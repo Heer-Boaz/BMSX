@@ -6271,25 +6271,33 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 		const layoutHost = this.createRuntimeErrorOverlayLayoutHost();
-		const layout = computeRuntimeErrorOverlayLayout(
-			layoutHost,
-			overlay,
-			codeTop,
-			codeRight,
-			textLeft,
-			constants.ERROR_OVERLAY_PADDING_X,
-			constants.ERROR_OVERLAY_PADDING_Y
-		);
+        const layout = computeRuntimeErrorOverlayLayout(
+            layoutHost,
+            overlay,
+            codeTop,
+            codeRight,
+            textLeft,
+            constants.ERROR_OVERLAY_PADDING_X,
+            constants.ERROR_OVERLAY_PADDING_Y,
+            computeRuntimeErrorOverlayMaxWidth(this.viewportWidth, this.charAdvance, this.gutterWidth)
+        );
 		if (!layout) {
 			return;
 		}
-		const highlightLines: number[] = [];
-		if (overlay.hovered && overlay.hoverLine >= 0 && overlay.hoverLine < overlay.lineDescriptors.length) {
-			const descriptor = overlay.lineDescriptors[overlay.hoverLine];
-			if (descriptor && descriptor.role === 'frame') {
-				highlightLines.push(overlay.hoverLine);
-			}
-		}
+        const highlightLines: number[] = [];
+        if (overlay.hovered && overlay.hoverLine >= 0 && overlay.hoverLine < overlay.lineDescriptors.length) {
+            const descriptor = overlay.lineDescriptors[overlay.hoverLine];
+            if (descriptor && descriptor.role === 'frame') {
+                const mapping = (layout as any).displayLineMap as number[] | undefined;
+                if (Array.isArray(mapping) && mapping.length > 0) {
+                    for (let i = 0; i < mapping.length; i += 1) {
+                        if (mapping[i] === overlay.hoverLine) highlightLines.push(i);
+                    }
+                } else {
+                    highlightLines.push(overlay.hoverLine);
+                }
+            }
+        }
 		const drawOptions: RuntimeErrorOverlayDrawOptions = {
 			textColor: constants.ERROR_OVERLAY_TEXT_COLOR,
 			paddingX: constants.ERROR_OVERLAY_PADDING_X,
@@ -6307,15 +6315,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return false;
 		}
 		const layoutHost = this.createRuntimeErrorOverlayLayoutHost();
-		const layout = computeRuntimeErrorOverlayLayout(
-			layoutHost,
-			overlay,
-			codeTop,
-			codeRight,
-			textLeft,
-			constants.ERROR_OVERLAY_PADDING_X,
-			constants.ERROR_OVERLAY_PADDING_Y
-		);
+        const layout = computeRuntimeErrorOverlayLayout(
+            layoutHost,
+            overlay,
+            codeTop,
+            codeRight,
+            textLeft,
+            constants.ERROR_OVERLAY_PADDING_X,
+            constants.ERROR_OVERLAY_PADDING_Y,
+            computeRuntimeErrorOverlayMaxWidth(this.viewportWidth, this.charAdvance, this.gutterWidth)
+        );
 		if (!layout) {
 			overlay.hovered = false;
 			overlay.hoverLine = -1;

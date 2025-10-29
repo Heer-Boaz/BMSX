@@ -368,8 +368,12 @@ export type RuntimeErrorOverlayLineDescriptor = {
 };
 
 export type RuntimeErrorOverlayLayout = {
-	bounds: RectBounds;
-	lineRects: ReadonlyArray<RectBounds>;
+    bounds: RectBounds;
+    lineRects: ReadonlyArray<RectBounds>;
+    // Visual line content produced by layout (word-wrapped)
+    displayLines?: ReadonlyArray<string>;
+    // Map from visual line index to descriptor index in 'lineDescriptors'
+    displayLineMap?: ReadonlyArray<number>;
 };
 
 export type RuntimeErrorDetails = {

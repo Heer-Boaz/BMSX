@@ -38,9 +38,11 @@ export interface RuntimeErrorOverlayLayoutHost {
 }
 
 export type RuntimeErrorOverlayLayoutResult = {
-	bounds: ErrorOverlayBounds;
-	connector?: ErrorOverlayRenderConfig['connector'];
-	lineRects: RectBounds[];
+    bounds: ErrorOverlayBounds;
+    connector?: ErrorOverlayRenderConfig['connector'];
+    lineRects: RectBounds[];
+    displayLines: string[];
+    displayLineMap: number[];
 };
 
 export type RuntimeErrorOverlayDrawOptions = {
@@ -59,13 +61,14 @@ export type RuntimeErrorOverlayClickResult =
 	| { kind: 'noop' };
 
 export function computeRuntimeErrorOverlayLayout(
-	host: RuntimeErrorOverlayLayoutHost,
-	overlay: RuntimeErrorOverlay,
-	codeTop: number,
-	codeRight: number,
-	textLeft: number,
-	paddingX: number,
-	paddingY: number
+    host: RuntimeErrorOverlayLayoutHost,
+    overlay: RuntimeErrorOverlay,
+    codeTop: number,
+    codeRight: number,
+    textLeft: number,
+    paddingX: number,
+    paddingY: number,
+    maxTextWidth: number
 ): RuntimeErrorOverlayLayoutResult | null {
 	host.ensureVisualLines();
 	const visualIndex = host.positionToVisualIndex(overlay.row, overlay.column);
@@ -97,22 +100,65 @@ export function computeRuntimeErrorOverlayLayout(
 	const clampedAnchorDisplay = clamp(anchorDisplay, sliceStartDisplay, sliceEndDisplay);
 	const anchorX = textLeft + host.measureRangeFast(entry, sliceStartDisplay, clampedAnchorDisplay);
 	const rowTop = codeTop + relativeRow * host.lineHeight;
-	const lines = overlay.lines.length > 0 ? overlay.lines : ['Runtime error'];
+    const sourceLines = overlay.lines.length > 0 ? overlay.lines : ['Runtime error'];
+    // Wrap lines greedily to fit inside the given max width
+    const displayLines: string[] = [];
+    const displayLineMap: number[] = [];
+    for (let d = 0; d < sourceLines.length; d += 1) {
+        const text = sourceLines[d];
+        if (text.length === 0) {
+            displayLines.push('');
+            displayLineMap.push(d);
+            continue;
+        }
+        let current = '';
+        for (let i = 0; i < text.length; i += 1) {
+            const ch = text.charAt(i);
+            const candidate = current + ch;
+            const w = host.measureText(candidate);
+            if (current.length > 0 && w > maxTextWidth) {
+                displayLines.push(current);
+                displayLineMap.push(d);
+                current = ch;
+                if (host.measureText(current) > maxTextWidth) {
+                    displayLines.push(current);
+                    displayLineMap.push(d);
+                    current = '';
+                }
+                continue;
+            }
+            if (current.length === 0 && w > maxTextWidth) {
+                displayLines.push(ch);
+                displayLineMap.push(d);
+                current = '';
+                continue;
+            }
+            current = candidate;
+        }
+        if (current.length > 0) {
+            displayLines.push(current);
+            displayLineMap.push(d);
+        }
+        if (displayLineMap.length === 0 || displayLineMap[displayLineMap.length - 1] !== d) {
+            // Ensure at least one display line per descriptor
+            // (needed if a single character was wider than max width and got pushed above)
+        }
+    }
 	const availableBottom = host.viewportHeight - host.bottomMargin;
 	const belowTop = rowTop + host.lineHeight + 2;
-	const bubbleBounds = computeErrorOverlayBounds(
-		anchorX,
-		rowTop,
-		lines,
-		(text) => host.measureText(text),
-		{
-			left: textLeft,
-			top: codeTop,
-			right: codeRight,
-			bottom: availableBottom
-		},
-		host.lineHeight
-	);
+    const bubbleBounds = computeErrorOverlayBounds(
+        anchorX,
+        rowTop,
+        displayLines,
+        (text) => host.measureText(text),
+        {
+            left: textLeft,
+            top: codeTop,
+            right: codeRight,
+            bottom: availableBottom
+        },
+        host.lineHeight
+    );
 
 	const placedBelow = bubbleBounds.top >= belowTop - 1;
 	const connectorLeft = Math.max(textLeft, anchorX);
@@ -144,15 +190,17 @@ export function computeRuntimeErrorOverlayLayout(
 	const lineLeft = bubbleBounds.left + paddingX;
 	const lineRight = bubbleBounds.right - paddingX;
 	let currentY = bubbleBounds.top + paddingY;
-	for (let index = 0; index < lines.length; index += 1) {
-		lineRects.push({ left: lineLeft, top: currentY, right: lineRight, bottom: currentY + host.lineHeight });
-		currentY += host.lineHeight;
-	}
-	overlay.layout = {
-		bounds: { left: bubbleBounds.left, top: bubbleBounds.top, right: bubbleBounds.right, bottom: bubbleBounds.bottom },
-		lineRects,
-	};
-	return { bounds: bubbleBounds, connector, lineRects };
+    for (let index = 0; index < displayLines.length; index += 1) {
+        lineRects.push({ left: lineLeft, top: currentY, right: lineRight, bottom: currentY + host.lineHeight });
+        currentY += host.lineHeight;
+    }
+    overlay.layout = {
+        bounds: { left: bubbleBounds.left, top: bubbleBounds.top, right: bubbleBounds.right, bottom: bubbleBounds.bottom },
+        lineRects,
+        displayLineMap,
+        displayLines,
+    };
+    return { bounds: bubbleBounds, connector, lineRects, displayLines, displayLineMap };
 }
 
 export function drawRuntimeErrorOverlay(
@@ -164,16 +212,17 @@ export function drawRuntimeErrorOverlay(
 	options: RuntimeErrorOverlayDrawOptions
 ): void {
 	const highlightLines = options.highlightLines && options.highlightLines.length > 0 ? options.highlightLines : undefined;
-	renderErrorOverlay(api, overlay.lines.length > 0 ? overlay.lines : ['Runtime error'], font, lineHeight, {
-		bounds: layout.bounds,
-		background: options.backgroundColor,
-		textColor: options.textColor,
-		paddingX: options.paddingX,
-		paddingY: options.paddingY,
-		connector: layout.connector,
-		highlightLines,
-		highlightColor: options.highlightColor,
-	});
+    const toDraw = (layout as any).displayLines as string[] | undefined;
+    renderErrorOverlay(api, (toDraw && toDraw.length > 0 ? toDraw : (overlay.lines.length > 0 ? overlay.lines : ['Runtime error'])), font, lineHeight, {
+        bounds: layout.bounds,
+        background: options.backgroundColor,
+        textColor: options.textColor,
+        paddingX: options.paddingX,
+        paddingY: options.paddingY,
+        connector: layout.connector,
+        highlightLines,
+        highlightColor: options.highlightColor,
+    });
 }
 
 export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverlay, x: number, y: number): number {
@@ -181,12 +230,16 @@ export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverl
 	if (!layout) {
 		return -1;
 	}
-	for (let index = 0; index < layout.lineRects.length; index += 1) {
-		const rect = layout.lineRects[index];
-		if (pointInRect(x, y, rect)) {
-			return index;
-		}
-	}
+    for (let index = 0; index < layout.lineRects.length; index += 1) {
+        const rect = layout.lineRects[index];
+        if (pointInRect(x, y, rect)) {
+            const mapping = (layout as any).displayLineMap as number[] | undefined;
+            if (Array.isArray(mapping) && index >= 0 && index < mapping.length) {
+                return mapping[index];
+            }
+            return index;
+        }
+    }
 	return -1;
 }
 

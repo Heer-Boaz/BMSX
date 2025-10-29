@@ -1498,35 +1498,39 @@ export class BmsxConsoleRuntime extends Service {
 	private buildRuntimeErrorDetailsForEditor(error: unknown, message: string): RuntimeErrorDetails | null {
 		const interpreter = this.luaInterpreter;
 		let luaFrames: RuntimeErrorStackFrame[] = [];
-		if (interpreter) {
-			const callFrames = interpreter.getLastFaultCallStack();
-			// Convert recorded call sites
-			luaFrames = this.convertLuaCallFrames(callFrames);
-			// If the thrown error includes precise location, prepend it as the current frame
-			if (error instanceof LuaError) {
-				const src = typeof error.chunkName === 'string' && error.chunkName.length > 0 ? error.chunkName : null;
-				const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
-				const col = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
-				let fnName: string | null = null;
-				if (callFrames.length > 0) {
-					const innermost = callFrames[callFrames.length - 1];
-					fnName = innermost.functionName && innermost.functionName.length > 0 ? innermost.functionName : null;
-				}
-				let raw = '';
-				if (fnName && fnName.length > 0) raw = fnName;
-				if (src && src.length > 0) raw = raw.length > 0 ? `${raw} @ ${src}` : src;
-				const top: RuntimeErrorStackFrame = { origin: 'lua', functionName: fnName, source: src, line, column: col, raw: raw.length > 0 ? raw : '[lua]' };
-				if (src && src.length > 0) {
-					const hint = this.lookupChunkResourceInfoNullable(src);
-					if (hint) {
-						top.chunkAssetId = hint.assetId ?? null;
-						if (hint.path && hint.path.length > 0) top.chunkPath = hint.path;
-					}
-				}
-				luaFrames.unshift(top);
-			}
-			interpreter.clearLastFaultCallStack();
-		}
+        if (interpreter) {
+            const callFrames = interpreter.getLastFaultCallStack();
+            // Convert recorded call sites
+            luaFrames = this.convertLuaCallFrames(callFrames);
+            // If the thrown error includes precise location, prepend it as the current frame
+            if (error instanceof LuaError) {
+                const src = typeof error.chunkName === 'string' && error.chunkName.length > 0 ? error.chunkName : null;
+                const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
+                const col = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
+                // Only inject if not already represented as the innermost frame
+                const innermost = callFrames.length > 0 ? callFrames[callFrames.length - 1] : null;
+                const alreadyCaptured = !!innermost && innermost.source === (src ?? '') && innermost.line === (line ?? 0) && innermost.column === (col ?? 0);
+                if (!alreadyCaptured) {
+                    let fnName: string | null = null;
+                    if (innermost) {
+                        fnName = innermost.functionName && innermost.functionName.length > 0 ? innermost.functionName : null;
+                    }
+                    let raw = '';
+                    if (fnName && fnName.length > 0) raw = fnName;
+                    if (src && src.length > 0) raw = raw.length > 0 ? `${raw} @ ${src}` : src;
+                    const top: RuntimeErrorStackFrame = { origin: 'lua', functionName: fnName, source: src, line, column: col, raw: raw.length > 0 ? raw : '[lua]' };
+                    if (src && src.length > 0) {
+                        const hint = this.lookupChunkResourceInfoNullable(src);
+                        if (hint) {
+                            top.chunkAssetId = hint.assetId ?? null;
+                            if (hint.path && hint.path.length > 0) top.chunkPath = hint.path;
+                        }
+                    }
+                    luaFrames.unshift(top);
+                }
+            }
+            interpreter.clearLastFaultCallStack();
+        }
 		let stackText: string | null = null;
 		if (error instanceof Error && typeof error.stack === 'string') {
 			stackText = error.stack;

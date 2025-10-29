@@ -127,27 +127,27 @@ function buildCombinedRuntimeErrorStack(details: RuntimeErrorDetails | null): Ru
 }
 
 function formatRuntimeErrorStackFrame(frame: RuntimeErrorStackFrame): string {
-	const originLabel = frame.origin === 'lua' ? 'Lua' : 'JS';
-	let name = frame.functionName && frame.functionName.length > 0 ? frame.functionName : '';
-	if (name.length === 0 && frame.source && frame.source.length > 0) {
-		name = frame.source;
-	}
-	if (name.length === 0 && frame.raw.length > 0) {
-		name = frame.raw;
-	}
-	if (name.length === 0) {
-		name = '(anonymous)';
-	}
-	let location = '';
-	if (frame.source && frame.source.length > 0) {
-		location = frame.source;
-	}
-	if (frame.line !== null) {
-		location = location.length > 0 ? `${location}:${frame.line}` : `${frame.line}`;
-		if (frame.column !== null) {
-			location += `:${frame.column}`;
-		}
-	}
-	const suffix = location.length > 0 ? ` @ ${location}` : '';
-	return `[${originLabel}] ${name}${suffix}`;
+    const originLabel = frame.origin === 'lua' ? 'Lua' : 'JS';
+    let name = frame.functionName && frame.functionName.length > 0 ? frame.functionName : '';
+    if (name.length === 0 && frame.source && frame.source.length > 0) {
+        name = frame.source;
+    }
+    if (name.length === 0 && frame.raw.length > 0) {
+        name = frame.raw;
+    }
+    if (name.length === 0) {
+        name = '(anonymous)';
+    }
+    let location = '';
+    if (frame.source && frame.source.length > 0) {
+        location = frame.source;
+    }
+    if (frame.line !== null) {
+        location = location.length > 0 ? `${location}:${frame.line}` : `${frame.line}`;
+        if (frame.column !== null) {
+            location += `:${frame.column}`;
+        }
+    }
+    const suffix = location.length > 0 ? ` (${location})` : '';
+    return `[${originLabel}] ${name}${suffix}`;
 }
