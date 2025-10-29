@@ -26,6 +26,7 @@ import type { StateDefinition } from '../fsm/statedefinition';
 import type { StateMachineController } from '../fsm/fsmcontroller';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
 import { ConsoleCartEditor } from './ide/console_cart_editor';
+import { ConsoleLuaEditor } from './ide/console_lua_editor';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { ConsoleFontVariant } from './font';
 import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
@@ -648,7 +649,7 @@ export class BmsxConsoleRuntime extends Service {
 		const primaryAssetId = (this.luaProgram && 'assetId' in this.luaProgram)
 			? (typeof this.luaProgram.assetId === 'string' ? this.luaProgram.assetId : null)
 			: null;
-		this.editor = new ConsoleCartEditor({
+		this.editor = new ConsoleLuaEditor({
 			playerIndex: this.playerIndex,
 			metadata: this.cart.meta,
 			viewport,

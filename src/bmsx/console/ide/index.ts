@@ -1,4 +1,5 @@
-export { ConsoleCartEditor } from './console_cart_editor';
+export { ConsoleCartEditor, type ConsoleEditorShortcutContext } from './console_cart_editor';
+export { ConsoleLuaEditor } from './console_lua_editor';
 export { CHARACTER_MAP, CHARACTER_CODES } from './character_map';
 export type {
 	ConsoleEditorOptions,

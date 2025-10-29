@@ -76,6 +76,7 @@ const THEME_BASE = {
 		builtin: PALETTE.magenta,
 		functionName: PALETTE.white,
 		parameter: PALETTE.brown,
+		globalVar: PALETTE.veryDarkBlue,
 		label: PALETTE.darkRed,
 		localTop: PALETTE.green,
 		localFunction: PALETTE.grey,
@@ -204,6 +205,7 @@ export const COLOR_CODE_DIM = THEME_BASE.text.dim;
 export const COLOR_BUILTIN = THEME_BASE.text.builtin;
 export const COLOR_FUNCTION_NAME = THEME_BASE.text.functionName;
 export const COLOR_PARAMETER = THEME_BASE.text.parameter;
+export const COLOR_GLOBAL_VARIABLE = THEME_BASE.text.globalVar;
 export const COLOR_LABEL = THEME_BASE.text.label;
 export const COLOR_LOCAL_TOP = THEME_BASE.text.localTop;
 export const COLOR_LOCAL_FUNCTION = THEME_BASE.text.localFunction;

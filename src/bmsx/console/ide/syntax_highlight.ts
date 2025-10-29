@@ -135,7 +135,7 @@ function resolveColorForSymbolKind(kind: SymbolKind): number {
 		case 'function':
 			return constants.COLOR_FUNCTION_HANDLE;
 		case 'global':
-			return constants.COLOR_LOCAL_TOP;
+			return constants.COLOR_GLOBAL_VARIABLE;
 		case 'tableField':
 			return constants.COLOR_LOCAL_TOP;
 		default:

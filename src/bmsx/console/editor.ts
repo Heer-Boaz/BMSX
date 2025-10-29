@@ -1,4 +1,4 @@
-export { ConsoleCartEditor } from './ide';
+export { ConsoleCartEditor, ConsoleLuaEditor } from './ide';
 export type {
 	ConsoleEditorOptions,
 	ConsoleEditorSerializedState,
@@ -7,4 +7,5 @@ export type {
 	Position,
 	RuntimeErrorOverlay,
 	SearchMatch,
+	ConsoleEditorShortcutContext,
 } from './ide';

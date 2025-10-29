@@ -117,6 +117,16 @@ import {
 } from './input_helpers';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast.ts';
 
+export type ConsoleEditorShortcutContext = {
+	ctrlDown: boolean;
+	shiftDown: boolean;
+	altDown: boolean;
+	metaDown: boolean;
+	inlineFieldFocused: boolean;
+	resourcePanelFocused: boolean;
+	codeTabActive: boolean;
+};
+
 const EDITOR_TOGGLE_KEY = 'Escape';
 const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'start'];
 
@@ -1662,7 +1672,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 
-		if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {
+		if ((ctrlDown || metaDown) && !shiftDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {
 			consumeKeyboardKey(keyboard, 'KeyF');
 			this.openSearch(true);
 			return;
@@ -1678,6 +1688,17 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		|| this.lineJumpActive
 		|| this.createResourceActive
 		|| this.renameController.isActive();
+	if (this.handleCustomKeybinding(keyboard, deltaSeconds, {
+		ctrlDown,
+		metaDown,
+		shiftDown,
+		altDown,
+		inlineFieldFocused,
+		resourcePanelFocused: this.resourcePanelFocused,
+		codeTabActive: this.isCodeTabActive(),
+	})) {
+		return;
+	}
 	if (!inlineFieldFocused && isKeyJustPressedGlobal(this.playerIndex, 'F12')) {
 		consumeKeyboardKey(keyboard, 'F12');
 		if (shiftDown) {
@@ -1847,6 +1868,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return;
 	}
 		// Remaining character input after controller handled modifiers is no-op here
+	}
+
+	protected handleCustomKeybinding(
+		_keyboard: KeyboardInput,
+		_deltaSeconds: number,
+		_context: ConsoleEditorShortcutContext,
+	): boolean {
+		return false;
 	}
 
 	private handleCreateResourceInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
