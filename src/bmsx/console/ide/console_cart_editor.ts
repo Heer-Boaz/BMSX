@@ -3904,6 +3904,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 		const bounds = this.getCodeAreaBounds();
 		if (this.processRuntimeErrorOverlayPointer(snapshot, justPressed, bounds.codeTop, bounds.codeRight, bounds.textLeft)) {
+			// Keep primary pressed state in sync when overlay handles the event
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			return;
 		}
 		const insideCodeArea = snapshot.viewportY >= bounds.codeTop
@@ -6342,11 +6344,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		this.resetPointerClickTracking();
-		console.log('[RuntimeErrorOverlay] Click dispatch', {
-			hoverLine: overlay.hoverLine,
-			layoutLineCount: layout.lineRects.length,
-			lineDescriptorRoles: overlay.lineDescriptors.map(descriptor => descriptor.role),
-		});
 		const clickResult = evaluateRuntimeErrorOverlayClick(overlay, overlay.hoverLine);
 		switch (clickResult.kind) {
 			case 'expand': {

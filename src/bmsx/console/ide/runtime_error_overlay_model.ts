@@ -19,6 +19,8 @@ export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails | null): R
 			line: frame.line,
 			column: frame.column,
 			raw: frame.raw,
+			chunkAssetId: frame.chunkAssetId,
+			chunkPath: frame.chunkPath,
 		});
 	}
 	const jsFrames: RuntimeErrorStackFrame[] = [];
@@ -31,6 +33,8 @@ export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails | null): R
 			line: frame.line,
 			column: frame.column,
 			raw: frame.raw,
+			chunkAssetId: frame.chunkAssetId,
+			chunkPath: frame.chunkPath,
 		});
 	}
 	return {

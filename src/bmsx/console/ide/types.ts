@@ -355,6 +355,8 @@ export type RuntimeErrorStackFrame = {
 	line: number | null;
 	column: number | null;
 	raw: string;
+	chunkAssetId?: string | null;
+	chunkPath?: string | null;
 };
 
 export type RuntimeErrorOverlayLineRole = 'message' | 'header' | 'divider' | 'frame';

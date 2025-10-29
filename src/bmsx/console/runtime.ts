@@ -1500,7 +1500,31 @@ export class BmsxConsoleRuntime extends Service {
 		let luaFrames: RuntimeErrorStackFrame[] = [];
 		if (interpreter) {
 			const callFrames = interpreter.getLastFaultCallStack();
+			// Convert recorded call sites
 			luaFrames = this.convertLuaCallFrames(callFrames);
+			// If the thrown error includes precise location, prepend it as the current frame
+			if (error instanceof LuaError) {
+				const src = typeof error.chunkName === 'string' && error.chunkName.length > 0 ? error.chunkName : null;
+				const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
+				const col = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
+				let fnName: string | null = null;
+				if (callFrames.length > 0) {
+					const innermost = callFrames[callFrames.length - 1];
+					fnName = innermost.functionName && innermost.functionName.length > 0 ? innermost.functionName : null;
+				}
+				let raw = '';
+				if (fnName && fnName.length > 0) raw = fnName;
+				if (src && src.length > 0) raw = raw.length > 0 ? `${raw} @ ${src}` : src;
+				const top: RuntimeErrorStackFrame = { origin: 'lua', functionName: fnName, source: src, line, column: col, raw: raw.length > 0 ? raw : '[lua]' };
+				if (src && src.length > 0) {
+					const hint = this.lookupChunkResourceInfoNullable(src);
+					if (hint) {
+						top.chunkAssetId = hint.assetId ?? null;
+						if (hint.path && hint.path.length > 0) top.chunkPath = hint.path;
+					}
+				}
+				luaFrames.unshift(top);
+			}
 			interpreter.clearLastFaultCallStack();
 		}
 		let stackText: string | null = null;
@@ -1532,14 +1556,24 @@ export class BmsxConsoleRuntime extends Service {
 			if (source && source.length > 0) {
 				rawLabel = rawLabel.length > 0 ? `${rawLabel} @ ${source}` : source;
 			}
-			frames.push({
+			const runtimeFrame: RuntimeErrorStackFrame = {
 				origin: 'lua',
 				functionName: frame.functionName && frame.functionName.length > 0 ? frame.functionName : null,
 				source,
 				line: effectiveLine,
 				column: effectiveColumn,
-				raw: rawLabel.length > 0 ? rawLabel : '[lua]'
-			});
+				raw: rawLabel.length > 0 ? rawLabel : '[lua]',
+			};
+			if (source && source.length > 0) {
+				const hint = this.lookupChunkResourceInfoNullable(source);
+				if (hint) {
+					runtimeFrame.chunkAssetId = hint.assetId ?? null;
+					if (hint.path && hint.path.length > 0) {
+						runtimeFrame.chunkPath = hint.path;
+					}
+				}
+			}
+			frames.push(runtimeFrame);
 		}
 		return frames;
 	}

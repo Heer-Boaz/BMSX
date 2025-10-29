@@ -202,10 +202,6 @@ export function evaluateRuntimeErrorOverlayClick(
 	}
 	const descriptor = overlay.lineDescriptors[hoverLine];
 	if (descriptor.role === 'frame' && descriptor.frame) {
-		console.log('[RuntimeErrorOverlay] Frame click', {
-			lineIndex: hoverLine,
-			frame: descriptor.frame,
-		});
 		if (descriptor.frame.origin === 'lua') {
 			return { kind: 'navigate', frame: descriptor.frame };
 		}
