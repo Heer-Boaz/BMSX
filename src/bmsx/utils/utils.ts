@@ -1,4 +1,4 @@
-import { Area, Direction, vec2, vec2arr, vec3arr, vec3, type Identifier } from '../rompack/rompack';
+import { Area, Direction, vec2, vec2arr, vec3arr, vec3, type Identifier, type RectBounds } from '../rompack/rompack';
 import { V3 } from '../render/3d/math3d';
 
 /**
@@ -20,6 +20,10 @@ export function clamp(value: number, min: number, max: number): number {
 	if (value < min) return min;
 	if (value > max) return max;
 	return value;
+}
+
+export function pointInRect(x: number, y: number, rect: RectBounds): boolean {
+	return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
 }
 
 /**

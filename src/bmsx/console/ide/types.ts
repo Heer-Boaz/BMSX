@@ -11,6 +11,7 @@ import type {
 	ConsoleViewport,
 } from '../types';
 import type { ConsoleFontVariant } from '../font';
+import type { RectBounds } from '../../rompack/rompack';
 
 export type ConsoleEditorOptions = {
 	playerIndex: number;
@@ -67,13 +68,6 @@ export type EditorSnapshot = {
 	scrollColumn: number;
 	selectionAnchor: Position | null;
 	dirty: boolean;
-};
-
-export type RectBounds = {
-	left: number;
-	top: number;
-	right: number;
-	bottom: number;
 };
 
 export type SymbolCatalogEntry = {

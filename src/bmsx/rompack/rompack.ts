@@ -182,6 +182,13 @@ export interface Area {
 	end: vec2;
 }
 
+export type RectBounds = {
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+};
+
 export type Polygon = number[];
 
 export interface Oriented {
@@ -335,4 +342,6 @@ export interface ImgMeta {
 	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
 	centerpoint?: vec2arr; // The center point of the image, based on the bounding box.
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
-}export type TextureSource = unknown & { close?(): void; width: number; height: number; }; // platform-specific source type (e.g. ImageBitmap in browsers)
+}
+
+export type TextureSource = unknown & { close?(): void; width: number; height: number; }; // platform-specific source type (e.g. ImageBitmap in browsers)

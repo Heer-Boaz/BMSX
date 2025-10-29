@@ -1,7 +1,8 @@
 import type { BmsxConsoleApi } from '../api';
 import { clamp } from '../../utils/utils';
 import { SCROLLBAR_MIN_THUMB_HEIGHT } from './constants';
-import type { RectBounds, ScrollbarKind } from './types';
+import type { ScrollbarKind } from './types';
+import type { RectBounds } from 'bmsx/rompack/rompack';
 
 export class ConsoleScrollbar {
 	public readonly orientation: 'vertical' | 'horizontal';
