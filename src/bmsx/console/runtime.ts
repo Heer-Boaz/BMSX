@@ -1210,7 +1210,6 @@ export class BmsxConsoleRuntime extends Service {
 		this.handleMethodCache.clear();
 		this.luaObjectToHandle = new WeakMap<object, number>();
 		this.luaObjectWrapperCache = new WeakMap<object, LuaTable>();
-		this.nextLuaHandleId = 1;
 		this.freeHandles = [];
 		this.freeHandleSet.clear();
 		this.disposeAllLuaComponentDefinitions();
@@ -3162,12 +3161,17 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private releaseHandle(handle: number): void {
+		// Only recycle handles that belong to the current mapping and whose
+		// targets have actually been collected. If the handle is unknown to this
+		// runtime (e.g. stale from a previous interpreter before reset), do not
+		// add it to the free list to avoid accidental reuse.
 		const reference = this.luaHandleToObject.get(handle);
-		if (reference) {
-			const target = typeof reference.deref === 'function' ? reference.deref() : null;
-			if (target) {
-				return;
-			}
+		if (!reference) {
+			return; // Unknown handle in this runtime; ignore.
+		}
+		const target = typeof reference.deref === 'function' ? reference.deref() : null;
+		if (target) {
+			return; // Still alive; nothing to release.
 		}
 		this.luaHandleToObject.delete(handle);
 		this.handleMethodCache.delete(handle);
