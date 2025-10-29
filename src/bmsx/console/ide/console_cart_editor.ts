@@ -4405,16 +4405,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		const assetId = this.resolveHoverAssetId(context);
 		const chunkName = this.resolveHoverChunkName(context);
-		const inspection = this.safeInspectLuaExpression({
-			assetId,
-			expression: token.expression,
-			chunkName,
-			row: row + 1,
-			column: token.startColumn + 1,
-		});
-		let definition = inspection?.definition ?? null;
+		let definition = this.resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, assetId, chunkName);
 		if (!definition) {
-			definition = this.resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, assetId, chunkName);
+			const inspection = this.safeInspectLuaExpression({
+				assetId,
+				expression: token.expression,
+				chunkName,
+				row: row + 1,
+				column: token.startColumn + 1,
+			});
+			definition = inspection?.definition ?? null;
 		}
 		if (!definition) {
 			this.clearGotoHoverHighlight();
@@ -4447,16 +4447,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return false;
 		}
 		const chunkName = this.resolveHoverChunkName(context);
-		const inspection = this.safeInspectLuaExpression({
-			assetId,
-			expression: token.expression,
-			chunkName,
-			row: row + 1,
-			column: token.startColumn + 1,
-		});
-		let definition = inspection?.definition ?? null;
+		let definition = this.resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, assetId, chunkName);
 		if (!definition) {
-			definition = this.resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, assetId, chunkName);
+			const inspection = this.safeInspectLuaExpression({
+				assetId,
+				expression: token.expression,
+				chunkName,
+				row: row + 1,
+				column: token.startColumn + 1,
+			});
+			definition = inspection?.definition ?? null;
 		}
 		if (!definition) {
 			const resolvedChunkName = chunkName
