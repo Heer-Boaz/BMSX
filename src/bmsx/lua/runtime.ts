@@ -52,6 +52,13 @@ import { LuaParser } from './parser.ts';
 import type { LuaFunctionValue, LuaValue, LuaTable } from './value.ts';
 import { createLuaTable, isLuaTable } from './value.ts';
 
+export type LuaCallFrame = {
+	readonly functionName: string | null;
+	readonly source: string;
+	readonly line: number;
+	readonly column: number;
+};
+
 type ExecutionSignal =
 	| { readonly kind: 'normal' }
 	| { readonly kind: 'return'; readonly values: ReadonlyArray<LuaValue> }
@@ -72,8 +79,13 @@ class LuaNativeFunction implements LuaFunctionValue {
 	}
 
 	public call(args: ReadonlyArray<LuaValue>): LuaValue[] {
-		const result = this.handler(this.interpreter, args);
-		return Array.from(result);
+		try {
+			const result = this.handler(this.interpreter, args);
+			return Array.from(result);
+		} catch (error) {
+			this.interpreter.captureActiveCallStackForFault();
+			throw error;
+		}
 	}
 }
 
@@ -128,6 +140,8 @@ export class LuaInterpreter {
 	private readonly chunkDefinitions: Map<string, ReadonlyArray<LuaDefinitionInfo>> = new Map();
 	private readonly envStack: LuaEnvironment[] = [];
 	private lastFaultEnvironment: LuaEnvironment | null = null;
+	private readonly callStack: LuaCallFrame[] = [];
+	private lastFaultCallStack: LuaCallFrame[] = [];
 
 	 constructor(globals: LuaEnvironment | null) {
 	 	 if (globals === null) {
@@ -198,18 +212,27 @@ export class LuaInterpreter {
 		const chunkScope = LuaEnvironment.createChild(this.globals);
 		this.chunkEnvironment = chunkScope;
 		return this.withEnv(chunkScope, () => {
-			const signal = this.executeStatements(chunk.body, chunkScope, [], null);
-			if (signal.kind === 'return') {
-				return Array.from(signal.values);
+			this.lastFaultCallStack = [];
+			this.pushCallFrame('<chunk>', chunk.range.chunkName, chunk.range.start.line, chunk.range.start.column);
+			try {
+				const signal = this.executeStatements(chunk.body, chunkScope, [], null);
+				if (signal.kind === 'return') {
+					return Array.from(signal.values);
+				}
+				if (signal.kind === 'break') {
+					const breakStatement = signal.origin as LuaBreakStatement;
+					throw this.runtimeErrorAt(breakStatement.range, 'Unexpected break outside of loop.');
+				}
+				if (signal.kind === 'goto') {
+					throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found.`);
+				}
+				return [];
+			} catch (error) {
+				this.recordFaultCallStack();
+				throw error;
+			} finally {
+				this.callStack.pop();
 			}
-			if (signal.kind === 'break') {
-				const breakStatement = signal.origin as LuaBreakStatement;
-				throw this.runtimeErrorAt(breakStatement.range, 'Unexpected break outside of loop.');
-			}
-			if (signal.kind === 'goto') {
-				throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found.`);
-			}
-			return [];
 		});
 	}
 
@@ -275,6 +298,43 @@ export class LuaInterpreter {
 
 	public markFaultEnvironment(): void {
 		this.lastFaultEnvironment = this.envStack.length > 0 ? this.envStack[this.envStack.length - 1] : null;
+		this.recordFaultCallStack();
+	}
+
+	public getLastFaultCallStack(): ReadonlyArray<LuaCallFrame> {
+		return this.lastFaultCallStack;
+	}
+
+	public clearLastFaultCallStack(): void {
+		this.lastFaultCallStack = [];
+	}
+
+	public captureActiveCallStackForFault(): void {
+		this.recordFaultCallStack();
+	}
+
+	private pushCallFrame(functionName: string | null, source: string, line: number, column: number): void {
+		const safeLine = Number.isFinite(line) ? Math.max(0, Math.floor(line)) : 0;
+		const safeColumn = Number.isFinite(column) ? Math.max(0, Math.floor(column)) : 0;
+		this.callStack.push({
+			functionName,
+			source,
+			line: safeLine,
+			column: safeColumn,
+		});
+	}
+
+	private recordFaultCallStack(): void {
+		if (this.callStack.length === 0) {
+			this.lastFaultCallStack = [];
+			return;
+		}
+		this.lastFaultCallStack = this.callStack.map(frame => ({
+			functionName: frame.functionName,
+			source: frame.source,
+			line: frame.line,
+			column: frame.column,
+		}));
 	}
 
 	private executeStatements(statements: ReadonlyArray<LuaStatement>, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, parentScope: LabelScope | null): ExecutionSignal {
@@ -1528,6 +1588,11 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 
 	public invokeScriptFunction(expression: LuaFunctionExpression, closure: LuaEnvironment, name: string, args: ReadonlyArray<LuaValue>, implicitSelfName: string | null): LuaValue[] {
 		const activationEnvironment = LuaEnvironment.createChild(closure);
+		const callRange = this.currentCallRange;
+		const rangeSource = callRange ? callRange.chunkName : expression.range.chunkName;
+		const rangeLine = callRange ? callRange.start.line : expression.range.start.line;
+		const rangeColumn = callRange ? callRange.start.column : expression.range.start.column;
+		this.pushCallFrame(name && name.length > 0 ? name : null, rangeSource, rangeLine, rangeColumn);
 		const parameters = expression.parameters;
 		let argumentIndex = 0;
 		if (implicitSelfName !== null) {
@@ -1548,17 +1613,24 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			}
 			varargValues = extras;
 		}
-		const signal = this.withEnv(activationEnvironment, () => this.executeBlock(expression.body, activationEnvironment, varargValues, null));
-		if (signal.kind === 'return') {
-			return Array.from(signal.values);
+		try {
+			const signal = this.withEnv(activationEnvironment, () => this.executeBlock(expression.body, activationEnvironment, varargValues, null));
+			if (signal.kind === 'return') {
+				return Array.from(signal.values);
+			}
+			if (signal.kind === 'break') {
+				throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
+			}
+			if (signal.kind === 'goto') {
+				throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found in function '${name}'.`);
+			}
+			return [];
+		} catch (error) {
+			this.recordFaultCallStack();
+			throw error;
+		} finally {
+			this.callStack.pop();
 		}
-		if (signal.kind === 'break') {
-			throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
-		}
-		if (signal.kind === 'goto') {
-			throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found in function '${name}'.`);
-		}
-		return [];
 	}
 
 	private validateReservedIdentifiers(statements: ReadonlyArray<LuaStatement>): void {

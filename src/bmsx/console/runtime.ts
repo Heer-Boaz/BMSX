@@ -6,7 +6,7 @@ import { ConsoleColliderManager } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
 import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor } from './types';
 import type { RomResourcePath } from '../rompack/rompack';
-import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '../lua/runtime.ts';
+import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction, type LuaCallFrame } from '../lua/runtime.ts';
 import { LuaEnvironment } from '../lua/environment.ts';
 import type { LuaFunctionValue, LuaValue, LuaTable } from '../lua/value.ts';
 import { createLuaTable, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../lua/value.ts';
@@ -27,6 +27,7 @@ import type { StateMachineController } from '../fsm/fsmcontroller';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
 import { ConsoleCartEditor } from './ide/console_cart_editor';
 import { ConsoleLuaEditor } from './ide/console_lua_editor';
+import type { RuntimeErrorDetails, RuntimeErrorStackFrame } from './ide/types';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { ConsoleFontVariant } from './font';
 import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
@@ -1453,6 +1454,7 @@ export class BmsxConsoleRuntime extends Service {
 		else {
 			message = String(error);
 		}
+		const runtimeDetails = this.buildRuntimeErrorDetailsForEditor(error, message);
 		let line: number | null = null;
 		let column: number | null = null;
 		let chunkName: string | null = null;
@@ -1474,15 +1476,15 @@ export class BmsxConsoleRuntime extends Service {
 			try {
 				const hint = this.lookupChunkResourceInfoNullable(chunkName);
 				if (hint) {
-					this.editor.showRuntimeErrorInChunk(chunkName, line, column, message, hint);
+					this.editor.showRuntimeErrorInChunk(chunkName, line, column, message, hint, runtimeDetails);
 				} else {
-					this.editor.showRuntimeErrorInChunk(chunkName, line, column, message);
+					this.editor.showRuntimeErrorInChunk(chunkName, line, column, message, undefined, runtimeDetails);
 				}
 			}
 			catch (editorError) {
 				const overlayMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
 				try {
-				this.editor.showRuntimeError(line, column, overlayMessage);
+				this.editor.showRuntimeError(line, column, overlayMessage, runtimeDetails);
 				}
 				catch (secondaryError) {
 					console.warn('[BmsxConsoleRuntime] Failed to display Lua error in console editor.', editorError, secondaryError);
@@ -1491,6 +1493,140 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const logMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
 		console.error('[BmsxConsoleRuntime] Lua runtime error:', logMessage, error);
+	}
+
+	private buildRuntimeErrorDetailsForEditor(error: unknown, message: string): RuntimeErrorDetails | null {
+		const interpreter = this.luaInterpreter;
+		let luaFrames: RuntimeErrorStackFrame[] = [];
+		if (interpreter) {
+			const callFrames = interpreter.getLastFaultCallStack();
+			luaFrames = this.convertLuaCallFrames(callFrames);
+			interpreter.clearLastFaultCallStack();
+		}
+		let stackText: string | null = null;
+		if (error instanceof Error && typeof error.stack === 'string') {
+			stackText = error.stack;
+		}
+		const jsFrames = this.parseJsStackFrames(stackText);
+		if (luaFrames.length === 0 && jsFrames.length === 0) {
+			return null;
+		}
+		return {
+			message,
+			luaStack: luaFrames,
+			jsStack: jsFrames,
+		};
+	}
+
+	private convertLuaCallFrames(callFrames: ReadonlyArray<LuaCallFrame>): RuntimeErrorStackFrame[] {
+		const frames: RuntimeErrorStackFrame[] = [];
+		for (let index = callFrames.length - 1; index >= 0; index -= 1) {
+			const frame = callFrames[index];
+			const source = frame.source && frame.source.length > 0 ? frame.source : null;
+			const effectiveLine = frame.line > 0 ? frame.line : null;
+			const effectiveColumn = frame.column > 0 ? frame.column : null;
+			let rawLabel = '';
+			if (frame.functionName && frame.functionName.length > 0) {
+				rawLabel = frame.functionName;
+			}
+			if (source && source.length > 0) {
+				rawLabel = rawLabel.length > 0 ? `${rawLabel} @ ${source}` : source;
+			}
+			frames.push({
+				origin: 'lua',
+				functionName: frame.functionName && frame.functionName.length > 0 ? frame.functionName : null,
+				source,
+				line: effectiveLine,
+				column: effectiveColumn,
+				raw: rawLabel.length > 0 ? rawLabel : '[lua]'
+			});
+		}
+		return frames;
+	}
+
+	private parseJsStackFrames(stack: string | null): RuntimeErrorStackFrame[] {
+		if (!stack || stack.length === 0) {
+			return [];
+		}
+		const sanitized = stack.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+		const lines = sanitized.split('\n');
+		const frames: RuntimeErrorStackFrame[] = [];
+		for (let index = 1; index < lines.length; index += 1) {
+			const trimmed = lines[index].trim();
+			if (trimmed.length === 0) {
+				continue;
+			}
+			if (!trimmed.startsWith('at ')) {
+				continue;
+			}
+			const parsed = this.parseJsStackLine(trimmed);
+			if (parsed) {
+				frames.push(parsed);
+			}
+		}
+		return frames;
+	}
+
+	private parseJsStackLine(line: string): RuntimeErrorStackFrame | null {
+		let content = line;
+		if (content.startsWith('at ')) {
+			content = content.slice(3).trim();
+		}
+		let functionName: string | null = null;
+		let location = content;
+		const openIndex = content.indexOf('(');
+		const closeIndex = content.lastIndexOf(')');
+		if (openIndex >= 0 && closeIndex > openIndex) {
+			const prefix = content.slice(0, openIndex).trim();
+			functionName = prefix.length > 0 ? prefix : null;
+			location = content.slice(openIndex + 1, closeIndex).trim();
+		}
+		let source: string | null = null;
+		let lineNumber: number | null = null;
+		let columnNumber: number | null = null;
+		const locationText = location;
+		if (locationText.length > 0) {
+			const lastColon = locationText.lastIndexOf(':');
+			if (lastColon > 0) {
+				const columnText = locationText.slice(lastColon + 1);
+				const columnValue = Number.parseInt(columnText, 10);
+				if (Number.isFinite(columnValue) && columnValue > 0) {
+					columnNumber = columnValue;
+					const withoutColumn = locationText.slice(0, lastColon);
+					const lineColon = withoutColumn.lastIndexOf(':');
+					if (lineColon > 0) {
+						const lineText = withoutColumn.slice(lineColon + 1);
+						const lineValue = Number.parseInt(lineText, 10);
+						if (Number.isFinite(lineValue) && lineValue > 0) {
+							lineNumber = lineValue;
+							source = withoutColumn.slice(0, lineColon);
+						} else {
+							source = withoutColumn;
+						}
+					} else {
+						source = withoutColumn;
+					}
+				} else {
+					source = locationText;
+				}
+			} else {
+				source = locationText;
+			}
+		}
+		if (source) {
+			source = source.trim();
+			if (source.length === 0) {
+				source = null;
+			}
+		}
+		return {
+			origin: 'js',
+			functionName,
+			source,
+			line: lineNumber,
+			column: columnNumber,
+			raw: line,
+		};
 	}
 
 	private createApiRuntimeError(interpreter: LuaInterpreter, message: string): LuaRuntimeError {

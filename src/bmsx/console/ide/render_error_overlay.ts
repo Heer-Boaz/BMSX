@@ -16,6 +16,8 @@ export interface ErrorOverlayRenderConfig {
 	textColor: number;
 	paddingX: number;
 	paddingY: number;
+	highlightLines?: ReadonlyArray<number>;
+	highlightColor?: { r: number; g: number; b: number; a: number };
 	connector?: {
 		left: number;
 		right: number;
@@ -76,11 +78,28 @@ export function renderErrorOverlay(
 	lineHeight: number,
 	config: ErrorOverlayRenderConfig
 ): void {
-	const { bounds, background, textColor, paddingX, paddingY, connector } = config;
+	const { bounds, background, textColor, paddingX, paddingY, connector, highlightLines, highlightColor } = config;
 	api.rectfill_color(bounds.left, bounds.top, bounds.right, bounds.bottom, background);
 	const startX = bounds.left + paddingX;
+	const highlightSet = new Set<number>();
+	if (highlightLines) {
+		for (let index = 0; index < highlightLines.length; index += 1) {
+			const value = highlightLines[index];
+			if (typeof value === 'number' && Number.isFinite(value)) {
+				highlightSet.add(Math.floor(value));
+			}
+		}
+	}
 	let currentY = bounds.top + paddingY;
 	for (let i = 0; i < lines.length; i += 1) {
+		if (highlightSet.has(i)) {
+			const lineLeft = startX;
+			const lineRight = bounds.right - paddingX;
+			if (lineRight > lineLeft) {
+				const color = highlightColor ?? background;
+				api.rectfill_color(lineLeft, currentY, lineRight, currentY + lineHeight, color);
+			}
+		}
 		drawEditorText(api, font, lines[i], startX, currentY, textColor);
 		currentY += lineHeight;
 	}

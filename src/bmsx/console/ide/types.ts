@@ -352,11 +352,48 @@ export type InlineInputOptions = {
 	maxLength?: number | null;
 };
 
+export type RuntimeErrorStackFrameOrigin = 'lua' | 'js';
+
+export type RuntimeErrorStackFrame = {
+	origin: RuntimeErrorStackFrameOrigin;
+	functionName: string | null;
+	source: string | null;
+	line: number | null;
+	column: number | null;
+	raw: string;
+};
+
+export type RuntimeErrorOverlayLineRole = 'message' | 'header' | 'divider' | 'frame';
+
+export type RuntimeErrorOverlayLineDescriptor = {
+	text: string;
+	role: RuntimeErrorOverlayLineRole;
+	frame?: RuntimeErrorStackFrame;
+};
+
+export type RuntimeErrorOverlayLayout = {
+	bounds: RectBounds;
+	lineRects: ReadonlyArray<RectBounds>;
+};
+
+export type RuntimeErrorDetails = {
+	message: string;
+	luaStack: ReadonlyArray<RuntimeErrorStackFrame>;
+	jsStack: ReadonlyArray<RuntimeErrorStackFrame>;
+};
+
 export type RuntimeErrorOverlay = {
 	row: number;
 	column: number;
 	lines: string[];
 	timer: number;
+	messageLines: string[];
+	lineDescriptors: RuntimeErrorOverlayLineDescriptor[];
+	layout: RuntimeErrorOverlayLayout | null;
+	details: RuntimeErrorDetails | null;
+	expanded: boolean;
+	hovered: boolean;
+	hoverLine: number;
 };
 
 export type RepeatEntry = {

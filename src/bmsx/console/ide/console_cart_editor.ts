@@ -47,7 +47,8 @@ import {
 	computeErrorOverlayBounds,
 	renderErrorOverlay,
 	renderErrorOverlayText,
-	type ErrorOverlayRenderConfig
+	type ErrorOverlayRenderConfig,
+	type ErrorOverlayBounds
 } from './render_error_overlay';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
@@ -86,6 +87,9 @@ import type {
 	ResourceSearchResult,
 	ResourceViewerState,
 	RuntimeErrorOverlay,
+	RuntimeErrorDetails,
+	RuntimeErrorStackFrame,
+	RuntimeErrorOverlayLineDescriptor,
 	ScrollbarKind,
 	SearchMatch,
 	SymbolCatalogEntry,
@@ -595,13 +599,20 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	public showRuntimeErrorInChunk(chunkName: string | null, line: number | null, column: number | null, message: string, hint?: { assetId: string | null; path?: string | null }): void {
+	public showRuntimeErrorInChunk(
+		chunkName: string | null,
+		line: number | null,
+		column: number | null,
+		message: string,
+		hint?: { assetId: string | null; path?: string | null },
+		details?: RuntimeErrorDetails | null
+	): void {
 		this.focusChunkSource(chunkName, hint);
 		const overlayMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
-		this.showRuntimeError(line, column, overlayMessage);
+		this.showRuntimeError(line, column, overlayMessage, details ?? null);
 	}
 
-	public showRuntimeError(line: number | null, column: number | null, message: string): void {
+	public showRuntimeError(line: number | null, column: number | null, message: string, details?: RuntimeErrorDetails | null): void {
 		if (!this.active) {
 			this.activate();
 		}
@@ -630,19 +641,167 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.updateDesiredColumn();
 		this.revealCursor();
 		this.resetBlink();
-		const normalizedMessage = (message?.length > 0) ? message.trim() : 'Runtime error';
+		const normalizedMessage = message && message.length > 0 ? message.trim() : 'Runtime error';
 		const overlayMessage = processedLine !== null ? `Line ${processedLine}:${normalizedMessage}` : normalizedMessage;
-		const overlayLines = this.buildRuntimeErrorLines(overlayMessage);
+		const messageLines = this.buildRuntimeErrorLines(overlayMessage);
+		const overlayDetails = this.cloneRuntimeErrorDetails(details ?? null);
 		const overlay: RuntimeErrorOverlay = {
 			row: targetRow,
 			column: targetColumn,
-			lines: overlayLines,
+			lines: [],
 			timer: Number.POSITIVE_INFINITY,
+			messageLines,
+			lineDescriptors: [],
+			layout: null,
+			details: overlayDetails,
+			expanded: false,
+			hovered: false,
+			hoverLine: -1,
 		};
+		this.rebuildRuntimeErrorOverlayView(overlay);
 		this.setActiveRuntimeErrorOverlay(overlay);
 		this.setExecutionStopHighlight(processedLine !== null ? targetRow : null);
-		const statusLine = overlayLines.length > 0 ? overlayLines[0] : 'Runtime error';
+		const statusLine = overlay.lines.length > 0 ? overlay.lines[0] : 'Runtime error';
 		this.showMessage(statusLine, constants.COLOR_STATUS_ERROR, 8.0);
+	}
+
+	private cloneRuntimeErrorDetails(details: RuntimeErrorDetails | null): RuntimeErrorDetails | null {
+		if (!details) {
+			return null;
+		}
+		const luaFrames: RuntimeErrorStackFrame[] = [];
+		for (let i = 0; i < details.luaStack.length; i += 1) {
+			const frame = details.luaStack[i];
+			luaFrames.push({
+				origin: frame.origin,
+				functionName: frame.functionName,
+				source: frame.source,
+				line: frame.line,
+				column: frame.column,
+				raw: frame.raw,
+			});
+		}
+		const jsFrames: RuntimeErrorStackFrame[] = [];
+		for (let j = 0; j < details.jsStack.length; j += 1) {
+			const frame = details.jsStack[j];
+			jsFrames.push({
+				origin: frame.origin,
+				functionName: frame.functionName,
+				source: frame.source,
+				line: frame.line,
+				column: frame.column,
+				raw: frame.raw,
+			});
+		}
+		return {
+			message: details.message,
+			luaStack: luaFrames,
+			jsStack: jsFrames,
+		};
+	}
+
+	private rebuildRuntimeErrorOverlayView(overlay: RuntimeErrorOverlay): void {
+		const descriptors = this.buildRuntimeErrorOverlayDescriptors(overlay.messageLines, overlay.details, overlay.expanded);
+		overlay.lineDescriptors = descriptors;
+		overlay.lines = descriptors.map(descriptor => descriptor.text);
+		overlay.layout = null;
+		overlay.hovered = false;
+		overlay.hoverLine = -1;
+	}
+
+	private buildRuntimeErrorOverlayDescriptors(
+		messageLines: string[],
+		details: RuntimeErrorDetails | null,
+		expanded: boolean
+	): RuntimeErrorOverlayLineDescriptor[] {
+		const descriptors: RuntimeErrorOverlayLineDescriptor[] = [];
+		for (let index = 0; index < messageLines.length; index += 1) {
+			descriptors.push({ text: messageLines[index], role: 'message' });
+		}
+		if (!expanded) {
+			return descriptors;
+		}
+		const combinedStack = this.buildCombinedRuntimeErrorStack(details);
+		if (combinedStack.length === 0) {
+			return descriptors;
+		}
+		if (descriptors.length > 0) {
+			descriptors.push({ text: '', role: 'divider' });
+		}
+		let headerText = 'Call Stack:';
+		const hasLuaFrames = details !== null && details.luaStack.length > 0;
+		const hasJsFrames = details !== null && details.jsStack.length > 0;
+		if (hasLuaFrames && hasJsFrames) {
+			headerText = 'Call Stack (Lua + JS):';
+		} else if (hasLuaFrames) {
+			headerText = 'Lua Call Stack:';
+		} else if (hasJsFrames) {
+			headerText = 'JS Call Stack:';
+		}
+		descriptors.push({ text: headerText, role: 'header' });
+		for (let frameIndex = 0; frameIndex < combinedStack.length; frameIndex += 1) {
+			const frame = combinedStack[frameIndex];
+			const text = this.formatRuntimeErrorStackFrame(frame);
+			descriptors.push({ text, role: 'frame', frame });
+		}
+		return descriptors;
+	}
+
+	private buildCombinedRuntimeErrorStack(details: RuntimeErrorDetails | null): RuntimeErrorStackFrame[] {
+		if (!details) {
+			return [];
+		}
+		const luaFrames: RuntimeErrorStackFrame[] = [];
+		for (let i = 0; i < details.luaStack.length; i += 1) {
+			luaFrames.push(details.luaStack[i]);
+		}
+		const jsFrames: RuntimeErrorStackFrame[] = [];
+		for (let j = 0; j < details.jsStack.length; j += 1) {
+			jsFrames.push(details.jsStack[j]);
+		}
+		if (luaFrames.length === 0 && jsFrames.length === 0) {
+			return [];
+		}
+		if (luaFrames.length === 0) {
+			return jsFrames.slice();
+		}
+		if (jsFrames.length === 0) {
+			return luaFrames.slice();
+		}
+		const combined: RuntimeErrorStackFrame[] = [];
+		for (let k = 0; k < luaFrames.length; k += 1) {
+			combined.push(luaFrames[k]);
+		}
+		for (let m = 0; m < jsFrames.length; m += 1) {
+			combined.push(jsFrames[m]);
+		}
+		return combined;
+	}
+
+	private formatRuntimeErrorStackFrame(frame: RuntimeErrorStackFrame): string {
+		const originLabel = frame.origin === 'lua' ? 'Lua' : 'JS';
+		let name = frame.functionName && frame.functionName.length > 0 ? frame.functionName : '';
+		if (name.length === 0 && frame.source && frame.source.length > 0) {
+			name = frame.source;
+		}
+		if (name.length === 0 && frame.raw.length > 0) {
+			name = frame.raw;
+		}
+		if (name.length === 0) {
+			name = '(anonymous)';
+		}
+		let location = '';
+		if (frame.source && frame.source.length > 0) {
+			location = frame.source;
+		}
+		if (frame.line !== null) {
+			location = location.length > 0 ? `${location}:${frame.line}` : `${frame.line}`;
+			if (frame.column !== null) {
+				location += `:${frame.column}`;
+			}
+		}
+		const suffix = location.length > 0 ? ` @ ${location}` : '';
+		return `[${originLabel}] ${name}${suffix}`;
 	}
 
 	private focusChunkSource(chunkName: string | null, hint?: { assetId: string | null; path?: string | null }): void {
@@ -1215,14 +1374,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			timer: this.message.timer,
 			visible: this.message.visible,
 		};
-		const overlay = this.runtimeErrorOverlay
-			? {
-				row: this.runtimeErrorOverlay.row,
-				column: this.runtimeErrorOverlay.column,
-				lines: this.runtimeErrorOverlay.lines.slice(),
-				timer: this.runtimeErrorOverlay.timer,
-			}
-			: null;
 		return {
 			active: this.active,
 			activeTab: this.getActiveTabKind(),
@@ -1236,7 +1387,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			lineJumpActive: this.lineJumpActive,
 			lineJumpVisible: this.lineJumpVisible,
 			message,
-			runtimeErrorOverlay: overlay,
+			runtimeErrorOverlay: null,
 			saveGeneration: this.saveGeneration,
 			appliedGeneration: this.appliedGeneration,
 		};
@@ -1284,15 +1435,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.message.color = state.message.color;
 		this.message.timer = state.message.timer;
 		this.message.visible = state.message.visible;
-		const restoredOverlay = state.runtimeErrorOverlay
-			? {
-				row: state.runtimeErrorOverlay.row,
-				column: state.runtimeErrorOverlay.column,
-				lines: state.runtimeErrorOverlay.lines.slice(),
-				timer: state.runtimeErrorOverlay.timer,
-			}
-			: null;
-		this.setActiveRuntimeErrorOverlay(restoredOverlay);
+		this.setActiveRuntimeErrorOverlay(null);
 		this.lastSearchVersion = this.textVersion;
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
@@ -3894,6 +4037,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 
 		const bounds = this.getCodeAreaBounds();
+		if (this.handleRuntimeErrorOverlayPointer(snapshot, justPressed, bounds.codeTop, bounds.codeRight, bounds.textLeft)) {
+			return;
+		}
 		const insideCodeArea = snapshot.viewportY >= bounds.codeTop
 			&& snapshot.viewportY < bounds.codeBottom
 			&& snapshot.viewportX >= bounds.codeLeft
@@ -6251,29 +6397,30 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.cursorScreenInfo = host.cursorScreenInfo;
 	}
 
-private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
-		const overlay = this.runtimeErrorOverlay;
-		if (!overlay) {
-			return;
-		}
+	private computeRuntimeErrorOverlayLayout(
+		overlay: RuntimeErrorOverlay,
+		codeTop: number,
+		codeRight: number,
+		textLeft: number
+	): { bounds: ErrorOverlayBounds; connector: ErrorOverlayRenderConfig['connector']; lineRects: RectBounds[] } | null {
 		this.ensureVisualLines();
 		const visualIndex = this.positionToVisualIndex(overlay.row, overlay.column);
 		const visibleRows = this.visibleRowCount();
 		const relativeRow = visualIndex - this.scrollRow;
 		if (relativeRow < 0 || relativeRow >= visibleRows) {
-			return;
+			overlay.layout = null;
+			return null;
 		}
 		const segment = this.visualIndexToSegment(visualIndex);
 		if (!segment) {
-			return;
+			overlay.layout = null;
+			return null;
 		}
 		const entry = this.getCachedHighlight(segment.row);
 		const highlight = entry.hi;
 		let columnStart = this.wordWrapEnabled ? segment.startColumn : this.scrollColumn;
-		if (this.wordWrapEnabled) {
-			if (columnStart < segment.startColumn || columnStart > segment.endColumn) {
-				columnStart = segment.startColumn;
-			}
+		if (this.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
+			columnStart = segment.startColumn;
 		}
 		const columnCount = this.wordWrapEnabled
 			? Math.max(0, segment.endColumn - columnStart)
@@ -6306,7 +6453,6 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		const placedBelow = bubbleBounds.top >= belowTop - 1;
 		const connectorLeft = Math.max(textLeft, anchorX);
 		const connectorRight = Math.min(bubbleBounds.left, connectorLeft + 3);
-
 		let connector: ErrorOverlayRenderConfig['connector'] = undefined;
 		if (connectorRight > connectorLeft) {
 			if (placedBelow) {
@@ -6328,15 +6474,163 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 				};
 			}
 		}
+		const lineRects: RectBounds[] = [];
+		const lineLeft = bubbleBounds.left + constants.ERROR_OVERLAY_PADDING_X;
+		const lineRight = bubbleBounds.right - constants.ERROR_OVERLAY_PADDING_X;
+		let currentY = bubbleBounds.top + constants.ERROR_OVERLAY_PADDING_Y;
+		for (let index = 0; index < lines.length; index += 1) {
+			lineRects.push({ left: lineLeft, top: currentY, right: lineRight, bottom: currentY + this.lineHeight });
+			currentY += this.lineHeight;
+		}
+		overlay.layout = {
+			bounds: { left: bubbleBounds.left, top: bubbleBounds.top, right: bubbleBounds.right, bottom: bubbleBounds.bottom },
+			lineRects,
+		};
+		return { bounds: bubbleBounds, connector: connector ?? undefined, lineRects };
+	}
 
-		renderErrorOverlay(api, lines, this.font, this.lineHeight, {
-			bounds: bubbleBounds,
-			background: constants.ERROR_OVERLAY_BACKGROUND,
+	private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
+		const overlay = this.runtimeErrorOverlay;
+		if (!overlay) {
+			return;
+		}
+		const layoutInfo = this.computeRuntimeErrorOverlayLayout(overlay, codeTop, codeRight, textLeft);
+		if (!layoutInfo) {
+			return;
+		}
+		const highlightLines: number[] = [];
+		if (overlay.hovered && overlay.hoverLine >= 0 && overlay.hoverLine < overlay.lineDescriptors.length) {
+			const descriptor = overlay.lineDescriptors[overlay.hoverLine];
+			if (descriptor && descriptor.role === 'frame') {
+				highlightLines.push(overlay.hoverLine);
+			}
+		}
+		const backgroundColor = overlay.hovered ? constants.ERROR_OVERLAY_BACKGROUND_HOVER : constants.ERROR_OVERLAY_BACKGROUND;
+		renderErrorOverlay(api, overlay.lines.length > 0 ? overlay.lines : ['Runtime error'], this.font, this.lineHeight, {
+			bounds: layoutInfo.bounds,
+			background: backgroundColor,
 			textColor: constants.ERROR_OVERLAY_TEXT_COLOR,
 			paddingX: constants.ERROR_OVERLAY_PADDING_X,
 			paddingY: constants.ERROR_OVERLAY_PADDING_Y,
-			connector
+			connector: layoutInfo.connector,
+			highlightLines: highlightLines.length > 0 ? highlightLines : undefined,
+			highlightColor: constants.ERROR_OVERLAY_LINE_HOVER,
 		});
+	}
+
+	private runtimeErrorOverlayLineIndexAtPosition(overlay: RuntimeErrorOverlay, x: number, y: number): number {
+		const layout = overlay.layout;
+		if (!layout) {
+			return -1;
+		}
+		for (let index = 0; index < layout.lineRects.length; index += 1) {
+			const rect = layout.lineRects[index];
+			if (this.pointInRect(x, y, rect)) {
+				return index;
+			}
+		}
+		return -1;
+	}
+
+	private setRuntimeErrorOverlayExpanded(expanded: boolean): void {
+		const overlay = this.runtimeErrorOverlay;
+		if (!overlay || overlay.expanded === expanded) {
+			return;
+		}
+		overlay.expanded = expanded;
+		overlay.hovered = false;
+		overlay.hoverLine = -1;
+		this.rebuildRuntimeErrorOverlayView(overlay);
+	}
+
+	private handleRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, justPressed: boolean, codeTop: number, codeRight: number, textLeft: number): boolean {
+		const overlay = this.runtimeErrorOverlay;
+		if (!overlay) {
+			return false;
+		}
+		const layoutInfo = this.computeRuntimeErrorOverlayLayout(overlay, codeTop, codeRight, textLeft);
+		if (!layoutInfo) {
+			overlay.hovered = false;
+			overlay.hoverLine = -1;
+			return false;
+		}
+		if (!snapshot.valid || !snapshot.insideViewport) {
+			overlay.hovered = false;
+			overlay.hoverLine = -1;
+			return false;
+		}
+		const insideBubble = this.pointInRect(snapshot.viewportX, snapshot.viewportY, layoutInfo.bounds);
+		if (!insideBubble) {
+			overlay.hovered = false;
+			overlay.hoverLine = -1;
+			if (justPressed && overlay.expanded) {
+				this.setRuntimeErrorOverlayExpanded(false);
+			}
+			return false;
+		}
+		overlay.hovered = true;
+		overlay.hoverLine = this.runtimeErrorOverlayLineIndexAtPosition(overlay, snapshot.viewportX, snapshot.viewportY);
+		if (justPressed) {
+			this.pointerSelecting = false;
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			this.resetPointerClickTracking();
+			if (!overlay.expanded) {
+				this.setRuntimeErrorOverlayExpanded(true);
+				return true;
+			}
+			if (overlay.hoverLine >= 0 && overlay.hoverLine < overlay.lineDescriptors.length) {
+				const descriptor = overlay.lineDescriptors[overlay.hoverLine];
+				if (descriptor && descriptor.role === 'frame' && descriptor.frame && descriptor.frame.origin === 'lua') {
+					this.navigateToRuntimeErrorFrame(descriptor.frame);
+					return true;
+				}
+				if (descriptor && (descriptor.role === 'header' || descriptor.role === 'message')) {
+					this.setRuntimeErrorOverlayExpanded(false);
+					return true;
+				}
+				if (descriptor && descriptor.role === 'frame') {
+					return true;
+				}
+				if (descriptor && descriptor.role === 'divider') {
+					this.setRuntimeErrorOverlayExpanded(false);
+					return true;
+				}
+			}
+			this.setRuntimeErrorOverlayExpanded(false);
+			return true;
+		}
+		this.pointerSelecting = false;
+		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+		return true;
+	}
+
+	private navigateToRuntimeErrorFrame(frame: RuntimeErrorStackFrame): void {
+		if (frame.origin !== 'lua') {
+			return;
+		}
+		const chunkName = frame.source ?? null;
+		try {
+			this.focusChunkSource(chunkName, undefined);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.showMessage(`Failed to open call frame: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+			return;
+		}
+		if (frame.line !== null) {
+			const targetRow = clamp(frame.line - 1, 0, Math.max(0, this.lines.length - 1));
+			let targetColumn = 0;
+			if (frame.column !== null) {
+				targetColumn = Math.max(0, frame.column - 1);
+			}
+			this.setCursorPosition(targetRow, targetColumn);
+			this.centerCursorVertically();
+			this.revealCursor();
+			this.cursorRevealSuspended = false;
+			this.resetBlink();
+		} else {
+			this.revealCursor();
+		}
+		this.showMessage('Navigated to call site', constants.COLOR_STATUS_SUCCESS, 1.6);
 	}
 
 	private isCodeTabActive(): boolean {
