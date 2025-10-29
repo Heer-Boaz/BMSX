@@ -27,6 +27,9 @@ import { id_to_space_symbol, type Space } from '../core/space';
 import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';
 import { Component } from '../component/basecomponent';
+import { LuaComponent } from '../component/lua_component';
+import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
+import { BmsxConsoleRuntime } from './runtime';
 import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type BehaviorTreeContext, type ConstructorWithBTProperty } from '../ai/behaviourtree';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
@@ -529,6 +532,72 @@ export class BmsxConsoleApi {
 	}
 }
 
+	public define_lua_component(descriptor: Record<string, unknown>): string {
+		const runtime = this.requireConsoleRuntime('define_lua_component');
+		return runtime.registerLuaComponentDefinition(descriptor);
+	}
+
+	public attach_lua_component(objectId: Identifier, component: string | { id: string; id_local?: string; state?: Record<string, unknown> }): string {
+		const runtime = this.requireConsoleRuntime('attach_lua_component');
+		const object = this.requireWorldObject(objectId, 'attach_lua_component');
+		const options = typeof component === 'string' ? { id: component } : (component ?? {});
+		const rawId = (options as { id?: unknown }).id;
+		if (typeof rawId !== 'string' || rawId.trim().length === 0) {
+			throw new Error('[BmsxConsoleApi] attach_lua_component requires an id field.');
+		}
+		const definitionId = rawId.trim();
+		const idLocalRaw = (options as { id_local?: unknown }).id_local;
+		const id_local = typeof idLocalRaw === 'string' && idLocalRaw.trim().length > 0 ? idLocalRaw.trim() : undefined;
+		const stateRaw = (options as { state?: unknown }).state;
+		let state: Record<string, unknown> | undefined;
+		if (stateRaw !== undefined) {
+			if (!this.isPlainObject(stateRaw)) {
+				throw new Error('[BmsxConsoleApi] attach_lua_component state must be a table/object.');
+			}
+			state = this.cloneStateMachineData(stateRaw as Record<string, unknown>);
+		}
+		if (state && !this.isPlainObject(state)) {
+			throw new Error('[BmsxConsoleApi] attach_lua_component state must be a plain object.');
+		}
+		const instance = runtime.createLuaComponentInstance({
+			definitionId,
+			parentId: object.id,
+			id_local,
+			state,
+		});
+		if (instance.isUniqueDefinition) {
+			const existing = object.getComponents(LuaComponent);
+			if (existing.some(entry => entry.definitionId === definitionId)) {
+				throw new Error(`[BmsxConsoleApi] Lua component '${definitionId}' is marked unique and already attached to '${objectId}'.`);
+			}
+		}
+		object.addComponent(instance);
+		return instance.id;
+	}
+
+	public define_lua_ability(descriptor: Record<string, unknown>): string {
+		const runtime = this.requireConsoleRuntime('define_lua_ability');
+		const definition = runtime.registerLuaAbilityDefinition(descriptor);
+		return definition.id;
+	}
+
+	public grant_lua_ability(objectId: Identifier, abilityId: string): void {
+		if (typeof abilityId !== 'string' || abilityId.trim().length === 0) {
+			throw new Error('[BmsxConsoleApi] grant_lua_ability requires a non-empty ability id.');
+		}
+		const runtime = this.requireConsoleRuntime('grant_lua_ability');
+		const object = this.requireWorldObject(objectId, 'grant_lua_ability');
+		const asc = object.getUniqueComponent(AbilitySystemComponent);
+		if (!asc) {
+			throw new Error(`[BmsxConsoleApi] World object '${objectId}' does not have an AbilitySystemComponent.`);
+		}
+		const definition = runtime.getLuaAbilityDefinition(abilityId.trim());
+		if (!definition) {
+			throw new Error(`[BmsxConsoleApi] Lua ability '${abilityId}' is not registered.`);
+		}
+		asc.grantAbility(definition);
+	}
+
 	public add_component(objectId: Identifier, componentRef: string, options?: Record<string, unknown>): string {
 		const object = this.requireWorldObject(objectId, 'add_component');
 		const rawOptions = options ? this.cloneStateMachineData(options) : {};
@@ -647,6 +716,14 @@ export class BmsxConsoleApi {
 
 	public rungate(): GateGroup {
 		return runGate;
+	}
+
+	private requireConsoleRuntime(context: string): BmsxConsoleRuntime {
+		const runtime = BmsxConsoleRuntime.instance;
+		if (!runtime) {
+			throw new Error(`[BmsxConsoleApi] ${context} requires the console runtime to be active.`);
+		}
+		return runtime;
 	}
 
 	public register_fsm(id: string, blueprint: Record<string, unknown>): void {

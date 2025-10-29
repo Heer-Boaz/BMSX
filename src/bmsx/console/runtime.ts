@@ -29,6 +29,11 @@ import { ConsoleCartEditor } from './ide/console_cart_editor';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { ConsoleFontVariant } from './font';
 import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
+import { LuaComponent } from '../component/lua_component';
+import type { LuaComponentHandlerIdMap } from '../component/lua_component';
+import { defineAbility, abilityActions } from '../gas/ability_registry';
+import type { GameplayAbilityDefinition } from '../gas/gameplay_ability';
+import { deepClone } from '../utils/utils';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -98,6 +103,30 @@ type LuaServiceBinding = {
 	hooks: LuaServiceHooks;
 	events: Map<string, LuaFunctionValue>;
 	autoActivate: boolean;
+};
+
+type LuaComponentDefinitionRecord = {
+	id: string;
+	handlerIds: LuaComponentHandlerIdMap;
+	initialState?: Record<string, unknown>;
+	tagsPre?: ReadonlyArray<string>;
+	tagsPost?: ReadonlyArray<string>;
+	unique?: boolean;
+};
+
+type LuaAbilityRegistrationDescriptor = {
+	id: string;
+	unique?: 'ignore' | 'restart' | 'stack';
+	requiredTags?: ReadonlyArray<string>;
+	blockedTags?: ReadonlyArray<string>;
+	grantTags?: ReadonlyArray<string>;
+	removeOnActivate?: ReadonlyArray<string>;
+	removeOnEnd?: ReadonlyArray<string>;
+	cooldownMs?: number;
+	cost?: ReadonlyArray<{ attr: string; amount: number }>;
+	activation?: LuaFunctionValue;
+	completion?: LuaFunctionValue;
+	cancel?: LuaFunctionValue;
 };
 
 class LuaScriptService extends Service {
@@ -246,6 +275,12 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly luaBehaviorTreeIds: Set<string> = new Set<string>();
 	private readonly luaStateMachineHandlerIds: Map<string, Set<string>> = new Map();
 	private readonly luaBehaviorTreeHandlerIds: Map<string, Set<string>> = new Map();
+	private readonly luaComponentDefinitions: Map<string, LuaComponentDefinitionRecord> = new Map();
+	private readonly luaComponentHandlerIds: Map<string, Set<string>> = new Map();
+	private readonly luaAbilityDefinitions: Map<string, GameplayAbilityDefinition> = new Map();
+	private readonly luaAbilityHandlerIds: Map<string, Set<string>> = new Map();
+	private readonly luaAbilityActionIds: Map<string, string[]> = new Map();
+	private luaAbilityVersion = 0;
 	private readonly behaviorTreeDiagnostics: Map<string, BehaviorTreeDiagnostic[]> = new Map();
 	private readonly luaServices: Map<string, LuaServiceBinding> = new Map();
 	private hasBooted = false;
@@ -1176,6 +1211,9 @@ export class BmsxConsoleRuntime extends Service {
 		this.nextLuaHandleId = 1;
 		this.freeHandles = [];
 		this.freeHandleSet.clear();
+		this.disposeAllLuaComponentDefinitions();
+		this.disposeAllLuaAbilityDefinitions();
+		this.luaAbilityVersion = 0;
 		this.disposeLuaServices();
 		setLuaTableCaseInsensitiveKeys(this.caseInsensitiveLua);
 	}
@@ -2457,6 +2495,244 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaStateMachineHandlerIds.delete(machineId);
 	}
 
+	private registerLuaComponentHandler(componentId: string, slot: string, fn: LuaFunctionValue, interpreter: LuaInterpreter): string {
+		const handlerId = this.makeLuaHandlerId(`component:${componentId}`, [slot]);
+		const runtime = this;
+		const handler = function (this: unknown, ...args: unknown[]) {
+			const callArgs: unknown[] = [this, ...args];
+			const results = runtime.callLuaFunctionWithInterpreter(fn, callArgs, interpreter);
+			return results.length > 0 ? results[0] : undefined;
+		};
+		HandlerRegistry.instance.register(handlerId, handler);
+		let set = this.luaComponentHandlerIds.get(componentId);
+		if (!set) {
+			set = new Set<string>();
+			this.luaComponentHandlerIds.set(componentId, set);
+		}
+		set.add(handlerId);
+		return handlerId;
+	}
+
+	private disposeLuaComponentHandlers(componentId: string): void {
+		const entries = this.luaComponentHandlerIds.get(componentId);
+		if (!entries) {
+			return;
+		}
+		for (const handlerId of entries) {
+			HandlerRegistry.instance.unregister(handlerId);
+		}
+		this.luaComponentHandlerIds.delete(componentId);
+	}
+
+	private disposeAllLuaComponentDefinitions(): void {
+		for (const componentId of [...this.luaComponentHandlerIds.keys()]) {
+			this.disposeLuaComponentHandlers(componentId);
+		}
+		this.luaComponentDefinitions.clear();
+	}
+
+	public registerLuaComponentDefinition(descriptor: Record<string, unknown>): string {
+		if (!descriptor || typeof descriptor !== 'object') {
+			throw new Error('[BmsxConsoleRuntime] define_lua_component requires a descriptor table.');
+		}
+		const interpreter = this.requireLuaInterpreter();
+		const idValue = (descriptor as { id?: unknown; name?: unknown }).id ?? (descriptor as { name?: unknown }).name;
+		const componentId = this.normalizeLuaIdentifier(idValue, 'define_lua_component');
+		const handlersRaw = (descriptor as { handlers?: unknown }).handlers;
+		const handlerIds: LuaComponentHandlerIdMap = {};
+		this.disposeLuaComponentHandlers(componentId);
+		if (handlersRaw && typeof handlersRaw === 'object') {
+			const handlerEntries = handlersRaw as Record<string, unknown>;
+			for (const [rawKey, candidate] of Object.entries(handlerEntries)) {
+				const normalized = this.normalizeLuaComponentHandlerKey(rawKey);
+				if (!normalized) {
+					continue;
+				}
+				if (!this.isLuaFunctionValue(candidate)) {
+					throw new Error(`[BmsxConsoleRuntime] Handler '${rawKey}' for component '${componentId}' must be a function.`);
+				}
+				const handlerId = this.registerLuaComponentHandler(componentId, normalized, candidate, interpreter);
+				if (normalized === 'onattach') handlerIds.onattach = handlerId;
+				if (normalized === 'ondetach') handlerIds.ondetach = handlerId;
+				if (normalized === 'ondispose') handlerIds.ondispose = handlerId;
+				if (normalized === 'preupdate') handlerIds.preupdate = handlerId;
+				if (normalized === 'postupdate') handlerIds.postupdate = handlerId;
+			}
+		}
+		const tagsPre = this.normalizeStringArray((descriptor as { tagsPre?: unknown; tags_pre?: unknown }).tagsPre ?? (descriptor as { tags_pre?: unknown }).tags_pre);
+		const tagsPost = this.normalizeStringArray((descriptor as { tagsPost?: unknown; tags_post?: unknown }).tagsPost ?? (descriptor as { tags_post?: unknown }).tags_post);
+		const unique = Boolean((descriptor as { unique?: unknown }).unique);
+		const initialStateRaw = (descriptor as { state?: unknown; initialState?: unknown }).state ?? (descriptor as { initialState?: unknown }).initialState;
+		const initialState = initialStateRaw && typeof initialStateRaw === 'object' ? deepClone(initialStateRaw as Record<string, unknown>) : undefined;
+		const record: LuaComponentDefinitionRecord = {
+			id: componentId,
+			handlerIds,
+			initialState,
+			tagsPre,
+			tagsPost,
+			unique,
+		};
+		this.luaComponentDefinitions.set(componentId, record);
+		return componentId;
+	}
+
+	public createLuaComponentInstance(opts: { definitionId: string; parentId: Identifier; id_local?: string | null; state?: Record<string, unknown> | null }): LuaComponent {
+		const definition = this.luaComponentDefinitions.get(opts.definitionId);
+		if (!definition) {
+			throw new Error(`[BmsxConsoleRuntime] Lua component definition '${opts.definitionId}' is not registered.`);
+		}
+		const baseState = definition.initialState ? deepClone(definition.initialState) : {};
+		if (opts.state) {
+			Object.assign(baseState, deepClone(opts.state));
+		}
+		return new LuaComponent({
+			parentid: opts.parentId,
+			id_local: opts.id_local ?? undefined,
+			definitionId: definition.id,
+			handlerIds: definition.handlerIds,
+			initialState: baseState,
+			tagsPre: definition.tagsPre,
+			tagsPost: definition.tagsPost,
+			unique: definition.unique,
+		});
+	}
+
+	public getLuaComponentDefinition(definitionId: string): LuaComponentDefinitionRecord | undefined {
+		return this.luaComponentDefinitions.get(definitionId);
+	}
+
+	private registerLuaAbilityHandler(abilityId: string, slot: string, fn: LuaFunctionValue, interpreter: LuaInterpreter): { handlerId: string; actionId: string } {
+		const versionTag = `${slot}.${this.luaAbilityVersion++}`;
+		const handlerId = this.makeLuaHandlerId(`ability:${abilityId}`, [versionTag]);
+		const actionId = `${handlerId}.action`;
+		const runtime = this;
+		const handler = function (this: unknown, ctx: unknown, params: unknown) {
+			const callArgs: unknown[] = [ctx, params];
+			const results = runtime.callLuaFunctionWithInterpreter(fn, callArgs, interpreter);
+			return results.length > 0 ? results[0] : undefined;
+		};
+		HandlerRegistry.instance.register(handlerId, handler);
+		let handlerSet = this.luaAbilityHandlerIds.get(abilityId);
+		if (!handlerSet) {
+			handlerSet = new Set<string>();
+			this.luaAbilityHandlerIds.set(abilityId, handlerSet);
+		}
+		handlerSet.add(handlerId);
+		const actionFn = (ctx: unknown, params: Record<string, unknown> | undefined) => {
+			const registered = HandlerRegistry.instance.get(handlerId);
+			if (!registered) {
+				throw new Error(`[LuaAbility:${abilityId}] Handler '${handlerId}' not registered.`);
+			}
+			return registered.call(ctx, ctx, params);
+		};
+		abilityActions.register(actionId, actionFn);
+		const actionList = this.luaAbilityActionIds.get(abilityId) ?? [];
+		actionList.push(actionId);
+		this.luaAbilityActionIds.set(abilityId, actionList);
+		return { handlerId, actionId };
+	}
+
+	private disposeLuaAbilityHandlers(abilityId: string): void {
+		const handlerEntries = this.luaAbilityHandlerIds.get(abilityId);
+		if (handlerEntries) {
+			for (const id of handlerEntries) {
+				HandlerRegistry.instance.unregister(id);
+			}
+			this.luaAbilityHandlerIds.delete(abilityId);
+		}
+		this.luaAbilityActionIds.delete(abilityId);
+		this.luaAbilityDefinitions.delete(abilityId);
+	}
+
+	private disposeAllLuaAbilityDefinitions(): void {
+		for (const abilityId of [...this.luaAbilityHandlerIds.keys()]) {
+			this.disposeLuaAbilityHandlers(abilityId);
+		}
+		this.luaAbilityDefinitions.clear();
+		this.luaAbilityActionIds.clear();
+	}
+
+	public registerLuaAbilityDefinition(descriptor: Record<string, unknown>): GameplayAbilityDefinition {
+		if (!descriptor || typeof descriptor !== 'object') {
+			throw new Error('[BmsxConsoleRuntime] define_lua_ability requires a descriptor table.');
+		}
+		const interpreter = this.requireLuaInterpreter();
+		const abilityId = this.normalizeLuaIdentifier((descriptor as { id?: unknown }).id, 'define_lua_ability');
+		this.disposeLuaAbilityHandlers(abilityId);
+		const activationFn = (descriptor as LuaAbilityRegistrationDescriptor).activation;
+		if (!activationFn || !this.isLuaFunctionValue(activationFn)) {
+			throw new Error(`[BmsxConsoleRuntime] Lua ability '${abilityId}' requires an activation handler.`);
+		}
+		const completionFn = (descriptor as LuaAbilityRegistrationDescriptor).completion;
+		const cancelFn = (descriptor as LuaAbilityRegistrationDescriptor).cancel;
+		const activation = this.registerLuaAbilityHandler(abilityId, 'activation', activationFn, interpreter);
+		const completion = completionFn && this.isLuaFunctionValue(completionFn)
+			? this.registerLuaAbilityHandler(abilityId, 'completion', completionFn, interpreter)
+			: null;
+		const cancel = cancelFn && this.isLuaFunctionValue(cancelFn)
+			? this.registerLuaAbilityHandler(abilityId, 'cancel', cancelFn, interpreter)
+			: null;
+		const definition: GameplayAbilityDefinition = {
+			id: abilityId,
+			unique: (descriptor as LuaAbilityRegistrationDescriptor).unique ?? 'ignore',
+			requiredTags: this.normalizeStringArray((descriptor as LuaAbilityRegistrationDescriptor).requiredTags),
+			blockedTags: this.normalizeStringArray((descriptor as LuaAbilityRegistrationDescriptor).blockedTags),
+			activation: [{ type: 'call', action: activation.actionId }],
+			completion: completion ? [{ type: 'call', action: completion.actionId }] : undefined,
+			cancel: cancel ? [{ type: 'call', action: cancel.actionId }] : undefined,
+		};
+		const grantTags = this.normalizeStringArray((descriptor as LuaAbilityRegistrationDescriptor).grantTags);
+		const removeOnActivate = this.normalizeStringArray((descriptor as LuaAbilityRegistrationDescriptor).removeOnActivate);
+		const removeOnEnd = this.normalizeStringArray((descriptor as LuaAbilityRegistrationDescriptor).removeOnEnd);
+		if ((grantTags && grantTags.length > 0) || (removeOnActivate && removeOnActivate.length > 0) || (removeOnEnd && removeOnEnd.length > 0)) {
+			definition.tags = {
+				grant: grantTags && grantTags.length > 0 ? grantTags : undefined,
+				removeOnActivate: removeOnActivate && removeOnActivate.length > 0 ? removeOnActivate : undefined,
+				removeOnEnd: removeOnEnd && removeOnEnd.length > 0 ? removeOnEnd : undefined,
+			};
+		}
+		const cooldownMs = (descriptor as LuaAbilityRegistrationDescriptor).cooldownMs;
+		if (typeof cooldownMs === 'number' && Number.isFinite(cooldownMs) && cooldownMs >= 0) {
+			definition.cooldownMs = cooldownMs;
+		}
+		const costRaw = (descriptor as LuaAbilityRegistrationDescriptor).cost;
+		if (Array.isArray(costRaw) && costRaw.length > 0) {
+			const sanitized = [];
+			for (const entry of costRaw) {
+				if (!entry || typeof entry !== 'object') {
+					continue;
+				}
+				const attr = (entry as { attr?: unknown }).attr;
+				const amount = (entry as { amount?: unknown }).amount;
+				if (typeof attr !== 'string' || attr.trim().length === 0) {
+					throw new Error(`[BmsxConsoleRuntime] Lua ability '${abilityId}' cost entries require a non-empty attr.`);
+				}
+				if (typeof amount !== 'number' || !Number.isFinite(amount)) {
+					throw new Error(`[BmsxConsoleRuntime] Lua ability '${abilityId}' cost entries require a finite amount.`);
+				}
+				sanitized.push({ attr: attr.trim(), amount });
+			}
+			if (sanitized.length > 0) {
+				definition.cost = sanitized;
+			}
+		}
+		try {
+			defineAbility(abilityId);
+		}
+		catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			if (!message.includes('already registered')) {
+				throw error;
+			}
+		}
+		this.luaAbilityDefinitions.set(abilityId, definition);
+		return definition;
+	}
+
+	public getLuaAbilityDefinition(id: string): GameplayAbilityDefinition | undefined {
+		return this.luaAbilityDefinitions.get(id);
+	}
+
 
 	private executeLuaStateMachineHandler(handlerId: string, fn: LuaFunctionValue, interpreter: LuaInterpreter, self: Stateful, args: unknown[]): unknown {
 		const callArgs: unknown[] = [self];
@@ -2522,6 +2798,56 @@ export class BmsxConsoleRuntime extends Service {
 			return undefined;
 		}
 		return results.length > 0 ? results[0] : undefined;
+	}
+
+	private normalizeLuaIdentifier(value: unknown, context: string): string {
+		if (typeof value === 'string') {
+			const trimmed = value.trim();
+			if (trimmed.length > 0) {
+				return trimmed;
+			}
+		}
+		throw new Error(`[BmsxConsoleRuntime] ${context} requires a non-empty id.`);
+	}
+
+	private normalizeLuaComponentHandlerKey(key: string): keyof LuaComponentHandlerIdMap | null {
+		const normalized = key.replace(/[^a-zA-Z]/g, '').toLowerCase();
+		switch (normalized) {
+			case 'onattach':
+				return 'onattach';
+			case 'ondetach':
+				return 'ondetach';
+			case 'ondispose':
+				return 'ondispose';
+			case 'pre':
+			case 'preupdate':
+				return 'preupdate';
+			case 'post':
+			case 'postupdate':
+				return 'postupdate';
+			default:
+				return null;
+		}
+	}
+
+	private normalizeStringArray(value: unknown): string[] | undefined {
+		if (value === undefined || value === null) {
+			return undefined;
+		}
+		if (typeof value === 'string') {
+			const trimmed = value.trim();
+			return trimmed.length > 0 ? [trimmed] : undefined;
+		}
+		if (Array.isArray(value)) {
+			const out: string[] = [];
+			for (const entry of value) {
+				if (typeof entry !== 'string') continue;
+				const trimmed = entry.trim();
+				if (trimmed.length > 0) out.push(trimmed);
+			}
+			return out.length > 0 ? out : undefined;
+		}
+		return undefined;
 	}
 
 	public callLuaFunctionWithInterpreter(fn: LuaFunctionValue, args: unknown[], interpreter: LuaInterpreter): unknown[] {
