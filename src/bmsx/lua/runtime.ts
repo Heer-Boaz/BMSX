@@ -141,7 +141,8 @@ export class LuaInterpreter {
 	private readonly envStack: LuaEnvironment[] = [];
 	private lastFaultEnvironment: LuaEnvironment | null = null;
 	private readonly callStack: LuaCallFrame[] = [];
-	private lastFaultCallStack: LuaCallFrame[] = [];
+    private lastFaultCallStack: LuaCallFrame[] = [];
+    private lastFaultDepth: number = 0;
 
 	 constructor(globals: LuaEnvironment | null) {
 	 	 if (globals === null) {
@@ -301,13 +302,14 @@ export class LuaInterpreter {
 		this.recordFaultCallStack();
 	}
 
-	public getLastFaultCallStack(): ReadonlyArray<LuaCallFrame> {
-		return this.lastFaultCallStack;
-	}
+    public getLastFaultCallStack(): ReadonlyArray<LuaCallFrame> {
+        return this.lastFaultCallStack;
+    }
 
-	public clearLastFaultCallStack(): void {
-		this.lastFaultCallStack = [];
-	}
+    public clearLastFaultCallStack(): void {
+        this.lastFaultCallStack = [];
+        this.lastFaultDepth = 0;
+    }
 
 	public captureActiveCallStackForFault(): void {
 		this.recordFaultCallStack();
@@ -324,18 +326,25 @@ export class LuaInterpreter {
 		});
 	}
 
-	private recordFaultCallStack(): void {
-		if (this.callStack.length === 0) {
-			this.lastFaultCallStack = [];
-			return;
-		}
-		this.lastFaultCallStack = this.callStack.map(frame => ({
-			functionName: frame.functionName,
-			source: frame.source,
-			line: frame.line,
-			column: frame.column,
-		}));
-	}
+    private recordFaultCallStack(): void {
+        const depth = this.callStack.length;
+        if (depth === 0) {
+            this.lastFaultCallStack = [];
+            this.lastFaultDepth = 0;
+            return;
+        }
+        // Preserve the most-detailed stack captured in this fault path
+        if (this.lastFaultCallStack.length > 0 && depth < this.lastFaultDepth) {
+            return;
+        }
+        this.lastFaultCallStack = this.callStack.map(frame => ({
+            functionName: frame.functionName,
+            source: frame.source,
+            line: frame.line,
+            column: frame.column,
+        }));
+        this.lastFaultDepth = depth;
+    }
 
 	private executeStatements(statements: ReadonlyArray<LuaStatement>, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, parentScope: LabelScope | null): ExecutionSignal {
 		const labels = this.buildLabelMap(statements);

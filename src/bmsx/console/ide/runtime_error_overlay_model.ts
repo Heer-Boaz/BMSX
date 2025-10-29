@@ -148,6 +148,6 @@ function formatRuntimeErrorStackFrame(frame: RuntimeErrorStackFrame): string {
             location += `:${frame.column}`;
         }
     }
-    const suffix = location.length > 0 ? ` (${location})` : '';
+    const suffix = location.length > 0 ? `(${location})` : '';
     return `[${originLabel}] ${name}${suffix}`;
 }
