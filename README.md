@@ -520,7 +520,7 @@ BMSX organizes all interactive entities as `WorldObject` instances, which are ma
   - The core entity type in BMSX, representing anything with a position, size, state, and behavior.
   - Implements position (`x`, `y`, `z`), size, hitbox, hit polygons, direction, and more.
   - Supports attaching components for modular behavior (see Component System).
-  - Provides event hooks for collision, leaving screen, spawning, disposal, and more.
+  - Integrates with the global event system for collision, boundary, and lifecycle notifications.
   - Can be extended for custom logic, AI, or rendering (e.g., `SpriteObject`).
 
 - **Properties and Methods:**
@@ -528,7 +528,7 @@ BMSX organizes all interactive entities as `WorldObject` instances, which are ma
   - `pos`, `size`, `direction`: Spatial properties for movement and collision.
   - `components`: Map of attached components for modular logic.
   - `addComponent`, `removeComponent`, `getComponent`: Manage components at runtime.
-  - `onspawn`, `dispose`, `paint`, `collide`, `oncollide`, `onWallcollide`, `onLeaveScreen`, etc.: Lifecycle and event hooks.
+  - Lifecycle methods such as `onspawn`, `dispose`, `paint`, `collide`, plus rich event streams (see `WorldObjectEvents`) for collisions, boundary checks, and space transitions.
   - `collides`, `detect_object_collision`, `overlaps_point`: Collision detection utilities.
   - `updateComponentsWithTag(tag, ...)`: Update all components with a given tag (used for preprocessing/postprocessing logic).
 
@@ -568,8 +568,14 @@ const enemy = model.getGameObject('enemy42');
 // Attach a component for collision
 player.addComponent(new TileCollisionComponent(player.id));
 
-// Handle collision event
-player.oncollide = (src) => { /* custom logic */ };
+// Handle collision events using the event system
+@subscribesToSelfScopedEvent(WorldObjectEvents.PhysicsCollisionEnter)
+handleCollision(_event: string, _self: WorldObject, payload: { otherId?: string }) {
+	const other = payload.otherId ? $.world.getWorldObject(payload.otherId) : null;
+	if (other) {
+		// custom logic
+	}
+}
 ```
 
 ## Collision and Movement

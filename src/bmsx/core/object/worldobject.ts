@@ -23,11 +23,28 @@ const DEFAULT_POSITION_VALUES: [number, number, number] = [0, 0, 0];
 const DEFAULT_SIZE_VALUES: [number, number, number] = [0, 0, 0];
 
 type LeaveLeavingScreenPayload = { d: Direction, old_x_or_y: number };
+type SpaceTransitionEventPayload = { from?: Identifier; to?: Identifier };
 
 export type WorldObjectEventPayloads = {
 	['leaveScreen']: LeaveLeavingScreenPayload;
 	['leavingScreen']: LeaveLeavingScreenPayload;
+	['space.enter']: SpaceTransitionEventPayload;
+	['space.leave']: SpaceTransitionEventPayload;
 };
+
+export const WorldObjectEvents = {
+	LeaveScreen: 'leaveScreen',
+	LeavingScreen: 'leavingScreen',
+	WallCollide: 'wallcollide',
+	PhysicsCollisionEnter: 'physicsCollision_enter',
+	PhysicsCollisionStay: 'physicsCollision_stay',
+	PhysicsCollisionExit: 'physicsCollision_exit',
+	OverlapBegin: 'overlapBegin',
+	OverlapStay: 'overlapStay',
+	OverlapEnd: 'overlapEnd',
+	SpaceEnter: 'space.enter',
+	SpaceLeave: 'space.leave',
+} as const;
 
 @insavegame
 export class WorldObject implements vec3, ComponentContainer, Stateful {
@@ -677,37 +694,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 
 	/** Specific flag controlling whether this WorldObject processes events. */
 	public eventhandling_enabled: boolean = false;
-
-	/**
-	 * Represents a callback function that is triggered when a collision occurs with another WorldObject.
-	 *
-	 * @param src - The WorldObject that triggered the collision.
-	 */
-	public oncollide?: (src: WorldObject) => void;
-	/**
-	 * Callback function that is triggered when the world object collides with a wall.
-	 * @param dir - The direction of the collision.
-	 */
-	public onWallcollide?: (dir: Direction) => void;
-	/**
-	 * Callback function that is called when the WorldObject leaves the screen.
-	 *
-	 * @param ik - The WorldObject that is leaving the screen.
-	 * @param dir - The direction in which the WorldObject is leaving the screen.
-	 * @param old_x_or_y - The previous x or y coordinate of the WorldObject before leaving the screen.
-	 */
-	public onLeaveScreen?: (ik: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['leaveScreen']) => void;
-	/**
-	 * Callback function that is triggered when the world object is leaving the screen.
-	 *
-	 * @param ik - The world object that is leaving the screen.
-	 * @param dir - The direction in which the world object is leaving the screen.
-	 * @param old_x_or_y - The previous x or y coordinate of the world object before leaving the screen.
-	 */
-	public onLeavingScreen?: (ik: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['leavingScreen']) => void;
-
-	public onleaveSpace?: (from: Identifier) => void;
-	public onenterSpace?: (to: Identifier) => void;
 
 	protected _facing: Facing;
 	public prevFacing: Facing;

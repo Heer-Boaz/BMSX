@@ -1,7 +1,8 @@
 import { World, Space } from 'bmsx/world';
 import { build_fsm, sdef, State } from 'bmsx/bfsm';
 import { BFont, BootArgs, Direction, Game, new_area, new_vec2, randomInt, vec2 } from 'bmsx';
-import { WorldObject } from 'bmsx/worldobject';
+import { WorldObject, WorldObjectEvents } from 'bmsx/worldobject';
+import { subscribesToSelfScopedEvent } from 'bmsx/core/eventemitter';
 import { GameView } from 'bmsx/glview';
 import { Input } from 'bmsx/input';
 import { MSX1ScreenHeight, MSX1ScreenWidth } from 'bmsx/msx';
@@ -154,12 +155,15 @@ class fles extends SpriteObject {
 		super();
 		this.z = 1020;
 		this.imgid = BitmapId.fles2;
-		this.onLeaveScreen = (ik: fles, _) => ik.banish();
-		let me = this;
 
 		this.getOrCreateCollider().setLocalArea(new_area(4, 4, 12, 12));
 		this.size = new_vec2(16, 16);
 		this.hittable = true;
+	}
+
+	@subscribesToSelfScopedEvent(WorldObjectEvents.LeaveScreen)
+	private handleLeaveScreen(_event: string, emitter: fles): void {
+		emitter.banish();
 	}
 
 	override onspawn(spawningPos?: vec2): void {
@@ -230,21 +234,20 @@ class monster extends SpriteObject {
 		this.getOrCreateCollider().setLocalArea(new_area(0, 80, 0, 50));
 		this.size = new_vec2(80, 50);
 		this.hittable = true;
-		let me = this;
-
-		this.oncollide = (src: WorldObject) => {
-			_model.enemyHp -= 10;
-			if (_model.enemyHp <= 0) {
-				me.banish();
-				// _model.monster = null;
-				_model.marlies.state.to('naarrelax');
-			}
-		};
 	}
 
 	override onspawn(spawningPos?: vec2): void {
 		super.onspawn(spawningPos);
 		_model.monster = this;
+	}
+
+	@subscribesToSelfScopedEvent(WorldObjectEvents.PhysicsCollisionEnter)
+	private handleCollision(): void {
+		_model.enemyHp -= 10;
+		if (_model.enemyHp <= 0) {
+			this.banish();
+			_model.marlies.state.to('naarrelax');
+		}
 	}
 }
 

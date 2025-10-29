@@ -4,6 +4,8 @@ import { Area, Direction, newArea, new_vec2 } from "bmsx/common";
 import { BitmapId } from "./resourceids";
 import { Model } from "./gamemodel";
 import { BSTEventType, sdef, model } from 'bmsx';
+import { WorldObjectEvents, type WorldObjectEventPayloads } from 'bmsx/worldobject';
+import { subscribesToSelfScopedEvent } from 'bmsx/core/eventemitter';
 
 type AniType = { i: BitmapId, dy: number; };
 
@@ -21,22 +23,6 @@ export class ZakFoe extends Foe {
 		this.direction = dir;
 		this.z = 10;
 		this.health = 1;
-
-		let collissionHandler = (d: Direction) => {
-			switch (this.direction) {
-				case 'left':
-					this.direction = 'right';
-					break;
-				case 'right':
-					this.direction = 'left';
-					break;
-				case 'down':
-					this.markForDisposure();
-					break;
-			}
-		};
-		this.onWallcollide = collissionHandler;
-		this.onLeaveScreen = collissionHandler;
 
 		let state0 = this.add(0);
 		state0.tape = <Array<AniType>>[
@@ -109,6 +95,31 @@ export class ZakFoe extends Foe {
 		state1.onnext = state1handler;
 
 		this.setStart(0, false);
+	}
+
+	@subscribesToSelfScopedEvent(WorldObjectEvents.WallCollide)
+	private onWallCollision(_event: string, _emitter: ZakFoe, payload?: { d?: Direction }): void {
+		if (!payload?.d) return;
+		this.handleBoundary(payload.d);
+	}
+
+	@subscribesToSelfScopedEvent(WorldObjectEvents.LeaveScreen)
+	private onLeaveScreenEvent(_event: string, _emitter: ZakFoe, payload: WorldObjectEventPayloads['leaveScreen']): void {
+		this.handleBoundary(payload.d);
+	}
+
+	private handleBoundary(direction: Direction): void {
+		switch (direction) {
+			case 'left':
+				this.direction = 'right';
+				break;
+			case 'right':
+				this.direction = 'left';
+				break;
+			case 'down':
+				this.markForDisposure();
+				break;
+		}
 	}
 
 	public run(): void {

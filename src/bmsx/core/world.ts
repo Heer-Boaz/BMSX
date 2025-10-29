@@ -12,7 +12,7 @@ import type { ECSPipelineExtensionContext } from '../ecs/extensions';
 import { Direction, vec3, type Area, type vec2arr } from "../rompack/rompack";
 import { excludepropfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { CameraObject } from './object/cameraobject';
-import { WorldObject } from './object/worldobject';
+import { WorldObject, WorldObjectEvents, type WorldObjectEventPayloads } from './object/worldobject';
 import { AmbientLightObject, LightObject } from './object/lightobject';
 import { Registry } from "./registry";
 import { $ } from './game';
@@ -295,6 +295,9 @@ export class World implements Stateful, RegisterablePersistent {
 		}
 		origin_space.despawn(obj, true);
 		target_space.spawn(obj, null, { skipOnSpawn: true, reason: 'transfer' });
+		const transition: WorldObjectEventPayloads['space.enter'] = { from: origin_space.id, to: target_space.id };
+		EventEmitter.instance.emit(WorldObjectEvents.SpaceLeave, obj, transition);
+		EventEmitter.instance.emit(WorldObjectEvents.SpaceEnter, obj, transition);
 	}
 
 	/**
@@ -313,8 +316,9 @@ export class World implements Stateful, RegisterablePersistent {
 		const suppress = opts?.suppressLifecycleHooks ?? true;
 		from.despawn(o, suppress);
 		toSpace.spawn(o, undefined, { skipOnSpawn: suppress, reason: 'transfer' });
-		o.onleaveSpace?.(from.id);
-		o.onenterSpace?.(toSpace.id);
+		const transition: WorldObjectEventPayloads['space.enter'] = { from: from.id, to: toSpace.id };
+		EventEmitter.instance.emit(WorldObjectEvents.SpaceLeave, o, transition);
+		EventEmitter.instance.emit(WorldObjectEvents.SpaceEnter, o, transition);
 	}
 
 	/**
