@@ -289,8 +289,9 @@ export type PendingActionPrompt = {
 export type ConsoleRuntimeBridge = {
 	getState(): unknown;
 	setState(state: unknown): void;
-	boot(): void;
+	boot(reason?: string): void;
 	reloadLuaProgram(source: string): Promise<void>;
+	resumeFromSnapshot(state: unknown): void;
 	setEditorOverlayResolution(mode: EditorResolutionMode): void;
 	isLuaRuntimeFailed(): boolean;
 };

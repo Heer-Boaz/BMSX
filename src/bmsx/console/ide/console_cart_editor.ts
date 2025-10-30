@@ -4932,7 +4932,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.clearExecutionStopHighlights();
 		this.deactivate();
 		this.scheduleRuntimeTask(() => {
-			runtime.setState(sanitizedSnapshot);
+			runtime.resumeFromSnapshot(sanitizedSnapshot);
 			if (shouldUpdateGeneration) {
 				this.appliedGeneration = targetGeneration;
 			}
@@ -4957,9 +4957,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.scheduleRuntimeTask(async () => {
 			if (requiresReload && savedSource !== null) {
 				await runtime.reloadLuaProgram(savedSource);
-			} else {
-				runtime.boot();
 			}
+			runtime.boot('editor:reboot');
 			this.appliedGeneration = targetGeneration;
 			$.paused = false;
 		}, (error) => {
@@ -8336,6 +8335,9 @@ private handleCompletionKeybindings(
 			return null;
 		}
 		if (typeof runtime.reloadLuaProgram !== 'function') {
+			return null;
+		}
+		if (typeof runtime.resumeFromSnapshot !== 'function') {
 			return null;
 		}
 		if (typeof runtime.isLuaRuntimeFailed !== 'function') {

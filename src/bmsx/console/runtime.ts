@@ -766,17 +766,8 @@ export class BmsxConsoleRuntime extends Service {
 		this.frameCounter = savedFrameCounter;
 
 		if (this.hasLuaProgram()) {
-			const hasStructuredSnapshot = snapshot.luaSnapshot !== undefined && snapshot.luaSnapshot !== null;
-			const hasFallbackState = snapshot.luaGlobals !== undefined || snapshot.luaLocals !== undefined || snapshot.luaRandomSeed !== undefined;
-			const shouldRunInit = !savedRuntimeFailed && !hasStructuredSnapshot && !hasFallbackState;
-
-			this.reinitializeLuaProgramForState(snapshot, shouldRunInit);
-			if (!savedRuntimeFailed && hasStructuredSnapshot) {
-				this.applyLuaSnapshot(snapshot.luaSnapshot);
-			}
-			else if (!savedRuntimeFailed) {
-				this.restoreFallbackLuaState(snapshot);
-			}
+			const shouldRunInit = this.shouldRunInitForSnapshot(snapshot);
+			this.reinitializeLuaProgramFromSnapshot(snapshot, { runInit: shouldRunInit, hotReload: false });
 			this.frameCounter = savedFrameCounter;
 		} else if (snapshot.cartState !== undefined && typeof this.cart.restoreState === 'function') {
 			this.cart.restoreState(this.api, snapshot.cartState);
@@ -790,27 +781,160 @@ export class BmsxConsoleRuntime extends Service {
 		this.redrawAfterStateRestore();
 	}
 
-	private reinitializeLuaProgramForState(snapshot: BmsxConsoleState, runInit: boolean): void {
+	public resumeFromSnapshot(state: unknown): void {
+		if (!state || typeof state !== 'object') {
+			this.luaRuntimeFailed = false;
+			return;
+		}
+		const snapshot: BmsxConsoleState = { ...(state as BmsxConsoleState), luaRuntimeFailed: false };
+		const runInit = this.shouldRunInitForSnapshot(snapshot);
+		this.reinitializeLuaProgramFromSnapshot(snapshot, { runInit, hotReload: true });
+		this.luaRuntimeFailed = false;
+		this.lastFrameTimestampMs = $.platform.clock.now();
+		this.setEditorPipelineActive(this.editor?.isActive() === true, true);
+		this.redrawAfterStateRestore();
+	}
+
+	private reloadLuaProgramState(source: string, chunkName: string, override?: string | null): void {
+		const snapshot = this.getState();
+		const base: BmsxConsoleState = snapshot ? { ...snapshot } : {
+			frameCounter: this.frameCounter,
+			luaRuntimeFailed: false,
+			luaProgramSourceOverride: source,
+			luaChunkName: chunkName,
+			storage: this.storage.dump(),
+		};
+		base.frameCounter = this.frameCounter;
+		base.luaRuntimeFailed = false;
+		base.luaProgramSourceOverride = override ?? source;
+		base.luaChunkName = chunkName;
+		const runInit = this.shouldRunInitForSnapshot(base);
+		this.reinitializeLuaProgramFromSnapshot(base, { runInit, hotReload: true });
+		this.lastFrameTimestampMs = $.platform.clock.now();
+		this.setEditorPipelineActive(this.editor?.isActive() === true, true);
+		this.redrawAfterStateRestore();
+	}
+
+	private shouldRunInitForSnapshot(snapshot: BmsxConsoleState): boolean {
+		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
+		const hasStructuredSnapshot = snapshot.luaSnapshot !== undefined && snapshot.luaSnapshot !== null;
+		const hasFallbackState = snapshot.luaGlobals !== undefined
+			|| snapshot.luaLocals !== undefined
+			|| snapshot.luaRandomSeed !== undefined;
+		return !savedRuntimeFailed && !hasStructuredSnapshot && !hasFallbackState;
+	}
+
+	private reinitializeLuaProgramFromSnapshot(snapshot: BmsxConsoleState, options: { runInit: boolean; hotReload: boolean }): void {
 		const program = this.luaProgram;
 		if (!program) {
 			return;
 		}
 		const targetChunkName = snapshot.luaChunkName ?? this.resolveLuaProgramChunkName(program);
-		const override = snapshot.luaProgramSourceOverride ?? null;
-		const source = override !== null ? override : this.resolveLuaProgramSource(program);
+		let override: string | null = null;
+		if (typeof snapshot.luaProgramSourceOverride === 'string') {
+			override = snapshot.luaProgramSourceOverride;
+		}
+		else if (typeof this.luaProgramSourceOverride === 'string') {
+			override = this.luaProgramSourceOverride;
+		}
+		let source: string;
+		try {
+			source = override ?? this.resolveLuaProgramSource(program);
+		}
+		catch (error) {
+			throw error instanceof Error ? error : new Error(String(error));
+		}
 
 		this.applyProgramSourceToCartridge(source, targetChunkName);
 		this.luaProgramSourceOverride = override;
 		this.luaChunkName = targetChunkName;
 
+		this.initializeLuaInterpreterFromSnapshot({
+			source,
+			chunkName: targetChunkName,
+			snapshot,
+			runInit: options.runInit,
+			hotReload: options.hotReload,
+		});
+	}
+
+	private initializeLuaInterpreterFromSnapshot(params: { source: string; chunkName: string; snapshot: BmsxConsoleState; runInit: boolean; hotReload: boolean }): void {
+		if (params.hotReload) {
+			this.resetLuaInterpreterForHotReload();
+		}
+		else {
+			this.resetLuaInteroperabilityState();
+		}
+
+		const interpreter = createLuaInterpreter();
+		interpreter.clearLastFaultEnvironment();
+		this.luaInterpreter = interpreter;
 		this.luaSnapshotSave = null;
 		this.luaSnapshotLoad = null;
-		this.luaInterpreter = null;
 		this.luaInitFunction = null;
 		this.luaUpdateFunction = null;
 		this.luaDrawFunction = null;
 
-		this.bootLuaProgram(runInit);
+		const program = this.luaProgram;
+		let programAssetId: string | null = null;
+		if (program) {
+			this.registerProgramChunk(program, params.chunkName);
+			if ('assetId' in program && typeof program.assetId === 'string' && program.assetId.length > 0) {
+				programAssetId = program.assetId;
+			}
+		}
+
+		this.registerApiBuiltins(interpreter);
+		interpreter.setReservedIdentifiers(this.apiFunctionNames);
+		this.loadLuaStateMachineScripts(interpreter);
+		this.loadLuaBehaviorTreeScripts(interpreter);
+		this.loadLuaServiceScripts(interpreter);
+
+		interpreter.execute(params.source, params.chunkName);
+		if (program) {
+			this.cacheChunkEnvironment(interpreter, params.chunkName, programAssetId);
+		}
+
+		const env = interpreter.getGlobalEnvironment();
+		const initName = program?.entry?.init ?? 'init';
+		const updateName = program?.entry?.update ?? 'update';
+		const drawName = program?.entry?.draw ?? 'draw';
+		this.luaInitFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, initName));
+		this.luaUpdateFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, updateName));
+		this.luaDrawFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, drawName));
+		this.luaSnapshotSave = this.resolveLuaFunction(this.getLuaGlobalValue(env, '__bmsx_snapshot_save'));
+		this.luaSnapshotLoad = this.resolveLuaFunction(this.getLuaGlobalValue(env, '__bmsx_snapshot_load'));
+
+		const snapshot = params.snapshot;
+		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
+		if (snapshot.luaSnapshot !== undefined && snapshot.luaSnapshot !== null && this.luaSnapshotLoad !== null) {
+			this.applyLuaSnapshot(snapshot.luaSnapshot);
+		}
+		else {
+			this.restoreFallbackLuaState(snapshot);
+		}
+
+		if (params.runInit && this.luaInitFunction !== null && !savedRuntimeFailed) {
+			try {
+				this.invokeLuaFunction(this.luaInitFunction, []);
+			}
+			catch (error) {
+				this.handleLuaError(error);
+			}
+		}
+
+		this.frameCounter = snapshot.frameCounter ?? 0;
+		this.luaRuntimeFailed = savedRuntimeFailed;
+	}
+
+	private resetLuaInterpreterForHotReload(): void {
+		this.handleMethodCache.clear();
+		this.luaObjectWrapperCache = new WeakMap<object, LuaTable>();
+		this.disposeAllLuaComponentDefinitions();
+		this.disposeAllLuaAbilityDefinitions();
+		this.luaAbilityVersion = 0;
+		this.disposeLuaServices();
+		setLuaTableCaseInsensitiveKeys(this.caseInsensitiveLua);
 	}
 
 	private redrawAfterStateRestore(): void {
@@ -1391,13 +1515,12 @@ export class BmsxConsoleRuntime extends Service {
 		const previousSource = this.getLuaProgramSource(program);
 		try {
 			await this.saveLuaProgram(source);
-			this.boot('reloadLuaProgram:apply');
+			this.reloadLuaProgramState(source, previousChunkName, source);
 		}
 		catch (error) {
 			this.luaProgramSourceOverride = previousOverride;
 			try {
-				this.applyProgramSourceToCartridge(previousSource, previousChunkName);
-				this.boot('reloadLuaProgram:restore');
+				this.reloadLuaProgramState(previousSource, previousChunkName, previousOverride ?? previousSource);
 			}
 			catch (restoreError) {
 				this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after reload failure', { error: restoreError });
@@ -3696,26 +3819,15 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const chunkName = this.resolveLuaProgramChunkName(program);
 		const previousOverride = this.luaProgramSourceOverride;
-			try {
-				this.luaProgramSourceOverride = fetched;
-				this.applyProgramSourceToCartridge(fetched, chunkName);
-				// Soft-apply prefetched source without rebooting the world/runtime.
-				// Preserve frame counter and world state; only reinitialize the Lua program.
-				const currentState = this.getState() ?? {
-					frameCounter: this.frameCounter,
-					luaRuntimeFailed: false,
-					luaProgramSourceOverride: null,
-					luaChunkName: chunkName,
-					storage: this.storage.dump(),
-				};
-				(currentState as BmsxConsoleState).luaProgramSourceOverride = fetched;
-				(currentState as BmsxConsoleState).luaRuntimeFailed = false;
-				this.restoreFromStateSnapshot(currentState as BmsxConsoleState);
-			} catch (error) {
+		try {
+			this.reloadLuaProgramState(fetched, chunkName, fetched);
+		}
+		catch (error) {
 			this.luaProgramSourceOverride = previousOverride;
 			try {
-				this.applyProgramSourceToCartridge(currentSource, chunkName);
-			} catch (restoreError) {
+				this.reloadLuaProgramState(currentSource, chunkName, previousOverride ?? currentSource);
+			}
+			catch (restoreError) {
 				this.handleLuaPersistenceFailure('restore', `[BmsxConsoleRuntime] Failed to restore Lua source after prefetched apply error`, { error: restoreError });
 				return;
 			}

@@ -6,7 +6,7 @@ test('restoreFromStateSnapshot does not clear colliders or physics', () => {
   const src = readFileSync('src/bmsx/console/runtime.ts', 'utf8');
   const start = src.indexOf('private restoreFromStateSnapshot');
   assert.ok(start > -1, 'restoreFromStateSnapshot not found');
-  const end = src.indexOf('private reinitializeLuaProgramForState', start);
+  const end = src.indexOf('private shouldRunInitForSnapshot', start);
   const snippet = src.slice(start, end === -1 ? undefined : end);
   // Should not clear colliders/physics during resume restore
   assert.equal(snippet.includes('collider_clear('), false, 'collider_clear present in restoreFromStateSnapshot');
@@ -22,6 +22,17 @@ test('prefetchLuaSourceFromFilesystem soft-applies without boot()', () => {
   const snippet = src.slice(start, nextPrivate === -1 ? undefined : nextPrivate);
   // The prefetch path should not call boot() directly
   assert.equal(snippet.includes('.boot('), false, 'boot() found in prefetch path');
-  // It should use restoreFromStateSnapshot to keep state
-  assert.equal(snippet.includes('restoreFromStateSnapshot'), true, 'restoreFromStateSnapshot not used in prefetch path');
+  // It should use the soft reload helper to keep state
+  assert.equal(snippet.includes('reloadLuaProgramState'), true, 'reloadLuaProgramState not used in prefetch path');
+});
+
+test('initializeLuaInterpreterFromSnapshot reloads lua integrations', () => {
+  const src = readFileSync('src/bmsx/console/runtime.ts', 'utf8');
+  const start = src.indexOf('private initializeLuaInterpreterFromSnapshot');
+  assert.ok(start > -1, 'initializeLuaInterpreterFromSnapshot not found');
+  const nextPrivate = src.indexOf('\n\tprivate ', start + 1);
+  const snippet = src.slice(start, nextPrivate === -1 ? undefined : nextPrivate);
+  assert.equal(snippet.includes('loadLuaStateMachineScripts'), true, 'FSM scripts not reloaded during in-place program apply');
+  assert.equal(snippet.includes('loadLuaBehaviorTreeScripts'), true, 'Behaviour tree scripts not reloaded during in-place program apply');
+  assert.equal(snippet.includes('loadLuaServiceScripts'), true, 'Service scripts not reloaded during in-place program apply');
 });
