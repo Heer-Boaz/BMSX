@@ -104,6 +104,12 @@ export class Space  {
 		const skip = opts?.skipOnSpawn ?? false;
 		const reason = (typeof opts === 'object' && opts !== null && !(opts instanceof Boolean)) ? opts.reason : undefined;
 		if (!skip) { o.onspawn?.(spawnPos, { reason: reason ?? 'fresh' }); }
+		world.dispatchWorldLifecycleSlot(o, 'spawn', {
+			world,
+			spaceId: this.id,
+			reason: reason ?? 'fresh',
+			position: spawnPos,
+		});
 
 		// Mark depth sort dirty; if in a batch, collect space id once
 		if (world.depthDirtyBatch) world.depthDirtyBatch.add(this.id); else this.depthSortDirty = true;
@@ -116,12 +122,17 @@ export class Space  {
 	protected disposeWorldObject(o: WorldObject, skip_ondespawn_event: boolean = false): void {
 		const index = this.objects.indexOf(o);
 		if (index < 0) throw new Error(`WorldObject ${o?.id ?? o} to remove from space '${this.id}' was not found, while calling [Space.despawn]!`);
-		if (!skip_ondespawn_event) o.ondespawn?.();
-		if (index > -1) this.objects.splice(index, 1);
-		this._id2objMap.delete(o.id);
 		const world = $.world;
-		world.objToSpaceMap.delete(o.id);
-		world.onObjectExiled(this, o);
+		if (!skip_ondespawn_event) o.ondespawn?.();
+		world.dispatchWorldLifecycleSlot(o, 'despawn', {
+			world,
+			spaceId: this.id,
+			reason: skip_ondespawn_event ? 'transfer' : 'despawn',
+		});
+	if (index > -1) this.objects.splice(index, 1);
+	this._id2objMap.delete(o.id);
+	world.objToSpaceMap.delete(o.id);
+	world.onObjectExiled(this, o);
 		if (world.depthDirtyBatch) world.depthDirtyBatch.add(this.id); else this.depthSortDirty = true;
 	}
 

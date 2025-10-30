@@ -1,5 +1,5 @@
 function dummy_handler(self)
-	-- print(state, 10, 10, 5)
+	print(state, 10, 10, 5)
 end
 
 return {

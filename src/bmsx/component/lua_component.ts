@@ -1,5 +1,5 @@
 import { Component, type ComponentAttachOptions, type ComponentTag } from './basecomponent';
-import { HandlerRegistry } from '../fsm/fsmlibrary';
+import { HandlerRegistry } from '../core/handlerregistry';
 import { deepClone } from '../utils/utils';
 
 export type LuaComponentHandlerIdMap = {

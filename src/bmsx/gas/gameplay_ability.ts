@@ -42,6 +42,13 @@ export class AbilityActionRegistry {
 		this.map.set(id, action);
 	}
 
+	public unregister(id: string): void {
+		if (!id) {
+			return;
+		}
+		this.map.delete(id);
+	}
+
 	public get(id: string): AbilityAction {
 		const action = this.map.get(id);
 		if (!action) {

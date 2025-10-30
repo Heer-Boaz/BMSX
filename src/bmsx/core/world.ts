@@ -19,6 +19,7 @@ import { $ } from './game';
 import type { Component, ComponentConstructor } from "../component/basecomponent";
 import { Space, id2spaceType, initial_world_spaces, obj_id2space_id_type, obj_id_to_space_id_symbol, id_to_space_symbol } from './space';
 import { EventEmitter } from './eventemitter';
+import { HandlerRegistry } from './handlerregistry';
 import { filterIterable, makeIndexProxy, shallowCopy } from '../utils/utils';
 import { Collision2DSystem } from '../service/collision2d_service';
 import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
@@ -37,6 +38,13 @@ export const id2obj = Symbol('id2object');
 export interface TileCollisionService {
 	collidesWithTile(o: WorldObject, dir: Direction): boolean;
 	isCollisionTile(x: number, y: number): boolean;
+}
+
+export interface WorldLifecycleContext {
+	world: World;
+	spaceId?: Identifier;
+	reason?: SpawnReason | 'transfer' | 'despawn' | 'dispose';
+	position?: vec3;
 }
 export type ModelModuleEcsConfig = {
 	systems?: SystemDescriptor[];
@@ -700,6 +708,20 @@ export class World implements Stateful, RegisterablePersistent {
 			set.add(o);
 			this._lightsBySpace.set(space.id, set);
 		}
+	}
+
+	public dispatchWorldLifecycleSlot(object: WorldObject, slot: 'spawn' | 'despawn' | 'dispose', context: WorldLifecycleContext): void {
+		const registry = HandlerRegistry.instance;
+		const invoke = (slotId: string): boolean => {
+			const handler = registry.get(slotId);
+			if (!handler) return false;
+			const outcome = handler.call(object, context);
+			return outcome === HandlerRegistry.STOP;
+		};
+		if (invoke(`wo.${object.id}.${slot}`)) return;
+		const ctorName = object.constructor?.name ?? 'WorldObject';
+		if (invoke(`woclass.${ctorName}.${slot}`)) return;
+		invoke(`global.${slot}`);
 	}
 	public onObjectExiled(space: Space, o: WorldObject): void {
 		if (o instanceof CameraObject) this._camerasBySpace.get(space.id)?.delete(o);

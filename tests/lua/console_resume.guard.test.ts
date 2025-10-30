@@ -36,3 +36,34 @@ test('initializeLuaInterpreterFromSnapshot reloads lua integrations', () => {
   assert.equal(snippet.includes('loadLuaBehaviorTreeScripts'), true, 'Behaviour tree scripts not reloaded during in-place program apply');
   assert.equal(snippet.includes('loadLuaServiceScripts'), true, 'Service scripts not reloaded during in-place program apply');
 });
+
+test('reloadLuaProgramState applies hot reload without reinitialising interpreter', () => {
+  const src = readFileSync('src/bmsx/console/runtime.ts', 'utf8');
+  const start = src.indexOf('private reloadLuaProgramState');
+  assert.ok(start > -1, 'reloadLuaProgramState not found');
+  const nextPrivate = src.indexOf('\n\tprivate ', start + 1);
+  const snippet = src.slice(start, nextPrivate === -1 ? undefined : nextPrivate);
+  assert.equal(snippet.includes('reinitializeLuaProgramFromSnapshot'), false, 'reloadLuaProgramState should not reset interpreter');
+  assert.equal(snippet.includes('applyLuaProgramHotReload'), true, 'reloadLuaProgramState should apply hot reload');
+});
+
+test('applyLuaProgramHotReload keeps interpreter resident', () => {
+  const src = readFileSync('src/bmsx/console/runtime.ts', 'utf8');
+  const start = src.indexOf('private applyLuaProgramHotReload');
+  assert.ok(start > -1, 'applyLuaProgramHotReload not found');
+  const nextPrivate = src.indexOf('\n\tprivate ', start + 1);
+  const snippet = src.slice(start, nextPrivate === -1 ? undefined : nextPrivate);
+  assert.equal(snippet.includes('resetLuaInterpreterForHotReload'), false, 'applyLuaProgramHotReload should not reset interpreter');
+  assert.equal(snippet.includes('execute('), true, 'applyLuaProgramHotReload must execute the updated chunk');
+  assert.equal(snippet.includes('mergeLuaChunkEnvironmentState'), true, 'applyLuaProgramHotReload should merge previous state');
+});
+
+test('registerLuaAbilityHandler uses stable handler identifiers', () => {
+  const src = readFileSync('src/bmsx/console/runtime.ts', 'utf8');
+  const start = src.indexOf('private registerLuaAbilityHandler');
+  assert.ok(start > -1, 'registerLuaAbilityHandler not found');
+  const nextPrivate = src.indexOf('\n\tprivate ', start + 1);
+  const snippet = src.slice(start, nextPrivate === -1 ? undefined : nextPrivate);
+  assert.equal(snippet.includes('makeLuaHandlerId(`ability:${abilityId}`, [slot])'), true, 'ability handlers should derive ids from slot only');
+  assert.equal(snippet.includes('luaAbilityVersion'), false, 'version-based ability handler ids should be removed');
+});

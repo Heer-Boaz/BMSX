@@ -656,6 +656,12 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		this.sc.dispose();
 
 		// Deregister the object from the entity registry
+		const world = $.world;
+		world.dispatchWorldLifecycleSlot(this, 'dispose', {
+			world,
+			spaceId: world.objToSpaceMap.get(this.id) ?? world.activeSpaceId,
+			reason: 'dispose',
+		});
 		this.unbind();
 	}
 

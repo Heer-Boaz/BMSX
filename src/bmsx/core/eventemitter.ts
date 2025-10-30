@@ -2,6 +2,7 @@ import { Identifiable, Identifier, Parentable, type RegisterablePersistent } fro
 import { Registry } from "./registry";
 import { $ } from './game';
 import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
+import { HandlerRegistry } from './handlerregistry';
 
 // export type EventPayload = StructuredEventPayload | string | number | boolean | null | undefined;
 // export type StructuredEventPayload = Record<string, any> & { lane?: EventLane };
@@ -316,6 +317,24 @@ export class EventEmitter implements RegisterablePersistent {
 
 		// Wildcard listeners
 		for (const item of self.anyListeners) if (item.handler(event_name, emitter, payload)) anyoneSubscribed = true; // Call the handler and check if it returns true, which indicates that the event was handled
+
+		const dispatchRegistrySlot = (slotId: string): boolean => {
+			const stub = HandlerRegistry.instance.get(slotId);
+			if (!stub) return false;
+			const outcome = stub.call(emitter, event_name, emitter, payload);
+			anyoneSubscribed = true;
+			return outcome === HandlerRegistry.STOP;
+		};
+
+		if (emitter && typeof (emitter as Identifiable).id === 'string') {
+			const emitterId = (emitter as Identifiable).id;
+			if (dispatchRegistrySlot(`event.${emitterId}.${event_name}`)) {
+				return;
+			}
+		}
+		if (dispatchRegistrySlot(`event.global.${event_name}`)) {
+			return;
+		}
 
 		if (!anyoneSubscribed && $.debug) {
 			const emitterId = emitter ? emitter.id : 'none';

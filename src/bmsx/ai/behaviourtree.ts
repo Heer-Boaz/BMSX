@@ -5,7 +5,7 @@ import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';
 import type { Identifiable, Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import type { WorldObject } from '../core/object/worldobject';
-import { HandlerRegistry } from '../fsm/fsmlibrary';
+import { HandlerRegistry } from '../core/handlerregistry';
 
 /** Node specification used to compose a behaviour tree. */
 export type BehaviorTreeNodeSpec =
