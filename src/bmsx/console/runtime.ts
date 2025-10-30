@@ -314,7 +314,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.seedDefaultLuaBuiltins();
 		this.initializeEditor();
 		this.attachFrameListener();
-		this.boot();
+		this.boot('constructor');
 		void this.prefetchLuaSourceFromFilesystem();
 	}
 
@@ -497,7 +497,16 @@ export class BmsxConsoleRuntime extends Service {
 		this.editorRenderBackend.setFrameOverride(null);
 	}
 
-	public boot(): void {
+	public boot(reason?: string): void {
+		const bootReason = reason ?? 'unspecified';
+		try { console.info(`[BmsxConsoleRuntime] Boot: ${bootReason}`); } catch { /* ignore */ }
+		// Guard against unintended reboots while in a failed Lua runtime state.
+		// Explicit callers should provide a reason. Unspecified reboots are ignored
+		// when the Lua VM has failed, to preserve editor resume semantics.
+		if (this.luaRuntimeFailed && bootReason === 'unspecified') {
+			try { console.warn('[BmsxConsoleRuntime] Ignoring boot without reason during Lua failure state.'); } catch { /* ignore */ }
+			return;
+		}
 		this.frameCounter = 0;
 		this.luaRuntimeFailed = false;
 		this.luaChunkResourceMap.clear();
@@ -732,7 +741,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.luaProgramSourceOverride = null;
 			this.luaChunkName = null;
 		}
-		this.boot();
+		this.boot('setState:resetFresh');
 	}
 
 	private restoreFromStateSnapshot(snapshot: BmsxConsoleState): void {
@@ -754,7 +763,6 @@ export class BmsxConsoleRuntime extends Service {
 		if (this.editor) {
 			this.editor.clearRuntimeErrorOverlay();
 		}
-		this.api.collider_clear();
 		this.frameCounter = savedFrameCounter;
 
 		if (this.hasLuaProgram()) {
@@ -1383,13 +1391,13 @@ export class BmsxConsoleRuntime extends Service {
 		const previousSource = this.getLuaProgramSource(program);
 		try {
 			await this.saveLuaProgram(source);
-			this.boot();
+			this.boot('reloadLuaProgram:apply');
 		}
 		catch (error) {
 			this.luaProgramSourceOverride = previousOverride;
 			try {
 				this.applyProgramSourceToCartridge(previousSource, previousChunkName);
-				this.boot();
+				this.boot('reloadLuaProgram:restore');
 			}
 			catch (restoreError) {
 				this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after reload failure', { error: restoreError });
@@ -3688,11 +3696,22 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const chunkName = this.resolveLuaProgramChunkName(program);
 		const previousOverride = this.luaProgramSourceOverride;
-		try {
-			this.luaProgramSourceOverride = fetched;
-			this.applyProgramSourceToCartridge(fetched, chunkName);
-			this.boot();
-		} catch (error) {
+			try {
+				this.luaProgramSourceOverride = fetched;
+				this.applyProgramSourceToCartridge(fetched, chunkName);
+				// Soft-apply prefetched source without rebooting the world/runtime.
+				// Preserve frame counter and world state; only reinitialize the Lua program.
+				const currentState = this.getState() ?? {
+					frameCounter: this.frameCounter,
+					luaRuntimeFailed: false,
+					luaProgramSourceOverride: null,
+					luaChunkName: chunkName,
+					storage: this.storage.dump(),
+				};
+				(currentState as BmsxConsoleState).luaProgramSourceOverride = fetched;
+				(currentState as BmsxConsoleState).luaRuntimeFailed = false;
+				this.restoreFromStateSnapshot(currentState as BmsxConsoleState);
+			} catch (error) {
 			this.luaProgramSourceOverride = previousOverride;
 			try {
 				this.applyProgramSourceToCartridge(currentSource, chunkName);
