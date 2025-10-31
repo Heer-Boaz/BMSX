@@ -5506,6 +5506,7 @@ export class BmsxConsoleRuntime extends Service {
 				return this.editor.getSourceForChunk(info.assetId, chunkName);
 			} catch {
 				// Fall back to rompack/program sources.
+				console.warn(`[BmsxConsoleRuntime] Editor failed to provide source for chunk '${chunkName}'. Falling back to rompack/program sources.`);
 			}
 		}
 		if (info.assetId) {
