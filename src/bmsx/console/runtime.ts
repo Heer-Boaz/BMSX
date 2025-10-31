@@ -857,6 +857,7 @@ export class BmsxConsoleRuntime extends Service {
 		const hotSource = params.override ?? params.source;
 		this.refreshLuaHandlersForChunk(normalizedChunk, hotSource);
 		this.refreshLuaHandlersAfterResume(normalizedChunk);
+		this.clearEditorErrorOverlaysIfNoFault();
 	}
 
 	private reloadLuaProgramState(source: string, chunkName: string, override?: string | null): void {
@@ -1126,6 +1127,19 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.api.begin_frame(this.frameCounter, 0);
 		this.cart.draw(this.api);
+	}
+
+	private clearEditorErrorOverlaysIfNoFault(): void {
+		if (this.luaRuntimeFailed) return;
+		const editor = this.editor as unknown as { clearAllRuntimeErrorOverlays?: () => void } | null;
+		if (!editor) return;
+		if (typeof editor.clearAllRuntimeErrorOverlays === 'function') {
+			editor.clearAllRuntimeErrorOverlays();
+		} else {
+			// Fallback for older editors: clear only the active tab overlay
+			(this.editor as any).clearRuntimeErrorOverlay();
+		}
+		publishOverlayFrame(null);
 	}
 
 	private getEditorSource(): string {
@@ -5752,6 +5766,7 @@ export class BmsxConsoleRuntime extends Service {
 
 		try {
 			this.luaHotReloader.reloadModule(normalized, moduleSource);
+			this.clearEditorErrorOverlaysIfNoFault();
 		}
 		catch (error) {
 			this.handleLuaError(error);
