@@ -798,9 +798,10 @@ export class BmsxConsoleRuntime extends Service {
 			this.luaRuntimeFailed = false;
 			return;
 		}
-		const snapshot: BmsxConsoleState = { ...(state as BmsxConsoleState), luaRuntimeFailed: false };
-		const runInit = this.shouldRunInitForSnapshot(snapshot);
-		this.reinitializeLuaProgramFromSnapshot(snapshot, { runInit, hotReload: true });
+		const originalSnapshot = state as BmsxConsoleState;
+		// Resume should never re-run init; keep VM state intact.
+		const snapshot: BmsxConsoleState = { ...originalSnapshot, luaRuntimeFailed: false };
+		this.resumeLuaProgramState(snapshot, { runInit: false });
 		this.luaRuntimeFailed = false;
 		this.lastFrameTimestampMs = $.platform.clock.now();
 		this.setEditorPipelineActive(this.editor?.isActive() === true, true);
@@ -838,7 +839,9 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaRuntimeFailed = false;
 		this.luaProgramSourceOverride = params.override ?? params.source;
 		this.luaChunkName = params.chunkName;
-		this.refreshLuaHandlersForChunk(params.chunkName);
+		const hotSource = params.override ?? params.source;
+		this.refreshLuaHandlersForChunk(normalizedChunk, hotSource);
+		this.refreshLuaHandlersAfterResume(normalizedChunk);
 	}
 
 	private reloadLuaProgramState(source: string, chunkName: string, override?: string | null): void {
@@ -868,6 +871,52 @@ export class BmsxConsoleRuntime extends Service {
 			|| snapshot.luaLocals !== undefined
 			|| snapshot.luaRandomSeed !== undefined;
 		return !savedRuntimeFailed && !hasStructuredSnapshot && !hasFallbackState;
+	}
+
+	private resumeLuaProgramState(snapshot: BmsxConsoleState, options: { runInit: boolean }): void {
+		const program = this.luaProgram;
+		if (!program) {
+			return;
+		}
+		if (!this.luaInterpreter) {
+			this.reinitializeLuaProgramFromSnapshot(snapshot, { runInit: options.runInit, hotReload: false });
+			return;
+		}
+
+		const targetChunkName = snapshot.luaChunkName ?? this.resolveLuaProgramChunkName(program);
+		const currentChunk = this.luaChunkName ?? this.resolveLuaProgramChunkName(program);
+		const normalizedTarget = this.normalizeChunkName(targetChunkName);
+		const normalizedCurrent = this.normalizeChunkName(currentChunk);
+
+		const requestedOverride = (typeof snapshot.luaProgramSourceOverride === 'string' && snapshot.luaProgramSourceOverride.length > 0)
+			? snapshot.luaProgramSourceOverride
+			: (typeof this.luaProgramSourceOverride === 'string' ? this.luaProgramSourceOverride : null);
+
+		const currentOverride = typeof this.luaProgramSourceOverride === 'string' ? this.luaProgramSourceOverride : null;
+		const shouldHotReload = (requestedOverride !== null && requestedOverride !== currentOverride) || (normalizedTarget !== normalizedCurrent);
+
+		if (shouldHotReload) {
+			let source: string;
+			try {
+				source = requestedOverride ?? this.resolveLuaProgramSource(program);
+			}
+			catch (error) {
+				throw error instanceof Error ? error : new Error(String(error));
+			}
+			this.applyProgramSourceToCartridge(source, targetChunkName);
+			this.luaProgramSourceOverride = requestedOverride;
+			this.luaChunkName = targetChunkName;
+			try {
+				this.applyLuaProgramHotReload({ source, chunkName: targetChunkName, override: requestedOverride });
+			}
+			catch (error) {
+				this.handleLuaError(error);
+				throw error;
+			}
+			// No init on resume, and ensure other modules swap cleanly.
+			this.refreshLuaHandlersAfterResume(targetChunkName);
+		}
+		// If no change, do nothing: keep VM state and compiled chunk intact.
 	}
 
 	private reinitializeLuaProgramFromSnapshot(snapshot: BmsxConsoleState, options: { runInit: boolean; hotReload: boolean }): void {
@@ -902,6 +951,78 @@ export class BmsxConsoleRuntime extends Service {
 			runInit: options.runInit,
 			hotReload: options.hotReload,
 		});
+	}
+
+	private refreshLuaHandlersAfterResume(resumeModuleId: string | null): void {
+		const modules = new Set<string>();
+		const normalizedResume = resumeModuleId ? this.normalizeChunkName(resumeModuleId) : null;
+
+		const pushModule = (moduleId: string | null | undefined): void => {
+			if (!moduleId) {
+				return;
+			}
+			const normalized = this.normalizeChunkName(moduleId);
+			if (normalizedResume && normalized === normalizedResume) {
+				return;
+			}
+			modules.add(normalized);
+		};
+
+		for (const chunkName of this.luaChunkResourceMap.keys()) {
+			pushModule(chunkName);
+		}
+
+		const pushModuleForHandler = (handlerId: string | null | undefined): void => {
+			if (!handlerId) {
+				return;
+			}
+			const descriptor = HandlerRegistry.instance.describe(handlerId);
+			if (!descriptor) {
+				return;
+			}
+			const source = descriptor.source;
+			if (!source || source.lang !== 'lua') {
+				return;
+			}
+			pushModule(source.module);
+		};
+
+		for (const handlerId of this.luaHandlerBindings.keys()) {
+			pushModuleForHandler(handlerId);
+		}
+
+		for (const handlerSet of this.luaStateMachineHandlerIds.values()) {
+			for (const handlerId of handlerSet) {
+				pushModuleForHandler(handlerId);
+			}
+		}
+
+		for (const handlerSet of this.luaBehaviorTreeHandlerIds.values()) {
+			for (const handlerId of handlerSet) {
+				pushModuleForHandler(handlerId);
+			}
+		}
+
+		for (const handlerSet of this.luaComponentHandlerIds.values()) {
+			for (const handlerId of handlerSet) {
+				pushModuleForHandler(handlerId);
+			}
+		}
+
+		for (const handlerId of this.luaAbilityActionByHandler.keys()) {
+			pushModuleForHandler(handlerId);
+		}
+
+		for (const handlerId of this.luaServiceEventListeners.keys()) {
+			pushModuleForHandler(handlerId);
+		}
+
+		if (modules.size === 0) {
+			return;
+		}
+		for (const moduleId of modules) {
+			this.refreshLuaHandlersForChunk(moduleId);
+		}
 	}
 
 	private initializeLuaInterpreterFromSnapshot(params: { source: string; chunkName: string; snapshot: BmsxConsoleState; runInit: boolean; hotReload: boolean }): void {
@@ -1030,6 +1151,30 @@ export class BmsxConsoleRuntime extends Service {
 				rompack.lua = {};
 			}
 			rompack.lua[assetId] = source;
+			try {
+				const category = this.resolveLuaHotReloadCategory(assetId);
+				const normalizedPath = path.replace(/\\/g, '/');
+				let chunkName: string;
+				switch (category) {
+					case 'fsm':
+						chunkName = this.resolveLuaFsmChunkName(assetId, normalizedPath);
+						break;
+					case 'behavior_tree':
+						chunkName = this.resolveLuaBehaviorTreeChunkName(assetId, normalizedPath);
+						break;
+					case 'service':
+						chunkName = this.resolveLuaServiceChunkName(assetId, normalizedPath);
+						break;
+					default:
+						chunkName = `@${normalizedPath}`;
+						break;
+				}
+				this.registerLuaChunkResource(chunkName, { assetId, path: normalizedPath });
+				this.refreshLuaHandlersForChunk(chunkName, source);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				this.recordLuaWarning(`[BmsxConsoleRuntime] Hot reload of '${assetId}' after save failed: ${message}`);
+			}
 		}
 	}
 
@@ -1124,6 +1269,28 @@ export class BmsxConsoleRuntime extends Service {
 		this.resourcePathCache.set(assetId, normalizedPath);
 		this.registerLuaChunkResource(normalizedPath, { assetId, path: normalizedPath });
 		const descriptor: ConsoleResourceDescriptor = { path: normalizedPath, type: resourceType, assetId };
+		try {
+			const category = this.resolveLuaHotReloadCategory(assetId);
+			let chunkName: string;
+			switch (category) {
+				case 'fsm':
+					chunkName = this.resolveLuaFsmChunkName(assetId, normalizedPath);
+					break;
+				case 'behavior_tree':
+					chunkName = this.resolveLuaBehaviorTreeChunkName(assetId, normalizedPath);
+					break;
+				case 'service':
+					chunkName = this.resolveLuaServiceChunkName(assetId, normalizedPath);
+					break;
+				default:
+					chunkName = `@${normalizedPath}`;
+					break;
+			}
+			this.refreshLuaHandlersForChunk(chunkName, contents);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.recordLuaWarning(`[BmsxConsoleRuntime] Hot load of new resource '${assetId}' failed: ${message}`);
+		}
 		return descriptor;
 	}
 
@@ -1516,6 +1683,13 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		try {
 			await this.persistLuaSourceToFilesystem(savePath, source);
+			try {
+				this.reloadLuaProgramState(source, targetChunkName, source);
+			}
+			catch (error) {
+				this.handleLuaError(error);
+				throw error;
+			}
 		} catch (error) {
 			this.luaProgramSourceOverride = previousOverride;
 			try {
@@ -1551,7 +1725,6 @@ export class BmsxConsoleRuntime extends Service {
 		const previousSource = this.getLuaProgramSource(program);
 		try {
 			await this.saveLuaProgram(source);
-			this.reloadLuaProgramState(source, previousChunkName, source);
 		}
 		catch (error) {
 			this.luaProgramSourceOverride = previousOverride;
@@ -1566,6 +1739,27 @@ export class BmsxConsoleRuntime extends Service {
 			if (this.luaFailurePolicy.persist === 'warning') {
 				return;
 			}
+		}
+	}
+
+	public reloadProgramAndResetWorld(source: string): void {
+		if (!this.hasLuaProgram()) {
+			throw new Error('[BmsxConsoleRuntime] Cannot reload Lua program when no Lua program is active.');
+		}
+		const program = this.luaProgram;
+		if (!program) {
+			throw new Error('[BmsxConsoleRuntime] Lua program reference unavailable.');
+		}
+		if (typeof source !== 'string' || source.trim().length === 0) {
+			throw new Error('[BmsxConsoleRuntime] Lua source must be a non-empty string.');
+		}
+		const chunkName = this.luaChunkName ?? this.resolveLuaProgramChunkName(program);
+		this.resetWorldState();
+		try {
+			this.reloadLuaProgramState(source, chunkName, source);
+		} catch (error) {
+			this.handleLuaError(error);
+			throw error;
 		}
 	}
 
@@ -4384,7 +4578,11 @@ export class BmsxConsoleRuntime extends Service {
 					if (typeof rawKey === 'string' && rawKey.length > 0) {
 						nextSegment = rawKey;
 					} else if (typeof rawKey === 'number' && Number.isFinite(rawKey)) {
-						nextSegment = String(rawKey);
+						if (Number.isInteger(rawKey) && rawKey >= 1) {
+							nextSegment = String(rawKey - 1);
+						} else {
+							nextSegment = String(rawKey);
+						}
 					}
 					if (!nextSegment) continue;
 					visit(entry, path.concat(nextSegment));
@@ -5511,36 +5709,34 @@ export class BmsxConsoleRuntime extends Service {
 		return this.luaBuiltinMetadata.has(name);
 	}
 
-	private refreshLuaHandlersForChunk(chunkName: string): void {
+	private refreshLuaHandlersForChunk(chunkName: string, sourceOverride?: string | null): void {
 		const normalized = this.normalizeChunkName(chunkName);
 		const registry = HandlerRegistry.instance;
 		const ids = registry.listByModule(normalized);
 		if (ids.length === 0) {
 			return;
 		}
-		const resourceInfo = this.lookupChunkResourceInfo(normalized);
-		const assetId = resourceInfo?.assetId ?? null;
-		if (!assetId) {
+
+		const resourceInfo = this.lookupChunkResourceInfo(normalized) ?? { assetId: null };
+		const moduleSource = (typeof sourceOverride === 'string' && sourceOverride.length > 0)
+			? sourceOverride
+			: this.resolveSourceForChunk(normalized, resourceInfo);
+
+		if (typeof moduleSource !== 'string' || moduleSource.length === 0) {
 			return;
 		}
-		const rompack = $.rompack;
-		if (!rompack || !rompack.lua) {
-			return;
-		}
-		const source = rompack.lua[assetId];
-		if (typeof source !== 'string') {
-			return;
-		}
+
 		const previousContext = this.currentLuaAssetContext;
-		const category = this.resolveLuaHotReloadCategory(assetId);
-		if (category) {
+		const assetId = resourceInfo.assetId ?? null;
+		const category = assetId ? this.resolveLuaHotReloadCategory(assetId) : null;
+		if (assetId && category) {
 			this.currentLuaAssetContext = { category, assetId };
 		}
-		if (resourceInfo) {
-			this.registerLuaChunkResource(chunkName, resourceInfo);
-		}
+
+		this.registerLuaChunkResource(chunkName, resourceInfo);
+
 		try {
-			this.luaHotReloader.reloadModule(normalized, source);
+			this.luaHotReloader.reloadModule(normalized, moduleSource);
 		}
 		catch (error) {
 			this.handleLuaError(error);
