@@ -46,8 +46,8 @@ type ListenerEntry = {
 	desc: HandlerDescriptor;
 };
 
-export interface LuaHotReloadContext {
-	resolve(desc: HandlerDescriptor): GenericHandler | null;
+export interface LuaHotReloadCompilationResult {
+	exports: Record<string, GenericHandler>;
 	finalize?(result: { updated: string[]; removed: string[]; unchanged: string[] }): void;
 }
 
@@ -136,13 +136,6 @@ export class HandlerRegistry {
 	public listByModule(moduleId: string): string[] {
 		const ids = this.byModule.get(moduleId);
 		return ids ? Array.from(ids) : [];
-	}
-
-	public peekImpl(id: string): GenericHandler | undefined {
-		const single = this.singles.get(id);
-		if (single) return single.impl;
-		const listener = this.listeners.get(id);
-		return listener?.impl;
 	}
 
 	public unregister(id: string): void {
@@ -247,10 +240,13 @@ export class HandlerRegistry {
 					}
 					continue;
 				}
-				this.unregister(step.id);
-				removed.push(step.id);
-				continue;
-			}
+			const moduleName = single.desc.source?.module ?? module;
+			single.impl = this.createRemovedTrap(step.id, moduleName, single.desc.source?.symbol);
+			single.desc.version = (single.desc.version ?? 0) + 1;
+			updated.push(step.id);
+			removed.push(step.id);
+			continue;
+		}
 
 			const listener = this.listeners.get(step.id);
 			if (!listener) continue;
@@ -264,12 +260,21 @@ export class HandlerRegistry {
 				}
 				continue;
 			}
-			const slotId = listener.desc.listenerOf!;
-			this.off(slotId, listener.desc.id);
+			if (listener.desc.listenerOf) {
+				this.off(listener.desc.listenerOf, listener.desc.id);
+			} else {
+				this.removeListenerById(listener.desc.id);
+			}
 			removed.push(listener.desc.id);
 		}
 
 		return { updated, removed, unchanged };
+	}
+
+	private createRemovedTrap(id: string, module: string, symbol?: string): GenericHandler {
+		return function removedTrap() {
+			throw new Error(`Handler '${id}'${symbol ? ` (symbol '${symbol}')` : ''} no longer exists in module '${module}'`);
+		};
 	}
 
 	private ensureSlot(slotId: string): SlotEntry {
@@ -366,6 +371,14 @@ export function registerLuaHandler(
 	meta: LuaHandlerMeta,
 	extra?: LuaHandlerExtra
 ): GenericHandler {
+	const symbol = meta.symbol?.trim();
+	if (!symbol || symbol === '<anonymous>') {
+		throw new Error(`[HandlerRegistry] Lua handler '${id}' requires a stable non-anonymous symbol.`);
+	}
+	const moduleName = meta.module?.trim();
+	if (!moduleName) {
+		throw new Error(`[HandlerRegistry] Lua handler '${id}' requires a module identifier.`);
+	}
 	const desc: HandlerDescriptor = {
 		id,
 		category: extra?.category ?? 'other',
@@ -394,18 +407,20 @@ export function subscribeLua(
 
 export class LuaHotReloader {
 	constructor(
-		private readonly lua: { compileAndLoad(moduleId: string, source: string): LuaHotReloadContext },
+		private readonly lua: { compileAndLoad(moduleId: string, source: string): LuaHotReloadCompilationResult },
 		private readonly registry: HandlerRegistry = HandlerRegistry.instance
 	) {}
 
 	reloadModule(moduleId: string, source: string) {
-		const context = this.lua.compileAndLoad(moduleId, source);
+		const { exports, finalize } = this.lua.compileAndLoad(moduleId, source);
 		const result = this.registry.swapByModule(moduleId, (desc) => {
 			if (desc.source?.lang !== 'lua') return null;
 			if (desc.source.module !== moduleId) return null;
-			return context.resolve(desc);
+			const next = exports[desc.source.symbol];
+			if (typeof next !== 'function') return null;
+			return next as GenericHandler;
 		});
-		context.finalize?.(result);
+		finalize?.(result);
 		return result;
 	}
 }

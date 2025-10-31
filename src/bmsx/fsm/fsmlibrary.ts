@@ -603,18 +603,6 @@ function createDelegatedHandler(targetId: string, registry: HandlerRegistry, opt
 	};
 }
 
-function createProxyForRegistryId(id: string, registry: HandlerRegistry, opts: HandlerInvokeOptions): GenericHandler {
-	return function (this: Stateful, ...args: any[]) {
-		const handler = registry.get(id);
-		if (!handler) {
-			// Built-ins should always be present; delegated handlers warn via createDelegatedHandler.
-			return opts.coerceBoolean ? !!opts.defaultValue : opts.defaultValue;
-		}
-		const result = handler.apply(this, args);
-		return opts.coerceBoolean ? !!result : result;
-	};
-}
-
 function looksLikeStatePath(value: string): boolean {
 	if (!value) return false;
 	return value.startsWith('./') ||
@@ -636,7 +624,7 @@ function hoistSlot(
 	slot: string,
 	id: string,
 	registry: HandlerRegistry,
-	useProxyThunks: boolean,
+	_useProxyThunks: boolean,
 	options: HoistOptions
 ): void {
 	const current = owner[slot];
@@ -651,15 +639,9 @@ function hoistSlot(
 			target: options.target,
 			source: overrideSource ?? baseSource,
 		};
-		registry.register(desc, handler);
-		if (useProxyThunks) {
-			const proxy = createProxyForRegistryId(id, registry, options);
-			annotateHandler(proxy as Function, id);
-			owner[slot] = proxy;
-		} else {
-			annotateHandler(handler as Function, id);
-			owner[slot] = handler;
-		}
+		const stub = registry.register(desc, handler);
+		annotateHandler(stub as Function, id);
+		owner[slot] = stub;
 	};
 
 	if (typeof current === 'function') {
