@@ -12,7 +12,7 @@ import type {
 	RuntimeErrorOverlay,
 	RuntimeErrorStackFrame
 } from './types';
-import type { RectBounds } from 'bmsx/rompack/rompack';
+import type { RectBounds } from '../../rompack/rompack.ts';
 
 export interface RuntimeErrorOverlayLayoutHost {
 	ensureVisualLines(): void;

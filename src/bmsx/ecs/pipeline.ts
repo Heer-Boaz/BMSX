@@ -1,7 +1,7 @@
 
+import { $ } from '../core/game';
 import type { World } from "../core/world";
 import { ECSystem, ECSystemManager, TickGroup } from "./ecsystem";
-import { $ } from 'bmsx/core/game';
 
 export interface SystemDescriptor {
 	id: string;

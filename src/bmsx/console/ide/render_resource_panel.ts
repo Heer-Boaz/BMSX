@@ -1,7 +1,7 @@
 import type { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
 import type { ResourceBrowserItem } from './types';
-import type { RectBounds } from 'bmsx/rompack/rompack';
+import type { RectBounds } from '../../rompack/rompack.ts';
 import { Msx1Colors } from '../../systems/msx';
 import { ConsoleScrollbar } from './scrollbar';
 import { clamp } from '../../utils/utils';

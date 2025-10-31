@@ -2,7 +2,7 @@ import { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
 import type { BmsxConsoleMetadata } from '../types';
 import type { EditorResolutionMode, TopBarButtonId } from './types';
-import type { RectBounds } from 'bmsx/rompack/rompack';
+import type { RectBounds } from '../../rompack/rompack.ts';
 
 export interface TopBarHost {
 	viewportWidth: number;

@@ -6,7 +6,7 @@ import { clamp } from '../../utils/utils';
 import { ConsoleScrollbar } from './scrollbar';
 import { renderResourcePanel } from './render_resource_panel';
 import type { ResourceBrowserItem } from './types';
-import type { RectBounds } from 'bmsx/rompack/rompack';
+import type { RectBounds } from '../../rompack/rompack.ts';
 import type { ConsoleResourceDescriptor } from '../types';
 import { isKeyJustPressed as isKeyJustPressedGlobal, isModifierPressed as isModifierPressedGlobal, consumeKey as consumeKeyboardKey } from './input_helpers';
 

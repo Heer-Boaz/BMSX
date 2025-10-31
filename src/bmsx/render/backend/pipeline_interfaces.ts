@@ -1,6 +1,5 @@
 /// <reference types="@webgpu/types" />
-import { color_arr, type vec2 } from '../../rompack/rompack';
-import type { TextureSource } from 'bmsx/rompack/rompack';
+import { color_arr, type TextureSource, type vec2 } from '../../rompack/rompack';
 import type { WebGLBackend } from './webgl/webgl_backend';
 import type { WebGPUBackend } from './webgpu/webgpu_backend';
 

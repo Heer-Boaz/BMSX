@@ -1,6 +1,6 @@
 import type { BmsxConsoleApi } from '../api';
 import type { EditorDiagnostic, PointerSnapshot } from './types';
-import type { RectBounds } from 'bmsx/rompack/rompack';
+import type { RectBounds } from '../../rompack/rompack.ts';
 import * as constants from './constants';
 import { wrapTextDynamic as wrapMessageLinesGeneric } from './text_utils_local';
 import { clamp } from '../../utils/utils';

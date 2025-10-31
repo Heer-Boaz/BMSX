@@ -16,7 +16,7 @@ import type {
 import { ConsoleEditorFont } from '../editor_font';
 import { DEFAULT_CONSOLE_FONT_VARIANT, getConsoleFontPreset, type ConsoleFontVariant } from '../font';
 import { drawEditorColoredText, drawEditorText } from './text_renderer';
-import { Msx1Colors } from 'bmsx';
+import { Msx1Colors } from '../../systems/msx.ts';
 import { renderCodeArea } from './render_code_area';
 import { clamp } from '../../utils/utils';
 import { CHARACTER_CODES } from './character_map';
@@ -102,7 +102,7 @@ import type {
 	TopBarButtonId,
 	VisualLineSegment,
 } from './types';
-import type { RectBounds } from 'bmsx/rompack/rompack.ts';
+import type { RectBounds } from '../../rompack/rompack.ts';
 import { ReferenceState, resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation.ts';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
