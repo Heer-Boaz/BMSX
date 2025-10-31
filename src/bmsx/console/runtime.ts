@@ -301,6 +301,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private constructor(options: BmsxConsoleRuntimeOptions) {
 		super({ id: 'bmsx_console_runtime' });
+		BmsxConsoleRuntime._instance = this;
 		const rompack = $.rompack;
 		this.caseInsensitiveLua = options.caseInsensitiveLua ?? (rompack?.caseInsensitiveLua ?? true);
 		setLuaTableCaseInsensitiveKeys(this.caseInsensitiveLua);
@@ -2353,10 +2354,9 @@ export class BmsxConsoleRuntime extends Service {
 		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
 		const previousDefinitions = new Map<string, StateDefinition | undefined>();
 		const changedMachines: string[] = [];
-		for (const assetId of Object.keys(luaSources)) {
-			if (!this.assetIdRepresentsFsm(assetId)) {
-				continue;
-			}
+		const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => this.assetIdRepresentsFsm(assetId));
+		for (let index = 0; index < assetIds.length; index += 1) {
+			const assetId = assetIds[index]!;
 			const source = luaSources[assetId];
 			if (typeof source !== 'string') {
 				throw new Error(`[BmsxConsoleRuntime] FSM Lua asset '${assetId}' is not a string source.`);
@@ -2521,10 +2521,9 @@ export class BmsxConsoleRuntime extends Service {
 		const changedTrees: Set<string> = new Set();
 		const luaSources = rompack.lua;
 		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
-		for (const assetId of Object.keys(luaSources)) {
-			if (!this.assetIdRepresentsBehaviorTree(assetId)) {
-				continue;
-			}
+		const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => this.assetIdRepresentsBehaviorTree(assetId));
+		for (let index = 0; index < assetIds.length; index += 1) {
+			const assetId = assetIds[index]!;
 			const source = luaSources[assetId];
 			if (typeof source !== 'string') {
 				throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua asset '${assetId}' is not a string source.`);
@@ -2620,6 +2619,32 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
+	private sortLuaAssetIds(
+		luaSources: Record<string, unknown>,
+		sourcePaths: Record<string, unknown>,
+		predicate: (assetId: string) => boolean,
+	): string[] {
+		const candidates: string[] = [];
+		for (const assetId of Object.keys(luaSources)) {
+			if (predicate(assetId)) {
+				candidates.push(assetId);
+			}
+		}
+		const keyFor = (assetId: string): string => {
+			const raw = sourcePaths[assetId];
+			if (typeof raw === 'string' && raw.length > 0) {
+				return raw;
+			}
+			const resolved = this.resolveResourcePath(assetId);
+			if (resolved && resolved.length > 0) {
+				return resolved;
+			}
+			return assetId;
+		};
+		candidates.sort((left, right) => keyFor(left).localeCompare(keyFor(right)));
+		return candidates;
+	}
+
 	private refreshBehaviorTreeContexts(treeIds?: readonly string[]): void {
 		const world = $.world;
 		const filter = treeIds ? new Set(treeIds) : null;
@@ -2662,10 +2687,9 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const luaSources = rompack.lua;
 		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
-		for (const assetId of Object.keys(luaSources)) {
-			if (!this.assetIdRepresentsService(assetId)) {
-				continue;
-			}
+		const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => this.assetIdRepresentsService(assetId));
+		for (let index = 0; index < assetIds.length; index += 1) {
+			const assetId = assetIds[index]!;
 			const source = luaSources[assetId];
 			if (typeof source !== 'string') {
 				throw new Error(`[BmsxConsoleRuntime] Service Lua asset '${assetId}' is not a string source.`);
@@ -3601,30 +3625,41 @@ export class BmsxConsoleRuntime extends Service {
 		return fallbackText.length > 0 ? encode(fallbackText) : '<anonymous>';
 	}
 
-	private moduleIdFor(
-		category: 'fsm' | 'behavior_tree' | 'service' | 'component' | 'ability' | 'other',
-		assetId?: string | null,
-		chunkName?: string | null
-	): string {
-		const trimmedChunk = (chunkName ?? '').trim();
-		const trimmedAsset = (assetId ?? '').trim();
-		let raw: string;
-		if (trimmedChunk.length > 0) {
-			raw = trimmedChunk;
-		} else if (trimmedAsset.length > 0) {
-			raw = `${category}/${trimmedAsset}`;
-		} else {
-			raw = category;
-			if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production') {
-				try {
-					console.warn(`[HotReload] moduleIdFor('${category}') invoked without assetId or chunkName; defaulting to '${raw}'. This may cause collisions.`);
-				} catch {
-					// ignore logging failures
-				}
-			}
-		}
-		return this.normalizeChunkName(raw);
-	}
+    private moduleIdFor(
+        category: 'fsm' | 'behavior_tree' | 'service' | 'component' | 'ability' | 'other',
+        assetId?: string | null,
+        chunkName?: string | null
+    ): string {
+        const trimmedChunk = (chunkName ?? '').trim();
+        const trimmedAsset = (assetId ?? '').trim();
+        let raw: string;
+        if (trimmedChunk.length > 0) {
+            // Important: ability handlers must not share the plain chunk module id to avoid
+            // being swapped out by generic hot-reload when the script does not export symbols.
+            // Prefix ability handlers with a distinct namespace.
+            raw = (category === 'ability') ? `${category}/${trimmedChunk}` : trimmedChunk;
+        } else if (trimmedAsset.length > 0) {
+            raw = `${category}/${trimmedAsset}`;
+        } else {
+            raw = category;
+            if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production') {
+                try {
+                    console.warn(`[HotReload] moduleIdFor('${category}') invoked without assetId or chunkName; defaulting to '${raw}'. This may cause collisions.`);
+                } catch {
+                    // ignore logging failures
+                }
+            }
+        }
+        return this.normalizeChunkName(raw);
+    }
+
+    /**
+     * Report an engine/runtime error (non-Lua) to the Console editor overlay.
+     * Useful for surfacing exceptions thrown by engine systems (e.g., ability runtime).
+     */
+    public reportEngineError(error: unknown): void {
+        this.handleLuaError(error);
+    }
 
 	private assertLuaHandlerSymbol(handlerId: string, symbol: string): void {
 		if (!symbol || symbol === '<anonymous>') {
@@ -4034,7 +4069,18 @@ export class BmsxConsoleRuntime extends Service {
 					start = 1;
 				}
 				for (let index = start; index < args.length; index += 1) {
-					jsArgs.push(this.luaValueToJs(args[index]));
+					const originalArg = args[index];
+					const converted = this.luaValueToJs(originalArg);
+					if (this.isLuaFunctionValue(originalArg)) {
+						const luaFn = originalArg as LuaFunctionValue;
+						const ensured = this.ensureInterpreter(interpreter);
+						jsArgs.push((...invocationArgs: unknown[]) => {
+							const results = this.callLuaFunctionWithInterpreter(luaFn, invocationArgs, ensured);
+							return results.length > 0 ? results[0] : undefined;
+						});
+						continue;
+					}
+					jsArgs.push(converted);
 				}
 			}
 		try {

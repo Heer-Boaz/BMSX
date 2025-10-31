@@ -288,6 +288,9 @@ export class EventEmitter implements RegisterablePersistent {
 
 	public emit<P extends EventPayload = EventPayload>(event_name: string, emitter: Identifiable, payload?: P): void {
 		const structuredPayload = EventEmitter.asStructuredPayload(payload);
+		if (event_name === 'overlapBegin' && (!structuredPayload || typeof structuredPayload !== 'object')) {
+			throw new Error(`[EventEmitter] overlapBegin emitted without payload.`);
+		}
 		const lane: EventLane = structuredPayload?.lane ?? 'gameplay';
 		if (lane === 'gameplay' && emitter == null) {
 			throw new Error(`Gameplay events require an Identifiable emitter. Event "${event_name}" missing emitter id.`);
@@ -337,9 +340,9 @@ export class EventEmitter implements RegisterablePersistent {
 		}
 
 		if (!anyoneSubscribed && $.debug) {
-			const emitterId = emitter ? emitter.id : 'none';
-			console.warn(`No listeners for event "${event_name}" [${lane}] and emitter "${emitterId}", payload: "${payload ? JSON.stringify(payload) : 'no payload'}"`);
-			if (self.anyListeners.length === 0) console.warn(`Also, no wildcard listeners for event "${event_name}"!`);
+			// const emitterId = emitter ? emitter.id : 'none';
+			// console.warn(`No listeners for event "${event_name}" [${lane}] and emitter "${emitterId}", payload: "${payload ? JSON.stringify(payload) : 'no payload'}"`);
+			// if (self.anyListeners.length === 0) console.warn(`Also, no wildcard listeners for event "${event_name}"!`);
 		}
 	}
 

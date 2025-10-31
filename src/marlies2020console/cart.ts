@@ -1,5 +1,4 @@
 import { createLuaConsoleCartridge } from 'bmsx/console';
-import { marlies2020Program } from './lua/program';
 
 export const marlies2020ConsoleCartridge = createLuaConsoleCartridge({
 	meta: {
@@ -7,7 +6,15 @@ export const marlies2020ConsoleCartridge = createLuaConsoleCartridge({
 		version: '0.1.0',
 		persistentId: 'marlies2020_console',
 	},
-	program: marlies2020Program,
+	program: {
+		assetId: 'marlies2020',
+		chunkName: 'marlies2020',
+		entry: {
+			init: 'init',
+			update: 'update',
+			draw: 'draw',
+		},
+	},
 });
 
 export default marlies2020ConsoleCartridge;

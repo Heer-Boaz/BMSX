@@ -1,4 +1,5 @@
 import { $, $rompack, runGate } from '../core/game';
+import { Input } from '../input/input';
 import type { color, RectRenderSubmission, RenderLayer } from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
 import { ConsoleFont } from './font';
@@ -352,6 +353,24 @@ export class BmsxConsoleApi {
 		this.syncSpriteCollider(command);
 	}
 
+	public check_action_state(playerIndex: number, actionDefinition: string): boolean {
+		if (!Number.isInteger(playerIndex) || playerIndex <= 0) {
+			throw new Error('[BmsxConsoleApi] check_action_state requires a positive integer player index.');
+		}
+		if (typeof actionDefinition !== 'string') {
+			throw new Error('[BmsxConsoleApi] check_action_state requires an action definition string.');
+		}
+		const trimmed = actionDefinition.trim();
+		if (trimmed.length === 0) {
+			throw new Error('[BmsxConsoleApi] check_action_state requires a non-empty action definition.');
+		}
+		const playerInput = Input.instance.getPlayerInput(playerIndex);
+		if (!playerInput) {
+			throw new Error(`[BmsxConsoleApi] Player input handler for index ${playerIndex} is not initialised.`);
+		}
+		return playerInput.checkActionTriggered(trimmed);
+	}
+
 	public cartdata(namespace: string): void {
 		this.storage.setNamespace(namespace);
 	}
@@ -596,6 +615,24 @@ export class BmsxConsoleApi {
 			throw new Error(`[BmsxConsoleApi] Lua ability '${abilityId}' is not registered.`);
 		}
 		asc.grantAbility(definition);
+	}
+
+	public request_ability(objectId: Identifier, abilityId: string, options?: { payload?: Record<string, unknown>; source?: Identifier | null }): boolean {
+		if (typeof abilityId !== 'string' || abilityId.trim().length === 0) {
+			throw new Error('[BmsxConsoleApi] request_ability requires a non-empty ability id.');
+		}
+		const object = this.requireWorldObject(objectId, 'request_ability');
+		const asc = object.getUniqueComponent(AbilitySystemComponent);
+		if (!asc) {
+			throw new Error(`[BmsxConsoleApi] World object '${objectId}' does not have an AbilitySystemComponent.`);
+		}
+		const trimmedId = abilityId.trim() as any;
+		const payload = options?.payload as any;
+		const source = options?.source as any;
+		const result = source !== undefined || payload !== undefined
+			? asc.requestAbility(trimmedId, { payload, source })
+			: asc.requestAbility(trimmedId);
+		return result.ok === true;
 	}
 
 	public add_component(objectId: Identifier, componentRef: string, options?: Record<string, unknown>): string {

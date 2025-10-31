@@ -31,7 +31,9 @@ export class SpriteColliderSyncSystem extends ECSystem {
 
 			const entry = $rompack.img[id];
 			if (!entry) {
-				throw new Error(`[SpriteColliderSyncSystem] Sprite asset '${id}' not found in rompack.`);
+				const ownerId = o.id ?? '<unknown>';
+				const componentId = sprite.id ?? sprite.id_local ?? 'SpriteComponent';
+				throw new Error(`[SpriteColliderSyncSystem] Sprite asset '${id}' not found in rompack (object='${ownerId}', component='${componentId}').`);
 			}
 			const imgmeta = entry['imgmeta'];
 			if (!imgmeta) {
