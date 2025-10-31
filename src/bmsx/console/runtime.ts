@@ -526,7 +526,9 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaChunkEnvironmentsByAssetId.clear();
 		this.luaChunkEnvironmentsByChunkName.clear();
 		if (this.editor) {
-			this.editor.clearRuntimeErrorOverlay();
+			// Clear overlays across all code tabs to ensure no stale error UI persists
+			// when the editor had focused a specific chunk for the fault.
+			(this.editor as any).clearAllRuntimeErrorOverlays?.() ?? this.editor.clearRuntimeErrorOverlay();
 		}
 		if (this.hasBooted) {
 			this.resetWorldState();
@@ -801,8 +803,21 @@ export class BmsxConsoleRuntime extends Service {
 		const originalSnapshot = state as BmsxConsoleState;
 		// Resume should never re-run init; keep VM state intact.
 		const snapshot: BmsxConsoleState = { ...originalSnapshot, luaRuntimeFailed: false };
-		this.resumeLuaProgramState(snapshot, { runInit: false });
+		// Clear any previous error overlays and interpreter fault markers so a fresh
+		// resume starts clean and can report new errors normally.
+		if (this.editor) {
+			this.editor.clearRuntimeErrorOverlay();
+		}
+		if (this.luaInterpreter) {
+			this.luaInterpreter.clearLastFaultEnvironment();
+			this.luaInterpreter.clearLastFaultCallStack?.();
+		}
+		// Also clear dedupe set so subsequent errors surface again after resume.
+		this.handledLuaErrors = new WeakSet<object>();
+		// Clear flag and any queued overlay frame before we resume swapping handlers.
 		this.luaRuntimeFailed = false;
+		publishOverlayFrame(null);
+		this.resumeLuaProgramState(snapshot, { runInit: false });
 		this.lastFrameTimestampMs = $.platform.clock.now();
 		this.setEditorPipelineActive(this.editor?.isActive() === true, true);
 		this.redrawAfterStateRestore();

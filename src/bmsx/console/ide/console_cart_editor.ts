@@ -832,6 +832,17 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.setActiveRuntimeErrorOverlay(null);
 	}
 
+	// Clear overlays and stop highlights across all open code tabs, not just the
+	// currently active one. Useful when resuming after a runtime error where the
+	// editor may have switched tabs to the faulting chunk.
+	public clearAllRuntimeErrorOverlays(): void {
+		this.runtimeErrorOverlay = null;
+		for (const context of this.codeTabContexts.values()) {
+			context.runtimeErrorOverlay = null;
+		}
+		this.clearExecutionStopHighlights();
+	}
+
 	private setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay | null): void {
 		this.runtimeErrorOverlay = overlay;
 		const context = this.getActiveCodeTabContext();
