@@ -9,7 +9,8 @@
 	"src/ella2023",
 	"src/sint2024",
 	"src/luademo",
-	"src/luashell"
+	"src/luashell",
+	"src/marlies2020console"
   ],
   "dependencies": {
 	"blob": "*",

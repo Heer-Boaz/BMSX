@@ -320,6 +320,7 @@
 			"id": "romtobuild",
 			"description": "Choose ROM to build",
 			"options": [
+				"marlies2020console",
 				"luashell",
 				"luademo",
 				"bmsxconsole",
