@@ -22,6 +22,13 @@ interface SliceResult {
 	endDisplay: number;
 }
 
+type PendingSemanticUpdate = {
+	lines: readonly string[];
+	version: number;
+	chunkName: string;
+	requestedAt: number;
+};
+
 /**
  * ConsoleCodeLayout owns syntax highlight caching and visual line layout for the cart editor.
  * ConsoleCartEditor delegates expensive computations here so the orchestrator stays lean.
@@ -38,9 +45,17 @@ export class ConsoleCodeLayout {
 	private semanticChunkName: string | null = null;
 	private semanticSignature = 0;
 	private nextSemanticSignature = 1;
+	private readonly semanticDebounceMs: number;
+	private pendingSemantic: PendingSemanticUpdate | null = null;
+	private lastSemanticUpdateMs = 0;
 
-	constructor(private readonly font: ConsoleEditorFont, private readonly workspace: LuaSemanticWorkspace, options?: { maxHighlightCache?: number }) {
+	constructor(
+		private readonly font: ConsoleEditorFont,
+		private readonly workspace: LuaSemanticWorkspace,
+		options?: { maxHighlightCache?: number; semanticDebounceMs?: number },
+	) {
 		this.maxHighlightCache = options?.maxHighlightCache ?? 2048;
+		this.semanticDebounceMs = Math.max(0, options?.semanticDebounceMs ?? 120);
 	}
 
 	public invalidateHighlight(row: number): void {
@@ -54,10 +69,12 @@ export class ConsoleCodeLayout {
 		this.semanticVersion = -1;
 		this.semanticChunkName = null;
 		this.semanticSignature = 0;
+		this.pendingSemantic = null;
+		this.lastSemanticUpdateMs = 0;
 	}
 
 	public getCachedHighlight(lines: readonly string[], row: number, documentVersion: number, chunkName: string): CachedHighlight {
-		this.ensureSemanticModel(lines, documentVersion, chunkName);
+		this.ensureSemanticModel(lines, documentVersion, chunkName, false);
 		const annotations = this.semanticModel?.annotations ?? null;
 		const semanticSignature = this.semanticSignature;
 		const source = lines[row] ?? '';
@@ -188,7 +205,7 @@ export class ConsoleCodeLayout {
 	}
 
 	public getSemanticDefinitions(lines: readonly string[], documentVersion: number, chunkName: string): readonly LuaDefinitionInfo[] | null {
-		this.ensureSemanticModel(lines, documentVersion, chunkName);
+		this.ensureSemanticModel(lines, documentVersion, chunkName, true);
 		if (!this.semanticModel) {
 			return null;
 		}
@@ -281,26 +298,76 @@ export class ConsoleCodeLayout {
 	}
 
 	public getSemanticModel(lines: readonly string[], documentVersion: number, chunkName: string): LuaSemanticModel | null {
-		this.ensureSemanticModel(lines, documentVersion, chunkName);
+		this.ensureSemanticModel(lines, documentVersion, chunkName, true);
 		return this.semanticModel;
 	}
 
-	private ensureSemanticModel(lines: readonly string[], version: number, chunkName: string): void {
-		if (this.semanticLinesRef === lines && this.semanticVersion === version && this.semanticChunkName === chunkName && this.semanticModel) {
+	private ensureSemanticModel(
+		lines: readonly string[],
+		version: number,
+		chunkName: string,
+		force: boolean,
+	): void {
+		const sameChunk = this.semanticChunkName === chunkName;
+		const sameVersion = this.semanticVersion === version;
+		const sameLines = this.semanticLinesRef === lines;
+		if (sameChunk && sameVersion && sameLines && this.semanticModel) {
 			return;
 		}
-		const source = lines.join('\n');
-		try {
-			const model = this.workspace.updateFile(chunkName, source);
-			this.semanticModel = model;
-		} catch {
-			this.semanticModel = null;
+		const now = Date.now();
+		const pending = this.updatePendingSemantic(lines, version, chunkName, now);
+		const requireImmediate = force || !this.semanticModel || !sameChunk || !sameLines;
+		if (!requireImmediate && this.semanticDebounceMs > 0) {
+			const elapsedSinceRequest = now - pending.requestedAt;
+			const elapsedSinceUpdate = this.lastSemanticUpdateMs > 0 ? now - this.lastSemanticUpdateMs : Number.POSITIVE_INFINITY;
+			if (elapsedSinceRequest < this.semanticDebounceMs || elapsedSinceUpdate < this.semanticDebounceMs) {
+				return;
+			}
 		}
-		this.semanticLinesRef = lines;
-		this.semanticVersion = version;
-		this.semanticChunkName = chunkName;
+		this.applySemanticUpdate(pending, now);
+	}
+
+	private updatePendingSemantic(
+		lines: readonly string[],
+		version: number,
+		chunkName: string,
+		now: number,
+	): PendingSemanticUpdate {
+		const current = this.pendingSemantic;
+		if (
+			current
+			&& current.lines === lines
+			&& current.version === version
+			&& current.chunkName === chunkName
+		) {
+			return current;
+		}
+		const pending: PendingSemanticUpdate = {
+			lines,
+			version,
+			chunkName,
+			requestedAt: now,
+		};
+		this.pendingSemantic = pending;
+		return pending;
+	}
+
+	private applySemanticUpdate(pending: PendingSemanticUpdate, timestampMs: number): void {
+		const source = pending.lines.join('\n');
+		let model: LuaSemanticModel | null = null;
+		try {
+			model = this.workspace.updateFile(pending.chunkName, source);
+		} catch {
+			model = null;
+		}
+		this.semanticModel = model;
+		this.semanticLinesRef = pending.lines;
+		this.semanticVersion = pending.version;
+		this.semanticChunkName = pending.chunkName;
 		this.semanticSignature = this.nextSemanticSignature;
 		this.nextSemanticSignature += 1;
 		this.highlightCache.clear();
+		this.pendingSemantic = null;
+		this.lastSemanticUpdateMs = timestampMs;
 	}
 }

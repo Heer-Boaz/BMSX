@@ -176,6 +176,7 @@ export class LuaProjectIndex {
 	private readonly symbols: Map<SymbolID, Decl> = new Map();
 	private readonly globalsByKey: Map<string, SymbolID> = new Map();
 	private readonly refsBySymbol: Map<SymbolID, Ref[]> = new Map();
+	private globalsDirty = false;
 
 	public updateFile(file: string, source: string): LuaSemanticModel {
 		const data = buildLuaFileSemanticData(source, file);
@@ -183,13 +184,13 @@ export class LuaProjectIndex {
 			source,
 			data,
 		});
-		this.rebuild();
+		this.globalsDirty = true;
 		return data.model;
 	}
 
 	public removeFile(file: string): void {
 		this.files.delete(file);
-		this.rebuild();
+		this.globalsDirty = true;
 	}
 
 	public getFileModel(file: string): LuaSemanticModel | null {
@@ -198,6 +199,7 @@ export class LuaProjectIndex {
 	}
 
 	public getDefinitionAt(file: string, position: Position): Decl | null {
+		this.ensureGlobals();
 		const record = this.files.get(file);
 		if (!record) {
 			return null;
@@ -207,6 +209,7 @@ export class LuaProjectIndex {
 	}
 
 	public symbolAt(file: string, position: Position): { id: SymbolID; decl: Decl } | null {
+		this.ensureGlobals();
 		const record = this.files.get(file);
 		if (!record) {
 			return null;
@@ -215,11 +218,13 @@ export class LuaProjectIndex {
 	}
 
 	public getReferences(symbolId: SymbolID): readonly Ref[] {
+		this.ensureGlobals();
 		const refs = this.refsBySymbol.get(symbolId);
 		return refs ? refs.slice() : [];
 	}
 
 	public getDecl(symbolId: SymbolID): Decl | null {
+		this.ensureGlobals();
 		const decl = this.symbols.get(symbolId);
 		return decl ?? null;
 	}
@@ -233,12 +238,21 @@ export class LuaProjectIndex {
 	}
 
 	public getFileData(file: string): FileSemanticData | null {
+		this.ensureGlobals();
 		const record = this.files.get(file);
 		return record ? record.data : null;
 	}
 
 	public listFiles(): string[] {
 		return Array.from(this.files.keys());
+	}
+
+	private ensureGlobals(): void {
+		if (!this.globalsDirty) {
+			return;
+		}
+		this.rebuild();
+		this.globalsDirty = false;
 	}
 
 	private rebuild(): void {
