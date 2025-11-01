@@ -5,7 +5,7 @@ import type { PlayerInput } from '../input/playerinput';
 import type { InputAbilityProgram, Binding, Effect, AbilityRequestDescriptor, EmitGameplayDescriptor } from './input_ability_dsl';
 
 export interface EvalContext {
-	ownerId: string;
+	owner_id: string;
 	playerIndex: number;
 	hasTag: (tag: string) => boolean;
 	matchesMode: (path: string) => boolean;
@@ -180,7 +180,8 @@ function compileEffect(effect: Effect, slot?: string): EffectExecutor {
 			};
 		}
 		return (ctx: EvalContext) => {
-			ctx.requestAbility(spec.id, { payload: spec.payload, source: spec.source });
+			if (spec.payload === undefined) ctx.requestAbility(spec.id);
+			else ctx.requestAbility(spec.id, { payload: spec.payload } as any);
 		};
 	}
 	if (isInputConsume(effect)) {

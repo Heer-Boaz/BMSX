@@ -34,12 +34,11 @@ type KnownAbilityRequestDescriptor = AbilityTableKeys extends never
 	: {
 		[Id in AbilityTableKeys]: {
 			id: Id;
-			source?: string;
 		} & { payload?: AbilityPayloadFor<Id> };
 	}[AbilityTableKeys];
 
 type FallbackAbilityRequestDescriptor = AbilityTableKeys extends never
-	? { id: AbilityIdentifier; source?: string; payload?: unknown }
+	? { id: AbilityIdentifier; payload?: unknown }
 	: never;
 
 export type AbilityRequestDescriptor = KnownAbilityRequestDescriptor | FallbackAbilityRequestDescriptor;

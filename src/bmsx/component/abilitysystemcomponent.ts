@@ -98,16 +98,15 @@ export class AbilitySystemComponent extends Component {
 		abilityRegistry.validate(id, payload);
 		const failure = this.canActivateReason(id);
 		if (failure) {
-			this.notifyAbilityFailed(id, failure, opts?.source);
+			this.notifyAbilityFailed(id, failure);
 			return { ok: false as const, reason: failure };
 		}
 		const command: GameplayCommand = {
 			kind: 'activateability',
 			owner: this.parentid,
 			ability_id: id,
-			source: opts?.source,
 		};
-		if (payload !== undefined) command.payload = payload as AbilityPayloadFor<AbilityId>;
+	if (payload !== undefined) (command as any).payload = payload as AbilityPayloadFor<AbilityId>;
 		GameplayCommandBuffer.instance.push(command);
 		return { ok: true };
 	}
@@ -405,7 +404,7 @@ export class AbilitySystemComponent extends Component {
 				parentid: this.parentid,
 				hasTag: (tag: TagId) => this.hasGameplayTag(tag),
 				tryActivate: <Id extends AbilityId>(abilityId: Id, payload?: AbilityPayloadFor<Id>) => this.tryActivate(abilityId, payload),
-				requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => this.requestAbility(abilityId, opts)
+				requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => this.requestAbility(abilityId, opts),
 			};
 		} else {
 			this._ref.parentid = this.parentid;
@@ -480,7 +479,10 @@ export class AbilitySystemComponent extends Component {
 				$.emitGameplay(event, owner, payload);
 			},
 			pushCommand: (command: GameplayCommand) => GameplayCommandBuffer.instance.push(command),
-			requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => this.requestAbility(abilityId, opts),
+			requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => {
+				if (opts && 'payload' in (opts as any)) return this.requestAbility(abilityId, { payload: (opts as any).payload } as any);
+				return this.requestAbility(abilityId);
+			},
 		};
 	}
 

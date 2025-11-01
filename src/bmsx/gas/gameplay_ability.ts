@@ -169,7 +169,6 @@ export interface ModifyTagsStep {
 export interface RequestAbilityStep {
 	type: 'requestAbility';
 	ability: AbilityId;
-	source?: string;
 	payload?: Record<string, AbilityValueSpec>;
 }
 
@@ -338,13 +337,9 @@ export class GameplayAbilityExecution {
 			case 'requestAbility': {
 				const payload = step.payload ? resolveRecord(step.payload, this.ctx) : undefined;
 				if (payload === undefined) {
-					if (step.source) {
-						this.ctx.runtime.requestAbility(step.ability, { source: step.source } as AbilityRequestOptions<AbilityId>);
-					} else {
-						this.ctx.runtime.requestAbility(step.ability);
-					}
+					this.ctx.runtime.requestAbility(step.ability);
 				} else {
-					this.ctx.runtime.requestAbility(step.ability, { source: step.source, payload } as AbilityRequestOptions<AbilityId>);
+					this.ctx.runtime.requestAbility(step.ability, { payload } as any);
 				}
 				return { kind: 'continue' };
 			}
@@ -410,13 +405,9 @@ export class GameplayAbilityExecution {
 			case 'requestAbility': {
 				const payload = step.payload ? resolveRecord(step.payload, this.ctx) : undefined;
 				if (payload === undefined) {
-					if (step.source) {
-						this.ctx.runtime.requestAbility(step.ability, { source: step.source } as AbilityRequestOptions<AbilityId>);
-					} else {
-						this.ctx.runtime.requestAbility(step.ability);
-					}
+					this.ctx.runtime.requestAbility(step.ability);
 				} else {
-					this.ctx.runtime.requestAbility(step.ability, { source: step.source, payload } as AbilityRequestOptions<AbilityId>);
+					this.ctx.runtime.requestAbility(step.ability, { payload } as any);
 				}
 				return;
 			}

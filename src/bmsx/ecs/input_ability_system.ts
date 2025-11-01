@@ -77,7 +77,7 @@ export class InputAbilitySystem extends ECSystem {
 			const programKey = this.resolveProgramKey(component, obj);
 			const queuedEvents: Array<{ event: string; payload?: unknown }> = [];
 			const ctx: EvalContext = {
-				ownerId,
+				owner_id: ownerId,
 				playerIndex,
 				hasTag: (tag: string) => asc.hasGameplayTag(tag),
 				matchesMode: (path: string) => obj.sc.matches_state_path(path),
@@ -152,7 +152,7 @@ export class InputAbilitySystem extends ECSystem {
 			const binding = bindings[i]!;
 			if (!binding.predicate(ctx)) continue;
 
-			const bindingKey = this.makeBindingKey(ctx.ownerId, programKey, ctx.playerIndex, binding, i);
+			const bindingKey = this.makeBindingKey(ctx.owner_id, programKey, ctx.playerIndex, binding, i);
 			const armed = this.bindingLatch.get(bindingKey) === true;
 			if (armed) this.frameLatchTouched.add(bindingKey);
 

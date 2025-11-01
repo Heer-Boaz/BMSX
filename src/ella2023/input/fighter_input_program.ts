@@ -20,9 +20,9 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 				release: '(left[jr] && right[!p] && duck[!p] && jump[!p]) || (right[jr] && left[!p] && duck[!p] && jump[!p])',
 			},
 			do: {
-				left: { 'ability.request': { id: 'fighter.locomotion.walk', payload: { direction: 'left' }, source: 'input.ial' } },
-				right: { 'ability.request': { id: 'fighter.locomotion.walk', payload: { direction: 'right' }, source: 'input.ial' } },
-				release: { 'ability.request': { id: 'fighter.locomotion.walk_stop', source: 'input.ial' } },
+				left: { 'ability.request': { id: 'fighter.locomotion.walk', payload: { direction: 'left' } } },
+				right: { 'ability.request': { id: 'fighter.locomotion.walk', payload: { direction: 'right' } } },
+				release: { 'ability.request': { id: 'fighter.locomotion.walk_stop' } },
 			},
 		},
 		{
@@ -39,8 +39,8 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 				release: 'duck[jr]',
 			},
 			do: {
-				press: { 'ability.request': { id: 'fighter.control.duck_hold', source: 'input.ial' } },
-				release: { 'ability.request': { id: 'fighter.control.duck_release', source: 'input.ial' } },
+				press: { 'ability.request': { id: 'fighter.control.duck_hold' } },
+				release: { 'ability.request': { id: 'fighter.control.duck_release' } },
 			},
 		},
 		{
@@ -54,7 +54,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 			},
 			on: { press: 'jump[j] && right[wp{6}] && left[!p]' },
 			do: {
-				press: { 'ability.request': { id: 'fighter.control.jump', payload: { direction: 'right' }, source: 'input.ial' } },
+				press: { 'ability.request': { id: 'fighter.control.jump', payload: { direction: 'right' } } },
 			},
 		},
 		{
@@ -68,7 +68,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 			},
 			on: { press: 'jump[j] && left[wp{6}] && right[!p]' },
 			do: {
-				press: { 'ability.request': { id: 'fighter.control.jump', payload: { direction: 'left' }, source: 'input.ial' } },
+				press: { 'ability.request': { id: 'fighter.control.jump', payload: { direction: 'left' } } },
 			},
 		},
 		{
@@ -82,7 +82,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 			},
 			on: { press: 'jump[j]' },
 			do: {
-				press: { 'ability.request': { id: 'fighter.control.jump', source: 'input.ial' } },
+				press: { 'ability.request': { id: 'fighter.control.jump' } },
 			},
 		},
 		{
@@ -97,7 +97,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 			on: { press: 'highkick[wp{6}] || lowkick[wp{6}]' },
 			do: {
 				press: [
-					{ 'ability.request': { id: 'fighter.attack.flyingkick', payload: { attackType: 'flyingkick' }, source: 'input.ial' } },
+					{ 'ability.request': { id: 'fighter.attack.flyingkick', payload: { attackType: 'flyingkick' } } },
 					{ 'input.consume': ['highkick', 'lowkick'] },
 				],
 			},
@@ -113,7 +113,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 			on: { press: 'punch[wp{6}]' },
 			do: {
 				press: [
-					{ 'ability.request': { id: 'fighter.attack.punch', payload: { attackType: 'punch' }, source: 'input.ial' } },
+					{ 'ability.request': { id: 'fighter.attack.punch', payload: { attackType: 'punch' } } },
 					{ 'input.consume': ['punch'] },
 				],
 			},
@@ -129,7 +129,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 			on: { press: 'highkick[wp{6}]' },
 			do: {
 				press: [
-					{ 'ability.request': { id: 'fighter.attack.highkick', payload: { attackType: 'highkick' }, source: 'input.ial' } },
+					{ 'ability.request': { id: 'fighter.attack.highkick', payload: { attackType: 'highkick' } } },
 					{ 'input.consume': ['highkick'] },
 				],
 			},
@@ -146,7 +146,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 			on: { press: 'lowkick[wp{6}]' },
 			do: {
 				press: [
-					{ 'ability.request': { id: 'fighter.attack.duckkick', payload: { attackType: 'duckkick' }, source: 'input.ial' } },
+					{ 'ability.request': { id: 'fighter.attack.duckkick', payload: { attackType: 'duckkick' } } },
 					{ 'input.consume': ['lowkick'] },
 				],
 			},
@@ -162,7 +162,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 			on: { press: 'lowkick[wp{6}]' },
 			do: {
 				press: [
-					{ 'ability.request': { id: 'fighter.attack.lowkick', payload: { attackType: 'lowkick' }, source: 'input.ial' } },
+					{ 'ability.request': { id: 'fighter.attack.lowkick', payload: { attackType: 'lowkick' } } },
 					{ 'input.consume': ['lowkick'] },
 				],
 			},
@@ -178,7 +178,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 			},
 			on: { hold: 'left[!p] && right[!p]' },
 			do: {
-				hold: { 'ability.request': { id: 'fighter.locomotion.walk_stop', source: 'input.ial' } },
+				hold: { 'ability.request': { id: 'fighter.locomotion.walk_stop' } },
 			},
 		},
 	],

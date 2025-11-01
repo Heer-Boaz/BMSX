@@ -180,14 +180,13 @@ export abstract class Fighter extends SpriteObject {
 
 	public requestAbility<I extends FighterAbilityId>(abilityId: I, ...args: AbilityRequestArgs<I>): boolean {
 		const payload = (args.length > 0 ? args[0] : undefined) as FighterAbilityPayloadTable[I] | undefined;
-		const opts = (args.length > 1 ? args[1] : undefined) as { source?: string } | undefined;
+		// opts argument deprecated; source is no longer supported here
 		const asc = this.getUniqueComponent(AbilitySystemComponent);
-		const source = opts?.source ?? 'fighter.script';
 		if (payload === undefined) {
-			const result = asc.requestAbility(abilityId, { source } as AbilityRequestOptions<I>);
+			const result = asc.requestAbility(abilityId);
 			return result.ok;
 		}
-		const result = asc.requestAbility(abilityId, { source, payload } as AbilityRequestOptions<I>);
+		const result = asc.requestAbility(abilityId, { payload } as any);
 		return result.ok;
 	}
 

@@ -22,8 +22,8 @@ export class AbilityRuntimeSystem extends ECSystem {
 				}
 				ascByOwner.set(command.owner, asc);
 			}
-			try {
-				asc.tryActivate(command.ability_id, command.payload);
+				try {
+					asc.tryActivate(command.ability_id, command.payload);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				throw new Error(`[AbilityRuntimeSystem] Activation failed for ability '${command.ability_id}' on owner '${command.owner}': ${message}`);

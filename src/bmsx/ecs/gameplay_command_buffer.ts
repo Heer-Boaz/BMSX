@@ -8,7 +8,7 @@ type CommandTable = {
 	'posx': { kind: 'posx'; target_id: Identifier; x: number; };
 	'posy': { kind: 'posy'; target_id: Identifier; y: number; };
 	'posz': { kind: 'posz'; target_id: Identifier; z: number; };
-	'activateability': { kind: 'activateability'; owner: Identifier; target_id?: Identifier; ability_id: AbilityId; payload?: AbilityPayloadFor<AbilityId>; source?: string; };
+	'activateability': { kind: 'activateability'; owner: Identifier; target_id?: Identifier; ability_id: AbilityId; payload?: AbilityPayloadFor<AbilityId>; };
 	'dispatchEvent': { kind: 'dispatchEvent'; target_id: Identifier; event: string; emitter_id?: Identifier; payload?: EventPayload; };
 };
 

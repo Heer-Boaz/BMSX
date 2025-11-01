@@ -18,8 +18,8 @@ export type AbilityPayloadFor<Id extends AbilityId> = Id extends AbilityTableKey
 	: EventPayload;
 
 export type AbilityRequestOptions<Id extends AbilityId> = Id extends AbilityTableKeys
-	? (AbilityPayloadFor<Id> extends undefined ? { source?: string; payload?: undefined } : { source?: string; payload: AbilityPayloadFor<Id> })
-	: { source?: string; payload?: EventPayload };
+	? (AbilityPayloadFor<Id> extends undefined ? { payload?: undefined } : { payload: AbilityPayloadFor<Id> })
+	: { payload?: EventPayload };
 
 export interface Attribute {
   base: number;
