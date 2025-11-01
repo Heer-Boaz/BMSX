@@ -56,6 +56,7 @@ export class StateDefinition {
 
 	/**
 	 * Determines how the tape progresses when it reaches either end.
+	 * @remarks Default is `once`.
 	 *
 	 * - `once`: tapehead stops at the final entry.
 	 * - `loop`: tapehead rewinds to the start after the last entry.
