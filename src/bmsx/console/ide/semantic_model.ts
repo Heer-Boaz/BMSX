@@ -176,21 +176,34 @@ export class LuaProjectIndex {
 	private readonly symbols: Map<SymbolID, Decl> = new Map();
 	private readonly globalsByKey: Map<string, SymbolID> = new Map();
 	private readonly refsBySymbol: Map<SymbolID, Ref[]> = new Map();
-	private globalsDirty = false;
+	private readonly globalsSources: Map<string, Map<SymbolID, number>> = new Map();
+	private readonly refsByGlobalKey: Map<string, Set<Ref>> = new Map();
+	private readonly fileOrder: Map<string, number> = new Map();
+	private nextFileOrder = 1;
 
 	public updateFile(file: string, source: string): LuaSemanticModel {
 		const data = buildLuaFileSemanticData(source, file);
+		const current = this.files.get(file);
+		if (current) {
+			this.removeFileData(current.data);
+		}
 		this.files.set(file, {
 			source,
 			data,
 		});
-		this.globalsDirty = true;
+		this.ensureFileOrder(file);
+		this.applyFileData(data);
 		return data.model;
 	}
 
 	public removeFile(file: string): void {
+		const record = this.files.get(file);
+		if (!record) {
+			return;
+		}
+		this.removeFileData(record.data);
 		this.files.delete(file);
-		this.globalsDirty = true;
+		this.fileOrder.delete(file);
 	}
 
 	public getFileModel(file: string): LuaSemanticModel | null {
@@ -199,7 +212,6 @@ export class LuaProjectIndex {
 	}
 
 	public getDefinitionAt(file: string, position: Position): Decl | null {
-		this.ensureGlobals();
 		const record = this.files.get(file);
 		if (!record) {
 			return null;
@@ -209,7 +221,6 @@ export class LuaProjectIndex {
 	}
 
 	public symbolAt(file: string, position: Position): { id: SymbolID; decl: Decl } | null {
-		this.ensureGlobals();
 		const record = this.files.get(file);
 		if (!record) {
 			return null;
@@ -218,13 +229,11 @@ export class LuaProjectIndex {
 	}
 
 	public getReferences(symbolId: SymbolID): readonly Ref[] {
-		this.ensureGlobals();
 		const refs = this.refsBySymbol.get(symbolId);
 		return refs ? refs.slice() : [];
 	}
 
 	public getDecl(symbolId: SymbolID): Decl | null {
-		this.ensureGlobals();
 		const decl = this.symbols.get(symbolId);
 		return decl ?? null;
 	}
@@ -238,7 +247,6 @@ export class LuaProjectIndex {
 	}
 
 	public getFileData(file: string): FileSemanticData | null {
-		this.ensureGlobals();
 		const record = this.files.get(file);
 		return record ? record.data : null;
 	}
@@ -247,50 +255,6 @@ export class LuaProjectIndex {
 		return Array.from(this.files.keys());
 	}
 
-	private ensureGlobals(): void {
-		if (!this.globalsDirty) {
-			return;
-		}
-		this.rebuild();
-		this.globalsDirty = false;
-	}
-
-	private rebuild(): void {
-		this.symbols.clear();
-		this.globalsByKey.clear();
-		this.refsBySymbol.clear();
-
-		const records = Array.from(this.files.values());
-		for (let recordIndex = 0; recordIndex < records.length; recordIndex += 1) {
-			const data = records[recordIndex]!.data;
-			for (let declIndex = 0; declIndex < data.decls.length; declIndex += 1) {
-				const decl = data.decls[declIndex]!;
-				this.symbols.set(decl.id, decl);
-				if (decl.isGlobal && !this.globalsByKey.has(decl.symbolKey)) {
-					this.globalsByKey.set(decl.symbolKey, decl.id);
-				}
-			}
-		}
-		for (let recordIndex = 0; recordIndex < records.length; recordIndex += 1) {
-			const data = records[recordIndex]!.data;
-			for (let refIndex = 0; refIndex < data.refs.length; refIndex += 1) {
-				const ref = data.refs[refIndex]!;
-				if (ref.target) {
-					this.registerReference(ref.target, ref);
-					continue;
-				}
-				if (ref.symbolKey.length === 0) {
-					continue;
-				}
-				const targetId = this.globalsByKey.get(ref.symbolKey);
-				if (!targetId) {
-					continue;
-				}
-				ref.target = targetId;
-				this.registerReference(targetId, ref);
-			}
-		}
-	}
 
 	private registerReference(symbolId: SymbolID, ref: Ref): void {
 		let bucket = this.refsBySymbol.get(symbolId);
@@ -299,6 +263,190 @@ export class LuaProjectIndex {
 			this.refsBySymbol.set(symbolId, bucket);
 		}
 		bucket.push(ref);
+	}
+
+	private unregisterReference(symbolId: SymbolID, ref: Ref): void {
+		const bucket = this.refsBySymbol.get(symbolId);
+		if (!bucket) {
+			return;
+		}
+		for (let index = bucket.length - 1; index >= 0; index -= 1) {
+			if (bucket[index] === ref) {
+				bucket.splice(index, 1);
+			}
+		}
+		if (bucket.length === 0) {
+			this.refsBySymbol.delete(symbolId);
+		}
+	}
+
+	private applyFileData(data: FileSemanticData): void {
+		for (let i = 0; i < data.decls.length; i += 1) {
+			const decl = data.decls[i];
+			this.symbols.set(decl.id, decl);
+		}
+		for (let i = 0; i < data.decls.length; i += 1) {
+			const decl = data.decls[i];
+			if (decl.isGlobal) {
+				this.addGlobalDecl(decl);
+			}
+		}
+		for (let i = 0; i < data.refs.length; i += 1) {
+			this.addReference(data.refs[i]);
+		}
+	}
+
+	private removeFileData(data: FileSemanticData): void {
+		for (let i = 0; i < data.refs.length; i += 1) {
+			this.removeReference(data.refs[i]);
+		}
+		for (let i = 0; i < data.decls.length; i += 1) {
+			const decl = data.decls[i];
+			this.symbols.delete(decl.id);
+			if (decl.isGlobal) {
+				this.removeGlobalDecl(decl);
+			}
+		}
+	}
+
+	private addGlobalDecl(decl: Decl): void {
+		const key = decl.symbolKey;
+		let bucket = this.globalsSources.get(key);
+		if (!bucket) {
+			bucket = new Map();
+			this.globalsSources.set(key, bucket);
+		}
+		const existingOrder = bucket.get(decl.id);
+		if (existingOrder === undefined) {
+			bucket.set(decl.id, this.ensureFileOrder(decl.file));
+		}
+		const current = this.globalsByKey.get(key) ?? null;
+		const selected = this.selectGlobalForKey(bucket);
+		if (selected !== current) {
+			if (selected !== null) {
+				this.globalsByKey.set(key, selected);
+			} else {
+				this.globalsByKey.delete(key);
+			}
+			this.retargetGlobalReferences(key, selected);
+		}
+	}
+
+	private removeGlobalDecl(decl: Decl): void {
+		const key = decl.symbolKey;
+		const bucket = this.globalsSources.get(key);
+		if (!bucket) {
+			if (this.globalsByKey.get(key) === decl.id) {
+				this.globalsByKey.delete(key);
+				this.retargetGlobalReferences(key, null);
+			}
+			return;
+		}
+		bucket.delete(decl.id);
+		if (bucket.size === 0) {
+			this.globalsSources.delete(key);
+			if (this.globalsByKey.get(key) === decl.id) {
+				this.globalsByKey.delete(key);
+				this.retargetGlobalReferences(key, null);
+			}
+			return;
+		}
+		const current = this.globalsByKey.get(key) ?? null;
+		const selected = this.selectGlobalForKey(bucket);
+		if (selected !== current) {
+			if (selected !== null) {
+				this.globalsByKey.set(key, selected);
+			} else {
+				this.globalsByKey.delete(key);
+			}
+			this.retargetGlobalReferences(key, selected);
+		}
+	}
+
+	private selectGlobalForKey(bucket: Map<SymbolID, number>): SymbolID | null {
+		let selected: SymbolID | null = null;
+		let best = Number.POSITIVE_INFINITY;
+		for (const [id, order] of bucket) {
+			if (order < best) {
+				best = order;
+				selected = id;
+			} else if (order === best && selected !== null && id < selected) {
+				selected = id;
+			}
+		}
+		return selected;
+	}
+
+	private retargetGlobalReferences(key: string, symbolId: SymbolID | null): void {
+		const bucket = this.refsByGlobalKey.get(key);
+		if (!bucket || bucket.size === 0) {
+			return;
+		}
+		for (const ref of bucket) {
+			if (ref.target) {
+				this.unregisterReference(ref.target, ref);
+			}
+			if (symbolId) {
+				ref.target = symbolId;
+				this.registerReference(symbolId, ref);
+			} else {
+				ref.target = null;
+			}
+		}
+	}
+
+	private getOrCreateGlobalRefSet(key: string): Set<Ref> {
+		let bucket = this.refsByGlobalKey.get(key);
+		if (!bucket) {
+			bucket = new Set<Ref>();
+			this.refsByGlobalKey.set(key, bucket);
+		}
+		return bucket;
+	}
+
+	private addReference(ref: Ref): void {
+		if (ref.symbolKey.length > 0) {
+			this.getOrCreateGlobalRefSet(ref.symbolKey).add(ref);
+		}
+		if (ref.target) {
+			this.registerReference(ref.target, ref);
+			return;
+		}
+		if (ref.symbolKey.length === 0) {
+			return;
+		}
+		const target = this.globalsByKey.get(ref.symbolKey);
+		if (!target) {
+			return;
+		}
+		ref.target = target;
+		this.registerReference(target, ref);
+	}
+
+	private removeReference(ref: Ref): void {
+		if (ref.target) {
+			this.unregisterReference(ref.target, ref);
+		}
+		if (ref.symbolKey.length > 0) {
+			const bucket = this.refsByGlobalKey.get(ref.symbolKey);
+			if (bucket) {
+				bucket.delete(ref);
+				if (bucket.size === 0) {
+					this.refsByGlobalKey.delete(ref.symbolKey);
+				}
+			}
+		}
+	}
+
+	private ensureFileOrder(file: string): number {
+		const existing = this.fileOrder.get(file);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const order = this.nextFileOrder;
+		this.fileOrder.set(file, order);
+		this.nextFileOrder += 1;
+		return order;
 	}
 
 	private findSymbolAt(record: FileRecord, position: Position): { id: SymbolID; decl: Decl } | null {

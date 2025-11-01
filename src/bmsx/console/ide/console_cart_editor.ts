@@ -1,7 +1,7 @@
 import { $ } from '../../core/game';
 import type { KeyboardInput } from '../../input/keyboardinput';
 import type { BGamepadButton } from '../../input/inputtypes';
-import type { ViewportMetrics } from '../../platform/platform';
+import type { FrameLoop, ViewportMetrics } from '../../platform/platform';
 import { BmsxConsoleApi } from '../api';
 import type {
 	BmsxConsoleMetadata,
@@ -24,7 +24,7 @@ import * as constants from './constants';
 // Intellisense data is handled by CompletionController
 import { CompletionController } from './completion_controller';
 import { ProblemsPanelController } from './problems_panel';
-import { computeAggregatedEditorDiagnostics, type DiagnosticContextInput } from './diagnostics';
+import { computeAggregatedEditorDiagnostics, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
 import { isIdentifierChar, isIdentifierStartChar } from './text_utils';
 import type { InlineFieldEditingHandlers, InlineFieldMetrics } from './inline_text_field';
 import {
@@ -136,6 +136,12 @@ export type ConsoleEditorShortcutContext = {
 	codeTabActive: boolean;
 };
 
+type DiagnosticsCacheEntry = {
+	contextId: string;
+	chunkName: string | null;
+	diagnostics: EditorDiagnostic[];
+};
+
 const EDITOR_TOGGLE_KEY = 'Escape';
 const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'start'];
 
@@ -177,11 +183,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private deferredMessageDuration: number | null = null;
 	private runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
 	private executionStopRow: number | null = null;
+	private readonly clockNow: () => number;
 	private readonly problemsPanel: ProblemsPanelController;
 	private problemsPanelResizing = false;
 	private diagnostics: EditorDiagnostic[] = [];
 	private diagnosticsByRow: Map<number, EditorDiagnostic[]> = new Map();
 	private diagnosticsDirty = true;
+	private readonly diagnosticsDebounceMs = 200;
+	private diagnosticsCache: Map<string, DiagnosticsCacheEntry> = new Map();
+	private dirtyDiagnosticContexts: Set<string> = new Set();
+	private diagnosticsDueAtMs: number | null = null;
 	private readonly codeTabContexts: Map<string, CodeTabContext> = new Map();
 	private activeCodeTabContextId: string | null = null;
 	private entryTabId: string | null = null;
@@ -349,6 +360,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.viewportHeight = options.viewport.height;
 		this.font = new ConsoleEditorFont(this.fontVariant);
 		this.tabDirtyMarkerAssetId = getConsoleFontPreset(this.fontVariant).tabDirtyMarkerAssetId;
+		this.clockNow = this.resolveClockNow();
 		this.searchField = createInlineTextField();
 		this.symbolSearchField = createInlineTextField();
 		this.resourceSearchField = createInlineTextField();
@@ -362,7 +374,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.lineHeight = this.font.lineHeight();
 		this.charAdvance = this.font.advance('M');
 		this.spaceAdvance = this.font.advance(' ');
-		this.layout = new ConsoleCodeLayout(this.font, this.semanticWorkspace);
+	this.layout = new ConsoleCodeLayout(this.font, this.semanticWorkspace, { clockNow: this.clockNow });
 		this.inlineFieldMetricsRef = {
 			measureText: (text: string) => this.measureText(text),
 			advanceChar: (ch: string) => this.font.advance(ch),
@@ -475,6 +487,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			truncateTextToWidth: (text, maxWidth) => this.truncateTextToWidth(text, maxWidth),
 			gotoDiagnostic: (diagnostic) => this.gotoDiagnostic(diagnostic),
         });
+		this.problemsPanel.setDiagnostics(this.diagnostics);
 		this.renameController = new RenameController({
 			processFieldEdit: (field, keyboard, options) => this.processInlineFieldEditing(field, keyboard, options),
 			shouldFireRepeat: (keyboard, code, deltaSeconds) => this.shouldFireRepeat(keyboard, code, deltaSeconds),
@@ -493,16 +506,57 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.entryTabId = entryContext.id;
 		this.codeTabContexts.set(entryContext.id, entryContext);
 	}
-	this.initializeTabs(entryContext);
-	this.resetResourcePanelState();
-	if (entryContext) {
-		this.activateCodeEditorTab(entryContext.id);
-	}
-	this.desiredColumn = this.cursorColumn;
-	this.assertMonospace();
+		this.initializeTabs(entryContext);
+		this.resetResourcePanelState();
+		if (entryContext) {
+			this.activateCodeEditorTab(entryContext.id);
+		}
+		this.desiredColumn = this.cursorColumn;
+		this.assertMonospace();
 	const initialContext = entryContext ? this.codeTabContexts.get(entryContext.id) ?? null : null;
 	this.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
 	this.applyResolutionModeToRuntime();
+	}
+
+	private resolveClockNow(): () => number {
+		try {
+			const globalScope = $ as { platform?: { clock?: { now(): number } } };
+			if (globalScope && globalScope.platform && globalScope.platform.clock && typeof globalScope.platform.clock.now === 'function') {
+				const clock = globalScope.platform.clock;
+				return () => clock.now();
+			}
+		} catch {
+			// fall through to performance/Date fallback
+		}
+		if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+			return () => performance.now();
+		}
+		return () => Date.now();
+	}
+
+	private scheduleNextFrame(task: () => void): void {
+		try {
+			const globalScope = $ as { platform?: { frames?: FrameLoop } };
+			if (globalScope && globalScope.platform && globalScope.platform.frames && typeof globalScope.platform.frames.start === 'function') {
+				const loop = globalScope.platform.frames;
+				let handle: { stop(): void } | null = null;
+				handle = loop.start(() => {
+					if (handle) {
+						handle.stop();
+						handle = null;
+					}
+					task();
+				});
+				return;
+			}
+		} catch {
+			// fall through to microtask/Promise fallback
+		}
+		if (typeof queueMicrotask === 'function') {
+			queueMicrotask(task);
+			return;
+		}
+		void Promise.resolve().then(task);
 	}
 
 	private drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void {
@@ -1028,47 +1082,236 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.lastSearchVersion = this.textVersion;
 		}
 		if (this.diagnosticsDirty) {
-			this.recomputeDiagnostics();
+			this.processDiagnosticsQueue(this.clockNow());
 		}
 		if (this.isCodeTabActive() && !this.cursorRevealSuspended) {
 			this.ensureCursorVisible();
 		}
 	}
 
-    private recomputeDiagnostics(): void {
-        this.diagnosticsDirty = false;
+	private processDiagnosticsQueue(now: number): void {
+		if (!this.diagnosticsDirty) {
+			return;
+		}
+		if (this.dirtyDiagnosticContexts.size === 0) {
+			this.diagnosticsDirty = false;
+			this.diagnosticsDueAtMs = null;
+			return;
+		}
+		if (this.diagnosticsDueAtMs === null) {
+			this.diagnosticsDueAtMs = now + this.diagnosticsDebounceMs;
+			return;
+		}
+		if (now < this.diagnosticsDueAtMs) {
+			return;
+		}
+		const batch = this.collectDiagnosticsBatch();
+		if (batch.length === 0) {
+			this.diagnosticsDirty = false;
+			this.diagnosticsDueAtMs = null;
+			return;
+		}
+		this.runDiagnosticsForContexts(batch);
+		if (this.dirtyDiagnosticContexts.size === 0) {
+			this.diagnosticsDirty = false;
+			this.diagnosticsDueAtMs = null;
+		} else {
+			this.diagnosticsDueAtMs = now + this.diagnosticsDebounceMs;
+		}
+	}
 
-        const activeId = this.activeCodeTabContextId ?? null;
-        const inputs: DiagnosticContextInput[] = [];
-        for (const context of this.codeTabContexts.values()) {
-            const assetId = this.resolveHoverAssetId(context);
-            const chunkName = this.resolveHoverChunkName(context);
-            let source = '';
-            if (activeId && context.id === activeId) source = this.lines.join('\n');
-            else {
-                try { source = this.getSourceForChunk(assetId, chunkName); } catch { source = ''; }
-            }
-            inputs.push({ id: context.id, title: context.title, descriptor: context.descriptor, assetId, chunkName, source });
-        }
-        const diagnostics = computeAggregatedEditorDiagnostics(inputs, {
-            listLocalSymbols: (assetId, chunk) => { try { return this.listLuaSymbolsFn(assetId, chunk); } catch { return []; } },
-            listGlobalSymbols: () => { try { return this.listGlobalLuaSymbolsFn(); } catch { return []; } },
-            listBuiltins: () => { try { return this.listBuiltinLuaFunctionsFn(); } catch { return []; } },
-        });
+	private collectDiagnosticsBatch(): string[] {
+		const batch: string[] = [];
+		const activeId = this.activeCodeTabContextId;
+		if (activeId && this.dirtyDiagnosticContexts.has(activeId)) {
+			batch.push(activeId);
+		}
+		if (batch.length === 0) {
+			const iterator = this.dirtyDiagnosticContexts.values().next();
+			if (!iterator.done) {
+				batch.push(iterator.value);
+			}
+		}
+		return batch;
+	}
 
-        this.diagnosticsByRow.clear();
-        if (activeId) {
-            for (let i = 0; i < diagnostics.length; i += 1) {
-                const d = diagnostics[i];
-                if (d.contextId !== activeId) continue;
-                let bucket = this.diagnosticsByRow.get(d.row);
-                if (!bucket) { bucket = []; this.diagnosticsByRow.set(d.row, bucket); }
-                bucket.push(d);
-            }
-        }
-        this.diagnostics = diagnostics;
-        this.problemsPanel.setDiagnostics(this.diagnostics);
-    }
+	private runDiagnosticsForContexts(contextIds: readonly string[]): void {
+		if (contextIds.length === 0) {
+			return;
+		}
+		const providers = this.createDiagnosticProviders();
+		const activeId = this.activeCodeTabContextId;
+		const inputs: DiagnosticContextInput[] = [];
+		const metadata: Array<{ id: string; chunkName: string | null }> = [];
+		for (let index = 0; index < contextIds.length; index += 1) {
+			const contextId = contextIds[index];
+			const context = this.codeTabContexts.get(contextId);
+			if (!context) {
+				this.diagnosticsCache.delete(contextId);
+				this.dirtyDiagnosticContexts.delete(contextId);
+				continue;
+			}
+			const assetId = this.resolveHoverAssetId(context);
+			const chunkName = this.resolveHoverChunkName(context);
+			let source = '';
+			if (activeId && contextId === activeId) {
+				source = this.lines.join('\n');
+			} else {
+				try {
+					source = this.getSourceForChunk(assetId, chunkName);
+				} catch {
+					source = '';
+				}
+			}
+			if (source.length === 0) {
+				this.diagnosticsCache.delete(contextId);
+				this.dirtyDiagnosticContexts.delete(contextId);
+				continue;
+			}
+			inputs.push({
+				id: context.id,
+				title: context.title,
+				descriptor: context.descriptor,
+				assetId,
+				chunkName,
+				source,
+			});
+			metadata.push({ id: context.id, chunkName });
+		}
+		if (inputs.length === 0) {
+			this.updateDiagnosticsAggregates();
+			return;
+		}
+		const diagnostics = computeAggregatedEditorDiagnostics(inputs, providers);
+		const byContext = new Map<string, EditorDiagnostic[]>();
+		for (let index = 0; index < diagnostics.length; index += 1) {
+			const diag = diagnostics[index];
+			const key = diag.contextId ?? '';
+			let bucket = byContext.get(key);
+			if (!bucket) {
+				bucket = [];
+				byContext.set(key, bucket);
+			}
+			bucket.push(diag);
+		}
+		for (let index = 0; index < metadata.length; index += 1) {
+			const meta = metadata[index];
+			const diagList = byContext.get(meta.id) ?? [];
+			this.diagnosticsCache.set(meta.id, {
+				contextId: meta.id,
+				chunkName: meta.chunkName,
+				diagnostics: diagList,
+			});
+			this.dirtyDiagnosticContexts.delete(meta.id);
+		}
+		this.updateDiagnosticsAggregates();
+	}
+
+	private createDiagnosticProviders(): DiagnosticProviders {
+		return {
+			listLocalSymbols: (assetId, chunk) => {
+				try {
+					return this.listLuaSymbolsFn(assetId, chunk);
+				} catch {
+					return [];
+				}
+			},
+			listGlobalSymbols: () => {
+				try {
+					return this.listGlobalLuaSymbolsFn();
+				} catch {
+					return [];
+				}
+			},
+			listBuiltins: () => {
+				try {
+					return this.listBuiltinLuaFunctionsFn();
+				} catch {
+					return [];
+				}
+			},
+		};
+	}
+
+	private updateDiagnosticsAggregates(): void {
+		const aggregate: EditorDiagnostic[] = [];
+		for (const context of this.codeTabContexts.values()) {
+			const entry = this.diagnosticsCache.get(context.id);
+			if (entry) {
+				for (let index = 0; index < entry.diagnostics.length; index += 1) {
+					aggregate.push(entry.diagnostics[index]);
+				}
+			}
+		}
+		for (const [contextId, entry] of this.diagnosticsCache) {
+			if (this.codeTabContexts.has(contextId)) {
+				continue;
+			}
+			for (let index = 0; index < entry.diagnostics.length; index += 1) {
+				aggregate.push(entry.diagnostics[index]);
+			}
+		}
+		this.diagnostics = aggregate;
+		this.refreshActiveDiagnostics();
+		this.problemsPanel.setDiagnostics(this.diagnostics);
+	}
+
+	private refreshActiveDiagnostics(): void {
+		this.diagnosticsByRow.clear();
+		const activeId = this.activeCodeTabContextId;
+		if (!activeId) {
+			return;
+		}
+		const entry = this.diagnosticsCache.get(activeId);
+		if (!entry) {
+			return;
+		}
+		for (let index = 0; index < entry.diagnostics.length; index += 1) {
+			const diag = entry.diagnostics[index];
+			let bucket = this.diagnosticsByRow.get(diag.row);
+			if (!bucket) {
+				bucket = [];
+				this.diagnosticsByRow.set(diag.row, bucket);
+			}
+			bucket.push(diag);
+		}
+	}
+
+	private markDiagnosticsDirtyForChunk(chunkName: string): void {
+		const context = this.findContextByChunk(chunkName);
+		if (!context) {
+			return;
+		}
+		this.markDiagnosticsDirty(context.id);
+	}
+
+	private findContextByChunk(chunkName: string): CodeTabContext | null {
+		const normalized = this.normalizeChunkReference(chunkName) ?? chunkName;
+		for (const context of this.codeTabContexts.values()) {
+			const descriptor = context.descriptor;
+			if (descriptor) {
+				const descriptorPath = this.normalizeChunkReference(descriptor.path);
+				if ((descriptorPath && descriptorPath === normalized)
+					|| descriptor.assetId === chunkName
+					|| descriptor.assetId === normalized) {
+					return context;
+				}
+				continue;
+			}
+			const aliases: string[] = [];
+			if (this.primaryAssetId) {
+				aliases.push(this.primaryAssetId);
+			}
+			aliases.push('__entry__', '<console>');
+			for (let index = 0; index < aliases.length; index += 1) {
+				const alias = aliases[index];
+				if (alias === chunkName || alias === normalized) {
+					return context;
+				}
+			}
+		}
+		return null;
+	}
 
 	private getDiagnosticsForRow(row: number): readonly EditorDiagnostic[] {
 		const bucket = this.diagnosticsByRow.get(row);
@@ -2542,6 +2785,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		for (const bucket of rangeMap.values()) {
 			const replacements = renameManager.applyRenameToChunk(bucket.chunkName, bucket.ranges, newName, normalizedActiveChunk);
 			updatedTotal += replacements;
+			if (replacements > 0) {
+				this.markDiagnosticsDirtyForChunk(bucket.chunkName);
+			}
 		}
 		return { updatedMatches: updatedTotal };
 	}
@@ -2911,11 +3157,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 			return;
 		}
-		this.closeSymbolSearch(true);
 		const location = match.entry.symbol.location;
-		setTimeout(() => {
+		this.closeSymbolSearch(true);
+		this.scheduleNextFrame(() => {
 			this.navigateToLuaDefinition(location);
-		}, 0);
+		});
 	}
 
 	private handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
@@ -3163,9 +3409,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		const match = this.resourceSearchMatches[index];
 		this.closeResourceSearch(true);
-		setTimeout(() => {
+		this.scheduleNextFrame(() => {
 			this.openResourceDescriptor(match.entry.descriptor);
-		}, 0);
+		});
 	}
 
 	private handleResourceSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
@@ -7141,12 +7387,13 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.invalidateAllHighlights();
 			this.updateDesiredColumn();
 			this.ensureCursorVisible();
+			this.refreshActiveDiagnostics();
 			return;
 		}
-			const source = context.load();
-			context.lastSavedSource = source;
-			this.lines = this.splitLines(source);
-			this.invalidateVisualLines();
+		const source = context.load();
+		context.lastSavedSource = source;
+		this.lines = this.splitLines(source);
+		this.invalidateVisualLines();
 		this.markDiagnosticsDirty();
 		if (this.lines.length === 0) {
 			this.lines.push('');
@@ -7173,6 +7420,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.resetBlink();
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
+		this.refreshActiveDiagnostics();
 	}
 
 	private getMainProgramSourceForReload(): string {
@@ -7904,9 +8152,15 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 		this.textVersion += 1;
 	}
 
-	protected markDiagnosticsDirty(): void {
-		this.diagnosticsDirty = true;
+protected markDiagnosticsDirty(contextId?: string): void {
+	const targetId = contextId ?? this.activeCodeTabContextId;
+	if (!targetId) {
+		return;
 	}
+	this.diagnosticsDirty = true;
+	this.dirtyDiagnosticContexts.add(targetId);
+	this.diagnosticsDueAtMs = this.clockNow() + this.diagnosticsDebounceMs;
+}
 
 	protected markTextMutated(): void {
 		this.dirty = true;

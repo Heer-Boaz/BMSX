@@ -6,6 +6,13 @@ import { LuaSemanticWorkspace } from './semantic_workspace.ts';
 import type { LuaDefinitionInfo } from '../../lua/ast.ts';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types.ts';
 
+const defaultClockNow = (): number => {
+	if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+		return performance.now();
+	}
+	return Date.now();
+};
+
 interface VisualLinesContext {
 	lines: readonly string[];
 	wordWrapEnabled: boolean;
@@ -26,7 +33,6 @@ type PendingSemanticUpdate = {
 	lines: readonly string[];
 	version: number;
 	chunkName: string;
-	requestedAt: number;
 };
 
 /**
@@ -46,16 +52,18 @@ export class ConsoleCodeLayout {
 	private semanticSignature = 0;
 	private nextSemanticSignature = 1;
 	private readonly semanticDebounceMs: number;
+	private readonly clockNow: () => number;
 	private pendingSemantic: PendingSemanticUpdate | null = null;
-	private lastSemanticUpdateMs = 0;
+	private semanticDueAtMs: number | null = null;
 
 	constructor(
 		private readonly font: ConsoleEditorFont,
 		private readonly workspace: LuaSemanticWorkspace,
-		options?: { maxHighlightCache?: number; semanticDebounceMs?: number },
+		options?: { maxHighlightCache?: number; semanticDebounceMs?: number; clockNow?: () => number },
 	) {
 		this.maxHighlightCache = options?.maxHighlightCache ?? 2048;
 		this.semanticDebounceMs = Math.max(0, options?.semanticDebounceMs ?? 120);
+		this.clockNow = options?.clockNow ?? defaultClockNow;
 	}
 
 	public invalidateHighlight(row: number): void {
@@ -70,7 +78,7 @@ export class ConsoleCodeLayout {
 		this.semanticChunkName = null;
 		this.semanticSignature = 0;
 		this.pendingSemantic = null;
-		this.lastSemanticUpdateMs = 0;
+		this.semanticDueAtMs = null;
 	}
 
 	public getCachedHighlight(lines: readonly string[], row: number, documentVersion: number, chunkName: string): CachedHighlight {
@@ -314,24 +322,28 @@ export class ConsoleCodeLayout {
 		if (sameChunk && sameVersion && sameLines && this.semanticModel) {
 			return;
 		}
-		const now = Date.now();
-		const pending = this.updatePendingSemantic(lines, version, chunkName, now);
-		const requireImmediate = force || !this.semanticModel || !sameChunk || !sameLines;
-		if (!requireImmediate && this.semanticDebounceMs > 0) {
-			const elapsedSinceRequest = now - pending.requestedAt;
-			const elapsedSinceUpdate = this.lastSemanticUpdateMs > 0 ? now - this.lastSemanticUpdateMs : Number.POSITIVE_INFINITY;
-			if (elapsedSinceRequest < this.semanticDebounceMs || elapsedSinceUpdate < this.semanticDebounceMs) {
-				return;
-			}
+		const previousPending = this.pendingSemantic;
+		const pending = this.updatePendingSemantic(lines, version, chunkName);
+		const requireImmediate = force || !this.semanticModel || !sameChunk || !sameLines || this.semanticDebounceMs === 0;
+		if (requireImmediate) {
+			this.semanticDueAtMs = null;
+			this.applySemanticUpdate(pending);
+			return;
 		}
-		this.applySemanticUpdate(pending, now);
+		const now = this.clockNow();
+		if (pending !== previousPending || this.semanticDueAtMs === null) {
+			this.semanticDueAtMs = now + this.semanticDebounceMs;
+		}
+		if (this.semanticDueAtMs !== null && now >= this.semanticDueAtMs) {
+			this.semanticDueAtMs = null;
+			this.applySemanticUpdate(pending);
+		}
 	}
 
 	private updatePendingSemantic(
 		lines: readonly string[],
 		version: number,
 		chunkName: string,
-		now: number,
 	): PendingSemanticUpdate {
 		const current = this.pendingSemantic;
 		if (
@@ -346,13 +358,12 @@ export class ConsoleCodeLayout {
 			lines,
 			version,
 			chunkName,
-			requestedAt: now,
 		};
 		this.pendingSemantic = pending;
 		return pending;
 	}
 
-	private applySemanticUpdate(pending: PendingSemanticUpdate, timestampMs: number): void {
+	private applySemanticUpdate(pending: PendingSemanticUpdate): void {
 		const source = pending.lines.join('\n');
 		let model: LuaSemanticModel | null = null;
 		try {
@@ -368,6 +379,5 @@ export class ConsoleCodeLayout {
 		this.nextSemanticSignature += 1;
 		this.highlightCache.clear();
 		this.pendingSemantic = null;
-		this.lastSemanticUpdateMs = timestampMs;
 	}
 }
