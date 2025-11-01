@@ -52,18 +52,40 @@ export class ConsoleCodeLayout {
 	private semanticSignature = 0;
 	private nextSemanticSignature = 1;
 	private readonly semanticDebounceMs: number;
+	private readonly scheduleTask: ((fn: () => void) => void) | null;
 	private readonly clockNow: () => number;
 	private pendingSemantic: PendingSemanticUpdate | null = null;
 	private semanticDueAtMs: number | null = null;
+	private semanticUpdateScheduled = false;
 
 	constructor(
 		private readonly font: ConsoleEditorFont,
 		private readonly workspace: LuaSemanticWorkspace,
-		options?: { maxHighlightCache?: number; semanticDebounceMs?: number; clockNow?: () => number },
+		options?: { maxHighlightCache?: number; semanticDebounceMs?: number; clockNow?: () => number; scheduleTask?: (fn: () => void) => void },
 	) {
 		this.maxHighlightCache = options?.maxHighlightCache ?? 2048;
 		this.semanticDebounceMs = Math.max(0, options?.semanticDebounceMs ?? 120);
 		this.clockNow = options?.clockNow ?? defaultClockNow;
+		this.scheduleTask = options?.scheduleTask ?? null;
+	}
+
+	private scheduleSemanticUpdate(): void {
+		if (this.semanticUpdateScheduled) {
+			return;
+		}
+		if (!this.scheduleTask) {
+			return;
+		}
+		this.semanticUpdateScheduled = true;
+		this.scheduleTask(() => {
+			this.semanticUpdateScheduled = false;
+			const pending = this.pendingSemantic;
+			if (!pending) {
+				return;
+			}
+			this.semanticDueAtMs = null;
+			this.applySemanticUpdate(pending);
+		});
 	}
 
 	public invalidateHighlight(row: number): void {
@@ -79,6 +101,7 @@ export class ConsoleCodeLayout {
 		this.semanticSignature = 0;
 		this.pendingSemantic = null;
 		this.semanticDueAtMs = null;
+		this.semanticUpdateScheduled = false;
 	}
 
 	public getCachedHighlight(lines: readonly string[], row: number, documentVersion: number, chunkName: string): CachedHighlight {
@@ -213,8 +236,11 @@ export class ConsoleCodeLayout {
 	}
 
 	public getSemanticDefinitions(lines: readonly string[], documentVersion: number, chunkName: string): readonly LuaDefinitionInfo[] | null {
-		this.ensureSemanticModel(lines, documentVersion, chunkName, true);
+		this.ensureSemanticModel(lines, documentVersion, chunkName, false);
 		if (!this.semanticModel) {
+			return null;
+		}
+		if (this.semanticVersion !== documentVersion || this.semanticChunkName !== chunkName) {
 			return null;
 		}
 		return this.semanticModel.definitions;
@@ -326,6 +352,7 @@ export class ConsoleCodeLayout {
 		const pending = this.updatePendingSemantic(lines, version, chunkName);
 		const requireImmediate = force || !this.semanticModel || !sameChunk || !sameLines || this.semanticDebounceMs === 0;
 		if (requireImmediate) {
+			this.semanticUpdateScheduled = false;
 			this.semanticDueAtMs = null;
 			this.applySemanticUpdate(pending);
 			return;
@@ -335,8 +362,12 @@ export class ConsoleCodeLayout {
 			this.semanticDueAtMs = now + this.semanticDebounceMs;
 		}
 		if (this.semanticDueAtMs !== null && now >= this.semanticDueAtMs) {
-			this.semanticDueAtMs = null;
-			this.applySemanticUpdate(pending);
+			if (this.scheduleTask) {
+				this.scheduleSemanticUpdate();
+			} else {
+				this.semanticDueAtMs = null;
+				this.applySemanticUpdate(pending);
+			}
 		}
 	}
 
@@ -378,6 +409,7 @@ export class ConsoleCodeLayout {
 		this.semanticSignature = this.nextSemanticSignature;
 		this.nextSemanticSignature += 1;
 		this.highlightCache.clear();
+		this.semanticDueAtMs = null;
 		this.pendingSemantic = null;
 	}
 }

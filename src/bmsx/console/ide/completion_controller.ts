@@ -1,6 +1,7 @@
 import { BmsxConsoleApi } from '../api';
 import { clamp } from '../../utils/utils';
 import { collectLuaScopedSymbols, getApiCompletionData, getKeywordCompletions, type LuaScopedSymbol } from './intellisense';
+import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast.ts';
 import {
     CompletionContext,
     CompletionSession,
@@ -44,10 +45,12 @@ export interface CompletionHost {
     listLuaSymbols(assetId: string | null, chunkName: string | null): ConsoleLuaSymbolEntry[];
     listGlobalLuaSymbols(): ConsoleLuaSymbolEntry[];
     listBuiltinLuaFunctions(): ConsoleLuaBuiltinDescriptor[];
+    getSemanticDefinitions(): readonly LuaDefinitionInfo[] | null;
     // Utilities
     charAt(row: number, column: number): string;
     getTextVersion(): number;
     shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean;
+    scheduleTask(task: () => void): void;
 }
 
 const keywordCompletions = getKeywordCompletions();
@@ -65,6 +68,7 @@ export class CompletionController {
     private completionSession: CompletionSession | null = null;
     private readonly localCompletionCache: Map<string, LocalCompletionCacheEntry> = new Map();
     private cachedGlobalCompletionItems: LuaCompletionItem[] | null = null;
+    private readonly pendingLocalSymbolParses: Set<string> = new Set();
     private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } | null = null;
     private suppressNextAutoCompletion = false;
     private parameterHint: ParameterHintState | null = null;
@@ -461,16 +465,9 @@ export class CompletionController {
         let cached = this.localCompletionCache.get(key) ?? null;
         const needsParse = !cached || cached.chunkName !== chunkName || cached.parsedVersion !== currentVersion;
         if (needsParse) {
-            const lines = this.host.getLines();
-            const source = lines.join('\n');
-            const parseChunkName = chunkName && chunkName.length > 0 ? chunkName : 'lua_chunk';
-            let symbols: LuaScopedSymbol[] | null;
-            try {
-                symbols = collectLuaScopedSymbols({ source, chunkName: parseChunkName });
-            } catch {
-                symbols = null;
-            }
-            if (symbols !== null) {
+            const definitions = this.host.getSemanticDefinitions();
+            if (definitions && definitions.length > 0) {
+                const symbols = this.convertDefinitionsToLocalSymbols(definitions, chunkName);
                 cached = {
                     parsedVersion: currentVersion,
                     chunkName,
@@ -478,10 +475,7 @@ export class CompletionController {
                 };
                 this.localCompletionCache.set(key, cached);
             } else {
-                if (cached && cached.chunkName !== chunkName) {
-                    this.localCompletionCache.delete(key);
-                    cached = null;
-                }
+                this.requestLocalSymbolParse(key, chunkName);
                 if (!cached) {
                     return [];
                 }
@@ -542,6 +536,74 @@ export class CompletionController {
         }
         items.sort((a, b) => a.label.localeCompare(b.label));
         return items;
+    }
+
+    private convertDefinitionsToLocalSymbols(definitions: readonly LuaDefinitionInfo[], chunkName: string | null): LuaScopedSymbol[] {
+        if (!definitions || definitions.length === 0) {
+            return [];
+        }
+        const scopedSymbols: LuaScopedSymbol[] = [];
+        for (let index = 0; index < definitions.length; index += 1) {
+            const definition = definitions[index];
+            const name = definition.name;
+            if (!name || name.length === 0) {
+                continue;
+            }
+            const path = definition.namePath.length > 0 ? definition.namePath.join('.') : name;
+            scopedSymbols.push({
+                name,
+                path,
+                kind: definition.kind,
+                definitionRange: this.convertSourceRange(definition.definition),
+                scopeRange: this.convertSourceRange(definition.scope),
+            });
+        }
+        return scopedSymbols;
+    }
+
+    private convertSourceRange(range: LuaSourceRange): ConsoleLuaDefinitionRange {
+        return {
+            chunkName: range.chunkName,
+            startLine: range.start.line,
+            startColumn: range.start.column,
+            endLine: range.end.line,
+            endColumn: range.end.column,
+        };
+    }
+
+    private requestLocalSymbolParse(cacheKey: string, chunkName: string | null): void {
+        if (this.pendingLocalSymbolParses.has(cacheKey)) {
+            return;
+        }
+        this.pendingLocalSymbolParses.add(cacheKey);
+        const snapshotVersion = this.host.getTextVersion();
+        this.host.scheduleTask(() => {
+            this.pendingLocalSymbolParses.delete(cacheKey);
+            if (this.host.getTextVersion() !== snapshotVersion) {
+                return;
+            }
+            const lines = this.host.getLines();
+            const source = lines.join('\n');
+            const parseChunkName = chunkName && chunkName.length > 0 ? chunkName : 'lua_chunk';
+            let symbols: LuaScopedSymbol[] | null = null;
+            try {
+                symbols = collectLuaScopedSymbols({ source, chunkName: parseChunkName });
+            } catch {
+                symbols = null;
+            }
+            if (!symbols) {
+                return;
+            }
+            const currentVersion = this.host.getTextVersion();
+            if (currentVersion !== snapshotVersion) {
+                return;
+            }
+            this.localCompletionCache.set(cacheKey, {
+                parsedVersion: currentVersion,
+                chunkName,
+                symbols,
+            });
+        });
     }
 
     private filterLocalSymbolsAtPosition(symbols: readonly LuaScopedSymbol[], row: number, column: number): LuaScopedSymbol[] {

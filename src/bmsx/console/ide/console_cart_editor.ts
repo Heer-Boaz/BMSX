@@ -193,6 +193,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private diagnosticsCache: Map<string, DiagnosticsCacheEntry> = new Map();
 	private dirtyDiagnosticContexts: Set<string> = new Set();
 	private diagnosticsDueAtMs: number | null = null;
+	private diagnosticsComputationScheduled = false;
 	private readonly codeTabContexts: Map<string, CodeTabContext> = new Map();
 	private activeCodeTabContextId: string | null = null;
 	private entryTabId: string | null = null;
@@ -374,7 +375,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.lineHeight = this.font.lineHeight();
 		this.charAdvance = this.font.advance('M');
 		this.spaceAdvance = this.font.advance(' ');
-	this.layout = new ConsoleCodeLayout(this.font, this.semanticWorkspace, { clockNow: this.clockNow });
+	this.layout = new ConsoleCodeLayout(this.font, this.semanticWorkspace, {
+		clockNow: this.clockNow,
+		scheduleTask: (fn) => this.scheduleNextFrame(fn),
+	});
 		this.inlineFieldMetricsRef = {
 			measureText: (text: string) => this.measureText(text),
 			advanceChar: (ch: string) => this.font.advance(ch),
@@ -414,11 +418,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				showMessage: (text, color, duration) => this.showMessage(text, color, duration),
 			}, { resourceVertical: this.scrollbars.resourceVertical, resourceHorizontal: this.scrollbars.resourceHorizontal });
 		// Initialize completion/intellisense controller
-		this.completion = new CompletionController({
-			getPlayerIndex: () => this.playerIndex,
-			isCodeTabActive: () => this.isCodeTabActive(),
-			getLines: () => this.lines,
-			getCursorRow: () => this.cursorRow,
+	this.completion = new CompletionController({
+		getPlayerIndex: () => this.playerIndex,
+		isCodeTabActive: () => this.isCodeTabActive(),
+		getLines: () => this.lines,
+		getCursorRow: () => this.cursorRow,
 			getCursorColumn: () => this.cursorColumn,
 			setCursorPosition: (row, column) => { this.cursorRow = row; this.cursorColumn = column; },
 			setSelectionAnchor: (row, column) => { this.selectionAnchor = { row, column }; },
@@ -434,13 +438,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			getActiveCodeTabContext: () => this.getActiveCodeTabContext(),
 			resolveHoverAssetId: (ctx) => this.resolveHoverAssetId(ctx as any),
 			resolveHoverChunkName: (ctx) => this.resolveHoverChunkName(ctx as any),
-			listLuaSymbols: (assetId, chunk) => this.listLuaSymbolsFn(assetId, chunk),
-			listGlobalLuaSymbols: () => this.listGlobalLuaSymbolsFn(),
-			listBuiltinLuaFunctions: () => this.listBuiltinLuaFunctionsFn(),
-			charAt: (r, c) => this.charAt(r, c),
-			getTextVersion: () => this.textVersion,
-			shouldFireRepeat: (kb, code, dt) => this.input.shouldRepeatPublic(kb, code, dt),
-		});
+		listLuaSymbols: (assetId, chunk) => this.listLuaSymbolsFn(assetId, chunk),
+		listGlobalLuaSymbols: () => this.listGlobalLuaSymbolsFn(),
+		listBuiltinLuaFunctions: () => this.listBuiltinLuaFunctionsFn(),
+		getSemanticDefinitions: () => this.getActiveSemanticDefinitions(),
+		charAt: (r, c) => this.charAt(r, c),
+		getTextVersion: () => this.textVersion,
+		shouldFireRepeat: (kb, code, dt) => this.input.shouldRepeatPublic(kb, code, dt),
+		scheduleTask: (fn) => this.scheduleNextFrame(fn),
+	});
 		this.completion.setEnterCommitsEnabled(false);
 		// Initialize input controller
 		this.input = new InputController({
@@ -1105,6 +1111,40 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (now < this.diagnosticsDueAtMs) {
 			return;
 		}
+		this.scheduleDiagnosticsComputation();
+	}
+
+	private scheduleDiagnosticsComputation(): void {
+		if (this.diagnosticsComputationScheduled) {
+			return;
+		}
+		this.diagnosticsComputationScheduled = true;
+		this.scheduleNextFrame(() => {
+			this.diagnosticsComputationScheduled = false;
+			this.executeDiagnosticsComputation();
+		});
+	}
+
+	private executeDiagnosticsComputation(): void {
+		if (!this.diagnosticsDirty) {
+			this.diagnosticsDueAtMs = null;
+			return;
+		}
+		if (this.dirtyDiagnosticContexts.size === 0) {
+			this.diagnosticsDirty = false;
+			this.diagnosticsDueAtMs = null;
+			return;
+		}
+		const now = this.clockNow();
+		if (this.diagnosticsDueAtMs === null) {
+			this.diagnosticsDueAtMs = now + this.diagnosticsDebounceMs;
+			this.scheduleDiagnosticsComputation();
+			return;
+		}
+		if (now < this.diagnosticsDueAtMs) {
+			this.scheduleDiagnosticsComputation();
+			return;
+		}
 		const batch = this.collectDiagnosticsBatch();
 		if (batch.length === 0) {
 			this.diagnosticsDirty = false;
@@ -1117,6 +1157,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.diagnosticsDueAtMs = null;
 		} else {
 			this.diagnosticsDueAtMs = now + this.diagnosticsDebounceMs;
+			this.scheduleDiagnosticsComputation();
 		}
 	}
 
@@ -1283,6 +1324,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 		this.markDiagnosticsDirty(context.id);
+	}
+
+	private getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] | null {
+		const context = this.getActiveCodeTabContext();
+		const chunkName = this.resolveHoverChunkName(context) ?? '<console>';
+		return this.layout.getSemanticDefinitions(this.lines, this.textVersion, chunkName);
 	}
 
 	private findContextByChunk(chunkName: string): CodeTabContext | null {
@@ -7021,6 +7068,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			if (this.activeCodeTabContextId === tab.id) {
 				this.activeCodeTabContextId = null;
 			}
+			this.dirtyDiagnosticContexts.delete(tab.id);
+			this.diagnosticsCache.delete(tab.id);
 		}
 		if (this.activeTabId === tabId) {
 			const fallback = this.tabs[index - 1] ?? this.tabs[0];
