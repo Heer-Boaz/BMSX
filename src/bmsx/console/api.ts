@@ -1,11 +1,11 @@
 import { $, $rompack, runGate } from '../core/game';
 import { Input } from '../input/input';
+import type { PlayerInput } from '../input/playerinput';
 import type { color, RectRenderSubmission, RenderLayer } from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
 import { ConsoleFont } from './font';
-import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
-import { BmsxConsoleButton, BmsxConsolePointerButton, ConsolePointerVector, ConsolePointerViewport, ConsolePointerWheel } from './types';
+import { BmsxConsolePointerButton, ConsolePointerVector, ConsolePointerViewport, ConsolePointerWheel } from './types';
 import { ConsoleSpriteRegistry, ConsoleTilemap, type SpriteColliderConfig, type SpriteDefinition, type SpritePhysicsConfig } from './sprites';
 import { ConsoleColliderManager, type ColliderCreateOptions, type ColliderContactInfo } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
@@ -36,7 +36,7 @@ import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorT
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
 
 export type BmsxConsoleApiOptions = {
-	input: BmsxConsoleInput;
+	playerIndex: number;
 	storage: BmsxConsoleStorage;
 	colliders: ConsoleColliderManager;
 	physics: Physics2DManager;
@@ -44,6 +44,14 @@ export type BmsxConsoleApiOptions = {
 
 const DRAW_LAYER: RectRenderSubmission['layer'] = 'ui';
 const CONSOLE_TAB_SPACES = 2;
+
+const POINTER_ACTIONS: readonly string[] = [
+	'pointer_primary',
+	'pointer_secondary',
+	'pointer_aux',
+	'pointer_back',
+	'pointer_forward',
+] as const;
 
 type ConsoleComponentDescriptor = {
 	className: string;
@@ -62,7 +70,7 @@ type NormalizedSpawnOptions = {
 };
 
 export class BmsxConsoleApi {
-	private readonly input: BmsxConsoleInput;
+	private readonly playerIndex: number;
 	private readonly storage: BmsxConsoleStorage;
 	private readonly font: ConsoleFont;
 	private readonly spriteRegistry: ConsoleSpriteRegistry;
@@ -86,7 +94,7 @@ export class BmsxConsoleApi {
 		if (viewport.x <= 0 || viewport.y <= 0) {
 			throw new Error('[BmsxConsoleApi] Invalid viewport size.');
 		}
-		this.input = options.input;
+		this.playerIndex = options.playerIndex;
 		this.storage = options.storage;
 		this.font = new ConsoleFont();
 		this.spriteRegistry = new ConsoleSpriteRegistry();
@@ -135,24 +143,35 @@ export class BmsxConsoleApi {
 		return $.view.viewportSize.y;
 	}
 
-	public btn(button: BmsxConsoleButton): boolean {
-		return this.input.btn(button);
-	}
-
-	public btnp(button: BmsxConsoleButton): boolean {
-		return this.input.btnp(button);
-	}
-
 	public mousebtn(button: BmsxConsolePointerButton): boolean {
-		return this.input.pointerButton(button);
+		const state = this.getPlayerInput().getActionState(this.pointerAction(button));
+		return state.pressed;
 	}
 
 	public mousebtnp(button: BmsxConsolePointerButton): boolean {
-		return this.input.pointerButtonPressed(button);
+		const state = this.getPlayerInput().getActionState(this.pointerAction(button));
+		return state.guardedjustpressed;
 	}
 
 	public mousebtnr(button: BmsxConsolePointerButton): boolean {
-		return this.input.pointerButtonReleased(button);
+		const state = this.getPlayerInput().getActionState(this.pointerAction(button));
+		return state.justreleased;
+	}
+
+	private getPlayerInput(): PlayerInput {
+		const playerInput = Input.instance.getPlayerInput(this.playerIndex);
+		if (!playerInput) {
+			throw new Error(`[BmsxConsoleApi] Player input handler for index ${this.playerIndex} is not initialised.`);
+		}
+		return playerInput;
+	}
+
+	private pointerAction(button: BmsxConsolePointerButton): string {
+		const action = POINTER_ACTIONS[button];
+		if (!action) {
+			throw new Error(`[BmsxConsoleApi] Pointer button index ${button} outside supported range 0-${POINTER_ACTIONS.length - 1}.`);
+		}
+		return action;
 	}
 
 	public mousepos(): ConsolePointerViewport {
@@ -160,11 +179,21 @@ export class BmsxConsoleApi {
 	}
 
 	public pointer_screen_position(): ConsolePointerVector {
-		return this.input.pointerPosition();
+		const state = this.getPlayerInput().getActionState('pointer_position');
+		const coords = state.value2d;
+		if (!coords) {
+			return { x: 0, y: 0, valid: false };
+		}
+		return { x: coords[0], y: coords[1], valid: true };
 	}
 
 	public pointer_delta(): ConsolePointerVector {
-		return this.input.pointerDelta();
+		const state = this.getPlayerInput().getActionState('pointer_delta');
+		const delta = state.value2d;
+		if (!delta) {
+			return { x: 0, y: 0, valid: false };
+		}
+		return { x: delta[0], y: delta[1], valid: true };
 	}
 
 	public pointer_viewport_position(): ConsolePointerViewport {
@@ -172,7 +201,10 @@ export class BmsxConsoleApi {
 	}
 
 	public mousewheel(): ConsolePointerWheel {
-		return this.input.pointerWheel();
+		const state = this.getPlayerInput().getActionState('pointer_wheel');
+		const value = typeof state.value === 'number' ? state.value : 0;
+		const valid = typeof state.value === 'number';
+		return { value, valid };
 	}
 
 	public stat(index: number): number {
@@ -195,16 +227,16 @@ export class BmsxConsoleApi {
 				}
 				return Math.floor(viewport.y);
 			}
-			case 34: {
-				return this.computePointerButtonMask();
+		case 34: {
+			return this.computePointerButtonMask();
+		}
+		case 36: {
+			const wheel = this.mousewheel();
+			if (!wheel.valid) {
+				return 0;
 			}
-			case 36: {
-				const wheel = this.input.pointerWheel();
-				if (!wheel.valid) {
-					return 0;
-				}
-				return Math.floor(wheel.value);
-			}
+			return Math.floor(wheel.value);
+		}
 			default:
 				return 0;
 		}
@@ -628,9 +660,8 @@ export class BmsxConsoleApi {
 		}
 		const trimmedId = abilityId.trim() as any;
 		const payload = options?.payload as any;
-		const source = options?.source as any;
-		const result = source !== undefined || payload !== undefined
-			? asc.requestAbility(trimmedId, { payload, source })
+		const result = payload !== undefined
+			? asc.requestAbility(trimmedId, { payload })
 			: asc.requestAbility(trimmedId);
 		return result.ok === true;
 	}
@@ -1124,7 +1155,7 @@ export class BmsxConsoleApi {
 	}
 
 	private pointerViewportPositionInternal(): ConsolePointerViewport {
-		const screen = this.input.pointerPosition();
+		const screen = this.pointer_screen_position();
 		if (!screen.valid) {
 			return { x: 0, y: 0, valid: false, inside: false };
 		}
@@ -1148,19 +1179,19 @@ export class BmsxConsoleApi {
 
 	private computePointerButtonMask(): number {
 		let mask = 0;
-		if (this.input.pointerButton(BmsxConsolePointerButton.Primary)) {
+		if (this.mousebtn(BmsxConsolePointerButton.Primary)) {
 			mask |= 1;
 		}
-		if (this.input.pointerButton(BmsxConsolePointerButton.Secondary)) {
+		if (this.mousebtn(BmsxConsolePointerButton.Secondary)) {
 			mask |= 2;
 		}
-		if (this.input.pointerButton(BmsxConsolePointerButton.Auxiliary)) {
+		if (this.mousebtn(BmsxConsolePointerButton.Auxiliary)) {
 			mask |= 4;
 		}
-		if (this.input.pointerButton(BmsxConsolePointerButton.Back)) {
+		if (this.mousebtn(BmsxConsolePointerButton.Back)) {
 			mask |= 8;
 		}
-		if (this.input.pointerButton(BmsxConsolePointerButton.Forward)) {
+		if (this.mousebtn(BmsxConsolePointerButton.Forward)) {
 			mask |= 16;
 		}
 		return mask;

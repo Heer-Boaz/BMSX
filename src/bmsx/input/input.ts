@@ -96,8 +96,26 @@ export function makeButtonState(partialState?: Partial<ButtonState>): ButtonStat
 }
 
 export function makeActionState(actionname: string, partialState?: Partial<ActionState>): ActionState {
-	const { action = actionname, alljustpressed = false, allwaspressed = false, alljustreleased = false, ...buttonState } = partialState ?? {};
-	return { action, alljustpressed, allwaspressed, alljustreleased, ...makeButtonState(buttonState) };
+	const {
+		action = actionname,
+		alljustpressed = false,
+		allwaspressed = false,
+		alljustreleased = false,
+		guardedjustpressed = false,
+		repeatpressed = false,
+		repeatcount = 0,
+		...buttonState
+	} = partialState ?? {};
+	return {
+		action,
+		alljustpressed,
+		allwaspressed,
+		alljustreleased,
+		guardedjustpressed,
+		repeatpressed,
+		repeatcount,
+		...makeButtonState(buttonState),
+	};
 }
 
 type DeviceBinding = {

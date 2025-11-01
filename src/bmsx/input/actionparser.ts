@@ -48,7 +48,7 @@ function tokenToString(t: Tokens): string {
  */
 function lex(src: string): Token[] {
 	// Regular expression to match various tokens in the input string
-	const R = /\s*(\|\||&&|\||!|\(|\)|\[|]|,|\?jp|&jp|\?wp\{\d+}|&wp\{\d+}|\?jr|&jr|\?wr\{\d+}|&wr\{\d+}|[&?]|(?:t|wp|wr|pr)\{[^}]*}|[a-zA-Z_][a-zA-Z0-9_]*|[<>!=]=?)/gy;
+	const R = /\s*(\|\||&&|\||!|\(|\)|\[|]|,|\?jp|&jp|\?gp|&gp|\?rp|&rp|\?wp\{\d+}|&wp\{\d+}|\?jr|&jr|\?wr\{\d+}|&wr\{\d+}|[&?]|(?:t|wp|wr|pr|rc)\{[^}]*}|[a-zA-Z_][a-zA-Z0-9_]*|[<>!=]=?)/gy;
 	const out: Token[] = []; // Array to hold the parsed tokens
 	let m: RegExpExecArray | null; // Regular expression to match tokens in the input string
 	while ((m = R.exec(src)) !== null) {
@@ -136,6 +136,8 @@ interface ActNode extends NodeBase {
 	_edgeForJR: boolean; // positive release-like
 	_edgeForWP: boolean; // positive press-like (same as JP)
 	_edgeForWR: boolean; // positive release-like (same as JR)
+	_edgeForGP: boolean;
+	_edgeForRP: boolean;
 }
 
 /**
@@ -350,7 +352,7 @@ class InputActionParser {
 		const name = this.take(Tokens.Ident).value;
 	const mods = this.current()?.value === '[' ? this.parseModifierList() : [];
 
-	const node = { name, mods, _edgeForJP: false, _edgeForJR: false, _edgeForWP: false, _edgeForWR: false };
+	const node = { name, mods, _edgeForJP: false, _edgeForJR: false, _edgeForWP: false, _edgeForWR: false, _edgeForGP: false, _edgeForRP: false };
 	this.annotateActNode(node);
 	// Return an ActNode representing the parsed action
 	return { ...node, eval: compileAction(name, mods) };
@@ -376,21 +378,40 @@ class InputActionParser {
 	private annotateActNode(n: Partial<ActNode>) {
 		// empty mods = implicit press-positive
 		if (n.mods.length === 0) {
-			n._edgeForJP = n._edgeForWP = true;
+			n._edgeForJP = n._edgeForWP = n._edgeForGP = n._edgeForRP = true;
 			n._edgeForJR = n._edgeForWR = false;
 			return;
 		}
-		let pressPos = false, releasePos = false;
+		let pressPos = false;
+		let releasePos = false;
+		let guardPos = false;
+		let repeatPos = false;
+		let guardExplicit = false;
+		let repeatExplicit = false;
 		for (const m of n.mods) {
 			const neg = m.startsWith('!');
 			const raw = neg ? m.slice(1) : m;
+			if (raw === 'gp') {
+				guardExplicit = true;
+				if (!neg) guardPos = true;
+				continue;
+			}
+			if (raw === 'rp') {
+				repeatExplicit = true;
+				if (!neg) repeatPos = true;
+				continue;
+			}
 			const pressish = raw === 'p' || raw === 'j' || /^wp\{\d+}/.test(raw);
 			const releaseish = raw === 'jr' || /^wr\{\d+}/.test(raw);
 			if (pressish && !neg) pressPos = true;
 			if (releaseish && !neg) releasePos = true;
 		}
+		if (!guardExplicit) guardPos = pressPos;
+		if (!repeatExplicit) repeatPos = pressPos;
 		n._edgeForJP = n._edgeForWP = pressPos;
 		n._edgeForJR = n._edgeForWR = releasePos;
+		n._edgeForGP = guardPos;
+		n._edgeForRP = repeatPos;
 	}
 
 	private applyModifiersInPlace(node: Node, mods: string[]): void {
@@ -522,6 +543,8 @@ const STATIC: Record<string, ModFn> = {
 	'&j': (get, n, win) => get(n, win).alljustpressed,
 	'jr': (get, n, win) => get(n, win).justreleased,
 	'&jr': (get, n, win) => get(n, win).alljustreleased,
+	'gp': (get, n, win) => get(n, win).guardedjustpressed === true,
+	'rp': (get, n, win) => get(n, win).repeatpressed === true,
 	'c': (get, n, win) => get(n, win).consumed,
 	// 'h' (hold) == held for more than 1 frame (equivalent to t{>=1})
 	'h': (get, n, win) => (get(n, win).presstime ?? 0) >= 1,
@@ -563,6 +586,15 @@ const R_WR = /^wr\{(\d+)}/;
  * - `t{>=5}`
  */
 const R_T = /^t\{([^}]+)}/;
+
+/**
+ * A regular expression to match repeat-count comparison tokens in the format `rc{comparator}`.
+ *
+ * Examples:
+ * - `rc{>2}`
+ * - `rc{==0}`
+ */
+const R_RC = /^rc\{([^}]+)}/;
 
 /**
 * Creates a modifier predicate function based on the given token.
@@ -613,6 +645,30 @@ function makeModPred(tok: string): ModFn {
 					case '>=': return pt >= val;
 					case '==': return pt === val;
 					case '!=': default: return pt !== val;
+				}
+			};
+	}
+	else if (R_RC.test(raw)) {
+			const cmpRaw = raw.match(R_RC)![1].trim();
+			let op: string; let val: number;
+			const m = cmpRaw.match(NUM_RE);
+			if (m) {
+				op = m[1];
+				val = +m[2];
+			} else {
+				const numOnly = cmpRaw.match(/^\d+(?:\.\d+)?$/);
+				if (!numOnly) throw new Error(`Invalid rc{…} comparator '${cmpRaw}'`);
+				op = '>='; val = +cmpRaw;
+			}
+			fn = (get, n, win) => {
+				const count = get(n, win).repeatcount ?? 0;
+				switch (op) {
+					case '<': return count < val;
+					case '>': return count > val;
+					case '<=': return count <= val;
+					case '>=': return count >= val;
+					case '==': return count === val;
+					case '!=': default: return count !== val;
 				}
 			};
 	}
@@ -713,6 +769,72 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 				}
 			}
 			if (!hasEligible) return false; // require at least one eligible leaf per arg
+		}
+		return true;
+	},
+
+	// --- Guarded press (edge requiring guard acceptance) ---
+
+	'?gp': (args) => (gs) => {
+		let any = false;
+		for (let i = 0; i < args.length; i++) {
+			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
+			if (!truth) continue;
+			any = true;
+			for (let j = 0; j < leaves.length; j++) {
+				const a = leaves[j] as ActNode;
+				if (a._edgeForGP && gs(a.name).guardedjustpressed === true) return true;
+			}
+		}
+		return false && any;
+	},
+
+	'&gp': (args) => (gs) => {
+		for (let i = 0; i < args.length; i++) {
+			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
+			if (!truth) return false;
+			let hasEligible = false;
+			for (let j = 0; j < leaves.length; j++) {
+				const a = leaves[j] as ActNode;
+				if (a._edgeForGP) {
+					hasEligible = true;
+					if (gs(a.name).guardedjustpressed !== true) return false;
+				}
+			}
+			if (!hasEligible) return false;
+		}
+		return true;
+	},
+
+	// --- Repeat press pulses (edge from repeat handler) ---
+
+	'?rp': (args) => (gs) => {
+		let any = false;
+		for (let i = 0; i < args.length; i++) {
+			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
+			if (!truth) continue;
+			any = true;
+			for (let j = 0; j < leaves.length; j++) {
+				const a = leaves[j] as ActNode;
+				if (a._edgeForRP && gs(a.name).repeatpressed === true) return true;
+			}
+		}
+		return false && any;
+	},
+
+	'&rp': (args) => (gs) => {
+		for (let i = 0; i < args.length; i++) {
+			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
+			if (!truth) return false;
+			let hasEligible = false;
+			for (let j = 0; j < leaves.length; j++) {
+				const a = leaves[j] as ActNode;
+				if (a._edgeForRP) {
+					hasEligible = true;
+					if (gs(a.name).repeatpressed !== true) return false;
+				}
+			}
+			if (!hasEligible) return false;
 		}
 		return true;
 	},
@@ -886,5 +1008,32 @@ export class ActionDefinitionEvaluator {
 		// Evaluate the action definition using the provided state getter
 		// This will return true if the action is triggered based on the current state (or the windowed state if applicable)
 		return ast.eval(get);
+	}
+
+	/**
+	 * Return all action names referenced by the given action definition string.
+	 * Uses the parser (cached) and traverses the AST collecting ActNode names.
+	 */
+	static getReferencedActions(def: string): string[] {
+		let ast = this.cache.get(def);
+		if (!ast) { ast = InputActionParser.parse(def); this.cache.set(def, ast); }
+		const out = new Set<string>();
+		const walk = (n: Node) => {
+			if ((n as ActNode).name !== undefined) {
+				out.add((n as ActNode).name);
+				return;
+			}
+			if ((n as FunNode).fname !== undefined) {
+				for (const a of (n as FunNode).args) walk(a);
+				return;
+			}
+			if ((n as OpNode).op !== undefined) {
+				if ((n as OpNode).left) walk((n as OpNode).left!);
+				if ((n as OpNode).right) walk((n as OpNode).right!);
+				return;
+			}
+		};
+		walk(ast);
+		return Array.from(out);
 	}
 }

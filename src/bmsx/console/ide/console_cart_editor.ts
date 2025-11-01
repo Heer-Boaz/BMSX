@@ -779,6 +779,24 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return normalized.replace(/\\/g, '/');
 	}
 
+	private resolveResourceDescriptorForSource(assetId: string | null, chunkName: string | null): ConsoleResourceDescriptor | null {
+		if (typeof assetId === 'string' && assetId.length > 0) {
+			const byAsset = this.findResourceDescriptorByAssetId(assetId);
+			if (byAsset) {
+				return byAsset;
+			}
+		}
+		const normalizedChunk = this.normalizeChunkReference(chunkName);
+		if (!normalizedChunk) {
+			return null;
+		}
+		try {
+			return this.findResourceDescriptorForChunk(normalizedChunk);
+		} catch {
+			return null;
+		}
+	}
+
 
 	private listResourcesStrict(): ConsoleResourceDescriptor[] {
 		const descriptors = this.listResourcesFn();
@@ -1107,19 +1125,23 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	public getSourceForChunk(assetId: string | null, chunkName: string | null): string {
 		const context = this.findCodeTabContext(assetId, chunkName);
-		if (!context) {
-			throw new Error(`[ConsoleCartEditor] Unable to locate editor context for asset '${assetId ?? '<null>'}' and chunk '${chunkName ?? '<null>'}'.`);
+		if (context) {
+			if (context.id === this.activeCodeTabContextId) {
+				return this.lines.join('\n');
+			}
+			if (context.snapshot) {
+				return context.snapshot.lines.join('\n');
+			}
+			if (context.lastSavedSource.length > 0) {
+				return context.lastSavedSource;
+			}
+			return context.load();
 		}
-		if (context.id === this.activeCodeTabContextId) {
-			return this.lines.join('\n');
+		const descriptor = this.resolveResourceDescriptorForSource(assetId, chunkName);
+		if (descriptor) {
+			return this.loadLuaResourceFn(descriptor.assetId);
 		}
-		if (context.snapshot) {
-			return context.snapshot.lines.join('\n');
-		}
-		if (context.lastSavedSource.length > 0) {
-			return context.lastSavedSource;
-		}
-		return context.load();
+		throw new Error(`[ConsoleCartEditor] Unable to locate source for asset '${assetId ?? '<null>'}' and chunk '${chunkName ?? '<null>'}'.`);
 	}
 
 	private getTabDirtyMarkerMetrics(): { width: number; height: number } {

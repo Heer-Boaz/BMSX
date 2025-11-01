@@ -131,7 +131,15 @@ export type InputEvent = {
  * Represents the state of an action, including the action name and button state.
  */
 
-export type ActionState = { action: string; alljustpressed: boolean; allwaspressed: boolean; alljustreleased: boolean; } & ButtonState;
+export type ActionState = {
+	action: string;
+	alljustpressed: boolean;
+	allwaspressed: boolean;
+	alljustreleased: boolean;
+	guardedjustpressed: boolean;
+	repeatpressed: boolean;
+	repeatcount: number;
+} & ButtonState;
 
 /**
  * Represents the parameters for a vibration effect on the gamepad.

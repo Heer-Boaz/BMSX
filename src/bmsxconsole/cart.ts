@@ -1,5 +1,4 @@
 import type { BmsxConsoleApi, BmsxConsoleCartridge } from 'bmsx/console';
-import { BmsxConsoleButton } from 'bmsx/console';
 import { BitmapId } from './resourceids';
 import { clamp } from 'bmsx/utils/utils';
 
@@ -73,6 +72,16 @@ const COLOR_HEADER = 11;
 const COLOR_HIGHLIGHT = 13;
 const COLOR_WARNING = 8;
 type DemoBounds = { x: number; y: number; width: number; height: number };
+
+const CONSOLE_PLAYER_INDEX = 1;
+
+function guardPress(api: BmsxConsoleApi, action: string): boolean {
+	return api.check_action_state(CONSOLE_PLAYER_INDEX, `${action}[gp]`);
+}
+
+function repeatPress(api: BmsxConsoleApi, action: string): boolean {
+	return api.check_action_state(CONSOLE_PLAYER_INDEX, `${action}[rp]`);
+}
 
 type DemoBall = {
 	id: number;
@@ -178,7 +187,7 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 	}
 
 	public update(api: BmsxConsoleApi, deltaSeconds: number): void {
-		if (api.btnp(BmsxConsoleButton.ActionX)) {
+		if (guardPress(api, 'console_x')) {
 			this.advanceMode();
 			this.selection = 1;
 		}
@@ -310,15 +319,15 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 	}
 
 	private handleTrackInput(api: BmsxConsoleApi): void {
-		if (api.btnp(BmsxConsoleButton.Up)) {
+		if (repeatPress(api, 'console_up')) {
 			this.selection = clamp(this.selection - 1, 1, 3);
 		}
-		if (api.btnp(BmsxConsoleButton.Down)) {
+		if (repeatPress(api, 'console_down')) {
 			this.selection = clamp(this.selection + 1, 1, 3);
 		}
 		let delta = 0;
-		if (api.btnp(BmsxConsoleButton.Left)) delta -= 1;
-		if (api.btnp(BmsxConsoleButton.Right)) delta += 1;
+		if (repeatPress(api, 'console_left')) delta -= 1;
+		if (repeatPress(api, 'console_right')) delta += 1;
 		if (delta === 0) return;
 		if (this.selection === 1) {
 			this.character.hp = clamp(this.character.hp + delta, 0, this.character.hpmax);
@@ -332,13 +341,13 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 
 	private handleStatusInput(api: BmsxConsoleApi): void {
 		const maxIndex = STATUS_DEFINITIONS.length;
-		if (api.btnp(BmsxConsoleButton.Up)) {
+		if (repeatPress(api, 'console_up')) {
 			this.selection = clamp(this.selection - 1, 1, maxIndex);
 		}
-		if (api.btnp(BmsxConsoleButton.Down)) {
+		if (repeatPress(api, 'console_down')) {
 			this.selection = clamp(this.selection + 1, 1, maxIndex);
 		}
-		if (api.btnp(BmsxConsoleButton.ActionO)) {
+		if (guardPress(api, 'console_o')) {
 			const status = STATUS_DEFINITIONS[this.selection - 1];
 			this.toggleStatus(status.id);
 			this.save(api);
@@ -347,15 +356,15 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 
 	private handleEditInput(api: BmsxConsoleApi): void {
 		const maxIndex = 7;
-		if (api.btnp(BmsxConsoleButton.Up)) {
+		if (repeatPress(api, 'console_up')) {
 			this.selection = clamp(this.selection - 1, 1, maxIndex);
 		}
-		if (api.btnp(BmsxConsoleButton.Down)) {
+		if (repeatPress(api, 'console_down')) {
 			this.selection = clamp(this.selection + 1, 1, maxIndex);
 		}
 		let delta = 0;
-		if (api.btnp(BmsxConsoleButton.Left)) delta -= 1;
-		if (api.btnp(BmsxConsoleButton.Right)) delta += 1;
+		if (repeatPress(api, 'console_left')) delta -= 1;
+		if (repeatPress(api, 'console_right')) delta += 1;
 		if (delta === 0) return;
 		if (this.selection === 1) this.character.base.dex = stepDie(this.character.base.dex, delta);
 		else if (this.selection === 2) this.character.base.ins = stepDie(this.character.base.ins, delta);

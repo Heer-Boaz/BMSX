@@ -1,6 +1,5 @@
 import type { StorageService } from '../platform/platform';
 import { BmsxConsoleApi } from './api';
-import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
 import { ConsoleColliderManager } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
@@ -25,6 +24,7 @@ import type { BehaviorTreeDefinition, BehaviorTreeDiagnostic } from '../ai/behav
 import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { StateDefinition } from '../fsm/statedefinition';
 import type { StateMachineController } from '../fsm/fsmcontroller';
+import type { State } from '../fsm/state';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
 import { ConsoleCartEditor } from './ide/console_cart_editor';
 import { ConsoleLuaEditor } from './ide/console_lua_editor';
@@ -230,7 +230,6 @@ export class BmsxConsoleRuntime extends Service {
 
 	private cart: BmsxConsoleCartridge;
 	private readonly api: BmsxConsoleApi;
-	private input: BmsxConsoleInput;
 	private readonly storage: BmsxConsoleStorage;
 	private readonly storageService: StorageService;
 	private readonly colliders: ConsoleColliderManager;
@@ -312,13 +311,12 @@ export class BmsxConsoleRuntime extends Service {
 		this.presentationFrameHandler = this.handlePresentationFrame.bind(this);
 		this.cart = options.cart;
 		this.playerIndex = options.playerIndex;
-		this.input = new BmsxConsoleInput(options.playerIndex);
 		this.storageService = options.storage ?? $.platform.storage;
 		this.storage = new BmsxConsoleStorage(this.storageService, options.cart.meta.persistentId);
 		this.colliders = new ConsoleColliderManager();
 		this.physics = new Physics2DManager();
 		this.api = new BmsxConsoleApi({
-			input: this.input,
+			playerIndex: this.playerIndex,
 			storage: this.storage,
 			colliders: this.colliders,
 			physics: this.physics,
@@ -566,7 +564,6 @@ export class BmsxConsoleRuntime extends Service {
 			throw new Error('[BmsxConsoleRuntime] Delta time must be a finite non-negative number.');
 		}
 		const deltaSeconds = deltaMilliseconds / 1000;
-		this.input.beginFrame(this.frameCounter, deltaSeconds);
 		const editor = this.editor;
 		if (editor) {
 			editor.update(deltaSeconds);
@@ -2438,26 +2435,17 @@ export class BmsxConsoleRuntime extends Service {
 		const controllers = new Set<StateMachineController>();
 
 		for (const machineId of machineIds) {
-			const instances = ActiveStateMachines.get(machineId);
-			if (!instances) {
-				throw new Error(`[BmsxConsoleRuntime] Active state machines map has no entry for '${machineId}'.`);
+			const instances = this.filterValidStateMachineInstances(machineId, ActiveStateMachines.get(machineId));
+			if (instances.length === 0) {
+				continue;
 			}
 			const oldDefinition = previousDefinitions.get(machineId);
 			if (!oldDefinition) {
-				throw new Error(`[BmsxConsoleRuntime] Previous definition missing for state machine '${machineId}'.`);
+				continue;
 			}
 			for (const instance of instances) {
-				if (!instance) {
-					throw new Error(`[BmsxConsoleRuntime] Active state machine list for '${machineId}' contains null entries.`);
-				}
 				const target = instance.target;
-				if (!target) {
-					throw new Error(`[BmsxConsoleRuntime] State machine '${machineId}' has no target.`);
-				}
 				const controller = target.sc;
-				if (!controller) {
-					throw new Error(`[BmsxConsoleRuntime] State machine '${machineId}' target '${target.id}' has no controller.`);
-				}
 				controllers.add(controller);
 				const cache = controller._subscribedCache;
 				const events = oldDefinition.event_list ?? [];
@@ -2484,9 +2472,9 @@ export class BmsxConsoleRuntime extends Service {
 
 	private refreshStateMachines(machineIds: readonly string[], previousDefinitions: ReadonlyMap<string, StateDefinition | undefined>, controllersToRebind: ReadonlySet<StateMachineController>): void {
 		for (const machineId of machineIds) {
-			const instances = ActiveStateMachines.get(machineId);
-			if (!instances) {
-				throw new Error(`[BmsxConsoleRuntime] Active state machines map has no entry for '${machineId}'.`);
+			const instances = this.filterValidStateMachineInstances(machineId, ActiveStateMachines.get(machineId));
+			if (instances.length === 0) {
+				continue;
 			}
 			const newDefinition = StateDefinitions[machineId];
 			if (!newDefinition) {
@@ -2494,15 +2482,36 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			const previousDefinition = previousDefinitions.get(machineId);
 			for (const instance of instances) {
-				if (!instance) {
-					throw new Error(`[BmsxConsoleRuntime] Active state machine list for '${machineId}' contains null entries.`);
-				}
 				migrateMachineDiff(instance, previousDefinition, newDefinition);
 			}
 		}
 		for (const controller of controllersToRebind) {
 			controller.bind();
 		}
+	}
+
+	private filterValidStateMachineInstances(machineId: string, instances: ReadonlyArray<State<Stateful>> | undefined): State<Stateful>[] {
+		if (!instances || instances.length === 0) {
+			ActiveStateMachines.delete(machineId);
+			return [];
+		}
+		const valid: State<Stateful>[] = [];
+		let mutated = false;
+		for (const instance of instances) {
+			if (!instance || !instance.target || !instance.target.sc) {
+				mutated = true;
+				continue;
+			}
+			valid.push(instance);
+		}
+		if (mutated) {
+			if (valid.length === 0) {
+				ActiveStateMachines.delete(machineId);
+			} else {
+				ActiveStateMachines.set(machineId, valid);
+			}
+		}
+		return valid;
 	}
 
 	private loadLuaBehaviorTreeScripts(interpreter: LuaInterpreter): void {

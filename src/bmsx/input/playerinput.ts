@@ -3,6 +3,29 @@ import { Input, InputStateManager, makeActionState, makeButtonState } from './in
 import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, GamepadBinding, GamepadInputMapping, InputHandler, InputMap, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping, VibrationParams } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
 import { ContextStack, MappingContext } from './context';
+import { $ } from '../core/game';
+import { clamp } from '../utils/utils';
+
+const ACTION_GUARD_MIN_MS = 24;
+const ACTION_GUARD_MAX_MS = 120;
+const INITIAL_REPEAT_DELAY_FRAMES = 15;
+const REPEAT_INTERVAL_FRAMES = 4;
+
+type ActionGuardRecord = {
+	lastAcceptedAtMs: number;
+	lastObservedTimestamp: number;
+	lastResultAccepted: boolean;
+	lastWindowMs: number;
+};
+
+type ActionRepeatRecord = {
+	active: boolean;
+	repeatCount: number;
+	pressStartFrame: number;
+	lastFrameEvaluated: number;
+	lastResult: boolean;
+	hasDispatchedThisCycle: boolean;
+};
 
 export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
 export type InputSource = typeof INPUT_SOURCES[number];
@@ -32,6 +55,12 @@ export class PlayerInput {
 
 	/** Pending rebind operation, if any */
 	private pendingRebind: { action: string; source: InputSource; mode: 'append' | 'replace' } | null = null;
+
+	private readonly actionGuardRecords: Map<string, ActionGuardRecord> = new Map();
+	private readonly actionRepeatRecords: Map<string, ActionRepeatRecord> = new Map();
+	private lastPollTimestampMs: number | null = null;
+	private guardWindowMs: number = ACTION_GUARD_MIN_MS;
+	private frameCounter = 0;
 
 	/**
 	 * Indicates whether the player is the main player.
@@ -78,6 +107,19 @@ export class PlayerInput {
 	 * @returns True if the action definition is satisfied, false otherwise.
 	 */
 	public checkActionTriggered(actionDefinition: string): boolean {
+		// Validate referenced action names exist in current mappings to catch typos or missing bindings early
+		const referenced = ActionDefinitionEvaluator.getReferencedActions(actionDefinition);
+		if (referenced.length > 0) {
+			const missing: string[] = [];
+			for (const name of referenced) {
+				// Ask the context stack whether any bindings exist for this action across sources
+				const kb = this.contexts.getBindings(name, 'keyboard');
+				const gp = this.contexts.getBindings(name, 'gamepad');
+				const ptr = this.contexts.getBindings(name, 'pointer');
+				if ((!kb || kb.length === 0) && (!gp || gp.length === 0) && (!ptr || ptr.length === 0)) missing.push(name);
+			}
+			if (missing.length > 0) throw new Error(`[PlayerInput] Action definition references unknown actions: ${missing.join(', ')}`);
+		}
 		return ActionDefinitionEvaluator.checkActionTriggered(actionDefinition, this.getActionState.bind(this));
 	}
 
@@ -280,7 +322,8 @@ export class PlayerInput {
 		}
 		const minPresstime = minPresstimeRaw === Infinity ? null : minPresstimeRaw;
 
-		return {
+		const timestamp = maxTimestamp === -Infinity ? null : maxTimestamp;
+		const result: ActionState = {
 			action,
 			pressed,
 			justpressed,
@@ -292,10 +335,21 @@ export class PlayerInput {
 			allwaspressed,
 			consumed,
 			presstime: minPresstime,
-			timestamp: maxTimestamp === -Infinity ? null : maxTimestamp,
+			timestamp,
 			value: typeof merged1D === 'number' ? merged1D : null,
 			value2d: merged2D,
+			guardedjustpressed: false,
+			repeatpressed: false,
+			repeatcount: 0,
 		};
+
+		const guarded = this.evaluateActionGuard(action, result);
+		const repeat = this.evaluateActionRepeat(action, result);
+		result.guardedjustpressed = guarded;
+		result.repeatpressed = repeat.triggered;
+		result.repeatcount = repeat.count;
+
+		return result;
 	}
 
 	/**
@@ -485,6 +539,17 @@ export class PlayerInput {
 	 * Polls the input for the player for each input source (e.g., keyboard, gamepad, ...)
 	 */
 	pollInput(currentTime: number): void {
+		this.frameCounter += 1;
+		if (Number.isFinite(currentTime)) {
+			if (this.lastPollTimestampMs !== null) {
+				const delta = currentTime - this.lastPollTimestampMs;
+				if (Number.isFinite(delta) && delta > 0) {
+					this.guardWindowMs = clamp(delta, ACTION_GUARD_MIN_MS, ACTION_GUARD_MAX_MS);
+				}
+			}
+			this.lastPollTimestampMs = currentTime;
+		}
+
 		this._stateManager.beginFrame(currentTime);
 		for (const source of INPUT_SOURCES) {
 			const handler = this.inputHandlers[source];
@@ -550,6 +615,137 @@ export class PlayerInput {
 		this.pendingRebind = null;
 	}
 
+	private evaluateActionGuard(action: string, state: ActionState, windowOverride?: number): boolean {
+		if (state.justpressed !== true) {
+			return false;
+		}
+
+		const timestamp = this.resolveActionTimestamp(state);
+		const guardMs = this.normalizeGuardWindow(windowOverride);
+		const existing = this.actionGuardRecords.get(action);
+		if (existing && existing.lastObservedTimestamp === timestamp && existing.lastWindowMs === guardMs) {
+			return existing.lastResultAccepted;
+		}
+
+		const previousAcceptedAt = existing && Number.isFinite(existing.lastAcceptedAtMs)
+			? existing.lastAcceptedAtMs
+			: null;
+		let accepted = true;
+		if (previousAcceptedAt !== null) {
+			const delta = timestamp - previousAcceptedAt;
+			if (Number.isFinite(delta) && delta <= guardMs) {
+				accepted = false;
+			}
+		}
+
+		const nextRecord: ActionGuardRecord = {
+			lastAcceptedAtMs: accepted ? timestamp : (previousAcceptedAt ?? timestamp),
+			lastObservedTimestamp: timestamp,
+			lastResultAccepted: accepted,
+			lastWindowMs: guardMs,
+		};
+		this.actionGuardRecords.set(action, nextRecord);
+		return accepted;
+	}
+
+	private normalizeGuardWindow(windowOverride?: number): number {
+		if (typeof windowOverride === 'number' && Number.isFinite(windowOverride) && windowOverride > 0) {
+			return clamp(windowOverride, ACTION_GUARD_MIN_MS, ACTION_GUARD_MAX_MS);
+		}
+		return this.guardWindowMs;
+	}
+
+	private resolveActionTimestamp(state: ActionState): number {
+		if (typeof state.timestamp === 'number' && Number.isFinite(state.timestamp)) {
+			return state.timestamp;
+		}
+		if (typeof state.pressedAtMs === 'number' && Number.isFinite(state.pressedAtMs)) {
+			return state.pressedAtMs;
+		}
+		if (this.lastPollTimestampMs !== null) {
+			return this.lastPollTimestampMs;
+		}
+		return $.platform.clock.now();
+	}
+
+	private evaluateActionRepeat(action: string, state: ActionState): { triggered: boolean; count: number } {
+		const repeat = this.ensureRepeatState(action);
+		if (repeat.lastFrameEvaluated === this.frameCounter) {
+			return { triggered: repeat.lastResult, count: repeat.repeatCount };
+		}
+
+		let result = false;
+
+		if (state.justpressed === true) {
+			repeat.active = true;
+			repeat.repeatCount = 0;
+			repeat.hasDispatchedThisCycle = true;
+			repeat.pressStartFrame = this.frameCounter;
+			result = true;
+		} else if (state.pressed !== true && state.justreleased === true && !repeat.hasDispatchedThisCycle) {
+			repeat.active = false;
+			repeat.repeatCount = 0;
+			repeat.hasDispatchedThisCycle = true;
+			repeat.pressStartFrame = -1;
+			result = true;
+		} else if (state.pressed !== true) {
+			repeat.active = false;
+			repeat.repeatCount = 0;
+			repeat.hasDispatchedThisCycle = false;
+			repeat.pressStartFrame = -1;
+		} else {
+			if (!repeat.active) {
+				repeat.active = true;
+				repeat.repeatCount = 0;
+				repeat.pressStartFrame = this.frameCounter;
+			}
+			if (repeat.pressStartFrame < 0) {
+				repeat.pressStartFrame = this.frameCounter;
+			}
+			const heldFrames = this.frameCounter - repeat.pressStartFrame;
+			if (heldFrames < 0) {
+				throw new Error(`[PlayerInput] Negative held frame count detected for action ${action}.`);
+			}
+			const repeatsElapsed = this.computeRepeatCount(heldFrames);
+			if (repeatsElapsed > repeat.repeatCount) {
+				repeat.repeatCount = repeatsElapsed;
+				repeat.hasDispatchedThisCycle = true;
+				result = true;
+			}
+		}
+
+		repeat.lastFrameEvaluated = this.frameCounter;
+		repeat.lastResult = result;
+		return { triggered: result, count: repeat.repeatCount };
+	}
+
+	private ensureRepeatState(action: string): ActionRepeatRecord {
+		let entry = this.actionRepeatRecords.get(action);
+		if (!entry) {
+			entry = {
+				active: false,
+				repeatCount: 0,
+				pressStartFrame: -1,
+				lastFrameEvaluated: -1,
+				lastResult: false,
+				hasDispatchedThisCycle: false,
+			};
+			this.actionRepeatRecords.set(action, entry);
+		}
+		return entry;
+	}
+
+	private computeRepeatCount(heldFrames: number): number {
+		if (heldFrames < 0) {
+			throw new Error('[PlayerInput] Held frame count cannot be negative.');
+		}
+		if (heldFrames < INITIAL_REPEAT_DELAY_FRAMES) {
+			return 0;
+		}
+		const elapsedSinceDelay = heldFrames - INITIAL_REPEAT_DELAY_FRAMES;
+		return Math.floor(elapsedSinceDelay / REPEAT_INTERVAL_FRAMES) + 1;
+	}
+
 	/** Updates aggregated button states and cleans up stale events. */
 	update(currentTime: number): void {
 		this._stateManager.update(currentTime);
@@ -598,5 +794,10 @@ export class PlayerInput {
 		for (const source of INPUT_SOURCES) {
 			this.inputHandlers[source]?.reset(except);
 		}
+		this.actionGuardRecords.clear();
+		this.actionRepeatRecords.clear();
+		this.lastPollTimestampMs = null;
+		this.guardWindowMs = ACTION_GUARD_MIN_MS;
+		this.frameCounter = 0;
 	}
 }
