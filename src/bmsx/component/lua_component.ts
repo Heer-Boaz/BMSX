@@ -1,18 +1,18 @@
 import { Component, type ComponentAttachOptions, type ComponentTag } from './basecomponent';
-import { HandlerRegistry } from '../core/handlerregistry';
 import { deepClone } from '../utils/utils';
+import type { LuaHandlerFn } from '../lua/handler_cache.ts';
 
-export type LuaComponentHandlerIdMap = {
-	onattach?: string;
-	ondetach?: string;
-	ondispose?: string;
-	preupdate?: string;
-	postupdate?: string;
+export type LuaComponentHandlerMap = {
+	onattach?: LuaHandlerFn;
+	ondetach?: LuaHandlerFn;
+	ondispose?: LuaHandlerFn;
+	preupdate?: LuaHandlerFn;
+	postupdate?: LuaHandlerFn;
 };
 
 export type LuaComponentInstanceOptions = ComponentAttachOptions & {
 	definitionId: string;
-	handlerIds: LuaComponentHandlerIdMap;
+	handlers: LuaComponentHandlerMap;
 	initialState?: Record<string, unknown>;
 	tagsPre?: ReadonlyArray<ComponentTag>;
 	tagsPost?: ReadonlyArray<ComponentTag>;
@@ -23,7 +23,7 @@ export class LuaComponent extends Component {
 	public readonly definitionId: string;
 	public readonly vars: Record<string, unknown>;
 
-	private readonly handlerIds: LuaComponentHandlerIdMap;
+	private readonly handlers: LuaComponentHandlerMap;
 	private readonly uniquePerDefinition: boolean;
 	private readonly tagsPreLocal?: ReadonlyArray<ComponentTag>;
 	private readonly tagsPostLocal?: ReadonlyArray<ComponentTag>;
@@ -31,7 +31,7 @@ export class LuaComponent extends Component {
 	constructor(options: LuaComponentInstanceOptions) {
 		super(options);
 		this.definitionId = options.definitionId;
-		this.handlerIds = { ...options.handlerIds };
+		this.handlers = { ...options.handlers };
 		this.uniquePerDefinition = options.unique ?? false;
 		this.tagsPreLocal = options.tagsPre;
 		this.tagsPostLocal = options.tagsPost;
@@ -88,14 +88,10 @@ export class LuaComponent extends Component {
 		void this.invokeHandler('postupdate', args);
 	}
 
-	private invokeHandler(key: keyof LuaComponentHandlerIdMap, ...args: unknown[]): unknown {
-		const handlerId = this.handlerIds[key];
-		if (!handlerId) {
-			return undefined;
-		}
-		const handler = HandlerRegistry.instance.get(handlerId);
+	private invokeHandler(key: keyof LuaComponentHandlerMap, ...args: unknown[]): unknown {
+		const handler = this.handlers[key];
 		if (!handler) {
-			throw new Error(`[LuaComponent:${this.definitionId}] Handler '${handlerId}' is not registered.`);
+			return undefined;
 		}
 		return handler.call(this, this, ...args);
 	}

@@ -58,12 +58,13 @@ test('applyLuaProgramHotReload keeps interpreter resident', () => {
   assert.equal(snippet.includes('mergeLuaChunkEnvironmentState'), true, 'applyLuaProgramHotReload should merge previous state');
 });
 
-test('registerLuaAbilityHandler uses stable handler identifiers', () => {
-  const src = readFileSync('src/bmsx/console/runtime.ts', 'utf8');
-  const start = src.indexOf('private registerLuaAbilityHandler');
-  assert.ok(start > -1, 'registerLuaAbilityHandler not found');
-  const nextPrivate = src.indexOf('\n\tprivate ', start + 1);
-  const snippet = src.slice(start, nextPrivate === -1 ? undefined : nextPrivate);
-  assert.equal(snippet.includes('makeLuaHandlerId(`ability:${abilityId}`, [slot])'), true, 'ability handlers should derive ids from slot only');
-  assert.equal(snippet.includes('luaAbilityVersion'), false, 'version-based ability handler ids should be removed');
+test('registerAbilityDefinition uses Lua handler metadata', () => {
+	const src = readFileSync('src/bmsx/console/runtime.ts', 'utf8');
+	const start = src.indexOf('public registerAbilityDefinition');
+	assert.ok(start > -1, 'registerAbilityDefinition not found');
+	const nextPublic = src.indexOf('\n\tpublic ', start + 1);
+	const snippet = src.slice(start, nextPublic === -1 ? undefined : nextPublic);
+	assert.equal(snippet.includes('isLuaHandlerFn(activationFn)'), true, 'activation handlers should be validated as LuaHandlerFn');
+	assert.equal(snippet.includes("this.registerAbilityAction(abilityId, 'activation', activationFn)"), true, 'ability actions should use Lua handler functions directly');
+	assert.equal(snippet.includes('registerLuaAbilityHandler'), false, 'legacy ability handler registration should be removed');
 });

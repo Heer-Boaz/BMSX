@@ -5,6 +5,7 @@ import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';
 import type { Identifier } from '../rompack/rompack';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
 import { HandlerRegistry, type GenericHandler, type HandlerCategory, type HandlerDescriptor } from '../core/handlerregistry';
+import { isLuaHandlerFn } from '../lua/handler_cache.ts';
 import type {
 	EventBagName,
 	listed_sdef_event,
@@ -646,6 +647,9 @@ function hoistSlot(
 
 	if (typeof current === 'function') {
 		const fn = current as GenericHandler;
+		if (isLuaHandlerFn(fn)) {
+			return;
+		}
 		const symbol = typeof fn.name === 'string' && fn.name.length > 0 ? fn.name : slot;
 		assign(fn, { lang: 'js', module: 'js::fsm::direct', symbol });
 		return;
