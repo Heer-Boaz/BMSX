@@ -4,6 +4,10 @@ local CORONA_SPEED = 55
 local CORONA_FRAME_TICKS = 6
 local CORONA_FRAMES = { 'corona1', 'corona2', 'corona3', 'corona2' }
 
+local function corona_state(object)
+	return object.lua_instance
+end
+
 local function out_of_bounds(x, y)
 	return x < -32 or x > SCREEN_WIDTH + 32 or y < -32 or y > SCREEN_HEIGHT + 32
 end
@@ -16,10 +20,12 @@ return {
 			ticks2advance_tape = CORONA_FRAME_TICKS,
 			enable_tape_autotick = true,
 			tape_playback_mode = 'loop',
+			markers = {
+				{ frame = 0, event = 'corona.behavior.choose_direction' },
+				{ frame = 2, event = 'corona.behavior.choose_direction' },
+			},
 			entering_state = function(object, state)
-				state:reset()
-				state.tapehead_position = 0
-				object:getcomponentbyid('corona_sprite').imgid = state.current_tape_value
+				object:getcomponentbyid('corona_sprite').imgid = state.current_tape_value or CORONA_FRAMES[1]
 			end,
 			tape_next = function(object, state)
 				object:getcomponentbyid('corona_sprite').imgid = state.current_tape_value
@@ -27,13 +33,18 @@ return {
 			on = {
 				dispel = '../despawn',
 				['player.win'] = '../despawn',
+				['corona.behavior.choose_direction'] = {
+					['do'] = function(state)
+						state.target:tickTree('marlies2020_corona_bt')
+						return nil
+					end,
+				},
 			},
 			tick = function(object)
-				object:tickTree('marlies2020_corona_bt')
-				local state = object:getcomponentbyid('corona_state').vars
+				local context = corona_state(object)
 				local delta = delta_seconds()
-				object.x = object.x + state.move_x * CORONA_SPEED * delta
-				object.y = object.y + state.move_y * CORONA_SPEED * delta
+				object.x = object.x + context.move_x * CORONA_SPEED * delta
+				object.y = object.y + context.move_y * CORONA_SPEED * delta
 				if out_of_bounds(object.x, object.y) then
 					return '../despawn'
 				end
@@ -42,7 +53,7 @@ return {
 		},
 		despawn = {
 			entering_state = function(object)
-				remove_corona(object.id)
+				despawn(object.id)
 			end,
 			tick = function()
 				return '../despawn'

@@ -194,6 +194,9 @@ export class AbilitySystemComponent extends Component {
 		this._abilities.set(definition.id, definition);
 		this._abilityActions.set(definition.id, registry);
 	}
+	public hasAbility(id: AbilityId): boolean {
+		return this._abilities.has(id);
+	}
 	public revokeAbility(id: AbilityId): void {
 		this._abilities.delete(id);
 		this._abilityActions.delete(id);

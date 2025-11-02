@@ -1,6 +1,6 @@
 import { BmsxConsoleApi } from '../api';
 import { clamp } from '../../utils/utils';
-import { collectLuaScopedSymbols, getApiCompletionData, getKeywordCompletions, type LuaScopedSymbol } from './intellisense';
+import { getApiCompletionData, getKeywordCompletions, type LuaScopedSymbol } from './intellisense';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast.ts';
 import {
     CompletionContext,
@@ -68,7 +68,6 @@ export class CompletionController {
     private completionSession: CompletionSession | null = null;
     private readonly localCompletionCache: Map<string, LocalCompletionCacheEntry> = new Map();
     private cachedGlobalCompletionItems: LuaCompletionItem[] | null = null;
-    private readonly pendingLocalSymbolParses: Set<string> = new Set();
     private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } | null = null;
     private suppressNextAutoCompletion = false;
     private parameterHint: ParameterHintState | null = null;
@@ -467,18 +466,15 @@ export class CompletionController {
         if (needsParse) {
             const definitions = this.host.getSemanticDefinitions();
             if (definitions && definitions.length > 0) {
-                const symbols = this.convertDefinitionsToLocalSymbols(definitions, chunkName);
+                const symbols = this.convertDefinitionsToLocalSymbols(definitions);
                 cached = {
                     parsedVersion: currentVersion,
                     chunkName,
                     symbols,
                 };
                 this.localCompletionCache.set(key, cached);
-            } else {
-                this.requestLocalSymbolParse(key, chunkName);
-                if (!cached) {
-                    return [];
-                }
+            } else if (!cached) {
+                return [];
             }
         }
         if (!cached) {
@@ -538,7 +534,7 @@ export class CompletionController {
         return items;
     }
 
-    private convertDefinitionsToLocalSymbols(definitions: readonly LuaDefinitionInfo[], chunkName: string | null): LuaScopedSymbol[] {
+    private convertDefinitionsToLocalSymbols(definitions: readonly LuaDefinitionInfo[]): LuaScopedSymbol[] {
         if (!definitions || definitions.length === 0) {
             return [];
         }
@@ -563,47 +559,11 @@ export class CompletionController {
 
     private convertSourceRange(range: LuaSourceRange): ConsoleLuaDefinitionRange {
         return {
-            chunkName: range.chunkName,
             startLine: range.start.line,
             startColumn: range.start.column,
             endLine: range.end.line,
             endColumn: range.end.column,
         };
-    }
-
-    private requestLocalSymbolParse(cacheKey: string, chunkName: string | null): void {
-        if (this.pendingLocalSymbolParses.has(cacheKey)) {
-            return;
-        }
-        this.pendingLocalSymbolParses.add(cacheKey);
-        const snapshotVersion = this.host.getTextVersion();
-        this.host.scheduleTask(() => {
-            this.pendingLocalSymbolParses.delete(cacheKey);
-            if (this.host.getTextVersion() !== snapshotVersion) {
-                return;
-            }
-            const lines = this.host.getLines();
-            const source = lines.join('\n');
-            const parseChunkName = chunkName && chunkName.length > 0 ? chunkName : 'lua_chunk';
-            let symbols: LuaScopedSymbol[] | null = null;
-            try {
-                symbols = collectLuaScopedSymbols({ source, chunkName: parseChunkName });
-            } catch {
-                symbols = null;
-            }
-            if (!symbols) {
-                return;
-            }
-            const currentVersion = this.host.getTextVersion();
-            if (currentVersion !== snapshotVersion) {
-                return;
-            }
-            this.localCompletionCache.set(cacheKey, {
-                parsedVersion: currentVersion,
-                chunkName,
-                symbols,
-            });
-        });
     }
 
     private filterLocalSymbolsAtPosition(symbols: readonly LuaScopedSymbol[], row: number, column: number): LuaScopedSymbol[] {

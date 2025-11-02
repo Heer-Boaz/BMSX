@@ -513,12 +513,16 @@ export class BmsxConsoleApi {
 	}
 
 	public spawn_world_object(classRef: string, options?: Record<string, unknown>): string {
-		const ctor = this.resolveWorldObjectConstructor(classRef);
 		const rawOptions = options ? this.cloneStateMachineData(options) : {};
 		if (rawOptions && !this.isPlainObject(rawOptions)) {
 			throw new Error('[BmsxConsoleApi] spawn_world_object options must be a table/object.');
 		}
 		const normalized = this.normalizeSpawnOptions(rawOptions as Record<string, unknown>);
+		const runtime = BmsxConsoleRuntime.instance;
+		if (runtime) {
+			runtime.applyLuaWorldObjectDefaults(classRef, normalized);
+		}
+		const ctor = this.resolveWorldObjectConstructor(classRef);
 		if (normalized.id && $.world.exists(normalized.id)) {
 			throw new Error(`[BmsxConsoleApi] World object '${normalized.id}' already exists.`);
 		}
@@ -527,6 +531,7 @@ export class BmsxConsoleApi {
 		if (normalized.fsmId) ctorOptions.fsm_id = normalized.fsmId;
 		const instance = new ctor(ctorOptions);
 		this.applySpawnOrientation(instance, normalized);
+		this.attachSpawnComponents(instance, normalized.components);
 		const spawnPos = normalized.position ? new_vec3(normalized.position.x, normalized.position.y, normalized.position.z) : undefined;
 		if (normalized.space) {
 			const space = this.lookupSpace(normalized.space);
@@ -536,7 +541,9 @@ export class BmsxConsoleApi {
 			const reasonOpts = normalized.reason ? { reason: normalized.reason } : undefined;
 			$.world.spawn(instance, spawnPos, reasonOpts);
 		}
-		this.attachSpawnComponents(instance, normalized.components);
+		if (runtime) {
+			runtime.onLuaWorldObjectSpawned(instance);
+		}
 		return instance.id;
 	}
 
@@ -583,18 +590,23 @@ export class BmsxConsoleApi {
 	}
 }
 
-	public define_lua_component(descriptor: Record<string, unknown>): string {
-		const runtime = this.requireConsoleRuntime('define_lua_component');
-		return runtime.registerLuaComponentDefinition(descriptor);
+	public define_component(descriptor: Record<string, unknown>): string {
+		const runtime = this.requireConsoleRuntime('define_component');
+		return runtime.registerComponentDefinition(descriptor);
 	}
 
-	public attach_lua_component(objectId: Identifier, component: string | { id: string; id_local?: string; state?: Record<string, unknown> }): string {
-		const runtime = this.requireConsoleRuntime('attach_lua_component');
-		const object = this.requireWorldObject(objectId, 'attach_lua_component');
+	public define_worldobject(descriptor: Record<string, unknown>): string {
+		const runtime = this.requireConsoleRuntime('define_worldobject');
+		return runtime.registerWorldObjectDefinition(descriptor);
+	}
+
+	public attach_component(objectId: Identifier, component: string | { id: string; id_local?: string; state?: Record<string, unknown> }): string {
+		const runtime = this.requireConsoleRuntime('attach_component');
+	const object = this.requireWorldObject(objectId, 'attach_component');
 		const options = typeof component === 'string' ? { id: component } : (component ?? {});
 		const rawId = (options as { id?: unknown }).id;
 		if (typeof rawId !== 'string' || rawId.trim().length === 0) {
-			throw new Error('[BmsxConsoleApi] attach_lua_component requires an id field.');
+		throw new Error('[BmsxConsoleApi] attach_component requires an id field.');
 		}
 		const definitionId = rawId.trim();
 		const idLocalRaw = (options as { id_local?: unknown }).id_local;
@@ -602,15 +614,15 @@ export class BmsxConsoleApi {
 		const stateRaw = (options as { state?: unknown }).state;
 		let state: Record<string, unknown> | undefined;
 		if (stateRaw !== undefined) {
-			if (!this.isPlainObject(stateRaw)) {
-				throw new Error('[BmsxConsoleApi] attach_lua_component state must be a table/object.');
+		if (!this.isPlainObject(stateRaw)) {
+			throw new Error('[BmsxConsoleApi] attach_component state must be a table/object.');
 			}
 			state = this.cloneStateMachineData(stateRaw as Record<string, unknown>);
 		}
-		if (state && !this.isPlainObject(state)) {
-			throw new Error('[BmsxConsoleApi] attach_lua_component state must be a plain object.');
+	if (state && !this.isPlainObject(state)) {
+		throw new Error('[BmsxConsoleApi] attach_component state must be a plain object.');
 		}
-		const instance = runtime.createLuaComponentInstance({
+		const instance = runtime.createComponentInstance({
 			definitionId,
 			parentId: object.id,
 			id_local,
@@ -626,23 +638,23 @@ export class BmsxConsoleApi {
 		return instance.id;
 	}
 
-	public define_lua_ability(descriptor: Record<string, unknown>): string {
-		const runtime = this.requireConsoleRuntime('define_lua_ability');
-		const definition = runtime.registerLuaAbilityDefinition(descriptor);
+	public define_ability(descriptor: Record<string, unknown>): string {
+		const runtime = this.requireConsoleRuntime('define_ability');
+		const definition = runtime.registerAbilityDefinition(descriptor);
 		return definition.id;
 	}
 
-	public grant_lua_ability(objectId: Identifier, abilityId: string): void {
+	public grant_ability(objectId: Identifier, abilityId: string): void {
 		if (typeof abilityId !== 'string' || abilityId.trim().length === 0) {
-			throw new Error('[BmsxConsoleApi] grant_lua_ability requires a non-empty ability id.');
+			throw new Error('[BmsxConsoleApi] grant_ability requires a non-empty ability id.');
 		}
-		const runtime = this.requireConsoleRuntime('grant_lua_ability');
-		const object = this.requireWorldObject(objectId, 'grant_lua_ability');
+		const runtime = this.requireConsoleRuntime('grant_ability');
+		const object = this.requireWorldObject(objectId, 'grant_ability');
 		const asc = object.getUniqueComponent(AbilitySystemComponent);
 		if (!asc) {
 			throw new Error(`[BmsxConsoleApi] World object '${objectId}' does not have an AbilitySystemComponent.`);
 		}
-		const definition = runtime.getLuaAbilityDefinition(abilityId.trim());
+		const definition = runtime.getAbilityDefinition(abilityId.trim());
 		if (!definition) {
 			throw new Error(`[BmsxConsoleApi] Lua ability '${abilityId}' is not registered.`);
 		}

@@ -2,6 +2,7 @@ import { $ } from '../core/game';
 import { ECSystem, TickGroup } from '../ecs/ecsystem';
 import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
+import { BmsxConsoleRuntime } from '../console/runtime';
 
 export class AbilityRuntimeSystem extends ECSystem {
 	constructor(priority: number = 32) { super(TickGroup.AbilityUpdate, priority); }
@@ -26,6 +27,10 @@ export class AbilityRuntimeSystem extends ECSystem {
 					asc.tryActivate(command.ability_id, command.payload);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
+				const runtime = BmsxConsoleRuntime.instance;
+				if (runtime) {
+					runtime.reportEngineError(error);
+				}
 				throw new Error(`[AbilityRuntimeSystem] Activation failed for ability '${command.ability_id}' on owner '${command.owner}': ${message}`);
 			}
 		}
@@ -36,6 +41,10 @@ export class AbilityRuntimeSystem extends ECSystem {
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				const ownerId = asc.parentid ? asc.parentid : '<unknown>';
+				const runtime = BmsxConsoleRuntime.instance;
+				if (runtime) {
+					runtime.reportEngineError(error);
+				}
 				throw new Error(`[AbilityRuntimeSystem] Tick failed for AbilitySystemComponent '${ownerId}': ${message}`);
 			}
 		}

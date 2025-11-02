@@ -1,7 +1,7 @@
 import { BootArgs, WorldConfiguration, Input, $, KeyboardButton, BGamepadButton } from 'bmsx';
 import { createMarlies2020ConsoleWorldModule } from './worldmodule';
 
-type ConsoleAction = 'console_left' | 'console_right' | 'console_up' | 'console_down' | 'console_o' | 'console_x';
+type ConsoleAction = 'move_left' | 'move_right' | 'move_up' | 'move_down' | 'fire' | 'interact';
 
 type ConsoleKeyboardMapping = {
 	[action in ConsoleAction]: KeyboardButton[];
@@ -12,21 +12,21 @@ type ConsoleGamepadMapping = {
 };
 
 const keyboardInputMapping: ConsoleKeyboardMapping = {
-	console_left: ['ArrowLeft'],
-	console_right: ['ArrowRight'],
-	console_up: ['ArrowUp'],
-	console_down: ['ArrowDown'],
-	console_o: ['KeyZ'],
-	console_x: ['KeyX'],
+	move_left: ['ArrowLeft'],
+	move_right: ['ArrowRight'],
+	move_up: ['ArrowUp'],
+	move_down: ['ArrowDown'],
+	fire: ['KeyZ'],
+	interact: ['KeyX'],
 };
 
 const gamepadInputMapping: ConsoleGamepadMapping = {
-	console_left: ['left'],
-	console_right: ['right'],
-	console_up: ['up'],
-	console_down: ['down'],
-	console_o: ['b'],
-	console_x: ['a'],
+	move_left: ['left'],
+	move_right: ['right'],
+	move_up: ['up'],
+	move_down: ['down'],
+	fire: ['b'],
+	interact: ['a'],
 };
 
 const globalTarget = globalThis as { h406A?: (args: BootArgs) => Promise<void>; };

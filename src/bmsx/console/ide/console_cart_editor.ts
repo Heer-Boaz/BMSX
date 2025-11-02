@@ -1,7 +1,7 @@
 import { $ } from '../../core/game';
 import type { KeyboardInput } from '../../input/keyboardinput';
 import type { BGamepadButton } from '../../input/inputtypes';
-import type { FrameLoop, ViewportMetrics } from '../../platform/platform';
+import type { ViewportMetrics } from '../../platform/platform';
 import { BmsxConsoleApi } from '../api';
 import type {
 	BmsxConsoleMetadata,
@@ -375,10 +375,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.lineHeight = this.font.lineHeight();
 		this.charAdvance = this.font.advance('M');
 		this.spaceAdvance = this.font.advance(' ');
-	this.layout = new ConsoleCodeLayout(this.font, this.semanticWorkspace, {
-		clockNow: this.clockNow,
-		scheduleTask: (fn) => this.scheduleNextFrame(fn),
-	});
+		this.layout = new ConsoleCodeLayout(this.font, this.semanticWorkspace, {
+			clockNow: this.clockNow,
+			scheduleTask: (fn) => this.scheduleNextFrame(fn),
+		});
 		this.inlineFieldMetricsRef = {
 			measureText: (text: string) => this.measureText(text),
 			advanceChar: (ch: string) => this.font.advance(ch),
@@ -398,7 +398,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			viewerVertical: new ConsoleScrollbar('viewerVertical', 'vertical'),
 		};
 		this.scrollbarController = new ScrollbarController(this.scrollbars as any);
-			// Initialize resource panel controller
+		// Initialize resource panel controller
 		this.resourcePanel = new ResourcePanelController({
 			getViewportWidth: () => this.viewportWidth,
 			getViewportHeight: () => this.viewportHeight,
@@ -409,20 +409,20 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			measureText: (t) => this.measureText(t),
 			drawText: (a, t, x, y, c) => drawEditorText(a, this.font, t, x, y, c),
 			drawColoredText: (a, t, colors, x, y) => drawEditorColoredText(a, this.font, t, colors, x, y, constants.COLOR_CODE_TEXT),
-				drawRectOutlineColor: (a, l, t, r, b, col) => this.drawRectOutlineColor(a, l, t, r, b, col),
-				playerIndex: this.playerIndex,
-				listResources: () => this.listResourcesStrict(),
-				openLuaCodeTab: (d) => this.openLuaCodeTab(d),
-				openResourceViewerTab: (d) => this.openResourceViewerTab(d),
-				focusEditorFromResourcePanel: () => this.focusEditorFromResourcePanel(),
-				showMessage: (text, color, duration) => this.showMessage(text, color, duration),
-			}, { resourceVertical: this.scrollbars.resourceVertical, resourceHorizontal: this.scrollbars.resourceHorizontal });
+			drawRectOutlineColor: (a, l, t, r, b, col) => this.drawRectOutlineColor(a, l, t, r, b, col),
+			playerIndex: this.playerIndex,
+			listResources: () => this.listResourcesStrict(),
+			openLuaCodeTab: (d) => this.openLuaCodeTab(d),
+			openResourceViewerTab: (d) => this.openResourceViewerTab(d),
+			focusEditorFromResourcePanel: () => this.focusEditorFromResourcePanel(),
+			showMessage: (text, color, duration) => this.showMessage(text, color, duration),
+		}, { resourceVertical: this.scrollbars.resourceVertical, resourceHorizontal: this.scrollbars.resourceHorizontal });
 		// Initialize completion/intellisense controller
-	this.completion = new CompletionController({
-		getPlayerIndex: () => this.playerIndex,
-		isCodeTabActive: () => this.isCodeTabActive(),
-		getLines: () => this.lines,
-		getCursorRow: () => this.cursorRow,
+		this.completion = new CompletionController({
+			getPlayerIndex: () => this.playerIndex,
+			isCodeTabActive: () => this.isCodeTabActive(),
+			getLines: () => this.lines,
+			getCursorRow: () => this.cursorRow,
 			getCursorColumn: () => this.cursorColumn,
 			setCursorPosition: (row, column) => { this.cursorRow = row; this.cursorColumn = column; },
 			setSelectionAnchor: (row, column) => { this.selectionAnchor = { row, column }; },
@@ -440,13 +440,13 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			resolveHoverChunkName: (ctx) => this.resolveHoverChunkName(ctx as any),
 		listLuaSymbols: (assetId, chunk) => this.listLuaSymbolsFn(assetId, chunk),
 		listGlobalLuaSymbols: () => this.listGlobalLuaSymbolsFn(),
-		listBuiltinLuaFunctions: () => this.listBuiltinLuaFunctionsFn(),
-		getSemanticDefinitions: () => this.getActiveSemanticDefinitions(),
-		charAt: (r, c) => this.charAt(r, c),
-		getTextVersion: () => this.textVersion,
-		shouldFireRepeat: (kb, code, dt) => this.input.shouldRepeatPublic(kb, code, dt),
-		scheduleTask: (fn) => this.scheduleNextFrame(fn),
-	});
+			listBuiltinLuaFunctions: () => this.listBuiltinLuaFunctionsFn(),
+			getSemanticDefinitions: () => this.getActiveSemanticDefinitions(),
+			charAt: (r, c) => this.charAt(r, c),
+			getTextVersion: () => this.textVersion,
+			shouldFireRepeat: (kb, code, dt) => this.input.shouldRepeatPublic(kb, code, dt),
+			scheduleTask: (fn) => this.scheduleNextFrame(fn),
+		});
 		this.completion.setEnterCommitsEnabled(false);
 		// Initialize input controller
 		this.input = new InputController({
@@ -541,23 +541,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private scheduleNextFrame(task: () => void): void {
-		try {
-			const globalScope = $ as { platform?: { frames?: FrameLoop } };
-			if (globalScope && globalScope.platform && globalScope.platform.frames && typeof globalScope.platform.frames.start === 'function') {
-				const loop = globalScope.platform.frames;
-				let handle: { stop(): void } | null = null;
-				handle = loop.start(() => {
-					if (handle) {
-						handle.stop();
-						handle = null;
-					}
-					task();
-				});
-				return;
-			}
-		} catch {
-			// fall through to microtask/Promise fallback
-		}
 		if (typeof queueMicrotask === 'function') {
 			queueMicrotask(task);
 			return;
@@ -8218,6 +8201,9 @@ protected markDiagnosticsDirty(contextId?: string): void {
 		this.clearReferenceHighlights();
 		this.updateActiveContextDirtyFlag();
 		this.invalidateVisualLines();
+		const activeContext = this.getActiveCodeTabContext();
+		const chunkName = this.resolveHoverChunkName(activeContext) ?? '<console>';
+		this.layout.requestSemanticUpdate(this.lines, this.textVersion, chunkName);
 		this.handlePostEditMutation();
 	}
 

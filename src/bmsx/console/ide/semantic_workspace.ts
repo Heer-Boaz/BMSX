@@ -1,10 +1,14 @@
-import { LuaProjectIndex, type LuaSemanticModel, type Decl, type Ref, type FileSemanticData, type SymbolID } from './semantic_model.ts';
+import { LuaProjectIndex, type LuaSemanticModel, type Decl, type Ref, type FileSemanticData, type SerializedFileSemanticData, type SymbolID } from './semantic_model.ts';
 
 export class LuaSemanticWorkspace {
 	private readonly index = new LuaProjectIndex();
 
 	public updateFile(file: string, source: string): LuaSemanticModel {
 		return this.index.updateFile(file, source);
+	}
+
+	public applySerializedFileData(data: SerializedFileSemanticData): LuaSemanticModel {
+		return this.index.applySerializedFileData(data);
 	}
 
 	public removeFile(file: string): void {

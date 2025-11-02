@@ -84,6 +84,34 @@ export type FileSemanticData = {
 	refs: readonly Ref[];
 };
 
+export type SerializedFileSemanticData = {
+	file: string;
+	source: string;
+	lines: readonly string[];
+	annotations: SemanticAnnotations;
+	decls: readonly Decl[];
+	refs: readonly Ref[];
+	definitions: readonly LuaDefinitionInfo[];
+};
+
+export function hydrateFileSemanticData(data: SerializedFileSemanticData): FileSemanticData {
+	const model = createSemanticModel({
+		file: data.file,
+		decls: data.decls,
+		definitions: data.definitions,
+		refs: data.refs,
+		annotations: data.annotations,
+	});
+	return {
+		model,
+		source: data.source,
+		lines: data.lines,
+		annotations: data.annotations,
+		decls: data.decls,
+		refs: data.refs,
+	};
+}
+
 type ScopeKind = 'chunk' | 'function' | 'block' | 'loop';
 
 type Scope = {
@@ -183,17 +211,12 @@ export class LuaProjectIndex {
 
 	public updateFile(file: string, source: string): LuaSemanticModel {
 		const data = buildLuaFileSemanticData(source, file);
-		const current = this.files.get(file);
-		if (current) {
-			this.removeFileData(current.data);
-		}
-		this.files.set(file, {
-			source,
-			data,
-		});
-		this.ensureFileOrder(file);
-		this.applyFileData(data);
-		return data.model;
+		return this.storeFileData(file, data);
+	}
+
+	public applySerializedFileData(data: SerializedFileSemanticData): LuaSemanticModel {
+		const hydrated = hydrateFileSemanticData(data);
+		return this.storeFileData(data.file, hydrated);
 	}
 
 	public removeFile(file: string): void {
@@ -447,6 +470,20 @@ export class LuaProjectIndex {
 		this.fileOrder.set(file, order);
 		this.nextFileOrder += 1;
 		return order;
+	}
+
+	private storeFileData(file: string, data: FileSemanticData): LuaSemanticModel {
+		const current = this.files.get(file);
+		if (current) {
+			this.removeFileData(current.data);
+		}
+		this.files.set(file, {
+			source: data.source,
+			data,
+		});
+		this.ensureFileOrder(file);
+		this.applyFileData(data);
+		return data.model;
 	}
 
 	private findSymbolAt(record: FileRecord, position: Position): { id: SymbolID; decl: Decl } | null {

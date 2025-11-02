@@ -33,10 +33,14 @@ import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { ConsoleFontVariant } from './font';
 import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
 import { LuaComponent } from '../component/lua_component';
+import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 import type { LuaComponentHandlerIdMap } from '../component/lua_component';
 import { defineAbility, abilityActions } from '../gas/ability_registry';
 import type { GameplayAbilityDefinition } from '../gas/gameplay_ability';
 import { deepClone } from '../utils/utils';
+import { WorldObject } from '../core/object/worldobject';
+import { Reviver } from '../serializer/gameserializer';
+import type { RevivableObjectArgs } from '../serializer/serializationhooks';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -115,6 +119,22 @@ type LuaComponentDefinitionRecord = {
 	tagsPre?: ReadonlyArray<string>;
 	tagsPost?: ReadonlyArray<string>;
 	unique?: boolean;
+};
+
+type LuaConsoleComponentDescriptor = {
+	className: string;
+	options: Record<string, unknown>;
+};
+
+type LuaWorldObjectDefinitionRecord = {
+	id: string;
+	baseClassName: string;
+	baseCtor: new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
+	constructor: new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
+	classRef: string;
+	classTable: LuaTable;
+	defaultComponents: LuaConsoleComponentDescriptor[];
+	defaultFsmId?: string;
 };
 
 type LuaAbilityRegistrationDescriptor = {
@@ -277,12 +297,13 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly luaBehaviorTreeIds: Set<string> = new Set<string>();
 	private readonly luaStateMachineHandlerIds: Map<string, Set<string>> = new Map();
 	private readonly luaBehaviorTreeHandlerIds: Map<string, Set<string>> = new Map();
-	private readonly luaComponentDefinitions: Map<string, LuaComponentDefinitionRecord> = new Map();
-	private readonly luaComponentHandlerIds: Map<string, Set<string>> = new Map();
-	private readonly luaAbilityDefinitions: Map<string, GameplayAbilityDefinition> = new Map();
-	private readonly luaAbilityHandlerIds: Map<string, Set<string>> = new Map();
-	private readonly luaAbilityActionIds: Map<string, string[]> = new Map();
-	private readonly luaAbilityActionByHandler = new Map<string, string>();
+	private readonly componentDefinitions: Map<string, LuaComponentDefinitionRecord> = new Map();
+	private readonly worldObjectDefinitions: Map<string, LuaWorldObjectDefinitionRecord> = new Map();
+	private readonly componentHandlerIds: Map<string, Set<string>> = new Map();
+	private readonly abilityDefinitions: Map<string, GameplayAbilityDefinition> = new Map();
+	private readonly abilityHandlerIds: Map<string, Set<string>> = new Map();
+	private readonly abilityActionIds: Map<string, string[]> = new Map();
+	private readonly abilityActionByHandler = new Map<string, string>();
 	private readonly luaHandlerBindings = new Map<string, { fn: LuaFunctionValue; interpreter: LuaInterpreter }>();
 	private readonly luaServiceEventListeners = new Map<string, { slot: string; unsubscribe: () => void }>();
 	private readonly luaModuleOwners = new Map<string, { fsm?: string; behavior_tree?: string }>();
@@ -633,6 +654,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.editor = null;
 		}
 		this.colliders.clear();
+		this.disposeAllWorldObjectDefinitions();
 		this.disposeLuaServices();
 		this.luaInterpreter = null;
 		this.fsmLuaInterpreter = null;
@@ -1017,13 +1039,13 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 
-		for (const handlerSet of this.luaComponentHandlerIds.values()) {
+		for (const handlerSet of this.componentHandlerIds.values()) {
 			for (const handlerId of handlerSet) {
 				pushModuleForHandler(handlerId);
 			}
 		}
 
-		for (const handlerId of this.luaAbilityActionByHandler.keys()) {
+		for (const handlerId of this.abilityActionByHandler.keys()) {
 			pushModuleForHandler(handlerId);
 		}
 
@@ -1435,6 +1457,9 @@ export class BmsxConsoleRuntime extends Service {
 							continue;
 						}
 					}
+					if (typeof key === 'string' && key === '__index') {
+						continue;
+					}
 					let serializedEntry: unknown;
 					try {
 						serializedEntry = this.serializeLuaValueForSnapshot(entryValue, visited);
@@ -1573,8 +1598,9 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaObjectWrapperCache = new WeakMap<object, LuaTable>();
 		this.freeHandles = [];
 		this.freeHandleSet.clear();
-		this.disposeAllLuaComponentDefinitions();
-		this.disposeAllLuaAbilityDefinitions();
+		this.disposeAllComponentDefinitions();
+		this.disposeAllWorldObjectDefinitions();
+		this.disposeAllAbilityDefinitions();
 		this.disposeLuaServices();
 		this.luaModuleOwners.clear();
 		this.handledLuaErrors = new WeakSet<object>();
@@ -3263,10 +3289,10 @@ export class BmsxConsoleRuntime extends Service {
 
 	private registerLuaComponentHandler(componentId: string, slot: string, fn: LuaFunctionValue, interpreter: LuaInterpreter, symbolPath: string[]): string {
 		const handlerId = this.makeLuaHandlerId(`component:${componentId}`, [slot]);
-		let set = this.luaComponentHandlerIds.get(componentId);
+		let set = this.componentHandlerIds.get(componentId);
 		if (!set) {
 			set = new Set<string>();
-			this.luaComponentHandlerIds.set(componentId, set);
+			this.componentHandlerIds.set(componentId, set);
 		}
 		set.add(handlerId);
 		this.updateLuaHandlerBinding(handlerId, fn, interpreter);
@@ -3300,8 +3326,8 @@ export class BmsxConsoleRuntime extends Service {
 		return handlerId;
 	}
 
-	private disposeLuaComponentHandlers(componentId: string): void {
-		const entries = this.luaComponentHandlerIds.get(componentId);
+	private disposeComponentHandlers(componentId: string): void {
+		const entries = this.componentHandlerIds.get(componentId);
 		if (!entries) {
 			return;
 		}
@@ -3309,26 +3335,26 @@ export class BmsxConsoleRuntime extends Service {
 		HandlerRegistry.instance.unregister(handlerId);
 		this.removeLuaHandlerTracking(handlerId);
 	}
-	this.luaComponentHandlerIds.delete(componentId);
+	this.componentHandlerIds.delete(componentId);
 	}
 
-	private disposeAllLuaComponentDefinitions(): void {
-		for (const componentId of [...this.luaComponentHandlerIds.keys()]) {
-			this.disposeLuaComponentHandlers(componentId);
+	private disposeAllComponentDefinitions(): void {
+		for (const componentId of [...this.componentHandlerIds.keys()]) {
+			this.disposeComponentHandlers(componentId);
 		}
-		this.luaComponentDefinitions.clear();
+		this.componentDefinitions.clear();
 	}
 
-	public registerLuaComponentDefinition(descriptor: Record<string, unknown>): string {
+	public registerComponentDefinition(descriptor: Record<string, unknown>): string {
 		if (!descriptor || typeof descriptor !== 'object') {
-			throw new Error('[BmsxConsoleRuntime] define_lua_component requires a descriptor table.');
+			throw new Error('[BmsxConsoleRuntime] define_component requires a descriptor table.');
 		}
 		const interpreter = this.requireLuaInterpreter();
 		const idValue = (descriptor as { id?: unknown; name?: unknown }).id ?? (descriptor as { name?: unknown }).name;
-		const componentId = this.normalizeLuaIdentifier(idValue, 'define_lua_component');
+		const componentId = this.normalizeLuaIdentifier(idValue, 'define_component');
 		const handlersRaw = (descriptor as { handlers?: unknown }).handlers;
-		const handlerIds: LuaComponentHandlerIdMap = {};
-		this.disposeLuaComponentHandlers(componentId);
+	const handlerIds: LuaComponentHandlerIdMap = {};
+	this.disposeComponentHandlers(componentId);
 		if (handlersRaw && typeof handlersRaw === 'object') {
 			const handlerEntries = handlersRaw as Record<string, unknown>;
 			for (const [rawKey, candidate] of Object.entries(handlerEntries)) {
@@ -3360,12 +3386,12 @@ export class BmsxConsoleRuntime extends Service {
 			tagsPost,
 			unique,
 		};
-		this.luaComponentDefinitions.set(componentId, record);
+	this.componentDefinitions.set(componentId, record);
 		return componentId;
 	}
 
-	public createLuaComponentInstance(opts: { definitionId: string; parentId: Identifier; id_local?: string | null; state?: Record<string, unknown> | null }): LuaComponent {
-		const definition = this.luaComponentDefinitions.get(opts.definitionId);
+	public createComponentInstance(opts: { definitionId: string; parentId: Identifier; id_local?: string | null; state?: Record<string, unknown> | null }): LuaComponent {
+		const definition = this.componentDefinitions.get(opts.definitionId);
 		if (!definition) {
 			throw new Error(`[BmsxConsoleRuntime] Lua component definition '${opts.definitionId}' is not registered.`);
 		}
@@ -3385,17 +3411,289 @@ export class BmsxConsoleRuntime extends Service {
 		});
 	}
 
-	public getLuaComponentDefinition(definitionId: string): LuaComponentDefinitionRecord | undefined {
-		return this.luaComponentDefinitions.get(definitionId);
+	public getComponentDefinition(definitionId: string): LuaComponentDefinitionRecord | undefined {
+		return this.componentDefinitions.get(definitionId);
 	}
 
-	private registerLuaAbilityHandler(abilityId: string, slot: string, fn: LuaFunctionValue, interpreter: LuaInterpreter): { handlerId: string; actionId: string } {
+	private normalizeLuaWorldObjectComponents(raw: unknown): LuaConsoleComponentDescriptor[] {
+		if (!raw) {
+			return [];
+		}
+		if (!Array.isArray(raw)) {
+			throw new Error('[BmsxConsoleRuntime] Lua world object components must be provided as an array.');
+		}
+		const normalized: LuaConsoleComponentDescriptor[] = [];
+		for (let i = 0; i < raw.length; i += 1) {
+			const entry = raw[i];
+			if (!entry || typeof entry !== 'object') {
+				throw new Error(`[BmsxConsoleRuntime] Component descriptor at index ${i} must be a table.`);
+			}
+			const record = entry as Record<string, unknown>;
+			const className = this.getLuaRecordEntry<string>(record, ['class', 'className']);
+			if (typeof className !== 'string' || className.trim().length === 0) {
+				throw new Error(`[BmsxConsoleRuntime] Component descriptor at index ${i} is missing a class name.`);
+			}
+			const options = deepClone(record);
+			delete options.class;
+			delete options.className;
+			normalized.push({ className: className.trim(), options });
+		}
+		return normalized;
+	}
+
+	private cloneComponentDescriptors(source: LuaConsoleComponentDescriptor[]): LuaConsoleComponentDescriptor[] {
+		const cloned: LuaConsoleComponentDescriptor[] = [];
+		for (let i = 0; i < source.length; i += 1) {
+			const item = source[i]!;
+			cloned.push({
+				className: item.className,
+				options: deepClone(item.options),
+			});
+		}
+		return cloned;
+	}
+
+	public registerWorldObjectDefinition(descriptor: Record<string, unknown>): string {
+		if (!descriptor || typeof descriptor !== 'object') {
+			throw new Error('[BmsxConsoleRuntime] define_worldobject requires a descriptor table.');
+		}
+		const interpreter = this.requireLuaInterpreter();
+		const idValue = this.getLuaRecordEntry<string>(descriptor, ['id', 'name']);
+		const classRefRaw = this.getLuaRecordEntry<string>(descriptor, ['class', 'prototype', 'luaclass', 'klass']);
+		const objectId = this.normalizeLuaIdentifier(idValue ?? classRefRaw, 'define_worldobject');
+		let classRef = classRefRaw;
+		if (!classRef || classRef.trim().length === 0) {
+			const fallback = objectId.split('.').pop();
+			classRef = fallback && fallback.length > 0 ? fallback : objectId;
+		}
+		const normalizedClassRef = this.normalizeLuaIdentifier(classRef, 'define_worldobject.class');
+
+		this.disposeWorldObjectDefinition(objectId);
+
+		const classTable = this.resolveLuaClassTable(normalizedClassRef, interpreter);
+
+		const baseCandidate =
+			this.getLuaRecordEntry<string>(descriptor, ['base', 'extends', 'super']) ??
+			this.luaValueToJs(this.getLuaTableEntry(classTable, ['base', 'extends', 'super']) ?? null);
+		const baseRef = typeof baseCandidate === 'string' && baseCandidate.trim().length > 0 ? baseCandidate : 'WorldObject';
+		const baseCtor = this.resolveWorldObjectConstructor(baseRef);
+
+		const componentsRaw = this.getLuaRecordEntry<unknown>(descriptor, ['components']) ??
+			this.luaValueToJs(this.getLuaTableEntry(classTable, ['components']) ?? null);
+		const defaultComponents = this.normalizeLuaWorldObjectComponents(componentsRaw);
+
+		const fsmCandidate =
+			this.getLuaRecordEntry<string>(descriptor, ['fsm', 'fsmId', 'fsm_id']) ??
+			(() => {
+				const value = this.getLuaTableEntry(classTable, ['fsm', 'fsmId', 'fsm_id']);
+				return value === null ? undefined : this.luaValueToJs(value);
+			})();
+		const defaultFsmId = typeof fsmCandidate === 'string' && fsmCandidate.trim().length > 0 ? fsmCandidate : undefined;
+
+		const record: LuaWorldObjectDefinitionRecord = {
+			id: objectId,
+			baseClassName: baseRef ?? 'WorldObject',
+			baseCtor,
+			constructor: WorldObject as unknown as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject,
+			classRef: normalizedClassRef,
+			classTable,
+			defaultComponents,
+			defaultFsmId,
+		};
+
+		record.constructor = this.createLuaWorldObjectConstructor(record);
+		this.worldObjectDefinitions.set(objectId, record);
+
+		Reviver.constructors[objectId] = record.constructor as unknown as new () => unknown;
+		(globalThis as Record<string, unknown>)[objectId] = record.constructor;
+
+		return objectId;
+	}
+
+	private createLuaWorldObjectConstructor(def: LuaWorldObjectDefinitionRecord): new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject {
+		const runtime = this;
+		const baseCtor = def.baseCtor;
+		return class LuaWorldObjectInstance extends baseCtor {
+			public readonly __luaDefinitionId: string = def.id;
+			constructor(opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) {
+				super(opts);
+				runtime.initializeLuaWorldObjectInstance(this, def);
+			}
+
+			override dispose(): void {
+				try {
+					runtime.invokeWorldObjectMethod(def, this, ['on_dispose', 'dispose']);
+				}
+				finally {
+					super.dispose();
+				}
+			}
+		};
+	}
+
+	private initializeLuaWorldObjectInstance(host: WorldObject, def: LuaWorldObjectDefinitionRecord): void {
+		const interpreter = this.requireLuaInterpreter();
+		const instance = this.instantiateLuaWorldObject(def, host, interpreter);
+		const target = host as unknown as { lua_instance?: LuaTable };
+		target.lua_instance = instance;
+	}
+
+	public onLuaWorldObjectSpawned(host: WorldObject): void {
+		const marker = host as { __luaDefinitionId?: string };
+		const defId = marker.__luaDefinitionId;
+		if (!defId) {
+			return;
+		}
+		const def = this.worldObjectDefinitions.get(defId);
+		if (!def) {
+			return;
+		}
+		this.invokeWorldObjectMethod(def, host, ['on_spawn', 'spawn']);
+	}
+
+	private instantiateLuaWorldObject(def: LuaWorldObjectDefinitionRecord, host: WorldObject, interpreter: LuaInterpreter): LuaTable {
+		const classTable = def.classTable;
+		this.ensureLuaClassPrototype(classTable);
+		const factoryCandidate = this.getLuaTableEntry(classTable, ['create', 'constructor', 'factory', 'new']);
+		let instance: LuaTable | null = null;
+		if (factoryCandidate !== null && this.isLuaFunctionValue(factoryCandidate)) {
+			const luaArgs: LuaValue[] = [classTable, this.jsToLua(host, interpreter)];
+			const results = factoryCandidate.call(luaArgs);
+			if (results.length > 0) {
+				const value = results[0];
+				if (isLuaTable(value)) {
+					instance = value;
+				}
+				else if (value !== null && value !== undefined) {
+					throw new Error(`[BmsxConsoleRuntime] World object '${def.id}' create handler must return a table.`);
+				}
+			}
+		}
+		if (!instance) {
+			instance = createLuaTable();
+			instance.setMetatable(classTable);
+		}
+		const hostRef = instance.get('object');
+		if (hostRef === null) {
+			instance.set('object', this.jsToLua(host, interpreter));
+		}
+		return instance;
+	}
+
+	private ensureLuaClassPrototype(classTable: LuaTable): void {
+		const meta = classTable.getMetatable();
+		const indexValue = meta ? meta.get('__index') : classTable.get('__index');
+		if (indexValue === null) {
+			classTable.set('__index', classTable);
+		}
+	}
+
+	private invokeWorldObjectMethod(def: LuaWorldObjectDefinitionRecord, host: WorldObject, methodKeys: readonly string[]): void {
+		const instance = this.getLuaWorldObjectInstance(host);
+		if (!instance) {
+			return;
+		}
+		const fn = this.resolveWorldObjectFunction(instance, def.classTable, methodKeys);
+		if (!fn) {
+			return;
+		}
+		const interpreter = this.requireLuaInterpreter();
+		this.callLuaFunctionWithInterpreter(fn, [instance, host], interpreter);
+	}
+
+	private resolveWorldObjectFunction(instance: LuaTable, classTable: LuaTable, methodKeys: readonly string[]): LuaFunctionValue | null {
+		for (let index = 0; index < methodKeys.length; index += 1) {
+			const key = methodKeys[index];
+			if (!key) continue;
+			const fromInstance = instance.get(key);
+			if (fromInstance !== null && this.isLuaFunctionValue(fromInstance)) {
+				return fromInstance;
+			}
+			const fromClass = this.getLuaTableEntry(classTable, [key]);
+			if (fromClass !== null && this.isLuaFunctionValue(fromClass)) {
+				return fromClass;
+			}
+		}
+		return null;
+	}
+
+	private getLuaWorldObjectInstance(host: WorldObject): LuaTable | null {
+		const bag = host as unknown as { lua_instance?: LuaTable };
+		return bag.lua_instance ?? null;
+	}
+
+	private resolveLuaClassTable(classRef: string, interpreter: LuaInterpreter): LuaTable {
+		const env = interpreter.getGlobalEnvironment();
+		const segments = classRef.split('.');
+		if (segments.length === 0) {
+			throw new Error('[BmsxConsoleRuntime] define_worldobject.class requires a non-empty identifier.');
+		}
+		let value = this.getLuaGlobalValue(env, segments[0]) as LuaValue | null;
+		if (value === null) {
+			throw new Error(`[BmsxConsoleRuntime] Lua class '${classRef}' not found.`);
+		}
+		for (let index = 1; index < segments.length; index += 1) {
+			if (!isLuaTable(value)) {
+				throw new Error(`[BmsxConsoleRuntime] Lua class path '${classRef}' resolved to a non-table value.`);
+			}
+			const next = this.getLuaTableEntry(value, [segments[index]!]);
+			if (next === null) {
+				throw new Error(`[BmsxConsoleRuntime] Lua class '${classRef}' not found.`);
+			}
+			value = next;
+		}
+		if (!isLuaTable(value)) {
+			throw new Error(`[BmsxConsoleRuntime] Lua class '${classRef}' resolved to a non-table value.`);
+		}
+		return value;
+	}
+
+	private disposeWorldObjectDefinition(id: string): void {
+		const existing = this.worldObjectDefinitions.get(id);
+		if (!existing) {
+			return;
+		}
+		this.worldObjectDefinitions.delete(id);
+		if (Reviver.constructors[id] === existing.constructor) {
+			delete Reviver.constructors[id];
+		}
+		const globalScope = globalThis as Record<string, unknown>;
+		if (globalScope[id] === existing.constructor) {
+			delete globalScope[id];
+		}
+	}
+
+	private disposeAllWorldObjectDefinitions(): void {
+		for (const id of [...this.worldObjectDefinitions.keys()]) {
+			this.disposeWorldObjectDefinition(id);
+		}
+	}
+
+	public hasLuaWorldObjectDefinition(id: string): boolean {
+	return this.worldObjectDefinitions.has(id);
+	}
+
+	public applyLuaWorldObjectDefaults(classRef: string, target: { fsmId?: string; components: Array<{ className: string; options: Record<string, unknown> }> }): void {
+		const def = this.worldObjectDefinitions.get(classRef);
+		if (!def) {
+			return;
+		}
+		if (def.defaultComponents.length > 0) {
+			const cloned = this.cloneComponentDescriptors(def.defaultComponents);
+			target.components = [...cloned, ...target.components];
+		}
+		if (!target.fsmId && def.defaultFsmId) {
+			target.fsmId = def.defaultFsmId;
+		}
+	}
+
+	private registerAbilityHandler(abilityId: string, slot: string, fn: LuaFunctionValue, interpreter: LuaInterpreter): { handlerId: string; actionId: string } {
 		const handlerId = this.makeLuaHandlerId(`ability:${abilityId}`, [slot]);
 		const actionId = `${handlerId}.action`;
-		let handlerSet = this.luaAbilityHandlerIds.get(abilityId);
+		let handlerSet = this.abilityHandlerIds.get(abilityId);
 		if (!handlerSet) {
 			handlerSet = new Set<string>();
-			this.luaAbilityHandlerIds.set(abilityId, handlerSet);
+			this.abilityHandlerIds.set(abilityId, handlerSet);
 		}
 		handlerSet.add(handlerId);
 		this.updateLuaHandlerBinding(handlerId, fn, interpreter);
@@ -3431,55 +3729,54 @@ export class BmsxConsoleRuntime extends Service {
 			return registered.call(ctx, ctx, params);
 		};
 		abilityActions.register(actionId, actionFn);
-		const actionList = this.luaAbilityActionIds.get(abilityId) ?? [];
+		const actionList = this.abilityActionIds.get(abilityId) ?? [];
 		actionList.push(actionId);
-		this.luaAbilityActionIds.set(abilityId, actionList);
-		this.luaAbilityActionByHandler.set(handlerId, actionId);
+		this.abilityActionIds.set(abilityId, actionList);
+		this.abilityActionByHandler.set(handlerId, actionId);
 
 		return { handlerId, actionId };
 	}
 
-
-	private disposeLuaAbilityHandlers(abilityId: string): void {
-	const handlerEntries = this.luaAbilityHandlerIds.get(abilityId);
-	if (handlerEntries) {
-		for (const id of handlerEntries) {
-			HandlerRegistry.instance.unregister(id);
-			this.removeLuaHandlerTracking(id);
+	private disposeAbilityHandlers(abilityId: string): void {
+		const handlerEntries = this.abilityHandlerIds.get(abilityId);
+		if (handlerEntries) {
+			for (const id of handlerEntries) {
+				HandlerRegistry.instance.unregister(id);
+				this.removeLuaHandlerTracking(id);
+			}
+			this.abilityHandlerIds.delete(abilityId);
 		}
-		this.luaAbilityHandlerIds.delete(abilityId);
-	}
-	this.luaAbilityActionIds.delete(abilityId);
-	this.luaAbilityDefinitions.delete(abilityId);
+		this.abilityActionIds.delete(abilityId);
+		this.abilityDefinitions.delete(abilityId);
 	}
 
-	private disposeAllLuaAbilityDefinitions(): void {
-		for (const abilityId of [...this.luaAbilityHandlerIds.keys()]) {
-			this.disposeLuaAbilityHandlers(abilityId);
+	private disposeAllAbilityDefinitions(): void {
+		for (const abilityId of [...this.abilityHandlerIds.keys()]) {
+			this.disposeAbilityHandlers(abilityId);
 		}
-		this.luaAbilityDefinitions.clear();
-		this.luaAbilityActionIds.clear();
+		this.abilityDefinitions.clear();
+		this.abilityActionIds.clear();
 	}
 
-	public registerLuaAbilityDefinition(descriptor: Record<string, unknown>): GameplayAbilityDefinition {
+	public registerAbilityDefinition(descriptor: Record<string, unknown>): GameplayAbilityDefinition {
 		if (!descriptor || typeof descriptor !== 'object') {
-			throw new Error('[BmsxConsoleRuntime] define_lua_ability requires a descriptor table.');
+			throw new Error('[BmsxConsoleRuntime] define_ability requires a descriptor table.');
 		}
 		const interpreter = this.requireLuaInterpreter();
-		const abilityId = this.normalizeLuaIdentifier((descriptor as { id?: unknown }).id, 'define_lua_ability');
-		this.disposeLuaAbilityHandlers(abilityId);
+		const abilityId = this.normalizeLuaIdentifier((descriptor as { id?: unknown }).id, 'define_ability');
+		this.disposeAbilityHandlers(abilityId);
 		const activationFn = (descriptor as LuaAbilityRegistrationDescriptor).activation;
 		if (!activationFn || !this.isLuaFunctionValue(activationFn)) {
 			throw new Error(`[BmsxConsoleRuntime] Lua ability '${abilityId}' requires an activation handler.`);
 		}
 		const completionFn = (descriptor as LuaAbilityRegistrationDescriptor).completion;
 		const cancelFn = (descriptor as LuaAbilityRegistrationDescriptor).cancel;
-		const activation = this.registerLuaAbilityHandler(abilityId, 'activation', activationFn, interpreter);
+		const activation = this.registerAbilityHandler(abilityId, 'activation', activationFn, interpreter);
 		const completion = completionFn && this.isLuaFunctionValue(completionFn)
-			? this.registerLuaAbilityHandler(abilityId, 'completion', completionFn, interpreter)
+			? this.registerAbilityHandler(abilityId, 'completion', completionFn, interpreter)
 			: null;
 		const cancel = cancelFn && this.isLuaFunctionValue(cancelFn)
-			? this.registerLuaAbilityHandler(abilityId, 'cancel', cancelFn, interpreter)
+			? this.registerAbilityHandler(abilityId, 'cancel', cancelFn, interpreter)
 			: null;
 		const definition: GameplayAbilityDefinition = {
 			id: abilityId,
@@ -3534,12 +3831,62 @@ export class BmsxConsoleRuntime extends Service {
 				throw error;
 			}
 		}
-		this.luaAbilityDefinitions.set(abilityId, definition);
+		this.abilityDefinitions.set(abilityId, definition);
+		this.refreshAbilityGrants(abilityId, definition);
 		return definition;
 	}
 
-	public getLuaAbilityDefinition(id: string): GameplayAbilityDefinition | undefined {
-		return this.luaAbilityDefinitions.get(id);
+	private refreshAbilityGrants(abilityId: string, definition: GameplayAbilityDefinition): void {
+		const world = $.world;
+		if (!world) {
+			return;
+		}
+		for (const [, asc] of world.objectsWithComponents(AbilitySystemComponent, { scope: 'active' })) {
+			if (!asc.hasAbility(abilityId)) {
+				continue;
+			}
+			asc.revokeAbility(abilityId);
+			asc.grantAbility(definition);
+		}
+	}
+
+	public getAbilityDefinition(id: string): GameplayAbilityDefinition | undefined {
+		return this.abilityDefinitions.get(id);
+	}
+
+	private resolveWorldObjectConstructor(ref: string | null | undefined): new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject {
+		const fallback = WorldObject as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
+		if (!ref) {
+			return fallback;
+		}
+		const trimmed = ref.trim();
+		if (trimmed.length === 0 || trimmed === 'WorldObject') {
+			return fallback;
+		}
+		const ctorUnknown = this.resolveConstructorReference(trimmed);
+		if (typeof ctorUnknown !== 'function') {
+			throw new Error(`[BmsxConsoleRuntime] World object constructor '${trimmed}' not found.`);
+		}
+		const ctor = ctorUnknown as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
+		if (!(ctor.prototype instanceof WorldObject)) {
+			throw new Error(`[BmsxConsoleRuntime] Constructor '${trimmed}' does not extend WorldObject.`);
+		}
+		return ctor;
+	}
+
+	private resolveConstructorReference(ref: string): unknown {
+		if (!ref) {
+			return undefined;
+		}
+		const constructors = Reviver.constructors;
+		if (constructors && Object.prototype.hasOwnProperty.call(constructors, ref)) {
+			return constructors[ref];
+		}
+		const globalScope = globalThis as Record<string, unknown>;
+		if (globalScope && typeof globalScope[ref] === 'function') {
+			return globalScope[ref];
+		}
+		return undefined;
 	}
 
 	private normalizeLuaIdentifier(value: unknown, context: string): string {
@@ -3746,8 +4093,8 @@ export class BmsxConsoleRuntime extends Service {
 		};
 		prune(this.luaStateMachineHandlerIds);
 		prune(this.luaBehaviorTreeHandlerIds);
-		prune(this.luaComponentHandlerIds);
-		prune(this.luaAbilityHandlerIds);
+		prune(this.componentHandlerIds);
+		prune(this.abilityHandlerIds);
 		this.luaHandlerBindings.delete(handlerId);
 		const listener = this.luaServiceEventListeners.get(handlerId);
 		if (listener) {
@@ -3757,16 +4104,16 @@ export class BmsxConsoleRuntime extends Service {
 				this.luaServiceEventListeners.delete(handlerId);
 			}
 		}
-		const abilityActionId = this.luaAbilityActionByHandler.get(handlerId);
+		const abilityActionId = this.abilityActionByHandler.get(handlerId);
 		if (abilityActionId) {
 			abilityActions.unregister(abilityActionId);
-			this.luaAbilityActionByHandler.delete(handlerId);
-			for (const [abilityId, actions] of this.luaAbilityActionIds) {
+			this.abilityActionByHandler.delete(handlerId);
+			for (const [abilityId, actions] of this.abilityActionIds) {
 				const remaining = actions.filter((entry) => entry !== abilityActionId);
 				if (remaining.length === 0) {
-					this.luaAbilityActionIds.delete(abilityId);
+					this.abilityActionIds.delete(abilityId);
 				} else if (remaining.length !== actions.length) {
-					this.luaAbilityActionIds.set(abilityId, remaining);
+					this.abilityActionIds.set(abilityId, remaining);
 				}
 			}
 		}

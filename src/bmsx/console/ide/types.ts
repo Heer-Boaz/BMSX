@@ -51,7 +51,7 @@ export type CachedHighlight = {
 	hi: HighlightLine;
 	displayToColumn: number[];
 	advancePrefix: number[];
-	semanticSignature: number;
+	rowSignature: number;
 };
 
 export type SearchMatch = {
