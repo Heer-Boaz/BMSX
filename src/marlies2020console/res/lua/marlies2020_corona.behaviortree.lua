@@ -16,7 +16,9 @@ local function bootstrap(self, blackboard)
 	blackboard:set('ready', true)
 	blackboard:set('timer', 0)
 	blackboard:set('index', 1)
-	self.vars.move = { x = -1, y = 0 }
+	local state = self:getcomponentbyid('corona_state').vars
+	state.move_x = -1
+	state.move_y = 0
 	return 'SUCCESS'
 end
 
@@ -27,7 +29,10 @@ local function choose_direction(self, blackboard)
 		blackboard:set('index', choice)
 		local distance = math.random(MIN_CORONA_MOVE, MAX_CORONA_MOVE)
 		blackboard:set('timer', distance / CORONA_SPEED)
-		self.vars.move = { x = directions[choice].x, y = directions[choice].y }
+		local selected = directions[choice]
+		local state = self:getcomponentbyid('corona_state').vars
+		state.move_x = selected.x
+		state.move_y = selected.y
 	else
 		blackboard:set('timer', timer)
 	end

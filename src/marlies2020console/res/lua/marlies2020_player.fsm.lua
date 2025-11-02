@@ -44,33 +44,35 @@ return {
 			tape_data = PLAYER_FRAMES_DOWN,
 			ticks2advance_tape = PLAYER_FRAME_TICKS,
 			enable_tape_autotick = true,
+			tape_playback_mode = 'loop',
 			on = common_events(),
 			entering_state = function(owner, state)
 				state:reset()
 				state.tapehead_position = 0
-				owner.vars.direction = 'down'
+				local player_state = owner:getcomponentbyid('player_state').vars
+				player_state.direction = 'down'
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tape_next = function(owner, state)
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tick = function(owner)
-				local vars = owner.vars
-				local horizontal = vars.horizontal_direction
+				local player_state = owner:getcomponentbyid('player_state').vars
+				local horizontal = player_state.horizontal_direction
 				if horizontal == 'left' then
 					return '../switch_left'
 				elseif horizontal == 'right' then
 					return '../switch_right'
 				end
 
-				local vertical = vars.vertical_intent
+				local vertical = player_state.vertical_intent
 				if vertical == 'up' then
 					return '../walk_up'
 				end
 				if vertical == 'down' then
 					local delta = delta_seconds()
 					local next_y = owner.y + PLAYER_MOVE_SPEED * delta
-					if can_move_y(vars.column, next_y, true) then
+					if can_move_y(player_state.column, next_y, true) then
 						owner.y = math.min(SCREEN_HEIGHT - 32, next_y)
 					end
 				end
@@ -81,33 +83,35 @@ return {
 			tape_data = PLAYER_FRAMES_UP,
 			ticks2advance_tape = PLAYER_FRAME_TICKS,
 			enable_tape_autotick = true,
+			tape_playback_mode = 'loop',
 			on = common_events(),
 			entering_state = function(owner, state)
 				state:reset()
 				state.tapehead_position = 0
-				owner.vars.direction = 'up'
+				local player_state = owner:getcomponentbyid('player_state').vars
+				player_state.direction = 'up'
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tape_next = function(owner, state)
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tick = function(owner)
-				local vars = owner.vars
-				local horizontal = vars.horizontal_direction
+				local player_state = owner:getcomponentbyid('player_state').vars
+				local horizontal = player_state.horizontal_direction
 				if horizontal == 'left' then
 					return '../switch_left'
 				elseif horizontal == 'right' then
 					return '../switch_right'
 				end
 
-				local vertical = vars.vertical_intent
+				local vertical = player_state.vertical_intent
 				if vertical == 'down' then
 					return '../walk_down'
 				end
 				if vertical == 'up' then
 					local delta = delta_seconds()
 					local next_y = owner.y - PLAYER_MOVE_SPEED * delta
-					if can_move_y(vars.column, next_y, false) then
+					if can_move_y(player_state.column, next_y, false) then
 						owner.y = math.max(4, next_y)
 					end
 				end
@@ -118,21 +122,23 @@ return {
 			tape_data = PLAYER_FRAMES_SWITCH,
 			ticks2advance_tape = PLAYER_FRAME_TICKS,
 			enable_tape_autotick = true,
+			tape_playback_mode = 'loop',
 			on = common_events(),
 			entering_state = function(owner, state)
 				state:reset()
 				state.tapehead_position = 0
-				owner.vars.direction = 'left'
+				local player_state = owner:getcomponentbyid('player_state').vars
+				player_state.direction = 'left'
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tape_next = function(owner, state)
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tick = function(owner)
-				local vars = owner.vars
-				local target = vars.switch_target
+				local player_state = owner:getcomponentbyid('player_state').vars
+				local target = player_state.switch_target
 				if not target then
-					vars.horizontal_direction = nil
+					player_state.horizontal_direction = nil
 					return '../walk_down'
 				end
 				local delta = delta_seconds()
@@ -140,10 +146,10 @@ return {
 				owner.x = owner.x - PLAYER_SWITCH_SPEED * delta
 				if owner.x <= target_x then
 					owner.x = target_x
-					vars.column = target
-					vars.horizontal_direction = nil
-					vars.switch_target = nil
-					vars.direction = 'down'
+					player_state.column = target
+					player_state.horizontal_direction = nil
+					player_state.switch_target = nil
+					player_state.direction = 'down'
 					return '../walk_down'
 				end
 				return nil
@@ -153,21 +159,23 @@ return {
 			tape_data = PLAYER_FRAMES_SWITCH,
 			ticks2advance_tape = PLAYER_FRAME_TICKS,
 			enable_tape_autotick = true,
+			tape_playback_mode = 'loop',
 			on = common_events(),
 			entering_state = function(owner, state)
 				state:reset()
 				state.tapehead_position = 0
-				owner.vars.direction = 'right'
+				local player_state = owner:getcomponentbyid('player_state').vars
+				player_state.direction = 'right'
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tape_next = function(owner, state)
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tick = function(owner)
-				local vars = owner.vars
-				local target = vars.switch_target
+				local player_state = owner:getcomponentbyid('player_state').vars
+				local target = player_state.switch_target
 				if not target then
-					vars.horizontal_direction = nil
+					player_state.horizontal_direction = nil
 					return '../walk_down'
 				end
 				local delta = delta_seconds()
@@ -175,10 +183,10 @@ return {
 				owner.x = owner.x + PLAYER_SWITCH_SPEED * delta
 				if owner.x >= target_x then
 					owner.x = target_x
-					vars.column = target
-					vars.horizontal_direction = nil
-					vars.switch_target = nil
-					vars.direction = 'down'
+					player_state.column = target
+					player_state.horizontal_direction = nil
+					player_state.switch_target = nil
+					player_state.direction = 'down'
 					return '../walk_down'
 				end
 				return nil
@@ -188,28 +196,30 @@ return {
 			tape_data = PLAYER_FRAMES_HURT,
 			ticks2advance_tape = PLAYER_FRAME_TICKS,
 			enable_tape_autotick = true,
+			tape_playback_mode = 'loop',
 			on = victory_event(),
 			entering_state = function(owner, state)
 				state:reset()
 				state.tapehead_position = 0
-				owner.vars.direction = 'down'
+				local player_state = owner:getcomponentbyid('player_state').vars
+				player_state.direction = 'down'
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tape_next = function(owner, state)
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tick = function(owner)
-				local vars = owner.vars
-				local remaining = vars.hurt_remaining
+				local player_state = owner:getcomponentbyid('player_state').vars
+				local remaining = player_state.hurt_remaining
 				if not remaining then
 					return '../walk_down'
 				end
 				local updated = remaining - delta_seconds()
 				if updated <= 0 then
-					vars.hurt_remaining = nil
+					player_state.hurt_remaining = nil
 					return '../walk_down'
 				end
-				vars.hurt_remaining = updated
+				player_state.hurt_remaining = updated
 				return nil
 			end,
 		},
@@ -217,10 +227,12 @@ return {
 			tape_data = PLAYER_FRAMES_WIN,
 			ticks2advance_tape = PLAYER_FRAME_TICKS,
 			enable_tape_autotick = true,
+			tape_playback_mode = 'loop',
 			entering_state = function(owner, state)
 				state:reset()
 				state.tapehead_position = 0
-				owner.vars.direction = 'down'
+				local player_state = owner:getcomponentbyid('player_state').vars
+				player_state.direction = 'down'
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tape_next = function(owner, state)

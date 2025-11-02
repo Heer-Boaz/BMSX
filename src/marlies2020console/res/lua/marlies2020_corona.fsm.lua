@@ -15,6 +15,7 @@ return {
 			tape_data = CORONA_FRAMES,
 			ticks2advance_tape = CORONA_FRAME_TICKS,
 			enable_tape_autotick = true,
+			tape_playback_mode = 'loop',
 			entering_state = function(object, state)
 				state:reset()
 				state.tapehead_position = 0
@@ -29,10 +30,10 @@ return {
 			},
 			tick = function(object)
 				object:tickTree('marlies2020_corona_bt')
-				local move = object.vars.move
+				local state = object:getcomponentbyid('corona_state').vars
 				local delta = delta_seconds()
-				object.x = object.x + move.x * CORONA_SPEED * delta
-				object.y = object.y + move.y * CORONA_SPEED * delta
+				object.x = object.x + state.move_x * CORONA_SPEED * delta
+				object.y = object.y + state.move_y * CORONA_SPEED * delta
 				if out_of_bounds(object.x, object.y) then
 					return '../despawn'
 				end

@@ -65,82 +65,82 @@ local PLAYER_INPUT_PROGRAM = {
 		{
 			name = 'move_left',
 			priority = 10,
-			on = { hold = 'console_left[h]', release = 'console_left[jr]' },
+			on = { hold = 'move_left[h]', release = 'move_left[jr]' },
 			['do'] = {
 				hold = {
-					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_horizontal, payload = { direction = 'left' }, source = 'input.console' } },
-					{ ['input.consume'] = 'console_left' },
+					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_horizontal, payload = { direction = 'left' } } },
+					{ ['input.consume'] = 'move_left' },
 				},
 				release = {
-					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_horizontal_stop, source = 'input.console' } },
-					{ ['input.consume'] = 'console_left' },
+					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_horizontal_stop } },
+					{ ['input.consume'] = 'move_left' },
 				},
 			},
 		},
 		{
 			name = 'move_right',
 			priority = 10,
-			on = { hold = 'console_right[h]', release = 'console_right[jr]' },
+			on = { hold = 'move_right[h]', release = 'move_right[jr]' },
 			['do'] = {
 				hold = {
-					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_horizontal, payload = { direction = 'right' }, source = 'input.console' } },
-					{ ['input.consume'] = 'console_right' },
+					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_horizontal, payload = { direction = 'right' } } },
+					{ ['input.consume'] = 'move_right' },
 				},
 				release = {
-					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_horizontal_stop, source = 'input.console' } },
-					{ ['input.consume'] = 'console_right' },
+					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_horizontal_stop } },
+					{ ['input.consume'] = 'move_right' },
 				},
 			},
 		},
 		{
 			name = 'move_up',
 			priority = 9,
-			on = { hold = 'console_up[h]', release = 'console_up[jr]' },
+			on = { hold = 'move_up[h]', release = 'move_up[jr]' },
 			['do'] = {
 				hold = {
-					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_vertical, payload = { direction = 'up' }, source = 'input.console' } },
-					{ ['input.consume'] = 'console_up' },
+					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_vertical, payload = { direction = 'up' } } },
+					{ ['input.consume'] = 'move_up' },
 				},
 				release = {
-					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_vertical_stop, source = 'input.console' } },
-					{ ['input.consume'] = 'console_up' },
+					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_vertical_stop } },
+					{ ['input.consume'] = 'move_up' },
 				},
 			},
 		},
 		{
 			name = 'move_down',
 			priority = 9,
-			on = { hold = 'console_down[h]', release = 'console_down[jr]' },
+			on = { hold = 'move_down[h]', release = 'move_down[jr]' },
 			['do'] = {
 				hold = {
-					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_vertical, payload = { direction = 'down' }, source = 'input.console' } },
-					{ ['input.consume'] = 'console_down' },
+					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_vertical, payload = { direction = 'down' } } },
+					{ ['input.consume'] = 'move_down' },
 				},
 				release = {
-					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_vertical_stop, source = 'input.console' } },
-					{ ['input.consume'] = 'console_down' },
+					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.move_vertical_stop } },
+					{ ['input.consume'] = 'move_down' },
 				},
 			},
 		},
 		{
 			name = 'fire',
 			priority = 8,
-			on = { press = 'console_o[j]' },
+			on = { press = 'fire[j]' },
 			['do'] = {
 				press = {
-					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.fire, source = 'input.console' } },
-					{ ['input.consume'] = 'console_o' },
+					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.fire } },
+					{ ['input.consume'] = 'fire' },
 				},
 			},
 		},
 		{
 			name = 'interact',
 			priority = 8,
-			on = { press = 'console_x[j]' },
+			on = { press = 'interact[j]' },
 			['do'] = {
 				press = {
-					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.interact, source = 'input.console' } },
-					{ ['input.consume'] = 'console_x' },
+					{ ['ability.request'] = { id = PLAYER_ABILITY_IDS.interact } },
+					{ ['input.consume'] = 'interact' },
 				},
 			},
 		},
@@ -178,9 +178,43 @@ game_state = {
 	spawn_timer = SPAWN_INTERVAL,
 	pitas_served = 0,
 	corona_count = 0,
+	player_events = nil,
 }
 
 local ability_definitions_ready = false
+
+local PLAYER_STATE_COMPONENT_ID = define_lua_component({
+	id = 'marlies2020.player_state',
+	state = {
+		column = START_COLUMN,
+		inventory_item = nil,
+		touch_ingredients = {},
+		touch_boards = {},
+		touch_corona = {},
+		horizontal_direction = nil,
+		switch_target = nil,
+		vertical_intent = nil,
+		direction = 'down',
+		hurt_remaining = nil,
+	},
+})
+
+local CORONA_STATE_COMPONENT_ID = define_lua_component({
+	id = 'marlies2020.corona_state',
+	state = {
+		move_x = -1,
+		move_y = 0,
+	},
+})
+
+local FIRE_STATE_COMPONENT_ID = define_lua_component({
+	id = 'marlies2020.fire_state',
+	state = {
+		vx = 0,
+		vy = 0,
+		life = FIRE_LIFETIME,
+	},
+})
 
 local function assert_sprite_id(component, context)
 	if component.imgid == nil then
@@ -230,16 +264,16 @@ local function register_ingredient(id, object, kind, contents)
 	assert_sprite_id(game_state.ingredients[id].sprite, 'ingredient:' .. id .. ':' .. kind)
 end
 
-local function release_inventory(vars)
-	local item = vars.inventory_item
+local function release_inventory(state)
+	local item = state.inventory_item
 	item.held = false
-	vars.inventory_item = nil
+	state.inventory_item = nil
 end
 
 local function ability_fire(ctx)
 	local owner = ctx.owner
-	local vars = owner.vars
-	local direction = vars.direction
+	local state = owner:getcomponentbyid('player_state').vars
+	local direction = state.direction
 	local dx = 0
 	local dy = 1
 	if direction == 'up' then
@@ -252,18 +286,17 @@ local function ability_fire(ctx)
 		dy = 0
 	end
 	local fire_id, fire = spawn_fire(owner, dx, dy)
-	game_state.fires[fire_id] = { id = fire_id, object = fire }
 	sfx(SOUNDS.fire)
 	ctx.dispatchMode('player.fire', nil, owner.id)
 end
 
 local function ability_interact(ctx)
 	local owner = ctx.owner
-	local vars = owner.vars
-	local held = vars.inventory_item
+	local state = owner:getcomponentbyid('player_state').vars
+	local held = state.inventory_item
 
 	if held and held.kind == 'knife' then
-		for _, ingredient in pairs(vars.touch_ingredients) do
+		for _, ingredient in pairs(state.touch_ingredients) do
 			if ingredient.kind == 'cucumber' and not ingredient.held then
 				ingredient.kind = 'cucumber_sliced'
 				ingredient.object:getcomponentbyid('ingredient_sprite').imgid = SPRITES.cucumber_sliced
@@ -275,7 +308,7 @@ local function ability_interact(ctx)
 	end
 
 	if held and held.kind == 'pita_filled' then
-		for _, board in pairs(vars.touch_boards) do
+		for _, board in pairs(state.touch_boards) do
 			if not board.filled then
 				fill_board(board)
 				game_state.pitas_served = game_state.pitas_served + 1
@@ -287,7 +320,7 @@ local function ability_interact(ctx)
 	end
 
 	if held and held.kind ~= 'knife' and held.kind ~= 'pita_filled' then
-		for _, target in pairs(vars.touch_ingredients) do
+		for _, target in pairs(state.touch_ingredients) do
 			if target.kind == 'pita' then
 				local contents = target.contents
 				for index = 1, #contents do
@@ -308,7 +341,7 @@ local function ability_interact(ctx)
 	end
 
 	if not held then
-		for _, ingredient in pairs(vars.touch_ingredients) do
+		for _, ingredient in pairs(state.touch_ingredients) do
 			if not ingredient.held then
 				ingredient.held = true
 				vars.inventory_item = ingredient
@@ -322,37 +355,37 @@ end
 local function ability_move_horizontal(ctx, params)
 	local owner = ctx.owner
 	local direction = params.direction
-	local vars = owner.vars
-	local column = vars.column
+	local state = owner:getcomponentbyid('player_state').vars
+	local column = state.column
 	local next_column = direction == 'left' and (column - 1) or (column + 1)
 	if next_column < 1 or next_column > #COLUMN_X then
 		return
 	end
-	vars.switch_target = next_column
-	vars.horizontal_direction = direction
+	state.switch_target = next_column
+	state.horizontal_direction = direction
 end
 
 local function ability_move_horizontal_stop(ctx)
-	local vars = ctx.owner.vars
-	vars.horizontal_direction = nil
-	vars.switch_target = nil
+	local state = ctx.owner:getcomponentbyid('player_state').vars
+	state.horizontal_direction = nil
+	state.switch_target = nil
 end
 
 local function ability_move_vertical(ctx, params)
-	ctx.owner.vars.vertical_intent = params.direction
+	ctx.owner:getcomponentbyid('player_state').vars.vertical_intent = params.direction
 end
 
 local function ability_move_vertical_stop(ctx)
-	ctx.owner.vars.vertical_intent = nil
+	ctx.owner:getcomponentbyid('player_state').vars.vertical_intent = nil
 end
 
 local function ability_hurt(ctx, params)
 	local owner = ctx.owner
-	local vars = owner.vars
-	vars.vertical_intent = nil
-	vars.horizontal_direction = nil
-	vars.switch_target = nil
-	vars.hurt_remaining = PLAYER_HIT_RECOVERY
+	local state = owner:getcomponentbyid('player_state').vars
+	state.vertical_intent = nil
+	state.horizontal_direction = nil
+	state.switch_target = nil
+	state.hurt_remaining = PLAYER_HIT_RECOVERY
 	sfx(SOUNDS.hurt)
 	ctx.dispatchMode('player.hurt', params, owner.id)
 end
@@ -431,20 +464,17 @@ local function setup_player_components(object)
 end
 
 function reset_game_state()
-	local player_data = game_state.player_state
-	if player_data then
-		local emitter_id = player_data._event_emitter_id
-		events:off('overlapBegin', player_data._begin_overlap, emitter_id, true)
-		events:off('overlapEnd', player_data._end_overlap, emitter_id, true)
+	local player_events = game_state.player_events
+	if player_events then
+		events:off('overlapBegin', player_events.begin_overlap, player_events.emitter_id, true)
+		events:off('overlapEnd', player_events.end_overlap, player_events.emitter_id, true)
 	end
 	for id, entry in pairs(game_state.corona) do
-		local vars = entry.object.vars
-		events:off('overlapBegin', vars._overlap, vars._event_emitter_id, true)
+		events:off('overlapBegin', entry.overlap_handler, entry.emitter_id, true)
 	end
 	for id, entry in pairs(game_state.fires) do
-		local vars = entry.object.vars
-		events:off('overlapBegin', vars._hit, vars._event_emitter_id, true)
-		events:off('leaveScreen', vars._leave, id, true)
+		events:off('overlapBegin', entry.hit_handler, entry.emitter_id, true)
+		events:off('leaveScreen', entry.leave_handler, entry.emitter_id, true)
 	end
 	game_state.player_id = nil
 	game_state.player = nil
@@ -460,14 +490,13 @@ function reset_game_state()
 	game_state.spawn_timer = SPAWN_INTERVAL
 	game_state.pitas_served = 0
 	game_state.victory = false
-	game_state.player_state = nil
+	game_state.player_events = nil
 	game_state.player_abilities_granted = false
 end
 
 function remove_corona(id)
 	local entry = game_state.corona[id]
-	local vars = entry.object.vars
-	events:off('overlapBegin', vars._overlap, vars._event_emitter_id, true)
+	events:off('overlapBegin', entry.overlap_handler, entry.emitter_id, true)
 	game_state.corona[id] = nil
 	game_state.corona_count = game_state.corona_count - 1
 	despawn(id)
@@ -475,9 +504,8 @@ end
 
 function remove_fire(id)
 	local entry = game_state.fires[id]
-	local vars = entry.object.vars
-	events:off('overlapBegin', vars._hit, vars._event_emitter_id, true)
-	events:off('leaveScreen', vars._leave, id, true)
+	events:off('overlapBegin', entry.hit_handler, entry.emitter_id, true)
+	events:off('leaveScreen', entry.leave_handler, entry.emitter_id, true)
 	game_state.fires[id] = nil
 	despawn(id)
 end
@@ -492,11 +520,11 @@ function spawn_fire(owner, dx, dy)
 		},
 	})
 	local object = registry:get(id)
-	object.vars = {
-		vx = dx * FIRE_SPEED,
-		vy = dy * FIRE_SPEED,
-		life = FIRE_LIFETIME,
-	}
+	attach_lua_component(id, { id = FIRE_STATE_COMPONENT_ID, id_local = 'fire_state' })
+	local fire_state = object:getcomponentbyid('fire_state').vars
+	fire_state.vx = dx * FIRE_SPEED
+	fire_state.vy = dy * FIRE_SPEED
+	fire_state.life = FIRE_LIFETIME
 	assert_sprite_id(object:getcomponentbyid('fire_sprite'), 'fire:' .. id)
 	local collider = object:getcomponentbyid('fire_collider')
 	collider.generateOverlapEvents = true
@@ -510,11 +538,15 @@ function spawn_fire(owner, dx, dy)
 	local function leave_screen()
 		remove_fire(object.id)
 	end
-	object.vars._hit = hit_corona
-	object.vars._leave = leave_screen
-	object.vars._event_emitter_id = object.id
 	events:on('overlapBegin', hit_corona, object, { emitter = object.id, persistent = true })
 	events:on('leaveScreen', leave_screen, object, { emitter = object.id, persistent = true })
+	game_state.fires[id] = {
+		id = id,
+		object = object,
+		hit_handler = hit_corona,
+		leave_handler = leave_screen,
+		emitter_id = object.id,
+	}
 	attach_fsm(id, 'marlies2020_fire')
 	return id, object
 end
@@ -582,19 +614,19 @@ local function spawn_player()
 		},
 	})
 	local object = registry:get(id)
-	local data = {
-		column = START_COLUMN,
-		inventory_item = nil,
-		touch_ingredients = {},
-		touch_boards = {},
-		touch_corona = {},
-		horizontal_direction = nil,
-		switch_target = nil,
-		vertical_intent = nil,
-		direction = 'down',
-	}
-	object.vars = data
-	game_state.player_state = data
+	attach_lua_component(id, { id = PLAYER_STATE_COMPONENT_ID, id_local = 'player_state' })
+	local state_component = object:getcomponentbyid('player_state')
+	local state = state_component.vars
+	state.column = START_COLUMN
+	state.inventory_item = nil
+	state.touch_ingredients = {}
+	state.touch_boards = {}
+	state.touch_corona = {}
+	state.horizontal_direction = nil
+	state.switch_target = nil
+	state.vertical_intent = nil
+	state.direction = 'down'
+	state.hurt_remaining = nil
 	setup_player_components(object)
 	assert_sprite_id(object:getcomponentbyid('player_sprite'), 'player')
 
@@ -606,31 +638,33 @@ local function spawn_player()
 		local other = payload.otherId
 		local ingredient = game_state.ingredients[other]
 		if ingredient then
-			data.touch_ingredients[other] = ingredient
+			state.touch_ingredients[other] = ingredient
 		end
 		local board = game_state.boards[other]
 		if board then
-			data.touch_boards[other] = board
+			state.touch_boards[other] = board
 		end
 		if game_state.corona[other] then
-			data.touch_corona[other] = true
-			request_ability(object.id, PLAYER_ABILITY_IDS.hurt, { payload = { source = other }, source = other })
+			state.touch_corona[other] = true
+			request_ability(object.id, PLAYER_ABILITY_IDS.hurt, { payload = { source = other } })
 		end
 	end
 
 	local function end_overlap(_, _, payload)
 		local other = payload.otherId
-		data.touch_ingredients[other] = nil
-		data.touch_boards[other] = nil
-		data.touch_corona[other] = nil
+		state.touch_ingredients[other] = nil
+		state.touch_boards[other] = nil
+		state.touch_corona[other] = nil
 	end
 
-	data._begin_overlap = begin_overlap
-	data._end_overlap = end_overlap
 	local emitter_id = object.id
 	events:on('overlapBegin', begin_overlap, object, { emitter = emitter_id, persistent = true })
 	events:on('overlapEnd', end_overlap, object, { emitter = emitter_id, persistent = true })
-	data._event_emitter_id = emitter_id
+	game_state.player_events = {
+		emitter_id = emitter_id,
+		begin_overlap = begin_overlap,
+		end_overlap = end_overlap,
+	}
 	attach_fsm(id, 'marlies2020_player')
 	game_state.player_id = id
 	game_state.player = object
@@ -652,9 +686,10 @@ local function spawn_corona(position)
 	attach_fsm(id, 'marlies2020_corona')
 	attach_bt(id, 'marlies2020_corona_bt')
 	local object = registry:get(id)
-	object.vars = {
-		move = { x = -1, y = 0 },
-	}
+	attach_lua_component(id, { id = CORONA_STATE_COMPONENT_ID, id_local = 'corona_state' })
+	local corona_state = object:getcomponentbyid('corona_state').vars
+	corona_state.move_x = -1
+	corona_state.move_y = 0
 	assert_sprite_id(object:getcomponentbyid('corona_sprite'), 'corona:' .. id)
 	local collider = object:getcomponentbyid('corona_collider')
 	collider.generateOverlapEvents = true
@@ -665,10 +700,13 @@ local function spawn_corona(position)
 			object.sc:dispatch_event('dispel', object, { source = other })
 		end
 	end
-	object.vars._overlap = handle_overlap
-	object.vars._event_emitter_id = object.id
 	events:on('overlapBegin', handle_overlap, object, { emitter = object.id, persistent = true })
-	game_state.corona[id] = { id = id, object = object }
+	game_state.corona[id] = {
+		id = id,
+		object = object,
+		overlap_handler = handle_overlap,
+		emitter_id = object.id,
+	}
 	game_state.corona_count = game_state.corona_count + 1
 end
 

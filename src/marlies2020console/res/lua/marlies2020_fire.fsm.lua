@@ -8,6 +8,7 @@ return {
 			tape_data = FIRE_FRAMES,
 			ticks2advance_tape = FIRE_FRAME_TICKS,
 			enable_tape_autotick = true,
+			tape_playback_mode = 'loop',
 			entering_state = function(object, state)
 				state:reset()
 				state.tapehead_position = 0
@@ -18,12 +19,13 @@ return {
 			end,
 			tick = function(object)
 				local delta = delta_seconds()
-				object.vars.life = object.vars.life - delta
-				if object.vars.life <= 0 then
+				local fire_state = object:getcomponentbyid('fire_state').vars
+				fire_state.life = fire_state.life - delta
+				if fire_state.life <= 0 then
 					return '../expired'
 				end
-				object.x = object.x + object.vars.vx * delta
-				object.y = object.y + object.vars.vy * delta
+				object.x = object.x + fire_state.vx * delta
+				object.y = object.y + fire_state.vy * delta
 				return nil
 			end,
 		},
