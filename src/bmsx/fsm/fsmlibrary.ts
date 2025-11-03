@@ -4,8 +4,7 @@ import { deepClone, deepEqual } from '../utils/utils';
 import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';
 import type { Identifier } from '../rompack/rompack';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
-import { HandlerRegistry, type GenericHandler, type HandlerCategory, type HandlerDescriptor } from '../core/handlerregistry';
-import { isLuaHandlerFn } from '../lua/handler_cache.ts';
+import { HandlerRegistry, type HandlerDescriptor } from '../core/handlerregistry';
 import type {
 	EventBagName,
 	listed_sdef_event,
@@ -31,6 +30,7 @@ import { assertClassicAuthoring } from './fsm_classic_linter';
 export const StateDefinitions: Record<string, StateDefinition> = {};
 export const ActiveStateMachines: Map<string, State<Stateful>[]> = new Map();
 const stateMachineBlueprintSignatures: Map<Identifier, string> = new Map();
+type GenericHandler = (this: any, ...args: any[]) => any;
 
 function eventNameHasScope(name: string): boolean {
 	return name.startsWith('$');
@@ -355,7 +355,7 @@ export function setupFSMlibrary(): void {
 
 		const built = createMachine(machine_name, raw);
 		// HOIST before validate so you can also validate handler existence if you switch to ID strings
-		walkAndHoist(machine_name, built, HandlerRegistry.instance, [], /*useProxyThunks=*/true);
+		walkAndHoist(machine_name, built);
 		compileMarkersTree(built);
 
 		validateStateMachine(built);
@@ -374,7 +374,7 @@ export function rebuildStateMachine(machineName: Identifier, blueprint: StateMac
 	}
 
 	const built = createMachine(machineName, blueprint);
-	walkAndHoist(machineName, built, HandlerRegistry.instance, [], /*useProxyThunks=*/true);
+	walkAndHoist(machineName, built);
 	compileMarkersTree(built);
 	validateStateMachine(built);
 	clearDefinitionsForMachine(machineName);
@@ -540,29 +540,6 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 
 function makeId(parts: string[]) { return parts.join('.'); }
 
-function formatStatePath(path: string[], def: StateDefinition): string {
-	if (path.length > 0) {
-		return path.join('.');
-	}
-	return def.id ?? def.def_id ?? '<root>';
-}
-
-function makeStateTarget(machineName: string, path: string[], def: StateDefinition, hook: string) {
-	return {
-		machine: machineName,
-		state: formatStatePath(path, def),
-		hook,
-	};
-}
-
-function makeEventTarget(machineName: string, path: string[], def: StateDefinition, bag: string, eventName: string, hook: string) {
-	return {
-		machine: machineName,
-		state: formatStatePath(path, def),
-		hook: `${bag}:${eventName}:${hook}`,
-	};
-}
-
 function annotateHandler(fn: Function, id: string): void {
 	try {
 		Object.defineProperty(fn, '_handlerId', { value: id, configurable: true, writable: true });
@@ -571,37 +548,21 @@ function annotateHandler(fn: Function, id: string): void {
 	}
 }
 
-type HandlerInvokeOptions = {
-	defaultValue?: any;
-	coerceBoolean?: boolean;
-	debugRef?: string;
-};
-
-type HoistOptions = HandlerInvokeOptions & {
-	category: HandlerCategory;
-	target: HandlerDescriptor['target'];
-	source?: HandlerDescriptor['source'];
-};
-
-const MissingHandlerWarnings = new Set<string>();
-
-function warnMissingHandler(refId: string, debugRef?: string): void {
-	const key = `${refId}::${debugRef ?? ''}`;
-	if (MissingHandlerWarnings.has(key)) return;
-	MissingHandlerWarnings.add(key);
-	console.warn(`[FSM] Handler '${refId}' referenced by '${debugRef ?? 'unknown slot'}' is not registered.`);
-}
-
-function createDelegatedHandler(targetId: string, registry: HandlerRegistry, opts: HandlerInvokeOptions): GenericHandler {
-	return function (this: Stateful, ...args: any[]) {
-		const handler = registry.get(targetId);
-		if (!handler) {
-			warnMissingHandler(targetId, opts.debugRef);
-			return opts.coerceBoolean ? !!opts.defaultValue : opts.defaultValue;
+function resolveHandler(value: unknown, id: string): GenericHandler {
+	if (typeof value === 'function') {
+		const fn = value as GenericHandler;
+		annotateHandler(fn, id);
+		return fn;
+	}
+	if (typeof value === 'string') {
+		const builtin = createBuiltinHandlerFromString(value);
+		if (builtin) {
+			annotateHandler(builtin, id);
+			return builtin;
 		}
-		const result = handler.apply(this, args);
-		return opts.coerceBoolean ? !!result : result;
-	};
+		throw new Error(`[FSMLibrary] Handler '${id}' must be a function (received string '${value}').`);
+	}
+	throw new Error(`[FSMLibrary] Handler '${id}' must be a function.`);
 }
 
 function looksLikeStatePath(value: string): boolean {
@@ -620,57 +581,27 @@ function createBuiltinHandlerFromString(value: string): GenericHandler | undefin
 	return function () { return value; };
 }
 
-function hoistSlot(
-	owner: Record<string, any>,
-	slot: string,
-	id: string,
-	registry: HandlerRegistry,
-	_useProxyThunks: boolean,
-	options: HoistOptions
-): void {
+function hoistSlot(owner: Record<string, any>, slot: string, id: string): void {
 	const current = owner[slot];
 	if (current === undefined || current === null) return;
 
-	const baseSource = options.source ?? { lang: 'js', module: 'js::fsm::hoisted', symbol: slot };
-
-	const assign = (handler: GenericHandler, overrideSource?: HandlerDescriptor['source']) => {
-		const desc: HandlerDescriptor = {
-			id,
-			category: options.category,
-			target: options.target,
-			source: overrideSource ?? baseSource,
-		};
-		const stub = registry.register(desc, handler);
-		annotateHandler(stub as Function, id);
-		owner[slot] = stub;
-	};
+	if (Array.isArray(current)) {
+		const cloned: GenericHandler[] = current.map((handler, index) => resolveHandler(handler, `${id}[${index}]`));
+		owner[slot] = cloned;
+		return;
+	}
 
 	if (typeof current === 'function') {
-		const fn = current as GenericHandler;
-		if (isLuaHandlerFn(fn)) {
-			return;
-		}
-		const symbol = typeof fn.name === 'string' && fn.name.length > 0 ? fn.name : slot;
-		assign(fn, { lang: 'js', module: 'js::fsm::direct', symbol });
+		owner[slot] = resolveHandler(current, id);
 		return;
 	}
 
 	if (typeof current === 'string') {
-		if (current.includes('.handlers.')) {
-			const delegated = createDelegatedHandler(current, registry, { ...options, debugRef: id });
-			assign(delegated, { lang: 'js', module: 'js::fsm::delegated', symbol: current });
-			return;
-		}
-
-		const builtin = createBuiltinHandlerFromString(current);
-		if (!builtin) {
-			throw new Error(`[FSMLibrary] Unsupported string handler '${current}' in classic FSM slot '${id}'.`);
-		}
-		assign(builtin, { lang: 'js', module: 'js::fsm::builtin', symbol: current });
+		owner[slot] = resolveHandler(current, id);
 		return;
 	}
 
-	throw new Error(`[FSMLibrary] Classic FSM authoring only supports functions or handler id strings. Slot '${id}' provided '${typeof current}'.`);
+	throw new Error(`[FSMLibrary] Handler '${id}' must be a function.`);
 }
 
 // @ts-ignore
@@ -685,127 +616,73 @@ type StateSlots = { [K in keyof StateDefinition]-?: StateDefinition[K] extends S
 
 // Event definition handlers
 function hoistEventIf(
-	machineName: string,
-	stateDef: StateDefinition,
-	path: string[],
-	bagName: string,
-	eventName: string,
+	_machineName: string,
+	_stateDef: StateDefinition,
+	_path: string[],
+	_bagName: string,
+	_eventName: string,
 	ownerDef: StateEventDefinition,
 	id: string,
-	registry: HandlerRegistry,
-	useProxyThunks: boolean
 ) {
-	hoistSlot(ownerDef as Record<string, any>, 'if', id, registry, useProxyThunks, {
-		category: 'fsm',
-		target: makeEventTarget(machineName, path, stateDef, bagName, eventName, 'if'),
-		source: { lang: 'js', module: 'js::fsm::event', symbol: `${bagName}:${eventName}:if` },
-		defaultValue: false,
-		coerceBoolean: true,
-	});
+	hoistSlot(ownerDef as Record<string, any>, 'if', id);
 }
 
 function hoistEventDo(
-	machineName: string,
-	stateDef: StateDefinition,
-	path: string[],
-	bagName: string,
-	eventName: string,
+	_machineName: string,
+	_stateDef: StateDefinition,
+	_path: string[],
+	_bagName: string,
+	_eventName: string,
 	ownerDef: StateEventDefinition,
 	id: string,
-	registry: HandlerRegistry,
-	useProxyThunks: boolean
 ) {
-	hoistSlot(ownerDef as Record<string, any>, 'do', id, registry, useProxyThunks, {
-		category: 'fsm',
-		target: makeEventTarget(machineName, path, stateDef, bagName, eventName, 'do'),
-		source: { lang: 'js', module: 'js::fsm::event', symbol: `${bagName}:${eventName}:do` },
-	});
+	hoistSlot(ownerDef as Record<string, any>, 'do', id);
 }
 
 // Guard handlers
 function hoistGuardCanEnter(
-	machineName: string,
-	stateDef: StateDefinition,
-	path: string[],
+	_machineName: string,
+	_stateDef: StateDefinition,
+	_path: string[],
 	guard: StateGuard,
 	id: string,
-	registry: HandlerRegistry,
-	useProxyThunks: boolean
 ) {
-	hoistSlot(guard as Record<string, any>, 'can_enter', id, registry, useProxyThunks, {
-		category: 'fsm',
-		target: makeStateTarget(machineName, path, stateDef, 'guards:can_enter'),
-		source: { lang: 'js', module: 'js::fsm::guard', symbol: 'can_enter' },
-		defaultValue: false,
-		coerceBoolean: true,
-	});
+	hoistSlot(guard as Record<string, any>, 'can_enter', id);
 }
 
 function hoistGuardCanExit(
-	machineName: string,
-	stateDef: StateDefinition,
-	path: string[],
+	_machineName: string,
+	_stateDef: StateDefinition,
+	_path: string[],
 	guard: StateGuard,
 	id: string,
-	registry: HandlerRegistry,
-	useProxyThunks: boolean
 ) {
-	hoistSlot(guard as Record<string, any>, 'can_exit', id, registry, useProxyThunks, {
-		category: 'fsm',
-		target: makeStateTarget(machineName, path, stateDef, 'guards:can_exit'),
-		source: { lang: 'js', module: 'js::fsm::guard', symbol: 'can_exit' },
-		defaultValue: false,
-		coerceBoolean: true,
-	});
+	hoistSlot(guard as Record<string, any>, 'can_exit', id);
 }
 
 // StateDefinition handlers
-function hoistStateTick(machineName: string, path: string[], ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as Record<string, any>, 'tick', id, registry, useProxyThunks, {
-		category: 'fsm',
-		target: makeStateTarget(machineName, path, ownerDef, 'tick'),
-		source: { lang: 'js', module: 'js::fsm::state', symbol: 'tick' },
-	});
+function hoistStateTick(_machineName: string, _path: string[], ownerDef: StateDefinition, id: string) {
+	hoistSlot(ownerDef as Record<string, any>, 'tick', id);
 }
 
-function hoistStateTapeEnd(machineName: string, path: string[], ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as Record<string, any>, 'tape_end', id, registry, useProxyThunks, {
-		category: 'fsm',
-		target: makeStateTarget(machineName, path, ownerDef, 'tape_end'),
-		source: { lang: 'js', module: 'js::fsm::state', symbol: 'tape_end' },
-	});
+function hoistStateTapeEnd(_machineName: string, _path: string[], ownerDef: StateDefinition, id: string) {
+	hoistSlot(ownerDef as Record<string, any>, 'tape_end', id);
 }
 
-function hoistStateTapeNext(machineName: string, path: string[], ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as Record<string, any>, 'tape_next', id, registry, useProxyThunks, {
-		category: 'fsm',
-		target: makeStateTarget(machineName, path, ownerDef, 'tape_next'),
-		source: { lang: 'js', module: 'js::fsm::state', symbol: 'tape_next' },
-	});
+function hoistStateTapeNext(_machineName: string, _path: string[], ownerDef: StateDefinition, id: string) {
+	hoistSlot(ownerDef as Record<string, any>, 'tape_next', id);
 }
 
-function hoistStateEntering(machineName: string, path: string[], ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as Record<string, any>, 'entering_state', id, registry, useProxyThunks, {
-		category: 'fsm',
-		target: makeStateTarget(machineName, path, ownerDef, 'entering_state'),
-		source: { lang: 'js', module: 'js::fsm::state', symbol: 'entering_state' },
-	});
+function hoistStateEntering(_machineName: string, _path: string[], ownerDef: StateDefinition, id: string) {
+	hoistSlot(ownerDef as Record<string, any>, 'entering_state', id);
 }
 
-function hoistStateExiting(machineName: string, path: string[], ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as Record<string, any>, 'exiting_state', id, registry, useProxyThunks, {
-		category: 'fsm',
-		target: makeStateTarget(machineName, path, ownerDef, 'exiting_state'),
-		source: { lang: 'js', module: 'js::fsm::state', symbol: 'exiting_state' },
-	});
+function hoistStateExiting(_machineName: string, _path: string[], ownerDef: StateDefinition, id: string) {
+	hoistSlot(ownerDef as Record<string, any>, 'exiting_state', id);
 }
 
-function hoistStateProcessInput(machineName: string, path: string[], ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as Record<string, any>, 'process_input', id, registry, useProxyThunks, {
-		category: 'fsm',
-		target: makeStateTarget(machineName, path, ownerDef, 'process_input'),
-		source: { lang: 'js', module: 'js::fsm::state', symbol: 'process_input' },
-	});
+function hoistStateProcessInput(_machineName: string, _path: string[], ownerDef: StateDefinition, id: string) {
+	hoistSlot(ownerDef as Record<string, any>, 'process_input', id);
 }
 
 function normalizeEventNameForId(name: string) {
@@ -833,9 +710,7 @@ function hoistEventDef(
 	statePath: string[],
 	bagName: EventBagName,
 	rawEventName: string,
-	eventDefinition: StateEventDefinition,
-	registry: HandlerRegistry,
-	useProxyThunks: boolean
+	eventDefinition: StateEventDefinition
 ) {
 	if (!eventDefinition || typeof eventDefinition === 'string') return;
 
@@ -843,27 +718,25 @@ function hoistEventDef(
 	const base = [machineName, ...statePath, bagName, eventName];
 
 	if (typeof eventDefinition.if !== 'undefined') {
-		hoistEventIf(machineName, stateDef, statePath, bagName, eventName, eventDefinition, makeId([...base, 'if']), registry, useProxyThunks);
+		hoistEventIf(machineName, stateDef, statePath, bagName, eventName, eventDefinition, makeId([...base, 'if']));
 	}
 	if (typeof eventDefinition.do !== 'undefined') {
-		hoistEventDo(machineName, stateDef, statePath, bagName, eventName, eventDefinition, makeId([...base, 'do']), registry, useProxyThunks);
+		hoistEventDo(machineName, stateDef, statePath, bagName, eventName, eventDefinition, makeId([...base, 'do']));
 	}
 }
 
 function walkAndHoist(
 	machineName: string,
 	sdef: StateDefinition,
-	registry: HandlerRegistry,
 	path: string[] = [],
-	useProxyThunks = true
 ) {
 	// direct slots — aligned with StateDefinition handler properties
-	if (typeof sdef.tick !== 'undefined') hoistStateTick(machineName, path, sdef, makeId([machineName, ...path, 'tick']), registry, useProxyThunks);
-	if (typeof sdef.tape_end !== 'undefined') hoistStateTapeEnd(machineName, path, sdef, makeId([machineName, ...path, 'tape_end']), registry, useProxyThunks);
-	if (typeof sdef.tape_next !== 'undefined') hoistStateTapeNext(machineName, path, sdef, makeId([machineName, ...path, 'tape_next']), registry, useProxyThunks);
-	if (typeof sdef.entering_state !== 'undefined') hoistStateEntering(machineName, path, sdef, makeId([machineName, ...path, 'entering_state']), registry, useProxyThunks);
-	if (typeof sdef.exiting_state !== 'undefined') hoistStateExiting(machineName, path, sdef, makeId([machineName, ...path, 'exiting_state']), registry, useProxyThunks);
-	if (typeof sdef.process_input !== 'undefined') hoistStateProcessInput(machineName, path, sdef, makeId([machineName, ...path, 'process_input']), registry, useProxyThunks);
+	if (typeof sdef.tick !== 'undefined') hoistStateTick(machineName, path, sdef, makeId([machineName, ...path, 'tick']));
+	if (typeof sdef.tape_end !== 'undefined') hoistStateTapeEnd(machineName, path, sdef, makeId([machineName, ...path, 'tape_end']));
+	if (typeof sdef.tape_next !== 'undefined') hoistStateTapeNext(machineName, path, sdef, makeId([machineName, ...path, 'tape_next']));
+	if (typeof sdef.entering_state !== 'undefined') hoistStateEntering(machineName, path, sdef, makeId([machineName, ...path, 'entering_state']));
+	if (typeof sdef.exiting_state !== 'undefined') hoistStateExiting(machineName, path, sdef, makeId([machineName, ...path, 'exiting_state']));
+	if (typeof sdef.process_input !== 'undefined') hoistStateProcessInput(machineName, path, sdef, makeId([machineName, ...path, 'process_input']));
 
 	// on / input_event_handlers
 	for (const bagName of ['on', 'input_event_handlers'] as EventBagName[]) {
@@ -873,7 +746,7 @@ function walkAndHoist(
 			const evDef = bag[rawEventName];
 			switch (typeof evDef) {
 				case 'object':
-					hoistEventDef(machineName, sdef, path, bagName, rawEventName, evDef, registry, useProxyThunks);
+					hoistEventDef(machineName, sdef, path, bagName, rawEventName, evDef);
 					break;
 				case 'string':
 					// string definitions are just direct event names, no handlers to hoist
@@ -895,10 +768,10 @@ function walkAndHoist(
 			if (!chk || typeof chk !== 'object') return;
 			const base = [machineName, ...path, `run_checks[${i}]`];
 			if (typeof chk.if !== 'undefined') {
-				hoistEventIf(machineName, sdef, path, `run_checks`, `${i}`, chk, makeId([...base, 'if']), registry, useProxyThunks);
+				hoistEventIf(machineName, sdef, path, `run_checks`, `${i}`, chk, makeId([...base, 'if']));
 			}
 			if (typeof chk.do !== 'undefined') {
-				hoistEventDo(machineName, sdef, path, `run_checks`, `${i}`, chk, makeId([...base, 'do']), registry, useProxyThunks);
+				hoistEventDo(machineName, sdef, path, `run_checks`, `${i}`, chk, makeId([...base, 'do']));
 			}
 		});
 	}
@@ -907,17 +780,17 @@ function walkAndHoist(
 	const g = sdef.transition_guards;
 	if (g && typeof g === 'object') {
 		if (typeof g.can_enter !== 'undefined') {
-			hoistGuardCanEnter(machineName, sdef, path, g, makeId([machineName, ...path, 'guards', 'can_enter']), registry, useProxyThunks);
+			hoistGuardCanEnter(machineName, sdef, path, g, makeId([machineName, ...path, 'guards', 'can_enter']));
 		}
 		if (typeof g.can_exit !== 'undefined') {
-			hoistGuardCanExit(machineName, sdef, path, g, makeId([machineName, ...path, 'guards', 'can_exit']), registry, useProxyThunks);
+			hoistGuardCanExit(machineName, sdef, path, g, makeId([machineName, ...path, 'guards', 'can_exit']));
 		}
 	}
 
 	// recurse children
 	if (sdef.states) {
 		for (const [childId, child] of Object.entries(sdef.states) as [string, StateDefinition][]) {
-			walkAndHoist(machineName, child, registry, [...path, childId], useProxyThunks);
+			walkAndHoist(machineName, child, [...path, childId]);
 		}
 	}
 }
