@@ -9,6 +9,8 @@ import type {
 	ConsoleLuaDefinitionLocation,
 	ConsoleLuaHoverRequest,
 	ConsoleLuaHoverResult,
+	ConsoleLuaMemberCompletion,
+	ConsoleLuaMemberCompletionRequest,
 	ConsoleLuaResourceCreationRequest,
 	ConsoleLuaSymbolEntry,
 	ConsoleResourceDescriptor,
@@ -101,6 +103,7 @@ import type {
 	TabDragState,
 	TopBarButtonId,
 	VisualLineSegment,
+	LuaCompletionItem,
 } from './types';
 import type { RectBounds } from '../../rompack/rompack.ts';
 import { ReferenceState, resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation.ts';
@@ -158,6 +161,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private readonly createLuaResourceFn: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
 	private readonly listResourcesFn: () => ConsoleResourceDescriptor[];
 	private readonly inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
+	private readonly listLuaObjectMembersFn: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
 	private readonly listLuaSymbolsFn: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	private readonly listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
 	private readonly listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
@@ -350,6 +354,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	this.saveLuaResourceFn = options.saveLuaResource;
 	this.createLuaResourceFn = options.createLuaResource;
 	this.inspectLuaExpressionFn = options.inspectLuaExpression;
+	this.listLuaObjectMembersFn = options.listLuaObjectMembers;
 	this.listLuaSymbolsFn = options.listLuaSymbols;
 	this.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
 	this.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
@@ -442,6 +447,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		listGlobalLuaSymbols: () => this.listGlobalLuaSymbolsFn(),
 			listBuiltinLuaFunctions: () => this.listBuiltinLuaFunctionsFn(),
 			getSemanticDefinitions: () => this.getActiveSemanticDefinitions(),
+			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),
 			charAt: (r, c) => this.charAt(r, c),
 			getTextVersion: () => this.textVersion,
 			shouldFireRepeat: (kb, code, dt) => this.input.shouldRepeatPublic(kb, code, dt),
@@ -8790,6 +8796,47 @@ private handleCompletionKeybindings(
 		} else if (this.scrollColumn > maxColumn) {
 			this.scrollColumn = maxColumn;
 		}
+	}
+
+	private buildMemberCompletionItems(request: {
+		objectName: string;
+		operator: '.' | ':';
+		prefix: string;
+		assetId: string | null;
+		chunkName: string | null;
+	}): LuaCompletionItem[] {
+		if (request.objectName.length === 0) {
+			return [];
+		}
+		const response = this.listLuaObjectMembersFn({
+			assetId: request.assetId ?? null,
+			chunkName: request.chunkName ?? null,
+			expression: request.objectName,
+			operator: request.operator,
+		});
+		if (response.length === 0) {
+			return [];
+		}
+		const items: LuaCompletionItem[] = [];
+		for (let index = 0; index < response.length; index += 1) {
+			const entry = response[index];
+			if (!entry || !entry.name || entry.name.length === 0) {
+				continue;
+			}
+			const kind = entry.kind === 'method' ? 'native_method' : 'native_property';
+			const parameters = entry.parameters && entry.parameters.length > 0 ? entry.parameters.slice() : undefined;
+			const detail = entry.detail ?? null;
+			items.push({
+				label: entry.name,
+				insertText: entry.name,
+				sortKey: `${kind}:${entry.name.toLowerCase()}`,
+				kind,
+				detail,
+				parameters,
+			});
+		}
+		items.sort((a, b) => a.label.localeCompare(b.label));
+		return items;
 	}
 
 	protected visibleRowCount(): number {

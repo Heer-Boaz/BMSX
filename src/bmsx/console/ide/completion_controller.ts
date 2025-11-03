@@ -18,6 +18,14 @@ import type { KeyboardInput } from '../../input/keyboardinput';
 import { isWhitespace, isWordChar } from './text_utils';
 import { isLuaCommentContext } from './text_utils_local';
 
+type MemberCompletionHostRequest = {
+    objectName: string;
+    operator: '.' | ':';
+    prefix: string;
+    assetId: string | null;
+    chunkName: string | null;
+};
+
 export interface CompletionHost {
     // Editor state accessors
     getPlayerIndex(): number;
@@ -46,6 +54,7 @@ export interface CompletionHost {
     listGlobalLuaSymbols(): ConsoleLuaSymbolEntry[];
     listBuiltinLuaFunctions(): ConsoleLuaBuiltinDescriptor[];
     getSemanticDefinitions(): readonly LuaDefinitionInfo[] | null;
+    getMemberCompletionItems?(request: MemberCompletionHostRequest): LuaCompletionItem[];
     // Utilities
     charAt(row: number, column: number): string;
     getTextVersion(): number;
@@ -436,6 +445,21 @@ export class CompletionController {
         if (context.kind === 'member') {
             if (context.objectName.toLowerCase() === 'api') {
                 return apiCompletionData.items.slice();
+            }
+            if (this.host.getMemberCompletionItems) {
+                const activeContext = this.host.getActiveCodeTabContext();
+                const assetId = this.host.resolveHoverAssetId(activeContext);
+                const chunkName = this.host.resolveHoverChunkName(activeContext);
+                const items = this.host.getMemberCompletionItems({
+                    objectName: context.objectName,
+                    operator: context.operator,
+                    prefix: context.prefix,
+                    assetId,
+                    chunkName,
+                });
+                if (items && items.length > 0) {
+                    return items.slice();
+                }
             }
             return [];
         }
@@ -912,7 +936,7 @@ export class CompletionController {
         let index = session.selectionIndex;
         if (index < 0 || index >= session.filteredItems.length) index = 0;
         const item = session.filteredItems[index];
-        const addParentheses = item.kind === 'api_method';
+        const addParentheses = item.kind === 'api_method' || item.kind === 'native_method';
         const freshContext = this.analyzeCompletionContext();
         const effectiveContext = freshContext && this.completionContextsCompatible(session.context, freshContext) ? freshContext : session.context;
         this.applyCompletionItemForContext(effectiveContext, item, addParentheses);

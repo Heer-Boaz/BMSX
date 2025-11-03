@@ -149,6 +149,20 @@ export type ConsoleLuaHoverRequest = {
 	column: number;
 };
 
+export type ConsoleLuaMemberCompletionRequest = {
+	assetId: string | null;
+	chunkName: string | null;
+	expression: string;
+	operator: '.' | ':';
+};
+
+export type ConsoleLuaMemberCompletion = {
+	name: string;
+	kind: 'method' | 'property';
+	detail: string | null;
+	parameters: string[];
+};
+
 export type ConsoleLuaHoverResult = {
 	expression: string;
 	lines: string[];

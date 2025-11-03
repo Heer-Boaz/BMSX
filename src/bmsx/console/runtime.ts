@@ -3,7 +3,7 @@ import { BmsxConsoleApi } from './api';
 import { BmsxConsoleStorage } from './storage';
 import { ConsoleColliderManager } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
-import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor } from './types';
+import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor, ConsoleLuaMemberCompletionRequest, ConsoleLuaMemberCompletion } from './types';
 import type { RomResourcePath } from '../rompack/rompack';
 import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction, type LuaCallFrame } from '../lua/runtime.ts';
 import { LuaEnvironment } from '../lua/environment.ts';
@@ -283,6 +283,7 @@ export class BmsxConsoleRuntime extends Service {
 	private editorPipelineActive = false;
 	private readonly luaFailurePolicy: LuaPersistenceFailurePolicy;
 	private pendingLuaWarnings: string[] = [];
+	private readonly nativeMemberCompletionCache: WeakMap<object, { dot?: ConsoleLuaMemberCompletion[]; colon?: ConsoleLuaMemberCompletion[] }> = new WeakMap();
 	private readonly luaChunkResourceMap: Map<string, { assetId: string | null; path?: string | null }> = new Map();
 	private readonly resourcePathCache: Map<string, string | null> = new Map();
 	private readonly luaChunkEnvironmentsByAssetId: Map<string, LuaEnvironment> = new Map();
@@ -702,6 +703,7 @@ export class BmsxConsoleRuntime extends Service {
 			saveLuaResource: (assetId: string, source: string) => this.saveLuaResourceSource(assetId, source),
 			createLuaResource: (request) => this.createLuaResource(request),
 			inspectLuaExpression: (request: ConsoleLuaHoverRequest) => this.inspectLuaExpression(request),
+			listLuaObjectMembers: (request) => this.listLuaObjectMembers(request),
 			primaryAssetId,
 			listLuaSymbols: (assetId: string | null, chunkName: string | null) => this.listLuaSymbols(assetId, chunkName),
 			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
@@ -4623,11 +4625,11 @@ export class BmsxConsoleRuntime extends Service {
 		const usageRow = Number.isFinite(request.row) ? Math.max(1, Math.floor(request.row)) : null;
 		const usageColumn = Number.isFinite(request.column) ? Math.max(1, Math.floor(request.column)) : null;
 		const resolved = this.resolveLuaChainValue(chain, assetId);
-		const staticDefinition = this.findStaticDefinitionLocation(assetId, chain, usageRow, usageColumn, request.chunkName);
-		if (!resolved) {
-			if (!staticDefinition) {
-				return null;
-			}
+	const staticDefinition = this.findStaticDefinitionLocation(assetId, chain, usageRow, usageColumn, request.chunkName);
+	if (!resolved) {
+		if (!staticDefinition) {
+			return null;
+		}
 			return {
 				expression: trimmed,
 				lines: ['static definition'],
@@ -4664,17 +4666,43 @@ export class BmsxConsoleRuntime extends Service {
 				definition = staticDefinition;
 			}
 		}
-		return {
-			expression: trimmed,
-			lines: formatted.lines,
-			valueType: formatted.valueType,
-			scope: resolved.scope,
-			state: 'value',
-			isFunction,
-			isLocalFunction,
-			isBuiltin,
-			definition,
-		};
+	return {
+		expression: trimmed,
+		lines: formatted.lines,
+		valueType: formatted.valueType,
+		scope: resolved.scope,
+		state: 'value',
+		isFunction,
+		isLocalFunction,
+		isBuiltin,
+		definition,
+	};
+}
+
+	private listLuaObjectMembers(request: ConsoleLuaMemberCompletionRequest): ConsoleLuaMemberCompletion[] {
+		const trimmed = request.expression.trim();
+		if (trimmed.length === 0) {
+			return [];
+		}
+		const chain = this.parseLuaIdentifierChain(trimmed);
+		if (!chain) {
+			return [];
+		}
+		const resolved = this.resolveLuaChainValue(chain, request.assetId);
+		if (!resolved || resolved.kind !== 'value') {
+			return [];
+		}
+		const value = resolved.value;
+		if (value === null) {
+			return [];
+		}
+		if (isLuaNativeValue(value)) {
+			return this.getNativeMemberCompletionEntries(value, request.operator);
+		}
+		if (isLuaTable(value)) {
+			return this.buildTableMemberCompletionEntries(value, request.operator);
+		}
+		return [];
 	}
 
 	private resolveLuaDefinitionMetadata(value: LuaValue, fallbackAssetId: string | null, definitionRange: LuaSourceRange | null): ConsoleLuaDefinitionLocation | null {
@@ -5270,18 +5298,35 @@ export class BmsxConsoleRuntime extends Service {
 			const numeric = Number.isFinite(value) ? String(value) : 'nan';
 			return { lines: [numeric], valueType: 'number', isFunction: false };
 		}
-		if (typeof value === 'string') {
-			return { lines: [this.truncateInspectorLine(JSON.stringify(value))], valueType: 'string', isFunction: false };
+	if (typeof value === 'string') {
+		return { lines: [this.truncateInspectorLine(JSON.stringify(value))], valueType: 'string', isFunction: false };
+	}
+	if (this.isLuaFunctionValue(value)) {
+		const fnName = value.name && value.name.length > 0 ? value.name : '<anonymous>';
+		return { lines: [`<function ${fnName}>`], valueType: 'function', isFunction: true };
+	}
+	if (isLuaNativeValue(value)) {
+		const native = value.native;
+		const typeName = value.typeName && value.typeName.length > 0 ? value.typeName : this.resolveNativeTypeName(native);
+		if (typeof native === 'function') {
+			const params = this.extractFunctionParameters(native as (...args: unknown[]) => unknown);
+			const paramSegment = params.length > 0 ? params.join(', ') : '';
+			const signature = paramSegment.length > 0 ? `(${paramSegment})` : '()';
+			const label = typeName && typeName.length > 0 ? `<native function ${typeName}${signature}>` : `<native function${signature}>`;
+			return { lines: [label], valueType: typeName ?? 'native', isFunction: true };
 		}
-		if (this.isLuaFunctionValue(value)) {
-			const fnName = value.name && value.name.length > 0 ? value.name : '<anonymous>';
-			return { lines: [`<function ${fnName}>`], valueType: 'function', isFunction: true };
+		let summary = `<${typeName ?? 'native'}>`;
+		const identifier = (native as { id?: unknown }).id;
+		if (identifier !== undefined && identifier !== null) {
+			summary = `${summary} id=${String(identifier)}`;
 		}
-		if (isLuaTable(value)) {
-			try {
-				const serialized = this.serializeLuaValueForSnapshot(value, new Set<LuaTable>());
-				const json = JSON.stringify(serialized, null, 2) ?? 'null';
-				const rawLines = json.split('\n');
+		return { lines: [summary], valueType: typeName ?? 'native', isFunction: false };
+	}
+	if (isLuaTable(value)) {
+		try {
+			const serialized = this.serializeLuaValueForSnapshot(value, new Set<LuaTable>());
+			const json = JSON.stringify(serialized, null, 2) ?? 'null';
+			const rawLines = json.split('\n');
 				const lines: string[] = [];
 				for (let i = 0; i < rawLines.length && i < BmsxConsoleRuntime.HOVER_VALUE_MAX_SERIALIZED_LINES; i += 1) {
 					lines.push(this.truncateInspectorLine(rawLines[i]));
@@ -5293,8 +5338,206 @@ export class BmsxConsoleRuntime extends Service {
 			} catch (_error) {
 				return { lines: ['<table>'], valueType: 'table', isFunction: false };
 			}
+	}
+	return { lines: ['<unknown>'], valueType: 'unknown', isFunction: false };
+}
+
+	private getNativeMemberCompletionEntries(value: LuaNativeValue, operator: '.' | ':'): ConsoleLuaMemberCompletion[] {
+		const native = value.native;
+		const typeName = value.typeName && value.typeName.length > 0 ? value.typeName : this.resolveNativeTypeName(native);
+		const registry = new Map<string, ConsoleLuaMemberCompletion>();
+		const includeProperties = operator === '.';
+		if (typeof native === 'object' && native !== null) {
+			this.populateNativeMembersFromTarget(native, operator, typeName, registry, includeProperties);
+		} else if (typeof native === 'function' && operator === '.') {
+			this.populateNativeMembersFromTarget(native, operator, typeName, registry, includeProperties);
 		}
-		return { lines: ['<unknown>'], valueType: 'unknown', isFunction: false };
+		const prototypeEntries = this.getCachedPrototypeNativeEntries(native, operator, typeName);
+		for (let index = 0; index < prototypeEntries.length; index += 1) {
+			this.registerNativeCompletion(registry, prototypeEntries[index]);
+		}
+		const result: ConsoleLuaMemberCompletion[] = [];
+		for (const entry of registry.values()) {
+			result.push({
+				name: entry.name,
+				kind: entry.kind,
+				detail: entry.detail,
+				parameters: entry.parameters.slice(),
+			});
+		}
+		result.sort((a, b) => a.name.localeCompare(b.name));
+		return result;
+	}
+
+	private getCachedPrototypeNativeEntries(native: object | Function, operator: '.' | ':', typeName: string | null): ConsoleLuaMemberCompletion[] {
+		const cacheKey = this.resolveNativeCompletionCacheKey(native);
+		const cacheField = operator === ':' ? 'colon' : 'dot';
+		let cache = this.nativeMemberCompletionCache.get(cacheKey);
+		const cached = cache && cache[cacheField];
+		if (cached) {
+			return this.cloneMemberCompletions(cached);
+		}
+		const built = this.buildNativePrototypeMemberEntries(native, operator, typeName);
+		if (!cache) {
+			cache = {};
+			this.nativeMemberCompletionCache.set(cacheKey, cache);
+		}
+		cache[cacheField] = built;
+		return this.cloneMemberCompletions(built);
+	}
+
+	private buildNativePrototypeMemberEntries(native: object | Function, operator: '.' | ':', typeName: string | null): ConsoleLuaMemberCompletion[] {
+		const registry = new Map<string, ConsoleLuaMemberCompletion>();
+		const includeProperties = operator === '.';
+		const visited = new Set<object>();
+		const traverse = (target: object | null): void => {
+			let current = target;
+			while (current && !visited.has(current)) {
+				if (current === Object.prototype || current === Function.prototype) {
+					return;
+				}
+				visited.add(current);
+				this.populateNativeMembersFromTarget(current, operator, typeName, registry, includeProperties);
+				current = Object.getPrototypeOf(current);
+			}
+		};
+		if (typeof native === 'function') {
+			const prototype = native.prototype && typeof native.prototype === 'object' ? native.prototype : null;
+			traverse(prototype);
+			if (operator === '.') {
+				const functionPrototype = Object.getPrototypeOf(native);
+				traverse(functionPrototype);
+			}
+		} else {
+			traverse(Object.getPrototypeOf(native));
+		}
+		const entries: ConsoleLuaMemberCompletion[] = [];
+		for (const entry of registry.values()) {
+			entries.push({ name: entry.name, kind: entry.kind, detail: entry.detail, parameters: entry.parameters.slice() });
+		}
+		entries.sort((a, b) => a.name.localeCompare(b.name));
+		return entries;
+	}
+
+	private buildTableMemberCompletionEntries(table: LuaTable, operator: '.' | ':'): ConsoleLuaMemberCompletion[] {
+		const entries = table.entriesArray();
+		if (entries.length === 0) {
+			return [];
+		}
+		const registry = new Map<string, ConsoleLuaMemberCompletion>();
+		for (let i = 0; i < entries.length; i += 1) {
+			const [key, entryValue] = entries[i];
+			if (typeof key !== 'string' || key.length === 0) {
+				continue;
+			}
+			const isFunction = this.isLuaFunctionValue(entryValue);
+			if (operator === ':' && !isFunction) {
+				continue;
+			}
+			const kind: 'method' | 'property' = isFunction ? 'method' : 'property';
+			const detail = isFunction ? `function ${key}` : `table field '${key}'`;
+			registry.set(key, { name: key, kind, detail, parameters: [] });
+		}
+		const results: ConsoleLuaMemberCompletion[] = [];
+		for (const entry of registry.values()) {
+			results.push({ name: entry.name, kind: entry.kind, detail: entry.detail, parameters: entry.parameters.slice() });
+		}
+		results.sort((a, b) => a.name.localeCompare(b.name));
+		return results;
+	}
+
+	private resolveNativeCompletionCacheKey(native: object | Function): object {
+		if (typeof native === 'function') {
+			return native;
+		}
+		const prototype = Object.getPrototypeOf(native);
+		if (prototype && typeof prototype === 'object') {
+			return prototype;
+		}
+		return native;
+	}
+
+	private populateNativeMembersFromTarget(target: object, operator: '.' | ':', typeName: string | null, registry: Map<string, ConsoleLuaMemberCompletion>, includeProperties: boolean): void {
+		const propertyNames = Object.getOwnPropertyNames(target);
+		for (let index = 0; index < propertyNames.length; index += 1) {
+			const name = propertyNames[index];
+			if (!name || name === 'constructor' || name === '__proto__') {
+				continue;
+			}
+			const descriptor = Object.getOwnPropertyDescriptor(target, name);
+			if (!descriptor) {
+				continue;
+			}
+			if (typeof descriptor.value === 'function') {
+				const rawParams = this.extractFunctionParameters(descriptor.value as (...args: unknown[]) => unknown);
+				const params = operator === ':' ? this.adjustMethodParametersForColon(rawParams) : rawParams.slice();
+				const detail = this.formatNativeMethodDetail(typeName, name, params);
+				this.registerNativeCompletion(registry, { name, kind: 'method', detail, parameters: params });
+				continue;
+			}
+			const hasGetter = typeof descriptor.get === 'function';
+			const hasSetter = typeof descriptor.set === 'function';
+			if (includeProperties && (hasGetter || 'value' in descriptor)) {
+				const detail = this.formatNativePropertyDetail(typeName, name, hasGetter, hasSetter);
+				this.registerNativeCompletion(registry, { name, kind: 'property', detail, parameters: [] });
+			}
+		}
+	}
+
+	private registerNativeCompletion(registry: Map<string, ConsoleLuaMemberCompletion>, entry: ConsoleLuaMemberCompletion): void {
+		if (registry.has(entry.name)) {
+			return;
+		}
+		registry.set(entry.name, {
+			name: entry.name,
+			kind: entry.kind,
+			detail: entry.detail,
+			parameters: entry.parameters.slice(),
+		});
+	}
+
+	private adjustMethodParametersForColon(params: string[]): string[] {
+		if (!params || params.length === 0) {
+			return [];
+		}
+		const first = params[0] ?? '';
+		const normalized = first.trim().toLowerCase();
+		if (normalized === 'self' || normalized === 'this') {
+			return params.slice(1);
+		}
+		return params.slice();
+	}
+
+	private formatNativeMethodDetail(typeName: string | null, name: string, parameters: readonly string[]): string {
+		const paramSegment = parameters.length > 0 ? parameters.join(', ') : '';
+		const signature = paramSegment.length > 0 ? `(${paramSegment})` : '()';
+		if (typeName && typeName.length > 0) {
+			return `${typeName}.${name}${signature}`;
+		}
+		return `${name}${signature}`;
+	}
+
+	private formatNativePropertyDetail(typeName: string | null, name: string, hasGetter: boolean, hasSetter: boolean): string {
+		const base = typeName && typeName.length > 0 ? `${typeName}.${name}` : name;
+		if (hasGetter && hasSetter) {
+			return `${base} (property)`;
+		}
+		if (hasGetter) {
+			return `${base} (read-only)`;
+		}
+		if (hasSetter) {
+			return `${base} (write-only)`;
+		}
+		return `${base}`;
+	}
+
+	private cloneMemberCompletions(entries: ConsoleLuaMemberCompletion[]): ConsoleLuaMemberCompletion[] {
+		const cloned: ConsoleLuaMemberCompletion[] = [];
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			cloned.push({ name: entry.name, kind: entry.kind, detail: entry.detail, parameters: entry.parameters.slice() });
+		}
+		return cloned;
 	}
 
 	private truncateInspectorLine(value: string): string {
