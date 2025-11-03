@@ -4,10 +4,6 @@ local CORONA_SPEED = 55
 local CORONA_FRAME_TICKS = 6
 local CORONA_FRAMES = { 'corona1', 'corona2', 'corona3', 'corona2' }
 
-local function corona_state(object)
-	return object.lua_instance
-end
-
 local function out_of_bounds(x, y)
 	return x < -32 or x > SCREEN_WIDTH + 32 or y < -32 or y > SCREEN_HEIGHT + 32
 end
@@ -41,7 +37,7 @@ return {
 				},
 			},
 			tick = function(object)
-				local context = corona_state(object)
+				local context = object
 				local delta = delta_seconds()
 				object.x = object.x + context.move_x * CORONA_SPEED * delta
 				object.y = object.y + context.move_y * CORONA_SPEED * delta

@@ -239,13 +239,9 @@ local function release_inventory(state)
 	state.inventory_item = nil
 end
 
-local function object_state(owner)
-	return owner.lua_instance
-end
-
 local function ability_fire(ctx)
 	local owner = ctx.owner
-	local state = object_state(owner)
+	local state = owner
 	local direction = state.direction
 	local dx = 0
 	local dy = 1
@@ -265,7 +261,7 @@ end
 
 local function ability_interact(ctx)
 	local owner = ctx.owner
-	local state = object_state(owner)
+	local state = owner
 	local held = state.inventory_item
 
 	if held and held.kind == 'knife' then
@@ -327,7 +323,7 @@ end
 
 local function ability_move_horizontal(ctx, params)
 	local owner = ctx.owner
-	local state = object_state(owner)
+	local state = owner
 	local column = state.column
 	local direction = params.direction
 	local next_column = direction == 'left' and (column - 1) or (column + 1)
@@ -339,24 +335,24 @@ local function ability_move_horizontal(ctx, params)
 end
 
 local function ability_move_horizontal_stop(ctx)
-	local state = object_state(ctx.owner)
+	local state = ctx.owner
 	state.horizontal_direction = nil
 	state.switch_target = nil
 end
 
 local function ability_move_vertical(ctx, params)
-	local state = object_state(ctx.owner)
+	local state = ctx.owner
 	state.vertical_intent = params.direction
 end
 
 local function ability_move_vertical_stop(ctx)
-	local state = object_state(ctx.owner)
+	local state = ctx.owner
 	state.vertical_intent = nil
 end
 
 local function ability_hurt(ctx, params)
 	local owner = ctx.owner
-	local state = object_state(owner)
+	local state = owner
 	state.vertical_intent = nil
 	state.horizontal_direction = nil
 	state.switch_target = nil
@@ -449,26 +445,21 @@ PlayerObject = {
 	},
 	fsm = 'marlies2020_player',
 }
-local PlayerObjectMetatable = { __index = PlayerObject }
 
 function PlayerObject:create(owner)
-	local instance = {
-		object = owner,
-		column = START_COLUMN,
-		inventory_item = nil,
-		touch_ingredients = {},
-		touch_boards = {},
-		touch_corona = {},
-		horizontal_direction = nil,
-		switch_target = nil,
-		vertical_intent = nil,
-		direction = 'down',
-		hurt_remaining = nil,
-	}
-	return setmetatable(instance, PlayerObjectMetatable)
+	owner.column = START_COLUMN
+	owner.inventory_item = nil
+	owner.touch_ingredients = {}
+	owner.touch_boards = {}
+	owner.touch_corona = {}
+	owner.horizontal_direction = nil
+	owner.switch_target = nil
+	owner.vertical_intent = nil
+	owner.direction = 'down'
+	owner.hurt_remaining = nil
 end
 
-function PlayerObject:on_spawn(owner)
+function PlayerObject:on_spawn()
 	self.touch_ingredients = {}
 	self.touch_boards = {}
 	self.touch_corona = {}
@@ -476,10 +467,10 @@ function PlayerObject:on_spawn(owner)
 	self.direction = 'down'
 	self.hurt_remaining = nil
 
-	setup_player_components(owner)
-	assert_sprite_id(owner:getcomponentbyid('player_sprite'), 'player')
+	setup_player_components(self)
+	assert_sprite_id(self:getcomponentbyid('player_sprite'), 'player')
 
-	local collider = owner:getcomponentbyid('player_collider')
+	local collider = self:getcomponentbyid('player_collider')
 	collider.generateOverlapEvents = true
 	collider.isTrigger = true
 
@@ -495,7 +486,7 @@ function PlayerObject:on_spawn(owner)
 		end
 		if game_state.corona[other] then
 			self.touch_corona[other] = true
-			request_ability(owner.id, PLAYER_ABILITY_IDS.hurt, { payload = { source = other } })
+			request_ability(self.id, PLAYER_ABILITY_IDS.hurt, { payload = { source = other } })
 		end
 	end
 
@@ -503,18 +494,18 @@ function PlayerObject:on_spawn(owner)
 		local other = payload.otherId
 		self.touch_ingredients[other] = nil
 		self.touch_boards[other] = nil
-		self.touch_corona[other] = nil
+	self.touch_corona[other] = nil
 	end
 
-	events:on('overlapBegin', begin_overlap, owner, { emitter = owner.id, persistent = true })
-	events:on('overlapEnd', end_overlap, owner, { emitter = owner.id, persistent = true })
+	events:on('overlapBegin', begin_overlap, self, { emitter = self.id, persistent = true })
+	events:on('overlapEnd', end_overlap, self, { emitter = self.id, persistent = true })
 
-	game_state.player = owner
-	game_state.player_id = owner.id
+	game_state.player = self
+	game_state.player_id = self.id
 	initialize_player_abilities()
 end
 
-function PlayerObject:on_dispose(_owner)
+function PlayerObject:on_dispose()
 	if self.inventory_item then
 		self.inventory_item.held = false
 		self.inventory_item = nil
@@ -541,41 +532,35 @@ CoronaObject = {
 	},
 	fsm = 'marlies2020_corona',
 }
-local CoronaObjectMetatable = { __index = CoronaObject }
-
 function CoronaObject:create(owner)
-	local instance = {
-		object = owner,
-		move_x = -1,
-		move_y = 0,
-	}
-	return setmetatable(instance, CoronaObjectMetatable)
+	owner.move_x = -1
+	owner.move_y = 0
 end
 
-function CoronaObject:on_spawn(owner)
+function CoronaObject:on_spawn()
 	self.move_x = self.move_x or -1
 	self.move_y = self.move_y or 0
-	assert_sprite_id(owner:getcomponentbyid('corona_sprite'), 'corona:' .. owner.id)
-	local collider = owner:getcomponentbyid('corona_collider')
+	assert_sprite_id(self:getcomponentbyid('corona_sprite'), 'corona:' .. self.id)
+	local collider = self:getcomponentbyid('corona_collider')
 	collider.generateOverlapEvents = true
 	collider.isTrigger = true
 
 	local function handle_overlap(_, _, payload)
 		local other = payload.otherId
 		if game_state.fires[other] then
-			owner.sc:dispatch_event('dispel', owner, { source = other })
+			self.sc:dispatch_event('dispel', self, { source = other })
 		end
 	end
 
-	events:on('overlapBegin', handle_overlap, owner, { emitter = owner.id, persistent = true })
-	attach_bt(owner.id, 'marlies2020_corona_bt')
-	owner:tickTree('marlies2020_corona_bt')
-	game_state.corona[owner.id] = owner
+	events:on('overlapBegin', handle_overlap, self, { emitter = self.id, persistent = true })
+	attach_bt(self.id, 'marlies2020_corona_bt')
+	self:tickTree('marlies2020_corona_bt')
+	game_state.corona[self.id] = self
 	game_state.corona_count = game_state.corona_count + 1
 end
 
-function CoronaObject:on_dispose(owner)
-	game_state.corona[owner.id] = nil
+function CoronaObject:on_dispose()
+	game_state.corona[self.id] = nil
 	game_state.corona_count = game_state.corona_count - 1
 end
 
@@ -596,21 +581,15 @@ FireObject = {
 	},
 	fsm = 'marlies2020_fire',
 }
-local FireObjectMetatable = { __index = FireObject }
-
 function FireObject:create(owner)
-	local instance = {
-		object = owner,
-		vx = 0,
-		vy = 0,
-		life = FIRE_LIFETIME,
-	}
-	return setmetatable(instance, FireObjectMetatable)
+	owner.vx = 0
+	owner.vy = 0
+	owner.life = FIRE_LIFETIME
 end
 
-function FireObject:on_spawn(owner)
-	assert_sprite_id(owner:getcomponentbyid('fire_sprite'), 'fire:' .. owner.id)
-	local collider = owner:getcomponentbyid('fire_collider')
+function FireObject:on_spawn()
+	assert_sprite_id(self:getcomponentbyid('fire_sprite'), 'fire:' .. self.id)
+	local collider = self:getcomponentbyid('fire_collider')
 	collider.generateOverlapEvents = true
 	collider.isTrigger = true
 
@@ -622,16 +601,16 @@ function FireObject:on_spawn(owner)
 	end
 
 	local function leave_screen()
-		despawn(owner.id)
+		despawn(self.id)
 	end
 
-	events:on('overlapBegin', hit_corona, owner, { emitter = owner.id, persistent = true })
-	events:on('leaveScreen', leave_screen, owner, { emitter = owner.id, persistent = true })
-	game_state.fires[owner.id] = owner
+	events:on('overlapBegin', hit_corona, self, { emitter = self.id, persistent = true })
+	events:on('leaveScreen', leave_screen, self, { emitter = self.id, persistent = true })
+	game_state.fires[self.id] = self
 end
 
-function FireObject:on_dispose(owner)
-	game_state.fires[owner.id] = nil
+function FireObject:on_dispose()
+	game_state.fires[self.id] = nil
 end
 
 define_worldobject({
@@ -692,7 +671,7 @@ function spawn_fire(owner, dx, dy)
 		position = { x = owner.x + dx * 12, y = owner.y + dy * 12, z = owner.z + 100 },
 	})
 	local object = registry:get(id)
-	local state = object_state(object)
+	local state = object
 	state.vx = dx * FIRE_SPEED
 	state.vy = dy * FIRE_SPEED
 	state.life = FIRE_LIFETIME
@@ -765,7 +744,7 @@ local function spawn_corona(x, y)
 		position = { x = x, y = y, z = 900 },
 	})
 	local object = registry:get(id)
-	local state = object_state(object)
+	local state = object
 	state.move_x = x <= 0 and 1 or -1
 	state.move_y = 0
 end

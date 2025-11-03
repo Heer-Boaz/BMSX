@@ -1,10 +1,36 @@
-export type LuaValue = LuaNil | boolean | number | string | LuaTable | LuaFunctionValue;
+export type LuaValue = LuaNil | boolean | number | string | LuaTable | LuaFunctionValue | LuaNativeValue;
 
 export type LuaNil = null;
 
 export interface LuaFunctionValue {
 	readonly name: string;
 	call(args: ReadonlyArray<LuaValue>): LuaValue[];
+}
+
+export class LuaNativeValue {
+	private metatable: LuaTable | null = null;
+
+	constructor(public readonly native: object | Function, public readonly typeName?: string) {
+		if (native === null || (typeof native !== 'object' && typeof native !== 'function')) {
+			throw new Error('LuaNativeValue requires an object or function.');
+		}
+	}
+
+	public getMetatable(): LuaTable | null {
+		return this.metatable;
+	}
+
+	public setMetatable(value: LuaTable | null): void {
+		this.metatable = value;
+	}
+}
+
+export function createLuaNativeValue(native: object | Function, typeName?: string): LuaNativeValue {
+	return new LuaNativeValue(native, typeName);
+}
+
+export function isLuaNativeValue(value: unknown): value is LuaNativeValue {
+	return value instanceof LuaNativeValue;
 }
 
 type LuaTableMethods = {

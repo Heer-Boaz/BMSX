@@ -1,10 +1,6 @@
 local FIRE_FRAME_TICKS = 2
 local FIRE_FRAMES = { 'vuur1', 'vuur2', 'vuur3', 'vuur4', 'vuur5', 'vuur6', 'vuur7', 'vuur8', 'vuur9', 'vuur10' }
 
-local function fire_state(object)
-	return object.lua_instance
-end
-
 return {
 	id = 'marlies2020_fire',
 	states = {
@@ -21,7 +17,7 @@ return {
 			end,
 			tick = function(object)
 				local delta = delta_seconds()
-				local context = fire_state(object)
+				local context = object
 				context.life = context.life - delta
 				if context.life <= 0 then
 					return '../expired'

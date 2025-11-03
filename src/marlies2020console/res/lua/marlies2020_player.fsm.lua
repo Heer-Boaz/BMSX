@@ -11,10 +11,6 @@ local PLAYER_FRAMES_SWITCH = { 'p7' }
 local PLAYER_FRAMES_HURT = { 'p8', 'p9' }
 local PLAYER_FRAMES_WIN = { 'p10' }
 
-local function player_state(owner)
-	return owner.lua_instance
-end
-
 local function common_events()
 	return {
 		['player.hurt'] = '../hurt',
@@ -51,7 +47,7 @@ return {
 			tape_playback_mode = 'loop',
 			on = common_events(),
 			entering_state = function(owner, state)
-				local context = player_state(owner)
+				local context = owner
 				context.direction = 'down'
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value or PLAYER_FRAMES_DOWN[1]
 			end,
@@ -59,7 +55,7 @@ return {
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tick = function(owner)
-				local context = player_state(owner)
+				local context = owner
 				local horizontal = context.horizontal_direction
 				if horizontal == 'left' then
 					return '../switch_left'
@@ -88,7 +84,7 @@ return {
 			tape_playback_mode = 'loop',
 			on = common_events(),
 			entering_state = function(owner, state)
-				local context = player_state(owner)
+				local context = owner
 				context.direction = 'up'
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value or PLAYER_FRAMES_UP[1]
 			end,
@@ -96,7 +92,7 @@ return {
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tick = function(owner)
-				local context = player_state(owner)
+				local context = owner
 				local horizontal = context.horizontal_direction
 				if horizontal == 'left' then
 					return '../switch_left'
@@ -125,7 +121,7 @@ return {
 			tape_playback_mode = 'loop',
 			on = common_events(),
 			entering_state = function(owner, state)
-				local context = player_state(owner)
+				local context = owner
 				context.direction = 'left'
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value or PLAYER_FRAMES_SWITCH[1]
 			end,
@@ -133,7 +129,7 @@ return {
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tick = function(owner)
-				local context = player_state(owner)
+				local context = owner
 				local target = context.switch_target
 				if not target then
 					context.horizontal_direction = nil
@@ -160,7 +156,7 @@ return {
 			tape_playback_mode = 'loop',
 			on = common_events(),
 			entering_state = function(owner, state)
-				local context = player_state(owner)
+				local context = owner
 				context.direction = 'right'
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value or PLAYER_FRAMES_SWITCH[1]
 			end,
@@ -168,7 +164,7 @@ return {
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tick = function(owner)
-				local context = player_state(owner)
+				local context = owner
 				local target = context.switch_target
 				if not target then
 					context.horizontal_direction = nil
@@ -195,7 +191,7 @@ return {
 			tape_playback_mode = 'loop',
 			on = victory_event(),
 			entering_state = function(owner, state)
-				local context = player_state(owner)
+				local context = owner
 				context.direction = 'down'
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value or PLAYER_FRAMES_HURT[1]
 			end,
@@ -203,7 +199,7 @@ return {
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
 			end,
 			tick = function(owner)
-				local context = player_state(owner)
+				local context = owner
 				local remaining = context.hurt_remaining
 				if not remaining then
 					return '../walk_down'
@@ -223,7 +219,7 @@ return {
 			enable_tape_autotick = true,
 			tape_playback_mode = 'loop',
 			entering_state = function(owner, state)
-				local context = player_state(owner)
+				local context = owner
 				context.direction = 'down'
 				owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value or PLAYER_FRAMES_WIN[1]
 			end,
