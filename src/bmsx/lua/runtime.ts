@@ -70,6 +70,8 @@ const NORMAL_SIGNAL: ExecutionSignal = { kind: 'normal' };
 export interface LuaHostAdapter {
 	toLua(value: unknown, interpreter: LuaInterpreter): LuaValue;
 	toJs(value: LuaValue, interpreter: LuaInterpreter): unknown;
+	serializeNative?(native: object | Function): unknown;
+	deserializeNative?(token: unknown): object | Function | null;
 }
 
 class LuaNativeFunction implements LuaFunctionValue {
@@ -205,6 +207,10 @@ export class LuaInterpreter {
 		const nativeValue = createLuaNativeValue(value, typeName);
 		this.nativeValueCache.set(value, nativeValue);
 		return nativeValue;
+	}
+
+	public getHostAdapter(): LuaHostAdapter | null {
+		return this.hostAdapter;
 	}
 
 	public parseChunk(source: string, chunkName: string): LuaChunk {
@@ -1427,6 +1433,9 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		if (left === right) {
 			return true;
 		}
+		if (isLuaNativeValue(left) && isLuaNativeValue(right)) {
+			return left.native === right.native;
+		}
 		const handler = this.extractSharedMetamethodFunction(left, right, '__eq', expression.range);
 		if (handler !== null) {
 			const result = handler.call([left, right]);
@@ -2256,6 +2265,9 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 
 		this.globals.set('type', new LuaNativeFunction('type', this, (_interpreter, args) => {
 			const value = args.length > 0 ? args[0] : null;
+			if (isLuaNativeValue(value)) {
+				return ['native'];
+			}
 			let result: string;
 			if (value === null) {
 				result = 'nil';

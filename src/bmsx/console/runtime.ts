@@ -351,6 +351,8 @@ export class BmsxConsoleRuntime extends Service {
 				const moduleId = this.moduleIdFor('other', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
 				return this.luaValueToJs(luaValue, { moduleId, interpreter: ctx, path: [] });
 			},
+			serializeNative: (native) => this.snapshotEncodeNative(native),
+			deserializeNative: (token) => this.snapshotDecodeNative(token),
 		});
 	}
 
@@ -1395,9 +1397,6 @@ export class BmsxConsoleRuntime extends Service {
 		if (this.isLuaFunctionValue(value)) {
 			return true;
 		}
-		if (isLuaNativeValue(value)) {
-			return true;
-		}
 		return false;
 	}
 
@@ -1413,7 +1412,8 @@ export class BmsxConsoleRuntime extends Service {
 			return value;
 		}
 		if (isLuaNativeValue(value)) {
-			throw new Error('Cannot serialize native engine objects inside Lua tables.');
+			const encoded = this.snapshotEncodeNative(value.native);
+			return encoded !== undefined ? encoded : null;
 		}
 		if (isLuaTable(value)) {
 			if (visited.has(value)) {
@@ -1427,13 +1427,12 @@ export class BmsxConsoleRuntime extends Service {
 				}
 				const numericEntries = new Map<number, unknown>();
 				const objectEntries: Record<string, unknown> = {};
+				const complexEntries: Array<{ key: unknown; value: unknown }> = [];
 				let hasStringKey = false;
 				let maxNumericIndex = 0;
+				let hasComplexKeys = false;
 				for (const [key, entryValue] of entries) {
 					if (this.isLuaFunctionValue(entryValue)) {
-						continue;
-					}
-					if (isLuaNativeValue(entryValue)) {
 						continue;
 					}
 					if (typeof key === 'string' && key === '__index') {
@@ -1441,7 +1440,15 @@ export class BmsxConsoleRuntime extends Service {
 					}
 					let serializedEntry: unknown;
 					try {
-						serializedEntry = this.serializeLuaValueForSnapshot(entryValue, visited);
+						if (isLuaNativeValue(entryValue)) {
+							const encoded = this.snapshotEncodeNative(entryValue.native);
+							if (encoded === undefined) {
+								continue;
+							}
+							serializedEntry = encoded;
+						} else {
+							serializedEntry = this.serializeLuaValueForSnapshot(entryValue, visited);
+						}
 					}
 					catch (error) {
 						if ($.debug) {
@@ -1449,6 +1456,19 @@ export class BmsxConsoleRuntime extends Service {
 						}
 						continue;
 					}
+					let serializedKey: unknown;
+					try {
+						serializedKey = this.serializeLuaSnapshotKey(key, visited);
+					} catch (error) {
+						if ($.debug) {
+							console.warn(`[BmsxConsoleRuntime] Skipping Lua table key '${String(key)}' during snapshot:`, error);
+						}
+						continue;
+					}
+					if (serializedKey === undefined) {
+						continue;
+					}
+					complexEntries.push({ key: serializedKey, value: serializedEntry });
 					if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
 						numericEntries.set(key, serializedEntry);
 						if (key > maxNumericIndex) {
@@ -1461,7 +1481,13 @@ export class BmsxConsoleRuntime extends Service {
 						objectEntries[key] = serializedEntry;
 						continue;
 					}
-					throw new Error('Unsupported Lua table key type during snapshot serialization.');
+					hasComplexKeys = true;
+				}
+				if (hasComplexKeys) {
+					return {
+						__bmsx_table__: 'map',
+						entries: complexEntries,
+					};
 				}
 				const numericCount = numericEntries.size;
 				const isSequential = numericCount > 0 && !hasStringKey && numericCount === maxNumericIndex;
@@ -1483,6 +1509,35 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 		throw new Error('Unsupported Lua value encountered during snapshot serialization.');
+	}
+
+	private serializeLuaSnapshotKey(key: LuaValue, visited: Set<LuaTable>): unknown {
+		if (key === null || typeof key === 'boolean' || typeof key === 'number' || typeof key === 'string') {
+			return key;
+		}
+		if (isLuaNativeValue(key)) {
+			return this.snapshotEncodeNative(key.native);
+		}
+		if (this.isLuaFunctionValue(key)) {
+			return undefined;
+		}
+		if (isLuaTable(key)) {
+			return this.serializeLuaValueForSnapshot(key, visited);
+		}
+		return this.serializeLuaValueForSnapshot(key, visited);
+	}
+
+	private deserializeLuaSnapshotKey(raw: unknown, interpreter: LuaInterpreter): LuaValue {
+		if (raw === null || typeof raw === 'boolean' || typeof raw === 'number' || typeof raw === 'string') {
+			return raw as LuaValue;
+		}
+		if (typeof raw === 'object' && raw !== null) {
+			const decoded = this.snapshotDecodeNative(raw);
+			if (decoded) {
+				return this.wrapNativeValue(decoded, interpreter);
+			}
+		}
+		return this.jsToLua(raw, interpreter);
 	}
 
 	private captureLuaSnapshot(): unknown {
@@ -3939,6 +3994,34 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		if (typeof value === 'object') {
 			const ensured = this.ensureInterpreter(interpreter);
+			if (this.isPlainObject(value)) {
+				const record = value as Record<string, unknown>;
+				if ('__native__' in record) {
+					const decoded = this.snapshotDecodeNative(record);
+					if (decoded) {
+						return this.wrapNativeValue(decoded, ensured);
+					}
+					return null;
+				}
+				if (record.__bmsx_table__ === 'map' && Array.isArray(record.entries)) {
+					const entries = record.entries as Array<{ key: unknown; value: unknown }>;
+					const table = createLuaTable();
+					for (const entry of entries) {
+						const keyValue = this.deserializeLuaSnapshotKey(entry.key, ensured);
+						if (keyValue === undefined || keyValue === null) {
+							continue;
+						}
+						const valueValue = this.jsToLua(entry.value, ensured);
+						table.set(keyValue, valueValue);
+					}
+					return table;
+				}
+				const table = createLuaTable();
+				for (const [prop, entry] of Object.entries(record)) {
+					table.set(prop, this.jsToLua(entry, ensured));
+				}
+				return table;
+			}
 			if (value instanceof Map) {
 				const table = createLuaTable();
 				for (const [key, entry] of value.entries()) {
@@ -3972,6 +4055,115 @@ export class BmsxConsoleRuntime extends Service {
 
 	private wrapNativeValue(value: object | Function, interpreter: LuaInterpreter): LuaNativeValue {
 		return interpreter.getOrCreateNativeValue(value, this.resolveNativeTypeName(value));
+	}
+
+	private snapshotEncodeNative(native: object | Function): unknown {
+		if (native instanceof WorldObject) {
+			return { __native__: 'world_object', id: native.id ?? null };
+		}
+		const owner = (native as { owner?: unknown }).owner;
+		if (owner && owner instanceof WorldObject) {
+			const componentId = (native as { id?: unknown }).id ?? null;
+			const className = (native as { constructor?: { name?: string } }).constructor?.name ?? null;
+			return {
+				__native__: 'component',
+				ownerId: owner.id ?? null,
+				id: componentId,
+				className,
+			};
+		}
+		if (typeof native === 'function') {
+			return { __native__: 'function' };
+		}
+		return undefined;
+	}
+
+	private snapshotDecodeNative(token: unknown): object | Function | null {
+		if (!token || typeof token !== 'object') {
+			return null;
+		}
+		const record = token as { __native__?: string; [key: string]: unknown };
+		switch (record.__native__) {
+			case 'world_object': {
+				return this.lookupWorldObjectById(record.id);
+			}
+			case 'component': {
+				const owner = this.lookupWorldObjectById(record.ownerId);
+				if (!owner) {
+					return null;
+				}
+				const byId = (owner as { getComponentById?: (id: unknown) => unknown; getcomponentbyid?: (id: unknown) => unknown });
+				const resolver = typeof byId.getComponentById === 'function'
+					? byId.getComponentById
+					: typeof byId.getcomponentbyid === 'function'
+						? byId.getcomponentbyid
+						: null;
+				if (resolver) {
+					if (record.id !== undefined && record.id !== null) {
+						try {
+							const resolved = resolver.call(owner, record.id);
+							if (resolved) {
+								return resolved as object;
+							}
+						}
+						catch {
+							// ignore lookup failures
+						}
+					}
+					if (record.className) {
+						try {
+							const resolved = resolver.call(owner, record.className);
+							if (resolved) {
+								return resolved as object;
+							}
+						}
+						catch {
+							// ignore lookup failures
+						}
+					}
+				}
+				return null;
+			}
+			default:
+				return null;
+		}
+	}
+
+	private lookupWorldObjectById(id: unknown): WorldObject | null {
+		if (id === undefined || id === null) {
+			return null;
+		}
+		try {
+			const registry = ($ as { registry?: { get?: (key: unknown) => unknown } }).registry;
+			if (registry && typeof registry.get === 'function') {
+				const resolved = registry.get(id);
+				if (resolved instanceof WorldObject) {
+					return resolved;
+				}
+				if (resolved && typeof resolved === 'object' && 'id' in (resolved as Record<string, unknown>)) {
+					return resolved as WorldObject;
+				}
+			}
+		}
+		catch {
+			// ignore
+		}
+		try {
+			const world = ($ as { world?: { get?: (key: unknown) => unknown } }).world;
+			if (world && typeof world.get === 'function') {
+				const resolved = world.get(id);
+				if (resolved instanceof WorldObject) {
+					return resolved;
+				}
+				if (resolved && typeof resolved === 'object' && 'id' in (resolved as Record<string, unknown>)) {
+					return resolved as WorldObject;
+				}
+			}
+		}
+		catch {
+			// ignore
+		}
+		return null;
 	}
 
 	private getLuaProgramSource(program: BmsxConsoleLuaProgram): string {
