@@ -8,7 +8,7 @@ import type { RomResourcePath } from '../rompack/rompack';
 import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction, type LuaCallFrame } from '../lua/runtime.ts';
 import { LuaEnvironment } from '../lua/environment.ts';
 import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from '../lua/value.ts';
-import { createLuaNativeValue, createLuaTable, isLuaNativeValue, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../lua/value.ts';
+import { createLuaTable, isLuaNativeValue, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../lua/value.ts';
 import { LuaRuntimeError, LuaError } from '../lua/errors.ts';
 import { $ } from '../core/game';
 import { Service } from '../core/service';
@@ -274,7 +274,6 @@ export class BmsxConsoleRuntime extends Service {
 	private luaDrawFunction: LuaFunctionValue | null = null;
 	private luaChunkName: string | null = null;
 	private frameCounter = 0;
-	private nativeValueCache: WeakMap<object, LuaNativeValue> = new WeakMap<object, LuaNativeValue>();
 	private luaSnapshotSave: LuaFunctionValue | null = null;
 	private luaSnapshotLoad: LuaFunctionValue | null = null;
 	private luaRuntimeFailed = false;
@@ -1572,7 +1571,6 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private resetLuaInteroperabilityState(): void {
-		this.nativeValueCache = new WeakMap<object, LuaNativeValue>();
 		this.disposeAllComponentDefinitions();
 		this.disposeAllWorldObjectDefinitions();
 		this.disposeAllAbilityDefinitions();
@@ -3957,7 +3955,7 @@ export class BmsxConsoleRuntime extends Service {
 				}
 				return table;
 			}
-			return this.wrapNativeValue(value as object);
+			return this.wrapNativeValue(value as object, ensured);
 		}
 		if (typeof value === 'function') {
 			if (isLuaHandlerFn(value)) {
@@ -3966,21 +3964,14 @@ export class BmsxConsoleRuntime extends Service {
 					return binding.fn;
 				}
 			}
-			return this.wrapNativeValue(value);
+			const ensured = this.ensureInterpreter(interpreter);
+			return this.wrapNativeValue(value, ensured);
 		}
 		return null;
 	}
 
-	private wrapNativeValue(value: object | Function): LuaNativeValue {
-		let cached = this.nativeValueCache.get(value);
-		if (cached !== undefined) {
-			return cached;
-		}
-		const typeName = this.resolveNativeTypeName(value);
-		const nativeValue = createLuaNativeValue(value, typeName);
-		this.nativeValueCache.set(value, nativeValue);
-		cached = nativeValue;
-		return cached;
+	private wrapNativeValue(value: object | Function, interpreter: LuaInterpreter): LuaNativeValue {
+		return interpreter.getOrCreateNativeValue(value, this.resolveNativeTypeName(value));
 	}
 
 	private getLuaProgramSource(program: BmsxConsoleLuaProgram): string {

@@ -50,7 +50,7 @@ import { LuaRuntimeError, LuaSyntaxError } from './errors.ts';
 import { LuaLexer } from './lexer.ts';
 import { LuaParser } from './parser.ts';
 import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from './value.ts';
-import { createLuaTable, isLuaTable, isLuaNativeValue } from './value.ts';
+import { createLuaNativeValue, createLuaTable, isLuaTable, isLuaNativeValue } from './value.ts';
 
 export type LuaCallFrame = {
 	readonly functionName: string | null;
@@ -152,6 +152,7 @@ export class LuaInterpreter {
     private lastFaultDepth: number = 0;
 	private hostAdapter: LuaHostAdapter | null = null;
 	private caseInsensitiveNativeAccess = true;
+	private nativeValueCache: WeakMap<object | Function, LuaNativeValue> = new WeakMap();
 	private readonly nativeMethodCache: WeakMap<LuaNativeValue, Map<string, LuaFunctionValue>> = new WeakMap<
 		LuaNativeValue,
 		Map<string, LuaFunctionValue>
@@ -194,6 +195,16 @@ export class LuaInterpreter {
 
 	public setCaseInsensitiveNativeAccess(enabled: boolean): void {
 		this.caseInsensitiveNativeAccess = enabled;
+	}
+
+	public getOrCreateNativeValue(value: object | Function, typeName?: string): LuaNativeValue {
+		let cached = this.nativeValueCache.get(value);
+		if (cached) {
+			return cached;
+		}
+		const nativeValue = createLuaNativeValue(value, typeName);
+		this.nativeValueCache.set(value, nativeValue);
+		return nativeValue;
 	}
 
 	public parseChunk(source: string, chunkName: string): LuaChunk {
@@ -1918,7 +1929,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 	private enumerateNativeKeys(target: LuaNativeValue): LuaValue[] {
 		const native = target.native as Record<string, unknown>;
 		const keys: LuaValue[] = [];
-		for (const property in native) {
+		for (const property of Object.keys(native)) {
 			const numeric = Number(property);
 			if (Number.isInteger(numeric) && String(numeric) === property) {
 				keys.push(numeric);
