@@ -307,7 +307,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly abilityActionIds: Map<string, string[]> = new Map();
 	private readonly luaHandlerCache = new LuaHandlerCache(
 		(fn, interpreter, thisArg, args) => this.invokeLuaHandler(fn, interpreter, thisArg, args),
-		error => this.handleLuaHandlerError(error),
+		(error, meta) => this.handleLuaHandlerError(error, meta),
 	);
 	private readonly luaServiceEventListeners = new Map<string, { event: string; listener: EventHandler<any> }>();
 	private handledLuaErrors = new WeakSet<object>();
@@ -2576,7 +2576,7 @@ export class BmsxConsoleRuntime extends Service {
 				} else {
 					throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua script '${assetId}' must provide a 'definition' or 'tree' entry.`);
 				}
-			const prepared = this.prepareLuaBehaviorTreeDefinition(treeId, definitionSource, assetId);
+				const prepared = this.prepareLuaBehaviorTreeDefinition(treeId, definitionSource, assetId);
 				applyPreparedBehaviorTree(treeId, prepared, { force: true });
 				const diagnostics = getBehaviorTreeDiagnostics(treeId);
 				this.behaviorTreeDiagnostics.set(treeId, diagnostics);
@@ -3659,8 +3659,12 @@ export class BmsxConsoleRuntime extends Service {
 		return results.length > 0 ? results[0] : undefined;
 	}
 
-	private handleLuaHandlerError(error: unknown): void {
-		this.handleLuaError(error instanceof Error ? error : new Error(String(error)));
+	private handleLuaHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): void {
+		const normalized = error instanceof Error ? error : new Error(String(error));
+		if (meta && meta.hid && !normalized.message.startsWith(`[${meta.hid}]`)) {
+			normalized.message = `[${meta.hid}] ${normalized.message}`;
+		}
+		this.handleLuaError(normalized);
 	}
 
 	private ensureMarshalContext(context?: LuaMarshalContext): LuaMarshalContext {
@@ -4089,10 +4093,9 @@ export class BmsxConsoleRuntime extends Service {
 			return value;
 		}
 		if (this.isLuaFunctionValue(value)) {
-			const path = marshalCtx.path.length > 0 ? marshalCtx.path.join('.') : undefined;
 			return this.luaHandlerCache.getOrCreate(value, {
 				moduleId: marshalCtx.moduleId,
-				path,
+				path: marshalCtx.path.slice(),
 				interpreter: marshalCtx.interpreter,
 			});
 		}
