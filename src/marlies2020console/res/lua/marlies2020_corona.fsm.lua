@@ -34,7 +34,7 @@ return {
 				dispel = '../despawn',
 				['player.win'] = '../despawn',
 				['corona.behavior.choose_direction'] = {
-					['do'] = function(state)
+					['do'] = function(_, state)
 						state.target:tickTree('marlies2020_corona_bt')
 						return nil
 					end,
