@@ -5357,9 +5357,12 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const metatable = value.getMetatable();
 		if (metatable) {
-			const luaEntries = this.buildTableMemberCompletionEntries(metatable, operator);
-			for (let index = 0; index < luaEntries.length; index += 1) {
-				this.registerNativeCompletion(registry, luaEntries[index]);
+			const indexValue = metatable.get('__index');
+			if (isLuaTable(indexValue)) {
+				const luaEntries = this.buildTableMemberCompletionEntries(indexValue, operator);
+				for (let index = 0; index < luaEntries.length; index += 1) {
+					this.registerNativeCompletion(registry, luaEntries[index]);
+				}
 			}
 		}
 		const prototypeEntries = this.getCachedPrototypeNativeEntries(native, operator, typeName);
@@ -5464,18 +5467,27 @@ export class BmsxConsoleRuntime extends Service {
 		while (current && !visited.has(current)) {
 			visited.add(current);
 			appendFromTable(current);
+			let nextTable: LuaTable | null = null;
+
 			const metatable = current.getMetatable();
-			if (!metatable) {
+			if (metatable) {
+				const metatableIndex = metatable.get('__index');
+				if (isLuaTable(metatableIndex)) {
+					nextTable = metatableIndex;
+				}
+			}
+
+			if (!nextTable) {
+				const ownIndex = current.get('__index');
+				if (isLuaTable(ownIndex)) {
+					nextTable = ownIndex;
+				}
+			}
+
+			if (!nextTable) {
 				break;
 			}
-			const indexValue = metatable.get('__index');
-			if (!indexValue || typeof indexValue !== 'object') {
-				break;
-			}
-			const nextTable = indexValue as unknown as LuaTable;
-			if (typeof nextTable.entriesArray !== 'function') {
-				break;
-			}
+
 			current = nextTable;
 		}
 
