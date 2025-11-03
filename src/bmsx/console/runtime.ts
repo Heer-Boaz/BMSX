@@ -2971,13 +2971,12 @@ export class BmsxConsoleRuntime extends Service {
 			const interpreter = this.requireLuaInterpreter();
 			const moduleId = this.moduleIdFor('behavior_tree', assetId, this.luaChunkName ?? null);
 			const ctx = this.ensureMarshalContext({ moduleId, interpreter, path: ['definition'] });
-			const marshalled = this.luaValueToJs(definitionValue as LuaValue, ctx);
-			return deepClone(marshalled as Record<string, unknown>) as BehaviorTreeDefinition;
+			return this.luaValueToJs(definitionValue as LuaValue, ctx) as BehaviorTreeDefinition;
 		}
 		if (!this.isPlainObject(definitionValue) && !Array.isArray(definitionValue)) {
 			throw new Error(`[BmsxConsoleRuntime] Behavior tree '${treeId}' definition in asset '${assetId}' must be a table.`);
 		}
-		return deepClone(definitionValue as Record<string, unknown>) as BehaviorTreeDefinition;
+		return definitionValue as BehaviorTreeDefinition;
 	}
 
 	private tickLuaServices(deltaSeconds: number): void {
@@ -3127,13 +3126,12 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		if (this.isLuaValue(blueprint)) {
 			const ctx = this.ensureMarshalContext({ moduleId, interpreter, path: ['blueprint'] });
-			const marshalled = this.luaValueToJs(blueprint as LuaValue, ctx);
-			return deepClone(marshalled as Record<string, unknown>) as StateMachineBlueprint;
+			return this.luaValueToJs(blueprint as LuaValue, ctx) as StateMachineBlueprint;
 		}
 		if (!this.isPlainObject(blueprint)) {
 			throw new Error(`[BmsxConsoleRuntime] FSM '${machineId}' blueprint must be a table.`);
 		}
-		return deepClone(blueprint as Record<string, unknown>) as StateMachineBlueprint;
+		return blueprint as StateMachineBlueprint;
 	}
 
 	private unregisterLuaStateMachine(machineId: string): void {

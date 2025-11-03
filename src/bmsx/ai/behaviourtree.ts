@@ -5,7 +5,6 @@ import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';
 import type { Identifiable, Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import type { WorldObject } from '../core/object/worldobject';
-import { HandlerRegistry } from '../core/handlerregistry';
 
 /** Node specification used to compose a behaviour tree. */
 export type BehaviorTreeNodeSpec =
@@ -19,7 +18,7 @@ export type BehaviorTreeNodeSpec =
 	| { type: 'limit' | 'Limit'; child: BehaviorTreeNodeSpec; limit: number; count_propname: string; priority?: number }
 	| { type: 'priorityselector' | 'PrioritySelector'; children: BehaviorTreeNodeSpec[]; priority?: number }
 	| { type: 'wait' | 'Wait'; wait_time: number; wait_propname: string; priority?: number }
-	| { type: 'action' | 'Action'; action: NodeActionRef; parameters?: any[]; priority?: number }
+	| { type: 'action' | 'Action'; action: NodeAction; parameters?: any[]; priority?: number }
 	| { type: 'compositeaction' | 'CompositeAction'; actions: BehaviorTreeNodeSpec[]; parameters?: any[]; priority?: number };
 
 /**
@@ -180,47 +179,26 @@ function buildBehaviorTreeNode(config: BehaviorTreeNodeSpec, id: BehaviorTreeID)
 		});
 	};
 	const ensureDecorator = (decorator: NodeDecorator | undefined, nodeType: string): NodeDecorator => {
-		if (typeof decorator === 'function') {
-			return decorator;
+		if (typeof decorator !== 'function') {
+			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires a decorator function.`);
 		}
-		if (typeof decorator === 'string') {
-			const handler = HandlerRegistry.instance.get(decorator);
-			if (!handler) {
-				throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' references unknown decorator handler '${decorator}'.`);
-			}
-			return handler as NodeDecorator;
-		}
-		throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires a decorator function.`);
+		return decorator;
 	};
 	const ensureCondition = (condition: NodeCondition | undefined, nodeType: string): NodeCondition => {
-		if (typeof condition === 'function') {
-			return condition;
+		if (typeof condition !== 'function') {
+			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires a condition function.`);
 		}
-		if (typeof condition === 'string') {
-			const handler = HandlerRegistry.instance.get(condition);
-			if (!handler) {
-				throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' references unknown condition handler '${condition}'.`);
-			}
-			return handler as NodeCondition;
-		}
-		throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires a condition function.`);
+		return condition;
 	};
 	const ensureConditions = (conditions: NodeCondition[] | undefined, nodeType: string): NodeCondition[] => {
 		if (!Array.isArray(conditions) || conditions.length === 0) {
 			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires one or more condition functions.`);
 		}
 		return conditions.map((condition, index) => {
-			if (typeof condition === 'function') {
-				return condition;
+			if (typeof condition !== 'function') {
+				throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires condition functions and received ${typeof condition} at index ${index}.`);
 			}
-			if (typeof condition === 'string') {
-				const handler = HandlerRegistry.instance.get(condition);
-				if (!handler) {
-					throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' references unknown condition handler '${condition}' at index ${index}.`);
-				}
-				return handler as NodeCondition;
-			}
-			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires condition functions and received ${typeof condition}.`);
+			return condition;
 		});
 	};
 	const ensureCompositeModifier = (modifier: NodeCompositeConditionModifier | undefined, nodeType: string): NodeCompositeConditionModifier => {
@@ -290,7 +268,7 @@ function buildBehaviorTreeNode(config: BehaviorTreeNodeSpec, id: BehaviorTreeID)
 		if (config.action === undefined || config.action === null) {
 			throw new Error(`[BehaviorTree:${id}] Action node requires an action handler.`);
 		}
-		return new ActionNode(id, config.action as NodeActionRef, config.priority, config.parameters);
+			return new ActionNode(id, config.action, config.priority, config.parameters);
 		case 'compositeaction':
 		case 'CompositeAction':
 			if (!Array.isArray(config.actions) || config.actions.length === 0) {
@@ -1009,37 +987,19 @@ export class WaitNode extends BTNode {
  */
 
 export type NodeAction = (blackboard: Blackboard, ...parameters: any[]) => BTStatus;
-export type NodeActionRef = NodeAction | string;
 
 /**
  * Represents a node in a behavior tree that performs an action.
  */
 export class ActionNode extends ParametrizedBTNode {
-	private readonly actionRef: NodeActionRef;
-	private cachedAction: NodeAction | null = null;
+	private readonly action: NodeAction;
 
-	constructor(id: BehaviorTreeID, action: NodeActionRef, _priority = 0, parameters?: any[]) {
+	constructor(id: BehaviorTreeID, action: NodeAction, _priority = 0, parameters?: any[]) {
 		super(id, _priority, parameters);
-		if (typeof action !== 'function' && typeof action !== 'string') {
+		if (typeof action !== 'function') {
 			throw new Error(`[BehaviorTree:${id}] ActionNode requires an action handler.`);
 		}
-		this.actionRef = action;
-	}
-
-	private resolveAction(): NodeAction {
-		if (typeof this.actionRef === 'function') {
-			return this.actionRef;
-		}
-		if (this.cachedAction) {
-			return this.cachedAction;
-		}
-		const handler = HandlerRegistry.instance.get(this.actionRef);
-		if (!handler) {
-			throw new Error(`[BehaviorTree:${this.id}] Action handler '${this.actionRef}' is not registered.`);
-		}
-		const resolved = handler as NodeAction;
-		this.cachedAction = resolved;
-		return resolved;
+		this.action = action;
 	}
 
 	/**
@@ -1047,8 +1007,7 @@ export class ActionNode extends ParametrizedBTNode {
 	 * @returns The feedback of the action execution.
 	 */
 	tick(targetId: Identifier, blackboard: Blackboard): BTNodeFeedback {
-		const action = this.resolveAction();
-		const result = action.call(this.getTarget(targetId), blackboard, ...this.parameters);
+		const result = this.action.call(this.getTarget(targetId), blackboard, ...this.parameters);
 		return { status: result };
 	}
 }
