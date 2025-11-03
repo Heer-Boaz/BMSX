@@ -283,7 +283,7 @@ export class BmsxConsoleRuntime extends Service {
 	private editorPipelineActive = false;
 	private readonly luaFailurePolicy: LuaPersistenceFailurePolicy;
 	private pendingLuaWarnings: string[] = [];
-	private readonly nativeMemberCompletionCache: WeakMap<object, { dot?: ConsoleLuaMemberCompletion[]; colon?: ConsoleLuaMemberCompletion[] }> = new WeakMap();
+	private nativeMemberCompletionCache: WeakMap<object, { dot?: ConsoleLuaMemberCompletion[]; colon?: ConsoleLuaMemberCompletion[] }> = new WeakMap();
 	private readonly luaChunkResourceMap: Map<string, { assetId: string | null; path?: string | null }> = new Map();
 	private readonly resourcePathCache: Map<string, string | null> = new Map();
 	private readonly luaChunkEnvironmentsByAssetId: Map<string, LuaEnvironment> = new Map();
@@ -879,6 +879,7 @@ export class BmsxConsoleRuntime extends Service {
 		const hotSource = params.override ?? params.source;
 		this.refreshLuaHandlersForChunk(normalizedChunk, hotSource);
 		this.refreshLuaHandlersAfterResume(normalizedChunk);
+		this.clearNativeMemberCompletionCache();
 		this.clearEditorErrorOverlaysIfNoFault();
 	}
 
@@ -953,6 +954,7 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			// No init on resume, and ensure other modules swap cleanly.
 			this.refreshLuaHandlersAfterResume(targetChunkName);
+			this.clearNativeMemberCompletionCache();
 		}
 		// If no change, do nothing: keep VM state and compiled chunk intact.
 	}
@@ -989,6 +991,7 @@ export class BmsxConsoleRuntime extends Service {
 			runInit: options.runInit,
 			hotReload: options.hotReload,
 		});
+		this.clearNativeMemberCompletionCache();
 	}
 
 	private refreshLuaHandlersAfterResume(resumeModuleId: string | null): void {
@@ -5352,6 +5355,13 @@ export class BmsxConsoleRuntime extends Service {
 		} else if (typeof native === 'function' && operator === '.') {
 			this.populateNativeMembersFromTarget(native, operator, typeName, registry, includeProperties);
 		}
+		const metatable = value.getMetatable();
+		if (metatable) {
+			const luaEntries = this.buildTableMemberCompletionEntries(metatable, operator);
+			for (let index = 0; index < luaEntries.length; index += 1) {
+				this.registerNativeCompletion(registry, luaEntries[index]);
+			}
+		}
 		const prototypeEntries = this.getCachedPrototypeNativeEntries(native, operator, typeName);
 		for (let index = 0; index < prototypeEntries.length; index += 1) {
 			this.registerNativeCompletion(registry, prototypeEntries[index]);
@@ -5420,24 +5430,55 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private buildTableMemberCompletionEntries(table: LuaTable, operator: '.' | ':'): ConsoleLuaMemberCompletion[] {
-		const entries = table.entriesArray();
-		if (entries.length === 0) {
-			return [];
-		}
 		const registry = new Map<string, ConsoleLuaMemberCompletion>();
-		for (let i = 0; i < entries.length; i += 1) {
-			const [key, entryValue] = entries[i];
-			if (typeof key !== 'string' || key.length === 0) {
-				continue;
+		const includeProperties = operator === '.';
+
+		const appendFromTable = (target: LuaTable) => {
+			const entries = target.entriesArray();
+			for (let index = 0; index < entries.length; index += 1) {
+				const [key, entryValue] = entries[index];
+				if (typeof key !== 'string' || key.length === 0) {
+					continue;
+				}
+				if (key === '__index' || key === '__metatable') {
+					continue;
+				}
+				const isFunction = this.isLuaFunctionValue(entryValue);
+				if (operator === ':' && !isFunction) {
+					continue;
+				}
+				const kind: 'method' | 'property' = isFunction ? 'method' : 'property';
+				if (!includeProperties && kind === 'property') {
+					continue;
+				}
+				if (registry.has(key)) {
+					continue;
+				}
+				const detail = isFunction ? `function ${key}` : `table field '${key}'`;
+				registry.set(key, { name: key, kind, detail, parameters: [] });
 			}
-			const isFunction = this.isLuaFunctionValue(entryValue);
-			if (operator === ':' && !isFunction) {
-				continue;
+		};
+
+		const visited = new Set<LuaTable>();
+		let current: LuaTable | null = table;
+		while (current && !visited.has(current)) {
+			visited.add(current);
+			appendFromTable(current);
+			const metatable = current.getMetatable();
+			if (!metatable) {
+				break;
 			}
-			const kind: 'method' | 'property' = isFunction ? 'method' : 'property';
-			const detail = isFunction ? `function ${key}` : `table field '${key}'`;
-			registry.set(key, { name: key, kind, detail, parameters: [] });
+			const indexValue = metatable.get('__index');
+			if (!indexValue || typeof indexValue !== 'object') {
+				break;
+			}
+			const nextTable = indexValue as unknown as LuaTable;
+			if (typeof nextTable.entriesArray !== 'function') {
+				break;
+			}
+			current = nextTable;
 		}
+
 		const results: ConsoleLuaMemberCompletion[] = [];
 		for (const entry of registry.values()) {
 			results.push({ name: entry.name, kind: entry.kind, detail: entry.detail, parameters: entry.parameters.slice() });
@@ -5459,9 +5500,17 @@ export class BmsxConsoleRuntime extends Service {
 
 	private populateNativeMembersFromTarget(target: object, operator: '.' | ':', typeName: string | null, registry: Map<string, ConsoleLuaMemberCompletion>, includeProperties: boolean): void {
 		const propertyNames = Object.getOwnPropertyNames(target);
+		const isFunctionTarget = typeof target === 'function';
+		const skipFunctionPrototypeMembers = target === Function.prototype;
 		for (let index = 0; index < propertyNames.length; index += 1) {
 			const name = propertyNames[index];
-			if (!name || name === 'constructor' || name === '__proto__') {
+			if (!name || name === 'constructor' || name === '__proto__' || name === 'prototype' || name === 'caller' || name === 'callee') {
+				continue;
+			}
+			if (skipFunctionPrototypeMembers && (name === 'call' || name === 'apply' || name === 'bind')) {
+				continue;
+			}
+			if (isFunctionTarget && (name === 'length' || name === 'name' || name === 'arguments')) {
 				continue;
 			}
 			const descriptor = Object.getOwnPropertyDescriptor(target, name);
@@ -5540,6 +5589,10 @@ export class BmsxConsoleRuntime extends Service {
 		return cloned;
 	}
 
+	private clearNativeMemberCompletionCache(): void {
+		this.nativeMemberCompletionCache = new WeakMap<object, { dot?: ConsoleLuaMemberCompletion[]; colon?: ConsoleLuaMemberCompletion[] }>();
+	}
+
 	private truncateInspectorLine(value: string): string {
 		if (value.length <= BmsxConsoleRuntime.HOVER_VALUE_MAX_LINE_LENGTH) {
 			return value;
@@ -5597,6 +5650,7 @@ export class BmsxConsoleRuntime extends Service {
 			default:
 				break;
 		}
+		this.clearNativeMemberCompletionCache();
 		this.clearEditorErrorOverlaysIfNoFault();
 	}
 
