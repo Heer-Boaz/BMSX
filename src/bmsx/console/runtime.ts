@@ -5350,11 +5350,6 @@ export class BmsxConsoleRuntime extends Service {
 		const typeName = value.typeName && value.typeName.length > 0 ? value.typeName : this.resolveNativeTypeName(native);
 		const registry = new Map<string, ConsoleLuaMemberCompletion>();
 		const includeProperties = operator === '.';
-		if (typeof native === 'object' && native !== null) {
-			this.populateNativeMembersFromTarget(native, operator, typeName, registry, includeProperties);
-		} else if (typeof native === 'function' && operator === '.') {
-			this.populateNativeMembersFromTarget(native, operator, typeName, registry, includeProperties);
-		}
 		const metatable = value.getMetatable();
 		if (metatable) {
 			const indexValue = metatable.get('__index');
@@ -5364,6 +5359,11 @@ export class BmsxConsoleRuntime extends Service {
 					this.registerNativeCompletion(registry, luaEntries[index]);
 				}
 			}
+		}
+		if (typeof native === 'object' && native !== null) {
+			this.populateNativeMembersFromTarget(native, operator, typeName, registry, includeProperties);
+		} else if (typeof native === 'function' && operator === '.') {
+			this.populateNativeMembersFromTarget(native, operator, typeName, registry, includeProperties);
 		}
 		const prototypeEntries = this.getCachedPrototypeNativeEntries(native, operator, typeName);
 		for (let index = 0; index < prototypeEntries.length; index += 1) {
@@ -5532,7 +5532,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (typeof descriptor.value === 'function') {
 				const rawParams = this.extractFunctionParameters(descriptor.value as (...args: unknown[]) => unknown);
 				const params = operator === ':' ? this.adjustMethodParametersForColon(rawParams) : rawParams.slice();
-				const detail = this.formatNativeMethodDetail(typeName, name, params);
+				const detail = this.formatNativeMethodDetail(typeName, name, params, operator);
 				this.registerNativeCompletion(registry, { name, kind: 'method', detail, parameters: params });
 				continue;
 			}
@@ -5569,11 +5569,12 @@ export class BmsxConsoleRuntime extends Service {
 		return params.slice();
 	}
 
-	private formatNativeMethodDetail(typeName: string | null, name: string, parameters: readonly string[]): string {
+	private formatNativeMethodDetail(typeName: string | null, name: string, parameters: readonly string[], operator: '.' | ':'): string {
 		const paramSegment = parameters.length > 0 ? parameters.join(', ') : '';
 		const signature = paramSegment.length > 0 ? `(${paramSegment})` : '()';
+		const separator = operator === ':' ? ':' : '.';
 		if (typeName && typeName.length > 0) {
-			return `${typeName}.${name}${signature}`;
+			return `${typeName}${separator}${name}${signature}`;
 		}
 		return `${name}${signature}`;
 	}
