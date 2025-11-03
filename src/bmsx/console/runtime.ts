@@ -855,10 +855,12 @@ export class BmsxConsoleRuntime extends Service {
 		interpreter.clearLastFaultEnvironment();
 		interpreter.execute(params.source, params.chunkName);
 		this.cacheChunkEnvironment(interpreter, params.chunkName, programAssetId);
+		const hotModuleId = this.moduleIdFor('other', programAssetId, params.chunkName);
 		const nextEnvironment = interpreter.getChunkEnvironment();
 		if (previousEnvironment && nextEnvironment && previousEnvironment !== nextEnvironment) {
 			this.mergeLuaChunkEnvironmentState(previousEnvironment, nextEnvironment);
 		}
+		this.rebindChunkEnvironmentHandlers(hotModuleId, interpreter);
 		const env = interpreter.getGlobalEnvironment();
 		const initName = program.entry?.init ?? 'init';
 		const updateName = program.entry?.update ?? 'update';
@@ -1010,6 +1012,49 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		for (const moduleId of modules) {
 			this.refreshLuaHandlersForChunk(moduleId);
+		}
+	}
+
+	private rebindChunkEnvironmentHandlers(moduleId: string, interpreter: LuaInterpreter): void {
+		const env = interpreter.getChunkEnvironment();
+		if (!env) {
+			return;
+		}
+		const visited = new WeakSet<LuaTable>();
+		for (const [key, value] of env.entries()) {
+			const path = [key];
+			if (value !== null && value !== undefined) {
+				this.rebindHandlersFromLuaValue(moduleId, value, interpreter, path, visited);
+			}
+		}
+	}
+
+	private rebindHandlersFromLuaValue(
+		moduleId: string,
+		value: LuaValue,
+		interpreter: LuaInterpreter,
+		path: ReadonlyArray<string>,
+		visited: WeakSet<LuaTable>,
+	): void {
+		if (this.isLuaFunctionValue(value)) {
+			this.luaHandlerCache.rebind(moduleId, path, value, interpreter);
+			return;
+		}
+		if (!isLuaTable(value)) {
+			return;
+		}
+		const table = value as LuaTable;
+		if (visited.has(table)) {
+			return;
+		}
+		visited.add(table);
+		for (const [rawKey, entry] of table.entriesArray()) {
+			if (rawKey === BmsxConsoleRuntime.LUA_HANDLE_FIELD || rawKey === BmsxConsoleRuntime.LUA_TYPE_FIELD) {
+				continue;
+			}
+			const segment = typeof rawKey === 'string' ? rawKey : String(rawKey);
+			const nextPath = path.length === 0 ? [segment] : [...path, segment];
+			this.rebindHandlersFromLuaValue(moduleId, entry, interpreter, nextPath, visited);
 		}
 	}
 
@@ -2376,7 +2421,7 @@ export class BmsxConsoleRuntime extends Service {
 					throw new Error(`[BmsxConsoleRuntime] FSM Lua script '${assetId}' returned a blueprint without a valid 'id'.`);
 				}
 				const machineId = machineIdRaw.trim();
-				const prepared = this.prepareLuaStateMachineBlueprint(machineId, blueprintValue, interpreter);
+				const prepared = this.prepareLuaStateMachineBlueprint(machineId, blueprintValue, interpreter, moduleId);
 				const existingDefinition = StateDefinitions[machineId];
 				const result = applyPreparedStateMachine(machineId, prepared, { force: true });
 				this.api.register_prepared_fsm(machineId, prepared, { setup: false });
@@ -2922,10 +2967,17 @@ export class BmsxConsoleRuntime extends Service {
 		if (definitionValue === null || definitionValue === undefined) {
 			throw new Error(`[BmsxConsoleRuntime] Behavior tree '${treeId}' definition in asset '${assetId}' cannot be nil.`);
 		}
+		if (this.isLuaValue(definitionValue)) {
+			const interpreter = this.requireLuaInterpreter();
+			const moduleId = this.moduleIdFor('behavior_tree', assetId, this.luaChunkName ?? null);
+			const ctx = this.ensureMarshalContext({ moduleId, interpreter, path: ['definition'] });
+			const marshalled = this.luaValueToJs(definitionValue as LuaValue, ctx);
+			return deepClone(marshalled as Record<string, unknown>) as BehaviorTreeDefinition;
+		}
 		if (!this.isPlainObject(definitionValue) && !Array.isArray(definitionValue)) {
 			throw new Error(`[BmsxConsoleRuntime] Behavior tree '${treeId}' definition in asset '${assetId}' must be a table.`);
 		}
-		return deepClone(definitionValue) as BehaviorTreeDefinition;
+		return deepClone(definitionValue as Record<string, unknown>) as BehaviorTreeDefinition;
 	}
 
 	private tickLuaServices(deltaSeconds: number): void {
@@ -3064,8 +3116,24 @@ export class BmsxConsoleRuntime extends Service {
 		return `@service/${assetId}`;
 	}
 
-	private prepareLuaStateMachineBlueprint(_machineId: string, blueprint: Record<string, unknown>, _interpreter: LuaInterpreter): StateMachineBlueprint {
-		return deepClone(blueprint) as StateMachineBlueprint;
+	private prepareLuaStateMachineBlueprint(
+		machineId: string,
+		blueprint: unknown,
+		interpreter: LuaInterpreter,
+		moduleId: string,
+	): StateMachineBlueprint {
+		if (blueprint === null || blueprint === undefined) {
+			throw new Error(`[BmsxConsoleRuntime] FSM '${machineId}' returned an empty blueprint.`);
+		}
+		if (this.isLuaValue(blueprint)) {
+			const ctx = this.ensureMarshalContext({ moduleId, interpreter, path: ['blueprint'] });
+			const marshalled = this.luaValueToJs(blueprint as LuaValue, ctx);
+			return deepClone(marshalled as Record<string, unknown>) as StateMachineBlueprint;
+		}
+		if (!this.isPlainObject(blueprint)) {
+			throw new Error(`[BmsxConsoleRuntime] FSM '${machineId}' blueprint must be a table.`);
+		}
+		return deepClone(blueprint as Record<string, unknown>) as StateMachineBlueprint;
 	}
 
 	private unregisterLuaStateMachine(machineId: string): void {
