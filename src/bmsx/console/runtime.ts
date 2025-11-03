@@ -1483,14 +1483,15 @@ export class BmsxConsoleRuntime extends Service {
 					}
 					hasComplexKeys = true;
 				}
-				if (hasComplexKeys) {
+				const numericCount = numericEntries.size;
+				const isSequential = numericCount > 0 && !hasStringKey && numericCount === maxNumericIndex;
+				const needsMap = hasComplexKeys || (numericCount > 0 && (!isSequential || hasStringKey));
+				if (needsMap) {
 					return {
 						__bmsx_table__: 'map',
 						entries: complexEntries,
 					};
 				}
-				const numericCount = numericEntries.size;
-				const isSequential = numericCount > 0 && !hasStringKey && numericCount === maxNumericIndex;
 				if (isSequential) {
 					const result: unknown[] = new Array(maxNumericIndex);
 					for (let index = 1; index <= maxNumericIndex; index += 1) {
