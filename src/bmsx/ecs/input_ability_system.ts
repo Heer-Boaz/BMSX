@@ -147,24 +147,24 @@ export class InputAbilitySystem extends ECSystem {
 		ctx: EvalContext,
 		programKey: string,
 	): void {
-		const bindings = program.bindings;
-		for (let i = 0; i < bindings.length; i++) {
-			const binding = bindings[i]!;
-			if (!binding.predicate(ctx)) continue;
+			const bindings = program.bindings;
+			for (let i = 0; i < bindings.length; i++) {
+				const binding = bindings[i]!;
+				if (!binding.predicate(ctx)) continue;
 
-			const bindingKey = this.makeBindingKey(ctx.owner_id, programKey, ctx.playerIndex, binding, i);
-			const armed = this.bindingLatch.get(bindingKey) === true;
-			if (armed) this.frameLatchTouched.add(bindingKey);
+				const bindingKey = this.makeBindingKey(ctx.owner_id, programKey, ctx.playerIndex, binding, i);
+				const armed = this.bindingLatch.get(bindingKey) === true;
+				if (armed) this.frameLatchTouched.add(bindingKey);
 
 			const pressMatched = binding.press ? binding.press(input) : false;
 			const holdMatched = binding.hold ? binding.hold(input) : false;
 			const releaseMatched = binding.release ? binding.release(input) : false;
 			const customEdges = binding.customEdges;
-			if (!armed && !pressMatched && !holdMatched && !releaseMatched && customEdges.length === 0) continue;
+				if (!armed && !pressMatched && !holdMatched && !releaseMatched && customEdges.length === 0) continue;
 
-			const scratch = this.ensureScratch(customEdges.length);
-			for (let j = 0; j < customEdges.length; j++) {
-				scratch[j] = customEdges[j]!.match(input);
+				const scratch = this.ensureScratch(customEdges.length);
+				for (let j = 0; j < customEdges.length; j++) {
+					scratch[j] = customEdges[j]!.match(input);
 			}
 
 			let matched = false;

@@ -253,10 +253,17 @@ local function ability_interact(ctx)
 end
 
 local function ability_move_horizontal(ctx, params)
+    local payload = params or ctx.payload
+    if not payload then
+        return
+    end
+    local direction = payload.direction
+    if not direction then
+        return
+    end
     local owner = ctx.owner
     local state = owner
     local column = state.column
-    local direction = params.direction
     local next_column = direction == 'left' and (column - 1) or (column + 1)
     if next_column < 1 or next_column > #column_x then
         return
@@ -272,8 +279,16 @@ local function ability_move_horizontal_stop(ctx)
 end
 
 local function ability_move_vertical(ctx, params)
+    local payload = params or ctx.payload
+    if not payload then
+        return
+    end
+    local direction = payload.direction
+    if not direction then
+        return
+    end
     local state = ctx.owner
-    state.vertical_intent = params.direction
+    state.vertical_intent = direction
 end
 
 local function ability_move_vertical_stop(ctx)
