@@ -30,27 +30,29 @@ import { new_vec2 } from 'bmsx/utils/utils';
 
 class HeadlessClock implements Clock {
 	private readonly origin = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+	public scheduleOnce!: NonNullable<Clock['scheduleOnce']>;
 	now(): MonoTime {
 		const base = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
 		return base - this.origin;
 	}
-	scheduleOnce(delayMs: number, cb: (t: MonoTime) => void) {
-		let active = true;
-		const id = setTimeout(() => {
+}
+
+HeadlessClock.prototype.scheduleOnce = function (delayMs: number, cb: (t: MonoTime) => void) {
+	let active = true;
+	const handle = setTimeout(() => {
+		if (!active) return;
+		active = false;
+		cb(this.now());
+	}, Math.max(0, Math.floor(delayMs)));
+	return {
+		cancel: () => {
 			if (!active) return;
 			active = false;
-			try { cb(this.now()); } catch { /* swallow callback errors */ }
-		}, Math.max(0, Math.floor(delayMs)));
-		return {
-			cancel: () => {
-				if (!active) return;
-				active = false;
-				clearTimeout(id as unknown as number);
-			},
-			isActive: () => active,
-		};
-	}
-}
+			clearTimeout(handle);
+		},
+		isActive: () => active,
+	};
+};
 
 class HeadlessFrameLoop implements FrameLoop {
 	constructor(private readonly clock: Clock, private readonly stepMs: number) { }

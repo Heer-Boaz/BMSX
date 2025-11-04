@@ -453,7 +453,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * The mapping of behavior tree IDs to behavior tree contexts.
 	 */
-	private _btreecontexts: { [id: BehaviorTreeID]: BehaviorTreeContext };
+	private _btreecontexts: { [id: BehaviorTreeID]: BehaviorTreeContext } = {};
 
 	public get btreecontexts() {
 		return this._btreecontexts;
@@ -874,16 +874,19 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 */
 	protected initializeBehaviorTrees() {
 		// Get the constructor of the current instance
-		const constructor = this.constructor as ConstructorWithBTProperty;
-		this._btreecontexts = {};
+		const ctor = this.constructor as ConstructorWithBTProperty;
+		const contexts = this._btreecontexts;
 
-		// Iterate over the behavior tree names and create the behavior trees
-		constructor.linkedBTs?.forEach(bt_id => {
-			const blackboard = new Blackboard({ id: bt_id });
-			this._btreecontexts[bt_id] = {
-				treeId: bt_id,
+		// Iterate over the behavior tree names and ensure the behavior trees exist
+		ctor.linkedBTs?.forEach(btId => {
+			if (contexts[btId]) {
+				return;
+			}
+			const blackboard = new Blackboard({ id: btId });
+			contexts[btId] = {
+				treeId: btId,
 				running: true,
-				root: instantiateBehaviorTree(bt_id),
+				root: instantiateBehaviorTree(btId),
 				blackboard,
 			};
 		});

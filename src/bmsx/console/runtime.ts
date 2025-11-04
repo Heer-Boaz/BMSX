@@ -4157,7 +4157,12 @@ export class BmsxConsoleRuntime extends Service {
 		return this.expandComponentEntries(entries);
 	}
 
-	public finalizeLuaWorldObjectSpawn(host: WorldObject, options: LuaWorldObjectSpawnOptions): void {
+	public primeLuaWorldObjectInstance(host: WorldObject, options: LuaWorldObjectSpawnOptions): void {
+		// Attach behavior trees before FSMs so FSM "entering_state" or
+		// immediate events can safely tick BT contexts on first frame.
+		this.attachWorldObjectBehaviorTrees(host, options.behaviorTrees);
+		this.attachWorldObjectFsms(host, options.fsms);
+
 		if (options.defaults && Object.keys(options.defaults).length > 0) {
 			const hostRecord = host as unknown as Record<string, unknown>;
 			for (const [key, value] of Object.entries(options.defaults)) {
@@ -4177,13 +4182,8 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 
-		// Attach behavior trees before FSMs so FSM "entering_state" or
-		// immediate events can safely tick BT contexts on first frame.
-		this.attachWorldObjectBehaviorTrees(host, options.behaviorTrees);
-		this.attachWorldObjectFsms(host, options.fsms);
 		this.attachWorldObjectAbilities(host, options.abilities);
 	}
-
 	private attachWorldObjectFsms(host: WorldObject, entries: ReadonlyArray<LuaWorldObjectSystemEntry>): void {
 		if (!entries || entries.length === 0) {
 			return;

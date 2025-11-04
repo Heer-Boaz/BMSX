@@ -533,6 +533,9 @@ export class BmsxConsoleApi {
 			? runtime.materializeComponentEntries(normalized.components)
 			: this.materializeComponentEntriesFallback(normalized.components);
 		this.attachSpawnComponents(instance, componentDescriptors);
+		if (runtime) {
+			runtime.primeLuaWorldObjectInstance(instance, normalized);
+		}
 		const spawnPos = normalized.position ? new_vec3(normalized.position.x, normalized.position.y, normalized.position.z) : undefined;
 		if (normalized.space) {
 			const space = this.lookupSpace(normalized.space);
@@ -543,7 +546,6 @@ export class BmsxConsoleApi {
 			$.world.spawn(instance, spawnPos, reasonOpts);
 		}
 		if (runtime) {
-			runtime.finalizeLuaWorldObjectSpawn(instance, normalized);
 			runtime.onLuaWorldObjectSpawned(instance);
 		}
 		return instance.id;

@@ -10,10 +10,10 @@ return {
 			enable_tape_autotick = true,
 			tape_playback_mode = 'loop',
 			entering_state = function(object, state)
-				object:getcomponentbyid('fire_sprite').imgid = state.current_tape_value or FIRE_FRAMES[1]
+				object:getComponentById('fire_sprite').imgid = state.current_tape_value or FIRE_FRAMES[1]
 			end,
 			tape_next = function(object, state)
-				object:getcomponentbyid('fire_sprite').imgid = state.current_tape_value
+				object:getComponentById('fire_sprite').imgid = state.current_tape_value
 			end,
 			tick = function(object)
 				local delta = delta_seconds()
