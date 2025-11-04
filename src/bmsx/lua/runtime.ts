@@ -159,6 +159,9 @@ export class LuaInterpreter {
 		LuaNativeValue,
 		Map<string, LuaFunctionValue>
 	>();
+	private readonly packageTable: LuaTable;
+	private readonly packageLoaded: LuaTable;
+	private requireHandler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) | null = null;
 
 	 constructor(globals: LuaEnvironment | null) {
 	 	 if (globals === null) {
@@ -169,6 +172,8 @@ export class LuaInterpreter {
 	 	 }
 	 	 this.currentChunk = '<chunk>';
 	 	 this.randomSeedValue = Date.now();
+	 	 this.packageTable = createLuaTable();
+	 	 this.packageLoaded = createLuaTable();
 	 	 this.initializeBuiltins();
 	 }
 
@@ -197,6 +202,33 @@ export class LuaInterpreter {
 
 	public setCaseInsensitiveNativeAccess(enabled: boolean): void {
 		this.caseInsensitiveNativeAccess = enabled;
+	}
+
+	public setRequireHandler(handler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) | null): void {
+		this.requireHandler = handler;
+	}
+
+	public getPackageLoadedTable(): LuaTable {
+		return this.packageLoaded;
+	}
+
+	private invokeRequireBuiltin(args: ReadonlyArray<LuaValue>): LuaValue[] {
+		if (args.length === 0) {
+			throw this.runtimeError('require(moduleName) expects a module name.');
+		}
+		const moduleArg = args[0];
+		if (moduleArg === null || typeof moduleArg !== 'string') {
+			throw this.runtimeError('require(moduleName) expects a string module name.');
+		}
+		const moduleName = moduleArg.trim();
+		if (moduleName.length === 0) {
+			throw this.runtimeError('require(moduleName) expects a non-empty module name.');
+		}
+		if (!this.requireHandler) {
+			throw this.runtimeError('require is not enabled in this interpreter.');
+		}
+		const value = this.requireHandler(this, moduleName);
+		return [value];
 	}
 
 	public getOrCreateNativeValue(value: object | Function, typeName?: string): LuaNativeValue {
@@ -2233,6 +2265,10 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 	}
 
 	private initializeBuiltins(): void {
+		this.packageTable.set('loaded', this.packageLoaded);
+		this.globals.set('package', this.packageTable);
+		this.globals.set('require', new LuaNativeFunction('require', this, (_interpreter, args) => this.invokeRequireBuiltin(args)));
+
 		this.globals.set('print', new LuaNativeFunction('print', this, (interpreter, args) => {
 			const parts: string[] = [];
 			for (const value of args) {

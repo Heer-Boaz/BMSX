@@ -3,7 +3,8 @@ import './ability_manifest';
 import type { GameplayAbilityDefinition } from 'bmsx/gas/gameplay_ability';
 import type { AbilityId } from 'bmsx/gas/gastypes';
 import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
-import { Fighter, FIGHTER_CORE_ABILITY_IDS, type AttackType } from './fighter';
+import { Fighter, type AttackType } from './fighter';
+import { FIGHTER_ATTACK_ABILITY_IDS, FIGHTER_CORE_ABILITY_IDS, type FighterCoreAbilityName } from './ability_catalog';
 
 const CORE_ABILITIES: GameplayAbilityDefinition[] = [
 	{
@@ -67,12 +68,12 @@ export function registerFighterAbilities(fighter: Fighter): void {
 	for (const ability of ALL_ABILITIES) asc.grantAbility(ability);
 }
 
-export function getCoreAbilityId(name: keyof typeof FIGHTER_CORE_ABILITY_IDS): AbilityId {
+export function getCoreAbilityId(name: FighterCoreAbilityName): AbilityId {
 	return FIGHTER_CORE_ABILITY_IDS[name];
 }
 
 function createAttackAbility(attack: Exclude<AttackType, 'flyingkick'>): GameplayAbilityDefinition {
-	const id = abilityIdForAttack(attack);
+	const id = FIGHTER_ATTACK_ABILITY_IDS[attack];
 	return {
 		id,
 		blockedTags: ['state.attacking', 'state.airborne', 'state.combat_disabled'],
@@ -91,7 +92,7 @@ function createAttackAbility(attack: Exclude<AttackType, 'flyingkick'>): Gamepla
 
 function createFlyingKickAbility(): GameplayAbilityDefinition {
 	const attack: AttackType = 'flyingkick';
-	const id = abilityIdForAttack(attack);
+	const id = FIGHTER_ATTACK_ABILITY_IDS[attack];
 	return {
 		id,
 		requiredTags: ['state.airborne'],
@@ -107,8 +108,4 @@ function createFlyingKickAbility(): GameplayAbilityDefinition {
 			{ type: 'emit', event: 'fighter.attack.completed', payload: { id: literal(id), attackType: literal(attack) }, lane: 'gameplay' },
 		],
 	};
-}
-
-function abilityIdForAttack(attack: AttackType): `fighter.attack.${AttackType}` {
-	return `fighter.attack.${attack}` as `fighter.attack.${AttackType}`;
 }

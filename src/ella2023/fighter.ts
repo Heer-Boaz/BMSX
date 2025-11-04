@@ -1,53 +1,56 @@
 import { $, GameplayCommandBuffer, InputAbilityComponent, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction, type EventPayload, Component, subscribesToParentScopedEvent, type ComponentAttachOptions, type WorldObjectEventPayloads, V3 } from 'bmsx';
 import './fighter_fsms';
-import type { AbilityId, AbilityPayloadFor, AbilityRequestOptions } from 'bmsx/gas/gastypes';
+import type { AbilityPayloadFor, AbilityRequestOptions } from 'bmsx/gas/gastypes';
 import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { VERTICAL_POSITION_FIGHTERS } from './gameconstants';
 import { BitmapId } from './resourceids';
 import { FIGHTER_INPUT_PROGRAM } from './input/fighter_input_program';
 import type { Eila } from './eila';
+import {
+	FIGHTER_ATTACK_ABILITY_IDS,
+	FIGHTER_CORE_ABILITY_IDS,
+	type FighterAbilityId,
+	type FighterAttackAbilityId,
+	type FighterAttackType,
+	type FighterCoreAbilityName,
+} from './ability_catalog';
+export { FIGHTER_ATTACK_ABILITY_IDS, FIGHTER_CORE_ABILITY_IDS } from './ability_catalog';
+export type { FighterCoreAbilityName } from './ability_catalog';
 
 type StoerheidsdansStateData = { expectedAnimation: string | null };
 type JumpStateData = { direction: Direction };
 
-export type AttackType = 'punch' | 'highkick' | 'lowkick' | 'duckkick' | 'flyingkick';
+export type AttackType = FighterAttackType;
 
 type FighterAbilityPayloadTable = {
-	'fighter.locomotion.walk': { direction: Direction };
-	'fighter.locomotion.walk_stop': undefined;
-	'fighter.control.duck_hold': undefined;
-	'fighter.control.duck_release': undefined;
-	'fighter.control.jump': { direction?: Direction };
-	'fighter.attack.punch': { attackType: 'punch' };
-	'fighter.attack.highkick': { attackType: 'highkick' };
-	'fighter.attack.lowkick': { attackType: 'lowkick' };
-	'fighter.attack.duckkick': { attackType: 'duckkick' };
-	'fighter.attack.flyingkick': { attackType: 'flyingkick' };
+	[typeof FIGHTER_CORE_ABILITY_IDS.walk]: { direction: Direction };
+	[typeof FIGHTER_CORE_ABILITY_IDS.walk_stop]: undefined;
+	[typeof FIGHTER_CORE_ABILITY_IDS.duck_hold]: undefined;
+	[typeof FIGHTER_CORE_ABILITY_IDS.duck_release]: undefined;
+	[typeof FIGHTER_CORE_ABILITY_IDS.jump]: { direction?: Direction };
+	[typeof FIGHTER_ATTACK_ABILITY_IDS.punch]: { attackType: 'punch' };
+	[typeof FIGHTER_ATTACK_ABILITY_IDS.highkick]: { attackType: 'highkick' };
+	[typeof FIGHTER_ATTACK_ABILITY_IDS.lowkick]: { attackType: 'lowkick' };
+	[typeof FIGHTER_ATTACK_ABILITY_IDS.duckkick]: { attackType: 'duckkick' };
+	[typeof FIGHTER_ATTACK_ABILITY_IDS.flyingkick]: { attackType: 'flyingkick' };
 };
 
-const ATTACK_ABILITY_IDS: { readonly [K in AttackType]: `fighter.attack.${K}` } = {
-	punch: 'fighter.attack.punch',
-	highkick: 'fighter.attack.highkick',
-	lowkick: 'fighter.attack.lowkick',
-	duckkick: 'fighter.attack.duckkick',
-	flyingkick: 'fighter.attack.flyingkick',
-} as const;
+type AttackAbilityPayloadMap = {
+	[K in AttackType]: FighterAbilityPayloadTable[typeof FIGHTER_ATTACK_ABILITY_IDS[K]];
+};
 
-const ATTACK_ABILITY_PAYLOADS: { readonly [K in AttackType]: FighterAbilityPayloadTable[`fighter.attack.${K}`] } = {
+const ATTACK_ABILITY_PAYLOADS: AttackAbilityPayloadMap = {
 	punch: { attackType: 'punch' },
 	highkick: { attackType: 'highkick' },
 	lowkick: { attackType: 'lowkick' },
 	duckkick: { attackType: 'duckkick' },
 	flyingkick: { attackType: 'flyingkick' },
-} as const;
+};
 
-type AttackAbilityId = typeof ATTACK_ABILITY_IDS[AttackType];
-
-type FighterAbilityId = keyof FighterAbilityPayloadTable;
 type AbilityRequestArgs<I extends FighterAbilityId> = [payload?: FighterAbilityPayloadTable[I], opts?: { source?: string }];
 
-type WalkAbilityPayload = AbilityPayloadFor<'fighter.locomotion.walk'>;
+type WalkAbilityPayload = AbilityPayloadFor<typeof FIGHTER_CORE_ABILITY_IDS.walk>;
 
 export type HitMarkerType = 'player_hit' | 'enemy_hit' | 'poef';
 
@@ -55,18 +58,6 @@ export type HitMarkerInfo = {
 	type: HitMarkerType,
 	pos: vec2, // Offset from the fighter's position
 };
-
-const CORE_ABILITY_IDS = {
-	walk: 'fighter.locomotion.walk',
-	walk_stop: 'fighter.locomotion.walk_stop',
-	duck_hold: 'fighter.control.duck_hold',
-	duck_release: 'fighter.control.duck_release',
-	jump: 'fighter.control.jump',
-} as const;
-
-export type FighterCoreAbilityName = keyof typeof CORE_ABILITY_IDS;
-
-export const FIGHTER_CORE_ABILITY_IDS: { [K in FighterCoreAbilityName]: AbilityId } = CORE_ABILITY_IDS as { [K in FighterCoreAbilityName]: AbilityId };
 
 function getDamage(attackType: AttackType): number {
 	switch (attackType) {
@@ -174,8 +165,8 @@ export abstract class Fighter extends SpriteObject {
 		this.sc.dispatch_event('animate_idle', this);
 	}
 
-	public getAbilityId<Name extends FighterCoreAbilityName>(name: Name): typeof CORE_ABILITY_IDS[Name] {
-		return CORE_ABILITY_IDS[name];
+	public getAbilityId<Name extends FighterCoreAbilityName>(name: Name): typeof FIGHTER_CORE_ABILITY_IDS[Name] {
+		return FIGHTER_CORE_ABILITY_IDS[name];
 	}
 
 	public requestAbility<I extends FighterAbilityId>(abilityId: I, ...args: AbilityRequestArgs<I>): boolean {
@@ -204,8 +195,8 @@ export abstract class Fighter extends SpriteObject {
 		return asc.canActivateReason(abilityId) === null;
 	}
 
-	public getAttackAbilityId(attackType: AttackType): AttackAbilityId {
-		return ATTACK_ABILITY_IDS[attackType];
+	public getAttackAbilityId(attackType: AttackType): FighterAttackAbilityId {
+		return FIGHTER_ATTACK_ABILITY_IDS[attackType];
 	}
 
 	public startAttack(_state: State, payload?: { attackType?: AttackType }): void {
@@ -495,4 +486,3 @@ export class JumpingWhileLeavingScreenComponent extends Component {
 		}
 	}
 }
-

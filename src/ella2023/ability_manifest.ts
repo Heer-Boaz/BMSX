@@ -2,19 +2,20 @@ import type { Direction } from 'bmsx';
 import { abilityActions, defineAbility, type Schema } from 'bmsx/gas/ability_registry';
 import type { AbilityActionContext } from 'bmsx/gas/gameplay_ability';
 import { Fighter, type AttackType } from './fighter';
+import { FIGHTER_ATTACK_ABILITY_IDS, FIGHTER_CORE_ABILITY_IDS } from './ability_catalog';
 
 declare module 'bmsx/gas/gastypes' {
 	interface AbilityPayloadTable {
-		'fighter.locomotion.walk': { direction: Direction };
-		'fighter.locomotion.walk_stop': undefined;
-		'fighter.control.duck_hold': undefined;
-		'fighter.control.duck_release': undefined;
-		'fighter.control.jump': { direction?: Direction };
-		'fighter.attack.punch': { attackType: 'punch' };
-		'fighter.attack.highkick': { attackType: 'highkick' };
-		'fighter.attack.lowkick': { attackType: 'lowkick' };
-		'fighter.attack.duckkick': { attackType: 'duckkick' };
-		'fighter.attack.flyingkick': { attackType: 'flyingkick' };
+		[typeof FIGHTER_CORE_ABILITY_IDS.walk]: { direction: Direction };
+		[typeof FIGHTER_CORE_ABILITY_IDS.walk_stop]: undefined;
+		[typeof FIGHTER_CORE_ABILITY_IDS.duck_hold]: undefined;
+		[typeof FIGHTER_CORE_ABILITY_IDS.duck_release]: undefined;
+		[typeof FIGHTER_CORE_ABILITY_IDS.jump]: { direction?: Direction };
+		[typeof FIGHTER_ATTACK_ABILITY_IDS.punch]: { attackType: 'punch' };
+		[typeof FIGHTER_ATTACK_ABILITY_IDS.highkick]: { attackType: 'highkick' };
+		[typeof FIGHTER_ATTACK_ABILITY_IDS.lowkick]: { attackType: 'lowkick' };
+		[typeof FIGHTER_ATTACK_ABILITY_IDS.duckkick]: { attackType: 'duckkick' };
+		[typeof FIGHTER_ATTACK_ABILITY_IDS.flyingkick]: { attackType: 'flyingkick' };
 	}
 }
 
@@ -100,22 +101,22 @@ abilityActions.register('fighter.attack.hideMarker', ctx => {
 	fighter.hideHitMarker();
 });
 
-defineAbility('fighter.locomotion.walk', { schema: walkSchema });
+defineAbility(FIGHTER_CORE_ABILITY_IDS.walk, { schema: walkSchema });
 
-defineAbility('fighter.locomotion.walk_stop');
+defineAbility(FIGHTER_CORE_ABILITY_IDS.walk_stop);
 
-defineAbility('fighter.control.duck_hold');
+defineAbility(FIGHTER_CORE_ABILITY_IDS.duck_hold);
 
-defineAbility('fighter.control.duck_release');
+defineAbility(FIGHTER_CORE_ABILITY_IDS.duck_release);
 
-defineAbility('fighter.control.jump', { schema: jumpSchema });
+defineAbility(FIGHTER_CORE_ABILITY_IDS.jump, { schema: jumpSchema });
 
-defineAbility('fighter.attack.punch', { schema: attackSchema('punch') });
+defineAbility(FIGHTER_ATTACK_ABILITY_IDS.punch, { schema: attackSchema('punch') });
 
-defineAbility('fighter.attack.highkick', { schema: attackSchema('highkick') });
+defineAbility(FIGHTER_ATTACK_ABILITY_IDS.highkick, { schema: attackSchema('highkick') });
 
-defineAbility('fighter.attack.lowkick', { schema: attackSchema('lowkick') });
+defineAbility(FIGHTER_ATTACK_ABILITY_IDS.lowkick, { schema: attackSchema('lowkick') });
 
-defineAbility('fighter.attack.duckkick', { schema: attackSchema('duckkick') });
+defineAbility(FIGHTER_ATTACK_ABILITY_IDS.duckkick, { schema: attackSchema('duckkick') });
 
-defineAbility('fighter.attack.flyingkick', { schema: attackSchema('flyingkick') });
+defineAbility(FIGHTER_ATTACK_ABILITY_IDS.flyingkick, { schema: attackSchema('flyingkick') });

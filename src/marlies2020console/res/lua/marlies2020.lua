@@ -53,154 +53,15 @@ sprites = {
     sint = 'sint'
 }
 
-player_ability_ids = {
-    fire = 'marlies2020.player.fire',
-    interact = 'marlies2020.player.interact',
-    move_horizontal = 'marlies2020.player.move_horizontal',
-    move_horizontal_stop = 'marlies2020.player.move_horizontal_stop',
-    move_vertical = 'marlies2020.player.move_vertical',
-    move_vertical_stop = 'marlies2020.player.move_vertical_stop',
-    hurt = 'marlies2020.player.hurt'
-}
+local abilities = require('src/marlies2020console/res/lua/marlies2020_abilities')
 
-local player_input_program = {
-    schema = 1,
-    bindings = {{
-        name = 'move_left',
-        priority = 10,
-        on = {
-            hold = 'move_left[h]',
-            release = 'move_left[jr]'
-        },
-        ['do'] = {
-            hold = {{
-                ['ability.request'] = {
-                    id = player_ability_ids.move_horizontal,
-                    payload = {
-                        direction = 'left'
-                    }
-                }
-            }, {
-                ['input.consume'] = 'move_left'
-            }},
-            release = {{
-                ['ability.request'] = {
-                    id = player_ability_ids.move_horizontal_stop
-                }
-            }, {
-                ['input.consume'] = 'move_left'
-            }}
-        }
-    }, {
-        name = 'move_right',
-        priority = 10,
-        on = {
-            hold = 'move_right[h]',
-            release = 'move_right[jr]'
-        },
-        ['do'] = {
-            hold = {{
-                ['ability.request'] = {
-                    id = player_ability_ids.move_horizontal,
-                    payload = {
-                        direction = 'right'
-                    }
-                }
-            }, {
-                ['input.consume'] = 'move_right'
-            }},
-            release = {{
-                ['ability.request'] = {
-                    id = player_ability_ids.move_horizontal_stop
-                }
-            }, {
-                ['input.consume'] = 'move_right'
-            }}
-        }
-    }, {
-        name = 'move_up',
-        priority = 9,
-        on = {
-            hold = 'move_up[h]',
-            release = 'move_up[jr]'
-        },
-        ['do'] = {
-            hold = {{
-                ['ability.request'] = {
-                    id = player_ability_ids.move_vertical,
-                    payload = {
-                        direction = 'up'
-                    }
-                }
-            }, {
-                ['input.consume'] = 'move_up'
-            }},
-            release = {{
-                ['ability.request'] = {
-                    id = player_ability_ids.move_vertical_stop
-                }
-            }, {
-                ['input.consume'] = 'move_up'
-            }}
-        }
-    }, {
-        name = 'move_down',
-        priority = 9,
-        on = {
-            hold = 'move_down[h]',
-            release = 'move_down[jr]'
-        },
-        ['do'] = {
-            hold = {{
-                ['ability.request'] = {
-                    id = player_ability_ids.move_vertical,
-                    payload = {
-                        direction = 'down'
-                    }
-                }
-            }, {
-                ['input.consume'] = 'move_down'
-            }},
-            release = {{
-                ['ability.request'] = {
-                    id = player_ability_ids.move_vertical_stop
-                }
-            }, {
-                ['input.consume'] = 'move_down'
-            }}
-        }
-    }, {
-        name = 'fire',
-        priority = 8,
-        on = {
-            press = 'fire[j]'
-        },
-        ['do'] = {
-            press = {{
-                ['ability.request'] = {
-                    id = player_ability_ids.fire
-                }
-            }, {
-                ['input.consume'] = 'fire'
-            }}
-        }
-    }, {
-        name = 'interact',
-        priority = 8,
-        on = {
-            press = 'interact[j]'
-        },
-        ['do'] = {
-            press = {{
-                ['ability.request'] = {
-                    id = player_ability_ids.interact
-                }
-            }, {
-                ['input.consume'] = 'interact'
-            }}
-        }
-    }}
-}
+local playerAbilityIds = abilities.abilityIds
+local playerInputProgram = abilities.inputProgram
+local playerAbilityGrantOrder = abilities.abilityOrder
+
+PLAYER_ABILITY_IDS = playerAbilityIds
+PLAYER_ABILITY_ORDER = playerAbilityGrantOrder
+PLAYER_INPUT_PROGRAM = playerInputProgram
 
 corona_spawn_locs = {{
     x = screen_width,
@@ -437,40 +298,40 @@ local function ensure_player_ability_definitions()
     end
 
     define_ability({
-        id = player_ability_ids.fire,
+        id = playerAbilityIds.fire,
         cooldownms = math.floor(player_fire_cooldown * 1000),
         activation = ability_fire
     })
 
     define_ability({
-        id = player_ability_ids.interact,
+        id = playerAbilityIds.interact,
         activation = ability_interact
     })
 
     define_ability({
-        id = player_ability_ids.move_horizontal,
+        id = playerAbilityIds.move_horizontal,
         unique = 'ignore',
         activation = ability_move_horizontal
     })
 
     define_ability({
-        id = player_ability_ids.move_horizontal_stop,
+        id = playerAbilityIds.move_horizontal_stop,
         activation = ability_move_horizontal_stop
     })
 
     define_ability({
-        id = player_ability_ids.move_vertical,
+        id = playerAbilityIds.move_vertical,
         unique = 'ignore',
         activation = ability_move_vertical
     })
 
     define_ability({
-        id = player_ability_ids.move_vertical_stop,
+        id = playerAbilityIds.move_vertical_stop,
         activation = ability_move_vertical_stop
     })
 
     define_ability({
-        id = player_ability_ids.hurt,
+        id = playerAbilityIds.hurt,
         cooldownms = math.floor(player_hit_recovery * 1000),
         activation = ability_hurt
     })

@@ -1,3 +1,8 @@
+local abilities = require('src/marlies2020console/res/lua/marlies2020_abilities')
+local playerAbilityIds = abilities.abilityIds
+local playerInputProgram = abilities.inputProgram
+local playerAbilityOrder = abilities.abilityOrder
+
 PlayerObject = PlayerObject or {}
 
 function PlayerObject:create(owner)
@@ -23,7 +28,7 @@ function PlayerObject:on_spawn()
 
 	local input_component = self:getComponentById('player_input')
 	input_component.playerIndex = 1
-	input_component.program = PLAYER_INPUT_PROGRAM
+	input_component.program = playerInputProgram
 
 	local function begin_overlap(_, _, payload)
 		local other = payload.otherId
@@ -37,7 +42,7 @@ function PlayerObject:on_spawn()
 		end
 		if game_state.corona[other] then
 			self.touch_corona[other] = true
-			request_ability(self.id, PLAYER_ABILITY_IDS.hurt, {
+			request_ability(self.id, playerAbilityIds.hurt, {
 				payload = {
 					source = other
 				}
@@ -116,13 +121,5 @@ worldobject({
 	fsms = {
 		{ id = 'marlies2020_player' },
 	},
-	abilities = {
-		'marlies2020.player.fire',
-		'marlies2020.player.interact',
-		'marlies2020.player.move_horizontal',
-		'marlies2020.player.move_horizontal_stop',
-		'marlies2020.player.move_vertical',
-		'marlies2020.player.move_vertical_stop',
-		'marlies2020.player.hurt',
-	},
+	abilities = playerAbilityOrder,
 })

@@ -175,6 +175,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private readonly listResourcesFn: () => ConsoleResourceDescriptor[];
 	private readonly inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
 	private readonly listLuaObjectMembersFn: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
+	private readonly listLuaModuleSymbolsFn: (moduleName: string) => ConsoleLuaSymbolEntry[];
 	private readonly listLuaSymbolsFn: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	private readonly listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
 	private readonly listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
@@ -372,6 +373,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	this.createLuaResourceFn = options.createLuaResource;
 	this.inspectLuaExpressionFn = options.inspectLuaExpression;
 	this.listLuaObjectMembersFn = options.listLuaObjectMembers;
+	this.listLuaModuleSymbolsFn = options.listLuaModuleSymbols;
 	this.listLuaSymbolsFn = options.listLuaSymbols;
 	this.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
 	this.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
@@ -459,8 +461,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			getActiveCodeTabContext: () => this.getActiveCodeTabContext(),
 			resolveHoverAssetId: (ctx) => this.resolveHoverAssetId(ctx as any),
 			resolveHoverChunkName: (ctx) => this.resolveHoverChunkName(ctx as any),
-		listLuaSymbols: (assetId, chunk) => this.listLuaSymbolsFn(assetId, chunk),
-		listGlobalLuaSymbols: () => this.listGlobalLuaSymbolsFn(),
+			listLuaSymbols: (assetId, chunk) => this.listLuaSymbolsFn(assetId, chunk),
+			listGlobalLuaSymbols: () => this.listGlobalLuaSymbolsFn(),
+			listLuaModuleSymbols: (moduleName) => this.listLuaModuleSymbolsFn(moduleName),
 			listBuiltinLuaFunctions: () => this.listBuiltinLuaFunctionsFn(),
 			getSemanticDefinitions: () => this.getActiveSemanticDefinitions(),
 			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),

@@ -69,20 +69,12 @@ export type LuaScopedSymbolOptions = {
 export function collectLuaScopedSymbols(options: LuaScopedSymbolOptions): LuaScopedSymbol[] {
 	let chunk: LuaChunk;
 	try {
-		chunk = parseLuaChunk(options.source, options.chunkName);
+		chunk = parseChunkWithRecovery(options.source, options.chunkName);
 	} catch (error) {
-		if (!(error instanceof LuaSyntaxError)) {
-			throw error;
+		if (error instanceof LuaSyntaxError) {
+			return [];
 		}
-		const truncated = truncateSourceAtSyntaxError(options.source, error);
-		if (truncated === null) {
-			throw error;
-		}
-		try {
-			chunk = parseLuaChunk(truncated, options.chunkName);
-		} catch {
-			throw error;
-		}
+		throw error;
 	}
 	const definitions = chunk.definitions;
 	if (definitions.length === 0) {
@@ -105,6 +97,113 @@ export function collectLuaScopedSymbols(options: LuaScopedSymbolOptions): LuaSco
 		});
 	}
 	return scopedSymbols;
+}
+
+export function collectLuaModuleAliases(options: LuaScopedSymbolOptions): Map<string, string> {
+	let chunk: LuaChunk;
+	try {
+		chunk = parseChunkWithRecovery(options.source, options.chunkName);
+	} catch (error) {
+		if (error instanceof LuaSyntaxError) {
+			return new Map();
+		}
+		throw error;
+	}
+	const aliases = new Map<string, string>();
+	collectRequireAliasesFromStatements(chunk.body, aliases);
+	return aliases;
+}
+
+function collectRequireAliasesFromStatements(statements: ReadonlyArray<LuaStatement>, aliases: Map<string, string>): void {
+	for (let index = 0; index < statements.length; index += 1) {
+		const statement = statements[index];
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement:
+				recordLocalRequireAliases(statement as LuaLocalAssignmentStatement, aliases);
+				break;
+			case LuaSyntaxKind.AssignmentStatement:
+				recordGlobalRequireAliases(statement as LuaAssignmentStatement, aliases);
+				break;
+			default:
+				break;
+		}
+	}
+}
+
+function recordLocalRequireAliases(statement: LuaLocalAssignmentStatement, aliases: Map<string, string>): void {
+	if (statement.values.length === 0) {
+		return;
+	}
+	for (let index = 0; index < statement.names.length; index += 1) {
+		const identifier = statement.names[index];
+		const valueIndex = index < statement.values.length ? index : statement.values.length - 1;
+		const moduleName = tryExtractRequireModuleName(statement.values[valueIndex]);
+		if (moduleName) {
+			aliases.set(identifier.name, moduleName);
+		}
+	}
+}
+
+function recordGlobalRequireAliases(statement: LuaAssignmentStatement, aliases: Map<string, string>): void {
+	if (statement.right.length === 0) {
+		return;
+	}
+	for (let index = 0; index < statement.left.length; index += 1) {
+		const target = statement.left[index];
+		if (target.kind !== LuaSyntaxKind.IdentifierExpression) {
+			continue;
+		}
+		const valueIndex = index < statement.right.length ? index : statement.right.length - 1;
+		const moduleName = tryExtractRequireModuleName(statement.right[valueIndex]);
+		if (moduleName) {
+			aliases.set((target as LuaIdentifierExpression).name, moduleName);
+		}
+	}
+}
+
+function tryExtractRequireModuleName(expression: LuaExpression): string | null {
+	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+		return null;
+	}
+	const call = expression as LuaCallExpression;
+	if (call.methodName) {
+		return null;
+	}
+	const callee = call.callee;
+	if (callee.kind !== LuaSyntaxKind.IdentifierExpression) {
+		return null;
+	}
+	if ((callee as LuaIdentifierExpression).name.toLowerCase() !== 'require') {
+		return null;
+	}
+	if (call.arguments.length === 0) {
+		return null;
+	}
+	const firstArg = call.arguments[0];
+	if (firstArg.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		return null;
+	}
+	const moduleName = (firstArg as LuaStringLiteralExpression).value.trim();
+	return moduleName.length > 0 ? moduleName : null;
+}
+
+function parseChunkWithRecovery(source: string, chunkName: string): LuaChunk {
+	try {
+		return parseLuaChunk(source, chunkName);
+	} catch (error) {
+		if (!(error instanceof LuaSyntaxError)) {
+			throw error;
+		}
+		const truncated = truncateSourceAtSyntaxError(source, error);
+		if (truncated === null) {
+			throw error;
+		}
+		try {
+			return parseLuaChunk(truncated, chunkName);
+		} catch {
+			throw error;
+		}
+	}
 }
 
 function buildKeywordCompletionsInternal(): LuaCompletionItem[] {

@@ -176,6 +176,14 @@ type LuaComponentPresetRecord = {
 	build: LuaHandlerFn;
 };
 
+type LuaRequireModuleRecord = {
+	packageKey: string;
+	canonicalKey: string;
+	assetId: string;
+	chunkName: string;
+	path: string | null;
+};
+
 
 type LuaAbilityRegistrationDescriptor = {
 	id: string;
@@ -228,6 +236,7 @@ export class BmsxConsoleRuntime extends Service {
 		{ name: 'tostring', params: ['value'], signature: 'tostring(value)' },
 		{ name: 'type', params: ['value'], signature: 'type(value)' },
 		{ name: 'xpcall', params: ['func', 'msgh', 'arg...'], signature: 'xpcall(f, msgh, ...)' },
+		{ name: 'require', params: ['moduleName'], signature: 'require(moduleName)' },
 		{ name: 'table.concat', params: ['list', 'separator?', 'start?', 'end?'], signature: 'table.concat(list [, sep [, i [, j]]])' },
 		{ name: 'table.insert', params: ['list', 'pos?', 'value'], signature: 'table.insert(list [, pos], value)' },
 		{ name: 'table.pack', params: ['...'], signature: 'table.pack(...)' },
@@ -242,6 +251,7 @@ export class BmsxConsoleRuntime extends Service {
 		'tonumber',
 		'setmetatable',
 		'getmetatable',
+		'require',
 		'pairs',
 		'ipairs',
 		'serialize',
@@ -252,6 +262,7 @@ export class BmsxConsoleRuntime extends Service {
 		'table',
 		'coroutine',
 		'debug',
+		'package',
 		'api',
 	]);
 
@@ -326,6 +337,9 @@ export class BmsxConsoleRuntime extends Service {
 	private nativeMemberCompletionCache: WeakMap<object, { dot?: ConsoleLuaMemberCompletion[]; colon?: ConsoleLuaMemberCompletion[] }> = new WeakMap();
 	private readonly luaChunkResourceMap: Map<string, { assetId: string | null; path?: string | null }> = new Map();
 	private readonly resourcePathCache: Map<string, string | null> = new Map();
+	private readonly luaModuleAliases: Map<string, LuaRequireModuleRecord> = new Map();
+	private readonly luaModuleLoadingKeys: Set<string> = new Set();
+	private luaModuleIndexBuilt = false;
 	private readonly luaChunkEnvironmentsByAssetId: Map<string, LuaEnvironment> = new Map();
 	private readonly luaChunkEnvironmentsByChunkName: Map<string, LuaEnvironment> = new Map();
 	private readonly luaFsmMachineIds: Set<string> = new Set<string>();
@@ -420,6 +434,7 @@ export class BmsxConsoleRuntime extends Service {
 			serializeNative: (native) => this.snapshotEncodeNative(native),
 			deserializeNative: (token) => this.snapshotDecodeNative(token),
 		});
+		interpreter.setRequireHandler((ctx, module) => this.requireLuaModule(ctx, module));
 	}
 
 	private assertCompatibleOptions(options: BmsxConsoleRuntimeOptions): void {
@@ -607,6 +622,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaRuntimeFailed = false;
 		this.luaChunkResourceMap.clear();
 		this.resourcePathCache.clear();
+		this.invalidateLuaModuleIndex();
 		this.luaChunkEnvironmentsByAssetId.clear();
 		this.luaChunkEnvironmentsByChunkName.clear();
 		if (this.editor) {
@@ -771,6 +787,7 @@ export class BmsxConsoleRuntime extends Service {
 			createLuaResource: (request) => this.createLuaResource(request),
 			inspectLuaExpression: (request: ConsoleLuaHoverRequest) => this.inspectLuaExpression(request),
 			listLuaObjectMembers: (request) => this.listLuaObjectMembers(request),
+			listLuaModuleSymbols: (moduleName) => this.listLuaModuleSymbols(moduleName),
 			primaryAssetId,
 			listLuaSymbols: (assetId: string | null, chunkName: string | null) => this.listLuaSymbols(assetId, chunkName),
 			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
@@ -5440,11 +5457,81 @@ export class BmsxConsoleRuntime extends Service {
 		return normalized.replace(/\\/g, '/');
 	}
 
+	private normalizeModulePath(path: string): string {
+		let normalized = path.trim();
+		if (normalized.startsWith('@')) {
+			normalized = normalized.slice(1);
+		}
+		normalized = normalized.replace(/\\/g, '/');
+		while (normalized.startsWith('./')) {
+			normalized = normalized.slice(2);
+		}
+		return normalized.replace(/\/{2,}/g, '/');
+	}
+
+	private stripLuaExtension(candidate: string): string {
+		if (candidate.toLowerCase().endsWith('.lua')) {
+			return candidate.slice(0, -4);
+		}
+		return candidate;
+	}
+
+	private baseModuleName(path: string): string {
+		const normalized = this.normalizeModulePath(path);
+		const index = normalized.lastIndexOf('/');
+		const name = index >= 0 ? normalized.slice(index + 1) : normalized;
+		return this.stripLuaExtension(name);
+	}
+
+	private normalizeModuleKey(name: string): string {
+		let normalized = name.trim();
+		if (normalized.length === 0) {
+			return '';
+		}
+		normalized = normalized.replace(/\\/g, '/');
+		if (normalized.startsWith('@')) {
+			normalized = normalized.slice(1);
+		}
+		while (normalized.startsWith('./')) {
+			normalized = normalized.slice(2);
+		}
+		normalized = normalized.replace(/\.lua$/i, '');
+		normalized = normalized.replace(/\./g, '/');
+		normalized = normalized.replace(/\/{2,}/g, '/');
+		return normalized.toLowerCase();
+	}
+
+	private resolveLuaModuleChunkName(assetId: string, sourcePath: string | null): string {
+		const category = this.resolveLuaHotReloadCategory(assetId);
+		switch (category) {
+			case 'fsm':
+				return this.resolveLuaFsmChunkName(assetId, sourcePath);
+			case 'behavior_tree':
+				return this.resolveLuaBehaviorTreeChunkName(assetId, sourcePath);
+			case 'service':
+				return this.resolveLuaServiceChunkName(assetId, sourcePath);
+			case 'component_preset':
+				return this.resolveLuaComponentPresetChunkName(assetId, sourcePath);
+			case 'worldobject':
+				return this.resolveLuaWorldObjectChunkName(assetId, sourcePath);
+			default:
+				if (sourcePath && sourcePath.length > 0) {
+					return `@${sourcePath}`;
+				}
+				return `@lua/${assetId}`;
+		}
+	}
+
 
 	private registerLuaChunkResource(chunkName: string, info: { assetId: string | null; path?: string | null }): void {
 		if (!chunkName) return;
 		const key = this.normalizeChunkName(chunkName);
 		this.luaChunkResourceMap.set(key, info);
+	}
+
+	private invalidateLuaModuleIndex(): void {
+		this.luaModuleIndexBuilt = false;
+		this.luaModuleAliases.clear();
 	}
 
 	private cacheChunkEnvironment(interpreter: LuaInterpreter, chunkName: string, assetId: string | null): void {
@@ -5456,6 +5543,136 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaChunkEnvironmentsByChunkName.set(normalizedChunk, environment);
 		if (assetId && assetId.length > 0) {
 			this.luaChunkEnvironmentsByAssetId.set(assetId, environment);
+		}
+	}
+
+	private registerLuaModuleAliases(record: LuaRequireModuleRecord, assetId: string, sourcePath: string | null, chunkName: string, canonicalPath: string): void {
+		const register = (candidate: string | null) => {
+			if (!candidate) {
+				return;
+			}
+			const key = this.normalizeModuleKey(candidate);
+			if (!key) {
+				return;
+			}
+			if (!this.luaModuleAliases.has(key)) {
+				this.luaModuleAliases.set(key, record);
+			}
+		};
+		const canonical = this.normalizeModulePath(canonicalPath);
+		register(canonical);
+		register(`${canonical}.lua`);
+		if (sourcePath) {
+			const normalizedSource = this.normalizeModulePath(sourcePath);
+			register(normalizedSource);
+			register(`${normalizedSource}.lua`);
+			register(normalizedSource.replace(/\//g, '.'));
+			register(`${normalizedSource.replace(/\//g, '.')}.lua`);
+		}
+		register(assetId);
+		register(`${assetId}.lua`);
+		register(assetId.replace(/[\\/]/g, '.'));
+		register(`${assetId.replace(/[\\/]/g, '.')}.lua`);
+		register(chunkName);
+		const canonicalDots = canonical.replace(/\//g, '.');
+		register(canonicalDots);
+		register(`${canonicalDots}.lua`);
+		const baseName = this.baseModuleName(canonical);
+		register(baseName);
+		register(`${baseName}.lua`);
+		const baseDots = baseName.replace(/\//g, '.');
+		register(baseDots);
+		register(`${baseDots}.lua`);
+	}
+
+	private ensureLuaModuleIndex(): void {
+		if (this.luaModuleIndexBuilt) {
+			return;
+		}
+		this.luaModuleAliases.clear();
+		const rompack = this.api.rompack();
+		if (!rompack || !rompack.lua) {
+			this.luaModuleIndexBuilt = true;
+			return;
+		}
+		const luaSources = rompack.lua;
+		const sourcePaths = rompack.luaSourcePaths ?? {};
+		for (const assetId of Object.keys(luaSources)) {
+			const source = luaSources[assetId];
+			if (typeof source !== 'string' || source.length === 0) {
+				continue;
+			}
+			const sourcePathRaw = sourcePaths[assetId];
+			const sourcePath = typeof sourcePathRaw === 'string' && sourcePathRaw.length > 0 ? sourcePathRaw : null;
+			const chunkName = this.resolveLuaModuleChunkName(assetId, sourcePath);
+			const canonicalPath = this.stripLuaExtension(this.normalizeModulePath(sourcePath ?? assetId ?? chunkName));
+			const canonicalKey = this.normalizeModuleKey(canonicalPath);
+			if (!canonicalKey) {
+				continue;
+			}
+			const record: LuaRequireModuleRecord = {
+				packageKey: canonicalPath,
+				canonicalKey,
+				assetId,
+				chunkName,
+				path: sourcePath ? this.normalizeModulePath(sourcePath) : null,
+			};
+			this.registerLuaModuleAliases(record, assetId, sourcePath, chunkName, canonicalPath);
+		}
+		this.luaModuleIndexBuilt = true;
+	}
+
+	private requireLuaModule(interpreter: LuaInterpreter, moduleName: string): LuaValue {
+		this.ensureLuaModuleIndex();
+		const aliasKey = this.normalizeModuleKey(moduleName);
+		if (!aliasKey) {
+			throw this.createApiRuntimeError(interpreter, `require(moduleName) received an invalid module name '${moduleName}'.`);
+		}
+		const record = this.luaModuleAliases.get(aliasKey);
+		if (!record) {
+			throw this.createApiRuntimeError(interpreter, `Module '${moduleName}' not found.`);
+		}
+		const packageLoaded = interpreter.getPackageLoadedTable();
+		const cached = packageLoaded.get(record.packageKey);
+		if (cached !== null) {
+			return cached;
+		}
+		if (this.luaModuleLoadingKeys.has(record.packageKey)) {
+			const pending = packageLoaded.get(record.packageKey);
+			return pending === null ? true : pending;
+		}
+		const rompack = this.api.rompack();
+		if (!rompack || !rompack.lua) {
+			throw this.createApiRuntimeError(interpreter, `Lua assets unavailable while loading module '${moduleName}'.`);
+		}
+		const source = rompack.lua[record.assetId];
+		if (typeof source !== 'string' || source.length === 0) {
+			throw this.createApiRuntimeError(interpreter, `Module '${moduleName}' is empty or missing.`);
+		}
+		const resourceInfo: { assetId: string | null; path?: string | null } = { assetId: record.assetId };
+		if (record.path) {
+			resourceInfo.path = record.path;
+		}
+		this.registerLuaChunkResource(record.chunkName, resourceInfo);
+		this.luaModuleLoadingKeys.add(record.packageKey);
+		packageLoaded.set(record.packageKey, true);
+		try {
+			const results = interpreter.execute(source, record.chunkName);
+			this.cacheChunkEnvironment(interpreter, record.chunkName, record.assetId);
+			const moduleValue = results.length > 0 && results[0] !== null ? results[0] : true;
+			packageLoaded.set(record.packageKey, moduleValue);
+			return moduleValue;
+		}
+		catch (error) {
+			packageLoaded.delete(record.packageKey);
+			if (error instanceof LuaRuntimeError) {
+				throw error;
+			}
+			const message = error instanceof Error ? error.message : String(error);
+			throw this.createApiRuntimeError(interpreter, message);
+		}
+		finally {
+			this.luaModuleLoadingKeys.delete(record.packageKey);
 		}
 	}
 
@@ -5727,6 +5944,18 @@ export class BmsxConsoleRuntime extends Service {
 			return a.path.localeCompare(b.path);
 		});
 		return symbols;
+	}
+
+	public listLuaModuleSymbols(moduleName: string): ConsoleLuaSymbolEntry[] {
+		if (typeof moduleName !== 'string' || moduleName.trim().length === 0) {
+			return [];
+		}
+		this.ensureLuaModuleIndex();
+		const record = this.luaModuleAliases.get(this.normalizeModuleKey(moduleName));
+		if (!record) {
+			return [];
+		}
+		return this.listLuaSymbols(record.assetId, record.chunkName);
 	}
 
 	public listLuaBuiltinFunctions(): ConsoleLuaBuiltinDescriptor[] {

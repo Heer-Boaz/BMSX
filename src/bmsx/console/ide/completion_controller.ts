@@ -1,15 +1,16 @@
 import { BmsxConsoleApi } from '../api';
 import { clamp } from '../../utils/utils';
-import { getApiCompletionData, getKeywordCompletions, type LuaScopedSymbol } from './intellisense';
+import { collectLuaModuleAliases, getApiCompletionData, getKeywordCompletions, type LuaScopedSymbol } from './intellisense';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast.ts';
 import {
     CompletionContext,
     CompletionSession,
-    CompletionTrigger,
-    CursorScreenInfo,
-    EditContext,
-    LuaCompletionItem,
-    ParameterHintState,
+	CompletionTrigger,
+	CursorScreenInfo,
+	EditContext,
+	LuaCompletionItem,
+	LuaCompletionKind,
+	ParameterHintState,
 } from './types';
 import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaSymbolEntry } from '../types';
 import * as constants from './constants';
@@ -52,6 +53,7 @@ export interface CompletionHost {
     resolveHoverChunkName(context: unknown | null): string | null;
     listLuaSymbols(assetId: string | null, chunkName: string | null): ConsoleLuaSymbolEntry[];
     listGlobalLuaSymbols(): ConsoleLuaSymbolEntry[];
+    listLuaModuleSymbols(moduleName: string): ConsoleLuaSymbolEntry[];
     listBuiltinLuaFunctions(): ConsoleLuaBuiltinDescriptor[];
     getSemanticDefinitions(): readonly LuaDefinitionInfo[] | null;
     getMemberCompletionItems?(request: MemberCompletionHostRequest): LuaCompletionItem[];
@@ -68,6 +70,7 @@ type LocalCompletionCacheEntry = {
     parsedVersion: number;
     chunkName: string | null;
     symbols: LuaScopedSymbol[];
+    moduleAliases: Map<string, string>;
 };
 
 export class CompletionController {
@@ -476,20 +479,36 @@ export class CompletionController {
 			if (context.objectName.toLowerCase() === 'api') {
 				return apiCompletionData.items.slice();
 			}
+			const merged: LuaCompletionItem[] = [];
+			const seen = new Map<string, LuaCompletionItem>();
+			const appendItems = (items: LuaCompletionItem[] | undefined | null): void => {
+				if (!items || items.length === 0) {
+					return;
+				}
+				for (let i = 0; i < items.length; i += 1) {
+					const item = items[i];
+					if (!seen.has(item.sortKey)) {
+						seen.set(item.sortKey, item);
+						merged.push(item);
+					}
+				}
+			};
+			appendItems(this.getModuleMemberCompletionItems(context));
 			if (this.host.getMemberCompletionItems) {
 				const activeContext = this.host.getActiveCodeTabContext();
 				const assetId = this.host.resolveHoverAssetId(activeContext);
 				const chunkName = this.host.resolveHoverChunkName(activeContext);
-				const items = this.host.getMemberCompletionItems({
+				const runtimeItems = this.host.getMemberCompletionItems({
 					objectName: context.objectName,
 					operator: context.operator,
 					prefix: context.prefix,
 					assetId,
 					chunkName,
 				});
-				if (items && items.length > 0) {
-					return items.slice();
-				}
+				appendItems(runtimeItems);
+			}
+			if (merged.length > 0) {
+				return merged;
 			}
 			return [];
 		}
@@ -509,8 +528,21 @@ export class CompletionController {
 	}
 
     private getLocalCompletionItems(context: CompletionContext): LuaCompletionItem[] {
+        const cached = this.ensureLocalCompletionCache();
+        if (!cached) return [];
+        const column = context.replaceToColumn;
+        const filtered = this.filterLocalSymbolsAtPosition(cached.symbols, context.row, column);
+        if (filtered.length === 0) {
+            return [];
+        }
+        const activeCodeContext = this.host.getActiveCodeTabContext();
+        const chunkName = cached.chunkName ?? this.host.resolveHoverChunkName(activeCodeContext);
+        return this.buildLocalCompletionItems(filtered, chunkName ?? null);
+    }
+
+    private ensureLocalCompletionCache(): LocalCompletionCacheEntry | null {
         const key = this.activeCompletionCacheKey();
-        if (!key) return [];
+        if (!key) return null;
         const activeCodeContext = this.host.getActiveCodeTabContext();
         const chunkName = this.host.resolveHoverChunkName(activeCodeContext);
         const currentVersion = this.host.getTextVersion();
@@ -518,28 +550,18 @@ export class CompletionController {
         const needsParse = !cached || cached.chunkName !== chunkName || cached.parsedVersion !== currentVersion;
         if (needsParse) {
             const definitions = this.host.getSemanticDefinitions();
-            if (definitions && definitions.length > 0) {
-                const symbols = this.convertDefinitionsToLocalSymbols(definitions);
-                cached = {
-                    parsedVersion: currentVersion,
-                    chunkName,
-                    symbols,
-                };
-                this.localCompletionCache.set(key, cached);
-            } else if (!cached) {
-                return [];
-            }
+            const symbols = definitions && definitions.length > 0 ? this.convertDefinitionsToLocalSymbols(definitions) : [];
+            const lines = this.host.getLines();
+            const moduleAliases = this.collectModuleAliasesFromLines(lines, chunkName ?? null);
+            cached = {
+                parsedVersion: currentVersion,
+                chunkName,
+                symbols,
+                moduleAliases,
+            };
+            this.localCompletionCache.set(key, cached);
         }
-        if (!cached) {
-            cached = this.localCompletionCache.get(key) ?? null;
-        }
-        if (!cached) return [];
-        const column = context.replaceToColumn;
-        const filtered = this.filterLocalSymbolsAtPosition(cached.symbols, context.row, column);
-        if (filtered.length === 0) {
-            return [];
-        }
-        return this.buildLocalCompletionItems(filtered, cached.chunkName ?? chunkName ?? null);
+        return cached ?? null;
     }
 
     private getGlobalCompletionItems(): LuaCompletionItem[] {
@@ -567,25 +589,26 @@ export class CompletionController {
         return items;
     }
 
-    private buildSymbolCompletionItems(entries: ConsoleLuaSymbolEntry[], scope: 'local' | 'global'): LuaCompletionItem[] {
-        if (entries.length === 0) return [];
-        const items: LuaCompletionItem[] = [];
-        for (let i = 0; i < entries.length; i += 1) {
-            const entry = entries[i];
-            const origin = (() => {
+	private buildSymbolCompletionItems(entries: ConsoleLuaSymbolEntry[], scope: 'local' | 'global' | 'module'): LuaCompletionItem[] {
+		if (entries.length === 0) return [];
+		const items: LuaCompletionItem[] = [];
+		for (let i = 0; i < entries.length; i += 1) {
+			const entry = entries[i];
+			const origin = (() => {
                 if (entry.location.path && entry.location.path.length > 0) return entry.location.path;
                 if (entry.location.assetId && entry.location.assetId.length > 0) return entry.location.assetId;
                 if (entry.location.chunkName && entry.location.chunkName.length > 0) return entry.location.chunkName;
                 return '';
             })();
             const kindLabel = this.formatSymbolKind(entry.kind);
-            const detail = origin.length > 0 ? `${kindLabel} • ${origin}` : kindLabel;
-            const sortKey = `${scope}:${origin}:${entry.path}:${entry.name}:${entry.kind}`;
-            items.push({ label: entry.name, insertText: entry.name, sortKey, kind: scope, detail });
-        }
-        items.sort((a, b) => a.label.localeCompare(b.label));
-        return items;
-    }
+			const detail = origin.length > 0 ? `${kindLabel} • ${origin}` : kindLabel;
+			const sortKey = `${scope}:${origin}:${entry.path}:${entry.name}:${entry.kind}`;
+			const completionKind: LuaCompletionKind = scope === 'local' ? 'local' : scope === 'module' ? 'module' : 'global';
+			items.push({ label: entry.name, insertText: entry.name, sortKey, kind: completionKind, detail });
+		}
+		items.sort((a, b) => a.label.localeCompare(b.label));
+		return items;
+	}
 
     private convertDefinitionsToLocalSymbols(definitions: readonly LuaDefinitionInfo[]): LuaScopedSymbol[] {
         if (!definitions || definitions.length === 0) {
@@ -643,24 +666,70 @@ export class CompletionController {
         return Array.from(selected.values());
     }
 
-    private buildLocalCompletionItems(symbols: readonly LuaScopedSymbol[], chunkLabel: string | null): LuaCompletionItem[] {
-        const items: LuaCompletionItem[] = [];
-        for (let index = 0; index < symbols.length; index += 1) {
-            const symbol = symbols[index];
-            const label = symbol.name;
-            const kindLabel = this.formatSymbolKind(symbol.kind as ConsoleLuaSymbolEntry['kind']);
-            const detailParts: string[] = [kindLabel];
-            if (chunkLabel && chunkLabel.length > 0) {
-                detailParts.push(chunkLabel);
-            }
-            detailParts.push(`line ${symbol.definitionRange.startLine}`);
-            const detail = detailParts.join(' • ');
-            const sortKey = `local:${symbol.definitionRange.startLine.toString().padStart(6, '0')}:${label}`;
-            items.push({ label, insertText: label, sortKey, kind: 'local', detail });
-        }
-        items.sort((a, b) => a.label.localeCompare(b.label));
-        return items;
-    }
+	private buildLocalCompletionItems(symbols: readonly LuaScopedSymbol[], chunkLabel: string | null): LuaCompletionItem[] {
+		const items: LuaCompletionItem[] = [];
+		for (let index = 0; index < symbols.length; index += 1) {
+			const symbol = symbols[index];
+			const label = symbol.name;
+			const kindLabel = this.formatSymbolKind(symbol.kind as ConsoleLuaSymbolEntry['kind']);
+			const detailParts: string[] = [kindLabel];
+			if (chunkLabel && chunkLabel.length > 0) {
+				detailParts.push(chunkLabel);
+			}
+			detailParts.push(`line ${symbol.definitionRange.startLine}`);
+			const detail = detailParts.join(' • ');
+			const sortKey = `local:${symbol.definitionRange.startLine.toString().padStart(6, '0')}:${label}`;
+			items.push({ label, insertText: label, sortKey, kind: 'local', detail });
+		}
+		items.sort((a, b) => a.label.localeCompare(b.label));
+		return items;
+	}
+
+	private collectModuleAliasesFromLines(lines: readonly string[], chunkName: string | null): Map<string, string> {
+		if (!lines || lines.length === 0) {
+			return new Map();
+		}
+		const source = lines.join('\n');
+		if (source.trim().length === 0) {
+			return new Map();
+		}
+		try {
+			return collectLuaModuleAliases({ source, chunkName: chunkName ?? '<buffer>' });
+		} catch {
+			return new Map();
+		}
+	}
+
+	private getModuleMemberCompletionItems(context: CompletionContext): LuaCompletionItem[] {
+		if (context.kind !== 'member') {
+			return [];
+		}
+		const cached = this.ensureLocalCompletionCache();
+		if (!cached || cached.moduleAliases.size === 0) {
+			return [];
+		}
+		const moduleName = cached.moduleAliases.get(context.objectName);
+		if (!moduleName) {
+			return [];
+		}
+		let symbols: ConsoleLuaSymbolEntry[] = [];
+		try {
+			symbols = this.host.listLuaModuleSymbols(moduleName);
+		} catch {
+			symbols = [];
+		}
+		if (!symbols || symbols.length === 0) {
+			return [];
+		}
+		const items = this.buildSymbolCompletionItems(symbols, 'module');
+		for (let index = 0; index < items.length; index += 1) {
+			const item = items[index];
+			const escaped = moduleName.replace(/'/g, "\\'");
+			const detail = item.detail ? `${item.detail} • require('${escaped}')` : `module export • require('${escaped}')`;
+			item.detail = detail;
+		}
+		return items;
+	}
 
     private isLocalDefinitionKind(kind: LuaScopedSymbol['kind']): boolean {
         return kind === 'variable' || kind === 'function' || kind === 'parameter';

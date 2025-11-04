@@ -27,6 +27,7 @@ export type ConsoleEditorOptions = {
 	createLuaResource: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
 	inspectLuaExpression: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
 	listLuaObjectMembers: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
+	listLuaModuleSymbols: (moduleName: string) => ConsoleLuaSymbolEntry[];
 	primaryAssetId: string | null;
 	listLuaSymbols: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
@@ -100,7 +101,16 @@ export type ResourceSearchResult = {
 	matchIndex: number;
 };
 
-export type LuaCompletionKind = 'keyword' | 'local' | 'global' | 'builtin' | 'api_method' | 'api_property' | 'native_method' | 'native_property';
+export type LuaCompletionKind =
+	| 'keyword'
+	| 'local'
+	| 'global'
+	| 'builtin'
+	| 'api_method'
+	| 'api_property'
+	| 'native_method'
+	| 'native_property'
+	| 'module';
 
 export type LuaCompletionItem = {
 	label: string;

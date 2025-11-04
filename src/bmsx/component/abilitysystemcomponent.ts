@@ -99,6 +99,9 @@ export class AbilitySystemComponent extends Component {
 		const failure = this.canActivateReason(id);
 		if (failure) {
 			this.notifyAbilityFailed(id, failure);
+			if (this.isStructuralActivationFailure(failure)) {
+				throw new Error(`[AbilitySystemComponent] Ability '${id}' request on '${this.parentid}' failed: ${failure}`);
+			}
 			return { ok: false as const, reason: failure };
 		}
 		const command: GameplayCommand = {
@@ -627,5 +630,9 @@ export class AbilitySystemComponent extends Component {
 		const owner = $.world.getWorldObject(this.parentid);
 		if (!owner) throw new Error(`[AbilitySystemComponent] Owner '${this.parentid}' not found.`);
 		return owner;
+	}
+
+	private isStructuralActivationFailure(reason: string): boolean {
+		return reason.startsWith('unknown ability:');
 	}
 }
