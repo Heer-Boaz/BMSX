@@ -330,6 +330,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private backgroundTaskHandle: TimerHandle | null = null;
 	private readonly backgroundTaskBudgetMs = 2.0;
 	private diagnosticsTaskPending = false;
+	private lastReportedSemanticError: string | null = null;
 	private readonly referenceState: ReferenceState = new ReferenceState();
 	private textVersion = 0;
 	private saveGeneration = 0;
@@ -1102,11 +1103,18 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.handleActionPromptInput(keyboard);
 			return;
 		}
-		this.handleEditorInput(keyboard, deltaSeconds);
-		this.completion.processPending(deltaSeconds);
-		if (this.diagnosticsDirty) {
-			this.processDiagnosticsQueue(this.clockNow());
-		}
+	this.handleEditorInput(keyboard, deltaSeconds);
+	this.completion.processPending(deltaSeconds);
+	const semanticError = this.layout.getLastSemanticError();
+	if (semanticError && semanticError !== this.lastReportedSemanticError) {
+		this.showMessage(semanticError, constants.COLOR_STATUS_ERROR, 4.0);
+		this.lastReportedSemanticError = semanticError;
+	} else if (!semanticError && this.lastReportedSemanticError !== null) {
+		this.lastReportedSemanticError = null;
+	}
+	if (this.diagnosticsDirty) {
+		this.processDiagnosticsQueue(this.clockNow());
+	}
 		if (this.isCodeTabActive() && !this.cursorRevealSuspended) {
 			this.ensureCursorVisible();
 		}
@@ -1935,6 +1943,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.backgroundTaskHandle = null;
 	}
 	this.diagnosticsTaskPending = false;
+	this.lastReportedSemanticError = null;
 }
 
 	private updateBlink(deltaSeconds: number): void {
@@ -7530,22 +7539,24 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		this.activeCodeTabContextId = tabId;
 		const isEntry = this.entryTabId !== null && context.id === this.entryTabId;
-		if (context.snapshot) {
-			this.restoreSnapshot(context.snapshot);
-			this.saveGeneration = context.saveGeneration;
-			this.appliedGeneration = context.appliedGeneration;
-			if (isEntry) {
-				this.lastSavedSource = context.lastSavedSource;
-			}
-			context.dirty = this.dirty;
-			this.setTabDirty(context.id, context.dirty);
-			this.syncRuntimeErrorOverlayFromContext(context);
-			this.invalidateAllHighlights();
-			this.updateDesiredColumn();
-			this.ensureCursorVisible();
-			this.refreshActiveDiagnostics();
-			return;
+	if (context.snapshot) {
+		this.restoreSnapshot(context.snapshot);
+		this.saveGeneration = context.saveGeneration;
+		this.appliedGeneration = context.appliedGeneration;
+		if (isEntry) {
+			this.lastSavedSource = context.lastSavedSource;
 		}
+		context.dirty = this.dirty;
+		this.setTabDirty(context.id, context.dirty);
+		this.syncRuntimeErrorOverlayFromContext(context);
+		this.invalidateAllHighlights();
+		this.updateDesiredColumn();
+		this.ensureCursorVisible();
+		this.refreshActiveDiagnostics();
+		const chunkNameSnapshot = this.resolveHoverChunkName(context) ?? '<console>';
+		this.layout.forceSemanticUpdate(this.lines, this.textVersion, chunkNameSnapshot);
+		return;
+	}
 		const source = context.load();
 		context.lastSavedSource = source;
 		this.lines = this.splitLines(source);
@@ -7554,11 +7565,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (this.lines.length === 0) {
 			this.lines.push('');
 		}
-		this.invalidateAllHighlights();
-		this.cursorRow = 0;
-		this.cursorColumn = 0;
-		this.scrollRow = 0;
-		this.scrollColumn = 0;
+	this.invalidateAllHighlights();
+	this.cursorRow = 0;
+	this.cursorColumn = 0;
+	this.scrollRow = 0;
+	this.scrollColumn = 0;
 		this.selectionAnchor = null;
 		this.dirty = false;
 		context.dirty = false;
@@ -7570,13 +7581,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (isEntry) {
 			this.lastSavedSource = context.lastSavedSource;
 		}
-		this.setTabDirty(context.id, context.dirty);
-		this.syncRuntimeErrorOverlayFromContext(context);
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.pointerSelecting = false;
-		this.pointerPrimaryWasPressed = false;
-		this.refreshActiveDiagnostics();
+	this.setTabDirty(context.id, context.dirty);
+	this.syncRuntimeErrorOverlayFromContext(context);
+	this.bumpTextVersion();
+	const chunkName = this.resolveHoverChunkName(context) ?? '<console>';
+	this.layout.forceSemanticUpdate(this.lines, this.textVersion, chunkName);
+	this.updateDesiredColumn();
+	this.resetBlink();
+	this.pointerSelecting = false;
+	this.pointerPrimaryWasPressed = false;
+	this.refreshActiveDiagnostics();
 	}
 
 	private getMainProgramSourceForReload(): string {

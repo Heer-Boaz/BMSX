@@ -30,6 +30,13 @@ function PlayerObject:on_spawn()
 	input_component.playerIndex = 1
 	input_component.program = playerInputProgram
 
+	local asc = self:getComponentById('player_abilities')
+	assert(asc ~= nil, '[PlayerObject:on_spawn] AbilitySystemComponent missing')
+	assert(type(asc.hasAbility) == 'function', '[PlayerObject:on_spawn] AbilitySystemComponent lacks hasAbility')
+	assert(asc:hasAbility(playerAbilityIds.fire), '[PlayerObject:on_spawn] fire ability missing')
+	assert(asc:hasAbility(playerAbilityIds.move_horizontal), '[PlayerObject:on_spawn] move ability missing')
+	assert(asc:hasAbility(playerAbilityIds.interact), '[PlayerObject:on_spawn] interact ability missing')
+
 	local function begin_overlap(_, _, payload)
 		local other = payload.otherId
 		local ingredient = game_state.ingredients[other]

@@ -4279,8 +4279,7 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			const definition = this.abilityDefinitions.get(abilityId);
 			if (!definition) {
-				this.recordLuaWarning(`[WorldObject:${host.id}] Ability '${abilityId}' is not registered.`);
-				continue;
+				throw new Error(`[BmsxConsoleRuntime] World object '${host.id}' declares ability '${abilityId}', but it has not been registered. Ensure 'define_ability' runs before the world object definition attaches abilities.`);
 			}
 			if (!asc.hasAbility(abilityId)) {
 				asc.grantAbility(definition, abilityActions);

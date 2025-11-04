@@ -176,12 +176,27 @@ function compileEffect(effect: Effect, slot?: string): EffectExecutor {
 		if (!spec) throw new Error(`Missing ability request in effect ${JSON.stringify(effect)}`);
 		if (typeof spec === 'string') {
 			return (ctx: EvalContext) => {
-				ctx.requestAbility(spec);
+				const result = ctx.requestAbility(spec);
+				if (result && result.ok === false) {
+					const detail = result.reason ?? 'unknown';
+					throw new Error(`[InputAbilityCompiler] Ability request '${spec}' for owner '${ctx.owner_id}' failed: ${detail}`);
+				}
 			};
 		}
 		return (ctx: EvalContext) => {
-			if (spec.payload === undefined) ctx.requestAbility(spec.id);
-			else ctx.requestAbility(spec.id, { payload: spec.payload } as any);
+			if (spec.payload === undefined) {
+				const result = ctx.requestAbility(spec.id);
+				if (result && result.ok === false) {
+					const detail = result.reason ?? 'unknown';
+					throw new Error(`[InputAbilityCompiler] Ability request '${spec.id}' for owner '${ctx.owner_id}' failed: ${detail}`);
+				}
+			} else {
+				const result = ctx.requestAbility(spec.id, { payload: spec.payload } as any);
+				if (result && result.ok === false) {
+					const detail = result.reason ?? 'unknown';
+					throw new Error(`[InputAbilityCompiler] Ability request '${spec.id}' for owner '${ctx.owner_id}' failed: ${detail}`);
+				}
+			}
 		};
 	}
 	if (isInputConsume(effect)) {

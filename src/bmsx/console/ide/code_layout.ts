@@ -52,6 +52,7 @@ type SemanticWorkerResponse =
 		requestId: number;
 		version: number;
 		chunkName: string;
+		errorMessage?: string;
 	};
 
 /**
@@ -83,6 +84,7 @@ export class ConsoleCodeLayout {
 	private rowVisualLineCounts: number[] = [];
 	private lastViewportRowEstimate = 120;
 	private semanticTimer: TimerHandle | null = null;
+	private lastSemanticError: string | null = null;
 
 	constructor(
 		private readonly font: ConsoleEditorFont,
@@ -306,6 +308,10 @@ export class ConsoleCodeLayout {
 		return this.visualLines;
 	}
 
+	public getLastSemanticError(): string | null {
+		return this.lastSemanticError;
+	}
+
 	public getSemanticDefinitions(lines: readonly string[], documentVersion: number, chunkName: string): readonly LuaDefinitionInfo[] | null {
 		this.ensureSemanticModel(lines, documentVersion, chunkName, 'background');
 		if (!this.semanticModel) {
@@ -496,6 +502,17 @@ export class ConsoleCodeLayout {
 		return segments;
 	}
 
+	public forceSemanticUpdate(lines: readonly string[], documentVersion: number, chunkName: string): void {
+	const pending = this.updatePendingSemantic(lines, documentVersion, chunkName);
+	this.semanticDueAtMs = null;
+	if (this.semanticTimer) {
+		this.semanticTimer.cancel();
+		this.semanticTimer = null;
+	}
+	this.semanticUpdateScheduled = false;
+	this.dispatchSemanticUpdate(pending, 'force');
+}
+
 	public getSemanticModel(lines: readonly string[], documentVersion: number, chunkName: string): LuaSemanticModel | null {
 		this.ensureSemanticModel(lines, documentVersion, chunkName, 'force');
 		return this.semanticModel;
@@ -553,6 +570,7 @@ export class ConsoleCodeLayout {
 		version: number,
 		chunkName: string,
 	): PendingSemanticUpdate {
+		this.lastSemanticError = null;
 		const current = this.pendingSemantic;
 		if (current && current.version === version && current.chunkName === chunkName) {
 			return current;
@@ -619,6 +637,7 @@ export class ConsoleCodeLayout {
 		this.semanticChunkName = chunkName;
 		this.semanticDueAtMs = null;
 		this.pendingSemantic = null;
+		this.lastSemanticError = null;
 		this.updateAnnotationSignatures(annotations);
 		this.highlightCache.clear();
 		this.markVisualLinesDirty();
@@ -707,7 +726,13 @@ export class ConsoleCodeLayout {
 			this.finalizeSemanticUpdate(model, response.version, response.chunkName, annotations);
 			return;
 		}
-		this.applySemanticUpdateSync(inFlight);
+		this.semanticDueAtMs = null;
+		if (this.semanticTimer) {
+			this.semanticTimer.cancel();
+			this.semanticTimer = null;
+		}
+		this.semanticUpdateScheduled = false;
+		this.lastSemanticError = response.errorMessage ?? 'Failed to update semantic model.';
 	}
 
 	private tryCreateSemanticWorker(): Worker | null {

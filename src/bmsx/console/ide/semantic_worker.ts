@@ -23,6 +23,7 @@ type SemanticErrorMessage = {
 	requestId: number;
 	version: number;
 	chunkName: string;
+	errorMessage?: string;
 };
 
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
@@ -48,12 +49,14 @@ workerScope.onmessage = (event: MessageEvent<UpdateMessage>): void => {
 			data: serialized,
 		};
 		workerScope.postMessage(response);
-	} catch {
+	} catch (error) {
+		const errorText = error instanceof Error ? error.message : String(error);
 		const errorResponse: SemanticErrorMessage = {
 			type: 'semantic-error',
 			requestId: message.requestId,
 			version: message.version,
 			chunkName: message.chunkName,
+			errorMessage: errorText,
 		};
 		workerScope.postMessage(errorResponse);
 	}
