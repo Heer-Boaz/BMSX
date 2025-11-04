@@ -467,6 +467,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			listLuaModuleSymbols: (moduleName) => this.listLuaModuleSymbolsFn(moduleName),
 			listBuiltinLuaFunctions: () => this.listBuiltinLuaFunctionsFn(),
 			getSemanticDefinitions: () => this.getActiveSemanticDefinitions(),
+			getLuaModuleAliases: (chunkName) => this.getLuaModuleAliases(chunkName),
 			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),
 			charAt: (r, c) => this.charAt(r, c),
 			getTextVersion: () => this.textVersion,
@@ -1372,6 +1373,22 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const context = this.getActiveCodeTabContext();
 		const chunkName = this.resolveHoverChunkName(context) ?? '<console>';
 		return this.layout.getSemanticDefinitions(this.lines, this.textVersion, chunkName);
+	}
+
+	private getLuaModuleAliases(chunkName: string | null): Map<string, string> {
+		const activeContext = this.getActiveCodeTabContext();
+		const targetChunk = chunkName ?? this.resolveHoverChunkName(activeContext) ?? '<console>';
+		this.layout.getSemanticDefinitions(this.lines, this.textVersion, targetChunk);
+		const data = this.semanticWorkspace.getFileData(targetChunk);
+		if (!data || data.moduleAliases.length === 0) {
+			return new Map();
+		}
+		const aliases = new Map<string, string>();
+		for (let index = 0; index < data.moduleAliases.length; index += 1) {
+			const entry = data.moduleAliases[index];
+			aliases.set(entry.alias, entry.module);
+		}
+		return aliases;
 	}
 
 	private findContextByChunk(chunkName: string): CodeTabContext | null {

@@ -40,6 +40,7 @@ workerScope.onmessage = (event: MessageEvent<UpdateMessage>): void => {
 			decls: fileData.decls,
 			refs: fileData.refs,
 			definitions: fileData.model.definitions,
+			moduleAliases: fileData.moduleAliases,
 		};
 		const response: SemanticResultMessage = {
 			type: 'semantic-result',

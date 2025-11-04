@@ -14,6 +14,9 @@ import {
 	type LuaCallExpression,
 	type LuaFunctionExpression,
 	type LuaTableConstructorExpression,
+	type LuaAssignmentStatement,
+	type LuaLocalAssignmentStatement,
+	type LuaStringLiteralExpression,
 	type LuaFunctionDeclarationStatement,
 	type LuaDefinitionInfo,
 	type LuaSourceRange,
@@ -39,6 +42,11 @@ export type SemanticAnnotations = Array<TokenAnnotation[] | undefined>;
 export type LuaReferenceLookupResult = {
 	definition: LuaDefinitionInfo | null;
 	references: LuaSourceRange[];
+};
+
+export type ModuleAliasEntry = {
+	alias: string;
+	module: string;
 };
 
 export type LuaSemanticModel = {
@@ -82,6 +90,7 @@ export type FileSemanticData = {
 	annotations: SemanticAnnotations;
 	decls: readonly Decl[];
 	refs: readonly Ref[];
+	moduleAliases: readonly ModuleAliasEntry[];
 };
 
 export type SerializedFileSemanticData = {
@@ -92,6 +101,7 @@ export type SerializedFileSemanticData = {
 	decls: readonly Decl[];
 	refs: readonly Ref[];
 	definitions: readonly LuaDefinitionInfo[];
+	moduleAliases: readonly ModuleAliasEntry[];
 };
 
 export function hydrateFileSemanticData(data: SerializedFileSemanticData): FileSemanticData {
@@ -109,6 +119,7 @@ export function hydrateFileSemanticData(data: SerializedFileSemanticData): FileS
 		annotations: data.annotations,
 		decls: data.decls,
 		refs: data.refs,
+		moduleAliases: data.moduleAliases,
 	};
 }
 
@@ -177,6 +188,11 @@ export function buildLuaFileSemanticData(source: string, chunkName: string): Fil
 	definitions.sort(compareDefinitionInfo);
 	const refs = result.refs.slice();
 	const annotations = finalizeAnnotations(result.annotations);
+	const moduleAliasEntries = collectModuleAliasesFromChunk(chunk);
+	const moduleAliases: ModuleAliasEntry[] = [];
+	for (const [alias, moduleName] of moduleAliasEntries) {
+		moduleAliases.push({ alias, module: moduleName });
+	}
 	const model: LuaSemanticModel = createSemanticModel({
 		file: chunkName,
 		decls,
@@ -191,12 +207,86 @@ export function buildLuaFileSemanticData(source: string, chunkName: string): Fil
 		annotations,
 		decls,
 		refs,
+		moduleAliases,
 	};
 }
 
 export function buildLuaSemanticModel(source: string, chunkName: string): LuaSemanticModel {
 	const data = buildLuaFileSemanticData(source, chunkName);
 	return data.model;
+}
+
+function collectModuleAliasesFromChunk(chunk: LuaChunk): Map<string, string> {
+	const aliases = new Map<string, string>();
+	const statements = chunk.body;
+	for (let index = 0; index < statements.length; index += 1) {
+		const statement = statements[index];
+		if (statement.kind === LuaSyntaxKind.LocalAssignmentStatement) {
+			recordLocalRequireAliases(statement as LuaLocalAssignmentStatement, aliases);
+			continue;
+		}
+		if (statement.kind === LuaSyntaxKind.AssignmentStatement) {
+			recordGlobalRequireAliases(statement as LuaAssignmentStatement, aliases);
+		}
+	}
+	return aliases;
+}
+
+function recordLocalRequireAliases(statement: LuaLocalAssignmentStatement, aliases: Map<string, string>): void {
+	if (statement.values.length === 0) {
+		return;
+	}
+	for (let index = 0; index < statement.names.length; index += 1) {
+		const identifier = statement.names[index];
+		const valueIndex = index < statement.values.length ? index : statement.values.length - 1;
+		const moduleName = tryExtractRequireModuleName(statement.values[valueIndex]);
+		if (moduleName) {
+			aliases.set(identifier.name, moduleName);
+		}
+	}
+}
+
+function recordGlobalRequireAliases(statement: LuaAssignmentStatement, aliases: Map<string, string>): void {
+	if (statement.right.length === 0) {
+		return;
+	}
+	for (let index = 0; index < statement.left.length; index += 1) {
+		const target = statement.left[index];
+		if (target.kind !== LuaSyntaxKind.IdentifierExpression) {
+			continue;
+		}
+		const valueIndex = index < statement.right.length ? index : statement.right.length - 1;
+		const moduleName = tryExtractRequireModuleName(statement.right[valueIndex]);
+		if (moduleName) {
+			aliases.set((target as LuaIdentifierExpression).name, moduleName);
+		}
+	}
+}
+
+function tryExtractRequireModuleName(expression: LuaExpression): string | null {
+	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+		return null;
+	}
+	const call = expression as LuaCallExpression;
+	if (call.methodName) {
+		return null;
+	}
+	const callee = call.callee;
+	if (callee.kind !== LuaSyntaxKind.IdentifierExpression) {
+		return null;
+	}
+	if ((callee as LuaIdentifierExpression).name.toLowerCase() !== 'require') {
+		return null;
+	}
+	if (call.arguments.length === 0) {
+		return null;
+	}
+	const firstArg = call.arguments[0];
+	if (firstArg.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		return null;
+	}
+	const moduleName = (firstArg as LuaStringLiteralExpression).value.trim();
+	return moduleName.length > 0 ? moduleName : null;
 }
 
 export class LuaProjectIndex {

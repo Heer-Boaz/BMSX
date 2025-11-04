@@ -1,6 +1,6 @@
 import { BmsxConsoleApi } from '../api';
 import { clamp } from '../../utils/utils';
-import { collectLuaModuleAliases, getApiCompletionData, getKeywordCompletions, type LuaScopedSymbol } from './intellisense';
+import { getApiCompletionData, getKeywordCompletions, type LuaScopedSymbol } from './intellisense';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast.ts';
 import {
     CompletionContext,
@@ -56,6 +56,7 @@ export interface CompletionHost {
     listLuaModuleSymbols(moduleName: string): ConsoleLuaSymbolEntry[];
     listBuiltinLuaFunctions(): ConsoleLuaBuiltinDescriptor[];
     getSemanticDefinitions(): readonly LuaDefinitionInfo[] | null;
+    getLuaModuleAliases(chunkName: string | null): Map<string, string>;
     getMemberCompletionItems?(request: MemberCompletionHostRequest): LuaCompletionItem[];
     // Utilities
     charAt(row: number, column: number): string;
@@ -540,29 +541,28 @@ export class CompletionController {
         return this.buildLocalCompletionItems(filtered, chunkName ?? null);
     }
 
-    private ensureLocalCompletionCache(): LocalCompletionCacheEntry | null {
-        const key = this.activeCompletionCacheKey();
-        if (!key) return null;
-        const activeCodeContext = this.host.getActiveCodeTabContext();
-        const chunkName = this.host.resolveHoverChunkName(activeCodeContext);
-        const currentVersion = this.host.getTextVersion();
-        let cached = this.localCompletionCache.get(key) ?? null;
-        const needsParse = !cached || cached.chunkName !== chunkName || cached.parsedVersion !== currentVersion;
-        if (needsParse) {
-            const definitions = this.host.getSemanticDefinitions();
-            const symbols = definitions && definitions.length > 0 ? this.convertDefinitionsToLocalSymbols(definitions) : [];
-            const lines = this.host.getLines();
-            const moduleAliases = this.collectModuleAliasesFromLines(lines, chunkName ?? null);
-            cached = {
-                parsedVersion: currentVersion,
-                chunkName,
-                symbols,
-                moduleAliases,
-            };
-            this.localCompletionCache.set(key, cached);
-        }
-        return cached ?? null;
-    }
+	private ensureLocalCompletionCache(): LocalCompletionCacheEntry | null {
+		const key = this.activeCompletionCacheKey();
+		if (!key) return null;
+		const activeCodeContext = this.host.getActiveCodeTabContext();
+		const chunkName = this.host.resolveHoverChunkName(activeCodeContext);
+		const currentVersion = this.host.getTextVersion();
+		let cached = this.localCompletionCache.get(key) ?? null;
+		const needsParse = !cached || cached.chunkName !== chunkName || cached.parsedVersion !== currentVersion;
+		if (needsParse) {
+			const definitions = this.host.getSemanticDefinitions();
+			const symbols = definitions && definitions.length > 0 ? this.convertDefinitionsToLocalSymbols(definitions) : [];
+			const moduleAliases = this.host.getLuaModuleAliases(chunkName ?? null);
+			cached = {
+				parsedVersion: currentVersion,
+				chunkName,
+				symbols,
+				moduleAliases: new Map(moduleAliases),
+			};
+			this.localCompletionCache.set(key, cached);
+		}
+		return cached ?? null;
+	}
 
     private getGlobalCompletionItems(): LuaCompletionItem[] {
         if (this.cachedGlobalCompletionItems) return this.cachedGlobalCompletionItems;
@@ -683,21 +683,6 @@ export class CompletionController {
 		}
 		items.sort((a, b) => a.label.localeCompare(b.label));
 		return items;
-	}
-
-	private collectModuleAliasesFromLines(lines: readonly string[], chunkName: string | null): Map<string, string> {
-		if (!lines || lines.length === 0) {
-			return new Map();
-		}
-		const source = lines.join('\n');
-		if (source.trim().length === 0) {
-			return new Map();
-		}
-		try {
-			return collectLuaModuleAliases({ source, chunkName: chunkName ?? '<buffer>' });
-		} catch {
-			return new Map();
-		}
 	}
 
 	private getModuleMemberCompletionItems(context: CompletionContext): LuaCompletionItem[] {
