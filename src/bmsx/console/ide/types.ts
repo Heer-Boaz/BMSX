@@ -148,6 +148,7 @@ export type CompletionSession = {
 	anchorRow: number;
 	anchorColumn: number;
 	maxVisibleItems: number;
+	filterCache: Map<string, LuaCompletionItem[]>;
 };
 
 export type EditContext = {

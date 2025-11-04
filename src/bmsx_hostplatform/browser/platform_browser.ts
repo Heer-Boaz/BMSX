@@ -88,6 +88,23 @@ class BrowserClock implements Clock {
 	now(): number {
 		return performance.now();
 	}
+
+	scheduleOnce(delayMs: number, cb: (t: number) => void) {
+		let active = true;
+		const id = window.setTimeout(() => {
+			if (!active) return;
+			active = false;
+			try { cb(this.now()); } catch { /* swallow errors from callbacks */ }
+		}, Math.max(0, Math.floor(delayMs)));
+		return {
+			cancel: () => {
+				if (!active) return;
+				active = false;
+				window.clearTimeout(id as number);
+			},
+			isActive: () => active,
+		};
+	}
 }
 
 class BrowserFrameLoop implements FrameLoop {

@@ -28,7 +28,29 @@ export interface Platform {
 
 export type MonoTime = number;
 
-export interface Clock { now(): MonoTime; }
+/**
+ * Generic handle returned by the platform when scheduling a delayed callback.
+ * Intentionally minimal and non-browser-like (no IDs or global timer names).
+ */
+export interface TimerHandle {
+	/**
+	 * Cancel the scheduled callback if it hasn't fired yet. Safe to call multiple times.
+	 */
+	cancel(): void;
+
+	/**
+	 * Returns true if the timer is still active (not yet fired or cancelled).
+	 */
+	isActive?(): boolean;
+}
+
+/**
+ * Clock provides monotonic time and optional scheduling helpers. Implementations may
+ * provide `scheduleOnce` to request a single delayed callback. The method is optional
+ * to avoid forcing all Clock implementers to adopt platforms that don't support timers
+ * (for example, some headless or test harnesses).
+ */
+export interface Clock { now(): MonoTime; scheduleOnce?: (delayMs: number, cb: (t: MonoTime) => void) => TimerHandle; }
 
 export interface FrameLoop {
 	start(tick: (t: MonoTime) => void): { stop(): void };

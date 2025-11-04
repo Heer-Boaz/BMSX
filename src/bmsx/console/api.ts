@@ -31,6 +31,7 @@ import { Component } from '../component/basecomponent';
 import { LuaComponent } from '../component/lua_component';
 import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 import { BmsxConsoleRuntime } from './runtime';
+import type { LuaWorldObjectComponentEntry, LuaWorldObjectSystemEntry, LuaWorldObjectSpawnOptions } from './runtime';
 import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type BehaviorTreeContext, type ConstructorWithBTProperty } from '../ai/behaviourtree';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
@@ -58,15 +59,13 @@ type ConsoleComponentDescriptor = {
 	options: Record<string, unknown>;
 };
 
-type NormalizedSpawnOptions = {
+type NormalizedSpawnOptions = LuaWorldObjectSpawnOptions & {
 	id?: string;
-	fsmId?: string;
 	space?: string;
 	reason?: SpawnReason;
 	position: { x: number; y: number; z: number } | null;
 	orientation: { x: number; y: number; z: number } | null;
 	scale: { x: number; y: number; z: number } | null;
-	components: ConsoleComponentDescriptor[];
 };
 
 export class BmsxConsoleApi {
@@ -528,10 +527,12 @@ export class BmsxConsoleApi {
 		}
 		const ctorOptions: RevivableObjectArgs & { id?: string; fsm_id?: string } = {};
 		if (normalized.id) ctorOptions.id = normalized.id;
-		if (normalized.fsmId) ctorOptions.fsm_id = normalized.fsmId;
 		const instance = new ctor(ctorOptions);
 		this.applySpawnOrientation(instance, normalized);
-		this.attachSpawnComponents(instance, normalized.components);
+		const componentDescriptors = runtime
+			? runtime.materializeComponentEntries(normalized.components)
+			: this.materializeComponentEntriesFallback(normalized.components);
+		this.attachSpawnComponents(instance, componentDescriptors);
 		const spawnPos = normalized.position ? new_vec3(normalized.position.x, normalized.position.y, normalized.position.z) : undefined;
 		if (normalized.space) {
 			const space = this.lookupSpace(normalized.space);
@@ -542,9 +543,26 @@ export class BmsxConsoleApi {
 			$.world.spawn(instance, spawnPos, reasonOpts);
 		}
 		if (runtime) {
+			runtime.finalizeLuaWorldObjectSpawn(instance, normalized);
 			runtime.onLuaWorldObjectSpawned(instance);
 		}
 		return instance.id;
+	}
+
+	public spawn_object(definitionId: string, overrides?: Record<string, unknown>): string {
+		if (typeof definitionId !== 'string' || definitionId.trim().length === 0) {
+			throw new Error('[BmsxConsoleApi] spawn_object requires a non-empty definition id.');
+		}
+		const runtime = this.requireConsoleRuntime('spawn_object');
+		const definition = runtime.getWorldObjectDefinition(definitionId.trim());
+		if (!definition) {
+			throw new Error(`[BmsxConsoleApi] World object definition '${definitionId}' is not registered.`);
+		}
+		const overridesClone = overrides ? this.cloneStateMachineData(overrides) : {};
+		if (overridesClone && !this.isPlainObject(overridesClone)) {
+			throw new Error('[BmsxConsoleApi] spawn_object overrides must be a table/object.');
+		}
+		return this.spawn_world_object(definition.classRef, overridesClone as Record<string, unknown>);
 	}
 
 	public despawn(id: Identifier, options?: { dispose?: boolean }): void {
@@ -595,9 +613,19 @@ export class BmsxConsoleApi {
 		return runtime.registerComponentDefinition(descriptor);
 	}
 
+	public define_component_preset(descriptor: Record<string, unknown>): string {
+		const runtime = this.requireConsoleRuntime('define_component_preset');
+		return runtime.registerComponentPreset(descriptor);
+	}
+
 	public define_worldobject(descriptor: Record<string, unknown>): string {
 		const runtime = this.requireConsoleRuntime('define_worldobject');
 		return runtime.registerWorldObjectDefinition(descriptor);
+	}
+
+	public define_service(descriptor: Record<string, unknown>): Record<string, unknown> {
+		const runtime = this.requireConsoleRuntime('define_service');
+		return runtime.registerServiceDefinition(descriptor);
 	}
 
 	public attach_component(objectId: Identifier, component: string | { id: string; id_local?: string; state?: Record<string, unknown> }): string {
@@ -928,13 +956,17 @@ export class BmsxConsoleApi {
 	private normalizeSpawnOptions(raw: Record<string, unknown>): NormalizedSpawnOptions {
 		const normalized: NormalizedSpawnOptions = {
 			id: undefined,
-			fsmId: undefined,
 			space: undefined,
 			reason: undefined,
 			position: null,
 			orientation: null,
 			scale: null,
 			components: [],
+			fsms: [],
+			behaviorTrees: [],
+			abilities: [],
+			tags: [],
+			defaults: undefined,
 		};
 		if (typeof raw.id === 'string') {
 			const trimmed = raw.id.trim();
@@ -943,13 +975,9 @@ export class BmsxConsoleApi {
 			}
 			normalized.id = trimmed;
 		}
-		const fsmCandidate = raw.fsmId !== undefined ? raw.fsmId : raw.fsm_id;
-		if (typeof fsmCandidate === 'string') {
-			const trimmedFsm = fsmCandidate.trim();
-			if (trimmedFsm.length === 0) {
-				throw new Error('[BmsxConsoleApi] spawn_world_object options.fsmId must be a non-empty string when provided.');
-			}
-			normalized.fsmId = trimmedFsm;
+		const fsmsRaw = raw.fsms ?? raw.state_machines ?? raw.stateMachines ?? raw.machines;
+		if (fsmsRaw !== undefined) {
+			normalized.fsms = this.normalizeSpawnSystemEntries(fsmsRaw, 'fsms', false);
 		}
 		if (raw.space !== undefined) {
 			if (typeof raw.space !== 'string' || raw.space.trim().length === 0) {
@@ -978,49 +1006,25 @@ export class BmsxConsoleApi {
 			normalized.scale = this.normalizeVector3(raw.scale, 'spawn_world_object options.scale', true, 1);
 		}
 		if (raw.components !== undefined) {
-			if (!Array.isArray(raw.components)) {
-				throw new Error('[BmsxConsoleApi] spawn_world_object options.components must be an array.');
+			normalized.components = this.normalizeSpawnComponentEntries(raw.components);
+		}
+
+		const behaviorTreesRaw = raw.bts ?? raw.behavior_trees ?? raw.behaviorTrees;
+		if (behaviorTreesRaw !== undefined) {
+			normalized.behaviorTrees = this.normalizeSpawnSystemEntries(behaviorTreesRaw, 'behavior trees', true);
+		}
+
+		if (raw.abilities !== undefined) {
+			normalized.abilities = this.normalizeStringList(raw.abilities);
+		}
+		if (raw.tags !== undefined) {
+			normalized.tags = this.normalizeStringList(raw.tags);
+		}
+		if (raw.defaults !== undefined) {
+			if (!this.isPlainObject(raw.defaults)) {
+				throw new Error('[BmsxConsoleApi] spawn_world_object defaults must be a table/object.');
 			}
-			const entries = raw.components;
-			for (let index = 0; index < entries.length; index += 1) {
-				const entry = entries[index];
-				if (typeof entry === 'string') {
-					const trimmed = entry.trim();
-					if (trimmed.length === 0) {
-						throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}] must be a non-empty string.`);
-					}
-					normalized.components.push({ className: trimmed, options: {} });
-					continue;
-				}
-				if (this.isPlainObject(entry)) {
-					const descriptor = entry as Record<string, unknown>;
-					const classCandidate = descriptor.class !== undefined ? descriptor.class
-						: descriptor.className !== undefined ? descriptor.className
-							: descriptor.type !== undefined ? descriptor.type
-								: descriptor.name;
-					if (typeof classCandidate !== 'string' || classCandidate.trim().length === 0) {
-						throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}] requires a non-empty 'class' field.`);
-					}
-					let optionsObject: Record<string, unknown>;
-					if (descriptor.options !== undefined) {
-						if (!this.isPlainObject(descriptor.options)) {
-							throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}].options must be a table/object.`);
-						}
-						optionsObject = this.cloneStateMachineData(descriptor.options as Record<string, unknown>);
-					} else {
-						const clone = this.cloneStateMachineData(descriptor);
-						delete clone.class;
-						delete clone.className;
-						delete clone.type;
-						delete clone.name;
-						delete clone.options;
-						optionsObject = clone;
-					}
-					normalized.components.push({ className: classCandidate.trim(), options: optionsObject });
-					continue;
-				}
-				throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}] must be a string or table/object.`);
-			}
+			normalized.defaults = this.cloneStateMachineData(raw.defaults as Record<string, unknown>);
 		}
 		return normalized;
 	}
@@ -1050,6 +1054,155 @@ export class BmsxConsoleApi {
 		return result;
 	}
 
+	private normalizeSpawnComponentEntries(raw: unknown): LuaWorldObjectComponentEntry[] {
+		if (!Array.isArray(raw)) {
+			throw new Error('[BmsxConsoleApi] spawn_world_object options.components must be an array.');
+		}
+		const entries: LuaWorldObjectComponentEntry[] = [];
+		for (let index = 0; index < raw.length; index += 1) {
+			const entry = raw[index];
+			if (typeof entry === 'string') {
+				const trimmed = entry.trim();
+				if (trimmed.length === 0) {
+					throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}] must be a non-empty string.`);
+				}
+				entries.push({ kind: 'component', descriptor: { className: trimmed, options: {} } });
+				continue;
+			}
+			if (!this.isPlainObject(entry)) {
+				throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}] must be a string or table/object.`);
+			}
+			const record = entry as Record<string, unknown>;
+			const preset = record.preset ?? record.presetId ?? record.preset_id;
+			if (typeof preset === 'string' && preset.trim().length > 0) {
+				const paramsRaw = record.params ?? record.arguments ?? record.options ?? record.config;
+				let params: Record<string, unknown> = {};
+				if (paramsRaw !== undefined) {
+					if (!this.isPlainObject(paramsRaw)) {
+						throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}] preset params must be a table/object.`);
+					}
+					params = this.cloneStateMachineData(paramsRaw as Record<string, unknown>);
+				}
+				entries.push({ kind: 'preset', presetId: preset.trim(), params });
+				continue;
+			}
+			const classCandidate = record.class ?? record.className ?? record.type ?? record.name;
+			if (typeof classCandidate !== 'string' || classCandidate.trim().length === 0) {
+				throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}] requires a non-empty 'class' field.`);
+			}
+			let options: Record<string, unknown>;
+			if (record.options !== undefined) {
+				if (!this.isPlainObject(record.options)) {
+					throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}].options must be a table/object.`);
+				}
+				options = this.cloneStateMachineData(record.options as Record<string, unknown>);
+			} else {
+				const clone = this.cloneStateMachineData(record);
+				delete clone.class;
+				delete clone.className;
+				delete clone.type;
+				delete clone.name;
+				delete clone.preset;
+				delete clone.presetId;
+				delete clone.preset_id;
+				delete clone.params;
+				delete clone.arguments;
+				delete clone.config;
+				delete clone.options;
+				options = clone;
+			}
+			entries.push({ kind: 'component', descriptor: { className: classCandidate.trim(), options } });
+		}
+		return entries;
+	}
+
+	private normalizeSpawnSystemEntries(raw: unknown, label: string, allowAutoTick: boolean): LuaWorldObjectSystemEntry[] {
+		if (raw === undefined || raw === null) {
+			return [];
+		}
+		const entries: LuaWorldObjectSystemEntry[] = [];
+		const push = (value: Record<string, unknown>, indexLabel: string) => {
+			const idCandidate = value.id
+				?? value.fsm ?? value.fsmId ?? value.machine ?? value.machineId
+				?? value.tree ?? value.treeId ?? value.bt ?? value.btId;
+			if (typeof idCandidate !== 'string' || idCandidate.trim().length === 0) {
+				throw new Error(`[BmsxConsoleApi] ${label} entry ${indexLabel} is missing a valid id.`);
+			}
+			const entry: LuaWorldObjectSystemEntry = { id: idCandidate.trim() };
+			const contextCandidate = value.context ?? value.slot ?? value.scope ?? value.alias;
+			if (typeof contextCandidate === 'string' && contextCandidate.trim().length > 0) {
+				entry.context = contextCandidate.trim();
+			}
+			if (allowAutoTick) {
+				const autoCandidate = value.auto_tick ?? value.autoTick ?? value.auto;
+				if (typeof autoCandidate === 'boolean') {
+					entry.autoTick = autoCandidate;
+				}
+			}
+			const activeCandidate = value.active ?? value.enabled ?? value.running;
+			if (typeof activeCandidate === 'boolean') {
+				entry.active = activeCandidate;
+			}
+			entries.push(entry);
+		};
+		if (typeof raw === 'string') {
+			const trimmed = raw.trim();
+			if (trimmed.length === 0) {
+				throw new Error(`[BmsxConsoleApi] ${label} string entries must not be empty.`);
+			}
+			entries.push({ id: trimmed });
+			return entries;
+		}
+		if (Array.isArray(raw)) {
+			for (let index = 0; index < raw.length; index += 1) {
+				const value = raw[index];
+				if (typeof value === 'string') {
+					const trimmed = value.trim();
+					if (trimmed.length === 0) {
+						throw new Error(`[BmsxConsoleApi] ${label}[${index}] must not be empty.`);
+					}
+					entries.push({ id: trimmed });
+					continue;
+				}
+				if (!this.isPlainObject(value)) {
+					throw new Error(`[BmsxConsoleApi] ${label}[${index}] must be a string or table/object.`);
+				}
+				push(value as Record<string, unknown>, `[${index}]`);
+			}
+			return entries;
+		}
+		if (this.isPlainObject(raw)) {
+			push(raw as Record<string, unknown>, '');
+			return entries;
+		}
+		throw new Error(`[BmsxConsoleApi] ${label} must be provided as a string, table, or array.`);
+	}
+
+	private normalizeStringList(value: unknown): string[] {
+		if (value === undefined || value === null) {
+			return [];
+		}
+		if (typeof value === 'string') {
+			const trimmed = value.trim();
+			return trimmed.length > 0 ? [trimmed] : [];
+		}
+		if (!Array.isArray(value)) {
+			throw new Error('[BmsxConsoleApi] Expected a string or array of strings.');
+		}
+		const result: string[] = [];
+		for (let index = 0; index < value.length; index += 1) {
+			const entry = value[index];
+			if (typeof entry !== 'string') {
+				continue;
+			}
+			const trimmed = entry.trim();
+			if (trimmed.length > 0) {
+				result.push(trimmed);
+			}
+		}
+		return result;
+	}
+
 	private applySpawnOrientation(instance: WorldObject, options: NormalizedSpawnOptions): void {
 		if (options.orientation) {
 			instance.orientation = new_vec3(options.orientation.x, options.orientation.y, options.orientation.z);
@@ -1065,6 +1218,21 @@ export class BmsxConsoleApi {
 		for (let index = 0; index < descriptors.length; index += 1) {
 			this.attachComponentByDescriptor(object, descriptors[index]);
 		}
+	}
+
+	private materializeComponentEntriesFallback(entries: ReadonlyArray<LuaWorldObjectComponentEntry>): ConsoleComponentDescriptor[] {
+		const descriptors: ConsoleComponentDescriptor[] = [];
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index]!;
+			if (entry.kind === 'preset') {
+				throw new Error('[BmsxConsoleApi] Component presets require the console runtime to be active.');
+			}
+			descriptors.push({
+				className: entry.descriptor.className,
+				options: this.cloneStateMachineData(entry.descriptor.options),
+			});
+		}
+		return descriptors;
 	}
 
 	private attachComponentByDescriptor(object: WorldObject, descriptor: ConsoleComponentDescriptor): Component {

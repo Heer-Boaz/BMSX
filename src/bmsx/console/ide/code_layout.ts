@@ -1,4 +1,6 @@
+import { $ } from '../../core/game';
 import { clamp } from '../../utils/utils.ts';
+import type { TimerHandle } from '../../platform/platform';
 import type { ConsoleEditorFont } from '../editor_font';
 import { highlightLine as highlightLineExternal } from './syntax_highlight';
 import { type LuaSemanticModel, type SemanticAnnotations, type SerializedFileSemanticData, type SymbolKind, type TokenAnnotation } from './semantic_model.ts';
@@ -20,6 +22,7 @@ interface VisualLinesContext {
 	documentVersion: number;
 	chunkName: string;
 	computeWrapWidth(): number;
+	estimatedVisibleRowCount?: number;
 }
 
 interface SliceResult {
@@ -65,7 +68,6 @@ export class ConsoleCodeLayout {
 	private semanticVersion = -1;
 	private semanticChunkName: string | null = null;
 	private readonly semanticDebounceMs: number;
-	private readonly scheduleTask: ((fn: () => void) => void) | null;
 	private readonly clockNow: () => number;
 	private pendingSemantic: PendingSemanticUpdate | null = null;
 	private inFlightSemantic: PendingSemanticUpdate | null = null;
@@ -74,38 +76,54 @@ export class ConsoleCodeLayout {
 	private annotationRowSig: Uint32Array | null = null;
 	private semanticWorker: Worker | null = null;
 	private nextSemanticRequestId = 1;
+	private lastHotRowRange: { start: number; end: number } | null = null;
+	private lastHotGuardRows = 0;
+	private readonly viewportRowMargin = 64;
+	private readonly averageCharAdvance: number;
+	private rowVisualLineCounts: number[] = [];
+	private lastViewportRowEstimate = 120;
+	private semanticTimer: TimerHandle | null = null;
 
 	constructor(
 		private readonly font: ConsoleEditorFont,
 		private readonly workspace: LuaSemanticWorkspace,
-		options?: { maxHighlightCache?: number; semanticDebounceMs?: number; clockNow?: () => number; scheduleTask?: (fn: () => void) => void },
+		options?: { maxHighlightCache?: number; semanticDebounceMs?: number; clockNow?: () => number },
 	) {
 		this.maxHighlightCache = options?.maxHighlightCache ?? 2048;
 		this.semanticDebounceMs = Math.max(0, options?.semanticDebounceMs ?? 120);
 		this.clockNow = options?.clockNow ?? defaultClockNow;
-		this.scheduleTask = options?.scheduleTask ?? null;
 		this.semanticWorker = this.tryCreateSemanticWorker();
+		const probeAdvance = this.font.advance('M');
+		const fallbackAdvance = this.font.advance(' ');
+		this.averageCharAdvance = Math.max(1, Number.isFinite(probeAdvance) && probeAdvance > 0 ? probeAdvance : (Number.isFinite(fallbackAdvance) && fallbackAdvance > 0 ? fallbackAdvance : 1));
 	}
 
 	private scheduleSemanticUpdate(): void {
-		if (this.semanticUpdateScheduled || this.scheduleTask === null) {
+		if (this.semanticUpdateScheduled) {
 			return;
 		}
+		const now = this.clockNow();
+		const delay = this.semanticDueAtMs !== null ? Math.max(0, this.semanticDueAtMs - now) : 0;
+		if (this.semanticTimer) {
+			this.semanticTimer.cancel();
+			this.semanticTimer = null;
+		}
 		this.semanticUpdateScheduled = true;
-		this.scheduleTask(() => {
+		this.semanticTimer = $.platform.clock.scheduleOnce!(delay, () => {
+			this.semanticTimer = null;
 			this.semanticUpdateScheduled = false;
 			const pending = this.pendingSemantic;
 			if (!pending) {
 				return;
 			}
 			if (this.semanticDueAtMs !== null) {
-				const now = this.clockNow();
-				if (now < this.semanticDueAtMs) {
+				const current = this.clockNow();
+				if (current < this.semanticDueAtMs) {
 					this.scheduleSemanticUpdate();
 					return;
 				}
+				this.semanticDueAtMs = null;
 			}
-			this.semanticDueAtMs = null;
 			this.dispatchSemanticUpdate(pending, 'background');
 		});
 	}
@@ -119,12 +137,19 @@ export class ConsoleCodeLayout {
 		this.semanticModel = null;
 		this.semanticVersion = -1;
 		this.semanticChunkName = null;
-		this.pendingSemantic = null;
-		this.inFlightSemantic = null;
-		this.semanticDueAtMs = null;
-		this.semanticUpdateScheduled = false;
-		this.annotationRowSig = null;
+	this.pendingSemantic = null;
+	this.inFlightSemantic = null;
+	this.semanticDueAtMs = null;
+	this.semanticUpdateScheduled = false;
+	if (this.semanticTimer) {
+		this.semanticTimer.cancel();
+		this.semanticTimer = null;
 	}
+	this.annotationRowSig = null;
+	this.lastHotRowRange = null;
+	this.lastHotGuardRows = 0;
+	this.rowVisualLineCounts = [];
+}
 
 	public requestSemanticUpdate(lines: readonly string[], documentVersion: number, chunkName: string): void {
 		this.ensureSemanticModel(lines, documentVersion, chunkName, 'background');
@@ -223,8 +248,21 @@ export class ConsoleCodeLayout {
 	}
 
 	public ensureVisualLines(context: VisualLinesContext): number {
+		const visibleRows = Math.max(1, context.estimatedVisibleRowCount ?? this.lastViewportRowEstimate);
+		this.lastViewportRowEstimate = visibleRows;
+		if (!this.visualLinesDirty && !this.viewportWithinHotWindow(context, visibleRows)) {
+			this.visualLinesDirty = true;
+		}
 		if (this.visualLinesDirty) {
-			this.rebuildVisualLines(context.lines, context.wordWrapEnabled, context.computeWrapWidth(), context.documentVersion, context.chunkName);
+			this.rebuildVisualLines(
+				context.lines,
+				context.wordWrapEnabled,
+				context.computeWrapWidth(),
+				context.documentVersion,
+				context.chunkName,
+				context.scrollRow,
+				visibleRows,
+			);
 			this.visualLinesDirty = false;
 		}
 		return this.clampScrollRow(context.scrollRow);
@@ -284,7 +322,15 @@ export class ConsoleCodeLayout {
 		return clamp(scrollRow, 0, maxScrollRow);
 	}
 
-	private rebuildVisualLines(lines: readonly string[], wordWrapEnabled: boolean, wrapWidth: number, documentVersion: number, chunkName: string): void {
+	private rebuildVisualLines(
+		lines: readonly string[],
+		wordWrapEnabled: boolean,
+		wrapWidth: number,
+		documentVersion: number,
+		chunkName: string,
+		scrollRow: number,
+		visibleRowEstimate: number,
+	): void {
 		const lineCount = lines.length;
 		if (lineCount === 0) {
 			this.visualLines = [{
@@ -293,37 +339,90 @@ export class ConsoleCodeLayout {
 				endColumn: 0,
 			}];
 			this.rowToFirstVisualLine = [0];
+			this.rowVisualLineCounts = [1];
+			this.lastHotRowRange = null;
+			this.lastHotGuardRows = 0;
 			return;
 		}
+		const needsFullRebuild = this.visualLines.length === 0
+			|| this.rowToFirstVisualLine.length !== lineCount
+			|| this.rowVisualLineCounts.length !== lineCount;
+		if (needsFullRebuild) {
+			this.rebuildAllVisualLines(lines, wordWrapEnabled, wrapWidth, documentVersion, chunkName);
+			this.lastHotRowRange = { start: 0, end: lineCount - 1 };
+			this.lastHotGuardRows = Math.max(8, Math.floor(visibleRowEstimate / 2));
+			return;
+		}
+		const hotRows = this.computeHotRowWindow(lineCount, scrollRow, visibleRowEstimate);
+		this.rebuildRowRange(lines, wordWrapEnabled, wrapWidth, documentVersion, chunkName, hotRows.start, hotRows.end);
+		this.lastHotRowRange = hotRows;
+		this.lastHotGuardRows = Math.max(8, Math.floor(visibleRowEstimate / 2));
+	}
+
+	private rebuildAllVisualLines(
+		lines: readonly string[],
+		wordWrapEnabled: boolean,
+		wrapWidth: number,
+		documentVersion: number,
+		chunkName: string,
+	): void {
+		const lineCount = lines.length;
 		const segments: VisualLineSegment[] = [];
 		const rowIndexLookup: number[] = new Array(lineCount).fill(-1);
+		const counts: number[] = new Array(lineCount).fill(0);
 		const effectiveWrapWidth = wordWrapEnabled ? wrapWidth : Number.POSITIVE_INFINITY;
+		const approxWrapColumns = !wordWrapEnabled || wrapWidth === Number.POSITIVE_INFINITY
+			? Number.POSITIVE_INFINITY
+			: Math.max(1, Math.floor(wrapWidth / Math.max(1, this.averageCharAdvance)));
 		for (let row = 0; row < lineCount; row += 1) {
+			rowIndexLookup[row] = segments.length;
 			const line = lines[row];
 			const entry = this.getCachedHighlight(lines, row, documentVersion, chunkName);
-			const lineLength = line.length;
-			if (rowIndexLookup[row] === -1) {
-				rowIndexLookup[row] = segments.length;
-			}
-			if (lineLength === 0) {
-				segments.push({ row, startColumn: 0, endColumn: 0 });
-				continue;
-			}
-			let column = 0;
-			while (column < lineLength) {
-				const nextBreak = wordWrapEnabled
-					? this.findWrapBreak(line, entry, column, effectiveWrapWidth)
-					: lineLength;
-				const endColumn = Math.max(column + 1, Math.min(lineLength, nextBreak));
-				segments.push({ row, startColumn: column, endColumn });
-				column = endColumn;
-			}
+			const rowSegments = this.buildSegmentsForRow(line, row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
+			segments.push(...rowSegments);
+			counts[row] = rowSegments.length;
 		}
 		if (segments.length === 0) {
 			segments.push({ row: 0, startColumn: 0, endColumn: 0 });
 		}
 		this.visualLines = segments;
 		this.rowToFirstVisualLine = rowIndexLookup;
+		this.rowVisualLineCounts = counts;
+	}
+
+	private rebuildRowRange(
+		lines: readonly string[],
+		wordWrapEnabled: boolean,
+		wrapWidth: number,
+		documentVersion: number,
+		chunkName: string,
+		startRow: number,
+		endRow: number,
+	): void {
+		if (startRow > endRow) {
+			return;
+		}
+		const lineCount = lines.length;
+		const effectiveWrapWidth = wordWrapEnabled ? wrapWidth : Number.POSITIVE_INFINITY;
+		const approxWrapColumns = !wordWrapEnabled || wrapWidth === Number.POSITIVE_INFINITY
+			? Number.POSITIVE_INFINITY
+			: Math.max(1, Math.floor(wrapWidth / Math.max(1, this.averageCharAdvance)));
+		for (let row = startRow; row <= endRow; row += 1) {
+			const startIndex = this.rowToFirstVisualLine[row];
+			const oldCount = this.rowVisualLineCounts[row] ?? 0;
+			const entry = this.getCachedHighlight(lines, row, documentVersion, chunkName);
+			const rowSegments = this.buildSegmentsForRow(lines[row], row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
+			this.visualLines.splice(startIndex, oldCount, ...rowSegments);
+			const newCount = rowSegments.length;
+			this.rowVisualLineCounts[row] = newCount;
+			this.rowToFirstVisualLine[row] = startIndex;
+			const delta = newCount - oldCount;
+			if (delta !== 0) {
+				for (let adjust = row + 1; adjust < lineCount; adjust += 1) {
+					this.rowToFirstVisualLine[adjust] = (this.rowToFirstVisualLine[adjust] ?? 0) + delta;
+				}
+			}
+		}
 	}
 
 	private findWrapBreak(line: string, entry: CachedHighlight, startColumn: number, wrapWidth: number): number {
@@ -364,6 +463,39 @@ export class ConsoleCodeLayout {
 		return this.measureRangeFast(entry, startDisplay, endDisplay);
 	}
 
+	private findApproximateWrapBreak(lineLength: number, startColumn: number, approxColumns: number): number {
+		if (approxColumns === Number.POSITIVE_INFINITY) {
+			return lineLength;
+		}
+		return Math.min(lineLength, startColumn + approxColumns);
+	}
+
+	private buildSegmentsForRow(
+		line: string,
+		row: number,
+		entry: CachedHighlight | null,
+		wordWrapEnabled: boolean,
+		effectiveWrapWidth: number,
+		approxWrapColumns: number,
+	): VisualLineSegment[] {
+		if (!line || line.length === 0) {
+			return [{ row, startColumn: 0, endColumn: 0 }];
+		}
+		const segments: VisualLineSegment[] = [];
+		const length = line.length;
+		let column = 0;
+		while (column < length) {
+			const nextBreak = wordWrapEnabled
+				? (entry ? this.findWrapBreak(line, entry, column, effectiveWrapWidth)
+					: this.findApproximateWrapBreak(length, column, approxWrapColumns))
+				: length;
+			const endColumn = Math.max(column + 1, Math.min(length, nextBreak));
+			segments.push({ row, startColumn: column, endColumn });
+			column = endColumn;
+		}
+		return segments;
+	}
+
 	public getSemanticModel(lines: readonly string[], documentVersion: number, chunkName: string): LuaSemanticModel | null {
 		this.ensureSemanticModel(lines, documentVersion, chunkName, 'force');
 		return this.semanticModel;
@@ -378,29 +510,43 @@ export class ConsoleCodeLayout {
 		if (this.semanticModel && this.semanticVersion === version && this.semanticChunkName === chunkName) {
 			return;
 		}
-		const pending = this.updatePendingSemantic(lines, version, chunkName);
-		if (mode === 'force') {
-			this.semanticDueAtMs = null;
-			this.semanticUpdateScheduled = false;
-			this.dispatchSemanticUpdate(pending, 'force');
-			return;
+	const pending = this.updatePendingSemantic(lines, version, chunkName);
+	if (mode === 'force') {
+		this.semanticDueAtMs = null;
+		if (this.semanticTimer) {
+			this.semanticTimer.cancel();
+			this.semanticTimer = null;
 		}
-		if (this.semanticDebounceMs === 0 || this.scheduleTask === null) {
-			this.semanticDueAtMs = null;
-			this.dispatchSemanticUpdate(pending, 'background');
-			return;
-		}
-		const now = this.clockNow();
-		if (this.semanticDueAtMs !== null && now >= this.semanticDueAtMs) {
-			this.semanticDueAtMs = null;
-			this.dispatchSemanticUpdate(pending, 'background');
-			return;
-		}
-		if (this.semanticDueAtMs === null) {
-			this.semanticDueAtMs = now + this.semanticDebounceMs;
-		}
-		this.scheduleSemanticUpdate();
+		this.semanticUpdateScheduled = false;
+		this.dispatchSemanticUpdate(pending, 'force');
+		return;
 	}
+	if (this.semanticDebounceMs === 0) {
+		this.semanticDueAtMs = null;
+		if (this.semanticTimer) {
+			this.semanticTimer.cancel();
+			this.semanticTimer = null;
+		}
+		this.semanticUpdateScheduled = false;
+		this.dispatchSemanticUpdate(pending, 'background');
+		return;
+	}
+	const now = this.clockNow();
+	if (this.semanticDueAtMs === null || this.semanticDueAtMs < now + this.semanticDebounceMs) {
+		this.semanticDueAtMs = now + this.semanticDebounceMs;
+	}
+	if (this.semanticDueAtMs <= now) {
+		this.semanticDueAtMs = null;
+		if (this.semanticTimer) {
+			this.semanticTimer.cancel();
+			this.semanticTimer = null;
+		}
+		this.semanticUpdateScheduled = false;
+		this.dispatchSemanticUpdate(pending, 'background');
+		return;
+	}
+	this.scheduleSemanticUpdate();
+}
 
 	private updatePendingSemantic(
 		lines: readonly string[],
@@ -474,6 +620,8 @@ export class ConsoleCodeLayout {
 		this.semanticDueAtMs = null;
 		this.pendingSemantic = null;
 		this.updateAnnotationSignatures(annotations);
+		this.highlightCache.clear();
+		this.markVisualLinesDirty();
 	}
 
 	private updateAnnotationSignatures(annotations: SemanticAnnotations | null): void {
@@ -584,5 +732,53 @@ export class ConsoleCodeLayout {
 		} catch {
 			return null;
 		}
+	}
+
+	private computeHotRowWindow(lineCount: number, scrollRow: number, visibleRows: number): { start: number; end: number } {
+		if (lineCount === 0) {
+			return { start: 0, end: -1 };
+		}
+		let startRow = 0;
+		let endRow = lineCount - 1;
+		const totalVisual = this.visualLines.length;
+		if (totalVisual > 0) {
+			const startSegment = this.visualIndexToSegment(clamp(scrollRow, 0, totalVisual - 1));
+			const endSegment = this.visualIndexToSegment(clamp(scrollRow + Math.max(1, visibleRows), 0, totalVisual - 1));
+			if (startSegment) {
+				startRow = startSegment.row;
+			}
+			if (endSegment) {
+				endRow = endSegment.row;
+			}
+		}
+		const margin = Math.max(this.viewportRowMargin, visibleRows * 2);
+		startRow = clamp(startRow - margin, 0, lineCount - 1);
+		endRow = clamp(endRow + margin, 0, lineCount - 1);
+		return { start: startRow, end: endRow };
+	}
+
+	private viewportWithinHotWindow(context: VisualLinesContext, visibleRows: number): boolean {
+		const hot = this.lastHotRowRange;
+		if (!hot || this.visualLines.length === 0) {
+			return false;
+		}
+		const startSegment = this.visualLines[clamp(context.scrollRow, 0, this.visualLines.length - 1)];
+		if (!startSegment) {
+			return false;
+		}
+		const endVisual = clamp(context.scrollRow + Math.max(1, visibleRows) - 1, 0, this.visualLines.length - 1);
+		const endSegment = this.visualLines[endVisual] ?? startSegment;
+		const viewportStartRow = Math.min(startSegment.row, endSegment.row);
+		const viewportEndRow = Math.max(startSegment.row, endSegment.row);
+		const guard = this.lastHotGuardRows;
+		const guardedStart = Math.max(0, hot.start + guard);
+		if (viewportStartRow < guardedStart) {
+			return false;
+		}
+		const guardedEnd = Math.max(guardedStart, hot.end - guard);
+		if (viewportEndRow > guardedEnd) {
+			return false;
+		}
+		return true;
 	}
 }

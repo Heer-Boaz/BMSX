@@ -59,7 +59,6 @@ export interface CompletionHost {
     charAt(row: number, column: number): string;
     getTextVersion(): number;
     shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean;
-    scheduleTask(task: () => void): void;
 }
 
 const keywordCompletions = getKeywordCompletions();
@@ -77,6 +76,8 @@ export class CompletionController {
     private completionSession: CompletionSession | null = null;
     private readonly localCompletionCache: Map<string, LocalCompletionCacheEntry> = new Map();
     private cachedGlobalCompletionItems: LuaCompletionItem[] | null = null;
+    private sharedCompletionItems: LuaCompletionItem[] | null = null;
+    private sharedCompletionMap: Map<string, LuaCompletionItem> | null = null;
     private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } | null = null;
     private suppressNextAutoCompletion = false;
     private parameterHint: ParameterHintState | null = null;
@@ -176,6 +177,8 @@ export class CompletionController {
         // Invalidate caches upon edit
         this.invalidateLocalCompletionCacheForActiveContext();
         this.cachedGlobalCompletionItems = null;
+        this.sharedCompletionItems = null;
+        this.sharedCompletionMap = null;
         if (this.suppressNextAutoCompletion) {
             this.suppressNextAutoCompletion = false;
             this.cancelPendingCompletion();
@@ -441,43 +444,69 @@ export class CompletionController {
         return { kind: 'global', prefix, row, replaceFromColumn, replaceToColumn };
     }
 
-    private collectCompletionItems(context: CompletionContext): LuaCompletionItem[] {
-        if (context.kind === 'member') {
-            if (context.objectName.toLowerCase() === 'api') {
-                return apiCompletionData.items.slice();
-            }
-            if (this.host.getMemberCompletionItems) {
-                const activeContext = this.host.getActiveCodeTabContext();
-                const assetId = this.host.resolveHoverAssetId(activeContext);
-                const chunkName = this.host.resolveHoverChunkName(activeContext);
-                const items = this.host.getMemberCompletionItems({
-                    objectName: context.objectName,
-                    operator: context.operator,
-                    prefix: context.prefix,
-                    assetId,
-                    chunkName,
-                });
-                if (items && items.length > 0) {
-                    return items.slice();
-                }
-            }
-            return [];
-        }
-        const registry = new Map<string, LuaCompletionItem>();
-        const register = (item: LuaCompletionItem): void => {
-            if (!registry.has(item.sortKey)) registry.set(item.sortKey, item);
-        };
-        for (let i = 0; i < keywordCompletions.length; i += 1) register(keywordCompletions[i]);
-        const localItems = this.getLocalCompletionItems(context);
-        for (let i = 0; i < localItems.length; i += 1) register(localItems[i]);
-        const globalItems = this.getGlobalCompletionItems();
-        for (let i = 0; i < globalItems.length; i += 1) register(globalItems[i]);
-        const builtinItems = this.getBuiltinCompletionItems();
-        for (let i = 0; i < builtinItems.length; i += 1) register(builtinItems[i]);
-        const combined = Array.from(registry.values());
-        combined.sort((a, b) => a.label.localeCompare(b.label));
-        return combined;
-    }
+	private getSharedCompletionEntries(): { list: LuaCompletionItem[]; map: Map<string, LuaCompletionItem> } {
+		if (!this.sharedCompletionItems || !this.sharedCompletionMap) {
+			const map = new Map<string, LuaCompletionItem>();
+			const register = (item: LuaCompletionItem): void => {
+				if (!map.has(item.sortKey)) {
+					map.set(item.sortKey, item);
+				}
+			};
+			for (let i = 0; i < keywordCompletions.length; i += 1) {
+				register(keywordCompletions[i]);
+			}
+			const globalItems = this.getGlobalCompletionItems();
+			for (let i = 0; i < globalItems.length; i += 1) {
+				register(globalItems[i]);
+			}
+			const builtinItems = this.getBuiltinCompletionItems();
+			for (let i = 0; i < builtinItems.length; i += 1) {
+				register(builtinItems[i]);
+			}
+			const sharedList = Array.from(map.values());
+			sharedList.sort((a, b) => a.label.localeCompare(b.label));
+			this.sharedCompletionItems = sharedList;
+			this.sharedCompletionMap = map;
+		}
+		return { list: this.sharedCompletionItems!, map: this.sharedCompletionMap! };
+	}
+
+	private collectCompletionItems(context: CompletionContext): LuaCompletionItem[] {
+		if (context.kind === 'member') {
+			if (context.objectName.toLowerCase() === 'api') {
+				return apiCompletionData.items.slice();
+			}
+			if (this.host.getMemberCompletionItems) {
+				const activeContext = this.host.getActiveCodeTabContext();
+				const assetId = this.host.resolveHoverAssetId(activeContext);
+				const chunkName = this.host.resolveHoverChunkName(activeContext);
+				const items = this.host.getMemberCompletionItems({
+					objectName: context.objectName,
+					operator: context.operator,
+					prefix: context.prefix,
+					assetId,
+					chunkName,
+				});
+				if (items && items.length > 0) {
+					return items.slice();
+				}
+			}
+			return [];
+		}
+		const shared = this.getSharedCompletionEntries();
+		const localItems = this.getLocalCompletionItems(context);
+		if (localItems.length === 0) {
+			return shared.list;
+		}
+		const combined = shared.list.slice();
+		for (let i = 0; i < localItems.length; i += 1) {
+			const item = localItems[i];
+			if (!shared.map.has(item.sortKey)) {
+				combined.push(item);
+			}
+		}
+		return combined;
+	}
 
     private getLocalCompletionItems(context: CompletionContext): LuaCompletionItem[] {
         const key = this.activeCompletionCacheKey();
@@ -717,6 +746,8 @@ export class CompletionController {
         if (!Array.isArray(descriptors)) descriptors = [];
         this.builtinDescriptors = descriptors;
         this.builtinDescriptorMap.clear();
+        this.sharedCompletionItems = null;
+        this.sharedCompletionMap = null;
         const registerDescriptor = (descriptor: ConsoleLuaBuiltinDescriptor): void => {
             if (!descriptor || typeof descriptor.name !== 'string') return;
             const normalized = descriptor.name.trim();
@@ -800,6 +831,7 @@ export class CompletionController {
 					anchorRow: this.host.getCursorRow(),
 					anchorColumn: this.host.getCursorColumn(),
 					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
+					filterCache: new Map(),
 				};
 				break;
 			case 'global':
@@ -812,6 +844,7 @@ export class CompletionController {
 					anchorRow: this.host.getCursorRow(),
 					anchorColumn: this.host.getCursorColumn(),
 					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
+					filterCache: new Map(),
 				};
 				break;
 			case 'local':
@@ -824,6 +857,7 @@ export class CompletionController {
 					anchorRow: this.host.getCursorRow(),
 					anchorColumn: this.host.getCursorColumn(),
 					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
+					filterCache: new Map(),
 				};
 				break;
 		}
@@ -832,10 +866,10 @@ export class CompletionController {
     }
 
     private refreshCompletionSessionFromContext(context: CompletionContext): void {
-        const session = this.completionSession;
-        if (!session) return;
-        const items = this.collectCompletionItems(context);
-        if (items.length === 0) { this.closeSession(); return; }
+		const session = this.completionSession;
+		if (!session) return;
+		const items = this.collectCompletionItems(context);
+		if (items.length === 0) { this.closeSession(); return; }
 		switch (context.kind) {
 			case 'member':
 				session.context = { kind: 'member', objectName: context.objectName, operator: context.operator, prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn };
@@ -847,26 +881,32 @@ export class CompletionController {
 				session.context = { kind: 'local', prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn };
 				break;
 		}
-        session.items = items;
-        session.anchorRow = this.host.getCursorRow();
-        session.anchorColumn = this.host.getCursorColumn();
-        this.applyCompletionFilter(session);
-    }
+		session.items = items;
+		session.filterCache.clear();
+		session.anchorRow = this.host.getCursorRow();
+		session.anchorColumn = this.host.getCursorColumn();
+		this.applyCompletionFilter(session);
+	}
 
-    private applyCompletionFilter(session: CompletionSession): void {
-        const prefix = session.context.prefix;
-        const filtered = this.filterCompletionItems(session.items, prefix);
-        if (filtered.length === 0) {
-            session.filteredItems = [];
-            session.selectionIndex = -1;
-            session.displayOffset = 0;
-            this.closeSession();
-            return;
-        }
-        session.filteredItems = filtered;
-        if (session.selectionIndex < 0 || session.selectionIndex >= session.filteredItems.length) session.selectionIndex = 0;
-        this.ensureCompletionSelectionVisible(session);
-    }
+	private applyCompletionFilter(session: CompletionSession): void {
+		const prefix = session.context.prefix;
+		const cacheKey = prefix.toLowerCase();
+		let filtered = session.filterCache.get(cacheKey) ?? null;
+		if (!filtered) {
+			filtered = this.filterCompletionItems(session.items, prefix);
+			session.filterCache.set(cacheKey, filtered);
+		}
+		if (filtered.length === 0) {
+			session.filteredItems = [];
+			session.selectionIndex = -1;
+			session.displayOffset = 0;
+			this.closeSession();
+			return;
+		}
+		session.filteredItems = filtered;
+		if (session.selectionIndex < 0 || session.selectionIndex >= session.filteredItems.length) session.selectionIndex = 0;
+		this.ensureCompletionSelectionVisible(session);
+	}
 
     private filterCompletionItems(items: LuaCompletionItem[], prefix: string): LuaCompletionItem[] {
         const lower = prefix.toLowerCase();

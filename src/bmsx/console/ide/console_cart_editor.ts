@@ -106,6 +106,7 @@ import type {
 	LuaCompletionItem,
 } from './types';
 import type { RectBounds } from '../../rompack/rompack.ts';
+import type { TimerHandle } from '../../platform/platform';
 import { ReferenceState, resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation.ts';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
@@ -143,6 +144,18 @@ type DiagnosticsCacheEntry = {
 	contextId: string;
 	chunkName: string | null;
 	diagnostics: EditorDiagnostic[];
+};
+
+type BackgroundTask = () => boolean;
+
+type SearchComputationJob = {
+	query: string;
+	version: number;
+	nextRow: number;
+	matches: SearchMatch[];
+	firstMatchAfterCursor: number;
+	cursorRow: number;
+	cursorColumn: number;
 };
 
 const EDITOR_TOGGLE_KEY = 'Escape';
@@ -311,9 +324,13 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private resourceSearchHoverIndex = -1;
 	private searchMatches: SearchMatch[] = [];
 	private searchCurrentIndex = -1;
+	private searchJob: SearchComputationJob | null = null;
+	private readonly backgroundTasks: Array<() => boolean> = [];
+	private backgroundTaskHandle: TimerHandle | null = null;
+	private readonly backgroundTaskBudgetMs = 2.0;
+	private diagnosticsTaskPending = false;
 	private readonly referenceState: ReferenceState = new ReferenceState();
 	private textVersion = 0;
-	private lastSearchVersion = 0;
 	private saveGeneration = 0;
 	private appliedGeneration = 0;
 	private lastSavedSource = '';
@@ -366,7 +383,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.viewportHeight = options.viewport.height;
 		this.font = new ConsoleEditorFont(this.fontVariant);
 		this.tabDirtyMarkerAssetId = getConsoleFontPreset(this.fontVariant).tabDirtyMarkerAssetId;
-		this.clockNow = this.resolveClockNow();
+		this.clockNow = $.platform.clock.now;
 		this.searchField = createInlineTextField();
 		this.symbolSearchField = createInlineTextField();
 		this.resourceSearchField = createInlineTextField();
@@ -382,7 +399,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.spaceAdvance = this.font.advance(' ');
 		this.layout = new ConsoleCodeLayout(this.font, this.semanticWorkspace, {
 			clockNow: this.clockNow,
-			scheduleTask: (fn) => this.scheduleNextFrame(fn),
 		});
 		this.inlineFieldMetricsRef = {
 			measureText: (text: string) => this.measureText(text),
@@ -451,7 +467,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			charAt: (r, c) => this.charAt(r, c),
 			getTextVersion: () => this.textVersion,
 			shouldFireRepeat: (kb, code, dt) => this.input.shouldRepeatPublic(kb, code, dt),
-			scheduleTask: (fn) => this.scheduleNextFrame(fn),
 		});
 		this.completion.setEnterCommitsEnabled(false);
 		// Initialize input controller
@@ -530,28 +545,44 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	this.applyResolutionModeToRuntime();
 	}
 
-	private resolveClockNow(): () => number {
-		try {
-			const globalScope = $ as { platform?: { clock?: { now(): number } } };
-			if (globalScope && globalScope.platform && globalScope.platform.clock && typeof globalScope.platform.clock.now === 'function') {
-				const clock = globalScope.platform.clock;
-				return () => clock.now();
-			}
-		} catch {
-			// fall through to performance/Date fallback
-		}
-		if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
-			return () => performance.now();
-		}
-		return () => Date.now();
-	}
-
 	private scheduleNextFrame(task: () => void): void {
 		if (typeof queueMicrotask === 'function') {
 			queueMicrotask(task);
 			return;
 		}
 		void Promise.resolve().then(task);
+	}
+
+	private enqueueBackgroundTask(task: BackgroundTask): void {
+		this.backgroundTasks.push(task);
+		if (this.backgroundTaskHandle === null) {
+			this.backgroundTaskHandle = $.platform.clock.scheduleOnce!(0, () => this.runBackgroundTasks());
+		}
+	}
+
+	private runBackgroundTasks(): void {
+		this.backgroundTaskHandle = null;
+		if (this.backgroundTasks.length === 0) {
+			return;
+		}
+		const clock = $.platform.clock;
+		const deadline = clock.now() + this.backgroundTaskBudgetMs;
+		const iterationsLimit = this.backgroundTasks.length * 2;
+		let iterations = 0;
+		while (this.backgroundTasks.length > 0) {
+			const task = this.backgroundTasks.shift()!;
+			const keep = task();
+			if (keep) {
+				this.backgroundTasks.push(task);
+			}
+			iterations += 1;
+			if (clock.now() >= deadline || iterations >= iterationsLimit) {
+				break;
+			}
+		}
+		if (this.backgroundTasks.length > 0 && this.backgroundTaskHandle === null) {
+			this.backgroundTaskHandle = $.platform.clock.scheduleOnce!(0, () => this.runBackgroundTasks());
+		}
 	}
 
 	private drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void {
@@ -1070,12 +1101,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		this.handleEditorInput(keyboard, deltaSeconds);
 		this.completion.processPending(deltaSeconds);
-		if (this.searchQuery.length === 0) {
-			this.lastSearchVersion = this.textVersion;
-		} else if (this.searchActive && this.textVersion !== this.lastSearchVersion) {
-			this.updateSearchMatches();
-			this.lastSearchVersion = this.textVersion;
-		}
 		if (this.diagnosticsDirty) {
 			this.processDiagnosticsQueue(this.clockNow());
 		}
@@ -1124,6 +1149,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.diagnosticsDueAtMs = null;
 			return;
 		}
+		if (this.diagnosticsTaskPending) {
+			return;
+		}
 		const now = this.clockNow();
 		if (this.diagnosticsDueAtMs === null) {
 			this.diagnosticsDueAtMs = now + this.diagnosticsDebounceMs;
@@ -1140,14 +1168,28 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.diagnosticsDueAtMs = null;
 			return;
 		}
-		this.runDiagnosticsForContexts(batch);
-		if (this.dirtyDiagnosticContexts.size === 0) {
-			this.diagnosticsDirty = false;
-			this.diagnosticsDueAtMs = null;
-		} else {
-			this.diagnosticsDueAtMs = now + this.diagnosticsDebounceMs;
-			this.scheduleDiagnosticsComputation();
+		this.enqueueDiagnosticsJob(batch);
+	}
+
+	private enqueueDiagnosticsJob(contextIds: readonly string[]): void {
+		if (contextIds.length === 0) {
+			return;
 		}
+		this.diagnosticsTaskPending = true;
+		const batch = [...contextIds];
+		this.enqueueBackgroundTask(() => {
+			this.runDiagnosticsForContexts(batch);
+			this.diagnosticsTaskPending = false;
+			if (this.dirtyDiagnosticContexts.size === 0) {
+				this.diagnosticsDirty = false;
+				this.diagnosticsDueAtMs = null;
+			} else {
+				const now = this.clockNow();
+				this.diagnosticsDueAtMs = now + this.diagnosticsDebounceMs;
+				this.scheduleDiagnosticsComputation();
+			}
+			return false;
+		});
 	}
 
 	private collectDiagnosticsBatch(): string[] {
@@ -1614,7 +1656,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.message.timer = state.message.timer;
 		this.message.visible = state.message.visible;
 		this.setActiveRuntimeErrorOverlay(null);
-		this.lastSearchVersion = this.textVersion;
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
 		this.clearGotoHoverHighlight();
@@ -1799,14 +1840,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.lineJumpValue = '';
 		this.syncRuntimeErrorOverlayFromContext(this.getActiveCodeTabContext());
 		this.resetActionPromptState();
+		this.cancelSearchJob();
 		if (this.searchQuery.length === 0) {
 			this.searchMatches = [];
 			this.searchCurrentIndex = -1;
 		} else {
-			this.updateSearchMatches();
-			if (this.searchMatches.length > 0) {
-				this.focusSearchResult(this.searchCurrentIndex);
-			}
+			this.startSearchJob();
 		}
 		this.ensureCursorVisible();
 		if (this.message.visible && !Number.isFinite(this.message.timer) && this.deferredMessageDuration !== null) {
@@ -1882,11 +1921,18 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.searchVisible = false;
 		this.lineJumpActive = false;
 		this.lineJumpVisible = false;
-		this.runtimeErrorOverlay = null;
-		this.resetActionPromptState();
-		this.closeCreateResourcePrompt(false);
-		this.hideResourcePanel();
+	this.runtimeErrorOverlay = null;
+	this.resetActionPromptState();
+	this.closeCreateResourcePrompt(false);
+	this.hideResourcePanel();
+	this.cancelSearchJob();
+	this.backgroundTasks.length = 0;
+	if (this.backgroundTaskHandle) {
+		this.backgroundTaskHandle.cancel();
+		this.backgroundTaskHandle = null;
 	}
+	this.diagnosticsTaskPending = false;
+}
 
 	private updateBlink(deltaSeconds: number): void {
 		this.blinkTimer += deltaSeconds;
@@ -2569,11 +2615,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.searchQuery = this.searchField.text;
 		const shouldHide = clearQuery || this.searchQuery.length === 0;
 		this.searchVisible = shouldHide ? false : true;
-		this.searchMatches = [];
-		this.searchCurrentIndex = -1;
-		this.selectionAnchor = null;
-		this.resetBlink();
+	this.searchMatches = [];
+	this.searchCurrentIndex = -1;
+	this.selectionAnchor = null;
+	if (shouldHide) {
+		this.cancelSearchJob();
 	}
+	this.resetBlink();
+}
 
 	private focusEditorFromSearch(): void {
 		if (!this.searchActive && !this.searchVisible) {
@@ -2588,6 +2637,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.selectionAnchor = null;
 		this.searchField.selectionAnchor = null;
 		this.searchField.pointerSelecting = false;
+		this.cancelSearchJob();
 		this.resetBlink();
 	}
 
@@ -3615,51 +3665,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private onSearchQueryChanged(): void {
-		this.updateSearchMatches();
-		if (this.searchMatches.length === 0) {
-			this.selectionAnchor = null;
-			this.searchCurrentIndex = -1;
-			return;
-		}
-		if (this.searchCurrentIndex < 0 || this.searchCurrentIndex >= this.searchMatches.length) {
-			this.searchCurrentIndex = 0;
-		}
-		this.focusSearchResult(this.searchCurrentIndex);
-	}
-
-	private updateSearchMatches(): void {
+	if (this.searchQuery.length === 0) {
+		this.cancelSearchJob();
 		this.searchMatches = [];
 		this.searchCurrentIndex = -1;
-		if (this.searchQuery.length === 0) {
-			this.lastSearchVersion = this.textVersion;
-			return;
-		}
-		const needle = this.searchQuery.toLowerCase();
-		for (let row = 0; row < this.lines.length; row++) {
-			const line = this.lines[row];
-			if (line.length === 0) {
-				continue;
-			}
-			const lower = line.toLowerCase();
-			let start = 0;
-			while (start <= lower.length - needle.length) {
-				const index = lower.indexOf(needle, start);
-				if (index === -1) {
-					break;
-				}
-				this.searchMatches.push({ row, start: index, end: index + needle.length });
-				if (this.searchCurrentIndex === -1) {
-					if (row > this.cursorRow || (row === this.cursorRow && index >= this.cursorColumn)) {
-						this.searchCurrentIndex = this.searchMatches.length - 1;
-					}
-				}
-				start = index + needle.length;
-			}
-		}
-		if (this.searchCurrentIndex === -1 && this.searchMatches.length > 0) {
-			this.searchCurrentIndex = 0;
-		}
-		this.lastSearchVersion = this.textVersion;
+		this.selectionAnchor = null;
+		return;
+	}
+		this.startSearchJob();
 	}
 
 	private focusSearchResult(index: number): void {
@@ -3696,6 +3709,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private jumpToNextMatch(): void {
+		this.ensureSearchJobCompleted();
 		if (this.searchMatches.length === 0) {
 			this.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 			return;
@@ -3712,6 +3726,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private jumpToPreviousMatch(): void {
+		this.ensureSearchJobCompleted();
 		if (this.searchMatches.length === 0) {
 			this.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 			return;
@@ -3725,6 +3740,106 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 		}
 		this.focusSearchResult(this.searchCurrentIndex);
+	}
+
+	private startSearchJob(): void {
+		this.cancelSearchJob();
+		const normalized = this.searchQuery.toLowerCase();
+		const job: SearchComputationJob = {
+			query: normalized,
+			version: this.textVersion,
+			nextRow: 0,
+			matches: [],
+			firstMatchAfterCursor: -1,
+			cursorRow: this.cursorRow,
+			cursorColumn: this.cursorColumn,
+		};
+		this.searchJob = job;
+		this.searchMatches = [];
+		this.searchCurrentIndex = -1;
+		this.selectionAnchor = null;
+		this.enqueueBackgroundTask(() => this.runSearchJobSlice(job));
+	}
+
+	private runSearchJobSlice(job: SearchComputationJob): boolean {
+		if (this.searchJob !== job) {
+			return false;
+		}
+		if (job.query.length === 0 || job.version !== this.textVersion || this.searchQuery.length === 0) {
+			this.searchJob = null;
+			return false;
+		}
+		const rowsPerSlice = 200;
+		let processed = 0;
+		while (job.nextRow < this.lines.length && processed < rowsPerSlice) {
+			const row = job.nextRow;
+			job.nextRow += 1;
+			processed += 1;
+			this.collectSearchMatchesForRow(job, row);
+		}
+		if (job.nextRow >= this.lines.length) {
+			this.completeSearchJob(job);
+			return false;
+		}
+		return true;
+	}
+
+	private collectSearchMatchesForRow(job: SearchComputationJob, row: number): void {
+		const line = this.lines[row];
+		if (!line || line.length === 0) {
+			return;
+		}
+		const lower = line.toLowerCase();
+		const needle = job.query;
+		if (needle.length === 0 || lower.length < needle.length) {
+			return;
+		}
+		let start = 0;
+		while (start <= lower.length - needle.length) {
+			const index = lower.indexOf(needle, start);
+			if (index === -1) {
+				break;
+			}
+			const match: SearchMatch = { row, start: index, end: index + needle.length };
+			job.matches.push(match);
+			const matchIndex = job.matches.length - 1;
+			if (job.firstMatchAfterCursor === -1) {
+				if (row > job.cursorRow || (row === job.cursorRow && index >= job.cursorColumn)) {
+					job.firstMatchAfterCursor = matchIndex;
+				}
+			}
+			start = index + needle.length;
+		}
+	}
+
+	private completeSearchJob(job: SearchComputationJob): void {
+		if (this.searchJob !== job) {
+			return;
+		}
+		this.searchJob = null;
+		this.searchMatches = job.matches;
+		if (job.matches.length === 0) {
+			this.searchCurrentIndex = -1;
+			this.selectionAnchor = null;
+		} else {
+			const index = job.firstMatchAfterCursor >= 0 ? job.firstMatchAfterCursor : 0;
+			this.searchCurrentIndex = clamp(index, 0, job.matches.length - 1);
+			this.focusSearchResult(this.searchCurrentIndex);
+		}
+	}
+
+	private cancelSearchJob(): void {
+		this.searchJob = null;
+	}
+
+	private ensureSearchJobCompleted(): void {
+		const job = this.searchJob;
+		if (!job) {
+			return;
+		}
+		while (this.searchJob === job && this.runSearchJobSlice(job)) {
+			// Continue processing synchronously until the job completes.
+		}
 	}
 
 	private showReferenceStatusMessage(): void {
@@ -8211,6 +8326,9 @@ protected markDiagnosticsDirty(contextId?: string): void {
 		const chunkName = this.resolveHoverChunkName(activeContext) ?? '<console>';
 		this.layout.requestSemanticUpdate(this.lines, this.textVersion, chunkName);
 		this.handlePostEditMutation();
+		if (this.searchQuery.length > 0) {
+			this.startSearchJob();
+		}
 	}
 
 	protected recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
@@ -8252,6 +8370,7 @@ private handleCompletionKeybindings(
 			documentVersion: this.textVersion,
 			chunkName,
 			computeWrapWidth: () => this.computeWrapWidth(),
+			estimatedVisibleRowCount: Math.max(1, this.cachedVisibleRowCount),
 		});
 		if (this.scrollRow < 0) {
 			this.scrollRow = 0;

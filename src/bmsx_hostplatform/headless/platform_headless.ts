@@ -34,6 +34,22 @@ class HeadlessClock implements Clock {
 		const base = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
 		return base - this.origin;
 	}
+	scheduleOnce(delayMs: number, cb: (t: MonoTime) => void) {
+		let active = true;
+		const id = setTimeout(() => {
+			if (!active) return;
+			active = false;
+			try { cb(this.now()); } catch { /* swallow callback errors */ }
+		}, Math.max(0, Math.floor(delayMs)));
+		return {
+			cancel: () => {
+				if (!active) return;
+				active = false;
+				clearTimeout(id as unknown as number);
+			},
+			isActive: () => active,
+		};
+	}
 }
 
 class HeadlessFrameLoop implements FrameLoop {
