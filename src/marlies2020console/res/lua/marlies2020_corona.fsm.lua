@@ -21,10 +21,10 @@ return {
 				{ frame = 2, event = 'corona.behavior.choose_direction' },
 			},
 			entering_state = function(object, state)
-				object:getcomponentbyid('corona_sprite').imgid = state.current_tape_value or CORONA_FRAMES[1]
+				object:getComponentById('corona_sprite').imgid = state.current_tape_value or CORONA_FRAMES[1]
 			end,
 			tape_next = function(object, state)
-				object:getcomponentbyid('corona_sprite').imgid = state.current_tape_value
+				object:getComponentById('corona_sprite').imgid = state.current_tape_value
 			end,
 			on = {
 				dispel = '../despawn',

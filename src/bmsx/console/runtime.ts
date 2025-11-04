@@ -357,11 +357,28 @@ export class BmsxConsoleRuntime extends Service {
 		super({ id: 'bmsx_console_runtime' });
 		BmsxConsoleRuntime._instance = this;
 		const rompack = $.rompack;
-		this.caseInsensitiveLua = options.caseInsensitiveLua ?? (rompack?.caseInsensitiveLua ?? true);
-		setLuaTableCaseInsensitiveKeys(this.caseInsensitiveLua);
-		setEditorCaseInsensitivity(this.caseInsensitiveLua);
-		this.enableEvents();
-		const policyOverride = options.luaSourceFailurePolicy ?? {};
+	this.caseInsensitiveLua = options.caseInsensitiveLua ?? (rompack?.caseInsensitiveLua ?? true);
+	setLuaTableCaseInsensitiveKeys(this.caseInsensitiveLua);
+	setEditorCaseInsensitivity(this.caseInsensitiveLua);
+	this.enableEvents();
+	const clock = $.platform.clock;
+	clock.scheduleOnce = (delayMs, cb) => {
+		let active = true;
+		const handle = setTimeout(() => {
+			if (!active) return;
+			active = false;
+			cb(clock.now());
+		}, Math.max(0, Math.floor(delayMs)));
+		return {
+			cancel: () => {
+				if (!active) return;
+				active = false;
+				clearTimeout(handle);
+			},
+			isActive: () => active,
+		};
+	};
+	const policyOverride = options.luaSourceFailurePolicy ?? {};
 		this.luaFailurePolicy = { ...DEFAULT_LUA_FAILURE_POLICY, ...policyOverride };
 		this.presentationFrameHandler = this.handlePresentationFrame.bind(this);
 		this.cart = options.cart;
@@ -3951,7 +3968,9 @@ export class BmsxConsoleRuntime extends Service {
 	this.worldObjectDefinitionsByClassRef.set(normalizedClassRef, record);
 
 	Reviver.constructors[objectId] = record.constructor as unknown as new () => unknown;
+	Reviver.constructors[normalizedClassRef] = record.constructor as unknown as new () => unknown;
 		(globalThis as Record<string, unknown>)[objectId] = record.constructor;
+		(globalThis as Record<string, unknown>)[normalizedClassRef] = record.constructor;
 
 		return objectId;
 	}
@@ -4158,8 +4177,10 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 
-		this.attachWorldObjectFsms(host, options.fsms);
+		// Attach behavior trees before FSMs so FSM "entering_state" or
+		// immediate events can safely tick BT contexts on first frame.
 		this.attachWorldObjectBehaviorTrees(host, options.behaviorTrees);
+		this.attachWorldObjectFsms(host, options.fsms);
 		this.attachWorldObjectAbilities(host, options.abilities);
 	}
 
@@ -4651,12 +4672,16 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private exposeEngineObjects(env: LuaEnvironment, interpreter: LuaInterpreter): void {
+		const rompackView = this.buildLuaRompackView();
 		const entries: Array<[string, unknown]> = [
 			['world', $.world],
 			['game', $],
 			['registry', $.registry],
 			['events', $.event_emitter],
 		];
+		if (rompackView) {
+			entries.push(['rompack', rompackView]);
+		}
 		for (const [name, object] of entries) {
 			if (object === undefined || object === null) {
 				continue;
@@ -4664,6 +4689,98 @@ export class BmsxConsoleRuntime extends Service {
 			const luaValue = this.jsToLua(object, interpreter);
 			this.registerLuaGlobal(env, name, luaValue);
 		}
+	}
+
+	private buildLuaRompackView(): Record<string, unknown> | null {
+		const rompack = $.rompack;
+		if (!rompack) {
+			return null;
+		}
+		return {
+			img: this.serializeRomAssetMap(rompack.img),
+			audio: this.serializeRomAssetMap(rompack.audio),
+			model: this.serializeRomAssetMap(rompack.model),
+			data: this.cloneRompackDataMap(rompack.data),
+			fsm: rompack.fsm ? deepClone(rompack.fsm) : {},
+			audioevents: rompack.audioevents ? deepClone(rompack.audioevents) : {},
+			lua: rompack.lua ? { ...rompack.lua } : {},
+			luaSourcePaths: rompack.luaSourcePaths ? { ...rompack.luaSourcePaths } : {},
+			resourcePaths: Array.isArray(rompack.resourcePaths)
+				? rompack.resourcePaths.map(entry => ({ path: entry.path, type: entry.type, assetId: entry.assetId }))
+				: [],
+			code: rompack.code,
+			caseInsensitiveLua: rompack.caseInsensitiveLua ?? null,
+		};
+	}
+
+	private serializeRomAssetMap(source: Record<string, any> | undefined): Record<string, unknown> {
+		const result: Record<string, unknown> = {};
+		if (!source) {
+			return result;
+		}
+		for (const [id, asset] of Object.entries(source)) {
+			if (!asset) {
+				continue;
+			}
+			result[id] = this.extractRomAssetFields(asset);
+		}
+		return result;
+	}
+
+	private extractRomAssetFields(source: Record<string, any>): Record<string, unknown> {
+		const entry: Record<string, unknown> = {};
+		for (const key of Object.getOwnPropertyNames(source)) {
+			switch (key) {
+				case 'buffer':
+				case 'texture_buffer':
+				case '_imgbin':
+				case '_imgbinYFlipped':
+				case 'imgbin':
+				case 'imgbinYFlipped':
+					continue;
+			}
+			const descriptor = Object.getOwnPropertyDescriptor(source, key);
+			if (descriptor && typeof descriptor.get === 'function') {
+				continue;
+			}
+			const value = source[key];
+			if (value === undefined) {
+				continue;
+			}
+			if (value === null || typeof value !== 'object') {
+				entry[key] = value;
+				continue;
+			}
+			entry[key] = deepClone(value as Record<string, unknown>);
+		}
+		return entry;
+	}
+
+	private cloneRompackDataMap(source: Record<string, unknown> | undefined): Record<string, unknown> {
+		const result: Record<string, unknown> = {};
+		if (!source) {
+			return result;
+		}
+		for (const [id, value] of Object.entries(source)) {
+			if (value === undefined) {
+				continue;
+			}
+			if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+				result[id] = value;
+				continue;
+			}
+			if (typeof ArrayBuffer !== 'undefined' && value instanceof ArrayBuffer) {
+				result[id] = { byteLength: value.byteLength };
+				continue;
+			}
+			if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(value as ArrayBufferView)) {
+				const view = value as ArrayBufferView;
+				result[id] = { byteLength: view.byteLength, constructor: view.constructor.name };
+				continue;
+			}
+			result[id] = deepClone(value as Record<string, unknown>);
+		}
+		return result;
 	}
 
 	private ensureInterpreter(interpreter: LuaInterpreter | null): LuaInterpreter {
