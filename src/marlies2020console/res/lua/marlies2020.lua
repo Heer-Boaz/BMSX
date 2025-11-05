@@ -54,6 +54,7 @@ sprites = {
 }
 
 local abilities = require('src/marlies2020console/res/lua/marlies2020_abilities')
+require('src/marlies2020console/res/lua/marlies2020_systems')
 
 local playerAbilityIds = abilities.abilityIds
 local playerInputProgram = abilities.inputProgram
