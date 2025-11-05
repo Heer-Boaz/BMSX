@@ -185,7 +185,6 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public offscreenCanvasSize!: vec2;
 	public textures: { [k: string]: unknown | null } = {};
 	private _dynamicAtlasIndex: number | null = null;
-	private _engineAtlasHandle: TextureHandle | null = null;
 	public pipelineRegistry?: RenderPassLibrary;
 	// Texture binding cache
 	private _activeTexUnit: number | null = null;
@@ -838,21 +837,19 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		}
 		const atlasImage = await atlas._imgbin;
 		this.textures['_atlas'] = this.backend.createTexture(atlasImage, {});
+		const dynamicFallback = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
+		this.textures['_atlas_dynamic'] = dynamicFallback;
+		this.textures['_atlas_dynamic_fallback'] = dynamicFallback;
 		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 		const engineAtlas = GameView.imgassets[engineAtlasName];
-		let secondaryTexture: TextureHandle | null = null;
+		let engineTexture: TextureHandle | null = null;
 		if (engineAtlas) {
 			const engineAtlasImage = await engineAtlas._imgbin;
-			secondaryTexture = this.backend.createTexture(engineAtlasImage, {});
-			this.textures[ENGINE_ATLAS_TEXTURE_KEY] = secondaryTexture;
+			engineTexture = this.backend.createTexture(engineAtlasImage, {});
 		} else {
-			this.textures[ENGINE_ATLAS_TEXTURE_KEY] = null;
+			engineTexture = dynamicFallback;
 		}
-		if (!secondaryTexture) {
-			secondaryTexture = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
-		}
-		this._engineAtlasHandle = secondaryTexture;
-		this.textures['_atlas_dynamic'] = secondaryTexture;
+		this.textures[ENGINE_ATLAS_TEXTURE_KEY] = engineTexture;
 		// Default material textures for meshes
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
 		// Normal map default (0.5,0.5,1.0)
@@ -881,7 +878,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (this._dynamicAtlasIndex === index) return;
 		if (index == null) {
 			this._dynamicAtlasIndex = null;
-			this.textures['_atlas_dynamic'] = this._engineAtlasHandle;
+			const fallback = this.textures['_atlas_dynamic_fallback'] as TextureHandle | null | undefined;
+			this.textures['_atlas_dynamic'] = fallback ?? null;
 			return;
 		}
 		const atlasName = generateAtlasName(index);

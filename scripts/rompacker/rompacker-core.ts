@@ -39,8 +39,6 @@ const yaml = require('js-yaml');
 // @ts-ignore
 const { createHash } = require('crypto');
 
-const ENGINE_ATLAS_INDEX = 254; // Keep in sync with src/bmsx/render/atlas.ts
-
 // Command line parameter for texture atlas usage
 let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 export function setAtlasFlag(enabled: boolean): void {
@@ -830,10 +828,12 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 					}
 					throw new Error(`[RomPacker] Duplicate image resource "${name}" defined by "${existingImage.filepath}" and "${filepath}".`);
 				}
-			// If we are generating and using texture atlases, we need to add the image to the atlas
+			// If we are generating and using texture atlases, we need to add the image to the atlas.
 			if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS && !imgMeta.skipAtlas) {
 				const atlasIndex = imgMeta.targetAtlas ?? defaultAtlasIndex;
-				if (atlasIndex !== undefined) targetAtlasIdSet.add(atlasIndex);
+				if (atlasIndex !== undefined) {
+					targetAtlasIdSet.add(atlasIndex);
+				}
 			}
 			const targetAtlasIndex = imgMeta.skipAtlas ? undefined : (imgMeta.targetAtlas ?? defaultAtlasIndex);
 				result.push({

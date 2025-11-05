@@ -22,7 +22,9 @@ import {
 	RESOLUTION_VECTOR_SIZE,
 	SPRITE_DRAW_OFFSET,
 	TEXCOORD_COMPONENTS,
-	TEXTURE_UNIT_ATLAS, TEXTURE_UNIT_ATLAS_DYNAMIC,
+	TEXTURE_UNIT_ATLAS,
+	TEXTURE_UNIT_ATLAS_DYNAMIC,
+	TEXTURE_UNIT_ATLAS_ENGINE,
 	TEXTURECOORDS_SIZE,
 	VERTEX_BUFFER_OFFSET_MULTIPLIER,
 	VERTICES_PER_SPRITE,
@@ -57,6 +59,7 @@ let atlas_idLocation: number;
 let resolutionLocation: WebGLUniformLocation;
 let texture0Location: WebGLUniformLocation;
 let texture1Location: WebGLUniformLocation;
+let texture2Location: WebGLUniformLocation;
 let spriteAmbientEnabledLocation: WebGLUniformLocation;
 let spriteAmbientFactorLocation: WebGLUniformLocation;
 let vertexBuffer: WebGLBuffer;
@@ -118,6 +121,8 @@ export function setupSpriteShaderLocations(backend: GPUBackend): void {
 	resolutionLocation = gl.getUniformLocation(spriteShaderProgram, 'u_resolution')!;
 	texture0Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture0')!;
 	texture1Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture1')!;
+	texture2Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture2')!;
+texture2Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture2')!;
 	spriteAmbientEnabledLocation = gl.getUniformLocation(spriteShaderProgram, 'u_spriteAmbientEnabled')!;
 	spriteAmbientFactorLocation = gl.getUniformLocation(spriteShaderProgram, 'u_spriteAmbientFactor')!;
 	spriteShaderScaleLocation = gl.getUniformLocation(spriteShaderProgram, 'u_scale');
@@ -131,6 +136,7 @@ export function setupDefaultUniformValues(backend: WebGLBackend, defaultScale: n
 	gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
 	gl.uniform1i(texture0Location, TEXTURE_UNIT_ATLAS);
 	gl.uniform1i(texture1Location, TEXTURE_UNIT_ATLAS_DYNAMIC);
+	gl.uniform1i(texture2Location, TEXTURE_UNIT_ATLAS_ENGINE);
 	gl.uniform1i(spriteAmbientEnabledLocation, 0);
 	gl.uniform1f(spriteAmbientFactorLocation, 1.0);
 }
@@ -190,9 +196,13 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS;
 		context.bind2DTex(state.atlasTex);
 	}
-	if (state.atlasSecondaryTex) {
+	if (state.atlasDynamicTex) {
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS_DYNAMIC;
-		context.bind2DTex(state.atlasSecondaryTex);
+		context.bind2DTex(state.atlasDynamicTex);
+	}
+	if (state.atlasEngineTex) {
+		context.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
+		context.bind2DTex(state.atlasEngineTex);
 	}
 	const q = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 100) / 100;
 	const layerWeight = (layer?: RenderLayer) => {
@@ -367,7 +377,11 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			const vs = shaderModule(spriteVS, { uniforms: ['FrameUniforms'] }, 'sprites-vs');
 			const fs = shaderModule(
 				spriteFS,
-				{ uniforms: ['FrameUniforms'], textures: [{ name: 'u_texture0' }, { name: 'u_texture1' }], samplers: [{ name: 's_texture0' }, { name: 's_texture1' }] },
+				{
+					uniforms: ['FrameUniforms'],
+					textures: [{ name: 'u_texture0' }, { name: 'u_texture1' }, { name: 'u_texture2' }],
+					samplers: [{ name: 's_texture0' }, { name: 's_texture1' }, { name: 's_texture2' }]
+				},
 				'sprites-fs'
 			);
 			const build = makePipelineBuildDesc('Sprites2D', vs, fs);
@@ -404,7 +418,6 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			}
 		const dynamicAtlasTexture = gv.textures['_atlas_dynamic'] as WebGLTexture | null | undefined;
 		const engineAtlasTexture = gv.textures[ENGINE_ATLAS_TEXTURE_KEY] as WebGLTexture | null | undefined;
-		const secondaryAtlasTexture = (dynamicAtlasTexture ?? engineAtlasTexture ?? null) as WebGLTexture | null;
 		const spriteState: SpritesPipelineState = {
 			width,
 			height,
@@ -412,10 +425,11 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			baseHeight,
 			// Provide atlas textures for direct binding in render step when needed
 			atlasTex: atlasTexture as WebGLTexture,
-			atlasSecondaryTex: secondaryAtlasTexture,
+			atlasDynamicTex: (dynamicAtlasTexture ?? null) as WebGLTexture | null,
+			atlasEngineTex: (engineAtlasTexture ?? null) as WebGLTexture | null,
 			ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
-				ambientFactorDefault: gv.spriteAmbientFactorDefault ?? 1.0,
-			};
+			ambientFactorDefault: gv.spriteAmbientFactorDefault ?? 1.0,
+		};
 			registry.setState('sprites', spriteState);
 			// Validate binding layout vs resources
 			registry.validatePassResources('sprites', backend);
