@@ -1,15 +1,15 @@
 {
-	"title": "Marlies 2020 Console",
-	"short_name": "Marlies2020",
-	"rom_name": "marlies2020console",
+	"title": "Lua Demo",
+	"short_name": "LuaDemo",
+	"rom_name": "luademo",
 	"metadata": {
-		"version": "0.1.0",
-		"persistentId": "marlies2020_console"
+		"version": "1.0.0",
+		"persistentId": "bmsx_lua_demo"
 	},
 	"console": {
 		"moduleId": "bmsx-console",
 		"playerIndex": 1,
-		"viewport": { "width": 256, "height": 212 },
+		"viewport": { "width": 128, "height": 128 },
 		"world": { "viewportSize": { "x": 256, "y": 212 } }
 	},
 	"input": {
@@ -31,8 +31,8 @@
 		}
 	},
 	"lua": {
-		"assetId": "marlies2020",
-		"chunkName": "marlies2020",
+		"assetId": "demo",
+		"chunkName": "demo",
 		"entry": {
 			"init": "init",
 			"update": "update",

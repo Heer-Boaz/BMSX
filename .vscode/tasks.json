@@ -311,7 +311,7 @@
 			"group": "build",
 			"problemMatcher": [],
 			"label": "npm: build:game",
-			"detail": "npx tsx scripts/rompacker/rompacker.ts --nodeploy -romname testrom"
+			"detail": "npx tsx scripts/rompacker/rompacker.ts --nodeploy -romname testrom",
 		}
 	],
 	"inputs": [

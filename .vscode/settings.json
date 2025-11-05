@@ -4,5 +4,6 @@
 	"yaml.format.singleQuote": true,
 	"yaml.schemas": {
 		"./schemas/audio-events.schema.json": "**.aem.yaml"
-	}
+	},
+	"chatgpt.openOnStartup": true
 }

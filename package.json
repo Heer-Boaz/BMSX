@@ -3,15 +3,12 @@
   "private": true,
   "version": "1.0.0",
   "description": "",
-  "workspaces": [
-	"src/bmsx",
-	"src/testrom",
-	"src/ella2023",
-	"src/sint2024",
-	"src/luademo",
-	"src/luashell",
-	"src/marlies2020console"
-  ],
+	"workspaces": [
+		"src/bmsx",
+		"src/testrom",
+		"src/ella2023",
+		"src/sint2024"
+	],
   "dependencies": {
 	"blob": "*",
 	"node-fetch": "*",
@@ -59,12 +56,15 @@
 	"typescript": "^5.8.3",
 	"ts-morph": "^22.0.0"
   },
-  "scripts": {
-	"headless:game": "node scripts/headless-run.js",
-	"test:lua": "npx tsx --test tests/lua/*.ts",
-	"validate:engine:scripts": "npm run validate:engine && (test -f tsconfig.scripts.json && npm run validate:scripts || true)",
-	"validate:engine": "npx tsc --build ./src/bmsx",
-	"build:game": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --usepkgtsconfig --debug -romname ",
+	"scripts": {
+		"headless:game": "node scripts/headless-run.js",
+		"test:lua": "npx tsx --test tests/lua/*.ts",
+		"validate:engine:scripts": "npm run validate:engine && (test -f tsconfig.scripts.json && npm run validate:scripts || true)",
+		"validate:engine": "npx tsc --build ./src/bmsx",
+		"build:engine:debug": "npx tsx scripts/rompacker/rompacker.ts --mode engine --debug --force --nodeploy --skiptypecheck --platform browser -romname engine -title \"BMSX Engine\" -bootloaderpath ./src/bmsxconsole -respath ./src/bmsx/res && npx tsx scripts/rompacker/rompacker.ts --mode engine --debug --force --nodeploy --skiptypecheck --platform headless -romname engine -title \"BMSX Engine\" -bootloaderpath ./src/bmsxconsole -respath ./src/bmsx/res",
+		"build:cart": "node scripts/cart-build.mjs --debug",
+		"build:cart:release": "node scripts/cart-build.mjs --release",
+		"build:game": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --usepkgtsconfig --debug -romname ",
 	"build:game:force": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --usepkgtsconfig --debug --force -romname ",
 	"validate:game:force": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --usepkgtsconfig --debug --force -romname ",
 	"build:game:headless": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --usepkgtsconfig --debug --platform headless -romname ",

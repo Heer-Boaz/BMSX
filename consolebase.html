@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<title>#title Console</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+	<style>/*#css*/</style>
+</head>
+<body class="boot">
+	<canvas id="gamescreen" hidden></canvas>
+	<div id="loading" class="loading"></div>
+	<div id="extra-message" hidden></div>
+	<img id="msx" class="boot-logo" hidden />
+	<div id="bootrom"></div>
+
+	<div class="console-ui">
+		<label for="openCart">Open Cart
+			<input type="file" id="openCart" accept=".rom" />
+		</label>
+		<select id="cartList">
+			<option value="" disabled selected>Select Cart</option>
+		</select>
+		<button id="loadCartButton" type="button">Load</button>
+		<button id="reloadEngine" type="button">Reload Engine</button>
+	</div>
+
+	<script>//#zipjs</script>
+	<script>//#bootromjs</script>
+	<script>//#enginejs</script>
+	<script>
+		//#debug
+		(function () {
+			const params = new URLSearchParams(window.location.search);
+			const engineParam = params.get('engine');
+			const cartParam = params.get('cart');
+			const defaultEnginePath = '#engineRomPath';
+			const engineUrl = engineParam && engineParam.length > 0 ? engineParam : defaultEnginePath;
+			const STORAGE_KEY_RECENTS = 'bmsx-console-recents';
+
+			const fileInput = document.getElementById('openCart');
+			const reloadButton = document.getElementById('reloadEngine');
+			const cartSelect = document.getElementById('cartList');
+			const loadButton = document.getElementById('loadCartButton');
+
+			function readRecents() {
+				try {
+					const raw = localStorage.getItem(STORAGE_KEY_RECENTS);
+					if (!raw) return [];
+					const parsed = JSON.parse(raw);
+					if (Array.isArray(parsed)) return parsed;
+				} catch (_) {
+					// ignore parse errors
+				}
+				return [];
+			}
+
+			function saveRecent(entry) {
+				if (!entry || typeof entry.href !== 'string') return;
+				const recents = readRecents().filter(item => item.href !== entry.href);
+				recents.unshift(entry);
+				localStorage.setItem(STORAGE_KEY_RECENTS, JSON.stringify(recents.slice(0, 5)));
+			}
+
+			function populateCartSelect(serverCarts) {
+				if (!(cartSelect instanceof HTMLSelectElement)) return;
+				cartSelect.innerHTML = '';
+				const placeholder = document.createElement('option');
+				placeholder.value = '';
+				placeholder.disabled = true;
+				placeholder.selected = true;
+				placeholder.textContent = 'Select Cart';
+				cartSelect.appendChild(placeholder);
+
+				const recents = readRecents();
+				if (recents.length > 0) {
+					const recentGroup = document.createElement('optgroup');
+					recentGroup.label = 'Recent';
+					for (const item of recents) {
+						const opt = document.createElement('option');
+						opt.value = item.href;
+						opt.textContent = item.label || item.href;
+						recentGroup.appendChild(opt);
+					}
+					cartSelect.appendChild(recentGroup);
+				}
+
+				if (Array.isArray(serverCarts) && serverCarts.length > 0) {
+					const serverGroup = document.createElement('optgroup');
+					serverGroup.label = 'Available';
+					for (const cart of serverCarts) {
+						const opt = document.createElement('option');
+						opt.value = cart.href || `/${cart.file}`;
+						opt.textContent = cart.label || cart.file;
+						serverGroup.appendChild(opt);
+					}
+					cartSelect.appendChild(serverGroup);
+				}
+			}
+
+			async function fetchServerCarts() {
+				try {
+					const response = await fetch('/__bmsx__/carts', { headers: { 'Cache-Control': 'no-cache' } });
+					if (!response.ok) return [];
+					const payload = await response.json();
+					if (payload && Array.isArray(payload.carts)) {
+						return payload.carts;
+					}
+				} catch (err) {
+					console.warn('[console] Failed to fetch carts:', err);
+				}
+				return [];
+			}
+
+			async function prepareEngine() {
+				if (!engineUrl) return;
+				await window.bootrom.loadEngineRom(engineUrl);
+			}
+
+			function startCart(url, label) {
+				if (!url) return;
+				window.bootrom.loadCartRom(url)
+					.then(() => {
+						window.bootrom.usr(0);
+						if (label && !url.startsWith('blob:')) {
+							saveRecent({ href: url, label });
+							populateCartSelect(currentServerCarts);
+						}
+					})
+					.catch(err => window.bootrom.outputError(String(err)));
+			}
+
+			let currentServerCarts = [];
+
+			if (fileInput instanceof HTMLInputElement) {
+				fileInput.addEventListener('change', (ev) => {
+					const target = ev.target;
+					if (!(target instanceof HTMLInputElement) || !target.files || target.files.length === 0) return;
+					const file = target.files[0];
+					const blobUrl = URL.createObjectURL(file);
+					startCart(blobUrl, file.name);
+				});
+			}
+
+			if (reloadButton instanceof HTMLButtonElement) {
+				reloadButton.addEventListener('click', () => {
+					prepareEngine().catch(err => window.bootrom.outputError(String(err)));
+				});
+			}
+
+			if (loadButton instanceof HTMLButtonElement && cartSelect instanceof HTMLSelectElement) {
+				loadButton.addEventListener('click', () => {
+					const value = cartSelect.value;
+					if (!value) return;
+					const selectedOption = cartSelect.selectedOptions[0];
+					const label = selectedOption ? selectedOption.textContent : value;
+					startCart(value, label || value);
+				});
+			}
+
+			fetchServerCarts()
+				.then((carts) => {
+					currentServerCarts = carts;
+					populateCartSelect(carts);
+				})
+				.catch(() => {
+					populateCartSelect([]);
+				});
+
+			prepareEngine()
+				.then(() => {
+					if (cartParam) {
+						const label = cartParam.split('/').pop() || cartParam;
+						startCart(cartParam, label);
+					}
+				})
+				.catch(err => window.bootrom.outputError(String(err)));
+		})();
+	</script>
+</body>
+</html>

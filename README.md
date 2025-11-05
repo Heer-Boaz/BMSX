@@ -1,3 +1,27 @@
+### Console Engine Workflow
+
+New split packaging lets you build the engine once and ship carts as pure Lua/data packs.
+
+```bash
+# 1) Build the standalone engine runtime + assets
+npm run build:engine:debug
+
+# 2) Build a cart (defaults to src/carts/<name>)
+npm run build:cart -- --cart=luademo
+
+# 3) Serve or open the console shell
+npm run serve:dist   # or open dist/console_debug.html directly
+```
+
+Use `--root` / `--res` overrides when a cart lives outside `src/carts`, e.g.
+
+```bash
+npm run build:cart -- --cart=marlies2020console --root=src/marlies2020console --res=src/marlies2020console/res
+```
+
+The shell lists prebuilt carts (via `/__bmsx__/carts`) and remembers recent selections, so you can swap cartridges without rebuilding the engine.
+
+
 ### Custom Render Pipelines
 
 You can register new render pipelines at runtime (from a ROM) without touching engine internals.

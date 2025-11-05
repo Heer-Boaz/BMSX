@@ -2484,7 +2484,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (firstLua && typeof firstLua.path === 'string') {
 			return this.ensureDirectorySuffix(firstLua.path);
 		}
-		return 'res/lua/';
+		return './';
 	}
 
 	private ensureDirectorySuffix(path: string): string {

@@ -41,6 +41,7 @@ import { deepClone } from '../utils/utils';
 import { WorldObject } from '../core/object/worldobject';
 import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';
+import { Input } from '../input/input';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -55,6 +56,15 @@ const DEFAULT_LUA_FAILURE_POLICY: LuaPersistenceFailurePolicy = {
 	apply: 'error',
 	restore: 'error',
 };
+
+const CONSOLE_BUTTON_ACTIONS: ReadonlyArray<string> = [
+	'console_left',
+	'console_right',
+	'console_up',
+	'console_down',
+	'console_o',
+	'console_x',
+];
 
 // Flip back to 'msx' to restore the legacy editor font.
 const EDITOR_FONT_VARIANT: ConsoleFontVariant = 'tiny';
@@ -1280,6 +1290,11 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		if (source.trim().length === 0) {
 			throw new Error('[BmsxConsoleRuntime] Lua resource source cannot be empty.');
 		}
+		const program = this.luaProgram;
+		if (program && 'assetId' in program && typeof program.assetId === 'string' && program.assetId === assetId) {
+			await this.saveLuaProgram(source);
+			return;
+		}
 		const path = this.resolveLuaResourcePath(assetId);
 		if (!path) {
 			throw new Error(`[BmsxConsoleRuntime] Lua source path unavailable for asset '${assetId}'. Rebuild the rompack with filesystem metadata to enable saving.`);
@@ -1863,6 +1878,14 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		}
 		try {
 			await this.persistLuaSourceToFilesystem(savePath, source);
+			const rompack = $.rompack;
+			const programAssetId = ('assetId' in program && typeof program.assetId === 'string') ? program.assetId : null;
+			if (rompack && programAssetId) {
+				if (!rompack.lua) {
+					rompack.lua = {};
+				}
+				rompack.lua[programAssetId] = source;
+			}
 			try {
 				this.reloadLuaProgramState(source, targetChunkName, source);
 			}
@@ -2259,6 +2282,85 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		});
 		this.registerLuaGlobal(env, 'register_worldobject', registerWorldobject);
 		this.registerLuaBuiltin({ name: 'register_worldobject', params: ['def'], signature: 'register_worldobject(def)' });
+
+		const resolveButtonAction = (luaInterpreter: LuaInterpreter, value: LuaValue, fnName: string): string => {
+			if (typeof value !== 'number' || Number.isNaN(value)) {
+				throw this.createApiRuntimeError(luaInterpreter, `${fnName}(button [, player]) expects a numeric button index.`);
+			}
+			const index = Math.trunc(value);
+			if (index < 0 || index >= CONSOLE_BUTTON_ACTIONS.length) {
+				throw this.createApiRuntimeError(luaInterpreter, `${fnName}(button [, player]) button index must be between 0 and ${CONSOLE_BUTTON_ACTIONS.length - 1}.`);
+			}
+			return CONSOLE_BUTTON_ACTIONS[index];
+		};
+
+		const resolvePlayerIndex = (luaInterpreter: LuaInterpreter, value: LuaValue | undefined, fnName: string): number => {
+			if (value === undefined || value === null) {
+				return this.playerIndex;
+			}
+			if (typeof value !== 'number' || Number.isNaN(value)) {
+				throw this.createApiRuntimeError(luaInterpreter, `${fnName}(button [, player]) expects the optional player index to be numeric.`);
+			}
+			const normalized = Math.trunc(value);
+			if (normalized < 0) {
+				throw this.createApiRuntimeError(luaInterpreter, `${fnName}(button [, player]) player index cannot be negative.`);
+			}
+			return normalized + 1;
+		};
+
+		const registerButtonFunction = (fnName: 'btn' | 'btnp' | 'btnr', modifier: string) => {
+			const native = createLuaNativeFunction(fnName, interpreter, (luaInterpreter, args) => {
+				if (args.length === 0) {
+					throw this.createApiRuntimeError(luaInterpreter, `${fnName}(button [, player]) requires at least one argument.`);
+				}
+				const action = resolveButtonAction(luaInterpreter, args[0], fnName);
+				const playerIndex = resolvePlayerIndex(luaInterpreter, args.length >= 2 ? args[1] : undefined, fnName);
+				let hasBinding = false;
+				try {
+					const playerInput = Input.instance.getPlayerInput(playerIndex);
+					const inputMap = playerInput.inputMap;
+					if (inputMap) {
+						const keyboardBindings = inputMap.keyboard?.[action];
+						const gamepadBindings = inputMap.gamepad?.[action];
+						const pointerBindings = inputMap.pointer?.[action];
+						hasBinding = Boolean(
+							(keyboardBindings && keyboardBindings.length > 0) ||
+							(gamepadBindings && gamepadBindings.length > 0) ||
+							(pointerBindings && pointerBindings.length > 0)
+						);
+					}
+				} catch {
+					hasBinding = false;
+				}
+				if (!hasBinding) {
+					return [false];
+				}
+				const actionDefinition = `${action}${modifier}`;
+				try {
+					const triggered = this.api.check_action_state(playerIndex, actionDefinition);
+					return [triggered];
+				} catch (error) {
+					if (error instanceof Error && /unknown actions/i.test(error.message)) {
+						return [false];
+					}
+					throw error;
+				}
+			});
+			this.registerLuaGlobal(env, fnName, native);
+			this.registerLuaBuiltin({
+				name: fnName,
+				params: ['button', 'player?'],
+				signature: `${fnName}(button [, player])`,
+				parameterDescriptions: [
+					'Button index (0=left,1=right,2=up,3=down,4=O,5=X).',
+					'Optional player index (0-based).',
+				],
+			});
+		};
+
+		registerButtonFunction('btn', '[p]');
+		registerButtonFunction('btnp', '[gp]');
+		registerButtonFunction('btnr', '[jr]');
 
 		const members = this.collectApiMembers();
 		for (const { name, kind, descriptor } of members) {

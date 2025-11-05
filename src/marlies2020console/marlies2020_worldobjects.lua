@@ -1,6 +1,6 @@
 -- Consolidated world object registrations for Marlies 2020 console.
 
-local abilities = require('src/marlies2020console/res/lua/marlies2020_abilities')
+local abilities = require('src/marlies2020console/marlies2020_abilities')
 
 local playerAbilityIds = abilities.abilityIds
 local playerInputProgram = abilities.inputProgram
