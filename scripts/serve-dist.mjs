@@ -3,7 +3,7 @@
 // Usage: node scripts/serve-dist.mjs [--dir dist] [--port 8080] [--host 0.0.0.0] [--spa] [--cache <seconds|no-store>]
 
 import { createServer } from 'node:http';
-import { stat, access, readFile, writeFile } from 'node:fs/promises';
+import { stat, access, readFile, writeFile, readdir } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -160,6 +160,32 @@ async function handleLuaApi(req, res, url) {
 	return true;
 }
 
+async function handleCartsApi(req, res, url) {
+	if (url.pathname !== '/__bmsx__/carts') {
+		return false;
+	}
+	if (req.method !== 'GET') {
+		res.writeHead(405, { 'Allow': 'GET' }).end();
+		return true;
+	}
+	let entries;
+	try {
+		entries = await readdir(root, { withFileTypes: true });
+	} catch (err) {
+		res.writeHead(500, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: String(err) }));
+		return true;
+	}
+	const carts = entries
+		.filter(entry => entry.isFile() && entry.name.endsWith('.rom') && !entry.name.startsWith('engine'))
+		.map(entry => {
+			const file = entry.name;
+			const label = file.replace(/\.debug\.rom$/i, '').replace(/\.rom$/i, '');
+			return { file, label, href: `/${file}` };
+		});
+	res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(JSON.stringify({ carts }));
+	return true;
+}
+
 function getType(p) {
 	const ext = path.extname(p).toLowerCase();
 	return MIME.get(ext) || 'application/octet-stream';
@@ -202,6 +228,9 @@ const server = createServer(async (req, res) => {
 	try {
     const requestUrl = new URL(req.url || '/', 'http://x');
     if (await handleLuaApi(req, res, requestUrl)) {
+        return;
+    }
+    if (await handleCartsApi(req, res, requestUrl)) {
         return;
     }
     const urlPath = requestUrl.pathname;

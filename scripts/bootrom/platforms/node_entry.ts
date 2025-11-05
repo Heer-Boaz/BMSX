@@ -23,6 +23,8 @@ interface LaunchOptions {
 	inputTimelinePath?: string;
 	inputModulePath?: string;
 	ttlMs?: number;
+	engineRomPath?: string;
+	engineRuntimePath?: string;
 }
 
 interface BootGlobals {
@@ -146,6 +148,8 @@ function printHelp(): void {
 	console.log('  --ttl <seconds>          Auto-terminate after the given number of seconds (default 10).');
 	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule.');
 	console.log('  --input-module <file>    JS/TS module exporting a scheduler for custom input logic.');
+	console.log('  --engine <path>          Optional engine ROM to merge when cart lacks code.');
+	console.log('  --engine-runtime <path>  JS runtime bundle for the engine (defaults to dist/engine.js).');
 	console.log('  --help, -h               Show this help message.');
 }
 
@@ -208,6 +212,20 @@ function parseArgs(argv: string[]): LaunchOptions {
 			const next = argv[index + 1];
 			if (!next) throw new Error('Expected path after --input-module.');
 			options.inputModulePath = next;
+			index += 2;
+			continue;
+		}
+		if (arg === '--engine') {
+			const next = argv[index + 1];
+			if (!next) throw new Error('Expected path after --engine.');
+			options.engineRomPath = next;
+			index += 2;
+			continue;
+		}
+		if (arg === '--engine-runtime') {
+			const next = argv[index + 1];
+			if (!next) throw new Error('Expected path after --engine-runtime.');
+			options.engineRuntimePath = next;
 			index += 2;
 			continue;
 		}
@@ -359,6 +377,59 @@ function executeRomCode(source: string, label: string): void {
 	wrapped(globalThis as Record<string, unknown>);
 }
 
+function mergeRecords<T>(primary: Record<string, T> | undefined, fallback?: Record<string, T>): Record<string, T> {
+	return {
+		...(fallback ?? {}),
+		...(primary ?? {}),
+	};
+}
+
+function combineRompacks(engineRom: RomPack | null, cartRom: RomPack): RomPack {
+	if (!engineRom) {
+		return cartRom;
+	}
+	const combinedResourcePaths = (() => {
+		const paths = [...(engineRom.resourcePaths ?? []), ...(cartRom.resourcePaths ?? [])];
+		const seen = new Set<string>();
+		const unique: typeof paths = [];
+		for (const entry of paths) {
+			const key = `${entry.type}:${entry.assetId}:${entry.path}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+			unique.push(entry);
+		}
+		return unique;
+	})();
+
+	const combined: RomPack = {
+		...engineRom,
+		...cartRom,
+		rom: cartRom.rom,
+		img: mergeRecords(cartRom.img, engineRom.img),
+		audio: mergeRecords(cartRom.audio, engineRom.audio),
+		model: mergeRecords(cartRom.model, engineRom.model),
+		data: mergeRecords(cartRom.data, engineRom.data),
+		audioevents: mergeRecords(cartRom.audioevents, engineRom.audioevents),
+		lua: mergeRecords(cartRom.lua, engineRom.lua),
+		luaSourcePaths: mergeRecords(cartRom.luaSourcePaths, engineRom.luaSourcePaths),
+		resourcePaths: combinedResourcePaths,
+		code: cartRom.code ?? engineRom.code ?? null,
+		caseInsensitiveLua: cartRom.caseInsensitiveLua ?? engineRom.caseInsensitiveLua,
+		manifest: cartRom.manifest ?? engineRom.manifest,
+	};
+	return combined;
+}
+
+async function loadEngineRuntimeFromFile(filePath: string): Promise<void> {
+	try {
+		const script = await fs.readFile(filePath, 'utf8');
+		const wrapped = new Function('globalScope', `${script}\n//# sourceURL=${filePath}`);
+		wrapped(globalThis as Record<string, unknown>);
+	} catch (err: any) {
+		throw new Error(`Failed to load engine runtime from "${filePath}": ${err?.message ?? err}`);
+	}
+}
+
 function ensureHostEnvironment(): void {
 	const globals = globalThis as Record<string, unknown>;
 	if (globals.window === undefined) {
@@ -381,6 +452,45 @@ function createPlatform(frameIntervalMs: number | undefined): Platform {
 	throw new Error(`Unsupported boot platform: ${__BOOTROM_TARGET__}`);
 }
 
+async function prepareRuntime(rompack: RomPack, cliOptions: LaunchOptions, romPath: string): Promise<{ rompack: RomPack; entry: (args: BootArgs) => Promise<void> }> {
+	ensureHostEnvironment();
+	const globals = globalThis as BootGlobals;
+	if (typeof rompack.code === 'string' && rompack.code.length > 0) {
+		executeRomCode(rompack.code, `${__BOOTROM_ROM_NAME__}.${__BOOTROM_TARGET__}.js`);
+		const entry = globals.h406A;
+		if (typeof entry !== 'function') {
+			throw new Error('Bootloader entry point h406A not registered by ROM code.');
+		}
+		return { rompack, entry };
+	}
+
+	const romDirectory = path.resolve(path.dirname(romPath));
+	const engineRomPath = cliOptions.engineRomPath
+		? path.resolve(cliOptions.engineRomPath)
+		: path.join(romDirectory, __BOOTROM_DEBUG__ ? 'engine.debug.rom' : 'engine.rom');
+	const engineRuntimePath = cliOptions.engineRuntimePath
+		? path.resolve(cliOptions.engineRuntimePath)
+		: path.join(romDirectory, 'engine.js');
+
+	let engineRom: RomPack | null = null;
+	try {
+		const engineBuffer = await readRomFile(engineRomPath);
+		engineRom = await loadRomPack(engineBuffer);
+		console.log(`[bootrom:${__BOOTROM_TARGET__}] Loaded engine ROM from ${engineRomPath}`);
+	} catch (err: any) {
+		console.warn(`[bootrom:${__BOOTROM_TARGET__}] Engine ROM not loaded (${err?.message ?? err}). Continuing without engine assets.`);
+	}
+
+	await loadEngineRuntimeFromFile(engineRuntimePath);
+	const entry = globals.h406A;
+	if (typeof entry !== 'function') {
+		throw new Error('Engine runtime did not register h406A entry point.');
+	}
+
+	const combined = combineRompacks(engineRom, rompack);
+	return { rompack: combined, entry };
+}
+
 async function main(): Promise<void> {
 	const cliOptions = parseArgs(process.argv.slice(2));
 	const romPath = resolveRomPath(cliOptions);
@@ -396,17 +506,7 @@ async function main(): Promise<void> {
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading ROM: ${romPath}`);
 	const buffer = await readRomFile(romPath);
 	const rompack = await loadRomPack(buffer);
-	if (typeof rompack.code !== 'string') {
-		throw new Error('ROM pack code segment missing.');
-	}
-
-	ensureHostEnvironment();
-	executeRomCode(rompack.code, `${__BOOTROM_ROM_NAME__}.${__BOOTROM_TARGET__}.js`);
-	const globals = globalThis as BootGlobals;
-	const entry = globals.h406A;
-	if (typeof entry !== 'function') {
-		throw new Error('Bootloader entry point h406A not registered by ROM code.');
-	}
+	const { rompack: activeRompack, entry } = await prepareRuntime(rompack, cliOptions, romPath);
 
 	const platform = createPlatform(frameInterval);
 	const postInput = (event: InputEvt) => {
@@ -434,7 +534,7 @@ async function main(): Promise<void> {
 	}, ttlMs);
 
 	const bootArgs: BootArgs = {
-		rompack,
+		rompack: activeRompack,
 		platform,
 		viewHost: platform.gameviewHost,
 		caseInsensitiveLua: __BOOTROM_CASE_INSENSITIVE_LUA__,

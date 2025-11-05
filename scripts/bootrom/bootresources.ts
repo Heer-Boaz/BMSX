@@ -560,10 +560,20 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 			}
 			break;
 		}
-		case 'romlabel':
-		case 'rommanifest':
-			// No additional handling required; buffer already present if needed.
-			break;
+	case 'romlabel':
+	case 'rommanifest':
+		if (res.type === 'rommanifest') {
+			try {
+				const slice = rom.slice(res.start, res.end);
+				const text = new TextDecoder('utf-8').decode(slice);
+				const parsed = JSON.parse(text);
+				romResult.manifest = parsed;
+				romResult.data[res.resid] = parsed;
+			} catch (err: any) {
+				throw new Error(`Failed to load 'rommanifest' from rom: ${err.message}.`);
+			}
+		}
+		break;
 		default:
 			throw new Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack!`);
 	}

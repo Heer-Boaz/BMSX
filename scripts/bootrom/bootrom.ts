@@ -14,6 +14,8 @@ declare global {
 		getRomFromUrlParameter: () => string | null;
 		bootrom: {
 			rom: RomPack | null;
+			engineRom: RomPack | null;
+			cartRom: RomPack | null;
 			debug: boolean;
 			romname: string | undefined;
 			sndcontext: AudioContext | null;
@@ -24,7 +26,9 @@ declare global {
 			enableOnscreenGamepad: boolean;
 			set defusr(rom: RomPack);
 			usr: (x: number) => number;
-			bload: (url: string) => Promise<RomPack | null>;
+			bload: (url: string, mode?: 'auto' | 'engine' | 'cart') => Promise<RomPack | null>;
+			loadEngineRom: (url: string) => Promise<RomPack | null>;
+			loadCartRom: (url: string) => Promise<RomPack | null>;
 			outputError: (errormsg: string) => void;
 			resizeHandler: () => void;
 		};
@@ -44,6 +48,48 @@ declare global {
  * @returns {void}
  */
 declare var h406A: (args: BootArgs) => Promise<void>;
+
+function mergeRecords<T>(primary: Record<string, T> | undefined, fallback?: Record<string, T>): Record<string, T> {
+	return {
+		...(fallback ?? {}),
+		...(primary ?? {}),
+	};
+}
+
+function combineRompacks(engineRom: RomPack | null | undefined, cartRom: RomPack): RomPack {
+	if (!engineRom) {
+		return cartRom;
+}
+	const combinedResourcePaths = (() => {
+		const paths = [...(engineRom.resourcePaths ?? []), ...(cartRom.resourcePaths ?? [])];
+		const seen = new Set<string>();
+		const unique: typeof paths = [];
+		for (const entry of paths) {
+			const key = `${entry.type}:${entry.assetId}:${entry.path}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+			unique.push(entry);
+		}
+		return unique;
+	})();
+
+	const combined: RomPack = {
+		...engineRom,
+		...cartRom,
+		rom: cartRom.rom,
+		img: mergeRecords(cartRom.img, engineRom.img),
+		audio: mergeRecords(cartRom.audio, engineRom.audio),
+		model: mergeRecords(cartRom.model, engineRom.model),
+		data: mergeRecords(cartRom.data, engineRom.data),
+		audioevents: mergeRecords(cartRom.audioevents, engineRom.audioevents),
+		lua: mergeRecords(cartRom.lua, engineRom.lua),
+		luaSourcePaths: mergeRecords(cartRom.luaSourcePaths, engineRom.luaSourcePaths),
+		resourcePaths: combinedResourcePaths,
+		code: cartRom.code ?? engineRom.code ?? null,
+		caseInsensitiveLua: cartRom.caseInsensitiveLua ?? engineRom.caseInsensitiveLua,
+	};
+	return combined;
+}
 
 /**
  * Object representing the boot ROM.
@@ -74,6 +120,8 @@ export const bootrom = {
 	 * @var {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
 	 */
 	rom: null as RomPack | null,
+	engineRom: null as RomPack | null,
+	cartRom: null as RomPack | null,
 	debug: false,
 	romname: undefined as string | undefined, // Currently, used for fetching the megarom Javascript for debug mode
 	sndcontext: null as AudioContext | null,
@@ -92,6 +140,8 @@ export const bootrom = {
 	 */
 	set defusr(rom: RomPack) {
 		bootrom.rom = rom;
+		bootrom.cartRom = rom;
+		bootrom.engineRom = null;
 	},
 
 	/**
@@ -192,7 +242,8 @@ export const bootrom = {
 	 * @param url - The URL of the ROM pack to load.
 	 * @returns A Promise that resolves to the loaded ROM pack, or null if the loading failed.
 	 */
-	async bload(url: string): Promise<RomPack | null> {
+	async bload(url: string, mode: 'auto' | 'engine' | 'cart' = 'auto'): Promise<RomPack | null> {
+		const loadKind = mode === 'auto' ? 'cart' : mode;
 		if (typeof window !== 'undefined') {
 			window.onunhandledrejection = (event: PromiseRejectionEvent) => {
 				event.preventDefault();
@@ -229,6 +280,22 @@ export const bootrom = {
 				throw new Error(`Error while fetching ROM: "${err.message}"`);
 			});
 		};
+
+		if (loadKind === 'engine') {
+			try {
+				const response_array = await fetchRom();
+				const ziprom_and_label = await getZippedRomAndRomLabelFromBlob(response_array);
+				// @ts-ignore
+				const inflated = pako.inflate(ziprom_and_label.zipped_rom).buffer;
+				const enginePack = await loadResources(inflated);
+				enginePack.caseInsensitiveLua = __BOOTROM_CASE_INSENSITIVE_LUA__;
+				bootrom.engineRom = enginePack;
+				return enginePack;
+			} catch (err) {
+				console.error('[bootrom] Failed to load engine ROM:', err);
+				throw err;
+			}
+		}
 
 		return new Promise((resolve, reject) => {
 			let loadedRomPack: RomPack | null = null;
@@ -272,11 +339,15 @@ export const bootrom = {
 			.then((loadResult: any) => {
 				loadedRomPack = loadResult;
 				loadedRomPack.caseInsensitiveLua = __BOOTROM_CASE_INSENSITIVE_LUA__;
+				const combinedPack = combineRompacks(bootrom.engineRom, loadedRomPack);
+				bootrom.cartRom = loadedRomPack;
+				bootrom.rom = combinedPack;
+				loadedRomPack = combinedPack;
 				return awaitBootComplete().then(() => {  // Return the promise and chain the replace after animation ends
 						replaceBMSXImgWithRomLabel();
 					});
 				})
-				.then(() => loadScript(loadedRomPack))
+				.then(() => loadScript(loadedRomPack!))
 				.then(() => {
 					setLoaderText('Press any key, button or touch screen to start...');
 					return awaitPressedAnyKeyPromise();
@@ -287,6 +358,14 @@ export const bootrom = {
 					reject(err);
 				});
 		});
+	},
+
+	loadEngineRom(url: string) {
+		return this.bload(url, 'engine');
+	},
+
+	loadCartRom(url: string) {
+		return this.bload(url, 'cart');
 	},
 
 	outputError(errormsg: string) {
@@ -363,7 +442,10 @@ async function awaitBootComplete(): Promise<void> {
  */
 async function loadScript(rom: RomPack): Promise<void> {
 	if (!HAS_DOM_ENVIRONMENT) {
-		throw new Error('Cannot load script without a DOM environment.');
+		return;
+	}
+	if (!rom.code || rom.code.length === 0) {
+		return;
 	}
 	try {
 		const romcode = document.createElement('script');

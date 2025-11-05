@@ -14,7 +14,7 @@ const { spawnSync } = require('child_process');
 const { join, parse, relative, resolve, sep } = require('path');
 
 // @ts-ignore
-const { access, mkdir, readdir, readFile, stat, writeFile, unlink } = require('fs/promises');
+const { access, mkdir, readdir, readFile, stat, writeFile, unlink, copyFile } = require('fs/promises');
 // @ts-ignore
 const { createWriteStream } = require('fs');
 // @ts-ignore
@@ -116,7 +116,6 @@ const RESOURCE_SCAN_EXCLUDE = new Set<string>([
 	'.ts',
 	'.map',
 	'.tsbuildinfo',
-	'.rommanifest',
 ]);
 
 /**
@@ -251,6 +250,36 @@ export async function esbuild(romname: string, bootloader_path: string, debug: b
 		});
 	}
 	return null;
+}
+
+export async function buildEngineRuntime(options: { debug: boolean }): Promise<void> {
+	const { debug } = options;
+	await mkdir('./rom', { recursive: true });
+	await build({
+		entryPoints: ['./src/bmsx/console/engine_entry.ts'],
+		bundle: true,
+		platform: 'browser',
+		format: 'iife',
+		target: 'es2020',
+		outfile: './rom/engine.js',
+		keepNames: true,
+		minify: !debug,
+		sourcemap: debug ? 'inline' : false,
+		define: {
+			'process.env.NODE_ENV': debug ? '"development"' : '"production"',
+		},
+		plugins: [
+			glsl({ minify: !debug }),
+		],
+		loader: {
+			'.png': 'dataurl',
+			'.glsl': 'text',
+			'.json': 'json',
+			'.html': 'text',
+		},
+	});
+	await mkdir('./dist', { recursive: true });
+	await copyFile('./rom/engine.js', './dist/engine.js');
 }
 
 /**
@@ -494,6 +523,46 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 	});
 }
 
+export async function buildConsoleHtml(options: { romName: string; title: string; debug: boolean }): Promise<void> {
+	const { romName, title, debug } = options;
+	await mkdir('./dist', { recursive: true });
+	const [templateHtml, bootromJs, engineJs, zipJs] = await Promise.all([
+		readFile('./consolebase.html', 'utf8'),
+		readFile(`./rom/${BOOTROM_JS_FILENAME}`, 'utf8'),
+		readFile('./dist/engine.js', 'utf8'),
+		readFile('./scripts/pako_inflate.min.js', 'utf8'),
+	]);
+
+	const cssMinified = await new Promise<string>((resolve, reject) => {
+		minify({
+			compressor: cleanCSS,
+			input: './gamebase.css',
+			output: './rom/gamebase.console.min.css',
+			callback: (err: any, css: string) => {
+				if (!css) {
+					reject(err);
+					return;
+				}
+				resolve(css);
+			},
+		});
+	});
+
+	const replacements = {
+		'/*#css*/': cssMinified,
+		'//#bootromjs': bootromJs,
+		'//#enginejs': engineJs,
+		'//#zipjs': zipJs,
+		'//#debug': `bootrom.debug = ${debug};`,
+		'#engineRomPath': `./${romName}${debug ? '.debug' : ''}.rom`,
+		'#title': title,
+	};
+
+	const transformed = applyStringReplacements(templateHtml, replacements);
+	const outfile = `./dist/console${debug ? '_debug' : ''}.html`;
+	await writeFile(outfile, transformed, 'utf8');
+}
+
 /**
  * Parses the metadata of an audio file from its filename.
  * @param {string} filename - The name of the audio file.
@@ -651,16 +720,75 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
  * @param romname The name of the ROM pack to build the list for.
  * @returns An array of resources with basic metadata.
  */
-export async function getResMetaList(respaths: string[], romname?: string): Promise<Resource[]> {
+export type ResourceScanOptions = {
+	includeCode?: boolean;
+	extraLuaPaths?: string[];
+};
+
+const EXTRA_LUA_SCAN_SKIP = new Set<string>([
+	'.git',
+	'.svn',
+	'.hg',
+	'.cache',
+	'node_modules',
+	'dist',
+	'build',
+	'out',
+	'rom',
+	'res',
+]);
+
+function shouldSkipExtraLuaDir(dirname: string): boolean {
+	return EXTRA_LUA_SCAN_SKIP.has(dirname.toLowerCase());
+}
+
+export async function getResMetaList(respaths: string[], romname?: string, options: ResourceScanOptions = {}): Promise<Resource[]> {
 	const arrayOfFiles: string[] = [];
+	const includeCode = options.includeCode !== false;
+	const extraLuaRoots = options.extraLuaPaths ?? [];
+	const seenPaths = new Set<string>();
+
+	const pushFile = (filepath: string) => {
+		const normalized = resolve(filepath);
+		if (seenPaths.has(normalized)) return;
+		seenPaths.add(normalized);
+		arrayOfFiles.push(filepath);
+	};
+
 	for (const respath of respaths) {
 		const files = await getFiles(respath) ?? [];
-		arrayOfFiles.push(...files);
+		for (const file of files) {
+			pushFile(file);
+		}
 	}
+
+	async function appendLuaFilesFromRoot(root: string): Promise<void> {
+		let entries: import('fs').Dirent[];
+		try {
+			entries = await readdir(root, { withFileTypes: true });
+		} catch {
+			return;
+		}
+		for (const entry of entries) {
+			if (shouldSkipExtraLuaDir(entry.name)) continue;
+			const entryPath = join(root, entry.name);
+			if (entry.isDirectory()) {
+				await appendLuaFilesFromRoot(entryPath);
+			} else if (entry.isFile() && entry.name.toLowerCase().endsWith('.lua')) {
+				pushFile(entryPath);
+			}
+		}
+	}
+
+	for (const luaRoot of extraLuaRoots) {
+		if (!luaRoot || luaRoot.length === 0) continue;
+		await appendLuaFilesFromRoot(luaRoot);
+	}
+
 	const megarom_filename = `${romname}.js`;
 	// Note that romname can be undefined when building the resource enum file, so we only add the file if romname is defined
-	if (romname) {
-		addFile("./rom", megarom_filename, arrayOfFiles); // Add source at the end
+	if (romname && includeCode) {
+		pushFile(`./rom/${megarom_filename}`);
 	}
 	arrayOfFiles.sort((a, b) => a.localeCompare(b));
 
@@ -679,6 +807,9 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 		const meta = getResMetaByFilename(filepath);
 
 		const type = meta.type;
+		if (type === 'code' && !includeCode) {
+			continue;
+		}
 		let name = meta.name;
 		const ext = meta.ext;
 		const sourcePath = filepath ? toWorkspaceRelativePath(filepath) : undefined;
@@ -727,12 +858,13 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 			case 'romlabel':
 				result.push({ filepath, name, ext, type, id: undefined, sourcePath });
 				break;
-			case 'rommanifest':
-				result.push({ filepath, name, ext, type, id: undefined, sourcePath });
-				break;
-			case 'code':
-				codeFileCount += 1;
-				break;
+		case 'rommanifest':
+			result.push({ filepath, name, ext, type, id: undefined, sourcePath });
+			break;
+		case 'code':
+			result.push({ filepath, name, ext, type, id: 1, sourcePath });
+			codeFileCount += 1;
+			break;
 			case 'data':
 			case 'aem': // AEM files are added to the data asset list
 				// For data files, we use the name as is
@@ -943,8 +1075,9 @@ function lowercaseLuaSourceExceptStrings(source: string): string {
  * @param rom_name The name of the ROM pack to build the list for.
  * @returns An array of resources.
  */
-export async function getResourcesList(resMetaList: Resource[], rom_name: string): Promise<Resource[]> {
+export async function getResourcesList(resMetaList: Resource[], rom_name: string, options: { includeCode?: boolean } = {}): Promise<Resource[]> {
 	let resources: Array<Resource> = [];
+	const includeCode = options.includeCode !== false;
 
 	/**
 	 * Loads an image from the specified resource object.
@@ -1009,19 +1142,21 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 				};
 		}
 	});
-	resourcePromises.push((async () => {
-		const megarom_filename = `${rom_name}.js`;
-		const filepath = `./rom/${megarom_filename}`;
-		// Manually add the ROM source code to the list
-		return {
-			buffer: await readFile(filepath),
-			filepath: filepath,
-			name: megarom_filename,
-			ext: '.js',
-			type: 'code',
-			id: 1,
-		};
-	})());
+	if (includeCode) {
+		resourcePromises.push((async () => {
+			const megarom_filename = `${rom_name}.js`;
+			const filepath = `./rom/${megarom_filename}`;
+			// Manually add the ROM source code to the list
+			return {
+				buffer: await readFile(filepath),
+				filepath: filepath,
+				name: megarom_filename,
+				ext: '.js',
+				type: 'code',
+				id: 1,
+			};
+		})());
+	}
 
 	resources = await Promise.all(resourcePromises);
 
@@ -1033,14 +1168,14 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
  * @param respaths An array of the paths to the resources to include in the list.
  * @param rom_name The name of the ROM pack to build the list for.
  */
-export async function buildResourceList(respaths: string[], rom_name?: string) {
+export async function buildResourceList(respaths: string[], rom_name?: string, options: ResourceScanOptions = {}) {
 	const tsimgout = new Array<string>();
 	const tssndout = new Array<string>();
 	const tsdataout = new Array<string>();
 	const tsmodelout = new Array<string>();
 	const tsluaout = new Array<string>();
 
-	const metalist: Resource[] = await getResMetaList(respaths, rom_name);
+	const metalist: Resource[] = await getResMetaList(respaths, rom_name, options);
 
 	tsimgout.push(BOILERPLATE_RESOURCE_ID_BITMAP);
 	tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
@@ -1125,10 +1260,10 @@ export async function generateRomAssets(resources: Resource[]) {
 		let buffer = res.buffer; // NOTE that we will remove the buffer during the finalization of the ROM pack. To do proper finalization, we need to store the buffer here right now. N.B. the bootrom will also add the buffer to the RomAsset, so that's why the property is relevant in the first place and we are now using it to temporarily hold the buffer per asset.
 
 		switch (type) {
-			case 'romlabel':
-				romlabel_buffer = res.buffer;
-				romAssets.push({ resid, type, imgmeta: undefined, buffer: romlabel_buffer, sourcePath });
-				break;
+		case 'romlabel':
+			romlabel_buffer = res.buffer;
+			romAssets.push({ resid, type, imgmeta: undefined, buffer: romlabel_buffer, sourcePath });
+			break;
 			case 'image': {
 				const imgmeta = buildImgMeta(res);
 				let baseAsset: RomAsset;
@@ -1159,6 +1294,9 @@ export async function generateRomAssets(resources: Resource[]) {
 			romAssets.push({ resid, type, buffer, sourcePath: luaSourcePath });
 			break;
 		}
+	case 'rommanifest':
+		romAssets.push({ resid, type, buffer, sourcePath });
+		break;
 	case 'data':
 	case 'aem':
 				// Encode the JSON-data via the binencoder
@@ -1636,14 +1774,18 @@ export const shouldCheckFile = (filename: string, checkCodeFiles: boolean, check
  * @param {string} resPath - The path to the resource files.
  * @returns {Promise<boolean>} A Promise that resolves with a boolean indicating whether a rebuild is required.
  */
-export async function isRebuildRequired(romname: string, bootloaderPath: string, resPath: string): Promise<boolean> {
+export async function isRebuildRequired(romname: string, bootloaderPath: string, resPath: string, options: ResourceScanOptions = {}): Promise<boolean> {
 	const romFilePath = `./dist/${romname}.rom`;
 	const minifiedJsFilePath = `./rom/${romname}.js`;
+	const includeCode = options.includeCode !== false;
+	const extraLuaRoots = options.extraLuaPaths ?? [];
 
 	async function checkPaths() {
 		try {
 			await access(romFilePath);
-			await access(minifiedJsFilePath);
+			if (includeCode) {
+				await access(minifiedJsFilePath);
+			}
 			return false;
 		} catch {
 			return true;
@@ -1698,7 +1840,20 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 	const shouldCheckCodeFiles = (dir: string) => dir.startsWith(bootloaderPath);
 	const shouldCheckAssets = (dir: string) => dir.startsWith(resPath);
 
-	return await shouldRebuild(bootloaderPath, shouldCheckCodeFiles(bootloaderPath), shouldCheckAssets(bootloaderPath)) ||
+	const extraChecks: Array<Promise<boolean>> = [];
+	const normalizedBoot = resolve(bootloaderPath);
+	const normalizedRes = resolve(resPath);
+	for (const root of extraLuaRoots) {
+		if (!root || root.length === 0) continue;
+		const normalized = resolve(root);
+		if (normalized === normalizedBoot || normalized === normalizedRes) continue;
+		extraChecks.push(shouldRebuild(root, true, false));
+	}
+
+	const extraNeedsRebuild = extraChecks.length > 0 ? await Promise.all(extraChecks).then(results => results.some(Boolean)) : false;
+
+	return extraNeedsRebuild ||
+		await shouldRebuild(bootloaderPath, shouldCheckCodeFiles(bootloaderPath), shouldCheckAssets(bootloaderPath)) ||
 		await shouldRebuild(resPath, shouldCheckCodeFiles(resPath), shouldCheckAssets(resPath)) ||
 		await shouldRebuild('src/bmsx', true, false);
 }

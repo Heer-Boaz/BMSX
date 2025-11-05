@@ -6,6 +6,7 @@ import type { Canvas, Image as NodeCanvasImage } from 'canvas';
 import type { asset_type } from '../../src/bmsx/rompack/rompack';
 
 export type RomPackerTarget = 'browser' | 'cli' | 'headless';
+export type RomPackerMode = 'bundle' | 'engine' | 'cart';
 
 export interface RomPackerOptions {
 	rom_name: string;
@@ -26,6 +27,7 @@ export interface RomPackerOptions {
 	skipTypecheck?: boolean;
 	/** When true (default), rompacker folds Lua identifiers to lowercase for case-insensitive mode. */
 	caseInsensitiveLua: boolean;
+	mode: RomPackerMode;
 }
 
 export type resourcetype = asset_type | 'rommanifest';
@@ -118,4 +120,9 @@ export interface RomManifest {
 	title?: string;
 	short_name?: string;
 	rom_name?: string;
+}
+
+export interface ResourceScanOptions {
+	includeCode?: boolean;
+	extraLuaPaths?: string[];
 }
