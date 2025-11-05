@@ -55,7 +55,7 @@ const THEME_BASE = {
 	surfaces: {
 		frame: PALETTE.white,
 		topBar: PALETTE.grey,
-		editor: PALETTE.darkBlue,
+		editor: PALETTE.veryDarkBlue,
 		gutter: PALETTE.grey,
 		resourcePanel: PALETTE.grey,
 		resourcePanelHighlight: PALETTE.black,
@@ -76,10 +76,10 @@ const THEME_BASE = {
 		builtin: PALETTE.magenta,
 		functionName: PALETTE.white,
 		parameter: PALETTE.brown,
-		globalVar: PALETTE.veryDarkBlue,
+		globalVar: PALETTE.blue,
 		label: PALETTE.darkRed,
-		localTop: PALETTE.green,
-		localFunction: PALETTE.grey,
+		localTop: PALETTE.white,
+		localFunction: PALETTE.white,
 		functionHandle: PALETTE.lightGreen
 	},
 	status: {
