@@ -180,6 +180,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private readonly listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
 	private readonly listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
 	private readonly primaryAssetId: string | null;
+	private builtinIdentifierCache: { key: string; set: ReadonlySet<string> } | null = null;
 	private hoverTooltip: CodeHoverTooltip | null = null;
 	private lastPointerSnapshot: PointerSnapshot | null = null;
 	private lastInspectorResult: ConsoleLuaHoverResult | null = null;
@@ -402,6 +403,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.spaceAdvance = this.font.advance(' ');
 		this.layout = new ConsoleCodeLayout(this.font, this.semanticWorkspace, {
 			clockNow: this.clockNow,
+			getBuiltinIdentifiers: () => this.getBuiltinIdentifierSet(),
 		});
 		this.inlineFieldMetricsRef = {
 			measureText: (text: string) => this.measureText(text),
@@ -979,6 +981,46 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private syncRuntimeErrorOverlayFromContext(context: CodeTabContext | null): void {
 		this.runtimeErrorOverlay = context ? context.runtimeErrorOverlay ?? null : null;
 		this.executionStopRow = context ? context.executionStopRow ?? null : null;
+	}
+
+	private getBuiltinIdentifierSet(): ReadonlySet<string> {
+		try {
+			const descriptors = this.listBuiltinLuaFunctionsFn();
+			const names: string[] = [];
+			for (let index = 0; index < descriptors.length; index += 1) {
+				const descriptor = descriptors[index];
+				if (!descriptor || typeof descriptor.name !== 'string') {
+					continue;
+				}
+				const trimmed = descriptor.name.trim();
+				if (trimmed.length === 0) {
+					continue;
+				}
+				names.push(trimmed);
+			}
+			names.sort((a, b) => a.localeCompare(b));
+			const key = names.join('\u0000');
+			const cached = this.builtinIdentifierCache;
+			if (cached && cached.key === key) {
+				return cached.set;
+			}
+			const set = new Set<string>();
+			for (let i = 0; i < names.length; i += 1) {
+				const name = names[i];
+				set.add(name);
+				set.add(name.toLowerCase());
+			}
+			const entry = { key, set };
+			this.builtinIdentifierCache = entry;
+			return entry.set;
+		} catch (error) {
+			if (this.builtinIdentifierCache) {
+				return this.builtinIdentifierCache.set;
+			}
+			const fallback = new Set<string>();
+			this.builtinIdentifierCache = { key: '', set: fallback };
+			return fallback;
+		}
 	}
 
 	private buildRuntimeErrorLines(message: string): string[] {

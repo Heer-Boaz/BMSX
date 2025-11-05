@@ -70,6 +70,7 @@ export class ConsoleCodeLayout {
 	private semanticChunkName: string | null = null;
 	private readonly semanticDebounceMs: number;
 	private readonly clockNow: () => number;
+	private readonly getBuiltinIdentifiers: (() => Iterable<string> | null) | null;
 	private pendingSemantic: PendingSemanticUpdate | null = null;
 	private inFlightSemantic: PendingSemanticUpdate | null = null;
 	private semanticDueAtMs: number | null = null;
@@ -89,11 +90,12 @@ export class ConsoleCodeLayout {
 	constructor(
 		private readonly font: ConsoleEditorFont,
 		private readonly workspace: LuaSemanticWorkspace,
-		options?: { maxHighlightCache?: number; semanticDebounceMs?: number; clockNow?: () => number },
+		options?: { maxHighlightCache?: number; semanticDebounceMs?: number; clockNow?: () => number; getBuiltinIdentifiers?: () => Iterable<string> | null },
 	) {
 		this.maxHighlightCache = options?.maxHighlightCache ?? 2048;
 		this.semanticDebounceMs = Math.max(0, options?.semanticDebounceMs ?? 120);
 		this.clockNow = options?.clockNow ?? defaultClockNow;
+		this.getBuiltinIdentifiers = options?.getBuiltinIdentifiers ?? null;
 		this.semanticWorker = this.tryCreateSemanticWorker();
 		const probeAdvance = this.font.advance('M');
 		const fallbackAdvance = this.font.advance(' ');
@@ -169,7 +171,15 @@ export class ConsoleCodeLayout {
 		if (cached && cached.src === source && cached.rowSignature === rowSignature) {
 			return cached;
 		}
-		const highlight = highlightLineExternal(lines, row, annotations);
+		let builtinIdentifiers: Iterable<string> | null = null;
+		if (this.getBuiltinIdentifiers) {
+			try {
+				builtinIdentifiers = this.getBuiltinIdentifiers();
+			} catch {
+				builtinIdentifiers = null;
+			}
+		}
+		const highlight = highlightLineExternal(lines, row, annotations, builtinIdentifiers);
 		const displayToColumn: number[] = new Array(highlight.chars.length + 1);
 		for (let index = 0; index < displayToColumn.length; index += 1) {
 			displayToColumn[index] = 0;

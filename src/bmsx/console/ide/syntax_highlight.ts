@@ -84,10 +84,10 @@ function skipWhitespace(line: string, start: number): number {
 
 const MULTI_CHAR_OPERATORS = new Set(['==', '~=', '<=', '>=', '..', '//', '<<', '>>']);
 
-const BUILTIN_IDENTIFIERS = new Set([
-	'_g',
-	'_env',
-	'_version',
+const DEFAULT_BUILTIN_NAMES: readonly string[] = [
+	'_G',
+	'_ENV',
+	'_VERSION',
 	'assert',
 	'collectgarbage',
 	'coroutine',
@@ -121,10 +121,133 @@ const BUILTIN_IDENTIFIERS = new Set([
 	'type',
 	'utf8',
 	'xpcall',
-	'bit32'
-]);
+	'bit32',
+];
 
 const COMMENT_ANNOTATIONS = ['TODO', 'FIXME', 'BUG', 'HACK', 'NOTE', 'WARNING'];
+
+type BuiltinLookup = {
+	isBuiltin(word: string): boolean;
+};
+
+const BUILTIN_LOOKUP_FROM_SET = new WeakMap<ReadonlySet<string>, BuiltinLookup>();
+const BUILTIN_LOOKUP_FROM_KEY = new Map<string, BuiltinLookup>();
+
+function createLookupFromNames(names: Iterable<string>): BuiltinLookup {
+	const exact = new Set<string>();
+	const canonical = new Set<string>();
+	for (const candidate of names) {
+		if (typeof candidate !== 'string') {
+			continue;
+		}
+		const trimmed = candidate.trim();
+		if (trimmed.length === 0) {
+			continue;
+		}
+		exact.add(trimmed);
+		canonical.add(trimmed.toLowerCase());
+	}
+	return {
+		isBuiltin(word: string): boolean {
+			if (!word) {
+				return false;
+			}
+			if (exact.has(word)) {
+				return true;
+			}
+			return canonical.has(word.toLowerCase());
+		},
+	};
+}
+
+function createLookupWithExtras(extras: Iterable<string>): BuiltinLookup {
+	const names: string[] = [];
+	for (let index = 0; index < DEFAULT_BUILTIN_NAMES.length; index += 1) {
+		names.push(DEFAULT_BUILTIN_NAMES[index]);
+	}
+	for (const value of extras) {
+		if (typeof value !== 'string') {
+			continue;
+		}
+		names.push(value);
+	}
+	return createLookupFromNames(names);
+}
+
+function buildBuiltinCacheKey(values: readonly string[]): string {
+	if (values.length === 0) {
+		return '';
+	}
+	const normalized: string[] = [];
+	for (let index = 0; index < values.length; index += 1) {
+		const value = values[index];
+		if (typeof value !== 'string') {
+			continue;
+		}
+		const trimmed = value.trim();
+		if (trimmed.length === 0) {
+			continue;
+		}
+		normalized.push(trimmed);
+	}
+	if (normalized.length === 0) {
+		return '';
+	}
+	normalized.sort((a, b) => {
+		if (a < b) return -1;
+		if (a > b) return 1;
+		return 0;
+	});
+	return normalized.join('\u0000');
+}
+
+const DEFAULT_BUILTIN_LOOKUP = createLookupFromNames(DEFAULT_BUILTIN_NAMES);
+
+function getBuiltinLookup(extra: Iterable<string> | null | undefined): BuiltinLookup {
+	if (!extra) {
+		return DEFAULT_BUILTIN_LOOKUP;
+	}
+	if (extra instanceof Set) {
+		const existing = BUILTIN_LOOKUP_FROM_SET.get(extra as ReadonlySet<string>);
+		if (existing) {
+			return existing;
+		}
+		const lookup = createLookupWithExtras(extra);
+		BUILTIN_LOOKUP_FROM_SET.set(extra as ReadonlySet<string>, lookup);
+		return lookup;
+	}
+	if (Array.isArray(extra)) {
+		const key = buildBuiltinCacheKey(extra);
+		const existing = BUILTIN_LOOKUP_FROM_KEY.get(key);
+		if (existing) {
+			return existing;
+		}
+		const lookup = createLookupWithExtras(extra);
+		BUILTIN_LOOKUP_FROM_KEY.set(key, lookup);
+		return lookup;
+	}
+	const collected = Array.from(extra);
+	const key = buildBuiltinCacheKey(collected);
+	const existing = BUILTIN_LOOKUP_FROM_KEY.get(key);
+	if (existing) {
+		return existing;
+	}
+	const lookup = createLookupWithExtras(collected);
+	BUILTIN_LOOKUP_FROM_KEY.set(key, lookup);
+	return lookup;
+}
+
+function extractIdentifierAt(line: string, column: number): string {
+	let start = column;
+	while (start > 0 && isIdentifierPart(line.charAt(start - 1))) {
+		start -= 1;
+	}
+	let end = column;
+	while (end < line.length && isIdentifierPart(line.charAt(end))) {
+		end += 1;
+	}
+	return line.slice(start, end);
+}
 
 function resolveColorForSymbolKind(kind: SymbolKind): number {
 	switch (kind) {
@@ -262,7 +385,12 @@ function highlightGotoLabel(line: string, start: number, columnColors: number[])
 	return labelEnd;
 }
 
-function applySemanticAnnotations(columnColors: number[], annotations: SemanticAnnotations[number] | undefined): void {
+function applySemanticAnnotations(
+	line: string,
+	columnColors: number[],
+	annotations: SemanticAnnotations[number] | undefined,
+	builtinLookup: BuiltinLookup,
+): void {
 	if (!annotations) {
 		return;
 	}
@@ -271,9 +399,40 @@ function applySemanticAnnotations(columnColors: number[], annotations: SemanticA
 		if (annotation.role === 'definition' && annotation.kind === 'function') {
 			continue;
 		}
+		const start = Math.max(0, Math.min(annotation.start, columnColors.length));
+		const rawEnd = Math.max(annotation.end, start);
+		if (start >= columnColors.length) {
+			continue;
+		}
+		const end = Math.min(rawEnd, columnColors.length);
+		let skip = false;
+		if (annotation.role === 'usage' && (annotation.kind === 'global' || annotation.kind === 'function')) {
+			const searchStart = Math.max(0, start - 1);
+			const searchEnd = Math.min(columnColors.length, Math.max(end + 1, searchStart + 1));
+			for (let column = searchStart; column < searchEnd; column += 1) {
+				if (columnColors[column] !== constants.COLOR_BUILTIN) {
+					continue;
+				}
+				const identifier = extractIdentifierAt(line, column);
+				if (identifier.length === 0) {
+					continue;
+				}
+				if (builtinLookup.isBuiltin(identifier)) {
+					skip = true;
+					break;
+				}
+			}
+			if (!skip) {
+				const trimmed = line.slice(start, Math.min(rawEnd, line.length)).trim();
+				if (trimmed.length > 0 && builtinLookup.isBuiltin(trimmed)) {
+					skip = true;
+				}
+			}
+		}
+		if (skip) {
+			continue;
+		}
 		const color = resolveColorForSymbolKind(annotation.kind);
-		const start = Math.max(0, annotation.start);
-		const end = Math.max(start, annotation.end);
 		for (let column = start; column < end && column < columnColors.length; column += 1) {
 			columnColors[column] = color;
 		}
@@ -284,10 +443,12 @@ export function highlightLine(
 	source: readonly string[] | string,
 	rowOrSemantics?: number | SemanticAnnotations | null,
 	maybeSemantics?: SemanticAnnotations | null,
+	builtinIdentifiers?: Iterable<string> | null,
 ): HighlightLine {
 	let lines: readonly string[];
 	let row = 0;
 	let annotations: SemanticAnnotations | null = null;
+	let builtinCollection: Iterable<string> | null | undefined = builtinIdentifiers ?? null;
 	if (typeof source === 'string') {
 		lines = [source];
 		row = 0;
@@ -298,11 +459,18 @@ export function highlightLine(
 			annotations = maybeSemantics ?? null;
 		} else {
 			annotations = rowOrSemantics ?? null;
+			if (builtinIdentifiers === undefined && maybeSemantics !== undefined) {
+				builtinCollection = maybeSemantics as Iterable<string> | null | undefined;
+			}
 		}
+	}
+	if (builtinIdentifiers !== undefined) {
+		builtinCollection = builtinIdentifiers;
 	}
 	const line = row >= 0 && row < lines.length ? lines[row] ?? '' : '';
 	const length = line.length;
 	const columnColors: number[] = new Array(length).fill(constants.COLOR_CODE_TEXT);
+	const builtinLookup = getBuiltinLookup(builtinCollection);
 	let i = 0;
 	while (i < length) {
 		if (i === 0 && line.startsWith('#!')) {
@@ -378,7 +546,7 @@ export function highlightLine(
 			let color = constants.COLOR_CODE_TEXT;
 			if (KEYWORDS.has(lowerWord)) {
 				color = constants.COLOR_KEYWORD;
-			} else if (BUILTIN_IDENTIFIERS.has(lowerWord)) {
+			} else if (builtinLookup.isBuiltin(word)) {
 				color = constants.COLOR_BUILTIN;
 			}
 			if (color !== constants.COLOR_CODE_TEXT) {
@@ -403,7 +571,7 @@ export function highlightLine(
 
 	if (annotations) {
 		const lineAnnotations = row >= 0 && row < annotations.length ? annotations[row] : undefined;
-		applySemanticAnnotations(columnColors, lineAnnotations);
+		applySemanticAnnotations(line, columnColors, lineAnnotations, builtinLookup);
 	}
 
 	const chars: string[] = [];
