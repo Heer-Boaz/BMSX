@@ -21,6 +21,7 @@ import { AnyBackend, GPUBackend, PassEncoder, RenderContext, RenderPassDef, Rend
 import { checkWebGLError } from './webgl/webgl.helpers';
 import { WebGLBackend } from './webgl/webgl_backend';
 import { registerHeadlessPasses } from '../headless/headless_render_passes';
+import { ENGINE_ATLAS_TEXTURE_KEY } from '../atlas';
 
 export type FogUniforms = {
 	fogD50: number;
@@ -46,7 +47,7 @@ export interface SpritesPipelineState {
 	baseWidth: number;
 	baseHeight: number;
 	atlasTex?: TextureHandle | null;
-	atlasDynamicTex?: TextureHandle | null;
+	atlasSecondaryTex?: TextureHandle | null;
 	ambientEnabledDefault: boolean;
 	ambientFactorDefault: number;
 }
@@ -191,7 +192,8 @@ export class RenderPassLibrary {
 			}
 			if (passId === 'sprites') {
 				if (!gv.textures['_atlas']) console.warn(`[validate] ${pass.name}: texture '_atlas' missing`);
-				if (!gv.textures['_atlas_dynamic']) console.warn(`[validate] ${pass.name}: texture '_atlas_dynamic' missing`);
+				const secondaryTexture = gv.textures['_atlas_dynamic'] ?? gv.textures[ENGINE_ATLAS_TEXTURE_KEY];
+				if (!secondaryTexture) console.warn(`[validate] ${pass.name}: secondary atlas texture missing`);
 			}
 			if (passId === 'meshbatch') {
 				const dirBuf = MeshPipeline.getDirectionalLightBuffer();

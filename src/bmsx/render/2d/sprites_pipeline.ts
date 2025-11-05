@@ -32,6 +32,7 @@ import {
 	ZCOORDS_SIZE
 } from '../backend/webgl/webgl.constants';
 import { color, ImgRenderSubmission, RectRenderSubmission, GameView, type RenderLayer } from '../gameview';
+import { ENGINE_ATLAS_TEXTURE_KEY } from '../atlas';
 import { $ } from '../../core/game';
 import { bvec } from './vertexutils2d';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
@@ -189,9 +190,9 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS;
 		context.bind2DTex(state.atlasTex);
 	}
-	if (state.atlasDynamicTex) {
+	if (state.atlasSecondaryTex) {
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS_DYNAMIC;
-		context.bind2DTex(state.atlasDynamicTex);
+		context.bind2DTex(state.atlasSecondaryTex);
 	}
 	const q = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 100) / 100;
 	const layerWeight = (layer?: RenderLayer) => {
@@ -401,19 +402,18 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			if (!atlasTexture) {
 				throw new Error("[SpritesPipeline] Texture '_atlas' missing from view textures.");
 			}
-			const dynamicAtlasTexture = gv.textures['_atlas_dynamic'];
-			if (dynamicAtlasTexture === undefined) {
-				throw new Error("[SpritesPipeline] Texture '_atlas_dynamic' entry missing from view textures.");
-			}
-			const spriteState: SpritesPipelineState = {
-				width,
-				height,
-				baseWidth,
-				baseHeight,
-				// Provide atlas textures for direct binding in render step when needed
-				atlasTex: atlasTexture as WebGLTexture,
-				atlasDynamicTex: dynamicAtlasTexture as WebGLTexture | null,
-				ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
+		const dynamicAtlasTexture = gv.textures['_atlas_dynamic'] as WebGLTexture | null | undefined;
+		const engineAtlasTexture = gv.textures[ENGINE_ATLAS_TEXTURE_KEY] as WebGLTexture | null | undefined;
+		const secondaryAtlasTexture = (dynamicAtlasTexture ?? engineAtlasTexture ?? null) as WebGLTexture | null;
+		const spriteState: SpritesPipelineState = {
+			width,
+			height,
+			baseWidth,
+			baseHeight,
+			// Provide atlas textures for direct binding in render step when needed
+			atlasTex: atlasTexture as WebGLTexture,
+			atlasSecondaryTex: secondaryAtlasTexture,
+			ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
 				ambientFactorDefault: gv.spriteAmbientFactorDefault ?? 1.0,
 			};
 			registry.setState('sprites', spriteState);

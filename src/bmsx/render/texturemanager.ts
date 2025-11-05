@@ -4,6 +4,7 @@ import { GateGroup, taskGate } from '../core/taskgate';
 import { color_arr, GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, type RomImgAsset, type TextureSource } from '../rompack/rompack';
 import { GPUBackend, TextureHandle, TextureParams } from './backend/pipeline_interfaces';
 import { $ } from '../core/game';
+import { generateAtlasName } from './gameview';
 
 export const TEXTMANAGER_ID = 'texmgr';
 export type TextureIdentifier = string;
@@ -420,8 +421,9 @@ export class TextureManager implements RegisterablePersistent {
 		// If the image was packed into an atlas, extract its region and cache the result in the `_imgbin` property
 		const imgmeta = romImgAsset.imgmeta;
 		if (!source && imgmeta.atlassed) {
-			// const atlas = rompack.img[generateAtlasName(imgmeta.atlasid)]?._imgbin; // Atlas should have a populated _imgbin property
-			const atlas = $.rompack.img['_atlas']?._imgbin as ImageBitmap; // Atlas should have a populated _imgbin property
+			const atlasKey = generateAtlasName(imgmeta.atlasid ?? 0);
+			const atlasAsset = $.rompack.img[atlasKey];
+			const atlas = atlasAsset?._imgbin as ImageBitmap;
 			if (!atlas) throw new Error(`Texture atlas image not found for atlas ID ${imgmeta.atlasid}`);
 			const coords = imgmeta.texcoords;
 			if (!coords) throw new Error(`No texture coordinates for atlassed image '${romImgAsset.resid}'`);

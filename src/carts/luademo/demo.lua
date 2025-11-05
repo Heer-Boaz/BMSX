@@ -256,7 +256,7 @@ function update(delta)
 	for _, ball in ipairs(state.balls) do
 		update_ball(ball, delta)
 	end
-
+	
 	if btnp(4) then
 		state.paletteindex = state.paletteindex % #palette + 1
 	end

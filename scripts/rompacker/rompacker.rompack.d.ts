@@ -125,4 +125,5 @@ export interface RomManifest {
 export interface ResourceScanOptions {
 	includeCode?: boolean;
 	extraLuaPaths?: string[];
+	defaultAtlasIndex?: number;
 }

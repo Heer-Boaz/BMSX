@@ -39,6 +39,8 @@ const yaml = require('js-yaml');
 // @ts-ignore
 const { createHash } = require('crypto');
 
+const ENGINE_ATLAS_INDEX = 254; // Keep in sync with src/bmsx/render/atlas.ts
+
 // Command line parameter for texture atlas usage
 let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 export function setAtlasFlag(enabled: boolean): void {
@@ -615,10 +617,6 @@ export function parseImageMeta(filenameWithoutExt: string): {
 	if (!skipAtlas && GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
 		const atlasMatch = filenameWithoutExt.match(/@atlas=(\d+)/i);
 		targetAtlas = atlasMatch ? parseInt(atlasMatch[1], 10) : undefined;
-		if (targetAtlas === undefined) {
-			// If no atlas is specified, we use the default atlas 0
-			targetAtlas = 0;
-		}
 	}
 
 	// Remove all @cc, @cx, and @atlas=n (in any order)
@@ -723,6 +721,7 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 export type ResourceScanOptions = {
 	includeCode?: boolean;
 	extraLuaPaths?: string[];
+	defaultAtlasIndex?: number;
 };
 
 const EXTRA_LUA_SCAN_SKIP = new Set<string>([
@@ -746,6 +745,7 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 	const arrayOfFiles: string[] = [];
 	const includeCode = options.includeCode !== false;
 	const extraLuaRoots = options.extraLuaPaths ?? [];
+	const defaultAtlasIndex = options.defaultAtlasIndex ?? 0;
 	const seenPaths = new Set<string>();
 
 	const pushFile = (filepath: string) => {
@@ -830,11 +830,12 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 					}
 					throw new Error(`[RomPacker] Duplicate image resource "${name}" defined by "${existingImage.filepath}" and "${filepath}".`);
 				}
-				// If we are generating and using texture atlases, we need to add the image to the atlas
-				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS && !imgMeta.skipAtlas) {
-					if (imgMeta.targetAtlas !== undefined) targetAtlasIdSet.add(imgMeta.targetAtlas);
-				}
-				const targetAtlasIndex = imgMeta.skipAtlas ? undefined : imgMeta.targetAtlas;
+			// If we are generating and using texture atlases, we need to add the image to the atlas
+			if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS && !imgMeta.skipAtlas) {
+				const atlasIndex = imgMeta.targetAtlas ?? defaultAtlasIndex;
+				if (atlasIndex !== undefined) targetAtlasIdSet.add(atlasIndex);
+			}
+			const targetAtlasIndex = imgMeta.skipAtlas ? undefined : (imgMeta.targetAtlas ?? defaultAtlasIndex);
 				result.push({
 					filepath,
 					name,

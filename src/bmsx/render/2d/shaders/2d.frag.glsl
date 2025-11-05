@@ -22,12 +22,15 @@ layout(std140) uniform FrameUniforms {
 uniform int u_spriteAmbientEnabled;  // 0/1
 uniform float u_spriteAmbientFactor; // 0..1
 
+const uint ENGINE_ATLAS_ID = 254u;
+
 void main() {
 	vec4 texColor;
 	switch (v_atlas_id) {
 		case 0u: // Use the first texture if atlas ID is 0
 			texColor = texture(u_texture0, v_texcoord);
 			break;
+		case ENGINE_ATLAS_ID:
 		case 1u: // Use the second texture if atlas ID is 1
 			texColor = texture(u_texture1, v_texcoord);
 			break;

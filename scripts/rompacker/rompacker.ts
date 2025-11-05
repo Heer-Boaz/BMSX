@@ -6,6 +6,8 @@ import type { RomManifest, RomPackerMode, RomPackerOptions, RomPackerTarget } fr
 const term = require('terminal-kit').terminal;
 const _colors = require('colors');
 
+const ENGINE_ATLAS_INDEX = 254; // Keep in sync with src/bmsx/render/atlas.ts
+
 // Command line parameter for texture atlas usage
 let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 
@@ -387,10 +389,11 @@ async function main() {
 			if (rom_name) {
 				writeOut(`Note: ROM name is set to "${rom_name}" (not used for resource list building).\n`);
 			}
-			await buildResourceList(resourceRoots, rom_name || undefined, {
-				extraLuaPaths,
-				includeCode: isBundleMode,
-			});
+		await buildResourceList(resourceRoots, rom_name || undefined, {
+			extraLuaPaths,
+			includeCode: isBundleMode,
+			defaultAtlasIndex,
+		});
 			writeOut(`\n${_colors.brightWhite.bold('[Resource list bouwen ge-DONUT]')} \n`);
 			return;
 		} else {
@@ -421,10 +424,11 @@ async function main() {
 		}
 
 	resourceRoots = isEngineMode ? [effectiveResPath, consoleResPath] : isCartMode ? [effectiveResPath] : [effectiveResPath, commonResPath];
-		respath = effectiveResPath;
-		if (!isEngineMode) {
-			extraLuaPaths.push(bootloader_path);
-		}
+	respath = effectiveResPath;
+	if (!isEngineMode) {
+		extraLuaPaths.push(bootloader_path);
+	}
+	const defaultAtlasIndex = isEngineMode ? ENGINE_ATLAS_INDEX : 0;
 
 		writeOut(`Target platform: ${platform}.\n`);
 		if (resourceRoots.length === 1) {
@@ -549,10 +553,11 @@ async function main() {
 				await buildEngineRuntime({ debug });
 			}
 				await progress?.taskCompleted();
-			const romResMetaList = await getResMetaList(resourceRoots, rom_name, {
-				includeCode: isBundleMode,
-				extraLuaPaths,
-			});
+				const romResMetaList = await getResMetaList(resourceRoots, rom_name, {
+					includeCode: isBundleMode,
+					extraLuaPaths,
+					defaultAtlasIndex,
+				});
 				await progress?.taskCompleted();
 				// Build resources
 				let resources = await getResourcesList(romResMetaList, rom_name, {
