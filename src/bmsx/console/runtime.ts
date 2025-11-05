@@ -1,5 +1,6 @@
 import type { StorageService } from '../platform/platform';
 import { BmsxConsoleApi } from './api';
+import { CONSOLE_API_METHOD_METADATA } from './api_metadata';
 import { BmsxConsoleStorage } from './storage';
 import { ConsoleColliderManager } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
@@ -9,7 +10,7 @@ import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction, type Lua
 import { LuaEnvironment } from '../lua/environment.ts';
 import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from '../lua/value.ts';
 import { createLuaTable, isLuaNativeValue, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../lua/value.ts';
-import { LuaRuntimeError, LuaError } from '../lua/errors.ts';
+import { LuaRuntimeError, LuaError, LuaSyntaxError } from '../lua/errors.ts';
 import { $ } from '../core/game';
 import { Service } from '../core/service';
 import { EventEmitter, type EventPayload, type EventHandler, type StructuredEventPayload } from '../core/eventemitter';
@@ -214,6 +215,7 @@ class LuaScriptService extends Service {
 		super({ id, deferBind: true });
 	}
 }
+
 
 export class BmsxConsoleRuntime extends Service {
 	private static _instance: BmsxConsoleRuntime | null = null;
@@ -2335,40 +2337,72 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 				this.registerLuaBuiltin({ name, params: ['def'], signature: 'register_service(def)' });
 				continue;
 			}
-			const callable = descriptor.value;
-				if (typeof callable !== 'function') {
+		const callable = descriptor.value;
+		if (typeof callable !== 'function') {
+			continue;
+		}
+		const params = this.extractFunctionParameters(callable as (...args: unknown[]) => unknown);
+		const apiMetadata = CONSOLE_API_METHOD_METADATA[name];
+		const optionalSet: Set<string> = new Set();
+		if (apiMetadata?.optionalParameters) {
+			for (let index = 0; index < apiMetadata.optionalParameters.length; index += 1) {
+				optionalSet.add(apiMetadata.optionalParameters[index]);
+			}
+		}
+		const parameterDescriptionMap: Map<string, string | null> = new Map();
+		if (apiMetadata?.parameters) {
+			for (let index = 0; index < apiMetadata.parameters.length; index += 1) {
+				const metadataParam = apiMetadata.parameters[index];
+				if (!metadataParam || typeof metadataParam.name !== 'string') {
 					continue;
 				}
-				const params = this.extractFunctionParameters(callable as (...args: unknown[]) => unknown);
-				const signature = params.length > 0 ? `${name}(${params.join(', ')})` : `${name}()`;
-				const native = createLuaNativeFunction(`api.${name}`, interpreter, (_lua, args) => {
-					const category = this.resolveApiMethodMarshalCategory(name);
-					const moduleId = this.moduleIdFor(category, this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
-					const baseCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
-					const jsArgs = Array.from(args, (arg, index) => this.luaValueToJs(arg, this.extendMarshalContext(baseCtx, `arg${index}`)));
-					try {
-						const target = this.api as unknown as Record<string, unknown>;
-						const method = target[name];
-						if (typeof method !== 'function') {
-							throw new Error(`Method '${name}' is not callable.`);
-						}
-						const result = (method as (...inner: unknown[]) => unknown).apply(this.api, jsArgs);
-						return this.wrapResultValue(result, interpreter);
-					} catch (error) {
-						if (error instanceof LuaRuntimeError) {
-							this.handleLuaError(error);
-							return [];
-						}
-						const message = error instanceof Error ? error.message : String(error);
-						const runtimeError = this.createApiRuntimeError(interpreter, `[api.${name}] ${message}`);
-						this.handleLuaError(runtimeError);
-						return [];
-					}
-				});
-				this.registerLuaGlobal(env, name, native);
-				this.registerLuaBuiltin({ name, params, signature });
-				continue;
+				if (metadataParam.optional) {
+					optionalSet.add(metadataParam.name);
+				}
+				if (metadataParam.description !== undefined) {
+					parameterDescriptionMap.set(metadataParam.name, metadataParam.description ?? null);
+				}
 			}
+		}
+		const optionalArray = optionalSet.size > 0 ? Array.from(optionalSet) : undefined;
+		const parameterDescriptions = params.map(param => parameterDescriptionMap.get(param) ?? null);
+		const displayParams = params.map(param => (optionalSet.has(param) ? `${param}?` : param));
+		const signature = displayParams.length > 0 ? `${name}(${displayParams.join(', ')})` : `${name}()`;
+		const native = createLuaNativeFunction(`api.${name}`, interpreter, (_lua, args) => {
+			const category = this.resolveApiMethodMarshalCategory(name);
+			const moduleId = this.moduleIdFor(category, this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
+			const baseCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
+			const jsArgs = Array.from(args, (arg, index) => this.luaValueToJs(arg, this.extendMarshalContext(baseCtx, `arg${index}`)));
+			try {
+				const target = this.api as unknown as Record<string, unknown>;
+				const method = target[name];
+				if (typeof method !== 'function') {
+					throw new Error(`Method '${name}' is not callable.`);
+				}
+				const result = (method as (...inner: unknown[]) => unknown).apply(this.api, jsArgs);
+				return this.wrapResultValue(result, interpreter);
+			} catch (error) {
+				if (error instanceof LuaRuntimeError) {
+					this.handleLuaError(error);
+					return [];
+				}
+				const message = error instanceof Error ? error.message : String(error);
+				const runtimeError = this.createApiRuntimeError(interpreter, `[api.${name}] ${message}`);
+				this.handleLuaError(runtimeError);
+				return [];
+			}
+		});
+		this.registerLuaGlobal(env, name, native);
+		this.registerLuaBuiltin({
+			name,
+			params,
+			signature,
+			optionalParams: optionalArray,
+			parameterDescriptions,
+			description: apiMetadata?.description ?? null,
+		});
+		continue;
+	}
 
 			if (descriptor.get) {
 				const getter = descriptor.get;
@@ -2402,14 +2436,59 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		if (normalizedName.length === 0) {
 			return;
 		}
-		const params = Array.isArray(metadata.params) ? metadata.params.slice() : [];
-		const signature = typeof metadata.signature === 'string' ? metadata.signature : normalizedName;
-		this.luaBuiltinMetadata.set(normalizedName, {
-			name: normalizedName,
-			params,
-			signature,
-		});
+	const params: string[] = [];
+	const optionalSet: Set<string> = new Set();
+	const normalizedDescriptions: (string | null)[] = [];
+	const sourceParams = Array.isArray(metadata.params) ? metadata.params : [];
+	const sourceDescriptions = Array.isArray(metadata.parameterDescriptions) ? metadata.parameterDescriptions : [];
+	for (let index = 0; index < sourceParams.length; index += 1) {
+		const raw = sourceParams[index];
+		const description = index < sourceDescriptions.length ? sourceDescriptions[index] ?? null : null;
+		if (typeof raw !== 'string') {
+			continue;
+		}
+		const trimmed = raw.trim();
+		if (trimmed.length === 0) {
+			continue;
+		}
+		if (trimmed === '...' || trimmed.endsWith('...')) {
+			params.push(trimmed);
+			normalizedDescriptions.push(description);
+			continue;
+		}
+		if (trimmed.endsWith('?')) {
+			const base = trimmed.slice(0, -1);
+			if (base.length > 0) {
+				params.push(base);
+				normalizedDescriptions.push(description);
+				optionalSet.add(base);
+			}
+			continue;
+		}
+		params.push(trimmed);
+		normalizedDescriptions.push(description);
 	}
+	if (Array.isArray(metadata.optionalParams)) {
+		for (let index = 0; index < metadata.optionalParams.length; index += 1) {
+			const name = metadata.optionalParams[index];
+			if (typeof name !== 'string' || name.length === 0) {
+				continue;
+			}
+			optionalSet.add(name);
+		}
+	}
+	const signature = typeof metadata.signature === 'string' ? metadata.signature : normalizedName;
+	const optionalParams = optionalSet.size > 0 ? Array.from(optionalSet) : undefined;
+	const descriptor: ConsoleLuaBuiltinDescriptor = {
+		name: normalizedName,
+		params,
+		signature,
+		optionalParams,
+		parameterDescriptions: normalizedDescriptions,
+		description: metadata.description ?? null,
+	};
+	this.luaBuiltinMetadata.set(normalizedName, descriptor);
+}
 
 	private registerLuaGlobal(env: LuaEnvironment, name: string, value: LuaValue): void {
 		env.set(name, value);
@@ -6356,10 +6435,17 @@ private disposeComponentPreset(id: string): void {
 	public listLuaBuiltinFunctions(): ConsoleLuaBuiltinDescriptor[] {
 		const result: ConsoleLuaBuiltinDescriptor[] = [];
 		for (const metadata of this.luaBuiltinMetadata.values()) {
+			const optionalParams = metadata.optionalParams ?? [];
+			const optionalSet = optionalParams.length > 0 ? new Set(optionalParams) : null;
+			const params = metadata.params.map(param => (optionalSet && optionalSet.has(param) ? `${param}?` : param));
+			const parameterDescriptions = metadata.parameterDescriptions ? metadata.parameterDescriptions.slice() : undefined;
 			result.push({
 				name: metadata.name,
-				params: Array.isArray(metadata.params) ? metadata.params.slice() : [],
+				params,
 				signature: metadata.signature,
+				optionalParams,
+				parameterDescriptions,
+				description: metadata.description ?? null,
 			});
 		}
 		result.sort((a, b) => a.name.localeCompare(b.name));
@@ -6663,26 +6749,64 @@ private disposeComponentPreset(id: string): void {
 	}
 
 	private buildSemanticModelForChunk(chunkName: string, info: { assetId: string | null; path?: string | null }): LuaSemanticModel | null {
-		const source = this.resolveSourceForChunk(chunkName, info);
-		if (!source) {
-			return null;
-		}
-		const normalizedChunk = this.normalizeChunkName(chunkName);
-		const cached = this.chunkSemanticCache.get(normalizedChunk);
-		if (cached && cached.source === source) {
-			return cached.model;
-		}
-		try {
-			const model = buildLuaSemanticModel(source, chunkName);
-			this.chunkSemanticCache.set(normalizedChunk, { source, model, definitions: model.definitions });
-			return model;
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			this.chunkSemanticCache.set(normalizedChunk, { source, model: null, definitions: [] });
-			console.warn(`[BmsxConsoleRuntime] Failed to parse '${chunkName}': ${message}`);
-			return null;
-		}
+	const source = this.resolveSourceForChunk(chunkName, info);
+	if (!source) {
+		return null;
 	}
+	const normalizedChunk = this.normalizeChunkName(chunkName);
+	const cached = this.chunkSemanticCache.get(normalizedChunk);
+	const previousModel = cached ? cached.model : null;
+	const previousDefinitions = cached ? cached.definitions : [];
+	if (cached && cached.source === source) {
+		return cached.model;
+	}
+	try {
+		const model = buildLuaSemanticModel(source, chunkName);
+		this.chunkSemanticCache.set(normalizedChunk, { source, model, definitions: model.definitions });
+		return model;
+	} catch (error) {
+		if (error instanceof LuaSyntaxError) {
+			const sanitizedSource = (() => {
+				if (!Number.isFinite(error.line)) {
+					return null;
+				}
+				const lines = source.split('\n');
+				const lineIndex = error.line - 1;
+				if (lineIndex < 0 || lineIndex >= lines.length) {
+					return null;
+				}
+				const originalLine = lines[lineIndex];
+				const trimmed = originalLine.trimStart();
+				if (trimmed.startsWith('--__BMSX_SYNTAX_ERROR__')) {
+					return null;
+				}
+				const prefixLength = originalLine.length - trimmed.length;
+				const prefix = originalLine.slice(0, prefixLength);
+				lines[lineIndex] = `${prefix}--__BMSX_SYNTAX_ERROR__ ${trimmed}`;
+				return lines.join('\n');
+			})();
+			if (sanitizedSource && sanitizedSource !== source) {
+				try {
+					const model = buildLuaSemanticModel(sanitizedSource, chunkName);
+					this.chunkSemanticCache.set(normalizedChunk, { source, model, definitions: model.definitions });
+					return model;
+				} catch {
+					// continue with fallback logic below
+				}
+			}
+			if (previousModel) {
+				this.chunkSemanticCache.set(normalizedChunk, { source, model: previousModel, definitions: previousDefinitions });
+				return previousModel;
+			}
+			this.chunkSemanticCache.set(normalizedChunk, { source, model: null, definitions: [] });
+			return null;
+		}
+		const message = error instanceof Error ? error.message : String(error);
+		this.chunkSemanticCache.set(normalizedChunk, { source, model: null, definitions: [] });
+		console.warn(`[BmsxConsoleRuntime] Failed to parse '${chunkName}': ${message}`);
+		return null;
+	}
+}
 
 	private resolveSourceForChunk(chunkName: string, info: { assetId: string | null; path?: string | null }): string | null {
 		if (this.editor) {

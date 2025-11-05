@@ -98,69 +98,70 @@ export class KeyboardInput implements InputHandler {
 		// Update existing keys in place, create states on demand
 		Object.keys(this.keyStates).forEach(buttonId => {
 			const prev = this.gamepadButtonStates[buttonId] ?? makeButtonState();
-			const isDown = this.keyStates[buttonId].pressed;
-			const wasDown = !!prev.pressed;
+			const isDown = this.keyStates[buttonId].pressed === true;
+			const wasDown = prev.pressed === true;
+
+			let pressId = typeof prev.pressId === 'number' ? prev.pressId : null;
+			if (isDown && !pressId) {
+				pressId = this.nextPressId++;
+			}
+			const pressedAt = wasDown
+				? (typeof prev.pressedAtMs === 'number' ? prev.pressedAtMs : prev.timestamp ?? now)
+				: now;
+
+			let state: ButtonState;
 			if (isDown) {
-				const just = !wasDown;
-				if (just) {
-					const pid = this.nextPressId++;
-					this.gamepadButtonStates[buttonId] = makeButtonState({
-						pressed: true,
-						justpressed: true,
-						waspressed: true,
-						presstime: 0,
-						timestamp: now,
-						pressedAtMs: now,
-						pressId: pid,
-						value: 1,
-					});
-				} else {
-					const st = this.gamepadButtonStates[buttonId] ?? makeButtonState();
-					st.pressed = true;
-					st.justpressed = false;
-					st.waspressed = true;
-					st.justreleased = false;
-					st.presstime = (st.presstime ?? 0) + 1;
-					st.value = 1;
-					// preserve pressId, pressedAtMs, timestamp from first frame
-					this.gamepadButtonStates[buttonId] = st;
-				}
+				state = {
+					...prev,
+					pressed: true,
+					justpressed: !wasDown,
+					justreleased: false,
+					waspressed: true,
+					wasreleased: prev.wasreleased,
+					presstime: Math.max(0, now - pressedAt),
+					pressedAtMs: pressedAt,
+					releasedAtMs: null,
+					timestamp: wasDown ? (prev.timestamp ?? pressedAt) : now,
+					pressId,
+					value: 1,
+					consumed: false,
+				};
 			} else {
-				const st = this.gamepadButtonStates[buttonId] ?? makeButtonState();
-				const jr = wasDown;
-				this.gamepadButtonStates[buttonId] = makeButtonState({
+				state = {
+					...prev,
 					pressed: false,
 					justpressed: false,
-					justreleased: jr,
-					waspressed: st.waspressed || wasDown,
-					wasreleased: st.wasreleased || jr,
-					consumed: false,
-					timestamp: now,
-					releasedAtMs: jr ? now : st.releasedAtMs ?? null,
-					pressId: jr ? st.pressId ?? null : st.pressId ?? null,
+					justreleased: wasDown,
+					waspressed: prev.waspressed || wasDown,
+					wasreleased: prev.wasreleased || wasDown,
+					presstime: null,
+					pressedAtMs: null,
+					releasedAtMs: wasDown ? now : prev.releasedAtMs ?? null,
+					timestamp: wasDown ? now : prev.timestamp ?? now,
+					pressId: wasDown ? (prev.pressId ?? pressId) : null,
 					value: 0,
-				});
+					consumed: false,
+				};
 			}
 
-			// Mirror to the corresponding gamepad button mapping for keyboard (so consumers can treat keyboard as a gamepad-like source)
+			this.gamepadButtonStates[buttonId] = state;
+
 			const mapped = Input.KEYBOARDKEY2GAMEPADBUTTON[buttonId as keyof typeof Input.KEYBOARDKEY2GAMEPADBUTTON];
 			if (mapped) {
-				const src = this.gamepadButtonStates[buttonId];
 				const dst = this.gamepadButtonStates[mapped] ?? makeButtonState();
-				// copy fields shallowly
-				dst.pressed = src.pressed;
-				dst.justpressed = src.justpressed;
-				dst.justreleased = src.justreleased;
-				dst.waspressed = src.waspressed;
-				dst.wasreleased = src.wasreleased;
-				dst.consumed = src.consumed;
-				dst.presstime = src.presstime;
-				dst.timestamp = src.timestamp;
-				dst.pressedAtMs = src.pressedAtMs;
-				dst.releasedAtMs = src.releasedAtMs;
-				dst.pressId = src.pressId;
-				dst.value = src.value;
-				dst.value2d = src.value2d ?? null;
+				dst.pressed = state.pressed;
+				dst.justpressed = state.justpressed;
+				dst.justreleased = state.justreleased;
+				dst.waspressed = state.waspressed;
+				dst.wasreleased = state.wasreleased;
+				dst.consumed = state.consumed;
+				dst.presstime = state.presstime;
+				dst.timestamp = state.timestamp;
+				dst.pressedAtMs = state.pressedAtMs;
+				dst.releasedAtMs = state.releasedAtMs;
+				dst.pressId = state.pressId;
+				dst.value = state.value;
+				dst.value2d = state.value2d ?? null;
 				this.gamepadButtonStates[mapped] = dst;
 			}
 		});

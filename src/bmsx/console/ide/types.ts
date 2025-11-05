@@ -184,6 +184,8 @@ export type ParameterHintState = {
 	anchorRow: number;
 	anchorColumn: number;
 	argumentIndex: number;
+	paramDescriptions?: readonly (string | null)[];
+	methodDescription?: string | null;
 };
 
 export type EditorDiagnosticSeverity = 'error' | 'warning';
@@ -205,6 +207,9 @@ export type ApiCompletionMetadata = {
 	params: string[];
 	signature: string;
 	kind: 'method' | 'getter';
+	optionalParams?: readonly string[];
+	parameterDescriptions?: readonly (string | null)[];
+	description?: string | null;
 };
 
 export type VisualLineSegment = {

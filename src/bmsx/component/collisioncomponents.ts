@@ -56,6 +56,35 @@ export class Collider2DComponent extends Component<WorldObject> {
 	public get syncToken(): string | undefined { return this._syncToken; }
 	public set syncToken(v: string | undefined) { this._syncToken = v; }
 
+	constructor(opts: ComponentAttachOptions & {
+		hittable?: boolean;
+		layer?: number;
+		mask?: number;
+		istrigger?: boolean;
+		generateoverlapevents?: boolean;
+		spaceevents?: 'current' | 'ui' | 'both' | 'all';
+	}) {
+		super(opts);
+		if (typeof opts.hittable === 'boolean') {
+			this.hittable = opts.hittable;
+		}
+		if (typeof opts.layer === 'number' && Number.isFinite(opts.layer)) {
+			this.layer = opts.layer;
+		}
+		if (typeof opts.mask === 'number' && Number.isFinite(opts.mask)) {
+			this.mask = opts.mask;
+		}
+		if (typeof opts.istrigger === 'boolean') {
+			this.isTrigger = opts.istrigger;
+		}
+		if (typeof opts.generateoverlapevents === 'boolean') {
+			this.generateOverlapEvents = opts.generateoverlapevents;
+		}
+		if (opts.spaceevents === 'current' || opts.spaceevents === 'ui' || opts.spaceevents === 'both' || opts.spaceevents === 'all') {
+			this.spaceEvents = opts.spaceevents;
+		}
+	}
+
 	/** Returns world-space AABB. Falls back to object size if no local area is set. */
 	public get worldArea(): Area {
 		const parent = this.parentOrThrow();

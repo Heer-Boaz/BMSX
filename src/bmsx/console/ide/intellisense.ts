@@ -1,4 +1,5 @@
 import { BmsxConsoleApi } from '../api';
+import { CONSOLE_API_METHOD_METADATA } from '../api_metadata';
 import { LuaLexer } from '../../lua/lexer.ts';
 import { LuaParser } from '../../lua/parser.ts';
 import { LuaSyntaxError } from '../../lua/errors.ts';
@@ -241,19 +242,58 @@ function initializeApiCompletionDataInternal(): { items: LuaCompletionItem[]; si
 			}
 			if (typeof descriptor.value === 'function') {
 				const params = extractFunctionParameters(descriptor.value as (...args: unknown[]) => unknown);
-				const detail = params.length > 0
-					? `api.${name}(${params.join(', ')})`
+				const metadata = CONSOLE_API_METHOD_METADATA[name];
+				const optionalSources = new Set<string>();
+				if (metadata?.optionalParameters) {
+					for (let optIndex = 0; optIndex < metadata.optionalParameters.length; optIndex += 1) {
+						optionalSources.add(metadata.optionalParameters[optIndex]);
+					}
+				}
+				const parameterDescriptionMap: Map<string, string | null> = new Map();
+				if (metadata?.parameters) {
+					for (let paramIndex = 0; paramIndex < metadata.parameters.length; paramIndex += 1) {
+						const paramMeta = metadata.parameters[paramIndex];
+						if (!paramMeta || typeof paramMeta.name !== 'string') {
+							continue;
+						}
+						if (paramMeta.optional) {
+							optionalSources.add(paramMeta.name);
+						}
+						if (paramMeta.description !== undefined) {
+							parameterDescriptionMap.set(paramMeta.name, paramMeta.description ?? null);
+						}
+					}
+				}
+				const optionalParams = optionalSources.size > 0 ? Array.from(optionalSources) : [];
+				const parameterDescriptions = params.map(param => parameterDescriptionMap.get(param) ?? null);
+				const displayParams = params.map(param => (optionalSources.has(param) ? `${param}?` : param));
+				const baseDetail = displayParams.length > 0
+					? `api.${name}(${displayParams.join(', ')})`
 					: `api.${name}()`;
+				const methodDescription = metadata?.description ?? null;
+				const detail = methodDescription && methodDescription.length > 0 ? `${baseDetail} • ${methodDescription}` : baseDetail;
 				const item: LuaCompletionItem = {
 					label: name,
 					insertText: name,
 					sortKey: `api:${name}`,
 					kind: 'api_method',
 					detail,
-					parameters: params,
+					parameters: displayParams,
 				};
 				items.push(item);
-				signatures.set(name, { params: params.slice(), signature: detail, kind: 'method' });
+				const metadataEntry: ApiCompletionMetadata = {
+					params: params.slice(),
+					signature: baseDetail,
+					kind: 'method',
+					optionalParams,
+					parameterDescriptions,
+					description: methodDescription,
+				};
+				signatures.set(name, metadataEntry);
+				const lower = name.toLowerCase();
+				if (lower !== name && !signatures.has(lower)) {
+					signatures.set(lower, metadataEntry);
+				}
 				processed.add(name);
 				continue;
 			}
@@ -267,7 +307,12 @@ function initializeApiCompletionDataInternal(): { items: LuaCompletionItem[]; si
 					detail,
 				};
 				items.push(item);
-				signatures.set(name, { params: [], signature: detail, kind: 'getter' });
+				const metadataEntry: ApiCompletionMetadata = { params: [], signature: detail, kind: 'getter', description: null };
+				signatures.set(name, metadataEntry);
+				const lower = name.toLowerCase();
+				if (lower !== name && !signatures.has(lower)) {
+					signatures.set(lower, metadataEntry);
+				}
 				processed.add(name);
 			}
 		}
@@ -829,6 +874,8 @@ type CallSignatureMetadata = {
 	callStyle?: 'function' | 'method';
 	declarationStyle?: 'function' | 'method';
 	hasVararg?: boolean;
+	description?: string | null;
+	parameterDescriptions?: readonly (string | null)[];
 };
 
 function resolveCallSignature(
@@ -844,12 +891,15 @@ function resolveCallSignature(
 		if (qualified && qualified.parts.length > 0 && qualified.parts[0] === 'api') {
 			const apiMeta = apiSignatures.get(call.methodName);
 			if (apiMeta) {
+				const marker = applyOptionalMarkers(apiMeta.params, apiMeta.optionalParams, apiMeta.parameterDescriptions ?? null);
 				return {
-					params: apiMeta.params,
+					params: marker.params,
 					label: `api.${call.methodName}`,
 					callStyle: 'method',
 					declarationStyle: 'function',
 					hasVararg: apiMeta.params.some(param => param === '...' || param.endsWith('...')),
+					description: apiMeta.description ?? null,
+					parameterDescriptions: marker.descriptions,
 				};
 			}
 		}
@@ -863,35 +913,44 @@ function resolveCallSignature(
 		const method = qualified.parts[qualified.parts.length - 1];
 		const apiMeta = apiSignatures.get(method);
 		if (apiMeta) {
+			const marker = applyOptionalMarkers(apiMeta.params, apiMeta.optionalParams, apiMeta.parameterDescriptions ?? null);
 			return {
-				params: apiMeta.params,
+				params: marker.params,
 				label: `api.${method}`,
 				callStyle: 'function',
 				declarationStyle: 'function',
 				hasVararg: apiMeta.params.some(param => param === '...' || param.endsWith('...')),
+				description: apiMeta.description ?? null,
+				parameterDescriptions: marker.descriptions,
 			};
 		}
 	}
 	const key = qualified.parts.join('.').toLowerCase();
 	const builtin = builtinLookup.get(key);
 	if (builtin) {
+		const marker = applyOptionalMarkers(builtin.params, builtin.optionalParams, builtin.parameterDescriptions ?? null);
 		return {
-			params: builtin.params,
+			params: marker.params,
 			label: builtin.name,
 			callStyle: 'function',
 			declarationStyle: 'function',
 			hasVararg: builtin.params.some(param => param === '...' || param.endsWith('...')),
+			description: builtin.description ?? null,
+			parameterDescriptions: marker.descriptions,
 		};
 	}
 	// Fallback: treat API methods as global functions (runtime registers them globally)
 	const apiMetaAsGlobal = apiSignatures.get(key);
 	if (apiMetaAsGlobal) {
+		const marker = applyOptionalMarkers(apiMetaAsGlobal.params, apiMetaAsGlobal.optionalParams, apiMetaAsGlobal.parameterDescriptions ?? null);
 		return {
-			params: apiMetaAsGlobal.params,
+			params: marker.params,
 			label: key,
 			callStyle: 'function',
 			declarationStyle: 'function',
 			hasVararg: apiMetaAsGlobal.params.some(param => param === '...' || param.endsWith('...')),
+			description: apiMetaAsGlobal.description ?? null,
+			parameterDescriptions: marker.descriptions,
 		};
 	}
 	return null;
@@ -905,6 +964,34 @@ type FunctionCallInfo = {
 	path: string;
 	style: 'function' | 'method';
 };
+
+function applyOptionalMarkers(
+	params: readonly string[],
+	optionalParams?: readonly string[] | null,
+	parameterDescriptions?: readonly (string | null)[] | null,
+): { params: string[]; descriptions: (string | null)[] } {
+	if (!params || params.length === 0) {
+		return { params: [], descriptions: [] };
+	}
+	const optionalSet = optionalParams && optionalParams.length > 0 ? new Set(optionalParams) : null;
+	const resultParams: string[] = [];
+	const resultDescriptions: (string | null)[] = [];
+	for (let index = 0; index < params.length; index += 1) {
+		const param = params[index];
+		if (!param || param.length === 0) {
+			continue;
+		}
+		const description = parameterDescriptions && index < parameterDescriptions.length ? parameterDescriptions[index] ?? null : null;
+		if (optionalSet && optionalSet.has(param)) {
+			resultParams.push(param.endsWith('?') ? param : `${param}?`);
+			resultDescriptions.push(description);
+			continue;
+		}
+		resultParams.push(param);
+		resultDescriptions.push(description);
+	}
+	return { params: resultParams, descriptions: resultDescriptions };
+}
 
 function resolveQualifiedName(expression: LuaExpression): QualifiedName | null {
 	const parts: string[] = [];

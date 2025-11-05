@@ -59,8 +59,8 @@ register_worldobject({
 		{
 			class = 'Collider2DComponent',
 			id_local = 'ingredient_collider',
-			isTrigger = true,
-			generateOverlapEvents = true,
+			istrigger = true,
+			generateoverlapevents = true,
 		},
 	},
 })
@@ -215,9 +215,9 @@ register_worldobject({
 		{
 			class = 'Collider2DComponent',
 			id_local = 'fire_collider',
-			isTrigger = true,
-			generateOverlapEvents = true,
-			spaceEvents = 'current',
+			istrigger = true,
+			generateoverlapevents = true,
+			spaceevents = 'current',
 		},
 		{
 			class = 'ScreenBoundaryComponent',
@@ -338,8 +338,8 @@ register_worldobject({
 		{
 			class = 'Collider2DComponent',
 			id_local = 'player_collider',
-			isTrigger = true,
-			generateOverlapEvents = true,
+			istrigger = true,
+			generateoverlapevents = true,
 		},
 		{
 			class = 'AbilitySystemComponent',

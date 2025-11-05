@@ -373,24 +373,45 @@ export class CompletionController {
         const hint = this.parameterHint;
         const cursorInfo = this.host.getCursorScreenInfo();
         if (!hint || !cursorInfo) return;
-        const params = hint.params;
-        const baseColor = constants.COLOR_PARAMETER_HINT_TEXT;
-        const segments: Array<{ text: string; color: number }> = [];
-        segments.push({ text: `api.${hint.methodName}(`, color: baseColor });
-        for (let i = 0; i < params.length; i += 1) {
-            if (i > 0) segments.push({ text: ', ', color: baseColor });
-            const color = i === hint.argumentIndex ? constants.COLOR_PARAMETER_HINT_ACTIVE : baseColor;
-            segments.push({ text: params[i], color });
-        }
-        segments.push({ text: ')', color: baseColor });
-        let textWidth = 0;
-        for (let i = 0; i < segments.length; i += 1) {
-            const part = segments[i];
-            if (part.text.length === 0) continue;
-            textWidth += this.host.measureText(part.text);
-        }
-        const popupWidth = Math.floor(textWidth + constants.PARAMETER_HINT_PADDING_X * 2);
-        const popupHeight = Math.floor(this.host.getLineHeight() + constants.PARAMETER_HINT_PADDING_Y * 2);
+	const params = hint.params;
+	const baseColor = constants.COLOR_PARAMETER_HINT_TEXT;
+	const segments: Array<{ text: string; color: number }> = [];
+	segments.push({ text: `${hint.methodName}(`, color: baseColor });
+	for (let i = 0; i < params.length; i += 1) {
+		if (i > 0) segments.push({ text: ', ', color: baseColor });
+		const color = i === hint.argumentIndex ? constants.COLOR_PARAMETER_HINT_ACTIVE : baseColor;
+		segments.push({ text: params[i], color });
+	}
+	segments.push({ text: ')', color: baseColor });
+	let firstLineWidth = 0;
+	for (let i = 0; i < segments.length; i += 1) {
+		const part = segments[i];
+		if (part.text.length === 0) continue;
+		firstLineWidth += this.host.measureText(part.text);
+	}
+	const methodDescription = hint.methodDescription && hint.methodDescription.length > 0 ? hint.methodDescription : null;
+	const activeParamDescription = hint.paramDescriptions && hint.argumentIndex < hint.paramDescriptions.length
+		? hint.paramDescriptions[hint.argumentIndex] ?? null
+		: null;
+	const descriptionLines: Array<{ text: string; color: number }> = [];
+	if (methodDescription) {
+		descriptionLines.push({ text: methodDescription, color: baseColor });
+	}
+	if (activeParamDescription && activeParamDescription.length > 0) {
+		descriptionLines.push({ text: activeParamDescription, color: constants.COLOR_PARAMETER_HINT_ACTIVE });
+	}
+	let maxLineWidth = firstLineWidth;
+	for (let i = 0; i < descriptionLines.length; i += 1) {
+		const width = this.host.measureText(descriptionLines[i].text);
+		if (width > maxLineWidth) {
+			maxLineWidth = width;
+		}
+	}
+	const lineHeight = this.host.getLineHeight();
+	const lineSpacing = 2;
+	const totalLines = 1 + descriptionLines.length;
+	const popupWidth = Math.floor(maxLineWidth + constants.PARAMETER_HINT_PADDING_X * 2);
+	const popupHeight = Math.floor(totalLines * lineHeight + constants.PARAMETER_HINT_PADDING_Y * 2 + Math.max(0, totalLines - 1) * lineSpacing);
         let popupLeft = Math.floor(cursorInfo.x);
         if (popupLeft + popupWidth > bounds.codeRight) popupLeft = bounds.codeRight - popupWidth;
         if (popupLeft < bounds.textLeft) popupLeft = bounds.textLeft;
@@ -403,14 +424,19 @@ export class CompletionController {
         const popupBottom = popupTop + popupHeight;
         api.rectfill(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BACKGROUND);
         api.rect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BORDER);
-        let textX = popupLeft + constants.PARAMETER_HINT_PADDING_X;
-        const textY = popupTop + constants.PARAMETER_HINT_PADDING_Y;
-        for (let i = 0; i < segments.length; i += 1) {
-            const part = segments[i];
-            if (part.text.length === 0) continue;
-            this.host.drawText(api, part.text, textX, textY, part.color);
-            textX += this.host.measureText(part.text);
-        }
+	let textX = popupLeft + constants.PARAMETER_HINT_PADDING_X;
+	let currentY = popupTop + constants.PARAMETER_HINT_PADDING_Y;
+	for (let i = 0; i < segments.length; i += 1) {
+		const part = segments[i];
+		if (part.text.length === 0) continue;
+		this.host.drawText(api, part.text, textX, currentY, part.color);
+		textX += this.host.measureText(part.text);
+	}
+	for (let i = 0; i < descriptionLines.length; i += 1) {
+		const line = descriptionLines[i];
+		currentY += lineHeight + lineSpacing;
+		this.host.drawText(api, line.text, popupLeft + constants.PARAMETER_HINT_PADDING_X, currentY, line.color);
+	}
     }
 
     // Internal helpers and logic
@@ -579,12 +605,13 @@ export class CompletionController {
     private getBuiltinCompletionItems(): LuaCompletionItem[] {
         this.ensureBuiltinDescriptorCache();
         const items: LuaCompletionItem[] = [];
-        for (const descriptor of this.builtinDescriptorMap.values()) {
-            const label = descriptor.name;
-            const params = Array.isArray(descriptor.params) ? descriptor.params.slice() : [];
-            const detail = descriptor.signature && descriptor.signature.length > 0 ? descriptor.signature : 'Lua builtin';
-            items.push({ label, insertText: label, sortKey: `builtin:${label.toLowerCase()}`, kind: 'builtin', detail, parameters: params });
-        }
+		for (const descriptor of this.builtinDescriptorMap.values()) {
+			const label = descriptor.name;
+			const params = Array.isArray(descriptor.params) ? descriptor.params.slice() : [];
+			const baseDetail = descriptor.signature && descriptor.signature.length > 0 ? descriptor.signature : 'Lua builtin';
+			const detail = descriptor.description && descriptor.description.length > 0 ? `${baseDetail} • ${descriptor.description}` : baseDetail;
+			items.push({ label, insertText: label, sortKey: `builtin:${label.toLowerCase()}`, kind: 'builtin', detail, parameters: params });
+		}
         items.sort((a, b) => a.label.localeCompare(b.label));
         return items;
     }
@@ -802,41 +829,76 @@ export class CompletionController {
         this.builtinDescriptorMap.clear();
         this.sharedCompletionItems = null;
         this.sharedCompletionMap = null;
-        const registerDescriptor = (descriptor: ConsoleLuaBuiltinDescriptor): void => {
-            if (!descriptor || typeof descriptor.name !== 'string') return;
-            const normalized = descriptor.name.trim();
-            if (normalized.length === 0) return;
-            const params = Array.isArray(descriptor.params) ? descriptor.params.slice() : [];
-            const signature = descriptor.signature && descriptor.signature.length > 0 ? descriptor.signature : normalized;
-            const entry: ConsoleLuaBuiltinDescriptor = { name: normalized, params, signature };
-            this.builtinDescriptorMap.set(normalized.toLowerCase(), entry);
-        };
-        for (let i = 0; i < descriptors.length; i += 1) registerDescriptor(descriptors[i]);
+		const registerDescriptor = (descriptor: ConsoleLuaBuiltinDescriptor): void => {
+			if (!descriptor || typeof descriptor.name !== 'string') return;
+			const normalized = descriptor.name.trim();
+			if (normalized.length === 0) return;
+			const params = Array.isArray(descriptor.params) ? descriptor.params.slice() : [];
+			const signature = descriptor.signature && descriptor.signature.length > 0 ? descriptor.signature : normalized;
+			const optionalParams = Array.isArray(descriptor.optionalParams) ? descriptor.optionalParams.slice() : undefined;
+			const entry: ConsoleLuaBuiltinDescriptor = {
+				name: normalized,
+				params,
+				signature,
+				optionalParams,
+				parameterDescriptions: descriptor.parameterDescriptions ? descriptor.parameterDescriptions.slice() : undefined,
+				description: descriptor.description ?? null,
+			};
+			this.builtinDescriptorMap.set(normalized.toLowerCase(), entry);
+		};
+		for (let i = 0; i < descriptors.length; i += 1) registerDescriptor(descriptors[i]);
 
-        // Also expose API methods as global built-ins if not already present,
-        // since the runtime registers them globally too.
-        for (const [name, meta] of apiCompletionData.signatures) {
-            const key = name.toLowerCase();
-            if (!this.builtinDescriptorMap.has(key)) {
-                const params = Array.isArray(meta.params) ? meta.params.slice() : [];
-                const signature = meta.signature && meta.signature.length > 0 ? meta.signature : name;
-                this.builtinDescriptorMap.set(key, { name, params, signature });
-            }
-        }
-    }
+		// Also expose API methods as global built-ins if not already present,
+		// since the runtime registers them globally too.
+		for (const [name, meta] of apiCompletionData.signatures) {
+			const key = name.toLowerCase();
+			if (!this.builtinDescriptorMap.has(key)) {
+				const optionalParams = meta.optionalParams ?? [];
+				const optionalSet = optionalParams.length > 0 ? new Set(optionalParams) : null;
+				const params = Array.isArray(meta.params)
+					? meta.params.map(param => (optionalSet && optionalSet.has(param) ? `${param}?` : param))
+					: [];
+				const signature = meta.signature && meta.signature.length > 0 ? meta.signature : name;
+				this.builtinDescriptorMap.set(key, {
+					name,
+					params,
+					signature,
+					optionalParams,
+					parameterDescriptions: meta.parameterDescriptions ? meta.parameterDescriptions.slice() : undefined,
+					description: meta.description ?? null,
+				});
+			}
+		}
+	}
 
-    private findBuiltinDescriptor(objectName: string | null, methodName: string): ConsoleLuaBuiltinDescriptor | null {
+	private findBuiltinDescriptor(objectName: string | null, methodName: string): ConsoleLuaBuiltinDescriptor | null {
         this.ensureBuiltinDescriptorCache();
         const methodKey = methodName.toLowerCase();
-        if (objectName) {
-            const compositeKey = `${objectName.toLowerCase()}.${methodKey}`;
-            const composite = this.builtinDescriptorMap.get(compositeKey);
-            if (composite) return { name: composite.name, params: composite.params.slice(), signature: composite.signature };
-        }
-        const direct = this.builtinDescriptorMap.get(methodKey);
-        if (direct) return { name: direct.name, params: direct.params.slice(), signature: direct.signature };
-        return null;
-    }
+		if (objectName) {
+			const compositeKey = `${objectName.toLowerCase()}.${methodKey}`;
+			const composite = this.builtinDescriptorMap.get(compositeKey);
+			if (composite) {
+				return {
+					name: composite.name,
+					params: composite.params.slice(),
+					signature: composite.signature,
+					optionalParams: composite.optionalParams ? composite.optionalParams.slice() : undefined,
+					description: composite.description ?? null,
+				};
+			}
+		}
+		const direct = this.builtinDescriptorMap.get(methodKey);
+		if (direct) {
+			return {
+				name: direct.name,
+				params: direct.params.slice(),
+				signature: direct.signature,
+				optionalParams: direct.optionalParams ? direct.optionalParams.slice() : undefined,
+				description: direct.description ?? null,
+			};
+		}
+		return null;
+	}
 
     private determineAutoCompletionTrigger(context: CompletionContext, edit: EditContext): CompletionTrigger | null {
         if (!edit || edit.kind === 'delete') return null;
@@ -1118,20 +1180,74 @@ export class CompletionController {
                 }
             }
         }
-        // if (objectName && objectName.toLowerCase() === 'api') {
-        //     const apiMeta = apiCompletionData.signatures.get(methodName);
-        //     if (apiMeta) {
-        //         const params = apiMeta.params.slice();
-        //         return { methodName, params, signatureLabel: apiMeta.signature, anchorRow: safeRow, anchorColumn: lastOpen, argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)) };
-        //     }
-        // }
-        const builtin = this.findBuiltinDescriptor(objectName, methodName);
-        if (builtin) {
-            const params = Array.isArray(builtin.params) ? builtin.params.slice() : [];
-            return { methodName: builtin.name, params, signatureLabel: builtin.signature, anchorRow: safeRow, anchorColumn: lastOpen, argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)) };
-        }
-        return null;
-    }
+
+	const isApiObject = objectName !== null && objectName.toLowerCase() === 'api';
+	const normalizedMethodName = methodName.toLowerCase();
+	if (isApiObject) {
+		const apiMeta = apiCompletionData.signatures.get(normalizedMethodName);
+		if (apiMeta) {
+			const optionalSet = apiMeta.optionalParams && apiMeta.optionalParams.length > 0 ? new Set(apiMeta.optionalParams) : null;
+			const params = apiMeta.params.map(param => (optionalSet && optionalSet.has(param) ? `${param}?` : param));
+			const paramDescriptions = apiMeta.parameterDescriptions ? apiMeta.parameterDescriptions.slice() : undefined;
+			return {
+				methodName,
+				params,
+				signatureLabel: apiMeta.signature,
+				anchorRow: safeRow,
+				anchorColumn: lastOpen,
+				argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
+				paramDescriptions,
+				methodDescription: apiMeta.description ?? null,
+			};
+		}
+	}
+		const builtin = this.findBuiltinDescriptor(objectName, methodName);
+		if (builtin) {
+			const params = Array.isArray(builtin.params) ? builtin.params.slice() : [];
+		let paramDescriptions = Array.isArray(builtin.parameterDescriptions) ? builtin.parameterDescriptions.slice() : undefined;
+		let methodDescription = builtin.description ?? null;
+		if ((!paramDescriptions || paramDescriptions.length === 0) || !methodDescription) {
+			const apiMetaFallback = apiCompletionData.signatures.get(normalizedMethodName);
+				if (apiMetaFallback) {
+					if (!paramDescriptions || paramDescriptions.length === 0) {
+						paramDescriptions = apiMetaFallback.parameterDescriptions ? apiMetaFallback.parameterDescriptions.slice() : undefined;
+					}
+					if (!methodDescription && apiMetaFallback.description) {
+						methodDescription = apiMetaFallback.description;
+					}
+				}
+			}
+			return {
+				methodName: builtin.name,
+				params,
+				signatureLabel: builtin.signature,
+				anchorRow: safeRow,
+				anchorColumn: lastOpen,
+				argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
+				paramDescriptions,
+				methodDescription,
+			};
+		}
+	if (!objectName || isApiObject) {
+		const apiMetaGlobal = apiCompletionData.signatures.get(normalizedMethodName);
+		if (apiMetaGlobal) {
+			const optionalSet = apiMetaGlobal.optionalParams && apiMetaGlobal.optionalParams.length > 0 ? new Set(apiMetaGlobal.optionalParams) : null;
+			const params = apiMetaGlobal.params.map(param => (optionalSet && optionalSet.has(param) ? `${param}?` : param));
+			const paramDescriptions = apiMetaGlobal.parameterDescriptions ? apiMetaGlobal.parameterDescriptions.slice() : undefined;
+			return {
+				methodName,
+				params,
+				signatureLabel: apiMetaGlobal.signature,
+				anchorRow: safeRow,
+				anchorColumn: lastOpen,
+				argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
+				paramDescriptions,
+				methodDescription: apiMetaGlobal.description ?? null,
+			};
+		}
+	}
+	return null;
+}
 
     private activeCompletionCacheKey(): string | null {
         const context = this.host.getActiveCodeTabContext();

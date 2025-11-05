@@ -71,6 +71,7 @@ export class OnscreenGamepad implements InputHandler {
 	private pointer2Elements = new Map<number, Set<string>>();
 	private elementActiveCount = new Map<string, number>();
 	private gamepadButtonStates: KeyOrButtonId2ButtonState = {};
+	private nextPressId = 1;
 	private handlesProvider: OnscreenGamepadHandleProvider | null = null;
 
 	constructor(platform: OnscreenGamepadPlatform) {
@@ -140,20 +141,22 @@ export class OnscreenGamepad implements InputHandler {
 			const isDown = count > 0;
 			if (isDown) {
 				const wasPressed = previous.pressed === true;
-				const previousPressId = typeof previous.pressId === 'number' ? previous.pressId : 0;
-				const previousTimestamp = typeof previous.timestamp === 'number' ? previous.timestamp : now;
-				const previousPressTime = typeof previous.presstime === 'number' ? previous.presstime : 0;
-				const consumed = previous.consumed === true;
-				const newPressId = wasPressed ? (typeof previous.pressId === 'number' ? previous.pressId : null) : previousPressId + 1;
+				const previousPressId = typeof previous.pressId === 'number' ? previous.pressId : null;
+				const pressedAt = wasPressed
+					? (typeof previous.pressedAtMs === 'number' ? previous.pressedAtMs : previous.timestamp ?? now)
+					: now;
+				const newPressId = wasPressed ? previousPressId ?? this.nextPressId++ : this.nextPressId++;
 				newStates[button] = {
 					...previous,
 					pressed: true,
 					justpressed: !wasPressed,
 					justreleased: false,
-					presstime: previousPressTime + 1,
-					consumed,
-					timestamp: wasPressed ? previousTimestamp : now,
-					pressId: wasPressed ? (typeof previous.pressId === 'number' ? previous.pressId : null) : newPressId,
+					presstime: Math.max(0, now - pressedAt),
+					consumed: false,
+					timestamp: wasPressed ? (previous.timestamp ?? pressedAt) : now,
+					pressedAtMs: pressedAt,
+					releasedAtMs: null,
+					pressId: newPressId,
 					value: 1,
 				};
 			} else {
@@ -163,10 +166,12 @@ export class OnscreenGamepad implements InputHandler {
 					pressed: false,
 					justpressed: false,
 					justreleased: was,
-					presstime: 0,
+					presstime: null,
 					consumed: false,
 					timestamp: now,
 					pressId: typeof previous.pressId === 'number' ? previous.pressId : null,
+					pressedAtMs: null,
+					releasedAtMs: was ? now : previous.releasedAtMs ?? null,
 					value: 0,
 				};
 			}

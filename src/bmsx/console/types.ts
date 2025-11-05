@@ -139,6 +139,9 @@ export type ConsoleLuaBuiltinDescriptor = {
 	name: string;
 	params: string[];
 	signature: string;
+	optionalParams?: readonly string[];
+	parameterDescriptions?: readonly (string | null)[];
+	description?: string | null;
 };
 
 export type ConsoleLuaHoverRequest = {
