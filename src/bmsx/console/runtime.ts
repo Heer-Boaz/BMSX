@@ -2,8 +2,6 @@ import type { StorageService } from '../platform/platform';
 import { BmsxConsoleApi } from './api';
 import { CONSOLE_API_METHOD_METADATA } from './api_metadata';
 import { BmsxConsoleStorage } from './storage';
-import { ConsoleColliderManager } from './collision';
-import { Physics2DManager } from '../physics/physics2d';
 import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor, ConsoleLuaMemberCompletionRequest, ConsoleLuaMemberCompletion } from './types';
 import type { RomResourcePath } from '../rompack/rompack';
 import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction, type LuaCallFrame } from '../lua/runtime.ts';
@@ -312,8 +310,6 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly api: BmsxConsoleApi;
 	private readonly storage: BmsxConsoleStorage;
 	private readonly storageService: StorageService;
-	private readonly colliders: ConsoleColliderManager;
-	private readonly physics: Physics2DManager;
 	private readonly apiFunctionNames = new Set<string>();
 	private readonly luaBuiltinMetadata = new Map<string, ConsoleLuaBuiltinDescriptor>();
 	private readonly caseInsensitiveLua: boolean;
@@ -414,13 +410,9 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		this.playerIndex = options.playerIndex;
 		this.storageService = options.storage ?? $.platform.storage;
 		this.storage = new BmsxConsoleStorage(this.storageService, options.cart.meta.persistentId);
-		this.colliders = new ConsoleColliderManager();
-		this.physics = new Physics2DManager();
 		this.api = new BmsxConsoleApi({
 			playerIndex: this.playerIndex,
 			storage: this.storage,
-			colliders: this.colliders,
-			physics: this.physics,
 		});
 		this.luaProgram = this.cart.luaProgram ?? null;
 		this.seedDefaultLuaBuiltins();
@@ -649,9 +641,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		if (this.hasBooted) {
 			this.resetWorldState();
 		}
-		this.physics.clear();
 		this.api.cartdata(this.cart.meta.persistentId);
-		this.api.collider_clear();
 		if (this.hasLuaProgram()) {
 			this.bootLuaProgram(true);
 		}
@@ -740,7 +730,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			this.cart.draw(this.api);
 		}
 		this.endFrameAndFlush(editorActive);
-		this.physics.step(deltaSeconds);
 		this.frameCounter += 1;
 	}
 
@@ -751,7 +740,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			this.editor.shutdown();
 			this.editor = null;
 		}
-		this.colliders.clear();
 		this.disposeAllWorldObjectDefinitions();
 		this.disposeLuaServices();
 		this.luaInterpreter = null;

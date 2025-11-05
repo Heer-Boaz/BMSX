@@ -31,7 +31,6 @@ export interface TabBarHost {
 	measureText: (text: string) => number;
 	drawText: (api: BmsxConsoleApi, text: string, x: number, y: number, color: number) => void;
 	getDirtyMarkerMetrics: () => { width: number; height: number };
-	tabDirtyMarkerAssetId: string;
 	tabButtonBounds: Map<string, RectBounds>;
 	tabCloseButtonBounds: Map<string, RectBounds>;
 }
@@ -207,7 +206,9 @@ export function renderTabBar(api: BmsxConsoleApi, host: TabBarHost): number {
 				if (entry.dirty && entry.markerMetrics) {
 					const markerX = closeBounds.left + Math.floor((entry.closeWidth - entry.markerMetrics.width) / 2);
 					const markerY = bounds.top + Math.floor((bounds.bottom - bounds.top - entry.markerMetrics.height) / 2);
-					api.spr(host.tabDirtyMarkerAssetId, markerX, markerY);
+					const markerRight = markerX + entry.markerMetrics.width - 1;
+					const markerBottom = markerY + entry.markerMetrics.height - 1;
+					api.rectfill(markerX, markerY, markerRight, markerBottom, constants.COLOR_TAB_DIRTY_MARKER);
 				}
 			}
 		} else {
@@ -218,7 +219,9 @@ export function renderTabBar(api: BmsxConsoleApi, host: TabBarHost): number {
 					? indicatorLeft + Math.floor(Math.max(0, (indicatorWidth - entry.markerMetrics.width) / 2))
 					: bounds.right - entry.markerMetrics.width - spacing;
 				const markerY = bounds.top + Math.floor((bounds.bottom - bounds.top - entry.markerMetrics.height) / 2);
-				api.spr(host.tabDirtyMarkerAssetId, markerX, markerY);
+				const markerRight = markerX + entry.markerMetrics.width - 1;
+				const markerBottom = markerY + entry.markerMetrics.height - 1;
+				api.rectfill(markerX, markerY, markerRight, markerBottom, constants.COLOR_TAB_DIRTY_MARKER);
 			}
 		}
 

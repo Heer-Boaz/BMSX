@@ -48,7 +48,6 @@ const PALETTE = {
 	white: 15,
 	brown: 16, // Extended palette color
 	veryDarkBlue: 17 // Extended palette color
-
 };
 
 const THEME_BASE = {
@@ -67,20 +66,21 @@ const THEME_BASE = {
 		topBar: PALETTE.black,
 		primary: PALETTE.white,
 		secondary: PALETTE.black,
-		keyword: PALETTE.lightYellow,
+		keyword: PALETTE.brown,
 		string: PALETTE.lightRed,
-		number: PALETTE.darkYellow,
+		number: PALETTE.lightBlue,
 		comment: PALETTE.darkGreen,
 		operator: PALETTE.white,
 		dim: PALETTE.lightRed,
-		builtin: PALETTE.magenta,
+		builtin: PALETTE.darkYellow,
 		functionName: PALETTE.white,
-		parameter: PALETTE.brown,
-		globalVar: PALETTE.blue,
+		parameter: PALETTE.red,
+		globalVar: PALETTE.lightYellow,
 		label: PALETTE.darkRed,
 		localTop: PALETTE.white,
 		localFunction: PALETTE.white,
-		functionHandle: PALETTE.lightGreen
+		functionHandle: PALETTE.lightGreen,
+		selection: PALETTE.black,
 	},
 	status: {
 		background: PALETTE.grey,
@@ -129,7 +129,8 @@ const TAB_BASE = {
 	inactiveBackground: THEME_BASE.surfaces.tabInactive,
 	activeBackground: THEME_BASE.surfaces.tabActive,
 	inactiveText: THEME_BASE.tab.inactiveText,
-	activeText: THEME_BASE.tab.activeText
+	activeText: THEME_BASE.tab.activeText,
+	dirtyMarker: THEME_BASE.status.warning
 };
 
 const SEARCH_BASE = {
@@ -210,8 +211,8 @@ export const COLOR_LABEL = THEME_BASE.text.label;
 export const COLOR_LOCAL_TOP = THEME_BASE.text.localTop;
 export const COLOR_LOCAL_FUNCTION = THEME_BASE.text.localFunction;
 export const COLOR_FUNCTION_HANDLE = THEME_BASE.text.functionHandle;
-export const HIGHLIGHT_OVERLAY = Msx1Colors[PALETTE.darkBlue]; //Msx1Colors[PALETTE.darkBlue];
-export const SELECTION_OVERLAY = Msx1Colors[PALETTE.magenta];
+export const HIGHLIGHT_OVERLAY = Msx1Colors[THEME_BASE.surfaces.editor]; //Msx1Colors[PALETTE.darkBlue];
+export const SELECTION_OVERLAY = Msx1Colors[THEME_BASE.text.selection];
 export const CARET_COLOR = Msx1Colors[PALETTE.white];
 export const INLINE_CARET_COLOR = Msx1Colors[PALETTE.black];
 export const COLOR_STATUS_BACKGROUND = THEME_BASE.status.background;
@@ -343,6 +344,7 @@ export const COLOR_TAB_INACTIVE_BACKGROUND = TAB_BASE.inactiveBackground;
 export const COLOR_TAB_ACTIVE_BACKGROUND = TAB_BASE.activeBackground;
 export const COLOR_TAB_INACTIVE_TEXT = TAB_BASE.inactiveText;
 export const COLOR_TAB_ACTIVE_TEXT = TAB_BASE.activeText;
+export const COLOR_TAB_DIRTY_MARKER = TAB_BASE.dirtyMarker;
 export const TAB_CLOSE_BUTTON_PADDING_X = 3;
 export const TAB_CLOSE_BUTTON_PADDING_Y = 1;
 export const TAB_CLOSE_BUTTON_SYMBOL = 'x';

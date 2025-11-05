@@ -21,11 +21,20 @@ state = {
 }
 
 local palette = { 6, 8, 10, 12, 14 }
+local sprite_colors = {
+	[6] = { r = 250 / 255, g = 80 / 255, b = 51 / 255, a = 1 },
+	[8] = { r = 255 / 255, g = 81 / 255, b = 52 / 255, a = 1 },
+	[10] = { r = 226 / 255, g = 210 / 255, b = 4 / 255, a = 1 },
+	[12] = { r = 4 / 255, g = 212 / 255, b = 19 / 255, a = 1 },
+	[14] = { r = 208 / 255, g = 208 / 255, b = 208 / 255, a = 1 },
+	[15] = { r = 1, g = 1, b = 1, a = 1 },
+}
 local ball_id = 'ball'
 local ball_size = 8
 local ball_radius = ball_size / 2
 
 local function create_ball(seed)
+	local object_id = 'lua_demo_ball_' .. tostring(seed)
 	return {
 		x = math.random(ball_radius, 128 - ball_radius),
 		y = math.random(ball_radius, 128 - ball_radius),
@@ -33,14 +42,82 @@ local function create_ball(seed)
 		vy = math.random() * 60 - 30,
 		radius = ball_radius,
 		seed = seed,
+		object_id = object_id,
 	}
 end
 
+local function ensure_ball_sprite(ball)
+	local object = registry:get(ball.object_id)
+	if not object then
+		spawn_world_object('WorldObject', {
+			id = ball.object_id,
+			position = { x = ball.x, y = ball.y, z = 0 },
+			components = {
+				{
+					class = 'SpriteComponent',
+					id_local = 'ball_sprite',
+					layer = 'ui',
+					imgid = ball_id,
+				},
+			},
+		})
+		object = registry:get(ball.object_id)
+	end
+	if not object then
+		return
+	end
+	local sprite = object:getcomponentbyid('ball_sprite')
+	if sprite then
+		sprite.offset = sprite.offset or { x = 0, y = 0, z = 0 }
+		sprite.offset.x = -ball.radius
+		sprite.offset.y = -ball.radius
+		sprite.layer = 'ui'
+		sprite.colorize = sprite.colorize or sprite_colors[palette[1]]
+	end
+	object.visible = true
+end
+
+local function update_ball_sprite_position(ball)
+	local object = registry:get(ball.object_id)
+	if not object then
+		return
+	end
+	object.x = ball.x
+	object.y = ball.y
+end
+
+local function apply_ball_sprite_color(ball, color_index)
+	local object = registry:get(ball.object_id)
+	if not object then
+		return
+	end
+	local sprite = object:getcomponentbyid('ball_sprite')
+	if not sprite then
+		return
+	end
+	sprite.colorize = sprite_colors[color_index]
+end
+
+local function despawn_ball_sprite(ball)
+	if not ball.object_id then
+		return
+	end
+	if registry:get(ball.object_id) then
+		despawn(ball.object_id)
+	end
+end
+
 local function reset_balls()
+	for _, existing in ipairs(state.balls) do
+		despawn_ball_sprite(existing)
+	end
 	state.balls = {}
 	math.randomseed(os.time())
 	for i = 1, 8 do
-		table.insert(state.balls, create_ball(i))
+		local ball = create_ball(i)
+		ensure_ball_sprite(ball)
+		update_ball_sprite_position(ball)
+		table.insert(state.balls, ball)
 	end
 end
 
@@ -168,6 +245,7 @@ local function update_ball(ball, delta)
 		ball.y = 128 - ball.radius
 		ball.vy = -ball.vy
 	end
+	update_ball_sprite_position(ball)
 end
 
 function update(delta)
@@ -200,9 +278,13 @@ local function draw_ball(ball, color)
 	if state.serviceflash > 0 then
 		color = 15
 	end
-	local left = math.floor(ball.x - ball.radius)
-	local top = math.floor(ball.y - ball.radius + offsety)
-	spr(ball_id, left, top, { color = color })
+	local object = registry:get(ball.object_id)
+	if not object then
+		return
+	end
+	apply_ball_sprite_color(ball, color)
+	object.x = ball.x
+	object.y = ball.y + offsety
 end
 
 local function draw_service_info()

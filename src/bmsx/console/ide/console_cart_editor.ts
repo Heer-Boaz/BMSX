@@ -16,9 +16,10 @@ import type {
 	ConsoleResourceDescriptor,
 } from '../types.ts';
 import { ConsoleEditorFont } from '../editor_font';
-import { DEFAULT_CONSOLE_FONT_VARIANT, getConsoleFontPreset, type ConsoleFontVariant } from '../font';
+import { DEFAULT_CONSOLE_FONT_VARIANT, type ConsoleFontVariant } from '../font';
 import { drawEditorColoredText, drawEditorText } from './text_renderer';
 import { Msx1Colors } from '../../systems/msx.ts';
+import { SpriteComponent } from '../../component/sprite_component';
 import { renderCodeArea } from './render_code_area';
 import { clamp } from '../../utils/utils';
 import { CHARACTER_CODES } from './character_map';
@@ -253,6 +254,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	};
 	private readonly tabButtonBounds: Map<string, RectBounds> = new Map();
 	private readonly tabCloseButtonBounds: Map<string, RectBounds> = new Map();
+	private resourceViewerSpriteId: string | null = null;
+	private resourceViewerSpriteAsset: string | null = null;
+	private resourceViewerSpriteScale = 1;
 	private readonly actionPromptButtons: { saveAndContinue: RectBounds | null; continue: RectBounds; cancel: RectBounds } = {
 		saveAndContinue: null,
 		continue: { left: 0, top: 0, right: 0, bottom: 0 },
@@ -283,9 +287,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private tabDragState: TabDragState | null = null;
 	private crtOptionsSnapshot: CrtOptionsSnapshot | null = null;
 	private resolutionMode: EditorResolutionMode = 'viewport';
-	private readonly tabDirtyMarkerAssetId: string;
-	private tabDirtyMarkerWidth: number | null = null;
-	private tabDirtyMarkerHeight: number | null = null;
 	protected cursorRevealSuspended = false;
 	private searchActive = false;
 	private searchVisible = false;
@@ -386,7 +387,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.viewportWidth = options.viewport.width;
 		this.viewportHeight = options.viewport.height;
 		this.font = new ConsoleEditorFont(this.fontVariant);
-		this.tabDirtyMarkerAssetId = getConsoleFontPreset(this.fontVariant).tabDirtyMarkerAssetId;
 		this.clockNow = $.platform.clock.now;
 		this.searchField = createInlineTextField();
 		this.symbolSearchField = createInlineTextField();
@@ -1491,7 +1491,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			measureText: (text: string) => this.measureText(text),
 			drawText: (api2, text, x, y, color) => drawEditorText(api2, this.font, text, x, y, color),
 			getDirtyMarkerMetrics: () => this.getTabDirtyMarkerMetrics(),
-			tabDirtyMarkerAssetId: this.tabDirtyMarkerAssetId,
 			tabButtonBounds: this.tabButtonBounds,
 			tabCloseButtonBounds: this.tabCloseButtonBounds,
 		});
@@ -1499,6 +1498,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (this.isResourceViewActive()) {
 			this.drawResourceViewer(api);
 		} else {
+			this.hideResourceViewerSprite(api);
 			this.drawCreateResourceBar(api);
 			this.drawSearchBar(api);
 			this.drawResourceSearchBar(api);
@@ -1536,29 +1536,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private getTabDirtyMarkerMetrics(): { width: number; height: number } {
-		if (this.tabDirtyMarkerWidth === null || this.tabDirtyMarkerHeight === null) {
-			const rompack = $.rompack;
-			if (!rompack || !rompack.img) {
-				throw new Error('[ConsoleCartEditor] Rompack unavailable while resolving tab dirty marker.');
-			}
-			const entry = rompack.img[this.tabDirtyMarkerAssetId];
-			if (!entry || !entry.imgmeta) {
-				throw new Error(`[ConsoleCartEditor] Tab dirty marker asset '${this.tabDirtyMarkerAssetId}' unavailable.`);
-			}
-			const width = entry.imgmeta.width;
-			const height = entry.imgmeta.height;
-			if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-				throw new Error(`[ConsoleCartEditor] Tab dirty marker asset '${this.tabDirtyMarkerAssetId}' has invalid dimensions.`);
-			}
-			this.tabDirtyMarkerWidth = Math.max(1, Math.floor(width));
-			this.tabDirtyMarkerHeight = Math.max(1, Math.floor(height));
-		}
-		const width = this.tabDirtyMarkerWidth;
-		const height = this.tabDirtyMarkerHeight;
-		if (width === null || height === null) {
-			throw new Error('[ConsoleCartEditor] Failed to resolve tab dirty marker metrics.');
-		}
-		return { width, height };
+		return { width: 4, height: 4 };
 	}
 
 	private refreshViewportDimensions(force = false): void {
@@ -8015,6 +7993,60 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return Math.max(0, Math.floor(availableHeight / this.lineHeight));
 	}
 
+	private ensureResourceViewerSprite(api: BmsxConsoleApi, assetId: string, layout: { left: number; top: number; scale: number }): void {
+		if (!this.resourceViewerSpriteId) {
+			this.resourceViewerSpriteId = 'console_resource_viewer_sprite';
+		}
+		const spriteId = this.resourceViewerSpriteId;
+		let object = api.world_object(spriteId);
+		if (!object) {
+			api.spawn_world_object('WorldObject', {
+				id: spriteId,
+				position: { x: layout.left, y: layout.top, z: 0 },
+				components: [
+					{
+						class: 'SpriteComponent',
+						options: {
+							id_local: 'viewer_sprite',
+							imgid: assetId,
+							layer: 'ui',
+						},
+					},
+				],
+			});
+			object = api.world_object(spriteId);
+		}
+		if (!object) {
+			return;
+		}
+		const sprite = object.getComponentByLocalId(SpriteComponent, 'viewer_sprite');
+		if (!sprite) {
+			return;
+		}
+		if (this.resourceViewerSpriteAsset !== assetId) {
+			sprite.imgid = assetId;
+			this.resourceViewerSpriteAsset = assetId;
+		}
+		if (this.resourceViewerSpriteScale !== layout.scale) {
+			sprite.scale.x = layout.scale;
+			sprite.scale.y = layout.scale;
+			this.resourceViewerSpriteScale = layout.scale;
+		}
+		object.x = layout.left;
+		object.y = layout.top;
+		object.visible = true;
+	}
+
+	private hideResourceViewerSprite(api: BmsxConsoleApi): void {
+		if (!this.resourceViewerSpriteId) {
+			return;
+		}
+		const object = api.world_object(this.resourceViewerSpriteId);
+		if (object) {
+			object.visible = false;
+		}
+	}
+
 	private resourceViewerClampScroll(viewer: ResourceViewerState): void {
 		const capacity = this.resourceViewerTextCapacity(viewer);
 		if (capacity <= 0) {
@@ -8143,9 +8175,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const contentTop = bounds.codeTop + 2;
 		const layout = this.resourceViewerImageLayout(viewer);
 		let textTop = contentTop;
-		if (layout) {
-			api.spr(viewer.image!.assetId, layout.left, layout.top, { scale: layout.scale });
+		if (layout && viewer.image) {
+			this.ensureResourceViewerSprite(api, viewer.image.assetId, { left: layout.left, top: layout.top, scale: layout.scale });
 			textTop = Math.floor(layout.bottom + this.lineHeight);
+		} else {
+			this.hideResourceViewerSprite(api);
 		}
 		if (capacity <= 0) {
 		if (viewer.lines.length > 0) {

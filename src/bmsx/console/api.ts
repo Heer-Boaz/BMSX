@@ -1,16 +1,13 @@
 import { $, $rompack, runGate } from '../core/game';
 import { Input } from '../input/input';
 import type { PlayerInput } from '../input/playerinput';
-import type { color, RectRenderSubmission, RenderLayer } from '../render/shared/render_types';
+import type { color, RectRenderSubmission } from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
 import { ConsoleFont } from './font';
 import { BmsxConsoleStorage } from './storage';
 import { BmsxConsolePointerButton, ConsolePointerVector, ConsolePointerViewport, ConsolePointerWheel } from './types';
-import { ConsoleSpriteRegistry, ConsoleTilemap, type SpriteColliderConfig, type SpriteDefinition, type SpritePhysicsConfig } from './sprites';
-import { ConsoleColliderManager, type ColliderCreateOptions, type ColliderContactInfo } from './collision';
-import { Physics2DManager } from '../physics/physics2d';
 import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest } from '../audio/soundmaster';
-import type { Area, BoundingBoxPrecalc, HitPolygonsPrecalc, Polygon, ImgMeta, Identifier, Registerable, RomPack } from '../rompack/rompack';
+import type { Identifier, Registerable, RomPack } from '../rompack/rompack';
 import type { World, SpawnReason } from '../core/world';
 import type { Registry } from '../core/registry';
 import { Service } from '../core/service';
@@ -22,7 +19,7 @@ import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { taskGate, GateGroup } from '../core/taskgate';
 import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { setupFSMlibrary } from '../fsm/fsmlibrary';
-import { DirectConsoleRenderBackend, type ConsoleRenderBackend, type SpriteCommand } from './render_backend';
+import { DirectConsoleRenderBackend, type ConsoleRenderBackend } from './render_backend';
 import { new_vec3 } from '../utils/utils';
 import { id_to_space_symbol, type Space } from '../core/space';
 import { Reviver } from '../serializer/gameserializer';
@@ -39,8 +36,6 @@ type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterP
 export type BmsxConsoleApiOptions = {
 	playerIndex: number;
 	storage: BmsxConsoleStorage;
-	colliders: ConsoleColliderManager;
-	physics: Physics2DManager;
 };
 
 const DRAW_LAYER: RectRenderSubmission['layer'] = 'ui';
@@ -72,16 +67,8 @@ export class BmsxConsoleApi {
 	private readonly playerIndex: number;
 	private readonly storage: BmsxConsoleStorage;
 	private readonly font: ConsoleFont;
-	private readonly spriteRegistry: ConsoleSpriteRegistry;
-	private readonly tilemap: ConsoleTilemap;
-	private readonly colliders: ConsoleColliderManager;
-	private readonly physics: Physics2DManager;
-	private readonly spriteCommandsById = new Map<string, SpriteCommand>();
-	private readonly pendingVelocities = new Map<string, { vx: number; vy: number }>();
-	private readonly pendingPositions = new Map<string, { x: number; y: number }>();
 	private frameIndex: number = 0;
 	private deltaSecondsValue: number = 0;
-	private spriteInstanceSerial = 0;
 	private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 
 	constructor(options: BmsxConsoleApiOptions) {
@@ -96,11 +83,6 @@ export class BmsxConsoleApi {
 		this.playerIndex = options.playerIndex;
 		this.storage = options.storage;
 		this.font = new ConsoleFont();
-		this.spriteRegistry = new ConsoleSpriteRegistry();
-		this.tilemap = new ConsoleTilemap(this.spriteRegistry);
-		this.colliders = options.colliders;
-		this.physics = options.physics;
-		this.physics.bindColliders(this.colliders);
 	}
 
 	public set_render_backend(backend: ConsoleRenderBackend | null): void {
@@ -298,92 +280,6 @@ export class BmsxConsoleApi {
 		}
 	}
 
-	public spr(sprite: number | string, x: number, y: number, options?: { id?: string; scale?: number; layer?: RenderLayer; flipH?: boolean; flipV?: boolean }): void {
-		const scale = options?.scale ?? 1;
-		const flipH = options?.flipH ?? false;
-		const flipV = options?.flipV ?? false;
-		const layer = options?.layer ?? DRAW_LAYER;
-		const spriteId = options?.id ?? null;
-		let command: SpriteCommand;
-		if (typeof sprite === 'number') {
-			const def = this.spriteRegistry.require(sprite);
-			const baseX = x - def.originX * scale;
-			const baseY = y - def.originY * scale;
-			command = {
-				kind: 'sprite',
-				imgId: def.bitmapId,
-				spriteIndex: sprite,
-				originX: def.originX,
-				originY: def.originY,
-				baseX,
-				baseY,
-				drawX: x,
-				drawY: y,
-				scale,
-				layer,
-				flipH,
-				flipV,
-				spriteId,
-				instanceId: '',
-				colliderId: '',
-				width: 0,
-				height: 0,
-				positionDirty: false,
-				colorize: undefined,
-			};
-		} else {
-			const baseX = x;
-			const baseY = y;
-			command = {
-				kind: 'sprite',
-				imgId: sprite,
-				spriteIndex: null,
-				originX: 0,
-				originY: 0,
-				baseX,
-				baseY,
-				drawX: x,
-				drawY: y,
-				scale,
-				layer,
-				flipH,
-				flipV,
-				spriteId,
-				instanceId: '',
-				colliderId: '',
-				width: 0,
-				height: 0,
-				positionDirty: false,
-				colorize: undefined,
-			};
-		}
-		this.submitSpriteCommand(command);
-		this.renderBackend.drawSprite(command);
-		this.syncSpriteCollider(command);
-	}
-
-	public sprite_exists(id: string): boolean {
-		if (!id) {
-			throw new Error('[BmsxConsoleApi] Sprite id must be a non-empty string.');
-		}
-		return this.spriteCommandsById.has(id);
-	}
-
-	public sprite_set_position(id: string, x: number, y: number): void {
-		if (!id) {
-			throw new Error('[BmsxConsoleApi] Sprite id must be a non-empty string.');
-		}
-		const command = this.spriteCommandsById.get(id);
-		if (!command || command.spriteIndex === null) {
-			this.pendingPositions.set(id, { x, y });
-			return;
-		}
-		this.setCommandPosition(command, x, y);
-		command.positionDirty = true;
-		this.pendingPositions.delete(id);
-		this.syncSpriteCollider(command);
-	}
-
 	public check_action_state(playerIndex: number, actionDefinition: string): boolean {
 		if (!Number.isInteger(playerIndex) || playerIndex <= 0) {
 			throw new Error('[BmsxConsoleApi] check_action_state requires a positive integer player index.');
@@ -412,55 +308,6 @@ export class BmsxConsoleApi {
 
 	public dget(index: number): number {
 		return this.storage.getValue(index);
-	}
-
-	public collider_create(id: string, opts: ColliderCreateOptions): void {
-		this.colliders.create(id, opts);
-		this.physics.ensureBody(id, { isStatic: true, restitution: 1, mass: Infinity });
-	}
-
-	public collider_destroy(id: string): void {
-		this.colliders.remove(id);
-		this.physics.removeBody(id);
-		this.pendingVelocities.delete(id);
-	}
-
-	public collider_clear(): void {
-		this.colliders.clear();
-		this.physics.clear();
-		this.pendingVelocities.clear();
-	}
-
-	public collider_set_position(id: string, x: number, y: number): void {
-		this.colliders.setPosition(id, x, y);
-	}
-
-	public collider_overlap(aId: string, bId: string): boolean {
-		return this.colliders.overlap(aId, bId);
-	}
-
-	public collider_contact(aId: string, bId: string): ColliderContactInfo | null {
-		return this.colliders.contact(aId, bId);
-	}
-
-	public sprite_set_velocity(id: string, vx: number, vy: number): void {
-		if (!Number.isFinite(vx) || !Number.isFinite(vy)) {
-			throw new Error('[BmsxConsoleApi] Velocity components must be finite.');
-		}
-		this.pendingVelocities.set(id, { vx, vy });
-		if (this.physics.hasBody(id)) {
-			this.physics.setVelocity(id, vx, vy);
-		}
-	}
-
-	public sprite_velocity(id: string): { vx: number; vy: number } {
-		return this.physics.getVelocity(id);
-	}
-
-	public sprite_center(id: string): { x: number; y: number } | null {
-		if (!this.colliders.has(id)) return null;
-		if (!this.physics.hasBody(id)) return null;
-		return this.physics.getCenter(id);
 	}
 
 	public sfx(id: string, options?: AudioPlayOptions): void {
@@ -890,48 +737,6 @@ export class BmsxConsoleApi {
 		runtime.registerBehaviorTreeDefinition(descriptor);
 	}
 
-	public define_sprite(index: number, bitmapId: string, opts?: { width?: number; height?: number; originX?: number; originY?: number; flags?: number; collider?: SpriteColliderConfig | null; physics?: SpritePhysicsConfig | null }): void {
-		this.spriteRegistry.defineSprite(index, bitmapId, opts);
-	}
-
-	public fset(index: number, flag: number, value: boolean): void {
-		this.spriteRegistry.fset(index, flag, value);
-	}
-
-	public fget(index: number, flag?: number): boolean | number {
-		return this.spriteRegistry.fget(index, flag);
-	}
-
-	public load_map(data: number[], width: number, height: number, tileSize?: { width: number; height: number }): void {
-		this.tilemap.load(data, width, height, tileSize);
-	}
-
-	public set_tile_size(width: number, height: number): void {
-		this.tilemap.setTileSize(width, height);
-	}
-
-	public mget(mapX: number, mapY: number): number {
-		return this.tilemap.mget(mapX, mapY);
-	}
-
-	public mset(mapX: number, mapY: number, spriteIndex: number): void {
-		this.tilemap.mset(mapX, mapY, spriteIndex);
-	}
-
-	public map(mapX: number, mapY: number, screenX: number, screenY: number, width: number, height: number, layer?: RenderLayer): void {
-		this.tilemap.draw(mapX, mapY, screenX, screenY, width, height, (definition: SpriteDefinition, x: number, y: number) => {
-			this.spr(definition.id, x, y, { layer });
-		});
-	}
-
-	public map_collides_rect(x: number, y: number, width: number, height: number, flagBit: number = 0): boolean {
-		return this.tilemap.isRectFlagged(x, y, width, height, flagBit);
-	}
-
-	public get_tile_dimensions(): { width: number; height: number; } {
-		return { width: this.tilemap.tileWidthPixels, height: this.tilemap.tileHeightPixels };
-	}
-
 	private setFsmBlueprintFactory(id: string, blueprint: StateMachineBlueprint): void {
 		const snapshot = this.cloneStateMachineData(blueprint);
 		StateDefinitionBuilders[id] = () => this.cloneStateMachineData(snapshot);
@@ -1323,47 +1128,6 @@ export class BmsxConsoleApi {
 		return JSON.parse(JSON.stringify(source)) as T;
 	}
 
-	private submitSpriteCommand(command: SpriteCommand): void {
-		if (command.instanceId === '') {
-			command.instanceId = this.allocateSpriteInstanceId();
-		}
-		if (command.colliderId === '') {
-			command.colliderId = this.generateSpriteColliderId(command);
-		}
-		if (command.spriteId !== null) {
-			const existing = this.spriteCommandsById.get(command.spriteId);
-			if (existing) {
-				this.releaseSpriteCollider(existing);
-			}
-			this.spriteCommandsById.set(command.spriteId, command);
-			const pending = this.pendingPositions.get(command.spriteId);
-			if (pending && command.spriteIndex !== null) {
-				this.setCommandPosition(command, pending.x, pending.y);
-				command.positionDirty = true;
-				this.pendingPositions.delete(command.spriteId);
-			}
-		}
-	}
-
-	private generateSpriteColliderId(command: SpriteCommand): string {
-		if (command.spriteId !== null) return command.spriteId;
-		return `console_sprite_${command.instanceId}`;
-	}
-
-	private allocateSpriteInstanceId(): string {
-		const id = `spr_${this.spriteInstanceSerial}`;
-		this.spriteInstanceSerial += 1;
-		return id;
-	}
-
-	private releaseSpriteCollider(command: SpriteCommand): void {
-		if (command.colliderId.length === 0) return;
-		if (this.colliders.has(command.colliderId)) {
-			this.colliders.remove(command.colliderId);
-		}
-		command.colliderId = '';
-	}
-
 	private pointerViewportPositionInternal(): ConsolePointerViewport {
 		const screen = this.pointer_screen_position();
 		if (!screen.valid) {
@@ -1405,217 +1169,6 @@ export class BmsxConsoleApi {
 			mask |= 16;
 		}
 		return mask;
-	}
-
-	private syncSpriteCollider(command: SpriteCommand): void {
-		if (command.spriteIndex === null) {
-			if (command.colliderId.length !== 0) {
-				this.releaseSpriteCollider(command);
-			}
-			return;
-		}
-		const definition = this.spriteRegistry.require(command.spriteIndex);
-		const config = definition.collider;
-		if (config === null) {
-			if (command.colliderId.length !== 0) {
-				this.releaseSpriteCollider(command);
-			}
-			return;
-		}
-		if (command.instanceId === '') {
-			command.instanceId = this.allocateSpriteInstanceId();
-		}
-		if (command.colliderId === '') {
-			command.colliderId = this.generateSpriteColliderId(command);
-		}
-		const build = this.buildSpriteCollider(definition, command, config);
-		command.width = build.width;
-		command.height = build.height;
-		const collider = this.colliders.upsert(command.colliderId, build.options);
-		if (build.geometry) {
-			collider.setGeometry(build.geometry.area, build.geometry.polygons);
-		}
-		const existing = command.positionDirty ? null : this.colliders.get(command.colliderId);
-		if (existing) {
-			const state = this.colliders.getState(command.colliderId);
-			command.baseX = state.centerX - build.width / 2;
-			command.baseY = state.centerY - build.height / 2;
-			command.drawX = command.baseX + command.originX * command.scale;
-			command.drawY = command.baseY + command.originY * command.scale;
-		}
-		const centerX = command.baseX + build.width / 2;
-		const centerY = command.baseY + build.height / 2;
-		this.colliders.setPosition(command.colliderId, centerX, centerY);
-		command.positionDirty = false;
-		this.configurePhysicsBody(command, definition);
-	}
-
-	private buildSpriteCollider(definition: SpriteDefinition, command: SpriteCommand, config: SpriteColliderConfig): { options: ColliderCreateOptions; width: number; height: number; geometry: { area: Area | null; polygons: Polygon[] | null } | null } {
-		const scale = command.scale;
-		if (!(scale > 0)) throw new Error('[BmsxConsoleApi] Sprite scale must be positive.');
-		if (config.kind === 'circle') {
-			const baseRadius = config.radius !== undefined ? config.radius : Math.max(definition.width, definition.height) / 2;
-			const radius = baseRadius * scale;
-			if (!(radius > 0)) {
-				throw new Error(`[BmsxConsoleApi] Sprite ${command.spriteIndex ?? -1} circle radius must be positive.`);
-			}
-			return {
-				options: {
-					kind: 'circle',
-					radius,
-					layer: config.layer,
-					mask: config.mask,
-					isTrigger: config.isTrigger ?? false,
-				},
-				width: radius * 2,
-				height: radius * 2,
-				geometry: null,
-			};
-		}
-		if (config.kind === 'box') {
-			const width = (config.width ?? definition.width) * scale;
-			const height = (config.height ?? definition.height) * scale;
-			if (!(width > 0) || !(height > 0)) {
-				throw new Error(`[BmsxConsoleApi] Sprite ${command.spriteIndex ?? -1} box collider dimensions must be positive.`);
-			}
-			return {
-				options: {
-					kind: 'box',
-					width,
-					height,
-					layer: config.layer,
-					mask: config.mask,
-					isTrigger: config.isTrigger ?? false,
-				},
-				width,
-				height,
-				geometry: {
-					area: { start: { x: 0, y: 0 }, end: { x: width, y: height } },
-					polygons: null,
-				},
-			};
-		}
-		const meta = this.getSpriteMeta(definition.bitmapId);
-		const baseWidth = meta?.width ?? definition.width;
-		const baseHeight = meta?.height ?? definition.height;
-		const width = baseWidth * scale;
-		const height = baseHeight * scale;
-		if (!(width > 0) || !(height > 0)) {
-			throw new Error(`[BmsxConsoleApi] Sprite ${command.spriteIndex ?? -1} metadata width/height must be positive.`);
-		}
-		const boundingSource = meta?.boundingbox ?? this.defaultBoundingBox(baseWidth, baseHeight);
-		const bounding = this.selectBounding(boundingSource, command.flipH, command.flipV);
-		const polygonsSource = meta?.hitpolygons ?? null;
-		const polygons = polygonsSource ? this.selectPolygons(polygonsSource, command.flipH, command.flipV) : null;
-		const scaledArea = this.scaleArea(bounding, scale);
-		const scaledPolys = polygons ? this.scalePolygons(polygons, scale) : null;
-		return {
-			options: {
-				kind: 'custom',
-				width,
-				height,
-				layer: config.layer,
-				mask: config.mask,
-				isTrigger: config.isTrigger ?? false,
-			},
-			width,
-			height,
-			geometry: {
-				area: scaledArea,
-				polygons: scaledPolys,
-			},
-		};
-	}
-
-	private setCommandPosition(command: SpriteCommand, x: number, y: number): void {
-		command.drawX = x;
-		command.drawY = y;
-		const originX = command.originX;
-		const originY = command.originY;
-		command.baseX = x - originX * command.scale;
-		command.baseY = y - originY * command.scale;
-	}
-
-	private configurePhysicsBody(command: SpriteCommand, definition: SpriteDefinition): void {
-		const physicsConfig = definition.physics;
-		if (physicsConfig === null) {
-			if (this.physics.hasBody(command.colliderId)) {
-				this.physics.removeBody(command.colliderId);
-			}
-			this.pendingVelocities.delete(command.colliderId);
-			return;
-		}
-		this.physics.ensureBody(command.colliderId, {
-			mass: physicsConfig.mass,
-			restitution: physicsConfig.restitution,
-			gravityScale: physicsConfig.gravityScale,
-			maxSpeed: physicsConfig.maxSpeed,
-			isStatic: physicsConfig.isStatic,
-		});
-		if (physicsConfig.isStatic) {
-			this.pendingVelocities.delete(command.colliderId);
-			return;
-		}
-		const pending = this.pendingVelocities.get(command.colliderId);
-		if (pending) {
-			this.physics.setVelocity(command.colliderId, pending.vx, pending.vy);
-			this.pendingVelocities.delete(command.colliderId);
-		}
-	}
-	private getSpriteMeta(bitmapId: string): ImgMeta | null {
-		const entry = $rompack?.img?.[bitmapId] ?? null;
-		if (!entry || !entry.imgmeta) {
-			return null;
-		}
-		return entry.imgmeta as ImgMeta;
-	}
-
-	private selectBounding(box: BoundingBoxPrecalc, flipH: boolean, flipV: boolean): Area {
-		if (flipH && flipV) return box.fliphv;
-		if (flipH) return box.fliph;
-		if (flipV) return box.flipv;
-		return box.original;
-	}
-
-	private defaultBoundingBox(width: number, height: number): BoundingBoxPrecalc {
-		const original = this.makeArea(0, 0, width, height);
-		return {
-			original,
-			fliph: this.makeArea(0, 0, width, height),
-			flipv: this.makeArea(0, 0, width, height),
-			fliphv: this.makeArea(0, 0, width, height),
-		};
-	}
-
-	private selectPolygons(polys: HitPolygonsPrecalc, flipH: boolean, flipV: boolean): Polygon[] {
-		if (flipH && flipV) return polys.fliphv;
-		if (flipH) return polys.fliph;
-		if (flipV) return polys.flipv;
-		return polys.original;
-	}
-
-	private makeArea(x0: number, y0: number, x1: number, y1: number): Area {
-		return {
-			start: { x: x0, y: y0 },
-			end: { x: x1, y: y1 },
-		};
-	}
-
-	private scaleArea(area: Area, scale: number): Area {
-		return {
-			start: { x: area.start.x * scale, y: area.start.y * scale },
-			end: { x: area.end.x * scale, y: area.end.y * scale },
-		};
-	}
-
-	private scalePolygons(polys: Polygon[], scale: number): Polygon[] {
-		return polys.map(poly => {
-			const scaled: number[] = [];
-			for (let i = 0; i < poly.length; i += 2) {
-				scaled.push(poly[i] * scale, poly[i + 1] * scale);
-			}
-			return scaled;
-		});
 	}
 
 	private expandTabs(text: string): string {

@@ -27,15 +27,6 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 			{ name: 'colorIndex', optional: true, description: 'Palette index to fill the screen with (defaults to 0).' },
 		],
 	},
-	define_sprite: {
-		optionalParameters: ['opts'],
-		description: 'Creates or updates a sprite definition in the console registry.',
-		parameters: [
-			{ name: 'index', description: 'Sprite slot index to define.' },
-			{ name: 'bitmapId', description: 'Bitmap asset identifier used for the sprite.' },
-			{ name: 'opts', optional: true, description: 'Additional sprite properties such as size, origin, colliders, or physics.' },
-		],
-	},
 	despawn: {
 		optionalParameters: ['options'],
 		description: 'Removes a world object from the world.',
@@ -69,48 +60,6 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 			{ name: 'eventName', description: 'Name of the presentation event to emit.' },
 			{ name: 'emitterOrId', description: 'Emitter identifier associated with the event.' },
 			{ name: 'payload', optional: true, description: 'Optional presentation event payload.' },
-		],
-	},
-	fget: {
-		optionalParameters: ['flag'],
-		description: 'Reads sprite flag bits from the sprite registry.',
-		parameters: [
-			{ name: 'index', description: 'Sprite index to query.' },
-			{ name: 'flag', optional: true, description: 'Optional flag bit index (0-7); returns entire mask when omitted.' },
-		],
-	},
-	load_map: {
-		optionalParameters: ['tileSize'],
-		description: 'Loads map tile data into the console tilemap buffer.',
-		parameters: [
-			{ name: 'data', description: 'Array of tile indices to copy into the map.' },
-			{ name: 'width', description: 'Width of the provided tile data in tiles.' },
-			{ name: 'height', description: 'Height of the provided tile data in tiles.' },
-			{ name: 'tileSize', optional: true, description: 'Optional tile dimensions override for the loaded data.' },
-		],
-	},
-	map: {
-		optionalParameters: ['layer'],
-		description: 'Draws a region of the tilemap to the screen.',
-		parameters: [
-			{ name: 'mapX', description: 'Tilemap X coordinate of the source region.' },
-			{ name: 'mapY', description: 'Tilemap Y coordinate of the source region.' },
-			{ name: 'screenX', description: 'Destination screen X coordinate in pixels.' },
-			{ name: 'screenY', description: 'Destination screen Y coordinate in pixels.' },
-			{ name: 'width', description: 'Width of the region to draw in tiles.' },
-			{ name: 'height', description: 'Height of the region to draw in tiles.' },
-			{ name: 'layer', optional: true, description: 'Optional render layer for the draw call.' },
-		],
-	},
-	map_collides_rect: {
-		optionalParameters: ['flagBit'],
-		description: 'Checks if any tile within a rectangular region has a collision flag.',
-		parameters: [
-			{ name: 'mapX', description: 'Tilemap X coordinate of the region.' },
-			{ name: 'mapY', description: 'Tilemap Y coordinate of the region.' },
-			{ name: 'width', description: 'Width of the region to test in tiles.' },
-			{ name: 'height', description: 'Height of the region to test in tiles.' },
-			{ name: 'flagBit', optional: true, description: 'Optional collision flag bit to check (defaults to any flag).' },
 		],
 	},
 	music: {
@@ -167,16 +116,6 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 		parameters: [
 			{ name: 'classRef', description: 'World object class reference or identifier.' },
 			{ name: 'options', optional: true, description: 'Optional spawn options such as position, orientation, or components.' },
-		],
-	},
-	spr: {
-		optionalParameters: ['options'],
-		description: 'Draws a sprite or sprite instance at the given coordinates.',
-		parameters: [
-			{ name: 'sprite', description: 'Sprite index or identifier to draw.' },
-			{ name: 'x', description: 'Screen X coordinate in pixels.' },
-			{ name: 'y', description: 'Screen Y coordinate in pixels.' },
-			{ name: 'options', optional: true, description: 'Optional draw options such as ID, scale, layer, or flipping.' },
 		],
 	},
 } as const;

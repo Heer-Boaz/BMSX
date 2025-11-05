@@ -38,7 +38,6 @@ export type SpriteCommand = {
 	flipV: boolean;
 	spriteId: string | null;
 	instanceId: string;
-	colliderId: string;
 	width: number;
 	height: number;
 	positionDirty: boolean;
