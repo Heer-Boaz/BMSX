@@ -159,6 +159,7 @@ type LuaWorldObjectDefinitionRecord = {
 	behaviorTrees: LuaWorldObjectSystemEntry[];
 	abilities: string[];
 	tags: string[];
+	assetId: string | null;
 };
 
 type LuaServiceDefinitionRecord = {
@@ -168,12 +169,14 @@ type LuaServiceDefinitionRecord = {
 	abilities: string[];
 	tags: string[];
 	autoActivate: boolean;
+	assetId: string | null;
 };
 
 type LuaComponentPresetRecord = {
 	id: string;
 	moduleId: string;
 	build: LuaHandlerFn;
+	assetId?: string | null;
 };
 
 type LuaRequireModuleRecord = {
@@ -344,12 +347,21 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly luaChunkEnvironmentsByAssetId: Map<string, LuaEnvironment> = new Map();
 	private readonly luaChunkEnvironmentsByChunkName: Map<string, LuaEnvironment> = new Map();
 	private readonly luaFsmMachineIds: Set<string> = new Set<string>();
+	private readonly luaFsmsByAsset: Map<string, Set<string>> = new Map();
+	private readonly fsmChangeRecordsByAsset: Map<string, Array<{ machineId: string; previousDefinition?: StateDefinition }>> = new Map();
 	private readonly luaBehaviorTreeIds: Set<string> = new Set<string>();
+	private readonly luaBehaviorTreesByAsset: Map<string, Set<string>> = new Map();
+	private readonly behaviorTreeChangesByAsset: Map<string, Set<string>> = new Map();
 	private readonly componentDefinitions: Map<string, LuaComponentDefinitionRecord> = new Map();
 	private readonly componentPresets: Map<string, LuaComponentPresetRecord> = new Map();
+	private readonly luaComponentPresetsByAsset: Map<string, Set<string>> = new Map();
 	private readonly worldObjectDefinitions: Map<string, LuaWorldObjectDefinitionRecord> = new Map();
 	private readonly worldObjectDefinitionsByClassRef: Map<string, LuaWorldObjectDefinitionRecord> = new Map();
-	private readonly serviceDefinitions: Map<string, LuaServiceDefinitionRecord> = new Map();
+	private readonly luaWorldObjectsByAsset: Map<string, Set<string>> = new Map();
+private readonly serviceDefinitions: Map<string, LuaServiceDefinitionRecord> = new Map();
+private readonly luaServiceDefinitionsByAsset: Map<string, Set<string>> = new Map();
+private readonly luaServicesByAsset: Map<string, Set<string>> = new Map();
+private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 	private readonly abilityDefinitions: Map<string, GameplayAbilityDefinition> = new Map();
 	private readonly abilityActionIds: Map<string, string[]> = new Map();
 	private readonly worldObjectFsmAttachments: WeakMap<WorldObject, Set<string>> = new WeakMap();
@@ -626,6 +638,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.invalidateLuaModuleIndex();
 		this.luaChunkEnvironmentsByAssetId.clear();
 		this.luaChunkEnvironmentsByChunkName.clear();
+		this.luaGenericAssetsExecuted.clear();
 		if (this.editor) {
 			// Clear overlays across all code tabs to ensure no stale error UI persists
 			// when the editor had focused a specific chunk for the fault.
@@ -1399,13 +1412,12 @@ export class BmsxConsoleRuntime extends Service {
 		if (!Array.isArray(rompack.resourcePaths)) {
 			rompack.resourcePaths = [];
 		}
-		const resourceType: RomResourcePath['type'] = this.resourcePathRepresentsFsm(normalizedPath, assetId) ? 'fsm' : 'lua';
-		const resourceEntry: RomResourcePath = { path: normalizedPath, type: resourceType, assetId };
+		const resourceEntry: RomResourcePath = { path: normalizedPath, type: 'lua', assetId };
 		rompack.resourcePaths.push(resourceEntry);
 		rompack.resourcePaths.sort((left, right) => left.path.localeCompare(right.path));
 		this.resourcePathCache.set(assetId, normalizedPath);
 		this.registerLuaChunkResource(normalizedPath, { assetId, path: normalizedPath });
-		const descriptor: ConsoleResourceDescriptor = { path: normalizedPath, type: resourceType, assetId };
+		const descriptor: ConsoleResourceDescriptor = { path: normalizedPath, type: 'lua', assetId };
 		try {
 			const category = this.resolveLuaHotReloadCategory(assetId);
 			let chunkName: string;
@@ -2225,15 +2237,15 @@ export class BmsxConsoleRuntime extends Service {
 		this.apiFunctionNames.clear();
 
 		const env = interpreter.getGlobalEnvironment();
-		const worldobject = createLuaNativeFunction('worldobject', interpreter, (luaInterpreter, args) => {
+		const registerWorldobject = createLuaNativeFunction('register_worldobject', interpreter, (luaInterpreter, args) => {
 			if (args.length === 0 || !isLuaTable(args[0])) {
-				throw this.createApiRuntimeError(luaInterpreter, 'worldobject(def) requires a table argument.');
+				throw this.createApiRuntimeError(luaInterpreter, 'register_worldobject(def) requires a table argument.');
 			}
 			const defTable = args[0] as LuaTable;
 			const moduleId = this.moduleIdFor('worldobject', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
 			const idValue = defTable.get('id');
 			if (typeof idValue !== 'string' || idValue.trim().length === 0) {
-				throw this.createApiRuntimeError(luaInterpreter, 'worldobject(def) requires def.id to be a non-empty string.');
+				throw this.createApiRuntimeError(luaInterpreter, 'register_worldobject(def) requires def.id to be a non-empty string.');
 			}
 			const classValue = defTable.get('class');
 			let className: string;
@@ -2245,18 +2257,18 @@ export class BmsxConsoleRuntime extends Service {
 				this.registerLuaClass(className, classValue as LuaTable, interpreter);
 				defTable.set('class', className);
 			} else {
-				throw this.createApiRuntimeError(luaInterpreter, 'worldobject(def) requires def.class to be a string or table.');
+				throw this.createApiRuntimeError(luaInterpreter, 'register_worldobject(def) requires def.class to be a string or table.');
 			}
 			const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter: luaInterpreter, path: [] });
 			const descriptor = this.luaValueToJs(defTable, marshalCtx);
 			if (!descriptor || typeof descriptor !== 'object') {
-				throw this.createApiRuntimeError(luaInterpreter, 'worldobject(def) failed to marshal descriptor table.');
+				throw this.createApiRuntimeError(luaInterpreter, 'register_worldobject(def) failed to marshal descriptor table.');
 			}
 			const id = this.registerWorldObjectDefinition(descriptor as Record<string, unknown>);
 			return [id];
 		});
-		this.registerLuaGlobal(env, 'worldobject', worldobject);
-		this.registerLuaBuiltin({ name: 'worldobject', params: ['def'], signature: 'worldobject(def)' });
+		this.registerLuaGlobal(env, 'register_worldobject', registerWorldobject);
+		this.registerLuaBuiltin({ name: 'register_worldobject', params: ['def'], signature: 'register_worldobject(def)' });
 
 		const members = this.collectApiMembers();
 		for (const { name, kind, descriptor } of members) {
@@ -2285,6 +2297,42 @@ export class BmsxConsoleRuntime extends Service {
 				});
 				this.registerLuaGlobal(env, name, native);
 				this.registerLuaBuiltin({ name, params: ['def'], signature: 'define_ability(def)' });
+				continue;
+			}
+			if (name === 'register_service') {
+				const native = createLuaNativeFunction('api.register_service', interpreter, (luaInterpreter, args) => {
+					if (args.length === 0 || !isLuaTable(args[0])) {
+						throw this.createApiRuntimeError(luaInterpreter, 'register_service(def) requires a table argument.');
+					}
+					const table = args[0] as LuaTable;
+					try {
+						const moduleId = this.moduleIdFor('service', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
+						const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter: luaInterpreter, path: [] });
+						const descriptorRaw = this.luaValueToJs(table, marshalCtx);
+						if (!this.isPlainObject(descriptorRaw)) {
+							throw new Error('register_service descriptor must be a table.');
+						}
+						this.instantiateLuaService({
+							table,
+							descriptor: descriptorRaw as Record<string, unknown>,
+							moduleId,
+							interpreter: luaInterpreter,
+							assetId: this.currentLuaAssetContext?.assetId ?? null,
+						});
+						return [];
+					} catch (error) {
+						if (error instanceof LuaRuntimeError) {
+							this.handleLuaError(error);
+							return [];
+						}
+						const message = error instanceof Error ? error.message : String(error);
+						const runtimeError = this.createApiRuntimeError(luaInterpreter, `[api.register_service] ${message}`);
+						this.handleLuaError(runtimeError);
+						return [];
+					}
+				});
+				this.registerLuaGlobal(env, name, native);
+				this.registerLuaBuiltin({ name, params: ['def'], signature: 'register_service(def)' });
 				continue;
 			}
 			const callable = descriptor.value;
@@ -2537,23 +2585,38 @@ export class BmsxConsoleRuntime extends Service {
 }
 
 	private loadLuaStateMachineScripts(interpreter: LuaInterpreter): void {
+		this.executeGenericLuaAssets(interpreter);
+
 		const rompack = this.api.rompack();
-		if (!rompack || !rompack.lua) {
-			return;
-		}
 		const previousMachineIds = new Set(this.luaFsmMachineIds);
 		this.luaFsmMachineIds.clear();
+		if (!rompack || !rompack.lua) {
+			if (previousMachineIds.size > 0) {
+				for (const removed of previousMachineIds) {
+					this.unregisterLuaStateMachine(removed);
+				}
+			}
+			this.luaFsmsByAsset.clear();
+			this.fsmChangeRecordsByAsset.clear();
+			return;
+		}
 		const luaSources = rompack.lua;
 		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
 		const previousDefinitions = new Map<string, StateDefinition | undefined>();
 		const changedMachines: string[] = [];
-		const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => this.assetIdRepresentsFsm(assetId));
+		const processedAssets: Set<string> = new Set();
+		const trackedAssets = new Set(this.luaFsmsByAsset.keys());
+		const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => trackedAssets.has(assetId), trackedAssets);
 		for (let index = 0; index < assetIds.length; index += 1) {
 			const assetId = assetIds[index]!;
 			const source = luaSources[assetId];
 			if (typeof source !== 'string') {
 				throw new Error(`[BmsxConsoleRuntime] FSM Lua asset '${assetId}' is not a string source.`);
 			}
+			processedAssets.add(assetId);
+			const previousAssetIds = new Set(this.luaFsmsByAsset.get(assetId) ?? []);
+			this.luaFsmsByAsset.set(assetId, new Set());
+			this.fsmChangeRecordsByAsset.set(assetId, []);
 			const previousAssetContext = this.currentLuaAssetContext;
 			this.currentLuaAssetContext = { category: 'fsm', assetId };
 			try {
@@ -2573,7 +2636,7 @@ export class BmsxConsoleRuntime extends Service {
 					fsmInfo.path = pathHint;
 				}
 				this.registerLuaChunkResource(chunkName, fsmInfo);
-				let results: LuaValue[];
+				let results: LuaValue[] = [];
 				try {
 					results = interpreter.execute(source, chunkName);
 					this.cacheChunkEnvironment(interpreter, chunkName, assetId);
@@ -2582,40 +2645,49 @@ export class BmsxConsoleRuntime extends Service {
 					const message = error instanceof Error ? error.message : String(error);
 					throw new Error(`[BmsxConsoleRuntime] Failed to execute FSM Lua script '${assetId}': ${message}`);
 				}
-				const value = results.length > 0 ? results[0] : null;
-				if (value === null) {
-					throw new Error(`[BmsxConsoleRuntime] FSM Lua script '${assetId}' returned nil.`);
+				if (results.length > 0 && results[0] !== null) {
+					const moduleId = this.moduleIdFor('fsm', assetId, chunkName);
+					const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
+					const blueprintValue = this.luaValueToJs(results[0], marshalCtx);
+					if (!this.isPlainObject(blueprintValue)) {
+						throw new Error(`[BmsxConsoleRuntime] FSM Lua script '${assetId}' must return a table when yielding a value.`);
+					}
+					this.registerStateMachineDefinition(blueprintValue as Record<string, unknown>);
 				}
-				const moduleId = this.moduleIdFor('fsm', assetId, chunkName);
-				const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
-				const blueprintValue = this.luaValueToJs(value, marshalCtx);
-				if (!this.isPlainObject(blueprintValue)) {
-					throw new Error(`[BmsxConsoleRuntime] FSM Lua script '${assetId}' must return a table.`);
-				}
-				const machineIdRaw = blueprintValue.id;
-				if (typeof machineIdRaw !== 'string' || machineIdRaw.trim().length === 0) {
-					throw new Error(`[BmsxConsoleRuntime] FSM Lua script '${assetId}' returned a blueprint without a valid 'id'.`);
-				}
-				const machineId = machineIdRaw.trim();
-				const prepared = this.prepareLuaStateMachineBlueprint(machineId, blueprintValue, interpreter, moduleId);
-				const existingDefinition = StateDefinitions[machineId];
-				const result = applyPreparedStateMachine(machineId, prepared, { force: true });
-				this.api.register_prepared_fsm(machineId, prepared, { setup: false });
-				this.luaFsmMachineIds.add(machineId);
-				previousMachineIds.delete(machineId);
-				if (!result.changed || !existingDefinition) {
-					continue;
-				}
-				if (!ActiveStateMachines.has(machineId)) {
-					continue;
-				}
-				existingDefinition.event_list = existingDefinition.event_list ?? [];
-				previousDefinitions.set(machineId, existingDefinition);
-				changedMachines.push(machineId);
 			}
 			finally {
 				this.currentLuaAssetContext = previousAssetContext;
 			}
+			const assetSet = this.luaFsmsByAsset.get(assetId) ?? new Set();
+			for (const machineId of assetSet) {
+				previousMachineIds.delete(machineId);
+			}
+			const changeRecords = this.fsmChangeRecordsByAsset.get(assetId);
+			if (changeRecords) {
+				for (let idx = 0; idx < changeRecords.length; idx += 1) {
+					const record = changeRecords[idx]!;
+					changedMachines.push(record.machineId);
+					previousDefinitions.set(record.machineId, record.previousDefinition);
+				}
+				this.fsmChangeRecordsByAsset.set(assetId, []);
+			}
+			for (const machineId of previousAssetIds) {
+				if (!assetSet.has(machineId)) {
+					this.unregisterLuaStateMachine(machineId);
+					previousMachineIds.delete(machineId);
+				}
+			}
+		}
+		for (const [assetId, ids] of Array.from(this.luaFsmsByAsset.entries())) {
+			if (processedAssets.has(assetId)) {
+				continue;
+			}
+			for (const machineId of ids) {
+				this.unregisterLuaStateMachine(machineId);
+				previousMachineIds.delete(machineId);
+			}
+			this.luaFsmsByAsset.delete(assetId);
+			this.fsmChangeRecordsByAsset.delete(assetId);
 		}
 		if (previousMachineIds.size > 0) {
 			for (const removed of previousMachineIds) {
@@ -2712,6 +2784,8 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private loadLuaBehaviorTreeScripts(interpreter: LuaInterpreter): void {
+		this.executeGenericLuaAssets(interpreter);
+
 		const previousTreeIds = new Set(this.luaBehaviorTreeIds);
 		this.luaBehaviorTreeIds.clear();
 		const rompack = this.api.rompack();
@@ -2722,18 +2796,26 @@ export class BmsxConsoleRuntime extends Service {
 				}
 				this.handleRemovedBehaviorTrees(previousTreeIds);
 			}
+			this.luaBehaviorTreesByAsset.clear();
+			this.behaviorTreeChangesByAsset.clear();
 			return;
 		}
+	const luaSources = rompack.lua;
+	const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
+	const trackedAssets = new Set(this.luaBehaviorTreesByAsset.keys());
+	const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => trackedAssets.has(assetId), trackedAssets);
+		const processedAssets: Set<string> = new Set();
 		const changedTrees: Set<string> = new Set();
-		const luaSources = rompack.lua;
-		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
-		const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => this.assetIdRepresentsBehaviorTree(assetId));
 		for (let index = 0; index < assetIds.length; index += 1) {
 			const assetId = assetIds[index]!;
 			const source = luaSources[assetId];
 			if (typeof source !== 'string') {
 				throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua asset '${assetId}' is not a string source.`);
 			}
+			processedAssets.add(assetId);
+			const previousAssetTrees = new Set(this.luaBehaviorTreesByAsset.get(assetId) ?? []);
+			this.luaBehaviorTreesByAsset.set(assetId, new Set());
+			this.behaviorTreeChangesByAsset.set(assetId, new Set());
 			const previousAssetContext = this.currentLuaAssetContext;
 			this.currentLuaAssetContext = { category: 'behavior_tree', assetId };
 			try {
@@ -2753,7 +2835,7 @@ export class BmsxConsoleRuntime extends Service {
 					btInfo.path = pathHint;
 				}
 				this.registerLuaChunkResource(chunkName, btInfo);
-				let executionResults: LuaValue[];
+				let executionResults: LuaValue[] = [];
 				try {
 					executionResults = interpreter.execute(source, chunkName);
 					this.cacheChunkEnvironment(interpreter, chunkName, assetId);
@@ -2762,58 +2844,47 @@ export class BmsxConsoleRuntime extends Service {
 					const message = error instanceof Error ? error.message : String(error);
 					throw new Error(`[BmsxConsoleRuntime] Failed to execute Behavior tree Lua script '${assetId}': ${message}`);
 				}
-				if (executionResults.length === 0) {
-					throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua script '${assetId}' returned no value.`);
-				}
-				const descriptorValue = executionResults[0];
-				const moduleId = this.moduleIdFor('behavior_tree', assetId, chunkName);
-				const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
-				const descriptor = this.luaValueToJs(descriptorValue, marshalCtx);
-				if (!this.isPlainObject(descriptor)) {
-					throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua script '${assetId}' must return a table.`);
-				}
-				const descriptorRecord = descriptor as Record<string, unknown>;
-				const idValue = descriptorRecord.id;
-				if (typeof idValue !== 'string' || idValue.trim().length === 0) {
-					throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua script '${assetId}' is missing a valid id.`);
-				}
-				const treeId = idValue.trim();
-				let definitionSource: unknown;
-				if (Object.prototype.hasOwnProperty.call(descriptorRecord, 'definition')) {
-					definitionSource = descriptorRecord['definition'];
-				} else if (Object.prototype.hasOwnProperty.call(descriptorRecord, 'tree')) {
-					definitionSource = descriptorRecord['tree'];
-				} else if (Object.prototype.hasOwnProperty.call(descriptorRecord, 'root')) {
-					definitionSource = { root: descriptorRecord['root'] };
-				} else if (Object.prototype.hasOwnProperty.call(descriptorRecord, 'type')) {
-					const copy: Record<string, unknown> = {};
-					for (const [key, entry] of Object.entries(descriptorRecord)) {
-						if (key === 'id') {
-							continue;
-						}
-						copy[key] = entry;
+				if (executionResults.length > 0 && executionResults[0] !== null) {
+					const moduleId = this.moduleIdFor('behavior_tree', assetId, chunkName);
+					const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
+					const descriptor = this.luaValueToJs(executionResults[0], marshalCtx);
+					if (!this.isPlainObject(descriptor)) {
+						throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua script '${assetId}' must return a table when yielding a value.`);
 					}
-					definitionSource = copy;
-				} else {
-					throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua script '${assetId}' must provide a 'definition' or 'tree' entry.`);
+					this.registerBehaviorTreeDefinition(descriptor as Record<string, unknown>);
 				}
-				const prepared = this.prepareLuaBehaviorTreeDefinition(treeId, definitionSource, assetId);
-				applyPreparedBehaviorTree(treeId, prepared, { force: true });
-				const diagnostics = getBehaviorTreeDiagnostics(treeId);
-				this.behaviorTreeDiagnostics.set(treeId, diagnostics);
-				for (let index = 0; index < diagnostics.length; index += 1) {
-					const diagnostic = diagnostics[index];
-					if (diagnostic.severity === 'warning') {
-						this.recordLuaWarning(`[BehaviorTree:${treeId}] ${diagnostic.message}`);
-					}
-				}
-				this.luaBehaviorTreeIds.add(treeId);
-				previousTreeIds.delete(treeId);
-				changedTrees.add(treeId);
 			}
 			finally {
 				this.currentLuaAssetContext = previousAssetContext;
 			}
+			const treeSet = this.luaBehaviorTreesByAsset.get(assetId) ?? new Set();
+			for (const treeId of treeSet) {
+				previousTreeIds.delete(treeId);
+			}
+			const assetChanges = this.behaviorTreeChangesByAsset.get(assetId);
+			if (assetChanges) {
+				for (const treeId of assetChanges) {
+					changedTrees.add(treeId);
+				}
+				this.behaviorTreeChangesByAsset.set(assetId, new Set());
+			}
+			for (const treeId of previousAssetTrees) {
+				if (!treeSet.has(treeId)) {
+					unregisterBehaviorTreeBuilder(treeId);
+					previousTreeIds.delete(treeId);
+				}
+			}
+		}
+		for (const [assetId, ids] of Array.from(this.luaBehaviorTreesByAsset.entries())) {
+			if (processedAssets.has(assetId)) {
+				continue;
+			}
+			for (const treeId of ids) {
+				unregisterBehaviorTreeBuilder(treeId);
+				previousTreeIds.delete(treeId);
+			}
+			this.luaBehaviorTreesByAsset.delete(assetId);
+			this.behaviorTreeChangesByAsset.delete(assetId);
 		}
 		if (previousTreeIds.size > 0) {
 			for (const removed of previousTreeIds) {
@@ -2830,10 +2901,11 @@ export class BmsxConsoleRuntime extends Service {
 		luaSources: Record<string, unknown>,
 		sourcePaths: Record<string, unknown>,
 		predicate: (assetId: string) => boolean,
+		extra?: ReadonlySet<string>,
 	): string[] {
 		const candidates: string[] = [];
 		for (const assetId of Object.keys(luaSources)) {
-			if (predicate(assetId)) {
+			if (predicate(assetId) || (extra && extra.has(assetId))) {
 				candidates.push(assetId);
 			}
 		}
@@ -2886,14 +2958,78 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
+	public registerBehaviorTreeDefinition(descriptor: Record<string, unknown>): void {
+		if (!descriptor || typeof descriptor !== 'object') {
+			throw new Error('[BmsxConsoleRuntime] registerBehaviorTreeDefinition requires a descriptor table.');
+		}
+		const idValue = (descriptor as { id?: unknown }).id;
+		if (typeof idValue !== 'string' || idValue.trim().length === 0) {
+			throw new Error('[BmsxConsoleRuntime] Behavior tree descriptor requires a non-empty id.');
+		}
+		const treeId = idValue.trim();
+		let definitionSource: unknown;
+		if (Object.prototype.hasOwnProperty.call(descriptor, 'definition')) {
+			definitionSource = (descriptor as { definition?: unknown }).definition;
+		} else if (Object.prototype.hasOwnProperty.call(descriptor, 'tree')) {
+			definitionSource = (descriptor as { tree?: unknown }).tree;
+		} else if (Object.prototype.hasOwnProperty.call(descriptor, 'root')) {
+			definitionSource = { root: (descriptor as { root?: unknown }).root };
+		} else if (Object.prototype.hasOwnProperty.call(descriptor, 'type')) {
+			const copy: Record<string, unknown> = {};
+			for (const [key, value] of Object.entries(descriptor)) {
+				if (key === 'id') {
+					continue;
+				}
+				copy[key] = value;
+			}
+			definitionSource = copy;
+		} else {
+			throw new Error(`[BmsxConsoleRuntime] Behavior tree '${treeId}' descriptor must provide a definition.`);
+		}
+		const assetId = this.currentLuaAssetContext?.assetId ?? null;
+		const prepared = this.prepareLuaBehaviorTreeDefinition(treeId, definitionSource, assetId ?? 'runtime');
+		const result = applyPreparedBehaviorTree(treeId, prepared, { force: true });
+		const diagnostics = getBehaviorTreeDiagnostics(treeId);
+		this.behaviorTreeDiagnostics.set(treeId, diagnostics);
+		for (let index = 0; index < diagnostics.length; index += 1) {
+			const diagnostic = diagnostics[index];
+			if (diagnostic.severity === 'warning') {
+				this.recordLuaWarning(`[BehaviorTree:${treeId}] ${diagnostic.message}`);
+			}
+		}
+		this.luaBehaviorTreeIds.add(treeId);
+		if (assetId) {
+			let set = this.luaBehaviorTreesByAsset.get(assetId);
+			if (!set) {
+				set = new Set();
+				this.luaBehaviorTreesByAsset.set(assetId, set);
+			}
+			set.add(treeId);
+			if (result.changed) {
+				let changed = this.behaviorTreeChangesByAsset.get(assetId);
+				if (!changed) {
+					changed = new Set();
+					this.behaviorTreeChangesByAsset.set(assetId, changed);
+				}
+				changed.add(treeId);
+			}
+		} else if (result.changed) {
+			this.refreshBehaviorTreeContexts([treeId]);
+		}
+	}
+
 	private loadLuaComponentPresetScripts(interpreter: LuaInterpreter): void {
+		this.executeGenericLuaAssets(interpreter);
+
 		const rompack = this.api.rompack();
 		if (!rompack || !rompack.lua) {
 			return;
 		}
-		const luaSources = rompack.lua;
-		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
-		const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => this.assetIdRepresentsComponentPreset(assetId));
+	const luaSources = rompack.lua;
+	const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
+	const trackedAssets = new Set(this.luaComponentPresetsByAsset.keys());
+	const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => trackedAssets.has(assetId), trackedAssets);
+		const processedAssets = new Set<string>();
 		for (let index = 0; index < assetIds.length; index += 1) {
 			const assetId = assetIds[index]!;
 			const source = luaSources[assetId];
@@ -2921,6 +3057,7 @@ export class BmsxConsoleRuntime extends Service {
 				this.registerLuaChunkResource(chunkName, presetInfo);
 				interpreter.execute(source, chunkName);
 				this.cacheChunkEnvironment(interpreter, chunkName, assetId);
+				processedAssets.add(assetId);
 			}
 			catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -2930,22 +3067,73 @@ export class BmsxConsoleRuntime extends Service {
 				this.currentLuaAssetContext = previousAssetContext;
 			}
 		}
+		for (const [assetId, presetIds] of Array.from(this.luaComponentPresetsByAsset.entries())) {
+			if (processedAssets.has(assetId)) {
+				continue;
+			}
+			for (const presetId of presetIds) {
+				this.componentPresets.delete(presetId);
+			}
+			this.luaComponentPresetsByAsset.delete(assetId);
+		}
 	}
 
-	private loadLuaWorldObjectDefinitionScripts(interpreter: LuaInterpreter): void {
+	private executeGenericLuaAssets(interpreter: LuaInterpreter): void {
 		const rompack = this.api.rompack();
 		if (!rompack || !rompack.lua) {
 			return;
 		}
 		const luaSources = rompack.lua;
 		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
-		const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => this.assetIdRepresentsWorldObject(assetId));
+		for (const assetId of Object.keys(luaSources)) {
+			if (this.luaGenericAssetsExecuted.has(assetId)) {
+				continue;
+			}
+			const source = luaSources[assetId];
+			if (typeof source !== 'string') {
+				continue;
+			}
+			const sourcePathRaw = sourcePaths[assetId];
+			const sourcePath = typeof sourcePathRaw === 'string' && sourcePathRaw.length > 0 ? sourcePathRaw : null;
+			const previousAssetContext = this.currentLuaAssetContext;
+			const previousChunkName = this.luaChunkName;
+			const chunkName = this.resolveLuaModuleChunkName(assetId, sourcePath);
+			try {
+				this.currentLuaAssetContext = { category: 'other', assetId };
+				this.luaChunkName = chunkName;
+				this.registerLuaChunkResource(chunkName, { assetId, path: sourcePath ?? undefined });
+				interpreter.execute(source, chunkName);
+				this.cacheChunkEnvironment(interpreter, chunkName, assetId);
+				this.luaGenericAssetsExecuted.add(assetId);
+			}
+			catch (error) {
+				throw error;
+			}
+			finally {
+				this.luaChunkName = previousChunkName;
+				this.currentLuaAssetContext = previousAssetContext;
+			}
+		}
+	}
+	private loadLuaWorldObjectDefinitionScripts(interpreter: LuaInterpreter): void {
+		this.executeGenericLuaAssets(interpreter);
+
+		const rompack = this.api.rompack();
+		if (!rompack || !rompack.lua) {
+			return;
+		}
+		const luaSources = rompack.lua;
+		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
+		const trackedAssets = new Set(this.luaWorldObjectsByAsset.keys());
+		const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => trackedAssets.has(assetId), trackedAssets);
+		const processedAssets = new Set<string>();
 		for (let index = 0; index < assetIds.length; index += 1) {
 			const assetId = assetIds[index]!;
-			const source = luaSources[assetId];
+		       const source = luaSources[assetId];
 			if (typeof source !== 'string') {
 				throw new Error(`[BmsxConsoleRuntime] World object Lua asset '${assetId}' is not a string source.`);
 			}
+			processedAssets.add(assetId);
 			const previousAssetContext = this.currentLuaAssetContext;
 			this.currentLuaAssetContext = { category: 'worldobject', assetId };
 			try {
@@ -2976,230 +3164,184 @@ export class BmsxConsoleRuntime extends Service {
 				this.currentLuaAssetContext = previousAssetContext;
 			}
 		}
+		for (const [assetId, ids] of Array.from(this.luaWorldObjectsByAsset.entries())) {
+			if (processedAssets.has(assetId)) {
+				continue;
+			}
+			for (const worldobjectId of ids) {
+				this.disposeWorldObjectDefinition(worldobjectId);
+			}
+			this.luaWorldObjectsByAsset.delete(assetId);
+		}
 	}
 
-	private loadLuaServiceScripts(interpreter: LuaInterpreter): void {
-		this.disposeLuaServices();
-		const rompack = this.api.rompack();
-		if (!rompack || !rompack.lua) {
-			return;
+	private instantiateLuaService(opts: { table: LuaTable; descriptor: Record<string, unknown>; moduleId: string; interpreter: LuaInterpreter; assetId: string | null }): void {
+		const { table, descriptor, moduleId, interpreter, assetId } = opts;
+		const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
+		const idValue = descriptor.id;
+		if (typeof idValue !== 'string' || idValue.trim().length === 0) {
+			throw new Error('[BmsxConsoleRuntime] Service descriptor requires a non-empty id.');
 		}
-		const luaSources = rompack.lua;
-		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
-		const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => this.assetIdRepresentsService(assetId));
-		for (let index = 0; index < assetIds.length; index += 1) {
-			const assetId = assetIds[index]!;
-			const source = luaSources[assetId];
-			if (typeof source !== 'string') {
-				throw new Error(`[BmsxConsoleRuntime] Service Lua asset '${assetId}' is not a string source.`);
-			}
-			const previousAssetContext = this.currentLuaAssetContext;
-			this.currentLuaAssetContext = { category: 'service', assetId };
-			try {
-			const sourcePathRaw = sourcePaths[assetId];
-			let pathHint: string | null = null;
-			if (typeof sourcePathRaw === 'string' && sourcePathRaw.length > 0) {
-				pathHint = sourcePathRaw;
-			} else {
-				const resolvedPath = this.resolveResourcePath(assetId);
-				if (resolvedPath) {
-					pathHint = resolvedPath;
-				}
-			}
-			const chunkName = this.resolveLuaServiceChunkName(assetId, typeof sourcePathRaw === 'string' ? sourcePathRaw : null);
-			const serviceInfo: { assetId: string | null; path?: string | null } = { assetId };
-			if (pathHint) {
-				serviceInfo.path = pathHint;
-			}
-			this.registerLuaChunkResource(chunkName, serviceInfo);
-			let executionResults: LuaValue[];
-			try {
-				executionResults = interpreter.execute(source, chunkName);
-				this.cacheChunkEnvironment(interpreter, chunkName, assetId);
-			}
-			catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				throw new Error(`[BmsxConsoleRuntime] Failed to execute Service Lua script '${assetId}': ${message}`);
-			}
-			if (executionResults.length === 0) {
-				throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' returned no value.`);
-			}
-			const table = executionResults[0];
-			if (!(isLuaTable(table))) {
-				throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' must return a table.`);
-			}
-			const moduleId = this.moduleIdFor('service', assetId, chunkName);
-			const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
-			const descriptorRaw = this.luaValueToJs(table, marshalCtx);
-			if (!this.isPlainObject(descriptorRaw)) {
-				throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' must return a plain table.`);
-			}
-			const descriptor = descriptorRaw as Record<string, unknown>;
-			const idValue = descriptor.id;
-			if (typeof idValue !== 'string' || idValue.trim().length === 0) {
-				throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' is missing a valid id.`);
-			}
-			const serviceId = idValue.trim() as Identifier;
-			if (this.luaServices.has(serviceId)) {
-				throw new Error(`[BmsxConsoleRuntime] Duplicate Lua service id '${serviceId}' detected.`);
-			}
+		const serviceId = idValue.trim() as Identifier;
+		if (this.luaServices.has(serviceId)) {
+			throw new Error(`[BmsxConsoleRuntime] Duplicate Lua service id '${serviceId}' detected.`);
+		}
 
-			let autoActivate = true;
-			const autoActivateRaw = this.getLuaRecordEntry<boolean>(descriptor, ['auto_activate', 'autoActivate']);
-			if (typeof autoActivateRaw === 'boolean') {
-				autoActivate = autoActivateRaw;
-			}
+		let autoActivate = true;
+		const autoActivateRaw = this.getLuaRecordEntry<boolean>(descriptor, ['auto_activate', 'autoActivate']);
+		if (typeof autoActivateRaw === 'boolean') {
+			autoActivate = autoActivateRaw;
+		}
 
-			const hooks: LuaServiceHooks = {};
-			const bootCandidate = this.getLuaTableEntry(table, ['on_boot', 'boot', 'initialize']);
-			if (bootCandidate !== undefined && bootCandidate !== null) {
-				if (!this.isLuaFunctionValue(bootCandidate)) {
-					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_boot' must be a function.`);
-				}
-				const handler = this.luaValueToJs(bootCandidate, this.extendMarshalContext(marshalCtx, 'hooks.boot'));
-				if (!isLuaHandlerFn(handler)) {
-					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_boot' must be a Lua handler.`);
-				}
-				hooks.boot = handler;
+		const hooks: LuaServiceHooks = {};
+		const bootCandidate = this.getLuaTableEntry(table, ['on_boot', 'boot', 'initialize']);
+		if (bootCandidate !== undefined && bootCandidate !== null) {
+			if (!this.isLuaFunctionValue(bootCandidate)) {
+				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_boot' must be a function.`);
 			}
-			const activateCandidate = this.getLuaTableEntry(table, ['on_activate', 'activate']);
-			if (activateCandidate !== undefined && activateCandidate !== null) {
-				if (!this.isLuaFunctionValue(activateCandidate)) {
-					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_activate' must be a function.`);
-				}
-				const handler = this.luaValueToJs(activateCandidate, this.extendMarshalContext(marshalCtx, 'hooks.activate'));
-				if (!isLuaHandlerFn(handler)) {
-					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_activate' must be a Lua handler.`);
-				}
-				hooks.activate = handler;
+			const handler = this.luaValueToJs(bootCandidate, this.extendMarshalContext(marshalCtx, 'hooks.boot'));
+			if (!isLuaHandlerFn(handler)) {
+				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_boot' must be a Lua handler.`);
 			}
-			const deactivateCandidate = this.getLuaTableEntry(table, ['on_deactivate', 'deactivate']);
-			if (deactivateCandidate !== undefined && deactivateCandidate !== null) {
-				if (!this.isLuaFunctionValue(deactivateCandidate)) {
-					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_deactivate' must be a function.`);
-				}
-				const handler = this.luaValueToJs(deactivateCandidate, this.extendMarshalContext(marshalCtx, 'hooks.deactivate'));
-				if (!isLuaHandlerFn(handler)) {
-					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_deactivate' must be a Lua handler.`);
-				}
-				hooks.deactivate = handler;
+			hooks.boot = handler;
+		}
+		const activateCandidate = this.getLuaTableEntry(table, ['on_activate', 'activate']);
+		if (activateCandidate !== undefined && activateCandidate !== null) {
+			if (!this.isLuaFunctionValue(activateCandidate)) {
+				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_activate' must be a function.`);
 			}
-			const disposeCandidate = this.getLuaTableEntry(table, ['on_dispose', 'dispose']);
-			if (disposeCandidate !== undefined && disposeCandidate !== null) {
-				if (!this.isLuaFunctionValue(disposeCandidate)) {
-					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_dispose' must be a function.`);
-				}
-				const handler = this.luaValueToJs(disposeCandidate, this.extendMarshalContext(marshalCtx, 'hooks.dispose'));
-				if (!isLuaHandlerFn(handler)) {
-					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_dispose' must be a Lua handler.`);
-				}
-				hooks.dispose = handler;
+			const handler = this.luaValueToJs(activateCandidate, this.extendMarshalContext(marshalCtx, 'hooks.activate'));
+			if (!isLuaHandlerFn(handler)) {
+				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_activate' must be a Lua handler.`);
 			}
-			const tickCandidate = this.getLuaTableEntry(table, ['on_tick', 'tick', 'update']);
-			if (tickCandidate !== undefined && tickCandidate !== null) {
-				if (!this.isLuaFunctionValue(tickCandidate)) {
-					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_tick' must be a function.`);
-				}
-				const handler = this.luaValueToJs(tickCandidate, this.extendMarshalContext(marshalCtx, 'hooks.tick'));
-				if (!isLuaHandlerFn(handler)) {
-					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_tick' must be a Lua handler.`);
-				}
-				hooks.tick = handler;
+			hooks.activate = handler;
+		}
+		const deactivateCandidate = this.getLuaTableEntry(table, ['on_deactivate', 'deactivate']);
+		if (deactivateCandidate !== undefined && deactivateCandidate !== null) {
+			if (!this.isLuaFunctionValue(deactivateCandidate)) {
+				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_deactivate' must be a function.`);
 			}
-			const getStateCandidate = this.getLuaTableEntry(table, ['get_state', 'getState', 'serialize']);
-			if (getStateCandidate !== undefined && getStateCandidate !== null) {
-				if (!this.isLuaFunctionValue(getStateCandidate)) {
-					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'get_state' must be a function.`);
-				}
-				const handler = this.luaValueToJs(getStateCandidate, this.extendMarshalContext(marshalCtx, 'hooks.get_state'));
-				if (!isLuaHandlerFn(handler)) {
-					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'get_state' must be a Lua handler.`);
-				}
-				hooks.getState = handler;
+			const handler = this.luaValueToJs(deactivateCandidate, this.extendMarshalContext(marshalCtx, 'hooks.deactivate'));
+			if (!isLuaHandlerFn(handler)) {
+				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_deactivate' must be a Lua handler.`);
 			}
-			const setStateCandidate = this.getLuaTableEntry(table, ['set_state', 'setState', 'deserialize']);
-			if (setStateCandidate !== undefined && setStateCandidate !== null) {
-				if (!this.isLuaFunctionValue(setStateCandidate)) {
-					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'set_state' must be a function.`);
-				}
-				const handler = this.luaValueToJs(setStateCandidate, this.extendMarshalContext(marshalCtx, 'hooks.set_state'));
-				if (!isLuaHandlerFn(handler)) {
-					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'set_state' must be a Lua handler.`);
-				}
-				hooks.setState = handler;
+			hooks.deactivate = handler;
+		}
+		const disposeCandidate = this.getLuaTableEntry(table, ['on_dispose', 'dispose']);
+		if (disposeCandidate !== undefined && disposeCandidate !== null) {
+			if (!this.isLuaFunctionValue(disposeCandidate)) {
+				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_dispose' must be a function.`);
 			}
+			const handler = this.luaValueToJs(disposeCandidate, this.extendMarshalContext(marshalCtx, 'hooks.dispose'));
+			if (!isLuaHandlerFn(handler)) {
+				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_dispose' must be a Lua handler.`);
+			}
+			hooks.dispose = handler;
+		}
+		const tickCandidate = this.getLuaTableEntry(table, ['on_tick', 'tick']);
+		if (tickCandidate !== undefined && tickCandidate !== null) {
+			if (!this.isLuaFunctionValue(tickCandidate)) {
+				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_tick' must be a function.`);
+			}
+			const handler = this.luaValueToJs(tickCandidate, this.extendMarshalContext(marshalCtx, 'hooks.tick'));
+			if (!isLuaHandlerFn(handler)) {
+				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_tick' must be a Lua handler.`);
+			}
+			hooks.tick = handler;
+		}
+		const getStateCandidate = this.getLuaTableEntry(table, ['get_state', 'getState', 'serialize']);
+		if (getStateCandidate !== undefined && getStateCandidate !== null) {
+			if (!this.isLuaFunctionValue(getStateCandidate)) {
+				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'get_state' must be a function.`);
+			}
+			const handler = this.luaValueToJs(getStateCandidate, this.extendMarshalContext(marshalCtx, 'hooks.get_state'));
+			if (!isLuaHandlerFn(handler)) {
+				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'get_state' must be a Lua handler.`);
+			}
+			hooks.getState = handler;
+		}
+		const setStateCandidate = this.getLuaTableEntry(table, ['set_state', 'setState', 'deserialize']);
+		if (setStateCandidate !== undefined && setStateCandidate !== null) {
+			if (!this.isLuaFunctionValue(setStateCandidate)) {
+				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'set_state' must be a function.`);
+			}
+			const handler = this.luaValueToJs(setStateCandidate, this.extendMarshalContext(marshalCtx, 'hooks.set_state'));
+			if (!isLuaHandlerFn(handler)) {
+				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'set_state' must be a Lua handler.`);
+			}
+			hooks.setState = handler;
+		}
 
-			const events = new Map<string, LuaHandlerFn>();
-			const eventsValue = this.getLuaTableEntry(table, ['events']);
-			if (isLuaTable(eventsValue)) {
-				for (const [rawKey, handler] of eventsValue.entriesArray()) {
-					const eventName = typeof rawKey === 'string' ? rawKey.trim() : '';
-					if (eventName.length === 0) {
-						throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' events must use string keys.`);
-					}
-					if (!this.isLuaFunctionValue(handler)) {
-						throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' event '${eventName}' must be a function.`);
-					}
-					const jsHandler = this.luaValueToJs(handler, this.extendMarshalContext(marshalCtx, `events.${eventName}`));
-					if (!isLuaHandlerFn(jsHandler)) {
-						throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' event '${eventName}' must be a Lua handler.`);
-					}
-					events.set(eventName, jsHandler);
+		const events = new Map<string, LuaHandlerFn>();
+		const eventsValue = this.getLuaTableEntry(table, ['events']);
+		if (isLuaTable(eventsValue)) {
+			for (const [rawKey, handler] of eventsValue.entriesArray()) {
+				const eventName = typeof rawKey === 'string' ? rawKey.trim() : '';
+				if (eventName.length === 0) {
+					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' events must use string keys.`);
 				}
-			}
-
-			const machines: Identifier[] = [];
-			const machinesValue = this.getLuaRecordEntry<unknown>(descriptor, ['machines', 'state_machines', 'stateMachines']);
-			if (Array.isArray(machinesValue)) {
-				for (let index = 0; index < machinesValue.length; index += 1) {
-					const value = machinesValue[index];
-					if (typeof value !== 'string' || value.trim().length === 0) {
-						throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' machines[${index}] must be a string.`);
-					}
-					machines.push(value.trim() as Identifier);
+				if (!this.isLuaFunctionValue(handler)) {
+					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' event '${eventName}' must be a function.`);
 				}
-			} else if (typeof machinesValue === 'string' && machinesValue.trim().length > 0) {
-				machines.push(machinesValue.trim() as Identifier);
-			}
-
-			const service = new LuaScriptService(serviceId);
-
-			const binding: LuaServiceBinding = {
-				service,
-				table,
-				hooks,
-				events,
-				autoActivate,
-			};
-
-			this.luaServices.set(serviceId, binding);
-
-			for (let index = 0; index < machines.length; index += 1) {
-				service.sc.add_statemachine(machines[index], serviceId);
-			}
-
-			if (hooks.getState) {
-				service.getState = () => this.invokeLuaServiceHook(binding, hooks.getState!);
-			}
-			if (hooks.setState) {
-				service.setState = (state: unknown) => { this.invokeLuaServiceHook(binding, hooks.setState!, state); };
-			}
-
-			const originalActivate = service.activate.bind(service);
-			service.activate = () => {
-				originalActivate();
-				if (hooks.activate) {
-					this.invokeLuaServiceHook(binding, hooks.activate);
+				const jsHandler = this.luaValueToJs(handler, this.extendMarshalContext(marshalCtx, `events.${eventName}`));
+				if (!isLuaHandlerFn(jsHandler)) {
+					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' event '${eventName}' must be a Lua handler.`);
 				}
-			};
+				events.set(eventName, jsHandler);
+			}
+		}
 
-			const originalDeactivate = service.deactivate.bind(service);
-			service.deactivate = () => {
-				if (hooks.deactivate) {
-					this.invokeLuaServiceHook(binding, hooks.deactivate);
+		const machines: Identifier[] = [];
+		const machinesValue = this.getLuaRecordEntry<unknown>(descriptor, ['machines', 'state_machines', 'stateMachines']);
+		if (Array.isArray(machinesValue)) {
+			for (let index = 0; index < machinesValue.length; index += 1) {
+				const value = machinesValue[index];
+				if (typeof value !== 'string' || value.trim().length === 0) {
+					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' machines[${index}] must be a string.`);
 				}
-				originalDeactivate();
-			};
+				machines.push(value.trim() as Identifier);
+			}
+		} else if (typeof machinesValue === 'string' && machinesValue.trim().length > 0) {
+			machines.push(machinesValue.trim() as Identifier);
+		}
+
+		const service = new LuaScriptService(serviceId);
+		const binding: LuaServiceBinding = {
+			service,
+			table,
+			hooks,
+			events,
+			autoActivate,
+		};
+
+		this.luaServices.set(serviceId, binding);
+
+		for (let index = 0; index < machines.length; index += 1) {
+			service.sc.add_statemachine(machines[index], serviceId);
+		}
+
+		if (hooks.getState) {
+			service.getState = () => this.invokeLuaServiceHook(binding, hooks.getState!);
+		}
+		if (hooks.setState) {
+			service.setState = (state: unknown) => { this.invokeLuaServiceHook(binding, hooks.setState!, state); };
+		}
+
+		const originalActivate = service.activate.bind(service);
+		service.activate = () => {
+			originalActivate();
+			if (hooks.activate) {
+				this.invokeLuaServiceHook(binding, hooks.activate);
+			}
+		};
+
+		const originalDeactivate = service.deactivate.bind(service);
+		service.deactivate = () => {
+			if (hooks.deactivate) {
+				this.invokeLuaServiceHook(binding, hooks.deactivate);
+			}
+			originalDeactivate();
+		};
 
 		const originalDispose = service.dispose.bind(service);
 		service.dispose = () => {
@@ -3208,6 +3350,11 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			this.unregisterLuaServiceEvents(service.id);
 			this.luaServices.delete(service.id);
+			for (const [key, set] of this.luaServicesByAsset.entries()) {
+				if (set.delete(service.id) && set.size === 0 && key !== '__service_global__') {
+					this.luaServicesByAsset.delete(key);
+				}
+			}
 			originalDispose();
 		};
 
@@ -3228,22 +3375,111 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.registerLuaServiceEvents(binding);
 
-			if (hooks.boot) {
-				this.invokeLuaServiceHook(binding, hooks.boot);
-			}
+		if (hooks.boot) {
+			this.invokeLuaServiceHook(binding, hooks.boot);
+		}
 
-			if (binding.autoActivate) {
-				service.activate();
-			}
-			else if (events.size > 0) {
-				service.enableEvents();
-			}
+		if (binding.autoActivate) {
+			service.activate();
 		}
-		finally {
-			this.currentLuaAssetContext = previousAssetContext;
+		else if (events.size > 0) {
+			service.enableEvents();
 		}
+
+		const assetKey = assetId ?? '__service_global__';
+		let set = this.luaServicesByAsset.get(assetKey);
+		if (!set) {
+			set = new Set();
+			this.luaServicesByAsset.set(assetKey, set);
 		}
+		set.add(serviceId);
 	}
+
+	private loadLuaServiceScripts(interpreter: LuaInterpreter): void {
+		this.executeGenericLuaAssets(interpreter);
+		this.disposeLuaServices();
+		this.luaServicesByAsset.clear();
+		const rompack = this.api.rompack();
+		if (!rompack || !rompack.lua) {
+			return;
+		}
+		const luaSources = rompack.lua;
+		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
+	const trackedAssets = new Set(this.luaServiceDefinitionsByAsset.keys());
+	const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => trackedAssets.has(assetId), trackedAssets);
+	const processedAssets = new Set<string>();
+		for (let index = 0; index < assetIds.length; index += 1) {
+			const assetId = assetIds[index]!;
+			const source = luaSources[assetId];
+			if (typeof source !== 'string') {
+				throw new Error(`[BmsxConsoleRuntime] Service Lua asset '${assetId}' is not a string source.`);
+			}
+			processedAssets.add(assetId);
+			this.luaServicesByAsset.set(assetId, new Set());
+			const previousAssetContext = this.currentLuaAssetContext;
+			this.currentLuaAssetContext = { category: 'service', assetId };
+			try {
+				const sourcePathRaw = sourcePaths[assetId];
+				let pathHint: string | null = null;
+				if (typeof sourcePathRaw === 'string' && sourcePathRaw.length > 0) {
+					pathHint = sourcePathRaw;
+				} else {
+					const resolvedPath = this.resolveResourcePath(assetId);
+					if (resolvedPath) {
+						pathHint = resolvedPath;
+					}
+				}
+				const chunkName = this.resolveLuaServiceChunkName(assetId, typeof sourcePathRaw === 'string' ? sourcePathRaw : null);
+				const serviceInfo: { assetId: string | null; path?: string | null } = { assetId };
+				if (pathHint) {
+					serviceInfo.path = pathHint;
+				}
+				this.registerLuaChunkResource(chunkName, serviceInfo);
+				let executionResults: LuaValue[] = [];
+				try {
+					executionResults = interpreter.execute(source, chunkName);
+					this.cacheChunkEnvironment(interpreter, chunkName, assetId);
+				}
+				catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					throw new Error(`[BmsxConsoleRuntime] Failed to execute Service Lua script '${assetId}': ${message}`);
+				}
+				if (executionResults.length > 0 && executionResults[0] !== null) {
+					const table = executionResults[0];
+					if (!isLuaTable(table)) {
+						throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' must return a table.`);
+					}
+					const moduleId = this.moduleIdFor('service', assetId, chunkName);
+					const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
+					const descriptorRaw = this.luaValueToJs(table, marshalCtx);
+					if (!this.isPlainObject(descriptorRaw)) {
+						throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' must return a plain table.`);
+					}
+					this.instantiateLuaService({
+						table,
+						descriptor: descriptorRaw as Record<string, unknown>,
+						moduleId,
+						interpreter,
+						assetId,
+					});
+				}
+			}
+			finally {
+				this.currentLuaAssetContext = previousAssetContext;
+			}
+		}
+		for (const [assetId, serviceIds] of Array.from(this.luaServiceDefinitionsByAsset.entries())) {
+			if (processedAssets.has(assetId)) {
+				continue;
+			}
+			if (serviceIds) {
+				for (const serviceId of serviceIds) {
+					this.serviceDefinitions.delete(serviceId);
+				}
+			}
+			this.luaServiceDefinitionsByAsset.delete(assetId);
+		}
+ }
 
 	private prepareLuaBehaviorTreeDefinition(treeId: string, definitionValue: unknown, assetId: string): BehaviorTreeDefinition {
 		if (definitionValue === null || definitionValue === undefined) {
@@ -3341,58 +3577,20 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private assetIdRepresentsBehaviorTree(assetId: string): boolean {
-		if (!assetId) {
-			return false;
-		}
-		const lower = assetId.toLowerCase();
-		return lower.includes('.bt.') || lower.endsWith('.bt') || lower.includes('.behaviortree') || lower.includes('.behaviourtree') || lower.includes('.behavior_tree') || lower.includes('.behaviour_tree');
-	}
-
-	private assetIdRepresentsFsm(assetId: string): boolean {
-		if (!assetId) {
-			return false;
-		}
-		return assetId.indexOf('.fsm') !== -1;
-	}
-
-	private assetIdRepresentsService(assetId: string): boolean {
-		if (!assetId) {
-			return false;
-		}
-	return assetId.indexOf('.service') !== -1;
-}
-
-	private assetIdRepresentsComponentPreset(assetId: string): boolean {
-		if (!assetId) {
-			return false;
-		}
-		const lower = assetId.toLowerCase();
-		return lower.includes('.componentpreset.') || lower.endsWith('.componentpreset') || lower.includes('.component_preset');
-	}
-
-	private assetIdRepresentsWorldObject(assetId: string): boolean {
-		if (!assetId) {
-			return false;
-		}
-		const lower = assetId.toLowerCase();
-		return lower.includes('.worldobject.') || lower.endsWith('.worldobject') || lower.includes('.world_object');
-	}
-
 	private resolveLuaHotReloadCategory(assetId: string): 'fsm' | 'behavior_tree' | 'service' | 'component_preset' | 'worldobject' | null {
-		if (this.assetIdRepresentsFsm(assetId)) {
+		if (this.luaFsmsByAsset.has(assetId)) {
 			return 'fsm';
 		}
-		if (this.assetIdRepresentsBehaviorTree(assetId)) {
+		if (this.luaBehaviorTreesByAsset.has(assetId)) {
 			return 'behavior_tree';
 		}
-		if (this.assetIdRepresentsService(assetId)) {
+		if (this.luaServiceDefinitionsByAsset.has(assetId) || this.luaServicesByAsset.has(assetId)) {
 			return 'service';
 		}
-		if (this.assetIdRepresentsComponentPreset(assetId)) {
+		if (this.luaComponentPresetsByAsset.has(assetId)) {
 			return 'component_preset';
 		}
-		if (this.assetIdRepresentsWorldObject(assetId)) {
+		if (this.luaWorldObjectsByAsset.has(assetId)) {
 			return 'worldobject';
 		}
 		return null;
@@ -3462,6 +3660,51 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		ActiveStateMachines.delete(machineId);
 		this.luaFsmMachineIds.delete(machineId);
+		for (const set of this.luaFsmsByAsset.values()) {
+			set.delete(machineId);
+		}
+	}
+
+	public registerStateMachineDefinition(descriptor: Record<string, unknown>): void {
+		if (!descriptor || typeof descriptor !== 'object') {
+			throw new Error('[BmsxConsoleRuntime] registerStateMachineDefinition expects a descriptor table.');
+		}
+		const idValue = (descriptor as { id?: unknown }).id;
+		if (typeof idValue !== 'string' || idValue.trim().length === 0) {
+			throw new Error('[BmsxConsoleRuntime] FSM descriptor requires a non-empty id.');
+		}
+		const machineId = idValue.trim();
+		const interpreter = this.requireLuaInterpreter();
+		const moduleId = this.moduleIdFor('fsm', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
+		const prepared = this.prepareLuaStateMachineBlueprint(machineId, descriptor, interpreter, moduleId);
+		const existingDefinition = StateDefinitions[machineId];
+		const result = applyPreparedStateMachine(machineId, prepared, { force: true });
+		this.api.register_prepared_fsm(machineId, prepared, { setup: false });
+		this.luaFsmMachineIds.add(machineId);
+		const assetId = this.currentLuaAssetContext?.assetId ?? null;
+		if (assetId) {
+			let set = this.luaFsmsByAsset.get(assetId);
+			if (!set) {
+				set = new Set();
+				this.luaFsmsByAsset.set(assetId, set);
+			}
+			set.add(machineId);
+			if (result.changed && existingDefinition && ActiveStateMachines.has(machineId)) {
+				existingDefinition.event_list = existingDefinition.event_list ?? [];
+				let records = this.fsmChangeRecordsByAsset.get(assetId);
+				if (!records) {
+					records = [];
+					this.fsmChangeRecordsByAsset.set(assetId, records);
+				}
+				records.push({ machineId, previousDefinition: existingDefinition });
+			}
+		} else if (result.changed && existingDefinition && ActiveStateMachines.has(machineId)) {
+			existingDefinition.event_list = existingDefinition.event_list ?? [];
+			const previousDefinitions = new Map<string, StateDefinition | undefined>();
+			previousDefinitions.set(machineId, existingDefinition);
+			const controllers = this.unsubscribeStateMachineEvents([machineId], previousDefinitions);
+			this.refreshStateMachines([machineId], previousDefinitions, controllers);
+		}
 	}
 
 	private disposeAllComponentDefinitions(): void {
@@ -3539,33 +3782,53 @@ export class BmsxConsoleRuntime extends Service {
 		if (!descriptor || typeof descriptor !== 'object') {
 			throw new Error('[BmsxConsoleRuntime] define_component_preset requires a descriptor table.');
 		}
-		const moduleId = this.moduleIdFor('other', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
-		const idValue = this.getLuaRecordEntry<string>(descriptor, ['id', 'name']);
-		if (typeof idValue !== 'string' || idValue.trim().length === 0) {
-			throw new Error('[BmsxConsoleRuntime] Component preset requires a non-empty id.');
-		}
-		const presetId = this.normalizeLuaIdentifier(idValue, 'define_component_preset');
-		this.disposeComponentPreset(presetId);
-		const buildCandidate = (descriptor as { build?: unknown }).build;
-		if (!buildCandidate || typeof buildCandidate !== 'function' || !isLuaHandlerFn(buildCandidate as Function)) {
-			throw new Error(`[BmsxConsoleRuntime] Component preset '${presetId}' requires a Lua build function.`);
-		}
-		const buildHandler = buildCandidate as LuaHandlerFn;
-		const presetRecord: LuaComponentPresetRecord = {
-			id: presetId,
-			moduleId,
-			build: buildHandler,
-		};
-		this.componentPresets.set(presetId, presetRecord);
-		return presetId;
+	const moduleId = this.moduleIdFor('other', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
+	const idValue = this.getLuaRecordEntry<string>(descriptor, ['id', 'name']);
+	if (typeof idValue !== 'string' || idValue.trim().length === 0) {
+		throw new Error('[BmsxConsoleRuntime] Component preset requires a non-empty id.');
 	}
+	const presetId = this.normalizeLuaIdentifier(idValue, 'define_component_preset');
+	this.disposeComponentPreset(presetId);
+	const buildCandidate = (descriptor as { build?: unknown }).build;
+	if (!buildCandidate || typeof buildCandidate !== 'function' || !isLuaHandlerFn(buildCandidate as Function)) {
+		throw new Error(`[BmsxConsoleRuntime] Component preset '${presetId}' requires a Lua build function.`);
+	}
+	const buildHandler = buildCandidate as LuaHandlerFn;
+	const assetId = this.currentLuaAssetContext?.assetId ?? null;
+	const presetRecord: LuaComponentPresetRecord = {
+		id: presetId,
+		moduleId,
+		build: buildHandler,
+		assetId,
+	};
+	this.componentPresets.set(presetId, presetRecord);
+	if (assetId) {
+		let set = this.luaComponentPresetsByAsset.get(assetId);
+		if (!set) {
+			set = new Set();
+			this.luaComponentPresetsByAsset.set(assetId, set);
+		}
+		set.add(presetId);
+	}
+	return presetId;
+}
 
-	private disposeComponentPreset(id: string): void {
-		if (!id) {
-			return;
-		}
-		this.componentPresets.delete(id);
+private disposeComponentPreset(id: string): void {
+	if (!id) {
+		return;
 	}
+	const record = this.componentPresets.get(id);
+	if (record && record.assetId) {
+		const set = this.luaComponentPresetsByAsset.get(record.assetId);
+		if (set) {
+			set.delete(id);
+			if (set.size === 0) {
+				this.luaComponentPresetsByAsset.delete(record.assetId);
+			}
+		}
+	}
+	this.componentPresets.delete(id);
+}
 
 	public registerServiceDefinition(descriptor: Record<string, unknown>): Record<string, unknown> {
 		if (!descriptor || typeof descriptor !== 'object') {
@@ -3575,11 +3838,11 @@ export class BmsxConsoleRuntime extends Service {
 		if (typeof serviceIdRaw !== 'string' || serviceIdRaw.trim().length === 0) {
 			throw new Error('[BmsxConsoleRuntime] define_service requires a non-empty id.');
 		}
-		const serviceId = this.normalizeLuaIdentifier(serviceIdRaw, 'define_service');
-		const fsmsRaw = (descriptor as { fsms?: unknown; state_machines?: unknown; stateMachines?: unknown; machines?: unknown }).fsms
-			?? (descriptor as { state_machines?: unknown }).state_machines
-			?? (descriptor as { stateMachines?: unknown }).stateMachines
-			?? (descriptor as { machines?: unknown }).machines;
+	const serviceId = this.normalizeLuaIdentifier(serviceIdRaw, 'define_service');
+	const fsmsRaw = (descriptor as { fsms?: unknown; state_machines?: unknown; stateMachines?: unknown; machines?: unknown }).fsms
+		?? (descriptor as { state_machines?: unknown }).state_machines
+		?? (descriptor as { stateMachines?: unknown }).stateMachines
+		?? (descriptor as { machines?: unknown }).machines;
 		const btRaw = (descriptor as { bts?: unknown; behavior_trees?: unknown; behaviorTrees?: unknown }).bts
 			?? (descriptor as { behavior_trees?: unknown }).behavior_trees
 			?? (descriptor as { behaviorTrees?: unknown }).behaviorTrees;
@@ -3591,15 +3854,34 @@ export class BmsxConsoleRuntime extends Service {
 		const abilities = this.normalizeStringArray(abilitiesRaw) ?? [];
 		const tags = this.normalizeStringArray(tagsRaw) ?? [];
 		const autoActivate = typeof autoActivateRaw === 'boolean' ? autoActivateRaw : true;
-		const record: LuaServiceDefinitionRecord = {
-			id: serviceId,
-			fsms,
-			behaviorTrees,
-			abilities: abilities.slice(),
-			tags: tags.slice(),
-			autoActivate,
-		};
-		this.serviceDefinitions.set(serviceId, record);
+	const record: LuaServiceDefinitionRecord = {
+		id: serviceId,
+		fsms,
+		behaviorTrees,
+		abilities: abilities.slice(),
+		tags: tags.slice(),
+		autoActivate,
+		assetId: this.currentLuaAssetContext?.assetId ?? null,
+	};
+	const previous = this.serviceDefinitions.get(serviceId);
+	if (previous && previous.assetId) {
+		const set = this.luaServiceDefinitionsByAsset.get(previous.assetId);
+		if (set) {
+			set.delete(serviceId);
+			if (set.size === 0) {
+				this.luaServiceDefinitionsByAsset.delete(previous.assetId);
+			}
+		}
+	}
+	this.serviceDefinitions.set(serviceId, record);
+	if (record.assetId) {
+		let set = this.luaServiceDefinitionsByAsset.get(record.assetId);
+		if (!set) {
+			set = new Set();
+			this.luaServiceDefinitionsByAsset.set(record.assetId, set);
+		}
+		set.add(serviceId);
+	}
 		if (!Object.prototype.hasOwnProperty.call(descriptor, 'auto_activate') && !Object.prototype.hasOwnProperty.call(descriptor, 'autoActivate')) {
 			(descriptor as { auto_activate?: boolean }).auto_activate = autoActivate;
 		}
@@ -3922,20 +4204,20 @@ export class BmsxConsoleRuntime extends Service {
 
 	public registerWorldObjectDefinition(descriptor: Record<string, unknown>): string {
 		if (!descriptor || typeof descriptor !== 'object') {
-			throw new Error('[BmsxConsoleRuntime] define_worldobject requires a descriptor table.');
+			throw new Error('[BmsxConsoleRuntime] register_worldobject requires a descriptor table.');
 		}
 		const interpreter = this.requireLuaInterpreter();
 		const moduleId = this.moduleIdFor('other', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
 		const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
 		const idValue = this.getLuaRecordEntry<string>(descriptor, ['id', 'name']);
 		const classRefRaw = this.getLuaRecordEntry<string>(descriptor, ['class', 'prototype', 'luaclass', 'klass']);
-		const objectId = this.normalizeLuaIdentifier(idValue ?? classRefRaw, 'define_worldobject');
+		const objectId = this.normalizeLuaIdentifier(idValue ?? classRefRaw, 'register_worldobject');
 		let classRef = classRefRaw;
 		if (!classRef || classRef.trim().length === 0) {
 			const fallback = objectId.split('.').pop();
 			classRef = fallback && fallback.length > 0 ? fallback : objectId;
 		}
-		const normalizedClassRef = this.normalizeLuaIdentifier(classRef, 'define_worldobject.class');
+		const normalizedClassRef = this.normalizeLuaIdentifier(classRef, 'register_worldobject.class');
 
 		this.disposeWorldObjectDefinition(objectId);
 
@@ -3956,7 +4238,7 @@ export class BmsxConsoleRuntime extends Service {
 			const value = this.getLuaTableEntry(classTable, ['defaults', 'state', 'properties']);
 			return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.defaults'));
 		})();
-	const defaults = defaultsSource !== undefined ? this.normalizeWorldObjectDefaults(defaultsSource, 'define_worldobject.defaults') : undefined;
+	const defaults = defaultsSource !== undefined ? this.normalizeWorldObjectDefaults(defaultsSource, 'register_worldobject.defaults') : undefined;
 
 	const fsmCandidate =
 		this.getLuaRecordEntry<string | string[] | Record<string, unknown>>(descriptor, ['fsms', 'state_machines', 'stateMachines', 'machines']) ??
@@ -3989,24 +4271,34 @@ export class BmsxConsoleRuntime extends Service {
 		})(),
 	) ?? [];
 
-	const record: LuaWorldObjectDefinitionRecord = {
-		id: objectId,
-		baseClassName: baseRef ?? 'WorldObject',
-		baseCtor,
-		constructor: WorldObject as unknown as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject,
-		classRef: normalizedClassRef,
-		classTable,
-		components: this.cloneComponentEntries(componentEntries),
-		defaults,
-		fsms: this.cloneSystemEntries(fsms),
-		behaviorTrees: this.cloneSystemEntries(behaviorTrees),
-		abilities: abilitiesList.slice(),
-		tags: tagsList.slice(),
-	};
+		const assetId = this.currentLuaAssetContext?.assetId ?? null;
+		const record: LuaWorldObjectDefinitionRecord = {
+			id: objectId,
+			baseClassName: baseRef ?? 'WorldObject',
+			baseCtor,
+			constructor: WorldObject as unknown as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject,
+			classRef: normalizedClassRef,
+			classTable,
+			components: this.cloneComponentEntries(componentEntries),
+			defaults,
+			fsms: this.cloneSystemEntries(fsms),
+			behaviorTrees: this.cloneSystemEntries(behaviorTrees),
+			abilities: abilitiesList.slice(),
+			tags: tagsList.slice(),
+			assetId,
+		};
 
 	record.constructor = this.createLuaWorldObjectConstructor(record);
 	this.worldObjectDefinitions.set(objectId, record);
 	this.worldObjectDefinitionsByClassRef.set(normalizedClassRef, record);
+	if (assetId) {
+		let set = this.luaWorldObjectsByAsset.get(assetId);
+		if (!set) {
+			set = new Set();
+			this.luaWorldObjectsByAsset.set(assetId, set);
+		}
+		set.add(objectId);
+	}
 
 	Reviver.constructors[objectId] = record.constructor as unknown as new () => unknown;
 	Reviver.constructors[normalizedClassRef] = record.constructor as unknown as new () => unknown;
@@ -4097,7 +4389,7 @@ export class BmsxConsoleRuntime extends Service {
 		const env = interpreter.getGlobalEnvironment();
 		const segments = classRef.split('.');
 		if (segments.length === 0) {
-			throw new Error('[BmsxConsoleRuntime] define_worldobject.class requires a non-empty identifier.');
+			throw new Error('[BmsxConsoleRuntime] register_worldobject.class requires a non-empty identifier.');
 		}
 		let value = this.getLuaGlobalValue(env, segments[0]) as LuaValue | null;
 		if (value === null) {
@@ -4127,6 +4419,15 @@ export class BmsxConsoleRuntime extends Service {
 		this.worldObjectDefinitions.delete(id);
 		if (this.worldObjectDefinitionsByClassRef.get(existing.classRef) === existing) {
 			this.worldObjectDefinitionsByClassRef.delete(existing.classRef);
+		}
+		if (existing.assetId) {
+			const set = this.luaWorldObjectsByAsset.get(existing.assetId);
+			if (set) {
+				set.delete(id);
+				if (set.size === 0) {
+					this.luaWorldObjectsByAsset.delete(existing.assetId);
+				}
+			}
 		}
 		if (Reviver.constructors[id] === existing.constructor) {
 			delete Reviver.constructors[id];
@@ -4385,48 +4686,6 @@ export class BmsxConsoleRuntime extends Service {
 		return this.luaHandlerCache.getOrCreate(binding.fn, { moduleId, interpreter: binding.interpreter, path });
 	}
 
-	public registerAbilityDefinitionFromLua(descriptorTable: LuaTable, interpreter: LuaInterpreter): GameplayAbilityDefinition {
-		const moduleId = this.moduleIdFor('ability', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
-		const baseCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
-		let abilityIdSeed: string | null = null;
-		const idValue = descriptorTable.get('id');
-		if (typeof idValue === 'string' && idValue.trim().length > 0) {
-			abilityIdSeed = idValue.trim();
-		}
-		const descriptor: Record<string, unknown> = {};
-		for (const [rawKey, rawValue] of descriptorTable.entriesArray()) {
-			const keyText = typeof rawKey === 'string' ? rawKey : String(rawKey);
-			if (keyText === 'activation' || keyText === 'completion' || keyText === 'cancel') {
-				if (this.isLuaFunctionValue(rawValue)) {
-					const handler = this.luaHandlerCache.getOrCreate(rawValue, {
-						moduleId,
-						interpreter,
-						path: ['ability', abilityIdSeed ?? 'anon', keyText],
-					});
-					descriptor[keyText] = handler;
-					continue;
-				}
-				if (rawValue === null) {
-					descriptor[keyText] = undefined;
-					continue;
-				}
-			}
-			descriptor[keyText] = this.luaValueToJs(rawValue, this.extendMarshalContext(baseCtx, keyText));
-		}
-		if (abilityIdSeed && (typeof descriptor.id !== 'string' || descriptor.id.trim().length === 0)) {
-			descriptor.id = abilityIdSeed;
-		}
-		return this.registerAbilityDefinition(descriptor);
-	}
-
-	private disposeAllAbilityDefinitions(): void {
-		for (const abilityId of [...this.abilityActionIds.keys()]) {
-			this.disposeAbilityHandlers(abilityId);
-		}
-		this.abilityDefinitions.clear();
-		this.abilityActionIds.clear();
-	}
-
 	public registerAbilityDefinition(descriptor: Record<string, unknown>): GameplayAbilityDefinition {
 		if (!descriptor || typeof descriptor !== 'object') {
 			throw new Error('[BmsxConsoleRuntime] define_ability requires a descriptor table.');
@@ -4505,6 +4764,48 @@ export class BmsxConsoleRuntime extends Service {
 		this.abilityDefinitions.set(abilityId, definition);
 		this.refreshAbilityGrants(abilityId, definition);
 		return definition;
+	}
+
+	private disposeAllAbilityDefinitions(): void {
+		for (const abilityId of [...this.abilityActionIds.keys()]) {
+			this.disposeAbilityHandlers(abilityId);
+		}
+		this.abilityDefinitions.clear();
+		this.abilityActionIds.clear();
+	}
+
+	public registerAbilityDefinitionFromLua(descriptorTable: LuaTable, interpreter: LuaInterpreter): GameplayAbilityDefinition {
+		const moduleId = this.moduleIdFor('ability', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
+		const baseCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
+		let abilityIdSeed: string | null = null;
+		const idValue = descriptorTable.get('id');
+		if (typeof idValue === 'string' && idValue.trim().length > 0) {
+			abilityIdSeed = idValue.trim();
+		}
+		const descriptor: Record<string, unknown> = {};
+		for (const [rawKey, rawValue] of descriptorTable.entriesArray()) {
+			const keyText = typeof rawKey === 'string' ? rawKey : String(rawKey);
+			if (keyText === 'activation' || keyText === 'completion' || keyText === 'cancel') {
+				if (this.isLuaFunctionValue(rawValue)) {
+					const handler = this.luaHandlerCache.getOrCreate(rawValue, {
+						moduleId,
+						interpreter,
+						path: ['ability', abilityIdSeed ?? 'anon', keyText],
+					});
+					descriptor[keyText] = handler;
+					continue;
+				}
+				if (rawValue === null) {
+					descriptor[keyText] = undefined;
+					continue;
+				}
+			}
+			descriptor[keyText] = this.luaValueToJs(rawValue, this.extendMarshalContext(baseCtx, keyText));
+		}
+		if (abilityIdSeed && (typeof descriptor.id !== 'string' || descriptor.id.trim().length === 0)) {
+			descriptor.id = abilityIdSeed;
+		}
+		return this.registerAbilityDefinition(descriptor);
 	}
 
 	private refreshAbilityGrants(abilityId: string, definition: GameplayAbilityDefinition): void {
@@ -4713,11 +5014,21 @@ export class BmsxConsoleRuntime extends Service {
 
 	private resolveApiMethodMarshalCategory(name: string): 'fsm' | 'behavior_tree' | 'service' | 'component' | 'ability' | 'worldobject' | 'other' {
 		switch (name) {
+			case 'register_fsm':
+				return 'fsm';
+			case 'register_behavior_tree':
+				return 'behavior_tree';
+			case 'register_service':
+				return 'service';
 			case 'define_component':
+			case 'register_component':
+			case 'define_component_preset':
+			case 'register_component_preset':
 				return 'component';
 			case 'define_ability':
+			case 'register_ability':
 				return 'ability';
-			case 'define_worldobject':
+			case 'register_worldobject':
 				return 'worldobject';
 			default:
 				return 'other';
@@ -4798,13 +5109,12 @@ export class BmsxConsoleRuntime extends Service {
 		if (!rompack) {
 			return null;
 		}
-		return {
-			img: this.serializeRomAssetMap(rompack.img),
-			audio: this.serializeRomAssetMap(rompack.audio),
-			model: this.serializeRomAssetMap(rompack.model),
-			data: this.cloneRompackDataMap(rompack.data),
-			fsm: rompack.fsm ? deepClone(rompack.fsm) : {},
-			audioevents: rompack.audioevents ? deepClone(rompack.audioevents) : {},
+	return {
+		img: this.serializeRomAssetMap(rompack.img),
+		audio: this.serializeRomAssetMap(rompack.audio),
+		model: this.serializeRomAssetMap(rompack.model),
+		data: this.cloneRompackDataMap(rompack.data),
+		audioevents: rompack.audioevents ? deepClone(rompack.audioevents) : {},
 			lua: rompack.lua ? { ...rompack.lua } : {},
 			luaSourcePaths: rompack.luaSourcePaths ? { ...rompack.luaSourcePaths } : {},
 			resourcePaths: Array.isArray(rompack.resourcePaths)
@@ -5742,6 +6052,10 @@ export class BmsxConsoleRuntime extends Service {
 		this.registerLuaChunkResource(record.chunkName, resourceInfo);
 		this.luaModuleLoadingKeys.add(record.packageKey);
 		packageLoaded.set(record.packageKey, true);
+		const previousAssetContext = this.currentLuaAssetContext;
+		const previousChunkName = this.luaChunkName;
+		this.currentLuaAssetContext = { category: 'other', assetId: record.assetId };
+		this.luaChunkName = record.chunkName;
 		try {
 			const results = interpreter.execute(source, record.chunkName);
 			this.cacheChunkEnvironment(interpreter, record.chunkName, record.assetId);
@@ -5759,6 +6073,8 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		finally {
 			this.luaModuleLoadingKeys.delete(record.packageKey);
+			this.luaChunkName = previousChunkName;
+			this.currentLuaAssetContext = previousAssetContext;
 		}
 	}
 
@@ -5830,13 +6146,6 @@ export class BmsxConsoleRuntime extends Service {
 		const normalizedPath = entry.path.replace(/\\/g, '/');
 		this.resourcePathCache.set(assetId, normalizedPath);
 		return normalizedPath;
-	}
-
-	private resourcePathRepresentsFsm(path: string, assetId: string): boolean {
-		if (path.toLowerCase().indexOf('.fsm.') !== -1) {
-			return true;
-		}
-		return assetId.toLowerCase().indexOf('.fsm') !== -1;
 	}
 
 	private inspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult | null {
@@ -6895,11 +7204,12 @@ export class BmsxConsoleRuntime extends Service {
 	private refreshLuaHandlersForChunk(chunkName: string, _sourceOverride?: string | null): void {
 		const normalized = this.normalizeChunkName(chunkName);
 		const resourceInfo = this.lookupChunkResourceInfo(normalized) ?? { assetId: null };
-		const assetId = resourceInfo.assetId ?? null;
-		if (!assetId) {
-			return;
-		}
-		const category = this.resolveLuaHotReloadCategory(assetId);
+	const assetId = resourceInfo.assetId ?? null;
+	if (!assetId) {
+		return;
+	}
+	this.luaGenericAssetsExecuted.delete(assetId);
+	const category = this.resolveLuaHotReloadCategory(assetId);
 		if (!category) {
 			return;
 		}

@@ -2479,31 +2479,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return normalized.slice(0, slashIndex + 1);
 	}
 
-	private buildDefaultResourceContents(path: string, assetId: string): string {
-		if (this.resourcePathRepresentsFsm(path, assetId)) {
-			const blueprintId = this.sanitizeFsmBlueprintId(assetId);
-			if (blueprintId === 'new_fsm') {
-				return constants.DEFAULT_NEW_FSM_RESOURCE_CONTENT;
-			}
-			return constants.DEFAULT_NEW_FSM_RESOURCE_CONTENT.replace('new_fsm', blueprintId);
-		}
+	private buildDefaultResourceContents(_path: string, _assetId: string): string {
 		return constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
-	}
-
-	private resourcePathRepresentsFsm(path: string, assetId: string): boolean {
-		if (path.toLowerCase().indexOf('.fsm.') !== -1) {
-			return true;
-		}
-		return assetId.toLowerCase().indexOf('.fsm') !== -1;
-	}
-
-	private sanitizeFsmBlueprintId(assetId: string): string {
-		let id = assetId.replace(/\.lua$/i, '').replace(/\.fsm$/i, '');
-		id = id.replace(/[^A-Za-z0-9_]/g, '_');
-		if (id.length === 0) {
-			return 'new_fsm';
-		}
-		return id;
 	}
 
 	private handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
@@ -7756,23 +7733,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 					}
 					const keys = Object.keys(model);
 					this.appendResourceViewerLines(lines, ['-- Model Metadata --', `Keys: ${keys.join(', ')}`]);
-					break;
-				}
-				case 'fsm': {
-					const fsm = rompack.fsm?.[descriptor.assetId];
-					if (fsm) {
-						const json = this.safeJsonStringify(fsm);
-						this.appendResourceViewerLines(lines, ['-- FSM --', '']);
-						this.appendResourceViewerLines(lines, json.split(/\r?\n/));
-						break;
-					}
-					const source = rompack.lua?.[descriptor.assetId];
-					if (typeof source === 'string') {
-						this.appendResourceViewerLines(lines, ['-- FSM Source --', '']);
-						this.appendResourceViewerLines(lines, source.split(/\r?\n/));
-						break;
-					}
-					error = `FSM '${descriptor.assetId}' not found.`;
 					break;
 				}
 				case 'aem': {

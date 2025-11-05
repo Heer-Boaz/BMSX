@@ -90,11 +90,6 @@ export interface ModelResource extends BaseResource<'model'> {
 	datatype: datatype;
 }
 
-export interface FsmResource extends BaseResource<'fsm'> {
-	id: number;
-	datatype: datatype;
-}
-
 export interface LuaResource extends BaseResource<'lua'> {
 	id: number;
 }
@@ -115,7 +110,6 @@ export type Resource =
 	| AemResource
 	| CodeResource
 	| ModelResource
-	| FsmResource
 	| LuaResource
 	| RomLabelResource
 	| RomManifestResource;

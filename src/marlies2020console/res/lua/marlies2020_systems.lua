@@ -85,7 +85,6 @@ do
 					local context = object
 					context.life = context.life - delta
 					if context.life <= 0 then
-						error('test')
 						return '../expired'
 					end
 					object.x = object.x + context.vx * delta
@@ -408,5 +407,3 @@ do
 		end,
 	})
 end
-
-return true

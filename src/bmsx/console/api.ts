@@ -581,17 +581,16 @@ export class BmsxConsoleApi {
 	}
 
 	public attach_bt(objectId: Identifier, treeId: BehaviorTreeID): void {
-	const trimmed = typeof treeId === 'string' ? treeId.trim() : '';
-	if (trimmed.length === 0) {
-		throw new Error('[BmsxConsoleApi] attach_bt requires a non-empty behavior tree id.');
-	}
-	if (!behaviorTreeExists(trimmed)) {
-		throw new Error(`[BmsxConsoleApi] Behavior tree '${trimmed}' is not registered.`);
-	}
-	const object = this.requireWorldObject(objectId, 'attach_bt');
-	const ctor = object.constructor as ConstructorWithBTProperty;
-		const hasOwnLinkedSet = Object.prototype.hasOwnProperty.call(ctor, 'linkedBTs');
-		if (hasOwnLinkedSet) {
+		const trimmed = typeof treeId === 'string' ? treeId.trim() : '';
+		if (trimmed.length === 0) {
+			throw new Error('[BmsxConsoleApi] attach_bt requires a non-empty behavior tree id.');
+		}
+		if (!behaviorTreeExists(trimmed)) {
+			throw new Error(`[BmsxConsoleApi] Behavior tree '${trimmed}' is not registered.`);
+		}
+		const object = this.requireWorldObject(objectId, 'attach_bt');
+		const ctor = object.constructor as ConstructorWithBTProperty;
+		if (Object.prototype.hasOwnProperty.call(ctor, 'linkedBTs')) {
 			const linked = ctor.linkedBTs ?? new Set<BehaviorTreeID>();
 			if (!linked.has(trimmed)) {
 				const next = new Set(linked);
@@ -599,44 +598,56 @@ export class BmsxConsoleApi {
 				ctor.linkedBTs = next;
 			}
 		}
-	const contexts = (object as { btreecontexts?: Record<string, BehaviorTreeContext> }).btreecontexts;
-	if (contexts && !contexts[trimmed]) {
-		contexts[trimmed] = {
-			treeId: trimmed,
-			running: true,
-			root: instantiateBehaviorTree(trimmed),
-			blackboard: new Blackboard({ id: trimmed }),
-		};
+		const contexts = (object as { btreecontexts?: Record<string, BehaviorTreeContext> }).btreecontexts;
+		if (contexts && !contexts[trimmed]) {
+			contexts[trimmed] = {
+				treeId: trimmed,
+				running: true,
+				root: instantiateBehaviorTree(trimmed),
+				blackboard: new Blackboard({ id: trimmed }),
+			};
+		}
 	}
-}
 
-	public define_component(descriptor: Record<string, unknown>): string {
-		const runtime = this.requireConsoleRuntime('define_component');
+	public register_component(descriptor: Record<string, unknown>): string {
+		const runtime = this.requireConsoleRuntime('register_component');
 		return runtime.registerComponentDefinition(descriptor);
 	}
 
-	public define_component_preset(descriptor: Record<string, unknown>): string {
-		const runtime = this.requireConsoleRuntime('define_component_preset');
+	public define_component(descriptor: Record<string, unknown>): string {
+		return this.register_component(descriptor);
+	}
+
+	public register_component_preset(descriptor: Record<string, unknown>): string {
+		const runtime = this.requireConsoleRuntime('register_component_preset');
 		return runtime.registerComponentPreset(descriptor);
 	}
 
-	public define_worldobject(descriptor: Record<string, unknown>): string {
-		const runtime = this.requireConsoleRuntime('define_worldobject');
+	public define_component_preset(descriptor: Record<string, unknown>): string {
+		return this.register_component_preset(descriptor);
+	}
+
+	public register_worldobject(descriptor: Record<string, unknown>): string {
+		const runtime = this.requireConsoleRuntime('register_worldobject');
 		return runtime.registerWorldObjectDefinition(descriptor);
 	}
 
-	public define_service(descriptor: Record<string, unknown>): Record<string, unknown> {
-		const runtime = this.requireConsoleRuntime('define_service');
+	public register_service(descriptor: Record<string, unknown>): Record<string, unknown> {
+		const runtime = this.requireConsoleRuntime('register_service');
 		return runtime.registerServiceDefinition(descriptor);
+	}
+
+	public define_service(descriptor: Record<string, unknown>): Record<string, unknown> {
+		return this.register_service(descriptor);
 	}
 
 	public attach_component(objectId: Identifier, component: string | { id: string; id_local?: string; state?: Record<string, unknown> }): string {
 		const runtime = this.requireConsoleRuntime('attach_component');
-	const object = this.requireWorldObject(objectId, 'attach_component');
+		const object = this.requireWorldObject(objectId, 'attach_component');
 		const options = typeof component === 'string' ? { id: component } : (component ?? {});
 		const rawId = (options as { id?: unknown }).id;
 		if (typeof rawId !== 'string' || rawId.trim().length === 0) {
-		throw new Error('[BmsxConsoleApi] attach_component requires an id field.');
+			throw new Error('[BmsxConsoleApi] attach_component requires an id field.');
 		}
 		const definitionId = rawId.trim();
 		const idLocalRaw = (options as { id_local?: unknown }).id_local;
@@ -644,13 +655,13 @@ export class BmsxConsoleApi {
 		const stateRaw = (options as { state?: unknown }).state;
 		let state: Record<string, unknown> | undefined;
 		if (stateRaw !== undefined) {
-		if (!this.isPlainObject(stateRaw)) {
-			throw new Error('[BmsxConsoleApi] attach_component state must be a table/object.');
+			if (!this.isPlainObject(stateRaw)) {
+				throw new Error('[BmsxConsoleApi] attach_component state must be a table/object.');
 			}
 			state = this.cloneStateMachineData(stateRaw as Record<string, unknown>);
 		}
-	if (state && !this.isPlainObject(state)) {
-		throw new Error('[BmsxConsoleApi] attach_component state must be a plain object.');
+		if (state && !this.isPlainObject(state)) {
+			throw new Error('[BmsxConsoleApi] attach_component state must be a plain object.');
 		}
 		const instance = runtime.createComponentInstance({
 			definitionId,
@@ -668,10 +679,14 @@ export class BmsxConsoleApi {
 		return instance.id;
 	}
 
-	public define_ability(descriptor: Record<string, unknown>): string {
-		const runtime = this.requireConsoleRuntime('define_ability');
+	public register_ability(descriptor: Record<string, unknown>): string {
+		const runtime = this.requireConsoleRuntime('register_ability');
 		const definition = runtime.registerAbilityDefinition(descriptor);
 		return definition.id;
+	}
+
+	public define_ability(descriptor: Record<string, unknown>): string {
+		return this.register_ability(descriptor);
 	}
 
 	public grant_ability(objectId: Identifier, abilityId: string): void {
@@ -836,16 +851,21 @@ export class BmsxConsoleApi {
 		return runtime;
 	}
 
-	public register_fsm(id: string, blueprint: Record<string, unknown>): void {
-		const trimmed = typeof id === 'string' ? id.trim() : '';
-		if (trimmed.length === 0) {
-			throw new Error('[BmsxConsoleApi] register_fsm id must be a non-empty string.');
-		}
-		if (typeof blueprint !== 'object' || blueprint === null) {
+	public register_fsm(blueprint: Record<string, unknown>): void {
+		if (!blueprint || typeof blueprint !== 'object') {
 			throw new Error('[BmsxConsoleApi] register_fsm blueprint must be a table/object.');
 		}
-		const prepared = this.cloneStateMachineData(blueprint);
-		this.register_prepared_fsm(trimmed, prepared);
+		const idValue = (blueprint as { id?: unknown }).id;
+		if (typeof idValue !== 'string' || idValue.trim().length === 0) {
+			throw new Error('[BmsxConsoleApi] register_fsm blueprint requires a non-empty id field.');
+		}
+		const runtime = BmsxConsoleRuntime.instance;
+		if (runtime) {
+			runtime.registerStateMachineDefinition(blueprint);
+			return;
+		}
+		const prepared = this.cloneStateMachineData(blueprint) as StateMachineBlueprint;
+		this.register_prepared_fsm(idValue.trim(), prepared);
 	}
 
 	public register_prepared_fsm(id: string, blueprint: StateMachineBlueprint, options?: { setup?: boolean }): void {
@@ -860,6 +880,14 @@ export class BmsxConsoleApi {
 		if (!options || options.setup !== false) {
 			setupFSMlibrary();
 		}
+	}
+
+	public register_behavior_tree(descriptor: Record<string, unknown>): void {
+		if (!descriptor || typeof descriptor !== 'object') {
+			throw new Error('[BmsxConsoleApi] register_behavior_tree requires a descriptor table.');
+		}
+		const runtime = this.requireConsoleRuntime('register_behavior_tree');
+		runtime.registerBehaviorTreeDefinition(descriptor);
 	}
 
 	public define_sprite(index: number, bitmapId: string, opts?: { width?: number; height?: number; originX?: number; originY?: number; flags?: number; collider?: SpriteColliderConfig | null; physics?: SpritePhysicsConfig | null }): void {

@@ -43,7 +43,7 @@ export function computeSourceLabel(path: string | null, fallback: string): strin
 
 export function isLuaResourceDescriptor(descriptor: ConsoleResourceDescriptor): boolean {
 	const type = descriptor.type.toLowerCase();
-	if (type === 'lua' || type === 'fsm') {
+	if (type === 'lua') {
 		return true;
 	}
 	const normalizedPath = descriptor.path.toLowerCase();

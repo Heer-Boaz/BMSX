@@ -2,7 +2,7 @@ function dummy_handler(self)
 	-- print(state, 10, 10, 5)
 end
 
-return {
+register_fsm({
     id = 'console_testmachine',
     enable_tape_autotick = true,
     ticks2advance_tape = 50,
@@ -33,4 +33,4 @@ return {
             }
         }
     }
-}
+})

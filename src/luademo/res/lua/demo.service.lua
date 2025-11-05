@@ -1,4 +1,4 @@
-return {
+register_service({
 	id = 'lua_demo_engine_service',
 	auto_activate = true,
 	on_boot = function(self)
@@ -61,4 +61,4 @@ return {
 		self.toggleCount = state.toggleCount
 		self.status = state.status
 	end,
-}
+})

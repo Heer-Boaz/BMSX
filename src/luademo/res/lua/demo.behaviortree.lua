@@ -108,7 +108,7 @@ local function idle(self, blackboard)
 	return 'SUCCESS'
 end
 
-return {
+register_behavior_tree({
 	id = 'lua_demo_bt',
 	definition = {
 		root = {
@@ -139,4 +139,4 @@ return {
 			},
 		},
 	},
-}
+})

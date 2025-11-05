@@ -222,7 +222,6 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 		audio: {},
 		model: {},
 		data: {},
-	fsm: {},
 	code: null,
 	audioevents: {},
 	lua: {},
@@ -550,17 +549,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				throw new Error(`Failed to load 'data' from rom: ${err.message}.`);
 			}
 			break;
-		case 'fsm': {
-			try {
-				const u8 = new Uint8Array(rom.slice(res.start, res.end));
-				const blueprint = decodeBinary(u8);
-				romResult.fsm[res.resid] = blueprint;
-			} catch (err: any) {
-				throw new Error(`Failed to load 'fsm' from rom: ${err.message}.`);
-			}
-			break;
-		}
-		case 'aem': {
+	case 'aem': {
 			try {
 				const u8 = new Uint8Array(rom.slice(res.start, res.end));
 				const audioevents = decodeBinary(u8);

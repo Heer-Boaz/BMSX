@@ -1,5 +1,4 @@
 import type { EventLane, EventScope } from "../core/eventemitter";
-import { $ } from '../core/game';
 import { deepClone, deepEqual } from '../utils/utils';
 import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';
 import type { Identifier } from '../rompack/rompack';
@@ -339,11 +338,6 @@ function safeStartStateId(def: StateDefinition): Identifier {
  * If the `sdef` object is created successfully, it sets the machine definition in the `MachineDefinitions` object.
  */
 export function setupFSMlibrary(): void {
-	// Combine built-in FSMs from decorators with ones from ROM pack
-	for (const [key, bp] of Object.entries($.rompack.fsm)) {
-		StateDefinitionBuilders[key] = () => bp;
-	}
-
 	for (const machine_name in StateDefinitionBuilders) {
 		const raw = StateDefinitionBuilders[machine_name]();
 		if (!raw) continue;

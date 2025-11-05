@@ -1,5 +1,4 @@
 import { AudioEventMapEntry } from '../audio/audioeventmanager';
-import { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { quat } from '../render/3d/math3d';
 import { TextureKey } from '../render/texturemanager';
 import type { GameViewHost, Platform } from '../platform';
@@ -11,7 +10,6 @@ export interface RomPack {
 	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata.
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
 	code: string | null; // The loaded game code in the ROM pack.
-	fsm: id2fsm; // Reference to the loaded FSM assets in the ROM pack, including metadata.
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata.
 	lua: Record<asset_id, string>; // Loaded Lua sources bundled with the ROM pack.
 	luaSourcePaths: Record<asset_id, string>; // Relative filesystem paths for Lua sources, keyed by Lua asset id.
@@ -19,7 +17,7 @@ export interface RomPack {
 	caseInsensitiveLua?: boolean;
 }
 
-export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'fsm' | 'aem' | 'lua' | 'rommanifest';
+export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'rommanifest';
 export type asset_id = string;
 
 export interface RomResourcePath {
@@ -63,14 +61,12 @@ export type id2res = Record<asset_id, RomAsset>;
 export type id2imgres = Record<asset_id, RomImgAsset>;
 export type id2model = Record<asset_id, GLTFModel>;
 export type id2data = Record<asset_id, any>;
-export type id2fsm = Record<asset_id, StateMachineBlueprint>;
 export type id2audioevent = Record<asset_id, AudioEventMapEntry>;
 
 export type BitmapId = asset_id;
 export type AudioId = asset_id;
 export type ModelId = asset_id;
 export type DataId = asset_id;
-export type FsmId = asset_id;
 export type LuaId = asset_id;
 
 /**

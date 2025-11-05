@@ -85,9 +85,6 @@ const BOILERPLATE_RESOURCE_ID_DATA = `export enum DataId {
 const BOILERPLATE_RESOURCE_ID_MODEL = `export enum ModelId {
 	none = 'none',`;
 
-const BOILERPLATE_RESOURCE_ID_FSM = `export enum FsmId {
-	none = 'none',`;
-
 const BOILERPLATE_RESOURCE_ID_LUA = `export enum LuaId {
 	none = 'none',`;
 
@@ -592,7 +589,6 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 	let datatype: 'json' | 'yaml' | 'bin' | undefined = undefined;
 
 	const getDataSubtype = (currentName: string): asset_type => {
-		if (currentName.includes('.fsm')) return 'fsm';
 		if (currentName.includes('.aem')) return 'aem';
 		return 'data';
 	};
@@ -676,7 +672,6 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 	let sndid = 1;
 	let dataid = 1;
 	let modelid = 1;
-	let fsmid = 1;
 	let luaid = 1;
 	let codeFileCount = 0;
 	for (let i = 0; i < arrayOfFiles.length; i++) {
@@ -755,10 +750,6 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 			case 'atlas':
 				// Atlas files are not real files, but we add them to the resource list in the next step
 				break;
-			case 'fsm':
-				result.push({ filepath, name, ext, type, id: fsmid, datatype: meta.datatype, sourcePath });
-				++fsmid;
-				break;
 		}
 	}
 
@@ -813,12 +804,10 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 	checkDuplicateIds('audio');
 	checkDuplicateIds('data');
 	checkDuplicateIds('model');
-	checkDuplicateIds('fsm');
 	checkDuplicateNames('data');
 	checkDuplicateNames('image');
 	checkDuplicateNames('audio');
 	checkDuplicateNames('model');
-	checkDuplicateNames('fsm');
 	checkDuplicateNames('lua');
 
 	return result;
@@ -985,10 +974,9 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 				};
 			}
 			case 'audio':
-			case 'data':
-			case 'aem':
-			case 'model':
-			case 'fsm':
+		case 'data':
+		case 'aem':
+		case 'model':
 			case 'romlabel':
 			case 'rommanifest':
 			case 'atlas':
@@ -1050,7 +1038,6 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
 	const tssndout = new Array<string>();
 	const tsdataout = new Array<string>();
 	const tsmodelout = new Array<string>();
-	const tsfsmout = new Array<string>();
 	const tsluaout = new Array<string>();
 
 	const metalist: Resource[] = await getResMetaList(respaths, rom_name);
@@ -1059,7 +1046,6 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
 	tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
 	tsdataout.push(BOILERPLATE_RESOURCE_ID_DATA);
 	tsmodelout.push(BOILERPLATE_RESOURCE_ID_MODEL);
-	tsfsmout.push(BOILERPLATE_RESOURCE_ID_FSM);
 	tsluaout.push(BOILERPLATE_RESOURCE_ID_LUA);
 
 	for (let i = 0; i < metalist.length; i++) {
@@ -1085,9 +1071,6 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
 		case 'model':
 			tsmodelout.push(`${enum_member_to_add} `);
 			break;
-		case 'fsm':
-			tsfsmout.push(`${enum_member_to_add} `);
-			break;
 			case 'romlabel':
 				// Ignore this part
 				break;
@@ -1101,10 +1084,9 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
 	tssndout.push("}\n");
 	tsdataout.push("}\n");
 	tsmodelout.push("}\n");
-	tsfsmout.push("}\n");
 	tsluaout.push("}\n");
 
-	const total_output: string = tsimgout.concat(tssndout, tsdataout, tsmodelout, tsfsmout, tsluaout).join('\n');
+	const total_output: string = tsimgout.concat(tssndout, tsdataout, tsmodelout, tsluaout).join('\n');
 
 	const targetPath = respaths[0].replace('/res', '/resourceids.ts');
 	await writeFile(targetPath, total_output);
@@ -1177,9 +1159,8 @@ export async function generateRomAssets(resources: Resource[]) {
 			romAssets.push({ resid, type, buffer, sourcePath: luaSourcePath });
 			break;
 		}
-		case 'data':
-		case 'fsm':
-		case 'aem':
+	case 'data':
+	case 'aem':
 				// Encode the JSON-data via the binencoder
 				// Convert the buffer to a JSON string and then encode it
 				switch (res.datatype) {
