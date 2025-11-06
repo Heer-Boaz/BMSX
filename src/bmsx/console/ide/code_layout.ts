@@ -136,6 +136,18 @@ export class ConsoleCodeLayout {
 		this.highlightCache.delete(row);
 	}
 
+	public invalidateHighlightsFrom(row: number): void {
+		if (this.highlightCache.size === 0) {
+			return;
+		}
+		const threshold = Math.max(0, row);
+		for (const key of Array.from(this.highlightCache.keys())) {
+			if (key >= threshold) {
+				this.highlightCache.delete(key);
+			}
+		}
+	}
+
 	public invalidateAllHighlights(): void {
 		this.highlightCache.clear();
 		this.semanticModel = null;

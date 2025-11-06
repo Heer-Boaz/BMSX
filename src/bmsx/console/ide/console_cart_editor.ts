@@ -6356,6 +6356,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.lines[0] = '';
 			this.cursorColumn = 0;
 		} else {
+			const removedRow = this.cursorRow;
 			this.lines.splice(this.cursorRow, 1);
 			if (this.cursorRow >= this.lines.length) {
 				this.cursorRow = this.lines.length - 1;
@@ -6364,8 +6365,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			if (this.cursorColumn > newLength) {
 				this.cursorColumn = newLength;
 			}
+			this.invalidateHighlightsFromRow(Math.min(removedRow, this.lines.length - 1));
 		}
-		this.invalidateAllHighlights();
+		this.invalidateLine(this.cursorRow);
 		this.selectionAnchor = null;
 		this.markTextMutated();
 		this.resetBlink();
@@ -6447,6 +6449,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.cursorRevealSuspended = false;
 		this.updateActiveContextDirtyFlag();
 		this.ensureCursorVisible();
+		this.requestSemanticRefresh();
 	}
 
 	private drawTopBar(api: BmsxConsoleApi): void {
@@ -7718,6 +7721,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.updateDesiredColumn();
 		this.resetBlink();
 		this.ensureCursorVisible();
+		this.requestSemanticRefresh();
 	}
 
 	private resetResourcePanelState(): void {
@@ -8691,8 +8695,18 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 		this.layout.invalidateAllHighlights();
 	}
 
+	protected invalidateHighlightsFromRow(startRow: number): void {
+		this.layout.invalidateHighlightsFrom(Math.max(0, startRow));
+	}
+
 	private measureRangeFast(entry: CachedHighlight, startDisplay: number, endDisplay: number): number {
 		return this.layout.measureRangeFast(entry, startDisplay, endDisplay);
+	}
+
+	private requestSemanticRefresh(context?: CodeTabContext | null): void {
+		const activeContext = context ?? this.getActiveCodeTabContext();
+		const chunkName = this.resolveHoverChunkName(activeContext) ?? '<console>';
+		this.layout.requestSemanticUpdate(this.lines, this.textVersion, chunkName);
 	}
 
 	private lowerBound(values: number[], target: number, lo = 0, hi = values.length): number {
@@ -8730,9 +8744,7 @@ protected markDiagnosticsDirty(contextId?: string): void {
 		this.clearReferenceHighlights();
 		this.updateActiveContextDirtyFlag();
 		this.invalidateVisualLines();
-		const activeContext = this.getActiveCodeTabContext();
-		const chunkName = this.resolveHoverChunkName(activeContext) ?? '<console>';
-		this.layout.requestSemanticUpdate(this.lines, this.textVersion, chunkName);
+		this.requestSemanticRefresh();
 		this.handlePostEditMutation();
 		if (this.searchQuery.length > 0) {
 			this.startSearchJob();

@@ -50,6 +50,20 @@ export abstract class ConsoleCartEditorTextOps {
 	protected abstract markTextMutated(): void;
 	protected abstract invalidateLine(row: number): void;
 	protected abstract invalidateAllHighlights(): void;
+	protected abstract invalidateHighlightsFromRow(startRow: number): void;
+	protected invalidateLineRange(startRow: number, endRow: number): void {
+		if (this.lines.length === 0) {
+			return;
+		}
+		let from = Math.min(startRow, endRow);
+		let to = Math.max(startRow, endRow);
+		const lastRow = this.lines.length - 1;
+		from = clamp(from, 0, lastRow);
+		to = clamp(to, 0, lastRow);
+		for (let row = from; row <= to; row += 1) {
+			this.invalidateLine(row);
+		}
+	}
 	protected abstract recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void;
 	protected abstract onCursorMoved(): void;
 	protected abstract ensureVisualLines(): void;
@@ -516,17 +530,19 @@ export abstract class ConsoleCartEditorTextOps {
 	}
 
 	protected insertLineBreak(): void {
+		const sourceRow = this.cursorRow;
 		this.prepareUndo('insert-line-break', false);
 		this.deleteSelectionIfPresent();
 		const line = this.currentLine();
 		const before = line.slice(0, this.cursorColumn);
 		const after = line.slice(this.cursorColumn);
-		this.lines[this.cursorRow] = before;
+		this.lines[sourceRow] = before;
 		const indentation = this.extractIndentation(before);
 		const newLine = indentation + after;
-		this.lines.splice(this.cursorRow + 1, 0, newLine);
-		this.invalidateAllHighlights();
-		this.cursorRow += 1;
+		this.lines.splice(sourceRow + 1, 0, newLine);
+		this.invalidateLineRange(sourceRow, sourceRow + 1);
+		this.invalidateHighlightsFromRow(sourceRow);
+		this.cursorRow = sourceRow + 1;
 		this.cursorColumn = indentation.length;
 		this.recordEditContext('insert', '\n');
 		this.markTextMutated();
@@ -575,13 +591,15 @@ export abstract class ConsoleCartEditorTextOps {
 		if (this.cursorRow === 0) {
 			return;
 		}
-		const previousLine = this.lines[this.cursorRow - 1];
+		const mergedRow = this.cursorRow - 1;
+		const previousLine = this.lines[mergedRow];
 		const currentLine = this.currentLine();
 		this.recordEditContext('delete', '\n');
-		this.lines[this.cursorRow - 1] = previousLine + currentLine;
+		this.lines[mergedRow] = previousLine + currentLine;
 		this.lines.splice(this.cursorRow, 1);
-		this.invalidateAllHighlights();
-		this.cursorRow -= 1;
+		this.invalidateLine(mergedRow);
+		this.invalidateHighlightsFromRow(mergedRow);
+		this.cursorRow = mergedRow;
 		this.cursorColumn = previousLine.length;
 		this.markTextMutated();
 		this.resetBlink();
@@ -618,7 +636,8 @@ export abstract class ConsoleCartEditorTextOps {
 		const updatedLine = line + nextLine;
 		this.lines[this.cursorRow] = updatedLine;
 		this.lines.splice(this.cursorRow + 1, 1);
-		this.invalidateAllHighlights();
+		this.invalidateLine(this.cursorRow);
+		this.invalidateHighlightsFromRow(this.cursorRow);
 		this.recordEditContext('delete', '\n');
 		this.markTextMutated();
 		this.resetBlink();
@@ -668,7 +687,8 @@ export abstract class ConsoleCartEditorTextOps {
 		this.lines.splice(startRow + 1, endRow - startRow);
 		this.cursorRow = startRow;
 		this.cursorColumn = startColumn;
-		this.invalidateAllHighlights();
+		this.invalidateLine(startRow);
+		this.invalidateHighlightsFromRow(startRow);
 		this.recordEditContext('delete', removedParts.join('\n'));
 		this.markTextMutated();
 		this.resetBlink();
@@ -710,7 +730,8 @@ export abstract class ConsoleCartEditorTextOps {
 			removedParts.push(lastLine.slice(0, endColumn));
 			this.lines[startRow] = firstLine.slice(0, startColumn) + lastLine.slice(endColumn);
 			this.lines.splice(startRow + 1, endRow - startRow);
-			this.invalidateAllHighlights();
+			this.invalidateLine(startRow);
+			this.invalidateHighlightsFromRow(startRow);
 			this.recordEditContext('delete', removedParts.join('\n'));
 		}
 		this.cursorRow = startRow;
@@ -728,7 +749,8 @@ export abstract class ConsoleCartEditorTextOps {
 		this.prepareUndo('delete-active-lines', false);
 		const range = this.getSelectionRange();
 		if (!range) {
-			this.lines.splice(this.cursorRow, 1);
+			const removedRow = this.cursorRow;
+			this.lines.splice(removedRow, 1);
 			if (this.lines.length === 0) {
 				this.lines = [''];
 				this.cursorRow = 0;
@@ -740,7 +762,8 @@ export abstract class ConsoleCartEditorTextOps {
 				const line = this.lines[this.cursorRow];
 				this.cursorColumn = Math.min(this.cursorColumn, line.length);
 			}
-			this.invalidateAllHighlights();
+			this.invalidateLine(this.cursorRow);
+			this.invalidateHighlightsFromRow(Math.min(removedRow, this.lines.length - 1));
 			this.recordEditContext('delete', '\n');
 			this.markTextMutated();
 			this.resetBlink();
@@ -756,14 +779,15 @@ export abstract class ConsoleCartEditorTextOps {
 		}
 		const count = deletionEnd - deletionStart + 1;
 		const deletedLines = this.lines.slice(deletionStart, deletionStart + count);
-		this.lines.splice(deletionStart, count);
-		if (this.lines.length === 0) {
-			this.lines = [''];
-		}
-		this.cursorRow = clamp(deletionStart, 0, this.lines.length - 1);
-		this.cursorColumn = 0;
-		this.selectionAnchor = null;
-		this.invalidateAllHighlights();
+			this.lines.splice(deletionStart, count);
+			if (this.lines.length === 0) {
+				this.lines = [''];
+			}
+			this.cursorRow = clamp(deletionStart, 0, this.lines.length - 1);
+			this.cursorColumn = 0;
+			this.selectionAnchor = null;
+			this.invalidateLine(this.cursorRow);
+			this.invalidateHighlightsFromRow(deletionStart);
 		this.recordEditContext('delete', deletedLines.join('\n'));
 		this.markTextMutated();
 		this.resetBlink();
@@ -787,7 +811,14 @@ export abstract class ConsoleCartEditorTextOps {
 		const block = this.lines.splice(range.startRow, count);
 		const targetIndex = range.startRow + delta;
 		this.lines.splice(targetIndex, 0, ...block);
-		this.invalidateAllHighlights();
+		const affectedStart = Math.max(0, Math.min(range.startRow, targetIndex));
+		const affectedEnd = Math.min(this.lines.length - 1, Math.max(range.endRow, targetIndex + count - 1));
+		if (affectedStart <= affectedEnd) {
+			for (let row = affectedStart; row <= affectedEnd; row += 1) {
+				this.invalidateLine(row);
+			}
+		}
+		this.invalidateHighlightsFromRow(affectedStart);
 		this.cursorRow += delta;
 		if (this.selectionAnchor) {
 			this.selectionAnchor = { row: this.selectionAnchor.row + delta, column: this.selectionAnchor.column };
@@ -935,7 +966,8 @@ export abstract class ConsoleCartEditorTextOps {
 			this.cursorRow = start.row + fragments.length - 1;
 			this.cursorColumn = lastFragment.length;
 		}
-		this.invalidateAllHighlights();
+		this.invalidateLineRange(start.row, start.row + fragments.length - 1);
+		this.invalidateHighlightsFromRow(start.row);
 		this.selectionAnchor = null;
 		this.markTextMutated();
 		this.resetBlink();
@@ -1050,7 +1082,8 @@ export abstract class ConsoleCartEditorTextOps {
 			newLines.push(lastFragment + after);
 			const insertionRow = this.cursorRow;
 			this.lines.splice(insertionRow, 1, ...newLines);
-			this.invalidateAllHighlights();
+			this.invalidateLineRange(insertionRow, insertionRow + newLines.length - 1);
+			this.invalidateHighlightsFromRow(insertionRow);
 			this.cursorRow = insertionRow + lastIndex;
 			this.cursorColumn = lastFragment.length;
 			this.recordEditContext('insert', normalized);
