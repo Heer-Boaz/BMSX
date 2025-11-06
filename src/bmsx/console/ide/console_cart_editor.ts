@@ -1889,8 +1889,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return true;
 		}
 		if (this.searchActive || this.searchVisible) {
-			this.closeSearch(false);
-			this.searchVisible = false;
+			this.closeSearch(false, true);
 			return true;
 		}
 		return false;
@@ -2677,22 +2676,22 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.resetBlink();
 	}
 
-	private closeSearch(clearQuery: boolean): void {
+	private closeSearch(clearQuery: boolean, forceHide = false): void {
 		this.searchActive = false;
 		if (clearQuery) {
 			this.applySearchFieldText('', true);
 		}
 		this.searchQuery = this.searchField.text;
-		const shouldHide = clearQuery || this.searchQuery.length === 0;
+		const shouldHide = forceHide || clearQuery || this.searchQuery.length === 0;
 		this.searchVisible = shouldHide ? false : true;
-	this.searchMatches = [];
-	this.searchCurrentIndex = -1;
-	this.selectionAnchor = null;
-	if (shouldHide) {
-		this.cancelSearchJob();
+		this.searchMatches = [];
+		this.searchCurrentIndex = -1;
+		this.selectionAnchor = null;
+		if (shouldHide) {
+			this.cancelSearchJob();
+		}
+		this.resetBlink();
 	}
-	this.resetBlink();
-}
 
 	private focusEditorFromSearch(): void {
 		if (!this.searchActive && !this.searchVisible) {
@@ -2713,7 +2712,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	private openResourceSearch(initialQuery: string = ''): void {
 	this.clearReferenceHighlights();
-	this.closeSearch(false);
+	this.closeSearch(false, true);
 	this.closeLineJump(false);
 	this.closeSymbolSearch(false);
 	this.renameController.cancel();
@@ -2759,7 +2758,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	private openSymbolSearch(initialQuery: string = ''): void {
 		this.clearReferenceHighlights();
-		this.closeSearch(false);
+		this.closeSearch(false, true);
 		this.closeLineJump(false);
 		this.closeResourceSearch(false);
 		this.renameController.cancel();
@@ -2777,7 +2776,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	private openGlobalSymbolSearch(initialQuery: string = ''): void {
 		this.clearReferenceHighlights();
-		this.closeSearch(false);
+		this.closeSearch(false, true);
 		this.closeLineJump(false);
 		this.closeResourceSearch(false);
 		this.renameController.cancel();
@@ -2838,7 +2837,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (!this.isCodeTabActive()) {
 			return;
 		}
-		this.closeSearch(false);
+		this.closeSearch(false, true);
 		this.closeLineJump(false);
 		this.closeResourceSearch(false);
 		this.closeSymbolSearch(false);
@@ -3672,9 +3671,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	this.clearReferenceHighlights();
 	this.closeSymbolSearch(false);
 	this.closeResourceSearch(false);
-	this.closeSearch(false);
+	this.closeSearch(false, true);
 	this.renameController.cancel();
-		this.searchVisible = false;
 		this.lineJumpVisible = true;
 		this.lineJumpActive = true;
 		this.applyLineJumpFieldText('', true);
@@ -4216,7 +4214,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				if (snapshot.viewportY < fieldBottom) {
 					if (justPressed) {
 						this.closeLineJump(false);
-						this.closeSearch(false);
+						this.closeSearch(false, true);
 						this.closeSymbolSearch(false);
 						this.resourceSearchVisible = true;
 						this.resourceSearchActive = true;
@@ -4278,7 +4276,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				if (snapshot.viewportY < fieldBottom) {
 					if (justPressed) {
 						this.closeLineJump(false);
-						this.closeSearch(false);
+						this.closeSearch(false, true);
 						this.symbolSearchVisible = true;
 						this.symbolSearchActive = true;
 						this.resourcePanelFocused = false;
@@ -4359,7 +4357,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			const insideLineJump = this.pointInRect(snapshot.viewportX, snapshot.viewportY, lineJumpBounds);
 			if (insideLineJump) {
 				if (justPressed) {
-					this.closeSearch(false);
+					this.closeSearch(false, true);
 					this.lineJumpActive = true;
 					this.resetBlink();
 				}
@@ -7616,7 +7614,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private enterResourceViewer(tab: EditorTabDescriptor): void {
-		this.closeSearch(false);
+		this.closeSearch(false, true);
 		this.closeLineJump(false);
 		this.cursorRevealSuspended = false;
 		tab.dirty = false;
