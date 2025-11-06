@@ -298,16 +298,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private readonly scrollbarController: ScrollbarController;
 	private readonly input: InputController;
 	private toggleInputLatch = false;
-	private windowFocused = (() => {
-		if (typeof document === 'undefined' || typeof document.hasFocus !== 'function') {
-			return true;
-		}
-		try {
-			return document.hasFocus();
-		} catch {
-			return true;
-		}
-	})();
+	private windowFocused = true;
+	private pendingWindowFocused = true;
+	private disposeVisibilityListener: (() => void) | null = null;
+	private disposeWindowEventListeners: (() => void) | null = null;
 	private lastPointerClickTimeMs = 0;
 	private lastPointerClickRow = -1;
 	private lastPointerClickColumn = -1;
@@ -580,9 +574,81 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.assertMonospace();
 	const initialContext = entryContext ? this.codeTabContexts.get(entryContext.id) ?? null : null;
 	this.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
-	$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
-	this.applyResolutionModeToRuntime();
-	this.navigationHistory.current = this.createNavigationEntry();
+		$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
+		this.applyResolutionModeToRuntime();
+		this.pendingWindowFocused = this.windowFocused;
+		this.installPlatformVisibilityListener();
+		this.installWindowEventListeners();
+		this.navigationHistory.current = this.createNavigationEntry();
+	}
+
+	private installPlatformVisibilityListener(): void {
+		this.disposeVisibilityListener?.();
+		this.disposeVisibilityListener = $.platform.lifecycle.onVisibilityChange((visible) => {
+			this.requestWindowFocusState(!!visible, true);
+		});
+	}
+
+	private installWindowEventListeners(): void {
+		this.disposeWindowEventListeners?.();
+		const host = $.platform.gameviewHost;
+		if (!host) {
+			throw new Error('[ConsoleCartEditor] Platform game view host unavailable while installing window listeners.');
+		}
+		const windowEvents = host.getCapability('window-events');
+		if (!windowEvents) {
+			throw new Error('[ConsoleCartEditor] Platform window-events capability not exposed.');
+		}
+		const disposers: (() => void)[] = [];
+		disposers.push(windowEvents.subscribe('blur', () => {
+			this.requestWindowFocusState(false, true);
+		}));
+		disposers.push(windowEvents.subscribe('focus', () => {
+			this.requestWindowFocusState(true, true);
+		}));
+		this.disposeWindowEventListeners = () => {
+			for (let i = 0; i < disposers.length; i++) {
+				try {
+					disposers[i]();
+				} catch {
+					// Ignore disposer failures; best-effort cleanup.
+				}
+			}
+		};
+	}
+
+	private tryGetKeyboard(): KeyboardInput | null {
+		try {
+			return this.getKeyboard();
+		} catch {
+			return null;
+		}
+	}
+
+	private resetInputFocusState(keyboard: KeyboardInput | null): void {
+		if (keyboard) {
+			keyboard.reset();
+		}
+		this.input.resetRepeats();
+		this.resetKeyPressGuards();
+		this.repeatState.clear();
+		this.toggleInputLatch = false;
+	}
+
+	private requestWindowFocusState(hasFocus: boolean, immediate: boolean): void {
+		this.pendingWindowFocused = hasFocus;
+		if (immediate) {
+			this.flushWindowFocusState();
+		}
+	}
+
+	private flushWindowFocusState(keyboard?: KeyboardInput): void {
+		if (this.pendingWindowFocused === this.windowFocused) {
+			return;
+		}
+		const resolvedKeyboard = keyboard ?? this.tryGetKeyboard();
+		this.windowFocused = this.pendingWindowFocused;
+		this.resetInputFocusState(resolvedKeyboard);
 	}
 
 	private scheduleNextFrame(task: () => void): void {
@@ -1771,6 +1837,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.storeActiveCodeTabContext();
 		this.input.applyOverrides(false, this.captureKeys);
 		this.active = false;
+		if (this.disposeVisibilityListener) {
+			this.disposeVisibilityListener();
+			this.disposeVisibilityListener = null;
+		}
+		if (this.disposeWindowEventListeners) {
+			this.disposeWindowEventListeners();
+			this.disposeWindowEventListeners = null;
+		}
+		this.windowFocused = true;
+		this.pendingWindowFocused = true;
 		this.repeatState.clear();
 		this.resetKeyPressGuards();
 		this.pointerSelecting = false;
@@ -1810,23 +1886,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private syncWindowFocusState(keyboard: KeyboardInput): void {
-		let hasFocus = true;
-		if (typeof document !== 'undefined' && typeof document.hasFocus === 'function') {
-			try {
-				hasFocus = document.hasFocus();
-			} catch {
-				hasFocus = true;
-			}
-		}
-		if (hasFocus === this.windowFocused) {
-			return;
-		}
-		this.windowFocused = hasFocus;
-		keyboard.reset();
-		this.input.resetRepeats();
-		this.resetKeyPressGuards();
-		this.repeatState.clear();
-		this.toggleInputLatch = false;
+		this.flushWindowFocusState(keyboard);
 	}
 
 	private handleToggleRequest(keyboard: KeyboardInput): boolean {
@@ -1927,6 +1987,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private activate(): void {
+		if (!this.disposeVisibilityListener) {
+			this.installPlatformVisibilityListener();
+		}
+		if (!this.disposeWindowEventListeners) {
+			this.installWindowEventListeners();
+		}
 		this.input.applyOverrides(true, this.captureKeys);
 		this.applyResolutionModeToRuntime();
 		if (this.activeCodeTabContextId) {

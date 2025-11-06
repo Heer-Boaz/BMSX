@@ -289,7 +289,7 @@ export interface ViewportMetrics {
 	visible: VisibleViewportMetrics;
 }
 
-export type HostWindowEventType = 'resize' | 'orientationchange' | 'keyup' | 'keydown';
+export type HostWindowEventType = 'resize' | 'orientationchange' | 'keyup' | 'keydown' | 'focus' | 'blur';
 
 export type HostEventListener = (event: unknown) => void;
 
