@@ -82,7 +82,13 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
         const availableHeight = Math.max(0, (bounds.codeBottom - bounds.codeTop) - (horizontalVisible ? constants.SCROLLBAR_WIDTH : 0));
         rowCapacity = Math.max(1, Math.floor(availableHeight / host.lineHeight));
         verticalVisible = visualCount > rowCapacity;
-        const availableWidth = Math.max(0, (bounds.codeRight - bounds.codeLeft) - (verticalVisible ? constants.SCROLLBAR_WIDTH : 0) - gutterOffset);
+        const availableWidth = Math.max(
+            0,
+            (bounds.codeRight - bounds.codeLeft)
+            - (verticalVisible ? constants.SCROLLBAR_WIDTH : 0)
+            - gutterOffset
+            - constants.CODE_AREA_RIGHT_MARGIN
+        );
         columnCapacity = Math.max(1, Math.floor(availableWidth / advance));
         if (wrapEnabled) {
             horizontalVisible = false;
@@ -96,8 +102,14 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
     host.cachedVisibleRowCount = rowCapacity;
     host.cachedVisibleColumnCount = columnCapacity;
 
-    const contentRight = bounds.codeRight - (host.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
+    const contentRight = Math.max(
+        bounds.textLeft,
+        bounds.codeRight
+            - (host.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
+            - constants.CODE_AREA_RIGHT_MARGIN
+    );
     const contentBottom = bounds.codeBottom - (host.codeHorizontalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
+    const trackRight = bounds.codeRight - (host.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
 
     api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, constants.COLOR_CODE_BACKGROUND);
     if (bounds.gutterRight > bounds.gutterLeft) {
@@ -241,23 +253,24 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
 
 	host.cursorScreenInfo = cursorInfo;
 
-	const verticalTrack: RectBounds = {
-		left: contentRight,
-		top: bounds.codeTop,
-		right: contentRight + constants.SCROLLBAR_WIDTH,
-		bottom: contentBottom,
-	};
-	host.scrollbars.codeVertical.layout(verticalTrack, Math.max(visualCount, 1), rowCapacity, host.scrollRow);
+    const verticalTrackLeft = bounds.codeRight - constants.SCROLLBAR_WIDTH;
+    const verticalTrack: RectBounds = {
+        left: verticalTrackLeft,
+        top: bounds.codeTop,
+        right: verticalTrackLeft + constants.SCROLLBAR_WIDTH,
+        bottom: contentBottom,
+    };
+    host.scrollbars.codeVertical.layout(verticalTrack, Math.max(visualCount, 1), rowCapacity, host.scrollRow);
 	host.scrollRow = clamp(Math.round(host.scrollbars.codeVertical.getScroll()), 0, Math.max(0, visualCount - rowCapacity));
 	host.codeVerticalScrollbarVisible = host.scrollbars.codeVertical.isVisible();
 
 	if (!wrapEnabled) {
-		const horizontalTrack: RectBounds = {
-			left: bounds.codeLeft,
-			top: contentBottom,
-			right: contentRight,
-			bottom: contentBottom + constants.SCROLLBAR_WIDTH,
-		};
+            const horizontalTrack: RectBounds = {
+                left: bounds.codeLeft,
+                top: contentBottom,
+                right: trackRight,
+                bottom: contentBottom + constants.SCROLLBAR_WIDTH,
+            };
 		const maxColumns = columnCapacity + host.computeMaximumScrollColumn();
 	host.scrollbars.codeHorizontal.layout(horizontalTrack, maxColumns, columnCapacity, host.scrollColumn);
 	host.scrollColumn = clamp(Math.round(host.scrollbars.codeHorizontal.getScroll()), 0, host.computeMaximumScrollColumn());

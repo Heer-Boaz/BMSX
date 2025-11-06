@@ -358,6 +358,7 @@ export const RESOURCE_PANEL_DIVIDER_COLOR = TAB_BASE.border;
 export const RESOURCE_PANEL_PADDING_X = 4;
 export const RESOURCE_PANEL_DIVIDER_DRAG_MARGIN = 4;
 export const SCROLLBAR_WIDTH = 3;
+export const CODE_AREA_RIGHT_MARGIN = 6;
 export const SCROLLBAR_MIN_THUMB_HEIGHT = 6;
 export const SCROLLBAR_TRACK_COLOR = THEME_BASE.status.background;
 export const SCROLLBAR_THUMB_COLOR = THEME_BASE.status.text;

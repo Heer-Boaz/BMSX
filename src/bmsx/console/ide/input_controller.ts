@@ -97,21 +97,24 @@ export class InputController {
         }
       }
       let movedAlt = false;
-      if (this.shouldRepeat('ArrowUp', deltaSeconds)) {
+      const altUpJustPressed = isKeyJustPressedGlobal(idx, 'ArrowUp');
+      const altUpRepeat = !altUpJustPressed && this.shouldRepeat('ArrowUp', deltaSeconds);
+      if (altUpJustPressed || altUpRepeat) {
         consumeKeyboardKey(keyboard, 'ArrowUp');
         this.host.moveSelectionLines(-1);
         movedAlt = true;
       }
-      if (this.shouldRepeat('ArrowDown', deltaSeconds)) {
+      const altDownJustPressed = isKeyJustPressedGlobal(idx, 'ArrowDown');
+      const altDownRepeat = !altDownJustPressed && this.shouldRepeat('ArrowDown', deltaSeconds);
+      if (altDownJustPressed || altDownRepeat) {
         consumeKeyboardKey(keyboard, 'ArrowDown');
         this.host.moveSelectionLines(1);
         movedAlt = true;
       }
-      if (movedAlt) return;
-      // If user holds Alt+Up/Down, ignore further vertical movement handling
-      if (isModifierPressedGlobal(this.host.getPlayerIndex(), 'AltLeft') || isModifierPressedGlobal(this.host.getPlayerIndex(), 'AltRight')) {
-        // fall through only for horizontal/home/end/page keys
+      if (movedAlt) {
+        return;
       }
+      return;
     }
     // Arrow keys
     if (this.shouldRepeat('ArrowLeft', deltaSeconds)) {
@@ -241,6 +244,10 @@ export class InputController {
   // Expose repeat for other controllers (e.g. completion controller)
   public shouldRepeatPublic(_keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean {
     return this.shouldRepeat(code, deltaSeconds);
+  }
+
+  public resetRepeats(): void {
+    this.repeatState.clear();
   }
 
   // Apply input overrides (debug hotkeys + keyboard capture)

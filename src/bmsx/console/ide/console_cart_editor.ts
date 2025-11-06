@@ -298,6 +298,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private readonly scrollbarController: ScrollbarController;
 	private readonly input: InputController;
 	private toggleInputLatch = false;
+	private windowFocused = (() => {
+		if (typeof document === 'undefined' || typeof document.hasFocus !== 'function') {
+			return true;
+		}
+		try {
+			return document.hasFocus();
+		} catch {
+			return true;
+		}
+	})();
 	private lastPointerClickTimeMs = 0;
 	private lastPointerClickRow = -1;
 	private lastPointerClickColumn = -1;
@@ -1154,6 +1164,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	public update(deltaSeconds: number): void {
 		this.refreshViewportDimensions();
 		const keyboard = this.getKeyboard();
+		this.syncWindowFocusState(keyboard);
 		this.updateMessage(deltaSeconds);
 		this.updateRuntimeErrorOverlay(deltaSeconds);
 		if (this.handleToggleRequest(keyboard)) {
@@ -1796,6 +1807,26 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			throw new Error(`[ConsoleCartEditor] Keyboard handler for player ${this.playerIndex} is invalid.`);
 		}
 		return candidate;
+	}
+
+	private syncWindowFocusState(keyboard: KeyboardInput): void {
+		let hasFocus = true;
+		if (typeof document !== 'undefined' && typeof document.hasFocus === 'function') {
+			try {
+				hasFocus = document.hasFocus();
+			} catch {
+				hasFocus = true;
+			}
+		}
+		if (hasFocus === this.windowFocused) {
+			return;
+		}
+		this.windowFocused = hasFocus;
+		keyboard.reset();
+		this.input.resetRepeats();
+		this.resetKeyPressGuards();
+		this.repeatState.clear();
+		this.toggleInputLatch = false;
 	}
 
 	private handleToggleRequest(keyboard: KeyboardInput): boolean {
@@ -3044,6 +3075,18 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 		this.symbolCatalogContext = { scope, assetId, chunkName };
+		const deduped: ConsoleLuaSymbolEntry[] = [];
+		const seen = new Set<string>();
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			const key = this.symbolCatalogDedupKey(entry);
+			if (seen.has(key)) {
+				continue;
+			}
+			seen.add(key);
+			deduped.push(entry);
+		}
+		entries = deduped;
 		const catalogEntries = entries.map((entry) => {
 			const display = entry.path && entry.path.length > 0 ? entry.path : entry.name;
 			const sourceLabel = scope === 'global' ? this.symbolSourceLabel(entry) : null;
@@ -3110,6 +3153,21 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return null;
 		}
 		return computeSourceLabel(path, entry.location.chunkName ?? '<console>');
+	}
+
+	private symbolCatalogDedupKey(entry: ConsoleLuaSymbolEntry): string {
+		const { location, kind, name } = entry;
+		const chunkName = location.chunkName ?? '';
+		const normalizedPath = location.path ? location.path.replace(/\\/g, '/') : '';
+		const assetId = location.assetId ?? '';
+		const locationKey = chunkName.length > 0
+			? chunkName
+			: (normalizedPath.length > 0 ? normalizedPath : assetId);
+		const startLine = location.range.startLine;
+		const startColumn = location.range.startColumn;
+		const endLine = location.range.endLine;
+		const endColumn = location.range.endColumn;
+		return `${kind}|${name}|${locationKey}|${startLine}:${startColumn}|${endLine}:${endColumn}`;
 	}
 
 	private buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext | null): ReferenceCatalogEntry[] {
