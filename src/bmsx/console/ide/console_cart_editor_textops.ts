@@ -676,6 +676,51 @@ export abstract class ConsoleCartEditorTextOps {
 		this.revealCursor();
 	}
 
+	protected deleteWordForward(): void {
+		if (!this.hasSelection() && this.cursorRow >= this.lines.length - 1 && this.cursorColumn >= this.currentLine().length) {
+			return;
+		}
+		this.prepareUndo('delete-word-forward', false);
+		if (this.deleteSelectionIfPresent()) {
+			return;
+		}
+		const destination = this.findWordRight(this.cursorRow, this.cursorColumn);
+		if (destination.row === this.cursorRow && destination.column === this.cursorColumn) {
+			this.deleteForward();
+			return;
+		}
+		const startRow = this.cursorRow;
+		const startColumn = this.cursorColumn;
+		const endRow = destination.row;
+		const endColumn = destination.column;
+		if (startRow === endRow) {
+			const line = this.lines[startRow];
+			const removed = line.slice(startColumn, endColumn);
+			this.lines[startRow] = line.slice(0, startColumn) + line.slice(endColumn);
+			this.invalidateLine(startRow);
+			this.recordEditContext('delete', removed);
+		} else {
+			const firstLine = this.lines[startRow];
+			const lastLine = this.lines[endRow];
+			const removedParts: string[] = [];
+			removedParts.push(firstLine.slice(startColumn));
+			for (let row = startRow + 1; row < endRow; row += 1) {
+				removedParts.push(this.lines[row]);
+			}
+			removedParts.push(lastLine.slice(0, endColumn));
+			this.lines[startRow] = firstLine.slice(0, startColumn) + lastLine.slice(endColumn);
+			this.lines.splice(startRow + 1, endRow - startRow);
+			this.invalidateAllHighlights();
+			this.recordEditContext('delete', removedParts.join('\n'));
+		}
+		this.cursorRow = startRow;
+		this.cursorColumn = startColumn;
+		this.markTextMutated();
+		this.resetBlink();
+		this.updateDesiredColumn();
+		this.revealCursor();
+	}
+
 	protected deleteActiveLines(): void {
 		if (this.lines.length === 0) {
 			return;

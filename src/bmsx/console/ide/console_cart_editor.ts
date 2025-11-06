@@ -118,6 +118,15 @@ import {
 	type ReferenceCatalogEntry,
 	type ReferenceSymbolEntry,
 } from './reference_sources';
+
+type NavigationHistoryEntry = {
+	contextId: string;
+	assetId: string | null;
+	chunkName: string | null;
+	path: string | null;
+	row: number;
+	column: number;
+};
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
 import { planRenameLineEdits } from './rename_apply';
 import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_cross_file';
@@ -238,6 +247,13 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		'NumpadDivide',
 		...CHARACTER_CODES,
 	])];
+	private static readonly NAVIGATION_HISTORY_LIMIT = 64;
+	private readonly navigationHistory = {
+		back: [] as NavigationHistoryEntry[],
+		forward: [] as NavigationHistoryEntry[],
+		current: null as NavigationHistoryEntry | null,
+	};
+	private navigationCaptureSuspended = false;
 
 	private static readonly EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
 	private static customClipboard: string | null = null;
@@ -499,6 +515,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			deleteCharRight: () => this.deleteCharRight(),
 			deleteActiveLines: () => this.deleteActiveLines(),
 			deleteWordBackward: () => this.deleteWordBackward(),
+			deleteWordForward: () => this.deleteWordForward(),
 			insertNewline: () => this.insertNewline(),
 			insertText: (text) => this.insertText(text),
 			moveCursorLeft: (byWord, select) => this.moveCursorLeft(byWord, select),
@@ -512,6 +529,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			moveSelectionLines: (delta) => this.moveSelectionLines(delta),
 			indentSelectionOrLine: () => this.indentSelectionOrLine(),
 			unindentSelectionOrLine: () => this.unindentSelectionOrLine(),
+			navigateBackward: () => this.goBackwardInNavigationHistory(),
+			navigateForward: () => this.goForwardInNavigationHistory(),
 		});
         this.problemsPanel = new ProblemsPanelController({
             lineHeight: this.lineHeight,
@@ -550,6 +569,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	const initialContext = entryContext ? this.codeTabContexts.get(entryContext.id) ?? null : null;
 	this.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
 	this.applyResolutionModeToRuntime();
+	this.navigationHistory.current = this.createNavigationEntry();
 	}
 
 	private scheduleNextFrame(task: () => void): void {
@@ -3715,6 +3735,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private gotoDiagnostic(diagnostic: EditorDiagnostic): void {
+		const navigationCheckpoint = this.beginNavigationCapture();
 		// Switch to the originating tab if provided
 		if (diagnostic.contextId && diagnostic.contextId.length > 0 && diagnostic.contextId !== this.activeCodeTabContextId) {
 			this.setActiveTab(diagnostic.contextId);
@@ -3732,6 +3753,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.clearSelection();
 		this.cursorRevealSuspended = false;
 		this.ensureCursorVisible();
+		this.completeNavigation(navigationCheckpoint);
 	}
 
 	private jumpToNextMatch(): void {
@@ -4996,6 +5018,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation): void {
+		const navigationCheckpoint = this.beginNavigationCapture();
 		this.clearReferenceHighlights();
 		const hint: { assetId: string | null; path?: string | null } = { assetId: definition.assetId };
 		if (definition.path !== undefined) {
@@ -5022,6 +5045,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.cursorRevealSuspended = false;
 		this.clearHoverTooltip();
 		this.clearGotoHoverHighlight();
+		this.completeNavigation(navigationCheckpoint);
 		this.showMessage('Jumped to definition', constants.COLOR_STATUS_SUCCESS, 1.6);
 	}
 
@@ -5040,6 +5064,163 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.resetBlink();
 		this.cursorRevealSuspended = false;
 		this.ensureCursorVisible();
+	}
+
+	private beginNavigationCapture(): NavigationHistoryEntry | null {
+		if (this.navigationCaptureSuspended) {
+			return null;
+		}
+		if (!this.navigationHistory.current) {
+			this.navigationHistory.current = this.createNavigationEntry();
+		}
+		const current = this.navigationHistory.current;
+		return current ? this.cloneNavigationEntry(current) : null;
+	}
+
+	private completeNavigation(previous: NavigationHistoryEntry | null): void {
+		if (this.navigationCaptureSuspended) {
+			return;
+		}
+		const next = this.createNavigationEntry();
+		if (previous && (!next || !this.areNavigationEntriesEqual(previous, next))) {
+			const backStack = this.navigationHistory.back;
+			const lastBack = backStack[backStack.length - 1] ?? null;
+			if (!lastBack || !this.areNavigationEntriesEqual(lastBack, previous)) {
+				this.pushNavigationEntry(backStack, previous);
+			}
+			this.navigationHistory.forward.length = 0;
+		} else if (previous && next && this.areNavigationEntriesEqual(previous, next)) {
+			// Same location; do not mutate stacks.
+		} else if (previous === null && next) {
+			this.navigationHistory.forward.length = 0;
+		}
+		this.navigationHistory.current = next;
+	}
+
+	private pushNavigationEntry(stack: NavigationHistoryEntry[], entry: NavigationHistoryEntry): void {
+		stack.push(entry);
+		const overflow = stack.length - ConsoleCartEditor.NAVIGATION_HISTORY_LIMIT;
+		if (overflow > 0) {
+			stack.splice(0, overflow);
+		}
+	}
+
+	private areNavigationEntriesEqual(a: NavigationHistoryEntry, b: NavigationHistoryEntry): boolean {
+		return a.contextId === b.contextId
+			&& a.assetId === b.assetId
+			&& a.chunkName === b.chunkName
+			&& a.path === b.path
+			&& a.row === b.row
+			&& a.column === b.column;
+	}
+
+	private cloneNavigationEntry(entry: NavigationHistoryEntry): NavigationHistoryEntry {
+		return { ...entry };
+	}
+
+	private createNavigationEntry(): NavigationHistoryEntry | null {
+		if (!this.isCodeTabActive()) {
+			return null;
+		}
+		const context = this.getActiveCodeTabContext();
+		if (!context) {
+			return null;
+		}
+		const assetId = this.resolveHoverAssetId(context);
+		const chunkName = this.resolveHoverChunkName(context);
+		const path = context.descriptor?.path ?? null;
+		const maxRowIndex = this.lines.length > 0 ? this.lines.length - 1 : 0;
+		const row = clamp(this.cursorRow, 0, maxRowIndex);
+		const line = this.lines[row] ?? '';
+		const column = clamp(this.cursorColumn, 0, line.length);
+		return {
+			contextId: context.id,
+			assetId,
+			chunkName,
+			path,
+			row,
+			column,
+		};
+	}
+
+	private withNavigationCaptureSuspended<T>(operation: () => T): T {
+		const previous = this.navigationCaptureSuspended;
+		this.navigationCaptureSuspended = true;
+		try {
+			return operation();
+		} finally {
+			this.navigationCaptureSuspended = previous;
+		}
+	}
+
+	private applyNavigationEntry(entry: NavigationHistoryEntry): void {
+		const existingContext = this.codeTabContexts.get(entry.contextId) ?? null;
+		if (existingContext) {
+			this.setActiveTab(entry.contextId);
+		} else {
+			const hint: { assetId: string | null; path?: string | null } = { assetId: entry.assetId };
+			if (entry.path) {
+				hint.path = entry.path;
+			}
+			this.focusChunkSource(entry.chunkName, hint);
+			if (entry.contextId) {
+				this.setActiveTab(entry.contextId);
+			}
+		}
+		if (!this.isCodeTabActive()) {
+			this.activateCodeTab();
+		}
+		if (!this.isCodeTabActive()) {
+			return;
+		}
+		const maxRowIndex = this.lines.length > 0 ? this.lines.length - 1 : 0;
+		const targetRow = clamp(entry.row, 0, maxRowIndex);
+		const line = this.lines[targetRow] ?? '';
+		const targetColumn = clamp(entry.column, 0, line.length);
+		this.setCursorPosition(targetRow, targetColumn);
+		this.clearSelection();
+		this.cursorRevealSuspended = false;
+		this.ensureCursorVisible();
+	}
+
+	private goBackwardInNavigationHistory(): void {
+		if (this.navigationHistory.back.length === 0) {
+			return;
+		}
+		const currentEntry = this.createNavigationEntry();
+		if (currentEntry) {
+			const forwardStack = this.navigationHistory.forward;
+			const lastForward = forwardStack[forwardStack.length - 1] ?? null;
+			if (!lastForward || !this.areNavigationEntriesEqual(lastForward, currentEntry)) {
+				this.pushNavigationEntry(forwardStack, currentEntry);
+			}
+		} else {
+			this.navigationHistory.forward.length = 0;
+		}
+		const target = this.navigationHistory.back.pop()!;
+		this.withNavigationCaptureSuspended(() => {
+			this.applyNavigationEntry(target);
+		});
+		this.navigationHistory.current = this.createNavigationEntry();
+	}
+
+	private goForwardInNavigationHistory(): void {
+		if (this.navigationHistory.forward.length === 0) {
+			return;
+		}
+		const currentEntry = this.createNavigationEntry();
+		if (currentEntry) {
+			const backStack = this.navigationHistory.back;
+			const lastBack = backStack[backStack.length - 1] ?? null;
+			if (!lastBack || !this.areNavigationEntriesEqual(lastBack, currentEntry)) {
+				this.pushNavigationEntry(backStack, currentEntry);
+			}
+		}
+		const target = this.navigationHistory.forward.pop()!;
+		this.withNavigationCaptureSuspended(() => {
+			this.applyNavigationEntry(target);
+		});
+		this.navigationHistory.current = this.createNavigationEntry();
 	}
 
 	private handleActionPromptPointer(snapshot: PointerSnapshot): void {
@@ -6963,6 +7144,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (!tab) {
 			return;
 		}
+		const navigationCheckpoint = tab.kind === 'lua_editor' && tabId !== this.activeTabId
+			? this.beginNavigationCapture()
+			: null;
 		this.closeSymbolSearch(true);
 		const previousKind = this.getActiveTabKind();
 		if (previousKind === 'lua_editor') {
@@ -6974,6 +7158,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				this.runtimeErrorOverlay = null;
 			} else if (tab.kind === 'lua_editor') {
 				this.activateCodeEditorTab(tab.id);
+				if (navigationCheckpoint) {
+					this.completeNavigation(navigationCheckpoint);
+				}
 			}
 			return;
 		}
@@ -6985,6 +7172,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		if (tab.kind === 'lua_editor') {
 			this.activateCodeEditorTab(tab.id);
+			if (navigationCheckpoint) {
+				this.completeNavigation(navigationCheckpoint);
+			}
 		}
 	}
 
@@ -7119,6 +7309,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
+		const navigationCheckpoint = this.beginNavigationCapture();
 		const tabId: EditorTabId = `lua:${descriptor.assetId}`;
 		let tab = this.tabs.find(candidate => candidate.id === tabId);
 		if (!this.codeTabContexts.has(tabId)) {
@@ -7144,6 +7335,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 		}
 		this.setActiveTab(tabId);
+		this.completeNavigation(navigationCheckpoint);
 	}
 
 	private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {

@@ -31,6 +31,7 @@ export interface InputHost {
   deleteCharRight(): void;
   deleteActiveLines(): void;
   deleteWordBackward(): void;
+  deleteWordForward(): void;
   insertNewline(): void;
   insertText(text: string): void;
   moveCursorLeft(byWord: boolean, select: boolean): void;
@@ -44,6 +45,8 @@ export interface InputHost {
   moveSelectionLines(delta: number): void;
   indentSelectionOrLine(): void;
   unindentSelectionOrLine(): void;
+  navigateBackward(): void;
+  navigateForward(): void;
 }
 
 export class InputController {
@@ -80,6 +83,19 @@ export class InputController {
   private handleNavigationKeys(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, altDown: boolean): void {
     // Alt+Arrow: move selection lines up/down
     if (altDown) {
+      const idx = this.host.getPlayerIndex();
+      if (!ctrlDown && !shiftDown) {
+        if (isKeyJustPressedGlobal(idx, 'ArrowLeft')) {
+          consumeKeyboardKey(keyboard, 'ArrowLeft');
+          this.host.navigateBackward();
+          return;
+        }
+        if (isKeyJustPressedGlobal(idx, 'ArrowRight')) {
+          consumeKeyboardKey(keyboard, 'ArrowRight');
+          this.host.navigateForward();
+          return;
+        }
+      }
       let movedAlt = false;
       if (this.shouldRepeat('ArrowUp', deltaSeconds)) {
         consumeKeyboardKey(keyboard, 'ArrowUp');
@@ -100,12 +116,12 @@ export class InputController {
     // Arrow keys
     if (this.shouldRepeat('ArrowLeft', deltaSeconds)) {
       consumeKeyboardKey(keyboard, 'ArrowLeft');
-      this.host.moveCursorLeft(ctrlDown || altDown, shiftDown);
+      this.host.moveCursorLeft(ctrlDown, shiftDown);
       return;
     }
     if (this.shouldRepeat('ArrowRight', deltaSeconds)) {
       consumeKeyboardKey(keyboard, 'ArrowRight');
-      this.host.moveCursorRight(ctrlDown || altDown, shiftDown);
+      this.host.moveCursorRight(ctrlDown, shiftDown);
       return;
     }
     if (this.shouldRepeat('ArrowUp', deltaSeconds)) {
@@ -165,6 +181,8 @@ export class InputController {
       consumeKeyboardKey(keyboard, 'Delete');
       if (shiftDown && !ctrlDown) {
         this.host.deleteActiveLines();
+      } else if (ctrlDown) {
+        this.host.deleteWordForward();
       } else if (this.host.getSelection()) {
         this.host.deleteSelection();
       } else {
