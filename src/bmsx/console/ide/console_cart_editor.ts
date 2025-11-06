@@ -168,7 +168,8 @@ type SearchComputationJob = {
 	cursorColumn: number;
 };
 
-const EDITOR_TOGGLE_KEY = 'Escape';
+const EDITOR_TOGGLE_KEY = 'F1';
+const ESCAPE_KEY = 'Escape';
 const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'start'];
 
 // Intellisense data is handled by CompletionController
@@ -228,6 +229,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private entryTabId: string | null = null;
 	private readonly captureKeys: string[] = [...new Set([
 		EDITOR_TOGGLE_KEY,
+		ESCAPE_KEY,
 		'ArrowUp',
 		'ArrowDown',
 		'ArrowLeft',
@@ -568,6 +570,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.assertMonospace();
 	const initialContext = entryContext ? this.codeTabContexts.get(entryContext.id) ?? null : null;
 	this.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
+	$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 	this.applyResolutionModeToRuntime();
 	this.navigationHistory.current = this.createNavigationEntry();
 	}
@@ -1684,6 +1687,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	public restoreState(state: ConsoleEditorSerializedState): void { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
 		if (!state) return;
 		this.input.applyOverrides(false, this.captureKeys);
+		$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 		this.codeTabContexts.clear();
 		const entryContext = this.createEntryTabContext();
 		if (entryContext) {
@@ -1795,6 +1799,17 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private handleToggleRequest(keyboard: KeyboardInput): boolean {
+		const escapeState = getKeyboardButtonState(this.playerIndex, ESCAPE_KEY);
+		if (escapeState && escapeState.pressed === true) {
+			if (shouldAcceptKeyPressGlobal(ESCAPE_KEY, escapeState)) {
+				const handled = this.handleEscapeKey();
+				if (handled) {
+					consumeKeyboardKey(keyboard, ESCAPE_KEY);
+					return true;
+				}
+			}
+		}
+
 		const toggleKeyState = getKeyboardButtonState(this.playerIndex, EDITOR_TOGGLE_KEY);
 		const selectButton = EDITOR_TOGGLE_GAMEPAD_BUTTONS[0];
 		const startButton = EDITOR_TOGGLE_GAMEPAD_BUTTONS[1];
@@ -1823,6 +1838,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return false;
 		}
 		this.toggleInputLatch = true;
+		const intercepted = this.handleEscapeKey();
 		if (keyboardAccepted) {
 			consumeKeyboardKey(keyboard, EDITOR_TOGGLE_KEY);
 		}
@@ -1831,6 +1847,22 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			handler.consumeButton(selectButton);
 			handler.consumeButton(startButton);
 		}
+		if (intercepted) {
+			return true;
+		}
+		if (this.active) {
+			if (this.dirty) {
+				this.openActionPrompt('close');
+			} else {
+				this.deactivate();
+			}
+		} else {
+			this.activate();
+		}
+		return true;
+	}
+
+	private handleEscapeKey(): boolean {
 		if (this.pendingActionPrompt) {
 			this.resetActionPromptState();
 			return true;
@@ -1861,16 +1893,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.searchVisible = false;
 			return true;
 		}
-		if (this.active) {
-			if (this.dirty) {
-				this.openActionPrompt('close');
-			} else {
-				this.deactivate();
-			}
-		} else {
-			this.activate();
-		}
-		return true;
+		return false;
 	}
 
 	private activate(): void {
@@ -1969,10 +1992,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	if (this.dimCrtInEditor) {
 		this.restoreCrtOptions();
 	}
-	this.completion.closeSession();
-	this.repeatState.clear();
+		this.completion.closeSession();
+		this.repeatState.clear();
 		this.resetKeyPressGuards();
 		this.input.applyOverrides(false, this.captureKeys);
+		$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 		this.selectionAnchor = null;
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;

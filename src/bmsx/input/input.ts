@@ -15,6 +15,7 @@ import { OnscreenGamepad } from './onscreengamepad';
 import type { OnscreenGamepadLayout } from './onscreengamepad';
 
 const NO_GAMEPAD_LAYOUT: OnscreenGamepadLayout = Object.freeze({ left: 0, right: 0, bottom: 0, visible: false }) as OnscreenGamepadLayout;
+const DEBUG_HUD_TOGGLE_KEY = 'F10';
 import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
 import { ControllerAssignmentUI } from '../ui/controller_assignment_ui';
 import { PlayerInput, InputSource } from './playerinput';
@@ -532,7 +533,7 @@ export class Input implements RegisterablePersistent {
 		return clone;
 	}
 
-	private static readonly DEBUG_CAPTURE_KEYS = new Set(['F1', 'F6', 'F7', 'F11']);
+	private static readonly DEBUG_CAPTURE_KEYS = new Set([DEBUG_HUD_TOGGLE_KEY, 'F6', 'F7', 'F11']);
 
 	/**
 	* The mapping of indices to their corresponding gamepad button names.
@@ -986,12 +987,12 @@ export class Input implements RegisterablePersistent {
 
 		const allowGlobalHotkeys = $.running || !$.paused;
 		if (allowGlobalHotkeys) {
-			const hudToggle = player.getButtonState('F1', 'keyboard');
+			const hudToggle = player.getButtonState(DEBUG_HUD_TOGGLE_KEY, 'keyboard');
 			if (hudToggle?.justpressed) {
 				toggleRenderHUD();
 				toggleECSHUD();
 				toggleInputHUD();
-				keyboardHandler.consumeButton('F1');
+				keyboardHandler.consumeButton(DEBUG_HUD_TOGGLE_KEY);
 			}
 
 			const debugMenu = player.getButtonState('F6', 'keyboard');
@@ -1215,8 +1216,12 @@ export class Input implements RegisterablePersistent {
 		EventEmitter.instance.emit('playerjoin', this, { playerIndex: playerIndex });
 	}
 
+	public static get KC_F10(): boolean {
+		return Input.instance.getPlayerInput(1).checkAndConsume(DEBUG_HUD_TOGGLE_KEY);
+	}
+
 	public static get KC_F1(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('F1');
+		return Input.KC_F10;
 	}
 
 	public static get KC_F12(): boolean {
@@ -1272,15 +1277,18 @@ export class Input implements RegisterablePersistent {
 	}
 
 	public static get KC_BTN3(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('F1', 'x');
+		return Input.instance.getPlayerInput(1).checkAndConsume(DEBUG_HUD_TOGGLE_KEY, 'x');
 	}
 
 	public static get KC_BTN4(): boolean {
 		return Input.instance.getPlayerInput(1).checkAndConsume('F5', 'y');
 	}
 
+	public static get KD_F10(): boolean {
+		return Input.instance.getPlayerInput(1).getButtonState(DEBUG_HUD_TOGGLE_KEY, 'keyboard').pressed;
+	}
 	public static get KD_F1(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('F1', 'keyboard').pressed;
+		return Input.KD_F10;
 	}
 	public static get KD_F12(): boolean {
 		return Input.instance.getPlayerInput(1).getButtonState('F12', 'keyboard').pressed;
@@ -1322,7 +1330,7 @@ export class Input implements RegisterablePersistent {
 		return Input.instance.getPlayerInput(1).getButtonState('KeyZ', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('b', 'gamepad').pressed;
 	}
 	public static get KD_BTN3(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('F1', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('x', 'gamepad').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState(DEBUG_HUD_TOGGLE_KEY, 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('x', 'gamepad').pressed;
 	}
 	public static get KD_BTN4(): boolean {
 		return Input.instance.getPlayerInput(1).getButtonState('F5', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('y', 'gamepad').pressed;

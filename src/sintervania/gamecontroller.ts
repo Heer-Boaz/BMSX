@@ -211,7 +211,7 @@ export class Controller extends BaseControllerOld {
 	}
 
 	private handleInputDuringGame(): void {
-		if (Input.KC_F1)
+		if (Input.KC_F10)
 			this.PauseGame();
 		switch ((model as Model).substate) {
 			case GameSubstate.BelmontDies:
@@ -238,7 +238,7 @@ export class Controller extends BaseControllerOld {
 	}
 
 	private handleInputDuringPause(): void {
-		if (Input.KC_F1)
+		if (Input.KC_F10)
 			this.UnpauseGame();
 	}
 
