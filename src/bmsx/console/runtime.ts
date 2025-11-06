@@ -936,6 +936,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		// Clear flag and any queued overlay frame before we resume swapping handlers.
 		this.luaRuntimeFailed = false;
 		publishOverlayFrame(null);
+		this.processPendingLuaAssets('resume');
 		this.resumeLuaProgramState(snapshot, { runInit: false });
 		this.lastFrameTimestampMs = $.platform.clock.now();
 		this.setEditorPipelineActive(this.editor?.isActive() === true, true);
@@ -1020,6 +1021,8 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			this.reinitializeLuaProgramFromSnapshot(snapshot, { runInit: options.runInit, hotReload: false });
 			return;
 		}
+
+		this.processPendingLuaAssets('resume');
 
 		const targetChunkName = snapshot.luaChunkName ?? this.resolveLuaProgramChunkName(program);
 		const currentChunk = this.luaChunkName ?? this.resolveLuaProgramChunkName(program);
@@ -1326,7 +1329,18 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 						break;
 				}
 				this.registerLuaChunkResource(chunkName, { assetId, path: normalizedPath });
+				this.luaGenericAssetsExecuted.delete(assetId);
+				let loadError: unknown = null;
+				try {
+					this.processPendingLuaAssets('lua:save');
+				} catch (error) {
+					loadError = error;
+				}
 				this.refreshLuaHandlersForChunk(chunkName, source);
+				if (loadError) {
+					const message = loadError instanceof Error ? loadError.message : String(loadError);
+					this.recordLuaWarning(`[BmsxConsoleRuntime] Hot reload of '${assetId}' after save failed: ${message}`);
+				}
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				this.recordLuaWarning(`[BmsxConsoleRuntime] Hot reload of '${assetId}' after save failed: ${message}`);
@@ -1423,6 +1437,13 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		rompack.resourcePaths.sort((left, right) => left.path.localeCompare(right.path));
 		this.resourcePathCache.set(assetId, normalizedPath);
 		this.registerLuaChunkResource(normalizedPath, { assetId, path: normalizedPath });
+		this.luaGenericAssetsExecuted.delete(assetId);
+		let hotLoadError: unknown = null;
+		try {
+			this.processPendingLuaAssets('lua:create');
+		} catch (error) {
+			hotLoadError = error;
+		}
 		const descriptor: ConsoleResourceDescriptor = { path: normalizedPath, type: 'lua', assetId };
 		try {
 			const category = this.resolveLuaHotReloadCategory(assetId);
@@ -1442,6 +1463,10 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 					break;
 			}
 			this.refreshLuaHandlersForChunk(chunkName, contents);
+			if (hotLoadError) {
+				const message = hotLoadError instanceof Error ? hotLoadError.message : String(hotLoadError);
+				this.recordLuaWarning(`[BmsxConsoleRuntime] Hot load of new resource '${assetId}' encountered issues: ${message}`);
+			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			this.recordLuaWarning(`[BmsxConsoleRuntime] Hot load of new resource '${assetId}' failed: ${message}`);
@@ -1823,6 +1848,57 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		if (debugTiming) {
 			const elapsedMs = $.platform.clock.now() - bootStartMs;
 			console.info(`[BmsxConsoleRuntime] Lua boot '${chunkName}' completed in ${elapsedMs.toFixed(2)}ms.`);
+		}
+	}
+
+	private getPendingLuaAssetIds(): string[] {
+		const rompack = $.rompack;
+		if (!rompack || !rompack.lua) {
+			return [];
+		}
+		const pending: string[] = [];
+		for (const [assetId, source] of Object.entries(rompack.lua)) {
+			if (typeof source !== 'string') {
+				continue;
+			}
+			if (!this.luaGenericAssetsExecuted.has(assetId)) {
+				pending.push(assetId);
+			}
+		}
+		return pending;
+	}
+
+	private processPendingLuaAssets(context: string): void {
+		const pending = this.getPendingLuaAssetIds();
+		if (pending.length === 0) {
+			return;
+		}
+		let interpreter: LuaInterpreter | null = null;
+		if (this.hasLuaProgram()) {
+			interpreter = this.luaInterpreter;
+			if (!interpreter) {
+				// Interpreter will be reinitialised later (for example during resume); defer processing.
+				return;
+			}
+		} else {
+			interpreter = this.ensureFsmLuaInterpreter();
+		}
+		if ($.debug) {
+			const summary = pending.join(', ');
+			console.info(`[BmsxConsoleRuntime] Loading ${pending.length} pending Lua asset(s) for ${context}: ${summary}`);
+		}
+		const previousChunkName = this.luaChunkName;
+		try {
+			this.loadLuaComponentPresetScripts(interpreter);
+			this.loadLuaStateMachineScripts(interpreter);
+			this.loadLuaBehaviorTreeScripts(interpreter);
+			this.loadLuaServiceScripts(interpreter);
+			this.loadLuaWorldObjectDefinitionScripts(interpreter);
+		} catch (error) {
+			this.handleLuaError(error);
+			throw error instanceof Error ? error : new Error(String(error));
+		} finally {
+			this.luaChunkName = previousChunkName;
 		}
 	}
 
