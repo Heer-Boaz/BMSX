@@ -542,10 +542,28 @@ local function advance_spawn_timer(delta)
 end
 
 function init()
-    math.randomseed(os.time())
-    reset_game_state()
-    ensure_player_ability_definitions()
-    spawn_world()
+	set_input_map({
+		keyboard = {
+			move_left = { 'ArrowLeft' },
+			move_right = { 'ArrowRight' },
+			move_up = { 'ArrowUp' },
+			move_down = { 'ArrowDown' },
+			fire = { 'KeyZ' },
+			interact = { 'KeyX' },
+		},
+		gamepad = {
+			move_left = { 'left' },
+			move_right = { 'right' },
+			move_up = { 'up' },
+			move_down = { 'down' },
+			fire = { 'b' },
+			interact = { 'a' },
+		},
+	})
+	math.randomseed(os.time())
+	reset_game_state()
+	ensure_player_ability_definitions()
+	spawn_world()
 end
 
 function update(delta)

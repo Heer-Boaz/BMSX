@@ -6,20 +6,19 @@ New split packaging lets you build the engine once and ship carts as pure Lua/da
 # 1) Build the standalone engine runtime + assets
 npm run build:engine:debug
 
-# 2) Build a cart (defaults to src/carts/<name>)
-npm run build:cart -- --cart=luademo
+# 2) Build a cart (resources under src/carts/<name>)
+npx tsx scripts/rompacker/rompacker.ts \
+  -romname luademo \
+  -title "Lua Demo" \
+  -respath ./src/carts/luademo/res
 
 # 3) Serve or open the console shell
-npm run serve:dist   # or open dist/console_debug.html directly
+npm run serve:dist   # or open dist/game_debug.html directly
 ```
 
-Use `--root` / `--res` overrides when a cart lives outside `src/carts`, e.g.
+If you omit `-respath`, rompacker will look for resources under `src/<romname>/res` and `src/carts/<romname>/res` automatically.
 
-```bash
-npm run build:cart -- --cart=marlies2020console --root=src/marlies2020console --res=src/marlies2020console/res
-```
-
-The shell lists prebuilt carts (via `/__bmsx__/carts`) and remembers recent selections, so you can swap cartridges without rebuilding the engine.
+Adjust `-respath` (and optionally `-title`) for carts that live elsewhere in the repo.
 
 
 ### Custom Render Pipelines

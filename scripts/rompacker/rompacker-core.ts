@@ -523,46 +523,6 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 	});
 }
 
-export async function buildConsoleHtml(options: { romName: string; title: string; debug: boolean }): Promise<void> {
-	const { romName, title, debug } = options;
-	await mkdir('./dist', { recursive: true });
-	const [templateHtml, bootromJs, engineJs, zipJs] = await Promise.all([
-		readFile('./consolebase.html', 'utf8'),
-		readFile(`./rom/${BOOTROM_JS_FILENAME}`, 'utf8'),
-		readFile('./dist/engine.js', 'utf8'),
-		readFile('./scripts/pako_inflate.min.js', 'utf8'),
-	]);
-
-	const cssMinified = await new Promise<string>((resolve, reject) => {
-		minify({
-			compressor: cleanCSS,
-			input: './gamebase.css',
-			output: './rom/gamebase.console.min.css',
-			callback: (err: any, css: string) => {
-				if (!css) {
-					reject(err);
-					return;
-				}
-				resolve(css);
-			},
-		});
-	});
-
-	const replacements = {
-		'/*#css*/': cssMinified,
-		'//#bootromjs': bootromJs,
-		'//#enginejs': engineJs,
-		'//#zipjs': zipJs,
-		'//#debug': `bootrom.debug = ${debug};`,
-		'#engineRomPath': `./${romName}${debug ? '.debug' : ''}.rom`,
-		'#title': title,
-	};
-
-	const transformed = applyStringReplacements(templateHtml, replacements);
-	const outfile = `./dist/console${debug ? '_debug' : ''}.html`;
-	await writeFile(outfile, transformed, 'utf8');
-}
-
 /**
  * Parses the metadata of an audio file from its filename.
  * @param {string} filename - The name of the audio file.
@@ -719,7 +679,7 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 export type ResourceScanOptions = {
 	includeCode?: boolean;
 	extraLuaPaths?: string[];
-	defaultAtlasIndex?: number;
+	atlasIndexResolver?: (filepath: string, currentIndex: number | undefined) => number | undefined;
 };
 
 const EXTRA_LUA_SCAN_SKIP = new Set<string>([
@@ -743,7 +703,7 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 	const arrayOfFiles: string[] = [];
 	const includeCode = options.includeCode !== false;
 	const extraLuaRoots = options.extraLuaPaths ?? [];
-	const defaultAtlasIndex = options.defaultAtlasIndex ?? 0;
+	const atlasIndexResolver = options.atlasIndexResolver;
 	const seenPaths = new Set<string>();
 
 	const pushFile = (filepath: string) => {
@@ -828,14 +788,20 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 					}
 					throw new Error(`[RomPacker] Duplicate image resource "${name}" defined by "${existingImage.filepath}" and "${filepath}".`);
 				}
-			// If we are generating and using texture atlases, we need to add the image to the atlas.
-			if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS && !imgMeta.skipAtlas) {
-				const atlasIndex = imgMeta.targetAtlas ?? defaultAtlasIndex;
-				if (atlasIndex !== undefined) {
-					targetAtlasIdSet.add(atlasIndex);
+			let targetAtlasIndex = imgMeta.skipAtlas ? undefined : imgMeta.targetAtlas;
+			if (!imgMeta.skipAtlas && typeof atlasIndexResolver === 'function') {
+				const resolvedIndex = atlasIndexResolver(filepath, targetAtlasIndex);
+				if (typeof resolvedIndex === 'number' && Number.isFinite(resolvedIndex)) {
+					imgMeta.targetAtlas = resolvedIndex;
+					targetAtlasIndex = resolvedIndex;
 				}
 			}
-			const targetAtlasIndex = imgMeta.skipAtlas ? undefined : (imgMeta.targetAtlas ?? defaultAtlasIndex);
+			// If we are generating and using texture atlases, we need to add the image to the atlas.
+			if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS && !imgMeta.skipAtlas) {
+				if (imgMeta.targetAtlas !== undefined) {
+					targetAtlasIdSet.add(imgMeta.targetAtlas);
+				}
+			}
 				result.push({
 					filepath,
 					name,

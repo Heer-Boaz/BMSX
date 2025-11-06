@@ -58,7 +58,7 @@ let result = child.spawnSync('npx', [
 	'--skiptypecheck',
 	'-romname', 'engine',
 	'-title', 'BMSX Engine',
-	'-bootloaderpath', './src/bmsxconsole',
+	'-bootloaderpath', './src/bmsx/console/default_cart',
 	'-respath', './src/bmsx/res'
 ], { stdio: 'inherit' });
 if (result.status !== 0) {
@@ -66,10 +66,10 @@ if (result.status !== 0) {
 	process.exit(result.status || 1);
 }
 
+
 result = child.spawnSync('npx', [
 	'tsx',
 	'scripts/rompacker/rompacker.ts',
-	'--mode', 'cart',
 	'--debug',
 	'--force',
 	'--nodeploy',

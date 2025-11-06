@@ -19,7 +19,13 @@
 			"console_up": ["ArrowUp"],
 			"console_down": ["ArrowDown"],
 			"console_o": ["KeyZ"],
-			"console_x": ["KeyX"]
+			"console_x": ["KeyX"],
+			"move_left": ["ArrowLeft"],
+			"move_right": ["ArrowRight"],
+			"move_up": ["ArrowUp"],
+			"move_down": ["ArrowDown"],
+			"fire": ["KeyZ"],
+			"interact": ["KeyX"]
 		},
 		"gamepad": {
 			"console_left": ["left"],
@@ -27,7 +33,13 @@
 			"console_up": ["up"],
 			"console_down": ["down"],
 			"console_o": ["b"],
-			"console_x": ["a"]
+			"console_x": ["a"],
+			"move_left": ["left"],
+			"move_right": ["right"],
+			"move_up": ["up"],
+			"move_down": ["down"],
+			"fire": ["b"],
+			"interact": ["a"]
 		}
 	},
 	"lua": {

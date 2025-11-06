@@ -42,6 +42,7 @@ import { WorldObject } from '../core/object/worldobject';
 import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';
 import { Input } from '../input/input';
+import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputMapping, KeyboardBinding, GamepadBinding, PointerBinding } from '../input/inputtypes';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -2009,6 +2010,95 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		return fn.call(luaArgs);
 	}
 
+	private applyInputMappingFromLua(mapping: Record<string, unknown>, interpreter: LuaInterpreter, playerIndex: number): void {
+		const keyboardLayer = this.convertLuaInputLayer(mapping['keyboard'], interpreter, 'keyboard') as KeyboardInputMapping | undefined;
+		const gamepadLayer = this.convertLuaInputLayer(mapping['gamepad'], interpreter, 'gamepad') as GamepadInputMapping | undefined;
+		const pointerLayer = this.convertLuaInputLayer(mapping['pointer'], interpreter, 'pointer') as PointerInputMapping | undefined;
+
+		const existing = Input.instance.getPlayerInput(playerIndex).inputMap;
+		const next: InputMap = {
+			keyboard: keyboardLayer ?? existing?.keyboard ?? {},
+			gamepad: gamepadLayer ?? existing?.gamepad ?? {},
+			pointer: pointerLayer ?? existing?.pointer ?? Input.clonePointerMapping(),
+		};
+		$.setInputMap(playerIndex, next);
+	}
+
+	private convertLuaInputLayer(value: unknown, interpreter: LuaInterpreter, kind: 'keyboard' | 'gamepad' | 'pointer'): KeyboardInputMapping | GamepadInputMapping | PointerInputMapping | undefined {
+		if (value === undefined || value === null) {
+			return undefined;
+		}
+		if (typeof value !== 'object') {
+			throw this.createApiRuntimeError(interpreter, `set_input_map: ${kind} mapping must be a table.`);
+		}
+		const result: Record<string, Array<KeyboardBinding | GamepadBinding | PointerBinding>> = {};
+		for (const [action, rawBindings] of Object.entries(value as Record<string, unknown>)) {
+			if (!action || typeof action !== 'string') {
+				continue;
+			}
+			const entries = this.normalizeBindingList(kind, action, rawBindings, interpreter);
+			if (entries.length === 0) {
+				continue;
+			}
+			result[action] = entries as Array<KeyboardBinding | GamepadBinding | PointerBinding>;
+		}
+		return result as KeyboardInputMapping | GamepadInputMapping | PointerInputMapping;
+	}
+
+	private normalizeBindingList(kind: 'keyboard' | 'gamepad' | 'pointer', action: string, rawBindings: unknown, interpreter: LuaInterpreter): Array<KeyboardBinding | GamepadBinding | PointerBinding> {
+		const items = this.toArrayLike(rawBindings);
+		const normalized: Array<KeyboardBinding | GamepadBinding | PointerBinding> = [];
+		for (const item of items) {
+			if (item === undefined || item === null) {
+				continue;
+			}
+			if (typeof item === 'string') {
+				if (item.length === 0) {
+					continue;
+				}
+				normalized.push(item);
+				continue;
+			}
+			if (typeof item === 'object') {
+				const record = item as Record<string, unknown>;
+				const idValue = record.id;
+				if (typeof idValue !== 'string' || idValue.length === 0) {
+					throw this.createApiRuntimeError(interpreter, `set_input_map: ${kind} binding for action '${action}' must provide a non-empty string id.`);
+				}
+				const binding: { id: string; scale?: number; invert?: boolean } = { id: idValue };
+				if ('scale' in record && record.scale !== undefined && record.scale !== null) {
+					const scale = Number(record.scale);
+					if (!Number.isFinite(scale)) {
+						throw this.createApiRuntimeError(interpreter, `set_input_map: ${kind} binding for action '${action}' has an invalid scale value.`);
+					}
+					binding.scale = scale;
+				}
+				if ('invert' in record && record.invert !== undefined && record.invert !== null) {
+					binding.invert = Boolean(record.invert);
+				}
+				normalized.push(binding as KeyboardBinding | GamepadBinding | PointerBinding);
+				continue;
+			}
+			throw this.createApiRuntimeError(interpreter, `set_input_map: ${kind} binding for action '${action}' must be a string or a table with an 'id' field.`);
+		}
+		return normalized;
+	}
+
+	private toArrayLike(value: unknown): unknown[] {
+		if (Array.isArray(value)) {
+			return value;
+		}
+		if (value && typeof value === 'object') {
+			const entries = Object.entries(value as Record<string, unknown>);
+			if (entries.every(([key]) => /^\d+$/.test(key))) {
+				return entries
+					.sort((a, b) => Number(a[0]) - Number(b[0]))
+					.map(([, element]) => element);
+			}
+		}
+		return value === undefined || value === null ? [] : [value];
+	}
+
 	private handleLuaError(error: unknown): void {
 		if (typeof error === 'object' && error !== null && this.handledLuaErrors.has(error as object)) {
 			return;
@@ -2361,6 +2451,31 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		registerButtonFunction('btn', '[p]');
 		registerButtonFunction('btnp', '[gp]');
 		registerButtonFunction('btnr', '[jr]');
+
+		const setInputMapNative = createLuaNativeFunction('set_input_map', interpreter, (luaInterpreter, args) => {
+			if (args.length === 0 || !isLuaTable(args[0])) {
+				throw this.createApiRuntimeError(luaInterpreter, 'set_input_map(mapping [, player]) requires a table as the first argument.');
+			}
+			const mappingTable = args[0] as LuaTable;
+			const targetPlayer = args.length >= 2
+				? resolvePlayerIndex(luaInterpreter, args[1], 'set_input_map')
+				: this.playerIndex;
+			const moduleId = this.moduleIdFor('other', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
+			const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter: luaInterpreter, path: [] });
+			const mappingValue = this.luaValueToJs(mappingTable, marshalCtx);
+			if (!mappingValue || typeof mappingValue !== 'object') {
+				throw this.createApiRuntimeError(luaInterpreter, 'set_input_map(mapping [, player]) requires mapping to be a table.');
+			}
+			this.applyInputMappingFromLua(mappingValue as Record<string, unknown>, luaInterpreter, targetPlayer);
+			return [];
+		});
+		this.registerLuaGlobal(env, 'set_input_map', setInputMapNative);
+		this.registerLuaBuiltin({
+			name: 'set_input_map',
+			params: ['mapping', 'player?'],
+			signature: 'set_input_map(mapping [, player])',
+			description: 'Replaces the input bindings for the console player. The optional player argument is zero-based.',
+		});
 
 		const members = this.collectApiMembers();
 		for (const { name, kind, descriptor } of members) {
