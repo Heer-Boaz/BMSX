@@ -436,9 +436,6 @@ export type CustomKeybindingHandler = (
 	context: ConsoleEditorShortcutContext
 ) => boolean;
 
-export type ConsoleCartEditorCustomization = {
-	handleCustomKeybinding?: CustomKeybindingHandler;
-};
 export type DiagnosticsCacheEntry = {
 	contextId: string;
 	chunkName: string | null;

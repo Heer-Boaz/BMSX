@@ -103,7 +103,6 @@ import type {
 	TopBarButtonId,
 	VisualLineSegment,
 	LuaCompletionItem,
-	ConsoleCartEditorCustomization,
 	ConsoleEditorShortcutContext,
 	CustomKeybindingHandler,
 	DiagnosticsCacheEntry,
@@ -145,9 +144,11 @@ import {
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
 } from './input_helpers';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast.ts';
-import { CaretNavigationState, resolveIndentAwareHome, resolveSegmentEnd } from './caret_navigation.ts';
+import { resolveIndentAwareHome, resolveSegmentEnd } from './caret_navigation.ts';
 import type { BmsxConsoleRuntime } from '../../console.ts';
 import { EDITOR_TOGGLE_KEY, ESCAPE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, GLOBAL_SEARCH_RESULT_LIMIT } from './constants';
+import { formatLuaDocument } from './lua_formatter.ts';
+import { caretNavigation, drawCursor, drawInlineCaret, updateBlink } from './caret.ts';
 
 export let playerIndex: number;
 export let lines: string[] = [''];
@@ -163,7 +164,6 @@ export let undoStack: EditorSnapshot[] = [];
 export let redoStack: EditorSnapshot[] = [];
 export let lastHistoryKey: string | null = null;
 export let lastHistoryTimestamp = 0;
-export const caretNavigation = new CaretNavigationState();
 export let metadata: BmsxConsoleMetadata;
 export let fontVariant: ConsoleFontVariant;
 export let loadSourceFn: () => string;
@@ -3026,7 +3026,6 @@ export function shutdown(): void {
 	resetActionPromptState();
 	hideResourcePanel();
 	activateCodeTab();
-	applyCustomization();
 }
 
 export function getKeyboard(): KeyboardInput {
@@ -3283,14 +3282,6 @@ export function deactivate(): void {
 	clearBackgroundTasks();
 	diagnosticsTaskPending = false;
 	lastReportedSemanticError = null;
-}
-
-export function updateBlink(deltaSeconds: number): void {
-	blinkTimer += deltaSeconds;
-	if (blinkTimer >= constants.CURSOR_BLINK_INTERVAL) {
-		blinkTimer -= constants.CURSOR_BLINK_INTERVAL;
-		cursorVisible = !cursorVisible;
-	}
 }
 
 export function splitLines(source: string): string[] {
@@ -3595,10 +3586,6 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 
 let customKeybindingHandler: CustomKeybindingHandler | null = null;
 
-function applyCustomization(customization?: ConsoleCartEditorCustomization): void {
-	customKeybindingHandler = customization?.handleCustomKeybinding ?? null;
-}
-
 export function handleCustomKeybinding(
 	keyboard: KeyboardInput,
 	deltaSeconds: number,
@@ -3680,10 +3667,10 @@ export function cancelCreateResourcePrompt(): void {
 }
 
 export async function confirmCreateResourcePrompt(): Promise<void> {
-	if(createResourceWorking) {
+	if (createResourceWorking) {
 		return;
 	}
-		let normalizedPath: string;
+	let normalizedPath: string;
 	let assetId: string;
 	let directory: string;
 	try {
@@ -3693,27 +3680,27 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 		directory = result.directory;
 		applyCreateResourceFieldText(normalizedPath, true);
 		createResourceError = null;
-	} catch(error) {
+	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		createResourceError = message;
 		showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 		resetBlink();
 		return;
 	}
-		createResourceWorking = true;
+	createResourceWorking = true;
 	resetBlink();
 	const contents = buildDefaultResourceContents(normalizedPath, assetId);
 	try {
 		const descriptor = await createLuaResourceFn({ path: normalizedPath, assetId, contents });
 		lastCreateResourceDirectory = directory;
 		pendingResourceSelectionAssetId = descriptor.assetId;
-		if(resourcePanelVisible) {
+		if (resourcePanelVisible) {
 			refreshResourcePanelContents();
 		}
-			openLuaCodeTab(descriptor);
+		openLuaCodeTab(descriptor);
 		showMessage(`Created ${descriptor.path} (asset ${descriptor.assetId})`, constants.COLOR_STATUS_SUCCESS, 2.5);
 		closeCreateResourcePrompt(false);
-	} catch(error) {
+	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		const simplified = simplifyRuntimeErrorMessage(message);
 		createResourceError = simplified;
@@ -7226,33 +7213,33 @@ export function openActionPrompt(action: PendingActionPrompt['action']): void {
 }
 
 export async function handleActionPromptSelection(choice: 'save-continue' | 'continue' | 'cancel'): Promise<void> {
-	if(!pendingActionPrompt) {
+	if (!pendingActionPrompt) {
 		return;
 	}
-		if(choice === 'cancel') {
-	resetActionPromptState();
-	return;
-}
-if (choice === 'save-continue') {
-	const saved = await attemptPromptSave(pendingActionPrompt.action);
-	if (!saved) {
+	if (choice === 'cancel') {
+		resetActionPromptState();
 		return;
 	}
-}
-const success = executePendingAction();
-if (success) {
-	resetActionPromptState();
-}
+	if (choice === 'save-continue') {
+		const saved = await attemptPromptSave(pendingActionPrompt.action);
+		if (!saved) {
+			return;
+		}
 	}
+	const success = executePendingAction();
+	if (success) {
+		resetActionPromptState();
+	}
+}
 
 export async function attemptPromptSave(action: PendingActionPrompt['action']): Promise<boolean> {
-	if(action === 'close') {
+	if (action === 'close') {
+		await save();
+		return dirty === false;
+	}
 	await save();
 	return dirty === false;
 }
-await save();
-return dirty === false;
-	}
 
 export function executePendingAction(): boolean {
 	const prompt = pendingActionPrompt;
@@ -7855,10 +7842,10 @@ export function updateDesiredColumn(): void {
 
 export async function save(): Promise<void> {
 	const context = getActiveCodeTabContext();
-	if(!context) {
+	if (!context) {
 		return;
 	}
-		const source = lines.join('\n');
+	const source = lines.join('\n');
 	try {
 		await context.save(source);
 		dirty = false;
@@ -7866,14 +7853,14 @@ export async function save(): Promise<void> {
 		context.lastSavedSource = source;
 		context.saveGeneration = saveGeneration;
 		const isEntryContext = entryTabId !== null && context.id === entryTabId;
-		if(isEntryContext) {
+		if (isEntryContext) {
 			lastSavedSource = source;
 		}
-			context.snapshot = captureSnapshot();
+		context.snapshot = captureSnapshot();
 		updateActiveContextDirtyFlag();
 		const message = isEntryContext ? 'Lua cart saved (restart pending)' : `${context.title} saved (restart pending)`;
 		showMessage(message, constants.COLOR_STATUS_SUCCESS, 2.5);
-	} catch(error) {
+	} catch (error) {
 		if (tryShowLuaErrorOverlay(error)) {
 			return;
 		}
@@ -7898,56 +7885,56 @@ export function updateRuntimeErrorOverlay(deltaSeconds: number): void {
 
 export async function copySelectionToClipboard(): Promise<void> {
 	const text = getSelectionText();
-	if(text === null) {
-	showMessage('Nothing selected to copy', constants.COLOR_STATUS_WARNING, 1.5);
-	return;
-}
-await writeClipboard(text, 'Copied selection to clipboard');
+	if (text === null) {
+		showMessage('Nothing selected to copy', constants.COLOR_STATUS_WARNING, 1.5);
+		return;
 	}
+	await writeClipboard(text, 'Copied selection to clipboard');
+}
 
 export async function cutSelectionToClipboard(): Promise<void> {
 	const text = getSelectionText();
-	if(text === null) {
-	showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
-	return;
-}
-prepareUndo('cut', false);
-await writeClipboard(text, 'Cut selection to clipboard');
-replaceSelectionWith('');
+	if (text === null) {
+		showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
+		return;
 	}
+	prepareUndo('cut', false);
+	await writeClipboard(text, 'Cut selection to clipboard');
+	replaceSelectionWith('');
+}
 
 export async function cutLineToClipboard(): Promise<void> {
-	if(lines.length === 0) {
-	showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
-	return;
+	if (lines.length === 0) {
+		showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
+		return;
+	}
+	const currentLineValue = currentLine();
+	const isLastLine = cursorRow >= lines.length - 1;
+	const text = isLastLine ? currentLineValue : currentLineValue + '\n';
+	prepareUndo('cut-line', false);
+	await writeClipboard(text, 'Cut line to clipboard');
+	if (lines.length === 1) {
+		lines[0] = '';
+		cursorColumn = 0;
+	} else {
+		const removedRow = cursorRow;
+		lines.splice(cursorRow, 1);
+		if (cursorRow >= lines.length) {
+			cursorRow = lines.length - 1;
+		}
+		const newLength = lines[cursorRow].length;
+		if (cursorColumn > newLength) {
+			cursorColumn = newLength;
+		}
+		invalidateHighlightsFromRow(Math.min(removedRow, lines.length - 1));
+	}
+	invalidateLine(cursorRow);
+	selectionAnchor = null;
+	markTextMutated();
+	resetBlink();
+	updateDesiredColumn();
+	revealCursor();
 }
-const currentLineValue = currentLine();
-const isLastLine = cursorRow >= lines.length - 1;
-const text = isLastLine ? currentLineValue : currentLineValue + '\n';
-prepareUndo('cut-line', false);
-await writeClipboard(text, 'Cut line to clipboard');
-if (lines.length === 1) {
-	lines[0] = '';
-	cursorColumn = 0;
-} else {
-	const removedRow = cursorRow;
-	lines.splice(cursorRow, 1);
-	if (cursorRow >= lines.length) {
-		cursorRow = lines.length - 1;
-	}
-	const newLength = lines[cursorRow].length;
-	if (cursorColumn > newLength) {
-		cursorColumn = newLength;
-	}
-	invalidateHighlightsFromRow(Math.min(removedRow, lines.length - 1));
-}
-invalidateLine(cursorRow);
-selectionAnchor = null;
-markTextMutated();
-resetBlink();
-updateDesiredColumn();
-revealCursor();
-	}
 
 export function pasteFromClipboard(): void {
 	const text = customClipboard;
@@ -7964,19 +7951,19 @@ export function pasteFromClipboard(): void {
 export async function writeClipboard(text: string, successMessage: string): Promise<void> {
 	customClipboard = text;
 	const clipboard = $.platform.clipboard;
-	if(!clipboard.isSupported()) {
-	const message = successMessage + ' (Editor clipboard only)';
-	showMessage(message, constants.COLOR_STATUS_SUCCESS, 1.5);
-	return;
-}
-try {
-	await clipboard.writeText(text);
-	showMessage(successMessage, constants.COLOR_STATUS_SUCCESS, 1.5);
-}
-catch (error) {
-	showMessage('System clipboard write failed. Editor clipboard updated.', constants.COLOR_STATUS_WARNING, 3.5);
-}
+	if (!clipboard.isSupported()) {
+		const message = successMessage + ' (Editor clipboard only)';
+		showMessage(message, constants.COLOR_STATUS_SUCCESS, 1.5);
+		return;
 	}
+	try {
+		await clipboard.writeText(text);
+		showMessage(successMessage, constants.COLOR_STATUS_SUCCESS, 1.5);
+	}
+	catch (error) {
+		showMessage('System clipboard write failed. Editor clipboard updated.', constants.COLOR_STATUS_WARNING, 3.5);
+	}
+}
 
 export function captureSnapshot(): EditorSnapshot {
 	const linesCopy = lines.slice();
@@ -10235,36 +10222,6 @@ export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number
 	};
 }
 
-export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): void {
-	const cursorX = info.x;
-	const cursorY = info.y;
-	const caretLeft = Math.floor(Math.max(textX, cursorX - 1));
-	const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + info.width));
-	const caretTop = Math.floor(cursorY);
-	const caretBottom = caretTop + info.height;
-	const problemsPanelHasFocus = problemsPanel.isVisible() && problemsPanel.isFocused();
-	if (searchActive || lineJumpActive || resourcePanelFocused || createResourceActive || problemsPanelHasFocus) {
-		const innerLeft = caretLeft + 1;
-		const innerRight = caretRight - 1;
-		const innerTop = caretTop + 1;
-		const innerBottom = caretBottom - 1;
-		if (innerRight > innerLeft && innerBottom > innerTop) {
-			api.rectfill(innerLeft, innerTop, innerRight, innerBottom, constants.COLOR_CODE_BACKGROUND);
-		}
-		drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
-		drawEditorColoredText(api, font, info.baseChar, [info.baseColor], cursorX, cursorY, info.baseColor);
-	} else {
-		api.rectfill_color(caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
-		const caretPaletteIndex = resolvePaletteIndex(constants.CARET_COLOR);
-		const caretInverseColor = caretPaletteIndex !== null
-			? invertColorIndex(caretPaletteIndex)
-			: invertColorIndex(info.baseColor);
-		drawEditorColoredText(api, font, info.baseChar, [caretInverseColor], cursorX, cursorY, caretInverseColor);
-	}
-}
-
-// Removed local completion popup and parameter hint drawers; delegated to CompletionController
-
 export function sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
 	return layout.sliceHighlightedLine(highlight, columnStart, columnCount);
 }
@@ -10486,34 +10443,6 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	}
 }
 
-
-export function drawInlineCaret(
-	api: BmsxConsoleApi,
-	field: InlineTextField,
-	left: number,
-	top: number,
-	right: number,
-	bottom: number,
-	cursorX: number,
-	active: boolean,
-	caretColor: { r: number; g: number; b: number; a: number } = constants.CARET_COLOR,
-	baseTextColor: number = constants.COLOR_STATUS_TEXT,
-): void {
-	if (!cursorVisible) {
-		return;
-	}
-	if (active) {
-		api.rectfill_color(left, top, right, bottom, caretColor);
-		const caretIndex = resolvePaletteIndex(caretColor);
-		const inverseColor = caretIndex !== null
-			? invertColorIndex(caretIndex)
-			: invertColorIndex(baseTextColor);
-		const glyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
-		drawEditorText(api, font, glyph.length > 0 ? glyph : ' ', cursorX, top, inverseColor);
-		return;
-	}
-	drawRectOutlineColor(api, left, top, right, bottom, caretColor);
-}
 
 export function drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void {
 	if (right <= left || bottom <= top) {
@@ -10987,11 +10916,80 @@ const editorFacade: ConsoleCartEditor = {
 	getSourceForChunk,
 };
 
-export function createConsoleCartEditor(
-	options: ConsoleEditorOptions,
-	customization?: ConsoleCartEditorCustomization,
-): ConsoleCartEditor {
-	applyCustomization(customization);
+export function handleCodeFormattingShortcut(
+	keyboard: KeyboardInput,
+	_deltaSeconds: number,
+	context: ConsoleEditorShortcutContext): boolean {
+	if (!context.codeTabActive || context.inlineFieldFocused || context.resourcePanelFocused) {
+		return false;
+	}
+	if (!context.altDown || context.shiftDown || (!context.ctrlDown && !context.metaDown)) {
+		return false;
+	}
+	if (!isKeyJustPressedGlobal(playerIndex, 'KeyF')) {
+		return false;
+	}
+	consumeKeyboardKey(keyboard, 'KeyF');
+	applyDocumentFormatting();
+	return true;
+}
+function applyDocumentFormatting(): void {
+	const originalLines = [...lines];
+	const originalSource = originalLines.join('\\n');
+	try {
+		const formatted = formatLuaDocument(originalSource);
+		if (formatted === originalSource) {
+			showMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
+			return;
+		}
+		const cursorOffset = computeDocumentOffset(originalLines, cursorRow, cursorColumn);
+		prepareUndo('format-document', false);
+		if (lines.length === 0) {
+			setSelectionAnchorPosition({ row: 0, column: 0 });
+			setCursorPosition(0, 0);
+		} else {
+			const lastRow = lines.length - 1;
+			setSelectionAnchorPosition({ row: 0, column: 0 });
+			setCursorPosition(lastRow, lines[lastRow].length);
+		}
+		replaceSelectionWith(formatted);
+		const updatedLines = [...lines];
+		const target = resolveOffsetPosition(updatedLines, cursorOffset);
+		setCursorPosition(target.row, target.column);
+		clearSelection();
+		markDiagnosticsDirty();
+		showMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		showMessage(`Formatting failed: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
+	}
+}
+function computeDocumentOffset(lines: readonly string[], row: number, column: number): number {
+	let offset = 0;
+	for (let index = 0; index < row; index += 1) {
+		offset += lines[index].length + 1;
+	}
+	return offset + column;
+}
+function resolveOffsetPosition(lines: readonly string[], offset: number): { row: number; column: number; } {
+	let remaining = offset;
+	for (let row = 0; row < lines.length; row += 1) {
+		const lineLength = lines[row].length;
+		if (remaining <= lineLength) {
+			return { row, column: remaining };
+		}
+		remaining -= lineLength + 1;
+	}
+	if (lines.length === 0) {
+		return { row: 0, column: 0 };
+	}
+	const lastRow = lines.length - 1;
+	return { row: lastRow, column: lines[lastRow].length };
+}
+
+export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleCartEditor {
+	customKeybindingHandler = (keyboard, deltaSeconds, context) =>
+		handleCodeFormattingShortcut(keyboard, deltaSeconds, context);
 	initializeConsoleCartEditor(options);
 	return editorFacade;
 }
