@@ -139,22 +139,7 @@ const messageController = createMessageController({
 	getDeferredDuration: () => ide_state.deferredMessageDuration,
 	setDeferredDuration: (value) => { ide_state.deferredMessageDuration = value; },
 });
-ide_state.message = messageController.message;
-ide_state.showMessage = messageController.showMessage;
-ide_state.updateMessage = messageController.updateMessage;
-ide_state.showWarningBanner = messageController.showWarningBanner;
 
-export function clearCursorVisualOverride(): void {
-	caretNavigation.clear();
-}
-
-export function setCursorVisualOverride(row: number, column: number, visualIndex: number, segmentStartColumn: number): void {
-	caretNavigation.capture(row, column, visualIndex, segmentStartColumn);
-}
-
-export function getCursorVisualOverride(row: number, column: number): { visualIndex: number; segmentStartColumn: number } | null {
-	return caretNavigation.peek(row, column);
-}
 
 export function invalidateLineRange(startRow: number, endRow: number): void {
 	if (ide_state.lines.length === 0) {
@@ -301,7 +286,7 @@ export function moveCursorHorizontal(delta: number): void {
 }
 
 export function moveWordLeft(): void {
-	clearCursorVisualOverride();
+	caretNavigation.clear();
 	const destination = findWordLeft(ide_state.cursorRow, ide_state.cursorColumn);
 	ide_state.cursorRow = destination.row;
 	ide_state.cursorColumn = destination.column;
@@ -312,7 +297,7 @@ export function moveWordLeft(): void {
 }
 
 export function moveWordRight(): void {
-	clearCursorVisualOverride();
+	caretNavigation.clear();
 	const destination = findWordRight(ide_state.cursorRow, ide_state.cursorColumn);
 	ide_state.cursorRow = destination.row;
 	ide_state.cursorColumn = destination.column;
@@ -489,8 +474,8 @@ export function moveCursorDown(select: boolean): void {
 }
 
 export function moveCursorHome(select: boolean): void {
-	const previousOverride = getCursorVisualOverride(ide_state.cursorRow, ide_state.cursorColumn);
-	clearCursorVisualOverride();
+	const previousOverride = caretNavigation.peek(ide_state.cursorRow, ide_state.cursorColumn);
+	caretNavigation.clear();
 	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	if (select) {
 		ensureSelectionAnchor(previous);
@@ -509,7 +494,7 @@ export function moveCursorHome(select: boolean): void {
 			ide_state.cursorRow = segment.row;
 			const line = ide_state.lines[segment.row] ?? '';
 			ide_state.cursorColumn = resolveIndentAwareHome(line, segment, ide_state.cursorColumn);
-			setCursorVisualOverride(segment.row, ide_state.cursorColumn, visualIndex, segment.startColumn);
+			caretNavigation.capture(segment.row, ide_state.cursorColumn, visualIndex, segment.startColumn);
 		} else {
 			ide_state.cursorColumn = 0;
 		}
@@ -521,8 +506,8 @@ export function moveCursorHome(select: boolean): void {
 }
 
 export function moveCursorEnd(select: boolean): void {
-	const previousOverride = getCursorVisualOverride(ide_state.cursorRow, ide_state.cursorColumn);
-	clearCursorVisualOverride();
+	const previousOverride = caretNavigation.peek(ide_state.cursorRow, ide_state.cursorColumn);
+	caretNavigation.clear();
 	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	if (select) {
 		ensureSelectionAnchor(previous);
@@ -547,7 +532,7 @@ export function moveCursorEnd(select: boolean): void {
 			ide_state.cursorRow = segment.row;
 			const line = ide_state.lines[segment.row] ?? '';
 			ide_state.cursorColumn = resolveSegmentEnd(line, segment);
-			setCursorVisualOverride(segment.row, ide_state.cursorColumn, visualIndex, segment.startColumn);
+			caretNavigation.capture(segment.row, ide_state.cursorColumn, visualIndex, segment.startColumn);
 		} else {
 			ide_state.cursorColumn = currentLine().length;
 		}
@@ -1766,7 +1751,7 @@ export function showRuntimeError(line: number | null, column: number | null, mes
 	setActiveRuntimeErrorOverlay(overlay);
 	setExecutionStopHighlight(processedLine !== null ? targetRow : null);
 	const statusLine = overlay.lines.length > 0 ? overlay.lines[0] : 'Runtime error';
-	ide_state.showMessage(statusLine, constants.COLOR_STATUS_ERROR, 8.0);
+	messageController.showMessage(statusLine, constants.COLOR_STATUS_ERROR, 8.0);
 }
 
 export function focusChunkSource(chunkName: string | null, hint?: { assetId: string | null; path?: string | null }): void {
@@ -1933,7 +1918,7 @@ export function findResourceDescriptorForChunk(chunkPath: string): ConsoleResour
 export function openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
 	selectResourceInPanel(descriptor);
 	if (descriptor.type === 'atlas') {
-		ide_state.showMessage('Atlas resources cannot be previewed in the console editor.', constants.COLOR_STATUS_WARNING, 3.2);
+		messageController.showMessage('Atlas resources cannot be previewed in the console editor.', constants.COLOR_STATUS_WARNING, 3.2);
 		focusEditorFromResourcePanel();
 		return;
 	}
@@ -2049,7 +2034,7 @@ export function topMargin(): number {
 }
 
 export function statusAreaHeight(): number {
-	if (!ide_state.message.visible) {
+	if (!messageController.message.visible) {
 		return ide_state.baseBottomMargin;
 	}
 	const segments = getStatusMessageLines();
@@ -2078,11 +2063,11 @@ export function getVisibleProblemsPanelHeight(): number {
 }
 
 export function getStatusMessageLines(): string[] {
-	if (!ide_state.message.visible) {
+	if (!messageController.message.visible) {
 		return [];
 	}
-	const sanitized = ide_state.message.text.length > 0
-		? ide_state.message.text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+	const sanitized = messageController.message.text.length > 0
+		? messageController.message.text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 		: '';
 	const rawLines = sanitized.length > 0 ? sanitized.split('\n') : [''];
 	const maxWidth = Math.max(ide_state.viewportWidth - 8, ide_state.charAdvance);
@@ -2113,7 +2098,7 @@ export function tryShowLuaErrorOverlay(error: unknown): boolean {
 	const hasColumn = rawColumn !== null && rawColumn > 0;
 	if (!hasLine && !hasColumn) {
 		if (messageText) {
-			ide_state.showMessage(messageText, constants.COLOR_STATUS_ERROR, 4.0);
+			messageController.showMessage(messageText, constants.COLOR_STATUS_ERROR, 4.0);
 			return true;
 		}
 		return false;
@@ -2134,7 +2119,7 @@ export function safeInspectLuaExpression(request: ConsoleLuaHoverRequest): Conso
 		const handled = tryShowLuaErrorOverlay(error);
 		if (!handled) {
 			const message = error instanceof Error ? error.message : String(error);
-			ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 3.2);
+			messageController.showMessage(message, constants.COLOR_STATUS_ERROR, 3.2);
 		}
 		return null;
 	}
@@ -2144,7 +2129,7 @@ export function update(deltaSeconds: number): void {
 	refreshViewportDimensions();
 	const keyboard = getKeyboard();
 	flushWindowFocusState(keyboard);
-	ide_state.updateMessage(deltaSeconds);
+	messageController.updateMessage(deltaSeconds);
 	updateRuntimeErrorOverlay(deltaSeconds);
 	if (handleToggleRequest(keyboard)) {
 		return;
@@ -2163,7 +2148,7 @@ export function update(deltaSeconds: number): void {
 	ide_state.completion.processPending(deltaSeconds);
 	const semanticError = ide_state.layout.getLastSemanticError();
 	if (semanticError && semanticError !== ide_state.lastReportedSemanticError) {
-		ide_state.showMessage(semanticError, constants.COLOR_STATUS_ERROR, 4.0);
+		messageController.showMessage(semanticError, constants.COLOR_STATUS_ERROR, 4.0);
 		ide_state.lastReportedSemanticError = semanticError;
 	} else if (!semanticError && ide_state.lastReportedSemanticError !== null) {
 		ide_state.lastReportedSemanticError = null;
@@ -2650,10 +2635,10 @@ export function getActiveResourceViewer(): ResourceViewerState | null {
 export function serializeState(): ConsoleEditorSerializedState { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
 	const snapshot = captureSnapshot();
 	const messageSnapshot: MessageState = {
-		text: ide_state.message.text,
-		color: ide_state.message.color,
-		timer: ide_state.message.timer,
-		visible: ide_state.message.visible,
+		text: messageController.message.text,
+		color: messageController.message.color,
+		timer: messageController.message.timer,
+		visible: messageController.message.visible,
 	};
 	return {
 		active: ide_state.active,
@@ -2717,10 +2702,10 @@ export function restoreState(state: ConsoleEditorSerializedState): void { // NOT
 	applyLineJumpFieldText(state.lineJumpValue, true);
 	ide_state.lineJumpActive = state.lineJumpActive;
 	ide_state.lineJumpVisible = state.lineJumpVisible;
-	ide_state.message.text = state.message.text;
-	ide_state.message.color = state.message.color;
-	ide_state.message.timer = state.message.timer;
-	ide_state.message.visible = state.message.visible;
+	messageController.message.text = state.message.text;
+	messageController.message.color = state.message.color;
+	messageController.message.timer = state.message.timer;
+	messageController.message.visible = state.message.visible;
 	setActiveRuntimeErrorOverlay(null);
 	ide_state.pointerSelecting = false;
 	ide_state.pointerPrimaryWasPressed = false;
@@ -2882,7 +2867,7 @@ export function handleEscapeKey(): boolean {
 	}
 	if (ide_state.runtimeErrorOverlay) {
 		clearRuntimeErrorOverlay();
-		ide_state.message.visible = false;
+		messageController.message.visible = false;
 		return true;
 	}
 	if (ide_state.createResourceVisible) {
@@ -2962,8 +2947,8 @@ export function activate(): void {
 		startSearchJob();
 	}
 	ensureCursorVisible();
-	if (ide_state.message.visible && !Number.isFinite(ide_state.message.timer) && ide_state.deferredMessageDuration !== null) {
-		ide_state.message.timer = ide_state.deferredMessageDuration;
+	if (messageController.message.visible && !Number.isFinite(messageController.message.timer) && ide_state.deferredMessageDuration !== null) {
+		messageController.message.timer = ide_state.deferredMessageDuration;
 	}
 	ide_state.deferredMessageDuration = null;
 	if (ide_state.dimCrtInEditor) {
@@ -3450,7 +3435,7 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		ide_state.createResourceError = message;
-		ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
+		messageController.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 		resetBlink();
 		return;
 	}
@@ -3465,13 +3450,13 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 			refreshResourcePanelContents();
 		}
 		openLuaCodeTab(descriptor);
-		ide_state.showMessage(`Created ${descriptor.path} (asset ${descriptor.assetId})`, constants.COLOR_STATUS_SUCCESS, 2.5);
+		messageController.showMessage(`Created ${descriptor.path} (asset ${descriptor.assetId})`, constants.COLOR_STATUS_SUCCESS, 2.5);
 		closeCreateResourcePrompt(false);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		const simplified = simplifyRuntimeErrorMessage(message);
 		ide_state.createResourceError = simplified;
-		ide_state.showMessage(`Failed to create resource: ${simplified}`, constants.COLOR_STATUS_WARNING, 4.0);
+		messageController.showMessage(`Failed to create resource: ${simplified}`, constants.COLOR_STATUS_WARNING, 4.0);
 	} finally {
 		ide_state.createResourceWorking = false;
 		resetBlink();
@@ -3930,14 +3915,14 @@ export function openReferenceSearchPopup(): void {
 		chunkName: referenceContext.chunkName,
 	});
 	if (result.kind === 'error') {
-		ide_state.showMessage(result.message, constants.COLOR_STATUS_WARNING, result.duration);
+		messageController.showMessage(result.message, constants.COLOR_STATUS_WARNING, result.duration);
 		return;
 	}
 	const { info, initialIndex } = result;
 	ide_state.referenceState.apply(info, initialIndex);
 	ide_state.referenceCatalog = buildReferenceCatalogForExpression(info, context);
 	if (ide_state.referenceCatalog.length === 0) {
-		ide_state.showMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
+		messageController.showMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
 		return;
 	}
 	ide_state.symbolSearchMode = 'references';
@@ -4160,7 +4145,7 @@ export function refreshSymbolCatalog(force: boolean): void {
 		ide_state.symbolSearchSelectionIndex = -1;
 		ide_state.symbolSearchDisplayOffset = 0;
 		ide_state.symbolSearchHoverIndex = -1;
-		ide_state.showMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+		messageController.showMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
 	ide_state.symbolCatalogContext = { scope, assetId, chunkName };
@@ -4391,7 +4376,7 @@ export function moveSymbolSearchSelection(delta: number): void {
 
 export function applySymbolSearchSelection(index: number): void {
 	if (index < 0 || index >= ide_state.symbolSearchMatches.length) {
-		ide_state.showMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
+		messageController.showMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	const match = ide_state.symbolSearchMatches[index];
@@ -4405,9 +4390,9 @@ export function applySymbolSearchSelection(index: number): void {
 		navigateToLuaDefinition(symbol.location);
 		const total = ide_state.referenceCatalog.length;
 		if (entryIndex >= 0 && total > 0) {
-			ide_state.showMessage(`Reference ${entryIndex + 1}/${total} for ${expressionLabel}`, constants.COLOR_STATUS_SUCCESS, 1.6);
+			messageController.showMessage(`Reference ${entryIndex + 1}/${total} for ${expressionLabel}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 		} else {
-			ide_state.showMessage('Jumped to reference', constants.COLOR_STATUS_SUCCESS, 1.6);
+			messageController.showMessage('Jumped to reference', constants.COLOR_STATUS_SUCCESS, 1.6);
 		}
 		return;
 	}
@@ -4429,7 +4414,7 @@ export function handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: n
 		if (ide_state.symbolSearchSelectionIndex >= 0) {
 			applySymbolSearchSelection(ide_state.symbolSearchSelectionIndex);
 		} else {
-			ide_state.showMessage('No symbol selected', constants.COLOR_STATUS_WARNING, 1.5);
+			messageController.showMessage('No symbol selected', constants.COLOR_STATUS_WARNING, 1.5);
 		}
 		return;
 	}
@@ -4497,7 +4482,7 @@ export function refreshResourceCatalog(): void {
 		ide_state.resourceSearchSelectionIndex = -1;
 		ide_state.resourceSearchDisplayOffset = 0;
 		ide_state.resourceSearchHoverIndex = -1;
-		ide_state.showMessage(`Failed to list resources: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+		messageController.showMessage(`Failed to list resources: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
 	const augmented = descriptors.slice();
@@ -4630,7 +4615,7 @@ export function moveResourceSearchSelection(delta: number): void {
 
 export function applyResourceSearchSelection(index: number): void {
 	if (index < 0 || index >= ide_state.resourceSearchMatches.length) {
-		ide_state.showMessage('Resource not found', constants.COLOR_STATUS_WARNING, 1.5);
+		messageController.showMessage('Resource not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	const match = ide_state.resourceSearchMatches[index];
@@ -4657,7 +4642,7 @@ export function handleResourceSearchInput(keyboard: KeyboardInput, deltaSeconds:
 				closeResourceSearch(true);
 				focusEditorFromResourceSearch();
 			} else {
-				ide_state.showMessage('No resource selected', constants.COLOR_STATUS_WARNING, 1.5);
+				messageController.showMessage('No resource selected', constants.COLOR_STATUS_WARNING, 1.5);
 			}
 		}
 		return;
@@ -4787,20 +4772,20 @@ export function focusEditorFromResourcePanel(): void {
 
 export function applyLineJump(): void {
 	if (ide_state.lineJumpValue.length === 0) {
-		ide_state.showMessage('Enter a line number', constants.COLOR_STATUS_WARNING, 1.5);
+		messageController.showMessage('Enter a line number', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	const target = Number.parseInt(ide_state.lineJumpValue, 10);
 	if (!Number.isFinite(target) || target < 1 || target > ide_state.lines.length) {
 		const limit = ide_state.lines.length <= 0 ? 1 : ide_state.lines.length;
-		ide_state.showMessage(`Line must be between 1 and ${limit}`, constants.COLOR_STATUS_WARNING, 1.8);
+		messageController.showMessage(`Line must be between 1 and ${limit}`, constants.COLOR_STATUS_WARNING, 1.8);
 		return;
 	}
 	setCursorPosition(target - 1, 0);
 	clearSelection();
 	breakUndoSequence();
 	closeLineJump(true);
-	ide_state.showMessage(`Jumped to line ${target}`, constants.COLOR_STATUS_SUCCESS, 1.5);
+	messageController.showMessage(`Jumped to line ${target}`, constants.COLOR_STATUS_SUCCESS, 1.5);
 }
 
 export function onSearchQueryChanged(): void {
@@ -4869,7 +4854,7 @@ export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
 export function jumpToNextMatch(): void {
 	if (ide_state.searchScope === 'global') {
 		if (activeSearchMatchCount() === 0) {
-			ide_state.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
+			messageController.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
 		moveSearchSelection(1, { wrap: true });
@@ -4878,7 +4863,7 @@ export function jumpToNextMatch(): void {
 	}
 	ensureSearchJobCompleted();
 	if (ide_state.searchMatches.length === 0) {
-		ide_state.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
+		messageController.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	if (ide_state.searchCurrentIndex < 0) {
@@ -4895,7 +4880,7 @@ export function jumpToNextMatch(): void {
 export function jumpToPreviousMatch(): void {
 	if (ide_state.searchScope === 'global') {
 		if (activeSearchMatchCount() === 0) {
-			ide_state.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
+			messageController.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
 		moveSearchSelection(-1, { wrap: true });
@@ -4904,7 +4889,7 @@ export function jumpToPreviousMatch(): void {
 	}
 	ensureSearchJobCompleted();
 	if (ide_state.searchMatches.length === 0) {
-		ide_state.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
+		messageController.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	if (ide_state.searchCurrentIndex < 0) {
@@ -5316,7 +5301,7 @@ export function focusGlobalSearchResult(index: number, previewOnly: boolean = fa
 	const match = ide_state.globalSearchMatches[index];
 	if (!match) {
 		if (!previewOnly) {
-			ide_state.showMessage('Search result unavailable', constants.COLOR_STATUS_WARNING, 1.5);
+			messageController.showMessage('Search result unavailable', constants.COLOR_STATUS_WARNING, 1.5);
 		}
 		return;
 	}
@@ -5347,7 +5332,7 @@ export function showReferenceStatusMessage(): void {
 		return;
 	}
 	const label = ide_state.referenceState.getExpression() ?? '';
-	ide_state.showMessage(`Reference ${activeIndex + 1}/${matches.length} for ${label}`, constants.COLOR_STATUS_SUCCESS, 1.6);
+	messageController.showMessage(`Reference ${activeIndex + 1}/${matches.length} for ${label}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 }
 
 export function handlePointerInput(_deltaSeconds: number): void {
@@ -6457,7 +6442,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 	const assetId = resolveHoverAssetId(context);
 	const token = extractHoverExpression(row, column);
 	if (!token) {
-		ide_state.showMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
+		messageController.showMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
 		return false;
 	}
 	const chunkName = resolveHoverChunkName(context);
@@ -6500,7 +6485,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 			return true;
 		}
 		if (!ide_state.inspectorRequestFailed) {
-			ide_state.showMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
+			messageController.showMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
 		}
 		return false;
 	}
@@ -6524,7 +6509,7 @@ export function navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation
 		}
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		ide_state.showMessage(`Failed to open definition: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
+		messageController.showMessage(`Failed to open definition: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
 		return;
 	}
 	if (targetContextId) {
@@ -6537,7 +6522,7 @@ export function navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation
 	clearHoverTooltip();
 	clearGotoHoverHighlight();
 	completeNavigation(navigationCheckpoint);
-	ide_state.showMessage('Jumped to definition', constants.COLOR_STATUS_SUCCESS, 1.6);
+	messageController.showMessage('Jumped to definition', constants.COLOR_STATUS_SUCCESS, 1.6);
 }
 
 export function applyDefinitionSelection(range: ConsoleLuaDefinitionLocation['range']): void {
@@ -7033,7 +7018,7 @@ export function performAction(action: PendingActionPrompt['action']): boolean {
 export function performResume(): boolean {
 	const runtime = getConsoleRuntime();
 	if (!runtime) {
-		ide_state.showMessage('Console runtime unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
+		messageController.showMessage('Console runtime unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
 		return false;
 	}
 	if (!runtime.isLuaRuntimeFailed() && !hasPendingRuntimeReload()) {
@@ -7047,12 +7032,12 @@ export function performResume(): boolean {
 		snapshot = runtime.getState();
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		ide_state.showMessage(`Failed to capture runtime state: ${message}`, constants.COLOR_STATUS_ERROR, 4.0);
+		messageController.showMessage(`Failed to capture runtime state: ${message}`, constants.COLOR_STATUS_ERROR, 4.0);
 		return false;
 	}
 	const sanitizedSnapshot = prepareRuntimeSnapshotForResume(snapshot);
 	if (!sanitizedSnapshot) {
-		ide_state.showMessage('Runtime state unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
+		messageController.showMessage('Runtime state unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
 		return false;
 	}
 	const targetGeneration = ide_state.saveGeneration;
@@ -7074,7 +7059,7 @@ export function performResume(): boolean {
 export function performReboot(): boolean {
 	const runtime = getConsoleRuntime();
 	if (!runtime) {
-		ide_state.showMessage('Console runtime unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
+		messageController.showMessage('Console runtime unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
 		return false;
 	}
 	const requiresReload = hasPendingRuntimeReload();
@@ -7553,7 +7538,7 @@ export function createInlineFieldEditingHandlers(keyboard: KeyboardInput): Inlin
 			void writeClipboard(payload, message);
 		},
 		onClipboardEmpty: () => {
-			ide_state.showMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
+			messageController.showMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
 		},
 	};
 }
@@ -7589,7 +7574,7 @@ export function updateDesiredColumn(): void {
 	let segmentStartColumn = 0;
 	if (ide_state.wordWrapEnabled) {
 		ensureVisualLines();
-		const override = getCursorVisualOverride(ide_state.cursorRow, ide_state.cursorColumn);
+		const override = caretNavigation.peek(ide_state.cursorRow, ide_state.cursorColumn);
 		if (override) {
 			segmentStartColumn = override.segmentStartColumn;
 		} else {
@@ -7626,13 +7611,13 @@ export async function save(): Promise<void> {
 		context.snapshot = captureSnapshot();
 		updateActiveContextDirtyFlag();
 		const message = isEntryContext ? 'Lua cart saved (restart pending)' : `${context.title} saved (restart pending)`;
-		ide_state.showMessage(message, constants.COLOR_STATUS_SUCCESS, 2.5);
+		messageController.showMessage(message, constants.COLOR_STATUS_SUCCESS, 2.5);
 	} catch (error) {
 		if (tryShowLuaErrorOverlay(error)) {
 			return;
 		}
 		const message = error instanceof Error ? error.message : String(error);
-		ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
+		messageController.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 	}
 }
 
@@ -7653,7 +7638,7 @@ export function updateRuntimeErrorOverlay(deltaSeconds: number): void {
 export async function copySelectionToClipboard(): Promise<void> {
 	const text = getSelectionText();
 	if (text === null) {
-		ide_state.showMessage('Nothing selected to copy', constants.COLOR_STATUS_WARNING, 1.5);
+		messageController.showMessage('Nothing selected to copy', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	await writeClipboard(text, 'Copied selection to clipboard');
@@ -7662,7 +7647,7 @@ export async function copySelectionToClipboard(): Promise<void> {
 export async function cutSelectionToClipboard(): Promise<void> {
 	const text = getSelectionText();
 	if (text === null) {
-		ide_state.showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
+		messageController.showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	prepareUndo('cut', false);
@@ -7672,7 +7657,7 @@ export async function cutSelectionToClipboard(): Promise<void> {
 
 export async function cutLineToClipboard(): Promise<void> {
 	if (ide_state.lines.length === 0) {
-		ide_state.showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
+		messageController.showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	const currentLineValue = currentLine();
@@ -7706,13 +7691,13 @@ export async function cutLineToClipboard(): Promise<void> {
 export function pasteFromClipboard(): void {
 	const text = ide_state.customClipboard;
 	if (text === null || text.length === 0) {
-		ide_state.showMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
+		messageController.showMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	prepareUndo('paste', false);
 	deleteSelectionIfPresent();
 	insertClipboardText(text);
-	ide_state.showMessage('Pasted from editor clipboard', constants.COLOR_STATUS_SUCCESS, 1.5);
+	messageController.showMessage('Pasted from editor clipboard', constants.COLOR_STATUS_SUCCESS, 1.5);
 }
 
 export async function writeClipboard(text: string, successMessage: string): Promise<void> {
@@ -7720,15 +7705,15 @@ export async function writeClipboard(text: string, successMessage: string): Prom
 	const clipboard = $.platform.clipboard;
 	if (!clipboard.isSupported()) {
 		const message = successMessage + ' (Editor clipboard only)';
-		ide_state.showMessage(message, constants.COLOR_STATUS_SUCCESS, 1.5);
+		messageController.showMessage(message, constants.COLOR_STATUS_SUCCESS, 1.5);
 		return;
 	}
 	try {
 		await clipboard.writeText(text);
-		ide_state.showMessage(successMessage, constants.COLOR_STATUS_SUCCESS, 1.5);
+		messageController.showMessage(successMessage, constants.COLOR_STATUS_SUCCESS, 1.5);
 	}
 	catch (error) {
-		ide_state.showMessage('System clipboard write failed. Editor clipboard updated.', constants.COLOR_STATUS_WARNING, 3.5);
+		messageController.showMessage('System clipboard write failed. Editor clipboard updated.', constants.COLOR_STATUS_WARNING, 3.5);
 	}
 }
 
@@ -8533,7 +8518,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: RuntimeErrorStackFrame)
 	}
 	const source = frame.source ?? '';
 	if (source.length === 0) {
-		ide_state.showMessage('Runtime frame is missing a chunk reference.', constants.COLOR_STATUS_ERROR, 3.0);
+		messageController.showMessage('Runtime frame is missing a chunk reference.', constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
 	let normalizedChunk: string;
@@ -8541,7 +8526,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: RuntimeErrorStackFrame)
 		normalizedChunk = normalizeChunkName(source);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		ide_state.showMessage(`Unable to resolve runtime chunk name: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+		messageController.showMessage(`Unable to resolve runtime chunk name: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
 	const frameAssetId = typeof frame.chunkAssetId === 'string' && frame.chunkAssetId.length > 0 ? frame.chunkAssetId : null;
@@ -8561,12 +8546,12 @@ export function navigateToRuntimeErrorFrameTarget(frame: RuntimeErrorStackFrame)
 		focusChunkSource(normalizedChunk, hint);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		ide_state.showMessage(`Failed to open runtime chunk: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+		messageController.showMessage(`Failed to open runtime chunk: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
 	const activeContext = getActiveCodeTabContext();
 	if (!activeContext) {
-		ide_state.showMessage('Unable to activate editor context for runtime frame.', constants.COLOR_STATUS_ERROR, 3.0);
+		messageController.showMessage('Unable to activate editor context for runtime frame.', constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
 	const lastRowIndex = Math.max(0, ide_state.lines.length - 1);
@@ -8598,7 +8583,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: RuntimeErrorStackFrame)
 	ide_state.cursorRevealSuspended = false;
 	centerCursorVertically();
 	ensureCursorVisible();
-	ide_state.showMessage('Navigated to call site', constants.COLOR_STATUS_SUCCESS, 1.6);
+	messageController.showMessage('Navigated to call site', constants.COLOR_STATUS_SUCCESS, 1.6);
 }
 
 export function findFunctionDefinitionRowInActiveFile(functionName: string): number | null {
@@ -8704,7 +8689,7 @@ export function toggleResolutionMode(): void {
 	ide_state.cursorRevealSuspended = false;
 	applyResolutionModeToRuntime();
 	const modeLabel = ide_state.resolutionMode === 'offscreen' ? 'OFFSCREEN' : 'NATIVE';
-	ide_state.showMessage(`Editor resolution: ${modeLabel}`, constants.COLOR_STATUS_TEXT, 2.5);
+	messageController.showMessage(`Editor resolution: ${modeLabel}`, constants.COLOR_STATUS_TEXT, 2.5);
 }
 
 export function toggleWordWrap(): void {
@@ -8745,7 +8730,7 @@ export function toggleWordWrap(): void {
 	ensureCursorVisible();
 	updateDesiredColumn();
 	const message = ide_state.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled';
-	ide_state.showMessage(message, constants.COLOR_STATUS_TEXT, 2.5);
+	messageController.showMessage(message, constants.COLOR_STATUS_TEXT, 2.5);
 }
 
 export function applyResolutionModeToRuntime(): void {
@@ -10129,7 +10114,7 @@ export function visualIndexToSegment(index: number): VisualLineSegment | null {
 
 export function positionToVisualIndex(row: number, column: number): number {
 	ensureVisualLines();
-	const override = getCursorVisualOverride(row, column);
+	const override = caretNavigation.peek(row, column);
 	if (override) {
 		return override.visualIndex;
 	}
@@ -10138,7 +10123,7 @@ export function positionToVisualIndex(row: number, column: number): number {
 
 export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?: number, desiredOffsetHint?: number): void {
 	ensureVisualLines();
-	clearCursorVisualOverride();
+	caretNavigation.clear();
 	const visualLines = ide_state.layout.getVisualLines();
 	if (visualLines.length === 0) {
 		ide_state.cursorRow = 0;
@@ -10257,7 +10242,7 @@ export function drawStatusBar(api: BmsxConsoleApi): void {
 		measureText: (text: string) => measureText(text),
 		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, ide_state.font, text, x, y, color),
 		truncateTextToWidth: (text: string, maxWidth: number) => truncateTextToWidth(text, maxWidth),
-		message: ide_state.message,
+		message: messageController.message,
 		getStatusMessageLines: () => getStatusMessageLines(),
 		symbolSearchVisible: ide_state.symbolSearchVisible,
 		getActiveSymbolSearchMatch: () => getActiveSymbolSearchMatch(),
@@ -10508,7 +10493,7 @@ export function handleRuntimeTaskError(error: unknown, fallbackMessage: string):
 	const message = error instanceof Error ? error.message : String(error);
 	$.paused = true;
 	activate();
-	ide_state.showMessage(`${fallbackMessage}: ${message}`, constants.COLOR_STATUS_ERROR, 4.0);
+	messageController.showMessage(`${fallbackMessage}: ${message}`, constants.COLOR_STATUS_ERROR, 4.0);
 }
 
 export function truncateTextToWidth(text: string, maxWidth: number): string {
@@ -10660,7 +10645,7 @@ export type ConsoleCartEditor = {
 	update: typeof update;
 	draw: typeof draw;
 	shutdown: typeof shutdown;
-	showWarningBanner: typeof ide_state.showWarningBanner;
+	showWarningBanner: typeof messageController.showWarningBanner;
 	showRuntimeErrorInChunk: typeof showRuntimeErrorInChunk;
 	showRuntimeError: typeof showRuntimeError;
 	clearRuntimeErrorOverlay: typeof clearRuntimeErrorOverlay;
@@ -10675,7 +10660,7 @@ const editorFacade: ConsoleCartEditor = {
 	update,
 	draw,
 	shutdown,
-	showWarningBanner: ide_state.showWarningBanner,
+	showWarningBanner: messageController.showWarningBanner,
 	showRuntimeErrorInChunk,
 	showRuntimeError,
 	clearRuntimeErrorOverlay,
@@ -10706,7 +10691,7 @@ function applyDocumentFormatting(): void {
 	try {
 		const formatted = formatLuaDocument(originalSource);
 		if (formatted === originalSource) {
-			ide_state.showMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
+			messageController.showMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
 			return;
 		}
 		const cursorOffset = computeDocumentOffset(originalLines, ide_state.cursorRow, ide_state.cursorColumn);
@@ -10725,10 +10710,10 @@ function applyDocumentFormatting(): void {
 		setCursorPosition(target.row, target.column);
 		clearSelection();
 		markDiagnosticsDirty();
-		ide_state.showMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
+		messageController.showMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		ide_state.showMessage(`Formatting failed: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
+		messageController.showMessage(`Formatting failed: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
 	}
 }
 function computeDocumentOffset(lines: readonly string[], row: number, column: number): number {
@@ -10837,7 +10822,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		openLuaCodeTab: (d) => openLuaCodeTab(d),
 		openResourceViewerTab: (d) => openResourceViewerTab(d),
 		focusEditorFromResourcePanel: () => focusEditorFromResourcePanel(),
-		showMessage:  (text, color, duration) => ide_state.showMessage(text, color, duration),
+		showMessage:  (text, color, duration) => messageController.showMessage(text, color, duration),
 	}, { resourceVertical: ide_state.scrollbars.resourceVertical, resourceHorizontal: ide_state.scrollbars.resourceHorizontal });
 	ide_state.completion = new CompletionController({
 		getPlayerIndex: () => ide_state.playerIndex,
@@ -10924,7 +10909,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		shouldFireRepeat: (keyboard, code, deltaSeconds) => shouldFireRepeat(keyboard, code, deltaSeconds),
 		undo: () => undo(),
 		redo: () => redo(),
-		showMessage:  (text, color, duration) => ide_state.showMessage(text, color, duration),
+		showMessage:  (text, color, duration) => messageController.showMessage(text, color, duration),
 		commitRename: (payload) => commitRename(payload),
 		onRenameSessionClosed: () => focusEditorFromRename(),
 	}, ide_state.referenceState, ide_state.playerIndex);
