@@ -167,6 +167,37 @@ export {
 	revealCursor,
 } from './cursor_operations';
 
+// Import selection operations for internal use
+import {
+	setSelectionAnchorPosition as setSelectionAnchorPositionImpl,
+	clearSelection as clearSelectionImpl,
+	hasSelection as hasSelectionImpl,
+	getSelectionRange as getSelectionRangeImpl,
+	getSelectionText as getSelectionTextImpl,
+	selectWordAtPosition as selectWordAtPositionImpl,
+	deleteSelectionIfPresent as deleteSelectionIfPresentImpl,
+	replaceSelectionWith as replaceSelectionWithImpl,
+	stepLeft as stepLeftImpl,
+	stepRight as stepRightImpl,
+} from './selection';
+
+// Re-export selection operations from their dedicated module
+export {
+	setSelectionAnchorPosition,
+	clearSelection,
+	hasSelection,
+	comparePositions,
+	getSelectionRange,
+	getSelectionText,
+	ensureSelectionAnchor,
+	collapseSelectionTo,
+	selectWordAtPosition,
+	deleteSelectionIfPresent,
+	replaceSelectionWith,
+	stepLeft,
+	stepRight,
+} from './selection';
+
 export function invalidateLineRange(startRow: number, endRow: number): void {
 	if (ide_state.lines.length === 0) {
 		return;
@@ -722,131 +753,12 @@ export function deleteSelection(): void {
 	replaceSelectionWith('');
 }
 
-export function deleteSelectionIfPresent(): boolean {
-	if (!hasSelection()) {
-		return false;
-	}
-	replaceSelectionWith('');
-	return true;
-}
-
-export function replaceSelectionWith(text: string): void {
-	const range = getSelectionRange();
-	if (!range) {
-		return;
-	}
-	recordEditContext(text.length === 0 ? 'delete' : 'replace', text);
-	const { start, end } = range;
-	const startLine = ide_state.lines[start.row];
-	const endLine = ide_state.lines[end.row];
-	const leading = startLine.slice(0, start.column);
-	const trailing = endLine.slice(end.column);
-	const fragments = text.split('\n');
-	if (fragments.length === 1) {
-		const combined = leading + fragments[0] + trailing;
-		ide_state.lines.splice(start.row, end.row - start.row + 1, combined);
-		ide_state.cursorRow = start.row;
-		ide_state.cursorColumn = leading.length + fragments[0].length;
-	} else {
-		const firstLine = leading + fragments[0];
-		const lastFragment = fragments[fragments.length - 1];
-		const lastLine = lastFragment + trailing;
-		const middle = fragments.slice(1, -1);
-		ide_state.lines.splice(start.row, end.row - start.row + 1, firstLine, ...middle, lastLine);
-		ide_state.cursorRow = start.row + fragments.length - 1;
-		ide_state.cursorColumn = lastFragment.length;
-	}
-	invalidateLineRange(start.row, start.row + fragments.length - 1);
-	invalidateHighlightsFromRow(start.row);
-	ide_state.selectionAnchor = null;
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
-}
-
-export function selectWordAtPosition(row: number, column: number): void {
-	if (row < 0 || row >= ide_state.lines.length) {
-		return;
-	}
-	const line = ide_state.lines[row];
-	if (line.length === 0) {
-		ide_state.selectionAnchor = null;
-		ide_state.cursorRow = row;
-		ide_state.cursorColumn = 0;
-		updateDesiredColumn();
-		resetBlink();
-		revealCursor();
-		return;
-	}
-	let index = column;
-	if (index >= line.length) {
-		index = line.length - 1;
-	}
-	if (index < 0) {
-		index = 0;
-	}
-	let start = index;
-	let end = index + 1;
-	const current = line.charAt(index);
-	if (isWordChar(current)) {
-		while (start > 0 && isWordChar(line.charAt(start - 1))) {
-			start -= 1;
-		}
-		while (end < line.length && isWordChar(line.charAt(end))) {
-			end += 1;
-		}
-	} else if (isWhitespace(current)) {
-		while (start > 0 && isWhitespace(line.charAt(start - 1))) {
-			start -= 1;
-		}
-		while (end < line.length && isWhitespace(line.charAt(end))) {
-			end += 1;
-		}
-	} else {
-		while (start > 0) {
-			const previous = line.charAt(start - 1);
-			if (isWordChar(previous) || isWhitespace(previous)) {
-				break;
-			}
-			start -= 1;
-		}
-		while (end < line.length) {
-			const next = line.charAt(end);
-			if (isWordChar(next) || isWhitespace(next)) {
-				break;
-			}
-			end += 1;
-		}
-	}
-	if (end < start) {
-		end = start;
-	}
-	ide_state.selectionAnchor = { row, column: start };
-	ide_state.cursorRow = row;
-	ide_state.cursorColumn = end;
-	updateDesiredColumn();
-	resetBlink();
-	revealCursor();
-}
-
-export function getSelectionText(): string | null {
-	const range = getSelectionRange();
-	if (!range) {
-		return null;
-	}
-	const { start, end } = range;
-	if (start.row === end.row) {
-		return ide_state.lines[start.row].slice(start.column, end.column);
-	}
-	const parts: string[] = [];
-	parts.push(ide_state.lines[start.row].slice(start.column));
-	for (let row = start.row + 1; row < end.row; row += 1) {
-		parts.push(ide_state.lines[row]);
-	}
-	parts.push(ide_state.lines[end.row].slice(0, end.column));
-	return parts.join('\n');
-}
+// Selection manipulation functions moved to selection.ts
+// Use the implementations from there
+const deleteSelectionIfPresent = deleteSelectionIfPresentImpl;
+const replaceSelectionWith = replaceSelectionWithImpl;
+const selectWordAtPosition = selectWordAtPositionImpl;
+const getSelectionText = getSelectionTextImpl;
 
 export function insertClipboardText(text: string): void {
 	const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -884,84 +796,14 @@ export function insertClipboardText(text: string): void {
 	revealCursor();
 }
 
-export function ensureSelectionAnchor(anchor: Position): void {
-	if (!ide_state.selectionAnchor) {
-		ide_state.selectionAnchor = { row: anchor.row, column: anchor.column };
-	}
-}
-
-export function setSelectionAnchorPosition(position: Position | null): void {
-	if (!position) {
-		ide_state.selectionAnchor = null;
-		return;
-	}
-	ide_state.selectionAnchor = { row: position.row, column: position.column };
-}
-
-export function clearSelection(): void {
-	ide_state.selectionAnchor = null;
-}
-
-export function hasSelection(): boolean {
-	return getSelectionRange() !== null;
-}
-
-export function comparePositions(a: Position, b: Position): number {
-	if (a.row !== b.row) {
-		return a.row - b.row;
-	}
-	return a.column - b.column;
-}
-
-export function getSelectionRange(): { start: Position; end: Position } | null {
-	const anchor = ide_state.selectionAnchor;
-	if (!anchor) {
-		return null;
-	}
-	const cursor: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
-	if (anchor.row === cursor.row && anchor.column === cursor.column) {
-		return null;
-	}
-	if (comparePositions(cursor, anchor) < 0) {
-		return { start: cursor, end: anchor };
-	}
-	return { start: anchor, end: cursor };
-}
-
-export function collapseSelectionTo(target: 'start' | 'end'): void {
-	const range = getSelectionRange();
-	if (!range) {
-		return;
-	}
-	const destination = target === 'start' ? range.start : range.end;
-	ide_state.cursorRow = destination.row;
-	ide_state.cursorColumn = destination.column;
-	ide_state.selectionAnchor = null;
-	updateDesiredColumn();
-	resetBlink();
-	revealCursor();
-}
-
-export function stepLeft(row: number, column: number): { row: number; column: number } | null {
-	if (column > 0) {
-		return { row, column: column - 1 };
-	}
-	if (row > 0) {
-		return { row: row - 1, column: ide_state.lines[row - 1].length };
-	}
-	return null;
-}
-
-export function stepRight(row: number, column: number): { row: number; column: number } | null {
-	const length = ide_state.lines[row].length;
-	if (column < length) {
-		return { row, column: column + 1 };
-	}
-	if (row < ide_state.lines.length - 1) {
-		return { row: row + 1, column: 0 };
-	}
-	return null;
-}
+// Selection anchor and state management functions moved to selection.ts
+// Import and use the implementations from there for internal use
+const setSelectionAnchorPosition = setSelectionAnchorPositionImpl;
+const clearSelection = clearSelectionImpl;
+const hasSelection = hasSelectionImpl;
+const getSelectionRange = getSelectionRangeImpl;
+const stepLeft = stepLeftImpl;
+const stepRight = stepRightImpl;
 
 export function charAt(row: number, column: number): string {
 	if (row < 0 || row >= ide_state.lines.length) {
