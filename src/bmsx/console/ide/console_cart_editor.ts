@@ -185,295 +185,397 @@ const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'sta
 const GLOBAL_SEARCH_RESULT_LIMIT = constants.SEARCH_MAX_RESULTS * 4;
 
 // Intellisense data is handled by CompletionController
+let metadata: BmsxConsoleMetadata;
+let fontVariant: ConsoleFontVariant;
+let loadSourceFn: () => string;
+let saveSourceFn: (source: string) => Promise<void>;
+let loadLuaResourceFn: (assetId: string) => string;
+let saveLuaResourceFn: (assetId: string, source: string) => Promise<void>;
+let createLuaResourceFn: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
+let listResourcesFn: () => ConsoleResourceDescriptor[];
+let inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
+let listLuaObjectMembersFn: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
+let listLuaModuleSymbolsFn: (moduleName: string) => ConsoleLuaSymbolEntry[];
+let listLuaSymbolsFn: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
+let listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
+let listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
+let primaryAssetId: string | null;
+let builtinIdentifierCache: { key: string; set: ReadonlySet<string> } | null = null;
+let hoverTooltip: CodeHoverTooltip | null = null;
+let lastPointerSnapshot: PointerSnapshot | null = null;
+let lastInspectorResult: ConsoleLuaHoverResult | null = null;
+let inspectorRequestFailed = false;
+let gotoHoverHighlight: { row: number; startColumn: number; endColumn: number; expression: string } | null = null;
+let viewportWidth: number;
+let viewportHeight: number;
+let font: ConsoleEditorFont;
+let lineHeight: number;
+let charAdvance: number;
+let spaceAdvance: number;
+let gutterWidth: number;
+let headerHeight: number;
+let tabBarHeight: number;
+let tabBarRowCount = 1;
+let baseBottomMargin: number;
+const repeatState: Map<string, RepeatEntry> = new Map();
+const message: MessageState = { text: '', color: constants.COLOR_STATUS_TEXT, timer: 0, visible: false };
+let deferredMessageDuration: number | null = null;
+let runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
+let executionStopRow: number | null = null;
+let clockNow: () => number;
+let problemsPanel: ProblemsPanelController;
+let problemsPanelResizing = false;
+let diagnostics: EditorDiagnostic[] = [];
+let diagnosticsByRow: Map<number, EditorDiagnostic[]> = new Map();
+let diagnosticsDirty = true;
+const diagnosticsDebounceMs = 200;
+let diagnosticsCache: Map<string, DiagnosticsCacheEntry> = new Map();
+let dirtyDiagnosticContexts: Set<string> = new Set();
+let diagnosticsDueAtMs: number | null = null;
+let diagnosticsComputationScheduled = false;
+const codeTabContexts: Map<string, CodeTabContext> = new Map();
+let activeCodeTabContextId: string | null = null;
+let entryTabId: string | null = null;
+const captureKeys: string[] = [...new Set([
+	EDITOR_TOGGLE_KEY,
+	ESCAPE_KEY,
+	'ArrowUp',
+	'ArrowDown',
+	'ArrowLeft',
+	'ArrowRight',
+	'Backspace',
+	'Delete',
+	'Enter',
+	'NumpadEnter',
+	'End',
+	'Home',
+	'PageDown',
+	'PageUp',
+	'Space',
+	'Tab',
+	'F3',
+	'F12',
+	'NumpadDivide',
+	...CHARACTER_CODES,
+])];
+const topBarButtonBounds: Record<TopBarButtonId, RectBounds> = {
+	resume: { left: 0, top: 0, right: 0, bottom: 0 },
+	reboot: { left: 0, top: 0, right: 0, bottom: 0 },
+	save: { left: 0, top: 0, right: 0, bottom: 0 },
+	resources: { left: 0, top: 0, right: 0, bottom: 0 },
+	problems: { left: 0, top: 0, right: 0, bottom: 0 },
+	filter: { left: 0, top: 0, right: 0, bottom: 0 },
+	resolution: { left: 0, top: 0, right: 0, bottom: 0 },
+	wrap: { left: 0, top: 0, right: 0, bottom: 0 },
+};
+const tabButtonBounds: Map<string, RectBounds> = new Map();
+const tabCloseButtonBounds: Map<string, RectBounds> = new Map();
+let resourceViewerSpriteId: string | null = null;
+let resourceViewerSpriteAsset: string | null = null;
+let resourceViewerSpriteScale = 1;
+const actionPromptButtons: { saveAndContinue: RectBounds | null; continue: RectBounds; cancel: RectBounds } = {
+	saveAndContinue: null,
+	continue: { left: 0, top: 0, right: 0, bottom: 0 },
+	cancel: { left: 0, top: 0, right: 0, bottom: 0 },
+};
+let pendingActionPrompt: PendingActionPrompt | null = null;
+let active = false;
+let blinkTimer = 0;
+let cursorVisible = true;
+let warnNonMonospace = false;
+let pointerSelecting = false;
+let pointerPrimaryWasPressed = false;
+let pointerAuxWasPressed = false;
+let searchField: InlineTextField;
+let symbolSearchField: InlineTextField;
+let resourceSearchField: InlineTextField;
+let lineJumpField: InlineTextField;
+let createResourceField: InlineTextField;
+let inlineFieldMetricsRef: InlineFieldMetrics;
+let scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
+let scrollbarController: ScrollbarController;
+let input: InputController;
+let toggleInputLatch = false;
+let windowFocused = true;
+let pendingWindowFocused = true;
+let disposeVisibilityListener: (() => void) | null = null;
+let disposeWindowEventListeners: (() => void) | null = null;
+let lastPointerClickTimeMs = 0;
+let lastPointerClickRow = -1;
+let lastPointerClickColumn = -1;
+let tabHoverId: string | null = null;
+let tabDragState: TabDragState | null = null;
+let crtOptionsSnapshot: CrtOptionsSnapshot | null = null;
+let resolutionMode: EditorResolutionMode = 'viewport';
+let cursorRevealSuspended = false;
+let searchActive = false;
+let searchVisible = false;
+let searchQuery = '';
+let symbolSearchQuery = '';
+let resourceSearchQuery = '';
+// Completion session state is fully handled by CompletionController
+let pendingEditContext: EditContext | null = null;
+let cursorScreenInfo: CursorScreenInfo | null = null;
+// parameter hints managed by completion controller
+let lineJumpActive = false;
+let symbolSearchActive = false;
+let symbolSearchVisible = false;
+let symbolSearchGlobal = false;
+let symbolSearchMode: 'symbols' | 'references' = 'symbols';
+let resourceSearchActive = false;
+let resourceSearchVisible = false;
+let lineJumpVisible = false;
+let lineJumpValue = '';
+let createResourceActive = false;
+let createResourceVisible = false;
+let createResourcePath = '';
+let createResourceError: string | null = null;
+let createResourceWorking = false;
+let lastCreateResourceDirectory: string | null = null;
+// completion session auto-trigger handled by completion controller
+let symbolCatalog: SymbolCatalogEntry[] = [];
+let referenceCatalog: ReferenceCatalogEntry[] = [];
+let symbolCatalogContext: { scope: 'local' | 'global'; assetId: string | null; chunkName: string | null } | null = null;
+let symbolSearchMatches: SymbolSearchResult[] = [];
+let symbolSearchSelectionIndex = -1;
+let symbolSearchDisplayOffset = 0;
+let symbolSearchHoverIndex = -1;
+let resourceCatalog: ResourceCatalogEntry[] = [];
+let resourceSearchMatches: ResourceSearchResult[] = [];
+let resourceSearchSelectionIndex = -1;
+let resourceSearchDisplayOffset = 0;
+let resourceSearchHoverIndex = -1;
+let searchMatches: SearchMatch[] = [];
+let searchCurrentIndex = -1;
+let searchJob: SearchComputationJob | null = null;
+let searchDisplayOffset = 0;
+let searchHoverIndex = -1;
+let searchScope: 'local' | 'global' = 'local';
+let globalSearchMatches: GlobalSearchMatch[] = [];
+let globalSearchJob: GlobalSearchJob | null = null;
+const backgroundTasks: Array<() => boolean> = [];
+let backgroundTaskHandle: TimerHandle | null = null;
+const backgroundTaskBudgetMs = 2.0;
+let diagnosticsTaskPending = false;
+let lastReportedSemanticError: string | null = null;
+const referenceState: ReferenceState = new ReferenceState();
+let textVersion = 0;
+let saveGeneration = 0;
+let appliedGeneration = 0;
+let lastSavedSource = '';
+let tabs: EditorTabDescriptor[] = [];
+let activeTabId: string | null = null;
+let resourceBrowserItems: ResourceBrowserItem[] = [];
+let resourceBrowserSelectionIndex = -1;
+// removed legacy hover field; hover state is owned by ResourcePanelController
+let resourcePanelVisible = false;
+let resourcePanelFocused = false;
+let resourcePanelResourceCount = 0;
+let pendingResourceSelectionAssetId: string | null = null;
+let resourcePanelWidthRatio: number | null = null;
+let resourcePanelResizing = false;
+// max line width computed by ResourcePanelController
+let resourcePanel: ResourcePanelController;
+let renameController: RenameController;
+let semanticWorkspace: LuaSemanticWorkspace = new LuaSemanticWorkspace();
+let layout: ConsoleCodeLayout;
+let codeVerticalScrollbarVisible = false;
+let codeHorizontalScrollbarVisible = false;
+let cachedVisibleRowCount = 1;
+let cachedVisibleColumnCount = 1;
+let dimCrtInEditor: boolean = false; // Default value; can be changed via settings
+let wordWrapEnabled = true;
+let lastPointerRowResolution: { visualIndex: number; segment: VisualLineSegment | null } | null = null;
+let completion: CompletionController;
+const NAVIGATION_HISTORY_LIMIT = 64;
+const navigationHistory = {
+	back: [] as NavigationHistoryEntry[],
+	forward: [] as NavigationHistoryEntry[],
+	current: null as NavigationHistoryEntry | null,
+};
+let navigationCaptureSuspended = false;
+
+const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
+let customClipboard: string | null = null;
+
+function activeSearchMatchCount(): number {
+	return searchScope === 'global' ? globalSearchMatches.length : searchMatches.length;
+}
+
+function searchPageSize(): number {
+	return constants.SEARCH_MAX_RESULTS;
+}
+
+function computeSearchPageStats(): { total: number; offset: number; visible: number } {
+	const total = searchVisible ? activeSearchMatchCount() : 0;
+	if (total <= 0) {
+		searchDisplayOffset = 0;
+		return { total: 0, offset: 0, visible: 0 };
+	}
+	const pageSize = searchPageSize();
+	const maxOffset = Math.max(0, total - 1);
+	searchDisplayOffset = clamp(searchDisplayOffset, 0, maxOffset);
+	const remaining = total - searchDisplayOffset;
+	const visible = Math.min(pageSize, remaining);
+	return { total, offset: searchDisplayOffset, visible };
+}
+
+function searchVisibleResultCount(): number {
+	return computeSearchPageStats().visible;
+}
+
+function searchResultEntryHeight(): number {
+	return lineHeight * 2;
+}
+
+function isResourceSearchCompactMode(): boolean {
+	return viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
+}
+
+function resourceSearchEntryHeight(): number {
+	return isResourceSearchCompactMode() ? lineHeight * 2 : lineHeight;
+}
+
+function resourceSearchPageSize(): number {
+	return isResourceSearchCompactMode() ? constants.QUICK_OPEN_COMPACT_MAX_RESULTS : constants.QUICK_OPEN_MAX_RESULTS;
+}
+
+function resourceSearchWindowCapacity(): number {
+	return resourceSearchVisible ? resourceSearchPageSize() : 0;
+}
+
+function resourceSearchVisibleResultCount(): number {
+	if (!resourceSearchVisible) {
+		return 0;
+	}
+	const remaining = Math.max(0, resourceSearchMatches.length - resourceSearchDisplayOffset);
+	const capacity = resourceSearchWindowCapacity();
+	if (capacity <= 0) {
+		return remaining;
+	}
+	return Math.min(remaining, capacity);
+}
+
+function isSymbolSearchCompactMode(): boolean {
+	return viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
+}
+
+function symbolSearchEntryHeight(): number {
+	if (symbolSearchMode === 'references') {
+		return lineHeight * 2;
+	}
+	return symbolSearchGlobal && isSymbolSearchCompactMode() ? lineHeight * 2 : lineHeight;
+}
+
+function symbolSearchPageSize(): number {
+	if (symbolSearchMode === 'references') {
+		return constants.REFERENCE_SEARCH_MAX_RESULTS;
+	}
+	if (!symbolSearchGlobal) {
+		return constants.SYMBOL_SEARCH_MAX_RESULTS;
+	}
+	return isSymbolSearchCompactMode() ? constants.SYMBOL_SEARCH_COMPACT_MAX_RESULTS : constants.SYMBOL_SEARCH_MAX_RESULTS;
+}
+
+function symbolSearchVisibleResultCount(): number {
+	if (!symbolSearchVisible) {
+		return 0;
+	}
+	const remaining = Math.max(0, symbolSearchMatches.length - symbolSearchDisplayOffset);
+	const maxResults = symbolSearchPageSize();
+	return Math.min(remaining, maxResults);
+}
+
+function symbolCatalogDedupKey(entry: ConsoleLuaSymbolEntry): string {
+	const { location, kind, name } = entry;
+	const chunkName = location.chunkName ?? '';
+	const normalizedPath = location.path ? location.path.replace(/\\/g, '/') : '';
+	const assetId = location.assetId ?? '';
+	const locationKey = normalizedPath.length > 0
+		? normalizedPath
+		: (assetId.length > 0 ? assetId : chunkName);
+	const startLine = location.range.startLine;
+	const startColumn = location.range.startColumn;
+	const endLine = location.range.endLine;
+	const endColumn = location.range.endColumn;
+	return `${kind}|${name}|${locationKey}|${startLine}:${startColumn}|${endLine}:${endColumn}`;
+}
 
 export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	protected readonly playerIndex: number;
-	private readonly metadata: BmsxConsoleMetadata;
-	private readonly fontVariant: ConsoleFontVariant;
-	private readonly loadSourceFn: () => string;
-	private readonly saveSourceFn: (source: string) => Promise<void>;
-	private readonly loadLuaResourceFn: (assetId: string) => string;
-	private readonly saveLuaResourceFn: (assetId: string, source: string) => Promise<void>;
-	private readonly createLuaResourceFn: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
-	private readonly listResourcesFn: () => ConsoleResourceDescriptor[];
-	private readonly inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
-	private readonly listLuaObjectMembersFn: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
-	private readonly listLuaModuleSymbolsFn: (moduleName: string) => ConsoleLuaSymbolEntry[];
-	private readonly listLuaSymbolsFn: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
-	private readonly listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
-	private readonly listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
-	private readonly primaryAssetId: string | null;
-	private builtinIdentifierCache: { key: string; set: ReadonlySet<string> } | null = null;
-	private hoverTooltip: CodeHoverTooltip | null = null;
-	private lastPointerSnapshot: PointerSnapshot | null = null;
-	private lastInspectorResult: ConsoleLuaHoverResult | null = null;
-	private inspectorRequestFailed = false;
-	private gotoHoverHighlight: { row: number; startColumn: number; endColumn: number; expression: string } | null = null;
-	private viewportWidth: number;
-	private viewportHeight: number;
-	private readonly font: ConsoleEditorFont;
-	private readonly lineHeight: number;
-	private readonly charAdvance: number;
-	private readonly spaceAdvance: number;
-	private readonly gutterWidth: number;
-	private readonly headerHeight: number;
-	private readonly tabBarHeight: number;
-	private tabBarRowCount = 1;
-	private readonly baseBottomMargin: number;
-	private readonly repeatState: Map<string, RepeatEntry> = new Map();
-	private readonly message: MessageState = { text: '', color: constants.COLOR_STATUS_TEXT, timer: 0, visible: false };
-	private deferredMessageDuration: number | null = null;
-	private runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
-	private executionStopRow: number | null = null;
-	private readonly clockNow: () => number;
-	private readonly problemsPanel: ProblemsPanelController;
-	private problemsPanelResizing = false;
-	private diagnostics: EditorDiagnostic[] = [];
-	private diagnosticsByRow: Map<number, EditorDiagnostic[]> = new Map();
-	private diagnosticsDirty = true;
-	private readonly diagnosticsDebounceMs = 200;
-	private diagnosticsCache: Map<string, DiagnosticsCacheEntry> = new Map();
-	private dirtyDiagnosticContexts: Set<string> = new Set();
-	private diagnosticsDueAtMs: number | null = null;
-	private diagnosticsComputationScheduled = false;
-	private readonly codeTabContexts: Map<string, CodeTabContext> = new Map();
-	private activeCodeTabContextId: string | null = null;
-	private entryTabId: string | null = null;
-	private readonly captureKeys: string[] = [...new Set([
-		EDITOR_TOGGLE_KEY,
-		ESCAPE_KEY,
-		'ArrowUp',
-		'ArrowDown',
-		'ArrowLeft',
-		'ArrowRight',
-		'Backspace',
-		'Delete',
-		'Enter',
-		'NumpadEnter',
-		'End',
-		'Home',
-		'PageDown',
-		'PageUp',
-		'Space',
-		'Tab',
-		'F3',
-		'F12',
-		'NumpadDivide',
-		...CHARACTER_CODES,
-	])];
-	private static readonly NAVIGATION_HISTORY_LIMIT = 64;
-	private readonly navigationHistory = {
-		back: [] as NavigationHistoryEntry[],
-		forward: [] as NavigationHistoryEntry[],
-		current: null as NavigationHistoryEntry | null,
-	};
-	private navigationCaptureSuspended = false;
-
-	private static readonly EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
-	private static customClipboard: string | null = null;
-
-	private readonly topBarButtonBounds: Record<TopBarButtonId, RectBounds> = {
-		resume: { left: 0, top: 0, right: 0, bottom: 0 },
-		reboot: { left: 0, top: 0, right: 0, bottom: 0 },
-		save: { left: 0, top: 0, right: 0, bottom: 0 },
-		resources: { left: 0, top: 0, right: 0, bottom: 0 },
-		problems: { left: 0, top: 0, right: 0, bottom: 0 },
-		filter: { left: 0, top: 0, right: 0, bottom: 0 },
-		resolution: { left: 0, top: 0, right: 0, bottom: 0 },
-		wrap: { left: 0, top: 0, right: 0, bottom: 0 },
-	};
-	private readonly tabButtonBounds: Map<string, RectBounds> = new Map();
-	private readonly tabCloseButtonBounds: Map<string, RectBounds> = new Map();
-	private resourceViewerSpriteId: string | null = null;
-	private resourceViewerSpriteAsset: string | null = null;
-	private resourceViewerSpriteScale = 1;
-	private readonly actionPromptButtons: { saveAndContinue: RectBounds | null; continue: RectBounds; cancel: RectBounds } = {
-		saveAndContinue: null,
-		continue: { left: 0, top: 0, right: 0, bottom: 0 },
-		cancel: { left: 0, top: 0, right: 0, bottom: 0 },
-	};
-	private pendingActionPrompt: PendingActionPrompt | null = null;
-	private active = false;
-	private blinkTimer = 0;
-	private cursorVisible = true;
-	private warnNonMonospace = false;
-	private pointerSelecting = false;
-	private pointerPrimaryWasPressed = false;
-	private pointerAuxWasPressed = false;
-	private readonly searchField: InlineTextField;
-	private readonly symbolSearchField: InlineTextField;
-	private readonly resourceSearchField: InlineTextField;
-	private readonly lineJumpField: InlineTextField;
-	private readonly createResourceField: InlineTextField;
-	private readonly inlineFieldMetricsRef: InlineFieldMetrics;
-	private readonly scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
-	private readonly scrollbarController: ScrollbarController;
-	private readonly input: InputController;
-	private toggleInputLatch = false;
-	private windowFocused = true;
-	private pendingWindowFocused = true;
-	private disposeVisibilityListener: (() => void) | null = null;
-	private disposeWindowEventListeners: (() => void) | null = null;
-	private lastPointerClickTimeMs = 0;
-	private lastPointerClickRow = -1;
-	private lastPointerClickColumn = -1;
-	private tabHoverId: string | null = null;
-	private tabDragState: TabDragState | null = null;
-	private crtOptionsSnapshot: CrtOptionsSnapshot | null = null;
-	private resolutionMode: EditorResolutionMode = 'viewport';
-	protected cursorRevealSuspended = false;
-	private searchActive = false;
-	private searchVisible = false;
-	private searchQuery = '';
-	private symbolSearchQuery = '';
-	private resourceSearchQuery = '';
-	// Completion session state is fully handled by CompletionController
-	private pendingEditContext: EditContext | null = null;
-	private cursorScreenInfo: CursorScreenInfo | null = null;
-	// parameter hints managed by completion controller
-	private lineJumpActive = false;
-	private symbolSearchActive = false;
-	private symbolSearchVisible = false;
-	private symbolSearchGlobal = false;
-	private symbolSearchMode: 'symbols' | 'references' = 'symbols';
-	private resourceSearchActive = false;
-	private resourceSearchVisible = false;
-	private lineJumpVisible = false;
-	private lineJumpValue = '';
-	private createResourceActive = false;
-	private createResourceVisible = false;
-	private createResourcePath = '';
-	private createResourceError: string | null = null;
-	private createResourceWorking = false;
-	private lastCreateResourceDirectory: string | null = null;
-	// completion session auto-trigger handled by completion controller
-	private symbolCatalog: SymbolCatalogEntry[] = [];
-	private referenceCatalog: ReferenceCatalogEntry[] = [];
-	private symbolCatalogContext: { scope: 'local' | 'global'; assetId: string | null; chunkName: string | null } | null = null;
-	private symbolSearchMatches: SymbolSearchResult[] = [];
-	private symbolSearchSelectionIndex = -1;
-	private symbolSearchDisplayOffset = 0;
-	private symbolSearchHoverIndex = -1;
-	private resourceCatalog: ResourceCatalogEntry[] = [];
-	private resourceSearchMatches: ResourceSearchResult[] = [];
-	private resourceSearchSelectionIndex = -1;
-	private resourceSearchDisplayOffset = 0;
-	private resourceSearchHoverIndex = -1;
-	private searchMatches: SearchMatch[] = [];
-	private searchCurrentIndex = -1;
-	private searchJob: SearchComputationJob | null = null;
-	private searchDisplayOffset = 0;
-	private searchHoverIndex = -1;
-	private searchScope: 'local' | 'global' = 'local';
-	private globalSearchMatches: GlobalSearchMatch[] = [];
-	private globalSearchJob: GlobalSearchJob | null = null;
-	private readonly backgroundTasks: Array<() => boolean> = [];
-	private backgroundTaskHandle: TimerHandle | null = null;
-	private readonly backgroundTaskBudgetMs = 2.0;
-	private diagnosticsTaskPending = false;
-	private lastReportedSemanticError: string | null = null;
-	private readonly referenceState: ReferenceState = new ReferenceState();
-	private textVersion = 0;
-	private saveGeneration = 0;
-	private appliedGeneration = 0;
-	private lastSavedSource = '';
-	private tabs: EditorTabDescriptor[] = [];
-	private activeTabId: string | null = null;
-	private resourceBrowserItems: ResourceBrowserItem[] = [];
-	private resourceBrowserSelectionIndex = -1;
-	// removed legacy hover field; hover state is owned by ResourcePanelController
-	private resourcePanelVisible = false;
-	private resourcePanelFocused = false;
-	private resourcePanelResourceCount = 0;
-	private pendingResourceSelectionAssetId: string | null = null;
-	private resourcePanelWidthRatio: number | null = null;
-	private resourcePanelResizing = false;
-	// max line width computed by ResourcePanelController
-	private readonly resourcePanel: ResourcePanelController;
-	private readonly renameController: RenameController;
-	private readonly semanticWorkspace: LuaSemanticWorkspace = new LuaSemanticWorkspace();
-	private readonly layout: ConsoleCodeLayout;
-	private codeVerticalScrollbarVisible = false;
-	private codeHorizontalScrollbarVisible = false;
-	private cachedVisibleRowCount = 1;
-	private cachedVisibleColumnCount = 1;
-	private dimCrtInEditor: boolean = false; // Default value; can be changed via settings
-	protected wordWrapEnabled = true;
-	private lastPointerRowResolution: { visualIndex: number; segment: VisualLineSegment | null } | null = null;
-	private readonly completion: CompletionController;
 
 	constructor(options: ConsoleEditorOptions) {
 		super();
 		this.playerIndex = options.playerIndex;
-		this.metadata = options.metadata;
-		this.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
-		this.loadSourceFn = options.loadSource;
-		this.saveSourceFn = options.saveSource;
-		this.listResourcesFn = options.listResources;
-		this.loadLuaResourceFn = options.loadLuaResource;
-		this.saveLuaResourceFn = options.saveLuaResource;
-		this.createLuaResourceFn = options.createLuaResource;
-		this.inspectLuaExpressionFn = options.inspectLuaExpression;
-		this.listLuaObjectMembersFn = options.listLuaObjectMembers;
-		this.listLuaModuleSymbolsFn = options.listLuaModuleSymbols;
-		this.listLuaSymbolsFn = options.listLuaSymbols;
-		this.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
-		this.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
-		this.primaryAssetId = options.primaryAssetId;
+		metadata = options.metadata;
+		fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
+		loadSourceFn = options.loadSource;
+		saveSourceFn = options.saveSource;
+		listResourcesFn = options.listResources;
+		loadLuaResourceFn = options.loadLuaResource;
+		saveLuaResourceFn = options.saveLuaResource;
+		createLuaResourceFn = options.createLuaResource;
+		inspectLuaExpressionFn = options.inspectLuaExpression;
+		listLuaObjectMembersFn = options.listLuaObjectMembers;
+		listLuaModuleSymbolsFn = options.listLuaModuleSymbols;
+		listLuaSymbolsFn = options.listLuaSymbols;
+		listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
+		listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
+		primaryAssetId = options.primaryAssetId;
 		if ($.debug) {
-			this.listResourcesFn();
+			listResourcesFn();
 		}
-		this.viewportWidth = options.viewport.width;
-		this.viewportHeight = options.viewport.height;
-		this.font = new ConsoleEditorFont(this.fontVariant);
-		this.clockNow = $.platform.clock.now;
-		this.searchField = createInlineTextField();
-		this.symbolSearchField = createInlineTextField();
-		this.resourceSearchField = createInlineTextField();
-		this.lineJumpField = createInlineTextField();
-		this.createResourceField = createInlineTextField();
-		this.applySearchFieldText(this.searchQuery, true);
-		this.applySymbolSearchFieldText(this.symbolSearchQuery, true);
-		this.applyResourceSearchFieldText(this.resourceSearchQuery, true);
-		this.applyLineJumpFieldText(this.lineJumpValue, true);
-		this.applyCreateResourceFieldText(this.createResourcePath, true);
-		this.lineHeight = this.font.lineHeight();
-		this.charAdvance = this.font.advance('M');
-		this.spaceAdvance = this.font.advance(' ');
-		this.layout = new ConsoleCodeLayout(this.font, this.semanticWorkspace, {
-			clockNow: this.clockNow,
+		viewportWidth = options.viewport.width;
+		viewportHeight = options.viewport.height;
+		font = new ConsoleEditorFont(fontVariant);
+		clockNow = $.platform.clock.now;
+		searchField = createInlineTextField();
+		symbolSearchField = createInlineTextField();
+		resourceSearchField = createInlineTextField();
+		lineJumpField = createInlineTextField();
+		createResourceField = createInlineTextField();
+		this.applySearchFieldText(searchQuery, true);
+		this.applySymbolSearchFieldText(symbolSearchQuery, true);
+		this.applyResourceSearchFieldText(resourceSearchQuery, true);
+		this.applyLineJumpFieldText(lineJumpValue, true);
+		this.applyCreateResourceFieldText(createResourcePath, true);
+		lineHeight = font.lineHeight();
+		charAdvance = font.advance('M');
+		spaceAdvance = font.advance(' ');
+		layout = new ConsoleCodeLayout(font, semanticWorkspace, {
+			clockNow: clockNow,
 			getBuiltinIdentifiers: () => this.getBuiltinIdentifierSet(),
 		});
-		this.inlineFieldMetricsRef = {
+		inlineFieldMetricsRef = {
 			measureText: (text: string) => this.measureText(text),
-			advanceChar: (ch: string) => this.font.advance(ch),
-			spaceAdvance: this.spaceAdvance,
+			advanceChar: (ch: string) => font.advance(ch),
+			spaceAdvance: spaceAdvance,
 			tabSpaces: constants.TAB_SPACES,
 		};
-		this.gutterWidth = 2;
-		const primaryBarHeight = this.lineHeight + 4;
-		this.headerHeight = primaryBarHeight;
-		this.tabBarHeight = this.lineHeight + 3;
-		this.baseBottomMargin = this.lineHeight + 6;
-		this.scrollbars = {
+		gutterWidth = 2;
+		const primaryBarHeight = lineHeight + 4;
+		headerHeight = primaryBarHeight;
+		tabBarHeight = lineHeight + 3;
+		baseBottomMargin = lineHeight + 6;
+		scrollbars = {
 			codeVertical: new ConsoleScrollbar('codeVertical', 'vertical'),
 			codeHorizontal: new ConsoleScrollbar('codeHorizontal', 'horizontal'),
 			resourceVertical: new ConsoleScrollbar('resourceVertical', 'vertical'),
 			resourceHorizontal: new ConsoleScrollbar('resourceHorizontal', 'horizontal'),
 			viewerVertical: new ConsoleScrollbar('viewerVertical', 'vertical'),
 		};
-		this.scrollbarController = new ScrollbarController(this.scrollbars as any);
+		scrollbarController = new ScrollbarController(scrollbars as any);
 		// Initialize resource panel controller
-		this.resourcePanel = new ResourcePanelController({
-			getViewportWidth: () => this.viewportWidth,
-			getViewportHeight: () => this.viewportHeight,
+		resourcePanel = new ResourcePanelController({
+			getViewportWidth: () => viewportWidth,
+			getViewportHeight: () => viewportHeight,
 			getBottomMargin: () => this.bottomMargin,
 			codeViewportTop: () => this.codeViewportTop(),
-			lineHeight: this.lineHeight,
-			charAdvance: this.charAdvance,
+			lineHeight: lineHeight,
+			charAdvance: charAdvance,
 			measureText: (t) => this.measureText(t),
-			drawText: (a, t, x, y, c) => drawEditorText(a, this.font, t, x, y, c),
-			drawColoredText: (a, t, colors, x, y) => drawEditorColoredText(a, this.font, t, colors, x, y, constants.COLOR_CODE_TEXT),
+			drawText: (a, t, x, y, c) => drawEditorText(a, font, t, x, y, c),
+			drawColoredText: (a, t, colors, x, y) => drawEditorColoredText(a, font, t, colors, x, y, constants.COLOR_CODE_TEXT),
 			drawRectOutlineColor: (a, l, t, r, b, col) => this.drawRectOutlineColor(a, l, t, r, b, col),
 			playerIndex: this.playerIndex,
 			listResources: () => this.listResourcesStrict(),
@@ -481,9 +583,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			openResourceViewerTab: (d) => this.openResourceViewerTab(d),
 			focusEditorFromResourcePanel: () => this.focusEditorFromResourcePanel(),
 			showMessage: (text, color, duration) => this.showMessage(text, color, duration),
-		}, { resourceVertical: this.scrollbars.resourceVertical, resourceHorizontal: this.scrollbars.resourceHorizontal });
+		}, { resourceVertical: scrollbars.resourceVertical, resourceHorizontal: scrollbars.resourceHorizontal });
 		// Initialize completion/intellisense controller
-		this.completion = new CompletionController({
+		completion = new CompletionController({
 			getPlayerIndex: () => this.playerIndex,
 			isCodeTabActive: () => this.isCodeTabActive(),
 			getLines: () => this.lines,
@@ -496,27 +598,27 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			resetBlink: () => this.resetBlink(),
 			revealCursor: () => this.revealCursor(),
 			measureText: (text) => this.measureText(text),
-			drawText: (api, text, x, y, color) => drawEditorText(api, this.font, text, x, y, color),
-			getCursorScreenInfo: () => this.cursorScreenInfo,
-			getLineHeight: () => this.lineHeight,
-			getSpaceAdvance: () => this.spaceAdvance,
+			drawText: (api, text, x, y, color) => drawEditorText(api, font, text, x, y, color),
+			getCursorScreenInfo: () => cursorScreenInfo,
+			getLineHeight: () => lineHeight,
+			getSpaceAdvance: () => spaceAdvance,
 			getActiveCodeTabContext: () => this.getActiveCodeTabContext(),
 			resolveHoverAssetId: (ctx) => this.resolveHoverAssetId(ctx as any),
 			resolveHoverChunkName: (ctx) => this.resolveHoverChunkName(ctx as any),
-			listLuaSymbols: (assetId, chunk) => this.listLuaSymbolsFn(assetId, chunk),
-			listGlobalLuaSymbols: () => this.listGlobalLuaSymbolsFn(),
-			listLuaModuleSymbols: (moduleName) => this.listLuaModuleSymbolsFn(moduleName),
-			listBuiltinLuaFunctions: () => this.listBuiltinLuaFunctionsFn(),
+			listLuaSymbols: (assetId, chunk) => listLuaSymbolsFn(assetId, chunk),
+			listGlobalLuaSymbols: () => listGlobalLuaSymbolsFn(),
+			listLuaModuleSymbols: (moduleName) => listLuaModuleSymbolsFn(moduleName),
+			listBuiltinLuaFunctions: () => listBuiltinLuaFunctionsFn(),
 			getSemanticDefinitions: () => this.getActiveSemanticDefinitions(),
 			getLuaModuleAliases: (chunkName) => this.getLuaModuleAliases(chunkName),
 			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),
 			charAt: (r, c) => this.charAt(r, c),
-			getTextVersion: () => this.textVersion,
-			shouldFireRepeat: (kb, code, dt) => this.input.shouldRepeatPublic(kb, code, dt),
+			getTextVersion: () => textVersion,
+			shouldFireRepeat: (kb, code, dt) => input.shouldRepeatPublic(kb, code, dt),
 		});
-		this.completion.setEnterCommitsEnabled(false);
+		completion.setEnterCommitsEnabled(false);
 		// Initialize input controller
-		this.input = new InputController({
+		input = new InputController({
 			getPlayerIndex: () => this.playerIndex,
 			isCodeTabActive: () => this.isCodeTabActive(),
 			getLines: () => this.lines,
@@ -555,16 +657,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			navigateBackward: () => this.goBackwardInNavigationHistory(),
 			navigateForward: () => this.goForwardInNavigationHistory(),
 		});
-		this.problemsPanel = new ProblemsPanelController({
-			lineHeight: this.lineHeight,
+		problemsPanel = new ProblemsPanelController({
+			lineHeight: lineHeight,
 			measureText: (text) => this.measureText(text),
-			drawText: (api, text, x, y, color) => drawEditorText(api, this.font, text, x, y, color),
+			drawText: (api, text, x, y, color) => drawEditorText(api, font, text, x, y, color),
 			drawRectOutlineColor: (api, l, t, r, b, col) => this.drawRectOutlineColor(api, l, t, r, b, col),
 			truncateTextToWidth: (text, maxWidth) => this.truncateTextToWidth(text, maxWidth),
 			gotoDiagnostic: (diagnostic) => this.gotoDiagnostic(diagnostic),
 		});
-		this.problemsPanel.setDiagnostics(this.diagnostics);
-		this.renameController = new RenameController({
+		problemsPanel.setDiagnostics(diagnostics);
+		renameController = new RenameController({
 			processFieldEdit: (field, keyboard, options) => this.processInlineFieldEditing(field, keyboard, options),
 			shouldFireRepeat: (keyboard, code, deltaSeconds) => this.shouldFireRepeat(keyboard, code, deltaSeconds),
 			undo: () => this.undo(),
@@ -572,15 +674,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			showMessage: (text, color, duration) => this.showMessage(text, color, duration),
 			commitRename: (payload) => this.commitRename(payload),
 			onRenameSessionClosed: () => this.focusEditorFromRename(),
-		}, this.referenceState, this.playerIndex);
-		this.codeVerticalScrollbarVisible = false;
-		this.codeHorizontalScrollbarVisible = false;
-		this.cachedVisibleRowCount = 1;
-		this.cachedVisibleColumnCount = 1;
+		}, referenceState, this.playerIndex);
+		codeVerticalScrollbarVisible = false;
+		codeHorizontalScrollbarVisible = false;
+		cachedVisibleRowCount = 1;
+		cachedVisibleColumnCount = 1;
 		const entryContext = this.createEntryTabContext();
 		if (entryContext) {
-			this.entryTabId = entryContext.id;
-			this.codeTabContexts.set(entryContext.id, entryContext);
+			entryTabId = entryContext.id;
+			codeTabContexts.set(entryContext.id, entryContext);
 		}
 		this.initializeTabs(entryContext);
 		this.resetResourcePanelState();
@@ -589,25 +691,41 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		this.desiredColumn = this.cursorColumn;
 		this.assertMonospace();
-		const initialContext = entryContext ? this.codeTabContexts.get(entryContext.id) ?? null : null;
-		this.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
+		const initialContext = entryContext ? codeTabContexts.get(entryContext.id) ?? null : null;
+		lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
 		$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 		this.applyResolutionModeToRuntime();
-		this.pendingWindowFocused = this.windowFocused;
+		pendingWindowFocused = windowFocused;
 		this.installPlatformVisibilityListener();
 		this.installWindowEventListeners();
-		this.navigationHistory.current = this.createNavigationEntry();
+		navigationHistory.current = this.createNavigationEntry();
 	}
 
-	private installPlatformVisibilityListener(): void {
-		this.disposeVisibilityListener?.();
-		this.disposeVisibilityListener = $.platform.lifecycle.onVisibilityChange((visible) => {
+	protected get wordWrapEnabled(): boolean {
+		return wordWrapEnabled;
+	}
+
+	protected set wordWrapEnabled(value: boolean) {
+		wordWrapEnabled = value;
+	}
+
+	protected get cursorRevealSuspended(): boolean {
+		return cursorRevealSuspended;
+	}
+
+	protected set cursorRevealSuspended(value: boolean) {
+		cursorRevealSuspended = value;
+	}
+
+	public installPlatformVisibilityListener(): void {
+		disposeVisibilityListener?.();
+		disposeVisibilityListener = $.platform.lifecycle.onVisibilityChange((visible) => {
 			this.requestWindowFocusState(!!visible, true);
 		});
 	}
 
-	private installWindowEventListeners(): void {
-		this.disposeWindowEventListeners?.();
+	public installWindowEventListeners(): void {
+		disposeWindowEventListeners?.();
 		const host = $.platform.gameviewHost;
 		if (!host) {
 			throw new Error('[ConsoleCartEditor] Platform game view host unavailable while installing window listeners.');
@@ -623,7 +741,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		disposers.push(windowEvents.subscribe('focus', () => {
 			this.requestWindowFocusState(true, true);
 		}));
-		this.disposeWindowEventListeners = () => {
+		disposeWindowEventListeners = () => {
 			for (let i = 0; i < disposers.length; i++) {
 				try {
 					disposers[i]();
@@ -634,41 +752,33 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 	}
 
-	private tryGetKeyboard(): KeyboardInput | null {
-		try {
-			return this.getKeyboard();
-		} catch {
-			return null;
-		}
-	}
-
-	private resetInputFocusState(keyboard: KeyboardInput | null): void {
+	public resetInputFocusState(keyboard: KeyboardInput | null): void {
 		if (keyboard) {
 			keyboard.reset();
 		}
-		this.input.resetRepeats();
+		input.resetRepeats();
 		this.resetKeyPressGuards();
-		this.repeatState.clear();
-		this.toggleInputLatch = false;
+		repeatState.clear();
+		toggleInputLatch = false;
 	}
 
-	private requestWindowFocusState(hasFocus: boolean, immediate: boolean): void {
-		this.pendingWindowFocused = hasFocus;
+	public requestWindowFocusState(hasFocus: boolean, immediate: boolean): void {
+		pendingWindowFocused = hasFocus;
 		if (immediate) {
 			this.flushWindowFocusState();
 		}
 	}
 
-	private flushWindowFocusState(keyboard?: KeyboardInput): void {
-		if (this.pendingWindowFocused === this.windowFocused) {
+	public flushWindowFocusState(keyboard?: KeyboardInput): void {
+		if (pendingWindowFocused === windowFocused) {
 			return;
 		}
-		const resolvedKeyboard = keyboard ?? this.tryGetKeyboard();
-		this.windowFocused = this.pendingWindowFocused;
-		this.resetInputFocusState(resolvedKeyboard);
+		windowFocused = pendingWindowFocused;
+		const effectiveKeyboard = keyboard ?? this.getKeyboard();
+		this.resetInputFocusState(effectiveKeyboard);
 	}
 
-	private scheduleNextFrame(task: () => void): void {
+	public scheduleNextFrame(task: () => void): void {
 		if (typeof queueMicrotask === 'function') {
 			queueMicrotask(task);
 			return;
@@ -676,40 +786,40 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		void Promise.resolve().then(task);
 	}
 
-	private enqueueBackgroundTask(task: BackgroundTask): void {
-		this.backgroundTasks.push(task);
-		if (this.backgroundTaskHandle === null) {
-			this.backgroundTaskHandle = $.platform.clock.scheduleOnce!(0, () => this.runBackgroundTasks());
+	public enqueueBackgroundTask(task: BackgroundTask): void {
+		backgroundTasks.push(task);
+		if (backgroundTaskHandle === null) {
+			backgroundTaskHandle = $.platform.clock.scheduleOnce!(0, () => this.runBackgroundTasks());
 		}
 	}
 
-	private runBackgroundTasks(): void {
-		this.backgroundTaskHandle = null;
-		if (this.backgroundTasks.length === 0) {
+	public runBackgroundTasks(): void {
+		backgroundTaskHandle = null;
+		if (backgroundTasks.length === 0) {
 			return;
 		}
 		const clock = $.platform.clock;
-		const deadline = clock.now() + this.backgroundTaskBudgetMs;
-		const iterationsLimit = this.backgroundTasks.length * 2;
+		const deadline = clock.now() + backgroundTaskBudgetMs;
+		const iterationsLimit = backgroundTasks.length * 2;
 		let iterations = 0;
-		while (this.backgroundTasks.length > 0) {
-			const task = this.backgroundTasks.shift()!;
+		while (backgroundTasks.length > 0) {
+			const task = backgroundTasks.shift()!;
 			const keep = task();
 			if (keep) {
-				this.backgroundTasks.push(task);
+				backgroundTasks.push(task);
 			}
 			iterations += 1;
 			if (clock.now() >= deadline || iterations >= iterationsLimit) {
 				break;
 			}
 		}
-		if (this.backgroundTasks.length > 0 && this.backgroundTaskHandle === null) {
-			this.backgroundTaskHandle = $.platform.clock.scheduleOnce!(0, () => this.runBackgroundTasks());
+		if (backgroundTasks.length > 0 && backgroundTaskHandle === null) {
+			backgroundTaskHandle = $.platform.clock.scheduleOnce!(0, () => this.runBackgroundTasks());
 		}
 	}
 
-	private drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void {
-		const tooltip = this.hoverTooltip;
+	public drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void {
+		const tooltip = hoverTooltip;
 		if (!tooltip) {
 			return;
 		}
@@ -726,7 +836,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			tooltip.bubbleBounds = null;
 			return;
 		}
-		const rowTop = codeTop + relativeRow * this.lineHeight;
+		const rowTop = codeTop + relativeRow * lineHeight;
 		const segment = this.visualIndexToSegment(visualIndex);
 		if (!segment) {
 			tooltip.bubbleBounds = null;
@@ -734,19 +844,19 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		const entry = this.getCachedHighlight(segment.row);
 		const highlight = entry.hi;
-		let columnStart = this.wordWrapEnabled ? segment.startColumn : this.scrollColumn;
-		if (this.wordWrapEnabled) {
+		let columnStart = wordWrapEnabled ? segment.startColumn : this.scrollColumn;
+		if (wordWrapEnabled) {
 			if (columnStart < segment.startColumn || columnStart > segment.endColumn) {
 				columnStart = segment.startColumn;
 			}
 		}
-		const columnCount = this.wordWrapEnabled
+		const columnCount = wordWrapEnabled
 			? Math.max(0, segment.endColumn - columnStart)
 			: this.visibleColumnCount() + 8;
 		const slice = this.sliceHighlightedLine(highlight, columnStart, columnCount);
 		const sliceStartDisplay = slice.startDisplay;
-		const sliceEndLimit = this.wordWrapEnabled ? this.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
-		const sliceEndDisplay = this.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
+		const sliceEndLimit = wordWrapEnabled ? this.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
+		const sliceEndDisplay = wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
 		const startDisplay = this.columnToDisplay(highlight, tooltip.startColumn);
 		const endDisplay = this.columnToDisplay(highlight, tooltip.endColumn);
 		const clampedStartDisplay = clamp(startDisplay, sliceStartDisplay, sliceEndDisplay);
@@ -767,14 +877,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 		}
 		const bubbleWidth = maxLineWidth + constants.HOVER_TOOLTIP_PADDING_X * 2;
-		const bubbleHeight = visibleLines.length * this.lineHeight + constants.HOVER_TOOLTIP_PADDING_Y * 2;
-		const viewportRight = this.viewportWidth - 1;
-		let bubbleLeft = expressionEndX + this.spaceAdvance;
+		const bubbleHeight = visibleLines.length * lineHeight + constants.HOVER_TOOLTIP_PADDING_Y * 2;
+		const viewportRight = viewportWidth - 1;
+		let bubbleLeft = expressionEndX + spaceAdvance;
 		if (bubbleLeft + bubbleWidth > viewportRight) {
 			bubbleLeft = viewportRight - bubbleWidth;
 		}
 		if (bubbleLeft <= expressionEndX) {
-			const leftCandidate = expressionStartX - bubbleWidth - this.spaceAdvance;
+			const leftCandidate = expressionStartX - bubbleWidth - spaceAdvance;
 			if (leftCandidate >= textLeft) {
 				bubbleLeft = leftCandidate;
 			} else {
@@ -791,19 +901,19 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		api.rectfill_color(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, constants.HOVER_TOOLTIP_BACKGROUND);
 		api.rect(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, constants.HOVER_TOOLTIP_BORDER);
 		for (let i = 0; i < visibleLines.length; i += 1) {
-			const lineY = bubbleTop + constants.HOVER_TOOLTIP_PADDING_Y + i * this.lineHeight;
-			drawEditorText(api, this.font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, constants.COLOR_STATUS_TEXT);
+			const lineY = bubbleTop + constants.HOVER_TOOLTIP_PADDING_Y + i * lineHeight;
+			drawEditorText(api, font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, constants.COLOR_STATUS_TEXT);
 		}
 		tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleLeft + bubbleWidth, bottom: bubbleTop + bubbleHeight };
 	}
 
 	public showWarningBanner(text: string, durationSeconds = 4.0): void {
 		this.showMessage(text, constants.COLOR_STATUS_WARNING, durationSeconds);
-		if (!this.active) {
-			this.message.timer = Number.POSITIVE_INFINITY;
-			this.deferredMessageDuration = durationSeconds;
+		if (!active) {
+			message.timer = Number.POSITIVE_INFINITY;
+			deferredMessageDuration = durationSeconds;
 		} else {
-			this.deferredMessageDuration = null;
+			deferredMessageDuration = null;
 		}
 	}
 
@@ -821,7 +931,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	public showRuntimeError(line: number | null, column: number | null, message: string, details?: RuntimeErrorDetails | null): void {
-		if (!this.active) {
+		if (!active) {
 			this.activate();
 		}
 		const hasLocation = typeof line === 'number' && Number.isFinite(line) && line >= 1;
@@ -841,10 +951,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.clampCursorColumn();
 		targetColumn = this.cursorColumn;
 		this.selectionAnchor = null;
-		this.pointerSelecting = false;
-		this.pointerPrimaryWasPressed = false;
-		this.scrollbarController.cancel();
-		this.cursorRevealSuspended = false;
+		pointerSelecting = false;
+		pointerPrimaryWasPressed = false;
+		scrollbarController.cancel();
+		cursorRevealSuspended = false;
 		this.centerCursorVertically();
 		this.updateDesiredColumn();
 		this.revealCursor();
@@ -873,8 +983,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.showMessage(statusLine, constants.COLOR_STATUS_ERROR, 8.0);
 	}
 
-	private focusChunkSource(chunkName: string | null, hint?: { assetId: string | null; path?: string | null }): void {
-		if (!this.active) {
+	public focusChunkSource(chunkName: string | null, hint?: { assetId: string | null; path?: string | null }): void {
+		if (!active) {
 			this.activate();
 		}
 		this.closeSymbolSearch(true);
@@ -892,7 +1002,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.openResourceDescriptor(descriptor);
 	}
 
-	private focusResourceByAsset(assetId: string, preferredPath?: string | null): void {
+	public focusResourceByAsset(assetId: string, preferredPath?: string | null): void {
 		if (typeof assetId !== 'string' || assetId.length === 0) {
 			throw new Error('[ConsoleCartEditor] Invalid asset id for runtime error highlight.');
 		}
@@ -910,7 +1020,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.openResourceDescriptor({ path: normalizedPreferred, type: 'lua', assetId });
 	}
 
-	private normalizeChunkName(name: string | null): string {
+	public normalizeChunkName(name: string | null): string {
 		if (typeof name !== 'string' || name.trim().length === 0) {
 			throw new Error('[ConsoleCartEditor] Chunk name unavailable for runtime error.');
 		}
@@ -925,7 +1035,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return normalized;
 	}
 
-	private normalizeResourcePath(path?: string | null): string | undefined {
+	public normalizeResourcePath(path?: string | null): string | undefined {
 		if (path === null || path === undefined) {
 			return undefined;
 		}
@@ -933,9 +1043,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return normalized.length > 0 ? normalized : undefined;
 	}
 
-	private findCodeTabContext(assetId: string | null, chunkName: string | null): CodeTabContext | null {
+	public findCodeTabContext(assetId: string | null, chunkName: string | null): CodeTabContext | null {
 		const normalizedChunk = this.normalizeChunkReference(chunkName);
-		for (const context of this.codeTabContexts.values()) {
+		for (const context of codeTabContexts.values()) {
 			const descriptor = context.descriptor;
 			if (assetId && descriptor && descriptor.assetId === assetId) {
 				return context;
@@ -947,10 +1057,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				}
 			}
 		}
-		if (!this.entryTabId) {
+		if (!entryTabId) {
 			return null;
 		}
-		const entryContext = this.codeTabContexts.get(this.entryTabId) ?? null;
+		const entryContext = codeTabContexts.get(entryTabId) ?? null;
 		if (!entryContext) {
 			return null;
 		}
@@ -971,7 +1081,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return null;
 	}
 
-	private normalizeChunkReference(reference: string | null): string | null {
+	public normalizeChunkReference(reference: string | null): string | null {
 		if (!reference) {
 			return null;
 		}
@@ -982,7 +1092,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return normalized.replace(/\\/g, '/');
 	}
 
-	private resolveResourceDescriptorForSource(assetId: string | null, chunkName: string | null): ConsoleResourceDescriptor | null {
+	public resolveResourceDescriptorForSource(assetId: string | null, chunkName: string | null): ConsoleResourceDescriptor | null {
 		if (typeof assetId === 'string' && assetId.length > 0) {
 			const byAsset = this.findResourceDescriptorByAssetId(assetId);
 			if (byAsset) {
@@ -1001,21 +1111,21 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 
-	private listResourcesStrict(): ConsoleResourceDescriptor[] {
-		const descriptors = this.listResourcesFn();
+	public listResourcesStrict(): ConsoleResourceDescriptor[] {
+		const descriptors = listResourcesFn();
 		if (!Array.isArray(descriptors)) {
 			throw new Error('[ConsoleCartEditor] Resource enumeration returned an invalid result.');
 		}
 		return descriptors;
 	}
 
-	private findResourceDescriptorByAssetId(assetId: string): ConsoleResourceDescriptor | null {
+	public findResourceDescriptorByAssetId(assetId: string): ConsoleResourceDescriptor | null {
 		const descriptors = this.listResourcesStrict();
 		const match = descriptors.find(entry => entry.assetId === assetId);
 		return match ?? null;
 	}
 
-	private findResourceDescriptorForChunk(chunkPath: string): ConsoleResourceDescriptor {
+	public findResourceDescriptorForChunk(chunkPath: string): ConsoleResourceDescriptor {
 		const descriptors = this.listResourcesStrict();
 		const normalizedTarget = chunkPath.replace(/\\/g, '/');
 		const exact = descriptors.find(entry => entry.path.replace(/\\/g, '/') === normalizedTarget);
@@ -1034,7 +1144,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	// resourceDescriptorMatchesFilter removed; controller owns filtering
 
-	private openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
+	public openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
 		this.selectResourceInPanel(descriptor);
 		if (descriptor.type === 'atlas') {
 			this.showMessage('Atlas resources cannot be previewed in the console editor.', constants.COLOR_STATUS_WARNING, 3.2);
@@ -1057,25 +1167,25 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	// currently active one. Useful when resuming after a runtime error where the
 	// editor may have switched tabs to the faulting chunk.
 	public clearAllRuntimeErrorOverlays(): void {
-		this.runtimeErrorOverlay = null;
-		for (const context of this.codeTabContexts.values()) {
+		runtimeErrorOverlay = null;
+		for (const context of codeTabContexts.values()) {
 			context.runtimeErrorOverlay = null;
 		}
 		this.clearExecutionStopHighlights();
 	}
 
-	private setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay | null): void {
-		this.runtimeErrorOverlay = overlay;
+	public setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay | null): void {
+		runtimeErrorOverlay = overlay;
 		const context = this.getActiveCodeTabContext();
 		if (context) {
 			context.runtimeErrorOverlay = overlay;
 		}
 	}
 
-	private setExecutionStopHighlight(row: number | null): void {
+	public setExecutionStopHighlight(row: number | null): void {
 		const context = this.getActiveCodeTabContext();
 		if (!context) {
-			this.executionStopRow = null;
+			executionStopRow = null;
 			return;
 		}
 		let nextRow = row;
@@ -1084,24 +1194,24 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			nextRow = clamp(nextRow, 0, maxRow);
 		}
 		context.executionStopRow = nextRow;
-		this.executionStopRow = nextRow;
+		executionStopRow = nextRow;
 	}
 
-	private clearExecutionStopHighlights(): void {
-		this.executionStopRow = null;
-		for (const context of this.codeTabContexts.values()) {
+	public clearExecutionStopHighlights(): void {
+		executionStopRow = null;
+		for (const context of codeTabContexts.values()) {
 			context.executionStopRow = null;
 		}
 	}
 
-	private syncRuntimeErrorOverlayFromContext(context: CodeTabContext | null): void {
-		this.runtimeErrorOverlay = context ? context.runtimeErrorOverlay ?? null : null;
-		this.executionStopRow = context ? context.executionStopRow ?? null : null;
+	public syncRuntimeErrorOverlayFromContext(context: CodeTabContext | null): void {
+		runtimeErrorOverlay = context ? context.runtimeErrorOverlay ?? null : null;
+		executionStopRow = context ? context.executionStopRow ?? null : null;
 	}
 
-	private getBuiltinIdentifierSet(): ReadonlySet<string> {
+	public getBuiltinIdentifierSet(): ReadonlySet<string> {
 		try {
-			const descriptors = this.listBuiltinLuaFunctionsFn();
+			const descriptors = listBuiltinLuaFunctionsFn();
 			const names: string[] = [];
 			for (let index = 0; index < descriptors.length; index += 1) {
 				const descriptor = descriptors[index];
@@ -1116,7 +1226,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 			names.sort((a, b) => a.localeCompare(b));
 			const key = names.join('\u0000');
-			const cached = this.builtinIdentifierCache;
+			const cached = builtinIdentifierCache;
 			if (cached && cached.key === key) {
 				return cached.set;
 			}
@@ -1127,69 +1237,69 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				set.add(name.toLowerCase());
 			}
 			const entry = { key, set };
-			this.builtinIdentifierCache = entry;
+			builtinIdentifierCache = entry;
 			return entry.set;
 		} catch (error) {
-			if (this.builtinIdentifierCache) {
-				return this.builtinIdentifierCache.set;
+			if (builtinIdentifierCache) {
+				return builtinIdentifierCache.set;
 			}
 			const fallback = new Set<string>();
-			this.builtinIdentifierCache = { key: '', set: fallback };
+			builtinIdentifierCache = { key: '', set: fallback };
 			return fallback;
 		}
 	}
 
-	private buildRuntimeErrorLines(message: string): string[] {
-		const maxWidth = computeRuntimeErrorOverlayMaxWidth(this.viewportWidth, this.charAdvance, this.gutterWidth);
+	public buildRuntimeErrorLines(message: string): string[] {
+		const maxWidth = computeRuntimeErrorOverlayMaxWidth(viewportWidth, charAdvance, gutterWidth);
 		return buildRuntimeErrorLinesUtil(message, maxWidth, (text) => this.measureText(text));
 	}
 
-	private getTabBarTotalHeight(): number {
-		return this.tabBarHeight * Math.max(1, this.tabBarRowCount);
+	public getTabBarTotalHeight(): number {
+		return tabBarHeight * Math.max(1, tabBarRowCount);
 	}
 
-	private get topMargin(): number {
-		return this.headerHeight + this.getTabBarTotalHeight() + 2;
+	public get topMargin(): number {
+		return headerHeight + this.getTabBarTotalHeight() + 2;
 	}
 
-	private statusAreaHeight(): number {
-		if (!this.message.visible) {
-			return this.baseBottomMargin;
+	public statusAreaHeight(): number {
+		if (!message.visible) {
+			return baseBottomMargin;
 		}
 		const segments = this.getStatusMessageLines();
 		const lineCount = Math.max(1, segments.length);
-		return this.baseBottomMargin + lineCount * this.lineHeight + 4;
+		return baseBottomMargin + lineCount * lineHeight + 4;
 	}
 
-	private get bottomMargin(): number {
+	public get bottomMargin(): number {
 		return this.statusAreaHeight() + this.getVisibleProblemsPanelHeight();
 	}
 
-	private getVisibleProblemsPanelHeight(): number {
-		if (!this.problemsPanel.isVisible()) {
+	public getVisibleProblemsPanelHeight(): number {
+		if (!problemsPanel.isVisible()) {
 			return 0;
 		}
-		const planned = this.problemsPanel.getVisibleHeight();
+		const planned = problemsPanel.getVisibleHeight();
 		if (planned <= 0) {
 			return 0;
 		}
 		const statusHeight = this.statusAreaHeight();
-		const maxAvailable = Math.max(0, this.viewportHeight - statusHeight - (this.headerHeight + this.getTabBarTotalHeight()));
+		const maxAvailable = Math.max(0, viewportHeight - statusHeight - (headerHeight + this.getTabBarTotalHeight()));
 		if (maxAvailable <= 0) {
 			return 0;
 		}
 		return Math.min(planned, maxAvailable);
 	}
 
-	private getStatusMessageLines(): string[] {
-		if (!this.message.visible) {
+	public getStatusMessageLines(): string[] {
+		if (!message.visible) {
 			return [];
 		}
-		const sanitized = this.message.text.length > 0
-			? this.message.text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+		const sanitized = message.text.length > 0
+			? message.text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 			: '';
 		const rawLines = sanitized.length > 0 ? sanitized.split('\n') : [''];
-		const maxWidth = Math.max(this.viewportWidth - 8, this.charAdvance);
+		const maxWidth = Math.max(viewportWidth - 8, charAdvance);
 		const lines: string[] = [];
 		for (let i = 0; i < rawLines.length; i += 1) {
 			const wrapped = wrapRuntimeErrorLineUtil(rawLines[i], maxWidth, (text) => this.measureText(text));
@@ -1200,7 +1310,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return lines.length > 0 ? lines : [''];
 	}
 
-	private tryShowLuaErrorOverlay(error: unknown): boolean {
+	public tryShowLuaErrorOverlay(error: unknown): boolean {
 		let candidate: { line?: unknown; column?: unknown; chunkName?: unknown; message?: unknown };
 		if (typeof error === 'string') {
 			candidate = { message: error };
@@ -1229,12 +1339,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return true;
 	}
 
-	private safeInspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult | null {
-		this.inspectorRequestFailed = false;
+	public safeInspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult | null {
+		inspectorRequestFailed = false;
 		try {
-			return this.inspectLuaExpressionFn(request);
+			return inspectLuaExpressionFn(request);
 		} catch (error) {
-			this.inspectorRequestFailed = true;
+			inspectorRequestFailed = true;
 			const handled = this.tryShowLuaErrorOverlay(error);
 			if (!handled) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -1247,130 +1357,130 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	public update(deltaSeconds: number): void {
 		this.refreshViewportDimensions();
 		const keyboard = this.getKeyboard();
-		this.syncWindowFocusState(keyboard);
+		this.flushWindowFocusState(keyboard);
 		this.updateMessage(deltaSeconds);
 		this.updateRuntimeErrorOverlay(deltaSeconds);
 		if (this.handleToggleRequest(keyboard)) {
 			return;
 		}
-		if (!this.active) {
+		if (!active) {
 			return;
 		}
 		this.updateBlink(deltaSeconds);
 		this.handlePointerWheel();
 		this.handlePointerInput(deltaSeconds);
-		if (this.pendingActionPrompt) {
+		if (pendingActionPrompt) {
 			this.handleActionPromptInput(keyboard);
 			return;
 		}
 		this.handleEditorInput(keyboard, deltaSeconds);
-		this.completion.processPending(deltaSeconds);
-		const semanticError = this.layout.getLastSemanticError();
-		if (semanticError && semanticError !== this.lastReportedSemanticError) {
+		completion.processPending(deltaSeconds);
+		const semanticError = layout.getLastSemanticError();
+		if (semanticError && semanticError !== lastReportedSemanticError) {
 			this.showMessage(semanticError, constants.COLOR_STATUS_ERROR, 4.0);
-			this.lastReportedSemanticError = semanticError;
-		} else if (!semanticError && this.lastReportedSemanticError !== null) {
-			this.lastReportedSemanticError = null;
+			lastReportedSemanticError = semanticError;
+		} else if (!semanticError && lastReportedSemanticError !== null) {
+			lastReportedSemanticError = null;
 		}
-		if (this.diagnosticsDirty) {
-			this.processDiagnosticsQueue(this.clockNow());
+		if (diagnosticsDirty) {
+			this.processDiagnosticsQueue(clockNow());
 		}
-		if (this.isCodeTabActive() && !this.cursorRevealSuspended) {
+		if (this.isCodeTabActive() && !cursorRevealSuspended) {
 			this.ensureCursorVisible();
 		}
 	}
 
-	private processDiagnosticsQueue(now: number): void {
-		if (!this.diagnosticsDirty) {
+	public processDiagnosticsQueue(now: number): void {
+		if (!diagnosticsDirty) {
 			return;
 		}
-		if (this.dirtyDiagnosticContexts.size === 0) {
-			this.diagnosticsDirty = false;
-			this.diagnosticsDueAtMs = null;
+		if (dirtyDiagnosticContexts.size === 0) {
+			diagnosticsDirty = false;
+			diagnosticsDueAtMs = null;
 			return;
 		}
-		if (this.diagnosticsDueAtMs === null) {
-			this.diagnosticsDueAtMs = now + this.diagnosticsDebounceMs;
+		if (diagnosticsDueAtMs === null) {
+			diagnosticsDueAtMs = now + diagnosticsDebounceMs;
 			return;
 		}
-		if (now < this.diagnosticsDueAtMs) {
+		if (now < diagnosticsDueAtMs) {
 			return;
 		}
 		this.scheduleDiagnosticsComputation();
 	}
 
-	private scheduleDiagnosticsComputation(): void {
-		if (this.diagnosticsComputationScheduled) {
+	public scheduleDiagnosticsComputation(): void {
+		if (diagnosticsComputationScheduled) {
 			return;
 		}
-		this.diagnosticsComputationScheduled = true;
+		diagnosticsComputationScheduled = true;
 		this.scheduleNextFrame(() => {
-			this.diagnosticsComputationScheduled = false;
+			diagnosticsComputationScheduled = false;
 			this.executeDiagnosticsComputation();
 		});
 	}
 
-	private executeDiagnosticsComputation(): void {
-		if (!this.diagnosticsDirty) {
-			this.diagnosticsDueAtMs = null;
+	public executeDiagnosticsComputation(): void {
+		if (!diagnosticsDirty) {
+			diagnosticsDueAtMs = null;
 			return;
 		}
-		if (this.dirtyDiagnosticContexts.size === 0) {
-			this.diagnosticsDirty = false;
-			this.diagnosticsDueAtMs = null;
+		if (dirtyDiagnosticContexts.size === 0) {
+			diagnosticsDirty = false;
+			diagnosticsDueAtMs = null;
 			return;
 		}
-		if (this.diagnosticsTaskPending) {
+		if (diagnosticsTaskPending) {
 			return;
 		}
-		const now = this.clockNow();
-		if (this.diagnosticsDueAtMs === null) {
-			this.diagnosticsDueAtMs = now + this.diagnosticsDebounceMs;
+		const now = clockNow();
+		if (diagnosticsDueAtMs === null) {
+			diagnosticsDueAtMs = now + diagnosticsDebounceMs;
 			this.scheduleDiagnosticsComputation();
 			return;
 		}
-		if (now < this.diagnosticsDueAtMs) {
+		if (now < diagnosticsDueAtMs) {
 			this.scheduleDiagnosticsComputation();
 			return;
 		}
 		const batch = this.collectDiagnosticsBatch();
 		if (batch.length === 0) {
-			this.diagnosticsDirty = false;
-			this.diagnosticsDueAtMs = null;
+			diagnosticsDirty = false;
+			diagnosticsDueAtMs = null;
 			return;
 		}
 		this.enqueueDiagnosticsJob(batch);
 	}
 
-	private enqueueDiagnosticsJob(contextIds: readonly string[]): void {
+	public enqueueDiagnosticsJob(contextIds: readonly string[]): void {
 		if (contextIds.length === 0) {
 			return;
 		}
-		this.diagnosticsTaskPending = true;
+		diagnosticsTaskPending = true;
 		const batch = [...contextIds];
 		this.enqueueBackgroundTask(() => {
 			this.runDiagnosticsForContexts(batch);
-			this.diagnosticsTaskPending = false;
-			if (this.dirtyDiagnosticContexts.size === 0) {
-				this.diagnosticsDirty = false;
-				this.diagnosticsDueAtMs = null;
+			diagnosticsTaskPending = false;
+			if (dirtyDiagnosticContexts.size === 0) {
+				diagnosticsDirty = false;
+				diagnosticsDueAtMs = null;
 			} else {
-				const now = this.clockNow();
-				this.diagnosticsDueAtMs = now + this.diagnosticsDebounceMs;
+				const now = clockNow();
+				diagnosticsDueAtMs = now + diagnosticsDebounceMs;
 				this.scheduleDiagnosticsComputation();
 			}
 			return false;
 		});
 	}
 
-	private collectDiagnosticsBatch(): string[] {
+	public collectDiagnosticsBatch(): string[] {
 		const batch: string[] = [];
-		const activeId = this.activeCodeTabContextId;
-		if (activeId && this.dirtyDiagnosticContexts.has(activeId)) {
+		const activeId = activeCodeTabContextId;
+		if (activeId && dirtyDiagnosticContexts.has(activeId)) {
 			batch.push(activeId);
 		}
 		if (batch.length === 0) {
-			const iterator = this.dirtyDiagnosticContexts.values().next();
+			const iterator = dirtyDiagnosticContexts.values().next();
 			if (!iterator.done) {
 				batch.push(iterator.value);
 			}
@@ -1378,20 +1488,20 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return batch;
 	}
 
-	private runDiagnosticsForContexts(contextIds: readonly string[]): void {
+	public runDiagnosticsForContexts(contextIds: readonly string[]): void {
 		if (contextIds.length === 0) {
 			return;
 		}
 		const providers = this.createDiagnosticProviders();
-		const activeId = this.activeCodeTabContextId;
+		const activeId = activeCodeTabContextId;
 		const inputs: DiagnosticContextInput[] = [];
 		const metadata: Array<{ id: string; chunkName: string | null }> = [];
 		for (let index = 0; index < contextIds.length; index += 1) {
 			const contextId = contextIds[index];
-			const context = this.codeTabContexts.get(contextId);
+			const context = codeTabContexts.get(contextId);
 			if (!context) {
-				this.diagnosticsCache.delete(contextId);
-				this.dirtyDiagnosticContexts.delete(contextId);
+				diagnosticsCache.delete(contextId);
+				dirtyDiagnosticContexts.delete(contextId);
 				continue;
 			}
 			const assetId = this.resolveHoverAssetId(context);
@@ -1407,8 +1517,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				}
 			}
 			if (source.length === 0) {
-				this.diagnosticsCache.delete(contextId);
-				this.dirtyDiagnosticContexts.delete(contextId);
+				diagnosticsCache.delete(contextId);
+				dirtyDiagnosticContexts.delete(contextId);
 				continue;
 			}
 			inputs.push({
@@ -1440,35 +1550,35 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		for (let index = 0; index < metadata.length; index += 1) {
 			const meta = metadata[index];
 			const diagList = byContext.get(meta.id) ?? [];
-			this.diagnosticsCache.set(meta.id, {
+			diagnosticsCache.set(meta.id, {
 				contextId: meta.id,
 				chunkName: meta.chunkName,
 				diagnostics: diagList,
 			});
-			this.dirtyDiagnosticContexts.delete(meta.id);
+			dirtyDiagnosticContexts.delete(meta.id);
 		}
 		this.updateDiagnosticsAggregates();
 	}
 
-	private createDiagnosticProviders(): DiagnosticProviders {
+	public createDiagnosticProviders(): DiagnosticProviders {
 		return {
 			listLocalSymbols: (assetId, chunk) => {
 				try {
-					return this.listLuaSymbolsFn(assetId, chunk);
+					return listLuaSymbolsFn(assetId, chunk);
 				} catch {
 					return [];
 				}
 			},
 			listGlobalSymbols: () => {
 				try {
-					return this.listGlobalLuaSymbolsFn();
+					return listGlobalLuaSymbolsFn();
 				} catch {
 					return [];
 				}
 			},
 			listBuiltins: () => {
 				try {
-					return this.listBuiltinLuaFunctionsFn();
+					return listBuiltinLuaFunctionsFn();
 				} catch {
 					return [];
 				}
@@ -1476,51 +1586,51 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 	}
 
-	private updateDiagnosticsAggregates(): void {
+	public updateDiagnosticsAggregates(): void {
 		const aggregate: EditorDiagnostic[] = [];
-		for (const context of this.codeTabContexts.values()) {
-			const entry = this.diagnosticsCache.get(context.id);
+		for (const context of codeTabContexts.values()) {
+			const entry = diagnosticsCache.get(context.id);
 			if (entry) {
 				for (let index = 0; index < entry.diagnostics.length; index += 1) {
 					aggregate.push(entry.diagnostics[index]);
 				}
 			}
 		}
-		for (const [contextId, entry] of this.diagnosticsCache) {
-			if (this.codeTabContexts.has(contextId)) {
+		for (const [contextId, entry] of diagnosticsCache) {
+			if (codeTabContexts.has(contextId)) {
 				continue;
 			}
 			for (let index = 0; index < entry.diagnostics.length; index += 1) {
 				aggregate.push(entry.diagnostics[index]);
 			}
 		}
-		this.diagnostics = aggregate;
+		diagnostics = aggregate;
 		this.refreshActiveDiagnostics();
-		this.problemsPanel.setDiagnostics(this.diagnostics);
+		problemsPanel.setDiagnostics(diagnostics);
 	}
 
-	private refreshActiveDiagnostics(): void {
-		this.diagnosticsByRow.clear();
-		const activeId = this.activeCodeTabContextId;
+	public refreshActiveDiagnostics(): void {
+		diagnosticsByRow.clear();
+		const activeId = activeCodeTabContextId;
 		if (!activeId) {
 			return;
 		}
-		const entry = this.diagnosticsCache.get(activeId);
+		const entry = diagnosticsCache.get(activeId);
 		if (!entry) {
 			return;
 		}
 		for (let index = 0; index < entry.diagnostics.length; index += 1) {
 			const diag = entry.diagnostics[index];
-			let bucket = this.diagnosticsByRow.get(diag.row);
+			let bucket = diagnosticsByRow.get(diag.row);
 			if (!bucket) {
 				bucket = [];
-				this.diagnosticsByRow.set(diag.row, bucket);
+				diagnosticsByRow.set(diag.row, bucket);
 			}
 			bucket.push(diag);
 		}
 	}
 
-	private markDiagnosticsDirtyForChunk(chunkName: string): void {
+	public markDiagnosticsDirtyForChunk(chunkName: string): void {
 		const context = this.findContextByChunk(chunkName);
 		if (!context) {
 			return;
@@ -1528,17 +1638,17 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.markDiagnosticsDirty(context.id);
 	}
 
-	private getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] | null {
+	public getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] | null {
 		const context = this.getActiveCodeTabContext();
 		const chunkName = this.resolveHoverChunkName(context) ?? '<console>';
-		return this.layout.getSemanticDefinitions(this.lines, this.textVersion, chunkName);
+		return layout.getSemanticDefinitions(this.lines, textVersion, chunkName);
 	}
 
-	private getLuaModuleAliases(chunkName: string | null): Map<string, string> {
+	public getLuaModuleAliases(chunkName: string | null): Map<string, string> {
 		const activeContext = this.getActiveCodeTabContext();
 		const targetChunk = chunkName ?? this.resolveHoverChunkName(activeContext) ?? '<console>';
-		this.layout.getSemanticDefinitions(this.lines, this.textVersion, targetChunk);
-		const data = this.semanticWorkspace.getFileData(targetChunk);
+		layout.getSemanticDefinitions(this.lines, textVersion, targetChunk);
+		const data = semanticWorkspace.getFileData(targetChunk);
 		if (!data || data.moduleAliases.length === 0) {
 			return new Map();
 		}
@@ -1550,9 +1660,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return aliases;
 	}
 
-	private findContextByChunk(chunkName: string): CodeTabContext | null {
+	public findContextByChunk(chunkName: string): CodeTabContext | null {
 		const normalized = this.normalizeChunkReference(chunkName) ?? chunkName;
-		for (const context of this.codeTabContexts.values()) {
+		for (const context of codeTabContexts.values()) {
 			const descriptor = context.descriptor;
 			if (descriptor) {
 				const descriptorPath = this.normalizeChunkReference(descriptor.path);
@@ -1564,8 +1674,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				continue;
 			}
 			const aliases: string[] = [];
-			if (this.primaryAssetId) {
-				aliases.push(this.primaryAssetId);
+			if (primaryAssetId) {
+				aliases.push(primaryAssetId);
 			}
 			aliases.push('__entry__', '<console>');
 			for (let index = 0; index < aliases.length; index += 1) {
@@ -1578,38 +1688,38 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return null;
 	}
 
-	private getDiagnosticsForRow(row: number): readonly EditorDiagnostic[] {
-		const bucket = this.diagnosticsByRow.get(row);
-		return bucket ?? ConsoleCartEditor.EMPTY_DIAGNOSTICS;
+	public getDiagnosticsForRow(row: number): readonly EditorDiagnostic[] {
+		const bucket = diagnosticsByRow.get(row);
+		return bucket ?? EMPTY_DIAGNOSTICS;
 	}
 
 	public isActive(): boolean {
-		return this.active;
+		return active;
 	}
 
 	public draw(api: BmsxConsoleApi): void {
 		this.refreshViewportDimensions();
-		if (!this.active) {
+		if (!active) {
 			return;
 		}
-		this.codeVerticalScrollbarVisible = false;
-		this.codeHorizontalScrollbarVisible = false;
+		codeVerticalScrollbarVisible = false;
+		codeHorizontalScrollbarVisible = false;
 		const frameColor = Msx1Colors[constants.COLOR_FRAME];
-		api.rectfill_color(0, 0, this.viewportWidth, this.viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
+		api.rectfill_color(0, 0, viewportWidth, viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
 		this.drawTopBar(api);
-		this.tabBarRowCount = renderTabBar(api, {
-			viewportWidth: this.viewportWidth,
-			headerHeight: this.headerHeight,
-			rowHeight: this.tabBarHeight,
-			lineHeight: this.lineHeight,
-			tabs: this.tabs,
-			activeTabId: this.activeTabId,
-			tabHoverId: this.tabHoverId,
+		tabBarRowCount = renderTabBar(api, {
+			viewportWidth: viewportWidth,
+			headerHeight: headerHeight,
+			rowHeight: tabBarHeight,
+			lineHeight: lineHeight,
+			tabs: tabs,
+			activeTabId: activeTabId,
+			tabHoverId: tabHoverId,
 			measureText: (text: string) => this.measureText(text),
-			drawText: (api2, text, x, y, color) => drawEditorText(api2, this.font, text, x, y, color),
+			drawText: (api2, text, x, y, color) => drawEditorText(api2, font, text, x, y, color),
 			getDirtyMarkerMetrics: () => this.getTabDirtyMarkerMetrics(),
-			tabButtonBounds: this.tabButtonBounds,
-			tabCloseButtonBounds: this.tabCloseButtonBounds,
+			tabButtonBounds: tabButtonBounds,
+			tabCloseButtonBounds: tabCloseButtonBounds,
 		});
 		this.drawResourcePanel(api);
 		if (this.isResourceViewActive()) {
@@ -1626,7 +1736,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		this.drawProblemsPanel(api);
 		this.drawStatusBar(api);
-		if (this.pendingActionPrompt) {
+		if (pendingActionPrompt) {
 			this.drawActionPromptOverlay(api);
 		}
 	}
@@ -1634,7 +1744,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	public getSourceForChunk(assetId: string | null, chunkName: string | null): string {
 		const context = this.findCodeTabContext(assetId, chunkName);
 		if (context) {
-			if (context.id === this.activeCodeTabContextId) {
+			if (context.id === activeCodeTabContextId) {
 				return this.lines.join('\n');
 			}
 			if (context.snapshot) {
@@ -1647,74 +1757,74 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		const descriptor = this.resolveResourceDescriptorForSource(assetId, chunkName);
 		if (descriptor) {
-			return this.loadLuaResourceFn(descriptor.assetId);
+			return loadLuaResourceFn(descriptor.assetId);
 		}
 		throw new Error(`[ConsoleCartEditor] Unable to locate source for asset '${assetId ?? '<null>'}' and chunk '${chunkName ?? '<null>'}'.`);
 	}
 
-	private getTabDirtyMarkerMetrics(): { width: number; height: number } {
+	public getTabDirtyMarkerMetrics(): { width: number; height: number } {
 		return { width: 4, height: 4 };
 	}
 
-	private refreshViewportDimensions(force = false): void {
+	public refreshViewportDimensions(force = false): void {
 		const view = $.view;
 		if (!view) {
 			throw new Error('[ConsoleCartEditor] Game view unavailable during editor frame.');
 		}
-		const renderSize = this.resolutionMode === 'offscreen' ? view.offscreenCanvasSize : view.viewportSize;
+		const renderSize = resolutionMode === 'offscreen' ? view.offscreenCanvasSize : view.viewportSize;
 		if (!Number.isFinite(renderSize.x) || !Number.isFinite(renderSize.y) || renderSize.x <= 0 || renderSize.y <= 0) {
 			throw new Error('[ConsoleCartEditor] Invalid render dimensions.');
 		}
 		const width = renderSize.x;
 		const height = renderSize.y;
-		if (!force && width === this.viewportWidth && height === this.viewportHeight) {
+		if (!force && width === viewportWidth && height === viewportHeight) {
 			return;
 		}
-		this.viewportWidth = width;
-		this.viewportHeight = height;
+		viewportWidth = width;
+		viewportHeight = height;
 		this.invalidateVisualLines();
-		if (this.resourcePanelWidthRatio !== null) {
-			this.resourcePanelWidthRatio = this.clampResourcePanelRatio(this.resourcePanelWidthRatio);
-			if (this.resourcePanelVisible && this.computePanelPixelWidth(this.resourcePanelWidthRatio) <= 0) {
+		if (resourcePanelWidthRatio !== null) {
+			resourcePanelWidthRatio = this.clampResourcePanelRatio(resourcePanelWidthRatio);
+			if (resourcePanelVisible && this.computePanelPixelWidth(resourcePanelWidthRatio) <= 0) {
 				this.hideResourcePanel();
 			}
 		}
-		if (this.resourcePanelVisible) {
+		if (resourcePanelVisible) {
 			this.resourceBrowserEnsureSelectionVisible();
 		}
 	}
 
-	private initializeTabs(entryContext: CodeTabContext | null = null): void {
-		this.tabs = [];
-		this.tabHoverId = null;
-		this.tabDragState = null;
-		this.tabButtonBounds.clear();
-		this.tabCloseButtonBounds.clear();
+	public initializeTabs(entryContext: CodeTabContext | null = null): void {
+		tabs = [];
+		tabHoverId = null;
+		tabDragState = null;
+		tabButtonBounds.clear();
+		tabCloseButtonBounds.clear();
 		if (entryContext) {
-			this.tabs.push({
+			tabs.push({
 				id: entryContext.id,
 				kind: 'lua_editor',
 				title: entryContext.title,
 				closable: true,
 				dirty: entryContext.dirty,
 			});
-			this.activeTabId = entryContext.id;
-			this.activeCodeTabContextId = entryContext.id;
+			activeTabId = entryContext.id;
+			activeCodeTabContextId = entryContext.id;
 			return;
 		}
-		this.activeTabId = null;
-		this.activeCodeTabContextId = null;
+		activeTabId = null;
+		activeCodeTabContextId = null;
 	}
 
-	private setTabDirty(tabId: string, dirty: boolean): void {
-		const tab = this.tabs.find(candidate => candidate.id === tabId);
+	public setTabDirty(tabId: string, dirty: boolean): void {
+		const tab = tabs.find(candidate => candidate.id === tabId);
 		if (!tab) {
 			return;
 		}
 		tab.dirty = dirty;
 	}
 
-	private updateActiveContextDirtyFlag(): void {
+	public updateActiveContextDirtyFlag(): void {
 		const context = this.getActiveCodeTabContext();
 		if (!context) {
 			return;
@@ -1723,25 +1833,25 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.setTabDirty(context.id, context.dirty);
 	}
 
-	private getActiveTabKind(): EditorTabKind {
-		if (!this.activeTabId) {
+	public getActiveTabKind(): EditorTabKind {
+		if (!activeTabId) {
 			return 'lua_editor';
 		}
-		const active = this.tabs.find(tab => tab.id === this.activeTabId);
+		const active = tabs.find(tab => tab.id === activeTabId);
 		if (active) {
 			return active.kind;
 		}
-		if (this.tabs.length > 0) {
-			const first = this.tabs[0];
-			this.activeTabId = first.id;
+		if (tabs.length > 0) {
+			const first = tabs[0];
+			activeTabId = first.id;
 			return first.kind;
 		}
-		this.activeTabId = null;
+		activeTabId = null;
 		return 'lua_editor';
 	}
 
-	private getActiveResourceViewer(): ResourceViewerState | null {
-		const tab = this.tabs.find(candidate => candidate.id === this.activeTabId);
+	public getActiveResourceViewer(): ResourceViewerState | null {
+		const tab = tabs.find(candidate => candidate.id === activeTabId);
 		if (!tab) {
 			return null;
 		}
@@ -1753,91 +1863,91 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	public serializeState(): ConsoleEditorSerializedState { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
 		const snapshot = this.captureSnapshot();
-		const message: MessageState = {
-			text: this.message.text,
-			color: this.message.color,
-			timer: this.message.timer,
-			visible: this.message.visible,
+		const messageSnapshot: MessageState = {
+			text: message.text,
+			color: message.color,
+			timer: message.timer,
+			visible: message.visible,
 		};
 		return {
-			active: this.active,
+			active: active,
 			activeTab: this.getActiveTabKind(),
 			snapshot,
-			searchQuery: this.searchQuery,
-			searchMatches: this.searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end })),
-			searchCurrentIndex: this.searchCurrentIndex,
-			searchActive: this.searchActive,
-			searchVisible: this.searchVisible,
-			lineJumpValue: this.lineJumpValue,
-			lineJumpActive: this.lineJumpActive,
-			lineJumpVisible: this.lineJumpVisible,
-			message,
+			searchQuery: searchQuery,
+			searchMatches: searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end })),
+			searchCurrentIndex: searchCurrentIndex,
+			searchActive: searchActive,
+			searchVisible: searchVisible,
+			lineJumpValue: lineJumpValue,
+			lineJumpActive: lineJumpActive,
+			lineJumpVisible: lineJumpVisible,
+			message: messageSnapshot,
 			runtimeErrorOverlay: null,
-			saveGeneration: this.saveGeneration,
-			appliedGeneration: this.appliedGeneration,
+			saveGeneration: saveGeneration,
+			appliedGeneration: appliedGeneration,
 		};
 	}
 
 	public restoreState(state: ConsoleEditorSerializedState): void { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
 		if (!state) return;
-		this.input.applyOverrides(false, this.captureKeys);
+		input.applyOverrides(false, captureKeys);
 		$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
-		this.codeTabContexts.clear();
+		codeTabContexts.clear();
 		const entryContext = this.createEntryTabContext();
 		if (entryContext) {
-			this.entryTabId = entryContext.id;
-			this.codeTabContexts.set(entryContext.id, entryContext);
-			this.activeCodeTabContextId = entryContext.id;
+			entryTabId = entryContext.id;
+			codeTabContexts.set(entryContext.id, entryContext);
+			activeCodeTabContextId = entryContext.id;
 		}
 		else {
-			this.activeCodeTabContextId = null;
+			activeCodeTabContextId = null;
 		}
 		this.initializeTabs(entryContext);
 		this.resetResourcePanelState();
 		this.hideResourcePanel();
-		this.active = state.active;
+		active = state.active;
 		const restoredKind = state.activeTab ?? 'lua_editor';
 		if (restoredKind === 'resource_view') {
-			const activeResourceTab = this.tabs.find(tab => tab.kind === 'resource_view');
+			const activeResourceTab = tabs.find(tab => tab.kind === 'resource_view');
 			if (activeResourceTab) {
 				this.setActiveTab(activeResourceTab.id);
 			}
 		} else {
 			this.activateCodeTab();
 		}
-		if (this.active) {
-			this.input.applyOverrides(true, this.captureKeys);
+		if (active) {
+			input.applyOverrides(true, captureKeys);
 		}
 		this.restoreSnapshot(state.snapshot);
 		this.applySearchFieldText(state.searchQuery, true);
-		this.searchScope = 'local';
-		this.searchDisplayOffset = 0;
-		this.searchHoverIndex = -1;
-		this.globalSearchMatches = [];
-		this.searchMatches = state.searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end }));
-		this.searchCurrentIndex = state.searchCurrentIndex;
-		this.searchActive = state.searchActive;
-		this.searchVisible = state.searchVisible;
+		searchScope = 'local';
+		searchDisplayOffset = 0;
+		searchHoverIndex = -1;
+		globalSearchMatches = [];
+		searchMatches = state.searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end }));
+		searchCurrentIndex = state.searchCurrentIndex;
+		searchActive = state.searchActive;
+		searchVisible = state.searchVisible;
 		this.applyLineJumpFieldText(state.lineJumpValue, true);
-		this.lineJumpActive = state.lineJumpActive;
-		this.lineJumpVisible = state.lineJumpVisible;
-		this.message.text = state.message.text;
-		this.message.color = state.message.color;
-		this.message.timer = state.message.timer;
-		this.message.visible = state.message.visible;
+		lineJumpActive = state.lineJumpActive;
+		lineJumpVisible = state.lineJumpVisible;
+		message.text = state.message.text;
+		message.color = state.message.color;
+		message.timer = state.message.timer;
+		message.visible = state.message.visible;
 		this.setActiveRuntimeErrorOverlay(null);
-		this.pointerSelecting = false;
-		this.pointerPrimaryWasPressed = false;
+		pointerSelecting = false;
+		pointerPrimaryWasPressed = false;
 		this.clearGotoHoverHighlight();
-		this.cursorRevealSuspended = false;
-		this.repeatState.clear();
+		cursorRevealSuspended = false;
+		repeatState.clear();
 		this.resetKeyPressGuards();
 		this.breakUndoSequence();
-		this.saveGeneration = Number.isFinite(state.saveGeneration) ? Math.max(0, Math.floor(state.saveGeneration)) : 0;
-		this.appliedGeneration = Number.isFinite(state.appliedGeneration) ? Math.max(0, Math.floor(state.appliedGeneration)) : 0;
+		saveGeneration = Number.isFinite(state.saveGeneration) ? Math.max(0, Math.floor(state.saveGeneration)) : 0;
+		appliedGeneration = Number.isFinite(state.appliedGeneration) ? Math.max(0, Math.floor(state.appliedGeneration)) : 0;
 		this.resetActionPromptState();
 		const activeContext = this.getActiveCodeTabContext();
-		const entryContextRef = this.entryTabId ? this.codeTabContexts.get(this.entryTabId) ?? null : null;
+		const entryContextRef = entryTabId ? codeTabContexts.get(entryTabId) ?? null : null;
 		if (activeContext) {
 			activeContext.lastSavedSource = this.lines.join('\n');
 			activeContext.dirty = this.dirty;
@@ -1847,59 +1957,59 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			if (activeContext && activeContext.id === entryContextRef.id) {
 				entryContextRef.lastSavedSource = this.lines.join('\n');
 			}
-			this.lastSavedSource = entryContextRef.lastSavedSource;
+			lastSavedSource = entryContextRef.lastSavedSource;
 		} else {
-			this.lastSavedSource = '';
+			lastSavedSource = '';
 		}
 	}
 
 	public shutdown(): void {
 		this.clearExecutionStopHighlights();
 		this.storeActiveCodeTabContext();
-		this.input.applyOverrides(false, this.captureKeys);
-		this.active = false;
-		if (this.disposeVisibilityListener) {
-			this.disposeVisibilityListener();
-			this.disposeVisibilityListener = null;
+		input.applyOverrides(false, captureKeys);
+		active = false;
+		if (disposeVisibilityListener) {
+			disposeVisibilityListener();
+			disposeVisibilityListener = null;
 		}
-		if (this.disposeWindowEventListeners) {
-			this.disposeWindowEventListeners();
-			this.disposeWindowEventListeners = null;
+		if (disposeWindowEventListeners) {
+			disposeWindowEventListeners();
+			disposeWindowEventListeners = null;
 		}
-		this.windowFocused = true;
-		this.pendingWindowFocused = true;
-		this.repeatState.clear();
+		windowFocused = true;
+		pendingWindowFocused = true;
+		repeatState.clear();
 		this.resetKeyPressGuards();
-		this.pointerSelecting = false;
-		this.pointerPrimaryWasPressed = false;
-		this.pointerAuxWasPressed = false;
+		pointerSelecting = false;
+		pointerPrimaryWasPressed = false;
+		pointerAuxWasPressed = false;
 		this.clearGotoHoverHighlight();
-		this.cursorRevealSuspended = false;
-		this.searchActive = false;
-		this.searchVisible = false;
+		cursorRevealSuspended = false;
+		searchActive = false;
+		searchVisible = false;
 		this.cancelSearchJob();
 		this.cancelGlobalSearchJob();
-		this.searchMatches = [];
-		this.globalSearchMatches = [];
-		this.searchDisplayOffset = 0;
-		this.searchHoverIndex = -1;
-		this.searchScope = 'local';
-		this.searchCurrentIndex = -1;
+		searchMatches = [];
+		globalSearchMatches = [];
+		searchDisplayOffset = 0;
+		searchHoverIndex = -1;
+		searchScope = 'local';
+		searchCurrentIndex = -1;
 		this.applySearchFieldText('', true);
-		this.lineJumpActive = false;
-		this.lineJumpVisible = false;
+		lineJumpActive = false;
+		lineJumpVisible = false;
 		this.applyLineJumpFieldText('', true);
-		this.createResourceActive = false;
-		this.createResourceVisible = false;
+		createResourceActive = false;
+		createResourceVisible = false;
 		this.applyCreateResourceFieldText('', true);
-		this.createResourceError = null;
-		this.createResourceWorking = false;
+		createResourceError = null;
+		createResourceWorking = false;
 		this.resetActionPromptState();
 		this.hideResourcePanel();
 		this.activateCodeTab();
 	}
 
-	private getKeyboard(): KeyboardInput {
+	public getKeyboard(): KeyboardInput {
 		const playerInput = $.input.getPlayerInput(this.playerIndex);
 		if (!playerInput) {
 			throw new Error(`[ConsoleCartEditor] Player input ${this.playerIndex} unavailable.`);
@@ -1915,11 +2025,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return candidate;
 	}
 
-	private syncWindowFocusState(keyboard: KeyboardInput): void {
-		this.flushWindowFocusState(keyboard);
-	}
-
-	private handleToggleRequest(keyboard: KeyboardInput): boolean {
+	public handleToggleRequest(keyboard: KeyboardInput): boolean {
 		const escapeState = getKeyboardButtonState(this.playerIndex, ESCAPE_KEY);
 		if (escapeState && escapeState.pressed === true) {
 			if (shouldAcceptKeyPressGlobal(ESCAPE_KEY, escapeState)) {
@@ -1942,10 +2048,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const startPressed = startState ? startState.pressed === true : false;
 		const gamepadPressed = selectPressed && startPressed;
 		if (!keyboardPressed && !gamepadPressed) {
-			this.toggleInputLatch = false;
+			toggleInputLatch = false;
 			return false;
 		}
-		if (this.toggleInputLatch) {
+		if (toggleInputLatch) {
 			return false;
 		}
 		const keyboardAccepted = toggleKeyState ? shouldAcceptKeyPressGlobal(EDITOR_TOGGLE_KEY, toggleKeyState) : false;
@@ -1958,7 +2064,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (!keyboardAccepted && !gamepadAccepted) {
 			return false;
 		}
-		this.toggleInputLatch = true;
+		toggleInputLatch = true;
 		const intercepted = this.handleEscapeKey();
 		if (keyboardAccepted) {
 			consumeKeyboardKey(keyboard, EDITOR_TOGGLE_KEY);
@@ -1971,7 +2077,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (intercepted) {
 			return true;
 		}
-		if (this.active) {
+		if (active) {
 			if (this.dirty) {
 				this.openActionPrompt('close');
 			} else {
@@ -1983,52 +2089,52 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return true;
 	}
 
-	private handleEscapeKey(): boolean {
-		if (this.pendingActionPrompt) {
+	public handleEscapeKey(): boolean {
+		if (pendingActionPrompt) {
 			this.resetActionPromptState();
 			return true;
 		}
-		if (this.runtimeErrorOverlay) {
+		if (runtimeErrorOverlay) {
 			this.clearRuntimeErrorOverlay();
-			this.message.visible = false;
+			message.visible = false;
 			return true;
 		}
-		if (this.createResourceVisible) {
+		if (createResourceVisible) {
 			this.closeCreateResourcePrompt(true);
 			return true;
 		}
-		if (this.symbolSearchActive || this.symbolSearchVisible) {
+		if (symbolSearchActive || symbolSearchVisible) {
 			this.closeSymbolSearch(false);
 			return true;
 		}
-		if (this.resourceSearchActive || this.resourceSearchVisible) {
+		if (resourceSearchActive || resourceSearchVisible) {
 			this.closeResourceSearch(false);
 			return true;
 		}
-		if (this.lineJumpActive || this.lineJumpVisible) {
+		if (lineJumpActive || lineJumpVisible) {
 			this.closeLineJump(false);
 			return true;
 		}
-		if (this.searchActive || this.searchVisible) {
+		if (searchActive || searchVisible) {
 			this.closeSearch(false, true);
 			return true;
 		}
 		return false;
 	}
 
-	private activate(): void {
-		if (!this.disposeVisibilityListener) {
+	public activate(): void {
+		if (!disposeVisibilityListener) {
 			this.installPlatformVisibilityListener();
 		}
-		if (!this.disposeWindowEventListeners) {
+		if (!disposeWindowEventListeners) {
 			this.installWindowEventListeners();
 		}
-		this.input.applyOverrides(true, this.captureKeys);
+		input.applyOverrides(true, captureKeys);
 		this.applyResolutionModeToRuntime();
-		if (this.activeCodeTabContextId) {
-			const existingTab = this.tabs.find(candidate => candidate.id === this.activeCodeTabContextId);
+		if (activeCodeTabContextId) {
+			const existingTab = tabs.find(candidate => candidate.id === activeCodeTabContextId);
 			if (existingTab) {
-				this.setActiveTab(this.activeCodeTabContextId);
+				this.setActiveTab(activeCodeTabContextId);
 			} else {
 				this.activateCodeTab();
 			}
@@ -2036,13 +2142,13 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.activateCodeTab();
 		}
 		this.bumpTextVersion();
-		this.cursorVisible = true;
-		this.blinkTimer = 0;
-		this.active = true;
-		this.pointerSelecting = false;
-		this.pointerPrimaryWasPressed = false;
-		this.cursorRevealSuspended = false;
-		this.repeatState.clear();
+		cursorVisible = true;
+		blinkTimer = 0;
+		active = true;
+		pointerSelecting = false;
+		pointerPrimaryWasPressed = false;
+		cursorRevealSuspended = false;
+		repeatState.clear();
 		this.resetKeyPressGuards();
 		this.updateDesiredColumn();
 		this.selectionAnchor = null;
@@ -2050,46 +2156,46 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.redoStack = [];
 		this.lastHistoryKey = null;
 		this.lastHistoryTimestamp = 0;
-		this.searchActive = false;
-		this.searchVisible = false;
-		this.lineJumpActive = false;
-		this.lineJumpVisible = false;
-		this.lineJumpValue = '';
+		searchActive = false;
+		searchVisible = false;
+		lineJumpActive = false;
+		lineJumpVisible = false;
+		lineJumpValue = '';
 		this.syncRuntimeErrorOverlayFromContext(this.getActiveCodeTabContext());
 		this.resetActionPromptState();
 		this.cancelSearchJob();
 		this.cancelGlobalSearchJob();
-		this.globalSearchMatches = [];
-		this.searchDisplayOffset = 0;
-		this.searchHoverIndex = -1;
-		this.searchScope = 'local';
-		if (this.searchQuery.length === 0) {
-			this.searchMatches = [];
-			this.searchCurrentIndex = -1;
+		globalSearchMatches = [];
+		searchDisplayOffset = 0;
+		searchHoverIndex = -1;
+		searchScope = 'local';
+		if (searchQuery.length === 0) {
+			searchMatches = [];
+			searchCurrentIndex = -1;
 		} else {
 			this.startSearchJob();
 		}
 		this.ensureCursorVisible();
-		if (this.message.visible && !Number.isFinite(this.message.timer) && this.deferredMessageDuration !== null) {
-			this.message.timer = this.deferredMessageDuration;
+		if (message.visible && !Number.isFinite(message.timer) && deferredMessageDuration !== null) {
+			message.timer = deferredMessageDuration;
 		}
-		this.deferredMessageDuration = null;
-		if (this.dimCrtInEditor) {
+		deferredMessageDuration = null;
+		if (dimCrtInEditor) {
 			this.applyEditorCrtDimming();
 		}
 	}
 
-	private applyEditorCrtDimming(): void {
+	public applyEditorCrtDimming(): void {
 		const view = $.view;
 		const [bleedR, bleedG, bleedB] = view.colorBleed;
 		const [glowR, glowG, glowB] = view.glowColor;
-		this.crtOptionsSnapshot = {
+		crtOptionsSnapshot = {
 			noiseIntensity: view.noiseIntensity,
 			colorBleed: [bleedR, bleedG, bleedB] as [number, number, number],
 			blurIntensity: view.blurIntensity,
 			glowColor: [glowR, glowG, glowB] as [number, number, number],
 		};
-		let snapshot = this.crtOptionsSnapshot;
+		let snapshot = crtOptionsSnapshot;
 		view.noiseIntensity = snapshot.noiseIntensity * 0.5;
 		view.colorBleed = [
 			snapshot.colorBleed[0] * 0.5,
@@ -2104,12 +2210,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		] as [number, number, number];
 	}
 
-	private restoreCrtOptions(): void {
-		const snapshot = this.crtOptionsSnapshot;
+	public restoreCrtOptions(): void {
+		const snapshot = crtOptionsSnapshot;
 		if (!snapshot) {
 			throw new Error('[ConsoleCartEditor] CRT options snapshot unavailable during restore.');
 		}
-		this.crtOptionsSnapshot = null;
+		crtOptionsSnapshot = null;
 		const view = $.view;
 		view.noiseIntensity = snapshot.noiseIntensity;
 		view.colorBleed = [snapshot.colorBleed[0], snapshot.colorBleed[1], snapshot.colorBleed[2]] as [number, number, number];
@@ -2117,66 +2223,66 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		view.glowColor = [snapshot.glowColor[0], snapshot.glowColor[1], snapshot.glowColor[2]] as [number, number, number];
 	}
 
-	private deactivate(): void {
+	public deactivate(): void {
 		this.storeActiveCodeTabContext();
-		this.active = false;
-		if (this.dimCrtInEditor) {
+		active = false;
+		if (dimCrtInEditor) {
 			this.restoreCrtOptions();
 		}
-		this.completion.closeSession();
-		this.repeatState.clear();
+		completion.closeSession();
+		repeatState.clear();
 		this.resetKeyPressGuards();
-		this.input.applyOverrides(false, this.captureKeys);
+		input.applyOverrides(false, captureKeys);
 		$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 		this.selectionAnchor = null;
-		this.pointerSelecting = false;
-		this.pointerPrimaryWasPressed = false;
-		this.pointerAuxWasPressed = false;
-		this.tabDragState = null;
+		pointerSelecting = false;
+		pointerPrimaryWasPressed = false;
+		pointerAuxWasPressed = false;
+		tabDragState = null;
 		this.clearGotoHoverHighlight();
-		this.scrollbarController.cancel();
-		this.cursorRevealSuspended = false;
+		scrollbarController.cancel();
+		cursorRevealSuspended = false;
 		this.undoStack = [];
 		this.redoStack = [];
 		this.lastHistoryKey = null;
 		this.lastHistoryTimestamp = 0;
-		this.searchActive = false;
-		this.searchVisible = false;
-		this.lineJumpActive = false;
-		this.lineJumpVisible = false;
-		this.runtimeErrorOverlay = null;
+		searchActive = false;
+		searchVisible = false;
+		lineJumpActive = false;
+		lineJumpVisible = false;
+		runtimeErrorOverlay = null;
 		this.resetActionPromptState();
 		this.closeCreateResourcePrompt(false);
 		this.hideResourcePanel();
 		this.cancelSearchJob();
 		this.cancelGlobalSearchJob();
-		this.globalSearchMatches = [];
-		this.searchDisplayOffset = 0;
-		this.searchHoverIndex = -1;
-		this.searchScope = 'local';
-		this.backgroundTasks.length = 0;
-		if (this.backgroundTaskHandle) {
-			this.backgroundTaskHandle.cancel();
-			this.backgroundTaskHandle = null;
+		globalSearchMatches = [];
+		searchDisplayOffset = 0;
+		searchHoverIndex = -1;
+		searchScope = 'local';
+		backgroundTasks.length = 0;
+		if (backgroundTaskHandle) {
+			backgroundTaskHandle.cancel();
+			backgroundTaskHandle = null;
 		}
-		this.diagnosticsTaskPending = false;
-		this.lastReportedSemanticError = null;
+		diagnosticsTaskPending = false;
+		lastReportedSemanticError = null;
 	}
 
-	private updateBlink(deltaSeconds: number): void {
-		this.blinkTimer += deltaSeconds;
-		if (this.blinkTimer >= constants.CURSOR_BLINK_INTERVAL) {
-			this.blinkTimer -= constants.CURSOR_BLINK_INTERVAL;
-			this.cursorVisible = !this.cursorVisible;
+	public updateBlink(deltaSeconds: number): void {
+		blinkTimer += deltaSeconds;
+		if (blinkTimer >= constants.CURSOR_BLINK_INTERVAL) {
+			blinkTimer -= constants.CURSOR_BLINK_INTERVAL;
+			cursorVisible = !cursorVisible;
 		}
 	}
 
-	private splitLines(source: string): string[] {
+	public splitLines(source: string): string[] {
 		return source.split(/\r?\n/);
 	}
 
-	private handleActionPromptInput(keyboard: KeyboardInput): void {
-		if (!this.pendingActionPrompt) {
+	public handleActionPromptInput(keyboard: KeyboardInput): void {
+		if (!pendingActionPrompt) {
 			return;
 		}
 		if (isKeyJustPressedGlobal(this.playerIndex, 'Escape')) {
@@ -2190,11 +2296,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number): void {
-		if (this.resourcePanelVisible && this.resourcePanelFocused) {
-			this.resourcePanel.handleKeyboard(keyboard, deltaSeconds);
-			const st = this.resourcePanel.getStateForRender();
-			this.resourcePanelFocused = st.focused;
+	public handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number): void {
+		if (resourcePanelVisible && resourcePanelFocused) {
+			resourcePanel.handleKeyboard(keyboard, deltaSeconds);
+			const st = resourcePanel.getStateForRender();
+			resourcePanelFocused = st.focused;
 			return;
 		}
 		if (this.isResourceViewActive()) {
@@ -2244,7 +2350,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyM')) {
 			consumeKeyboardKey(keyboard, 'KeyM');
 			this.toggleProblemsPanel();
-			if (this.problemsPanel.isVisible()) {
+			if (problemsPanel.isVisible()) {
 				this.markDiagnosticsDirty();
 			} else {
 				this.focusEditorFromProblemsPanel();
@@ -2257,7 +2363,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 
-		if (this.createResourceActive) {
+		if (createResourceActive) {
 			this.handleCreateResourceInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 			return;
 		}
@@ -2283,19 +2389,19 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.cycleTab(shiftDown ? -1 : 1);
 			return;
 		}
-		const inlineFieldFocused = this.searchActive
-			|| this.symbolSearchActive
-			|| this.resourceSearchActive
-			|| this.lineJumpActive
-			|| this.createResourceActive
-			|| this.renameController.isActive();
+		const inlineFieldFocused = searchActive
+			|| symbolSearchActive
+			|| resourceSearchActive
+			|| lineJumpActive
+			|| createResourceActive
+			|| renameController.isActive();
 		if (this.handleCustomKeybinding(keyboard, deltaSeconds, {
 			ctrlDown,
 			metaDown,
 			shiftDown,
 			altDown,
 			inlineFieldFocused,
-			resourcePanelFocused: this.resourcePanelFocused,
+			resourcePanelFocused: resourcePanelFocused,
 			codeTabActive: this.isCodeTabActive(),
 		})) {
 			return;
@@ -2315,7 +2421,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		if ((ctrlDown || metaDown)
 			&& !inlineFieldFocused
-			&& !this.resourcePanelFocused
+			&& !resourcePanelFocused
 			&& this.isCodeTabActive()
 			&& isKeyJustPressedGlobal(this.playerIndex, 'KeyA')) {
 			consumeKeyboardKey(keyboard, 'KeyA');
@@ -2334,49 +2440,49 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.openLineJump();
 			return;
 		}
-		if (this.renameController.isActive()) {
-			this.renameController.handleInput(keyboard, deltaSeconds, { ctrlDown, metaDown, shiftDown, altDown });
+		if (renameController.isActive()) {
+			renameController.handleInput(keyboard, deltaSeconds, { ctrlDown, metaDown, shiftDown, altDown });
 			return;
 		}
-		if (this.resourceSearchActive) {
+		if (resourceSearchActive) {
 			this.handleResourceSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 			return;
 		}
-		if (this.symbolSearchActive) {
+		if (symbolSearchActive) {
 			this.handleSymbolSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 			return;
 		}
-		if (this.lineJumpActive) {
+		if (lineJumpActive) {
 			this.handleLineJumpInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 			return;
 		}
-		if (this.searchActive) {
+		if (searchActive) {
 			this.handleSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 			return;
 		}
-		if (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()) {
+		if (problemsPanel.isVisible() && problemsPanel.isFocused()) {
 			let handled = false;
 			if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
 				consumeKeyboardKey(keyboard, 'ArrowUp');
-				handled = this.problemsPanel.handleKeyboardCommand('up');
+				handled = problemsPanel.handleKeyboardCommand('up');
 			} else if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
 				consumeKeyboardKey(keyboard, 'ArrowDown');
-				handled = this.problemsPanel.handleKeyboardCommand('down');
+				handled = problemsPanel.handleKeyboardCommand('down');
 			} else if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
 				consumeKeyboardKey(keyboard, 'PageUp');
-				handled = this.problemsPanel.handleKeyboardCommand('page-up');
+				handled = problemsPanel.handleKeyboardCommand('page-up');
 			} else if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
 				consumeKeyboardKey(keyboard, 'PageDown');
-				handled = this.problemsPanel.handleKeyboardCommand('page-down');
+				handled = problemsPanel.handleKeyboardCommand('page-down');
 			} else if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
 				consumeKeyboardKey(keyboard, 'Home');
-				handled = this.problemsPanel.handleKeyboardCommand('home');
+				handled = problemsPanel.handleKeyboardCommand('home');
 			} else if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
 				consumeKeyboardKey(keyboard, 'End');
-				handled = this.problemsPanel.handleKeyboardCommand('end');
+				handled = problemsPanel.handleKeyboardCommand('end');
 			} else if (isKeyJustPressedGlobal(this.playerIndex, 'Enter') || isKeyJustPressedGlobal(this.playerIndex, 'NumpadEnter')) {
 				if (isKeyJustPressedGlobal(this.playerIndex, 'Enter')) consumeKeyboardKey(keyboard, 'Enter'); else consumeKeyboardKey(keyboard, 'NumpadEnter');
-				handled = this.problemsPanel.handleKeyboardCommand('activate');
+				handled = problemsPanel.handleKeyboardCommand('activate');
 			} else if (isKeyJustPressedGlobal(this.playerIndex, 'Escape')) {
 				consumeKeyboardKey(keyboard, 'Escape');
 				this.hideProblemsPanel();
@@ -2388,7 +2494,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			if (this.shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) consumeKeyboardKey(keyboard, 'ArrowRight');
 			if (handled) return; else return;
 		}
-		if (this.searchQuery.length > 0 && isKeyJustPressedGlobal(this.playerIndex, 'F3')) {
+		if (searchQuery.length > 0 && isKeyJustPressedGlobal(this.playerIndex, 'F3')) {
 			consumeKeyboardKey(keyboard, 'F3');
 			if (shiftDown) {
 				this.jumpToPreviousMatch();
@@ -2464,7 +2570,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (this.handleCompletionKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown)) {
 			return;
 		}
-		this.input.handleEditorInput(keyboard, deltaSeconds);
+		input.handleEditorInput(keyboard, deltaSeconds);
 		if (ctrlDown || metaDown || altDown) {
 			return;
 		}
@@ -2479,22 +2585,22 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return false;
 	}
 
-	private handleCreateResourceInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
+	public handleCreateResourceInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
 		const altDown = isModifierPressedGlobal(this.playerIndex, 'AltLeft') || isModifierPressedGlobal(this.playerIndex, 'AltRight');
 		if (isKeyJustPressedGlobal(this.playerIndex, 'Escape')) {
 			consumeKeyboardKey(keyboard, 'Escape');
 			this.cancelCreateResourcePrompt();
 			return;
 		}
-		if (!this.createResourceWorking && isKeyJustPressedGlobal(this.playerIndex, 'Enter')) {
+		if (!createResourceWorking && isKeyJustPressedGlobal(this.playerIndex, 'Enter')) {
 			consumeKeyboardKey(keyboard, 'Enter');
 			void this.confirmCreateResourcePrompt();
 			return;
 		}
-		if (this.createResourceWorking) {
+		if (createResourceWorking) {
 			return;
 		}
-		const textChanged = this.processInlineFieldEditing(this.createResourceField, keyboard, {
+		const textChanged = this.processInlineFieldEditing(createResourceField, keyboard, {
 			ctrlDown,
 			metaDown,
 			shiftDown,
@@ -2505,78 +2611,78 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			maxLength: constants.CREATE_RESOURCE_MAX_PATH_LENGTH,
 		});
 		if (textChanged) {
-			this.createResourceError = null;
+			createResourceError = null;
 			this.resetBlink();
 		}
-		this.createResourcePath = this.createResourceField.text;
+		createResourcePath = createResourceField.text;
 	}
 
-	private openCreateResourcePrompt(): void {
-		if (this.createResourceWorking) {
+	public openCreateResourcePrompt(): void {
+		if (createResourceWorking) {
 			return;
 		}
-		this.resourcePanelFocused = false;
-		this.renameController.cancel();
-		let defaultPath = this.createResourcePath.length === 0
+		resourcePanelFocused = false;
+		renameController.cancel();
+		let defaultPath = createResourcePath.length === 0
 			? this.determineCreateResourceDefaultPath()
-			: this.createResourcePath;
+			: createResourcePath;
 		if (defaultPath.length > constants.CREATE_RESOURCE_MAX_PATH_LENGTH) {
 			defaultPath = defaultPath.slice(defaultPath.length - constants.CREATE_RESOURCE_MAX_PATH_LENGTH);
 		}
 		this.applyCreateResourceFieldText(defaultPath, true);
-		this.createResourceVisible = true;
-		this.createResourceActive = true;
-		this.createResourceError = null;
-		this.cursorVisible = true;
+		createResourceVisible = true;
+		createResourceActive = true;
+		createResourceError = null;
+		cursorVisible = true;
 		this.resetBlink();
 	}
 
-	private closeCreateResourcePrompt(focusEditor: boolean): void {
-		this.createResourceActive = false;
-		this.createResourceVisible = false;
-		this.createResourceWorking = false;
+	public closeCreateResourcePrompt(focusEditor: boolean): void {
+		createResourceActive = false;
+		createResourceVisible = false;
+		createResourceWorking = false;
 		if (focusEditor) {
 			this.focusEditorFromSearch();
 			this.focusEditorFromLineJump();
 		}
 		this.applyCreateResourceFieldText('', true);
-		this.createResourceError = null;
+		createResourceError = null;
 		this.resetBlink();
 	}
 
-	private cancelCreateResourcePrompt(): void {
+	public cancelCreateResourcePrompt(): void {
 		this.closeCreateResourcePrompt(true);
 	}
 
-	private async confirmCreateResourcePrompt(): Promise<void> {
-		if (this.createResourceWorking) {
+	public async confirmCreateResourcePrompt(): Promise<void> {
+		if (createResourceWorking) {
 			return;
 		}
 		let normalizedPath: string;
 		let assetId: string;
 		let directory: string;
 		try {
-			const result = this.normalizeCreateResourceRequest(this.createResourcePath);
+			const result = this.normalizeCreateResourceRequest(createResourcePath);
 			normalizedPath = result.path;
 			assetId = result.assetId;
 			directory = result.directory;
 			this.applyCreateResourceFieldText(normalizedPath, true);
-			this.createResourceError = null;
+			createResourceError = null;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			this.createResourceError = message;
+			createResourceError = message;
 			this.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 			this.resetBlink();
 			return;
 		}
-		this.createResourceWorking = true;
+		createResourceWorking = true;
 		this.resetBlink();
 		const contents = this.buildDefaultResourceContents(normalizedPath, assetId);
 		try {
-			const descriptor = await this.createLuaResourceFn({ path: normalizedPath, assetId, contents });
-			this.lastCreateResourceDirectory = directory;
-			this.pendingResourceSelectionAssetId = descriptor.assetId;
-			if (this.resourcePanelVisible) {
+			const descriptor = await createLuaResourceFn({ path: normalizedPath, assetId, contents });
+			lastCreateResourceDirectory = directory;
+			pendingResourceSelectionAssetId = descriptor.assetId;
+			if (resourcePanelVisible) {
 				this.refreshResourcePanelContents();
 			}
 			this.openLuaCodeTab(descriptor);
@@ -2585,15 +2691,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			const simplified = this.simplifyRuntimeErrorMessage(message);
-			this.createResourceError = simplified;
+			createResourceError = simplified;
 			this.showMessage(`Failed to create resource: ${simplified}`, constants.COLOR_STATUS_WARNING, 4.0);
 		} finally {
-			this.createResourceWorking = false;
+			createResourceWorking = false;
 			this.resetBlink();
 		}
 	}
 
-	private isValidCreateResourceCharacter(value: string): boolean {
+	public isValidCreateResourceCharacter(value: string): boolean {
 		if (value.length !== 1) {
 			return false;
 		}
@@ -2610,7 +2716,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return value === '_' || value === '-' || value === '.' || value === '/';
 	}
 
-	private normalizeCreateResourceRequest(rawPath: string): { path: string; assetId: string; directory: string } {
+	public normalizeCreateResourceRequest(rawPath: string): { path: string; assetId: string; directory: string } {
 		let candidate = rawPath.trim();
 		if (candidate.length === 0) {
 			throw new Error('Path must not be empty.');
@@ -2651,9 +2757,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return { path: candidate, assetId: baseName, directory: this.ensureDirectorySuffix(directory) };
 	}
 
-	private determineCreateResourceDefaultPath(): string {
-		if (this.lastCreateResourceDirectory && this.lastCreateResourceDirectory.length > 0) {
-			return this.lastCreateResourceDirectory;
+	public determineCreateResourceDefaultPath(): string {
+		if (lastCreateResourceDirectory && lastCreateResourceDirectory.length > 0) {
+			return lastCreateResourceDirectory;
 		}
 		const activeContext = this.getActiveCodeTabContext();
 		if (activeContext && activeContext.descriptor && typeof activeContext.descriptor.path === 'string' && activeContext.descriptor.path.length > 0) {
@@ -2661,7 +2767,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		let descriptors: ConsoleResourceDescriptor[] = [];
 		try {
-			descriptors = this.listResourcesFn();
+			descriptors = listResourcesFn();
 		} catch (error) {
 			descriptors = [];
 		}
@@ -2672,7 +2778,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return './';
 	}
 
-	private ensureDirectorySuffix(path: string): string {
+	public ensureDirectorySuffix(path: string): string {
 		if (!path || path.length === 0) {
 			return '';
 		}
@@ -2684,11 +2790,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return normalized.slice(0, slashIndex + 1);
 	}
 
-	private buildDefaultResourceContents(_path: string, _assetId: string): string {
+	public buildDefaultResourceContents(_path: string, _assetId: string): string {
 		return constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 	}
 
-	private handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
+	public handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
 		const altDown = isModifierPressedGlobal(this.playerIndex, 'AltLeft') || isModifierPressedGlobal(this.playerIndex, 'AltRight');
 		if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {
 			consumeKeyboardKey(keyboard, 'KeyF');
@@ -2719,19 +2825,19 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			void this.save();
 			return;
 		}
-		const hasResults = this.activeSearchMatchCount() > 0;
-		const previewLocal = this.searchScope === 'local';
+		const hasResults = activeSearchMatchCount() > 0;
+		const previewLocal = searchScope === 'local';
 		if (isKeyJustPressedGlobal(this.playerIndex, 'Enter')) {
 			consumeKeyboardKey(keyboard, 'Enter');
 			if (hasResults) {
 				if (shiftDown) {
 					this.moveSearchSelection(-1, { wrap: true, preview: previewLocal });
-				} else if (this.searchCurrentIndex === -1) {
-					this.searchCurrentIndex = 0;
+				} else if (searchCurrentIndex === -1) {
+					searchCurrentIndex = 0;
 				} else {
 					this.moveSearchSelection(1, { wrap: true, preview: previewLocal });
 				}
-				this.applySearchSelection(this.searchCurrentIndex);
+				this.applySearchSelection(searchCurrentIndex);
 			} else if (shiftDown) {
 				this.jumpToPreviousMatch();
 			} else {
@@ -2761,36 +2867,36 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 			if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
 				consumeKeyboardKey(keyboard, 'PageUp');
-				this.moveSearchSelection(-this.searchPageSize(), { preview: previewLocal });
+				this.moveSearchSelection(-searchPageSize(), { preview: previewLocal });
 				return;
 			}
 			if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
 				consumeKeyboardKey(keyboard, 'PageDown');
-				this.moveSearchSelection(this.searchPageSize(), { preview: previewLocal });
+				this.moveSearchSelection(searchPageSize(), { preview: previewLocal });
 				return;
 			}
 			if (isKeyJustPressedGlobal(this.playerIndex, 'Home')) {
 				consumeKeyboardKey(keyboard, 'Home');
-				this.searchCurrentIndex = hasResults ? 0 : -1;
+				searchCurrentIndex = hasResults ? 0 : -1;
 				this.ensureSearchSelectionVisible();
 				if (previewLocal) {
-					this.applySearchSelection(this.searchCurrentIndex, { preview: true });
+					this.applySearchSelection(searchCurrentIndex, { preview: true });
 				}
 				return;
 			}
 			if (isKeyJustPressedGlobal(this.playerIndex, 'End')) {
 				consumeKeyboardKey(keyboard, 'End');
-				const lastIndex = hasResults ? this.activeSearchMatchCount() - 1 : -1;
-				this.searchCurrentIndex = lastIndex;
+				const lastIndex = hasResults ? activeSearchMatchCount() - 1 : -1;
+				searchCurrentIndex = lastIndex;
 				this.ensureSearchSelectionVisible();
 				if (previewLocal) {
-					this.applySearchSelection(this.searchCurrentIndex, { preview: true });
+					this.applySearchSelection(searchCurrentIndex, { preview: true });
 				}
 				return;
 			}
 		}
 
-		const textChanged = this.processInlineFieldEditing(this.searchField, keyboard, {
+		const textChanged = this.processInlineFieldEditing(searchField, keyboard, {
 			ctrlDown,
 			metaDown,
 			shiftDown,
@@ -2801,13 +2907,13 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			maxLength: null,
 		});
 
-		this.searchQuery = this.searchField.text;
+		searchQuery = searchField.text;
 		if (textChanged) {
 			this.onSearchQueryChanged();
 		}
 	}
 
-	private handleLineJumpInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
+	public handleLineJumpInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
 		if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(this.playerIndex, 'KeyL')) {
 			consumeKeyboardKey(keyboard, 'KeyL');
 			this.openLineJump();
@@ -2831,7 +2937,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 
 		const digitFilter = (value: string): boolean => value >= '0' && value <= '9';
-		const textChanged = this.processInlineFieldEditing(this.lineJumpField, keyboard, {
+		const textChanged = this.processInlineFieldEditing(lineJumpField, keyboard, {
 			ctrlDown,
 			metaDown,
 			shiftDown,
@@ -2841,32 +2947,32 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			characterFilter: digitFilter,
 			maxLength: 6,
 		});
-		this.lineJumpValue = this.lineJumpField.text;
+		lineJumpValue = lineJumpField.text;
 		if (textChanged) {
 			// keep value in sync; no additional processing required
 		}
 	}
 
-	private openSearch(useSelection: boolean, scope: 'local' | 'global' = 'local'): void {
+	public openSearch(useSelection: boolean, scope: 'local' | 'global' = 'local'): void {
 		this.clearReferenceHighlights();
 		this.closeSymbolSearch(false);
 		this.closeResourceSearch(false);
 		this.closeLineJump(false);
-		this.renameController.cancel();
-		this.searchScope = scope;
-		this.searchDisplayOffset = 0;
-		this.searchHoverIndex = -1;
+		renameController.cancel();
+		searchScope = scope;
+		searchDisplayOffset = 0;
+		searchHoverIndex = -1;
 		if (scope === 'global') {
 			this.cancelSearchJob();
-			this.searchMatches = [];
-			this.globalSearchMatches = [];
+			searchMatches = [];
+			globalSearchMatches = [];
 		} else {
 			this.cancelGlobalSearchJob();
-			this.globalSearchMatches = [];
+			globalSearchMatches = [];
 		}
-		this.searchVisible = true;
-		this.searchActive = true;
-		this.applySearchFieldText(this.searchQuery, true);
+		searchVisible = true;
+		searchActive = true;
+		this.applySearchFieldText(searchQuery, true);
 		let appliedSelection = false;
 		if (useSelection) {
 			const range = this.getSelectionRange();
@@ -2878,167 +2984,167 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				appliedSelection = true;
 			}
 		}
-		if (!appliedSelection && this.searchField.text.length === 0) {
-			this.searchCurrentIndex = -1;
+		if (!appliedSelection && searchField.text.length === 0) {
+			searchCurrentIndex = -1;
 		}
-		this.searchQuery = this.searchField.text;
+		searchQuery = searchField.text;
 		this.onSearchQueryChanged();
 		this.resetBlink();
 	}
 
-	private closeSearch(clearQuery: boolean, forceHide = false): void {
-		this.searchActive = false;
-		this.searchHoverIndex = -1;
-		this.searchDisplayOffset = 0;
+	public closeSearch(clearQuery: boolean, forceHide = false): void {
+		searchActive = false;
+		searchHoverIndex = -1;
+		searchDisplayOffset = 0;
 		if (clearQuery) {
 			this.applySearchFieldText('', true);
 		}
-		this.searchQuery = this.searchField.text;
-		const shouldHide = forceHide || clearQuery || this.searchQuery.length === 0;
+		searchQuery = searchField.text;
+		const shouldHide = forceHide || clearQuery || searchQuery.length === 0;
 		if (shouldHide) {
-			this.searchVisible = false;
-			this.searchScope = 'local';
-			this.searchMatches = [];
-			this.globalSearchMatches = [];
-			this.searchCurrentIndex = -1;
+			searchVisible = false;
+			searchScope = 'local';
+			searchMatches = [];
+			globalSearchMatches = [];
+			searchCurrentIndex = -1;
 			this.cancelSearchJob();
 			this.cancelGlobalSearchJob();
 		} else {
-			if (this.searchScope !== 'local') {
-				this.searchScope = 'local';
+			if (searchScope !== 'local') {
+				searchScope = 'local';
 				this.cancelGlobalSearchJob();
-				this.globalSearchMatches = [];
+				globalSearchMatches = [];
 			}
-			this.searchMatches = [];
-			this.searchCurrentIndex = -1;
-			this.searchVisible = true;
+			searchMatches = [];
+			searchCurrentIndex = -1;
+			searchVisible = true;
 			this.onSearchQueryChanged();
 		}
 		this.selectionAnchor = null;
 		this.resetBlink();
 	}
 
-	private focusEditorFromSearch(): void {
-		if (!this.searchActive && !this.searchVisible) {
+	public focusEditorFromSearch(): void {
+		if (!searchActive && !searchVisible) {
 			return;
 		}
-		this.searchActive = false;
-		this.searchScope = 'local';
-		this.searchDisplayOffset = 0;
-		this.searchHoverIndex = -1;
+		searchActive = false;
+		searchScope = 'local';
+		searchDisplayOffset = 0;
+		searchHoverIndex = -1;
 		this.cancelGlobalSearchJob();
-		if (this.searchQuery.length === 0) {
-			this.searchVisible = false;
-			this.searchMatches = [];
-			this.globalSearchMatches = [];
-			this.searchCurrentIndex = -1;
+		if (searchQuery.length === 0) {
+			searchVisible = false;
+			searchMatches = [];
+			globalSearchMatches = [];
+			searchCurrentIndex = -1;
 		} else {
-			this.searchMatches = [];
-			this.globalSearchMatches = [];
-			this.searchCurrentIndex = -1;
+			searchMatches = [];
+			globalSearchMatches = [];
+			searchCurrentIndex = -1;
 		}
 		this.selectionAnchor = null;
-		this.searchField.selectionAnchor = null;
-		this.searchField.pointerSelecting = false;
+		searchField.selectionAnchor = null;
+		searchField.pointerSelecting = false;
 		this.cancelSearchJob();
 		this.cancelGlobalSearchJob();
 		this.resetBlink();
 	}
 
-	private openResourceSearch(initialQuery: string = ''): void {
+	public openResourceSearch(initialQuery: string = ''): void {
 		this.clearReferenceHighlights();
 		this.closeSearch(false, true);
 		this.closeLineJump(false);
 		this.closeSymbolSearch(false);
-		this.renameController.cancel();
-		this.resourceSearchVisible = true;
-		this.resourceSearchActive = true;
+		renameController.cancel();
+		resourceSearchVisible = true;
+		resourceSearchActive = true;
 		this.applyResourceSearchFieldText(initialQuery, true);
 		this.refreshResourceCatalog();
 		this.updateResourceSearchMatches();
-		this.resourceSearchHoverIndex = -1;
+		resourceSearchHoverIndex = -1;
 		this.resetBlink();
 	}
 
-	private closeResourceSearch(clearQuery: boolean): void {
+	public closeResourceSearch(clearQuery: boolean): void {
 		if (clearQuery) {
 			this.applyResourceSearchFieldText('', true);
 		}
-		this.resourceSearchActive = false;
-		this.resourceSearchVisible = false;
-		this.resourceSearchMatches = [];
-		this.resourceSearchSelectionIndex = -1;
-		this.resourceSearchDisplayOffset = 0;
-		this.resourceSearchHoverIndex = -1;
-		this.resourceSearchField.selectionAnchor = null;
-		this.resourceSearchField.pointerSelecting = false;
+		resourceSearchActive = false;
+		resourceSearchVisible = false;
+		resourceSearchMatches = [];
+		resourceSearchSelectionIndex = -1;
+		resourceSearchDisplayOffset = 0;
+		resourceSearchHoverIndex = -1;
+		resourceSearchField.selectionAnchor = null;
+		resourceSearchField.pointerSelecting = false;
 		this.resetBlink();
 	}
 
-	private focusEditorFromResourceSearch(): void {
-		if (!this.resourceSearchActive && !this.resourceSearchVisible) {
+	public focusEditorFromResourceSearch(): void {
+		if (!resourceSearchActive && !resourceSearchVisible) {
 			return;
 		}
-		this.resourceSearchActive = false;
-		if (this.resourceSearchQuery.length === 0) {
-			this.resourceSearchVisible = false;
-			this.resourceSearchMatches = [];
-			this.resourceSearchSelectionIndex = -1;
-			this.resourceSearchDisplayOffset = 0;
+		resourceSearchActive = false;
+		if (resourceSearchQuery.length === 0) {
+			resourceSearchVisible = false;
+			resourceSearchMatches = [];
+			resourceSearchSelectionIndex = -1;
+			resourceSearchDisplayOffset = 0;
 		}
-		this.resourceSearchField.selectionAnchor = null;
-		this.resourceSearchField.pointerSelecting = false;
+		resourceSearchField.selectionAnchor = null;
+		resourceSearchField.pointerSelecting = false;
 		this.resetBlink();
 	}
 
-	private openSymbolSearch(initialQuery: string = ''): void {
+	public openSymbolSearch(initialQuery: string = ''): void {
 		this.clearReferenceHighlights();
 		this.closeSearch(false, true);
 		this.closeLineJump(false);
 		this.closeResourceSearch(false);
-		this.renameController.cancel();
-		this.symbolSearchMode = 'symbols';
-		this.referenceCatalog = [];
-		this.symbolSearchGlobal = false;
-		this.symbolSearchVisible = true;
-		this.symbolSearchActive = true;
+		renameController.cancel();
+		symbolSearchMode = 'symbols';
+		referenceCatalog = [];
+		symbolSearchGlobal = false;
+		symbolSearchVisible = true;
+		symbolSearchActive = true;
 		this.applySymbolSearchFieldText(initialQuery, true);
 		this.refreshSymbolCatalog(true);
 		this.updateSymbolSearchMatches();
-		this.symbolSearchHoverIndex = -1;
+		symbolSearchHoverIndex = -1;
 		this.resetBlink();
 	}
 
-	private openGlobalSymbolSearch(initialQuery: string = ''): void {
+	public openGlobalSymbolSearch(initialQuery: string = ''): void {
 		this.clearReferenceHighlights();
 		this.closeSearch(false, true);
 		this.closeLineJump(false);
 		this.closeResourceSearch(false);
-		this.renameController.cancel();
-		this.symbolSearchMode = 'symbols';
-		this.referenceCatalog = [];
-		this.symbolSearchGlobal = true;
-		this.symbolSearchVisible = true;
-		this.symbolSearchActive = true;
+		renameController.cancel();
+		symbolSearchMode = 'symbols';
+		referenceCatalog = [];
+		symbolSearchGlobal = true;
+		symbolSearchVisible = true;
+		symbolSearchActive = true;
 		this.applySymbolSearchFieldText(initialQuery, true);
 		this.refreshSymbolCatalog(true);
 		this.updateSymbolSearchMatches();
-		this.symbolSearchHoverIndex = -1;
+		symbolSearchHoverIndex = -1;
 		this.resetBlink();
 	}
 
-	private openReferenceSearchPopup(): void {
+	public openReferenceSearchPopup(): void {
 		const context = this.getActiveCodeTabContext();
-		if (this.symbolSearchVisible || this.symbolSearchActive) {
+		if (symbolSearchVisible || symbolSearchActive) {
 			this.closeSymbolSearch(false);
 		}
-		this.renameController.cancel();
+		renameController.cancel();
 		const referenceContext = this.buildProjectReferenceContext(context);
 		const result = resolveReferenceLookup({
-			layout: this.layout,
-			workspace: this.semanticWorkspace,
+			layout: layout,
+			workspace: semanticWorkspace,
 			lines: this.lines,
-			textVersion: this.textVersion,
+			textVersion: textVersion,
 			cursorRow: this.cursorRow,
 			cursorColumn: this.cursorColumn,
 			extractExpression: (row, column) => this.extractHoverExpression(row, column),
@@ -3049,26 +3155,26 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 		const { info, initialIndex } = result;
-		this.referenceState.apply(info, initialIndex);
-		this.referenceCatalog = this.buildReferenceCatalogForExpression(info, context);
-		if (this.referenceCatalog.length === 0) {
+		referenceState.apply(info, initialIndex);
+		referenceCatalog = this.buildReferenceCatalogForExpression(info, context);
+		if (referenceCatalog.length === 0) {
 			this.showMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
 			return;
 		}
-		this.symbolSearchMode = 'references';
-		this.symbolSearchGlobal = true;
-		this.symbolSearchVisible = true;
-		this.symbolSearchActive = true;
+		symbolSearchMode = 'references';
+		symbolSearchGlobal = true;
+		symbolSearchVisible = true;
+		symbolSearchActive = true;
 		this.applySymbolSearchFieldText('', true);
-		this.symbolSearchQuery = '';
+		symbolSearchQuery = '';
 		this.updateReferenceSearchMatches();
-		this.symbolSearchHoverIndex = -1;
+		symbolSearchHoverIndex = -1;
 		this.ensureSymbolSearchSelectionVisible();
 		this.resetBlink();
 		this.showReferenceStatusMessage();
 	}
 
-	private openRenamePrompt(): void {
+	public openRenamePrompt(): void {
 		if (!this.isCodeTabActive()) {
 			return;
 		}
@@ -3076,32 +3182,32 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.closeLineJump(false);
 		this.closeResourceSearch(false);
 		this.closeSymbolSearch(false);
-		this.createResourceActive = false;
+		createResourceActive = false;
 		const context = this.getActiveCodeTabContext();
 		const referenceContext = this.buildProjectReferenceContext(context);
-		const started = this.renameController.begin({
-			layout: this.layout,
-			workspace: this.semanticWorkspace,
+		const started = renameController.begin({
+			layout: layout,
+			workspace: semanticWorkspace,
 			lines: this.lines,
-			textVersion: this.textVersion,
+			textVersion: textVersion,
 			cursorRow: this.cursorRow,
 			cursorColumn: this.cursorColumn,
 			extractExpression: (row, column) => this.extractHoverExpression(row, column),
 			chunkName: referenceContext.chunkName,
 		});
 		if (started) {
-			this.cursorVisible = true;
+			cursorVisible = true;
 			this.resetBlink();
 		}
 	}
 
-	private commitRename(payload: RenameCommitPayload): RenameCommitResult {
+	public commitRename(payload: RenameCommitPayload): RenameCommitResult {
 		const { matches, newName, activeIndex, info } = payload;
 		const activeContext = this.getActiveCodeTabContext();
 		const referenceContext = this.buildProjectReferenceContext(activeContext);
 		const activeChunkName = referenceContext.chunkName;
 		const normalizedActiveChunk = this.normalizeChunkReference(activeChunkName) ?? activeChunkName;
-		const renameManager = new CrossFileRenameManager(this.getCrossFileRenameDependencies(), this.semanticWorkspace);
+		const renameManager = new CrossFileRenameManager(this.getCrossFileRenameDependencies(), semanticWorkspace);
 		const sortedMatches = matches.slice();
 		sortedMatches.sort((a, b) => {
 			if (a.row !== b.row) {
@@ -3134,15 +3240,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.selectionAnchor = { row: match.row, column: endColumn };
 			this.updateDesiredColumn();
 			this.resetBlink();
-			this.cursorRevealSuspended = false;
+			cursorRevealSuspended = false;
 			this.ensureCursorVisible();
 			updatedTotal += sortedMatches.length;
 		}
 		if (activeEditsApplied) {
-			this.semanticWorkspace.updateFile(activeChunkName, this.lines.join('\n'));
+			semanticWorkspace.updateFile(activeChunkName, this.lines.join('\n'));
 		}
-		const decl = info.definitionKey ? this.semanticWorkspace.getDecl(info.definitionKey) : null;
-		const references = info.definitionKey ? this.semanticWorkspace.getReferences(info.definitionKey) : [];
+		const decl = info.definitionKey ? semanticWorkspace.getDecl(info.definitionKey) : null;
+		const references = info.definitionKey ? semanticWorkspace.getReferences(info.definitionKey) : [];
 		type RangeBucket = { chunkName: string; ranges: LuaSourceRange[]; seen: Set<string> };
 		const rangeMap = new Map<string, RangeBucket>();
 		const addRange = (range: LuaSourceRange | null | undefined): void => {
@@ -3182,70 +3288,70 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return { updatedMatches: updatedTotal };
 	}
 
-	private getCrossFileRenameDependencies(): CrossFileRenameDependencies {
+	public getCrossFileRenameDependencies(): CrossFileRenameDependencies {
 		return {
 			normalizeChunkReference: (reference: string | null) => this.normalizeChunkReference(reference),
 			findResourceDescriptorForChunk: (chunk: string) => this.findResourceDescriptorForChunk(chunk),
 			createLuaCodeTabContext: (descriptor: ConsoleResourceDescriptor) => this.createLuaCodeTabContext(descriptor),
 			createEntryTabContext: () => this.createEntryTabContext(),
-			getEntryTabId: () => this.entryTabId,
+			getEntryTabId: () => entryTabId,
 			setEntryTabId: (id: string | null) => {
-				this.entryTabId = id;
+				entryTabId = id;
 			},
-			getPrimaryAssetId: () => this.primaryAssetId,
-			getCodeTabContext: (id: string) => this.codeTabContexts.get(id) ?? null,
+			getPrimaryAssetId: () => primaryAssetId,
+			getCodeTabContext: (id: string) => codeTabContexts.get(id) ?? null,
 			setCodeTabContext: (context: CodeTabContext) => {
-				this.codeTabContexts.set(context.id, context);
+				codeTabContexts.set(context.id, context);
 			},
-			listCodeTabContexts: () => this.codeTabContexts.values(),
+			listCodeTabContexts: () => codeTabContexts.values(),
 			splitLines: (source: string) => this.splitLines(source),
 			setTabDirty: (tabId: string, dirty: boolean) => this.setTabDirty(tabId, dirty),
 		};
 	}
 
-	private closeSymbolSearch(clearQuery: boolean): void {
+	public closeSymbolSearch(clearQuery: boolean): void {
 		if (clearQuery) {
 			this.applySymbolSearchFieldText('', true);
 		}
-		this.symbolSearchActive = false;
-		this.symbolSearchVisible = false;
-		this.symbolSearchGlobal = false;
-		this.symbolSearchMode = 'symbols';
-		this.referenceCatalog = [];
-		this.symbolSearchMatches = [];
-		this.symbolSearchSelectionIndex = -1;
-		this.symbolSearchDisplayOffset = 0;
-		this.symbolSearchHoverIndex = -1;
-		this.symbolSearchField.selectionAnchor = null;
-		this.symbolSearchField.pointerSelecting = false;
+		symbolSearchActive = false;
+		symbolSearchVisible = false;
+		symbolSearchGlobal = false;
+		symbolSearchMode = 'symbols';
+		referenceCatalog = [];
+		symbolSearchMatches = [];
+		symbolSearchSelectionIndex = -1;
+		symbolSearchDisplayOffset = 0;
+		symbolSearchHoverIndex = -1;
+		symbolSearchField.selectionAnchor = null;
+		symbolSearchField.pointerSelecting = false;
 		this.resetBlink();
 	}
 
-	private focusEditorFromSymbolSearch(): void {
-		if (!this.symbolSearchActive && !this.symbolSearchVisible) {
+	public focusEditorFromSymbolSearch(): void {
+		if (!symbolSearchActive && !symbolSearchVisible) {
 			return;
 		}
-		this.symbolSearchActive = false;
-		if (this.symbolSearchQuery.length === 0) {
-			this.symbolSearchVisible = false;
-			this.symbolSearchMatches = [];
-			this.symbolSearchSelectionIndex = -1;
-			this.symbolSearchDisplayOffset = 0;
+		symbolSearchActive = false;
+		if (symbolSearchQuery.length === 0) {
+			symbolSearchVisible = false;
+			symbolSearchMatches = [];
+			symbolSearchSelectionIndex = -1;
+			symbolSearchDisplayOffset = 0;
 		}
-		this.symbolSearchField.selectionAnchor = null;
-		this.symbolSearchField.pointerSelecting = false;
+		symbolSearchField.selectionAnchor = null;
+		symbolSearchField.pointerSelecting = false;
 		this.resetBlink();
 	}
 
-	private focusEditorFromRename(): void {
-		this.cursorRevealSuspended = false;
+	public focusEditorFromRename(): void {
+		cursorRevealSuspended = false;
 		this.resetBlink();
 		this.revealCursor();
-		this.cursorVisible = true;
+		cursorVisible = true;
 	}
 
-	private refreshSymbolCatalog(force: boolean): void {
-		const scope: 'local' | 'global' = this.symbolSearchGlobal ? 'global' : 'local';
+	public refreshSymbolCatalog(force: boolean): void {
+		const scope: 'local' | 'global' = symbolSearchGlobal ? 'global' : 'local';
 		let assetId: string | null = null;
 		let chunkName: string | null = null;
 		if (scope === 'local') {
@@ -3253,7 +3359,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			assetId = this.resolveHoverAssetId(context);
 			chunkName = this.resolveHoverChunkName(context);
 		}
-		const existing = this.symbolCatalogContext;
+		const existing = symbolCatalogContext;
 		const unchanged = existing !== null
 			&& existing.scope === scope
 			&& (scope === 'global'
@@ -3264,26 +3370,26 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		let entries: ConsoleLuaSymbolEntry[] = [];
 		try {
 			if (scope === 'global') {
-				entries = this.listGlobalLuaSymbolsFn();
+				entries = listGlobalLuaSymbolsFn();
 			} else {
-				entries = this.listLuaSymbolsFn(assetId, chunkName);
+				entries = listLuaSymbolsFn(assetId, chunkName);
 			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			this.symbolCatalog = [];
-			this.symbolSearchMatches = [];
-			this.symbolSearchSelectionIndex = -1;
-			this.symbolSearchDisplayOffset = 0;
-			this.symbolSearchHoverIndex = -1;
+			symbolCatalog = [];
+			symbolSearchMatches = [];
+			symbolSearchSelectionIndex = -1;
+			symbolSearchDisplayOffset = 0;
+			symbolSearchHoverIndex = -1;
 			this.showMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 			return;
 		}
-		this.symbolCatalogContext = { scope, assetId, chunkName };
+		symbolCatalogContext = { scope, assetId, chunkName };
 		const deduped: ConsoleLuaSymbolEntry[] = [];
 		const seen = new Set<string>();
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
-			const key = this.symbolCatalogDedupKey(entry);
+			const key = symbolCatalogDedupKey(entry);
 			if (seen.has(key)) {
 				continue;
 			}
@@ -3316,10 +3422,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			const bSource = b.sourceLabel ?? '';
 			return aSource.localeCompare(bSource);
 		});
-		this.symbolCatalog = catalogEntries;
+		symbolCatalog = catalogEntries;
 	}
 
-	private symbolPriority(kind: ConsoleLuaSymbolEntry['kind']): number {
+	public symbolPriority(kind: ConsoleLuaSymbolEntry['kind']): number {
 		switch (kind) {
 			case 'table_field':
 				return 5;
@@ -3335,7 +3441,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private symbolKindLabel(kind: ConsoleLuaSymbolEntry['kind']): string {
+	public symbolKindLabel(kind: ConsoleLuaSymbolEntry['kind']): string {
 		switch (kind) {
 			case 'function':
 				return 'FUNC';
@@ -3351,7 +3457,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string | null {
+	public symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string | null {
 		const path = entry.location.path ?? entry.location.assetId ?? null;
 		if (!path) {
 			return null;
@@ -3359,36 +3465,21 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return computeSourceLabel(path, entry.location.chunkName ?? '<console>');
 	}
 
-	private symbolCatalogDedupKey(entry: ConsoleLuaSymbolEntry): string {
-		const { location, kind, name } = entry;
-		const chunkName = location.chunkName ?? '';
-		const normalizedPath = location.path ? location.path.replace(/\\/g, '/') : '';
-		const assetId = location.assetId ?? '';
-		const locationKey = normalizedPath.length > 0
-			? normalizedPath
-			: (assetId.length > 0 ? assetId : chunkName);
-		const startLine = location.range.startLine;
-		const startColumn = location.range.startColumn;
-		const endLine = location.range.endLine;
-		const endColumn = location.range.endColumn;
-		return `${kind}|${name}|${locationKey}|${startLine}:${startColumn}|${endLine}:${endColumn}`;
-	}
-
-	private buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext | null): ReferenceCatalogEntry[] {
+	public buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext | null): ReferenceCatalogEntry[] {
 		const descriptor = context?.descriptor ?? null;
 		const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
-		const assetId = descriptor?.assetId ?? this.primaryAssetId ?? null;
+		const assetId = descriptor?.assetId ?? primaryAssetId ?? null;
 		const chunkName = this.resolveHoverChunkName(context) ?? normalizedPath ?? assetId ?? '<console>';
 		const environment: ProjectReferenceEnvironment = {
 			activeContext: this.getActiveCodeTabContext(),
 			activeLines: this.lines,
-			codeTabContexts: Array.from(this.codeTabContexts.values()),
+			codeTabContexts: Array.from(codeTabContexts.values()),
 			listResources: () => this.listResourcesStrict(),
-			loadLuaResource: (resourceId: string) => this.loadLuaResourceFn(resourceId),
+			loadLuaResource: (resourceId: string) => loadLuaResourceFn(resourceId),
 		};
 		const sourceLabelPath = descriptor?.path ?? descriptor?.assetId ?? null;
 		return buildProjectReferenceCatalog({
-			workspace: this.semanticWorkspace,
+			workspace: semanticWorkspace,
 			info,
 			lines: this.lines,
 			chunkName,
@@ -3398,29 +3489,29 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		});
 	}
 
-	private updateSymbolSearchMatches(): void {
-		if (this.symbolSearchMode === 'references') {
+	public updateSymbolSearchMatches(): void {
+		if (symbolSearchMode === 'references') {
 			this.updateReferenceSearchMatches();
 			return;
 		}
 		this.refreshSymbolCatalog(false);
-		this.symbolSearchMatches = [];
-		this.symbolSearchSelectionIndex = -1;
-		this.symbolSearchDisplayOffset = 0;
-		this.symbolSearchHoverIndex = -1;
-		if (this.symbolCatalog.length === 0) {
+		symbolSearchMatches = [];
+		symbolSearchSelectionIndex = -1;
+		symbolSearchDisplayOffset = 0;
+		symbolSearchHoverIndex = -1;
+		if (symbolCatalog.length === 0) {
 			return;
 		}
-		const query = this.symbolSearchQuery.trim().toLowerCase();
+		const query = symbolSearchQuery.trim().toLowerCase();
 		if (query.length === 0) {
-			this.symbolSearchMatches = this.symbolCatalog.map(entry => ({ entry, matchIndex: 0 }));
-			if (this.symbolSearchMatches.length > 0) {
-				this.symbolSearchSelectionIndex = 0;
+			symbolSearchMatches = symbolCatalog.map(entry => ({ entry, matchIndex: 0 }));
+			if (symbolSearchMatches.length > 0) {
+				symbolSearchSelectionIndex = 0;
 			}
 			return;
 		}
 		const matches: SymbolSearchResult[] = [];
-		for (const entry of this.symbolCatalog) {
+		for (const entry of symbolCatalog) {
 			const idx = entry.searchKey.indexOf(query);
 			if (idx === -1) {
 				continue;
@@ -3428,7 +3519,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			matches.push({ entry, matchIndex: idx });
 		}
 		if (matches.length === 0) {
-			this.symbolSearchMatches = [];
+			symbolSearchMatches = [];
 			return;
 		}
 		matches.sort((a, b) => {
@@ -3448,125 +3539,92 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 			return a.entry.displayName.localeCompare(b.entry.displayName);
 		});
-		this.symbolSearchMatches = matches;
-		this.symbolSearchSelectionIndex = 0;
-		this.symbolSearchDisplayOffset = 0;
+		symbolSearchMatches = matches;
+		symbolSearchSelectionIndex = 0;
+		symbolSearchDisplayOffset = 0;
 	}
 
-	private updateReferenceSearchMatches(): void {
+	public updateReferenceSearchMatches(): void {
 		const { matches, selectionIndex, displayOffset } = filterReferenceCatalog({
-			catalog: this.referenceCatalog,
-			query: this.symbolSearchQuery,
-			state: this.referenceState,
-			pageSize: this.symbolSearchPageSize(),
+			catalog: referenceCatalog,
+			query: symbolSearchQuery,
+			state: referenceState,
+			pageSize: symbolSearchPageSize(),
 		});
-		this.symbolSearchMatches = matches;
-		this.symbolSearchSelectionIndex = selectionIndex;
-		this.symbolSearchDisplayOffset = displayOffset;
-		this.symbolSearchHoverIndex = -1;
+		symbolSearchMatches = matches;
+		symbolSearchSelectionIndex = selectionIndex;
+		symbolSearchDisplayOffset = displayOffset;
+		symbolSearchHoverIndex = -1;
 	}
 
-
-
-
-	private isSymbolSearchCompactMode(): boolean {
-		return this.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
-	}
-
-	private symbolSearchEntryHeight(): number {
-		if (this.symbolSearchMode === 'references') {
-			return this.lineHeight * 2;
-		}
-		return (this.symbolSearchGlobal && this.isSymbolSearchCompactMode()) ? this.lineHeight * 2 : this.lineHeight;
-	}
-
-	private symbolSearchVisibleResultCount(): number {
-		if (!this.symbolSearchVisible) {
-			return 0;
-		}
-		const remaining = Math.max(0, this.symbolSearchMatches.length - this.symbolSearchDisplayOffset);
-		const maxResults = this.symbolSearchPageSize();
-		return Math.min(remaining, maxResults);
-	}
-
-	private symbolSearchPageSize(): number {
-		if (this.symbolSearchMode === 'references') {
-			return constants.REFERENCE_SEARCH_MAX_RESULTS;
-		}
-		if (!this.symbolSearchGlobal) {
-			return constants.SYMBOL_SEARCH_MAX_RESULTS;
-		}
-		return this.isSymbolSearchCompactMode() ? constants.SYMBOL_SEARCH_COMPACT_MAX_RESULTS : constants.SYMBOL_SEARCH_MAX_RESULTS;
-	}
-
-	private getActiveSymbolSearchMatch(): SymbolSearchResult | null {
-		if (!this.symbolSearchVisible || this.symbolSearchMatches.length === 0) {
+	public getActiveSymbolSearchMatch(): SymbolSearchResult | null {
+		if (!symbolSearchVisible || symbolSearchMatches.length === 0) {
 			return null;
 		}
-		let index = this.symbolSearchHoverIndex;
-		if (index < 0 || index >= this.symbolSearchMatches.length) {
-			index = this.symbolSearchSelectionIndex;
+		let index = symbolSearchHoverIndex;
+		if (index < 0 || index >= symbolSearchMatches.length) {
+			index = symbolSearchSelectionIndex;
 		}
-		if (index < 0 || index >= this.symbolSearchMatches.length) {
+		if (index < 0 || index >= symbolSearchMatches.length) {
 			return null;
 		}
-		return this.symbolSearchMatches[index];
+		return symbolSearchMatches[index];
 	}
 
-	private ensureSymbolSearchSelectionVisible(): void {
-		if (this.symbolSearchSelectionIndex < 0) {
-			this.symbolSearchDisplayOffset = 0;
+	public ensureSymbolSearchSelectionVisible(): void {
+		if (symbolSearchSelectionIndex < 0) {
+			symbolSearchDisplayOffset = 0;
 			return;
 		}
-		const maxVisible = this.symbolSearchPageSize();
-		if (this.symbolSearchSelectionIndex < this.symbolSearchDisplayOffset) {
-			this.symbolSearchDisplayOffset = this.symbolSearchSelectionIndex;
+		const maxVisible = symbolSearchPageSize();
+		if (symbolSearchSelectionIndex < symbolSearchDisplayOffset) {
+			symbolSearchDisplayOffset = symbolSearchSelectionIndex;
 		}
-		if (this.symbolSearchSelectionIndex >= this.symbolSearchDisplayOffset + maxVisible) {
-			this.symbolSearchDisplayOffset = this.symbolSearchSelectionIndex - maxVisible + 1;
+		if (symbolSearchSelectionIndex >= symbolSearchDisplayOffset + maxVisible) {
+			symbolSearchDisplayOffset = symbolSearchSelectionIndex - maxVisible + 1;
 		}
-		if (this.symbolSearchDisplayOffset < 0) {
-			this.symbolSearchDisplayOffset = 0;
+		if (symbolSearchDisplayOffset < 0) {
+			symbolSearchDisplayOffset = 0;
 		}
-		const maxOffset = Math.max(0, this.symbolSearchMatches.length - maxVisible);
-		if (this.symbolSearchDisplayOffset > maxOffset) {
-			this.symbolSearchDisplayOffset = maxOffset;
+		const maxOffset = Math.max(0, symbolSearchMatches.length - maxVisible);
+		if (symbolSearchDisplayOffset > maxOffset) {
+			symbolSearchDisplayOffset = maxOffset;
 		}
 	}
 
-	private moveSymbolSearchSelection(delta: number): void {
-		if (this.symbolSearchMatches.length === 0) {
+	public moveSymbolSearchSelection(delta: number): void {
+		if (symbolSearchMatches.length === 0) {
 			return;
 		}
-		let next = this.symbolSearchSelectionIndex;
+		let next = symbolSearchSelectionIndex;
 		if (next === -1) {
-			next = delta > 0 ? 0 : this.symbolSearchMatches.length - 1;
+			next = delta > 0 ? 0 : symbolSearchMatches.length - 1;
 		} else {
-			next = clamp(next + delta, 0, this.symbolSearchMatches.length - 1);
+			next = clamp(next + delta, 0, symbolSearchMatches.length - 1);
 		}
-		if (next === this.symbolSearchSelectionIndex) {
+		if (next === symbolSearchSelectionIndex) {
 			return;
 		}
-		this.symbolSearchSelectionIndex = next;
+		symbolSearchSelectionIndex = next;
 		this.ensureSymbolSearchSelectionVisible();
 		this.resetBlink();
 	}
 
-	private applySymbolSearchSelection(index: number): void {
-		if (index < 0 || index >= this.symbolSearchMatches.length) {
+	public applySymbolSearchSelection(index: number): void {
+		if (index < 0 || index >= symbolSearchMatches.length) {
 			this.showMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
-		const match = this.symbolSearchMatches[index];
-		if (this.symbolSearchMode === 'references') {
+		const match = symbolSearchMatches[index];
+		if (symbolSearchMode === 'references') {
 			const referenceEntry = match.entry as ReferenceCatalogEntry;
 			const symbol = referenceEntry.symbol as ReferenceSymbolEntry;
-			const entryIndex = this.referenceCatalog.indexOf(referenceEntry);
-			const expressionLabel = this.referenceState.getExpression() ?? symbol.name;
+			const entryIndex = referenceCatalog.indexOf(referenceEntry);
+			const expressionLabel = referenceState.getExpression() ?? symbol.name;
 			this.closeSymbolSearch(true);
-			this.referenceState.clear();
+			referenceState.clear();
 			this.navigateToLuaDefinition(symbol.location);
-			const total = this.referenceCatalog.length;
+			const total = referenceCatalog.length;
 			if (entryIndex >= 0 && total > 0) {
 				this.showMessage(`Reference ${entryIndex + 1}/${total} for ${expressionLabel}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 			} else {
@@ -3581,7 +3639,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		});
 	}
 
-	private handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
+	public handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
 		const altDown = isModifierPressedGlobal(this.playerIndex, 'AltLeft') || isModifierPressedGlobal(this.playerIndex, 'AltRight');
 		if (isKeyJustPressedGlobal(this.playerIndex, 'Enter')) {
 			consumeKeyboardKey(keyboard, 'Enter');
@@ -3589,8 +3647,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				this.moveSymbolSearchSelection(-1);
 				return;
 			}
-			if (this.symbolSearchSelectionIndex >= 0) {
-				this.applySymbolSearchSelection(this.symbolSearchSelectionIndex);
+			if (symbolSearchSelectionIndex >= 0) {
+				this.applySymbolSearchSelection(symbolSearchSelectionIndex);
 			} else {
 				this.showMessage('No symbol selected', constants.COLOR_STATUS_WARNING, 1.5);
 			}
@@ -3613,27 +3671,27 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'PageUp');
-			this.moveSymbolSearchSelection(-this.symbolSearchPageSize());
+			this.moveSymbolSearchSelection(-symbolSearchPageSize());
 			return;
 		}
 		if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'PageDown');
-			this.moveSymbolSearchSelection(this.symbolSearchPageSize());
+			this.moveSymbolSearchSelection(symbolSearchPageSize());
 			return;
 		}
 		if (isKeyJustPressedGlobal(this.playerIndex, 'Home')) {
 			consumeKeyboardKey(keyboard, 'Home');
-			this.symbolSearchSelectionIndex = this.symbolSearchMatches.length > 0 ? 0 : -1;
+			symbolSearchSelectionIndex = symbolSearchMatches.length > 0 ? 0 : -1;
 			this.ensureSymbolSearchSelectionVisible();
 			return;
 		}
 		if (isKeyJustPressedGlobal(this.playerIndex, 'End')) {
 			consumeKeyboardKey(keyboard, 'End');
-			this.symbolSearchSelectionIndex = this.symbolSearchMatches.length > 0 ? this.symbolSearchMatches.length - 1 : -1;
+			symbolSearchSelectionIndex = symbolSearchMatches.length > 0 ? symbolSearchMatches.length - 1 : -1;
 			this.ensureSymbolSearchSelectionVisible();
 			return;
 		}
-		const textChanged = this.processInlineFieldEditing(this.symbolSearchField, keyboard, {
+		const textChanged = this.processInlineFieldEditing(symbolSearchField, keyboard, {
 			ctrlDown,
 			metaDown,
 			shiftDown,
@@ -3643,23 +3701,23 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			characterFilter: undefined,
 			maxLength: null,
 		});
-		this.symbolSearchQuery = this.symbolSearchField.text;
+		symbolSearchQuery = symbolSearchField.text;
 		if (textChanged) {
 			this.updateSymbolSearchMatches();
 		}
 	}
 
-	private refreshResourceCatalog(): void {
+	public refreshResourceCatalog(): void {
 		let descriptors: ConsoleResourceDescriptor[];
 		try {
 			descriptors = this.listResourcesStrict();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			this.resourceCatalog = [];
-			this.resourceSearchMatches = [];
-			this.resourceSearchSelectionIndex = -1;
-			this.resourceSearchDisplayOffset = 0;
-			this.resourceSearchHoverIndex = -1;
+			resourceCatalog = [];
+			resourceSearchMatches = [];
+			resourceSearchSelectionIndex = -1;
+			resourceSearchDisplayOffset = 0;
+			resourceSearchHoverIndex = -1;
 			this.showMessage(`Failed to list resources: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 			return;
 		}
@@ -3695,26 +3753,26 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			};
 		});
 		entries.sort((a, b) => a.displayPath.localeCompare(b.displayPath));
-		this.resourceCatalog = entries;
+		resourceCatalog = entries;
 	}
 
-	private updateResourceSearchMatches(): void {
-		this.resourceSearchMatches = [];
-		this.resourceSearchSelectionIndex = -1;
-		this.resourceSearchDisplayOffset = 0;
-		this.resourceSearchHoverIndex = -1;
-		if (this.resourceCatalog.length === 0) {
+	public updateResourceSearchMatches(): void {
+		resourceSearchMatches = [];
+		resourceSearchSelectionIndex = -1;
+		resourceSearchDisplayOffset = 0;
+		resourceSearchHoverIndex = -1;
+		if (resourceCatalog.length === 0) {
 			return;
 		}
-		const query = this.resourceSearchQuery.trim().toLowerCase();
+		const query = resourceSearchQuery.trim().toLowerCase();
 		if (query.length === 0) {
-			this.resourceSearchMatches = this.resourceCatalog.map(entry => ({ entry, matchIndex: 0 }));
-			this.resourceSearchSelectionIndex = -1;
+			resourceSearchMatches = resourceCatalog.map(entry => ({ entry, matchIndex: 0 }));
+			resourceSearchSelectionIndex = -1;
 			return;
 		}
 		const tokens = query.split(/\s+/).filter(token => token.length > 0);
 		const matches: ResourceSearchResult[] = [];
-		for (const entry of this.resourceCatalog) {
+		for (const entry of resourceCatalog) {
 			let bestIndex = Number.POSITIVE_INFINITY;
 			let valid = true;
 			for (const token of tokens) {
@@ -3736,7 +3794,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			matches.push({ entry, matchIndex: bestIndex });
 		}
 		if (matches.length === 0) {
-			this.resourceSearchMatches = [];
+			resourceSearchMatches = [];
 			return;
 		}
 		matches.sort((a, b) => {
@@ -3748,90 +3806,62 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 			return a.entry.displayPath.localeCompare(b.entry.displayPath);
 		});
-		this.resourceSearchMatches = matches;
-		this.resourceSearchSelectionIndex = matches.length > 0 ? 0 : -1;
+		resourceSearchMatches = matches;
+		resourceSearchSelectionIndex = matches.length > 0 ? 0 : -1;
 	}
 
-	private isResourceSearchCompactMode(): boolean {
-		return this.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
-	}
-
-	private resourceSearchEntryHeight(): number {
-		return this.isResourceSearchCompactMode() ? this.lineHeight * 2 : this.lineHeight;
-	}
-
-	private resourceSearchWindowCapacity(): number {
-		return this.resourceSearchVisible ? this.resourceSearchPageSize() : 0;
-	}
-
-	private resourceSearchPageSize(): number {
-		return this.isResourceSearchCompactMode() ? constants.QUICK_OPEN_COMPACT_MAX_RESULTS : constants.QUICK_OPEN_MAX_RESULTS;
-	}
-
-	private resourceSearchVisibleResultCount(): number {
-		if (!this.resourceSearchVisible) {
-			return 0;
-		}
-		const remaining = Math.max(0, this.resourceSearchMatches.length - this.resourceSearchDisplayOffset);
-		const capacity = this.resourceSearchWindowCapacity();
-		if (capacity <= 0) {
-			return remaining;
-		}
-		return Math.min(remaining, capacity);
-	}
-
-	private ensureResourceSearchSelectionVisible(): void {
-		if (this.resourceSearchSelectionIndex < 0) {
-			this.resourceSearchDisplayOffset = 0;
+	public ensureResourceSearchSelectionVisible(): void {
+		if (resourceSearchSelectionIndex < 0) {
+			resourceSearchDisplayOffset = 0;
 			return;
 		}
-		const windowSize = Math.max(1, this.resourceSearchWindowCapacity());
-		if (this.resourceSearchSelectionIndex < this.resourceSearchDisplayOffset) {
-			this.resourceSearchDisplayOffset = this.resourceSearchSelectionIndex;
+		const windowSize = Math.max(1, resourceSearchWindowCapacity());
+		if (resourceSearchSelectionIndex < resourceSearchDisplayOffset) {
+			resourceSearchDisplayOffset = resourceSearchSelectionIndex;
 		}
-		if (this.resourceSearchSelectionIndex >= this.resourceSearchDisplayOffset + windowSize) {
-			this.resourceSearchDisplayOffset = this.resourceSearchSelectionIndex - windowSize + 1;
+		if (resourceSearchSelectionIndex >= resourceSearchDisplayOffset + windowSize) {
+			resourceSearchDisplayOffset = resourceSearchSelectionIndex - windowSize + 1;
 		}
-		if (this.resourceSearchDisplayOffset < 0) {
-			this.resourceSearchDisplayOffset = 0;
+		if (resourceSearchDisplayOffset < 0) {
+			resourceSearchDisplayOffset = 0;
 		}
-		const maxOffset = Math.max(0, this.resourceSearchMatches.length - windowSize);
-		if (this.resourceSearchDisplayOffset > maxOffset) {
-			this.resourceSearchDisplayOffset = maxOffset;
+		const maxOffset = Math.max(0, resourceSearchMatches.length - windowSize);
+		if (resourceSearchDisplayOffset > maxOffset) {
+			resourceSearchDisplayOffset = maxOffset;
 		}
 	}
 
-	private moveResourceSearchSelection(delta: number): void {
-		if (this.resourceSearchMatches.length === 0) {
+	public moveResourceSearchSelection(delta: number): void {
+		if (resourceSearchMatches.length === 0) {
 			return;
 		}
-		let next = this.resourceSearchSelectionIndex;
+		let next = resourceSearchSelectionIndex;
 		if (next === -1) {
-			next = delta > 0 ? 0 : this.resourceSearchMatches.length - 1;
+			next = delta > 0 ? 0 : resourceSearchMatches.length - 1;
 		} else {
-			next = clamp(next + delta, 0, this.resourceSearchMatches.length - 1);
+			next = clamp(next + delta, 0, resourceSearchMatches.length - 1);
 		}
-		if (next === this.resourceSearchSelectionIndex) {
+		if (next === resourceSearchSelectionIndex) {
 			return;
 		}
-		this.resourceSearchSelectionIndex = next;
+		resourceSearchSelectionIndex = next;
 		this.ensureResourceSearchSelectionVisible();
 		this.resetBlink();
 	}
 
-	private applyResourceSearchSelection(index: number): void {
-		if (index < 0 || index >= this.resourceSearchMatches.length) {
+	public applyResourceSearchSelection(index: number): void {
+		if (index < 0 || index >= resourceSearchMatches.length) {
 			this.showMessage('Resource not found', constants.COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
-		const match = this.resourceSearchMatches[index];
+		const match = resourceSearchMatches[index];
 		this.closeResourceSearch(true);
 		this.scheduleNextFrame(() => {
 			this.openResourceDescriptor(match.entry.descriptor);
 		});
 	}
 
-	private handleResourceSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
+	public handleResourceSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
 		const altDown = isModifierPressedGlobal(this.playerIndex, 'AltLeft') || isModifierPressedGlobal(this.playerIndex, 'AltRight');
 		if (isKeyJustPressedGlobal(this.playerIndex, 'Enter')) {
 			consumeKeyboardKey(keyboard, 'Enter');
@@ -3839,11 +3869,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				this.moveResourceSearchSelection(-1);
 				return;
 			}
-			if (this.resourceSearchSelectionIndex >= 0) {
-				this.applyResourceSearchSelection(this.resourceSearchSelectionIndex);
+			if (resourceSearchSelectionIndex >= 0) {
+				this.applyResourceSearchSelection(resourceSearchSelectionIndex);
 				return;
 			} else {
-				const trimmed = this.resourceSearchQuery.trim();
+				const trimmed = resourceSearchQuery.trim();
 				if (trimmed.length === 0) {
 					this.closeResourceSearch(true);
 					this.focusEditorFromResourceSearch();
@@ -3871,27 +3901,27 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'PageUp');
-			this.moveResourceSearchSelection(-this.resourceSearchWindowCapacity());
+			this.moveResourceSearchSelection(-resourceSearchWindowCapacity());
 			return;
 		}
 		if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'PageDown');
-			this.moveResourceSearchSelection(this.resourceSearchWindowCapacity());
+			this.moveResourceSearchSelection(resourceSearchWindowCapacity());
 			return;
 		}
 		if (isKeyJustPressedGlobal(this.playerIndex, 'Home')) {
 			consumeKeyboardKey(keyboard, 'Home');
-			this.resourceSearchSelectionIndex = this.resourceSearchMatches.length > 0 ? 0 : -1;
+			resourceSearchSelectionIndex = resourceSearchMatches.length > 0 ? 0 : -1;
 			this.ensureResourceSearchSelectionVisible();
 			return;
 		}
 		if (isKeyJustPressedGlobal(this.playerIndex, 'End')) {
 			consumeKeyboardKey(keyboard, 'End');
-			this.resourceSearchSelectionIndex = this.resourceSearchMatches.length > 0 ? this.resourceSearchMatches.length - 1 : -1;
+			resourceSearchSelectionIndex = resourceSearchMatches.length > 0 ? resourceSearchMatches.length - 1 : -1;
 			this.ensureResourceSearchSelectionVisible();
 			return;
 		}
-		const textChanged = this.processInlineFieldEditing(this.resourceSearchField, keyboard, {
+		const textChanged = this.processInlineFieldEditing(resourceSearchField, keyboard, {
 			ctrlDown,
 			metaDown,
 			shiftDown,
@@ -3901,27 +3931,27 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			characterFilter: undefined,
 			maxLength: null,
 		});
-		this.resourceSearchQuery = this.resourceSearchField.text;
+		resourceSearchQuery = resourceSearchField.text;
 		if (textChanged) {
-			if (this.resourceSearchQuery.startsWith('@')) {
-				const query = this.resourceSearchQuery.slice(1).trimStart();
+			if (resourceSearchQuery.startsWith('@')) {
+				const query = resourceSearchQuery.slice(1).trimStart();
 				this.closeResourceSearch(true);
 				this.openSymbolSearch(query);
 				return;
 			}
-			if (this.resourceSearchQuery.startsWith('#')) {
-				const query = this.resourceSearchQuery.slice(1).trimStart();
+			if (resourceSearchQuery.startsWith('#')) {
+				const query = resourceSearchQuery.slice(1).trimStart();
 				this.closeResourceSearch(true);
 				this.openGlobalSymbolSearch(query);
 				return;
 			}
-			if (this.resourceSearchQuery.startsWith(':')) {
-				const query = this.resourceSearchQuery.slice(1).trimStart();
+			if (resourceSearchQuery.startsWith(':')) {
+				const query = resourceSearchQuery.slice(1).trimStart();
 				this.closeResourceSearch(true);
 				this.openLineJump();
 				if (query.length > 0) {
 					this.applyLineJumpFieldText(query, true);
-					this.lineJumpValue = query;
+					lineJumpValue = query;
 				}
 				return;
 			}
@@ -3929,59 +3959,59 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private openLineJump(): void {
+	public openLineJump(): void {
 		this.clearReferenceHighlights();
 		this.closeSymbolSearch(false);
 		this.closeResourceSearch(false);
 		this.closeSearch(false, true);
-		this.renameController.cancel();
-		this.lineJumpVisible = true;
-		this.lineJumpActive = true;
+		renameController.cancel();
+		lineJumpVisible = true;
+		lineJumpActive = true;
 		this.applyLineJumpFieldText('', true);
 		this.resetBlink();
 	}
 
-	private closeLineJump(clearValue: boolean): void {
-		this.lineJumpActive = false;
-		this.lineJumpVisible = false;
+	public closeLineJump(clearValue: boolean): void {
+		lineJumpActive = false;
+		lineJumpVisible = false;
 		if (clearValue) {
 			this.applyLineJumpFieldText('', true);
 		}
-		this.lineJumpField.selectionAnchor = null;
-		this.lineJumpField.pointerSelecting = false;
+		lineJumpField.selectionAnchor = null;
+		lineJumpField.pointerSelecting = false;
 		this.resetBlink();
 	}
 
-	private focusEditorFromLineJump(): void {
-		if (!this.lineJumpActive && !this.lineJumpVisible) {
+	public focusEditorFromLineJump(): void {
+		if (!lineJumpActive && !lineJumpVisible) {
 			return;
 		}
-		this.lineJumpActive = false;
-		this.lineJumpVisible = false;
-		this.lineJumpField.selectionAnchor = null;
-		this.lineJumpField.pointerSelecting = false;
+		lineJumpActive = false;
+		lineJumpVisible = false;
+		lineJumpField.selectionAnchor = null;
+		lineJumpField.pointerSelecting = false;
 		this.resetBlink();
 	}
 
-	private focusEditorFromProblemsPanel(): void {
-		this.problemsPanel.setFocused(false);
+	public focusEditorFromProblemsPanel(): void {
+		problemsPanel.setFocused(false);
 		this.resetBlink();
 	}
 
-	private focusEditorFromResourcePanel(): void {
-		if (!this.resourcePanelFocused) {
+	public focusEditorFromResourcePanel(): void {
+		if (!resourcePanelFocused) {
 			return;
 		}
-		this.resourcePanelFocused = false;
+		resourcePanelFocused = false;
 		this.resetBlink();
 	}
 
-	private applyLineJump(): void {
-		if (this.lineJumpValue.length === 0) {
+	public applyLineJump(): void {
+		if (lineJumpValue.length === 0) {
 			this.showMessage('Enter a line number', constants.COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
-		const target = Number.parseInt(this.lineJumpValue, 10);
+		const target = Number.parseInt(lineJumpValue, 10);
 		if (!Number.isFinite(target) || target < 1 || target > this.lines.length) {
 			const limit = this.lines.length <= 0 ? 1 : this.lines.length;
 			this.showMessage(`Line must be between 1 and ${limit}`, constants.COLOR_STATUS_WARNING, 1.8);
@@ -3994,39 +4024,39 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.showMessage(`Jumped to line ${target}`, constants.COLOR_STATUS_SUCCESS, 1.5);
 	}
 
-	private onSearchQueryChanged(): void {
-		if (this.searchScope === 'global') {
+	public onSearchQueryChanged(): void {
+		if (searchScope === 'global') {
 			this.onGlobalSearchQueryChanged();
 			return;
 		}
-		if (this.searchQuery.length === 0) {
+		if (searchQuery.length === 0) {
 			this.cancelSearchJob();
-			this.searchMatches = [];
-			this.searchCurrentIndex = -1;
+			searchMatches = [];
+			searchCurrentIndex = -1;
 			this.selectionAnchor = null;
-			this.searchDisplayOffset = 0;
+			searchDisplayOffset = 0;
 			return;
 		}
 		this.startSearchJob();
 	}
 
-	private onGlobalSearchQueryChanged(): void {
-		this.searchDisplayOffset = 0;
-		this.searchHoverIndex = -1;
-		this.searchCurrentIndex = -1;
-		if (this.searchQuery.length === 0) {
+	public onGlobalSearchQueryChanged(): void {
+		searchDisplayOffset = 0;
+		searchHoverIndex = -1;
+		searchCurrentIndex = -1;
+		if (searchQuery.length === 0) {
 			this.cancelGlobalSearchJob();
-			this.globalSearchMatches = [];
+			globalSearchMatches = [];
 			return;
 		}
 		this.startGlobalSearchJob();
 	}
 
-	private focusSearchResult(index: number): void {
-		if (index < 0 || index >= this.searchMatches.length) {
+	public focusSearchResult(index: number): void {
+		if (index < 0 || index >= searchMatches.length) {
 			return;
 		}
-		const match = this.searchMatches[index];
+		const match = searchMatches[index];
 		this.cursorRow = match.row;
 		this.cursorColumn = match.start;
 		this.selectionAnchor = { row: match.row, column: match.end };
@@ -4035,10 +4065,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.revealCursor();
 	}
 
-	private gotoDiagnostic(diagnostic: EditorDiagnostic): void {
+	public gotoDiagnostic(diagnostic: EditorDiagnostic): void {
 		const navigationCheckpoint = this.beginNavigationCapture();
 		// Switch to the originating tab if provided
-		if (diagnostic.contextId && diagnostic.contextId.length > 0 && diagnostic.contextId !== this.activeCodeTabContextId) {
+		if (diagnostic.contextId && diagnostic.contextId.length > 0 && diagnostic.contextId !== activeCodeTabContextId) {
 			this.setActiveTab(diagnostic.contextId);
 		}
 		if (!this.isCodeTabActive()) {
@@ -4052,90 +4082,90 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const targetColumn = clamp(diagnostic.startColumn, 0, line.length);
 		this.setCursorPosition(targetRow, targetColumn);
 		this.clearSelection();
-		this.cursorRevealSuspended = false;
+		cursorRevealSuspended = false;
 		this.ensureCursorVisible();
 		this.completeNavigation(navigationCheckpoint);
 	}
 
-	private jumpToNextMatch(): void {
-		if (this.searchScope === 'global') {
-			if (this.activeSearchMatchCount() === 0) {
+	public jumpToNextMatch(): void {
+		if (searchScope === 'global') {
+			if (activeSearchMatchCount() === 0) {
 				this.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 				return;
 			}
 			this.moveSearchSelection(1, { wrap: true });
-			this.applySearchSelection(this.searchCurrentIndex);
+			this.applySearchSelection(searchCurrentIndex);
 			return;
 		}
 		this.ensureSearchJobCompleted();
-		if (this.searchMatches.length === 0) {
+		if (searchMatches.length === 0) {
 			this.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
-		if (this.searchCurrentIndex < 0) {
-			this.searchCurrentIndex = 0;
+		if (searchCurrentIndex < 0) {
+			searchCurrentIndex = 0;
 		} else {
-			this.searchCurrentIndex += 1;
-			if (this.searchCurrentIndex >= this.searchMatches.length) {
-				this.searchCurrentIndex = 0;
+			searchCurrentIndex += 1;
+			if (searchCurrentIndex >= searchMatches.length) {
+				searchCurrentIndex = 0;
 			}
 		}
-		this.focusSearchResult(this.searchCurrentIndex);
+		this.focusSearchResult(searchCurrentIndex);
 	}
 
-	private jumpToPreviousMatch(): void {
-		if (this.searchScope === 'global') {
-			if (this.activeSearchMatchCount() === 0) {
+	public jumpToPreviousMatch(): void {
+		if (searchScope === 'global') {
+			if (activeSearchMatchCount() === 0) {
 				this.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 				return;
 			}
 			this.moveSearchSelection(-1, { wrap: true });
-			this.applySearchSelection(this.searchCurrentIndex);
+			this.applySearchSelection(searchCurrentIndex);
 			return;
 		}
 		this.ensureSearchJobCompleted();
-		if (this.searchMatches.length === 0) {
+		if (searchMatches.length === 0) {
 			this.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
-		if (this.searchCurrentIndex < 0) {
-			this.searchCurrentIndex = this.searchMatches.length - 1;
+		if (searchCurrentIndex < 0) {
+			searchCurrentIndex = searchMatches.length - 1;
 		} else {
-			this.searchCurrentIndex -= 1;
-			if (this.searchCurrentIndex < 0) {
-				this.searchCurrentIndex = this.searchMatches.length - 1;
+			searchCurrentIndex -= 1;
+			if (searchCurrentIndex < 0) {
+				searchCurrentIndex = searchMatches.length - 1;
 			}
 		}
-		this.focusSearchResult(this.searchCurrentIndex);
+		this.focusSearchResult(searchCurrentIndex);
 	}
 
-	private startSearchJob(): void {
+	public startSearchJob(): void {
 		this.cancelSearchJob();
-		this.searchDisplayOffset = 0;
-		this.searchHoverIndex = -1;
-		const normalized = this.searchQuery.toLowerCase();
+		searchDisplayOffset = 0;
+		searchHoverIndex = -1;
+		const normalized = searchQuery.toLowerCase();
 		const job: SearchComputationJob = {
 			query: normalized,
-			version: this.textVersion,
+			version: textVersion,
 			nextRow: 0,
 			matches: [],
 			firstMatchAfterCursor: -1,
 			cursorRow: this.cursorRow,
 			cursorColumn: this.cursorColumn,
 		};
-		this.searchJob = job;
-		this.searchMatches = [];
-		this.searchCurrentIndex = -1;
+		searchJob = job;
+		searchMatches = [];
+		searchCurrentIndex = -1;
 		this.selectionAnchor = null;
 		this.enqueueBackgroundTask(() => this.runSearchJobSlice(job));
 	}
 
-	private runSearchJobSlice(job: SearchComputationJob): boolean {
-		if (this.searchJob !== job) {
+	public runSearchJobSlice(job: SearchComputationJob): boolean {
+		if (searchJob !== job) {
 			return false;
 		}
-		if (job.query.length === 0 || job.version !== this.textVersion || this.searchQuery.length === 0) {
-			this.searchJob = null;
+		if (job.query.length === 0 || job.version !== textVersion || searchQuery.length === 0) {
+			searchJob = null;
 			return false;
 		}
 		const rowsPerSlice = 200;
@@ -4153,7 +4183,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return true;
 	}
 
-	private collectSearchMatchesForRow(job: SearchComputationJob, row: number): void {
+	public collectSearchMatchesForRow(job: SearchComputationJob, row: number): void {
 		const line = this.lines[row];
 		if (!line || line.length === 0) {
 			return;
@@ -4170,7 +4200,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		});
 	}
 
-	private forEachMatchInLine(line: string, needle: string, cb: (start: number, end: number) => void): void {
+	public forEachMatchInLine(line: string, needle: string, cb: (start: number, end: number) => void): void {
 		if (!line || needle.length === 0 || line.length === 0) {
 			return;
 		}
@@ -4190,43 +4220,43 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private completeSearchJob(job: SearchComputationJob): void {
-		if (this.searchJob !== job) {
+	public completeSearchJob(job: SearchComputationJob): void {
+		if (searchJob !== job) {
 			return;
 		}
-		this.searchJob = null;
-		this.searchMatches = job.matches;
+		searchJob = null;
+		searchMatches = job.matches;
 		if (job.matches.length === 0) {
-			this.searchCurrentIndex = -1;
+			searchCurrentIndex = -1;
 			this.selectionAnchor = null;
-			this.searchDisplayOffset = 0;
+			searchDisplayOffset = 0;
 		} else {
 			const index = job.firstMatchAfterCursor >= 0 ? job.firstMatchAfterCursor : 0;
-			this.searchCurrentIndex = clamp(index, 0, job.matches.length - 1);
+			searchCurrentIndex = clamp(index, 0, job.matches.length - 1);
 			this.ensureSearchSelectionVisible();
-			this.focusSearchResult(this.searchCurrentIndex);
+			this.focusSearchResult(searchCurrentIndex);
 		}
 	}
 
-	private cancelSearchJob(): void {
-		this.searchJob = null;
+	public cancelSearchJob(): void {
+		searchJob = null;
 	}
 
-	private ensureSearchJobCompleted(): void {
-		const job = this.searchJob;
+	public ensureSearchJobCompleted(): void {
+		const job = searchJob;
 		if (!job) {
 			return;
 		}
-		while (this.searchJob === job && this.runSearchJobSlice(job)) {
+		while (searchJob === job && this.runSearchJobSlice(job)) {
 			// Continue processing synchronously until the job completes.
 		}
 	}
 
-	private startGlobalSearchJob(): void {
+	public startGlobalSearchJob(): void {
 		this.cancelGlobalSearchJob();
-		const normalized = this.searchQuery.toLowerCase();
+		const normalized = searchQuery.toLowerCase();
 		if (normalized.length === 0) {
-			this.globalSearchMatches = [];
+			globalSearchMatches = [];
 			return;
 		}
 		let descriptors: ConsoleResourceDescriptor[] = [];
@@ -4244,20 +4274,20 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			matches: [],
 			limitHit: false,
 		};
-		this.globalSearchJob = job;
-		this.globalSearchMatches = [];
-		this.searchCurrentIndex = -1;
-		this.searchDisplayOffset = 0;
-		this.searchHoverIndex = -1;
+		globalSearchJob = job;
+		globalSearchMatches = [];
+		searchCurrentIndex = -1;
+		searchDisplayOffset = 0;
+		searchHoverIndex = -1;
 		this.enqueueBackgroundTask(() => this.runGlobalSearchJobSlice(job));
 	}
 
-	private runGlobalSearchJobSlice(job: GlobalSearchJob): boolean {
-		if (this.globalSearchJob !== job) {
+	public runGlobalSearchJobSlice(job: GlobalSearchJob): boolean {
+		if (globalSearchJob !== job) {
 			return false;
 		}
 		if (job.query.length === 0) {
-			this.globalSearchJob = null;
+			globalSearchJob = null;
 			return false;
 		}
 		const rowsPerSlice = 200;
@@ -4317,34 +4347,34 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return true;
 	}
 
-	private completeGlobalSearchJob(job: GlobalSearchJob): void {
-		if (this.globalSearchJob !== job) {
+	public completeGlobalSearchJob(job: GlobalSearchJob): void {
+		if (globalSearchJob !== job) {
 			return;
 		}
-		this.globalSearchJob = null;
-		this.globalSearchMatches = job.matches;
-		if (this.globalSearchMatches.length === 0) {
-			this.searchCurrentIndex = -1;
-			this.searchDisplayOffset = 0;
+		globalSearchJob = null;
+		globalSearchMatches = job.matches;
+		if (globalSearchMatches.length === 0) {
+			searchCurrentIndex = -1;
+			searchDisplayOffset = 0;
 			return;
 		}
-		if (this.searchCurrentIndex < 0 || this.searchCurrentIndex >= this.globalSearchMatches.length) {
-			this.searchCurrentIndex = 0;
+		if (searchCurrentIndex < 0 || searchCurrentIndex >= globalSearchMatches.length) {
+			searchCurrentIndex = 0;
 		}
 		this.ensureSearchSelectionVisible();
 	}
 
-	private cancelGlobalSearchJob(): void {
-		this.globalSearchJob = null;
+	public cancelGlobalSearchJob(): void {
+		globalSearchJob = null;
 	}
 
-	private loadDescriptorLines(descriptor: ConsoleResourceDescriptor): string[] | null {
+	public loadDescriptorLines(descriptor: ConsoleResourceDescriptor): string[] | null {
 		try {
 			const assetId = descriptor.assetId;
 			if (!assetId) {
 				return null;
 			}
-			const source = this.loadLuaResourceFn(assetId);
+			const source = loadLuaResourceFn(assetId);
 			if (typeof source !== 'string') {
 				return null;
 			}
@@ -4354,7 +4384,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private describeDescriptor(descriptor: ConsoleResourceDescriptor): string {
+	public describeDescriptor(descriptor: ConsoleResourceDescriptor): string {
 		if (descriptor.path && descriptor.path.length > 0) {
 			return descriptor.path.replace(/\\/g, '/');
 		}
@@ -4364,7 +4394,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return '<resource>';
 	}
 
-	private buildSearchSnippet(line: string, start: number, end: number): string {
+	public buildSearchSnippet(line: string, start: number, end: number): string {
 		if (!line || line.length === 0) {
 			return '<blank>';
 		}
@@ -4381,24 +4411,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return snippet;
 	}
 
-	private activeSearchMatchCount(): number {
-		return this.searchScope === 'global' ? this.globalSearchMatches.length : this.searchMatches.length;
-	}
-
-	private searchPageSize(): number {
-		return constants.SEARCH_MAX_RESULTS;
-	}
-
-	private searchVisibleResultCount(): number {
-		const stats = this.computeSearchPageStats();
-		return stats.visible;
-	}
-
-	private searchResultEntryHeight(): number {
-		return this.lineHeight * 2;
-	}
-
-	private getVisibleSearchResultEntries(): Array<{ primary: string; secondary?: string | null; detail?: string | null }> {
+	public getVisibleSearchResultEntries(): Array<{ primary: string; secondary?: string | null; detail?: string | null }> {
 		const stats = this.computeSearchPageStats();
 		if (stats.visible <= 0) {
 			return [];
@@ -4413,42 +4426,42 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return results;
 	}
 
-	private ensureSearchSelectionVisible(): void {
-		const total = this.activeSearchMatchCount();
+	public ensureSearchSelectionVisible(): void {
+		const total = activeSearchMatchCount();
 		if (total === 0) {
-			this.searchDisplayOffset = 0;
+			searchDisplayOffset = 0;
 			return;
 		}
-		if (this.searchCurrentIndex < 0) {
-			this.searchCurrentIndex = 0;
+		if (searchCurrentIndex < 0) {
+			searchCurrentIndex = 0;
 		}
-		const pageSize = this.searchPageSize();
-		if (this.searchCurrentIndex < this.searchDisplayOffset) {
-			this.searchDisplayOffset = this.searchCurrentIndex;
-		} else if (this.searchCurrentIndex >= this.searchDisplayOffset + pageSize) {
-			this.searchDisplayOffset = this.searchCurrentIndex - pageSize + 1;
+		const pageSize = searchPageSize();
+		if (searchCurrentIndex < searchDisplayOffset) {
+			searchDisplayOffset = searchCurrentIndex;
+		} else if (searchCurrentIndex >= searchDisplayOffset + pageSize) {
+			searchDisplayOffset = searchCurrentIndex - pageSize + 1;
 		}
 		const maxOffset = Math.max(0, total - pageSize);
-		this.searchDisplayOffset = clamp(this.searchDisplayOffset, 0, maxOffset);
+		searchDisplayOffset = clamp(searchDisplayOffset, 0, maxOffset);
 	}
 
-	private computeSearchPageStats(): { total: number; offset: number; visible: number } {
-		const total = this.isSearchVisible() ? this.activeSearchMatchCount() : 0;
+	public computeSearchPageStats(): { total: number; offset: number; visible: number } {
+		const total = this.isSearchVisible() ? activeSearchMatchCount() : 0;
 		if (total <= 0) {
-			this.searchDisplayOffset = 0;
+			searchDisplayOffset = 0;
 			return { total: 0, offset: 0, visible: 0 };
 		}
-		const pageSize = this.searchPageSize();
+		const pageSize = searchPageSize();
 		const maxOffset = Math.max(0, total - 1);
-		this.searchDisplayOffset = clamp(this.searchDisplayOffset, 0, maxOffset);
-		const remaining = total - this.searchDisplayOffset;
+		searchDisplayOffset = clamp(searchDisplayOffset, 0, maxOffset);
+		const remaining = total - searchDisplayOffset;
 		const visible = Math.min(pageSize, remaining);
-		return { total, offset: this.searchDisplayOffset, visible };
+		return { total, offset: searchDisplayOffset, visible };
 	}
 
-	private buildSearchResultEntry(index: number): { primary: string; secondary?: string | null; detail?: string | null } | null {
-		if (this.searchScope === 'global') {
-			const match = this.globalSearchMatches[index];
+	public buildSearchResultEntry(index: number): { primary: string; secondary?: string | null; detail?: string | null } | null {
+		if (searchScope === 'global') {
+			const match = globalSearchMatches[index];
 			if (!match) {
 				return null;
 			}
@@ -4458,7 +4471,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				detail: `:${match.row + 1}`,
 			};
 		}
-		const match = this.searchMatches[index];
+		const match = searchMatches[index];
 		if (!match) {
 			return null;
 		}
@@ -4470,12 +4483,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 	}
 
-	private moveSearchSelection(delta: number, options?: { wrap?: boolean; preview?: boolean }): void {
-		const total = this.activeSearchMatchCount();
+	public moveSearchSelection(delta: number, options?: { wrap?: boolean; preview?: boolean }): void {
+		const total = activeSearchMatchCount();
 		if (total === 0) {
 			return;
 		}
-		let next = this.searchCurrentIndex;
+		let next = searchCurrentIndex;
 		if (next === -1) {
 			next = delta > 0 ? 0 : total - 1;
 		} else {
@@ -4486,31 +4499,31 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		} else {
 			next = clamp(next, 0, total - 1);
 		}
-		if (next === this.searchCurrentIndex) {
+		if (next === searchCurrentIndex) {
 			if (options?.preview) {
 				this.applySearchSelection(next, { preview: true });
 			}
 			return;
 		}
-		this.searchCurrentIndex = next;
+		searchCurrentIndex = next;
 		this.ensureSearchSelectionVisible();
 		if (options?.preview) {
 			this.applySearchSelection(next, { preview: true });
 		}
 	}
 
-	private applySearchSelection(index: number, options?: { preview?: boolean }): void {
-		const total = this.activeSearchMatchCount();
+	public applySearchSelection(index: number, options?: { preview?: boolean }): void {
+		const total = activeSearchMatchCount();
 		if (total === 0) {
 			return;
 		}
 		let targetIndex = index;
 		if (targetIndex < 0 || targetIndex >= total) {
 			targetIndex = clamp(targetIndex, 0, total - 1);
-			this.searchCurrentIndex = targetIndex;
+			searchCurrentIndex = targetIndex;
 		}
-		this.searchCurrentIndex = targetIndex;
-		if (this.searchScope === 'global') {
+		searchCurrentIndex = targetIndex;
+		if (searchScope === 'global') {
 			if (options?.preview) {
 				return;
 			}
@@ -4520,8 +4533,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private focusGlobalSearchResult(index: number, previewOnly: boolean = false): void {
-		const match = this.globalSearchMatches[index];
+	public focusGlobalSearchResult(index: number, previewOnly: boolean = false): void {
+		const match = globalSearchMatches[index];
 		if (!match) {
 			if (!previewOnly) {
 				this.showMessage('Search result unavailable', constants.COLOR_STATUS_WARNING, 1.5);
@@ -4548,17 +4561,17 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		});
 	}
 
-	private showReferenceStatusMessage(): void {
-		const matches = this.referenceState.getMatches();
-		const activeIndex = this.referenceState.getActiveIndex();
+	public showReferenceStatusMessage(): void {
+		const matches = referenceState.getMatches();
+		const activeIndex = referenceState.getActiveIndex();
 		if (matches.length === 0 || activeIndex < 0) {
 			return;
 		}
-		const label = this.referenceState.getExpression() ?? '';
+		const label = referenceState.getExpression() ?? '';
 		this.showMessage(`Reference ${activeIndex + 1}/${matches.length} for ${label}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 	}
 
-	private handlePointerInput(_deltaSeconds: number): void {
+	public handlePointerInput(_deltaSeconds: number): void {
 		const ctrlDown = isModifierPressedGlobal(this.playerIndex, 'ControlLeft') || isModifierPressedGlobal(this.playerIndex, 'ControlRight');
 		const metaDown = isModifierPressedGlobal(this.playerIndex, 'MetaLeft') || isModifierPressedGlobal(this.playerIndex, 'MetaRight');
 		const gotoModifierActive = ctrlDown || metaDown;
@@ -4568,37 +4581,37 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const activeContext = this.getActiveCodeTabContext();
 		const snapshot = this.readPointerSnapshot();
 		this.updateTabHoverState(snapshot);
-		this.lastPointerSnapshot = snapshot && snapshot.valid ? snapshot : null;
+		lastPointerSnapshot = snapshot && snapshot.valid ? snapshot : null;
 		if (!snapshot) {
-			this.pointerPrimaryWasPressed = false;
-			this.scrollbarController.cancel();
-			this.lastPointerRowResolution = null;
+			pointerPrimaryWasPressed = false;
+			scrollbarController.cancel();
+			lastPointerRowResolution = null;
 			this.clearHoverTooltip();
 			this.clearGotoHoverHighlight();
 			return;
 		}
 		if (!snapshot.valid) {
-			this.scrollbarController.cancel();
+			scrollbarController.cancel();
 			this.clearGotoHoverHighlight();
-			this.lastPointerRowResolution = null;
-		} else if (this.scrollbarController.hasActiveDrag() && !snapshot.primaryPressed) {
-			this.scrollbarController.cancel();
-		} else if (this.scrollbarController.hasActiveDrag() && snapshot.primaryPressed) {
-			if (this.scrollbarController.update(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, (k, s) => this.applyScrollbarScroll(k, s))) {
-				this.pointerSelecting = false;
+			lastPointerRowResolution = null;
+		} else if (scrollbarController.hasActiveDrag() && !snapshot.primaryPressed) {
+			scrollbarController.cancel();
+		} else if (scrollbarController.hasActiveDrag() && snapshot.primaryPressed) {
+			if (scrollbarController.update(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, (k, s) => this.applyScrollbarScroll(k, s))) {
+				pointerSelecting = false;
 				this.clearHoverTooltip();
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 				return;
 			}
 		}
 		if (!snapshot.primaryPressed) {
-			this.searchField.pointerSelecting = false;
-			this.symbolSearchField.pointerSelecting = false;
-			this.resourceSearchField.pointerSelecting = false;
-			this.lineJumpField.pointerSelecting = false;
-			this.createResourceField.pointerSelecting = false;
-			this.symbolSearchHoverIndex = -1;
-			this.resourceSearchHoverIndex = -1;
+			searchField.pointerSelecting = false;
+			symbolSearchField.pointerSelecting = false;
+			resourceSearchField.pointerSelecting = false;
+			lineJumpField.pointerSelecting = false;
+			createResourceField.pointerSelecting = false;
+			symbolSearchHoverIndex = -1;
+			resourceSearchHoverIndex = -1;
 		}
 		let pointerAuxJustPressed = false;
 		let pointerAuxPressed = false;
@@ -4610,21 +4623,21 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				pointerAuxPressed = true;
 			} else if (auxAction && auxAction.pressed === true && auxAction.consumed !== true) {
 				pointerAuxPressed = true;
-				pointerAuxJustPressed = !this.pointerAuxWasPressed;
+				pointerAuxJustPressed = !pointerAuxWasPressed;
 			}
 		}
-		this.pointerAuxWasPressed = pointerAuxPressed;
-		const wasPressed = this.pointerPrimaryWasPressed;
+		pointerAuxWasPressed = pointerAuxPressed;
+		const wasPressed = pointerPrimaryWasPressed;
 		const justPressed = snapshot.primaryPressed && !wasPressed;
 		const justReleased = !snapshot.primaryPressed && wasPressed;
-		if (justReleased || (!snapshot.primaryPressed && this.pointerSelecting)) {
-			this.pointerSelecting = false;
+		if (justReleased || (!snapshot.primaryPressed && pointerSelecting)) {
+			pointerSelecting = false;
 		}
-		if (this.tabDragState) {
+		if (tabDragState) {
 			if (!snapshot.primaryPressed) {
 				this.endTabDrag();
-				this.pointerSelecting = false;
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				pointerSelecting = false;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.clearGotoHoverHighlight();
 				this.clearHoverTooltip();
 				return;
@@ -4632,219 +4645,219 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			if (snapshot.valid) {
 				this.updateTabDrag(snapshot.viewportX, snapshot.viewportY);
 			}
-			this.pointerSelecting = false;
-			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			pointerSelecting = false;
+			pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.clearGotoHoverHighlight();
 			this.clearHoverTooltip();
 			return;
 		}
-		if (justPressed && this.scrollbarController.begin(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, this.bottomMargin, (k, s) => this.applyScrollbarScroll(k, s))) {
-			this.pointerSelecting = false;
+		if (justPressed && scrollbarController.begin(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, this.bottomMargin, (k, s) => this.applyScrollbarScroll(k, s))) {
+			pointerSelecting = false;
 			this.clearHoverTooltip();
 			this.clearGotoHoverHighlight();
-			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			pointerPrimaryWasPressed = snapshot.primaryPressed;
 			return;
 		}
-		if (this.resourcePanelResizing && !snapshot.valid) {
-			this.resourcePanelResizing = false;
-			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+		if (resourcePanelResizing && !snapshot.valid) {
+			resourcePanelResizing = false;
+			pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.clearGotoHoverHighlight();
 			return;
 		}
 		if (!snapshot.valid) {
-			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.clearHoverTooltip();
 			this.clearGotoHoverHighlight();
 			return;
 		}
-		if (this.resourcePanelResizing) {
+		if (resourcePanelResizing) {
 			if (!snapshot.primaryPressed) {
-				this.resourcePanelResizing = false;
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				resourcePanelResizing = false;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 			} else {
-				const ok = this.resourcePanel.setRatioFromViewportX(snapshot.viewportX, this.viewportWidth);
+				const ok = resourcePanel.setRatioFromViewportX(snapshot.viewportX, viewportWidth);
 				if (!ok) {
 					this.hideResourcePanel();
 				} else {
 					this.invalidateVisualLines();
 					/* hscroll handled inside controller */
 				}
-				this.resourcePanelFocused = true;
-				this.pointerSelecting = false;
+				resourcePanelFocused = true;
+				pointerSelecting = false;
 				this.resetPointerClickTracking();
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 			}
 			this.clearGotoHoverHighlight();
 			return;
 		}
-		if (this.problemsPanelResizing) {
+		if (problemsPanelResizing) {
 			if (!snapshot.primaryPressed) {
-				this.problemsPanelResizing = false;
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				problemsPanelResizing = false;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 			} else {
 				this.setProblemsPanelHeightFromViewportY(snapshot.viewportY);
-				this.pointerSelecting = false;
+				pointerSelecting = false;
 				this.resetPointerClickTracking();
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 			}
 			this.clearGotoHoverHighlight();
 			return;
 		}
-		if (justPressed && snapshot.viewportY >= 0 && snapshot.viewportY < this.headerHeight) {
+		if (justPressed && snapshot.viewportY >= 0 && snapshot.viewportY < headerHeight) {
 			if (this.handleTopBarPointer(snapshot)) {
-				this.pointerSelecting = false;
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				pointerSelecting = false;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.resetPointerClickTracking();
 				this.clearGotoHoverHighlight();
 				return;
 			}
 		}
-		if (this.resourcePanelVisible && justPressed && this.isPointerOverResourcePanelDivider(snapshot.viewportX, snapshot.viewportY)) {
+		if (resourcePanelVisible && justPressed && this.isPointerOverResourcePanelDivider(snapshot.viewportX, snapshot.viewportY)) {
 			if (this.getResourcePanelWidth() > 0) {
-				this.resourcePanelResizing = true;
-				this.resourcePanelFocused = true;
-				this.pointerSelecting = false;
+				resourcePanelResizing = true;
+				resourcePanelFocused = true;
+				pointerSelecting = false;
 				this.resetPointerClickTracking();
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 			}
 			this.clearGotoHoverHighlight();
 			return;
 		}
-		if (justPressed && this.problemsPanel.isVisible() && this.isPointerOverProblemsPanelDivider(snapshot.viewportX, snapshot.viewportY)) {
-			this.problemsPanelResizing = true;
-			this.pointerSelecting = false;
+		if (justPressed && problemsPanel.isVisible() && this.isPointerOverProblemsPanelDivider(snapshot.viewportX, snapshot.viewportY)) {
+			problemsPanelResizing = true;
+			pointerSelecting = false;
 			this.resetPointerClickTracking();
-			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.clearGotoHoverHighlight();
 			return;
 		}
-		const tabTop = this.headerHeight;
+		const tabTop = headerHeight;
 		const tabBottom = tabTop + this.getTabBarTotalHeight();
 		if (pointerAuxJustPressed && this.handleTabBarMiddleClick(snapshot)) {
 			if (playerInput) {
 				playerInput.consumeAction('pointer_aux');
 			}
-			this.pointerSelecting = false;
-			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			pointerSelecting = false;
+			pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.resetPointerClickTracking();
 			this.clearGotoHoverHighlight();
 			return;
 		}
 		if (justPressed && snapshot.viewportY >= tabTop && snapshot.viewportY < tabBottom) {
 			if (this.handleTabBarPointer(snapshot)) {
-				this.pointerSelecting = false;
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				pointerSelecting = false;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.resetPointerClickTracking();
 				this.clearGotoHoverHighlight();
 				return;
 			}
 		}
-		const panelBounds = this.resourcePanel.getBounds();
-		const pointerInPanel = this.resourcePanelVisible
+		const panelBounds = resourcePanel.getBounds();
+		const pointerInPanel = resourcePanelVisible
 			&& panelBounds !== null
 			&& this.pointInRect(snapshot.viewportX, snapshot.viewportY, panelBounds);
 		if (pointerInPanel) {
-			this.resourcePanel.setFocused(true);
+			resourcePanel.setFocused(true);
 			this.resetPointerClickTracking();
 			this.clearHoverTooltip();
-			const margin = Math.max(4, this.lineHeight);
+			const margin = Math.max(4, lineHeight);
 			if (snapshot.viewportY < panelBounds.top + margin) {
-				this.resourcePanel.scrollBy(-1);
+				resourcePanel.scrollBy(-1);
 			} else if (snapshot.viewportY >= panelBounds.bottom - margin) {
-				this.resourcePanel.scrollBy(1);
+				resourcePanel.scrollBy(1);
 			}
-			const hoverIndex = this.resourcePanel.indexAtPosition(snapshot.viewportX, snapshot.viewportY);
-			this.resourcePanel.setHoverIndex(hoverIndex);
+			const hoverIndex = resourcePanel.indexAtPosition(snapshot.viewportX, snapshot.viewportY);
+			resourcePanel.setHoverIndex(hoverIndex);
 			if (hoverIndex >= 0) {
-				if (hoverIndex !== this.resourceBrowserSelectionIndex) {
-					this.resourcePanel.setSelectionIndex(hoverIndex);
+				if (hoverIndex !== resourceBrowserSelectionIndex) {
+					resourcePanel.setSelectionIndex(hoverIndex);
 				}
 				if (justPressed) {
-					this.resourcePanel.openSelected();
-					this.resourcePanel.setFocused(false);
+					resourcePanel.openSelected();
+					resourcePanel.setFocused(false);
 				}
 			}
 			if (!snapshot.primaryPressed && hoverIndex === -1) {
-				this.resourcePanel.setHoverIndex(-1);
+				resourcePanel.setHoverIndex(-1);
 			}
-			this.pointerSelecting = false;
-			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			pointerSelecting = false;
+			pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.clearGotoHoverHighlight();
-			const s = this.resourcePanel.getStateForRender();
-			this.resourcePanelFocused = s.focused;
-			this.resourceBrowserSelectionIndex = s.selectionIndex;
+			const s = resourcePanel.getStateForRender();
+			resourcePanelFocused = s.focused;
+			resourceBrowserSelectionIndex = s.selectionIndex;
 			return;
 		}
 		if (justPressed && !pointerInPanel) {
-			this.resourcePanel.setFocused(false);
+			resourcePanel.setFocused(false);
 		}
-		if (this.resourcePanelVisible && !snapshot.primaryPressed) {
-			this.resourcePanel.setHoverIndex(-1);
+		if (resourcePanelVisible && !snapshot.primaryPressed) {
+			resourcePanel.setHoverIndex(-1);
 		}
 		const problemsBounds = this.getProblemsPanelBounds();
-		if (this.problemsPanel.isVisible() && problemsBounds) {
+		if (problemsPanel.isVisible() && problemsBounds) {
 			const insideProblems = this.pointInRect(snapshot.viewportX, snapshot.viewportY, problemsBounds);
 			if (insideProblems) {
-				if (this.problemsPanel.handlePointer(snapshot, justPressed, justReleased, problemsBounds)) {
-					this.pointerSelecting = false;
-					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				if (problemsPanel.handlePointer(snapshot, justPressed, justReleased, problemsBounds)) {
+					pointerSelecting = false;
+					pointerPrimaryWasPressed = snapshot.primaryPressed;
 					this.resetPointerClickTracking();
 					this.clearHoverTooltip();
 					this.clearGotoHoverHighlight();
 					return;
 				}
 			} else if (justPressed) {
-				this.problemsPanel.setFocused(false);
+				problemsPanel.setFocused(false);
 			}
 		}
 		if (this.isResourceViewActive()) {
 			this.resetPointerClickTracking();
-			this.pointerSelecting = false;
-			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			pointerSelecting = false;
+			pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.clearHoverTooltip();
 			this.clearGotoHoverHighlight();
 			return;
 		}
-		if (this.pendingActionPrompt) {
+		if (pendingActionPrompt) {
 			this.resetPointerClickTracking();
 			if (justPressed) {
 				this.handleActionPromptPointer(snapshot);
 			}
-			this.pointerSelecting = false;
-			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			pointerSelecting = false;
+			pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.clearHoverTooltip();
 			this.clearGotoHoverHighlight();
 			return;
 		}
 		const createResourceBounds = this.getCreateResourceBarBounds();
-		if (this.createResourceVisible && createResourceBounds) {
+		if (createResourceVisible && createResourceBounds) {
 			const insideCreateBar = this.pointInRect(snapshot.viewportX, snapshot.viewportY, createResourceBounds);
 			if (insideCreateBar) {
 				if (justPressed) {
-					this.createResourceActive = true;
-					this.cursorVisible = true;
+					createResourceActive = true;
+					cursorVisible = true;
 					this.resetBlink();
-					this.resourcePanelFocused = false;
+					resourcePanelFocused = false;
 				}
 				const label = 'NEW FILE:';
 				const labelX = 4;
 				const textLeft = labelX + this.measureText(label + ' ');
-				this.processInlineFieldPointer(this.createResourceField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-				this.pointerSelecting = false;
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				this.processInlineFieldPointer(createResourceField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+				pointerSelecting = false;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.clearHoverTooltip();
 				this.clearGotoHoverHighlight();
 				return;
 			}
 			if (justPressed) {
-				this.createResourceActive = false;
+				createResourceActive = false;
 			}
 		}
 		const resourceSearchBounds = this.getResourceSearchBarBounds();
-		if (this.resourceSearchVisible && resourceSearchBounds) {
+		if (resourceSearchVisible && resourceSearchBounds) {
 			const insideResourceSearch = this.pointInRect(snapshot.viewportX, snapshot.viewportY, resourceSearchBounds);
 			if (insideResourceSearch) {
-				const baseHeight = this.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
+				const baseHeight = lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
 				const fieldBottom = resourceSearchBounds.top + baseHeight;
 				const resultsStart = fieldBottom + constants.QUICK_OPEN_RESULT_SPACING;
 				if (snapshot.viewportY < fieldBottom) {
@@ -4852,116 +4865,116 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 						this.closeLineJump(false);
 						this.closeSearch(false, true);
 						this.closeSymbolSearch(false);
-						this.resourceSearchVisible = true;
-						this.resourceSearchActive = true;
-						this.resourcePanelFocused = false;
-						this.cursorVisible = true;
+						resourceSearchVisible = true;
+						resourceSearchActive = true;
+						resourcePanelFocused = false;
+						cursorVisible = true;
 						this.resetBlink();
 					}
 					const label = 'FILE :';
 					const labelX = 4;
 					const textLeft = labelX + this.measureText(label + ' ');
-					this.processInlineFieldPointer(this.resourceSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-					this.pointerSelecting = false;
-					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+					this.processInlineFieldPointer(resourceSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+					pointerSelecting = false;
+					pointerPrimaryWasPressed = snapshot.primaryPressed;
 					this.clearHoverTooltip();
 					this.clearGotoHoverHighlight();
 					return;
 				}
-				const rowHeight = this.resourceSearchEntryHeight();
-				const visibleCount = this.resourceSearchVisibleResultCount();
+				const rowHeight = resourceSearchEntryHeight();
+				const visibleCount = resourceSearchVisibleResultCount();
 				let hoverIndex = -1;
 				if (snapshot.viewportY >= resultsStart) {
 					const relative = snapshot.viewportY - resultsStart;
 					const indexWithin = Math.floor(relative / rowHeight);
 					if (indexWithin >= 0 && indexWithin < visibleCount) {
-						hoverIndex = this.resourceSearchDisplayOffset + indexWithin;
+						hoverIndex = resourceSearchDisplayOffset + indexWithin;
 					}
 				}
-				this.resourceSearchHoverIndex = hoverIndex;
+				resourceSearchHoverIndex = hoverIndex;
 				if (hoverIndex >= 0 && justPressed) {
-					if (hoverIndex !== this.resourceSearchSelectionIndex) {
-						this.resourceSearchSelectionIndex = hoverIndex;
+					if (hoverIndex !== resourceSearchSelectionIndex) {
+						resourceSearchSelectionIndex = hoverIndex;
 						this.ensureResourceSearchSelectionVisible();
 					}
 					this.applyResourceSearchSelection(hoverIndex);
-					this.pointerSelecting = false;
-					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+					pointerSelecting = false;
+					pointerPrimaryWasPressed = snapshot.primaryPressed;
 					this.clearHoverTooltip();
 					this.clearGotoHoverHighlight();
 					return;
 				}
-				this.pointerSelecting = false;
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				pointerSelecting = false;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.clearHoverTooltip();
 				this.clearGotoHoverHighlight();
 				return;
 			}
 			if (justPressed) {
-				this.resourceSearchActive = false;
+				resourceSearchActive = false;
 			}
-			this.resourceSearchHoverIndex = -1;
+			resourceSearchHoverIndex = -1;
 		}
 		const symbolBounds = this.getSymbolSearchBarBounds();
-		if (this.symbolSearchVisible && symbolBounds) {
+		if (symbolSearchVisible && symbolBounds) {
 			const insideSymbol = this.pointInRect(snapshot.viewportX, snapshot.viewportY, symbolBounds);
 			if (insideSymbol) {
-				const baseHeight = this.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+				const baseHeight = lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
 				const fieldBottom = symbolBounds.top + baseHeight;
 				const resultsStart = fieldBottom + constants.SYMBOL_SEARCH_RESULT_SPACING;
 				if (snapshot.viewportY < fieldBottom) {
 					if (justPressed) {
 						this.closeLineJump(false);
 						this.closeSearch(false, true);
-						this.symbolSearchVisible = true;
-						this.symbolSearchActive = true;
-						this.resourcePanelFocused = false;
-						this.cursorVisible = true;
+						symbolSearchVisible = true;
+						symbolSearchActive = true;
+						resourcePanelFocused = false;
+						cursorVisible = true;
 						this.resetBlink();
 					}
-					const label = this.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
+					const label = symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
 					const labelX = 4;
 					const textLeft = labelX + this.measureText(label + ' ');
-					this.processInlineFieldPointer(this.symbolSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-					this.pointerSelecting = false;
-					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+					this.processInlineFieldPointer(symbolSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+					pointerSelecting = false;
+					pointerPrimaryWasPressed = snapshot.primaryPressed;
 					this.clearHoverTooltip();
 					this.clearGotoHoverHighlight();
 					return;
 				}
-				const visibleCount = this.symbolSearchVisibleResultCount();
+				const visibleCount = symbolSearchVisibleResultCount();
 				let hoverIndex = -1;
 				if (snapshot.viewportY >= resultsStart) {
 					const relative = snapshot.viewportY - resultsStart;
-					const entryHeight = this.symbolSearchEntryHeight();
+					const entryHeight = symbolSearchEntryHeight();
 					const indexWithin = entryHeight > 0 ? Math.floor(relative / entryHeight) : -1;
 					if (indexWithin >= 0 && indexWithin < visibleCount) {
-						hoverIndex = this.symbolSearchDisplayOffset + indexWithin;
+						hoverIndex = symbolSearchDisplayOffset + indexWithin;
 					}
 				}
-				this.symbolSearchHoverIndex = hoverIndex;
+				symbolSearchHoverIndex = hoverIndex;
 				if (hoverIndex >= 0 && justPressed) {
-					if (hoverIndex !== this.symbolSearchSelectionIndex) {
-						this.symbolSearchSelectionIndex = hoverIndex;
+					if (hoverIndex !== symbolSearchSelectionIndex) {
+						symbolSearchSelectionIndex = hoverIndex;
 						this.ensureSymbolSearchSelectionVisible();
 					}
 					this.applySymbolSearchSelection(hoverIndex);
-					this.pointerSelecting = false;
-					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+					pointerSelecting = false;
+					pointerPrimaryWasPressed = snapshot.primaryPressed;
 					this.clearHoverTooltip();
 					this.clearGotoHoverHighlight();
 					return;
 				}
-				this.pointerSelecting = false;
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				pointerSelecting = false;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.clearHoverTooltip();
 				this.clearGotoHoverHighlight();
 				return;
 			}
 			if (justPressed) {
-				this.symbolSearchActive = false;
+				symbolSearchActive = false;
 			}
-			this.symbolSearchHoverIndex = -1;
+			symbolSearchHoverIndex = -1;
 		}
 
 		const renameBounds = this.getRenameBarBounds();
@@ -4969,120 +4982,120 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			const insideRename = this.pointInRect(snapshot.viewportX, snapshot.viewportY, renameBounds);
 			if (insideRename) {
 				if (justPressed) {
-					this.resourcePanelFocused = false;
-					this.cursorVisible = true;
+					resourcePanelFocused = false;
+					cursorVisible = true;
 					this.resetBlink();
 				}
 				const label = 'RENAME:';
 				const labelX = 4;
 				const textLeft = labelX + this.measureText(label + ' ');
-				this.processInlineFieldPointer(this.renameController.getField(), textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-				this.pointerSelecting = false;
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				this.processInlineFieldPointer(renameController.getField(), textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+				pointerSelecting = false;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.clearHoverTooltip();
 				this.clearGotoHoverHighlight();
 				return;
 			}
 			if (justPressed) {
-				this.renameController.cancel();
+				renameController.cancel();
 			}
 		}
 
 		const lineJumpBounds = this.getLineJumpBarBounds();
-		if (this.lineJumpVisible && lineJumpBounds) {
+		if (lineJumpVisible && lineJumpBounds) {
 			const insideLineJump = this.pointInRect(snapshot.viewportX, snapshot.viewportY, lineJumpBounds);
 			if (insideLineJump) {
 				if (justPressed) {
 					this.closeSearch(false, true);
-					this.lineJumpActive = true;
+					lineJumpActive = true;
 					this.resetBlink();
 				}
 				const label = 'LINE #:';
 				const labelX = 4;
 				const textLeft = labelX + this.measureText(label + ' ');
-				this.processInlineFieldPointer(this.lineJumpField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-				this.pointerSelecting = false;
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				this.processInlineFieldPointer(lineJumpField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+				pointerSelecting = false;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.clearHoverTooltip();
 				this.clearGotoHoverHighlight();
 				return;
 			}
 			if (justPressed) {
-				this.lineJumpActive = false;
+				lineJumpActive = false;
 			}
 		}
 		const searchBounds = this.getSearchBarBounds();
-		if (this.searchVisible && searchBounds) {
+		if (searchVisible && searchBounds) {
 			const insideSearch = this.pointInRect(snapshot.viewportX, snapshot.viewportY, searchBounds);
-			const baseHeight = this.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+			const baseHeight = lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 			const fieldBottom = searchBounds.top + baseHeight;
-			const visibleResults = this.searchVisibleResultCount();
+			const visibleResults = searchVisibleResultCount();
 			if (insideSearch) {
-				this.searchHoverIndex = -1;
+				searchHoverIndex = -1;
 				if (snapshot.viewportY < fieldBottom) {
 					if (justPressed) {
 						this.closeLineJump(false);
-						this.searchVisible = true;
-						this.searchActive = true;
-						this.resourcePanelFocused = false;
-						this.cursorVisible = true;
+						searchVisible = true;
+						searchActive = true;
+						resourcePanelFocused = false;
+						cursorVisible = true;
 						this.resetBlink();
 					}
-					const label = this.searchScope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
+					const label = searchScope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
 					const labelX = 4;
 					const textLeft = labelX + this.measureText(label + ' ');
-					this.processInlineFieldPointer(this.searchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-					this.pointerSelecting = false;
-					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+					this.processInlineFieldPointer(searchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+					pointerSelecting = false;
+					pointerPrimaryWasPressed = snapshot.primaryPressed;
 					this.clearHoverTooltip();
 					this.clearGotoHoverHighlight();
 					return;
 				}
 				if (visibleResults > 0) {
 					const resultsStart = fieldBottom + constants.SEARCH_RESULT_SPACING;
-					const rowHeight = this.searchResultEntryHeight();
+					const rowHeight = searchResultEntryHeight();
 					let hoverIndex = -1;
 					if (snapshot.viewportY >= resultsStart) {
 						const relative = snapshot.viewportY - resultsStart;
 						const indexWithin = Math.floor(relative / rowHeight);
 						if (indexWithin >= 0 && indexWithin < visibleResults) {
-							hoverIndex = this.searchDisplayOffset + indexWithin;
+							hoverIndex = searchDisplayOffset + indexWithin;
 						}
 					}
-					this.searchHoverIndex = hoverIndex;
+					searchHoverIndex = hoverIndex;
 					if (hoverIndex >= 0 && justPressed) {
-						if (hoverIndex !== this.searchCurrentIndex) {
-							this.searchCurrentIndex = hoverIndex;
+						if (hoverIndex !== searchCurrentIndex) {
+							searchCurrentIndex = hoverIndex;
 							this.ensureSearchSelectionVisible();
-							if (this.searchScope === 'local') {
+							if (searchScope === 'local') {
 								this.applySearchSelection(hoverIndex, { preview: true });
 							}
 						}
 						this.applySearchSelection(hoverIndex);
-						this.pointerSelecting = false;
-						this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+						pointerSelecting = false;
+						pointerPrimaryWasPressed = snapshot.primaryPressed;
 						this.clearHoverTooltip();
 						this.clearGotoHoverHighlight();
 						return;
 					}
-					this.pointerSelecting = false;
-					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+					pointerSelecting = false;
+					pointerPrimaryWasPressed = snapshot.primaryPressed;
 					this.clearHoverTooltip();
 					this.clearGotoHoverHighlight();
 					return;
 				}
 			} else if (justPressed) {
-				this.searchActive = false;
-				this.searchHoverIndex = -1;
+				searchActive = false;
+				searchHoverIndex = -1;
 			}
 		} else {
-			this.searchHoverIndex = -1;
+			searchHoverIndex = -1;
 		}
 
 		const bounds = this.getCodeAreaBounds();
 		if (this.processRuntimeErrorOverlayPointer(snapshot, justPressed, bounds.codeTop, bounds.codeRight, bounds.textLeft)) {
 			// Keep primary pressed state in sync when overlay handles the event
-			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			pointerPrimaryWasPressed = snapshot.primaryPressed;
 			return;
 		}
 		const insideCodeArea = snapshot.viewportY >= bounds.codeTop
@@ -5091,31 +5104,31 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			&& snapshot.viewportX < bounds.codeRight;
 		if (justPressed && insideCodeArea) {
 			this.clearReferenceHighlights();
-			this.resourcePanelFocused = false;
+			resourcePanelFocused = false;
 			this.focusEditorFromLineJump();
 			this.focusEditorFromSearch();
 			this.focusEditorFromResourceSearch();
 			this.focusEditorFromSymbolSearch();
-			this.completion.closeSession();
+			completion.closeSession();
 			const targetRow = this.resolvePointerRow(snapshot.viewportY);
 			const targetColumn = this.resolvePointerColumn(targetRow, snapshot.viewportX);
 			if (gotoModifierActive && this.tryGotoDefinitionAt(targetRow, targetColumn)) {
-				this.pointerSelecting = false;
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				pointerSelecting = false;
+				pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.resetPointerClickTracking();
 				return;
 			}
 			const doubleClick = this.registerPointerClick(targetRow, targetColumn);
 			if (doubleClick) {
 				this.selectWordAtPosition(targetRow, targetColumn);
-				this.pointerSelecting = false;
+				pointerSelecting = false;
 			} else {
 				this.selectionAnchor = { row: targetRow, column: targetColumn };
 				this.setCursorPosition(targetRow, targetColumn);
-				this.pointerSelecting = true;
+				pointerSelecting = true;
 			}
 		}
-		if (this.pointerSelecting && snapshot.primaryPressed) {
+		if (pointerSelecting && snapshot.primaryPressed) {
 			this.clearGotoHoverHighlight();
 			this.handlePointerAutoScroll(snapshot.viewportX, snapshot.viewportY);
 			const targetRow = this.resolvePointerRow(snapshot.viewportY);
@@ -5125,16 +5138,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 			this.setCursorPosition(targetRow, targetColumn);
 		}
-		if (this.isCodeTabActive() && !snapshot.primaryPressed && !this.pointerSelecting && insideCodeArea && gotoModifierActive) {
+		if (this.isCodeTabActive() && !snapshot.primaryPressed && !pointerSelecting && insideCodeArea && gotoModifierActive) {
 			const hoverRow = this.resolvePointerRow(snapshot.viewportY);
 			const hoverColumn = this.resolvePointerColumn(hoverRow, snapshot.viewportX);
 			this.refreshGotoHoverHighlight(hoverRow, hoverColumn, activeContext);
-		} else if (!gotoModifierActive || !insideCodeArea || snapshot.primaryPressed || this.pointerSelecting || !this.isCodeTabActive()) {
+		} else if (!gotoModifierActive || !insideCodeArea || snapshot.primaryPressed || pointerSelecting || !this.isCodeTabActive()) {
 			this.clearGotoHoverHighlight();
 		}
 		if (this.isCodeTabActive()) {
 			const altDown = isModifierPressedGlobal(this.playerIndex, 'AltLeft') || isModifierPressedGlobal(this.playerIndex, 'AltRight');
-			if (!snapshot.primaryPressed && !this.pointerSelecting && insideCodeArea && altDown) {
+			if (!snapshot.primaryPressed && !pointerSelecting && insideCodeArea && altDown) {
 				this.updateHoverTooltip(snapshot);
 			} else {
 				this.clearHoverTooltip();
@@ -5142,33 +5155,33 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		} else {
 			this.clearHoverTooltip();
 		}
-		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+		pointerPrimaryWasPressed = snapshot.primaryPressed;
 	}
 
-	private updateTabHoverState(snapshot: PointerSnapshot | null): void {
+	public updateTabHoverState(snapshot: PointerSnapshot | null): void {
 		if (!snapshot || !snapshot.valid || !snapshot.insideViewport) {
-			this.tabHoverId = null;
+			tabHoverId = null;
 			return;
 		}
-		const tabTop = this.headerHeight;
+		const tabTop = headerHeight;
 		const tabBottom = tabTop + this.getTabBarTotalHeight();
 		const y = snapshot.viewportY;
 		if (y < tabTop || y >= tabBottom) {
-			this.tabHoverId = null;
+			tabHoverId = null;
 			return;
 		}
 		const x = snapshot.viewportX;
 		let hovered: string | null = null;
-		for (const [tabId, bounds] of this.tabButtonBounds) {
+		for (const [tabId, bounds] of tabButtonBounds) {
 			if (this.pointInRect(x, y, bounds)) {
 				hovered = tabId;
 				break;
 			}
 		}
-		this.tabHoverId = hovered;
+		tabHoverId = hovered;
 	}
 
-	private updateHoverTooltip(snapshot: PointerSnapshot): void {
+	public updateHoverTooltip(snapshot: PointerSnapshot): void {
 		const context = this.getActiveCodeTabContext();
 		const assetId = this.resolveHoverAssetId(context);
 		const row = this.resolvePointerRow(snapshot.viewportY);
@@ -5187,8 +5200,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			column: token.startColumn + 1,
 		};
 		const inspection = this.safeInspectLuaExpression(request);
-		const previousInspection = this.lastInspectorResult;
-		this.lastInspectorResult = inspection;
+		const previousInspection = lastInspectorResult;
+		lastInspectorResult = inspection;
 		if (!inspection) {
 			this.clearHoverTooltip();
 			return;
@@ -5198,7 +5211,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 		const contentLines = this.buildHoverContentLines(inspection);
-		const existing = this.hoverTooltip;
+		const existing = hoverTooltip;
 		if (existing && existing.expression === inspection.expression && existing.assetId === assetId) {
 			existing.contentLines = contentLines;
 			existing.valueType = inspection.valueType;
@@ -5219,7 +5232,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 			return;
 		}
-		this.hoverTooltip = {
+		hoverTooltip = {
 			expression: inspection.expression,
 			contentLines,
 			valueType: inspection.valueType,
@@ -5235,52 +5248,52 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 	}
 
-	private buildHoverContentLines(result: ConsoleLuaHoverResult): string[] {
+	public buildHoverContentLines(result: ConsoleLuaHoverResult): string[] {
 		return buildHoverContentLinesExternal(result);
 	}
 
-	private clearHoverTooltip(): void {
-		this.hoverTooltip = null;
-		this.lastInspectorResult = null;
+	public clearHoverTooltip(): void {
+		hoverTooltip = null;
+		lastInspectorResult = null;
 	}
 
-	// Scrollbar drag is handled via this.scrollbarController
+	// Scrollbar drag is handled via scrollbarController
 
-	private applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void {
+	public applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void {
 		if (Number.isNaN(scroll)) {
 			return;
 		}
 		switch (kind) {
 			case 'codeVertical': {
 				this.ensureVisualLines();
-				const rowCount = Math.max(1, this.cachedVisibleRowCount);
+				const rowCount = Math.max(1, cachedVisibleRowCount);
 				const maxScroll = Math.max(0, this.getVisualLineCount() - rowCount);
 				this.scrollRow = clamp(Math.round(scroll), 0, maxScroll);
-				this.cursorRevealSuspended = true;
+				cursorRevealSuspended = true;
 				break;
 			}
 			case 'codeHorizontal': {
-				if (this.wordWrapEnabled) {
+				if (wordWrapEnabled) {
 					this.scrollColumn = 0;
 					break;
 				}
 				const maxScroll = this.computeMaximumScrollColumn();
 				this.scrollColumn = clamp(Math.round(scroll), 0, maxScroll);
-				this.cursorRevealSuspended = true;
+				cursorRevealSuspended = true;
 				break;
 			}
 			case 'resourceVertical': {
-				this.resourcePanel.setScroll(scroll);
-				this.resourcePanel.setFocused(true);
-				const s = this.resourcePanel.getStateForRender();
-				this.resourcePanelFocused = s.focused;
+				resourcePanel.setScroll(scroll);
+				resourcePanel.setFocused(true);
+				const s = resourcePanel.getStateForRender();
+				resourcePanelFocused = s.focused;
 				break;
 			}
 			case 'resourceHorizontal': {
-				this.resourcePanel.setHScroll(scroll);
-				this.resourcePanel.setFocused(true);
-				const s = this.resourcePanel.getStateForRender();
-				this.resourcePanelFocused = s.focused;
+				resourcePanel.setHScroll(scroll);
+				resourcePanel.setFocused(true);
+				const s = resourcePanel.getStateForRender();
+				resourcePanelFocused = s.focused;
 				break;
 			}
 			case 'viewerVertical': {
@@ -5296,14 +5309,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private adjustHoverTooltipScroll(stepCount: number): boolean {
-		if (!this.hoverTooltip) {
+	public adjustHoverTooltipScroll(stepCount: number): boolean {
+		if (!hoverTooltip) {
 			return false;
 		}
 		if (stepCount === 0) {
 			return false;
 		}
-		const tooltip = this.hoverTooltip;
+		const tooltip = hoverTooltip;
 		const totalLines = tooltip.contentLines.length;
 		if (totalLines <= tooltip.visibleLineCount || tooltip.visibleLineCount <= 0) {
 			const maxVisible = Math.max(1, Math.min(constants.HOVER_TOOLTIP_MAX_VISIBLE_LINES, totalLines));
@@ -5324,15 +5337,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return true;
 	}
 
-	private isPointInHoverTooltip(x: number, y: number): boolean {
-		const tooltip = this.hoverTooltip;
+	public isPointInHoverTooltip(x: number, y: number): boolean {
+		const tooltip = hoverTooltip;
 		if (!tooltip || !tooltip.bubbleBounds) {
 			return false;
 		}
 		return this.pointInRect(x, y, tooltip.bubbleBounds);
 	}
 
-	private pointerHitsHoverTarget(snapshot: PointerSnapshot, tooltip: CodeHoverTooltip): boolean {
+	public pointerHitsHoverTarget(snapshot: PointerSnapshot, tooltip: CodeHoverTooltip): boolean {
 		if (!snapshot.valid || !snapshot.insideViewport) {
 			return false;
 		}
@@ -5348,14 +5361,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return column >= tooltip.startColumn && column <= tooltip.endColumn;
 	}
 
-	private resolveHoverAssetId(context: CodeTabContext | null): string | null {
+	public resolveHoverAssetId(context: CodeTabContext | null): string | null {
 		if (context && context.descriptor) {
 			return context.descriptor.assetId;
 		}
-		return this.primaryAssetId;
+		return primaryAssetId;
 	}
 
-	private resolveHoverChunkName(context: CodeTabContext | null): string | null {
+	public resolveHoverChunkName(context: CodeTabContext | null): string | null {
 		if (context && context.descriptor) {
 			if (context.descriptor.path && context.descriptor.path.length > 0) {
 				return context.descriptor.path;
@@ -5364,13 +5377,13 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				return context.descriptor.assetId;
 			}
 		}
-		if (this.primaryAssetId) {
-			return this.primaryAssetId;
+		if (primaryAssetId) {
+			return primaryAssetId;
 		}
 		return null;
 	}
 
-	private buildProjectReferenceContext(context: CodeTabContext | null): {
+	public buildProjectReferenceContext(context: CodeTabContext | null): {
 		environment: ProjectReferenceEnvironment;
 		chunkName: string;
 		normalizedPath: string | null;
@@ -5379,7 +5392,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const descriptor = context?.descriptor ?? null;
 		const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
 		const descriptorAssetId = descriptor?.assetId ?? null;
-		const resolvedAssetId = descriptorAssetId ?? this.primaryAssetId ?? null;
+		const resolvedAssetId = descriptorAssetId ?? primaryAssetId ?? null;
 		const resolvedChunk = this.resolveHoverChunkName(context)
 			?? normalizedPath
 			?? descriptorAssetId
@@ -5388,9 +5401,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const environment: ProjectReferenceEnvironment = {
 			activeContext: context,
 			activeLines: this.lines,
-			codeTabContexts: Array.from(this.codeTabContexts.values()),
+			codeTabContexts: Array.from(codeTabContexts.values()),
 			listResources: () => this.listResourcesStrict(),
-			loadLuaResource: (resourceId: string) => this.loadLuaResourceFn(resourceId),
+			loadLuaResource: (resourceId: string) => loadLuaResourceFn(resourceId),
 		};
 		return {
 			environment,
@@ -5400,7 +5413,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 	}
 
-	private resolveSemanticDefinitionLocation(
+	public resolveSemanticDefinitionLocation(
 		context: CodeTabContext | null,
 		expression: string,
 		usageRow: number,
@@ -5418,7 +5431,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const activeContext = this.getActiveCodeTabContext();
 		const hoverChunkName = this.resolveHoverChunkName(activeContext);
 		const modelChunkName = chunkName ?? hoverChunkName ?? '<console>';
-		const model = this.layout.getSemanticModel(this.lines, this.textVersion, modelChunkName);
+		const model = layout.getSemanticModel(this.lines, textVersion, modelChunkName);
 		if (!model) {
 			return null;
 		}
@@ -5432,12 +5445,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const descriptor = context?.descriptor ?? null;
 		const descriptorPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
 		const descriptorAssetId = descriptor?.assetId ?? null;
-		const resolvedAssetId = descriptorAssetId ?? assetId ?? this.primaryAssetId ?? null;
+		const resolvedAssetId = descriptorAssetId ?? assetId ?? primaryAssetId ?? null;
 		const resolvedChunk = chunkName
 			?? descriptorPath
 			?? descriptorAssetId
 			?? assetId
-			?? this.primaryAssetId
+			?? primaryAssetId
 			?? hoverChunkName
 			?? '<console>';
 		const location: ConsoleLuaDefinitionLocation = {
@@ -5458,7 +5471,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return location;
 	}
 
-	private findDefinitionAtPosition(
+	public findDefinitionAtPosition(
 		definitions: readonly LuaDefinitionInfo[],
 		row: number,
 		column: number,
@@ -5491,7 +5504,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return null;
 	}
 
-	private extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number } | null {
+	public extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number } | null {
 		if (row < 0 || row >= this.lines.length) {
 			return null;
 		}
@@ -5611,13 +5624,13 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return { expression, startColumn: targetSegment.start, endColumn: targetSegment.end };
 	}
 
-	private refreshGotoHoverHighlight(row: number, column: number, context: CodeTabContext | null): void {
+	public refreshGotoHoverHighlight(row: number, column: number, context: CodeTabContext | null): void {
 		const token = this.extractHoverExpression(row, column);
 		if (!token) {
 			this.clearGotoHoverHighlight();
 			return;
 		}
-		const existing = this.gotoHoverHighlight;
+		const existing = gotoHoverHighlight;
 		if (existing
 			&& existing.row === row
 			&& column >= existing.startColumn
@@ -5642,7 +5655,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.clearGotoHoverHighlight();
 			return;
 		}
-		this.gotoHoverHighlight = {
+		gotoHoverHighlight = {
 			row,
 			startColumn: token.startColumn,
 			endColumn: token.endColumn,
@@ -5650,15 +5663,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 	}
 
-	private clearGotoHoverHighlight(): void {
-		this.gotoHoverHighlight = null;
+	public clearGotoHoverHighlight(): void {
+		gotoHoverHighlight = null;
 	}
 
-	private clearReferenceHighlights(): void {
-		this.referenceState.clear();
+	public clearReferenceHighlights(): void {
+		referenceState.clear();
 	}
 
-	private tryGotoDefinitionAt(row: number, column: number): boolean {
+	public tryGotoDefinitionAt(row: number, column: number): boolean {
 		const context = this.getActiveCodeTabContext();
 		const descriptor = context?.descriptor ?? null;
 		const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
@@ -5685,19 +5698,19 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				?? normalizedPath
 				?? descriptor?.assetId
 				?? assetId
-				?? this.primaryAssetId
+				?? primaryAssetId
 				?? '<console>';
 			const environment: ProjectReferenceEnvironment = {
 				activeContext: context,
 				activeLines: this.lines,
-				codeTabContexts: Array.from(this.codeTabContexts.values()),
+				codeTabContexts: Array.from(codeTabContexts.values()),
 				listResources: () => this.listResourcesStrict(),
-				loadLuaResource: (resourceId: string) => this.loadLuaResourceFn(resourceId),
+				loadLuaResource: (resourceId: string) => loadLuaResourceFn(resourceId),
 			};
 			const projectDefinition = resolveDefinitionLocationForExpression({
 				expression: token.expression,
 				environment,
-				workspace: this.semanticWorkspace,
+				workspace: semanticWorkspace,
 				currentChunkName: resolvedChunkName,
 				currentLines: this.lines,
 				currentAssetId: assetId,
@@ -5707,7 +5720,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				this.navigateToLuaDefinition(projectDefinition);
 				return true;
 			}
-			if (!this.inspectorRequestFailed) {
+			if (!inspectorRequestFailed) {
 				this.showMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
 			}
 			return false;
@@ -5716,7 +5729,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return true;
 	}
 
-	private navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation): void {
+	public navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation): void {
 		const navigationCheckpoint = this.beginNavigationCapture();
 		this.clearReferenceHighlights();
 		const hint: { assetId: string | null; path?: string | null } = { assetId: definition.assetId };
@@ -5741,14 +5754,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.activateCodeTab();
 		}
 		this.applyDefinitionSelection(definition.range);
-		this.cursorRevealSuspended = false;
+		cursorRevealSuspended = false;
 		this.clearHoverTooltip();
 		this.clearGotoHoverHighlight();
 		this.completeNavigation(navigationCheckpoint);
 		this.showMessage('Jumped to definition', constants.COLOR_STATUS_SUCCESS, 1.6);
 	}
 
-	private applyDefinitionSelection(range: ConsoleLuaDefinitionLocation['range']): void {
+	public applyDefinitionSelection(range: ConsoleLuaDefinitionLocation['range']): void {
 		const lastRowIndex = Math.max(0, this.lines.length - 1);
 		const startRow = clamp(range.startLine - 1, 0, lastRowIndex);
 		const startLine = this.lines[startRow] ?? '';
@@ -5756,55 +5769,55 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.cursorRow = startRow;
 		this.cursorColumn = startColumn;
 		this.selectionAnchor = null;
-		this.pointerSelecting = false;
-		this.pointerPrimaryWasPressed = false;
-		this.pointerAuxWasPressed = false;
+		pointerSelecting = false;
+		pointerPrimaryWasPressed = false;
+		pointerAuxWasPressed = false;
 		this.updateDesiredColumn();
 		this.resetBlink();
-		this.cursorRevealSuspended = false;
+		cursorRevealSuspended = false;
 		this.ensureCursorVisible();
 	}
 
-	private beginNavigationCapture(): NavigationHistoryEntry | null {
-		if (this.navigationCaptureSuspended) {
+	public beginNavigationCapture(): NavigationHistoryEntry | null {
+		if (navigationCaptureSuspended) {
 			return null;
 		}
-		if (!this.navigationHistory.current) {
-			this.navigationHistory.current = this.createNavigationEntry();
+		if (!navigationHistory.current) {
+			navigationHistory.current = this.createNavigationEntry();
 		}
-		const current = this.navigationHistory.current;
+		const current = navigationHistory.current;
 		return current ? this.cloneNavigationEntry(current) : null;
 	}
 
-	private completeNavigation(previous: NavigationHistoryEntry | null): void {
-		if (this.navigationCaptureSuspended) {
+	public completeNavigation(previous: NavigationHistoryEntry | null): void {
+		if (navigationCaptureSuspended) {
 			return;
 		}
 		const next = this.createNavigationEntry();
 		if (previous && (!next || !this.areNavigationEntriesEqual(previous, next))) {
-			const backStack = this.navigationHistory.back;
+			const backStack = navigationHistory.back;
 			const lastBack = backStack[backStack.length - 1] ?? null;
 			if (!lastBack || !this.areNavigationEntriesEqual(lastBack, previous)) {
 				this.pushNavigationEntry(backStack, previous);
 			}
-			this.navigationHistory.forward.length = 0;
+			navigationHistory.forward.length = 0;
 		} else if (previous && next && this.areNavigationEntriesEqual(previous, next)) {
 			// Same location; do not mutate stacks.
 		} else if (previous === null && next) {
-			this.navigationHistory.forward.length = 0;
+			navigationHistory.forward.length = 0;
 		}
-		this.navigationHistory.current = next;
+		navigationHistory.current = next;
 	}
 
-	private pushNavigationEntry(stack: NavigationHistoryEntry[], entry: NavigationHistoryEntry): void {
+	public pushNavigationEntry(stack: NavigationHistoryEntry[], entry: NavigationHistoryEntry): void {
 		stack.push(entry);
-		const overflow = stack.length - ConsoleCartEditor.NAVIGATION_HISTORY_LIMIT;
+		const overflow = stack.length - NAVIGATION_HISTORY_LIMIT;
 		if (overflow > 0) {
 			stack.splice(0, overflow);
 		}
 	}
 
-	private areNavigationEntriesEqual(a: NavigationHistoryEntry, b: NavigationHistoryEntry): boolean {
+	public areNavigationEntriesEqual(a: NavigationHistoryEntry, b: NavigationHistoryEntry): boolean {
 		return a.contextId === b.contextId
 			&& a.assetId === b.assetId
 			&& a.chunkName === b.chunkName
@@ -5813,11 +5826,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			&& a.column === b.column;
 	}
 
-	private cloneNavigationEntry(entry: NavigationHistoryEntry): NavigationHistoryEntry {
+	public cloneNavigationEntry(entry: NavigationHistoryEntry): NavigationHistoryEntry {
 		return { ...entry };
 	}
 
-	private createNavigationEntry(): NavigationHistoryEntry | null {
+	public createNavigationEntry(): NavigationHistoryEntry | null {
 		if (!this.isCodeTabActive()) {
 			return null;
 		}
@@ -5842,18 +5855,18 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 	}
 
-	private withNavigationCaptureSuspended<T>(operation: () => T): T {
-		const previous = this.navigationCaptureSuspended;
-		this.navigationCaptureSuspended = true;
+	public withNavigationCaptureSuspended<T>(operation: () => T): T {
+		const previous = navigationCaptureSuspended;
+		navigationCaptureSuspended = true;
 		try {
 			return operation();
 		} finally {
-			this.navigationCaptureSuspended = previous;
+			navigationCaptureSuspended = previous;
 		}
 	}
 
-	private applyNavigationEntry(entry: NavigationHistoryEntry): void {
-		const existingContext = this.codeTabContexts.get(entry.contextId) ?? null;
+	public applyNavigationEntry(entry: NavigationHistoryEntry): void {
+		const existingContext = codeTabContexts.get(entry.contextId) ?? null;
 		if (existingContext) {
 			this.setActiveTab(entry.contextId);
 		} else {
@@ -5878,129 +5891,129 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const targetColumn = clamp(entry.column, 0, line.length);
 		this.setCursorPosition(targetRow, targetColumn);
 		this.clearSelection();
-		this.cursorRevealSuspended = false;
+		cursorRevealSuspended = false;
 		this.ensureCursorVisible();
 	}
 
-	private goBackwardInNavigationHistory(): void {
-		if (this.navigationHistory.back.length === 0) {
+	public goBackwardInNavigationHistory(): void {
+		if (navigationHistory.back.length === 0) {
 			return;
 		}
 		const currentEntry = this.createNavigationEntry();
 		if (currentEntry) {
-			const forwardStack = this.navigationHistory.forward;
+			const forwardStack = navigationHistory.forward;
 			const lastForward = forwardStack[forwardStack.length - 1] ?? null;
 			if (!lastForward || !this.areNavigationEntriesEqual(lastForward, currentEntry)) {
 				this.pushNavigationEntry(forwardStack, currentEntry);
 			}
 		} else {
-			this.navigationHistory.forward.length = 0;
+			navigationHistory.forward.length = 0;
 		}
-		const target = this.navigationHistory.back.pop()!;
+		const target = navigationHistory.back.pop()!;
 		this.withNavigationCaptureSuspended(() => {
 			this.applyNavigationEntry(target);
 		});
-		this.navigationHistory.current = this.createNavigationEntry();
+		navigationHistory.current = this.createNavigationEntry();
 	}
 
-	private goForwardInNavigationHistory(): void {
-		if (this.navigationHistory.forward.length === 0) {
+	public goForwardInNavigationHistory(): void {
+		if (navigationHistory.forward.length === 0) {
 			return;
 		}
 		const currentEntry = this.createNavigationEntry();
 		if (currentEntry) {
-			const backStack = this.navigationHistory.back;
+			const backStack = navigationHistory.back;
 			const lastBack = backStack[backStack.length - 1] ?? null;
 			if (!lastBack || !this.areNavigationEntriesEqual(lastBack, currentEntry)) {
 				this.pushNavigationEntry(backStack, currentEntry);
 			}
 		}
-		const target = this.navigationHistory.forward.pop()!;
+		const target = navigationHistory.forward.pop()!;
 		this.withNavigationCaptureSuspended(() => {
 			this.applyNavigationEntry(target);
 		});
-		this.navigationHistory.current = this.createNavigationEntry();
+		navigationHistory.current = this.createNavigationEntry();
 	}
 
-	private handleActionPromptPointer(snapshot: PointerSnapshot): void {
-		if (!this.pendingActionPrompt) {
+	public handleActionPromptPointer(snapshot: PointerSnapshot): void {
+		if (!pendingActionPrompt) {
 			return;
 		}
 		const x = snapshot.viewportX;
 		const y = snapshot.viewportY;
-		const saveBounds = this.actionPromptButtons.saveAndContinue;
+		const saveBounds = actionPromptButtons.saveAndContinue;
 		if (saveBounds && this.pointInRect(x, y, saveBounds)) {
 			void this.handleActionPromptSelection('save-continue');
 			return;
 		}
-		if (this.pointInRect(x, y, this.actionPromptButtons.continue)) {
+		if (this.pointInRect(x, y, actionPromptButtons.continue)) {
 			void this.handleActionPromptSelection('continue');
 			return;
 		}
-		if (this.pointInRect(x, y, this.actionPromptButtons.cancel)) {
+		if (this.pointInRect(x, y, actionPromptButtons.cancel)) {
 			void this.handleActionPromptSelection('cancel');
 		}
 	}
 
-	private handleTopBarPointer(snapshot: PointerSnapshot): boolean {
+	public handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 		const y = snapshot.viewportY;
-		if (y < 0 || y >= this.headerHeight) {
+		if (y < 0 || y >= headerHeight) {
 			return false;
 		}
 		const x = snapshot.viewportX;
-		if (this.pointInRect(x, y, this.topBarButtonBounds.resume)) {
+		if (this.pointInRect(x, y, topBarButtonBounds.resume)) {
 			this.handleTopBarButtonPress('resume');
 			return true;
 		}
-		if (this.pointInRect(x, y, this.topBarButtonBounds.reboot)) {
+		if (this.pointInRect(x, y, topBarButtonBounds.reboot)) {
 			this.handleTopBarButtonPress('reboot');
 			return true;
 		}
-		if (this.dirty && this.pointInRect(x, y, this.topBarButtonBounds.save)) {
+		if (this.dirty && this.pointInRect(x, y, topBarButtonBounds.save)) {
 			this.handleTopBarButtonPress('save');
 			return true;
 		}
-		if (this.pointInRect(x, y, this.topBarButtonBounds.resources)) {
+		if (this.pointInRect(x, y, topBarButtonBounds.resources)) {
 			this.handleTopBarButtonPress('resources');
 			return true;
 		}
-		if (this.pointInRect(x, y, this.topBarButtonBounds.problems)) {
+		if (this.pointInRect(x, y, topBarButtonBounds.problems)) {
 			this.handleTopBarButtonPress('problems');
 			return true;
 		}
-		if (this.resourcePanelVisible && this.pointInRect(x, y, this.topBarButtonBounds.filter)) {
+		if (resourcePanelVisible && this.pointInRect(x, y, topBarButtonBounds.filter)) {
 			this.handleTopBarButtonPress('filter');
 			return true;
 		}
-		if (this.pointInRect(x, y, this.topBarButtonBounds.wrap)) {
+		if (this.pointInRect(x, y, topBarButtonBounds.wrap)) {
 			this.handleTopBarButtonPress('wrap');
 			return true;
 		}
-		if (this.pointInRect(x, y, this.topBarButtonBounds.resolution)) {
+		if (this.pointInRect(x, y, topBarButtonBounds.resolution)) {
 			this.handleTopBarButtonPress('resolution');
 			return true;
 		}
 		return false;
 	}
 
-	private handleTabBarPointer(snapshot: PointerSnapshot): boolean {
-		const tabTop = this.headerHeight;
+	public handleTabBarPointer(snapshot: PointerSnapshot): boolean {
+		const tabTop = headerHeight;
 		const tabBottom = tabTop + this.getTabBarTotalHeight();
 		const y = snapshot.viewportY;
 		if (y < tabTop || y >= tabBottom) {
 			return false;
 		}
 		const x = snapshot.viewportX;
-		for (let index = 0; index < this.tabs.length; index += 1) {
-			const tab = this.tabs[index];
-			const closeBounds = this.tabCloseButtonBounds.get(tab.id);
+		for (let index = 0; index < tabs.length; index += 1) {
+			const tab = tabs[index];
+			const closeBounds = tabCloseButtonBounds.get(tab.id);
 			if (closeBounds && this.pointInRect(x, y, closeBounds)) {
 				this.endTabDrag();
 				this.closeTab(tab.id);
-				this.tabHoverId = null;
+				tabHoverId = null;
 				return true;
 			}
-			const tabBounds = this.tabButtonBounds.get(tab.id);
+			const tabBounds = tabButtonBounds.get(tab.id);
 			if (tabBounds && this.pointInRect(x, y, tabBounds)) {
 				this.beginTabDrag(tab.id, x);
 				this.setActiveTab(tab.id);
@@ -6010,20 +6023,20 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return false;
 	}
 
-	private handleTabBarMiddleClick(snapshot: PointerSnapshot): boolean {
-		const tabTop = this.headerHeight;
+	public handleTabBarMiddleClick(snapshot: PointerSnapshot): boolean {
+		const tabTop = headerHeight;
 		const tabBottom = tabTop + this.getTabBarTotalHeight();
 		const y = snapshot.viewportY;
 		if (y < tabTop || y >= tabBottom) {
 			return false;
 		}
 		const x = snapshot.viewportX;
-		for (let index = 0; index < this.tabs.length; index += 1) {
-			const tab = this.tabs[index];
+		for (let index = 0; index < tabs.length; index += 1) {
+			const tab = tabs[index];
 			if (!tab.closable) {
 				continue;
 			}
-			const bounds = this.tabButtonBounds.get(tab.id);
+			const bounds = tabButtonBounds.get(tab.id);
 			if (!bounds) {
 				continue;
 			}
@@ -6035,7 +6048,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return false;
 	}
 
-	private handlePointerWheel(): void {
+	public handlePointerWheel(): void {
 		const playerInput = $.input.getPlayerInput(this.playerIndex);
 		if (!playerInput) {
 			return;
@@ -6051,14 +6064,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const magnitude = Math.abs(delta);
 		const steps = Math.max(1, Math.round(magnitude / constants.WHEEL_SCROLL_STEP));
 		const direction = delta > 0 ? 1 : -1;
-		const pointer = this.lastPointerSnapshot;
+		const pointer = lastPointerSnapshot;
 		const shiftDown = isModifierPressedGlobal(this.playerIndex, 'ShiftLeft') || isModifierPressedGlobal(this.playerIndex, 'ShiftRight');
-		if (this.hoverTooltip) {
+		if (hoverTooltip) {
 			let canScrollTooltip = false;
 			if (!pointer) {
 				canScrollTooltip = true;
 			} else if (pointer.valid && pointer.insideViewport) {
-				if (this.isPointInHoverTooltip(pointer.viewportX, pointer.viewportY) || this.pointerHitsHoverTarget(pointer, this.hoverTooltip)) {
+				if (this.isPointInHoverTooltip(pointer.viewportX, pointer.viewportY) || this.pointerHitsHoverTarget(pointer, hoverTooltip)) {
 					canScrollTooltip = true;
 				}
 			}
@@ -6067,21 +6080,21 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				return;
 			}
 		}
-		if (this.resourceSearchVisible) {
+		if (resourceSearchVisible) {
 			const bounds = this.getResourceSearchBarBounds();
 			const pointerInQuickOpen = bounds !== null
 				&& pointer
 				&& pointer.valid
 				&& pointer.insideViewport
 				&& this.pointInRect(pointer.viewportX, pointer.viewportY, bounds);
-			if (pointerInQuickOpen || this.resourceSearchActive) {
+			if (pointerInQuickOpen || resourceSearchActive) {
 				this.moveResourceSearchSelection(direction * steps);
 				playerInput.consumeAction('pointer_wheel');
 				return;
 			}
 		}
-		const panelBounds = this.resourcePanel.getBounds();
-		const pointerInPanel = this.resourcePanelVisible
+		const panelBounds = resourcePanel.getBounds();
+		const pointerInPanel = resourcePanelVisible
 			&& panelBounds !== null
 			&& pointer
 			&& pointer.valid
@@ -6089,7 +6102,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			&& this.pointInRect(pointer.viewportX, pointer.viewportY, panelBounds);
 		if (pointerInPanel) {
 			if (shiftDown) {
-				const horizontalPixels = direction * steps * this.charAdvance * 4;
+				const horizontalPixels = direction * steps * charAdvance * 4;
 				this.scrollResourceBrowserHorizontal(horizontalPixels);
 				this.resourceBrowserEnsureSelectionVisible();
 			} else {
@@ -6098,31 +6111,31 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			playerInput.consumeAction('pointer_wheel');
 			return;
 		}
-		if (this.problemsPanel.isVisible()) {
+		if (problemsPanel.isVisible()) {
 			const bounds = this.getProblemsPanelBounds();
 			if (bounds) {
 				let allowScroll = false;
 				if (!pointer) {
-					allowScroll = this.problemsPanel.isFocused();
+					allowScroll = problemsPanel.isFocused();
 				} else if (pointer.valid && pointer.insideViewport && this.pointInRect(pointer.viewportX, pointer.viewportY, bounds)) {
 					allowScroll = true;
 				}
 				const stepsAbs = Math.max(1, Math.round(Math.abs(steps)));
-				if (this.problemsPanel.isFocused()) {
+				if (problemsPanel.isFocused()) {
 					// Match quick-open/symbol behavior: focused wheel moves selection
 					for (let i = 0; i < stepsAbs; i += 1) {
-						void this.problemsPanel.handleKeyboardCommand(direction > 0 ? 'down' : 'up');
+						void problemsPanel.handleKeyboardCommand(direction > 0 ? 'down' : 'up');
 					}
 					playerInput.consumeAction('pointer_wheel');
 					return;
 				}
-				if (allowScroll && this.problemsPanel.handlePointerWheel(direction, stepsAbs)) {
+				if (allowScroll && problemsPanel.handlePointerWheel(direction, stepsAbs)) {
 					playerInput.consumeAction('pointer_wheel');
 					return;
 				}
 			}
 		}
-		if (this.completion.handlePointerWheel(direction, steps, pointer && pointer.valid && pointer.insideViewport ? { x: pointer.viewportX, y: pointer.viewportY } : null)) {
+		if (completion.handlePointerWheel(direction, steps, pointer && pointer.valid && pointer.insideViewport ? { x: pointer.viewportX, y: pointer.viewportY } : null)) {
 			playerInput.consumeAction('pointer_wheel');
 			return;
 		}
@@ -6139,11 +6152,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 		}
 		this.scrollRows(direction * steps);
-		this.cursorRevealSuspended = true;
+		cursorRevealSuspended = true;
 		playerInput.consumeAction('pointer_wheel');
 	}
 
-	private handleTopBarButtonPress(button: TopBarButtonId): void {
+	public handleTopBarButtonPress(button: TopBarButtonId): void {
 		switch (button) {
 			case 'problems':
 				this.toggleProblemsPanel();
@@ -6177,18 +6190,18 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private openActionPrompt(action: PendingActionPrompt['action']): void {
+	public openActionPrompt(action: PendingActionPrompt['action']): void {
 		this.activateCodeTab();
-		this.pendingActionPrompt = { action };
-		this.actionPromptButtons.saveAndContinue = null;
-		this.actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
-		this.actionPromptButtons.cancel = { left: 0, top: 0, right: 0, bottom: 0 };
-		this.pointerSelecting = false;
-		this.pointerPrimaryWasPressed = false;
+		pendingActionPrompt = { action };
+		actionPromptButtons.saveAndContinue = null;
+		actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
+		actionPromptButtons.cancel = { left: 0, top: 0, right: 0, bottom: 0 };
+		pointerSelecting = false;
+		pointerPrimaryWasPressed = false;
 	}
 
-	private async handleActionPromptSelection(choice: 'save-continue' | 'continue' | 'cancel'): Promise<void> {
-		if (!this.pendingActionPrompt) {
+	public async handleActionPromptSelection(choice: 'save-continue' | 'continue' | 'cancel'): Promise<void> {
+		if (!pendingActionPrompt) {
 			return;
 		}
 		if (choice === 'cancel') {
@@ -6196,7 +6209,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 		if (choice === 'save-continue') {
-			const saved = await this.attemptPromptSave(this.pendingActionPrompt.action);
+			const saved = await this.attemptPromptSave(pendingActionPrompt.action);
 			if (!saved) {
 				return;
 			}
@@ -6207,7 +6220,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private async attemptPromptSave(action: PendingActionPrompt['action']): Promise<boolean> {
+	public async attemptPromptSave(action: PendingActionPrompt['action']): Promise<boolean> {
 		if (action === 'close') {
 			await this.save();
 			return this.dirty === false;
@@ -6216,15 +6229,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return this.dirty === false;
 	}
 
-	private executePendingAction(): boolean {
-		const prompt = this.pendingActionPrompt;
+	public executePendingAction(): boolean {
+		const prompt = pendingActionPrompt;
 		if (!prompt) {
 			return false;
 		}
 		return this.performAction(prompt.action);
 	}
 
-	private performAction(action: PendingActionPrompt['action']): boolean {
+	public performAction(action: PendingActionPrompt['action']): boolean {
 		if (action === 'resume') {
 			return this.performResume();
 		}
@@ -6238,7 +6251,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return false;
 	}
 
-	private performResume(): boolean {
+	public performResume(): boolean {
 		const runtime = this.getConsoleRuntime();
 		if (!runtime) {
 			this.showMessage('Console runtime unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
@@ -6263,14 +6276,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.showMessage('Runtime state unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
 			return false;
 		}
-		const targetGeneration = this.saveGeneration;
+		const targetGeneration = saveGeneration;
 		const shouldUpdateGeneration = this.hasPendingRuntimeReload();
 		this.clearExecutionStopHighlights();
 		this.deactivate();
 		this.scheduleRuntimeTask(() => {
 			runtime.resumeFromSnapshot(sanitizedSnapshot);
 			if (shouldUpdateGeneration) {
-				this.appliedGeneration = targetGeneration;
+				appliedGeneration = targetGeneration;
 			}
 			$.paused = false;
 		}, (error) => {
@@ -6279,7 +6292,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return true;
 	}
 
-	private performReboot(): boolean {
+	public performReboot(): boolean {
 		const runtime = this.getConsoleRuntime();
 		if (!runtime) {
 			this.showMessage('Console runtime unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
@@ -6287,7 +6300,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		const requiresReload = this.hasPendingRuntimeReload();
 		const savedSource = requiresReload ? this.getMainProgramSourceForReload() : null;
-		const targetGeneration = this.saveGeneration;
+		const targetGeneration = saveGeneration;
 		this.clearExecutionStopHighlights();
 		this.deactivate();
 		this.scheduleRuntimeTask(async () => {
@@ -6295,7 +6308,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				await runtime.reloadLuaProgram(savedSource);
 			}
 			runtime.boot('editor:reboot');
-			this.appliedGeneration = targetGeneration;
+			appliedGeneration = targetGeneration;
 			$.paused = false;
 		}, (error) => {
 			this.handleRuntimeTaskError(error, 'Failed to reboot game');
@@ -6306,7 +6319,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	// Indentation adjustments delegated to base class implementation.
 
 
-	private toggleLineComments(): void {
+	public toggleLineComments(): void {
 		const range = this.getLineRangeForMovement();
 		if (range.startRow < 0 || range.endRow < range.startRow) {
 			return;
@@ -6331,7 +6344,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private addLineComments(range?: { startRow: number; endRow: number }): void {
+	public addLineComments(range?: { startRow: number; endRow: number }): void {
 		const target = range ?? this.getLineRangeForMovement();
 		if (target.startRow < 0 || target.endRow < target.startRow) {
 			return;
@@ -6366,7 +6379,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.revealCursor();
 	}
 
-	private removeLineComments(range?: { startRow: number; endRow: number }): void {
+	public removeLineComments(range?: { startRow: number; endRow: number }): void {
 		const target = range ?? this.getLineRangeForMovement();
 		if (target.startRow < 0 || target.endRow < target.startRow) {
 			return;
@@ -6406,7 +6419,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.revealCursor();
 	}
 
-	private firstNonWhitespaceIndex(value: string): number {
+	public firstNonWhitespaceIndex(value: string): number {
 		for (let index = 0; index < value.length; index++) {
 			const ch = value.charAt(index);
 			if (ch !== ' ' && ch !== '\t') {
@@ -6416,7 +6429,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return value.length;
 	}
 
-	private shiftPositionsForInsertion(row: number, column: number, length: number): void {
+	public shiftPositionsForInsertion(row: number, column: number, length: number): void {
 		if (length <= 0) {
 			return;
 		}
@@ -6428,7 +6441,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private shiftPositionsForRemoval(row: number, column: number, length: number): void {
+	public shiftPositionsForRemoval(row: number, column: number, length: number): void {
 		if (length <= 0) {
 			return;
 		}
@@ -6449,11 +6462,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	protected revealCursor(): void {
-		this.cursorRevealSuspended = false;
+		cursorRevealSuspended = false;
 		this.ensureCursorVisible();
 	}
 
-	private readPointerSnapshot(): PointerSnapshot | null {
+	public readPointerSnapshot(): PointerSnapshot | null {
 		const playerInput = $.input.getPlayerInput(this.playerIndex);
 		if (!playerInput) {
 			return null;
@@ -6482,7 +6495,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 	}
 
-	private mapScreenPointToViewport(screenX: number, screenY: number): { x: number; y: number; inside: boolean; valid: boolean } {
+	public mapScreenPointToViewport(screenX: number, screenY: number): { x: number; y: number; inside: boolean; valid: boolean } {
 		const view = $.view;
 		if (!view) {
 			return { x: 0, y: 0, inside: false, valid: false };
@@ -6496,27 +6509,27 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const relativeX = screenX - rect.left;
 		const relativeY = screenY - rect.top;
 		const inside = relativeX >= 0 && relativeX < width && relativeY >= 0 && relativeY < height;
-		const viewportX = (relativeX / width) * this.viewportWidth;
-		const viewportY = (relativeY / height) * this.viewportHeight;
+		const viewportX = (relativeX / width) * viewportWidth;
+		const viewportY = (relativeY / height) * viewportHeight;
 		return { x: viewportX, y: viewportY, inside, valid: true };
 	}
 
-	private getCodeAreaBounds(): { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; gutterLeft: number; gutterRight: number; textLeft: number; } {
+	public getCodeAreaBounds(): { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; gutterLeft: number; gutterRight: number; textLeft: number; } {
 		const codeTop = this.codeViewportTop();
-		const codeBottom = this.viewportHeight - this.bottomMargin;
-		const codeLeft = this.resourcePanelVisible ? this.getResourcePanelWidth() : 0;
-		const codeRight = this.viewportWidth;
+		const codeBottom = viewportHeight - this.bottomMargin;
+		const codeLeft = resourcePanelVisible ? this.getResourcePanelWidth() : 0;
+		const codeRight = viewportWidth;
 		const gutterLeft = codeLeft;
-		const gutterRight = gutterLeft + this.gutterWidth;
+		const gutterRight = gutterLeft + gutterWidth;
 		const textLeft = gutterRight + 2;
 		return { codeTop, codeBottom, codeLeft, codeRight, gutterLeft, gutterRight, textLeft };
 	}
 
-	private resolvePointerRow(viewportY: number): number {
+	public resolvePointerRow(viewportY: number): number {
 		this.ensureVisualLines();
 		const bounds = this.getCodeAreaBounds();
 		const relativeY = viewportY - bounds.codeTop;
-		const lineOffset = Math.floor(relativeY / this.lineHeight);
+		const lineOffset = Math.floor(relativeY / lineHeight);
 		let visualIndex = this.scrollRow + lineOffset;
 		const visualCount = this.getVisualLineCount();
 		if (visualIndex < 0) {
@@ -6527,14 +6540,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		const segment = this.visualIndexToSegment(visualIndex);
 		if (!segment) {
-			this.lastPointerRowResolution = null;
+			lastPointerRowResolution = null;
 			return clamp(visualIndex, 0, Math.max(0, this.lines.length - 1));
 		}
-		this.lastPointerRowResolution = { visualIndex, segment };
+		lastPointerRowResolution = { visualIndex, segment };
 		return segment.row;
 	}
 
-	private resolvePointerColumn(row: number, viewportX: number): number {
+	public resolvePointerColumn(row: number, viewportX: number): number {
 		const bounds = this.getCodeAreaBounds();
 		const textLeft = bounds.textLeft;
 		const line = this.lines[row] ?? '';
@@ -6545,12 +6558,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const highlight = entry.hi;
 		let segmentStartColumn = this.scrollColumn;
 		let segmentEndColumn = line.length;
-		const resolvedSegment = this.lastPointerRowResolution?.segment;
-		if (this.wordWrapEnabled && resolvedSegment && resolvedSegment.row === row) {
+		const resolvedSegment = lastPointerRowResolution?.segment;
+		if (wordWrapEnabled && resolvedSegment && resolvedSegment.row === row) {
 			segmentStartColumn = resolvedSegment.startColumn;
 			segmentEndColumn = resolvedSegment.endColumn;
 		}
-		if (this.wordWrapEnabled) {
+		if (wordWrapEnabled) {
 			if (segmentStartColumn < 0) {
 				segmentStartColumn = 0;
 			}
@@ -6575,7 +6588,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			displayIndex = startDisplay;
 		}
 		if (displayIndex >= highlight.chars.length) {
-			return this.wordWrapEnabled ? Math.min(segmentEndColumn, line.length) : line.length;
+			return wordWrapEnabled ? Math.min(segmentEndColumn, line.length) : line.length;
 		}
 		const left = entry.advancePrefix[displayIndex];
 		const right = entry.advancePrefix[displayIndex + 1];
@@ -6587,7 +6600,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (target >= midpoint) {
 			column += 1;
 		}
-		if (this.wordWrapEnabled) {
+		if (wordWrapEnabled) {
 			if (column > segmentEndColumn) {
 				column = segmentEndColumn;
 			}
@@ -6606,8 +6619,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return column;
 	}
 
-	private handlePointerAutoScroll(viewportX: number, viewportY: number): void {
-		if (!this.pointerSelecting) {
+	public handlePointerAutoScroll(viewportX: number, viewportY: number): void {
+		if (!pointerSelecting) {
 			return;
 		}
 		const bounds = this.getCodeAreaBounds();
@@ -6627,7 +6640,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (viewportX < bounds.gutterLeft) {
 			return;
 		}
-		if (!this.wordWrapEnabled) {
+		if (!wordWrapEnabled) {
 			if (viewportX < bounds.textLeft) {
 				if (this.scrollColumn > 0) {
 					this.scrollColumn -= 1;
@@ -6645,40 +6658,40 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (this.scrollColumn < 0) {
 			this.scrollColumn = 0;
 		}
-		if (this.wordWrapEnabled) {
+		if (wordWrapEnabled) {
 			this.scrollColumn = 0;
 		}
 		const maxScrollRow = Math.max(0, this.getVisualLineCount() - this.visibleRowCount());
 		if (this.scrollRow > maxScrollRow) {
 			this.scrollRow = maxScrollRow;
 		}
-		if (!this.wordWrapEnabled && this.scrollColumn > maxScrollColumn) {
+		if (!wordWrapEnabled && this.scrollColumn > maxScrollColumn) {
 			this.scrollColumn = maxScrollColumn;
 		}
 	}
 
-	private registerPointerClick(row: number, column: number): boolean {
+	public registerPointerClick(row: number, column: number): boolean {
 		const now = $.platform.clock.now();
-		const interval = now - this.lastPointerClickTimeMs;
-		const sameRow = row === this.lastPointerClickRow;
-		const columnDelta = Math.abs(column - this.lastPointerClickColumn);
-		const doubleClick = this.lastPointerClickTimeMs > 0
+		const interval = now - lastPointerClickTimeMs;
+		const sameRow = row === lastPointerClickRow;
+		const columnDelta = Math.abs(column - lastPointerClickColumn);
+		const doubleClick = lastPointerClickTimeMs > 0
 			&& interval <= constants.DOUBLE_CLICK_MAX_INTERVAL_MS
 			&& sameRow
 			&& columnDelta <= 2;
-		this.lastPointerClickTimeMs = now;
-		this.lastPointerClickRow = row;
-		this.lastPointerClickColumn = column;
+		lastPointerClickTimeMs = now;
+		lastPointerClickRow = row;
+		lastPointerClickColumn = column;
 		return doubleClick;
 	}
 
-	private resetPointerClickTracking(): void {
-		this.lastPointerClickTimeMs = 0;
-		this.lastPointerClickRow = -1;
-		this.lastPointerClickColumn = -1;
+	public resetPointerClickTracking(): void {
+		lastPointerClickTimeMs = 0;
+		lastPointerClickRow = -1;
+		lastPointerClickColumn = -1;
 	}
 
-	private scrollRows(deltaRows: number): void {
+	public scrollRows(deltaRows: number): void {
 		if (deltaRows === 0) {
 			return;
 		}
@@ -6694,66 +6707,66 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	// === InputController host wrappers ===
 	// Snapshot helpers used by controllers to bracket mutations
-	private recordSnapshotPre(key: string): void {
+	public recordSnapshotPre(key: string): void {
 		// Use non-coalesced snapshot to ensure distinct undo step
 		this.prepareUndo(key, false);
 	}
 
-	private recordSnapshotPost(_key: string): void {
+	public recordSnapshotPost(_key: string): void {
 		// Break coalescing to avoid merging unrelated edits
 		this.breakUndoSequence();
 	}
 
-	private deleteCharLeft(): void {
+	public deleteCharLeft(): void {
 		this.backspace();
 	}
 
-	private deleteCharRight(): void {
+	public deleteCharRight(): void {
 		this.deleteForward();
 	}
 
-	private insertNewline(): void {
+	public insertNewline(): void {
 		this.insertLineBreak();
 	}
 
 	// cursor/grid manipulation now resides in ConsoleCartEditorTextOps base class.
 
-	private applySearchFieldText(value: string, moveCursorToEnd: boolean): void {
-		this.searchQuery = value;
-		setFieldText(this.searchField, value, moveCursorToEnd);
+	public applySearchFieldText(value: string, moveCursorToEnd: boolean): void {
+		searchQuery = value;
+		setFieldText(searchField, value, moveCursorToEnd);
 	}
 
-	private applySymbolSearchFieldText(value: string, moveCursorToEnd: boolean): void {
-		this.symbolSearchQuery = value;
-		setFieldText(this.symbolSearchField, value, moveCursorToEnd);
+	public applySymbolSearchFieldText(value: string, moveCursorToEnd: boolean): void {
+		symbolSearchQuery = value;
+		setFieldText(symbolSearchField, value, moveCursorToEnd);
 	}
 
-	private applyResourceSearchFieldText(value: string, moveCursorToEnd: boolean): void {
-		this.resourceSearchQuery = value;
-		setFieldText(this.resourceSearchField, value, moveCursorToEnd);
+	public applyResourceSearchFieldText(value: string, moveCursorToEnd: boolean): void {
+		resourceSearchQuery = value;
+		setFieldText(resourceSearchField, value, moveCursorToEnd);
 	}
 
-	private applyLineJumpFieldText(value: string, moveCursorToEnd: boolean): void {
-		this.lineJumpValue = value;
-		setFieldText(this.lineJumpField, value, moveCursorToEnd);
+	public applyLineJumpFieldText(value: string, moveCursorToEnd: boolean): void {
+		lineJumpValue = value;
+		setFieldText(lineJumpField, value, moveCursorToEnd);
 	}
 
-	private applyCreateResourceFieldText(value: string, moveCursorToEnd: boolean): void {
-		this.createResourcePath = value;
-		setFieldText(this.createResourceField, value, moveCursorToEnd);
+	public applyCreateResourceFieldText(value: string, moveCursorToEnd: boolean): void {
+		createResourcePath = value;
+		setFieldText(createResourceField, value, moveCursorToEnd);
 	}
 
-	private inlineFieldMetrics(): InlineFieldMetrics {
-		return this.inlineFieldMetricsRef;
+	public inlineFieldMetrics(): InlineFieldMetrics {
+		return inlineFieldMetricsRef;
 	}
 
-	private createInlineFieldEditingHandlers(keyboard: KeyboardInput): InlineFieldEditingHandlers {
+	public createInlineFieldEditingHandlers(keyboard: KeyboardInput): InlineFieldEditingHandlers {
 		return {
 			isKeyJustPressed: (code) => isKeyJustPressedGlobal(this.playerIndex, code),
 			isKeyTyped: (code) => isKeyTypedGlobal(this.playerIndex, code),
-			shouldFireRepeat: (code, deltaSeconds) => this.input.shouldRepeatPublic(keyboard, code, deltaSeconds),
+			shouldFireRepeat: (code, deltaSeconds) => input.shouldRepeatPublic(keyboard, code, deltaSeconds),
 			consumeKey: (code) => consumeKeyboardKey(keyboard, code),
-			readClipboard: () => ConsoleCartEditor.customClipboard,
+			readClipboard: () => customClipboard,
 			writeClipboard: (payload, action) => {
 				const message = action === 'copy'
 					? 'Copied to editor clipboard'
@@ -6766,11 +6779,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 	}
 
-	private processInlineFieldEditing(field: InlineTextField, keyboard: KeyboardInput, options: InlineInputOptions): boolean {
+	public processInlineFieldEditing(field: InlineTextField, keyboard: KeyboardInput, options: InlineInputOptions): boolean {
 		return applyInlineFieldEditing(field, options, this.createInlineFieldEditingHandlers(keyboard));
 	}
 
-	private processInlineFieldPointer(field: InlineTextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {
+	public processInlineFieldPointer(field: InlineTextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {
 		const result = applyInlineFieldPointer(field, {
 			metrics: this.inlineFieldMetrics(),
 			textLeft,
@@ -6795,7 +6808,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const highlight = entry.hi;
 		const cursorDisplay = this.columnToDisplay(highlight, this.cursorColumn);
 		let segmentStartColumn = 0;
-		if (this.wordWrapEnabled) {
+		if (wordWrapEnabled) {
 			this.ensureVisualLines();
 			const override = this.getCursorVisualOverride(this.cursorRow, this.cursorColumn);
 			if (override) {
@@ -6815,7 +6828,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private async save(): Promise<void> {
+	public async save(): Promise<void> {
 		const context = this.getActiveCodeTabContext();
 		if (!context) {
 			return;
@@ -6824,12 +6837,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		try {
 			await context.save(source);
 			this.dirty = false;
-			this.saveGeneration = this.saveGeneration + 1;
+			saveGeneration = saveGeneration + 1;
 			context.lastSavedSource = source;
-			context.saveGeneration = this.saveGeneration;
-			const isEntryContext = this.entryTabId !== null && context.id === this.entryTabId;
+			context.saveGeneration = saveGeneration;
+			const isEntryContext = entryTabId !== null && context.id === entryTabId;
 			if (isEntryContext) {
-				this.lastSavedSource = source;
+				lastSavedSource = source;
 			}
 			context.snapshot = this.captureSnapshot();
 			this.updateActiveContextDirtyFlag();
@@ -6845,24 +6858,24 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	protected showMessage(text: string, color: number, durationSeconds: number): void {
-		this.message.text = text;
-		this.message.color = color;
-		this.message.timer = durationSeconds;
-		this.message.visible = true;
+		message.text = text;
+		message.color = color;
+		message.timer = durationSeconds;
+		message.visible = true;
 	}
 
-	private updateMessage(deltaSeconds: number): void {
-		if (!this.message.visible) {
+	public updateMessage(deltaSeconds: number): void {
+		if (!message.visible) {
 			return;
 		}
-		this.message.timer -= deltaSeconds;
-		if (this.message.timer <= 0) {
-			this.message.visible = false;
+		message.timer -= deltaSeconds;
+		if (message.timer <= 0) {
+			message.visible = false;
 		}
 	}
 
-	private updateRuntimeErrorOverlay(deltaSeconds: number): void {
-		const overlay = this.runtimeErrorOverlay;
+	public updateRuntimeErrorOverlay(deltaSeconds: number): void {
+		const overlay = runtimeErrorOverlay;
 		if (!overlay) {
 			return;
 		}
@@ -6875,7 +6888,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private async copySelectionToClipboard(): Promise<void> {
+	public async copySelectionToClipboard(): Promise<void> {
 		const text = this.getSelectionText();
 		if (text === null) {
 			this.showMessage('Nothing selected to copy', constants.COLOR_STATUS_WARNING, 1.5);
@@ -6884,7 +6897,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		await this.writeClipboard(text, 'Copied selection to clipboard');
 	}
 
-	private async cutSelectionToClipboard(): Promise<void> {
+	public async cutSelectionToClipboard(): Promise<void> {
 		const text = this.getSelectionText();
 		if (text === null) {
 			this.showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
@@ -6895,7 +6908,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.replaceSelectionWith('');
 	}
 
-	private async cutLineToClipboard(): Promise<void> {
+	public async cutLineToClipboard(): Promise<void> {
 		if (this.lines.length === 0) {
 			this.showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
 			return;
@@ -6928,8 +6941,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.revealCursor();
 	}
 
-	private pasteFromClipboard(): void {
-		const text = ConsoleCartEditor.customClipboard;
+	public pasteFromClipboard(): void {
+		const text = customClipboard;
 		if (text === null || text.length === 0) {
 			this.showMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
 			return;
@@ -6940,8 +6953,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.showMessage('Pasted from editor clipboard', constants.COLOR_STATUS_SUCCESS, 1.5);
 	}
 
-	private async writeClipboard(text: string, successMessage: string): Promise<void> {
-		ConsoleCartEditor.customClipboard = text;
+	public async writeClipboard(text: string, successMessage: string): Promise<void> {
+		customClipboard = text;
 		const clipboard = $.platform.clipboard;
 		if (!clipboard.isSupported()) {
 			const message = successMessage + ' (Editor clipboard only)';
@@ -6999,47 +7012,47 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.bumpTextVersion();
 		this.updateDesiredColumn();
 		this.resetBlink();
-		this.cursorRevealSuspended = false;
+		cursorRevealSuspended = false;
 		this.updateActiveContextDirtyFlag();
 		this.ensureCursorVisible();
 		this.requestSemanticRefresh();
 	}
 
-	private drawTopBar(api: BmsxConsoleApi): void {
+	public drawTopBar(api: BmsxConsoleApi): void {
 		const host = {
-			viewportWidth: this.viewportWidth,
-			headerHeight: this.headerHeight,
-			lineHeight: this.lineHeight,
+			viewportWidth: viewportWidth,
+			headerHeight: headerHeight,
+			lineHeight: lineHeight,
 			measureText: (text: string) => this.measureText(text),
-			drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, this.font, text, x, y, color),
-			wordWrapEnabled: this.wordWrapEnabled,
-			resolutionMode: this.resolutionMode,
-			metadata: this.metadata,
+			drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, font, text, x, y, color),
+			wordWrapEnabled: wordWrapEnabled,
+			resolutionMode: resolutionMode,
+			metadata: metadata,
 			dirty: this.dirty,
-			resourcePanelVisible: this.resourcePanelVisible,
-			resourcePanelFilterMode: this.resourcePanel.getFilterMode(),
-			problemsPanelVisible: this.problemsPanel.isVisible(),
-			topBarButtonBounds: this.topBarButtonBounds,
+			resourcePanelVisible: resourcePanelVisible,
+			resourcePanelFilterMode: resourcePanel.getFilterMode(),
+			problemsPanelVisible: problemsPanel.isVisible(),
+			topBarButtonBounds: topBarButtonBounds,
 		};
 		renderTopBar(api, host);
 	}
 
-	private drawCreateResourceBar(api: BmsxConsoleApi): void {
+	public drawCreateResourceBar(api: BmsxConsoleApi): void {
 		const host = {
-			viewportWidth: this.viewportWidth,
-			headerHeight: this.headerHeight,
+			viewportWidth: viewportWidth,
+			headerHeight: headerHeight,
 			tabBarHeight: this.getTabBarTotalHeight(),
-			lineHeight: this.lineHeight,
-			spaceAdvance: this.spaceAdvance,
-			charAdvance: this.charAdvance,
+			lineHeight: lineHeight,
+			spaceAdvance: spaceAdvance,
+			charAdvance: charAdvance,
 			measureText: (t: string) => this.measureText(t),
-			drawText: (api2: BmsxConsoleApi, t: string, x: number, y: number, c: number) => drawEditorText(api2, this.font, t, x, y, c),
+			drawText: (api2: BmsxConsoleApi, t: string, x: number, y: number, c: number) => drawEditorText(api2, font, t, x, y, c),
 			inlineFieldMetrics: () => this.inlineFieldMetrics(),
-			createResourceActive: this.createResourceActive,
-			createResourceVisible: this.createResourceVisible,
-			createResourceField: this.createResourceField,
-			createResourceWorking: this.createResourceWorking,
-			createResourceError: this.createResourceError,
+			createResourceActive: createResourceActive,
+			createResourceVisible: createResourceVisible,
+			createResourceField: createResourceField,
+			createResourceWorking: createResourceWorking,
+			createResourceError: createResourceError,
 			drawCreateResourceErrorDialog: (api4: BmsxConsoleApi, err: string) => this.drawCreateResourceErrorDialog(api4, err),
 			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
 			getSearchBarHeight: () => this.getSearchBarHeight(),
@@ -7062,27 +7075,27 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-			blockActiveCarets: (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()),
+			blockActiveCarets: (problemsPanel.isVisible() && problemsPanel.isFocused()),
 		};
 		renderCreateResourceBar(api, host);
 	}
 
-	private drawSearchBar(api: BmsxConsoleApi): void {
+	public drawSearchBar(api: BmsxConsoleApi): void {
 		const host: import('./render_inline_bars').InlineBarsHost = {
-			viewportWidth: this.viewportWidth,
-			headerHeight: this.headerHeight,
+			viewportWidth: viewportWidth,
+			headerHeight: headerHeight,
 			tabBarHeight: this.getTabBarTotalHeight(),
-			lineHeight: this.lineHeight,
-			spaceAdvance: this.spaceAdvance,
-			charAdvance: this.charAdvance,
+			lineHeight: lineHeight,
+			spaceAdvance: spaceAdvance,
+			charAdvance: charAdvance,
 			measureText: (t: string) => this.measureText(t),
-			drawText: (a, t, x, y, c) => drawEditorText(a, this.font, t, x, y, c),
+			drawText: (a, t, x, y, c) => drawEditorText(a, font, t, x, y, c),
 			inlineFieldMetrics: () => this.inlineFieldMetrics(),
-			createResourceActive: this.createResourceActive,
-			createResourceVisible: this.createResourceVisible,
-			createResourceField: this.createResourceField,
-			createResourceWorking: this.createResourceWorking,
-			createResourceError: this.createResourceError,
+			createResourceActive: createResourceActive,
+			createResourceVisible: createResourceVisible,
+			createResourceField: createResourceField,
+			createResourceWorking: createResourceWorking,
+			createResourceError: createResourceError,
 			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
 			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
 			getSearchBarHeight: () => this.getSearchBarHeight(),
@@ -7105,41 +7118,41 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-			blockActiveCarets: (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()),
-			searchActive: this.searchActive,
-			searchField: this.searchField,
-			searchQuery: this.searchQuery,
-			searchMatchesCount: this.activeSearchMatchCount(),
-			searchCurrentIndex: this.searchCurrentIndex,
-			searchScope: this.searchScope,
-			searchWorking: this.searchScope === 'global' ? this.globalSearchJob !== null : this.searchJob !== null,
-			searchVisibleResultCount: () => this.searchVisibleResultCount(),
-			searchResultEntryHeight: () => this.searchResultEntryHeight(),
+			blockActiveCarets: (problemsPanel.isVisible() && problemsPanel.isFocused()),
+			searchActive: searchActive,
+			searchField: searchField,
+			searchQuery: searchQuery,
+			searchMatchesCount: activeSearchMatchCount(),
+			searchCurrentIndex: searchCurrentIndex,
+			searchScope: searchScope,
+			searchWorking: searchScope === 'global' ? globalSearchJob !== null : searchJob !== null,
+			searchVisibleResultCount: () => searchVisibleResultCount(),
+			searchResultEntryHeight: () => searchResultEntryHeight(),
 			searchResultEntries: this.getVisibleSearchResultEntries(),
-			searchResultEntriesBaseOffset: this.searchDisplayOffset,
-			searchSelectionIndex: this.searchCurrentIndex,
-			searchHoverIndex: this.searchHoverIndex,
-			searchDisplayOffset: this.searchDisplayOffset,
+			searchResultEntriesBaseOffset: searchDisplayOffset,
+			searchSelectionIndex: searchCurrentIndex,
+			searchHoverIndex: searchHoverIndex,
+			searchDisplayOffset: searchDisplayOffset,
 		};
 		renderSearchBar(api, host);
 	}
 
-	private drawResourceSearchBar(api: BmsxConsoleApi): void {
+	public drawResourceSearchBar(api: BmsxConsoleApi): void {
 		const host: import('./render_inline_bars').InlineBarsHost = {
-			viewportWidth: this.viewportWidth,
-			headerHeight: this.headerHeight,
+			viewportWidth: viewportWidth,
+			headerHeight: headerHeight,
 			tabBarHeight: this.getTabBarTotalHeight(),
-			lineHeight: this.lineHeight,
-			spaceAdvance: this.spaceAdvance,
-			charAdvance: this.charAdvance,
+			lineHeight: lineHeight,
+			spaceAdvance: spaceAdvance,
+			charAdvance: charAdvance,
 			measureText: (t: string) => this.measureText(t),
-			drawText: (a, t, x, y, c) => drawEditorText(a, this.font, t, x, y, c),
+			drawText: (a, t, x, y, c) => drawEditorText(a, font, t, x, y, c),
 			inlineFieldMetrics: () => this.inlineFieldMetrics(),
-			createResourceActive: this.createResourceActive,
-			createResourceVisible: this.createResourceVisible,
-			createResourceField: this.createResourceField,
-			createResourceWorking: this.createResourceWorking,
-			createResourceError: this.createResourceError,
+			createResourceActive: createResourceActive,
+			createResourceVisible: createResourceVisible,
+			createResourceField: createResourceField,
+			createResourceWorking: createResourceWorking,
+			createResourceError: createResourceError,
 			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
 			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
 			getSearchBarHeight: () => this.getSearchBarHeight(),
@@ -7162,36 +7175,36 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-			blockActiveCarets: (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()),
-			resourceSearchActive: this.resourceSearchActive,
-			resourceSearchField: this.resourceSearchField,
-			resourceSearchVisibleResultCount: () => this.resourceSearchVisibleResultCount(),
-			resourceSearchEntryHeight: () => this.resourceSearchEntryHeight(),
-			isResourceSearchCompactMode: () => this.isResourceSearchCompactMode(),
-			resourceSearchMatches: this.resourceSearchMatches,
-			resourceSearchSelectionIndex: this.resourceSearchSelectionIndex,
-			resourceSearchHoverIndex: this.resourceSearchHoverIndex,
-			resourceSearchDisplayOffset: this.resourceSearchDisplayOffset,
+			blockActiveCarets: (problemsPanel.isVisible() && problemsPanel.isFocused()),
+			resourceSearchActive: resourceSearchActive,
+			resourceSearchField: resourceSearchField,
+			resourceSearchVisibleResultCount: () => resourceSearchVisibleResultCount(),
+			resourceSearchEntryHeight: () => resourceSearchEntryHeight(),
+			isResourceSearchCompactMode: () => isResourceSearchCompactMode(),
+			resourceSearchMatches: resourceSearchMatches,
+			resourceSearchSelectionIndex: resourceSearchSelectionIndex,
+			resourceSearchHoverIndex: resourceSearchHoverIndex,
+			resourceSearchDisplayOffset: resourceSearchDisplayOffset,
 		};
 		renderResourceSearchBar(api, host);
 	}
 
-	private drawSymbolSearchBar(api: BmsxConsoleApi): void {
+	public drawSymbolSearchBar(api: BmsxConsoleApi): void {
 		const host: import('./render_inline_bars').InlineBarsHost = {
-			viewportWidth: this.viewportWidth,
-			headerHeight: this.headerHeight,
+			viewportWidth: viewportWidth,
+			headerHeight: headerHeight,
 			tabBarHeight: this.getTabBarTotalHeight(),
-			lineHeight: this.lineHeight,
-			spaceAdvance: this.spaceAdvance,
-			charAdvance: this.charAdvance,
+			lineHeight: lineHeight,
+			spaceAdvance: spaceAdvance,
+			charAdvance: charAdvance,
 			measureText: (t: string) => this.measureText(t),
-			drawText: (a, t, x, y, c) => drawEditorText(a, this.font, t, x, y, c),
+			drawText: (a, t, x, y, c) => drawEditorText(a, font, t, x, y, c),
 			inlineFieldMetrics: () => this.inlineFieldMetrics(),
-			createResourceActive: this.createResourceActive,
-			createResourceVisible: this.createResourceVisible,
-			createResourceField: this.createResourceField,
-			createResourceWorking: this.createResourceWorking,
-			createResourceError: this.createResourceError,
+			createResourceActive: createResourceActive,
+			createResourceVisible: createResourceVisible,
+			createResourceField: createResourceField,
+			createResourceWorking: createResourceWorking,
+			createResourceError: createResourceError,
 			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
 			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
 			getSearchBarHeight: () => this.getSearchBarHeight(),
@@ -7214,38 +7227,38 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-			blockActiveCarets: (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()),
-			symbolSearchGlobal: this.symbolSearchGlobal,
-			symbolSearchActive: this.symbolSearchActive,
-			symbolSearchMode: this.symbolSearchMode,
-			symbolSearchField: this.symbolSearchField,
-			symbolSearchVisibleResultCount: () => this.symbolSearchVisibleResultCount(),
-			symbolSearchEntryHeight: () => this.symbolSearchEntryHeight(),
-			isSymbolSearchCompactMode: () => this.isSymbolSearchCompactMode(),
-			symbolSearchMatches: this.symbolSearchMatches,
-			symbolSearchSelectionIndex: this.symbolSearchSelectionIndex,
-			symbolSearchHoverIndex: this.symbolSearchHoverIndex,
-			symbolSearchDisplayOffset: this.symbolSearchDisplayOffset,
+			blockActiveCarets: (problemsPanel.isVisible() && problemsPanel.isFocused()),
+			symbolSearchGlobal: symbolSearchGlobal,
+			symbolSearchActive: symbolSearchActive,
+			symbolSearchMode: symbolSearchMode,
+			symbolSearchField: symbolSearchField,
+			symbolSearchVisibleResultCount: () => symbolSearchVisibleResultCount(),
+			symbolSearchEntryHeight: () => symbolSearchEntryHeight(),
+			isSymbolSearchCompactMode: () => isSymbolSearchCompactMode(),
+			symbolSearchMatches: symbolSearchMatches,
+			symbolSearchSelectionIndex: symbolSearchSelectionIndex,
+			symbolSearchHoverIndex: symbolSearchHoverIndex,
+			symbolSearchDisplayOffset: symbolSearchDisplayOffset,
 		};
 		renderSymbolSearchBar(api, host);
 	}
 
-	private drawRenameBar(api: BmsxConsoleApi): void {
+	public drawRenameBar(api: BmsxConsoleApi): void {
 		const host: import('./render_inline_bars').InlineBarsHost = {
-			viewportWidth: this.viewportWidth,
-			headerHeight: this.headerHeight,
+			viewportWidth: viewportWidth,
+			headerHeight: headerHeight,
 			tabBarHeight: this.getTabBarTotalHeight(),
-			lineHeight: this.lineHeight,
-			spaceAdvance: this.spaceAdvance,
-			charAdvance: this.charAdvance,
+			lineHeight: lineHeight,
+			spaceAdvance: spaceAdvance,
+			charAdvance: charAdvance,
 			measureText: (t: string) => this.measureText(t),
-			drawText: (a, t, x, y, c) => drawEditorText(a, this.font, t, x, y, c),
+			drawText: (a, t, x, y, c) => drawEditorText(a, font, t, x, y, c),
 			inlineFieldMetrics: () => this.inlineFieldMetrics(),
-			createResourceActive: this.createResourceActive,
-			createResourceVisible: this.createResourceVisible,
-			createResourceField: this.createResourceField,
-			createResourceWorking: this.createResourceWorking,
-			createResourceError: this.createResourceError,
+			createResourceActive: createResourceActive,
+			createResourceVisible: createResourceVisible,
+			createResourceField: createResourceField,
+			createResourceWorking: createResourceWorking,
+			createResourceError: createResourceError,
 			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
 			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
 			getSearchBarHeight: () => this.getSearchBarHeight(),
@@ -7268,32 +7281,32 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-			blockActiveCarets: (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()),
-			renameActive: this.renameController.isActive(),
-			renameField: this.renameController.getField(),
-			renameMatchCount: this.renameController.getMatchCount(),
-			renameExpression: this.renameController.getExpressionLabel(),
-			renameOriginalName: this.renameController.getOriginalName(),
+			blockActiveCarets: (problemsPanel.isVisible() && problemsPanel.isFocused()),
+			renameActive: renameController.isActive(),
+			renameField: renameController.getField(),
+			renameMatchCount: renameController.getMatchCount(),
+			renameExpression: renameController.getExpressionLabel(),
+			renameOriginalName: renameController.getOriginalName(),
 		};
 		renderRenameBar(api, host);
 	}
 
-	private drawLineJumpBar(api: BmsxConsoleApi): void {
+	public drawLineJumpBar(api: BmsxConsoleApi): void {
 		const host: import('./render_inline_bars').InlineBarsHost = {
-			viewportWidth: this.viewportWidth,
-			headerHeight: this.headerHeight,
+			viewportWidth: viewportWidth,
+			headerHeight: headerHeight,
 			tabBarHeight: this.getTabBarTotalHeight(),
-			lineHeight: this.lineHeight,
-			spaceAdvance: this.spaceAdvance,
-			charAdvance: this.charAdvance,
+			lineHeight: lineHeight,
+			spaceAdvance: spaceAdvance,
+			charAdvance: charAdvance,
 			measureText: (t: string) => this.measureText(t),
-			drawText: (a, t, x, y, c) => drawEditorText(a, this.font, t, x, y, c),
+			drawText: (a, t, x, y, c) => drawEditorText(a, font, t, x, y, c),
 			inlineFieldMetrics: () => this.inlineFieldMetrics(),
-			createResourceActive: this.createResourceActive,
-			createResourceVisible: this.createResourceVisible,
-			createResourceField: this.createResourceField,
-			createResourceWorking: this.createResourceWorking,
-			createResourceError: this.createResourceError,
+			createResourceActive: createResourceActive,
+			createResourceVisible: createResourceVisible,
+			createResourceField: createResourceField,
+			createResourceWorking: createResourceWorking,
+			createResourceError: createResourceError,
 			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
 			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
 			getSearchBarHeight: () => this.getSearchBarHeight(),
@@ -7316,16 +7329,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-			blockActiveCarets: (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()),
-			lineJumpActive: this.lineJumpActive,
-			lineJumpField: this.lineJumpField,
+			blockActiveCarets: (problemsPanel.isVisible() && problemsPanel.isFocused()),
+			lineJumpActive: lineJumpActive,
+			lineJumpField: lineJumpField,
 		};
 		renderLineJumpBar(api, host);
 	}
 
-	private drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: string): void {
-		const maxDialogWidth = Math.min(this.viewportWidth - 16, 360);
-		const wrapWidth = Math.max(this.charAdvance, maxDialogWidth - (constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
+	public drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: string): void {
+		const maxDialogWidth = Math.min(viewportWidth - 16, 360);
+		const wrapWidth = Math.max(charAdvance, maxDialogWidth - (constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
 		const segments = message.split(/\r?\n/);
 		const lines: string[] = [];
 		for (let i = 0; i < segments.length; i += 1) {
@@ -7342,10 +7355,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		for (let i = 0; i < lines.length; i += 1) {
 			contentWidth = Math.max(contentWidth, this.measureText(lines[i]));
 		}
-		const dialogWidth = Math.min(this.viewportWidth - 16, Math.max(180, contentWidth + constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
-		const dialogHeight = Math.min(this.viewportHeight - 16, lines.length * this.lineHeight + constants.ERROR_OVERLAY_PADDING_Y * 2 + 16);
-		const left = Math.max(8, Math.floor((this.viewportWidth - dialogWidth) / 2));
-		const top = Math.max(8, Math.floor((this.viewportHeight - dialogHeight) / 2));
+		const dialogWidth = Math.min(viewportWidth - 16, Math.max(180, contentWidth + constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
+		const dialogHeight = Math.min(viewportHeight - 16, lines.length * lineHeight + constants.ERROR_OVERLAY_PADDING_Y * 2 + 16);
+		const left = Math.max(8, Math.floor((viewportWidth - dialogWidth) / 2));
+		const top = Math.max(8, Math.floor((viewportHeight - dialogHeight) / 2));
 		const right = left + dialogWidth;
 		const bottom = top + dialogHeight;
 		api.rectfill(left, top, right, bottom, constants.COLOR_STATUS_BACKGROUND);
@@ -7354,20 +7367,20 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
 		renderErrorOverlayText(
 			api,
-			this.font,
+			font,
 			lines,
 			left + dialogPaddingX,
 			top + dialogPaddingY,
-			this.lineHeight,
+			lineHeight,
 			constants.COLOR_STATUS_TEXT
 		);
 	}
 
-	private simplifyRuntimeErrorMessage(message: string): string {
+	public simplifyRuntimeErrorMessage(message: string): string {
 		return message.replace(/^\[BmsxConsoleRuntime\]\s*/, '');
 	}
 
-	private codeViewportTop(): number {
+	public codeViewportTop(): number {
 		return this.topMargin
 			+ this.getCreateResourceBarHeight()
 			+ this.getSearchBarHeight()
@@ -7377,135 +7390,135 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			+ this.getLineJumpBarHeight();
 	}
 
-	private getCreateResourceBarHeight(): number {
+	public getCreateResourceBarHeight(): number {
 		if (!this.isCreateResourceVisible()) {
 			return 0;
 		}
-		return this.lineHeight + constants.CREATE_RESOURCE_BAR_MARGIN_Y * 2;
+		return lineHeight + constants.CREATE_RESOURCE_BAR_MARGIN_Y * 2;
 	}
 
-	private isCreateResourceVisible(): boolean {
-		return this.createResourceVisible;
+	public isCreateResourceVisible(): boolean {
+		return createResourceVisible;
 	}
 
-	private getSearchBarHeight(): number {
+	public getSearchBarHeight(): number {
 		if (!this.isSearchVisible()) {
 			return 0;
 		}
-		const baseHeight = this.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
-		const visible = this.searchVisibleResultCount();
+		const baseHeight = lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+		const visible = searchVisibleResultCount();
 		if (visible <= 0) {
 			return baseHeight;
 		}
-		return baseHeight + constants.SEARCH_RESULT_SPACING + visible * this.searchResultEntryHeight();
+		return baseHeight + constants.SEARCH_RESULT_SPACING + visible * searchResultEntryHeight();
 	}
 
-	private isSearchVisible(): boolean {
-		return this.searchVisible;
+	public isSearchVisible(): boolean {
+		return searchVisible;
 	}
 
-	private getResourceSearchBarHeight(): number {
+	public getResourceSearchBarHeight(): number {
 		if (!this.isResourceSearchVisible()) {
 			return 0;
 		}
-		const baseHeight = this.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
-		const visible = this.resourceSearchVisibleResultCount();
+		const baseHeight = lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
+		const visible = resourceSearchVisibleResultCount();
 		if (visible <= 0) {
 			return baseHeight;
 		}
-		return baseHeight + constants.QUICK_OPEN_RESULT_SPACING + visible * this.resourceSearchEntryHeight();
+		return baseHeight + constants.QUICK_OPEN_RESULT_SPACING + visible * resourceSearchEntryHeight();
 	}
 
-	private isResourceSearchVisible(): boolean {
-		return this.resourceSearchVisible;
+	public isResourceSearchVisible(): boolean {
+		return resourceSearchVisible;
 	}
 
-	private getSymbolSearchBarHeight(): number {
+	public getSymbolSearchBarHeight(): number {
 		if (!this.isSymbolSearchVisible()) {
 			return 0;
 		}
-		const baseHeight = this.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
-		const visible = this.symbolSearchVisibleResultCount();
+		const baseHeight = lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+		const visible = symbolSearchVisibleResultCount();
 		if (visible <= 0) {
 			return baseHeight;
 		}
-		return baseHeight + constants.SYMBOL_SEARCH_RESULT_SPACING + visible * this.symbolSearchEntryHeight();
+		return baseHeight + constants.SYMBOL_SEARCH_RESULT_SPACING + visible * symbolSearchEntryHeight();
 	}
 
-	private isSymbolSearchVisible(): boolean {
-		return this.symbolSearchVisible;
+	public isSymbolSearchVisible(): boolean {
+		return symbolSearchVisible;
 	}
 
-	private getRenameBarHeight(): number {
+	public getRenameBarHeight(): number {
 		if (!this.isRenameVisible()) {
 			return 0;
 		}
-		return this.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+		return lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 	}
 
-	private isRenameVisible(): boolean {
-		return this.renameController.isVisible();
+	public isRenameVisible(): boolean {
+		return renameController.isVisible();
 	}
 
-	private getLineJumpBarHeight(): number {
+	public getLineJumpBarHeight(): number {
 		if (!this.isLineJumpVisible()) {
 			return 0;
 		}
-		return this.lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;
+		return lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;
 	}
 
-	private isLineJumpVisible(): boolean {
-		return this.lineJumpVisible;
+	public isLineJumpVisible(): boolean {
+		return lineJumpVisible;
 	}
 
-	private getCreateResourceBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+	public getCreateResourceBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
 		const height = this.getCreateResourceBarHeight();
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.getTabBarTotalHeight();
+		const top = headerHeight + this.getTabBarTotalHeight();
 		return {
 			top,
 			bottom: top + height,
 			left: 0,
-			right: this.viewportWidth,
+			right: viewportWidth,
 		};
 	}
 
-	private getSearchBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+	public getSearchBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
 		const height = this.getSearchBarHeight();
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.getTabBarTotalHeight() + this.getCreateResourceBarHeight();
+		const top = headerHeight + this.getTabBarTotalHeight() + this.getCreateResourceBarHeight();
 		return {
 			top,
 			bottom: top + height,
 			left: 0,
-			right: this.viewportWidth,
+			right: viewportWidth,
 		};
 	}
 
-	private getResourceSearchBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+	public getResourceSearchBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
 		const height = this.getResourceSearchBarHeight();
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.getTabBarTotalHeight() + this.getCreateResourceBarHeight() + this.getSearchBarHeight();
+		const top = headerHeight + this.getTabBarTotalHeight() + this.getCreateResourceBarHeight() + this.getSearchBarHeight();
 		return {
 			top,
 			bottom: top + height,
 			left: 0,
-			right: this.viewportWidth,
+			right: viewportWidth,
 		};
 	}
 
-	private getLineJumpBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+	public getLineJumpBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
 		const height = this.getLineJumpBarHeight();
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.getTabBarTotalHeight()
+		const top = headerHeight + this.getTabBarTotalHeight()
 			+ this.getCreateResourceBarHeight()
 			+ this.getSearchBarHeight()
 			+ this.getResourceSearchBarHeight()
@@ -7515,16 +7528,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			top,
 			bottom: top + height,
 			left: 0,
-			right: this.viewportWidth,
+			right: viewportWidth,
 		};
 	}
 
-	private getSymbolSearchBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+	public getSymbolSearchBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
 		const height = this.getSymbolSearchBarHeight();
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.getTabBarTotalHeight()
+		const top = headerHeight + this.getTabBarTotalHeight()
 			+ this.getCreateResourceBarHeight()
 			+ this.getSearchBarHeight()
 			+ this.getResourceSearchBarHeight();
@@ -7532,16 +7545,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			top,
 			bottom: top + height,
 			left: 0,
-			right: this.viewportWidth,
+			right: viewportWidth,
 		};
 	}
 
-	private getRenameBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+	public getRenameBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
 		const height = this.getRenameBarHeight();
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.getTabBarTotalHeight()
+		const top = headerHeight + this.getTabBarTotalHeight()
 			+ this.getCreateResourceBarHeight()
 			+ this.getSearchBarHeight()
 			+ this.getResourceSearchBarHeight()
@@ -7550,31 +7563,31 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			top,
 			bottom: top + height,
 			left: 0,
-			right: this.viewportWidth,
+			right: viewportWidth,
 		};
 	}
 
-	private drawCodeArea(api: BmsxConsoleApi): void {
+	public drawCodeArea(api: BmsxConsoleApi): void {
 		const host: import('./render_code_area').CodeAreaHost = {
 			// Geometry and metrics
-			lineHeight: this.lineHeight,
-			spaceAdvance: this.spaceAdvance,
-			charAdvance: this.charAdvance,
-			warnNonMonospace: this.warnNonMonospace,
+			lineHeight: lineHeight,
+			spaceAdvance: spaceAdvance,
+			charAdvance: charAdvance,
+			warnNonMonospace: warnNonMonospace,
 			// Editor state
-			wordWrapEnabled: this.wordWrapEnabled,
-			codeHorizontalScrollbarVisible: this.codeHorizontalScrollbarVisible,
-			codeVerticalScrollbarVisible: this.codeVerticalScrollbarVisible,
-			cachedVisibleRowCount: this.cachedVisibleRowCount,
-			cachedVisibleColumnCount: this.cachedVisibleColumnCount,
+			wordWrapEnabled: wordWrapEnabled,
+			codeHorizontalScrollbarVisible: codeHorizontalScrollbarVisible,
+			codeVerticalScrollbarVisible: codeVerticalScrollbarVisible,
+			cachedVisibleRowCount: cachedVisibleRowCount,
+			cachedVisibleColumnCount: cachedVisibleColumnCount,
 			scrollRow: this.scrollRow,
 			scrollColumn: this.scrollColumn,
 			cursorRow: this.cursorRow,
 			cursorColumn: this.cursorColumn,
-			cursorVisible: this.cursorVisible,
-			cursorScreenInfo: this.cursorScreenInfo,
-			gotoHoverHighlight: this.gotoHoverHighlight,
-			executionStopRow: this.executionStopRow,
+			cursorVisible: cursorVisible,
+			cursorScreenInfo: cursorScreenInfo,
+			gotoHoverHighlight: gotoHoverHighlight,
+			executionStopRow: executionStopRow,
 			lines: this.lines,
 			// Helpers
 			ensureVisualLines: () => this.ensureVisualLines(),
@@ -7586,15 +7599,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			getCachedHighlight: (r: number) => this.getCachedHighlight(r),
 			sliceHighlightedLine: (hi, start, count) => this.sliceHighlightedLine(hi, start, count),
 			columnToDisplay: (hi, c) => this.columnToDisplay(hi, c),
-			drawColoredText: (a, t, cols, x, y) => drawEditorColoredText(a, this.font, t, cols, x, y, constants.COLOR_CODE_TEXT),
+			drawColoredText: (a, t, cols, x, y) => drawEditorColoredText(a, font, t, cols, x, y, constants.COLOR_CODE_TEXT),
 			drawReferenceHighlightsForRow: (a, ri, e, ox, oy, s, ed) => this.drawReferenceHighlightsForRow(a, ri, e, ox, oy, s, ed),
 			drawSearchHighlightsForRow: (a, ri, e, ox, oy, s, ed) => this.drawSearchHighlightsForRow(a, ri, e, ox, oy, s, ed),
 			computeSelectionSlice: (ri, hi, s, e) => this.computeSelectionSlice(ri, hi, s, e),
 			measureRangeFast: (entry, from, to) => this.measureRangeFast(entry, from, to),
 			getDiagnosticsForRow: (row) => this.getDiagnosticsForRow(row),
 			scrollbars: {
-				codeVertical: this.scrollbars.codeVertical,
-				codeHorizontal: this.scrollbars.codeHorizontal,
+				codeVertical: scrollbars.codeVertical,
+				codeHorizontal: scrollbars.codeHorizontal,
 			},
 			computeMaximumScrollColumn: () => this.computeMaximumScrollColumn(),
 			// Overlays
@@ -7602,23 +7615,23 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			drawHoverTooltip: (a, ct, cb, tl) => this.drawHoverTooltip(a, ct, cb, tl),
 			drawCursor: (a, info, tx) => this.drawCursor(a, info, tx),
 			computeCursorScreenInfo: (entry, tl, rt, ssd) => this.computeCursorScreenInfo(entry, tl, rt, ssd),
-			drawCompletionPopup: (a, b) => this.completion.drawCompletionPopup(a, b),
-			drawParameterHintOverlay: (a, b) => this.completion.drawParameterHintOverlay(a, b),
+			drawCompletionPopup: (a, b) => completion.drawCompletionPopup(a, b),
+			drawParameterHintOverlay: (a, b) => completion.drawParameterHintOverlay(a, b),
 		};
 		renderCodeArea(api, host);
 		// write back mutable state possibly changed by renderer
-		this.wordWrapEnabled = host.wordWrapEnabled;
-		this.codeHorizontalScrollbarVisible = host.codeHorizontalScrollbarVisible;
-		this.codeVerticalScrollbarVisible = host.codeVerticalScrollbarVisible;
-		this.cachedVisibleRowCount = host.cachedVisibleRowCount;
-		this.cachedVisibleColumnCount = host.cachedVisibleColumnCount;
+		wordWrapEnabled = host.wordWrapEnabled;
+		codeHorizontalScrollbarVisible = host.codeHorizontalScrollbarVisible;
+		codeVerticalScrollbarVisible = host.codeVerticalScrollbarVisible;
+		cachedVisibleRowCount = host.cachedVisibleRowCount;
+		cachedVisibleColumnCount = host.cachedVisibleColumnCount;
 		this.scrollRow = host.scrollRow;
 		this.scrollColumn = host.scrollColumn;
-		this.cursorScreenInfo = host.cursorScreenInfo;
+		cursorScreenInfo = host.cursorScreenInfo;
 	}
 
-	private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
-		const overlay = this.runtimeErrorOverlay;
+	public drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
+		const overlay = runtimeErrorOverlay;
 		if (!overlay) {
 			return;
 		}
@@ -7631,7 +7644,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			textLeft,
 			constants.ERROR_OVERLAY_PADDING_X,
 			constants.ERROR_OVERLAY_PADDING_Y,
-			computeRuntimeErrorOverlayMaxWidth(this.viewportWidth, this.charAdvance, this.gutterWidth)
+			computeRuntimeErrorOverlayMaxWidth(viewportWidth, charAdvance, gutterWidth)
 		);
 		if (!layout) {
 			return;
@@ -7658,11 +7671,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			highlightColor: constants.ERROR_OVERLAY_LINE_HOVER,
 			highlightLines: highlightLines.length > 0 ? highlightLines : null,
 		};
-		drawRuntimeErrorOverlayBubble(api, this.font, overlay, layout, this.lineHeight, drawOptions);
+		drawRuntimeErrorOverlayBubble(api, font, overlay, layout, lineHeight, drawOptions);
 	}
 
-	private processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, justPressed: boolean, codeTop: number, codeRight: number, textLeft: number): boolean {
-		const overlay = this.runtimeErrorOverlay;
+	public processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, justPressed: boolean, codeTop: number, codeRight: number, textLeft: number): boolean {
+		const overlay = runtimeErrorOverlay;
 		if (!overlay) {
 			return false;
 		}
@@ -7675,7 +7688,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			textLeft,
 			constants.ERROR_OVERLAY_PADDING_X,
 			constants.ERROR_OVERLAY_PADDING_Y,
-			computeRuntimeErrorOverlayMaxWidth(this.viewportWidth, this.charAdvance, this.gutterWidth)
+			computeRuntimeErrorOverlayMaxWidth(viewportWidth, charAdvance, gutterWidth)
 		);
 		if (!layout) {
 			overlay.hovered = false;
@@ -7702,8 +7715,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (!justPressed) {
 			return true;
 		}
-		this.pointerSelecting = false;
-		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+		pointerSelecting = false;
+		pointerPrimaryWasPressed = snapshot.primaryPressed;
 		this.resetPointerClickTracking();
 		const clickResult = evaluateRuntimeErrorOverlayClick(overlay, overlay.hoverLine);
 		switch (clickResult.kind) {
@@ -7731,7 +7744,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return true;
 	}
 
-	private createRuntimeErrorOverlayLayoutHost(): RuntimeErrorOverlayLayoutHost {
+	public createRuntimeErrorOverlayLayoutHost(): RuntimeErrorOverlayLayoutHost {
 		return {
 			ensureVisualLines: () => this.ensureVisualLines(),
 			positionToVisualIndex: (row: number, column: number) => this.positionToVisualIndex(row, column),
@@ -7739,20 +7752,20 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			scrollRow: this.scrollRow,
 			visualIndexToSegment: (visualIndex: number) => this.visualIndexToSegment(visualIndex),
 			getCachedHighlight: (rowIndex: number) => this.getCachedHighlight(rowIndex),
-			wordWrapEnabled: this.wordWrapEnabled,
+			wordWrapEnabled: wordWrapEnabled,
 			scrollColumn: this.scrollColumn,
 			visibleColumnCount: () => this.visibleColumnCount(),
 			sliceHighlightedLine: (highlight, columnStart, columnCount) => this.sliceHighlightedLine(highlight, columnStart, columnCount),
 			columnToDisplay: (highlight, column) => this.columnToDisplay(highlight, column),
 			measureRangeFast: (entry, fromDisplay, toDisplay) => this.measureRangeFast(entry, fromDisplay, toDisplay),
-			lineHeight: this.lineHeight,
-			viewportHeight: this.viewportHeight,
+			lineHeight: lineHeight,
+			viewportHeight: viewportHeight,
 			bottomMargin: this.bottomMargin,
 			measureText: (text: string) => this.measureText(text),
 		};
 	}
 
-	private navigateToRuntimeErrorFrameTarget(frame: RuntimeErrorStackFrame): void {
+	public navigateToRuntimeErrorFrameTarget(frame: RuntimeErrorStackFrame): void {
 		if (frame.origin !== 'lua') {
 			return;
 		}
@@ -7817,16 +7830,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 		}
 		this.selectionAnchor = null;
-		this.pointerSelecting = false;
+		pointerSelecting = false;
 		this.resetPointerClickTracking();
 		this.setCursorPosition(targetRow, targetColumn);
-		this.cursorRevealSuspended = false;
+		cursorRevealSuspended = false;
 		this.centerCursorVertically();
 		this.ensureCursorVisible();
 		this.showMessage('Navigated to call site', constants.COLOR_STATUS_SUCCESS, 1.6);
 	}
 
-	private findFunctionDefinitionRowInActiveFile(functionName: string): number | null {
+	public findFunctionDefinitionRowInActiveFile(functionName: string): number | null {
 		if (typeof functionName !== 'string' || functionName.length === 0) {
 			return null;
 		}
@@ -7847,20 +7860,20 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return null;
 	}
 
-	private isCodeTabActive(): boolean {
+	public isCodeTabActive(): boolean {
 		return this.getActiveTabKind() === 'lua_editor';
 	}
 
-	private isResourceViewActive(): boolean {
+	public isResourceViewActive(): boolean {
 		return this.getActiveTabKind() === 'resource_view';
 	}
 
-	private setActiveTab(tabId: string): void {
-		const tab = this.tabs.find(candidate => candidate.id === tabId);
+	public setActiveTab(tabId: string): void {
+		const tab = tabs.find(candidate => candidate.id === tabId);
 		if (!tab) {
 			return;
 		}
-		const navigationCheckpoint = tab.kind === 'lua_editor' && tabId !== this.activeTabId
+		const navigationCheckpoint = tab.kind === 'lua_editor' && tabId !== activeTabId
 			? this.beginNavigationCapture()
 			: null;
 		this.closeSymbolSearch(true);
@@ -7868,10 +7881,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (previousKind === 'lua_editor') {
 			this.storeActiveCodeTabContext();
 		}
-		if (this.activeTabId === tabId) {
+		if (activeTabId === tabId) {
 			if (tab.kind === 'resource_view') {
 				this.enterResourceViewer(tab);
-				this.runtimeErrorOverlay = null;
+				runtimeErrorOverlay = null;
 			} else if (tab.kind === 'lua_editor') {
 				this.activateCodeEditorTab(tab.id);
 				if (navigationCheckpoint) {
@@ -7880,10 +7893,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 			return;
 		}
-		this.activeTabId = tabId;
+		activeTabId = tabId;
 		if (tab.kind === 'resource_view') {
 			this.enterResourceViewer(tab);
-			this.runtimeErrorOverlay = null;
+			runtimeErrorOverlay = null;
 			return;
 		}
 		if (tab.kind === 'lua_editor') {
@@ -7894,47 +7907,47 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private toggleResourcePanel(): void {
+	public toggleResourcePanel(): void {
 		// Keep editor/controller visibility in sync by delegating to controller
-		this.resourcePanel.togglePanel();
+		resourcePanel.togglePanel();
 	}
 
-	private toggleProblemsPanel(): void {
-		if (this.problemsPanel.isVisible()) {
+	public toggleProblemsPanel(): void {
+		if (problemsPanel.isVisible()) {
 			this.hideProblemsPanel();
 			return;
 		}
 		this.showProblemsPanel();
 	}
 
-	private showProblemsPanel(): void {
-		this.problemsPanel.show();
+	public showProblemsPanel(): void {
+		problemsPanel.show();
 		this.markDiagnosticsDirty();
 	}
 
-	private hideProblemsPanel(): void {
-		this.problemsPanel.hide();
+	public hideProblemsPanel(): void {
+		problemsPanel.hide();
 		this.focusEditorFromProblemsPanel();
 	}
 
-	private toggleResourcePanelFilterMode(): void {
+	public toggleResourcePanelFilterMode(): void {
 		// Controller owns filter state and messaging
-		this.resourcePanel.toggleFilterMode();
+		resourcePanel.toggleFilterMode();
 	}
 
-	private toggleResolutionMode(): void {
-		this.resolutionMode = this.resolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
+	public toggleResolutionMode(): void {
+		resolutionMode = resolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
 		this.refreshViewportDimensions(true);
 		this.ensureCursorVisible();
-		this.cursorRevealSuspended = false;
+		cursorRevealSuspended = false;
 		this.applyResolutionModeToRuntime();
-		const modeLabel = this.resolutionMode === 'offscreen' ? 'OFFSCREEN' : 'NATIVE';
+		const modeLabel = resolutionMode === 'offscreen' ? 'OFFSCREEN' : 'NATIVE';
 		this.showMessage(`Editor resolution: ${modeLabel}`, constants.COLOR_STATUS_TEXT, 2.5);
 	}
 
-	private toggleWordWrap(): void {
+	public toggleWordWrap(): void {
 		this.ensureVisualLines();
-		const previousWrap = this.wordWrapEnabled;
+		const previousWrap = wordWrapEnabled;
 		const visualLineCount = this.getVisualLineCount();
 		const previousTopIndex = clamp(this.scrollRow, 0, visualLineCount > 0 ? visualLineCount - 1 : 0);
 		const previousTopSegment = this.visualIndexToSegment(previousTopIndex);
@@ -7947,8 +7960,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const previousCursorColumn = this.cursorColumn;
 		const previousDesiredColumn = this.desiredColumn;
 
-		this.wordWrapEnabled = !previousWrap;
-		this.cursorRevealSuspended = false;
+		wordWrapEnabled = !previousWrap;
+		cursorRevealSuspended = false;
 		this.invalidateVisualLines();
 		this.ensureVisualLines();
 
@@ -7957,7 +7970,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.cursorColumn = clamp(previousCursorColumn, 0, currentLine.length);
 		this.desiredColumn = previousDesiredColumn;
 
-		if (this.wordWrapEnabled) {
+		if (wordWrapEnabled) {
 			this.scrollColumn = 0;
 			const anchorVisualIndex = this.positionToVisualIndex(anchorRow, anchorColumnForWrap);
 			this.scrollRow = clamp(anchorVisualIndex, 0, Math.max(0, this.getVisualLineCount() - this.visibleRowCount()));
@@ -7966,49 +7979,49 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			const anchorVisualIndex = this.positionToVisualIndex(anchorRow, this.scrollColumn);
 			this.scrollRow = clamp(anchorVisualIndex, 0, Math.max(0, this.getVisualLineCount() - this.visibleRowCount()));
 		}
-		this.lastPointerRowResolution = null;
+		lastPointerRowResolution = null;
 		this.ensureCursorVisible();
 		this.updateDesiredColumn();
-		const message = this.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled';
+		const message = wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled';
 		this.showMessage(message, constants.COLOR_STATUS_TEXT, 2.5);
 	}
 
-	private applyResolutionModeToRuntime(): void {
+	public applyResolutionModeToRuntime(): void {
 		const runtime = this.getConsoleRuntime();
 		if (!runtime) {
 			return;
 		}
-		runtime.setEditorOverlayResolution(this.resolutionMode);
+		runtime.setEditorOverlayResolution(resolutionMode);
 	}
 
 	// showResourcePanel removed; controller handles visibility via toggle/show()
 
-	private hideResourcePanel(): void {
+	public hideResourcePanel(): void {
 		// Forward to controller; it resets its internal state
-		this.resourcePanel.hide();
-		this.resourcePanelFocused = false;
-		this.resourcePanelResizing = false;
+		resourcePanel.hide();
+		resourcePanelFocused = false;
+		resourcePanelResizing = false;
 		this.resetResourcePanelState();
 		this.invalidateVisualLines();
 	}
 
-	private activateCodeTab(): void {
-		const codeTab = this.tabs.find(candidate => candidate.kind === 'lua_editor');
+	public activateCodeTab(): void {
+		const codeTab = tabs.find(candidate => candidate.kind === 'lua_editor');
 		if (codeTab) {
 			this.setActiveTab(codeTab.id);
 			return;
 		}
-		if (this.entryTabId) {
-			let context = this.codeTabContexts.get(this.entryTabId);
+		if (entryTabId) {
+			let context = codeTabContexts.get(entryTabId);
 			if (!context) {
 				context = this.createEntryTabContext();
 				if (!context) {
 					return;
 				}
-				this.entryTabId = context.id;
-				this.codeTabContexts.set(context.id, context);
+				entryTabId = context.id;
+				codeTabContexts.set(context.id, context);
 			}
-			let entryTab = this.tabs.find(candidate => candidate.id === context.id);
+			let entryTab = tabs.find(candidate => candidate.id === context.id);
 			if (!entryTab) {
 				entryTab = {
 					id: context.id,
@@ -8018,21 +8031,21 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 					dirty: context.dirty,
 					resource: undefined,
 				};
-				this.tabs.unshift(entryTab);
+				tabs.unshift(entryTab);
 			}
 			this.setActiveTab(context.id);
 		}
 	}
 
-	private openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
+	public openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
 		const navigationCheckpoint = this.beginNavigationCapture();
 		const tabId: EditorTabId = `lua:${descriptor.assetId}`;
-		let tab = this.tabs.find(candidate => candidate.id === tabId);
-		if (!this.codeTabContexts.has(tabId)) {
+		let tab = tabs.find(candidate => candidate.id === tabId);
+		if (!codeTabContexts.has(tabId)) {
 			const context = this.createLuaCodeTabContext(descriptor);
-			this.codeTabContexts.set(tabId, context);
+			codeTabContexts.set(tabId, context);
 		}
-		const context = this.codeTabContexts.get(tabId) ?? null;
+		const context = codeTabContexts.get(tabId) ?? null;
 		if (!tab) {
 			const dirty = context ? context.dirty : false;
 			tab = {
@@ -8043,7 +8056,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				dirty,
 				resource: undefined,
 			};
-			this.tabs.push(tab);
+			tabs.push(tab);
 		} else {
 			tab.title = this.computeResourceTabTitle(descriptor);
 			if (context) {
@@ -8054,9 +8067,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.completeNavigation(navigationCheckpoint);
 	}
 
-	private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
+	public openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 		const tabId: EditorTabId = `resource:${descriptor.assetId}`;
-		let tab = this.tabs.find(candidate => candidate.id === tabId);
+		let tab = tabs.find(candidate => candidate.id === tabId);
 		const state = this.buildResourceViewerState(descriptor);
 		this.resourceViewerClampScroll(state);
 		if (tab) {
@@ -8074,62 +8087,62 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			dirty: false,
 			resource: state,
 		};
-		this.tabs.push(tab);
+		tabs.push(tab);
 		this.setActiveTab(tabId);
 	}
 
-	private closeActiveTab(): void {
-		if (!this.activeTabId) {
+	public closeActiveTab(): void {
+		if (!activeTabId) {
 			return;
 		}
-		this.closeTab(this.activeTabId);
+		this.closeTab(activeTabId);
 	}
 
-	private closeTab(tabId: string): void {
-		const index = this.tabs.findIndex(tab => tab.id === tabId);
+	public closeTab(tabId: string): void {
+		const index = tabs.findIndex(tab => tab.id === tabId);
 		if (index === -1) {
 			return;
 		}
-		if (this.tabDragState && this.tabDragState.tabId === tabId) {
+		if (tabDragState && tabDragState.tabId === tabId) {
 			this.endTabDrag();
 		}
-		const tab = this.tabs[index];
+		const tab = tabs[index];
 		if (!tab.closable) {
 			return;
 		}
-		const wasActiveContext = tab.kind === 'lua_editor' && this.activeCodeTabContextId === tab.id;
+		const wasActiveContext = tab.kind === 'lua_editor' && activeCodeTabContextId === tab.id;
 		if (wasActiveContext) {
 			this.storeActiveCodeTabContext();
 		}
-		this.tabs.splice(index, 1);
+		tabs.splice(index, 1);
 		if (tab.kind === 'lua_editor') {
-			if (this.activeCodeTabContextId === tab.id) {
-				this.activeCodeTabContextId = null;
+			if (activeCodeTabContextId === tab.id) {
+				activeCodeTabContextId = null;
 			}
-			this.dirtyDiagnosticContexts.delete(tab.id);
-			this.diagnosticsCache.delete(tab.id);
+			dirtyDiagnosticContexts.delete(tab.id);
+			diagnosticsCache.delete(tab.id);
 		}
-		if (this.activeTabId === tabId) {
-			const fallback = this.tabs[index - 1] ?? this.tabs[0];
+		if (activeTabId === tabId) {
+			const fallback = tabs[index - 1] ?? tabs[0];
 			if (fallback) {
 				this.setActiveTab(fallback.id);
 			} else {
-				this.activeTabId = null;
-				this.activeCodeTabContextId = null;
+				activeTabId = null;
+				activeCodeTabContextId = null;
 				this.resetEditorContent();
 			}
 		}
 	}
 
-	private cycleTab(direction: number): void {
-		if (this.tabs.length <= 1 || direction === 0) {
+	public cycleTab(direction: number): void {
+		if (tabs.length <= 1 || direction === 0) {
 			return;
 		}
-		const count = this.tabs.length;
-		let currentIndex = this.tabs.findIndex(tab => tab.id === this.activeTabId);
+		const count = tabs.length;
+		let currentIndex = tabs.findIndex(tab => tab.id === activeTabId);
 		if (currentIndex === -1) {
 			const fallbackIndex = direction > 0 ? 0 : count - 1;
-			const fallback = this.tabs[fallbackIndex];
+			const fallback = tabs[fallbackIndex];
 			if (fallback) {
 				this.setActiveTab(fallback.id);
 			}
@@ -8140,11 +8153,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (nextIndex === currentIndex) {
 			return;
 		}
-		const target = this.tabs[nextIndex];
+		const target = tabs[nextIndex];
 		this.setActiveTab(target.id);
 	}
 
-	private measureTabWidth(tab: EditorTabDescriptor): number {
+	public measureTabWidth(tab: EditorTabDescriptor): number {
 		const textWidth = this.measureText(tab.title);
 		let indicatorWidth = 0;
 		if (tab.closable) {
@@ -8156,16 +8169,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return textWidth + constants.TAB_BUTTON_PADDING_X * 2 + indicatorWidth;
 	}
 
-	private computeTabLayout(): Array<{ id: string; left: number; right: number; width: number; center: number; rowIndex: number }> {
+	public computeTabLayout(): Array<{ id: string; left: number; right: number; width: number; center: number; rowIndex: number }> {
 		const layout: Array<{ id: string; left: number; right: number; width: number; center: number; rowIndex: number }> = [];
-		for (let index = 0; index < this.tabs.length; index += 1) {
-			const tab = this.tabs[index];
-			const bounds = this.tabButtonBounds.get(tab.id) ?? null;
+		for (let index = 0; index < tabs.length; index += 1) {
+			const tab = tabs[index];
+			const bounds = tabButtonBounds.get(tab.id) ?? null;
 			if (bounds) {
 				const left = bounds.left;
 				const right = bounds.right;
 				const width = Math.max(0, right - left);
-				const rowIndex = Math.max(0, Math.floor((bounds.top - this.headerHeight) / this.tabBarHeight));
+				const rowIndex = Math.max(0, Math.floor((bounds.top - headerHeight) / tabBarHeight));
 				layout.push({
 					id: tab.id,
 					left,
@@ -8192,14 +8205,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return layout;
 	}
 
-	private beginTabDrag(tabId: string, pointerX: number): void {
-		if (this.tabs.length <= 1) {
-			this.tabDragState = null;
+	public beginTabDrag(tabId: string, pointerX: number): void {
+		if (tabs.length <= 1) {
+			tabDragState = null;
 			return;
 		}
-		const bounds = this.tabButtonBounds.get(tabId) ?? null;
+		const bounds = tabButtonBounds.get(tabId) ?? null;
 		const pointerOffset = bounds ? pointerX - bounds.left : 0;
-		this.tabDragState = {
+		tabDragState = {
 			tabId,
 			pointerOffset,
 			startX: pointerX,
@@ -8207,8 +8220,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 	}
 
-	private updateTabDrag(pointerX: number, pointerY: number): void {
-		const state = this.tabDragState;
+	public updateTabDrag(pointerX: number, pointerY: number): void {
+		const state = tabDragState;
 		if (!state) {
 			return;
 		}
@@ -8229,12 +8242,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const pointerLeft = pointerX - state.pointerOffset;
 		const pointerCenter = pointerLeft + Math.max(dragged.width, 1) * 0.5;
 		const totalTabHeight = this.getTabBarTotalHeight();
-		const withinTabBar = pointerY >= this.headerHeight && pointerY < this.headerHeight + totalTabHeight;
-		const maxRowIndex = Math.max(0, this.tabBarRowCount - 1);
+		const withinTabBar = pointerY >= headerHeight && pointerY < headerHeight + totalTabHeight;
+		const maxRowIndex = Math.max(0, tabBarRowCount - 1);
 		const pointerRow = withinTabBar
-			? clamp(Math.floor((pointerY - this.headerHeight) / this.tabBarHeight), 0, maxRowIndex)
+			? clamp(Math.floor((pointerY - headerHeight) / tabBarHeight), 0, maxRowIndex)
 			: dragged.rowIndex;
-		const rowStride = this.viewportWidth + constants.TAB_BUTTON_SPACING * 4;
+		const rowStride = viewportWidth + constants.TAB_BUTTON_SPACING * 4;
 		const pointerValue = pointerRow * rowStride + pointerCenter;
 		let desiredIndex = currentIndex;
 		for (let i = 0; i < layout.length; i += 1) {
@@ -8250,27 +8263,27 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (desiredIndex === currentIndex) {
 			return;
 		}
-		const tabIndex = this.tabs.findIndex(entry => entry.id === state.tabId);
+		const tabIndex = tabs.findIndex(entry => entry.id === state.tabId);
 		if (tabIndex === -1) {
 			return;
 		}
-		const removed = this.tabs.splice(tabIndex, 1);
+		const removed = tabs.splice(tabIndex, 1);
 		const tab = removed[0];
 		if (!tab) {
 			return;
 		}
-		const targetIndex = clamp(desiredIndex, 0, this.tabs.length);
-		this.tabs.splice(targetIndex, 0, tab);
+		const targetIndex = clamp(desiredIndex, 0, tabs.length);
+		tabs.splice(targetIndex, 0, tab);
 	}
 
-	private endTabDrag(): void {
-		if (!this.tabDragState) {
+	public endTabDrag(): void {
+		if (!tabDragState) {
 			return;
 		}
-		this.tabDragState = null;
+		tabDragState = null;
 	}
 
-	private resetEditorContent(): void {
+	public resetEditorContent(): void {
 		this.lines = [''];
 		this.invalidateVisualLines();
 		this.markDiagnosticsDirty();
@@ -8279,7 +8292,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.scrollRow = 0;
 		this.scrollColumn = 0;
 		this.selectionAnchor = null;
-		this.lastSavedSource = '';
+		lastSavedSource = '';
 		this.invalidateAllHighlights();
 		this.bumpTextVersion();
 		this.dirty = false;
@@ -8291,27 +8304,27 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.requestSemanticRefresh();
 	}
 
-	private resetResourcePanelState(): void {
-		this.resourceBrowserItems = [];
-		this.resourceBrowserSelectionIndex = -1;
+	public resetResourcePanelState(): void {
+		resourceBrowserItems = [];
+		resourceBrowserSelectionIndex = -1;
 		// max line width handled by controller
-		this.pendingResourceSelectionAssetId = null;
-		this.resourcePanelResizing = false;
+		pendingResourceSelectionAssetId = null;
+		resourcePanelResizing = false;
 	}
 
-	private refreshResourcePanelContents(): void {
+	public refreshResourcePanelContents(): void {
 		// New path owned by ResourcePanelController
-		this.resourcePanel.refresh();
-		const s = this.resourcePanel.getStateForRender();
-		this.resourcePanelResourceCount = s.items.length;
-		this.resourceBrowserItems = s.items;
-		this.resourceBrowserSelectionIndex = s.selectionIndex;
+		resourcePanel.refresh();
+		const s = resourcePanel.getStateForRender();
+		resourcePanelResourceCount = s.items.length;
+		resourceBrowserItems = s.items;
+		resourceBrowserSelectionIndex = s.selectionIndex;
 	}
 
-	private enterResourceViewer(tab: EditorTabDescriptor): void {
+	public enterResourceViewer(tab: EditorTabDescriptor): void {
 		this.closeSearch(false, true);
 		this.closeLineJump(false);
-		this.cursorRevealSuspended = false;
+		cursorRevealSuspended = false;
 		tab.dirty = false;
 		// hover state handled by controller; no-op here
 		if (!tab.resource) {
@@ -8324,22 +8337,22 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	// updateResourceBrowserMetrics removed; controller computes metrics
 
-	private selectResourceInPanel(descriptor: ConsoleResourceDescriptor): void {
+	public selectResourceInPanel(descriptor: ConsoleResourceDescriptor): void {
 		if (!descriptor.assetId || descriptor.assetId.length === 0) {
 			return;
 		}
-		this.pendingResourceSelectionAssetId = descriptor.assetId;
-		if (!this.resourcePanelVisible) {
+		pendingResourceSelectionAssetId = descriptor.assetId;
+		if (!resourcePanelVisible) {
 			return;
 		}
 		this.applyPendingResourceSelection();
 	}
 
-	private applyPendingResourceSelection(): void {
-		if (!this.resourcePanelVisible) {
+	public applyPendingResourceSelection(): void {
+		if (!resourcePanelVisible) {
 			return;
 		}
-		const assetId = this.pendingResourceSelectionAssetId;
+		const assetId = pendingResourceSelectionAssetId;
 		if (!assetId) {
 			return;
 		}
@@ -8347,14 +8360,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (index === -1) {
 			return;
 		}
-		this.resourceBrowserSelectionIndex = index;
+		resourceBrowserSelectionIndex = index;
 		this.resourceBrowserEnsureSelectionVisible();
-		this.pendingResourceSelectionAssetId = null;
+		pendingResourceSelectionAssetId = null;
 	}
 
-	private findResourcePanelIndexByAssetId(assetId: string): number {
-		for (let i = 0; i < this.resourceBrowserItems.length; i++) {
-			const descriptor = this.resourceBrowserItems[i].descriptor;
+	public findResourcePanelIndexByAssetId(assetId: string): number {
+		for (let i = 0; i < resourceBrowserItems.length; i++) {
+			const descriptor = resourceBrowserItems[i].descriptor;
 			if (descriptor && descriptor.assetId === assetId) {
 				return i;
 			}
@@ -8368,22 +8381,22 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	// clampResourceBrowserHorizontalScroll removed; use controller.clampHScroll()
 
-	private createEntryTabContext(): CodeTabContext | null {
-		const assetId = (typeof this.primaryAssetId === 'string' && this.primaryAssetId.length > 0)
-			? this.primaryAssetId
+	public createEntryTabContext(): CodeTabContext | null {
+		const assetId = (typeof primaryAssetId === 'string' && primaryAssetId.length > 0)
+			? primaryAssetId
 			: null;
 		const descriptor = assetId ? this.findResourceDescriptorByAssetId(assetId) : null;
 		const resolvedAssetId = descriptor ? descriptor.assetId : (assetId ?? '__entry__');
 		const tabId: string = `lua:${resolvedAssetId}`;
 		const title = descriptor
 			? this.computeResourceTabTitle(descriptor)
-			: (assetId ?? this.metadata.title ?? 'ENTRY').toUpperCase();
+			: (assetId ?? metadata.title ?? 'ENTRY').toUpperCase();
 		const load = descriptor
-			? () => this.loadLuaResourceFn(descriptor.assetId)
-			: () => this.loadSourceFn();
+			? () => loadLuaResourceFn(descriptor.assetId)
+			: () => loadSourceFn();
 		const save = descriptor
-			? (source: string) => this.saveLuaResourceFn(descriptor.assetId, source)
-			: (source: string) => this.saveSourceFn(source);
+			? (source: string) => saveLuaResourceFn(descriptor.assetId, source)
+			: (source: string) => saveSourceFn(source);
 		return {
 			id: tabId,
 			title,
@@ -8400,14 +8413,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 	}
 
-	private createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): CodeTabContext {
+	public createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): CodeTabContext {
 		const title = this.computeResourceTabTitle(descriptor);
 		return {
 			id: `lua:${descriptor.assetId}`,
 			title,
 			descriptor,
-			load: () => this.loadLuaResourceFn(descriptor.assetId),
-			save: (source: string) => this.saveLuaResourceFn(descriptor.assetId, source),
+			load: () => loadLuaResourceFn(descriptor.assetId),
+			save: (source: string) => saveLuaResourceFn(descriptor.assetId, source),
 			snapshot: null,
 			lastSavedSource: '',
 			saveGeneration: 0,
@@ -8418,56 +8431,56 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 	}
 
-	private getActiveCodeTabContext(): CodeTabContext | null {
-		if (!this.activeCodeTabContextId) {
+	public getActiveCodeTabContext(): CodeTabContext | null {
+		if (!activeCodeTabContextId) {
 			return null;
 		}
-		return this.codeTabContexts.get(this.activeCodeTabContextId) ?? null;
+		return codeTabContexts.get(activeCodeTabContextId) ?? null;
 	}
 
-	private storeActiveCodeTabContext(): void {
+	public storeActiveCodeTabContext(): void {
 		const context = this.getActiveCodeTabContext();
 		if (!context) {
 			return;
 		}
 		context.snapshot = this.captureSnapshot();
-		if (this.entryTabId && context.id === this.entryTabId) {
-			context.lastSavedSource = this.lastSavedSource;
+		if (entryTabId && context.id === entryTabId) {
+			context.lastSavedSource = lastSavedSource;
 		}
-		context.saveGeneration = this.saveGeneration;
-		context.appliedGeneration = this.appliedGeneration;
+		context.saveGeneration = saveGeneration;
+		context.appliedGeneration = appliedGeneration;
 		context.dirty = this.dirty;
-		context.runtimeErrorOverlay = this.runtimeErrorOverlay;
-		context.executionStopRow = this.executionStopRow;
+		context.runtimeErrorOverlay = runtimeErrorOverlay;
+		context.executionStopRow = executionStopRow;
 		this.setTabDirty(context.id, context.dirty);
 	}
 
-	private activateCodeEditorTab(tabId: string | null): void {
+	public activateCodeEditorTab(tabId: string | null): void {
 		if (!tabId) {
 			return;
 		}
-		let context = this.codeTabContexts.get(tabId);
+		let context = codeTabContexts.get(tabId);
 		if (!context) {
-			if (this.entryTabId && tabId === this.entryTabId) {
+			if (entryTabId && tabId === entryTabId) {
 				const recreated = this.createEntryTabContext();
 				if (!recreated || recreated.id !== tabId) {
 					return;
 				}
 				context = recreated;
-				this.entryTabId = context.id;
-				this.codeTabContexts.set(tabId, context);
+				entryTabId = context.id;
+				codeTabContexts.set(tabId, context);
 			} else {
 				return;
 			}
 		}
-		this.activeCodeTabContextId = tabId;
-		const isEntry = this.entryTabId !== null && context.id === this.entryTabId;
+		activeCodeTabContextId = tabId;
+		const isEntry = entryTabId !== null && context.id === entryTabId;
 		if (context.snapshot) {
 			this.restoreSnapshot(context.snapshot);
-			this.saveGeneration = context.saveGeneration;
-			this.appliedGeneration = context.appliedGeneration;
+			saveGeneration = context.saveGeneration;
+			appliedGeneration = context.appliedGeneration;
 			if (isEntry) {
-				this.lastSavedSource = context.lastSavedSource;
+				lastSavedSource = context.lastSavedSource;
 			}
 			context.dirty = this.dirty;
 			this.setTabDirty(context.id, context.dirty);
@@ -8477,7 +8490,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.ensureCursorVisible();
 			this.refreshActiveDiagnostics();
 			const chunkNameSnapshot = this.resolveHoverChunkName(context) ?? '<console>';
-			this.layout.forceSemanticUpdate(this.lines, this.textVersion, chunkNameSnapshot);
+			layout.forceSemanticUpdate(this.lines, textVersion, chunkNameSnapshot);
 			return;
 		}
 		const source = context.load();
@@ -8498,34 +8511,34 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		context.dirty = false;
 		context.runtimeErrorOverlay = null;
 		context.executionStopRow = null;
-		this.executionStopRow = null;
-		this.saveGeneration = context.saveGeneration;
-		this.appliedGeneration = context.appliedGeneration;
+		executionStopRow = null;
+		saveGeneration = context.saveGeneration;
+		appliedGeneration = context.appliedGeneration;
 		if (isEntry) {
-			this.lastSavedSource = context.lastSavedSource;
+			lastSavedSource = context.lastSavedSource;
 		}
 		this.setTabDirty(context.id, context.dirty);
 		this.syncRuntimeErrorOverlayFromContext(context);
 		this.bumpTextVersion();
 		const chunkName = this.resolveHoverChunkName(context) ?? '<console>';
-		this.layout.forceSemanticUpdate(this.lines, this.textVersion, chunkName);
+		layout.forceSemanticUpdate(this.lines, textVersion, chunkName);
 		this.updateDesiredColumn();
 		this.resetBlink();
-		this.pointerSelecting = false;
-		this.pointerPrimaryWasPressed = false;
+		pointerSelecting = false;
+		pointerPrimaryWasPressed = false;
 		this.refreshActiveDiagnostics();
 	}
 
-	private getMainProgramSourceForReload(): string {
-		const entryId = this.entryTabId;
+	public getMainProgramSourceForReload(): string {
+		const entryId = entryTabId;
 		if (!entryId) {
-			return this.loadSourceFn();
+			return loadSourceFn();
 		}
-		const context = this.codeTabContexts.get(entryId);
+		const context = codeTabContexts.get(entryId);
 		if (!context) {
-			return this.loadSourceFn();
+			return loadSourceFn();
 		}
-		if (context.id === this.activeCodeTabContextId) {
+		if (context.id === activeCodeTabContextId) {
 			return this.lines.join('\n');
 		}
 		if (context.snapshot) {
@@ -8537,7 +8550,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return context.load();
 	}
 
-	private buildResourceViewerState(descriptor: ConsoleResourceDescriptor): ResourceViewerState {
+	public buildResourceViewerState(descriptor: ConsoleResourceDescriptor): ResourceViewerState {
 		const title = this.computeResourceTabTitle(descriptor);
 		const lines: string[] = [
 			`Path: ${descriptor.path || '<unknown>'}`,
@@ -8693,7 +8706,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return state;
 	}
 
-	private computeResourceTabTitle(descriptor: ConsoleResourceDescriptor): string {
+	public computeResourceTabTitle(descriptor: ConsoleResourceDescriptor): string {
 		const normalized = descriptor.path.replace(/\\/g, '/');
 		const parts = normalized.split('/').filter(part => part.length > 0);
 		if (parts.length > 0) {
@@ -8705,7 +8718,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return descriptor.type.toUpperCase();
 	}
 
-	private appendResourceViewerLines(target: string[], additions: Iterable<string>): void {
+	public appendResourceViewerLines(target: string[], additions: Iterable<string>): void {
 		for (const entry of additions) {
 			if (target.length >= constants.RESOURCE_VIEWER_MAX_LINES - 1) {
 				if (target.length === constants.RESOURCE_VIEWER_MAX_LINES - 1) {
@@ -8717,14 +8730,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private trimResourceViewerLines(lines: string[]): void {
+	public trimResourceViewerLines(lines: string[]): void {
 		if (lines.length > constants.RESOURCE_VIEWER_MAX_LINES) {
 			lines.length = constants.RESOURCE_VIEWER_MAX_LINES - 1;
 			lines.push('<content truncated>');
 		}
 	}
 
-	private safeJsonStringify(value: unknown, space = 2): string {
+	public safeJsonStringify(value: unknown, space = 2): string {
 		return JSON.stringify(value, (_key, val) => {
 			if (typeof val === 'bigint') {
 				return Number(val);
@@ -8733,7 +8746,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}, space);
 	}
 
-	private describeMetadataValue(value: unknown): string {
+	public describeMetadataValue(value: unknown): string {
 		if (value === null || value === undefined) {
 			return '<none>';
 		}
@@ -8754,7 +8767,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return String(value);
 	}
 
-	private getViewportMetrics(): ViewportMetrics {
+	public getViewportMetrics(): ViewportMetrics {
 		const platform = $.platform;
 		if (!platform) {
 			throw new Error('[ConsoleCartEditor] Platform services unavailable while resolving viewport metrics.');
@@ -8781,7 +8794,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return metrics;
 	}
 
-	private computePanelRatioBounds(): { min: number; max: number } {
+	public computePanelRatioBounds(): { min: number; max: number } {
 		const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
 		const minEditorRatio = constants.RESOURCE_PANEL_MIN_EDITOR_RATIO;
 		const availableForPanel = Math.max(0, 1 - minEditorRatio);
@@ -8789,7 +8802,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return { min: minRatio, max: maxRatio };
 	}
 
-	private clampResourcePanelRatio(ratio: number | null): number {
+	public clampResourcePanelRatio(ratio: number | null): number {
 		const bounds = this.computePanelRatioBounds();
 		let resolved = ratio ?? this.defaultResourcePanelRatio();
 		if (!Number.isFinite(resolved)) {
@@ -8804,7 +8817,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return resolved;
 	}
 
-	private defaultResourcePanelRatio(): number {
+	public defaultResourcePanelRatio(): number {
 		const metrics = this.getViewportMetrics();
 		const viewportWidth = metrics.windowInner.width;
 		const screenWidth = metrics.screen.width;
@@ -8815,26 +8828,26 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return Math.max(bounds.min, Math.min(bounds.max, ratio));
 	}
 
-	private computePanelPixelWidth(ratio: number): number {
-		if (!Number.isFinite(ratio) || ratio <= 0 || this.viewportWidth <= 0) {
+	public computePanelPixelWidth(ratio: number): number {
+		if (!Number.isFinite(ratio) || ratio <= 0 || viewportWidth <= 0) {
 			return 0;
 		}
-		return Math.floor(this.viewportWidth * ratio);
+		return Math.floor(viewportWidth * ratio);
 	}
 
-	private getResourcePanelWidth(): number {
-		if (!this.resourcePanelVisible) return 0;
-		const bounds = this.resourcePanel.getBounds();
+	public getResourcePanelWidth(): number {
+		if (!resourcePanelVisible) return 0;
+		const bounds = resourcePanel.getBounds();
 		return bounds ? Math.max(0, bounds.right - bounds.left) : 0;
 	}
 
-	// getResourcePanelBounds removed; use this.resourcePanel.getBounds()
+	// getResourcePanelBounds removed; use resourcePanel.getBounds()
 
-	private isPointerOverResourcePanelDivider(x: number, y: number): boolean {
-		if (!this.resourcePanelVisible) {
+	public isPointerOverResourcePanelDivider(x: number, y: number): boolean {
+		if (!resourcePanelVisible) {
 			return false;
 		}
-		const bounds = this.resourcePanel.getBounds();
+		const bounds = resourcePanel.getBounds();
 		if (!bounds) {
 			return false;
 		}
@@ -8844,15 +8857,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return y >= bounds.top && y <= bounds.bottom && x >= left && x <= right;
 	}
 
-	// resourcePanelLineCapacity removed; use this.resourcePanel.lineCapacity()
+	// resourcePanelLineCapacity removed; use resourcePanel.lineCapacity()
 
-	private scrollResourceBrowser(amount: number): void {
-		if (!this.resourcePanelVisible) return;
-		this.resourcePanel.scrollBy(amount);
+	public scrollResourceBrowser(amount: number): void {
+		if (!resourcePanelVisible) return;
+		resourcePanel.scrollBy(amount);
 		// controller owns scroll; no local mirror required
 	}
 
-	private resourceViewerImageLayout(viewer: ResourceViewerState): { left: number; top: number; width: number; height: number; bottom: number; scale: number } | null {
+	public resourceViewerImageLayout(viewer: ResourceViewerState): { left: number; top: number; width: number; height: number; bottom: number; scale: number } | null {
 		const info = viewer.image;
 		if (!info) {
 			return null;
@@ -8868,8 +8881,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const contentTop = bounds.codeTop + 2;
 		const availableWidth = Math.max(1, bounds.codeRight - bounds.codeLeft - paddingX * 2);
 		const estimatedTextLines = Math.max(3, Math.min(8, viewer.lines.length + (viewer.error ? 1 : 0)));
-		const reservedTextHeight = Math.min(totalHeight * 0.45, this.lineHeight * estimatedTextLines);
-		const maxImageHeight = Math.max(this.lineHeight * 2, totalHeight - reservedTextHeight);
+		const reservedTextHeight = Math.min(totalHeight * 0.45, lineHeight * estimatedTextLines);
+		const maxImageHeight = Math.max(lineHeight * 2, totalHeight - reservedTextHeight);
 		let scale = Math.min(availableWidth / width, maxImageHeight / height);
 		if (!Number.isFinite(scale) || scale <= 0) {
 			scale = Math.min(availableWidth / width, totalHeight / height);
@@ -8887,26 +8900,26 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return { left, top, width: drawWidth, height: drawHeight, bottom, scale };
 	}
 
-	private resourceViewerTextCapacity(viewer: ResourceViewerState): number {
+	public resourceViewerTextCapacity(viewer: ResourceViewerState): number {
 		const bounds = this.getCodeAreaBounds();
 		const contentTop = bounds.codeTop + 2;
 		const layout = this.resourceViewerImageLayout(viewer);
 		let textTop = contentTop;
 		if (layout) {
-			textTop = Math.floor(layout.bottom + this.lineHeight);
+			textTop = Math.floor(layout.bottom + lineHeight);
 		}
 		if (textTop >= bounds.codeBottom) {
 			return 0;
 		}
 		const availableHeight = Math.max(0, bounds.codeBottom - textTop);
-		return Math.max(0, Math.floor(availableHeight / this.lineHeight));
+		return Math.max(0, Math.floor(availableHeight / lineHeight));
 	}
 
-	private ensureResourceViewerSprite(api: BmsxConsoleApi, assetId: string, layout: { left: number; top: number; scale: number }): void {
-		if (!this.resourceViewerSpriteId) {
-			this.resourceViewerSpriteId = 'console_resource_viewer_sprite';
+	public ensureResourceViewerSprite(api: BmsxConsoleApi, assetId: string, layout: { left: number; top: number; scale: number }): void {
+		if (!resourceViewerSpriteId) {
+			resourceViewerSpriteId = 'console_resource_viewer_sprite';
 		}
-		const spriteId = this.resourceViewerSpriteId;
+		const spriteId = resourceViewerSpriteId;
 		let object = api.world_object(spriteId);
 		if (!object) {
 			api.spawn_world_object('WorldObject', {
@@ -8932,31 +8945,31 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (!sprite) {
 			return;
 		}
-		if (this.resourceViewerSpriteAsset !== assetId) {
+		if (resourceViewerSpriteAsset !== assetId) {
 			sprite.imgid = assetId;
-			this.resourceViewerSpriteAsset = assetId;
+			resourceViewerSpriteAsset = assetId;
 		}
-		if (this.resourceViewerSpriteScale !== layout.scale) {
+		if (resourceViewerSpriteScale !== layout.scale) {
 			sprite.scale.x = layout.scale;
 			sprite.scale.y = layout.scale;
-			this.resourceViewerSpriteScale = layout.scale;
+			resourceViewerSpriteScale = layout.scale;
 		}
 		object.x = layout.left;
 		object.y = layout.top;
 		object.visible = true;
 	}
 
-	private hideResourceViewerSprite(api: BmsxConsoleApi): void {
-		if (!this.resourceViewerSpriteId) {
+	public hideResourceViewerSprite(api: BmsxConsoleApi): void {
+		if (!resourceViewerSpriteId) {
 			return;
 		}
-		const object = api.world_object(this.resourceViewerSpriteId);
+		const object = api.world_object(resourceViewerSpriteId);
 		if (object) {
 			object.visible = false;
 		}
 	}
 
-	private resourceViewerClampScroll(viewer: ResourceViewerState): void {
+	public resourceViewerClampScroll(viewer: ResourceViewerState): void {
 		const capacity = this.resourceViewerTextCapacity(viewer);
 		if (capacity <= 0) {
 			viewer.scroll = 0;
@@ -8973,21 +8986,21 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	// Bridge wrappers to the ResourcePanelController (temporary during migration)
-	private resourceBrowserEnsureSelectionVisible(): void {
-		if (!this.resourcePanelVisible) return;
-		this.resourcePanel.ensureSelectionVisiblePublic();
+	public resourceBrowserEnsureSelectionVisible(): void {
+		if (!resourcePanelVisible) return;
+		resourcePanel.ensureSelectionVisiblePublic();
 		// controller owns scroll; no local mirror required
 	}
 
-	private scrollResourceBrowserHorizontal(delta: number): void {
-		if (!this.resourcePanelVisible) return;
-		const s = this.resourcePanel.getStateForRender();
-		this.resourcePanel.setHScroll(s.hscroll + delta);
+	public scrollResourceBrowserHorizontal(delta: number): void {
+		if (!resourcePanelVisible) return;
+		const s = resourcePanel.getStateForRender();
+		resourcePanel.setHScroll(s.hscroll + delta);
 	}
 
 	// moved to ResourcePanelController
 
-	private scrollResourceViewer(amount: number): void {
+	public scrollResourceViewer(amount: number): void {
 		const viewer = this.getActiveResourceViewer();
 		if (!viewer) {
 			return;
@@ -9005,7 +9018,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	// moved to ResourcePanelController
 
 
-	private handleResourceViewerInput(keyboard: KeyboardInput, deltaSeconds: number): void {
+	public handleResourceViewerInput(keyboard: KeyboardInput, deltaSeconds: number): void {
 		const viewer = this.getActiveResourceViewer();
 		if (!viewer) {
 			return;
@@ -9046,19 +9059,19 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private drawResourcePanel(api: BmsxConsoleApi): void {
+	public drawResourcePanel(api: BmsxConsoleApi): void {
 		// Delegate full drawing to controller and then mirror back minimal state used elsewhere
-		this.resourcePanel.draw(api);
-		const s = this.resourcePanel.getStateForRender();
-		this.resourcePanelVisible = s.visible;
-		this.resourceBrowserItems = s.items;
-		this.resourcePanelFocused = s.focused;
-		this.resourceBrowserSelectionIndex = s.selectionIndex;
-		this.resourcePanelResourceCount = s.items.length;
+		resourcePanel.draw(api);
+		const s = resourcePanel.getStateForRender();
+		resourcePanelVisible = s.visible;
+		resourceBrowserItems = s.items;
+		resourcePanelFocused = s.focused;
+		resourceBrowserSelectionIndex = s.selectionIndex;
+		resourcePanelResourceCount = s.items.length;
 		// max line width handled by controller
 	}
 
-	private drawResourceViewer(api: BmsxConsoleApi): void {
+	public drawResourceViewer(api: BmsxConsoleApi): void {
 		const viewer = this.getActiveResourceViewer();
 		if (!viewer) {
 			return;
@@ -9068,7 +9081,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const contentLeft = bounds.codeLeft + constants.RESOURCE_PANEL_PADDING_X;
 		const capacity = this.resourceViewerTextCapacity(viewer);
 		const totalLines = viewer.lines.length;
-		const verticalScrollbar = this.scrollbars.viewerVertical;
+		const verticalScrollbar = scrollbars.viewerVertical;
 		const verticalTrack: RectBounds = {
 			left: bounds.codeRight - constants.SCROLLBAR_WIDTH,
 			top: bounds.codeTop,
@@ -9086,17 +9099,17 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		let textTop = contentTop;
 		if (layout && viewer.image) {
 			this.ensureResourceViewerSprite(api, viewer.image.assetId, { left: layout.left, top: layout.top, scale: layout.scale });
-			textTop = Math.floor(layout.bottom + this.lineHeight);
+			textTop = Math.floor(layout.bottom + lineHeight);
 		} else {
 			this.hideResourceViewerSprite(api);
 		}
 		if (capacity <= 0) {
 			if (viewer.lines.length > 0) {
 				const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.floor(viewer.scroll)))] ?? '';
-				const fallbackY = Math.min(textTop, bounds.codeBottom - this.lineHeight);
-				drawEditorText(api, this.font, line, contentLeft, fallbackY, constants.COLOR_RESOURCE_VIEWER_TEXT);
+				const fallbackY = Math.min(textTop, bounds.codeBottom - lineHeight);
+				drawEditorText(api, font, line, contentLeft, fallbackY, constants.COLOR_RESOURCE_VIEWER_TEXT);
 			} else {
-				drawEditorText(api, this.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
+				drawEditorText(api, font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
 			}
 			if (verticalVisible) {
 				verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
@@ -9107,15 +9120,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		viewer.scroll = clamp(viewer.scroll, 0, maxScroll);
 		const end = Math.min(totalLines, Math.floor(viewer.scroll) + capacity);
 		if (viewer.lines.length === 0) {
-			drawEditorText(api, this.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			drawEditorText(api, font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		} else {
 			for (let lineIndex = Math.floor(viewer.scroll), drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
 				const line = viewer.lines[lineIndex] ?? '';
-				const y = textTop + drawIndex * this.lineHeight;
+				const y = textTop + drawIndex * lineHeight;
 				if (y >= bounds.codeBottom) {
 					break;
 				}
-				drawEditorText(api, this.font, line, contentLeft, y, constants.COLOR_RESOURCE_VIEWER_TEXT);
+				drawEditorText(api, font, line, contentLeft, y, constants.COLOR_RESOURCE_VIEWER_TEXT);
 			}
 		}
 		if (verticalVisible) {
@@ -9123,12 +9136,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private drawReferenceHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
-		const matches = this.referenceState.getMatches();
+	public drawReferenceHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
+		const matches = referenceState.getMatches();
 		if (matches.length === 0) {
 			return;
 		}
-		const activeIndex = this.referenceState.getActiveIndex();
+		const activeIndex = referenceState.getActiveIndex();
 		const highlight = entry.hi;
 		for (let i = 0; i < matches.length; i += 1) {
 			const match = matches[i];
@@ -9145,17 +9158,17 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			const startX = originX + this.measureRangeFast(entry, sliceStartDisplay, visibleStart);
 			const endX = originX + this.measureRangeFast(entry, sliceStartDisplay, visibleEnd);
 			const overlay = i === activeIndex ? constants.REFERENCES_MATCH_ACTIVE_OVERLAY : constants.REFERENCES_MATCH_OVERLAY;
-			api.rectfill_color(startX, originY, endX, originY + this.lineHeight, overlay);
+			api.rectfill_color(startX, originY, endX, originY + lineHeight, overlay);
 		}
 	}
 
-	private drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
-		if (this.searchScope !== 'local' || this.searchMatches.length === 0 || this.searchQuery.length === 0) {
+	public drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
+		if (searchScope !== 'local' || searchMatches.length === 0 || searchQuery.length === 0) {
 			return;
 		}
 		const highlight = entry.hi;
-		for (let i = 0; i < this.searchMatches.length; i++) {
-			const match = this.searchMatches[i];
+		for (let i = 0; i < searchMatches.length; i++) {
+			const match = searchMatches[i];
 			if (match.row !== rowIndex) {
 				continue;
 			}
@@ -9168,12 +9181,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 			const startX = originX + this.measureRangeFast(entry, sliceStartDisplay, visibleStart);
 			const endX = originX + this.measureRangeFast(entry, sliceStartDisplay, visibleEnd);
-			const overlay = i === this.searchCurrentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
-			api.rectfill_color(startX, originY, endX, originY + this.lineHeight, overlay);
+			const overlay = i === searchCurrentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
+			api.rectfill_color(startX, originY, endX, originY + lineHeight, overlay);
 		}
 	}
 
-	private computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo {
+	public computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo {
 		const highlight = entry.hi;
 		const columnToDisplay = highlight.columnToDisplay;
 		const clampedColumn = columnToDisplay.length > 0
@@ -9182,7 +9195,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const cursorDisplayIndex = columnToDisplay.length > 0 ? columnToDisplay[clampedColumn] : 0;
 		const limitedDisplayIndex = Math.max(sliceStartDisplay, cursorDisplayIndex);
 		const cursorX = textLeft + this.measureRangeFast(entry, sliceStartDisplay, limitedDisplayIndex);
-		let cursorWidth = this.charAdvance;
+		let cursorWidth = charAdvance;
 		let baseChar = ' ';
 		let baseColor = constants.COLOR_CODE_TEXT;
 		if (cursorDisplayIndex < highlight.chars.length) {
@@ -9194,13 +9207,13 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				if (widthValue > 0) {
 					cursorWidth = widthValue;
 				} else {
-					cursorWidth = this.font.advance(baseChar);
+					cursorWidth = font.advance(baseChar);
 				}
 			}
 		}
 		const currentChar = this.currentLine().charAt(this.cursorColumn);
 		if (currentChar === '\t') {
-			cursorWidth = this.spaceAdvance * constants.TAB_SPACES;
+			cursorWidth = spaceAdvance * constants.TAB_SPACES;
 		}
 		return {
 			row: this.cursorRow,
@@ -9208,21 +9221,21 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			x: cursorX,
 			y: rowTop,
 			width: cursorWidth,
-			height: this.lineHeight,
+			height: lineHeight,
 			baseChar,
 			baseColor,
 		};
 	}
 
-	private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): void {
+	public drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): void {
 		const cursorX = info.x;
 		const cursorY = info.y;
 		const caretLeft = Math.floor(Math.max(textX, cursorX - 1));
 		const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + info.width));
 		const caretTop = Math.floor(cursorY);
 		const caretBottom = caretTop + info.height;
-		const problemsPanelHasFocus = this.problemsPanel.isVisible() && this.problemsPanel.isFocused();
-		if (this.searchActive || this.lineJumpActive || this.resourcePanelFocused || this.createResourceActive || problemsPanelHasFocus) {
+		const problemsPanelHasFocus = problemsPanel.isVisible() && problemsPanel.isFocused();
+		if (searchActive || lineJumpActive || resourcePanelFocused || createResourceActive || problemsPanelHasFocus) {
 			const innerLeft = caretLeft + 1;
 			const innerRight = caretRight - 1;
 			const innerTop = caretTop + 1;
@@ -9231,52 +9244,52 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				api.rectfill(innerLeft, innerTop, innerRight, innerBottom, constants.COLOR_CODE_BACKGROUND);
 			}
 			this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
-			drawEditorColoredText(api, this.font, info.baseChar, [info.baseColor], cursorX, cursorY, info.baseColor);
+			drawEditorColoredText(api, font, info.baseChar, [info.baseColor], cursorX, cursorY, info.baseColor);
 		} else {
 			api.rectfill_color(caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
 			const caretPaletteIndex = this.resolvePaletteIndex(constants.CARET_COLOR);
 			const caretInverseColor = caretPaletteIndex !== null
 				? this.invertColorIndex(caretPaletteIndex)
 				: this.invertColorIndex(info.baseColor);
-			drawEditorColoredText(api, this.font, info.baseChar, [caretInverseColor], cursorX, cursorY, caretInverseColor);
+			drawEditorColoredText(api, font, info.baseChar, [caretInverseColor], cursorX, cursorY, caretInverseColor);
 		}
 	}
 
 	// Removed local completion popup and parameter hint drawers; delegated to CompletionController
 
-	private sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
-		return this.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
+	public sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
+		return layout.sliceHighlightedLine(highlight, columnStart, columnCount);
 	}
 
-	private getCachedHighlight(row: number): CachedHighlight {
+	public getCachedHighlight(row: number): CachedHighlight {
 		const activeContext = this.getActiveCodeTabContext();
 		const chunkName = this.resolveHoverChunkName(activeContext) ?? '<console>';
-		return this.layout.getCachedHighlight(this.lines, row, this.textVersion, chunkName);
+		return layout.getCachedHighlight(this.lines, row, textVersion, chunkName);
 	}
 
 	protected invalidateLine(row: number): void {
-		this.layout.invalidateHighlight(row);
+		layout.invalidateHighlight(row);
 	}
 
 	protected invalidateAllHighlights(): void {
-		this.layout.invalidateAllHighlights();
+		layout.invalidateAllHighlights();
 	}
 
 	protected invalidateHighlightsFromRow(startRow: number): void {
-		this.layout.invalidateHighlightsFrom(Math.max(0, startRow));
+		layout.invalidateHighlightsFrom(Math.max(0, startRow));
 	}
 
-	private measureRangeFast(entry: CachedHighlight, startDisplay: number, endDisplay: number): number {
-		return this.layout.measureRangeFast(entry, startDisplay, endDisplay);
+	public measureRangeFast(entry: CachedHighlight, startDisplay: number, endDisplay: number): number {
+		return layout.measureRangeFast(entry, startDisplay, endDisplay);
 	}
 
-	private requestSemanticRefresh(context?: CodeTabContext | null): void {
+	public requestSemanticRefresh(context?: CodeTabContext | null): void {
 		const activeContext = context ?? this.getActiveCodeTabContext();
 		const chunkName = this.resolveHoverChunkName(activeContext) ?? '<console>';
-		this.layout.requestSemanticUpdate(this.lines, this.textVersion, chunkName);
+		layout.requestSemanticUpdate(this.lines, textVersion, chunkName);
 	}
 
-	private lowerBound(values: number[], target: number, lo = 0, hi = values.length): number {
+	public lowerBound(values: number[], target: number, lo = 0, hi = values.length): number {
 		let left = lo;
 		let right = hi;
 		while (left < right) {
@@ -9290,18 +9303,18 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return left;
 	}
 
-	private bumpTextVersion(): void {
-		this.textVersion += 1;
+	public bumpTextVersion(): void {
+		textVersion += 1;
 	}
 
 	protected markDiagnosticsDirty(contextId?: string): void {
-		const targetId = contextId ?? this.activeCodeTabContextId;
+		const targetId = contextId ?? activeCodeTabContextId;
 		if (!targetId) {
 			return;
 		}
-		this.diagnosticsDirty = true;
-		this.dirtyDiagnosticContexts.add(targetId);
-		this.diagnosticsDueAtMs = this.clockNow() + this.diagnosticsDebounceMs;
+		diagnosticsDirty = true;
+		dirtyDiagnosticContexts.add(targetId);
+		diagnosticsDueAtMs = clockNow() + diagnosticsDebounceMs;
 	}
 
 	protected markTextMutated(): void {
@@ -9313,22 +9326,22 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.invalidateVisualLines();
 		this.requestSemanticRefresh();
 		this.handlePostEditMutation();
-		if (this.searchQuery.length > 0) {
+		if (searchQuery.length > 0) {
 			this.startSearchJob();
 		}
 	}
 
 	protected recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
-		this.pendingEditContext = { kind, text };
+		pendingEditContext = { kind, text };
 	}
 
-	private handlePostEditMutation(): void {
-		const editContext = this.pendingEditContext;
-		this.pendingEditContext = null;
-		this.completion.updateAfterEdit(editContext);
+	public handlePostEditMutation(): void {
+		const editContext = pendingEditContext;
+		pendingEditContext = null;
+		completion.updateAfterEdit(editContext);
 	}
 
-	private handleCompletionKeybindings(
+	public handleCompletionKeybindings(
 		keyboard: KeyboardInput,
 		deltaSeconds: number,
 		shiftDown: boolean,
@@ -9336,50 +9349,50 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		altDown: boolean,
 		metaDown: boolean,
 	): boolean {
-		return this.completion.handleKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown);
+		return completion.handleKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown);
 	}
 
 	protected onCursorMoved(): void {
-		this.completion.onCursorMoved();
+		completion.onCursorMoved();
 	}
 
-	private invalidateVisualLines(): void {
-		this.layout.markVisualLinesDirty();
+	public invalidateVisualLines(): void {
+		layout.markVisualLinesDirty();
 	}
 
 	protected ensureVisualLines(): void {
 		const activeContext = this.getActiveCodeTabContext();
 		const chunkName = this.resolveHoverChunkName(activeContext) ?? '<console>';
-		this.scrollRow = this.layout.ensureVisualLines({
+		this.scrollRow = layout.ensureVisualLines({
 			lines: this.lines,
-			wordWrapEnabled: this.wordWrapEnabled,
+			wordWrapEnabled: wordWrapEnabled,
 			scrollRow: this.scrollRow,
-			documentVersion: this.textVersion,
+			documentVersion: textVersion,
 			chunkName,
 			computeWrapWidth: () => this.computeWrapWidth(),
-			estimatedVisibleRowCount: Math.max(1, this.cachedVisibleRowCount),
+			estimatedVisibleRowCount: Math.max(1, cachedVisibleRowCount),
 		});
 		if (this.scrollRow < 0) {
 			this.scrollRow = 0;
 		}
 	}
 
-	private computeWrapWidth(): number {
-		const resourceWidth = this.resourcePanelVisible ? this.getResourcePanelWidth() : 0;
-		const gutterSpace = this.gutterWidth + 2;
+	public computeWrapWidth(): number {
+		const resourceWidth = resourcePanelVisible ? this.getResourcePanelWidth() : 0;
+		const gutterSpace = gutterWidth + 2;
 		const verticalScrollbarSpace = 0;
-		const available = this.viewportWidth - resourceWidth - gutterSpace - verticalScrollbarSpace;
-		return Math.max(this.charAdvance, available - 2);
+		const available = viewportWidth - resourceWidth - gutterSpace - verticalScrollbarSpace;
+		return Math.max(charAdvance, available - 2);
 	}
 
 	protected getVisualLineCount(): number {
 		this.ensureVisualLines();
-		return this.layout.getVisualLineCount();
+		return layout.getVisualLineCount();
 	}
 
 	protected visualIndexToSegment(index: number): VisualLineSegment | null {
 		this.ensureVisualLines();
-		return this.layout.visualIndexToSegment(index);
+		return layout.visualIndexToSegment(index);
 	}
 
 	protected positionToVisualIndex(row: number, column: number): number {
@@ -9388,13 +9401,13 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (override) {
 			return override.visualIndex;
 		}
-		return this.layout.positionToVisualIndex(this.lines, row, column);
+		return layout.positionToVisualIndex(this.lines, row, column);
 	}
 
 	protected setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?: number, desiredOffsetHint?: number): void {
 		this.ensureVisualLines();
 		this.clearCursorVisualOverride();
-		const visualLines = this.layout.getVisualLines();
+		const visualLines = layout.getVisualLines();
 		if (visualLines.length === 0) {
 			this.cursorRow = 0;
 			this.cursorColumn = 0;
@@ -9412,7 +9425,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const hasDesiredHint = desiredColumnHint !== undefined;
 		const hasOffsetHint = desiredOffsetHint !== undefined;
 		let targetColumn = hasDesiredHint ? desiredColumnHint! : this.cursorColumn;
-		if (this.wordWrapEnabled) {
+		if (wordWrapEnabled) {
 			const segmentEndColumn = Math.max(segment.endColumn, segment.startColumn);
 			const segmentDisplayStart = this.columnToDisplay(highlight, segment.startColumn);
 			const segmentDisplayEnd = this.columnToDisplay(highlight, segmentEndColumn);
@@ -9437,7 +9450,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.cursorRow = segment.row;
 		this.cursorColumn = clamp(targetColumn, 0, line.length);
 		const cursorDisplay = this.columnToDisplay(highlight, this.cursorColumn);
-		if (this.wordWrapEnabled) {
+		if (wordWrapEnabled) {
 			const hasNextSegmentSameRow = (clampedIndex + 1 < visualLines.length)
 				&& visualLines[clampedIndex + 1].row === segment.row;
 			const segmentEnd = Math.max(segment.endColumn, segment.startColumn);
@@ -9466,7 +9479,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 
-	private drawInlineCaret(
+	public drawInlineCaret(
 		api: BmsxConsoleApi,
 		field: InlineTextField,
 		left: number,
@@ -9478,7 +9491,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		caretColor: { r: number; g: number; b: number; a: number } = constants.CARET_COLOR,
 		baseTextColor: number = constants.COLOR_STATUS_TEXT,
 	): void {
-		if (!this.cursorVisible) {
+		if (!cursorVisible) {
 			return;
 		}
 		if (active) {
@@ -9488,13 +9501,13 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				? this.invertColorIndex(caretIndex)
 				: this.invertColorIndex(baseTextColor);
 			const glyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
-			drawEditorText(api, this.font, glyph.length > 0 ? glyph : ' ', cursorX, top, inverseColor);
+			drawEditorText(api, font, glyph.length > 0 ? glyph : ' ', cursorX, top, inverseColor);
 			return;
 		}
 		this.drawRectOutlineColor(api, left, top, right, bottom, caretColor);
 	}
 
-	private drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void {
+	public drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void {
 		if (right <= left || bottom <= top) {
 			return;
 		}
@@ -9504,7 +9517,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		api.rectfill_color(right - 1, top, right, bottom, color);
 	}
 
-	private computeSelectionSlice(lineIndex: number, highlight: HighlightLine, sliceStart: number, sliceEnd: number): { startDisplay: number; endDisplay: number } | null {
+	public computeSelectionSlice(lineIndex: number, highlight: HighlightLine, sliceStart: number, sliceEnd: number): { startDisplay: number; endDisplay: number } | null {
 		const range = this.getSelectionRange();
 		if (!range) {
 			return null;
@@ -9531,35 +9544,35 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return { startDisplay: visibleStart, endDisplay: visibleEnd };
 	}
 
-	private drawStatusBar(api: BmsxConsoleApi): void {
+	public drawStatusBar(api: BmsxConsoleApi): void {
 		const host = {
-			viewportWidth: this.viewportWidth,
-			viewportHeight: this.viewportHeight,
+			viewportWidth: viewportWidth,
+			viewportHeight: viewportHeight,
 			bottomMargin: this.statusAreaHeight(),
-			lineHeight: this.lineHeight,
+			lineHeight: lineHeight,
 			measureText: (text: string) => this.measureText(text),
-			drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, this.font, text, x, y, color),
+			drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, font, text, x, y, color),
 			truncateTextToWidth: (text: string, maxWidth: number) => this.truncateTextToWidth(text, maxWidth),
-			message: this.message,
+			message: message,
 			getStatusMessageLines: () => this.getStatusMessageLines(),
-			symbolSearchVisible: this.symbolSearchVisible,
+			symbolSearchVisible: symbolSearchVisible,
 			getActiveSymbolSearchMatch: () => this.getActiveSymbolSearchMatch(),
-			resourcePanelVisible: this.resourcePanelVisible,
-			resourcePanelFilterMode: this.resourcePanel.getFilterMode(),
-			resourcePanelResourceCount: this.resourcePanelResourceCount,
+			resourcePanelVisible: resourcePanelVisible,
+			resourcePanelFilterMode: resourcePanel.getFilterMode(),
+			resourcePanelResourceCount: resourcePanelResourceCount,
 			isResourceViewActive: () => this.isResourceViewActive(),
 			getActiveResourceViewer: () => this.getActiveResourceViewer(),
-			metadata: this.metadata,
+			metadata: metadata,
 			statusLeftInfo: this.buildStatusLeftInfo(),
-			problemsPanelFocused: this.problemsPanel.isVisible() && this.problemsPanel.isFocused(),
+			problemsPanelFocused: problemsPanel.isVisible() && problemsPanel.isFocused(),
 		};
 		renderStatusBar(api, host);
 	}
 
-	private buildStatusLeftInfo(): string {
-		if (this.problemsPanel.isVisible()) {
-			if (this.problemsPanel.isFocused()) {
-				const sel = this.problemsPanel.getSelectedDiagnostic();
+	public buildStatusLeftInfo(): string {
+		if (problemsPanel.isVisible()) {
+			if (problemsPanel.isFocused()) {
+				const sel = problemsPanel.getSelectedDiagnostic();
 				if (sel) {
 					const file = sel.sourceLabel ?? (sel.chunkName ?? '');
 					const parts: string[] = [];
@@ -9574,29 +9587,29 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return `LINE ${this.cursorRow + 1}/${this.lines.length} COL ${this.cursorColumn + 1}`;
 	}
 
-	private drawProblemsPanel(api: BmsxConsoleApi): void {
+	public drawProblemsPanel(api: BmsxConsoleApi): void {
 		const bounds = this.getProblemsPanelBounds();
 		if (!bounds) {
 			return;
 		}
-		this.problemsPanel.draw(api, bounds);
+		problemsPanel.draw(api, bounds);
 	}
 
-	private getProblemsPanelBounds(): RectBounds | null {
+	public getProblemsPanelBounds(): RectBounds | null {
 		const panelHeight = this.getVisibleProblemsPanelHeight();
 		if (panelHeight <= 0) {
 			return null;
 		}
 		const statusHeight = this.statusAreaHeight();
-		const bottom = this.viewportHeight - statusHeight;
+		const bottom = viewportHeight - statusHeight;
 		const top = bottom - panelHeight;
 		if (bottom <= top) {
 			return null;
 		}
-		return { left: 0, top, right: this.viewportWidth, bottom };
+		return { left: 0, top, right: viewportWidth, bottom };
 	}
 
-	private isPointerOverProblemsPanelDivider(x: number, y: number): boolean {
+	public isPointerOverProblemsPanelDivider(x: number, y: number): boolean {
 		const bounds = this.getProblemsPanelBounds();
 		if (!bounds) {
 			return false;
@@ -9606,25 +9619,25 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return y >= dividerTop - margin && y <= dividerTop + margin && x >= bounds.left && x <= bounds.right;
 	}
 
-	private setProblemsPanelHeightFromViewportY(viewportY: number): void {
+	public setProblemsPanelHeightFromViewportY(viewportY: number): void {
 		const statusHeight = this.statusAreaHeight();
-		const bottom = this.viewportHeight - statusHeight;
-		const minTop = this.headerHeight + this.getTabBarTotalHeight() + 1;
-		const headerH = this.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
-		const minContent = Math.max(1, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS) * this.lineHeight;
+		const bottom = viewportHeight - statusHeight;
+		const minTop = headerHeight + this.getTabBarTotalHeight() + 1;
+		const headerH = lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
+		const minContent = Math.max(1, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS) * lineHeight;
 		const minHeight = headerH + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2 + minContent;
 		const maxTop = Math.max(minTop, bottom - minHeight);
 		const top = clamp(viewportY, minTop, maxTop);
 		const height = clamp(bottom - top, minHeight, Math.max(minHeight, bottom - minTop));
-		this.problemsPanel.setFixedHeightPx(height);
+		problemsPanel.setFixedHeightPx(height);
 	}
 
-	private drawActionPromptOverlay(api: BmsxConsoleApi): void {
-		const prompt = this.pendingActionPrompt;
+	public drawActionPromptOverlay(api: BmsxConsoleApi): void {
+		const prompt = pendingActionPrompt;
 		if (!prompt) {
 			return;
 		}
-		api.rectfill_color(0, 0, this.viewportWidth, this.viewportHeight, constants.ACTION_OVERLAY_COLOR);
+		api.rectfill_color(0, 0, viewportWidth, viewportHeight, constants.ACTION_OVERLAY_COLOR);
 
 		let messageLines: string[];
 		let primaryLabel: string;
@@ -9671,12 +9684,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const buttonRowWidth = primaryWidth + secondaryWidth + cancelWidth + buttonSpacing * 2;
 		const paddingX = 12;
 		const paddingY = 12;
-		const buttonHeight = this.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
-		const messageSpacing = this.lineHeight + 2;
+		const buttonHeight = lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
+		const messageSpacing = lineHeight + 2;
 		const dialogWidth = Math.max(maxMessageWidth + paddingX * 2, buttonRowWidth + paddingX * 2);
 		const dialogHeight = paddingY * 2 + messageLines.length * messageSpacing + 6 + buttonHeight;
-		const left = Math.max(4, Math.floor((this.viewportWidth - dialogWidth) / 2));
-		const top = Math.max(4, Math.floor((this.viewportHeight - dialogHeight) / 2));
+		const left = Math.max(4, Math.floor((viewportWidth - dialogWidth) / 2));
+		const top = Math.max(4, Math.floor((viewportHeight - dialogHeight) / 2));
 		const right = left + dialogWidth;
 		const bottom = top + dialogHeight;
 
@@ -9686,7 +9699,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		let textY = top + paddingY;
 		const textX = left + paddingX;
 		for (let i = 0; i < messageLines.length; i++) {
-			drawEditorText(api, this.font, messageLines[i], textX, textY, constants.ACTION_DIALOG_TEXT_COLOR);
+			drawEditorText(api, font, messageLines[i], textX, textY, constants.ACTION_DIALOG_TEXT_COLOR);
 			textY += messageSpacing;
 		}
 
@@ -9695,34 +9708,34 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const saveBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + primaryWidth, bottom: buttonY + buttonHeight };
 		api.rectfill(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, constants.ACTION_BUTTON_BACKGROUND);
 		api.rect(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-		drawEditorText(api, this.font, primaryLabel, saveBounds.left + constants.HEADER_BUTTON_PADDING_X, saveBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
-		this.actionPromptButtons.saveAndContinue = saveBounds;
+		drawEditorText(api, font, primaryLabel, saveBounds.left + constants.HEADER_BUTTON_PADDING_X, saveBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
+		actionPromptButtons.saveAndContinue = saveBounds;
 		buttonX = saveBounds.right + buttonSpacing;
 
 		const continueBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + secondaryWidth, bottom: buttonY + buttonHeight };
 		api.rectfill(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, constants.ACTION_BUTTON_BACKGROUND);
 		api.rect(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-		drawEditorText(api, this.font, secondaryLabel, continueBounds.left + constants.HEADER_BUTTON_PADDING_X, continueBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
-		this.actionPromptButtons.continue = continueBounds;
+		drawEditorText(api, font, secondaryLabel, continueBounds.left + constants.HEADER_BUTTON_PADDING_X, continueBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
+		actionPromptButtons.continue = continueBounds;
 		buttonX = continueBounds.right + buttonSpacing;
 
 		const cancelBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + cancelWidth, bottom: buttonY + buttonHeight };
 		api.rectfill(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND);
 		api.rect(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-		drawEditorText(api, this.font, cancelLabel, cancelBounds.left + constants.HEADER_BUTTON_PADDING_X, cancelBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.COLOR_HEADER_BUTTON_TEXT);
-		this.actionPromptButtons.cancel = cancelBounds;
+		drawEditorText(api, font, cancelLabel, cancelBounds.left + constants.HEADER_BUTTON_PADDING_X, cancelBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.COLOR_HEADER_BUTTON_TEXT);
+		actionPromptButtons.cancel = cancelBounds;
 	}
 
-	private columnToDisplay(highlight: HighlightLine, column: number): number {
-		return this.layout.columnToDisplay(highlight, column);
+	public columnToDisplay(highlight: HighlightLine, column: number): number {
+		return layout.columnToDisplay(highlight, column);
 	}
 
-	private resolvePaletteIndex(color: { r: number; g: number; b: number; a: number }): number | null {
+	public resolvePaletteIndex(color: { r: number; g: number; b: number; a: number }): number | null {
 		const index = Msx1Colors.indexOf(color);
 		return index === -1 ? null : index;
 	}
 
-	private invertColorIndex(colorIndex: number): number {
+	public invertColorIndex(colorIndex: number): number {
 		const color = Msx1Colors[colorIndex];
 		if (!color) {
 			return constants.COLOR_CODE_TEXT;
@@ -9731,25 +9744,25 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return luminance > 0.5 ? 0 : 15;
 	}
 
-	private resetActionPromptState(): void {
-		this.pendingActionPrompt = null;
-		this.actionPromptButtons.saveAndContinue = null;
-		this.actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
-		this.actionPromptButtons.cancel = { left: 0, top: 0, right: 0, bottom: 0 };
+	public resetActionPromptState(): void {
+		pendingActionPrompt = null;
+		actionPromptButtons.saveAndContinue = null;
+		actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
+		actionPromptButtons.cancel = { left: 0, top: 0, right: 0, bottom: 0 };
 	}
 
-	private pointInRect(x: number, y: number, rect: RectBounds | null): boolean {
+	public pointInRect(x: number, y: number, rect: RectBounds | null): boolean {
 		if (!rect) {
 			return false;
 		}
 		return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
 	}
 
-	private hasPendingRuntimeReload(): boolean {
-		return this.saveGeneration > this.appliedGeneration;
+	public hasPendingRuntimeReload(): boolean {
+		return saveGeneration > appliedGeneration;
 	}
 
-	private getConsoleRuntime(): ConsoleRuntimeBridge | null {
+	public getConsoleRuntime(): ConsoleRuntimeBridge | null {
 		const registry = $.registry;
 		if (!registry) {
 			return null;
@@ -9780,7 +9793,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return runtime;
 	}
 
-	private prepareRuntimeSnapshotForResume(snapshot: unknown): Record<string, unknown> | null {
+	public prepareRuntimeSnapshotForResume(snapshot: unknown): Record<string, unknown> | null {
 		if (!snapshot || typeof snapshot !== 'object') {
 			return null;
 		}
@@ -9794,7 +9807,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return sanitized;
 	}
 
-	private scheduleRuntimeTask(task: () => void | Promise<void>, onError: (error: unknown) => void): void {
+	public scheduleRuntimeTask(task: () => void | Promise<void>, onError: (error: unknown) => void): void {
 		const invoke = (fn: () => void): void => {
 			if (typeof queueMicrotask === 'function') {
 				queueMicrotask(fn);
@@ -9814,34 +9827,34 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		});
 	}
 
-	private handleRuntimeTaskError(error: unknown, fallbackMessage: string): void {
+	public handleRuntimeTaskError(error: unknown, fallbackMessage: string): void {
 		const message = error instanceof Error ? error.message : String(error);
 		$.paused = true;
 		this.activate();
 		this.showMessage(`${fallbackMessage}: ${message}`, constants.COLOR_STATUS_ERROR, 4.0);
 	}
 
-	private truncateTextToWidth(text: string, maxWidth: number): string {
-		return truncateTextToWidthExternal(text, maxWidth, (ch) => this.font.advance(ch), this.spaceAdvance);
+	public truncateTextToWidth(text: string, maxWidth: number): string {
+		return truncateTextToWidthExternal(text, maxWidth, (ch) => font.advance(ch), spaceAdvance);
 	}
 
-	private measureText(text: string): number {
-		return measureTextGeneric(text, (ch) => this.font.advance(ch), this.spaceAdvance);
+	public measureText(text: string): number {
+		return measureTextGeneric(text, (ch) => font.advance(ch), spaceAdvance);
 	}
 
-	private assertMonospace(): void {
+	public assertMonospace(): void {
 		const sample = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-*/%<>=#(){}[]:,.;\'"`~!@^&|\\?_ ';
-		const reference = this.font.advance('M');
+		const reference = font.advance('M');
 		for (let i = 0; i < sample.length; i++) {
-			const candidate = this.font.advance(sample.charAt(i));
+			const candidate = font.advance(sample.charAt(i));
 			if (candidate !== reference) {
-				this.warnNonMonospace = true;
+				warnNonMonospace = true;
 				break;
 			}
 		}
 	}
 
-	private centerCursorVertically(): void {
+	public centerCursorVertically(): void {
 		this.ensureVisualLines();
 		const rows = this.visibleRowCount();
 		const totalVisual = this.getVisualLineCount();
@@ -9861,7 +9874,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.scrollRow = target;
 	}
 
-	private ensureCursorVisible(): void {
+	public ensureCursorVisible(): void {
 		this.clampCursorRow();
 		this.clampCursorColumn();
 
@@ -9879,7 +9892,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const maxScrollRow = Math.max(0, totalVisual - rows);
 		this.scrollRow = clamp(this.scrollRow, 0, maxScrollRow);
 
-		if (this.wordWrapEnabled) {
+		if (wordWrapEnabled) {
 			this.scrollColumn = 0;
 			return;
 		}
@@ -9904,7 +9917,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private buildMemberCompletionItems(request: {
+	public buildMemberCompletionItems(request: {
 		objectName: string;
 		operator: '.' | ':';
 		prefix: string;
@@ -9914,7 +9927,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (request.objectName.length === 0) {
 			return [];
 		}
-		const response = this.listLuaObjectMembersFn({
+		const response = listLuaObjectMembersFn({
 			assetId: request.assetId ?? null,
 			chunkName: request.chunkName ?? null,
 			expression: request.objectName,
@@ -9946,20 +9959,20 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	protected visibleRowCount(): number {
-		return this.cachedVisibleRowCount > 0 ? this.cachedVisibleRowCount : 1;
+		return cachedVisibleRowCount > 0 ? cachedVisibleRowCount : 1;
 	}
 
 	protected visibleColumnCount(): number {
-		return this.cachedVisibleColumnCount > 0 ? this.cachedVisibleColumnCount : 1;
+		return cachedVisibleColumnCount > 0 ? cachedVisibleColumnCount : 1;
 	}
 
 	protected resetBlink(): void {
-		this.blinkTimer = 0;
-		this.cursorVisible = true;
+		blinkTimer = 0;
+		cursorVisible = true;
 	}
 
-	private shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean {
-		return this.input.shouldRepeatPublic(keyboard, code, deltaSeconds);
+	public shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean {
+		return input.shouldRepeatPublic(keyboard, code, deltaSeconds);
 	}
 
 	// Input overrides moved to InputController
