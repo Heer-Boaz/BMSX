@@ -17,13 +17,11 @@ import { consoleEditorSpec } from '../core/pipelines/console_editor';
 import { EditorConsoleRenderBackend } from './render_backend';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { LuaHandlerCache, type LuaHandlerFn, isLuaHandlerFn } from '../lua/handler_cache.ts';
-import { ActiveStateMachines, migrateMachineDiff, StateDefinitions, applyPreparedStateMachine } from '../fsm/fsmlibrary';
+import { ActiveStateMachines, StateDefinitions, applyPreparedStateMachine } from '../fsm/fsmlibrary';
 import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { instantiateBehaviorTree, unregisterBehaviorTreeBuilder, applyPreparedBehaviorTree, getBehaviorTreeDiagnostics, Blackboard } from '../ai/behaviourtree';
 import type { BehaviorTreeDefinition, BehaviorTreeDiagnostic } from '../ai/behaviourtree';
-import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
-import type { StateDefinition } from '../fsm/statedefinition';
-import type { State } from '../fsm/state';
+import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
 import { ConsoleCartEditor } from './ide/console_cart_editor';
 import { ConsoleLuaEditor } from './ide/console_lua_editor';
@@ -2960,7 +2958,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 				}
 			}
 			this.luaFsmsByAsset.clear();
-			this.fsmChangeRecordsByAsset.clear();
 			return;
 		}
 		const luaSources = rompack.lua;
@@ -3218,7 +3215,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		}
 		const assetId = this.currentLuaAssetContext?.assetId ?? null;
 		const prepared = this.prepareLuaBehaviorTreeDefinition(treeId, definitionSource, assetId ?? 'runtime');
-		const result = applyPreparedBehaviorTree(treeId, prepared, { force: true });
+		applyPreparedBehaviorTree(treeId, prepared, { force: true });
 		const diagnostics = getBehaviorTreeDiagnostics(treeId);
 		this.behaviorTreeDiagnostics.set(treeId, diagnostics);
 		for (let index = 0; index < diagnostics.length; index += 1) {

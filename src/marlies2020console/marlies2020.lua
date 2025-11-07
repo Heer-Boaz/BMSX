@@ -57,13 +57,13 @@ local abilities = require('src/marlies2020console/marlies2020_abilities')
 require('src/marlies2020console/marlies2020_systems')
 require('src/marlies2020console/marlies2020_worldobjects')
 
-local playerAbilityIds = abilities.abilityIds
-local playerInputProgram = abilities.inputProgram
-local playerAbilityGrantOrder = abilities.abilityOrder
+local playerabilityids = abilities.abilityids
+local playerinputprogram = abilities.inputprogram
+local playerabilitygrantorder = abilities.abilityorder
 
-PLAYER_ABILITY_IDS = playerAbilityIds
-PLAYER_ABILITY_ORDER = playerAbilityGrantOrder
-PLAYER_INPUT_PROGRAM = playerInputProgram
+player_ability_ids = playerabilityids
+player_ability_order = playerabilitygrantorder
+player_input_program = playerinputprogram
 
 corona_spawn_locs = {{
     x = screen_width,
@@ -315,40 +315,40 @@ local function ensure_player_ability_definitions()
     end
 
     define_ability({
-        id = playerAbilityIds.fire,
+        id = playerabilityids.fire,
         cooldownms = math.floor(player_fire_cooldown * 1000),
         activation = ability_fire
     })
 
     define_ability({
-        id = playerAbilityIds.interact,
+        id = playerabilityids.interact,
         activation = ability_interact
     })
 
     define_ability({
-        id = playerAbilityIds.move_horizontal,
+        id = playerabilityids.move_horizontal,
         unique = 'ignore',
         activation = ability_move_horizontal
     })
 
     define_ability({
-        id = playerAbilityIds.move_horizontal_stop,
+        id = playerabilityids.move_horizontal_stop,
         activation = ability_move_horizontal_stop
     })
 
     define_ability({
-        id = playerAbilityIds.move_vertical,
+        id = playerabilityids.move_vertical,
         unique = 'ignore',
         activation = ability_move_vertical
     })
 
     define_ability({
-        id = playerAbilityIds.move_vertical_stop,
+        id = playerabilityids.move_vertical_stop,
         activation = ability_move_vertical_stop
     })
 
     define_ability({
-        id = playerAbilityIds.hurt,
+        id = playerabilityids.hurt,
         cooldownms = math.floor(player_hit_recovery * 1000),
         activation = ability_hurt
     })
@@ -584,9 +584,10 @@ function update(delta)
 end
 
 function draw()
-    local text_y = inventory_pos.y + 24
+    local text_y = inventory_pos.y + 60
     print('Pitas: ' .. tostring(game_state.pitas_served) .. '/' .. tostring(pitas_required), 4, text_y, 10)
     if game_state.victory then
         print('Hoera!', 96, 12, 11)
     end
+    print('Boaz is stoer', 32, 64, 15)
 end
