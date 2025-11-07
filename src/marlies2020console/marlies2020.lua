@@ -567,6 +567,7 @@ function init()
 end
 
 function update(delta)
+-- error('dsdf')
     if game_state.victory then
         if not game_state.victory_id then
             spawn_victory_sprite()

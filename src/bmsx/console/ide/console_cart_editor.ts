@@ -92,6 +92,7 @@ import type {
 	CustomKeybindingHandler,
 	GlobalSearchJob,
 	SearchComputationJob,
+	RuntimeErrorOverlayLayout,
 } from './types';
 import type { RectBounds } from '../../rompack/rompack.ts';
 import { resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation.ts';
@@ -8391,7 +8392,7 @@ export function drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, co
 	if (overlay.hovered && overlay.hoverLine >= 0 && overlay.hoverLine < overlay.lineDescriptors.length) {
 		const descriptor = overlay.lineDescriptors[overlay.hoverLine];
 		if (descriptor && descriptor.role === 'frame') {
-			const mapping = (layout as any).displayLineMap as number[] | undefined;
+			const mapping = (layout as RuntimeErrorOverlayLayout).displayLineMap as number[] | undefined;
 			if (Array.isArray(mapping) && mapping.length > 0) {
 				for (let i = 0; i < mapping.length; i += 1) {
 					if (mapping[i] === overlay.hoverLine) highlightLines.push(i);
@@ -10796,7 +10797,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		resourceHorizontal: new ConsoleScrollbar('resourceHorizontal', 'horizontal'),
 		viewerVertical: new ConsoleScrollbar('viewerVertical', 'vertical'),
 	};
-	ide_state.scrollbarController = new ScrollbarController(scrollbars as any);
+	ide_state.scrollbarController = new ScrollbarController(ide_state.scrollbars);
 	ide_state.resourcePanel = new ResourcePanelController({
 		getViewportWidth: () => ide_state.viewportWidth,
 		getViewportHeight: () => ide_state.viewportHeight,
@@ -10833,8 +10834,8 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		getLineHeight: () => ide_state.lineHeight,
 		getSpaceAdvance: () => ide_state.spaceAdvance,
 		getActiveCodeTabContext: () => getActiveCodeTabContext(),
-		resolveHoverAssetId: (ctx) => resolveHoverAssetId(ctx as any),
-		resolveHoverChunkName: (ctx) => resolveHoverChunkName(ctx as any),
+		resolveHoverAssetId: (ctx) => resolveHoverAssetId(ctx as CodeTabContext),
+		resolveHoverChunkName: (ctx) => resolveHoverChunkName(ctx as CodeTabContext),
 		listLuaSymbols: (assetId, chunk) => ide_state.listLuaSymbolsFn(assetId, chunk),
 		listGlobalLuaSymbols: () => ide_state.listGlobalLuaSymbolsFn(),
 		listLuaModuleSymbols: (moduleName) => ide_state.listLuaModuleSymbolsFn(moduleName),
