@@ -3,19 +3,14 @@ import type { KeyboardInput } from '../../input/keyboardinput';
 import type { ViewportMetrics } from '../../platform/platform';
 import { BmsxConsoleApi } from '../api';
 import type {
-	BmsxConsoleMetadata,
-	ConsoleLuaBuiltinDescriptor,
 	ConsoleLuaDefinitionLocation,
 	ConsoleLuaHoverRequest,
 	ConsoleLuaHoverResult,
-	ConsoleLuaMemberCompletion,
-	ConsoleLuaMemberCompletionRequest,
-	ConsoleLuaResourceCreationRequest,
 	ConsoleLuaSymbolEntry,
 	ConsoleResourceDescriptor,
 } from '../types.ts';
 import { ConsoleEditorFont } from '../editor_font';
-import { DEFAULT_CONSOLE_FONT_VARIANT, type ConsoleFontVariant } from '../font';
+import { DEFAULT_CONSOLE_FONT_VARIANT } from '../font';
 import { drawEditorColoredText, drawEditorText } from './text_renderer';
 import { Msx1Colors } from '../../systems/msx.ts';
 import { SpriteComponent } from '../../component/sprite_component';
@@ -60,7 +55,6 @@ import {
 import { ResourcePanelController } from './resource_panel_controller';
 import { InputController } from './input_controller';
 import { ConsoleCodeLayout } from './code_layout';
-import { LuaSemanticWorkspace } from './semantic_workspace.ts';
 import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine as wrapRuntimeErrorLineUtil } from './runtime_error_utils';
 import type {
 	CachedHighlight,
@@ -68,14 +62,11 @@ import type {
 	CodeTabContext,
 	ConsoleEditorOptions,
 	ConsoleEditorSerializedState,
-	CrtOptionsSnapshot,
 	CursorScreenInfo,
-	EditorResolutionMode,
 	EditorSnapshot,
 	EditorTabDescriptor,
 	EditorTabId,
 	EditorTabKind,
-	EditContext,
 	EditorDiagnostic,
 	HighlightLine,
 	InlineInputOptions,
@@ -84,8 +75,6 @@ import type {
 	PendingActionPrompt,
 	PointerSnapshot,
 	Position,
-	RepeatEntry,
-	ResourceBrowserItem,
 	ResourceCatalogEntry,
 	ResourceSearchResult,
 	ResourceViewerState,
@@ -95,20 +84,17 @@ import type {
 	ScrollbarKind,
 	SearchMatch,
 	GlobalSearchMatch,
-	SymbolCatalogEntry,
 	SymbolSearchResult,
-	TabDragState,
 	TopBarButtonId,
 	VisualLineSegment,
 	LuaCompletionItem,
 	ConsoleEditorShortcutContext,
 	CustomKeybindingHandler,
-	DiagnosticsCacheEntry,
 	GlobalSearchJob,
 	SearchComputationJob,
 } from './types';
 import type { RectBounds } from '../../rompack/rompack.ts';
-import { ReferenceState, resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation.ts';
+import { resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation.ts';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
 	computeSourceLabel,
@@ -139,214 +125,24 @@ import type { BmsxConsoleRuntime } from '../../console.ts';
 import { EDITOR_TOGGLE_KEY, ESCAPE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, GLOBAL_SEARCH_RESULT_LIMIT } from './constants';
 import { formatLuaDocument } from './lua_formatter.ts';
 import * as constants from './constants';
-import { type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs } from './ide_state';
-// Note: ide_state object is available for future migration, currently using legacy exports
+import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs } from './ide_state';
 
-// Legacy exports for backwards compatibility - these now reference ide_state
-export let playerIndex: number;
-export let lines: string[] = [''];
-export let cursorRow = 0;
-export let cursorColumn = 0;
-export let scrollRow = 0;
-export let scrollColumn = 0;
-export let dirty = false;
-export let desiredColumn = 0;
-export let desiredDisplayOffset = 0;
-export let selectionAnchor: Position | null = null;
-export let undoStack: EditorSnapshot[] = [];
-export let redoStack: EditorSnapshot[] = [];
-export let lastHistoryKey: string | null = null;
-export let lastHistoryTimestamp = 0;
-export let metadata: BmsxConsoleMetadata;
-export let fontVariant: ConsoleFontVariant;
-export let loadSourceFn: () => string;
-export let saveSourceFn: (source: string) => Promise<void>;
-export let loadLuaResourceFn: (assetId: string) => string;
-export let saveLuaResourceFn: (assetId: string, source: string) => Promise<void>;
-export let createLuaResourceFn: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
-export let listResourcesFn: () => ConsoleResourceDescriptor[];
-export let inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
-export let listLuaObjectMembersFn: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
-export let listLuaModuleSymbolsFn: (moduleName: string) => ConsoleLuaSymbolEntry[];
-export let listLuaSymbolsFn: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
-export let listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
-export let listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
-export let primaryAssetId: string | null;
-export let builtinIdentifierCache: { key: string; set: ReadonlySet<string> } | null = null;
-export let hoverTooltip: CodeHoverTooltip | null = null;
-export let lastPointerSnapshot: PointerSnapshot | null = null;
-export let lastInspectorResult: ConsoleLuaHoverResult | null = null;
-export let inspectorRequestFailed = false;
-export let gotoHoverHighlight: { row: number; startColumn: number; endColumn: number; expression: string } | null = null;
-export let viewportWidth: number;
-export let viewportHeight: number;
-export let font: ConsoleEditorFont;
-export let lineHeight: number;
-export let charAdvance: number;
-export let spaceAdvance: number;
-export let gutterWidth: number;
-export let headerHeight: number;
-export let tabBarHeight: number;
-export let tabBarRowCount = 1;
-export let baseBottomMargin: number;
-export const repeatState: Map<string, RepeatEntry> = new Map();
-export let deferredMessageDuration: number | null = null;
-export let runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
-export let executionStopRow: number | null = null;
-export let clockNow: () => number;
-export let problemsPanel: ProblemsPanelController;
-export let problemsPanelResizing = false;
-export let diagnostics: EditorDiagnostic[] = [];
-export let diagnosticsByRow: Map<number, EditorDiagnostic[]> = new Map();
-export let diagnosticsDirty = true;
-export let diagnosticsCache: Map<string, DiagnosticsCacheEntry> = new Map();
-export let dirtyDiagnosticContexts: Set<string> = new Set();
-export let diagnosticsDueAtMs: number | null = null;
-export let diagnosticsComputationScheduled = false;
-export const codeTabContexts: Map<string, CodeTabContext> = new Map();
-export let activeCodeTabContextId: string | null = null;
-export let entryTabId: string | null = null;
-export { captureKeys } from './ide_state';
-export const topBarButtonBounds: Record<TopBarButtonId, RectBounds> = {
-	resume: { left: 0, top: 0, right: 0, bottom: 0 },
-	reboot: { left: 0, top: 0, right: 0, bottom: 0 },
-	save: { left: 0, top: 0, right: 0, bottom: 0 },
-	resources: { left: 0, top: 0, right: 0, bottom: 0 },
-	problems: { left: 0, top: 0, right: 0, bottom: 0 },
-	filter: { left: 0, top: 0, right: 0, bottom: 0 },
-	resolution: { left: 0, top: 0, right: 0, bottom: 0 },
-	wrap: { left: 0, top: 0, right: 0, bottom: 0 },
-};
-export const tabButtonBounds: Map<string, RectBounds> = new Map();
-export const tabCloseButtonBounds: Map<string, RectBounds> = new Map();
-export let resourceViewerSpriteId: string | null = null;
-export let resourceViewerSpriteAsset: string | null = null;
-export let resourceViewerSpriteScale = 1;
-export const actionPromptButtons: { saveAndContinue: RectBounds | null; continue: RectBounds; cancel: RectBounds } = {
-	saveAndContinue: null,
-	continue: { left: 0, top: 0, right: 0, bottom: 0 },
-	cancel: { left: 0, top: 0, right: 0, bottom: 0 },
-};
-export let pendingActionPrompt: PendingActionPrompt | null = null;
-export let active = false;
+// Re-export commonly used constants for convenience
+export { captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT } from './ide_state';
+
+// Export ide_state for direct access
+export { ide_state };
+
+// Legacy convenience accessors (to be gradually phased out)
 const messageController = createMessageController({
-	isActive: () => active,
-	getDeferredDuration: () => deferredMessageDuration,
-	setDeferredDuration: (value) => { deferredMessageDuration = value; },
+	isActive: () => ide_state.active,
+	getDeferredDuration: () => ide_state.deferredMessageDuration,
+	setDeferredDuration: (value) => { ide_state.deferredMessageDuration = value; },
 });
-export const message = messageController.message;
-export const showMessage = messageController.showMessage;
-export const updateMessage = messageController.updateMessage;
-export const showWarningBanner = messageController.showWarningBanner;
-export let blinkTimer = 0;
-export let cursorVisible = true;
-export let warnNonMonospace = false;
-export let pointerSelecting = false;
-export let pointerPrimaryWasPressed = false;
-export let pointerAuxWasPressed = false;
-export let searchField: InlineTextField;
-export let symbolSearchField: InlineTextField;
-export let resourceSearchField: InlineTextField;
-export let lineJumpField: InlineTextField;
-export let createResourceField: InlineTextField;
-export let inlineFieldMetricsRef: InlineFieldMetrics;
-export let scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
-export let scrollbarController: ScrollbarController;
-export let input: InputController;
-export let toggleInputLatch = false;
-export let windowFocused = true;
-export let pendingWindowFocused = true;
-export let disposeVisibilityListener: (() => void) | null = null;
-export let disposeWindowEventListeners: (() => void) | null = null;
-export let lastPointerClickTimeMs = 0;
-export let lastPointerClickRow = -1;
-export let lastPointerClickColumn = -1;
-export let tabHoverId: string | null = null;
-export let tabDragState: TabDragState | null = null;
-export let crtOptionsSnapshot: CrtOptionsSnapshot | null = null;
-export let resolutionMode: EditorResolutionMode = 'viewport';
-export let cursorRevealSuspended = false;
-export let searchActive = false;
-export let searchVisible = false;
-export let searchQuery = '';
-export let symbolSearchQuery = '';
-export let resourceSearchQuery = '';
-export let pendingEditContext: EditContext | null = null;
-export let cursorScreenInfo: CursorScreenInfo | null = null;
-export let lineJumpActive = false;
-export let symbolSearchActive = false;
-export let symbolSearchVisible = false;
-export let symbolSearchGlobal = false;
-export let symbolSearchMode: 'symbols' | 'references' = 'symbols';
-export let resourceSearchActive = false;
-export let resourceSearchVisible = false;
-export let lineJumpVisible = false;
-export let lineJumpValue = '';
-export let createResourceActive = false;
-export let createResourceVisible = false;
-export let createResourcePath = '';
-export let createResourceError: string | null = null;
-export let createResourceWorking = false;
-export let lastCreateResourceDirectory: string | null = null;
-export let symbolCatalog: SymbolCatalogEntry[] = [];
-export let referenceCatalog: ReferenceCatalogEntry[] = [];
-export let symbolCatalogContext: { scope: 'local' | 'global'; assetId: string | null; chunkName: string | null } | null = null;
-export let symbolSearchMatches: SymbolSearchResult[] = [];
-export let symbolSearchSelectionIndex = -1;
-export let symbolSearchDisplayOffset = 0;
-export let symbolSearchHoverIndex = -1;
-export let resourceCatalog: ResourceCatalogEntry[] = [];
-export let resourceSearchMatches: ResourceSearchResult[] = [];
-export let resourceSearchSelectionIndex = -1;
-export let resourceSearchDisplayOffset = 0;
-export let resourceSearchHoverIndex = -1;
-export let searchMatches: SearchMatch[] = [];
-export let searchCurrentIndex = -1;
-export let searchJob: SearchComputationJob | null = null;
-export let searchDisplayOffset = 0;
-export let searchHoverIndex = -1;
-export let searchScope: 'local' | 'global' = 'local';
-export let globalSearchMatches: GlobalSearchMatch[] = [];
-export let globalSearchJob: GlobalSearchJob | null = null;
-export let diagnosticsTaskPending = false;
-export let lastReportedSemanticError: string | null = null;
-export const referenceState: ReferenceState = new ReferenceState();
-export let textVersion = 0;
-export let saveGeneration = 0;
-export let appliedGeneration = 0;
-export let lastSavedSource = '';
-export let tabs: EditorTabDescriptor[] = [];
-export let activeTabId: string | null = null;
-export let resourceBrowserItems: ResourceBrowserItem[] = [];
-export let resourceBrowserSelectionIndex = -1;
-export let resourcePanelVisible = false;
-export let resourcePanelFocused = false;
-export let resourcePanelResourceCount = 0;
-export let pendingResourceSelectionAssetId: string | null = null;
-export let resourcePanelWidthRatio: number | null = null;
-export let resourcePanelResizing = false;
-export let resourcePanel: ResourcePanelController;
-export let renameController: RenameController;
-export let semanticWorkspace: LuaSemanticWorkspace = new LuaSemanticWorkspace();
-export let layout: ConsoleCodeLayout;
-export let codeVerticalScrollbarVisible = false;
-export let codeHorizontalScrollbarVisible = false;
-export let cachedVisibleRowCount = 1;
-export let cachedVisibleColumnCount = 1;
-export let dimCrtInEditor: boolean = false; // Default value; can be changed via settings
-export let wordWrapEnabled = true;
-export let lastPointerRowResolution: { visualIndex: number; segment: VisualLineSegment | null } | null = null;
-export let completion: CompletionController;
-export { NAVIGATION_HISTORY_LIMIT } from './ide_state';
-export const navigationHistory = {
-	back: [] as NavigationHistoryEntry[],
-	forward: [] as NavigationHistoryEntry[],
-	current: null as NavigationHistoryEntry | null,
-};
-export let navigationCaptureSuspended = false;
-
-export { EMPTY_DIAGNOSTICS } from './ide_state';
-export let customClipboard: string | null = null;
+ide_state.message = messageController.message;
+ide_state.showMessage = messageController.showMessage;
+ide_state.updateMessage = messageController.updateMessage;
+ide_state.showWarningBanner = messageController.showWarningBanner;
 
 export function clearCursorVisualOverride(): void {
 	caretNavigation.clear();
@@ -361,12 +157,12 @@ export function getCursorVisualOverride(row: number, column: number): { visualIn
 }
 
 export function invalidateLineRange(startRow: number, endRow: number): void {
-	if (lines.length === 0) {
+	if (ide_state.lines.length === 0) {
 		return;
 	}
 	let from = Math.min(startRow, endRow);
 	let to = Math.max(startRow, endRow);
-	const lastRow = lines.length - 1;
+	const lastRow = ide_state.lines.length - 1;
 	from = clamp(from, 0, lastRow);
 	to = clamp(to, 0, lastRow);
 	for (let row = from; row <= to; row += 1) {
@@ -376,8 +172,8 @@ export function invalidateLineRange(startRow: number, endRow: number): void {
 
 export function maximumLineLength(): number {
 	let maxLength = 0;
-	for (let i = 0; i < lines.length; i += 1) {
-		const length = lines[i].length;
+	for (let i = 0; i < ide_state.lines.length; i += 1) {
+		const length = ide_state.lines[i].length;
 		if (length > maxLength) {
 			maxLength = length;
 		}
@@ -401,7 +197,7 @@ export function setCursorPosition(row: number, column: number): void {
 	if (targetRow < 0) {
 		targetRow = 0;
 	}
-	const lastRow = lines.length - 1;
+	const lastRow = ide_state.lines.length - 1;
 	if (targetRow > lastRow) {
 		targetRow = lastRow >= 0 ? lastRow : 0;
 	}
@@ -409,12 +205,12 @@ export function setCursorPosition(row: number, column: number): void {
 	if (targetColumn < 0) {
 		targetColumn = 0;
 	}
-	const lineLength = lines[targetRow]?.length ?? 0;
+	const lineLength = ide_state.lines[targetRow]?.length ?? 0;
 	if (targetColumn > lineLength) {
 		targetColumn = lineLength;
 	}
-	cursorRow = targetRow;
-	cursorColumn = targetColumn;
+	ide_state.cursorRow = targetRow;
+	ide_state.cursorColumn = targetColumn;
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -428,10 +224,10 @@ export function moveCursorVertical(delta: number): void {
 	if (visualCount === 0) {
 		return;
 	}
-	const currentIndex = positionToVisualIndex(cursorRow, cursorColumn);
+	const currentIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
 	const targetIndex = clamp(currentIndex + delta, 0, visualCount - 1);
-	const desired = desiredColumn;
-	const desiredDisplay = desiredDisplayOffset;
+	const desired = ide_state.desiredColumn;
+	const desiredDisplay = ide_state.desiredDisplayOffset;
 	setCursorFromVisualIndex(targetIndex, desired, desiredDisplay);
 	resetBlink();
 	revealCursor();
@@ -448,56 +244,56 @@ export function moveCursorHorizontal(delta: number): void {
 	if (visualCount === 0) {
 		return;
 	}
-	const visualIndex = positionToVisualIndex(cursorRow, cursorColumn);
+	const visualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
 	const segment = visualIndexToSegment(visualIndex);
 	if (!segment) {
 		return;
 	}
-	const line = lines[segment.row] ?? '';
+	const line = ide_state.lines[segment.row] ?? '';
 	if (delta < 0) {
-		if (cursorColumn > segment.startColumn) {
-			cursorColumn -= 1;
+		if (ide_state.cursorColumn > segment.startColumn) {
+			ide_state.cursorColumn -= 1;
 		} else {
 			let moved = false;
-			if (wordWrapEnabled && visualIndex > 0) {
+			if (ide_state.wordWrapEnabled && visualIndex > 0) {
 				const prevSegment = visualIndexToSegment(visualIndex - 1);
 				if (prevSegment && prevSegment.row === segment.row) {
-					cursorRow = prevSegment.row;
-					const prevLine = lines[prevSegment.row] ?? '';
+					ide_state.cursorRow = prevSegment.row;
+					const prevLine = ide_state.lines[prevSegment.row] ?? '';
 					const prevEnd = Math.max(prevSegment.endColumn, prevSegment.startColumn);
 					const hasMoreBefore = prevEnd > prevSegment.startColumn;
 					const targetColumn = hasMoreBefore && prevEnd < prevLine.length
 						? Math.max(prevSegment.startColumn, prevEnd - 1)
 						: Math.min(prevEnd, prevLine.length);
-					cursorColumn = clamp(targetColumn, 0, prevLine.length);
+					ide_state.cursorColumn = clamp(targetColumn, 0, prevLine.length);
 					moved = true;
 				}
 			}
 			if (!moved && segment.row > 0) {
-				cursorRow = segment.row - 1;
-				cursorColumn = lines[cursorRow].length;
+				ide_state.cursorRow = segment.row - 1;
+				ide_state.cursorColumn = ide_state.lines[ide_state.cursorRow].length;
 			}
 		}
 	} else {
-		if (cursorColumn < segment.endColumn && cursorColumn < line.length) {
-			cursorColumn += 1;
+		if (ide_state.cursorColumn < segment.endColumn && ide_state.cursorColumn < line.length) {
+			ide_state.cursorColumn += 1;
 		} else {
 			let moved = false;
-			if (wordWrapEnabled && visualIndex < visualCount - 1) {
+			if (ide_state.wordWrapEnabled && visualIndex < visualCount - 1) {
 				const nextSegment = visualIndexToSegment(visualIndex + 1);
 				if (nextSegment && nextSegment.row === segment.row) {
-					cursorRow = nextSegment.row;
-					cursorColumn = nextSegment.startColumn;
+					ide_state.cursorRow = nextSegment.row;
+					ide_state.cursorColumn = nextSegment.startColumn;
 					moved = true;
 				}
 			}
-			if (!moved && segment.row < lines.length - 1) {
-				cursorRow = segment.row + 1;
-				cursorColumn = 0;
+			if (!moved && segment.row < ide_state.lines.length - 1) {
+				ide_state.cursorRow = segment.row + 1;
+				ide_state.cursorColumn = 0;
 			}
 		}
 	}
-	cursorColumn = clamp(cursorColumn, 0, lines[cursorRow]?.length ?? 0);
+	ide_state.cursorColumn = clamp(ide_state.cursorColumn, 0, ide_state.lines[ide_state.cursorRow]?.length ?? 0);
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -506,9 +302,9 @@ export function moveCursorHorizontal(delta: number): void {
 
 export function moveWordLeft(): void {
 	clearCursorVisualOverride();
-	const destination = findWordLeft(cursorRow, cursorColumn);
-	cursorRow = destination.row;
-	cursorColumn = destination.column;
+	const destination = findWordLeft(ide_state.cursorRow, ide_state.cursorColumn);
+	ide_state.cursorRow = destination.row;
+	ide_state.cursorColumn = destination.column;
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -517,9 +313,9 @@ export function moveWordLeft(): void {
 
 export function moveWordRight(): void {
 	clearCursorVisualOverride();
-	const destination = findWordRight(cursorRow, cursorColumn);
-	cursorRow = destination.row;
-	cursorColumn = destination.column;
+	const destination = findWordRight(ide_state.cursorRow, ide_state.cursorColumn);
+	ide_state.cursorRow = destination.row;
+	ide_state.cursorColumn = destination.column;
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -568,8 +364,8 @@ export function findWordRight(row: number, column: number): { row: number; colum
 	let currentColumn = column;
 	let step = stepRight(currentRow, currentColumn);
 	if (!step) {
-		const lastRow = lines.length - 1;
-		return { row: lastRow, column: lines[lastRow].length };
+		const lastRow = ide_state.lines.length - 1;
+		return { row: lastRow, column: ide_state.lines[lastRow].length };
 	}
 	currentRow = step.row;
 	currentColumn = step.column;
@@ -577,8 +373,8 @@ export function findWordRight(row: number, column: number): { row: number; colum
 	while (isWhitespace(currentChar)) {
 		const next = stepRight(currentRow, currentColumn);
 		if (!next) {
-			const lastRow = lines.length - 1;
-			return { row: lastRow, column: lines[lastRow].length };
+			const lastRow = ide_state.lines.length - 1;
+			return { row: lastRow, column: ide_state.lines[lastRow].length };
 		}
 		currentRow = next.row;
 		currentColumn = next.column;
@@ -588,9 +384,9 @@ export function findWordRight(row: number, column: number): { row: number; colum
 	while (true) {
 		const next = stepRight(currentRow, currentColumn);
 		if (!next) {
-			const lastRow = lines.length - 1;
+			const lastRow = ide_state.lines.length - 1;
 			currentRow = lastRow;
-			currentColumn = lines[lastRow].length;
+			currentColumn = ide_state.lines[lastRow].length;
 			break;
 		}
 		const nextChar = charAt(next.row, next.column);
@@ -605,9 +401,9 @@ export function findWordRight(row: number, column: number): { row: number; colum
 	while (isWhitespace(charAt(currentRow, currentColumn))) {
 		const next = stepRight(currentRow, currentColumn);
 		if (!next) {
-			const lastRow = lines.length - 1;
+			const lastRow = ide_state.lines.length - 1;
 			currentRow = lastRow;
-			currentColumn = lines[lastRow].length;
+			currentColumn = ide_state.lines[lastRow].length;
 			break;
 		}
 		currentRow = next.row;
@@ -617,7 +413,7 @@ export function findWordRight(row: number, column: number): { row: number; colum
 }
 
 export function moveCursorLeft(byWord: boolean, select: boolean): void {
-	const previous: Position = { row: cursorRow, column: cursorColumn };
+	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else if (hasSelection()) {
@@ -638,7 +434,7 @@ export function moveCursorLeft(byWord: boolean, select: boolean): void {
 }
 
 export function moveCursorRight(byWord: boolean, select: boolean): void {
-	const previous: Position = { row: cursorRow, column: cursorColumn };
+	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else if (hasSelection()) {
@@ -659,7 +455,7 @@ export function moveCursorRight(byWord: boolean, select: boolean): void {
 }
 
 export function moveCursorUp(select: boolean): void {
-	const previous: Position = { row: cursorRow, column: cursorColumn };
+	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else if (hasSelection()) {
@@ -676,7 +472,7 @@ export function moveCursorUp(select: boolean): void {
 }
 
 export function moveCursorDown(select: boolean): void {
-	const previous: Position = { row: cursorRow, column: cursorColumn };
+	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else if (hasSelection()) {
@@ -693,29 +489,29 @@ export function moveCursorDown(select: boolean): void {
 }
 
 export function moveCursorHome(select: boolean): void {
-	const previousOverride = getCursorVisualOverride(cursorRow, cursorColumn);
+	const previousOverride = getCursorVisualOverride(ide_state.cursorRow, ide_state.cursorColumn);
 	clearCursorVisualOverride();
-	const previous: Position = { row: cursorRow, column: cursorColumn };
+	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else {
 		clearSelection();
 	}
-	const ctrlDown = isModifierPressedGlobal(playerIndex, 'ControlLeft') || isModifierPressedGlobal(playerIndex, 'ControlRight');
+	const ctrlDown = isModifierPressedGlobal(ide_state.playerIndex, 'ControlLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ControlRight');
 	if (ctrlDown) {
-		cursorRow = 0;
-		cursorColumn = 0;
+		ide_state.cursorRow = 0;
+		ide_state.cursorColumn = 0;
 	} else {
 		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? positionToVisualIndex(cursorRow, cursorColumn);
+		const visualIndex = previousOverride?.visualIndex ?? positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
 		const segment = visualIndexToSegment(visualIndex);
 		if (segment) {
-			cursorRow = segment.row;
-			const line = lines[segment.row] ?? '';
-			cursorColumn = resolveIndentAwareHome(line, segment, cursorColumn);
-			setCursorVisualOverride(segment.row, cursorColumn, visualIndex, segment.startColumn);
+			ide_state.cursorRow = segment.row;
+			const line = ide_state.lines[segment.row] ?? '';
+			ide_state.cursorColumn = resolveIndentAwareHome(line, segment, ide_state.cursorColumn);
+			setCursorVisualOverride(segment.row, ide_state.cursorColumn, visualIndex, segment.startColumn);
 		} else {
-			cursorColumn = 0;
+			ide_state.cursorColumn = 0;
 		}
 	}
 	updateDesiredColumn();
@@ -725,35 +521,35 @@ export function moveCursorHome(select: boolean): void {
 }
 
 export function moveCursorEnd(select: boolean): void {
-	const previousOverride = getCursorVisualOverride(cursorRow, cursorColumn);
+	const previousOverride = getCursorVisualOverride(ide_state.cursorRow, ide_state.cursorColumn);
 	clearCursorVisualOverride();
-	const previous: Position = { row: cursorRow, column: cursorColumn };
+	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else {
 		clearSelection();
 	}
-	const ctrlDown = isModifierPressedGlobal(playerIndex, 'ControlLeft') || isModifierPressedGlobal(playerIndex, 'ControlRight');
+	const ctrlDown = isModifierPressedGlobal(ide_state.playerIndex, 'ControlLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ControlRight');
 	if (ctrlDown) {
-		const lastRow = lines.length - 1;
+		const lastRow = ide_state.lines.length - 1;
 		if (lastRow < 0) {
-			cursorRow = 0;
-			cursorColumn = 0;
+			ide_state.cursorRow = 0;
+			ide_state.cursorColumn = 0;
 		} else {
-			cursorRow = lastRow;
-			cursorColumn = lines[lastRow].length;
+			ide_state.cursorRow = lastRow;
+			ide_state.cursorColumn = ide_state.lines[lastRow].length;
 		}
 	} else {
 		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? positionToVisualIndex(cursorRow, cursorColumn);
+		const visualIndex = previousOverride?.visualIndex ?? positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
 		const segment = visualIndexToSegment(visualIndex);
 		if (segment) {
-			cursorRow = segment.row;
-			const line = lines[segment.row] ?? '';
-			cursorColumn = resolveSegmentEnd(line, segment);
-			setCursorVisualOverride(segment.row, cursorColumn, visualIndex, segment.startColumn);
+			ide_state.cursorRow = segment.row;
+			const line = ide_state.lines[segment.row] ?? '';
+			ide_state.cursorColumn = resolveSegmentEnd(line, segment);
+			setCursorVisualOverride(segment.row, ide_state.cursorColumn, visualIndex, segment.startColumn);
 		} else {
-			cursorColumn = currentLine().length;
+			ide_state.cursorColumn = currentLine().length;
 		}
 	}
 	updateDesiredColumn();
@@ -763,7 +559,7 @@ export function moveCursorEnd(select: boolean): void {
 }
 
 export function pageUp(select: boolean): void {
-	const previous: Position = { row: cursorRow, column: cursorColumn };
+	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else {
@@ -772,16 +568,16 @@ export function pageUp(select: boolean): void {
 	const rows = visibleRowCount();
 	ensureVisualLines();
 	const visualCount = getVisualLineCount();
-	const currentVisual = positionToVisualIndex(cursorRow, cursorColumn);
+	const currentVisual = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
 	const targetVisual = clamp(currentVisual - rows, 0, Math.max(0, visualCount - 1));
-	setCursorFromVisualIndex(targetVisual, desiredColumn, desiredDisplayOffset);
+	setCursorFromVisualIndex(targetVisual, ide_state.desiredColumn, ide_state.desiredDisplayOffset);
 	resetBlink();
 	breakUndoSequence();
 	revealCursor();
 }
 
 export function pageDown(select: boolean): void {
-	const previous: Position = { row: cursorRow, column: cursorColumn };
+	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else {
@@ -790,9 +586,9 @@ export function pageDown(select: boolean): void {
 	const rows = visibleRowCount();
 	ensureVisualLines();
 	const visualCount = getVisualLineCount();
-	const currentVisual = positionToVisualIndex(cursorRow, cursorColumn);
+	const currentVisual = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
 	const targetVisual = clamp(currentVisual + rows, 0, Math.max(0, visualCount - 1));
-	setCursorFromVisualIndex(targetVisual, desiredColumn, desiredDisplayOffset);
+	setCursorFromVisualIndex(targetVisual, ide_state.desiredColumn, ide_state.desiredDisplayOffset);
 	resetBlink();
 	breakUndoSequence();
 	revealCursor();
@@ -812,12 +608,12 @@ export function insertText(text: string): void {
 		// Selection replaced.
 	}
 	const line = currentLine();
-	const before = line.slice(0, cursorColumn);
-	const after = line.slice(cursorColumn);
-	lines[cursorRow] = before + text + after;
-	invalidateLine(cursorRow);
+	const before = line.slice(0, ide_state.cursorColumn);
+	const after = line.slice(ide_state.cursorColumn);
+	ide_state.lines[ide_state.cursorRow] = before + text + after;
+	invalidateLine(ide_state.cursorRow);
 	recordEditContext('insert', text);
-	cursorColumn += text.length;
+	ide_state.cursorColumn += text.length;
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -826,20 +622,20 @@ export function insertText(text: string): void {
 }
 
 export function insertLineBreak(): void {
-	const sourceRow = cursorRow;
+	const sourceRow = ide_state.cursorRow;
 	prepareUndo('insert-line-break', false);
 	deleteSelectionIfPresent();
 	const line = currentLine();
-	const before = line.slice(0, cursorColumn);
-	const after = line.slice(cursorColumn);
-	lines[sourceRow] = before;
+	const before = line.slice(0, ide_state.cursorColumn);
+	const after = line.slice(ide_state.cursorColumn);
+	ide_state.lines[sourceRow] = before;
 	const indentation = extractIndentation(before);
 	const newLine = indentation + after;
-	lines.splice(sourceRow + 1, 0, newLine);
+	ide_state.lines.splice(sourceRow + 1, 0, newLine);
 	invalidateLineRange(sourceRow, sourceRow + 1);
 	invalidateHighlightsFromRow(sourceRow);
-	cursorRow = sourceRow + 1;
-	cursorColumn = indentation.length;
+	ide_state.cursorRow = sourceRow + 1;
+	ide_state.cursorColumn = indentation.length;
 	recordEditContext('insert', '\n');
 	markTextMutated();
 	resetBlink();
@@ -862,21 +658,21 @@ export function extractIndentation(value: string): string {
 }
 
 export function backspace(): void {
-	if (!hasSelection() && cursorColumn === 0 && cursorRow === 0) {
+	if (!hasSelection() && ide_state.cursorColumn === 0 && ide_state.cursorRow === 0) {
 		return;
 	}
 	prepareUndo('backspace', true);
 	if (deleteSelectionIfPresent()) {
 		return;
 	}
-	if (cursorColumn > 0) {
+	if (ide_state.cursorColumn > 0) {
 		const line = currentLine();
-		const removedChar = line.charAt(cursorColumn - 1);
-		const before = line.slice(0, cursorColumn - 1);
-		const after = line.slice(cursorColumn);
-		lines[cursorRow] = before + after;
-		invalidateLine(cursorRow);
-		cursorColumn -= 1;
+		const removedChar = line.charAt(ide_state.cursorColumn - 1);
+		const before = line.slice(0, ide_state.cursorColumn - 1);
+		const after = line.slice(ide_state.cursorColumn);
+		ide_state.lines[ide_state.cursorRow] = before + after;
+		invalidateLine(ide_state.cursorRow);
+		ide_state.cursorColumn -= 1;
 		recordEditContext('delete', removedChar);
 		markTextMutated();
 		resetBlink();
@@ -884,19 +680,19 @@ export function backspace(): void {
 		revealCursor();
 		return;
 	}
-	if (cursorRow === 0) {
+	if (ide_state.cursorRow === 0) {
 		return;
 	}
-	const mergedRow = cursorRow - 1;
-	const previousLine = lines[mergedRow];
+	const mergedRow = ide_state.cursorRow - 1;
+	const previousLine = ide_state.lines[mergedRow];
 	const currentLineValue = currentLine();
 	recordEditContext('delete', '\n');
-	lines[mergedRow] = previousLine + currentLineValue;
-	lines.splice(cursorRow, 1);
+	ide_state.lines[mergedRow] = previousLine + currentLineValue;
+	ide_state.lines.splice(ide_state.cursorRow, 1);
 	invalidateLine(mergedRow);
 	invalidateHighlightsFromRow(mergedRow);
-	cursorRow = mergedRow;
-	cursorColumn = previousLine.length;
+	ide_state.cursorRow = mergedRow;
+	ide_state.cursorColumn = previousLine.length;
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -904,7 +700,7 @@ export function backspace(): void {
 }
 
 export function deleteForward(): void {
-	if (!hasSelection() && cursorColumn >= currentLine().length && cursorRow >= lines.length - 1) {
+	if (!hasSelection() && ide_state.cursorColumn >= currentLine().length && ide_state.cursorRow >= ide_state.lines.length - 1) {
 		return;
 	}
 	prepareUndo('delete-forward', true);
@@ -912,12 +708,12 @@ export function deleteForward(): void {
 		return;
 	}
 	const line = currentLine();
-	if (cursorColumn < line.length) {
-		const removedChar = line.charAt(cursorColumn);
-		const before = line.slice(0, cursorColumn);
-		const after = line.slice(cursorColumn + 1);
-		lines[cursorRow] = before + after;
-		invalidateLine(cursorRow);
+	if (ide_state.cursorColumn < line.length) {
+		const removedChar = line.charAt(ide_state.cursorColumn);
+		const before = line.slice(0, ide_state.cursorColumn);
+		const after = line.slice(ide_state.cursorColumn + 1);
+		ide_state.lines[ide_state.cursorRow] = before + after;
+		invalidateLine(ide_state.cursorRow);
 		recordEditContext('delete', removedChar);
 		markTextMutated();
 		resetBlink();
@@ -925,15 +721,15 @@ export function deleteForward(): void {
 		revealCursor();
 		return;
 	}
-	if (cursorRow >= lines.length - 1) {
+	if (ide_state.cursorRow >= ide_state.lines.length - 1) {
 		return;
 	}
-	const nextLine = lines[cursorRow + 1];
+	const nextLine = ide_state.lines[ide_state.cursorRow + 1];
 	const updatedLine = line + nextLine;
-	lines[cursorRow] = updatedLine;
-	lines.splice(cursorRow + 1, 1);
-	invalidateLine(cursorRow);
-	invalidateHighlightsFromRow(cursorRow);
+	ide_state.lines[ide_state.cursorRow] = updatedLine;
+	ide_state.lines.splice(ide_state.cursorRow + 1, 1);
+	invalidateLine(ide_state.cursorRow);
+	invalidateHighlightsFromRow(ide_state.cursorRow);
 	recordEditContext('delete', '\n');
 	markTextMutated();
 	resetBlink();
@@ -942,27 +738,27 @@ export function deleteForward(): void {
 }
 
 export function deleteWordBackward(): void {
-	if (!hasSelection() && cursorColumn === 0 && cursorRow === 0) {
+	if (!hasSelection() && ide_state.cursorColumn === 0 && ide_state.cursorRow === 0) {
 		return;
 	}
 	prepareUndo('delete-word-backward', false);
 	if (deleteSelectionIfPresent()) {
 		return;
 	}
-	const target = findWordLeft(cursorRow, cursorColumn);
-	if (target.row === cursorRow && target.column === cursorColumn) {
+	const target = findWordLeft(ide_state.cursorRow, ide_state.cursorColumn);
+	if (target.row === ide_state.cursorRow && target.column === ide_state.cursorColumn) {
 		backspace();
 		return;
 	}
 	const startRow = target.row;
 	const startColumn = target.column;
-	const endRow = cursorRow;
-	const endColumn = cursorColumn;
+	const endRow = ide_state.cursorRow;
+	const endColumn = ide_state.cursorColumn;
 	if (startRow === endRow) {
-		const line = lines[startRow];
+		const line = ide_state.lines[startRow];
 		const removed = line.slice(startColumn, endColumn);
-		lines[startRow] = line.slice(0, startColumn) + line.slice(endColumn);
-		cursorColumn = startColumn;
+		ide_state.lines[startRow] = line.slice(0, startColumn) + line.slice(endColumn);
+		ide_state.cursorColumn = startColumn;
 		invalidateLine(startRow);
 		recordEditContext('delete', removed);
 		markTextMutated();
@@ -971,18 +767,18 @@ export function deleteWordBackward(): void {
 		revealCursor();
 		return;
 	}
-	const firstLine = lines[startRow];
-	const lastLine = lines[endRow];
+	const firstLine = ide_state.lines[startRow];
+	const lastLine = ide_state.lines[endRow];
 	const removedParts: string[] = [];
 	removedParts.push(firstLine.slice(startColumn));
 	for (let row = startRow + 1; row < endRow; row += 1) {
-		removedParts.push(lines[row]);
+		removedParts.push(ide_state.lines[row]);
 	}
 	removedParts.push(lastLine.slice(0, endColumn));
-	lines[startRow] = firstLine.slice(0, startColumn) + lastLine.slice(endColumn);
-	lines.splice(startRow + 1, endRow - startRow);
-	cursorRow = startRow;
-	cursorColumn = startColumn;
+	ide_state.lines[startRow] = firstLine.slice(0, startColumn) + lastLine.slice(endColumn);
+	ide_state.lines.splice(startRow + 1, endRow - startRow);
+	ide_state.cursorRow = startRow;
+	ide_state.cursorColumn = startColumn;
 	invalidateLine(startRow);
 	invalidateHighlightsFromRow(startRow);
 	recordEditContext('delete', removedParts.join('\n'));
@@ -993,45 +789,45 @@ export function deleteWordBackward(): void {
 }
 
 export function deleteWordForward(): void {
-	if (!hasSelection() && cursorRow >= lines.length - 1 && cursorColumn >= currentLine().length) {
+	if (!hasSelection() && ide_state.cursorRow >= ide_state.lines.length - 1 && ide_state.cursorColumn >= currentLine().length) {
 		return;
 	}
 	prepareUndo('delete-word-forward', false);
 	if (deleteSelectionIfPresent()) {
 		return;
 	}
-	const destination = findWordRight(cursorRow, cursorColumn);
-	if (destination.row === cursorRow && destination.column === cursorColumn) {
+	const destination = findWordRight(ide_state.cursorRow, ide_state.cursorColumn);
+	if (destination.row === ide_state.cursorRow && destination.column === ide_state.cursorColumn) {
 		deleteForward();
 		return;
 	}
-	const startRow = cursorRow;
-	const startColumn = cursorColumn;
+	const startRow = ide_state.cursorRow;
+	const startColumn = ide_state.cursorColumn;
 	const endRow = destination.row;
 	const endColumn = destination.column;
 	if (startRow === endRow) {
-		const line = lines[startRow];
+		const line = ide_state.lines[startRow];
 		const removed = line.slice(startColumn, endColumn);
-		lines[startRow] = line.slice(0, startColumn) + line.slice(endColumn);
+		ide_state.lines[startRow] = line.slice(0, startColumn) + line.slice(endColumn);
 		invalidateLine(startRow);
 		recordEditContext('delete', removed);
 	} else {
-		const firstLine = lines[startRow];
-		const lastLine = lines[endRow];
+		const firstLine = ide_state.lines[startRow];
+		const lastLine = ide_state.lines[endRow];
 		const removedParts: string[] = [];
 		removedParts.push(firstLine.slice(startColumn));
 		for (let row = startRow + 1; row < endRow; row += 1) {
-			removedParts.push(lines[row]);
+			removedParts.push(ide_state.lines[row]);
 		}
 		removedParts.push(lastLine.slice(0, endColumn));
-		lines[startRow] = firstLine.slice(0, startColumn) + lastLine.slice(endColumn);
-		lines.splice(startRow + 1, endRow - startRow);
+		ide_state.lines[startRow] = firstLine.slice(0, startColumn) + lastLine.slice(endColumn);
+		ide_state.lines.splice(startRow + 1, endRow - startRow);
 		invalidateLine(startRow);
 		invalidateHighlightsFromRow(startRow);
 		recordEditContext('delete', removedParts.join('\n'));
 	}
-	cursorRow = startRow;
-	cursorColumn = startColumn;
+	ide_state.cursorRow = startRow;
+	ide_state.cursorColumn = startColumn;
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -1039,27 +835,27 @@ export function deleteWordForward(): void {
 }
 
 export function deleteActiveLines(): void {
-	if (lines.length === 0) {
+	if (ide_state.lines.length === 0) {
 		return;
 	}
-	prepareUndo('delete-active-lines', false);
+	prepareUndo('delete-ide_state.active-ide_state.lines', false);
 	const range = getSelectionRange();
 	if (!range) {
-		const removedRow = cursorRow;
-		lines.splice(removedRow, 1);
-		if (lines.length === 0) {
-			lines = [''];
-			cursorRow = 0;
-			cursorColumn = 0;
-		} else if (cursorRow >= lines.length) {
-			cursorRow = lines.length - 1;
-			cursorColumn = lines[cursorRow].length;
+		const removedRow = ide_state.cursorRow;
+		ide_state.lines.splice(removedRow, 1);
+		if (ide_state.lines.length === 0) {
+			ide_state.lines = [''];
+			ide_state.cursorRow = 0;
+			ide_state.cursorColumn = 0;
+		} else if (ide_state.cursorRow >= ide_state.lines.length) {
+			ide_state.cursorRow = ide_state.lines.length - 1;
+			ide_state.cursorColumn = ide_state.lines[ide_state.cursorRow].length;
 		} else {
-			const line = lines[cursorRow];
-			cursorColumn = Math.min(cursorColumn, line.length);
+			const line = ide_state.lines[ide_state.cursorRow];
+			ide_state.cursorColumn = Math.min(ide_state.cursorColumn, line.length);
 		}
-		invalidateLine(cursorRow);
-		invalidateHighlightsFromRow(Math.min(removedRow, lines.length - 1));
+		invalidateLine(ide_state.cursorRow);
+		invalidateHighlightsFromRow(Math.min(removedRow, ide_state.lines.length - 1));
 		recordEditContext('delete', '\n');
 		markTextMutated();
 		resetBlink();
@@ -1074,15 +870,15 @@ export function deleteActiveLines(): void {
 		deletionEnd -= 1;
 	}
 	const count = deletionEnd - deletionStart + 1;
-	const deletedLines = lines.slice(deletionStart, deletionStart + count);
-	lines.splice(deletionStart, count);
-	if (lines.length === 0) {
-		lines = [''];
+	const deletedLines = ide_state.lines.slice(deletionStart, deletionStart + count);
+	ide_state.lines.splice(deletionStart, count);
+	if (ide_state.lines.length === 0) {
+		ide_state.lines = [''];
 	}
-	cursorRow = clamp(deletionStart, 0, lines.length - 1);
-	cursorColumn = 0;
-	selectionAnchor = null;
-	invalidateLine(cursorRow);
+	ide_state.cursorRow = clamp(deletionStart, 0, ide_state.lines.length - 1);
+	ide_state.cursorColumn = 0;
+	ide_state.selectionAnchor = null;
+	invalidateLine(ide_state.cursorRow);
 	invalidateHighlightsFromRow(deletionStart);
 	recordEditContext('delete', deletedLines.join('\n'));
 	markTextMutated();
@@ -1099,25 +895,25 @@ export function moveSelectionLines(delta: number): void {
 	if (delta < 0 && range.startRow === 0) {
 		return;
 	}
-	if (delta > 0 && range.endRow >= lines.length - 1) {
+	if (delta > 0 && range.endRow >= ide_state.lines.length - 1) {
 		return;
 	}
-	prepareUndo('move-lines', false);
+	prepareUndo('move-ide_state.lines', false);
 	const count = range.endRow - range.startRow + 1;
-	const block = lines.splice(range.startRow, count);
+	const block = ide_state.lines.splice(range.startRow, count);
 	const targetIndex = range.startRow + delta;
-	lines.splice(targetIndex, 0, ...block);
+	ide_state.lines.splice(targetIndex, 0, ...block);
 	const affectedStart = Math.max(0, Math.min(range.startRow, targetIndex));
-	const affectedEnd = Math.min(lines.length - 1, Math.max(range.endRow, targetIndex + count - 1));
+	const affectedEnd = Math.min(ide_state.lines.length - 1, Math.max(range.endRow, targetIndex + count - 1));
 	if (affectedStart <= affectedEnd) {
 		for (let row = affectedStart; row <= affectedEnd; row += 1) {
 			invalidateLine(row);
 		}
 	}
 	invalidateHighlightsFromRow(affectedStart);
-	cursorRow += delta;
-	if (selectionAnchor) {
-		selectionAnchor = { row: selectionAnchor.row + delta, column: selectionAnchor.column };
+	ide_state.cursorRow += delta;
+	if (ide_state.selectionAnchor) {
+		ide_state.selectionAnchor = { row: ide_state.selectionAnchor.row + delta, column: ide_state.selectionAnchor.column };
 	}
 	clampCursorColumn();
 	markTextMutated();
@@ -1129,7 +925,7 @@ export function moveSelectionLines(delta: number): void {
 export function getLineRangeForMovement(): { startRow: number; endRow: number } {
 	const range = getSelectionRange();
 	if (!range) {
-		return { startRow: cursorRow, endRow: cursorRow };
+		return { startRow: ide_state.cursorRow, endRow: ide_state.cursorRow };
 	}
 	let endRow = range.end.row;
 	if (range.end.column === 0 && endRow > range.start.row) {
@@ -1143,9 +939,9 @@ export function indentSelectionOrLine(): void {
 	const range = getSelectionRange();
 	if (!range) {
 		const line = currentLine();
-		lines[cursorRow] = '\t' + line;
-		cursorColumn += 1;
-		invalidateLine(cursorRow);
+		ide_state.lines[ide_state.cursorRow] = '\t' + line;
+		ide_state.cursorColumn += 1;
+		invalidateLine(ide_state.cursorRow);
 		recordEditContext('insert', '\t');
 		markTextMutated();
 		resetBlink();
@@ -1154,13 +950,13 @@ export function indentSelectionOrLine(): void {
 		return;
 	}
 	for (let row = range.start.row; row <= range.end.row; row += 1) {
-		lines[row] = '\t' + lines[row];
+		ide_state.lines[row] = '\t' + ide_state.lines[row];
 		invalidateLine(row);
 	}
-	if (selectionAnchor) {
-		selectionAnchor = { row: selectionAnchor.row, column: selectionAnchor.column + 1 };
+	if (ide_state.selectionAnchor) {
+		ide_state.selectionAnchor = { row: ide_state.selectionAnchor.row, column: ide_state.selectionAnchor.column + 1 };
 	}
-	cursorColumn += 1;
+	ide_state.cursorColumn += 1;
 	recordEditContext('insert', '\t');
 	markTextMutated();
 	resetBlink();
@@ -1178,9 +974,9 @@ export function unindentSelectionOrLine(): void {
 			return;
 		}
 		const remove = Math.min(indentation, 1);
-		lines[cursorRow] = line.slice(remove);
-		cursorColumn = Math.max(0, cursorColumn - remove);
-		invalidateLine(cursorRow);
+		ide_state.lines[ide_state.cursorRow] = line.slice(remove);
+		ide_state.cursorColumn = Math.max(0, ide_state.cursorColumn - remove);
+		invalidateLine(ide_state.cursorRow);
 		recordEditContext('delete', line.slice(0, remove));
 		markTextMutated();
 		resetBlink();
@@ -1189,17 +985,17 @@ export function unindentSelectionOrLine(): void {
 		return;
 	}
 	for (let row = range.start.row; row <= range.end.row; row += 1) {
-		const line = lines[row];
+		const line = ide_state.lines[row];
 		const indentation = countLeadingIndent(line);
 		if (indentation > 0) {
-			lines[row] = line.slice(1);
+			ide_state.lines[row] = line.slice(1);
 			invalidateLine(row);
 		}
 	}
-	if (selectionAnchor) {
-		selectionAnchor = { row: selectionAnchor.row, column: Math.max(0, selectionAnchor.column - 1) };
+	if (ide_state.selectionAnchor) {
+		ide_state.selectionAnchor = { row: ide_state.selectionAnchor.row, column: Math.max(0, ide_state.selectionAnchor.column - 1) };
 	}
-	cursorColumn = Math.max(0, cursorColumn - 1);
+	ide_state.cursorColumn = Math.max(0, ide_state.cursorColumn - 1);
 	recordEditContext('delete', '\t');
 	markTextMutated();
 	resetBlink();
@@ -1243,28 +1039,28 @@ export function replaceSelectionWith(text: string): void {
 	}
 	recordEditContext(text.length === 0 ? 'delete' : 'replace', text);
 	const { start, end } = range;
-	const startLine = lines[start.row];
-	const endLine = lines[end.row];
+	const startLine = ide_state.lines[start.row];
+	const endLine = ide_state.lines[end.row];
 	const leading = startLine.slice(0, start.column);
 	const trailing = endLine.slice(end.column);
 	const fragments = text.split('\n');
 	if (fragments.length === 1) {
 		const combined = leading + fragments[0] + trailing;
-		lines.splice(start.row, end.row - start.row + 1, combined);
-		cursorRow = start.row;
-		cursorColumn = leading.length + fragments[0].length;
+		ide_state.lines.splice(start.row, end.row - start.row + 1, combined);
+		ide_state.cursorRow = start.row;
+		ide_state.cursorColumn = leading.length + fragments[0].length;
 	} else {
 		const firstLine = leading + fragments[0];
 		const lastFragment = fragments[fragments.length - 1];
 		const lastLine = lastFragment + trailing;
 		const middle = fragments.slice(1, -1);
-		lines.splice(start.row, end.row - start.row + 1, firstLine, ...middle, lastLine);
-		cursorRow = start.row + fragments.length - 1;
-		cursorColumn = lastFragment.length;
+		ide_state.lines.splice(start.row, end.row - start.row + 1, firstLine, ...middle, lastLine);
+		ide_state.cursorRow = start.row + fragments.length - 1;
+		ide_state.cursorColumn = lastFragment.length;
 	}
 	invalidateLineRange(start.row, start.row + fragments.length - 1);
 	invalidateHighlightsFromRow(start.row);
-	selectionAnchor = null;
+	ide_state.selectionAnchor = null;
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -1272,14 +1068,14 @@ export function replaceSelectionWith(text: string): void {
 }
 
 export function selectWordAtPosition(row: number, column: number): void {
-	if (row < 0 || row >= lines.length) {
+	if (row < 0 || row >= ide_state.lines.length) {
 		return;
 	}
-	const line = lines[row];
+	const line = ide_state.lines[row];
 	if (line.length === 0) {
-		selectionAnchor = null;
-		cursorRow = row;
-		cursorColumn = 0;
+		ide_state.selectionAnchor = null;
+		ide_state.cursorRow = row;
+		ide_state.cursorColumn = 0;
 		updateDesiredColumn();
 		resetBlink();
 		revealCursor();
@@ -1328,9 +1124,9 @@ export function selectWordAtPosition(row: number, column: number): void {
 	if (end < start) {
 		end = start;
 	}
-	selectionAnchor = { row, column: start };
-	cursorRow = row;
-	cursorColumn = end;
+	ide_state.selectionAnchor = { row, column: start };
+	ide_state.cursorRow = row;
+	ide_state.cursorColumn = end;
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -1343,14 +1139,14 @@ export function getSelectionText(): string | null {
 	}
 	const { start, end } = range;
 	if (start.row === end.row) {
-		return lines[start.row].slice(start.column, end.column);
+		return ide_state.lines[start.row].slice(start.column, end.column);
 	}
 	const parts: string[] = [];
-	parts.push(lines[start.row].slice(start.column));
+	parts.push(ide_state.lines[start.row].slice(start.column));
 	for (let row = start.row + 1; row < end.row; row += 1) {
-		parts.push(lines[row]);
+		parts.push(ide_state.lines[row]);
 	}
-	parts.push(lines[end.row].slice(0, end.column));
+	parts.push(ide_state.lines[end.row].slice(0, end.column));
 	return parts.join('\n');
 }
 
@@ -1358,13 +1154,13 @@ export function insertClipboardText(text: string): void {
 	const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 	const fragments = normalized.split('\n');
 	const currentLineValue = currentLine();
-	const before = currentLineValue.slice(0, cursorColumn);
-	const after = currentLineValue.slice(cursorColumn);
+	const before = currentLineValue.slice(0, ide_state.cursorColumn);
+	const after = currentLineValue.slice(ide_state.cursorColumn);
 	if (fragments.length === 1) {
 		const fragment = fragments[0];
-		lines[cursorRow] = before + fragment + after;
-		invalidateLine(cursorRow);
-		cursorColumn = before.length + fragment.length;
+		ide_state.lines[ide_state.cursorRow] = before + fragment + after;
+		invalidateLine(ide_state.cursorRow);
+		ide_state.cursorColumn = before.length + fragment.length;
 		recordEditContext('insert', fragment);
 	} else {
 		const firstLine = before + fragments[0];
@@ -1376,12 +1172,12 @@ export function insertClipboardText(text: string): void {
 			newLines.push(fragments[i]);
 		}
 		newLines.push(lastFragment + after);
-		const insertionRow = cursorRow;
-		lines.splice(insertionRow, 1, ...newLines);
+		const insertionRow = ide_state.cursorRow;
+		ide_state.lines.splice(insertionRow, 1, ...newLines);
 		invalidateLineRange(insertionRow, insertionRow + newLines.length - 1);
 		invalidateHighlightsFromRow(insertionRow);
-		cursorRow = insertionRow + lastIndex;
-		cursorColumn = lastFragment.length;
+		ide_state.cursorRow = insertionRow + lastIndex;
+		ide_state.cursorColumn = lastFragment.length;
 		recordEditContext('insert', normalized);
 	}
 	markTextMutated();
@@ -1391,21 +1187,21 @@ export function insertClipboardText(text: string): void {
 }
 
 export function ensureSelectionAnchor(anchor: Position): void {
-	if (!selectionAnchor) {
-		selectionAnchor = { row: anchor.row, column: anchor.column };
+	if (!ide_state.selectionAnchor) {
+		ide_state.selectionAnchor = { row: anchor.row, column: anchor.column };
 	}
 }
 
 export function setSelectionAnchorPosition(position: Position | null): void {
 	if (!position) {
-		selectionAnchor = null;
+		ide_state.selectionAnchor = null;
 		return;
 	}
-	selectionAnchor = { row: position.row, column: position.column };
+	ide_state.selectionAnchor = { row: position.row, column: position.column };
 }
 
 export function clearSelection(): void {
-	selectionAnchor = null;
+	ide_state.selectionAnchor = null;
 }
 
 export function hasSelection(): boolean {
@@ -1420,11 +1216,11 @@ export function comparePositions(a: Position, b: Position): number {
 }
 
 export function getSelectionRange(): { start: Position; end: Position } | null {
-	const anchor = selectionAnchor;
+	const anchor = ide_state.selectionAnchor;
 	if (!anchor) {
 		return null;
 	}
-	const cursor: Position = { row: cursorRow, column: cursorColumn };
+	const cursor: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	if (anchor.row === cursor.row && anchor.column === cursor.column) {
 		return null;
 	}
@@ -1440,9 +1236,9 @@ export function collapseSelectionTo(target: 'start' | 'end'): void {
 		return;
 	}
 	const destination = target === 'start' ? range.start : range.end;
-	cursorRow = destination.row;
-	cursorColumn = destination.column;
-	selectionAnchor = null;
+	ide_state.cursorRow = destination.row;
+	ide_state.cursorColumn = destination.column;
+	ide_state.selectionAnchor = null;
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -1453,27 +1249,27 @@ export function stepLeft(row: number, column: number): { row: number; column: nu
 		return { row, column: column - 1 };
 	}
 	if (row > 0) {
-		return { row: row - 1, column: lines[row - 1].length };
+		return { row: row - 1, column: ide_state.lines[row - 1].length };
 	}
 	return null;
 }
 
 export function stepRight(row: number, column: number): { row: number; column: number } | null {
-	const length = lines[row].length;
+	const length = ide_state.lines[row].length;
 	if (column < length) {
 		return { row, column: column + 1 };
 	}
-	if (row < lines.length - 1) {
+	if (row < ide_state.lines.length - 1) {
 		return { row: row + 1, column: 0 };
 	}
 	return null;
 }
 
 export function charAt(row: number, column: number): string {
-	if (row < 0 || row >= lines.length) {
+	if (row < 0 || row >= ide_state.lines.length) {
 		return '';
 	}
-	const line = lines[row];
+	const line = ide_state.lines[row];
 	if (column < 0 || column >= line.length) {
 		return '';
 	}
@@ -1481,43 +1277,43 @@ export function charAt(row: number, column: number): string {
 }
 
 export function currentLine(): string {
-	if (cursorRow < 0 || cursorRow >= lines.length) {
+	if (ide_state.cursorRow < 0 || ide_state.cursorRow >= ide_state.lines.length) {
 		return '';
 	}
-	return lines[cursorRow];
+	return ide_state.lines[ide_state.cursorRow];
 }
 
 export function clampCursorRow(): void {
-	if (cursorRow < 0) {
-		cursorRow = 0;
-	} else if (cursorRow >= lines.length) {
-		cursorRow = lines.length - 1;
+	if (ide_state.cursorRow < 0) {
+		ide_state.cursorRow = 0;
+	} else if (ide_state.cursorRow >= ide_state.lines.length) {
+		ide_state.cursorRow = ide_state.lines.length - 1;
 	}
 }
 
 export function clampCursorColumn(): void {
 	const line = currentLine();
-	if (cursorColumn < 0) {
-		cursorColumn = 0;
+	if (ide_state.cursorColumn < 0) {
+		ide_state.cursorColumn = 0;
 		return;
 	}
 	const length = line.length;
-	if (cursorColumn > length) {
-		cursorColumn = length;
+	if (ide_state.cursorColumn > length) {
+		ide_state.cursorColumn = length;
 	}
 }
 
 export function clampSelectionPosition(position: Position | null): Position | null {
-	if (!position || lines.length === 0) {
+	if (!position || ide_state.lines.length === 0) {
 		return null;
 	}
 	let row = position.row;
 	if (row < 0) {
 		row = 0;
-	} else if (row >= lines.length) {
-		row = lines.length - 1;
+	} else if (row >= ide_state.lines.length) {
+		row = ide_state.lines.length - 1;
 	}
-	const line = lines[row] ?? '';
+	const line = ide_state.lines[row] ?? '';
 	let column = position.column;
 	if (column < 0) {
 		column = 0;
@@ -1530,70 +1326,70 @@ export function clampSelectionPosition(position: Position | null): Position | nu
 export function prepareUndo(key: string, allowMerge: boolean): void {
 	const now = Date.now();
 	const shouldMerge = allowMerge
-		&& lastHistoryKey === key
-		&& now - lastHistoryTimestamp <= constants.UNDO_COALESCE_INTERVAL_MS;
+		&& ide_state.lastHistoryKey === key
+		&& now - ide_state.lastHistoryTimestamp <= constants.UNDO_COALESCE_INTERVAL_MS;
 	if (shouldMerge) {
-		lastHistoryTimestamp = now;
+		ide_state.lastHistoryTimestamp = now;
 		return;
 	}
 	const snapshot = captureSnapshot();
-	if (undoStack.length >= constants.UNDO_HISTORY_LIMIT) {
-		undoStack.shift();
+	if (ide_state.undoStack.length >= constants.UNDO_HISTORY_LIMIT) {
+		ide_state.undoStack.shift();
 	}
-	undoStack.push(snapshot);
-	redoStack.length = 0;
-	lastHistoryTimestamp = now;
+	ide_state.undoStack.push(snapshot);
+	ide_state.redoStack.length = 0;
+	ide_state.lastHistoryTimestamp = now;
 	if (allowMerge) {
-		lastHistoryKey = key;
+		ide_state.lastHistoryKey = key;
 	} else {
-		lastHistoryKey = null;
+		ide_state.lastHistoryKey = null;
 	}
 }
 
 export function undo(): void {
-	if (undoStack.length === 0) {
+	if (ide_state.undoStack.length === 0) {
 		return;
 	}
-	const snapshot = undoStack.pop();
+	const snapshot = ide_state.undoStack.pop();
 	if (!snapshot) {
 		return;
 	}
 	const current = captureSnapshot();
-	if (redoStack.length >= constants.UNDO_HISTORY_LIMIT) {
-		redoStack.shift();
+	if (ide_state.redoStack.length >= constants.UNDO_HISTORY_LIMIT) {
+		ide_state.redoStack.shift();
 	}
-	redoStack.push(current);
+	ide_state.redoStack.push(current);
 	restoreSnapshot(snapshot, true);
 	breakUndoSequence();
 }
 
 export function redo(): void {
-	if (redoStack.length === 0) {
+	if (ide_state.redoStack.length === 0) {
 		return;
 	}
-	const snapshot = redoStack.pop();
+	const snapshot = ide_state.redoStack.pop();
 	if (!snapshot) {
 		return;
 	}
 	const current = captureSnapshot();
-	if (undoStack.length >= constants.UNDO_HISTORY_LIMIT) {
-		undoStack.shift();
+	if (ide_state.undoStack.length >= constants.UNDO_HISTORY_LIMIT) {
+		ide_state.undoStack.shift();
 	}
-	undoStack.push(current);
+	ide_state.undoStack.push(current);
 	restoreSnapshot(snapshot, true);
 	breakUndoSequence();
 }
 
 export function breakUndoSequence(): void {
-	lastHistoryKey = null;
-	lastHistoryTimestamp = 0;
+	ide_state.lastHistoryKey = null;
+	ide_state.lastHistoryTimestamp = 0;
 }
 
 export function extractIdentifierAt(row: number, column: number): string | null {
-	if (row < 0 || row >= lines.length) {
+	if (row < 0 || row >= ide_state.lines.length) {
 		return null;
 	}
-	const line = lines[row];
+	const line = ide_state.lines[row];
 	if (column < 0 || column > line.length) {
 		return null;
 	}
@@ -1624,44 +1420,44 @@ export function clampScrollRow(): void {
 	ensureVisualLines();
 	const rows = visibleRowCount();
 	const totalVisual = getVisualLineCount();
-	const cursorVisualIndex = positionToVisualIndex(cursorRow, cursorColumn);
-	if (cursorVisualIndex < scrollRow) {
-		scrollRow = cursorVisualIndex;
+	const cursorVisualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
+	if (cursorVisualIndex < ide_state.scrollRow) {
+		ide_state.scrollRow = cursorVisualIndex;
 	}
-	if (cursorVisualIndex >= scrollRow + rows) {
-		scrollRow = cursorVisualIndex - rows + 1;
+	if (cursorVisualIndex >= ide_state.scrollRow + rows) {
+		ide_state.scrollRow = cursorVisualIndex - rows + 1;
 	}
 	const maxScrollRow = Math.max(0, totalVisual - rows);
-	scrollRow = clamp(scrollRow, 0, maxScrollRow);
+	ide_state.scrollRow = clamp(ide_state.scrollRow, 0, maxScrollRow);
 }
 
 export function clampScrollColumn(): void {
-	if (wordWrapEnabled) {
-		scrollColumn = 0;
+	if (ide_state.wordWrapEnabled) {
+		ide_state.scrollColumn = 0;
 		return;
 	}
 	const columns = visibleColumnCount();
-	if (cursorColumn < scrollColumn) {
-		scrollColumn = cursorColumn;
+	if (ide_state.cursorColumn < ide_state.scrollColumn) {
+		ide_state.scrollColumn = ide_state.cursorColumn;
 	}
-	const maxScrollColumn = cursorColumn - columns + 1;
-	if (maxScrollColumn > scrollColumn) {
-		scrollColumn = maxScrollColumn;
+	const maxScrollColumn = ide_state.cursorColumn - columns + 1;
+	if (maxScrollColumn > ide_state.scrollColumn) {
+		ide_state.scrollColumn = maxScrollColumn;
 	}
-	if (scrollColumn < 0) {
-		scrollColumn = 0;
+	if (ide_state.scrollColumn < 0) {
+		ide_state.scrollColumn = 0;
 	}
 	const lineLength = currentLine().length;
 	const maxColumn = lineLength - columns;
 	if (maxColumn < 0) {
-		scrollColumn = 0;
-	} else if (scrollColumn > maxColumn) {
-		scrollColumn = maxColumn;
+		ide_state.scrollColumn = 0;
+	} else if (ide_state.scrollColumn > maxColumn) {
+		ide_state.scrollColumn = maxColumn;
 	}
 }
 
 function activeSearchMatchCount(): number {
-	return searchScope === 'global' ? globalSearchMatches.length : searchMatches.length;
+	return ide_state.searchScope === 'global' ? ide_state.globalSearchMatches.length : ide_state.searchMatches.length;
 }
 
 function searchPageSize(): number {
@@ -1673,15 +1469,15 @@ function searchVisibleResultCount(): number {
 }
 
 function searchResultEntryHeight(): number {
-	return lineHeight * 2;
+	return ide_state.lineHeight * 2;
 }
 
 function isResourceSearchCompactMode(): boolean {
-	return viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
+	return ide_state.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
 }
 
 function resourceSearchEntryHeight(): number {
-	return isResourceSearchCompactMode() ? lineHeight * 2 : lineHeight;
+	return isResourceSearchCompactMode() ? ide_state.lineHeight * 2 : ide_state.lineHeight;
 }
 
 function resourceSearchPageSize(): number {
@@ -1689,14 +1485,14 @@ function resourceSearchPageSize(): number {
 }
 
 function resourceSearchWindowCapacity(): number {
-	return resourceSearchVisible ? resourceSearchPageSize() : 0;
+	return ide_state.resourceSearchVisible ? resourceSearchPageSize() : 0;
 }
 
 function resourceSearchVisibleResultCount(): number {
-	if (!resourceSearchVisible) {
+	if (!ide_state.resourceSearchVisible) {
 		return 0;
 	}
-	const remaining = Math.max(0, resourceSearchMatches.length - resourceSearchDisplayOffset);
+	const remaining = Math.max(0, ide_state.resourceSearchMatches.length - ide_state.resourceSearchDisplayOffset);
 	const capacity = resourceSearchWindowCapacity();
 	if (capacity <= 0) {
 		return remaining;
@@ -1705,31 +1501,31 @@ function resourceSearchVisibleResultCount(): number {
 }
 
 function isSymbolSearchCompactMode(): boolean {
-	return viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
+	return ide_state.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
 }
 
 function symbolSearchEntryHeight(): number {
-	if (symbolSearchMode === 'references') {
-		return lineHeight * 2;
+	if (ide_state.symbolSearchMode === 'references') {
+		return ide_state.lineHeight * 2;
 	}
-	return symbolSearchGlobal && isSymbolSearchCompactMode() ? lineHeight * 2 : lineHeight;
+	return ide_state.symbolSearchGlobal && isSymbolSearchCompactMode() ? ide_state.lineHeight * 2 : ide_state.lineHeight;
 }
 
 function symbolSearchPageSize(): number {
-	if (symbolSearchMode === 'references') {
+	if (ide_state.symbolSearchMode === 'references') {
 		return constants.REFERENCE_SEARCH_MAX_RESULTS;
 	}
-	if (!symbolSearchGlobal) {
+	if (!ide_state.symbolSearchGlobal) {
 		return constants.SYMBOL_SEARCH_MAX_RESULTS;
 	}
 	return isSymbolSearchCompactMode() ? constants.SYMBOL_SEARCH_COMPACT_MAX_RESULTS : constants.SYMBOL_SEARCH_MAX_RESULTS;
 }
 
 function symbolSearchVisibleResultCount(): number {
-	if (!symbolSearchVisible) {
+	if (!ide_state.symbolSearchVisible) {
 		return 0;
 	}
-	const remaining = Math.max(0, symbolSearchMatches.length - symbolSearchDisplayOffset);
+	const remaining = Math.max(0, ide_state.symbolSearchMatches.length - ide_state.symbolSearchDisplayOffset);
 	const maxResults = symbolSearchPageSize();
 	return Math.min(remaining, maxResults);
 }
@@ -1750,14 +1546,14 @@ function symbolCatalogDedupKey(entry: ConsoleLuaSymbolEntry): string {
 }
 
 export function installPlatformVisibilityListener(): void {
-	disposeVisibilityListener?.();
-	disposeVisibilityListener = $.platform.lifecycle.onVisibilityChange((visible) => {
+	ide_state.disposeVisibilityListener?.();
+	ide_state.disposeVisibilityListener = $.platform.lifecycle.onVisibilityChange((visible) => {
 		requestWindowFocusState(!!visible, true);
 	});
 }
 
 export function installWindowEventListeners(): void {
-	disposeWindowEventListeners?.();
+	ide_state.disposeWindowEventListeners?.();
 	const host = $.platform.gameviewHost;
 	if (!host) {
 		throw new Error('[ConsoleCartEditor] Platform game view host unavailable while installing window listeners.');
@@ -1773,7 +1569,7 @@ export function installWindowEventListeners(): void {
 	disposers.push(windowEvents.subscribe('focus', () => {
 		requestWindowFocusState(true, true);
 	}));
-	disposeWindowEventListeners = () => {
+	ide_state.disposeWindowEventListeners = () => {
 		for (let i = 0; i < disposers.length; i++) {
 			try {
 				disposers[i]();
@@ -1788,24 +1584,24 @@ export function resetInputFocusState(keyboard: KeyboardInput | null): void {
 	if (keyboard) {
 		keyboard.reset();
 	}
-	input.resetRepeats();
+	ide_state.input.resetRepeats();
 	resetKeyPressGuards();
-	repeatState.clear();
-	toggleInputLatch = false;
+	ide_state.repeatState.clear();
+	ide_state.toggleInputLatch = false;
 }
 
 export function requestWindowFocusState(hasFocus: boolean, immediate: boolean): void {
-	pendingWindowFocused = hasFocus;
+	ide_state.pendingWindowFocused = hasFocus;
 	if (immediate) {
 		flushWindowFocusState();
 	}
 }
 
 export function flushWindowFocusState(keyboard?: KeyboardInput): void {
-	if (pendingWindowFocused === windowFocused) {
+	if (ide_state.pendingWindowFocused === ide_state.windowFocused) {
 		return;
 	}
-	windowFocused = pendingWindowFocused;
+	ide_state.windowFocused = ide_state.pendingWindowFocused;
 	const effectiveKeyboard = keyboard ?? getKeyboard();
 	resetInputFocusState(effectiveKeyboard);
 }
@@ -1819,7 +1615,7 @@ export function scheduleNextFrame(task: () => void): void {
 }
 
 export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void {
-	const tooltip = hoverTooltip;
+	const tooltip = ide_state.hoverTooltip;
 	if (!tooltip) {
 		return;
 	}
@@ -1831,12 +1627,12 @@ export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBotto
 	const visibleRows = visibleRowCount();
 	ensureVisualLines();
 	const visualIndex = positionToVisualIndex(tooltip.row, tooltip.startColumn);
-	const relativeRow = visualIndex - scrollRow;
+	const relativeRow = visualIndex - ide_state.scrollRow;
 	if (relativeRow < 0 || relativeRow >= visibleRows) {
 		tooltip.bubbleBounds = null;
 		return;
 	}
-	const rowTop = codeTop + relativeRow * lineHeight;
+	const rowTop = codeTop + relativeRow * ide_state.lineHeight;
 	const segment = visualIndexToSegment(visualIndex);
 	if (!segment) {
 		tooltip.bubbleBounds = null;
@@ -1844,19 +1640,19 @@ export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBotto
 	}
 	const entry = getCachedHighlight(segment.row);
 	const highlight = entry.hi;
-	let columnStart = wordWrapEnabled ? segment.startColumn : scrollColumn;
-	if (wordWrapEnabled) {
+	let columnStart = ide_state.wordWrapEnabled ? segment.startColumn : ide_state.scrollColumn;
+	if (ide_state.wordWrapEnabled) {
 		if (columnStart < segment.startColumn || columnStart > segment.endColumn) {
 			columnStart = segment.startColumn;
 		}
 	}
-	const columnCount = wordWrapEnabled
+	const columnCount = ide_state.wordWrapEnabled
 		? Math.max(0, segment.endColumn - columnStart)
 		: visibleColumnCount() + 8;
 	const slice = sliceHighlightedLine(highlight, columnStart, columnCount);
 	const sliceStartDisplay = slice.startDisplay;
-	const sliceEndLimit = wordWrapEnabled ? columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
-	const sliceEndDisplay = wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
+	const sliceEndLimit = ide_state.wordWrapEnabled ? columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
+	const sliceEndDisplay = ide_state.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
 	const startDisplay = columnToDisplay(highlight, tooltip.startColumn);
 	const endDisplay = columnToDisplay(highlight, tooltip.endColumn);
 	const clampedStartDisplay = clamp(startDisplay, sliceStartDisplay, sliceEndDisplay);
@@ -1877,14 +1673,14 @@ export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBotto
 		}
 	}
 	const bubbleWidth = maxLineWidth + constants.HOVER_TOOLTIP_PADDING_X * 2;
-	const bubbleHeight = visibleLines.length * lineHeight + constants.HOVER_TOOLTIP_PADDING_Y * 2;
-	const viewportRight = viewportWidth - 1;
-	let bubbleLeft = expressionEndX + spaceAdvance;
+	const bubbleHeight = visibleLines.length * ide_state.lineHeight + constants.HOVER_TOOLTIP_PADDING_Y * 2;
+	const viewportRight = ide_state.viewportWidth - 1;
+	let bubbleLeft = expressionEndX + ide_state.spaceAdvance;
 	if (bubbleLeft + bubbleWidth > viewportRight) {
 		bubbleLeft = viewportRight - bubbleWidth;
 	}
 	if (bubbleLeft <= expressionEndX) {
-		const leftCandidate = expressionStartX - bubbleWidth - spaceAdvance;
+		const leftCandidate = expressionStartX - bubbleWidth - ide_state.spaceAdvance;
 		if (leftCandidate >= textLeft) {
 			bubbleLeft = leftCandidate;
 		} else {
@@ -1901,8 +1697,8 @@ export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBotto
 	api.rectfill_color(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, constants.HOVER_TOOLTIP_BACKGROUND);
 	api.rect(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, constants.HOVER_TOOLTIP_BORDER);
 	for (let i = 0; i < visibleLines.length; i += 1) {
-		const lineY = bubbleTop + constants.HOVER_TOOLTIP_PADDING_Y + i * lineHeight;
-		drawEditorText(api, font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, constants.COLOR_STATUS_TEXT);
+		const lineY = bubbleTop + constants.HOVER_TOOLTIP_PADDING_Y + i * ide_state.lineHeight;
+		drawEditorText(api, ide_state.font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, constants.COLOR_STATUS_TEXT);
 	}
 	tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleLeft + bubbleWidth, bottom: bubbleTop + bubbleHeight };
 }
@@ -1921,30 +1717,30 @@ export function showRuntimeErrorInChunk(
 }
 
 export function showRuntimeError(line: number | null, column: number | null, message: string, details?: RuntimeErrorDetails | null): void {
-	if (!active) {
+	if (!ide_state.active) {
 		activate();
 	}
 	const hasLocation = typeof line === 'number' && Number.isFinite(line) && line >= 1;
 	const processedLine = hasLocation ? Math.max(1, Math.floor(line!)) : null;
 	const processedColumn = typeof column === 'number' && Number.isFinite(column) ? Math.floor(column!) - 1 : null;
-	let targetRow = cursorRow;
+	let targetRow = ide_state.cursorRow;
 	if (processedLine !== null) {
-		targetRow = clamp(processedLine - 1, 0, lines.length - 1);
-		cursorRow = targetRow;
+		targetRow = clamp(processedLine - 1, 0, ide_state.lines.length - 1);
+		ide_state.cursorRow = targetRow;
 	}
-	const currentLine = lines[targetRow] ?? '';
-	let targetColumn = cursorColumn;
+	const currentLine = ide_state.lines[targetRow] ?? '';
+	let targetColumn = ide_state.cursorColumn;
 	if (processedColumn !== null) {
 		targetColumn = clamp(processedColumn, 0, currentLine.length);
-		cursorColumn = targetColumn;
+		ide_state.cursorColumn = targetColumn;
 	}
 	clampCursorColumn();
-	targetColumn = cursorColumn;
-	selectionAnchor = null;
-	pointerSelecting = false;
-	pointerPrimaryWasPressed = false;
-	scrollbarController.cancel();
-	cursorRevealSuspended = false;
+	targetColumn = ide_state.cursorColumn;
+	ide_state.selectionAnchor = null;
+	ide_state.pointerSelecting = false;
+	ide_state.pointerPrimaryWasPressed = false;
+	ide_state.scrollbarController.cancel();
+	ide_state.cursorRevealSuspended = false;
 	centerCursorVertically();
 	updateDesiredColumn();
 	revealCursor();
@@ -1970,11 +1766,11 @@ export function showRuntimeError(line: number | null, column: number | null, mes
 	setActiveRuntimeErrorOverlay(overlay);
 	setExecutionStopHighlight(processedLine !== null ? targetRow : null);
 	const statusLine = overlay.lines.length > 0 ? overlay.lines[0] : 'Runtime error';
-	showMessage(statusLine, constants.COLOR_STATUS_ERROR, 8.0);
+	ide_state.showMessage(statusLine, constants.COLOR_STATUS_ERROR, 8.0);
 }
 
 export function focusChunkSource(chunkName: string | null, hint?: { assetId: string | null; path?: string | null }): void {
-	if (!active) {
+	if (!ide_state.active) {
 		activate();
 	}
 	closeSymbolSearch(true);
@@ -2035,7 +1831,7 @@ export function normalizeResourcePath(path?: string | null): string | undefined 
 
 export function findCodeTabContext(assetId: string | null, chunkName: string | null): CodeTabContext | null {
 	const normalizedChunk = normalizeChunkReference(chunkName);
-	for (const context of codeTabContexts.values()) {
+	for (const context of ide_state.codeTabContexts.values()) {
 		const descriptor = context.descriptor;
 		if (assetId && descriptor && descriptor.assetId === assetId) {
 			return context;
@@ -2047,10 +1843,10 @@ export function findCodeTabContext(assetId: string | null, chunkName: string | n
 			}
 		}
 	}
-	if (!entryTabId) {
+	if (!ide_state.entryTabId) {
 		return null;
 	}
-	const entryContext = codeTabContexts.get(entryTabId) ?? null;
+	const entryContext = ide_state.codeTabContexts.get(ide_state.entryTabId) ?? null;
 	if (!entryContext) {
 		return null;
 	}
@@ -2102,7 +1898,7 @@ export function resolveResourceDescriptorForSource(assetId: string | null, chunk
 
 
 export function listResourcesStrict(): ConsoleResourceDescriptor[] {
-	const descriptors = listResourcesFn();
+	const descriptors = ide_state.listResourcesFn();
 	if (!Array.isArray(descriptors)) {
 		throw new Error('[ConsoleCartEditor] Resource enumeration returned an invalid result.');
 	}
@@ -2137,7 +1933,7 @@ export function findResourceDescriptorForChunk(chunkPath: string): ConsoleResour
 export function openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
 	selectResourceInPanel(descriptor);
 	if (descriptor.type === 'atlas') {
-		showMessage('Atlas resources cannot be previewed in the console editor.', constants.COLOR_STATUS_WARNING, 3.2);
+		ide_state.showMessage('Atlas resources cannot be previewed in the console editor.', constants.COLOR_STATUS_WARNING, 3.2);
 		focusEditorFromResourcePanel();
 		return;
 	}
@@ -2153,19 +1949,19 @@ export function clearRuntimeErrorOverlay(): void {
 	setActiveRuntimeErrorOverlay(null);
 }
 
-// Clear overlays and stop highlights across all open code tabs, not just the
-// currently active one. Useful when resuming after a runtime error where the
-// editor may have switched tabs to the faulting chunk.
+// Clear overlays and stop highlights across all open code ide_state.tabs, not just the
+// currently ide_state.active one. Useful when resuming after a runtime error where the
+// editor may have switched ide_state.tabs to the faulting chunk.
 export function clearAllRuntimeErrorOverlays(): void {
-	runtimeErrorOverlay = null;
-	for (const context of codeTabContexts.values()) {
+	ide_state.runtimeErrorOverlay = null;
+	for (const context of ide_state.codeTabContexts.values()) {
 		context.runtimeErrorOverlay = null;
 	}
 	clearExecutionStopHighlights();
 }
 
 export function setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay | null): void {
-	runtimeErrorOverlay = overlay;
+	ide_state.runtimeErrorOverlay = overlay;
 	const context = getActiveCodeTabContext();
 	if (context) {
 		context.runtimeErrorOverlay = overlay;
@@ -2175,33 +1971,33 @@ export function setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay | null
 export function setExecutionStopHighlight(row: number | null): void {
 	const context = getActiveCodeTabContext();
 	if (!context) {
-		executionStopRow = null;
+		ide_state.executionStopRow = null;
 		return;
 	}
 	let nextRow = row;
 	if (nextRow !== null) {
-		const maxRow = Math.max(0, lines.length - 1);
+		const maxRow = Math.max(0, ide_state.lines.length - 1);
 		nextRow = clamp(nextRow, 0, maxRow);
 	}
 	context.executionStopRow = nextRow;
-	executionStopRow = nextRow;
+	ide_state.executionStopRow = nextRow;
 }
 
 export function clearExecutionStopHighlights(): void {
-	executionStopRow = null;
-	for (const context of codeTabContexts.values()) {
+	ide_state.executionStopRow = null;
+	for (const context of ide_state.codeTabContexts.values()) {
 		context.executionStopRow = null;
 	}
 }
 
 export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext | null): void {
-	runtimeErrorOverlay = context ? context.runtimeErrorOverlay ?? null : null;
-	executionStopRow = context ? context.executionStopRow ?? null : null;
+	ide_state.runtimeErrorOverlay = context ? context.runtimeErrorOverlay ?? null : null;
+	ide_state.executionStopRow = context ? context.executionStopRow ?? null : null;
 }
 
 export function getBuiltinIdentifierSet(): ReadonlySet<string> {
 	try {
-		const descriptors = listBuiltinLuaFunctionsFn();
+		const descriptors = ide_state.listBuiltinLuaFunctionsFn();
 		const names: string[] = [];
 		for (let index = 0; index < descriptors.length; index += 1) {
 			const descriptor = descriptors[index];
@@ -2216,7 +2012,7 @@ export function getBuiltinIdentifierSet(): ReadonlySet<string> {
 		}
 		names.sort((a, b) => a.localeCompare(b));
 		const key = names.join('\u0000');
-		const cached = builtinIdentifierCache;
+		const cached = ide_state.builtinIdentifierCache;
 		if (cached && cached.key === key) {
 			return cached.set;
 		}
@@ -2227,38 +2023,38 @@ export function getBuiltinIdentifierSet(): ReadonlySet<string> {
 			set.add(name.toLowerCase());
 		}
 		const entry = { key, set };
-		builtinIdentifierCache = entry;
+		ide_state.builtinIdentifierCache = entry;
 		return entry.set;
 	} catch (error) {
-		if (builtinIdentifierCache) {
-			return builtinIdentifierCache.set;
+		if (ide_state.builtinIdentifierCache) {
+			return ide_state.builtinIdentifierCache.set;
 		}
 		const fallback = new Set<string>();
-		builtinIdentifierCache = { key: '', set: fallback };
+		ide_state.builtinIdentifierCache = { key: '', set: fallback };
 		return fallback;
 	}
 }
 
 export function buildRuntimeErrorLines(message: string): string[] {
-	const maxWidth = computeRuntimeErrorOverlayMaxWidth(viewportWidth, charAdvance, gutterWidth);
+	const maxWidth = computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth);
 	return buildRuntimeErrorLinesUtil(message, maxWidth, (text) => measureText(text));
 }
 
 export function getTabBarTotalHeight(): number {
-	return tabBarHeight * Math.max(1, tabBarRowCount);
+	return ide_state.tabBarHeight * Math.max(1, ide_state.tabBarRowCount);
 }
 
 export function topMargin(): number {
-	return headerHeight + getTabBarTotalHeight() + 2;
+	return ide_state.headerHeight + getTabBarTotalHeight() + 2;
 }
 
 export function statusAreaHeight(): number {
-	if (!message.visible) {
-		return baseBottomMargin;
+	if (!ide_state.message.visible) {
+		return ide_state.baseBottomMargin;
 	}
 	const segments = getStatusMessageLines();
 	const lineCount = Math.max(1, segments.length);
-	return baseBottomMargin + lineCount * lineHeight + 4;
+	return ide_state.baseBottomMargin + lineCount * ide_state.lineHeight + 4;
 }
 
 export function bottomMargin(): number {
@@ -2266,15 +2062,15 @@ export function bottomMargin(): number {
 }
 
 export function getVisibleProblemsPanelHeight(): number {
-	if (!problemsPanel.isVisible()) {
+	if (!ide_state.problemsPanel.isVisible()) {
 		return 0;
 	}
-	const planned = problemsPanel.getVisibleHeight();
+	const planned = ide_state.problemsPanel.getVisibleHeight();
 	if (planned <= 0) {
 		return 0;
 	}
 	const statusHeight = statusAreaHeight();
-	const maxAvailable = Math.max(0, viewportHeight - statusHeight - (headerHeight + getTabBarTotalHeight()));
+	const maxAvailable = Math.max(0, ide_state.viewportHeight - statusHeight - (ide_state.headerHeight + getTabBarTotalHeight()));
 	if (maxAvailable <= 0) {
 		return 0;
 	}
@@ -2282,22 +2078,22 @@ export function getVisibleProblemsPanelHeight(): number {
 }
 
 export function getStatusMessageLines(): string[] {
-	if (!message.visible) {
+	if (!ide_state.message.visible) {
 		return [];
 	}
-	const sanitized = message.text.length > 0
-		? message.text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+	const sanitized = ide_state.message.text.length > 0
+		? ide_state.message.text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 		: '';
 	const rawLines = sanitized.length > 0 ? sanitized.split('\n') : [''];
-	const maxWidth = Math.max(viewportWidth - 8, charAdvance);
-	const lines: string[] = [];
+	const maxWidth = Math.max(ide_state.viewportWidth - 8, ide_state.charAdvance);
+	const localLines: string[] = [];
 	for (let i = 0; i < rawLines.length; i += 1) {
 		const wrapped = wrapRuntimeErrorLineUtil(rawLines[i], maxWidth, (text) => measureText(text));
 		for (let j = 0; j < wrapped.length; j += 1) {
-			lines.push(wrapped[j]);
+			localLines.push(wrapped[j]);
 		}
 	}
-	return lines.length > 0 ? lines : [''];
+	return localLines.length > 0 ? localLines : [''];
 }
 
 export function tryShowLuaErrorOverlay(error: unknown): boolean {
@@ -2317,7 +2113,7 @@ export function tryShowLuaErrorOverlay(error: unknown): boolean {
 	const hasColumn = rawColumn !== null && rawColumn > 0;
 	if (!hasLine && !hasColumn) {
 		if (messageText) {
-			showMessage(messageText, constants.COLOR_STATUS_ERROR, 4.0);
+			ide_state.showMessage(messageText, constants.COLOR_STATUS_ERROR, 4.0);
 			return true;
 		}
 		return false;
@@ -2330,15 +2126,15 @@ export function tryShowLuaErrorOverlay(error: unknown): boolean {
 }
 
 export function safeInspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult | null {
-	inspectorRequestFailed = false;
+	ide_state.inspectorRequestFailed = false;
 	try {
-		return inspectLuaExpressionFn(request);
+		return ide_state.inspectLuaExpressionFn(request);
 	} catch (error) {
-		inspectorRequestFailed = true;
+		ide_state.inspectorRequestFailed = true;
 		const handled = tryShowLuaErrorOverlay(error);
 		if (!handled) {
 			const message = error instanceof Error ? error.message : String(error);
-			showMessage(message, constants.COLOR_STATUS_ERROR, 3.2);
+			ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 3.2);
 		}
 		return null;
 	}
@@ -2348,95 +2144,95 @@ export function update(deltaSeconds: number): void {
 	refreshViewportDimensions();
 	const keyboard = getKeyboard();
 	flushWindowFocusState(keyboard);
-	updateMessage(deltaSeconds);
+	ide_state.updateMessage(deltaSeconds);
 	updateRuntimeErrorOverlay(deltaSeconds);
 	if (handleToggleRequest(keyboard)) {
 		return;
 	}
-	if (!active) {
+	if (!ide_state.active) {
 		return;
 	}
 	updateBlink(deltaSeconds);
 	handlePointerWheel();
 	handlePointerInput(deltaSeconds);
-	if (pendingActionPrompt) {
+	if (ide_state.pendingActionPrompt) {
 		handleActionPromptInput(keyboard);
 		return;
 	}
 	handleEditorInput(keyboard, deltaSeconds);
-	completion.processPending(deltaSeconds);
-	const semanticError = layout.getLastSemanticError();
-	if (semanticError && semanticError !== lastReportedSemanticError) {
-		showMessage(semanticError, constants.COLOR_STATUS_ERROR, 4.0);
-		lastReportedSemanticError = semanticError;
-	} else if (!semanticError && lastReportedSemanticError !== null) {
-		lastReportedSemanticError = null;
+	ide_state.completion.processPending(deltaSeconds);
+	const semanticError = ide_state.layout.getLastSemanticError();
+	if (semanticError && semanticError !== ide_state.lastReportedSemanticError) {
+		ide_state.showMessage(semanticError, constants.COLOR_STATUS_ERROR, 4.0);
+		ide_state.lastReportedSemanticError = semanticError;
+	} else if (!semanticError && ide_state.lastReportedSemanticError !== null) {
+		ide_state.lastReportedSemanticError = null;
 	}
-	if (diagnosticsDirty) {
-		processDiagnosticsQueue(clockNow());
+	if (ide_state.diagnosticsDirty) {
+		processDiagnosticsQueue(ide_state.clockNow());
 	}
-	if (isCodeTabActive() && !cursorRevealSuspended) {
+	if (isCodeTabActive() && !ide_state.cursorRevealSuspended) {
 		ensureCursorVisible();
 	}
 }
 
 export function processDiagnosticsQueue(now: number): void {
-	if (!diagnosticsDirty) {
+	if (!ide_state.diagnosticsDirty) {
 		return;
 	}
-	if (dirtyDiagnosticContexts.size === 0) {
-		diagnosticsDirty = false;
-		diagnosticsDueAtMs = null;
+	if (ide_state.dirtyDiagnosticContexts.size === 0) {
+		ide_state.diagnosticsDirty = false;
+		ide_state.diagnosticsDueAtMs = null;
 		return;
 	}
-	if (diagnosticsDueAtMs === null) {
-		diagnosticsDueAtMs = now + diagnosticsDebounceMs;
+	if (ide_state.diagnosticsDueAtMs === null) {
+		ide_state.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
 		return;
 	}
-	if (now < diagnosticsDueAtMs) {
+	if (now < ide_state.diagnosticsDueAtMs) {
 		return;
 	}
 	scheduleDiagnosticsComputation();
 }
 
 export function scheduleDiagnosticsComputation(): void {
-	if (diagnosticsComputationScheduled) {
+	if (ide_state.diagnosticsComputationScheduled) {
 		return;
 	}
-	diagnosticsComputationScheduled = true;
+	ide_state.diagnosticsComputationScheduled = true;
 	scheduleNextFrame(() => {
-		diagnosticsComputationScheduled = false;
+		ide_state.diagnosticsComputationScheduled = false;
 		executeDiagnosticsComputation();
 	});
 }
 
 export function executeDiagnosticsComputation(): void {
-	if (!diagnosticsDirty) {
-		diagnosticsDueAtMs = null;
+	if (!ide_state.diagnosticsDirty) {
+		ide_state.diagnosticsDueAtMs = null;
 		return;
 	}
-	if (dirtyDiagnosticContexts.size === 0) {
-		diagnosticsDirty = false;
-		diagnosticsDueAtMs = null;
+	if (ide_state.dirtyDiagnosticContexts.size === 0) {
+		ide_state.diagnosticsDirty = false;
+		ide_state.diagnosticsDueAtMs = null;
 		return;
 	}
-	if (diagnosticsTaskPending) {
+	if (ide_state.diagnosticsTaskPending) {
 		return;
 	}
-	const now = clockNow();
-	if (diagnosticsDueAtMs === null) {
-		diagnosticsDueAtMs = now + diagnosticsDebounceMs;
+	const now = ide_state.clockNow();
+	if (ide_state.diagnosticsDueAtMs === null) {
+		ide_state.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
 		scheduleDiagnosticsComputation();
 		return;
 	}
-	if (now < diagnosticsDueAtMs) {
+	if (now < ide_state.diagnosticsDueAtMs) {
 		scheduleDiagnosticsComputation();
 		return;
 	}
 	const batch = collectDiagnosticsBatch();
 	if (batch.length === 0) {
-		diagnosticsDirty = false;
-		diagnosticsDueAtMs = null;
+		ide_state.diagnosticsDirty = false;
+		ide_state.diagnosticsDueAtMs = null;
 		return;
 	}
 	enqueueDiagnosticsJob(batch);
@@ -2446,17 +2242,17 @@ export function enqueueDiagnosticsJob(contextIds: readonly string[]): void {
 	if (contextIds.length === 0) {
 		return;
 	}
-	diagnosticsTaskPending = true;
+	ide_state.diagnosticsTaskPending = true;
 	const batch = [...contextIds];
 	enqueueBackgroundTask(() => {
 		runDiagnosticsForContexts(batch);
-		diagnosticsTaskPending = false;
-		if (dirtyDiagnosticContexts.size === 0) {
-			diagnosticsDirty = false;
-			diagnosticsDueAtMs = null;
+		ide_state.diagnosticsTaskPending = false;
+		if (ide_state.dirtyDiagnosticContexts.size === 0) {
+			ide_state.diagnosticsDirty = false;
+			ide_state.diagnosticsDueAtMs = null;
 		} else {
-			const now = clockNow();
-			diagnosticsDueAtMs = now + diagnosticsDebounceMs;
+			const now = ide_state.clockNow();
+			ide_state.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
 			scheduleDiagnosticsComputation();
 		}
 		return false;
@@ -2465,12 +2261,12 @@ export function enqueueDiagnosticsJob(contextIds: readonly string[]): void {
 
 export function collectDiagnosticsBatch(): string[] {
 	const batch: string[] = [];
-	const activeId = activeCodeTabContextId;
-	if (activeId && dirtyDiagnosticContexts.has(activeId)) {
+	const activeId = ide_state.activeCodeTabContextId;
+	if (activeId && ide_state.dirtyDiagnosticContexts.has(activeId)) {
 		batch.push(activeId);
 	}
 	if (batch.length === 0) {
-		const iterator = dirtyDiagnosticContexts.values().next();
+		const iterator = ide_state.dirtyDiagnosticContexts.values().next();
 		if (!iterator.done) {
 			batch.push(iterator.value);
 		}
@@ -2483,22 +2279,22 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 		return;
 	}
 	const providers = createDiagnosticProviders();
-	const activeId = activeCodeTabContextId;
+	const activeId = ide_state.activeCodeTabContextId;
 	const inputs: DiagnosticContextInput[] = [];
 	const metadata: Array<{ id: string; chunkName: string | null }> = [];
 	for (let index = 0; index < contextIds.length; index += 1) {
 		const contextId = contextIds[index];
-		const context = codeTabContexts.get(contextId);
+		const context = ide_state.codeTabContexts.get(contextId);
 		if (!context) {
-			diagnosticsCache.delete(contextId);
-			dirtyDiagnosticContexts.delete(contextId);
+			ide_state.diagnosticsCache.delete(contextId);
+			ide_state.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
 		const assetId = resolveHoverAssetId(context);
 		const chunkName = resolveHoverChunkName(context);
 		let source = '';
 		if (activeId && contextId === activeId) {
-			source = lines.join('\n');
+			source = ide_state.lines.join('\n');
 		} else {
 			try {
 				source = getSourceForChunk(assetId, chunkName);
@@ -2507,8 +2303,8 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			}
 		}
 		if (source.length === 0) {
-			diagnosticsCache.delete(contextId);
-			dirtyDiagnosticContexts.delete(contextId);
+			ide_state.diagnosticsCache.delete(contextId);
+			ide_state.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
 		inputs.push({
@@ -2540,12 +2336,12 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 	for (let index = 0; index < metadata.length; index += 1) {
 		const meta = metadata[index];
 		const diagList = byContext.get(meta.id) ?? [];
-		diagnosticsCache.set(meta.id, {
+		ide_state.diagnosticsCache.set(meta.id, {
 			contextId: meta.id,
 			chunkName: meta.chunkName,
 			diagnostics: diagList,
 		});
-		dirtyDiagnosticContexts.delete(meta.id);
+		ide_state.dirtyDiagnosticContexts.delete(meta.id);
 	}
 	updateDiagnosticsAggregates();
 }
@@ -2554,21 +2350,21 @@ export function createDiagnosticProviders(): DiagnosticProviders {
 	return {
 		listLocalSymbols: (assetId, chunk) => {
 			try {
-				return listLuaSymbolsFn(assetId, chunk);
+				return ide_state.listLuaSymbolsFn(assetId, chunk);
 			} catch {
 				return [];
 			}
 		},
 		listGlobalSymbols: () => {
 			try {
-				return listGlobalLuaSymbolsFn();
+				return ide_state.listGlobalLuaSymbolsFn();
 			} catch {
 				return [];
 			}
 		},
 		listBuiltins: () => {
 			try {
-				return listBuiltinLuaFunctionsFn();
+				return ide_state.listBuiltinLuaFunctionsFn();
 			} catch {
 				return [];
 			}
@@ -2578,43 +2374,43 @@ export function createDiagnosticProviders(): DiagnosticProviders {
 
 export function updateDiagnosticsAggregates(): void {
 	const aggregate: EditorDiagnostic[] = [];
-	for (const context of codeTabContexts.values()) {
-		const entry = diagnosticsCache.get(context.id);
+	for (const context of ide_state.codeTabContexts.values()) {
+		const entry = ide_state.diagnosticsCache.get(context.id);
 		if (entry) {
 			for (let index = 0; index < entry.diagnostics.length; index += 1) {
 				aggregate.push(entry.diagnostics[index]);
 			}
 		}
 	}
-	for (const [contextId, entry] of diagnosticsCache) {
-		if (codeTabContexts.has(contextId)) {
+	for (const [contextId, entry] of ide_state.diagnosticsCache) {
+		if (ide_state.codeTabContexts.has(contextId)) {
 			continue;
 		}
 		for (let index = 0; index < entry.diagnostics.length; index += 1) {
 			aggregate.push(entry.diagnostics[index]);
 		}
 	}
-	diagnostics = aggregate;
+	ide_state.diagnostics = aggregate;
 	refreshActiveDiagnostics();
-	problemsPanel.setDiagnostics(diagnostics);
+	ide_state.problemsPanel.setDiagnostics(ide_state.diagnostics);
 }
 
 export function refreshActiveDiagnostics(): void {
-	diagnosticsByRow.clear();
-	const activeId = activeCodeTabContextId;
+	ide_state.diagnosticsByRow.clear();
+	const activeId = ide_state.activeCodeTabContextId;
 	if (!activeId) {
 		return;
 	}
-	const entry = diagnosticsCache.get(activeId);
+	const entry = ide_state.diagnosticsCache.get(activeId);
 	if (!entry) {
 		return;
 	}
 	for (let index = 0; index < entry.diagnostics.length; index += 1) {
 		const diag = entry.diagnostics[index];
-		let bucket = diagnosticsByRow.get(diag.row);
+		let bucket = ide_state.diagnosticsByRow.get(diag.row);
 		if (!bucket) {
 			bucket = [];
-			diagnosticsByRow.set(diag.row, bucket);
+			ide_state.diagnosticsByRow.set(diag.row, bucket);
 		}
 		bucket.push(diag);
 	}
@@ -2631,14 +2427,14 @@ export function markDiagnosticsDirtyForChunk(chunkName: string): void {
 export function getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] | null {
 	const context = getActiveCodeTabContext();
 	const chunkName = resolveHoverChunkName(context) ?? '<console>';
-	return layout.getSemanticDefinitions(lines, textVersion, chunkName);
+	return ide_state.layout.getSemanticDefinitions(ide_state.lines, ide_state.textVersion, chunkName);
 }
 
 export function getLuaModuleAliases(chunkName: string | null): Map<string, string> {
 	const activeContext = getActiveCodeTabContext();
 	const targetChunk = chunkName ?? resolveHoverChunkName(activeContext) ?? '<console>';
-	layout.getSemanticDefinitions(lines, textVersion, targetChunk);
-	const data = semanticWorkspace.getFileData(targetChunk);
+	ide_state.layout.getSemanticDefinitions(ide_state.lines, ide_state.textVersion, targetChunk);
+	const data = ide_state.semanticWorkspace.getFileData(targetChunk);
 	if (!data || data.moduleAliases.length === 0) {
 		return new Map();
 	}
@@ -2652,7 +2448,7 @@ export function getLuaModuleAliases(chunkName: string | null): Map<string, strin
 
 export function findContextByChunk(chunkName: string): CodeTabContext | null {
 	const normalized = normalizeChunkReference(chunkName) ?? chunkName;
-	for (const context of codeTabContexts.values()) {
+	for (const context of ide_state.codeTabContexts.values()) {
 		const descriptor = context.descriptor;
 		if (descriptor) {
 			const descriptorPath = normalizeChunkReference(descriptor.path);
@@ -2664,8 +2460,8 @@ export function findContextByChunk(chunkName: string): CodeTabContext | null {
 			continue;
 		}
 		const aliases: string[] = [];
-		if (primaryAssetId) {
-			aliases.push(primaryAssetId);
+		if (ide_state.primaryAssetId) {
+			aliases.push(ide_state.primaryAssetId);
 		}
 		aliases.push('__entry__', '<console>');
 		for (let index = 0; index < aliases.length; index += 1) {
@@ -2679,37 +2475,37 @@ export function findContextByChunk(chunkName: string): CodeTabContext | null {
 }
 
 export function getDiagnosticsForRow(row: number): readonly EditorDiagnostic[] {
-	const bucket = diagnosticsByRow.get(row);
+	const bucket = ide_state.diagnosticsByRow.get(row);
 	return bucket ?? EMPTY_DIAGNOSTICS;
 }
 
 export function isActive(): boolean {
-	return active;
+	return ide_state.active;
 }
 
 export function draw(api: BmsxConsoleApi): void {
 	refreshViewportDimensions();
-	if (!active) {
+	if (!ide_state.active) {
 		return;
 	}
-	codeVerticalScrollbarVisible = false;
-	codeHorizontalScrollbarVisible = false;
+	ide_state.codeVerticalScrollbarVisible = false;
+	ide_state.codeHorizontalScrollbarVisible = false;
 	const frameColor = Msx1Colors[constants.COLOR_FRAME];
-	api.rectfill_color(0, 0, viewportWidth, viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
+	api.rectfill_color(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
 	drawTopBar(api);
-	tabBarRowCount = renderTabBar(api, {
-		viewportWidth: viewportWidth,
-		headerHeight: headerHeight,
-		rowHeight: tabBarHeight,
-		lineHeight: lineHeight,
-		tabs: tabs,
-		activeTabId: activeTabId,
-		tabHoverId: tabHoverId,
+	ide_state.tabBarRowCount = renderTabBar(api, {
+		viewportWidth: ide_state.viewportWidth,
+		headerHeight: ide_state.headerHeight,
+		rowHeight: ide_state.tabBarHeight,
+		lineHeight: ide_state.lineHeight,
+		tabs: ide_state.tabs,
+		activeTabId: ide_state.activeTabId,
+		tabHoverId: ide_state.tabHoverId,
 		measureText: (text: string) => measureText(text),
-		drawText: (api2, text, x, y, color) => drawEditorText(api2, font, text, x, y, color),
+		drawText: (api2, text, x, y, color) => drawEditorText(api2, ide_state.font, text, x, y, color),
 		getDirtyMarkerMetrics: () => getTabDirtyMarkerMetrics(),
-		tabButtonBounds: tabButtonBounds,
-		tabCloseButtonBounds: tabCloseButtonBounds,
+		tabButtonBounds: ide_state.tabButtonBounds,
+		tabCloseButtonBounds: ide_state.tabCloseButtonBounds,
 	});
 	drawResourcePanel(api);
 	if (isResourceViewActive()) {
@@ -2726,7 +2522,7 @@ export function draw(api: BmsxConsoleApi): void {
 	}
 	drawProblemsPanel(api);
 	drawStatusBar(api);
-	if (pendingActionPrompt) {
+	if (ide_state.pendingActionPrompt) {
 		drawActionPromptOverlay(api);
 	}
 }
@@ -2734,8 +2530,8 @@ export function draw(api: BmsxConsoleApi): void {
 export function getSourceForChunk(assetId: string | null, chunkName: string | null): string {
 	const context = findCodeTabContext(assetId, chunkName);
 	if (context) {
-		if (context.id === activeCodeTabContextId) {
-			return lines.join('\n');
+		if (context.id === ide_state.activeCodeTabContextId) {
+			return ide_state.lines.join('\n');
 		}
 		if (context.snapshot) {
 			return context.snapshot.lines.join('\n');
@@ -2747,7 +2543,7 @@ export function getSourceForChunk(assetId: string | null, chunkName: string | nu
 	}
 	const descriptor = resolveResourceDescriptorForSource(assetId, chunkName);
 	if (descriptor) {
-		return loadLuaResourceFn(descriptor.assetId);
+		return ide_state.loadLuaResourceFn(descriptor.assetId);
 	}
 	throw new Error(`[ConsoleCartEditor] Unable to locate source for asset '${assetId ?? '<null>'}' and chunk '${chunkName ?? '<null>'}'.`);
 }
@@ -2761,53 +2557,53 @@ export function refreshViewportDimensions(force = false): void {
 	if (!view) {
 		throw new Error('[ConsoleCartEditor] Game view unavailable during editor frame.');
 	}
-	const renderSize = resolutionMode === 'offscreen' ? view.offscreenCanvasSize : view.viewportSize;
+	const renderSize = ide_state.resolutionMode === 'offscreen' ? view.offscreenCanvasSize : view.viewportSize;
 	if (!Number.isFinite(renderSize.x) || !Number.isFinite(renderSize.y) || renderSize.x <= 0 || renderSize.y <= 0) {
 		throw new Error('[ConsoleCartEditor] Invalid render dimensions.');
 	}
 	const width = renderSize.x;
 	const height = renderSize.y;
-	if (!force && width === viewportWidth && height === viewportHeight) {
+	if (!force && width === ide_state.viewportWidth && height === ide_state.viewportHeight) {
 		return;
 	}
-	viewportWidth = width;
-	viewportHeight = height;
+	ide_state.viewportWidth = width;
+	ide_state.viewportHeight = height;
 	invalidateVisualLines();
-	if (resourcePanelWidthRatio !== null) {
-		resourcePanelWidthRatio = clampResourcePanelRatio(resourcePanelWidthRatio);
-		if (resourcePanelVisible && computePanelPixelWidth(resourcePanelWidthRatio) <= 0) {
+	if (ide_state.resourcePanelWidthRatio !== null) {
+		ide_state.resourcePanelWidthRatio = clampResourcePanelRatio(ide_state.resourcePanelWidthRatio);
+		if (ide_state.resourcePanelVisible && computePanelPixelWidth(ide_state.resourcePanelWidthRatio) <= 0) {
 			hideResourcePanel();
 		}
 	}
-	if (resourcePanelVisible) {
+	if (ide_state.resourcePanelVisible) {
 		resourceBrowserEnsureSelectionVisible();
 	}
 }
 
 export function initializeTabs(entryContext: CodeTabContext | null = null): void {
-	tabs = [];
-	tabHoverId = null;
-	tabDragState = null;
-	tabButtonBounds.clear();
-	tabCloseButtonBounds.clear();
+	ide_state.tabs = [];
+	ide_state.tabHoverId = null;
+	ide_state.tabDragState = null;
+	ide_state.tabButtonBounds.clear();
+	ide_state.tabCloseButtonBounds.clear();
 	if (entryContext) {
-		tabs.push({
+		ide_state.tabs.push({
 			id: entryContext.id,
 			kind: 'lua_editor',
 			title: entryContext.title,
 			closable: true,
 			dirty: entryContext.dirty,
 		});
-		activeTabId = entryContext.id;
-		activeCodeTabContextId = entryContext.id;
+		ide_state.activeTabId = entryContext.id;
+		ide_state.activeCodeTabContextId = entryContext.id;
 		return;
 	}
-	activeTabId = null;
-	activeCodeTabContextId = null;
+	ide_state.activeTabId = null;
+	ide_state.activeCodeTabContextId = null;
 }
 
 export function setTabDirty(tabId: string, dirty: boolean): void {
-	const tab = tabs.find(candidate => candidate.id === tabId);
+	const tab = ide_state.tabs.find(candidate => candidate.id === tabId);
 	if (!tab) {
 		return;
 	}
@@ -2819,29 +2615,29 @@ export function updateActiveContextDirtyFlag(): void {
 	if (!context) {
 		return;
 	}
-	context.dirty = dirty;
+	context.dirty = ide_state.dirty;
 	setTabDirty(context.id, context.dirty);
 }
 
 export function getActiveTabKind(): EditorTabKind {
-	if (!activeTabId) {
+	if (!ide_state.activeTabId) {
 		return 'lua_editor';
 	}
-	const active = tabs.find(tab => tab.id === activeTabId);
-	if (active) {
+	const active = ide_state.tabs.find(tab => tab.id === ide_state.activeTabId);
+	if (ide_state.active) {
 		return active.kind;
 	}
-	if (tabs.length > 0) {
-		const first = tabs[0];
-		activeTabId = first.id;
+	if (ide_state.tabs.length > 0) {
+		const first = ide_state.tabs[0];
+		ide_state.activeTabId = first.id;
 		return first.kind;
 	}
-	activeTabId = null;
+	ide_state.activeTabId = null;
 	return 'lua_editor';
 }
 
 export function getActiveResourceViewer(): ResourceViewerState | null {
-	const tab = tabs.find(candidate => candidate.id === activeTabId);
+	const tab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeTabId);
 	if (!tab) {
 		return null;
 	}
@@ -2854,169 +2650,169 @@ export function getActiveResourceViewer(): ResourceViewerState | null {
 export function serializeState(): ConsoleEditorSerializedState { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
 	const snapshot = captureSnapshot();
 	const messageSnapshot: MessageState = {
-		text: message.text,
-		color: message.color,
-		timer: message.timer,
-		visible: message.visible,
+		text: ide_state.message.text,
+		color: ide_state.message.color,
+		timer: ide_state.message.timer,
+		visible: ide_state.message.visible,
 	};
 	return {
-		active: active,
+		active: ide_state.active,
 		activeTab: getActiveTabKind(),
 		snapshot,
-		searchQuery: searchQuery,
-		searchMatches: searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end })),
-		searchCurrentIndex: searchCurrentIndex,
-		searchActive: searchActive,
-		searchVisible: searchVisible,
-		lineJumpValue: lineJumpValue,
-		lineJumpActive: lineJumpActive,
-		lineJumpVisible: lineJumpVisible,
+		searchQuery: ide_state.searchQuery,
+		searchMatches: ide_state.searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end })),
+		searchCurrentIndex: ide_state.searchCurrentIndex,
+		searchActive: ide_state.searchActive,
+		searchVisible: ide_state.searchVisible,
+		lineJumpValue: ide_state.lineJumpValue,
+		lineJumpActive: ide_state.lineJumpActive,
+		lineJumpVisible: ide_state.lineJumpVisible,
 		message: messageSnapshot,
 		runtimeErrorOverlay: null,
-		saveGeneration: saveGeneration,
-		appliedGeneration: appliedGeneration,
+		saveGeneration: ide_state.saveGeneration,
+		appliedGeneration: ide_state.appliedGeneration,
 	};
 }
 
 export function restoreState(state: ConsoleEditorSerializedState): void { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
 	if (!state) return;
-	input.applyOverrides(false, captureKeys);
+	ide_state.input.applyOverrides(false, captureKeys);
 	$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
-	codeTabContexts.clear();
+	ide_state.codeTabContexts.clear();
 	const entryContext = createEntryTabContext();
 	if (entryContext) {
-		entryTabId = entryContext.id;
-		codeTabContexts.set(entryContext.id, entryContext);
-		activeCodeTabContextId = entryContext.id;
+		ide_state.entryTabId = entryContext.id;
+		ide_state.codeTabContexts.set(entryContext.id, entryContext);
+		ide_state.activeCodeTabContextId = entryContext.id;
 	}
 	else {
-		activeCodeTabContextId = null;
+		ide_state.activeCodeTabContextId = null;
 	}
 	initializeTabs(entryContext);
 	resetResourcePanelState();
 	hideResourcePanel();
-	active = state.active;
+	ide_state.active = state.active;
 	const restoredKind = state.activeTab ?? 'lua_editor';
 	if (restoredKind === 'resource_view') {
-		const activeResourceTab = tabs.find(tab => tab.kind === 'resource_view');
+		const activeResourceTab = ide_state.tabs.find(tab => tab.kind === 'resource_view');
 		if (activeResourceTab) {
 			setActiveTab(activeResourceTab.id);
 		}
 	} else {
 		activateCodeTab();
 	}
-	if (active) {
-		input.applyOverrides(true, captureKeys);
+	if (ide_state.active) {
+		ide_state.input.applyOverrides(true, captureKeys);
 	}
 	restoreSnapshot(state.snapshot);
 	applySearchFieldText(state.searchQuery, true);
-	searchScope = 'local';
-	searchDisplayOffset = 0;
-	searchHoverIndex = -1;
-	globalSearchMatches = [];
-	searchMatches = state.searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end }));
-	searchCurrentIndex = state.searchCurrentIndex;
-	searchActive = state.searchActive;
-	searchVisible = state.searchVisible;
+	ide_state.searchScope = 'local';
+	ide_state.searchDisplayOffset = 0;
+	ide_state.searchHoverIndex = -1;
+	ide_state.globalSearchMatches = [];
+	ide_state.searchMatches = state.searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end }));
+	ide_state.searchCurrentIndex = state.searchCurrentIndex;
+	ide_state.searchActive = state.searchActive;
+	ide_state.searchVisible = state.searchVisible;
 	applyLineJumpFieldText(state.lineJumpValue, true);
-	lineJumpActive = state.lineJumpActive;
-	lineJumpVisible = state.lineJumpVisible;
-	message.text = state.message.text;
-	message.color = state.message.color;
-	message.timer = state.message.timer;
-	message.visible = state.message.visible;
+	ide_state.lineJumpActive = state.lineJumpActive;
+	ide_state.lineJumpVisible = state.lineJumpVisible;
+	ide_state.message.text = state.message.text;
+	ide_state.message.color = state.message.color;
+	ide_state.message.timer = state.message.timer;
+	ide_state.message.visible = state.message.visible;
 	setActiveRuntimeErrorOverlay(null);
-	pointerSelecting = false;
-	pointerPrimaryWasPressed = false;
+	ide_state.pointerSelecting = false;
+	ide_state.pointerPrimaryWasPressed = false;
 	clearGotoHoverHighlight();
-	cursorRevealSuspended = false;
-	repeatState.clear();
+	ide_state.cursorRevealSuspended = false;
+	ide_state.repeatState.clear();
 	resetKeyPressGuards();
 	breakUndoSequence();
-	saveGeneration = Number.isFinite(state.saveGeneration) ? Math.max(0, Math.floor(state.saveGeneration)) : 0;
-	appliedGeneration = Number.isFinite(state.appliedGeneration) ? Math.max(0, Math.floor(state.appliedGeneration)) : 0;
+	ide_state.saveGeneration = Number.isFinite(state.saveGeneration) ? Math.max(0, Math.floor(state.saveGeneration)) : 0;
+	ide_state.appliedGeneration = Number.isFinite(state.appliedGeneration) ? Math.max(0, Math.floor(state.appliedGeneration)) : 0;
 	resetActionPromptState();
 	const activeContext = getActiveCodeTabContext();
-	const entryContextRef = entryTabId ? codeTabContexts.get(entryTabId) ?? null : null;
+	const entryContextRef = ide_state.entryTabId ? ide_state.codeTabContexts.get(ide_state.entryTabId) ?? null : null;
 	if (activeContext) {
-		activeContext.lastSavedSource = lines.join('\n');
-		activeContext.dirty = dirty;
+		activeContext.lastSavedSource = ide_state.lines.join('\n');
+		activeContext.dirty = ide_state.dirty;
 		setTabDirty(activeContext.id, activeContext.dirty);
 	}
 	if (entryContextRef) {
 		if (activeContext && activeContext.id === entryContextRef.id) {
-			entryContextRef.lastSavedSource = lines.join('\n');
+			entryContextRef.lastSavedSource = ide_state.lines.join('\n');
 		}
-		lastSavedSource = entryContextRef.lastSavedSource;
+		ide_state.lastSavedSource = entryContextRef.lastSavedSource;
 	} else {
-		lastSavedSource = '';
+		ide_state.lastSavedSource = '';
 	}
 }
 
 export function shutdown(): void {
 	clearExecutionStopHighlights();
 	storeActiveCodeTabContext();
-	input.applyOverrides(false, captureKeys);
-	active = false;
-	if (disposeVisibilityListener) {
-		disposeVisibilityListener();
-		disposeVisibilityListener = null;
+	ide_state.input.applyOverrides(false, captureKeys);
+	ide_state.active = false;
+	if (ide_state.disposeVisibilityListener) {
+		ide_state.disposeVisibilityListener();
+		ide_state.disposeVisibilityListener = null;
 	}
-	if (disposeWindowEventListeners) {
-		disposeWindowEventListeners();
-		disposeWindowEventListeners = null;
+	if (ide_state.disposeWindowEventListeners) {
+		ide_state.disposeWindowEventListeners();
+		ide_state.disposeWindowEventListeners = null;
 	}
-	windowFocused = true;
-	pendingWindowFocused = true;
-	repeatState.clear();
+	ide_state.windowFocused = true;
+	ide_state.pendingWindowFocused = true;
+	ide_state.repeatState.clear();
 	resetKeyPressGuards();
-	pointerSelecting = false;
-	pointerPrimaryWasPressed = false;
-	pointerAuxWasPressed = false;
+	ide_state.pointerSelecting = false;
+	ide_state.pointerPrimaryWasPressed = false;
+	ide_state.pointerAuxWasPressed = false;
 	clearGotoHoverHighlight();
-	cursorRevealSuspended = false;
-	searchActive = false;
-	searchVisible = false;
+	ide_state.cursorRevealSuspended = false;
+	ide_state.searchActive = false;
+	ide_state.searchVisible = false;
 	cancelSearchJob();
 	cancelGlobalSearchJob();
-	searchMatches = [];
-	globalSearchMatches = [];
-	searchDisplayOffset = 0;
-	searchHoverIndex = -1;
-	searchScope = 'local';
-	searchCurrentIndex = -1;
+	ide_state.searchMatches = [];
+	ide_state.globalSearchMatches = [];
+	ide_state.searchDisplayOffset = 0;
+	ide_state.searchHoverIndex = -1;
+	ide_state.searchScope = 'local';
+	ide_state.searchCurrentIndex = -1;
 	applySearchFieldText('', true);
-	lineJumpActive = false;
-	lineJumpVisible = false;
+	ide_state.lineJumpActive = false;
+	ide_state.lineJumpVisible = false;
 	applyLineJumpFieldText('', true);
-	createResourceActive = false;
-	createResourceVisible = false;
+	ide_state.createResourceActive = false;
+	ide_state.createResourceVisible = false;
 	applyCreateResourceFieldText('', true);
-	createResourceError = null;
-	createResourceWorking = false;
+	ide_state.createResourceError = null;
+	ide_state.createResourceWorking = false;
 	resetActionPromptState();
 	hideResourcePanel();
 	activateCodeTab();
 }
 
 export function getKeyboard(): KeyboardInput {
-	const playerInput = $.input.getPlayerInput(playerIndex);
+	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
 	if (!playerInput) {
-		throw new Error(`[ConsoleCartEditor] Player input ${playerIndex} unavailable.`);
+		throw new Error(`[ConsoleCartEditor] Player ide_state.input ${ide_state.playerIndex} unavailable.`);
 	}
 	const handler = playerInput.inputHandlers['keyboard'];
 	if (!handler) {
-		throw new Error(`[ConsoleCartEditor] Keyboard handler missing for player ${playerIndex}.`);
+		throw new Error(`[ConsoleCartEditor] Keyboard handler missing for player ${ide_state.playerIndex}.`);
 	}
 	const candidate = handler as KeyboardInput;
 	if (typeof candidate.keydown !== 'function') {
-		throw new Error(`[ConsoleCartEditor] Keyboard handler for player ${playerIndex} is invalid.`);
+		throw new Error(`[ConsoleCartEditor] Keyboard handler for player ${ide_state.playerIndex} is invalid.`);
 	}
 	return candidate;
 }
 
 export function handleToggleRequest(keyboard: KeyboardInput): boolean {
-	const escapeState = getKeyboardButtonState(playerIndex, ESCAPE_KEY);
+	const escapeState = getKeyboardButtonState(ide_state.playerIndex, ESCAPE_KEY);
 	if (escapeState && escapeState.pressed === true) {
 		if (shouldAcceptKeyPressGlobal(ESCAPE_KEY, escapeState)) {
 			const handled = handleEscapeKey();
@@ -3027,10 +2823,10 @@ export function handleToggleRequest(keyboard: KeyboardInput): boolean {
 		}
 	}
 
-	const toggleKeyState = getKeyboardButtonState(playerIndex, EDITOR_TOGGLE_KEY);
+	const toggleKeyState = getKeyboardButtonState(ide_state.playerIndex, EDITOR_TOGGLE_KEY);
 	const selectButton = EDITOR_TOGGLE_GAMEPAD_BUTTONS[0];
 	const startButton = EDITOR_TOGGLE_GAMEPAD_BUTTONS[1];
-	const playerInput = $.input.getPlayerInput(playerIndex);
+	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
 	const selectState = playerInput ? playerInput.getButtonState(selectButton, 'gamepad') : null;
 	const startState = playerInput ? playerInput.getButtonState(startButton, 'gamepad') : null;
 	const keyboardPressed = toggleKeyState ? toggleKeyState.pressed === true : false;
@@ -3038,10 +2834,10 @@ export function handleToggleRequest(keyboard: KeyboardInput): boolean {
 	const startPressed = startState ? startState.pressed === true : false;
 	const gamepadPressed = selectPressed && startPressed;
 	if (!keyboardPressed && !gamepadPressed) {
-		toggleInputLatch = false;
+		ide_state.toggleInputLatch = false;
 		return false;
 	}
-	if (toggleInputLatch) {
+	if (ide_state.toggleInputLatch) {
 		return false;
 	}
 	const keyboardAccepted = toggleKeyState ? shouldAcceptKeyPressGlobal(EDITOR_TOGGLE_KEY, toggleKeyState) : false;
@@ -3054,7 +2850,7 @@ export function handleToggleRequest(keyboard: KeyboardInput): boolean {
 	if (!keyboardAccepted && !gamepadAccepted) {
 		return false;
 	}
-	toggleInputLatch = true;
+	ide_state.toggleInputLatch = true;
 	const intercepted = handleEscapeKey();
 	if (keyboardAccepted) {
 		consumeKeyboardKey(keyboard, EDITOR_TOGGLE_KEY);
@@ -3067,8 +2863,8 @@ export function handleToggleRequest(keyboard: KeyboardInput): boolean {
 	if (intercepted) {
 		return true;
 	}
-	if (active) {
-		if (dirty) {
+	if (ide_state.active) {
+		if (ide_state.dirty) {
 			openActionPrompt('close');
 		} else {
 			deactivate();
@@ -3080,32 +2876,32 @@ export function handleToggleRequest(keyboard: KeyboardInput): boolean {
 }
 
 export function handleEscapeKey(): boolean {
-	if (pendingActionPrompt) {
+	if (ide_state.pendingActionPrompt) {
 		resetActionPromptState();
 		return true;
 	}
-	if (runtimeErrorOverlay) {
+	if (ide_state.runtimeErrorOverlay) {
 		clearRuntimeErrorOverlay();
-		message.visible = false;
+		ide_state.message.visible = false;
 		return true;
 	}
-	if (createResourceVisible) {
+	if (ide_state.createResourceVisible) {
 		closeCreateResourcePrompt(true);
 		return true;
 	}
-	if (symbolSearchActive || symbolSearchVisible) {
+	if (ide_state.symbolSearchActive || ide_state.symbolSearchVisible) {
 		closeSymbolSearch(false);
 		return true;
 	}
-	if (resourceSearchActive || resourceSearchVisible) {
+	if (ide_state.resourceSearchActive || ide_state.resourceSearchVisible) {
 		closeResourceSearch(false);
 		return true;
 	}
-	if (lineJumpActive || lineJumpVisible) {
+	if (ide_state.lineJumpActive || ide_state.lineJumpVisible) {
 		closeLineJump(false);
 		return true;
 	}
-	if (searchActive || searchVisible) {
+	if (ide_state.searchActive || ide_state.searchVisible) {
 		closeSearch(false, true);
 		return true;
 	}
@@ -3113,18 +2909,18 @@ export function handleEscapeKey(): boolean {
 }
 
 export function activate(): void {
-	if (!disposeVisibilityListener) {
+	if (!ide_state.disposeVisibilityListener) {
 		installPlatformVisibilityListener();
 	}
-	if (!disposeWindowEventListeners) {
+	if (!ide_state.disposeWindowEventListeners) {
 		installWindowEventListeners();
 	}
-	input.applyOverrides(true, captureKeys);
+	ide_state.input.applyOverrides(true, captureKeys);
 	applyResolutionModeToRuntime();
-	if (activeCodeTabContextId) {
-		const existingTab = tabs.find(candidate => candidate.id === activeCodeTabContextId);
+	if (ide_state.activeCodeTabContextId) {
+		const existingTab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeCodeTabContextId);
 		if (existingTab) {
-			setActiveTab(activeCodeTabContextId);
+			setActiveTab(ide_state.activeCodeTabContextId);
 		} else {
 			activateCodeTab();
 		}
@@ -3132,45 +2928,45 @@ export function activate(): void {
 		activateCodeTab();
 	}
 	bumpTextVersion();
-	cursorVisible = true;
-	blinkTimer = 0;
-	active = true;
-	pointerSelecting = false;
-	pointerPrimaryWasPressed = false;
-	cursorRevealSuspended = false;
-	repeatState.clear();
+	ide_state.cursorVisible = true;
+	ide_state.blinkTimer = 0;
+	ide_state.active = true;
+	ide_state.pointerSelecting = false;
+	ide_state.pointerPrimaryWasPressed = false;
+	ide_state.cursorRevealSuspended = false;
+	ide_state.repeatState.clear();
 	resetKeyPressGuards();
 	updateDesiredColumn();
-	selectionAnchor = null;
-	undoStack = [];
-	redoStack = [];
-	lastHistoryKey = null;
-	lastHistoryTimestamp = 0;
-	searchActive = false;
-	searchVisible = false;
-	lineJumpActive = false;
-	lineJumpVisible = false;
-	lineJumpValue = '';
+	ide_state.selectionAnchor = null;
+	ide_state.undoStack = [];
+	ide_state.redoStack = [];
+	ide_state.lastHistoryKey = null;
+	ide_state.lastHistoryTimestamp = 0;
+	ide_state.searchActive = false;
+	ide_state.searchVisible = false;
+	ide_state.lineJumpActive = false;
+	ide_state.lineJumpVisible = false;
+	ide_state.lineJumpValue = '';
 	syncRuntimeErrorOverlayFromContext(getActiveCodeTabContext());
 	resetActionPromptState();
 	cancelSearchJob();
 	cancelGlobalSearchJob();
-	globalSearchMatches = [];
-	searchDisplayOffset = 0;
-	searchHoverIndex = -1;
-	searchScope = 'local';
-	if (searchQuery.length === 0) {
-		searchMatches = [];
-		searchCurrentIndex = -1;
+	ide_state.globalSearchMatches = [];
+	ide_state.searchDisplayOffset = 0;
+	ide_state.searchHoverIndex = -1;
+	ide_state.searchScope = 'local';
+	if (ide_state.searchQuery.length === 0) {
+		ide_state.searchMatches = [];
+		ide_state.searchCurrentIndex = -1;
 	} else {
 		startSearchJob();
 	}
 	ensureCursorVisible();
-	if (message.visible && !Number.isFinite(message.timer) && deferredMessageDuration !== null) {
-		message.timer = deferredMessageDuration;
+	if (ide_state.message.visible && !Number.isFinite(ide_state.message.timer) && ide_state.deferredMessageDuration !== null) {
+		ide_state.message.timer = ide_state.deferredMessageDuration;
 	}
-	deferredMessageDuration = null;
-	if (dimCrtInEditor) {
+	ide_state.deferredMessageDuration = null;
+	if (ide_state.dimCrtInEditor) {
 		applyEditorCrtDimming();
 	}
 }
@@ -3179,13 +2975,13 @@ export function applyEditorCrtDimming(): void {
 	const view = $.view;
 	const [bleedR, bleedG, bleedB] = view.colorBleed;
 	const [glowR, glowG, glowB] = view.glowColor;
-	crtOptionsSnapshot = {
+	ide_state.crtOptionsSnapshot = {
 		noiseIntensity: view.noiseIntensity,
 		colorBleed: [bleedR, bleedG, bleedB] as [number, number, number],
 		blurIntensity: view.blurIntensity,
 		glowColor: [glowR, glowG, glowB] as [number, number, number],
 	};
-	let snapshot = crtOptionsSnapshot;
+	let snapshot = ide_state.crtOptionsSnapshot;
 	view.noiseIntensity = snapshot.noiseIntensity * 0.5;
 	view.colorBleed = [
 		snapshot.colorBleed[0] * 0.5,
@@ -3201,11 +2997,11 @@ export function applyEditorCrtDimming(): void {
 }
 
 export function restoreCrtOptions(): void {
-	const snapshot = crtOptionsSnapshot;
+	const snapshot = ide_state.crtOptionsSnapshot;
 	if (!snapshot) {
 		throw new Error('[ConsoleCartEditor] CRT options snapshot unavailable during restore.');
 	}
-	crtOptionsSnapshot = null;
+	ide_state.crtOptionsSnapshot = null;
 	const view = $.view;
 	view.noiseIntensity = snapshot.noiseIntensity;
 	view.colorBleed = [snapshot.colorBleed[0], snapshot.colorBleed[1], snapshot.colorBleed[2]] as [number, number, number];
@@ -3215,44 +3011,44 @@ export function restoreCrtOptions(): void {
 
 export function deactivate(): void {
 	storeActiveCodeTabContext();
-	active = false;
-	if (dimCrtInEditor) {
+	ide_state.active = false;
+	if (ide_state.dimCrtInEditor) {
 		restoreCrtOptions();
 	}
-	completion.closeSession();
-	repeatState.clear();
+	ide_state.completion.closeSession();
+	ide_state.repeatState.clear();
 	resetKeyPressGuards();
-	input.applyOverrides(false, captureKeys);
+	ide_state.input.applyOverrides(false, captureKeys);
 	$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
-	selectionAnchor = null;
-	pointerSelecting = false;
-	pointerPrimaryWasPressed = false;
-	pointerAuxWasPressed = false;
-	tabDragState = null;
+	ide_state.selectionAnchor = null;
+	ide_state.pointerSelecting = false;
+	ide_state.pointerPrimaryWasPressed = false;
+	ide_state.pointerAuxWasPressed = false;
+	ide_state.tabDragState = null;
 	clearGotoHoverHighlight();
-	scrollbarController.cancel();
-	cursorRevealSuspended = false;
-	undoStack = [];
-	redoStack = [];
-	lastHistoryKey = null;
-	lastHistoryTimestamp = 0;
-	searchActive = false;
-	searchVisible = false;
-	lineJumpActive = false;
-	lineJumpVisible = false;
-	runtimeErrorOverlay = null;
+	ide_state.scrollbarController.cancel();
+	ide_state.cursorRevealSuspended = false;
+	ide_state.undoStack = [];
+	ide_state.redoStack = [];
+	ide_state.lastHistoryKey = null;
+	ide_state.lastHistoryTimestamp = 0;
+	ide_state.searchActive = false;
+	ide_state.searchVisible = false;
+	ide_state.lineJumpActive = false;
+	ide_state.lineJumpVisible = false;
+	ide_state.runtimeErrorOverlay = null;
 	resetActionPromptState();
 	closeCreateResourcePrompt(false);
 	hideResourcePanel();
 	cancelSearchJob();
 	cancelGlobalSearchJob();
-	globalSearchMatches = [];
-	searchDisplayOffset = 0;
-	searchHoverIndex = -1;
-	searchScope = 'local';
+	ide_state.globalSearchMatches = [];
+	ide_state.searchDisplayOffset = 0;
+	ide_state.searchHoverIndex = -1;
+	ide_state.searchScope = 'local';
 	clearBackgroundTasks();
-	diagnosticsTaskPending = false;
-	lastReportedSemanticError = null;
+	ide_state.diagnosticsTaskPending = false;
+	ide_state.lastReportedSemanticError = null;
 }
 
 export function splitLines(source: string): string[] {
@@ -3260,131 +3056,131 @@ export function splitLines(source: string): string[] {
 }
 
 export function handleActionPromptInput(keyboard: KeyboardInput): void {
-	if (!pendingActionPrompt) {
+	if (!ide_state.pendingActionPrompt) {
 		return;
 	}
-	if (isKeyJustPressedGlobal(playerIndex, 'Escape')) {
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Escape')) {
 		consumeKeyboardKey(keyboard, 'Escape');
 		resetActionPromptState();
 		return;
 	}
-	if (isKeyJustPressedGlobal(playerIndex, 'Enter')) {
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter')) {
 		consumeKeyboardKey(keyboard, 'Enter');
 		void handleActionPromptSelection('save-continue');
 	}
 }
 
 export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number): void {
-	if (resourcePanelVisible && resourcePanelFocused) {
-		resourcePanel.handleKeyboard(keyboard, deltaSeconds);
-		const st = resourcePanel.getStateForRender();
-		resourcePanelFocused = st.focused;
+	if (ide_state.resourcePanelVisible && ide_state.resourcePanelFocused) {
+		ide_state.resourcePanel.handleKeyboard(keyboard, deltaSeconds);
+		const st = ide_state.resourcePanel.getStateForRender();
+		ide_state.resourcePanelFocused = st.focused;
 		return;
 	}
 	if (isResourceViewActive()) {
 		handleResourceViewerInput(keyboard, deltaSeconds);
 		return;
 	}
-	const ctrlDown = isModifierPressedGlobal(playerIndex, 'ControlLeft') || isModifierPressedGlobal(playerIndex, 'ControlRight');
-	const shiftDown = isModifierPressedGlobal(playerIndex, 'ShiftLeft') || isModifierPressedGlobal(playerIndex, 'ShiftRight');
-	const metaDown = isModifierPressedGlobal(playerIndex, 'MetaLeft') || isModifierPressedGlobal(playerIndex, 'MetaRight');
-	const altDown = isModifierPressedGlobal(playerIndex, 'AltLeft') || isModifierPressedGlobal(playerIndex, 'AltRight');
+	const ctrlDown = isModifierPressedGlobal(ide_state.playerIndex, 'ControlLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ControlRight');
+	const shiftDown = isModifierPressedGlobal(ide_state.playerIndex, 'ShiftLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ShiftRight');
+	const metaDown = isModifierPressedGlobal(ide_state.playerIndex, 'MetaLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'MetaRight');
+	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
 
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(playerIndex, 'KeyO')) {
+	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyO')) {
 		consumeKeyboardKey(keyboard, 'KeyO');
 		openSymbolSearch();
 		return;
 	}
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(playerIndex, 'KeyR')) {
+	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyR')) {
 		consumeKeyboardKey(keyboard, 'KeyR');
 		toggleResolutionMode();
 		return;
 	}
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(playerIndex, 'KeyL')) {
+	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyL')) {
 		consumeKeyboardKey(keyboard, 'KeyL');
 		toggleResourcePanelFilterMode();
 		return;
 	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(playerIndex, 'Comma')) {
+	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'Comma')) {
 		consumeKeyboardKey(keyboard, 'Comma');
 		openResourceSearch();
 		return;
 	}
-	if ((ctrlDown || metaDown) && !altDown && !shiftDown && isKeyJustPressedGlobal(playerIndex, 'KeyE')) {
+	if ((ctrlDown || metaDown) && !altDown && !shiftDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyE')) {
 		consumeKeyboardKey(keyboard, 'KeyE');
 		openResourceSearch();
 		return;
 	}
-	if ((ctrlDown && altDown) && isKeyJustPressedGlobal(playerIndex, 'Comma')) {
+	if ((ctrlDown && altDown) && isKeyJustPressedGlobal(ide_state.playerIndex, 'Comma')) {
 		consumeKeyboardKey(keyboard, 'Comma');
 		openSymbolSearch();
 		return;
 	}
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(playerIndex, 'KeyB')) {
+	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyB')) {
 		consumeKeyboardKey(keyboard, 'KeyB');
 		toggleResourcePanel();
 		return;
 	}
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(playerIndex, 'KeyM')) {
+	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyM')) {
 		consumeKeyboardKey(keyboard, 'KeyM');
 		toggleProblemsPanel();
-		if (problemsPanel.isVisible()) {
+		if (ide_state.problemsPanel.isVisible()) {
 			markDiagnosticsDirty();
 		} else {
 			focusEditorFromProblemsPanel();
 		}
 		return;
 	}
-	if (!ctrlDown && !metaDown && altDown && isKeyJustPressedGlobal(playerIndex, 'Comma')) {
+	if (!ctrlDown && !metaDown && altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'Comma')) {
 		consumeKeyboardKey(keyboard, 'Comma');
 		openGlobalSymbolSearch();
 		return;
 	}
 
-	if (createResourceActive) {
+	if (ide_state.createResourceActive) {
 		handleCreateResourceInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 		return;
 	}
 
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(playerIndex, 'KeyN')) {
+	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyN')) {
 		consumeKeyboardKey(keyboard, 'KeyN');
 		openCreateResourcePrompt();
 		return;
 	}
 
-	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal(playerIndex, 'KeyF')) {
+	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyF')) {
 		consumeKeyboardKey(keyboard, 'KeyF');
 		openSearch(true, 'global');
 		return;
 	}
-	if ((ctrlDown || metaDown) && !shiftDown && !altDown && isKeyJustPressedGlobal(playerIndex, 'KeyF')) {
+	if ((ctrlDown || metaDown) && !shiftDown && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyF')) {
 		consumeKeyboardKey(keyboard, 'KeyF');
 		openSearch(true, 'local');
 		return;
 	}
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(playerIndex, 'Tab')) {
+	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(ide_state.playerIndex, 'Tab')) {
 		consumeKeyboardKey(keyboard, 'Tab');
 		cycleTab(shiftDown ? -1 : 1);
 		return;
 	}
-	const inlineFieldFocused = searchActive
-		|| symbolSearchActive
-		|| resourceSearchActive
-		|| lineJumpActive
-		|| createResourceActive
-		|| renameController.isActive();
+	const inlineFieldFocused = ide_state.searchActive
+		|| ide_state.symbolSearchActive
+		|| ide_state.resourceSearchActive
+		|| ide_state.lineJumpActive
+		|| ide_state.createResourceActive
+		|| ide_state.renameController.isActive();
 	if (handleCustomKeybinding(keyboard, deltaSeconds, {
 		ctrlDown,
 		metaDown,
 		shiftDown,
 		altDown,
 		inlineFieldFocused,
-		resourcePanelFocused: resourcePanelFocused,
+		resourcePanelFocused: ide_state.resourcePanelFocused,
 		codeTabActive: isCodeTabActive(),
 	})) {
 		return;
 	}
-	if (!inlineFieldFocused && isKeyJustPressedGlobal(playerIndex, 'F12')) {
+	if (!inlineFieldFocused && isKeyJustPressedGlobal(ide_state.playerIndex, 'F12')) {
 		consumeKeyboardKey(keyboard, 'F12');
 		if (shiftDown) {
 			return;
@@ -3392,76 +3188,76 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		openReferenceSearchPopup();
 		return;
 	}
-	if (!inlineFieldFocused && isCodeTabActive() && isKeyJustPressedGlobal(playerIndex, 'F2')) {
+	if (!inlineFieldFocused && isCodeTabActive() && isKeyJustPressedGlobal(ide_state.playerIndex, 'F2')) {
 		consumeKeyboardKey(keyboard, 'F2');
 		openRenamePrompt();
 		return;
 	}
 	if ((ctrlDown || metaDown)
 		&& !inlineFieldFocused
-		&& !resourcePanelFocused
+		&& !ide_state.resourcePanelFocused
 		&& isCodeTabActive()
-		&& isKeyJustPressedGlobal(playerIndex, 'KeyA')) {
+		&& isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyA')) {
 		consumeKeyboardKey(keyboard, 'KeyA');
-		selectionAnchor = { row: 0, column: 0 };
-		const lastRowIndex = lines.length > 0 ? lines.length - 1 : 0;
-		const lastColumn = lines.length > 0 ? lines[lastRowIndex].length : 0;
-		cursorRow = lastRowIndex;
-		cursorColumn = lastColumn;
+		ide_state.selectionAnchor = { row: 0, column: 0 };
+		const lastRowIndex = ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0;
+		const lastColumn = ide_state.lines.length > 0 ? ide_state.lines[lastRowIndex].length : 0;
+		ide_state.cursorRow = lastRowIndex;
+		ide_state.cursorColumn = lastColumn;
 		updateDesiredColumn();
 		resetBlink();
 		revealCursor();
 		return;
 	}
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(playerIndex, 'KeyL')) {
+	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyL')) {
 		consumeKeyboardKey(keyboard, 'KeyL');
 		openLineJump();
 		return;
 	}
-	if (renameController.isActive()) {
-		renameController.handleInput(keyboard, deltaSeconds, { ctrlDown, metaDown, shiftDown, altDown });
+	if (ide_state.renameController.isActive()) {
+		ide_state.renameController.handleInput(keyboard, deltaSeconds, { ctrlDown, metaDown, shiftDown, altDown });
 		return;
 	}
-	if (resourceSearchActive) {
+	if (ide_state.resourceSearchActive) {
 		handleResourceSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 		return;
 	}
-	if (symbolSearchActive) {
+	if (ide_state.symbolSearchActive) {
 		handleSymbolSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 		return;
 	}
-	if (lineJumpActive) {
+	if (ide_state.lineJumpActive) {
 		handleLineJumpInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 		return;
 	}
-	if (searchActive) {
+	if (ide_state.searchActive) {
 		handleSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 		return;
 	}
-	if (problemsPanel.isVisible() && problemsPanel.isFocused()) {
+	if (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()) {
 		let handled = false;
 		if (shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'ArrowUp');
-			handled = problemsPanel.handleKeyboardCommand('up');
+			handled = ide_state.problemsPanel.handleKeyboardCommand('up');
 		} else if (shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'ArrowDown');
-			handled = problemsPanel.handleKeyboardCommand('down');
+			handled = ide_state.problemsPanel.handleKeyboardCommand('down');
 		} else if (shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'PageUp');
-			handled = problemsPanel.handleKeyboardCommand('page-up');
+			handled = ide_state.problemsPanel.handleKeyboardCommand('page-up');
 		} else if (shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'PageDown');
-			handled = problemsPanel.handleKeyboardCommand('page-down');
+			handled = ide_state.problemsPanel.handleKeyboardCommand('page-down');
 		} else if (shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'Home');
-			handled = problemsPanel.handleKeyboardCommand('home');
+			handled = ide_state.problemsPanel.handleKeyboardCommand('home');
 		} else if (shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'End');
-			handled = problemsPanel.handleKeyboardCommand('end');
-		} else if (isKeyJustPressedGlobal(playerIndex, 'Enter') || isKeyJustPressedGlobal(playerIndex, 'NumpadEnter')) {
-			if (isKeyJustPressedGlobal(playerIndex, 'Enter')) consumeKeyboardKey(keyboard, 'Enter'); else consumeKeyboardKey(keyboard, 'NumpadEnter');
-			handled = problemsPanel.handleKeyboardCommand('activate');
-		} else if (isKeyJustPressedGlobal(playerIndex, 'Escape')) {
+			handled = ide_state.problemsPanel.handleKeyboardCommand('end');
+		} else if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter') || isKeyJustPressedGlobal(ide_state.playerIndex, 'NumpadEnter')) {
+			if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter')) consumeKeyboardKey(keyboard, 'Enter'); else consumeKeyboardKey(keyboard, 'NumpadEnter');
+			handled = ide_state.problemsPanel.handleKeyboardCommand('activate');
+		} else if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Escape')) {
 			consumeKeyboardKey(keyboard, 'Escape');
 			hideProblemsPanel();
 			focusEditorFromProblemsPanel();
@@ -3472,7 +3268,7 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		if (shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) consumeKeyboardKey(keyboard, 'ArrowRight');
 		if (handled) return; else return;
 	}
-	if (searchQuery.length > 0 && isKeyJustPressedGlobal(playerIndex, 'F3')) {
+	if (ide_state.searchQuery.length > 0 && isKeyJustPressedGlobal(ide_state.playerIndex, 'F3')) {
 		consumeKeyboardKey(keyboard, 'F3');
 		if (shiftDown) {
 			jumpToPreviousMatch();
@@ -3495,22 +3291,22 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		redo();
 		return;
 	}
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(playerIndex, 'KeyW')) {
+	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyW')) {
 		consumeKeyboardKey(keyboard, 'KeyW');
 		closeActiveTab();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal(playerIndex, 'KeyS')) {
+	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyS')) {
 		consumeKeyboardKey(keyboard, 'KeyS');
 		void save();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal(playerIndex, 'KeyC')) {
+	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyC')) {
 		consumeKeyboardKey(keyboard, 'KeyC');
 		void copySelectionToClipboard();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal(playerIndex, 'KeyX')) {
+	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyX')) {
 		consumeKeyboardKey(keyboard, 'KeyX');
 		if (hasSelection()) {
 			void cutSelectionToClipboard();
@@ -3519,40 +3315,40 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		}
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal(playerIndex, 'KeyV')) {
+	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyV')) {
 		consumeKeyboardKey(keyboard, 'KeyV');
 		pasteFromClipboard();
 		return;
 	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(playerIndex, 'Slash')) {
+	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'Slash')) {
 		consumeKeyboardKey(keyboard, 'Slash');
 		toggleLineComments();
 		return;
 	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(playerIndex, 'NumpadDivide')) {
+	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'NumpadDivide')) {
 		consumeKeyboardKey(keyboard, 'NumpadDivide');
 		toggleLineComments();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal(playerIndex, 'BracketRight')) {
+	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'BracketRight')) {
 		consumeKeyboardKey(keyboard, 'BracketRight');
 		indentSelectionOrLine();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal(playerIndex, 'BracketLeft')) {
+	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'BracketLeft')) {
 		consumeKeyboardKey(keyboard, 'BracketLeft');
 		unindentSelectionOrLine();
 		return;
 	}
-	// Manual completion open/close handled by CompletionController via handleCompletionKeybindings
+	// Manual ide_state.completion open/close handled by CompletionController via handleCompletionKeybindings
 	if (handleCompletionKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown)) {
 		return;
 	}
-	input.handleEditorInput(keyboard, deltaSeconds);
+	ide_state.input.handleEditorInput(keyboard, deltaSeconds);
 	if (ctrlDown || metaDown || altDown) {
 		return;
 	}
-	// Remaining character input after controller handled modifiers is no-op here
+	// Remaining character ide_state.input after controller handled modifiers is no-op here
 }
 
 let customKeybindingHandler: CustomKeybindingHandler | null = null;
@@ -3569,21 +3365,21 @@ export function handleCustomKeybinding(
 }
 
 export function handleCreateResourceInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
-	const altDown = isModifierPressedGlobal(playerIndex, 'AltLeft') || isModifierPressedGlobal(playerIndex, 'AltRight');
-	if (isKeyJustPressedGlobal(playerIndex, 'Escape')) {
+	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Escape')) {
 		consumeKeyboardKey(keyboard, 'Escape');
 		cancelCreateResourcePrompt();
 		return;
 	}
-	if (!createResourceWorking && isKeyJustPressedGlobal(playerIndex, 'Enter')) {
+	if (!ide_state.createResourceWorking && isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter')) {
 		consumeKeyboardKey(keyboard, 'Enter');
 		void confirmCreateResourcePrompt();
 		return;
 	}
-	if (createResourceWorking) {
+	if (ide_state.createResourceWorking) {
 		return;
 	}
-	const textChanged = processInlineFieldEditing(createResourceField, keyboard, {
+	const textChanged = processInlineFieldEditing(ide_state.createResourceField, keyboard, {
 		ctrlDown,
 		metaDown,
 		shiftDown,
@@ -3594,42 +3390,42 @@ export function handleCreateResourceInput(keyboard: KeyboardInput, deltaSeconds:
 		maxLength: constants.CREATE_RESOURCE_MAX_PATH_LENGTH,
 	});
 	if (textChanged) {
-		createResourceError = null;
+		ide_state.createResourceError = null;
 		resetBlink();
 	}
-	createResourcePath = createResourceField.text;
+	ide_state.createResourcePath = ide_state.createResourceField.text;
 }
 
 export function openCreateResourcePrompt(): void {
-	if (createResourceWorking) {
+	if (ide_state.createResourceWorking) {
 		return;
 	}
-	resourcePanelFocused = false;
-	renameController.cancel();
-	let defaultPath = createResourcePath.length === 0
+	ide_state.resourcePanelFocused = false;
+	ide_state.renameController.cancel();
+	let defaultPath = ide_state.createResourcePath.length === 0
 		? determineCreateResourceDefaultPath()
-		: createResourcePath;
+		: ide_state.createResourcePath;
 	if (defaultPath.length > constants.CREATE_RESOURCE_MAX_PATH_LENGTH) {
 		defaultPath = defaultPath.slice(defaultPath.length - constants.CREATE_RESOURCE_MAX_PATH_LENGTH);
 	}
 	applyCreateResourceFieldText(defaultPath, true);
-	createResourceVisible = true;
-	createResourceActive = true;
-	createResourceError = null;
-	cursorVisible = true;
+	ide_state.createResourceVisible = true;
+	ide_state.createResourceActive = true;
+	ide_state.createResourceError = null;
+	ide_state.cursorVisible = true;
 	resetBlink();
 }
 
 export function closeCreateResourcePrompt(focusEditor: boolean): void {
-	createResourceActive = false;
-	createResourceVisible = false;
-	createResourceWorking = false;
+	ide_state.createResourceActive = false;
+	ide_state.createResourceVisible = false;
+	ide_state.createResourceWorking = false;
 	if (focusEditor) {
 		focusEditorFromSearch();
 		focusEditorFromLineJump();
 	}
 	applyCreateResourceFieldText('', true);
-	createResourceError = null;
+	ide_state.createResourceError = null;
 	resetBlink();
 }
 
@@ -3638,46 +3434,46 @@ export function cancelCreateResourcePrompt(): void {
 }
 
 export async function confirmCreateResourcePrompt(): Promise<void> {
-	if (createResourceWorking) {
+	if (ide_state.createResourceWorking) {
 		return;
 	}
 	let normalizedPath: string;
 	let assetId: string;
 	let directory: string;
 	try {
-		const result = normalizeCreateResourceRequest(createResourcePath);
+		const result = normalizeCreateResourceRequest(ide_state.createResourcePath);
 		normalizedPath = result.path;
 		assetId = result.assetId;
 		directory = result.directory;
 		applyCreateResourceFieldText(normalizedPath, true);
-		createResourceError = null;
+		ide_state.createResourceError = null;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		createResourceError = message;
-		showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
+		ide_state.createResourceError = message;
+		ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 		resetBlink();
 		return;
 	}
-	createResourceWorking = true;
+	ide_state.createResourceWorking = true;
 	resetBlink();
 	const contents = buildDefaultResourceContents(normalizedPath, assetId);
 	try {
-		const descriptor = await createLuaResourceFn({ path: normalizedPath, assetId, contents });
-		lastCreateResourceDirectory = directory;
-		pendingResourceSelectionAssetId = descriptor.assetId;
-		if (resourcePanelVisible) {
+		const descriptor = await ide_state.createLuaResourceFn({ path: normalizedPath, assetId, contents });
+		ide_state.lastCreateResourceDirectory = directory;
+		ide_state.pendingResourceSelectionAssetId = descriptor.assetId;
+		if (ide_state.resourcePanelVisible) {
 			refreshResourcePanelContents();
 		}
 		openLuaCodeTab(descriptor);
-		showMessage(`Created ${descriptor.path} (asset ${descriptor.assetId})`, constants.COLOR_STATUS_SUCCESS, 2.5);
+		ide_state.showMessage(`Created ${descriptor.path} (asset ${descriptor.assetId})`, constants.COLOR_STATUS_SUCCESS, 2.5);
 		closeCreateResourcePrompt(false);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		const simplified = simplifyRuntimeErrorMessage(message);
-		createResourceError = simplified;
-		showMessage(`Failed to create resource: ${simplified}`, constants.COLOR_STATUS_WARNING, 4.0);
+		ide_state.createResourceError = simplified;
+		ide_state.showMessage(`Failed to create resource: ${simplified}`, constants.COLOR_STATUS_WARNING, 4.0);
 	} finally {
-		createResourceWorking = false;
+		ide_state.createResourceWorking = false;
 		resetBlink();
 	}
 }
@@ -3741,8 +3537,8 @@ export function normalizeCreateResourceRequest(rawPath: string): { path: string;
 }
 
 export function determineCreateResourceDefaultPath(): string {
-	if (lastCreateResourceDirectory && lastCreateResourceDirectory.length > 0) {
-		return lastCreateResourceDirectory;
+	if (ide_state.lastCreateResourceDirectory && ide_state.lastCreateResourceDirectory.length > 0) {
+		return ide_state.lastCreateResourceDirectory;
 	}
 	const activeContext = getActiveCodeTabContext();
 	if (activeContext && activeContext.descriptor && typeof activeContext.descriptor.path === 'string' && activeContext.descriptor.path.length > 0) {
@@ -3750,7 +3546,7 @@ export function determineCreateResourceDefaultPath(): string {
 	}
 	let descriptors: ConsoleResourceDescriptor[] = [];
 	try {
-		descriptors = listResourcesFn();
+		descriptors = ide_state.listResourcesFn();
 	} catch (error) {
 		descriptors = [];
 	}
@@ -3778,13 +3574,13 @@ export function buildDefaultResourceContents(_path: string, _assetId: string): s
 }
 
 export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
-	const altDown = isModifierPressedGlobal(playerIndex, 'AltLeft') || isModifierPressedGlobal(playerIndex, 'AltRight');
-	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal(playerIndex, 'KeyF')) {
+	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
+	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyF')) {
 		consumeKeyboardKey(keyboard, 'KeyF');
 		openSearch(false, 'global');
 		return;
 	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(playerIndex, 'KeyF')) {
+	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyF')) {
 		consumeKeyboardKey(keyboard, 'KeyF');
 		openSearch(false, 'local');
 		return;
@@ -3803,24 +3599,24 @@ export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number,
 		redo();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal(playerIndex, 'KeyS')) {
+	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyS')) {
 		consumeKeyboardKey(keyboard, 'KeyS');
 		void save();
 		return;
 	}
 	const hasResults = activeSearchMatchCount() > 0;
-	const previewLocal = searchScope === 'local';
-	if (isKeyJustPressedGlobal(playerIndex, 'Enter')) {
+	const previewLocal = ide_state.searchScope === 'local';
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter')) {
 		consumeKeyboardKey(keyboard, 'Enter');
 		if (hasResults) {
 			if (shiftDown) {
 				moveSearchSelection(-1, { wrap: true, preview: previewLocal });
-			} else if (searchCurrentIndex === -1) {
-				searchCurrentIndex = 0;
+			} else if (ide_state.searchCurrentIndex === -1) {
+				ide_state.searchCurrentIndex = 0;
 			} else {
 				moveSearchSelection(1, { wrap: true, preview: previewLocal });
 			}
-			applySearchSelection(searchCurrentIndex);
+			applySearchSelection(ide_state.searchCurrentIndex);
 		} else if (shiftDown) {
 			jumpToPreviousMatch();
 		} else {
@@ -3828,7 +3624,7 @@ export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number,
 		}
 		return;
 	}
-	if (isKeyJustPressedGlobal(playerIndex, 'F3')) {
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'F3')) {
 		consumeKeyboardKey(keyboard, 'F3');
 		if (shiftDown) {
 			jumpToPreviousMatch();
@@ -3858,28 +3654,28 @@ export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number,
 			moveSearchSelection(searchPageSize(), { preview: previewLocal });
 			return;
 		}
-		if (isKeyJustPressedGlobal(playerIndex, 'Home')) {
+		if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Home')) {
 			consumeKeyboardKey(keyboard, 'Home');
-			searchCurrentIndex = hasResults ? 0 : -1;
+			ide_state.searchCurrentIndex = hasResults ? 0 : -1;
 			ensureSearchSelectionVisible();
 			if (previewLocal) {
-				applySearchSelection(searchCurrentIndex, { preview: true });
+				applySearchSelection(ide_state.searchCurrentIndex, { preview: true });
 			}
 			return;
 		}
-		if (isKeyJustPressedGlobal(playerIndex, 'End')) {
+		if (isKeyJustPressedGlobal(ide_state.playerIndex, 'End')) {
 			consumeKeyboardKey(keyboard, 'End');
 			const lastIndex = hasResults ? activeSearchMatchCount() - 1 : -1;
-			searchCurrentIndex = lastIndex;
+			ide_state.searchCurrentIndex = lastIndex;
 			ensureSearchSelectionVisible();
 			if (previewLocal) {
-				applySearchSelection(searchCurrentIndex, { preview: true });
+				applySearchSelection(ide_state.searchCurrentIndex, { preview: true });
 			}
 			return;
 		}
 	}
 
-	const textChanged = processInlineFieldEditing(searchField, keyboard, {
+	const textChanged = processInlineFieldEditing(ide_state.searchField, keyboard, {
 		ctrlDown,
 		metaDown,
 		shiftDown,
@@ -3890,37 +3686,37 @@ export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number,
 		maxLength: null,
 	});
 
-	searchQuery = searchField.text;
+	ide_state.searchQuery = ide_state.searchField.text;
 	if (textChanged) {
 		onSearchQueryChanged();
 	}
 }
 
 export function handleLineJumpInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(playerIndex, 'KeyL')) {
+	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyL')) {
 		consumeKeyboardKey(keyboard, 'KeyL');
 		openLineJump();
 		return;
 	}
-	const altDown = isModifierPressedGlobal(playerIndex, 'AltLeft') || isModifierPressedGlobal(playerIndex, 'AltRight');
-	if (isKeyJustPressedGlobal(playerIndex, 'Enter')) {
+	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter')) {
 		consumeKeyboardKey(keyboard, 'Enter');
 		applyLineJump();
 		return;
 	}
-	if (!shiftDown && isKeyJustPressedGlobal(playerIndex, 'NumpadEnter')) {
+	if (!shiftDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'NumpadEnter')) {
 		consumeKeyboardKey(keyboard, 'NumpadEnter');
 		applyLineJump();
 		return;
 	}
-	if (isKeyJustPressedGlobal(playerIndex, 'Escape')) {
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Escape')) {
 		consumeKeyboardKey(keyboard, 'Escape');
 		closeLineJump(false);
 		return;
 	}
 
 	const digitFilter = (value: string): boolean => value >= '0' && value <= '9';
-	const textChanged = processInlineFieldEditing(lineJumpField, keyboard, {
+	const textChanged = processInlineFieldEditing(ide_state.lineJumpField, keyboard, {
 		ctrlDown,
 		metaDown,
 		shiftDown,
@@ -3930,7 +3726,7 @@ export function handleLineJumpInput(keyboard: KeyboardInput, deltaSeconds: numbe
 		characterFilter: digitFilter,
 		maxLength: 6,
 	});
-	lineJumpValue = lineJumpField.text;
+	ide_state.lineJumpValue = ide_state.lineJumpField.text;
 	if (textChanged) {
 		// keep value in sync; no additional processing required
 	}
@@ -3941,94 +3737,94 @@ export function openSearch(useSelection: boolean, scope: 'local' | 'global' = 'l
 	closeSymbolSearch(false);
 	closeResourceSearch(false);
 	closeLineJump(false);
-	renameController.cancel();
-	searchScope = scope;
-	searchDisplayOffset = 0;
-	searchHoverIndex = -1;
+	ide_state.renameController.cancel();
+	ide_state.searchScope = scope;
+	ide_state.searchDisplayOffset = 0;
+	ide_state.searchHoverIndex = -1;
 	if (scope === 'global') {
 		cancelSearchJob();
-		searchMatches = [];
-		globalSearchMatches = [];
+		ide_state.searchMatches = [];
+		ide_state.globalSearchMatches = [];
 	} else {
 		cancelGlobalSearchJob();
-		globalSearchMatches = [];
+		ide_state.globalSearchMatches = [];
 	}
-	searchVisible = true;
-	searchActive = true;
-	applySearchFieldText(searchQuery, true);
+	ide_state.searchVisible = true;
+	ide_state.searchActive = true;
+	applySearchFieldText(ide_state.searchQuery, true);
 	let appliedSelection = false;
 	if (useSelection) {
 		const range = getSelectionRange();
 		const selected = getSelectionText();
 		if (range && selected !== null && selected.length > 0 && selected.indexOf('\n') === -1) {
 			applySearchFieldText(selected, true);
-			cursorRow = range.start.row;
-			cursorColumn = range.start.column;
+			ide_state.cursorRow = range.start.row;
+			ide_state.cursorColumn = range.start.column;
 			appliedSelection = true;
 		}
 	}
-	if (!appliedSelection && searchField.text.length === 0) {
-		searchCurrentIndex = -1;
+	if (!appliedSelection && ide_state.searchField.text.length === 0) {
+		ide_state.searchCurrentIndex = -1;
 	}
-	searchQuery = searchField.text;
+	ide_state.searchQuery = ide_state.searchField.text;
 	onSearchQueryChanged();
 	resetBlink();
 }
 
 export function closeSearch(clearQuery: boolean, forceHide = false): void {
-	searchActive = false;
-	searchHoverIndex = -1;
-	searchDisplayOffset = 0;
+	ide_state.searchActive = false;
+	ide_state.searchHoverIndex = -1;
+	ide_state.searchDisplayOffset = 0;
 	if (clearQuery) {
 		applySearchFieldText('', true);
 	}
-	searchQuery = searchField.text;
-	const shouldHide = forceHide || clearQuery || searchQuery.length === 0;
+	ide_state.searchQuery = ide_state.searchField.text;
+	const shouldHide = forceHide || clearQuery || ide_state.searchQuery.length === 0;
 	if (shouldHide) {
-		searchVisible = false;
-		searchScope = 'local';
-		searchMatches = [];
-		globalSearchMatches = [];
-		searchCurrentIndex = -1;
+		ide_state.searchVisible = false;
+		ide_state.searchScope = 'local';
+		ide_state.searchMatches = [];
+		ide_state.globalSearchMatches = [];
+		ide_state.searchCurrentIndex = -1;
 		cancelSearchJob();
 		cancelGlobalSearchJob();
 	} else {
-		if (searchScope !== 'local') {
-			searchScope = 'local';
+		if (ide_state.searchScope !== 'local') {
+			ide_state.searchScope = 'local';
 			cancelGlobalSearchJob();
-			globalSearchMatches = [];
+			ide_state.globalSearchMatches = [];
 		}
-		searchMatches = [];
-		searchCurrentIndex = -1;
-		searchVisible = true;
+		ide_state.searchMatches = [];
+		ide_state.searchCurrentIndex = -1;
+		ide_state.searchVisible = true;
 		onSearchQueryChanged();
 	}
-	selectionAnchor = null;
+	ide_state.selectionAnchor = null;
 	resetBlink();
 }
 
 export function focusEditorFromSearch(): void {
-	if (!searchActive && !searchVisible) {
+	if (!ide_state.searchActive && !ide_state.searchVisible) {
 		return;
 	}
-	searchActive = false;
-	searchScope = 'local';
-	searchDisplayOffset = 0;
-	searchHoverIndex = -1;
+	ide_state.searchActive = false;
+	ide_state.searchScope = 'local';
+	ide_state.searchDisplayOffset = 0;
+	ide_state.searchHoverIndex = -1;
 	cancelGlobalSearchJob();
-	if (searchQuery.length === 0) {
-		searchVisible = false;
-		searchMatches = [];
-		globalSearchMatches = [];
-		searchCurrentIndex = -1;
+	if (ide_state.searchQuery.length === 0) {
+		ide_state.searchVisible = false;
+		ide_state.searchMatches = [];
+		ide_state.globalSearchMatches = [];
+		ide_state.searchCurrentIndex = -1;
 	} else {
-		searchMatches = [];
-		globalSearchMatches = [];
-		searchCurrentIndex = -1;
+		ide_state.searchMatches = [];
+		ide_state.globalSearchMatches = [];
+		ide_state.searchCurrentIndex = -1;
 	}
-	selectionAnchor = null;
-	searchField.selectionAnchor = null;
-	searchField.pointerSelecting = false;
+	ide_state.selectionAnchor = null;
+	ide_state.searchField.selectionAnchor = null;
+	ide_state.searchField.pointerSelecting = false;
 	cancelSearchJob();
 	cancelGlobalSearchJob();
 	resetBlink();
@@ -4039,13 +3835,13 @@ export function openResourceSearch(initialQuery: string = ''): void {
 	closeSearch(false, true);
 	closeLineJump(false);
 	closeSymbolSearch(false);
-	renameController.cancel();
-	resourceSearchVisible = true;
-	resourceSearchActive = true;
+	ide_state.renameController.cancel();
+	ide_state.resourceSearchVisible = true;
+	ide_state.resourceSearchActive = true;
 	applyResourceSearchFieldText(initialQuery, true);
 	refreshResourceCatalog();
 	updateResourceSearchMatches();
-	resourceSearchHoverIndex = -1;
+	ide_state.resourceSearchHoverIndex = -1;
 	resetBlink();
 }
 
@@ -4053,30 +3849,30 @@ export function closeResourceSearch(clearQuery: boolean): void {
 	if (clearQuery) {
 		applyResourceSearchFieldText('', true);
 	}
-	resourceSearchActive = false;
-	resourceSearchVisible = false;
-	resourceSearchMatches = [];
-	resourceSearchSelectionIndex = -1;
-	resourceSearchDisplayOffset = 0;
-	resourceSearchHoverIndex = -1;
-	resourceSearchField.selectionAnchor = null;
-	resourceSearchField.pointerSelecting = false;
+	ide_state.resourceSearchActive = false;
+	ide_state.resourceSearchVisible = false;
+	ide_state.resourceSearchMatches = [];
+	ide_state.resourceSearchSelectionIndex = -1;
+	ide_state.resourceSearchDisplayOffset = 0;
+	ide_state.resourceSearchHoverIndex = -1;
+	ide_state.resourceSearchField.selectionAnchor = null;
+	ide_state.resourceSearchField.pointerSelecting = false;
 	resetBlink();
 }
 
 export function focusEditorFromResourceSearch(): void {
-	if (!resourceSearchActive && !resourceSearchVisible) {
+	if (!ide_state.resourceSearchActive && !ide_state.resourceSearchVisible) {
 		return;
 	}
-	resourceSearchActive = false;
-	if (resourceSearchQuery.length === 0) {
-		resourceSearchVisible = false;
-		resourceSearchMatches = [];
-		resourceSearchSelectionIndex = -1;
-		resourceSearchDisplayOffset = 0;
+	ide_state.resourceSearchActive = false;
+	if (ide_state.resourceSearchQuery.length === 0) {
+		ide_state.resourceSearchVisible = false;
+		ide_state.resourceSearchMatches = [];
+		ide_state.resourceSearchSelectionIndex = -1;
+		ide_state.resourceSearchDisplayOffset = 0;
 	}
-	resourceSearchField.selectionAnchor = null;
-	resourceSearchField.pointerSelecting = false;
+	ide_state.resourceSearchField.selectionAnchor = null;
+	ide_state.resourceSearchField.pointerSelecting = false;
 	resetBlink();
 }
 
@@ -4085,16 +3881,16 @@ export function openSymbolSearch(initialQuery: string = ''): void {
 	closeSearch(false, true);
 	closeLineJump(false);
 	closeResourceSearch(false);
-	renameController.cancel();
-	symbolSearchMode = 'symbols';
-	referenceCatalog = [];
-	symbolSearchGlobal = false;
-	symbolSearchVisible = true;
-	symbolSearchActive = true;
+	ide_state.renameController.cancel();
+	ide_state.symbolSearchMode = 'symbols';
+	ide_state.referenceCatalog = [];
+	ide_state.symbolSearchGlobal = false;
+	ide_state.symbolSearchVisible = true;
+	ide_state.symbolSearchActive = true;
 	applySymbolSearchFieldText(initialQuery, true);
 	refreshSymbolCatalog(true);
 	updateSymbolSearchMatches();
-	symbolSearchHoverIndex = -1;
+	ide_state.symbolSearchHoverIndex = -1;
 	resetBlink();
 }
 
@@ -4103,55 +3899,55 @@ export function openGlobalSymbolSearch(initialQuery: string = ''): void {
 	closeSearch(false, true);
 	closeLineJump(false);
 	closeResourceSearch(false);
-	renameController.cancel();
-	symbolSearchMode = 'symbols';
-	referenceCatalog = [];
-	symbolSearchGlobal = true;
-	symbolSearchVisible = true;
-	symbolSearchActive = true;
+	ide_state.renameController.cancel();
+	ide_state.symbolSearchMode = 'symbols';
+	ide_state.referenceCatalog = [];
+	ide_state.symbolSearchGlobal = true;
+	ide_state.symbolSearchVisible = true;
+	ide_state.symbolSearchActive = true;
 	applySymbolSearchFieldText(initialQuery, true);
 	refreshSymbolCatalog(true);
 	updateSymbolSearchMatches();
-	symbolSearchHoverIndex = -1;
+	ide_state.symbolSearchHoverIndex = -1;
 	resetBlink();
 }
 
 export function openReferenceSearchPopup(): void {
 	const context = getActiveCodeTabContext();
-	if (symbolSearchVisible || symbolSearchActive) {
+	if (ide_state.symbolSearchVisible || ide_state.symbolSearchActive) {
 		closeSymbolSearch(false);
 	}
-	renameController.cancel();
+	ide_state.renameController.cancel();
 	const referenceContext = buildProjectReferenceContext(context);
 	const result = resolveReferenceLookup({
-		layout: layout,
-		workspace: semanticWorkspace,
-		lines: lines,
-		textVersion: textVersion,
-		cursorRow: cursorRow,
-		cursorColumn: cursorColumn,
+		layout: ide_state.layout,
+		workspace: ide_state.semanticWorkspace,
+		lines: ide_state.lines,
+		textVersion: ide_state.textVersion,
+		cursorRow: ide_state.cursorRow,
+		cursorColumn: ide_state.cursorColumn,
 		extractExpression: (row, column) => extractHoverExpression(row, column),
 		chunkName: referenceContext.chunkName,
 	});
 	if (result.kind === 'error') {
-		showMessage(result.message, constants.COLOR_STATUS_WARNING, result.duration);
+		ide_state.showMessage(result.message, constants.COLOR_STATUS_WARNING, result.duration);
 		return;
 	}
 	const { info, initialIndex } = result;
-	referenceState.apply(info, initialIndex);
-	referenceCatalog = buildReferenceCatalogForExpression(info, context);
-	if (referenceCatalog.length === 0) {
-		showMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
+	ide_state.referenceState.apply(info, initialIndex);
+	ide_state.referenceCatalog = buildReferenceCatalogForExpression(info, context);
+	if (ide_state.referenceCatalog.length === 0) {
+		ide_state.showMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
 		return;
 	}
-	symbolSearchMode = 'references';
-	symbolSearchGlobal = true;
-	symbolSearchVisible = true;
-	symbolSearchActive = true;
+	ide_state.symbolSearchMode = 'references';
+	ide_state.symbolSearchGlobal = true;
+	ide_state.symbolSearchVisible = true;
+	ide_state.symbolSearchActive = true;
 	applySymbolSearchFieldText('', true);
-	symbolSearchQuery = '';
+	ide_state.symbolSearchQuery = '';
 	updateReferenceSearchMatches();
-	symbolSearchHoverIndex = -1;
+	ide_state.symbolSearchHoverIndex = -1;
 	ensureSymbolSearchSelectionVisible();
 	resetBlink();
 	showReferenceStatusMessage();
@@ -4165,21 +3961,21 @@ export function openRenamePrompt(): void {
 	closeLineJump(false);
 	closeResourceSearch(false);
 	closeSymbolSearch(false);
-	createResourceActive = false;
+	ide_state.createResourceActive = false;
 	const context = getActiveCodeTabContext();
 	const referenceContext = buildProjectReferenceContext(context);
-	const started = renameController.begin({
-		layout: layout,
-		workspace: semanticWorkspace,
-		lines: lines,
-		textVersion: textVersion,
-		cursorRow: cursorRow,
-		cursorColumn: cursorColumn,
+	const started = ide_state.renameController.begin({
+		layout: ide_state.layout,
+		workspace: ide_state.semanticWorkspace,
+		lines: ide_state.lines,
+		textVersion: ide_state.textVersion,
+		cursorRow: ide_state.cursorRow,
+		cursorColumn: ide_state.cursorColumn,
 		extractExpression: (row, column) => extractHoverExpression(row, column),
 		chunkName: referenceContext.chunkName,
 	});
 	if (started) {
-		cursorVisible = true;
+		ide_state.cursorVisible = true;
 		resetBlink();
 	}
 }
@@ -4190,7 +3986,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	const referenceContext = buildProjectReferenceContext(activeContext);
 	const activeChunkName = referenceContext.chunkName;
 	const normalizedActiveChunk = normalizeChunkReference(activeChunkName) ?? activeChunkName;
-	const renameManager = new CrossFileRenameManager(getCrossFileRenameDependencies(), semanticWorkspace);
+	const renameManager = new CrossFileRenameManager(getCrossFileRenameDependencies(), ide_state.semanticWorkspace);
 	const sortedMatches = matches.slice();
 	sortedMatches.sort((a, b) => {
 		if (a.row !== b.row) {
@@ -4201,13 +3997,13 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	let updatedTotal = 0;
 	let activeEditsApplied = false;
 	if (sortedMatches.length > 0) {
-		const edits = planRenameLineEdits(lines, sortedMatches, newName);
+		const edits = planRenameLineEdits(ide_state.lines, sortedMatches, newName);
 		if (edits.length > 0) {
 			prepareUndo('rename', false);
 			recordEditContext('replace', newName);
 			for (let index = 0; index < edits.length; index += 1) {
 				const edit = edits[index];
-				lines[edit.row] = edit.text;
+				ide_state.lines[edit.row] = edit.text;
 				invalidateLine(edit.row);
 			}
 			markTextMutated();
@@ -4215,23 +4011,23 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 		}
 		const clampedIndex = clamp(activeIndex, 0, sortedMatches.length - 1);
 		const match = sortedMatches[clampedIndex];
-		const line = lines[match.row] ?? '';
+		const line = ide_state.lines[match.row] ?? '';
 		const startColumn = clamp(match.start, 0, line.length);
 		const endColumn = clamp(startColumn + newName.length, startColumn, line.length);
-		cursorRow = match.row;
-		cursorColumn = startColumn;
-		selectionAnchor = { row: match.row, column: endColumn };
+		ide_state.cursorRow = match.row;
+		ide_state.cursorColumn = startColumn;
+		ide_state.selectionAnchor = { row: match.row, column: endColumn };
 		updateDesiredColumn();
 		resetBlink();
-		cursorRevealSuspended = false;
+		ide_state.cursorRevealSuspended = false;
 		ensureCursorVisible();
 		updatedTotal += sortedMatches.length;
 	}
 	if (activeEditsApplied) {
-		semanticWorkspace.updateFile(activeChunkName, lines.join('\n'));
+		ide_state.semanticWorkspace.updateFile(activeChunkName, ide_state.lines.join('\n'));
 	}
-	const decl = info.definitionKey ? semanticWorkspace.getDecl(info.definitionKey) : null;
-	const references = info.definitionKey ? semanticWorkspace.getReferences(info.definitionKey) : [];
+	const decl = info.definitionKey ? ide_state.semanticWorkspace.getDecl(info.definitionKey) : null;
+	const references = info.definitionKey ? ide_state.semanticWorkspace.getReferences(info.definitionKey) : [];
 	type RangeBucket = { chunkName: string; ranges: LuaSourceRange[]; seen: Set<string> };
 	const rangeMap = new Map<string, RangeBucket>();
 	const addRange = (range: LuaSourceRange | null | undefined): void => {
@@ -4277,16 +4073,16 @@ export function getCrossFileRenameDependencies(): CrossFileRenameDependencies {
 		findResourceDescriptorForChunk: (chunk: string) => findResourceDescriptorForChunk(chunk),
 		createLuaCodeTabContext: (descriptor: ConsoleResourceDescriptor) => createLuaCodeTabContext(descriptor),
 		createEntryTabContext: () => createEntryTabContext(),
-		getEntryTabId: () => entryTabId,
+		getEntryTabId: () => ide_state.entryTabId,
 		setEntryTabId: (id: string | null) => {
-			entryTabId = id;
+			ide_state.entryTabId = id;
 		},
-		getPrimaryAssetId: () => primaryAssetId,
-		getCodeTabContext: (id: string) => codeTabContexts.get(id) ?? null,
+		getPrimaryAssetId: () => ide_state.primaryAssetId,
+		getCodeTabContext: (id: string) => ide_state.codeTabContexts.get(id) ?? null,
 		setCodeTabContext: (context: CodeTabContext) => {
-			codeTabContexts.set(context.id, context);
+			ide_state.codeTabContexts.set(context.id, context);
 		},
-		listCodeTabContexts: () => codeTabContexts.values(),
+		listCodeTabContexts: () => ide_state.codeTabContexts.values(),
 		splitLines: (source: string) => splitLines(source),
 		setTabDirty: (tabId: string, dirty: boolean) => setTabDirty(tabId, dirty),
 	};
@@ -4296,45 +4092,45 @@ export function closeSymbolSearch(clearQuery: boolean): void {
 	if (clearQuery) {
 		applySymbolSearchFieldText('', true);
 	}
-	symbolSearchActive = false;
-	symbolSearchVisible = false;
-	symbolSearchGlobal = false;
-	symbolSearchMode = 'symbols';
-	referenceCatalog = [];
-	symbolSearchMatches = [];
-	symbolSearchSelectionIndex = -1;
-	symbolSearchDisplayOffset = 0;
-	symbolSearchHoverIndex = -1;
-	symbolSearchField.selectionAnchor = null;
-	symbolSearchField.pointerSelecting = false;
+	ide_state.symbolSearchActive = false;
+	ide_state.symbolSearchVisible = false;
+	ide_state.symbolSearchGlobal = false;
+	ide_state.symbolSearchMode = 'symbols';
+	ide_state.referenceCatalog = [];
+	ide_state.symbolSearchMatches = [];
+	ide_state.symbolSearchSelectionIndex = -1;
+	ide_state.symbolSearchDisplayOffset = 0;
+	ide_state.symbolSearchHoverIndex = -1;
+	ide_state.symbolSearchField.selectionAnchor = null;
+	ide_state.symbolSearchField.pointerSelecting = false;
 	resetBlink();
 }
 
 export function focusEditorFromSymbolSearch(): void {
-	if (!symbolSearchActive && !symbolSearchVisible) {
+	if (!ide_state.symbolSearchActive && !ide_state.symbolSearchVisible) {
 		return;
 	}
-	symbolSearchActive = false;
-	if (symbolSearchQuery.length === 0) {
-		symbolSearchVisible = false;
-		symbolSearchMatches = [];
-		symbolSearchSelectionIndex = -1;
-		symbolSearchDisplayOffset = 0;
+	ide_state.symbolSearchActive = false;
+	if (ide_state.symbolSearchQuery.length === 0) {
+		ide_state.symbolSearchVisible = false;
+		ide_state.symbolSearchMatches = [];
+		ide_state.symbolSearchSelectionIndex = -1;
+		ide_state.symbolSearchDisplayOffset = 0;
 	}
-	symbolSearchField.selectionAnchor = null;
-	symbolSearchField.pointerSelecting = false;
+	ide_state.symbolSearchField.selectionAnchor = null;
+	ide_state.symbolSearchField.pointerSelecting = false;
 	resetBlink();
 }
 
 export function focusEditorFromRename(): void {
-	cursorRevealSuspended = false;
+	ide_state.cursorRevealSuspended = false;
 	resetBlink();
 	revealCursor();
-	cursorVisible = true;
+	ide_state.cursorVisible = true;
 }
 
 export function refreshSymbolCatalog(force: boolean): void {
-	const scope: 'local' | 'global' = symbolSearchGlobal ? 'global' : 'local';
+	const scope: 'local' | 'global' = ide_state.symbolSearchGlobal ? 'global' : 'local';
 	let assetId: string | null = null;
 	let chunkName: string | null = null;
 	if (scope === 'local') {
@@ -4342,7 +4138,7 @@ export function refreshSymbolCatalog(force: boolean): void {
 		assetId = resolveHoverAssetId(context);
 		chunkName = resolveHoverChunkName(context);
 	}
-	const existing = symbolCatalogContext;
+	const existing = ide_state.symbolCatalogContext;
 	const unchanged = existing !== null
 		&& existing.scope === scope
 		&& (scope === 'global'
@@ -4353,21 +4149,21 @@ export function refreshSymbolCatalog(force: boolean): void {
 	let entries: ConsoleLuaSymbolEntry[] = [];
 	try {
 		if (scope === 'global') {
-			entries = listGlobalLuaSymbolsFn();
+			entries = ide_state.listGlobalLuaSymbolsFn();
 		} else {
-			entries = listLuaSymbolsFn(assetId, chunkName);
+			entries = ide_state.listLuaSymbolsFn(assetId, chunkName);
 		}
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		symbolCatalog = [];
-		symbolSearchMatches = [];
-		symbolSearchSelectionIndex = -1;
-		symbolSearchDisplayOffset = 0;
-		symbolSearchHoverIndex = -1;
-		showMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+		ide_state.symbolCatalog = [];
+		ide_state.symbolSearchMatches = [];
+		ide_state.symbolSearchSelectionIndex = -1;
+		ide_state.symbolSearchDisplayOffset = 0;
+		ide_state.symbolSearchHoverIndex = -1;
+		ide_state.showMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
-	symbolCatalogContext = { scope, assetId, chunkName };
+	ide_state.symbolCatalogContext = { scope, assetId, chunkName };
 	const deduped: ConsoleLuaSymbolEntry[] = [];
 	const seen = new Set<string>();
 	for (let index = 0; index < entries.length; index += 1) {
@@ -4405,7 +4201,7 @@ export function refreshSymbolCatalog(force: boolean): void {
 		const bSource = b.sourceLabel ?? '';
 		return aSource.localeCompare(bSource);
 	});
-	symbolCatalog = catalogEntries;
+	ide_state.symbolCatalog = catalogEntries;
 }
 
 export function symbolPriority(kind: ConsoleLuaSymbolEntry['kind']): number {
@@ -4451,20 +4247,20 @@ export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string | null {
 export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext | null): ReferenceCatalogEntry[] {
 	const descriptor = context?.descriptor ?? null;
 	const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
-	const assetId = descriptor?.assetId ?? primaryAssetId ?? null;
+	const assetId = descriptor?.assetId ?? ide_state.primaryAssetId ?? null;
 	const chunkName = resolveHoverChunkName(context) ?? normalizedPath ?? assetId ?? '<console>';
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: getActiveCodeTabContext(),
-		activeLines: lines,
-		codeTabContexts: Array.from(codeTabContexts.values()),
+		activeLines: ide_state.lines,
+		codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
 		listResources: () => listResourcesStrict(),
-		loadLuaResource: (resourceId: string) => loadLuaResourceFn(resourceId),
+		loadLuaResource: (resourceId: string) => ide_state.loadLuaResourceFn(resourceId),
 	};
 	const sourceLabelPath = descriptor?.path ?? descriptor?.assetId ?? null;
 	return buildProjectReferenceCatalog({
-		workspace: semanticWorkspace,
+		workspace: ide_state.semanticWorkspace,
 		info,
-		lines: lines,
+		lines: ide_state.lines,
 		chunkName,
 		assetId,
 		environment,
@@ -4473,28 +4269,28 @@ export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, con
 }
 
 export function updateSymbolSearchMatches(): void {
-	if (symbolSearchMode === 'references') {
+	if (ide_state.symbolSearchMode === 'references') {
 		updateReferenceSearchMatches();
 		return;
 	}
 	refreshSymbolCatalog(false);
-	symbolSearchMatches = [];
-	symbolSearchSelectionIndex = -1;
-	symbolSearchDisplayOffset = 0;
-	symbolSearchHoverIndex = -1;
-	if (symbolCatalog.length === 0) {
+	ide_state.symbolSearchMatches = [];
+	ide_state.symbolSearchSelectionIndex = -1;
+	ide_state.symbolSearchDisplayOffset = 0;
+	ide_state.symbolSearchHoverIndex = -1;
+	if (ide_state.symbolCatalog.length === 0) {
 		return;
 	}
-	const query = symbolSearchQuery.trim().toLowerCase();
+	const query = ide_state.symbolSearchQuery.trim().toLowerCase();
 	if (query.length === 0) {
-		symbolSearchMatches = symbolCatalog.map(entry => ({ entry, matchIndex: 0 }));
-		if (symbolSearchMatches.length > 0) {
-			symbolSearchSelectionIndex = 0;
+		ide_state.symbolSearchMatches = ide_state.symbolCatalog.map(entry => ({ entry, matchIndex: 0 }));
+		if (ide_state.symbolSearchMatches.length > 0) {
+			ide_state.symbolSearchSelectionIndex = 0;
 		}
 		return;
 	}
 	const matches: SymbolSearchResult[] = [];
-	for (const entry of symbolCatalog) {
+	for (const entry of ide_state.symbolCatalog) {
 		const idx = entry.searchKey.indexOf(query);
 		if (idx === -1) {
 			continue;
@@ -4502,7 +4298,7 @@ export function updateSymbolSearchMatches(): void {
 		matches.push({ entry, matchIndex: idx });
 	}
 	if (matches.length === 0) {
-		symbolSearchMatches = [];
+		ide_state.symbolSearchMatches = [];
 		return;
 	}
 	matches.sort((a, b) => {
@@ -4522,96 +4318,96 @@ export function updateSymbolSearchMatches(): void {
 		}
 		return a.entry.displayName.localeCompare(b.entry.displayName);
 	});
-	symbolSearchMatches = matches;
-	symbolSearchSelectionIndex = 0;
-	symbolSearchDisplayOffset = 0;
+	ide_state.symbolSearchMatches = matches;
+	ide_state.symbolSearchSelectionIndex = 0;
+	ide_state.symbolSearchDisplayOffset = 0;
 }
 
 export function updateReferenceSearchMatches(): void {
 	const { matches, selectionIndex, displayOffset } = filterReferenceCatalog({
-		catalog: referenceCatalog,
-		query: symbolSearchQuery,
-		state: referenceState,
+		catalog: ide_state.referenceCatalog,
+		query: ide_state.symbolSearchQuery,
+		state: ide_state.referenceState,
 		pageSize: symbolSearchPageSize(),
 	});
-	symbolSearchMatches = matches;
-	symbolSearchSelectionIndex = selectionIndex;
-	symbolSearchDisplayOffset = displayOffset;
-	symbolSearchHoverIndex = -1;
+	ide_state.symbolSearchMatches = matches;
+	ide_state.symbolSearchSelectionIndex = selectionIndex;
+	ide_state.symbolSearchDisplayOffset = displayOffset;
+	ide_state.symbolSearchHoverIndex = -1;
 }
 
 export function getActiveSymbolSearchMatch(): SymbolSearchResult | null {
-	if (!symbolSearchVisible || symbolSearchMatches.length === 0) {
+	if (!ide_state.symbolSearchVisible || ide_state.symbolSearchMatches.length === 0) {
 		return null;
 	}
-	let index = symbolSearchHoverIndex;
-	if (index < 0 || index >= symbolSearchMatches.length) {
-		index = symbolSearchSelectionIndex;
+	let index = ide_state.symbolSearchHoverIndex;
+	if (index < 0 || index >= ide_state.symbolSearchMatches.length) {
+		index = ide_state.symbolSearchSelectionIndex;
 	}
-	if (index < 0 || index >= symbolSearchMatches.length) {
+	if (index < 0 || index >= ide_state.symbolSearchMatches.length) {
 		return null;
 	}
-	return symbolSearchMatches[index];
+	return ide_state.symbolSearchMatches[index];
 }
 
 export function ensureSymbolSearchSelectionVisible(): void {
-	if (symbolSearchSelectionIndex < 0) {
-		symbolSearchDisplayOffset = 0;
+	if (ide_state.symbolSearchSelectionIndex < 0) {
+		ide_state.symbolSearchDisplayOffset = 0;
 		return;
 	}
 	const maxVisible = symbolSearchPageSize();
-	if (symbolSearchSelectionIndex < symbolSearchDisplayOffset) {
-		symbolSearchDisplayOffset = symbolSearchSelectionIndex;
+	if (ide_state.symbolSearchSelectionIndex < ide_state.symbolSearchDisplayOffset) {
+		ide_state.symbolSearchDisplayOffset = ide_state.symbolSearchSelectionIndex;
 	}
-	if (symbolSearchSelectionIndex >= symbolSearchDisplayOffset + maxVisible) {
-		symbolSearchDisplayOffset = symbolSearchSelectionIndex - maxVisible + 1;
+	if (ide_state.symbolSearchSelectionIndex >= ide_state.symbolSearchDisplayOffset + maxVisible) {
+		ide_state.symbolSearchDisplayOffset = ide_state.symbolSearchSelectionIndex - maxVisible + 1;
 	}
-	if (symbolSearchDisplayOffset < 0) {
-		symbolSearchDisplayOffset = 0;
+	if (ide_state.symbolSearchDisplayOffset < 0) {
+		ide_state.symbolSearchDisplayOffset = 0;
 	}
-	const maxOffset = Math.max(0, symbolSearchMatches.length - maxVisible);
-	if (symbolSearchDisplayOffset > maxOffset) {
-		symbolSearchDisplayOffset = maxOffset;
+	const maxOffset = Math.max(0, ide_state.symbolSearchMatches.length - maxVisible);
+	if (ide_state.symbolSearchDisplayOffset > maxOffset) {
+		ide_state.symbolSearchDisplayOffset = maxOffset;
 	}
 }
 
 export function moveSymbolSearchSelection(delta: number): void {
-	if (symbolSearchMatches.length === 0) {
+	if (ide_state.symbolSearchMatches.length === 0) {
 		return;
 	}
-	let next = symbolSearchSelectionIndex;
+	let next = ide_state.symbolSearchSelectionIndex;
 	if (next === -1) {
-		next = delta > 0 ? 0 : symbolSearchMatches.length - 1;
+		next = delta > 0 ? 0 : ide_state.symbolSearchMatches.length - 1;
 	} else {
-		next = clamp(next + delta, 0, symbolSearchMatches.length - 1);
+		next = clamp(next + delta, 0, ide_state.symbolSearchMatches.length - 1);
 	}
-	if (next === symbolSearchSelectionIndex) {
+	if (next === ide_state.symbolSearchSelectionIndex) {
 		return;
 	}
-	symbolSearchSelectionIndex = next;
+	ide_state.symbolSearchSelectionIndex = next;
 	ensureSymbolSearchSelectionVisible();
 	resetBlink();
 }
 
 export function applySymbolSearchSelection(index: number): void {
-	if (index < 0 || index >= symbolSearchMatches.length) {
-		showMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
+	if (index < 0 || index >= ide_state.symbolSearchMatches.length) {
+		ide_state.showMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
-	const match = symbolSearchMatches[index];
-	if (symbolSearchMode === 'references') {
+	const match = ide_state.symbolSearchMatches[index];
+	if (ide_state.symbolSearchMode === 'references') {
 		const referenceEntry = match.entry as ReferenceCatalogEntry;
 		const symbol = referenceEntry.symbol as ReferenceSymbolEntry;
-		const entryIndex = referenceCatalog.indexOf(referenceEntry);
-		const expressionLabel = referenceState.getExpression() ?? symbol.name;
+		const entryIndex = ide_state.referenceCatalog.indexOf(referenceEntry);
+		const expressionLabel = ide_state.referenceState.getExpression() ?? symbol.name;
 		closeSymbolSearch(true);
-		referenceState.clear();
+		ide_state.referenceState.clear();
 		navigateToLuaDefinition(symbol.location);
-		const total = referenceCatalog.length;
+		const total = ide_state.referenceCatalog.length;
 		if (entryIndex >= 0 && total > 0) {
-			showMessage(`Reference ${entryIndex + 1}/${total} for ${expressionLabel}`, constants.COLOR_STATUS_SUCCESS, 1.6);
+			ide_state.showMessage(`Reference ${entryIndex + 1}/${total} for ${expressionLabel}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 		} else {
-			showMessage('Jumped to reference', constants.COLOR_STATUS_SUCCESS, 1.6);
+			ide_state.showMessage('Jumped to reference', constants.COLOR_STATUS_SUCCESS, 1.6);
 		}
 		return;
 	}
@@ -4623,21 +4419,21 @@ export function applySymbolSearchSelection(index: number): void {
 }
 
 export function handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
-	const altDown = isModifierPressedGlobal(playerIndex, 'AltLeft') || isModifierPressedGlobal(playerIndex, 'AltRight');
-	if (isKeyJustPressedGlobal(playerIndex, 'Enter')) {
+	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter')) {
 		consumeKeyboardKey(keyboard, 'Enter');
 		if (shiftDown) {
 			moveSymbolSearchSelection(-1);
 			return;
 		}
-		if (symbolSearchSelectionIndex >= 0) {
-			applySymbolSearchSelection(symbolSearchSelectionIndex);
+		if (ide_state.symbolSearchSelectionIndex >= 0) {
+			applySymbolSearchSelection(ide_state.symbolSearchSelectionIndex);
 		} else {
-			showMessage('No symbol selected', constants.COLOR_STATUS_WARNING, 1.5);
+			ide_state.showMessage('No symbol selected', constants.COLOR_STATUS_WARNING, 1.5);
 		}
 		return;
 	}
-	if (isKeyJustPressedGlobal(playerIndex, 'Escape')) {
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Escape')) {
 		consumeKeyboardKey(keyboard, 'Escape');
 		closeSymbolSearch(true);
 		return;
@@ -4662,19 +4458,19 @@ export function handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: n
 		moveSymbolSearchSelection(symbolSearchPageSize());
 		return;
 	}
-	if (isKeyJustPressedGlobal(playerIndex, 'Home')) {
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Home')) {
 		consumeKeyboardKey(keyboard, 'Home');
-		symbolSearchSelectionIndex = symbolSearchMatches.length > 0 ? 0 : -1;
+		ide_state.symbolSearchSelectionIndex = ide_state.symbolSearchMatches.length > 0 ? 0 : -1;
 		ensureSymbolSearchSelectionVisible();
 		return;
 	}
-	if (isKeyJustPressedGlobal(playerIndex, 'End')) {
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'End')) {
 		consumeKeyboardKey(keyboard, 'End');
-		symbolSearchSelectionIndex = symbolSearchMatches.length > 0 ? symbolSearchMatches.length - 1 : -1;
+		ide_state.symbolSearchSelectionIndex = ide_state.symbolSearchMatches.length > 0 ? ide_state.symbolSearchMatches.length - 1 : -1;
 		ensureSymbolSearchSelectionVisible();
 		return;
 	}
-	const textChanged = processInlineFieldEditing(symbolSearchField, keyboard, {
+	const textChanged = processInlineFieldEditing(ide_state.symbolSearchField, keyboard, {
 		ctrlDown,
 		metaDown,
 		shiftDown,
@@ -4684,7 +4480,7 @@ export function handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: n
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	symbolSearchQuery = symbolSearchField.text;
+	ide_state.symbolSearchQuery = ide_state.symbolSearchField.text;
 	if (textChanged) {
 		updateSymbolSearchMatches();
 	}
@@ -4696,12 +4492,12 @@ export function refreshResourceCatalog(): void {
 		descriptors = listResourcesStrict();
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		resourceCatalog = [];
-		resourceSearchMatches = [];
-		resourceSearchSelectionIndex = -1;
-		resourceSearchDisplayOffset = 0;
-		resourceSearchHoverIndex = -1;
-		showMessage(`Failed to list resources: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+		ide_state.resourceCatalog = [];
+		ide_state.resourceSearchMatches = [];
+		ide_state.resourceSearchSelectionIndex = -1;
+		ide_state.resourceSearchDisplayOffset = 0;
+		ide_state.resourceSearchHoverIndex = -1;
+		ide_state.showMessage(`Failed to list resources: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
 	const augmented = descriptors.slice();
@@ -4736,26 +4532,26 @@ export function refreshResourceCatalog(): void {
 		};
 	});
 	entries.sort((a, b) => a.displayPath.localeCompare(b.displayPath));
-	resourceCatalog = entries;
+	ide_state.resourceCatalog = entries;
 }
 
 export function updateResourceSearchMatches(): void {
-	resourceSearchMatches = [];
-	resourceSearchSelectionIndex = -1;
-	resourceSearchDisplayOffset = 0;
-	resourceSearchHoverIndex = -1;
-	if (resourceCatalog.length === 0) {
+	ide_state.resourceSearchMatches = [];
+	ide_state.resourceSearchSelectionIndex = -1;
+	ide_state.resourceSearchDisplayOffset = 0;
+	ide_state.resourceSearchHoverIndex = -1;
+	if (ide_state.resourceCatalog.length === 0) {
 		return;
 	}
-	const query = resourceSearchQuery.trim().toLowerCase();
+	const query = ide_state.resourceSearchQuery.trim().toLowerCase();
 	if (query.length === 0) {
-		resourceSearchMatches = resourceCatalog.map(entry => ({ entry, matchIndex: 0 }));
-		resourceSearchSelectionIndex = -1;
+		ide_state.resourceSearchMatches = ide_state.resourceCatalog.map(entry => ({ entry, matchIndex: 0 }));
+		ide_state.resourceSearchSelectionIndex = -1;
 		return;
 	}
 	const tokens = query.split(/\s+/).filter(token => token.length > 0);
 	const matches: ResourceSearchResult[] = [];
-	for (const entry of resourceCatalog) {
+	for (const entry of ide_state.resourceCatalog) {
 		let bestIndex = Number.POSITIVE_INFINITY;
 		let valid = true;
 		for (const token of tokens) {
@@ -4777,7 +4573,7 @@ export function updateResourceSearchMatches(): void {
 		matches.push({ entry, matchIndex: bestIndex });
 	}
 	if (matches.length === 0) {
-		resourceSearchMatches = [];
+		ide_state.resourceSearchMatches = [];
 		return;
 	}
 	matches.sort((a, b) => {
@@ -4789,55 +4585,55 @@ export function updateResourceSearchMatches(): void {
 		}
 		return a.entry.displayPath.localeCompare(b.entry.displayPath);
 	});
-	resourceSearchMatches = matches;
-	resourceSearchSelectionIndex = matches.length > 0 ? 0 : -1;
+	ide_state.resourceSearchMatches = matches;
+	ide_state.resourceSearchSelectionIndex = matches.length > 0 ? 0 : -1;
 }
 
 export function ensureResourceSearchSelectionVisible(): void {
-	if (resourceSearchSelectionIndex < 0) {
-		resourceSearchDisplayOffset = 0;
+	if (ide_state.resourceSearchSelectionIndex < 0) {
+		ide_state.resourceSearchDisplayOffset = 0;
 		return;
 	}
 	const windowSize = Math.max(1, resourceSearchWindowCapacity());
-	if (resourceSearchSelectionIndex < resourceSearchDisplayOffset) {
-		resourceSearchDisplayOffset = resourceSearchSelectionIndex;
+	if (ide_state.resourceSearchSelectionIndex < ide_state.resourceSearchDisplayOffset) {
+		ide_state.resourceSearchDisplayOffset = ide_state.resourceSearchSelectionIndex;
 	}
-	if (resourceSearchSelectionIndex >= resourceSearchDisplayOffset + windowSize) {
-		resourceSearchDisplayOffset = resourceSearchSelectionIndex - windowSize + 1;
+	if (ide_state.resourceSearchSelectionIndex >= ide_state.resourceSearchDisplayOffset + windowSize) {
+		ide_state.resourceSearchDisplayOffset = ide_state.resourceSearchSelectionIndex - windowSize + 1;
 	}
-	if (resourceSearchDisplayOffset < 0) {
-		resourceSearchDisplayOffset = 0;
+	if (ide_state.resourceSearchDisplayOffset < 0) {
+		ide_state.resourceSearchDisplayOffset = 0;
 	}
-	const maxOffset = Math.max(0, resourceSearchMatches.length - windowSize);
-	if (resourceSearchDisplayOffset > maxOffset) {
-		resourceSearchDisplayOffset = maxOffset;
+	const maxOffset = Math.max(0, ide_state.resourceSearchMatches.length - windowSize);
+	if (ide_state.resourceSearchDisplayOffset > maxOffset) {
+		ide_state.resourceSearchDisplayOffset = maxOffset;
 	}
 }
 
 export function moveResourceSearchSelection(delta: number): void {
-	if (resourceSearchMatches.length === 0) {
+	if (ide_state.resourceSearchMatches.length === 0) {
 		return;
 	}
-	let next = resourceSearchSelectionIndex;
+	let next = ide_state.resourceSearchSelectionIndex;
 	if (next === -1) {
-		next = delta > 0 ? 0 : resourceSearchMatches.length - 1;
+		next = delta > 0 ? 0 : ide_state.resourceSearchMatches.length - 1;
 	} else {
-		next = clamp(next + delta, 0, resourceSearchMatches.length - 1);
+		next = clamp(next + delta, 0, ide_state.resourceSearchMatches.length - 1);
 	}
-	if (next === resourceSearchSelectionIndex) {
+	if (next === ide_state.resourceSearchSelectionIndex) {
 		return;
 	}
-	resourceSearchSelectionIndex = next;
+	ide_state.resourceSearchSelectionIndex = next;
 	ensureResourceSearchSelectionVisible();
 	resetBlink();
 }
 
 export function applyResourceSearchSelection(index: number): void {
-	if (index < 0 || index >= resourceSearchMatches.length) {
-		showMessage('Resource not found', constants.COLOR_STATUS_WARNING, 1.5);
+	if (index < 0 || index >= ide_state.resourceSearchMatches.length) {
+		ide_state.showMessage('Resource not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
-	const match = resourceSearchMatches[index];
+	const match = ide_state.resourceSearchMatches[index];
 	closeResourceSearch(true);
 	scheduleNextFrame(() => {
 		openResourceDescriptor(match.entry.descriptor);
@@ -4845,28 +4641,28 @@ export function applyResourceSearchSelection(index: number): void {
 }
 
 export function handleResourceSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
-	const altDown = isModifierPressedGlobal(playerIndex, 'AltLeft') || isModifierPressedGlobal(playerIndex, 'AltRight');
-	if (isKeyJustPressedGlobal(playerIndex, 'Enter')) {
+	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter')) {
 		consumeKeyboardKey(keyboard, 'Enter');
 		if (shiftDown) {
 			moveResourceSearchSelection(-1);
 			return;
 		}
-		if (resourceSearchSelectionIndex >= 0) {
-			applyResourceSearchSelection(resourceSearchSelectionIndex);
+		if (ide_state.resourceSearchSelectionIndex >= 0) {
+			applyResourceSearchSelection(ide_state.resourceSearchSelectionIndex);
 			return;
 		} else {
-			const trimmed = resourceSearchQuery.trim();
+			const trimmed = ide_state.resourceSearchQuery.trim();
 			if (trimmed.length === 0) {
 				closeResourceSearch(true);
 				focusEditorFromResourceSearch();
 			} else {
-				showMessage('No resource selected', constants.COLOR_STATUS_WARNING, 1.5);
+				ide_state.showMessage('No resource selected', constants.COLOR_STATUS_WARNING, 1.5);
 			}
 		}
 		return;
 	}
-	if (isKeyJustPressedGlobal(playerIndex, 'Escape')) {
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Escape')) {
 		consumeKeyboardKey(keyboard, 'Escape');
 		closeResourceSearch(true);
 		focusEditorFromResourceSearch();
@@ -4892,19 +4688,19 @@ export function handleResourceSearchInput(keyboard: KeyboardInput, deltaSeconds:
 		moveResourceSearchSelection(resourceSearchWindowCapacity());
 		return;
 	}
-	if (isKeyJustPressedGlobal(playerIndex, 'Home')) {
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Home')) {
 		consumeKeyboardKey(keyboard, 'Home');
-		resourceSearchSelectionIndex = resourceSearchMatches.length > 0 ? 0 : -1;
+		ide_state.resourceSearchSelectionIndex = ide_state.resourceSearchMatches.length > 0 ? 0 : -1;
 		ensureResourceSearchSelectionVisible();
 		return;
 	}
-	if (isKeyJustPressedGlobal(playerIndex, 'End')) {
+	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'End')) {
 		consumeKeyboardKey(keyboard, 'End');
-		resourceSearchSelectionIndex = resourceSearchMatches.length > 0 ? resourceSearchMatches.length - 1 : -1;
+		ide_state.resourceSearchSelectionIndex = ide_state.resourceSearchMatches.length > 0 ? ide_state.resourceSearchMatches.length - 1 : -1;
 		ensureResourceSearchSelectionVisible();
 		return;
 	}
-	const textChanged = processInlineFieldEditing(resourceSearchField, keyboard, {
+	const textChanged = processInlineFieldEditing(ide_state.resourceSearchField, keyboard, {
 		ctrlDown,
 		metaDown,
 		shiftDown,
@@ -4914,27 +4710,27 @@ export function handleResourceSearchInput(keyboard: KeyboardInput, deltaSeconds:
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	resourceSearchQuery = resourceSearchField.text;
+	ide_state.resourceSearchQuery = ide_state.resourceSearchField.text;
 	if (textChanged) {
-		if (resourceSearchQuery.startsWith('@')) {
-			const query = resourceSearchQuery.slice(1).trimStart();
+		if (ide_state.resourceSearchQuery.startsWith('@')) {
+			const query = ide_state.resourceSearchQuery.slice(1).trimStart();
 			closeResourceSearch(true);
 			openSymbolSearch(query);
 			return;
 		}
-		if (resourceSearchQuery.startsWith('#')) {
-			const query = resourceSearchQuery.slice(1).trimStart();
+		if (ide_state.resourceSearchQuery.startsWith('#')) {
+			const query = ide_state.resourceSearchQuery.slice(1).trimStart();
 			closeResourceSearch(true);
 			openGlobalSymbolSearch(query);
 			return;
 		}
-		if (resourceSearchQuery.startsWith(':')) {
-			const query = resourceSearchQuery.slice(1).trimStart();
+		if (ide_state.resourceSearchQuery.startsWith(':')) {
+			const query = ide_state.resourceSearchQuery.slice(1).trimStart();
 			closeResourceSearch(true);
 			openLineJump();
 			if (query.length > 0) {
 				applyLineJumpFieldText(query, true);
-				lineJumpValue = query;
+				ide_state.lineJumpValue = query;
 			}
 			return;
 		}
@@ -4947,102 +4743,102 @@ export function openLineJump(): void {
 	closeSymbolSearch(false);
 	closeResourceSearch(false);
 	closeSearch(false, true);
-	renameController.cancel();
-	lineJumpVisible = true;
-	lineJumpActive = true;
+	ide_state.renameController.cancel();
+	ide_state.lineJumpVisible = true;
+	ide_state.lineJumpActive = true;
 	applyLineJumpFieldText('', true);
 	resetBlink();
 }
 
 export function closeLineJump(clearValue: boolean): void {
-	lineJumpActive = false;
-	lineJumpVisible = false;
+	ide_state.lineJumpActive = false;
+	ide_state.lineJumpVisible = false;
 	if (clearValue) {
 		applyLineJumpFieldText('', true);
 	}
-	lineJumpField.selectionAnchor = null;
-	lineJumpField.pointerSelecting = false;
+	ide_state.lineJumpField.selectionAnchor = null;
+	ide_state.lineJumpField.pointerSelecting = false;
 	resetBlink();
 }
 
 export function focusEditorFromLineJump(): void {
-	if (!lineJumpActive && !lineJumpVisible) {
+	if (!ide_state.lineJumpActive && !ide_state.lineJumpVisible) {
 		return;
 	}
-	lineJumpActive = false;
-	lineJumpVisible = false;
-	lineJumpField.selectionAnchor = null;
-	lineJumpField.pointerSelecting = false;
+	ide_state.lineJumpActive = false;
+	ide_state.lineJumpVisible = false;
+	ide_state.lineJumpField.selectionAnchor = null;
+	ide_state.lineJumpField.pointerSelecting = false;
 	resetBlink();
 }
 
 export function focusEditorFromProblemsPanel(): void {
-	problemsPanel.setFocused(false);
+	ide_state.problemsPanel.setFocused(false);
 	resetBlink();
 }
 
 export function focusEditorFromResourcePanel(): void {
-	if (!resourcePanelFocused) {
+	if (!ide_state.resourcePanelFocused) {
 		return;
 	}
-	resourcePanelFocused = false;
+	ide_state.resourcePanelFocused = false;
 	resetBlink();
 }
 
 export function applyLineJump(): void {
-	if (lineJumpValue.length === 0) {
-		showMessage('Enter a line number', constants.COLOR_STATUS_WARNING, 1.5);
+	if (ide_state.lineJumpValue.length === 0) {
+		ide_state.showMessage('Enter a line number', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
-	const target = Number.parseInt(lineJumpValue, 10);
-	if (!Number.isFinite(target) || target < 1 || target > lines.length) {
-		const limit = lines.length <= 0 ? 1 : lines.length;
-		showMessage(`Line must be between 1 and ${limit}`, constants.COLOR_STATUS_WARNING, 1.8);
+	const target = Number.parseInt(ide_state.lineJumpValue, 10);
+	if (!Number.isFinite(target) || target < 1 || target > ide_state.lines.length) {
+		const limit = ide_state.lines.length <= 0 ? 1 : ide_state.lines.length;
+		ide_state.showMessage(`Line must be between 1 and ${limit}`, constants.COLOR_STATUS_WARNING, 1.8);
 		return;
 	}
 	setCursorPosition(target - 1, 0);
 	clearSelection();
 	breakUndoSequence();
 	closeLineJump(true);
-	showMessage(`Jumped to line ${target}`, constants.COLOR_STATUS_SUCCESS, 1.5);
+	ide_state.showMessage(`Jumped to line ${target}`, constants.COLOR_STATUS_SUCCESS, 1.5);
 }
 
 export function onSearchQueryChanged(): void {
-	if (searchScope === 'global') {
+	if (ide_state.searchScope === 'global') {
 		onGlobalSearchQueryChanged();
 		return;
 	}
-	if (searchQuery.length === 0) {
+	if (ide_state.searchQuery.length === 0) {
 		cancelSearchJob();
-		searchMatches = [];
-		searchCurrentIndex = -1;
-		selectionAnchor = null;
-		searchDisplayOffset = 0;
+		ide_state.searchMatches = [];
+		ide_state.searchCurrentIndex = -1;
+		ide_state.selectionAnchor = null;
+		ide_state.searchDisplayOffset = 0;
 		return;
 	}
 	startSearchJob();
 }
 
 export function onGlobalSearchQueryChanged(): void {
-	searchDisplayOffset = 0;
-	searchHoverIndex = -1;
-	searchCurrentIndex = -1;
-	if (searchQuery.length === 0) {
+	ide_state.searchDisplayOffset = 0;
+	ide_state.searchHoverIndex = -1;
+	ide_state.searchCurrentIndex = -1;
+	if (ide_state.searchQuery.length === 0) {
 		cancelGlobalSearchJob();
-		globalSearchMatches = [];
+		ide_state.globalSearchMatches = [];
 		return;
 	}
 	startGlobalSearchJob();
 }
 
 export function focusSearchResult(index: number): void {
-	if (index < 0 || index >= searchMatches.length) {
+	if (index < 0 || index >= ide_state.searchMatches.length) {
 		return;
 	}
-	const match = searchMatches[index];
-	cursorRow = match.row;
-	cursorColumn = match.start;
-	selectionAnchor = { row: match.row, column: match.end };
+	const match = ide_state.searchMatches[index];
+	ide_state.cursorRow = match.row;
+	ide_state.cursorColumn = match.start;
+	ide_state.selectionAnchor = { row: match.row, column: match.end };
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -5051,7 +4847,7 @@ export function focusSearchResult(index: number): void {
 export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	// Switch to the originating tab if provided
-	if (diagnostic.contextId && diagnostic.contextId.length > 0 && diagnostic.contextId !== activeCodeTabContextId) {
+	if (diagnostic.contextId && diagnostic.contextId.length > 0 && diagnostic.contextId !== ide_state.activeCodeTabContextId) {
 		setActiveTab(diagnostic.contextId);
 	}
 	if (!isCodeTabActive()) {
@@ -5060,106 +4856,106 @@ export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
 	if (!isCodeTabActive()) {
 		return;
 	}
-	const targetRow = clamp(diagnostic.row, 0, Math.max(0, lines.length - 1));
-	const line = lines[targetRow] ?? '';
+	const targetRow = clamp(diagnostic.row, 0, Math.max(0, ide_state.lines.length - 1));
+	const line = ide_state.lines[targetRow] ?? '';
 	const targetColumn = clamp(diagnostic.startColumn, 0, line.length);
 	setCursorPosition(targetRow, targetColumn);
 	clearSelection();
-	cursorRevealSuspended = false;
+	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();
 	completeNavigation(navigationCheckpoint);
 }
 
 export function jumpToNextMatch(): void {
-	if (searchScope === 'global') {
+	if (ide_state.searchScope === 'global') {
 		if (activeSearchMatchCount() === 0) {
-			showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
+			ide_state.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
 		moveSearchSelection(1, { wrap: true });
-		applySearchSelection(searchCurrentIndex);
+		applySearchSelection(ide_state.searchCurrentIndex);
 		return;
 	}
 	ensureSearchJobCompleted();
-	if (searchMatches.length === 0) {
-		showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
+	if (ide_state.searchMatches.length === 0) {
+		ide_state.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
-	if (searchCurrentIndex < 0) {
-		searchCurrentIndex = 0;
+	if (ide_state.searchCurrentIndex < 0) {
+		ide_state.searchCurrentIndex = 0;
 	} else {
-		searchCurrentIndex += 1;
-		if (searchCurrentIndex >= searchMatches.length) {
-			searchCurrentIndex = 0;
+		ide_state.searchCurrentIndex += 1;
+		if (ide_state.searchCurrentIndex >= ide_state.searchMatches.length) {
+			ide_state.searchCurrentIndex = 0;
 		}
 	}
-	focusSearchResult(searchCurrentIndex);
+	focusSearchResult(ide_state.searchCurrentIndex);
 }
 
 export function jumpToPreviousMatch(): void {
-	if (searchScope === 'global') {
+	if (ide_state.searchScope === 'global') {
 		if (activeSearchMatchCount() === 0) {
-			showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
+			ide_state.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
 		moveSearchSelection(-1, { wrap: true });
-		applySearchSelection(searchCurrentIndex);
+		applySearchSelection(ide_state.searchCurrentIndex);
 		return;
 	}
 	ensureSearchJobCompleted();
-	if (searchMatches.length === 0) {
-		showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
+	if (ide_state.searchMatches.length === 0) {
+		ide_state.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
-	if (searchCurrentIndex < 0) {
-		searchCurrentIndex = searchMatches.length - 1;
+	if (ide_state.searchCurrentIndex < 0) {
+		ide_state.searchCurrentIndex = ide_state.searchMatches.length - 1;
 	} else {
-		searchCurrentIndex -= 1;
-		if (searchCurrentIndex < 0) {
-			searchCurrentIndex = searchMatches.length - 1;
+		ide_state.searchCurrentIndex -= 1;
+		if (ide_state.searchCurrentIndex < 0) {
+			ide_state.searchCurrentIndex = ide_state.searchMatches.length - 1;
 		}
 	}
-	focusSearchResult(searchCurrentIndex);
+	focusSearchResult(ide_state.searchCurrentIndex);
 }
 
 export function startSearchJob(): void {
 	cancelSearchJob();
-	searchDisplayOffset = 0;
-	searchHoverIndex = -1;
-	const normalized = searchQuery.toLowerCase();
+	ide_state.searchDisplayOffset = 0;
+	ide_state.searchHoverIndex = -1;
+	const normalized = ide_state.searchQuery.toLowerCase();
 	const job: SearchComputationJob = {
 		query: normalized,
-		version: textVersion,
+		version: ide_state.textVersion,
 		nextRow: 0,
 		matches: [],
 		firstMatchAfterCursor: -1,
-		cursorRow: cursorRow,
-		cursorColumn: cursorColumn,
+		cursorRow: ide_state.cursorRow,
+		cursorColumn: ide_state.cursorColumn,
 	};
-	searchJob = job;
-	searchMatches = [];
-	searchCurrentIndex = -1;
-	selectionAnchor = null;
+	ide_state.searchJob = job;
+	ide_state.searchMatches = [];
+	ide_state.searchCurrentIndex = -1;
+	ide_state.selectionAnchor = null;
 	enqueueBackgroundTask(() => runSearchJobSlice(job));
 }
 
 export function runSearchJobSlice(job: SearchComputationJob): boolean {
-	if (searchJob !== job) {
+	if (ide_state.searchJob !== job) {
 		return false;
 	}
-	if (job.query.length === 0 || job.version !== textVersion || searchQuery.length === 0) {
-		searchJob = null;
+	if (job.query.length === 0 || job.version !== ide_state.textVersion || ide_state.searchQuery.length === 0) {
+		ide_state.searchJob = null;
 		return false;
 	}
 	const rowsPerSlice = 200;
 	let processed = 0;
-	while (job.nextRow < lines.length && processed < rowsPerSlice) {
+	while (job.nextRow < ide_state.lines.length && processed < rowsPerSlice) {
 		const row = job.nextRow;
 		job.nextRow += 1;
 		processed += 1;
 		collectSearchMatchesForRow(job, row);
 	}
-	if (job.nextRow >= lines.length) {
+	if (job.nextRow >= ide_state.lines.length) {
 		completeSearchJob(job);
 		return false;
 	}
@@ -5167,7 +4963,7 @@ export function runSearchJobSlice(job: SearchComputationJob): boolean {
 }
 
 export function collectSearchMatchesForRow(job: SearchComputationJob, row: number): void {
-	const line = lines[row];
+	const line = ide_state.lines[row];
 	if (!line || line.length === 0) {
 		return;
 	}
@@ -5204,42 +5000,42 @@ export function forEachMatchInLine(line: string, needle: string, cb: (start: num
 }
 
 export function completeSearchJob(job: SearchComputationJob): void {
-	if (searchJob !== job) {
+	if (ide_state.searchJob !== job) {
 		return;
 	}
-	searchJob = null;
-	searchMatches = job.matches;
+	ide_state.searchJob = null;
+	ide_state.searchMatches = job.matches;
 	if (job.matches.length === 0) {
-		searchCurrentIndex = -1;
-		selectionAnchor = null;
-		searchDisplayOffset = 0;
+		ide_state.searchCurrentIndex = -1;
+		ide_state.selectionAnchor = null;
+		ide_state.searchDisplayOffset = 0;
 	} else {
 		const index = job.firstMatchAfterCursor >= 0 ? job.firstMatchAfterCursor : 0;
-		searchCurrentIndex = clamp(index, 0, job.matches.length - 1);
+		ide_state.searchCurrentIndex = clamp(index, 0, job.matches.length - 1);
 		ensureSearchSelectionVisible();
-		focusSearchResult(searchCurrentIndex);
+		focusSearchResult(ide_state.searchCurrentIndex);
 	}
 }
 
 export function cancelSearchJob(): void {
-	searchJob = null;
+	ide_state.searchJob = null;
 }
 
 export function ensureSearchJobCompleted(): void {
-	const job = searchJob;
+	const job = ide_state.searchJob;
 	if (!job) {
 		return;
 	}
-	while (searchJob === job && runSearchJobSlice(job)) {
+	while (ide_state.searchJob === job && runSearchJobSlice(job)) {
 		// Continue processing synchronously until the job completes.
 	}
 }
 
 export function startGlobalSearchJob(): void {
 	cancelGlobalSearchJob();
-	const normalized = searchQuery.toLowerCase();
+	const normalized = ide_state.searchQuery.toLowerCase();
 	if (normalized.length === 0) {
-		globalSearchMatches = [];
+		ide_state.globalSearchMatches = [];
 		return;
 	}
 	let descriptors: ConsoleResourceDescriptor[] = [];
@@ -5257,20 +5053,20 @@ export function startGlobalSearchJob(): void {
 		matches: [],
 		limitHit: false,
 	};
-	globalSearchJob = job;
-	globalSearchMatches = [];
-	searchCurrentIndex = -1;
-	searchDisplayOffset = 0;
-	searchHoverIndex = -1;
+	ide_state.globalSearchJob = job;
+	ide_state.globalSearchMatches = [];
+	ide_state.searchCurrentIndex = -1;
+	ide_state.searchDisplayOffset = 0;
+	ide_state.searchHoverIndex = -1;
 	enqueueBackgroundTask(() => runGlobalSearchJobSlice(job));
 }
 
 export function runGlobalSearchJobSlice(job: GlobalSearchJob): boolean {
-	if (globalSearchJob !== job) {
+	if (ide_state.globalSearchJob !== job) {
 		return false;
 	}
 	if (job.query.length === 0) {
-		globalSearchJob = null;
+		ide_state.globalSearchJob = null;
 		return false;
 	}
 	const rowsPerSlice = 200;
@@ -5317,7 +5113,7 @@ export function runGlobalSearchJobSlice(job: GlobalSearchJob): boolean {
 				}
 			});
 		}
-		if (job.nextRow >= lines.length) {
+		if (job.nextRow >= ide_state.lines.length) {
 			job.currentLines = null;
 			job.nextRow = 0;
 			job.descriptorIndex += 1;
@@ -5331,24 +5127,24 @@ export function runGlobalSearchJobSlice(job: GlobalSearchJob): boolean {
 }
 
 export function completeGlobalSearchJob(job: GlobalSearchJob): void {
-	if (globalSearchJob !== job) {
+	if (ide_state.globalSearchJob !== job) {
 		return;
 	}
-	globalSearchJob = null;
-	globalSearchMatches = job.matches;
-	if (globalSearchMatches.length === 0) {
-		searchCurrentIndex = -1;
-		searchDisplayOffset = 0;
+	ide_state.globalSearchJob = null;
+	ide_state.globalSearchMatches = job.matches;
+	if (ide_state.globalSearchMatches.length === 0) {
+		ide_state.searchCurrentIndex = -1;
+		ide_state.searchDisplayOffset = 0;
 		return;
 	}
-	if (searchCurrentIndex < 0 || searchCurrentIndex >= globalSearchMatches.length) {
-		searchCurrentIndex = 0;
+	if (ide_state.searchCurrentIndex < 0 || ide_state.searchCurrentIndex >= ide_state.globalSearchMatches.length) {
+		ide_state.searchCurrentIndex = 0;
 	}
 	ensureSearchSelectionVisible();
 }
 
 export function cancelGlobalSearchJob(): void {
-	globalSearchJob = null;
+	ide_state.globalSearchJob = null;
 }
 
 export function loadDescriptorLines(descriptor: ConsoleResourceDescriptor): string[] | null {
@@ -5357,7 +5153,7 @@ export function loadDescriptorLines(descriptor: ConsoleResourceDescriptor): stri
 		if (!assetId) {
 			return null;
 		}
-		const source = loadLuaResourceFn(assetId);
+		const source = ide_state.loadLuaResourceFn(assetId);
 		if (typeof source !== 'string') {
 			return null;
 		}
@@ -5412,39 +5208,39 @@ export function getVisibleSearchResultEntries(): Array<{ primary: string; second
 export function ensureSearchSelectionVisible(): void {
 	const total = activeSearchMatchCount();
 	if (total === 0) {
-		searchDisplayOffset = 0;
+		ide_state.searchDisplayOffset = 0;
 		return;
 	}
-	if (searchCurrentIndex < 0) {
-		searchCurrentIndex = 0;
+	if (ide_state.searchCurrentIndex < 0) {
+		ide_state.searchCurrentIndex = 0;
 	}
 	const pageSize = searchPageSize();
-	if (searchCurrentIndex < searchDisplayOffset) {
-		searchDisplayOffset = searchCurrentIndex;
-	} else if (searchCurrentIndex >= searchDisplayOffset + pageSize) {
-		searchDisplayOffset = searchCurrentIndex - pageSize + 1;
+	if (ide_state.searchCurrentIndex < ide_state.searchDisplayOffset) {
+		ide_state.searchDisplayOffset = ide_state.searchCurrentIndex;
+	} else if (ide_state.searchCurrentIndex >= ide_state.searchDisplayOffset + pageSize) {
+		ide_state.searchDisplayOffset = ide_state.searchCurrentIndex - pageSize + 1;
 	}
 	const maxOffset = Math.max(0, total - pageSize);
-	searchDisplayOffset = clamp(searchDisplayOffset, 0, maxOffset);
+	ide_state.searchDisplayOffset = clamp(ide_state.searchDisplayOffset, 0, maxOffset);
 }
 
 export function computeSearchPageStats(): { total: number; offset: number; visible: number } {
 	const total = isSearchVisible() ? activeSearchMatchCount() : 0;
 	if (total <= 0) {
-		searchDisplayOffset = 0;
+		ide_state.searchDisplayOffset = 0;
 		return { total: 0, offset: 0, visible: 0 };
 	}
 	const pageSize = searchPageSize();
 	const maxOffset = Math.max(0, total - 1);
-	searchDisplayOffset = clamp(searchDisplayOffset, 0, maxOffset);
-	const remaining = total - searchDisplayOffset;
+	ide_state.searchDisplayOffset = clamp(ide_state.searchDisplayOffset, 0, maxOffset);
+	const remaining = total - ide_state.searchDisplayOffset;
 	const visible = Math.min(pageSize, remaining);
-	return { total, offset: searchDisplayOffset, visible };
+	return { total, offset: ide_state.searchDisplayOffset, visible };
 }
 
 export function buildSearchResultEntry(index: number): { primary: string; secondary?: string | null; detail?: string | null } | null {
-	if (searchScope === 'global') {
-		const match = globalSearchMatches[index];
+	if (ide_state.searchScope === 'global') {
+		const match = ide_state.globalSearchMatches[index];
 		if (!match) {
 			return null;
 		}
@@ -5454,11 +5250,11 @@ export function buildSearchResultEntry(index: number): { primary: string; second
 			detail: `:${match.row + 1}`,
 		};
 	}
-	const match = searchMatches[index];
+	const match = ide_state.searchMatches[index];
 	if (!match) {
 		return null;
 	}
-	const lineText = lines[match.row] ?? '';
+	const lineText = ide_state.lines[match.row] ?? '';
 	return {
 		primary: `Line ${match.row + 1}`,
 		secondary: buildSearchSnippet(lineText, match.start, match.end),
@@ -5471,7 +5267,7 @@ export function moveSearchSelection(delta: number, options?: { wrap?: boolean; p
 	if (total === 0) {
 		return;
 	}
-	let next = searchCurrentIndex;
+	let next = ide_state.searchCurrentIndex;
 	if (next === -1) {
 		next = delta > 0 ? 0 : total - 1;
 	} else {
@@ -5482,13 +5278,13 @@ export function moveSearchSelection(delta: number, options?: { wrap?: boolean; p
 	} else {
 		next = clamp(next, 0, total - 1);
 	}
-	if (next === searchCurrentIndex) {
+	if (next === ide_state.searchCurrentIndex) {
 		if (options?.preview) {
 			applySearchSelection(next, { preview: true });
 		}
 		return;
 	}
-	searchCurrentIndex = next;
+	ide_state.searchCurrentIndex = next;
 	ensureSearchSelectionVisible();
 	if (options?.preview) {
 		applySearchSelection(next, { preview: true });
@@ -5503,10 +5299,10 @@ export function applySearchSelection(index: number, options?: { preview?: boolea
 	let targetIndex = index;
 	if (targetIndex < 0 || targetIndex >= total) {
 		targetIndex = clamp(targetIndex, 0, total - 1);
-		searchCurrentIndex = targetIndex;
+		ide_state.searchCurrentIndex = targetIndex;
 	}
-	searchCurrentIndex = targetIndex;
-	if (searchScope === 'global') {
+	ide_state.searchCurrentIndex = targetIndex;
+	if (ide_state.searchScope === 'global') {
 		if (options?.preview) {
 			return;
 		}
@@ -5517,10 +5313,10 @@ export function applySearchSelection(index: number, options?: { preview?: boolea
 }
 
 export function focusGlobalSearchResult(index: number, previewOnly: boolean = false): void {
-	const match = globalSearchMatches[index];
+	const match = ide_state.globalSearchMatches[index];
 	if (!match) {
 		if (!previewOnly) {
-			showMessage('Search result unavailable', constants.COLOR_STATUS_WARNING, 1.5);
+			ide_state.showMessage('Search result unavailable', constants.COLOR_STATUS_WARNING, 1.5);
 		}
 		return;
 	}
@@ -5533,30 +5329,30 @@ export function focusGlobalSearchResult(index: number, previewOnly: boolean = fa
 		activateCodeTab();
 	}
 	scheduleNextFrame(() => {
-		const row = clamp(match.row, 0, Math.max(0, lines.length - 1));
-		const line = lines[row] ?? '';
+		const row = clamp(match.row, 0, Math.max(0, ide_state.lines.length - 1));
+		const line = ide_state.lines[row] ?? '';
 		const endColumn = Math.min(match.end, line.length);
-		cursorRow = row;
-		cursorColumn = clamp(match.start, 0, line.length);
-		selectionAnchor = { row, column: endColumn };
+		ide_state.cursorRow = row;
+		ide_state.cursorColumn = clamp(match.start, 0, line.length);
+		ide_state.selectionAnchor = { row, column: endColumn };
 		ensureCursorVisible();
 		resetBlink();
 	});
 }
 
 export function showReferenceStatusMessage(): void {
-	const matches = referenceState.getMatches();
-	const activeIndex = referenceState.getActiveIndex();
+	const matches = ide_state.referenceState.getMatches();
+	const activeIndex = ide_state.referenceState.getActiveIndex();
 	if (matches.length === 0 || activeIndex < 0) {
 		return;
 	}
-	const label = referenceState.getExpression() ?? '';
-	showMessage(`Reference ${activeIndex + 1}/${matches.length} for ${label}`, constants.COLOR_STATUS_SUCCESS, 1.6);
+	const label = ide_state.referenceState.getExpression() ?? '';
+	ide_state.showMessage(`Reference ${activeIndex + 1}/${matches.length} for ${label}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 }
 
 export function handlePointerInput(_deltaSeconds: number): void {
-	const ctrlDown = isModifierPressedGlobal(playerIndex, 'ControlLeft') || isModifierPressedGlobal(playerIndex, 'ControlRight');
-	const metaDown = isModifierPressedGlobal(playerIndex, 'MetaLeft') || isModifierPressedGlobal(playerIndex, 'MetaRight');
+	const ctrlDown = isModifierPressedGlobal(ide_state.playerIndex, 'ControlLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ControlRight');
+	const metaDown = isModifierPressedGlobal(ide_state.playerIndex, 'MetaLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'MetaRight');
 	const gotoModifierActive = ctrlDown || metaDown;
 	if (!gotoModifierActive) {
 		clearGotoHoverHighlight();
@@ -5564,41 +5360,41 @@ export function handlePointerInput(_deltaSeconds: number): void {
 	const activeContext = getActiveCodeTabContext();
 	const snapshot = readPointerSnapshot();
 	updateTabHoverState(snapshot);
-	lastPointerSnapshot = snapshot && snapshot.valid ? snapshot : null;
+	ide_state.lastPointerSnapshot = snapshot && snapshot.valid ? snapshot : null;
 	if (!snapshot) {
-		pointerPrimaryWasPressed = false;
-		scrollbarController.cancel();
-		lastPointerRowResolution = null;
+		ide_state.pointerPrimaryWasPressed = false;
+		ide_state.scrollbarController.cancel();
+		ide_state.lastPointerRowResolution = null;
 		clearHoverTooltip();
 		clearGotoHoverHighlight();
 		return;
 	}
 	if (!snapshot.valid) {
-		scrollbarController.cancel();
+		ide_state.scrollbarController.cancel();
 		clearGotoHoverHighlight();
-		lastPointerRowResolution = null;
-	} else if (scrollbarController.hasActiveDrag() && !snapshot.primaryPressed) {
-		scrollbarController.cancel();
-	} else if (scrollbarController.hasActiveDrag() && snapshot.primaryPressed) {
-		if (scrollbarController.update(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, (k, s) => applyScrollbarScroll(k, s))) {
-			pointerSelecting = false;
+		ide_state.lastPointerRowResolution = null;
+	} else if (ide_state.scrollbarController.hasActiveDrag() && !snapshot.primaryPressed) {
+		ide_state.scrollbarController.cancel();
+	} else if (ide_state.scrollbarController.hasActiveDrag() && snapshot.primaryPressed) {
+		if (ide_state.scrollbarController.update(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, (k, s) => applyScrollbarScroll(k, s))) {
+			ide_state.pointerSelecting = false;
 			clearHoverTooltip();
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			return;
 		}
 	}
 	if (!snapshot.primaryPressed) {
-		searchField.pointerSelecting = false;
-		symbolSearchField.pointerSelecting = false;
-		resourceSearchField.pointerSelecting = false;
-		lineJumpField.pointerSelecting = false;
-		createResourceField.pointerSelecting = false;
-		symbolSearchHoverIndex = -1;
-		resourceSearchHoverIndex = -1;
+		ide_state.searchField.pointerSelecting = false;
+		ide_state.symbolSearchField.pointerSelecting = false;
+		ide_state.resourceSearchField.pointerSelecting = false;
+		ide_state.lineJumpField.pointerSelecting = false;
+		ide_state.createResourceField.pointerSelecting = false;
+		ide_state.symbolSearchHoverIndex = -1;
+		ide_state.resourceSearchHoverIndex = -1;
 	}
 	let pointerAuxJustPressed = false;
 	let pointerAuxPressed = false;
-	const playerInput = $.input.getPlayerInput(playerIndex);
+	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
 	if (playerInput) {
 		const auxAction = playerInput.getActionState('pointer_aux');
 		if (auxAction && auxAction.justpressed === true && auxAction.consumed !== true) {
@@ -5606,21 +5402,21 @@ export function handlePointerInput(_deltaSeconds: number): void {
 			pointerAuxPressed = true;
 		} else if (auxAction && auxAction.pressed === true && auxAction.consumed !== true) {
 			pointerAuxPressed = true;
-			pointerAuxJustPressed = !pointerAuxWasPressed;
+			pointerAuxJustPressed = !ide_state.pointerAuxWasPressed;
 		}
 	}
-	pointerAuxWasPressed = pointerAuxPressed;
-	const wasPressed = pointerPrimaryWasPressed;
+	ide_state.pointerAuxWasPressed = pointerAuxPressed;
+	const wasPressed = ide_state.pointerPrimaryWasPressed;
 	const justPressed = snapshot.primaryPressed && !wasPressed;
 	const justReleased = !snapshot.primaryPressed && wasPressed;
-	if (justReleased || (!snapshot.primaryPressed && pointerSelecting)) {
-		pointerSelecting = false;
+	if (justReleased || (!snapshot.primaryPressed && ide_state.pointerSelecting)) {
+		ide_state.pointerSelecting = false;
 	}
-	if (tabDragState) {
+	if (ide_state.tabDragState) {
 		if (!snapshot.primaryPressed) {
 			endTabDrag();
-			pointerSelecting = false;
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			ide_state.pointerSelecting = false;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			clearGotoHoverHighlight();
 			clearHoverTooltip();
 			return;
@@ -5628,219 +5424,219 @@ export function handlePointerInput(_deltaSeconds: number): void {
 		if (snapshot.valid) {
 			updateTabDrag(snapshot.viewportX, snapshot.viewportY);
 		}
-		pointerSelecting = false;
-		pointerPrimaryWasPressed = snapshot.primaryPressed;
+		ide_state.pointerSelecting = false;
+		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearGotoHoverHighlight();
 		clearHoverTooltip();
 		return;
 	}
-	if (justPressed && scrollbarController.begin(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, bottomMargin(), (k, s) => applyScrollbarScroll(k, s))) {
-		pointerSelecting = false;
+	if (justPressed && ide_state.scrollbarController.begin(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, bottomMargin(), (k, s) => applyScrollbarScroll(k, s))) {
+		ide_state.pointerSelecting = false;
 		clearHoverTooltip();
 		clearGotoHoverHighlight();
-		pointerPrimaryWasPressed = snapshot.primaryPressed;
+		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		return;
 	}
-	if (resourcePanelResizing && !snapshot.valid) {
-		resourcePanelResizing = false;
-		pointerPrimaryWasPressed = snapshot.primaryPressed;
+	if (ide_state.resourcePanelResizing && !snapshot.valid) {
+		ide_state.resourcePanelResizing = false;
+		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearGotoHoverHighlight();
 		return;
 	}
 	if (!snapshot.valid) {
-		pointerPrimaryWasPressed = snapshot.primaryPressed;
+		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearHoverTooltip();
 		clearGotoHoverHighlight();
 		return;
 	}
-	if (resourcePanelResizing) {
+	if (ide_state.resourcePanelResizing) {
 		if (!snapshot.primaryPressed) {
-			resourcePanelResizing = false;
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			ide_state.resourcePanelResizing = false;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		} else {
-			const ok = resourcePanel.setRatioFromViewportX(snapshot.viewportX, viewportWidth);
+			const ok = ide_state.resourcePanel.setRatioFromViewportX(snapshot.viewportX, ide_state.viewportWidth);
 			if (!ok) {
 				hideResourcePanel();
 			} else {
 				invalidateVisualLines();
 				/* hscroll handled inside controller */
 			}
-			resourcePanelFocused = true;
-			pointerSelecting = false;
+			ide_state.resourcePanelFocused = true;
+			ide_state.pointerSelecting = false;
 			resetPointerClickTracking();
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		}
 		clearGotoHoverHighlight();
 		return;
 	}
-	if (problemsPanelResizing) {
+	if (ide_state.problemsPanelResizing) {
 		if (!snapshot.primaryPressed) {
-			problemsPanelResizing = false;
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			ide_state.problemsPanelResizing = false;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		} else {
 			setProblemsPanelHeightFromViewportY(snapshot.viewportY);
-			pointerSelecting = false;
+			ide_state.pointerSelecting = false;
 			resetPointerClickTracking();
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		}
 		clearGotoHoverHighlight();
 		return;
 	}
-	if (justPressed && snapshot.viewportY >= 0 && snapshot.viewportY < headerHeight) {
+	if (justPressed && snapshot.viewportY >= 0 && snapshot.viewportY < ide_state.headerHeight) {
 		if (handleTopBarPointer(snapshot)) {
-			pointerSelecting = false;
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			ide_state.pointerSelecting = false;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			resetPointerClickTracking();
 			clearGotoHoverHighlight();
 			return;
 		}
 	}
-	if (resourcePanelVisible && justPressed && isPointerOverResourcePanelDivider(snapshot.viewportX, snapshot.viewportY)) {
+	if (ide_state.resourcePanelVisible && justPressed && isPointerOverResourcePanelDivider(snapshot.viewportX, snapshot.viewportY)) {
 		if (getResourcePanelWidth() > 0) {
-			resourcePanelResizing = true;
-			resourcePanelFocused = true;
-			pointerSelecting = false;
+			ide_state.resourcePanelResizing = true;
+			ide_state.resourcePanelFocused = true;
+			ide_state.pointerSelecting = false;
 			resetPointerClickTracking();
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		}
 		clearGotoHoverHighlight();
 		return;
 	}
-	if (justPressed && problemsPanel.isVisible() && isPointerOverProblemsPanelDivider(snapshot.viewportX, snapshot.viewportY)) {
-		problemsPanelResizing = true;
-		pointerSelecting = false;
+	if (justPressed && ide_state.problemsPanel.isVisible() && isPointerOverProblemsPanelDivider(snapshot.viewportX, snapshot.viewportY)) {
+		ide_state.problemsPanelResizing = true;
+		ide_state.pointerSelecting = false;
 		resetPointerClickTracking();
-		pointerPrimaryWasPressed = snapshot.primaryPressed;
+		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearGotoHoverHighlight();
 		return;
 	}
-	const tabTop = headerHeight;
+	const tabTop = ide_state.headerHeight;
 	const tabBottom = tabTop + getTabBarTotalHeight();
 	if (pointerAuxJustPressed && handleTabBarMiddleClick(snapshot)) {
 		if (playerInput) {
 			playerInput.consumeAction('pointer_aux');
 		}
-		pointerSelecting = false;
-		pointerPrimaryWasPressed = snapshot.primaryPressed;
+		ide_state.pointerSelecting = false;
+		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		resetPointerClickTracking();
 		clearGotoHoverHighlight();
 		return;
 	}
 	if (justPressed && snapshot.viewportY >= tabTop && snapshot.viewportY < tabBottom) {
 		if (handleTabBarPointer(snapshot)) {
-			pointerSelecting = false;
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			ide_state.pointerSelecting = false;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			resetPointerClickTracking();
 			clearGotoHoverHighlight();
 			return;
 		}
 	}
-	const panelBounds = resourcePanel.getBounds();
-	const pointerInPanel = resourcePanelVisible
+	const panelBounds = ide_state.resourcePanel.getBounds();
+	const pointerInPanel = ide_state.resourcePanelVisible
 		&& panelBounds !== null
 		&& pointInRect(snapshot.viewportX, snapshot.viewportY, panelBounds);
 	if (pointerInPanel) {
-		resourcePanel.setFocused(true);
+		ide_state.resourcePanel.setFocused(true);
 		resetPointerClickTracking();
 		clearHoverTooltip();
-		const margin = Math.max(4, lineHeight);
+		const margin = Math.max(4, ide_state.lineHeight);
 		if (snapshot.viewportY < panelBounds.top + margin) {
-			resourcePanel.scrollBy(-1);
+			ide_state.resourcePanel.scrollBy(-1);
 		} else if (snapshot.viewportY >= panelBounds.bottom - margin) {
-			resourcePanel.scrollBy(1);
+			ide_state.resourcePanel.scrollBy(1);
 		}
-		const hoverIndex = resourcePanel.indexAtPosition(snapshot.viewportX, snapshot.viewportY);
-		resourcePanel.setHoverIndex(hoverIndex);
+		const hoverIndex = ide_state.resourcePanel.indexAtPosition(snapshot.viewportX, snapshot.viewportY);
+		ide_state.resourcePanel.setHoverIndex(hoverIndex);
 		if (hoverIndex >= 0) {
-			if (hoverIndex !== resourceBrowserSelectionIndex) {
-				resourcePanel.setSelectionIndex(hoverIndex);
+			if (hoverIndex !== ide_state.resourceBrowserSelectionIndex) {
+				ide_state.resourcePanel.setSelectionIndex(hoverIndex);
 			}
 			if (justPressed) {
-				resourcePanel.openSelected();
-				resourcePanel.setFocused(false);
+				ide_state.resourcePanel.openSelected();
+				ide_state.resourcePanel.setFocused(false);
 			}
 		}
 		if (!snapshot.primaryPressed && hoverIndex === -1) {
-			resourcePanel.setHoverIndex(-1);
+			ide_state.resourcePanel.setHoverIndex(-1);
 		}
-		pointerSelecting = false;
-		pointerPrimaryWasPressed = snapshot.primaryPressed;
+		ide_state.pointerSelecting = false;
+		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearGotoHoverHighlight();
-		const s = resourcePanel.getStateForRender();
-		resourcePanelFocused = s.focused;
-		resourceBrowserSelectionIndex = s.selectionIndex;
+		const s = ide_state.resourcePanel.getStateForRender();
+		ide_state.resourcePanelFocused = s.focused;
+		ide_state.resourceBrowserSelectionIndex = s.selectionIndex;
 		return;
 	}
 	if (justPressed && !pointerInPanel) {
-		resourcePanel.setFocused(false);
+		ide_state.resourcePanel.setFocused(false);
 	}
-	if (resourcePanelVisible && !snapshot.primaryPressed) {
-		resourcePanel.setHoverIndex(-1);
+	if (ide_state.resourcePanelVisible && !snapshot.primaryPressed) {
+		ide_state.resourcePanel.setHoverIndex(-1);
 	}
 	const problemsBounds = getProblemsPanelBounds();
-	if (problemsPanel.isVisible() && problemsBounds) {
+	if (ide_state.problemsPanel.isVisible() && problemsBounds) {
 		const insideProblems = pointInRect(snapshot.viewportX, snapshot.viewportY, problemsBounds);
 		if (insideProblems) {
-			if (problemsPanel.handlePointer(snapshot, justPressed, justReleased, problemsBounds)) {
-				pointerSelecting = false;
-				pointerPrimaryWasPressed = snapshot.primaryPressed;
+			if (ide_state.problemsPanel.handlePointer(snapshot, justPressed, justReleased, problemsBounds)) {
+				ide_state.pointerSelecting = false;
+				ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				resetPointerClickTracking();
 				clearHoverTooltip();
 				clearGotoHoverHighlight();
 				return;
 			}
 		} else if (justPressed) {
-			problemsPanel.setFocused(false);
+			ide_state.problemsPanel.setFocused(false);
 		}
 	}
 	if (isResourceViewActive()) {
 		resetPointerClickTracking();
-		pointerSelecting = false;
-		pointerPrimaryWasPressed = snapshot.primaryPressed;
+		ide_state.pointerSelecting = false;
+		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearHoverTooltip();
 		clearGotoHoverHighlight();
 		return;
 	}
-	if (pendingActionPrompt) {
+	if (ide_state.pendingActionPrompt) {
 		resetPointerClickTracking();
 		if (justPressed) {
 			handleActionPromptPointer(snapshot);
 		}
-		pointerSelecting = false;
-		pointerPrimaryWasPressed = snapshot.primaryPressed;
+		ide_state.pointerSelecting = false;
+		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearHoverTooltip();
 		clearGotoHoverHighlight();
 		return;
 	}
 	const createResourceBounds = getCreateResourceBarBounds();
-	if (createResourceVisible && createResourceBounds) {
+	if (ide_state.createResourceVisible && createResourceBounds) {
 		const insideCreateBar = pointInRect(snapshot.viewportX, snapshot.viewportY, createResourceBounds);
 		if (insideCreateBar) {
 			if (justPressed) {
-				createResourceActive = true;
-				cursorVisible = true;
+				ide_state.createResourceActive = true;
+				ide_state.cursorVisible = true;
 				resetBlink();
-				resourcePanelFocused = false;
+				ide_state.resourcePanelFocused = false;
 			}
 			const label = 'NEW FILE:';
 			const labelX = 4;
 			const textLeft = labelX + measureText(label + ' ');
-			processInlineFieldPointer(createResourceField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-			pointerSelecting = false;
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			processInlineFieldPointer(ide_state.createResourceField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+			ide_state.pointerSelecting = false;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			clearHoverTooltip();
 			clearGotoHoverHighlight();
 			return;
 		}
 		if (justPressed) {
-			createResourceActive = false;
+			ide_state.createResourceActive = false;
 		}
 	}
 	const resourceSearchBounds = getResourceSearchBarBounds();
-	if (resourceSearchVisible && resourceSearchBounds) {
+	if (ide_state.resourceSearchVisible && resourceSearchBounds) {
 		const insideResourceSearch = pointInRect(snapshot.viewportX, snapshot.viewportY, resourceSearchBounds);
 		if (insideResourceSearch) {
-			const baseHeight = lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
+			const baseHeight = ide_state.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
 			const fieldBottom = resourceSearchBounds.top + baseHeight;
 			const resultsStart = fieldBottom + constants.QUICK_OPEN_RESULT_SPACING;
 			if (snapshot.viewportY < fieldBottom) {
@@ -5848,18 +5644,18 @@ export function handlePointerInput(_deltaSeconds: number): void {
 					closeLineJump(false);
 					closeSearch(false, true);
 					closeSymbolSearch(false);
-					resourceSearchVisible = true;
-					resourceSearchActive = true;
-					resourcePanelFocused = false;
-					cursorVisible = true;
+					ide_state.resourceSearchVisible = true;
+					ide_state.resourceSearchActive = true;
+					ide_state.resourcePanelFocused = false;
+					ide_state.cursorVisible = true;
 					resetBlink();
 				}
 				const label = 'FILE :';
 				const labelX = 4;
 				const textLeft = labelX + measureText(label + ' ');
-				processInlineFieldPointer(resourceSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-				pointerSelecting = false;
-				pointerPrimaryWasPressed = snapshot.primaryPressed;
+				processInlineFieldPointer(ide_state.resourceSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+				ide_state.pointerSelecting = false;
+				ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				clearHoverTooltip();
 				clearGotoHoverHighlight();
 				return;
@@ -5871,56 +5667,56 @@ export function handlePointerInput(_deltaSeconds: number): void {
 				const relative = snapshot.viewportY - resultsStart;
 				const indexWithin = Math.floor(relative / rowHeight);
 				if (indexWithin >= 0 && indexWithin < visibleCount) {
-					hoverIndex = resourceSearchDisplayOffset + indexWithin;
+					hoverIndex = ide_state.resourceSearchDisplayOffset + indexWithin;
 				}
 			}
-			resourceSearchHoverIndex = hoverIndex;
+			ide_state.resourceSearchHoverIndex = hoverIndex;
 			if (hoverIndex >= 0 && justPressed) {
-				if (hoverIndex !== resourceSearchSelectionIndex) {
-					resourceSearchSelectionIndex = hoverIndex;
+				if (hoverIndex !== ide_state.resourceSearchSelectionIndex) {
+					ide_state.resourceSearchSelectionIndex = hoverIndex;
 					ensureResourceSearchSelectionVisible();
 				}
 				applyResourceSearchSelection(hoverIndex);
-				pointerSelecting = false;
-				pointerPrimaryWasPressed = snapshot.primaryPressed;
+				ide_state.pointerSelecting = false;
+				ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				clearHoverTooltip();
 				clearGotoHoverHighlight();
 				return;
 			}
-			pointerSelecting = false;
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			ide_state.pointerSelecting = false;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			clearHoverTooltip();
 			clearGotoHoverHighlight();
 			return;
 		}
 		if (justPressed) {
-			resourceSearchActive = false;
+			ide_state.resourceSearchActive = false;
 		}
-		resourceSearchHoverIndex = -1;
+		ide_state.resourceSearchHoverIndex = -1;
 	}
 	const symbolBounds = getSymbolSearchBarBounds();
-	if (symbolSearchVisible && symbolBounds) {
+	if (ide_state.symbolSearchVisible && symbolBounds) {
 		const insideSymbol = pointInRect(snapshot.viewportX, snapshot.viewportY, symbolBounds);
 		if (insideSymbol) {
-			const baseHeight = lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+			const baseHeight = ide_state.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
 			const fieldBottom = symbolBounds.top + baseHeight;
 			const resultsStart = fieldBottom + constants.SYMBOL_SEARCH_RESULT_SPACING;
 			if (snapshot.viewportY < fieldBottom) {
 				if (justPressed) {
 					closeLineJump(false);
 					closeSearch(false, true);
-					symbolSearchVisible = true;
-					symbolSearchActive = true;
-					resourcePanelFocused = false;
-					cursorVisible = true;
+					ide_state.symbolSearchVisible = true;
+					ide_state.symbolSearchActive = true;
+					ide_state.resourcePanelFocused = false;
+					ide_state.cursorVisible = true;
 					resetBlink();
 				}
-				const label = symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
+				const label = ide_state.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
 				const labelX = 4;
 				const textLeft = labelX + measureText(label + ' ');
-				processInlineFieldPointer(symbolSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-				pointerSelecting = false;
-				pointerPrimaryWasPressed = snapshot.primaryPressed;
+				processInlineFieldPointer(ide_state.symbolSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+				ide_state.pointerSelecting = false;
+				ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				clearHoverTooltip();
 				clearGotoHoverHighlight();
 				return;
@@ -5932,32 +5728,32 @@ export function handlePointerInput(_deltaSeconds: number): void {
 				const entryHeight = symbolSearchEntryHeight();
 				const indexWithin = entryHeight > 0 ? Math.floor(relative / entryHeight) : -1;
 				if (indexWithin >= 0 && indexWithin < visibleCount) {
-					hoverIndex = symbolSearchDisplayOffset + indexWithin;
+					hoverIndex = ide_state.symbolSearchDisplayOffset + indexWithin;
 				}
 			}
-			symbolSearchHoverIndex = hoverIndex;
+			ide_state.symbolSearchHoverIndex = hoverIndex;
 			if (hoverIndex >= 0 && justPressed) {
-				if (hoverIndex !== symbolSearchSelectionIndex) {
-					symbolSearchSelectionIndex = hoverIndex;
+				if (hoverIndex !== ide_state.symbolSearchSelectionIndex) {
+					ide_state.symbolSearchSelectionIndex = hoverIndex;
 					ensureSymbolSearchSelectionVisible();
 				}
 				applySymbolSearchSelection(hoverIndex);
-				pointerSelecting = false;
-				pointerPrimaryWasPressed = snapshot.primaryPressed;
+				ide_state.pointerSelecting = false;
+				ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				clearHoverTooltip();
 				clearGotoHoverHighlight();
 				return;
 			}
-			pointerSelecting = false;
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			ide_state.pointerSelecting = false;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			clearHoverTooltip();
 			clearGotoHoverHighlight();
 			return;
 		}
 		if (justPressed) {
-			symbolSearchActive = false;
+			ide_state.symbolSearchActive = false;
 		}
-		symbolSearchHoverIndex = -1;
+		ide_state.symbolSearchHoverIndex = -1;
 	}
 
 	const renameBounds = getRenameBarBounds();
@@ -5965,71 +5761,71 @@ export function handlePointerInput(_deltaSeconds: number): void {
 		const insideRename = pointInRect(snapshot.viewportX, snapshot.viewportY, renameBounds);
 		if (insideRename) {
 			if (justPressed) {
-				resourcePanelFocused = false;
-				cursorVisible = true;
+				ide_state.resourcePanelFocused = false;
+				ide_state.cursorVisible = true;
 				resetBlink();
 			}
 			const label = 'RENAME:';
 			const labelX = 4;
 			const textLeft = labelX + measureText(label + ' ');
-			processInlineFieldPointer(renameController.getField(), textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-			pointerSelecting = false;
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			processInlineFieldPointer(ide_state.renameController.getField(), textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+			ide_state.pointerSelecting = false;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			clearHoverTooltip();
 			clearGotoHoverHighlight();
 			return;
 		}
 		if (justPressed) {
-			renameController.cancel();
+			ide_state.renameController.cancel();
 		}
 	}
 
 	const lineJumpBounds = getLineJumpBarBounds();
-	if (lineJumpVisible && lineJumpBounds) {
+	if (ide_state.lineJumpVisible && lineJumpBounds) {
 		const insideLineJump = pointInRect(snapshot.viewportX, snapshot.viewportY, lineJumpBounds);
 		if (insideLineJump) {
 			if (justPressed) {
 				closeSearch(false, true);
-				lineJumpActive = true;
+				ide_state.lineJumpActive = true;
 				resetBlink();
 			}
 			const label = 'LINE #:';
 			const labelX = 4;
 			const textLeft = labelX + measureText(label + ' ');
-			processInlineFieldPointer(lineJumpField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-			pointerSelecting = false;
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			processInlineFieldPointer(ide_state.lineJumpField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+			ide_state.pointerSelecting = false;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			clearHoverTooltip();
 			clearGotoHoverHighlight();
 			return;
 		}
 		if (justPressed) {
-			lineJumpActive = false;
+			ide_state.lineJumpActive = false;
 		}
 	}
 	const searchBounds = getSearchBarBounds();
-	if (searchVisible && searchBounds) {
+	if (ide_state.searchVisible && searchBounds) {
 		const insideSearch = pointInRect(snapshot.viewportX, snapshot.viewportY, searchBounds);
-		const baseHeight = lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+		const baseHeight = ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 		const fieldBottom = searchBounds.top + baseHeight;
 		const visibleResults = searchVisibleResultCount();
 		if (insideSearch) {
-			searchHoverIndex = -1;
+			ide_state.searchHoverIndex = -1;
 			if (snapshot.viewportY < fieldBottom) {
 				if (justPressed) {
 					closeLineJump(false);
-					searchVisible = true;
-					searchActive = true;
-					resourcePanelFocused = false;
-					cursorVisible = true;
+					ide_state.searchVisible = true;
+					ide_state.searchActive = true;
+					ide_state.resourcePanelFocused = false;
+					ide_state.cursorVisible = true;
 					resetBlink();
 				}
-				const label = searchScope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
+				const label = ide_state.searchScope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
 				const labelX = 4;
 				const textLeft = labelX + measureText(label + ' ');
-				processInlineFieldPointer(searchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-				pointerSelecting = false;
-				pointerPrimaryWasPressed = snapshot.primaryPressed;
+				processInlineFieldPointer(ide_state.searchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+				ide_state.pointerSelecting = false;
+				ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				clearHoverTooltip();
 				clearGotoHoverHighlight();
 				return;
@@ -6042,43 +5838,43 @@ export function handlePointerInput(_deltaSeconds: number): void {
 					const relative = snapshot.viewportY - resultsStart;
 					const indexWithin = Math.floor(relative / rowHeight);
 					if (indexWithin >= 0 && indexWithin < visibleResults) {
-						hoverIndex = searchDisplayOffset + indexWithin;
+						hoverIndex = ide_state.searchDisplayOffset + indexWithin;
 					}
 				}
-				searchHoverIndex = hoverIndex;
+				ide_state.searchHoverIndex = hoverIndex;
 				if (hoverIndex >= 0 && justPressed) {
-					if (hoverIndex !== searchCurrentIndex) {
-						searchCurrentIndex = hoverIndex;
+					if (hoverIndex !== ide_state.searchCurrentIndex) {
+						ide_state.searchCurrentIndex = hoverIndex;
 						ensureSearchSelectionVisible();
-						if (searchScope === 'local') {
+						if (ide_state.searchScope === 'local') {
 							applySearchSelection(hoverIndex, { preview: true });
 						}
 					}
 					applySearchSelection(hoverIndex);
-					pointerSelecting = false;
-					pointerPrimaryWasPressed = snapshot.primaryPressed;
+					ide_state.pointerSelecting = false;
+					ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 					clearHoverTooltip();
 					clearGotoHoverHighlight();
 					return;
 				}
-				pointerSelecting = false;
-				pointerPrimaryWasPressed = snapshot.primaryPressed;
+				ide_state.pointerSelecting = false;
+				ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				clearHoverTooltip();
 				clearGotoHoverHighlight();
 				return;
 			}
 		} else if (justPressed) {
-			searchActive = false;
-			searchHoverIndex = -1;
+			ide_state.searchActive = false;
+			ide_state.searchHoverIndex = -1;
 		}
 	} else {
-		searchHoverIndex = -1;
+		ide_state.searchHoverIndex = -1;
 	}
 
 	const bounds = getCodeAreaBounds();
 	if (processRuntimeErrorOverlayPointer(snapshot, justPressed, bounds.codeTop, bounds.codeRight, bounds.textLeft)) {
 		// Keep primary pressed state in sync when overlay handles the event
-		pointerPrimaryWasPressed = snapshot.primaryPressed;
+		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		return;
 	}
 	const insideCodeArea = snapshot.viewportY >= bounds.codeTop
@@ -6087,50 +5883,50 @@ export function handlePointerInput(_deltaSeconds: number): void {
 		&& snapshot.viewportX < bounds.codeRight;
 	if (justPressed && insideCodeArea) {
 		clearReferenceHighlights();
-		resourcePanelFocused = false;
+		ide_state.resourcePanelFocused = false;
 		focusEditorFromLineJump();
 		focusEditorFromSearch();
 		focusEditorFromResourceSearch();
 		focusEditorFromSymbolSearch();
-		completion.closeSession();
+		ide_state.completion.closeSession();
 		const targetRow = resolvePointerRow(snapshot.viewportY);
 		const targetColumn = resolvePointerColumn(targetRow, snapshot.viewportX);
 		if (gotoModifierActive && tryGotoDefinitionAt(targetRow, targetColumn)) {
-			pointerSelecting = false;
-			pointerPrimaryWasPressed = snapshot.primaryPressed;
+			ide_state.pointerSelecting = false;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			resetPointerClickTracking();
 			return;
 		}
 		const doubleClick = registerPointerClick(targetRow, targetColumn);
 		if (doubleClick) {
 			selectWordAtPosition(targetRow, targetColumn);
-			pointerSelecting = false;
+			ide_state.pointerSelecting = false;
 		} else {
-			selectionAnchor = { row: targetRow, column: targetColumn };
+			ide_state.selectionAnchor = { row: targetRow, column: targetColumn };
 			setCursorPosition(targetRow, targetColumn);
-			pointerSelecting = true;
+			ide_state.pointerSelecting = true;
 		}
 	}
-	if (pointerSelecting && snapshot.primaryPressed) {
+	if (ide_state.pointerSelecting && snapshot.primaryPressed) {
 		clearGotoHoverHighlight();
 		handlePointerAutoScroll(snapshot.viewportX, snapshot.viewportY);
 		const targetRow = resolvePointerRow(snapshot.viewportY);
 		const targetColumn = resolvePointerColumn(targetRow, snapshot.viewportX);
-		if (!selectionAnchor) {
-			selectionAnchor = { row: targetRow, column: targetColumn };
+		if (!ide_state.selectionAnchor) {
+			ide_state.selectionAnchor = { row: targetRow, column: targetColumn };
 		}
 		setCursorPosition(targetRow, targetColumn);
 	}
-	if (isCodeTabActive() && !snapshot.primaryPressed && !pointerSelecting && insideCodeArea && gotoModifierActive) {
+	if (isCodeTabActive() && !snapshot.primaryPressed && !ide_state.pointerSelecting && insideCodeArea && gotoModifierActive) {
 		const hoverRow = resolvePointerRow(snapshot.viewportY);
 		const hoverColumn = resolvePointerColumn(hoverRow, snapshot.viewportX);
 		refreshGotoHoverHighlight(hoverRow, hoverColumn, activeContext);
-	} else if (!gotoModifierActive || !insideCodeArea || snapshot.primaryPressed || pointerSelecting || !isCodeTabActive()) {
+	} else if (!gotoModifierActive || !insideCodeArea || snapshot.primaryPressed || ide_state.pointerSelecting || !isCodeTabActive()) {
 		clearGotoHoverHighlight();
 	}
 	if (isCodeTabActive()) {
-		const altDown = isModifierPressedGlobal(playerIndex, 'AltLeft') || isModifierPressedGlobal(playerIndex, 'AltRight');
-		if (!snapshot.primaryPressed && !pointerSelecting && insideCodeArea && altDown) {
+		const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
+		if (!snapshot.primaryPressed && !ide_state.pointerSelecting && insideCodeArea && altDown) {
 			updateHoverTooltip(snapshot);
 		} else {
 			clearHoverTooltip();
@@ -6138,30 +5934,30 @@ export function handlePointerInput(_deltaSeconds: number): void {
 	} else {
 		clearHoverTooltip();
 	}
-	pointerPrimaryWasPressed = snapshot.primaryPressed;
+	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 }
 
 export function updateTabHoverState(snapshot: PointerSnapshot | null): void {
 	if (!snapshot || !snapshot.valid || !snapshot.insideViewport) {
-		tabHoverId = null;
+		ide_state.tabHoverId = null;
 		return;
 	}
-	const tabTop = headerHeight;
+	const tabTop = ide_state.headerHeight;
 	const tabBottom = tabTop + getTabBarTotalHeight();
 	const y = snapshot.viewportY;
 	if (y < tabTop || y >= tabBottom) {
-		tabHoverId = null;
+		ide_state.tabHoverId = null;
 		return;
 	}
 	const x = snapshot.viewportX;
 	let hovered: string | null = null;
-	for (const [tabId, bounds] of tabButtonBounds) {
+	for (const [tabId, bounds] of ide_state.tabButtonBounds) {
 		if (pointInRect(x, y, bounds)) {
 			hovered = tabId;
 			break;
 		}
 	}
-	tabHoverId = hovered;
+	ide_state.tabHoverId = hovered;
 }
 
 export function updateHoverTooltip(snapshot: PointerSnapshot): void {
@@ -6183,8 +5979,8 @@ export function updateHoverTooltip(snapshot: PointerSnapshot): void {
 		column: token.startColumn + 1,
 	};
 	const inspection = safeInspectLuaExpression(request);
-	const previousInspection = lastInspectorResult;
-	lastInspectorResult = inspection;
+	const previousInspection = ide_state.lastInspectorResult;
+	ide_state.lastInspectorResult = inspection;
 	if (!inspection) {
 		clearHoverTooltip();
 		return;
@@ -6194,7 +5990,7 @@ export function updateHoverTooltip(snapshot: PointerSnapshot): void {
 		return;
 	}
 	const contentLines = buildHoverContentLines(inspection);
-	const existing = hoverTooltip;
+	const existing = ide_state.hoverTooltip;
 	if (existing && existing.expression === inspection.expression && existing.assetId === assetId) {
 		existing.contentLines = contentLines;
 		existing.valueType = inspection.valueType;
@@ -6215,7 +6011,7 @@ export function updateHoverTooltip(snapshot: PointerSnapshot): void {
 		}
 		return;
 	}
-	hoverTooltip = {
+	ide_state.hoverTooltip = {
 		expression: inspection.expression,
 		contentLines,
 		valueType: inspection.valueType,
@@ -6236,11 +6032,11 @@ export function buildHoverContentLines(result: ConsoleLuaHoverResult): string[] 
 }
 
 export function clearHoverTooltip(): void {
-	hoverTooltip = null;
-	lastInspectorResult = null;
+	ide_state.hoverTooltip = null;
+	ide_state.lastInspectorResult = null;
 }
 
-// Scrollbar drag is handled via scrollbarController
+// Scrollbar drag is handled via ide_state.scrollbarController
 
 export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void {
 	if (Number.isNaN(scroll)) {
@@ -6249,34 +6045,34 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 	switch (kind) {
 		case 'codeVertical': {
 			ensureVisualLines();
-			const rowCount = Math.max(1, cachedVisibleRowCount);
+			const rowCount = Math.max(1, ide_state.cachedVisibleRowCount);
 			const maxScroll = Math.max(0, getVisualLineCount() - rowCount);
-			scrollRow = clamp(Math.round(scroll), 0, maxScroll);
-			cursorRevealSuspended = true;
+			ide_state.scrollRow = clamp(Math.round(scroll), 0, maxScroll);
+			ide_state.cursorRevealSuspended = true;
 			break;
 		}
 		case 'codeHorizontal': {
-			if (wordWrapEnabled) {
-				scrollColumn = 0;
+			if (ide_state.wordWrapEnabled) {
+				ide_state.scrollColumn = 0;
 				break;
 			}
 			const maxScroll = computeMaximumScrollColumn();
-			scrollColumn = clamp(Math.round(scroll), 0, maxScroll);
-			cursorRevealSuspended = true;
+			ide_state.scrollColumn = clamp(Math.round(scroll), 0, maxScroll);
+			ide_state.cursorRevealSuspended = true;
 			break;
 		}
 		case 'resourceVertical': {
-			resourcePanel.setScroll(scroll);
-			resourcePanel.setFocused(true);
-			const s = resourcePanel.getStateForRender();
-			resourcePanelFocused = s.focused;
+			ide_state.resourcePanel.setScroll(scroll);
+			ide_state.resourcePanel.setFocused(true);
+			const s = ide_state.resourcePanel.getStateForRender();
+			ide_state.resourcePanelFocused = s.focused;
 			break;
 		}
 		case 'resourceHorizontal': {
-			resourcePanel.setHScroll(scroll);
-			resourcePanel.setFocused(true);
-			const s = resourcePanel.getStateForRender();
-			resourcePanelFocused = s.focused;
+			ide_state.resourcePanel.setHScroll(scroll);
+			ide_state.resourcePanel.setFocused(true);
+			const s = ide_state.resourcePanel.getStateForRender();
+			ide_state.resourcePanelFocused = s.focused;
 			break;
 		}
 		case 'viewerVertical': {
@@ -6293,13 +6089,13 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 }
 
 export function adjustHoverTooltipScroll(stepCount: number): boolean {
-	if (!hoverTooltip) {
+	if (!ide_state.hoverTooltip) {
 		return false;
 	}
 	if (stepCount === 0) {
 		return false;
 	}
-	const tooltip = hoverTooltip;
+	const tooltip = ide_state.hoverTooltip;
 	const totalLines = tooltip.contentLines.length;
 	if (totalLines <= tooltip.visibleLineCount || tooltip.visibleLineCount <= 0) {
 		const maxVisible = Math.max(1, Math.min(constants.HOVER_TOOLTIP_MAX_VISIBLE_LINES, totalLines));
@@ -6321,7 +6117,7 @@ export function adjustHoverTooltipScroll(stepCount: number): boolean {
 }
 
 export function isPointInHoverTooltip(x: number, y: number): boolean {
-	const tooltip = hoverTooltip;
+	const tooltip = ide_state.hoverTooltip;
 	if (!tooltip || !tooltip.bubbleBounds) {
 		return false;
 	}
@@ -6348,7 +6144,7 @@ export function resolveHoverAssetId(context: CodeTabContext | null): string | nu
 	if (context && context.descriptor) {
 		return context.descriptor.assetId;
 	}
-	return primaryAssetId;
+	return ide_state.primaryAssetId;
 }
 
 export function resolveHoverChunkName(context: CodeTabContext | null): string | null {
@@ -6360,8 +6156,8 @@ export function resolveHoverChunkName(context: CodeTabContext | null): string | 
 			return context.descriptor.assetId;
 		}
 	}
-	if (primaryAssetId) {
-		return primaryAssetId;
+	if (ide_state.primaryAssetId) {
+		return ide_state.primaryAssetId;
 	}
 	return null;
 }
@@ -6375,7 +6171,7 @@ export function buildProjectReferenceContext(context: CodeTabContext | null): {
 	const descriptor = context?.descriptor ?? null;
 	const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
 	const descriptorAssetId = descriptor?.assetId ?? null;
-	const resolvedAssetId = descriptorAssetId ?? primaryAssetId ?? null;
+	const resolvedAssetId = descriptorAssetId ?? ide_state.primaryAssetId ?? null;
 	const resolvedChunk = resolveHoverChunkName(context)
 		?? normalizedPath
 		?? descriptorAssetId
@@ -6383,10 +6179,10 @@ export function buildProjectReferenceContext(context: CodeTabContext | null): {
 		?? '<console>';
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: context,
-		activeLines: lines,
-		codeTabContexts: Array.from(codeTabContexts.values()),
+		activeLines: ide_state.lines,
+		codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
 		listResources: () => listResourcesStrict(),
-		loadLuaResource: (resourceId: string) => loadLuaResourceFn(resourceId),
+		loadLuaResource: (resourceId: string) => ide_state.loadLuaResourceFn(resourceId),
 	};
 	return {
 		environment,
@@ -6414,7 +6210,7 @@ export function resolveSemanticDefinitionLocation(
 	const activeContext = getActiveCodeTabContext();
 	const hoverChunkName = resolveHoverChunkName(activeContext);
 	const modelChunkName = chunkName ?? hoverChunkName ?? '<console>';
-	const model = layout.getSemanticModel(lines, textVersion, modelChunkName);
+	const model = ide_state.layout.getSemanticModel(ide_state.lines, ide_state.textVersion, modelChunkName);
 	if (!model) {
 		return null;
 	}
@@ -6428,12 +6224,12 @@ export function resolveSemanticDefinitionLocation(
 	const descriptor = context?.descriptor ?? null;
 	const descriptorPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
 	const descriptorAssetId = descriptor?.assetId ?? null;
-	const resolvedAssetId = descriptorAssetId ?? assetId ?? primaryAssetId ?? null;
+	const resolvedAssetId = descriptorAssetId ?? assetId ?? ide_state.primaryAssetId ?? null;
 	const resolvedChunk = chunkName
 		?? descriptorPath
 		?? descriptorAssetId
 		?? assetId
-		?? primaryAssetId
+		?? ide_state.primaryAssetId
 		?? hoverChunkName
 		?? '<console>';
 	const location: ConsoleLuaDefinitionLocation = {
@@ -6488,12 +6284,12 @@ export function findDefinitionAtPosition(
 }
 
 export function extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number } | null {
-	if (row < 0 || row >= lines.length) {
+	if (row < 0 || row >= ide_state.lines.length) {
 		return null;
 	}
-	const line = lines[row] ?? '';
+	const line = ide_state.lines[row] ?? '';
 	const safeColumn = Math.min(Math.max(column, 0), Math.max(0, line.length));
-	if (isLuaCommentContext(lines, row, safeColumn)) {
+	if (isLuaCommentContext(ide_state.lines, row, safeColumn)) {
 		return null;
 	}
 	if (line.length === 0) {
@@ -6613,7 +6409,7 @@ export function refreshGotoHoverHighlight(row: number, column: number, context: 
 		clearGotoHoverHighlight();
 		return;
 	}
-	const existing = gotoHoverHighlight;
+	const existing = ide_state.gotoHoverHighlight;
 	if (existing
 		&& existing.row === row
 		&& column >= existing.startColumn
@@ -6638,7 +6434,7 @@ export function refreshGotoHoverHighlight(row: number, column: number, context: 
 		clearGotoHoverHighlight();
 		return;
 	}
-	gotoHoverHighlight = {
+	ide_state.gotoHoverHighlight = {
 		row,
 		startColumn: token.startColumn,
 		endColumn: token.endColumn,
@@ -6647,11 +6443,11 @@ export function refreshGotoHoverHighlight(row: number, column: number, context: 
 }
 
 export function clearGotoHoverHighlight(): void {
-	gotoHoverHighlight = null;
+	ide_state.gotoHoverHighlight = null;
 }
 
 export function clearReferenceHighlights(): void {
-	referenceState.clear();
+	ide_state.referenceState.clear();
 }
 
 export function tryGotoDefinitionAt(row: number, column: number): boolean {
@@ -6661,7 +6457,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 	const assetId = resolveHoverAssetId(context);
 	const token = extractHoverExpression(row, column);
 	if (!token) {
-		showMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
+		ide_state.showMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
 		return false;
 	}
 	const chunkName = resolveHoverChunkName(context);
@@ -6681,21 +6477,21 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 			?? normalizedPath
 			?? descriptor?.assetId
 			?? assetId
-			?? primaryAssetId
+			?? ide_state.primaryAssetId
 			?? '<console>';
 		const environment: ProjectReferenceEnvironment = {
 			activeContext: context,
-			activeLines: lines,
-			codeTabContexts: Array.from(codeTabContexts.values()),
+			activeLines: ide_state.lines,
+			codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
 			listResources: () => listResourcesStrict(),
-			loadLuaResource: (resourceId: string) => loadLuaResourceFn(resourceId),
+			loadLuaResource: (resourceId: string) => ide_state.loadLuaResourceFn(resourceId),
 		};
 		const projectDefinition = resolveDefinitionLocationForExpression({
 			expression: token.expression,
 			environment,
-			workspace: semanticWorkspace,
+			workspace: ide_state.semanticWorkspace,
 			currentChunkName: resolvedChunkName,
-			currentLines: lines,
+			currentLines: ide_state.lines,
 			currentAssetId: assetId,
 			sourceLabelPath: normalizedPath ?? descriptor?.assetId ?? null,
 		});
@@ -6703,8 +6499,8 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 			navigateToLuaDefinition(projectDefinition);
 			return true;
 		}
-		if (!inspectorRequestFailed) {
-			showMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
+		if (!ide_state.inspectorRequestFailed) {
+			ide_state.showMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
 		}
 		return false;
 	}
@@ -6728,7 +6524,7 @@ export function navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation
 		}
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		showMessage(`Failed to open definition: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
+		ide_state.showMessage(`Failed to open definition: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
 		return;
 	}
 	if (targetContextId) {
@@ -6737,59 +6533,59 @@ export function navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation
 		activateCodeTab();
 	}
 	applyDefinitionSelection(definition.range);
-	cursorRevealSuspended = false;
+	ide_state.cursorRevealSuspended = false;
 	clearHoverTooltip();
 	clearGotoHoverHighlight();
 	completeNavigation(navigationCheckpoint);
-	showMessage('Jumped to definition', constants.COLOR_STATUS_SUCCESS, 1.6);
+	ide_state.showMessage('Jumped to definition', constants.COLOR_STATUS_SUCCESS, 1.6);
 }
 
 export function applyDefinitionSelection(range: ConsoleLuaDefinitionLocation['range']): void {
-	const lastRowIndex = Math.max(0, lines.length - 1);
+	const lastRowIndex = Math.max(0, ide_state.lines.length - 1);
 	const startRow = clamp(range.startLine - 1, 0, lastRowIndex);
-	const startLine = lines[startRow] ?? '';
+	const startLine = ide_state.lines[startRow] ?? '';
 	const startColumn = clamp(range.startColumn - 1, 0, startLine.length);
-	cursorRow = startRow;
-	cursorColumn = startColumn;
-	selectionAnchor = null;
-	pointerSelecting = false;
-	pointerPrimaryWasPressed = false;
-	pointerAuxWasPressed = false;
+	ide_state.cursorRow = startRow;
+	ide_state.cursorColumn = startColumn;
+	ide_state.selectionAnchor = null;
+	ide_state.pointerSelecting = false;
+	ide_state.pointerPrimaryWasPressed = false;
+	ide_state.pointerAuxWasPressed = false;
 	updateDesiredColumn();
 	resetBlink();
-	cursorRevealSuspended = false;
+	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();
 }
 
 export function beginNavigationCapture(): NavigationHistoryEntry | null {
-	if (navigationCaptureSuspended) {
+	if (ide_state.navigationCaptureSuspended) {
 		return null;
 	}
-	if (!navigationHistory.current) {
-		navigationHistory.current = createNavigationEntry();
+	if (!ide_state.navigationHistory.current) {
+		ide_state.navigationHistory.current = createNavigationEntry();
 	}
-	const current = navigationHistory.current;
+	const current = ide_state.navigationHistory.current;
 	return current ? cloneNavigationEntry(current) : null;
 }
 
 export function completeNavigation(previous: NavigationHistoryEntry | null): void {
-	if (navigationCaptureSuspended) {
+	if (ide_state.navigationCaptureSuspended) {
 		return;
 	}
 	const next = createNavigationEntry();
 	if (previous && (!next || !areNavigationEntriesEqual(previous, next))) {
-		const backStack = navigationHistory.back;
+		const backStack = ide_state.navigationHistory.back;
 		const lastBack = backStack[backStack.length - 1] ?? null;
 		if (!lastBack || !areNavigationEntriesEqual(lastBack, previous)) {
 			pushNavigationEntry(backStack, previous);
 		}
-		navigationHistory.forward.length = 0;
+		ide_state.navigationHistory.forward.length = 0;
 	} else if (previous && next && areNavigationEntriesEqual(previous, next)) {
 		// Same location; do not mutate stacks.
 	} else if (previous === null && next) {
-		navigationHistory.forward.length = 0;
+		ide_state.navigationHistory.forward.length = 0;
 	}
-	navigationHistory.current = next;
+	ide_state.navigationHistory.current = next;
 }
 
 export function pushNavigationEntry(stack: NavigationHistoryEntry[], entry: NavigationHistoryEntry): void {
@@ -6824,10 +6620,10 @@ export function createNavigationEntry(): NavigationHistoryEntry | null {
 	const assetId = resolveHoverAssetId(context);
 	const chunkName = resolveHoverChunkName(context);
 	const path = context.descriptor?.path ?? null;
-	const maxRowIndex = lines.length > 0 ? lines.length - 1 : 0;
-	const row = clamp(cursorRow, 0, maxRowIndex);
-	const line = lines[row] ?? '';
-	const column = clamp(cursorColumn, 0, line.length);
+	const maxRowIndex = ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0;
+	const row = clamp(ide_state.cursorRow, 0, maxRowIndex);
+	const line = ide_state.lines[row] ?? '';
+	const column = clamp(ide_state.cursorColumn, 0, line.length);
 	return {
 		contextId: context.id,
 		assetId,
@@ -6839,17 +6635,17 @@ export function createNavigationEntry(): NavigationHistoryEntry | null {
 }
 
 export function withNavigationCaptureSuspended<T>(operation: () => T): T {
-	const previous = navigationCaptureSuspended;
-	navigationCaptureSuspended = true;
+	const previous = ide_state.navigationCaptureSuspended;
+	ide_state.navigationCaptureSuspended = true;
 	try {
 		return operation();
 	} finally {
-		navigationCaptureSuspended = previous;
+		ide_state.navigationCaptureSuspended = previous;
 	}
 }
 
 export function applyNavigationEntry(entry: NavigationHistoryEntry): void {
-	const existingContext = codeTabContexts.get(entry.contextId) ?? null;
+	const existingContext = ide_state.codeTabContexts.get(entry.contextId) ?? null;
 	if (existingContext) {
 		setActiveTab(entry.contextId);
 	} else {
@@ -6868,111 +6664,111 @@ export function applyNavigationEntry(entry: NavigationHistoryEntry): void {
 	if (!isCodeTabActive()) {
 		return;
 	}
-	const maxRowIndex = lines.length > 0 ? lines.length - 1 : 0;
+	const maxRowIndex = ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0;
 	const targetRow = clamp(entry.row, 0, maxRowIndex);
-	const line = lines[targetRow] ?? '';
+	const line = ide_state.lines[targetRow] ?? '';
 	const targetColumn = clamp(entry.column, 0, line.length);
 	setCursorPosition(targetRow, targetColumn);
 	clearSelection();
-	cursorRevealSuspended = false;
+	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();
 }
 
 export function goBackwardInNavigationHistory(): void {
-	if (navigationHistory.back.length === 0) {
+	if (ide_state.navigationHistory.back.length === 0) {
 		return;
 	}
 	const currentEntry = createNavigationEntry();
 	if (currentEntry) {
-		const forwardStack = navigationHistory.forward;
+		const forwardStack = ide_state.navigationHistory.forward;
 		const lastForward = forwardStack[forwardStack.length - 1] ?? null;
 		if (!lastForward || !areNavigationEntriesEqual(lastForward, currentEntry)) {
 			pushNavigationEntry(forwardStack, currentEntry);
 		}
 	} else {
-		navigationHistory.forward.length = 0;
+		ide_state.navigationHistory.forward.length = 0;
 	}
-	const target = navigationHistory.back.pop()!;
+	const target = ide_state.navigationHistory.back.pop()!;
 	withNavigationCaptureSuspended(() => {
 		applyNavigationEntry(target);
 	});
-	navigationHistory.current = createNavigationEntry();
+	ide_state.navigationHistory.current = createNavigationEntry();
 }
 
 export function goForwardInNavigationHistory(): void {
-	if (navigationHistory.forward.length === 0) {
+	if (ide_state.navigationHistory.forward.length === 0) {
 		return;
 	}
 	const currentEntry = createNavigationEntry();
 	if (currentEntry) {
-		const backStack = navigationHistory.back;
+		const backStack = ide_state.navigationHistory.back;
 		const lastBack = backStack[backStack.length - 1] ?? null;
 		if (!lastBack || !areNavigationEntriesEqual(lastBack, currentEntry)) {
 			pushNavigationEntry(backStack, currentEntry);
 		}
 	}
-	const target = navigationHistory.forward.pop()!;
+	const target = ide_state.navigationHistory.forward.pop()!;
 	withNavigationCaptureSuspended(() => {
 		applyNavigationEntry(target);
 	});
-	navigationHistory.current = createNavigationEntry();
+	ide_state.navigationHistory.current = createNavigationEntry();
 }
 
 export function handleActionPromptPointer(snapshot: PointerSnapshot): void {
-	if (!pendingActionPrompt) {
+	if (!ide_state.pendingActionPrompt) {
 		return;
 	}
 	const x = snapshot.viewportX;
 	const y = snapshot.viewportY;
-	const saveBounds = actionPromptButtons.saveAndContinue;
+	const saveBounds = ide_state.actionPromptButtons.saveAndContinue;
 	if (saveBounds && pointInRect(x, y, saveBounds)) {
 		void handleActionPromptSelection('save-continue');
 		return;
 	}
-	if (pointInRect(x, y, actionPromptButtons.continue)) {
+	if (pointInRect(x, y, ide_state.actionPromptButtons.continue)) {
 		void handleActionPromptSelection('continue');
 		return;
 	}
-	if (pointInRect(x, y, actionPromptButtons.cancel)) {
+	if (pointInRect(x, y, ide_state.actionPromptButtons.cancel)) {
 		void handleActionPromptSelection('cancel');
 	}
 }
 
 export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 	const y = snapshot.viewportY;
-	if (y < 0 || y >= headerHeight) {
+	if (y < 0 || y >= ide_state.headerHeight) {
 		return false;
 	}
 	const x = snapshot.viewportX;
-	if (pointInRect(x, y, topBarButtonBounds.resume)) {
+	if (pointInRect(x, y, ide_state.topBarButtonBounds.resume)) {
 		handleTopBarButtonPress('resume');
 		return true;
 	}
-	if (pointInRect(x, y, topBarButtonBounds.reboot)) {
+	if (pointInRect(x, y, ide_state.topBarButtonBounds.reboot)) {
 		handleTopBarButtonPress('reboot');
 		return true;
 	}
-	if (dirty && pointInRect(x, y, topBarButtonBounds.save)) {
+	if (ide_state.dirty && pointInRect(x, y, ide_state.topBarButtonBounds.save)) {
 		handleTopBarButtonPress('save');
 		return true;
 	}
-	if (pointInRect(x, y, topBarButtonBounds.resources)) {
+	if (pointInRect(x, y, ide_state.topBarButtonBounds.resources)) {
 		handleTopBarButtonPress('resources');
 		return true;
 	}
-	if (pointInRect(x, y, topBarButtonBounds.problems)) {
+	if (pointInRect(x, y, ide_state.topBarButtonBounds.problems)) {
 		handleTopBarButtonPress('problems');
 		return true;
 	}
-	if (resourcePanelVisible && pointInRect(x, y, topBarButtonBounds.filter)) {
+	if (ide_state.resourcePanelVisible && pointInRect(x, y, ide_state.topBarButtonBounds.filter)) {
 		handleTopBarButtonPress('filter');
 		return true;
 	}
-	if (pointInRect(x, y, topBarButtonBounds.wrap)) {
+	if (pointInRect(x, y, ide_state.topBarButtonBounds.wrap)) {
 		handleTopBarButtonPress('wrap');
 		return true;
 	}
-	if (pointInRect(x, y, topBarButtonBounds.resolution)) {
+	if (pointInRect(x, y, ide_state.topBarButtonBounds.resolution)) {
 		handleTopBarButtonPress('resolution');
 		return true;
 	}
@@ -6980,23 +6776,23 @@ export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 }
 
 export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {
-	const tabTop = headerHeight;
+	const tabTop = ide_state.headerHeight;
 	const tabBottom = tabTop + getTabBarTotalHeight();
 	const y = snapshot.viewportY;
 	if (y < tabTop || y >= tabBottom) {
 		return false;
 	}
 	const x = snapshot.viewportX;
-	for (let index = 0; index < tabs.length; index += 1) {
-		const tab = tabs[index];
-		const closeBounds = tabCloseButtonBounds.get(tab.id);
+	for (let index = 0; index < ide_state.tabs.length; index += 1) {
+		const tab = ide_state.tabs[index];
+		const closeBounds = ide_state.tabCloseButtonBounds.get(tab.id);
 		if (closeBounds && pointInRect(x, y, closeBounds)) {
 			endTabDrag();
 			closeTab(tab.id);
-			tabHoverId = null;
+			ide_state.tabHoverId = null;
 			return true;
 		}
-		const tabBounds = tabButtonBounds.get(tab.id);
+		const tabBounds = ide_state.tabButtonBounds.get(tab.id);
 		if (tabBounds && pointInRect(x, y, tabBounds)) {
 			beginTabDrag(tab.id, x);
 			setActiveTab(tab.id);
@@ -7007,19 +6803,19 @@ export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {
 }
 
 export function handleTabBarMiddleClick(snapshot: PointerSnapshot): boolean {
-	const tabTop = headerHeight;
+	const tabTop = ide_state.headerHeight;
 	const tabBottom = tabTop + getTabBarTotalHeight();
 	const y = snapshot.viewportY;
 	if (y < tabTop || y >= tabBottom) {
 		return false;
 	}
 	const x = snapshot.viewportX;
-	for (let index = 0; index < tabs.length; index += 1) {
-		const tab = tabs[index];
+	for (let index = 0; index < ide_state.tabs.length; index += 1) {
+		const tab = ide_state.tabs[index];
 		if (!tab.closable) {
 			continue;
 		}
-		const bounds = tabButtonBounds.get(tab.id);
+		const bounds = ide_state.tabButtonBounds.get(tab.id);
 		if (!bounds) {
 			continue;
 		}
@@ -7032,7 +6828,7 @@ export function handleTabBarMiddleClick(snapshot: PointerSnapshot): boolean {
 }
 
 export function handlePointerWheel(): void {
-	const playerInput = $.input.getPlayerInput(playerIndex);
+	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
 	if (!playerInput) {
 		return;
 	}
@@ -7047,14 +6843,14 @@ export function handlePointerWheel(): void {
 	const magnitude = Math.abs(delta);
 	const steps = Math.max(1, Math.round(magnitude / constants.WHEEL_SCROLL_STEP));
 	const direction = delta > 0 ? 1 : -1;
-	const pointer = lastPointerSnapshot;
-	const shiftDown = isModifierPressedGlobal(playerIndex, 'ShiftLeft') || isModifierPressedGlobal(playerIndex, 'ShiftRight');
-	if (hoverTooltip) {
+	const pointer = ide_state.lastPointerSnapshot;
+	const shiftDown = isModifierPressedGlobal(ide_state.playerIndex, 'ShiftLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ShiftRight');
+	if (ide_state.hoverTooltip) {
 		let canScrollTooltip = false;
 		if (!pointer) {
 			canScrollTooltip = true;
 		} else if (pointer.valid && pointer.insideViewport) {
-			if (isPointInHoverTooltip(pointer.viewportX, pointer.viewportY) || pointerHitsHoverTarget(pointer, hoverTooltip)) {
+			if (isPointInHoverTooltip(pointer.viewportX, pointer.viewportY) || pointerHitsHoverTarget(pointer, ide_state.hoverTooltip)) {
 				canScrollTooltip = true;
 			}
 		}
@@ -7063,21 +6859,21 @@ export function handlePointerWheel(): void {
 			return;
 		}
 	}
-	if (resourceSearchVisible) {
+	if (ide_state.resourceSearchVisible) {
 		const bounds = getResourceSearchBarBounds();
 		const pointerInQuickOpen = bounds !== null
 			&& pointer
 			&& pointer.valid
 			&& pointer.insideViewport
 			&& pointInRect(pointer.viewportX, pointer.viewportY, bounds);
-		if (pointerInQuickOpen || resourceSearchActive) {
+		if (pointerInQuickOpen || ide_state.resourceSearchActive) {
 			moveResourceSearchSelection(direction * steps);
 			playerInput.consumeAction('pointer_wheel');
 			return;
 		}
 	}
-	const panelBounds = resourcePanel.getBounds();
-	const pointerInPanel = resourcePanelVisible
+	const panelBounds = ide_state.resourcePanel.getBounds();
+	const pointerInPanel = ide_state.resourcePanelVisible
 		&& panelBounds !== null
 		&& pointer
 		&& pointer.valid
@@ -7085,7 +6881,7 @@ export function handlePointerWheel(): void {
 		&& pointInRect(pointer.viewportX, pointer.viewportY, panelBounds);
 	if (pointerInPanel) {
 		if (shiftDown) {
-			const horizontalPixels = direction * steps * charAdvance * 4;
+			const horizontalPixels = direction * steps * ide_state.charAdvance * 4;
 			scrollResourceBrowserHorizontal(horizontalPixels);
 			resourceBrowserEnsureSelectionVisible();
 		} else {
@@ -7094,31 +6890,31 @@ export function handlePointerWheel(): void {
 		playerInput.consumeAction('pointer_wheel');
 		return;
 	}
-	if (problemsPanel.isVisible()) {
+	if (ide_state.problemsPanel.isVisible()) {
 		const bounds = getProblemsPanelBounds();
 		if (bounds) {
 			let allowScroll = false;
 			if (!pointer) {
-				allowScroll = problemsPanel.isFocused();
+				allowScroll = ide_state.problemsPanel.isFocused();
 			} else if (pointer.valid && pointer.insideViewport && pointInRect(pointer.viewportX, pointer.viewportY, bounds)) {
 				allowScroll = true;
 			}
 			const stepsAbs = Math.max(1, Math.round(Math.abs(steps)));
-			if (problemsPanel.isFocused()) {
+			if (ide_state.problemsPanel.isFocused()) {
 				// Match quick-open/symbol behavior: focused wheel moves selection
 				for (let i = 0; i < stepsAbs; i += 1) {
-					void problemsPanel.handleKeyboardCommand(direction > 0 ? 'down' : 'up');
+					void ide_state.problemsPanel.handleKeyboardCommand(direction > 0 ? 'down' : 'up');
 				}
 				playerInput.consumeAction('pointer_wheel');
 				return;
 			}
-			if (allowScroll && problemsPanel.handlePointerWheel(direction, stepsAbs)) {
+			if (allowScroll && ide_state.problemsPanel.handlePointerWheel(direction, stepsAbs)) {
 				playerInput.consumeAction('pointer_wheel');
 				return;
 			}
 		}
 	}
-	if (completion.handlePointerWheel(direction, steps, pointer && pointer.valid && pointer.insideViewport ? { x: pointer.viewportX, y: pointer.viewportY } : null)) {
+	if (ide_state.completion.handlePointerWheel(direction, steps, pointer && pointer.valid && pointer.insideViewport ? { x: pointer.viewportX, y: pointer.viewportY } : null)) {
 		playerInput.consumeAction('pointer_wheel');
 		return;
 	}
@@ -7135,7 +6931,7 @@ export function handlePointerWheel(): void {
 		}
 	}
 	scrollRows(direction * steps);
-	cursorRevealSuspended = true;
+	ide_state.cursorRevealSuspended = true;
 	playerInput.consumeAction('pointer_wheel');
 }
 
@@ -7157,14 +6953,14 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 			toggleResourcePanel();
 			return;
 		case 'save':
-			if (dirty) {
+			if (ide_state.dirty) {
 				void save();
 			}
 			return;
 		case 'resume':
 		case 'reboot':
 			activateCodeTab();
-			if (dirty) {
+			if (ide_state.dirty) {
 				openActionPrompt(button);
 				return;
 			}
@@ -7175,16 +6971,16 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 
 export function openActionPrompt(action: PendingActionPrompt['action']): void {
 	activateCodeTab();
-	pendingActionPrompt = { action };
-	actionPromptButtons.saveAndContinue = null;
-	actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
-	actionPromptButtons.cancel = { left: 0, top: 0, right: 0, bottom: 0 };
-	pointerSelecting = false;
-	pointerPrimaryWasPressed = false;
+	ide_state.pendingActionPrompt = { action };
+	ide_state.actionPromptButtons.saveAndContinue = null;
+	ide_state.actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
+	ide_state.actionPromptButtons.cancel = { left: 0, top: 0, right: 0, bottom: 0 };
+	ide_state.pointerSelecting = false;
+	ide_state.pointerPrimaryWasPressed = false;
 }
 
 export async function handleActionPromptSelection(choice: 'save-continue' | 'continue' | 'cancel'): Promise<void> {
-	if (!pendingActionPrompt) {
+	if (!ide_state.pendingActionPrompt) {
 		return;
 	}
 	if (choice === 'cancel') {
@@ -7192,7 +6988,7 @@ export async function handleActionPromptSelection(choice: 'save-continue' | 'con
 		return;
 	}
 	if (choice === 'save-continue') {
-		const saved = await attemptPromptSave(pendingActionPrompt.action);
+		const saved = await attemptPromptSave(ide_state.pendingActionPrompt.action);
 		if (!saved) {
 			return;
 		}
@@ -7206,14 +7002,14 @@ export async function handleActionPromptSelection(choice: 'save-continue' | 'con
 export async function attemptPromptSave(action: PendingActionPrompt['action']): Promise<boolean> {
 	if (action === 'close') {
 		await save();
-		return dirty === false;
+		return ide_state.dirty === false;
 	}
 	await save();
-	return dirty === false;
+	return ide_state.dirty === false;
 }
 
 export function executePendingAction(): boolean {
-	const prompt = pendingActionPrompt;
+	const prompt = ide_state.pendingActionPrompt;
 	if (!prompt) {
 		return false;
 	}
@@ -7237,7 +7033,7 @@ export function performAction(action: PendingActionPrompt['action']): boolean {
 export function performResume(): boolean {
 	const runtime = getConsoleRuntime();
 	if (!runtime) {
-		showMessage('Console runtime unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
+		ide_state.showMessage('Console runtime unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
 		return false;
 	}
 	if (!runtime.isLuaRuntimeFailed() && !hasPendingRuntimeReload()) {
@@ -7251,22 +7047,22 @@ export function performResume(): boolean {
 		snapshot = runtime.getState();
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		showMessage(`Failed to capture runtime state: ${message}`, constants.COLOR_STATUS_ERROR, 4.0);
+		ide_state.showMessage(`Failed to capture runtime state: ${message}`, constants.COLOR_STATUS_ERROR, 4.0);
 		return false;
 	}
 	const sanitizedSnapshot = prepareRuntimeSnapshotForResume(snapshot);
 	if (!sanitizedSnapshot) {
-		showMessage('Runtime state unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
+		ide_state.showMessage('Runtime state unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
 		return false;
 	}
-	const targetGeneration = saveGeneration;
+	const targetGeneration = ide_state.saveGeneration;
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
 	clearExecutionStopHighlights();
 	deactivate();
 	scheduleRuntimeTask(() => {
 		runtime.resumeFromSnapshot(sanitizedSnapshot);
 		if (shouldUpdateGeneration) {
-			appliedGeneration = targetGeneration;
+			ide_state.appliedGeneration = targetGeneration;
 		}
 		$.paused = false;
 	}, (error) => {
@@ -7278,12 +7074,12 @@ export function performResume(): boolean {
 export function performReboot(): boolean {
 	const runtime = getConsoleRuntime();
 	if (!runtime) {
-		showMessage('Console runtime unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
+		ide_state.showMessage('Console runtime unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
 		return false;
 	}
 	const requiresReload = hasPendingRuntimeReload();
 	const savedSource = requiresReload ? getMainProgramSourceForReload() : null;
-	const targetGeneration = saveGeneration;
+	const targetGeneration = ide_state.saveGeneration;
 	clearExecutionStopHighlights();
 	deactivate();
 	scheduleRuntimeTask(async () => {
@@ -7291,7 +7087,7 @@ export function performReboot(): boolean {
 			await runtime.reloadLuaProgram(savedSource);
 		}
 		runtime.boot('editor:reboot');
-		appliedGeneration = targetGeneration;
+		ide_state.appliedGeneration = targetGeneration;
 		$.paused = false;
 	}, (error) => {
 		handleRuntimeTaskError(error, 'Failed to reboot game');
@@ -7309,7 +7105,7 @@ export function toggleLineComments(): void {
 	}
 	let allCommented = true;
 	for (let row = range.startRow; row <= range.endRow; row++) {
-		const line = lines[row];
+		const line = ide_state.lines[row];
 		const commentIndex = firstNonWhitespaceIndex(line);
 		if (commentIndex >= line.length) {
 			allCommented = false;
@@ -7332,10 +7128,10 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 	if (target.startRow < 0 || target.endRow < target.startRow) {
 		return;
 	}
-	prepareUndo('comment-lines', false);
+	prepareUndo('comment-ide_state.lines', false);
 	let changed = false;
 	for (let row = target.startRow; row <= target.endRow; row++) {
-		const originalLine = lines[row];
+		const originalLine = ide_state.lines[row];
 		const insertIndex = firstNonWhitespaceIndex(originalLine);
 		const hasContent = insertIndex < originalLine.length;
 		let insertion = '--';
@@ -7346,7 +7142,7 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 			}
 		}
 		const updatedLine = originalLine.slice(0, insertIndex) + insertion + originalLine.slice(insertIndex);
-		lines[row] = updatedLine;
+		ide_state.lines[row] = updatedLine;
 		invalidateLine(row);
 		shiftPositionsForInsertion(row, insertIndex, insertion.length);
 		changed = true;
@@ -7355,7 +7151,7 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 		return;
 	}
 	clampCursorColumn();
-	selectionAnchor = clampSelectionPosition(selectionAnchor);
+	ide_state.selectionAnchor = clampSelectionPosition(ide_state.selectionAnchor);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -7367,10 +7163,10 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 	if (target.startRow < 0 || target.endRow < target.startRow) {
 		return;
 	}
-	prepareUndo('uncomment-lines', false);
+	prepareUndo('uncomment-ide_state.lines', false);
 	let changed = false;
 	for (let row = target.startRow; row <= target.endRow; row++) {
-		const originalLine = lines[row];
+		const originalLine = ide_state.lines[row];
 		const commentIndex = firstNonWhitespaceIndex(originalLine);
 		if (commentIndex >= originalLine.length) {
 			continue;
@@ -7386,7 +7182,7 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 			}
 		}
 		const updatedLine = originalLine.slice(0, commentIndex) + originalLine.slice(commentIndex + removal);
-		lines[row] = updatedLine;
+		ide_state.lines[row] = updatedLine;
 		invalidateLine(row);
 		shiftPositionsForRemoval(row, commentIndex, removal);
 		changed = true;
@@ -7395,7 +7191,7 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 		return;
 	}
 	clampCursorColumn();
-	selectionAnchor = clampSelectionPosition(selectionAnchor);
+	ide_state.selectionAnchor = clampSelectionPosition(ide_state.selectionAnchor);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -7416,11 +7212,11 @@ export function shiftPositionsForInsertion(row: number, column: number, length: 
 	if (length <= 0) {
 		return;
 	}
-	if (cursorRow === row && cursorColumn >= column) {
-		cursorColumn += length;
+	if (ide_state.cursorRow === row && ide_state.cursorColumn >= column) {
+		ide_state.cursorColumn += length;
 	}
-	if (selectionAnchor && selectionAnchor.row === row && selectionAnchor.column >= column) {
-		selectionAnchor.column += length;
+	if (ide_state.selectionAnchor && ide_state.selectionAnchor.row === row && ide_state.selectionAnchor.column >= column) {
+		ide_state.selectionAnchor.column += length;
 	}
 }
 
@@ -7428,29 +7224,29 @@ export function shiftPositionsForRemoval(row: number, column: number, length: nu
 	if (length <= 0) {
 		return;
 	}
-	if (cursorRow === row && cursorColumn > column) {
-		if (cursorColumn <= column + length) {
-			cursorColumn = column;
+	if (ide_state.cursorRow === row && ide_state.cursorColumn > column) {
+		if (ide_state.cursorColumn <= column + length) {
+			ide_state.cursorColumn = column;
 		} else {
-			cursorColumn -= length;
+			ide_state.cursorColumn -= length;
 		}
 	}
-	if (selectionAnchor && selectionAnchor.row === row && selectionAnchor.column > column) {
-		if (selectionAnchor.column <= column + length) {
-			selectionAnchor.column = column;
+	if (ide_state.selectionAnchor && ide_state.selectionAnchor.row === row && ide_state.selectionAnchor.column > column) {
+		if (ide_state.selectionAnchor.column <= column + length) {
+			ide_state.selectionAnchor.column = column;
 		} else {
-			selectionAnchor.column -= length;
+			ide_state.selectionAnchor.column -= length;
 		}
 	}
 }
 
 export function revealCursor(): void {
-	cursorRevealSuspended = false;
+	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();
 }
 
 export function readPointerSnapshot(): PointerSnapshot | null {
-	const playerInput = $.input.getPlayerInput(playerIndex);
+	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
 	if (!playerInput) {
 		return null;
 	}
@@ -7492,18 +7288,18 @@ export function mapScreenPointToViewport(screenX: number, screenY: number): { x:
 	const relativeX = screenX - rect.left;
 	const relativeY = screenY - rect.top;
 	const inside = relativeX >= 0 && relativeX < width && relativeY >= 0 && relativeY < height;
-	const viewportX = (relativeX / width) * viewportWidth;
-	const viewportY = (relativeY / height) * viewportHeight;
+	const viewportX = (relativeX / width) * ide_state.viewportWidth;
+	const viewportY = (relativeY / height) * ide_state.viewportHeight;
 	return { x: viewportX, y: viewportY, inside, valid: true };
 }
 
 export function getCodeAreaBounds(): { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; gutterLeft: number; gutterRight: number; textLeft: number; } {
 	const codeTop = codeViewportTop();
-	const codeBottom = viewportHeight - bottomMargin();
-	const codeLeft = resourcePanelVisible ? getResourcePanelWidth() : 0;
-	const codeRight = viewportWidth;
+	const codeBottom = ide_state.viewportHeight - bottomMargin();
+	const codeLeft = ide_state.resourcePanelVisible ? getResourcePanelWidth() : 0;
+	const codeRight = ide_state.viewportWidth;
 	const gutterLeft = codeLeft;
-	const gutterRight = gutterLeft + gutterWidth;
+	const gutterRight = gutterLeft + ide_state.gutterWidth;
 	const textLeft = gutterRight + 2;
 	return { codeTop, codeBottom, codeLeft, codeRight, gutterLeft, gutterRight, textLeft };
 }
@@ -7512,8 +7308,8 @@ export function resolvePointerRow(viewportY: number): number {
 	ensureVisualLines();
 	const bounds = getCodeAreaBounds();
 	const relativeY = viewportY - bounds.codeTop;
-	const lineOffset = Math.floor(relativeY / lineHeight);
-	let visualIndex = scrollRow + lineOffset;
+	const lineOffset = Math.floor(relativeY / ide_state.lineHeight);
+	let visualIndex = ide_state.scrollRow + lineOffset;
 	const visualCount = getVisualLineCount();
 	if (visualIndex < 0) {
 		visualIndex = 0;
@@ -7523,30 +7319,30 @@ export function resolvePointerRow(viewportY: number): number {
 	}
 	const segment = visualIndexToSegment(visualIndex);
 	if (!segment) {
-		lastPointerRowResolution = null;
-		return clamp(visualIndex, 0, Math.max(0, lines.length - 1));
+		ide_state.lastPointerRowResolution = null;
+		return clamp(visualIndex, 0, Math.max(0, ide_state.lines.length - 1));
 	}
-	lastPointerRowResolution = { visualIndex, segment };
+	ide_state.lastPointerRowResolution = { visualIndex, segment };
 	return segment.row;
 }
 
 export function resolvePointerColumn(row: number, viewportX: number): number {
 	const bounds = getCodeAreaBounds();
 	const textLeft = bounds.textLeft;
-	const line = lines[row] ?? '';
+	const line = ide_state.lines[row] ?? '';
 	if (line.length === 0) {
 		return 0;
 	}
 	const entry = getCachedHighlight(row);
 	const highlight = entry.hi;
-	let segmentStartColumn = scrollColumn;
+	let segmentStartColumn = ide_state.scrollColumn;
 	let segmentEndColumn = line.length;
-	const resolvedSegment = lastPointerRowResolution?.segment;
-	if (wordWrapEnabled && resolvedSegment && resolvedSegment.row === row) {
+	const resolvedSegment = ide_state.lastPointerRowResolution?.segment;
+	if (ide_state.wordWrapEnabled && resolvedSegment && resolvedSegment.row === row) {
 		segmentStartColumn = resolvedSegment.startColumn;
 		segmentEndColumn = resolvedSegment.endColumn;
 	}
-	if (wordWrapEnabled) {
+	if (ide_state.wordWrapEnabled) {
 		if (segmentStartColumn < 0) {
 			segmentStartColumn = 0;
 		}
@@ -7571,7 +7367,7 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 		displayIndex = startDisplay;
 	}
 	if (displayIndex >= highlight.chars.length) {
-		return wordWrapEnabled ? Math.min(segmentEndColumn, line.length) : line.length;
+		return ide_state.wordWrapEnabled ? Math.min(segmentEndColumn, line.length) : line.length;
 	}
 	const left = entry.advancePrefix[displayIndex];
 	const right = entry.advancePrefix[displayIndex + 1];
@@ -7583,7 +7379,7 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 	if (target >= midpoint) {
 		column += 1;
 	}
-	if (wordWrapEnabled) {
+	if (ide_state.wordWrapEnabled) {
 		if (column > segmentEndColumn) {
 			column = segmentEndColumn;
 		}
@@ -7603,75 +7399,75 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 }
 
 export function handlePointerAutoScroll(viewportX: number, viewportY: number): void {
-	if (!pointerSelecting) {
+	if (!ide_state.pointerSelecting) {
 		return;
 	}
 	const bounds = getCodeAreaBounds();
 	ensureVisualLines();
 	if (viewportY < bounds.codeTop) {
-		if (scrollRow > 0) {
-			scrollRow -= 1;
+		if (ide_state.scrollRow > 0) {
+			ide_state.scrollRow -= 1;
 		}
 	}
 	else if (viewportY >= bounds.codeBottom) {
 		const lastRow = getVisualLineCount() - 1;
-		if (scrollRow < lastRow) {
-			scrollRow += 1;
+		if (ide_state.scrollRow < lastRow) {
+			ide_state.scrollRow += 1;
 		}
 	}
 	const maxScrollColumn = computeMaximumScrollColumn();
 	if (viewportX < bounds.gutterLeft) {
 		return;
 	}
-	if (!wordWrapEnabled) {
+	if (!ide_state.wordWrapEnabled) {
 		if (viewportX < bounds.textLeft) {
-			if (scrollColumn > 0) {
-				scrollColumn -= 1;
+			if (ide_state.scrollColumn > 0) {
+				ide_state.scrollColumn -= 1;
 			}
 		}
 		else if (viewportX >= bounds.codeRight) {
-			if (scrollColumn < maxScrollColumn) {
-				scrollColumn += 1;
+			if (ide_state.scrollColumn < maxScrollColumn) {
+				ide_state.scrollColumn += 1;
 			}
 		}
 	}
-	if (scrollRow < 0) {
-		scrollRow = 0;
+	if (ide_state.scrollRow < 0) {
+		ide_state.scrollRow = 0;
 	}
-	if (scrollColumn < 0) {
-		scrollColumn = 0;
+	if (ide_state.scrollColumn < 0) {
+		ide_state.scrollColumn = 0;
 	}
-	if (wordWrapEnabled) {
-		scrollColumn = 0;
+	if (ide_state.wordWrapEnabled) {
+		ide_state.scrollColumn = 0;
 	}
 	const maxScrollRow = Math.max(0, getVisualLineCount() - visibleRowCount());
-	if (scrollRow > maxScrollRow) {
-		scrollRow = maxScrollRow;
+	if (ide_state.scrollRow > maxScrollRow) {
+		ide_state.scrollRow = maxScrollRow;
 	}
-	if (!wordWrapEnabled && scrollColumn > maxScrollColumn) {
-		scrollColumn = maxScrollColumn;
+	if (!ide_state.wordWrapEnabled && ide_state.scrollColumn > maxScrollColumn) {
+		ide_state.scrollColumn = maxScrollColumn;
 	}
 }
 
 export function registerPointerClick(row: number, column: number): boolean {
 	const now = $.platform.clock.now();
-	const interval = now - lastPointerClickTimeMs;
-	const sameRow = row === lastPointerClickRow;
-	const columnDelta = Math.abs(column - lastPointerClickColumn);
-	const doubleClick = lastPointerClickTimeMs > 0
+	const interval = now - ide_state.lastPointerClickTimeMs;
+	const sameRow = row === ide_state.lastPointerClickRow;
+	const columnDelta = Math.abs(column - ide_state.lastPointerClickColumn);
+	const doubleClick = ide_state.lastPointerClickTimeMs > 0
 		&& interval <= constants.DOUBLE_CLICK_MAX_INTERVAL_MS
 		&& sameRow
 		&& columnDelta <= 2;
-	lastPointerClickTimeMs = now;
-	lastPointerClickRow = row;
-	lastPointerClickColumn = column;
+	ide_state.lastPointerClickTimeMs = now;
+	ide_state.lastPointerClickRow = row;
+	ide_state.lastPointerClickColumn = column;
 	return doubleClick;
 }
 
 export function resetPointerClickTracking(): void {
-	lastPointerClickTimeMs = 0;
-	lastPointerClickRow = -1;
-	lastPointerClickColumn = -1;
+	ide_state.lastPointerClickTimeMs = 0;
+	ide_state.lastPointerClickRow = -1;
+	ide_state.lastPointerClickColumn = -1;
 }
 
 export function scrollRows(deltaRows: number): void {
@@ -7680,8 +7476,8 @@ export function scrollRows(deltaRows: number): void {
 	}
 	ensureVisualLines();
 	const maxScrollRow = Math.max(0, getVisualLineCount() - visibleRowCount());
-	const targetRow = clamp(scrollRow + deltaRows, 0, maxScrollRow);
-	scrollRow = targetRow;
+	const targetRow = clamp(ide_state.scrollRow + deltaRows, 0, maxScrollRow);
+	ide_state.scrollRow = targetRow;
 }
 
 // Cursor movement handled in ConsoleCartEditorTextOps base class.
@@ -7715,41 +7511,41 @@ export function insertNewline(): void {
 // cursor/grid manipulation now resides in ConsoleCartEditorTextOps base class.
 
 export function applySearchFieldText(value: string, moveCursorToEnd: boolean): void {
-	searchQuery = value;
-	setFieldText(searchField, value, moveCursorToEnd);
+	ide_state.searchQuery = value;
+	setFieldText(ide_state.searchField, value, moveCursorToEnd);
 }
 
 export function applySymbolSearchFieldText(value: string, moveCursorToEnd: boolean): void {
-	symbolSearchQuery = value;
-	setFieldText(symbolSearchField, value, moveCursorToEnd);
+	ide_state.symbolSearchQuery = value;
+	setFieldText(ide_state.symbolSearchField, value, moveCursorToEnd);
 }
 
 export function applyResourceSearchFieldText(value: string, moveCursorToEnd: boolean): void {
-	resourceSearchQuery = value;
-	setFieldText(resourceSearchField, value, moveCursorToEnd);
+	ide_state.resourceSearchQuery = value;
+	setFieldText(ide_state.resourceSearchField, value, moveCursorToEnd);
 }
 
 export function applyLineJumpFieldText(value: string, moveCursorToEnd: boolean): void {
-	lineJumpValue = value;
-	setFieldText(lineJumpField, value, moveCursorToEnd);
+	ide_state.lineJumpValue = value;
+	setFieldText(ide_state.lineJumpField, value, moveCursorToEnd);
 }
 
 export function applyCreateResourceFieldText(value: string, moveCursorToEnd: boolean): void {
-	createResourcePath = value;
-	setFieldText(createResourceField, value, moveCursorToEnd);
+	ide_state.createResourcePath = value;
+	setFieldText(ide_state.createResourceField, value, moveCursorToEnd);
 }
 
 export function inlineFieldMetrics(): InlineFieldMetrics {
-	return inlineFieldMetricsRef;
+	return ide_state.inlineFieldMetricsRef;
 }
 
 export function createInlineFieldEditingHandlers(keyboard: KeyboardInput): InlineFieldEditingHandlers {
 	return {
-		isKeyJustPressed: (code) => isKeyJustPressedGlobal(playerIndex, code),
-		isKeyTyped: (code) => isKeyTypedGlobal(playerIndex, code),
-		shouldFireRepeat: (code, deltaSeconds) => input.shouldRepeatPublic(keyboard, code, deltaSeconds),
+		isKeyJustPressed: (code) => isKeyJustPressedGlobal(ide_state.playerIndex, code),
+		isKeyTyped: (code) => isKeyTypedGlobal(ide_state.playerIndex, code),
+		shouldFireRepeat: (code, deltaSeconds) => ide_state.input.shouldRepeatPublic(keyboard, code, deltaSeconds),
 		consumeKey: (code) => consumeKeyboardKey(keyboard, code),
-		readClipboard: () => customClipboard,
+		readClipboard: () => ide_state.customClipboard,
 		writeClipboard: (payload, action) => {
 			const message = action === 'copy'
 				? 'Copied to editor clipboard'
@@ -7757,7 +7553,7 @@ export function createInlineFieldEditingHandlers(keyboard: KeyboardInput): Inlin
 			void writeClipboard(payload, message);
 		},
 		onClipboardEmpty: () => {
-			showMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
+			ide_state.showMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
 		},
 	};
 }
@@ -7782,22 +7578,22 @@ export function processInlineFieldPointer(field: InlineTextField, textLeft: numb
 }
 
 export function updateDesiredColumn(): void {
-	desiredColumn = cursorColumn;
-	desiredDisplayOffset = 0;
-	if (cursorRow < 0 || cursorRow >= lines.length) {
+	ide_state.desiredColumn = ide_state.cursorColumn;
+	ide_state.desiredDisplayOffset = 0;
+	if (ide_state.cursorRow < 0 || ide_state.cursorRow >= ide_state.lines.length) {
 		return;
 	}
-	const entry = getCachedHighlight(cursorRow);
+	const entry = getCachedHighlight(ide_state.cursorRow);
 	const highlight = entry.hi;
-	const cursorDisplay = columnToDisplay(highlight, cursorColumn);
+	const cursorDisplay = columnToDisplay(highlight, ide_state.cursorColumn);
 	let segmentStartColumn = 0;
-	if (wordWrapEnabled) {
+	if (ide_state.wordWrapEnabled) {
 		ensureVisualLines();
-		const override = getCursorVisualOverride(cursorRow, cursorColumn);
+		const override = getCursorVisualOverride(ide_state.cursorRow, ide_state.cursorColumn);
 		if (override) {
 			segmentStartColumn = override.segmentStartColumn;
 		} else {
-			const visualIndex = positionToVisualIndex(cursorRow, cursorColumn);
+			const visualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
 			const segment = visualIndexToSegment(visualIndex);
 			if (segment) {
 				segmentStartColumn = segment.startColumn;
@@ -7805,9 +7601,9 @@ export function updateDesiredColumn(): void {
 		}
 	}
 	const segmentDisplayStart = columnToDisplay(highlight, segmentStartColumn);
-	desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
-	if (desiredDisplayOffset < 0) {
-		desiredDisplayOffset = 0;
+	ide_state.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
+	if (ide_state.desiredDisplayOffset < 0) {
+		ide_state.desiredDisplayOffset = 0;
 	}
 }
 
@@ -7816,32 +7612,32 @@ export async function save(): Promise<void> {
 	if (!context) {
 		return;
 	}
-	const source = lines.join('\n');
+	const source = ide_state.lines.join('\n');
 	try {
 		await context.save(source);
-		dirty = false;
-		saveGeneration = saveGeneration + 1;
+		ide_state.dirty = false;
+		ide_state.saveGeneration = ide_state.saveGeneration + 1;
 		context.lastSavedSource = source;
-		context.saveGeneration = saveGeneration;
-		const isEntryContext = entryTabId !== null && context.id === entryTabId;
+		context.saveGeneration = ide_state.saveGeneration;
+		const isEntryContext = ide_state.entryTabId !== null && context.id === ide_state.entryTabId;
 		if (isEntryContext) {
-			lastSavedSource = source;
+			ide_state.lastSavedSource = source;
 		}
 		context.snapshot = captureSnapshot();
 		updateActiveContextDirtyFlag();
 		const message = isEntryContext ? 'Lua cart saved (restart pending)' : `${context.title} saved (restart pending)`;
-		showMessage(message, constants.COLOR_STATUS_SUCCESS, 2.5);
+		ide_state.showMessage(message, constants.COLOR_STATUS_SUCCESS, 2.5);
 	} catch (error) {
 		if (tryShowLuaErrorOverlay(error)) {
 			return;
 		}
 		const message = error instanceof Error ? error.message : String(error);
-		showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
+		ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 	}
 }
 
 export function updateRuntimeErrorOverlay(deltaSeconds: number): void {
-	const overlay = runtimeErrorOverlay;
+	const overlay = ide_state.runtimeErrorOverlay;
 	if (!overlay) {
 		return;
 	}
@@ -7857,7 +7653,7 @@ export function updateRuntimeErrorOverlay(deltaSeconds: number): void {
 export async function copySelectionToClipboard(): Promise<void> {
 	const text = getSelectionText();
 	if (text === null) {
-		showMessage('Nothing selected to copy', constants.COLOR_STATUS_WARNING, 1.5);
+		ide_state.showMessage('Nothing selected to copy', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	await writeClipboard(text, 'Copied selection to clipboard');
@@ -7866,7 +7662,7 @@ export async function copySelectionToClipboard(): Promise<void> {
 export async function cutSelectionToClipboard(): Promise<void> {
 	const text = getSelectionText();
 	if (text === null) {
-		showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
+		ide_state.showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	prepareUndo('cut', false);
@@ -7875,32 +7671,32 @@ export async function cutSelectionToClipboard(): Promise<void> {
 }
 
 export async function cutLineToClipboard(): Promise<void> {
-	if (lines.length === 0) {
-		showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
+	if (ide_state.lines.length === 0) {
+		ide_state.showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	const currentLineValue = currentLine();
-	const isLastLine = cursorRow >= lines.length - 1;
+	const isLastLine = ide_state.cursorRow >= ide_state.lines.length - 1;
 	const text = isLastLine ? currentLineValue : currentLineValue + '\n';
 	prepareUndo('cut-line', false);
 	await writeClipboard(text, 'Cut line to clipboard');
-	if (lines.length === 1) {
-		lines[0] = '';
-		cursorColumn = 0;
+	if (ide_state.lines.length === 1) {
+		ide_state.lines[0] = '';
+		ide_state.cursorColumn = 0;
 	} else {
-		const removedRow = cursorRow;
-		lines.splice(cursorRow, 1);
-		if (cursorRow >= lines.length) {
-			cursorRow = lines.length - 1;
+		const removedRow = ide_state.cursorRow;
+		ide_state.lines.splice(ide_state.cursorRow, 1);
+		if (ide_state.cursorRow >= ide_state.lines.length) {
+			ide_state.cursorRow = ide_state.lines.length - 1;
 		}
-		const newLength = lines[cursorRow].length;
-		if (cursorColumn > newLength) {
-			cursorColumn = newLength;
+		const newLength = ide_state.lines[ide_state.cursorRow].length;
+		if (ide_state.cursorColumn > newLength) {
+			ide_state.cursorColumn = newLength;
 		}
-		invalidateHighlightsFromRow(Math.min(removedRow, lines.length - 1));
+		invalidateHighlightsFromRow(Math.min(removedRow, ide_state.lines.length - 1));
 	}
-	invalidateLine(cursorRow);
-	selectionAnchor = null;
+	invalidateLine(ide_state.cursorRow);
+	ide_state.selectionAnchor = null;
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -7908,77 +7704,77 @@ export async function cutLineToClipboard(): Promise<void> {
 }
 
 export function pasteFromClipboard(): void {
-	const text = customClipboard;
+	const text = ide_state.customClipboard;
 	if (text === null || text.length === 0) {
-		showMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
+		ide_state.showMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	prepareUndo('paste', false);
 	deleteSelectionIfPresent();
 	insertClipboardText(text);
-	showMessage('Pasted from editor clipboard', constants.COLOR_STATUS_SUCCESS, 1.5);
+	ide_state.showMessage('Pasted from editor clipboard', constants.COLOR_STATUS_SUCCESS, 1.5);
 }
 
 export async function writeClipboard(text: string, successMessage: string): Promise<void> {
-	customClipboard = text;
+	ide_state.customClipboard = text;
 	const clipboard = $.platform.clipboard;
 	if (!clipboard.isSupported()) {
 		const message = successMessage + ' (Editor clipboard only)';
-		showMessage(message, constants.COLOR_STATUS_SUCCESS, 1.5);
+		ide_state.showMessage(message, constants.COLOR_STATUS_SUCCESS, 1.5);
 		return;
 	}
 	try {
 		await clipboard.writeText(text);
-		showMessage(successMessage, constants.COLOR_STATUS_SUCCESS, 1.5);
+		ide_state.showMessage(successMessage, constants.COLOR_STATUS_SUCCESS, 1.5);
 	}
 	catch (error) {
-		showMessage('System clipboard write failed. Editor clipboard updated.', constants.COLOR_STATUS_WARNING, 3.5);
+		ide_state.showMessage('System clipboard write failed. Editor clipboard updated.', constants.COLOR_STATUS_WARNING, 3.5);
 	}
 }
 
 export function captureSnapshot(): EditorSnapshot {
-	const linesCopy = lines.slice();
+	const linesCopy = ide_state.lines.slice();
 	let selectionCopy: Position | null = null;
-	if (selectionAnchor) {
-		selectionCopy = { row: selectionAnchor.row, column: selectionAnchor.column };
+	if (ide_state.selectionAnchor) {
+		selectionCopy = { row: ide_state.selectionAnchor.row, column: ide_state.selectionAnchor.column };
 	}
 	return {
 		lines: linesCopy,
-		cursorRow: cursorRow,
-		cursorColumn: cursorColumn,
-		scrollRow: scrollRow,
-		scrollColumn: scrollColumn,
+		cursorRow: ide_state.cursorRow,
+		cursorColumn: ide_state.cursorColumn,
+		scrollRow: ide_state.scrollRow,
+		scrollColumn: ide_state.scrollColumn,
 		selectionAnchor: selectionCopy,
-		dirty: dirty,
+		dirty: ide_state.dirty,
 	};
 }
 
 export function restoreSnapshot(snapshot: EditorSnapshot, preserveSelection: boolean = false): void {
-	const preservedSelection = preserveSelection && selectionAnchor
-		? { row: selectionAnchor.row, column: selectionAnchor.column }
+	const preservedSelection = preserveSelection && ide_state.selectionAnchor
+		? { row: ide_state.selectionAnchor.row, column: ide_state.selectionAnchor.column }
 		: null;
-	lines = snapshot.lines.slice();
+	ide_state.lines = snapshot.lines.slice();
 	invalidateVisualLines();
 	invalidateAllHighlights();
 	markDiagnosticsDirty();
-	cursorRow = snapshot.cursorRow;
-	cursorColumn = snapshot.cursorColumn;
-	scrollRow = snapshot.scrollRow;
-	scrollColumn = snapshot.scrollColumn;
+	ide_state.cursorRow = snapshot.cursorRow;
+	ide_state.cursorColumn = snapshot.cursorColumn;
+	ide_state.scrollRow = snapshot.scrollRow;
+	ide_state.scrollColumn = snapshot.scrollColumn;
 	if (!preserveSelection) {
 		if (snapshot.selectionAnchor) {
-			selectionAnchor = { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column };
+			ide_state.selectionAnchor = { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column };
 		} else {
-			selectionAnchor = null;
+			ide_state.selectionAnchor = null;
 		}
 	} else {
-		selectionAnchor = clampSelectionPosition(preservedSelection);
+		ide_state.selectionAnchor = clampSelectionPosition(preservedSelection);
 	}
-	dirty = snapshot.dirty;
+	ide_state.dirty = snapshot.dirty;
 	bumpTextVersion();
 	updateDesiredColumn();
 	resetBlink();
-	cursorRevealSuspended = false;
+	ide_state.cursorRevealSuspended = false;
 	updateActiveContextDirtyFlag();
 	ensureCursorVisible();
 	requestSemanticRefresh();
@@ -7986,39 +7782,39 @@ export function restoreSnapshot(snapshot: EditorSnapshot, preserveSelection: boo
 
 export function drawTopBar(api: BmsxConsoleApi): void {
 	const host = {
-		viewportWidth: viewportWidth,
-		headerHeight: headerHeight,
-		lineHeight: lineHeight,
+		viewportWidth: ide_state.viewportWidth,
+		headerHeight: ide_state.headerHeight,
+		lineHeight: ide_state.lineHeight,
 		measureText: (text: string) => measureText(text),
-		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, font, text, x, y, color),
-		wordWrapEnabled: wordWrapEnabled,
-		resolutionMode: resolutionMode,
-		metadata: metadata,
-		dirty: dirty,
-		resourcePanelVisible: resourcePanelVisible,
-		resourcePanelFilterMode: resourcePanel.getFilterMode(),
-		problemsPanelVisible: problemsPanel.isVisible(),
-		topBarButtonBounds: topBarButtonBounds,
+		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, ide_state.font, text, x, y, color),
+		wordWrapEnabled: ide_state.wordWrapEnabled,
+		resolutionMode: ide_state.resolutionMode,
+		metadata: ide_state.metadata,
+		dirty: ide_state.dirty,
+		resourcePanelVisible: ide_state.resourcePanelVisible,
+		resourcePanelFilterMode: ide_state.resourcePanel.getFilterMode(),
+		problemsPanelVisible: ide_state.problemsPanel.isVisible(),
+		topBarButtonBounds: ide_state.topBarButtonBounds,
 	};
 	renderTopBar(api, host);
 }
 
 export function drawCreateResourceBar(api: BmsxConsoleApi): void {
 	const host = {
-		viewportWidth: viewportWidth,
-		headerHeight: headerHeight,
+		viewportWidth: ide_state.viewportWidth,
+		headerHeight: ide_state.headerHeight,
 		tabBarHeight: getTabBarTotalHeight(),
-		lineHeight: lineHeight,
-		spaceAdvance: spaceAdvance,
-		charAdvance: charAdvance,
+		lineHeight: ide_state.lineHeight,
+		spaceAdvance: ide_state.spaceAdvance,
+		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
-		drawText: (api2: BmsxConsoleApi, t: string, x: number, y: number, c: number) => drawEditorText(api2, font, t, x, y, c),
+		drawText: (api2: BmsxConsoleApi, t: string, x: number, y: number, c: number) => drawEditorText(api2, ide_state.font, t, x, y, c),
 		inlineFieldMetrics: () => inlineFieldMetrics(),
-		createResourceActive: createResourceActive,
-		createResourceVisible: createResourceVisible,
-		createResourceField: createResourceField,
-		createResourceWorking: createResourceWorking,
-		createResourceError: createResourceError,
+		createResourceActive: ide_state.createResourceActive,
+		createResourceVisible: ide_state.createResourceVisible,
+		createResourceField: ide_state.createResourceField,
+		createResourceWorking: ide_state.createResourceWorking,
+		createResourceError: ide_state.createResourceError,
 		drawCreateResourceErrorDialog: (api4: BmsxConsoleApi, err: string) => drawCreateResourceErrorDialog(api4, err),
 		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
 		getSearchBarHeight: () => getSearchBarHeight(),
@@ -8041,27 +7837,27 @@ export function drawCreateResourceBar(api: BmsxConsoleApi): void {
 		inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 		inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (problemsPanel.isVisible() && problemsPanel.isFocused()),
+		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
 	};
 	renderCreateResourceBar(api, host);
 }
 
 export function drawSearchBar(api: BmsxConsoleApi): void {
 	const host: import('./render_inline_bars').InlineBarsHost = {
-		viewportWidth: viewportWidth,
-		headerHeight: headerHeight,
+		viewportWidth: ide_state.viewportWidth,
+		headerHeight: ide_state.headerHeight,
 		tabBarHeight: getTabBarTotalHeight(),
-		lineHeight: lineHeight,
-		spaceAdvance: spaceAdvance,
-		charAdvance: charAdvance,
+		lineHeight: ide_state.lineHeight,
+		spaceAdvance: ide_state.spaceAdvance,
+		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, font, t, x, y, c),
+		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
 		inlineFieldMetrics: () => inlineFieldMetrics(),
-		createResourceActive: createResourceActive,
-		createResourceVisible: createResourceVisible,
-		createResourceField: createResourceField,
-		createResourceWorking: createResourceWorking,
-		createResourceError: createResourceError,
+		createResourceActive: ide_state.createResourceActive,
+		createResourceVisible: ide_state.createResourceVisible,
+		createResourceField: ide_state.createResourceField,
+		createResourceWorking: ide_state.createResourceWorking,
+		createResourceError: ide_state.createResourceError,
 		drawCreateResourceErrorDialog: (a, m) => drawCreateResourceErrorDialog(a, m),
 		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
 		getSearchBarHeight: () => getSearchBarHeight(),
@@ -8084,41 +7880,41 @@ export function drawSearchBar(api: BmsxConsoleApi): void {
 		inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 		inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (problemsPanel.isVisible() && problemsPanel.isFocused()),
-		searchActive: searchActive,
-		searchField: searchField,
-		searchQuery: searchQuery,
+		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
+		searchActive: ide_state.searchActive,
+		searchField: ide_state.searchField,
+		searchQuery: ide_state.searchQuery,
 		searchMatchesCount: activeSearchMatchCount(),
-		searchCurrentIndex: searchCurrentIndex,
-		searchScope: searchScope,
-		searchWorking: searchScope === 'global' ? globalSearchJob !== null : searchJob !== null,
+		searchCurrentIndex: ide_state.searchCurrentIndex,
+		searchScope: ide_state.searchScope,
+		searchWorking: ide_state.searchScope === 'global' ? ide_state.globalSearchJob !== null : ide_state.searchJob !== null,
 		searchVisibleResultCount: () => searchVisibleResultCount(),
 		searchResultEntryHeight: () => searchResultEntryHeight(),
 		searchResultEntries: getVisibleSearchResultEntries(),
-		searchResultEntriesBaseOffset: searchDisplayOffset,
-		searchSelectionIndex: searchCurrentIndex,
-		searchHoverIndex: searchHoverIndex,
-		searchDisplayOffset: searchDisplayOffset,
+		searchResultEntriesBaseOffset: ide_state.searchDisplayOffset,
+		searchSelectionIndex: ide_state.searchCurrentIndex,
+		searchHoverIndex: ide_state.searchHoverIndex,
+		searchDisplayOffset: ide_state.searchDisplayOffset,
 	};
 	renderSearchBar(api, host);
 }
 
 export function drawResourceSearchBar(api: BmsxConsoleApi): void {
 	const host: import('./render_inline_bars').InlineBarsHost = {
-		viewportWidth: viewportWidth,
-		headerHeight: headerHeight,
+		viewportWidth: ide_state.viewportWidth,
+		headerHeight: ide_state.headerHeight,
 		tabBarHeight: getTabBarTotalHeight(),
-		lineHeight: lineHeight,
-		spaceAdvance: spaceAdvance,
-		charAdvance: charAdvance,
+		lineHeight: ide_state.lineHeight,
+		spaceAdvance: ide_state.spaceAdvance,
+		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, font, t, x, y, c),
+		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
 		inlineFieldMetrics: () => inlineFieldMetrics(),
-		createResourceActive: createResourceActive,
-		createResourceVisible: createResourceVisible,
-		createResourceField: createResourceField,
-		createResourceWorking: createResourceWorking,
-		createResourceError: createResourceError,
+		createResourceActive: ide_state.createResourceActive,
+		createResourceVisible: ide_state.createResourceVisible,
+		createResourceField: ide_state.createResourceField,
+		createResourceWorking: ide_state.createResourceWorking,
+		createResourceError: ide_state.createResourceError,
 		drawCreateResourceErrorDialog: (a, m) => drawCreateResourceErrorDialog(a, m),
 		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
 		getSearchBarHeight: () => getSearchBarHeight(),
@@ -8141,36 +7937,36 @@ export function drawResourceSearchBar(api: BmsxConsoleApi): void {
 		inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 		inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (problemsPanel.isVisible() && problemsPanel.isFocused()),
-		resourceSearchActive: resourceSearchActive,
-		resourceSearchField: resourceSearchField,
+		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
+		resourceSearchActive: ide_state.resourceSearchActive,
+		resourceSearchField: ide_state.resourceSearchField,
 		resourceSearchVisibleResultCount: () => resourceSearchVisibleResultCount(),
 		resourceSearchEntryHeight: () => resourceSearchEntryHeight(),
 		isResourceSearchCompactMode: () => isResourceSearchCompactMode(),
-		resourceSearchMatches: resourceSearchMatches,
-		resourceSearchSelectionIndex: resourceSearchSelectionIndex,
-		resourceSearchHoverIndex: resourceSearchHoverIndex,
-		resourceSearchDisplayOffset: resourceSearchDisplayOffset,
+		resourceSearchMatches: ide_state.resourceSearchMatches,
+		resourceSearchSelectionIndex: ide_state.resourceSearchSelectionIndex,
+		resourceSearchHoverIndex: ide_state.resourceSearchHoverIndex,
+		resourceSearchDisplayOffset: ide_state.resourceSearchDisplayOffset,
 	};
 	renderResourceSearchBar(api, host);
 }
 
 export function drawSymbolSearchBar(api: BmsxConsoleApi): void {
 	const host: import('./render_inline_bars').InlineBarsHost = {
-		viewportWidth: viewportWidth,
-		headerHeight: headerHeight,
+		viewportWidth: ide_state.viewportWidth,
+		headerHeight: ide_state.headerHeight,
 		tabBarHeight: getTabBarTotalHeight(),
-		lineHeight: lineHeight,
-		spaceAdvance: spaceAdvance,
-		charAdvance: charAdvance,
+		lineHeight: ide_state.lineHeight,
+		spaceAdvance: ide_state.spaceAdvance,
+		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, font, t, x, y, c),
+		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
 		inlineFieldMetrics: () => inlineFieldMetrics(),
-		createResourceActive: createResourceActive,
-		createResourceVisible: createResourceVisible,
-		createResourceField: createResourceField,
-		createResourceWorking: createResourceWorking,
-		createResourceError: createResourceError,
+		createResourceActive: ide_state.createResourceActive,
+		createResourceVisible: ide_state.createResourceVisible,
+		createResourceField: ide_state.createResourceField,
+		createResourceWorking: ide_state.createResourceWorking,
+		createResourceError: ide_state.createResourceError,
 		drawCreateResourceErrorDialog: (a, m) => drawCreateResourceErrorDialog(a, m),
 		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
 		getSearchBarHeight: () => getSearchBarHeight(),
@@ -8193,38 +7989,38 @@ export function drawSymbolSearchBar(api: BmsxConsoleApi): void {
 		inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 		inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (problemsPanel.isVisible() && problemsPanel.isFocused()),
-		symbolSearchGlobal: symbolSearchGlobal,
-		symbolSearchActive: symbolSearchActive,
-		symbolSearchMode: symbolSearchMode,
-		symbolSearchField: symbolSearchField,
+		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
+		symbolSearchGlobal: ide_state.symbolSearchGlobal,
+		symbolSearchActive: ide_state.symbolSearchActive,
+		symbolSearchMode: ide_state.symbolSearchMode,
+		symbolSearchField: ide_state.symbolSearchField,
 		symbolSearchVisibleResultCount: () => symbolSearchVisibleResultCount(),
 		symbolSearchEntryHeight: () => symbolSearchEntryHeight(),
 		isSymbolSearchCompactMode: () => isSymbolSearchCompactMode(),
-		symbolSearchMatches: symbolSearchMatches,
-		symbolSearchSelectionIndex: symbolSearchSelectionIndex,
-		symbolSearchHoverIndex: symbolSearchHoverIndex,
-		symbolSearchDisplayOffset: symbolSearchDisplayOffset,
+		symbolSearchMatches: ide_state.symbolSearchMatches,
+		symbolSearchSelectionIndex: ide_state.symbolSearchSelectionIndex,
+		symbolSearchHoverIndex: ide_state.symbolSearchHoverIndex,
+		symbolSearchDisplayOffset: ide_state.symbolSearchDisplayOffset,
 	};
 	renderSymbolSearchBar(api, host);
 }
 
 export function drawRenameBar(api: BmsxConsoleApi): void {
 	const host: import('./render_inline_bars').InlineBarsHost = {
-		viewportWidth: viewportWidth,
-		headerHeight: headerHeight,
+		viewportWidth: ide_state.viewportWidth,
+		headerHeight: ide_state.headerHeight,
 		tabBarHeight: getTabBarTotalHeight(),
-		lineHeight: lineHeight,
-		spaceAdvance: spaceAdvance,
-		charAdvance: charAdvance,
+		lineHeight: ide_state.lineHeight,
+		spaceAdvance: ide_state.spaceAdvance,
+		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, font, t, x, y, c),
+		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
 		inlineFieldMetrics: () => inlineFieldMetrics(),
-		createResourceActive: createResourceActive,
-		createResourceVisible: createResourceVisible,
-		createResourceField: createResourceField,
-		createResourceWorking: createResourceWorking,
-		createResourceError: createResourceError,
+		createResourceActive: ide_state.createResourceActive,
+		createResourceVisible: ide_state.createResourceVisible,
+		createResourceField: ide_state.createResourceField,
+		createResourceWorking: ide_state.createResourceWorking,
+		createResourceError: ide_state.createResourceError,
 		drawCreateResourceErrorDialog: (a, m) => drawCreateResourceErrorDialog(a, m),
 		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
 		getSearchBarHeight: () => getSearchBarHeight(),
@@ -8247,32 +8043,32 @@ export function drawRenameBar(api: BmsxConsoleApi): void {
 		inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 		inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (problemsPanel.isVisible() && problemsPanel.isFocused()),
-		renameActive: renameController.isActive(),
-		renameField: renameController.getField(),
-		renameMatchCount: renameController.getMatchCount(),
-		renameExpression: renameController.getExpressionLabel(),
-		renameOriginalName: renameController.getOriginalName(),
+		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
+		renameActive: ide_state.renameController.isActive(),
+		renameField: ide_state.renameController.getField(),
+		renameMatchCount: ide_state.renameController.getMatchCount(),
+		renameExpression: ide_state.renameController.getExpressionLabel(),
+		renameOriginalName: ide_state.renameController.getOriginalName(),
 	};
 	renderRenameBar(api, host);
 }
 
 export function drawLineJumpBar(api: BmsxConsoleApi): void {
 	const host: import('./render_inline_bars').InlineBarsHost = {
-		viewportWidth: viewportWidth,
-		headerHeight: headerHeight,
+		viewportWidth: ide_state.viewportWidth,
+		headerHeight: ide_state.headerHeight,
 		tabBarHeight: getTabBarTotalHeight(),
-		lineHeight: lineHeight,
-		spaceAdvance: spaceAdvance,
-		charAdvance: charAdvance,
+		lineHeight: ide_state.lineHeight,
+		spaceAdvance: ide_state.spaceAdvance,
+		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, font, t, x, y, c),
+		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
 		inlineFieldMetrics: () => inlineFieldMetrics(),
-		createResourceActive: createResourceActive,
-		createResourceVisible: createResourceVisible,
-		createResourceField: createResourceField,
-		createResourceWorking: createResourceWorking,
-		createResourceError: createResourceError,
+		createResourceActive: ide_state.createResourceActive,
+		createResourceVisible: ide_state.createResourceVisible,
+		createResourceField: ide_state.createResourceField,
+		createResourceWorking: ide_state.createResourceWorking,
+		createResourceError: ide_state.createResourceError,
 		drawCreateResourceErrorDialog: (a, m) => drawCreateResourceErrorDialog(a, m),
 		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
 		getSearchBarHeight: () => getSearchBarHeight(),
@@ -8295,16 +8091,16 @@ export function drawLineJumpBar(api: BmsxConsoleApi): void {
 		inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 		inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (problemsPanel.isVisible() && problemsPanel.isFocused()),
-		lineJumpActive: lineJumpActive,
-		lineJumpField: lineJumpField,
+		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
+		lineJumpActive: ide_state.lineJumpActive,
+		lineJumpField: ide_state.lineJumpField,
 	};
 	renderLineJumpBar(api, host);
 }
 
 export function drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: string): void {
-	const maxDialogWidth = Math.min(viewportWidth - 16, 360);
-	const wrapWidth = Math.max(charAdvance, maxDialogWidth - (constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
+	const maxDialogWidth = Math.min(ide_state.viewportWidth - 16, 360);
+	const wrapWidth = Math.max(ide_state.charAdvance, maxDialogWidth - (constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
 	const segments = message.split(/\r?\n/);
 	const lines: string[] = [];
 	for (let i = 0; i < segments.length; i += 1) {
@@ -8321,10 +8117,10 @@ export function drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: stri
 	for (let i = 0; i < lines.length; i += 1) {
 		contentWidth = Math.max(contentWidth, measureText(lines[i]));
 	}
-	const dialogWidth = Math.min(viewportWidth - 16, Math.max(180, contentWidth + constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
-	const dialogHeight = Math.min(viewportHeight - 16, lines.length * lineHeight + constants.ERROR_OVERLAY_PADDING_Y * 2 + 16);
-	const left = Math.max(8, Math.floor((viewportWidth - dialogWidth) / 2));
-	const top = Math.max(8, Math.floor((viewportHeight - dialogHeight) / 2));
+	const dialogWidth = Math.min(ide_state.viewportWidth - 16, Math.max(180, contentWidth + constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
+	const dialogHeight = Math.min(ide_state.viewportHeight - 16, lines.length * ide_state.lineHeight + constants.ERROR_OVERLAY_PADDING_Y * 2 + 16);
+	const left = Math.max(8, Math.floor((ide_state.viewportWidth - dialogWidth) / 2));
+	const top = Math.max(8, Math.floor((ide_state.viewportHeight - dialogHeight) / 2));
 	const right = left + dialogWidth;
 	const bottom = top + dialogHeight;
 	api.rectfill(left, top, right, bottom, constants.COLOR_STATUS_BACKGROUND);
@@ -8333,11 +8129,11 @@ export function drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: stri
 	const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
 	renderErrorOverlayText(
 		api,
-		font,
-		lines,
+		ide_state.font,
+		ide_state.lines,
 		left + dialogPaddingX,
 		top + dialogPaddingY,
-		lineHeight,
+		ide_state.lineHeight,
 		constants.COLOR_STATUS_TEXT
 	);
 }
@@ -8360,18 +8156,18 @@ export function getCreateResourceBarHeight(): number {
 	if (!isCreateResourceVisible()) {
 		return 0;
 	}
-	return lineHeight + constants.CREATE_RESOURCE_BAR_MARGIN_Y * 2;
+	return ide_state.lineHeight + constants.CREATE_RESOURCE_BAR_MARGIN_Y * 2;
 }
 
 export function isCreateResourceVisible(): boolean {
-	return createResourceVisible;
+	return ide_state.createResourceVisible;
 }
 
 export function getSearchBarHeight(): number {
 	if (!isSearchVisible()) {
 		return 0;
 	}
-	const baseHeight = lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+	const baseHeight = ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 	const visible = searchVisibleResultCount();
 	if (visible <= 0) {
 		return baseHeight;
@@ -8380,14 +8176,14 @@ export function getSearchBarHeight(): number {
 }
 
 export function isSearchVisible(): boolean {
-	return searchVisible;
+	return ide_state.searchVisible;
 }
 
 export function getResourceSearchBarHeight(): number {
 	if (!isResourceSearchVisible()) {
 		return 0;
 	}
-	const baseHeight = lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
+	const baseHeight = ide_state.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
 	const visible = resourceSearchVisibleResultCount();
 	if (visible <= 0) {
 		return baseHeight;
@@ -8396,14 +8192,14 @@ export function getResourceSearchBarHeight(): number {
 }
 
 export function isResourceSearchVisible(): boolean {
-	return resourceSearchVisible;
+	return ide_state.resourceSearchVisible;
 }
 
 export function getSymbolSearchBarHeight(): number {
 	if (!isSymbolSearchVisible()) {
 		return 0;
 	}
-	const baseHeight = lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+	const baseHeight = ide_state.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
 	const visible = symbolSearchVisibleResultCount();
 	if (visible <= 0) {
 		return baseHeight;
@@ -8412,29 +8208,29 @@ export function getSymbolSearchBarHeight(): number {
 }
 
 export function isSymbolSearchVisible(): boolean {
-	return symbolSearchVisible;
+	return ide_state.symbolSearchVisible;
 }
 
 export function getRenameBarHeight(): number {
 	if (!isRenameVisible()) {
 		return 0;
 	}
-	return lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+	return ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 }
 
 export function isRenameVisible(): boolean {
-	return renameController.isVisible();
+	return ide_state.renameController.isVisible();
 }
 
 export function getLineJumpBarHeight(): number {
 	if (!isLineJumpVisible()) {
 		return 0;
 	}
-	return lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;
+	return ide_state.lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;
 }
 
 export function isLineJumpVisible(): boolean {
-	return lineJumpVisible;
+	return ide_state.lineJumpVisible;
 }
 
 export function getCreateResourceBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
@@ -8442,12 +8238,12 @@ export function getCreateResourceBarBounds(): { top: number; bottom: number; lef
 	if (height <= 0) {
 		return null;
 	}
-	const top = headerHeight + getTabBarTotalHeight();
+	const top = ide_state.headerHeight + getTabBarTotalHeight();
 	return {
 		top,
 		bottom: top + height,
 		left: 0,
-		right: viewportWidth,
+		right: ide_state.viewportWidth,
 	};
 }
 
@@ -8456,12 +8252,12 @@ export function getSearchBarBounds(): { top: number; bottom: number; left: numbe
 	if (height <= 0) {
 		return null;
 	}
-	const top = headerHeight + getTabBarTotalHeight() + getCreateResourceBarHeight();
+	const top = ide_state.headerHeight + getTabBarTotalHeight() + getCreateResourceBarHeight();
 	return {
 		top,
 		bottom: top + height,
 		left: 0,
-		right: viewportWidth,
+		right: ide_state.viewportWidth,
 	};
 }
 
@@ -8470,12 +8266,12 @@ export function getResourceSearchBarBounds(): { top: number; bottom: number; lef
 	if (height <= 0) {
 		return null;
 	}
-	const top = headerHeight + getTabBarTotalHeight() + getCreateResourceBarHeight() + getSearchBarHeight();
+	const top = ide_state.headerHeight + getTabBarTotalHeight() + getCreateResourceBarHeight() + getSearchBarHeight();
 	return {
 		top,
 		bottom: top + height,
 		left: 0,
-		right: viewportWidth,
+		right: ide_state.viewportWidth,
 	};
 }
 
@@ -8484,7 +8280,7 @@ export function getLineJumpBarBounds(): { top: number; bottom: number; left: num
 	if (height <= 0) {
 		return null;
 	}
-	const top = headerHeight + getTabBarTotalHeight()
+	const top = ide_state.headerHeight + getTabBarTotalHeight()
 		+ getCreateResourceBarHeight()
 		+ getSearchBarHeight()
 		+ getResourceSearchBarHeight()
@@ -8494,7 +8290,7 @@ export function getLineJumpBarBounds(): { top: number; bottom: number; left: num
 		top,
 		bottom: top + height,
 		left: 0,
-		right: viewportWidth,
+		right: ide_state.viewportWidth,
 	};
 }
 
@@ -8503,7 +8299,7 @@ export function getSymbolSearchBarBounds(): { top: number; bottom: number; left:
 	if (height <= 0) {
 		return null;
 	}
-	const top = headerHeight + getTabBarTotalHeight()
+	const top = ide_state.headerHeight + getTabBarTotalHeight()
 		+ getCreateResourceBarHeight()
 		+ getSearchBarHeight()
 		+ getResourceSearchBarHeight();
@@ -8511,7 +8307,7 @@ export function getSymbolSearchBarBounds(): { top: number; bottom: number; left:
 		top,
 		bottom: top + height,
 		left: 0,
-		right: viewportWidth,
+		right: ide_state.viewportWidth,
 	};
 }
 
@@ -8520,7 +8316,7 @@ export function getRenameBarBounds(): { top: number; bottom: number; left: numbe
 	if (height <= 0) {
 		return null;
 	}
-	const top = headerHeight + getTabBarTotalHeight()
+	const top = ide_state.headerHeight + getTabBarTotalHeight()
 		+ getCreateResourceBarHeight()
 		+ getSearchBarHeight()
 		+ getResourceSearchBarHeight()
@@ -8529,32 +8325,32 @@ export function getRenameBarBounds(): { top: number; bottom: number; left: numbe
 		top,
 		bottom: top + height,
 		left: 0,
-		right: viewportWidth,
+		right: ide_state.viewportWidth,
 	};
 }
 
 export function drawCodeArea(api: BmsxConsoleApi): void {
 	const host: import('./render_code_area').CodeAreaHost = {
 		// Geometry and metrics
-		lineHeight: lineHeight,
-		spaceAdvance: spaceAdvance,
-		charAdvance: charAdvance,
-		warnNonMonospace: warnNonMonospace,
+		lineHeight: ide_state.lineHeight,
+		spaceAdvance: ide_state.spaceAdvance,
+		charAdvance: ide_state.charAdvance,
+		warnNonMonospace: ide_state.warnNonMonospace,
 		// Editor state
-		wordWrapEnabled: wordWrapEnabled,
-		codeHorizontalScrollbarVisible: codeHorizontalScrollbarVisible,
-		codeVerticalScrollbarVisible: codeVerticalScrollbarVisible,
-		cachedVisibleRowCount: cachedVisibleRowCount,
-		cachedVisibleColumnCount: cachedVisibleColumnCount,
-		scrollRow: scrollRow,
-		scrollColumn: scrollColumn,
-		cursorRow: cursorRow,
-		cursorColumn: cursorColumn,
-		cursorVisible: cursorVisible,
-		cursorScreenInfo: cursorScreenInfo,
-		gotoHoverHighlight: gotoHoverHighlight,
-		executionStopRow: executionStopRow,
-		lines: lines,
+		wordWrapEnabled: ide_state.wordWrapEnabled,
+		codeHorizontalScrollbarVisible: ide_state.codeHorizontalScrollbarVisible,
+		codeVerticalScrollbarVisible: ide_state.codeVerticalScrollbarVisible,
+		cachedVisibleRowCount: ide_state.cachedVisibleRowCount,
+		cachedVisibleColumnCount: ide_state.cachedVisibleColumnCount,
+		scrollRow: ide_state.scrollRow,
+		scrollColumn: ide_state.scrollColumn,
+		cursorRow: ide_state.cursorRow,
+		cursorColumn: ide_state.cursorColumn,
+		cursorVisible: ide_state.cursorVisible,
+		cursorScreenInfo: ide_state.cursorScreenInfo,
+		gotoHoverHighlight: ide_state.gotoHoverHighlight,
+		executionStopRow: ide_state.executionStopRow,
+		lines: ide_state.lines,
 		// Helpers
 		ensureVisualLines: () => ensureVisualLines(),
 		getCodeAreaBounds: () => getCodeAreaBounds(),
@@ -8565,15 +8361,15 @@ export function drawCodeArea(api: BmsxConsoleApi): void {
 		getCachedHighlight: (r: number) => getCachedHighlight(r),
 		sliceHighlightedLine: (hi, start, count) => sliceHighlightedLine(hi, start, count),
 		columnToDisplay: (hi, c) => columnToDisplay(hi, c),
-		drawColoredText: (a, t, cols, x, y) => drawEditorColoredText(a, font, t, cols, x, y, constants.COLOR_CODE_TEXT),
+		drawColoredText: (a, t, cols, x, y) => drawEditorColoredText(a, ide_state.font, t, cols, x, y, constants.COLOR_CODE_TEXT),
 		drawReferenceHighlightsForRow: (a, ri, e, ox, oy, s, ed) => drawReferenceHighlightsForRow(a, ri, e, ox, oy, s, ed),
 		drawSearchHighlightsForRow: (a, ri, e, ox, oy, s, ed) => drawSearchHighlightsForRow(a, ri, e, ox, oy, s, ed),
 		computeSelectionSlice: (ri, hi, s, e) => computeSelectionSlice(ri, hi, s, e),
 		measureRangeFast: (entry, from, to) => measureRangeFast(entry, from, to),
 		getDiagnosticsForRow: (row) => getDiagnosticsForRow(row),
 		scrollbars: {
-			codeVertical: scrollbars.codeVertical,
-			codeHorizontal: scrollbars.codeHorizontal,
+			codeVertical: ide_state.scrollbars.codeVertical,
+			codeHorizontal: ide_state.scrollbars.codeHorizontal,
 		},
 		computeMaximumScrollColumn: () => computeMaximumScrollColumn(),
 		// Overlays
@@ -8581,23 +8377,23 @@ export function drawCodeArea(api: BmsxConsoleApi): void {
 		drawHoverTooltip: (a, ct, cb, tl) => drawHoverTooltip(a, ct, cb, tl),
 		drawCursor: (a, info, tx) => drawCursor(a, info, tx),
 		computeCursorScreenInfo: (entry, tl, rt, ssd) => computeCursorScreenInfo(entry, tl, rt, ssd),
-		drawCompletionPopup: (a, b) => completion.drawCompletionPopup(a, b),
-		drawParameterHintOverlay: (a, b) => completion.drawParameterHintOverlay(a, b),
+		drawCompletionPopup: (a, b) => ide_state.completion.drawCompletionPopup(a, b),
+		drawParameterHintOverlay: (a, b) => ide_state.completion.drawParameterHintOverlay(a, b),
 	};
 	renderCodeArea(api, host);
 	// write back mutable state possibly changed by renderer
-	wordWrapEnabled = host.wordWrapEnabled;
-	codeHorizontalScrollbarVisible = host.codeHorizontalScrollbarVisible;
-	codeVerticalScrollbarVisible = host.codeVerticalScrollbarVisible;
-	cachedVisibleRowCount = host.cachedVisibleRowCount;
-	cachedVisibleColumnCount = host.cachedVisibleColumnCount;
-	scrollRow = host.scrollRow;
-	scrollColumn = host.scrollColumn;
-	cursorScreenInfo = host.cursorScreenInfo;
+	ide_state.wordWrapEnabled = host.wordWrapEnabled;
+	ide_state.codeHorizontalScrollbarVisible = host.codeHorizontalScrollbarVisible;
+	ide_state.codeVerticalScrollbarVisible = host.codeVerticalScrollbarVisible;
+	ide_state.cachedVisibleRowCount = host.cachedVisibleRowCount;
+	ide_state.cachedVisibleColumnCount = host.cachedVisibleColumnCount;
+	ide_state.scrollRow = host.scrollRow;
+	ide_state.scrollColumn = host.scrollColumn;
+	ide_state.cursorScreenInfo = host.cursorScreenInfo;
 }
 
 export function drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
-	const overlay = runtimeErrorOverlay;
+	const overlay = ide_state.runtimeErrorOverlay;
 	if (!overlay) {
 		return;
 	}
@@ -8610,9 +8406,9 @@ export function drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, co
 		textLeft,
 		constants.ERROR_OVERLAY_PADDING_X,
 		constants.ERROR_OVERLAY_PADDING_Y,
-		computeRuntimeErrorOverlayMaxWidth(viewportWidth, charAdvance, gutterWidth)
+		computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth)
 	);
-	if (!layout) {
+	if (!ide_state.layout) {
 		return;
 	}
 	const highlightLines: number[] = [];
@@ -8637,11 +8433,11 @@ export function drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, co
 		highlightColor: constants.ERROR_OVERLAY_LINE_HOVER,
 		highlightLines: highlightLines.length > 0 ? highlightLines : null,
 	};
-	drawRuntimeErrorOverlayBubble(api, font, overlay, layout, lineHeight, drawOptions);
+	drawRuntimeErrorOverlayBubble(api, ide_state.font, overlay, layout, ide_state.lineHeight, drawOptions);
 }
 
 export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, justPressed: boolean, codeTop: number, codeRight: number, textLeft: number): boolean {
-	const overlay = runtimeErrorOverlay;
+	const overlay = ide_state.runtimeErrorOverlay;
 	if (!overlay) {
 		return false;
 	}
@@ -8654,9 +8450,9 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 		textLeft,
 		constants.ERROR_OVERLAY_PADDING_X,
 		constants.ERROR_OVERLAY_PADDING_Y,
-		computeRuntimeErrorOverlayMaxWidth(viewportWidth, charAdvance, gutterWidth)
+		computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth)
 	);
-	if (!layout) {
+	if (!ide_state.layout) {
 		overlay.hovered = false;
 		overlay.hoverLine = -1;
 		return false;
@@ -8681,8 +8477,8 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 	if (!justPressed) {
 		return true;
 	}
-	pointerSelecting = false;
-	pointerPrimaryWasPressed = snapshot.primaryPressed;
+	ide_state.pointerSelecting = false;
+	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	resetPointerClickTracking();
 	const clickResult = evaluateRuntimeErrorOverlayClick(overlay, overlay.hoverLine);
 	switch (clickResult.kind) {
@@ -8715,17 +8511,17 @@ export function createRuntimeErrorOverlayLayoutHost(): RuntimeErrorOverlayLayout
 		ensureVisualLines: () => ensureVisualLines(),
 		positionToVisualIndex: (row: number, column: number) => positionToVisualIndex(row, column),
 		visibleRowCount: () => visibleRowCount(),
-		scrollRow: scrollRow,
+		scrollRow: ide_state.scrollRow,
 		visualIndexToSegment: (visualIndex: number) => visualIndexToSegment(visualIndex),
 		getCachedHighlight: (rowIndex: number) => getCachedHighlight(rowIndex),
-		wordWrapEnabled: wordWrapEnabled,
-		scrollColumn: scrollColumn,
+		wordWrapEnabled: ide_state.wordWrapEnabled,
+		scrollColumn: ide_state.scrollColumn,
 		visibleColumnCount: () => visibleColumnCount(),
 		sliceHighlightedLine: (highlight, columnStart, columnCount) => sliceHighlightedLine(highlight, columnStart, columnCount),
 		columnToDisplay: (highlight, column) => columnToDisplay(highlight, column),
 		measureRangeFast: (entry, fromDisplay, toDisplay) => measureRangeFast(entry, fromDisplay, toDisplay),
-		lineHeight: lineHeight,
-		viewportHeight: viewportHeight,
+		lineHeight: ide_state.lineHeight,
+		viewportHeight: ide_state.viewportHeight,
 		bottomMargin: bottomMargin(),
 		measureText: (text: string) => measureText(text),
 	};
@@ -8737,7 +8533,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: RuntimeErrorStackFrame)
 	}
 	const source = frame.source ?? '';
 	if (source.length === 0) {
-		showMessage('Runtime frame is missing a chunk reference.', constants.COLOR_STATUS_ERROR, 3.0);
+		ide_state.showMessage('Runtime frame is missing a chunk reference.', constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
 	let normalizedChunk: string;
@@ -8745,7 +8541,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: RuntimeErrorStackFrame)
 		normalizedChunk = normalizeChunkName(source);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		showMessage(`Unable to resolve runtime chunk name: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+		ide_state.showMessage(`Unable to resolve runtime chunk name: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
 	const frameAssetId = typeof frame.chunkAssetId === 'string' && frame.chunkAssetId.length > 0 ? frame.chunkAssetId : null;
@@ -8765,15 +8561,15 @@ export function navigateToRuntimeErrorFrameTarget(frame: RuntimeErrorStackFrame)
 		focusChunkSource(normalizedChunk, hint);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		showMessage(`Failed to open runtime chunk: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+		ide_state.showMessage(`Failed to open runtime chunk: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
 	const activeContext = getActiveCodeTabContext();
 	if (!activeContext) {
-		showMessage('Unable to activate editor context for runtime frame.', constants.COLOR_STATUS_ERROR, 3.0);
+		ide_state.showMessage('Unable to activate editor context for runtime frame.', constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
-	const lastRowIndex = Math.max(0, lines.length - 1);
+	const lastRowIndex = Math.max(0, ide_state.lines.length - 1);
 	let targetRow: number | null = null;
 	if (typeof frame.line === 'number' && frame.line > 0) {
 		targetRow = clamp(frame.line - 1, 0, lastRowIndex);
@@ -8784,7 +8580,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: RuntimeErrorStackFrame)
 	if (targetRow === null) {
 		targetRow = 0;
 	}
-	const targetLine = lines[targetRow] ?? '';
+	const targetLine = ide_state.lines[targetRow] ?? '';
 	let targetColumn = 0;
 	if (typeof frame.column === 'number' && frame.column > 0) {
 		targetColumn = clamp(frame.column - 1, 0, targetLine.length);
@@ -8795,14 +8591,14 @@ export function navigateToRuntimeErrorFrameTarget(frame: RuntimeErrorStackFrame)
 			targetColumn = nameIndex;
 		}
 	}
-	selectionAnchor = null;
-	pointerSelecting = false;
+	ide_state.selectionAnchor = null;
+	ide_state.pointerSelecting = false;
 	resetPointerClickTracking();
 	setCursorPosition(targetRow, targetColumn);
-	cursorRevealSuspended = false;
+	ide_state.cursorRevealSuspended = false;
 	centerCursorVertically();
 	ensureCursorVisible();
-	showMessage('Navigated to call site', constants.COLOR_STATUS_SUCCESS, 1.6);
+	ide_state.showMessage('Navigated to call site', constants.COLOR_STATUS_SUCCESS, 1.6);
 }
 
 export function findFunctionDefinitionRowInActiveFile(functionName: string): number | null {
@@ -8815,8 +8611,8 @@ export function findFunctionDefinitionRowInActiveFile(functionName: string): num
 		new RegExp(`^\\s*local\\s+function\\s+${escaped}\\b`),
 		new RegExp(`\\b${escaped}\\s*=\\s*function\\b`),
 	];
-	for (let row = 0; row < lines.length; row += 1) {
-		const line = lines[row];
+	for (let row = 0; row < ide_state.lines.length; row += 1) {
+		const line = ide_state.lines[row];
 		for (let index = 0; index < patterns.length; index += 1) {
 			if (patterns[index].test(line)) {
 				return row;
@@ -8835,11 +8631,11 @@ export function isResourceViewActive(): boolean {
 }
 
 export function setActiveTab(tabId: string): void {
-	const tab = tabs.find(candidate => candidate.id === tabId);
+	const tab = ide_state.tabs.find(candidate => candidate.id === tabId);
 	if (!tab) {
 		return;
 	}
-	const navigationCheckpoint = tab.kind === 'lua_editor' && tabId !== activeTabId
+	const navigationCheckpoint = tab.kind === 'lua_editor' && tabId !== ide_state.activeTabId
 		? beginNavigationCapture()
 		: null;
 	closeSymbolSearch(true);
@@ -8847,10 +8643,10 @@ export function setActiveTab(tabId: string): void {
 	if (previousKind === 'lua_editor') {
 		storeActiveCodeTabContext();
 	}
-	if (activeTabId === tabId) {
+	if (ide_state.activeTabId === tabId) {
 		if (tab.kind === 'resource_view') {
 			enterResourceViewer(tab);
-			runtimeErrorOverlay = null;
+			ide_state.runtimeErrorOverlay = null;
 		} else if (tab.kind === 'lua_editor') {
 			activateCodeEditorTab(tab.id);
 			if (navigationCheckpoint) {
@@ -8859,10 +8655,10 @@ export function setActiveTab(tabId: string): void {
 		}
 		return;
 	}
-	activeTabId = tabId;
+	ide_state.activeTabId = tabId;
 	if (tab.kind === 'resource_view') {
 		enterResourceViewer(tab);
-		runtimeErrorOverlay = null;
+		ide_state.runtimeErrorOverlay = null;
 		return;
 	}
 	if (tab.kind === 'lua_editor') {
@@ -8875,11 +8671,11 @@ export function setActiveTab(tabId: string): void {
 
 export function toggleResourcePanel(): void {
 	// Keep editor/controller visibility in sync by delegating to controller
-	resourcePanel.togglePanel();
+	ide_state.resourcePanel.togglePanel();
 }
 
 export function toggleProblemsPanel(): void {
-	if (problemsPanel.isVisible()) {
+	if (ide_state.problemsPanel.isVisible()) {
 		hideProblemsPanel();
 		return;
 	}
@@ -8887,69 +8683,69 @@ export function toggleProblemsPanel(): void {
 }
 
 export function showProblemsPanel(): void {
-	problemsPanel.show();
+	ide_state.problemsPanel.show();
 	markDiagnosticsDirty();
 }
 
 export function hideProblemsPanel(): void {
-	problemsPanel.hide();
+	ide_state.problemsPanel.hide();
 	focusEditorFromProblemsPanel();
 }
 
 export function toggleResourcePanelFilterMode(): void {
 	// Controller owns filter state and messaging
-	resourcePanel.toggleFilterMode();
+	ide_state.resourcePanel.toggleFilterMode();
 }
 
 export function toggleResolutionMode(): void {
-	resolutionMode = resolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
+	ide_state.resolutionMode = ide_state.resolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
 	refreshViewportDimensions(true);
 	ensureCursorVisible();
-	cursorRevealSuspended = false;
+	ide_state.cursorRevealSuspended = false;
 	applyResolutionModeToRuntime();
-	const modeLabel = resolutionMode === 'offscreen' ? 'OFFSCREEN' : 'NATIVE';
-	showMessage(`Editor resolution: ${modeLabel}`, constants.COLOR_STATUS_TEXT, 2.5);
+	const modeLabel = ide_state.resolutionMode === 'offscreen' ? 'OFFSCREEN' : 'NATIVE';
+	ide_state.showMessage(`Editor resolution: ${modeLabel}`, constants.COLOR_STATUS_TEXT, 2.5);
 }
 
 export function toggleWordWrap(): void {
 	ensureVisualLines();
-	const previousWrap = wordWrapEnabled;
+	const previousWrap = ide_state.wordWrapEnabled;
 	const visualLineCount = getVisualLineCount();
-	const previousTopIndex = clamp(scrollRow, 0, visualLineCount > 0 ? visualLineCount - 1 : 0);
+	const previousTopIndex = clamp(ide_state.scrollRow, 0, visualLineCount > 0 ? visualLineCount - 1 : 0);
 	const previousTopSegment = visualIndexToSegment(previousTopIndex);
-	const anchorRow = previousTopSegment ? previousTopSegment.row : cursorRow;
+	const anchorRow = previousTopSegment ? previousTopSegment.row : ide_state.cursorRow;
 	const anchorColumnForWrap = previousTopSegment ? previousTopSegment.startColumn : 0;
 	const anchorColumnForUnwrap = previousTopSegment
-		? (previousWrap ? previousTopSegment.startColumn : scrollColumn)
-		: scrollColumn;
-	const previousCursorRow = cursorRow;
-	const previousCursorColumn = cursorColumn;
-	const previousDesiredColumn = desiredColumn;
+		? (previousWrap ? previousTopSegment.startColumn : ide_state.scrollColumn)
+		: ide_state.scrollColumn;
+	const previousCursorRow = ide_state.cursorRow;
+	const previousCursorColumn = ide_state.cursorColumn;
+	const previousDesiredColumn = ide_state.desiredColumn;
 
-	wordWrapEnabled = !previousWrap;
-	cursorRevealSuspended = false;
+	ide_state.wordWrapEnabled = !previousWrap;
+	ide_state.cursorRevealSuspended = false;
 	invalidateVisualLines();
 	ensureVisualLines();
 
-	cursorRow = clamp(previousCursorRow, 0, lines.length > 0 ? lines.length - 1 : 0);
-	const currentLine = lines[cursorRow] ?? '';
-	cursorColumn = clamp(previousCursorColumn, 0, currentLine.length);
-	desiredColumn = previousDesiredColumn;
+	ide_state.cursorRow = clamp(previousCursorRow, 0, ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0);
+	const currentLine = ide_state.lines[ide_state.cursorRow] ?? '';
+	ide_state.cursorColumn = clamp(previousCursorColumn, 0, currentLine.length);
+	ide_state.desiredColumn = previousDesiredColumn;
 
-	if (wordWrapEnabled) {
-		scrollColumn = 0;
+	if (ide_state.wordWrapEnabled) {
+		ide_state.scrollColumn = 0;
 		const anchorVisualIndex = positionToVisualIndex(anchorRow, anchorColumnForWrap);
-		scrollRow = clamp(anchorVisualIndex, 0, Math.max(0, getVisualLineCount() - visibleRowCount()));
+		ide_state.scrollRow = clamp(anchorVisualIndex, 0, Math.max(0, getVisualLineCount() - visibleRowCount()));
 	} else {
-		scrollColumn = clamp(anchorColumnForUnwrap, 0, computeMaximumScrollColumn());
-		const anchorVisualIndex = positionToVisualIndex(anchorRow, scrollColumn);
-		scrollRow = clamp(anchorVisualIndex, 0, Math.max(0, getVisualLineCount() - visibleRowCount()));
+		ide_state.scrollColumn = clamp(anchorColumnForUnwrap, 0, computeMaximumScrollColumn());
+		const anchorVisualIndex = positionToVisualIndex(anchorRow, ide_state.scrollColumn);
+		ide_state.scrollRow = clamp(anchorVisualIndex, 0, Math.max(0, getVisualLineCount() - visibleRowCount()));
 	}
-	lastPointerRowResolution = null;
+	ide_state.lastPointerRowResolution = null;
 	ensureCursorVisible();
 	updateDesiredColumn();
-	const message = wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled';
-	showMessage(message, constants.COLOR_STATUS_TEXT, 2.5);
+	const message = ide_state.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled';
+	ide_state.showMessage(message, constants.COLOR_STATUS_TEXT, 2.5);
 }
 
 export function applyResolutionModeToRuntime(): void {
@@ -8957,37 +8753,37 @@ export function applyResolutionModeToRuntime(): void {
 	if (!runtime) {
 		return;
 	}
-	runtime.setEditorOverlayResolution(resolutionMode);
+	runtime.setEditorOverlayResolution(ide_state.resolutionMode);
 }
 
 // showResourcePanel removed; controller handles visibility via toggle/show()
 
 export function hideResourcePanel(): void {
 	// Forward to controller; it resets its internal state
-	resourcePanel.hide();
-	resourcePanelFocused = false;
-	resourcePanelResizing = false;
+	ide_state.resourcePanel.hide();
+	ide_state.resourcePanelFocused = false;
+	ide_state.resourcePanelResizing = false;
 	resetResourcePanelState();
 	invalidateVisualLines();
 }
 
 export function activateCodeTab(): void {
-	const codeTab = tabs.find(candidate => candidate.kind === 'lua_editor');
+	const codeTab = ide_state.tabs.find(candidate => candidate.kind === 'lua_editor');
 	if (codeTab) {
 		setActiveTab(codeTab.id);
 		return;
 	}
-	if (entryTabId) {
-		let context = codeTabContexts.get(entryTabId);
+	if (ide_state.entryTabId) {
+		let context = ide_state.codeTabContexts.get(ide_state.entryTabId);
 		if (!context) {
 			context = createEntryTabContext();
 			if (!context) {
 				return;
 			}
-			entryTabId = context.id;
-			codeTabContexts.set(context.id, context);
+			ide_state.entryTabId = context.id;
+			ide_state.codeTabContexts.set(context.id, context);
 		}
-		let entryTab = tabs.find(candidate => candidate.id === context.id);
+		let entryTab = ide_state.tabs.find(candidate => candidate.id === context.id);
 		if (!entryTab) {
 			entryTab = {
 				id: context.id,
@@ -8997,7 +8793,7 @@ export function activateCodeTab(): void {
 				dirty: context.dirty,
 				resource: undefined,
 			};
-			tabs.unshift(entryTab);
+			ide_state.tabs.unshift(entryTab);
 		}
 		setActiveTab(context.id);
 	}
@@ -9006,12 +8802,12 @@ export function activateCodeTab(): void {
 export function openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	const tabId: EditorTabId = `lua:${descriptor.assetId}`;
-	let tab = tabs.find(candidate => candidate.id === tabId);
-	if (!codeTabContexts.has(tabId)) {
+	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
+	if (!ide_state.codeTabContexts.has(tabId)) {
 		const context = createLuaCodeTabContext(descriptor);
-		codeTabContexts.set(tabId, context);
+		ide_state.codeTabContexts.set(tabId, context);
 	}
-	const context = codeTabContexts.get(tabId) ?? null;
+	const context = ide_state.codeTabContexts.get(tabId) ?? null;
 	if (!tab) {
 		const dirty = context ? context.dirty : false;
 		tab = {
@@ -9022,7 +8818,7 @@ export function openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
 			dirty,
 			resource: undefined,
 		};
-		tabs.push(tab);
+		ide_state.tabs.push(tab);
 	} else {
 		tab.title = computeResourceTabTitle(descriptor);
 		if (context) {
@@ -9035,7 +8831,7 @@ export function openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
 
 export function openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 	const tabId: EditorTabId = `resource:${descriptor.assetId}`;
-	let tab = tabs.find(candidate => candidate.id === tabId);
+	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
 	const state = buildResourceViewerState(descriptor);
 	resourceViewerClampScroll(state);
 	if (tab) {
@@ -9053,62 +8849,62 @@ export function openResourceViewerTab(descriptor: ConsoleResourceDescriptor): vo
 		dirty: false,
 		resource: state,
 	};
-	tabs.push(tab);
+	ide_state.tabs.push(tab);
 	setActiveTab(tabId);
 }
 
 export function closeActiveTab(): void {
-	if (!activeTabId) {
+	if (!ide_state.activeTabId) {
 		return;
 	}
-	closeTab(activeTabId);
+	closeTab(ide_state.activeTabId);
 }
 
 export function closeTab(tabId: string): void {
-	const index = tabs.findIndex(tab => tab.id === tabId);
+	const index = ide_state.tabs.findIndex(tab => tab.id === tabId);
 	if (index === -1) {
 		return;
 	}
-	if (tabDragState && tabDragState.tabId === tabId) {
+	if (ide_state.tabDragState && ide_state.tabDragState.tabId === tabId) {
 		endTabDrag();
 	}
-	const tab = tabs[index];
+	const tab = ide_state.tabs[index];
 	if (!tab.closable) {
 		return;
 	}
-	const wasActiveContext = tab.kind === 'lua_editor' && activeCodeTabContextId === tab.id;
+	const wasActiveContext = tab.kind === 'lua_editor' && ide_state.activeCodeTabContextId === tab.id;
 	if (wasActiveContext) {
 		storeActiveCodeTabContext();
 	}
-	tabs.splice(index, 1);
+	ide_state.tabs.splice(index, 1);
 	if (tab.kind === 'lua_editor') {
-		if (activeCodeTabContextId === tab.id) {
-			activeCodeTabContextId = null;
+		if (ide_state.activeCodeTabContextId === tab.id) {
+			ide_state.activeCodeTabContextId = null;
 		}
-		dirtyDiagnosticContexts.delete(tab.id);
-		diagnosticsCache.delete(tab.id);
+		ide_state.dirtyDiagnosticContexts.delete(tab.id);
+		ide_state.diagnosticsCache.delete(tab.id);
 	}
-	if (activeTabId === tabId) {
-		const fallback = tabs[index - 1] ?? tabs[0];
+	if (ide_state.activeTabId === tabId) {
+		const fallback = ide_state.tabs[index - 1] ?? ide_state.tabs[0];
 		if (fallback) {
 			setActiveTab(fallback.id);
 		} else {
-			activeTabId = null;
-			activeCodeTabContextId = null;
+			ide_state.activeTabId = null;
+			ide_state.activeCodeTabContextId = null;
 			resetEditorContent();
 		}
 	}
 }
 
 export function cycleTab(direction: number): void {
-	if (tabs.length <= 1 || direction === 0) {
+	if (ide_state.tabs.length <= 1 || direction === 0) {
 		return;
 	}
-	const count = tabs.length;
-	let currentIndex = tabs.findIndex(tab => tab.id === activeTabId);
+	const count = ide_state.tabs.length;
+	let currentIndex = ide_state.tabs.findIndex(tab => tab.id === ide_state.activeTabId);
 	if (currentIndex === -1) {
 		const fallbackIndex = direction > 0 ? 0 : count - 1;
-		const fallback = tabs[fallbackIndex];
+		const fallback = ide_state.tabs[fallbackIndex];
 		if (fallback) {
 			setActiveTab(fallback.id);
 		}
@@ -9119,7 +8915,7 @@ export function cycleTab(direction: number): void {
 	if (nextIndex === currentIndex) {
 		return;
 	}
-	const target = tabs[nextIndex];
+	const target = ide_state.tabs[nextIndex];
 	setActiveTab(target.id);
 }
 
@@ -9137,14 +8933,14 @@ export function measureTabWidth(tab: EditorTabDescriptor): number {
 
 export function computeTabLayout(): Array<{ id: string; left: number; right: number; width: number; center: number; rowIndex: number }> {
 	const layout: Array<{ id: string; left: number; right: number; width: number; center: number; rowIndex: number }> = [];
-	for (let index = 0; index < tabs.length; index += 1) {
-		const tab = tabs[index];
-		const bounds = tabButtonBounds.get(tab.id) ?? null;
+	for (let index = 0; index < ide_state.tabs.length; index += 1) {
+		const tab = ide_state.tabs[index];
+		const bounds = ide_state.tabButtonBounds.get(tab.id) ?? null;
 		if (bounds) {
 			const left = bounds.left;
 			const right = bounds.right;
 			const width = Math.max(0, right - left);
-			const rowIndex = Math.max(0, Math.floor((bounds.top - headerHeight) / tabBarHeight));
+			const rowIndex = Math.max(0, Math.floor((bounds.top - ide_state.headerHeight) / ide_state.tabBarHeight));
 			layout.push({
 				id: tab.id,
 				left,
@@ -9172,13 +8968,13 @@ export function computeTabLayout(): Array<{ id: string; left: number; right: num
 }
 
 export function beginTabDrag(tabId: string, pointerX: number): void {
-	if (tabs.length <= 1) {
-		tabDragState = null;
+	if (ide_state.tabs.length <= 1) {
+		ide_state.tabDragState = null;
 		return;
 	}
-	const bounds = tabButtonBounds.get(tabId) ?? null;
+	const bounds = ide_state.tabButtonBounds.get(tabId) ?? null;
 	const pointerOffset = bounds ? pointerX - bounds.left : 0;
-	tabDragState = {
+	ide_state.tabDragState = {
 		tabId,
 		pointerOffset,
 		startX: pointerX,
@@ -9187,7 +8983,7 @@ export function beginTabDrag(tabId: string, pointerX: number): void {
 }
 
 export function updateTabDrag(pointerX: number, pointerY: number): void {
-	const state = tabDragState;
+	const state = ide_state.tabDragState;
 	if (!state) {
 		return;
 	}
@@ -9208,12 +9004,12 @@ export function updateTabDrag(pointerX: number, pointerY: number): void {
 	const pointerLeft = pointerX - state.pointerOffset;
 	const pointerCenter = pointerLeft + Math.max(dragged.width, 1) * 0.5;
 	const totalTabHeight = getTabBarTotalHeight();
-	const withinTabBar = pointerY >= headerHeight && pointerY < headerHeight + totalTabHeight;
-	const maxRowIndex = Math.max(0, tabBarRowCount - 1);
+	const withinTabBar = pointerY >= ide_state.headerHeight && pointerY < ide_state.headerHeight + totalTabHeight;
+	const maxRowIndex = Math.max(0, ide_state.tabBarRowCount - 1);
 	const pointerRow = withinTabBar
-		? clamp(Math.floor((pointerY - headerHeight) / tabBarHeight), 0, maxRowIndex)
+		? clamp(Math.floor((pointerY - ide_state.headerHeight) / ide_state.tabBarHeight), 0, maxRowIndex)
 		: dragged.rowIndex;
-	const rowStride = viewportWidth + constants.TAB_BUTTON_SPACING * 4;
+	const rowStride = ide_state.viewportWidth + constants.TAB_BUTTON_SPACING * 4;
 	const pointerValue = pointerRow * rowStride + pointerCenter;
 	let desiredIndex = currentIndex;
 	for (let i = 0; i < layout.length; i += 1) {
@@ -9229,39 +9025,39 @@ export function updateTabDrag(pointerX: number, pointerY: number): void {
 	if (desiredIndex === currentIndex) {
 		return;
 	}
-	const tabIndex = tabs.findIndex(entry => entry.id === state.tabId);
+	const tabIndex = ide_state.tabs.findIndex(entry => entry.id === state.tabId);
 	if (tabIndex === -1) {
 		return;
 	}
-	const removed = tabs.splice(tabIndex, 1);
+	const removed = ide_state.tabs.splice(tabIndex, 1);
 	const tab = removed[0];
 	if (!tab) {
 		return;
 	}
-	const targetIndex = clamp(desiredIndex, 0, tabs.length);
-	tabs.splice(targetIndex, 0, tab);
+	const targetIndex = clamp(desiredIndex, 0, ide_state.tabs.length);
+	ide_state.tabs.splice(targetIndex, 0, tab);
 }
 
 export function endTabDrag(): void {
-	if (!tabDragState) {
+	if (!ide_state.tabDragState) {
 		return;
 	}
-	tabDragState = null;
+	ide_state.tabDragState = null;
 }
 
 export function resetEditorContent(): void {
-	lines = [''];
+	ide_state.lines = [''];
 	invalidateVisualLines();
 	markDiagnosticsDirty();
-	cursorRow = 0;
-	cursorColumn = 0;
-	scrollRow = 0;
-	scrollColumn = 0;
-	selectionAnchor = null;
-	lastSavedSource = '';
+	ide_state.cursorRow = 0;
+	ide_state.cursorColumn = 0;
+	ide_state.scrollRow = 0;
+	ide_state.scrollColumn = 0;
+	ide_state.selectionAnchor = null;
+	ide_state.lastSavedSource = '';
 	invalidateAllHighlights();
 	bumpTextVersion();
-	dirty = false;
+	ide_state.dirty = false;
 	updateActiveContextDirtyFlag();
 	syncRuntimeErrorOverlayFromContext(null);
 	updateDesiredColumn();
@@ -9271,26 +9067,26 @@ export function resetEditorContent(): void {
 }
 
 export function resetResourcePanelState(): void {
-	resourceBrowserItems = [];
-	resourceBrowserSelectionIndex = -1;
+	ide_state.resourceBrowserItems = [];
+	ide_state.resourceBrowserSelectionIndex = -1;
 	// max line width handled by controller
-	pendingResourceSelectionAssetId = null;
-	resourcePanelResizing = false;
+	ide_state.pendingResourceSelectionAssetId = null;
+	ide_state.resourcePanelResizing = false;
 }
 
 export function refreshResourcePanelContents(): void {
 	// New path owned by ResourcePanelController
-	resourcePanel.refresh();
-	const s = resourcePanel.getStateForRender();
-	resourcePanelResourceCount = s.items.length;
-	resourceBrowserItems = s.items;
-	resourceBrowserSelectionIndex = s.selectionIndex;
+	ide_state.resourcePanel.refresh();
+	const s = ide_state.resourcePanel.getStateForRender();
+	ide_state.resourcePanelResourceCount = s.items.length;
+	ide_state.resourceBrowserItems = s.items;
+	ide_state.resourceBrowserSelectionIndex = s.selectionIndex;
 }
 
 export function enterResourceViewer(tab: EditorTabDescriptor): void {
 	closeSearch(false, true);
 	closeLineJump(false);
-	cursorRevealSuspended = false;
+	ide_state.cursorRevealSuspended = false;
 	tab.dirty = false;
 	// hover state handled by controller; no-op here
 	if (!tab.resource) {
@@ -9307,18 +9103,18 @@ export function selectResourceInPanel(descriptor: ConsoleResourceDescriptor): vo
 	if (!descriptor.assetId || descriptor.assetId.length === 0) {
 		return;
 	}
-	pendingResourceSelectionAssetId = descriptor.assetId;
-	if (!resourcePanelVisible) {
+	ide_state.pendingResourceSelectionAssetId = descriptor.assetId;
+	if (!ide_state.resourcePanelVisible) {
 		return;
 	}
 	applyPendingResourceSelection();
 }
 
 export function applyPendingResourceSelection(): void {
-	if (!resourcePanelVisible) {
+	if (!ide_state.resourcePanelVisible) {
 		return;
 	}
-	const assetId = pendingResourceSelectionAssetId;
+	const assetId = ide_state.pendingResourceSelectionAssetId;
 	if (!assetId) {
 		return;
 	}
@@ -9326,14 +9122,14 @@ export function applyPendingResourceSelection(): void {
 	if (index === -1) {
 		return;
 	}
-	resourceBrowserSelectionIndex = index;
+	ide_state.resourceBrowserSelectionIndex = index;
 	resourceBrowserEnsureSelectionVisible();
-	pendingResourceSelectionAssetId = null;
+	ide_state.pendingResourceSelectionAssetId = null;
 }
 
 export function findResourcePanelIndexByAssetId(assetId: string): number {
-	for (let i = 0; i < resourceBrowserItems.length; i++) {
-		const descriptor = resourceBrowserItems[i].descriptor;
+	for (let i = 0; i < ide_state.resourceBrowserItems.length; i++) {
+		const descriptor = ide_state.resourceBrowserItems[i].descriptor;
 		if (descriptor && descriptor.assetId === assetId) {
 			return i;
 		}
@@ -9348,21 +9144,21 @@ export function findResourcePanelIndexByAssetId(assetId: string): number {
 // clampResourceBrowserHorizontalScroll removed; use controller.clampHScroll()
 
 export function createEntryTabContext(): CodeTabContext | null {
-	const assetId = (typeof primaryAssetId === 'string' && primaryAssetId.length > 0)
-		? primaryAssetId
+	const assetId = (typeof ide_state.primaryAssetId === 'string' && ide_state.primaryAssetId.length > 0)
+		? ide_state.primaryAssetId
 		: null;
 	const descriptor = assetId ? findResourceDescriptorByAssetId(assetId) : null;
 	const resolvedAssetId = descriptor ? descriptor.assetId : (assetId ?? '__entry__');
 	const tabId: string = `lua:${resolvedAssetId}`;
 	const title = descriptor
 		? computeResourceTabTitle(descriptor)
-		: (assetId ?? metadata.title ?? 'ENTRY').toUpperCase();
+		: (assetId ?? ide_state.metadata.title ?? 'ENTRY').toUpperCase();
 	const load = descriptor
-		? () => loadLuaResourceFn(descriptor.assetId)
-		: () => loadSourceFn();
+		? () => ide_state.loadLuaResourceFn(descriptor.assetId)
+		: () => ide_state.loadSourceFn();
 	const save = descriptor
-		? (source: string) => saveLuaResourceFn(descriptor.assetId, source)
-		: (source: string) => saveSourceFn(source);
+		? (source: string) => ide_state.saveLuaResourceFn(descriptor.assetId, source)
+		: (source: string) => ide_state.saveSourceFn(source);
 	return {
 		id: tabId,
 		title,
@@ -9385,8 +9181,8 @@ export function createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): 
 		id: `lua:${descriptor.assetId}`,
 		title,
 		descriptor,
-		load: () => loadLuaResourceFn(descriptor.assetId),
-		save: (source: string) => saveLuaResourceFn(descriptor.assetId, source),
+		load: () => ide_state.loadLuaResourceFn(descriptor.assetId),
+		save: (source: string) => ide_state.saveLuaResourceFn(descriptor.assetId, source),
 		snapshot: null,
 		lastSavedSource: '',
 		saveGeneration: 0,
@@ -9398,10 +9194,10 @@ export function createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): 
 }
 
 export function getActiveCodeTabContext(): CodeTabContext | null {
-	if (!activeCodeTabContextId) {
+	if (!ide_state.activeCodeTabContextId) {
 		return null;
 	}
-	return codeTabContexts.get(activeCodeTabContextId) ?? null;
+	return ide_state.codeTabContexts.get(ide_state.activeCodeTabContextId) ?? null;
 }
 
 export function storeActiveCodeTabContext(): void {
@@ -9410,14 +9206,14 @@ export function storeActiveCodeTabContext(): void {
 		return;
 	}
 	context.snapshot = captureSnapshot();
-	if (entryTabId && context.id === entryTabId) {
-		context.lastSavedSource = lastSavedSource;
+	if (ide_state.entryTabId && context.id === ide_state.entryTabId) {
+		context.lastSavedSource = ide_state.lastSavedSource;
 	}
-	context.saveGeneration = saveGeneration;
-	context.appliedGeneration = appliedGeneration;
-	context.dirty = dirty;
-	context.runtimeErrorOverlay = runtimeErrorOverlay;
-	context.executionStopRow = executionStopRow;
+	context.saveGeneration = ide_state.saveGeneration;
+	context.appliedGeneration = ide_state.appliedGeneration;
+	context.dirty = ide_state.dirty;
+	context.runtimeErrorOverlay = ide_state.runtimeErrorOverlay;
+	context.executionStopRow = ide_state.executionStopRow;
 	setTabDirty(context.id, context.dirty);
 }
 
@@ -9425,30 +9221,30 @@ export function activateCodeEditorTab(tabId: string | null): void {
 	if (!tabId) {
 		return;
 	}
-	let context = codeTabContexts.get(tabId);
+	let context = ide_state.codeTabContexts.get(tabId);
 	if (!context) {
-		if (entryTabId && tabId === entryTabId) {
+		if (ide_state.entryTabId && tabId === ide_state.entryTabId) {
 			const recreated = createEntryTabContext();
 			if (!recreated || recreated.id !== tabId) {
 				return;
 			}
 			context = recreated;
-			entryTabId = context.id;
-			codeTabContexts.set(tabId, context);
+			ide_state.entryTabId = context.id;
+			ide_state.codeTabContexts.set(tabId, context);
 		} else {
 			return;
 		}
 	}
-	activeCodeTabContextId = tabId;
-	const isEntry = entryTabId !== null && context.id === entryTabId;
+	ide_state.activeCodeTabContextId = tabId;
+	const isEntry = ide_state.entryTabId !== null && context.id === ide_state.entryTabId;
 	if (context.snapshot) {
 		restoreSnapshot(context.snapshot);
-		saveGeneration = context.saveGeneration;
-		appliedGeneration = context.appliedGeneration;
+		ide_state.saveGeneration = context.saveGeneration;
+		ide_state.appliedGeneration = context.appliedGeneration;
 		if (isEntry) {
-			lastSavedSource = context.lastSavedSource;
+			ide_state.lastSavedSource = context.lastSavedSource;
 		}
-		context.dirty = dirty;
+		context.dirty = ide_state.dirty;
 		setTabDirty(context.id, context.dirty);
 		syncRuntimeErrorOverlayFromContext(context);
 		invalidateAllHighlights();
@@ -9456,56 +9252,56 @@ export function activateCodeEditorTab(tabId: string | null): void {
 		ensureCursorVisible();
 		refreshActiveDiagnostics();
 		const chunkNameSnapshot = resolveHoverChunkName(context) ?? '<console>';
-		layout.forceSemanticUpdate(lines, textVersion, chunkNameSnapshot);
+		ide_state.layout.forceSemanticUpdate(ide_state.lines, ide_state.textVersion, chunkNameSnapshot);
 		return;
 	}
 	const source = context.load();
 	context.lastSavedSource = source;
-	lines = splitLines(source);
+	ide_state.lines = splitLines(source);
 	invalidateVisualLines();
 	markDiagnosticsDirty();
-	if (lines.length === 0) {
-		lines.push('');
+	if (ide_state.lines.length === 0) {
+		ide_state.lines.push('');
 	}
 	invalidateAllHighlights();
-	cursorRow = 0;
-	cursorColumn = 0;
-	scrollRow = 0;
-	scrollColumn = 0;
-	selectionAnchor = null;
-	dirty = false;
+	ide_state.cursorRow = 0;
+	ide_state.cursorColumn = 0;
+	ide_state.scrollRow = 0;
+	ide_state.scrollColumn = 0;
+	ide_state.selectionAnchor = null;
+	ide_state.dirty = false;
 	context.dirty = false;
 	context.runtimeErrorOverlay = null;
 	context.executionStopRow = null;
-	executionStopRow = null;
-	saveGeneration = context.saveGeneration;
-	appliedGeneration = context.appliedGeneration;
+	ide_state.executionStopRow = null;
+	ide_state.saveGeneration = context.saveGeneration;
+	ide_state.appliedGeneration = context.appliedGeneration;
 	if (isEntry) {
-		lastSavedSource = context.lastSavedSource;
+		ide_state.lastSavedSource = context.lastSavedSource;
 	}
 	setTabDirty(context.id, context.dirty);
 	syncRuntimeErrorOverlayFromContext(context);
 	bumpTextVersion();
 	const chunkName = resolveHoverChunkName(context) ?? '<console>';
-	layout.forceSemanticUpdate(lines, textVersion, chunkName);
+	ide_state.layout.forceSemanticUpdate(ide_state.lines, ide_state.textVersion, chunkName);
 	updateDesiredColumn();
 	resetBlink();
-	pointerSelecting = false;
-	pointerPrimaryWasPressed = false;
+	ide_state.pointerSelecting = false;
+	ide_state.pointerPrimaryWasPressed = false;
 	refreshActiveDiagnostics();
 }
 
 export function getMainProgramSourceForReload(): string {
-	const entryId = entryTabId;
+	const entryId = ide_state.entryTabId;
 	if (!entryId) {
-		return loadSourceFn();
+		return ide_state.loadSourceFn();
 	}
-	const context = codeTabContexts.get(entryId);
+	const context = ide_state.codeTabContexts.get(entryId);
 	if (!context) {
-		return loadSourceFn();
+		return ide_state.loadSourceFn();
 	}
-	if (context.id === activeCodeTabContextId) {
-		return lines.join('\n');
+	if (context.id === ide_state.activeCodeTabContextId) {
+		return ide_state.lines.join('\n');
 	}
 	if (context.snapshot) {
 		return context.snapshot.lines.join('\n');
@@ -9525,7 +9321,7 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 	];
 	const state: ResourceViewerState = {
 		descriptor,
-		lines,
+		lines: ide_state.lines,
 		error: null,
 		title,
 		scroll: 0,
@@ -9795,25 +9591,25 @@ export function defaultResourcePanelRatio(): number {
 }
 
 export function computePanelPixelWidth(ratio: number): number {
-	if (!Number.isFinite(ratio) || ratio <= 0 || viewportWidth <= 0) {
+	if (!Number.isFinite(ratio) || ratio <= 0 || ide_state.viewportWidth <= 0) {
 		return 0;
 	}
-	return Math.floor(viewportWidth * ratio);
+	return Math.floor(ide_state.viewportWidth * ratio);
 }
 
 export function getResourcePanelWidth(): number {
-	if (!resourcePanelVisible) return 0;
-	const bounds = resourcePanel.getBounds();
+	if (!ide_state.resourcePanelVisible) return 0;
+	const bounds = ide_state.resourcePanel.getBounds();
 	return bounds ? Math.max(0, bounds.right - bounds.left) : 0;
 }
 
-// getResourcePanelBounds removed; use resourcePanel.getBounds()
+// getResourcePanelBounds removed; use ide_state.resourcePanel.getBounds()
 
 export function isPointerOverResourcePanelDivider(x: number, y: number): boolean {
-	if (!resourcePanelVisible) {
+	if (!ide_state.resourcePanelVisible) {
 		return false;
 	}
-	const bounds = resourcePanel.getBounds();
+	const bounds = ide_state.resourcePanel.getBounds();
 	if (!bounds) {
 		return false;
 	}
@@ -9823,11 +9619,11 @@ export function isPointerOverResourcePanelDivider(x: number, y: number): boolean
 	return y >= bounds.top && y <= bounds.bottom && x >= left && x <= right;
 }
 
-// resourcePanelLineCapacity removed; use resourcePanel.lineCapacity()
+// resourcePanelLineCapacity removed; use ide_state.resourcePanel.lineCapacity()
 
 export function scrollResourceBrowser(amount: number): void {
-	if (!resourcePanelVisible) return;
-	resourcePanel.scrollBy(amount);
+	if (!ide_state.resourcePanelVisible) return;
+	ide_state.resourcePanel.scrollBy(amount);
 	// controller owns scroll; no local mirror required
 }
 
@@ -9847,8 +9643,8 @@ export function resourceViewerImageLayout(viewer: ResourceViewerState): { left: 
 	const contentTop = bounds.codeTop + 2;
 	const availableWidth = Math.max(1, bounds.codeRight - bounds.codeLeft - paddingX * 2);
 	const estimatedTextLines = Math.max(3, Math.min(8, viewer.lines.length + (viewer.error ? 1 : 0)));
-	const reservedTextHeight = Math.min(totalHeight * 0.45, lineHeight * estimatedTextLines);
-	const maxImageHeight = Math.max(lineHeight * 2, totalHeight - reservedTextHeight);
+	const reservedTextHeight = Math.min(totalHeight * 0.45, ide_state.lineHeight * estimatedTextLines);
+	const maxImageHeight = Math.max(ide_state.lineHeight * 2, totalHeight - reservedTextHeight);
 	let scale = Math.min(availableWidth / width, maxImageHeight / height);
 	if (!Number.isFinite(scale) || scale <= 0) {
 		scale = Math.min(availableWidth / width, totalHeight / height);
@@ -9872,20 +9668,20 @@ export function resourceViewerTextCapacity(viewer: ResourceViewerState): number 
 	const layout = resourceViewerImageLayout(viewer);
 	let textTop = contentTop;
 	if (layout) {
-		textTop = Math.floor(layout.bottom + lineHeight);
+		textTop = Math.floor(layout.bottom + ide_state.lineHeight);
 	}
 	if (textTop >= bounds.codeBottom) {
 		return 0;
 	}
 	const availableHeight = Math.max(0, bounds.codeBottom - textTop);
-	return Math.max(0, Math.floor(availableHeight / lineHeight));
+	return Math.max(0, Math.floor(availableHeight / ide_state.lineHeight));
 }
 
 export function ensureResourceViewerSprite(api: BmsxConsoleApi, assetId: string, layout: { left: number; top: number; scale: number }): void {
-	if (!resourceViewerSpriteId) {
-		resourceViewerSpriteId = 'console_resource_viewer_sprite';
+	if (!ide_state.resourceViewerSpriteId) {
+		ide_state.resourceViewerSpriteId = 'console_resource_viewer_sprite';
 	}
-	const spriteId = resourceViewerSpriteId;
+	const spriteId = ide_state.resourceViewerSpriteId;
 	let object = api.world_object(spriteId);
 	if (!object) {
 		api.spawn_world_object('WorldObject', {
@@ -9911,14 +9707,14 @@ export function ensureResourceViewerSprite(api: BmsxConsoleApi, assetId: string,
 	if (!sprite) {
 		return;
 	}
-	if (resourceViewerSpriteAsset !== assetId) {
+	if (ide_state.resourceViewerSpriteAsset !== assetId) {
 		sprite.imgid = assetId;
-		resourceViewerSpriteAsset = assetId;
+		ide_state.resourceViewerSpriteAsset = assetId;
 	}
-	if (resourceViewerSpriteScale !== layout.scale) {
+	if (ide_state.resourceViewerSpriteScale !== layout.scale) {
 		sprite.scale.x = layout.scale;
 		sprite.scale.y = layout.scale;
-		resourceViewerSpriteScale = layout.scale;
+		ide_state.resourceViewerSpriteScale = layout.scale;
 	}
 	object.x = layout.left;
 	object.y = layout.top;
@@ -9926,10 +9722,10 @@ export function ensureResourceViewerSprite(api: BmsxConsoleApi, assetId: string,
 }
 
 export function hideResourceViewerSprite(api: BmsxConsoleApi): void {
-	if (!resourceViewerSpriteId) {
+	if (!ide_state.resourceViewerSpriteId) {
 		return;
 	}
-	const object = api.world_object(resourceViewerSpriteId);
+	const object = api.world_object(ide_state.resourceViewerSpriteId);
 	if (object) {
 		object.visible = false;
 	}
@@ -9953,15 +9749,15 @@ export function resourceViewerClampScroll(viewer: ResourceViewerState): void {
 
 // Bridge wrappers to the ResourcePanelController (temporary during migration)
 export function resourceBrowserEnsureSelectionVisible(): void {
-	if (!resourcePanelVisible) return;
-	resourcePanel.ensureSelectionVisiblePublic();
+	if (!ide_state.resourcePanelVisible) return;
+	ide_state.resourcePanel.ensureSelectionVisiblePublic();
 	// controller owns scroll; no local mirror required
 }
 
 export function scrollResourceBrowserHorizontal(delta: number): void {
-	if (!resourcePanelVisible) return;
-	const s = resourcePanel.getStateForRender();
-	resourcePanel.setHScroll(s.hscroll + delta);
+	if (!ide_state.resourcePanelVisible) return;
+	const s = ide_state.resourcePanel.getStateForRender();
+	ide_state.resourcePanel.setHScroll(s.hscroll + delta);
 }
 
 // moved to ResourcePanelController
@@ -9989,10 +9785,10 @@ export function handleResourceViewerInput(keyboard: KeyboardInput, deltaSeconds:
 	if (!viewer) {
 		return;
 	}
-	const ctrlDown = isModifierPressedGlobal(playerIndex, 'ControlLeft') || isModifierPressedGlobal(playerIndex, 'ControlRight');
-	const metaDown = isModifierPressedGlobal(playerIndex, 'MetaLeft') || isModifierPressedGlobal(playerIndex, 'MetaRight');
-	const shiftDown = isModifierPressedGlobal(playerIndex, 'ShiftLeft') || isModifierPressedGlobal(playerIndex, 'ShiftRight');
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(playerIndex, 'KeyR')) {
+	const ctrlDown = isModifierPressedGlobal(ide_state.playerIndex, 'ControlLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ControlRight');
+	const metaDown = isModifierPressedGlobal(ide_state.playerIndex, 'MetaLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'MetaRight');
+	const shiftDown = isModifierPressedGlobal(ide_state.playerIndex, 'ShiftLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ShiftRight');
+	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyR')) {
 		consumeKeyboardKey(keyboard, 'KeyR');
 		toggleResolutionMode();
 		return;
@@ -10008,7 +9804,7 @@ export function handleResourceViewerInput(keyboard: KeyboardInput, deltaSeconds:
 		{ code: 'End', delta: Number.POSITIVE_INFINITY },
 	];
 	for (const entry of moves) {
-		const triggered = isKeyJustPressedGlobal(playerIndex, entry.code) || shouldFireRepeat(keyboard, entry.code, deltaSeconds);
+		const triggered = isKeyJustPressedGlobal(ide_state.playerIndex, entry.code) || shouldFireRepeat(keyboard, entry.code, deltaSeconds);
 		if (!triggered) {
 			continue;
 		}
@@ -10027,13 +9823,13 @@ export function handleResourceViewerInput(keyboard: KeyboardInput, deltaSeconds:
 
 export function drawResourcePanel(api: BmsxConsoleApi): void {
 	// Delegate full drawing to controller and then mirror back minimal state used elsewhere
-	resourcePanel.draw(api);
-	const s = resourcePanel.getStateForRender();
-	resourcePanelVisible = s.visible;
-	resourceBrowserItems = s.items;
-	resourcePanelFocused = s.focused;
-	resourceBrowserSelectionIndex = s.selectionIndex;
-	resourcePanelResourceCount = s.items.length;
+	ide_state.resourcePanel.draw(api);
+	const s = ide_state.resourcePanel.getStateForRender();
+	ide_state.resourcePanelVisible = s.visible;
+	ide_state.resourceBrowserItems = s.items;
+	ide_state.resourcePanelFocused = s.focused;
+	ide_state.resourceBrowserSelectionIndex = s.selectionIndex;
+	ide_state.resourcePanelResourceCount = s.items.length;
 	// max line width handled by controller
 }
 
@@ -10047,7 +9843,7 @@ export function drawResourceViewer(api: BmsxConsoleApi): void {
 	const contentLeft = bounds.codeLeft + constants.RESOURCE_PANEL_PADDING_X;
 	const capacity = resourceViewerTextCapacity(viewer);
 	const totalLines = viewer.lines.length;
-	const verticalScrollbar = scrollbars.viewerVertical;
+	const verticalScrollbar = ide_state.scrollbars.viewerVertical;
 	const verticalTrack: RectBounds = {
 		left: bounds.codeRight - constants.SCROLLBAR_WIDTH,
 		top: bounds.codeTop,
@@ -10065,17 +9861,17 @@ export function drawResourceViewer(api: BmsxConsoleApi): void {
 	let textTop = contentTop;
 	if (layout && viewer.image) {
 		ensureResourceViewerSprite(api, viewer.image.assetId, { left: layout.left, top: layout.top, scale: layout.scale });
-		textTop = Math.floor(layout.bottom + lineHeight);
+		textTop = Math.floor(layout.bottom + ide_state.lineHeight);
 	} else {
 		hideResourceViewerSprite(api);
 	}
 	if (capacity <= 0) {
 		if (viewer.lines.length > 0) {
 			const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.floor(viewer.scroll)))] ?? '';
-			const fallbackY = Math.min(textTop, bounds.codeBottom - lineHeight);
-			drawEditorText(api, font, line, contentLeft, fallbackY, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			const fallbackY = Math.min(textTop, bounds.codeBottom - ide_state.lineHeight);
+			drawEditorText(api, ide_state.font, line, contentLeft, fallbackY, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		} else {
-			drawEditorText(api, font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			drawEditorText(api, ide_state.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		}
 		if (verticalVisible) {
 			verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
@@ -10086,15 +9882,15 @@ export function drawResourceViewer(api: BmsxConsoleApi): void {
 	viewer.scroll = clamp(viewer.scroll, 0, maxScroll);
 	const end = Math.min(totalLines, Math.floor(viewer.scroll) + capacity);
 	if (viewer.lines.length === 0) {
-		drawEditorText(api, font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
+		drawEditorText(api, ide_state.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
 	} else {
 		for (let lineIndex = Math.floor(viewer.scroll), drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
 			const line = viewer.lines[lineIndex] ?? '';
-			const y = textTop + drawIndex * lineHeight;
+			const y = textTop + drawIndex * ide_state.lineHeight;
 			if (y >= bounds.codeBottom) {
 				break;
 			}
-			drawEditorText(api, font, line, contentLeft, y, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			drawEditorText(api, ide_state.font, line, contentLeft, y, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		}
 	}
 	if (verticalVisible) {
@@ -10103,11 +9899,11 @@ export function drawResourceViewer(api: BmsxConsoleApi): void {
 }
 
 export function drawReferenceHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
-	const matches = referenceState.getMatches();
+	const matches = ide_state.referenceState.getMatches();
 	if (matches.length === 0) {
 		return;
 	}
-	const activeIndex = referenceState.getActiveIndex();
+	const activeIndex = ide_state.referenceState.getActiveIndex();
 	const highlight = entry.hi;
 	for (let i = 0; i < matches.length; i += 1) {
 		const match = matches[i];
@@ -10124,17 +9920,17 @@ export function drawReferenceHighlightsForRow(api: BmsxConsoleApi, rowIndex: num
 		const startX = originX + measureRangeFast(entry, sliceStartDisplay, visibleStart);
 		const endX = originX + measureRangeFast(entry, sliceStartDisplay, visibleEnd);
 		const overlay = i === activeIndex ? constants.REFERENCES_MATCH_ACTIVE_OVERLAY : constants.REFERENCES_MATCH_OVERLAY;
-		api.rectfill_color(startX, originY, endX, originY + lineHeight, overlay);
+		api.rectfill_color(startX, originY, endX, originY + ide_state.lineHeight, overlay);
 	}
 }
 
 export function drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
-	if (searchScope !== 'local' || searchMatches.length === 0 || searchQuery.length === 0) {
+	if (ide_state.searchScope !== 'local' || ide_state.searchMatches.length === 0 || ide_state.searchQuery.length === 0) {
 		return;
 	}
 	const highlight = entry.hi;
-	for (let i = 0; i < searchMatches.length; i++) {
-		const match = searchMatches[i];
+	for (let i = 0; i < ide_state.searchMatches.length; i++) {
+		const match = ide_state.searchMatches[i];
 		if (match.row !== rowIndex) {
 			continue;
 		}
@@ -10147,8 +9943,8 @@ export function drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number
 		}
 		const startX = originX + measureRangeFast(entry, sliceStartDisplay, visibleStart);
 		const endX = originX + measureRangeFast(entry, sliceStartDisplay, visibleEnd);
-		const overlay = i === searchCurrentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
-		api.rectfill_color(startX, originY, endX, originY + lineHeight, overlay);
+		const overlay = i === ide_state.searchCurrentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
+		api.rectfill_color(startX, originY, endX, originY + ide_state.lineHeight, overlay);
 	}
 }
 
@@ -10156,12 +9952,12 @@ export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number
 	const highlight = entry.hi;
 	const columnToDisplay = highlight.columnToDisplay;
 	const clampedColumn = columnToDisplay.length > 0
-		? clamp(cursorColumn, 0, columnToDisplay.length - 1)
+		? clamp(ide_state.cursorColumn, 0, columnToDisplay.length - 1)
 		: 0;
 	const cursorDisplayIndex = columnToDisplay.length > 0 ? columnToDisplay[clampedColumn] : 0;
 	const limitedDisplayIndex = Math.max(sliceStartDisplay, cursorDisplayIndex);
 	const cursorX = textLeft + measureRangeFast(entry, sliceStartDisplay, limitedDisplayIndex);
-	let cursorWidth = charAdvance;
+	let cursorWidth = ide_state.charAdvance;
 	let baseChar = ' ';
 	let baseColor = constants.COLOR_CODE_TEXT;
 	if (cursorDisplayIndex < highlight.chars.length) {
@@ -10173,56 +9969,56 @@ export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number
 			if (widthValue > 0) {
 				cursorWidth = widthValue;
 			} else {
-				cursorWidth = font.advance(baseChar);
+				cursorWidth = ide_state.font.advance(baseChar);
 			}
 		}
 	}
-	const currentChar = currentLine().charAt(cursorColumn);
+	const currentChar = currentLine().charAt(ide_state.cursorColumn);
 	if (currentChar === '\t') {
-		cursorWidth = spaceAdvance * constants.TAB_SPACES;
+		cursorWidth = ide_state.spaceAdvance * constants.TAB_SPACES;
 	}
 	return {
-		row: cursorRow,
-		column: cursorColumn,
+		row: ide_state.cursorRow,
+		column: ide_state.cursorColumn,
 		x: cursorX,
 		y: rowTop,
 		width: cursorWidth,
-		height: lineHeight,
+		height: ide_state.lineHeight,
 		baseChar,
 		baseColor,
 	};
 }
 
 export function sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
-	return layout.sliceHighlightedLine(highlight, columnStart, columnCount);
+	return ide_state.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
 }
 
 export function getCachedHighlight(row: number): CachedHighlight {
 	const activeContext = getActiveCodeTabContext();
 	const chunkName = resolveHoverChunkName(activeContext) ?? '<console>';
-	return layout.getCachedHighlight(lines, row, textVersion, chunkName);
+	return ide_state.layout.getCachedHighlight(ide_state.lines, row, ide_state.textVersion, chunkName);
 }
 
 export function invalidateLine(row: number): void {
-	layout.invalidateHighlight(row);
+	ide_state.layout.invalidateHighlight(row);
 }
 
 export function invalidateAllHighlights(): void {
-	layout.invalidateAllHighlights();
+	ide_state.layout.invalidateAllHighlights();
 }
 
 export function invalidateHighlightsFromRow(startRow: number): void {
-	layout.invalidateHighlightsFrom(Math.max(0, startRow));
+	ide_state.layout.invalidateHighlightsFrom(Math.max(0, startRow));
 }
 
 export function measureRangeFast(entry: CachedHighlight, startDisplay: number, endDisplay: number): number {
-	return layout.measureRangeFast(entry, startDisplay, endDisplay);
+	return ide_state.layout.measureRangeFast(entry, startDisplay, endDisplay);
 }
 
 export function requestSemanticRefresh(context?: CodeTabContext | null): void {
 	const activeContext = context ?? getActiveCodeTabContext();
 	const chunkName = resolveHoverChunkName(activeContext) ?? '<console>';
-	layout.requestSemanticUpdate(lines, textVersion, chunkName);
+	ide_state.layout.requestSemanticUpdate(ide_state.lines, ide_state.textVersion, chunkName);
 }
 
 export function lowerBound(values: number[], target: number, lo = 0, hi = values.length): number {
@@ -10240,21 +10036,21 @@ export function lowerBound(values: number[], target: number, lo = 0, hi = values
 }
 
 export function bumpTextVersion(): void {
-	textVersion += 1;
+	ide_state.textVersion += 1;
 }
 
 export function markDiagnosticsDirty(contextId?: string): void {
-	const targetId = contextId ?? activeCodeTabContextId;
+	const targetId = contextId ?? ide_state.activeCodeTabContextId;
 	if (!targetId) {
 		return;
 	}
-	diagnosticsDirty = true;
-	dirtyDiagnosticContexts.add(targetId);
-	diagnosticsDueAtMs = clockNow() + diagnosticsDebounceMs;
+	ide_state.diagnosticsDirty = true;
+	ide_state.dirtyDiagnosticContexts.add(targetId);
+	ide_state.diagnosticsDueAtMs = ide_state.clockNow() + diagnosticsDebounceMs;
 }
 
 export function markTextMutated(): void {
-	dirty = true;
+	ide_state.dirty = true;
 	markDiagnosticsDirty();
 	bumpTextVersion();
 	clearReferenceHighlights();
@@ -10262,19 +10058,19 @@ export function markTextMutated(): void {
 	invalidateVisualLines();
 	requestSemanticRefresh();
 	handlePostEditMutation();
-	if (searchQuery.length > 0) {
+	if (ide_state.searchQuery.length > 0) {
 		startSearchJob();
 	}
 }
 
 export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
-	pendingEditContext = { kind, text };
+	ide_state.pendingEditContext = { kind, text };
 }
 
 export function handlePostEditMutation(): void {
-	const editContext = pendingEditContext;
-	pendingEditContext = null;
-	completion.updateAfterEdit(editContext);
+	const editContext = ide_state.pendingEditContext;
+	ide_state.pendingEditContext = null;
+	ide_state.completion.updateAfterEdit(editContext);
 }
 
 export function handleCompletionKeybindings(
@@ -10285,50 +10081,50 @@ export function handleCompletionKeybindings(
 	altDown: boolean,
 	metaDown: boolean,
 ): boolean {
-	return completion.handleKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown);
+	return ide_state.completion.handleKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown);
 }
 
 export function onCursorMoved(): void {
-	completion.onCursorMoved();
+	ide_state.completion.onCursorMoved();
 }
 
 export function invalidateVisualLines(): void {
-	layout.markVisualLinesDirty();
+	ide_state.layout.markVisualLinesDirty();
 }
 
 export function ensureVisualLines(): void {
 	const activeContext = getActiveCodeTabContext();
 	const chunkName = resolveHoverChunkName(activeContext) ?? '<console>';
-	scrollRow = layout.ensureVisualLines({
-		lines: lines,
-		wordWrapEnabled: wordWrapEnabled,
-		scrollRow: scrollRow,
-		documentVersion: textVersion,
+	ide_state.scrollRow = ide_state.layout.ensureVisualLines({
+		lines: ide_state.lines,
+		wordWrapEnabled: ide_state.wordWrapEnabled,
+		scrollRow: ide_state.scrollRow,
+		documentVersion: ide_state.textVersion,
 		chunkName,
 		computeWrapWidth: () => computeWrapWidth(),
-		estimatedVisibleRowCount: Math.max(1, cachedVisibleRowCount),
+		estimatedVisibleRowCount: Math.max(1, ide_state.cachedVisibleRowCount),
 	});
-	if (scrollRow < 0) {
-		scrollRow = 0;
+	if (ide_state.scrollRow < 0) {
+		ide_state.scrollRow = 0;
 	}
 }
 
 export function computeWrapWidth(): number {
-	const resourceWidth = resourcePanelVisible ? getResourcePanelWidth() : 0;
-	const gutterSpace = gutterWidth + 2;
+	const resourceWidth = ide_state.resourcePanelVisible ? getResourcePanelWidth() : 0;
+	const gutterSpace = ide_state.gutterWidth + 2;
 	const verticalScrollbarSpace = 0;
-	const available = viewportWidth - resourceWidth - gutterSpace - verticalScrollbarSpace;
-	return Math.max(charAdvance, available - 2);
+	const available = ide_state.viewportWidth - resourceWidth - gutterSpace - verticalScrollbarSpace;
+	return Math.max(ide_state.charAdvance, available - 2);
 }
 
 export function getVisualLineCount(): number {
 	ensureVisualLines();
-	return layout.getVisualLineCount();
+	return ide_state.layout.getVisualLineCount();
 }
 
 export function visualIndexToSegment(index: number): VisualLineSegment | null {
 	ensureVisualLines();
-	return layout.visualIndexToSegment(index);
+	return ide_state.layout.visualIndexToSegment(index);
 }
 
 export function positionToVisualIndex(row: number, column: number): number {
@@ -10337,16 +10133,16 @@ export function positionToVisualIndex(row: number, column: number): number {
 	if (override) {
 		return override.visualIndex;
 	}
-	return layout.positionToVisualIndex(lines, row, column);
+	return ide_state.layout.positionToVisualIndex(ide_state.lines, row, column);
 }
 
 export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?: number, desiredOffsetHint?: number): void {
 	ensureVisualLines();
 	clearCursorVisualOverride();
-	const visualLines = layout.getVisualLines();
+	const visualLines = ide_state.layout.getVisualLines();
 	if (visualLines.length === 0) {
-		cursorRow = 0;
-		cursorColumn = 0;
+		ide_state.cursorRow = 0;
+		ide_state.cursorColumn = 0;
 		updateDesiredColumn();
 		return;
 	}
@@ -10357,11 +10153,11 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	}
 	const entry = getCachedHighlight(segment.row);
 	const highlight = entry.hi;
-	const line = lines[segment.row] ?? '';
+	const line = ide_state.lines[segment.row] ?? '';
 	const hasDesiredHint = desiredColumnHint !== undefined;
 	const hasOffsetHint = desiredOffsetHint !== undefined;
-	let targetColumn = hasDesiredHint ? desiredColumnHint! : cursorColumn;
-	if (wordWrapEnabled) {
+	let targetColumn = hasDesiredHint ? desiredColumnHint! : ide_state.cursorColumn;
+	if (ide_state.wordWrapEnabled) {
 		const segmentEndColumn = Math.max(segment.endColumn, segment.startColumn);
 		const segmentDisplayStart = columnToDisplay(highlight, segment.startColumn);
 		const segmentDisplayEnd = columnToDisplay(highlight, segmentEndColumn);
@@ -10371,7 +10167,7 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 			const targetDisplay = clamp(segmentDisplayStart + clampedOffset, segmentDisplayStart, segmentDisplayEnd);
 			let columnFromOffset = entry.displayToColumn[targetDisplay];
 			if (columnFromOffset === undefined) {
-				columnFromOffset = lines[segment.row].length;
+				columnFromOffset = ide_state.lines[segment.row].length;
 			}
 			targetColumn = clamp(columnFromOffset, segment.startColumn, segmentEndColumn);
 		} else {
@@ -10383,34 +10179,34 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	} else {
 		targetColumn = clamp(Math.round(targetColumn), 0, line.length);
 	}
-	cursorRow = segment.row;
-	cursorColumn = clamp(targetColumn, 0, line.length);
-	const cursorDisplay = columnToDisplay(highlight, cursorColumn);
-	if (wordWrapEnabled) {
+	ide_state.cursorRow = segment.row;
+	ide_state.cursorColumn = clamp(targetColumn, 0, line.length);
+	const cursorDisplay = columnToDisplay(highlight, ide_state.cursorColumn);
+	if (ide_state.wordWrapEnabled) {
 		const hasNextSegmentSameRow = (clampedIndex + 1 < visualLines.length)
 			&& visualLines[clampedIndex + 1].row === segment.row;
 		const segmentEnd = Math.max(segment.endColumn, segment.startColumn);
-		if (cursorColumn < segment.startColumn) {
-			cursorColumn = segment.startColumn;
+		if (ide_state.cursorColumn < segment.startColumn) {
+			ide_state.cursorColumn = segment.startColumn;
 		}
-		if (segmentEnd >= segment.startColumn && cursorColumn > segmentEnd) {
-			cursorColumn = Math.min(segmentEnd, line.length);
+		if (segmentEnd >= segment.startColumn && ide_state.cursorColumn > segmentEnd) {
+			ide_state.cursorColumn = Math.min(segmentEnd, line.length);
 		}
-		if (hasNextSegmentSameRow && cursorColumn >= segmentEnd) {
-			cursorColumn = Math.max(segment.startColumn, segmentEnd - 1);
+		if (hasNextSegmentSameRow && ide_state.cursorColumn >= segmentEnd) {
+			ide_state.cursorColumn = Math.max(segment.startColumn, segmentEnd - 1);
 		}
 		const segmentDisplayStart = columnToDisplay(highlight, segment.startColumn);
-		desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
+		ide_state.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
 	} else {
-		desiredDisplayOffset = cursorDisplay;
+		ide_state.desiredDisplayOffset = cursorDisplay;
 	}
 	if (hasDesiredHint) {
-		desiredColumn = Math.max(0, desiredColumnHint!);
+		ide_state.desiredColumn = Math.max(0, desiredColumnHint!);
 	} else {
-		desiredColumn = cursorColumn;
+		ide_state.desiredColumn = ide_state.cursorColumn;
 	}
-	if (desiredDisplayOffset < 0) {
-		desiredDisplayOffset = 0;
+	if (ide_state.desiredDisplayOffset < 0) {
+		ide_state.desiredDisplayOffset = 0;
 	}
 }
 
@@ -10435,7 +10231,7 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 		return null;
 	}
 	let selectionStartColumn = lineIndex === start.row ? start.column : 0;
-	let selectionEndColumn = lineIndex === end.row ? end.column : lines[lineIndex].length;
+	let selectionEndColumn = lineIndex === end.row ? end.column : ide_state.lines[lineIndex].length;
 	if (lineIndex === end.row && end.column === 0 && end.row > start.row) {
 		selectionEndColumn = 0;
 	}
@@ -10454,33 +10250,33 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 
 export function drawStatusBar(api: BmsxConsoleApi): void {
 	const host = {
-		viewportWidth: viewportWidth,
-		viewportHeight: viewportHeight,
+		viewportWidth: ide_state.viewportWidth,
+		viewportHeight: ide_state.viewportHeight,
 		bottomMargin: statusAreaHeight(),
-		lineHeight: lineHeight,
+		lineHeight: ide_state.lineHeight,
 		measureText: (text: string) => measureText(text),
-		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, font, text, x, y, color),
+		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, ide_state.font, text, x, y, color),
 		truncateTextToWidth: (text: string, maxWidth: number) => truncateTextToWidth(text, maxWidth),
-		message: message,
+		message: ide_state.message,
 		getStatusMessageLines: () => getStatusMessageLines(),
-		symbolSearchVisible: symbolSearchVisible,
+		symbolSearchVisible: ide_state.symbolSearchVisible,
 		getActiveSymbolSearchMatch: () => getActiveSymbolSearchMatch(),
-		resourcePanelVisible: resourcePanelVisible,
-		resourcePanelFilterMode: resourcePanel.getFilterMode(),
-		resourcePanelResourceCount: resourcePanelResourceCount,
+		resourcePanelVisible: ide_state.resourcePanelVisible,
+		resourcePanelFilterMode: ide_state.resourcePanel.getFilterMode(),
+		resourcePanelResourceCount: ide_state.resourcePanelResourceCount,
 		isResourceViewActive: () => isResourceViewActive(),
 		getActiveResourceViewer: () => getActiveResourceViewer(),
-		metadata: metadata,
+		metadata: ide_state.metadata,
 		statusLeftInfo: buildStatusLeftInfo(),
-		problemsPanelFocused: problemsPanel.isVisible() && problemsPanel.isFocused(),
+		problemsPanelFocused: ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused(),
 	};
 	renderStatusBar(api, host);
 }
 
 export function buildStatusLeftInfo(): string {
-	if (problemsPanel.isVisible()) {
-		if (problemsPanel.isFocused()) {
-			const sel = problemsPanel.getSelectedDiagnostic();
+	if (ide_state.problemsPanel.isVisible()) {
+		if (ide_state.problemsPanel.isFocused()) {
+			const sel = ide_state.problemsPanel.getSelectedDiagnostic();
 			if (sel) {
 				const file = sel.sourceLabel ?? (sel.chunkName ?? '');
 				const parts: string[] = [];
@@ -10492,7 +10288,7 @@ export function buildStatusLeftInfo(): string {
 		// When Problems panel is visible but not focused or no selection, don't render default editor position
 		return '';
 	}
-	return `LINE ${cursorRow + 1}/${lines.length} COL ${cursorColumn + 1}`;
+	return `LINE ${ide_state.cursorRow + 1}/${ide_state.lines.length} COL ${ide_state.cursorColumn + 1}`;
 }
 
 export function drawProblemsPanel(api: BmsxConsoleApi): void {
@@ -10500,7 +10296,7 @@ export function drawProblemsPanel(api: BmsxConsoleApi): void {
 	if (!bounds) {
 		return;
 	}
-	problemsPanel.draw(api, bounds);
+	ide_state.problemsPanel.draw(api, bounds);
 }
 
 export function getProblemsPanelBounds(): RectBounds | null {
@@ -10509,12 +10305,12 @@ export function getProblemsPanelBounds(): RectBounds | null {
 		return null;
 	}
 	const statusHeight = statusAreaHeight();
-	const bottom = viewportHeight - statusHeight;
+	const bottom = ide_state.viewportHeight - statusHeight;
 	const top = bottom - panelHeight;
 	if (bottom <= top) {
 		return null;
 	}
-	return { left: 0, top, right: viewportWidth, bottom };
+	return { left: 0, top, right: ide_state.viewportWidth, bottom };
 }
 
 export function isPointerOverProblemsPanelDivider(x: number, y: number): boolean {
@@ -10529,23 +10325,23 @@ export function isPointerOverProblemsPanelDivider(x: number, y: number): boolean
 
 export function setProblemsPanelHeightFromViewportY(viewportY: number): void {
 	const statusHeight = statusAreaHeight();
-	const bottom = viewportHeight - statusHeight;
-	const minTop = headerHeight + getTabBarTotalHeight() + 1;
-	const headerH = lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
-	const minContent = Math.max(1, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS) * lineHeight;
+	const bottom = ide_state.viewportHeight - statusHeight;
+	const minTop = ide_state.headerHeight + getTabBarTotalHeight() + 1;
+	const headerH = ide_state.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
+	const minContent = Math.max(1, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS) * ide_state.lineHeight;
 	const minHeight = headerH + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2 + minContent;
 	const maxTop = Math.max(minTop, bottom - minHeight);
 	const top = clamp(viewportY, minTop, maxTop);
 	const height = clamp(bottom - top, minHeight, Math.max(minHeight, bottom - minTop));
-	problemsPanel.setFixedHeightPx(height);
+	ide_state.problemsPanel.setFixedHeightPx(height);
 }
 
 export function drawActionPromptOverlay(api: BmsxConsoleApi): void {
-	const prompt = pendingActionPrompt;
+	const prompt = ide_state.pendingActionPrompt;
 	if (!prompt) {
 		return;
 	}
-	api.rectfill_color(0, 0, viewportWidth, viewportHeight, constants.ACTION_OVERLAY_COLOR);
+	api.rectfill_color(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, constants.ACTION_OVERLAY_COLOR);
 
 	let messageLines: string[];
 	let primaryLabel: string;
@@ -10592,12 +10388,12 @@ export function drawActionPromptOverlay(api: BmsxConsoleApi): void {
 	const buttonRowWidth = primaryWidth + secondaryWidth + cancelWidth + buttonSpacing * 2;
 	const paddingX = 12;
 	const paddingY = 12;
-	const buttonHeight = lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
-	const messageSpacing = lineHeight + 2;
+	const buttonHeight = ide_state.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
+	const messageSpacing = ide_state.lineHeight + 2;
 	const dialogWidth = Math.max(maxMessageWidth + paddingX * 2, buttonRowWidth + paddingX * 2);
 	const dialogHeight = paddingY * 2 + messageLines.length * messageSpacing + 6 + buttonHeight;
-	const left = Math.max(4, Math.floor((viewportWidth - dialogWidth) / 2));
-	const top = Math.max(4, Math.floor((viewportHeight - dialogHeight) / 2));
+	const left = Math.max(4, Math.floor((ide_state.viewportWidth - dialogWidth) / 2));
+	const top = Math.max(4, Math.floor((ide_state.viewportHeight - dialogHeight) / 2));
 	const right = left + dialogWidth;
 	const bottom = top + dialogHeight;
 
@@ -10607,7 +10403,7 @@ export function drawActionPromptOverlay(api: BmsxConsoleApi): void {
 	let textY = top + paddingY;
 	const textX = left + paddingX;
 	for (let i = 0; i < messageLines.length; i++) {
-		drawEditorText(api, font, messageLines[i], textX, textY, constants.ACTION_DIALOG_TEXT_COLOR);
+		drawEditorText(api, ide_state.font, messageLines[i], textX, textY, constants.ACTION_DIALOG_TEXT_COLOR);
 		textY += messageSpacing;
 	}
 
@@ -10616,26 +10412,26 @@ export function drawActionPromptOverlay(api: BmsxConsoleApi): void {
 	const saveBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + primaryWidth, bottom: buttonY + buttonHeight };
 	api.rectfill(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, constants.ACTION_BUTTON_BACKGROUND);
 	api.rect(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(api, font, primaryLabel, saveBounds.left + constants.HEADER_BUTTON_PADDING_X, saveBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
-	actionPromptButtons.saveAndContinue = saveBounds;
+	drawEditorText(api, ide_state.font, primaryLabel, saveBounds.left + constants.HEADER_BUTTON_PADDING_X, saveBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
+	ide_state.actionPromptButtons.saveAndContinue = saveBounds;
 	buttonX = saveBounds.right + buttonSpacing;
 
 	const continueBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + secondaryWidth, bottom: buttonY + buttonHeight };
 	api.rectfill(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, constants.ACTION_BUTTON_BACKGROUND);
 	api.rect(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(api, font, secondaryLabel, continueBounds.left + constants.HEADER_BUTTON_PADDING_X, continueBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
-	actionPromptButtons.continue = continueBounds;
+	drawEditorText(api, ide_state.font, secondaryLabel, continueBounds.left + constants.HEADER_BUTTON_PADDING_X, continueBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
+	ide_state.actionPromptButtons.continue = continueBounds;
 	buttonX = continueBounds.right + buttonSpacing;
 
 	const cancelBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + cancelWidth, bottom: buttonY + buttonHeight };
 	api.rectfill(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND);
 	api.rect(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(api, font, cancelLabel, cancelBounds.left + constants.HEADER_BUTTON_PADDING_X, cancelBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.COLOR_HEADER_BUTTON_TEXT);
-	actionPromptButtons.cancel = cancelBounds;
+	drawEditorText(api, ide_state.font, cancelLabel, cancelBounds.left + constants.HEADER_BUTTON_PADDING_X, cancelBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.COLOR_HEADER_BUTTON_TEXT);
+	ide_state.actionPromptButtons.cancel = cancelBounds;
 }
 
 export function columnToDisplay(highlight: HighlightLine, column: number): number {
-	return layout.columnToDisplay(highlight, column);
+	return ide_state.layout.columnToDisplay(highlight, column);
 }
 
 export function resolvePaletteIndex(color: { r: number; g: number; b: number; a: number }): number | null {
@@ -10653,10 +10449,10 @@ export function invertColorIndex(colorIndex: number): number {
 }
 
 export function resetActionPromptState(): void {
-	pendingActionPrompt = null;
-	actionPromptButtons.saveAndContinue = null;
-	actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
-	actionPromptButtons.cancel = { left: 0, top: 0, right: 0, bottom: 0 };
+	ide_state.pendingActionPrompt = null;
+	ide_state.actionPromptButtons.saveAndContinue = null;
+	ide_state.actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
+	ide_state.actionPromptButtons.cancel = { left: 0, top: 0, right: 0, bottom: 0 };
 }
 
 export function pointInRect(x: number, y: number, rect: RectBounds | null): boolean {
@@ -10667,7 +10463,7 @@ export function pointInRect(x: number, y: number, rect: RectBounds | null): bool
 }
 
 export function hasPendingRuntimeReload(): boolean {
-	return saveGeneration > appliedGeneration;
+	return ide_state.saveGeneration > ide_state.appliedGeneration;
 }
 
 export function getConsoleRuntime(): BmsxConsoleRuntime | null {
@@ -10712,24 +10508,24 @@ export function handleRuntimeTaskError(error: unknown, fallbackMessage: string):
 	const message = error instanceof Error ? error.message : String(error);
 	$.paused = true;
 	activate();
-	showMessage(`${fallbackMessage}: ${message}`, constants.COLOR_STATUS_ERROR, 4.0);
+	ide_state.showMessage(`${fallbackMessage}: ${message}`, constants.COLOR_STATUS_ERROR, 4.0);
 }
 
 export function truncateTextToWidth(text: string, maxWidth: number): string {
-	return truncateTextToWidthExternal(text, maxWidth, (ch) => font.advance(ch), spaceAdvance);
+	return truncateTextToWidthExternal(text, maxWidth, (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance);
 }
 
 export function measureText(text: string): number {
-	return measureTextGeneric(text, (ch) => font.advance(ch), spaceAdvance);
+	return measureTextGeneric(text, (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance);
 }
 
 export function assertMonospace(): void {
 	const sample = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-*/%<>=#(){}[]:,.;\'"`~!@^&|\\?_ ';
-	const reference = font.advance('M');
+	const reference = ide_state.font.advance('M');
 	for (let i = 0; i < sample.length; i++) {
-		const candidate = font.advance(sample.charAt(i));
+		const candidate = ide_state.font.advance(sample.charAt(i));
 		if (candidate !== reference) {
-			warnNonMonospace = true;
+			ide_state.warnNonMonospace = true;
 			break;
 		}
 	}
@@ -10739,10 +10535,10 @@ export function centerCursorVertically(): void {
 	ensureVisualLines();
 	const rows = visibleRowCount();
 	const totalVisual = getVisualLineCount();
-	const cursorVisualIndex = positionToVisualIndex(cursorRow, cursorColumn);
+	const cursorVisualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
 	const maxScroll = Math.max(0, totalVisual - rows);
 	if (rows <= 1) {
-		scrollRow = clamp(cursorVisualIndex, 0, maxScroll);
+		ide_state.scrollRow = clamp(cursorVisualIndex, 0, maxScroll);
 		return;
 	}
 	let target = cursorVisualIndex - Math.floor(rows / 2);
@@ -10752,7 +10548,7 @@ export function centerCursorVertically(): void {
 	if (target > maxScroll) {
 		target = maxScroll;
 	}
-	scrollRow = target;
+	ide_state.scrollRow = target;
 }
 
 export function ensureCursorVisible(): void {
@@ -10762,39 +10558,39 @@ export function ensureCursorVisible(): void {
 	ensureVisualLines();
 	const rows = visibleRowCount();
 	const totalVisual = getVisualLineCount();
-	const cursorVisualIndex = positionToVisualIndex(cursorRow, cursorColumn);
+	const cursorVisualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
 
-	if (cursorVisualIndex < scrollRow) {
-		scrollRow = cursorVisualIndex;
+	if (cursorVisualIndex < ide_state.scrollRow) {
+		ide_state.scrollRow = cursorVisualIndex;
 	}
-	if (cursorVisualIndex >= scrollRow + rows) {
-		scrollRow = cursorVisualIndex - rows + 1;
+	if (cursorVisualIndex >= ide_state.scrollRow + rows) {
+		ide_state.scrollRow = cursorVisualIndex - rows + 1;
 	}
 	const maxScrollRow = Math.max(0, totalVisual - rows);
-	scrollRow = clamp(scrollRow, 0, maxScrollRow);
+	ide_state.scrollRow = clamp(ide_state.scrollRow, 0, maxScrollRow);
 
-	if (wordWrapEnabled) {
-		scrollColumn = 0;
+	if (ide_state.wordWrapEnabled) {
+		ide_state.scrollColumn = 0;
 		return;
 	}
 
 	const columns = visibleColumnCount();
-	if (cursorColumn < scrollColumn) {
-		scrollColumn = cursorColumn;
+	if (ide_state.cursorColumn < ide_state.scrollColumn) {
+		ide_state.scrollColumn = ide_state.cursorColumn;
 	}
-	const maxScrollColumn = cursorColumn - columns + 1;
-	if (maxScrollColumn > scrollColumn) {
-		scrollColumn = maxScrollColumn;
+	const maxScrollColumn = ide_state.cursorColumn - columns + 1;
+	if (maxScrollColumn > ide_state.scrollColumn) {
+		ide_state.scrollColumn = maxScrollColumn;
 	}
-	if (scrollColumn < 0) {
-		scrollColumn = 0;
+	if (ide_state.scrollColumn < 0) {
+		ide_state.scrollColumn = 0;
 	}
 	const lineLength = currentLine().length;
 	const maxColumn = lineLength - columns;
 	if (maxColumn < 0) {
-		scrollColumn = 0;
-	} else if (scrollColumn > maxColumn) {
-		scrollColumn = maxColumn;
+		ide_state.scrollColumn = 0;
+	} else if (ide_state.scrollColumn > maxColumn) {
+		ide_state.scrollColumn = maxColumn;
 	}
 }
 
@@ -10808,7 +10604,7 @@ export function buildMemberCompletionItems(request: {
 	if (request.objectName.length === 0) {
 		return [];
 	}
-	const response = listLuaObjectMembersFn({
+	const response = ide_state.listLuaObjectMembersFn({
 		assetId: request.assetId ?? null,
 		chunkName: request.chunkName ?? null,
 		expression: request.objectName,
@@ -10840,20 +10636,20 @@ export function buildMemberCompletionItems(request: {
 }
 
 export function visibleRowCount(): number {
-	return cachedVisibleRowCount > 0 ? cachedVisibleRowCount : 1;
+	return ide_state.cachedVisibleRowCount > 0 ? ide_state.cachedVisibleRowCount : 1;
 }
 
 export function visibleColumnCount(): number {
-	return cachedVisibleColumnCount > 0 ? cachedVisibleColumnCount : 1;
+	return ide_state.cachedVisibleColumnCount > 0 ? ide_state.cachedVisibleColumnCount : 1;
 }
 
 export function resetBlink(): void {
-	blinkTimer = 0;
-	cursorVisible = true;
+	ide_state.blinkTimer = 0;
+	ide_state.cursorVisible = true;
 }
 
 export function shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean {
-	return input.shouldRepeatPublic(keyboard, code, deltaSeconds);
+	return ide_state.input.shouldRepeatPublic(keyboard, code, deltaSeconds);
 }
 
 
@@ -10864,7 +10660,7 @@ export type ConsoleCartEditor = {
 	update: typeof update;
 	draw: typeof draw;
 	shutdown: typeof shutdown;
-	showWarningBanner: typeof showWarningBanner;
+	showWarningBanner: typeof ide_state.showWarningBanner;
 	showRuntimeErrorInChunk: typeof showRuntimeErrorInChunk;
 	showRuntimeError: typeof showRuntimeError;
 	clearRuntimeErrorOverlay: typeof clearRuntimeErrorOverlay;
@@ -10879,7 +10675,7 @@ const editorFacade: ConsoleCartEditor = {
 	update,
 	draw,
 	shutdown,
-	showWarningBanner,
+	showWarningBanner: ide_state.showWarningBanner,
 	showRuntimeErrorInChunk,
 	showRuntimeError,
 	clearRuntimeErrorOverlay,
@@ -10897,7 +10693,7 @@ export function handleCodeFormattingShortcut(
 	if (!context.altDown || context.shiftDown || (!context.ctrlDown && !context.metaDown)) {
 		return false;
 	}
-	if (!isKeyJustPressedGlobal(playerIndex, 'KeyF')) {
+	if (!isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyF')) {
 		return false;
 	}
 	consumeKeyboardKey(keyboard, 'KeyF');
@@ -10905,34 +10701,34 @@ export function handleCodeFormattingShortcut(
 	return true;
 }
 function applyDocumentFormatting(): void {
-	const originalLines = [...lines];
+	const originalLines = [...ide_state.lines];
 	const originalSource = originalLines.join('\\n');
 	try {
 		const formatted = formatLuaDocument(originalSource);
 		if (formatted === originalSource) {
-			showMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
+			ide_state.showMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
 			return;
 		}
-		const cursorOffset = computeDocumentOffset(originalLines, cursorRow, cursorColumn);
+		const cursorOffset = computeDocumentOffset(originalLines, ide_state.cursorRow, ide_state.cursorColumn);
 		prepareUndo('format-document', false);
-		if (lines.length === 0) {
+		if (ide_state.lines.length === 0) {
 			setSelectionAnchorPosition({ row: 0, column: 0 });
 			setCursorPosition(0, 0);
 		} else {
-			const lastRow = lines.length - 1;
+			const lastRow = ide_state.lines.length - 1;
 			setSelectionAnchorPosition({ row: 0, column: 0 });
-			setCursorPosition(lastRow, lines[lastRow].length);
+			setCursorPosition(lastRow, ide_state.lines[lastRow].length);
 		}
 		replaceSelectionWith(formatted);
-		const updatedLines = [...lines];
+		const updatedLines = [...ide_state.lines];
 		const target = resolveOffsetPosition(updatedLines, cursorOffset);
 		setCursorPosition(target.row, target.column);
 		clearSelection();
 		markDiagnosticsDirty();
-		showMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
+		ide_state.showMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		showMessage(`Formatting failed: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
+		ide_state.showMessage(`Formatting failed: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
 	}
 }
 function computeDocumentOffset(lines: readonly string[], row: number, column: number): number {
@@ -10951,11 +10747,11 @@ function resolveOffsetPosition(lines: readonly string[], offset: number): { row:
 		}
 		remaining -= lineLength + 1;
 	}
-	if (lines.length === 0) {
+	if (ide_state.lines.length === 0) {
 		return { row: 0, column: 0 };
 	}
-	const lastRow = lines.length - 1;
-	return { row: lastRow, column: lines[lastRow].length };
+	const lastRow = ide_state.lines.length - 1;
+	return { row: lastRow, column: ide_state.lines[lastRow].length };
 }
 
 export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleCartEditor {
@@ -10966,126 +10762,126 @@ export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleC
 }
 
 function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
-	playerIndex = options.playerIndex;
-	metadata = options.metadata;
-	fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
-	loadSourceFn = options.loadSource;
-	saveSourceFn = options.saveSource;
-	listResourcesFn = options.listResources;
-	loadLuaResourceFn = options.loadLuaResource;
-	saveLuaResourceFn = options.saveLuaResource;
-	createLuaResourceFn = options.createLuaResource;
-	inspectLuaExpressionFn = options.inspectLuaExpression;
-	listLuaObjectMembersFn = options.listLuaObjectMembers;
-	listLuaModuleSymbolsFn = options.listLuaModuleSymbols;
-	listLuaSymbolsFn = options.listLuaSymbols;
-	listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
-	listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
-	primaryAssetId = options.primaryAssetId;
+	ide_state.playerIndex = options.playerIndex;
+	ide_state.metadata = options.metadata;
+	ide_state.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
+	ide_state.loadSourceFn = options.loadSource;
+	ide_state.saveSourceFn = options.saveSource;
+	ide_state.listResourcesFn = options.listResources;
+	ide_state.loadLuaResourceFn = options.loadLuaResource;
+	ide_state.saveLuaResourceFn = options.saveLuaResource;
+	ide_state.createLuaResourceFn = options.createLuaResource;
+	ide_state.inspectLuaExpressionFn = options.inspectLuaExpression;
+	ide_state.listLuaObjectMembersFn = options.listLuaObjectMembers;
+	ide_state.listLuaModuleSymbolsFn = options.listLuaModuleSymbols;
+	ide_state.listLuaSymbolsFn = options.listLuaSymbols;
+	ide_state.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
+	ide_state.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
+	ide_state.primaryAssetId = options.primaryAssetId;
 	if ($.debug) {
-		listResourcesFn();
+		ide_state.listResourcesFn();
 	}
-	viewportWidth = options.viewport.width;
-	viewportHeight = options.viewport.height;
-	font = new ConsoleEditorFont(fontVariant);
-	clockNow = $.platform.clock.now;
-	searchField = createInlineTextField();
-	symbolSearchField = createInlineTextField();
-	resourceSearchField = createInlineTextField();
-	lineJumpField = createInlineTextField();
-	createResourceField = createInlineTextField();
-	applySearchFieldText(searchQuery, true);
-	applySymbolSearchFieldText(symbolSearchQuery, true);
-	applyResourceSearchFieldText(resourceSearchQuery, true);
-	applyLineJumpFieldText(lineJumpValue, true);
-	applyCreateResourceFieldText(createResourcePath, true);
-	lineHeight = font.lineHeight();
-	charAdvance = font.advance('M');
-	spaceAdvance = font.advance(' ');
-	layout = new ConsoleCodeLayout(font, semanticWorkspace, {
-		clockNow: clockNow,
+	ide_state.viewportWidth = options.viewport.width;
+	ide_state.viewportHeight = options.viewport.height;
+	ide_state.font = new ConsoleEditorFont(ide_state.fontVariant);
+	ide_state.clockNow = $.platform.clock.now;
+	ide_state.searchField = createInlineTextField();
+	ide_state.symbolSearchField = createInlineTextField();
+	ide_state.resourceSearchField = createInlineTextField();
+	ide_state.lineJumpField = createInlineTextField();
+	ide_state.createResourceField = createInlineTextField();
+	applySearchFieldText(ide_state.searchQuery, true);
+	applySymbolSearchFieldText(ide_state.symbolSearchQuery, true);
+	applyResourceSearchFieldText(ide_state.resourceSearchQuery, true);
+	applyLineJumpFieldText(ide_state.lineJumpValue, true);
+	applyCreateResourceFieldText(ide_state.createResourcePath, true);
+	ide_state.lineHeight = ide_state.font.lineHeight();
+	ide_state.charAdvance = ide_state.font.advance('M');
+	ide_state.spaceAdvance = ide_state.font.advance(' ');
+	ide_state.layout = new ConsoleCodeLayout(ide_state.font, ide_state.semanticWorkspace, {
+		clockNow: ide_state.clockNow,
 		getBuiltinIdentifiers: () => getBuiltinIdentifierSet(),
 	});
-	inlineFieldMetricsRef = {
+	ide_state.inlineFieldMetricsRef = {
 		measureText: (text: string) => measureText(text),
-		advanceChar: (ch: string) => font.advance(ch),
-		spaceAdvance: spaceAdvance,
+		advanceChar: (ch: string) => ide_state.font.advance(ch),
+		spaceAdvance: ide_state.spaceAdvance,
 		tabSpaces: constants.TAB_SPACES,
 	};
-	gutterWidth = 2;
-	const primaryBarHeight = lineHeight + 4;
-	headerHeight = primaryBarHeight;
-	tabBarHeight = lineHeight + 3;
-	baseBottomMargin = lineHeight + 6;
-	scrollbars = {
+	ide_state.gutterWidth = 2;
+	const primaryBarHeight = ide_state.lineHeight + 4;
+	ide_state.headerHeight = primaryBarHeight;
+	ide_state.tabBarHeight = ide_state.lineHeight + 3;
+	ide_state.baseBottomMargin = ide_state.lineHeight + 6;
+	ide_state.scrollbars = {
 		codeVertical: new ConsoleScrollbar('codeVertical', 'vertical'),
 		codeHorizontal: new ConsoleScrollbar('codeHorizontal', 'horizontal'),
 		resourceVertical: new ConsoleScrollbar('resourceVertical', 'vertical'),
 		resourceHorizontal: new ConsoleScrollbar('resourceHorizontal', 'horizontal'),
 		viewerVertical: new ConsoleScrollbar('viewerVertical', 'vertical'),
 	};
-	scrollbarController = new ScrollbarController(scrollbars as any);
-	resourcePanel = new ResourcePanelController({
-		getViewportWidth: () => viewportWidth,
-		getViewportHeight: () => viewportHeight,
+	ide_state.scrollbarController = new ScrollbarController(scrollbars as any);
+	ide_state.resourcePanel = new ResourcePanelController({
+		getViewportWidth: () => ide_state.viewportWidth,
+		getViewportHeight: () => ide_state.viewportHeight,
 		getBottomMargin: () => bottomMargin(),
 		codeViewportTop: () => codeViewportTop(),
-		lineHeight: lineHeight,
-		charAdvance: charAdvance,
+		lineHeight: ide_state.lineHeight,
+		charAdvance: ide_state.charAdvance,
 		measureText: (t) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, font, t, x, y, c),
-		drawColoredText: (a, t, colors, x, y) => drawEditorColoredText(a, font, t, colors, x, y, constants.COLOR_CODE_TEXT),
+		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
+		drawColoredText: (a, t, colors, x, y) => drawEditorColoredText(a, ide_state.font, t, colors, x, y, constants.COLOR_CODE_TEXT),
 		drawRectOutlineColor: (a, l, t, r, b, col) => drawRectOutlineColor(a, l, t, r, b, col),
-		playerIndex: playerIndex,
+		playerIndex: ide_state.playerIndex,
 		listResources: () => listResourcesStrict(),
 		openLuaCodeTab: (d) => openLuaCodeTab(d),
 		openResourceViewerTab: (d) => openResourceViewerTab(d),
 		focusEditorFromResourcePanel: () => focusEditorFromResourcePanel(),
-		showMessage: (text, color, duration) => showMessage(text, color, duration),
-	}, { resourceVertical: scrollbars.resourceVertical, resourceHorizontal: scrollbars.resourceHorizontal });
-	completion = new CompletionController({
-		getPlayerIndex: () => playerIndex,
+		showMessage:  (text, color, duration) => ide_state.showMessage(text, color, duration),
+	}, { resourceVertical: ide_state.scrollbars.resourceVertical, resourceHorizontal: ide_state.scrollbars.resourceHorizontal });
+	ide_state.completion = new CompletionController({
+		getPlayerIndex: () => ide_state.playerIndex,
 		isCodeTabActive: () => isCodeTabActive(),
-		getLines: () => lines,
-		getCursorRow: () => cursorRow,
-		getCursorColumn: () => cursorColumn,
-		setCursorPosition: (row, column) => { cursorRow = row; cursorColumn = column; },
-		setSelectionAnchor: (row, column) => { selectionAnchor = { row, column }; },
+		getLines: () => ide_state.lines,
+		getCursorRow: () => ide_state.cursorRow,
+		getCursorColumn: () => ide_state.cursorColumn,
+		setCursorPosition: (row, column) => { ide_state.cursorRow = row; ide_state.cursorColumn = column; },
+		setSelectionAnchor: (row, column) => { ide_state.selectionAnchor = { row, column }; },
 		replaceSelectionWith: (text) => replaceSelectionWith(text),
 		updateDesiredColumn: () => updateDesiredColumn(),
 		resetBlink: () => resetBlink(),
 		revealCursor: () => revealCursor(),
 		measureText: (text) => measureText(text),
-		drawText: (api, text, x, y, color) => drawEditorText(api, font, text, x, y, color),
-		getCursorScreenInfo: () => cursorScreenInfo,
-		getLineHeight: () => lineHeight,
-		getSpaceAdvance: () => spaceAdvance,
+		drawText: (api, text, x, y, color) => drawEditorText(api, ide_state.font, text, x, y, color),
+		getCursorScreenInfo: () => ide_state.cursorScreenInfo,
+		getLineHeight: () => ide_state.lineHeight,
+		getSpaceAdvance: () => ide_state.spaceAdvance,
 		getActiveCodeTabContext: () => getActiveCodeTabContext(),
 		resolveHoverAssetId: (ctx) => resolveHoverAssetId(ctx as any),
 		resolveHoverChunkName: (ctx) => resolveHoverChunkName(ctx as any),
-		listLuaSymbols: (assetId, chunk) => listLuaSymbolsFn(assetId, chunk),
-		listGlobalLuaSymbols: () => listGlobalLuaSymbolsFn(),
-		listLuaModuleSymbols: (moduleName) => listLuaModuleSymbolsFn(moduleName),
-		listBuiltinLuaFunctions: () => listBuiltinLuaFunctionsFn(),
+		listLuaSymbols: (assetId, chunk) => ide_state.listLuaSymbolsFn(assetId, chunk),
+		listGlobalLuaSymbols: () => ide_state.listGlobalLuaSymbolsFn(),
+		listLuaModuleSymbols: (moduleName) => ide_state.listLuaModuleSymbolsFn(moduleName),
+		listBuiltinLuaFunctions: () => ide_state.listBuiltinLuaFunctionsFn(),
 		getSemanticDefinitions: () => getActiveSemanticDefinitions(),
 		getLuaModuleAliases: (chunkName) => getLuaModuleAliases(chunkName),
 		getMemberCompletionItems: (request) => buildMemberCompletionItems(request),
 		charAt: (r, c) => charAt(r, c),
-		getTextVersion: () => textVersion,
-		shouldFireRepeat: (kb, code, dt) => input.shouldRepeatPublic(kb, code, dt),
+		getTextVersion: () => ide_state.textVersion,
+		shouldFireRepeat: (kb, code, dt) => ide_state.input.shouldRepeatPublic(kb, code, dt),
 	});
-	completion.setEnterCommitsEnabled(false);
-	input = new InputController({
-		getPlayerIndex: () => playerIndex,
+	ide_state.completion.setEnterCommitsEnabled(false);
+	ide_state.input = new InputController({
+		getPlayerIndex: () => ide_state.playerIndex,
 		isCodeTabActive: () => isCodeTabActive(),
-		getLines: () => lines,
-		setLines: (lines) => { lines = lines; markDiagnosticsDirty(); },
-		getCursorRow: () => cursorRow,
-		getCursorColumn: () => cursorColumn,
-		setCursorPosition: (row, column) => { cursorRow = row; cursorColumn = column; },
-		setSelectionAnchor: (row, column) => { selectionAnchor = { row, column }; },
+		getLines: () => ide_state.lines,
+		setLines: (lines) => { ide_state.lines = lines; markDiagnosticsDirty(); },
+		getCursorRow: () => ide_state.cursorRow,
+		getCursorColumn: () => ide_state.cursorColumn,
+		setCursorPosition: (row, column) => { ide_state.cursorRow = row; ide_state.cursorColumn = column; },
+		setSelectionAnchor: (row, column) => { ide_state.selectionAnchor = { row, column }; },
 		getSelection: () => getSelectionRange(),
-		clearSelection: () => { selectionAnchor = null; },
+		clearSelection: () => { ide_state.selectionAnchor = null; },
 		updateDesiredColumn: () => updateDesiredColumn(),
 		resetBlink: () => resetBlink(),
 		revealCursor: () => revealCursor(),
@@ -11114,53 +10910,53 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		navigateBackward: () => goBackwardInNavigationHistory(),
 		navigateForward: () => goForwardInNavigationHistory(),
 	});
-	problemsPanel = new ProblemsPanelController({
-		lineHeight: lineHeight,
+	ide_state.problemsPanel = new ProblemsPanelController({
+		lineHeight: ide_state.lineHeight,
 		measureText: (text) => measureText(text),
-		drawText: (api, text, x, y, color) => drawEditorText(api, font, text, x, y, color),
+		drawText: (api, text, x, y, color) => drawEditorText(api, ide_state.font, text, x, y, color),
 		drawRectOutlineColor: (api, l, t, r, b, col) => drawRectOutlineColor(api, l, t, r, b, col),
 		truncateTextToWidth: (text, maxWidth) => truncateTextToWidth(text, maxWidth),
 		gotoDiagnostic: (diagnostic) => gotoDiagnostic(diagnostic),
 	});
-	problemsPanel.setDiagnostics(diagnostics);
-	renameController = new RenameController({
+	ide_state.problemsPanel.setDiagnostics(ide_state.diagnostics);
+	ide_state.renameController = new RenameController({
 		processFieldEdit: (field, keyboard, options) => processInlineFieldEditing(field, keyboard, options),
 		shouldFireRepeat: (keyboard, code, deltaSeconds) => shouldFireRepeat(keyboard, code, deltaSeconds),
 		undo: () => undo(),
 		redo: () => redo(),
-		showMessage: (text, color, duration) => showMessage(text, color, duration),
+		showMessage:  (text, color, duration) => ide_state.showMessage(text, color, duration),
 		commitRename: (payload) => commitRename(payload),
 		onRenameSessionClosed: () => focusEditorFromRename(),
-	}, referenceState, playerIndex);
-	codeVerticalScrollbarVisible = false;
-	codeHorizontalScrollbarVisible = false;
-	cachedVisibleRowCount = 1;
-	cachedVisibleColumnCount = 1;
+	}, ide_state.referenceState, ide_state.playerIndex);
+	ide_state.codeVerticalScrollbarVisible = false;
+	ide_state.codeHorizontalScrollbarVisible = false;
+	ide_state.cachedVisibleRowCount = 1;
+	ide_state.cachedVisibleColumnCount = 1;
 	const entryContext = createEntryTabContext();
 	if (entryContext) {
-		entryTabId = entryContext.id;
-		codeTabContexts.set(entryContext.id, entryContext);
+		ide_state.entryTabId = entryContext.id;
+		ide_state.codeTabContexts.set(entryContext.id, entryContext);
 	}
 	initializeTabs(entryContext);
 	resetResourcePanelState();
 	if (entryContext) {
 		activateCodeEditorTab(entryContext.id);
 	}
-	desiredColumn = cursorColumn;
+	ide_state.desiredColumn = ide_state.cursorColumn;
 	assertMonospace();
-	const initialContext = entryContext ? codeTabContexts.get(entryContext.id) ?? null : null;
-	lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
+	const initialContext = entryContext ? ide_state.codeTabContexts.get(entryContext.id) ?? null : null;
+	ide_state.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
 	$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 	applyResolutionModeToRuntime();
-	pendingWindowFocused = windowFocused;
+	ide_state.pendingWindowFocused = ide_state.windowFocused;
 	installPlatformVisibilityListener();
 	installWindowEventListeners();
-	navigationHistory.current = createNavigationEntry();
+	ide_state.navigationHistory.current = createNavigationEntry();
 }export function updateBlink(deltaSeconds: number): void {
-	blinkTimer += deltaSeconds;
-	if (blinkTimer >= constants.CURSOR_BLINK_INTERVAL) {
-		blinkTimer -= constants.CURSOR_BLINK_INTERVAL;
-		cursorVisible = !cursorVisible;
+	ide_state.blinkTimer += deltaSeconds;
+	if (ide_state.blinkTimer >= constants.CURSOR_BLINK_INTERVAL) {
+		ide_state.blinkTimer -= constants.CURSOR_BLINK_INTERVAL;
+		ide_state.cursorVisible = !ide_state.cursorVisible;
 	}
 }
 export const caretNavigation = new CaretNavigationState();
@@ -11171,8 +10967,8 @@ export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: n
 	const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + info.width));
 	const caretTop = Math.floor(cursorY);
 	const caretBottom = caretTop + info.height;
-	const problemsPanelHasFocus = problemsPanel.isVisible() && problemsPanel.isFocused();
-	if (searchActive || lineJumpActive || resourcePanelFocused || createResourceActive || problemsPanelHasFocus) {
+	const problemsPanelHasFocus = ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused();
+	if (ide_state.searchActive || ide_state.lineJumpActive || ide_state.resourcePanelFocused || ide_state.createResourceActive || problemsPanelHasFocus) {
 		const innerLeft = caretLeft + 1;
 		const innerRight = caretRight - 1;
 		const innerTop = caretTop + 1;
@@ -11181,14 +10977,14 @@ export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: n
 			api.rectfill(innerLeft, innerTop, innerRight, innerBottom, constants.COLOR_CODE_BACKGROUND);
 		}
 		drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
-		drawEditorColoredText(api, font, info.baseChar, [info.baseColor], cursorX, cursorY, info.baseColor);
+		drawEditorColoredText(api, ide_state.font, info.baseChar, [info.baseColor], cursorX, cursorY, info.baseColor);
 	} else {
 		api.rectfill_color(caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
 		const caretPaletteIndex = resolvePaletteIndex(constants.CARET_COLOR);
 		const caretInverseColor = caretPaletteIndex !== null
 			? invertColorIndex(caretPaletteIndex)
 			: invertColorIndex(info.baseColor);
-		drawEditorColoredText(api, font, info.baseChar, [caretInverseColor], cursorX, cursorY, caretInverseColor);
+		drawEditorColoredText(api, ide_state.font, info.baseChar, [caretInverseColor], cursorX, cursorY, caretInverseColor);
 	}
 }
 export function drawInlineCaret(
@@ -11203,7 +10999,7 @@ export function drawInlineCaret(
 	caretColor: { r: number; g: number; b: number; a: number; } = constants.CARET_COLOR,
 	baseTextColor: number = constants.COLOR_STATUS_TEXT
 ): void {
-	if (!cursorVisible) {
+	if (!ide_state.cursorVisible) {
 		return;
 	}
 	if (active) {
@@ -11213,7 +11009,7 @@ export function drawInlineCaret(
 			? invertColorIndex(caretIndex)
 			: invertColorIndex(baseTextColor);
 		const glyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
-		drawEditorText(api, font, glyph.length > 0 ? glyph : ' ', cursorX, top, inverseColor);
+		drawEditorText(api, ide_state.font, glyph.length > 0 ? glyph : ' ', cursorX, top, inverseColor);
 		return;
 	}
 	drawRectOutlineColor(api, left, top, right, bottom, caretColor);
