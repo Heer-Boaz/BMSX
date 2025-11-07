@@ -185,58 +185,58 @@ const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'sta
 const GLOBAL_SEARCH_RESULT_LIMIT = constants.SEARCH_MAX_RESULTS * 4;
 
 // Intellisense data is handled by CompletionController
-let metadata: BmsxConsoleMetadata;
-let fontVariant: ConsoleFontVariant;
-let loadSourceFn: () => string;
-let saveSourceFn: (source: string) => Promise<void>;
-let loadLuaResourceFn: (assetId: string) => string;
-let saveLuaResourceFn: (assetId: string, source: string) => Promise<void>;
-let createLuaResourceFn: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
-let listResourcesFn: () => ConsoleResourceDescriptor[];
-let inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
-let listLuaObjectMembersFn: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
-let listLuaModuleSymbolsFn: (moduleName: string) => ConsoleLuaSymbolEntry[];
-let listLuaSymbolsFn: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
-let listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
-let listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
-let primaryAssetId: string | null;
-let builtinIdentifierCache: { key: string; set: ReadonlySet<string> } | null = null;
-let hoverTooltip: CodeHoverTooltip | null = null;
-let lastPointerSnapshot: PointerSnapshot | null = null;
-let lastInspectorResult: ConsoleLuaHoverResult | null = null;
-let inspectorRequestFailed = false;
-let gotoHoverHighlight: { row: number; startColumn: number; endColumn: number; expression: string } | null = null;
-let viewportWidth: number;
-let viewportHeight: number;
-let font: ConsoleEditorFont;
-let lineHeight: number;
-let charAdvance: number;
-let spaceAdvance: number;
-let gutterWidth: number;
-let headerHeight: number;
-let tabBarHeight: number;
-let tabBarRowCount = 1;
-let baseBottomMargin: number;
-const repeatState: Map<string, RepeatEntry> = new Map();
-const message: MessageState = { text: '', color: constants.COLOR_STATUS_TEXT, timer: 0, visible: false };
-let deferredMessageDuration: number | null = null;
-let runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
-let executionStopRow: number | null = null;
-let clockNow: () => number;
-let problemsPanel: ProblemsPanelController;
-let problemsPanelResizing = false;
-let diagnostics: EditorDiagnostic[] = [];
-let diagnosticsByRow: Map<number, EditorDiagnostic[]> = new Map();
-let diagnosticsDirty = true;
-const diagnosticsDebounceMs = 200;
-let diagnosticsCache: Map<string, DiagnosticsCacheEntry> = new Map();
-let dirtyDiagnosticContexts: Set<string> = new Set();
-let diagnosticsDueAtMs: number | null = null;
-let diagnosticsComputationScheduled = false;
-const codeTabContexts: Map<string, CodeTabContext> = new Map();
-let activeCodeTabContextId: string | null = null;
-let entryTabId: string | null = null;
-const captureKeys: string[] = [...new Set([
+export let metadata: BmsxConsoleMetadata;
+export let fontVariant: ConsoleFontVariant;
+export let loadSourceFn: () => string;
+export let saveSourceFn: (source: string) => Promise<void>;
+export let loadLuaResourceFn: (assetId: string) => string;
+export let saveLuaResourceFn: (assetId: string, source: string) => Promise<void>;
+export let createLuaResourceFn: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
+export let listResourcesFn: () => ConsoleResourceDescriptor[];
+export let inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
+export let listLuaObjectMembersFn: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
+export let listLuaModuleSymbolsFn: (moduleName: string) => ConsoleLuaSymbolEntry[];
+export let listLuaSymbolsFn: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
+export let listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
+export let listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
+export let primaryAssetId: string | null;
+export let builtinIdentifierCache: { key: string; set: ReadonlySet<string> } | null = null;
+export let hoverTooltip: CodeHoverTooltip | null = null;
+export let lastPointerSnapshot: PointerSnapshot | null = null;
+export let lastInspectorResult: ConsoleLuaHoverResult | null = null;
+export let inspectorRequestFailed = false;
+export let gotoHoverHighlight: { row: number; startColumn: number; endColumn: number; expression: string } | null = null;
+export let viewportWidth: number;
+export let viewportHeight: number;
+export let font: ConsoleEditorFont;
+export let lineHeight: number;
+export let charAdvance: number;
+export let spaceAdvance: number;
+export let gutterWidth: number;
+export let headerHeight: number;
+export let tabBarHeight: number;
+export let tabBarRowCount = 1;
+export let baseBottomMargin: number;
+export const repeatState: Map<string, RepeatEntry> = new Map();
+export const message: MessageState = { text: '', color: constants.COLOR_STATUS_TEXT, timer: 0, visible: false };
+export let deferredMessageDuration: number | null = null;
+export let runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
+export let executionStopRow: number | null = null;
+export let clockNow: () => number;
+export let problemsPanel: ProblemsPanelController;
+export let problemsPanelResizing = false;
+export let diagnostics: EditorDiagnostic[] = [];
+export let diagnosticsByRow: Map<number, EditorDiagnostic[]> = new Map();
+export let diagnosticsDirty = true;
+export const diagnosticsDebounceMs = 200;
+export let diagnosticsCache: Map<string, DiagnosticsCacheEntry> = new Map();
+export let dirtyDiagnosticContexts: Set<string> = new Set();
+export let diagnosticsDueAtMs: number | null = null;
+export let diagnosticsComputationScheduled = false;
+export const codeTabContexts: Map<string, CodeTabContext> = new Map();
+export let activeCodeTabContextId: string | null = null;
+export let entryTabId: string | null = null;
+export const captureKeys: string[] = [...new Set([
 	EDITOR_TOGGLE_KEY,
 	ESCAPE_KEY,
 	'ArrowUp',
@@ -258,7 +258,7 @@ const captureKeys: string[] = [...new Set([
 	'NumpadDivide',
 	...CHARACTER_CODES,
 ])];
-const topBarButtonBounds: Record<TopBarButtonId, RectBounds> = {
+export const topBarButtonBounds: Record<TopBarButtonId, RectBounds> = {
 	resume: { left: 0, top: 0, right: 0, bottom: 0 },
 	reboot: { left: 0, top: 0, right: 0, bottom: 0 },
 	save: { left: 0, top: 0, right: 0, bottom: 0 },
@@ -268,135 +268,130 @@ const topBarButtonBounds: Record<TopBarButtonId, RectBounds> = {
 	resolution: { left: 0, top: 0, right: 0, bottom: 0 },
 	wrap: { left: 0, top: 0, right: 0, bottom: 0 },
 };
-const tabButtonBounds: Map<string, RectBounds> = new Map();
-const tabCloseButtonBounds: Map<string, RectBounds> = new Map();
-let resourceViewerSpriteId: string | null = null;
-let resourceViewerSpriteAsset: string | null = null;
-let resourceViewerSpriteScale = 1;
-const actionPromptButtons: { saveAndContinue: RectBounds | null; continue: RectBounds; cancel: RectBounds } = {
+export const tabButtonBounds: Map<string, RectBounds> = new Map();
+export const tabCloseButtonBounds: Map<string, RectBounds> = new Map();
+export let resourceViewerSpriteId: string | null = null;
+export let resourceViewerSpriteAsset: string | null = null;
+export let resourceViewerSpriteScale = 1;
+export const actionPromptButtons: { saveAndContinue: RectBounds | null; continue: RectBounds; cancel: RectBounds } = {
 	saveAndContinue: null,
 	continue: { left: 0, top: 0, right: 0, bottom: 0 },
 	cancel: { left: 0, top: 0, right: 0, bottom: 0 },
 };
-let pendingActionPrompt: PendingActionPrompt | null = null;
-let active = false;
-let blinkTimer = 0;
-let cursorVisible = true;
-let warnNonMonospace = false;
-let pointerSelecting = false;
-let pointerPrimaryWasPressed = false;
-let pointerAuxWasPressed = false;
-let searchField: InlineTextField;
-let symbolSearchField: InlineTextField;
-let resourceSearchField: InlineTextField;
-let lineJumpField: InlineTextField;
-let createResourceField: InlineTextField;
-let inlineFieldMetricsRef: InlineFieldMetrics;
-let scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
-let scrollbarController: ScrollbarController;
-let input: InputController;
-let toggleInputLatch = false;
-let windowFocused = true;
-let pendingWindowFocused = true;
-let disposeVisibilityListener: (() => void) | null = null;
-let disposeWindowEventListeners: (() => void) | null = null;
-let lastPointerClickTimeMs = 0;
-let lastPointerClickRow = -1;
-let lastPointerClickColumn = -1;
-let tabHoverId: string | null = null;
-let tabDragState: TabDragState | null = null;
-let crtOptionsSnapshot: CrtOptionsSnapshot | null = null;
-let resolutionMode: EditorResolutionMode = 'viewport';
-let cursorRevealSuspended = false;
-let searchActive = false;
-let searchVisible = false;
-let searchQuery = '';
-let symbolSearchQuery = '';
-let resourceSearchQuery = '';
-// Completion session state is fully handled by CompletionController
-let pendingEditContext: EditContext | null = null;
-let cursorScreenInfo: CursorScreenInfo | null = null;
-// parameter hints managed by completion controller
-let lineJumpActive = false;
-let symbolSearchActive = false;
-let symbolSearchVisible = false;
-let symbolSearchGlobal = false;
-let symbolSearchMode: 'symbols' | 'references' = 'symbols';
-let resourceSearchActive = false;
-let resourceSearchVisible = false;
-let lineJumpVisible = false;
-let lineJumpValue = '';
-let createResourceActive = false;
-let createResourceVisible = false;
-let createResourcePath = '';
-let createResourceError: string | null = null;
-let createResourceWorking = false;
-let lastCreateResourceDirectory: string | null = null;
-// completion session auto-trigger handled by completion controller
-let symbolCatalog: SymbolCatalogEntry[] = [];
-let referenceCatalog: ReferenceCatalogEntry[] = [];
-let symbolCatalogContext: { scope: 'local' | 'global'; assetId: string | null; chunkName: string | null } | null = null;
-let symbolSearchMatches: SymbolSearchResult[] = [];
-let symbolSearchSelectionIndex = -1;
-let symbolSearchDisplayOffset = 0;
-let symbolSearchHoverIndex = -1;
-let resourceCatalog: ResourceCatalogEntry[] = [];
-let resourceSearchMatches: ResourceSearchResult[] = [];
-let resourceSearchSelectionIndex = -1;
-let resourceSearchDisplayOffset = 0;
-let resourceSearchHoverIndex = -1;
-let searchMatches: SearchMatch[] = [];
-let searchCurrentIndex = -1;
-let searchJob: SearchComputationJob | null = null;
-let searchDisplayOffset = 0;
-let searchHoverIndex = -1;
-let searchScope: 'local' | 'global' = 'local';
-let globalSearchMatches: GlobalSearchMatch[] = [];
-let globalSearchJob: GlobalSearchJob | null = null;
-const backgroundTasks: Array<() => boolean> = [];
-let backgroundTaskHandle: TimerHandle | null = null;
-const backgroundTaskBudgetMs = 2.0;
-let diagnosticsTaskPending = false;
-let lastReportedSemanticError: string | null = null;
-const referenceState: ReferenceState = new ReferenceState();
-let textVersion = 0;
-let saveGeneration = 0;
-let appliedGeneration = 0;
-let lastSavedSource = '';
-let tabs: EditorTabDescriptor[] = [];
-let activeTabId: string | null = null;
-let resourceBrowserItems: ResourceBrowserItem[] = [];
-let resourceBrowserSelectionIndex = -1;
-// removed legacy hover field; hover state is owned by ResourcePanelController
-let resourcePanelVisible = false;
-let resourcePanelFocused = false;
-let resourcePanelResourceCount = 0;
-let pendingResourceSelectionAssetId: string | null = null;
-let resourcePanelWidthRatio: number | null = null;
-let resourcePanelResizing = false;
-// max line width computed by ResourcePanelController
-let resourcePanel: ResourcePanelController;
-let renameController: RenameController;
-let semanticWorkspace: LuaSemanticWorkspace = new LuaSemanticWorkspace();
-let layout: ConsoleCodeLayout;
-let codeVerticalScrollbarVisible = false;
-let codeHorizontalScrollbarVisible = false;
-let cachedVisibleRowCount = 1;
-let cachedVisibleColumnCount = 1;
-let dimCrtInEditor: boolean = false; // Default value; can be changed via settings
-let wordWrapEnabled = true;
-let lastPointerRowResolution: { visualIndex: number; segment: VisualLineSegment | null } | null = null;
-let completion: CompletionController;
-const NAVIGATION_HISTORY_LIMIT = 64;
-const navigationHistory = {
+export let pendingActionPrompt: PendingActionPrompt | null = null;
+export let active = false;
+export let blinkTimer = 0;
+export let cursorVisible = true;
+export let warnNonMonospace = false;
+export let pointerSelecting = false;
+export let pointerPrimaryWasPressed = false;
+export let pointerAuxWasPressed = false;
+export let searchField: InlineTextField;
+export let symbolSearchField: InlineTextField;
+export let resourceSearchField: InlineTextField;
+export let lineJumpField: InlineTextField;
+export let createResourceField: InlineTextField;
+export let inlineFieldMetricsRef: InlineFieldMetrics;
+export let scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
+export let scrollbarController: ScrollbarController;
+export let input: InputController;
+export let toggleInputLatch = false;
+export let windowFocused = true;
+export let pendingWindowFocused = true;
+export let disposeVisibilityListener: (() => void) | null = null;
+export let disposeWindowEventListeners: (() => void) | null = null;
+export let lastPointerClickTimeMs = 0;
+export let lastPointerClickRow = -1;
+export let lastPointerClickColumn = -1;
+export let tabHoverId: string | null = null;
+export let tabDragState: TabDragState | null = null;
+export let crtOptionsSnapshot: CrtOptionsSnapshot | null = null;
+export let resolutionMode: EditorResolutionMode = 'viewport';
+export let cursorRevealSuspended = false;
+export let searchActive = false;
+export let searchVisible = false;
+export let searchQuery = '';
+export let symbolSearchQuery = '';
+export let resourceSearchQuery = '';
+export let pendingEditContext: EditContext | null = null;
+export let cursorScreenInfo: CursorScreenInfo | null = null;
+export let lineJumpActive = false;
+export let symbolSearchActive = false;
+export let symbolSearchVisible = false;
+export let symbolSearchGlobal = false;
+export let symbolSearchMode: 'symbols' | 'references' = 'symbols';
+export let resourceSearchActive = false;
+export let resourceSearchVisible = false;
+export let lineJumpVisible = false;
+export let lineJumpValue = '';
+export let createResourceActive = false;
+export let createResourceVisible = false;
+export let createResourcePath = '';
+export let createResourceError: string | null = null;
+export let createResourceWorking = false;
+export let lastCreateResourceDirectory: string | null = null;
+export let symbolCatalog: SymbolCatalogEntry[] = [];
+export let referenceCatalog: ReferenceCatalogEntry[] = [];
+export let symbolCatalogContext: { scope: 'local' | 'global'; assetId: string | null; chunkName: string | null } | null = null;
+export let symbolSearchMatches: SymbolSearchResult[] = [];
+export let symbolSearchSelectionIndex = -1;
+export let symbolSearchDisplayOffset = 0;
+export let symbolSearchHoverIndex = -1;
+export let resourceCatalog: ResourceCatalogEntry[] = [];
+export let resourceSearchMatches: ResourceSearchResult[] = [];
+export let resourceSearchSelectionIndex = -1;
+export let resourceSearchDisplayOffset = 0;
+export let resourceSearchHoverIndex = -1;
+export let searchMatches: SearchMatch[] = [];
+export let searchCurrentIndex = -1;
+export let searchJob: SearchComputationJob | null = null;
+export let searchDisplayOffset = 0;
+export let searchHoverIndex = -1;
+export let searchScope: 'local' | 'global' = 'local';
+export let globalSearchMatches: GlobalSearchMatch[] = [];
+export let globalSearchJob: GlobalSearchJob | null = null;
+export const backgroundTasks: Array<() => boolean> = [];
+export let backgroundTaskHandle: TimerHandle | null = null;
+export const backgroundTaskBudgetMs = 2.0;
+export let diagnosticsTaskPending = false;
+export let lastReportedSemanticError: string | null = null;
+export const referenceState: ReferenceState = new ReferenceState();
+export let textVersion = 0;
+export let saveGeneration = 0;
+export let appliedGeneration = 0;
+export let lastSavedSource = '';
+export let tabs: EditorTabDescriptor[] = [];
+export let activeTabId: string | null = null;
+export let resourceBrowserItems: ResourceBrowserItem[] = [];
+export let resourceBrowserSelectionIndex = -1;
+export let resourcePanelVisible = false;
+export let resourcePanelFocused = false;
+export let resourcePanelResourceCount = 0;
+export let pendingResourceSelectionAssetId: string | null = null;
+export let resourcePanelWidthRatio: number | null = null;
+export let resourcePanelResizing = false;
+export let resourcePanel: ResourcePanelController;
+export let renameController: RenameController;
+export let semanticWorkspace: LuaSemanticWorkspace = new LuaSemanticWorkspace();
+export let layout: ConsoleCodeLayout;
+export let codeVerticalScrollbarVisible = false;
+export let codeHorizontalScrollbarVisible = false;
+export let cachedVisibleRowCount = 1;
+export let cachedVisibleColumnCount = 1;
+export let dimCrtInEditor: boolean = false; // Default value; can be changed via settings
+export let wordWrapEnabled = true;
+export let lastPointerRowResolution: { visualIndex: number; segment: VisualLineSegment | null } | null = null;
+export let completion: CompletionController;
+export const NAVIGATION_HISTORY_LIMIT = 64;
+export const navigationHistory = {
 	back: [] as NavigationHistoryEntry[],
 	forward: [] as NavigationHistoryEntry[],
 	current: null as NavigationHistoryEntry | null,
 };
-let navigationCaptureSuspended = false;
+export let navigationCaptureSuspended = false;
 
-const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
-let customClipboard: string | null = null;
+export const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
+export let customClipboard: string | null = null;
 
 function activeSearchMatchCount(): number {
 	return searchScope === 'global' ? globalSearchMatches.length : searchMatches.length;
@@ -699,22 +694,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.installPlatformVisibilityListener();
 		this.installWindowEventListeners();
 		navigationHistory.current = this.createNavigationEntry();
-	}
-
-	protected get wordWrapEnabled(): boolean {
-		return wordWrapEnabled;
-	}
-
-	protected set wordWrapEnabled(value: boolean) {
-		wordWrapEnabled = value;
-	}
-
-	protected get cursorRevealSuspended(): boolean {
-		return cursorRevealSuspended;
-	}
-
-	protected set cursorRevealSuspended(value: boolean) {
-		cursorRevealSuspended = value;
 	}
 
 	public installPlatformVisibilityListener(): void {

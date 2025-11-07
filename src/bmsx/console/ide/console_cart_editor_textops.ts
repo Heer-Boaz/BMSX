@@ -7,6 +7,7 @@ import {
 } from './input_helpers';
 import { CaretNavigationState, resolveIndentAwareHome, resolveSegmentEnd } from './caret_navigation';
 import type { EditorSnapshot, Position, VisualLineSegment } from './types';
+import { wordWrapEnabled } from './console_cart_editor';
 
 /**
  * ConsoleCartEditorTextOps hosts the core text-buffer state and mutation logic for ConsoleCartEditor.
@@ -41,8 +42,6 @@ export abstract class ConsoleCartEditorTextOps {
 	}
 
 	protected abstract readonly playerIndex: number;
-	protected abstract wordWrapEnabled: boolean;
-	protected abstract cursorRevealSuspended: boolean;
 
 	protected abstract resetBlink(): void;
 	protected abstract revealCursor(): void;
@@ -163,7 +162,7 @@ export abstract class ConsoleCartEditorTextOps {
 				this.cursorColumn -= 1;
 			} else {
 				let moved = false;
-				if (this.wordWrapEnabled && visualIndex > 0) {
+				if (wordWrapEnabled && visualIndex > 0) {
 					const prevSegment = this.visualIndexToSegment(visualIndex - 1);
 					if (prevSegment && prevSegment.row === segment.row) {
 						this.cursorRow = prevSegment.row;
@@ -187,7 +186,7 @@ export abstract class ConsoleCartEditorTextOps {
 				this.cursorColumn += 1;
 			} else {
 				let moved = false;
-				if (this.wordWrapEnabled && visualIndex < visualCount - 1) {
+				if (wordWrapEnabled && visualIndex < visualCount - 1) {
 					const nextSegment = this.visualIndexToSegment(visualIndex + 1);
 					if (nextSegment && nextSegment.row === segment.row) {
 						this.cursorRow = nextSegment.row;
@@ -1332,7 +1331,7 @@ export abstract class ConsoleCartEditorTextOps {
 	}
 
 	protected clampScrollColumn(): void {
-		if (this.wordWrapEnabled) {
+		if (wordWrapEnabled) {
 			this.scrollColumn = 0;
 			return;
 		}
