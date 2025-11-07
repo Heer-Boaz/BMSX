@@ -58,7 +58,7 @@ function ensureHudElement(): HTMLElement {
 			(content as HTMLElement).style.display = collapsed ? 'none' : '';
 			btnMin.textContent = collapsed ? '+' : '–';
 		});
-		btnClose.addEventListener('click', (ev) => { ev.stopPropagation(); overlay.disable(); });
+	btnClose.addEventListener('click', (ev) => { ev.stopPropagation(); overlay?.disable(); });
 	}
 	return el;
 }
@@ -148,10 +148,11 @@ export class ECSHUDOverlay {
 	public unbind(): void { EventEmitter.instance.removeSubscriber(this); }
 }
 
-const overlay = new ECSHUDOverlay();
-overlay.bind();
+const overlay: ECSHUDOverlay | null = typeof document === 'undefined' ? null : new ECSHUDOverlay();
+if (overlay) overlay.bind();
 
 export function toggleECSHUD(): void {
+	if (!overlay) return;
 	if (overlay.enabled) overlay.disable();
 	else overlay.enable();
 }

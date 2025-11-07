@@ -1,4 +1,4 @@
-import type { EventLane, EventScope } from "../core/eventemitter";
+import { EventEmitter, type EventLane, type EventScope } from "../core/eventemitter";
 import { deepClone, deepEqual } from '../utils/utils';
 import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';
 import type { Identifier } from '../rompack/rompack';
@@ -30,6 +30,79 @@ export const StateDefinitions: Record<string, StateDefinition> = {};
 export const ActiveStateMachines: Map<string, State<Stateful>[]> = new Map();
 const stateMachineBlueprintSignatures: Map<Identifier, string> = new Map();
 type GenericHandler = (this: any, ...args: any[]) => any;
+function filterValidStateMachineInstances(machineId: Identifier, instances: ReadonlyArray<State<Stateful>> | undefined): State<Stateful>[] {
+	if (!instances || instances.length === 0) {
+		ActiveStateMachines.delete(machineId);
+		return [];
+	}
+	const valid: State<Stateful>[] = [];
+	let mutated = false;
+	for (const instance of instances) {
+		if (!instance || !instance.target || !instance.target.sc) {
+			mutated = true;
+			continue;
+		}
+		valid.push(instance);
+	}
+	if (mutated) {
+		if (valid.length === 0) {
+			ActiveStateMachines.delete(machineId);
+		} else {
+			ActiveStateMachines.set(machineId, valid);
+		}
+	}
+	return valid;
+}
+
+function collectControllers(instances: readonly State<Stateful>[]): Set<any> {
+	const controllers = new Set<any>();
+	for (const instance of instances) {
+		const target = instance.target;
+		const controller = target?.sc;
+		if (controller) controllers.add(controller);
+	}
+	return controllers;
+}
+
+function unsubscribeStateMachineEvents(instances: readonly State<Stateful>[], definition?: StateDefinition): void {
+	if (!definition || !definition.event_list || definition.event_list.length === 0) return;
+	for (const instance of instances) {
+		const target = instance.target;
+		const controller = target?.sc;
+		if (!controller) continue;
+		const cache = controller._subscribedCache;
+		for (const event of definition.event_list) {
+			let emitter: Identifier | undefined;
+			switch (event.scope) {
+				case 'self':
+					emitter = target.id;
+					break;
+				case 'all':
+				default:
+					emitter = undefined;
+					break;
+			}
+			EventEmitter.instance.off(event.name, controller.auto_dispatch, emitter, true);
+			const lane = event.lane ?? 'any';
+			const cacheKey = `${event.name}-${emitter ?? 'global'}-${lane}`;
+			cache.delete(cacheKey);
+		}
+	}
+}
+
+function hotReloadStateMachine(machineId: Identifier, previousDefinition: StateDefinition | undefined, newDefinition: StateDefinition): void {
+	if (!previousDefinition) return;
+	const instances = filterValidStateMachineInstances(machineId, ActiveStateMachines.get(machineId));
+	if (instances.length === 0) return;
+	const controllers = collectControllers(instances);
+	unsubscribeStateMachineEvents(instances, previousDefinition);
+	for (const instance of instances) {
+		migrateMachineDiff(instance, previousDefinition, newDefinition);
+	}
+	for (const controller of controllers) {
+		controller.bind();
+	}
+}
 
 function eventNameHasScope(name: string): boolean {
 	return name.startsWith('$');
@@ -387,6 +460,10 @@ export function applyPreparedStateMachine(machineName: Identifier, blueprint: St
 	stateMachineBlueprintSignatures.set(machineName, signature);
 	const clonedBlueprint = cloneBlueprint(blueprint) as StateMachineBlueprint;
 	rebuildStateMachine(machineName, clonedBlueprint);
+	const newDefinition = StateDefinitions[machineName];
+	if (newDefinition) {
+		hotReloadStateMachine(machineName, previousDefinition, newDefinition);
+	}
 	return { changed: true, previousDefinition };
 }
 

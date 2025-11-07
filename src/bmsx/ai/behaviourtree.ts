@@ -150,7 +150,24 @@ export function applyPreparedBehaviorTree(id: BehaviorTreeID, definition: Behavi
 		behaviorTreeDiagnostics.set(trimmed, [{ severity: 'error', message }]);
 		throw error;
 	}
+	refreshBehaviorTreeContexts([trimmed]);
 	return { changed: true, previousDefinition };
+}
+
+function refreshBehaviorTreeContexts(treeIds?: readonly string[]): void {
+	const world = $.world;
+	const filter = treeIds ? new Set(treeIds) : null;
+	for (const object of world.objects({ scope: 'all' })) {
+		const contexts = object.btreecontexts;
+		for (const treeId in contexts) {
+			if (filter && !filter.has(treeId)) continue;
+			const context = contexts[treeId];
+			const updatedRoot = instantiateBehaviorTree(treeId);
+			const wasEnabled = context.root.enabled;
+			context.root = updatedRoot;
+			if (!wasEnabled) updatedRoot.stop();
+		}
+	}
 }
 
 /**

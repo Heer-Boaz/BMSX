@@ -116,6 +116,7 @@ export class StateDefinition {
 
 	public event_list: { name: string; scope: EventScope; lane: EventLane | 'any' }[];
 
+
 	private get is_root(): boolean { return this.root === this; }
 
 	/**

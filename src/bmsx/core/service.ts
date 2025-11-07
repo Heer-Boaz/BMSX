@@ -2,7 +2,7 @@ import { type RegisterablePersistent, type Identifier, type Identifiable } from 
 import { EventEmitter } from './eventemitter';
 import { Stateful } from '../fsm/fsmtypes';
 import { StateMachineController } from '../fsm/fsmcontroller';
-import { StateDefinitions } from '../fsm/fsmlibrary';
+import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { Registry } from './registry';
 import { onload, type RevivableObjectArgs } from '../serializer/serializationhooks';
 
@@ -49,7 +49,7 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 		this.id = opts?.id ?? Service.deriveIdFromConstructor(this.constructor.name ?? 'service');
 
 		const fsmName = this.constructor.name;
-		const hasDef = !!StateDefinitions?.[fsmName];
+		const hasDef = !!StateDefinitionBuilders[fsmName];
 		this.sc = hasDef ? new StateMachineController({ ...opts, fsm_id: fsmName, id: this.id }) : new StateMachineController(opts);
 
 		// Register service in global registry

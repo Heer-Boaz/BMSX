@@ -1,23 +1,11 @@
+import './test_setup';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { rebuildStateMachine, StateDefinitions, migrateMachineDiff } from '../../src/bmsx/fsm/fsmlibrary';
+import { ActiveStateMachines, StateDefinitions, rebuildStateMachine, applyPreparedStateMachine } from '../../src/bmsx/fsm/fsmlibrary';
 import { State } from '../../src/bmsx/fsm/state';
 import type { StateMachineBlueprint, Stateful } from '../../src/bmsx/fsm/fsmtypes';
-import type { StateMachineController } from '../../src/bmsx/fsm/fsmcontroller';
 import { Registry } from '../../src/bmsx/core/registry';
-
-class DummyTarget implements Stateful {
-	public eventhandling_enabled = true;
-	public sc: StateMachineController;
-
-	constructor(public readonly id: string) {
-		this.sc = {} as StateMachineController;
-	}
-
-	bind(): void { /* no-op */ }
-	dispose(): void { /* no-op */ }
-}
 
 function cleanupDefinitions(machineId: string): void {
 	delete StateDefinitions[machineId];
@@ -44,14 +32,31 @@ test('active FSM instances adopt reloaded tape data, ticks, and markers', () => 
 		},
 	};
 	const idleBlueprintA = blueprintA.states!['#idle']!;
-	assert.ok(rebuildStateMachine(machineId, blueprintA), 'initial FSM definition must register');
 
-	const target = new DummyTarget(`target_${machineId}`);
+	const definitionA = rebuildStateMachine(machineId, blueprintA);
+	assert.ok(StateDefinitions[machineId], 'initial FSM definition must register');
+
+	const targetId = `target_${machineId}`;
+	const controllerStub = {
+		_subscribedCache: new Set<string>(),
+		bind(): void { /* no-op */ },
+		auto_dispatch(): void { /* no-op */ },
+	} as Record<string, any>;
+
+	const target = {
+		id: targetId,
+		eventhandling_enabled: true,
+		sc: controllerStub,
+		bind(): void { /* no-op */ },
+		dispose(): void { /* no-op */ },
+	} as unknown as Stateful;
+
 	registry.register(target);
 
 	const root = State.create(machineId, target.id);
 	const idle = root.states?.['#idle'];
 	assert.ok(idle, 'idle state should exist after construction');
+	ActiveStateMachines.set(machineId, [root]);
 
 	const firstThreshold = (idle as any)._tapeTickThreshold;
 	assert.equal(
@@ -72,11 +77,7 @@ test('active FSM instances adopt reloaded tape data, ticks, and markers', () => 
 		},
 	};
 	const idleBlueprintB = blueprintB.states!['#idle']!;
-	const previousDefinition = StateDefinitions[machineId];
-	assert.ok(previousDefinition, 'previous definition should be available before rebuild');
-	const nextDefinition = rebuildStateMachine(machineId, blueprintB);
-
-	migrateMachineDiff(root, previousDefinition, nextDefinition);
+	applyPreparedStateMachine(machineId, blueprintB, { force: true });
 
 	const refreshedThreshold = (idle as any)._tapeTickThreshold;
 	assert.equal(

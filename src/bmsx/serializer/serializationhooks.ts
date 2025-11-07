@@ -1,5 +1,26 @@
 import { normalizeDecoratedClassName } from '../utils/decorators';
-import { Serializer, Reviver, type ConstructorWithSaveGame } from './gameserializer';
+import * as GameSerializer from './gameserializer';
+import type { ConstructorWithSaveGame } from './gameserializer';
+
+function queueRegistration(fn: () => void): void {
+	queueMicrotask(fn);
+}
+
+function getSerializer() {
+	const serializer = GameSerializer.Serializer;
+	if (!serializer) {
+		throw new Error('Serializer not initialized yet.');
+	}
+	return serializer;
+}
+
+function getReviver() {
+	const reviver = GameSerializer.Reviver;
+	if (!reviver) {
+		throw new Error('Reviver not initialized yet.');
+	}
+	return reviver;
+}
 
 /**
  * Marks a static method as an `@onsave` hook.  The function must
@@ -16,10 +37,13 @@ export function onsave(value: (...args: any[]) => any, context: ClassMethodDecor
 			throw new Error('[@onsave] Decorated class must have a constructor name.');
 		}
 		const className = ctor.name;
-		Serializer.onSaves[className] ??= [];
-		if (!Serializer.onSaves[className].includes(method)) {
-			Serializer.onSaves[className].push(method);
-		}
+		queueRegistration(() => {
+			const serializer = getSerializer();
+			serializer.onSaves[className] ??= [];
+			if (!serializer.onSaves[className].includes(method)) {
+				serializer.onSaves[className].push(method);
+			}
+		});
 	};
 	if (context.static) {
 		context.addInitializer(function () { register(this); });
@@ -46,11 +70,15 @@ export function excludepropfromsavegame(_value: undefined, context: ClassFieldDe
 			throw new Error('[@excludepropfromsavegame] Decorated class must have a constructor name.');
 		}
 		const type = normalizeDecoratedClassName(ctor.name);
-		Serializer.excludedProperties[type] ??= {};
-		Serializer.excludedProperties[type][prop] = true;
+		queueRegistration(() => {
+			const serializer = getSerializer();
+			const reviver = getReviver();
+			serializer.excludedProperties[type] ??= {};
+			serializer.excludedProperties[type][prop] = true;
 
-		Reviver.excludedProperties[type] ??= {};
-		Reviver.excludedProperties[type][prop] = true; // also skip during hydration
+			reviver.excludedProperties[type] ??= {};
+			reviver.excludedProperties[type][prop] = true;
+		});
 	};
 	if (context.static) {
 		context.addInitializer(function () { register(this); });
@@ -78,11 +106,14 @@ export function onload(value: (...args: any[]) => any, context: ClassMethodDecor
 		}
 		const type = normalizeDecoratedClassName(ctor.name);
 
-		Reviver.onLoads ??= {};
-		Reviver.onLoads[type] ??= [];
-		if (!Reviver.onLoads[type].includes(method)) {
-			Reviver.onLoads[type].push(method);
-		}
+		queueRegistration(() => {
+			const reviver = getReviver();
+			reviver.onLoads ??= {};
+			reviver.onLoads[type] ??= [];
+			if (!reviver.onLoads[type].includes(method)) {
+				reviver.onLoads[type].push(method);
+			}
+		});
 	};
 	if (context.static) {
 		context.addInitializer(function () { register(this); });
@@ -165,21 +196,25 @@ export function insavegame(typeId: string): {
  * - Otherwise returns undefined.
  */
 export function insavegame(valueOrId: any, maybeContext?: ClassDecoratorContext) {
-	function register(ctor: any, typeId?: string) {
-		if (!ctor || typeof ctor !== 'function') {
-			throw new Error('[@insavegame] Decorator received an invalid constructor.');
-		}
-		let key = typeId ?? ctor.name;
-		if (!key) throw new Error('[@insavegame]: Failed to register class: no valid key found.');
-		// If no explicit typeId was supplied and the inferred class name starts with underscore
-		// (artifact of TS decorator transform emitting helper vars like _ClassName), strip it for the public key.
-		if (!typeId) key = normalizeDecoratedClassName(key);
-
-		Reviver.constructors ??= {};
-		Reviver.constructors[key] = ctor;
-		(ctor as ConstructorWithSaveGame).__exclude_savegame__ = false;
-		Serializer.classExcludeMap.set(key, false);
+function register(ctor: any, typeId?: string) {
+	if (!ctor || typeof ctor !== 'function') {
+		throw new Error('[@insavegame] Decorator received an invalid constructor.');
 	}
+	let key = typeId ?? ctor.name;
+	if (!key) throw new Error('[@insavegame]: Failed to register class: no valid key found.');
+	// If no explicit typeId was supplied and the inferred class name starts with underscore
+	// (artifact of TS decorator transform emitting helper vars like _ClassName), strip it for the public key.
+	if (!typeId) key = normalizeDecoratedClassName(key);
+
+	queueRegistration(() => {
+		const reviver = getReviver();
+		const serializer = getSerializer();
+		reviver.constructors ??= {};
+		reviver.constructors[key] = ctor;
+		(ctor as ConstructorWithSaveGame).__exclude_savegame__ = false;
+		serializer.classExcludeMap.set(key, false);
+	});
+}
 	if (typeof valueOrId === 'function' && maybeContext) {
 		register(valueOrId);
 		return undefined;
@@ -209,6 +244,9 @@ export function excludeclassfromsavegame(value: any, _context: ClassDecoratorCon
 		throw new Error('[@excludeclassfromsavegame] Target class must have a constructor name.');
 	}
 	const key = normalizeDecoratedClassName((value as Function).name);
-	Serializer.classExcludeMap.set(key, true);
-	Serializer.excludedObjectTypes.add(key);
+	queueRegistration(() => {
+		const serializer = getSerializer();
+		serializer.classExcludeMap.set(key, true);
+		serializer.excludedObjectTypes.add(key);
+	});
 }

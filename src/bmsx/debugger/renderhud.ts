@@ -317,14 +317,16 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 	}
 }
 
-const overlay = new RenderHUDOverlay();
-overlay.bind();
+const overlay: RenderHUDOverlay | null = typeof document === 'undefined' ? null : new RenderHUDOverlay();
+if (overlay) overlay.bind();
 
 export function toggleRenderHUD(): void {
+	if (!overlay) return;
 	if (overlay.enabled) overlay.disable();
 	else overlay.enable();
 }
 
 export function toggleRenderHUDAverageMode(): void {
+	if (!overlay) return;
 	overlay.toggleAverageMode();
 }

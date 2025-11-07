@@ -549,7 +549,27 @@ function rayCircleIntersect(px: number, py: number, rx: number, ry: number, cx: 
 	return t >= 0 ? t : (Math.max(t1, t2) >= 0 ? Math.max(t1, t2) : null);
 }
 
-export const Collision2DSystem = new Collision2DService();
+let collision2DInstance: Collision2DService | null = null;
+
+function getCollision2DInstance(): Collision2DService {
+	if (!collision2DInstance) {
+		collision2DInstance = new Collision2DService();
+	}
+	return collision2DInstance;
+}
+
+export const Collision2DSystem: Collision2DService = new Proxy({} as Collision2DService, {
+	get(_target, prop, receiver) {
+		const instance = getCollision2DInstance();
+		const value = Reflect.get(instance, prop, receiver);
+		return typeof value === 'function' ? value.bind(instance) : value;
+	},
+	set(_target, prop, value) {
+		const instance = getCollision2DInstance();
+		Reflect.set(instance, prop, value);
+		return true;
+	}
+});
 
 /** Simple uniform grid broad-phase keyed by Collider2DComponent. */
 class Collision2DBroadphaseIndex {

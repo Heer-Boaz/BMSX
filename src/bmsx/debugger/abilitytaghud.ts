@@ -84,11 +84,11 @@ function ensureHudElement(): { root: HTMLElement; content: HTMLElement; targetLa
 		});
 		btnClear.addEventListener('click', (ev) => {
 			ev.stopPropagation();
-			overlay.clearTarget();
+			overlay?.clearTarget();
 		});
 		btnClose.addEventListener('click', (ev) => {
 			ev.stopPropagation();
-			overlay.disable();
+			overlay?.disable();
 		});
 	}
 	const content = document.getElementById(CONTENT_ID);
@@ -241,15 +241,17 @@ class AbilityTagHUDOverlay {
 	}
 }
 
-const overlay = new AbilityTagHUDOverlay();
-overlay.bind();
+const overlay: AbilityTagHUDOverlay | null = typeof document === 'undefined' ? null : new AbilityTagHUDOverlay();
+if (overlay) overlay.bind();
 
 export function toggleAbilityTagHUD(): void {
+	if (!overlay) return;
 	if (overlay.enabled) overlay.disable();
 	else overlay.enable();
 }
 
 export function setAbilityTagHudTarget(id: Identifier | null): void {
+	if (!overlay) return;
 	overlay.setTarget(id);
 	if (!overlay.enabled) {
 		overlay.enable();
@@ -257,13 +259,14 @@ export function setAbilityTagHudTarget(id: Identifier | null): void {
 }
 
 export function clearAbilityTagHudTarget(): void {
+	if (!overlay) return;
 	overlay.clearTarget();
 }
 
 export function getAbilityTagHudTarget(): Identifier | null {
-	return overlay.getTarget();
+	return overlay ? overlay.getTarget() : null;
 }
 
 export function isAbilityTagHudEnabled(): boolean {
-	return overlay.enabled;
+	return overlay ? overlay.enabled : false;
 }

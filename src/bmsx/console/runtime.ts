@@ -23,7 +23,6 @@ import { instantiateBehaviorTree, unregisterBehaviorTreeBuilder, applyPreparedBe
 import type { BehaviorTreeDefinition, BehaviorTreeDiagnostic } from '../ai/behaviourtree';
 import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { StateDefinition } from '../fsm/statedefinition';
-import type { StateMachineController } from '../fsm/fsmcontroller';
 import type { State } from '../fsm/state';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
 import { ConsoleCartEditor } from './ide/console_cart_editor';
@@ -120,6 +119,12 @@ type LuaServiceBinding = {
 	hooks: LuaServiceHooks;
 	events: Map<string, LuaHandlerFn>;
 	autoActivate: boolean;
+};
+
+type LuaServiceSnapshot = {
+	state?: unknown;
+	active: boolean;
+	eventsEnabled: boolean;
 };
 
 type LuaComponentDefinitionRecord = {
@@ -357,10 +362,8 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly luaChunkEnvironmentsByChunkName: Map<string, LuaEnvironment> = new Map();
 	private readonly luaFsmMachineIds: Set<string> = new Set<string>();
 	private readonly luaFsmsByAsset: Map<string, Set<string>> = new Map();
-	private readonly fsmChangeRecordsByAsset: Map<string, Array<{ machineId: string; previousDefinition?: StateDefinition }>> = new Map();
 	private readonly luaBehaviorTreeIds: Set<string> = new Set<string>();
 	private readonly luaBehaviorTreesByAsset: Map<string, Set<string>> = new Map();
-	private readonly behaviorTreeChangesByAsset: Map<string, Set<string>> = new Map();
 	private readonly componentDefinitions: Map<string, LuaComponentDefinitionRecord> = new Map();
 	private readonly componentPresets: Map<string, LuaComponentPresetRecord> = new Map();
 	private readonly luaComponentPresetsByAsset: Map<string, Set<string>> = new Map();
@@ -2962,8 +2965,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		}
 		const luaSources = rompack.lua;
 		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
-		const previousDefinitions = new Map<string, StateDefinition | undefined>();
-		const changedMachines: string[] = [];
 		const processedAssets: Set<string> = new Set();
 		const trackedAssets = new Set(this.luaFsmsByAsset.keys());
 		const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => trackedAssets.has(assetId), trackedAssets);
@@ -2976,7 +2977,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			processedAssets.add(assetId);
 			const previousAssetIds = new Set(this.luaFsmsByAsset.get(assetId) ?? []);
 			this.luaFsmsByAsset.set(assetId, new Set());
-			this.fsmChangeRecordsByAsset.set(assetId, []);
 			const previousAssetContext = this.currentLuaAssetContext;
 			this.currentLuaAssetContext = { category: 'fsm', assetId };
 			try {
@@ -3022,15 +3022,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			for (const machineId of assetSet) {
 				previousMachineIds.delete(machineId);
 			}
-			const changeRecords = this.fsmChangeRecordsByAsset.get(assetId);
-			if (changeRecords) {
-				for (let idx = 0; idx < changeRecords.length; idx += 1) {
-					const record = changeRecords[idx]!;
-					changedMachines.push(record.machineId);
-					previousDefinitions.set(record.machineId, record.previousDefinition);
-				}
-				this.fsmChangeRecordsByAsset.set(assetId, []);
-			}
 			for (const machineId of previousAssetIds) {
 				if (!assetSet.has(machineId)) {
 					this.unregisterLuaStateMachine(machineId);
@@ -3047,101 +3038,14 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 				previousMachineIds.delete(machineId);
 			}
 			this.luaFsmsByAsset.delete(assetId);
-			this.fsmChangeRecordsByAsset.delete(assetId);
 		}
 		if (previousMachineIds.size > 0) {
 			for (const removed of previousMachineIds) {
 				this.unregisterLuaStateMachine(removed);
 			}
 		}
-		if (changedMachines.length > 0) {
-			const controllersToRebind = this.unsubscribeStateMachineEvents(changedMachines, previousDefinitions);
-			this.refreshStateMachines(changedMachines, previousDefinitions, controllersToRebind);
-		}
 	}
 
-	private unsubscribeStateMachineEvents(machineIds: readonly string[], previousDefinitions: ReadonlyMap<string, StateDefinition | undefined>): Set<StateMachineController> {
-		const controllers = new Set<StateMachineController>();
-
-		for (const machineId of machineIds) {
-			const instances = this.filterValidStateMachineInstances(machineId, ActiveStateMachines.get(machineId));
-			if (instances.length === 0) {
-				continue;
-			}
-			const oldDefinition = previousDefinitions.get(machineId);
-			if (!oldDefinition) {
-				continue;
-			}
-			for (const instance of instances) {
-				const target = instance.target;
-				const controller = target.sc;
-				controllers.add(controller);
-				const cache = controller._subscribedCache;
-				const events = oldDefinition.event_list ?? [];
-				for (const event of events) {
-					let emitter: Identifier | undefined;
-					switch (event.scope) {
-						case 'self':
-							emitter = target.id;
-							break;
-						case 'all':
-						default:
-							emitter = undefined;
-							break;
-					}
-					EventEmitter.instance.off(event.name, controller.auto_dispatch, emitter, true);
-					const lane = event.lane ?? 'any';
-					const cacheKey = `${event.name}-${emitter ?? 'global'}-${lane}`;
-					cache.delete(cacheKey);
-				}
-			}
-		}
-		return controllers;
-	}
-
-	private refreshStateMachines(machineIds: readonly string[], previousDefinitions: ReadonlyMap<string, StateDefinition | undefined>, controllersToRebind: ReadonlySet<StateMachineController>): void {
-		for (const machineId of machineIds) {
-			const instances = this.filterValidStateMachineInstances(machineId, ActiveStateMachines.get(machineId));
-			if (instances.length === 0) {
-				continue;
-			}
-			const newDefinition = StateDefinitions[machineId];
-			if (!newDefinition) {
-				throw new Error(`[BmsxConsoleRuntime] New definition missing for state machine '${machineId}'.`);
-			}
-			const previousDefinition = previousDefinitions.get(machineId);
-			for (const instance of instances) {
-				migrateMachineDiff(instance, previousDefinition, newDefinition);
-			}
-		}
-		for (const controller of controllersToRebind) {
-			controller.bind();
-		}
-	}
-
-	private filterValidStateMachineInstances(machineId: string, instances: ReadonlyArray<State<Stateful>> | undefined): State<Stateful>[] {
-		if (!instances || instances.length === 0) {
-			ActiveStateMachines.delete(machineId);
-			return [];
-		}
-		const valid: State<Stateful>[] = [];
-		let mutated = false;
-		for (const instance of instances) {
-			if (!instance || !instance.target || !instance.target.sc) {
-				mutated = true;
-				continue;
-			}
-			valid.push(instance);
-		}
-		if (mutated) {
-			if (valid.length === 0) {
-				ActiveStateMachines.delete(machineId);
-			} else {
-				ActiveStateMachines.set(machineId, valid);
-			}
-		}
-		return valid;
-	}
 
 	private loadLuaBehaviorTreeScripts(interpreter: LuaInterpreter): void {
 		this.executeGenericLuaAssets(interpreter);
@@ -3157,7 +3061,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 				this.handleRemovedBehaviorTrees(previousTreeIds);
 			}
 			this.luaBehaviorTreesByAsset.clear();
-			this.behaviorTreeChangesByAsset.clear();
 			return;
 		}
 	const luaSources = rompack.lua;
@@ -3165,7 +3068,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 	const trackedAssets = new Set(this.luaBehaviorTreesByAsset.keys());
 	const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => trackedAssets.has(assetId), trackedAssets);
 		const processedAssets: Set<string> = new Set();
-		const changedTrees: Set<string> = new Set();
 		for (let index = 0; index < assetIds.length; index += 1) {
 			const assetId = assetIds[index]!;
 			const source = luaSources[assetId];
@@ -3175,7 +3077,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			processedAssets.add(assetId);
 			const previousAssetTrees = new Set(this.luaBehaviorTreesByAsset.get(assetId) ?? []);
 			this.luaBehaviorTreesByAsset.set(assetId, new Set());
-			this.behaviorTreeChangesByAsset.set(assetId, new Set());
 			const previousAssetContext = this.currentLuaAssetContext;
 			this.currentLuaAssetContext = { category: 'behavior_tree', assetId };
 			try {
@@ -3221,13 +3122,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			for (const treeId of treeSet) {
 				previousTreeIds.delete(treeId);
 			}
-			const assetChanges = this.behaviorTreeChangesByAsset.get(assetId);
-			if (assetChanges) {
-				for (const treeId of assetChanges) {
-					changedTrees.add(treeId);
-				}
-				this.behaviorTreeChangesByAsset.set(assetId, new Set());
-			}
 			for (const treeId of previousAssetTrees) {
 				if (!treeSet.has(treeId)) {
 					unregisterBehaviorTreeBuilder(treeId);
@@ -3244,16 +3138,12 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 				previousTreeIds.delete(treeId);
 			}
 			this.luaBehaviorTreesByAsset.delete(assetId);
-			this.behaviorTreeChangesByAsset.delete(assetId);
 		}
 		if (previousTreeIds.size > 0) {
 			for (const removed of previousTreeIds) {
 				unregisterBehaviorTreeBuilder(removed);
 			}
 			this.handleRemovedBehaviorTrees(previousTreeIds);
-		}
-		if (changedTrees.size > 0) {
-			this.refreshBehaviorTreeContexts(Array.from(changedTrees));
 		}
 	}
 
@@ -3282,26 +3172,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		};
 		candidates.sort((left, right) => keyFor(left).localeCompare(keyFor(right)));
 		return candidates;
-	}
-
-	private refreshBehaviorTreeContexts(treeIds?: readonly string[]): void {
-		const world = $.world;
-		const filter = treeIds ? new Set(treeIds) : null;
-		for (const object of world.objects({ scope: 'all' })) {
-			const contexts = object.btreecontexts;
-			for (const treeId in contexts) {
-				if (filter && !filter.has(treeId)) {
-					continue;
-				}
-				const context = contexts[treeId];
-				const updatedRoot = instantiateBehaviorTree(context.treeId);
-				const wasEnabled = context.root.enabled;
-				context.root = updatedRoot;
-				if (!wasEnabled) {
-					updatedRoot.stop();
-				}
-			}
-		}
 	}
 
 	private handleRemovedBehaviorTrees(removed: Iterable<string>): void {
@@ -3365,16 +3235,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 				this.luaBehaviorTreesByAsset.set(assetId, set);
 			}
 			set.add(treeId);
-			if (result.changed) {
-				let changed = this.behaviorTreeChangesByAsset.get(assetId);
-				if (!changed) {
-					changed = new Set();
-					this.behaviorTreeChangesByAsset.set(assetId, changed);
-				}
-				changed.add(treeId);
-			}
-		} else if (result.changed) {
-			this.refreshBehaviorTreeContexts([treeId]);
 		}
 	}
 
@@ -3535,7 +3395,10 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		}
 	}
 
-	private instantiateLuaService(opts: { table: LuaTable; descriptor: Record<string, unknown>; moduleId: string; interpreter: LuaInterpreter; assetId: string | null }): void {
+	private instantiateLuaService(
+		opts: { table: LuaTable; descriptor: Record<string, unknown>; moduleId: string; interpreter: LuaInterpreter; assetId: string | null },
+		snapshots?: Map<string, LuaServiceSnapshot>,
+	): Identifier {
 		const { table, descriptor, moduleId, interpreter, assetId } = opts;
 		const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
 		const idValue = descriptor.id;
@@ -3739,11 +3602,10 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			this.invokeLuaServiceHook(binding, hooks.boot);
 		}
 
-		if (binding.autoActivate) {
-			service.activate();
-		}
-		else if (events.size > 0) {
-			service.enableEvents();
+		const snapshot = snapshots?.get(serviceId);
+		this.finalizeLuaServiceActivation(binding, snapshot);
+		if (snapshots && snapshot) {
+			snapshots.delete(serviceId);
 		}
 
 		const assetKey = assetId ?? '__service_global__';
@@ -3753,21 +3615,57 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			this.luaServicesByAsset.set(assetKey, set);
 		}
 		set.add(serviceId);
+		return serviceId;
+	}
+
+	private finalizeLuaServiceActivation(binding: LuaServiceBinding, snapshot?: LuaServiceSnapshot): void {
+		if (snapshot && snapshot.state !== undefined && binding.hooks.setState) {
+			try {
+				this.invokeLuaServiceHook(binding, binding.hooks.setState, snapshot.state);
+			} catch (error) {
+				this.handleLuaError(error);
+			}
+		}
+		const shouldActivate = snapshot ? snapshot.active : binding.autoActivate;
+		if (shouldActivate) {
+			if (!binding.service.active) {
+				binding.service.activate();
+			}
+			return;
+		}
+		const shouldEnableEvents = snapshot ? snapshot.eventsEnabled : binding.events.size > 0;
+		if (shouldEnableEvents && !binding.service.eventhandling_enabled) {
+			binding.service.enableEvents();
+		}
+	}
+
+	private captureLuaServiceSnapshot(binding: LuaServiceBinding): LuaServiceSnapshot {
+		let state: unknown;
+		try {
+			state = binding.service.getState();
+		} catch (error) {
+			this.handleLuaError(error);
+		}
+		return {
+			state,
+			active: binding.service.active,
+			eventsEnabled: binding.service.eventhandling_enabled === true,
+		};
 	}
 
 	private loadLuaServiceScripts(interpreter: LuaInterpreter): void {
 		this.executeGenericLuaAssets(interpreter);
-		this.disposeLuaServices();
-		this.luaServicesByAsset.clear();
 		const rompack = this.api.rompack();
 		if (!rompack || !rompack.lua) {
+			this.disposeLuaServices();
+			this.luaServicesByAsset.clear();
 			return;
 		}
 		const luaSources = rompack.lua;
 		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
-	const trackedAssets = new Set(this.luaServiceDefinitionsByAsset.keys());
-	const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => trackedAssets.has(assetId), trackedAssets);
-	const processedAssets = new Set<string>();
+		const trackedAssets = new Set(this.luaServiceDefinitionsByAsset.keys());
+		const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => trackedAssets.has(assetId), trackedAssets);
+		const processedAssets = new Set<string>();
 		for (let index = 0; index < assetIds.length; index += 1) {
 			const assetId = assetIds[index]!;
 			const source = luaSources[assetId];
@@ -3775,6 +3673,14 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 				throw new Error(`[BmsxConsoleRuntime] Service Lua asset '${assetId}' is not a string source.`);
 			}
 			processedAssets.add(assetId);
+			const previousIds = new Set(this.luaServicesByAsset.get(assetId) ?? []);
+			const snapshots = new Map<string, LuaServiceSnapshot>();
+			for (const serviceId of previousIds) {
+				const binding = this.luaServices.get(serviceId);
+				if (!binding) continue;
+				snapshots.set(serviceId, this.captureLuaServiceSnapshot(binding));
+				binding.service.dispose();
+			}
 			this.luaServicesByAsset.set(assetId, new Set());
 			const previousAssetContext = this.currentLuaAssetContext;
 			this.currentLuaAssetContext = { category: 'service', assetId };
@@ -3815,18 +3721,30 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 					if (!this.isPlainObject(descriptorRaw)) {
 						throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' must return a plain table.`);
 					}
-					this.instantiateLuaService({
-						table,
-						descriptor: descriptorRaw as Record<string, unknown>,
-						moduleId,
-						interpreter,
-						assetId,
-					});
+						this.instantiateLuaService({
+							table,
+							descriptor: descriptorRaw as Record<string, unknown>,
+							moduleId,
+							interpreter,
+							assetId,
+						}, snapshots);
+					}
+				}
+				finally {
+					this.currentLuaAssetContext = previousAssetContext;
 				}
 			}
-			finally {
-				this.currentLuaAssetContext = previousAssetContext;
+		for (const [assetId, bindings] of Array.from(this.luaServicesByAsset.entries())) {
+			if (processedAssets.has(assetId) || assetId === '__service_global__') {
+				continue;
 			}
+			for (const serviceId of bindings) {
+				const binding = this.luaServices.get(serviceId);
+				if (binding) {
+					binding.service.dispose();
+				}
+			}
+			this.luaServicesByAsset.delete(assetId);
 		}
 		for (const [assetId, serviceIds] of Array.from(this.luaServiceDefinitionsByAsset.entries())) {
 			if (processedAssets.has(assetId)) {
@@ -4037,8 +3955,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		const interpreter = this.requireLuaInterpreter();
 		const moduleId = this.moduleIdFor('fsm', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
 		const prepared = this.prepareLuaStateMachineBlueprint(machineId, descriptor, interpreter, moduleId);
-		const existingDefinition = StateDefinitions[machineId];
-		const result = applyPreparedStateMachine(machineId, prepared, { force: true });
+		applyPreparedStateMachine(machineId, prepared, { force: true });
 		this.api.register_prepared_fsm(machineId, prepared, { setup: false });
 		this.luaFsmMachineIds.add(machineId);
 		const assetId = this.currentLuaAssetContext?.assetId ?? null;
@@ -4049,21 +3966,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 				this.luaFsmsByAsset.set(assetId, set);
 			}
 			set.add(machineId);
-			if (result.changed && existingDefinition && ActiveStateMachines.has(machineId)) {
-				existingDefinition.event_list = existingDefinition.event_list ?? [];
-				let records = this.fsmChangeRecordsByAsset.get(assetId);
-				if (!records) {
-					records = [];
-					this.fsmChangeRecordsByAsset.set(assetId, records);
-				}
-				records.push({ machineId, previousDefinition: existingDefinition });
-			}
-		} else if (result.changed && existingDefinition && ActiveStateMachines.has(machineId)) {
-			existingDefinition.event_list = existingDefinition.event_list ?? [];
-			const previousDefinitions = new Map<string, StateDefinition | undefined>();
-			previousDefinitions.set(machineId, existingDefinition);
-			const controllers = this.unsubscribeStateMachineEvents([machineId], previousDefinitions);
-			this.refreshStateMachines([machineId], previousDefinitions, controllers);
 		}
 	}
 
@@ -4665,6 +4567,8 @@ private disposeComponentPreset(id: string): void {
 		(globalThis as Record<string, unknown>)[objectId] = record.constructor;
 		(globalThis as Record<string, unknown>)[normalizedClassRef] = record.constructor;
 
+		this.refreshLuaWorldObjectInstances(objectId, record);
+
 		return objectId;
 	}
 
@@ -4689,12 +4593,28 @@ private disposeComponentPreset(id: string): void {
 		};
 	}
 
-	private initializeLuaWorldObjectInstance(host: WorldObject, def: LuaWorldObjectDefinitionRecord): void {
+	private initializeLuaWorldObjectInstance(host: WorldObject, def: LuaWorldObjectDefinitionRecord, opts?: { runFactory?: boolean; invokeReload?: boolean }): void {
 		const interpreter = this.requireLuaInterpreter();
 		this.ensureLuaClassPrototype(def.classTable);
 		const value = this.jsToLua(host, interpreter);
 		if (isLuaNativeValue(value)) {
 			value.setMetatable(def.classTable);
+		}
+		if (opts?.invokeReload) {
+			const reloadCandidate = this.getLuaTableEntry(def.classTable, ['on_reload', 'reload', 'refresh']);
+			if (reloadCandidate !== null && this.isLuaFunctionValue(reloadCandidate)) {
+				const args: LuaValue[] = [def.classTable, value];
+				try {
+					reloadCandidate.call(args);
+				}
+				catch (error) {
+					this.handleLuaError(error);
+				}
+			}
+			return;
+		}
+		if (opts?.runFactory === false) {
+			return;
 		}
 		const factoryCandidate = this.getLuaTableEntry(def.classTable, ['create', 'constructor', 'factory', 'new']);
 		if (factoryCandidate !== null && this.isLuaFunctionValue(factoryCandidate)) {
@@ -4801,6 +4721,19 @@ private disposeComponentPreset(id: string): void {
 	private disposeAllWorldObjectDefinitions(): void {
 		for (const id of [...this.worldObjectDefinitions.keys()]) {
 			this.disposeWorldObjectDefinition(id);
+		}
+	}
+
+	private refreshLuaWorldObjectInstances(defId: string, def: LuaWorldObjectDefinitionRecord): void {
+		const world = $.world;
+		if (!world) {
+			return;
+		}
+		for (const object of world.objects({ scope: 'all' })) {
+			const marker = object as { __luaDefinitionId?: string };
+			if (marker.__luaDefinitionId !== defId) continue;
+			this.initializeLuaWorldObjectInstance(object, def, { runFactory: false, invokeReload: true });
+			this.invokeWorldObjectMethod(object, ['on_reload', 'reload']);
 		}
 	}
 

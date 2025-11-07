@@ -370,6 +370,10 @@ export class Input implements RegisterablePersistent {
 		return Input._instance;
 	}
 
+	public static maybeInstance(): Input | null {
+		return Input._instance ?? null;
+	}
+
 
 	/**
 	 * An array of player inputs for each player.
@@ -678,6 +682,10 @@ export class Input implements RegisterablePersistent {
 		this.deviceBindings.set('keyboard:0', { handler: keyboard, source: 'keyboard', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device: null });
 		this.deviceBindings.set('pointer:0', { handler: pointer, source: 'pointer', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device: null });
 		$.platform.input.setKeyboardCapture(this.shouldCaptureKey.bind(this));
+		this.attachToPlatformInput();
+	}
+
+	public refreshBindings(): void {
 		this.attachToPlatformInput();
 	}
 

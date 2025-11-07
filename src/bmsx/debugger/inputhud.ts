@@ -59,7 +59,7 @@ function ensureHudElement(): HTMLElement {
 			content.style.display = collapsed ? 'none' : '';
 			btnMin.textContent = collapsed ? '+' : '–';
 		});
-		btnClose.addEventListener('click', ev => { ev.stopPropagation(); overlay.disable(); });
+		btnClose.addEventListener('click', ev => { ev.stopPropagation(); overlay?.disable(); });
 	}
 	return el;
 }
@@ -233,10 +233,11 @@ export class InputHUDOverlay {
 	public unbind(): void { EventEmitter.instance.removeSubscriber(this); }
 }
 
-const overlay = new InputHUDOverlay();
-overlay.bind();
+const overlay: InputHUDOverlay | null = typeof document === 'undefined' ? null : new InputHUDOverlay();
+if (overlay) overlay.bind();
 
 export function toggleInputHUD(): void {
+	if (!overlay) return;
 	if (overlay.enabled) overlay.disable();
 	else overlay.enable();
 }

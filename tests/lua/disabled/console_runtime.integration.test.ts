@@ -112,7 +112,6 @@ async function createHarness(): Promise<RuntimeHarness> {
 		currentLuaAssetContext: null,
 		luaFsmMachineIds: new Set<string>(),
 		luaFsmsByAsset: new Map<string, Set<string>>(),
-		fsmChangeRecordsByAsset: new Map<string, Array<{ machineId: string }>>(),
 		componentPresets: new Map<string, unknown>(),
 		luaComponentPresetsByAsset: new Map<string, Set<string>>(),
 		serviceDefinitions: new Map<string, unknown>(),
@@ -181,13 +180,11 @@ test('registerStateMachineDefinition updates definitions and change tracking acr
 	};
 	runtime.registerStateMachineDefinition(blueprintB);
 
-	const changeRecords = (runtime as unknown as { fsmChangeRecordsByAsset: Map<string, Array<{ machineId: string }>> }).fsmChangeRecordsByAsset.get(assetId);
-	assert.ok(changeRecords && changeRecords.length === 1 && changeRecords[0]?.machineId === machineId, 'hot reload should record change for active machine');
 	assert.ok(StateDefinitions[machineId]?.states?.['#idle'], 'definition should be replaced after hot reload');
+	assert.deepEqual(StateDefinitions[machineId]?.states?.['#idle']?.tape_data, ['a', 'b'], 'hot reload should apply new tape data');
 
 	ActiveStateMachines.delete(machineId);
 	(runtime as unknown as { luaFsmsByAsset: Map<string, Set<string>> }).luaFsmsByAsset.delete(assetId);
-	(runtime as unknown as { fsmChangeRecordsByAsset: Map<string, Array<{ machineId: string }>> }).fsmChangeRecordsByAsset.delete(assetId);
 	(runtime as unknown as { luaFsmMachineIds: Set<string> }).luaFsmMachineIds.delete(machineId);
 	delete StateDefinitions[machineId];
 	delete StateDefinitionBuilders[machineId];
