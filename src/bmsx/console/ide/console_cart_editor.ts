@@ -120,18 +120,52 @@ import {
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
 } from './input_helpers';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast.ts';
-import { CaretNavigationState, resolveIndentAwareHome, resolveSegmentEnd } from './caret_navigation.ts';
+import { CaretNavigationState } from './caret_navigation.ts';
 import type { BmsxConsoleRuntime } from '../../console.ts';
 import { EDITOR_TOGGLE_KEY, ESCAPE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, GLOBAL_SEARCH_RESULT_LIMIT } from './constants';
 import { formatLuaDocument } from './lua_formatter.ts';
 import * as constants from './constants';
 import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs } from './ide_state';
+import {
+	setCursorPosition,
+	moveCursorLeft,
+	moveCursorRight,
+	moveCursorUp,
+	moveCursorDown,
+	moveCursorHome,
+	moveCursorEnd,
+	pageUp,
+	pageDown,
+	revealCursor,
+	clampCursorRow,
+	clampCursorColumn,
+} from './cursor_operations';
 
 // Re-export commonly used constants for convenience
 export { captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT } from './ide_state';
 
 // Export ide_state for direct access
 export { ide_state };
+
+// Re-export cursor operations from their dedicated module
+export {
+	setCursorPosition,
+	moveCursorVertical,
+	moveCursorHorizontal,
+	moveWordLeft,
+	moveWordRight,
+	moveCursorLeft,
+	moveCursorRight,
+	moveCursorUp,
+	moveCursorDown,
+	moveCursorHome,
+	moveCursorEnd,
+	pageUp,
+	pageDown,
+	clampCursorRow,
+	clampCursorColumn,
+	revealCursor,
+} from './cursor_operations';
 
 export function invalidateLineRange(startRow: number, endRow: number): void {
 	if (ide_state.lines.length === 0) {
@@ -166,409 +200,6 @@ export function computeMaximumScrollColumn(): number {
 		return 0;
 	}
 	return limit;
-}
-
-export function setCursorPosition(row: number, column: number): void {
-	caretNavigation.clear();
-	let targetRow = row;
-	if (targetRow < 0) {
-		targetRow = 0;
-	}
-	const lastRow = ide_state.lines.length - 1;
-	if (targetRow > lastRow) {
-		targetRow = lastRow >= 0 ? lastRow : 0;
-	}
-	let targetColumn = column;
-	if (targetColumn < 0) {
-		targetColumn = 0;
-	}
-	const lineLength = ide_state.lines[targetRow]?.length ?? 0;
-	if (targetColumn > lineLength) {
-		targetColumn = lineLength;
-	}
-	ide_state.cursorRow = targetRow;
-	ide_state.cursorColumn = targetColumn;
-	updateDesiredColumn();
-	resetBlink();
-	revealCursor();
-	onCursorMoved();
-}
-
-export function moveCursorVertical(delta: number): void {
-	caretNavigation.clear();
-	ensureVisualLines();
-	const visualCount = getVisualLineCount();
-	if (visualCount === 0) {
-		return;
-	}
-	const currentIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
-	const targetIndex = clamp(currentIndex + delta, 0, visualCount - 1);
-	const desired = ide_state.desiredColumn;
-	const desiredDisplay = ide_state.desiredDisplayOffset;
-	setCursorFromVisualIndex(targetIndex, desired, desiredDisplay);
-	resetBlink();
-	revealCursor();
-	onCursorMoved();
-}
-
-export function moveCursorHorizontal(delta: number): void {
-	if (delta === 0) {
-		return;
-	}
-	caretNavigation.clear();
-	ensureVisualLines();
-	const visualCount = getVisualLineCount();
-	if (visualCount === 0) {
-		return;
-	}
-	const visualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
-	const segment = visualIndexToSegment(visualIndex);
-	if (!segment) {
-		return;
-	}
-	const line = ide_state.lines[segment.row] ?? '';
-	if (delta < 0) {
-		if (ide_state.cursorColumn > segment.startColumn) {
-			ide_state.cursorColumn -= 1;
-		} else {
-			let moved = false;
-			if (ide_state.wordWrapEnabled && visualIndex > 0) {
-				const prevSegment = visualIndexToSegment(visualIndex - 1);
-				if (prevSegment && prevSegment.row === segment.row) {
-					ide_state.cursorRow = prevSegment.row;
-					const prevLine = ide_state.lines[prevSegment.row] ?? '';
-					const prevEnd = Math.max(prevSegment.endColumn, prevSegment.startColumn);
-					const hasMoreBefore = prevEnd > prevSegment.startColumn;
-					const targetColumn = hasMoreBefore && prevEnd < prevLine.length
-						? Math.max(prevSegment.startColumn, prevEnd - 1)
-						: Math.min(prevEnd, prevLine.length);
-					ide_state.cursorColumn = clamp(targetColumn, 0, prevLine.length);
-					moved = true;
-				}
-			}
-			if (!moved && segment.row > 0) {
-				ide_state.cursorRow = segment.row - 1;
-				ide_state.cursorColumn = ide_state.lines[ide_state.cursorRow].length;
-			}
-		}
-	} else {
-		if (ide_state.cursorColumn < segment.endColumn && ide_state.cursorColumn < line.length) {
-			ide_state.cursorColumn += 1;
-		} else {
-			let moved = false;
-			if (ide_state.wordWrapEnabled && visualIndex < visualCount - 1) {
-				const nextSegment = visualIndexToSegment(visualIndex + 1);
-				if (nextSegment && nextSegment.row === segment.row) {
-					ide_state.cursorRow = nextSegment.row;
-					ide_state.cursorColumn = nextSegment.startColumn;
-					moved = true;
-				}
-			}
-			if (!moved && segment.row < ide_state.lines.length - 1) {
-				ide_state.cursorRow = segment.row + 1;
-				ide_state.cursorColumn = 0;
-			}
-		}
-	}
-	ide_state.cursorColumn = clamp(ide_state.cursorColumn, 0, ide_state.lines[ide_state.cursorRow]?.length ?? 0);
-	updateDesiredColumn();
-	resetBlink();
-	revealCursor();
-	onCursorMoved();
-}
-
-export function moveWordLeft(): void {
-	caretNavigation.clear();
-	const destination = findWordLeft(ide_state.cursorRow, ide_state.cursorColumn);
-	ide_state.cursorRow = destination.row;
-	ide_state.cursorColumn = destination.column;
-	updateDesiredColumn();
-	resetBlink();
-	revealCursor();
-	onCursorMoved();
-}
-
-export function moveWordRight(): void {
-	caretNavigation.clear();
-	const destination = findWordRight(ide_state.cursorRow, ide_state.cursorColumn);
-	ide_state.cursorRow = destination.row;
-	ide_state.cursorColumn = destination.column;
-	updateDesiredColumn();
-	resetBlink();
-	revealCursor();
-	onCursorMoved();
-}
-
-export function findWordLeft(row: number, column: number): { row: number; column: number } {
-	let currentRow = row;
-	let currentColumn = column;
-	let step = stepLeft(currentRow, currentColumn);
-	if (!step) {
-		return { row: 0, column: 0 };
-	}
-	currentRow = step.row;
-	currentColumn = step.column;
-	let currentChar = charAt(currentRow, currentColumn);
-	while (isWhitespace(currentChar)) {
-		const previous = stepLeft(currentRow, currentColumn);
-		if (!previous) {
-			return { row: 0, column: 0 };
-		}
-		currentRow = previous.row;
-		currentColumn = previous.column;
-		currentChar = charAt(currentRow, currentColumn);
-	}
-	const word = isWordChar(currentChar);
-	while (true) {
-		const previous = stepLeft(currentRow, currentColumn);
-		if (!previous) {
-			currentRow = 0;
-			currentColumn = 0;
-			break;
-		}
-		const previousChar = charAt(previous.row, previous.column);
-		if (isWhitespace(previousChar) || isWordChar(previousChar) !== word) {
-			break;
-		}
-		currentRow = previous.row;
-		currentColumn = previous.column;
-	}
-	return { row: currentRow, column: currentColumn };
-}
-
-export function findWordRight(row: number, column: number): { row: number; column: number } {
-	let currentRow = row;
-	let currentColumn = column;
-	let step = stepRight(currentRow, currentColumn);
-	if (!step) {
-		const lastRow = ide_state.lines.length - 1;
-		return { row: lastRow, column: ide_state.lines[lastRow].length };
-	}
-	currentRow = step.row;
-	currentColumn = step.column;
-	let currentChar = charAt(currentRow, currentColumn);
-	while (isWhitespace(currentChar)) {
-		const next = stepRight(currentRow, currentColumn);
-		if (!next) {
-			const lastRow = ide_state.lines.length - 1;
-			return { row: lastRow, column: ide_state.lines[lastRow].length };
-		}
-		currentRow = next.row;
-		currentColumn = next.column;
-		currentChar = charAt(currentRow, currentColumn);
-	}
-	const word = isWordChar(currentChar);
-	while (true) {
-		const next = stepRight(currentRow, currentColumn);
-		if (!next) {
-			const lastRow = ide_state.lines.length - 1;
-			currentRow = lastRow;
-			currentColumn = ide_state.lines[lastRow].length;
-			break;
-		}
-		const nextChar = charAt(next.row, next.column);
-		if (isWhitespace(nextChar) || isWordChar(nextChar) !== word) {
-			currentRow = next.row;
-			currentColumn = next.column;
-			break;
-		}
-		currentRow = next.row;
-		currentColumn = next.column;
-	}
-	while (isWhitespace(charAt(currentRow, currentColumn))) {
-		const next = stepRight(currentRow, currentColumn);
-		if (!next) {
-			const lastRow = ide_state.lines.length - 1;
-			currentRow = lastRow;
-			currentColumn = ide_state.lines[lastRow].length;
-			break;
-		}
-		currentRow = next.row;
-		currentColumn = next.column;
-	}
-	return { row: currentRow, column: currentColumn };
-}
-
-export function moveCursorLeft(byWord: boolean, select: boolean): void {
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
-	if (select) {
-		ensureSelectionAnchor(previous);
-	} else if (hasSelection()) {
-		collapseSelectionTo('start');
-		breakUndoSequence();
-		return;
-	}
-	if (byWord) {
-		moveWordLeft();
-	} else {
-		moveCursorHorizontal(-1);
-	}
-	if (!select) {
-		clearSelection();
-	}
-	breakUndoSequence();
-	revealCursor();
-}
-
-export function moveCursorRight(byWord: boolean, select: boolean): void {
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
-	if (select) {
-		ensureSelectionAnchor(previous);
-	} else if (hasSelection()) {
-		collapseSelectionTo('end');
-		breakUndoSequence();
-		return;
-	}
-	if (byWord) {
-		moveWordRight();
-	} else {
-		moveCursorHorizontal(1);
-	}
-	if (!select) {
-		clearSelection();
-	}
-	breakUndoSequence();
-	revealCursor();
-}
-
-export function moveCursorUp(select: boolean): void {
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
-	if (select) {
-		ensureSelectionAnchor(previous);
-	} else if (hasSelection()) {
-		collapseSelectionTo('start');
-		breakUndoSequence();
-		return;
-	}
-	moveCursorVertical(-1);
-	if (!select) {
-		clearSelection();
-	}
-	breakUndoSequence();
-	revealCursor();
-}
-
-export function moveCursorDown(select: boolean): void {
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
-	if (select) {
-		ensureSelectionAnchor(previous);
-	} else if (hasSelection()) {
-		collapseSelectionTo('end');
-		breakUndoSequence();
-		return;
-	}
-	moveCursorVertical(1);
-	if (!select) {
-		clearSelection();
-	}
-	breakUndoSequence();
-	revealCursor();
-}
-
-export function moveCursorHome(select: boolean): void {
-	const previousOverride = caretNavigation.peek(ide_state.cursorRow, ide_state.cursorColumn);
-	caretNavigation.clear();
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
-	if (select) {
-		ensureSelectionAnchor(previous);
-	} else {
-		clearSelection();
-	}
-	const ctrlDown = isModifierPressedGlobal(ide_state.playerIndex, 'ControlLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ControlRight');
-	if (ctrlDown) {
-		ide_state.cursorRow = 0;
-		ide_state.cursorColumn = 0;
-	} else {
-		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
-		const segment = visualIndexToSegment(visualIndex);
-		if (segment) {
-			ide_state.cursorRow = segment.row;
-			const line = ide_state.lines[segment.row] ?? '';
-			ide_state.cursorColumn = resolveIndentAwareHome(line, segment, ide_state.cursorColumn);
-			caretNavigation.capture(segment.row, ide_state.cursorColumn, visualIndex, segment.startColumn);
-		} else {
-			ide_state.cursorColumn = 0;
-		}
-	}
-	updateDesiredColumn();
-	resetBlink();
-	breakUndoSequence();
-	revealCursor();
-}
-
-export function moveCursorEnd(select: boolean): void {
-	const previousOverride = caretNavigation.peek(ide_state.cursorRow, ide_state.cursorColumn);
-	caretNavigation.clear();
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
-	if (select) {
-		ensureSelectionAnchor(previous);
-	} else {
-		clearSelection();
-	}
-	const ctrlDown = isModifierPressedGlobal(ide_state.playerIndex, 'ControlLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ControlRight');
-	if (ctrlDown) {
-		const lastRow = ide_state.lines.length - 1;
-		if (lastRow < 0) {
-			ide_state.cursorRow = 0;
-			ide_state.cursorColumn = 0;
-		} else {
-			ide_state.cursorRow = lastRow;
-			ide_state.cursorColumn = ide_state.lines[lastRow].length;
-		}
-	} else {
-		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
-		const segment = visualIndexToSegment(visualIndex);
-		if (segment) {
-			ide_state.cursorRow = segment.row;
-			const line = ide_state.lines[segment.row] ?? '';
-			ide_state.cursorColumn = resolveSegmentEnd(line, segment);
-			caretNavigation.capture(segment.row, ide_state.cursorColumn, visualIndex, segment.startColumn);
-		} else {
-			ide_state.cursorColumn = currentLine().length;
-		}
-	}
-	updateDesiredColumn();
-	resetBlink();
-	breakUndoSequence();
-	revealCursor();
-}
-
-export function pageUp(select: boolean): void {
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
-	if (select) {
-		ensureSelectionAnchor(previous);
-	} else {
-		clearSelection();
-	}
-	const rows = visibleRowCount();
-	ensureVisualLines();
-	const visualCount = getVisualLineCount();
-	const currentVisual = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
-	const targetVisual = clamp(currentVisual - rows, 0, Math.max(0, visualCount - 1));
-	setCursorFromVisualIndex(targetVisual, ide_state.desiredColumn, ide_state.desiredDisplayOffset);
-	resetBlink();
-	breakUndoSequence();
-	revealCursor();
-}
-
-export function pageDown(select: boolean): void {
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
-	if (select) {
-		ensureSelectionAnchor(previous);
-	} else {
-		clearSelection();
-	}
-	const rows = visibleRowCount();
-	ensureVisualLines();
-	const visualCount = getVisualLineCount();
-	const currentVisual = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
-	const targetVisual = clamp(currentVisual + rows, 0, Math.max(0, visualCount - 1));
-	setCursorFromVisualIndex(targetVisual, ide_state.desiredColumn, ide_state.desiredDisplayOffset);
-	resetBlink();
-	breakUndoSequence();
-	revealCursor();
 }
 
 export function resetKeyPressGuards(): void {
@@ -809,6 +440,96 @@ export function deleteWordForward(): void {
 	resetBlink();
 	updateDesiredColumn();
 	revealCursor();
+}
+
+export function findWordLeft(row: number, column: number): { row: number; column: number } {
+	let currentRow = row;
+	let currentColumn = column;
+	let step = stepLeft(currentRow, currentColumn);
+	if (!step) {
+		return { row: 0, column: 0 };
+	}
+	currentRow = step.row;
+	currentColumn = step.column;
+	let currentChar = charAt(currentRow, currentColumn);
+	while (isWhitespace(currentChar)) {
+		const previous = stepLeft(currentRow, currentColumn);
+		if (!previous) {
+			return { row: 0, column: 0 };
+		}
+		currentRow = previous.row;
+		currentColumn = previous.column;
+		currentChar = charAt(currentRow, currentColumn);
+	}
+	const word = isWordChar(currentChar);
+	while (true) {
+		const previous = stepLeft(currentRow, currentColumn);
+		if (!previous) {
+			currentRow = 0;
+			currentColumn = 0;
+			break;
+		}
+		const previousChar = charAt(previous.row, previous.column);
+		if (isWhitespace(previousChar) || isWordChar(previousChar) !== word) {
+			break;
+		}
+		currentRow = previous.row;
+		currentColumn = previous.column;
+	}
+	return { row: currentRow, column: currentColumn };
+}
+
+export function findWordRight(row: number, column: number): { row: number; column: number } {
+	let currentRow = row;
+	let currentColumn = column;
+	let step = stepRight(currentRow, currentColumn);
+	if (!step) {
+		const lastRow = ide_state.lines.length - 1;
+		return { row: lastRow, column: ide_state.lines[lastRow].length };
+	}
+	currentRow = step.row;
+	currentColumn = step.column;
+	let currentChar = charAt(currentRow, currentColumn);
+	while (isWhitespace(currentChar)) {
+		const next = stepRight(currentRow, currentColumn);
+		if (!next) {
+			const lastRow = ide_state.lines.length - 1;
+			return { row: lastRow, column: ide_state.lines[lastRow].length };
+		}
+		currentRow = next.row;
+		currentColumn = next.column;
+		currentChar = charAt(currentRow, currentColumn);
+	}
+	const word = isWordChar(currentChar);
+	while (true) {
+		const next = stepRight(currentRow, currentColumn);
+		if (!next) {
+			const lastRow = ide_state.lines.length - 1;
+			currentRow = lastRow;
+			currentColumn = ide_state.lines[lastRow].length;
+			break;
+		}
+		const nextChar = charAt(next.row, next.column);
+		if (isWhitespace(nextChar) || isWordChar(nextChar) !== word) {
+			currentRow = next.row;
+			currentColumn = next.column;
+			break;
+		}
+		currentRow = next.row;
+		currentColumn = next.column;
+	}
+	while (isWhitespace(charAt(currentRow, currentColumn))) {
+		const next = stepRight(currentRow, currentColumn);
+		if (!next) {
+			const lastRow = ide_state.lines.length - 1;
+			currentRow = lastRow;
+			currentColumn = ide_state.lines[lastRow].length;
+			break;
+		}
+		currentRow = next.row;
+		currentColumn = next.column;
+	}
+	return { row: currentRow, column: currentColumn };
 }
 
 export function deleteActiveLines(): void {
@@ -1258,26 +979,6 @@ export function currentLine(): string {
 		return '';
 	}
 	return ide_state.lines[ide_state.cursorRow];
-}
-
-export function clampCursorRow(): void {
-	if (ide_state.cursorRow < 0) {
-		ide_state.cursorRow = 0;
-	} else if (ide_state.cursorRow >= ide_state.lines.length) {
-		ide_state.cursorRow = ide_state.lines.length - 1;
-	}
-}
-
-export function clampCursorColumn(): void {
-	const line = currentLine();
-	if (ide_state.cursorColumn < 0) {
-		ide_state.cursorColumn = 0;
-		return;
-	}
-	const length = line.length;
-	if (ide_state.cursorColumn > length) {
-		ide_state.cursorColumn = length;
-	}
 }
 
 export function clampSelectionPosition(position: Position | null): Position | null {
@@ -7215,11 +6916,6 @@ export function shiftPositionsForRemoval(row: number, column: number, length: nu
 			ide_state.selectionAnchor.column -= length;
 		}
 	}
-}
-
-export function revealCursor(): void {
-	ide_state.cursorRevealSuspended = false;
-	ensureCursorVisible();
 }
 
 export function readPointerSnapshot(): PointerSnapshot | null {
