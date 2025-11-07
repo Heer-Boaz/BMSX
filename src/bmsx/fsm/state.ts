@@ -2253,6 +2253,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 	public reapplyMarkersForCurrentFrame(recursive: boolean = false): void {
 		this.skipMarkerForFrameZero = false;
+		this.updateTapeTickThreshold();
 		this.syncWindowTagsAtCurrentFrame();
 		if (!recursive || !this.states) return;
 		for (const child of Object.values(this.states)) {
