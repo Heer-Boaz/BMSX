@@ -14,6 +14,7 @@ import type {
 } from '../types';
 import type { ConsoleFontVariant } from '../font';
 import type { RectBounds } from '../../rompack/rompack';
+import type { KeyboardInput } from '../../input/keyboardinput';
 
 export type ConsoleEditorOptions = {
 	playerIndex: number;
@@ -419,4 +420,48 @@ export type RuntimeErrorOverlay = {
 
 export type RepeatEntry = {
 	cooldown: number;
+};export type ConsoleEditorShortcutContext = {
+	ctrlDown: boolean;
+	shiftDown: boolean;
+	altDown: boolean;
+	metaDown: boolean;
+	inlineFieldFocused: boolean;
+	resourcePanelFocused: boolean;
+	codeTabActive: boolean;
 };
+
+export type CustomKeybindingHandler = (
+	keyboard: KeyboardInput,
+	deltaSeconds: number,
+	context: ConsoleEditorShortcutContext
+) => boolean;
+
+export type ConsoleCartEditorCustomization = {
+	handleCustomKeybinding?: CustomKeybindingHandler;
+};
+export type DiagnosticsCacheEntry = {
+	contextId: string;
+	chunkName: string | null;
+	diagnostics: EditorDiagnostic[];
+};
+
+export type SearchComputationJob = {
+	query: string;
+	version: number;
+	nextRow: number;
+	matches: SearchMatch[];
+	firstMatchAfterCursor: number;
+	cursorRow: number;
+	cursorColumn: number;
+};
+
+export type GlobalSearchJob = {
+	query: string;
+	descriptors: ConsoleResourceDescriptor[];
+	descriptorIndex: number;
+	currentLines: string[] | null;
+	nextRow: number;
+	matches: GlobalSearchMatch[];
+	limitHit: boolean;
+};
+

@@ -1,6 +1,5 @@
 import { $ } from '../../core/game';
 import type { KeyboardInput } from '../../input/keyboardinput';
-import type { BGamepadButton } from '../../input/inputtypes';
 import type { ViewportMetrics } from '../../platform/platform';
 import { BmsxConsoleApi } from '../api';
 import type {
@@ -104,6 +103,12 @@ import type {
 	TopBarButtonId,
 	VisualLineSegment,
 	LuaCompletionItem,
+	ConsoleCartEditorCustomization,
+	ConsoleEditorShortcutContext,
+	CustomKeybindingHandler,
+	DiagnosticsCacheEntry,
+	GlobalSearchJob,
+	SearchComputationJob,
 } from './types';
 import type { RectBounds } from '../../rompack/rompack.ts';
 import { ReferenceState, resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation.ts';
@@ -142,57 +147,7 @@ import {
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast.ts';
 import { CaretNavigationState, resolveIndentAwareHome, resolveSegmentEnd } from './caret_navigation.ts';
 import type { BmsxConsoleRuntime } from '../../console.ts';
-
-export type ConsoleEditorShortcutContext = {
-	ctrlDown: boolean;
-	shiftDown: boolean;
-	altDown: boolean;
-	metaDown: boolean;
-	inlineFieldFocused: boolean;
-	resourcePanelFocused: boolean;
-	codeTabActive: boolean;
-};
-
-export type CustomKeybindingHandler = (
-	keyboard: KeyboardInput,
-	deltaSeconds: number,
-	context: ConsoleEditorShortcutContext,
-) => boolean;
-
-export type ConsoleCartEditorCustomization = {
-	handleCustomKeybinding?: CustomKeybindingHandler;
-};
-
-type DiagnosticsCacheEntry = {
-	contextId: string;
-	chunkName: string | null;
-	diagnostics: EditorDiagnostic[];
-};
-
-type SearchComputationJob = {
-	query: string;
-	version: number;
-	nextRow: number;
-	matches: SearchMatch[];
-	firstMatchAfterCursor: number;
-	cursorRow: number;
-	cursorColumn: number;
-};
-
-type GlobalSearchJob = {
-	query: string;
-	descriptors: ConsoleResourceDescriptor[];
-	descriptorIndex: number;
-	currentLines: string[] | null;
-	nextRow: number;
-	matches: GlobalSearchMatch[];
-	limitHit: boolean;
-};
-
-const EDITOR_TOGGLE_KEY = 'F1';
-const ESCAPE_KEY = 'Escape';
-const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'start'];
-const GLOBAL_SEARCH_RESULT_LIMIT = constants.SEARCH_MAX_RESULTS * 4;
+import { EDITOR_TOGGLE_KEY, ESCAPE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, GLOBAL_SEARCH_RESULT_LIMIT } from './constants';
 
 export let playerIndex: number;
 export let lines: string[] = [''];

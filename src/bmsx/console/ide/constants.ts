@@ -1,3 +1,4 @@
+import type { BGamepadButton } from '../../input/inputtypes';
 import { Msx1Colors } from '../../systems/msx';
 
 /**
@@ -18,6 +19,8 @@ import { Msx1Colors } from '../../systems/msx';
  * 13: Magenta
  * 14: Grey
  * 15: White
+ * 16: Brown (Extended palette color)
+ * 17: Very dark blue (Extended palette color)
  */
 
 export const TAB_SPACES = 2;
@@ -404,3 +407,7 @@ export const COLOR_PARAMETER_HINT_BORDER = PARAMETER_HINT_BASE.border;
 export const COLOR_PARAMETER_HINT_TEXT = PARAMETER_HINT_BASE.text;
 export const COLOR_PARAMETER_HINT_ACTIVE = PARAMETER_HINT_BASE.active;
 export const COMPLETION_AUTO_TRIGGER_DELAY_SECONDS = 0.16;
+export const EDITOR_TOGGLE_KEY = 'F1';
+export const ESCAPE_KEY = 'Escape';
+export const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'start'];
+export const GLOBAL_SEARCH_RESULT_LIMIT = SEARCH_MAX_RESULTS * 4;

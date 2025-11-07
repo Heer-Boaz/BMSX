@@ -2,7 +2,6 @@ import * as constants from './constants';
 import {
 	createConsoleCartEditor,
 	type ConsoleCartEditor,
-	type ConsoleEditorShortcutContext,
 	playerIndex,
 	lines,
 	cursorRow,
@@ -15,6 +14,7 @@ import {
 	showMessage,
 	setSelectionAnchorPosition,
 } from './console_cart_editor';
+import { type ConsoleEditorShortcutContext } from './types';
 import type { ConsoleEditorOptions } from './types';
 import type { KeyboardInput } from '../../input/keyboardinput';
 import { consumeKey as consumeKeyboardKey, isKeyJustPressed as isKeyJustPressedGlobal } from './input_helpers';
