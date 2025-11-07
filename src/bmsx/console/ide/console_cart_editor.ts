@@ -167,36 +167,31 @@ export {
 	revealCursor,
 } from './cursor_operations';
 
-// Import selection operations for internal use
-import {
-	setSelectionAnchorPosition as setSelectionAnchorPositionImpl,
-	clearSelection as clearSelectionImpl,
-	hasSelection as hasSelectionImpl,
-	getSelectionRange as getSelectionRangeImpl,
-	getSelectionText as getSelectionTextImpl,
-	selectWordAtPosition as selectWordAtPositionImpl,
-	deleteSelectionIfPresent as deleteSelectionIfPresentImpl,
-	replaceSelectionWith as replaceSelectionWithImpl,
-	stepLeft as stepLeftImpl,
-	stepRight as stepRightImpl,
-} from './selection';
+// Re-export ALL text editing and selection operations for backward compatibility
+// This makes them available both internally and to external consumers
+export * from './text_editing_and_selection';
+// Import them for internal use in this module
+import * as TextEditing from './text_editing_and_selection';
 
-// Re-export selection operations from their dedicated module
-export {
-	setSelectionAnchorPosition,
-	clearSelection,
+// Use shorter aliases for commonly used functions
+const {
 	hasSelection,
-	comparePositions,
 	getSelectionRange,
 	getSelectionText,
-	ensureSelectionAnchor,
-	collapseSelectionTo,
 	selectWordAtPosition,
 	deleteSelectionIfPresent,
 	replaceSelectionWith,
+	setSelectionAnchorPosition,
+	clearSelection,
 	stepLeft,
 	stepRight,
-} from './selection';
+	charAt,
+	backspace,
+	deleteForward,
+	insertText,
+	insertLineBreak,
+	insertClipboardText,
+} = TextEditing;
 
 export function invalidateLineRange(startRow: number, endRow: number): void {
 	if (ide_state.lines.length === 0) {
@@ -237,144 +232,8 @@ export function resetKeyPressGuards(): void {
 	resetKeyPressRecords();
 }
 
-export function insertText(text: string): void {
-	if (text.length === 0) {
-		return;
-	}
-	const coalesce = text.length === 1;
-	prepareUndo('insert-text', coalesce);
-	if (deleteSelectionIfPresent()) {
-		// Selection replaced.
-	}
-	const line = currentLine();
-	const before = line.slice(0, ide_state.cursorColumn);
-	const after = line.slice(ide_state.cursorColumn);
-	ide_state.lines[ide_state.cursorRow] = before + text + after;
-	invalidateLine(ide_state.cursorRow);
-	recordEditContext('insert', text);
-	ide_state.cursorColumn += text.length;
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	clearSelection();
-	revealCursor();
-}
-
-export function insertLineBreak(): void {
-	const sourceRow = ide_state.cursorRow;
-	prepareUndo('insert-line-break', false);
-	deleteSelectionIfPresent();
-	const line = currentLine();
-	const before = line.slice(0, ide_state.cursorColumn);
-	const after = line.slice(ide_state.cursorColumn);
-	ide_state.lines[sourceRow] = before;
-	const indentation = extractIndentation(before);
-	const newLine = indentation + after;
-	ide_state.lines.splice(sourceRow + 1, 0, newLine);
-	invalidateLineRange(sourceRow, sourceRow + 1);
-	invalidateHighlightsFromRow(sourceRow);
-	ide_state.cursorRow = sourceRow + 1;
-	ide_state.cursorColumn = indentation.length;
-	recordEditContext('insert', '\n');
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	clearSelection();
-	revealCursor();
-}
-
-export function extractIndentation(value: string): string {
-	let result = '';
-	for (let i = 0; i < value.length; i += 1) {
-		const ch = value.charAt(i);
-		if (ch === ' ' || ch === '\t') {
-			result += ch;
-		} else {
-			break;
-		}
-	}
-	return result;
-}
-
-export function backspace(): void {
-	if (!hasSelection() && ide_state.cursorColumn === 0 && ide_state.cursorRow === 0) {
-		return;
-	}
-	prepareUndo('backspace', true);
-	if (deleteSelectionIfPresent()) {
-		return;
-	}
-	if (ide_state.cursorColumn > 0) {
-		const line = currentLine();
-		const removedChar = line.charAt(ide_state.cursorColumn - 1);
-		const before = line.slice(0, ide_state.cursorColumn - 1);
-		const after = line.slice(ide_state.cursorColumn);
-		ide_state.lines[ide_state.cursorRow] = before + after;
-		invalidateLine(ide_state.cursorRow);
-		ide_state.cursorColumn -= 1;
-		recordEditContext('delete', removedChar);
-		markTextMutated();
-		resetBlink();
-		updateDesiredColumn();
-		revealCursor();
-		return;
-	}
-	if (ide_state.cursorRow === 0) {
-		return;
-	}
-	const mergedRow = ide_state.cursorRow - 1;
-	const previousLine = ide_state.lines[mergedRow];
-	const currentLineValue = currentLine();
-	recordEditContext('delete', '\n');
-	ide_state.lines[mergedRow] = previousLine + currentLineValue;
-	ide_state.lines.splice(ide_state.cursorRow, 1);
-	invalidateLine(mergedRow);
-	invalidateHighlightsFromRow(mergedRow);
-	ide_state.cursorRow = mergedRow;
-	ide_state.cursorColumn = previousLine.length;
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
-}
-
-export function deleteForward(): void {
-	if (!hasSelection() && ide_state.cursorColumn >= currentLine().length && ide_state.cursorRow >= ide_state.lines.length - 1) {
-		return;
-	}
-	prepareUndo('delete-forward', true);
-	if (deleteSelectionIfPresent()) {
-		return;
-	}
-	const line = currentLine();
-	if (ide_state.cursorColumn < line.length) {
-		const removedChar = line.charAt(ide_state.cursorColumn);
-		const before = line.slice(0, ide_state.cursorColumn);
-		const after = line.slice(ide_state.cursorColumn + 1);
-		ide_state.lines[ide_state.cursorRow] = before + after;
-		invalidateLine(ide_state.cursorRow);
-		recordEditContext('delete', removedChar);
-		markTextMutated();
-		resetBlink();
-		updateDesiredColumn();
-		revealCursor();
-		return;
-	}
-	if (ide_state.cursorRow >= ide_state.lines.length - 1) {
-		return;
-	}
-	const nextLine = ide_state.lines[ide_state.cursorRow + 1];
-	const updatedLine = line + nextLine;
-	ide_state.lines[ide_state.cursorRow] = updatedLine;
-	ide_state.lines.splice(ide_state.cursorRow + 1, 1);
-	invalidateLine(ide_state.cursorRow);
-	invalidateHighlightsFromRow(ide_state.cursorRow);
-	recordEditContext('delete', '\n');
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
-}
+// Text insertion, deletion, and editing functions moved to text_editing_and_selection.ts
+// backspace(), deleteForward(), etc. are now imported and re-exported from the dedicated module
 
 export function deleteWordBackward(): void {
 	if (!hasSelection() && ide_state.cursorColumn === 0 && ide_state.cursorRow === 0) {
@@ -753,68 +612,11 @@ export function deleteSelection(): void {
 	replaceSelectionWith('');
 }
 
-// Selection manipulation functions moved to selection.ts
-// Use the implementations from there
-const deleteSelectionIfPresent = deleteSelectionIfPresentImpl;
-const replaceSelectionWith = replaceSelectionWithImpl;
-const selectWordAtPosition = selectWordAtPositionImpl;
-const getSelectionText = getSelectionTextImpl;
+// Selection manipulation functions moved to text_editing_and_selection.ts
+// They are now available via re-export
 
-export function insertClipboardText(text: string): void {
-	const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-	const fragments = normalized.split('\n');
-	const currentLineValue = currentLine();
-	const before = currentLineValue.slice(0, ide_state.cursorColumn);
-	const after = currentLineValue.slice(ide_state.cursorColumn);
-	if (fragments.length === 1) {
-		const fragment = fragments[0];
-		ide_state.lines[ide_state.cursorRow] = before + fragment + after;
-		invalidateLine(ide_state.cursorRow);
-		ide_state.cursorColumn = before.length + fragment.length;
-		recordEditContext('insert', fragment);
-	} else {
-		const firstLine = before + fragments[0];
-		const lastIndex = fragments.length - 1;
-		const lastFragment = fragments[lastIndex];
-		const newLines: string[] = [];
-		newLines.push(firstLine);
-		for (let i = 1; i < lastIndex; i += 1) {
-			newLines.push(fragments[i]);
-		}
-		newLines.push(lastFragment + after);
-		const insertionRow = ide_state.cursorRow;
-		ide_state.lines.splice(insertionRow, 1, ...newLines);
-		invalidateLineRange(insertionRow, insertionRow + newLines.length - 1);
-		invalidateHighlightsFromRow(insertionRow);
-		ide_state.cursorRow = insertionRow + lastIndex;
-		ide_state.cursorColumn = lastFragment.length;
-		recordEditContext('insert', normalized);
-	}
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
-}
-
-// Selection anchor and state management functions moved to selection.ts
-// Import and use the implementations from there for internal use
-const setSelectionAnchorPosition = setSelectionAnchorPositionImpl;
-const clearSelection = clearSelectionImpl;
-const hasSelection = hasSelectionImpl;
-const getSelectionRange = getSelectionRangeImpl;
-const stepLeft = stepLeftImpl;
-const stepRight = stepRightImpl;
-
-export function charAt(row: number, column: number): string {
-	if (row < 0 || row >= ide_state.lines.length) {
-		return '';
-	}
-	const line = ide_state.lines[row];
-	if (column < 0 || column >= line.length) {
-		return '';
-	}
-	return line.charAt(column);
-}
+// insertClipboardText() moved to text_editing_and_selection.ts
+// charAt() moved to text_editing_and_selection.ts
 
 export function currentLine(): string {
 	if (ide_state.cursorRow < 0 || ide_state.cursorRow >= ide_state.lines.length) {
