@@ -64,6 +64,17 @@ export type SearchMatch = {
 	end: number;
 };
 
+export type GlobalSearchMatch = {
+	descriptor: ConsoleResourceDescriptor | null;
+	pathLabel: string;
+	row: number;
+	start: number;
+	end: number;
+	snippet: string;
+	assetId: string | null;
+	chunkName: string | null;
+};
+
 export type EditorSnapshot = {
 	lines: string[];
 	cursorRow: number;

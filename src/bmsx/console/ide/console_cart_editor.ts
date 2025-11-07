@@ -99,6 +99,7 @@ import type {
 	RuntimeErrorStackFrame,
 	ScrollbarKind,
 	SearchMatch,
+	GlobalSearchMatch,
 	SymbolCatalogEntry,
 	SymbolSearchResult,
 	TabDragState,
@@ -168,9 +169,20 @@ type SearchComputationJob = {
 	cursorColumn: number;
 };
 
+type GlobalSearchJob = {
+	query: string;
+	descriptors: ConsoleResourceDescriptor[];
+	descriptorIndex: number;
+	currentLines: string[] | null;
+	nextRow: number;
+	matches: GlobalSearchMatch[];
+	limitHit: boolean;
+};
+
 const EDITOR_TOGGLE_KEY = 'F1';
 const ESCAPE_KEY = 'Escape';
 const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'start'];
+const GLOBAL_SEARCH_RESULT_LIMIT = constants.SEARCH_MAX_RESULTS * 4;
 
 // Intellisense data is handled by CompletionController
 
@@ -350,6 +362,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private searchMatches: SearchMatch[] = [];
 	private searchCurrentIndex = -1;
 	private searchJob: SearchComputationJob | null = null;
+	private searchDisplayOffset = 0;
+	private searchHoverIndex = -1;
+	private searchScope: 'local' | 'global' = 'local';
+	private globalSearchMatches: GlobalSearchMatch[] = [];
+	private globalSearchJob: GlobalSearchJob | null = null;
 	private readonly backgroundTasks: Array<() => boolean> = [];
 	private backgroundTaskHandle: TimerHandle | null = null;
 	private readonly backgroundTaskBudgetMs = 2.0;
@@ -1793,6 +1810,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		this.restoreSnapshot(state.snapshot);
 		this.applySearchFieldText(state.searchQuery, true);
+		this.searchScope = 'local';
+		this.searchDisplayOffset = 0;
+		this.searchHoverIndex = -1;
+		this.globalSearchMatches = [];
 		this.searchMatches = state.searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end }));
 		this.searchCurrentIndex = state.searchCurrentIndex;
 		this.searchActive = state.searchActive;
@@ -1856,6 +1877,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.cursorRevealSuspended = false;
 		this.searchActive = false;
 		this.searchVisible = false;
+		this.cancelSearchJob();
+		this.cancelGlobalSearchJob();
+		this.searchMatches = [];
+		this.globalSearchMatches = [];
+		this.searchDisplayOffset = 0;
+		this.searchHoverIndex = -1;
+		this.searchScope = 'local';
+		this.searchCurrentIndex = -1;
+		this.applySearchFieldText('', true);
 		this.lineJumpActive = false;
 		this.lineJumpVisible = false;
 		this.applyLineJumpFieldText('', true);
@@ -2028,6 +2058,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.syncRuntimeErrorOverlayFromContext(this.getActiveCodeTabContext());
 		this.resetActionPromptState();
 		this.cancelSearchJob();
+		this.cancelGlobalSearchJob();
+		this.globalSearchMatches = [];
+		this.searchDisplayOffset = 0;
+		this.searchHoverIndex = -1;
+		this.searchScope = 'local';
 		if (this.searchQuery.length === 0) {
 			this.searchMatches = [];
 			this.searchCurrentIndex = -1;
@@ -2114,6 +2149,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	this.closeCreateResourcePrompt(false);
 	this.hideResourcePanel();
 	this.cancelSearchJob();
+	this.cancelGlobalSearchJob();
+	this.globalSearchMatches = [];
+	this.searchDisplayOffset = 0;
+	this.searchHoverIndex = -1;
+	this.searchScope = 'local';
 	this.backgroundTasks.length = 0;
 	if (this.backgroundTaskHandle) {
 		this.backgroundTaskHandle.cancel();
@@ -2228,9 +2268,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 
+		if ((ctrlDown || metaDown) && altDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {
+			consumeKeyboardKey(keyboard, 'KeyF');
+			this.openSearch(true, 'global');
+			return;
+		}
 		if ((ctrlDown || metaDown) && !shiftDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {
 			consumeKeyboardKey(keyboard, 'KeyF');
-			this.openSearch(true);
+			this.openSearch(true, 'local');
 			return;
 		}
 	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(this.playerIndex, 'Tab')) {
@@ -2645,9 +2690,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	private handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
 		const altDown = isModifierPressedGlobal(this.playerIndex, 'AltLeft') || isModifierPressedGlobal(this.playerIndex, 'AltRight');
-		if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {
+		if ((ctrlDown || metaDown) && altDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {
 			consumeKeyboardKey(keyboard, 'KeyF');
-			this.openSearch(false);
+			this.openSearch(false, 'global');
+			return;
+		}
+		if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {
+			consumeKeyboardKey(keyboard, 'KeyF');
+			this.openSearch(false, 'local');
 			return;
 		}
 		if ((ctrlDown || metaDown) && this.shouldFireRepeat(keyboard, 'KeyZ', deltaSeconds)) {
@@ -2669,9 +2719,20 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			void this.save();
 			return;
 		}
+		const hasResults = this.activeSearchMatchCount() > 0;
+		const previewLocal = this.searchScope === 'local';
 		if (isKeyJustPressedGlobal(this.playerIndex, 'Enter')) {
 			consumeKeyboardKey(keyboard, 'Enter');
-			if (shiftDown) {
+			if (hasResults) {
+				if (shiftDown) {
+					this.moveSearchSelection(-1, { wrap: true, preview: previewLocal });
+				} else if (this.searchCurrentIndex === -1) {
+					this.searchCurrentIndex = 0;
+				} else {
+					this.moveSearchSelection(1, { wrap: true, preview: previewLocal });
+				}
+				this.applySearchSelection(this.searchCurrentIndex);
+			} else if (shiftDown) {
 				this.jumpToPreviousMatch();
 			} else {
 				this.jumpToNextMatch();
@@ -2686,6 +2747,47 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				this.jumpToNextMatch();
 			}
 			return;
+		}
+		if (hasResults) {
+			if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'ArrowUp');
+				this.moveSearchSelection(-1, { preview: previewLocal });
+				return;
+			}
+			if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'ArrowDown');
+				this.moveSearchSelection(1, { preview: previewLocal });
+				return;
+			}
+			if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'PageUp');
+				this.moveSearchSelection(-this.searchPageSize(), { preview: previewLocal });
+				return;
+			}
+			if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'PageDown');
+				this.moveSearchSelection(this.searchPageSize(), { preview: previewLocal });
+				return;
+			}
+			if (isKeyJustPressedGlobal(this.playerIndex, 'Home')) {
+				consumeKeyboardKey(keyboard, 'Home');
+				this.searchCurrentIndex = hasResults ? 0 : -1;
+				this.ensureSearchSelectionVisible();
+				if (previewLocal) {
+					this.applySearchSelection(this.searchCurrentIndex, { preview: true });
+				}
+				return;
+			}
+			if (isKeyJustPressedGlobal(this.playerIndex, 'End')) {
+				consumeKeyboardKey(keyboard, 'End');
+				const lastIndex = hasResults ? this.activeSearchMatchCount() - 1 : -1;
+				this.searchCurrentIndex = lastIndex;
+				this.ensureSearchSelectionVisible();
+				if (previewLocal) {
+					this.applySearchSelection(this.searchCurrentIndex, { preview: true });
+				}
+				return;
+			}
 		}
 
 		const textChanged = this.processInlineFieldEditing(this.searchField, keyboard, {
@@ -2745,12 +2847,23 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	private openSearch(useSelection: boolean): void {
+	private openSearch(useSelection: boolean, scope: 'local' | 'global' = 'local'): void {
 		this.clearReferenceHighlights();
 		this.closeSymbolSearch(false);
 		this.closeResourceSearch(false);
 		this.closeLineJump(false);
 		this.renameController.cancel();
+		this.searchScope = scope;
+		this.searchDisplayOffset = 0;
+		this.searchHoverIndex = -1;
+		if (scope === 'global') {
+			this.cancelSearchJob();
+			this.searchMatches = [];
+			this.globalSearchMatches = [];
+		} else {
+			this.cancelGlobalSearchJob();
+			this.globalSearchMatches = [];
+		}
 		this.searchVisible = true;
 		this.searchActive = true;
 		this.applySearchFieldText(this.searchQuery, true);
@@ -2775,18 +2888,33 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	private closeSearch(clearQuery: boolean, forceHide = false): void {
 		this.searchActive = false;
+		this.searchHoverIndex = -1;
+		this.searchDisplayOffset = 0;
 		if (clearQuery) {
 			this.applySearchFieldText('', true);
 		}
 		this.searchQuery = this.searchField.text;
 		const shouldHide = forceHide || clearQuery || this.searchQuery.length === 0;
-		this.searchVisible = shouldHide ? false : true;
-		this.searchMatches = [];
-		this.searchCurrentIndex = -1;
-		this.selectionAnchor = null;
 		if (shouldHide) {
+			this.searchVisible = false;
+			this.searchScope = 'local';
+			this.searchMatches = [];
+			this.globalSearchMatches = [];
+			this.searchCurrentIndex = -1;
 			this.cancelSearchJob();
+			this.cancelGlobalSearchJob();
+		} else {
+			if (this.searchScope !== 'local') {
+				this.searchScope = 'local';
+				this.cancelGlobalSearchJob();
+				this.globalSearchMatches = [];
+			}
+			this.searchMatches = [];
+			this.searchCurrentIndex = -1;
+			this.searchVisible = true;
+			this.onSearchQueryChanged();
 		}
+		this.selectionAnchor = null;
 		this.resetBlink();
 	}
 
@@ -2795,15 +2923,25 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 		this.searchActive = false;
+		this.searchScope = 'local';
+		this.searchDisplayOffset = 0;
+		this.searchHoverIndex = -1;
+		this.cancelGlobalSearchJob();
 		if (this.searchQuery.length === 0) {
 			this.searchVisible = false;
+			this.searchMatches = [];
+			this.globalSearchMatches = [];
+			this.searchCurrentIndex = -1;
+		} else {
+			this.searchMatches = [];
+			this.globalSearchMatches = [];
+			this.searchCurrentIndex = -1;
 		}
-		this.searchMatches = [];
-		this.searchCurrentIndex = -1;
 		this.selectionAnchor = null;
 		this.searchField.selectionAnchor = null;
 		this.searchField.pointerSelecting = false;
 		this.cancelSearchJob();
+		this.cancelGlobalSearchJob();
 		this.resetBlink();
 	}
 
@@ -3857,14 +3995,31 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private onSearchQueryChanged(): void {
-	if (this.searchQuery.length === 0) {
-		this.cancelSearchJob();
-		this.searchMatches = [];
-		this.searchCurrentIndex = -1;
-		this.selectionAnchor = null;
-		return;
-	}
+		if (this.searchScope === 'global') {
+			this.onGlobalSearchQueryChanged();
+			return;
+		}
+		if (this.searchQuery.length === 0) {
+			this.cancelSearchJob();
+			this.searchMatches = [];
+			this.searchCurrentIndex = -1;
+			this.selectionAnchor = null;
+			this.searchDisplayOffset = 0;
+			return;
+		}
 		this.startSearchJob();
+	}
+
+	private onGlobalSearchQueryChanged(): void {
+		this.searchDisplayOffset = 0;
+		this.searchHoverIndex = -1;
+		this.searchCurrentIndex = -1;
+		if (this.searchQuery.length === 0) {
+			this.cancelGlobalSearchJob();
+			this.globalSearchMatches = [];
+			return;
+		}
+		this.startGlobalSearchJob();
 	}
 
 	private focusSearchResult(index: number): void {
@@ -3903,6 +4058,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private jumpToNextMatch(): void {
+		if (this.searchScope === 'global') {
+			if (this.activeSearchMatchCount() === 0) {
+				this.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
+				return;
+			}
+			this.moveSearchSelection(1, { wrap: true });
+			this.applySearchSelection(this.searchCurrentIndex);
+			return;
+		}
 		this.ensureSearchJobCompleted();
 		if (this.searchMatches.length === 0) {
 			this.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
@@ -3920,6 +4084,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private jumpToPreviousMatch(): void {
+		if (this.searchScope === 'global') {
+			if (this.activeSearchMatchCount() === 0) {
+				this.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
+				return;
+			}
+			this.moveSearchSelection(-1, { wrap: true });
+			this.applySearchSelection(this.searchCurrentIndex);
+			return;
+		}
 		this.ensureSearchJobCompleted();
 		if (this.searchMatches.length === 0) {
 			this.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
@@ -3938,6 +4111,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	private startSearchJob(): void {
 		this.cancelSearchJob();
+		this.searchDisplayOffset = 0;
+		this.searchHoverIndex = -1;
 		const normalized = this.searchQuery.toLowerCase();
 		const job: SearchComputationJob = {
 			query: normalized,
@@ -3983,26 +4158,35 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (!line || line.length === 0) {
 			return;
 		}
-		const lower = line.toLowerCase();
-		const needle = job.query;
-		if (needle.length === 0 || lower.length < needle.length) {
-			return;
-		}
-		let start = 0;
-		while (start <= lower.length - needle.length) {
-			const index = lower.indexOf(needle, start);
-			if (index === -1) {
-				break;
-			}
-			const match: SearchMatch = { row, start: index, end: index + needle.length };
+		this.forEachMatchInLine(line, job.query, (start, end) => {
+			const match: SearchMatch = { row, start, end };
 			job.matches.push(match);
 			const matchIndex = job.matches.length - 1;
 			if (job.firstMatchAfterCursor === -1) {
-				if (row > job.cursorRow || (row === job.cursorRow && index >= job.cursorColumn)) {
+				if (row > job.cursorRow || (row === job.cursorRow && start >= job.cursorColumn)) {
 					job.firstMatchAfterCursor = matchIndex;
 				}
 			}
-			start = index + needle.length;
+		});
+	}
+
+	private forEachMatchInLine(line: string, needle: string, cb: (start: number, end: number) => void): void {
+		if (!line || needle.length === 0 || line.length === 0) {
+			return;
+		}
+		const lower = line.toLowerCase();
+		const query = needle.toLowerCase();
+		if (lower.length < query.length) {
+			return;
+		}
+		let startIndex = 0;
+		while (startIndex <= lower.length - query.length) {
+			const index = lower.indexOf(query, startIndex);
+			if (index === -1) {
+				break;
+			}
+			cb(index, index + query.length);
+			startIndex = index + query.length;
 		}
 	}
 
@@ -4015,9 +4199,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (job.matches.length === 0) {
 			this.searchCurrentIndex = -1;
 			this.selectionAnchor = null;
+			this.searchDisplayOffset = 0;
 		} else {
 			const index = job.firstMatchAfterCursor >= 0 ? job.firstMatchAfterCursor : 0;
 			this.searchCurrentIndex = clamp(index, 0, job.matches.length - 1);
+			this.ensureSearchSelectionVisible();
 			this.focusSearchResult(this.searchCurrentIndex);
 		}
 	}
@@ -4034,6 +4220,325 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		while (this.searchJob === job && this.runSearchJobSlice(job)) {
 			// Continue processing synchronously until the job completes.
 		}
+	}
+
+	private startGlobalSearchJob(): void {
+		this.cancelGlobalSearchJob();
+		const normalized = this.searchQuery.toLowerCase();
+		if (normalized.length === 0) {
+		this.globalSearchMatches = [];
+			return;
+		}
+		let descriptors: ConsoleResourceDescriptor[] = [];
+		try {
+			descriptors = this.listResourcesStrict().filter(entry => entry.type === 'lua');
+		} catch {
+			descriptors = [];
+		}
+		const job: GlobalSearchJob = {
+			query: normalized,
+			descriptors,
+			descriptorIndex: 0,
+			currentLines: null,
+			nextRow: 0,
+			matches: [],
+			limitHit: false,
+		};
+		this.globalSearchJob = job;
+		this.globalSearchMatches = [];
+		this.searchCurrentIndex = -1;
+		this.searchDisplayOffset = 0;
+		this.searchHoverIndex = -1;
+		this.enqueueBackgroundTask(() => this.runGlobalSearchJobSlice(job));
+	}
+
+	private runGlobalSearchJobSlice(job: GlobalSearchJob): boolean {
+		if (this.globalSearchJob !== job) {
+			return false;
+		}
+		if (job.query.length === 0) {
+			this.globalSearchJob = null;
+			return false;
+		}
+		const rowsPerSlice = 200;
+		let processed = 0;
+		while (job.descriptorIndex < job.descriptors.length && processed < rowsPerSlice && !job.limitHit) {
+			if (!job.currentLines) {
+				const descriptor = job.descriptors[job.descriptorIndex];
+				job.currentLines = this.loadDescriptorLines(descriptor);
+				job.nextRow = 0;
+				if (!job.currentLines) {
+					job.descriptorIndex += 1;
+					continue;
+				}
+			}
+			const lines = job.currentLines;
+			if (!lines) {
+				job.descriptorIndex += 1;
+				job.currentLines = null;
+				continue;
+			}
+			while (job.nextRow < lines.length && processed < rowsPerSlice && !job.limitHit) {
+				const row = job.nextRow;
+				job.nextRow += 1;
+				processed += 1;
+				const line = lines[row] ?? '';
+				this.forEachMatchInLine(line, job.query, (start, end) => {
+					if (job.limitHit) {
+						return;
+					}
+					const descriptor = job.descriptors[job.descriptorIndex];
+					const match: GlobalSearchMatch = {
+						descriptor,
+						pathLabel: this.describeDescriptor(descriptor),
+						row,
+						start,
+						end,
+						snippet: this.buildSearchSnippet(line, start, end),
+						assetId: descriptor.assetId ?? null,
+						chunkName: descriptor.path ?? null,
+					};
+					job.matches.push(match);
+					if (job.matches.length >= GLOBAL_SEARCH_RESULT_LIMIT) {
+						job.limitHit = true;
+					}
+				});
+			}
+			if (job.nextRow >= lines.length) {
+				job.currentLines = null;
+				job.nextRow = 0;
+				job.descriptorIndex += 1;
+			}
+		}
+		if (job.limitHit || job.descriptorIndex >= job.descriptors.length) {
+			this.completeGlobalSearchJob(job);
+			return false;
+		}
+		return true;
+	}
+
+	private completeGlobalSearchJob(job: GlobalSearchJob): void {
+		if (this.globalSearchJob !== job) {
+			return;
+		}
+		this.globalSearchJob = null;
+		this.globalSearchMatches = job.matches;
+		if (this.globalSearchMatches.length === 0) {
+			this.searchCurrentIndex = -1;
+			this.searchDisplayOffset = 0;
+			return;
+		}
+		if (this.searchCurrentIndex < 0 || this.searchCurrentIndex >= this.globalSearchMatches.length) {
+			this.searchCurrentIndex = 0;
+		}
+		this.ensureSearchSelectionVisible();
+	}
+
+	private cancelGlobalSearchJob(): void {
+		this.globalSearchJob = null;
+	}
+
+	private loadDescriptorLines(descriptor: ConsoleResourceDescriptor): string[] | null {
+		try {
+			const assetId = descriptor.assetId;
+			if (!assetId) {
+				return null;
+			}
+			const source = this.loadLuaResourceFn(assetId);
+			if (typeof source !== 'string') {
+				return null;
+			}
+			return source.split(/\r?\n/);
+		} catch {
+			return null;
+		}
+	}
+
+	private describeDescriptor(descriptor: ConsoleResourceDescriptor): string {
+		if (descriptor.path && descriptor.path.length > 0) {
+			return descriptor.path.replace(/\\/g, '/');
+		}
+		if (descriptor.assetId && descriptor.assetId.length > 0) {
+			return descriptor.assetId;
+		}
+		return '<resource>';
+	}
+
+	private buildSearchSnippet(line: string, start: number, end: number): string {
+		if (!line || line.length === 0) {
+			return '<blank>';
+		}
+		const padding = 32;
+		const sliceStart = Math.max(0, start - padding);
+		const sliceEnd = Math.min(line.length, end + padding);
+		let snippet = line.slice(sliceStart, sliceEnd).trim();
+		if (sliceStart > 0) {
+			snippet = `…${snippet}`;
+		}
+		if (sliceEnd < line.length) {
+			snippet = `${snippet}…`;
+		}
+		return snippet;
+	}
+
+	private activeSearchMatchCount(): number {
+		return this.searchScope === 'global' ? this.globalSearchMatches.length : this.searchMatches.length;
+	}
+
+	private searchPageSize(): number {
+		return constants.SEARCH_MAX_RESULTS;
+	}
+
+	private searchVisibleResultCount(): number {
+		if (!this.isSearchVisible()) {
+			return 0;
+		}
+		const total = this.activeSearchMatchCount();
+		if (total <= 0) {
+			return 0;
+		}
+		const maxOffset = Math.max(0, total - 1);
+		const offset = clamp(this.searchDisplayOffset, 0, maxOffset);
+		const visible = Math.min(this.searchPageSize(), total - offset);
+		return Math.max(0, visible);
+	}
+
+	private searchResultEntryHeight(): number {
+		return this.lineHeight * 2;
+	}
+
+	private getVisibleSearchResultEntries(): Array<{ primary: string; secondary?: string | null; detail?: string | null }> {
+		const results: Array<{ primary: string; secondary?: string | null; detail?: string | null }> = [];
+		const visible = this.searchVisibleResultCount();
+		if (visible <= 0) {
+			return results;
+		}
+		const total = this.activeSearchMatchCount();
+		const maxOffset = Math.max(0, total - 1);
+		const offset = clamp(this.searchDisplayOffset, 0, maxOffset);
+		for (let i = 0; i < visible; i += 1) {
+			const index = offset + i;
+			if (this.searchScope === 'global') {
+				const match = this.globalSearchMatches[index];
+				if (!match) {
+					continue;
+				}
+				const lineLabel = `:${match.row + 1}`;
+				results.push({
+					primary: match.pathLabel,
+					secondary: match.snippet,
+					detail: lineLabel,
+				});
+			} else {
+				const match = this.searchMatches[index];
+				if (!match) {
+					continue;
+				}
+				const lineText = this.lines[match.row] ?? '';
+				results.push({
+					primary: `Line ${match.row + 1}`,
+					secondary: this.buildSearchSnippet(lineText, match.start, match.end),
+					detail: null,
+				});
+			}
+		}
+		return results;
+	}
+
+	private ensureSearchSelectionVisible(): void {
+		const total = this.activeSearchMatchCount();
+		if (total === 0) {
+			this.searchDisplayOffset = 0;
+			return;
+		}
+		if (this.searchCurrentIndex < 0) {
+			this.searchCurrentIndex = 0;
+		}
+		const pageSize = this.searchPageSize();
+		if (this.searchCurrentIndex < this.searchDisplayOffset) {
+			this.searchDisplayOffset = this.searchCurrentIndex;
+		} else if (this.searchCurrentIndex >= this.searchDisplayOffset + pageSize) {
+			this.searchDisplayOffset = this.searchCurrentIndex - pageSize + 1;
+		}
+		const maxOffset = Math.max(0, total - pageSize);
+		this.searchDisplayOffset = clamp(this.searchDisplayOffset, 0, maxOffset);
+	}
+
+	private moveSearchSelection(delta: number, options?: { wrap?: boolean; preview?: boolean }): void {
+		const total = this.activeSearchMatchCount();
+		if (total === 0) {
+			return;
+		}
+		let next = this.searchCurrentIndex;
+		if (next === -1) {
+			next = delta > 0 ? 0 : total - 1;
+		} else {
+			next += delta;
+		}
+		if (options?.wrap) {
+			next = ((next % total) + total) % total;
+		} else {
+			next = clamp(next, 0, total - 1);
+		}
+		if (next === this.searchCurrentIndex) {
+			if (options?.preview) {
+				this.applySearchSelection(next, { preview: true });
+			}
+			return;
+		}
+		this.searchCurrentIndex = next;
+		this.ensureSearchSelectionVisible();
+		if (options?.preview) {
+			this.applySearchSelection(next, { preview: true });
+		}
+	}
+
+	private applySearchSelection(index: number, options?: { preview?: boolean }): void {
+		const total = this.activeSearchMatchCount();
+		if (total === 0) {
+			return;
+		}
+		let targetIndex = index;
+		if (targetIndex < 0 || targetIndex >= total) {
+			targetIndex = clamp(targetIndex, 0, total - 1);
+			this.searchCurrentIndex = targetIndex;
+		}
+		if (this.searchScope === 'global') {
+			if (options?.preview) {
+				return;
+			}
+			this.focusGlobalSearchResult(targetIndex, options?.preview === true);
+		} else {
+			this.focusSearchResult(targetIndex);
+		}
+	}
+
+	private focusGlobalSearchResult(index: number, previewOnly: boolean = false): void {
+		const match = this.globalSearchMatches[index];
+		if (!match) {
+			if (!previewOnly) {
+				this.showMessage('Search result unavailable', constants.COLOR_STATUS_WARNING, 1.5);
+			}
+			return;
+		}
+		if (previewOnly) {
+			return;
+		}
+		if (match.descriptor) {
+			this.openLuaCodeTab(match.descriptor);
+		} else {
+			this.activateCodeTab();
+		}
+		this.scheduleNextFrame(() => {
+			const row = clamp(match.row, 0, Math.max(0, this.lines.length - 1));
+			const line = this.lines[row] ?? '';
+			const endColumn = Math.min(match.end, line.length);
+			this.cursorRow = row;
+			this.cursorColumn = clamp(match.start, 0, line.length);
+			this.selectionAnchor = { row, column: endColumn };
+			this.ensureCursorVisible();
+			this.resetBlink();
+		});
 	}
 
 	private showReferenceStatusMessage(): void {
@@ -4502,28 +5007,69 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const searchBounds = this.getSearchBarBounds();
 		if (this.searchVisible && searchBounds) {
 			const insideSearch = this.pointInRect(snapshot.viewportX, snapshot.viewportY, searchBounds);
+			const baseHeight = this.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+			const fieldBottom = searchBounds.top + baseHeight;
+			const visibleResults = this.searchVisibleResultCount();
 			if (insideSearch) {
-				if (justPressed) {
-					this.closeLineJump(false);
-					this.searchVisible = true;
-					this.searchActive = true;
-					this.resourcePanelFocused = false;
-					this.cursorVisible = true;
-					this.resetBlink();
+				this.searchHoverIndex = -1;
+				if (snapshot.viewportY < fieldBottom) {
+					if (justPressed) {
+						this.closeLineJump(false);
+						this.searchVisible = true;
+						this.searchActive = true;
+						this.resourcePanelFocused = false;
+						this.cursorVisible = true;
+						this.resetBlink();
+					}
+					const label = this.searchScope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
+					const labelX = 4;
+					const textLeft = labelX + this.measureText(label + ' ');
+					this.processInlineFieldPointer(this.searchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+					this.pointerSelecting = false;
+					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+					this.clearHoverTooltip();
+					this.clearGotoHoverHighlight();
+					return;
 				}
-				const label = 'SEARCH:';
-				const labelX = 4;
-				const textLeft = labelX + this.measureText(label + ' ');
-				this.processInlineFieldPointer(this.searchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-				this.pointerSelecting = false;
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
-				this.clearHoverTooltip();
-				this.clearGotoHoverHighlight();
-				return;
-			}
-			if (justPressed) {
+				if (visibleResults > 0) {
+					const resultsStart = fieldBottom + constants.SEARCH_RESULT_SPACING;
+					const rowHeight = this.searchResultEntryHeight();
+					let hoverIndex = -1;
+					if (snapshot.viewportY >= resultsStart) {
+						const relative = snapshot.viewportY - resultsStart;
+						const indexWithin = Math.floor(relative / rowHeight);
+						if (indexWithin >= 0 && indexWithin < visibleResults) {
+							hoverIndex = this.searchDisplayOffset + indexWithin;
+						}
+					}
+					this.searchHoverIndex = hoverIndex;
+					if (hoverIndex >= 0 && justPressed) {
+						if (hoverIndex !== this.searchCurrentIndex) {
+							this.searchCurrentIndex = hoverIndex;
+							this.ensureSearchSelectionVisible();
+							if (this.searchScope === 'local') {
+								this.applySearchSelection(hoverIndex, { preview: true });
+							}
+						}
+						this.applySearchSelection(hoverIndex);
+						this.pointerSelecting = false;
+						this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+						this.clearHoverTooltip();
+						this.clearGotoHoverHighlight();
+						return;
+					}
+					this.pointerSelecting = false;
+					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+					this.clearHoverTooltip();
+					this.clearGotoHoverHighlight();
+					return;
+				}
+			} else if (justPressed) {
 				this.searchActive = false;
+				this.searchHoverIndex = -1;
 			}
+		} else {
+			this.searchHoverIndex = -1;
 		}
 
 		const bounds = this.getCodeAreaBounds();
@@ -6556,8 +7102,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			searchActive: this.searchActive,
 			searchField: this.searchField,
 			searchQuery: this.searchQuery,
-			searchMatchesCount: this.searchMatches.length,
+			searchMatchesCount: this.activeSearchMatchCount(),
 			searchCurrentIndex: this.searchCurrentIndex,
+			searchScope: this.searchScope,
+			searchWorking: this.searchScope === 'global' ? this.globalSearchJob !== null : this.searchJob !== null,
+			searchVisibleResultCount: () => this.searchVisibleResultCount(),
+			searchResultEntryHeight: () => this.searchResultEntryHeight(),
+			searchResultEntries: this.getVisibleSearchResultEntries(),
+			searchSelectionIndex: this.searchCurrentIndex,
+			searchHoverIndex: this.searchHoverIndex,
+			searchDisplayOffset: this.searchDisplayOffset,
 		};
 		renderSearchBar(api, host);
 	}
@@ -6830,7 +7384,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (!this.isSearchVisible()) {
 			return 0;
 		}
-		return this.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+		const baseHeight = this.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+		const visible = this.searchVisibleResultCount();
+		if (visible <= 0) {
+			return baseHeight;
+		}
+		return baseHeight + constants.SEARCH_RESULT_SPACING + visible * this.searchResultEntryHeight();
 	}
 
 	private isSearchVisible(): boolean {
@@ -8583,7 +9142,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
-		if (this.searchMatches.length === 0 || this.searchQuery.length === 0) {
+		if (this.searchScope !== 'local' || this.searchMatches.length === 0 || this.searchQuery.length === 0) {
 			return;
 		}
 		const highlight = entry.hi;

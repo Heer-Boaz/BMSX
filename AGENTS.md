@@ -116,6 +116,7 @@
 	* `@excludefromsavegame`: Indicates that the decorated class is excluded from the serialized game state.
 	* `@excludepropfromsavegame`: Indicates that the decorated class-property is excluded from the serialized game state.
 * When introducing new features, consider how they can be serialized and deserialized as part of the game state. Also consider that many objects/properties should be *excluded* from serialization.
+* When working on the code file `console_cart_editor.ts`, ensure that the functionality you work on is moved into its own code file, to ensure that the `console_cart_editor.ts` file becomes smaller and more manageable.
 * Don't unnecessarily override methods.
 * **Performance**:
   - Consider the performance implications of generated code, especially in critical areas of the application, noting that the engine is supposed to perform well on lower-end hardware such as iPhone 10/11/12.

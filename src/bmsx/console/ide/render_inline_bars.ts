@@ -1,6 +1,18 @@
 import { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
 
+type InlineResultListOptions<T> = {
+	entries: readonly T[] | null | undefined;
+	visibleCount: number;
+	displayOffset: number;
+	rowHeight: number;
+	rowTop: number;
+	viewportWidth: number;
+	selectionIndex: number;
+	hoverIndex: number;
+	drawRow: (entry: T, rowTop: number) => void;
+};
+
 export interface InlineBarsHost {
 	viewportWidth: number;
 	headerHeight: number;
@@ -50,6 +62,14 @@ export interface InlineBarsHost {
 	searchQuery?: string;
 	searchMatchesCount?: number;
 	searchCurrentIndex?: number;
+	searchScope?: 'local' | 'global';
+	searchWorking?: boolean;
+	searchVisibleResultCount?: () => number;
+	searchResultEntryHeight?: () => number;
+	searchResultEntries?: Array<{ primary: string; secondary?: string | null; detail?: string | null }>;
+	searchSelectionIndex?: number;
+	searchHoverIndex?: number;
+	searchDisplayOffset?: number;
 
 	// Resource search bar state and helpers
 	resourceSearchActive?: boolean;
@@ -149,7 +169,7 @@ export function renderSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, constants.COLOR_SEARCH_OUTLINE);
 
 	const field = host.searchField as { text: string } | undefined;
-	const label = 'SEARCH:';
+	const label = host.searchScope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
 	const labelX = 4;
 	const labelY = barTop + constants.SEARCH_BAR_MARGIN_Y;
 	host.drawText(api, label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
@@ -183,14 +203,56 @@ export function renderSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void
     host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretX, active, constants.INLINE_CARET_COLOR, queryColor);
 	}
 
+	const infoX = host.viewportWidth - 4;
 	const total = host.searchMatchesCount ?? 0;
 	const current = host.searchCurrentIndex ?? -1;
-	if (total > 0 || (host.searchQuery && host.searchQuery.length > 0)) {
+	if (host.searchWorking) {
+		const workingText = 'SEARCHING...';
+		const workingWidth = host.measureText(workingText);
+		host.drawText(api, workingText, infoX - workingWidth, labelY, constants.COLOR_SEARCH_TEXT);
+	} else if (total > 0 || (host.searchQuery && host.searchQuery.length > 0)) {
 		const infoText = total === 0 ? '0/0' : `${(current >= 0 ? current + 1 : 0)}/${total}`;
 		const infoColor = total === 0 ? constants.COLOR_STATUS_WARNING : constants.COLOR_SEARCH_TEXT;
 		const infoWidth = host.measureText(infoText);
-		host.drawText(api, infoText, host.viewportWidth - infoWidth - 4, labelY, infoColor);
+		host.drawText(api, infoText, infoX - infoWidth, labelY, infoColor);
 	}
+
+	const visible = host.searchVisibleResultCount ? host.searchVisibleResultCount() : 0;
+	if (visible <= 0) {
+		return;
+	}
+	const baseHeight = host.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+	const separatorTop = barTop + baseHeight;
+	api.rectfill(0, separatorTop, host.viewportWidth, separatorTop + constants.SEARCH_RESULT_SPACING, constants.COLOR_SEARCH_OUTLINE);
+	const resultsTop = separatorTop + constants.SEARCH_RESULT_SPACING;
+	const rowHeight = host.searchResultEntryHeight ? host.searchResultEntryHeight() : host.lineHeight * 2;
+
+	renderResultList(api, {
+		entries: host.searchResultEntries,
+		visibleCount: visible,
+		displayOffset: host.searchDisplayOffset ?? 0,
+		rowHeight,
+		rowTop: resultsTop,
+		viewportWidth: host.viewportWidth,
+		selectionIndex: host.searchSelectionIndex ?? -1,
+		hoverIndex: host.searchHoverIndex ?? -1,
+		drawRow: (entry, rowTop) => {
+			const paddingX = constants.QUICK_OPEN_RESULT_PADDING_X;
+			const primaryY = rowTop;
+			const secondaryY = rowTop + host.lineHeight;
+			if (entry.primary) {
+				host.drawText(api, entry.primary, paddingX, primaryY, constants.COLOR_SEARCH_TEXT);
+			}
+			if (entry.detail) {
+				const detailWidth = host.measureText(entry.detail);
+				const detailX = host.viewportWidth - detailWidth - paddingX;
+				host.drawText(api, entry.detail, detailX, primaryY, constants.COLOR_SEARCH_SECONDARY_TEXT);
+			}
+			if (entry.secondary) {
+				host.drawText(api, entry.secondary, paddingX, secondaryY, constants.COLOR_SEARCH_SECONDARY_TEXT);
+			}
+		},
+	});
 }
 
 export function renderResourceSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void {
@@ -245,37 +307,36 @@ export function renderResourceSearchBar(api: BmsxConsoleApi, host: InlineBarsHos
 	const resultsTop = separatorTop + constants.QUICK_OPEN_RESULT_SPACING;
 	const rowHeight = host.resourceSearchEntryHeight ? host.resourceSearchEntryHeight() : host.lineHeight * 2;
 	const compactMode = host.isResourceSearchCompactMode ? host.isResourceSearchCompactMode() : false;
-	for (let i = 0; i < visible; i += 1) {
-		const matchIndex = (host.resourceSearchDisplayOffset ?? 0) + i;
-		const match = host.resourceSearchMatches ? host.resourceSearchMatches[matchIndex] : undefined;
-		const rowTop = resultsTop + i * rowHeight;
-		const rowBottom = rowTop + rowHeight;
-		const isSelected = matchIndex === (host.resourceSearchSelectionIndex ?? -1);
-		const isHover = matchIndex === (host.resourceSearchHoverIndex ?? -1);
-		if (isSelected) {
-			api.rectfill_color(0, rowTop, host.viewportWidth, rowBottom, constants.HIGHLIGHT_OVERLAY);
-		} else if (isHover) {
-			api.rectfill_color(0, rowTop, host.viewportWidth, rowBottom, constants.SELECTION_OVERLAY);
-		}
-		let textX = constants.QUICK_OPEN_RESULT_PADDING_X;
-		const kindText = match?.entry.typeLabel ?? '';
-		const detail = match?.entry.assetLabel ?? '';
-		if (kindText.length > 0) {
-			host.drawText(api, kindText, textX, rowTop, constants.COLOR_QUICK_OPEN_KIND);
-			textX += host.measureText(kindText + ' ');
-		}
-		host.drawText(api, match?.entry.displayPath ?? '', textX, rowTop, constants.COLOR_QUICK_OPEN_TEXT);
-		if (compactMode) {
-			const secondaryY = rowTop + host.lineHeight;
-			if (detail.length > 0) {
-				host.drawText(api, detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, constants.COLOR_QUICK_OPEN_KIND);
+	renderResultList(api, {
+		entries: host.resourceSearchMatches,
+		visibleCount: visible,
+		displayOffset: host.resourceSearchDisplayOffset ?? 0,
+		rowHeight,
+		rowTop: resultsTop,
+		viewportWidth: host.viewportWidth,
+		selectionIndex: host.resourceSearchSelectionIndex ?? -1,
+		hoverIndex: host.resourceSearchHoverIndex ?? -1,
+		drawRow: (match, rowTop) => {
+			let textX = constants.QUICK_OPEN_RESULT_PADDING_X;
+			const kindText = match?.entry.typeLabel ?? '';
+			const detail = match?.entry.assetLabel ?? '';
+			if (kindText.length > 0) {
+				host.drawText(api, kindText, textX, rowTop, constants.COLOR_QUICK_OPEN_KIND);
+				textX += host.measureText(kindText + ' ');
 			}
-		} else if (detail.length > 0) {
-			const detailWidth = host.measureText(detail);
-			const detailX = host.viewportWidth - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
-			host.drawText(api, detail, detailX, rowTop, constants.COLOR_QUICK_OPEN_KIND);
-		}
-	}
+			host.drawText(api, match?.entry.displayPath ?? '', textX, rowTop, constants.COLOR_QUICK_OPEN_TEXT);
+			if (compactMode) {
+				const secondaryY = rowTop + host.lineHeight;
+				if (detail.length > 0) {
+					host.drawText(api, detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, constants.COLOR_QUICK_OPEN_KIND);
+				}
+			} else if (detail.length > 0) {
+				const detailWidth = host.measureText(detail);
+				const detailX = host.viewportWidth - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
+				host.drawText(api, detail, detailX, rowTop, constants.COLOR_QUICK_OPEN_KIND);
+			}
+		},
+	});
 }
 
 export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void {
@@ -336,50 +397,71 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 	const compactMode = mode === 'references'
 		? true
 		: (host.symbolSearchGlobal && host.isSymbolSearchCompactMode ? host.isSymbolSearchCompactMode() : false) as boolean;
-	for (let i = 0; i < visible; i += 1) {
-		const matchIndex = (host.symbolSearchDisplayOffset ?? 0) + i;
-		const match = host.symbolSearchMatches ? host.symbolSearchMatches[matchIndex] : undefined;
-		const rowTop = resultsTop + i * entryHeight;
-		const rowBottom = rowTop + entryHeight;
-		const isSelected = matchIndex === (host.symbolSearchSelectionIndex ?? -1);
-		const isHover = matchIndex === (host.symbolSearchHoverIndex ?? -1);
-		if (isSelected) {
-			api.rectfill_color(0, rowTop, host.viewportWidth, rowBottom, constants.HIGHLIGHT_OVERLAY);
-		} else if (isHover) {
-			api.rectfill_color(0, rowTop, host.viewportWidth, rowBottom, constants.SELECTION_OVERLAY);
-		}
-		let textX = constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-		const kindText = match?.entry.kindLabel ?? '';
-		const symbol = match?.entry.symbol as { __referenceColumn?: number } | undefined;
-		const referenceColumn = symbol?.__referenceColumn;
-		const lineValue = match?.entry.line ?? 0;
-		const lineText = mode === 'references' && typeof referenceColumn === 'number'
-			? `:${lineValue}:${referenceColumn}`
-			: `:${lineValue}`;
-		const lineWidth = host.measureText(lineText);
-		if (kindText.length > 0) {
-			host.drawText(api, kindText, textX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
-			textX += host.measureText(kindText + ' ');
-		}
-		host.drawText(api, match?.entry.displayName ?? '', textX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
-		if (compactMode) {
-			const secondaryY = rowTop + host.lineHeight;
-			const lineX = host.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-			host.drawText(api, lineText, lineX, secondaryY, constants.COLOR_SYMBOL_SEARCH_TEXT);
-			const sourceLabel = match?.entry.sourceLabel ?? '';
-			if (sourceLabel) {
-				host.drawText(api, sourceLabel, constants.SYMBOL_SEARCH_RESULT_PADDING_X, secondaryY, constants.COLOR_SYMBOL_SEARCH_KIND);
+	renderResultList(api, {
+		entries: host.symbolSearchMatches,
+		visibleCount: visible,
+		displayOffset: host.symbolSearchDisplayOffset ?? 0,
+		rowHeight: entryHeight,
+		rowTop: resultsTop,
+		viewportWidth: host.viewportWidth,
+		selectionIndex: host.symbolSearchSelectionIndex ?? -1,
+		hoverIndex: host.symbolSearchHoverIndex ?? -1,
+		drawRow: (match, rowTop) => {
+			let textX = constants.SYMBOL_SEARCH_RESULT_PADDING_X;
+			const kindText = match?.entry.kindLabel ?? '';
+			const symbol = match?.entry.symbol as { __referenceColumn?: number } | undefined;
+			const referenceColumn = symbol?.__referenceColumn;
+			const lineValue = match?.entry.line ?? 0;
+			const lineText = mode === 'references' && typeof referenceColumn === 'number'
+				? `:${lineValue}:${referenceColumn}`
+				: `:${lineValue}`;
+			const lineWidth = host.measureText(lineText);
+			if (kindText.length > 0) {
+				host.drawText(api, kindText, textX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
+				textX += host.measureText(kindText + ' ');
 			}
-		} else {
-			const lineX = host.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-			host.drawText(api, lineText, lineX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
-			const sourceLabel = match?.entry.sourceLabel ?? '';
-			if (sourceLabel) {
-				const sourceWidth = host.measureText(sourceLabel);
-				const sourceX = Math.max(textX, lineX - host.spaceAdvance - sourceWidth);
-				host.drawText(api, sourceLabel, sourceX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
+			host.drawText(api, match?.entry.displayName ?? '', textX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
+			if (compactMode) {
+				const secondaryY = rowTop + host.lineHeight;
+				const lineX = host.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
+				host.drawText(api, lineText, lineX, secondaryY, constants.COLOR_SYMBOL_SEARCH_TEXT);
+				const sourceLabel = match?.entry.sourceLabel ?? '';
+				if (sourceLabel) {
+					host.drawText(api, sourceLabel, constants.SYMBOL_SEARCH_RESULT_PADDING_X, secondaryY, constants.COLOR_SYMBOL_SEARCH_KIND);
+				}
+			} else {
+				const lineX = host.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
+				host.drawText(api, lineText, lineX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
+				const sourceLabel = match?.entry.sourceLabel ?? '';
+				if (sourceLabel) {
+					const sourceWidth = host.measureText(sourceLabel);
+					const sourceX = Math.max(textX, lineX - host.spaceAdvance - sourceWidth);
+					host.drawText(api, sourceLabel, sourceX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
+				}
 			}
+		},
+	});
+}
+
+function renderResultList<T>(api: BmsxConsoleApi, options: InlineResultListOptions<T>): void {
+	const { entries, visibleCount } = options;
+	if (!entries || visibleCount <= 0) {
+		return;
+	}
+	for (let i = 0; i < visibleCount; i += 1) {
+		const matchIndex = options.displayOffset + i;
+		const entry = entries[matchIndex];
+		if (!entry) {
+			continue;
 		}
+		const rowTop = options.rowTop + i * options.rowHeight;
+		const rowBottom = rowTop + options.rowHeight;
+		if (matchIndex === options.selectionIndex) {
+			api.rectfill_color(0, rowTop, options.viewportWidth, rowBottom, constants.HIGHLIGHT_OVERLAY);
+		} else if (matchIndex === options.hoverIndex) {
+			api.rectfill_color(0, rowTop, options.viewportWidth, rowBottom, constants.SELECTION_OVERLAY);
+		}
+		options.drawRow(entry, rowTop);
 	}
 }
 
