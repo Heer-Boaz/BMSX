@@ -107,7 +107,6 @@ import type {
 	LuaCompletionItem,
 } from './types';
 import type { RectBounds } from '../../rompack/rompack.ts';
-import type { TimerHandle } from '../../platform/platform';
 import { ReferenceState, resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation.ts';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
@@ -118,6 +117,9 @@ import {
 	type ReferenceCatalogEntry,
 	type ReferenceSymbolEntry,
 } from './reference_sources';
+import { createMessageController } from './console_cart_editor_messages';
+import { clearBackgroundTasks, enqueueBackgroundTask } from './console_cart_editor_background';
+export { enqueueBackgroundTask, runBackgroundTasks } from './console_cart_editor_background';
 
 type NavigationHistoryEntry = {
 	contextId: string;
@@ -167,8 +169,6 @@ type DiagnosticsCacheEntry = {
 	chunkName: string | null;
 	diagnostics: EditorDiagnostic[];
 };
-
-type BackgroundTask = () => boolean;
 
 type SearchComputationJob = {
 	query: string;
@@ -243,7 +243,6 @@ export let tabBarHeight: number;
 export let tabBarRowCount = 1;
 export let baseBottomMargin: number;
 export const repeatState: Map<string, RepeatEntry> = new Map();
-export const message: MessageState = { text: '', color: constants.COLOR_STATUS_TEXT, timer: 0, visible: false };
 export let deferredMessageDuration: number | null = null;
 export let runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
 export let executionStopRow: number | null = null;
@@ -305,6 +304,15 @@ export const actionPromptButtons: { saveAndContinue: RectBounds | null; continue
 };
 export let pendingActionPrompt: PendingActionPrompt | null = null;
 export let active = false;
+const messageController = createMessageController({
+	isActive: () => active,
+	getDeferredDuration: () => deferredMessageDuration,
+	setDeferredDuration: (value) => { deferredMessageDuration = value; },
+});
+export const message = messageController.message;
+export const showMessage = messageController.showMessage;
+export const updateMessage = messageController.updateMessage;
+export const showWarningBanner = messageController.showWarningBanner;
 export let blinkTimer = 0;
 export let cursorVisible = true;
 export let warnNonMonospace = false;
@@ -375,9 +383,6 @@ export let searchHoverIndex = -1;
 export let searchScope: 'local' | 'global' = 'local';
 export let globalSearchMatches: GlobalSearchMatch[] = [];
 export let globalSearchJob: GlobalSearchJob | null = null;
-export const backgroundTasks: Array<() => boolean> = [];
-export let backgroundTaskHandle: TimerHandle | null = null;
-export const backgroundTaskBudgetMs = 2.0;
 export let diagnosticsTaskPending = false;
 export let lastReportedSemanticError: string | null = null;
 export const referenceState: ReferenceState = new ReferenceState();
@@ -1888,38 +1893,6 @@ export function scheduleNextFrame(task: () => void): void {
 	void Promise.resolve().then(task);
 }
 
-export function enqueueBackgroundTask(task: BackgroundTask): void {
-	backgroundTasks.push(task);
-	if (backgroundTaskHandle === null) {
-		backgroundTaskHandle = $.platform.clock.scheduleOnce!(0, () => runBackgroundTasks());
-	}
-}
-
-export function runBackgroundTasks(): void {
-	backgroundTaskHandle = null;
-	if (backgroundTasks.length === 0) {
-		return;
-	}
-	const clock = $.platform.clock;
-	const deadline = clock.now() + backgroundTaskBudgetMs;
-	const iterationsLimit = backgroundTasks.length * 2;
-	let iterations = 0;
-	while (backgroundTasks.length > 0) {
-		const task = backgroundTasks.shift()!;
-		const keep = task();
-		if (keep) {
-			backgroundTasks.push(task);
-		}
-		iterations += 1;
-		if (clock.now() >= deadline || iterations >= iterationsLimit) {
-			break;
-		}
-	}
-	if (backgroundTasks.length > 0 && backgroundTaskHandle === null) {
-		backgroundTaskHandle = $.platform.clock.scheduleOnce!(0, () => runBackgroundTasks());
-	}
-}
-
 export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void {
 	const tooltip = hoverTooltip;
 	if (!tooltip) {
@@ -2007,16 +1980,6 @@ export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBotto
 		drawEditorText(api, font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, constants.COLOR_STATUS_TEXT);
 	}
 	tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleLeft + bubbleWidth, bottom: bubbleTop + bubbleHeight };
-}
-
-export function showWarningBanner(text: string, durationSeconds = 4.0): void {
-	showMessage(text, constants.COLOR_STATUS_WARNING, durationSeconds);
-	if (!active) {
-		message.timer = Number.POSITIVE_INFINITY;
-		deferredMessageDuration = durationSeconds;
-	} else {
-		deferredMessageDuration = null;
-	}
 }
 
 export function showRuntimeErrorInChunk(
@@ -3363,11 +3326,7 @@ export function deactivate(): void {
 	searchDisplayOffset = 0;
 	searchHoverIndex = -1;
 	searchScope = 'local';
-	backgroundTasks.length = 0;
-	if (backgroundTaskHandle) {
-		backgroundTaskHandle.cancel();
-		backgroundTaskHandle = null;
-	}
+	clearBackgroundTasks();
 	diagnosticsTaskPending = false;
 	lastReportedSemanticError = null;
 }
@@ -7966,23 +7925,6 @@ export async function save(): Promise<void> {
 		}
 		const message = error instanceof Error ? error.message : String(error);
 		showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
-	}
-}
-
-export function showMessage(text: string, color: number, durationSeconds: number): void {
-	message.text = text;
-	message.color = color;
-	message.timer = durationSeconds;
-	message.visible = true;
-}
-
-export function updateMessage(deltaSeconds: number): void {
-	if (!message.visible) {
-		return;
-	}
-	message.timer -= deltaSeconds;
-	if (message.timer <= 0) {
-		message.visible = false;
 	}
 }
 
