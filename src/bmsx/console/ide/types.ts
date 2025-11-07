@@ -316,16 +316,6 @@ export type PendingActionPrompt = {
 	action: 'resume' | 'reboot' | 'close';
 };
 
-export type ConsoleRuntimeBridge = {
-	getState(): unknown;
-	setState(state: unknown): void;
-	boot(reason?: string): void;
-	reloadLuaProgram(source: string): Promise<void>;
-	resumeFromSnapshot(state: unknown): void;
-	setEditorOverlayResolution(mode: EditorResolutionMode): void;
-	isLuaRuntimeFailed(): boolean;
-};
-
 export type ConsoleEditorSerializedState = {
 	active: boolean;
 	activeTab: EditorTabKind;

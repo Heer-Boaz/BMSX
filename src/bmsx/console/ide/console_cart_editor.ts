@@ -71,7 +71,6 @@ import type {
 	CodeTabContext,
 	ConsoleEditorOptions,
 	ConsoleEditorSerializedState,
-	ConsoleRuntimeBridge,
 	CrtOptionsSnapshot,
 	CursorScreenInfo,
 	EditorResolutionMode,
@@ -119,7 +118,6 @@ import {
 } from './reference_sources';
 import { createMessageController } from './console_cart_editor_messages';
 import { clearBackgroundTasks, enqueueBackgroundTask } from './console_cart_editor_background';
-export { enqueueBackgroundTask, runBackgroundTasks } from './console_cart_editor_background';
 
 type NavigationHistoryEntry = {
 	contextId: string;
@@ -143,6 +141,7 @@ import {
 } from './input_helpers';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast.ts';
 import { CaretNavigationState, resolveIndentAwareHome, resolveSegmentEnd } from './caret_navigation.ts';
+import type { BmsxConsoleRuntime } from '../../console.ts';
 
 export type ConsoleEditorShortcutContext = {
 	ctrlDown: boolean;
@@ -10816,35 +10815,8 @@ export function hasPendingRuntimeReload(): boolean {
 	return saveGeneration > appliedGeneration;
 }
 
-export function getConsoleRuntime(): ConsoleRuntimeBridge | null {
-	const registry = $.registry;
-	if (!registry) {
-		return null;
-	}
-	const instance = registry.get('bmsx_console_runtime') as unknown;
-	if (!instance || typeof instance !== 'object') {
-		return null;
-	}
-	const runtime = instance as ConsoleRuntimeBridge;
-	if (typeof runtime.getState !== 'function') {
-		return null;
-	}
-	if (typeof runtime.setState !== 'function') {
-		return null;
-	}
-	if (typeof runtime.boot !== 'function') {
-		return null;
-	}
-	if (typeof runtime.reloadLuaProgram !== 'function') {
-		return null;
-	}
-	if (typeof runtime.resumeFromSnapshot !== 'function') {
-		return null;
-	}
-	if (typeof runtime.isLuaRuntimeFailed !== 'function') {
-		return null;
-	}
-	return runtime;
+export function getConsoleRuntime(): BmsxConsoleRuntime | null {
+	return $.get('bmsx_console_runtime');
 }
 
 export function prepareRuntimeSnapshotForResume(snapshot: unknown): Record<string, unknown> | null {
