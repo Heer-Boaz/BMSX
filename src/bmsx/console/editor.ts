@@ -1,4 +1,9 @@
-export { ConsoleCartEditor, ConsoleLuaEditor } from './ide';
+export {
+	createConsoleCartEditor,
+	createConsoleLuaEditor,
+	type ConsoleCartEditor,
+	type ConsoleLuaEditor,
+} from './ide';
 export type {
 	ConsoleEditorOptions,
 	ConsoleEditorSerializedState,

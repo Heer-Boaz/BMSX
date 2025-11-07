@@ -23,8 +23,8 @@ import { instantiateBehaviorTree, unregisterBehaviorTreeBuilder, applyPreparedBe
 import type { BehaviorTreeDefinition, BehaviorTreeDiagnostic } from '../ai/behaviourtree';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
-import { ConsoleCartEditor } from './ide/console_cart_editor';
-import { ConsoleLuaEditor } from './ide/console_lua_editor';
+import type { ConsoleCartEditor } from './ide/console_cart_editor';
+import { createConsoleLuaEditor } from './ide/console_lua_editor';
 import type { RuntimeErrorDetails, RuntimeErrorStackFrame } from './ide/types';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { ConsoleFontVariant } from './font';
@@ -791,7 +791,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		const primaryAssetId = (this.luaProgram && 'assetId' in this.luaProgram)
 			? (typeof this.luaProgram.assetId === 'string' ? this.luaProgram.assetId : null)
 			: null;
-		this.editor = new ConsoleLuaEditor({
+		this.editor = createConsoleLuaEditor({
 			playerIndex: this.playerIndex,
 			metadata: this.cart.meta,
 			viewport,
