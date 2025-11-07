@@ -411,15 +411,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.saveSourceFn = options.saveSource;
 		this.listResourcesFn = options.listResources;
 		this.loadLuaResourceFn = options.loadLuaResource;
-	this.saveLuaResourceFn = options.saveLuaResource;
-	this.createLuaResourceFn = options.createLuaResource;
-	this.inspectLuaExpressionFn = options.inspectLuaExpression;
-	this.listLuaObjectMembersFn = options.listLuaObjectMembers;
-	this.listLuaModuleSymbolsFn = options.listLuaModuleSymbols;
-	this.listLuaSymbolsFn = options.listLuaSymbols;
-	this.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
-	this.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
-	this.primaryAssetId = options.primaryAssetId;
+		this.saveLuaResourceFn = options.saveLuaResource;
+		this.createLuaResourceFn = options.createLuaResource;
+		this.inspectLuaExpressionFn = options.inspectLuaExpression;
+		this.listLuaObjectMembersFn = options.listLuaObjectMembers;
+		this.listLuaModuleSymbolsFn = options.listLuaModuleSymbols;
+		this.listLuaSymbolsFn = options.listLuaSymbols;
+		this.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
+		this.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
+		this.primaryAssetId = options.primaryAssetId;
 		if ($.debug) {
 			this.listResourcesFn();
 		}
@@ -555,14 +555,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			navigateBackward: () => this.goBackwardInNavigationHistory(),
 			navigateForward: () => this.goForwardInNavigationHistory(),
 		});
-        this.problemsPanel = new ProblemsPanelController({
-            lineHeight: this.lineHeight,
-            measureText: (text) => this.measureText(text),
+		this.problemsPanel = new ProblemsPanelController({
+			lineHeight: this.lineHeight,
+			measureText: (text) => this.measureText(text),
 			drawText: (api, text, x, y, color) => drawEditorText(api, this.font, text, x, y, color),
 			drawRectOutlineColor: (api, l, t, r, b, col) => this.drawRectOutlineColor(api, l, t, r, b, col),
 			truncateTextToWidth: (text, maxWidth) => this.truncateTextToWidth(text, maxWidth),
 			gotoDiagnostic: (diagnostic) => this.gotoDiagnostic(diagnostic),
-        });
+		});
 		this.problemsPanel.setDiagnostics(this.diagnostics);
 		this.renameController = new RenameController({
 			processFieldEdit: (field, keyboard, options) => this.processInlineFieldEditing(field, keyboard, options),
@@ -577,11 +577,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.codeHorizontalScrollbarVisible = false;
 		this.cachedVisibleRowCount = 1;
 		this.cachedVisibleColumnCount = 1;
-	const entryContext = this.createEntryTabContext();
-	if (entryContext) {
-		this.entryTabId = entryContext.id;
-		this.codeTabContexts.set(entryContext.id, entryContext);
-	}
+		const entryContext = this.createEntryTabContext();
+		if (entryContext) {
+			this.entryTabId = entryContext.id;
+			this.codeTabContexts.set(entryContext.id, entryContext);
+		}
 		this.initializeTabs(entryContext);
 		this.resetResourcePanelState();
 		if (entryContext) {
@@ -589,8 +589,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		this.desiredColumn = this.cursorColumn;
 		this.assertMonospace();
-	const initialContext = entryContext ? this.codeTabContexts.get(entryContext.id) ?? null : null;
-	this.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
+		const initialContext = entryContext ? this.codeTabContexts.get(entryContext.id) ?? null : null;
+		this.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
 		$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 		this.applyResolutionModeToRuntime();
 		this.pendingWindowFocused = this.windowFocused;
@@ -1190,9 +1190,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			: '';
 		const rawLines = sanitized.length > 0 ? sanitized.split('\n') : [''];
 		const maxWidth = Math.max(this.viewportWidth - 8, this.charAdvance);
-	const lines: string[] = [];
-	for (let i = 0; i < rawLines.length; i += 1) {
-		const wrapped = wrapRuntimeErrorLineUtil(rawLines[i], maxWidth, (text) => this.measureText(text));
+		const lines: string[] = [];
+		for (let i = 0; i < rawLines.length; i += 1) {
+			const wrapped = wrapRuntimeErrorLineUtil(rawLines[i], maxWidth, (text) => this.measureText(text));
 			for (let j = 0; j < wrapped.length; j += 1) {
 				lines.push(wrapped[j]);
 			}
@@ -1263,18 +1263,18 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.handleActionPromptInput(keyboard);
 			return;
 		}
-	this.handleEditorInput(keyboard, deltaSeconds);
-	this.completion.processPending(deltaSeconds);
-	const semanticError = this.layout.getLastSemanticError();
-	if (semanticError && semanticError !== this.lastReportedSemanticError) {
-		this.showMessage(semanticError, constants.COLOR_STATUS_ERROR, 4.0);
-		this.lastReportedSemanticError = semanticError;
-	} else if (!semanticError && this.lastReportedSemanticError !== null) {
-		this.lastReportedSemanticError = null;
-	}
-	if (this.diagnosticsDirty) {
-		this.processDiagnosticsQueue(this.clockNow());
-	}
+		this.handleEditorInput(keyboard, deltaSeconds);
+		this.completion.processPending(deltaSeconds);
+		const semanticError = this.layout.getLastSemanticError();
+		if (semanticError && semanticError !== this.lastReportedSemanticError) {
+			this.showMessage(semanticError, constants.COLOR_STATUS_ERROR, 4.0);
+			this.lastReportedSemanticError = semanticError;
+		} else if (!semanticError && this.lastReportedSemanticError !== null) {
+			this.lastReportedSemanticError = null;
+		}
+		if (this.diagnosticsDirty) {
+			this.processDiagnosticsQueue(this.clockNow());
+		}
 		if (this.isCodeTabActive() && !this.cursorRevealSuspended) {
 			this.ensureCursorVisible();
 		}
@@ -2118,11 +2118,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private deactivate(): void {
-	this.storeActiveCodeTabContext();
-	this.active = false;
-	if (this.dimCrtInEditor) {
-		this.restoreCrtOptions();
-	}
+		this.storeActiveCodeTabContext();
+		this.active = false;
+		if (this.dimCrtInEditor) {
+			this.restoreCrtOptions();
+		}
 		this.completion.closeSession();
 		this.repeatState.clear();
 		this.resetKeyPressGuards();
@@ -2144,24 +2144,24 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.searchVisible = false;
 		this.lineJumpActive = false;
 		this.lineJumpVisible = false;
-	this.runtimeErrorOverlay = null;
-	this.resetActionPromptState();
-	this.closeCreateResourcePrompt(false);
-	this.hideResourcePanel();
-	this.cancelSearchJob();
-	this.cancelGlobalSearchJob();
-	this.globalSearchMatches = [];
-	this.searchDisplayOffset = 0;
-	this.searchHoverIndex = -1;
-	this.searchScope = 'local';
-	this.backgroundTasks.length = 0;
-	if (this.backgroundTaskHandle) {
-		this.backgroundTaskHandle.cancel();
-		this.backgroundTaskHandle = null;
+		this.runtimeErrorOverlay = null;
+		this.resetActionPromptState();
+		this.closeCreateResourcePrompt(false);
+		this.hideResourcePanel();
+		this.cancelSearchJob();
+		this.cancelGlobalSearchJob();
+		this.globalSearchMatches = [];
+		this.searchDisplayOffset = 0;
+		this.searchHoverIndex = -1;
+		this.searchScope = 'local';
+		this.backgroundTasks.length = 0;
+		if (this.backgroundTaskHandle) {
+			this.backgroundTaskHandle.cancel();
+			this.backgroundTaskHandle = null;
+		}
+		this.diagnosticsTaskPending = false;
+		this.lastReportedSemanticError = null;
 	}
-	this.diagnosticsTaskPending = false;
-	this.lastReportedSemanticError = null;
-}
 
 	private updateBlink(deltaSeconds: number): void {
 		this.blinkTimer += deltaSeconds;
@@ -2241,16 +2241,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.toggleResourcePanel();
 			return;
 		}
-        if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyM')) {
-            consumeKeyboardKey(keyboard, 'KeyM');
-            this.toggleProblemsPanel();
-            if (this.problemsPanel.isVisible()) {
-                this.markDiagnosticsDirty();
-            } else {
-                this.focusEditorFromProblemsPanel();
-            }
-            return;
-        }
+		if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyM')) {
+			consumeKeyboardKey(keyboard, 'KeyM');
+			this.toggleProblemsPanel();
+			if (this.problemsPanel.isVisible()) {
+				this.markDiagnosticsDirty();
+			} else {
+				this.focusEditorFromProblemsPanel();
+			}
+			return;
+		}
 		if (!ctrlDown && !metaDown && altDown && isKeyJustPressedGlobal(this.playerIndex, 'Comma')) {
 			consumeKeyboardKey(keyboard, 'Comma');
 			this.openGlobalSymbolSearch();
@@ -2268,51 +2268,51 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 
-		if ((ctrlDown || metaDown) && altDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {
+		if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {
 			consumeKeyboardKey(keyboard, 'KeyF');
 			this.openSearch(true, 'global');
 			return;
 		}
-		if ((ctrlDown || metaDown) && !shiftDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {
+		if ((ctrlDown || metaDown) && !shiftDown && !altDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {
 			consumeKeyboardKey(keyboard, 'KeyF');
 			this.openSearch(true, 'local');
 			return;
 		}
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(this.playerIndex, 'Tab')) {
-		consumeKeyboardKey(keyboard, 'Tab');
-		this.cycleTab(shiftDown ? -1 : 1);
-		return;
-	}
-	const inlineFieldFocused = this.searchActive
-		|| this.symbolSearchActive
-		|| this.resourceSearchActive
-		|| this.lineJumpActive
-		|| this.createResourceActive
-		|| this.renameController.isActive();
-	if (this.handleCustomKeybinding(keyboard, deltaSeconds, {
-		ctrlDown,
-		metaDown,
-		shiftDown,
-		altDown,
-		inlineFieldFocused,
-		resourcePanelFocused: this.resourcePanelFocused,
-		codeTabActive: this.isCodeTabActive(),
-	})) {
-		return;
-	}
-	if (!inlineFieldFocused && isKeyJustPressedGlobal(this.playerIndex, 'F12')) {
-		consumeKeyboardKey(keyboard, 'F12');
-		if (shiftDown) {
+		if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(this.playerIndex, 'Tab')) {
+			consumeKeyboardKey(keyboard, 'Tab');
+			this.cycleTab(shiftDown ? -1 : 1);
 			return;
 		}
-		this.openReferenceSearchPopup();
-		return;
-	}
-	if (!inlineFieldFocused && this.isCodeTabActive() && isKeyJustPressedGlobal(this.playerIndex, 'F2')) {
-		consumeKeyboardKey(keyboard, 'F2');
-		this.openRenamePrompt();
-		return;
-	}
+		const inlineFieldFocused = this.searchActive
+			|| this.symbolSearchActive
+			|| this.resourceSearchActive
+			|| this.lineJumpActive
+			|| this.createResourceActive
+			|| this.renameController.isActive();
+		if (this.handleCustomKeybinding(keyboard, deltaSeconds, {
+			ctrlDown,
+			metaDown,
+			shiftDown,
+			altDown,
+			inlineFieldFocused,
+			resourcePanelFocused: this.resourcePanelFocused,
+			codeTabActive: this.isCodeTabActive(),
+		})) {
+			return;
+		}
+		if (!inlineFieldFocused && isKeyJustPressedGlobal(this.playerIndex, 'F12')) {
+			consumeKeyboardKey(keyboard, 'F12');
+			if (shiftDown) {
+				return;
+			}
+			this.openReferenceSearchPopup();
+			return;
+		}
+		if (!inlineFieldFocused && this.isCodeTabActive() && isKeyJustPressedGlobal(this.playerIndex, 'F2')) {
+			consumeKeyboardKey(keyboard, 'F2');
+			this.openRenamePrompt();
+			return;
+		}
 		if ((ctrlDown || metaDown)
 			&& !inlineFieldFocused
 			&& !this.resourcePanelFocused
@@ -2354,40 +2354,40 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.handleSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 			return;
 		}
-        if (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()) {
-            let handled = false;
-            if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
-                consumeKeyboardKey(keyboard, 'ArrowUp');
-                handled = this.problemsPanel.handleKeyboardCommand('up');
-            } else if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
-                consumeKeyboardKey(keyboard, 'ArrowDown');
-                handled = this.problemsPanel.handleKeyboardCommand('down');
-            } else if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
-                consumeKeyboardKey(keyboard, 'PageUp');
-                handled = this.problemsPanel.handleKeyboardCommand('page-up');
-            } else if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
-                consumeKeyboardKey(keyboard, 'PageDown');
-                handled = this.problemsPanel.handleKeyboardCommand('page-down');
-            } else if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
-                consumeKeyboardKey(keyboard, 'Home');
-                handled = this.problemsPanel.handleKeyboardCommand('home');
-            } else if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
-                consumeKeyboardKey(keyboard, 'End');
-                handled = this.problemsPanel.handleKeyboardCommand('end');
-            } else if (isKeyJustPressedGlobal(this.playerIndex, 'Enter') || isKeyJustPressedGlobal(this.playerIndex, 'NumpadEnter')) {
-                if (isKeyJustPressedGlobal(this.playerIndex, 'Enter')) consumeKeyboardKey(keyboard, 'Enter'); else consumeKeyboardKey(keyboard, 'NumpadEnter');
-                handled = this.problemsPanel.handleKeyboardCommand('activate');
-            } else if (isKeyJustPressedGlobal(this.playerIndex, 'Escape')) {
-                consumeKeyboardKey(keyboard, 'Escape');
-                this.hideProblemsPanel();
-                this.focusEditorFromProblemsPanel();
-                return;
-            }
-            // Always swallow caret movement while problems panel is focused
-            if (this.shouldFireRepeat(keyboard, 'ArrowLeft', deltaSeconds)) consumeKeyboardKey(keyboard, 'ArrowLeft');
-            if (this.shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) consumeKeyboardKey(keyboard, 'ArrowRight');
-            if (handled) return; else return;
-        }
+		if (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()) {
+			let handled = false;
+			if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'ArrowUp');
+				handled = this.problemsPanel.handleKeyboardCommand('up');
+			} else if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'ArrowDown');
+				handled = this.problemsPanel.handleKeyboardCommand('down');
+			} else if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'PageUp');
+				handled = this.problemsPanel.handleKeyboardCommand('page-up');
+			} else if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'PageDown');
+				handled = this.problemsPanel.handleKeyboardCommand('page-down');
+			} else if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'Home');
+				handled = this.problemsPanel.handleKeyboardCommand('home');
+			} else if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'End');
+				handled = this.problemsPanel.handleKeyboardCommand('end');
+			} else if (isKeyJustPressedGlobal(this.playerIndex, 'Enter') || isKeyJustPressedGlobal(this.playerIndex, 'NumpadEnter')) {
+				if (isKeyJustPressedGlobal(this.playerIndex, 'Enter')) consumeKeyboardKey(keyboard, 'Enter'); else consumeKeyboardKey(keyboard, 'NumpadEnter');
+				handled = this.problemsPanel.handleKeyboardCommand('activate');
+			} else if (isKeyJustPressedGlobal(this.playerIndex, 'Escape')) {
+				consumeKeyboardKey(keyboard, 'Escape');
+				this.hideProblemsPanel();
+				this.focusEditorFromProblemsPanel();
+				return;
+			}
+			// Always swallow caret movement while problems panel is focused
+			if (this.shouldFireRepeat(keyboard, 'ArrowLeft', deltaSeconds)) consumeKeyboardKey(keyboard, 'ArrowLeft');
+			if (this.shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) consumeKeyboardKey(keyboard, 'ArrowRight');
+			if (handled) return; else return;
+		}
 		if (this.searchQuery.length > 0 && isKeyJustPressedGlobal(this.playerIndex, 'F3')) {
 			consumeKeyboardKey(keyboard, 'F3');
 			if (shiftDown) {
@@ -2455,19 +2455,19 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.indentSelectionOrLine();
 			return;
 		}
-	if (ctrlDown && isKeyJustPressedGlobal(this.playerIndex, 'BracketLeft')) {
-		consumeKeyboardKey(keyboard, 'BracketLeft');
-		this.unindentSelectionOrLine();
-		return;
-	}
+		if (ctrlDown && isKeyJustPressedGlobal(this.playerIndex, 'BracketLeft')) {
+			consumeKeyboardKey(keyboard, 'BracketLeft');
+			this.unindentSelectionOrLine();
+			return;
+		}
 		// Manual completion open/close handled by CompletionController via handleCompletionKeybindings
-	if (this.handleCompletionKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown)) {
-		return;
-	}
+		if (this.handleCompletionKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown)) {
+			return;
+		}
 		this.input.handleEditorInput(keyboard, deltaSeconds);
-	if (ctrlDown || metaDown || altDown) {
-		return;
-	}
+		if (ctrlDown || metaDown || altDown) {
+			return;
+		}
 		// Remaining character input after controller handled modifiers is no-op here
 	}
 
@@ -2512,12 +2512,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openCreateResourcePrompt(): void {
-	if (this.createResourceWorking) {
-		return;
-	}
-	this.resourcePanelFocused = false;
-	this.renameController.cancel();
-	let defaultPath = this.createResourcePath.length === 0
+		if (this.createResourceWorking) {
+			return;
+		}
+		this.resourcePanelFocused = false;
+		this.renameController.cancel();
+		let defaultPath = this.createResourcePath.length === 0
 			? this.determineCreateResourceDefaultPath()
 			: this.createResourcePath;
 		if (defaultPath.length > constants.CREATE_RESOURCE_MAX_PATH_LENGTH) {
@@ -2690,7 +2690,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	private handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
 		const altDown = isModifierPressedGlobal(this.playerIndex, 'AltLeft') || isModifierPressedGlobal(this.playerIndex, 'AltRight');
-		if ((ctrlDown || metaDown) && altDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {
+		if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {
 			consumeKeyboardKey(keyboard, 'KeyF');
 			this.openSearch(false, 'global');
 			return;
@@ -2946,12 +2946,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openResourceSearch(initialQuery: string = ''): void {
-	this.clearReferenceHighlights();
-	this.closeSearch(false, true);
-	this.closeLineJump(false);
-	this.closeSymbolSearch(false);
-	this.renameController.cancel();
-	this.resourceSearchVisible = true;
+		this.clearReferenceHighlights();
+		this.closeSearch(false, true);
+		this.closeLineJump(false);
+		this.closeSymbolSearch(false);
+		this.renameController.cancel();
+		this.resourceSearchVisible = true;
 		this.resourceSearchActive = true;
 		this.applyResourceSearchFieldText(initialQuery, true);
 		this.refreshResourceCatalog();
@@ -3056,15 +3056,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 		this.symbolSearchMode = 'references';
-			this.symbolSearchGlobal = true;
-			this.symbolSearchVisible = true;
-			this.symbolSearchActive = true;
-			this.applySymbolSearchFieldText('', true);
-			this.symbolSearchQuery = '';
-			this.updateReferenceSearchMatches();
-			this.symbolSearchHoverIndex = -1;
-			this.ensureSymbolSearchSelectionVisible();
-			this.resetBlink();
+		this.symbolSearchGlobal = true;
+		this.symbolSearchVisible = true;
+		this.symbolSearchActive = true;
+		this.applySymbolSearchFieldText('', true);
+		this.symbolSearchQuery = '';
+		this.updateReferenceSearchMatches();
+		this.symbolSearchHoverIndex = -1;
+		this.ensureSymbolSearchSelectionVisible();
+		this.resetBlink();
 		this.showReferenceStatusMessage();
 	}
 
@@ -3364,9 +3364,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const chunkName = location.chunkName ?? '';
 		const normalizedPath = location.path ? location.path.replace(/\\/g, '/') : '';
 		const assetId = location.assetId ?? '';
-		const locationKey = chunkName.length > 0
-			? chunkName
-			: (normalizedPath.length > 0 ? normalizedPath : assetId);
+		const locationKey = normalizedPath.length > 0
+			? normalizedPath
+			: (assetId.length > 0 ? assetId : chunkName);
 		const startLine = location.range.startLine;
 		const startColumn = location.range.startColumn;
 		const endLine = location.range.endLine;
@@ -3930,11 +3930,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openLineJump(): void {
-	this.clearReferenceHighlights();
-	this.closeSymbolSearch(false);
-	this.closeResourceSearch(false);
-	this.closeSearch(false, true);
-	this.renameController.cancel();
+		this.clearReferenceHighlights();
+		this.closeSymbolSearch(false);
+		this.closeResourceSearch(false);
+		this.closeSearch(false, true);
+		this.renameController.cancel();
 		this.lineJumpVisible = true;
 		this.lineJumpActive = true;
 		this.applyLineJumpFieldText('', true);
@@ -4226,7 +4226,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.cancelGlobalSearchJob();
 		const normalized = this.searchQuery.toLowerCase();
 		if (normalized.length === 0) {
-		this.globalSearchMatches = [];
+			this.globalSearchMatches = [];
 			return;
 		}
 		let descriptors: ConsoleResourceDescriptor[] = [];
@@ -4390,17 +4390,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private searchVisibleResultCount(): number {
-		if (!this.isSearchVisible()) {
-			return 0;
-		}
-		const total = this.activeSearchMatchCount();
-		if (total <= 0) {
-			return 0;
-		}
-		const maxOffset = Math.max(0, total - 1);
-		const offset = clamp(this.searchDisplayOffset, 0, maxOffset);
-		const visible = Math.min(this.searchPageSize(), total - offset);
-		return Math.max(0, visible);
+		const stats = this.computeSearchPageStats();
+		return stats.visible;
 	}
 
 	private searchResultEntryHeight(): number {
@@ -4408,38 +4399,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private getVisibleSearchResultEntries(): Array<{ primary: string; secondary?: string | null; detail?: string | null }> {
-		const results: Array<{ primary: string; secondary?: string | null; detail?: string | null }> = [];
-		const visible = this.searchVisibleResultCount();
-		if (visible <= 0) {
-			return results;
+		const stats = this.computeSearchPageStats();
+		if (stats.visible <= 0) {
+			return [];
 		}
-		const total = this.activeSearchMatchCount();
-		const maxOffset = Math.max(0, total - 1);
-		const offset = clamp(this.searchDisplayOffset, 0, maxOffset);
-		for (let i = 0; i < visible; i += 1) {
-			const index = offset + i;
-			if (this.searchScope === 'global') {
-				const match = this.globalSearchMatches[index];
-				if (!match) {
-					continue;
-				}
-				const lineLabel = `:${match.row + 1}`;
-				results.push({
-					primary: match.pathLabel,
-					secondary: match.snippet,
-					detail: lineLabel,
-				});
-			} else {
-				const match = this.searchMatches[index];
-				if (!match) {
-					continue;
-				}
-				const lineText = this.lines[match.row] ?? '';
-				results.push({
-					primary: `Line ${match.row + 1}`,
-					secondary: this.buildSearchSnippet(lineText, match.start, match.end),
-					detail: null,
-				});
+		const results: Array<{ primary: string; secondary?: string | null; detail?: string | null }> = [];
+		for (let i = 0; i < stats.visible; i += 1) {
+			const entry = this.buildSearchResultEntry(stats.offset + i);
+			if (entry) {
+				results.push(entry);
 			}
 		}
 		return results;
@@ -4462,6 +4430,44 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		const maxOffset = Math.max(0, total - pageSize);
 		this.searchDisplayOffset = clamp(this.searchDisplayOffset, 0, maxOffset);
+	}
+
+	private computeSearchPageStats(): { total: number; offset: number; visible: number } {
+		const total = this.isSearchVisible() ? this.activeSearchMatchCount() : 0;
+		if (total <= 0) {
+			this.searchDisplayOffset = 0;
+			return { total: 0, offset: 0, visible: 0 };
+		}
+		const pageSize = this.searchPageSize();
+		const maxOffset = Math.max(0, total - 1);
+		this.searchDisplayOffset = clamp(this.searchDisplayOffset, 0, maxOffset);
+		const remaining = total - this.searchDisplayOffset;
+		const visible = Math.min(pageSize, remaining);
+		return { total, offset: this.searchDisplayOffset, visible };
+	}
+
+	private buildSearchResultEntry(index: number): { primary: string; secondary?: string | null; detail?: string | null } | null {
+		if (this.searchScope === 'global') {
+			const match = this.globalSearchMatches[index];
+			if (!match) {
+				return null;
+			}
+			return {
+				primary: match.pathLabel,
+				secondary: match.snippet,
+				detail: `:${match.row + 1}`,
+			};
+		}
+		const match = this.searchMatches[index];
+		if (!match) {
+			return null;
+		}
+		const lineText = this.lines[match.row] ?? '';
+		return {
+			primary: `Line ${match.row + 1}`,
+			secondary: this.buildSearchSnippet(lineText, match.start, match.end),
+			detail: null,
+		};
 	}
 
 	private moveSearchSelection(delta: number, options?: { wrap?: boolean; preview?: boolean }): void {
@@ -4503,6 +4509,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			targetIndex = clamp(targetIndex, 0, total - 1);
 			this.searchCurrentIndex = targetIndex;
 		}
+		this.searchCurrentIndex = targetIndex;
 		if (this.searchScope === 'global') {
 			if (options?.preview) {
 				return;
@@ -4562,19 +4569,19 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const snapshot = this.readPointerSnapshot();
 		this.updateTabHoverState(snapshot);
 		this.lastPointerSnapshot = snapshot && snapshot.valid ? snapshot : null;
-	if (!snapshot) {
-		this.pointerPrimaryWasPressed = false;
-		this.scrollbarController.cancel();
-		this.lastPointerRowResolution = null;
-		this.clearHoverTooltip();
-		this.clearGotoHoverHighlight();
-		return;
-	}
-	if (!snapshot.valid) {
-		this.scrollbarController.cancel();
-		this.clearGotoHoverHighlight();
-		this.lastPointerRowResolution = null;
-	} else if (this.scrollbarController.hasActiveDrag() && !snapshot.primaryPressed) {
+		if (!snapshot) {
+			this.pointerPrimaryWasPressed = false;
+			this.scrollbarController.cancel();
+			this.lastPointerRowResolution = null;
+			this.clearHoverTooltip();
+			this.clearGotoHoverHighlight();
+			return;
+		}
+		if (!snapshot.valid) {
+			this.scrollbarController.cancel();
+			this.clearGotoHoverHighlight();
+			this.lastPointerRowResolution = null;
+		} else if (this.scrollbarController.hasActiveDrag() && !snapshot.primaryPressed) {
 			this.scrollbarController.cancel();
 		} else if (this.scrollbarController.hasActiveDrag() && snapshot.primaryPressed) {
 			if (this.scrollbarController.update(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, (k, s) => this.applyScrollbarScroll(k, s))) {
@@ -6616,38 +6623,38 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				this.scrollRow += 1;
 			}
 		}
-	const maxScrollColumn = this.computeMaximumScrollColumn();
+		const maxScrollColumn = this.computeMaximumScrollColumn();
 		if (viewportX < bounds.gutterLeft) {
 			return;
 		}
-	if (!this.wordWrapEnabled) {
-		if (viewportX < bounds.textLeft) {
-			if (this.scrollColumn > 0) {
-				this.scrollColumn -= 1;
+		if (!this.wordWrapEnabled) {
+			if (viewportX < bounds.textLeft) {
+				if (this.scrollColumn > 0) {
+					this.scrollColumn -= 1;
+				}
+			}
+			else if (viewportX >= bounds.codeRight) {
+				if (this.scrollColumn < maxScrollColumn) {
+					this.scrollColumn += 1;
+				}
 			}
 		}
-		else if (viewportX >= bounds.codeRight) {
-			if (this.scrollColumn < maxScrollColumn) {
-				this.scrollColumn += 1;
-			}
-		}
-	}
 		if (this.scrollRow < 0) {
 			this.scrollRow = 0;
 		}
-	if (this.scrollColumn < 0) {
-		this.scrollColumn = 0;
-	}
-	if (this.wordWrapEnabled) {
-		this.scrollColumn = 0;
-	}
-	const maxScrollRow = Math.max(0, this.getVisualLineCount() - this.visibleRowCount());
-	if (this.scrollRow > maxScrollRow) {
-		this.scrollRow = maxScrollRow;
-	}
-	if (!this.wordWrapEnabled && this.scrollColumn > maxScrollColumn) {
-		this.scrollColumn = maxScrollColumn;
-	}
+		if (this.scrollColumn < 0) {
+			this.scrollColumn = 0;
+		}
+		if (this.wordWrapEnabled) {
+			this.scrollColumn = 0;
+		}
+		const maxScrollRow = Math.max(0, this.getVisualLineCount() - this.visibleRowCount());
+		if (this.scrollRow > maxScrollRow) {
+			this.scrollRow = maxScrollRow;
+		}
+		if (!this.wordWrapEnabled && this.scrollColumn > maxScrollColumn) {
+			this.scrollColumn = maxScrollColumn;
+		}
 	}
 
 	private registerPointerClick(row: number, column: number): boolean {
@@ -6999,12 +7006,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private drawTopBar(api: BmsxConsoleApi): void {
-	const host = {
-		viewportWidth: this.viewportWidth,
-		headerHeight: this.headerHeight,
-		lineHeight: this.lineHeight,
-		measureText: (text: string) => this.measureText(text),
-		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, this.font, text, x, y, color),
+		const host = {
+			viewportWidth: this.viewportWidth,
+			headerHeight: this.headerHeight,
+			lineHeight: this.lineHeight,
+			measureText: (text: string) => this.measureText(text),
+			drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, this.font, text, x, y, color),
 			wordWrapEnabled: this.wordWrapEnabled,
 			resolutionMode: this.resolutionMode,
 			metadata: this.metadata,
@@ -7018,15 +7025,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private drawCreateResourceBar(api: BmsxConsoleApi): void {
-	const host = {
-		viewportWidth: this.viewportWidth,
-		headerHeight: this.headerHeight,
-		tabBarHeight: this.getTabBarTotalHeight(),
-		lineHeight: this.lineHeight,
-		spaceAdvance: this.spaceAdvance,
-		charAdvance: this.charAdvance,
-		measureText: (t: string) => this.measureText(t),
-		drawText: (api2: BmsxConsoleApi, t: string, x: number, y: number, c: number) => drawEditorText(api2, this.font, t, x, y, c),
+		const host = {
+			viewportWidth: this.viewportWidth,
+			headerHeight: this.headerHeight,
+			tabBarHeight: this.getTabBarTotalHeight(),
+			lineHeight: this.lineHeight,
+			spaceAdvance: this.spaceAdvance,
+			charAdvance: this.charAdvance,
+			measureText: (t: string) => this.measureText(t),
+			drawText: (api2: BmsxConsoleApi, t: string, x: number, y: number, c: number) => drawEditorText(api2, this.font, t, x, y, c),
 			inlineFieldMetrics: () => this.inlineFieldMetrics(),
 			createResourceActive: this.createResourceActive,
 			createResourceVisible: this.createResourceVisible,
@@ -7057,7 +7064,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
 			blockActiveCarets: (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()),
 		};
-			renderCreateResourceBar(api, host);
+		renderCreateResourceBar(api, host);
 	}
 
 	private drawSearchBar(api: BmsxConsoleApi): void {
@@ -7077,12 +7084,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			createResourceWorking: this.createResourceWorking,
 			createResourceError: this.createResourceError,
 			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
-		getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
-		getSearchBarHeight: () => this.getSearchBarHeight(),
-		getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
-		getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
-		getRenameBarHeight: () => this.getRenameBarHeight(),
-		getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
+			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
+			getSearchBarHeight: () => this.getSearchBarHeight(),
+			getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
+			getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+			getRenameBarHeight: () => this.getRenameBarHeight(),
+			getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
 			drawInlineCaret: (
 				a: BmsxConsoleApi,
 				f: InlineTextField,
@@ -7109,6 +7116,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			searchVisibleResultCount: () => this.searchVisibleResultCount(),
 			searchResultEntryHeight: () => this.searchResultEntryHeight(),
 			searchResultEntries: this.getVisibleSearchResultEntries(),
+			searchResultEntriesBaseOffset: this.searchDisplayOffset,
 			searchSelectionIndex: this.searchCurrentIndex,
 			searchHoverIndex: this.searchHoverIndex,
 			searchDisplayOffset: this.searchDisplayOffset,
@@ -7133,12 +7141,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			createResourceWorking: this.createResourceWorking,
 			createResourceError: this.createResourceError,
 			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
-		getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
-		getSearchBarHeight: () => this.getSearchBarHeight(),
-		getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
-		getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
-		getRenameBarHeight: () => this.getRenameBarHeight(),
-		getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
+			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
+			getSearchBarHeight: () => this.getSearchBarHeight(),
+			getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
+			getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+			getRenameBarHeight: () => this.getRenameBarHeight(),
+			getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
 			drawInlineCaret: (
 				a: BmsxConsoleApi,
 				f: InlineTextField,
@@ -7185,12 +7193,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			createResourceWorking: this.createResourceWorking,
 			createResourceError: this.createResourceError,
 			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
-		getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
-		getSearchBarHeight: () => this.getSearchBarHeight(),
-		getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
-		getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
-		getRenameBarHeight: () => this.getRenameBarHeight(),
-		getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
+			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
+			getSearchBarHeight: () => this.getSearchBarHeight(),
+			getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
+			getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+			getRenameBarHeight: () => this.getRenameBarHeight(),
+			getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
 			drawInlineCaret: (
 				a: BmsxConsoleApi,
 				f: InlineTextField,
@@ -7287,12 +7295,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			createResourceWorking: this.createResourceWorking,
 			createResourceError: this.createResourceError,
 			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
-		getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
-		getSearchBarHeight: () => this.getSearchBarHeight(),
-		getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
-		getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
-		getRenameBarHeight: () => this.getRenameBarHeight(),
-		getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
+			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
+			getSearchBarHeight: () => this.getSearchBarHeight(),
+			getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
+			getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+			getRenameBarHeight: () => this.getRenameBarHeight(),
+			getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
 			drawInlineCaret: (
 				a: BmsxConsoleApi,
 				f: InlineTextField,
@@ -7342,17 +7350,17 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const bottom = top + dialogHeight;
 		api.rectfill(left, top, right, bottom, constants.COLOR_STATUS_BACKGROUND);
 		api.rect(left, top, right, bottom, constants.COLOR_CREATE_RESOURCE_ERROR);
-	const dialogPaddingX = constants.ERROR_OVERLAY_PADDING_X + 6;
-	const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
-	renderErrorOverlayText(
-		api,
-		this.font,
-		lines,
-		left + dialogPaddingX,
-		top + dialogPaddingY,
-		this.lineHeight,
-		constants.COLOR_STATUS_TEXT
-	);
+		const dialogPaddingX = constants.ERROR_OVERLAY_PADDING_X + 6;
+		const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
+		renderErrorOverlayText(
+			api,
+			this.font,
+			lines,
+			left + dialogPaddingX,
+			top + dialogPaddingY,
+			this.lineHeight,
+			constants.COLOR_STATUS_TEXT
+		);
 	}
 
 	private simplifyRuntimeErrorMessage(message: string): string {
@@ -7360,14 +7368,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private codeViewportTop(): number {
-	return this.topMargin
-		+ this.getCreateResourceBarHeight()
-		+ this.getSearchBarHeight()
-		+ this.getResourceSearchBarHeight()
-		+ this.getSymbolSearchBarHeight()
-		+ this.getRenameBarHeight()
-		+ this.getLineJumpBarHeight();
-}
+		return this.topMargin
+			+ this.getCreateResourceBarHeight()
+			+ this.getSearchBarHeight()
+			+ this.getResourceSearchBarHeight()
+			+ this.getSymbolSearchBarHeight()
+			+ this.getRenameBarHeight()
+			+ this.getLineJumpBarHeight();
+	}
 
 	private getCreateResourceBarHeight(): number {
 		if (!this.isCreateResourceVisible()) {
@@ -7413,16 +7421,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private getSymbolSearchBarHeight(): number {
-	if (!this.isSymbolSearchVisible()) {
-		return 0;
+		if (!this.isSymbolSearchVisible()) {
+			return 0;
+		}
+		const baseHeight = this.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+		const visible = this.symbolSearchVisibleResultCount();
+		if (visible <= 0) {
+			return baseHeight;
+		}
+		return baseHeight + constants.SYMBOL_SEARCH_RESULT_SPACING + visible * this.symbolSearchEntryHeight();
 	}
-	const baseHeight = this.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
-	const visible = this.symbolSearchVisibleResultCount();
-	if (visible <= 0) {
-		return baseHeight;
-	}
-	return baseHeight + constants.SYMBOL_SEARCH_RESULT_SPACING + visible * this.symbolSearchEntryHeight();
-}
 
 	private isSymbolSearchVisible(): boolean {
 		return this.symbolSearchVisible;
@@ -7497,12 +7505,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (height <= 0) {
 			return null;
 		}
-	const top = this.headerHeight + this.getTabBarTotalHeight()
-		+ this.getCreateResourceBarHeight()
-		+ this.getSearchBarHeight()
-		+ this.getResourceSearchBarHeight()
-		+ this.getSymbolSearchBarHeight()
-		+ this.getRenameBarHeight();
+		const top = this.headerHeight + this.getTabBarTotalHeight()
+			+ this.getCreateResourceBarHeight()
+			+ this.getSearchBarHeight()
+			+ this.getResourceSearchBarHeight()
+			+ this.getSymbolSearchBarHeight()
+			+ this.getRenameBarHeight();
 		return {
 			top,
 			bottom: top + height,
@@ -7615,33 +7623,33 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 		const layoutHost = this.createRuntimeErrorOverlayLayoutHost();
-        const layout = computeRuntimeErrorOverlayLayout(
-            layoutHost,
-            overlay,
-            codeTop,
-            codeRight,
-            textLeft,
-            constants.ERROR_OVERLAY_PADDING_X,
-            constants.ERROR_OVERLAY_PADDING_Y,
-            computeRuntimeErrorOverlayMaxWidth(this.viewportWidth, this.charAdvance, this.gutterWidth)
-        );
+		const layout = computeRuntimeErrorOverlayLayout(
+			layoutHost,
+			overlay,
+			codeTop,
+			codeRight,
+			textLeft,
+			constants.ERROR_OVERLAY_PADDING_X,
+			constants.ERROR_OVERLAY_PADDING_Y,
+			computeRuntimeErrorOverlayMaxWidth(this.viewportWidth, this.charAdvance, this.gutterWidth)
+		);
 		if (!layout) {
 			return;
 		}
-        const highlightLines: number[] = [];
-        if (overlay.hovered && overlay.hoverLine >= 0 && overlay.hoverLine < overlay.lineDescriptors.length) {
-            const descriptor = overlay.lineDescriptors[overlay.hoverLine];
-            if (descriptor && descriptor.role === 'frame') {
-                const mapping = (layout as any).displayLineMap as number[] | undefined;
-                if (Array.isArray(mapping) && mapping.length > 0) {
-                    for (let i = 0; i < mapping.length; i += 1) {
-                        if (mapping[i] === overlay.hoverLine) highlightLines.push(i);
-                    }
-                } else {
-                    highlightLines.push(overlay.hoverLine);
-                }
-            }
-        }
+		const highlightLines: number[] = [];
+		if (overlay.hovered && overlay.hoverLine >= 0 && overlay.hoverLine < overlay.lineDescriptors.length) {
+			const descriptor = overlay.lineDescriptors[overlay.hoverLine];
+			if (descriptor && descriptor.role === 'frame') {
+				const mapping = (layout as any).displayLineMap as number[] | undefined;
+				if (Array.isArray(mapping) && mapping.length > 0) {
+					for (let i = 0; i < mapping.length; i += 1) {
+						if (mapping[i] === overlay.hoverLine) highlightLines.push(i);
+					}
+				} else {
+					highlightLines.push(overlay.hoverLine);
+				}
+			}
+		}
 		const drawOptions: RuntimeErrorOverlayDrawOptions = {
 			textColor: constants.ERROR_OVERLAY_TEXT_COLOR,
 			paddingX: constants.ERROR_OVERLAY_PADDING_X,
@@ -7659,16 +7667,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return false;
 		}
 		const layoutHost = this.createRuntimeErrorOverlayLayoutHost();
-        const layout = computeRuntimeErrorOverlayLayout(
-            layoutHost,
-            overlay,
-            codeTop,
-            codeRight,
-            textLeft,
-            constants.ERROR_OVERLAY_PADDING_X,
-            constants.ERROR_OVERLAY_PADDING_Y,
-            computeRuntimeErrorOverlayMaxWidth(this.viewportWidth, this.charAdvance, this.gutterWidth)
-        );
+		const layout = computeRuntimeErrorOverlayLayout(
+			layoutHost,
+			overlay,
+			codeTop,
+			codeRight,
+			textLeft,
+			constants.ERROR_OVERLAY_PADDING_X,
+			constants.ERROR_OVERLAY_PADDING_Y,
+			computeRuntimeErrorOverlayMaxWidth(this.viewportWidth, this.charAdvance, this.gutterWidth)
+		);
 		if (!layout) {
 			overlay.hovered = false;
 			overlay.hoverLine = -1;
@@ -7956,7 +7964,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		} else {
 			this.scrollColumn = clamp(anchorColumnForUnwrap, 0, this.computeMaximumScrollColumn());
 			const anchorVisualIndex = this.positionToVisualIndex(anchorRow, this.scrollColumn);
-		this.scrollRow = clamp(anchorVisualIndex, 0, Math.max(0, this.getVisualLineCount() - this.visibleRowCount()));
+			this.scrollRow = clamp(anchorVisualIndex, 0, Math.max(0, this.getVisualLineCount() - this.visibleRowCount()));
 		}
 		this.lastPointerRowResolution = null;
 		this.ensureCursorVisible();
@@ -8314,7 +8322,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	// buildResourceBrowserItems removed; ResourcePanelController owns item tree construction
 
-// updateResourceBrowserMetrics removed; controller computes metrics
+	// updateResourceBrowserMetrics removed; controller computes metrics
 
 	private selectResourceInPanel(descriptor: ConsoleResourceDescriptor): void {
 		if (!descriptor.assetId || descriptor.assetId.length === 0) {
@@ -8356,7 +8364,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	// getSelectedResourceDescriptor removed; controller + local state provide selection
 
-// computeResourceBrowserMaxHorizontalScroll removed; use controller.computeMaxHScroll()
+	// computeResourceBrowserMaxHorizontalScroll removed; use controller.computeMaxHScroll()
 
 	// clampResourceBrowserHorizontalScroll removed; use controller.clampHScroll()
 
@@ -8454,24 +8462,24 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		this.activeCodeTabContextId = tabId;
 		const isEntry = this.entryTabId !== null && context.id === this.entryTabId;
-	if (context.snapshot) {
-		this.restoreSnapshot(context.snapshot);
-		this.saveGeneration = context.saveGeneration;
-		this.appliedGeneration = context.appliedGeneration;
-		if (isEntry) {
-			this.lastSavedSource = context.lastSavedSource;
+		if (context.snapshot) {
+			this.restoreSnapshot(context.snapshot);
+			this.saveGeneration = context.saveGeneration;
+			this.appliedGeneration = context.appliedGeneration;
+			if (isEntry) {
+				this.lastSavedSource = context.lastSavedSource;
+			}
+			context.dirty = this.dirty;
+			this.setTabDirty(context.id, context.dirty);
+			this.syncRuntimeErrorOverlayFromContext(context);
+			this.invalidateAllHighlights();
+			this.updateDesiredColumn();
+			this.ensureCursorVisible();
+			this.refreshActiveDiagnostics();
+			const chunkNameSnapshot = this.resolveHoverChunkName(context) ?? '<console>';
+			this.layout.forceSemanticUpdate(this.lines, this.textVersion, chunkNameSnapshot);
+			return;
 		}
-		context.dirty = this.dirty;
-		this.setTabDirty(context.id, context.dirty);
-		this.syncRuntimeErrorOverlayFromContext(context);
-		this.invalidateAllHighlights();
-		this.updateDesiredColumn();
-		this.ensureCursorVisible();
-		this.refreshActiveDiagnostics();
-		const chunkNameSnapshot = this.resolveHoverChunkName(context) ?? '<console>';
-		this.layout.forceSemanticUpdate(this.lines, this.textVersion, chunkNameSnapshot);
-		return;
-	}
 		const source = context.load();
 		context.lastSavedSource = source;
 		this.lines = this.splitLines(source);
@@ -8480,11 +8488,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (this.lines.length === 0) {
 			this.lines.push('');
 		}
-	this.invalidateAllHighlights();
-	this.cursorRow = 0;
-	this.cursorColumn = 0;
-	this.scrollRow = 0;
-	this.scrollColumn = 0;
+		this.invalidateAllHighlights();
+		this.cursorRow = 0;
+		this.cursorColumn = 0;
+		this.scrollRow = 0;
+		this.scrollColumn = 0;
 		this.selectionAnchor = null;
 		this.dirty = false;
 		context.dirty = false;
@@ -8496,16 +8504,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (isEntry) {
 			this.lastSavedSource = context.lastSavedSource;
 		}
-	this.setTabDirty(context.id, context.dirty);
-	this.syncRuntimeErrorOverlayFromContext(context);
-	this.bumpTextVersion();
-	const chunkName = this.resolveHoverChunkName(context) ?? '<console>';
-	this.layout.forceSemanticUpdate(this.lines, this.textVersion, chunkName);
-	this.updateDesiredColumn();
-	this.resetBlink();
-	this.pointerSelecting = false;
-	this.pointerPrimaryWasPressed = false;
-	this.refreshActiveDiagnostics();
+		this.setTabDirty(context.id, context.dirty);
+		this.syncRuntimeErrorOverlayFromContext(context);
+		this.bumpTextVersion();
+		const chunkName = this.resolveHoverChunkName(context) ?? '<console>';
+		this.layout.forceSemanticUpdate(this.lines, this.textVersion, chunkName);
+		this.updateDesiredColumn();
+		this.resetBlink();
+		this.pointerSelecting = false;
+		this.pointerPrimaryWasPressed = false;
+		this.refreshActiveDiagnostics();
 	}
 
 	private getMainProgramSourceForReload(): string {
@@ -8820,7 +8828,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return bounds ? Math.max(0, bounds.right - bounds.left) : 0;
 	}
 
-// getResourcePanelBounds removed; use this.resourcePanel.getBounds()
+	// getResourcePanelBounds removed; use this.resourcePanel.getBounds()
 
 	private isPointerOverResourcePanelDivider(x: number, y: number): boolean {
 		if (!this.resourcePanelVisible) {
@@ -8836,7 +8844,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return y >= bounds.top && y <= bounds.bottom && x >= left && x <= right;
 	}
 
-// resourcePanelLineCapacity removed; use this.resourcePanel.lineCapacity()
+	// resourcePanelLineCapacity removed; use this.resourcePanel.lineCapacity()
 
 	private scrollResourceBrowser(amount: number): void {
 		if (!this.resourcePanelVisible) return;
@@ -8844,40 +8852,40 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		// controller owns scroll; no local mirror required
 	}
 
-		private resourceViewerImageLayout(viewer: ResourceViewerState): { left: number; top: number; width: number; height: number; bottom: number; scale: number } | null {
-			const info = viewer.image;
-			if (!info) {
-				return null;
-			}
-			const width = Math.max(1, info.width);
-			const height = Math.max(1, info.height);
-			const bounds = this.getCodeAreaBounds();
-			const totalHeight = Math.max(0, bounds.codeBottom - bounds.codeTop);
-			if (totalHeight <= 0) {
-				return null;
-			}
-			const paddingX = constants.RESOURCE_PANEL_PADDING_X;
-			const contentTop = bounds.codeTop + 2;
-			const availableWidth = Math.max(1, bounds.codeRight - bounds.codeLeft - paddingX * 2);
-			const estimatedTextLines = Math.max(3, Math.min(8, viewer.lines.length + (viewer.error ? 1 : 0)));
-			const reservedTextHeight = Math.min(totalHeight * 0.45, this.lineHeight * estimatedTextLines);
-			const maxImageHeight = Math.max(this.lineHeight * 2, totalHeight - reservedTextHeight);
-			let scale = Math.min(availableWidth / width, maxImageHeight / height);
-			if (!Number.isFinite(scale) || scale <= 0) {
-				scale = Math.min(availableWidth / width, totalHeight / height);
-				if (!Number.isFinite(scale) || scale <= 0) {
-					return null;
-				}
-			}
-			const drawWidth = width * scale;
-			const drawHeight = height * scale;
-			const leftMargin = bounds.codeLeft + paddingX;
-			const centeredOffset = Math.max(0, Math.floor((availableWidth - drawWidth) * 0.5));
-			const left = leftMargin + centeredOffset;
-			const top = contentTop;
-			const bottom = top + drawHeight;
-			return { left, top, width: drawWidth, height: drawHeight, bottom, scale };
+	private resourceViewerImageLayout(viewer: ResourceViewerState): { left: number; top: number; width: number; height: number; bottom: number; scale: number } | null {
+		const info = viewer.image;
+		if (!info) {
+			return null;
 		}
+		const width = Math.max(1, info.width);
+		const height = Math.max(1, info.height);
+		const bounds = this.getCodeAreaBounds();
+		const totalHeight = Math.max(0, bounds.codeBottom - bounds.codeTop);
+		if (totalHeight <= 0) {
+			return null;
+		}
+		const paddingX = constants.RESOURCE_PANEL_PADDING_X;
+		const contentTop = bounds.codeTop + 2;
+		const availableWidth = Math.max(1, bounds.codeRight - bounds.codeLeft - paddingX * 2);
+		const estimatedTextLines = Math.max(3, Math.min(8, viewer.lines.length + (viewer.error ? 1 : 0)));
+		const reservedTextHeight = Math.min(totalHeight * 0.45, this.lineHeight * estimatedTextLines);
+		const maxImageHeight = Math.max(this.lineHeight * 2, totalHeight - reservedTextHeight);
+		let scale = Math.min(availableWidth / width, maxImageHeight / height);
+		if (!Number.isFinite(scale) || scale <= 0) {
+			scale = Math.min(availableWidth / width, totalHeight / height);
+			if (!Number.isFinite(scale) || scale <= 0) {
+				return null;
+			}
+		}
+		const drawWidth = width * scale;
+		const drawHeight = height * scale;
+		const leftMargin = bounds.codeLeft + paddingX;
+		const centeredOffset = Math.max(0, Math.floor((availableWidth - drawWidth) * 0.5));
+		const left = leftMargin + centeredOffset;
+		const top = contentTop;
+		const bottom = top + drawHeight;
+		return { left, top, width: drawWidth, height: drawHeight, bottom, scale };
+	}
 
 	private resourceViewerTextCapacity(viewer: ResourceViewerState): number {
 		const bounds = this.getCodeAreaBounds();
@@ -8977,7 +8985,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.resourcePanel.setHScroll(s.hscroll + delta);
 	}
 
-// moved to ResourcePanelController
+	// moved to ResourcePanelController
 
 	private scrollResourceViewer(amount: number): void {
 		const viewer = this.getActiveResourceViewer();
@@ -8994,7 +9002,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.resourceViewerClampScroll(viewer);
 	}
 
-// moved to ResourcePanelController
+	// moved to ResourcePanelController
 
 
 	private handleResourceViewerInput(keyboard: KeyboardInput, deltaSeconds: number): void {
@@ -9083,13 +9091,13 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.hideResourceViewerSprite(api);
 		}
 		if (capacity <= 0) {
-		if (viewer.lines.length > 0) {
-			const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.floor(viewer.scroll)))] ?? '';
-			const fallbackY = Math.min(textTop, bounds.codeBottom - this.lineHeight);
-			drawEditorText(api, this.font, line, contentLeft, fallbackY, constants.COLOR_RESOURCE_VIEWER_TEXT);
-		} else {
-			drawEditorText(api, this.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
-		}
+			if (viewer.lines.length > 0) {
+				const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.floor(viewer.scroll)))] ?? '';
+				const fallbackY = Math.min(textTop, bounds.codeBottom - this.lineHeight);
+				drawEditorText(api, this.font, line, contentLeft, fallbackY, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			} else {
+				drawEditorText(api, this.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			}
 			if (verticalVisible) {
 				verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 			}
@@ -9098,17 +9106,17 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const maxScroll = Math.max(0, totalLines - capacity);
 		viewer.scroll = clamp(viewer.scroll, 0, maxScroll);
 		const end = Math.min(totalLines, Math.floor(viewer.scroll) + capacity);
-	if (viewer.lines.length === 0) {
-	drawEditorText(api, this.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
-	} else {
-		for (let lineIndex = Math.floor(viewer.scroll), drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
-			const line = viewer.lines[lineIndex] ?? '';
-			const y = textTop + drawIndex * this.lineHeight;
-			if (y >= bounds.codeBottom) {
-				break;
+		if (viewer.lines.length === 0) {
+			drawEditorText(api, this.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
+		} else {
+			for (let lineIndex = Math.floor(viewer.scroll), drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
+				const line = viewer.lines[lineIndex] ?? '';
+				const y = textTop + drawIndex * this.lineHeight;
+				if (y >= bounds.codeBottom) {
+					break;
+				}
+				drawEditorText(api, this.font, line, contentLeft, y, constants.COLOR_RESOURCE_VIEWER_TEXT);
 			}
-			drawEditorText(api, this.font, line, contentLeft, y, constants.COLOR_RESOURCE_VIEWER_TEXT);
-		}
 		}
 		if (verticalVisible) {
 			verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
@@ -9165,76 +9173,76 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-private computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo {
-	const highlight = entry.hi;
-	const columnToDisplay = highlight.columnToDisplay;
-	const clampedColumn = columnToDisplay.length > 0
-		? clamp(this.cursorColumn, 0, columnToDisplay.length - 1)
-		: 0;
-	const cursorDisplayIndex = columnToDisplay.length > 0 ? columnToDisplay[clampedColumn] : 0;
-	const limitedDisplayIndex = Math.max(sliceStartDisplay, cursorDisplayIndex);
-	const cursorX = textLeft + this.measureRangeFast(entry, sliceStartDisplay, limitedDisplayIndex);
-	let cursorWidth = this.charAdvance;
-	let baseChar = ' ';
-	let baseColor = constants.COLOR_CODE_TEXT;
-	if (cursorDisplayIndex < highlight.chars.length) {
-		baseChar = highlight.chars[cursorDisplayIndex];
-		baseColor = highlight.colors[cursorDisplayIndex];
-		const widthIndex = cursorDisplayIndex + 1;
-		if (widthIndex < entry.advancePrefix.length) {
-			const widthValue = entry.advancePrefix[widthIndex] - entry.advancePrefix[cursorDisplayIndex];
-			if (widthValue > 0) {
-				cursorWidth = widthValue;
-			} else {
-				cursorWidth = this.font.advance(baseChar);
+	private computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo {
+		const highlight = entry.hi;
+		const columnToDisplay = highlight.columnToDisplay;
+		const clampedColumn = columnToDisplay.length > 0
+			? clamp(this.cursorColumn, 0, columnToDisplay.length - 1)
+			: 0;
+		const cursorDisplayIndex = columnToDisplay.length > 0 ? columnToDisplay[clampedColumn] : 0;
+		const limitedDisplayIndex = Math.max(sliceStartDisplay, cursorDisplayIndex);
+		const cursorX = textLeft + this.measureRangeFast(entry, sliceStartDisplay, limitedDisplayIndex);
+		let cursorWidth = this.charAdvance;
+		let baseChar = ' ';
+		let baseColor = constants.COLOR_CODE_TEXT;
+		if (cursorDisplayIndex < highlight.chars.length) {
+			baseChar = highlight.chars[cursorDisplayIndex];
+			baseColor = highlight.colors[cursorDisplayIndex];
+			const widthIndex = cursorDisplayIndex + 1;
+			if (widthIndex < entry.advancePrefix.length) {
+				const widthValue = entry.advancePrefix[widthIndex] - entry.advancePrefix[cursorDisplayIndex];
+				if (widthValue > 0) {
+					cursorWidth = widthValue;
+				} else {
+					cursorWidth = this.font.advance(baseChar);
+				}
 			}
 		}
-	}
-	const currentChar = this.currentLine().charAt(this.cursorColumn);
-	if (currentChar === '\t') {
-		cursorWidth = this.spaceAdvance * constants.TAB_SPACES;
-	}
-	return {
-		row: this.cursorRow,
-		column: this.cursorColumn,
-		x: cursorX,
-		y: rowTop,
-		width: cursorWidth,
-		height: this.lineHeight,
-		baseChar,
-		baseColor,
-	};
-}
-
-private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): void {
-	const cursorX = info.x;
-	const cursorY = info.y;
-	const caretLeft = Math.floor(Math.max(textX, cursorX - 1));
-	const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + info.width));
-	const caretTop = Math.floor(cursorY);
-	const caretBottom = caretTop + info.height;
-	const problemsPanelHasFocus = this.problemsPanel.isVisible() && this.problemsPanel.isFocused();
-	if (this.searchActive || this.lineJumpActive || this.resourcePanelFocused || this.createResourceActive || problemsPanelHasFocus) {
-		const innerLeft = caretLeft + 1;
-		const innerRight = caretRight - 1;
-		const innerTop = caretTop + 1;
-		const innerBottom = caretBottom - 1;
-		if (innerRight > innerLeft && innerBottom > innerTop) {
-			api.rectfill(innerLeft, innerTop, innerRight, innerBottom, constants.COLOR_CODE_BACKGROUND);
+		const currentChar = this.currentLine().charAt(this.cursorColumn);
+		if (currentChar === '\t') {
+			cursorWidth = this.spaceAdvance * constants.TAB_SPACES;
 		}
-		this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
-		drawEditorColoredText(api, this.font, info.baseChar, [info.baseColor], cursorX, cursorY, info.baseColor);
-	} else {
-		api.rectfill_color(caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
-		const caretPaletteIndex = this.resolvePaletteIndex(constants.CARET_COLOR);
-		const caretInverseColor = caretPaletteIndex !== null
-			? this.invertColorIndex(caretPaletteIndex)
-			: this.invertColorIndex(info.baseColor);
-		drawEditorColoredText(api, this.font, info.baseChar, [caretInverseColor], cursorX, cursorY, caretInverseColor);
+		return {
+			row: this.cursorRow,
+			column: this.cursorColumn,
+			x: cursorX,
+			y: rowTop,
+			width: cursorWidth,
+			height: this.lineHeight,
+			baseChar,
+			baseColor,
+		};
 	}
-}
 
-// Removed local completion popup and parameter hint drawers; delegated to CompletionController
+	private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): void {
+		const cursorX = info.x;
+		const cursorY = info.y;
+		const caretLeft = Math.floor(Math.max(textX, cursorX - 1));
+		const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + info.width));
+		const caretTop = Math.floor(cursorY);
+		const caretBottom = caretTop + info.height;
+		const problemsPanelHasFocus = this.problemsPanel.isVisible() && this.problemsPanel.isFocused();
+		if (this.searchActive || this.lineJumpActive || this.resourcePanelFocused || this.createResourceActive || problemsPanelHasFocus) {
+			const innerLeft = caretLeft + 1;
+			const innerRight = caretRight - 1;
+			const innerTop = caretTop + 1;
+			const innerBottom = caretBottom - 1;
+			if (innerRight > innerLeft && innerBottom > innerTop) {
+				api.rectfill(innerLeft, innerTop, innerRight, innerBottom, constants.COLOR_CODE_BACKGROUND);
+			}
+			this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
+			drawEditorColoredText(api, this.font, info.baseChar, [info.baseColor], cursorX, cursorY, info.baseColor);
+		} else {
+			api.rectfill_color(caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
+			const caretPaletteIndex = this.resolvePaletteIndex(constants.CARET_COLOR);
+			const caretInverseColor = caretPaletteIndex !== null
+				? this.invertColorIndex(caretPaletteIndex)
+				: this.invertColorIndex(info.baseColor);
+			drawEditorColoredText(api, this.font, info.baseChar, [caretInverseColor], cursorX, cursorY, caretInverseColor);
+		}
+	}
+
+	// Removed local completion popup and parameter hint drawers; delegated to CompletionController
 
 	private sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
 		return this.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
@@ -9286,15 +9294,15 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 		this.textVersion += 1;
 	}
 
-protected markDiagnosticsDirty(contextId?: string): void {
-	const targetId = contextId ?? this.activeCodeTabContextId;
-	if (!targetId) {
-		return;
+	protected markDiagnosticsDirty(contextId?: string): void {
+		const targetId = contextId ?? this.activeCodeTabContextId;
+		if (!targetId) {
+			return;
+		}
+		this.diagnosticsDirty = true;
+		this.dirtyDiagnosticContexts.add(targetId);
+		this.diagnosticsDueAtMs = this.clockNow() + this.diagnosticsDebounceMs;
 	}
-	this.diagnosticsDirty = true;
-	this.dirtyDiagnosticContexts.add(targetId);
-	this.diagnosticsDueAtMs = this.clockNow() + this.diagnosticsDebounceMs;
-}
 
 	protected markTextMutated(): void {
 		this.dirty = true;
@@ -9320,16 +9328,16 @@ protected markDiagnosticsDirty(contextId?: string): void {
 		this.completion.updateAfterEdit(editContext);
 	}
 
-private handleCompletionKeybindings(
-	keyboard: KeyboardInput,
-	deltaSeconds: number,
-	shiftDown: boolean,
-	ctrlDown: boolean,
-	altDown: boolean,
-	metaDown: boolean,
-): boolean {
-	return this.completion.handleKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown);
-}
+	private handleCompletionKeybindings(
+		keyboard: KeyboardInput,
+		deltaSeconds: number,
+		shiftDown: boolean,
+		ctrlDown: boolean,
+		altDown: boolean,
+		metaDown: boolean,
+	): boolean {
+		return this.completion.handleKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown);
+	}
 
 	protected onCursorMoved(): void {
 		this.completion.onCursorMoved();
@@ -9479,10 +9487,10 @@ private handleCompletionKeybindings(
 			const inverseColor = caretIndex !== null
 				? this.invertColorIndex(caretIndex)
 				: this.invertColorIndex(baseTextColor);
-		const glyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
-		drawEditorText(api, this.font, glyph.length > 0 ? glyph : ' ', cursorX, top, inverseColor);
-		return;
-	}
+			const glyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
+			drawEditorText(api, this.font, glyph.length > 0 ? glyph : ' ', cursorX, top, inverseColor);
+			return;
+		}
 		this.drawRectOutlineColor(api, left, top, right, bottom, caretColor);
 	}
 
@@ -9524,47 +9532,47 @@ private handleCompletionKeybindings(
 	}
 
 	private drawStatusBar(api: BmsxConsoleApi): void {
-	const host = {
-		viewportWidth: this.viewportWidth,
-		viewportHeight: this.viewportHeight,
-		bottomMargin: this.statusAreaHeight(),
-		lineHeight: this.lineHeight,
-		measureText: (text: string) => this.measureText(text),
-		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, this.font, text, x, y, color),
-            truncateTextToWidth: (text: string, maxWidth: number) => this.truncateTextToWidth(text, maxWidth),
-            message: this.message,
-            getStatusMessageLines: () => this.getStatusMessageLines(),
-            symbolSearchVisible: this.symbolSearchVisible,
-            getActiveSymbolSearchMatch: () => this.getActiveSymbolSearchMatch(),
-            resourcePanelVisible: this.resourcePanelVisible,
-            resourcePanelFilterMode: this.resourcePanel.getFilterMode(),
-            resourcePanelResourceCount: this.resourcePanelResourceCount,
-            isResourceViewActive: () => this.isResourceViewActive(),
-            getActiveResourceViewer: () => this.getActiveResourceViewer(),
-            metadata: this.metadata,
-            statusLeftInfo: this.buildStatusLeftInfo(),
-            problemsPanelFocused: this.problemsPanel.isVisible() && this.problemsPanel.isFocused(),
-        };
-        renderStatusBar(api, host);
-    }
+		const host = {
+			viewportWidth: this.viewportWidth,
+			viewportHeight: this.viewportHeight,
+			bottomMargin: this.statusAreaHeight(),
+			lineHeight: this.lineHeight,
+			measureText: (text: string) => this.measureText(text),
+			drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, this.font, text, x, y, color),
+			truncateTextToWidth: (text: string, maxWidth: number) => this.truncateTextToWidth(text, maxWidth),
+			message: this.message,
+			getStatusMessageLines: () => this.getStatusMessageLines(),
+			symbolSearchVisible: this.symbolSearchVisible,
+			getActiveSymbolSearchMatch: () => this.getActiveSymbolSearchMatch(),
+			resourcePanelVisible: this.resourcePanelVisible,
+			resourcePanelFilterMode: this.resourcePanel.getFilterMode(),
+			resourcePanelResourceCount: this.resourcePanelResourceCount,
+			isResourceViewActive: () => this.isResourceViewActive(),
+			getActiveResourceViewer: () => this.getActiveResourceViewer(),
+			metadata: this.metadata,
+			statusLeftInfo: this.buildStatusLeftInfo(),
+			problemsPanelFocused: this.problemsPanel.isVisible() && this.problemsPanel.isFocused(),
+		};
+		renderStatusBar(api, host);
+	}
 
-    private buildStatusLeftInfo(): string {
-        if (this.problemsPanel.isVisible()) {
-            if (this.problemsPanel.isFocused()) {
-            const sel = this.problemsPanel.getSelectedDiagnostic();
-            if (sel) {
-                const file = sel.sourceLabel ?? (sel.chunkName ?? '');
-                const parts: string[] = [];
-                parts.push(`Ln ${sel.row + 1}, Col ${sel.startColumn + 1}`);
-                if (file.length > 0) parts.push(file);
-                return parts.join(' • ');
-            }
-            }
-            // When Problems panel is visible but not focused or no selection, don't render default editor position
-            return '';
-        }
-        return `LINE ${this.cursorRow + 1}/${this.lines.length} COL ${this.cursorColumn + 1}`;
-    }
+	private buildStatusLeftInfo(): string {
+		if (this.problemsPanel.isVisible()) {
+			if (this.problemsPanel.isFocused()) {
+				const sel = this.problemsPanel.getSelectedDiagnostic();
+				if (sel) {
+					const file = sel.sourceLabel ?? (sel.chunkName ?? '');
+					const parts: string[] = [];
+					parts.push(`Ln ${sel.row + 1}, Col ${sel.startColumn + 1}`);
+					if (file.length > 0) parts.push(file);
+					return parts.join(' • ');
+				}
+			}
+			// When Problems panel is visible but not focused or no selection, don't render default editor position
+			return '';
+		}
+		return `LINE ${this.cursorRow + 1}/${this.lines.length} COL ${this.cursorColumn + 1}`;
+	}
 
 	private drawProblemsPanel(api: BmsxConsoleApi): void {
 		const bounds = this.getProblemsPanelBounds();
@@ -9677,31 +9685,31 @@ private handleCompletionKeybindings(
 
 		let textY = top + paddingY;
 		const textX = left + paddingX;
-	for (let i = 0; i < messageLines.length; i++) {
-		drawEditorText(api, this.font, messageLines[i], textX, textY, constants.ACTION_DIALOG_TEXT_COLOR);
-		textY += messageSpacing;
-	}
+		for (let i = 0; i < messageLines.length; i++) {
+			drawEditorText(api, this.font, messageLines[i], textX, textY, constants.ACTION_DIALOG_TEXT_COLOR);
+			textY += messageSpacing;
+		}
 
 		const buttonY = bottom - paddingY - buttonHeight;
 		let buttonX = left + paddingX;
 		const saveBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + primaryWidth, bottom: buttonY + buttonHeight };
 		api.rectfill(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, constants.ACTION_BUTTON_BACKGROUND);
 		api.rect(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(api, this.font, primaryLabel, saveBounds.left + constants.HEADER_BUTTON_PADDING_X, saveBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
+		drawEditorText(api, this.font, primaryLabel, saveBounds.left + constants.HEADER_BUTTON_PADDING_X, saveBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
 		this.actionPromptButtons.saveAndContinue = saveBounds;
 		buttonX = saveBounds.right + buttonSpacing;
 
 		const continueBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + secondaryWidth, bottom: buttonY + buttonHeight };
 		api.rectfill(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, constants.ACTION_BUTTON_BACKGROUND);
 		api.rect(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(api, this.font, secondaryLabel, continueBounds.left + constants.HEADER_BUTTON_PADDING_X, continueBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
+		drawEditorText(api, this.font, secondaryLabel, continueBounds.left + constants.HEADER_BUTTON_PADDING_X, continueBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
 		this.actionPromptButtons.continue = continueBounds;
 		buttonX = continueBounds.right + buttonSpacing;
 
 		const cancelBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + cancelWidth, bottom: buttonY + buttonHeight };
 		api.rectfill(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND);
 		api.rect(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(api, this.font, cancelLabel, cancelBounds.left + constants.HEADER_BUTTON_PADDING_X, cancelBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.COLOR_HEADER_BUTTON_TEXT);
+		drawEditorText(api, this.font, cancelLabel, cancelBounds.left + constants.HEADER_BUTTON_PADDING_X, cancelBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.COLOR_HEADER_BUTTON_TEXT);
 		this.actionPromptButtons.cancel = cancelBounds;
 	}
 
@@ -9954,5 +9962,5 @@ private handleCompletionKeybindings(
 		return this.input.shouldRepeatPublic(keyboard, code, deltaSeconds);
 	}
 
-// Input overrides moved to InputController
+	// Input overrides moved to InputController
 }

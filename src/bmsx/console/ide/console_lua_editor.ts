@@ -18,7 +18,7 @@ export class ConsoleLuaEditor extends ConsoleCartEditor {
 		if (!context.codeTabActive || context.inlineFieldFocused || context.resourcePanelFocused) {
 			return false;
 		}
-		if (context.altDown || !context.shiftDown || (!context.ctrlDown && !context.metaDown)) {
+		if (!context.altDown || context.shiftDown || (!context.ctrlDown && !context.metaDown)) {
 			return false;
 		}
 		if (!isKeyJustPressedGlobal(this.playerIndex, 'KeyF')) {

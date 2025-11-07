@@ -5,6 +5,7 @@ type InlineResultListOptions<T> = {
 	entries: readonly T[] | null | undefined;
 	visibleCount: number;
 	displayOffset: number;
+	entriesBaseOffset?: number;
 	rowHeight: number;
 	rowTop: number;
 	viewportWidth: number;
@@ -67,6 +68,7 @@ export interface InlineBarsHost {
 	searchVisibleResultCount?: () => number;
 	searchResultEntryHeight?: () => number;
 	searchResultEntries?: Array<{ primary: string; secondary?: string | null; detail?: string | null }>;
+	searchResultEntriesBaseOffset?: number;
 	searchSelectionIndex?: number;
 	searchHoverIndex?: number;
 	searchDisplayOffset?: number;
@@ -231,6 +233,7 @@ export function renderSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 		entries: host.searchResultEntries,
 		visibleCount: visible,
 		displayOffset: host.searchDisplayOffset ?? 0,
+		entriesBaseOffset: host.searchResultEntriesBaseOffset ?? 0,
 		rowHeight,
 		rowTop: resultsTop,
 		viewportWidth: host.viewportWidth,
@@ -448,9 +451,14 @@ function renderResultList<T>(api: BmsxConsoleApi, options: InlineResultListOptio
 	if (!entries || visibleCount <= 0) {
 		return;
 	}
+	const baseOffset = options.entriesBaseOffset ?? 0;
 	for (let i = 0; i < visibleCount; i += 1) {
 		const matchIndex = options.displayOffset + i;
-		const entry = entries[matchIndex];
+		const entryIndex = matchIndex - baseOffset;
+		if (entryIndex < 0 || entryIndex >= entries.length) {
+			continue;
+		}
+		const entry = entries[entryIndex];
 		if (!entry) {
 			continue;
 		}
