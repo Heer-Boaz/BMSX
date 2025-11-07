@@ -21,8 +21,6 @@ import { Msx1Colors } from '../../systems/msx.ts';
 import { SpriteComponent } from '../../component/sprite_component';
 import { renderCodeArea } from './render_code_area';
 import { clamp } from '../../utils/utils';
-import { CHARACTER_CODES } from './character_map';
-import * as constants from './constants';
 // Intellisense data is handled by CompletionController
 import { CompletionController } from './completion_controller';
 import { ProblemsPanelController } from './problems_panel';
@@ -123,14 +121,6 @@ import {
 import { createMessageController } from './console_cart_editor_messages';
 import { clearBackgroundTasks, enqueueBackgroundTask } from './console_cart_editor_background';
 
-type NavigationHistoryEntry = {
-	contextId: string;
-	assetId: string | null;
-	chunkName: string | null;
-	path: string | null;
-	row: number;
-	column: number;
-};
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
 import { planRenameLineEdits } from './rename_apply';
 import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_cross_file';
@@ -144,12 +134,15 @@ import {
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
 } from './input_helpers';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast.ts';
-import { resolveIndentAwareHome, resolveSegmentEnd } from './caret_navigation.ts';
+import { CaretNavigationState, resolveIndentAwareHome, resolveSegmentEnd } from './caret_navigation.ts';
 import type { BmsxConsoleRuntime } from '../../console.ts';
 import { EDITOR_TOGGLE_KEY, ESCAPE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, GLOBAL_SEARCH_RESULT_LIMIT } from './constants';
 import { formatLuaDocument } from './lua_formatter.ts';
-import { caretNavigation, drawCursor, drawInlineCaret, updateBlink } from './caret.ts';
+import * as constants from './constants';
+import { type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs } from './ide_state';
+// Note: ide_state object is available for future migration, currently using legacy exports
 
+// Legacy exports for backwards compatibility - these now reference ide_state
 export let playerIndex: number;
 export let lines: string[] = [''];
 export let cursorRow = 0;
@@ -206,7 +199,6 @@ export let problemsPanelResizing = false;
 export let diagnostics: EditorDiagnostic[] = [];
 export let diagnosticsByRow: Map<number, EditorDiagnostic[]> = new Map();
 export let diagnosticsDirty = true;
-export const diagnosticsDebounceMs = 200;
 export let diagnosticsCache: Map<string, DiagnosticsCacheEntry> = new Map();
 export let dirtyDiagnosticContexts: Set<string> = new Set();
 export let diagnosticsDueAtMs: number | null = null;
@@ -214,28 +206,7 @@ export let diagnosticsComputationScheduled = false;
 export const codeTabContexts: Map<string, CodeTabContext> = new Map();
 export let activeCodeTabContextId: string | null = null;
 export let entryTabId: string | null = null;
-export const captureKeys: string[] = [...new Set([
-	EDITOR_TOGGLE_KEY,
-	ESCAPE_KEY,
-	'ArrowUp',
-	'ArrowDown',
-	'ArrowLeft',
-	'ArrowRight',
-	'Backspace',
-	'Delete',
-	'Enter',
-	'NumpadEnter',
-	'End',
-	'Home',
-	'PageDown',
-	'PageUp',
-	'Space',
-	'Tab',
-	'F3',
-	'F12',
-	'NumpadDivide',
-	...CHARACTER_CODES,
-])];
+export { captureKeys } from './ide_state';
 export const topBarButtonBounds: Record<TopBarButtonId, RectBounds> = {
 	resume: { left: 0, top: 0, right: 0, bottom: 0 },
 	reboot: { left: 0, top: 0, right: 0, bottom: 0 },
@@ -366,7 +337,7 @@ export let dimCrtInEditor: boolean = false; // Default value; can be changed via
 export let wordWrapEnabled = true;
 export let lastPointerRowResolution: { visualIndex: number; segment: VisualLineSegment | null } | null = null;
 export let completion: CompletionController;
-export const NAVIGATION_HISTORY_LIMIT = 64;
+export { NAVIGATION_HISTORY_LIMIT } from './ide_state';
 export const navigationHistory = {
 	back: [] as NavigationHistoryEntry[],
 	forward: [] as NavigationHistoryEntry[],
@@ -374,7 +345,7 @@ export const navigationHistory = {
 };
 export let navigationCaptureSuspended = false;
 
-export const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
+export { EMPTY_DIAGNOSTICS } from './ide_state';
 export let customClipboard: string | null = null;
 
 export function clearCursorVisualOverride(): void {
@@ -11185,4 +11156,66 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	installPlatformVisibilityListener();
 	installWindowEventListeners();
 	navigationHistory.current = createNavigationEntry();
+}export function updateBlink(deltaSeconds: number): void {
+	blinkTimer += deltaSeconds;
+	if (blinkTimer >= constants.CURSOR_BLINK_INTERVAL) {
+		blinkTimer -= constants.CURSOR_BLINK_INTERVAL;
+		cursorVisible = !cursorVisible;
+	}
 }
+export const caretNavigation = new CaretNavigationState();
+export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): void {
+	const cursorX = info.x;
+	const cursorY = info.y;
+	const caretLeft = Math.floor(Math.max(textX, cursorX - 1));
+	const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + info.width));
+	const caretTop = Math.floor(cursorY);
+	const caretBottom = caretTop + info.height;
+	const problemsPanelHasFocus = problemsPanel.isVisible() && problemsPanel.isFocused();
+	if (searchActive || lineJumpActive || resourcePanelFocused || createResourceActive || problemsPanelHasFocus) {
+		const innerLeft = caretLeft + 1;
+		const innerRight = caretRight - 1;
+		const innerTop = caretTop + 1;
+		const innerBottom = caretBottom - 1;
+		if (innerRight > innerLeft && innerBottom > innerTop) {
+			api.rectfill(innerLeft, innerTop, innerRight, innerBottom, constants.COLOR_CODE_BACKGROUND);
+		}
+		drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
+		drawEditorColoredText(api, font, info.baseChar, [info.baseColor], cursorX, cursorY, info.baseColor);
+	} else {
+		api.rectfill_color(caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
+		const caretPaletteIndex = resolvePaletteIndex(constants.CARET_COLOR);
+		const caretInverseColor = caretPaletteIndex !== null
+			? invertColorIndex(caretPaletteIndex)
+			: invertColorIndex(info.baseColor);
+		drawEditorColoredText(api, font, info.baseChar, [caretInverseColor], cursorX, cursorY, caretInverseColor);
+	}
+}
+export function drawInlineCaret(
+	api: BmsxConsoleApi,
+	field: InlineTextField,
+	left: number,
+	top: number,
+	right: number,
+	bottom: number,
+	cursorX: number,
+	active: boolean,
+	caretColor: { r: number; g: number; b: number; a: number; } = constants.CARET_COLOR,
+	baseTextColor: number = constants.COLOR_STATUS_TEXT
+): void {
+	if (!cursorVisible) {
+		return;
+	}
+	if (active) {
+		api.rectfill_color(left, top, right, bottom, caretColor);
+		const caretIndex = resolvePaletteIndex(caretColor);
+		const inverseColor = caretIndex !== null
+			? invertColorIndex(caretIndex)
+			: invertColorIndex(baseTextColor);
+		const glyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
+		drawEditorText(api, font, glyph.length > 0 ? glyph : ' ', cursorX, top, inverseColor);
+		return;
+	}
+	drawRectOutlineColor(api, left, top, right, bottom, caretColor);
+}
+
