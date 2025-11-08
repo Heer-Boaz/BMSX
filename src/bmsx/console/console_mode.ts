@@ -172,7 +172,6 @@ export class ConsoleMode {
 		this.historyRepeat.reset();
 		this.blinkTimer = 0;
 		this.caretVisible = true;
-		this.appendSystemMessage('Console mode ready. Type cont to resume or ide to open the editor.');
 	}
 
 	public deactivate(): void {
@@ -246,16 +245,30 @@ export class ConsoleMode {
 		}
 		const lineHeight = this.font.lineHeight();
 		const contentWidth = Math.max(0, surface.width - PADDING_X * 2);
-		const availableHeight = surface.height - PADDING_Y * 2 - lineHeight - PROMPT_GAP;
+
+		// compute prompt layout and wrapped input segments
+		const promptWidth = this.measureDisplayText(PROMPT_TEXT);
+		const firstLineMax = Math.max(8, contentWidth - promptWidth);
+		const otherLineMax = Math.max(8, contentWidth);
+		const displayInput = this.toDisplayText(this.field.text);
+		const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax);
+
+		// space available for output lines above the input area
+		const availableHeight = surface.height - PADDING_Y * 2 - PROMPT_GAP - (inputWrap.segments.length * lineHeight);
 		const maxContentLines = Math.max(1, Math.floor(availableHeight / lineHeight));
+
+		// build and clamp output lines
 		const wrappedLines = this.buildWrappedLines(contentWidth, maxContentLines);
 		const visibleStart = Math.max(0, wrappedLines.length - maxContentLines);
 		const visibleLines = wrappedLines.slice(visibleStart);
+
+		// draw backdrop sized to visible content + input area
 		if (this.showBackdrop) {
-			const panelHeight = visibleLines.length * lineHeight + PROMPT_GAP + lineHeight;
+			const panelHeight = visibleLines.length * lineHeight + PROMPT_GAP + inputWrap.segments.length * lineHeight;
 			this.drawBackdrop(renderer, surface.width, panelHeight);
 		}
 
+		// draw visible output lines starting at top padding
 		let y = PADDING_Y;
 		for (const line of visibleLines) {
 			const color = resolvePaletteColor(OUTPUT_COLORS[line.kind]);
@@ -263,11 +276,16 @@ export class ConsoleMode {
 			y += lineHeight;
 		}
 
-		const promptY = surface.height - PADDING_Y - lineHeight;
+		// compute where input block starts (positioned right after visible output lines,
+		// so the input moves upward as output fills the viewport — terminal-like behavior)
+		const inputStartY = PADDING_Y + visibleLines.length * lineHeight + PROMPT_GAP;
+
+		// draw prompt at the first input line then draw wrapped input lines (first segment after prompt)
 		const promptColor = resolvePaletteColor(OUTPUT_COLORS.prompt);
-		this.drawGlyphRun(renderer, PROMPT_TEXT, PADDING_X, promptY, promptColor);
-		const promptWidth = this.measureDisplayText(PROMPT_TEXT);
-		this.drawInputField(renderer, PADDING_X + promptWidth, promptY);
+		this.drawGlyphRun(renderer, PROMPT_TEXT, PADDING_X, inputStartY, promptColor);
+
+		// draw multi-line input (handles selection and caret)
+		this.drawMultilineInput(renderer, PADDING_X, inputStartY, promptWidth, inputWrap);
 	}
 
 	public recordHistory(command: string): void {
@@ -364,6 +382,10 @@ export class ConsoleMode {
 		keyboard.consumeButton('Enter');
 		keyboard.consumeButton('NumpadEnter');
 		const command = this.field.text.trimEnd();
+		if (command.length === 0) {
+			this.resetBlink();
+			return null;
+		}
 		this.resetInputField('');
 		this.resetBlink();
 		return command;
@@ -401,35 +423,109 @@ export class ConsoleMode {
 		return wrapRuntimeErrorLine(normalized, Math.max(8, maxWidth), (value) => this.font.measure(value));
 	}
 
-	private drawInputField(renderer: EditorConsoleRenderBackend, x: number, y: number): void {
-		const displayText = this.toDisplayText(this.field.text);
-		const inputColor = resolvePaletteColor(OUTPUT_COLORS.stdout);
-		const selection = selectionRange(this.field);
-		if (selection) {
-			const startText = displayText.slice(0, selection.start);
-			const selectionText = displayText.slice(selection.start, selection.end);
-			const startWidth = this.measureDisplayText(startText);
-			const selWidth = this.measureDisplayText(selectionText);
-			renderer.drawRect({
-				kind: 'fill',
-				x0: x + startWidth - 1,
-				y0: y - CHARACTER_INSET_Y,
-				x1: x + startWidth + selWidth + 1,
-				y1: y + this.font.lineHeight() + CHARACTER_INSET_Y,
-				color: this.selectionColor,
-			});
+	// New helper: wraps display text with a smaller first-line width (after prompt) and full width for following lines.
+	private wrapDisplayWithFirstWidth(text: string, firstWidth: number, otherWidth: number): { segments: string[]; starts: number[] } {
+		const segments: string[] = [];
+		const starts: number[] = [];
+		let current = '';
+		let currentWidth = 0;
+		let widthLimit = firstWidth;
+		let index = 0;
+		let segStart = 0;
+
+		for (let i = 0; i < text.length; i += 1) {
+			const ch = text.charAt(i);
+			// treat newline as explicit break
+			if (ch === '\n') {
+				segments.push(current);
+				starts.push(segStart);
+				current = '';
+				currentWidth = 0;
+				index += 1;
+				segStart = i + 1;
+				widthLimit = otherWidth;
+				continue;
+			}
+			const adv = this.font.advance(ch);
+			if (currentWidth + adv > widthLimit && current.length > 0) {
+				segments.push(current);
+				starts.push(segStart);
+				current = ch;
+				currentWidth = adv;
+				segStart = i;
+				widthLimit = otherWidth;
+			} else {
+				current += ch;
+				currentWidth += adv;
+			}
 		}
-		this.drawGlyphRun(renderer, displayText, x, y, inputColor);
-		if (this.caretVisible) {
-			const caretOffset = this.measureDisplayText(displayText.slice(0, this.field.cursor));
-			renderer.drawRect({
-				kind: 'fill',
-				x0: x + caretOffset,
-				y0: y - CHARACTER_INSET_Y,
-				x1: x + caretOffset + 1,
-				y1: y + this.font.lineHeight() + CHARACTER_INSET_Y,
-				color: this.caretColor,
-			});
+		segments.push(current);
+		starts.push(segStart);
+		// ensure at least one segment
+		if (segments.length === 0) {
+			segments.push('');
+			starts.push(0);
+		}
+		return { segments, starts };
+	}
+
+	// Replace single-line drawInputField with multi-line aware renderer
+	private drawMultilineInput(renderer: EditorConsoleRenderBackend, baseX: number, baseY: number, promptWidth: number, wrap: { segments: string[]; starts: number[] }): void {
+		const inputColor = resolvePaletteColor(OUTPUT_COLORS.stdout);
+		const sel = selectionRange(this.field);
+		const cursorIndex = this.field.cursor;
+		const displayText = this.toDisplayText(this.field.text);
+
+		for (let si = 0; si < wrap.segments.length; si += 1) {
+			const seg = wrap.segments[si];
+			const segStart = wrap.starts[si];
+			const segLen = seg.length;
+			const y = baseY + si * this.font.lineHeight();
+			let x = baseX;
+			// first segment is placed after the prompt
+			if (si === 0) {
+				x += promptWidth;
+			}
+
+			// draw selection background for this segment if selection overlaps
+			if (sel) {
+				const selStart = Math.max(sel.start, segStart);
+				const selEnd = Math.min(sel.end, segStart + segLen);
+				if (selStart < selEnd) {
+					const before = displayText.slice(segStart, selStart);
+					const selected = displayText.slice(selStart, selEnd);
+					const startWidth = this.measureDisplayText(before);
+					const selWidth = this.measureDisplayText(selected);
+					renderer.drawRect({
+						kind: 'fill',
+						x0: x + startWidth - 1,
+						y0: y - CHARACTER_INSET_Y,
+						x1: x + startWidth + selWidth + 1,
+						y1: y + this.font.lineHeight() + CHARACTER_INSET_Y,
+						color: this.selectionColor,
+					});
+				}
+			}
+
+			// draw the glyph run for this segment
+			this.drawGlyphRun(renderer, seg, x, y, inputColor);
+
+			// caret rendering: if caret is within this segment draw caret
+			if (this.caretVisible) {
+				const caretInSeg = cursorIndex >= segStart && cursorIndex <= segStart + segLen;
+				if (caretInSeg) {
+					const local = displayText.slice(segStart, cursorIndex);
+					const caretOffset = this.measureDisplayText(local);
+					renderer.drawRect({
+						kind: 'fill',
+						x0: x + caretOffset,
+						y0: y - CHARACTER_INSET_Y,
+						x1: x + caretOffset + 1,
+						y1: y + this.font.lineHeight() + CHARACTER_INSET_Y,
+						color: this.caretColor,
+					});
+				}
+			}
 		}
 	}
 
