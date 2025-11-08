@@ -404,9 +404,16 @@ export class ResourcePanelController {
     type Dir = { name: string; children: Map<string, Dir>; files: { name: string; descriptor: ConsoleResourceDescriptor }[] };
     const root: Dir = { name: '.', children: new Map(), files: [] };
     for (const entry of entries) {
-      const normalized = entry.path.replace(/\\\\/g, '/');
+      const rawPath = typeof entry.path === 'string' && entry.path.length > 0
+        ? entry.path
+        : (entry.assetId ?? '');
+      const normalized = rawPath.replace(/\\/g, '/');
       const parts = normalized.split('/').filter(part => part.length > 0 && part !== '.');
-      if (parts.length === 0) { root.files.push({ name: entry.path || entry.assetId, descriptor: entry }); continue; }
+      const fallbackName = rawPath.length > 0 ? rawPath : (entry.assetId ?? '<resource>');
+      if (parts.length === 0) {
+        root.files.push({ name: fallbackName, descriptor: entry });
+        continue;
+      }
       let current = root;
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
@@ -420,29 +427,38 @@ export class ResourcePanelController {
       }
     }
     items.push({ line: './', contentStartColumn: 0, descriptor: null });
-    const traverse = (directory: Dir, prefix: string) => {
+    const indentUnit = '  ';
+    const compactDirectory = (directory: Dir): { label: string; terminal: Dir } => {
+      const segments: string[] = [directory.name];
+      let cursor = directory;
+      while (cursor.files.length === 0 && cursor.children.size === 1) {
+        const iterator = cursor.children.values().next();
+        if (!iterator.value) {
+          break;
+        }
+        const next = iterator.value as Dir;
+        segments.push(next.name);
+        cursor = next;
+      }
+      return { label: segments.join('/'), terminal: cursor };
+    };
+    const traverse = (directory: Dir, depth: number) => {
       const childDirs = Array.from(directory.children.values()).sort((a, b) => a.name.localeCompare(b.name));
       const files = directory.files.slice().sort((a, b) => a.name.localeCompare(b.name));
-      const combined: Array<{ kind: 'dir'; node: Dir } | { kind: 'file'; node: { name: string; descriptor: ConsoleResourceDescriptor } }> = [];
-      for (const dir of childDirs) combined.push({ kind: 'dir', node: dir });
-      for (const file of files) combined.push({ kind: 'file', node: file });
-      for (let index = 0; index < combined.length; index++) {
-        const entry = combined[index];
-        const isLast = index === combined.length - 1;
-        const connector = prefix.length === 0 ? (isLast ? '`-- ' : '|-- ') : (isLast ? '`-- ' : '|-- ');
-        const linePrefix = prefix + connector;
-        const nextPrefix = prefix + (isLast ? '    ' : '|   ');
-        if (entry.kind === 'dir') {
-          const line = `${linePrefix}${entry.node.name}/`;
-          items.push({ line, contentStartColumn: linePrefix.length, descriptor: null });
-          traverse(entry.node, nextPrefix);
-        } else {
-          const line = `${linePrefix}${entry.node.name}`;
-          items.push({ line, contentStartColumn: linePrefix.length, descriptor: entry.node.descriptor });
-        }
+      for (const dir of childDirs) {
+        const { label, terminal } = compactDirectory(dir);
+        const indent = indentUnit.repeat(depth);
+        const line = `${indent}${label}/`;
+        items.push({ line, contentStartColumn: indent.length, descriptor: null });
+        traverse(terminal, depth + 1);
+      }
+      for (const file of files) {
+        const indent = indentUnit.repeat(depth);
+        const line = `${indent}${file.name}`;
+        items.push({ line, contentStartColumn: indent.length, descriptor: file.descriptor });
       }
     };
-    traverse(root, '');
+    traverse(root, 0);
     return items;
   }
 
