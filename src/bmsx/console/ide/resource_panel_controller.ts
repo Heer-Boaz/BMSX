@@ -533,37 +533,12 @@ export class ResourcePanelController {
     const capacity = this.lineCapacity();
     if (capacity <= 0) { this.scroll = 0; this.clampHScroll(); return; }
     const maxScroll = Math.max(0, this.items.length - capacity);
-    if (index < this.scroll) { this.scroll = index; this.ensureSelectionHorizontal(index); return; }
+    if (index < this.scroll) { this.scroll = index; this.clampHScroll(); return; }
     const overflow = index - (this.scroll + capacity - 1);
-    if (overflow > 0) this.scroll = Math.min(this.scroll + overflow, maxScroll);
-    this.ensureSelectionHorizontal(index);
-  }
-
-  private ensureSelectionHorizontal(index: number): void {
-    const bounds = this.getBounds();
-    if (!bounds) { this.hscroll = 0; return; }
-    const capacity = this.lineCapacity();
-    const needsScrollbar = this.items.length > capacity;
-    const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
-    const dividerLeft = bounds.right - 1;
-    const availableRight = Math.max(contentLeft, needsScrollbar ? dividerLeft - constants.SCROLLBAR_WIDTH : dividerLeft);
-    const availableWidth = Math.max(0, availableRight - contentLeft);
-    if (availableWidth <= 0) { this.hscroll = 0; return; }
-    const item = this.items[index];
-    const indentText = item.line.slice(0, item.contentStartColumn);
-    const contentText = item.line.slice(item.contentStartColumn);
-    const indentWidth = this.host.measureText(indentText);
-    const contentWidth = this.host.measureText(contentText);
-    const textStart = 0;
-    const textEnd = indentWidth + contentWidth;
-    let nextScroll = this.hscroll;
-    const margin = this.host.charAdvance * 2;
-    if (textStart - nextScroll < 0) nextScroll = Math.max(0, textStart - margin);
-    if (textEnd - nextScroll > availableWidth) nextScroll = textEnd - availableWidth + margin;
-    if (nextScroll < 0 || !Number.isFinite(nextScroll)) nextScroll = 0;
-    const maxScroll = this.computeMaxHScroll();
-    if (nextScroll > maxScroll) nextScroll = maxScroll;
-    this.hscroll = nextScroll;
+    if (overflow > 0) {
+      this.scroll = Math.min(this.scroll + overflow, maxScroll);
+    }
+    this.clampHScroll();
   }
 
   public lineCapacity(): number {
