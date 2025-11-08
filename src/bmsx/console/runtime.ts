@@ -4925,16 +4925,15 @@ private disposeComponentPreset(id: string): void {
 		this.invokeWorldObjectMethod(host, ['on_spawn', 'spawn']);
 	}
 
-	// private getLuaWorldObjectDefinitionForHost(host: WorldObject): LuaWorldObjectDefinitionRecord {
-	// 	const marker = host as { __luaDefinitionId?: string };
-	// 	const defId = marker.__luaDefinitionId;
-	// 	if (!defId) {
-	// 		throw new Error(`[BmsxConsoleRuntime] Lua world object definition ID marker not found on host: ${host.id}`);
-	// 	}
-	// 	const def = this.worldObjectDefinitions.get(defId);
-	// 	if (!def) throw new Error(`[BmsxConsoleRuntime] Lua world object definition not found for ID: ${defId}`);
-	// 	return def;
-	// }
+	private getLuaWorldObjectDefinitionForHost(host: WorldObject): LuaWorldObjectDefinitionRecord | null {
+		const marker = host as { __luaDefinitionId?: string };
+		const defId = marker.__luaDefinitionId;
+		if (!defId) {
+			return null;
+		}
+		const def = this.worldObjectDefinitions.get(defId);
+		return def ?? null;
+	}
 
 	private ensureLuaClassPrototype(classTable: LuaTable): void {
 		const meta = classTable.getMetatable();
@@ -4950,10 +4949,28 @@ private disposeComponentPreset(id: string): void {
 		if (!isLuaNativeValue(nativeValue)) {
 			return;
 		}
+		const definition = this.getLuaWorldObjectDefinitionForHost(host);
+		const prototypeTable = definition?.classTable ?? nativeValue.getMetatable();
+		const isLuaWorldObject = definition !== null || prototypeTable !== null;
 		for (let index = 0; index < methodKeys.length; index += 1) {
 			const key = methodKeys[index];
 			if (!key) {
-				throw new Error(`[BmsxConsoleRuntime] invokeWorldObjectMethod received an empty method key.`);
+				throw new Error('[BmsxConsoleRuntime] invokeWorldObjectMethod received an empty method key.');
+			}
+			if (prototypeTable) {
+				const luaCandidate = this.getLuaTableEntry(prototypeTable, [key]);
+				if (luaCandidate !== null && this.isLuaFunctionValue(luaCandidate)) {
+					this.callLuaFunctionWithInterpreter(luaCandidate, [host], interpreter);
+					return;
+				}
+			}
+			if (isLuaWorldObject) {
+				const instanceCandidate = interpreter.getNativeMemberValue(nativeValue, key, null);
+				if (instanceCandidate !== null && this.isLuaFunctionValue(instanceCandidate)) {
+					this.callLuaFunctionWithInterpreter(instanceCandidate, [host], interpreter);
+					return;
+				}
+				continue;
 			}
 			const candidate = interpreter.getNativeMemberValue(nativeValue, key, null);
 			if (candidate === null) {
