@@ -9045,10 +9045,9 @@ export function markTextMutated(): void {
 	updateActiveContextDirtyFlag();
 	invalidateVisualLines();
 	requestSemanticRefresh();
+	ide_state.navigationHistory.forward.length = 0;
 	handlePostEditMutation();
-	if (ide_state.searchQuery.length > 0) {
-		startSearchJob();
-	}
+	if (ide_state.searchQuery.length > 0) startSearchJob();
 }
 
 export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
