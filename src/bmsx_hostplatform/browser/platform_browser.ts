@@ -577,7 +577,8 @@ class BrowserInputHub implements InputHub {
 	}
 
 	private onKeyDown = (event: KeyboardEvent) => {
-		if (this.keyboardCapture && this.keyboardCapture(event.code)) {
+		const captured = this.keyboardCapture && this.keyboardCapture(event.code);
+		if (captured || this.shouldBlockBrowserShortcut(event)) {
 			event.preventDefault();
 			event.stopPropagation();
 			event.stopImmediatePropagation();
@@ -587,7 +588,8 @@ class BrowserInputHub implements InputHub {
 	};
 
 	private onKeyUp = (event: KeyboardEvent) => {
-		if (this.keyboardCapture && this.keyboardCapture(event.code)) {
+		const captured = this.keyboardCapture && this.keyboardCapture(event.code);
+		if (captured || this.shouldBlockBrowserShortcut(event)) {
 			event.preventDefault();
 			event.stopPropagation();
 			event.stopImmediatePropagation();
@@ -688,6 +690,17 @@ class BrowserInputHub implements InputHub {
 		}
 		this.devicesList = retained;
 	};
+
+	private shouldBlockBrowserShortcut(event: KeyboardEvent): boolean {
+		const ctrlLike = event.ctrlKey === true || event.metaKey === true;
+		if (ctrlLike && !event.altKey && event.code === 'KeyP') {
+			return true;
+		}
+		if (ctrlLike && event.shiftKey && !event.altKey && event.code === 'KeyR') {
+			return true;
+		}
+		return false;
+	}
 }
 
 function pointerButton(button: number): string {
