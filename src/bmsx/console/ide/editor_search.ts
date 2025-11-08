@@ -4,7 +4,7 @@ import { clamp } from '../../utils/utils';
 import { getSelectionRange, getSelectionText } from './text_editing_and_selection';
 
 import type { ConsoleResourceDescriptor } from '../types';
-import { activateCodeTab, applySearchFieldText, clearReferenceHighlights, closeLineJump, closeResourceSearch, closeSymbolSearch, ensureCursorVisible, openLuaCodeTab, resetBlink, revealCursor, scheduleNextFrame, updateDesiredColumn } from './console_cart_editor';
+import { activateCodeTab, applySearchFieldText, clearReferenceHighlights, closeLineJump, closeResourceSearch, closeSymbolSearch, ensureCursorVisible, listResourcesStrict, openLuaCodeTab, resetBlink, revealCursor, scheduleNextFrame, updateDesiredColumn } from './console_cart_editor';
 import { enqueueBackgroundTask } from './console_cart_editor_background';
 
 // Types used by search pipelines
@@ -367,8 +367,6 @@ export function startGlobalSearchJob(): void {
 	ide_state.searchHoverIndex = -1;
 	enqueueBackgroundTask(() => runGlobalSearchJobSlice(job));
 }
-
-declare function listResourcesStrict(): ConsoleResourceDescriptor[];
 
 export function runGlobalSearchJobSlice(job: GlobalSearchJob): boolean {
 	if (ide_state.globalSearchJob !== (job as any)) return false;

@@ -334,8 +334,8 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly editorRenderBackend = new EditorConsoleRenderBackend();
 	private readonly consoleOverlayBackend = new EditorConsoleRenderBackend();
 	private readonly consoleMode: ConsoleMode;
+	private overlayResolutionMode: 'offscreen' | 'viewport' = 'offscreen';
 	private overlayRenderedThisFrame = false;
-	private consoleWasPausedBeforeActivation = false;
 	private readonly consoleHotkeyLatch = new Map<string, number | null>();
 	private readonly validationStrategy: BmsxLuaValidationStrategy = BmsxLuaValidationStrategy.TrustRealRun;
 	private luaProgramSourceOverride: string | null = null;
@@ -395,6 +395,22 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 	private readonly luaServices: Map<string, LuaServiceBinding> = new Map();
 	private hasBooted = false;
 	private static readonly WORLD_OBJECT_RESERVED_DEFAULT_KEYS = new Set<string>(['id', 'sc', 'btreecontexts']);
+	private static readonly CONSOLE_SINGLE_ARG_KEYWORDS = new Set([
+		'if',
+		'then',
+		'elseif',
+		'else',
+		'end',
+		'for',
+		'while',
+		'repeat',
+		'until',
+		'function',
+		'local',
+		'return',
+		'break',
+		'do',
+	]);
 
 	private constructor(options: BmsxConsoleRuntimeOptions) {
 		super({ id: 'bmsx_console_runtime' });
@@ -436,6 +452,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		this.luaProgram = this.cart.luaProgram ?? null;
 		this.seedDefaultLuaBuiltins();
 		this.initializeEditor();
+		this.setEditorOverlayResolution(this.overlayResolutionMode);
 		this.attachFrameListener();
 		this.boot('constructor');
 		void this.prefetchLuaSourceFromFilesystem();
@@ -512,15 +529,23 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 	private pollConsoleHotkeys(): void {
 		const keyboard = this.getKeyboard();
 		const shiftDown = keyboard.getButtonState('ShiftLeft').pressed === true || keyboard.getButtonState('ShiftRight').pressed === true;
+		const ctrlDown = keyboard.getButtonState('ControlLeft').pressed === true || keyboard.getButtonState('ControlRight').pressed === true;
 		if (shiftDown && this.shouldAcceptConsoleHotkey('F1', keyboard.getButtonState('F1'))) {
 			keyboard.consumeButton('F1');
 			this.toggleConsoleMode();
 			return;
 		}
-		const ctrlDown = keyboard.getButtonState('ControlLeft').pressed === true || keyboard.getButtonState('ControlRight').pressed === true;
 		if (ctrlDown && this.shouldAcceptConsoleHotkey('KeyP', keyboard.getButtonState('KeyP'))) {
 			keyboard.consumeButton('KeyP');
 			this.toggleConsoleMode();
+			return;
+		}
+		if (this.consoleMode.isActive() && ctrlDown && shiftDown) {
+			const resolutionState = keyboard.getButtonState('KeyR');
+			if (this.shouldAcceptConsoleHotkey('console-resolution', resolutionState)) {
+				keyboard.consumeButton('KeyR');
+				this.toggleConsoleResolutionMode();
+			}
 		}
 	}
 
@@ -560,22 +585,20 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		if (this.editor?.isActive()) {
 			this.editor.deactivate();
 		}
-		this.consoleWasPausedBeforeActivation = $.paused === true;
-		$.paused = true;
 		this.consoleMode.activate();
 	}
 
-	private closeConsoleMode(resumeGame: boolean): void {
+	private closeConsoleMode(_resumeGame: boolean): void {
 		if (!this.consoleMode.isActive()) {
 			return;
 		}
 		this.consoleMode.deactivate();
-		if (resumeGame && !this.consoleWasPausedBeforeActivation) {
-			$.paused = false;
-		} else {
-			$.paused = this.consoleWasPausedBeforeActivation;
-		}
-		this.consoleWasPausedBeforeActivation = false;
+	}
+	private toggleConsoleResolutionMode(): void {
+		const next = this.overlayResolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
+		this.setEditorOverlayResolution(next);
+		const label = next === 'offscreen' ? 'LOW-RES' : 'HI-RES';
+		this.consoleMode.appendSystemMessage(`Resolution: ${label}`);
 	}
 
 	private getKeyboard(): KeyboardInput {
@@ -600,7 +623,11 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			throw new Error('[BmsxConsoleRuntime] Game view unavailable while rendering console overlay.');
 		}
 		this.consoleOverlayBackend.beginFrame();
-		this.consoleMode.draw(this.consoleOverlayBackend, { width: view.viewportSize.x, height: view.viewportSize.y });
+		const targetSize = this.overlayResolutionMode === 'viewport' ? view.viewportSize : view.offscreenCanvasSize;
+		if (!Number.isFinite(targetSize.x) || !Number.isFinite(targetSize.y) || targetSize.x <= 0 || targetSize.y <= 0) {
+			throw new Error('[BmsxConsoleRuntime] Invalid console overlay dimensions.');
+		}
+		this.consoleMode.draw(this.consoleOverlayBackend, { width: targetSize.x, height: targetSize.y });
 		this.consoleOverlayBackend.endFrame();
 		this.overlayRenderedThisFrame = true;
 	}
@@ -631,7 +658,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		const normalized = trimmed.toLowerCase();
 		if (normalized === 'cls') {
 			this.consoleMode.clearOutput();
-			this.consoleMode.appendSystemMessage('Console cleared.');
 			return;
 		}
 		if (normalized === 'cont') {
@@ -679,13 +705,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 				results = interpreter.execute(source, chunkName);
 			}
 			catch (error) {
-				if (error instanceof LuaSyntaxError && this.shouldAttemptConsoleReturnFallback(source)) {
-					const fallback = `return ${source}`;
-					results = interpreter.execute(fallback, chunkName);
-				}
-				else {
-					throw error;
-				}
+				throw error;
 			}
 			if (results.length > 0) {
 				const summary = results.map(value => this.consoleValueToString(value)).join('\t');
@@ -718,11 +738,30 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			const expression = trimmed.slice(1).trim();
 			return expression.length === 0 ? '' : `return ${expression}`;
 		}
+		const rewritten = this.rewriteSingleArgumentCall(trimmed);
+		if (rewritten) {
+			return rewritten;
+		}
 		return trimmed;
 	}
 
-	private shouldAttemptConsoleReturnFallback(source: string): boolean {
-		return !/^(return|local|function|for|while|repeat|if)\b/i.test(source);
+	private rewriteSingleArgumentCall(source: string): string | null {
+		const match = source.match(/^([A-Za-z_][A-Za-z0-9_]*(?:[.:][A-Za-z_][A-Za-z0-9_]*)*)\s+(.+)$/);
+		if (!match) {
+			return null;
+		}
+		const callee = match[1];
+		if (BmsxConsoleRuntime.CONSOLE_SINGLE_ARG_KEYWORDS.has(callee)) {
+			return null;
+		}
+		const argument = match[2].trim();
+		if (argument.length === 0 || argument.startsWith('=')) {
+			return null;
+		}
+		if (argument.startsWith('--')) {
+			return null;
+		}
+		return `${callee}(${argument})`;
 	}
 
 	private consoleValueToString(value: LuaValue): string {
@@ -867,11 +906,18 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		if (!view) {
 			throw new Error('[BmsxConsoleRuntime] Game view unavailable while setting editor overlay resolution.');
 		}
-		if (mode === 'viewport') {
+		const useViewport = mode === 'viewport';
+		if (useViewport) {
 			this.editorRenderBackend.setFrameOverride({ width: view.viewportSize.x, height: view.viewportSize.y });
-			return;
+		} else {
+			this.editorRenderBackend.setFrameOverride(null);
 		}
-		this.editorRenderBackend.setFrameOverride(null);
+		this.overlayResolutionMode = mode;
+		if (useViewport) {
+			this.consoleOverlayBackend.setFrameOverride({ width: view.viewportSize.x, height: view.viewportSize.y });
+		} else {
+			this.consoleOverlayBackend.setFrameOverride(null);
+		}
 	}
 
 	public boot(reason?: string): void {
@@ -936,17 +982,19 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		this.pollConsoleHotkeys();
 		this.advanceConsoleMode(deltaSeconds);
 		const editor = this.editor;
-		if (editor) {
+		const consoleActive = this.consoleMode.isActive();
+		if (editor && !consoleActive) {
 			editor.update(deltaSeconds);
 		}
-		const editorActive = editor?.isActive() === true;
+		const editorActive = editor?.isActive() === true && !consoleActive;
 		this.setEditorPipelineActive(editorActive);
-		const paused = $.paused === true;
-		const deltaForUpdate = paused ? 0 : deltaSeconds;
-		if (paused) {
+		const debugPaused = $.paused === true;
+		const haltGame = debugPaused || editorActive || consoleActive;
+		const deltaForUpdate = haltGame ? 0 : deltaSeconds;
+		if (debugPaused) {
 			this.api.begin_paused_frame(this.frameCounter);
 		} else {
-			this.api.begin_frame(this.frameCounter, deltaSeconds);
+			this.api.begin_frame(this.frameCounter, haltGame ? 0 : deltaSeconds);
 		}
 		if (editorActive && editor) {
 			editor.draw(this.api);
@@ -964,7 +1012,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 				return;
 			}
 			try {
-				if (!paused && this.luaUpdateFunction !== null) {
+				if (!haltGame && this.luaUpdateFunction !== null) {
 					this.invokeLuaFunction(this.luaUpdateFunction, [deltaSeconds]);
 				}
 				this.tickLuaServices(deltaForUpdate);
@@ -984,7 +1032,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			}
 		}
 		else {
-			if (!paused) {
+			if (!haltGame) {
 				this.cart.update(this.api, deltaSeconds);
 			}
 			this.tickLuaServices(deltaForUpdate);

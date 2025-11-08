@@ -7409,7 +7409,7 @@ export function drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, co
 		constants.ERROR_OVERLAY_PADDING_Y,
 		computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth)
 	);
-	if (!ide_state.layout) {
+	if (!layout) {
 		return;
 	}
 	const highlightLines: number[] = [];
@@ -7453,7 +7453,7 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 		constants.ERROR_OVERLAY_PADDING_Y,
 		computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth)
 	);
-	if (!ide_state.layout) {
+	if (!layout) {
 		overlay.hovered = false;
 		overlay.hoverLine = -1;
 		return false;

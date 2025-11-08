@@ -11,11 +11,10 @@ import {
 	applyInlineFieldEditing,
 	type InlineFieldEditingHandlers,
 	setFieldText,
-	caretX,
 	selectionRange,
 } from './ide/inline_text_field';
 import type { InlineInputOptions, InlineTextField } from './ide/types';
-import { INITIAL_REPEAT_DELAY, REPEAT_INTERVAL } from './ide/constants';
+import { INITIAL_REPEAT_DELAY, REPEAT_INTERVAL, TAB_SPACES } from './ide/constants';
 import { EditorConsoleRenderBackend } from './render_backend';
 
 type ConsoleOutputKind = 'prompt' | 'stdout' | 'stderr' | 'system';
@@ -36,12 +35,15 @@ type Viewport = { width: number; height: number };
 const MAX_OUTPUT_ENTRIES = 512;
 const MAX_HISTORY_ENTRIES = 256;
 const PROMPT_TEXT = '> ';
-const PROMPT_GAP = 6;
-const PADDING_X = 12;
-const PADDING_Y = 12;
-const BACKGROUND_ALPHA = 0.78;
-const OBLIQUE_STEP = 1;
+const PROMPT_GAP = 4;
+const PADDING_X = 10;
+const PADDING_Y = 10;
+const PANEL_BACKGROUND_ALPHA = 0.72;
+const CHARACTER_TILE_ALPHA = 1.0;
+const OBLIQUE_SHADOW_OFFSET = 1;
+const CHARACTER_INSET_Y = 1;
 const CURSOR_BLINK_PERIOD = 0.8;
+const ENABLE_PANEL_BACKDROP = false;
 
 const OUTPUT_COLORS: Record<ConsoleOutputKind, number> = {
 	prompt: 15,
@@ -134,6 +136,11 @@ export class ConsoleMode {
 	private readonly font: ConsoleEditorFont;
 	private readonly caseInsensitive: boolean;
 	private readonly maxEntries: number;
+	private readonly panelBackgroundColor = resolvePaletteColor(0, PANEL_BACKGROUND_ALPHA);
+	private readonly characterBackgroundColor = { r: 0, g: 0, b: 0, a: CHARACTER_TILE_ALPHA } as color;
+	private readonly caretColor = resolvePaletteColor(15);
+	private readonly selectionColor = resolvePaletteColor(11, 0.55);
+	private showBackdrop = ENABLE_PANEL_BACKDROP;
 	private readonly field: InlineTextField = createInlineTextField();
 	private readonly output: ConsoleOutputEntry[] = [];
 	private readonly history: string[] = [];
@@ -150,6 +157,10 @@ export class ConsoleMode {
 		this.font = new ConsoleEditorFont(options.fontVariant);
 		this.caseInsensitive = options.caseInsensitive ?? true;
 		this.maxEntries = options.maxEntries ?? MAX_OUTPUT_ENTRIES;
+	}
+
+	public setBackdropVisibility(enabled: boolean): void {
+		this.showBackdrop = enabled;
 	}
 
 	public activate(): void {
@@ -229,34 +240,34 @@ export class ConsoleMode {
 		return submit;
 	}
 
-	public draw(renderer: EditorConsoleRenderBackend, viewport: Viewport): void {
+	public draw(renderer: EditorConsoleRenderBackend, surface: Viewport): void {
 		if (!this.active) {
 			return;
 		}
 		const lineHeight = this.font.lineHeight();
-		const availableHeight = viewport.height - PADDING_Y * 2 - lineHeight - PROMPT_GAP;
+		const contentWidth = Math.max(0, surface.width - PADDING_X * 2);
+		const availableHeight = surface.height - PADDING_Y * 2 - lineHeight - PROMPT_GAP;
 		const maxContentLines = Math.max(1, Math.floor(availableHeight / lineHeight));
-		const wrappedLines = this.buildWrappedLines(viewport.width - PADDING_X * 2, maxContentLines);
+		const wrappedLines = this.buildWrappedLines(contentWidth, maxContentLines);
+		const visibleStart = Math.max(0, wrappedLines.length - maxContentLines);
+		const visibleLines = wrappedLines.slice(visibleStart);
+		if (this.showBackdrop) {
+			const panelHeight = visibleLines.length * lineHeight + PROMPT_GAP + lineHeight;
+			this.drawBackdrop(renderer, surface.width, panelHeight);
+		}
+
 		let y = PADDING_Y;
-		const startLineIndex = Math.max(0, wrappedLines.length - maxContentLines);
-		for (let i = startLineIndex; i < wrappedLines.length; i += 1) {
-			const line = wrappedLines[i];
-			const offset = this.computeObliqueOffset(i - startLineIndex);
-			const lineX = PADDING_X + offset;
-			const textColor = resolvePaletteColor(OUTPUT_COLORS[line.kind]);
-			const width = this.font.measure(line.text) + 4;
-			this.drawBackground(renderer, lineX - 2, y - 1, width, lineHeight + 2);
-			this.drawText(renderer, line.text, lineX, y, textColor);
+		for (const line of visibleLines) {
+			const color = resolvePaletteColor(OUTPUT_COLORS[line.kind]);
+			this.drawGlyphRun(renderer, line.text, PADDING_X, y, color);
 			y += lineHeight;
 		}
-		const promptOffset = this.computeObliqueOffset(maxContentLines);
-		const promptX = PADDING_X + promptOffset;
-		const promptY = viewport.height - PADDING_Y - lineHeight;
+
+		const promptY = surface.height - PADDING_Y - lineHeight;
 		const promptColor = resolvePaletteColor(OUTPUT_COLORS.prompt);
-		const promptWidth = this.font.measure(PROMPT_TEXT);
-		this.drawBackground(renderer, promptX - 2, promptY - 1, viewport.width - promptX - PADDING_X + 4, lineHeight + 2);
-		this.drawText(renderer, PROMPT_TEXT, promptX, promptY, promptColor);
-		this.drawInputField(renderer, promptX + promptWidth, promptY);
+		this.drawGlyphRun(renderer, PROMPT_TEXT, PADDING_X, promptY, promptColor);
+		const promptWidth = this.measureDisplayText(PROMPT_TEXT);
+		this.drawInputField(renderer, PADDING_X + promptWidth, promptY);
 	}
 
 	public recordHistory(command: string): void {
@@ -386,62 +397,99 @@ export class ConsoleMode {
 		if (text.length === 0) {
 			return [''];
 		}
-		const normalized = this.caseInsensitive && this.font.getVariant() === 'tiny'
-			? text.toUpperCase()
-			: text;
+		const normalized = this.toDisplayText(text);
 		return wrapRuntimeErrorLine(normalized, Math.max(8, maxWidth), (value) => this.font.measure(value));
 	}
 
-	private drawText(renderer: EditorConsoleRenderBackend, text: string, x: number, y: number, tint: color): void {
-		const normalized = this.caseInsensitive && this.font.getVariant() === 'tiny'
-			? text.toUpperCase()
-			: text;
-		renderer.drawText({ kind: 'print', text: normalized, x, y, color: tint }, this.font.getRenderFont());
-	}
-
-	private drawBackground(renderer: EditorConsoleRenderBackend, x: number, y: number, width: number, height: number): void {
-		const bgColor = { r: 0, g: 0, b: 0, a: BACKGROUND_ALPHA } satisfies color;
-		renderer.drawRect({
-			kind: 'fill',
-			x0: x,
-			y0: y,
-			x1: x + Math.max(0, width),
-			y1: y + height,
-			color: bgColor,
-		});
-	}
-
 	private drawInputField(renderer: EditorConsoleRenderBackend, x: number, y: number): void {
-		const text = this.field.text;
-		const visibleText = this.caseInsensitive && this.font.getVariant() === 'tiny'
-			? text.toUpperCase()
-			: text;
+		const displayText = this.toDisplayText(this.field.text);
 		const inputColor = resolvePaletteColor(OUTPUT_COLORS.stdout);
 		const selection = selectionRange(this.field);
 		if (selection) {
-			const startText = visibleText.slice(0, selection.start);
-			const selectionText = visibleText.slice(selection.start, selection.end);
-			const startWidth = this.font.measure(startText);
-			const selWidth = this.font.measure(selectionText);
-			this.drawBackground(renderer, x + startWidth, y - 1, selWidth, this.font.lineHeight() + 2);
-		}
-		this.drawText(renderer, visibleText, x, y, inputColor);
-		if (this.caretVisible) {
-			const caretPos = caretX(this.field, 0, (slice) => this.font.measure(this.caseInsensitive && this.font.getVariant() === 'tiny' ? slice.toUpperCase() : slice));
-			const caretWidth = Math.max(1, Math.floor(this.font.advance('|') * 0.15));
-			const caretColor = resolvePaletteColor(15);
+			const startText = displayText.slice(0, selection.start);
+			const selectionText = displayText.slice(selection.start, selection.end);
+			const startWidth = this.measureDisplayText(startText);
+			const selWidth = this.measureDisplayText(selectionText);
 			renderer.drawRect({
 				kind: 'fill',
-				x0: x + caretPos,
-				y0: y - 1,
-				x1: x + caretPos + caretWidth,
-				y1: y + this.font.lineHeight(),
-				color: caretColor,
+				x0: x + startWidth - 1,
+				y0: y - CHARACTER_INSET_Y,
+				x1: x + startWidth + selWidth + 1,
+				y1: y + this.font.lineHeight() + CHARACTER_INSET_Y,
+				color: this.selectionColor,
+			});
+		}
+		this.drawGlyphRun(renderer, displayText, x, y, inputColor);
+		if (this.caretVisible) {
+			const caretOffset = this.measureDisplayText(displayText.slice(0, this.field.cursor));
+			renderer.drawRect({
+				kind: 'fill',
+				x0: x + caretOffset,
+				y0: y - CHARACTER_INSET_Y,
+				x1: x + caretOffset + 1,
+				y1: y + this.font.lineHeight() + CHARACTER_INSET_Y,
+				color: this.caretColor,
 			});
 		}
 	}
 
-	private computeObliqueOffset(lineIndex: number): number {
-		return Math.max(0, lineIndex) * OBLIQUE_STEP;
+	private drawGlyphRun(renderer: EditorConsoleRenderBackend, text: string, originX: number, originY: number, tint: color): void {
+		const renderFont = this.font.getRenderFont();
+		const display = this.toDisplayText(text);
+		let cursorX = originX;
+		for (let i = 0; i < display.length; i += 1) {
+			const ch = display.charAt(i);
+			if (ch === '\t') {
+				cursorX += this.font.advance(' ') * TAB_SPACES;
+				continue;
+			}
+			if (ch === '\n') {
+				continue;
+			}
+			const advance = this.font.advance(ch);
+			const backgroundX = cursorX + OBLIQUE_SHADOW_OFFSET;
+			renderer.drawRect({
+				kind: 'fill',
+				x0: backgroundX,
+				y0: originY - CHARACTER_INSET_Y,
+				x1: backgroundX + advance + CHARACTER_INSET_Y,
+				y1: originY + this.font.lineHeight() + CHARACTER_INSET_Y,
+				color: this.characterBackgroundColor,
+			});
+			if (ch !== ' ') {
+				renderer.drawText({ kind: 'print', text: ch, x: cursorX, y: originY, color: tint }, renderFont);
+			}
+			cursorX += advance;
+		}
+	}
+
+	private drawBackdrop(renderer: EditorConsoleRenderBackend, surfaceWidth: number, contentHeight: number): void {
+		const padding = 6;
+		const x0 = Math.max(0, PADDING_X - padding);
+		const x1 = Math.max(x0 + 1, surfaceWidth - PADDING_X + padding);
+		const y0 = Math.max(0, PADDING_Y - padding);
+		const y1 = Math.max(y0 + 1, y0 + contentHeight + padding * 2);
+		renderer.drawRect({
+			kind: 'fill',
+			x0,
+			y0,
+			x1,
+			y1,
+			color: this.panelBackgroundColor,
+		});
+	}
+
+	private toDisplayText(value: string): string {
+		if (this.caseInsensitive && this.font.getVariant() === 'tiny') {
+			return value.toUpperCase();
+		}
+		return value;
+	}
+
+	private measureDisplayText(value: string): number {
+		if (!value) {
+			return 0;
+		}
+		return this.font.measure(this.toDisplayText(value));
 	}
 }
