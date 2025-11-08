@@ -38,7 +38,9 @@ import { WorldObject } from '../core/object/worldobject';
 import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';
 import { Input } from '../input/input';
-import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputMapping, KeyboardBinding, GamepadBinding, PointerBinding } from '../input/inputtypes';
+import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputMapping, KeyboardBinding, GamepadBinding, PointerBinding, ButtonState } from '../input/inputtypes';
+import type { KeyboardInput } from '../input/keyboardinput';
+import { ConsoleMode } from './console_mode';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -330,6 +332,11 @@ export class BmsxConsoleRuntime extends Service {
 	private playerIndex: number;
 	private editor: ConsoleCartEditor | null = null;
 	private readonly editorRenderBackend = new EditorConsoleRenderBackend();
+	private readonly consoleOverlayBackend = new EditorConsoleRenderBackend();
+	private readonly consoleMode: ConsoleMode;
+	private overlayRenderedThisFrame = false;
+	private consoleWasPausedBeforeActivation = false;
+	private readonly consoleHotkeyLatch = new Map<string, number | null>();
 	private readonly validationStrategy: BmsxLuaValidationStrategy = BmsxLuaValidationStrategy.TrustRealRun;
 	private luaProgramSourceOverride: string | null = null;
 	private luaInterpreter: LuaInterpreter | null = null;
@@ -393,10 +400,11 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		super({ id: 'bmsx_console_runtime' });
 		BmsxConsoleRuntime._instance = this;
 		const rompack = $.rompack;
-	this.caseInsensitiveLua = options.caseInsensitiveLua ?? (rompack?.caseInsensitiveLua ?? true);
-	setLuaTableCaseInsensitiveKeys(this.caseInsensitiveLua);
-	setEditorCaseInsensitivity(this.caseInsensitiveLua);
-	this.enableEvents();
+		this.caseInsensitiveLua = options.caseInsensitiveLua ?? (rompack?.caseInsensitiveLua ?? true);
+		setLuaTableCaseInsensitiveKeys(this.caseInsensitiveLua);
+		setEditorCaseInsensitivity(this.caseInsensitiveLua);
+		this.consoleMode = new ConsoleMode({ fontVariant: EDITOR_FONT_VARIANT, caseInsensitive: this.caseInsensitiveLua });
+		this.enableEvents();
 	const clock = $.platform.clock;
 	clock.scheduleOnce = (delayMs, cb) => {
 		let active = true;
@@ -501,20 +509,260 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		}
 	}
 
-	private shouldRequestPausedFrame(): boolean {
-		if (!this.editor) {
+	private pollConsoleHotkeys(): void {
+		const keyboard = this.getKeyboard();
+		const shiftDown = keyboard.getButtonState('ShiftLeft').pressed === true || keyboard.getButtonState('ShiftRight').pressed === true;
+		if (shiftDown && this.shouldAcceptConsoleHotkey('F1', keyboard.getButtonState('F1'))) {
+			keyboard.consumeButton('F1');
+			this.toggleConsoleMode();
+			return;
+		}
+		const ctrlDown = keyboard.getButtonState('ControlLeft').pressed === true || keyboard.getButtonState('ControlRight').pressed === true;
+		if (ctrlDown && this.shouldAcceptConsoleHotkey('KeyP', keyboard.getButtonState('KeyP'))) {
+			keyboard.consumeButton('KeyP');
+			this.toggleConsoleMode();
+		}
+	}
+
+	private shouldAcceptConsoleHotkey(code: string, state: ButtonState | null | undefined): boolean {
+		if (!state || state.pressed !== true) {
+			this.consoleHotkeyLatch.delete(code);
 			return false;
 		}
-		return this.editor.isActive();
+		const pressId = typeof state.pressId === 'number' ? state.pressId : null;
+		if (pressId !== null) {
+			const existing = this.consoleHotkeyLatch.get(code);
+			if (existing === pressId) {
+				return false;
+			}
+			this.consoleHotkeyLatch.set(code, pressId);
+			return true;
+		}
+		if (state.justpressed !== true) {
+			return false;
+		}
+		this.consoleHotkeyLatch.set(code, null);
+		return true;
+	}
+
+	private toggleConsoleMode(): void {
+		if (this.consoleMode.isActive()) {
+			this.closeConsoleMode(true);
+			return;
+		}
+		this.openConsoleMode();
+	}
+
+	private openConsoleMode(): void {
+		if (this.consoleMode.isActive()) {
+			return;
+		}
+		if (this.editor?.isActive()) {
+			this.editor.deactivate();
+		}
+		this.consoleWasPausedBeforeActivation = $.paused === true;
+		$.paused = true;
+		this.consoleMode.activate();
+	}
+
+	private closeConsoleMode(resumeGame: boolean): void {
+		if (!this.consoleMode.isActive()) {
+			return;
+		}
+		this.consoleMode.deactivate();
+		if (resumeGame && !this.consoleWasPausedBeforeActivation) {
+			$.paused = false;
+		} else {
+			$.paused = this.consoleWasPausedBeforeActivation;
+		}
+		this.consoleWasPausedBeforeActivation = false;
+	}
+
+	private getKeyboard(): KeyboardInput {
+		const playerInput = Input.instance.getPlayerInput(this.playerIndex);
+		if (!playerInput) {
+			throw new Error(`[BmsxConsoleRuntime] Player input handler for index ${this.playerIndex} is not initialised.`);
+		}
+		const handler = playerInput.inputHandlers['keyboard'];
+		if (!handler) {
+			throw new Error(`[BmsxConsoleRuntime] Keyboard input handler unavailable for player ${this.playerIndex}.`);
+		}
+		const keyboard = handler as KeyboardInput;
+		return keyboard;
+	}
+
+	private renderConsoleOverlay(): void {
+		if (!this.consoleMode.isActive()) {
+			return;
+		}
+		const view = $.view;
+		if (!view) {
+			throw new Error('[BmsxConsoleRuntime] Game view unavailable while rendering console overlay.');
+		}
+		this.consoleOverlayBackend.beginFrame();
+		this.consoleMode.draw(this.consoleOverlayBackend, { width: view.viewportSize.x, height: view.viewportSize.y });
+		this.consoleOverlayBackend.endFrame();
+		this.overlayRenderedThisFrame = true;
+	}
+
+	private advanceConsoleMode(deltaSeconds: number): void {
+		if (!this.consoleMode.isActive()) {
+			return;
+		}
+		this.consoleMode.update(deltaSeconds);
+		const keyboard = this.getKeyboard();
+		const command = this.consoleMode.handleInput(keyboard, deltaSeconds);
+		if (command === null) {
+			return;
+		}
+		this.handleConsoleCommand(command);
+	}
+
+	private handleConsoleCommand(rawCommand: string): void {
+		const input = rawCommand ?? '';
+		this.consoleMode.appendPromptEcho(input);
+		const trimmed = input.trim();
+		if (trimmed.length > 0) {
+			this.consoleMode.recordHistory(trimmed);
+		}
+		if (trimmed.length === 0) {
+			return;
+		}
+		const normalized = trimmed.toLowerCase();
+		if (normalized === 'cls') {
+			this.consoleMode.clearOutput();
+			this.consoleMode.appendSystemMessage('Console cleared.');
+			return;
+		}
+		if (normalized === 'cont') {
+			this.consoleMode.appendSystemMessage('Resuming game...');
+			this.closeConsoleMode(true);
+			return;
+		}
+		if (normalized === 'ide') {
+			this.consoleMode.appendSystemMessage('Opening editor.');
+			this.closeConsoleMode(false);
+			this.ensureEditorActive();
+			return;
+		}
+		this.executeConsoleCommand(trimmed);
+	}
+
+	private executeConsoleCommand(command: string): void {
+		const source = this.prepareConsoleChunk(command);
+		if (source.length === 0) {
+			return;
+		}
+		let interpreter: LuaInterpreter;
+		try {
+			interpreter = this.requireLuaInterpreter();
+		} catch (error) {
+			this.consoleMode.appendStderr('Lua interpreter unavailable.');
+			return;
+		}
+		const env = interpreter.getGlobalEnvironment();
+		const previousPrint = env.get('print');
+		const previousInsensitivePrint = this.caseInsensitiveLua ? env.get('PRINT') : null;
+		const consolePrint = createLuaNativeFunction('console_print', interpreter, (_ctx, args) => {
+			const text = args.map(arg => this.consoleValueToString(arg)).join('\t');
+			this.consoleMode.appendStdout(text);
+			return [];
+		});
+		env.set('print', consolePrint);
+		if (this.caseInsensitiveLua) {
+			env.set('PRINT', consolePrint);
+		}
+		const chunkName = `console:${this.frameCounter}`;
+		try {
+			let results: LuaValue[] = [];
+			try {
+				results = interpreter.execute(source, chunkName);
+			}
+			catch (error) {
+				if (error instanceof LuaSyntaxError && this.shouldAttemptConsoleReturnFallback(source)) {
+					const fallback = `return ${source}`;
+					results = interpreter.execute(fallback, chunkName);
+				}
+				else {
+					throw error;
+				}
+			}
+			if (results.length > 0) {
+				const summary = results.map(value => this.consoleValueToString(value)).join('\t');
+				this.consoleMode.appendStdout(summary);
+			}
+		}
+		catch (error) {
+			this.consoleMode.appendStderr(this.describeConsoleError(error));
+		}
+		finally {
+			if (previousPrint !== null) {
+				env.set('print', previousPrint);
+			}
+			if (this.caseInsensitiveLua && previousInsensitivePrint !== null) {
+				env.set('PRINT', previousInsensitivePrint);
+			}
+		}
+	}
+
+	private prepareConsoleChunk(command: string): string {
+		const trimmed = command.trim();
+		if (trimmed.length === 0) {
+			return '';
+		}
+		if (trimmed.startsWith('?')) {
+			const expression = trimmed.slice(1).trim();
+			return expression.length === 0 ? '' : `return ${expression}`;
+		}
+		if (trimmed.startsWith('=')) {
+			const expression = trimmed.slice(1).trim();
+			return expression.length === 0 ? '' : `return ${expression}`;
+		}
+		return trimmed;
+	}
+
+	private shouldAttemptConsoleReturnFallback(source: string): boolean {
+		return !/^(return|local|function|for|while|repeat|if)\b/i.test(source);
+	}
+
+	private consoleValueToString(value: LuaValue): string {
+		if (value === null) {
+			return 'nil';
+		}
+		if (typeof value === 'boolean') {
+			return value ? 'true' : 'false';
+		}
+		if (typeof value === 'number') {
+			return Number.isFinite(value) ? String(value) : 'nan';
+		}
+		if (typeof value === 'string') {
+			return value;
+		}
+		if (isLuaTable(value)) {
+			return 'table';
+		}
+		return 'function';
+	}
+
+	private describeConsoleError(error: unknown): string {
+		if (error instanceof LuaError || error instanceof LuaRuntimeError || error instanceof LuaSyntaxError) {
+			return error.message;
+		}
+		return error instanceof Error ? error.message : String(error);
+	}
+
+	private shouldRequestPausedFrame(): boolean {
+		const editorActive = this.editor?.isActive() === true;
+		return editorActive || this.consoleMode.isActive();
 	}
 
 	private endFrameAndFlush(editorActive: boolean): void {
 		this.api.end_frame();
-		this.flushEditorOverlayFrame(editorActive);
-	}
-
-	private flushEditorOverlayFrame(editorActive: boolean): void {
-		if (!editorActive) {
+		this.overlayRenderedThisFrame = editorActive;
+		if (this.consoleMode.isActive()) {
+			this.renderConsoleOverlay();
+		}
+		if (!this.overlayRenderedThisFrame) {
 			publishOverlayFrame(null);
 		}
 	}
@@ -684,6 +932,9 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			throw new Error('[BmsxConsoleRuntime] Delta time must be a finite non-negative number.');
 		}
 		const deltaSeconds = deltaMilliseconds / 1000;
+		this.overlayRenderedThisFrame = false;
+		this.pollConsoleHotkeys();
+		this.advanceConsoleMode(deltaSeconds);
 		const editor = this.editor;
 		if (editor) {
 			editor.update(deltaSeconds);
@@ -691,15 +942,12 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		const editorActive = editor?.isActive() === true;
 		this.setEditorPipelineActive(editorActive);
 		const paused = $.paused === true;
+		const deltaForUpdate = paused ? 0 : deltaSeconds;
 		if (paused) {
 			this.api.begin_paused_frame(this.frameCounter);
-			if (editorActive && editor) {
-				editor.draw(this.api);
-			}
-			this.endFrameAndFlush(editorActive);
-			return;
+		} else {
+			this.api.begin_frame(this.frameCounter, deltaSeconds);
 		}
-		this.api.begin_frame(this.frameCounter, deltaSeconds);
 		if (editorActive && editor) {
 			editor.draw(this.api);
 			this.endFrameAndFlush(editorActive);
@@ -716,10 +964,10 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 				return;
 			}
 			try {
-				if (this.luaUpdateFunction !== null) {
+				if (!paused && this.luaUpdateFunction !== null) {
 					this.invokeLuaFunction(this.luaUpdateFunction, [deltaSeconds]);
 				}
-				this.tickLuaServices(deltaSeconds);
+				this.tickLuaServices(deltaForUpdate);
 				if (this.luaDrawFunction !== null) {
 					this.invokeLuaFunction(this.luaDrawFunction, []);
 				}
@@ -736,8 +984,10 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			}
 		}
 		else {
-			this.cart.update(this.api, deltaSeconds);
-			this.tickLuaServices(deltaSeconds);
+			if (!paused) {
+				this.cart.update(this.api, deltaSeconds);
+			}
+			this.tickLuaServices(deltaForUpdate);
 			this.cart.draw(this.api);
 		}
 		this.endFrameAndFlush(editorActive);
@@ -745,6 +995,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 	}
 
 	public override dispose(): void {
+		this.consoleMode.deactivate();
 		this.setEditorPipelineActive(false, true);
 		this.detachFrameListener();
 		if (this.editor) {

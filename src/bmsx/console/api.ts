@@ -67,6 +67,11 @@ export class BmsxConsoleApi {
 	private readonly playerIndex: number;
 	private readonly storage: BmsxConsoleStorage;
 	private readonly font: ConsoleFont;
+	private readonly defaultPrintColorIndex = 15;
+	private textCursorX = 0;
+	private textCursorY = 0;
+	private textCursorHomeX = 0;
+	private textCursorColorIndex = 0;
 	private frameIndex: number = 0;
 	private deltaSecondsValue: number = 0;
 	private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
@@ -83,6 +88,7 @@ export class BmsxConsoleApi {
 		this.playerIndex = options.playerIndex;
 		this.storage = options.storage;
 		this.font = new ConsoleFont();
+		this.resetPrintCursor();
 	}
 
 	public set_render_backend(backend: ConsoleRenderBackend | null): void {
@@ -234,6 +240,7 @@ export class BmsxConsoleApi {
 			color,
 			layer: DRAW_LAYER,
 		});
+		this.resetPrintCursor();
 	}
 
 	public rect(x0: number, y0: number, x1: number, y1: number, colorIndex: number): void {
@@ -248,35 +255,20 @@ export class BmsxConsoleApi {
 		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: colorValue, layer: DRAW_LAYER });
 	}
 
-	public print(text: string, x: number, y: number, colorIndex: number): void {
-		const color = this.paletteColor(colorIndex);
-		const baseX = Math.floor(x);
-		let cursorY = Math.floor(y);
-		const lines = text.split('\n');
-		for (let i = 0; i < lines.length; i++) {
-			const expanded = this.expandTabs(lines[i]);
-			if (expanded.length > 0) {
-				this.renderBackend.drawText({ kind: 'print', text: expanded, x: baseX, y: cursorY, color }, this.font);
-			}
-			if (i < lines.length - 1) {
-				cursorY += this.font.lineHeight();
-			}
+	public print(text: string, x?: number, y?: number, colorIndex?: number): void {
+		const { baseX, baseY, color, font, autoAdvance } = this.resolvePrintContext(this.font, x, y, colorIndex);
+		this.drawMultilineText(text, baseX, baseY, color, font);
+		if (autoAdvance) {
+			this.advancePrintCursor(font.lineHeight());
 		}
 	}
 
-	public print_with_font(text: string, x: number, y: number, colorIndex: number, font: ConsoleFont): void {
-		const color = this.paletteColor(colorIndex);
-		const baseX = Math.floor(x);
-		let cursorY = Math.floor(y);
-		const lines = text.split('\n');
-		for (let i = 0; i < lines.length; i++) {
-			const expanded = this.expandTabs(lines[i]);
-			if (expanded.length > 0) {
-				this.renderBackend.drawText({ kind: 'print', text: expanded, x: baseX, y: cursorY, color }, font);
-			}
-			if (i < lines.length - 1) {
-				cursorY += font.lineHeight();
-			}
+	public print_with_font(text: string, x?: number, y?: number, colorIndex?: number, font?: ConsoleFont): void {
+		const renderFont = font ?? this.font;
+		const { baseX, baseY, color, autoAdvance } = this.resolvePrintContext(renderFont, x, y, colorIndex);
+		this.drawMultilineText(text, baseX, baseY, color, renderFont);
+		if (autoAdvance) {
+			this.advancePrintCursor(renderFont.lineHeight());
 		}
 	}
 
@@ -1198,5 +1190,59 @@ export class BmsxConsoleApi {
 			throw new Error(`[BmsxConsoleApi] Color index ${index} outside palette range 0-${Msx1Colors.length - 1}.`);
 		}
 		return Msx1Colors[index];
+	}
+
+	private resolvePrintContext(font: ConsoleFont, x: number | undefined, y: number | undefined, colorIndex: number | undefined): {
+		baseX: number;
+		baseY: number;
+		color: color;
+		autoAdvance: boolean;
+		font: ConsoleFont;
+	} {
+		const hasExplicitPosition = typeof x === 'number' && Number.isFinite(x) && typeof y === 'number' && Number.isFinite(y);
+		if (hasExplicitPosition) {
+			this.textCursorHomeX = Math.floor(x!);
+			this.textCursorX = this.textCursorHomeX;
+			this.textCursorY = Math.floor(y!);
+		}
+		if (typeof colorIndex === 'number' && Number.isFinite(colorIndex)) {
+			this.textCursorColorIndex = Math.floor(colorIndex);
+		}
+		const baseX = this.textCursorX;
+		const baseY = this.textCursorY;
+		const color = this.paletteColor(this.textCursorColorIndex);
+		return { baseX, baseY, color, autoAdvance: true, font };
+	}
+
+	private drawMultilineText(text: string, x: number, y: number, color: color, font: ConsoleFont): number {
+		const lines = text.split('\n');
+		let cursorY = y;
+		for (let i = 0; i < lines.length; i += 1) {
+			const expanded = this.expandTabs(lines[i]);
+			if (expanded.length > 0) {
+				this.renderBackend.drawText({ kind: 'print', text: expanded, x, y: cursorY, color }, font);
+			}
+			if (i < lines.length - 1) {
+				cursorY += font.lineHeight();
+			}
+		}
+		this.textCursorX = this.textCursorHomeX;
+		this.textCursorY = cursorY;
+		return cursorY;
+	}
+
+	private advancePrintCursor(lineHeight: number): void {
+		this.textCursorY += lineHeight;
+		const limit = this.display_height - lineHeight;
+		if (this.textCursorY >= limit) {
+			this.textCursorY = 0;
+		}
+	}
+
+	private resetPrintCursor(): void {
+		this.textCursorHomeX = 0;
+		this.textCursorX = 0;
+		this.textCursorY = 0;
+		this.textCursorColorIndex = this.defaultPrintColorIndex;
 	}
 }
