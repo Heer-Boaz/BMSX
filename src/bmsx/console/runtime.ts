@@ -4922,22 +4922,19 @@ private disposeComponentPreset(id: string): void {
 	}
 
 	public onLuaWorldObjectSpawned(host: WorldObject): void {
-		const def = this.getLuaWorldObjectDefinitionForHost(host);
-		if (!def) {
-			return;
-		}
 		this.invokeWorldObjectMethod(host, ['on_spawn', 'spawn']);
 	}
 
-	private getLuaWorldObjectDefinitionForHost(host: WorldObject): LuaWorldObjectDefinitionRecord | null {
-		const marker = host as { __luaDefinitionId?: string };
-		const defId = marker.__luaDefinitionId;
-		if (!defId) {
-			return null;
-		}
-		const def = this.worldObjectDefinitions.get(defId);
-		return def ?? null;
-	}
+	// private getLuaWorldObjectDefinitionForHost(host: WorldObject): LuaWorldObjectDefinitionRecord {
+	// 	const marker = host as { __luaDefinitionId?: string };
+	// 	const defId = marker.__luaDefinitionId;
+	// 	if (!defId) {
+	// 		throw new Error(`[BmsxConsoleRuntime] Lua world object definition ID marker not found on host: ${host.id}`);
+	// 	}
+	// 	const def = this.worldObjectDefinitions.get(defId);
+	// 	if (!def) throw new Error(`[BmsxConsoleRuntime] Lua world object definition not found for ID: ${defId}`);
+	// 	return def;
+	// }
 
 	private ensureLuaClassPrototype(classTable: LuaTable): void {
 		const meta = classTable.getMetatable();
@@ -4953,28 +4950,10 @@ private disposeComponentPreset(id: string): void {
 		if (!isLuaNativeValue(nativeValue)) {
 			return;
 		}
-		const definition = this.getLuaWorldObjectDefinitionForHost(host);
 		for (let index = 0; index < methodKeys.length; index += 1) {
 			const key = methodKeys[index];
 			if (!key) {
-				continue;
-			}
-			if (definition) {
-				const luaCandidate = this.getLuaTableEntry(definition.classTable, [key]);
-				if (luaCandidate !== null) {
-					const fn = interpreter.expectFunction(luaCandidate, `Method '${key}' not found on Lua class '${definition.classRef}'.`, null);
-					this.callLuaFunctionWithInterpreter(fn, [host], interpreter);
-					return;
-				}
-				if (Object.prototype.hasOwnProperty.call(host, key)) {
-					const instanceCandidate = interpreter.getNativeMemberValue(nativeValue, key, null);
-					if (instanceCandidate !== null) {
-						const fn = interpreter.expectFunction(instanceCandidate, `Method '${key}' not found on instance of '${definition.classRef}'.`, null);
-						this.callLuaFunctionWithInterpreter(fn, [host], interpreter);
-						return;
-					}
-				}
-				continue;
+				throw new Error(`[BmsxConsoleRuntime] invokeWorldObjectMethod received an empty method key.`);
 			}
 			const candidate = interpreter.getNativeMemberValue(nativeValue, key, null);
 			if (candidate === null) {
