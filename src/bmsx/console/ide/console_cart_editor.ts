@@ -9678,7 +9678,7 @@ export function handleCodeFormattingShortcut(
 	if (!context.codeTabActive || context.inlineFieldFocused || context.resourcePanelFocused) {
 		return false;
 	}
-	if (!context.altDown || context.shiftDown || (!context.ctrlDown && !context.metaDown)) {
+	if (!context.altDown || !context.shiftDown || context.ctrlDown || context.metaDown) {
 		return false;
 	}
 	if (!isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyF')) {
@@ -9690,7 +9690,7 @@ export function handleCodeFormattingShortcut(
 }
 function applyDocumentFormatting(): void {
 	const originalLines = [...ide_state.lines];
-	const originalSource = originalLines.join('\\n');
+	const originalSource = originalLines.join('\n');
 	try {
 		const formatted = formatLuaDocument(originalSource);
 		if (formatted === originalSource) {
@@ -10002,4 +10002,3 @@ export function drawInlineCaret(
 	}
 	drawRectOutlineColor(api, left, top, right, bottom, caretColor);
 }
-
