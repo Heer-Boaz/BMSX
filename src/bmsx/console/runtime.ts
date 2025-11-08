@@ -4922,16 +4922,21 @@ private disposeComponentPreset(id: string): void {
 	}
 
 	public onLuaWorldObjectSpawned(host: WorldObject): void {
-		const marker = host as { __luaDefinitionId?: string };
-		const defId = marker.__luaDefinitionId;
-		if (!defId) {
-			return;
-		}
-		const def = this.worldObjectDefinitions.get(defId);
+		const def = this.getLuaWorldObjectDefinitionForHost(host);
 		if (!def) {
 			return;
 		}
 		this.invokeWorldObjectMethod(host, ['on_spawn', 'spawn']);
+	}
+
+	private getLuaWorldObjectDefinitionForHost(host: WorldObject): LuaWorldObjectDefinitionRecord | null {
+		const marker = host as { __luaDefinitionId?: string };
+		const defId = marker.__luaDefinitionId;
+		if (!defId) {
+			return null;
+		}
+		const def = this.worldObjectDefinitions.get(defId);
+		return def ?? null;
 	}
 
 	private ensureLuaClassPrototype(classTable: LuaTable): void {
@@ -4948,9 +4953,27 @@ private disposeComponentPreset(id: string): void {
 		if (!isLuaNativeValue(nativeValue)) {
 			return;
 		}
+		const definition = this.getLuaWorldObjectDefinitionForHost(host);
 		for (let index = 0; index < methodKeys.length; index += 1) {
 			const key = methodKeys[index];
 			if (!key) {
+				continue;
+			}
+			if (definition) {
+				const luaCandidate = this.getLuaTableEntry(definition.classTable, [key]);
+				if (luaCandidate !== null) {
+					const fn = interpreter.expectFunction(luaCandidate, `Method '${key}' not found on Lua class '${definition.classRef}'.`, null);
+					this.callLuaFunctionWithInterpreter(fn, [host], interpreter);
+					return;
+				}
+				if (Object.prototype.hasOwnProperty.call(host, key)) {
+					const instanceCandidate = interpreter.getNativeMemberValue(nativeValue, key, null);
+					if (instanceCandidate !== null) {
+						const fn = interpreter.expectFunction(instanceCandidate, `Method '${key}' not found on instance of '${definition.classRef}'.`, null);
+						this.callLuaFunctionWithInterpreter(fn, [host], interpreter);
+						return;
+					}
+				}
 				continue;
 			}
 			const candidate = interpreter.getNativeMemberValue(nativeValue, key, null);
@@ -6740,7 +6763,18 @@ private disposeComponentPreset(id: string): void {
 	}
 
 	private normalizeWorkspacePath(path: string): string {
-		return path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\.\//, '');
+		let normalized = path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\.\//, '');
+		if (normalized.length > 1 && normalized.endsWith('/')) {
+			normalized = normalized.replace(/\/+$/, '');
+		}
+		return normalized;
+	}
+
+	private isWorkspacePathWithinRoot(path: string, root: string): boolean {
+		if (path === root) {
+			return true;
+		}
+		return path.startsWith(`${root}/`);
 	}
 
 	private resolveCartProjectRootPath(): string | null {
@@ -6755,17 +6789,20 @@ private disposeComponentPreset(id: string): void {
 		return this.normalizeWorkspacePath(root);
 	}
 
-private resolveFilesystemPathForCartPath(cartPath: string): string {
-	const normalizedCart = this.normalizeWorkspacePath(cartPath);
-	const root = this.resolveCartProjectRootPath();
-	if (!root || root.length === 0) {
-		return normalizedCart;
+	private resolveFilesystemPathForCartPath(cartPath: string): string {
+		const normalizedCart = this.normalizeWorkspacePath(cartPath);
+		const root = this.resolveCartProjectRootPath();
+		if (!root || root.length === 0) {
+			return normalizedCart;
+		}
+		if (normalizedCart.length === 0) {
+			return root;
+		}
+		if (this.isWorkspacePathWithinRoot(normalizedCart, root)) {
+			return normalizedCart;
+		}
+		return this.normalizeWorkspacePath(`${root}/${normalizedCart}`);
 	}
-	if (normalizedCart.length === 0) {
-		return root;
-	}
-	return this.normalizeWorkspacePath(`${root}/${normalizedCart}`);
-}
 
 	private inspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult | null {
 		if (!request) {
