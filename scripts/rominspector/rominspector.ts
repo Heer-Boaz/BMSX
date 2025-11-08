@@ -122,7 +122,7 @@ async function loadAssets(rombin: Buffer | ArrayBuffer) {
 			process.exit(1);
 		}
 		// @ts-ignore
-		assets = await loadAssetList(rombin);
+		({ assets } = await loadAssetList(rombin));
 
 		console.log('ROM pack metadata and resources loaded successfully.');
 

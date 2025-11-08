@@ -70,14 +70,27 @@ export async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer):
 	return { zipped_rom: blob_buffer, romlabel: undefined };
 }
 
-export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
+export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsset[]; projectRootPath: string | null }> {
 	const sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
-	let assetList: RomAsset[];
+	let decoded: unknown;
 	try {
-		assetList = decodeBinary(sliced) as RomAsset[];
+		decoded = decodeBinary(sliced);
 	} catch (e: any) {
 		console.error('[loadAssetList] decodeBinary error:', e);
 		throw e;
+	}
+	let projectRootPath: string | null = null;
+	let assetList: RomAsset[];
+	if (Array.isArray(decoded)) {
+		assetList = decoded as RomAsset[];
+	} else if (decoded && typeof decoded === 'object' && Array.isArray((decoded as any).assets)) {
+		const payload = decoded as { assets: RomAsset[]; projectRootPath?: string | null };
+		assetList = payload.assets;
+		if (typeof payload.projectRootPath === 'string' && payload.projectRootPath.length > 0) {
+			projectRootPath = payload.projectRootPath;
+		}
+	} else {
+		throw new Error('[loadAssetList] Invalid rom metadata structure.');
 	}
 
 	function flipPolygons(polys: Polygon[], flipH: boolean, flipV: boolean, imgW: number, imgH: number): Polygon[] {
@@ -212,26 +225,27 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
 			}
 		}
 	}
-	return Promise.resolve<RomAsset[]>(assetList);
+	return { assets: assetList, projectRootPath };
 }
 
 export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
+	const { assets, projectRootPath } = await loadAssetList(rom);
 	const result: RomPack = {
 		rom: rom,
 		img: {},
 		audio: {},
 		model: {},
 		data: {},
-	code: null,
-	audioevents: {},
-	lua: {},
-	luaSourcePaths: {},
-	resourcePaths: [],
-};
+		code: null,
+		audioevents: {},
+		lua: {},
+		luaSourcePaths: {},
+		resourcePaths: [],
+		projectRootPath: projectRootPath ?? null,
+	};
 	const seenResourcePaths = new Set<string>();
 
-	const assetList = await loadAssetList(rom);
-	await Promise.all(assetList.map(a => load(rom, a, result, opts, seenResourcePaths)));
+	await Promise.all(assets.map(a => load(rom, a, result, opts, seenResourcePaths)));
 	return Promise.resolve<RomPack>(result);
 }
 
@@ -581,7 +595,11 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 		const key = res.sourcePath;
 		if (!seenPaths.has(key)) {
 			seenPaths.add(key);
-			const entry: RomResourcePath = { path: res.sourcePath, type: res.type, assetId: res.resid };
+			const entry: RomResourcePath = {
+				path: res.sourcePath,
+				type: res.type,
+				assetId: res.resid,
+			};
 			romResult.resourcePaths.push(entry);
 		}
 	}

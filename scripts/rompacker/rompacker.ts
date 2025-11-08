@@ -368,6 +368,7 @@ function parseOptions(args: string[]): RomPackerOptions {
 		throw new Error(`Resource path "${respath}" does not exist. Tried: ${attempted || '<none>'}.`);
 	}
 	respath = normalizePathKey(resolvedResPath);
+	const derivedCartRoot = normalizePathKey(join(respath, '..'));
 
 	if (bootloaderFallbackApplied && normalizedRomName.length > 0) {
 		writeOut(`Bootloader not found for ROM "${rom_name}". Using default cart bootloader at ${consoleBootloaderPath}.\n`, 'warning');
@@ -381,7 +382,7 @@ function parseOptions(args: string[]): RomPackerOptions {
 
 	const cartRootCandidates: Array<string | undefined> = [
 		bootloader_path,
-		respath ? normalizePathKey(join(respath, '..')) : undefined,
+		derivedCartRoot,
 		normalizedRomName ? `./src/${normalizedRomName}` : undefined,
 		normalizedRomName && romLeaf && romLeaf !== normalizedRomName ? `./src/${romLeaf}` : undefined,
 		normalizedRomName && !normalizedRomName.startsWith('carts/') ? `./src/carts/${normalizedRomName}` : undefined,
@@ -516,6 +517,14 @@ async function main() {
 	}
 	const isEngineMode = mode === 'engine';
 	const isBundleMode = !isEngineMode;
+	const normalizedBootloader = normalizePathKey(bootloader_path);
+	const cartRootFromRes = respath ? normalizePathKey(join(respath, '..')) : null;
+	const projectRootFromRes = cartRootFromRes ? cartRootFromRes.replace(/^\.\//, '') : '';
+	const projectRootFromBoot = normalizedBootloader.replace(/^\.\//, '');
+	const projectRootPath = projectRootFromRes.length > 0
+		? projectRootFromRes
+		: (projectRootFromBoot.length > 0 ? projectRootFromBoot : null);
+	const virtualRoot = projectRootPath ?? undefined;
 
 		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
 		setAtlasFlag(useTextureAtlas);
@@ -546,6 +555,7 @@ async function main() {
 		extraLuaPaths: Array.from(extraLuaPathSet),
 		includeCode: isEngineMode || shouldBundleCartCode,
 		atlasIndexResolver,
+		virtualRoot,
 	});
 			writeOut(`\n${_colors.brightWhite.bold('[Resource list bouwen ge-DONUT]')} \n`);
 			return;
@@ -710,6 +720,7 @@ async function main() {
 				includeCode: isEngineMode || shouldBundleCartCode,
 				extraLuaPaths: Array.from(extraLuaPathSet),
 				atlasIndexResolver,
+				virtualRoot,
 			});
 			await progress?.taskCompleted();
 			// Build resources
@@ -729,7 +740,7 @@ async function main() {
 				const romAssets = await generateRomAssets(resources);
 				await progress?.taskCompleted();
 
-				await finalizeRompack(romAssets, rom_name, debug);
+				await finalizeRompack(romAssets, rom_name, debug, { projectRootPath });
 				await progress?.taskCompleted();
 			}
 

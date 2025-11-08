@@ -1946,8 +1946,8 @@ export function getActiveTabKind(): EditorTabKind {
 	if (!ide_state.activeTabId) {
 		return 'lua_editor';
 	}
-	const active = ide_state.tabs.find(tab => tab.id === ide_state.activeTabId);
-	if (ide_state.active) {
+	const active = ide_state.tabs.find(tab => tab.id === ide_state.activeTabId) ?? null;
+	if (active) {
 		return active.kind;
 	}
 	if (ide_state.tabs.length > 0) {

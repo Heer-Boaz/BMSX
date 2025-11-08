@@ -14,6 +14,7 @@ export interface RomPack {
 	lua: Record<asset_id, string>; // Loaded Lua sources bundled with the ROM pack.
 	luaSourcePaths: Record<asset_id, string>; // Relative filesystem paths for Lua sources, keyed by Lua asset id.
 	resourcePaths: RomResourcePath[]; // Filesystem metadata for packed resources.
+	projectRootPath?: string | null; // Workspace-relative cart root path for resolving filesystem writes.
 	caseInsensitiveLua?: boolean;
 	manifest?: unknown;
 }

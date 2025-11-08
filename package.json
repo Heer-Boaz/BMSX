@@ -56,7 +56,7 @@
 	"typescript": "^5.8.3",
 	"ts-morph": "^22.0.0"
   },
-	"scripts": {
+ "scripts": {
 		"headless:game": "node scripts/headless-run.js",
 		"test:lua": "npx tsx --test tests/lua/*.ts",
 		"validate:engine:scripts": "npm run validate:engine && (test -f tsconfig.scripts.json && npm run validate:scripts || true)",

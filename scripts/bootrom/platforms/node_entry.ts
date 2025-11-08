@@ -409,13 +409,14 @@ function combineRompacks(engineRom: RomPack | null, cartRom: RomPack): RomPack {
 		audio: mergeRecords(cartRom.audio, engineRom.audio),
 		model: mergeRecords(cartRom.model, engineRom.model),
 		data: mergeRecords(cartRom.data, engineRom.data),
-		audioevents: mergeRecords(cartRom.audioevents, engineRom.audioevents),
-		lua: mergeRecords(cartRom.lua, engineRom.lua),
-		luaSourcePaths: mergeRecords(cartRom.luaSourcePaths, engineRom.luaSourcePaths),
-		resourcePaths: combinedResourcePaths,
-		code: cartRom.code ?? engineRom.code ?? null,
-		caseInsensitiveLua: cartRom.caseInsensitiveLua ?? engineRom.caseInsensitiveLua,
-		manifest: cartRom.manifest ?? engineRom.manifest,
+	audioevents: mergeRecords(cartRom.audioevents, engineRom.audioevents),
+	lua: mergeRecords(cartRom.lua, engineRom.lua),
+	luaSourcePaths: mergeRecords(cartRom.luaSourcePaths, engineRom.luaSourcePaths),
+	resourcePaths: combinedResourcePaths,
+	projectRootPath: cartRom.projectRootPath ?? engineRom.projectRootPath ?? null,
+	code: cartRom.code ?? engineRom.code ?? null,
+	caseInsensitiveLua: cartRom.caseInsensitiveLua ?? engineRom.caseInsensitiveLua,
+	manifest: cartRom.manifest ?? engineRom.manifest,
 	};
 	return combined;
 }

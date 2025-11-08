@@ -110,6 +110,33 @@ function toWorkspaceRelativePath(filepath: string): string {
 	return relativePath.split(sep).join('/');
 }
 
+function normalizeVirtualRootPath(root?: string): string | null {
+	if (!root || root.length === 0) {
+		return null;
+	}
+	return toWorkspaceRelativePath(root);
+}
+
+export function resolveVirtualSourcePath(filepath: string | undefined, virtualRoot: string | null): string | undefined {
+	if (!filepath || filepath.length === 0) {
+		return undefined;
+	}
+	const workspacePath = toWorkspaceRelativePath(filepath);
+	if (!virtualRoot || virtualRoot.length === 0) {
+		return workspacePath;
+	}
+	const normalizedWorkspace = workspacePath.toLowerCase();
+	const normalizedRoot = virtualRoot.toLowerCase();
+	if (normalizedWorkspace === normalizedRoot) {
+		return '';
+	}
+	if (normalizedWorkspace.startsWith(`${normalizedRoot}/`)) {
+		const relative = workspacePath.slice(virtualRoot.length + 1);
+		return relative;
+	}
+	return workspacePath;
+}
+
 const RESOURCE_SCAN_EXCLUDE = new Set<string>([
 	'.rom',
 	'.js',
@@ -680,6 +707,7 @@ export type ResourceScanOptions = {
 	includeCode?: boolean;
 	extraLuaPaths?: string[];
 	atlasIndexResolver?: (filepath: string, currentIndex: number | undefined) => number | undefined;
+	virtualRoot?: string;
 };
 
 const EXTRA_LUA_SCAN_SKIP = new Set<string>([
@@ -705,6 +733,7 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 	const extraLuaRoots = options.extraLuaPaths ?? [];
 	const atlasIndexResolver = options.atlasIndexResolver;
 	const seenPaths = new Set<string>();
+	const virtualRoot = normalizeVirtualRootPath(options.virtualRoot);
 
 	const pushFile = (filepath: string) => {
 		const normalized = resolve(filepath);
@@ -770,7 +799,8 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 		}
 		let name = meta.name;
 		const ext = meta.ext;
-		const sourcePath = filepath ? toWorkspaceRelativePath(filepath) : undefined;
+		const virtualSourcePath = resolveVirtualSourcePath(filepath, virtualRoot);
+		const sourcePath = virtualSourcePath ?? (filepath ? toWorkspaceRelativePath(filepath) : undefined);
 		switch (type) {
 			case 'image':
 				const imgMeta = parseImageMeta(name);
@@ -1257,7 +1287,7 @@ export async function generateRomAssets(resources: Resource[]) {
 			if (!res.filepath || res.filepath.length === 0) {
 				throw new Error(`[RomPacker] Lua resource "${resid}" is missing its source file path.`);
 			}
-			const luaSourcePath = toWorkspaceRelativePath(res.filepath);
+			const luaSourcePath = sourcePath && sourcePath.length > 0 ? sourcePath : toWorkspaceRelativePath(res.filepath);
 			romAssets.push({ resid, type, buffer, sourcePath: luaSourcePath });
 			break;
 		}
@@ -1498,7 +1528,8 @@ export async function createAtlasses(resources: Resource[]) {
 export async function finalizeRompack(
 	assetList: RomAsset[],
 	rom_name: string,
-	debug: boolean
+	debug: boolean,
+	options: { projectRootPath?: string | null } = {}
 ) {
 	const outfileBasename = `${rom_name}${debug ? '.debug' : ''}.rom`;
 	const distPath = `./dist/${outfileBasename}`;
@@ -1556,7 +1587,11 @@ export async function finalizeRompack(
 			delete asset.texture_buffer;
 		}
 
-		const metadataBuffer = Buffer.from(encodeBinary(assetList));
+		const metadataPayload = {
+			assets: assetList,
+			projectRootPath: options.projectRootPath ?? null,
+		};
+		const metadataBuffer = Buffer.from(encodeBinary(metadataPayload));
 		const globalMetadataOffset = offset;
 		const globalMetadataLength = metadataBuffer.length;
 		await writeBuffer(metadataBuffer);

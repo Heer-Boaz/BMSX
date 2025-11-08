@@ -1299,11 +1299,12 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			await this.saveLuaProgram(source);
 			return;
 		}
-		const path = this.resolveLuaResourcePath(assetId);
-		if (!path) {
+		const cartPath = this.resolveLuaResourcePath(assetId);
+		if (!cartPath) {
 			throw new Error(`[BmsxConsoleRuntime] Lua source path unavailable for asset '${assetId}'. Rebuild the rompack with filesystem metadata to enable saving.`);
 		}
-		await this.persistLuaSourceToFilesystem(path, source);
+		const filesystemPath = this.resolveFilesystemPathForCartPath(cartPath);
+		await this.persistLuaSourceToFilesystem(filesystemPath, source);
 		const rompack = $.rompack;
 		if (rompack) {
 			if (!rompack.lua) {
@@ -1312,7 +1313,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			rompack.lua[assetId] = source;
 			try {
 				const category = this.resolveLuaHotReloadCategory(assetId);
-				const normalizedPath = path.replace(/\\/g, '/');
+				const normalizedPath = cartPath.replace(/\\/g, '/');
 				let chunkName: string;
 				switch (category) {
 					case 'fsm':
@@ -1420,7 +1421,8 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 				}
 			}
 		}
-		await this.persistLuaSourceToFilesystem(normalizedPath, contents);
+		const filesystemPath = this.resolveFilesystemPathForCartPath(normalizedPath);
+		await this.persistLuaSourceToFilesystem(filesystemPath, contents);
 		if (!rompack.lua) {
 			rompack.lua = {};
 		}
@@ -1916,13 +1918,14 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		if (!program) {
 			throw new Error('[BmsxConsoleRuntime] Lua program reference unavailable.');
 		}
-		const savePath = this.resolveLuaSourcePath(program);
-		if (!savePath) {
+		const cartSavePath = this.resolveLuaSourcePath(program);
+		if (!cartSavePath) {
 			if ('assetId' in program && program.assetId) {
 				throw new Error(`[BmsxConsoleRuntime] Lua source path unavailable for asset '${program.assetId}'. Rebuild the rompack with filesystem metadata to enable saving.`);
 			}
 			throw new Error('[BmsxConsoleRuntime] Lua program does not reference a filesystem source.');
 		}
+		const savePath = this.resolveFilesystemPathForCartPath(cartSavePath);
 		const previousOverride = this.luaProgramSourceOverride;
 		const previousChunkName = this.resolveLuaProgramChunkName(program);
 		const previousSource = this.getLuaProgramSource(program);
@@ -1978,7 +1981,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 				this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after persistence failure', { error: restoreError });
 				return;
 			}
-			this.handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Failed to persist Lua source to '${savePath}'`, { error });
+			this.handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Failed to persist Lua source to '${cartSavePath}'`, { error });
 			if (this.luaFailurePolicy.persist === 'warning') {
 				return;
 			}
@@ -6436,6 +6439,34 @@ private disposeComponentPreset(id: string): void {
 		this.resourcePathCache.set(assetId, normalizedPath);
 		return normalizedPath;
 	}
+
+	private normalizeWorkspacePath(path: string): string {
+		return path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\.\//, '');
+	}
+
+	private resolveCartProjectRootPath(): string | null {
+		const rompack = $.rompack;
+		if (!rompack) {
+			return null;
+		}
+		const root = rompack.projectRootPath;
+		if (typeof root !== 'string' || root.length === 0) {
+			return null;
+		}
+		return this.normalizeWorkspacePath(root);
+	}
+
+private resolveFilesystemPathForCartPath(cartPath: string): string {
+	const normalizedCart = this.normalizeWorkspacePath(cartPath);
+	const root = this.resolveCartProjectRootPath();
+	if (!root || root.length === 0) {
+		return normalizedCart;
+	}
+	if (normalizedCart.length === 0) {
+		return root;
+	}
+	return this.normalizeWorkspacePath(`${root}/${normalizedCart}`);
+}
 
 	private inspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult | null {
 		if (!request) {

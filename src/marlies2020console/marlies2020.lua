@@ -53,9 +53,9 @@ sprites = {
     sint = 'sint'
 }
 
-local abilities = require('src/marlies2020console/marlies2020_abilities')
-require('src/marlies2020console/marlies2020_systems')
-require('src/marlies2020console/marlies2020_worldobjects')
+local abilities = require('marlies2020_abilities')
+require('marlies2020_systems')
+require('marlies2020_worldobjects')
 
 local playerabilityids = abilities.abilityids
 local playerinputprogram = abilities.inputprogram

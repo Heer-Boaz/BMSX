@@ -1,12 +1,12 @@
--- Consolidated world object registrations for Marlies 2020 console.
+-- consolidated world object registrations for marlies 2020 console.
 
-local abilities = require('src/marlies2020console/marlies2020_abilities')
+local abilities = require('marlies2020_abilities')
 
-local playerAbilityIds = abilities.abilityIds
-local playerInputProgram = abilities.inputProgram
-local playerAbilityOrder = abilities.abilityOrder
+local playerabilityids = abilities.abilityids
+local playerinputprogram = abilities.inputprogram
+local playerabilityorder = abilities.abilityorder
 
-BackgroundObject = BackgroundObject or {}
+backgroundobject = backgroundobject or {}
 
 register_worldobject({
 	id = 'marlies2020.background',
@@ -17,12 +17,12 @@ register_worldobject({
 			id_local = 'background_sprite',
 			imgid = 'keuken',
 			layer = 'bg',
-			colliderLocalId = nil,
+			colliderlocalid = nil,
 		},
 	},
 })
 
-BoardObject = BoardObject or {}
+boardobject = boardobject or {}
 
 register_worldobject({
 	id = 'marlies2020.board',
@@ -33,7 +33,7 @@ register_worldobject({
 			id_local = 'board_sprite',
 			imgid = 'bord',
 			layer = 'actors',
-			colliderLocalId = 'board_collider',
+			colliderlocalid = 'board_collider',
 		},
 		{
 			preset = 'overlap_trigger',
@@ -44,7 +44,7 @@ register_worldobject({
 	},
 })
 
-IngredientObject = IngredientObject or {}
+ingredientobject = ingredientobject or {}
 
 register_worldobject({
 	id = 'marlies2020.ingredient',
@@ -54,7 +54,7 @@ register_worldobject({
 			class = 'SpriteComponent',
 			id_local = 'ingredient_sprite',
 			layer = 'actors',
-			colliderLocalId = 'ingredient_collider',
+			colliderlocalid = 'ingredient_collider',
 		},
 		{
 			class = 'Collider2DComponent',
@@ -65,7 +65,7 @@ register_worldobject({
 	},
 })
 
-InventoryFrameObject = InventoryFrameObject or {}
+inventoryframeobject = inventoryframeobject or {}
 
 register_worldobject({
 	id = 'marlies2020.inventory_frame',
@@ -76,12 +76,12 @@ register_worldobject({
 			id_local = 'inventory_sprite',
 			imgid = 'invframe',
 			layer = 'ui',
-			colliderLocalId = nil,
+			colliderlocalid = nil,
 		},
 	},
 })
 
-VictoryObject = VictoryObject or {}
+victoryobject = victoryobject or {}
 
 register_worldobject({
 	id = 'marlies2020.victory',
@@ -92,25 +92,25 @@ register_worldobject({
 			id_local = 'victory_sprite',
 			imgid = 'sint',
 			layer = 'actors',
-			colliderLocalId = nil,
+			colliderlocalid = nil,
 		},
 	},
 })
 
-CoronaObject = CoronaObject or {}
+coronaobject = coronaobject or {}
 
-function CoronaObject:create(owner)
+function coronaobject:create(owner)
 	owner.move_x = -1
 	owner.move_y = 0
 end
 
-function CoronaObject:on_spawn()
+function coronaobject:on_spawn()
 	self.move_x = self.move_x or -1
 	self.move_y = self.move_y or 0
 	attach_bt(self.id, 'marlies2020_corona_bt')
 
 	local function handle_overlap(_, _, payload)
-		local other = payload.otherId
+		local other = payload.otherid
 		if game_state.fires[other] then
 			self.sc:dispatch_event('dispel', self, {
 				source = other
@@ -126,7 +126,7 @@ function CoronaObject:on_spawn()
 	game_state.corona_count = game_state.corona_count + 1
 end
 
-function CoronaObject:on_dispose()
+function coronaobject:on_dispose()
 	game_state.corona[self.id] = nil
 	game_state.corona_count = game_state.corona_count - 1
 end
@@ -144,7 +144,7 @@ register_worldobject({
 			id_local = 'corona_sprite',
 			imgid = 'corona1',
 			layer = 'actors',
-			colliderLocalId = 'corona_collider',
+			colliderlocalid = 'corona_collider',
 		},
 		{
 			preset = 'overlap_trigger',
@@ -161,17 +161,17 @@ register_worldobject({
 	},
 })
 
-FireObject = FireObject or {}
+fireobject = fireobject or {}
 
-function FireObject:create(owner)
+function fireobject:create(owner)
 	owner.vx = 0
 	owner.vy = 0
-	owner.life = FIRE_LIFETIME
+	owner.life = fire_lifetime
 end
 
-function FireObject:on_spawn()
+function fireobject:on_spawn()
 	local function hit_corona(_, _, payload)
-		local other = payload.otherId
+		local other = payload.otherid
 		if game_state.corona[other] then
 			despawn(other)
 		end
@@ -192,7 +192,7 @@ function FireObject:on_spawn()
 	game_state.fires[self.id] = self
 end
 
-function FireObject:on_dispose()
+function fireobject:on_dispose()
 	game_state.fires[self.id] = nil
 end
 
@@ -210,7 +210,7 @@ register_worldobject({
 			id_local = 'fire_sprite',
 			imgid = 'vuur1',
 			layer = 'actors',
-			colliderLocalId = 'fire_collider',
+			colliderlocalid = 'fire_collider',
 		},
 		{
 			class = 'Collider2DComponent',
@@ -229,10 +229,10 @@ register_worldobject({
 	},
 })
 
-PlayerObject = PlayerObject or {}
+playerobject = playerobject or {}
 
-function PlayerObject:create(owner)
-	owner.column = START_COLUMN
+function playerobject:create(owner)
+	owner.column = start_column
 	owner.inventory_item = nil
 	owner.touch_ingredients = {}
 	owner.touch_boards = {}
@@ -244,7 +244,7 @@ function PlayerObject:create(owner)
 	owner.hurt_remaining = nil
 end
 
-function PlayerObject:on_spawn()
+function playerobject:on_spawn()
 	self.touch_ingredients = {}
 	self.touch_boards = {}
 	self.touch_corona = {}
@@ -252,19 +252,19 @@ function PlayerObject:on_spawn()
 	self.direction = 'down'
 	self.hurt_remaining = nil
 
-	local input_component = self:getComponentById('player_input')
-	input_component.playerIndex = 1
-	input_component.program = playerInputProgram
+	local input_component = self:getcomponentbyid('player_input')
+	input_component.playerindex = 1
+	input_component.program = playerinputprogram
 
-	local asc = self:getComponentById('player_abilities')
+	local asc = self:getcomponentbyid('player_abilities')
 	assert(asc ~= nil, '[PlayerObject:on_spawn] AbilitySystemComponent missing')
-	assert(type(asc.hasAbility) == 'function', '[PlayerObject:on_spawn] AbilitySystemComponent lacks hasAbility')
-	assert(asc:hasAbility(playerAbilityIds.fire), '[PlayerObject:on_spawn] fire ability missing')
-	assert(asc:hasAbility(playerAbilityIds.move_horizontal), '[PlayerObject:on_spawn] move ability missing')
-	assert(asc:hasAbility(playerAbilityIds.interact), '[PlayerObject:on_spawn] interact ability missing')
+	assert(type(asc.hasability) == 'function', '[PlayerObject:on_spawn] AbilitySystemComponent lacks hasAbility')
+	assert(asc:hasability(playerabilityids.fire), '[PlayerObject:on_spawn] fire ability missing')
+	assert(asc:hasability(playerabilityids.move_horizontal), '[PlayerObject:on_spawn] move ability missing')
+	assert(asc:hasability(playerabilityids.interact), '[PlayerObject:on_spawn] interact ability missing')
 
 	local function begin_overlap(_, _, payload)
-		local other = payload.otherId
+		local other = payload.otherid
 		local ingredient = game_state.ingredients[other]
 		if ingredient then
 			self.touch_ingredients[other] = ingredient
@@ -275,7 +275,7 @@ function PlayerObject:on_spawn()
 		end
 		if game_state.corona[other] then
 			self.touch_corona[other] = true
-			request_ability(self.id, playerAbilityIds.hurt, {
+			request_ability(self.id, playerabilityids.hurt, {
 				payload = {
 					source = other
 				}
@@ -284,7 +284,7 @@ function PlayerObject:on_spawn()
 	end
 
 	local function end_overlap(_, _, payload)
-		local other = payload.otherId
+		local other = payload.otherid
 		self.touch_ingredients[other] = nil
 		self.touch_boards[other] = nil
 		self.touch_corona[other] = nil
@@ -303,7 +303,7 @@ function PlayerObject:on_spawn()
 	game_state.player_id = self.id
 end
 
-function PlayerObject:on_dispose()
+function playerobject:on_dispose()
 	if self.inventory_item then
 		self.inventory_item.held = false
 		self.inventory_item = nil
@@ -333,7 +333,7 @@ register_worldobject({
 			class = 'SpriteComponent',
 			id_local = 'player_sprite',
 			layer = 'actors',
-			colliderLocalId = 'player_collider',
+			colliderlocalid = 'player_collider',
 		},
 		{
 			class = 'Collider2DComponent',
@@ -353,5 +353,5 @@ register_worldobject({
 	fsms = {
 		{ id = 'marlies2020_player' },
 	},
-	abilities = playerAbilityOrder,
+	abilities = playerabilityorder,
 })

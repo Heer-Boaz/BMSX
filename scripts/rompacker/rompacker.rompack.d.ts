@@ -128,4 +128,5 @@ export interface ResourceScanOptions {
 	includeCode?: boolean;
 	extraLuaPaths?: string[];
 	atlasIndexResolver?: (filepath: string, currentIndex: number | undefined) => number | undefined;
+	virtualRoot?: string;
 }
