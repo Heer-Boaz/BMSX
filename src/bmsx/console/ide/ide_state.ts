@@ -164,6 +164,7 @@ export interface IdeState {
 	topBarButtonBounds: Record<TopBarButtonId, RectBounds>;
 	tabButtonBounds: Map<string, RectBounds>;
 	tabCloseButtonBounds: Map<string, RectBounds>;
+	activeContextReadOnly: boolean;
 	resourceViewerSpriteId: string | null;
 	resourceViewerSpriteAsset: string | null;
 	resourceViewerSpriteScale: number;
@@ -355,9 +356,13 @@ export const ide_state: IdeState = {
 		filter: { left: 0, top: 0, right: 0, bottom: 0 },
 		resolution: { left: 0, top: 0, right: 0, bottom: 0 },
 		wrap: { left: 0, top: 0, right: 0, bottom: 0 },
+		debugObjects: { left: 0, top: 0, right: 0, bottom: 0 },
+		debugEvents: { left: 0, top: 0, right: 0, bottom: 0 },
+		debugRegistry: { left: 0, top: 0, right: 0, bottom: 0 },
 	},
 	tabButtonBounds: new Map<string, RectBounds>(),
 	tabCloseButtonBounds: new Map<string, RectBounds>(),
+	activeContextReadOnly: false,
 	resourceViewerSpriteId: null,
 	resourceViewerSpriteAsset: null,
 	resourceViewerSpriteScale: 1,

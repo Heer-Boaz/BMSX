@@ -13,6 +13,8 @@ import { ConsoleEditorFont } from '../editor_font';
 import { DEFAULT_CONSOLE_FONT_VARIANT } from '../font';
 import { drawEditorColoredText, drawEditorText } from './text_renderer';
 import { Msx1Colors } from '../../systems/msx.ts';
+import { EventEmitter, type ListenerSet } from '../../core/eventemitter';
+import { Registry } from '../../core/registry';
 import { SpriteComponent } from '../../component/sprite_component';
 import { renderCodeArea } from './render_code_area';
 import { clamp } from '../../utils/utils';
@@ -90,6 +92,7 @@ import type {
 	ConsoleEditorShortcutContext,
 	CustomKeybindingHandler,
 	GlobalSearchJob,
+	DebugPanelKind,
 	// SearchComputationJob migrated to editor_search.ts
 	RuntimeErrorOverlayLayout,
 } from './types';
@@ -647,6 +650,9 @@ export function clampSelectionPosition(position: Position | null): Position | nu
 }
 
 export function prepareUndo(key: string, allowMerge: boolean): void {
+	if (ide_state.activeContextReadOnly) {
+		return;
+	}
 	const now = Date.now();
 	const shouldMerge = allowMerge
 		&& ide_state.lastHistoryKey === key
@@ -670,6 +676,10 @@ export function prepareUndo(key: string, allowMerge: boolean): void {
 }
 
 export function undo(): void {
+	if (ide_state.activeContextReadOnly) {
+		notifyReadOnlyEdit();
+		return;
+	}
 	if (ide_state.undoStack.length === 0) {
 		return;
 	}
@@ -687,6 +697,10 @@ export function undo(): void {
 }
 
 export function redo(): void {
+	if (ide_state.activeContextReadOnly) {
+		notifyReadOnlyEdit();
+		return;
+	}
 	if (ide_state.redoStack.length === 0) {
 		return;
 	}
@@ -1923,6 +1937,7 @@ export function initializeTabs(entryContext: CodeTabContext | null = null): void
 	}
 	ide_state.activeTabId = null;
 	ide_state.activeCodeTabContextId = null;
+	ide_state.activeContextReadOnly = false;
 }
 
 export function setTabDirty(tabId: string, dirty: boolean): void {
@@ -2408,6 +2423,9 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 	const shiftDown = isModifierPressedGlobal(ide_state.playerIndex, 'ShiftLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ShiftRight');
 	const metaDown = isModifierPressedGlobal(ide_state.playerIndex, 'MetaLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'MetaRight');
 	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
+	const codeTabActive = isCodeTabActive();
+	const editableCodeTab = isEditableCodeTab();
+	const readOnlyCodeTab = isReadOnlyCodeTab();
 
 	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyO')) {
 		consumeKeyboardKey(keyboard, 'KeyO');
@@ -2499,7 +2517,7 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		altDown,
 		inlineFieldFocused,
 		resourcePanelFocused: ide_state.resourcePanelFocused,
-		codeTabActive: isCodeTabActive(),
+		codeTabActive,
 	})) {
 		return;
 	}
@@ -2511,7 +2529,7 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		openReferenceSearchPopup();
 		return;
 	}
-	if (!inlineFieldFocused && isCodeTabActive() && isKeyJustPressedGlobal(ide_state.playerIndex, 'F2')) {
+	if (!inlineFieldFocused && editableCodeTab && isKeyJustPressedGlobal(ide_state.playerIndex, 'F2')) {
 		consumeKeyboardKey(keyboard, 'F2');
 		openRenamePrompt();
 		return;
@@ -2602,6 +2620,10 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 	}
 	if ((ctrlDown || metaDown) && shouldFireRepeat(keyboard, 'KeyZ', deltaSeconds)) {
 		consumeKeyboardKey(keyboard, 'KeyZ');
+		if (!editableCodeTab) {
+			notifyReadOnlyEdit();
+			return;
+		}
 		if (shiftDown) {
 			redo();
 		} else {
@@ -2611,6 +2633,10 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 	}
 	if ((ctrlDown || metaDown) && shouldFireRepeat(keyboard, 'KeyY', deltaSeconds)) {
 		consumeKeyboardKey(keyboard, 'KeyY');
+		if (!editableCodeTab) {
+			notifyReadOnlyEdit();
+			return;
+		}
 		redo();
 		return;
 	}
@@ -2621,6 +2647,10 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 	}
 	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyS')) {
 		consumeKeyboardKey(keyboard, 'KeyS');
+		if (readOnlyCodeTab) {
+			notifyReadOnlyEdit();
+			return;
+		}
 		void save();
 		return;
 	}
@@ -2631,6 +2661,14 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 	}
 	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyX')) {
 		consumeKeyboardKey(keyboard, 'KeyX');
+		if (readOnlyCodeTab) {
+			if (hasSelection()) {
+				void copySelectionToClipboard();
+			} else {
+				notifyReadOnlyEdit();
+			}
+			return;
+		}
 		if (hasSelection()) {
 			void cutSelectionToClipboard();
 		} else {
@@ -2640,26 +2678,46 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 	}
 	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyV')) {
 		consumeKeyboardKey(keyboard, 'KeyV');
+		if (readOnlyCodeTab) {
+			notifyReadOnlyEdit();
+			return;
+		}
 		pasteFromClipboard();
 		return;
 	}
 	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'Slash')) {
 		consumeKeyboardKey(keyboard, 'Slash');
+		if (!editableCodeTab) {
+			notifyReadOnlyEdit();
+			return;
+		}
 		toggleLineComments();
 		return;
 	}
 	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'NumpadDivide')) {
 		consumeKeyboardKey(keyboard, 'NumpadDivide');
+		if (!editableCodeTab) {
+			notifyReadOnlyEdit();
+			return;
+		}
 		toggleLineComments();
 		return;
 	}
 	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'BracketRight')) {
 		consumeKeyboardKey(keyboard, 'BracketRight');
+		if (!editableCodeTab) {
+			notifyReadOnlyEdit();
+			return;
+		}
 		indentSelectionOrLine();
 		return;
 	}
 	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'BracketLeft')) {
 		consumeKeyboardKey(keyboard, 'BracketLeft');
+		if (!editableCodeTab) {
+			notifyReadOnlyEdit();
+			return;
+		}
 		unindentSelectionOrLine();
 		return;
 	}
@@ -3180,7 +3238,8 @@ export function openReferenceSearchPopup(): void {
 }
 
 export function openRenamePrompt(): void {
-	if (!isCodeTabActive()) {
+	if (!isEditableCodeTab()) {
+		notifyReadOnlyEdit();
 		return;
 	}
 	closeSearch(false, true);
@@ -5770,6 +5829,18 @@ export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 		handleTopBarButtonPress('filter');
 		return true;
 	}
+	if (pointInRect(x, y, ide_state.topBarButtonBounds.debugObjects)) {
+		handleTopBarButtonPress('debugObjects');
+		return true;
+	}
+	if (pointInRect(x, y, ide_state.topBarButtonBounds.debugEvents)) {
+		handleTopBarButtonPress('debugEvents');
+		return true;
+	}
+	if (pointInRect(x, y, ide_state.topBarButtonBounds.debugRegistry)) {
+		handleTopBarButtonPress('debugRegistry');
+		return true;
+	}
 	if (pointInRect(x, y, ide_state.topBarButtonBounds.wrap)) {
 		handleTopBarButtonPress('wrap');
 		return true;
@@ -5963,6 +6034,15 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 				void save();
 			}
 			return;
+		case 'debugObjects':
+			openDebugPanelTab('objects');
+			return;
+		case 'debugEvents':
+			openDebugPanelTab('events');
+			return;
+		case 'debugRegistry':
+			openDebugPanelTab('registry');
+			return;
 		case 'resume':
 		case 'reboot':
 			activateCodeTab();
@@ -6105,6 +6185,10 @@ export function performReboot(): boolean {
 
 
 export function toggleLineComments(): void {
+	if (!isEditableCodeTab()) {
+		notifyReadOnlyEdit();
+		return;
+	}
 	const range = getLineRangeForMovement();
 	if (range.startRow < 0 || range.endRow < range.startRow) {
 		return;
@@ -6130,6 +6214,10 @@ export function toggleLineComments(): void {
 }
 
 export function addLineComments(range?: { startRow: number; endRow: number }): void {
+	if (!isEditableCodeTab()) {
+		notifyReadOnlyEdit();
+		return;
+	}
 	const target = range ?? getLineRangeForMovement();
 	if (target.startRow < 0 || target.endRow < target.startRow) {
 		return;
@@ -6165,6 +6253,10 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 }
 
 export function removeLineComments(range?: { startRow: number; endRow: number }): void {
+	if (!isEditableCodeTab()) {
+		notifyReadOnlyEdit();
+		return;
+	}
 	const target = range ?? getLineRangeForMovement();
 	if (target.startRow < 0 || target.endRow < target.startRow) {
 		return;
@@ -6796,6 +6888,11 @@ export function drawTopBar(api: BmsxConsoleApi): void {
 		resourcePanelFilterMode: ide_state.resourcePanel.getFilterMode(),
 		problemsPanelVisible: ide_state.problemsPanel.isVisible(),
 		topBarButtonBounds: ide_state.topBarButtonBounds,
+		debugPanels: {
+			objectsActive: isDebugPanelActive('objects'),
+			eventsActive: isDebugPanelActive('events'),
+			registryActive: isDebugPanelActive('registry'),
+		},
 	};
 	renderTopBar(api, host);
 }
@@ -7627,6 +7724,18 @@ export function isCodeTabActive(): boolean {
 	return getActiveTabKind() === 'lua_editor';
 }
 
+export function isReadOnlyCodeTab(): boolean {
+	return isCodeTabActive() && ide_state.activeContextReadOnly === true;
+}
+
+export function isEditableCodeTab(): boolean {
+	return isCodeTabActive() && ide_state.activeContextReadOnly !== true;
+}
+
+function notifyReadOnlyEdit(): void {
+	ide_state.showMessage('Tab is read-only', constants.COLOR_STATUS_WARNING, 1.5);
+}
+
 export function isResourceViewActive(): boolean {
 	return getActiveTabKind() === 'resource_view';
 }
@@ -7646,6 +7755,7 @@ export function setActiveTab(tabId: string): void {
 	}
 	if (ide_state.activeTabId === tabId) {
 		if (tab.kind === 'resource_view') {
+			ide_state.activeContextReadOnly = false;
 			enterResourceViewer(tab);
 			ide_state.runtimeErrorOverlay = null;
 		} else if (tab.kind === 'lua_editor') {
@@ -7658,6 +7768,7 @@ export function setActiveTab(tabId: string): void {
 	}
 	ide_state.activeTabId = tabId;
 	if (tab.kind === 'resource_view') {
+		ide_state.activeContextReadOnly = false;
 		enterResourceViewer(tab);
 		ide_state.runtimeErrorOverlay = null;
 		return;
@@ -8237,6 +8348,7 @@ export function activateCodeEditorTab(tabId: string | null): void {
 		}
 	}
 	ide_state.activeCodeTabContextId = tabId;
+	ide_state.activeContextReadOnly = context.readOnly === true;
 	const isEntry = ide_state.entryTabId !== null && context.id === ide_state.entryTabId;
 	if (context.snapshot) {
 		restoreSnapshot(context.snapshot);
@@ -8498,6 +8610,178 @@ export function trimResourceViewerLines(lines: string[]): void {
 		lines.length = constants.RESOURCE_VIEWER_MAX_LINES - 1;
 		lines.push('<content truncated>');
 	}
+}
+
+const DEBUG_PANEL_TITLES: Record<DebugPanelKind, string> = {
+	objects: 'Objects',
+	events: 'Events',
+	registry: 'Registry',
+};
+
+function debugPanelTabId(kind: DebugPanelKind): string {
+	return `debug:${kind}`;
+}
+
+function buildDebugPanelLines(kind: DebugPanelKind): string[] {
+	const lines: string[] = [`${DEBUG_PANEL_TITLES[kind]} Overview`, ''];
+	switch (kind) {
+		case 'objects':
+			appendResourceViewerLines(lines, collectWorldObjectLines());
+			break;
+		case 'events':
+			appendResourceViewerLines(lines, collectEventEmitterLines());
+			break;
+		case 'registry':
+			appendResourceViewerLines(lines, collectRegistryLines());
+			break;
+	}
+	if (lines.length === 0) {
+		lines.push('<empty>');
+	}
+	trimResourceViewerLines(lines);
+	return lines;
+}
+
+function collectWorldObjectLines(): string[] {
+	const world = $.world;
+	if (!world) return ['<world unavailable>'];
+	const entries = Array.from(world.objects({ scope: 'all' }));
+	if (entries.length === 0) return ['<no world objects>'];
+	const lines: string[] = [`Total Objects: ${entries.length}`, ''];
+	for (let index = 0; index < entries.length; index += 1) {
+		const obj = entries[index]!;
+		const className = obj.constructor?.name ?? 'WorldObject';
+		const id = obj.id ?? '<unnamed>';
+		const posX = Number.isFinite(obj.x) ? Math.round(obj.x) : 0;
+		const posY = Number.isFinite(obj.y) ? Math.round(obj.y) : 0;
+		const posZ = Number.isFinite(obj.z) ? Math.round(obj.z) : 0;
+		const active = obj.active === false ? 'inactive' : 'active';
+		lines.push(`${index + 1}. ${id} [${className}] pos=(${posX}, ${posY}, ${posZ}) ${active}`);
+	}
+	return lines;
+}
+
+function describeListenerSet(set: ListenerSet): string {
+	const names: string[] = [];
+	for (const entry of set) {
+		const subscriber = entry.subscriber as { id?: string; constructor?: { name?: string } } | undefined;
+		const name = subscriber?.id ?? subscriber?.constructor?.name ?? '<anonymous>';
+		if (!names.includes(name)) names.push(name);
+		if (names.length >= 5) break;
+	}
+	const base = `${set.size} listener${set.size === 1 ? '' : 's'}`;
+	if (names.length === 0) return base;
+	const suffix = names.length < set.size ? `${names.join(', ')}, …` : names.join(', ');
+	return `${base} (${suffix})`;
+}
+
+function collectEventEmitterLines(): string[] {
+	const emitter = EventEmitter.instance;
+	const lines: string[] = [];
+	const globalEntries = Object.entries(emitter.globalScopeListeners ?? {});
+	lines.push('Global Listeners:');
+	if (globalEntries.length === 0) {
+		lines.push('  <none>');
+	} else {
+		for (const [eventName, set] of globalEntries.sort(([a], [b]) => a.localeCompare(b))) {
+			lines.push(`  ${eventName}: ${describeListenerSet(set)}`);
+		}
+	}
+	lines.push('');
+	lines.push('Scoped Listeners:');
+	const scopedEntries = Object.entries(emitter.emitterScopeListeners ?? {});
+	if (scopedEntries.length === 0) {
+		lines.push('  <none>');
+	} else {
+		for (const [eventName, scopes] of scopedEntries.sort(([a], [b]) => a.localeCompare(b))) {
+			lines.push(`  ${eventName}:`);
+			const scopeEntries = Object.entries(scopes);
+			for (const [scopeId, set] of scopeEntries.sort(([a], [b]) => a.localeCompare(b))) {
+				lines.push(`    [${scopeId}] ${describeListenerSet(set)}`);
+			}
+		}
+	}
+	return lines;
+}
+
+function collectRegistryLines(): string[] {
+	const registry = Registry.instance;
+	const entities = registry.getRegisteredEntities();
+	const lines: string[] = [`Registered Entities: ${entities.length}`, ''];
+	if (entities.length === 0) {
+		lines.push('<registry empty>');
+		return lines;
+	}
+	entities.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+	for (const entity of entities) {
+		const ctor = entity.constructor?.name ?? 'Unknown';
+		const persistent = entity.registrypersistent ? 'persistent' : 'ephemeral';
+		lines.push(`${entity.id} [${ctor}] ${persistent}`);
+	}
+	return lines;
+}
+
+function openDebugPanelTab(kind: DebugPanelKind): void {
+	const tabId = debugPanelTabId(kind);
+	const title = DEBUG_PANEL_TITLES[kind];
+	const load = () => buildDebugPanelLines(kind).join('\n');
+	let context = ide_state.codeTabContexts.get(tabId);
+	if (!context) {
+		context = {
+			id: tabId,
+			title,
+			descriptor: null,
+			load,
+			save: async () => { /* read-only */ },
+			snapshot: null,
+			lastSavedSource: '',
+			saveGeneration: 0,
+			appliedGeneration: 0,
+			dirty: false,
+			runtimeErrorOverlay: null,
+			executionStopRow: null,
+			readOnly: true,
+		};
+		ide_state.codeTabContexts.set(tabId, context);
+	} else {
+		context.load = load;
+		context.title = title;
+		context.readOnly = true;
+		context.snapshot = null;
+		context.dirty = false;
+	}
+	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
+	if (!tab) {
+		tab = {
+			id: tabId,
+			kind: 'lua_editor',
+			title,
+			closable: true,
+			dirty: false,
+		};
+		ide_state.tabs.push(tab);
+	} else {
+		tab.title = title;
+		tab.dirty = false;
+	}
+	setTabDirty(tabId, false);
+	setActiveTab(tabId);
+}
+
+function isDebugPanelActive(kind: DebugPanelKind): boolean {
+	return ide_state.activeTabId === debugPanelTabId(kind);
+}
+
+export function openDebugOverviewTab(): void {
+	openDebugPanelTab('registry');
+}
+
+export function openObjectInspectorTab(): void {
+	openDebugPanelTab('objects');
+}
+
+export function openEventInspectorTab(): void {
+	openDebugPanelTab('events');
 }
 
 export function safeJsonStringify(value: unknown, space = 2): string {
@@ -9068,6 +9352,9 @@ export function handleCompletionKeybindings(
 	altDown: boolean,
 	metaDown: boolean,
 ): boolean {
+	if (isReadOnlyCodeTab()) {
+		return false;
+	}
 	return ide_state.completion.handleKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown);
 }
 

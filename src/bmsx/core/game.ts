@@ -616,7 +616,7 @@ export class Game {
 
 		if (this._paused) {
 			this.accumulatedTime = 0;
-			this.world.runTickGroups([TickGroup.Animation, TickGroup.Presentation, TickGroup.EventFlush]);
+			this.world.runTickGroups([TickGroup.Presentation, TickGroup.EventFlush]);
 			const consoleRuntime = BmsxConsoleRuntime.instance;
 			consoleRuntime?.renderPausedFrame();
 			this.view.drawgame();

@@ -18,6 +18,11 @@ export interface TopBarHost {
 	resourcePanelFilterMode: 'lua_only' | 'all';
 	problemsPanelVisible: boolean;
 	topBarButtonBounds: Record<TopBarButtonId, RectBounds>;
+	debugPanels: {
+		objectsActive: boolean;
+		eventsActive: boolean;
+		registryActive: boolean;
+	};
 }
 
 export function renderTopBar(api: BmsxConsoleApi, host: TopBarHost): void {
@@ -40,6 +45,9 @@ export function renderTopBar(api: BmsxConsoleApi, host: TopBarHost): void {
 	host.topBarButtonBounds.resources = { left: 0, top: 0, right: 0, bottom: 0 };
 	host.topBarButtonBounds.problems = { left: 0, top: 0, right: 0, bottom: 0 };
 	host.topBarButtonBounds.filter = { left: 0, top: 0, right: 0, bottom: 0 };
+	host.topBarButtonBounds.debugObjects = { left: 0, top: 0, right: 0, bottom: 0 };
+	host.topBarButtonBounds.debugEvents = { left: 0, top: 0, right: 0, bottom: 0 };
+	host.topBarButtonBounds.debugRegistry = { left: 0, top: 0, right: 0, bottom: 0 };
 	let buttonX = 4;
 	const buttonEntries: Array<{ id: TopBarButtonId; label: string; disabled: boolean; active?: boolean }> = [
 		{ id: 'resume', label: 'RESUME', disabled: false },
@@ -48,6 +56,9 @@ export function renderTopBar(api: BmsxConsoleApi, host: TopBarHost): void {
 		{ id: 'resources', label: 'FILES', disabled: false, active: host.resourcePanelVisible },
 	];
 	buttonEntries.push({ id: 'problems', label: 'PROBLEMS', disabled: false, active: host.problemsPanelVisible });
+	buttonEntries.push({ id: 'debugObjects', label: 'OBJECTS', disabled: false, active: host.debugPanels.objectsActive });
+	buttonEntries.push({ id: 'debugEvents', label: 'EVENTS', disabled: false, active: host.debugPanels.eventsActive });
+	buttonEntries.push({ id: 'debugRegistry', label: 'REGISTRY', disabled: false, active: host.debugPanels.registryActive });
 	if (host.resourcePanelVisible) {
 		const filterLabel = host.resourcePanelFilterMode === 'lua_only' ? 'LUA' : 'ALL';
 		buttonEntries.push({

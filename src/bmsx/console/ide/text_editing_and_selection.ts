@@ -33,6 +33,10 @@ import {
 } from './console_cart_editor';
 import * as constants from './constants';
 
+function editorAllowsMutation(): boolean {
+	return ide_state.activeContextReadOnly !== true;
+}
+
 // ============================================================================
 // SELECTION STATE MANAGEMENT
 // ============================================================================
@@ -421,7 +425,7 @@ export function deleteSelectionIfPresent(): boolean {
  * This is the high-level version that prepares undo.
  */
 export function deleteSelection(): void {
-	if (!hasSelection()) {
+	if (!editorAllowsMutation() || !hasSelection()) {
 		return;
 	}
 	prepareUndo('delete-selection', false);
@@ -434,6 +438,9 @@ export function deleteSelection(): void {
  * @param text The text to insert in place of the selection
  */
 export function replaceSelectionWith(text: string): void {
+	if (!editorAllowsMutation()) {
+		return;
+	}
 	const range = getSelectionRange();
 	if (!range) {
 		return;
@@ -478,6 +485,9 @@ export function replaceSelectionWith(text: string): void {
  * @param text The text to insert
  */
 export function insertText(text: string): void {
+	if (!editorAllowsMutation() || text.length === 0) {
+		return;
+	}
 	if (text.length === 0) {
 		return;
 	}
@@ -505,6 +515,9 @@ export function insertText(text: string): void {
  * Auto-indents the new line based on the previous line's indentation.
  */
 export function insertLineBreak(): void {
+	if (!editorAllowsMutation()) {
+		return;
+	}
 	const sourceRow = ide_state.cursorRow;
 	prepareUndo('insert-line-break', false);
 	deleteSelectionIfPresent();
@@ -569,6 +582,9 @@ export function countLeadingIndent(line: string): number {
  * @param text The clipboard text to insert
  */
 export function insertClipboardText(text: string): void {
+	if (!editorAllowsMutation()) {
+		return;
+	}
 	const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 	const fragments = normalized.split('\n');
 	const currentLineValue = currentLine();
@@ -613,6 +629,9 @@ export function insertClipboardText(text: string): void {
  * If there's a selection, deletes the selection instead.
  */
 export function backspace(): void {
+	if (!editorAllowsMutation()) {
+		return;
+	}
 	if (!hasSelection() && ide_state.cursorColumn === 0 && ide_state.cursorRow === 0) {
 		return;
 	}
@@ -659,6 +678,9 @@ export function backspace(): void {
  * If there's a selection, deletes the selection instead.
  */
 export function deleteForward(): void {
+	if (!editorAllowsMutation()) {
+		return;
+	}
 	if (!hasSelection() && ide_state.cursorColumn >= currentLine().length && ide_state.cursorRow >= ide_state.lines.length - 1) {
 		return;
 	}
@@ -700,6 +722,9 @@ export function deleteForward(): void {
  * Deletes from the cursor to the start of the previous word.
  */
 export function deleteWordBackward(): void {
+	if (!editorAllowsMutation()) {
+		return;
+	}
 	if (!hasSelection() && ide_state.cursorColumn === 0 && ide_state.cursorRow === 0) {
 		return;
 	}
@@ -754,6 +779,9 @@ export function deleteWordBackward(): void {
  * Deletes from the cursor to the end of the next word.
  */
 export function deleteWordForward(): void {
+	if (!editorAllowsMutation()) {
+		return;
+	}
 	if (!hasSelection() && ide_state.cursorRow >= ide_state.lines.length - 1 && ide_state.cursorColumn >= currentLine().length) {
 		return;
 	}
@@ -808,6 +836,9 @@ export function deleteWordForward(): void {
  * If there's a selection spanning multiple lines, deletes all selected lines.
  */
 export function deleteActiveLines(): void {
+	if (!editorAllowsMutation()) {
+		return;
+	}
 	if (ide_state.lines.length === 0) {
 		return;
 	}
@@ -882,6 +913,9 @@ export function getLineRangeForMovement(): { startRow: number; endRow: number } 
  * @param delta Number of lines to move (negative for up, positive for down)
  */
 export function moveSelectionLines(delta: number): void {
+	if (!editorAllowsMutation()) {
+		return;
+	}
 	if (delta === 0) {
 		return;
 	}
@@ -924,6 +958,9 @@ export function moveSelectionLines(delta: number): void {
  * Indents the current line or selected lines by adding a tab character.
  */
 export function indentSelectionOrLine(): void {
+	if (!editorAllowsMutation()) {
+		return;
+	}
 	prepareUndo('indent', false);
 	const range = getSelectionRange();
 	if (!range) {
@@ -957,6 +994,9 @@ export function indentSelectionOrLine(): void {
  * Unindents the current line or selected lines by removing one indentation character.
  */
 export function unindentSelectionOrLine(): void {
+	if (!editorAllowsMutation()) {
+		return;
+	}
 	prepareUndo('unindent', false);
 	const range = getSelectionRange();
 	if (!range) {
@@ -1022,6 +1062,10 @@ export async function cutSelectionToClipboard(): Promise<void> {
 		ide_state.showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
+	if (!editorAllowsMutation()) {
+		await writeClipboard(text, 'Copied selection to clipboard');
+		return;
+	}
 	prepareUndo('cut', false);
 	await writeClipboard(text, 'Cut selection to clipboard');
 	replaceSelectionWith('');
@@ -1041,6 +1085,9 @@ export async function cutLineToClipboard(): Promise<void> {
 	const text = isLastLine ? currentLineValue : currentLineValue + '\n';
 	prepareUndo('cut-line', false);
 	await writeClipboard(text, 'Cut line to clipboard');
+	if (!editorAllowsMutation()) {
+		return;
+	}
 	if (ide_state.lines.length === 1) {
 		ide_state.lines[0] = '';
 		ide_state.cursorColumn = 0;
@@ -1071,6 +1118,10 @@ export function pasteFromClipboard(): void {
 	const text = ide_state.customClipboard;
 	if (text === null || text.length === 0) {
 		ide_state.showMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
+		return;
+	}
+	if (!editorAllowsMutation()) {
+		ide_state.showMessage('Tab is read-only', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	prepareUndo('paste', false);

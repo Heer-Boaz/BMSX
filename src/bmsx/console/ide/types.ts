@@ -230,9 +230,22 @@ export type VisualLineSegment = {
 	endColumn: number;
 };
 
-export type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources' | 'problems' | 'filter' | 'resolution' | 'wrap';
+export type TopBarButtonId =
+	| 'resume'
+	| 'reboot'
+	| 'save'
+	| 'resources'
+	| 'problems'
+	| 'filter'
+	| 'resolution'
+	| 'wrap'
+	| 'debugObjects'
+	| 'debugEvents'
+	| 'debugRegistry';
 
-export type EditorTabId = `resource:${string}` | `lua:${string}`;
+export type DebugPanelKind = 'objects' | 'events' | 'registry';
+
+export type EditorTabId = `resource:${string}` | `lua:${string}` | `debug:${string}`;
 export type EditorTabKind = 'resource_view' | 'lua_editor';
 
 export type ScrollbarKind = 'codeVertical' | 'codeHorizontal' | 'resourceVertical' | 'resourceHorizontal' | 'viewerVertical';
@@ -311,6 +324,7 @@ export type CodeTabContext = {
 	dirty: boolean;
 	runtimeErrorOverlay: RuntimeErrorOverlay | null;
 	executionStopRow: number | null;
+	readOnly?: boolean;
 };
 
 export type PendingActionPrompt = {
@@ -461,4 +475,3 @@ export type GlobalSearchJob = {
 	matches: GlobalSearchMatch[];
 	limitHit: boolean;
 };
-
