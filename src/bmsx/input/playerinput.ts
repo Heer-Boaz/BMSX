@@ -458,13 +458,29 @@ export class PlayerInput {
 		}
 	}
 
-	/**
-	 * Consumes a list of actions.
-	 *
-	 * @param actions - The actions to consume.
-	 */
+	public consumeButton(button: ButtonId, source: InputSource) {
+		const handler = this.inputHandlers[source];
+		if (!handler) return;
+
+		handler.consumeButton(button);
+	}
+
+	public consumeButtons(buttons: ButtonId[], source: InputSource) {
+		buttons.forEach(button => this.consumeButton(button, source));
+	}
+
 	public consumeActions(...actions: (ActionState | string)[]) {
 		actions.forEach(action => this.consumeAction(action));
+	}
+
+	public getModifiersState(): { shift: boolean; ctrl: boolean; alt: boolean; } {
+		const keyboardHandler = this.inputHandlers['keyboard'];
+
+		return {
+			shift: keyboardHandler?.getButtonState('Shift')?.pressed ?? false,
+			ctrl: keyboardHandler?.getButtonState('Control')?.pressed ?? false,
+			alt: keyboardHandler?.getButtonState('Alt')?.pressed ?? false,
+		};
 	}
 
 	/**
