@@ -4,6 +4,7 @@ export type ConsoleOverlaySpecOptions = {
 	includeConsole?: boolean;
 	includeEditor?: boolean;
 	includePresentation?: boolean;
+	includeConsoleDraw?: boolean;
 };
 
 /**
@@ -14,6 +15,7 @@ export function buildConsoleOverlaySpec(options: ConsoleOverlaySpecOptions): Nod
 	const includeConsole = options.includeConsole === true;
 	const includeEditor = options.includeEditor === true;
 	const includePresentation = options.includePresentation !== false || includeConsole || includeEditor;
+	const includeConsoleDraw = options.includeConsoleDraw !== false;
 	const nodes: NodeSpec[] = [];
 	if (includeConsole) {
 		nodes.push({ ref: 'bmsxConsole.mode' });
@@ -28,8 +30,9 @@ export function buildConsoleOverlaySpec(options: ConsoleOverlaySpecOptions): Nod
 		nodes.push({ ref: 'meshRender', after: ['spriteRender'] });
 		nodes.push({ ref: 'renderSubmit', after: ['meshRender'] });
 	}
-	if (includeConsole || includeEditor) {
-		nodes.push({ ref: 'bmsxConsole.draw', after: ['renderSubmit'] });
+	if (includeConsoleDraw) {
+		const drawAfter = includePresentation ? ['renderSubmit'] : undefined;
+		nodes.push({ ref: 'bmsxConsole.draw', after: drawAfter });
 	}
 	return nodes;
 }
