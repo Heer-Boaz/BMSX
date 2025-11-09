@@ -18,6 +18,7 @@ import { ObjectPropertyDialog, refreshAllObjectPropertyDialogs } from './objectp
 import { StateMachineVisualizer } from './statemachinevisualizer';
 import { CustomVisualComponent } from '../component/customvisual_component';
 import { setAbilityTagHudTarget } from './abilitytaghud';
+import { debuggerOverlayManager } from './overlay_manager';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 const PHYSICS_OVERLAY_ID = 'physics_overlay_canvas';
 
@@ -25,7 +26,6 @@ let draggedObj: WorldObject | null;
 let draggedObjCursorOffset: vec2;
 let shiftX: number;
 let shiftY: number;
-let prevPausedState: boolean; // Remember the paused-state before a dialog was opened. This allows to return to the original "paused" state after closing debug dialogs
 let currentHighlighterComponent: ObjectHighlighterComponent | null;
 let stateMachineVisualisers: Record<Identifier, StateMachineVisualizer> = {};
 
@@ -437,8 +437,19 @@ function createDialogDiv(previousDialog?: HTMLElement): HTMLDivElement {
 	return dialogDiv;
 }
 
+function releaseDebuggerOverlay(dialog: HTMLElement | undefined | null): void {
+	if (!dialog) return;
+	if ((dialog as HTMLElement).dataset?.debugOverlayRoot === 'true') {
+		debuggerOverlayManager.pop();
+	}
+}
+
 function createDebugDialog(title?: string, previousDialog?: HTMLElement): [HTMLDivElement, HTMLDivElement, HTMLSpanElement, HTMLDivElement, HTMLSpanElement] {
 	const dialogDiv = createDialogDiv(previousDialog);
+	if (!previousDialog) {
+		debuggerOverlayManager.push();
+		dialogDiv.dataset.debugOverlayRoot = 'true';
+	}
 	const wrapperDiv = createWrapperDiv(title, dialogDiv, previousDialog);
 	const contentDiv = createContentDiv(dialogDiv, previousDialog);
 
@@ -516,6 +527,7 @@ function createBackSpan(dialogDiv: HTMLDivElement, previousDialog?: HTMLElement)
 	backSpan.onclick = (e) => {
 		e.preventDefault();
 		document.body.removeChild(dialogDiv);
+		releaseDebuggerOverlay(dialogDiv);
 		previousDialog.style.display = 'flex';
 		let newDivFullscreen = dialogDiv.classList.contains('fullscreen');
 		let previousDialogFullscreen = previousDialog.classList.contains('fullscreen');
@@ -534,13 +546,15 @@ function createCloseSpan(dialogDiv: HTMLDivElement, previousDialog?: HTMLElement
 	closeSpan.onclick = (e) => {
 		e.preventDefault();
 		document.body.removeChild(dialogDiv);
+		releaseDebuggerOverlay(dialogDiv);
 
-		let previous = previousDialog;
+		let previous = previousDialog as (HTMLDivElement & { previous?: HTMLElement }) | undefined;
 		while (previous) {
+			const next = previous.previous as (typeof previous) | undefined;
 			document.body.removeChild(previous);
-			previous = previous.previous;
+			releaseDebuggerOverlay(previous);
+			previous = next;
 		}
-		$.paused = prevPausedState;
 	};
 
 	return closeSpan;
@@ -602,10 +616,6 @@ function addContent(parent: HTMLElement, type: string, content: string | null, d
 
 export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement): void {
 	if (e && e.type !== 'keydown') return;
-	if (!previous) {
-		prevPausedState = $.paused; // Remember the original paused-state so that we can return to that state
-		$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
-	}
 
 	const [dialogDiv, contentDiv] = createDebugDialog('Objects', previous);
 
@@ -706,8 +716,6 @@ function handleOpenListenersDialog(eventName: string, scope: string, listeners: 
 
 export function handleOpenDebugMenu(e: UIEvent): void {
 	if (e && e.type !== 'keydown') return;
-	prevPausedState = $.paused; // Remember the original paused-state so that we can return to that state
-	$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
 
 	const [dialogDiv, contentDiv] = createDebugDialog();
 
@@ -757,8 +765,6 @@ row.onclick = (_) => openObjectDetailMenu(Registry.instance, 'Da Registry', dial
 export function handleOpenModelMenu(e: UIEvent | null, previous: HTMLElement): void {
 	if (e && e.type !== 'keydown') return;
 	if (!previous) {
-		prevPausedState = $.paused; // Remember the original paused-state so that we can return to that state
-		$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
 		draggedObj = null; // Make sure that we stop dragging any object
 	}
 
@@ -766,11 +772,6 @@ export function handleOpenModelMenu(e: UIEvent | null, previous: HTMLElement): v
 }
 
 function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): void {
-	if (!previous) {
-		prevPausedState = $.paused; // Remember the original paused-state so that we can return to that state
-		$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
-	}
-
 	// Use ObjectPropertyDialog for live-refresh
 	if (obj) {
 		if (obj.id != null) {

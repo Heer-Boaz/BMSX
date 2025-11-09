@@ -13,7 +13,7 @@ import { $ } from '../core/game';
 import { Service } from '../core/service';
 import { EventEmitter, type EventPayload, type EventHandler, type StructuredEventPayload } from '../core/eventemitter';
 import type { Identifier, Identifiable } from '../rompack/rompack';
-import { consoleEditorSpec } from '../core/pipelines/console_editor';
+import { OverlayPipelineController } from '../core/pipelines/overlay_controller';
 import { EditorConsoleRenderBackend } from './render_backend';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { LuaHandlerCache, type LuaHandlerFn, isLuaHandlerFn } from '../lua/handler_cache.ts';
@@ -364,8 +364,7 @@ export class BmsxConsoleRuntime extends Service {
 	private luaSnapshotLoad: LuaFunctionValue | null = null;
 	private luaRuntimeFailed = false;
 	private lastFrameTimestampMs = 0;
-	private editorPipelineActive = false;
-	private pendingEditorPipelineState: boolean | null = null;
+	private overlayState = { console: false, editor: false };
 	private currentFrameState: ConsoleFrameState | null = null;
 	private readonly luaFailurePolicy: LuaPersistenceFailurePolicy;
 	private pendingLuaWarnings: string[] = [];
@@ -868,36 +867,24 @@ export class BmsxConsoleRuntime extends Service {
 		throw new Error(message);
 	}
 
-	private setEditorPipelineActive(active: boolean, force = false): void {
-		if (force) {
-			this.applyEditorPipelineActive(active, true);
+	private updateOverlayState(includeConsole: boolean, includeEditor: boolean, force = false): void {
+		if (!force && this.overlayState.console === includeConsole && this.overlayState.editor === includeEditor) {
 			return;
 		}
-		this.pendingEditorPipelineState = active;
-	}
-
-	private flushEditorPipelineState(): void {
-		if (this.pendingEditorPipelineState === null) {
+		this.overlayState = { console: includeConsole, editor: includeEditor };
+		const anyOverlay = includeConsole || includeEditor;
+		if (!anyOverlay) {
+			this.api.set_render_backend(null);
+			publishOverlayFrame(null);
+			OverlayPipelineController.setRequest('console', null);
 			return;
 		}
-		const next = this.pendingEditorPipelineState;
-		this.pendingEditorPipelineState = null;
-		this.applyEditorPipelineActive(next, false);
-	}
-
-	private applyEditorPipelineActive(active: boolean, force = false): void {
-		if (!force && active === this.editorPipelineActive) {
-			return;
-		}
-		this.editorPipelineActive = active;
-		if (active) {
-			this.api.set_render_backend(this.editorRenderBackend);
-			$.setPipelineOverride(consoleEditorSpec());
-			return;
-		}
-		this.api.set_render_backend(null);
-		$.setPipelineOverride(null);
-		publishOverlayFrame(null);
+		this.api.set_render_backend(this.editorRenderBackend);
+		OverlayPipelineController.setRequest('console', {
+			includeConsole,
+			includeEditor,
+			includePresentation: true,
+		});
 	}
 
 	public setEditorOverlayResolution(mode: 'offscreen' | 'viewport'): void {
@@ -1011,7 +998,6 @@ export class BmsxConsoleRuntime extends Service {
 		const editorActive = this.editor?.isActive() === true && !state.consoleActive;
 		state.editorEvaluated = true;
 		state.editorActive = editorActive;
-		this.setEditorPipelineActive(editorActive);
 		this.updateFrameHaltingState(state);
 	}
 
@@ -1021,7 +1007,7 @@ export class BmsxConsoleRuntime extends Service {
 		const haltGame = debugPaused || state.consoleActive || state.editorActive;
 		state.haltGame = haltGame;
 		state.deltaForUpdate = haltGame ? 0 : state.deltaSeconds;
-		this.setEditorPipelineActive(state.consoleActive || state.editorActive);
+		this.updateOverlayState(state.consoleActive, state.editorActive);
 	}
 
 	public runConsoleModePhase(): void {
@@ -1052,7 +1038,6 @@ export class BmsxConsoleRuntime extends Service {
 		const editorActive = editor?.isActive() === true && !state.consoleActive;
 		state.editorEvaluated = true;
 		state.editorActive = editorActive;
-		this.setEditorPipelineActive(editorActive);
 		this.updateFrameHaltingState(state);
 	}
 
@@ -1160,7 +1145,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public flushDeferredState(): void {
-		this.flushEditorPipelineState();
+		// No-op; overlay state is applied immediately.
 	}
 
 	private finalizeFrame(editorActive: boolean): void {
@@ -1204,7 +1189,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	public override dispose(): void {
 		this.consoleMode.deactivate();
-		this.setEditorPipelineActive(false, true);
+		this.updateOverlayState(false, false, true);
 		if (this.editor) {
 			this.editor.shutdown();
 			this.editor = null;
@@ -1282,7 +1267,7 @@ export class BmsxConsoleRuntime extends Service {
 			const activator = editor as unknown as { activate(): void };
 			activator.activate();
 		}
-		this.setEditorPipelineActive(true, true);
+		this.updateOverlayState(true, true, true);
 	}
 
 	public override getState(): BmsxConsoleState | undefined {
@@ -1368,7 +1353,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.luaRuntimeFailed = true;
 		}
 		this.resetFrameTiming();
-		this.setEditorPipelineActive(this.editor?.isActive() === true, true);
+		this.updateOverlayState(this.consoleMode.isActive(), this.editor?.isActive() === true, true);
 		this.redrawAfterStateRestore();
 	}
 
@@ -1397,7 +1382,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.processPendingLuaAssets('resume');
 		this.resumeLuaProgramState(snapshot, { runInit: false });
 		this.resetFrameTiming();
-		this.setEditorPipelineActive(this.editor?.isActive() === true, true);
+		this.updateOverlayState(this.consoleMode.isActive(), this.editor?.isActive() === true, true);
 		this.redrawAfterStateRestore();
 	}
 
@@ -1457,7 +1442,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.applyLuaProgramHotReload({ source: hotReloadSource, chunkName, override: hotReloadSource });
 		}
 		this.resetFrameTiming();
-		this.setEditorPipelineActive(this.editor?.isActive() === true, true);
+		this.updateOverlayState(this.consoleMode.isActive(), this.editor?.isActive() === true, true);
 		this.redrawAfterStateRestore();
 	}
 
@@ -3907,7 +3892,7 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			hooks.deactivate = handler;
 		}
-		const disposeCandidate = this.getLuaTableEntry(table, ['on_dispose', 'dispose']);
+		const disposeCandidate = this.getLuaTableEntry(table, ['on_dispose', 'ondispose']);
 		if (disposeCandidate !== undefined && disposeCandidate !== null) {
 			if (!this.isLuaFunctionValue(disposeCandidate)) {
 				throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_dispose' must be a function.`);
@@ -5041,7 +5026,7 @@ export class BmsxConsoleRuntime extends Service {
 
 			override dispose(): void {
 				try {
-					runtime.invokeWorldObjectMethod(this, ['on_dispose', 'dispose']);
+					runtime.invokeWorldObjectMethod(this, ['on_dispose', 'ondispose']);
 				}
 				finally {
 					super.dispose();
