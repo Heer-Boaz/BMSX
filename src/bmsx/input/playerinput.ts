@@ -422,65 +422,62 @@ export class PlayerInput {
 		const action: string = (typeof actionToConsume === 'string') ? actionToConsume : actionToConsume.action;
 
 		for (const source of INPUT_SOURCES) {
-			const handler = this.inputHandlers[source];
-			if (!handler) continue;
 			if (source === 'keyboard') {
 				const keysOrButtons: KeyboardBinding[] = inputMap.keyboard?.[action] ?? [];
 				for (const binding of keysOrButtons) {
 					const key = typeof binding === 'string' ? binding : binding.id;
-					const buttonState = handler.getButtonState(key);
+					const buttonState = this.getButtonState(key, 'keyboard');
 					if (buttonState.pressed && !buttonState.consumed) {
-						handler.consumeButton(key);
+						this.consumeButton(key, 'keyboard');
 					}
-					this._stateManager.consumeBufferedEvent(key, buttonState.pressId ?? undefined);
 				}
 			} else if (source === 'gamepad') {
 				const keysOrButtons: GamepadBinding[] = inputMap.gamepad?.[action] ?? [];
 				for (const binding of keysOrButtons) {
 					const key = typeof binding === 'string' ? binding : binding.id;
-					const buttonState = handler.getButtonState(key);
-					if (buttonState.pressed && !buttonState.consumed) {
-						handler.consumeButton(key);
+					const buttonState = this.getButtonState(key, 'gamepad');
+					if (buttonState?.pressed && !buttonState.consumed) {
+						this.consumeButton(key, 'gamepad');
 					}
-					this._stateManager.consumeBufferedEvent(key, buttonState.pressId ?? undefined);
 				}
 			} else if (source === 'pointer') {
 				const keysOrButtons: PointerBinding[] = inputMap.pointer?.[action] ?? [];
 				for (const binding of keysOrButtons) {
 					const key = typeof binding === 'string' ? binding : binding.id;
-					const buttonState = handler.getButtonState(key);
-					if (buttonState.pressed && !buttonState.consumed) {
-						handler.consumeButton(key);
+					const buttonState = this.getButtonState(key, 'pointer');
+					if (buttonState?.pressed && !buttonState.consumed) {
+						this.consumeButton(key, 'pointer');
 					}
-					this._stateManager.consumeBufferedEvent(key, buttonState.pressId ?? undefined);
 				}
 			}
 		}
 	}
 
-	public consumeButton(button: ButtonId, source: InputSource) {
+	public consumeButton(button: ButtonId, source: InputSource): void {
 		const handler = this.inputHandlers[source];
 		if (!handler) return;
-
+		const state = handler.getButtonState(button);
 		handler.consumeButton(button);
+		this._stateManager.consumeBufferedEvent(button, state?.pressId ?? undefined);
 	}
 
-	public consumeButtons(buttons: ButtonId[], source: InputSource) {
+	public consumeButtons(buttons: ButtonId[], source: InputSource): void {
 		buttons.forEach(button => this.consumeButton(button, source));
 	}
 
-	public consumeActions(...actions: (ActionState | string)[]) {
+	public consumeActions(...actions: (ActionState | string)[]): void {
 		actions.forEach(action => this.consumeAction(action));
 	}
 
-	public getModifiersState(): { shift: boolean; ctrl: boolean; alt: boolean; } {
+	public getModifiersState(): { shift: boolean; ctrl: boolean; alt: boolean; meta: boolean } {
 		const keyboardHandler = this.inputHandlers['keyboard'];
+		if (!keyboardHandler) return { shift: false, ctrl: false, alt: false, meta: false };
 
-		return {
-			shift: keyboardHandler?.getButtonState('Shift')?.pressed ?? false,
-			ctrl: keyboardHandler?.getButtonState('Control')?.pressed ?? false,
-			alt: keyboardHandler?.getButtonState('Alt')?.pressed ?? false,
-		};
+		const ctrl = keyboardHandler.getButtonState('ControlLeft')?.pressed === true || keyboardHandler.getButtonState('ControlRight')?.pressed === true;
+		const alt = keyboardHandler.getButtonState('AltLeft')?.pressed === true || keyboardHandler.getButtonState('AltRight')?.pressed === true;
+		const shift = keyboardHandler.getButtonState('ShiftLeft')?.pressed === true || keyboardHandler.getButtonState('ShiftRight')?.pressed === true;
+		const meta = keyboardHandler.getButtonState('MetaLeft')?.pressed === true || keyboardHandler.getButtonState('MetaRight')?.pressed === true;
+		return { shift, ctrl, alt, meta };
 	}
 
 	/**
@@ -489,10 +486,9 @@ export class PlayerInput {
 	 * @returns The state of the button.
 	 */
 	public getButtonState(button: ButtonId, source: InputSource): ButtonState {
-		if (source === 'keyboard' && !this.isKeyboardConnected()) return null;
-		if (source === 'gamepad' && !this.isGamepadConnected()) return null;
-		if (source === 'pointer' && !this.isPointerConnected()) return null;
-		return this.inputHandlers[source].getButtonState(button);
+		const handler = this.inputHandlers[source];
+		if (!handler) return makeButtonState();
+		return handler.getButtonState(button);
 	}
 
 	/**
@@ -780,20 +776,12 @@ export class PlayerInput {
 	 * Checks if a keyboard is connected for the specified player index.
 	 * @returns True if a keyboard is connected for the specified player index, false otherwise.
 	 */
-	private isKeyboardConnected(): boolean {
-		return this.inputHandlers['keyboard'] !== null;
-	}
-
 	/**
 	 * Checks if a gamepad is connected for the specified player index.
 	 * @returns True if a gamepad is connected for the specified player index, false otherwise.
 	 */
 	private isGamepadConnected(): boolean {
 		return this.inputHandlers['gamepad'] !== null;
-	}
-
-	private isPointerConnected(): boolean {
-		return this.inputHandlers['pointer'] !== null;
 	}
 
 	/** Clears cached transition state so edge detectors don't fire spuriously. */

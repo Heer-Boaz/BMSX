@@ -39,8 +39,8 @@ import { WorldObject } from '../core/object/worldobject';
 import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';
 import { Input } from '../input/input';
+import type { PlayerInput } from '../input/playerinput';
 import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputMapping, KeyboardBinding, GamepadBinding, PointerBinding, ButtonState } from '../input/inputtypes';
-import type { KeyboardInput } from '../input/keyboardinput';
 import { ConsoleMode } from './console_mode';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
@@ -511,23 +511,25 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private pollConsoleHotkeys(): void {
-		const keyboard = this.getKeyboard();
-		const shiftDown = keyboard.getButtonState('ShiftLeft').pressed === true || keyboard.getButtonState('ShiftRight').pressed === true;
-		const ctrlDown = keyboard.getButtonState('ControlLeft').pressed === true || keyboard.getButtonState('ControlRight').pressed === true;
-		if (shiftDown && this.shouldAcceptConsoleHotkey('F1', keyboard.getButtonState('F1'))) {
-			keyboard.consumeButton('F1');
+		const playerInput = this.getPlayerInput();
+		const getState = (code: string) => playerInput.getButtonState(code, 'keyboard');
+		const consume = (code: string) => playerInput.consumeButton(code, 'keyboard');
+		const shiftDown = getState('ShiftLeft')?.pressed === true || getState('ShiftRight')?.pressed === true;
+		const ctrlDown = getState('ControlLeft')?.pressed === true || getState('ControlRight')?.pressed === true;
+		if (shiftDown && this.shouldAcceptConsoleHotkey('F1', getState('F1'))) {
+			consume('F1');
 			this.toggleConsoleMode();
 			return;
 		}
-		if (ctrlDown && this.shouldAcceptConsoleHotkey('KeyP', keyboard.getButtonState('KeyP'))) {
-			keyboard.consumeButton('KeyP');
+		if (ctrlDown && this.shouldAcceptConsoleHotkey('KeyP', getState('KeyP'))) {
+			consume('KeyP');
 			this.toggleConsoleMode();
 			return;
 		}
 		if (this.consoleMode.isActive() && ctrlDown && shiftDown) {
-			const resolutionState = keyboard.getButtonState('KeyR');
+			const resolutionState = getState('KeyR');
 			if (this.shouldAcceptConsoleHotkey('console-resolution', resolutionState)) {
-				keyboard.consumeButton('KeyR');
+				consume('KeyR');
 				this.toggleConsoleResolutionMode();
 			}
 		}
@@ -585,18 +587,14 @@ export class BmsxConsoleRuntime extends Service {
 		// this.consoleMode.appendSystemMessage(`Resolution: ${label}`);
 	}
 
-	private getKeyboard(): KeyboardInput {
+	private getPlayerInput(): PlayerInput {
 		const playerInput = Input.instance.getPlayerInput(this.playerIndex);
 		if (!playerInput) {
 			throw new Error(`[BmsxConsoleRuntime] Player input handler for index ${this.playerIndex} is not initialised.`);
 		}
-		const handler = playerInput.inputHandlers['keyboard'];
-		if (!handler) {
-			throw new Error(`[BmsxConsoleRuntime] Keyboard input handler unavailable for player ${this.playerIndex}.`);
-		}
-		const keyboard = handler as KeyboardInput;
-		return keyboard;
+		return playerInput;
 	}
+
 
 	private renderConsoleOverlay(): void {
 		if (!this.consoleMode.isActive()) {
@@ -621,8 +619,8 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		this.consoleMode.update(deltaSeconds);
-		const keyboard = this.getKeyboard();
-		const command = this.consoleMode.handleInput(keyboard, deltaSeconds);
+		const playerInput = this.getPlayerInput();
+		const command = this.consoleMode.handleInput(playerInput, deltaSeconds);
 		if (command === null) {
 			return;
 		}

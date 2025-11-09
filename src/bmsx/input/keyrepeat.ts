@@ -1,11 +1,12 @@
 import type { ButtonState } from './inputtypes';
-import type { KeyboardInput } from './keyboardinput';
+
+export type ButtonStateResolver = (code: string) => ButtonState | null;
 
 export class KeyPressLatch {
 	private readonly records = new Map<string, number | null>();
 
 	public accept(code: string, state: ButtonState | undefined | null): boolean {
-		if (!state || state.pressed !== true) {
+		if (!state || state.pressed !== true || state.consumed === true) {
 			this.records.delete(code);
 			return false;
 		}
@@ -39,9 +40,9 @@ export class KeyRepeatController {
 
 	constructor(private readonly initialDelay: number, private readonly repeatInterval: number) { }
 
-	public shouldRepeat(code: string, keyboard: KeyboardInput, deltaSeconds: number, guards: KeyPressLatch): boolean {
-		const state = keyboard.getButtonState(code);
-		if (!state || state.pressed !== true) {
+	public shouldRepeat(code: string, resolve: ButtonStateResolver, deltaSeconds: number, guards: KeyPressLatch): boolean {
+		const state = resolve(code);
+		if (!state || state.pressed !== true || state.consumed === true) {
 			this.cooldowns.delete(code);
 			guards.release(code);
 			return false;

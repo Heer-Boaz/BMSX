@@ -56,6 +56,7 @@ import {
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
 import { InputController } from './input_controller';
+import { getIdePlayerInput, consumeIdeKey } from './player_input_adapter';
 import { ConsoleCodeLayout } from './code_layout';
 import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine as wrapRuntimeErrorLineUtil } from './runtime_error_utils';
 import type {
@@ -1476,7 +1477,7 @@ export function update(deltaSeconds: number): void {
 	flushWindowFocusState(keyboard);
 	ide_state.updateMessage(deltaSeconds);
 	updateRuntimeErrorOverlay(deltaSeconds);
-	if (handleToggleRequest(keyboard)) {
+	if (handleToggleRequest()) {
 		return;
 	}
 	if (!ide_state.active) {
@@ -2142,13 +2143,14 @@ export function getKeyboard(): KeyboardInput {
 	return candidate;
 }
 
-export function handleToggleRequest(keyboard: KeyboardInput): boolean {
+export function handleToggleRequest(): boolean {
+	const playerInput = getIdePlayerInput();
 	const escapeState = getKeyboardButtonState(ide_state.playerIndex, ESCAPE_KEY);
 	if (escapeState && escapeState.pressed === true) {
 		if (shouldAcceptKeyPressGlobal(ESCAPE_KEY, escapeState)) {
 			const handled = handleEscapeKey();
 			if (handled) {
-				consumeKeyboardKey(keyboard, ESCAPE_KEY);
+				consumeIdeKey(ESCAPE_KEY);
 				return true;
 			}
 		}
@@ -2157,7 +2159,6 @@ export function handleToggleRequest(keyboard: KeyboardInput): boolean {
 	const toggleKeyState = getKeyboardButtonState(ide_state.playerIndex, EDITOR_TOGGLE_KEY);
 	const selectButton = EDITOR_TOGGLE_GAMEPAD_BUTTONS[0];
 	const startButton = EDITOR_TOGGLE_GAMEPAD_BUTTONS[1];
-	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
 	const selectState = playerInput ? playerInput.getButtonState(selectButton, 'gamepad') : null;
 	const startState = playerInput ? playerInput.getButtonState(startButton, 'gamepad') : null;
 	const keyboardPressed = toggleKeyState ? toggleKeyState.pressed === true : false;
@@ -2184,7 +2185,7 @@ export function handleToggleRequest(keyboard: KeyboardInput): boolean {
 	ide_state.toggleInputLatch = true;
 	const intercepted = handleEscapeKey();
 	if (keyboardAccepted) {
-		consumeKeyboardKey(keyboard, EDITOR_TOGGLE_KEY);
+		consumeIdeKey(EDITOR_TOGGLE_KEY);
 	}
 	if (gamepadAccepted && playerInput && playerInput.inputHandlers['gamepad']) {
 		const handler = playerInput.inputHandlers['gamepad'];

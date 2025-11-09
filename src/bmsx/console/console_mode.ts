@@ -3,7 +3,7 @@ import type { color } from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
 import { ConsoleEditorFont } from './editor_font';
 import type { ConsoleFontVariant } from './font';
-import type { KeyboardInput } from '../input/keyboardinput';
+import type { PlayerInput } from '../input/playerinput';
 import { KeyPressLatch, KeyRepeatController } from '../input/keyrepeat';
 import { wrapRuntimeErrorLine } from './ide/runtime_error_utils';
 import {
@@ -149,11 +149,11 @@ export class ConsoleMode {
 		this.caretVisible = this.blinkTimer < CURSOR_BLINK_PERIOD * 0.5;
 	}
 
-	public handleInput(keyboard: KeyboardInput, deltaSeconds: number): string | null {
+	public handleInput(playerInput: PlayerInput, deltaSeconds: number): string | null {
 		if (!this.active) {
 			return null;
 		}
-		const modifiers = this.resolveModifiers(keyboard);
+		const modifiers = this.resolveModifiers(playerInput);
 		const options: InlineInputOptions = {
 			ctrlDown: modifiers.ctrl,
 			metaDown: modifiers.meta,
@@ -162,13 +162,13 @@ export class ConsoleMode {
 			deltaSeconds,
 			allowSpace: true,
 		};
-		const handlers = this.createInlineHandlers(keyboard);
+		const handlers = this.createInlineHandlers(playerInput);
 		applyInlineFieldEditing(this.field, options, handlers);
-		const historyHandled = this.handleHistoryNavigation(keyboard, deltaSeconds, modifiers);
+		const historyHandled = this.handleHistoryNavigation(playerInput, deltaSeconds, modifiers);
 		if (historyHandled) {
 			this.resetBlink();
 		}
-		const submit = this.trySubmitCommand(keyboard);
+		const submit = this.trySubmitCommand(playerInput);
 		return submit;
 	}
 
@@ -240,26 +240,23 @@ export class ConsoleMode {
 		}
 	}
 
-	private resolveModifiers(keyboard: KeyboardInput): { ctrl: boolean; alt: boolean; shift: boolean; meta: boolean } {
-		const ctrl = keyboard.getButtonState('ControlLeft').pressed === true || keyboard.getButtonState('ControlRight').pressed === true;
-		const alt = keyboard.getButtonState('AltLeft').pressed === true || keyboard.getButtonState('AltRight').pressed === true;
-		const shift = keyboard.getButtonState('ShiftLeft').pressed === true || keyboard.getButtonState('ShiftRight').pressed === true;
-		const meta = keyboard.getButtonState('MetaLeft').pressed === true || keyboard.getButtonState('MetaRight').pressed === true;
-		return { ctrl, alt, shift, meta };
+	private resolveModifiers(input: PlayerInput): { ctrl: boolean; alt: boolean; shift: boolean; meta: boolean } {
+		return input.getModifiersState();
 	}
 
-	private createInlineHandlers(keyboard: KeyboardInput): InlineFieldEditingHandlers {
+	private createInlineHandlers(playerInput: PlayerInput): InlineFieldEditingHandlers {
+		const resolveState = (code: string) => playerInput.getButtonState(code, 'keyboard');
 		return {
-			isKeyJustPressed: (code: string) => this.keyGuards.accept(code, keyboard.getButtonState(code)),
-			isKeyTyped: (code: string) => this.keyGuards.accept(code, keyboard.getButtonState(code)),
+			isKeyJustPressed: (code: string) => this.keyGuards.accept(code, resolveState(code)),
+			isKeyTyped: (code: string) => this.keyGuards.accept(code, resolveState(code)),
 			shouldFireRepeat: (code: string, deltaSeconds: number) => {
 				if (code === 'ArrowUp' || code === 'ArrowDown') {
 					this.keyGuards.release(code);
 					return false;
 				}
-				return this.editingRepeat.shouldRepeat(code, keyboard, deltaSeconds, this.keyGuards);
+				return this.editingRepeat.shouldRepeat(code, resolveState, deltaSeconds, this.keyGuards);
 			},
-			consumeKey: (code: string) => keyboard.consumeButton(code),
+			consumeKey: (code: string) => playerInput.consumeButton(code, 'keyboard'),
 			readClipboard: () => this.clipboard,
 			writeClipboard: (payload: string) => {
 				this.clipboard = payload;
@@ -269,21 +266,22 @@ export class ConsoleMode {
 		};
 	}
 
-	private handleHistoryNavigation(keyboard: KeyboardInput, deltaSeconds: number, modifiers: { ctrl: boolean; alt: boolean; meta: boolean }): boolean {
+	private handleHistoryNavigation(playerInput: PlayerInput, deltaSeconds: number, modifiers: { ctrl: boolean; alt: boolean; meta: boolean }): boolean {
 		if (modifiers.ctrl || modifiers.alt || modifiers.meta) {
 			return false;
 		}
 		if (this.history.length === 0) {
 			return false;
 		}
-		if (this.historyRepeat.shouldRepeat('ArrowUp', keyboard, deltaSeconds, this.keyGuards)) {
+		const resolveState = (code: string) => playerInput.getButtonState(code, 'keyboard');
+		if (this.historyRepeat.shouldRepeat('ArrowUp', resolveState, deltaSeconds, this.keyGuards)) {
 			this.recallHistory(-1);
-			keyboard.consumeButton('ArrowUp');
+			playerInput.consumeButton('ArrowUp', 'keyboard');
 			return true;
 		}
-		if (this.historyRepeat.shouldRepeat('ArrowDown', keyboard, deltaSeconds, this.keyGuards)) {
+		if (this.historyRepeat.shouldRepeat('ArrowDown', resolveState, deltaSeconds, this.keyGuards)) {
 			this.recallHistory(1);
-			keyboard.consumeButton('ArrowDown');
+			playerInput.consumeButton('ArrowDown', 'keyboard');
 			return true;
 		}
 		return false;
@@ -305,15 +303,14 @@ export class ConsoleMode {
 		this.resetInputField(entry);
 	}
 
-	private trySubmitCommand(keyboard: KeyboardInput): string | null {
-		const enterState = keyboard.getButtonState('Enter');
-		const numpadEnterState = keyboard.getButtonState('NumpadEnter');
+	private trySubmitCommand(playerInput: PlayerInput): string | null {
+		const enterState = playerInput.getButtonState('Enter', 'keyboard');
+		const numpadEnterState = playerInput.getButtonState('NumpadEnter', 'keyboard');
 		const enterPressed = this.keyGuards.accept('Enter', enterState) || this.keyGuards.accept('NumpadEnter', numpadEnterState);
 		if (!enterPressed) {
 			return null;
 		}
-		keyboard.consumeButton('Enter');
-		keyboard.consumeButton('NumpadEnter');
+		playerInput.consumeButtons(['Enter', 'NumpadEnter'], 'keyboard');
 		const command = this.field.text.trimEnd();
 		if (command.length === 0) {
 			this.resetBlink();
