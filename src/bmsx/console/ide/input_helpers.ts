@@ -17,13 +17,18 @@ export function getKeyboardButtonState(playerIndex: number, code: string): Butto
 	return getIdeKeyState(code, playerIndex);
 }
 
+function recordKeyState(code: string, state: ButtonState): void {
+	const pressId = state.pressId ?? null;
+	keyPressRecords.set(code, { lastPressId: pressId });
+}
+
 export function shouldAcceptKeyPress(code: string, state: ButtonState): boolean {
-	if (state.consumed === true) {
+	if (state.pressed !== true) {
 		keyPressRecords.delete(code);
 		return false;
 	}
-	if (state.pressed !== true) {
-		keyPressRecords.delete(code);
+	if (state.consumed === true) {
+		recordKeyState(code, state);
 		return false;
 	}
 	const pressId = state.pressId ?? null;
@@ -32,7 +37,7 @@ export function shouldAcceptKeyPress(code: string, state: ButtonState): boolean 
 		if (existing && existing.lastPressId === pressId) {
 			return false;
 		}
-		keyPressRecords.set(code, { lastPressId: pressId });
+		recordKeyState(code, state);
 		return true;
 	}
 	if (state.justpressed !== true) {
@@ -41,7 +46,7 @@ export function shouldAcceptKeyPress(code: string, state: ButtonState): boolean 
 	if (existing && existing.lastPressId === null) {
 		return false;
 	}
-	keyPressRecords.set(code, { lastPressId: null });
+	recordKeyState(code, state);
 	return true;
 }
 
