@@ -880,9 +880,6 @@ export function handleDebugMouseMove(e: DebugPointerEvent): void {
 			draggedObj = null; // Stop dragging object when shift is released
 		}
 	}
-	// Vraag een enkele veilige render aan via de main loop (alleen als paused).
-	// Geen directe draw -> minder batch/particle side-effects bij snel hoveren.
-	$.requestPausedFrame();
 }
 
 function highlight_object(o: WorldObject | null) {

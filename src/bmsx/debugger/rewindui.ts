@@ -50,7 +50,6 @@ export function showRewindDialog() {
 		const idx = Math.round(percent * (frames.length - 1));
 		if ($.jumpToFrame(idx)) {
 			updateInfo();
-			$.requestPausedFrame();
 		}
 	}
 	barContainer.addEventListener('mousedown', e => {

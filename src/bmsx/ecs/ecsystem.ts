@@ -33,6 +33,7 @@ export abstract class ECSystem {
 	readonly group: TickGroup;
 	readonly priority: number;
 	public __ecsId: string; // Optional identifier for debugging/stats (defaults to class name)
+	public runsWhileGamePaused = false;
 	constructor(group: TickGroup, priority: number = 0) { this.group = group; this.priority = priority; }
 	abstract update(model: World): void;
 }
@@ -98,6 +99,19 @@ export class ECSystemManager {
 				const id = s.__ecsId ?? s.constructor.name;
 				this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
 			}
+		}
+	}
+
+	/** Runs only systems explicitly flagged to run while the game is paused. */
+	runPaused(model: World): void {
+		this.beginFrame();
+		for (const s of this._systems) {
+			if (!s.runsWhileGamePaused) continue;
+			const t0 = $.platform.clock.now();
+			s.update(model);
+			const t1 = $.platform.clock.now();
+			const id = s.__ecsId ?? s.constructor.name;
+			this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
 		}
 	}
 }

@@ -24,16 +24,16 @@ type JumpStateData = { direction: Direction };
 export type AttackType = FighterAttackType;
 
 type FighterAbilityPayloadTable = {
-	[typeof FIGHTER_CORE_ABILITY_IDS.walk]: { direction: Direction };
-	[typeof FIGHTER_CORE_ABILITY_IDS.walk_stop]: undefined;
-	[typeof FIGHTER_CORE_ABILITY_IDS.duck_hold]: undefined;
-	[typeof FIGHTER_CORE_ABILITY_IDS.duck_release]: undefined;
-	[typeof FIGHTER_CORE_ABILITY_IDS.jump]: { direction?: Direction };
-	[typeof FIGHTER_ATTACK_ABILITY_IDS.punch]: { attackType: 'punch' };
-	[typeof FIGHTER_ATTACK_ABILITY_IDS.highkick]: { attackType: 'highkick' };
-	[typeof FIGHTER_ATTACK_ABILITY_IDS.lowkick]: { attackType: 'lowkick' };
-	[typeof FIGHTER_ATTACK_ABILITY_IDS.duckkick]: { attackType: 'duckkick' };
-	[typeof FIGHTER_ATTACK_ABILITY_IDS.flyingkick]: { attackType: 'flyingkick' };
+	[FIGHTER_CORE_ABILITY_IDS.walk]: { direction: Direction };
+	[FIGHTER_CORE_ABILITY_IDS.walk_stop]: undefined;
+	[FIGHTER_CORE_ABILITY_IDS.duck_hold]: undefined;
+	[FIGHTER_CORE_ABILITY_IDS.duck_release]: undefined;
+	[FIGHTER_CORE_ABILITY_IDS.jump]: { direction?: Direction };
+	[FIGHTER_ATTACK_ABILITY_IDS.punch]: { attackType: 'punch' };
+	[FIGHTER_ATTACK_ABILITY_IDS.highkick]: { attackType: 'highkick' };
+	[FIGHTER_ATTACK_ABILITY_IDS.lowkick]: { attackType: 'lowkick' };
+	[FIGHTER_ATTACK_ABILITY_IDS.duckkick]: { attackType: 'duckkick' };
+	[FIGHTER_ATTACK_ABILITY_IDS.flyingkick]: { attackType: 'flyingkick' };
 };
 
 type AttackAbilityPayloadMap = {

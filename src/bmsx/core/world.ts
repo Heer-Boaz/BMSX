@@ -562,6 +562,15 @@ export class World implements Stateful, RegisterablePersistent {
 		return out;
 	}
 
+	public runTickGroups(groups: ReadonlyArray<TickGroup>): void {
+		this.systems.beginFrame();
+		for (const group of groups) {
+			this._currentPhase = group;
+			this.systems.updatePhase(this, group);
+		}
+		this._currentPhase = null;
+	}
+
 	public raycast(origin: vec2arr, dir: vec2arr, maxDist: number) {
 		Collision2DSystem.rebuildIndex(this);
 		const hits = Collision2DSystem.raycastWorld(this, origin, dir, maxDist);

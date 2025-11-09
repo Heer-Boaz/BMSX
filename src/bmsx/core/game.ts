@@ -24,6 +24,7 @@ import { Registry } from "./registry";
 import { GateGroup, taskGate } from './taskgate';
 // Choose and apply an ECS pipeline here (gameplay/headless)
 import { DefaultECSPipelineRegistry } from "../ecs/pipeline";
+import { TickGroup } from '../ecs/ecsystem';
 import { registerBuiltinECS } from "../ecs/builtin_pipeline";
 import type { NodeSpec } from "../ecs/pipeline";
 import { collectEcsPipelineExtensions } from "../ecs/extensions";
@@ -150,21 +151,10 @@ export class Game {
 	 */
 	public debug_runSingleFrameAndPause!: boolean;
 
-	// When paused, this flag requests a single safe render frame via the main loop
-	private _pausedOneShotRenderPending: boolean = false;
 	private removeWillExit: (() => void) | null = null;
 	private _gameplayPipelineSpec: NodeSpec[] = [];
 	private _pipelineOverride: NodeSpec[] | null = null;
 	private initialWorldConfigSnapshot: WorldConfiguration | null = null;
-
-	/**
-	 * Request one single render while the game is paused. The render is executed
-	 * from the main run() loop so drawgame() is called in the normal gated path.
-	 * Multiple calls within the same frame are coalesced.
-	 */
-	public requestPausedFrame(): void {
-		if (this._paused) this._pausedOneShotRenderPending = true;
-	}
 
 	public get rompack(): RomPack { return $rompack!; }
 
@@ -545,7 +535,6 @@ export class Game {
 			this.wasupdated = true;
 			renderGate.end(gateToken);
 			runGate.end(runToken);
-			this.requestPausedFrame();
 		}
 	}
 
@@ -627,10 +616,10 @@ export class Game {
 
 		if (this._paused) {
 			this.accumulatedTime = 0;
-			if (this._pausedOneShotRenderPending) {
-				this._pausedOneShotRenderPending = false;
-				this.view.drawgame();
-			}
+			this.world.runTickGroups([TickGroup.Animation, TickGroup.Presentation, TickGroup.EventFlush]);
+			const consoleRuntime = BmsxConsoleRuntime.instance;
+			consoleRuntime?.renderPausedFrame();
+			this.view.drawgame();
 			return;
 		}
 
@@ -764,7 +753,6 @@ export class Game {
 			this.wasupdated = true;
 			renderGate.end(gateToken);
 			runGate.end(runToken);
-			this.requestPausedFrame();
 		}
 	}
 

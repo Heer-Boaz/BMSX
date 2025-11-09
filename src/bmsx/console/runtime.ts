@@ -33,6 +33,7 @@ import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 import type { LuaComponentHandlerMap } from '../component/lua_component';
 import { defineAbility, abilityActions } from '../gas/ability_registry';
 import type { GameplayAbilityDefinition } from '../gas/gameplay_ability';
+import type { AbilityId } from '../gas/gastypes';
 import { deepClone } from '../utils/utils';
 import { WorldObject } from '../core/object/worldobject';
 import { Reviver } from '../serializer/gameserializer';
@@ -391,8 +392,8 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly luaServiceDefinitionsByAsset: Map<string, Set<string>> = new Map();
 	private readonly luaServicesByAsset: Map<string, Set<string>> = new Map();
 	private readonly luaGenericAssetsExecuted: Set<string> = new Set();
-	private readonly abilityDefinitions: Map<string, GameplayAbilityDefinition> = new Map();
-	private readonly abilityActionIds: Map<string, string[]> = new Map();
+	private readonly abilityDefinitions: Map<AbilityId, GameplayAbilityDefinition> = new Map();
+	private readonly abilityActionIds: Map<AbilityId, string[]> = new Map();
 	private readonly worldObjectFsmAttachments: WeakMap<WorldObject, Set<string>> = new WeakMap();
 	private readonly worldObjectBtAttachments: WeakMap<WorldObject, Set<string>> = new WeakMap();
 	private readonly worldObjectAbilityAttachments: WeakMap<WorldObject, Set<string>> = new WeakMap();
@@ -771,11 +772,6 @@ export class BmsxConsoleRuntime extends Service {
 		return error instanceof Error ? error.message : String(error);
 	}
 
-	private shouldRequestPausedFrame(): boolean {
-		const editorActive = this.editor?.isActive() === true;
-		return editorActive || this.consoleMode.isActive();
-	}
-
 	private endFrameAndFlush(editorActive: boolean): void {
 		this.api.end_frame();
 		this.overlayRenderedThisFrame = editorActive;
@@ -1144,6 +1140,15 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
+	public renderPausedFrame(): void {
+		if (!this.tickEnabled) {
+			return;
+		}
+		this.runConsoleModePhase();
+		this.runEditorModePhase();
+		this.runDrawPhase();
+	}
+
 	public flushDeferredState(): void {
 		// No-op; overlay state is applied immediately.
 	}
@@ -1151,9 +1156,6 @@ export class BmsxConsoleRuntime extends Service {
 	private finalizeFrame(editorActive: boolean): void {
 		this.endFrameAndFlush(editorActive);
 		this.frameCounter += 1;
-		if ($.paused && this.shouldRequestPausedFrame()) {
-			$.requestPausedFrame();
-		}
 	}
 
 	private computeFrameDeltaSeconds(): number {
@@ -5351,7 +5353,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (typeof abilityIdRaw !== 'string' || abilityIdRaw.trim().length === 0) {
 				continue;
 			}
-			const abilityId = abilityIdRaw.trim();
+			const abilityId = abilityIdRaw.trim() as AbilityId;
 			const key = abilityId.toLowerCase();
 			if (attached.has(key)) {
 				continue;
@@ -5392,7 +5394,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private registerAbilityAction(abilityId: string, slot: string, handler: LuaHandlerFn): string {
+	private registerAbilityAction(abilityId: AbilityId, slot: string, handler: LuaHandlerFn): string {
 		const actionId = `lua.ability.${abilityId}.${slot}`;
 		abilityActions.register(actionId, (ctx, params) => {
 			const abilityCtx = ctx as { intentPayload?: unknown; payload?: StructuredEventPayload };
@@ -5413,7 +5415,7 @@ export class BmsxConsoleRuntime extends Service {
 		return actionId;
 	}
 
-	private disposeAbilityHandlers(abilityId: string): void {
+	private disposeAbilityHandlers(abilityId: AbilityId): void {
 		const actions = this.abilityActionIds.get(abilityId);
 		if (actions) {
 			for (const actionId of actions) {
@@ -5424,7 +5426,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.abilityDefinitions.delete(abilityId);
 	}
 
-	private ensureAbilityHandler(abilityId: string, slot: string, candidate: LuaHandlerFn | LuaValue | undefined): LuaHandlerFn | undefined {
+	private ensureAbilityHandler(abilityId: AbilityId, slot: string, candidate: LuaHandlerFn | LuaValue | undefined): LuaHandlerFn | undefined {
 		if (!candidate) {
 			return undefined;
 		}
@@ -5444,7 +5446,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!descriptor || typeof descriptor !== 'object') {
 			throw new Error('[BmsxConsoleRuntime] define_ability requires a descriptor table.');
 		}
-		const abilityId = this.normalizeLuaIdentifier((descriptor as { id?: unknown }).id, 'define_ability');
+		const abilityId = this.normalizeLuaIdentifier<AbilityId>((descriptor as { id?: unknown }).id, 'define_ability');
 		this.disposeAbilityHandlers(abilityId);
 		const activationFn = this.ensureAbilityHandler(abilityId, 'activation', (descriptor as LuaAbilityRegistrationDescriptor).activation);
 		if (!activationFn || typeof activationFn !== 'function' || !isLuaHandlerFn(activationFn)) {
@@ -5562,7 +5564,7 @@ export class BmsxConsoleRuntime extends Service {
 		return this.registerAbilityDefinition(descriptor);
 	}
 
-	private refreshAbilityGrants(abilityId: string, definition: GameplayAbilityDefinition): void {
+	private refreshAbilityGrants(abilityId: AbilityId, definition: GameplayAbilityDefinition): void {
 		const world = $.world;
 		if (!world) {
 			return;
@@ -5577,7 +5579,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public getAbilityDefinition(id: string): GameplayAbilityDefinition | undefined {
-		return this.abilityDefinitions.get(id);
+		return this.abilityDefinitions.get(id as AbilityId);
 	}
 
 	private resolveWorldObjectConstructor(ref: string | null | undefined): new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject {
@@ -5615,11 +5617,11 @@ export class BmsxConsoleRuntime extends Service {
 		return undefined;
 	}
 
-	private normalizeLuaIdentifier(value: unknown, context: string): string {
+	private normalizeLuaIdentifier<T extends string = string>(value: unknown, context: string): T {
 		if (typeof value === 'string') {
 			const trimmed = value.trim();
 			if (trimmed.length > 0) {
-				return trimmed;
+				return trimmed as T;
 			}
 		}
 		throw new Error(`[BmsxConsoleRuntime] ${context} requires a non-empty id.`);

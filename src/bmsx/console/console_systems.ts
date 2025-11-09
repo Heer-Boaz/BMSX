@@ -12,6 +12,7 @@ export class BmsxConsoleModeSystem extends BaseConsoleSystem {
 	constructor(priority = 5) {
 		super(TickGroup.Input, priority);
 		this.__ecsId = 'bmsxConsole.mode';
+		this.runsWhileGamePaused = true;
 	}
 
 	public update(_world: World): void {
@@ -24,6 +25,7 @@ export class BmsxConsoleEditorSystem extends BaseConsoleSystem {
 	constructor(priority = 7) {
 		super(TickGroup.Input, priority);
 		this.__ecsId = 'bmsxConsole.editor';
+		this.runsWhileGamePaused = true;
 	}
 
 	public update(_world: World): void {
@@ -36,6 +38,7 @@ export class BmsxConsoleUpdateSystem extends BaseConsoleSystem {
 	constructor(priority = 10) {
 		super(TickGroup.Input, priority);
 		this.__ecsId = 'bmsxConsole.update';
+		this.runsWhileGamePaused = true;
 	}
 
 	public update(_world: World): void {
@@ -48,6 +51,7 @@ export class BmsxConsoleDrawSystem extends BaseConsoleSystem {
 	constructor(priority = 100) {
 		super(TickGroup.Presentation, priority);
 		this.__ecsId = 'bmsxConsole.draw';
+		this.runsWhileGamePaused = true;
 	}
 
 	public update(_world: World): void {
