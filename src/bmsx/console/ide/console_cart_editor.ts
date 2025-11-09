@@ -233,7 +233,7 @@ export function computeMaximumScrollColumn(): number {
 }
 
 export function resetKeyPressGuards(): void {
-	resetKeyPressRecords();
+	resetKeyPressRecords(ide_state.playerIndex);
 }
 
 // Text insertion, deletion, and editing functions moved to text_editing_and_selection.ts
@@ -2167,7 +2167,12 @@ export function handleToggleRequest(keyboard: KeyboardInput): boolean {
 	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
 	const selectState = playerInput ? playerInput.getButtonState(selectButton, 'gamepad') : null;
 	const startState = playerInput ? playerInput.getButtonState(startButton, 'gamepad') : null;
-	const keyboardPressed = toggleKeyState ? toggleKeyState.pressed === true : false;
+	const shiftDown = isModifierPressedGlobal(ide_state.playerIndex, 'ShiftLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ShiftRight');
+	const ctrlDown = isModifierPressedGlobal(ide_state.playerIndex, 'ControlLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ControlRight');
+	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
+	const metaDown = isModifierPressedGlobal(ide_state.playerIndex, 'MetaLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'MetaRight');
+	const modifiersActive = shiftDown || ctrlDown || altDown || metaDown;
+	const keyboardPressed = toggleKeyState ? (toggleKeyState.pressed === true && !modifiersActive) : false;
 	const selectPressed = selectState ? selectState.pressed === true : false;
 	const startPressed = startState ? startState.pressed === true : false;
 	const gamepadPressed = selectPressed && startPressed;
@@ -2178,7 +2183,9 @@ export function handleToggleRequest(keyboard: KeyboardInput): boolean {
 	if (ide_state.toggleInputLatch) {
 		return false;
 	}
-	const keyboardAccepted = toggleKeyState ? shouldAcceptKeyPressGlobal(EDITOR_TOGGLE_KEY, toggleKeyState) : false;
+	const keyboardAccepted = keyboardPressed && toggleKeyState
+		? shouldAcceptKeyPressGlobal(EDITOR_TOGGLE_KEY, toggleKeyState)
+		: false;
 	let gamepadAccepted = false;
 	if (gamepadPressed) {
 		const selectAccepted = selectState ? shouldAcceptKeyPressGlobal(selectButton, selectState) : false;

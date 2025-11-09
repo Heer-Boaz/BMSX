@@ -51,11 +51,15 @@ const OUTPUT_COLORS: Record<ConsoleOutputKind, number> = {
 	system: 11,
 };
 
+type KeyPressAcceptOptions = {
+	ignoreConsumed?: boolean;
+};
+
 class KeyPressLatch {
 	private readonly records = new Map<string, number | null>();
 
-	public accept(code: string, state: ButtonState | undefined | null): boolean {
-		if (!state || state.pressed !== true) {
+	public accept(code: string, state: ButtonState | undefined | null, options?: KeyPressAcceptOptions): boolean {
+		if (!state || state.pressed !== true || (state.consumed === true && options?.ignoreConsumed !== true)) {
 			this.records.delete(code);
 			return false;
 		}
@@ -99,7 +103,7 @@ class KeyRepeatController {
 			remaining = INITIAL_REPEAT_DELAY;
 			this.cooldowns.set(code, remaining);
 		}
-		if (guards.accept(code, state)) {
+		if (guards.accept(code, state, { ignoreConsumed: true })) {
 			this.cooldowns.set(code, INITIAL_REPEAT_DELAY);
 			return true;
 		}
