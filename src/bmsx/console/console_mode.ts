@@ -4,7 +4,7 @@ import { Msx1Colors } from '../systems/msx';
 import { ConsoleEditorFont } from './editor_font';
 import type { ConsoleFontVariant } from './font';
 import type { KeyboardInput } from '../input/keyboardinput';
-import type { ButtonState } from '../input/inputtypes';
+import { KeyPressLatch, KeyRepeatController } from '../input/keyrepeat';
 import { wrapRuntimeErrorLine } from './ide/runtime_error_utils';
 import {
 	createInlineTextField,
@@ -51,76 +51,6 @@ const OUTPUT_COLORS: Record<ConsoleOutputKind, number> = {
 	system: 11,
 };
 
-type KeyPressAcceptOptions = {
-	ignoreConsumed?: boolean;
-};
-
-class KeyPressLatch {
-	private readonly records = new Map<string, number | null>();
-
-	public accept(code: string, state: ButtonState | undefined | null, options?: KeyPressAcceptOptions): boolean {
-		if (!state || state.pressed !== true || (state.consumed === true && options?.ignoreConsumed !== true)) {
-			this.records.delete(code);
-			return false;
-		}
-		const pressId = typeof state.pressId === 'number' ? state.pressId : null;
-		if (pressId !== null) {
-			const existing = this.records.get(code);
-			if (existing === pressId) {
-				return false;
-			}
-			this.records.set(code, pressId);
-			return true;
-		}
-		if (state.justpressed !== true) {
-			return false;
-		}
-		this.records.set(code, null);
-		return true;
-	}
-
-	public release(code: string): void {
-		this.records.delete(code);
-	}
-
-	public reset(): void {
-		this.records.clear();
-	}
-}
-
-class KeyRepeatController {
-	private readonly cooldowns = new Map<string, number>();
-
-	public shouldRepeat(code: string, keyboard: KeyboardInput, deltaSeconds: number, guards: KeyPressLatch): boolean {
-		const state = keyboard.getButtonState(code);
-		if (!state || state.pressed !== true) {
-			this.cooldowns.delete(code);
-			guards.release(code);
-			return false;
-		}
-		let remaining = this.cooldowns.get(code);
-		if (remaining === undefined) {
-			remaining = INITIAL_REPEAT_DELAY;
-			this.cooldowns.set(code, remaining);
-		}
-		if (guards.accept(code, state, { ignoreConsumed: true })) {
-			this.cooldowns.set(code, INITIAL_REPEAT_DELAY);
-			return true;
-		}
-		remaining -= deltaSeconds;
-		if (remaining <= 0) {
-			this.cooldowns.set(code, REPEAT_INTERVAL);
-			return true;
-		}
-		this.cooldowns.set(code, remaining);
-		return false;
-	}
-
-	public reset(): void {
-		this.cooldowns.clear();
-	}
-}
-
 function cloneColor(source: color, alphaOverride?: number): color {
 	return {
 		r: source.r,
@@ -149,8 +79,8 @@ export class ConsoleMode {
 	private readonly history: string[] = [];
 	private historyIndex: number | null = null;
 	private readonly keyGuards = new KeyPressLatch();
-	private readonly editingRepeat = new KeyRepeatController();
-	private readonly historyRepeat = new KeyRepeatController();
+	private readonly editingRepeat = new KeyRepeatController(INITIAL_REPEAT_DELAY, REPEAT_INTERVAL);
+	private readonly historyRepeat = new KeyRepeatController(INITIAL_REPEAT_DELAY, REPEAT_INTERVAL);
 	private clipboard: string | null = null;
 	private blinkTimer = 0;
 	private caretVisible = true;

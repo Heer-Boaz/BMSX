@@ -5,28 +5,8 @@ import type { KeyPressRecord } from './types';
 
 const keyPressRecords = new Map<string, KeyPressRecord>();
 
-export function resetKeyPressRecords(playerIndex: number): void {
+export function resetKeyPressRecords(): void {
 	keyPressRecords.clear();
-	if (!Number.isFinite(playerIndex)) {
-		return;
-	}
-	const playerInput = $.input.getPlayerInput(playerIndex);
-	if (!playerInput) {
-		return;
-	}
-	const handler = playerInput.inputHandlers['keyboard'];
-	if (!handler) {
-		return;
-	}
-	const keyboard = handler as KeyboardInput;
-	const stateEntries = Object.entries(keyboard.gamepadButtonStates);
-	for (let i = 0; i < stateEntries.length; i += 1) {
-		const [code, state] = stateEntries[i];
-		if (state?.pressed === true) {
-			const pressId = typeof state.pressId === 'number' ? state.pressId : null;
-			keyPressRecords.set(code, { lastPressId: pressId });
-		}
-	}
 }
 
 export function clearKeyPressRecord(code: string): void {
@@ -42,14 +22,11 @@ export function getKeyboardButtonState(playerIndex: number, code: string): Butto
 }
 
 export function shouldAcceptKeyPress(code: string, state: ButtonState): boolean {
-	if (state.consumed === true) {
-		return false;
-	}
 	if (state.pressed !== true) {
 		keyPressRecords.delete(code);
 		return false;
 	}
-	const pressId = typeof state.pressId === 'number' ? state.pressId : null;
+	const pressId = state.pressId ?? null;
 	const existing = keyPressRecords.get(code);
 	if (pressId !== null) {
 		if (existing && existing.lastPressId === pressId) {

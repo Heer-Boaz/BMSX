@@ -1004,6 +1004,7 @@ export class BmsxConsoleRuntime extends Service {
 		state.haltGame = haltGame;
 		state.deltaForUpdate = haltGame ? 0 : state.deltaSeconds;
 		this.updateOverlayState(state.consoleActive, state.editorActive);
+		Input.instance.setDebugHotkeysPaused(state.consoleActive || state.editorActive);
 	}
 
 	public runConsoleModePhase(): void {

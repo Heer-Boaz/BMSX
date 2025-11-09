@@ -921,18 +921,6 @@ export class Input implements RegisterablePersistent {
 		const keyboardHandler = player.inputHandlers['keyboard'];
 		if (!keyboardHandler) return;
 
-		const togglePause = player.getButtonState('Space', 'keyboard');
-		if (togglePause?.justpressed) {
-			if (!$.paused) {
-				$.paused = true;
-				$.debug_runSingleFrameAndPause = false;
-			} else {
-				$.paused = false;
-				$.debug_runSingleFrameAndPause = player.getButtonState('ShiftLeft', 'keyboard')?.pressed ?? false;
-			}
-			keyboardHandler.consumeButton('Space');
-		}
-
 		const fogToggle = player.getButtonState('KeyF', 'keyboard');
 		if (fogToggle?.justpressed) {
 			const atmosphere = $.view?.atmosphere;

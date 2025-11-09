@@ -19,6 +19,7 @@ export class KeyboardInput implements InputHandler {
 	public keyStates: KeyOrButtonId2ButtonState = {};
 
 	public gamepadButtonStates: KeyOrButtonId2ButtonState = {};
+	private readonly consumedPressIds = new Map<string, number | null>();
 
 	public get supportsVibrationEffect(): boolean {
 		return false; // Keyboard does not support vibration effects
@@ -49,10 +50,19 @@ export class KeyboardInput implements InputHandler {
 		if (!except) {
 			this.keyStates = {};
 			this.gamepadButtonStates = {};
+			this.consumedPressIds.clear();
 		}
 		else {
 			resetObject(this.keyStates, except);
 			resetObject(this.gamepadButtonStates, except);
+			if (this.consumedPressIds.size > 0) {
+				const keep = new Set(except);
+				for (const key of this.consumedPressIds.keys()) {
+					if (!keep.has(key)) {
+						this.consumedPressIds.delete(key);
+					}
+				}
+			}
 		}
 	}
 
@@ -65,11 +75,21 @@ export class KeyboardInput implements InputHandler {
 	public consumeButton(key: string): void {
 		const state = this.gamepadButtonStates[key] ?? (this.gamepadButtonStates[key] = makeButtonState());
 		state.consumed = true;
+		if (state.pressed === true) {
+			this.consumedPressIds.set(key, state.pressId ?? null);
+		} else {
+			this.consumedPressIds.delete(key);
+		}
 		// Use the constant to map keyboard keys to gamepad buttons
 		const keyMappedToCorrespondingGamepadButtonId = Input.KEYBOARDKEY2GAMEPADBUTTON[key as keyof typeof Input.KEYBOARDKEY2GAMEPADBUTTON];
 		if (keyMappedToCorrespondingGamepadButtonId) {
 			const mappedState = this.gamepadButtonStates[keyMappedToCorrespondingGamepadButtonId] ?? (this.gamepadButtonStates[keyMappedToCorrespondingGamepadButtonId] = makeButtonState());
 			mappedState.consumed = true;
+			if (mappedState.pressed === true) {
+				this.consumedPressIds.set(keyMappedToCorrespondingGamepadButtonId, mappedState.pressId ?? null);
+			} else {
+				this.consumedPressIds.delete(keyMappedToCorrespondingGamepadButtonId);
+			}
 		}
 	}
 
@@ -82,9 +102,33 @@ export class KeyboardInput implements InputHandler {
 	 */
 	public getButtonState(key: string): ButtonState {
 		if (key === null) return makeButtonState();
-		return getPressedState(this.gamepadButtonStates, key);
+		const state = getPressedState(this.gamepadButtonStates, key);
+		return this.applyConsumptionMask(key, state);
 		// const convertedKey = Input.KEYBOARDKEY2GAMEPADBUTTON[key] ? Input.KEYBOARDKEY2GAMEPADBUTTON[key] : key;
 		// return getPressedState(this.gamepadButtonStates, convertedKey);
+	}
+
+	private applyConsumptionMask(code: string, state: ButtonState): ButtonState {
+		if (state.pressed !== true) {
+			this.consumedPressIds.delete(code);
+			return state;
+		}
+		const consumedId = this.consumedPressIds.get(code);
+		if (consumedId === undefined) {
+			return state;
+		}
+		const pressId = state.pressId ?? null;
+		if (consumedId !== null && pressId !== consumedId) {
+			this.consumedPressIds.delete(code);
+			return state;
+		}
+		return {
+			...state,
+			justpressed: false,
+			justreleased: false,
+			pressId: null,
+			consumed: true,
+		};
 	}
 
 	/**
@@ -101,13 +145,11 @@ export class KeyboardInput implements InputHandler {
 			const isDown = this.keyStates[buttonId].pressed === true;
 			const wasDown = prev.pressed === true;
 
-			let pressId = typeof prev.pressId === 'number' ? prev.pressId : null;
+			let pressId = prev.pressId ?? null;
 			if (isDown && !pressId) {
 				pressId = this.nextPressId++;
 			}
-			const pressedAt = wasDown
-				? (typeof prev.pressedAtMs === 'number' ? prev.pressedAtMs : prev.timestamp ?? now)
-				: now;
+			const pressedAt = wasDown ? (prev.pressedAtMs ?? prev.timestamp ?? now) : now;
 
 			let state: ButtonState;
 			if (isDown) {
@@ -127,6 +169,7 @@ export class KeyboardInput implements InputHandler {
 					consumed: false,
 				};
 			} else {
+				this.consumedPressIds.delete(buttonId);
 				state = {
 					...prev,
 					pressed: false,

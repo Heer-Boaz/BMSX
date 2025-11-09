@@ -232,13 +232,6 @@ export function computeMaximumScrollColumn(): number {
 	return limit;
 }
 
-export function resetKeyPressGuards(): void {
-	resetKeyPressRecords(ide_state.playerIndex);
-}
-
-// Text insertion, deletion, and editing functions moved to text_editing_and_selection.ts
-// backspace(), deleteForward(), etc. are now imported and re-exported from the dedicated module
-
 export function deleteWordBackward(): void {
 	if (!hasSelection() && ide_state.cursorColumn === 0 && ide_state.cursorRow === 0) {
 		return;
@@ -922,7 +915,7 @@ export function resetInputFocusState(keyboard: KeyboardInput | null): void {
 		keyboard.reset();
 	}
 	ide_state.input.resetRepeats();
-	resetKeyPressGuards();
+	resetKeyPressRecords();
 	ide_state.repeatState.clear();
 	ide_state.toggleInputLatch = false;
 }
@@ -2065,7 +2058,7 @@ export function restoreState(state: ConsoleEditorSerializedState): void { // NOT
 	clearGotoHoverHighlight();
 	ide_state.cursorRevealSuspended = false;
 	ide_state.repeatState.clear();
-	resetKeyPressGuards();
+	resetKeyPressRecords();
 	breakUndoSequence();
 	ide_state.saveGeneration = Number.isFinite(state.saveGeneration) ? Math.max(0, Math.floor(state.saveGeneration)) : 0;
 	ide_state.appliedGeneration = Number.isFinite(state.appliedGeneration) ? Math.max(0, Math.floor(state.appliedGeneration)) : 0;
@@ -2103,7 +2096,7 @@ export function shutdown(): void {
 	ide_state.windowFocused = true;
 	ide_state.pendingWindowFocused = true;
 	ide_state.repeatState.clear();
-	resetKeyPressGuards();
+	resetKeyPressRecords();
 	ide_state.pointerSelecting = false;
 	ide_state.pointerPrimaryWasPressed = false;
 	ide_state.pointerAuxWasPressed = false;
@@ -2167,12 +2160,7 @@ export function handleToggleRequest(keyboard: KeyboardInput): boolean {
 	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
 	const selectState = playerInput ? playerInput.getButtonState(selectButton, 'gamepad') : null;
 	const startState = playerInput ? playerInput.getButtonState(startButton, 'gamepad') : null;
-	const shiftDown = isModifierPressedGlobal(ide_state.playerIndex, 'ShiftLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ShiftRight');
-	const ctrlDown = isModifierPressedGlobal(ide_state.playerIndex, 'ControlLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ControlRight');
-	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
-	const metaDown = isModifierPressedGlobal(ide_state.playerIndex, 'MetaLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'MetaRight');
-	const modifiersActive = shiftDown || ctrlDown || altDown || metaDown;
-	const keyboardPressed = toggleKeyState ? (toggleKeyState.pressed === true && !modifiersActive) : false;
+	const keyboardPressed = toggleKeyState ? toggleKeyState.pressed === true : false;
 	const selectPressed = selectState ? selectState.pressed === true : false;
 	const startPressed = startState ? startState.pressed === true : false;
 	const gamepadPressed = selectPressed && startPressed;
@@ -2183,9 +2171,7 @@ export function handleToggleRequest(keyboard: KeyboardInput): boolean {
 	if (ide_state.toggleInputLatch) {
 		return false;
 	}
-	const keyboardAccepted = keyboardPressed && toggleKeyState
-		? shouldAcceptKeyPressGlobal(EDITOR_TOGGLE_KEY, toggleKeyState)
-		: false;
+	const keyboardAccepted = toggleKeyState ? shouldAcceptKeyPressGlobal(EDITOR_TOGGLE_KEY, toggleKeyState) : false;
 	let gamepadAccepted = false;
 	if (gamepadPressed) {
 		const selectAccepted = selectState ? shouldAcceptKeyPressGlobal(selectButton, selectState) : false;
@@ -2280,7 +2266,7 @@ export function activate(): void {
 	ide_state.pointerPrimaryWasPressed = false;
 	ide_state.cursorRevealSuspended = false;
 	ide_state.repeatState.clear();
-	resetKeyPressGuards();
+	resetKeyPressRecords();
 	updateDesiredColumn();
 	ide_state.selectionAnchor = null;
 	ide_state.undoStack = [];
@@ -2362,7 +2348,7 @@ export function deactivate(): void {
 	}
 	ide_state.completion.closeSession();
 	ide_state.repeatState.clear();
-	resetKeyPressGuards();
+	resetKeyPressRecords();
 	ide_state.input.applyOverrides(false, captureKeys);
 	$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 	ide_state.selectionAnchor = null;
