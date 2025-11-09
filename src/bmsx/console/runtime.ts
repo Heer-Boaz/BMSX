@@ -201,6 +201,20 @@ type LuaRequireModuleRecord = {
 	path: string | null;
 };
 
+type ConsoleFrameState = {
+	deltaSeconds: number;
+	deltaForUpdate: number;
+	editorActive: boolean;
+	consoleActive: boolean;
+	haltGame: boolean;
+	debugPaused: boolean;
+	updateExecuted: boolean;
+	luaFaulted: boolean;
+	frameBegan: boolean;
+	consoleEvaluated: boolean;
+	editorEvaluated: boolean;
+};
+
 
 type LuaAbilityRegistrationDescriptor = {
 	id: string;
@@ -350,9 +364,9 @@ export class BmsxConsoleRuntime extends Service {
 	private luaSnapshotLoad: LuaFunctionValue | null = null;
 	private luaRuntimeFailed = false;
 	private lastFrameTimestampMs = 0;
-	private readonly presentationFrameHandler: (event_name: string, emitter: Identifiable, payload?: EventPayload) => void;
-	private frameListenerAttached = false;
 	private editorPipelineActive = false;
+	private pendingEditorPipelineState: boolean | null = null;
+	private currentFrameState: ConsoleFrameState | null = null;
 	private readonly luaFailurePolicy: LuaPersistenceFailurePolicy;
 	private pendingLuaWarnings: string[] = [];
 	private nativeMemberCompletionCache: WeakMap<object, { dot?: ConsoleLuaMemberCompletion[]; colon?: ConsoleLuaMemberCompletion[] }> = new WeakMap();
@@ -374,10 +388,10 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly worldObjectDefinitions: Map<string, LuaWorldObjectDefinitionRecord> = new Map();
 	private readonly worldObjectDefinitionsByClassRef: Map<string, LuaWorldObjectDefinitionRecord> = new Map();
 	private readonly luaWorldObjectsByAsset: Map<string, Set<string>> = new Map();
-private readonly serviceDefinitions: Map<string, LuaServiceDefinitionRecord> = new Map();
-private readonly luaServiceDefinitionsByAsset: Map<string, Set<string>> = new Map();
-private readonly luaServicesByAsset: Map<string, Set<string>> = new Map();
-private readonly luaGenericAssetsExecuted: Set<string> = new Set();
+	private readonly serviceDefinitions: Map<string, LuaServiceDefinitionRecord> = new Map();
+	private readonly luaServiceDefinitionsByAsset: Map<string, Set<string>> = new Map();
+	private readonly luaServicesByAsset: Map<string, Set<string>> = new Map();
+	private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 	private readonly abilityDefinitions: Map<string, GameplayAbilityDefinition> = new Map();
 	private readonly abilityActionIds: Map<string, string[]> = new Map();
 	private readonly worldObjectFsmAttachments: WeakMap<WorldObject, Set<string>> = new WeakMap();
@@ -421,26 +435,25 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		setEditorCaseInsensitivity(this.caseInsensitiveLua);
 		this.consoleMode = new ConsoleMode({ fontVariant: EDITOR_FONT_VARIANT, caseInsensitive: this.caseInsensitiveLua });
 		this.enableEvents();
-	const clock = $.platform.clock;
-	clock.scheduleOnce = (delayMs, cb) => {
-		let active = true;
-		const handle = setTimeout(() => {
-			if (!active) return;
-			active = false;
-			cb(clock.now());
-		}, Math.max(0, Math.floor(delayMs)));
-		return {
-			cancel: () => {
+		const clock = $.platform.clock;
+		clock.scheduleOnce = (delayMs, cb) => {
+			let active = true;
+			const handle = setTimeout(() => {
 				if (!active) return;
 				active = false;
-				clearTimeout(handle);
-			},
-			isActive: () => active,
+				cb(clock.now());
+			}, Math.max(0, Math.floor(delayMs)));
+			return {
+				cancel: () => {
+					if (!active) return;
+					active = false;
+					clearTimeout(handle);
+				},
+				isActive: () => active,
+			};
 		};
-	};
-	const policyOverride = options.luaSourceFailurePolicy ?? {};
+		const policyOverride = options.luaSourceFailurePolicy ?? {};
 		this.luaFailurePolicy = { ...DEFAULT_LUA_FAILURE_POLICY, ...policyOverride };
-		this.presentationFrameHandler = this.handlePresentationFrame.bind(this);
 		this.cart = options.cart;
 		this.playerIndex = options.playerIndex;
 		this.storageService = options.storage ?? $.platform.storage;
@@ -453,7 +466,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		this.seedDefaultLuaBuiltins();
 		this.initializeEditor();
 		this.setEditorOverlayResolution(this.overlayResolutionMode);
-		this.attachFrameListener();
+		this.resetFrameTiming();
 		this.boot('constructor');
 		void this.prefetchLuaSourceFromFilesystem();
 	}
@@ -494,35 +507,6 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		const nextCaseInsensitive = options.caseInsensitiveLua ?? (rompack?.caseInsensitiveLua ?? true);
 		if (nextCaseInsensitive !== this.caseInsensitiveLua) {
 			throw new Error('[BmsxConsoleRuntime] Runtime already initialised with a different Lua case-sensitivity setting.');
-		}
-	}
-
-	private attachFrameListener(): void {
-		if (this.frameListenerAttached) return;
-		EventEmitter.instance.on('frameend', this.presentationFrameHandler, this, { lane: 'presentation', persistent: true });
-		this.frameListenerAttached = true;
-	}
-
-	private detachFrameListener(): void {
-		if (!this.frameListenerAttached) return;
-		EventEmitter.instance.off('frameend', this.presentationFrameHandler);
-		this.frameListenerAttached = false;
-	}
-
-	private handlePresentationFrame(_event: string, _emitter: Identifiable, _payload?: EventPayload): void {
-		if (!this.tickEnabled) return;
-		const now = $.platform.clock.now();
-		let deltaMs = now - this.lastFrameTimestampMs;
-		if (!Number.isFinite(deltaMs) || deltaMs < 0) {
-			deltaMs = 0;
-		}
-		else if (deltaMs > BmsxConsoleRuntime.MAX_FRAME_DELTA_MS) {
-			deltaMs = BmsxConsoleRuntime.MAX_FRAME_DELTA_MS;
-		}
-		this.lastFrameTimestampMs = now;
-		this.frame(deltaMs);
-		if ($.paused && this.shouldRequestPausedFrame()) {
-			$.requestPausedFrame();
 		}
 	}
 
@@ -597,8 +581,8 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 	private toggleConsoleResolutionMode(): void {
 		const next = this.overlayResolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
 		this.setEditorOverlayResolution(next);
-		const label = next === 'offscreen' ? 'LOW-RES' : 'HI-RES';
-		this.consoleMode.appendSystemMessage(`Resolution: ${label}`);
+		// const label = next === 'offscreen' ? 'LOW-RES' : 'HI-RES';
+		// this.consoleMode.appendSystemMessage(`Resolution: ${label}`);
 	}
 
 	private getKeyboard(): KeyboardInput {
@@ -661,12 +645,10 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			return;
 		}
 		if (normalized === 'cont') {
-			this.consoleMode.appendSystemMessage('Resuming game...');
 			this.closeConsoleMode(true);
 			return;
 		}
 		if (normalized === 'ide') {
-			this.consoleMode.appendSystemMessage('Opening editor.');
 			this.closeConsoleMode(false);
 			this.ensureEditorActive();
 			return;
@@ -887,6 +869,23 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 	}
 
 	private setEditorPipelineActive(active: boolean, force = false): void {
+		if (force) {
+			this.applyEditorPipelineActive(active, true);
+			return;
+		}
+		this.pendingEditorPipelineState = active;
+	}
+
+	private flushEditorPipelineState(): void {
+		if (this.pendingEditorPipelineState === null) {
+			return;
+		}
+		const next = this.pendingEditorPipelineState;
+		this.pendingEditorPipelineState = null;
+		this.applyEditorPipelineActive(next, false);
+	}
+
+	private applyEditorPipelineActive(active: boolean, force = false): void {
 		if (!force && active === this.editorPipelineActive) {
 			return;
 		}
@@ -961,91 +960,251 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			this.loadLuaServiceScripts(fsmInterpreter);
 			this.cart.init(this.api);
 		}
-		this.lastFrameTimestampMs = $.platform.clock.now();
-		this.frame(0);
-		if ($.paused && this.shouldRequestPausedFrame()) {
-			$.requestPausedFrame();
-		}
+		this.resetFrameTiming();
 		this.hasBooted = true;
 	}
 
 	private resetWorldState(): void {
+		this.abandonFrameState();
 		$.resetToFreshWorld({ preserveConsoleRuntime: true });
 	}
 
-	public frame(deltaMilliseconds: number): void {
-		if (!Number.isFinite(deltaMilliseconds) || deltaMilliseconds < 0) {
-			throw new Error('[BmsxConsoleRuntime] Delta time must be a finite non-negative number.');
+	private ensureFrameState(): ConsoleFrameState {
+		const existing = this.currentFrameState;
+		if (existing) {
+			return existing;
 		}
-		const deltaSeconds = deltaMilliseconds / 1000;
+		const deltaSeconds = this.computeFrameDeltaSeconds();
 		this.overlayRenderedThisFrame = false;
-		this.pollConsoleHotkeys();
-		this.advanceConsoleMode(deltaSeconds);
-		const editor = this.editor;
-		const consoleActive = this.consoleMode.isActive();
-		if (editor && !consoleActive) {
-			editor.update(deltaSeconds);
-		}
-		const editorActive = editor?.isActive() === true && !consoleActive;
-		this.setEditorPipelineActive(editorActive);
 		const debugPaused = $.paused === true;
-		const haltGame = debugPaused || editorActive || consoleActive;
-		const deltaForUpdate = haltGame ? 0 : deltaSeconds;
-		if (debugPaused) {
-			this.api.begin_paused_frame(this.frameCounter);
-		} else {
-			this.api.begin_frame(this.frameCounter, haltGame ? 0 : deltaSeconds);
-		}
-		if (editorActive && editor) {
-			editor.draw(this.api);
-			this.endFrameAndFlush(editorActive);
-			this.frameCounter += 1;
+		const haltGame = debugPaused;
+		const state: ConsoleFrameState = {
+			deltaSeconds,
+			deltaForUpdate: haltGame ? 0 : deltaSeconds,
+			editorActive: false,
+			consoleActive: false,
+			haltGame,
+			debugPaused,
+			updateExecuted: false,
+			luaFaulted: this.luaRuntimeFailed,
+			frameBegan: false,
+			consoleEvaluated: false,
+			editorEvaluated: false,
+		};
+		this.currentFrameState = state;
+		return state;
+	}
+
+	private ensureConsoleEvaluation(state: ConsoleFrameState): void {
+		if (state.consoleEvaluated) {
 			return;
 		}
-		if (this.hasLuaProgram()) {
-			if (this.luaRuntimeFailed) {
+		state.consoleEvaluated = true;
+		state.consoleActive = this.consoleMode.isActive();
+		this.updateFrameHaltingState(state);
+	}
+
+	private ensureEditorEvaluation(state: ConsoleFrameState): void {
+		if (state.editorEvaluated) {
+			return;
+		}
+		const editorActive = this.editor?.isActive() === true && !state.consoleActive;
+		state.editorEvaluated = true;
+		state.editorActive = editorActive;
+		this.setEditorPipelineActive(editorActive);
+		this.updateFrameHaltingState(state);
+	}
+
+	private updateFrameHaltingState(state: ConsoleFrameState): void {
+		const debugPaused = $.paused === true;
+		state.debugPaused = debugPaused;
+		const haltGame = debugPaused || state.consoleActive || state.editorActive;
+		state.haltGame = haltGame;
+		state.deltaForUpdate = haltGame ? 0 : state.deltaSeconds;
+		this.setEditorPipelineActive(state.consoleActive || state.editorActive);
+	}
+
+	public runConsoleModePhase(): void {
+		if (!this.tickEnabled) {
+			return;
+		}
+		if (this.currentFrameState) {
+			this.abandonFrameState();
+		}
+		const state = this.ensureFrameState();
+		this.pollConsoleHotkeys();
+		this.advanceConsoleMode(state.deltaSeconds);
+		state.consoleEvaluated = true;
+		state.consoleActive = this.consoleMode.isActive();
+		this.updateFrameHaltingState(state);
+	}
+
+	public runEditorModePhase(): void {
+		if (!this.tickEnabled) {
+			return;
+		}
+		const state = this.ensureFrameState();
+		this.ensureConsoleEvaluation(state);
+		const editor = this.editor;
+		if (editor && !state.consoleActive) {
+			editor.update(state.deltaSeconds);
+		}
+		const editorActive = editor?.isActive() === true && !state.consoleActive;
+		state.editorEvaluated = true;
+		state.editorActive = editorActive;
+		this.setEditorPipelineActive(editorActive);
+		this.updateFrameHaltingState(state);
+	}
+
+	public runUpdatePhase(): void {
+		if (!this.tickEnabled) {
+			return;
+		}
+		const state = this.ensureFrameState();
+		this.ensureConsoleEvaluation(state);
+		this.ensureEditorEvaluation(state);
+		if (state.updateExecuted) {
+			return;
+		}
+		if (state.editorActive) {
+			state.updateExecuted = true;
+			return;
+		}
+		if (state.luaFaulted || this.luaRuntimeFailed) {
+			state.luaFaulted = true;
+			state.updateExecuted = true;
+			return;
+		}
+		try {
+			if (this.hasLuaProgram()) {
+				if (!state.haltGame && this.luaUpdateFunction !== null) {
+					this.invokeLuaFunction(this.luaUpdateFunction, [state.deltaSeconds]);
+				}
+				this.tickLuaServices(state.deltaForUpdate);
+			}
+			else {
+				if (!state.haltGame) {
+					this.cart.update(this.api, state.deltaSeconds);
+				}
+				this.tickLuaServices(state.deltaForUpdate);
+			}
+		}
+		catch (error) {
+			state.luaFaulted = true;
+			this.handleLuaError(error);
+		}
+		finally {
+			state.updateExecuted = true;
+		}
+	}
+
+	public runDrawPhase(): void {
+		if (!this.tickEnabled) {
+			return;
+		}
+		const state = this.ensureFrameState();
+		this.ensureConsoleEvaluation(state);
+		this.ensureEditorEvaluation(state);
+		if (!state) {
+			return;
+		}
+		try {
+			const editor = this.editor;
+			const editorActive = state.editorActive;
+			if (state.debugPaused) {
+				this.api.begin_paused_frame(this.frameCounter);
+			} else {
+				this.api.begin_frame(this.frameCounter, state.haltGame ? 0 : state.deltaSeconds);
+			}
+			state.frameBegan = true;
+			if (editorActive && editor) {
+				editor.draw(this.api);
+				this.finalizeFrame(true);
+				return;
+			}
+			const luaFaulted = state.luaFaulted || this.luaRuntimeFailed;
+			if (luaFaulted) {
 				if (editorActive && editor) {
 					editor.draw(this.api);
+					this.finalizeFrame(true);
+					return;
 				}
-				this.endFrameAndFlush(editorActive);
-				this.frameCounter += 1;
+				this.finalizeFrame(editorActive);
 				return;
 			}
-			try {
-				if (!haltGame && this.luaUpdateFunction !== null) {
-					this.invokeLuaFunction(this.luaUpdateFunction, [deltaSeconds]);
+			if (this.hasLuaProgram()) {
+				try {
+					if (this.luaDrawFunction !== null) {
+						this.invokeLuaFunction(this.luaDrawFunction, []);
+					}
 				}
-				this.tickLuaServices(deltaForUpdate);
-				if (this.luaDrawFunction !== null) {
-					this.invokeLuaFunction(this.luaDrawFunction, []);
+				catch (error) {
+					this.handleLuaError(error);
+					if (editorActive && editor) {
+						editor.draw(this.api);
+						this.finalizeFrame(true);
+						return;
+					}
+					this.finalizeFrame(editorActive);
+					return;
 				}
 			}
-			catch (error) {
-				this.handleLuaError(error);
-				const activeEditor = this.editor;
-				if (activeEditor && activeEditor.isActive()) {
-					activeEditor.draw(this.api);
-				}
-				this.endFrameAndFlush(editorActive);
-				this.frameCounter += 1;
-				return;
+			else {
+				this.cart.draw(this.api);
 			}
+			this.finalizeFrame(editorActive);
 		}
-		else {
-			if (!haltGame) {
-				this.cart.update(this.api, deltaSeconds);
-			}
-			this.tickLuaServices(deltaForUpdate);
-			this.cart.draw(this.api);
+		finally {
+			this.currentFrameState = null;
 		}
+	}
+
+	public flushDeferredState(): void {
+		this.flushEditorPipelineState();
+	}
+
+	private finalizeFrame(editorActive: boolean): void {
 		this.endFrameAndFlush(editorActive);
 		this.frameCounter += 1;
+		if ($.paused && this.shouldRequestPausedFrame()) {
+			$.requestPausedFrame();
+		}
+	}
+
+	private computeFrameDeltaSeconds(): number {
+		const now = $.platform.clock.now();
+		let deltaMs = now - this.lastFrameTimestampMs;
+		if (!Number.isFinite(deltaMs) || deltaMs < 0) {
+			deltaMs = 0;
+		}
+		else if (deltaMs > BmsxConsoleRuntime.MAX_FRAME_DELTA_MS) {
+			deltaMs = BmsxConsoleRuntime.MAX_FRAME_DELTA_MS;
+		}
+		this.lastFrameTimestampMs = now;
+		return deltaMs / 1000;
+	}
+
+	private abandonFrameState(): void {
+		const state = this.currentFrameState;
+		if (!state) {
+			return;
+		}
+		if (state.frameBegan) {
+			try {
+				this.api.end_frame();
+			} catch { /* best effort */ }
+			publishOverlayFrame(null);
+		}
+		this.currentFrameState = null;
+	}
+
+	private resetFrameTiming(): void {
+		this.lastFrameTimestampMs = $.platform.clock.now();
 	}
 
 	public override dispose(): void {
 		this.consoleMode.deactivate();
 		this.setEditorPipelineActive(false, true);
-		this.detachFrameListener();
 		if (this.editor) {
 			this.editor.shutdown();
 			this.editor = null;
@@ -1208,7 +1367,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		if (savedRuntimeFailed) {
 			this.luaRuntimeFailed = true;
 		}
-		this.lastFrameTimestampMs = $.platform.clock.now();
+		this.resetFrameTiming();
 		this.setEditorPipelineActive(this.editor?.isActive() === true, true);
 		this.redrawAfterStateRestore();
 	}
@@ -1237,7 +1396,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		publishOverlayFrame(null);
 		this.processPendingLuaAssets('resume');
 		this.resumeLuaProgramState(snapshot, { runInit: false });
-		this.lastFrameTimestampMs = $.platform.clock.now();
+		this.resetFrameTiming();
 		this.setEditorPipelineActive(this.editor?.isActive() === true, true);
 		this.redrawAfterStateRestore();
 	}
@@ -1297,7 +1456,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		else {
 			this.applyLuaProgramHotReload({ source: hotReloadSource, chunkName, override: hotReloadSource });
 		}
-		this.lastFrameTimestampMs = $.platform.clock.now();
+		this.resetFrameTiming();
 		this.setEditorPipelineActive(this.editor?.isActive() === true, true);
 		this.redrawAfterStateRestore();
 	}
@@ -2085,13 +2244,13 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		if (debugTiming) {
 			bootStartMs = $.platform.clock.now();
 		}
-	this.resetLuaInteroperabilityState();
-	this.luaSnapshotSave = null;
-	this.luaSnapshotLoad = null;
-	const interpreter = createLuaInterpreter();
-	this.configureInterpreter(interpreter);
-	interpreter.clearLastFaultEnvironment();
-	this.luaInterpreter = interpreter;
+		this.resetLuaInteroperabilityState();
+		this.luaSnapshotSave = null;
+		this.luaSnapshotLoad = null;
+		const interpreter = createLuaInterpreter();
+		this.configureInterpreter(interpreter);
+		interpreter.clearLastFaultEnvironment();
+		this.luaInterpreter = interpreter;
 		this.luaInitFunction = null;
 		this.luaUpdateFunction = null;
 		this.luaDrawFunction = null;
@@ -2519,7 +2678,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			catch (editorError) {
 				const overlayMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
 				try {
-				this.editor.showRuntimeError(line, column, overlayMessage, runtimeDetails);
+					this.editor.showRuntimeError(line, column, overlayMessage, runtimeDetails);
 				}
 				catch (secondaryError) {
 					console.warn('[BmsxConsoleRuntime] Failed to display Lua error in console editor.', editorError, secondaryError);
@@ -2536,39 +2695,39 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 	private buildRuntimeErrorDetailsForEditor(error: unknown, message: string): RuntimeErrorDetails | null {
 		const interpreter = this.luaInterpreter;
 		let luaFrames: RuntimeErrorStackFrame[] = [];
-        if (interpreter) {
-            const callFrames = interpreter.getLastFaultCallStack();
-            // Convert recorded call sites
-            luaFrames = this.convertLuaCallFrames(callFrames);
-            // If the thrown error includes precise location, prepend it as the current frame
-            if (error instanceof LuaError) {
-                const src = typeof error.chunkName === 'string' && error.chunkName.length > 0 ? error.chunkName : null;
-                const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
-                const col = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
-                // Only inject if not already represented as the innermost frame
-                const innermost = callFrames.length > 0 ? callFrames[callFrames.length - 1] : null;
-                const alreadyCaptured = !!innermost && innermost.source === (src ?? '') && innermost.line === (line ?? 0) && innermost.column === (col ?? 0);
-                if (!alreadyCaptured) {
-                    let fnName: string | null = null;
-                    if (innermost) {
-                        fnName = innermost.functionName && innermost.functionName.length > 0 ? innermost.functionName : null;
-                    }
-                    let raw = '';
-                    if (fnName && fnName.length > 0) raw = fnName;
-                    if (src && src.length > 0) raw = raw.length > 0 ? `${raw} @ ${src}` : src;
-                    const top: RuntimeErrorStackFrame = { origin: 'lua', functionName: fnName, source: src, line, column: col, raw: raw.length > 0 ? raw : '[lua]' };
-                    if (src && src.length > 0) {
-                        const hint = this.lookupChunkResourceInfoNullable(src);
-                        if (hint) {
-                            top.chunkAssetId = hint.assetId ?? null;
-                            if (hint.path && hint.path.length > 0) top.chunkPath = hint.path;
-                        }
-                    }
-                    luaFrames.unshift(top);
-                }
-            }
-            interpreter.clearLastFaultCallStack();
-        }
+		if (interpreter) {
+			const callFrames = interpreter.getLastFaultCallStack();
+			// Convert recorded call sites
+			luaFrames = this.convertLuaCallFrames(callFrames);
+			// If the thrown error includes precise location, prepend it as the current frame
+			if (error instanceof LuaError) {
+				const src = typeof error.chunkName === 'string' && error.chunkName.length > 0 ? error.chunkName : null;
+				const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
+				const col = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
+				// Only inject if not already represented as the innermost frame
+				const innermost = callFrames.length > 0 ? callFrames[callFrames.length - 1] : null;
+				const alreadyCaptured = !!innermost && innermost.source === (src ?? '') && innermost.line === (line ?? 0) && innermost.column === (col ?? 0);
+				if (!alreadyCaptured) {
+					let fnName: string | null = null;
+					if (innermost) {
+						fnName = innermost.functionName && innermost.functionName.length > 0 ? innermost.functionName : null;
+					}
+					let raw = '';
+					if (fnName && fnName.length > 0) raw = fnName;
+					if (src && src.length > 0) raw = raw.length > 0 ? `${raw} @ ${src}` : src;
+					const top: RuntimeErrorStackFrame = { origin: 'lua', functionName: fnName, source: src, line, column: col, raw: raw.length > 0 ? raw : '[lua]' };
+					if (src && src.length > 0) {
+						const hint = this.lookupChunkResourceInfoNullable(src);
+						if (hint) {
+							top.chunkAssetId = hint.assetId ?? null;
+							if (hint.path && hint.path.length > 0) top.chunkPath = hint.path;
+						}
+					}
+					luaFrames.unshift(top);
+				}
+			}
+			interpreter.clearLastFaultCallStack();
+		}
 		let stackText: string | null = null;
 		if (error instanceof Error && typeof error.stack === 'string') {
 			stackText = error.stack;
@@ -2857,135 +3016,135 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 
 		const members = this.collectApiMembers();
 		for (const { name, kind, descriptor } of members) {
-		if (!descriptor) {
-			continue;
-		}
-		if (kind === 'method') {
-			if (name === 'define_ability') {
-				const native = createLuaNativeFunction('api.define_ability', interpreter, (luaInterpreter, args) => {
-					if (args.length === 0 || !isLuaTable(args[0])) {
-						throw this.createApiRuntimeError(luaInterpreter, 'define_ability(def) requires a table argument.');
-					}
-					try {
-						const id = this.registerAbilityDefinitionFromLua(args[0] as LuaTable, luaInterpreter);
-						return this.wrapResultValue(id, interpreter);
-					} catch (error) {
-						if (error instanceof LuaRuntimeError) {
-							this.handleLuaError(error);
-							return [];
-						}
-						const message = error instanceof Error ? error.message : String(error);
-						const runtimeError = this.createApiRuntimeError(luaInterpreter, `[api.define_ability] ${message}`);
-						this.handleLuaError(runtimeError);
-						return [];
-					}
-				});
-				this.registerLuaGlobal(env, name, native);
-				this.registerLuaBuiltin({ name, params: ['def'], signature: 'define_ability(def)' });
+			if (!descriptor) {
 				continue;
 			}
-			if (name === 'register_service') {
-				const native = createLuaNativeFunction('api.register_service', interpreter, (luaInterpreter, args) => {
-					if (args.length === 0 || !isLuaTable(args[0])) {
-						throw this.createApiRuntimeError(luaInterpreter, 'register_service(def) requires a table argument.');
-					}
-					const table = args[0] as LuaTable;
-					try {
-						const moduleId = this.moduleIdFor('service', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
-						const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter: luaInterpreter, path: [] });
-						const descriptorRaw = this.luaValueToJs(table, marshalCtx);
-						if (!this.isPlainObject(descriptorRaw)) {
-							throw new Error('register_service descriptor must be a table.');
+			if (kind === 'method') {
+				if (name === 'define_ability') {
+					const native = createLuaNativeFunction('api.define_ability', interpreter, (luaInterpreter, args) => {
+						if (args.length === 0 || !isLuaTable(args[0])) {
+							throw this.createApiRuntimeError(luaInterpreter, 'define_ability(def) requires a table argument.');
 						}
-						this.instantiateLuaService({
-							table,
-							descriptor: descriptorRaw as Record<string, unknown>,
-							moduleId,
-							interpreter: luaInterpreter,
-							assetId: this.currentLuaAssetContext?.assetId ?? null,
-						});
-						return [];
-					} catch (error) {
-						if (error instanceof LuaRuntimeError) {
-							this.handleLuaError(error);
+						try {
+							const id = this.registerAbilityDefinitionFromLua(args[0] as LuaTable, luaInterpreter);
+							return this.wrapResultValue(id, interpreter);
+						} catch (error) {
+							if (error instanceof LuaRuntimeError) {
+								this.handleLuaError(error);
+								return [];
+							}
+							const message = error instanceof Error ? error.message : String(error);
+							const runtimeError = this.createApiRuntimeError(luaInterpreter, `[api.define_ability] ${message}`);
+							this.handleLuaError(runtimeError);
 							return [];
 						}
-						const message = error instanceof Error ? error.message : String(error);
-						const runtimeError = this.createApiRuntimeError(luaInterpreter, `[api.register_service] ${message}`);
-						this.handleLuaError(runtimeError);
-						return [];
-					}
-				});
-				this.registerLuaGlobal(env, name, native);
-				this.registerLuaBuiltin({ name, params: ['def'], signature: 'register_service(def)' });
-				continue;
-			}
-		const callable = descriptor.value;
-		if (typeof callable !== 'function') {
-			continue;
-		}
-		const params = this.extractFunctionParameters(callable as (...args: unknown[]) => unknown);
-		const apiMetadata = CONSOLE_API_METHOD_METADATA[name];
-		const optionalSet: Set<string> = new Set();
-		if (apiMetadata?.optionalParameters) {
-			for (let index = 0; index < apiMetadata.optionalParameters.length; index += 1) {
-				optionalSet.add(apiMetadata.optionalParameters[index]);
-			}
-		}
-		const parameterDescriptionMap: Map<string, string | null> = new Map();
-		if (apiMetadata?.parameters) {
-			for (let index = 0; index < apiMetadata.parameters.length; index += 1) {
-				const metadataParam = apiMetadata.parameters[index];
-				if (!metadataParam || typeof metadataParam.name !== 'string') {
+					});
+					this.registerLuaGlobal(env, name, native);
+					this.registerLuaBuiltin({ name, params: ['def'], signature: 'define_ability(def)' });
 					continue;
 				}
-				if (metadataParam.optional) {
-					optionalSet.add(metadataParam.name);
+				if (name === 'register_service') {
+					const native = createLuaNativeFunction('api.register_service', interpreter, (luaInterpreter, args) => {
+						if (args.length === 0 || !isLuaTable(args[0])) {
+							throw this.createApiRuntimeError(luaInterpreter, 'register_service(def) requires a table argument.');
+						}
+						const table = args[0] as LuaTable;
+						try {
+							const moduleId = this.moduleIdFor('service', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
+							const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter: luaInterpreter, path: [] });
+							const descriptorRaw = this.luaValueToJs(table, marshalCtx);
+							if (!this.isPlainObject(descriptorRaw)) {
+								throw new Error('register_service descriptor must be a table.');
+							}
+							this.instantiateLuaService({
+								table,
+								descriptor: descriptorRaw as Record<string, unknown>,
+								moduleId,
+								interpreter: luaInterpreter,
+								assetId: this.currentLuaAssetContext?.assetId ?? null,
+							});
+							return [];
+						} catch (error) {
+							if (error instanceof LuaRuntimeError) {
+								this.handleLuaError(error);
+								return [];
+							}
+							const message = error instanceof Error ? error.message : String(error);
+							const runtimeError = this.createApiRuntimeError(luaInterpreter, `[api.register_service] ${message}`);
+							this.handleLuaError(runtimeError);
+							return [];
+						}
+					});
+					this.registerLuaGlobal(env, name, native);
+					this.registerLuaBuiltin({ name, params: ['def'], signature: 'register_service(def)' });
+					continue;
 				}
-				if (metadataParam.description !== undefined) {
-					parameterDescriptionMap.set(metadataParam.name, metadataParam.description ?? null);
+				const callable = descriptor.value;
+				if (typeof callable !== 'function') {
+					continue;
 				}
+				const params = this.extractFunctionParameters(callable as (...args: unknown[]) => unknown);
+				const apiMetadata = CONSOLE_API_METHOD_METADATA[name];
+				const optionalSet: Set<string> = new Set();
+				if (apiMetadata?.optionalParameters) {
+					for (let index = 0; index < apiMetadata.optionalParameters.length; index += 1) {
+						optionalSet.add(apiMetadata.optionalParameters[index]);
+					}
+				}
+				const parameterDescriptionMap: Map<string, string | null> = new Map();
+				if (apiMetadata?.parameters) {
+					for (let index = 0; index < apiMetadata.parameters.length; index += 1) {
+						const metadataParam = apiMetadata.parameters[index];
+						if (!metadataParam || typeof metadataParam.name !== 'string') {
+							continue;
+						}
+						if (metadataParam.optional) {
+							optionalSet.add(metadataParam.name);
+						}
+						if (metadataParam.description !== undefined) {
+							parameterDescriptionMap.set(metadataParam.name, metadataParam.description ?? null);
+						}
+					}
+				}
+				const optionalArray = optionalSet.size > 0 ? Array.from(optionalSet) : undefined;
+				const parameterDescriptions = params.map(param => parameterDescriptionMap.get(param) ?? null);
+				const displayParams = params.map(param => (optionalSet.has(param) ? `${param}?` : param));
+				const signature = displayParams.length > 0 ? `${name}(${displayParams.join(', ')})` : `${name}()`;
+				const native = createLuaNativeFunction(`api.${name}`, interpreter, (_lua, args) => {
+					const category = this.resolveApiMethodMarshalCategory(name);
+					const moduleId = this.moduleIdFor(category, this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
+					const baseCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
+					const jsArgs = Array.from(args, (arg, index) => this.luaValueToJs(arg, this.extendMarshalContext(baseCtx, `arg${index}`)));
+					try {
+						const target = this.api as unknown as Record<string, unknown>;
+						const method = target[name];
+						if (typeof method !== 'function') {
+							throw new Error(`Method '${name}' is not callable.`);
+						}
+						const result = (method as (...inner: unknown[]) => unknown).apply(this.api, jsArgs);
+						return this.wrapResultValue(result, interpreter);
+					} catch (error) {
+						if (error instanceof LuaRuntimeError) {
+							this.handleLuaError(error);
+							return [];
+						}
+						const message = error instanceof Error ? error.message : String(error);
+						const runtimeError = this.createApiRuntimeError(interpreter, `[api.${name}] ${message}`);
+						this.handleLuaError(runtimeError);
+						return [];
+					}
+				});
+				this.registerLuaGlobal(env, name, native);
+				this.registerLuaBuiltin({
+					name,
+					params,
+					signature,
+					optionalParams: optionalArray,
+					parameterDescriptions,
+					description: apiMetadata?.description ?? null,
+				});
+				continue;
 			}
-		}
-		const optionalArray = optionalSet.size > 0 ? Array.from(optionalSet) : undefined;
-		const parameterDescriptions = params.map(param => parameterDescriptionMap.get(param) ?? null);
-		const displayParams = params.map(param => (optionalSet.has(param) ? `${param}?` : param));
-		const signature = displayParams.length > 0 ? `${name}(${displayParams.join(', ')})` : `${name}()`;
-		const native = createLuaNativeFunction(`api.${name}`, interpreter, (_lua, args) => {
-			const category = this.resolveApiMethodMarshalCategory(name);
-			const moduleId = this.moduleIdFor(category, this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
-			const baseCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
-			const jsArgs = Array.from(args, (arg, index) => this.luaValueToJs(arg, this.extendMarshalContext(baseCtx, `arg${index}`)));
-			try {
-				const target = this.api as unknown as Record<string, unknown>;
-				const method = target[name];
-				if (typeof method !== 'function') {
-					throw new Error(`Method '${name}' is not callable.`);
-				}
-				const result = (method as (...inner: unknown[]) => unknown).apply(this.api, jsArgs);
-				return this.wrapResultValue(result, interpreter);
-			} catch (error) {
-				if (error instanceof LuaRuntimeError) {
-					this.handleLuaError(error);
-					return [];
-				}
-				const message = error instanceof Error ? error.message : String(error);
-				const runtimeError = this.createApiRuntimeError(interpreter, `[api.${name}] ${message}`);
-				this.handleLuaError(runtimeError);
-				return [];
-			}
-		});
-		this.registerLuaGlobal(env, name, native);
-		this.registerLuaBuiltin({
-			name,
-			params,
-			signature,
-			optionalParams: optionalArray,
-			parameterDescriptions,
-			description: apiMetadata?.description ?? null,
-		});
-		continue;
-	}
 
 			if (descriptor.get) {
 				const getter = descriptor.get;
@@ -3019,59 +3178,59 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		if (normalizedName.length === 0) {
 			return;
 		}
-	const params: string[] = [];
-	const optionalSet: Set<string> = new Set();
-	const normalizedDescriptions: (string | null)[] = [];
-	const sourceParams = Array.isArray(metadata.params) ? metadata.params : [];
-	const sourceDescriptions = Array.isArray(metadata.parameterDescriptions) ? metadata.parameterDescriptions : [];
-	for (let index = 0; index < sourceParams.length; index += 1) {
-		const raw = sourceParams[index];
-		const description = index < sourceDescriptions.length ? sourceDescriptions[index] ?? null : null;
-		if (typeof raw !== 'string') {
-			continue;
-		}
-		const trimmed = raw.trim();
-		if (trimmed.length === 0) {
-			continue;
-		}
-		if (trimmed === '...' || trimmed.endsWith('...')) {
-			params.push(trimmed);
-			normalizedDescriptions.push(description);
-			continue;
-		}
-		if (trimmed.endsWith('?')) {
-			const base = trimmed.slice(0, -1);
-			if (base.length > 0) {
-				params.push(base);
-				normalizedDescriptions.push(description);
-				optionalSet.add(base);
-			}
-			continue;
-		}
-		params.push(trimmed);
-		normalizedDescriptions.push(description);
-	}
-	if (Array.isArray(metadata.optionalParams)) {
-		for (let index = 0; index < metadata.optionalParams.length; index += 1) {
-			const name = metadata.optionalParams[index];
-			if (typeof name !== 'string' || name.length === 0) {
+		const params: string[] = [];
+		const optionalSet: Set<string> = new Set();
+		const normalizedDescriptions: (string | null)[] = [];
+		const sourceParams = Array.isArray(metadata.params) ? metadata.params : [];
+		const sourceDescriptions = Array.isArray(metadata.parameterDescriptions) ? metadata.parameterDescriptions : [];
+		for (let index = 0; index < sourceParams.length; index += 1) {
+			const raw = sourceParams[index];
+			const description = index < sourceDescriptions.length ? sourceDescriptions[index] ?? null : null;
+			if (typeof raw !== 'string') {
 				continue;
 			}
-			optionalSet.add(name);
+			const trimmed = raw.trim();
+			if (trimmed.length === 0) {
+				continue;
+			}
+			if (trimmed === '...' || trimmed.endsWith('...')) {
+				params.push(trimmed);
+				normalizedDescriptions.push(description);
+				continue;
+			}
+			if (trimmed.endsWith('?')) {
+				const base = trimmed.slice(0, -1);
+				if (base.length > 0) {
+					params.push(base);
+					normalizedDescriptions.push(description);
+					optionalSet.add(base);
+				}
+				continue;
+			}
+			params.push(trimmed);
+			normalizedDescriptions.push(description);
 		}
+		if (Array.isArray(metadata.optionalParams)) {
+			for (let index = 0; index < metadata.optionalParams.length; index += 1) {
+				const name = metadata.optionalParams[index];
+				if (typeof name !== 'string' || name.length === 0) {
+					continue;
+				}
+				optionalSet.add(name);
+			}
+		}
+		const signature = typeof metadata.signature === 'string' ? metadata.signature : normalizedName;
+		const optionalParams = optionalSet.size > 0 ? Array.from(optionalSet) : undefined;
+		const descriptor: ConsoleLuaBuiltinDescriptor = {
+			name: normalizedName,
+			params,
+			signature,
+			optionalParams,
+			parameterDescriptions: normalizedDescriptions,
+			description: metadata.description ?? null,
+		};
+		this.luaBuiltinMetadata.set(normalizedName, descriptor);
 	}
-	const signature = typeof metadata.signature === 'string' ? metadata.signature : normalizedName;
-	const optionalParams = optionalSet.size > 0 ? Array.from(optionalSet) : undefined;
-	const descriptor: ConsoleLuaBuiltinDescriptor = {
-		name: normalizedName,
-		params,
-		signature,
-		optionalParams,
-		parameterDescriptions: normalizedDescriptions,
-		description: metadata.description ?? null,
-	};
-	this.luaBuiltinMetadata.set(normalizedName, descriptor);
-}
 
 	private registerLuaGlobal(env: LuaEnvironment, name: string, value: LuaValue): void {
 		env.set(name, value);
@@ -3236,15 +3395,15 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 	}
 
 	private ensureFsmLuaInterpreter(): LuaInterpreter {
-	if (this.fsmLuaInterpreter) {
-		return this.fsmLuaInterpreter;
+		if (this.fsmLuaInterpreter) {
+			return this.fsmLuaInterpreter;
+		}
+		const interpreter = createLuaInterpreter();
+		this.configureInterpreter(interpreter);
+		this.registerApiBuiltins(interpreter);
+		this.fsmLuaInterpreter = interpreter;
+		return interpreter;
 	}
-	const interpreter = createLuaInterpreter();
-	this.configureInterpreter(interpreter);
-	this.registerApiBuiltins(interpreter);
-	this.fsmLuaInterpreter = interpreter;
-	return interpreter;
-}
 
 	private loadLuaStateMachineScripts(interpreter: LuaInterpreter): void {
 		this.executeGenericLuaAssets(interpreter);
@@ -3361,10 +3520,10 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			this.luaBehaviorTreesByAsset.clear();
 			return;
 		}
-	const luaSources = rompack.lua;
-	const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
-	const trackedAssets = new Set(this.luaBehaviorTreesByAsset.keys());
-	const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => trackedAssets.has(assetId), trackedAssets);
+		const luaSources = rompack.lua;
+		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
+		const trackedAssets = new Set(this.luaBehaviorTreesByAsset.keys());
+		const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => trackedAssets.has(assetId), trackedAssets);
 		const processedAssets: Set<string> = new Set();
 		for (let index = 0; index < assetIds.length; index += 1) {
 			const assetId = assetIds[index]!;
@@ -3543,10 +3702,10 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		if (!rompack || !rompack.lua) {
 			return;
 		}
-	const luaSources = rompack.lua;
-	const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
-	const trackedAssets = new Set(this.luaComponentPresetsByAsset.keys());
-	const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => trackedAssets.has(assetId), trackedAssets);
+		const luaSources = rompack.lua;
+		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
+		const trackedAssets = new Set(this.luaComponentPresetsByAsset.keys());
+		const assetIds = this.sortLuaAssetIds(luaSources, sourcePaths, assetId => trackedAssets.has(assetId), trackedAssets);
 		const processedAssets = new Set<string>();
 		for (let index = 0; index < assetIds.length; index += 1) {
 			const assetId = assetIds[index]!;
@@ -3647,7 +3806,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		const processedAssets = new Set<string>();
 		for (let index = 0; index < assetIds.length; index += 1) {
 			const assetId = assetIds[index]!;
-		       const source = luaSources[assetId];
+			const source = luaSources[assetId];
 			if (typeof source !== 'string') {
 				throw new Error(`[BmsxConsoleRuntime] World object Lua asset '${assetId}' is not a string source.`);
 			}
@@ -4019,19 +4178,19 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 					if (!this.isPlainObject(descriptorRaw)) {
 						throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' must return a plain table.`);
 					}
-						this.instantiateLuaService({
-							table,
-							descriptor: descriptorRaw as Record<string, unknown>,
-							moduleId,
-							interpreter,
-							assetId,
-						}, snapshots);
-					}
-				}
-				finally {
-					this.currentLuaAssetContext = previousAssetContext;
+					this.instantiateLuaService({
+						table,
+						descriptor: descriptorRaw as Record<string, unknown>,
+						moduleId,
+						interpreter,
+						assetId,
+					}, snapshots);
 				}
 			}
+			finally {
+				this.currentLuaAssetContext = previousAssetContext;
+			}
+		}
 		for (const [assetId, bindings] of Array.from(this.luaServicesByAsset.entries())) {
 			if (processedAssets.has(assetId) || assetId === '__service_global__') {
 				continue;
@@ -4055,7 +4214,7 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 			}
 			this.luaServiceDefinitionsByAsset.delete(assetId);
 		}
- }
+	}
 
 	private prepareLuaBehaviorTreeDefinition(treeId: string, definitionValue: unknown, assetId: string): BehaviorTreeDefinition {
 		if (definitionValue === null || definitionValue === undefined) {
@@ -4342,53 +4501,53 @@ private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 		if (!descriptor || typeof descriptor !== 'object') {
 			throw new Error('[BmsxConsoleRuntime] define_component_preset requires a descriptor table.');
 		}
-	const moduleId = this.moduleIdFor('other', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
-	const idValue = this.getLuaRecordEntry<string>(descriptor, ['id', 'name']);
-	if (typeof idValue !== 'string' || idValue.trim().length === 0) {
-		throw new Error('[BmsxConsoleRuntime] Component preset requires a non-empty id.');
-	}
-	const presetId = this.normalizeLuaIdentifier(idValue, 'define_component_preset');
-	this.disposeComponentPreset(presetId);
-	const buildCandidate = (descriptor as { build?: unknown }).build;
-	if (!buildCandidate || typeof buildCandidate !== 'function' || !isLuaHandlerFn(buildCandidate as Function)) {
-		throw new Error(`[BmsxConsoleRuntime] Component preset '${presetId}' requires a Lua build function.`);
-	}
-	const buildHandler = buildCandidate as LuaHandlerFn;
-	const assetId = this.currentLuaAssetContext?.assetId ?? null;
-	const presetRecord: LuaComponentPresetRecord = {
-		id: presetId,
-		moduleId,
-		build: buildHandler,
-		assetId,
-	};
-	this.componentPresets.set(presetId, presetRecord);
-	if (assetId) {
-		let set = this.luaComponentPresetsByAsset.get(assetId);
-		if (!set) {
-			set = new Set();
-			this.luaComponentPresetsByAsset.set(assetId, set);
+		const moduleId = this.moduleIdFor('other', this.currentLuaAssetContext?.assetId ?? null, this.luaChunkName ?? null);
+		const idValue = this.getLuaRecordEntry<string>(descriptor, ['id', 'name']);
+		if (typeof idValue !== 'string' || idValue.trim().length === 0) {
+			throw new Error('[BmsxConsoleRuntime] Component preset requires a non-empty id.');
 		}
-		set.add(presetId);
+		const presetId = this.normalizeLuaIdentifier(idValue, 'define_component_preset');
+		this.disposeComponentPreset(presetId);
+		const buildCandidate = (descriptor as { build?: unknown }).build;
+		if (!buildCandidate || typeof buildCandidate !== 'function' || !isLuaHandlerFn(buildCandidate as Function)) {
+			throw new Error(`[BmsxConsoleRuntime] Component preset '${presetId}' requires a Lua build function.`);
+		}
+		const buildHandler = buildCandidate as LuaHandlerFn;
+		const assetId = this.currentLuaAssetContext?.assetId ?? null;
+		const presetRecord: LuaComponentPresetRecord = {
+			id: presetId,
+			moduleId,
+			build: buildHandler,
+			assetId,
+		};
+		this.componentPresets.set(presetId, presetRecord);
+		if (assetId) {
+			let set = this.luaComponentPresetsByAsset.get(assetId);
+			if (!set) {
+				set = new Set();
+				this.luaComponentPresetsByAsset.set(assetId, set);
+			}
+			set.add(presetId);
+		}
+		return presetId;
 	}
-	return presetId;
-}
 
-private disposeComponentPreset(id: string): void {
-	if (!id) {
-		return;
-	}
-	const record = this.componentPresets.get(id);
-	if (record && record.assetId) {
-		const set = this.luaComponentPresetsByAsset.get(record.assetId);
-		if (set) {
-			set.delete(id);
-			if (set.size === 0) {
-				this.luaComponentPresetsByAsset.delete(record.assetId);
+	private disposeComponentPreset(id: string): void {
+		if (!id) {
+			return;
+		}
+		const record = this.componentPresets.get(id);
+		if (record && record.assetId) {
+			const set = this.luaComponentPresetsByAsset.get(record.assetId);
+			if (set) {
+				set.delete(id);
+				if (set.size === 0) {
+					this.luaComponentPresetsByAsset.delete(record.assetId);
+				}
 			}
 		}
+		this.componentPresets.delete(id);
 	}
-	this.componentPresets.delete(id);
-}
 
 	public registerServiceDefinition(descriptor: Record<string, unknown>): Record<string, unknown> {
 		if (!descriptor || typeof descriptor !== 'object') {
@@ -4398,11 +4557,11 @@ private disposeComponentPreset(id: string): void {
 		if (typeof serviceIdRaw !== 'string' || serviceIdRaw.trim().length === 0) {
 			throw new Error('[BmsxConsoleRuntime] define_service requires a non-empty id.');
 		}
-	const serviceId = this.normalizeLuaIdentifier(serviceIdRaw, 'define_service');
-	const fsmsRaw = (descriptor as { fsms?: unknown; state_machines?: unknown; stateMachines?: unknown; machines?: unknown }).fsms
-		?? (descriptor as { state_machines?: unknown }).state_machines
-		?? (descriptor as { stateMachines?: unknown }).stateMachines
-		?? (descriptor as { machines?: unknown }).machines;
+		const serviceId = this.normalizeLuaIdentifier(serviceIdRaw, 'define_service');
+		const fsmsRaw = (descriptor as { fsms?: unknown; state_machines?: unknown; stateMachines?: unknown; machines?: unknown }).fsms
+			?? (descriptor as { state_machines?: unknown }).state_machines
+			?? (descriptor as { stateMachines?: unknown }).stateMachines
+			?? (descriptor as { machines?: unknown }).machines;
 		const btRaw = (descriptor as { bts?: unknown; behavior_trees?: unknown; behaviorTrees?: unknown }).bts
 			?? (descriptor as { behavior_trees?: unknown }).behavior_trees
 			?? (descriptor as { behaviorTrees?: unknown }).behaviorTrees;
@@ -4414,102 +4573,102 @@ private disposeComponentPreset(id: string): void {
 		const abilities = this.normalizeStringArray(abilitiesRaw) ?? [];
 		const tags = this.normalizeStringArray(tagsRaw) ?? [];
 		const autoActivate = typeof autoActivateRaw === 'boolean' ? autoActivateRaw : true;
-	const record: LuaServiceDefinitionRecord = {
-		id: serviceId,
-		fsms,
-		behaviorTrees,
-		abilities: abilities.slice(),
-		tags: tags.slice(),
-		autoActivate,
-		assetId: this.currentLuaAssetContext?.assetId ?? null,
-	};
-	const previous = this.serviceDefinitions.get(serviceId);
-	if (previous && previous.assetId) {
-		const set = this.luaServiceDefinitionsByAsset.get(previous.assetId);
-		if (set) {
-			set.delete(serviceId);
-			if (set.size === 0) {
-				this.luaServiceDefinitionsByAsset.delete(previous.assetId);
+		const record: LuaServiceDefinitionRecord = {
+			id: serviceId,
+			fsms,
+			behaviorTrees,
+			abilities: abilities.slice(),
+			tags: tags.slice(),
+			autoActivate,
+			assetId: this.currentLuaAssetContext?.assetId ?? null,
+		};
+		const previous = this.serviceDefinitions.get(serviceId);
+		if (previous && previous.assetId) {
+			const set = this.luaServiceDefinitionsByAsset.get(previous.assetId);
+			if (set) {
+				set.delete(serviceId);
+				if (set.size === 0) {
+					this.luaServiceDefinitionsByAsset.delete(previous.assetId);
+				}
 			}
 		}
-	}
-	this.serviceDefinitions.set(serviceId, record);
-	if (record.assetId) {
-		let set = this.luaServiceDefinitionsByAsset.get(record.assetId);
-		if (!set) {
-			set = new Set();
-			this.luaServiceDefinitionsByAsset.set(record.assetId, set);
+		this.serviceDefinitions.set(serviceId, record);
+		if (record.assetId) {
+			let set = this.luaServiceDefinitionsByAsset.get(record.assetId);
+			if (!set) {
+				set = new Set();
+				this.luaServiceDefinitionsByAsset.set(record.assetId, set);
+			}
+			set.add(serviceId);
 		}
-		set.add(serviceId);
-	}
 		if (!Object.prototype.hasOwnProperty.call(descriptor, 'auto_activate') && !Object.prototype.hasOwnProperty.call(descriptor, 'autoActivate')) {
 			(descriptor as { auto_activate?: boolean }).auto_activate = autoActivate;
 		}
 		return descriptor;
 	}
 
-    private normalizeLuaWorldObjectComponents(raw: unknown): LuaWorldObjectComponentEntry[] {
-        if (!raw) {
-            return [];
-        }
-        if (!Array.isArray(raw)) {
-            throw new Error('[BmsxConsoleRuntime] Lua world object components must be provided as an array.');
-        }
-        const normalized: LuaWorldObjectComponentEntry[] = [];
-        for (let i = 0; i < raw.length; i += 1) {
-            const entry = raw[i];
-            if (!entry || (typeof entry !== 'object' && typeof entry !== 'string')) {
-                throw new Error(`[BmsxConsoleRuntime] Component descriptor at index ${i} must be a table or string.`);
-            }
-            if (typeof entry === 'string') {
-                const trimmed = entry.trim();
-                if (trimmed.length === 0) {
-                    throw new Error(`[BmsxConsoleRuntime] Component descriptor at index ${i} must not be empty.`);
-                }
-                normalized.push({ kind: 'component', descriptor: { className: trimmed, options: {} } });
-                continue;
-            }
-            const record = entry as Record<string, unknown>;
-            const presetCandidate = this.getLuaRecordEntry<string>(record, ['preset', 'presetId', 'preset_id']);
-            if (typeof presetCandidate === 'string' && presetCandidate.trim().length > 0) {
-                const paramsRaw = this.getLuaRecordEntry<unknown>(record, ['params', 'arguments', 'options', 'config']);
-                let params: Record<string, unknown> = {};
-                if (paramsRaw !== undefined) {
-                    if (!this.isPlainObject(paramsRaw)) {
-                        throw new Error(`[BmsxConsoleRuntime] Component preset '${presetCandidate}' params must be a table/object.`);
-                    }
-                    params = deepClone(paramsRaw as Record<string, unknown>);
-                }
-                normalized.push({ kind: 'preset', presetId: presetCandidate.trim(), params });
-                continue;
-            }
-            const className = this.getLuaRecordEntry<string>(record, ['class', 'className', 'type']);
-            if (typeof className !== 'string' || className.trim().length === 0) {
-                throw new Error(`[BmsxConsoleRuntime] Component descriptor at index ${i} is missing a class name.`);
-            }
-            let options: Record<string, unknown>;
-            if (record.options !== undefined) {
-                if (!this.isPlainObject(record.options)) {
-                    throw new Error(`[BmsxConsoleRuntime] Component descriptor at index ${i} options must be a table/object.`);
-                }
-                options = deepClone(record.options as Record<string, unknown>);
-            } else {
-                options = deepClone(record);
-                delete options.class;
-                delete options.className;
-                delete options.type;
-                delete options.preset;
-                delete options.presetId;
-                delete options.preset_id;
-                delete options.params;
-                delete options.arguments;
-                delete options.options;
-                delete options.config;
-            }
-            normalized.push({ kind: 'component', descriptor: { className: className.trim(), options } });
-        }
-        return normalized;
-    }
+	private normalizeLuaWorldObjectComponents(raw: unknown): LuaWorldObjectComponentEntry[] {
+		if (!raw) {
+			return [];
+		}
+		if (!Array.isArray(raw)) {
+			throw new Error('[BmsxConsoleRuntime] Lua world object components must be provided as an array.');
+		}
+		const normalized: LuaWorldObjectComponentEntry[] = [];
+		for (let i = 0; i < raw.length; i += 1) {
+			const entry = raw[i];
+			if (!entry || (typeof entry !== 'object' && typeof entry !== 'string')) {
+				throw new Error(`[BmsxConsoleRuntime] Component descriptor at index ${i} must be a table or string.`);
+			}
+			if (typeof entry === 'string') {
+				const trimmed = entry.trim();
+				if (trimmed.length === 0) {
+					throw new Error(`[BmsxConsoleRuntime] Component descriptor at index ${i} must not be empty.`);
+				}
+				normalized.push({ kind: 'component', descriptor: { className: trimmed, options: {} } });
+				continue;
+			}
+			const record = entry as Record<string, unknown>;
+			const presetCandidate = this.getLuaRecordEntry<string>(record, ['preset', 'presetId', 'preset_id']);
+			if (typeof presetCandidate === 'string' && presetCandidate.trim().length > 0) {
+				const paramsRaw = this.getLuaRecordEntry<unknown>(record, ['params', 'arguments', 'options', 'config']);
+				let params: Record<string, unknown> = {};
+				if (paramsRaw !== undefined) {
+					if (!this.isPlainObject(paramsRaw)) {
+						throw new Error(`[BmsxConsoleRuntime] Component preset '${presetCandidate}' params must be a table/object.`);
+					}
+					params = deepClone(paramsRaw as Record<string, unknown>);
+				}
+				normalized.push({ kind: 'preset', presetId: presetCandidate.trim(), params });
+				continue;
+			}
+			const className = this.getLuaRecordEntry<string>(record, ['class', 'className', 'type']);
+			if (typeof className !== 'string' || className.trim().length === 0) {
+				throw new Error(`[BmsxConsoleRuntime] Component descriptor at index ${i} is missing a class name.`);
+			}
+			let options: Record<string, unknown>;
+			if (record.options !== undefined) {
+				if (!this.isPlainObject(record.options)) {
+					throw new Error(`[BmsxConsoleRuntime] Component descriptor at index ${i} options must be a table/object.`);
+				}
+				options = deepClone(record.options as Record<string, unknown>);
+			} else {
+				options = deepClone(record);
+				delete options.class;
+				delete options.className;
+				delete options.type;
+				delete options.preset;
+				delete options.presetId;
+				delete options.preset_id;
+				delete options.params;
+				delete options.arguments;
+				delete options.options;
+				delete options.config;
+			}
+			normalized.push({ kind: 'component', descriptor: { className: className.trim(), options } });
+		}
+		return normalized;
+	}
 
 	private cloneComponentEntries(source: LuaWorldObjectComponentEntry[]): LuaWorldObjectComponentEntry[] {
 		const cloned: LuaWorldObjectComponentEntry[] = [];
@@ -4791,45 +4950,45 @@ private disposeComponentPreset(id: string): void {
 
 		const componentsRaw = this.getLuaRecordEntry<unknown>(descriptor, ['components']) ??
 			this.luaValueToJs(this.getLuaTableEntry(classTable, ['components']) ?? null, this.extendMarshalContext(marshalCtx, 'class.components'));
-	const componentEntries = this.normalizeLuaWorldObjectComponents(componentsRaw);
+		const componentEntries = this.normalizeLuaWorldObjectComponents(componentsRaw);
 
-	const defaultsSource = this.getLuaRecordEntry<Record<string, unknown>>(descriptor, ['defaults', 'state', 'properties'])
-		?? (() => {
-			const value = this.getLuaTableEntry(classTable, ['defaults', 'state', 'properties']);
-			return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.defaults'));
-		})();
-	const defaults = defaultsSource !== undefined ? this.normalizeWorldObjectDefaults(defaultsSource, 'register_worldobject.defaults') : undefined;
+		const defaultsSource = this.getLuaRecordEntry<Record<string, unknown>>(descriptor, ['defaults', 'state', 'properties'])
+			?? (() => {
+				const value = this.getLuaTableEntry(classTable, ['defaults', 'state', 'properties']);
+				return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.defaults'));
+			})();
+		const defaults = defaultsSource !== undefined ? this.normalizeWorldObjectDefaults(defaultsSource, 'register_worldobject.defaults') : undefined;
 
-	const fsmCandidate =
-		this.getLuaRecordEntry<string | string[] | Record<string, unknown>>(descriptor, ['fsms', 'state_machines', 'stateMachines', 'machines']) ??
-		(() => {
-			const value = this.getLuaTableEntry(classTable, ['fsms', 'state_machines', 'stateMachines', 'machines']);
-			return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.fsms'));
-		})();
-	const fsms = this.normalizeWorldObjectFsmList(fsmCandidate);
+		const fsmCandidate =
+			this.getLuaRecordEntry<string | string[] | Record<string, unknown>>(descriptor, ['fsms', 'state_machines', 'stateMachines', 'machines']) ??
+			(() => {
+				const value = this.getLuaTableEntry(classTable, ['fsms', 'state_machines', 'stateMachines', 'machines']);
+				return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.fsms'));
+			})();
+		const fsms = this.normalizeWorldObjectFsmList(fsmCandidate);
 
-	const behaviorTreesRaw = this.getLuaRecordEntry<unknown>(descriptor, ['bts', 'behavior_trees', 'behaviorTrees']) ??
-		(() => {
-			const value = this.getLuaTableEntry(classTable, ['bts', 'behavior_trees', 'behaviorTrees']);
-			return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.behavior_trees'));
-		})();
-	const behaviorTrees = this.normalizeWorldObjectBehaviorTreeList(behaviorTreesRaw);
+		const behaviorTreesRaw = this.getLuaRecordEntry<unknown>(descriptor, ['bts', 'behavior_trees', 'behaviorTrees']) ??
+			(() => {
+				const value = this.getLuaTableEntry(classTable, ['bts', 'behavior_trees', 'behaviorTrees']);
+				return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.behavior_trees'));
+			})();
+		const behaviorTrees = this.normalizeWorldObjectBehaviorTreeList(behaviorTreesRaw);
 
-	const abilitiesList = this.normalizeStringArray(
-		this.getLuaRecordEntry<unknown>(descriptor, ['abilities', 'ability_ids', 'abilityIds']) ??
-		(() => {
-			const value = this.getLuaTableEntry(classTable, ['abilities', 'ability_ids', 'abilityIds']);
-			return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.abilities'));
-		})(),
-	) ?? [];
+		const abilitiesList = this.normalizeStringArray(
+			this.getLuaRecordEntry<unknown>(descriptor, ['abilities', 'ability_ids', 'abilityIds']) ??
+			(() => {
+				const value = this.getLuaTableEntry(classTable, ['abilities', 'ability_ids', 'abilityIds']);
+				return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.abilities'));
+			})(),
+		) ?? [];
 
-	const tagsList = this.normalizeStringArray(
-		this.getLuaRecordEntry<unknown>(descriptor, ['tags']) ??
-		(() => {
-			const value = this.getLuaTableEntry(classTable, ['tags']);
-			return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.tags'));
-		})(),
-	) ?? [];
+		const tagsList = this.normalizeStringArray(
+			this.getLuaRecordEntry<unknown>(descriptor, ['tags']) ??
+			(() => {
+				const value = this.getLuaTableEntry(classTable, ['tags']);
+				return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.tags'));
+			})(),
+		) ?? [];
 
 		const assetId = this.currentLuaAssetContext?.assetId ?? null;
 		const record: LuaWorldObjectDefinitionRecord = {
@@ -4848,20 +5007,20 @@ private disposeComponentPreset(id: string): void {
 			assetId,
 		};
 
-	record.constructor = this.createLuaWorldObjectConstructor(record);
-	this.worldObjectDefinitions.set(objectId, record);
-	this.worldObjectDefinitionsByClassRef.set(normalizedClassRef, record);
-	if (assetId) {
-		let set = this.luaWorldObjectsByAsset.get(assetId);
-		if (!set) {
-			set = new Set();
-			this.luaWorldObjectsByAsset.set(assetId, set);
+		record.constructor = this.createLuaWorldObjectConstructor(record);
+		this.worldObjectDefinitions.set(objectId, record);
+		this.worldObjectDefinitionsByClassRef.set(normalizedClassRef, record);
+		if (assetId) {
+			let set = this.luaWorldObjectsByAsset.get(assetId);
+			if (!set) {
+				set = new Set();
+				this.luaWorldObjectsByAsset.set(assetId, set);
+			}
+			set.add(objectId);
 		}
-		set.add(objectId);
-	}
 
-	Reviver.constructors[objectId] = record.constructor as unknown as new () => unknown;
-	Reviver.constructors[normalizedClassRef] = record.constructor as unknown as new () => unknown;
+		Reviver.constructors[objectId] = record.constructor as unknown as new () => unknown;
+		Reviver.constructors[normalizedClassRef] = record.constructor as unknown as new () => unknown;
 		(globalThis as Record<string, unknown>)[objectId] = record.constructor;
 		(globalThis as Record<string, unknown>)[normalizedClassRef] = record.constructor;
 
@@ -4882,7 +5041,7 @@ private disposeComponentPreset(id: string): void {
 
 			override dispose(): void {
 				try {
-				runtime.invokeWorldObjectMethod(this, ['on_dispose', 'dispose']);
+					runtime.invokeWorldObjectMethod(this, ['on_dispose', 'dispose']);
 				}
 				finally {
 					super.dispose();
@@ -5719,12 +5878,12 @@ private disposeComponentPreset(id: string): void {
 		if (!rompack) {
 			return null;
 		}
-	return {
-		img: this.serializeRomAssetMap(rompack.img),
-		audio: this.serializeRomAssetMap(rompack.audio),
-		model: this.serializeRomAssetMap(rompack.model),
-		data: this.cloneRompackDataMap(rompack.data),
-		audioevents: rompack.audioevents ? deepClone(rompack.audioevents) : {},
+		return {
+			img: this.serializeRomAssetMap(rompack.img),
+			audio: this.serializeRomAssetMap(rompack.audio),
+			model: this.serializeRomAssetMap(rompack.model),
+			data: this.cloneRompackDataMap(rompack.data),
+			audioevents: rompack.audioevents ? deepClone(rompack.audioevents) : {},
 			lua: rompack.lua ? { ...rompack.lua } : {},
 			luaSourcePaths: rompack.luaSourcePaths ? { ...rompack.luaSourcePaths } : {},
 			resourcePaths: Array.isArray(rompack.resourcePaths)
@@ -6038,7 +6197,7 @@ private disposeComponentPreset(id: string): void {
 		if (!token || typeof token !== 'object') {
 			return null;
 		}
-		const record = token as { __native__?: string; [key: string]: unknown };
+		const record = token as { __native__?: string;[key: string]: unknown };
 		switch (record.__native__) {
 			case 'world_object': {
 				return this.lookupWorldObjectById(record.id);
@@ -6820,11 +6979,11 @@ private disposeComponentPreset(id: string): void {
 		const usageRow = Number.isFinite(request.row) ? Math.max(1, Math.floor(request.row)) : null;
 		const usageColumn = Number.isFinite(request.column) ? Math.max(1, Math.floor(request.column)) : null;
 		const resolved = this.resolveLuaChainValue(chain, assetId);
-	const staticDefinition = this.findStaticDefinitionLocation(assetId, chain, usageRow, usageColumn, request.chunkName);
-	if (!resolved) {
-		if (!staticDefinition) {
-			return null;
-		}
+		const staticDefinition = this.findStaticDefinitionLocation(assetId, chain, usageRow, usageColumn, request.chunkName);
+		if (!resolved) {
+			if (!staticDefinition) {
+				return null;
+			}
 			return {
 				expression: trimmed,
 				lines: ['static definition'],
@@ -6861,18 +7020,18 @@ private disposeComponentPreset(id: string): void {
 				definition = staticDefinition;
 			}
 		}
-	return {
-		expression: trimmed,
-		lines: formatted.lines,
-		valueType: formatted.valueType,
-		scope: resolved.scope,
-		state: 'value',
-		isFunction,
-		isLocalFunction,
-		isBuiltin,
-		definition,
-	};
-}
+		return {
+			expression: trimmed,
+			lines: formatted.lines,
+			valueType: formatted.valueType,
+			scope: resolved.scope,
+			state: 'value',
+			isFunction,
+			isLocalFunction,
+			isBuiltin,
+			definition,
+		};
+	}
 
 	private listLuaObjectMembers(request: ConsoleLuaMemberCompletionRequest): ConsoleLuaMemberCompletion[] {
 		const trimmed = request.expression.trim();
@@ -7160,68 +7319,82 @@ private disposeComponentPreset(id: string): void {
 	}
 
 	private findStaticDefinitionLocation(assetId: string | null, chain: ReadonlyArray<string>, usageRow: number | null, usageColumn: number | null, preferredChunk: string | null): ConsoleLuaDefinitionLocation | null {
-	if (chain.length === 0) {
-		return null;
-	}
-	const bundle = this.getStaticDefinitions(assetId, preferredChunk);
-	if (!bundle || bundle.definitions.length === 0) {
-		return null;
-	}
-	const { definitions, chunks, models } = bundle;
-	if (usageRow !== null && usageColumn !== null) {
-		for (let index = 0; index < chunks.length; index += 1) {
-			const chunk = chunks[index];
-			let model = models.get(chunk.chunkName) ?? null;
-			if (!model) {
-				const source = this.resolveSourceForChunk(chunk.chunkName, chunk.info);
-				if (!source) {
-					continue;
+		if (chain.length === 0) {
+			return null;
+		}
+		const bundle = this.getStaticDefinitions(assetId, preferredChunk);
+		if (!bundle || bundle.definitions.length === 0) {
+			return null;
+		}
+		const { definitions, chunks, models } = bundle;
+		if (usageRow !== null && usageColumn !== null) {
+			for (let index = 0; index < chunks.length; index += 1) {
+				const chunk = chunks[index];
+				let model = models.get(chunk.chunkName) ?? null;
+				if (!model) {
+					const source = this.resolveSourceForChunk(chunk.chunkName, chunk.info);
+					if (!source) {
+						continue;
+					}
+					model = buildLuaSemanticModel(source, chunk.chunkName);
+					models.set(chunk.chunkName, model);
 				}
-				model = buildLuaSemanticModel(source, chunk.chunkName);
-				models.set(chunk.chunkName, model);
-			}
-			const semanticDefinition = model.lookupIdentifier(usageRow, usageColumn, chain);
-			if (semanticDefinition) {
-				const targetAsset = chunk.info.assetId ?? assetId;
-				return this.buildDefinitionLocationFromRange(semanticDefinition.definition, targetAsset);
+				const semanticDefinition = model.lookupIdentifier(usageRow, usageColumn, chain);
+				if (semanticDefinition) {
+					const targetAsset = chunk.info.assetId ?? assetId;
+					return this.buildDefinitionLocationFromRange(semanticDefinition.definition, targetAsset);
+				}
 			}
 		}
-	}
-	const identifier = chain[chain.length - 1];
-	const pathsMatch = (candidate: ReadonlyArray<string>): boolean => {
-		if (candidate.length !== chain.length) {
-			return false;
-		}
-		for (let index = 0; index < candidate.length; index += 1) {
-			if (candidate[index] !== chain[index]) {
+		const identifier = chain[chain.length - 1];
+		const pathsMatch = (candidate: ReadonlyArray<string>): boolean => {
+			if (candidate.length !== chain.length) {
 				return false;
 			}
-		}
-		return true;
-	};
-	const definitionPriority = (info: LuaDefinitionInfo): number => {
-		switch (info.kind) {
-			case 'parameter':
-				return 5;
-			case 'table_field':
-				return 4;
-			case 'function':
-				return 3;
-			case 'variable':
-				return 2;
-			case 'assignment':
-			default:
-				return 1;
-		}
-	};
-	const selectPreferred = (candidate: LuaDefinitionInfo, current: LuaDefinitionInfo | null): LuaDefinitionInfo | null => {
-		const candidatePriority = definitionPriority(candidate);
-		const currentPriority = current ? definitionPriority(current) : -1;
-		if (usageRow !== null) {
-			if (!this.positionWithinRange(usageRow, usageColumn, candidate.scope)) {
-				return current;
+			for (let index = 0; index < candidate.length; index += 1) {
+				if (candidate[index] !== chain[index]) {
+					return false;
+				}
 			}
-			if (usageRow < candidate.definition.start.line) {
+			return true;
+		};
+		const definitionPriority = (info: LuaDefinitionInfo): number => {
+			switch (info.kind) {
+				case 'parameter':
+					return 5;
+				case 'table_field':
+					return 4;
+				case 'function':
+					return 3;
+				case 'variable':
+					return 2;
+				case 'assignment':
+				default:
+					return 1;
+			}
+		};
+		const selectPreferred = (candidate: LuaDefinitionInfo, current: LuaDefinitionInfo | null): LuaDefinitionInfo | null => {
+			const candidatePriority = definitionPriority(candidate);
+			const currentPriority = current ? definitionPriority(current) : -1;
+			if (usageRow !== null) {
+				if (!this.positionWithinRange(usageRow, usageColumn, candidate.scope)) {
+					return current;
+				}
+				if (usageRow < candidate.definition.start.line) {
+					return current;
+				}
+				if (
+					!current
+					|| candidatePriority > currentPriority
+					|| (candidatePriority === currentPriority
+						&& (
+							candidate.definition.start.line > current.definition.start.line
+							|| (candidate.definition.start.line === current.definition.start.line
+								&& candidate.definition.start.column >= current.definition.start.column)
+						))
+				) {
+					return candidate;
+				}
 				return current;
 			}
 			if (
@@ -7229,47 +7402,33 @@ private disposeComponentPreset(id: string): void {
 				|| candidatePriority > currentPriority
 				|| (candidatePriority === currentPriority
 					&& (
-						candidate.definition.start.line > current.definition.start.line
+						candidate.definition.start.line < current.definition.start.line
 						|| (candidate.definition.start.line === current.definition.start.line
-							&& candidate.definition.start.column >= current.definition.start.column)
+							&& candidate.definition.start.column < current.definition.start.column)
 					))
-			) {
+			)
 				return candidate;
-			}
 			return current;
+		};
+		let bestExact: LuaDefinitionInfo | null = null;
+		let bestPartial: LuaDefinitionInfo | null = null;
+		for (let i = 0; i < definitions.length; i += 1) {
+			const definition = definitions[i];
+			if (pathsMatch(definition.namePath)) {
+				bestExact = selectPreferred(definition, bestExact);
+				continue;
+			}
+			if (definition.name !== identifier) {
+				continue;
+			}
+			bestPartial = selectPreferred(definition, bestPartial);
 		}
-		if (
-			!current
-			|| candidatePriority > currentPriority
-			|| (candidatePriority === currentPriority
-				&& (
-					candidate.definition.start.line < current.definition.start.line
-					|| (candidate.definition.start.line === current.definition.start.line
-						&& candidate.definition.start.column < current.definition.start.column)
-				))
-		)
-			return candidate;
-		return current;
-	};
-	let bestExact: LuaDefinitionInfo | null = null;
-	let bestPartial: LuaDefinitionInfo | null = null;
-	for (let i = 0; i < definitions.length; i += 1) {
-		const definition = definitions[i];
-		if (pathsMatch(definition.namePath)) {
-			bestExact = selectPreferred(definition, bestExact);
-			continue;
+		const chosen = bestExact ?? bestPartial;
+		if (!chosen) {
+			return null;
 		}
-		if (definition.name !== identifier) {
-			continue;
-		}
-		bestPartial = selectPreferred(definition, bestPartial);
+		return this.buildDefinitionLocationFromRange(chosen.definition, assetId);
 	}
-	const chosen = bestExact ?? bestPartial;
-	if (!chosen) {
-		return null;
-	}
-	return this.buildDefinitionLocationFromRange(chosen.definition, assetId);
-}
 
 	private getStaticDefinitions(assetId: string | null, preferredChunk: string | null): { definitions: ReadonlyArray<LuaDefinitionInfo>; chunks: Array<{ chunkName: string; info: { assetId: string | null; path?: string | null } }>; models: Map<string, LuaSemanticModel> } | null {
 		const interpreter = this.requireLuaInterpreter();
@@ -7322,64 +7481,64 @@ private disposeComponentPreset(id: string): void {
 	}
 
 	private buildSemanticModelForChunk(chunkName: string, info: { assetId: string | null; path?: string | null }): LuaSemanticModel | null {
-	const source = this.resolveSourceForChunk(chunkName, info);
-	if (!source) {
-		return null;
-	}
-	const normalizedChunk = this.normalizeChunkName(chunkName);
-	const cached = this.chunkSemanticCache.get(normalizedChunk);
-	const previousModel = cached ? cached.model : null;
-	const previousDefinitions = cached ? cached.definitions : [];
-	if (cached && cached.source === source) {
-		return cached.model;
-	}
-	try {
-		const model = buildLuaSemanticModel(source, chunkName);
-		this.chunkSemanticCache.set(normalizedChunk, { source, model, definitions: model.definitions });
-		return model;
-	} catch (error) {
-		if (error instanceof LuaSyntaxError) {
-			const sanitizedSource = (() => {
-				if (!Number.isFinite(error.line)) {
-					return null;
-				}
-				const lines = source.split('\n');
-				const lineIndex = error.line - 1;
-				if (lineIndex < 0 || lineIndex >= lines.length) {
-					return null;
-				}
-				const originalLine = lines[lineIndex];
-				const trimmed = originalLine.trimStart();
-				if (trimmed.startsWith('--__BMSX_SYNTAX_ERROR__')) {
-					return null;
-				}
-				const prefixLength = originalLine.length - trimmed.length;
-				const prefix = originalLine.slice(0, prefixLength);
-				lines[lineIndex] = `${prefix}--__BMSX_SYNTAX_ERROR__ ${trimmed}`;
-				return lines.join('\n');
-			})();
-			if (sanitizedSource && sanitizedSource !== source) {
-				try {
-					const model = buildLuaSemanticModel(sanitizedSource, chunkName);
-					this.chunkSemanticCache.set(normalizedChunk, { source, model, definitions: model.definitions });
-					return model;
-				} catch {
-					// continue with fallback logic below
-				}
-			}
-			if (previousModel) {
-				this.chunkSemanticCache.set(normalizedChunk, { source, model: previousModel, definitions: previousDefinitions });
-				return previousModel;
-			}
-			this.chunkSemanticCache.set(normalizedChunk, { source, model: null, definitions: [] });
+		const source = this.resolveSourceForChunk(chunkName, info);
+		if (!source) {
 			return null;
 		}
-		const message = error instanceof Error ? error.message : String(error);
-		this.chunkSemanticCache.set(normalizedChunk, { source, model: null, definitions: [] });
-		console.warn(`[BmsxConsoleRuntime] Failed to parse '${chunkName}': ${message}`);
-		return null;
+		const normalizedChunk = this.normalizeChunkName(chunkName);
+		const cached = this.chunkSemanticCache.get(normalizedChunk);
+		const previousModel = cached ? cached.model : null;
+		const previousDefinitions = cached ? cached.definitions : [];
+		if (cached && cached.source === source) {
+			return cached.model;
+		}
+		try {
+			const model = buildLuaSemanticModel(source, chunkName);
+			this.chunkSemanticCache.set(normalizedChunk, { source, model, definitions: model.definitions });
+			return model;
+		} catch (error) {
+			if (error instanceof LuaSyntaxError) {
+				const sanitizedSource = (() => {
+					if (!Number.isFinite(error.line)) {
+						return null;
+					}
+					const lines = source.split('\n');
+					const lineIndex = error.line - 1;
+					if (lineIndex < 0 || lineIndex >= lines.length) {
+						return null;
+					}
+					const originalLine = lines[lineIndex];
+					const trimmed = originalLine.trimStart();
+					if (trimmed.startsWith('--__BMSX_SYNTAX_ERROR__')) {
+						return null;
+					}
+					const prefixLength = originalLine.length - trimmed.length;
+					const prefix = originalLine.slice(0, prefixLength);
+					lines[lineIndex] = `${prefix}--__BMSX_SYNTAX_ERROR__ ${trimmed}`;
+					return lines.join('\n');
+				})();
+				if (sanitizedSource && sanitizedSource !== source) {
+					try {
+						const model = buildLuaSemanticModel(sanitizedSource, chunkName);
+						this.chunkSemanticCache.set(normalizedChunk, { source, model, definitions: model.definitions });
+						return model;
+					} catch {
+						// continue with fallback logic below
+					}
+				}
+				if (previousModel) {
+					this.chunkSemanticCache.set(normalizedChunk, { source, model: previousModel, definitions: previousDefinitions });
+					return previousModel;
+				}
+				this.chunkSemanticCache.set(normalizedChunk, { source, model: null, definitions: [] });
+				return null;
+			}
+			const message = error instanceof Error ? error.message : String(error);
+			this.chunkSemanticCache.set(normalizedChunk, { source, model: null, definitions: [] });
+			console.warn(`[BmsxConsoleRuntime] Failed to parse '${chunkName}': ${message}`);
+			return null;
+		}
 	}
-}
 
 	private resolveSourceForChunk(chunkName: string, info: { assetId: string | null; path?: string | null }): string | null {
 		if (this.editor) {
@@ -7562,35 +7721,35 @@ private disposeComponentPreset(id: string): void {
 			const numeric = Number.isFinite(value) ? String(value) : 'nan';
 			return { lines: [numeric], valueType: 'number', isFunction: false };
 		}
-	if (typeof value === 'string') {
-		return { lines: [this.truncateInspectorLine(JSON.stringify(value))], valueType: 'string', isFunction: false };
-	}
-	if (this.isLuaFunctionValue(value)) {
-		const fnName = value.name && value.name.length > 0 ? value.name : '<anonymous>';
-		return { lines: [`<function ${fnName}>`], valueType: 'function', isFunction: true };
-	}
-	if (isLuaNativeValue(value)) {
-		const native = value.native;
-		const typeName = value.typeName && value.typeName.length > 0 ? value.typeName : this.resolveNativeTypeName(native);
-		if (typeof native === 'function') {
-			const params = this.extractFunctionParameters(native as (...args: unknown[]) => unknown);
-			const paramSegment = params.length > 0 ? params.join(', ') : '';
-			const signature = paramSegment.length > 0 ? `(${paramSegment})` : '()';
-			const label = typeName && typeName.length > 0 ? `<native function ${typeName}${signature}>` : `<native function${signature}>`;
-			return { lines: [label], valueType: typeName ?? 'native', isFunction: true };
+		if (typeof value === 'string') {
+			return { lines: [this.truncateInspectorLine(JSON.stringify(value))], valueType: 'string', isFunction: false };
 		}
-		let summary = `<${typeName ?? 'native'}>`;
-		const identifier = (native as { id?: unknown }).id;
-		if (identifier !== undefined && identifier !== null) {
-			summary = `${summary} id=${String(identifier)}`;
+		if (this.isLuaFunctionValue(value)) {
+			const fnName = value.name && value.name.length > 0 ? value.name : '<anonymous>';
+			return { lines: [`<function ${fnName}>`], valueType: 'function', isFunction: true };
 		}
-		return { lines: [summary], valueType: typeName ?? 'native', isFunction: false };
-	}
-	if (isLuaTable(value)) {
-		try {
-			const serialized = this.serializeLuaValueForSnapshot(value, new Set<LuaTable>());
-			const json = JSON.stringify(serialized, null, 2) ?? 'null';
-			const rawLines = json.split('\n');
+		if (isLuaNativeValue(value)) {
+			const native = value.native;
+			const typeName = value.typeName && value.typeName.length > 0 ? value.typeName : this.resolveNativeTypeName(native);
+			if (typeof native === 'function') {
+				const params = this.extractFunctionParameters(native as (...args: unknown[]) => unknown);
+				const paramSegment = params.length > 0 ? params.join(', ') : '';
+				const signature = paramSegment.length > 0 ? `(${paramSegment})` : '()';
+				const label = typeName && typeName.length > 0 ? `<native function ${typeName}${signature}>` : `<native function${signature}>`;
+				return { lines: [label], valueType: typeName ?? 'native', isFunction: true };
+			}
+			let summary = `<${typeName ?? 'native'}>`;
+			const identifier = (native as { id?: unknown }).id;
+			if (identifier !== undefined && identifier !== null) {
+				summary = `${summary} id=${String(identifier)}`;
+			}
+			return { lines: [summary], valueType: typeName ?? 'native', isFunction: false };
+		}
+		if (isLuaTable(value)) {
+			try {
+				const serialized = this.serializeLuaValueForSnapshot(value, new Set<LuaTable>());
+				const json = JSON.stringify(serialized, null, 2) ?? 'null';
+				const rawLines = json.split('\n');
 				const lines: string[] = [];
 				for (let i = 0; i < rawLines.length && i < BmsxConsoleRuntime.HOVER_VALUE_MAX_SERIALIZED_LINES; i += 1) {
 					lines.push(this.truncateInspectorLine(rawLines[i]));
@@ -7602,9 +7761,9 @@ private disposeComponentPreset(id: string): void {
 			} catch (_error) {
 				return { lines: ['<table>'], valueType: 'table', isFunction: false };
 			}
+		}
+		return { lines: ['<unknown>'], valueType: 'unknown', isFunction: false };
 	}
-	return { lines: ['<unknown>'], valueType: 'unknown', isFunction: false };
-}
 
 	private getNativeMemberCompletionEntries(value: LuaNativeValue, operator: '.' | ':'): ConsoleLuaMemberCompletion[] {
 		const native = value.native;
@@ -7901,12 +8060,12 @@ private disposeComponentPreset(id: string): void {
 	private refreshLuaHandlersForChunk(chunkName: string, _sourceOverride?: string | null): void {
 		const normalized = this.normalizeChunkName(chunkName);
 		const resourceInfo = this.lookupChunkResourceInfo(normalized) ?? { assetId: null };
-	const assetId = resourceInfo.assetId ?? null;
-	if (!assetId) {
-		return;
-	}
-	this.luaGenericAssetsExecuted.delete(assetId);
-	const category = this.resolveLuaHotReloadCategory(assetId);
+		const assetId = resourceInfo.assetId ?? null;
+		if (!assetId) {
+			return;
+		}
+		this.luaGenericAssetsExecuted.delete(assetId);
+		const category = this.resolveLuaHotReloadCategory(assetId);
 		if (!category) {
 			return;
 		}

@@ -9955,25 +9955,15 @@ export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: n
 	const caretTop = Math.floor(cursorY);
 	const caretBottom = caretTop + info.height;
 	const problemsPanelHasFocus = ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused();
-	if (ide_state.searchActive || ide_state.lineJumpActive || ide_state.resourcePanelFocused || ide_state.createResourceActive || problemsPanelHasFocus) {
-		const innerLeft = caretLeft + 1;
-		const innerRight = caretRight - 1;
-		const innerTop = caretTop + 1;
-		const innerBottom = caretBottom - 1;
-		if (innerRight > innerLeft && innerBottom > innerTop) {
-			api.rectfill(innerLeft, innerTop, innerRight, innerBottom, constants.COLOR_CODE_BACKGROUND);
-		}
-		drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
-		drawEditorColoredText(api, ide_state.font, info.baseChar, [info.baseColor], cursorX, cursorY, info.baseColor);
-	} else {
-		api.rectfill_color(caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
-		const caretPaletteIndex = resolvePaletteIndex(constants.CARET_COLOR);
-		const caretInverseColor = caretPaletteIndex !== null
-			? invertColorIndex(caretPaletteIndex)
-			: invertColorIndex(info.baseColor);
-		drawEditorColoredText(api, ide_state.font, info.baseChar, [caretInverseColor], cursorX, cursorY, caretInverseColor);
-	}
+	const active = !(ide_state.searchActive || ide_state.lineJumpActive || ide_state.resourcePanelFocused || ide_state.createResourceActive || problemsPanelHasFocus);
+	const glyphColor = Msx1Colors[1];
+	renderInlineCaret({
+		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, col),
+		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, col),
+		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0),
+	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, constants.CARET_COLOR, info.baseChar, glyphColor);
 }
+import { renderInlineCaret } from './render_caret';
 export function drawInlineCaret(
 	api: BmsxConsoleApi,
 	field: InlineTextField,
@@ -9986,18 +9976,15 @@ export function drawInlineCaret(
 	caretColor: { r: number; g: number; b: number; a: number; } = constants.CARET_COLOR,
 	baseTextColor: number = constants.COLOR_STATUS_TEXT
 ): void {
-	if (!ide_state.cursorVisible) {
-		return;
-	}
-	if (active) {
-		api.rectfill_color(left, top, right, bottom, caretColor);
-		const caretIndex = resolvePaletteIndex(caretColor);
-		const inverseColor = caretIndex !== null
-			? invertColorIndex(caretIndex)
-			: invertColorIndex(baseTextColor);
-		const glyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
-		drawEditorText(api, ide_state.font, glyph.length > 0 ? glyph : ' ', cursorX, top, inverseColor);
-		return;
-	}
-	drawRectOutlineColor(api, left, top, right, bottom, caretColor);
+	if (!ide_state.cursorVisible) return;
+	const glyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
+	const caretIndex = resolvePaletteIndex(caretColor);
+	const inverseColorIndex = caretIndex !== null ? invertColorIndex(caretIndex) : invertColorIndex(baseTextColor);
+	// Map palette index to color object using Msx1Colors
+	const inverseColor = Msx1Colors[inverseColorIndex];
+	renderInlineCaret({
+		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, col),
+		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, col),
+		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0),
+	}, left, top, right, bottom, cursorX, active, caretColor, glyph, inverseColor);
 }

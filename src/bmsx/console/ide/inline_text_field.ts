@@ -398,7 +398,7 @@ export type InlineFieldEditingHandlers = {
 	consumeKey(code: string): void;
 	readClipboard(): string | null;
 	writeClipboard(payload: string, action: InlineFieldClipboardAction): void | Promise<void>;
-	onClipboardEmpty(): void;
+	onClipboardEmpty?(): void;
 };
 
 export function applyInlineFieldEditing(

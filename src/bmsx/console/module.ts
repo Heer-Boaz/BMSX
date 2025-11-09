@@ -2,30 +2,52 @@ import { $ } from '../core/game';
 import type { World, WorldModule } from '../core/world';
 import { BmsxConsoleRuntime } from './runtime';
 import type { BmsxConsoleCartridge, ConsoleModuleOptions } from './types';
-import { InputAbilitySystem } from '../ecs/input_ability_system';
+import { BmsxConsoleModeSystem, BmsxConsoleEditorSystem, BmsxConsoleUpdateSystem, BmsxConsoleDrawSystem } from './console_systems';
 import { TickGroup } from '../ecs/ecsystem';
 
 export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: ConsoleModuleOptions): WorldModule {
-	const moduleId = options.moduleId;
-	const inputSystemId = `${moduleId ?? 'console'}.inputAbility`;
+	const modeSystemId = 'bmsxConsole.mode';
+	const editorSystemId = 'bmsxConsole.editor';
+	const updateSystemId = 'bmsxConsole.update';
+	const drawSystemId = 'bmsxConsole.draw';
 	return {
 		id: options.moduleId,
 		ecs: {
 			systems: [
 				{
-					id: inputSystemId,
+					id: modeSystemId,
+					group: TickGroup.Input,
+					defaultPriority: 5,
+					create: (priority: number) => new BmsxConsoleModeSystem(priority),
+				},
+				{
+					id: editorSystemId,
+					group: TickGroup.Input,
+					defaultPriority: 7,
+					create: (priority: number) => new BmsxConsoleEditorSystem(priority),
+				},
+				{
+					id: updateSystemId,
 					group: TickGroup.Input,
 					defaultPriority: 10,
-					create: (priority: number) => new InputAbilitySystem(priority),
+					create: (priority: number) => new BmsxConsoleUpdateSystem(priority),
+				},
+				{
+					id: drawSystemId,
+					group: TickGroup.Presentation,
+					defaultPriority: 100,
+					create: (priority: number) => new BmsxConsoleDrawSystem(priority),
 				},
 			],
 			nodes: [
-				{ ref: inputSystemId, after: ['behaviorTrees'] },
+				{ ref: modeSystemId, after: ['behaviorTrees'] },
+				{ ref: editorSystemId, after: [modeSystemId] },
+				{ ref: updateSystemId, after: [editorSystemId] },
+				{ ref: drawSystemId, after: ['renderSubmit'] },
 			],
 		},
 		onBoot(_world: World) {
-			const rompack = $.rompack;
-			const caseInsensitiveLua = options.caseInsensitiveLua ?? (rompack?.caseInsensitiveLua ?? true);
+			const caseInsensitiveLua = options.caseInsensitiveLua ?? ($.rompack.caseInsensitiveLua ?? true);
 			BmsxConsoleRuntime.ensure({
 				cart,
 				playerIndex: options.playerIndex,
@@ -34,7 +56,7 @@ export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: Con
 			});
 		},
 		onTick(_world: World, _deltaMilliseconds: number) {
-			// Runtime advances itself via frame events.
+			BmsxConsoleRuntime.instance?.flushDeferredState();
 		},
 		onLoad(_world: World) {
 			// Runtime is independent from world save/load cycles.

@@ -16,6 +16,7 @@ import {
 import type { InlineInputOptions, InlineTextField } from './ide/types';
 import { INITIAL_REPEAT_DELAY, REPEAT_INTERVAL, TAB_SPACES } from './ide/constants';
 import { EditorConsoleRenderBackend } from './render_backend';
+import { renderInlineCaret, type CaretDrawOps } from './ide/render_caret';
 
 type ConsoleOutputKind = 'prompt' | 'stdout' | 'stderr' | 'system';
 
@@ -35,13 +36,11 @@ type Viewport = { width: number; height: number };
 const MAX_OUTPUT_ENTRIES = 512;
 const MAX_HISTORY_ENTRIES = 256;
 const PROMPT_TEXT = '> ';
-const PROMPT_GAP = 4;
+// const PROMPT_GAP = 4;
 const PADDING_X = 10;
 const PADDING_Y = 10;
 const PANEL_BACKGROUND_ALPHA = 0.72;
 const CHARACTER_TILE_ALPHA = 1.0;
-const OBLIQUE_SHADOW_OFFSET = 1;
-const CHARACTER_INSET_Y = 1;
 const CURSOR_BLINK_PERIOD = 0.8;
 const ENABLE_PANEL_BACKDROP = false;
 
@@ -254,7 +253,7 @@ export class ConsoleMode {
 		const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax);
 
 		// space available for output lines above the input area
-		const availableHeight = surface.height - PADDING_Y * 2 - PROMPT_GAP - (inputWrap.segments.length * lineHeight);
+		const availableHeight = surface.height - PADDING_Y * 2 - (inputWrap.segments.length * lineHeight);
 		const maxContentLines = Math.max(1, Math.floor(availableHeight / lineHeight));
 
 		// build and clamp output lines
@@ -264,7 +263,7 @@ export class ConsoleMode {
 
 		// draw backdrop sized to visible content + input area
 		if (this.showBackdrop) {
-			const panelHeight = visibleLines.length * lineHeight + PROMPT_GAP + inputWrap.segments.length * lineHeight;
+			const panelHeight = visibleLines.length * lineHeight + inputWrap.segments.length * lineHeight;
 			this.drawBackdrop(renderer, surface.width, panelHeight);
 		}
 
@@ -278,7 +277,7 @@ export class ConsoleMode {
 
 		// compute where input block starts (positioned right after visible output lines,
 		// so the input moves upward as output fills the viewport — terminal-like behavior)
-		const inputStartY = PADDING_Y + visibleLines.length * lineHeight + PROMPT_GAP;
+		const inputStartY = PADDING_Y + visibleLines.length * lineHeight;
 
 		// draw prompt at the first input line then draw wrapped input lines (first segment after prompt)
 		const promptColor = resolvePaletteColor(OUTPUT_COLORS.prompt);
@@ -332,7 +331,7 @@ export class ConsoleMode {
 				this.clipboard = payload;
 				void $.platform.clipboard.writeText(payload).catch(() => {});
 			},
-			onClipboardEmpty: () => this.appendSystemMessage('Clipboard is empty.'),
+			// onClipboardEmpty: () => this.appendSystemMessage('Clipboard is empty.'),
 		};
 	}
 
@@ -430,7 +429,6 @@ export class ConsoleMode {
 		let current = '';
 		let currentWidth = 0;
 		let widthLimit = firstWidth;
-		let index = 0;
 		let segStart = 0;
 
 		for (let i = 0; i < text.length; i += 1) {
@@ -441,12 +439,11 @@ export class ConsoleMode {
 				starts.push(segStart);
 				current = '';
 				currentWidth = 0;
-				index += 1;
 				segStart = i + 1;
 				widthLimit = otherWidth;
 				continue;
 			}
-			const adv = this.font.advance(ch);
+			const adv = ch === '\t' ? this.font.advance(' ') * TAB_SPACES : this.font.advance(ch);
 			if (currentWidth + adv > widthLimit && current.length > 0) {
 				segments.push(current);
 				starts.push(segStart);
@@ -498,10 +495,10 @@ export class ConsoleMode {
 					const selWidth = this.measureDisplayText(selected);
 					renderer.drawRect({
 						kind: 'fill',
-						x0: x + startWidth - 1,
-						y0: y - CHARACTER_INSET_Y,
+						x0: x + startWidth,
+						y0: y,
 						x1: x + startWidth + selWidth + 1,
-						y1: y + this.font.lineHeight() + CHARACTER_INSET_Y,
+						y1: y + this.font.lineHeight(),
 						color: this.selectionColor,
 					});
 				}
@@ -510,20 +507,26 @@ export class ConsoleMode {
 			// draw the glyph run for this segment
 			this.drawGlyphRun(renderer, seg, x, y, inputColor);
 
-			// caret rendering: if caret is within this segment draw caret
+			// caret rendering: use shared caret style from console_cart_editor
 			if (this.caretVisible) {
 				const caretInSeg = cursorIndex >= segStart && cursorIndex <= segStart + segLen;
 				if (caretInSeg) {
 					const local = displayText.slice(segStart, cursorIndex);
 					const caretOffset = this.measureDisplayText(local);
-					renderer.drawRect({
-						kind: 'fill',
-						x0: x + caretOffset,
-						y0: y - CHARACTER_INSET_Y,
-						x1: x + caretOffset + 1,
-						y1: y + this.font.lineHeight() + CHARACTER_INSET_Y,
-						color: this.caretColor,
-					});
+					// Use shared caret renderer with underlying glyph inversion
+					const nextChar = cursorIndex < displayText.length ? displayText.charAt(cursorIndex) : ' ';
+					const caretWidth = this.font.advance(nextChar);
+					const left = Math.floor(x + caretOffset);
+					const topY = y;
+					const right = left + Math.max(1, Math.floor(caretWidth));
+					const bottom = topY + this.font.lineHeight();
+					const renderFont = this.font.getRenderFont();
+					const ops: CaretDrawOps = {
+						fillRect: (x0, y0, x1, y1, color) => renderer.drawRect({ kind: 'fill', x0, y0, x1, y1, color }),
+						strokeRect: (x0, y0, x1, y1, color) => renderer.drawRect({ kind: 'rect', x0, y0, x1, y1, color }),
+						drawGlyph: (text, gx, gy, color) => renderer.drawText({ kind: 'print', text, x: gx, y: gy, color }, renderFont),
+					};
+					renderInlineCaret(ops, left, topY, right, bottom, left, /*active*/ true, this.caretColor, nextChar, { r: 0, g: 0, b: 0, a: 1 });
 				}
 			}
 		}
@@ -543,13 +546,13 @@ export class ConsoleMode {
 				continue;
 			}
 			const advance = this.font.advance(ch);
-			const backgroundX = cursorX + OBLIQUE_SHADOW_OFFSET;
+			const backgroundX = cursorX;
 			renderer.drawRect({
 				kind: 'fill',
 				x0: backgroundX,
-				y0: originY - CHARACTER_INSET_Y,
-				x1: backgroundX + advance + CHARACTER_INSET_Y,
-				y1: originY + this.font.lineHeight() + CHARACTER_INSET_Y,
+				y0: originY,
+				x1: backgroundX + advance,
+				y1: originY + this.font.lineHeight(),
 				color: this.characterBackgroundColor,
 			});
 			if (ch !== ' ') {
@@ -586,6 +589,8 @@ export class ConsoleMode {
 		if (!value) {
 			return 0;
 		}
-		return this.font.measure(this.toDisplayText(value));
+		// Match renderer/tab handling: expand tabs to TAB_SPACES spaces before measuring
+		const display = this.toDisplayText(value).replace(/\t/g, ' '.repeat(TAB_SPACES));
+		return this.font.measure(display);
 	}
 }

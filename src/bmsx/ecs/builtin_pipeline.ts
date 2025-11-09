@@ -1,5 +1,6 @@
 import { AbilityRuntimeSystem } from '../gas/abilityruntime';
 import { GameplayMovementSystem } from './gameplay_movement_system';
+import { InputAbilitySystem } from './input_ability_system';
 import {
 	BehaviorTreeSystem,
 	BoundarySystem,
@@ -24,12 +25,12 @@ import { SpriteColliderSyncSystem } from './spritecollider_sync_system';
 import { Collision2DBroadphaseRebuildSystem } from './collision2d_broadphase_system';
 import { Overlap2DSystem } from './overlap2d_system';
 import { FsmEventDispatchSystem } from './fsm_event_dispatch_system';
-// No explicit PreRender submission systems; GameView.drawbase() visits objects
 
 /** Register built-in ECS systems with sensible defaults. */
 export function registerBuiltinECS(): void {
 	R.registerMany([
 		{ id: 'behaviorTrees', group: TickGroup.Input, create: (p: number) => new BehaviorTreeSystem(p) },
+		{ id: 'inputAbility', group: TickGroup.Input, defaultPriority: 10, create: (p: number) => new InputAbilitySystem(p) },
 		{ id: 'abilityRuntime', group: TickGroup.AbilityUpdate, create: (p: number) => new AbilityRuntimeSystem(p) },
 		{ id: 'fsmEventDispatch', group: TickGroup.ModeResolution, defaultPriority: 5, create: (p: number) => new FsmEventDispatchSystem(p ?? 5) },
 		{ id: 'objectFSM', group: TickGroup.ModeResolution, create: (p: number) => new StateMachineSystem(p) },
@@ -47,10 +48,10 @@ export function registerBuiltinECS(): void {
 		{ id: 'overlapEvents', group: TickGroup.Physics, create: (p: number) => new Overlap2DSystem(p) },
 		{ id: 'transform', group: TickGroup.Physics, create: (p: number) => new TransformSystem(p) },
 		{ id: 'meshAnim', group: TickGroup.Animation, create: (p: number) => new MeshAnimationSystem(p) },
-		// Presentation: typed renderers first, then custom producers
 		{ id: 'textRender', group: TickGroup.Presentation, create: (p: number) => new TextRenderSystem(p) },
 		{ id: 'spriteRender', group: TickGroup.Presentation, create: (p: number) => new SpriteRenderSystem(p) },
-			{ id: 'meshRender', group: TickGroup.Presentation, create: (p: number) => new MeshRenderSystem(p) },
-			{ id: 'renderSubmit', group: TickGroup.Presentation, create: (p: number) => new PreRenderSubmitSystem(p) },
-		]);
+		{ id: 'meshRender', group: TickGroup.Presentation, create: (p: number) => new MeshRenderSystem(p) },
+		// No explicit PreRender submission systems; GameView.drawbase() visits objects
+		{ id: 'renderSubmit', group: TickGroup.Presentation, create: (p: number) => new PreRenderSubmitSystem(p) },
+	]);
 }

@@ -659,7 +659,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		const world = $.world;
 		world.dispatchWorldLifecycleSlot(this, 'dispose', {
 			world,
-			spaceId: world.objToSpaceMap.get(this.id) ?? world.activeSpaceId,
+			spaceId: world.objToSpaceMap.get(this.id),
 			reason: 'dispose',
 		});
 		this.unbind();
