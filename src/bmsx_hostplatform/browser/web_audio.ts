@@ -13,8 +13,6 @@ function clamp01(x: number): number {
 	return x;
 }
 
-const EPS = 1 / 44100;
-
 class WebClip implements AudioClipHandle {
 	constructor(public readonly buffer: AudioBuffer) {}
 	get duration(): number { return this.buffer.duration; }
@@ -79,7 +77,7 @@ class WebVoice implements VoiceHandle {
 				off = mod < 0 ? mod + dur : mod;
 			} else {
 				if (off < 0) off = 0;
-				const cap = dur - EPS;
+				const cap = Math.max(dur - this.minRampInterval(), 0);
 				if (off > cap) off = cap;
 			}
 		}
@@ -115,12 +113,17 @@ class WebVoice implements VoiceHandle {
 		};
 	}
 
+	private minRampInterval(): number {
+		const rate = this.ctx.sampleRate;
+		return rate > 0 ? (1 / rate) : Number.EPSILON;
+	}
+
 	setGainLinear(v: number): void {
 		const now = this.ctx.currentTime;
 		const p = this.gain.gain;
 		p.cancelScheduledValues(now);
 		p.setValueAtTime(p.value, now);
-		p.linearRampToValueAtTime(clamp01(v), now + EPS);
+		p.linearRampToValueAtTime(clamp01(v), now + this.minRampInterval());
 	}
 
 	rampGainLinear(target: number, durationSec: number): void {
@@ -128,7 +131,7 @@ class WebVoice implements VoiceHandle {
 		const p = this.gain.gain;
 		p.cancelScheduledValues(now);
 		p.setValueAtTime(p.value, now);
-		const dur = durationSec > 0 ? durationSec : EPS;
+		const dur = durationSec > 0 ? durationSec : this.minRampInterval();
 		p.linearRampToValueAtTime(clamp01(target), now + dur);
 	}
 

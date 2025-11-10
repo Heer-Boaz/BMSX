@@ -76,7 +76,6 @@ interface ActiveVoiceRecord extends ActiveVoiceInfo {
 	finalized: boolean;
 }
 
-const EPS = 1 / 44100;
 const MIN_GAIN = 0.0001;
 const DEFAULT_DECODE_CONCURRENCY = 4;
 const DEFAULT_MAX_VOICES: Record<AudioType, number> = { sfx: 16, music: 1, ui: 8 };
@@ -327,7 +326,9 @@ export class SoundMaster implements RegisterablePersistent {
 		const pitch = params.pitchDelta !== undefined ? params.pitchDelta : 0;
 		const pitchRate = Math.pow(2, pitch / 12);
 		rate *= pitchRate;
-		if (rate <= 0) rate = EPS;
+		if (rate <= 0) {
+			throw new Error('[SoundMaster] Playback rate must be positive.');
+		}
 
 		let offset = params.offset !== undefined ? params.offset : 0;
 		const duration = clip.duration;
@@ -337,7 +338,7 @@ export class SoundMaster implements RegisterablePersistent {
 				offset = mod < 0 ? mod + duration : mod;
 			} else {
 				if (offset < 0) offset = 0;
-				const cap = duration - EPS;
+				const cap = duration;
 				if (offset > cap) offset = cap;
 			}
 		}
