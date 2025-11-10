@@ -3,7 +3,8 @@ import type { EditorSnapshot } from '../editor';
 import type { ConsoleResourceDescriptor } from '../types';
 import { createEntryTabContext, findResourceDescriptorByAssetId, ide_state, initializeTabs, openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, restoreSnapshot, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './console_cart_editor';
 import { WORKSPACE_AUTOSAVE_INTERVAL_MS, workspaceDirtyCache } from './ide_state';
-import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext } from './types';
+import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position } from './types';
+import { clamp } from '../../utils/utils';
 
 const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 const METADATA_DIR_NAME = '.bmsx';
@@ -193,6 +194,14 @@ function sanitizeFilenameSegment(value: string): string {
 	return trimmed.length > 0 ? trimmed : 'untitled';
 }
 
+type SnapshotMetadata = {
+	cursorRow: number;
+	cursorColumn: number;
+	scrollRow: number;
+	scrollColumn: number;
+	selectionAnchor: Position | null;
+};
+
 export type SerializedDescriptor = {
 	assetId: string;
 	path: string;
@@ -209,6 +218,11 @@ export type PersistedDirtyEntry = {
 	contextId: string;
 	descriptor: SerializedDescriptor | null;
 	dirtyPath: string;
+	cursorRow: number;
+	cursorColumn: number;
+	scrollRow: number;
+	scrollColumn: number;
+	selectionAnchor: Position | null;
 };
 
 export type WorkspaceAutosavePayload = {
@@ -406,12 +420,12 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 		if (!context) {
 			continue;
 		}
-		const contents = await readDirtyBuffer(entry.dirtyPath);
-		if (contents === null) {
-			continue;
-		}
-		workspaceDirtyCache.set(entry.dirtyPath, contents);
-		const snapshot = buildSnapshotFromSource(contents);
+			const contents = await readDirtyBuffer(entry.dirtyPath);
+			if (contents === null) {
+				continue;
+			}
+			workspaceDirtyCache.set(entry.dirtyPath, contents);
+			const snapshot = buildSnapshotFromSource(contents, entry);
 		context.snapshot = snapshot;
 		context.dirty = true;
 		setTabDirty(context.id, true);
@@ -422,20 +436,41 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 	}
 }
 
-export function buildSnapshotFromSource(source: string): EditorSnapshot {
+export function buildSnapshotFromSource(source: string, metadata?: SnapshotMetadata): EditorSnapshot {
 	const normalized = source.replace(/\r\n/g, '\n');
 	const lines = normalized.split('\n');
 	const lastRow = lines.length > 0 ? lines.length - 1 : 0;
-	const lastColumn = lines.length > 0 ? lines[lastRow].length : 0;
+	const cursorRow = clampRow(metadata?.cursorRow ?? 0, lastRow);
+	const cursorColumn = clampColumn(metadata?.cursorColumn ?? 0, lines[cursorRow] ?? '');
 	return {
 		lines,
-		cursorRow: lastRow,
-		cursorColumn: lastColumn,
-		scrollRow: 0,
-		scrollColumn: 0,
-		selectionAnchor: null,
+		cursorRow,
+		cursorColumn,
+		scrollRow: clampRow(metadata?.scrollRow ?? 0, lastRow),
+		scrollColumn: Math.max(0, metadata?.scrollColumn ?? 0),
+		selectionAnchor: clampSelection(metadata?.selectionAnchor ?? null, lines),
 		dirty: true,
 	};
+}
+
+function clampRow(value: number, maxRow: number): number {
+	const normalized = Number.isFinite(value) ? value : 0;
+	return clamp(normalized, 0, Math.max(0, maxRow));
+}
+
+function clampColumn(value: number, line: string): number {
+	const normalized = Number.isFinite(value) ? value : 0;
+	return clamp(normalized, 0, Math.max(0, line.length));
+}
+
+function clampSelection(anchor: Position | null, lines: string[]): Position | null {
+	if (!anchor) {
+		return null;
+	}
+	const row = clampRow(anchor.row ?? 0, Math.max(0, lines.length - 1));
+	const line = lines[row] ?? '';
+	const column = clampColumn(anchor.column ?? 0, line);
+	return { row, column };
 }
 
 export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
@@ -448,6 +483,7 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 			continue;
 		}
 		const descriptor = serializeDescriptor(context.descriptor ?? null);
+		const metadata = captureContextSnapshotMetadata(context);
 		let dirtyPath: string;
 		try {
 			dirtyPath = descriptor
@@ -464,6 +500,11 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 			contextId: context.id,
 			descriptor,
 			dirtyPath,
+			cursorRow: metadata.cursorRow,
+			cursorColumn: metadata.cursorColumn,
+			scrollRow: metadata.scrollRow,
+			scrollColumn: metadata.scrollColumn,
+			selectionAnchor: metadata.selectionAnchor ? { row: metadata.selectionAnchor.row, column: metadata.selectionAnchor.column } : null,
 			text,
 		});
 	}
@@ -478,6 +519,35 @@ export function captureContextText(context: CodeTabContext): string | null {
 		return context.snapshot.lines.join('\n');
 	}
 	return null;
+}
+
+function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetadata {
+	if (context.id === ide_state.activeCodeTabContextId) {
+		return {
+			cursorRow: ide_state.cursorRow,
+			cursorColumn: ide_state.cursorColumn,
+			scrollRow: ide_state.scrollRow,
+			scrollColumn: ide_state.scrollColumn,
+			selectionAnchor: ide_state.selectionAnchor ? { row: ide_state.selectionAnchor.row, column: ide_state.selectionAnchor.column } : null,
+		};
+	}
+	const snapshot = context.snapshot;
+	if (snapshot) {
+		return {
+			cursorRow: snapshot.cursorRow,
+			cursorColumn: snapshot.cursorColumn,
+			scrollRow: snapshot.scrollRow,
+			scrollColumn: snapshot.scrollColumn,
+			selectionAnchor: snapshot.selectionAnchor ? { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column } : null,
+		};
+	}
+	return {
+		cursorRow: 0,
+		cursorColumn: 0,
+		scrollRow: 0,
+		scrollColumn: 0,
+		selectionAnchor: null,
+	};
 }
 
 export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextEntry>): WorkspaceAutosavePayload | null {
@@ -497,6 +567,11 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 			contextId: entry.contextId,
 			descriptor: entry.descriptor,
 			dirtyPath: entry.dirtyPath,
+			cursorRow: entry.cursorRow,
+			cursorColumn: entry.cursorColumn,
+			scrollRow: entry.scrollRow,
+			scrollColumn: entry.scrollColumn,
+			selectionAnchor: entry.selectionAnchor ? { row: entry.selectionAnchor.row, column: entry.selectionAnchor.column } : null,
 		});
 	}
 	return {
