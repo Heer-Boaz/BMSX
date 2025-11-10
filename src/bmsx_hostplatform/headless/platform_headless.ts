@@ -73,11 +73,55 @@ class HeadlessFrameLoop implements FrameLoop {
 }
 
 class HeadlessLifecycle implements Lifecycle {
+	private readonly exitHandlers = new Set<(event: PlatformExitEvent) => void>();
+	private exitHooksAttached = false;
+
 	onVisibilityChange(_cb: (visible: boolean) => void): () => void {
 		return () => void 0;
 	}
-	onWillExit(_cb: (event: PlatformExitEvent) => void): () => void {
-		return () => void 0;
+
+	onWillExit(cb: (event: PlatformExitEvent) => void): () => void {
+		this.exitHandlers.add(cb);
+		this.attachExitHooks();
+		return () => {
+			this.exitHandlers.delete(cb);
+		};
+	}
+
+	private attachExitHooks(): void {
+		if (this.exitHooksAttached) {
+			return;
+		}
+		this.exitHooksAttached = true;
+		const dispatch = (source: string): boolean => {
+			if (this.exitHandlers.size === 0) {
+				return false;
+			}
+			let prevented = false;
+			const event: PlatformExitEvent = {
+				preventDefault: () => { prevented = true; },
+				setReturnMessage: () => { },
+			};
+			for (const handler of Array.from(this.exitHandlers)) {
+				handler(event);
+			}
+			return prevented;
+		};
+		process.once('beforeExit', () => {
+			dispatch('beforeExit');
+		});
+		process.once('SIGINT', () => {
+			const prevented = dispatch('SIGINT');
+			if (!prevented) {
+				process.exit(130);
+			}
+		});
+		process.once('SIGTERM', () => {
+			const prevented = dispatch('SIGTERM');
+			if (!prevented) {
+				process.exit(143);
+			}
+		});
 	}
 }
 

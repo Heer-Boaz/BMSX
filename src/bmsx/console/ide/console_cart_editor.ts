@@ -2282,10 +2282,6 @@ export function activate(): void {
 	resetKeyPressRecords();
 	updateDesiredColumn();
 	ide_state.selectionAnchor = null;
-	ide_state.undoStack = [];
-	ide_state.redoStack = [];
-	ide_state.lastHistoryKey = null;
-	ide_state.lastHistoryTimestamp = 0;
 	ide_state.searchActive = false;
 	ide_state.searchVisible = false;
 	ide_state.lineJumpActive = false;

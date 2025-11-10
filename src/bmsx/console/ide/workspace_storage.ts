@@ -1,8 +1,9 @@
 import { $ } from '../../core/game';
 import type { EditorSnapshot } from '../editor';
 import type { ConsoleResourceDescriptor } from '../types';
-import { createEntryTabContext, findResourceDescriptorByAssetId, ide_state, initializeTabs, openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, restoreSnapshot, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './console_cart_editor';
+import { createEntryTabContext, findResourceDescriptorByAssetId, ide_state, initializeTabs, openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, restoreSnapshot, setActiveTab, setTabDirty, updateActiveContextDirtyFlag, cloneNavigationEntry } from './console_cart_editor';
 import { WORKSPACE_AUTOSAVE_INTERVAL_MS, workspaceDirtyCache } from './ide_state';
+import type { NavigationHistoryEntry } from './ide_state';
 import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position } from './types';
 import { clamp } from '../../utils/utils';
 
@@ -253,6 +254,15 @@ export type WorkspaceAutosavePayload = {
 	activeTabId: string | null;
 	tabs: PersistedTabEntry[];
 	dirtyFiles: PersistedDirtyEntry[];
+	undoStack: EditorSnapshot[];
+	redoStack: EditorSnapshot[];
+	lastHistoryKey: string | null;
+	lastHistoryTimestamp: number;
+	navigationHistory: {
+		back: NavigationHistoryEntry[];
+		forward: NavigationHistoryEntry[];
+		current: NavigationHistoryEntry | null;
+	};
 };
 
 export type DirtyContextEntry = PersistedDirtyEntry & { text: string };
@@ -372,6 +382,27 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 	} else if (ide_state.tabs.length > 0) {
 		setActiveTab(ide_state.tabs[0].id);
 	}
+	ide_state.undoStack = Array.isArray(payload.undoStack)
+		? payload.undoStack.map(cloneEditorSnapshot)
+		: [];
+	ide_state.redoStack = Array.isArray(payload.redoStack)
+		? payload.redoStack.map(cloneEditorSnapshot)
+		: [];
+	ide_state.lastHistoryKey = typeof payload.lastHistoryKey === 'string' ? payload.lastHistoryKey : null;
+	ide_state.lastHistoryTimestamp = Number.isFinite(payload.lastHistoryTimestamp)
+		? payload.lastHistoryTimestamp
+		: 0;
+	if (payload.navigationHistory) {
+		ide_state.navigationHistory.back = payload.navigationHistory.back.map(entry => cloneNavigationEntry(entry));
+		ide_state.navigationHistory.forward = payload.navigationHistory.forward.map(entry => cloneNavigationEntry(entry));
+		ide_state.navigationHistory.current = payload.navigationHistory.current
+			? cloneNavigationEntry(payload.navigationHistory.current)
+			: null;
+	} else {
+		ide_state.navigationHistory.back = [];
+		ide_state.navigationHistory.forward = [];
+		ide_state.navigationHistory.current = null;
+	}
 }
 
 export function restorePersistedTab(entry: PersistedTabEntry): void {
@@ -482,6 +513,20 @@ export function buildSnapshotFromSource(source: string, metadata?: SnapshotMetad
 		scrollColumn: Math.max(0, metadata?.scrollColumn ?? 0),
 		selectionAnchor: clampSelection(metadata?.selectionAnchor ?? null, lines),
 		dirty: true,
+	};
+}
+
+function cloneEditorSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
+	return {
+		lines: snapshot.lines.slice(),
+		cursorRow: snapshot.cursorRow,
+		cursorColumn: snapshot.cursorColumn,
+		scrollRow: snapshot.scrollRow,
+		scrollColumn: snapshot.scrollColumn,
+		selectionAnchor: snapshot.selectionAnchor
+			? { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column }
+			: null,
+		dirty: snapshot.dirty,
 	};
 }
 
@@ -606,6 +651,13 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 			selectionAnchor: entry.selectionAnchor ? { row: entry.selectionAnchor.row, column: entry.selectionAnchor.column } : null,
 		});
 	}
+	const undoStack = ide_state.undoStack.map(cloneEditorSnapshot);
+	const redoStack = ide_state.redoStack.map(cloneEditorSnapshot);
+	const navigationHistory = {
+		back: ide_state.navigationHistory.back.map(entry => cloneNavigationEntry(entry)),
+		forward: ide_state.navigationHistory.forward.map(entry => cloneNavigationEntry(entry)),
+		current: ide_state.navigationHistory.current ? cloneNavigationEntry(ide_state.navigationHistory.current) : null,
+	};
 	return {
 		version: 1,
 		savedAt: Date.now(),
@@ -613,6 +665,11 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 		activeTabId: ide_state.activeTabId ?? null,
 		tabs,
 		dirtyFiles,
+		undoStack,
+		redoStack,
+		lastHistoryKey: ide_state.lastHistoryKey ?? null,
+		lastHistoryTimestamp: ide_state.lastHistoryTimestamp ?? 0,
+		navigationHistory,
 	};
 }
 
