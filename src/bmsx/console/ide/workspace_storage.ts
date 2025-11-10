@@ -6,12 +6,14 @@ import { WORKSPACE_AUTOSAVE_INTERVAL_MS, workspaceDirtyCache } from './ide_state
 import type { NavigationHistoryEntry } from './ide_state';
 import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position } from './types';
 import { clamp } from '../../utils/utils';
+import type { StorageService, TimerHandle } from '../../platform/platform';
 
 const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 const METADATA_DIR_NAME = '.bmsx';
 const DIRTY_DIR_NAME = 'dirty';
 const STATE_FILE_NAME = 'ide-state.json';
 const MARKER_FILE_NAME = '~workspace';
+const LOCAL_STORAGE_PREFIX = 'bmsx.workspace';
 
 export type WorkspaceStoragePaths = {
 	projectRootPath: string;
@@ -21,6 +23,21 @@ export type WorkspaceStoragePaths = {
 };
 
 let storagePaths: WorkspaceStoragePaths | null = null;
+let serverBackend: ServerWorkspaceBackend | null = null;
+let serverBackendAvailable = false;
+let serverBackendFailureNotified = false;
+let localBackend: LocalWorkspaceBackend | null = null;
+let serverRetryScheduled = false;
+let serverRetryHandle: TimerHandle | NodeJS.Timeout | null = null;
+
+function resetWorkspaceBackends(): void {
+	serverBackend = null;
+	localBackend = null;
+	serverBackendAvailable = false;
+	serverBackendFailureNotified = false;
+	clearServerRetryHandle();
+	ide_state.serverWorkspaceConnected = false;
+}
 
 export function getWorkspaceStoragePaths(): WorkspaceStoragePaths | null {
 	return storagePaths;
@@ -29,13 +46,16 @@ export function getWorkspaceStoragePaths(): WorkspaceStoragePaths | null {
 export async function configureWorkspaceStorage(projectRootPath: string | null): Promise<void> {
 	if (!projectRootPath) {
 		storagePaths = null;
+		resetWorkspaceBackends();
 		return;
 	}
 	const normalizedRoot = normalizeRelativePath(projectRootPath);
 	if (normalizedRoot.length === 0) {
 		storagePaths = null;
+		resetWorkspaceBackends();
 		return;
 	}
+	resetWorkspaceBackends();
 	const metadataDir = joinRelativePaths(normalizedRoot, METADATA_DIR_NAME);
 	const dirtyDir = joinRelativePaths(metadataDir, DIRTY_DIR_NAME);
 	const stateFile = joinRelativePaths(metadataDir, STATE_FILE_NAME);
@@ -45,10 +65,25 @@ export async function configureWorkspaceStorage(projectRootPath: string | null):
 		dirtyDir,
 		stateFile,
 	};
+	const storage = $.platform.storage;
+	if (!storage) {
+		throw new Error('[WorkspaceStorage] Platform storage service unavailable.');
+	}
+	localBackend = new LocalWorkspaceBackend(normalizedRoot, storage);
+	await localBackend.ensureReady();
+	serverBackendFailureNotified = false;
+	serverBackendAvailable = false;
 	try {
-		await ensureWorkspaceDirectory(normalizedRoot);
+		const backend = new ServerWorkspaceBackend(normalizedRoot);
+		await backend.ensureReady();
+		serverBackend = backend;
+		serverBackendAvailable = true;
 	} catch (error) {
-		console.warn('[WorkspaceStorage] Unable to pre-create workspace directory.', error);
+		serverBackend = null;
+		serverBackendAvailable = false;
+		serverBackendFailureNotified = true;
+		ide_state.serverWorkspaceConnected = false;
+		console.warn('[WorkspaceStorage] Remote workspace unavailable; persisting locally only.', error);
 	}
 }
 
@@ -100,48 +135,52 @@ export async function writeDirtyBuffer(relativePath: string, contents: string): 
 }
 
 export async function deleteDirtyBuffer(relativePath: string): Promise<void> {
-	const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`;
-	const response = await fetchOrThrow(url, { method: 'DELETE' });
-	if (!response.ok && response.status !== 404) {
-		const message = await safeReadText(response);
-		throw new Error(`[WorkspaceStorage] Failed to delete dirty buffer (${relativePath}): ${message}`);
-	}
-}
-
-async function ensureWorkspaceDirectory(projectRootPath: string): Promise<void> {
-	const metadataDir = joinRelativePaths(projectRootPath, METADATA_DIR_NAME);
-	const markerPath = joinRelativePaths(metadataDir, MARKER_FILE_NAME);
-	await writeWorkspaceFile(markerPath, '');
+	await deleteWorkspaceFile(relativePath);
 }
 
 async function readWorkspaceFile(relativePath: string): Promise<string | null> {
-	const response = await fetchOrThrow(`${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`, {
-		method: 'GET',
-		cache: 'no-store',
-	});
-	if (response.status === 404) {
+	if (serverBackendAvailable && serverBackend) {
+		try {
+			const result = await serverBackend.readFile(relativePath);
+			if (result !== null) {
+				if (localBackend) {
+					await localBackend.writeFile(relativePath, result);
+				}
+				return result;
+			}
+		} catch (error) {
+			handleServerBackendFailure(error);
+		}
+	}
+	if (!localBackend) {
 		return null;
 	}
-	if (!response.ok) {
-		const detail = await safeReadText(response);
-		throw new Error(`[WorkspaceStorage] Failed to read file '${relativePath}': ${detail}`);
-	}
-	const payload = await response.json();
-	if (!payload || typeof payload.contents !== 'string') {
-		throw new Error(`[WorkspaceStorage] Invalid payload while reading '${relativePath}'.`);
-	}
-	return payload.contents;
+	return await localBackend.readFile(relativePath);
 }
 
 async function writeWorkspaceFile(relativePath: string, contents: string): Promise<void> {
-	const response = await fetchOrThrow(WORKSPACE_FILE_ENDPOINT, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ path: relativePath, contents }),
-	});
-	if (!response.ok) {
-		const detail = await safeReadText(response);
-		throw new Error(`[WorkspaceStorage] Failed to write file '${relativePath}': ${detail}`);
+	if (localBackend) {
+		await localBackend.writeFile(relativePath, contents);
+	}
+	if (serverBackendAvailable && serverBackend) {
+		try {
+			await serverBackend.writeFile(relativePath, contents);
+		} catch (error) {
+			handleServerBackendFailure(error);
+		}
+	}
+}
+
+async function deleteWorkspaceFile(relativePath: string): Promise<void> {
+	if (localBackend) {
+		await localBackend.deleteFile(relativePath);
+	}
+	if (serverBackendAvailable && serverBackend) {
+		try {
+			await serverBackend.deleteFile(relativePath);
+		} catch (error) {
+			handleServerBackendFailure(error);
+		}
 	}
 }
 
@@ -274,25 +313,32 @@ export function setupWorkspacePersistence(projectRootPath: string | null): void 
 	if (!projectRootPath || projectRootPath.length === 0) {
 		ide_state.workspaceAutosaveEnabled = false;
 		storagePaths = null;
+		resetWorkspaceBackends();
 		detachWorkspaceExitHandler();
+		ide_state.serverWorkspaceConnected = false;
 		return;
 	}
 	const normalizedRoot = normalizeRelativePath(projectRootPath);
 	if (normalizedRoot.length === 0) {
 		ide_state.workspaceAutosaveEnabled = false;
 		storagePaths = null;
+		resetWorkspaceBackends();
 		detachWorkspaceExitHandler();
+		ide_state.serverWorkspaceConnected = false;
 		return;
 	}
 	ide_state.workspaceAutosaveEnabled = true;
 	attachWorkspaceExitHandler();
 	ide_state.workspaceRestorePromise = (async () => {
 		try {
-			await configureWorkspaceStorage(projectRootPath);
+			await configureWorkspaceStorage(normalizedRoot);
 			await restoreWorkspaceSessionFromDisk();
+			ide_state.serverWorkspaceConnected = serverBackendAvailable;
 		} catch (error) {
 			console.warn('[ConsoleCartEditor] Workspace persistence disabled:', error);
 			ide_state.workspaceAutosaveEnabled = false;
+			storagePaths = null;
+			resetWorkspaceBackends();
 			detachWorkspaceExitHandler();
 			return;
 		} finally {
@@ -550,6 +596,95 @@ function clampSelection(anchor: Position | null, lines: string[]): Position | nu
 	return { row, column };
 }
 
+function handleServerBackendFailure(error: unknown): void {
+	if (!serverBackendAvailable) {
+		return;
+	}
+	serverBackendAvailable = false;
+	serverBackend = null;
+	clearServerRetryHandle();
+	ide_state.serverWorkspaceConnected = false;
+	if (!serverBackendFailureNotified) {
+		serverBackendFailureNotified = true;
+		console.warn('[WorkspaceStorage] Remote workspace became unavailable; persisting locally only.', error);
+	}
+}
+
+class LocalWorkspaceBackend {
+	constructor(private readonly projectRootPath: string, private readonly storage: StorageService) { }
+
+	private makeKey(relativePath: string): string {
+		return `${LOCAL_STORAGE_PREFIX}:${this.projectRootPath}:${relativePath}`;
+	}
+
+	async ensureReady(): Promise<void> {
+		this.storage.setItem(this.makeKey('__marker__'), 'ready');
+	}
+
+	async readFile(relativePath: string): Promise<string | null> {
+		return this.storage.getItem(this.makeKey(relativePath));
+	}
+
+	async writeFile(relativePath: string, contents: string): Promise<void> {
+		this.storage.setItem(this.makeKey(relativePath), contents);
+	}
+
+	async deleteFile(relativePath: string): Promise<void> {
+		this.storage.removeItem(this.makeKey(relativePath));
+	}
+}
+
+class ServerWorkspaceBackend {
+	constructor(private readonly projectRootPath: string) { }
+
+	async ensureReady(): Promise<void> {
+		const metadataDir = joinRelativePaths(this.projectRootPath, METADATA_DIR_NAME);
+		const markerPath = joinRelativePaths(metadataDir, MARKER_FILE_NAME);
+		await this.writeFile(markerPath, '');
+	}
+
+	async readFile(relativePath: string): Promise<string | null> {
+		const response = await fetchOrThrow(`${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`, {
+			method: 'GET',
+			cache: 'no-store',
+		});
+		if (response.status === 404) {
+			return null;
+		}
+		if (!response.ok) {
+			const detail = await safeReadText(response);
+			throw new Error(`[WorkspaceStorage] Failed to read file '${relativePath}': ${detail}`);
+		}
+		const payload = await response.json();
+		if (!payload || typeof payload.contents !== 'string') {
+			throw new Error(`[WorkspaceStorage] Invalid payload while reading '${relativePath}'.`);
+		}
+		return payload.contents;
+	}
+
+	async writeFile(relativePath: string, contents: string): Promise<void> {
+		const response = await fetchOrThrow(WORKSPACE_FILE_ENDPOINT, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ path: relativePath, contents }),
+		});
+		if (!response.ok) {
+			const detail = await safeReadText(response);
+			throw new Error(`[WorkspaceStorage] Failed to write file '${relativePath}': ${detail}`);
+		}
+	}
+
+	async deleteFile(relativePath: string): Promise<void> {
+		const response = await fetchOrThrow(`${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`, {
+			method: 'DELETE',
+		});
+		if (!response.ok && response.status !== 404) {
+			const detail = await safeReadText(response);
+			throw new Error(`[WorkspaceStorage] Failed to delete file '${relativePath}': ${detail}`);
+		}
+	}
+}
+
 export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 	if (!getWorkspaceStoragePaths()) {
 		return new Map();
@@ -693,6 +828,9 @@ export async function runWorkspaceAutosaveTick(): Promise<void> {
 	if (!ide_state.workspaceAutosaveEnabled) {
 		return;
 	}
+	if (!serverBackendAvailable && !serverRetryScheduled) {
+		scheduleServerBackendRetry();
+	}
 	if (ide_state.workspaceRestorePromise) {
 		try {
 			await ide_state.workspaceRestorePromise;
@@ -716,13 +854,65 @@ export async function runWorkspaceAutosaveTick(): Promise<void> {
 			}
 		}
 		await persistDirtyContextEntries(dirtyEntries);
-	} catch (error) {
-		console.warn('[ConsoleCartEditor] Workspace autosave failed:', error);
-	} finally {
-		ide_state.workspaceAutosaveRunning = false;
-		if (ide_state.workspaceAutosaveQueued) {
-			ide_state.workspaceAutosaveQueued = false;
+		} catch (error) {
+			console.warn('[ConsoleCartEditor] Workspace autosave failed:', error);
+		} finally {
+			ide_state.workspaceAutosaveRunning = false;
+			if (ide_state.workspaceAutosaveQueued) {
+				ide_state.workspaceAutosaveQueued = false;
 			void runWorkspaceAutosaveTick();
 		}
 	}
+}
+
+function scheduleServerBackendRetry(): void {
+	if (serverBackendAvailable || serverRetryScheduled || !storagePaths) {
+		return;
+	}
+	serverRetryScheduled = true;
+	const clock = $.platform.clock;
+	const delayMs = WORKSPACE_AUTOSAVE_INTERVAL_MS * 4;
+	if (typeof clock.scheduleOnce === 'function') {
+		serverRetryHandle = clock.scheduleOnce(delayMs, () => {
+			clearServerRetryHandle();
+			void tryReconnectServerBackend();
+		});
+		return;
+	}
+	const timeout = setTimeout(() => {
+		clearServerRetryHandle();
+		void tryReconnectServerBackend();
+	}, delayMs);
+	serverRetryHandle = timeout;
+}
+
+async function tryReconnectServerBackend(): Promise<void> {
+	if (serverBackendAvailable || !storagePaths) {
+		return;
+	}
+	try {
+		const backend = new ServerWorkspaceBackend(storagePaths.projectRootPath);
+		await backend.ensureReady();
+		serverBackend = backend;
+		serverBackendAvailable = true;
+		serverBackendFailureNotified = false;
+		ide_state.serverWorkspaceConnected = true;
+		clearServerRetryHandle();
+	} catch {
+		scheduleServerBackendRetry();
+	}
+}
+
+function clearServerRetryHandle(): void {
+	if (!serverRetryHandle) {
+		serverRetryScheduled = false;
+		return;
+	}
+	if (typeof (serverRetryHandle as TimerHandle).cancel === 'function') {
+		(serverRetryHandle as TimerHandle).cancel();
+	} else {
+		clearTimeout(serverRetryHandle as NodeJS.Timeout);
+	}
+	serverRetryHandle = null;
+	serverRetryScheduled = false;
 }

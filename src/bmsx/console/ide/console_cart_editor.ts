@@ -2368,10 +2368,6 @@ export function deactivate(): void {
 	clearGotoHoverHighlight();
 	ide_state.scrollbarController.cancel();
 	ide_state.cursorRevealSuspended = false;
-	ide_state.undoStack = [];
-	ide_state.redoStack = [];
-	ide_state.lastHistoryKey = null;
-	ide_state.lastHistoryTimestamp = 0;
 	ide_state.searchActive = false;
 	ide_state.searchVisible = false;
 	ide_state.lineJumpActive = false;
@@ -9552,6 +9548,7 @@ export function drawStatusBar(api: BmsxConsoleApi): void {
 		getActiveResourceViewer: () => getActiveResourceViewer(),
 		metadata: ide_state.metadata,
 		statusLeftInfo: buildStatusLeftInfo(),
+		serverConnected: ide_state.serverWorkspaceConnected,
 		problemsPanelFocused: ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused(),
 	};
 	renderStatusBar(api, host);

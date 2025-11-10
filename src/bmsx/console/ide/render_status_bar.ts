@@ -21,6 +21,7 @@ export interface StatusBarHost {
 	getActiveResourceViewer: () => { descriptor: { type: string; assetId: string; path: string } } | null;
 	metadata: BmsxConsoleMetadata;
 	statusLeftInfo?: string | null;
+	serverConnected: boolean;
 	// When the problems panel is focused, override status bar left text
 	problemsPanelFocused?: boolean;
 }
@@ -86,8 +87,14 @@ export function renderStatusBar(api: BmsxConsoleApi, host: StatusBarHost): void 
 
 	// Draw filename info on the right. The line/col info remains rendered by the editor for now.
 	const filenameInfo = `${host.metadata.title || 'UNTITLED'}.lua`;
+	const leftX = 4;
+	const indicatorSpacing = 6;
+	const glyphSize = 8;
+	const indicatorColor = host.serverConnected ? constants.COLOR_STATUS_SUCCESS : constants.COLOR_STATUS_ERROR;
+	api.rectfill(leftX, statusTop + 2, leftX + glyphSize, statusTop + 2 + glyphSize, indicatorColor);
+	let textX = leftX + glyphSize + indicatorSpacing;
 	if (host.statusLeftInfo && host.statusLeftInfo.length > 0) {
-		host.drawText(api, host.statusLeftInfo, 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
+		host.drawText(api, host.statusLeftInfo, textX, statusTop + 2, constants.COLOR_STATUS_TEXT);
 	}
 	host.drawText(api, filenameInfo, host.viewportWidth - host.measureText(filenameInfo) - 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
 }

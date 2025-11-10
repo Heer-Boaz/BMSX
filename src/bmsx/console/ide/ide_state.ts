@@ -292,6 +292,7 @@ export interface IdeState {
 	workspaceAutosaveQueued: boolean;
 	disposeWorkspaceExitListener: (() => void) | null;
 	workspaceRestorePromise: Promise<void> | null;
+	serverWorkspaceConnected: boolean;
 }
 
 export const ide_state: IdeState = {
@@ -501,6 +502,7 @@ export const ide_state: IdeState = {
 	workspaceAutosaveQueued: false,
 	disposeWorkspaceExitListener: null,
 	workspaceRestorePromise: null,
+	serverWorkspaceConnected: false,
 };
 
 // Initialize message controller
