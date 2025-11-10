@@ -55,6 +55,7 @@ import type {
 import type { RectBounds } from '../../rompack/rompack';
 import type { ReferenceCatalogEntry } from './reference_sources';
 import { ConsoleCodeLayout } from './code_layout';
+import type { TimerHandle } from '../../platform';
 
 export type NavigationHistoryEntry = {
 	contextId: string;
@@ -96,6 +97,9 @@ export const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
 export const NAVIGATION_HISTORY_LIMIT = 64;
 
 export const diagnosticsDebounceMs = 200;
+
+export const WORKSPACE_AUTOSAVE_INTERVAL_MS = 2500;
+export const workspaceDirtyCache = new Map<string, string>();
 
 export interface IdeState {
 	playerIndex: number;
@@ -281,6 +285,12 @@ export interface IdeState {
 	};
 	navigationCaptureSuspended: boolean;
 	customClipboard: string | null;
+	workspaceAutosaveEnabled: boolean;
+	workspaceAutosaveSignature: string;
+	workspaceAutosaveHandle: TimerHandle | { cancel(): void } | null;
+	workspaceAutosaveRunning: boolean;
+	workspaceAutosaveQueued: boolean;
+	workspaceRestorePromise: Promise<void> | null;
 }
 
 export const ide_state: IdeState = {
@@ -483,6 +493,12 @@ export const ide_state: IdeState = {
 	},
 	navigationCaptureSuspended: false,
 	customClipboard: null,
+	workspaceAutosaveEnabled: false,
+	workspaceAutosaveSignature: null,
+	workspaceAutosaveHandle: null,
+	workspaceAutosaveRunning: false,
+	workspaceAutosaveQueued: false,
+	workspaceRestorePromise: null,
 };
 
 // Initialize message controller

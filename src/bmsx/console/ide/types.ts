@@ -34,6 +34,7 @@ export type ConsoleEditorOptions = {
 	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
 	listBuiltinLuaFunctions: () => ConsoleLuaBuiltinDescriptor[];
 	fontVariant?: ConsoleFontVariant;
+	workspaceRootPath?: string | null;
 };
 
 export type Position = { row: number; column: number };

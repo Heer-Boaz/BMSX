@@ -130,7 +130,7 @@ import { EDITOR_TOGGLE_KEY, ESCAPE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, GLOBAL_SE
 import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, ensureSearchJobCompleted, moveSearchSelection, applySearchSelection, ensureSearchSelectionVisible, computeSearchPageStats, getVisibleSearchResultEntries, startSearchJob, forEachMatchInLine } from './editor_search';
 import { formatLuaDocument } from './lua_formatter.ts';
 import * as constants from './constants';
-import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs } from './ide_state';
+import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, workspaceDirtyCache } from './ide_state';
 import {
 	setCursorPosition,
 	moveCursorLeft,
@@ -145,6 +145,11 @@ import {
 	clampCursorRow,
 	clampCursorColumn,
 } from './cursor_operations';
+import {
+	runWorkspaceAutosaveTick,
+	setupWorkspacePersistence,
+	stopWorkspaceAutosaveLoop,
+} from './workspace_storage';
 
 // Re-export commonly used constants for convenience
 export { captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT } from './ide_state';
@@ -197,7 +202,6 @@ const {
 	insertLineBreak,
 	insertClipboardText,
 } = TextEditing;
-
 export function invalidateLineRange(startRow: number, endRow: number): void {
 	if (ide_state.lines.length === 0) {
 		return;
@@ -2086,6 +2090,13 @@ export function shutdown(): void {
 	storeActiveCodeTabContext();
 	ide_state.input.applyOverrides(false, captureKeys);
 	ide_state.active = false;
+	if (ide_state.workspaceAutosaveEnabled) {
+		stopWorkspaceAutosaveLoop();
+		void runWorkspaceAutosaveTick();
+	}
+	ide_state.workspaceAutosaveEnabled = false;
+	workspaceDirtyCache.clear();
+	ide_state.workspaceAutosaveSignature = null;
 	if (ide_state.disposeVisibilityListener) {
 		ide_state.disposeVisibilityListener();
 		ide_state.disposeVisibilityListener = null;
@@ -8715,7 +8726,7 @@ function collectRegistryLines(): string[] {
 	return lines;
 }
 
-function openDebugPanelTab(kind: DebugPanelKind): void {
+export function openDebugPanelTab(kind: DebugPanelKind): void {
 	const tabId = debugPanelTabId(kind);
 	const title = DEBUG_PANEL_TITLES[kind];
 	const load = () => buildDebugPanelLines(kind).join('\n');
@@ -10058,6 +10069,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	ide_state.resourceSearchField = createInlineTextField();
 	ide_state.lineJumpField = createInlineTextField();
 	ide_state.createResourceField = createInlineTextField();
+	setupWorkspacePersistence(options.workspaceRootPath ?? null);
 	applySearchFieldText(ide_state.searchQuery, true);
 	applySymbolSearchFieldText(ide_state.symbolSearchQuery, true);
 	applyResourceSearchFieldText(ide_state.resourceSearchQuery, true);

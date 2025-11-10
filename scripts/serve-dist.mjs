@@ -3,7 +3,7 @@
 // Usage: node scripts/serve-dist.mjs [--dir dist] [--port 8080] [--host 0.0.0.0] [--spa] [--cache <seconds|no-store>]
 
 import { createServer } from 'node:http';
-import { stat, access, readFile, writeFile, readdir } from 'node:fs/promises';
+import { stat, access, readFile, writeFile, readdir, mkdir, unlink } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -94,6 +94,48 @@ async function readRequestBody(req) {
 	});
 }
 
+async function handleWorkspaceApi(req, res, url) {
+	if (url.pathname !== '/__bmsx__/workspace') {
+		return false;
+	}
+	if (req.method !== 'POST') {
+		res.writeHead(405, { 'Allow': 'POST' }).end();
+		return true;
+	}
+	const rawBody = await readRequestBody(req);
+	let payload;
+	try {
+		payload = JSON.parse(rawBody);
+	} catch {
+		res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Request body must be valid JSON.' }));
+		return true;
+	}
+	const projectRootPath = typeof payload?.projectRootPath === 'string' ? payload.projectRootPath : '';
+	if (!projectRootPath) {
+		res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Missing "projectRootPath".' }));
+		return true;
+	}
+	let resolvedRoot;
+	try {
+		resolvedRoot = resolveWorkspacePath(projectRootPath);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: message }));
+		return true;
+	}
+	const metadataDir = path.join(resolvedRoot, '.bmsx');
+	const dirtyDir = path.join(metadataDir, 'dirty');
+	try {
+		await mkdir(metadataDir, { recursive: true });
+		await mkdir(dirtyDir, { recursive: true });
+		res.writeHead(204).end();
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		res.writeHead(500, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: message }));
+	}
+	return true;
+}
+
 async function handleLuaApi(req, res, url) {
 	if (url.pathname !== '/__bmsx__/lua') {
 		return false;
@@ -152,11 +194,44 @@ async function handleLuaApi(req, res, url) {
 			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: message }));
 			return true;
 		}
+		try {
+			await mkdir(path.dirname(absolutePath), { recursive: true });
+		} catch {
+			// directory creation best-effort
+		}
 		await writeFile(absolutePath, contents, 'utf8');
 		res.writeHead(204).end();
 		return true;
 	}
-	res.writeHead(405, { 'Allow': 'GET,POST,OPTIONS' }).end();
+	if (req.method === 'DELETE') {
+		const targetPath = url.searchParams.get('path');
+		if (!targetPath) {
+			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Missing "path" query parameter.' }));
+			return true;
+		}
+		let absolutePath;
+		try {
+			absolutePath = resolveWorkspacePath(targetPath);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: message }));
+			return true;
+		}
+		try {
+			await unlink(absolutePath);
+		} catch (err) {
+			if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
+				res.writeHead(204).end();
+				return true;
+			}
+			const message = err instanceof Error ? err.message : String(err);
+			res.writeHead(500, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: message }));
+			return true;
+		}
+		res.writeHead(204).end();
+		return true;
+	}
+	res.writeHead(405, { 'Allow': 'GET,POST,DELETE,OPTIONS' }).end();
 	return true;
 }
 
@@ -227,6 +302,9 @@ for (const c of defaultCandidates) {
 const server = createServer(async (req, res) => {
 	try {
     const requestUrl = new URL(req.url || '/', 'http://x');
+    if (await handleWorkspaceApi(req, res, requestUrl)) {
+        return;
+    }
     if (await handleLuaApi(req, res, requestUrl)) {
         return;
     }

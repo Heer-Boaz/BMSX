@@ -1252,6 +1252,7 @@ export class BmsxConsoleRuntime extends Service {
 			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
 			listBuiltinLuaFunctions: () => this.listLuaBuiltinFunctions(),
 			fontVariant: EDITOR_FONT_VARIANT,
+			workspaceRootPath: this.resolveCartProjectRootPath(),
 		});
 		this.flushLuaWarnings();
 	}
