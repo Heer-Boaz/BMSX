@@ -55,7 +55,7 @@ sprites = {
 
 local abilities = require('marlies2020_abilities')
 require('marlies2020_systems')
-require('marlies2020_worldobjects')
+require('marlies2020_worldobjects') -- dsfsdfdsf
 
 local playerabilityids = abilities.abilityids
 local playerinputprogram = abilities.inputprogram

@@ -103,6 +103,10 @@ const THEME_BASE = {
 		border: PALETTE.darkBlue,
 		activeText: PALETTE.grey,
 		inactiveText: PALETTE.black
+	},
+	server_status: {
+		connected: PALETTE.darkGreen,
+		disconnected: PALETTE.red,
 	}
 };
 
@@ -273,6 +277,8 @@ export const COLOR_CREATE_RESOURCE_TEXT = SEARCH_BASE.text;
 export const COLOR_CREATE_RESOURCE_PLACEHOLDER = SEARCH_BASE.placeholder;
 export const COLOR_CREATE_RESOURCE_OUTLINE = SEARCH_BASE.outline;
 export const COLOR_CREATE_RESOURCE_ERROR = THEME_BASE.status.warning;
+export const COLOR_SERVER_STATUS_CONNECTED = THEME_BASE.server_status.connected;
+export const COLOR_SERVER_STATUS_DISCONNECTED = THEME_BASE.server_status.disconnected;
 export const CREATE_RESOURCE_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
 export const CREATE_RESOURCE_MAX_PATH_LENGTH = 1024;
 export const PROBLEMS_PANEL_HEADER_PADDING_X = 6;

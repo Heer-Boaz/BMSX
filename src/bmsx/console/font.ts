@@ -83,6 +83,7 @@ function buildMsxCharMap(prefix: string): CharMap {
 		'|': withPrefix('code_0x7c'),
 		'}': withPrefix('code_0x7d'),
 		'~': withPrefix('code_0x7e'),
+		'•': withPrefix('ctrl_bel'),
 	};
 	for (let i = 0; i < 10; i += 1) {
 		const digit = String.fromCharCode(48 + i);
