@@ -15,6 +15,7 @@ import type {
 import type { ConsoleFontVariant } from '../font';
 import type { RectBounds } from '../../rompack/rompack';
 import type { KeyboardInput } from '../../input/keyboardinput';
+import type { StackTraceFrame } from '../../lua/runtime';
 
 export type ConsoleEditorOptions = {
 	playerIndex: number;
@@ -204,16 +205,16 @@ export type ParameterHintState = {
 export type EditorDiagnosticSeverity = 'error' | 'warning';
 
 export type EditorDiagnostic = {
-    row: number;
-    startColumn: number;
-    endColumn: number;
-    message: string;
-    severity: EditorDiagnosticSeverity;
-    // Optional metadata to identify the originating tab/source
-    contextId?: string;
-    sourceLabel?: string | null;
-    assetId?: string | null;
-    chunkName?: string | null;
+	row: number;
+	startColumn: number;
+	endColumn: number;
+	message: string;
+	severity: EditorDiagnosticSeverity;
+	// Optional metadata to identify the originating tab/source
+	contextId?: string;
+	sourceLabel?: string | null;
+	assetId?: string | null;
+	chunkName?: string | null;
 };
 
 export type ApiCompletionMetadata = {
@@ -383,40 +384,27 @@ export type InlineInputOptions = {
 	maxLength?: number | null;
 };
 
-export type RuntimeErrorStackFrameOrigin = 'lua' | 'js';
-
-export type RuntimeErrorStackFrame = {
-	origin: RuntimeErrorStackFrameOrigin;
-	functionName: string | null;
-	source: string | null;
-	line: number | null;
-	column: number | null;
-	raw: string;
-	chunkAssetId?: string | null;
-	chunkPath?: string | null;
-};
-
 export type RuntimeErrorOverlayLineRole = 'message' | 'header' | 'divider' | 'frame';
 
 export type RuntimeErrorOverlayLineDescriptor = {
 	text: string;
 	role: RuntimeErrorOverlayLineRole;
-	frame?: RuntimeErrorStackFrame;
+	frame?: StackTraceFrame;
 };
 
 export type RuntimeErrorOverlayLayout = {
-    bounds: RectBounds;
-    lineRects: ReadonlyArray<RectBounds>;
-    // Visual line content produced by layout (word-wrapped)
-    displayLines?: ReadonlyArray<string>;
-    // Map from visual line index to descriptor index in 'lineDescriptors'
-    displayLineMap?: ReadonlyArray<number>;
+	bounds: RectBounds;
+	lineRects: ReadonlyArray<RectBounds>;
+	// Visual line content produced by layout (word-wrapped)
+	displayLines?: ReadonlyArray<string>;
+	// Map from visual line index to descriptor index in 'lineDescriptors'
+	displayLineMap?: ReadonlyArray<number>;
 };
 
 export type RuntimeErrorDetails = {
 	message: string;
-	luaStack: ReadonlyArray<RuntimeErrorStackFrame>;
-	jsStack: ReadonlyArray<RuntimeErrorStackFrame>;
+	luaStack: ReadonlyArray<StackTraceFrame>;
+	jsStack: ReadonlyArray<StackTraceFrame>;
 };
 
 export type RuntimeErrorOverlay = {
@@ -435,7 +423,9 @@ export type RuntimeErrorOverlay = {
 
 export type RepeatEntry = {
 	cooldown: number;
-};export type ConsoleEditorShortcutContext = {
+};
+
+export type ConsoleEditorShortcutContext = {
 	ctrlDown: boolean;
 	shiftDown: boolean;
 	altDown: boolean;

@@ -3006,3 +3006,15 @@ export function createLuaInterpreter(): LuaInterpreter {
 export function createLuaNativeFunction(name: string, interpreter: LuaInterpreter, handler: (interpreter: LuaInterpreter, args: ReadonlyArray<LuaValue>) => ReadonlyArray<LuaValue>): LuaFunctionValue {
 	return new LuaNativeFunction(name, interpreter, handler);
 }
+export type StackFrameLanguage = 'lua' | 'js';
+
+export type StackTraceFrame = {
+	origin: StackFrameLanguage;
+	functionName: string | null;
+	source: string | null;
+	line: number | null;
+	column: number | null;
+	raw: string;
+	chunkAssetId?: string | null;
+	chunkPath?: string | null;
+};

@@ -24,7 +24,8 @@ import type { BehaviorTreeDefinition, BehaviorTreeDiagnostic } from '../ai/behav
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
 import { createConsoleCartEditor, type ConsoleCartEditor } from './ide/console_cart_editor';
-import type { RuntimeErrorDetails, RuntimeErrorStackFrame } from './ide/types';
+import type { RuntimeErrorDetails } from './ide/types';
+import type { StackTraceFrame } from 'bmsx/lua/runtime.ts';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { ConsoleFontVariant } from './font';
 import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
@@ -2681,7 +2682,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private buildRuntimeErrorDetailsForEditor(error: unknown, message: string): RuntimeErrorDetails | null {
 		const interpreter = this.luaInterpreter;
-		let luaFrames: RuntimeErrorStackFrame[] = [];
+		let luaFrames: StackTraceFrame[] = [];
 		if (interpreter) {
 			const callFrames = interpreter.getLastFaultCallStack();
 			// Convert recorded call sites
@@ -2702,7 +2703,7 @@ export class BmsxConsoleRuntime extends Service {
 					let raw = '';
 					if (fnName && fnName.length > 0) raw = fnName;
 					if (src && src.length > 0) raw = raw.length > 0 ? `${raw} @ ${src}` : src;
-					const top: RuntimeErrorStackFrame = { origin: 'lua', functionName: fnName, source: src, line, column: col, raw: raw.length > 0 ? raw : '[lua]' };
+					const top: StackTraceFrame = { origin: 'lua', functionName: fnName, source: src, line, column: col, raw: raw.length > 0 ? raw : '[lua]' };
 					if (src && src.length > 0) {
 						const hint = this.lookupChunkResourceInfoNullable(src);
 						if (hint) {
@@ -2730,8 +2731,8 @@ export class BmsxConsoleRuntime extends Service {
 		};
 	}
 
-	private convertLuaCallFrames(callFrames: ReadonlyArray<LuaCallFrame>): RuntimeErrorStackFrame[] {
-		const frames: RuntimeErrorStackFrame[] = [];
+	private convertLuaCallFrames(callFrames: ReadonlyArray<LuaCallFrame>): StackTraceFrame[] {
+		const frames: StackTraceFrame[] = [];
 		for (let index = callFrames.length - 1; index >= 0; index -= 1) {
 			const frame = callFrames[index];
 			const source = frame.source && frame.source.length > 0 ? frame.source : null;
@@ -2744,7 +2745,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (source && source.length > 0) {
 				rawLabel = rawLabel.length > 0 ? `${rawLabel} @ ${source}` : source;
 			}
-			const runtimeFrame: RuntimeErrorStackFrame = {
+			const runtimeFrame: StackTraceFrame = {
 				origin: 'lua',
 				functionName: frame.functionName && frame.functionName.length > 0 ? frame.functionName : null,
 				source,
@@ -2766,13 +2767,13 @@ export class BmsxConsoleRuntime extends Service {
 		return frames;
 	}
 
-	private parseJsStackFrames(stack: string | null): RuntimeErrorStackFrame[] {
+	private parseJsStackFrames(stack: string | null): StackTraceFrame[] {
 		if (!stack || stack.length === 0) {
 			return [];
 		}
 		const sanitized = stack.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 		const lines = sanitized.split('\n');
-		const frames: RuntimeErrorStackFrame[] = [];
+		const frames: StackTraceFrame[] = [];
 		for (let index = 1; index < lines.length; index += 1) {
 			const trimmed = lines[index].trim();
 			if (trimmed.length === 0) {
@@ -2789,7 +2790,7 @@ export class BmsxConsoleRuntime extends Service {
 		return frames;
 	}
 
-	private parseJsStackLine(line: string): RuntimeErrorStackFrame | null {
+	private parseJsStackLine(line: string): StackTraceFrame | null {
 		let content = line;
 		if (content.startsWith('at ')) {
 			content = content.slice(3).trim();

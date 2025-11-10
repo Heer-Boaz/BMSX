@@ -1,5 +1,5 @@
 import { clamp } from '../../utils/utils';
-import type { RuntimeErrorStackFrame } from './types';
+import type { StackTraceFrame } from 'bmsx/lua/runtime';
 
 export interface RuntimeErrorOverlayNavigationHost {
 	getLineCount(): number;
@@ -21,7 +21,7 @@ export type RuntimeErrorOverlayNavigationOptions = {
 
 export function navigateToRuntimeErrorFrame(
 	host: RuntimeErrorOverlayNavigationHost,
-	frame: RuntimeErrorStackFrame,
+	frame: StackTraceFrame,
 	options: RuntimeErrorOverlayNavigationOptions
 ): void {
 	if (frame.origin !== 'lua') {

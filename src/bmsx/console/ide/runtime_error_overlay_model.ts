@@ -1,15 +1,14 @@
 import type {
 	RuntimeErrorDetails,
 	RuntimeErrorOverlay,
-	RuntimeErrorOverlayLineDescriptor,
-	RuntimeErrorStackFrame
-} from './types';
+	RuntimeErrorOverlayLineDescriptor} from './types';
+import type { StackTraceFrame } from 'bmsx/lua/runtime';
 
 export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails | null): RuntimeErrorDetails | null {
 	if (!details) {
 		return null;
 	}
-	const luaFrames: RuntimeErrorStackFrame[] = [];
+	const luaFrames: StackTraceFrame[] = [];
 	for (let i = 0; i < details.luaStack.length; i += 1) {
 		const frame = details.luaStack[i];
 		luaFrames.push({
@@ -23,7 +22,7 @@ export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails | null): R
 			chunkPath: frame.chunkPath,
 		});
 	}
-	const jsFrames: RuntimeErrorStackFrame[] = [];
+	const jsFrames: StackTraceFrame[] = [];
 	for (let j = 0; j < details.jsStack.length; j += 1) {
 		const frame = details.jsStack[j];
 		jsFrames.push({
@@ -95,15 +94,15 @@ function buildRuntimeErrorOverlayDescriptors(
 	return descriptors;
 }
 
-function buildCombinedRuntimeErrorStack(details: RuntimeErrorDetails | null): RuntimeErrorStackFrame[] {
+function buildCombinedRuntimeErrorStack(details: RuntimeErrorDetails | null): StackTraceFrame[] {
 	if (!details) {
 		return [];
 	}
-	const luaFrames: RuntimeErrorStackFrame[] = [];
+	const luaFrames: StackTraceFrame[] = [];
 	for (let index = 0; index < details.luaStack.length; index += 1) {
 		luaFrames.push(details.luaStack[index]);
 	}
-	const jsFrames: RuntimeErrorStackFrame[] = [];
+	const jsFrames: StackTraceFrame[] = [];
 	for (let index = 0; index < details.jsStack.length; index += 1) {
 		jsFrames.push(details.jsStack[index]);
 	}
@@ -116,7 +115,7 @@ function buildCombinedRuntimeErrorStack(details: RuntimeErrorDetails | null): Ru
 	if (jsFrames.length === 0) {
 		return luaFrames.slice();
 	}
-	const combined: RuntimeErrorStackFrame[] = [];
+	const combined: StackTraceFrame[] = [];
 	for (let index = 0; index < luaFrames.length; index += 1) {
 		combined.push(luaFrames[index]);
 	}
@@ -126,7 +125,7 @@ function buildCombinedRuntimeErrorStack(details: RuntimeErrorDetails | null): Ru
 	return combined;
 }
 
-function formatRuntimeErrorStackFrame(frame: RuntimeErrorStackFrame): string {
+function formatRuntimeErrorStackFrame(frame: StackTraceFrame): string {
     const originLabel = frame.origin === 'lua' ? 'Lua' : 'JS';
     let name = frame.functionName && frame.functionName.length > 0 ? frame.functionName : '';
     if (name.length === 0 && frame.source && frame.source.length > 0) {

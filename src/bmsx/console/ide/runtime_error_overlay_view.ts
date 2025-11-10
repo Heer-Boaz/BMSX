@@ -9,9 +9,8 @@ import {
 } from './render_error_overlay';
 import type {
 	CachedHighlight,
-	RuntimeErrorOverlay,
-	RuntimeErrorStackFrame
-} from './types';
+	RuntimeErrorOverlay} from './types';
+import type { StackTraceFrame } from 'bmsx/lua/runtime.ts';
 import type { RectBounds } from '../../rompack/rompack.ts';
 
 export interface RuntimeErrorOverlayLayoutHost {
@@ -57,7 +56,7 @@ export type RuntimeErrorOverlayDrawOptions = {
 export type RuntimeErrorOverlayClickResult =
 	| { kind: 'expand' }
 	| { kind: 'collapse' }
-	| { kind: 'navigate'; frame: RuntimeErrorStackFrame }
+	| { kind: 'navigate'; frame: StackTraceFrame }
 	| { kind: 'noop' };
 
 export function computeRuntimeErrorOverlayLayout(

@@ -83,7 +83,6 @@ import type {
 	ResourceViewerState,
 	RuntimeErrorOverlay,
 	RuntimeErrorDetails,
-	RuntimeErrorStackFrame,
 	ScrollbarKind,
 	GlobalSearchMatch,
 	SymbolSearchResult,
@@ -97,6 +96,7 @@ import type {
 	// SearchComputationJob migrated to editor_search.ts
 	RuntimeErrorOverlayLayout,
 } from './types';
+import type { StackTraceFrame } from 'bmsx/lua/runtime.ts';
 import type { RectBounds } from '../../rompack/rompack.ts';
 import { resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation.ts';
 import {
@@ -7631,7 +7631,7 @@ export function createRuntimeErrorOverlayLayoutHost(): RuntimeErrorOverlayLayout
 	};
 }
 
-export function navigateToRuntimeErrorFrameTarget(frame: RuntimeErrorStackFrame): void {
+export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void {
 	if (frame.origin !== 'lua') {
 		return;
 	}
