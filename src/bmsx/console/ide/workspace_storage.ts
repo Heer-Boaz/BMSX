@@ -194,6 +194,27 @@ function sanitizeFilenameSegment(value: string): string {
 	return trimmed.length > 0 ? trimmed : 'untitled';
 }
 
+function attachWorkspaceExitHandler(): void {
+	detachWorkspaceExitHandler();
+	ide_state.disposeWorkspaceExitListener = $.platform.lifecycle.onWillExit(() => {
+		if (!ide_state.workspaceAutosaveEnabled) {
+		       return;
+		}
+		void runWorkspaceAutosaveTick();
+	});
+}
+
+function detachWorkspaceExitHandler(): void {
+	if (ide_state.disposeWorkspaceExitListener) {
+		try {
+			ide_state.disposeWorkspaceExitListener();
+		} catch {
+			// ignore
+		}
+		ide_state.disposeWorkspaceExitListener = null;
+	}
+}
+
 type SnapshotMetadata = {
 	cursorRow: number;
 	cursorColumn: number;
@@ -242,9 +263,19 @@ export function setupWorkspacePersistence(projectRootPath: string | null): void 
 	workspaceDirtyCache.clear();
 	if (!projectRootPath || projectRootPath.length === 0) {
 		ide_state.workspaceAutosaveEnabled = false;
+		storagePaths = null;
+		detachWorkspaceExitHandler();
+		return;
+	}
+	const normalizedRoot = normalizeRelativePath(projectRootPath);
+	if (normalizedRoot.length === 0) {
+		ide_state.workspaceAutosaveEnabled = false;
+		storagePaths = null;
+		detachWorkspaceExitHandler();
 		return;
 	}
 	ide_state.workspaceAutosaveEnabled = true;
+	attachWorkspaceExitHandler();
 	ide_state.workspaceRestorePromise = (async () => {
 		try {
 			await configureWorkspaceStorage(projectRootPath);
@@ -252,6 +283,7 @@ export function setupWorkspacePersistence(projectRootPath: string | null): void 
 		} catch (error) {
 			console.warn('[ConsoleCartEditor] Workspace persistence disabled:', error);
 			ide_state.workspaceAutosaveEnabled = false;
+			detachWorkspaceExitHandler();
 			return;
 		} finally {
 			ide_state.workspaceRestorePromise = null;
@@ -430,7 +462,7 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 		context.dirty = true;
 		setTabDirty(context.id, true);
 		if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
-			restoreSnapshot(snapshot);
+			restoreSnapshot(snapshot, { preserveScroll: true });
 			updateActiveContextDirtyFlag();
 		}
 	}

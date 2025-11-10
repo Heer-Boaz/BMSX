@@ -690,7 +690,7 @@ export function undo(): void {
 		ide_state.redoStack.shift();
 	}
 	ide_state.redoStack.push(current);
-	restoreSnapshot(snapshot, true);
+	restoreSnapshot(snapshot, { preserveSelection: true });
 	breakUndoSequence();
 }
 
@@ -711,7 +711,7 @@ export function redo(): void {
 		ide_state.undoStack.shift();
 	}
 	ide_state.undoStack.push(current);
-	restoreSnapshot(snapshot, true);
+	restoreSnapshot(snapshot, { preserveSelection: true });
 	breakUndoSequence();
 }
 
@@ -2097,6 +2097,7 @@ export function shutdown(): void {
 	ide_state.workspaceAutosaveEnabled = false;
 	workspaceDirtyCache.clear();
 	ide_state.workspaceAutosaveSignature = null;
+	setupWorkspacePersistence(null);
 	if (ide_state.disposeVisibilityListener) {
 		ide_state.disposeVisibilityListener();
 		ide_state.disposeVisibilityListener = null;
@@ -6847,7 +6848,13 @@ export function captureSnapshot(): EditorSnapshot {
 	};
 }
 
-export function restoreSnapshot(snapshot: EditorSnapshot, preserveSelection: boolean = false): void {
+type RestoreSnapshotOptions = {
+	preserveSelection?: boolean;
+	preserveScroll?: boolean;
+};
+
+export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnapshotOptions): void {
+	const preserveSelection = options?.preserveSelection === true;
 	const preservedSelection = preserveSelection && ide_state.selectionAnchor
 		? { row: ide_state.selectionAnchor.row, column: ide_state.selectionAnchor.column }
 		: null;
@@ -6874,7 +6881,9 @@ export function restoreSnapshot(snapshot: EditorSnapshot, preserveSelection: boo
 	resetBlink();
 	ide_state.cursorRevealSuspended = false;
 	updateActiveContextDirtyFlag();
-	ensureCursorVisible();
+	if (options?.preserveScroll !== true) {
+		ensureCursorVisible();
+	}
 	requestSemanticRefresh();
 }
 

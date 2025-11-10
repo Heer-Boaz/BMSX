@@ -290,6 +290,7 @@ export interface IdeState {
 	workspaceAutosaveHandle: TimerHandle | { cancel(): void } | null;
 	workspaceAutosaveRunning: boolean;
 	workspaceAutosaveQueued: boolean;
+	disposeWorkspaceExitListener: (() => void) | null;
 	workspaceRestorePromise: Promise<void> | null;
 }
 
@@ -498,6 +499,7 @@ export const ide_state: IdeState = {
 	workspaceAutosaveHandle: null,
 	workspaceAutosaveRunning: false,
 	workspaceAutosaveQueued: false,
+	disposeWorkspaceExitListener: null,
 	workspaceRestorePromise: null,
 };
 
