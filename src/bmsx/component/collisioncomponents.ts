@@ -143,7 +143,7 @@ export class Collider2DComponent extends Component<WorldObject> {
  * @param d The direction in which the `WorldObject` is leaving the screen.
  * @param old_x_or_y The old x or y position of the `WorldObject`.
  */
-export function leavingScreenHandler_prohibit(ik: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['leaveScreen']): void {
+export function leavingScreenHandler_prohibit(ik: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['screen.leave']): void {
 	switch (d) {
 		case 'left': case 'right':
 			ik.x = old_x_or_y;
@@ -212,22 +212,22 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
 	private checkBoundaryForXAxis(parent: WorldObject, oldx: number, newx: number) {
 		if (newx < oldx) {
 			if (newx + parent.size.x < 0) {
-				const payload: WorldObjectEventPayloads['leaveScreen'] = { d: 'left', old_x_or_y: oldx };
-				EventEmitter.instance.emit('leaveScreen', parent, payload);
+				const payload: WorldObjectEventPayloads['screen.leave'] = { d: 'left', old_x_or_y: oldx };
+				EventEmitter.instance.emit('screen.leave', parent, payload);
 			}
 			else if (newx < 0) {
-				const payload: WorldObjectEventPayloads['leavingScreen'] = { d: 'left', old_x_or_y: oldx };
-				EventEmitter.instance.emit('leavingScreen', parent, payload);
+				const payload: WorldObjectEventPayloads['screen.leaving'] = { d: 'left', old_x_or_y: oldx };
+				EventEmitter.instance.emit('screen.leaving', parent, payload);
 			}
 		}
 		else if (newx > oldx) {
 			if (newx >= $.world.gamewidth) {
-				const payload: WorldObjectEventPayloads['leaveScreen'] = { d: 'right', old_x_or_y: oldx };
-				EventEmitter.instance.emit('leaveScreen', parent, payload);
+				const payload: WorldObjectEventPayloads['screen.leave'] = { d: 'right', old_x_or_y: oldx };
+				EventEmitter.instance.emit('screen.leave', parent, payload);
 			}
 			else if (newx + parent.size.x >= $.world.gamewidth) {
-				const payload: WorldObjectEventPayloads['leavingScreen'] = { d: 'right', old_x_or_y: oldx };
-				EventEmitter.instance.emit('leavingScreen', parent, payload);
+				const payload: WorldObjectEventPayloads['screen.leaving'] = { d: 'right', old_x_or_y: oldx };
+				EventEmitter.instance.emit('screen.leaving', parent, payload);
 			}
 		}
 	}
@@ -242,22 +242,22 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
 	private checkBoundaryForYAxis(parent: WorldObject, oldy: number, newy: number) {
 		if (newy < oldy) {
 			if (newy + parent.size.y < 0) {
-				const payload: WorldObjectEventPayloads['leaveScreen'] = { d: 'up', old_x_or_y: oldy };
-				EventEmitter.instance.emit('leaveScreen', parent, payload);
+				const payload: WorldObjectEventPayloads['screen.leave'] = { d: 'up', old_x_or_y: oldy };
+				EventEmitter.instance.emit('screen.leave', parent, payload);
 			}
 			else if (newy < 0) {
-				const payload: WorldObjectEventPayloads['leavingScreen'] = { d: 'up', old_x_or_y: oldy };
-				EventEmitter.instance.emit('leavingScreen', parent, payload);
+				const payload: WorldObjectEventPayloads['screen.leaving'] = { d: 'up', old_x_or_y: oldy };
+				EventEmitter.instance.emit('screen.leaving', parent, payload);
 			}
 		}
 		else if (newy > oldy) {
 			if (newy >= $.world.gameheight) {
-				const payload: WorldObjectEventPayloads['leaveScreen'] = { d: 'down', old_x_or_y: oldy };
-				EventEmitter.instance.emit('leaveScreen', parent, payload);
+				const payload: WorldObjectEventPayloads['screen.leave'] = { d: 'down', old_x_or_y: oldy };
+				EventEmitter.instance.emit('screen.leave', parent, payload);
 			}
 			else if (newy + parent.size.y >= $.world.gameheight) {
-				const payload: WorldObjectEventPayloads['leavingScreen'] = { d: 'down', old_x_or_y: oldy };
-				EventEmitter.instance.emit('leavingScreen', parent, payload);
+				const payload: WorldObjectEventPayloads['screen.leaving'] = { d: 'down', old_x_or_y: oldy };
+				EventEmitter.instance.emit('screen.leaving', parent, payload);
 			}
 		}
 	}
@@ -338,13 +338,13 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
 @insavegame
 export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
 	/**
-	 * Event handler for the 'leavingScreen' event.
+	 * Event handler for the 'screen.leaving' event.
 	 * @param emitter - The ID of the world object emitting the event.
 	 * @param d - The direction in which the world object is leaving the screen.
 	 * @param old_x_or_y - The previous x or y coordinate of the world object.
 	 */
-	@subscribesToParentScopedEvent('leavingScreen')
-	public onLeavingScreen(_event_name: string, emitter: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['leavingScreen']) {
+	@subscribesToParentScopedEvent('screen.leaving')
+	public onLeavingScreen(_event_name: string, emitter: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['screen.leaving']) {
 		leavingScreenHandler_prohibit(emitter, { d, old_x_or_y });
 	}
 }

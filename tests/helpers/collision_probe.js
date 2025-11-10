@@ -9,7 +9,7 @@ module.exports.schedule = async function schedule({ logger }) {
       console.log('[TEST] no player');
       return;
     }
-    game.event_emitter.on('overlapBegin', (eventName, emitter, payload) => {
+    game.event_emitter.on('overlap.begin', (eventName, emitter, payload) => {
       if (emitter.id === player.id) {
         console.log('[TEST] overlap', emitter.id, payload.other_id);
       }

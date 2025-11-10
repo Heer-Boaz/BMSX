@@ -109,7 +109,7 @@ function coronaobject:on_spawn()
 	self.move_y = self.move_y or 0
 	attach_bt(self.id, 'marlies2020_corona_bt')
 
-	local function handle_overlap(_, _, payload)
+	local function handle_overlap(_, _, _, payload)
 		local other = payload.other_id
 		if game_state.fires[other] then
 			self.sc:dispatch_event('dispel', self, {
@@ -118,7 +118,7 @@ function coronaobject:on_spawn()
 		end
 	end
 
-	events:on('overlapBegin', handle_overlap, self, {
+	events:on('overlap.begin', handle_overlap, self, {
 		emitter = self.id,
 		persistent = true
 	})
@@ -133,7 +133,7 @@ end
 
 register_worldobject({
 	id = 'marlies2020.corona',
-	class = 'CoronaObject',
+	class = 'coronaobject',
 	defaults = {
 		move_x = -1,
 		move_y = 0,
@@ -170,7 +170,7 @@ function fireobject:create(owner)
 end
 
 function fireobject:on_spawn()
-	local function hit_corona(_, _, payload)
+	local function hit_corona(_, _, _, payload)
 		local other = payload.other_id
 		if game_state.corona[other] then
 			despawn(other)
@@ -181,11 +181,11 @@ function fireobject:on_spawn()
 		despawn(self.id)
 	end
 
-	events:on('overlapBegin', hit_corona, self, {
+	events:on('overlap.begin', hit_corona, self, {
 		emitter = self.id,
 		persistent = true
 	})
-	events:on('leaveScreen', leave_screen, self, {
+	events:on('screen.leave', leave_screen, self, {
 		emitter = self.id,
 		persistent = true
 	})
@@ -263,9 +263,8 @@ function playerobject:on_spawn()
 	assert(asc:hasability(playerabilityids.move_horizontal), '[PlayerObject:on_spawn] move ability missing')
 	assert(asc:hasability(playerabilityids.interact), '[PlayerObject:on_spawn] interact ability missing')
 
-		local function begin_overlap(_, _, payload)
+		local function begin_overlap(_, _, _, payload)
 			local other = payload.other_id
-			print('[DEBUG overlap begin]', self.id, other)
 			local ingredient = game_state.ingredients[other]
 		if ingredient then
 			self.touch_ingredients[other] = ingredient
@@ -284,18 +283,18 @@ function playerobject:on_spawn()
 		end
 	end
 
-	local function end_overlap(_, _, payload)
-		local other = payload.other_id
+		local function end_overlap(_, _, _, payload)
+			local other = payload.other_id
 		self.touch_ingredients[other] = nil
 		self.touch_boards[other] = nil
 		self.touch_corona[other] = nil
 	end
 
-	events:on('overlapBegin', begin_overlap, self, {
+	events:on('overlap.begin', begin_overlap, self, {
 		emitter = self.id,
 		persistent = true
 	})
-	events:on('overlapEnd', end_overlap, self, {
+	events:on('overlap.end', end_overlap, self, {
 		emitter = self.id,
 		persistent = true
 	})

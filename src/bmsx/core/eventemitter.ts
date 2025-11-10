@@ -288,7 +288,7 @@ export class EventEmitter implements RegisterablePersistent {
 
 	public emit<P extends EventPayload = EventPayload>(event_name: string, emitter: Identifiable, payload?: P): void {
 		const structuredPayload = EventEmitter.asStructuredPayload(payload);
-		if (event_name === 'overlapBegin' && (!structuredPayload || typeof structuredPayload !== 'object')) {
+		if (event_name === 'overlap.begin' && (!structuredPayload || typeof structuredPayload !== 'object')) {
 			throw new Error(`[EventEmitter] overlapBegin emitted without payload.`);
 		}
 		const lane: EventLane = structuredPayload?.lane ?? 'gameplay';

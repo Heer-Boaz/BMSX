@@ -104,7 +104,7 @@ export class ZakFoe extends Foe {
 	}
 
 	@subscribesToSelfScopedEvent(WorldObjectEvents.LeaveScreen)
-	private onLeaveScreenEvent(_event: string, _emitter: ZakFoe, payload: WorldObjectEventPayloads['leaveScreen']): void {
+	private onLeaveScreenEvent(_event: string, _emitter: ZakFoe, payload: WorldObjectEventPayloads['screen.leave']): void {
 		this.handleBoundary(payload.d);
 	}
 

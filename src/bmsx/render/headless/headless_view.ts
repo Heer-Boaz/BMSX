@@ -9,6 +9,7 @@ import type {
 	OnscreenGamepadHandleProvider,
 	GameViewHostCapabilityId,
 	GameViewHostCapabilityMap,
+	WindowEventHub,
 } from '../../platform';
 import { HeadlessGPUBackend } from './headless_backend';
 
@@ -45,12 +46,19 @@ class HeadlessGameViewCanvas implements GameViewCanvas {
 	requestWebGPUContext(): GPUCanvasContext | null { return null; }
 }
 
+class HeadlessWindowEventHub implements WindowEventHub {
+	subscribe(): () => void {
+		return () => void 0;
+	}
+}
+
 export class HeadlessGameViewHost implements GameViewHost {
 	public readonly surface: HeadlessGameViewCanvas;
 	private readonly overlays = new Map<string, HeadlessOverlay>();
 	private readonly viewportCapability: ViewportMetricsProvider;
 	private readonly overlayCapability: OverlayManager;
 	private readonly gamepadCapability: OnscreenGamepadHandleProvider;
+	private readonly windowEventCapability: WindowEventHub;
 
 	constructor(initialSize: vec2) {
 		this.surface = new HeadlessGameViewCanvas(initialSize);
@@ -79,6 +87,7 @@ export class HeadlessGameViewHost implements GameViewHost {
 		this.gamepadCapability = {
 			getHandles: () => null,
 		};
+		this.windowEventCapability = new HeadlessWindowEventHub();
 	}
 
 	getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] | null {
@@ -89,6 +98,8 @@ export class HeadlessGameViewHost implements GameViewHost {
 				return this.overlayCapability as GameViewHostCapabilityMap[T];
 			case 'onscreen-gamepad':
 				return this.gamepadCapability as GameViewHostCapabilityMap[T];
+			case 'window-events':
+				return this.windowEventCapability as GameViewHostCapabilityMap[T];
 			default:
 				return null;
 		}

@@ -239,36 +239,36 @@ export class BoundarySystem extends ECSystem {
 			if (newx < oldx) {
 				if (newx + o.size.x < 0) {
 					const payload = { d: 'left' as const, old_x_or_y: oldx };
-					EventEmitter.instance.emit('leaveScreen', o, payload);
+					EventEmitter.instance.emit('screen.leave', o, payload);
 				} else if (newx < 0) {
 					const payload = { d: 'left' as const, old_x_or_y: oldx };
-					EventEmitter.instance.emit('leavingScreen', o, payload);
+					EventEmitter.instance.emit('screen.leaving', o, payload);
 				}
 			} else if (newx > oldx) {
 				if (newx >= width) {
 					const payload = { d: 'right' as const, old_x_or_y: oldx };
-					EventEmitter.instance.emit('leaveScreen', o, payload);
+					EventEmitter.instance.emit('screen.leave', o, payload);
 				} else if (newx + o.size.x >= width) {
 					const payload = { d: 'right' as const, old_x_or_y: oldx };
-					EventEmitter.instance.emit('leavingScreen', o, payload);
+					EventEmitter.instance.emit('screen.leaving', o, payload);
 				}
 			}
 			// Y-axis
 			if (newy < oldy) {
 				if (newy + o.size.y < 0) {
 					const payload = { d: 'up' as const, old_x_or_y: oldy };
-					EventEmitter.instance.emit('leaveScreen', o, payload);
+					EventEmitter.instance.emit('screen.leave', o, payload);
 				} else if (newy < 0) {
 					const payload = { d: 'up' as const, old_x_or_y: oldy };
-					EventEmitter.instance.emit('leavingScreen', o, payload);
+					EventEmitter.instance.emit('screen.leaving', o, payload);
 				}
 			} else if (newy > oldy) {
 				if (newy >= height) {
 					const payload = { d: 'down' as const, old_x_or_y: oldy };
-					EventEmitter.instance.emit('leaveScreen', o, payload);
+					EventEmitter.instance.emit('screen.leave', o, payload);
 				} else if (newy + o.size.y >= height) {
 					const payload = { d: 'down' as const, old_x_or_y: oldy };
-					EventEmitter.instance.emit('leavingScreen', o, payload);
+					EventEmitter.instance.emit('screen.leaving', o, payload);
 				}
 			}
 			this.prev.set(o, { x: newx, y: newy });

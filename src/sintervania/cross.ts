@@ -29,7 +29,7 @@ export class Cross extends PlayerProjectile {
 	}
 
 	@subscribesToSelfScopedEvent(WorldObjectEvents.LeaveScreen)
-	private handleLeaveScreen(_event: string, _emitter: Cross, payload: WorldObjectEventPayloads['leaveScreen']): void {
+	private handleLeaveScreen(_event: string, _emitter: Cross, payload: WorldObjectEventPayloads['screen.leave']): void {
 		this.removeFromTheGame(payload.d);
 	}
 

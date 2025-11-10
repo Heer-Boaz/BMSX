@@ -5,7 +5,7 @@ import { Collider2DComponent } from '../component/collisioncomponents';
 import { $ } from '../core/game';
 import { Collision2DSystem } from '../service/collision2d_service';
 
-type OverlapEvent = 'overlapBegin' | 'overlapStay' | 'overlapEnd';
+type OverlapEvent = 'overlap.begin' | 'overlap.stay' | 'overlap.end';
 type Contact2D = { point?: { x: number; y: number }; normal?: { x: number; y: number }; depth?: number };
 
 type PairKey = string;
@@ -95,7 +95,7 @@ export class Overlap2DSystem extends ECSystem {
 			const emitB = colB.generateOverlapEvents;
 			if (!emitA && !emitB) return;
 			let contact: Contact2D | undefined;
-			if (eventName !== 'overlapEnd') {
+			if (eventName !== 'overlap.end') {
 				const c = Collision2DSystem.getContact2D(colA, colB) as Contact2D | undefined;
 				contact = c;
 			}
@@ -116,17 +116,17 @@ export class Overlap2DSystem extends ECSystem {
 		for (const k of begins) {
 			const [aId, bId] = k.split('|');
 			const a = id2col(aId); const b = id2col(bId);
-			emitPair('overlapBegin', a, b);
+			emitPair('overlap.begin', a, b);
 		}
 		for (const k of stays) {
 			const [aId, bId] = k.split('|');
 			const a = id2col(aId); const b = id2col(bId);
-			emitPair('overlapStay', a, b);
+			emitPair('overlap.stay', a, b);
 		}
 		for (const k of ends) {
 			const [aId, bId] = k.split('|');
 			const a = id2col(aId); const b = id2col(bId);
-			emitPair('overlapEnd', a, b);
+			emitPair('overlap.end', a, b);
 		}
 
 		this.prevPairs = newPairs;

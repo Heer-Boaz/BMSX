@@ -26,22 +26,22 @@ type LeaveLeavingScreenPayload = { d: Direction, old_x_or_y: number };
 type SpaceTransitionEventPayload = { from?: Identifier; to?: Identifier };
 
 export type WorldObjectEventPayloads = {
-	['leaveScreen']: LeaveLeavingScreenPayload;
-	['leavingScreen']: LeaveLeavingScreenPayload;
+	['screen.leave']: LeaveLeavingScreenPayload;
+	['screen.leaving']: LeaveLeavingScreenPayload;
 	['space.enter']: SpaceTransitionEventPayload;
 	['space.leave']: SpaceTransitionEventPayload;
 };
 
 export const WorldObjectEvents = {
-	LeaveScreen: 'leaveScreen',
-	LeavingScreen: 'leavingScreen',
+	LeaveScreen: 'screen.leave',
+	LeavingScreen: 'screen.leaving',
 	WallCollide: 'wallcollide',
-	PhysicsCollisionEnter: 'physicsCollision_enter',
-	PhysicsCollisionStay: 'physicsCollision_stay',
-	PhysicsCollisionExit: 'physicsCollision_exit',
-	OverlapBegin: 'overlapBegin',
-	OverlapStay: 'overlapStay',
-	OverlapEnd: 'overlapEnd',
+	PhysicsCollisionEnter: 'physics.collision.enter',
+	PhysicsCollisionStay: 'physics.collision.stay',
+	PhysicsCollisionExit: 'physics.collision.exit',
+	OverlapBegin: 'overlap.begin',
+	OverlapStay: 'overlap.stay',
+	OverlapEnd: 'overlap.end',
 	SpaceEnter: 'space.enter',
 	SpaceLeave: 'space.leave',
 } as const;

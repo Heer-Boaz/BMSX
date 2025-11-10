@@ -35,7 +35,7 @@ module.exports.schedule = async function schedule({ logger }) {
       player.y = targetY;
       console.log('[COLLISION_TEST] repositioned player', { x: player.x, y: player.y });
     }
-    game.event_emitter.on('overlapBegin', (eventName, emitter, payload) => {
+    game.event_emitter.on('overlap.begin', (eventName, emitter, payload) => {
       if (emitter.id === player.id) {
         console.log('[COLLISION_DETECTED]', emitter.id, payload.other_id);
       }

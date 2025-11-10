@@ -472,8 +472,8 @@ export class JumpingWhileLeavingScreenComponent extends Component {
 		this.enabled = false;
 	}
 
-	@subscribesToParentScopedEvent('leavingScreen')
-	public onLeavingScreen(_event_name: string, emitter: Eila, { d }: WorldObjectEventPayloads['leavingScreen']): void {
+	@subscribesToParentScopedEvent('screen.leaving')
+	public onLeavingScreen(_event_name: string, emitter: Eila, { d }: WorldObjectEventPayloads['screen.leaving']): void {
 		if (emitter.isJumping) {
 			switch (d) {
 				case 'left':

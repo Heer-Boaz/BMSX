@@ -58,7 +58,7 @@ export class Hag extends Foe {
 		BStopwatch.removeWatch(this.timer);
 	}
 
-	@subscribesToSelfScopedEvent('overlapBegin')
+	@subscribesToSelfScopedEvent('overlap.begin')
 	public onOverlapBegin(_event: string, _self: any, payload?: { other_id?: string }) {
 		if (!payload?.other_id) return;
 		if (payload.other_id === belmont.id) belmont.takeDamage(this.damageToPlayer);
