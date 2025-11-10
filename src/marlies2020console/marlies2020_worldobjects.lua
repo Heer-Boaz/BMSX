@@ -110,7 +110,7 @@ function coronaobject:on_spawn()
 	attach_bt(self.id, 'marlies2020_corona_bt')
 
 	local function handle_overlap(_, _, payload)
-		local other = payload.otherid
+		local other = payload.other_id
 		if game_state.fires[other] then
 			self.sc:dispatch_event('dispel', self, {
 				source = other
@@ -171,7 +171,7 @@ end
 
 function fireobject:on_spawn()
 	local function hit_corona(_, _, payload)
-		local other = payload.otherid
+		local other = payload.other_id
 		if game_state.corona[other] then
 			despawn(other)
 		end
@@ -264,7 +264,7 @@ function playerobject:on_spawn()
 	assert(asc:hasability(playerabilityids.interact), '[PlayerObject:on_spawn] interact ability missing')
 
 	local function begin_overlap(_, _, payload)
-		local other = payload.otherid
+		local other = payload.other_id
 		local ingredient = game_state.ingredients[other]
 		if ingredient then
 			self.touch_ingredients[other] = ingredient
@@ -284,7 +284,7 @@ function playerobject:on_spawn()
 	end
 
 	local function end_overlap(_, _, payload)
-		local other = payload.otherid
+		local other = payload.other_id
 		self.touch_ingredients[other] = nil
 		self.touch_boards[other] = nil
 		self.touch_corona[other] = nil

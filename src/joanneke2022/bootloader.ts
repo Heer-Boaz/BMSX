@@ -670,11 +670,11 @@ class draaischijf extends SpriteObject {
 
 // Event-driven polish: when the grinding wheel overlaps an imperfection while in 'slijpen' state, nudge its polish state.
 @subscribesToSelfScopedEvent('overlapStay')
-function onWheelOverlapStay(this: draaischijf, _event: string, _emitter: any, payload?: { otherId?: string }) {
-	if (!payload?.otherId) return;
+function onWheelOverlapStay(this: draaischijf, _event: string, _emitter: any, payload?: { other_id?: string }) {
+	if (!payload?.other_id) return;
 	// Only act while in the active grinding state
 	if (this.sc?.current_state?.def_id !== 'slijpen') return;
-	const other = $.world.getWorldObject<onvolmaaktheid>(payload.otherId);
+	const other = $.world.getWorldObject<onvolmaaktheid>(payload.other_id);
 	if (!other) return;
 	if (other?.is_onvolmaaktheid && other?.polijst_nudge) other.polijst_nudge();
 }

@@ -10,6 +10,15 @@ type Contact2D = { point?: { x: number; y: number }; normal?: { x: number; y: nu
 
 type PairKey = string;
 function makePairKey(a: string, b: string): PairKey { return a < b ? `${a}|${b}` : `${b}|${a}`; }
+type IdentifiedOwner = { id: string };
+function buildOverlapPayload(selfCol: Collider2DComponent, otherCol: Collider2DComponent, otherOwner: IdentifiedOwner, contact?: Contact2D) {
+	return {
+		other_id: otherOwner.id,
+		other_collider_id: otherCol.id,
+		collider_id: selfCol.id,
+		contact,
+	};
+}
 
 /** Emits overlapBegin/overlapStay/overlapEnd events for ColliderComponents. */
 export class Overlap2DSystem extends ECSystem {
@@ -90,10 +99,10 @@ export class Overlap2DSystem extends ECSystem {
 				const c = Collision2DSystem.getContact2D(colA, colB) as Contact2D | undefined;
 				contact = c;
 			}
-			if (emitA) EventEmitter.instance.emit(eventName, ownerA, { otherId: ownerB.id, otherColliderId: colB.id, colliderId: colA.id, contact });
+			if (emitA) EventEmitter.instance.emit(eventName, ownerA, buildOverlapPayload(colA, colB, ownerB, contact));
 			if (emitB) {
 				const flipped: Contact2D | undefined = contact?.normal ? { ...contact, normal: { x: -contact.normal.x, y: -contact.normal.y } } : contact;
-				EventEmitter.instance.emit(eventName, ownerB, { otherId: ownerA.id, otherColliderId: colA.id, colliderId: colB.id, contact: flipped });
+				EventEmitter.instance.emit(eventName, ownerB, buildOverlapPayload(colB, colA, ownerA, flipped));
 			}
 		};
 		const id2col = (id: string): Collider2DComponent => {

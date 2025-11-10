@@ -59,8 +59,8 @@ export class Hag extends Foe {
 	}
 
 	@subscribesToSelfScopedEvent('overlapBegin')
-	public onOverlapBegin(_event: string, _self: any, payload?: { otherId?: string }) {
-		if (!payload?.otherId) return;
-		if (payload.otherId === belmont.id) belmont.takeDamage(this.damageToPlayer);
+	public onOverlapBegin(_event: string, _self: any, payload?: { other_id?: string }) {
+		if (!payload?.other_id) return;
+		if (payload.other_id === belmont.id) belmont.takeDamage(this.damageToPlayer);
 	}
 }

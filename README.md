@@ -593,8 +593,8 @@ player.addComponent(new TileCollisionComponent(player.id));
 
 // Handle collision events using the event system
 @subscribesToSelfScopedEvent(WorldObjectEvents.PhysicsCollisionEnter)
-handleCollision(_event: string, _self: WorldObject, payload: { otherId?: string }) {
-	const other = payload.otherId ? $.world.getWorldObject(payload.otherId) : null;
+handleCollision(_event: string, _self: WorldObject, payload: { other_id?: string }) {
+	const other = payload.other_id ? $.world.getWorldObject(payload.other_id) : null;
 	if (other) {
 		// custom logic
 	}

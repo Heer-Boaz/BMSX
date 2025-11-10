@@ -455,13 +455,14 @@ export class PhysicsCollisionEventSystem extends ECSystem {
 			if (goAId == null || goBId == null) {
 				throw new Error('[PhysicsCollisionEventSystem] Collision participants must be identifiable.');
 			}
-			const payload = { type: evt.type, otherId: goBId, point: evt.point, normal: evt.normal };
-			EventEmitter.instance.emit('physicsCollision', goA as WorldObject, payload);
-			EventEmitter.instance.emit('physicsCollision', goB as WorldObject, { ...payload, otherId: goAId });
+			const payloadToB = { type: evt.type, other_id: goBId, point: evt.point, normal: evt.normal };
+			EventEmitter.instance.emit('physicsCollision', goA as WorldObject, payloadToB);
+			const payloadToA = { type: evt.type, other_id: goAId, point: evt.point, normal: evt.normal };
+			EventEmitter.instance.emit('physicsCollision', goB as WorldObject, payloadToA);
 			// Also emit typed events if listeners prefer name-specific subscriptions
 			const name = 'physicsCollision_' + evt.type;
-			EventEmitter.instance.emit(name, goA as WorldObject, payload);
-			EventEmitter.instance.emit(name, goB as WorldObject, { ...payload, otherId: goAId });
+			EventEmitter.instance.emit(name, goA as WorldObject, payloadToB);
+			EventEmitter.instance.emit(name, goB as WorldObject, payloadToA);
 		}
 	}
 }
