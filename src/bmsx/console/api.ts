@@ -34,7 +34,7 @@ import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorT
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
 
 export type BmsxConsoleApiOptions = {
-	playerIndex: number;
+	playerindex: number;
 	storage: BmsxConsoleStorage;
 };
 
@@ -64,7 +64,7 @@ type NormalizedSpawnOptions = LuaWorldObjectSpawnOptions & {
 };
 
 export class BmsxConsoleApi {
-	private readonly playerIndex: number;
+	private readonly playerindex: number;
 	private readonly storage: BmsxConsoleStorage;
 	private readonly font: ConsoleFont;
 	private readonly defaultPrintColorIndex = 15;
@@ -85,7 +85,7 @@ export class BmsxConsoleApi {
 		if (viewport.x <= 0 || viewport.y <= 0) {
 			throw new Error('[BmsxConsoleApi] Invalid viewport size.');
 		}
-		this.playerIndex = options.playerIndex;
+		this.playerindex = options.playerindex;
 		this.storage = options.storage;
 		this.font = new ConsoleFont();
 		this.resetPrintCursor();
@@ -146,9 +146,9 @@ export class BmsxConsoleApi {
 	}
 
 	private getPlayerInput(): PlayerInput {
-		const playerInput = Input.instance.getPlayerInput(this.playerIndex);
+		const playerInput = Input.instance.getPlayerInput(this.playerindex);
 		if (!playerInput) {
-			throw new Error(`[BmsxConsoleApi] Player input handler for index ${this.playerIndex} is not initialised.`);
+			throw new Error(`[BmsxConsoleApi] Player input handler for index ${this.playerindex} is not initialised.`);
 		}
 		return playerInput;
 	}
@@ -229,8 +229,8 @@ export class BmsxConsoleApi {
 		}
 	}
 
-	public cls(colorIndex: number = 0): void {
-		const color = this.paletteColor(colorIndex);
+	public cls(colorindex: number = 0): void {
+		const color = this.paletteColor(colorindex);
 		this.renderBackend.drawRect({
 			kind: 'fill',
 			x0: 0,
@@ -243,49 +243,49 @@ export class BmsxConsoleApi {
 		this.resetPrintCursor();
 	}
 
-	public rect(x0: number, y0: number, x1: number, y1: number, colorIndex: number): void {
-		this.renderBackend.drawRect({ kind: 'rect', x0, y0, x1, y1, color: this.paletteColor(colorIndex), layer: DRAW_LAYER });
+	public rect(x0: number, y0: number, x1: number, y1: number, colorindex: number): void {
+		this.renderBackend.drawRect({ kind: 'rect', x0, y0, x1, y1, color: this.paletteColor(colorindex), layer: DRAW_LAYER });
 	}
 
-	public rectfill(x0: number, y0: number, x1: number, y1: number, colorIndex: number): void {
-		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: this.paletteColor(colorIndex), layer: DRAW_LAYER });
+	public rectfill(x0: number, y0: number, x1: number, y1: number, colorindex: number): void {
+		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: this.paletteColor(colorindex), layer: DRAW_LAYER });
 	}
 
-	public rectfill_color(x0: number, y0: number, x1: number, y1: number, colorValue: color): void {
-		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: colorValue, layer: DRAW_LAYER });
+	public rectfill_color(x0: number, y0: number, x1: number, y1: number, colorvalue: color): void {
+		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: colorvalue, layer: DRAW_LAYER });
 	}
 
-	public print(text: string, x?: number, y?: number, colorIndex?: number): void {
-		const { baseX, baseY, color, font, autoAdvance } = this.resolvePrintContext(this.font, x, y, colorIndex);
+	public write(text: string, x?: number, y?: number, colorindex?: number): void {
+		const { baseX, baseY, color, font, autoAdvance } = this.resolveWriteContext(this.font, x, y, colorindex);
 		this.drawMultilineText(text, baseX, baseY, color, font);
 		if (autoAdvance) {
 			this.advancePrintCursor(font.lineHeight());
 		}
 	}
 
-	public print_with_font(text: string, x?: number, y?: number, colorIndex?: number, font?: ConsoleFont): void {
+	public write_with_font(text: string, x?: number, y?: number, colorindex?: number, font?: ConsoleFont): void {
 		const renderFont = font ?? this.font;
-		const { baseX, baseY, color, autoAdvance } = this.resolvePrintContext(renderFont, x, y, colorIndex);
+		const { baseX, baseY, color, autoAdvance } = this.resolveWriteContext(renderFont, x, y, colorindex);
 		this.drawMultilineText(text, baseX, baseY, color, renderFont);
 		if (autoAdvance) {
 			this.advancePrintCursor(renderFont.lineHeight());
 		}
 	}
 
-	public check_action_state(playerIndex: number, actionDefinition: string): boolean {
-		if (!Number.isInteger(playerIndex) || playerIndex <= 0) {
+	public check_action_state(playerindex: number, actiondefinition: string): boolean {
+		if (!Number.isInteger(playerindex) || playerindex <= 0) {
 			throw new Error('[BmsxConsoleApi] check_action_state requires a positive integer player index.');
 		}
-		if (typeof actionDefinition !== 'string') {
+		if (typeof actiondefinition !== 'string') {
 			throw new Error('[BmsxConsoleApi] check_action_state requires an action definition string.');
 		}
-		const trimmed = actionDefinition.trim();
+		const trimmed = actiondefinition.trim();
 		if (trimmed.length === 0) {
 			throw new Error('[BmsxConsoleApi] check_action_state requires a non-empty action definition.');
 		}
-		const playerInput = Input.instance.getPlayerInput(playerIndex);
+		const playerInput = Input.instance.getPlayerInput(playerindex);
 		if (!playerInput) {
-			throw new Error(`[BmsxConsoleApi] Player input handler for index ${playerIndex} is not initialised.`);
+			throw new Error(`[BmsxConsoleApi] Player input handler for index ${playerindex} is not initialised.`);
 		}
 		return playerInput.checkActionTriggered(trimmed);
 	}
@@ -350,7 +350,7 @@ export class BmsxConsoleApi {
 		return $.world.allObjectsFromSpaces;
 	}
 
-	public spawn_world_object(classRef: string, options?: Record<string, unknown>): string {
+	public spawn_world_object(class_ref: string, options?: Record<string, unknown>): string {
 		const rawOptions = options ? this.cloneStateMachineData(options) : {};
 		if (rawOptions && !this.isPlainObject(rawOptions)) {
 			throw new Error('[BmsxConsoleApi] spawn_world_object options must be a table/object.');
@@ -358,9 +358,9 @@ export class BmsxConsoleApi {
 		const normalized = this.normalizeSpawnOptions(rawOptions as Record<string, unknown>);
 		const runtime = BmsxConsoleRuntime.instance;
 		if (runtime) {
-			runtime.applyLuaWorldObjectDefaults(classRef, normalized);
+			runtime.applyLuaWorldObjectDefaults(class_ref, normalized);
 		}
-		const ctor = this.resolveWorldObjectConstructor(classRef);
+		const ctor = this.resolveWorldObjectConstructor(class_ref);
 		if (normalized.id && $.world.exists(normalized.id)) {
 			throw new Error(`[BmsxConsoleApi] World object '${normalized.id}' already exists.`);
 		}
@@ -390,20 +390,20 @@ export class BmsxConsoleApi {
 		return instance.id;
 	}
 
-	public spawn_object(definitionId: string, overrides?: Record<string, unknown>): string {
-		if (typeof definitionId !== 'string' || definitionId.trim().length === 0) {
+	public spawn_object(definition_id: string, overrides?: Record<string, unknown>): string {
+		if (typeof definition_id !== 'string' || definition_id.trim().length === 0) {
 			throw new Error('[BmsxConsoleApi] spawn_object requires a non-empty definition id.');
 		}
 		const runtime = this.requireConsoleRuntime('spawn_object');
-		const definition = runtime.getWorldObjectDefinition(definitionId.trim());
+		const definition = runtime.getWorldObjectDefinition(definition_id.trim());
 		if (!definition) {
-			throw new Error(`[BmsxConsoleApi] World object definition '${definitionId}' is not registered.`);
+			throw new Error(`[BmsxConsoleApi] World object definition '${definition_id}' is not registered.`);
 		}
 		const overridesClone = overrides ? this.cloneStateMachineData(overrides) : {};
 		if (overridesClone && !this.isPlainObject(overridesClone)) {
 			throw new Error('[BmsxConsoleApi] spawn_object overrides must be a table/object.');
 		}
-		return this.spawn_world_object(definition.classRef, overridesClone as Record<string, unknown>);
+		return this.spawn_world_object(definition.class_ref, overridesClone as Record<string, unknown>);
 	}
 
 	public despawn(id: Identifier, options?: { dispose?: boolean }): void {
@@ -414,20 +414,20 @@ export class BmsxConsoleApi {
 		}
 	}
 
-	public attach_fsm(objectId: Identifier, machineId: Identifier): void {
-		const object = this.requireWorldObject(objectId, 'attach_fsm');
-		object.sc.ensureStatemachine(machineId, object.id);
+	public attach_fsm(object_id: Identifier, machine_id: Identifier): void {
+		const object = this.requireWorldObject(object_id, 'attach_fsm');
+		object.sc.ensureStatemachine(machine_id, object.id);
 	}
 
-	public attach_bt(objectId: Identifier, treeId: BehaviorTreeID): void {
-		const trimmed = typeof treeId === 'string' ? treeId.trim() : '';
+	public attach_bt(object_id: Identifier, tree_id: BehaviorTreeID): void {
+		const trimmed = typeof tree_id === 'string' ? tree_id.trim() : '';
 		if (trimmed.length === 0) {
 			throw new Error('[BmsxConsoleApi] attach_bt requires a non-empty behavior tree id.');
 		}
 		if (!behaviorTreeExists(trimmed)) {
 			throw new Error(`[BmsxConsoleApi] Behavior tree '${trimmed}' is not registered.`);
 		}
-		const object = this.requireWorldObject(objectId, 'attach_bt');
+		const object = this.requireWorldObject(object_id, 'attach_bt');
 		const ctor = object.constructor as ConstructorWithBTProperty;
 		if (Object.prototype.hasOwnProperty.call(ctor, 'linkedBTs')) {
 			const linked = ctor.linkedBTs ?? new Set<BehaviorTreeID>();
@@ -440,7 +440,7 @@ export class BmsxConsoleApi {
 		const contexts = (object as { btreecontexts?: Record<string, BehaviorTreeContext> }).btreecontexts;
 		if (contexts && !contexts[trimmed]) {
 			contexts[trimmed] = {
-				treeId: trimmed,
+				tree_id: trimmed,
 				running: true,
 				root: instantiateBehaviorTree(trimmed),
 				blackboard: new Blackboard({ id: trimmed }),
@@ -480,15 +480,15 @@ export class BmsxConsoleApi {
 		return this.register_service(descriptor);
 	}
 
-	public attach_component(objectId: Identifier, component: string | { id: string; id_local?: string; state?: Record<string, unknown> }): string {
+	public attach_component(object_id: Identifier, component: string | { id: string; id_local?: string; state?: Record<string, unknown> }): string {
 		const runtime = this.requireConsoleRuntime('attach_component');
-		const object = this.requireWorldObject(objectId, 'attach_component');
+		const object = this.requireWorldObject(object_id, 'attach_component');
 		const options = typeof component === 'string' ? { id: component } : (component ?? {});
 		const rawId = (options as { id?: unknown }).id;
 		if (typeof rawId !== 'string' || rawId.trim().length === 0) {
 			throw new Error('[BmsxConsoleApi] attach_component requires an id field.');
 		}
-		const definitionId = rawId.trim();
+		const definition_id = rawId.trim();
 		const idLocalRaw = (options as { id_local?: unknown }).id_local;
 		const id_local = typeof idLocalRaw === 'string' && idLocalRaw.trim().length > 0 ? idLocalRaw.trim() : undefined;
 		const stateRaw = (options as { state?: unknown }).state;
@@ -503,15 +503,15 @@ export class BmsxConsoleApi {
 			throw new Error('[BmsxConsoleApi] attach_component state must be a plain object.');
 		}
 		const instance = runtime.createComponentInstance({
-			definitionId,
-			parentId: object.id,
+			definition_id,
+			parent_id: object.id,
 			id_local,
 			state,
 		});
 		if (instance.isUniqueDefinition) {
 			const existing = object.getComponents(LuaComponent);
-			if (existing.some(entry => entry.definitionId === definitionId)) {
-				throw new Error(`[BmsxConsoleApi] Lua component '${definitionId}' is marked unique and already attached to '${objectId}'.`);
+			if (existing.some(entry => entry.definition_id === definition_id)) {
+				throw new Error(`[BmsxConsoleApi] Lua component '${definition_id}' is marked unique and already attached to '${object_id}'.`);
 			}
 		}
 		object.addComponent(instance);
@@ -528,33 +528,33 @@ export class BmsxConsoleApi {
 		return this.register_ability(descriptor);
 	}
 
-	public grant_ability(objectId: Identifier, abilityId: string): void {
-		if (typeof abilityId !== 'string' || abilityId.trim().length === 0) {
+	public grant_ability(object_id: Identifier, ability_id: string): void {
+		if (typeof ability_id !== 'string' || ability_id.trim().length === 0) {
 			throw new Error('[BmsxConsoleApi] grant_ability requires a non-empty ability id.');
 		}
 		const runtime = this.requireConsoleRuntime('grant_ability');
-		const object = this.requireWorldObject(objectId, 'grant_ability');
+		const object = this.requireWorldObject(object_id, 'grant_ability');
 		const asc = object.getUniqueComponent(AbilitySystemComponent);
 		if (!asc) {
-			throw new Error(`[BmsxConsoleApi] World object '${objectId}' does not have an AbilitySystemComponent.`);
+			throw new Error(`[BmsxConsoleApi] World object '${object_id}' does not have an AbilitySystemComponent.`);
 		}
-		const definition = runtime.getAbilityDefinition(abilityId.trim());
+		const definition = runtime.getAbilityDefinition(ability_id.trim());
 		if (!definition) {
-			throw new Error(`[BmsxConsoleApi] Lua ability '${abilityId}' is not registered.`);
+			throw new Error(`[BmsxConsoleApi] Lua ability '${ability_id}' is not registered.`);
 		}
 		asc.grantAbility(definition);
 	}
 
-	public request_ability(objectId: Identifier, abilityId: string, options?: { payload?: Record<string, unknown>; source?: Identifier | null }): boolean {
-		if (typeof abilityId !== 'string' || abilityId.trim().length === 0) {
+	public request_ability(object_id: Identifier, ability_id: string, options?: { payload?: Record<string, unknown>; source?: Identifier | null }): boolean {
+		if (typeof ability_id !== 'string' || ability_id.trim().length === 0) {
 			throw new Error('[BmsxConsoleApi] request_ability requires a non-empty ability id.');
 		}
-		const object = this.requireWorldObject(objectId, 'request_ability');
+		const object = this.requireWorldObject(object_id, 'request_ability');
 		const asc = object.getUniqueComponent(AbilitySystemComponent);
 		if (!asc) {
-			throw new Error(`[BmsxConsoleApi] World object '${objectId}' does not have an AbilitySystemComponent.`);
+			throw new Error(`[BmsxConsoleApi] World object '${object_id}' does not have an AbilitySystemComponent.`);
 		}
-		const trimmedId = abilityId.trim() as any;
+		const trimmedId = ability_id.trim() as any;
 		const payload = options?.payload as any;
 		const result = payload !== undefined
 			? asc.requestAbility(trimmedId, { payload })
@@ -562,28 +562,28 @@ export class BmsxConsoleApi {
 		return result.ok === true;
 	}
 
-	public add_component(objectId: Identifier, componentRef: string, options?: Record<string, unknown>): string {
-		const object = this.requireWorldObject(objectId, 'add_component');
+	public add_component(object_id: Identifier, component_ref: string, options?: Record<string, unknown>): string {
+		const object = this.requireWorldObject(object_id, 'add_component');
 		const rawOptions = options ? this.cloneStateMachineData(options) : {};
 		if (rawOptions && !this.isPlainObject(rawOptions)) {
 			throw new Error('[BmsxConsoleApi] add_component options must be a table/object.');
 		}
 		const descriptor: ConsoleComponentDescriptor = {
-			className: componentRef,
+			className: component_ref,
 			options: rawOptions as Record<string, unknown>,
 		};
 		const component = this.attachComponentByDescriptor(object, descriptor);
 		return component.id;
 	}
 
-	public remove_component(objectId: Identifier, componentId: string): void {
-		if (typeof componentId !== 'string' || componentId.length === 0) {
-			throw new Error('[BmsxConsoleApi] remove_component componentId must be a non-empty string.');
+	public remove_component(object_id: Identifier, component_id: string): void {
+		if (typeof component_id !== 'string' || component_id.length === 0) {
+			throw new Error('[BmsxConsoleApi] remove_component component_id must be a non-empty string.');
 		}
-		const object = this.requireWorldObject(objectId, 'remove_component');
-		const component = object.getComponentById(componentId);
+		const object = this.requireWorldObject(object_id, 'remove_component');
+		const component = object.getComponentById(component_id);
 		if (!component) {
-			throw new Error(`[BmsxConsoleApi] Component '${componentId}' not found on object '${objectId}'.`);
+			throw new Error(`[BmsxConsoleApi] Component '${component_id}' not found on object '${object_id}'.`);
 		}
 		component.dispose();
 	}
@@ -626,45 +626,45 @@ export class BmsxConsoleApi {
 		return $.event_emitter;
 	}
 
-	private getEmitter(emitterOrId: Identifier | null): Registerable | null {
-		if (typeof emitterOrId === 'string') {
-			return $.registry.get(emitterOrId);
+	private getEmitter(emitter_or_id: Identifier | null): Registerable | null {
+		if (typeof emitter_or_id === 'string') {
+			return $.registry.get(emitter_or_id);
 		}
-		return emitterOrId;
+		return emitter_or_id;
 	}
 
-	private validateEmitter(emitterOrId: Identifier | Registerable, emitter?: Registerable): void {
-		if (emitterOrId && !emitter) {
-			throw new Error(`[BmsxConsoleApi] Emitter '${emitterOrId}' not found.`);
+	private validateEmitter(emitter_or_id: Identifier | Registerable, emitter?: Registerable): void {
+		if (emitter_or_id && !emitter) {
+			throw new Error(`[BmsxConsoleApi] Emitter '${emitter_or_id}' not found.`);
 		}
-		if (!emitterOrId) throw new Error('[BmsxConsoleApi] emit requires a non-empty emitter or emitter id.');
+		if (!emitter_or_id) throw new Error('[BmsxConsoleApi] emit requires a non-empty emitter or emitter id.');
 	}
 
-	public emit(eventName: string, emitterOrId?: Identifier, payload?: EventPayload): void {
-		if (typeof eventName !== 'string' || eventName.length === 0) {
+	public emit(event_name: string, emitter_or_id?: Identifier, payload?: EventPayload): void {
+		if (typeof event_name !== 'string' || event_name.length === 0) {
 			throw new Error('[BmsxConsoleApi] emit requires a non-empty event name.');
 		}
-		const emitter: Registerable | null = this.getEmitter(emitterOrId);
-		this.validateEmitter(emitterOrId, emitter);
-		$.emit(eventName, emitter, payload);
+		const emitter: Registerable | null = this.getEmitter(emitter_or_id);
+		this.validateEmitter(emitter_or_id, emitter);
+		$.emit(event_name, emitter, payload);
 	}
 
-	public emit_gameplay(eventName: string, emitterOrId: Identifier | null, payload?: EventPayload): void {
-		if (typeof eventName !== 'string' || eventName.length === 0) {
+	public emit_gameplay(event_name: string, emitter_or_id: Identifier | null, payload?: EventPayload): void {
+		if (typeof event_name !== 'string' || event_name.length === 0) {
 			throw new Error('[BmsxConsoleApi] emit_gameplay requires a non-empty event name.');
 		}
-		const emitter = this.getEmitter(emitterOrId);
-		this.validateEmitter(emitterOrId, emitter);
-		$.emitGameplay(eventName, emitter as any, payload);
+		const emitter = this.getEmitter(emitter_or_id);
+		this.validateEmitter(emitter_or_id, emitter);
+		$.emitGameplay(event_name, emitter as any, payload);
 	}
 
-	public emit_presentation(eventName: string, emitterOrId: Identifier | null, payload?: EventPayload): void {
-		if (typeof eventName !== 'string' || eventName.length === 0) {
+	public emit_presentation(event_name: string, emitter_or_id: Identifier | null, payload?: EventPayload): void {
+		if (typeof event_name !== 'string' || event_name.length === 0) {
 			throw new Error('[BmsxConsoleApi] emit_presentation requires a non-empty event name.');
 		}
-		const emitter = this.getEmitter(emitterOrId);
-		this.validateEmitter(emitterOrId, emitter);
-		$.emitPresentation(eventName, emitter, payload);
+		const emitter = this.getEmitter(emitter_or_id);
+		this.validateEmitter(emitter_or_id, emitter);
+		$.emitPresentation(event_name, emitter, payload);
 	}
 
 	public timelines(): EventTimeline[] {
@@ -734,35 +734,35 @@ export class BmsxConsoleApi {
 		StateDefinitionBuilders[id] = () => this.cloneStateMachineData(snapshot);
 	}
 
-	private resolveWorldObjectConstructor(classRef: string): new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject {
-		if (typeof classRef !== 'string' || classRef.trim().length === 0) {
+	private resolveWorldObjectConstructor(class_ref: string): new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject {
+		if (typeof class_ref !== 'string' || class_ref.trim().length === 0) {
 			throw new Error('[BmsxConsoleApi] spawn_world_object requires a non-empty class reference.');
 		}
-		if (classRef === 'WorldObject') {
+		if (class_ref === 'WorldObject') {
 			return WorldObject as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
 		}
-		const ctorUnknown = this.resolveConstructor(classRef.trim());
+		const ctorUnknown = this.resolveConstructor(class_ref.trim());
 		if (typeof ctorUnknown !== 'function') {
-			throw new Error(`[BmsxConsoleApi] World object constructor '${classRef}' not found.`);
+			throw new Error(`[BmsxConsoleApi] World object constructor '${class_ref}' not found.`);
 		}
 		const ctor = ctorUnknown as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
 		if (!(ctor.prototype instanceof WorldObject)) {
-			throw new Error(`[BmsxConsoleApi] Constructor '${classRef}' does not extend WorldObject.`);
+			throw new Error(`[BmsxConsoleApi] Constructor '${class_ref}' does not extend WorldObject.`);
 		}
 		return ctor;
 	}
 
-	private resolveComponentConstructor(classRef: string): new (opts: Record<string, unknown>) => Component {
-		if (typeof classRef !== 'string' || classRef.trim().length === 0) {
+	private resolveComponentConstructor(class_ref: string): new (opts: Record<string, unknown>) => Component {
+		if (typeof class_ref !== 'string' || class_ref.trim().length === 0) {
 			throw new Error('[BmsxConsoleApi] Component reference must be a non-empty string.');
 		}
-		const ctorUnknown = this.resolveConstructor(classRef.trim());
+		const ctorUnknown = this.resolveConstructor(class_ref.trim());
 		if (typeof ctorUnknown !== 'function') {
-			throw new Error(`[BmsxConsoleApi] Component constructor '${classRef}' not found.`);
+			throw new Error(`[BmsxConsoleApi] Component constructor '${class_ref}' not found.`);
 		}
 		const ctor = ctorUnknown as new (opts: Record<string, unknown>) => Component;
 		if (!(ctor.prototype instanceof Component)) {
-			throw new Error(`[BmsxConsoleApi] Constructor '${classRef}' does not extend Component.`);
+			throw new Error(`[BmsxConsoleApi] Constructor '${class_ref}' does not extend Component.`);
 		}
 		return ctor;
 	}
@@ -790,7 +790,7 @@ export class BmsxConsoleApi {
 			scale: null,
 			components: [],
 			fsms: [],
-			behaviorTrees: [],
+			behavior_trees: [],
 			abilities: [],
 			tags: [],
 			defaults: undefined,
@@ -838,7 +838,7 @@ export class BmsxConsoleApi {
 
 		const behaviorTreesRaw = raw.bts ?? raw.behavior_trees ?? raw.behaviorTrees;
 		if (behaviorTreesRaw !== undefined) {
-			normalized.behaviorTrees = this.normalizeSpawnSystemEntries(behaviorTreesRaw, 'behavior trees', true);
+			normalized.behavior_trees = this.normalizeSpawnSystemEntries(behaviorTreesRaw, 'behavior trees', true);
 		}
 
 		if (raw.abilities !== undefined) {
@@ -893,7 +893,7 @@ export class BmsxConsoleApi {
 				if (trimmed.length === 0) {
 					throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}] must be a non-empty string.`);
 				}
-				entries.push({ kind: 'component', descriptor: { className: trimmed, options: {} } });
+				entries.push({ kind: 'component', descriptor: { classname: trimmed, options: {} } });
 				continue;
 			}
 			if (!this.isPlainObject(entry)) {
@@ -938,7 +938,7 @@ export class BmsxConsoleApi {
 				delete clone.options;
 				options = clone;
 			}
-			entries.push({ kind: 'component', descriptor: { className: classCandidate.trim(), options } });
+			entries.push({ kind: 'component', descriptor: { classname: classCandidate.trim(), options } });
 		}
 		return entries;
 	}
@@ -950,8 +950,8 @@ export class BmsxConsoleApi {
 		const entries: LuaWorldObjectSystemEntry[] = [];
 		const push = (value: Record<string, unknown>, indexLabel: string) => {
 			const idCandidate = value.id
-				?? value.fsm ?? value.fsmId ?? value.machine ?? value.machineId
-				?? value.tree ?? value.treeId ?? value.bt ?? value.btId;
+				?? value.fsm ?? value.fsmId ?? value.machine ?? value.machine_id
+				?? value.tree ?? value.tree_id ?? value.bt ?? value.btId;
 			if (typeof idCandidate !== 'string' || idCandidate.trim().length === 0) {
 				throw new Error(`[BmsxConsoleApi] ${label} entry ${indexLabel} is missing a valid id.`);
 			}
@@ -963,7 +963,7 @@ export class BmsxConsoleApi {
 			if (allowAutoTick) {
 				const autoCandidate = value.auto_tick ?? value.autoTick ?? value.auto;
 				if (typeof autoCandidate === 'boolean') {
-					entry.autoTick = autoCandidate;
+					entry.auto_tick = autoCandidate;
 				}
 			}
 			const activeCandidate = value.active ?? value.enabled ?? value.running;
@@ -1055,7 +1055,7 @@ export class BmsxConsoleApi {
 				throw new Error('[BmsxConsoleApi] Component presets require the console runtime to be active.');
 			}
 			descriptors.push({
-				className: entry.descriptor.className,
+				className: entry.descriptor.classname,
 				options: this.cloneStateMachineData(entry.descriptor.options),
 			});
 		}
@@ -1192,7 +1192,7 @@ export class BmsxConsoleApi {
 		return Msx1Colors[index];
 	}
 
-	private resolvePrintContext(font: ConsoleFont, x: number | undefined, y: number | undefined, colorIndex: number | undefined): {
+	private resolveWriteContext(font: ConsoleFont, x: number | undefined, y: number | undefined, colorindex: number | undefined): {
 		baseX: number;
 		baseY: number;
 		color: color;
@@ -1205,8 +1205,8 @@ export class BmsxConsoleApi {
 			this.textCursorX = this.textCursorHomeX;
 			this.textCursorY = Math.floor(y!);
 		}
-		if (typeof colorIndex === 'number' && Number.isFinite(colorIndex)) {
-			this.textCursorColorIndex = Math.floor(colorIndex);
+		if (typeof colorindex === 'number' && Number.isFinite(colorindex)) {
+			this.textCursorColorIndex = Math.floor(colorindex);
 		}
 		const baseX = this.textCursorX;
 		const baseY = this.textCursorY;

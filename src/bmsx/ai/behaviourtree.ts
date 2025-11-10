@@ -502,7 +502,7 @@ export type BehaviorTreeID = string;
 
 // Represents the context for a behavior tree for a given world object.
 export type BehaviorTreeContext = {
-	treeId: BehaviorTreeID;
+	tree_id: BehaviorTreeID;
 	running: boolean; // Indicates if the behavior tree is currently running
 	root: BTNode; // The root node of the behavior tree
 	blackboard: Blackboard; // The blackboard associated with the behavior tree

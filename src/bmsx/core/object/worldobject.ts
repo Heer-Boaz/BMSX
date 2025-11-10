@@ -884,7 +884,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 			}
 			const blackboard = new Blackboard({ id: btId });
 			contexts[btId] = {
-				treeId: btId,
+				tree_id: btId,
 				running: true,
 				root: instantiateBehaviorTree(btId),
 				blackboard,

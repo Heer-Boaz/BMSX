@@ -20,7 +20,7 @@ export type LuaComponentInstanceOptions = ComponentAttachOptions & {
 };
 
 export class LuaComponent extends Component {
-	public readonly definitionId: string;
+	public readonly definition_id: string;
 	public readonly vars: Record<string, unknown>;
 
 	private readonly handlers: LuaComponentHandlerMap;
@@ -30,7 +30,7 @@ export class LuaComponent extends Component {
 
 	constructor(options: LuaComponentInstanceOptions) {
 		super(options);
-		this.definitionId = options.definitionId;
+		this.definition_id = options.definitionId;
 		this.handlers = { ...options.handlers };
 		this.uniquePerDefinition = options.unique ?? false;
 		this.tagsPreLocal = options.tagsPre;

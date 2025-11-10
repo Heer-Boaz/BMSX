@@ -11,6 +11,13 @@ export type ConsoleApiMethodMetadata = {
 };
 
 export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadata> = {
+	print: {
+		optionalParameters: ['text'],
+		description: 'Prints text to the console output log. If no text is provided, a blank line is printed.',
+		parameters: [
+			{ name: 'text', optional: true, description: 'Text string to print to the console log.' },
+		],
+	},
 	add_component: {
 		optionalParameters: ['options'],
 		description: 'Adds a component instance to an existing world object.',
@@ -20,11 +27,32 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 			{ name: 'options', optional: true, description: 'Optional component configuration such as state overrides.' },
 		],
 	},
+	write: {
+		optionalParameters: ['x', 'y', 'colorindex'],
+		description: 'Writes text to screen. Coordinates are in pixels. If x and y are not provided, text will be written at the current cursor position.',
+		parameters: [
+			{ name: 'text', optional: false, description: 'Text string to write to the screen.' },
+			{ name: 'x', optional: true, description: 'X coordinate to start writing the text at.' },
+			{ name: 'y', optional: true, description: 'Y coordinate to start writing the text at.' },
+			{ name: 'colorindex', optional: true, description: 'Palette index to use for the text color.' },
+		],
+	},
+	write_with_font: {
+		optionalParameters: ['x', 'y', 'colorindex', 'font'],
+		description: 'Writes text to screen using a specific font. Coordinates are in pixels. If x and y are not provided, text will be written at the current cursor position. If font is not provided, the default font will be used.',
+		parameters: [
+			{ name: 'text', optional: false, description: 'Text string to write to the screen.' },
+			{ name: 'x', optional: true, description: 'X coordinate to start writing the text at.' },
+			{ name: 'y', optional: true, description: 'Y coordinate to start writing the text at.' },
+			{ name: 'colorindex', optional: true, description: 'Palette index to use for the text color.' },
+			{ name: 'fontid', optional: true, description: 'Identifier of the font to use for rendering the text.' },
+		],
+	},
 	cls: {
-		optionalParameters: ['colorIndex'],
+		optionalParameters: ['colorindex'],
 		description: 'Clears the console render surface.',
 		parameters: [
-			{ name: 'colorIndex', optional: true, description: 'Palette index to fill the screen with (defaults to 0).' },
+			{ name: 'colorindex', optional: true, description: 'Palette index to fill the screen with (defaults to 0).' },
 		],
 	},
 	despawn: {
@@ -39,8 +67,8 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 		optionalParameters: ['emitterOrId', 'payload'],
 		description: 'Broadcasts an engine event via the global event bus.',
 		parameters: [
-			{ name: 'eventName', description: 'Name of the event to emit.' },
-			{ name: 'emitterOrId', optional: true, description: 'Emitter instance or identifier that produced the event.' },
+			{ name: 'event_name', description: 'Name of the event to emit.' },
+			{ name: 'emitter_or_id', optional: true, description: 'Emitter instance or identifier that produced the event.' },
 			{ name: 'payload', optional: true, description: 'Optional payload delivered to event listeners.' },
 		],
 	},
@@ -48,8 +76,8 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 		optionalParameters: ['payload'],
 		description: 'Dispatches a gameplay-scoped event to listeners.',
 		parameters: [
-			{ name: 'eventName', description: 'Name of the gameplay event to emit.' },
-			{ name: 'emitterOrId', description: 'Emitter identifier associated with the event.' },
+			{ name: 'event_name', description: 'Name of the gameplay event to emit.' },
+			{ name: 'emitter_or_id', description: 'Emitter identifier associated with the event.' },
 			{ name: 'payload', optional: true, description: 'Optional gameplay event payload.' },
 		],
 	},
@@ -57,8 +85,8 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 		optionalParameters: ['payload'],
 		description: 'Dispatches a presentation-scoped event to listeners.',
 		parameters: [
-			{ name: 'eventName', description: 'Name of the presentation event to emit.' },
-			{ name: 'emitterOrId', description: 'Emitter identifier associated with the event.' },
+			{ name: 'event_name', description: 'Name of the presentation event to emit.' },
+			{ name: 'emitter_or_id', description: 'Emitter identifier associated with the event.' },
 			{ name: 'payload', optional: true, description: 'Optional presentation event payload.' },
 		],
 	},
@@ -89,8 +117,8 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 		optionalParameters: ['options'],
 		description: 'Queues an ability execution request for a world object.',
 		parameters: [
-			{ name: 'objectId', description: 'Identifier of the world object requesting the ability.' },
-			{ name: 'abilityId', description: 'Ability identifier to trigger.' },
+			{ name: 'object_id', description: 'Identifier of the world object requesting the ability.' },
+			{ name: 'ability_id', description: 'Ability identifier to trigger.' },
 			{ name: 'options', optional: true, description: 'Optional request options such as payload data or source information.' },
 		],
 	},
@@ -106,7 +134,7 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 		optionalParameters: ['overrides'],
 		description: 'Instantiates a world object from a registered descriptor.',
 		parameters: [
-			{ name: 'definitionId', description: 'Identifier of the registered world object definition.' },
+			{ name: 'definition_id', description: 'Identifier of the registered world object definition.' },
 			{ name: 'overrides', optional: true, description: 'Optional overrides applied to the spawned instance.' },
 		],
 	},
@@ -114,7 +142,7 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 		optionalParameters: ['options'],
 		description: 'Creates a world object from the given class reference.',
 		parameters: [
-			{ name: 'classRef', description: 'World object class reference or identifier.' },
+			{ name: 'class_ref', description: 'World object class reference or identifier.' },
 			{ name: 'options', optional: true, description: 'Optional spawn options such as position, orientation, or components.' },
 		],
 	},

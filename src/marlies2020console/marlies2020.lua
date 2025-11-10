@@ -586,9 +586,9 @@ end
 
 function draw()
     local text_y = inventory_pos.y + 60
-    print('Pitas: ' .. tostring(game_state.pitas_served) .. '/' .. tostring(pitas_required), 4, text_y, 10)
+    write('Pitas: ' .. tostring(game_state.pitas_served) .. '/' .. tostring(pitas_required), 4, text_y, 10)
     if game_state.victory then
-        print('Hoera!', 96, 12, 11)
+        write('Hoera!', 96, 12, 11)
     end
-    print('Boaz is stoer', 32, 64, 15)
+    write('Boaz is stoer', 32, 64, 15)
 end

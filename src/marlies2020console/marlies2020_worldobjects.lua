@@ -263,9 +263,10 @@ function playerobject:on_spawn()
 	assert(asc:hasability(playerabilityids.move_horizontal), '[PlayerObject:on_spawn] move ability missing')
 	assert(asc:hasability(playerabilityids.interact), '[PlayerObject:on_spawn] interact ability missing')
 
-	local function begin_overlap(_, _, payload)
-		local other = payload.other_id
-		local ingredient = game_state.ingredients[other]
+		local function begin_overlap(_, _, payload)
+			local other = payload.other_id
+			print('[DEBUG overlap begin]', self.id, other)
+			local ingredient = game_state.ingredients[other]
 		if ingredient then
 			self.touch_ingredients[other] = ingredient
 		end
