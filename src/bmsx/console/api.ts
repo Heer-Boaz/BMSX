@@ -28,7 +28,7 @@ import { Component } from '../component/basecomponent';
 import { LuaComponent } from '../component/lua_component';
 import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 import { BmsxConsoleRuntime } from './runtime';
-import type { LuaWorldObjectComponentEntry, LuaWorldObjectSystemEntry, LuaWorldObjectSpawnOptions } from './runtime';
+import type { ConsoleWorldObjectComponentEntry, ConsoleWorldObjectSystemEntry, ConsoleWorldObjectSpawnOptions } from './runtime';
 import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type BehaviorTreeContext, type ConstructorWithBTProperty } from '../ai/behaviourtree';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
@@ -54,7 +54,7 @@ type ConsoleComponentDescriptor = {
 	options: Record<string, unknown>;
 };
 
-type NormalizedSpawnOptions = LuaWorldObjectSpawnOptions & {
+type NormalizedSpawnOptions = ConsoleWorldObjectSpawnOptions & {
 	id?: string;
 	space?: string;
 	reason?: SpawnReason;
@@ -358,7 +358,7 @@ export class BmsxConsoleApi {
 		const normalized = this.normalizeSpawnOptions(rawOptions as Record<string, unknown>);
 		const runtime = BmsxConsoleRuntime.instance;
 		if (runtime) {
-			runtime.applyLuaWorldObjectDefaults(class_ref, normalized);
+			runtime.applyConsoleWorldObjectDefaults(class_ref, normalized);
 		}
 		const ctor = this.resolveWorldObjectConstructor(class_ref);
 		if (normalized.id && $.world.exists(normalized.id)) {
@@ -385,7 +385,7 @@ export class BmsxConsoleApi {
 			$.world.spawn(instance, spawnPos, reasonOpts);
 		}
 		if (runtime) {
-			runtime.onLuaWorldObjectSpawned(instance);
+			runtime.onConsoleWorldObjectSpawned(instance);
 		}
 		return instance.id;
 	}
@@ -881,11 +881,11 @@ export class BmsxConsoleApi {
 		return result;
 	}
 
-	private normalizeSpawnComponentEntries(raw: unknown): LuaWorldObjectComponentEntry[] {
+	private normalizeSpawnComponentEntries(raw: unknown): ConsoleWorldObjectComponentEntry[] {
 		if (!Array.isArray(raw)) {
 			throw new Error('[BmsxConsoleApi] spawn_world_object options.components must be an array.');
 		}
-		const entries: LuaWorldObjectComponentEntry[] = [];
+		const entries: ConsoleWorldObjectComponentEntry[] = [];
 		for (let index = 0; index < raw.length; index += 1) {
 			const entry = raw[index];
 			if (typeof entry === 'string') {
@@ -943,11 +943,11 @@ export class BmsxConsoleApi {
 		return entries;
 	}
 
-	private normalizeSpawnSystemEntries(raw: unknown, label: string, allowAutoTick: boolean): LuaWorldObjectSystemEntry[] {
+	private normalizeSpawnSystemEntries(raw: unknown, label: string, allowAutoTick: boolean): ConsoleWorldObjectSystemEntry[] {
 		if (raw === undefined || raw === null) {
 			return [];
 		}
-		const entries: LuaWorldObjectSystemEntry[] = [];
+		const entries: ConsoleWorldObjectSystemEntry[] = [];
 		const push = (value: Record<string, unknown>, indexLabel: string) => {
 			const idCandidate = value.id
 				?? value.fsm ?? value.fsmId ?? value.machine ?? value.machine_id
@@ -955,7 +955,7 @@ export class BmsxConsoleApi {
 			if (typeof idCandidate !== 'string' || idCandidate.trim().length === 0) {
 				throw new Error(`[BmsxConsoleApi] ${label} entry ${indexLabel} is missing a valid id.`);
 			}
-			const entry: LuaWorldObjectSystemEntry = { id: idCandidate.trim() };
+			const entry: ConsoleWorldObjectSystemEntry = { id: idCandidate.trim() };
 			const contextCandidate = value.context ?? value.slot ?? value.scope ?? value.alias;
 			if (typeof contextCandidate === 'string' && contextCandidate.trim().length > 0) {
 				entry.context = contextCandidate.trim();
@@ -1047,7 +1047,7 @@ export class BmsxConsoleApi {
 		}
 	}
 
-	private materializeComponentEntriesFallback(entries: ReadonlyArray<LuaWorldObjectComponentEntry>): ConsoleComponentDescriptor[] {
+	private materializeComponentEntriesFallback(entries: ReadonlyArray<ConsoleWorldObjectComponentEntry>): ConsoleComponentDescriptor[] {
 		const descriptors: ConsoleComponentDescriptor[] = [];
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index]!;

@@ -7607,7 +7607,6 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 			return true;
 		}
 	}
-	return true;
 }
 
 export function createRuntimeErrorOverlayLayoutHost(): RuntimeErrorOverlayLayoutHost {

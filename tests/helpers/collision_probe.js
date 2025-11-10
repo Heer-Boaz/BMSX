@@ -4,7 +4,7 @@ module.exports.schedule = async function schedule({ logger }) {
     const game = globalThis.$;
     const world = game.world;
     const objects = Array.from(world.objects({ scope: 'all' }));
-    const player = objects.find(o => o.__luaDefinitionId === 'marlies2020.player');
+    const player = objects.find(o => o.__lua_definition_id === 'marlies2020.player');
     if (!player) {
       console.log('[TEST] no player');
       return;

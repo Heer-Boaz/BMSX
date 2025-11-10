@@ -8,12 +8,12 @@ module.exports.schedule = async function schedule({ logger }) {
     }
     const world = game.world;
     const objects = Array.from(world.objects({ scope: 'all' }));
-    const player = objects.find(o => o.__luaDefinitionId === 'marlies2020.player');
+    const player = objects.find(o => o.__lua_definition_id === 'marlies2020.player');
     if (!player) {
       console.log('[COLLISION_TEST] player not found');
       return;
     }
-    const ingredient = objects.find(o => o.__luaDefinitionId === 'marlies2020.ingredient');
+    const ingredient = objects.find(o => o.__lua_definition_id === 'marlies2020.ingredient');
     if (!ingredient) {
       console.log('[COLLISION_TEST] ingredient missing');
       return;
