@@ -1,15 +1,15 @@
 import { $ } from '../../core/game';
 import type { EditorSnapshot } from '../editor';
 import type { ConsoleResourceDescriptor } from '../types';
-import { captureSnapshot, createEntryTabContext, findResourceDescriptorByAssetId, getActiveTabKind, ide_state, initializeTabs, openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, restoreSnapshot, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './console_cart_editor';
+import { createEntryTabContext, findResourceDescriptorByAssetId, ide_state, initializeTabs, openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, restoreSnapshot, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './console_cart_editor';
 import { WORKSPACE_AUTOSAVE_INTERVAL_MS, workspaceDirtyCache } from './ide_state';
 import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext } from './types';
 
-const WORKSPACE_INIT_ENDPOINT = '/__bmsx__/workspace';
 const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 const METADATA_DIR_NAME = '.bmsx';
 const DIRTY_DIR_NAME = 'dirty';
 const STATE_FILE_NAME = 'ide-state.json';
+const MARKER_FILE_NAME = '~workspace';
 
 export type WorkspaceStoragePaths = {
 	projectRootPath: string;
@@ -34,7 +34,6 @@ export async function configureWorkspaceStorage(projectRootPath: string | null):
 		storagePaths = null;
 		return;
 	}
-	await ensureWorkspaceDirectory(normalizedRoot);
 	const metadataDir = joinRelativePaths(normalizedRoot, METADATA_DIR_NAME);
 	const dirtyDir = joinRelativePaths(metadataDir, DIRTY_DIR_NAME);
 	const stateFile = joinRelativePaths(metadataDir, STATE_FILE_NAME);
@@ -44,6 +43,11 @@ export async function configureWorkspaceStorage(projectRootPath: string | null):
 		dirtyDir,
 		stateFile,
 	};
+	try {
+		await ensureWorkspaceDirectory(normalizedRoot);
+	} catch (error) {
+		console.warn('[WorkspaceStorage] Unable to pre-create workspace directory.', error);
+	}
 }
 
 export function buildDirtyFilePath(resourcePath: string): string {
@@ -54,7 +58,21 @@ export function buildDirtyFilePath(resourcePath: string): string {
 	if (normalizedResource.length === 0) {
 		throw new Error('[WorkspaceStorage] Resource path is required to build dirty file path.');
 	}
-	return joinRelativePaths(storagePaths.dirtyDir, normalizedResource);
+	const segments = normalizedResource.split('/');
+	const baseName = segments.pop() ?? normalizedResource;
+	const tempName = baseName.startsWith('~') ? baseName : `~${baseName}`;
+	segments.push(tempName);
+	return joinRelativePaths(storagePaths.dirtyDir, ...segments);
+}
+
+export function buildScratchDirtyFilePath(contextId: string): string {
+	if (!storagePaths) {
+		throw new Error('[WorkspaceStorage] Workspace storage not configured.');
+	}
+	const sanitized = sanitizeFilenameSegment(contextId);
+	const baseName = sanitized.endsWith('.lua') ? sanitized : `${sanitized}.lua`;
+	const tempName = baseName.startsWith('~') ? baseName : `~${baseName}`;
+	return joinRelativePaths(storagePaths.dirtyDir, '__scratch__', tempName);
 }
 
 export async function readWorkspaceStateFile(): Promise<string | null> {
@@ -89,15 +107,9 @@ export async function deleteDirtyBuffer(relativePath: string): Promise<void> {
 }
 
 async function ensureWorkspaceDirectory(projectRootPath: string): Promise<void> {
-	const response = await fetchOrThrow(WORKSPACE_INIT_ENDPOINT, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ projectRootPath }),
-	});
-	if (!response.ok) {
-		const detail = await safeReadText(response);
-		throw new Error(`[WorkspaceStorage] Failed to prepare workspace directory: ${detail}`);
-	}
+	const metadataDir = joinRelativePaths(projectRootPath, METADATA_DIR_NAME);
+	const markerPath = joinRelativePaths(metadataDir, MARKER_FILE_NAME);
+	await writeWorkspaceFile(markerPath, '');
 }
 
 async function readWorkspaceFile(relativePath: string): Promise<string | null> {
@@ -175,6 +187,12 @@ function joinRelativePaths(...segments: string[]): string {
 		.replace(/\/+/g, '/');
 }
 
+function sanitizeFilenameSegment(value: string): string {
+	const replaced = value.replace(/[^A-Za-z0-9._-]/g, '_').replace(/_+/g, '_');
+	const trimmed = replaced.replace(/^[_\.]+/, '');
+	return trimmed.length > 0 ? trimmed : 'untitled';
+}
+
 export type SerializedDescriptor = {
 	assetId: string;
 	path: string;
@@ -189,7 +207,7 @@ export type PersistedTabEntry = {
 
 export type PersistedDirtyEntry = {
 	contextId: string;
-	descriptor: SerializedDescriptor;
+	descriptor: SerializedDescriptor | null;
 	dirtyPath: string;
 };
 
@@ -200,7 +218,6 @@ export type WorkspaceAutosavePayload = {
 	activeTabId: string | null;
 	tabs: PersistedTabEntry[];
 	dirtyFiles: PersistedDirtyEntry[];
-	activeSnapshot: EditorSnapshot | null;
 };
 
 export type DirtyContextEntry = PersistedDirtyEntry & { text: string };
@@ -301,13 +318,13 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 	for (const tabEntry of payload.tabs) {
 		restorePersistedTab(tabEntry);
 	}
+	await hydrateDirtyFiles(payload.dirtyFiles);
 	if (payload.activeTabId) {
 		setActiveTab(payload.activeTabId);
-	}
-	await hydrateDirtyFiles(payload.dirtyFiles);
-	if (payload.activeSnapshot && payload.activeTabId && ide_state.activeTabId === payload.activeTabId && getActiveTabKind() === 'lua_editor') {
-		restoreSnapshot(payload.activeSnapshot);
-		updateActiveContextDirtyFlag();
+	} else if (ide_state.entryTabId) {
+		setActiveTab(ide_state.entryTabId);
+	} else if (ide_state.tabs.length > 0) {
+		setActiveTab(ide_state.tabs[0].id);
 	}
 }
 
@@ -381,11 +398,8 @@ export function resolveSerializedDescriptor(serialized: SerializedDescriptor | n
 export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise<void> {
 	for (const entry of entries) {
 		const descriptor = resolveSerializedDescriptor(entry.descriptor);
-		if (!descriptor) {
-			continue;
-		}
 		let context = ide_state.codeTabContexts.get(entry.contextId) ?? null;
-		if (!context) {
+		if (!context && descriptor) {
 			openLuaCodeTab(descriptor);
 			context = ide_state.codeTabContexts.get(entry.contextId) ?? null;
 		}
@@ -430,16 +444,15 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 	}
 	const entries = new Map<string, DirtyContextEntry>();
 	for (const context of ide_state.codeTabContexts.values()) {
-		if (!context.descriptor || !context.dirty) {
+		if (!context.dirty) {
 			continue;
 		}
-		const descriptor = serializeDescriptor(context.descriptor);
-		if (!descriptor) {
-			continue;
-		}
+		const descriptor = serializeDescriptor(context.descriptor ?? null);
 		let dirtyPath: string;
 		try {
-			dirtyPath = buildDirtyFilePath(descriptor.path);
+			dirtyPath = descriptor
+				? buildDirtyFilePath(descriptor.path)
+				: buildScratchDirtyFilePath(context.id);
 		} catch {
 			continue;
 		}
@@ -486,9 +499,6 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 			dirtyPath: entry.dirtyPath,
 		});
 	}
-	const activeSnapshot = ide_state.activeTabId && getActiveTabKind() === 'lua_editor'
-		? captureSnapshot()
-		: null;
 	return {
 		version: 1,
 		savedAt: Date.now(),
@@ -496,7 +506,6 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 		activeTabId: ide_state.activeTabId ?? null,
 		tabs,
 		dirtyFiles,
-		activeSnapshot,
 	};
 }
 

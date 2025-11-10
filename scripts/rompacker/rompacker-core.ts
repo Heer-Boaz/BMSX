@@ -137,6 +137,8 @@ export function resolveVirtualSourcePath(filepath: string | undefined, virtualRo
 	return workspacePath;
 }
 
+const WORKSPACE_STATE_DIR_NAME = '.bmsx';
+
 const RESOURCE_SCAN_EXCLUDE = new Set<string>([
 	'.rom',
 	'.js',
@@ -161,6 +163,7 @@ export async function getFiles(dirPath: string, arrayOfFiles?: string[], filterE
 	let array = arrayOfFiles || [];
 	for (let file of files) {
 		if (file.indexOf('_ignore') > -1) continue;
+		if (isWorkspaceStateDirectory(file)) continue;
 
 		let fullpath = `${dirPath}/${file}`;
 
@@ -723,8 +726,14 @@ const EXTRA_LUA_SCAN_SKIP = new Set<string>([
 	'res',
 ]);
 
+EXTRA_LUA_SCAN_SKIP.add(WORKSPACE_STATE_DIR_NAME);
+
 function shouldSkipExtraLuaDir(dirname: string): boolean {
 	return EXTRA_LUA_SCAN_SKIP.has(dirname.toLowerCase());
+}
+
+function isWorkspaceStateDirectory(name: string): boolean {
+	return name.toLowerCase() === WORKSPACE_STATE_DIR_NAME;
 }
 
 export async function getResMetaList(respaths: string[], romname?: string, options: ResourceScanOptions = {}): Promise<Resource[]> {
@@ -757,7 +766,7 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 			return;
 		}
 		for (const entry of entries) {
-			if (shouldSkipExtraLuaDir(entry.name)) continue;
+			if (shouldSkipExtraLuaDir(entry.name) || isWorkspaceStateDirectory(entry.name)) continue;
 			const entryPath = join(root, entry.name);
 			if (entry.isDirectory()) {
 				await appendLuaFilesFromRoot(entryPath);
@@ -1812,7 +1821,7 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 			const entryPath = join(dir, entry.name);
 
 			if (entry.isDirectory()) {
-				if (entry.name === '_ignore' || entry.name === 'node_modules') {
+				if (entry.name === '_ignore' || entry.name === 'node_modules' || isWorkspaceStateDirectory(entry.name)) {
 					continue;
 				}
 				const rebuild = await shouldRebuild(entryPath, checkCodeFiles, checkAssets);

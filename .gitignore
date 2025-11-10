@@ -37,3 +37,5 @@ src/bmsx/bmsx.d.ts
 src/testrom/res/_ignore/detective_piet/**
 tsconfig.buildinfo
 scripts/tmp
+# Ignore all folders named .bmsx (directories only, not files)
+**/.bmsx/
