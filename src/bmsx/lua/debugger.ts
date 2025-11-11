@@ -68,6 +68,16 @@ export class LuaDebuggerController {
 		this.suppressedBoundaries.clear();
 	}
 
+	public unsuppressBoundary(chunkName: string, line: number, depth: number): void {
+		const normalizedChunk = this.normalizeChunkName(chunkName);
+		const resolvedLine = this.normalizeLineNumber(line);
+		if (resolvedLine === null) {
+			return;
+		}
+		const normalizedDepth = Math.max(0, depth | 0);
+		this.suppressedBoundaries.delete(this.buildBoundaryKey(normalizedChunk, resolvedLine, normalizedDepth));
+	}
+
 	public shouldPause(chunkName: string, line: number, depth: number): LuaDebuggerPauseReason | null {
 		const normalizedChunk = this.normalizeChunkName(chunkName);
 		const resolvedLine = this.normalizeLineNumber(line);

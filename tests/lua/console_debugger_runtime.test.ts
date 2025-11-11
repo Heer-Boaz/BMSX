@@ -7,12 +7,24 @@ import type { LuaDebuggerPauseSignal } from '../../src/bmsx/lua/runtime.ts';
 import { createLuaInterpreter, isLuaDebuggerPauseSignal } from '../../src/bmsx/lua/runtime.ts';
 import { LuaDebuggerController } from '../../src/bmsx/lua/debugger.ts';
 import { LuaRuntimeError } from '../../src/bmsx/lua/errors.ts';
+import type { LuaFunctionValue } from '../../src/bmsx/lua/value.ts';
 import { emitDebuggerLifecycleEvent } from '../../src/bmsx/console/debugger_lifecycle';
 import { getDebuggerCommandExecutor, issueDebuggerCommand } from '../../src/bmsx/console/ide/debugger_controls';
 import { setDebuggerRuntimeAccessor } from '../../src/bmsx/console/runtime_accessors';
 
 function resetDebuggerLifecycle(): void {
 	emitDebuggerLifecycleEvent({ type: 'continued', mode: 'continue' });
+}
+
+function callExpectPause(fn: LuaFunctionValue): LuaDebuggerPauseSignal {
+	try {
+		fn.call([]);
+		assert.fail('expected debugger pause');
+	}
+	catch (error) {
+		assert.ok(isLuaDebuggerPauseSignal(error), 'expected debugger pause signal');
+		return error;
+	}
 }
 
 test('lua interpreter skip strategy resumes past exception line', () => {
@@ -59,6 +71,43 @@ test('lua interpreter propagate strategy rethrows exception when continuing', ()
 	interpreter.setExceptionResumeStrategy('propagate');
 	assert.throws(() => suspension.resume(), LuaRuntimeError);
 	resetDebuggerLifecycle();
+});
+
+test('stepping after exception still breaks on next invocation', () => {
+	resetDebuggerLifecycle();
+	const interpreter = createLuaInterpreter();
+	interpreter.attachDebugger(new LuaDebuggerController());
+	const fn = interpreter.execute('return function() error(\"boom\") end', 'main.lua')[0] as LuaFunctionValue;
+	const first = callExpectPause(fn);
+	interpreter.setExceptionResumeStrategy('skip_statement');
+	const resumed = first.resume();
+	assert.equal(resumed.kind, 'normal');
+	const second = callExpectPause(fn);
+	assert.equal(second.reason, 'exception');
+});
+
+test('step over after exception pauses at next statement', () => {
+	resetDebuggerLifecycle();
+	const interpreter = createLuaInterpreter();
+	const controller = new LuaDebuggerController();
+	interpreter.attachDebugger(controller);
+	const fn = interpreter.execute(
+		`
+local counter = 0
+return function()
+	counter = counter + 1
+	error('boom')
+	counter = counter + 1
+end
+`,
+		'main.lua',
+	)[0] as LuaFunctionValue;
+	const suspension = callExpectPause(fn);
+	interpreter.setExceptionResumeStrategy('skip_statement');
+	controller.requestStepOver(suspension.callStack.length);
+	const result = suspension.resume();
+	assert.equal(result.kind, 'pause');
+	assert.equal(result.reason, 'step');
 });
 
 test('debugger commands dispatch only when a suspension is active', () => {
