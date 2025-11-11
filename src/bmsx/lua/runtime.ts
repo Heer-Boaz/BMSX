@@ -84,6 +84,8 @@ type DebuggerPauseContext = {
 	readonly reason: LuaDebuggerPauseReason;
 };
 
+type LuaExceptionResumeStrategy = 'propagate' | 'skip_statement';
+
 export interface LuaHostAdapter {
 	toLua(value: unknown, interpreter: LuaInterpreter): LuaValue;
 	toJs(value: LuaValue, interpreter: LuaInterpreter): unknown;
@@ -173,6 +175,7 @@ export class LuaInterpreter {
 	private debuggerController: LuaDebuggerController | null = null;
     private lastFaultCallStack: LuaCallFrame[] = [];
     private lastFaultDepth: number = 0;
+	private exceptionResumeStrategy: LuaExceptionResumeStrategy = 'propagate';
 	private hostAdapter: LuaHostAdapter | null = null;
 	private caseInsensitiveNativeAccess = true;
 	private nativeValueCache: WeakMap<object | Function, LuaNativeValue> = new WeakMap();
@@ -415,6 +418,20 @@ export class LuaInterpreter {
 		this.recordFaultCallStack();
 	}
 
+	public setExceptionResumeStrategy(strategy: LuaExceptionResumeStrategy): void {
+		if (strategy === 'skip_statement') {
+			this.exceptionResumeStrategy = 'skip_statement';
+			return;
+		}
+		this.exceptionResumeStrategy = 'propagate';
+	}
+
+	private consumeExceptionResumeStrategy(): LuaExceptionResumeStrategy {
+		const strategy = this.exceptionResumeStrategy;
+		this.exceptionResumeStrategy = 'propagate';
+		return strategy;
+	}
+
 	private pushCallFrame(functionName: string | null, source: string, line: number, column: number): void {
 		const safeLine = Number.isFinite(line) ? Math.max(0, Math.floor(line)) : 0;
 		const safeColumn = Number.isFinite(column) ? Math.max(0, Math.floor(column)) : 0;
@@ -527,20 +544,31 @@ export class LuaInterpreter {
 				const continuation = () => this.runStatements(statements, environment, varargs, scope, index);
 				return this.createDebuggerPauseSignal(pauseContext, continuation);
 			}
-			const signal = this.executeStatement(statement, environment, varargs, scope);
-			if (signal.kind === 'normal') {
-				index += 1;
-				continue;
-			}
-			if (signal.kind === 'goto') {
-				const metadata = scope.labels.get(signal.label);
-				if (metadata !== undefined) {
-					index = metadata.index;
+			try {
+				const signal = this.executeStatement(statement, environment, varargs, scope);
+				if (signal.kind === 'normal') {
+					index += 1;
 					continue;
+				}
+				if (signal.kind === 'goto') {
+					const metadata = scope.labels.get(signal.label);
+					if (metadata !== undefined) {
+						index = metadata.index;
+						continue;
+					}
+					return signal;
 				}
 				return signal;
 			}
-			return signal;
+			catch (error) {
+				if (isLuaDebuggerPauseSignal(error)) {
+					throw error;
+				}
+				if (error instanceof LuaRuntimeError) {
+					return this.createExceptionDebuggerPause(error, statements, environment, varargs, scope, index);
+				}
+				throw error;
+			}
 		}
 		return NORMAL_SIGNAL;
 	}
@@ -579,6 +607,55 @@ export class LuaInterpreter {
 			resume: () => {
 				context.controller.suppressNextAtBoundary(context.chunk, context.line, context.depth);
 				return this.withInterpreterSnapshot(envSnapshot, callStackSnapshot, callRange, currentChunk, chunkEnvironment, continuation);
+			},
+		};
+	}
+
+	private createExceptionDebuggerPause(
+		error: LuaRuntimeError,
+		statements: ReadonlyArray<LuaStatement>,
+		environment: LuaEnvironment,
+		varargs: ReadonlyArray<LuaValue>,
+		scope: LabelScope,
+		index: number,
+	): ExecutionSignal {
+		if (!this.debuggerController) {
+			throw error;
+		}
+		const envSnapshot = this.envStack.slice();
+		const callStackSnapshot = this.cloneCallStack();
+		const callRange = this.currentCallRange;
+		const currentChunk = this.currentChunk;
+		const chunkEnvironment = this.chunkEnvironment;
+		const statementRange = statements[index]?.range ?? null;
+		const chunkName = error.chunkName ?? statementRange?.chunkName ?? callRange?.chunkName ?? this.currentChunk ?? '<chunk>';
+		const line =
+			Number.isFinite(error.line) && error.line > 0
+				? Math.floor(error.line)
+				: statementRange?.start.line ?? callRange?.start.line ?? 0;
+		const column =
+			Number.isFinite(error.column) && error.column > 0
+				? Math.floor(error.column)
+				: statementRange?.start.column ?? callRange?.start.column ?? 0;
+		const normalizedChunk = this.normalizeChunkName(chunkName);
+		const resumeIndex = index;
+		const errorRef = error;
+		const continuation = () => this.runStatements(statements, environment, varargs, scope, resumeIndex + 1);
+		return {
+			kind: 'pause',
+			reason: 'exception',
+			location: {
+				chunk: normalizedChunk,
+				line,
+				column,
+			},
+			callStack: callStackSnapshot,
+			resume: () => {
+				const strategy = this.consumeExceptionResumeStrategy();
+				if (strategy === 'skip_statement') {
+					return this.withInterpreterSnapshot(envSnapshot, callStackSnapshot, callRange, currentChunk, chunkEnvironment, continuation);
+				}
+				throw errorRef;
 			},
 		};
 	}

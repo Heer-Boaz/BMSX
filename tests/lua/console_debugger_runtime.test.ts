@@ -4,12 +4,10 @@ register('./glsl-loader.mjs', import.meta.url);
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { LuaDebuggerPauseSignal } from '../../src/bmsx/lua/runtime.ts';
+import { createLuaInterpreter, isLuaDebuggerPauseSignal } from '../../src/bmsx/lua/runtime.ts';
+import { LuaDebuggerController } from '../../src/bmsx/lua/debugger.ts';
+import { LuaRuntimeError } from '../../src/bmsx/lua/errors.ts';
 import { emitDebuggerLifecycleEvent } from '../../src/bmsx/console/debugger_lifecycle';
-import {
-	DebuggerSession,
-	type DebuggerExceptionFrame,
-	type DebuggerExceptionStepResolution,
-} from '../../src/bmsx/console/debugger_session';
 import { getDebuggerCommandExecutor, issueDebuggerCommand } from '../../src/bmsx/console/ide/debugger_controls';
 import { setDebuggerRuntimeAccessor } from '../../src/bmsx/console/runtime_accessors';
 
@@ -17,38 +15,49 @@ function resetDebuggerLifecycle(): void {
 	emitDebuggerLifecycleEvent({ type: 'continued', mode: 'continue' });
 }
 
-function createExceptionSession(): { session: DebuggerSession; suspension: LuaDebuggerPauseSignal } {
-	const suspension: LuaDebuggerPauseSignal = {
-		kind: 'pause',
-		reason: 'exception',
-		location: { chunk: 'main.lua', line: 3, column: 1 },
-		callStack: [],
-		resume: () => ({ kind: 'normal' }),
-	};
-	const frames: DebuggerExceptionFrame[] = [
-		{ chunk: 'main.lua', line: 3, column: 1, hint: null },
-		{ chunk: 'helper.lua', line: 10, column: 1, hint: null },
-	];
-	const session = new DebuggerSession();
-	session.captureExceptionPause(suspension, frames);
-	return { session, suspension };
-}
-
-test('exception stepping advances frames and stays paused until explicitly continued', () => {
+test('lua interpreter skip strategy resumes past exception line', () => {
 	resetDebuggerLifecycle();
-	const { session } = createExceptionSession();
-	const first = session.resolveExceptionStep('stepInto');
-	assertResolution(first, 'focus');
-	assert.equal(first.payload.line, 10);
+	const interpreter = createLuaInterpreter();
+	const controller = new LuaDebuggerController();
+	interpreter.attachDebugger(controller);
+	const source = `
+value = 1
+error('boom')
+value = value + 5
+`;
+	let suspension: LuaDebuggerPauseSignal | null = null;
+	try {
+		interpreter.execute(source, 'main.lua');
+		assert.fail('Expected debugger suspension');
+	} catch (error) {
+		assert.ok(isLuaDebuggerPauseSignal(error), 'Expected pause signal');
+		suspension = error as LuaDebuggerPauseSignal;
+	}
+	assert.ok(suspension, 'Missing debugger suspension');
+	interpreter.setExceptionResumeStrategy('skip_statement');
+	const result = suspension.resume();
+	assert.equal(result.kind, 'normal');
+	const globals = interpreter.getGlobalEnvironment();
+	assert.equal(globals.get('value'), 6);
+	resetDebuggerLifecycle();
+});
 
-	const boundary = session.resolveExceptionStep('stepOut');
-	assertResolution(boundary, 'focus');
-	assert.equal(boundary.payload.line, 3);
-
-	const resume = session.resolveExceptionStep('continue');
-	assertResolution(resume, 'resume');
-	const none = session.resolveExceptionStep('stepInto');
-	assertResolution(none, 'none');
+test('lua interpreter propagate strategy rethrows exception when continuing', () => {
+	resetDebuggerLifecycle();
+	const interpreter = createLuaInterpreter();
+	const controller = new LuaDebuggerController();
+	interpreter.attachDebugger(controller);
+	let suspension: LuaDebuggerPauseSignal | null = null;
+	try {
+		interpreter.execute('error(\"boom\")', 'main.lua');
+		assert.fail('Expected debugger suspension');
+	} catch (error) {
+		assert.ok(isLuaDebuggerPauseSignal(error), 'Expected pause signal');
+		suspension = error as LuaDebuggerPauseSignal;
+	}
+	assert.ok(suspension, 'Missing debugger suspension');
+	interpreter.setExceptionResumeStrategy('propagate');
+	assert.throws(() => suspension.resume(), LuaRuntimeError);
 	resetDebuggerLifecycle();
 });
 
@@ -102,10 +111,3 @@ test('debugger commands dispatch only when a suspension is active', () => {
 		resetDebuggerLifecycle();
 	}
 });
-
-function assertResolution(
-	result: DebuggerExceptionStepResolution,
-	expected: DebuggerExceptionStepResolution['kind'],
-): void {
-	assert.equal(result.kind, expected);
-}

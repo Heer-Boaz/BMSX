@@ -10,7 +10,8 @@ const HEADLESS_BUNDLE = path.resolve('dist', 'headless_debug.js');
 const TIMELINE_PATH = path.resolve('tests', 'headless', 'timelines', 'debugger_step_f10.json');
 const MAX_BUFFER = 8 * 1024 * 1024;
 const STEP_LOG = /\[DebuggerCommandExecutor] command=stepOver handled=true/;
-const STATUS_LOG = /\[IDE Status] (?<text>.+)/g;
+const STATUS_ENTRY = /\[IDE Status] LINE (?<line>\d+)\/(?<total>\d+)/g;
+const BASE_EXCEPTION_LINE = 570; // hardcoded in marlies2020console (error inserted in update())
 
 test('debugger step should advance caret after exception pause', async () => {
 	const buildResult = spawnSync('npm', ['run', 'build:game:headless', ROM_NAME], {
@@ -31,8 +32,8 @@ test('debugger step should advance caret after exception pause', async () => {
 	const runResult = spawnSync('node', headlessArgs, { encoding: 'utf-8', maxBuffer: MAX_BUFFER });
 	const combined = `${runResult.stdout ?? ''}\n${runResult.stderr ?? ''}`;
 	assert.match(combined, STEP_LOG, 'Expected step command log while paused on exception');
-	const matches = Array.from(combined.matchAll(STATUS_LOG)).map((match) => (match.groups?.text ?? '').trim());
-	assert.ok(matches.length > 1, 'Expected multiple IDE status samples while paused in debugger');
-	const uniquePositions = new Set(matches);
-	assert.ok(uniquePositions.size > 1, 'Expected caret position to change after stepping');
+	const lines = Array.from(combined.matchAll(STATUS_ENTRY)).map((match) => Number(match.groups?.line ?? NaN));
+	const targetLine = BASE_EXCEPTION_LINE + 1;
+	assert.ok(lines.length > 0, 'Expected IDE status samples while paused in debugger');
+	assert.ok(lines.includes(targetLine), `Expected caret to advance to line ${targetLine} after stepping`);
 });

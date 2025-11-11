@@ -93,7 +93,7 @@ class HeadlessLifecycle implements Lifecycle {
 			return;
 		}
 		this.exitHooksAttached = true;
-		const dispatch = (source: string): boolean => {
+		const dispatch = (_source: string): boolean => {
 			if (this.exitHandlers.size === 0) {
 				return false;
 			}
