@@ -125,14 +125,29 @@ if (typeof (globalThis as any).createImageBitmap !== 'function') {
 }
 
 if (typeof (globalThis as any).document === 'undefined') {
-	(globalThis as any).document = {
+	const createStubElement = () => ({
+		style: {},
+		dataset: {} as Record<string, string>,
+		children: [] as unknown[],
+		appendChild: () => {},
+		removeChild: () => {},
+		remove: () => {},
+		setAttribute: () => {},
+	});
+	const headlessDocument = {
 		createElement: (tag: string) => {
-			if (tag.toLowerCase() !== 'canvas') {
-				throw new Error(`[node_entry] Unsupported element '${tag}' requested in headless environment.`);
+			if (tag.toLowerCase() === 'canvas') {
+				return createCanvas(1, 1);
 			}
-			return createCanvas(1, 1);
+			return createStubElement();
+		},
+		getElementById: (_id: string) => null,
+		body: {
+			appendChild: () => {},
+			removeChild: () => {},
 		},
 	};
+	(globalThis as any).document = headlessDocument;
 }
 
 function printHelp(): void {
