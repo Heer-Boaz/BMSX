@@ -63,6 +63,7 @@ import type {
 	CachedHighlight,
 	CodeHoverTooltip,
 	CodeTabContext,
+	EditContext,
 	ConsoleEditorOptions,
 	ConsoleEditorSerializedState,
 	CursorScreenInfo,
@@ -131,6 +132,8 @@ import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusE
 import { formatLuaDocument } from './lua_formatter.ts';
 import * as constants from './constants';
 import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, workspaceDirtyCache } from './ide_state';
+import { initializeDebuggerUiState } from './debugger_ui_state';
+import { issueDebuggerCommand } from './debugger_controls';
 import {
 	setCursorPosition,
 	moveCursorLeft,
@@ -156,6 +159,8 @@ export { captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT } from './ide_
 
 // Export ide_state for direct access
 export { ide_state };
+
+initializeDebuggerUiState();
 
 // Re-export cursor operations from their dedicated module
 export {
@@ -651,6 +656,7 @@ export function prepareUndo(key: string, allowMerge: boolean): void {
 	if (ide_state.activeContextReadOnly) {
 		return;
 	}
+	capturePreMutationSource();
 	const now = Date.now();
 	const shouldMerge = allowMerge
 		&& ide_state.lastHistoryKey === key
@@ -5798,6 +5804,7 @@ export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 		return false;
 	}
 	const x = snapshot.viewportX;
+	const debuggerButtonsEnabled = ide_state.debuggerControls.executionState === 'paused';
 	if (pointInRect(x, y, ide_state.topBarButtonBounds.resume)) {
 		handleTopBarButtonPress('resume');
 		return true;
@@ -5820,6 +5827,22 @@ export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 	}
 	if (ide_state.resourcePanelVisible && pointInRect(x, y, ide_state.topBarButtonBounds.filter)) {
 		handleTopBarButtonPress('filter');
+		return true;
+	}
+	if (debuggerButtonsEnabled && pointInRect(x, y, ide_state.topBarButtonBounds.debugContinue)) {
+		handleTopBarButtonPress('debugContinue');
+		return true;
+	}
+	if (debuggerButtonsEnabled && pointInRect(x, y, ide_state.topBarButtonBounds.debugStepOver)) {
+		handleTopBarButtonPress('debugStepOver');
+		return true;
+	}
+	if (debuggerButtonsEnabled && pointInRect(x, y, ide_state.topBarButtonBounds.debugStepInto)) {
+		handleTopBarButtonPress('debugStepInto');
+		return true;
+	}
+	if (debuggerButtonsEnabled && pointInRect(x, y, ide_state.topBarButtonBounds.debugStepOut)) {
+		handleTopBarButtonPress('debugStepOut');
 		return true;
 	}
 	if (pointInRect(x, y, ide_state.topBarButtonBounds.debugObjects)) {
@@ -6007,6 +6030,18 @@ export function handlePointerWheel(): void {
 
 export function handleTopBarButtonPress(button: TopBarButtonId): void {
 	switch (button) {
+		case 'debugContinue':
+			issueDebuggerCommand('continue');
+			return;
+		case 'debugStepOver':
+			issueDebuggerCommand('stepOver');
+			return;
+		case 'debugStepInto':
+			issueDebuggerCommand('stepInto');
+			return;
+		case 'debugStepOut':
+			issueDebuggerCommand('stepOut');
+			return;
 		case 'problems':
 			toggleProblemsPanel();
 			return;
@@ -6136,6 +6171,10 @@ export function performResume(): boolean {
 	}
 	const targetGeneration = ide_state.saveGeneration;
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
+	if (shouldUpdateGeneration) {
+		const overrideSource = getMainProgramSourceForReload();
+		(sanitizedSnapshot as Record<string, unknown> & { luaProgramSourceOverride?: string | null }).luaProgramSourceOverride = overrideSource;
+	}
 	clearExecutionStopHighlights();
 	deactivate();
 	scheduleRuntimeTask(() => {
@@ -6894,6 +6933,7 @@ export function drawTopBar(api: BmsxConsoleApi): void {
 			eventsActive: isDebugPanelActive('events'),
 			registryActive: isDebugPanelActive('registry'),
 		},
+		debuggerControls: ide_state.debuggerControls,
 	};
 	renderTopBar(api, host);
 }
@@ -9338,10 +9378,159 @@ export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: s
 	ide_state.pendingEditContext = { kind, text };
 }
 
+function serializeCurrentSource(): string {
+	return ide_state.lines.join('\n');
+}
+
+export function capturePreMutationSource(): void {
+	if (!ide_state.caseInsensitive) {
+		return;
+	}
+	if (ide_state.preMutationSource === null) {
+		ide_state.preMutationSource = serializeCurrentSource();
+	}
+}
+
+function applySourceToDocument(source: string): void {
+	const nextLines = source.split('\n');
+	const previousLength = ide_state.lines.length;
+	const limit = Math.min(previousLength, nextLines.length);
+	for (let index = 0; index < limit; index += 1) {
+		if (ide_state.lines[index] !== nextLines[index]) {
+			ide_state.lines[index] = nextLines[index];
+		}
+	}
+	if (nextLines.length > previousLength) {
+		for (let index = previousLength; index < nextLines.length; index += 1) {
+			ide_state.lines.push(nextLines[index]);
+		}
+	} else if (nextLines.length < previousLength) {
+		ide_state.lines.length = nextLines.length;
+	}
+	invalidateHighlightsFromRow(0);
+	invalidateVisualLines();
+}
+
+function normalizeCaseOutsideStrings(text: string): string {
+	if (text.length === 0) {
+		return text;
+	}
+	let inString = false;
+	let quote: string | null = null;
+	let escapeNext = false;
+	let needsNormalization = false;
+	for (let i = 0; i < text.length; i += 1) {
+		const ch = text.charAt(i);
+		if (inString) {
+			if (escapeNext) {
+				escapeNext = false;
+				continue;
+			}
+			if (ch === '\\') {
+				escapeNext = true;
+				continue;
+			}
+			if (ch === quote) {
+				inString = false;
+				quote = null;
+			}
+			continue;
+		}
+		if (ch === '"' || ch === '\'') {
+			inString = true;
+			quote = ch;
+			continue;
+		}
+		if (ch !== ch.toLowerCase()) {
+			needsNormalization = true;
+			break;
+		}
+	}
+	if (!needsNormalization) {
+		return text;
+	}
+	let result = '';
+	inString = false;
+	quote = null;
+	escapeNext = false;
+	for (let i = 0; i < text.length; i += 1) {
+		const ch = text.charAt(i);
+		if (inString) {
+			result += ch;
+			if (escapeNext) {
+				escapeNext = false;
+				continue;
+			}
+			if (ch === '\\') {
+				escapeNext = true;
+				continue;
+			}
+			if (ch === quote) {
+				inString = false;
+				quote = null;
+			}
+			continue;
+		}
+		if (ch === '"' || ch === '\'') {
+			inString = true;
+			quote = ch;
+			result += ch;
+			continue;
+		}
+		result += ch.toLowerCase();
+	}
+	return result;
+}
+
+function computeEditContextFromSources(previous: string, next: string): EditContext | null {
+	if (previous === next) {
+		return null;
+	}
+	let start = 0;
+	while (start < previous.length && start < next.length && previous.charAt(start) === next.charAt(start)) {
+		start += 1;
+	}
+	let endPrev = previous.length;
+	let endNext = next.length;
+	while (endPrev > start && endNext > start && previous.charAt(endPrev - 1) === next.charAt(endNext - 1)) {
+		endPrev -= 1;
+		endNext -= 1;
+	}
+	if (next.length >= previous.length) {
+		const inserted = next.slice(start, endNext);
+		return inserted.length > 0 ? { kind: 'insert', text: inserted } : null;
+	}
+	const deleted = previous.slice(start, endPrev);
+	return deleted.length > 0 ? { kind: 'delete', text: deleted } : null;
+}
+
+function applyCaseNormalizationIfNeeded(editContext: EditContext | null): EditContext | null {
+	if (!ide_state.caseInsensitive) {
+		ide_state.preMutationSource = null;
+		return editContext;
+	}
+	const currentSource = serializeCurrentSource();
+	const normalized = normalizeCaseOutsideStrings(currentSource);
+	const previousSource = ide_state.preMutationSource;
+	ide_state.preMutationSource = null;
+	if (normalized === currentSource) {
+		if (!previousSource) {
+			return editContext;
+		}
+		return computeEditContextFromSources(previousSource, currentSource) ?? editContext;
+	}
+	applySourceToDocument(normalized);
+	bumpTextVersion();
+	requestSemanticRefresh();
+	const derived = computeEditContextFromSources(previousSource ?? currentSource, normalized);
+	return derived ?? editContext;
+}
+
 export function handlePostEditMutation(): void {
 	const editContext = ide_state.pendingEditContext;
 	ide_state.pendingEditContext = null;
-	ide_state.completion.updateAfterEdit(editContext);
+	const finalContext = applyCaseNormalizationIfNeeded(editContext);
+	ide_state.completion.updateAfterEdit(finalContext);
 }
 
 export function handleCompletionKeybindings(
@@ -9543,6 +9732,7 @@ export function drawStatusBar(api: BmsxConsoleApi): void {
 		metadata: ide_state.metadata,
 		statusLeftInfo: buildStatusLeftInfo(),
 		serverConnected: ide_state.serverWorkspaceConnected,
+		debugPauseActive: ide_state.executionStopRow !== null,
 		problemsPanelFocused: ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused(),
 	};
 	renderStatusBar(api, host);
@@ -10040,6 +10230,8 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	ide_state.playerIndex = options.playerIndex;
 	ide_state.metadata = options.metadata;
 	ide_state.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
+	ide_state.caseInsensitive = options.caseInsensitiveLua ?? true;
+	ide_state.preMutationSource = null;
 	ide_state.loadSourceFn = options.loadSource;
 	ide_state.saveSourceFn = options.saveSource;
 	ide_state.listResourcesFn = options.listResources;
@@ -10128,7 +10320,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		resetBlink: () => resetBlink(),
 		revealCursor: () => revealCursor(),
 		measureText: (text) => measureText(text),
-		drawText: (api, text, x, y, color) => drawEditorText(api, ide_state.font, text, x, y, color),
+		drawText: (api, text, x, y, color) => drawEditorText(api as BmsxConsoleApi, ide_state.font, text, x, y, color),
 		getCursorScreenInfo: () => ide_state.cursorScreenInfo,
 		getLineHeight: () => ide_state.lineHeight,
 		getSpaceAdvance: () => ide_state.spaceAdvance,

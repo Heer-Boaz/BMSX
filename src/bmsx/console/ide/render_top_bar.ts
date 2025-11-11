@@ -3,6 +3,7 @@ import * as constants from './constants';
 import type { BmsxConsoleMetadata } from '../types';
 import type { EditorResolutionMode, TopBarButtonId } from './types';
 import type { RectBounds } from '../../rompack/rompack.ts';
+import type { DebuggerExecutionState } from '../debugger_lifecycle';
 
 export interface TopBarHost {
 	viewportWidth: number;
@@ -22,6 +23,9 @@ export interface TopBarHost {
 		objectsActive: boolean;
 		eventsActive: boolean;
 		registryActive: boolean;
+	};
+	debuggerControls: {
+		executionState: DebuggerExecutionState;
 	};
 }
 
@@ -48,6 +52,10 @@ export function renderTopBar(api: BmsxConsoleApi, host: TopBarHost): void {
 	host.topBarButtonBounds.debugObjects = { left: 0, top: 0, right: 0, bottom: 0 };
 	host.topBarButtonBounds.debugEvents = { left: 0, top: 0, right: 0, bottom: 0 };
 	host.topBarButtonBounds.debugRegistry = { left: 0, top: 0, right: 0, bottom: 0 };
+	host.topBarButtonBounds.debugContinue = { left: 0, top: 0, right: 0, bottom: 0 };
+	host.topBarButtonBounds.debugStepOver = { left: 0, top: 0, right: 0, bottom: 0 };
+	host.topBarButtonBounds.debugStepInto = { left: 0, top: 0, right: 0, bottom: 0 };
+	host.topBarButtonBounds.debugStepOut = { left: 0, top: 0, right: 0, bottom: 0 };
 	let buttonX = 4;
 	const buttonEntries: Array<{ id: TopBarButtonId; label: string; disabled: boolean; active?: boolean }> = [
 		{ id: 'resume', label: 'RESUME', disabled: false },
@@ -55,6 +63,14 @@ export function renderTopBar(api: BmsxConsoleApi, host: TopBarHost): void {
 		{ id: 'save', label: 'SAVE', disabled: !host.dirty },
 		{ id: 'resources', label: 'FILES', disabled: false, active: host.resourcePanelVisible },
 	];
+	const debuggerPaused = host.debuggerControls.executionState === 'paused';
+	const debuggerButtonDisabled = !debuggerPaused;
+	buttonEntries.push(
+		{ id: 'debugContinue', label: 'CONT', disabled: debuggerButtonDisabled },
+		{ id: 'debugStepOver', label: 'OVER', disabled: debuggerButtonDisabled },
+		{ id: 'debugStepInto', label: 'INTO', disabled: debuggerButtonDisabled },
+		{ id: 'debugStepOut', label: 'OUT', disabled: debuggerButtonDisabled },
+	);
 	buttonEntries.push({ id: 'problems', label: 'PROBLEMS', disabled: false, active: host.problemsPanelVisible });
 	buttonEntries.push({ id: 'debugObjects', label: 'OBJECTS', disabled: false, active: host.debugPanels.objectsActive });
 	buttonEntries.push({ id: 'debugEvents', label: 'EVENTS', disabled: false, active: host.debugPanels.eventsActive });

@@ -30,6 +30,7 @@ import {
 	recordEditContext,
 	prepareUndo,
 	currentLine,
+	capturePreMutationSource,
 } from './console_cart_editor';
 import * as constants from './constants';
 
@@ -441,6 +442,7 @@ export function replaceSelectionWith(text: string): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
+	capturePreMutationSource();
 	const range = getSelectionRange();
 	if (!range) {
 		return;

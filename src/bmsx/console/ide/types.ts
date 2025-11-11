@@ -21,6 +21,7 @@ export type ConsoleEditorOptions = {
 	playerIndex: number;
 	viewport: ConsoleViewport;
 	metadata: BmsxConsoleMetadata;
+	caseInsensitiveLua?: boolean;
 	loadSource: () => string;
 	saveSource: (source: string) => Promise<void>;
 	listResources: () => ConsoleResourceDescriptor[];
@@ -241,6 +242,10 @@ export type TopBarButtonId =
 	| 'filter'
 	| 'resolution'
 	| 'wrap'
+	| 'debugContinue'
+	| 'debugStepOver'
+	| 'debugStepInto'
+	| 'debugStepOut'
 	| 'debugObjects'
 	| 'debugEvents'
 	| 'debugRegistry';

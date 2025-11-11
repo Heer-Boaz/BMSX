@@ -52,6 +52,9 @@ import { Input } from '../input/input';
 import type { PlayerInput } from '../input/playerinput';
 import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputMapping, KeyboardBinding, GamepadBinding, PointerBinding, ButtonState } from '../input/inputtypes';
 import { ConsoleMode } from './console_mode';
+import { setDebuggerRuntimeAccessor } from './runtime_accessors.ts';
+import { emitDebuggerLifecycleEvent, type DebuggerResumeMode, type DebuggerPauseDisplayPayload } from './debugger_lifecycle';
+import { DebuggerSession, type DebuggerStepCommand } from './debugger_session';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -75,6 +78,9 @@ const CONSOLE_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'console_o',
 	'console_x',
 ];
+
+const CONSOLE_PREVIEW_MAX_ENTRIES = 12;
+const CONSOLE_PREVIEW_MAX_DEPTH = 2;
 
 // Flip back to 'msx' to restore the legacy editor font.
 const EDITOR_FONT_VARIANT: ConsoleFontVariant = 'tiny';
@@ -104,6 +110,18 @@ enum BmsxLuaValidationStrategy {
 	TrustRealRun = 'trust_real_run',
 	FullExecution = 'full_execution',
 }
+
+function mapRuntimeStepToCommand(mode: 'continue' | 'into' | 'over' | 'out'): DebuggerStepCommand {
+	if (mode === 'continue') {
+		return 'continue';
+	}
+	if (mode === 'out') {
+		return 'stepOut';
+	}
+	return 'stepInto';
+}
+
+setDebuggerRuntimeAccessor(() => BmsxConsoleRuntime.instance);
 
 type HttpResponse = {
 	ok: boolean;
@@ -376,6 +394,7 @@ export class BmsxConsoleRuntime extends Service {
 	private luaRuntimeFailed = false;
 	private luaDebuggerController: LuaDebuggerController | null = null;
 	private luaDebuggerSuspension: LuaDebuggerPauseSignal | null = null;
+	private readonly debuggerSession = new DebuggerSession();
 	private debuggerHaltsGame = false;
 	private lastFrameTimestampMs = 0;
 	private overlayState = { console: false, editor: false };
@@ -446,7 +465,16 @@ export class BmsxConsoleRuntime extends Service {
 		this.caseInsensitiveLua = options.caseInsensitiveLua ?? (rompack?.caseInsensitiveLua ?? true);
 		setLuaTableCaseInsensitiveKeys(this.caseInsensitiveLua);
 		setEditorCaseInsensitivity(this.caseInsensitiveLua);
-		this.consoleMode = new ConsoleMode({ fontVariant: EDITOR_FONT_VARIANT, caseInsensitive: this.caseInsensitiveLua });
+		this.consoleMode = new ConsoleMode({
+			playerIndex: options.playerIndex,
+			fontVariant: EDITOR_FONT_VARIANT,
+			caseInsensitive: this.caseInsensitiveLua,
+			listLuaSymbols: (assetId, chunkName) => this.listLuaSymbols(assetId, chunkName),
+			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
+			listLuaModuleSymbols: (moduleName) => this.listLuaModuleSymbols(moduleName),
+			listBuiltinLuaFunctions: () => this.listLuaBuiltinFunctions(),
+			listLuaObjectMembers: (request) => this.listLuaObjectMembers(request),
+		});
 		this.enableEvents();
 		const clock = $.platform.clock;
 		clock.scheduleOnce = (delayMs, cb) => {
@@ -532,16 +560,32 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaDebuggerSuspension = signal;
 		this.debuggerHaltsGame = true;
 		this.setDebuggerPaused(true, { syncGlobal: false });
+		this.debuggerSession.captureSuspension(signal);
 		const state = this.currentFrameState;
 		if (state) {
 			state.haltGame = true;
 			state.deltaForUpdate = 0;
 		}
+		const hint = this.lookupChunkResourceInfoNullable(signal.location.chunk);
+		const payload: DebuggerPauseDisplayPayload = {
+			chunk: signal.location.chunk,
+			line: signal.location.line,
+			column: signal.location.column,
+			reason: signal.reason,
+			hint,
+		};
+		emitDebuggerLifecycleEvent({
+			type: 'paused',
+			suspension: signal,
+			payload,
+			callStack: signal.callStack,
+		});
 	}
 	private pauseDebuggerForException(details: { chunkName: string | null; line: number | null; column: number | null }): void {
 		const controller = this.ensureLuaDebuggerController();
 		const interpreter = this.luaInterpreter;
 		const callStack = interpreter ? Array.from(interpreter.getLastFaultCallStack()) : [];
+		const frames = this.buildDebuggerExceptionFrames(details, callStack);
 		const chunk =
 			(details.chunkName && details.chunkName.length > 0
 				? details.chunkName
@@ -558,12 +602,13 @@ export class BmsxConsoleRuntime extends Service {
 			callStack,
 			resume: () => normalSignal,
 		};
-		this.onLuaDebuggerPause(suspension);
+		this.onLuaDebuggerPause(suspension as LuaDebuggerPauseSignal);
+		this.debuggerSession.captureExceptionPause(suspension as LuaDebuggerPauseSignal, frames);
 		controller.clearStepping();
 	}
 
-	private setDebuggerPaused(paused: boolean, options?: { syncGlobal?: boolean }): void {
-		if (options?.syncGlobal !== false) {
+	private setDebuggerPaused(paused: boolean, { syncGlobal }: { syncGlobal?: boolean } = {}): void {
+		if (syncGlobal !== false) {
 			$.paused = paused;
 		}
 		const state = this.currentFrameState;
@@ -572,7 +617,10 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private resumeLuaDebugger(mode: 'continue' | 'into' | 'over', stepDepthOverride?: number): void {
+	private resumeLuaDebugger(
+		mode: 'continue' | 'into' | 'over' | 'out',
+		options?: { stepDepthOverride?: number },
+	): void {
 		const suspension = this.luaDebuggerSuspension;
 		const controller = this.luaDebuggerController;
 		if (!suspension || !controller) {
@@ -580,22 +628,27 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		controller.clearSuppressedBoundaries();
 		const exceptionPause = suspension.reason === 'exception';
-		if (!exceptionPause) {
-			if (mode === 'into') {
-				controller.requestStepInto();
-			}
-			else if (mode === 'over') {
-				const targetDepth = typeof stepDepthOverride === 'number' ? Math.max(0, stepDepthOverride) : suspension.callStack.length;
-				controller.requestStepOver(targetDepth);
-			}
-			else {
-				controller.clearStepping();
-			}
+		if (exceptionPause) {
+			this.handleExceptionDebuggerStep(mode);
+			return;
+		}
+		const resumeMode = this.toDebuggerResumeMode(mode);
+		emitDebuggerLifecycleEvent({ type: 'continued', mode: resumeMode });
+		if (mode === 'into') {
+			controller.requestStepInto();
+		}
+		else if (mode === 'over' || mode === 'out') {
+			const baseDepth = suspension.callStack.length;
+			const fallbackDepth = mode === 'out' ? Math.max(0, baseDepth - 1) : baseDepth;
+			const targetDepth =
+				typeof options?.stepDepthOverride === 'number' ? Math.max(0, options.stepDepthOverride) : fallbackDepth;
+			controller.requestStepOver(targetDepth);
 		}
 		else {
 			controller.clearStepping();
 		}
 		this.luaDebuggerSuspension = null;
+		this.debuggerSession.clear();
 		this.debuggerHaltsGame = false;
 		this.setDebuggerPaused(false);
 		const state = this.currentFrameState;
@@ -607,6 +660,9 @@ export class BmsxConsoleRuntime extends Service {
 			if (result.kind === 'pause') {
 				this.onLuaDebuggerPause(result);
 			}
+				else {
+					// Remain in continued state until the runtime yields control back to the IDE.
+				}
 		}
 		catch (error) {
 			if (isLuaDebuggerPauseSignal(error)) {
@@ -615,6 +671,19 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			this.handleLuaError(error);
 		}
+	}
+
+	private toDebuggerResumeMode(mode: 'continue' | 'into' | 'over' | 'out'): DebuggerResumeMode {
+		if (mode === 'into') {
+			return 'stepInto';
+		}
+		if (mode === 'over') {
+			return 'stepOver';
+		}
+		if (mode === 'out') {
+			return 'stepOut';
+		}
+		return 'continue';
 	}
 
 	public setLuaBreakpoints(breakpoints: ReadonlyMap<string, ReadonlySet<number>>): void {
@@ -647,7 +716,7 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		const targetDepth = Math.max(0, suspension.callStack.length - 1);
-		this.resumeLuaDebugger('over', targetDepth);
+		this.resumeLuaDebugger('out', { stepDepthOverride: targetDepth });
 	}
 
 	public getLuaDebuggerSuspension(): LuaDebuggerPauseSignal | null {
@@ -905,7 +974,7 @@ export class BmsxConsoleRuntime extends Service {
 		return `${callee}(${argument})`;
 	}
 
-	private consoleValueToString(value: LuaValue): string {
+	private consoleValueToString(value: LuaValue, depth = 0, visited: Set<unknown> = new Set()): string {
 		if (value === null) {
 			return 'nil';
 		}
@@ -919,9 +988,207 @@ export class BmsxConsoleRuntime extends Service {
 			return value;
 		}
 		if (isLuaTable(value)) {
-			return 'table';
+			return this.describeLuaTable(value, depth, visited);
+		}
+		if (isLuaNativeValue(value)) {
+			return this.describeLuaNativeValue(value, depth, visited);
+		}
+		if (this.isLuaFunctionValue(value)) {
+			return this.describeLuaFunctionValue(value);
 		}
 		return 'function';
+	}
+
+	private describeLuaFunctionValue(value: LuaFunctionValue): string {
+		const name = value.name && value.name.length > 0 ? value.name : '<anonymous>';
+		return `function ${name}`;
+	}
+
+	private describeLuaTable(table: LuaTable, depth: number, visited: Set<unknown>): string {
+		if (visited.has(table) || depth >= CONSOLE_PREVIEW_MAX_DEPTH) {
+			return '{…}';
+		}
+		visited.add(table);
+		const entries = table.entriesArray();
+		if (entries.length === 0) {
+			return '{}';
+		}
+		const numeric = new Map<number, LuaValue>();
+		const stringEntries: Array<{ key: string; value: LuaValue }> = [];
+		const otherEntries: Array<{ key: string; value: LuaValue }> = [];
+		for (let i = 0; i < entries.length; i += 1) {
+			const [key, entryValue] = entries[i];
+			if (typeof key === 'number' && Number.isInteger(key)) {
+				numeric.set(key, entryValue);
+				continue;
+			}
+			if (typeof key === 'string') {
+				if (key === '__index' || key === '__metatable') {
+					continue;
+				}
+				stringEntries.push({ key, value: entryValue });
+				continue;
+			}
+			otherEntries.push({ key: this.consoleValueToString(key as LuaValue, depth + 1, visited), value: entryValue });
+		}
+		const sequentialValues: LuaValue[] = [];
+		let seqIndex = 1;
+		while (numeric.has(seqIndex)) {
+			sequentialValues.push(numeric.get(seqIndex)!);
+			seqIndex += 1;
+		}
+		const isPureSequence = sequentialValues.length === numeric.size && stringEntries.length === 0 && otherEntries.length === 0;
+		if (isPureSequence) {
+			return `[${this.formatValueList(sequentialValues, depth, visited)}${numeric.size > CONSOLE_PREVIEW_MAX_ENTRIES ? ', …' : ''}]`;
+		}
+		const parts: string[] = [];
+		const limit = CONSOLE_PREVIEW_MAX_ENTRIES;
+		let consumed = 0;
+		const appendEntry = (label: string, entryValue: LuaValue): void => {
+			if (consumed >= limit) {
+				return;
+			}
+			parts.push(`${label} = ${this.consoleValueToString(entryValue, depth + 1, visited)}`);
+			consumed += 1;
+		};
+		stringEntries.sort((a, b) => a.key.localeCompare(b.key));
+		for (let i = 0; i < stringEntries.length && consumed < limit; i += 1) {
+			const entry = stringEntries[i];
+			appendEntry(entry.key, entry.value);
+		}
+		const numericKeys = Array.from(numeric.keys()).filter(key => key < 1 || key >= seqIndex);
+		numericKeys.sort((a, b) => a - b);
+		for (let i = 0; i < numericKeys.length && consumed < limit; i += 1) {
+			const key = numericKeys[i];
+			const val = numeric.get(key);
+			if (val !== undefined) {
+				appendEntry(`[${key}]`, val);
+			}
+		}
+		for (let i = 0; i < otherEntries.length && consumed < limit; i += 1) {
+			const entry = otherEntries[i];
+			appendEntry(`[${entry.key}]`, entry.value);
+		}
+		if (sequentialValues.length > 0 && consumed < limit) {
+			parts.push(`array = [${this.formatValueList(sequentialValues, depth, visited)}${sequentialValues.length > limit ? ', …' : ''}]`);
+		}
+		if (parts.length === 0) {
+			return '{…}';
+		}
+		if (consumed >= limit || parts.length < stringEntries.length + numericKeys.length + otherEntries.length) {
+			parts.push('…');
+		}
+		return `{ ${parts.join(', ')} }`;
+	}
+
+	private describeLuaNativeValue(value: LuaNativeValue, depth: number, visited: Set<unknown>): string {
+		const native = value.native;
+		const typeName = value.typeName && value.typeName.length > 0 ? value.typeName : this.resolveNativeTypeName(native);
+		if (visited.has(native) || depth >= CONSOLE_PREVIEW_MAX_DEPTH) {
+			return `[${typeName ?? 'native'} …]`;
+		}
+		visited.add(native);
+		if (Array.isArray(native)) {
+			const preview = this.formatArrayPreview(native, depth + 1, visited);
+			return `${typeName ?? 'array'} [${preview}]`;
+		}
+		if (typeof native === 'function') {
+			const label = native.name && native.name.length > 0 ? native.name : '<anonymous>';
+			return `[native function ${label}]`;
+		}
+		if (native && typeof native === 'object') {
+			const entries = Object.getOwnPropertyNames(native).sort();
+			const limit = Math.min(entries.length, CONSOLE_PREVIEW_MAX_ENTRIES);
+			const parts: string[] = [];
+			for (let i = 0; i < limit; i += 1) {
+				const key = entries[i];
+				let summary = '<unavailable>';
+				try {
+					const descriptor = (native as Record<string, unknown>)[key];
+					summary = this.formatJsValue(descriptor, depth, visited);
+				} catch (error) {
+					summary = error instanceof Error ? error.message : String(error);
+				}
+				parts.push(`${key}: ${summary}`);
+			}
+			if (entries.length > limit) {
+				parts.push('…');
+			}
+			return `${typeName ?? 'native'} { ${parts.join(', ')} }`;
+		}
+		return `${typeName ?? 'native'} ${String(native)}`;
+	}
+
+	private formatArrayPreview(values: unknown[], depth: number, visited: Set<unknown>): string {
+		const preview: string[] = [];
+		const limit = Math.min(values.length, CONSOLE_PREVIEW_MAX_ENTRIES);
+		for (let i = 0; i < limit; i += 1) {
+			preview.push(this.formatJsValue(values[i], depth, visited));
+		}
+		if (values.length > limit) {
+			preview.push('…');
+		}
+		return preview.join(', ');
+	}
+
+	private formatValueList(values: LuaValue[], depth: number, visited: Set<unknown>): string {
+		const parts: string[] = [];
+		const limit = Math.min(values.length, CONSOLE_PREVIEW_MAX_ENTRIES);
+		for (let i = 0; i < limit; i += 1) {
+			parts.push(this.consoleValueToString(values[i], depth + 1, visited));
+		}
+		return parts.join(', ');
+	}
+
+	private formatJsValue(value: unknown, depth: number, visited: Set<unknown>): string {
+		if (value === null) {
+			return 'null';
+		}
+		if (Array.isArray(value)) {
+			return `[${this.formatArrayPreview(value, depth + 1, visited)}]`;
+		}
+		const type = typeof value;
+		if (type === 'string') {
+			return `"${value}"`;
+		}
+		if (type === 'number' || type === 'boolean') {
+			return String(value);
+		}
+		if (type === 'function') {
+			const fn = value as Function;
+			const label = fn.name && fn.name.length > 0 ? fn.name : '<anonymous>';
+			return `[function ${label}]`;
+		}
+		if (isLuaTable(value)) {
+			return this.describeLuaTable(value, depth + 1, visited);
+		}
+		if (isLuaNativeValue(value)) {
+			return this.describeLuaNativeValue(value, depth + 1, visited);
+		}
+		if (value && typeof value === 'object') {
+			if (visited.has(value)) {
+				return '{…}';
+			}
+			visited.add(value);
+			const entries = Object.keys(value as Record<string, unknown>).sort();
+			const limit = Math.min(entries.length, CONSOLE_PREVIEW_MAX_ENTRIES);
+			const parts: string[] = [];
+			for (let i = 0; i < limit; i += 1) {
+				const key = entries[i];
+				let summary = '<unavailable>';
+				try {
+					summary = this.formatJsValue((value as Record<string, unknown>)[key], depth + 1, visited);
+				} catch (error) {
+					summary = error instanceof Error ? error.message : String(error);
+				}
+				parts.push(`${key}: ${summary}`);
+			}
+			if (entries.length > limit) {
+				parts.push('…');
+			}
+			return `{ ${parts.join(', ')} }`;
+		}
+		return String(value);
 	}
 
 	private describeConsoleError(error: unknown): string {
@@ -1412,6 +1679,7 @@ export class BmsxConsoleRuntime extends Service {
 			playerIndex: this.playerIndex,
 			metadata: this.cart.meta,
 			viewport,
+			caseInsensitiveLua: this.caseInsensitiveLua,
 			loadSource: () => this.getEditorSource(),
 			saveSource: (source: string) => this.saveLuaProgram(source),
 			listResources: () => this.getResourceDescriptors(),
@@ -2869,6 +3137,13 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const logMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
 		console.error('[BmsxConsoleRuntime] Lua runtime error:', logMessage, error);
+		if (chunkName && chunkName.startsWith('console:')) {
+			try {
+				this.consoleMode.appendStderr(logMessage);
+			} catch (appendError) {
+				console.warn('[BmsxConsoleRuntime] Failed to append console runtime error output.', appendError);
+			}
+		}
 		if (typeof error === 'object' && error !== null) {
 			this.handledLuaErrors.add(error as object);
 		}
@@ -4454,18 +4729,18 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.unregisterLuaServiceEvents(binding.service.id);
 		for (const [eventName, handler] of binding.events) {
-				const listener = (emittedEvent: string, emitterObj: Identifiable, payloadValue?: EventPayload) => {
-					try {
-						return handler(binding.table, emittedEvent, emitterObj, payloadValue);
-					} catch (error) {
-						if (isLuaDebuggerPauseSignal(error)) {
-							this.onLuaDebuggerPause(error);
-							return undefined;
-						}
-						this.handleLuaError(error);
+			const listener = (emittedEvent: string, emitterObj: Identifiable, payloadValue?: EventPayload) => {
+				try {
+					return handler(binding.table, emittedEvent, emitterObj, payloadValue);
+				} catch (error) {
+					if (isLuaDebuggerPauseSignal(error)) {
+						this.onLuaDebuggerPause(error);
 						return undefined;
 					}
-				};
+					this.handleLuaError(error);
+					return undefined;
+				}
+			};
 			EventEmitter.instance.on(eventName, listener, binding.service.id, { lane: 'any' });
 			const key = `${binding.service.id}:${handler.__hid}`;
 			this.consoleServiceEventListeners.set(key, {
@@ -8299,4 +8574,51 @@ export class BmsxConsoleRuntime extends Service {
 		this.clearEditorErrorOverlaysIfNoFault();
 	}
 
+	private buildDebuggerExceptionFrames(details: { chunkName: string | null; line: number | null; column: number | null }, callStack: ReadonlyArray<LuaCallFrame>): ReadonlyArray<{ chunk: string; line: number; column: number; hint: { assetId: string | null; path?: string | null } | null }> {
+		const frames: Array<{ chunk: string; line: number; column: number; hint: { assetId: string | null; path?: string | null } | null }> = [];
+		const locationChunk = (details.chunkName && details.chunkName.length > 0 ? details.chunkName : this.luaChunkName) ?? '<chunk>';
+		const locationLine = typeof details.line === 'number' && Number.isFinite(details.line) ? Math.floor(details.line) : 0;
+		const locationColumn = typeof details.column === 'number' && Number.isFinite(details.column) ? Math.floor(details.column) : 0;
+		frames.push({
+			chunk: locationChunk,
+			line: locationLine,
+			column: locationColumn,
+			hint: this.lookupChunkResourceInfoNullable(locationChunk),
+		});
+		for (let index = callStack.length - 1; index >= 0; index -= 1) {
+			const frame = callStack[index];
+			const chunk = frame.source ?? '<chunk>';
+			frames.push({
+				chunk,
+				line: frame.line,
+				column: frame.column,
+				hint: this.lookupChunkResourceInfoNullable(chunk),
+			});
+		}
+		return frames;
+	}
+	private handleExceptionDebuggerStep(mode: 'continue' | 'into' | 'over' | 'out'): void {
+		const stepCommand = mapRuntimeStepToCommand(mode);
+		const resolution = this.debuggerSession.resolveExceptionStep(stepCommand);
+		if (resolution.kind === 'none') {
+			this.finalizeExceptionResume();
+			return;
+		}
+		if (resolution.kind === 'focus') {
+			emitDebuggerLifecycleEvent({ type: 'exception_frame_focus', payload: resolution.payload });
+			this.debuggerHaltsGame = true;
+			this.setDebuggerPaused(true, { syncGlobal: false });
+			return;
+		}
+		// resume
+		this.finalizeExceptionResume();
+	}
+
+	private finalizeExceptionResume(): void {
+		this.debuggerSession.clear();
+		this.luaDebuggerSuspension = null;
+		this.debuggerHaltsGame = false;
+		this.setDebuggerPaused(false);
+		emitDebuggerLifecycleEvent({ type: 'continued', mode: 'continue' });
+	}
 }

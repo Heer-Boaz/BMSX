@@ -1,9 +1,10 @@
-import type { KeyboardInput } from '../../input/keyboardinput';
-import { BmsxConsoleRuntime } from '../runtime.ts';
 import { consumeKey as consumeKeyboardKey, isKeyJustPressed as isKeyJustPressedGlobal } from './input_helpers';
+import { evaluateDebuggerShortcuts, type DebuggerShortcutContext } from './debugger_shortcuts_core';
+import { prepareDebuggerStepOverlay } from './debugger_overlay_controller';
+import { getDebuggerCommandExecutor } from './debugger_controls';
 
 type ShortcutContext = {
-	keyboard: KeyboardInput;
+	keyboard: any; // Hack to prevent having to import engine types
 	playerIndex: number;
 	ctrlDown: boolean;
 	altDown: boolean;
@@ -12,32 +13,18 @@ type ShortcutContext = {
 };
 
 export function handleDebuggerShortcuts(context: ShortcutContext): boolean {
-	const runtime = BmsxConsoleRuntime.instance;
-	if (!runtime) {
-		return false;
+	const executor = getDebuggerCommandExecutor();
+	const evalContext: DebuggerShortcutContext = {
+		ctrlDown: context.ctrlDown,
+		altDown: context.altDown,
+		metaDown: context.metaDown,
+		shiftDown: context.shiftDown,
+		isKeyJustPressed: (code) => isKeyJustPressedGlobal(context.playerIndex, code),
+		consumeKey: (code) => consumeKeyboardKey(context.keyboard, code, context.playerIndex),
+	};
+	const handled = evaluateDebuggerShortcuts(evalContext, executor);
+	if (handled) {
+		prepareDebuggerStepOverlay();
 	}
-	const suspension = runtime.getLuaDebuggerSuspension();
-	if (!suspension) {
-		return false;
-	}
-	if (context.ctrlDown || context.altDown || context.metaDown) {
-		return false;
-	}
-	if (isKeyJustPressedGlobal(context.playerIndex, 'F10')) {
-		consumeKeyboardKey(context.keyboard, 'F10', context.playerIndex);
-		runtime.stepOverLuaDebugger();
-		return true;
-	}
-	const f11Pressed = isKeyJustPressedGlobal(context.playerIndex, 'F11');
-	if (f11Pressed) {
-		consumeKeyboardKey(context.keyboard, 'F11', context.playerIndex);
-		if (context.shiftDown) {
-			runtime.stepOutLuaDebugger();
-		}
-		else {
-			runtime.stepIntoLuaDebugger();
-		}
-		return true;
-	}
-	return false;
+	return handled;
 }

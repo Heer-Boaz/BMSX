@@ -2,6 +2,8 @@ import { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
 import type { BmsxConsoleMetadata, ConsoleLuaSymbolEntry } from '../types';
 
+const STATUS_LOG_PREFIX = '[IDE Status]';
+
 export interface StatusBarHost {
 	viewportWidth: number;
 	viewportHeight: number;
@@ -22,6 +24,7 @@ export interface StatusBarHost {
 	metadata: BmsxConsoleMetadata;
 	statusLeftInfo?: string | null;
 	serverConnected: boolean;
+	debugPauseActive: boolean;
 	// When the problems panel is focused, override status bar left text
 	problemsPanelFocused?: boolean;
 }
@@ -94,6 +97,9 @@ export function renderStatusBar(api: BmsxConsoleApi, host: StatusBarHost): void 
 	let textX = leftX + glyphSize;
 	if (host.statusLeftInfo && host.statusLeftInfo.length > 0) {
 		host.drawText(api, host.statusLeftInfo, textX, statusTop + 2, constants.COLOR_STATUS_TEXT);
+		if (host.debugPauseActive) {
+			console.log(`${STATUS_LOG_PREFIX} ${host.statusLeftInfo}`);
+		}
 	}
 	host.drawText(api, filenameInfo, host.viewportWidth - host.measureText(filenameInfo) - 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
 }

@@ -56,6 +56,7 @@ import type { RectBounds } from '../../rompack/rompack';
 import type { ReferenceCatalogEntry } from './reference_sources';
 import { ConsoleCodeLayout } from './code_layout';
 import type { TimerHandle } from '../../platform';
+import type { DebuggerExecutionState } from '../debugger_lifecycle';
 
 export type NavigationHistoryEntry = {
 	contextId: string;
@@ -87,6 +88,7 @@ export const captureKeys: string[] = [...new Set([
 	'Space',
 	'Tab',
 	'F3',
+	'F5',
 	'F10',
 	'F11',
 	'F12',
@@ -103,11 +105,17 @@ export const diagnosticsDebounceMs = 200;
 export const WORKSPACE_AUTOSAVE_INTERVAL_MS = 2500;
 export const workspaceDirtyCache = new Map<string, string>();
 
+export type DebuggerControlsState = {
+	executionState: DebuggerExecutionState;
+};
+
 export interface IdeState {
 	playerIndex: number;
 	lines: string[];
 	cursorRow: number;
 	cursorColumn: number;
+	caseInsensitive: boolean;
+	preMutationSource: string | null;
 	scrollRow: number;
 	scrollColumn: number;
 	dirty: boolean;
@@ -168,6 +176,7 @@ export interface IdeState {
 	activeCodeTabContextId: string | null;
 	entryTabId: string | null;
 	topBarButtonBounds: Record<TopBarButtonId, RectBounds>;
+	debuggerControls: DebuggerControlsState;
 	tabButtonBounds: Map<string, RectBounds>;
 	tabCloseButtonBounds: Map<string, RectBounds>;
 	activeContextReadOnly: boolean;
@@ -302,6 +311,8 @@ export const ide_state: IdeState = {
 	lines: [''],
 	cursorRow: 0,
 	cursorColumn: 0,
+	caseInsensitive: true,
+	preMutationSource: null,
 	scrollRow: 0,
 	scrollColumn: 0,
 	dirty: false,
@@ -370,9 +381,16 @@ export const ide_state: IdeState = {
 		filter: { left: 0, top: 0, right: 0, bottom: 0 },
 		resolution: { left: 0, top: 0, right: 0, bottom: 0 },
 		wrap: { left: 0, top: 0, right: 0, bottom: 0 },
+		debugContinue: { left: 0, top: 0, right: 0, bottom: 0 },
+		debugStepOver: { left: 0, top: 0, right: 0, bottom: 0 },
+		debugStepInto: { left: 0, top: 0, right: 0, bottom: 0 },
+		debugStepOut: { left: 0, top: 0, right: 0, bottom: 0 },
 		debugObjects: { left: 0, top: 0, right: 0, bottom: 0 },
 		debugEvents: { left: 0, top: 0, right: 0, bottom: 0 },
 		debugRegistry: { left: 0, top: 0, right: 0, bottom: 0 },
+	},
+	debuggerControls: {
+		executionState: 'inactive',
 	},
 	tabButtonBounds: new Map<string, RectBounds>(),
 	tabCloseButtonBounds: new Map<string, RectBounds>(),
