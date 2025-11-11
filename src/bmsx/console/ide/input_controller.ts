@@ -3,6 +3,7 @@ import type { KeyboardInput } from '../../input/keyboardinput';
 import { isKeyJustPressed as isKeyJustPressedGlobal, isModifierPressed as isModifierPressedGlobal, isKeyTyped as isKeyTypedGlobal, consumeKey as consumeKeyboardKey, getKeyboardButtonState, shouldAcceptKeyPress as shouldAcceptKeyPressGlobal, clearKeyPressRecord } from './input_helpers';
 import * as constants from './constants';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
+import { handleDebuggerShortcuts } from './debugger_shortcuts';
 
 export interface InputHost {
   // State queries
@@ -67,6 +68,16 @@ export class InputController {
   const metaDown = isModifierPressedGlobal(idx, 'MetaLeft') || isModifierPressedGlobal(idx, 'MetaRight');
   const altDown = isModifierPressedGlobal(idx, 'AltLeft') || isModifierPressedGlobal(idx, 'AltRight');
 
+    if (handleDebuggerShortcuts({
+      keyboard,
+      playerIndex: idx,
+      ctrlDown,
+      shiftDown,
+      altDown,
+      metaDown,
+    })) {
+      return;
+    }
     // Navigation
     this.handleNavigationKeys(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown);
     // Editing

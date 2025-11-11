@@ -4,7 +4,16 @@ import { CONSOLE_API_METHOD_METADATA } from './api_metadata';
 import { BmsxConsoleStorage } from './storage';
 import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor, ConsoleLuaMemberCompletionRequest, ConsoleLuaMemberCompletion } from './types';
 import type { RomResourcePath } from '../rompack/rompack';
-import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction, type LuaCallFrame } from '../lua/runtime.ts';
+import {
+	createLuaInterpreter,
+	LuaInterpreter,
+	createLuaNativeFunction,
+	type LuaCallFrame,
+	type LuaDebuggerPauseSignal,
+	type ExecutionSignal,
+	isLuaDebuggerPauseSignal,
+} from '../lua/runtime.ts';
+import { LuaDebuggerController } from '../lua/debugger.ts';
 import { LuaEnvironment } from '../lua/environment.ts';
 import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from '../lua/value.ts';
 import { createLuaTable, isLuaNativeValue, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../lua/value.ts';
@@ -365,6 +374,9 @@ export class BmsxConsoleRuntime extends Service {
 	private luaSnapshotSave: LuaFunctionValue | null = null;
 	private luaSnapshotLoad: LuaFunctionValue | null = null;
 	private luaRuntimeFailed = false;
+	private luaDebuggerController: LuaDebuggerController | null = null;
+	private luaDebuggerSuspension: LuaDebuggerPauseSignal | null = null;
+	private debuggerHaltsGame = false;
 	private lastFrameTimestampMs = 0;
 	private overlayState = { console: false, editor: false };
 	private currentFrameState: ConsoleFrameState | null = null;
@@ -492,6 +504,154 @@ export class BmsxConsoleRuntime extends Service {
 			deserializeNative: (token) => this.snapshotDecodeNative(token),
 		});
 		interpreter.setRequireHandler((ctx, module) => this.requireLuaModule(ctx, module));
+		this.refreshDebuggerAttachment(interpreter);
+	}
+
+	private ensureLuaDebuggerController(): LuaDebuggerController {
+		if (!this.luaDebuggerController) {
+			this.luaDebuggerController = new LuaDebuggerController();
+			this.refreshDebuggerAttachment(this.luaInterpreter);
+			this.refreshDebuggerAttachment(this.fsmLuaInterpreter);
+		}
+		return this.luaDebuggerController;
+	}
+
+	private refreshDebuggerAttachment(interpreter: LuaInterpreter | null): void {
+		if (!interpreter) {
+			return;
+		}
+		interpreter.attachDebugger(this.luaDebuggerController);
+	}
+
+	private onLuaDebuggerPause(signal: LuaDebuggerPauseSignal): void {
+		if (this.luaDebuggerSuspension === signal) {
+			return;
+		}
+		const controller = this.ensureLuaDebuggerController();
+		controller.clearSuppressedBoundaries();
+		this.luaDebuggerSuspension = signal;
+		this.debuggerHaltsGame = true;
+		this.setDebuggerPaused(true, { syncGlobal: false });
+		const state = this.currentFrameState;
+		if (state) {
+			state.haltGame = true;
+			state.deltaForUpdate = 0;
+		}
+	}
+	private pauseDebuggerForException(details: { chunkName: string | null; line: number | null; column: number | null }): void {
+		const controller = this.ensureLuaDebuggerController();
+		const interpreter = this.luaInterpreter;
+		const callStack = interpreter ? Array.from(interpreter.getLastFaultCallStack()) : [];
+		const chunk =
+			(details.chunkName && details.chunkName.length > 0
+				? details.chunkName
+				: this.luaChunkName) ?? '<chunk>';
+		const line =
+			typeof details.line === 'number' && Number.isFinite(details.line) ? Math.floor(details.line) : 0;
+		const column =
+			typeof details.column === 'number' && Number.isFinite(details.column) ? Math.floor(details.column) : 0;
+		const normalSignal: ExecutionSignal = { kind: 'normal' };
+		const suspension: LuaDebuggerPauseSignal = {
+			kind: 'pause',
+			reason: 'exception',
+			location: { chunk, line, column },
+			callStack,
+			resume: () => normalSignal,
+		};
+		this.onLuaDebuggerPause(suspension);
+		controller.clearStepping();
+	}
+
+	private setDebuggerPaused(paused: boolean, options?: { syncGlobal?: boolean }): void {
+		if (options?.syncGlobal !== false) {
+			$.paused = paused;
+		}
+		const state = this.currentFrameState;
+		if (state) {
+			state.debugPaused = paused;
+		}
+	}
+
+	private resumeLuaDebugger(mode: 'continue' | 'into' | 'over', stepDepthOverride?: number): void {
+		const suspension = this.luaDebuggerSuspension;
+		const controller = this.luaDebuggerController;
+		if (!suspension || !controller) {
+			return;
+		}
+		controller.clearSuppressedBoundaries();
+		const exceptionPause = suspension.reason === 'exception';
+		if (!exceptionPause) {
+			if (mode === 'into') {
+				controller.requestStepInto();
+			}
+			else if (mode === 'over') {
+				const targetDepth = typeof stepDepthOverride === 'number' ? Math.max(0, stepDepthOverride) : suspension.callStack.length;
+				controller.requestStepOver(targetDepth);
+			}
+			else {
+				controller.clearStepping();
+			}
+		}
+		else {
+			controller.clearStepping();
+		}
+		this.luaDebuggerSuspension = null;
+		this.debuggerHaltsGame = false;
+		this.setDebuggerPaused(false);
+		const state = this.currentFrameState;
+		if (state) {
+			this.updateFrameHaltingState(state);
+		}
+		try {
+			const result = suspension.resume();
+			if (result.kind === 'pause') {
+				this.onLuaDebuggerPause(result);
+			}
+		}
+		catch (error) {
+			if (isLuaDebuggerPauseSignal(error)) {
+				this.onLuaDebuggerPause(error);
+				return;
+			}
+			this.handleLuaError(error);
+		}
+	}
+
+	public setLuaBreakpoints(breakpoints: ReadonlyMap<string, ReadonlySet<number>>): void {
+		const controller = breakpoints.size > 0 ? this.ensureLuaDebuggerController() : this.luaDebuggerController;
+		if (!controller) {
+			return;
+		}
+		if (breakpoints.size === 0) {
+			controller.clearBreakpoints();
+			return;
+		}
+		controller.setBreakpoints(breakpoints);
+	}
+
+	public continueLuaDebugger(): void {
+		this.resumeLuaDebugger('continue');
+	}
+
+	public stepIntoLuaDebugger(): void {
+		this.resumeLuaDebugger('into');
+	}
+
+	public stepOverLuaDebugger(): void {
+		this.resumeLuaDebugger('over');
+	}
+
+	public stepOutLuaDebugger(): void {
+		const suspension = this.luaDebuggerSuspension;
+		if (!suspension) {
+			return;
+		}
+		const targetDepth = Math.max(0, suspension.callStack.length - 1);
+		this.resumeLuaDebugger('over', targetDepth);
+	}
+
+	public getLuaDebuggerSuspension(): LuaDebuggerPauseSignal | null {
+		return this.luaDebuggerSuspension;
 	}
 
 	private assertCompatibleOptions(options: BmsxConsoleRuntimeOptions): void {
@@ -911,6 +1071,9 @@ export class BmsxConsoleRuntime extends Service {
 			try { console.warn('[BmsxConsoleRuntime] Ignoring boot without reason during Lua failure state.'); } catch { /* ignore */ }
 			return;
 		}
+		this.luaDebuggerSuspension = null;
+		this.debuggerHaltsGame = false;
+		this.setDebuggerPaused(false);
 		this.frameCounter = 0;
 		this.luaRuntimeFailed = false;
 		this.luaChunkResourceMap.clear();
@@ -959,7 +1122,7 @@ export class BmsxConsoleRuntime extends Service {
 		const deltaSeconds = this.computeFrameDeltaSeconds();
 		this.overlayRenderedThisFrame = false;
 		const debugPaused = $.paused === true;
-		const haltGame = debugPaused;
+		const haltGame = debugPaused || this.debuggerHaltsGame;
 		const state: ConsoleFrameState = {
 			deltaSeconds,
 			deltaForUpdate: haltGame ? 0 : deltaSeconds,
@@ -999,7 +1162,7 @@ export class BmsxConsoleRuntime extends Service {
 	private updateFrameHaltingState(state: ConsoleFrameState): void {
 		const debugPaused = $.paused === true;
 		state.debugPaused = debugPaused;
-		const haltGame = debugPaused || state.consoleActive || state.editorActive;
+		const haltGame = debugPaused || this.debuggerHaltsGame || state.consoleActive || state.editorActive;
 		state.haltGame = haltGame;
 		state.deltaForUpdate = haltGame ? 0 : state.deltaSeconds;
 		this.updateOverlayState(state.consoleActive, state.editorActive);
@@ -1071,8 +1234,13 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 		catch (error) {
-			state.luaFaulted = true;
-			this.handleLuaError(error);
+			if (isLuaDebuggerPauseSignal(error)) {
+				this.onLuaDebuggerPause(error);
+			}
+			else {
+				state.luaFaulted = true;
+				this.handleLuaError(error);
+			}
 		}
 		finally {
 			state.updateExecuted = true;
@@ -1120,7 +1288,12 @@ export class BmsxConsoleRuntime extends Service {
 					}
 				}
 				catch (error) {
-					this.handleLuaError(error);
+					if (isLuaDebuggerPauseSignal(error)) {
+						this.onLuaDebuggerPause(error);
+					}
+					else {
+						this.handleLuaError(error);
+					}
 					if (editorActive && editor) {
 						editor.draw(this.api);
 						this.finalizeFrame(true);
@@ -1672,7 +1845,11 @@ export class BmsxConsoleRuntime extends Service {
 				this.invokeLuaFunction(this.luaInitFunction, []);
 			}
 			catch (error) {
-				this.handleLuaError(error);
+				if (isLuaDebuggerPauseSignal(error)) {
+					this.onLuaDebuggerPause(error);
+				} else {
+					this.handleLuaError(error);
+				}
 			}
 		}
 
@@ -1691,7 +1868,11 @@ export class BmsxConsoleRuntime extends Service {
 					this.invokeLuaFunction(this.luaDrawFunction, []);
 				}
 				catch (error) {
-					this.handleLuaError(error);
+					if (isLuaDebuggerPauseSignal(error)) {
+						this.onLuaDebuggerPause(error);
+					} else {
+						this.handleLuaError(error);
+					}
 				}
 			}
 			return;
@@ -2134,6 +2315,10 @@ export class BmsxConsoleRuntime extends Service {
 			return this.luaValueToJs(results[0]);
 		}
 		catch (error) {
+			if (isLuaDebuggerPauseSignal(error)) {
+				this.onLuaDebuggerPause(error);
+				return undefined;
+			}
 			console.error('[BmsxConsoleRuntime] Failed to capture Lua snapshot:', error);
 			return undefined;
 		}
@@ -2147,6 +2332,10 @@ export class BmsxConsoleRuntime extends Service {
 			this.invokeLuaFunction(this.luaSnapshotLoad, [snapshot]);
 		}
 		catch (error) {
+			if (isLuaDebuggerPauseSignal(error)) {
+				this.onLuaDebuggerPause(error);
+				return;
+			}
 			console.error('[BmsxConsoleRuntime] Failed to restore Lua snapshot:', error);
 		}
 	}
@@ -2625,6 +2814,10 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private handleLuaError(error: unknown): void {
+		if (isLuaDebuggerPauseSignal(error)) {
+			this.onLuaDebuggerPause(error);
+			return;
+		}
 		if (typeof error === 'object' && error !== null && this.handledLuaErrors.has(error as object)) {
 			return;
 		}
@@ -2651,6 +2844,7 @@ export class BmsxConsoleRuntime extends Service {
 				chunkName = error.chunkName;
 			}
 		}
+		this.pauseDebuggerForException({ chunkName, line, column });
 		if (!this.editor && this.hasLuaProgram()) {
 			this.initializeEditor();
 		}
@@ -4260,14 +4454,18 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.unregisterLuaServiceEvents(binding.service.id);
 		for (const [eventName, handler] of binding.events) {
-			const listener = (emittedEvent: string, emitterObj: Identifiable, payloadValue?: EventPayload) => {
-				try {
-					return handler(binding.table, emittedEvent, emitterObj, payloadValue);
-				} catch (error) {
-					this.handleLuaError(error);
-					return undefined;
-				}
-			};
+				const listener = (emittedEvent: string, emitterObj: Identifiable, payloadValue?: EventPayload) => {
+					try {
+						return handler(binding.table, emittedEvent, emitterObj, payloadValue);
+					} catch (error) {
+						if (isLuaDebuggerPauseSignal(error)) {
+							this.onLuaDebuggerPause(error);
+							return undefined;
+						}
+						this.handleLuaError(error);
+						return undefined;
+					}
+				};
 			EventEmitter.instance.on(eventName, listener, binding.service.id, { lane: 'any' });
 			const key = `${binding.service.id}:${handler.__hid}`;
 			this.consoleServiceEventListeners.set(key, {
@@ -4292,6 +4490,10 @@ export class BmsxConsoleRuntime extends Service {
 			return fn(binding.table, ...args);
 		}
 		catch (error) {
+			if (isLuaDebuggerPauseSignal(error)) {
+				this.onLuaDebuggerPause(error);
+				return undefined;
+			}
 			this.handleLuaError(error);
 			return undefined;
 		}
@@ -5088,41 +5290,50 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private invokeWorldObjectMethod(host: WorldObject, methodKeys: readonly string[]): void {
-		const interpreter = this.requireLuaInterpreter();
-		const nativeValue = this.jsToLua(host, interpreter);
-		if (!isLuaNativeValue(nativeValue)) {
-			return;
+		try {
+			const interpreter = this.requireLuaInterpreter();
+			const nativeValue = this.jsToLua(host, interpreter);
+			if (!isLuaNativeValue(nativeValue)) {
+				return;
+			}
+			const definition = this.getConsoleWorldObjectDefinitionForHost(host);
+			const prototypeTable = definition?.class_table ?? nativeValue.getMetatable();
+			const isLuaWorldObject = definition !== null || prototypeTable !== null;
+			for (let index = 0; index < methodKeys.length; index += 1) {
+				const key = methodKeys[index];
+				if (!key) {
+					throw new Error('[BmsxConsoleRuntime] invokeWorldObjectMethod received an empty method key.');
+				}
+				if (prototypeTable) {
+					const luaCandidate = this.getLuaTableEntry(prototypeTable, [key]);
+					if (luaCandidate !== null && this.isLuaFunctionValue(luaCandidate)) {
+						this.callLuaFunctionWithInterpreter(luaCandidate, [host], interpreter);
+						return;
+					}
+				}
+				if (isLuaWorldObject) {
+					const instanceCandidate = interpreter.getNativeMemberValue(nativeValue, key, null);
+					if (instanceCandidate !== null && this.isLuaFunctionValue(instanceCandidate)) {
+						this.callLuaFunctionWithInterpreter(instanceCandidate, [host], interpreter);
+						return;
+					}
+					continue;
+				}
+				const candidate = interpreter.getNativeMemberValue(nativeValue, key, null);
+				if (candidate === null) {
+					continue;
+				}
+				const fn = interpreter.expectFunction(candidate, `Method '${key}' not found on native value.`, null);
+				this.callLuaFunctionWithInterpreter(fn, [host], interpreter);
+				return;
+			}
 		}
-		const definition = this.getConsoleWorldObjectDefinitionForHost(host);
-		const prototypeTable = definition?.class_table ?? nativeValue.getMetatable();
-		const isLuaWorldObject = definition !== null || prototypeTable !== null;
-		for (let index = 0; index < methodKeys.length; index += 1) {
-			const key = methodKeys[index];
-			if (!key) {
-				throw new Error('[BmsxConsoleRuntime] invokeWorldObjectMethod received an empty method key.');
+		catch (error) {
+			if (isLuaDebuggerPauseSignal(error)) {
+				this.onLuaDebuggerPause(error);
+				return;
 			}
-			if (prototypeTable) {
-				const luaCandidate = this.getLuaTableEntry(prototypeTable, [key]);
-				if (luaCandidate !== null && this.isLuaFunctionValue(luaCandidate)) {
-					this.callLuaFunctionWithInterpreter(luaCandidate, [host], interpreter);
-					return;
-				}
-			}
-			if (isLuaWorldObject) {
-				const instanceCandidate = interpreter.getNativeMemberValue(nativeValue, key, null);
-				if (instanceCandidate !== null && this.isLuaFunctionValue(instanceCandidate)) {
-					this.callLuaFunctionWithInterpreter(instanceCandidate, [host], interpreter);
-					return;
-				}
-				continue;
-			}
-			const candidate = interpreter.getNativeMemberValue(nativeValue, key, null);
-			if (candidate === null) {
-				continue;
-			}
-			const fn = interpreter.expectFunction(candidate, `Method '${key}' not found on native value.`, null);
-			this.callLuaFunctionWithInterpreter(fn, [host], interpreter);
-			return;
+			this.handleLuaError(error);
 		}
 	}
 
@@ -5402,7 +5613,16 @@ export class BmsxConsoleRuntime extends Service {
 			if (!binding) {
 				throw new Error(`[BmsxConsoleRuntime] Lua ability handler '${handler.__hid}' is not bound.`);
 			}
-			this.callLuaFunctionWithInterpreter(binding.fn, [ctx, effectiveParams], binding.interpreter);
+			try {
+				this.callLuaFunctionWithInterpreter(binding.fn, [ctx, effectiveParams], binding.interpreter);
+			}
+			catch (error) {
+				if (isLuaDebuggerPauseSignal(error)) {
+					this.onLuaDebuggerPause(error);
+					return;
+				}
+				this.handleLuaError(error);
+			}
 		});
 		let actionList = this.abilityActionIds.get(abilityId);
 		if (!actionList) {

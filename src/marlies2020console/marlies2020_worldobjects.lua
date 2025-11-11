@@ -173,7 +173,7 @@ function fireobject:on_spawn()
 	local function hit_corona(_, _, _, payload)
 		local other = payload.other_id
 		if game_state.corona[other] then
-			game_state.corona[other].__native__.dispose()
+			game_state.corona[other].__native__e.dispose()
 			-- despawn(other)
 		end
 	end

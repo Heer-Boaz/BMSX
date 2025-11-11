@@ -361,6 +361,7 @@ export type PointerSnapshot = {
 
 export type KeyPressRecord = {
 	lastPressId: number | null;
+	downLatched?: boolean;
 };
 
 export type InlineTextField = {

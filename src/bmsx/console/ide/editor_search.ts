@@ -118,9 +118,9 @@ export function closeSearch(clearQuery: boolean, forceHide = false): void {
 }
 
 export function focusEditorFromSearch(): void {
-	if (!ide_state.searchActive && !ide_state.searchVisible) {
-		return;
-	}
+	// if (!ide_state.searchActive && !ide_state.searchVisible) {
+	// 	return;
+	// }
 	ide_state.searchActive = false;
 	ide_state.searchScope = 'local';
 	ide_state.searchDisplayOffset = 0;

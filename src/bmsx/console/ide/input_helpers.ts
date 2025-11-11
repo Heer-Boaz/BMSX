@@ -17,9 +17,9 @@ export function getKeyboardButtonState(playerIndex: number, code: string): Butto
 	return getIdeKeyState(code, playerIndex);
 }
 
-function recordKeyState(code: string, state: ButtonState): void {
+function recordKeyState(code: string, state: ButtonState, latched: boolean): void {
 	const pressId = state.pressId ?? null;
-	keyPressRecords.set(code, { lastPressId: pressId });
+	keyPressRecords.set(code, { lastPressId: pressId, downLatched: latched });
 }
 
 export function shouldAcceptKeyPress(code: string, state: ButtonState): boolean {
@@ -28,26 +28,22 @@ export function shouldAcceptKeyPress(code: string, state: ButtonState): boolean 
 		return false;
 	}
 	if (state.consumed === true) {
-		recordKeyState(code, state);
+		recordKeyState(code, state, true);
 		return false;
 	}
-	const pressId = state.pressId ?? null;
 	const existing = keyPressRecords.get(code);
-	if (pressId !== null) {
-		if (existing && existing.lastPressId === pressId) {
-			return false;
-		}
-		recordKeyState(code, state);
+	if (existing?.downLatched) {
+		return false;
+	}
+	if (state.justpressed === true) {
+		recordKeyState(code, state, true);
 		return true;
 	}
-	if (state.justpressed !== true) {
-		return false;
+	if (!existing) {
+		recordKeyState(code, state, true);
+		return true;
 	}
-	if (existing && existing.lastPressId === null) {
-		return false;
-	}
-	recordKeyState(code, state);
-	return true;
+	return false;
 }
 
 export function isKeyJustPressed(playerIndex: number, code: string): boolean {

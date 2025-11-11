@@ -6,3 +6,4 @@ export * from './parser.ts';
 export * from './runtime.ts';
 export * from './token.ts';
 export * from './value.ts';
+export * from './debugger.ts';

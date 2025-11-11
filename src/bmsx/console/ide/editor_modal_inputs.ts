@@ -3,6 +3,7 @@
 // Follows project guidelines: no defensive coding unless necessary, assumes ide_state integrity.
 import type { KeyboardInput } from '../../input/keyboardinput';
 import { isKeyJustPressed as isKeyJustPressedGlobal, isModifierPressed as isModifierPressedGlobal, consumeKey as consumeKeyboardKey } from './input_helpers';
+import { handleDebuggerShortcuts } from './debugger_shortcuts';
 import { ide_state } from './ide_state';
 // Use re-exported helpers from main editor module (still hosted there)
 import { jumpToNextMatch, jumpToPreviousMatch, moveSearchSelection, applySearchSelection, resetBlink, updateDesiredColumn, revealCursor } from './console_cart_editor';
@@ -337,6 +338,21 @@ export function processActiveModalInput(keyboard: KeyboardInput, deltaSeconds: n
 
 // Aggregate handler to replace portions of handleEditorInput
 export function processModalAndShortcutInput(keyboard: KeyboardInput, deltaSeconds: number): void {
+  const playerIndex = ide_state.playerIndex;
+  const ctrlDown = isModifierPressedGlobal(playerIndex, 'ControlLeft') || isModifierPressedGlobal(playerIndex, 'ControlRight');
+  const shiftDown = isModifierPressedGlobal(playerIndex, 'ShiftLeft') || isModifierPressedGlobal(playerIndex, 'ShiftRight');
+  const metaDown = isModifierPressedGlobal(playerIndex, 'MetaLeft') || isModifierPressedGlobal(playerIndex, 'MetaRight');
+  const altDown = isModifierPressedGlobal(playerIndex, 'AltLeft') || isModifierPressedGlobal(playerIndex, 'AltRight');
+  if (handleDebuggerShortcuts({
+    keyboard,
+    playerIndex,
+    ctrlDown,
+    shiftDown,
+    altDown,
+    metaDown,
+  })) {
+    return;
+  }
   if (processActiveModalInput(keyboard, deltaSeconds)) return;
   if (handleHighLevelEditorShortcuts(keyboard)) return;
   if (handleClipboardShortcuts(keyboard)) return;

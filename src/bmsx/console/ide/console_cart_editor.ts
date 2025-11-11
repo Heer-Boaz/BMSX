@@ -791,12 +791,9 @@ export function clampScrollColumn(): void {
 	}
 }
 
-// migrated to editor_search.ts
 export { activeSearchMatchCount } from './editor_search';
 
-// migrated to editor_search.ts
 export { searchPageSize } from './editor_search';
-// additional search-related re-exports
 export { openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, ensureSearchJobCompleted, moveSearchSelection, applySearchSelection } from './editor_search';
 
 function searchVisibleResultCount(): number {
@@ -2279,7 +2276,6 @@ export function activate(): void {
 	ide_state.pointerPrimaryWasPressed = false;
 	ide_state.cursorRevealSuspended = false;
 	ide_state.repeatState.clear();
-	resetKeyPressRecords();
 	updateDesiredColumn();
 	ide_state.selectionAnchor = null;
 	ide_state.searchActive = false;
@@ -2357,7 +2353,6 @@ export function deactivate(): void {
 	}
 	ide_state.completion.closeSession();
 	ide_state.repeatState.clear();
-	resetKeyPressRecords();
 	ide_state.input.applyOverrides(false, captureKeys);
 	$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 	ide_state.selectionAnchor = null;

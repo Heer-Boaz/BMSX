@@ -4,7 +4,6 @@ import { Msx1Colors } from '../systems/msx';
 import { ConsoleEditorFont } from './editor_font';
 import type { ConsoleFontVariant } from './font';
 import type { PlayerInput } from '../input/playerinput';
-import { KeyPressLatch, KeyRepeatController } from '../input/keyrepeat';
 import { wrapRuntimeErrorLine } from './ide/runtime_error_utils';
 import {
 	createInlineTextField,
@@ -17,6 +16,15 @@ import type { InlineInputOptions, InlineTextField } from './ide/types';
 import { INITIAL_REPEAT_DELAY, REPEAT_INTERVAL, TAB_SPACES } from './ide/constants';
 import { EditorConsoleRenderBackend } from './render_backend';
 import { renderInlineCaret, type CaretDrawOps } from './ide/render_caret';
+import { ide_state } from './ide/ide_state';
+import {
+	isKeyJustPressed as isKeyJustPressedGlobal,
+	isKeyTyped as isKeyTypedGlobal,
+	consumeKey as consumeKeyboardKey,
+	getKeyboardButtonState,
+	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
+	clearKeyPressRecord,
+} from './ide/input_helpers';
 
 type ConsoleOutputKind = 'prompt' | 'stdout' | 'stderr' | 'system';
 
@@ -78,10 +86,8 @@ export class ConsoleMode {
 	private readonly output: ConsoleOutputEntry[] = [];
 	private readonly history: string[] = [];
 	private historyIndex: number | null = null;
-	private readonly keyGuards = new KeyPressLatch();
-	private readonly editingRepeat = new KeyRepeatController(INITIAL_REPEAT_DELAY, REPEAT_INTERVAL);
-	private readonly historyRepeat = new KeyRepeatController(INITIAL_REPEAT_DELAY, REPEAT_INTERVAL);
-	private clipboard: string | null = null;
+	private readonly editingRepeatState = new Map<string, number>();
+	private readonly historyRepeatState = new Map<string, number>();
 	private blinkTimer = 0;
 	private caretVisible = true;
 	private active = false;
@@ -100,18 +106,16 @@ export class ConsoleMode {
 		this.active = true;
 		this.resetInputField('');
 		this.historyIndex = null;
-		this.keyGuards.reset();
-		this.editingRepeat.reset();
-		this.historyRepeat.reset();
+		this.editingRepeatState.clear();
+		this.historyRepeatState.clear();
 		this.blinkTimer = 0;
 		this.caretVisible = true;
 	}
 
 	public deactivate(): void {
 		this.active = false;
-		this.keyGuards.reset();
-		this.editingRepeat.reset();
-		this.historyRepeat.reset();
+		this.editingRepeatState.clear();
+		this.historyRepeatState.clear();
 	}
 
 	public isActive(): boolean {
@@ -163,11 +167,11 @@ export class ConsoleMode {
 			allowSpace: true,
 		};
 		const handlers = this.createInlineHandlers(playerInput);
-		applyInlineFieldEditing(this.field, options, handlers);
 		const historyHandled = this.handleHistoryNavigation(playerInput, deltaSeconds, modifiers);
 		if (historyHandled) {
 			this.resetBlink();
 		}
+		applyInlineFieldEditing(this.field, options, handlers);
 		const submit = this.trySubmitCommand(playerInput);
 		return submit;
 	}
@@ -205,6 +209,7 @@ export class ConsoleMode {
 		let y = PADDING_Y;
 		for (const line of visibleLines) {
 			const color = resolvePaletteColor(OUTPUT_COLORS[line.kind]);
+			this.drawGlyphBackgrounds(renderer, line.text, PADDING_X, y);
 			this.drawGlyphRun(renderer, line.text, PADDING_X, y, color);
 			y += lineHeight;
 		}
@@ -215,6 +220,7 @@ export class ConsoleMode {
 
 		// draw prompt at the first input line then draw wrapped input lines (first segment after prompt)
 		const promptColor = resolvePaletteColor(OUTPUT_COLORS.prompt);
+		this.drawGlyphBackgrounds(renderer, PROMPT_TEXT, PADDING_X, inputStartY);
 		this.drawGlyphRun(renderer, PROMPT_TEXT, PADDING_X, inputStartY, promptColor);
 
 		// draw multi-line input (handles selection and caret)
@@ -245,24 +251,15 @@ export class ConsoleMode {
 	}
 
 	private createInlineHandlers(playerInput: PlayerInput): InlineFieldEditingHandlers {
-		const resolveState = (code: string) => playerInput.getButtonState(code, 'keyboard');
+		const playerIndex = playerInput.playerIndex;
 		return {
-			isKeyJustPressed: (code: string) => this.keyGuards.accept(code, resolveState(code)),
-			isKeyTyped: (code: string) => this.keyGuards.accept(code, resolveState(code)),
-			shouldFireRepeat: (code: string, deltaSeconds: number) => {
-				if (code === 'ArrowUp' || code === 'ArrowDown') {
-					this.keyGuards.release(code);
-					return false;
-				}
-				return this.editingRepeat.shouldRepeat(code, resolveState, deltaSeconds, this.keyGuards);
-			},
-			consumeKey: (code: string) => playerInput.consumeButton(code, 'keyboard'),
-			readClipboard: () => this.clipboard,
-			writeClipboard: (payload: string) => {
-				this.clipboard = payload;
-				void $.platform.clipboard.writeText(payload).catch(() => {});
-			},
-			// onClipboardEmpty: () => this.appendSystemMessage('Clipboard is empty.'),
+			isKeyJustPressed: (code: string) => isKeyJustPressedGlobal(playerIndex, code),
+			isKeyTyped: (code: string) => isKeyTypedGlobal(playerIndex, code),
+			shouldFireRepeat: (code: string, deltaSeconds: number) => this.shouldRepeatKey(code, deltaSeconds, playerIndex, this.editingRepeatState),
+			consumeKey: (code: string) => consumeKeyboardKey(null, code, playerIndex),
+			readClipboard: () => ide_state.customClipboard,
+			writeClipboard: (payload: string) => { this.writeClipboard(payload); },
+			onClipboardEmpty: () => { console.warn('[BmsxConsoleMode] Clipboard is empty'); },
 		};
 	}
 
@@ -273,15 +270,15 @@ export class ConsoleMode {
 		if (this.history.length === 0) {
 			return false;
 		}
-		const resolveState = (code: string) => playerInput.getButtonState(code, 'keyboard');
-		if (this.historyRepeat.shouldRepeat('ArrowUp', resolveState, deltaSeconds, this.keyGuards)) {
+		const playerIndex = playerInput.playerIndex;
+		if (this.shouldRepeatKey('ArrowUp', deltaSeconds, playerIndex, this.historyRepeatState)) {
 			this.recallHistory(-1);
-			playerInput.consumeButton('ArrowUp', 'keyboard');
+			consumeKeyboardKey(null, 'ArrowUp', playerIndex);
 			return true;
 		}
-		if (this.historyRepeat.shouldRepeat('ArrowDown', resolveState, deltaSeconds, this.keyGuards)) {
+		if (this.shouldRepeatKey('ArrowDown', deltaSeconds, playerIndex, this.historyRepeatState)) {
 			this.recallHistory(1);
-			playerInput.consumeButton('ArrowDown', 'keyboard');
+			consumeKeyboardKey(null, 'ArrowDown', playerIndex);
 			return true;
 		}
 		return false;
@@ -304,13 +301,13 @@ export class ConsoleMode {
 	}
 
 	private trySubmitCommand(playerInput: PlayerInput): string | null {
-		const enterState = playerInput.getButtonState('Enter', 'keyboard');
-		const numpadEnterState = playerInput.getButtonState('NumpadEnter', 'keyboard');
-		const enterPressed = this.keyGuards.accept('Enter', enterState) || this.keyGuards.accept('NumpadEnter', numpadEnterState);
+		const playerIndex = playerInput.playerIndex;
+		const enterPressed = isKeyJustPressedGlobal(playerIndex, 'Enter') || isKeyJustPressedGlobal(playerIndex, 'NumpadEnter');
 		if (!enterPressed) {
 			return null;
 		}
-		playerInput.consumeButtons(['Enter', 'NumpadEnter'], 'keyboard');
+		consumeKeyboardKey(null, 'Enter', playerIndex);
+		consumeKeyboardKey(null, 'NumpadEnter', playerIndex);
 		const command = this.field.text.trimEnd();
 		if (command.length === 0) {
 			this.resetBlink();
@@ -350,7 +347,37 @@ export class ConsoleMode {
 			return [''];
 		}
 		const normalized = this.toDisplayText(text);
-		return wrapRuntimeErrorLine(normalized, Math.max(8, maxWidth), (value) => this.font.measure(value));
+		return wrapRuntimeErrorLine(normalized, Math.max(8, maxWidth), (value) => this.measureDisplayText(value));
+	}
+
+	private writeClipboard(payload: string): void {
+		ide_state.customClipboard = payload;
+		void $.platform.clipboard.writeText(payload).catch(() => { console.warn('[BmsxConsoleMode] Failed to write to clipboard'); });
+	}
+
+	private shouldRepeatKey(code: string, deltaSeconds: number, playerIndex: number, state: Map<string, number>): boolean {
+		const buttonState = getKeyboardButtonState(playerIndex, code);
+		if (!buttonState || buttonState.pressed !== true) {
+			state.delete(code);
+			clearKeyPressRecord(code);
+			return false;
+		}
+		let cooldown = state.get(code);
+		if (cooldown === undefined) {
+			cooldown = INITIAL_REPEAT_DELAY;
+			state.set(code, cooldown);
+		}
+		if (shouldAcceptKeyPressGlobal(code, buttonState)) {
+			state.set(code, INITIAL_REPEAT_DELAY);
+			return true;
+		}
+		const nextCooldown = cooldown - deltaSeconds;
+		if (nextCooldown <= 0) {
+			state.set(code, REPEAT_INTERVAL);
+			return true;
+		}
+		state.set(code, nextCooldown);
+		return false;
 	}
 
 	// New helper: wraps display text with a smaller first-line width (after prompt) and full width for following lines.
@@ -375,20 +402,30 @@ export class ConsoleMode {
 				continue;
 			}
 			const adv = ch === '\t' ? this.font.advance(' ') * TAB_SPACES : this.font.advance(ch);
-			if (currentWidth + adv > widthLimit && current.length > 0) {
-				segments.push(current);
-				starts.push(segStart);
-				current = ch;
-				currentWidth = adv;
-				segStart = i;
+			if (currentWidth + adv > widthLimit) {
+				if (current.length > 0) {
+					segments.push(current);
+					starts.push(segStart);
+					current = ch;
+					currentWidth = adv;
+					segStart = i;
+				} else {
+					segments.push(ch);
+					starts.push(i);
+					current = '';
+					currentWidth = 0;
+					segStart = i + 1;
+				}
 				widthLimit = otherWidth;
-			} else {
-				current += ch;
-				currentWidth += adv;
+				continue;
 			}
+			current += ch;
+			currentWidth += adv;
 		}
-		segments.push(current);
-		starts.push(segStart);
+		if (current.length > 0 || text.endsWith('\n')) {
+			segments.push(current);
+			starts.push(segStart);
+		}
 		// ensure at least one segment
 		if (segments.length === 0) {
 			segments.push('');
@@ -415,6 +452,9 @@ export class ConsoleMode {
 				x += promptWidth;
 			}
 
+			// draw glyph backgrounds before overlays/text so selection remains visible
+			this.drawGlyphBackgrounds(renderer, seg, x, y);
+
 			// draw selection background for this segment if selection overlaps
 			if (sel) {
 				const selStart = Math.max(sel.start, segStart);
@@ -428,7 +468,7 @@ export class ConsoleMode {
 						kind: 'fill',
 						x0: x + startWidth,
 						y0: y,
-						x1: x + startWidth + selWidth + 1,
+						x1: x + startWidth + selWidth,
 						y1: y + this.font.lineHeight(),
 						color: this.selectionColor,
 					});
@@ -440,7 +480,9 @@ export class ConsoleMode {
 
 			// caret rendering: use shared caret style from console_cart_editor
 			if (this.caretVisible) {
-				const caretInSeg = cursorIndex >= segStart && cursorIndex <= segStart + segLen;
+				const segEnd = segStart + segLen;
+				const isLastSegment = si === wrap.segments.length - 1;
+				const caretInSeg = cursorIndex >= segStart && (cursorIndex < segEnd || (isLastSegment && cursorIndex === segEnd));
 				if (caretInSeg) {
 					const local = displayText.slice(segStart, cursorIndex);
 					const caretOffset = this.measureDisplayText(local);
@@ -457,9 +499,34 @@ export class ConsoleMode {
 						strokeRect: (x0, y0, x1, y1, color) => renderer.drawRect({ kind: 'rect', x0, y0, x1, y1, color }),
 						drawGlyph: (text, gx, gy, color) => renderer.drawText({ kind: 'print', text, x: gx, y: gy, color }, renderFont),
 					};
-					renderInlineCaret(ops, left, topY, right, bottom, left, /*active*/ true, this.caretColor, nextChar, { r: 0, g: 0, b: 0, a: 1 });
+					renderInlineCaret(ops, left, topY, right, bottom, left, /*active*/ true, this.caretColor, nextChar, this.characterBackgroundColor);
 				}
 			}
+		}
+	}
+
+	private drawGlyphBackgrounds(renderer: EditorConsoleRenderBackend, text: string, originX: number, originY: number): void {
+		const display = this.toDisplayText(text);
+		let cursorX = originX;
+		for (let i = 0; i < display.length; i += 1) {
+			const ch = display.charAt(i);
+			if (ch === '\t') {
+				cursorX += this.font.advance(' ') * TAB_SPACES;
+				continue;
+			}
+			if (ch === '\n') {
+				continue;
+			}
+			const advance = this.font.advance(ch);
+			renderer.drawRect({
+				kind: 'fill',
+				x0: cursorX,
+				y0: originY,
+				x1: cursorX + advance,
+				y1: originY + this.font.lineHeight(),
+				color: this.characterBackgroundColor,
+			});
+			cursorX += advance;
 		}
 	}
 
@@ -477,15 +544,6 @@ export class ConsoleMode {
 				continue;
 			}
 			const advance = this.font.advance(ch);
-			const backgroundX = cursorX;
-			renderer.drawRect({
-				kind: 'fill',
-				x0: backgroundX,
-				y0: originY,
-				x1: backgroundX + advance,
-				y1: originY + this.font.lineHeight(),
-				color: this.characterBackgroundColor,
-			});
 			if (ch !== ' ') {
 				renderer.drawText({ kind: 'print', text: ch, x: cursorX, y: originY, color: tint }, renderFont);
 			}

@@ -87,6 +87,8 @@ export const captureKeys: string[] = [...new Set([
 	'Space',
 	'Tab',
 	'F3',
+	'F10',
+	'F11',
 	'F12',
 	'NumpadDivide',
 	...CHARACTER_CODES,

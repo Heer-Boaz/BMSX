@@ -1,4 +1,5 @@
 import type { LuaInterpreter } from '../lua/runtime.ts';
+import { isLuaDebuggerPauseSignal } from '../lua/runtime.ts';
 import type { LuaFunctionValue } from '../lua/value.ts';
 
 export interface LuaHandlerFn extends Function {
@@ -148,6 +149,9 @@ export class LuaHandlerCache {
 			try {
 				return callLua(currentFn, currentInterpreter, this, args);
 			} catch (error) {
+				if (isLuaDebuggerPauseSignal(error)) {
+					throw error;
+				}
 				reportError(error, { hid, moduleId, path });
 				return undefined;
 			}
