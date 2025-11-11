@@ -21,6 +21,15 @@ export class Reviver {
 }
 export const ConstructorWithSaveGame = class {};
 `],
+	['src/bmsx/core/game.ts', `
+const globalScope = typeof globalThis !== 'undefined' ? globalThis : {};
+export const $ = {
+	paused: false,
+	input: {
+		getPlayerInput: () => (globalScope.__BMSX_TEST_PLAYER_INPUT ?? null),
+	},
+};
+`],
 ]);
 
 const GLSL_PREFIX = 'stub:glsl:';
