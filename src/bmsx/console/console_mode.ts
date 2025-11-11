@@ -4,6 +4,7 @@ import { Msx1Colors } from '../systems/msx';
 import { ConsoleEditorFont } from './editor_font';
 import type { ConsoleFontVariant } from './font';
 import type { PlayerInput } from '../input/playerinput';
+import type { KeyboardInput } from '../input/keyboardinput';
 import { wrapRuntimeErrorLine } from './ide/runtime_error_utils';
 import {
 	createInlineTextField,
@@ -11,8 +12,10 @@ import {
 	type InlineFieldEditingHandlers,
 	setFieldText,
 	selectionRange,
+	deleteSelection,
+	insertValue,
 } from './ide/inline_text_field';
-import type { InlineInputOptions, InlineTextField } from './ide/types';
+import type { InlineInputOptions, InlineTextField, CursorScreenInfo, EditContext, LuaCompletionItem } from './ide/types';
 import { INITIAL_REPEAT_DELAY, REPEAT_INTERVAL, TAB_SPACES } from './ide/constants';
 import { EditorConsoleRenderBackend } from './render_backend';
 import { renderInlineCaret, type CaretDrawOps } from './ide/render_caret';
@@ -25,6 +28,14 @@ import {
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
 	clearKeyPressRecord,
 } from './ide/input_helpers';
+import { CompletionController, type CompletionRenderApi } from './ide/completion_controller';
+import { collectLuaModuleAliases } from './ide/intellisense';
+import type {
+	ConsoleLuaBuiltinDescriptor,
+	ConsoleLuaMemberCompletion,
+	ConsoleLuaMemberCompletionRequest,
+	ConsoleLuaSymbolEntry,
+} from './types';
 
 type ConsoleOutputKind = 'prompt' | 'stdout' | 'stderr' | 'system';
 
@@ -34,9 +45,23 @@ type ConsoleOutputEntry = {
 };
 
 type ConsoleModeOptions = {
+	playerIndex: number;
 	fontVariant?: ConsoleFontVariant;
 	caseInsensitive?: boolean;
 	maxEntries?: number;
+	listLuaSymbols: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
+	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
+	listLuaModuleSymbols: (moduleName: string) => ConsoleLuaSymbolEntry[];
+	listBuiltinLuaFunctions: () => ConsoleLuaBuiltinDescriptor[];
+	listLuaObjectMembers: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
+};
+
+type CompletionMemberRequest = {
+	objectName: string;
+	operator: '.' | ':';
+	prefix: string;
+	assetId: string | null;
+	chunkName: string | null;
 };
 
 type Viewport = { width: number; height: number };
@@ -77,6 +102,12 @@ export class ConsoleMode {
 	private readonly font: ConsoleEditorFont;
 	private readonly caseInsensitive: boolean;
 	private readonly maxEntries: number;
+	private readonly playerIndex: number;
+	private readonly listLuaSymbolsFn: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
+	private readonly listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
+	private readonly listLuaModuleSymbolsFn: (moduleName: string) => ConsoleLuaSymbolEntry[];
+	private readonly listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
+	private readonly listLuaObjectMembersFn: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
 	private readonly panelBackgroundColor = resolvePaletteColor(0, PANEL_BACKGROUND_ALPHA);
 	private readonly characterBackgroundColor = { r: 0, g: 0, b: 0, a: CHARACTER_TILE_ALPHA } as color;
 	private readonly caretColor = resolvePaletteColor(15);
@@ -88,14 +119,61 @@ export class ConsoleMode {
 	private historyIndex: number | null = null;
 	private readonly editingRepeatState = new Map<string, number>();
 	private readonly historyRepeatState = new Map<string, number>();
+	private readonly completionRepeatState = new Map<string, number>();
+	private readonly consoleChunkName = '<console>';
+	private readonly completionContextToken = { chunk: this.consoleChunkName };
+	private readonly completion: CompletionController;
 	private blinkTimer = 0;
 	private caretVisible = true;
 	private active = false;
+	private textVersion = 0;
+	private cachedLines: string[] = [''];
+	private cachedLinesVersion = -1;
+	private cursorScreenInfo: CursorScreenInfo | null = null;
+	private activeCompletionRenderer: EditorConsoleRenderBackend | null = null;
 
 	constructor(options: ConsoleModeOptions) {
 		this.font = new ConsoleEditorFont(options.fontVariant);
 		this.caseInsensitive = options.caseInsensitive ?? true;
 		this.maxEntries = options.maxEntries ?? MAX_OUTPUT_ENTRIES;
+		this.playerIndex = options.playerIndex;
+		this.listLuaSymbolsFn = options.listLuaSymbols;
+		this.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
+		this.listLuaModuleSymbolsFn = options.listLuaModuleSymbols;
+		this.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
+		this.listLuaObjectMembersFn = options.listLuaObjectMembers;
+		this.completion = new CompletionController({
+			getPlayerIndex: () => this.playerIndex,
+			isCodeTabActive: () => this.active,
+			getLines: () => this.getLinesSnapshot(),
+			getCursorRow: () => this.getCursorPosition().row,
+			getCursorColumn: () => this.getCursorPosition().column,
+			setCursorPosition: (row, column) => { this.setCursorFromPosition(row, column); },
+			setSelectionAnchor: (row, column) => { this.setSelectionAnchorFromPosition(row, column); },
+			replaceSelectionWith: (text) => { this.replaceSelectionWithText(text); },
+			updateDesiredColumn: () => { this.field.desiredColumn = this.field.cursor; },
+			resetBlink: () => { this.resetBlink(); },
+			revealCursor: () => {},
+			measureText: (text) => this.measureRawText(text),
+			drawText: (api, text, x, y, color) => { this.drawCompletionText(api, text, x, y, color); },
+			getCursorScreenInfo: () => this.cursorScreenInfo,
+			getLineHeight: () => this.font.lineHeight(),
+			getSpaceAdvance: () => this.font.advance(' '),
+			getActiveCodeTabContext: () => (this.active ? this.completionContextToken : null),
+			resolveHoverAssetId: () => null,
+			resolveHoverChunkName: () => this.consoleChunkName,
+			listLuaSymbols: (assetId, chunkName) => this.listLuaSymbolsFn(assetId, chunkName),
+			listGlobalLuaSymbols: () => this.listGlobalLuaSymbolsFn(),
+			listLuaModuleSymbols: (moduleName) => this.listLuaModuleSymbolsFn(moduleName),
+			listBuiltinLuaFunctions: () => this.listBuiltinLuaFunctionsFn(),
+			getSemanticDefinitions: () => null,
+			getLuaModuleAliases: () => this.buildConsoleModuleAliases(),
+			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),
+			charAt: (row, column) => this.charAt(row, column),
+			getTextVersion: () => this.textVersion,
+			shouldFireRepeat: (_keyboard, code, deltaSeconds) => this.shouldRepeatKey(code, deltaSeconds, this.playerIndex, this.completionRepeatState),
+		});
+		this.completion.setEnterCommitsEnabled(true);
 	}
 
 	public setBackdropVisibility(enabled: boolean): void {
@@ -108,6 +186,7 @@ export class ConsoleMode {
 		this.historyIndex = null;
 		this.editingRepeatState.clear();
 		this.historyRepeatState.clear();
+		this.completion.closeSession();
 		this.blinkTimer = 0;
 		this.caretVisible = true;
 	}
@@ -116,6 +195,7 @@ export class ConsoleMode {
 		this.active = false;
 		this.editingRepeatState.clear();
 		this.historyRepeatState.clear();
+		this.completion.closeSession();
 	}
 
 	public isActive(): boolean {
@@ -142,6 +222,14 @@ export class ConsoleMode {
 		this.appendEntry({ kind: 'system', text });
 	}
 
+	private resolveKeyboardInput(playerInput: PlayerInput): KeyboardInput {
+		const handler = playerInput.inputHandlers['keyboard'];
+		if (!handler) {
+			throw new Error('[ConsoleMode] Keyboard handler unavailable.');
+		}
+		return handler as KeyboardInput;
+	}
+
 	public update(deltaSeconds: number): void {
 		if (!this.active) {
 			return;
@@ -151,6 +239,7 @@ export class ConsoleMode {
 			this.blinkTimer -= CURSOR_BLINK_PERIOD;
 		}
 		this.caretVisible = this.blinkTimer < CURSOR_BLINK_PERIOD * 0.5;
+		this.completion.processPending(deltaSeconds);
 	}
 
 	public handleInput(playerInput: PlayerInput, deltaSeconds: number): string | null {
@@ -158,6 +247,18 @@ export class ConsoleMode {
 			return null;
 		}
 		const modifiers = this.resolveModifiers(playerInput);
+		const keyboard = this.resolveKeyboardInput(playerInput);
+		if (this.completion.handleKeybindings(
+			keyboard,
+			deltaSeconds,
+			modifiers.shift,
+			modifiers.ctrl,
+			modifiers.alt,
+			modifiers.meta,
+		)) {
+			this.resetBlink();
+			return null;
+		}
 		const options: InlineInputOptions = {
 			ctrlDown: modifiers.ctrl,
 			metaDown: modifiers.meta,
@@ -171,8 +272,20 @@ export class ConsoleMode {
 		if (historyHandled) {
 			this.resetBlink();
 		}
-		applyInlineFieldEditing(this.field, options, handlers);
+		const previousText = this.field.text;
+		const previousCursor = this.field.cursor;
+		const previousAnchor = this.field.selectionAnchor;
+		const textChanged = applyInlineFieldEditing(this.field, options, handlers);
+		if (textChanged) {
+			const editContext = this.buildEditContext(previousText, this.field.text);
+			this.handleTextMutation(previousText, editContext);
+		} else if (previousCursor !== this.field.cursor || previousAnchor !== this.field.selectionAnchor) {
+			this.completion.onCursorMoved();
+		}
 		const submit = this.trySubmitCommand(playerInput);
+		if (submit !== null) {
+			this.completion.closeSession();
+		}
 		return submit;
 	}
 
@@ -225,6 +338,7 @@ export class ConsoleMode {
 
 		// draw multi-line input (handles selection and caret)
 		this.drawMultilineInput(renderer, PADDING_X, inputStartY, promptWidth, inputWrap);
+		this.drawCompletionOverlays(renderer, surface, promptWidth);
 	}
 
 	public recordHistory(command: string): void {
@@ -319,7 +433,9 @@ export class ConsoleMode {
 	}
 
 	private resetInputField(value: string): void {
+		const previous = this.field.text;
 		setFieldText(this.field, value, true);
+		this.onExternalFieldMutation(previous, value);
 	}
 
 	private resetBlink(): void {
@@ -378,6 +494,286 @@ export class ConsoleMode {
 		}
 		state.set(code, nextCooldown);
 		return false;
+	}
+
+	private getLinesSnapshot(): string[] {
+		if (this.cachedLinesVersion !== this.textVersion) {
+			this.cachedLines = this.field.text.split('\n');
+			this.cachedLinesVersion = this.textVersion;
+		}
+		if (this.cachedLines.length === 0) {
+			this.cachedLines = [''];
+		}
+		return this.cachedLines;
+	}
+
+	private getCursorPosition(): { row: number; column: number } {
+		const lines = this.getLinesSnapshot();
+		let remaining = this.field.cursor;
+		for (let row = 0; row < lines.length; row += 1) {
+			const line = lines[row];
+			if (remaining <= line.length) {
+				return { row, column: remaining };
+			}
+			remaining -= line.length + 1;
+		}
+		const lastRow = Math.max(0, lines.length - 1);
+		return { row: lastRow, column: lines[lastRow]?.length ?? 0 };
+	}
+
+	private positionToIndex(row: number, column: number): number {
+		const lines = this.getLinesSnapshot();
+		let index = 0;
+		for (let current = 0; current < row && current < lines.length; current += 1) {
+			index += lines[current].length + 1;
+		}
+		const targetRow = Math.min(row, lines.length - 1);
+		const rowText = lines[targetRow] ?? '';
+		const clampedColumn = Math.max(0, Math.min(column, rowText.length));
+		return index + clampedColumn;
+	}
+
+	private setCursorFromPosition(row: number, column: number): void {
+		const index = this.positionToIndex(row, column);
+		this.field.cursor = index;
+		this.field.desiredColumn = index;
+		this.field.selectionAnchor = null;
+		this.completion.onCursorMoved();
+	}
+
+	private setSelectionAnchorFromPosition(row: number, column: number): void {
+		this.field.selectionAnchor = this.positionToIndex(row, column);
+		this.completion.onCursorMoved();
+	}
+
+	private replaceSelectionWithText(text: string): void {
+		const previous = this.field.text;
+		deleteSelection(this.field);
+		if (text.length > 0) {
+			insertValue(this.field, text);
+		}
+		const context = text.length > 0 ? { kind: 'insert', text } as EditContext : this.buildEditContext(previous, this.field.text);
+		this.handleTextMutation(previous, context);
+	}
+
+	private buildEditContext(previous: string, next: string): EditContext | null {
+		if (previous === next) {
+			return null;
+		}
+		let start = 0;
+		while (start < previous.length && start < next.length && previous.charAt(start) === next.charAt(start)) {
+			start += 1;
+		}
+		let endPrev = previous.length;
+		let endNext = next.length;
+		while (endPrev > start && endNext > start && previous.charAt(endPrev - 1) === next.charAt(endNext - 1)) {
+			endPrev -= 1;
+			endNext -= 1;
+		}
+		if (next.length >= previous.length) {
+			const inserted = next.slice(start, endNext);
+			return inserted.length > 0 ? { kind: 'insert', text: inserted } : null;
+		}
+		const deleted = previous.slice(start, endPrev);
+		return deleted.length > 0 ? { kind: 'delete', text: deleted } : null;
+	}
+
+	private handleTextMutation(previousText: string | null, editContext: EditContext | null): void {
+		if (this.caseInsensitive) {
+			const normalized = this.normalizeInputCase(this.field.text);
+			if (normalized !== this.field.text) {
+				this.field.text = normalized;
+			}
+		}
+		const context = previousText !== null ? this.buildEditContext(previousText, this.field.text) : editContext;
+		this.textVersion += 1;
+		this.cachedLinesVersion = -1;
+		this.completion.updateAfterEdit(context);
+		this.completion.onCursorMoved();
+	}
+
+	private onExternalFieldMutation(previous: string, next: string): void {
+		if (previous === next) {
+			return;
+		}
+		this.handleTextMutation(previous, null);
+	}
+
+	private charAt(row: number, column: number): string {
+		const lines = this.getLinesSnapshot();
+		if (row < 0 || row >= lines.length) {
+			return '';
+		}
+		const line = lines[row];
+		if (column < 0 || column >= line.length) {
+			return '';
+		}
+		return line.charAt(column);
+	}
+
+	private measureRawText(text: string): number {
+		if (!text) {
+			return 0;
+		}
+		const normalized = this.caseInsensitive && this.font.getVariant() === 'tiny' ? text.toUpperCase() : text;
+		return this.font.measure(normalized);
+	}
+
+	private normalizeInputCase(text: string): string {
+		if (!this.caseInsensitive) {
+			return text;
+		}
+		let inString = false;
+		let quote: string | null = null;
+		let escapeNext = false;
+		let needsNormalization = false;
+		for (let i = 0; i < text.length; i += 1) {
+			const ch = text.charAt(i);
+			if (inString) {
+				if (escapeNext) {
+					escapeNext = false;
+					continue;
+				}
+				if (ch === '\\') {
+					escapeNext = true;
+					continue;
+				}
+				if (ch === quote) {
+					inString = false;
+					quote = null;
+				}
+				continue;
+			}
+			if (ch === '"' || ch === '\'') {
+				inString = true;
+				quote = ch;
+				continue;
+			}
+			if (ch !== ch.toLowerCase()) {
+				needsNormalization = true;
+				break;
+			}
+		}
+		if (!needsNormalization) {
+			return text;
+		}
+		let result = '';
+		inString = false;
+		quote = null;
+		escapeNext = false;
+		for (let i = 0; i < text.length; i += 1) {
+			const ch = text.charAt(i);
+			if (inString) {
+				result += ch;
+				if (escapeNext) {
+					escapeNext = false;
+					continue;
+				}
+				if (ch === '\\') {
+					escapeNext = true;
+					continue;
+				}
+				if (ch === quote) {
+					inString = false;
+					quote = null;
+				}
+				continue;
+			}
+			if (ch === '"' || ch === '\'') {
+				inString = true;
+				quote = ch;
+				result += ch;
+				continue;
+			}
+			result += ch.toLowerCase();
+		}
+		return result;
+	}
+
+	private drawCompletionText(_api: CompletionRenderApi, text: string, x: number, y: number, colorIndex: number): void {
+		const renderer = this.activeCompletionRenderer;
+		if (!renderer) {
+			return;
+		}
+		const renderFont = this.font.getRenderFont();
+		renderer.drawText({ kind: 'print', text, x, y, color: resolvePaletteColor(colorIndex) }, renderFont);
+	}
+
+	private createCompletionRenderApi(renderer: EditorConsoleRenderBackend): CompletionRenderApi {
+		return {
+			rect: (x0, y0, x1, y1, colorIndex) => renderer.drawRect({
+				kind: 'rect',
+				x0,
+				y0,
+				x1,
+				y1,
+				color: resolvePaletteColor(colorIndex),
+			}),
+			rectfill: (x0, y0, x1, y1, colorIndex) => renderer.drawRect({
+				kind: 'fill',
+				x0,
+				y0,
+				x1,
+				y1,
+				color: resolvePaletteColor(colorIndex),
+			}),
+		};
+	}
+
+	private drawCompletionOverlays(renderer: EditorConsoleRenderBackend, surface: Viewport, promptWidth: number): void {
+		this.activeCompletionRenderer = renderer;
+		const api = this.createCompletionRenderApi(renderer);
+		const bounds = {
+			codeTop: PADDING_Y,
+			codeBottom: surface.height - PADDING_Y,
+			codeLeft: PADDING_X,
+			codeRight: surface.width - PADDING_X,
+			textLeft: PADDING_X + promptWidth,
+		};
+		this.completion.drawCompletionPopup(api, bounds);
+		this.completion.drawParameterHintOverlay(api, bounds);
+		this.activeCompletionRenderer = null;
+	}
+
+	private buildConsoleModuleAliases(): Map<string, string> {
+		if (this.field.text.trim().length === 0) {
+			return new Map();
+		}
+		return collectLuaModuleAliases({ source: this.field.text, chunkName: this.consoleChunkName });
+	}
+
+	private buildMemberCompletionItems(request: CompletionMemberRequest): LuaCompletionItem[] {
+		if (request.objectName.length === 0) {
+			return [];
+		}
+		const response = this.listLuaObjectMembersFn({
+			assetId: request.assetId,
+			chunkName: request.chunkName,
+			expression: request.objectName,
+			operator: request.operator,
+		});
+		if (response.length === 0) {
+			return [];
+		}
+		const items: LuaCompletionItem[] = [];
+		for (let index = 0; index < response.length; index += 1) {
+			const entry = response[index];
+			if (!entry || entry.name.length === 0) {
+				continue;
+			}
+			const kind = entry.kind === 'method' ? 'native_method' : 'native_property';
+			const parameters = entry.parameters.length > 0 ? entry.parameters.slice() : undefined;
+			items.push({
+				label: entry.name,
+				insertText: entry.name,
+				sortKey: `${kind}:${entry.name.toLowerCase()}`,
+				kind,
+				detail: entry.detail ?? null,
+				parameters,
+			});
+		}
+		items.sort((a, b) => a.label.localeCompare(b.label));
+		return items;
 	}
 
 	// New helper: wraps display text with a smaller first-line width (after prompt) and full width for following lines.
@@ -440,6 +836,8 @@ export class ConsoleMode {
 		const sel = selectionRange(this.field);
 		const cursorIndex = this.field.cursor;
 		const displayText = this.toDisplayText(this.field.text);
+		let nextCursorInfo: CursorScreenInfo | null = null;
+		const cursorPosition = this.getCursorPosition();
 
 		for (let si = 0; si < wrap.segments.length; si += 1) {
 			const seg = wrap.segments[si];
@@ -479,29 +877,42 @@ export class ConsoleMode {
 			this.drawGlyphRun(renderer, seg, x, y, inputColor);
 
 			// caret rendering: use shared caret style from console_cart_editor
-			if (this.caretVisible) {
-				const segEnd = segStart + segLen;
-				const isLastSegment = si === wrap.segments.length - 1;
-				const caretInSeg = cursorIndex >= segStart && (cursorIndex < segEnd || (isLastSegment && cursorIndex === segEnd));
-				if (caretInSeg) {
-					const local = displayText.slice(segStart, cursorIndex);
-					const caretOffset = this.measureDisplayText(local);
-					// Use shared caret renderer with underlying glyph inversion
-					const nextChar = cursorIndex < displayText.length ? displayText.charAt(cursorIndex) : ' ';
-					const caretWidth = this.font.advance(nextChar);
-					const left = Math.floor(x + caretOffset);
-					const topY = y;
-					const right = left + Math.max(1, Math.floor(caretWidth));
-					const bottom = topY + this.font.lineHeight();
+			const segEnd = segStart + segLen;
+			const isLastSegment = si === wrap.segments.length - 1;
+			const caretInSeg = cursorIndex >= segStart && (cursorIndex < segEnd || (isLastSegment && cursorIndex === segEnd));
+			if (caretInSeg) {
+				const local = displayText.slice(segStart, cursorIndex);
+				const caretOffset = this.measureDisplayText(local);
+				const nextChar = cursorIndex < displayText.length ? displayText.charAt(cursorIndex) : ' ';
+				const caretWidth = this.font.advance(nextChar);
+				const left = Math.floor(x + caretOffset);
+				const topY = y;
+				const right = left + Math.max(1, Math.floor(caretWidth));
+				const bottom = topY + this.font.lineHeight();
+				nextCursorInfo = {
+					row: cursorPosition.row,
+					column: cursorPosition.column,
+					x: left,
+					y: topY,
+					width: Math.max(1, Math.floor(caretWidth)),
+					height: this.font.lineHeight(),
+					baseChar: nextChar,
+					baseColor: OUTPUT_COLORS.stdout,
+				};
+				if (this.caretVisible) {
 					const renderFont = this.font.getRenderFont();
 					const ops: CaretDrawOps = {
 						fillRect: (x0, y0, x1, y1, color) => renderer.drawRect({ kind: 'fill', x0, y0, x1, y1, color }),
 						strokeRect: (x0, y0, x1, y1, color) => renderer.drawRect({ kind: 'rect', x0, y0, x1, y1, color }),
 						drawGlyph: (text, gx, gy, color) => renderer.drawText({ kind: 'print', text, x: gx, y: gy, color }, renderFont),
 					};
-					renderInlineCaret(ops, left, topY, right, bottom, left, /*active*/ true, this.caretColor, nextChar, this.characterBackgroundColor);
+					renderInlineCaret(ops, left, topY, right, bottom, left, true, this.caretColor, nextChar, this.characterBackgroundColor);
 				}
 			}
+		}
+
+		if (nextCursorInfo) {
+			this.cursorScreenInfo = nextCursorInfo;
 		}
 	}
 

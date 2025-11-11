@@ -27,6 +27,8 @@ type MemberCompletionHostRequest = {
     chunkName: string | null;
 };
 
+export type CompletionRenderApi = Pick<BmsxConsoleApi, 'rect' | 'rectfill'>;
+
 export interface CompletionHost {
     // Editor state accessors
     getPlayerIndex(): number;
@@ -43,7 +45,7 @@ export interface CompletionHost {
     revealCursor(): void;
     // Geometry/metrics
     measureText(text: string): number;
-    drawText(api: BmsxConsoleApi, text: string, x: number, y: number, color: number): void;
+    drawText(api: CompletionRenderApi, text: string, x: number, y: number, color: number): void;
     getCursorScreenInfo(): CursorScreenInfo | null;
     getLineHeight(): number;
     getSpaceAdvance(): number;
@@ -310,7 +312,7 @@ export class CompletionController {
         return false;
     }
 
-    public drawCompletionPopup(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
+    public drawCompletionPopup(api: CompletionRenderApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
         const session = this.completionSession;
         const cursorInfo = this.host.getCursorScreenInfo();
         this.completionPopupBounds = null;
@@ -369,7 +371,7 @@ export class CompletionController {
         }
     }
 
-    public drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
+    public drawParameterHintOverlay(api: CompletionRenderApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
         const hint = this.parameterHint;
         const cursorInfo = this.host.getCursorScreenInfo();
         if (!hint || !cursorInfo) return;
