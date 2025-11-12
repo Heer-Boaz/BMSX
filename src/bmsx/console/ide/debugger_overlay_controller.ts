@@ -3,6 +3,7 @@ import { ide_state } from './ide_state';
 import * as constants from './constants';
 import { clamp } from '../../utils/utils.ts';
 import { subscribeDebuggerLifecycleEvents, type DebuggerPauseDisplayPayload, type DebuggerLifecycleEvent } from '../debugger_lifecycle';
+import type { LuaDebuggerSessionMetrics } from '../../lua/debugger.ts';
 
 const MESSAGE_BY_REASON: Record<DebuggerPauseDisplayPayload['reason'], string> = {
 	breakpoint: 'Paused on breakpoint',
@@ -10,7 +11,7 @@ const MESSAGE_BY_REASON: Record<DebuggerPauseDisplayPayload['reason'], string> =
 	exception: 'Paused on exception',
 };
 
-export function showDebuggerPauseOverlay(payload: DebuggerPauseDisplayPayload): void {
+export function showDebuggerPauseOverlay(payload: DebuggerPauseDisplayPayload, metrics: LuaDebuggerSessionMetrics | null): void {
 	if (!ide_state.active) {
 		return;
 	}
@@ -24,7 +25,9 @@ export function showDebuggerPauseOverlay(payload: DebuggerPauseDisplayPayload): 
 	const safeColumn = normalizeIndex(payload.column);
 	updateDebuggerCaret(safeLine, safeColumn);
 	setExecutionStopHighlight(safeLine);
-	const message = MESSAGE_BY_REASON[payload.reason] ?? 'Debugger paused';
+	const baseMessage = MESSAGE_BY_REASON[payload.reason] ?? 'Debugger paused';
+	const metricsText = formatDebuggerMetrics(metrics);
+	const message = metricsText ? `${baseMessage} — ${metricsText}` : baseMessage;
 	ide_state.showMessage(message, constants.COLOR_STATUS_WARNING, 3.0);
 }
 
@@ -61,9 +64,23 @@ function updateDebuggerCaret(row: number, column: number): void {
 	resetBlink();
 }
 
+function formatDebuggerMetrics(metrics: LuaDebuggerSessionMetrics | null): string | null {
+	if (!metrics) {
+		return null;
+	}
+	const parts: string[] = [`Session ${metrics.sessionId}`, `${metrics.pauseCount} stop${metrics.pauseCount === 1 ? '' : 's'}`];
+	if (metrics.exceptionCount > 0) {
+		parts.push(`${metrics.exceptionCount} exception${metrics.exceptionCount === 1 ? '' : 's'}`);
+	}
+	if (metrics.skippedExceptionCount > 0) {
+		parts.push(`${metrics.skippedExceptionCount} skipped`);
+	}
+	return parts.join(' · ');
+}
+
 subscribeDebuggerLifecycleEvents((event: DebuggerLifecycleEvent) => {
 	if (event.type === 'paused' || event.type === 'exception_frame_focus') {
-		showDebuggerPauseOverlay(event.payload);
+		showDebuggerPauseOverlay(event.payload, event.type === 'paused' ? event.metrics ?? null : null);
 		return;
 	}
 	if (event.type === 'continued') {

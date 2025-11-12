@@ -699,6 +699,9 @@ class BrowserInputHub implements InputHub {
 		if (ctrlLike && event.shiftKey && !event.altKey && event.code === 'KeyR') {
 			return true;
 		}
+		if (!ctrlLike && !event.altKey && event.code === 'F8') {
+			return true;
+		}
 		return false;
 	}
 }

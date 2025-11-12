@@ -265,23 +265,23 @@ function playerobject:on_spawn()
 	assert(asc:hasability(playerabilityids.interact), '[PlayerObject:on_spawn] interact ability missing')
 
 		local function begin_overlap(_, _, _, payload)
-			local other = payload.other_id
-			local ingredient = game_state.ingredients[other]
-		if ingredient then
-			self.touch_ingredients[other] = ingredient
-		end
-		local board = game_state.boards[other]
-		if board then
-			self.touch_boards[other] = board
-		end
-		if game_state.corona[other] then
-			self.touch_corona[other] = true
-			request_ability(self.id, playerabilityids.hurt, {
-				payload = {
-					source = other
-				}
-			})
-		end
+			-- local other = payload.other_id
+			-- local ingredient = game_state.ingredients[other]
+		-- if ingredient then
+			-- self.touch_ingredients[other] = ingredient
+		-- end
+		-- local board = game_state.boards[other]
+		-- if board then
+			-- self.touch_boards[other] = board
+		-- end
+		-- if game_state.corona[other] then
+			-- self.touch_corona[other] = true
+			-- request_ability(self.id, playerabilityids.hurt, {
+				-- payload = {
+					-- source = other
+				-- }
+			-- })
+		-- end
 	end
 
 		local function end_overlap(_, _, _, payload)

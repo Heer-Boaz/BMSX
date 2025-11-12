@@ -4,6 +4,7 @@ import type { BmsxConsoleMetadata } from '../types';
 import type { EditorResolutionMode, TopBarButtonId } from './types';
 import type { RectBounds } from '../../rompack/rompack.ts';
 import type { DebuggerExecutionState } from '../debugger_lifecycle';
+import type { LuaDebuggerSessionMetrics } from '../../lua/debugger.ts';
 
 export interface TopBarHost {
 	viewportWidth: number;
@@ -26,6 +27,7 @@ export interface TopBarHost {
 	};
 	debuggerControls: {
 		executionState: DebuggerExecutionState;
+		sessionMetrics: LuaDebuggerSessionMetrics | null;
 	};
 }
 
@@ -108,6 +110,10 @@ export function renderTopBar(api: BmsxConsoleApi, host: TopBarHost): void {
 		host.drawText(api, entry.label, bounds.left + constants.HEADER_BUTTON_PADDING_X, bounds.top + constants.HEADER_BUTTON_PADDING_Y, textColor);
 		buttonX = right + constants.HEADER_BUTTON_SPACING;
 	}
+	const debuggerSummary =
+		debuggerPaused && host.debuggerControls.sessionMetrics
+			? formatDebuggerTopBarMetrics(host.debuggerControls.sessionMetrics)
+			: null;
 
 	const wrapActive = host.wordWrapEnabled;
 	const wrapFill = wrapActive ? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND;
@@ -154,8 +160,28 @@ export function renderTopBar(api: BmsxConsoleApi, host: TopBarHost): void {
 	const resolutionLabelY = buttonTop + constants.HEADER_BUTTON_PADDING_Y;
 	host.drawText(api, resolutionLabel, resolutionLabelX, resolutionLabelY, resolutionTextColor);
 
-	host.drawText(api, host.metadata.title.toUpperCase(), 4, primaryBarHeight + 1, constants.COLOR_TOP_BAR_TEXT);
+	const titleY = primaryBarHeight + 1;
+	host.drawText(api, host.metadata.title.toUpperCase(), 4, titleY, constants.COLOR_TOP_BAR_TEXT);
 	const versionSuffix = host.dirty ? '*' : '';
 	const version = `v${host.metadata.version}${versionSuffix}`;
-	host.drawText(api, version, host.viewportWidth - host.measureText(version) - 4, primaryBarHeight + 1, constants.COLOR_TOP_BAR_TEXT);
+	const versionWidth = host.measureText(version);
+	let versionX = host.viewportWidth - versionWidth - 4;
+	if (debuggerSummary) {
+		const summaryWidth = host.measureText(debuggerSummary);
+		const summaryX = Math.max(4, versionX - summaryWidth - 8);
+		host.drawText(api, debuggerSummary, summaryX, titleY, constants.COLOR_TOP_BAR_TEXT);
+		versionX = Math.max(summaryX - 4, versionX);
+	}
+	host.drawText(api, version, versionX, titleY, constants.COLOR_TOP_BAR_TEXT);
+}
+
+function formatDebuggerTopBarMetrics(metrics: LuaDebuggerSessionMetrics): string {
+	const parts: string[] = [`S${metrics.sessionId}`, `P${metrics.pauseCount}`];
+	if (metrics.exceptionCount > 0) {
+		parts.push(`E${metrics.exceptionCount}`);
+	}
+	if (metrics.skippedExceptionCount > 0) {
+		parts.push(`Sk${metrics.skippedExceptionCount}`);
+	}
+	return parts.join(' ');
 }

@@ -57,6 +57,7 @@ import type { ReferenceCatalogEntry } from './reference_sources';
 import { ConsoleCodeLayout } from './code_layout';
 import type { TimerHandle } from '../../platform';
 import type { DebuggerExecutionState } from '../debugger_lifecycle';
+import type { LuaDebuggerSessionMetrics } from '../../lua/debugger.ts';
 
 export type NavigationHistoryEntry = {
 	contextId: string;
@@ -107,6 +108,7 @@ export const workspaceDirtyCache = new Map<string, string>();
 
 export type DebuggerControlsState = {
 	executionState: DebuggerExecutionState;
+	sessionMetrics: LuaDebuggerSessionMetrics | null;
 };
 
 export interface IdeState {
@@ -391,6 +393,7 @@ export const ide_state: IdeState = {
 	},
 	debuggerControls: {
 		executionState: 'inactive',
+		sessionMetrics: null,
 	},
 	tabButtonBounds: new Map<string, RectBounds>(),
 	tabCloseButtonBounds: new Map<string, RectBounds>(),

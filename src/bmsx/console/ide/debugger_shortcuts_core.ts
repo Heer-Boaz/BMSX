@@ -7,7 +7,13 @@ export type DebuggerShortcutContext = {
 	consumeKey: (code: string) => void;
 };
 
-export type DebuggerCommand = 'continue' | 'stepOver' | 'stepInto' | 'stepOut';
+export type DebuggerCommand =
+	| 'continue'
+	| 'stepOver'
+	| 'stepInto'
+	| 'stepOut'
+	| 'ignoreException'
+	| 'stepOutException';
 
 export interface DebuggerCommandExecutor {
 	isSuspended(): boolean;
@@ -26,10 +32,16 @@ export function evaluateDebuggerShortcuts(
 	}
 	if (context.isKeyJustPressed('F5')) {
 		context.consumeKey('F5');
+		if (context.shiftDown) {
+			return executor.issueDebuggerCommand('ignoreException');
+		}
 		return executor.issueDebuggerCommand('continue');
 	}
 	if (context.isKeyJustPressed('F10')) {
 		context.consumeKey('F10');
+		if (context.shiftDown) {
+			return executor.issueDebuggerCommand('stepOutException');
+		}
 		return executor.issueDebuggerCommand('stepOver');
 	}
 	if (context.isKeyJustPressed('F11')) {

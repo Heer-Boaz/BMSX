@@ -118,6 +118,8 @@ test('debugger commands dispatch only when a suspension is active', () => {
 		stepOverLuaDebugger: () => calls.push('stepOver'),
 		stepIntoLuaDebugger: () => calls.push('stepInto'),
 		stepOutLuaDebugger: () => calls.push('stepOut'),
+		ignoreLuaException: () => calls.push('ignoreException'),
+		stepOutLuaException: () => calls.push('stepOutException'),
 	};
 	setDebuggerRuntimeAccessor(() => runtimeStub);
 	try {
@@ -144,16 +146,19 @@ test('debugger commands dispatch only when a suspension is active', () => {
 				hint: null,
 			},
 			callStack: suspension.callStack,
+			metrics: null,
 		});
 		assert.equal(executor.isSuspended(), true);
 
 		assert.equal(issueDebuggerCommand('stepInto'), true);
-		assert.deepEqual(calls, ['stepInto']);
+		assert.equal(issueDebuggerCommand('ignoreException'), true);
+		assert.equal(issueDebuggerCommand('stepOutException'), true);
+		assert.deepEqual(calls, ['stepInto', 'ignoreException', 'stepOutException']);
 
 		emitDebuggerLifecycleEvent({ type: 'continued', mode: 'continue' });
 		assert.equal(executor.isSuspended(), false);
 		assert.equal(issueDebuggerCommand('stepOut'), false);
-		assert.deepEqual(calls, ['stepInto']);
+		assert.deepEqual(calls, ['stepInto', 'ignoreException', 'stepOutException']);
 	}
 	finally {
 		setDebuggerRuntimeAccessor(null);

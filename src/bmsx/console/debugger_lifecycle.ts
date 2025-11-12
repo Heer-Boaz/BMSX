@@ -1,4 +1,5 @@
 import type { LuaCallFrame, LuaDebuggerPauseSignal } from '../lua/runtime.ts';
+import type { LuaDebuggerSessionMetrics } from '../lua/debugger.ts';
 
 export type DebuggerPauseFrameHint = { assetId: string | null; path?: string | null } | null;
 
@@ -17,6 +18,7 @@ export type DebuggerLifecyclePausedEvent = {
 	suspension: LuaDebuggerPauseSignal;
 	payload: DebuggerPauseDisplayPayload;
 	callStack: ReadonlyArray<LuaCallFrame>;
+	metrics: LuaDebuggerSessionMetrics | null;
 };
 
 export type DebuggerLifecycleContinuedEvent = {

@@ -16,6 +16,12 @@ export function initializeDebuggerUiState(): void {
 function handleDebuggerLifecycleEvent(event: DebuggerLifecycleEvent): void {
 	if (event.type === 'continued') {
 		updateExecutionState('running');
+		ide_state.debuggerControls.sessionMetrics = null;
+		return;
+	}
+	if (event.type === 'paused') {
+		ide_state.debuggerControls.sessionMetrics = event.metrics ?? null;
+		updateExecutionState('paused');
 		return;
 	}
 	updateExecutionState('paused');

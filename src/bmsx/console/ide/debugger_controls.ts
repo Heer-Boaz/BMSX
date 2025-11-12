@@ -11,6 +11,8 @@ type RuntimeDebuggerApi = {
 	stepOverLuaDebugger(): void;
 	stepIntoLuaDebugger(): void;
 	stepOutLuaDebugger(): void;
+	ignoreLuaException(): void;
+	stepOutLuaException(): void;
 };
 
 const DEBUGGER_LOG_PREFIX = '[DebuggerCommandExecutor]';
@@ -39,12 +41,21 @@ class RuntimeDebuggerCommandExecutor implements DebuggerCommandExecutor {
 		if (!runtime) {
 			return null;
 		}
-		const { continueLuaDebugger, stepIntoLuaDebugger, stepOverLuaDebugger, stepOutLuaDebugger } = runtime;
+		const {
+			continueLuaDebugger,
+			stepIntoLuaDebugger,
+			stepOverLuaDebugger,
+			stepOutLuaDebugger,
+			ignoreLuaException,
+			stepOutLuaException,
+		} = runtime;
 		if (
 			typeof continueLuaDebugger !== 'function' ||
 			typeof stepIntoLuaDebugger !== 'function' ||
 			typeof stepOverLuaDebugger !== 'function' ||
-			typeof stepOutLuaDebugger !== 'function'
+			typeof stepOutLuaDebugger !== 'function' ||
+			typeof ignoreLuaException !== 'function' ||
+			typeof stepOutLuaException !== 'function'
 		) {
 			return null;
 		}
@@ -80,6 +91,14 @@ class RuntimeDebuggerCommandExecutor implements DebuggerCommandExecutor {
 				return true;
 			case 'stepOut':
 				runtime.stepOutLuaDebugger();
+				this.logCommand(command, true, 'ok');
+				return true;
+			case 'ignoreException':
+				runtime.ignoreLuaException();
+				this.logCommand(command, true, 'ok');
+				return true;
+			case 'stepOutException':
+				runtime.stepOutLuaException();
 				this.logCommand(command, true, 'ok');
 				return true;
 			default:

@@ -84,7 +84,7 @@ type DebuggerPauseContext = {
 	readonly reason: LuaDebuggerPauseReason;
 };
 
-type LuaExceptionResumeStrategy = 'propagate' | 'skip_statement';
+export type LuaExceptionResumeStrategy = 'propagate' | 'skip_statement';
 
 export interface LuaHostAdapter {
 	toLua(value: unknown, interpreter: LuaInterpreter): LuaValue;
@@ -454,7 +454,15 @@ export class LuaInterpreter {
         if (this.lastFaultCallStack.length > 0 && depth < this.lastFaultDepth) {
             return;
         }
-        this.lastFaultCallStack = this.callStack.map(frame => ({
+        const snapshot = this.callStack.map(frame => ({
+            functionName: frame.functionName,
+            source: frame.source,
+            line: frame.line,
+            column: frame.column,
+        }));
+        const controller = this.debuggerController;
+        const decorated = controller ? controller.decorateCallStack(snapshot, { consume: false }) : snapshot;
+        this.lastFaultCallStack = decorated.map(frame => ({
             functionName: frame.functionName,
             source: frame.source,
             line: frame.line,
@@ -592,6 +600,7 @@ export class LuaInterpreter {
 	private createDebuggerPauseSignal(context: DebuggerPauseContext, continuation: () => ExecutionSignal): ExecutionSignal {
 		const envSnapshot = this.envStack.slice();
 		const callStackSnapshot = this.cloneCallStack();
+		const callStackForSignal = context.controller.decorateCallStack(callStackSnapshot);
 		const callRange = this.currentCallRange;
 		const currentChunk = this.currentChunk;
 		const chunkEnvironment = this.chunkEnvironment;
@@ -603,7 +612,7 @@ export class LuaInterpreter {
 				line: context.line,
 				column: context.column,
 			},
-			callStack: callStackSnapshot,
+			callStack: callStackForSignal,
 			resume: () => {
 				context.controller.suppressNextAtBoundary(context.chunk, context.line, context.depth);
 				return this.withInterpreterSnapshot(envSnapshot, callStackSnapshot, callRange, currentChunk, chunkEnvironment, continuation);
@@ -622,8 +631,10 @@ export class LuaInterpreter {
 		if (!this.debuggerController) {
 			throw error;
 		}
+		const controller = this.debuggerController;
 		const envSnapshot = this.envStack.slice();
 		const callStackSnapshot = this.cloneCallStack();
+		const callStackForSignal = controller.decorateCallStack(callStackSnapshot);
 		const callRange = this.currentCallRange;
 		const currentChunk = this.currentChunk;
 		const chunkEnvironment = this.chunkEnvironment;
@@ -649,7 +660,7 @@ export class LuaInterpreter {
 				line,
 				column,
 			},
-			callStack: callStackSnapshot,
+			callStack: callStackForSignal,
 			resume: () => {
 				const strategy = this.consumeExceptionResumeStrategy();
 				if (strategy === 'skip_statement') {

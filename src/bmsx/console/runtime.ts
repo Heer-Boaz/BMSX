@@ -13,7 +13,7 @@ import {
 	type ExecutionSignal,
 	isLuaDebuggerPauseSignal,
 } from '../lua/runtime.ts';
-import { LuaDebuggerController } from '../lua/debugger.ts';
+import { LuaDebuggerController, type LuaDebuggerResumeCommand } from '../lua/debugger.ts';
 import { LuaEnvironment } from '../lua/environment.ts';
 import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from '../lua/value.ts';
 import { createLuaTable, isLuaNativeValue, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../lua/value.ts';
@@ -385,6 +385,7 @@ export class BmsxConsoleRuntime extends Service {
 	private luaDebuggerController: LuaDebuggerController | null = null;
 	private luaDebuggerSuspension: LuaDebuggerPauseSignal | null = null;
 	private debuggerHaltsGame = false;
+	private debuggerAutoActivateOnNextPause = false;
 	private lastFrameTimestampMs = 0;
 	private overlayState = { console: false, editor: false };
 	private currentFrameState: ConsoleFrameState | null = null;
@@ -545,12 +546,15 @@ export class BmsxConsoleRuntime extends Service {
 		if (this.luaDebuggerSuspension === signal) {
 			return;
 		}
+		const autoActivateOnPause = this.debuggerAutoActivateOnNextPause;
+		this.debuggerAutoActivateOnNextPause = false;
 		const controller = this.ensureLuaDebuggerController();
-		controller.clearSuppressedBoundaries();
+		const sessionMetrics = controller.handlePause(signal);
 		this.luaDebuggerSuspension = signal;
 		this.debuggerHaltsGame = true;
 		this.setDebuggerPaused(true, { syncGlobal: false });
-		if (signal.reason === 'exception') {
+		const shouldActivateEditor = signal.reason === 'exception' || autoActivateOnPause;
+		if (shouldActivateEditor) {
 			try {
 				this.ensureEditorActive();
 			}
@@ -576,6 +580,7 @@ export class BmsxConsoleRuntime extends Service {
 			suspension: signal,
 			payload,
 			callStack: signal.callStack,
+			metrics: sessionMetrics,
 		});
 	}
 	private pauseDebuggerForException(
@@ -620,37 +625,19 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private resumeLuaDebugger(
-		mode: 'continue' | 'into' | 'over' | 'out',
-		options?: { stepDepthOverride?: number },
-	): void {
-		const suspension = this.luaDebuggerSuspension;
+	private resumeLuaDebugger(command: LuaDebuggerResumeCommand, options?: { stepDepthOverride?: number }): void {
+		const suspension = this.requireLuaDebuggerSuspension(`resume(${command})`);
 		const controller = this.luaDebuggerController;
-		if (!suspension || !controller) {
-			return;
+		if (!controller) {
+			throw new Error('[BmsxConsoleRuntime] Lua debugger controller unavailable during resume.');
 		}
-		controller.clearSuppressedBoundaries();
-		const baseDepth = suspension.callStack.length;
-		const fallbackDepth = mode === 'out' ? Math.max(0, baseDepth - 1) : baseDepth;
-		const targetDepth =
-			typeof options?.stepDepthOverride === 'number' ? Math.max(0, options.stepDepthOverride) : fallbackDepth;
 		const interpreter = this.luaInterpreter;
-		const exceptionPause = suspension.reason === 'exception';
-		if (exceptionPause && interpreter) {
-			interpreter.setExceptionResumeStrategy('skip_statement');
-			controller.unsuppressBoundary(suspension.location.chunk, suspension.location.line, baseDepth);
-		}
-		if (mode === 'into') {
-			controller.requestStepInto();
-		}
-		else if (mode === 'over' || mode === 'out') {
-			controller.requestStepOver(targetDepth);
-		}
-		else {
-			controller.clearStepping();
+		const strategy = controller.prepareResume(command, suspension, options);
+		if (interpreter) {
+			interpreter.setExceptionResumeStrategy(strategy);
 		}
 		this.luaRuntimeFailed = false;
-		const resumeMode = this.toDebuggerResumeMode(mode);
+		const resumeMode = this.toDebuggerResumeMode(command);
 		emitDebuggerLifecycleEvent({ type: 'continued', mode: resumeMode });
 		this.luaDebuggerSuspension = null;
 		this.debuggerHaltsGame = false;
@@ -663,10 +650,9 @@ export class BmsxConsoleRuntime extends Service {
 			const result = suspension.resume();
 			if (result.kind === 'pause') {
 				this.onLuaDebuggerPause(result);
+				return;
 			}
-				else {
-					// Remain in continued state until the runtime yields control back to the IDE.
-				}
+			controller.handleSilentResumeResult(command, suspension);
 		}
 		catch (error) {
 			if (isLuaDebuggerPauseSignal(error)) {
@@ -677,14 +663,14 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private toDebuggerResumeMode(mode: 'continue' | 'into' | 'over' | 'out'): DebuggerResumeMode {
-		if (mode === 'into') {
+	private toDebuggerResumeMode(command: LuaDebuggerResumeCommand): DebuggerResumeMode {
+		if (command === 'stepInto') {
 			return 'stepInto';
 		}
-		if (mode === 'over') {
+		if (command === 'stepOver') {
 			return 'stepOver';
 		}
-		if (mode === 'out') {
+		if (command === 'stepOut' || command === 'stepOutException') {
 			return 'stepOut';
 		}
 		return 'continue';
@@ -707,24 +693,39 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public stepIntoLuaDebugger(): void {
-		this.resumeLuaDebugger('into');
+		this.resumeLuaDebugger('stepInto');
 	}
 
 	public stepOverLuaDebugger(): void {
-		this.resumeLuaDebugger('over');
+		this.resumeLuaDebugger('stepOver');
 	}
 
 	public stepOutLuaDebugger(): void {
-		const suspension = this.luaDebuggerSuspension;
-		if (!suspension) {
-			return;
-		}
+		const suspension = this.requireLuaDebuggerSuspension('stepOut');
 		const targetDepth = Math.max(0, suspension.callStack.length - 1);
-		this.resumeLuaDebugger('out', { stepDepthOverride: targetDepth });
+		this.resumeLuaDebugger('stepOut', { stepDepthOverride: targetDepth });
+	}
+
+	public ignoreLuaException(): void {
+		this.resumeLuaDebugger('ignoreException');
+	}
+
+	public stepOutLuaException(): void {
+		const suspension = this.requireLuaDebuggerSuspension('stepOutException');
+		const targetDepth = Math.max(0, suspension.callStack.length - 1);
+		this.resumeLuaDebugger('stepOutException', { stepDepthOverride: targetDepth });
 	}
 
 	public getLuaDebuggerSuspension(): LuaDebuggerPauseSignal | null {
 		return this.luaDebuggerSuspension;
+	}
+
+	private requireLuaDebuggerSuspension(context: string): LuaDebuggerPauseSignal {
+		const suspension = this.luaDebuggerSuspension;
+		if (!suspension) {
+			throw new Error(`[BmsxConsoleRuntime] ${context} requires an active Lua debugger suspension.`);
+		}
+		return suspension;
 	}
 
 	private assertCompatibleOptions(options: BmsxConsoleRuntimeOptions): void {
@@ -767,6 +768,50 @@ export class BmsxConsoleRuntime extends Service {
 				this.toggleConsoleResolutionMode();
 			}
 		}
+		const editorActive = this.editor?.isActive() === true;
+		if (this.handleGlobalDebuggerHotkeys({ shiftDown, ctrlDown, editorActive, getState, consume })) {
+			return;
+		}
+	}
+
+	private handleGlobalDebuggerHotkeys(args: {
+		shiftDown: boolean;
+		ctrlDown: boolean;
+		editorActive: boolean;
+		getState: (code: string) => ButtonState | null | undefined;
+		consume: (code: string) => void;
+	}): boolean {
+		if (args.ctrlDown) {
+			return false;
+		}
+		const { getState, consume } = args;
+		if (this.shouldAcceptConsoleHotkey('debugger-f8-step', getState('F8'))) {
+			consume('F8');
+			this.beginGlobalDebuggerStepping();
+			return true;
+		}
+		return false;
+	}
+
+	private beginGlobalDebuggerStepping(): void {
+		if (this.luaDebuggerSuspension) {
+			console.log('[LuaDebugger] Global F8 step-over requested while suspended.');
+			if (this.editor?.isActive() !== true) {
+				this.debuggerAutoActivateOnNextPause = true;
+			}
+			this.stepOverLuaDebugger();
+			return;
+		}
+		const controller = this.ensureLuaDebuggerController();
+		if (this.editor?.isActive() !== true) {
+			this.debuggerAutoActivateOnNextPause = true;
+		}
+		if (controller.hasActiveSteppingRequest()) {
+			console.log('[LuaDebugger] Global F8 step already pending; waiting for next pause.');
+			return;
+		}
+		console.log('[LuaDebugger] Global F8 step armed for next statement.');
+		controller.requestStepInto();
 	}
 
 	private shouldAcceptConsoleHotkey(code: string, state: ButtonState | null | undefined): boolean {
@@ -1334,12 +1379,12 @@ export class BmsxConsoleRuntime extends Service {
 
 	public boot(reason?: string): void {
 		const bootReason = reason ?? 'unspecified';
-		try { console.info(`[BmsxConsoleRuntime] Boot: ${bootReason}`); } catch { /* ignore */ }
+		console.info(`[BmsxConsoleRuntime] Boot: ${bootReason}`);
 		// Guard against unintended reboots while in a failed Lua runtime state.
 		// Explicit callers should provide a reason. Unspecified reboots are ignored
 		// when the Lua VM has failed, to preserve editor resume semantics.
 		if (this.luaRuntimeFailed && bootReason === 'unspecified') {
-			try { console.warn('[BmsxConsoleRuntime] Ignoring boot without reason during Lua failure state.'); } catch { /* ignore */ }
+			console.warn('[BmsxConsoleRuntime] Ignoring boot without reason during Lua failure state.');
 			return;
 		}
 		this.luaDebuggerSuspension = null;
