@@ -1,4 +1,5 @@
 import { $, World, build_fsm, new_vec3, State, StateMachineBlueprint, type EventPayload } from 'bmsx';
+import { createGameEvent } from 'bmsx/core/game_event';
 import { Eila } from './eila';
 import { Fighter } from './fighter';
 import { Hud } from './hud';
@@ -96,11 +97,15 @@ export class EilaModelFSM {
 						if (!this.getWorldObject('title')) {
 							this.spawn(new TitleScreen(), new_vec3(0, 0, 0));
 						}
-						this.getFromCurrentSpace('title').sc.dispatch_event('reset', this);
+						const title = this.getFromCurrentSpace('title');
+						const titleEvent = createGameEvent({ type: 'reset', emitter: this });
+						title.sc.dispatch_event(titleEvent);
 						if (!this.getWorldObject('gordijn')) {
 							this.spawn(new Gordijn(), new_vec3(0, 0, 100));
 						}
-						this.getFromCurrentSpace('gordijn').sc.dispatch_event('reset', this);
+						const curtain = this.getFromCurrentSpace('gordijn');
+						const curtainEvent = createGameEvent({ type: 'reset', emitter: this });
+						curtain.sc.dispatch_event(curtainEvent);
 					},
 					on: {
 						gamestart_selected: '/game',

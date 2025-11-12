@@ -9,6 +9,7 @@ import { InputAbilityComponent } from '../component/inputabilitycomponent';
 import { compileProgram, validateProgramAbilities, type CompiledProgram, type CompiledBinding, type EvalContext, type PatternPredicate, type EffectExecutor } from '../gas/input_ability_compiler';
 import { isInputAbilityProgram, type InputAbilityProgram } from '../gas/input_ability_dsl';
 import { filterIterable } from '../utils/utils';
+import type { GameEvent } from '../core/game_event';
 
 let assetProgramsValidated = false;
 
@@ -75,7 +76,7 @@ export class InputAbilitySystem extends ECSystem {
 			const ownerId = asc.parentid ?? obj.id;
 
 			const programKey = this.resolveProgramKey(component, obj);
-			const queuedEvents: Array<{ event: string; payload?: unknown }> = [];
+			const queuedEvents: GameEvent[] = [];
 			const ctx: EvalContext = {
 				owner_id: ownerId,
 				playerIndex,
@@ -87,22 +88,21 @@ export class InputAbilitySystem extends ECSystem {
 						input.consumeAction(actions[idx]!);
 					}
 				},
-				pushEvent: (event: string, payload?: unknown) => {
-					queuedEvents.push({ event, payload });
+				pushEvent: (event: GameEvent) => {
+					queuedEvents.push(event);
 				},
 			};
 
 			this.evaluateProgram(program, input, ctx, programKey);
-				for (let idx = 0; idx < queuedEvents.length; idx++) {
-					const evt = queuedEvents[idx]!;
-					GameplayCommandBuffer.instance.push({
-						kind: 'dispatchEvent',
-						target_id: obj.id,
-						event: evt.event,
-						emitter_id: ownerId,
-						payload: evt.payload,
-					});
-				}
+			for (let idx = 0; idx < queuedEvents.length; idx++) {
+				const evt = queuedEvents[idx]!;
+				if (!evt.emitter) evt.emitter = obj;
+				GameplayCommandBuffer.instance.push({
+					kind: 'emit',
+					target_id: obj.id,
+					event: evt,
+				});
+			}
 		}
 		const latchedKeys = Array.from(this.bindingLatch.keys());
 		for (let idx = 0; idx < latchedKeys.length; idx++) {

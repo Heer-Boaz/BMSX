@@ -20,7 +20,8 @@ import { createLuaTable, isLuaNativeValue, isLuaTable, setLuaTableCaseInsensitiv
 import { LuaRuntimeError, LuaError, LuaSyntaxError } from '../lua/errors.ts';
 import { $ } from '../core/game';
 import { Service } from '../core/service';
-import { EventEmitter, type EventPayload, type EventHandler, type StructuredEventPayload } from '../core/eventemitter';
+import { EventEmitter, type EventPayload, type EventHandler } from '../core/eventemitter';
+import type { GameEvent } from '../core/game_event';
 import type { Identifier, Identifiable } from '../rompack/rompack';
 import { OverlayPipelineController } from '../core/pipelines/overlay_controller';
 import { EditorConsoleRenderBackend } from './render_backend';
@@ -4734,9 +4735,12 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.unregisterLuaServiceEvents(binding.service.id);
 		for (const [eventName, handler] of binding.events) {
-			const listener = (emittedEvent: string, emitterObj: Identifiable, payloadValue?: EventPayload) => {
+			const listener = (event: GameEvent) => {
 				try {
-					return handler(binding.table, emittedEvent, emitterObj, payloadValue);
+					const emitterObj = (event.emitter as Identifiable) ?? binding.service;
+					const { type, lane, timeStamp, emitter, target, ...rest } = event as Record<string, unknown>;
+					const payloadValue = Object.keys(rest).length > 0 ? (rest as EventPayload) : undefined;
+					return handler(binding.table, event.type, emitterObj, payloadValue);
 				} catch (error) {
 					if (isLuaDebuggerPauseSignal(error)) {
 						this.onLuaDebuggerPause(error);
@@ -5886,8 +5890,8 @@ export class BmsxConsoleRuntime extends Service {
 	private registerAbilityAction(abilityId: AbilityId, slot: string, handler: LuaHandlerFn): string {
 		const actionId = `lua.ability.${abilityId}.${slot}`;
 		abilityActions.register(actionId, (ctx, params) => {
-			const abilityCtx = ctx as { intentPayload?: unknown; payload?: StructuredEventPayload };
-			abilityCtx.payload = ctx.intentPayload as StructuredEventPayload | undefined;
+			const abilityCtx = ctx as { intentPayload?: unknown; payload?: EventPayload };
+			abilityCtx.payload = ctx.intentPayload as EventPayload | undefined;
 			const effectiveParams = params ?? abilityCtx.payload;
 			const binding = this.luaHandlerCache.unwrap(handler);
 			if (!binding) {

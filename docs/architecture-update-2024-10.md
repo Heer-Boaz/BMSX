@@ -7,6 +7,7 @@
 - Added explicit event-bus lanes with runtime guards (`gameplay` vs `presentation`) and helpers (`Game.emitGameplay` / `Game.emitPresentation`). FSM `emit` actions now default to the presentation lane.
 - Gameplay tag mutations now assert if attempted outside Phase 3 and ability activations flow through the gameplay command buffer so gameplay code cannot touch state outside the sanctioned phases.
 - Event lanes are enforced at runtime (listener lanes vs emit lanes, consistent naming) and gameplay events are captured each frame via the new `GameplayEventRecorder` hook.
+- Game events now flow through `GameEvent` objects created via the `createGameEvent` helper. Provide a single object (`{ type: 'Foo', emitter, ...customProps }`) and push it via `Game.emit*` or the gameplay command buffer; subscribers annotated with `@subscribes*` receive that object as their only argument.
 
 ## Breaking Changes
 - `TickGroup` values and semantics changed. Custom ECS registrations must use the updated groups (`Input`, `AbilityUpdate`, `ModeResolution`, `Physics`, `Animation`, `Presentation`, `EventFlush`).
@@ -19,6 +20,7 @@
 ## Migration Notes
 - Scripts that previously called `asc.tryActivate` directly should switch to `asc.requestAbility` (returns `false` when gating fails). The ability system now enqueues gameplay commands automatically.
 - Gameplay code emitting presentation-only notifications (UI, audio, animation) should use `$.emitPresentation(...)`.
+- Update any `@subscribes*` handlers to accept a single `GameEvent` argument. Use `event.emitter` instead of separate parameters and read structured data directly from the properties you injected when creating the event.
 - Custom FSM YAML can opt into the presentation bus via `emit: { event: 'Foo', lane: 'presentation' }` or rely on the new default.
 - ECS extensions registering physics systems should review priorities against the new `physicsStep` system in the builtin pipeline.
 

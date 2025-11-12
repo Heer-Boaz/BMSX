@@ -17,7 +17,8 @@ import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
 import { Service } from "./service";
 import { RewindBuffer, RewindFrame } from "../serializer/rewind";
 import { World, WorldConfiguration, type SpawnReason } from "./world";
-import { EventEmitter, type EventLane, type EventPayload, type StructuredEventPayload } from "./eventemitter";
+import { EventEmitter } from "./eventemitter";
+import { createGameEvent, EventPayload, GameEvent } from "./game_event";
 import { WorldObject } from "./object/worldobject";
 import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
@@ -172,19 +173,43 @@ export class Game {
 	public get sndmaster(): SoundMaster { return this.registry.get<SoundMaster>('sm')!; }
 	public get platform(): Platform { return this._platform!; }
 
-	public emit(event_name: string, emitter: Identifiable | null, payload?: EventPayload) {
-		const finalPayload = Game.attachLane('any', payload);
-		this.event_emitter.emit(event_name, emitter, finalPayload);
+	public emit(event: GameEvent): void;
+	public emit(event_name: string, emitter: Identifiable | null, payload?: EventPayload): void;
+	public emit(arg0: GameEvent | string, emitter?: Identifiable | null, payload?: EventPayload): void {
+		if (typeof arg0 === 'string') {
+			if (payload && typeof payload !== 'object') throw new Error(`[Game.emit] Payload for '${arg0}' must be an object.`);
+			const event = createGameEvent({ type: arg0, emitter: emitter ?? null, lane: 'any', ...(payload ?? {}) });
+			this.emit(event);
+			return;
+		}
+		this.event_emitter.emit(arg0);
 	}
 
-	public emitGameplay(event_name: string, emitter: Identifiable, payload?: EventPayload): void {
-		const finalPayload = Game.attachLane('gameplay', payload);
-		this.event_emitter.emit(event_name, emitter, finalPayload);
+	public emitGameplay(event: GameEvent): void;
+	public emitGameplay(event_name: string, emitter: Identifiable, payload?: EventPayload): void;
+	public emitGameplay(arg0: GameEvent | string, emitter?: Identifiable, payload?: EventPayload): void {
+		if (typeof arg0 === 'string') {
+			if (!emitter) throw new Error(`[Game.emitGameplay] Emitter required for '${arg0}'.`);
+			if (payload && typeof payload !== 'object') throw new Error(`[Game.emitGameplay] Payload for '${arg0}' must be an object.`);
+			const event = createGameEvent({ type: arg0, emitter, lane: 'gameplay', ...(payload ?? {}) });
+			this.emitGameplay(event);
+			return;
+		}
+		arg0.lane = 'gameplay';
+		this.emit(arg0);
 	}
 
-	public emitPresentation(event_name: string, emitter: Identifiable | null, payload?: EventPayload): void {
-		const finalPayload = Game.attachLane('presentation', payload);
-		this.event_emitter.emit(event_name, emitter, finalPayload);
+	public emitPresentation(event: GameEvent): void;
+	public emitPresentation(event_name: string, emitter: Identifiable | null, payload?: EventPayload): void;
+	public emitPresentation(arg0: GameEvent | string, emitter?: Identifiable | null, payload?: EventPayload): void {
+		if (typeof arg0 === 'string') {
+			if (payload && typeof payload !== 'object') throw new Error(`[Game.emitPresentation] Payload for '${arg0}' must be an object.`);
+			const event = createGameEvent({ type: arg0, emitter: emitter ?? null, lane: 'presentation', ...(payload ?? {}) });
+			this.emitPresentation(event);
+			return;
+		}
+		arg0.lane = 'presentation';
+		this.emit(arg0);
 	}
 
 	public get<T extends Registerable>(id: Identifier): T {
@@ -201,12 +226,6 @@ export class Game {
 
 	public register(value: Registerable): void {
 		this.registry.register(value);
-	}
-
-	private static attachLane(lane: EventLane, payload?: EventPayload): EventPayload {
-		if (payload === undefined || payload === null) return { lane };
-		if (typeof payload === 'object') return { ...(payload as StructuredEventPayload), lane };
-		throw new Error(`[Game] Cannot attach lane '${lane}' to primitive payload emitted via Game API.`);
 	}
 
 	public deregister(id: Identifier | Registerable): void {

@@ -1,11 +1,12 @@
 ﻿import { EventEmitter } from '../core/eventemitter';
+import type { GameEvent } from '../core/game_event';
 import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import { toggleRenderHUD } from '../debugger/renderhud';
 import { toggleECSHUD } from '../debugger/ecshud';
 import { toggleInputHUD } from '../debugger/inputhud';
 import { openDebugOverviewTab, openObjectInspectorTab } from '../console/ide/console_cart_editor';
-import type { Identifier, Identifiable, RegisterablePersistent } from '../rompack/rompack';
+import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
 import { GamepadInput } from './gamepad';
 import { controllerUnassignedToast } from '../ui/ui_toast';
 import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState, PointerBinding, PointerInputMapping } from './inputtypes';
@@ -407,7 +408,7 @@ export class Input implements RegisterablePersistent {
 	private debugHotkeysPaused = false;
 	private readonly additionalCaptureKeys: Set<string> = new Set();
 
-	private readonly handleSpaceChanged = (_event: string, _emitter: Identifiable, _payload?: unknown): void => {
+	private readonly handleSpaceChanged = (_event: GameEvent): void => {
 		for (const player of this.playerInputs) {
 			if (!player) continue;
 			player.clearEdgeState();

@@ -1,4 +1,5 @@
 import { $, GameplayCommandBuffer, InputAbilityComponent, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction, type EventPayload, Component, subscribesToParentScopedEvent, type ComponentAttachOptions, type WorldObjectEventPayloads, V3 } from 'bmsx';
+import { createGameEvent, type GameEvent } from 'bmsx/core/game_event';
 import './fighter_fsms';
 import type { AbilityPayloadFor, AbilityRequestOptions } from 'bmsx/gas/gastypes';
 import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
@@ -124,8 +125,8 @@ export abstract class Fighter extends SpriteObject {
 					},
 					exiting_state(this: Fighter) {
 						this.sc.resume_all_statemachines();
-						$.emitGameplay('i_was_hit', this); // Allow the player to recuperate from the hit quickly.
-						$.emitGameplay('hit_animation_end', this); // The Game Model will handle the hit animation end event, which will hide the hit marker and determine if the fighter is down.
+						$.emitGameplay('i_was_hit', this, { fighter: this }); // Allow the player to recuperate from the hit quickly.
+						$.emitGameplay('hit_animation_end', this, { fighter: this }); // The Game Model will handle the hit animation end event, which will hide the hit marker and determine if the fighter is down.
 					},
 				},
 			}
@@ -161,8 +162,10 @@ export abstract class Fighter extends SpriteObject {
 		inputAbility.program = FIGHTER_INPUT_PROGRAM;
 
 		// Seed locomotion and animation so tags and sprites are valid on the first frame.
-		this.sc.dispatch_event('mode.locomotion.idle', this);
-		this.sc.dispatch_event('animate_idle', this);
+		const locomotion = createGameEvent({ type: 'mode.locomotion.idle', emitter: this });
+		this.sc.dispatch_event(locomotion);
+		const animateIdle = createGameEvent({ type: 'animate_idle', emitter: this });
+		this.sc.dispatch_event(animateIdle);
 	}
 
 	public getAbilityId<Name extends FighterCoreAbilityName>(name: Name): typeof FIGHTER_CORE_ABILITY_IDS[Name] {
@@ -208,7 +211,8 @@ export abstract class Fighter extends SpriteObject {
 			throw new Error('[Fighter] startAttack invoked without attack type.');
 		}
 		this.currentAttackType = attackType;
-		this.sc.dispatch_event(`animate_${attackType}`, this);
+		const attackEvent = createGameEvent({ type: `animate_${attackType}`, emitter: this });
+		this.sc.dispatch_event(attackEvent);
 	}
 
 	public finishAttack(_state: State, payload?: { attackType?: AttackType }): void {
@@ -440,7 +444,8 @@ export abstract class Fighter extends SpriteObject {
 		this.facing = this.facing === 'left' ? 'right' : 'left';
 		if (typeof nextAnimation === 'string') {
 			const attack = nextAnimation as AttackType;
-			this.sc.dispatch_event('mode.action.attack', this, { attackType: attack });
+			const event = createGameEvent({ type: 'mode.action.attack', attackType: attack, emitter: this });
+			this.sc.dispatch_event(event);
 		}
 	}
 
@@ -473,7 +478,10 @@ export class JumpingWhileLeavingScreenComponent extends Component {
 	}
 
 	@subscribesToParentScopedEvent('screen.leaving')
-	public onLeavingScreen(_event_name: string, emitter: Eila, { d }: WorldObjectEventPayloads['screen.leaving']): void {
+	public onLeavingScreen(event: GameEvent): void {
+		const emitter = event.emitter as Eila;
+		const detail = event as GameEvent<'screen.leaving', WorldObjectEventPayloads['screen.leaving']>;
+		const { d } = detail;
 		if (emitter.isJumping) {
 			switch (d) {
 				case 'left':

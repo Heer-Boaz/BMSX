@@ -1,6 +1,6 @@
-import type { EventPayload } from '../core/eventemitter';
 import type { AbilityId, AbilityPayloadFor } from '../gas/gastypes';
 import type { Identifier, vec3 } from '../rompack/rompack';
+import type { GameEvent } from '../core/game_event';
 
 type CommandTable = {
 	'moveto2d': { kind: 'moveto2d'; target_id: Identifier; delta: vec3; };
@@ -9,7 +9,7 @@ type CommandTable = {
 	'posy': { kind: 'posy'; target_id: Identifier; y: number; };
 	'posz': { kind: 'posz'; target_id: Identifier; z: number; };
 	'activateability': { kind: 'activateability'; owner: Identifier; target_id?: Identifier; ability_id: AbilityId; payload?: AbilityPayloadFor<AbilityId>; };
-	'dispatchEvent': { kind: 'dispatchEvent'; target_id: Identifier; event: string; emitter_id?: Identifier; payload?: EventPayload; };
+	'emit': { kind: 'emit'; target_id: Identifier; event: GameEvent; };
 };
 
 export type CommandKind = keyof CommandTable;

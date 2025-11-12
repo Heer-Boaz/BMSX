@@ -1,6 +1,8 @@
 import { $, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3, type RevivableObjectArgs } from 'bmsx';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { BitmapId } from './resourceids';
+import { createGameEvent } from 'bmsx/core/game_event';
+import { TitlePauseBlinkEvent, TitlePlayersOneEvent, TitleResumeBlinkEvent, TitleSwitchEvent } from './events';
 
 function wrapup(state: State) {
 	$.stopMusic();
@@ -109,8 +111,10 @@ export class TitleScreen extends SpriteObject {
 								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
 								this.selectedPlayers = 1;
 								this.cursorVisible = true;
-								this.sc.dispatch_event('players_1', this);
-								this.sc.dispatch_event('resume_blink', this);
+								const playersEvent = createGameEvent({ type: 'players_1', emitter: this });
+								this.sc.dispatch_event(playersEvent);
+								const resumeEvent = createGameEvent({ type: 'resume_blink', emitter: this });
+								this.sc.dispatch_event(resumeEvent);
 							},
 						},
 					},
@@ -125,13 +129,15 @@ export class TitleScreen extends SpriteObject {
 						$.consumeActions(1, ...priorityActions);
 
 						if (priorityActions.some(action => action.action === 'up' || action.action === 'down')) {
-							this.sc.dispatch_event('switch', this);
+							const switchEvent = createGameEvent({ type: 'switch', emitter: this });
+							this.sc.dispatch_event(switchEvent);
 							return;
 						}
 
 						// If a priority action is pressed, start the game.
 						this.cursorVisible = true;
-						this.sc.dispatch_event('pause_blink', this);
+						const pauseEvent = createGameEvent({ type: 'pause_blink', emitter: this });
+						this.sc.dispatch_event(pauseEvent);
 						$.emitPresentation('gamestart_selected', this, { numOfPlayers: this.selectedPlayers });
 					},
 					states: {

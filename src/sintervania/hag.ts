@@ -1,5 +1,6 @@
 import { BStopwatch, CollisionSystem } from 'bmsx';
 import { subscribesToSelfScopedEvent } from 'bmsx/core/eventemitter';
+import type { GameEvent } from 'bmsx/core/game_event';
 import { Animation, AniData } from "bmsx/animation";
 import { BitmapId } from "./resourceids";
 import { ItemType } from "./item";
@@ -59,8 +60,8 @@ export class Hag extends Foe {
 	}
 
 	@subscribesToSelfScopedEvent('overlap.begin')
-	public onOverlapBegin(_event: string, _self: any, payload?: { other_id?: string }) {
-		if (!payload?.other_id) return;
-		if (payload.other_id === belmont.id) belmont.takeDamage(this.damageToPlayer);
+	public onOverlapBegin(event: GameEvent) {
+		const otherId = (event as { other_id?: string }).other_id;
+		if (otherId === belmont.id) belmont.takeDamage(this.damageToPlayer);
 	}
 }

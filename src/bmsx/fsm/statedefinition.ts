@@ -204,7 +204,7 @@ export class StateDefinition {
 	public tick?: StateEventHandler | string | StateActionSpec;
 	public tape_end?: StateEventHandler | string | StateActionSpec;
 	public tape_next?: StateNextHandler | string | StateActionSpec;
-	public entering_state?: StateEventHandler | string | StateActionSpec;
+	public entering_state?: StateExitHandler | string | StateActionSpec;
 	public exiting_state?: StateExitHandler | string | StateActionSpec;
 	public process_input?: StateEventHandler | string | StateActionSpec;
 

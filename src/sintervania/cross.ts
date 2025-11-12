@@ -3,6 +3,7 @@ import { Area, Direction, newArea } from 'bmsx/common';
 import { BitmapId } from './resourceids';
 import { WorldObjectEvents, type WorldObjectEventPayloads } from 'bmsx/worldobject';
 import { subscribesToSelfScopedEvent } from 'bmsx/core/eventemitter';
+import type { GameEvent } from 'bmsx/core/game_event';
 
 export class Cross extends PlayerProjectile {
 	public get hitarea(): Area { return newArea(0, 0, 26, 18); }
@@ -29,13 +30,14 @@ export class Cross extends PlayerProjectile {
 	}
 
 	@subscribesToSelfScopedEvent(WorldObjectEvents.LeaveScreen)
-	private handleLeaveScreen(_event: string, _emitter: Cross, payload: WorldObjectEventPayloads['screen.leave']): void {
-		this.removeFromTheGame(payload.d);
+	private handleLeaveScreen(event: GameEvent): void {
+		const detail = event as GameEvent<'screen.leave', WorldObjectEventPayloads['screen.leave']>;
+		this.removeFromTheGame(detail.d);
 	}
 
 	@subscribesToSelfScopedEvent(WorldObjectEvents.WallCollide)
-	private handleWallCollision(_event: string, _emitter: Cross, payload?: { d?: Direction }): void {
-		if (!payload?.d) return;
-		this.removeFromTheGame(payload.d);
+	private handleWallCollision(event: GameEvent): void {
+		const { d } = event as GameEvent<'wallcollide', { d: Direction }>;
+		if (d) this.removeFromTheGame(d);
 	}
 }

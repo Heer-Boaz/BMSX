@@ -11,18 +11,19 @@ export class FsmEventDispatchSystem extends ECSystem {
 	}
 
 	public override update(): void {
-		const events = GameplayCommandBuffer.instance.drainByKind('dispatchEvent');
+		const events = GameplayCommandBuffer.instance.drainByKind('emit');
 
 		for (const cmd of events) {
 			const target = Registry.instance.get(cmd.target_id); // Allow global objects to be targets too, like services.
 			if (!target) {
-				throw new Error(`[FsmEventDispatchSystem] Event '${cmd.event}' targets unknown object '${cmd.target_id}'.`);
+				throw new Error(`[FsmEventDispatchSystem] Event '${cmd.event.type}' targets unknown object '${cmd.target_id}'.`);
 			}
 			if (!target.sc) {
 				throw new Error(`[FsmEventDispatchSystem] Target '${cmd.target_id}' has no state machine controller.`);
 			}
-			const emitterId = cmd.emitter_id ?? target.id;
-			target.sc.dispatch_event(cmd.event, emitterId, cmd.payload);
+			const event = cmd.event;
+			if (!event.emitter) event.emitter = target;
+			target.sc.dispatch_event(event);
 		}
 	}
 }

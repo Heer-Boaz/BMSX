@@ -1,4 +1,5 @@
 import { $, WorldObject, StateMachineBlueprint, build_fsm, calculateCenteredBlockX, insavegame, wrapGlyphs, type State, type RevivableObjectArgs, CustomVisualComponent, type EventPayload } from 'bmsx';
+import { createGameEvent } from 'bmsx/core/game_event';
 import { DataId } from './resourceids';
 import type { sint } from './sint';
 // import quizItemsData from './vragen.json';
@@ -189,7 +190,8 @@ export class quiz extends WorldObject {
 	 */
 	switchSintToQuestion(this: quiz) {
 		const sint = $.getWorldObject('sint');
-		sint.sc.dispatch_event('vraag', sint);
+		const event = createGameEvent({ type: 'vraag', emitter: sint });
+		sint.sc.dispatch_event(event);
 	}
 
 	/**
@@ -199,7 +201,8 @@ export class quiz extends WorldObject {
 	 */
 	switchSintToAnswer(this: quiz) {
 		const sint = $.getWorldObject('sint');
-		sint.sc.dispatch_event('antwoord', sint);
+		const event = createGameEvent({ type: 'antwoord', emitter: sint });
+		sint.sc.dispatch_event(event);
 	}
 
 	/**
@@ -209,7 +212,8 @@ export class quiz extends WorldObject {
 	 */
 	switchSintToKlaar(this: quiz) {
 		const sint = $.getWorldObject('sint');
-		sint.sc.dispatch_event('klaar', sint);
+		const event = createGameEvent({ type: 'klaar', emitter: sint });
+		sint.sc.dispatch_event(event);
 	}
 
 	@build_fsm()

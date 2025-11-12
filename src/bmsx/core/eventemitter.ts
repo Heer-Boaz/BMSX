@@ -3,13 +3,10 @@ import { Registry } from "./registry";
 import { $ } from './game';
 import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
 import { HandlerRegistry } from './handlerregistry';
+import { createGameEvent, EventLane, EventPayload, GameEvent } from './game_event';
+export { createGameEvent, EventLane, EventPayload, GameEvent } from './game_event';
 
-// export type EventPayload = StructuredEventPayload | string | number | boolean | null | undefined;
-// export type StructuredEventPayload = Record<string, any> & { lane?: EventLane };
-export type EventPayload = Record<string, any> & ({ lane?: EventLane } | undefined);
-export type StructuredEventPayload = EventPayload;
-// Generic event handler that allows more specific payload shapes, e.g. EventHandler<EventPayload & { bladiebla: boolean }>
-export type EventHandler<P extends EventPayload = EventPayload> = (event_name: string, emitter: Identifiable, payload?: P) => any;
+export type EventHandler<E extends GameEvent = GameEvent> = (event: E) => any;
 
 type Listener = { listener: EventHandler, subscriber: any, persistent: boolean, lane: EventLane | 'any' };
 export type ListenerSet = Set<Listener>;
@@ -21,8 +18,6 @@ export interface EventSubscriptionOptions {
 	persistent?: boolean;
 	lane?: EventLane;
 }
-
-export type EventLane = 'any' | 'gameplay' | 'presentation';
 
 /**
  * Represents an object that can subscribe to events.
@@ -121,7 +116,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * - Applies lifecycle gating on delivery: eventhandling_enabled/active/enabled flags, id/parentid registry checks.
 	 * - Optional `wrapper` allows callers to intercept handler invocation (after gating).
 	 */
-	public initClassBoundEventSubscriptions(subscriber: EventSubscriberType, wrapper?: (handler: EventHandler, event_name: string, emitter: Identifiable, payload?: EventPayload) => any) {
+	public initClassBoundEventSubscriptions(subscriber: EventSubscriberType, wrapper?: (handler: EventHandler, event: GameEvent) => any) {
 		const constr = subscriber.constructor;
 		if (!constr?.eventSubscriptions) return;
 
@@ -150,7 +145,7 @@ export class EventEmitter implements RegisterablePersistent {
 		const carrier = subscriber as EventSubscriberType & BoundCarrier;
 		if (carrier[EventEmitter._INIT_DONE]) return;
 
-		const shouldProcess = (_event_name: string, _emitter: Identifiable, _payload?: EventPayload): boolean => {
+		const shouldProcess = (): boolean => {
 			const obj = subscriber as { eventhandling_enabled?: boolean; active?: boolean; enabled?: boolean; id?: Identifier; parentid?: Identifier };
 			if (obj.eventhandling_enabled === false) return false;
 			if (obj.active === false) return false;
@@ -173,13 +168,16 @@ export class EventEmitter implements RegisterablePersistent {
 			if (!handler) {
 				const method = (subscriber as Record<string, unknown>)[subscription.handlerName];
 				if (typeof method !== 'function') throw new Error(`Event handler '${subscription.handlerName}' is not a function on ${subscriber.constructor?.name ?? 'object'}`);
-				const bound = (method as EventHandler).bind(subscriber);
+				const bound = (method as (...args: any[]) => any).bind(subscriber);
 				// Compose default gating with optional caller-provided wrapper
-				handler = ((event_name: string, emitter: Identifiable, payload?: EventPayload) => {
-					if (!shouldProcess(event_name, emitter, payload)) return;
-					if (wrapper) { wrapper(bound, event_name, emitter, payload); }
-					else { bound(event_name, emitter, payload); }
-				});
+				handler = (event: GameEvent) => {
+					if (!shouldProcess()) return;
+					if (wrapper) {
+						wrapper(bound, event);
+						return;
+					}
+					bound(event);
+				};
 				handlerMap.set(key, handler);
 			}
 
@@ -286,70 +284,81 @@ export class EventEmitter implements RegisterablePersistent {
 		}
 	}
 
-	public emit<P extends EventPayload = EventPayload>(event_name: string, emitter: Identifiable, payload?: P): void {
-		const structuredPayload = EventEmitter.asStructuredPayload(payload);
-		if (event_name === 'overlap.begin' && (!structuredPayload || typeof structuredPayload !== 'object')) {
-			throw new Error(`[EventEmitter] overlapBegin emitted without payload.`);
+	public emit<E extends GameEvent = GameEvent>(event: E): void;
+	public emit(event_name: string, emitter: Identifiable, payload?: EventPayload): void;
+	public emit<E extends GameEvent = GameEvent>(arg0: E | string, emitterOrSource?: Identifiable, payload?: EventPayload): void {
+		if (typeof arg0 === 'string') {
+			if (!emitterOrSource) throw new Error(`Event '${arg0}' emitted without emitter.`);
+			if (payload && typeof payload !== 'object') {
+				throw new Error(`Event '${arg0}' payload must be an object.`);
+			}
+			const event = createGameEvent({
+				type: arg0,
+				lane: 'gameplay',
+				emitter: emitterOrSource,
+				...(payload ?? {}),
+			});
+			this.emit(event);
+			return;
 		}
-		const lane: EventLane = structuredPayload?.lane ?? 'gameplay';
-		if (lane === 'gameplay' && emitter == null) {
-			throw new Error(`Gameplay events require an Identifiable emitter. Event "${event_name}" missing emitter id.`);
+		const event = arg0;
+		const eventName = event.type;
+		const emitter = event.emitter;
+		const lane: EventLane = event.lane ?? 'gameplay';
+		if (lane === 'gameplay' && !emitter) {
+			throw new Error(`Gameplay events require an Identifiable emitter. Event "${eventName}" missing emitter id.`);
 		}
 		const self = EventEmitter.instance;
-		const previousLane = self.eventLaneRegistry.get(event_name);
+		const previousLane = self.eventLaneRegistry.get(eventName);
 		if (previousLane && previousLane !== lane) {
-			throw new Error(`Event '${event_name}' emitted with lane '${lane}' but was previously seen on lane '${previousLane}'.`);
+			throw new Error(`Event '${eventName}' emitted with lane '${lane}' but was previously seen on lane '${previousLane}'.`);
 		}
-		self.eventLaneRegistry.set(event_name, lane);
+		self.eventLaneRegistry.set(eventName, lane);
 
-		if (lane === 'gameplay') {
-			GameplayEventRecorder.instance.record(event_name, emitter.id, payload);
+		if (lane === 'gameplay' && emitter) {
+			GameplayEventRecorder.instance.record(event);
 		}
 
 		let anyoneSubscribed = false;
 		const deliver = (set?: ListenerSet) => {
 			if (!set) return;
 			for (const item of set) {
-				if (item.lane !== 'any' && item.lane !== lane) throw new Error(`Event '${event_name}' delivered to listener with mismatched lane '${item.lane}' (event lane: '${lane}').`);
+				if (item.lane !== 'any' && item.lane !== lane) throw new Error(`Event '${eventName}' delivered to listener with mismatched lane '${item.lane}' (event lane: '${lane}').`);
 				anyoneSubscribed = true;
-				item.listener.call(item.subscriber, event_name, emitter, payload);
+				item.listener.call(item.subscriber, event);
 			}
 		};
-		deliver(self.emitterScopeListeners[event_name]?.[emitter.id]);
-		deliver(self.globalScopeListeners[event_name]);
+		if (emitter) {
+			const scoped = self.emitterScopeListeners[eventName]?.[emitter.id];
+			deliver(scoped);
+		}
+		deliver(self.globalScopeListeners[eventName]);
 
-		// Wildcard listeners
-		for (const item of self.anyListeners) if (item.handler(event_name, emitter, payload)) anyoneSubscribed = true; // Call the handler and check if it returns true, which indicates that the event was handled
+		for (const item of self.anyListeners) {
+			if (item.handler(event)) { anyoneSubscribed = true; }
+		}
 
 		const dispatchRegistrySlot = (slotId: string): boolean => {
 			const stub = HandlerRegistry.instance.get(slotId);
 			if (!stub) return false;
-			const outcome = stub.call(emitter, event_name, emitter, payload);
+			const outcome = stub.call(emitter ?? null, event);
 			anyoneSubscribed = true;
 			return outcome === HandlerRegistry.STOP;
 		};
 
-		if (emitter && typeof (emitter as Identifiable).id === 'string') {
-			const emitterId = (emitter as Identifiable).id;
-			if (dispatchRegistrySlot(`event.${emitterId}.${event_name}`)) {
+		if (emitter && typeof emitter.id === 'string') {
+			const emitterId = emitter.id;
+			if (dispatchRegistrySlot(`event.${emitterId}.${eventName}`)) {
 				return;
 			}
 		}
-		if (dispatchRegistrySlot(`event.global.${event_name}`)) {
+		if (dispatchRegistrySlot(`event.global.${eventName}`)) {
 			return;
 		}
 
 		if (!anyoneSubscribed && $.debug) {
-			// const emitterId = emitter ? emitter.id : 'none';
-			// console.warn(`No listeners for event "${event_name}" [${lane}] and emitter "${emitterId}", payload: "${payload ? JSON.stringify(payload) : 'no payload'}"`);
-			// if (self.anyListeners.length === 0) console.warn(`Also, no wildcard listeners for event "${event_name}"!`);
+			// Optional debug logging retained intentionally blank to avoid noise.
 		}
-	}
-
-	private static asStructuredPayload(payload: EventPayload): StructuredEventPayload | undefined {
-		if (!payload) return undefined;
-		if (typeof payload === 'object') return payload as StructuredEventPayload;
-		return undefined;
 	}
 
 	/**
@@ -646,12 +655,23 @@ export function subscribesToGlobalEvent(eventName: string, persistent?: boolean)
  * @param eventName The name of the event to emit.
  * @returns A decorator function that can be applied to a method.
  */
-export function emits_event(eventName: string) {
+export function emits_event(eventName?: string, lane: EventLane = 'gameplay') {
 	return function (value: Function, _context: ClassMethodDecoratorContext) {
 		const originalMethod = value;
-		return function (this: any, payload: EventPayload) {
-			originalMethod.call(this, payload);
-			EventEmitter.instance.emit(eventName, this as Identifiable, payload);
+		return function (this: any, ...args: any[]) {
+			const result = originalMethod.apply(this, args);
+			let event: GameEvent;
+			if (result && typeof result === 'object' && 'type' in result && 'lane' in result) {
+				event = result as GameEvent;
+			} else {
+				if (!eventName) {
+					throw new Error(`@emits_event requires the decorated method to return a GameEvent when no event name is provided.`);
+				}
+				event = createGameEvent({ type: eventName, lane, ...(result ?? {}) as Record<string, unknown> });
+			}
+			if (!event.emitter) event.emitter = this as Identifiable;
+			EventEmitter.instance.emit(event);
+			return event;
 		};
 	};
 }

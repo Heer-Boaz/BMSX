@@ -1,4 +1,5 @@
 import { $, World, InputAbilitySystem, Input, insavegame, Service, subscribesToGlobalEvent, TickGroup, type InputMap, type PointerInputMapping, type RevivableObjectArgs, type WorldModule } from 'bmsx';
+import { createGameEvent, type GameEvent } from 'bmsx/core/game_event';
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { YieArGameState } from './yieargamestate';
@@ -56,7 +57,9 @@ export class EilaEventService extends Service {
 	}
 
 	@subscribesToGlobalEvent('hit_animation_end', true)
-	public handleHitAnimationEndEvent(_event_name: string, emitter: Fighter): void {
+	public handleHitAnimationEndEvent(event: GameEvent): void {
+		const emitter = (event.emitter ?? null) as Fighter | null;
+		if (!emitter) throw new Error('[EilaEventService] hit_animation_end missing fighter emitter.');
 		const otherFighter = this.theOtherFighter(emitter);
 		if (otherFighter) {
 			otherFighter.hideHitMarker();
@@ -68,15 +71,19 @@ export class EilaEventService extends Service {
 			$.stopMusic();
 
 			// Handle that fighter is down
-			emitter.sc.dispatch_event('mode.impact.humiliated', emitter);
+			const humiliated = createGameEvent({ type: 'mode.impact.humiliated', emitter });
+			emitter.sc.dispatch_event(humiliated);
 			if (otherFighter) {
-				otherFighter.sc.dispatch_event('mode.control.stoerheidsdans', otherFighter);
+				const dance = createGameEvent({ type: 'mode.control.stoerheidsdans', emitter: otherFighter });
+				otherFighter.sc.dispatch_event(dance);
 			}
 		}
 	}
 
 	@subscribesToGlobalEvent('humiliated_animation_end', true)
-	public handleHumiliationAnimationEndEvent(_event_name: string, _emitter: Fighter, { character }: { character: string }): void {
+	public handleHumiliationAnimationEndEvent(event: GameEvent): void {
+		const fighter = (event as { fighter?: Fighter }).fighter ?? (event.emitter as Fighter | undefined);
+		if (!fighter) throw new Error('[EilaEventService] humiliated_animation_end missing fighter.');
 		// Track total humiliations for demo state persistence
 		this._humiliationCount++;
 		const player = $.world.getWorldObject<Fighter>('player');
@@ -86,12 +93,18 @@ export class EilaEventService extends Service {
 		const hp_sinterklaas = sinterklaas?.hp ?? 0;
 
 		if (hp_player > 0 && hp_sinterklaas > 0) {
-			sinterklaas?.sc.dispatch_event('mode.locomotion.idle', sinterklaas);
-			player?.sc.dispatch_event('mode.locomotion.idle', player);
+			if (sinterklaas) {
+				const idleS = createGameEvent({ type: 'mode.locomotion.idle', emitter: sinterklaas });
+				sinterklaas.sc.dispatch_event(idleS);
+			}
+			if (player) {
+				const idleP = createGameEvent({ type: 'mode.locomotion.idle', emitter: player });
+				player.sc.dispatch_event(idleP);
+			}
 			return;
 		}
 
-		switch (character) {
+		switch (fighter.id) {
 			case 'eila':
 				$.world.sc.transition_to('gameover');
 				break;

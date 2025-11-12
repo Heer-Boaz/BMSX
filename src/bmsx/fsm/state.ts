@@ -8,7 +8,7 @@ import { BST_MAX_HISTORY, DEFAULT_BST_ID } from './fsmcontroller';
 import { StateDefinitions } from './fsmlibrary';
 import { type id2sstate, type Stateful, type StateTransition, type StateTransitionWithType, type Tape, type TransitionType, type StateEventDefinition, type TickCheckDefinition } from './fsmtypes';
 import { StateDefinition } from './statedefinition';
-import { EventPayload, EventLane } from '../core/eventemitter';
+import { createGameEvent, EventLane, EventPayload, GameEvent } from '../core/game_event';
 import type { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 
 type TransitionExecutionMode = 'immediate' | 'queued' | 'deferred';
@@ -57,7 +57,7 @@ interface TransitionTraceEntry {
 	transitionType: TransitionType;
 	context?: TransitionDiagSnapshot;
 	guard?: TransitionGuardDiagnostics;
-	payload?: EventPayload;
+	payload?: unknown;
 	queueSize?: number;
 	reason?: string;
 }
@@ -88,18 +88,30 @@ function uniqueStrings(values: readonly string[] | undefined): string[] {
 	return Array.from(new Set(values));
 }
 
-function emitMarkerEvent(lane: EventLane | 'any', event: string, target: Stateful, payload?: EventPayload): void {
-	switch (lane) {
-		case 'presentation':
-			$.emitPresentation(event, target, payload);
-			break;
-		case 'gameplay':
-			$.emitGameplay(event, target, payload);
-			break;
-		default:
-			$.event_emitter.emit(event, target, payload);
-			break;
+function resolveEmitterId(event: GameEvent | undefined, fallback: Identifier): Identifier {
+	if (!event || !event.emitter) return fallback;
+	return (event.emitter as Identifiable).id ?? fallback;
+}
+
+function resolveEventPayload(event: GameEvent | undefined): EventPayload | undefined {
+	if (!event) return undefined;
+	const { type, lane, timeStamp, emitter, target, ...rest } = event as Record<string, unknown>;
+	if (Object.keys(rest).length === 0) return undefined;
+	return rest as EventPayload;
+}
+
+function emitMarkerEvent(lane: EventLane | 'any', eventName: string, target: Stateful, payload?: Record<string, unknown>): void {
+	const actualLane: EventLane = lane === 'any' ? 'gameplay' : lane;
+	const event = createGameEvent({ type: eventName, lane: actualLane, emitter: target, ...(payload ?? {}) });
+	if (lane === 'presentation') {
+		$.emitPresentation(event);
+		return;
 	}
+	if (lane === 'gameplay') {
+		$.emitGameplay(event);
+		return;
+	}
+	$.emit(event);
 }
 
 function fireMarkersForFrame(node: State, frame: number): void {
@@ -1610,8 +1622,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @param emitter_id - The identifier of the event emitter.
 	 * @param args - Additional arguments to pass to the event handlers.
 	 */
-	public dispatch_event(eventName: string, emitter_id: Identifier, payload?: EventPayload): boolean {
+	public dispatch_event(event: GameEvent): boolean {
 		if (this.paused) return false;
+
+		const eventName = event.type;
+		const emitterId = resolveEmitterId(event, this.target_id);
+		const payload = resolveEventPayload(event);
 
 		const hasChildren = !!this.states && Object.keys(this.states).length > 0;
 		if (hasChildren) {
@@ -1621,17 +1637,17 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 				throw new Error(`[State] Current child '${this.currentid}' not found in '${this.id}' while dispatching '${eventName}'.`);
 			}
 			const parallels = Object.values(states).filter(s => s.is_concurrent);
-			let handled = cur.dispatch_event(eventName, emitter_id, payload);
-			for (const s of parallels) handled = s.dispatch_event(eventName, emitter_id, payload) || handled;
+			let handled = cur.dispatch_event(event);
+			for (const s of parallels) handled = s.dispatch_event(event) || handled;
 			if (handled) return true;
 		}
 
 		let current: State | undefined = this;
 		let depth = 0;
 		while (current) {
-			const result = current.handleEvent(eventName, emitter_id, payload);
+			const result = current.handleEvent(eventName, emitterId, payload, event);
 			const bubbled = depth > 0 || (!result.handled && !!current.parent);
-			current.emitEventDispatchTrace(eventName, emitter_id, payload, result.handled, bubbled, depth, result.context);
+			current.emitEventDispatchTrace(eventName, emitterId, payload, result.handled, bubbled, depth, result.context);
 			if (result.handled) return true;
 			current = current.parent;
 			depth++;
@@ -1697,7 +1713,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @param args - Additional arguments for the event.
 	 * @returns A boolean indicating whether the event was handled.
 	 */
-	private handleEvent(eventName: string, emitter_id: Identifier, payload?: EventPayload): EventDispatchResult {
+	private handleEvent(eventName: string, emitter_id: Identifier, payload: any, _event?: GameEvent): EventDispatchResult {
 		if (this.paused) return { handled: false };
 		let capturedContext: TransitionDiagContext | undefined;
 		const handled = this.withCriticalSection(() => this.runWithTransitionContext(

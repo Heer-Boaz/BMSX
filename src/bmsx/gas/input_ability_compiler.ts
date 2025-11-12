@@ -3,6 +3,7 @@ import type { AbilityId, AbilityRequestOptions, AbilityRequestResult } from '../
 import { abilityRegistry } from './ability_registry';
 import type { PlayerInput } from '../input/playerinput';
 import type { InputAbilityProgram, Binding, Effect, AbilityRequestDescriptor, EmitGameplayDescriptor } from './input_ability_dsl';
+import { createGameEvent, type GameEvent } from '../core/game_event';
 
 export interface EvalContext {
 	owner_id: string;
@@ -11,7 +12,7 @@ export interface EvalContext {
 	matchesMode: (path: string) => boolean;
 	requestAbility: <Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>) => AbilityRequestResult;
 	consume: (actions: string[]) => void;
-	pushEvent?: (event: string, payload?: unknown) => void;
+	pushEvent?: (event: GameEvent) => void;
 }
 
 export type PatternPredicate = (input: PlayerInput) => boolean;
@@ -211,7 +212,8 @@ function compileEffect(effect: Effect, slot?: string): EffectExecutor {
 			if (!ctx.pushEvent) {
 				throw new Error(`[InputAbilityCompiler] emit.gameplay used in slot '${slot ?? 'unknown'}' without pushEvent handler.`);
 			}
-			ctx.pushEvent(event, payload);
+			const evt = createGameEvent({ type: event, lane: 'gameplay', ...(payload ?? {}) });
+			ctx.pushEvent(evt);
 		};
 	}
 	if (isNestedCommands(effect)) {

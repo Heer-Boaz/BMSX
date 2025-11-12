@@ -1,4 +1,5 @@
-import type { EventLane, EventPayload, EventScope, StructuredEventPayload } from '../core/eventemitter';
+import type { EventScope } from '../core/eventemitter';
+import { createGameEvent, EventLane, type GameEvent } from '../core/game_event';
 import type { GameplayCommand } from '../ecs/gameplay_command_buffer';
 import type { WorldObject } from '../core/object/worldobject';
 import type { Facing, Identifier } from '../rompack/rompack';
@@ -10,8 +11,8 @@ export interface AbilityRuntimeBindings {
 	hasTag(tag: TagId): boolean;
 	addTag(tag: TagId): void;
 	removeTag(tag: TagId): void;
-	dispatchMode(event: string, payload: EventPayload | undefined, target: Identifier | undefined, lane?: EventLane): void;
-	emitGameplay(event: string, payload: EventPayload, lane?: EventLane): void;
+	dispatchMode(event: GameEvent, target: Identifier | undefined): void;
+	emitGameplay(event: GameEvent): void;
 	pushCommand(command: GameplayCommand): void;
 	requestAbility<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult;
 }
@@ -20,12 +21,12 @@ export interface AbilityActionContext {
 	readonly owner: WorldObject;
 	readonly ownerId: Identifier;
 	readonly vars: Record<string, unknown>;
-	readonly intentPayload?: EventPayload;
+	readonly intentPayload?: unknown;
 	hasTag(tag: TagId): boolean;
 	addTag(tag: TagId): void;
 	removeTag(tag: TagId): void;
-	dispatchMode(event: string, payload: EventPayload | undefined, target: Identifier | undefined, lane?: EventLane): void;
-	emitGameplay(event: string, payload: EventPayload, lane?: EventLane): void;
+	dispatchMode(event: GameEvent, target: Identifier | undefined): void;
+	emitGameplay(event: GameEvent): void;
 	pushCommand(command: GameplayCommand): void;
 	requestAbility<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult;
 }
@@ -229,7 +230,7 @@ interface AbilityExecutionContext {
 	readonly runtime: AbilityRuntimeBindings;
 	readonly actions: AbilityActionRegistry;
 	readonly vars: Record<string, unknown>;
-	readonly intentPayload?: EventPayload;
+	readonly intentPayload?: unknown;
 }
 
 export class GameplayAbilityExecution {
@@ -238,7 +239,7 @@ export class GameplayAbilityExecution {
 	private finished: boolean;
 	private completionRan: boolean;
 
-	constructor(definition: GameplayAbilityDefinition, runtime: AbilityRuntimeBindings, actions: AbilityActionRegistry, intentPayload?: EventPayload) {
+	constructor(definition: GameplayAbilityDefinition, runtime: AbilityRuntimeBindings, actions: AbilityActionRegistry, intentPayload?: unknown) {
 		this.ctx = { definition, runtime, actions, vars: {}, intentPayload };
 		this.stack = [{ steps: definition.activation, index: 0 }];
 		this.finished = false;
@@ -287,12 +288,14 @@ export class GameplayAbilityExecution {
 			case 'dispatch': {
 				const payload = step.payload ? resolveRecord(step.payload, this.ctx) : undefined;
 				const target = step.target ? resolveIdentifier(step.target, this.ctx) : undefined;
-				this.ctx.runtime.dispatchMode(step.event, payload, target, step.lane);
+				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
+				this.ctx.runtime.dispatchMode(event, target);
 				return { kind: 'continue' };
 			}
 			case 'emit': {
 				const payload = step.payload ? resolveRecord(step.payload, this.ctx) : undefined;
-				this.ctx.runtime.emitGameplay(step.event, payload, step.lane);
+				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
+				this.ctx.runtime.emitGameplay(event);
 				return { kind: 'continue' };
 			}
 			case 'waitEvent': {
@@ -377,12 +380,14 @@ export class GameplayAbilityExecution {
 			case 'dispatch': {
 				const payload = step.payload ? resolveRecord(step.payload, this.ctx) : undefined;
 				const target = step.target ? resolveIdentifier(step.target, this.ctx) : undefined;
-				this.ctx.runtime.dispatchMode(step.event, payload, target, step.lane);
+				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
+				this.ctx.runtime.dispatchMode(event, target);
 				return;
 			}
 			case 'emit': {
 				const payload = step.payload ? resolveRecord(step.payload, this.ctx) : undefined;
-				this.ctx.runtime.emitGameplay(step.event, payload, step.lane);
+				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
+				this.ctx.runtime.emitGameplay(event);
 				return;
 			}
 			case 'setVar': {
@@ -427,21 +432,21 @@ export class GameplayAbilityExecution {
 	private executeAction(step: CallActionStep): void {
 		const action = this.ctx.actions.get(step.action);
 		const params = step.params ? resolveRecord(step.params, this.ctx) : undefined;
-		const runtime = this.ctx.runtime;
-		const callCtx: AbilityActionContext = {
-			owner: runtime.owner,
-			ownerId: runtime.ownerId,
-			vars: this.ctx.vars,
-			intentPayload: this.ctx.intentPayload,
-			hasTag: (tag: TagId) => runtime.hasTag(tag),
-			addTag: (tag: TagId) => runtime.addTag(tag),
-			removeTag: (tag: TagId) => runtime.removeTag(tag),
-			dispatchMode: (event: string, payload: EventPayload, target: Identifier | undefined, lane?: EventLane) => runtime.dispatchMode(event, payload, target, lane),
-			emitGameplay: (event: string, payload: EventPayload, lane?: EventLane) => runtime.emitGameplay(event, payload, lane),
-			pushCommand: (command: GameplayCommand) => runtime.pushCommand(command),
-			requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => runtime.requestAbility(abilityId, opts),
-		};
-		action(callCtx, params as StructuredEventPayload | undefined);
+			const runtime = this.ctx.runtime;
+			const callCtx: AbilityActionContext = {
+				owner: runtime.owner,
+				ownerId: runtime.ownerId,
+				vars: this.ctx.vars,
+				intentPayload: this.ctx.intentPayload,
+				hasTag: (tag: TagId) => runtime.hasTag(tag),
+				addTag: (tag: TagId) => runtime.addTag(tag),
+				removeTag: (tag: TagId) => runtime.removeTag(tag),
+				dispatchMode: (event: GameEvent, target: Identifier | undefined) => runtime.dispatchMode(event, target),
+				emitGameplay: (event: GameEvent) => runtime.emitGameplay(event),
+				pushCommand: (command: GameplayCommand) => runtime.pushCommand(command),
+				requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => runtime.requestAbility(abilityId, opts),
+			};
+		action(callCtx, params as Record<string, unknown> | undefined);
 	}
 }
 

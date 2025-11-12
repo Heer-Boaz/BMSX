@@ -1,5 +1,6 @@
 import { Component, type ComponentAttachOptions } from '../component/basecomponent';
 import { $ } from '../core/game';
+import { createGameEvent } from '../core/game_event';
 import { M4, V4 } from '../render/3d/math3d';
 import type { asset_id, GLTFModel, GLTFMesh, GLTFAnimation, GLTFAnimationSampler, GLTFNode, color_arr, vec3arr, vec4arr } from '../rompack/rompack';
 import { Mesh as RenderMesh } from '../render/3d/mesh';
@@ -537,13 +538,15 @@ export class MeshComponent extends Component {
 
 	private dispatchMeshAnimationEvent(event: string, payload: Record<string, unknown>, scope?: 'self' | 'global'): void {
 		const parent = this.parentOrThrow();
-		$.emit(event, parent, payload);
+		const busEvent = createGameEvent({ type: event, lane: 'any', emitter: parent, ...(payload ?? {}) });
+		$.emit(busEvent);
 		const sc = parent.sc;
 		if (!sc) {
 			throw new Error(`[MeshComponent] Parent '${parent.id}' is missing a state controller.`);
 		}
 		const name = scope === 'self' ? `$${event}` : event;
-		sc.dispatch_event(name, parent, payload);
+		const fsmEvent = createGameEvent({ type: name, emitter: parent, ...(payload ?? {}) });
+		sc.dispatch_event(fsmEvent);
 	}
 
 	private applyRootMotionDelta(): void {

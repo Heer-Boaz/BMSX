@@ -1,11 +1,11 @@
 import type { Identifier } from '../../rompack/rompack';
 import type { GameplayCommandWithMeta } from '../../ecs/gameplay_command_buffer';
+import type { GameEvent } from '../game_event';
 
 export type RecordedGameplayEvent = {
-	event: string;
+	event: GameEvent;
 	emitterId: Identifier;
 	frame: number;
-	payload?: any;
 };
 
 export class GameplayEventRecorder {
@@ -23,8 +23,12 @@ export class GameplayEventRecorder {
 		this._commands.length = 0;
 	}
 
-	public record(event: string, emitterId: Identifier, payload?: any): void {
-		this._current.push({ event, emitterId, frame: this._frame, payload });
+	public record(event: GameEvent): void {
+		const emitter = event.emitter;
+		if (!emitter) {
+			throw new Error('[GameplayEventRecorder] Gameplay event missing emitter.');
+		}
+		this._current.push({ event, emitterId: emitter.id, frame: this._frame });
 	}
 
 	public recordCommands(commands: ReadonlyArray<GameplayCommandWithMeta>): void {

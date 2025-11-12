@@ -1,5 +1,6 @@
 import { $, base_model_spaces, World, BFont, BGamepadButton, BootArgs, build_fsm, copy_vector, Game, WorldObject, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, GameView, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, CollisionSystem, type Direction } from "bmsx";
 import { subscribesToSelfScopedEvent } from 'bmsx/core/eventemitter';
+import type { GameEvent } from 'bmsx/core/game_event';
 import { GamepadInputMapping, KeyboardButton, KeyboardInputMapping } from 'bmsx';
 import { GameMenu } from "./gamemenu";
 import { BitmapId } from "./resourceids";
@@ -670,11 +671,12 @@ class draaischijf extends SpriteObject {
 
 // Event-driven polish: when the grinding wheel overlaps an imperfection while in 'slijpen' state, nudge its polish state.
 @subscribesToSelfScopedEvent('overlap.stay')
-function onWheelOverlapStay(this: draaischijf, _event: string, _emitter: any, payload?: { other_id?: string }) {
-	if (!payload?.other_id) return;
+function onWheelOverlapStay(this: draaischijf, event: GameEvent) {
+	const otherId = (event as { other_id?: string }).other_id;
+	if (!otherId) return;
 	// Only act while in the active grinding state
 	if (this.sc?.current_state?.def_id !== 'slijpen') return;
-	const other = $.world.getWorldObject<onvolmaaktheid>(payload.other_id);
+	const other = $.world.getWorldObject<onvolmaaktheid>(otherId);
 	if (!other) return;
 	if (other?.is_onvolmaaktheid && other?.polijst_nudge) other.polijst_nudge();
 }

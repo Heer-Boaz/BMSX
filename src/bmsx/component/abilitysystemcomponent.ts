@@ -1,5 +1,5 @@
 import { Component, type ComponentAttachOptions } from './basecomponent';
-import { EventEmitter, type EventLane, type EventPayload, type StructuredEventPayload } from '../core/eventemitter';
+import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
 import type { Identifier } from '../rompack/rompack';
 import type { WorldObject } from '../core/object/worldobject';
@@ -27,6 +27,7 @@ import {
 } from '../gas/gameplay_ability';
 import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
 import type { GameplayCommand } from '../ecs/gameplay_command_buffer';
+import { createGameEvent, EventLane, GameEvent } from '../core/game_event';
 
 export type AbilityTagSnapshot = {
 	explicit: TagId[];
@@ -285,7 +286,7 @@ export class AbilitySystemComponent extends Component {
 
 		const owner = this.ownerOrThrow();
 		const runtime = this.createRuntimeBindings(owner);
-		const execution = new GameplayAbilityExecution(definition, runtime, actions, payload as EventPayload);
+		const execution = new GameplayAbilityExecution(definition, runtime, actions, payload);
 
 		this.pay(definition);
 		const now = this.currentTimeMs();
@@ -467,22 +468,23 @@ export class AbilitySystemComponent extends Component {
 			hasTag: (tag: TagId) => this.hasGameplayTag(tag),
 			addTag: (tag: TagId) => this.addTag(tag),
 			removeTag: (tag: TagId) => this.removeTag(tag),
-			dispatchMode: (event: string, payload: EventPayload | undefined, target: Identifier | undefined, lane?: EventLane) => {
-				this.dispatchModeEvent(ownerId, event, payload, target, lane);
+			dispatchMode: (event: GameEvent, target: Identifier | undefined) => {
+				this.dispatchModeEvent(owner, event, target);
 			},
-			emitGameplay: (event: string, payload: EventPayload, lane?: EventLane) => {
-				if (lane === 'presentation') {
-					$.emitPresentation(event, owner, payload);
+			emitGameplay: (event: GameEvent) => {
+				if (!event.emitter) event.emitter = owner;
+				if (event.lane === 'presentation') {
+					$.emitPresentation(event);
 					return;
 				}
-				if (lane === 'any') {
-					$.emit(event, owner, payload);
+				if (event.lane === 'any') {
+					$.emit(event);
 					return;
 				}
-				if (lane && lane !== 'gameplay') {
-					throw new Error(`[AbilitySystemComponent] Unsupported event lane '${lane}' for emitGameplay.`);
+				if (event.lane && event.lane !== 'gameplay') {
+					throw new Error(`[AbilitySystemComponent] Unsupported event lane '${event.lane}' for emitGameplay.`);
 				}
-				$.emitGameplay(event, owner, payload);
+				$.emitGameplay(event);
 			},
 			pushCommand: (command: GameplayCommand) => GameplayCommandBuffer.instance.push(command),
 			requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => {
@@ -502,18 +504,13 @@ export class AbilitySystemComponent extends Component {
 		else this.grantedTagRefs.delete(tag);
 	}
 
-	private dispatchModeEvent(ownerId: Identifier, event: string, payload: EventPayload | undefined, target: Identifier | undefined, lane?: EventLane): void {
-		if (lane && (payload === undefined || typeof payload !== 'object')) {
-			throw new Error(`[AbilitySystemComponent] Cannot attach lane '${lane}' to non-object payload for event '${event}'.`);
-		}
-		const targetId = target ?? ownerId;
-		const finalPayload = lane && payload ? { ...(payload as Record<string, unknown>), lane } : payload;
+	private dispatchModeEvent(owner: WorldObject, event: GameEvent, target: Identifier | undefined): void {
+		if (!event.emitter) event.emitter = owner;
+		const targetId = target ?? owner.id;
 		GameplayCommandBuffer.instance.push({
-			kind: 'dispatchEvent',
-			event,
+			kind: 'emit',
 			target_id: targetId,
-			emitter_id: ownerId,
-			payload: finalPayload,
+			event,
 		});
 	}
 
@@ -534,8 +531,7 @@ export class AbilitySystemComponent extends Component {
 			}
 			case 'event': {
 				const token: any = { __ascWait: true, key };
-				const listener = (eventName: string) => {
-					if (eventName !== instruction.event) return;
+				const listener = (_event: GameEvent) => {
 					const entry = this._active.get(key);
 					if (!entry) return;
 					const pending = entry.wait;
@@ -594,10 +590,11 @@ export class AbilitySystemComponent extends Component {
 		const now = this.currentTimeMs();
 		const cdUntil = this._cooldownUntil.get(id);
 		const timeLeftMs = cdUntil !== undefined ? Math.max(0, cdUntil - now) : undefined;
-		const payload: StructuredEventPayload = { id, reason };
-		if (source !== undefined) payload.source = source;
-		if (timeLeftMs !== undefined) payload.timeLeftMs = timeLeftMs;
-		$.emitGameplay('AbilityFailed', owner, payload);
+		const detail: Record<string, unknown> = { id, reason };
+		if (source !== undefined) detail.source = source;
+		if (timeLeftMs !== undefined) detail.timeLeftMs = timeLeftMs;
+		const event = createGameEvent({ type: 'AbilityFailed', emitter: owner, lane: 'gameplay', ...detail });
+		$.emitGameplay(event);
 	}
 
 	private findActiveByAbility(id: AbilityId): string | undefined {

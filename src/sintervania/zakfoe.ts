@@ -6,6 +6,7 @@ import { Model } from "./gamemodel";
 import { BSTEventType, sdef, model } from 'bmsx';
 import { WorldObjectEvents, type WorldObjectEventPayloads } from 'bmsx/worldobject';
 import { subscribesToSelfScopedEvent } from 'bmsx/core/eventemitter';
+import type { GameEvent } from 'bmsx/core/game_event';
 
 type AniType = { i: BitmapId, dy: number; };
 
@@ -98,14 +99,15 @@ export class ZakFoe extends Foe {
 	}
 
 	@subscribesToSelfScopedEvent(WorldObjectEvents.WallCollide)
-	private onWallCollision(_event: string, _emitter: ZakFoe, payload?: { d?: Direction }): void {
-		if (!payload?.d) return;
-		this.handleBoundary(payload.d);
+	private onWallCollision(event: GameEvent): void {
+		const dir = (event as { d?: Direction }).d;
+		if (dir) this.handleBoundary(dir);
 	}
 
 	@subscribesToSelfScopedEvent(WorldObjectEvents.LeaveScreen)
-	private onLeaveScreenEvent(_event: string, _emitter: ZakFoe, payload: WorldObjectEventPayloads['screen.leave']): void {
-		this.handleBoundary(payload.d);
+	private onLeaveScreenEvent(event: GameEvent): void {
+		const detail = event as GameEvent<'screen.leave', WorldObjectEventPayloads['screen.leave']>;
+		this.handleBoundary(detail.d);
 	}
 
 	private handleBoundary(direction: Direction): void {

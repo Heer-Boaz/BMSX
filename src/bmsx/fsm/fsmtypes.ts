@@ -1,9 +1,10 @@
 import type { GameplayCommand } from '../ecs/gameplay_command_buffer';
-import type { EventLane, EventPayload, EventScope, EventSubscriber } from "../core/eventemitter";
+import type { EventScope, EventSubscriber } from "../core/eventemitter";
 import type { Identifier, Registerable } from '../rompack/rompack';
 import type { StateMachineController } from "./fsmcontroller";
 import type { State } from './state';
 import type { StateDefinition } from './statedefinition';
+import type { EventLane, EventPayload } from '../core/game_event';
 
 /**
  * Represents a type definition for mapping IDs to `sdef` objects.
@@ -111,7 +112,7 @@ export type StateTransition = {
 	/**
 	 * The arguments for the state transition.
 	 */
-	payload?: EventPayload;
+	payload?: unknown;
 
 	/**
 	 * The transition type: 'to' or 'switch', where 'to' is the default.
@@ -135,7 +136,7 @@ export type StateTransitionWithType = StateTransition & { transition_type: Trans
  */
 export type StateActionEmitSpec = string | {
 	event?: string;
-	payload?: EventPayload;
+	payload?: Record<string, unknown>;
 	emitter?: Identifier;
 	scope?: EventScope | string;
 	lane?: EventLane;
@@ -193,14 +194,14 @@ export interface StateActionDispatchSpec {
 	dispatch: {
 		event: string;
 		emitter?: Identifier;
-		payload?: EventPayload;
+		payload?: Record<string, unknown>;
 	};
 }
 
 export interface StateActionInvokeSpec {
 	invoke: {
 		fn: any;
-		payload?: EventPayload;
+		payload?: Record<string, unknown>;
 		args?: unknown | unknown[];
 	};
 }
@@ -210,7 +211,7 @@ export interface StateActionAddTagSpec { add_tag: any; }
 export interface StateActionRemoveTagSpec { remove_tag: any; }
 
 export interface StateActionActivateAbilitySpec {
-	activate_ability: string | { id: string; payload?: EventPayload; source?: string };
+	activate_ability: string | { id: string; payload?: Record<string, unknown>; source?: string };
 }
 
 export interface StateActionConsumeActionSpec {
@@ -245,7 +246,7 @@ export interface StateActionDispatchEventSpec {
 	dispatch_event: {
 		event: string;
 		emitter?: string;
-		payload?: EventPayload;
+		payload?: Record<string, unknown>;
 	};
 }
 
@@ -254,7 +255,7 @@ export interface StateActionTransitionSpec {
 	switch?: StateTransition | Identifier;
 	force_leaf?: StateTransition | Identifier;
 	revert?: boolean | StateTransition | Identifier;
-	payload?: EventPayload;
+	payload?: unknown;
 }
 
 export interface StateActionTransitionCompositeSpec extends StateActionTransitionSpec {

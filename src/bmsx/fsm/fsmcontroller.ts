@@ -1,4 +1,5 @@
-import { EventEmitter, type EventLane, type EventPayload } from '../core/eventemitter';
+import { EventEmitter } from '../core/eventemitter';
+import { createGameEvent, type GameEvent } from '../core/game_event';
 import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload, excludepropfromsavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { ActiveStateMachines } from './fsmlibrary';
@@ -309,17 +310,21 @@ export class StateMachineController {
 	 * @param emitter - The identifier or identifiable object that triggered the event.
 	 * @param args - Additional arguments to be passed to the event handlers.
 	 */
-	public dispatch_event(event_name: string, emitter: Identifier | Identifiable, ...args: any[]): void {
-		const emitter_id = typeof emitter === 'string' ? emitter : emitter.id;
-
-		// Dispatch the event to the current machine
-		// this.current_machine?.dispatch_event(event_name, emitter_id, ...args); // Optional chaining in case there is no current machine (allowed for objects without a state machine)
-
-		// Dispatch the event to all other machines. Note that the machine itself handles the `paused` flag or lack of any definition
+	public dispatch_event(event: GameEvent): void;
+	public dispatch_event(event_name: string, emitter: Identifier | Identifiable, payload?: Record<string, unknown>): void;
+	public dispatch_event(arg0: GameEvent | string, emitter?: Identifier | Identifiable, payload?: Record<string, unknown>): void {
+		if (typeof arg0 === 'string') {
+			if (!emitter) throw new Error(`[StateMachineController] Legacy dispatch_event '${arg0}' missing emitter.`);
+			if (payload && typeof payload !== 'object') throw new Error(`[StateMachineController] Payload for '${arg0}' must be an object.`);
+			const resolvedEmitter = typeof emitter === 'string' ? ({ id: emitter } as Identifiable) : emitter;
+			if (payload && typeof payload !== 'object') throw new Error(`[StateMachineController] Payload for '${arg0}' must be an object.`);
+			const legacy = createGameEvent({ type: arg0, emitter: resolvedEmitter, ...(payload ?? {}) });
+			this.dispatch_event(legacy);
+			return;
+		}
+		const event = arg0;
 		for (const id in this.statemachines) {
-			// if (this.current_machine_id === id) continue; // Skip the current machine, as the event has already been dispatched to that machine
-			// if (!this.statemachines[id].is_concurrent) continue; // ~Skip machines that are not running in parallel~ // Actually, dispatch to all non-paused machines, even if they are not concurrent. This allows for event-driven state changes in non-concurrent machines and it makes sense to regard all distinct machines as "parallel".
-			this.statemachines[id].dispatch_event(event_name, emitter_id, ...args);
+			this.statemachines[id].dispatch_event(event);
 		}
 	}
 
@@ -330,9 +335,10 @@ export class StateMachineController {
 	 * @param emitter - The identifier or identifiable object that emitted the event.
 	 * @param args - Additional arguments to pass to the event handler.
 	 */
-	public auto_dispatch(this: Stateful, event_name: string, emitter: Identifier | Identifiable, payload?: EventPayload, lane?: EventLane): void {
+	public auto_dispatch(this: Stateful, event: GameEvent): void {
 		if (this.eventhandling_enabled === false) return;
-		this.sc.dispatch_event(event_name, emitter, payload, lane);
+		if (!event.emitter) event.emitter = this;
+		this.sc.dispatch_event(event);
 	}
 
 	/**

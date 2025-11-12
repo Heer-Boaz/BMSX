@@ -3,6 +3,7 @@ import { build_fsm, sdef, State } from 'bmsx/bfsm';
 import { BFont, BootArgs, Direction, Game, new_area, new_vec2, randomInt, vec2 } from 'bmsx';
 import { WorldObject, WorldObjectEvents } from 'bmsx/worldobject';
 import { subscribesToSelfScopedEvent } from 'bmsx/core/eventemitter';
+import type { GameEvent } from 'bmsx/core/game_event';
 import { GameView } from 'bmsx/glview';
 import { Input } from 'bmsx/input';
 import { MSX1ScreenHeight, MSX1ScreenWidth } from 'bmsx/msx';
@@ -162,8 +163,8 @@ class fles extends SpriteObject {
 	}
 
 	@subscribesToSelfScopedEvent(WorldObjectEvents.LeaveScreen)
-	private handleLeaveScreen(_event: string, emitter: fles): void {
-		emitter.banish();
+	private handleLeaveScreen(event: GameEvent): void {
+		(event.emitter as fles).banish();
 	}
 
 	override onspawn(spawningPos?: vec2): void {

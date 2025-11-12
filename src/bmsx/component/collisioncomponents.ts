@@ -1,4 +1,5 @@
 import { EventEmitter, subscribesToParentScopedEvent } from "../core/eventemitter";
+import type { GameEvent } from '../core/game_event';
 import { $ } from '../core/game';
 import { WorldObject, WorldObjectEventPayloads } from "../core/object/worldobject";
 import { mod, new_vec2, set_inplace_vec2 } from '../utils/utils';
@@ -344,7 +345,9 @@ export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
 	 * @param old_x_or_y - The previous x or y coordinate of the world object.
 	 */
 	@subscribesToParentScopedEvent('screen.leaving')
-	public onLeavingScreen(_event_name: string, emitter: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['screen.leaving']) {
-		leavingScreenHandler_prohibit(emitter, { d, old_x_or_y });
+	public onLeavingScreen(event: GameEvent) {
+		const emitter = event.emitter as WorldObject;
+		const detail = event as GameEvent<'screen.leaving', WorldObjectEventPayloads['screen.leaving']>;
+		leavingScreenHandler_prohibit(emitter, { d: detail.d, old_x_or_y: detail.old_x_or_y });
 	}
 }

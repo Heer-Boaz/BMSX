@@ -1,4 +1,5 @@
 import { EventEmitter, EventHandler } from '../core/eventemitter';
+import type { GameEvent } from '../core/game_event';
 import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import type {
@@ -190,14 +191,16 @@ export class AudioEventManager implements RegisterablePersistent {
 	init(map: id2audioevent, handlers?: AudioHandler[]): void {
 		this.handlers = handlers ?? [];
 		this.merged = this.mergeEvents(map);
-		this.anyListener = (event_name, emitter, payload) => {
+		this.anyListener = (event: GameEvent) => {
+			const emitter = event.emitter;
+			if (!emitter) return false;
 			switch (emitter.id) {
 				case 'view':
 				case 'amg':
 					// Ignore events from these emitters
 					return false;
 			}
-			return this.onEvent(event_name, payload as AudioEventPayload, emitter);
+			return this.onEvent(event.type, event as AudioEventPayload, emitter);
 		};
 		// Wiring subscription is performed via bind(bus) to centralize lifecycle
 

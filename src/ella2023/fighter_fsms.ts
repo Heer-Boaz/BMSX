@@ -353,10 +353,10 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 			ticks2advance_tape: 300,
 			entering_state(this: Fighter) {
 				setSpriteFrame(this, 'humiliated');
-				$.emitPresentation('humiliated_animation_start', this, this);
+				$.emitPresentation('humiliated_animation_start', this, { fighter: this });
 			},
 			tape_next(this: Fighter) {
-				$.emitPresentation('humiliated_animation_end', this, this);
+				$.emitPresentation('humiliated_animation_end', this, { fighter: this });
 			},
 		},
 	},
