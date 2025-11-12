@@ -7,6 +7,7 @@ import type { NavigationHistoryEntry } from './ide_state';
 import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position } from './types';
 import { clamp } from '../../utils/utils';
 import type { StorageService, TimerHandle } from '../../platform/platform';
+import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './debugger_breakpoints';
 
 const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 const METADATA_DIR_NAME = '.bmsx';
@@ -302,6 +303,7 @@ export type WorkspaceAutosavePayload = {
 		forward: NavigationHistoryEntry[];
 		current: NavigationHistoryEntry | null;
 	};
+	breakpoints?: SerializedBreakpointMap;
 };
 
 export type DirtyContextEntry = PersistedDirtyEntry & { text: string };
@@ -449,6 +451,7 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 		ide_state.navigationHistory.forward = [];
 		ide_state.navigationHistory.current = null;
 	}
+	restoreBreakpointsFromPayload(payload.breakpoints ?? null);
 }
 
 export function restorePersistedTab(entry: PersistedTabEntry): void {
@@ -805,6 +808,7 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 		lastHistoryKey: ide_state.lastHistoryKey ?? null,
 		lastHistoryTimestamp: ide_state.lastHistoryTimestamp ?? 0,
 		navigationHistory,
+		breakpoints: serializeBreakpoints(),
 	};
 }
 

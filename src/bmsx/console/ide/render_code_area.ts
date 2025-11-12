@@ -63,6 +63,7 @@ export interface CodeAreaHost {
     computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo;
     drawCompletionPopup(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void;
     drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void;
+    hasBreakpoint?: (rowIndex: number) => boolean;
 }
 
 export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
@@ -142,6 +143,19 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
 		}
 		const lineIndex = segment.row;
 		const entry = host.getCachedHighlight(lineIndex);
+		const hasBreakpointForRow = typeof host.hasBreakpoint === 'function' && host.hasBreakpoint(lineIndex);
+		if (hasBreakpointForRow && bounds.gutterRight > bounds.gutterLeft) {
+			const markerPadding = 1;
+			const markerLeft = bounds.gutterLeft + markerPadding;
+			const markerRight = Math.max(markerLeft + 1, bounds.gutterRight - markerPadding);
+			const markerHeight = Math.max(2, host.lineHeight - markerPadding * 2);
+			const markerTop = rowY + Math.max(1, Math.floor((host.lineHeight - markerHeight) / 2));
+			const markerBottom = Math.min(rowY + host.lineHeight - 1, markerTop + markerHeight);
+			api.rectfill_color(markerLeft, markerTop, markerRight, markerBottom, constants.COLOR_BREAKPOINT_BORDER);
+			if (markerRight - markerLeft > 2 && markerBottom - markerTop > 2) {
+				api.rectfill_color(markerLeft + 1, markerTop + 1, markerRight - 1, markerBottom - 1, constants.COLOR_BREAKPOINT_FILL);
+			}
+		}
 		const isExecutionStopRow = host.executionStopRow !== null && lineIndex === host.executionStopRow;
 		const isCursorLine = lineIndex === host.cursorRow;
 		if (isExecutionStopRow) {

@@ -48,6 +48,7 @@ export interface InputHost {
   unindentSelectionOrLine(): void;
   navigateBackward(): void;
   navigateForward(): void;
+  toggleBreakpointAtCursor(): void;
 }
 
 export class InputController {
@@ -76,6 +77,11 @@ export class InputController {
       altDown,
       metaDown,
     })) {
+      return;
+    }
+    if (isKeyJustPressedGlobal(idx, 'F9')) {
+      consumeKeyboardKey(keyboard, 'F9');
+      this.host.toggleBreakpointAtCursor();
       return;
     }
     // Navigation

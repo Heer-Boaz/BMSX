@@ -90,6 +90,7 @@ export const captureKeys: string[] = [...new Set([
 	'Tab',
 	'F3',
 	'F5',
+	'F9',
 	'F10',
 	'F11',
 	'F12',
@@ -179,6 +180,7 @@ export interface IdeState {
 	entryTabId: string | null;
 	topBarButtonBounds: Record<TopBarButtonId, RectBounds>;
 	debuggerControls: DebuggerControlsState;
+	breakpoints: Map<string, Set<number>>;
 	tabButtonBounds: Map<string, RectBounds>;
 	tabCloseButtonBounds: Map<string, RectBounds>;
 	activeContextReadOnly: boolean;
@@ -395,6 +397,7 @@ export const ide_state: IdeState = {
 		executionState: 'inactive',
 		sessionMetrics: null,
 	},
+	breakpoints: new Map<string, Set<number>>(),
 	tabButtonBounds: new Map<string, RectBounds>(),
 	tabCloseButtonBounds: new Map<string, RectBounds>(),
 	activeContextReadOnly: false,

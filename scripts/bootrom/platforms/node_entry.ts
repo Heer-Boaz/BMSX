@@ -44,6 +44,8 @@ interface InputTimelineEntry {
 }
 
 let maxScheduledMs = 0;
+const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
+let workspaceFetchBridgeInstalled = false;
 
 if (typeof (globalThis as any).Image === 'undefined') {
 	(globalThis as any).Image = Image;
@@ -251,6 +253,164 @@ function parseArgs(argv: string[]): LaunchOptions {
 		throw new Error(`Unrecognized argument: ${arg}`);
 	}
 	return options;
+}
+
+type WorkspaceFetchDescriptor = {
+	url: URL;
+	method: string;
+	bodyText: string | null;
+};
+
+function installWorkspaceFetchBridge(): void {
+	if (workspaceFetchBridgeInstalled) {
+		return;
+	}
+	const workspaceRoot = path.resolve(process.cwd());
+	const existingFetch: ((input: any, init?: any) => Promise<Response>) | null =
+		typeof (globalThis as any).fetch === 'function'
+			? (globalThis as any).fetch.bind(globalThis)
+			: null;
+	const bridge = async (input: any, init?: any): Promise<Response> => {
+		const descriptor = normalizeWorkspaceFetchRequest(input, init);
+		if (!descriptor || descriptor.url.pathname !== WORKSPACE_FILE_ENDPOINT) {
+			if (existingFetch) {
+				return existingFetch(input, init);
+			}
+			throw new TypeError('Fetch is not supported in this environment.');
+		}
+		return await handleWorkspaceFetch(descriptor, workspaceRoot);
+	};
+	(globalThis as any).fetch = bridge;
+	console.log(`[bootrom:${__BOOTROM_TARGET__}] Workspace fetch bridge mounted (${workspaceRoot}).`);
+	workspaceFetchBridgeInstalled = true;
+}
+
+function normalizeWorkspaceFetchRequest(input: any, init?: any): WorkspaceFetchDescriptor | null {
+	if (typeof Request !== 'undefined' && input instanceof Request) {
+		return null;
+	}
+	let urlString: string | null = null;
+	if (typeof input === 'string') {
+		urlString = input;
+	} else if (typeof URL !== 'undefined' && input instanceof URL) {
+		urlString = input.toString();
+	} else if (input && typeof input.href === 'string') {
+		urlString = input.href;
+	}
+	if (!urlString) {
+		return null;
+	}
+	const url = urlString.includes('://')
+		? new URL(urlString)
+		: new URL(urlString, 'http://workspace.local');
+	const method = typeof init?.method === 'string'
+		? init.method.toUpperCase()
+		: 'GET';
+	let bodyText: string | null = null;
+	const body = init?.body;
+	if (typeof body === 'string') {
+		bodyText = body;
+	} else if (body instanceof URLSearchParams) {
+		bodyText = body.toString();
+	} else if (body instanceof ArrayBuffer) {
+		bodyText = Buffer.from(body).toString('utf8');
+	} else if (ArrayBuffer.isView(body)) {
+		bodyText = Buffer.from(body.buffer, body.byteOffset, body.byteLength).toString('utf8');
+	} else if (body !== undefined && body !== null && typeof body.toString === 'function') {
+		bodyText = body.toString();
+	}
+	return { url, method, bodyText };
+}
+
+function toErrorMessage(error: unknown): string {
+	if (error instanceof Error && typeof error.message === 'string') {
+		return error.message;
+	}
+	return String(error);
+}
+
+function resolveWorkspaceFilePath(workspaceRoot: string, relativePath: string): string {
+	const trimmed = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
+	const target = path.resolve(workspaceRoot, trimmed);
+	if (target === workspaceRoot) {
+		return target;
+	}
+	const boundary = workspaceRoot.endsWith(path.sep) ? workspaceRoot : `${workspaceRoot}${path.sep}`;
+	if (!target.startsWith(boundary)) {
+		throw new Error(`Path "${relativePath}" is outside of the workspace.`);
+	}
+	return target;
+}
+
+function jsonResponse(status: number, payload: unknown, extraHeaders?: Record<string, string>): Response {
+	const headers = {
+		'Content-Type': 'application/json',
+		...(extraHeaders ?? {}),
+	};
+	const body = payload === null ? null : JSON.stringify(payload);
+	return new Response(body, { status, headers });
+}
+
+async function handleWorkspaceFetch(descriptor: WorkspaceFetchDescriptor, workspaceRoot: string): Promise<Response> {
+	const { method, url, bodyText } = descriptor;
+	if (method === 'GET') {
+		const targetPath = url.searchParams.get('path');
+		if (!targetPath) {
+			return jsonResponse(400, { error: 'Missing "path" query parameter.' });
+		}
+		try {
+			const filePath = resolveWorkspaceFilePath(workspaceRoot, targetPath);
+			const contents = await fs.readFile(filePath, 'utf8');
+			return jsonResponse(200, { path: targetPath, contents });
+		} catch (error) {
+			const message = toErrorMessage(error);
+			if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
+				return jsonResponse(404, { error: `File not found: ${targetPath}` });
+			}
+			return jsonResponse(500, { error: message });
+		}
+	}
+	if (method === 'POST') {
+		if (!bodyText) {
+			return jsonResponse(400, { error: 'Request body is required.' });
+		}
+		let payload: { path?: string; contents?: string } | null = null;
+		try {
+			payload = JSON.parse(bodyText) as { path?: string; contents?: string };
+		} catch {
+			return jsonResponse(400, { error: 'Request body must be valid JSON.' });
+		}
+		const targetPath = typeof payload?.path === 'string' ? payload.path : '';
+		const contents = typeof payload?.contents === 'string' ? payload.contents : null;
+		if (!targetPath || contents === null) {
+			return jsonResponse(400, { error: 'Both "path" and "contents" must be provided.' });
+		}
+		try {
+			const filePath = resolveWorkspaceFilePath(workspaceRoot, targetPath);
+			await fs.mkdir(path.dirname(filePath), { recursive: true });
+			await fs.writeFile(filePath, contents, 'utf8');
+			return jsonResponse(204, null);
+		} catch (error) {
+			return jsonResponse(500, { error: toErrorMessage(error) });
+		}
+	}
+	if (method === 'DELETE') {
+		const targetPath = url.searchParams.get('path');
+		if (!targetPath) {
+			return jsonResponse(400, { error: 'Missing "path" query parameter.' });
+		}
+		try {
+			const filePath = resolveWorkspaceFilePath(workspaceRoot, targetPath);
+			await fs.unlink(filePath);
+			return jsonResponse(204, null);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
+				return jsonResponse(204, null);
+			}
+			return jsonResponse(500, { error: toErrorMessage(error) });
+		}
+	}
+	return new Response(null, { status: 405, headers: { Allow: 'GET,POST,DELETE' } });
 }
 
 function resolveRomPath(options: LaunchOptions): string {
@@ -523,6 +683,7 @@ async function main(): Promise<void> {
 	const buffer = await readRomFile(romPath);
 	const rompack = await loadRomPack(buffer);
 	const { rompack: activeRompack, entry } = await prepareRuntime(rompack, cliOptions, romPath);
+	installWorkspaceFetchBridge();
 
 	const platform = createPlatform(frameInterval);
 	const postInput = (event: InputEvt) => {

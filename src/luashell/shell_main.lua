@@ -16,6 +16,7 @@ function init()
 end
 
 function update(_dt)
+	error('sdfsf')
 end
 
 function draw()
@@ -24,3 +25,12 @@ function draw()
 		print(instructions[index], 8, 8 + (index - 1) * 16, text_color)
 	end
 end
+
+
+
+
+
+
+
+
+

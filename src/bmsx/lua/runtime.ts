@@ -173,8 +173,9 @@ export class LuaInterpreter {
 	private lastFaultEnvironment: LuaEnvironment | null = null;
 	private readonly callStack: LuaCallFrame[] = [];
 	private debuggerController: LuaDebuggerController | null = null;
-    private lastFaultCallStack: LuaCallFrame[] = [];
-    private lastFaultDepth: number = 0;
+	private lastFaultCallStack: LuaCallFrame[] = [];
+	private lastFaultDepth: number = 0;
+	private pendingDebuggerException: LuaRuntimeError | null = null;
 	private exceptionResumeStrategy: LuaExceptionResumeStrategy = 'propagate';
 	private hostAdapter: LuaHostAdapter | null = null;
 	private caseInsensitiveNativeAccess = true;
@@ -405,14 +406,20 @@ export class LuaInterpreter {
 		this.recordFaultCallStack();
 	}
 
-    public getLastFaultCallStack(): ReadonlyArray<LuaCallFrame> {
-        return this.lastFaultCallStack;
-    }
+	public getLastFaultCallStack(): ReadonlyArray<LuaCallFrame> {
+		return this.lastFaultCallStack;
+	}
 
-    public clearLastFaultCallStack(): void {
-        this.lastFaultCallStack = [];
-        this.lastFaultDepth = 0;
-    }
+	public clearLastFaultCallStack(): void {
+		this.lastFaultCallStack = [];
+		this.lastFaultDepth = 0;
+	}
+
+	public consumeLastDebuggerException(): LuaRuntimeError | null {
+		const exception = this.pendingDebuggerException;
+		this.pendingDebuggerException = null;
+		return exception;
+	}
 
 	public captureActiveCallStackForFault(): void {
 		this.recordFaultCallStack();
@@ -651,6 +658,7 @@ export class LuaInterpreter {
 		const normalizedChunk = this.normalizeChunkName(chunkName);
 		const resumeIndex = index;
 		const errorRef = error;
+		this.pendingDebuggerException = error;
 		const continuation = () => this.runStatements(statements, environment, varargs, scope, resumeIndex + 1);
 		return {
 			kind: 'pause',

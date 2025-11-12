@@ -1,4 +1,4 @@
-import type { StorageService } from '../platform/platform';
+import type { StorageService, InputEvt } from '../platform/platform';
 import { BmsxConsoleApi } from './api';
 import { CONSOLE_API_METHOD_METADATA } from './api_metadata';
 import { BmsxConsoleStorage } from './storage';
@@ -54,7 +54,12 @@ import type { PlayerInput } from '../input/playerinput';
 import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputMapping, KeyboardBinding, GamepadBinding, PointerBinding, ButtonState } from '../input/inputtypes';
 import { ConsoleMode } from './console_mode';
 import { setDebuggerRuntimeAccessor } from './runtime_accessors.ts';
-import { emitDebuggerLifecycleEvent, type DebuggerResumeMode, type DebuggerPauseDisplayPayload } from './debugger_lifecycle';
+import {
+	emitDebuggerLifecycleEvent,
+	type DebuggerResumeMode,
+	type DebuggerPauseDisplayPayload,
+	type DebuggerPauseFrameHint,
+} from './debugger_lifecycle';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -370,6 +375,7 @@ export class BmsxConsoleRuntime extends Service {
 	private overlayResolutionMode: 'offscreen' | 'viewport' = 'offscreen';
 	private overlayRenderedThisFrame = false;
 	private readonly consoleHotkeyLatch = new Map<string, number | null>();
+	private globalInputUnsubscribe: (() => void) | null = null;
 	private readonly validationStrategy: BmsxLuaValidationStrategy = BmsxLuaValidationStrategy.TrustRealRun;
 	private luaProgramSourceOverride: string | null = null;
 	private luaInterpreter: LuaInterpreter | null = null;
@@ -426,6 +432,16 @@ export class BmsxConsoleRuntime extends Service {
 	);
 	private readonly consoleServiceEventListeners = new Map<string, { event: string; listener: EventHandler<any> }>();
 	private handledLuaErrors = new WeakSet<object>();
+	private pendingRuntimeErrorOverlay:
+		| {
+				chunkName: string | null;
+				line: number | null;
+				column: number | null;
+				message: string;
+				hint: DebuggerPauseFrameHint;
+				details: RuntimeErrorDetails | null;
+		  }
+		| null = null;
 	private currentLuaAssetContext: { category: 'fsm' | 'behavior_tree' | 'service' | 'component_preset' | 'worldobject' | 'other'; assetId: string } | null = null;
 	private readonly behaviorTreeDiagnostics: Map<string, BehaviorTreeDiagnostic[]> = new Map();
 	private readonly consoleServices: Map<string, LuaServiceBinding> = new Map();
@@ -497,6 +513,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.seedDefaultLuaBuiltins();
 		this.initializeEditor();
 		this.setEditorOverlayResolution(this.overlayResolutionMode);
+		this.subscribeGlobalDebuggerHotkeys();
 		this.resetFrameTiming();
 		this.boot('constructor');
 		void this.prefetchLuaSourceFromFilesystem();
@@ -562,6 +579,10 @@ export class BmsxConsoleRuntime extends Service {
 				console.warn('[BmsxConsoleRuntime] Failed to activate console editor during debugger pause.', activationError);
 			}
 		}
+		if (signal.reason === 'exception') {
+			this.prepareDebuggerExceptionOverlay(signal);
+		}
+		this.flushPendingRuntimeErrorOverlay();
 		const state = this.currentFrameState;
 		if (state) {
 			state.haltGame = true;
@@ -622,6 +643,16 @@ export class BmsxConsoleRuntime extends Service {
 		const state = this.currentFrameState;
 		if (state) {
 			state.debugPaused = paused;
+		}
+	}
+
+	private clearActiveDebuggerPause(): void {
+		const hadSuspension = this.luaDebuggerSuspension !== null;
+		this.luaDebuggerSuspension = null;
+		this.debuggerHaltsGame = false;
+		this.setDebuggerPaused(false, { syncGlobal: false });
+		if (hadSuspension) {
+			emitDebuggerLifecycleEvent({ type: 'continued', mode: 'continue' });
 		}
 	}
 
@@ -689,28 +720,52 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public continueLuaDebugger(): void {
+		if (!this.luaDebuggerSuspension) {
+			console.warn('[LuaDebugger] Continue requested without an active suspension.');
+			return;
+		}
 		this.resumeLuaDebugger('continue');
 	}
 
 	public stepIntoLuaDebugger(): void {
+		if (!this.luaDebuggerSuspension) {
+			console.warn('[LuaDebugger] Step-into requested without an active suspension.');
+			return;
+		}
 		this.resumeLuaDebugger('stepInto');
 	}
 
 	public stepOverLuaDebugger(): void {
+		if (!this.luaDebuggerSuspension) {
+			console.warn('[LuaDebugger] Step-over requested without an active suspension.');
+			return;
+		}
 		this.resumeLuaDebugger('stepOver');
 	}
 
 	public stepOutLuaDebugger(): void {
+		if (!this.luaDebuggerSuspension) {
+			console.warn('[LuaDebugger] Step-out requested without an active suspension.');
+			return;
+		}
 		const suspension = this.requireLuaDebuggerSuspension('stepOut');
 		const targetDepth = Math.max(0, suspension.callStack.length - 1);
 		this.resumeLuaDebugger('stepOut', { stepDepthOverride: targetDepth });
 	}
 
 	public ignoreLuaException(): void {
+		if (!this.luaDebuggerSuspension) {
+			console.warn('[LuaDebugger] Ignore-exception requested without an active suspension.');
+			return;
+		}
 		this.resumeLuaDebugger('ignoreException');
 	}
 
 	public stepOutLuaException(): void {
+		if (!this.luaDebuggerSuspension) {
+			console.warn('[LuaDebugger] Exception step-out requested without an active suspension.');
+			return;
+		}
 		const suspension = this.requireLuaDebuggerSuspension('stepOutException');
 		const targetDepth = Math.max(0, suspension.callStack.length - 1);
 		this.resumeLuaDebugger('stepOutException', { stepDepthOverride: targetDepth });
@@ -774,6 +829,51 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
+	private subscribeGlobalDebuggerHotkeys(): void {
+		this.unsubscribeGlobalDebuggerHotkeys();
+		const hub = $.platform.input;
+		this.globalInputUnsubscribe = hub.subscribe((event) => this.onGlobalInputEvent(event));
+	}
+
+	private unsubscribeGlobalDebuggerHotkeys(): void {
+		if (!this.globalInputUnsubscribe) {
+			return;
+		}
+		const unsubscribe = this.globalInputUnsubscribe;
+		this.globalInputUnsubscribe = null;
+		unsubscribe();
+	}
+
+	private onGlobalInputEvent(event: InputEvt): void {
+		if (event.type !== 'button' || event.code !== 'F8' || event.down !== true) {
+			return;
+		}
+		if (typeof event.deviceId !== 'string' || !event.deviceId.startsWith('keyboard')) {
+			return;
+		}
+		const playerInput = this.getPlayerInput();
+		const modifiers = playerInput.getModifiersState();
+		if (modifiers.ctrl) {
+			return;
+		}
+		const pressId = typeof event.pressId === 'number' ? event.pressId : null;
+		const existing = this.consoleHotkeyLatch.get('debugger-f8-step') ?? null;
+		if (pressId !== null) {
+			if (existing === pressId) {
+				return;
+			}
+			this.consoleHotkeyLatch.set('debugger-f8-step', pressId);
+		} else if (existing === null) {
+			return;
+		} else {
+			this.consoleHotkeyLatch.set('debugger-f8-step', null);
+		}
+		if (this.editor?.isActive() !== true) {
+			this.debuggerAutoActivateOnNextPause = true;
+		}
+		this.beginGlobalDebuggerStepping();
+	}
+
 	private handleGlobalDebuggerHotkeys(args: {
 		shiftDown: boolean;
 		ctrlDown: boolean;
@@ -785,8 +885,12 @@ export class BmsxConsoleRuntime extends Service {
 			return false;
 		}
 		const { getState, consume } = args;
-		if (this.shouldAcceptConsoleHotkey('debugger-f8-step', getState('F8'))) {
+		const f8State = getState('F8');
+		if (this.shouldAcceptConsoleHotkey('debugger-f8-step', f8State)) {
 			consume('F8');
+			console.log(
+				`[LuaDebugger] Global F8 hotkey detected (suspended=${this.luaDebuggerSuspension ? 'yes' : 'no'}).`,
+			);
 			this.beginGlobalDebuggerStepping();
 			return true;
 		}
@@ -1523,6 +1627,18 @@ export class BmsxConsoleRuntime extends Service {
 		const state = this.ensureFrameState();
 		this.ensureConsoleEvaluation(state);
 		this.ensureEditorEvaluation(state);
+		const playerInput = this.getPlayerInput();
+		const getState = (code: string) => playerInput.getButtonState(code, 'keyboard');
+		const consume = (code: string) => playerInput.consumeButton(code, 'keyboard');
+		const shiftDown = getState('ShiftLeft')?.pressed === true || getState('ShiftRight')?.pressed === true;
+		const ctrlDown = getState('ControlLeft')?.pressed === true || getState('ControlRight')?.pressed === true;
+		this.handleGlobalDebuggerHotkeys({
+			shiftDown,
+			ctrlDown,
+			editorActive: state.editorActive === true,
+			getState,
+			consume,
+		});
 		if (state.updateExecuted) {
 			return;
 		}
@@ -1680,6 +1796,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	public override dispose(): void {
 		this.consoleMode.deactivate();
+		this.unsubscribeGlobalDebuggerHotkeys();
 		this.updateOverlayState(false, false, true);
 		if (this.editor) {
 			this.editor.shutdown();
@@ -1814,6 +1931,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private restoreFromStateSnapshot(snapshot: BmsxConsoleState): void {
+		this.clearActiveDebuggerPause();
 		// The editor deliberately clears luaRuntimeFailed before calling setState when the
 		// user hits "Resume". That signal tells us to keep the script environment but otherwise
 		// treat the operation as a soft reboot: user code should rerun init/update hooks while
@@ -1851,6 +1969,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public resumeFromSnapshot(state: unknown): void {
+		this.clearActiveDebuggerPause();
 		if (!state || typeof state !== 'object') {
 			this.luaRuntimeFailed = false;
 			return;
@@ -2209,6 +2328,69 @@ export class BmsxConsoleRuntime extends Service {
 			(this.editor as any).clearRuntimeErrorOverlay();
 		}
 		publishOverlayFrame(null);
+	}
+
+	private flushPendingRuntimeErrorOverlay(): void {
+		if (!this.pendingRuntimeErrorOverlay || !this.editor) {
+			return;
+		}
+		const payload = this.pendingRuntimeErrorOverlay;
+		try {
+			if (payload.hint) {
+				this.editor.showRuntimeErrorInChunk(
+					payload.chunkName,
+					payload.line,
+					payload.column,
+					payload.message,
+					payload.hint,
+					payload.details,
+				);
+			} else {
+				this.editor.showRuntimeError(payload.line, payload.column, payload.message, payload.details);
+			}
+			this.pendingRuntimeErrorOverlay = null;
+		}
+		catch (error) {
+			console.warn('[BmsxConsoleRuntime] Deferred runtime error overlay rendering failed; will retry.', error);
+		}
+	}
+
+	private prepareDebuggerExceptionOverlay(signal: LuaDebuggerPauseSignal): void {
+		const interpreter = this.luaInterpreter;
+		const exception = interpreter?.consumeLastDebuggerException?.() ?? null;
+		if (!exception) {
+			return;
+		}
+		const message = exception.message && exception.message.length > 0 ? exception.message : 'Runtime error';
+		let chunkName: string | null =
+			typeof exception.chunkName === 'string' && exception.chunkName.length > 0
+				? exception.chunkName
+				: null;
+		if (!chunkName || chunkName.length === 0) {
+			chunkName = signal.location.chunk;
+		}
+		const normalizedLine =
+			Number.isFinite(exception.line) && exception.line > 0 ? Math.floor(exception.line) : null;
+		const normalizedColumn =
+			Number.isFinite(exception.column) && exception.column > 0 ? Math.floor(exception.column) : null;
+		const fallbackLine =
+			Number.isFinite(signal.location.line) && signal.location.line > 0
+				? Math.floor(signal.location.line)
+				: null;
+		const fallbackColumn =
+			Number.isFinite(signal.location.column) && signal.location.column > 0
+				? Math.floor(signal.location.column)
+				: null;
+		const hint = this.lookupChunkResourceInfoNullable(chunkName);
+		const details = this.buildRuntimeErrorDetailsForEditor(exception, message);
+		this.pendingRuntimeErrorOverlay = {
+			chunkName,
+			line: normalizedLine ?? fallbackLine,
+			column: normalizedColumn ?? fallbackColumn,
+			message,
+			hint,
+			details,
+		};
 	}
 
 	private getEditorSource(): string {
@@ -3167,25 +3349,16 @@ export class BmsxConsoleRuntime extends Service {
 		if (!this.editor && this.hasLuaProgram()) {
 			this.initializeEditor();
 		}
-		if (this.editor) {
-			try {
-				const hint = this.lookupChunkResourceInfoNullable(chunkName);
-				if (hint) {
-					this.editor.showRuntimeErrorInChunk(chunkName, line, column, message, hint, runtimeDetails);
-				} else {
-					this.editor.showRuntimeErrorInChunk(chunkName, line, column, message, undefined, runtimeDetails);
-				}
-			}
-			catch (editorError) {
-				const overlayMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
-				try {
-					this.editor.showRuntimeError(line, column, overlayMessage, runtimeDetails);
-				}
-				catch (secondaryError) {
-					console.warn('[BmsxConsoleRuntime] Failed to display Lua error in console editor.', editorError, secondaryError);
-				}
-			}
-		}
+		const hint = this.lookupChunkResourceInfoNullable(chunkName);
+		this.pendingRuntimeErrorOverlay = {
+			chunkName,
+			line,
+			column,
+			message,
+			hint,
+			details: runtimeDetails,
+		};
+		this.flushPendingRuntimeErrorOverlay();
 		const logMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
 		console.error('[BmsxConsoleRuntime] Lua runtime error:', logMessage, error);
 		if (chunkName && chunkName.startsWith('console:')) {

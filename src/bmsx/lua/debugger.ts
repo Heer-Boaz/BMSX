@@ -1,6 +1,14 @@
 import { clamp } from '../utils/utils.ts';
 import type { LuaCallFrame, LuaDebuggerPauseSignal, LuaExceptionResumeStrategy } from './runtime.ts';
 
+export function normalizeLuaChunkName(name: string): string {
+	let normalized = name.trim();
+	if (normalized.startsWith('@')) {
+		normalized = normalized.slice(1);
+	}
+	return normalized.replace(/\\/g, '/');
+}
+
 export type LuaDebuggerStepMode = 'none' | 'into' | 'over';
 export type LuaDebuggerPauseReason = 'breakpoint' | 'step' | 'exception';
 export type LuaDebuggerResumeCommand = 'continue' | 'stepInto' | 'stepOver' | 'stepOut' | 'ignoreException' | 'stepOutException';
@@ -266,11 +274,7 @@ export class LuaDebuggerController {
 	}
 
 	private normalizeChunkName(name: string): string {
-		let normalized = name.trim();
-		if (normalized.startsWith('@')) {
-			normalized = normalized.slice(1);
-		}
-		return normalized.replace(/\\/g, '/');
+		return normalizeLuaChunkName(name);
 	}
 
 	private normalizeLineNumber(value: number): number | null {

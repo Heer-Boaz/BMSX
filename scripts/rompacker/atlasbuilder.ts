@@ -384,6 +384,9 @@ function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items
 }
 
 export function createOptimizedAtlas(imageResources: ImageResource[]): Canvas {
+	if (imageResources.length === 0) {
+		return createCanvas(1, 1);
+	}
 	const rects = imageResources.map(img_resource => ({ x: undefined as number, y: undefined as number, width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
 
 	const results: Array<{ items: { item: Rect, x: number, y: number; }[], width: number, height: number; }> = [];

@@ -59,6 +59,7 @@ import { InputController } from './input_controller';
 import { getIdePlayerInput, consumeIdeKey } from './player_input_adapter';
 import { ConsoleCodeLayout } from './code_layout';
 import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine as wrapRuntimeErrorLineUtil } from './runtime_error_utils';
+import { getBreakpointsForChunk, toggleBreakpoint } from './debugger_breakpoints';
 import type {
 	CachedHighlight,
 	CodeHoverTooltip,
@@ -4945,6 +4946,18 @@ export function handlePointerInput(_deltaSeconds: number): void {
 		&& snapshot.viewportY < bounds.codeBottom
 		&& snapshot.viewportX >= bounds.codeLeft
 		&& snapshot.viewportX < bounds.codeRight;
+	const inGutter = insideCodeArea
+		&& snapshot.viewportX >= bounds.gutterLeft
+		&& snapshot.viewportX < bounds.gutterRight;
+	if (justPressed && inGutter) {
+		const targetRow = resolvePointerRow(snapshot.viewportY);
+		if (toggleBreakpointForEditorRow(targetRow)) {
+			ide_state.pointerSelecting = false;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			resetPointerClickTracking();
+			return;
+		}
+	}
 	if (justPressed && insideCodeArea) {
 		clearReferenceHighlights();
 		ide_state.resourcePanelFocused = false;
@@ -7469,6 +7482,9 @@ export function getRenameBarBounds(): { top: number; bottom: number; left: numbe
 }
 
 export function drawCodeArea(api: BmsxConsoleApi): void {
+	const activeContext = getActiveCodeTabContext();
+	const activeChunkName = resolveHoverChunkName(activeContext);
+	const activeChunkBreakpoints = getBreakpointsForChunk(activeChunkName);
 	const host: import('./render_code_area').CodeAreaHost = {
 		// Geometry and metrics
 		lineHeight: ide_state.lineHeight,
@@ -7518,6 +7534,7 @@ export function drawCodeArea(api: BmsxConsoleApi): void {
 		computeCursorScreenInfo: (entry, tl, rt, ssd) => computeCursorScreenInfo(entry, tl, rt, ssd),
 		drawCompletionPopup: (a, b) => ide_state.completion.drawCompletionPopup(a, b),
 		drawParameterHintOverlay: (a, b) => ide_state.completion.drawParameterHintOverlay(a, b),
+		hasBreakpoint: (rowIndex: number) => activeChunkBreakpoints?.has(rowIndex + 1) ?? false,
 	};
 	renderCodeArea(api, host);
 	// write back mutable state possibly changed by renderer
@@ -10219,6 +10236,34 @@ function resolveOffsetPosition(lines: readonly string[], offset: number): { row:
 	return { row: lastRow, column: ide_state.lines[lastRow].length };
 }
 
+function getActiveBreakpointChunkName(): string | null {
+	const context = getActiveCodeTabContext();
+	return resolveHoverChunkName(context);
+}
+
+function toggleBreakpointForEditorRow(row: number): boolean {
+	if (row < 0 || row >= ide_state.lines.length) {
+		return false;
+	}
+	const chunkName = getActiveBreakpointChunkName();
+	if (!chunkName) {
+		ide_state.showMessage('No active chunk available for breakpoints.', constants.COLOR_STATUS_WARNING, 1.6);
+		return false;
+	}
+	const lineNumber = row + 1;
+	const result = toggleBreakpoint(chunkName, lineNumber);
+	if (result === 'unchanged') {
+		return false;
+	}
+	const verb = result === 'added' ? 'set' : 'cleared';
+	ide_state.showMessage(`Breakpoint ${verb} at ${chunkName}:${lineNumber}`, constants.COLOR_STATUS_TEXT, 1.4);
+	return true;
+}
+
+function toggleBreakpointAtCursor(): void {
+	void toggleBreakpointForEditorRow(ide_state.cursorRow);
+}
+
 export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleCartEditor {
 	customKeybindingHandler = (keyboard, deltaSeconds, context) =>
 		handleCodeFormattingShortcut(keyboard, deltaSeconds, context);
@@ -10276,7 +10321,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		spaceAdvance: ide_state.spaceAdvance,
 		tabSpaces: constants.TAB_SPACES,
 	};
-	ide_state.gutterWidth = 2;
+	ide_state.gutterWidth = 8;
 	const primaryBarHeight = ide_state.lineHeight + 4;
 	ide_state.headerHeight = primaryBarHeight;
 	ide_state.tabBarHeight = ide_state.lineHeight + 3;
@@ -10377,6 +10422,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		unindentSelectionOrLine: () => unindentSelectionOrLine(),
 		navigateBackward: () => goBackwardInNavigationHistory(),
 		navigateForward: () => goForwardInNavigationHistory(),
+		toggleBreakpointAtCursor: () => toggleBreakpointAtCursor(),
 	});
 	ide_state.problemsPanel = new ProblemsPanelController({
 		lineHeight: ide_state.lineHeight,

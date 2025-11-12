@@ -891,6 +891,10 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 		}
 	}
 
+	// Ensure the default atlas (index 0) is always present when atlases are generated and packed.
+	if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
+		targetAtlasIdSet.add(0);
+	}
 	// If we are generating and using texture atlases, we need to add the atlasses to the resource list
 	// @ts-ignore
 	for (const id of Array.from(targetAtlasIdSet).sort((a, b) => a - b)) {
