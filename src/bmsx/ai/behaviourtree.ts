@@ -1,6 +1,6 @@
 import { $ } from '../core/game';
 import { normalizeDecoratedClassName } from '../utils/decorators';
-import { deepClone } from '../utils/utils';
+import { deep_clone } from 'bmsx/utils/deep_clone';
 import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';
 import type { Identifiable, Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
@@ -95,8 +95,8 @@ export function registerBehaviorTreeBuilder(id: BehaviorTreeID, builder: () => B
 }
 
 export function registerBehaviorTreeDefinition(id: BehaviorTreeID, definition: BehaviorTreeDefinition): void {
-	const snapshot = deepClone(definition);
-	registerBehaviorTreeBuilder(id, () => deepClone(snapshot));
+	const snapshot = deep_clone(definition);
+	registerBehaviorTreeBuilder(id, () => deep_clone(snapshot));
 }
 
 export function behaviorTreeExists(id: BehaviorTreeID): boolean {

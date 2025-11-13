@@ -3,7 +3,7 @@ import type { EditorDiagnostic, PointerSnapshot } from './types';
 import type { RectBounds } from '../../rompack/rompack.ts';
 import * as constants from './constants';
 import { wrapTextDynamic as wrapMessageLinesGeneric } from './text_utils_local';
-import { clamp } from '../../utils/utils';
+import { clamp } from 'bmsx/utils/clamp.ts';
 
 type PanelLayout = {
     headerTop: number;

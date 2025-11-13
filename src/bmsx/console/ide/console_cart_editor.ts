@@ -17,7 +17,7 @@ import { EventEmitter, type ListenerSet } from '../../core/eventemitter';
 import { Registry } from '../../core/registry';
 import { SpriteComponent } from '../../component/sprite_component';
 import { renderCodeArea } from './render_code_area';
-import { clamp } from '../../utils/utils';
+import { clamp } from 'bmsx/utils/clamp.ts';
 // Intellisense data is handled by CompletionController
 import { CompletionController } from './completion_controller';
 import { ProblemsPanelController } from './problems_panel';

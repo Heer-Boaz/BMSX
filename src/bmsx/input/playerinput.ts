@@ -4,7 +4,7 @@ import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonSta
 import { KeyboardInput } from './keyboardinput';
 import { ContextStack, MappingContext } from './context';
 import { $ } from '../core/game';
-import { clamp } from '../utils/utils';
+import { clamp } from 'bmsx/utils/clamp';
 
 const ACTION_GUARD_MIN_MS = 24;
 const ACTION_GUARD_MAX_MS = 120;

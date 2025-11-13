@@ -1,4 +1,4 @@
-import { clamp } from '../utils/utils.ts';
+import { safeclamp } from 'bmsx/utils/safeclamp.ts';
 import type { LuaCallFrame, LuaDebuggerPauseSignal, LuaExceptionResumeStrategy } from './runtime.ts';
 
 export function normalizeLuaChunkName(name: string): string {
@@ -147,43 +147,48 @@ export class LuaDebuggerController {
 			typeof options?.stepDepthOverride === 'number'
 				? Math.max(0, options.stepDepthOverride)
 				: fallbackDepth;
-		if (command === 'stepInto') {
-			this.requestStepInto();
-		}
-		else if (command === 'stepOver' || command === 'stepOut' || command === 'stepOutException') {
-			this.requestStepOver(targetDepth);
-		}
-		else {
-			this.clearStepping();
+		switch (command) {
+			case 'continue':
+				this.clearStepping();
+				break;
+			case 'stepInto':
+				this.requestStepInto();
+				break;
+			case 'stepOver':
+			case 'stepOut':
+			case 'stepOutException':
+				this.requestStepOver(targetDepth);
+				break;
+			case 'ignoreException':
+				this.sessionMetrics.skippedExceptionCount += 1;
+				this.unsuppressBoundary(suspension.location.chunk, suspension.location.line, baseDepth);
+				console.warn(
+					`[LuaDebugger] Exception at ${suspension.location.chunk}:${suspension.location.line} ignored via debugger command.`,
+				);
+				return 'skip_statement';
+			default:
+				this.clearStepping();
+				break;
 		}
 
 		const exceptionPause = suspension.reason === 'exception';
-		if (command === 'ignoreException') {
-			this.sessionMetrics.skippedExceptionCount += 1;
-			this.unsuppressBoundary(suspension.location.chunk, suspension.location.line, baseDepth);
-			console.warn(
-				`[LuaDebugger] Exception at ${suspension.location.chunk}:${suspension.location.line} ignored via debugger command.`,
-			);
-			return 'skip_statement';
+		switch (command) {
+			case 'stepInto':
+			case 'stepOver':
+			case 'stepOut':
+				if (exceptionPause) {
+					this.unsuppressBoundary(suspension.location.chunk, suspension.location.line, baseDepth);
+					this.sessionMetrics.skippedExceptionCount += 1;
+					console.warn(
+						`[LuaDebugger] Exception at ${suspension.location.chunk}:${suspension.location.line} skipped automatically because ${command} was issued.`,
+					);
+					return 'skip_statement';
+				}
+			case 'stepOutException':
+				return 'propagate';
+			default:
+				return 'propagate';
 		}
-
-		if (
-			exceptionPause &&
-			(command === 'stepInto' || command === 'stepOver' || command === 'stepOut')
-		) {
-			this.unsuppressBoundary(suspension.location.chunk, suspension.location.line, baseDepth);
-			this.sessionMetrics.skippedExceptionCount += 1;
-			console.warn(
-				`[LuaDebugger] Exception at ${suspension.location.chunk}:${suspension.location.line} skipped automatically because ${command} was issued.`,
-			);
-			return 'skip_statement';
-		}
-
-		if (command === 'stepOutException') {
-			return 'propagate';
-		}
-
-		return 'propagate';
 	}
 
 	public handleSilentResumeResult(
@@ -191,9 +196,17 @@ export class LuaDebuggerController {
 		suspension: LuaDebuggerPauseSignal,
 	): void {
 		if (this.stepMode === 'none') {
+			console.log('[LuaDebugger] No active stepping request to carry across async boundary.');
 			return;
 		}
-		if (command === 'continue' || command === 'ignoreException') {
+		if (command === 'continue') {
+			console.log('[LuaDebugger] Cannot carry \'continue\' command across async boundary.');
+			return;
+		}
+		if (command === 'ignoreException') {
+			console.log(
+				`[LuaDebugger] Cannot carry 'ignoreException' command across async boundary at ${suspension.location.chunk}:${suspension.location.line}.`,
+			);
 			return;
 		}
 		this.pendingAsyncStep = this.createAsyncAugmentation({
@@ -242,11 +255,13 @@ export class LuaDebuggerController {
 		const normalizedChunk = this.normalizeChunkName(chunkName);
 		const resolvedLine = this.normalizeLineNumber(line);
 		if (resolvedLine === null) {
+			console.warn(`[LuaDebugger] Invalid line number encountered: ${line}`);
 			return null;
 		}
 		const normalizedDepth = Math.max(0, depth | 0);
 		const boundaryKey = this.buildBoundaryKey(normalizedChunk, resolvedLine, normalizedDepth);
 		if (this.suppressedBoundaries.delete(boundaryKey)) {
+			console.warn(`[LuaDebugger] Suppressed boundary at ${boundaryKey} was hit.`);
 			return null;
 		}
 		if (this.pendingAsyncStep) {
@@ -266,6 +281,7 @@ export class LuaDebuggerController {
 			this.stepMode = 'none';
 			return 'step';
 		}
+
 		return null;
 	}
 
@@ -278,11 +294,7 @@ export class LuaDebuggerController {
 	}
 
 	private normalizeLineNumber(value: number): number | null {
-		if (!Number.isFinite(value)) {
-			return null;
-		}
-		const resolved = clamp(Math.floor(value), 1, Number.MAX_SAFE_INTEGER);
-		return resolved;
+		return safeclamp(value, 1, Number.MAX_SAFE_INTEGER, null);
 	}
 
 	private clearAsyncContinuation(): void {

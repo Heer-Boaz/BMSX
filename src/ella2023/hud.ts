@@ -1,7 +1,6 @@
-import { $, Msx1Colors, SpriteObject, StateMachineBlueprint, build_fsm, insavegame, type RevivableObjectArgs } from 'bmsx';
+import { $, Msx1Colors, SpriteObject, StateMachineBlueprint, build_fsm, compute_bar_area, insavegame, type RevivableObjectArgs } from 'bmsx';
 import { Fighter } from './fighter';
 import { BitmapId } from './resourceids';
-import { computeBarArea } from 'bmsx/utils/utils';
 
 @insavegame
 export class Hud extends SpriteObject {
@@ -31,11 +30,11 @@ export class Hud extends SpriteObject {
 			const color = Msx1Colors[4];
 			const Z = 200;
 			const hp1 = sinterklaas?.hp ?? 100; // Note that the computeBarArea handles clamping
-			const hp2 = player?.hp ?? 100; // Note that the computeBarArea handles clamping
+			const hp2 = player?.hp ?? 100; // Note that the compute_bar_area handles clamping
 
-			const area1 = computeBarArea(HP_BAR1, hp1, MAX_HP, Z, false);
+			const area1 = compute_bar_area(HP_BAR1, hp1, MAX_HP, Z, false);
 			rc.submitRect({ kind: 'fill', area: area1, color });
-			const area2 = computeBarArea(HP_BAR2, hp2, MAX_HP, Z, true);
+			const area2 = compute_bar_area(HP_BAR2, hp2, MAX_HP, Z, true);
 			rc.submitRect({ kind: 'fill', area: area2, color });
 			rc.submitGlyphs({ x: 40, y: 32, glyphs: 'sen kai la' });
 			rc.submitGlyphs({ x: 144, y: 32, glyphs: 'ei la' });

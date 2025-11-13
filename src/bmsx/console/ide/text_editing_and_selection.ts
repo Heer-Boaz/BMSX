@@ -12,7 +12,7 @@
  */
 
 import { $ } from '../../core/game';
-import { clamp } from '../../utils/utils';
+import { clamp } from 'bmsx/utils/clamp';
 import { ide_state } from './ide_state';
 import type { Position } from './types';
 import { isWhitespace, isWordChar } from './text_utils';

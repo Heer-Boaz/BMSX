@@ -1,7 +1,7 @@
 import { Component, type ComponentAttachOptions } from '../component/basecomponent';
 import { $ } from '../core/game';
 import { WorldObject } from '../core/object/worldobject';
-import { new_vec3 } from '../utils/utils';
+import { new_vec3 } from 'bmsx/utils/vector_operations';
 import type { Oriented } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { PhysicsBody, PhysicsBodyDesc } from './physicsbody';

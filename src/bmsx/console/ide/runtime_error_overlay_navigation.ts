@@ -1,4 +1,4 @@
-import { clamp } from '../../utils/utils';
+import { clamp } from 'bmsx/utils/clamp';
 import type { StackTraceFrame } from 'bmsx/lua/runtime';
 
 export interface RuntimeErrorOverlayNavigationHost {

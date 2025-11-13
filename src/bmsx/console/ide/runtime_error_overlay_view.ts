@@ -1,4 +1,5 @@
-import { clamp, pointInRect } from '../../utils/utils';
+import { pointInRect } from 'bmsx/utils/rect_operations.ts';
+import { clamp } from 'bmsx/utils/clamp.ts';
 import type { BmsxConsoleApi } from '../api';
 import type { ConsoleEditorFont } from '../editor_font';
 import {

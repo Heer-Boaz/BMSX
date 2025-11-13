@@ -5,7 +5,7 @@ import { RenderPassLibrary } from '../backend/renderpasslib';
 import type { color } from '../gameview';
 import { M4 } from './math3d';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
-import { clamp } from '../../utils/utils';
+import { clamp } from 'bmsx/utils/clamp';
 
 let vao: WebGLVertexArrayObject | null = null;
 let program: WebGLProgram | null = null;

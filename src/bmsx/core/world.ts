@@ -20,7 +20,9 @@ import type { Component, ComponentConstructor } from "../component/basecomponent
 import { Space, id2spaceType, initial_world_spaces, obj_id2space_id_type, obj_id_to_space_id_symbol, id_to_space_symbol } from './space';
 import { EventEmitter } from './eventemitter';
 import { HandlerRegistry } from './handlerregistry';
-import { filterIterable, makeIndexProxy, shallowCopy } from '../utils/utils';
+import { filter_iterable } from 'bmsx/utils/filter_iterable';
+import { make_index_proxy } from 'bmsx/utils/make_index_proxy';
+import { shallowcopy } from 'bmsx/utils/shallowcopy';
 import { Collision2DSystem } from '../service/collision2d_service';
 import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
 import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
@@ -359,12 +361,12 @@ export class World implements Stateful, RegisterablePersistent {
 
 		this.spaces = [];
 		this._spaceMap = new Map<Identifier, Space>();
-		this[id_to_space_symbol] = makeIndexProxy(this._spaceMap);
+		this[id_to_space_symbol] = make_index_proxy(this._spaceMap);
 		this.objToSpaceMap = new Map<Identifier, Identifier>();
-		this[obj_id_to_space_id_symbol] = makeIndexProxy(this.objToSpaceMap);
+		this[obj_id_to_space_id_symbol] = make_index_proxy(this.objToSpaceMap);
 
 		this.paused = false;
-		if (opts.viewportSize) this._size = shallowCopy<vec2>(opts.viewportSize);
+		if (opts.viewportSize) this._size = shallowcopy<vec2>(opts.viewportSize);
 		if (opts.collisionService) this._collision = opts.collisionService;
 		if (opts.modules) this._modules = opts.modules.slice();
 		if (opts.fsmId) this._fsmId = opts.fsmId;
@@ -839,12 +841,12 @@ export class World implements Stateful, RegisterablePersistent {
 	}
 
 	public *filterObjects(predicate: (o: WorldObject) => boolean, opts: { scope?: WorldScope, reverse?: boolean } = {}): IterableIterator<WorldObject> {
-		yield* filterIterable(this.objects(opts), o => predicate(o));
+		yield* filter_iterable(this.objects(opts), o => predicate(o));
 	}
 
 	public countFilteredObjects(predicate: (o: WorldObject) => boolean, opts: { scope?: WorldScope } = {}): number {
 		let count = 0;
-		for (const _ of filterIterable(this.objects(opts), o => predicate(o))) { count++; }
+		for (const _ of filter_iterable(this.objects(opts), o => predicate(o))) { count++; }
 		return count;
 	}
 

@@ -3,7 +3,7 @@ import { insavegame, excludepropfromsavegame, onload, type RevivableObjectArgs }
 import { $ } from './game';
 import { WorldObject } from './object/worldobject';
 import { id2obj, id2objectType, type SpawnReason } from './world';
-import { makeIndexProxy } from "../utils/utils";
+import { make_index_proxy } from 'bmsx/utils/make_index_proxy';
 export type initial_world_spaces = 'game_start' | 'default' | 'ui';
 
 export type id2spaceType = Record<Identifier, Space>;
@@ -61,7 +61,7 @@ export class Space  {
 		this.id = opts.id;
 		this.objects = [];
 		this._id2objMap = new Map<Identifier, WorldObject>();
-		this[id2obj] = makeIndexProxy(this._id2objMap);
+		this[id2obj] = make_index_proxy(this._id2objMap);
 	}
 	[Symbol.dispose](): void {
 		throw new Error('Method not implemented.');

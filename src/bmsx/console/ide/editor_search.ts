@@ -1,6 +1,6 @@
 import { ide_state } from './ide_state';
 import * as constants from './constants';
-import { clamp } from '../../utils/utils';
+import { clamp } from 'bmsx/utils/clamp';
 import { getSelectionRange, getSelectionText } from './text_editing_and_selection';
 
 import type { ConsoleResourceDescriptor } from '../types';

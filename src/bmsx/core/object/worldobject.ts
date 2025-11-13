@@ -7,7 +7,8 @@ import { insavegame, onload, excludepropfromsavegame, type RevivableObjectArgs }
 import { $ } from '../game';
 import type { Space } from '../space';
 import { ObjectTracker } from "../../utils/objecttracker";
-import { middlepoint_area, new_area, new_vec2, new_vec3 } from '../../utils/utils';
+import { new_vec2, new_vec3 } from 'bmsx/utils/vector_operations';
+import { middlepoint_area, new_area } from 'bmsx/utils/rect_operations';
 import { StateDefinitions, registerHandlersForLinkedMachines } from '../../fsm/fsmlibrary';
 import { EventEmitter } from "../eventemitter";
 import { Registry } from "../registry";

@@ -8,7 +8,7 @@ import type { WorldObject } from '../core/object/worldobject';
 import { InputAbilityComponent } from '../component/inputabilitycomponent';
 import { compileProgram, validateProgramAbilities, type CompiledProgram, type CompiledBinding, type EvalContext, type PatternPredicate, type EffectExecutor } from '../gas/input_ability_compiler';
 import { isInputAbilityProgram, type InputAbilityProgram } from '../gas/input_ability_dsl';
-import { filterIterable } from '../utils/utils';
+import { filter_iterable } from 'bmsx/utils/filter_iterable';
 import type { GameEvent } from '../core/game_event';
 
 let assetProgramsValidated = false;
@@ -53,7 +53,7 @@ export class InputAbilitySystem extends ECSystem {
 
 	public override update(): void {
 		this.frameLatchTouched.clear();
-		for (let [obj, component] of filterIterable($.world.objectsWithComponents(InputAbilityComponent, { scope: 'active' }), (item: [ WorldObject, InputAbilityComponent]) => this.isEligibleObject(item[0]))) {
+		for (let [obj, component] of filter_iterable($.world.objectsWithComponents(InputAbilityComponent, { scope: 'active' }), (item: [ WorldObject, InputAbilityComponent]) => this.isEligibleObject(item[0]))) {
 			const program = this.resolveCompiledProgram(component);
 
 			const componentPlayerIndex = component.playerIndex ?? 0;

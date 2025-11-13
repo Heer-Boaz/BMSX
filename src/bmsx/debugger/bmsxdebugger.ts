@@ -7,7 +7,7 @@ import { WorldObject } from '../core/object/worldobject';
 import { Collision2DSystem } from '../service/collision2d_service';
 import { Registry } from '../core/registry';
 import { SpriteObject } from '../core/object/sprite';
-import { div_vec2, new_vec2 } from '../utils/utils';
+import { div_vec2, new_vec2 } from 'bmsx/utils/vector_operations';
 import { StateDefinitions } from '../fsm/fsmlibrary';
 import { PhysicsDebugComponent } from '../physics/physicsdebugcomponent';
 import type { Identifier, vec2 } from '../rompack/rompack';

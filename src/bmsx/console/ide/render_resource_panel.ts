@@ -4,7 +4,7 @@ import type { ResourceBrowserItem } from './types';
 import type { RectBounds } from '../../rompack/rompack.ts';
 import { Msx1Colors } from '../../systems/msx';
 import { ConsoleScrollbar } from './scrollbar';
-import { clamp } from '../../utils/utils';
+import { clamp } from 'bmsx/utils/clamp.ts';
 
 export interface ResourcePanelHost {
 	// Visibility and geometry

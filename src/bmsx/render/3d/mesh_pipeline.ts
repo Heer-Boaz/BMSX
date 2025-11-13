@@ -16,7 +16,7 @@ import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { MeshRenderSubmission } from '../gameview';
 import type { DirectionalLight, PointLight } from './light';
 import { M4, V3, float32ToFloat16, isMatrixMirrored, sphereInFrustumPacked, transformBoundingSphereCenter, transformedBoundingSphereRadius, translationDistanceSquared } from './math3d';
-import { arraysEqual } from '../../utils/utils';
+import { arrays_equal } from 'bmsx/utils/arrays_equal';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
 import {
 	beginMeshQueue,
@@ -234,13 +234,13 @@ function uploadJointPalette(gl: WebGL2RenderingContext, joints: Float32Array[] |
 	if (hasSkinning && joints) {
 		jointMatrixArray.fill(0); jointMatrixArray.set(identityMatrix, 0);
 		for (let i = 0; i < joints.length && i < MAX_JOINTS; i++) jointMatrixArray.set(joints[i], i * MAT4_FLOATS);
-		if (!lastSkinningEnabled || !arraysEqual(jointMatrixArray, lastJointMatrixArray)) { gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray); lastSkinningEnabled = true; lastJointMatrixArray.set(jointMatrixArray); }
+		if (!lastSkinningEnabled || !arrays_equal(jointMatrixArray, lastJointMatrixArray)) { gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray); lastSkinningEnabled = true; lastJointMatrixArray.set(jointMatrixArray); }
 	} else if (lastSkinningEnabled) {
 		jointMatrixArray.fill(0); jointMatrixArray.set(identityMatrix, 0); gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray); lastSkinningEnabled = false; lastJointMatrixArray.set(jointMatrixArray);
 	}
 }
 function uploadMorphWeights(gl: WebGL2RenderingContext, weights: Float32Array | null): void {
-	if (weights) { if (!lastMorphEnabled || !arraysEqual(weights, lastMorphWeightArray)) { gl.uniform1fv(morphWeightLocation3D, weights); lastMorphEnabled = true; lastMorphWeightArray.set(weights); } }
+	if (weights) { if (!lastMorphEnabled || !arrays_equal(weights, lastMorphWeightArray)) { gl.uniform1fv(morphWeightLocation3D, weights); lastMorphEnabled = true; lastMorphWeightArray.set(weights); } }
 	else if (lastMorphEnabled) { gl.uniform1fv(morphWeightLocation3D, zeroMorphWeights); lastMorphEnabled = false; lastMorphWeightArray.set(zeroMorphWeights); }
 }
 function getVAOSignature(m: Mesh, instanced: boolean, morph: boolean): string {

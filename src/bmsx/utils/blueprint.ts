@@ -1,4 +1,4 @@
-import { deepClone } from './utils';
+import { deep_clone } from './deep_clone';
 
 function computeSignature(value: unknown, seen: WeakSet<object>): string {
 	if (value === null) {
@@ -41,5 +41,5 @@ export function computeBlueprintSignature(value: unknown): string {
 }
 
 export function cloneBlueprint<T>(value: T): T {
-	return deepClone(value);
+	return deep_clone(value);
 }

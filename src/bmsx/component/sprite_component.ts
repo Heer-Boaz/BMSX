@@ -3,7 +3,7 @@ import { Component } from '../component/basecomponent';
 import type { Identifier, vec2, vec3 } from '../rompack/rompack';
 import { insavegame } from '../serializer/serializationhooks';
 import type { color, FlipOptions, RenderLayer } from '../render/gameview';
-import { new_vec2 } from '../utils/utils';
+import { new_vec2 } from 'bmsx/utils/vector_operations';
 
 @insavegame
 @componenttags_postprocessing('render')

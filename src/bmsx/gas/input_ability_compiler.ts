@@ -1,4 +1,4 @@
-import { hasOwn } from '../utils/utils';
+import { has_own } from 'bmsx/utils/has_own';
 import type { AbilityId, AbilityRequestOptions, AbilityRequestResult } from '../gas/gastypes';
 import { abilityRegistry } from './ability_registry';
 import type { PlayerInput } from '../input/playerinput';
@@ -304,17 +304,17 @@ function validateEffect(effect: Effect, ctx: ValidationContext): void {
 }
 
 function isAbilityRequest(effect: Effect): effect is { 'ability.request': AbilityId | AbilityRequestDescriptor } {
-	return hasOwn(effect, 'ability.request');
+	return has_own(effect, 'ability.request');
 }
 
 function isInputConsume(effect: Effect): effect is { 'input.consume': string | string[] } {
-	return hasOwn(effect, 'input.consume');
+	return has_own(effect, 'input.consume');
 }
 
 function isGameplayEmit(effect: Effect): effect is { 'emit.gameplay': EmitGameplayDescriptor } {
-	return hasOwn(effect, 'emit.gameplay');
+	return has_own(effect, 'emit.gameplay');
 }
 
 function isNestedCommands(effect: Effect): effect is { commands: Effect[] } {
-	return hasOwn(effect, 'commands');
+	return has_own(effect, 'commands');
 }

@@ -1,6 +1,6 @@
 // Sprites pipeline (formerly glview.2d) inlined from legacy module.
 // Provides batched 2D sprite + primitive rendering using shared buffers.
-import { new_vec2, new_vec3 } from '../../utils/utils';
+import { new_vec2, new_vec3 } from 'bmsx/utils/vector_operations';
 import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
 import spriteFS from '../2d/shaders/2d.frag.glsl';
 import spriteVS from '../2d/shaders/2d.vert.glsl';

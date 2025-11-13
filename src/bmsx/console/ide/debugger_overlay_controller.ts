@@ -1,7 +1,7 @@
 import { focusChunkSource, normalizeChunkName, setExecutionStopHighlight, clearExecutionStopHighlights, updateDesiredColumn, ensureCursorVisible, resetBlink, clearRuntimeErrorOverlay } from './console_cart_editor';
 import { ide_state } from './ide_state';
 import * as constants from './constants';
-import { clamp } from '../../utils/utils.ts';
+import { clamp } from 'bmsx/utils/clamp.ts';
 import { subscribeDebuggerLifecycleEvents, type DebuggerPauseDisplayPayload, type DebuggerLifecycleEvent } from '../debugger_lifecycle';
 import type { LuaDebuggerSessionMetrics } from '../../lua/debugger.ts';
 

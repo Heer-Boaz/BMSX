@@ -2,7 +2,7 @@ import { $ } from '../../core/game';
 import type { KeyboardInput } from '../../input/keyboardinput';
 import type { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
-import { clamp } from '../../utils/utils';
+import { clamp } from 'bmsx/utils/clamp.ts';
 import { ConsoleScrollbar } from './scrollbar';
 import { renderResourcePanel } from './render_resource_panel';
 import type { ResourceBrowserItem } from './types';

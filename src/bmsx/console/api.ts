@@ -20,7 +20,7 @@ import { taskGate, GateGroup } from '../core/taskgate';
 import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { setupFSMlibrary } from '../fsm/fsmlibrary';
 import { DirectConsoleRenderBackend, type ConsoleRenderBackend } from './render_backend';
-import { new_vec3 } from '../utils/utils';
+import { new_vec3 } from 'bmsx/utils/vector_operations';
 import { id_to_space_symbol, type Space } from '../core/space';
 import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';

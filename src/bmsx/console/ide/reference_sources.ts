@@ -1,4 +1,4 @@
-import { clamp } from '../../utils/utils.ts';
+import { clamp } from 'bmsx/utils/clamp.ts';
 import type { ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleResourceDescriptor } from '../types';
 import type { CodeTabContext, SearchMatch, SymbolSearchResult } from './types.ts';
 import type { ReferenceMatchInfo } from './reference_navigation.ts';

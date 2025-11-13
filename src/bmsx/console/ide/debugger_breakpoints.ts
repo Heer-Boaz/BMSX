@@ -1,5 +1,5 @@
 import { normalizeLuaChunkName } from '../../lua/debugger.ts';
-import { clamp } from '../../utils/utils.ts';
+import { clamp } from 'bmsx/utils/clamp.ts';
 import { getDebuggerRuntimeAccessor } from '../runtime_accessors.ts';
 import { ide_state } from './ide_state';
 

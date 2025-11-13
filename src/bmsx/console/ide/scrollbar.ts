@@ -1,5 +1,5 @@
 import type { BmsxConsoleApi } from '../api';
-import { clamp } from '../../utils/utils';
+import { clamp } from 'bmsx/utils/clamp.ts';
 import { SCROLLBAR_MIN_THUMB_HEIGHT } from './constants';
 import type { ScrollbarKind } from './types';
 import type { RectBounds } from '../../rompack/rompack.ts';

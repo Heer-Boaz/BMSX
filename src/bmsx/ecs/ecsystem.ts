@@ -5,7 +5,7 @@ import { EventEmitter } from "../core/eventemitter";
 import { $ } from "../core/game";
 import type { WorldObject } from "../core/object/worldobject";
 import { MeshComponent } from "../component/mesh_component";
-import { mod } from "../utils/utils";
+import { mod } from 'bmsx/utils/mod';
 import { PhysicsComponent } from "../physics/physicscomponent";
 import { CollisionEvent, PhysicsWorld } from "../physics/physicsworld";
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';

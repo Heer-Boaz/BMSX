@@ -1,3 +1,5 @@
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
+
 /**
  * Generic object pool utility.
  *
@@ -14,9 +16,6 @@
  * - Pool stores simple struct { item, active }. Reuse selects first inactive; if none and capacity not reached, create new.
  * - Returned handle is the item itself; pool tracks actives separately.
  */
-
-import { excludeclassfromsavegame } from '../serializer/serializationhooks';
-
 export interface PoolOptions<T> {
 	/** Preallocate this many instances eagerly (warm pool). */
 	warm?: number;

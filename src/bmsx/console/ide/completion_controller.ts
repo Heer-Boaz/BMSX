@@ -1,5 +1,5 @@
 import { BmsxConsoleApi } from '../api';
-import { clamp } from '../../utils/utils';
+import { clamp } from 'bmsx/utils/clamp.ts';
 import { getApiCompletionData, getKeywordCompletions, type LuaScopedSymbol } from './intellisense';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast.ts';
 import {

@@ -1,5 +1,5 @@
 import { $ } from '../core/game';
-import { new_vec3 } from '../utils/utils';
+import { new_vec3 } from 'bmsx/utils/vector_operations';
 import type { RegisterablePersistent, vec3 } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { BroadphasePair, BroadphaseSAP } from './broadphase';

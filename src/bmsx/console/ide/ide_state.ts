@@ -58,6 +58,7 @@ import { ConsoleCodeLayout } from './code_layout';
 import type { TimerHandle } from '../../platform';
 import type { DebuggerExecutionState } from '../debugger_lifecycle';
 import type { LuaDebuggerSessionMetrics } from '../../lua/debugger.ts';
+import { EDITOR_TOGGLE_KEY, ESCAPE_KEY } from './constants';
 
 export type NavigationHistoryEntry = {
 	contextId: string;
@@ -67,9 +68,6 @@ export type NavigationHistoryEntry = {
 	row: number;
 	column: number;
 };
-
-const EDITOR_TOGGLE_KEY = 'F12';
-const ESCAPE_KEY = 'Escape';
 
 export const captureKeys: string[] = [...new Set([
 	EDITOR_TOGGLE_KEY,

@@ -20,7 +20,7 @@ import { GameView, SkyboxImageIds } from '../render/gameview';
 import { decodeBinary, encodeBinary } from "./binencoder";
 import { Bindable, Identifier } from "bmsx/rompack/rompack";
 import { insavegame, type RevivableObjectArgs, onsave, onload } from './serializationhooks';
-import { typedArrayToNumberArray } from '../utils/utils';
+import { typedarray_to_numberarray } from 'bmsx/utils/typedarray_to_numberarray';
 
 // Decorators onload/onsave are defined locally in this file
 export type ConstructorWithSaveGame<T = Bindable> = (new (...args: any[]) => T) & { __exclude_savegame__?: boolean };
@@ -209,7 +209,7 @@ export class Serializer {
 			if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
 				const id = getIdForObject(value);
 				const typename = Serializer.get_typename(value);
-				const taPlain: { typename: string; data: number[]; isTypedArray: true } = { typename, data: typedArrayToNumberArray(value), isTypedArray: true };
+				const taPlain: { typename: string; data: number[]; isTypedArray: true } = { typename, data: typedarray_to_numberarray(value), isTypedArray: true };
 				if (parent && key !== undefined) parent[key] = { r: id };
 				else rootRef = { r: id };
 				objects[id] = taPlain;

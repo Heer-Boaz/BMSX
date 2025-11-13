@@ -1,5 +1,5 @@
 import { $ } from '../../core/game';
-import { clamp } from '../../utils/utils.ts';
+import { clamp } from 'bmsx/utils/clamp.ts';
 import type { TimerHandle } from '../../platform/platform';
 import type { ConsoleEditorFont } from '../editor_font';
 import { highlightLine as highlightLineExternal } from './syntax_highlight';

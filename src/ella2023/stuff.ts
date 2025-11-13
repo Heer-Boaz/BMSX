@@ -2,7 +2,6 @@ import { $, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint,
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { BitmapId } from './resourceids';
 import { createGameEvent } from 'bmsx/core/game_event';
-import { TitlePauseBlinkEvent, TitlePlayersOneEvent, TitleResumeBlinkEvent, TitleSwitchEvent } from './events';
 
 function wrapup(state: State) {
 	$.stopMusic();

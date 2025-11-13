@@ -1,5 +1,5 @@
 import { Component, type ComponentAttachOptions, type ComponentTag } from './basecomponent';
-import { deepClone } from '../utils/utils';
+import { deep_clone } from 'bmsx/utils/deep_clone.ts';
 import type { LuaHandlerFn } from '../lua/handler_cache.ts';
 
 export type LuaComponentHandlerMap = {
@@ -35,7 +35,7 @@ export class LuaComponent extends Component {
 		this.uniquePerDefinition = options.unique ?? false;
 		this.tagsPreLocal = options.tagsPre;
 		this.tagsPostLocal = options.tagsPost;
-		this.vars = options.initialState ? deepClone(options.initialState) : {};
+		this.vars = options.initialState ? deep_clone(options.initialState) : {};
 	}
 
 	public get isUniqueDefinition(): boolean {

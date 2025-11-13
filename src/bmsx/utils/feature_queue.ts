@@ -1,8 +1,8 @@
-// Generic double-buffered feature queue backed by ScratchBatch for stable capacity
-// and no sparse holes. Supports front/back swap per frame.
 
 import { ScratchBatch } from './scratchbatch';
 
+// Generic double-buffered feature queue backed by ScratchBatch for stable capacity
+// and no sparse holes. Supports front/back swap per frame.
 export class FeatureQueue<T> {
 	private _front: ScratchBatch<T>;
 	private _back: ScratchBatch<T>;

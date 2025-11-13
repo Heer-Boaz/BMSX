@@ -2,7 +2,8 @@ import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
-import { multiply_vec, multiply_vec2, shallowCopy } from '../utils/utils';
+import { multiply_vec, multiply_vec2 } from 'bmsx/utils/vector_operations';
+import { shallowcopy } from 'bmsx/utils/shallowcopy';
 import { Input } from '../input/input';
 import type { id2imgres, vec2 } from '../rompack/rompack';
 import { type RegisterablePersistent } from '../rompack/rompack';
@@ -305,10 +306,10 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		Registry.instance.register(this);
 		this.host = opts.host;
 		this.surface = this.host.surface;
-		this.viewportSize = shallowCopy(opts.viewportSize) as vec2;
-		this.canvasSize = (shallowCopy(opts.canvasSize) ?? multiply_vec2(this.viewportSize, 2)) as vec2; // By default, the canvas is twice the size of the viewport!!
+		this.viewportSize = shallowcopy(opts.viewportSize) as vec2;
+		this.canvasSize = (shallowcopy(opts.canvasSize) ?? multiply_vec2(this.viewportSize, 2)) as vec2; // By default, the canvas is twice the size of the viewport!!
 		// Offscreen resolution for internal render graph targets (view-agnostic, but usually twice the viewport size to allow for effects like CRT post processing)
-		this.offscreenCanvasSize = shallowCopy(opts.offscreenSize ?? multiply_vec(this.viewportSize, 2)) as vec2;
+		this.offscreenCanvasSize = shallowcopy(opts.offscreenSize ?? multiply_vec(this.viewportSize, 2)) as vec2;
 		renderGate.begin({ blocking: true, category: 'init', tag: 'init' }); // Note that we don't store the token; We can end the scope by calling renderGate.end() without a token, assuming that the category is unique fot init. It means that we can safely end the scope later without worrying about late resolves or lifecycle issues.
 	}
 
@@ -329,7 +330,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 				throw new Error('[GameView] viewportSize override must be positive.');
 			}
 			if (this.viewportSize.x !== viewport.x || this.viewportSize.y !== viewport.y) {
-				this.viewportSize = shallowCopy(viewport) as vec2;
+				this.viewportSize = shallowcopy(viewport) as vec2;
 				viewportChanged = true;
 			}
 		}
@@ -343,7 +344,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 				throw new Error('[GameView] canvasSize override must be positive.');
 			}
 			if (this.canvasSize.x !== canvas.x || this.canvasSize.y !== canvas.y) {
-				this.canvasSize = shallowCopy(canvas) as vec2;
+				this.canvasSize = shallowcopy(canvas) as vec2;
 				canvasChanged = true;
 			}
 		}
@@ -357,7 +358,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 				throw new Error('[GameView] offscreenSize override must be positive.');
 			}
 			if (this.offscreenCanvasSize.x !== offscreen.x || this.offscreenCanvasSize.y !== offscreen.y) {
-				this.offscreenCanvasSize = shallowCopy(offscreen) as vec2;
+				this.offscreenCanvasSize = shallowcopy(offscreen) as vec2;
 				offscreenChanged = true;
 			}
 		}

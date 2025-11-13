@@ -2,7 +2,7 @@
  * Cursor/Caret movement and navigation operations
  */
 
-import { clamp } from '../../utils/utils';
+import { clamp } from 'bmsx/utils/clamp';
 import { ide_state } from './ide_state';
 import type { Position } from './types';
 import { resolveIndentAwareHome, resolveSegmentEnd } from './caret_navigation';

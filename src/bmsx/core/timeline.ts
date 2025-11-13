@@ -2,11 +2,11 @@
 import type { PathRunner } from '../path/pathrunner';
 import type { quat } from '../render/3d/math3d';
 import type { vec3 } from '../rompack/rompack';
+import type { EasingFn } from '../utils/easing';
 import { EventEmitter } from './eventemitter';
 
 export interface TimelineEvent { time: number; name: string; data?: any; fired?: boolean; }
 export interface TimelineAction { start: number; end: number; update: (tNorm: number, globalU: number) => void; done?: boolean; }
-export type EasingFn = (t: number) => number;
 
 const Easings: Record<string, EasingFn> = {
 	linear: t => t,

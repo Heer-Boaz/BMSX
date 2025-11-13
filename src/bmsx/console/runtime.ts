@@ -45,7 +45,7 @@ import type { LuaComponentHandlerMap } from '../component/lua_component';
 import { defineAbility, abilityActions } from '../gas/ability_registry';
 import type { GameplayAbilityDefinition } from '../gas/gameplay_ability';
 import type { AbilityId } from '../gas/gastypes';
-import { deepClone } from '../utils/utils';
+import { deep_clone } from 'bmsx/utils/deep_clone.ts';
 import { WorldObject } from '../core/object/worldobject';
 import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';
@@ -60,6 +60,7 @@ import {
 	type DebuggerPauseDisplayPayload,
 	type DebuggerPauseFrameHint,
 } from './debugger_lifecycle';
+import { arrayify } from '../utils/arrayify.ts';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -527,6 +528,38 @@ export class BmsxConsoleRuntime extends Service {
 		return interpreter;
 	}
 
+	private extractErrorMessage(error: unknown): string {
+		if (typeof error === 'string') {
+			return error;
+		}
+		if (error instanceof LuaError || error instanceof LuaRuntimeError || error instanceof LuaSyntaxError) {
+			return error.message;
+		}
+		if (error instanceof Error) {
+			return error.message;
+		}
+		return String(error);
+	}
+
+	private extractErrorLocation(error: unknown): { line: number | null; column: number | null; chunkName: string | null } {
+		if (error instanceof LuaError) {
+			return {
+				line: Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null,
+				column: Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null,
+				chunkName: typeof error.chunkName === 'string' && error.chunkName.length > 0 ? error.chunkName : null,
+			};
+		}
+		return { line: null, column: null, chunkName: null };
+	}
+
+	private isLuaError(error: unknown): error is LuaError | LuaRuntimeError | LuaSyntaxError {
+		return error instanceof LuaError || error instanceof LuaRuntimeError || error instanceof LuaSyntaxError;
+	}
+
+	private normalizeError(error: unknown): Error {
+		return error instanceof Error ? error : new Error(String(error));
+	}
+
 	private configureInterpreter(interpreter: LuaInterpreter): void {
 		this.ensureLuaDebuggerController();
 		interpreter.setCaseInsensitiveNativeAccess(this.caseInsensitiveLua);
@@ -546,16 +579,11 @@ export class BmsxConsoleRuntime extends Service {
 	private ensureLuaDebuggerController(): LuaDebuggerController {
 		if (!this.luaDebuggerController) {
 			this.luaDebuggerController = new LuaDebuggerController();
-			this.refreshDebuggerAttachment(this.luaInterpreter);
-			this.refreshDebuggerAttachment(this.fsmLuaInterpreter);
 		}
 		return this.luaDebuggerController;
 	}
 
-	private refreshDebuggerAttachment(interpreter: LuaInterpreter | null): void {
-		if (!interpreter) {
-			return;
-		}
+	private refreshDebuggerAttachment(interpreter: LuaInterpreter): void {
 		interpreter.attachDebugger(this.luaDebuggerController);
 	}
 
@@ -1260,7 +1288,7 @@ export class BmsxConsoleRuntime extends Service {
 					const descriptor = (native as Record<string, unknown>)[key];
 					summary = this.formatJsValue(descriptor, depth, visited);
 				} catch (error) {
-					summary = error instanceof Error ? error.message : String(error);
+					summary = this.extractErrorMessage(error);
 				}
 				parts.push(`${key}: ${summary}`);
 			}
@@ -1332,7 +1360,7 @@ export class BmsxConsoleRuntime extends Service {
 				try {
 					summary = this.formatJsValue((value as Record<string, unknown>)[key], depth + 1, visited);
 				} catch (error) {
-					summary = error instanceof Error ? error.message : String(error);
+					summary = this.extractErrorMessage(error);
 				}
 				parts.push(`${key}: ${summary}`);
 			}
@@ -1345,10 +1373,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private describeConsoleError(error: unknown): string {
-		if (error instanceof LuaError || error instanceof LuaRuntimeError || error instanceof LuaSyntaxError) {
-			return error.message;
-		}
-		return error instanceof Error ? error.message : String(error);
+		return this.extractErrorMessage(error);
 	}
 
 	private endFrameAndFlush(editorActive: boolean): void {
@@ -1421,7 +1446,7 @@ export class BmsxConsoleRuntime extends Service {
 			parts.push(options.detail);
 		}
 		if (options.error !== undefined) {
-			const reason = options.error instanceof Error ? options.error.message : String(options.error);
+			const reason = this.extractErrorMessage(options.error);
 			if (reason.length > 0) {
 				parts.push(reason);
 			}
@@ -2097,7 +2122,7 @@ export class BmsxConsoleRuntime extends Service {
 				source = requestedOverride ?? this.resolveLuaProgramSource(program);
 			}
 			catch (error) {
-				throw error instanceof Error ? error : new Error(String(error));
+				throw this.normalizeError(error);
 			}
 			this.applyProgramSourceToCartridge(source, targetChunkName);
 			this.luaProgramSourceOverride = requestedOverride;
@@ -2112,8 +2137,24 @@ export class BmsxConsoleRuntime extends Service {
 			// No init on resume, and ensure other modules swap cleanly.
 			this.refreshLuaHandlersAfterResume(targetChunkName);
 			this.clearNativeMemberCompletionCache();
+			this.applyLuaResumeState(snapshot);
+			return;
 		}
-		// If no change, do nothing: keep VM state and compiled chunk intact.
+		// Interpreter already has the original chunk; reapply the captured Lua state.
+		this.applyLuaResumeState(snapshot);
+	}
+
+	private applyLuaResumeState(snapshot: BmsxConsoleState): void {
+		const interpreter = this.luaInterpreter;
+		if (!interpreter) {
+			return;
+		}
+		const hasStructuredSnapshot = snapshot.luaSnapshot !== undefined && snapshot.luaSnapshot !== null;
+		if (hasStructuredSnapshot && this.luaSnapshotLoad !== null) {
+			this.applyLuaSnapshot(snapshot.luaSnapshot);
+			return;
+		}
+		this.restoreFallbackLuaState(snapshot);
 	}
 
 	private reinitializeLuaProgramFromSnapshot(snapshot: BmsxConsoleState, options: { runInit: boolean; hotReload: boolean }): void {
@@ -2134,7 +2175,7 @@ export class BmsxConsoleRuntime extends Service {
 			source = override ?? this.resolveLuaProgramSource(program);
 		}
 		catch (error) {
-			throw error instanceof Error ? error : new Error(String(error));
+			throw this.normalizeError(error);
 		}
 
 		this.applyProgramSourceToCartridge(source, targetChunkName);
@@ -2465,11 +2506,11 @@ export class BmsxConsoleRuntime extends Service {
 				}
 				this.refreshLuaHandlersForChunk(chunkName, source);
 				if (loadError) {
-					const message = loadError instanceof Error ? loadError.message : String(loadError);
+					const message = this.extractErrorMessage(loadError);
 					this.recordLuaWarning(`[BmsxConsoleRuntime] Hot reload of '${assetId}' after save failed: ${message}`);
 				}
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
+				const message = this.extractErrorMessage(error);
 				this.recordLuaWarning(`[BmsxConsoleRuntime] Hot reload of '${assetId}' after save failed: ${message}`);
 			}
 		}
@@ -2592,11 +2633,11 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			this.refreshLuaHandlersForChunk(chunkName, contents);
 			if (hotLoadError) {
-				const message = hotLoadError instanceof Error ? hotLoadError.message : String(hotLoadError);
+				const message = this.extractErrorMessage(hotLoadError);
 				this.recordLuaWarning(`[BmsxConsoleRuntime] Hot load of new resource '${assetId}' encountered issues: ${message}`);
 			}
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
+			const message = this.extractErrorMessage(error);
 			this.recordLuaWarning(`[BmsxConsoleRuntime] Hot load of new resource '${assetId}' failed: ${message}`);
 		}
 		return descriptor;
@@ -3014,7 +3055,7 @@ export class BmsxConsoleRuntime extends Service {
 			interpreter = this.luaInterpreter;
 			if (!interpreter) {
 				// Interpreter will be reinitialised later (for example during resume); defer processing.
-				return;
+				throw new Error('[BmsxConsoleRuntime] Lua interpreter unavailable and we will not allow defensive checks to hide initialization failures.');
 			}
 		} else {
 			interpreter = this.ensureFsmLuaInterpreter();
@@ -3032,7 +3073,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.loadLuaWorldObjectDefinitionScripts(interpreter);
 		} catch (error) {
 			this.handleLuaError(error);
-			throw error instanceof Error ? error : new Error(String(error));
+			throw this.normalizeError(error);
 		} finally {
 			this.luaChunkName = previousChunkName;
 		}
@@ -3259,15 +3300,15 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private normalizeBindingList(kind: 'keyboard' | 'gamepad' | 'pointer', action: string, rawBindings: unknown, interpreter: LuaInterpreter): Array<KeyboardBinding | GamepadBinding | PointerBinding> {
-		const items = this.toArrayLike(rawBindings);
+		const items = arrayify(rawBindings);
 		const normalized: Array<KeyboardBinding | GamepadBinding | PointerBinding> = [];
 		for (const item of items) {
 			if (item === undefined || item === null) {
-				continue;
+				throw this.createApiRuntimeError(interpreter, `set_input_map: ${kind} binding for action '${action}' cannot be nil.`);
 			}
 			if (typeof item === 'string') {
 				if (item.length === 0) {
-					continue;
+					throw this.createApiRuntimeError(interpreter, `set_input_map: ${kind} binding for action '${action}' cannot be an empty string.`);
 				}
 				normalized.push(item);
 				continue;
@@ -3297,54 +3338,27 @@ export class BmsxConsoleRuntime extends Service {
 		return normalized;
 	}
 
-	private toArrayLike(value: unknown): unknown[] {
-		if (Array.isArray(value)) {
-			return value;
-		}
-		if (value && typeof value === 'object') {
-			const entries = Object.entries(value as Record<string, unknown>);
-			if (entries.every(([key]) => /^\d+$/.test(key))) {
-				return entries
-					.sort((a, b) => Number(a[0]) - Number(b[0]))
-					.map(([, element]) => element);
-			}
-		}
-		return value === undefined || value === null ? [] : [value];
-	}
-
 	private handleLuaError(error: unknown): void {
+		// Pause signal has its own handler
 		if (isLuaDebuggerPauseSignal(error)) {
+			console.info('[BmsxConsoleRuntime] Lua debugger pause signal received: ', error);
 			this.onLuaDebuggerPause(error);
 			return;
 		}
-		if (typeof error === 'object' && error !== null && this.handledLuaErrors.has(error as object)) {
+
+		// Avoid handling the same Error object repeatedly
+		if (error instanceof Error && this.handledLuaErrors.has(error as object)) {
 			return;
 		}
+
+		// Extract message and location info
+		const message = this.extractErrorMessage(error);
+		const { line, column, chunkName } = this.extractErrorLocation(error);
+
 		this.luaRuntimeFailed = true;
-		let message: string;
-		if (error instanceof Error) {
-			message = error.message;
-		}
-		else {
-			message = String(error);
-		}
 		const interpreter = this.luaInterpreter;
 		const callStackSnapshot = interpreter ? Array.from(interpreter.getLastFaultCallStack()) : [];
 		const runtimeDetails = this.buildRuntimeErrorDetailsForEditor(error, message);
-		let line: number | null = null;
-		let column: number | null = null;
-		let chunkName: string | null = null;
-		if (error instanceof LuaError) {
-			if (Number.isFinite(error.line) && error.line > 0) {
-				line = Math.floor(error.line);
-			}
-			if (Number.isFinite(error.column) && error.column > 0) {
-				column = Math.floor(error.column);
-			}
-			if (typeof error.chunkName === 'string' && error.chunkName.length > 0) {
-				chunkName = error.chunkName;
-			}
-		}
 		this.pauseDebuggerForException({ chunkName, line, column }, callStackSnapshot);
 		if (!this.editor && this.hasLuaProgram()) {
 			this.initializeEditor();
@@ -3368,6 +3382,7 @@ export class BmsxConsoleRuntime extends Service {
 				console.warn('[BmsxConsoleRuntime] Failed to append console runtime error output.', appendError);
 			}
 		}
+		// Remember we've handled this Error-like object so we don't duplicate reporting.
 		if (typeof error === 'object' && error !== null) {
 			this.handledLuaErrors.add(error as object);
 		}
@@ -3604,6 +3619,7 @@ export class BmsxConsoleRuntime extends Service {
 
 		const resolvePlayerIndex = (luaInterpreter: LuaInterpreter, value: LuaValue | undefined, fnName: string): number => {
 			if (value === undefined || value === null) {
+				throw this.createApiRuntimeError(luaInterpreter, `${fnName}(button [, player]) expects the optional player index to be numeric.`);
 				return this.playerIndex;
 			}
 			if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -3639,6 +3655,7 @@ export class BmsxConsoleRuntime extends Service {
 					}
 				} catch {
 					hasBinding = false;
+					throw this.createApiRuntimeError(luaInterpreter, `${fnName}(button [, player]) expects a valid input mapping to be defined.`);
 				}
 				if (!hasBinding) {
 					return [false];
@@ -3649,7 +3666,7 @@ export class BmsxConsoleRuntime extends Service {
 					return [triggered];
 				} catch (error) {
 					if (error instanceof Error && /unknown actions/i.test(error.message)) {
-						return [false];
+						throw this.createApiRuntimeError(luaInterpreter, `${fnName}(button [, player]) unknown action '${actionDefinition}'`);
 					}
 					throw error;
 				}
@@ -3710,11 +3727,11 @@ export class BmsxConsoleRuntime extends Service {
 							const id = this.registerAbilityDefinitionFromLua(args[0] as LuaTable, luaInterpreter);
 							return this.wrapResultValue(id, interpreter);
 						} catch (error) {
-							if (error instanceof LuaRuntimeError) {
+							if (this.isLuaError(error)) {
 								this.handleLuaError(error);
 								return [];
 							}
-							const message = error instanceof Error ? error.message : String(error);
+							const message = this.extractErrorMessage(error);
 							const runtimeError = this.createApiRuntimeError(luaInterpreter, `[api.define_ability] ${message}`);
 							this.handleLuaError(runtimeError);
 							return [];
@@ -3746,11 +3763,11 @@ export class BmsxConsoleRuntime extends Service {
 							});
 							return [];
 						} catch (error) {
-							if (error instanceof LuaRuntimeError) {
+							if (this.isLuaError(error)) {
 								this.handleLuaError(error);
 								return [];
 							}
-							const message = error instanceof Error ? error.message : String(error);
+							const message = this.extractErrorMessage(error);
 							const runtimeError = this.createApiRuntimeError(luaInterpreter, `[api.register_service] ${message}`);
 							this.handleLuaError(runtimeError);
 							return [];
@@ -3762,7 +3779,7 @@ export class BmsxConsoleRuntime extends Service {
 				}
 				const callable = descriptor.value;
 				if (typeof callable !== 'function') {
-					continue;
+					throw this.createApiRuntimeError(interpreter, `API method '${name}' is not callable.`);
 				}
 				const params = this.extractFunctionParameters(callable as (...args: unknown[]) => unknown);
 				const apiMetadata = CONSOLE_API_METHOD_METADATA[name];
@@ -3777,7 +3794,7 @@ export class BmsxConsoleRuntime extends Service {
 					for (let index = 0; index < apiMetadata.parameters.length; index += 1) {
 						const metadataParam = apiMetadata.parameters[index];
 						if (!metadataParam || typeof metadataParam.name !== 'string') {
-							continue;
+							throw this.createApiRuntimeError(interpreter, `API method '${name}' has invalid parameter metadata.`);
 						}
 						if (metadataParam.optional) {
 							optionalSet.add(metadataParam.name);
@@ -3805,11 +3822,11 @@ export class BmsxConsoleRuntime extends Service {
 						const result = (method as (...inner: unknown[]) => unknown).apply(this.api, jsArgs);
 						return this.wrapResultValue(result, interpreter);
 					} catch (error) {
-						if (error instanceof LuaRuntimeError) {
+						if (this.isLuaError(error)) {
 							this.handleLuaError(error);
 							return [];
 						}
-						const message = error instanceof Error ? error.message : String(error);
+						const message = this.extractErrorMessage(error);
 						const runtimeError = this.createApiRuntimeError(interpreter, `[api.${name}] ${message}`);
 						this.handleLuaError(runtimeError);
 						return [];
@@ -3834,11 +3851,11 @@ export class BmsxConsoleRuntime extends Service {
 						const value = getter.call(this.api);
 						return this.wrapResultValue(value, interpreter);
 					} catch (error) {
-						if (error instanceof LuaRuntimeError) {
+						if (this.isLuaError(error)) {
 							this.handleLuaError(error);
 							return [];
 						}
-						const message = error instanceof Error ? error.message : String(error);
+						const message = this.extractErrorMessage(error);
 						const runtimeError = this.createApiRuntimeError(interpreter, `[api.${name}] ${message}`);
 						this.handleLuaError(runtimeError);
 						return [];
@@ -3854,7 +3871,7 @@ export class BmsxConsoleRuntime extends Service {
 	private registerLuaBuiltin(metadata: ConsoleLuaBuiltinDescriptor): void {
 		const normalizedName = metadata.name.trim();
 		if (normalizedName.length === 0) {
-			return;
+			throw new Error(`Invalid Lua builtin name for '${normalizedName}'.`);
 		}
 		const params: string[] = [];
 		const optionalSet: Set<string> = new Set();
@@ -3865,11 +3882,11 @@ export class BmsxConsoleRuntime extends Service {
 			const raw = sourceParams[index];
 			const description = index < sourceDescriptions.length ? sourceDescriptions[index] ?? null : null;
 			if (typeof raw !== 'string') {
-				continue;
+				throw new Error(`Invalid Lua builtin parameter at index ${index} for '${normalizedName}'.`);
 			}
 			const trimmed = raw.trim();
 			if (trimmed.length === 0) {
-				continue;
+				throw new Error(`Invalid Lua builtin parameter at index ${index} for '${normalizedName}'.`);
 			}
 			if (trimmed === '...' || trimmed.endsWith('...')) {
 				params.push(trimmed);
@@ -3892,7 +3909,7 @@ export class BmsxConsoleRuntime extends Service {
 			for (let index = 0; index < metadata.optionalParams.length; index += 1) {
 				const name = metadata.optionalParams[index];
 				if (typeof name !== 'string' || name.length === 0) {
-					continue;
+					throw new Error(`Invalid Lua optional parameter at index ${index} for '${normalizedName}'.`);
 				}
 				optionalSet.add(name);
 			}
@@ -4137,7 +4154,7 @@ export class BmsxConsoleRuntime extends Service {
 					this.cacheChunkEnvironment(interpreter, chunkName, assetId);
 				}
 				catch (error) {
-					const message = error instanceof Error ? error.message : String(error);
+					const message = this.extractErrorMessage(error);
 					throw new Error(`[BmsxConsoleRuntime] Failed to execute FSM Lua script '${assetId}': ${message}`);
 				}
 				if (results.length > 0 && results[0] !== null) {
@@ -4237,7 +4254,7 @@ export class BmsxConsoleRuntime extends Service {
 					this.cacheChunkEnvironment(interpreter, chunkName, assetId);
 				}
 				catch (error) {
-					const message = error instanceof Error ? error.message : String(error);
+					const message = this.extractErrorMessage(error);
 					throw new Error(`[BmsxConsoleRuntime] Failed to execute Behavior tree Lua script '${assetId}': ${message}`);
 				}
 				if (executionResults.length > 0 && executionResults[0] !== null) {
@@ -4415,7 +4432,7 @@ export class BmsxConsoleRuntime extends Service {
 				processedAssets.add(assetId);
 			}
 			catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
+				const message = this.extractErrorMessage(error);
 				throw new Error(`[BmsxConsoleRuntime] Failed to execute Component preset Lua script '${assetId}': ${message}`);
 			}
 			finally {
@@ -4512,7 +4529,7 @@ export class BmsxConsoleRuntime extends Service {
 				this.cacheChunkEnvironment(interpreter, chunkName, assetId);
 			}
 			catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
+				const message = this.extractErrorMessage(error);
 				throw new Error(`[BmsxConsoleRuntime] Failed to execute World object Lua script '${assetId}': ${message}`);
 			}
 			finally {
@@ -4842,7 +4859,7 @@ export class BmsxConsoleRuntime extends Service {
 					this.cacheChunkEnvironment(interpreter, chunkName, assetId);
 				}
 				catch (error) {
-					const message = error instanceof Error ? error.message : String(error);
+					const message = this.extractErrorMessage(error);
 					throw new Error(`[BmsxConsoleRuntime] Failed to execute Service Lua script '${assetId}': ${message}`);
 				}
 				if (executionResults.length > 0 && executionResults[0] !== null) {
@@ -5144,7 +5161,7 @@ export class BmsxConsoleRuntime extends Service {
 		const tagsPost = this.normalizeStringArray((descriptor as { tagsPost?: unknown; tags_post?: unknown }).tagsPost ?? (descriptor as { tags_post?: unknown }).tags_post);
 		const unique = Boolean((descriptor as { unique?: unknown }).unique);
 		const initialStateRaw = (descriptor as { state?: unknown; initialState?: unknown }).state ?? (descriptor as { initialState?: unknown }).initialState;
-		const initialState = initialStateRaw && typeof initialStateRaw === 'object' ? deepClone(initialStateRaw as Record<string, unknown>) : undefined;
+		const initialState = initialStateRaw && typeof initialStateRaw === 'object' ? deep_clone(initialStateRaw as Record<string, unknown>) : undefined;
 		const record: LuaComponentDefinitionRecord = {
 			id: componentId,
 			handlers,
@@ -5162,9 +5179,9 @@ export class BmsxConsoleRuntime extends Service {
 		if (!definition) {
 			throw new Error(`[BmsxConsoleRuntime] Lua component definition '${opts.definition_id}' is not registered.`);
 		}
-		const baseState = definition.initial_state ? deepClone(definition.initial_state) : {};
+		const baseState = definition.initial_state ? deep_clone(definition.initial_state) : {};
 		if (opts.state) {
-			Object.assign(baseState, deepClone(opts.state));
+			Object.assign(baseState, deep_clone(opts.state));
 		}
 		return new LuaComponent({
 			parentid: opts.parent_id,
@@ -5326,7 +5343,7 @@ export class BmsxConsoleRuntime extends Service {
 					if (!this.isPlainObject(paramsRaw)) {
 						throw new Error(`[BmsxConsoleRuntime] Component preset '${presetCandidate}' params must be a table/object.`);
 					}
-					params = deepClone(paramsRaw as Record<string, unknown>);
+					params = deep_clone(paramsRaw as Record<string, unknown>);
 				}
 				normalized.push({ kind: 'preset', presetId: presetCandidate.trim(), params });
 				continue;
@@ -5340,9 +5357,9 @@ export class BmsxConsoleRuntime extends Service {
 				if (!this.isPlainObject(record.options)) {
 					throw new Error(`[BmsxConsoleRuntime] Component descriptor at index ${i} options must be a table/object.`);
 				}
-				options = deepClone(record.options as Record<string, unknown>);
+				options = deep_clone(record.options as Record<string, unknown>);
 			} else {
-				options = deepClone(record);
+				options = deep_clone(record);
 				delete options.class;
 				delete options.className;
 				delete options.type;
@@ -5368,7 +5385,7 @@ export class BmsxConsoleRuntime extends Service {
 					kind: 'component',
 					descriptor: {
 						classname: item.descriptor.classname,
-						options: deepClone(item.descriptor.options),
+						options: deep_clone(item.descriptor.options),
 					},
 				});
 				continue;
@@ -5376,7 +5393,7 @@ export class BmsxConsoleRuntime extends Service {
 			cloned.push({
 				kind: 'preset',
 				presetId: item.presetId,
-				params: deepClone(item.params),
+				params: deep_clone(item.params),
 			});
 		}
 		return cloned;
@@ -5403,7 +5420,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (entry.kind === 'component') {
 				descriptors.push({
 					className: entry.descriptor.classname,
-					options: deepClone(entry.descriptor.options),
+					options: deep_clone(entry.descriptor.options),
 				});
 				continue;
 			}
@@ -5417,9 +5434,9 @@ export class BmsxConsoleRuntime extends Service {
 				const className = this.getLuaRecordEntry<string>(record, ['class', 'className', 'type'])!.trim();
 				let options: Record<string, unknown>;
 				if (record.options !== undefined) {
-					options = deepClone(record.options as Record<string, unknown>);
+					options = deep_clone(record.options as Record<string, unknown>);
 				} else {
-					options = deepClone(record);
+					options = deep_clone(record);
 					delete options.class;
 					delete options.className;
 					delete options.type;
@@ -5466,7 +5483,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!this.isPlainObject(raw)) {
 			throw new Error(`[BmsxConsoleRuntime] ${label} must be a table/object.`);
 		}
-		return deepClone(raw as Record<string, unknown>);
+		return deep_clone(raw as Record<string, unknown>);
 	}
 
 	private normalizeWorldObjectFsmList(raw: unknown): ConsoleWorldObjectSystemEntry[] {
@@ -5947,13 +5964,13 @@ export class BmsxConsoleRuntime extends Service {
 		target.components = mergedComponents;
 
 		if (def.defaults) {
-			const mergedDefaults = deepClone(def.defaults);
+			const mergedDefaults = deep_clone(def.defaults);
 			if (target.defaults) {
-				Object.assign(mergedDefaults, deepClone(target.defaults));
+				Object.assign(mergedDefaults, deep_clone(target.defaults));
 			}
 			target.defaults = mergedDefaults;
 		} else if (target.defaults) {
-			target.defaults = deepClone(target.defaults);
+			target.defaults = deep_clone(target.defaults);
 		}
 
 		target.fsms = this.mergeSystemEntries(def.fsms, target.fsms);
@@ -5978,7 +5995,7 @@ export class BmsxConsoleRuntime extends Service {
 				if (BmsxConsoleRuntime.WORLD_OBJECT_RESERVED_DEFAULT_KEYS.has(key)) {
 					continue;
 				}
-				hostRecord[key] = deepClone(value);
+				hostRecord[key] = deep_clone(value);
 			}
 		}
 
@@ -6232,7 +6249,7 @@ export class BmsxConsoleRuntime extends Service {
 			defineAbility(abilityId);
 		}
 		catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
+			const message = this.extractErrorMessage(error);
 			if (!message.includes('already registered')) {
 				throw error;
 			}
@@ -6415,7 +6432,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private handleLuaHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): void {
-		const normalized = error instanceof Error ? error : new Error(String(error));
+		const normalized = this.normalizeError(error);
 		if (meta && meta.hid && !normalized.message.startsWith(`[${meta.hid}]`)) {
 			normalized.message = `[${meta.hid}] ${normalized.message}`;
 		}
@@ -6590,7 +6607,7 @@ export class BmsxConsoleRuntime extends Service {
 			audio: this.serializeRomAssetMap(rompack.audio),
 			model: this.serializeRomAssetMap(rompack.model),
 			data: this.cloneRompackDataMap(rompack.data),
-			audioevents: rompack.audioevents ? deepClone(rompack.audioevents) : {},
+			audioevents: rompack.audioevents ? deep_clone(rompack.audioevents) : {},
 			lua: rompack.lua ? { ...rompack.lua } : {},
 			luaSourcePaths: rompack.luaSourcePaths ? { ...rompack.luaSourcePaths } : {},
 			resourcePaths: Array.isArray(rompack.resourcePaths)
@@ -6639,7 +6656,7 @@ export class BmsxConsoleRuntime extends Service {
 				entry[key] = value;
 				continue;
 			}
-			entry[key] = deepClone(value as Record<string, unknown>);
+			entry[key] = deep_clone(value as Record<string, unknown>);
 		}
 		return entry;
 	}
@@ -6666,7 +6683,7 @@ export class BmsxConsoleRuntime extends Service {
 				result[id] = { byteLength: view.byteLength, constructor: view.constructor.name };
 				continue;
 			}
-			result[id] = deepClone(value as Record<string, unknown>);
+			result[id] = deep_clone(value as Record<string, unknown>);
 		}
 		return result;
 	}
@@ -7053,7 +7070,7 @@ export class BmsxConsoleRuntime extends Service {
 			try {
 				detail = await response.text();
 			} catch (textError) {
-				const message = textError instanceof Error ? textError.message : String(textError);
+				const message = this.extractErrorMessage(textError);
 				this.handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Save rejected for '${path}' (response body read failed)`, { detail: message });
 				if (this.luaFailurePolicy.persist === 'warning') {
 					return;
@@ -7066,7 +7083,7 @@ export class BmsxConsoleRuntime extends Service {
 				try {
 					parsed = JSON.parse(detail);
 				} catch (parseError) {
-					const parseMessage = parseError instanceof Error ? parseError.message : String(parseError);
+					const parseMessage = this.extractErrorMessage(parseError);
 					this.handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Save rejected for '${path}' (error payload parse failed)`, { detail: parseMessage });
 					if (this.luaFailurePolicy.persist === 'warning') {
 						return;
@@ -7115,7 +7132,7 @@ export class BmsxConsoleRuntime extends Service {
 			try {
 				detail = await response.text();
 			} catch (textError) {
-				const message = textError instanceof Error ? textError.message : String(textError);
+				const message = this.extractErrorMessage(textError);
 				this.handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from '${path}' (response body read failed)`, { detail: message });
 				if (this.luaFailurePolicy.fetch === 'warning') {
 					return null;
@@ -7128,7 +7145,7 @@ export class BmsxConsoleRuntime extends Service {
 				try {
 					parsed = JSON.parse(detail);
 				} catch (parseError) {
-					const parseMessage = parseError instanceof Error ? parseError.message : String(parseError);
+					const parseMessage = this.extractErrorMessage(parseError);
 					this.handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from '${path}' (error payload parse failed)`, { detail: parseMessage });
 					if (this.luaFailurePolicy.fetch === 'warning') {
 						return null;
@@ -7156,7 +7173,7 @@ export class BmsxConsoleRuntime extends Service {
 		try {
 			payload = await response.json();
 		} catch (parseError) {
-			const message = parseError instanceof Error ? parseError.message : String(parseError);
+			const message = this.extractErrorMessage(parseError);
 			this.handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Invalid response while loading Lua source from '${path}'`, { detail: message });
 			if (this.luaFailurePolicy.fetch === 'warning') {
 				return null;
@@ -7197,7 +7214,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (this.luaFailurePolicy.fetch === 'warning') {
 				return;
 			}
-			throw error instanceof Error ? error : new Error(String(error));
+			throw this.normalizeError(error);
 		}
 		if (!path) {
 			return;
@@ -7210,7 +7227,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (this.luaFailurePolicy.fetch === 'warning') {
 				return;
 			}
-			throw error instanceof Error ? error : new Error(String(error));
+			throw this.normalizeError(error);
 		}
 		if (fetched === null) {
 			return;
@@ -7237,7 +7254,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (this.luaFailurePolicy.apply === 'warning') {
 				return;
 			}
-			throw error instanceof Error ? error : new Error(String(error));
+			throw this.normalizeError(error);
 		}
 	}
 
@@ -7541,10 +7558,10 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		catch (error) {
 			packageLoaded.delete(record.packageKey);
-			if (error instanceof LuaRuntimeError) {
+			if (this.isLuaError(error)) {
 				throw error;
 			}
-			const message = error instanceof Error ? error.message : String(error);
+			const message = this.extractErrorMessage(error);
 			throw this.createApiRuntimeError(interpreter, message);
 		}
 		finally {
@@ -8240,7 +8257,7 @@ export class BmsxConsoleRuntime extends Service {
 				this.chunkSemanticCache.set(normalizedChunk, { source, model: null, definitions: [] });
 				return null;
 			}
-			const message = error instanceof Error ? error.message : String(error);
+			const message = this.extractErrorMessage(error);
 			this.chunkSemanticCache.set(normalizedChunk, { source, model: null, definitions: [] });
 			console.warn(`[BmsxConsoleRuntime] Failed to parse '${chunkName}': ${message}`);
 			return null;

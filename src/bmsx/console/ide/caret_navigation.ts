@@ -1,4 +1,4 @@
-import { clamp } from '../../utils/utils';
+import { clamp } from 'bmsx/utils/clamp';
 import type { VisualLineSegment } from './types';
 
 export type VisualCursorOverride = {

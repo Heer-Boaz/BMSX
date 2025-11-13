@@ -1,5 +1,6 @@
 import { EventEmitter, type EventLane, type EventScope } from "../core/eventemitter";
-import { deepClone, deepEqual } from '../utils/utils';
+import { deep_equal } from 'bmsx/utils/deep_equal';
+import { deep_clone } from 'bmsx/utils/deep_clone';
 import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';
 import type { Identifier } from '../rompack/rompack';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
@@ -362,15 +363,15 @@ function mergeDataWithDefaults(
 		const newDefVal = newDefaults[key];
 
 		if (!(key in out)) {
-			out[key] = deepClone(newDefVal);
+			out[key] = deep_clone(newDefVal);
 			continue;
 		}
 
-		const liveWasOldDefault = deepEqual(liveVal, oldDefVal);
-		const defaultChanged = !deepEqual(oldDefVal, newDefVal);
+		const liveWasOldDefault = deep_equal(liveVal, oldDefVal);
+		const defaultChanged = !deep_equal(oldDefVal, newDefVal);
 
 		if (liveWasOldDefault && defaultChanged) {
-			out[key] = deepClone(newDefVal);
+			out[key] = deep_clone(newDefVal);
 		}
 	}
 
