@@ -475,14 +475,14 @@ class diamant extends SpriteObject {
 }
 
 const actions = ['up', 'right', 'down', 'left', 'btn1', 'btn2'] as const;
-type Action = typeof actions[number];
+type InputAction = typeof actions[number];
 
 type MyKeyboardInputMapping = {
-	[key in keyof KeyboardInputMapping & Action]: KeyboardButton[];
+	[key in keyof KeyboardInputMapping & InputAction]: KeyboardButton[];
 };
 
 type MyGamepadInputMapping = {
-	[key in keyof GamepadInputMapping & Action]: BGamepadButton[];
+	[key in keyof GamepadInputMapping & InputAction]: BGamepadButton[];
 };
 
 const keyboardInputMapping: MyKeyboardInputMapping = {

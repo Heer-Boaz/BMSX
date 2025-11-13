@@ -17,7 +17,7 @@ export interface AbilityRuntimeBindings {
 	requestAbility<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult;
 }
 
-export interface AbilityActionContext {
+export interface GameplayActionContext {
 	readonly owner: WorldObject;
 	readonly ownerId: Identifier;
 	readonly vars: Record<string, unknown>;
@@ -31,14 +31,14 @@ export interface AbilityActionContext {
 	requestAbility<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult;
 }
 
-export type AbilityAction = (ctx: AbilityActionContext, params: Record<string, unknown> | undefined) => void;
+export type GameplayAction = (ctx: GameplayActionContext, params: Record<string, unknown> | undefined) => void;
 
-export class AbilityActionRegistry {
-	private readonly map = new Map<string, AbilityAction>();
+export class GameplayActionRegistry {
+	private readonly map = new Map<string, GameplayAction>();
 
-	public register(id: string, action: AbilityAction): void {
+	public register(id: string, action: GameplayAction): void {
 		if (!id) {
-			throw new Error('[AbilityActionRegistry] Cannot register action without id.');
+			throw new Error('[GameplayActionRegistry] Cannot register action without id.');
 		}
 		this.map.set(id, action);
 	}
@@ -50,10 +50,10 @@ export class AbilityActionRegistry {
 		this.map.delete(id);
 	}
 
-	public get(id: string): AbilityAction {
+	public get(id: string): GameplayAction {
 		const action = this.map.get(id);
 		if (!action) {
-			throw new Error(`[AbilityActionRegistry] Action '${id}' is not registered.`);
+			throw new Error(`[GameplayActionRegistry] Action '${id}' is not registered.`);
 		}
 		return action;
 	}
@@ -111,9 +111,9 @@ export type AbilityEventScopeSpec =
 	| { kind: 'world' }
 	| { kind: 'object'; target: AbilityValueSpec };
 
-export interface CallActionStep {
+export interface CallGameplayActionStep {
 	type: 'call';
-	action: string;
+	gameplayAction: string;
 	params?: Record<string, AbilityValueSpec>;
 }
 
@@ -184,7 +184,7 @@ export interface FaceStep {
 }
 
 export type AbilityStep =
-	| CallActionStep
+	| CallGameplayActionStep
 	| DispatchStep
 	| EmitStep
 	| WaitEventStep
@@ -228,7 +228,7 @@ interface AbilityExecutionFrame {
 interface AbilityExecutionContext {
 	readonly definition: GameplayAbilityDefinition;
 	readonly runtime: AbilityRuntimeBindings;
-	readonly actions: AbilityActionRegistry;
+	readonly gameplayActions: GameplayActionRegistry;
 	readonly vars: Record<string, unknown>;
 	readonly intentPayload?: unknown;
 }
@@ -239,8 +239,8 @@ export class GameplayAbilityExecution {
 	private finished: boolean;
 	private completionRan: boolean;
 
-	constructor(definition: GameplayAbilityDefinition, runtime: AbilityRuntimeBindings, actions: AbilityActionRegistry, intentPayload?: unknown) {
-		this.ctx = { definition, runtime, actions, vars: {}, intentPayload };
+	constructor(definition: GameplayAbilityDefinition, runtime: AbilityRuntimeBindings, gameplayActions: GameplayActionRegistry, intentPayload?: unknown) {
+		this.ctx = { definition, runtime, gameplayActions, vars: {}, intentPayload };
 		this.stack = [{ steps: definition.activation, index: 0 }];
 		this.finished = false;
 		this.completionRan = false;
@@ -283,7 +283,7 @@ export class GameplayAbilityExecution {
 				return { kind: 'continue' };
 			}
 			case 'call':
-				this.executeAction(step);
+				this.executeGameplayAction(step);
 				return { kind: 'continue' };
 			case 'dispatch': {
 				const payload = step.payload ? resolveRecord(step.payload, this.ctx) : undefined;
@@ -375,7 +375,7 @@ export class GameplayAbilityExecution {
 				return;
 			}
 			case 'call':
-				this.executeAction(step);
+				this.executeGameplayAction(step);
 				return;
 			case 'dispatch': {
 				const payload = step.payload ? resolveRecord(step.payload, this.ctx) : undefined;
@@ -429,23 +429,23 @@ export class GameplayAbilityExecution {
 		owner.facing = resolved;
 	}
 
-	private executeAction(step: CallActionStep): void {
-		const action = this.ctx.actions.get(step.action);
+	private executeGameplayAction(step: CallGameplayActionStep): void {
+		const action = this.ctx.gameplayActions.get(step.gameplayAction);
 		const params = step.params ? resolveRecord(step.params, this.ctx) : undefined;
-			const runtime = this.ctx.runtime;
-			const callCtx: AbilityActionContext = {
-				owner: runtime.owner,
-				ownerId: runtime.ownerId,
-				vars: this.ctx.vars,
-				intentPayload: this.ctx.intentPayload,
-				hasTag: (tag: TagId) => runtime.hasTag(tag),
-				addTag: (tag: TagId) => runtime.addTag(tag),
-				removeTag: (tag: TagId) => runtime.removeTag(tag),
-				dispatchMode: (event: GameEvent, target: Identifier | undefined) => runtime.dispatchMode(event, target),
-				emitGameplay: (event: GameEvent) => runtime.emitGameplay(event),
-				pushCommand: (command: GameplayCommand) => runtime.pushCommand(command),
-				requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => runtime.requestAbility(abilityId, opts),
-			};
+		const runtime = this.ctx.runtime;
+		const callCtx: GameplayActionContext = {
+			owner: runtime.owner,
+			ownerId: runtime.ownerId,
+			vars: this.ctx.vars,
+			intentPayload: this.ctx.intentPayload,
+			hasTag: (tag: TagId) => runtime.hasTag(tag),
+			addTag: (tag: TagId) => runtime.addTag(tag),
+			removeTag: (tag: TagId) => runtime.removeTag(tag),
+			dispatchMode: (event: GameEvent, target: Identifier | undefined) => runtime.dispatchMode(event, target),
+			emitGameplay: (event: GameEvent) => runtime.emitGameplay(event),
+			pushCommand: (command: GameplayCommand) => runtime.pushCommand(command),
+			requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => runtime.requestAbility(abilityId, opts),
+		};
 		action(callCtx, params as Record<string, unknown> | undefined);
 	}
 }

@@ -42,7 +42,7 @@ import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_mod
 import { LuaComponent } from '../component/lua_component';
 import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 import type { LuaComponentHandlerMap } from '../component/lua_component';
-import { defineAbility, abilityActions } from '../gas/ability_registry';
+import { defineAbility, gameplayActions } from '../gas/ability_registry';
 import type { GameplayAbilityDefinition } from '../gas/gameplay_ability';
 import type { AbilityId } from '../gas/gastypes';
 import { deep_clone } from 'bmsx/utils/deep_clone.ts';
@@ -422,7 +422,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly consoleServicesByAsset: Map<string, Set<string>> = new Map();
 	private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 	private readonly abilityDefinitions: Map<AbilityId, GameplayAbilityDefinition> = new Map();
-	private readonly abilityActionIds: Map<AbilityId, string[]> = new Map();
+	private readonly gameplayActionIds: Map<AbilityId, string[]> = new Map();
 	private readonly worldObjectFsmAttachments: WeakMap<WorldObject, Set<string>> = new WeakMap();
 	private readonly worldObjectBtAttachments: WeakMap<WorldObject, Set<string>> = new WeakMap();
 	private readonly worldObjectAbilityAttachments: WeakMap<WorldObject, Set<string>> = new WeakMap();
@@ -6091,7 +6091,7 @@ export class BmsxConsoleRuntime extends Service {
 				throw new Error(`[BmsxConsoleRuntime] World object '${host.id}' declares ability '${abilityId}', but it has not been registered. Ensure 'define_ability' runs before the world object definition attaches abilities.`);
 			}
 			if (!asc.hasAbility(abilityId)) {
-				asc.grantAbility(definition, abilityActions);
+				asc.grantAbility(definition, gameplayActions);
 			}
 			attached.add(key);
 		}
@@ -6122,9 +6122,9 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private registerAbilityAction(abilityId: AbilityId, slot: string, handler: LuaHandlerFn): string {
+	private registerGameplayAction(abilityId: AbilityId, slot: string, handler: LuaHandlerFn): string {
 		const actionId = `lua.ability.${abilityId}.${slot}`;
-		abilityActions.register(actionId, (ctx, params) => {
+		gameplayActions.register(actionId, (ctx, params) => {
 			const abilityCtx = ctx as { intentPayload?: unknown; payload?: EventPayload };
 			abilityCtx.payload = ctx.intentPayload as EventPayload | undefined;
 			const effectiveParams = params ?? abilityCtx.payload;
@@ -6143,22 +6143,22 @@ export class BmsxConsoleRuntime extends Service {
 				this.handleLuaError(error);
 			}
 		});
-		let actionList = this.abilityActionIds.get(abilityId);
+		let actionList = this.gameplayActionIds.get(abilityId);
 		if (!actionList) {
 			actionList = [];
-			this.abilityActionIds.set(abilityId, actionList);
+			this.gameplayActionIds.set(abilityId, actionList);
 		}
 		actionList.push(actionId);
 		return actionId;
 	}
 
 	private disposeAbilityHandlers(abilityId: AbilityId): void {
-		const actions = this.abilityActionIds.get(abilityId);
+		const actions = this.gameplayActionIds.get(abilityId);
 		if (actions) {
 			for (const actionId of actions) {
-				abilityActions.unregister(actionId);
+				gameplayActions.unregister(actionId);
 			}
-			this.abilityActionIds.delete(abilityId);
+			this.gameplayActionIds.delete(abilityId);
 		}
 		this.abilityDefinitions.delete(abilityId);
 	}
@@ -6194,21 +6194,21 @@ export class BmsxConsoleRuntime extends Service {
 		if (completionFn) (descriptor as ConsoleAbilityRegistrationDescriptor).completion = completionFn;
 		const cancelFn = this.ensureAbilityHandler(abilityId, 'cancel', (descriptor as ConsoleAbilityRegistrationDescriptor).cancel);
 		if (cancelFn) (descriptor as ConsoleAbilityRegistrationDescriptor).cancel = cancelFn;
-		const activationActionId = this.registerAbilityAction(abilityId, 'activation', activationFn);
+		const activationActionId = this.registerGameplayAction(abilityId, 'activation', activationFn);
 		const completionActionId = completionFn && typeof completionFn === 'function' && isLuaHandlerFn(completionFn)
-			? this.registerAbilityAction(abilityId, 'completion', completionFn)
+			? this.registerGameplayAction(abilityId, 'completion', completionFn)
 			: null;
 		const cancelActionId = cancelFn && typeof cancelFn === 'function' && isLuaHandlerFn(cancelFn)
-			? this.registerAbilityAction(abilityId, 'cancel', cancelFn)
+			? this.registerGameplayAction(abilityId, 'cancel', cancelFn)
 			: null;
 		const definition: GameplayAbilityDefinition = {
 			id: abilityId,
 			unique: (descriptor as ConsoleAbilityRegistrationDescriptor).unique ?? 'ignore',
 			requiredTags: this.normalizeStringArray((descriptor as ConsoleAbilityRegistrationDescriptor).requiredTags),
 			blockedTags: this.normalizeStringArray((descriptor as ConsoleAbilityRegistrationDescriptor).blockedTags),
-			activation: [{ type: 'call', action: activationActionId }],
-			completion: completionActionId ? [{ type: 'call', action: completionActionId }] : undefined,
-			cancel: cancelActionId ? [{ type: 'call', action: cancelActionId }] : undefined,
+			activation: [{ type: 'call', gameplayAction: activationActionId }],
+			completion: completionActionId ? [{ type: 'call', gameplayAction: completionActionId }] : undefined,
+			cancel: cancelActionId ? [{ type: 'call', gameplayAction: cancelActionId }] : undefined,
 		};
 		const grantTags = this.normalizeStringArray((descriptor as ConsoleAbilityRegistrationDescriptor).grantTags);
 		const removeOnActivate = this.normalizeStringArray((descriptor as ConsoleAbilityRegistrationDescriptor).removeOnActivate);
@@ -6260,11 +6260,11 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private disposeAllAbilityDefinitions(): void {
-		for (const abilityId of [...this.abilityActionIds.keys()]) {
+		for (const abilityId of [...this.gameplayActionIds.keys()]) {
 			this.disposeAbilityHandlers(abilityId);
 		}
 		this.abilityDefinitions.clear();
-		this.abilityActionIds.clear();
+		this.gameplayActionIds.clear();
 	}
 
 	public registerAbilityDefinitionFromLua(descriptorTable: LuaTable, interpreter: LuaInterpreter): GameplayAbilityDefinition {

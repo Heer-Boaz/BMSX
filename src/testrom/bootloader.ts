@@ -39,14 +39,14 @@ globalTarget.h406A = (args: BootArgs): Promise<any> => {
 };
 
 const actions = ['up', 'right', 'down', 'left', 'panleft', 'panright', 'switch_camera', 'bla', 'blap', 'moveforward', 'movebackward', 'turnleft', 'turnright', 'rotateleft', 'rotateright', 'panup', 'pandown', 'pitchup', 'pitchdown', 'toggleprojection', 'fire'] as const;
-export type Action = typeof actions[number];
+export type InputAction = typeof actions[number];
 
 type MyKeyboardInputMapping = {
-	[key in keyof KeyboardInputMapping & Action]: KeyboardButton[];
+	[key in keyof KeyboardInputMapping & InputAction]: KeyboardButton[];
 };
 
 type MyGamepadInputMapping = {
-	[key in keyof GamepadInputMapping & Action]: BGamepadButton[];
+	[key in keyof GamepadInputMapping & InputAction]: BGamepadButton[];
 };
 
 export const keyboardInputMapping: MyKeyboardInputMapping = {

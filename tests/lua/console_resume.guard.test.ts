@@ -65,6 +65,6 @@ test('registerAbilityDefinition uses Lua handler metadata', () => {
 	const nextPublic = src.indexOf('\n\tpublic ', start + 1);
 	const snippet = src.slice(start, nextPublic === -1 ? undefined : nextPublic);
 	assert.equal(snippet.includes('isLuaHandlerFn(activationFn)'), true, 'activation handlers should be validated as LuaHandlerFn');
-	assert.equal(snippet.includes("this.registerAbilityAction(abilityId, 'activation', activationFn)"), true, 'ability actions should use Lua handler functions directly');
+	assert.equal(snippet.includes("this.registerGameplayAction(abilityId, 'activation', activationFn)"), true, 'ability actions should use Lua handler functions directly');
 	assert.equal(snippet.includes('registerLuaAbilityHandler'), false, 'legacy ability handler registration should be removed');
 });

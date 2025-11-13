@@ -1,6 +1,6 @@
 import type { Direction } from 'bmsx';
-import { abilityActions, defineAbility, type Schema } from 'bmsx/gas/ability_registry';
-import type { AbilityActionContext } from 'bmsx/gas/gameplay_ability';
+import { gameplayActions, defineAbility, type Schema } from 'bmsx/gas/ability_registry';
+import type { GameplayActionContext } from 'bmsx/gas/gameplay_ability';
 import { Fighter, type AttackType } from './fighter';
 import { FIGHTER_ATTACK_ABILITY_IDS, FIGHTER_CORE_ABILITY_IDS } from './ability_catalog';
 
@@ -65,15 +65,15 @@ function attackSchema(expected: AttackType): Schema<{ attackType: AttackType }> 
 	};
 }
 
-function ensureFighterOwner(ctx: AbilityActionContext, actionId: string): Fighter {
+function ensureFighterOwner(ctx: GameplayActionContext, actionId: string): Fighter {
 	const owner = ctx.owner;
 	if (owner instanceof Fighter) return owner;
-	throw new Error(`[AbilityActions] '${actionId}' requires Fighter owner.`);
+	throw new Error(`[GameplayActions] '${actionId}' requires Fighter owner.`);
 }
 
 function resolveAttackType(params: Record<string, unknown> | undefined, actionId: string): AttackType {
 	if (!params) {
-		throw new Error(`[AbilityActions] '${actionId}' invoked without params.`);
+		throw new Error(`[GameplayActions] '${actionId}' invoked without params.`);
 	}
 	const payload = params as { attackType?: unknown };
 	const { attackType } = payload;
@@ -86,17 +86,17 @@ function resolveAttackType(params: Record<string, unknown> | undefined, actionId
 	) {
 		return attackType;
 	}
-	throw new Error(`[AbilityActions] '${actionId}' received invalid attackType '${String(attackType)}'.`);
+	throw new Error(`[GameplayActions] '${actionId}' received invalid attackType '${String(attackType)}'.`);
 }
 
-abilityActions.register('fighter.attack.tryHit', (ctx, params) => {
+gameplayActions.register('fighter.attack.tryHit', (ctx, params) => {
 	const fighter = ensureFighterOwner(ctx, 'fighter.attack.tryHit');
 	const attackType = resolveAttackType(params, 'fighter.attack.tryHit');
 	const opponent = fighter.getAttackOpponent();
 	fighter.doAttackFlow(attackType, opponent);
 });
 
-abilityActions.register('fighter.attack.hideMarker', ctx => {
+gameplayActions.register('fighter.attack.hideMarker', ctx => {
 	const fighter = ensureFighterOwner(ctx, 'fighter.attack.hideMarker');
 	fighter.hideHitMarker();
 });

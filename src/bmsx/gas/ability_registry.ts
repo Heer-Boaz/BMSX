@@ -1,5 +1,5 @@
 import type { AbilityId } from './gastypes';
-import { AbilityActionRegistry } from './gameplay_ability';
+import { GameplayActionRegistry } from './gameplay_ability';
 
 export type Schema<T> = {
 	validate(value: unknown): value is T;
@@ -48,7 +48,7 @@ class AbilityRegistry {
 
 export const abilityRegistry = new AbilityRegistry();
 
-export const abilityActions = new AbilityActionRegistry();
+export const gameplayActions = new GameplayActionRegistry();
 
 export function defineAbility<Id extends AbilityId, P>(id: Id, opts?: { schema?: Schema<P>; validate?: (payload: P) => void }): Id {
 	abilityRegistry.register(id, opts);

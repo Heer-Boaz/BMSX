@@ -5,7 +5,7 @@ import type { Identifier } from '../rompack/rompack';
 import type { WorldObject } from '../core/object/worldobject';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import { TickGroup } from '../ecs/ecsystem';
-import { abilityRegistry, abilityActions } from '../gas/ability_registry';
+import { abilityRegistry, gameplayActions } from '../gas/ability_registry';
 import {
 	type AbilityId,
 	type AbilityPayloadFor,
@@ -19,7 +19,7 @@ import {
 	type TagId,
 } from '../gas/gastypes';
 import {
-	AbilityActionRegistry,
+	GameplayActionRegistry,
 	GameplayAbilityExecution,
 	type AbilityRuntimeBindings,
 	type AbilityWaitInstruction,
@@ -75,7 +75,7 @@ export class AbilitySystemComponent extends Component {
 	private readonly grantedTagRefs = new Map<TagId, number>();
 
 	private readonly _abilities = new Map<AbilityId, GameplayAbilityDefinition>();
-	private readonly _abilityActions = new Map<AbilityId, AbilityActionRegistry>();
+	private readonly _gameplayActions = new Map<AbilityId, GameplayActionRegistry>();
 
 	@excludepropfromsavegame
 	private readonly _active = new Map<string, ActiveAbilityRun>();
@@ -190,20 +190,20 @@ export class AbilitySystemComponent extends Component {
 		return { explicit: explicitList, granted: grantedList, combined };
 	}
 
-	public grantAbility(definition: GameplayAbilityDefinition, actions?: AbilityActionRegistry): void {
+	public grantAbility(definition: GameplayAbilityDefinition, actions?: GameplayActionRegistry): void {
 		if (!definition || !definition.id) {
 			throw new Error('[AbilitySystemComponent] Cannot grant ability without a valid definition id.');
 		}
-		const registry = actions ?? abilityActions;
+		const registry = actions ?? gameplayActions;
 		this._abilities.set(definition.id, definition);
-		this._abilityActions.set(definition.id, registry);
+		this._gameplayActions.set(definition.id, registry);
 	}
 	public hasAbility(id: AbilityId): boolean {
 		return this._abilities.has(id);
 	}
 	public revokeAbility(id: AbilityId): void {
 		this._abilities.delete(id);
-		this._abilityActions.delete(id);
+		this._gameplayActions.delete(id);
 		// remove any active instances of this ability
 		for (const [key, run] of [...this._active]) {
 			if (run.id !== id) continue;
@@ -261,7 +261,7 @@ export class AbilitySystemComponent extends Component {
 
 	public tryActivate<Id extends AbilityId>(id: Id, payload?: AbilityPayloadFor<Id>): boolean {
 		const definition = this._abilities.get(id);
-		const actions = this._abilityActions.get(id);
+		const actions = this._gameplayActions.get(id);
 		if (!definition || !actions) return false;
 		abilityRegistry.validate(id, payload);
 
