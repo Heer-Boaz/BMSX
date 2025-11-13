@@ -24,6 +24,11 @@ export interface CompiledCustomEdge {
 	effect?: EffectExecutor;
 }
 
+type BindingAnalysis = {
+	usesTags: boolean;
+	usesAbilityRequests: boolean;
+};
+
 export interface CompiledBinding {
 	name?: string;
 	priority: number;
@@ -35,12 +40,16 @@ export interface CompiledBinding {
 	holdEffect?: EffectExecutor;
 	releaseEffect?: EffectExecutor;
 	customEdges: CompiledCustomEdge[];
+	usesTagConditions: boolean;
+	usesAbilityRequests: boolean;
 }
 
 export interface CompiledProgram {
 	evalMode: 'first' | 'all';
 	priority: number;
 	bindings: CompiledBinding[];
+	usesTagConditions: boolean;
+	usesAbilityRequests: boolean;
 }
 
 export type PatternParser = (pattern: string) => PatternPredicate;
@@ -61,15 +70,38 @@ export function compileProgram(program: InputAbilityProgram, parse: PatternParse
 		return a.index - b.index;
 	});
 
+	let usesTagConditions = false;
+	let usesAbilityRequests = false;
+	for (let i = 0; i < compiledEntries.length; i++) {
+		const entry = compiledEntries[i]!;
+		if (entry.compiled.usesTagConditions) usesTagConditions = true;
+		if (entry.compiled.usesAbilityRequests) usesAbilityRequests = true;
+	}
+
 	return {
 		evalMode,
 		priority: progPriority,
 		bindings: compiledEntries.map(entry => entry.compiled),
+		usesTagConditions,
+		usesAbilityRequests,
 	};
+}
+
+function hasTagConditions(binding: Binding): boolean {
+	const tags = binding.when?.tags;
+	if (!tags) return false;
+	if (tags.all && tags.all.length > 0) return true;
+	if (tags.any && tags.any.length > 0) return true;
+	if (tags.not && tags.not.length > 0) return true;
+	return false;
 }
 
 function compileBinding(binding: Binding, parse: PatternParser): CompiledBinding {
 	const priority = binding.priority ?? 0;
+	const analysis: BindingAnalysis = {
+		usesTags: hasTagConditions(binding),
+		usesAbilityRequests: false,
+	};
 	const predicate = compilePredicate(binding);
 	if (!binding.on) {
 		throw new Error(`[InputAbilityCompiler] Binding '${binding.name ?? '(unnamed)'}' is missing an 'on' clause.`);
@@ -78,7 +110,7 @@ function compileBinding(binding: Binding, parse: PatternParser): CompiledBinding
 	const hold = binding.on.hold ? parse(binding.on.hold) : undefined;
 	const release = binding.on.release ? parse(binding.on.release) : undefined;
 	const customEntries = binding.on.custom ?? [];
-	const customEffects = compileCustomEffects(binding);
+	const customEffects = compileCustomEffects(binding, analysis);
 	const customEdges = customEntries.map(item => ({
 		name: item.name,
 		match: parse(item.pattern),
@@ -92,10 +124,12 @@ function compileBinding(binding: Binding, parse: PatternParser): CompiledBinding
 		press,
 		hold,
 		release,
-		pressEffect: compileEffectList(binding.do?.press, 'press'),
-		holdEffect: compileEffectList(binding.do?.hold, 'hold'),
-		releaseEffect: compileEffectList(binding.do?.release, 'release'),
+		pressEffect: compileEffectList(binding.do?.press, 'press', analysis),
+		holdEffect: compileEffectList(binding.do?.hold, 'hold', analysis),
+		releaseEffect: compileEffectList(binding.do?.release, 'release', analysis),
 		customEdges,
+		usesTagConditions: analysis.usesTags,
+		usesAbilityRequests: analysis.usesAbilityRequests,
 	};
 }
 
@@ -145,22 +179,22 @@ function compilePredicate(binding: Binding): (ctx: EvalContext) => boolean {
 	};
 }
 
-function compileCustomEffects(binding: Binding): Map<string, EffectExecutor | undefined> {
+function compileCustomEffects(binding: Binding, analysis: BindingAnalysis): Map<string, EffectExecutor | undefined> {
 	const map = new Map<string, EffectExecutor | undefined>();
 	const table = binding.do ?? {};
 	for (const key of Object.keys(table)) {
 		if (key === 'press' || key === 'hold' || key === 'release') continue;
-		map.set(key, compileEffectList(table[key]));
+		map.set(key, compileEffectList(table[key], key, analysis));
 	}
 	return map;
 }
 
-function compileEffectList(spec: Effect | Effect[] | undefined, slot?: string): EffectExecutor | undefined {
+function compileEffectList(spec: Effect | Effect[] | undefined, slot?: string, analysis?: BindingAnalysis): EffectExecutor | undefined {
 	if (!spec) return undefined;
 	const entries = Array.isArray(spec) ? spec : [spec];
 	const executors: EffectExecutor[] = [];
 	for (let i = 0; i < entries.length; i++) {
-		executors.push(compileEffect(entries[i]!, slot));
+		executors.push(compileEffect(entries[i]!, slot, analysis));
 	}
 	if (executors.length === 0) throw new Error(`Empty effect list in slot '${slot ?? 'unknown'}'.`);
 	if (executors.length === 1) return executors[0];
@@ -171,8 +205,9 @@ function compileEffectList(spec: Effect | Effect[] | undefined, slot?: string): 
 	};
 }
 
-function compileEffect(effect: Effect, slot?: string): EffectExecutor {
+function compileEffect(effect: Effect, slot?: string, analysis?: BindingAnalysis): EffectExecutor {
 	if (isAbilityRequest(effect)) {
+		if (analysis) analysis.usesAbilityRequests = true;
 		const spec = effect['ability.request'];
 		if (!spec) throw new Error(`Missing ability request in effect ${JSON.stringify(effect)}`);
 		if (typeof spec === 'string') {
@@ -217,7 +252,7 @@ function compileEffect(effect: Effect, slot?: string): EffectExecutor {
 		};
 	}
 	if (isNestedCommands(effect)) {
-		const nested = compileEffectList(effect.commands, slot);
+		const nested = compileEffectList(effect.commands, slot, analysis);
 		if (!nested) throw new Error(`Empty commands in nested effect ${JSON.stringify(effect)}`);
 		return nested;
 	}

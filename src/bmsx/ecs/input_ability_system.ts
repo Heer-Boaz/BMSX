@@ -55,12 +55,13 @@ export class InputAbilitySystem extends ECSystem {
 		this.frameLatchTouched.clear();
 		for (let [obj, component] of filter_iterable($.world.objectsWithComponents(InputAbilityComponent, { scope: 'active' }), (item: [ WorldObject, InputAbilityComponent]) => this.isEligibleObject(item[0]))) {
 			const program = this.resolveCompiledProgram(component);
+			const programKey = this.resolveProgramKey(component, obj);
+			const componentId = component.id ?? component.id_local ?? component.constructor.name;
 
 			const componentPlayerIndex = component.playerIndex ?? 0;
 			const fallbackPlayerIndex = obj.player_index ?? 0;
 			const playerIndex = componentPlayerIndex > 0 ? componentPlayerIndex : fallbackPlayerIndex;
 			if (playerIndex <= 0) {
-				const componentId = component.id ?? component.id_local ?? component.constructor.name;
 				throw new Error(`[InputAbilitySystem] Unable to resolve player index for object '${obj.id}' (component '${componentId}').`);
 			}
 
@@ -68,21 +69,29 @@ export class InputAbilitySystem extends ECSystem {
 			if (!input) continue;
 
 			const asc = obj.getUniqueComponent(AbilitySystemComponent);
-			if (!asc) {
-				const componentId = component.id ?? component.id_local ?? component.constructor.name;
-				throw new Error(`[InputAbilitySystem] AbilitySystemComponent missing on object '${obj.id}' (component '${componentId}').`);
+			if (!asc && (program.usesAbilityRequests || program.usesTagConditions)) {
+				const reasons: string[] = [];
+				if (program.usesAbilityRequests) reasons.push('requests abilities');
+				if (program.usesTagConditions) reasons.push('uses gameplay tags');
+				const summary = reasons.join(' and ');
+				throw new Error(`[InputAbilitySystem] Program '${programKey}' ${summary} but object '${obj.id}' (component '${componentId}') has no AbilitySystemComponent.`);
 			}
 
-			const ownerId = asc.parentid ?? obj.id;
+			const ownerId = asc ? (asc.parentid ?? obj.id) : obj.id;
 
-			const programKey = this.resolveProgramKey(component, obj);
 			const queuedEvents: GameEvent[] = [];
+			const hasTag = asc ? (tag: string) => asc.hasGameplayTag(tag) : () => false;
+			const requestAbility = asc
+				? <Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>) => asc.requestAbility(id, opts)
+				: <Id extends AbilityId>(id: Id) => {
+					throw new Error(`[InputAbilitySystem] Program '${programKey}' attempted to request ability '${id}' on '${obj.id}' without an AbilitySystemComponent.`);
+				};
 			const ctx: EvalContext = {
 				owner_id: ownerId,
 				playerIndex,
-				hasTag: (tag: string) => asc.hasGameplayTag(tag),
+				hasTag,
 				matchesMode: (path: string) => obj.sc.matches_state_path(path),
-				requestAbility: <Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>) => asc.requestAbility(id, opts),
+				requestAbility,
 				consume: (actions: string[]) => {
 					for (let idx = 0; idx < actions.length; idx++) {
 						input.consumeAction(actions[idx]!);
