@@ -13,6 +13,7 @@ async function main(): Promise<void> {
 	const absoluteRomPath = path.resolve(romPath);
 	const romBuffer = await readFile(absoluteRomPath);
 	const arrayBuffer = romBuffer.buffer.slice(romBuffer.byteOffset, romBuffer.byteOffset + romBuffer.byteLength);
+	// @ts-ignore
 	const { zipped_rom } = await getZippedRomAndRomLabelFromBlob(arrayBuffer);
 	const inflated = pako.inflate(zipped_rom).buffer;
 	const { assets, projectRootPath } = await loadAssetList(inflated);
