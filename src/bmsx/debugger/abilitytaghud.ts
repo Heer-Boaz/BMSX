@@ -178,7 +178,7 @@ class AbilityTagHUDOverlay {
 		const ctor = obj.constructor as { name?: string } | undefined;
 		const ctorName = ctor && typeof ctor.name === 'string' ? ctor.name : 'WorldObject';
 		targetLabel.textContent = this.targetId + ' [' + ctorName + ']';
-		const asc = obj.getUniqueComponent(AbilitySystemComponent);
+		const asc = obj.get_unique_component(AbilitySystemComponent);
 		if (!asc) {
 			content.textContent = 'AbilitySystemComponent not found on this object.';
 			return;

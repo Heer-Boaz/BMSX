@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LuaLexer } from '../../src/bmsx/lua/lexer.ts';
-import { LuaParser } from '../../src/bmsx/lua/parser.ts';
-import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator } from '../../src/bmsx/lua/ast.ts';
+import { LuaLexer } from '../../src/bmsx/lua/lexer';
+import { LuaParser } from '../../src/bmsx/lua/parser';
+import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator } from '../../src/bmsx/lua/ast';
 import type {
 	LuaChunk,
 	LuaCallStatement,
@@ -18,7 +18,7 @@ import type {
 	LuaLabelStatement,
 	LuaReturnStatement,
 	LuaIdentifierExpression,
-} from '../../src/bmsx/lua/ast.ts';
+} from '../../src/bmsx/lua/ast';
 
 function parseChunk(source: string): LuaChunk {
 	const lexer = new LuaLexer(source, 'chunk');

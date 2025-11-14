@@ -1,5 +1,5 @@
-import { LuaLexer } from '../../lua/lexer.ts';
-import { LuaParser } from '../../lua/parser.ts';
+import { LuaLexer } from '../../lua/lexer';
+import { LuaParser } from '../../lua/parser';
 import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
@@ -20,9 +20,9 @@ import {
 	type LuaFunctionDeclarationStatement,
 	type LuaDefinitionInfo,
 	type LuaSourceRange,
-} from '../../lua/ast.ts';
-import type { LuaToken } from '../../lua/token.ts';
-import { LuaTokenType } from '../../lua/token.ts';
+} from '../../lua/ast';
+import type { LuaToken } from '../../lua/token';
+import { LuaTokenType } from '../../lua/token';
 
 export type SymbolKind = 'parameter' | 'local' | 'function' | 'global' | 'tableField';
 

@@ -18,11 +18,11 @@ module.exports.schedule = async function schedule({ logger }) {
       console.log('[COLLISION_TEST] ingredient missing');
       return;
     }
-    const playerCollider = typeof player.getComponentById === 'function'
-      ? player.getComponentById('player_collider')
+    const playerCollider = typeof player.get_component_by_id === 'function'
+      ? player.get_component_by_id('player_collider')
       : null;
-    const ingredientCollider = typeof ingredient.getComponentById === 'function'
-      ? ingredient.getComponentById('ingredient_collider')
+    const ingredientCollider = typeof ingredient.get_component_by_id === 'function'
+      ? ingredient.get_component_by_id('ingredient_collider')
       : null;
     if (playerCollider && ingredientCollider) {
       const playerWidth = playerCollider.worldArea.end.x - playerCollider.worldArea.start.x;

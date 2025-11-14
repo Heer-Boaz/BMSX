@@ -14,7 +14,7 @@ export class TextRenderSystem extends ECSystem {
 		for (const [o, tcx] of world.objectsWithComponents(TextComponent, { scope: 'active' })) {
 			if (!tcx.enabled) continue;
 			const parent = o as WorldObject;
-			const t = parent.getUniqueComponent(TransformComponent);
+			const t = parent.get_unique_component(TransformComponent);
 			const offset = tcx.offset;
 			if (!offset) {
 				throw new Error('[TextRenderSystem] TextComponent missing offset configuration.');

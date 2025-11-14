@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createLuaInterpreter } from '../../src/bmsx/lua/runtime.ts';
-import type { LuaSourceRange } from '../../src/bmsx/lua/ast.ts';
-import type { LuaFunctionValue } from '../../src/bmsx/lua/value.ts';
-import { LuaHandlerRegistry, type LuaHandlerBindContext } from '../../src/bmsx/console/lua_handler_registry.ts';
-import type { LuaValue } from '../../src/bmsx/lua/value.ts';
+import { createLuaInterpreter } from '../../src/bmsx/lua/runtime';
+import type { LuaSourceRange } from '../../src/bmsx/lua/ast';
+import type { LuaFunctionValue } from '../../src/bmsx/lua/value';
+import { LuaHandlerRegistry, type LuaHandlerBindContext } from '../../src/bmsx/console/lua_handler_registry';
+import type { LuaValue } from '../../src/bmsx/lua/value';
 
 test('LuaHandlerRegistry tracks registration and chunk mapping', () => {
 	const registry = new LuaHandlerRegistry();

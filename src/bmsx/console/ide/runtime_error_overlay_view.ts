@@ -1,5 +1,5 @@
-import { pointInRect } from 'bmsx/utils/rect_operations.ts';
-import { clamp } from 'bmsx/utils/clamp.ts';
+import { pointInRect } from 'bmsx/utils/rect_operations';
+import { clamp } from '../../utils/clamp';
 import type { BmsxConsoleApi } from '../api';
 import type { ConsoleEditorFont } from '../editor_font';
 import {
@@ -11,8 +11,8 @@ import {
 import type {
 	CachedHighlight,
 	RuntimeErrorOverlay} from './types';
-import type { StackTraceFrame } from 'bmsx/lua/runtime.ts';
-import type { RectBounds } from '../../rompack/rompack.ts';
+import type { StackTraceFrame } from '../../lua/runtime';
+import type { RectBounds } from '../../rompack/rompack';
 
 export interface RuntimeErrorOverlayLayoutHost {
 	ensureVisualLines(): void;

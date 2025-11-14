@@ -1,6 +1,6 @@
-import { LuaRuntimeError } from './errors.ts';
-import type { LuaValue } from './value.ts';
-import type { LuaSourceRange } from './ast.ts';
+import { LuaRuntimeError } from './errors';
+import type { LuaValue } from './value';
+import type { LuaSourceRange } from './ast';
 
 export class LuaEnvironment {
 	private readonly parent: LuaEnvironment | null;

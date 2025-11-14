@@ -1,4 +1,4 @@
-import { $, build_fsm, State, type StateMachineBlueprint, type GameEvent } from 'bmsx';
+import { $, build_fsm, State, type StateMachineBlueprint, type GameEvent, type TimelineDefinition, type TimelineFrameEventPayload, type TimelineEndEventPayload } from 'bmsx';
 import type { Direction } from 'bmsx';
 import type { Fighter, AttackType } from './fighter';
 
@@ -20,6 +20,8 @@ type AnimationEvent = GameEvent<'animationEnd', { animation_name?: string }>;
 type JumpEventDetail = { direction?: Direction | null; directional?: boolean | string };
 type JumpEvent = GameEvent<'mode.control.jump', JumpEventDetail>;
 type WalkEvent = GameEvent<'mode.locomotion.walk', { direction?: Direction }>;
+type TimelineFrameEvent = GameEvent<'timeline.frame', TimelineFrameEventPayload>;
+type TimelineEndEvent = GameEvent<'timeline.end', TimelineEndEventPayload>;
 
 const ATTACK_FRAMES: Record<AttackType, number> = {
 	punch: 6,
@@ -28,6 +30,37 @@ const ATTACK_FRAMES: Record<AttackType, number> = {
 	duckkick: 6,
 	flyingkick: 10,
 };
+
+const STATIC_TIMELINES: TimelineDefinition[] = [
+	{ id: 'fighter.jump.ascending', frames: [0], ticksPerFrame: 30, playbackMode: 'once' },
+	{ id: 'fighter.jump.descending', frames: [0], ticksPerFrame: 30, playbackMode: 'once' },
+	{
+		id: 'fighter.stoerheidsdans',
+		frames: ['highkick', 'lowkick', 'duckkick', 'punch', 'punch'],
+		repetitions: 2,
+		playbackMode: 'once',
+		ticksPerFrame: 0,
+		autotick: false,
+	},
+	{ id: 'fighter.walk.step1', frames: [0], ticksPerFrame: 8, playbackMode: 'once' },
+	{ id: 'fighter.walk.step2', frames: [0], ticksPerFrame: 8, playbackMode: 'once' },
+	{ id: 'fighter.animation.humiliated', frames: [0], ticksPerFrame: 300, playbackMode: 'once' },
+	{ id: 'fighter.hitanimation', frames: [-1, 1], repetitions: 10, playbackMode: 'once', ticksPerFrame: 1 },
+];
+
+const ATTACK_TIMELINES: TimelineDefinition[] = (Object.keys(ATTACK_FRAMES) as AttackType[]).map(name => createAttackTimelineDefinition(name));
+
+export const FIGHTER_TIMELINES: TimelineDefinition[] = [...STATIC_TIMELINES, ...ATTACK_TIMELINES];
+
+const TIMELINE_IDS = {
+	jumpAscending: 'fighter.jump.ascending',
+	jumpDescending: 'fighter.jump.descending',
+	stoerheidsdans: 'fighter.stoerheidsdans',
+	walkStep1: 'fighter.walk.step1',
+	walkStep2: 'fighter.walk.step2',
+	humiliated: 'fighter.animation.humiliated',
+	hitAnimation: 'fighter.hitanimation',
+} as const;
 
 const CONTROL_MACHINE_ID = 'fighter_control';
 const STOER_STATE_PATH = `${CONTROL_MACHINE_ID}:/stoerheidsdans`;
@@ -203,21 +236,41 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 						this.abilitySystem.removeTags('state.airborne', 'state.airborne.attackUsed');
 						this.abilitySystem.addTags('state.grounded');
 						this.finishJump();
-					},
+						},
 					states: {
 						_ascending: {
-							ticks2advance_tape: 30,
+							entering_state(this: Fighter) {
+								this.play_timeline(TIMELINE_IDS.jumpAscending);
+							},
 							tick(this: Fighter, state: State) {
 								this.jumpAscendingTick(state);
 							},
-							tape_next: '../descending',
+							on: {
+								'timeline.end': {
+									scope: 'self',
+									do(this: Fighter, _state: State, event: TimelineEndEvent) {
+										if (event.timeline_id !== TIMELINE_IDS.jumpAscending) return;
+										return '../descending';
+									},
+								},
+							},
 						},
 						descending: {
-							ticks2advance_tape: 30,
+							entering_state(this: Fighter) {
+								this.play_timeline(TIMELINE_IDS.jumpDescending);
+							},
 							tick(this: Fighter, state: State) {
 								this.jumpDescendingTick(state);
 							},
-							tape_next: GROUND_IDLE_STATE_PATH,
+							on: {
+								'timeline.end': {
+									scope: 'self',
+									do(this: Fighter, _state: State, event: TimelineEndEvent) {
+										if (event.timeline_id !== TIMELINE_IDS.jumpDescending) return;
+										return GROUND_IDLE_STATE_PATH;
+									},
+								},
+							},
 						},
 						flyingkick: {
 							is_concurrent: true,
@@ -254,16 +307,12 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 			},
 		},
 		stoerheidsdans: {
-			enable_tape_autotick: false,
-			ticks2advance_tape: 1,
-			tape_data: ['highkick', 'lowkick', 'duckkick', 'punch', 'punch'],
-			repetitions: 2,
-			tape_playback_mode: 'once',
 			data: { expectedAnimation: null },
 			entering_state(this: Fighter, state: State) {
 				this.abilitySystem.addTags('state.combat_disabled');
 				this.abilitySystem.removeTags('state.attacking');
 				this.enterStoerheidsdans(state);
+				this.play_timeline(TIMELINE_IDS.stoerheidsdans);
 			},
 			exiting_state(this: Fighter) {
 				this.abilitySystem.removeTags('state.combat_disabled');
@@ -274,12 +323,20 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 						this.handleStoerAnimationEnd(state, event);
 					},
 				},
-			},
-			tape_next(this: Fighter, state: State, payload?: { tape_rewound: boolean }) {
-				this.handleStoerTapeNext(state, payload);
-			},
-			tape_end(this: Fighter, state: State): string {
-				return this.completeStoerheidsdans(state);
+				'timeline.frame': {
+					scope: 'self',
+					do(this: Fighter, state: State, event: TimelineFrameEvent) {
+						if (event.timeline_id !== TIMELINE_IDS.stoerheidsdans) return;
+						this.handleStoerTimelineFrame(state, event);
+					},
+				},
+				'timeline.end': {
+					scope: 'self',
+					do(this: Fighter, state: State, event: TimelineEndEvent) {
+						if (event.timeline_id !== TIMELINE_IDS.stoerheidsdans) return;
+						return this.completeStoerheidsdans(state);
+					},
+				},
 			},
 		},
 		nagenieten: {
@@ -311,13 +368,13 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 	is_concurrent: true,
 	on: {
 		'$i_was_hit': {
-			do(_state: State) {
-				setTicksToLastFrame(_state);
+			do(this: Fighter) {
+				this.skip_animation_to_end();
 			},
 		},
 		'$i_hit_face': {
-			do(_state: State) {
-				setTicksToLastFrame(_state);
+			do(this: Fighter) {
+				this.skip_animation_to_end();
 			},
 		},
 		'$animate_idle': '_idle',
@@ -349,22 +406,39 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 					throw new Error('[FighterFSMs] Walk animation state missing _walk1 substate.');
 				}
 				state.transition_to('_walk1');
-				children._walk1.rewind_tape();
 			},
 			states: {
 				_walk1: {
-					ticks2advance_tape: 8,
 					entering_state(this: Fighter) {
 						setSpriteFrame(this, 'walk');
+						this.play_animation_timeline(TIMELINE_IDS.walkStep1);
 					},
-					tape_next: '../walk2',
+					on: {
+						'timeline.end': {
+							scope: 'self',
+							do(this: Fighter, _state: State, event: TimelineEndEvent) {
+								if (event.timeline_id !== TIMELINE_IDS.walkStep1) return;
+								this.handle_animation_timeline_end(event.timeline_id);
+								return '../walk2';
+							},
+						},
+					},
 				},
 				walk2: {
-					ticks2advance_tape: 8,
 					entering_state(this: Fighter) {
 						setSpriteFrame(this, 'walk_alt');
+						this.play_animation_timeline(TIMELINE_IDS.walkStep2);
 					},
-					tape_next: '../_walk1',
+					on: {
+						'timeline.end': {
+							scope: 'self',
+							do(this: Fighter, _state: State, event: TimelineEndEvent) {
+								if (event.timeline_id !== TIMELINE_IDS.walkStep2) return;
+								this.handle_animation_timeline_end(event.timeline_id);
+								return '../_walk1';
+							},
+						},
+					},
 				},
 			},
 		},
@@ -384,13 +458,20 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 			},
 		},
 		humiliated: {
-			ticks2advance_tape: 300,
 			entering_state(this: Fighter) {
 				setSpriteFrame(this, 'humiliated');
 				$.emitPresentation('humiliated_animation_start', this, { fighter: this });
+				this.play_animation_timeline(TIMELINE_IDS.humiliated);
 			},
-			tape_next(this: Fighter) {
-				$.emitPresentation('humiliated_animation_end', this, { fighter: this });
+			on: {
+				'timeline.end': {
+					scope: 'self',
+					do(this: Fighter, _state: State, event: TimelineEndEvent) {
+						if (event.timeline_id !== TIMELINE_IDS.humiliated) return;
+						this.handle_animation_timeline_end(event.timeline_id);
+						$.emitPresentation('humiliated_animation_end', this, { fighter: this });
+					},
+				},
 			},
 		},
 	},
@@ -422,23 +503,6 @@ function resolveWalkPayload(self: Fighter, payload?: WalkEvent | { direction?: D
 	return { direction };
 }
 
-function setTicksToLastFrame(state: State): void {
-	if (!state) {
-		throw new Error('[FighterFSMs] Cannot set ticks to last frame for undefined state.');
-	}
-	const current = state.current;
-	if (!current) {
-		throw new Error(`[FighterFSMs] Cannot set ticks to last frame for state '${state.path}' without active child state.`);
-	}
-	const definition = current.definition;
-	if (!definition) {
-		throw new Error(`[FighterFSMs] Cannot set ticks to last frame for state '${state.path}' without definition.`);
-	}
-	const ticksPerFrame = definition.ticks2advance_tape ?? 0;
-	const targetTicks = ticksPerFrame > 0 ? ticksPerFrame - 1 : 0;
-	current.setTicksNoSideEffect(targetTicks);
-}
-
 function getAnimSprites(self: Fighter): Record<string, string> {
 	const candidate = (self as unknown as { animSprites?: Record<string, string> }).animSprites;
 	if (!candidate) {
@@ -458,23 +522,44 @@ function setSpriteFrame(self: Fighter, frameKey: string): void {
 
 function restartWalkAnimation(state: State): void {
 	state.transition_to('walk/_walk1');
-	const walkState = state.current!;
-	const walkLeaf = walkState.current!;
-	walkLeaf.rewind_tape();
 }
 
 function createAttackAnimationState(name: AttackType, weaponClass: 'light' | 'heavy'): StateMachineBlueprint {
+	const timelineId = `fighter.attack.${name}`;
+	return {
+		entering_state(this: Fighter) {
+			setSpriteFrame(this, name);
+			this.play_animation_timeline(timelineId);
+			$.emitGameplay('combat.attack', this, { animation_name: name, weaponClass });
+		},
+		on: {
+			'timeline.end': {
+				scope: 'self',
+				do(this: Fighter, _state: State, event: TimelineEndEvent) {
+					if (event.timeline_id !== timelineId) return;
+					this.handle_animation_timeline_end(event.timeline_id);
+					$.emit('animationEnd', this, { animation_name: name });
+					$.emitGameplay(`fighter.attack.animation.${name}.finished`, this, { attackType: name });
+				},
+			},
+		},
+	};
+}
+
+function createAttackTimelineDefinition(name: AttackType): TimelineDefinition {
 	const configuredFrames = ATTACK_FRAMES[name];
 	const totalFrames = configuredFrames > 0 ? configuredFrames : 1;
-	const tape: number[] = [];
+	const frames: number[] = [];
 	for (let i = 0; i < totalFrames; i += 1) {
-		tape.push(i);
+		frames.push(i);
 	}
 	const startFrame = Math.max(0, Math.min(totalFrames - 1, Math.floor(totalFrames * 0.32)));
 	const endFrame = Math.max(startFrame, Math.min(totalFrames - 1, Math.floor(totalFrames * 0.55)));
 	return {
-		tape_data: tape,
-		ticks2advance_tape: 1,
+		id: `fighter.attack.${name}`,
+		frames,
+		ticksPerFrame: 1,
+		playbackMode: 'once',
 		windows: [
 			{
 				name: 'attackActive',
@@ -487,17 +572,6 @@ function createAttackAnimationState(name: AttackType, weaponClass: 'light' | 'he
 		markers: [
 			{ frame: 0, lane: 'presentation', event: `fx.${name}.windup` },
 		],
-		entering_state(this: Fighter) {
-			setSpriteFrame(this, name);
-			$.emitGameplay('combat.attack', this, { animation_name: name, weaponClass });
-		},
-		tape_next(this: Fighter, state: State) {
-			if (!state.is_at_tape_end) {
-				return;
-			}
-			$.emit('animationEnd', this, { animation_name: name });
-			$.emitGameplay(`fighter.attack.animation.${name}.finished`, this, { attackType: name });
-		},
 	};
 }
 

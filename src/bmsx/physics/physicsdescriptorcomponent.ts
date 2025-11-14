@@ -34,7 +34,7 @@ export class PhysicsDescriptorComponent extends Component {
 		if (!parent) {
 			throw new Error(`[PhysicsDescriptorComponent] Parent '${this.parentid}' not found while attaching physics runtime.`);
 		}
-		if (parent.getUniqueComponent(PhysicsComponent)) return;
+		if (parent.get_unique_component(PhysicsComponent)) return;
 		// console.log('[PhysicsDescriptorComponent] Attaching runtime physics to', parent.id);
 		// NOTE: Do NOT force 'kinematic' here. Kinematic bodies were never integrated in PhysicsWorld.step,
 		// causing everything spawned via descriptor to freeze. Default behavior should remain
@@ -52,7 +52,7 @@ export class PhysicsDescriptorComponent extends Component {
 			writeBack: this.writeBack,
 			// type: desc.bodyType // future extension
 		};
-		parent.addComponent(new PhysicsComponent({ parentid: this.parentid, physicsOptions: opts }));
+		parent.add_component(new PhysicsComponent({ parentid: this.parentid, physicsOptions: opts }));
 	}
 	@onload restore() { this.attachRuntime(); }
 	// No-op update hooks (tags present so descriptor participates consistently if needed)

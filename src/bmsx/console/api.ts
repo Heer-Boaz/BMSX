@@ -303,7 +303,7 @@ export class BmsxConsoleApi {
 	}
 
 	public sfx(id: string, options?: AudioPlayOptions): void {
-		$.playAudio(id, options);
+		$.playaudio(id, options);
 	}
 
 	public stop_sfx(): void {
@@ -509,12 +509,12 @@ export class BmsxConsoleApi {
 			state,
 		});
 		if (instance.isUniqueDefinition) {
-			const existing = object.getComponents(LuaComponent);
+			const existing = object.get_components(LuaComponent);
 			if (existing.some(entry => entry.definition_id === definition_id)) {
 				throw new Error(`[BmsxConsoleApi] Lua component '${definition_id}' is marked unique and already attached to '${object_id}'.`);
 			}
 		}
-		object.addComponent(instance);
+		object.add_component(instance);
 		return instance.id;
 	}
 
@@ -534,7 +534,7 @@ export class BmsxConsoleApi {
 		}
 		const runtime = this.requireConsoleRuntime('grant_ability');
 		const object = this.requireWorldObject(object_id, 'grant_ability');
-		const asc = object.getUniqueComponent(AbilitySystemComponent);
+		const asc = object.get_unique_component(AbilitySystemComponent);
 		if (!asc) {
 			throw new Error(`[BmsxConsoleApi] World object '${object_id}' does not have an AbilitySystemComponent.`);
 		}
@@ -550,7 +550,7 @@ export class BmsxConsoleApi {
 			throw new Error('[BmsxConsoleApi] request_ability requires a non-empty ability id.');
 		}
 		const object = this.requireWorldObject(object_id, 'request_ability');
-		const asc = object.getUniqueComponent(AbilitySystemComponent);
+		const asc = object.get_unique_component(AbilitySystemComponent);
 		if (!asc) {
 			throw new Error(`[BmsxConsoleApi] World object '${object_id}' does not have an AbilitySystemComponent.`);
 		}
@@ -581,7 +581,7 @@ export class BmsxConsoleApi {
 			throw new Error('[BmsxConsoleApi] remove_component component_id must be a non-empty string.');
 		}
 		const object = this.requireWorldObject(object_id, 'remove_component');
-		const component = object.getComponentById(component_id);
+		const component = object.get_component_by_id(component_id);
 		if (!component) {
 			throw new Error(`[BmsxConsoleApi] Component '${component_id}' not found on object '${object_id}'.`);
 		}
@@ -655,7 +655,7 @@ export class BmsxConsoleApi {
 		}
 		const emitter = this.getEmitter(emitter_or_id);
 		this.validateEmitter(emitter_or_id, emitter);
-		$.emitGameplay(event_name, emitter as any, payload);
+		$.emit_gameplay(event_name, emitter as any, payload);
 	}
 
 	public emit_presentation(event_name: string, emitter_or_id: Identifier | null, payload?: EventPayload): void {
@@ -664,7 +664,7 @@ export class BmsxConsoleApi {
 		}
 		const emitter = this.getEmitter(emitter_or_id);
 		this.validateEmitter(emitter_or_id, emitter);
-		$.emitPresentation(event_name, emitter, payload);
+		$.emit_presentation(event_name, emitter, payload);
 	}
 
 	public timelines(): EventTimeline[] {
@@ -1075,7 +1075,7 @@ export class BmsxConsoleApi {
 		}
 		(prepared as { parentid: string }).parentid = object.id;
 		const component = new ctor(prepared);
-		object.addComponent(component);
+		object.add_component(component);
 		return component;
 	}
 

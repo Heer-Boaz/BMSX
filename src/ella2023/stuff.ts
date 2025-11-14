@@ -167,9 +167,12 @@ export class TitleScreen extends SpriteObject {
 						},
 						blink: {
 							is_concurrent: true,
-							ticks2advance_tape: 20,
-							tape_data: [false, true],
-							tape_playback_mode: 'loop',
+							timeline: {
+								id: 'title-screen.blink',
+								frames: [false, true],
+								playbackMode: 'loop',
+								ticksPerFrame: 20,
+							},
 							data: {
 								pause_blink: false,
 							},
@@ -238,9 +241,12 @@ export class Gordijn extends WorldObject {
 					on: {
 						$curtained: '/_idle',
 					},
-					ticks2advance_tape: 2,
-					tape_data: [8],
-					repetitions: 256 / 8,
+					timeline: {
+						id: 'gordijn.close',
+						frames: [8],
+						ticksPerFrame: 2,
+						repetitions: 256 / 8,
+					},
 					entering_state(this: Gordijn) {
 						this.width = 0;
 					},

@@ -1,7 +1,7 @@
 import type { ConsoleCodeLayout } from './code_layout';
-import type { SearchMatch } from './types.ts';
-import { LuaSemanticWorkspace } from './semantic_workspace.ts';
-import type { LuaSourceRange } from '../../lua/ast.ts';
+import type { SearchMatch } from './types';
+import { LuaSemanticWorkspace } from './semantic_workspace';
+import type { LuaSourceRange } from '../../lua/ast';
 
 export type ExtractIdentifierExpression = (row: number, column: number) => { expression: string; startColumn: number; endColumn: number } | null;
 

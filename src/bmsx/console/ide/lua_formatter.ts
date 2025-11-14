@@ -1,6 +1,6 @@
-import { LuaLexer } from '../../lua/lexer.ts';
-import type { LuaToken } from '../../lua/token.ts';
-import { LuaTokenType } from '../../lua/token.ts';
+import { LuaLexer } from '../../lua/lexer';
+import type { LuaToken } from '../../lua/token';
+import { LuaTokenType } from '../../lua/token';
 
 type LineMetadata = {
 	decreaseBefore: number;

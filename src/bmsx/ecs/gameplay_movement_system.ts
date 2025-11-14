@@ -21,7 +21,7 @@ export class GameplayMovementSystem extends ECSystem {
 			if (!obj) {
 				throw new Error(`[GameplayMovementSystem] Movement command targets unknown object '${targetId}'.`);
 			}
-			if (obj.disposeFlag || obj.active === false) {
+			if (obj.dispose_flag || obj.active === false) {
 				throw new Error(`[GameplayMovementSystem] Movement command issued for inactive object '${targetId}'.`);
 			}
 

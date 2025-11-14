@@ -34,15 +34,15 @@ Deze notitie bundelt observaties van de huidige FSM‑architectuur, pijnpunten v
 
 ## Observaties uit voorbeelden
 
-- `ella2023/eila.ts`: scheiding besturing vs animatie; `@assign_fsm('player_animation')`; transities met `#this.*`/`#root.*`; tape voor animaties, parallelle subtrees.
-- `sint2024/quiz.ts`: UI‑flow met `on_input` DSL (bijv. `'? (a[j!c], b[j!c])'`), tape over vragen, guarded end‑state.
+- `ella2023/eila.ts`: scheiding besturing vs animatie; `@assign_fsm('player_animation')`; transities met `#this.*`/`#root.*`; timeline voor animaties, parallelle subtrees.
+- `sint2024/quiz.ts`: UI‑flow met `on_input` DSL (bijv. `'? (a[j!c], b[j!c])'`), timeline over vragen, guarded end‑state.
 
 ## Pijnpunten voor AI‑assistenten
 
 - String‑DSL’s zonder schema: inputpatronen en paden zijn gevoelig voor typos, valideren pas runtime.
 - `this`‑binding: handlers moeten `function (this: T, state: State, ...)` zijn; arrow functions breken context.
 - Variëteit in transities: zowel `to` als `switch`, plus directe strings; inconsistentie vergroot foutkans.
-- Impliciete conventies (startstate `_`/`#`, parallel, tape) zijn niet expliciet genoeg voor generatieve tools.
+- Impliciete conventies (startstate `_`/`#`, parallel, timeline) zijn niet expliciet genoeg voor generatieve tools.
 
 ## Voorstel: Bestandsysteem‑achtige Padnotatie (non‑breaking)
 
@@ -148,7 +148,7 @@ private handle_path(path: string | string[]): [string, string[], State] {
   - Legacy (`#this.*`, `#root.*`) blijft werken.
 - Transities: kies consequent `to:` (default) of `switch:` wanneer laagste level nodig is.
 - Input: houd je aan bestaande DSL of gebruik helper‑bouwers als die worden toegevoegd.
-- Tape/auto_reset: gebruik spaarzaam; `ticks2move`, `repetitions`, `auto_tick`, `auto_reset` documenteren bij de state.
+- Timeline/auto_reset: geef per state aan welke clip wordt afgespeeld (`timeline { frames, ticks_per_frame, playback_mode }`) en wanneer auto‑reset gewenst is.
 
 ## Voorbeelden (mapping)
 
@@ -183,6 +183,6 @@ private handle_path(path: string | string[]): [string, string[], State] {
 - Event scope: `$event` = self; anders global. Events worden geharvest en genormaliseerd.
 - Transities: `to` (tree) vs `switch` (laagste niveau).
 - Parallelle states: alle niet‑current parallelle states runnen ook per tick.
-- Tape: `ticks2advance_tape`, `repetitions`, `tape_playback_mode`, `tape_playback_easing`, `auto_tick`.
+- Timeline: `ticksPerFrame`, `repetitions`, `playbackMode`, `easing`, `autotick`.
 - Auto‑reset: `'state' | 'tree' | 'subtree' | 'none'`.
 - Hoisting: handlers uit definities/decorators → registry (proxy‑thunks voor hot‑swap).

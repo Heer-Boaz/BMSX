@@ -2,11 +2,11 @@ import { $ } from '../../core/game';
 import type { KeyboardInput } from '../../input/keyboardinput';
 import type { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
-import { clamp } from 'bmsx/utils/clamp.ts';
+import { clamp } from '../../utils/clamp';
 import { ConsoleScrollbar } from './scrollbar';
 import { renderResourcePanel } from './render_resource_panel';
 import type { ResourceBrowserItem } from './types';
-import type { RectBounds } from '../../rompack/rompack.ts';
+import type { RectBounds } from '../../rompack/rompack';
 import type { ConsoleResourceDescriptor } from '../types';
 import { isKeyJustPressed as isKeyJustPressedGlobal, isModifierPressed as isModifierPressedGlobal, consumeKey as consumeKeyboardKey } from './input_helpers';
 

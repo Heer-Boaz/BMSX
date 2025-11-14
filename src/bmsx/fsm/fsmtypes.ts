@@ -58,41 +58,8 @@ export interface StateEventHandler<T extends Stateful = any, E extends GameEvent
 }
 export interface StateExitHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P): void; }
 export interface StateNextHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P & { tape_rewound: boolean }): transition_target | void; }
-
 export type listed_sdef_event = { name: string, scope: EventScope, lane?: EventLane | 'any' };
 
-export type MarkerAt = { frame: number } | { u: number };
-
-export type Marker = MarkerAt & {
-	event: string;
-	lane?: EventLane | 'any';
-	payload?: Record<string, any>;
-	addTags?: string[];
-	removeTags?: string[];
-};
-
-export type Window = {
-	name: string;
-	start: MarkerAt;
-	end: MarkerAt;
-	lane?: EventLane | 'any';
-	tag?: string;
-	payloadstart?: Record<string, any>;
-	payloadend?: Record<string, any>;
-};
-
-export type CompiledMarker = {
-	frame: number;
-	event: string;
-	lane: EventLane | 'any';
-	payload?: Record<string, any>;
-	addtags?: string[];
-	removetags?: string[];
-};
-
-export interface CompiledMarkerCache {
-	byFrame: Record<number, CompiledMarker[]>;
-}
 
 /**
  * Represents the definition of a state event in a state machine.
@@ -282,8 +249,6 @@ export type TickCheckDefinition<T extends Stateful & EventSubscriber = any> = Om
 /**
  * Represents a tape used in the BFSM.
  */
-export type Tape = any[];
-
 /**
  * Represents an object that is stateful and can be registered, and subscribes to events.
  * It also has a player index, that is used to identify the player that the stateful object belongs to, which is used to determine which player's input to process.

@@ -1,8 +1,8 @@
 import type { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
 import type { CachedHighlight, CursorScreenInfo, EditorDiagnostic } from './types';
-import type { RectBounds } from '../../rompack/rompack.ts';
-import { clamp } from 'bmsx/utils/clamp.ts';
+import type { RectBounds } from '../../rompack/rompack';
+import { clamp } from '../../utils/clamp';
 
 export type CodeAreaBounds = { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; gutterLeft: number; gutterRight: number; textLeft: number };
 

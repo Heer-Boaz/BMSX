@@ -290,7 +290,7 @@ export class ObjectPropertyDialogOld {
 
 	private renderTable(): void {
 		// Fetch the object by ID from the global model
-		const obj = $.getWorldObject(this.objectId);
+		const obj = $.get_worldobject(this.objectId);
 		if (!obj) {
 			this.contentDiv.textContent = 'Object not found.';
 			this.tableRoot = null;
@@ -489,7 +489,7 @@ export class ObjectPropertyDialogOld {
 
 	public frameUpdate(): void {
 		// Fetch the object by ID from the global model
-		const obj = $.getWorldObject(this.objectId);
+		const obj = $.get_worldobject(this.objectId);
 		if (!obj) {
 			this.contentDiv.textContent = 'Object not found.';
 			this.tableRoot = null;

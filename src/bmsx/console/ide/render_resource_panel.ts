@@ -1,10 +1,10 @@
 import type { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
 import type { ResourceBrowserItem } from './types';
-import type { RectBounds } from '../../rompack/rompack.ts';
+import type { RectBounds } from '../../rompack/rompack';
 import { Msx1Colors } from '../../systems/msx';
 import { ConsoleScrollbar } from './scrollbar';
-import { clamp } from 'bmsx/utils/clamp.ts';
+import { clamp } from '../../utils/clamp';
 
 export interface ResourcePanelHost {
 	// Visibility and geometry

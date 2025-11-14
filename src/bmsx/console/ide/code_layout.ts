@@ -1,19 +1,12 @@
 import { $ } from '../../core/game';
-import { clamp } from 'bmsx/utils/clamp.ts';
+import { clamp } from '../../utils/clamp';;
 import type { TimerHandle } from '../../platform/platform';
 import type { ConsoleEditorFont } from '../editor_font';
 import { highlightLine as highlightLineExternal } from './syntax_highlight';
-import { type LuaSemanticModel, type SemanticAnnotations, type SerializedFileSemanticData, type SymbolKind, type TokenAnnotation } from './semantic_model.ts';
-import { LuaSemanticWorkspace } from './semantic_workspace.ts';
-import type { LuaDefinitionInfo } from '../../lua/ast.ts';
-import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types.ts';
-
-const defaultClockNow = (): number => {
-	if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
-		return performance.now();
-	}
-	return Date.now();
-};
+import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from './semantic_model';
+import { LuaSemanticWorkspace } from './semantic_workspace';
+import type { LuaDefinitionInfo } from '../../lua/ast';
+import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types';
 
 interface VisualLinesContext {
 	lines: readonly string[];
@@ -39,21 +32,21 @@ type PendingSemanticUpdate = {
 	requestId: number;
 };
 
-type SemanticWorkerResponse =
-	| {
-		type: 'semantic-result';
-		requestId: number;
-		version: number;
-		chunkName: string;
-		data: SerializedFileSemanticData;
-	}
-	| {
-		type: 'semantic-error';
-		requestId: number;
-		version: number;
-		chunkName: string;
-		errorMessage?: string;
-	};
+// type SemanticWorkerResponse =
+// 	| {
+// 		type: 'semantic-result';
+// 		requestId: number;
+// 		version: number;
+// 		chunkName: string;
+// 		data: SerializedFileSemanticData;
+// 	}
+// 	| {
+// 		type: 'semantic-error';
+// 		requestId: number;
+// 		version: number;
+// 		chunkName: string;
+// 		errorMessage?: string;
+// 	};
 
 /**
  * ConsoleCodeLayout owns syntax highlight caching and visual line layout for the cart editor.
@@ -72,7 +65,7 @@ export class ConsoleCodeLayout {
 	private readonly clockNow: () => number;
 	private readonly getBuiltinIdentifiers: (() => Iterable<string> | null) | null;
 	private pendingSemantic: PendingSemanticUpdate | null = null;
-	private inFlightSemantic: PendingSemanticUpdate | null = null;
+	// private inFlightSemantic: PendingSemanticUpdate | null = null;
 	private semanticDueAtMs: number | null = null;
 	private semanticUpdateScheduled = false;
 	private annotationRowSig: Uint32Array | null = null;
@@ -90,13 +83,14 @@ export class ConsoleCodeLayout {
 	constructor(
 		private readonly font: ConsoleEditorFont,
 		private readonly workspace: LuaSemanticWorkspace,
-		options?: { maxHighlightCache?: number; semanticDebounceMs?: number; clockNow?: () => number; getBuiltinIdentifiers?: () => Iterable<string> | null },
+		options: { maxHighlightCache: number; semanticDebounceMs: number; clockNow: () => number; getBuiltinIdentifiers: () => Iterable<string> | null },
 	) {
-		this.maxHighlightCache = options?.maxHighlightCache ?? 2048;
-		this.semanticDebounceMs = Math.max(0, options?.semanticDebounceMs ?? 120);
-		this.clockNow = options?.clockNow ?? defaultClockNow;
-		this.getBuiltinIdentifiers = options?.getBuiltinIdentifiers ?? null;
-		this.semanticWorker = this.tryCreateSemanticWorker();
+		this.maxHighlightCache = options.maxHighlightCache;
+		this.semanticDebounceMs = Math.max(0, options.semanticDebounceMs);
+		this.clockNow = options.clockNow;
+		this.getBuiltinIdentifiers = options.getBuiltinIdentifiers;
+		// this.semanticWorker = this.tryCreateSemanticWorker();
+		this.semanticWorker = null;
 		const probeAdvance = this.font.advance('M');
 		const fallbackAdvance = this.font.advance(' ');
 		this.averageCharAdvance = Math.max(1, Number.isFinite(probeAdvance) && probeAdvance > 0 ? probeAdvance : (Number.isFinite(fallbackAdvance) && fallbackAdvance > 0 ? fallbackAdvance : 1));
@@ -153,25 +147,25 @@ export class ConsoleCodeLayout {
 		this.semanticModel = null;
 		this.semanticVersion = -1;
 		this.semanticChunkName = null;
-	this.pendingSemantic = null;
-	this.inFlightSemantic = null;
-	this.semanticDueAtMs = null;
-	this.semanticUpdateScheduled = false;
-	if (this.semanticTimer) {
-		this.semanticTimer.cancel();
-		this.semanticTimer = null;
+		this.pendingSemantic = null;
+		// this.inFlightSemantic = null;
+		this.semanticDueAtMs = null;
+		this.semanticUpdateScheduled = false;
+		if (this.semanticTimer) {
+			this.semanticTimer.cancel();
+			this.semanticTimer = null;
+		}
+		this.annotationRowSig = null;
+		this.lastHotRowRange = null;
+		this.lastHotGuardRows = 0;
+		this.rowVisualLineCounts = [];
 	}
-	this.annotationRowSig = null;
-	this.lastHotRowRange = null;
-	this.lastHotGuardRows = 0;
-	this.rowVisualLineCounts = [];
-}
 
 	public requestSemanticUpdate(lines: readonly string[], documentVersion: number, chunkName: string): void {
 		this.ensureSemanticModel(lines, documentVersion, chunkName, 'background');
 	}
 
-	public getCachedHighlight(lines: readonly string[], row: number, _documentVersion: number, _chunkName: string): CachedHighlight {
+	public getCachedHighlight(lines: readonly string[], row: number): CachedHighlight {
 		const annotations = this.semanticModel ? this.semanticModel.annotations : null;
 		let rowSignature = 0;
 		const signatures = this.annotationRowSig;
@@ -282,8 +276,6 @@ export class ConsoleCodeLayout {
 				context.lines,
 				context.wordWrapEnabled,
 				context.computeWrapWidth(),
-				context.documentVersion,
-				context.chunkName,
 				context.scrollRow,
 				visibleRows,
 			);
@@ -354,8 +346,6 @@ export class ConsoleCodeLayout {
 		lines: readonly string[],
 		wordWrapEnabled: boolean,
 		wrapWidth: number,
-		documentVersion: number,
-		chunkName: string,
 		scrollRow: number,
 		visibleRowEstimate: number,
 	): void {
@@ -376,13 +366,13 @@ export class ConsoleCodeLayout {
 			|| this.rowToFirstVisualLine.length !== lineCount
 			|| this.rowVisualLineCounts.length !== lineCount;
 		if (needsFullRebuild) {
-			this.rebuildAllVisualLines(lines, wordWrapEnabled, wrapWidth, documentVersion, chunkName);
+			this.rebuildAllVisualLines(lines, wordWrapEnabled, wrapWidth);
 			this.lastHotRowRange = { start: 0, end: lineCount - 1 };
 			this.lastHotGuardRows = Math.max(8, Math.floor(visibleRowEstimate / 2));
 			return;
 		}
 		const hotRows = this.computeHotRowWindow(lineCount, scrollRow, visibleRowEstimate);
-		this.rebuildRowRange(lines, wordWrapEnabled, wrapWidth, documentVersion, chunkName, hotRows.start, hotRows.end);
+		this.rebuildRowRange(lines, wordWrapEnabled, wrapWidth, hotRows.start, hotRows.end);
 		this.lastHotRowRange = hotRows;
 		this.lastHotGuardRows = Math.max(8, Math.floor(visibleRowEstimate / 2));
 	}
@@ -391,8 +381,6 @@ export class ConsoleCodeLayout {
 		lines: readonly string[],
 		wordWrapEnabled: boolean,
 		wrapWidth: number,
-		documentVersion: number,
-		chunkName: string,
 	): void {
 		const lineCount = lines.length;
 		const segments: VisualLineSegment[] = [];
@@ -405,7 +393,7 @@ export class ConsoleCodeLayout {
 		for (let row = 0; row < lineCount; row += 1) {
 			rowIndexLookup[row] = segments.length;
 			const line = lines[row];
-			const entry = this.getCachedHighlight(lines, row, documentVersion, chunkName);
+			const entry = this.getCachedHighlight(lines, row);
 			const rowSegments = this.buildSegmentsForRow(line, row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
 			segments.push(...rowSegments);
 			counts[row] = rowSegments.length;
@@ -422,8 +410,6 @@ export class ConsoleCodeLayout {
 		lines: readonly string[],
 		wordWrapEnabled: boolean,
 		wrapWidth: number,
-		documentVersion: number,
-		chunkName: string,
 		startRow: number,
 		endRow: number,
 	): void {
@@ -438,7 +424,7 @@ export class ConsoleCodeLayout {
 		for (let row = startRow; row <= endRow; row += 1) {
 			const startIndex = this.rowToFirstVisualLine[row];
 			const oldCount = this.rowVisualLineCounts[row] ?? 0;
-			const entry = this.getCachedHighlight(lines, row, documentVersion, chunkName);
+			const entry = this.getCachedHighlight(lines, row);
 			const rowSegments = this.buildSegmentsForRow(lines[row], row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
 			this.visualLines.splice(startIndex, oldCount, ...rowSegments);
 			const newCount = rowSegments.length;
@@ -525,15 +511,15 @@ export class ConsoleCodeLayout {
 	}
 
 	public forceSemanticUpdate(lines: readonly string[], documentVersion: number, chunkName: string): void {
-	const pending = this.updatePendingSemantic(lines, documentVersion, chunkName);
-	this.semanticDueAtMs = null;
-	if (this.semanticTimer) {
-		this.semanticTimer.cancel();
-		this.semanticTimer = null;
+		const pending = this.updatePendingSemantic(lines, documentVersion, chunkName);
+		this.semanticDueAtMs = null;
+		if (this.semanticTimer) {
+			this.semanticTimer.cancel();
+			this.semanticTimer = null;
+		}
+		this.semanticUpdateScheduled = false;
+		this.dispatchSemanticUpdate(pending, 'force');
 	}
-	this.semanticUpdateScheduled = false;
-	this.dispatchSemanticUpdate(pending, 'force');
-}
 
 	public getSemanticModel(lines: readonly string[], documentVersion: number, chunkName: string): LuaSemanticModel | null {
 		this.ensureSemanticModel(lines, documentVersion, chunkName, 'force');
@@ -549,43 +535,43 @@ export class ConsoleCodeLayout {
 		if (this.semanticModel && this.semanticVersion === version && this.semanticChunkName === chunkName) {
 			return;
 		}
-	const pending = this.updatePendingSemantic(lines, version, chunkName);
-	if (mode === 'force') {
-		this.semanticDueAtMs = null;
-		if (this.semanticTimer) {
-			this.semanticTimer.cancel();
-			this.semanticTimer = null;
+		const pending = this.updatePendingSemantic(lines, version, chunkName);
+		if (mode === 'force') {
+			this.semanticDueAtMs = null;
+			if (this.semanticTimer) {
+				this.semanticTimer.cancel();
+				this.semanticTimer = null;
+			}
+			this.semanticUpdateScheduled = false;
+			this.dispatchSemanticUpdate(pending, 'force');
+			return;
 		}
-		this.semanticUpdateScheduled = false;
-		this.dispatchSemanticUpdate(pending, 'force');
-		return;
-	}
-	if (this.semanticDebounceMs === 0) {
-		this.semanticDueAtMs = null;
-		if (this.semanticTimer) {
-			this.semanticTimer.cancel();
-			this.semanticTimer = null;
+		if (this.semanticDebounceMs === 0) {
+			this.semanticDueAtMs = null;
+			if (this.semanticTimer) {
+				this.semanticTimer.cancel();
+				this.semanticTimer = null;
+			}
+			this.semanticUpdateScheduled = false;
+			this.dispatchSemanticUpdate(pending, 'background');
+			return;
 		}
-		this.semanticUpdateScheduled = false;
-		this.dispatchSemanticUpdate(pending, 'background');
-		return;
-	}
-	const now = this.clockNow();
-	if (this.semanticDueAtMs === null || this.semanticDueAtMs < now + this.semanticDebounceMs) {
-		this.semanticDueAtMs = now + this.semanticDebounceMs;
-	}
-	if (this.semanticDueAtMs <= now) {
-		this.semanticDueAtMs = null;
-		if (this.semanticTimer) {
-			this.semanticTimer.cancel();
-			this.semanticTimer = null;
+		const now = this.clockNow();
+		if (this.semanticDueAtMs === null || this.semanticDueAtMs < now + this.semanticDebounceMs) {
+			this.semanticDueAtMs = now + this.semanticDebounceMs;
 		}
-		this.semanticUpdateScheduled = false;
-		this.dispatchSemanticUpdate(pending, 'background');
-		return;
+		if (this.semanticDueAtMs <= now) {
+			this.semanticDueAtMs = null;
+			if (this.semanticTimer) {
+				this.semanticTimer.cancel();
+				this.semanticTimer = null;
+			}
+			this.semanticUpdateScheduled = false;
+			this.dispatchSemanticUpdate(pending, 'background');
+			return;
+		}
+		this.scheduleSemanticUpdate();
 	}
-	this.scheduleSemanticUpdate();
-}
 
 	private updatePendingSemantic(
 		lines: readonly string[],
@@ -613,11 +599,11 @@ export class ConsoleCodeLayout {
 		this.semanticDueAtMs = null;
 		if (strategy === 'force' || this.semanticWorker === null) {
 			this.pendingSemantic = null;
-			this.inFlightSemantic = null;
+			// this.inFlightSemantic = null;
 			this.applySemanticUpdateSync(pending);
 			return;
 		}
-		this.inFlightSemantic = pending;
+		// this.inFlightSemantic = pending;
 		this.pendingSemantic = null;
 		const worker = this.semanticWorker;
 		try {
@@ -631,7 +617,7 @@ export class ConsoleCodeLayout {
 				});
 			}
 		} catch {
-			this.inFlightSemantic = null;
+			// this.inFlightSemantic = null;
 			this.semanticWorker = null;
 			this.applySemanticUpdateSync(pending);
 		}
@@ -730,56 +716,56 @@ export class ConsoleCodeLayout {
 		}
 	}
 
-	private handleSemanticWorkerMessage(message: unknown): void {
-		const response = message as SemanticWorkerResponse;
-		const inFlight = this.inFlightSemantic;
-		if (!inFlight || response.requestId !== inFlight.requestId) {
-			return;
-		}
-		this.inFlightSemantic = null;
-		if (response.type === 'semantic-result') {
-			let model: LuaSemanticModel | null = null;
-			try {
-				model = this.workspace.applySerializedFileData(response.data);
-			} catch {
-				model = null;
-			}
-			const annotations = model ? model.annotations : null;
-			this.finalizeSemanticUpdate(model, response.version, response.chunkName, annotations);
-			return;
-		}
-		this.semanticDueAtMs = null;
-		if (this.semanticTimer) {
-			this.semanticTimer.cancel();
-			this.semanticTimer = null;
-		}
-		this.semanticUpdateScheduled = false;
-		this.lastSemanticError = response.errorMessage ?? 'Failed to update semantic model.';
-	}
+	// private handleSemanticWorkerMessage(message: unknown): void {
+	// 	const response = message as SemanticWorkerResponse;
+	// 	const inFlight = this.inFlightSemantic;
+	// 	if (!inFlight || response.requestId !== inFlight.requestId) {
+	// 		return;
+	// 	}
+	// 	this.inFlightSemantic = null;
+	// 	if (response.type === 'semantic-result') {
+	// 		let model: LuaSemanticModel | null = null;
+	// 		try {
+	// 			model = this.workspace.applySerializedFileData(response.data);
+	// 		} catch {
+	// 			model = null;
+	// 		}
+	// 		const annotations = model ? model.annotations : null;
+	// 		this.finalizeSemanticUpdate(model, response.version, response.chunkName, annotations);
+	// 		return;
+	// 	}
+	// 	this.semanticDueAtMs = null;
+	// 	if (this.semanticTimer) {
+	// 		this.semanticTimer.cancel();
+	// 		this.semanticTimer = null;
+	// 	}
+	// 	this.semanticUpdateScheduled = false;
+	// 	this.lastSemanticError = response.errorMessage ?? 'Failed to update semantic model.';
+	// }
 
-	private tryCreateSemanticWorker(): Worker | null {
-		if (typeof Worker === 'undefined') {
-			return null;
-		}
-		try {
-			const worker = new Worker(new URL('./semantic_worker.ts', import.meta.url), { type: 'module' });
-			worker.onmessage = (event: MessageEvent) => {
-				this.handleSemanticWorkerMessage(event.data);
-			};
-			worker.onerror = () => {
-				const inFlight = this.inFlightSemantic;
-				this.inFlightSemantic = null;
-				worker.terminate();
-				this.semanticWorker = null;
-				if (inFlight) {
-					this.applySemanticUpdateSync(inFlight);
-				}
-			};
-			return worker;
-		} catch {
-			return null;
-		}
-	}
+	// private tryCreateSemanticWorker(): Worker | null {
+	// 	if (typeof Worker === 'undefined') {
+	// 		return null;
+	// 	}
+	// 	try {
+	// 		const worker = new Worker(new URL('./semantic_worker', import.meta.url), { type: 'module' });
+	// 		worker.onmessage = (event: MessageEvent) => {
+	// 			this.handleSemanticWorkerMessage(event.data);
+	// 		};
+	// 		worker.onerror = () => {
+	// 			const inFlight = this.inFlightSemantic;
+	// 			this.inFlightSemantic = null;
+	// 			worker.terminate();
+	// 			this.semanticWorker = null;
+	// 			if (inFlight) {
+	// 				this.applySemanticUpdateSync(inFlight);
+	// 			}
+	// 		};
+	// 		return worker;
+	// 	} catch {
+	// 		return null;
+	// 	}
+	// }
 
 	private computeHotRowWindow(lineCount: number, scrollRow: number, visibleRows: number): { start: number; end: number } {
 		if (lineCount === 0) {

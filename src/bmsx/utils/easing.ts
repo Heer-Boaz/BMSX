@@ -26,24 +26,24 @@ const BASE_EASINGS: Record<string, EasingFn> = {
 
 export const DEFAULT_EASING = 'easeOutQuad' as const;
 
-export function getEasing(name?: string | null): EasingFn {
+export function get_easing(name?: string | null): EasingFn {
 	if (!name) return BASE_EASINGS[DEFAULT_EASING];
 	return BASE_EASINGS[name] ?? BASE_EASINGS[DEFAULT_EASING];
 }
 
-export function registerEasing(name: string, fn: EasingFn): void {
+export function register_easing(name: string, fn: EasingFn): void {
 	if (!name || typeof fn !== 'function') throw new Error('Cannot register easing: invalid arguments');
 	BASE_EASINGS[name] = fn;
 }
 
-export function hasEasing(name: string): boolean {
+export function has_easing(name: string): boolean {
 	return !!BASE_EASINGS[name];
 }
 
-export function listEasingNames(): readonly string[] {
+export function list_easing_names(): readonly string[] {
 	return Object.keys(BASE_EASINGS);
 }
 
-export function evaluateEasing(name: string | undefined, t: number): number {
-	return getEasing(name)(t);
+export function evaluate_easing(name: string | undefined, t: number): number {
+	return get_easing(name)(t);
 }

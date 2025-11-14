@@ -1,6 +1,6 @@
-import { normalizeLuaChunkName } from '../../lua/debugger.ts';
-import { clamp } from 'bmsx/utils/clamp.ts';
-import { getDebuggerRuntimeAccessor } from '../runtime_accessors.ts';
+import { normalizeLuaChunkName } from '../../lua/debugger';
+import { clamp } from '../../utils/clamp';;
+import { getDebuggerRuntimeAccessor } from '../runtime_accessors';
 import { ide_state } from './ide_state';
 
 export type SerializedBreakpointMap = Record<string, number[]>;

@@ -253,11 +253,11 @@ function playerobject:on_spawn()
 	self.direction = 'down'
 	self.hurt_remaining = nil
 
-	local input_component = self:getcomponentbyid('player_input')
+	local input_component = self:get_component_by_id('player_input')
 	input_component.playerindex = 1
 	input_component.program = playerinputprogram
 
-	local asc = self:getcomponentbyid('player_abilities')
+	local asc = self:get_component_by_id('player_abilities')
 	assert(asc ~= nil, '[PlayerObject:on_spawn] AbilitySystemComponent missing')
 	assert(type(asc.hasability) == 'function', '[PlayerObject:on_spawn] AbilitySystemComponent lacks hasAbility')
 	assert(asc:hasability(playerabilityids.fire), '[PlayerObject:on_spawn] fire ability missing')

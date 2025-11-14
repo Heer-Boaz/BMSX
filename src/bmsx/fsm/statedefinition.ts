@@ -1,8 +1,9 @@
 import { EventLane, EventScope } from '../core/eventemitter';
 import { type Identifier } from '../rompack/rompack';
 import { excludepropfromsavegame } from '../serializer/serializationhooks';
-import { type CompiledMarkerCache, type Marker, type MarkerAt, type StateActionSpec, type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateNextHandler, type Tape, type TickCheckDefinition, type Window, type id2partial_sdef } from './fsmtypes';
+import { type StateActionSpec, type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateNextHandler, type TickCheckDefinition, type id2partial_sdef } from './fsmtypes';
 import { State } from './state';
+import type { TimelineDefinition, TimelineMarkerAt, TimelinePlaybackMode } from '../timeline/timeline';
 
 function looksLikeStatePath(value: string): boolean {
 	if (!value) return false;
@@ -29,11 +30,7 @@ export class StateDefinition {
 	 */
 	public data?: { [key: string]: any; };
 
-	public markers?: Marker[];
-
-	public windows?: Window[];
-
-	public _compiled_markers?: CompiledMarkerCache;
+	public timeline?: TimelineDefinition;
 
 	/**
 	 * Indicates whether this state (or nested state machine) runs in parallel with
@@ -45,48 +42,9 @@ export class StateDefinition {
 	public is_concurrent?: boolean;
 
 	/**
-	 * The tape used by the BFSM.
-	 */
-	public tape_data: Tape;
-
-	/**
-	 * Number of runs before tapehead moves to next statedata.
-	 */
-	public ticks2advance_tape: number; // Number of runs before tapehead moves to next statedata
-
-	/**
-	 * Determines how the tape progresses when it reaches either end.
-	 * @remarks Default is `once`.
-	 *
-	 * - `once`: tapehead stops at the final entry.
-	 * - `loop`: tapehead rewinds to the start after the last entry.
-	 * - `pingpong`: tapehead inverts direction at the ends.
-	 */
-	public tape_playback_mode: 'once' | 'loop' | 'pingpong';
-
-	/**
-	 * Name of the easing curve used to distribute time across tape entries.
-	 * When set, the easing curve adjusts the effective ticks-per-entry while
-	 * preserving the total duration defined by {@link ticks2advance_tape}.
-	 */
-	public tape_playback_easing?: string;
-
-	/**
-	 * Specifies whether the tapehead should automatically advance based on ticks.
-	 * If ticks2advance_tape is 0, the default is false. Otherwise, auto_tick is true (unless it was already defined)
-	 */
-	public enable_tape_autotick: boolean; // Automagically increase the ticks during run
-
-	/**
 	 * Controls how input handlers are evaluated for this state. Defaults to 'all'.
 	 */
 	public input_eval?: 'first' | 'all';
-
-	/**
-	 * Number of times the tape should be repeated.
-	 * See {@link repeat_tape} for more information.
-	 */
-	public repetitions: number; // Number of times the tape should be repeated
 
 	// Number of times the tape should be repeated
 	@excludepropfromsavegame
@@ -130,38 +88,14 @@ export class StateDefinition {
 	public constructor(id: Identifier, partialdef?: Partial<StateDefinition>, root: StateDefinition = null, parent: StateDefinition = null) {
 		this.id = id;
 		partialdef && Object.assign(this, partialdef); // Assign the partial definition to the instance
-		this.ticks2advance_tape ??= 0; // Unless already defined, ticks2move is 0
-		this.tape_playback_mode ??= 'once';
-		this.repetitions = (this.tape_data ? (this.repetitions ?? 1) : 0);
-		this.enable_tape_autotick = this.enable_tape_autotick ?? (this.ticks2advance_tape !== 0 ? true : false); // If ticks2advance_tape is 0, auto_tick is false. Otherwise, auto_tick is true (unless it was already defined)
 		this.data ??= {}; // Unless already defined, data is an empty object
+		this.timeline = partialdef?.timeline ? { ...partialdef.timeline } : convertLegacyTapeToTimeline(partialdef, this);
 		this.root = root ?? this; // The root state machine is either the provided root or this state machine
 		this.parent = parent; // The parent state machine is either the provided parent or null (for root machines)
 		this.is_concurrent ??= false; // Unless already defined, parallel is false
 		this.def_id = this.make_id(); // Alias for def_id
-
-		if (this.tape_data) {
-			this.repeat_tape(this.tape_data, this.repetitions);
-		}
-
 		if (partialdef.states) {
 			this.construct_substate_machine(partialdef.states, this.root);
-		}
-	}
-
-	/**
-	 * Repeats the tape by appending it to itself multiple times.
-	 *
-	 * @param tape - The tape to be repeated.
-	 * @param repetitions - The number of times the tape should be repeated.
-	 */
-	private repeat_tape(tape: typeof this.tape_data, repetitions: typeof this.repetitions): void {
-		// Repeat the tape if necessary (and if it exists) by appending the tape to itself
-		if (tape && repetitions > 1) { // If there is a tape and the tape should be repeated at least once
-			let originalTape = [...tape]; // Copy the tape
-			for (let i = 1; i < repetitions; i++) { // Repeat the tape
-				tape.push(...originalTape); // Append the tape to itself
-			}
 		}
 	}
 
@@ -188,8 +122,6 @@ export class StateDefinition {
 	}
 
 	public tick?: StateEventHandler | string | StateActionSpec;
-	public tape_end?: StateEventHandler | string | StateActionSpec;
-	public tape_next?: StateNextHandler | string | StateActionSpec;
 	public entering_state?: StateExitHandler | string | StateActionSpec;
 	public exiting_state?: StateExitHandler | string | StateActionSpec;
 	public process_input?: StateEventHandler | string | StateActionSpec;
@@ -221,6 +153,8 @@ export class StateDefinition {
 	public input_event_handlers?: {
 		[key: string]: Identifier | StateEventDefinition;
 	};
+	public tape_end?: StateEventHandler | string | StateActionSpec;
+	public tape_next?: StateNextHandler | string | StateActionSpec;
 
 	public run_checks?: TickCheckDefinition[];
 
@@ -301,84 +235,6 @@ export class StateDefinition {
 
 export function validateStateMachine(machinedef: StateDefinition, path: string = machinedef.id): void {
 	try {
-		// Strict preflight checks for tape/ticks configuration on the current definition
-		const checkTapeConfig = (def: StateDefinition, atPath: string) => {
-			// Only validate when a tape is configured (otherwise ticks/autotick are irrelevant here)
-			if (!def.tape_data) return;
-
-			// ticks2advance_tape must be a finite number >= 0
-			if (typeof def.ticks2advance_tape !== 'number' || !isFinite(def.ticks2advance_tape) || Number.isNaN(def.ticks2advance_tape) || def.ticks2advance_tape < 0) {
-				throw new Error(`Invalid ticks2advance_tape for state '${atPath}': expected a number >= 0.`);
-			}
-
-			// When enable_tape_autotick is true, ticks2advance_tape must be > 0
-			if (def.enable_tape_autotick && def.ticks2advance_tape <= 0) {
-				throw new Error(`Invalid tape config in state '${atPath}': enable_tape_autotick requires ticks2advance_tape > 0 (got ${def.ticks2advance_tape}).`);
-			}
-
-			// repetitions must be >= 0 if defined
-			if (def.repetitions != null && def.repetitions < 0) {
-				throw new Error(`Invalid repetitions for state '${atPath}': expected a number >= 0.`);
-			}
-		};
-
-		const resolveMarkerCoordinate = (coordinate: MarkerAt, length: number, label: string): number => {
-			if (length <= 0) {
-				throw new Error(`Cannot resolve marker coordinate '${label}' without tape data.`);
-			}
-			if ('frame' in coordinate) {
-				const frame = coordinate.frame;
-				if (!Number.isFinite(frame) || Math.floor(frame) !== frame) {
-					throw new Error(`Marker coordinate '${label}' uses non-integer frame value '${frame}'.`);
-				}
-				if (frame < 0 || frame >= length) {
-					throw new Error(`Marker coordinate '${label}' frame '${frame}' is outside tape length '${length}'.`);
-				}
-				return frame;
-			}
-			const u = coordinate.u;
-			if (typeof u !== 'number' || Number.isNaN(u)) {
-				throw new Error(`Marker coordinate '${label}' has invalid normalized value '${u}'.`);
-			}
-			if (u < 0 || u > 1) {
-				throw new Error(`Marker coordinate '${label}' normalized value '${u}' must be within [0, 1].`);
-			}
-			if (length === 1) return 0;
-			const projected = Math.round(u * (length - 1));
-			if (projected < 0 || projected >= length) {
-				throw new Error(`Marker coordinate '${label}' resolved frame '${projected}' outside tape length '${length}'.`);
-			}
-			return projected;
-		};
-
-		const validateTimelineAnnotations = (def: StateDefinition, atPath: string) => {
-			const tapeLength = def.tape_data ? def.tape_data.length : 0;
-			if (def.windows && def.windows.length > 0) {
-				if (tapeLength <= 0) {
-					throw new Error(`State '${atPath}' defines windows but has no tape_data.`);
-				}
-				for (const windowDef of def.windows) {
-					const startFrame = resolveMarkerCoordinate(windowDef.start, tapeLength, `${atPath}.windows['${windowDef.name}'].start`);
-					const endFrame = resolveMarkerCoordinate(windowDef.end, tapeLength, `${atPath}.windows['${windowDef.name}'].end`);
-					if (startFrame > endFrame) {
-						throw new Error(`Window '${windowDef.name}' in state '${atPath}' has start frame ${startFrame} after end frame ${endFrame}.`);
-					}
-				}
-			}
-			if (def.markers && def.markers.length > 0) {
-				if (tapeLength <= 0) {
-					throw new Error(`State '${atPath}' defines markers but has no tape_data.`);
-				}
-				for (const marker of def.markers) {
-					resolveMarkerCoordinate(marker, tapeLength, `${atPath}.markers['${marker.event}']`);
-				}
-			}
-		};
-
-		// Validate current definition first
-		checkTapeConfig(machinedef, path);
-		validateTimelineAnnotations(machinedef, path);
-
 		if (!machinedef.states) return;
 
 		const stateIds = Object.keys(machinedef.states);
@@ -394,7 +250,7 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 			const statePath = `${path}.${stateDef.id}`;
 
 			// Strict preflight for each sub definition
-			checkTapeConfig(stateDef, statePath);
+			checkTimelineConfig(stateDef, statePath);
 			validateTimelineAnnotations(stateDef, statePath);
 
 			const checkTransitions = (transitions: { [key: string]: Identifier | StateEventDefinition; }, description: string) => {
@@ -428,7 +284,7 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 				}
 			}
 
-			const handlers = [stateDef.tick, stateDef.entering_state, stateDef.exiting_state, stateDef.tape_next, stateDef.tape_end, stateDef.process_input];
+			const handlers = [stateDef.tick, stateDef.entering_state, stateDef.exiting_state, stateDef.process_input];
 			const handlerNames = ['run', 'enter', 'exit', 'next', 'end', 'process_input'];
 			handlers.forEach((h, idx) => {
 				if (typeof h === 'string' && !h.includes('.handlers.') && !looksLikeStatePath(h)) {
@@ -467,5 +323,122 @@ function resolveStateDefPath(from: StateDefinition, target: string, origin: stri
 			throw new Error(`[Validate state machines] Machine '${origin}' - Invalid state path '${target}': state '${seg}' not found in transition from state '${ctx.id}' (${description})`);
 		}
 		ctx = child;
+	}
+}
+
+function convertLegacyTapeToTimeline(partialdef: Partial<StateDefinition> | undefined, owner: StateDefinition): TimelineDefinition | undefined {
+	if (!partialdef) return undefined;
+	const legacy = partialdef as Record<string, any>;
+	const tapeSource = legacy.tape_data ?? legacy.tape;
+	if (!Array.isArray(tapeSource) || tapeSource.length === 0) return undefined;
+	const frames = tapeSource.map(value => value);
+	const ticks = resolveLegacyNumber(legacy.ticks2advance_tape, legacy.ticks2move);
+	const playback = normalizeLegacyPlaybackMode(legacy.tape_playback_mode);
+	const repetitions = typeof legacy.repetitions === 'number' ? legacy.repetitions : undefined;
+	const autotick = typeof legacy.enable_tape_autotick === 'boolean' ? legacy.enable_tape_autotick : undefined;
+	const id = makeTimelineId(owner.def_id);
+	return {
+		id,
+		frames,
+		ticksPerFrame: ticks,
+		playbackMode: playback,
+		repetitions,
+		autotick,
+	};
+}
+
+function resolveLegacyNumber(...candidates: any[]): number {
+	for (const candidate of candidates) {
+		if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+			return candidate;
+		}
+	}
+	return 0;
+}
+
+function normalizeLegacyPlaybackMode(mode: any): TimelinePlaybackMode {
+	if (mode === 'loop' || mode === 'pingpong' || mode === 'once') return mode;
+	return 'once';
+}
+
+function makeTimelineId(defId: Identifier): string {
+	const normalized = defId.replace(/[:/]+/g, '.');
+	return `${normalized}.timeline`;
+}
+
+function checkTimelineConfig(def: StateDefinition, atPath: string): void {
+	const timeline = def.timeline;
+	if (!timeline) return;
+	const ticks = timeline.ticksPerFrame ?? 0;
+	if (typeof ticks !== 'number' || !Number.isFinite(ticks) || ticks < 0) {
+		throw new Error(`Invalid timeline config for state '${atPath}': ticksPerFrame must be a number >= 0.`);
+	}
+	if (timeline.autotick && ticks <= 0) {
+		throw new Error(`Invalid timeline config in state '${atPath}': autotick requires ticksPerFrame > 0 (got ${ticks}).`);
+	}
+	if (timeline.repetitions != null && timeline.repetitions < 0) {
+		throw new Error(`Invalid timeline config in state '${atPath}': repetitions must be >= 0.`);
+	}
+	if (!Array.isArray(timeline.frames)) {
+		throw new Error(`Invalid timeline config in state '${atPath}': frames must be an array.`);
+	}
+}
+
+function resolveMarkerCoordinate(coordinate: TimelineMarkerAt, length: number, label: string): number {
+	if (!length || length <= 0) {
+		throw new Error(`Cannot resolve marker coordinate '${label}' without timeline frames.`);
+	}
+	if ('frame' in coordinate) {
+		const frame = coordinate.frame;
+		if (!Number.isFinite(frame) || Math.floor(frame) !== frame) {
+			throw new Error(`Marker coordinate '${label}' uses non-integer frame value '${frame}'.`);
+		}
+		if (frame < 0 || frame >= length) {
+			throw new Error(`Marker coordinate '${label}' frame '${frame}' is outside tape length '${length}'.`);
+		}
+		return frame;
+	}
+	const u = coordinate.u;
+	if (typeof u !== 'number' || Number.isNaN(u)) {
+		throw new Error(`Marker coordinate '${label}' has invalid normalized value '${u}'.`);
+	}
+	if (u < 0 || u > 1) {
+		throw new Error(`Marker coordinate '${label}' normalized value '${u}' must be within [0, 1].`);
+	}
+	if (length === 1) return 0;
+	const projected = Math.round(u * (length - 1));
+	if (projected < 0 || projected >= length) {
+		throw new Error(`Marker coordinate '${label}' resolved frame '${projected}' outside tape length '${length}'.`);
+	}
+	return projected;
+}
+
+function validateTimelineAnnotations(def: StateDefinition, atPath: string): void {
+	const timeline = def.timeline;
+	if (!timeline) return;
+	const baseLength = Array.isArray(timeline.frames) ? timeline.frames.length : 0;
+	const repetitions = timeline.repetitions ?? 1;
+	const effectiveLength = baseLength * Math.max(1, repetitions);
+	const windows = timeline.windows ?? [];
+	const markers = timeline.markers ?? [];
+	if (windows.length > 0) {
+		if (effectiveLength <= 0) {
+			throw new Error(`State '${atPath}' defines windows but has no timeline frames.`);
+		}
+		for (const windowDef of windows) {
+			const startFrame = resolveMarkerCoordinate(windowDef.start, effectiveLength, `${atPath}.windows['${windowDef.name}'].start`);
+			const endFrame = resolveMarkerCoordinate(windowDef.end, effectiveLength, `${atPath}.windows['${windowDef.name}'].end`);
+			if (startFrame > endFrame) {
+				throw new Error(`Window '${windowDef.name}' in state '${atPath}' has start frame ${startFrame} after end frame ${endFrame}.`);
+			}
+		}
+	}
+	if (markers.length > 0) {
+		if (effectiveLength <= 0) {
+			throw new Error(`State '${atPath}' defines markers but has no timeline frames.`);
+		}
+		for (const marker of markers) {
+			resolveMarkerCoordinate(marker, effectiveLength, `${atPath}.markers['${marker.event}']`);
+		}
 	}
 }

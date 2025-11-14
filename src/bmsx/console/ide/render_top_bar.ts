@@ -2,9 +2,9 @@ import { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
 import type { BmsxConsoleMetadata } from '../types';
 import type { EditorResolutionMode, TopBarButtonId } from './types';
-import type { RectBounds } from '../../rompack/rompack.ts';
+import type { RectBounds } from '../../rompack/rompack';
 import type { DebuggerExecutionState } from '../debugger_lifecycle';
-import type { LuaDebuggerSessionMetrics } from '../../lua/debugger.ts';
+import type { LuaDebuggerSessionMetrics } from '../../lua/debugger';
 
 export interface TopBarHost {
 	viewportWidth: number;

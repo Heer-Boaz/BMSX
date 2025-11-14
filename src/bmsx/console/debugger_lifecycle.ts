@@ -1,5 +1,5 @@
-import type { LuaCallFrame, LuaDebuggerPauseSignal } from '../lua/runtime.ts';
-import type { LuaDebuggerSessionMetrics } from '../lua/debugger.ts';
+import type { LuaCallFrame, LuaDebuggerPauseSignal } from '../lua/runtime';
+import type { LuaDebuggerSessionMetrics } from '../lua/debugger';
 
 export type DebuggerPauseFrameHint = { assetId: string | null; path?: string | null } | null;
 

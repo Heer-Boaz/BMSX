@@ -474,7 +474,7 @@ export class AbilitySystemComponent extends Component {
 			emitGameplay: (event: GameEvent) => {
 				if (!event.emitter) event.emitter = owner;
 				if (event.lane === 'presentation') {
-					$.emitPresentation(event);
+					$.emit_presentation(event);
 					return;
 				}
 				if (event.lane === 'any') {
@@ -484,7 +484,7 @@ export class AbilitySystemComponent extends Component {
 				if (event.lane && event.lane !== 'gameplay') {
 					throw new Error(`[AbilitySystemComponent] Unsupported event lane '${event.lane}' for emitGameplay.`);
 				}
-				$.emitGameplay(event);
+				$.emit_gameplay(event);
 			},
 			pushCommand: (command: GameplayCommand) => GameplayCommandBuffer.instance.push(command),
 			requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => {
@@ -594,7 +594,7 @@ export class AbilitySystemComponent extends Component {
 		if (source !== undefined) detail.source = source;
 		if (timeLeftMs !== undefined) detail.timeLeftMs = timeLeftMs;
 		const event = createGameEvent({ type: 'AbilityFailed', emitter: owner, lane: 'gameplay', ...detail });
-		$.emitGameplay(event);
+		$.emit_gameplay(event);
 	}
 
 	private findActiveByAbility(id: AbilityId): string | undefined {

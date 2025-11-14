@@ -1,6 +1,6 @@
-import type { LuaSourceRange } from '../lua/ast.ts';
-import type { LuaInterpreter } from '../lua/runtime.ts';
-import type { LuaFunctionValue } from '../lua/value.ts';
+import type { LuaSourceRange } from '../lua/ast';
+import type { LuaInterpreter } from '../lua/runtime';
+import type { LuaFunctionValue } from '../lua/value';
 
 export type LuaHandlerCategory = string;
 

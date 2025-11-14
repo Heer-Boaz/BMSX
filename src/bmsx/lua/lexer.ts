@@ -1,6 +1,6 @@
-import { LuaSyntaxError } from './errors.ts';
-import type { LuaToken, LuaTokenLiteral } from './token.ts';
-import { LuaTokenType, resolveKeyword } from './token.ts';
+import { LuaSyntaxError } from './errors';
+import type { LuaToken, LuaTokenLiteral } from './token';
+import { LuaTokenType, resolveKeyword } from './token';
 
 export class LuaLexer {
 	private readonly source: string;

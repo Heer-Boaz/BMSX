@@ -91,10 +91,10 @@ export class SpriteAnimationSystem extends ECSystem {
 		}
 		let sprite: SpriteComponent | null = null;
 		if (component.spriteId) {
-			sprite = owner.getComponentById<SpriteComponent>(component.spriteId) ?? null;
+			sprite = owner.get_component_by_id<SpriteComponent>(component.spriteId) ?? null;
 		}
 		if (!sprite) {
-			const sprites = owner.getComponents(SpriteComponent);
+			const sprites = owner.get_components(SpriteComponent);
 			if (sprites.length > 0) {
 				sprite = sprites[0]!;
 			}
@@ -122,9 +122,9 @@ export class SpriteAnimationSystem extends ECSystem {
 	}
 
 	private isEligible(owner: WorldObject): boolean {
-		if (owner.disposeFlag) return false;
+		if (owner.dispose_flag) return false;
 		if (owner.active === false) return false;
-		if (!owner.tickEnabled) return false;
+		if (!owner.tick_enabled) return false;
 		return true;
 	}
 }

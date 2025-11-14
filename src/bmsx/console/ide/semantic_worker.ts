@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import { buildLuaFileSemanticData, type SerializedFileSemanticData } from './semantic_model.ts';
+import { buildLuaFileSemanticData, type SerializedFileSemanticData } from './semantic_model';
 
 type UpdateMessage = {
 	type: 'update';

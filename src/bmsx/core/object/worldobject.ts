@@ -17,6 +17,8 @@ import { Collider2DComponent } from '../../component/collisioncomponents';
 import { V3 } from '../../render/3d/math3d';
 import type { SpawnReason } from '../world';
 import { AbilitySystemComponent } from '../../component/abilitysystemcomponent';
+import { ensureTimelineComponent, TimelineComponent, type TimelinePlayOptions, type TimelineListener } from '../../component/timeline_component';
+import type { Timeline, TimelineDefinition } from '../../timeline/timeline';
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -55,6 +57,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	public componentMap: KeyToComponentMap = {};
 
 	public components: Component[] = []; // Array of all components in the object for easy iteration
+	private _timelineComponent?: TimelineComponent;
 
 	/**
 	 * The object tracker for the world object.
@@ -66,11 +69,11 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 *
 	 * @returns An iterator for all components in the object.
 	 */
-	public *iterateComponents(): IterableIterator<Component> {
+	public *iterate_components(): IterableIterator<Component> {
 		yield* this.components;
 	}
 
-	public *iterateComponentsByType<T extends Component>(constructor: ConcreteOrAbstractConstructor<T>): IterableIterator<T> {
+	public *iterate_components_by_type<T extends Component>(constructor: ConcreteOrAbstractConstructor<T>): IterableIterator<T> {
 		const arr = this.components.filter(c => c instanceof constructor) as T[];
 		if (arr) yield* arr;
 	}
@@ -85,26 +88,26 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param constructor - The constructor function of the component.
 	 * @returns The component of the specified type if found, otherwise undefined.
 	 */
-	getComponents<T extends Component>(constructor: ComponentConstructor<T>): T[] {
+	get_components<T extends Component>(constructor: ComponentConstructor<T>): T[] {
 		const key = constructor.name;
 		const arr = this.componentMap[key] as T[] | undefined;
 		return arr ? [...arr] : [];
 	}
 
-	hasComponent<T extends Component>(constructor: ComponentConstructor<T>): boolean {
+	has_component<T extends Component>(constructor: ComponentConstructor<T>): boolean {
 		const key = constructor.name;
 		const arr = this.componentMap[key] as T[] | undefined;
 		return !!arr && arr.length > 0;
 	}
 
-	getFirstComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
+	get_first_component<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
 		const key = constructor.name;
 		const arr = this.componentMap[key] as T[] | undefined;
 		return arr && arr.length > 0 ? arr[0] : undefined;
 	}
 
 	/** Returns the component of a given type that matches the supplied local id. */
-	getComponentByLocalId<T extends Component>(constructor: ComponentConstructor<T>, idLocal: Identifier): T | undefined {
+	get_component_by_local_id<T extends Component>(constructor: ComponentConstructor<T>, idLocal: Identifier): T | undefined {
 		for (const c of this.components) {
 			if (c instanceof constructor && c.id_local === idLocal) return c as T;
 		}
@@ -112,7 +115,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/** Return the unique instance of a component type; throws if multiple are attached. */
-	getUniqueComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
+	get_unique_component<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
 		const key = constructor.name;
 		const arr = this.componentMap[key] as T[] | undefined;
 		if (!arr || arr.length === 0) return undefined;
@@ -127,7 +130,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param {T} component - The component to be added.
 	 * @returns {void}
 	 */
-	addComponent<T extends Component>(component: T): void {
+	add_component<T extends Component>(component: T): void {
 		// Ensure parent linkage is correct even if caller used legacy constructor
 		component.linkToParent(this as any);
 		this.components.push(component);
@@ -147,7 +150,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * Retrieves a component instance by its id or local_id.
 	 */
-	public getComponentById<T extends Component = Component>(id: string): T | undefined {
+	public get_component_by_id<T extends Component = Component>(id: string): T | undefined {
 		const found = this.components.find(c => c.id === id || c.id_local === id);
 		return found as T | undefined;
 	}
@@ -155,7 +158,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * Retrieves the Nth instance of a component type attached to this object.
 	 */
-	public getComponentAt<T extends Component>(constructor: ComponentConstructor<T>, index: number): T | undefined {
+	public get_component_at<T extends Component>(constructor: ComponentConstructor<T>, index: number): T | undefined {
 		const key = (constructor)?.name;
 		const arr = this.componentMap[key] as T[] | undefined;
 		return arr ? arr[index] : undefined;
@@ -164,8 +167,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * Finds the first component of an optional type matching a predicate.
 	 */
-	public findComponent<T extends Component>(predicate: (c: T, index: number) => boolean, constructor?: ComponentConstructor<T>): T | undefined {
-		const arr = constructor ? this.getComponents(constructor) : this.components as T[];
+	public find_component<T extends Component>(predicate: (c: T, index: number) => boolean, constructor?: ComponentConstructor<T>): T | undefined {
+		const arr = constructor ? this.get_components(constructor) : this.components as T[];
 		for (let i = 0; i < arr.length; i++) {
 			const c = arr[i];
 			if (predicate(c, i)) return c;
@@ -176,8 +179,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * Finds all components of an optional type matching a predicate.
 	 */
-	public findComponents<T extends Component>(predicate: (c: T, index: number) => boolean, constructor?: ComponentConstructor<T>): T[] {
-		const arr = constructor ? this.getComponents(constructor) : this.components as T[];
+	public find_components<T extends Component>(predicate: (c: T, index: number) => boolean, constructor?: ComponentConstructor<T>): T[] {
+		const arr = constructor ? this.get_components(constructor) : this.components as T[];
 		const out: T[] = [];
 		for (let i = 0; i < arr.length; i++) { if (predicate(arr[i], i)) out.push(arr[i]); }
 		return out;
@@ -190,15 +193,15 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param constructor - The constructor of the component to remove.
 	 * @returns void
 	 */
-	removeComponents(constructor: { name: string } | Function): void {
+	remove_components(constructor: { name: string } | Function): void {
 		const key = (constructor)?.name;
 		const arr = this.componentMap[key];
 		if (!arr || arr.length === 0) return;
 		// Remove all instances of this type
-		for (const c of [...arr]) this.removeComponentInstance(c);
+		for (const c of [...arr]) this.remove_component_instance(c);
 	}
 
-	removeComponentInstance<T extends Component>(component: T): void {
+	remove_component_instance<T extends Component>(component: T): void {
 		// Remove from type bucket
 		const key = component.constructor?.name;
 		const arr = this.componentMap[key];
@@ -215,11 +218,58 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		component.clearParentLink();
 	}
 
+	protected get timeline_component(): TimelineComponent {
+		if (!this._timelineComponent || this._timelineComponent.parent !== this) {
+			this._timelineComponent = ensureTimelineComponent(this);
+		}
+		return this._timelineComponent;
+	}
+
+	public define_timeline(definition: TimelineDefinition): void {
+		this.timeline_component.ensure(definition);
+	}
+
+	public play_timeline(definitionOrId: TimelineDefinition | string, opts?: TimelinePlayOptions): void {
+		if (typeof definitionOrId === 'string') {
+			this.timeline_component.play(definitionOrId, opts);
+			return;
+		}
+		this.timeline_component.playDefinition(definitionOrId, opts);
+	}
+
+	public stop_timeline(id: string): void {
+		this.timeline_component.stop(id);
+	}
+
+	public rewind_timeline(id: string): void {
+		this.timeline_component.rewind(id);
+	}
+
+	public seek_timeline(id: string, frame: number): void {
+		this.timeline_component.seek(id, frame);
+	}
+
+	public force_timeline_head(id: string, frame: number): void {
+		this.timeline_component.forceSeek(id, frame);
+	}
+
+	public advance_timeline(id: string): void {
+		this.timeline_component.advance(id);
+	}
+
+	public get_timeline<T = unknown>(id: string): Timeline<T> | undefined {
+		return this.timeline_component.get<T>(id);
+	}
+
+	public on_timeline_event(id: string, listener: TimelineListener): () => void {
+		return this.timeline_component.addListener(id, listener);
+	}
+
 	/**
 	 * Shorthand getter for retrieving the ability system component attached to this object.
 	 */
-	public get abilitySystem(): AbilitySystemComponent | undefined {
-		return this.getUniqueComponent(AbilitySystemComponent);
+	public get abilitysystem(): AbilitySystemComponent | undefined {
+		return this.get_unique_component(AbilitySystemComponent);
 	}
 
 	/**
@@ -240,18 +290,18 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/** True when the object is part of the world and should participate in gameplay. */
 	public active: boolean = false;
 	/** If false, systems should not advance time-based logic for this object. */
-	public tickEnabled: boolean = false;
+	public tick_enabled: boolean = false;
 
-	public _disposeFlag: boolean = false;
+	public _dispose_flag: boolean = false;
 	@excludepropfromsavegame
 	private _disposed: boolean = false;
 
 	/**
 	 * Indicates whether the object is flagged for disposal.
 	 * If true, the object will be disposed of at the end of the game's current update cycle.
-	 * @note We do not expose `setDisposeFlag` because we want to ensure that the @see {markForDisposal} is called instead.
+	 * @note We do not expose `setDisposeFlag` because we want to ensure that the @see {mark_for_disposal} is called instead.
 	 */
-	public get disposeFlag(): boolean { return this._disposeFlag; }
+	public get dispose_flag(): boolean { return this._dispose_flag; }
 
 	protected _pos: vec3 = new_vec3(...DEFAULT_POSITION_VALUES);
 	/**
@@ -403,7 +453,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * Read-only: the identifier of the Space this object currently belongs to, or null if not in a space.
 	 */
-	public get spaceId(): Identifier | null {
+	public get space_id(): Identifier | null {
 		return this.space?.id ?? null;
 	}
 
@@ -468,7 +518,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param bt_id - The ID of the behavior tree to tick.
 	 * @returns void
 	 */
-	public tickTree(bt_id: BehaviorTreeID): void {
+	public tick_tree(bt_id: BehaviorTreeID): void {
 		const context = this.btreecontexts[bt_id];
 		if (!context) {
 			throw new Error(`[WorldObject:${this.id}] Behavior tree context '${bt_id}' does not exist.`);
@@ -503,7 +553,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * If the blackboard with the given BT_ID does not exist, an error message is logged and the function returns.
 	 * @param bt_id The ID of the blackboard to reset.
 	 */
-	public resetTree(bt_id: BehaviorTreeID): void {
+	public reset_tree(bt_id: BehaviorTreeID): void {
 		const context = this.btreecontexts[bt_id];
 		if (!context) {
 			throw new Error(`[WorldObject:${this.id}] Behavior tree context '${bt_id}' does not exist.`);
@@ -512,7 +562,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/** Returns the ColliderComponent if attached. */
-	public get collider(): Collider2DComponent | undefined { return this.getFirstComponent(Collider2DComponent); }
+	public get collider(): Collider2DComponent | undefined { return this.get_first_component(Collider2DComponent); }
 
 	/**
 	 * Indicates whether the object is hittable. Delegates to ColliderComponent when present.
@@ -566,7 +616,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 
 	/** World-space polygons if present. */
 	public get hitpolygon(): Polygon[] | undefined { return this.collider?.worldPolygons ?? undefined; }
-	public get hasHitPolygon(): boolean { const p = this.collider?.localPolygons; return !!(p && p.length > 0); }
+	public get has_hitpolygon(): boolean { const p = this.collider?.localPolygons; return !!(p && p.length > 0); }
 
 	public get x_plus_width(): number {
 		return this.pos.x + (this.size?.x ?? 0);
@@ -611,7 +661,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		this.addAutoComponents();
 
 		this.eventhandling_enabled = true; // Now active for event handling
-		this.tickEnabled = true;
+		this.tick_enabled = true;
 		this.sc.tickEnabled = true;
 		this.active = true;
 		// Start the object's state machines on fresh spawn
@@ -622,7 +672,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	public deactivate(): void {
 		this.active = false;
 		this.eventhandling_enabled = false;
-		this.tickEnabled = false;
+		this.tick_enabled = false;
 		this.sc.pause();
 	}
 
@@ -651,7 +701,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		this.deactivate();
 
 		// Dispose of components
-		for (const c of [...this.components]) this.removeComponentInstance(c);
+		for (const c of [...this.components]) this.remove_component_instance(c);
 
 		// Dispose all state machines
 		this.sc.dispose();
@@ -668,19 +718,19 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 
 	/** Ensure a GenericRendererComponent exists on this object and return it. */
 	public getOrCreateCustomRenderer(): CustomVisualComponent {
-		const existing = this.getFirstComponent(CustomVisualComponent);
+		const existing = this.get_first_component(CustomVisualComponent);
 		if (existing) return existing;
 		const rc = new CustomVisualComponent({ parentid: this.id });
-		this.addComponent(rc);
+		this.add_component(rc);
 		return rc;
 	}
 
 	/** Ensure a ColliderComponent exists on this object and return it. */
 	public getOrCreateCollider(): Collider2DComponent {
-		const existing = this.getFirstComponent(Collider2DComponent);
+		const existing = this.get_first_component(Collider2DComponent);
 		if (existing) return existing;
 		const c = new Collider2DComponent({ parentid: this.id, id_local: 'primary' });
-		this.addComponent(c);
+		this.add_component(c);
 		return c;
 	}
 
@@ -694,8 +744,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * Prefer calling this over dispose() when you want safe, end-of-frame removal
 	 * (avoids tearing down resources while other systems may still reference the object).
 	 */
-	public markForDisposal(): void {
-		this._disposeFlag = true;
+	public mark_for_disposal(): void {
+		this._dispose_flag = true;
 		this.deactivate();
 	}
 
@@ -799,11 +849,11 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 
 	removeComponentsWithTag(tag: ComponentTag): void {
 		const componentsToRemove = this.components.filter(component => component.hasProcessingTag(tag));
-		componentsToRemove.forEach(component => this.removeComponentInstance(component));
+		componentsToRemove.forEach(component => this.remove_component_instance(component));
 	}
 
 	removeAllComponents(): void {
-		for (const c of [...this.components]) this.removeComponentInstance(c);
+		for (const c of [...this.components]) this.remove_component_instance(c);
 	}
 
 	/**

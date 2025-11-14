@@ -12,9 +12,9 @@ export class PreRenderSubmitSystem extends ECSystem {
 	private submitSpace(space: Space): void {
 		if (space.depthSortDirty) space.sort_by_depth();
 		for (const o of space.objects) {
-			if (o.disposeFlag || !o.visible) continue;
+			if (o.dispose_flag || !o.visible) continue;
 			// Flush all GenericRendererComponent instances, including subclasses
-			for (const c of o.iterateComponentsByType(CustomVisualComponent)) {
+			for (const c of o.iterate_components_by_type(CustomVisualComponent)) {
 				c.flush($.view.renderer);
 			}
 		}

@@ -3,17 +3,20 @@ import { $ } from '../core/game';
 import { Input } from '../input/input';
 import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload, type RevivableObjectArgs } from '../serializer/serializationhooks';
-import { getEasing } from '../utils/easing';
 import { BST_MAX_HISTORY, DEFAULT_BST_ID } from './fsmcontroller';
 import { StateDefinitions } from './fsmlibrary';
-import { type id2sstate, type Stateful, type Tape, type StateEventDefinition, type TickCheckDefinition, type transition_target } from './fsmtypes';
+import { type id2sstate, type Stateful, type StateEventDefinition, type StateEventHandler, type StateNextHandler, type TickCheckDefinition, type transition_target } from './fsmtypes';
 import { StateDefinition } from './statedefinition';
-import { createGameEvent, EventLane, EventPayload, GameEvent } from '../core/game_event';
-import type { AbilitySystemComponent } from '../component/abilitysystemcomponent';
+import { createGameEvent, EventPayload, GameEvent } from '../core/game_event';
+import type { WorldObject } from '../core/object/worldobject';
+import type { Timeline, TimelineDefinition } from '../timeline/timeline';
+import type { TimelineFrameEventPayload, TimelineEndEventPayload, TimelineListener, TimelinePlayOptions } from '../component/timeline_component';
 
 type TransitionExecutionMode = 'immediate' | 'queued' | 'deferred';
 
-type TransitionTrigger = 'manual' | 'event' | 'input' | 'run-check' | 'process-input' | 'tick' | 'tape' | 'enter' | 'queue-drain';
+type TransitionTrigger = 'manual' | 'event' | 'input' | 'run-check' | 'process-input' | 'tick' | 'enter' | 'queue-drain';
+
+const TAPE_START_INDEX = -1;
 
 interface TransitionOutcomeSnapshot {
 	from?: Identifier;
@@ -78,13 +81,7 @@ interface TransitionGuardDiagnostics {
 	evaluations: GuardEvaluation[];
 }
 
-const TAPE_START_INDEX = -1; // The index of the tape that is *before* the start of the tape, so that the first index of the tape is considered when the `next`-event is triggered
 const EMPTY_GAME_EVENT = Object.freeze(createGameEvent({ type: '__fsm.synthetic__', lane: 'any', emitter: null }));
-
-function uniqueStrings(values: readonly string[] | undefined): string[] {
-	if (!values || values.length === 0) return [];
-	return Array.from(new Set(values));
-}
 
 function resolveEmitterId(event: GameEvent | undefined, fallback: Identifier): Identifier {
 	if (!event || !event.emitter) return fallback;
@@ -98,46 +95,26 @@ function resolveEventPayload(event: GameEvent | undefined): EventPayload | undef
 	return rest as EventPayload;
 }
 
-function emitMarkerEvent(lane: EventLane | 'any', eventName: string, target: Stateful, payload?: Record<string, unknown>): void {
-	const actualLane: EventLane = lane === 'any' ? 'gameplay' : lane;
-	const event = createGameEvent({ type: eventName, lane: actualLane, emitter: target, ...(payload ?? {}) });
-	if (lane === 'presentation') {
-		$.emitPresentation(event);
-		return;
-	}
-	if (lane === 'gameplay') {
-		$.emitGameplay(event);
-		return;
-	}
-	$.emit(event);
+type TimelineHost = Stateful & WorldObject & {
+	define_timeline(definition: TimelineDefinition): void;
+	play_timeline(definitionOrId: TimelineDefinition | string, opts?: TimelinePlayOptions): void;
+	stop_timeline(id: string): void;
+	rewind_timeline(id: string): void;
+	seek_timeline(id: string, frame: number): void;
+	force_timeline_head?(id: string, frame: number): void;
+	get_timeline<T = unknown>(id: string): Timeline<T> | undefined;
+	on_timeline_event(id: string, listener: TimelineListener): () => void;
+	advance_timeline(id: string): void;
+};
+
+function isTimelineHost(value: Stateful | undefined): value is TimelineHost {
+	if (!value) return false;
+	const candidate = value as unknown as Partial<TimelineHost>;
+	return typeof candidate.define_timeline === 'function'
+		&& typeof candidate.play_timeline === 'function'
+		&& typeof candidate.on_timeline_event === 'function';
 }
 
-function fireMarkersForFrame(node: State, frame: number): void {
-	const definition = node.definition;
-	const compiled = definition._compiled_markers;
-	if (!compiled) return;
-	const bucket = compiled.byFrame[frame];
-	if (!bucket || bucket.length === 0) return;
-
-	const target = node.target as Stateful & { abilitySystem?: AbilitySystemComponent };
-	for (const marker of bucket) {
-		const addTags = uniqueStrings(marker.addtags);
-		const removeTags = uniqueStrings(marker.removetags);
-		const hasAdd = addTags.length > 0;
-		const hasRemove = removeTags.length > 0;
-		if (hasAdd || hasRemove) {
-			const abilitySystem = target.abilitySystem;
-			if (!abilitySystem) {
-				throw new Error(`[FSM] Marker '${marker.event}' requires ability system on target '${target.id}'.`);
-			}
-			if (hasAdd) abilitySystem.addTags(...addTags);
-			if (hasRemove) abilitySystem.removeTags(...removeTags);
-		}
-		const lane = marker.lane ?? 'gameplay';
-		const payload = marker.payload ? { ...marker.payload } : undefined;
-		emitMarkerEvent(lane, marker.event, target, payload);
-	}
-}
 
 @insavegame
 /**
@@ -526,14 +503,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		};
 	}
 
-	private createTapeContext(action: 'next' | 'end'): TransitionDiagContext {
-		return {
-			trigger: 'tape',
-			description: `tape:${action}`,
-			timestamp: $.platform.clock.now(),
-		};
-	}
-
 	private createEnterContext(stateId: Identifier): TransitionDiagContext {
 		return {
 			trigger: 'enter',
@@ -698,7 +667,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	private transition_queue: TransitionQueueItem[];
 
-	private skipMarkerForFrameZero: boolean = false;
 
 	private transitionContextStack?: TransitionDiagContext[];
 
@@ -836,83 +804,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}
 	}
 
-	private dispatchMarkersForTapeFrame(previousFrame: number, nextFrame: number): void {
-		const tape = this.tape;
-		if (!tape || tape.length === 0) return;
-		if (nextFrame < 0 || nextFrame >= tape.length) return;
-		if (nextFrame === previousFrame) return;
-		if (nextFrame === 0 && this.skipMarkerForFrameZero) {
-			this.skipMarkerForFrameZero = false;
-			return;
-		}
-		fireMarkersForFrame(this, nextFrame);
-	}
 
-	private syncWindowTagsAtCurrentFrame(): void {
-		const compiled = this.definition._compiled_markers;
-		const tape = this.tape;
-		if (!compiled) return;
-		const abilitySystem = (this.target as Stateful & { abilitySystem?: AbilitySystemComponent }).abilitySystem;
-		const controlledTags = new Set<string>();
-		for (const bucket of Object.values(compiled.byFrame)) {
-			if (!bucket) continue;
-			for (const marker of bucket) {
-				if (marker.addtags) for (const tag of marker.addtags) controlledTags.add(tag);
-				if (marker.removetags) for (const tag of marker.removetags) controlledTags.add(tag);
-			}
-		}
-		if (!abilitySystem || controlledTags.size === 0) return;
-
-		const allTags = Array.from(controlledTags);
-		abilitySystem.removeTags(...allTags);
-
-		if (!tape || this._tapehead < 0) return;
-		const head = Math.min(this._tapehead, tape.length - 1);
-		if (head < 0) return;
-
-		const counts = new Map<string, number>();
-		for (let frame = 0; frame <= head; frame++) {
-			const bucket = compiled.byFrame[frame];
-			if (!bucket) continue;
-			for (const marker of bucket) {
-				if (marker.addtags) {
-					for (const tag of marker.addtags) {
-						const next = (counts.get(tag) ?? 0) + 1;
-						counts.set(tag, next);
-					}
-				}
-				if (marker.removetags) {
-					for (const tag of marker.removetags) {
-						const current = counts.get(tag) ?? 0;
-						const next = current - 1;
-						counts.set(tag, next > 0 ? next : 0);
-					}
-				}
-			}
-		}
-
-		const active = Array.from(counts.entries()).filter(([, count]) => count > 0).map(([tag]) => tag);
-		if (active.length > 0) abilitySystem.addTags(...uniqueStrings(active));
-	}
-
-	private applyEntryMarkers(next_state: transition_target | void): void {
-		if (next_state !== undefined) {
-			this.skipMarkerForFrameZero = false;
-			return;
-		}
-		const compiled = this.definition._compiled_markers;
-		if (!compiled) {
-			this.skipMarkerForFrameZero = false;
-			return;
-		}
-		const bucket = compiled.byFrame[0];
-		if (!bucket || bucket.length === 0) {
-			this.skipMarkerForFrameZero = false;
-			return;
-		}
-		fireMarkersForFrame(this, 0);
-		this.skipMarkerForFrameZero = true;
-	}
 
 	/**
 	 * Gets the definition of the current state of the FSM.
@@ -1027,7 +919,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			if (typeof enterStart === 'function') {
 				startNext = enterStart.call(this.target, startInstance);
 			}
-			startInstance.applyEntryMarkers(startNext);
+			startInstance.activateTimelineOnEntry(startNext);
+			startInstance.transitionToNextStateIfProvided(startNext);
 		});
 
 		// Start the state machine for the current active state recursively
@@ -1136,8 +1029,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			: undefined;
 		if (next_state) {
 			this.transitionToNextStateIfProvided(next_state);
-		} else if (this.definition.enable_tape_autotick) {
-			++this.ticks;
 		}
 	}
 
@@ -1441,6 +1332,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			if (typeof exitHandler === 'function') {
 				exitHandler.call(this.target, prevInstance);
 			}
+			prevInstance.resetTimelineState();
 			this.pushHistory(prevId);
 
 			this.currentid = state_id;
@@ -1462,7 +1354,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 					() => enterHandler.call(this.target, cur),
 				)
 				: undefined;
-			cur.applyEntryMarkers(next);
+			cur.activateTimelineOnEntry(next);
 			cur.transitionToNextStateIfProvided(next);
 
 			if (diagEnabled) {
@@ -1680,47 +1572,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	}
 
 	/**
-	 * Returns the tape associated with the state machine definition.
-	 * If no tape is defined, returns undefined.
-	 * @returns The tape associated with the state machine definition, or undefined if not found.
-	 */
-	public get tape(): Tape { return this.definition.tape_data; }
-
-	/**
-	 * Returns the current value of the tape at the position of the tape head.
-	 * If there is no tape or the tape head is beyond the end of the tape, returns undefined.
-	 */
-	public get current_tape_value(): any {
-		const t = this.tape;
-		const i = this.tapehead_position;
-		if (!t || t.length === 0) return undefined;
-		if (i < 0 || i >= t.length) return undefined;
-		return t[i];
-	}
-
-	/**
-	 * Indicates whether the head of the finite state machine is at the end of the tape.
-	 * If there is no tape, it also returns true.
-	 * @returns A boolean value indicating whether the head is at the end of the tape.
-	 */
-	public get is_at_tape_end(): boolean { return !this.tape || this.tapehead_position >= this.tape.length - 1; } // Note that beyond end also returns true if there is no tape!
-
-	/**
-	 * Determines whether the tape head is currently beyond the end of the tape.
-	 * Returns true if the tape head is beyond the end of the tape or if there is no tape, false otherwise.
-	 * Note that this function assumes that the tape head is within the bounds of the tape.
-	 */
-	protected get is_tape_exhausted(): boolean { return !this.tape || this.tapehead_position >= this.tape.length; } // Note that beyond end also returns true if there is no tape!
-
-	/**
-	 * Returns whether the tape head is currently before the start of the tape,
-	 * which is given by index `-1`.
-	 * If there is no tape, it also returns true.
-	 * @returns A boolean value indicating whether the tape head is before the start of the tape.
-	 */
-	public get is_tape_rewound_to_start(): boolean { return this.tapehead_position === TAPE_START_INDEX; }
-
-	/**
 	 * Generates a unique identifier for the current instance.
 	 * The identifier is created by concatenating the parent machine's id (or the `target_id` for root machines) and the `def_id`.
 	 * @returns The generated identifier.
@@ -1741,11 +1592,28 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		return id;
 	}
 
+	public get current_tape_value(): any {
+		return this._currentTimelineValue;
+	}
+
+	public get is_at_tape_end(): boolean {
+		return this._timelineIsAtEnd;
+	}
+
+	protected get is_tape_exhausted(): boolean {
+		return this._timelineIsAtEnd;
+	}
+
+	public get is_tape_rewound_to_start(): boolean {
+		return this.tapehead_position === TAPE_START_INDEX;
+	}
+
 	/**
 	 * Disposes the current state machine and deregisters it from the registry.
 	 * Also deregisters all states.
 	 */
 	public dispose(): void {
+		this.resetTimelineState();
 		// Also deregister all states
 		if (!this.states) return;
 		for (let state in this.states) {
@@ -1760,282 +1628,178 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		Registry.instance.deregister(this);
 	}
 
-	/**
-	 * The position of the tape head.
-	 */
-	protected _tapehead!: number;
-	private _tapeTickThreshold: number = Number.POSITIVE_INFINITY;
-	private _tapePlaybackDirection: 1 | -1 = 1;
+private _currentTimelineValue: any;
+private _timelineIsAtEnd = false;
+private _timelineListenerUnsub?: () => void;
+private _timelineId?: string;
+protected _ticks: number = 0;
 
-	/**
-	 * Gets the current position of the tapehead.
-	 * @returns The current position of the tapehead.
-
-	 */
-	public get tapehead_position(): number {
-		return this._tapehead;
+	private get timelineHost(): TimelineHost | undefined {
+		const target = this.target as Stateful | undefined;
+		if (isTimelineHost(target)) return target;
+		return undefined;
 	}
 
-	/**
-	 * Sets the current position of the tapehead to the given value.
-	 * If the tapehead is going out of bounds, the tapehead is moved to the beginning or end of the tape, depending on the state machine definition.
-	 * If the tapehead is moved, the tapemove event is triggered.
-	 * If the tapehead reaches the end of the tape, the tapeend event is triggered.
-	 * @param v - the new position of the tapehead
-	 */
-	public set tapehead_position(v: number) {
-		this.enterCriticalSection();
-		try {
-			this._ticks = 0; // Always reset tapehead ticks after moving tapehead
-			const tape = this.tape;
-			const mode = this.definition.tape_playback_mode ?? 'once';
-			const previousHead = typeof this._tapehead === 'number' ? this._tapehead : TAPE_START_INDEX;
-
-			if (!tape || tape.length === 0) {
-				this._tapehead = TAPE_START_INDEX;
-				this._tapePlaybackDirection = 1;
-				this.tapemove();
-				this.tapeend();
-				this.updateTapeTickThreshold();
-				return;
-			}
-
-			if (mode !== 'pingpong') this._tapePlaybackDirection = 1;
-
-			const lastIndex = tape.length - 1;
-
-			if (v < 0) {
-				if (mode === 'pingpong') {
-					this._tapehead = 0;
-					this._tapePlaybackDirection = 1;
-					this.dispatchMarkersForTapeFrame(previousHead, this._tapehead);
-					this.tapeend();
-				} else {
-					this._tapehead = 0;
-					this.dispatchMarkersForTapeFrame(previousHead, this._tapehead);
-					this.tapemove();
-					this.tapeend();
-				}
-				this.updateTapeTickThreshold();
-				return;
-			}
-
-			if (v > lastIndex) {
-				if (mode === 'loop') {
-					this._tapehead = 0;
-					this._tapePlaybackDirection = 1;
-					this.dispatchMarkersForTapeFrame(previousHead, this._tapehead);
-					this.tapemove(true);
-				} else if (mode === 'pingpong') {
-					this._tapehead = lastIndex;
-					if (lastIndex > 0) this._tapePlaybackDirection = -1;
-					this.dispatchMarkersForTapeFrame(previousHead, this._tapehead);
-					this.tapeend();
-					this.updateTapeTickThreshold();
-					return;
-				} else {
-					this._tapehead = lastIndex;
-					this.dispatchMarkersForTapeFrame(previousHead, this._tapehead);
-					this.tapeend();
-					this.updateTapeTickThreshold();
-					return;
-				}
-				this.tapeend();
-				this.updateTapeTickThreshold();
-				return;
-			}
-
-			this._tapehead = v; // Move the tape to new position
-			this.dispatchMarkersForTapeFrame(previousHead, this._tapehead);
-			this.tapemove();
-			this.updateTapeTickThreshold();
-		} finally {
-			this.leaveCriticalSection();
-		}
+private ensureTimelineHost(): TimelineHost {
+	const host = this.timelineHost;
+	if (!host) {
+		throw new Error(`[State] State '${this.id}' defines a timeline but target '${this.target_id}' does not implement timeline controls.`);
 	}
+	return host;
+}
 
-	// Sets the current position of the tapehead to the given value without triggering any events or side effects.
-	// @param v - the new position of the tapehead
-	public setHeadNoSideEffect(v: number) {
-		this._tapehead = v;
-		this.updateTapeTickThreshold();
-	}
+public get tapehead_position(): number {
+	const host = this.timelineHost;
+	if (!host || !this._timelineId) return TAPE_START_INDEX;
+	const timeline = host.get_timeline(this._timelineId);
+	return timeline ? timeline.head : TAPE_START_INDEX;
+}
 
-	/**
-	 * Sets the current number of ticks of the tapehead to the given value without triggering any events or side effects.
-	 * @param v - the new number of ticks of the tapehead
-	 */
-	public setTicksNoSideEffect(v: number) {
-		this._ticks = v;
-	}
+public set tapehead_position(v: number) {
+	const host = this.timelineHost;
+	if (!host || !this._timelineId) return;
+	host.seek_timeline(this._timelineId, v);
+}
 
-	/**
-	 * The number of ticks.
-	 */
-	protected _ticks!: number;
-	/**
-	 * Returns the current number of ticks of the tapehead.
-	 * @returns The current number of ticks of the tapehead.
-	 */
-	public get ticks(): number {
-		return this._ticks;
+public setHeadNoSideEffect(v: number): void {
+	const host = this.timelineHost;
+	if (!host || !this._timelineId) return;
+	if (typeof host.force_timeline_head === 'function') {
+		host.force_timeline_head(this._timelineId, v);
+	} else {
+		host.seek_timeline(this._timelineId, v);
 	}
-	/**
-	 * Sets the current number of ticks of the tapehead to the given value.
-	 * If the number of ticks is greater than or equal to the number of ticks required to move the tapehead,
-	 * the tapehead is moved to the next position.
-	 * @param v - the new number of ticks of the tapehead
-	 */
+}
+
+public setTicksNoSideEffect(v: number): void {
+	this._ticks = v;
+}
+
+public get ticks(): number {
+	return this._ticks;
+}
+
 	public set ticks(v: number) {
 		this._ticks = v;
-		const def = this.definition;
-		const base = def.ticks2advance_tape;
-		if (base <= 0) {
-			this.advanceTapehead();
-			return;
-		}
-		if (v >= this._tapeTickThreshold) {
-			this.advanceTapehead();
-		}
+		this.advanceTimelineManual();
 	}
 
-	private advanceTapehead(): void {
-		const tape = this.tape;
-		const mode = this.definition.tape_playback_mode ?? 'once';
-		if (!tape || tape.length === 0) {
-			this.tapehead_position = this._tapehead + 1;
-			return;
-		}
-
-		const direction = mode === 'pingpong' ? this._tapePlaybackDirection : 1;
-		const nextIndex = this._tapehead + direction;
-		this.tapehead_position = nextIndex;
+	private advanceTimelineManual(): void {
+		const host = this.timelineHost;
+		if (!host || !this._timelineId) return;
+		host.advance_timeline(this._timelineId);
 	}
 
-	private computeTapeProgress(index: number): number {
-		const tape = this.tape;
-		if (!tape || tape.length === 0) return 0;
-		const len = tape.length;
-		const clamped = Math.max(-1, Math.min(len, index));
-		if (clamped <= -1) return 0;
-		if (clamped >= len) return 1;
-		return (clamped + 1) / len;
+	private ensureTimelineBinding(): void {
+		const def = this.definition.timeline;
+		if (!def) return;
+		const host = this.ensureTimelineHost();
+		host.define_timeline(def);
+		this._timelineId = def.id;
+		if (this._timelineListenerUnsub) this._timelineListenerUnsub();
+		this._timelineListenerUnsub = host.on_timeline_event(def.id, this.createTimelineListener());
 	}
 
-	private updateTapeTickThreshold(): void {
-		const def = this.definition;
-		if (!def) {
-			this._tapeTickThreshold = Number.POSITIVE_INFINITY;
-			return;
-		}
-		const base = def.ticks2advance_tape;
-		if (base <= 0) {
-			this._tapeTickThreshold = base;
-			return;
-		}
-		const tape = this.tape;
-		if (!tape || tape.length === 0) {
-			this._tapeTickThreshold = base;
-			return;
-		}
-		const easingName = def.tape_playback_easing;
-		if (!easingName) {
-			this._tapeTickThreshold = base;
-			return;
-		}
-		const easing = getEasing(easingName);
-		const before = this.computeTapeProgress(this._tapehead);
-		const after = this.computeTapeProgress(this._tapehead + this._tapePlaybackDirection);
-		if (after === before) {
-			this._tapeTickThreshold = Number.POSITIVE_INFINITY;
-			return;
-		}
-		const delta = Math.abs(easing(after) - easing(before));
-		const totalSegments = tape.length;
-		const scaled = base * (delta > 0 ? delta * totalSegments : 1);
-		this._tapeTickThreshold = Math.max(scaled, Number.EPSILON);
+	private createTimelineListener(): TimelineListener {
+		return {
+			frame: payload => this.handleTimelineFrame(payload),
+			end: payload => this.handleTimelineEnd(payload),
+		};
 	}
 
-	/**
-	 * Calls the next state's function.
-	 * @param tape_rewound Indicates whether the tape has been rewound as part of loop playback.
-	 */
-	protected tapemove(tape_rewound: boolean = false) {
-		this.enterCriticalSection();
-		try {
-			const tapeNext = this.definition.tape_next;
-			const next_state = typeof tapeNext === 'function'
-				? this.runWithTransitionContext(
-					() => {
-						const ctx = this.createTapeContext('next');
-						ctx.handlerName = tapeNext.name || '<anonymous>';
-						return ctx;
+	private activateTimelineOnEntry(next_state: transition_target | void): void {
+		this.resetTimelineState();
+		if (next_state !== undefined) return;
+		if (!this.definition.timeline) return;
+		this.ensureTimelineBinding();
+		const host = this.ensureTimelineHost();
+		const def = this.definition.timeline!;
+		this._timelineIsAtEnd = false;
+		this._currentTimelineValue = undefined;
+		host.play_timeline(def, { rewind: true, snapToStart: true });
+	}
+
+	private resetTimelineState(): void {
+		if (this._timelineListenerUnsub) {
+			this._timelineListenerUnsub();
+			this._timelineListenerUnsub = undefined;
+		}
+		const host = this.timelineHost;
+		if (host && this._timelineId) {
+			host.stop_timeline(this._timelineId);
+		}
+		this._timelineId = undefined;
+		this._timelineIsAtEnd = false;
+		this._currentTimelineValue = undefined;
+	}
+
+	private handleTimelineFrame(payload: TimelineFrameEventPayload): void {
+		const def = this.definition.timeline;
+		if (!def || payload.timeline_id !== def.id) return;
+		this._timelineIsAtEnd = false;
+		this._currentTimelineValue = payload.frame_value;
+		this.handleTimelineCallback('next', { tape_rewound: payload.rewound });
+	}
+
+	private handleTimelineEnd(payload: TimelineEndEventPayload): void {
+		const def = this.definition.timeline;
+		if (!def || payload.timeline_id !== def.id) return;
+		this._timelineIsAtEnd = true;
+		this.handleTimelineCallback('end', EMPTY_GAME_EVENT);
+	}
+
+	private handleTimelineCallback(kind: 'next' | 'end', payload: any): void {
+		const handler = kind === 'next' ? this.definition.tape_next : this.definition.tape_end;
+		if (!handler) return;
+		if (typeof handler === 'function') {
+			if (kind === 'next') {
+				const fn = handler as StateNextHandler;
+				const result = this.runWithTransitionContext(
+					() => this.createEventContext('timeline.next', this.target_id, undefined),
+					ctx => {
+						if (ctx) ctx.handlerName = fn.name || '<anonymous>';
+						return fn.call(this.target, this, payload);
 					},
-					() => tapeNext.call(this.target, this, { tape_rewound }),
-				)
-				: undefined;
-			this.transitionToNextStateIfProvided(next_state);
-		} finally {
-			this.leaveCriticalSection();
-		}
-	}
-
-	/**
-	 * Triggers the `end` event of the state machine definition, passing this state and the `state_event_type.End` event type as arguments.
-	 */
-	protected tapeend() {
-		this.enterCriticalSection();
-		try {
-			const tapeEnd = this.definition.tape_end;
-			const next_state = typeof tapeEnd === 'function'
-				? this.runWithTransitionContext(
-					() => {
-						const ctx = this.createTapeContext('end');
-						ctx.handlerName = tapeEnd.name || '<anonymous>';
-						return ctx;
+				);
+				this.transitionToNextStateIfProvided(result);
+			} else {
+				const fn = handler as StateEventHandler;
+				this.runWithTransitionContext(
+					() => this.createEventContext('timeline.end', this.target_id, undefined),
+					ctx => {
+						if (ctx) ctx.handlerName = fn.name || '<anonymous>';
+						const result = fn.call(this.target, this, payload);
+						this.transitionToNextStateIfProvided(result);
 					},
-						() => tapeEnd.call(this.target, this, EMPTY_GAME_EVENT),
-				)
-				: undefined;
-			this.transitionToNextStateIfProvided(next_state);
-		} finally {
-			this.leaveCriticalSection();
+				);
+			}
+			return;
 		}
+		if (typeof handler === 'string') {
+			this.transitionToNextStateIfProvided(handler);
+			return;
+		}
+		console.warn(`[State] Timeline handler '${kind}' on state '${this.id}' uses unsupported action spec and was ignored.`);
 	}
 
-	/**
-	 * Resets the tape to its initial state by rewinding the tapehead to the beginning
-	 * and resetting the tick counter.
-	 *
-	 * This method performs the following actions:
-	 * - Sets the tapehead position to the start index.
-	 * - Resets the tick counter to zero.
-	 *
-	 * @public
-	 */
-	public rewind_tape() {
-		this.setHeadNoSideEffect(TAPE_START_INDEX); // Reset the tapehead to the beginning of the tape
-		this.setTicksNoSideEffect(0); // Reset the ticks
-		this._tapePlaybackDirection = 1;
-		this.skipMarkerForFrameZero = false;
-		this.updateTapeTickThreshold();
+	public rewind_tape(): void {
+		const host = this.timelineHost;
+		if (!host || !this._timelineId) return;
+		host.rewind_timeline(this._timelineId);
+		this._timelineIsAtEnd = false;
+		this._currentTimelineValue = undefined;
 	}
 
 	public reapplyMarkersForCurrentFrame(recursive: boolean = false): void {
-		this.skipMarkerForFrameZero = false;
-		this.updateTapeTickThreshold();
-		this.syncWindowTagsAtCurrentFrame();
 		if (!recursive || !this.states) return;
 		for (const child of Object.values(this.states)) {
-			if (child) child.reapplyMarkersForCurrentFrame(true);
+			child?.reapplyMarkersForCurrentFrame(true);
 		}
 	}
 
-	/**
-	 * Resets the state machine by setting the tapehead and ticks to 0 and the ticks2move to the value defined in the state machine definition.
-	 */
+	/** Resets this state machine's local data and propagates reset to child machines when requested. */
 	public reset(reset_tree: boolean = true): void {
-		this.rewind_tape(); // Rewind the tape
+		this.resetTimelineState();
 		const def = this.definition;
 		this.data = def.data ? { ...def.data } : {};
 		if (reset_tree) this.resetSubmachine(); // Reset the substate machine if it exists

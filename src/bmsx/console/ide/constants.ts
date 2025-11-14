@@ -296,33 +296,35 @@ export const PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN = 4;
 export const DEFAULT_NEW_LUA_RESOURCE_CONTENT = '-- New Lua resource\n';
 export const DEFAULT_NEW_FSM_RESOURCE_CONTENT = `return {
 \tid = '<MACHINE_ID>',
-\tenable_tape_autotick = true,
-\tticks2advance_tape = 50,
 \tstates = {
 \t\t_idle = { -- '_'-prefix to make it the initial state
+\t\t\ttimeline = {
+\t\t\t\tid = '<MACHINE_ID>.idle',
+\t\t\t\tframes = { 0 },
+\t\t\t\tticks_per_frame = 50,
+\t\t\t},
 \t\t\tentering_state = function(self, state, payload)
 \t\t\tend,
-\t\t\ttick = function(self, state, payload)
-\t\t\tend,
-\t\t\ttapemove = function(self, state, payload)
+\t\t\ttape_next = function(self, state, payload)
 \t\t\t\treturn '../running'
 \t\t\tend,
 \t\t\ton = {
 \t\t\t\t['$start'] = '../running' -- '$'-prefix to denote self-scoped event
 \t\t\t}
 \t\t},
-\t\tenable_tape_autotick = true,
-\t\tticks2advance_tape = 100,
 \t\trunning = {
+\t\t\ttimeline = {
+\t\t\t\tid = '<MACHINE_ID>.running',
+\t\t\t\tframes = { 0 },
+\t\t\t\tticks_per_frame = 100,
+\t\t\t},
 \t\t\tentering_state = function(self, state, payload)
 \t\t\tend,
-\t\t\ttick = function(self, state, payload)
-\t\t\tend,
-\t\t\ttapemove = function(self, state, payload)
+\t\t\ttape_next = function(self, state, payload)
 \t\t\t\treturn '../_idle'
 \t\t\tend,
 \t\t\ton = {
-\t\t\t\t['$stop'] = '../idle' -- '$'-prefix to denote self-scoped event
+\t\t\t\t['$stop'] = '../idle'
 \t\t\t}
 \t\t}
 \t}

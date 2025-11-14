@@ -30,7 +30,7 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 	static bouw(): StateMachineBlueprint {
 		return {
 			on: {
-				animation_end: { do(this: SelectedPlayerIndexIcon) { this.markForDisposal(); } },
+				animation_end: { do(this: SelectedPlayerIndexIcon) { this.mark_for_disposal(); } },
 			},
 			states: {
 				_default: {
@@ -59,7 +59,13 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 					},
 				},
 				assigned: {
-					tape_data: [true, false], repetitions: 5, tape_playback_mode: 'once', ticks2advance_tape: 4,
+					timeline: {
+						id: 'controller-assignment.assigned',
+						frames: [true, false],
+						repetitions: 5,
+						playbackMode: 'once',
+						ticksPerFrame: 4,
+					},
 					tape_next(this: SelectedPlayerIndexIcon, state: State) { this.colorize = state.current_tape_value ? { r: 1, g: 1, b: 1, a: .5 } : { r: 0, g: 1, b: 0, a: .75 }; },
 					tape_end(this: SelectedPlayerIndexIcon) {
 						const event = createGameEvent({ type: 'animation_end', emitter: this });
@@ -67,7 +73,13 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 					},
 				},
 				cancelled: {
-					tape_data: [2], repetitions: 16, tape_playback_mode: 'once', ticks2advance_tape: 1,
+					timeline: {
+						id: 'controller-assignment.cancelled',
+						frames: [2],
+						repetitions: 16,
+						playbackMode: 'once',
+						ticksPerFrame: 1,
+					},
 					entering_state(this: SelectedPlayerIndexIcon) { this.colorize = { r: 1, g: 0, b: 0, a: .75 }; },
 					tape_next(this: SelectedPlayerIndexIcon, state: State) { this.y -= state.current_tape_value; },
 					tape_end(this: SelectedPlayerIndexIcon) {

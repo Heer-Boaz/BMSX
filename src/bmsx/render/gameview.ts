@@ -413,7 +413,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			const frame = buildFrameData(this);
 			renderGraph.execute(frame);
 		} finally {
-			$.emitPresentation('frameend', this, token);
+			$.emit_presentation('frameend', this, token);
 			backend.endFrame();
 			renderGate.end(token);
 		}

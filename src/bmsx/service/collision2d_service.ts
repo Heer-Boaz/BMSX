@@ -36,7 +36,7 @@ class Collision2DService extends Service {
 		const idx = this.ensureIndex(world, cellSize);
 		idx.clear();
 		for (const o of world.objects({ scope: 'active' })) {
-			for (const col of o.getComponents(Collider2DComponent)) {
+			for (const col of o.get_components(Collider2DComponent)) {
 				if (!col.enabled) continue;
 				idx.addOrUpdate(col);
 			}
@@ -86,7 +86,7 @@ class Collision2DService extends Service {
 			if (!owner) return null;
 			return { owner, collider: target };
 		}
-		const col = target.getFirstComponent(Collider2DComponent);
+		const col = target.get_first_component(Collider2DComponent);
 		if (!col) return null;
 		return { owner: target, collider: col };
 	}

@@ -26,12 +26,17 @@ export class EilaModelFSM {
 					},
 					states: {
 						_ffwachten: {
-							ticks2advance_tape: 150,
-							entering_state(this: World) {
+							entering_state(this: World, state: State) {
 								$.playAudio(AudioId.start);
 								$.emitPresentation('its_curtains', this);
+								const data = state.data as { waitTicks?: number };
+								data.waitTicks = 0;
 							},
-							tape_end: () => '../oefenen',
+							tick(this: World, state: State) {
+								const data = state.data as { waitTicks?: number };
+								data.waitTicks = (data.waitTicks ?? 0) + 1;
+								if (data.waitTicks >= 150) return '../oefenen';
+							},
 						},
 						oefenen: {
 							entering_state(this: World) {
@@ -52,11 +57,16 @@ export class EilaModelFSM {
 							},
 						},
 						ffwachten2: {
-							ticks2advance_tape: 50,
-							entering_state(this: World) {
+							entering_state(this: World, state: State) {
 								this.setSpace('niets');
+								const data = state.data as { waitTicks?: number };
+								data.waitTicks = 0;
 							},
-							tape_end: () => '../knokken',
+							tick(this: World, state: State) {
+								const data = state.data as { waitTicks?: number };
+								data.waitTicks = (data.waitTicks ?? 0) + 1;
+								if (data.waitTicks >= 50) return '../knokken';
+							},
 						},
 						knokken: {
 							entering_state(this: World) {

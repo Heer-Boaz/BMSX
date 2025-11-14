@@ -13,7 +13,7 @@ export class SpriteRenderSystem extends ECSystem {
 		for (const [o, sc] of world.objectsWithComponents(SpriteComponent, { scope: 'active' })) {
 			if (!sc.enabled) continue;
 			const parent = o as WorldObject;
-			const tc = parent.getUniqueComponent(TransformComponent);
+			const tc = parent.get_unique_component(TransformComponent);
 			const pos = tc
 				? { x: tc.position[0] + sc.offset.x, y: tc.position[1] + sc.offset.y, z: tc.position[2] + sc.offset.z }
 				: { x: parent.x + sc.offset.x, y: parent.y + sc.offset.y, z: parent.z + sc.offset.z };

@@ -280,7 +280,12 @@ export class quiz extends WorldObject {
 				},
 
 				vraag: {
-					tape_data: Array.from({ length: quizItems.length }, (_, i) => i),
+					timeline: {
+						id: 'quiz.vraag',
+						frames: Array.from({ length: quizItems.length }, (_, i) => i),
+						playbackMode: 'once',
+						ticksPerFrame: 0,
+					},
 					entering_state(this: quiz, state: State) {
 						this.presentQuestion(state);
 					},

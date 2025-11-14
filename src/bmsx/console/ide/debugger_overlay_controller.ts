@@ -1,9 +1,9 @@
 import { focusChunkSource, normalizeChunkName, setExecutionStopHighlight, clearExecutionStopHighlights, updateDesiredColumn, ensureCursorVisible, resetBlink, clearRuntimeErrorOverlay } from './console_cart_editor';
 import { ide_state } from './ide_state';
 import * as constants from './constants';
-import { clamp } from 'bmsx/utils/clamp.ts';
+import { clamp } from '../../utils/clamp';
 import { subscribeDebuggerLifecycleEvents, type DebuggerPauseDisplayPayload, type DebuggerLifecycleEvent } from '../debugger_lifecycle';
-import type { LuaDebuggerSessionMetrics } from '../../lua/debugger.ts';
+import type { LuaDebuggerSessionMetrics } from '../../lua/debugger';
 
 const MESSAGE_BY_REASON: Record<DebuggerPauseDisplayPayload['reason'], string> = {
 	breakpoint: 'Paused on breakpoint',

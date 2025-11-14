@@ -24,10 +24,10 @@ do
 					{ frame = 2, event = 'corona.behavior.choose_direction' },
 				},
 				entering_state = function(object, state)
-					object:getcomponentbyid('corona_sprite').imgid = state.current_tape_value or corona_frames[1]
+					object:get_component_by_id('corona_sprite').imgid = state.current_tape_value or corona_frames[1]
 				end,
 				tape_next = function(object, state)
-					object:getcomponentbyid('corona_sprite').imgid = state.current_tape_value
+					object:get_component_by_id('corona_sprite').imgid = state.current_tape_value
 				end,
 				on = {
 					dispel = '../despawn',
@@ -75,10 +75,10 @@ do
 				enable_tape_autotick = true,
 				tape_playback_mode = 'loop',
 				entering_state = function(object, state)
-					object:getcomponentbyid('fire_sprite').imgid = state.current_tape_value or fire_frames[1]
+					object:get_component_by_id('fire_sprite').imgid = state.current_tape_value or fire_frames[1]
 				end,
 				tape_next = function(object, state)
-					object:getcomponentbyid('fire_sprite').imgid = state.current_tape_value
+					object:get_component_by_id('fire_sprite').imgid = state.current_tape_value
 				end,
 				tick = function(object)
 					local delta = delta_seconds()
@@ -156,10 +156,10 @@ do
 				entering_state = function(owner, state)
 					local context = owner
 					context.direction = 'down'
-					owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value or player_frames_down[1]
+					owner:get_component_by_id('player_sprite').imgid = state.current_tape_value or player_frames_down[1]
 				end,
 				tape_next = function(owner, state)
-					owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
+					owner:get_component_by_id('player_sprite').imgid = state.current_tape_value
 				end,
 				tick = function(owner)
 					local horizontal = owner.horizontal_direction
@@ -192,10 +192,10 @@ do
 				entering_state = function(owner, state)
 					local context = owner
 					context.direction = 'up'
-					owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value or player_frames_up[1]
+					owner:get_component_by_id('player_sprite').imgid = state.current_tape_value or player_frames_up[1]
 				end,
 				tape_next = function(owner, state)
-					owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
+					owner:get_component_by_id('player_sprite').imgid = state.current_tape_value
 				end,
 				tick = function(owner)
 					local context = owner
@@ -229,10 +229,10 @@ do
 				entering_state = function(owner, state)
 					local context = owner
 					context.direction = 'left'
-					owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value or player_frames_switch[1]
+					owner:get_component_by_id('player_sprite').imgid = state.current_tape_value or player_frames_switch[1]
 				end,
 				tape_next = function(owner, state)
-					owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
+					owner:get_component_by_id('player_sprite').imgid = state.current_tape_value
 				end,
 				tick = function(owner)
 					local context = owner
@@ -264,10 +264,10 @@ do
 				entering_state = function(owner, state)
 					local context = owner
 					context.direction = 'right'
-					owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value or player_frames_switch[1]
+					owner:get_component_by_id('player_sprite').imgid = state.current_tape_value or player_frames_switch[1]
 				end,
 				tape_next = function(owner, state)
-					owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
+					owner:get_component_by_id('player_sprite').imgid = state.current_tape_value
 				end,
 				tick = function(owner)
 					local context = owner
@@ -299,10 +299,10 @@ do
 				entering_state = function(owner, state)
 					local context = owner
 					context.direction = 'down'
-					owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value or player_frames_hurt[1]
+					owner:get_component_by_id('player_sprite').imgid = state.current_tape_value or player_frames_hurt[1]
 				end,
 				tape_next = function(owner, state)
-					owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
+					owner:get_component_by_id('player_sprite').imgid = state.current_tape_value
 				end,
 				tick = function(owner)
 					local context = owner
@@ -327,10 +327,10 @@ do
 				entering_state = function(owner, state)
 					local context = owner
 					context.direction = 'down'
-					owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value or player_frames_win[1]
+					owner:get_component_by_id('player_sprite').imgid = state.current_tape_value or player_frames_win[1]
 				end,
 				tape_next = function(owner, state)
-					owner:getcomponentbyid('player_sprite').imgid = state.current_tape_value
+					owner:get_component_by_id('player_sprite').imgid = state.current_tape_value
 				end,
 				tick = function()
 					return nil

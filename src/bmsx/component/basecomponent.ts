@@ -74,57 +74,57 @@ export interface ComponentContainer extends Identifiable, Registerable, Disposab
 	 * @param constructor - The constructor function of the component type.
 	 * @returns The component instance of the specified type, or undefined if not found.
 	 */
-	getComponents<T extends Component>(constructor: ComponentConstructor<T>): T[];
+	get_components<T extends Component>(constructor: ComponentConstructor<T>): T[];
 
 	/**
 	 * Retrieves a specific component instance by its global id.
 	 * @param id - The component id (unique within the registry).
 	 */
-	getComponentById<T extends Component = Component>(id: ComponentId): T | undefined;
+	get_component_by_id<T extends Component = Component>(id: ComponentId): T | undefined;
 
 	/**
 	 * Retrieves the Nth component instance of a given type attached to this object.
 	 * @param constructor - The component class (abstract allowed).
 	 * @param index - Zero-based index in attachment order.
 	 */
-	getComponentAt<T extends Component>(constructor: ComponentConstructor<T>, index: number): T | undefined;
+	get_component_at<T extends Component>(constructor: ComponentConstructor<T>, index: number): T | undefined;
 
 	/**
 	 * Finds the first component of a given type matching a predicate.
 	 */
-	findComponent<T extends Component>(predicate: (c: T, index: number) => boolean): T | undefined;
+	find_component<T extends Component>(predicate: (c: T, index: number) => boolean): T | undefined;
 
 	/**
 	 * Finds all components of a given type matching a predicate.
 	 */
-	findComponents<T extends Component>(predicate: (c: T, index: number) => boolean): T[];
+	find_components<T extends Component>(predicate: (c: T, index: number) => boolean): T[];
 
 	/** Convenience: return the first instance of a component type, if any. */
-	getUniqueComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined;
+	get_unique_component<T extends Component>(constructor: ComponentConstructor<T>): T | undefined;
 
 	/**
 	 * Returns the unique instance of a component type if present; throws if multiple instances are attached.
 	 * Useful when the type is expected to be singular (e.g., Transform, Physics, ASC).
 	 */
-	getUniqueComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined;
+	get_unique_component<T extends Component>(constructor: ComponentConstructor<T>): T | undefined;
 
 	/** Require a unique instance; throws if missing or if multiples are present. */
-	getUniqueComponent<T extends Component>(constructor: ComponentConstructor<T>): T;
+	get_unique_component<T extends Component>(constructor: ComponentConstructor<T>): T;
 
 	/**
 	 * Adds a component to the container.
 	 * @param component - The component instance to add.
 	 */
-	addComponent<T extends Component>(component: T): void;
+	add_component<T extends Component>(component: T): void;
 
 	/**
 	 * Remove a component to the container.
 	 * @param component - The component instance to remove.
 	 */
-	removeComponents<T extends Component>(constructor: ComponentConstructor<T>): void;
+	remove_components<T extends Component>(constructor: ComponentConstructor<T>): void;
 
 	/** Remove a specific component instance from the container. */
-	removeComponentInstance<T extends Component>(component: T): void;
+	remove_component_instance<T extends Component>(component: T): void;
 
 	/**
 	 * Updates all components with the specified tag in the container.
@@ -263,12 +263,12 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 
 		// Enforce uniqueness if the component class declares it
 		const ctor = this.constructor as ConstructorWithTagsProperty & { unique?: boolean };
-		const existing = parent.getComponents(this.constructor as ComponentConstructor<Component<T>>) ?? [];
+		const existing = parent.get_components(this.constructor as ComponentConstructor<Component<T>>) ?? [];
 		if (ctor.unique && existing.length > 0) {
 			throw new Error(`Component '${this.name}' is marked unique and is already attached to '${parent.id}'.`);
 		}
 		// Attach always allows multiple instances; container will assign final id and bind
-		parent.addComponent(this);
+		parent.add_component(this);
 		this._parentRef = parent;
 		this.bind();
 	}
@@ -277,7 +277,7 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 		const parent = this.parentOrThrow();
 
 		// Remove this instance from the parent
-		parent.removeComponentInstance(this);
+		parent.remove_component_instance(this);
 		this._parentRef = undefined;
 		this.parentid = null;
 	}

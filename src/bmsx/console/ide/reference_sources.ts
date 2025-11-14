@@ -1,9 +1,9 @@
-import { clamp } from 'bmsx/utils/clamp.ts';
+import { clamp } from '../../utils/clamp';
 import type { ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleResourceDescriptor } from '../types';
-import type { CodeTabContext, SearchMatch, SymbolSearchResult } from './types.ts';
-import type { ReferenceMatchInfo } from './reference_navigation.ts';
-import { ReferenceState } from './reference_navigation.ts';
-import { LuaSemanticWorkspace } from './semantic_workspace.ts';
+import type { CodeTabContext, SearchMatch, SymbolSearchResult } from './types';
+import type { ReferenceMatchInfo } from './reference_navigation';
+import { ReferenceState } from './reference_navigation';
+import { LuaSemanticWorkspace } from './semantic_workspace';
 import type { Decl } from './semantic_model';
 
 export type ProjectReferenceEnvironment = {

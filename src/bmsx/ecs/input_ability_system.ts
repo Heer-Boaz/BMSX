@@ -68,7 +68,7 @@ export class InputAbilitySystem extends ECSystem {
 			const input = $.input.getPlayerInput(playerIndex);
 			if (!input) continue;
 
-			const asc = obj.getUniqueComponent(AbilitySystemComponent);
+			const asc = obj.get_unique_component(AbilitySystemComponent);
 			if (!asc && (program.usesAbilityRequests || program.usesTagConditions)) {
 				const reasons: string[] = [];
 				if (program.usesAbilityRequests) reasons.push('requests abilities');
@@ -144,9 +144,9 @@ export class InputAbilitySystem extends ECSystem {
 	}
 
 	private isEligibleObject(obj: WorldObject): boolean {
-		if (obj.disposeFlag) return false;
+		if (obj.dispose_flag) return false;
 		if (obj.active === false) return false;
-		if (!obj.tickEnabled) return false;
+		if (!obj.tick_enabled) return false;
 		return true;
 	}
 

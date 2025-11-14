@@ -16,7 +16,7 @@ const PRIMARY_COLLIDER_ID = 'primary';
  */
 export abstract class SpriteObject extends WorldObject {
 	private get spriteComp(): SpriteComponent {
-		const comp = this.getComponentByLocalId(SpriteComponent, BASE_SPRITE_ID);
+		const comp = this.get_component_by_local_id(SpriteComponent, BASE_SPRITE_ID);
 		if (!comp) {
 			throw new Error(`[SpriteObject:${this.id}] Missing SpriteComponent '${BASE_SPRITE_ID}'.`);
 		}
@@ -105,9 +105,9 @@ export abstract class SpriteObject extends WorldObject {
 		super(opts);
 		// Attach base SpriteComponent (data-driven sprite handled by SpriteRenderSystem)
 		const baseSprite = new SpriteComponent({ parentid: this.id, imgid: 'none', id_local: BASE_SPRITE_ID, colliderLocalId: PRIMARY_COLLIDER_ID });
-		this.addComponent(baseSprite);
+		this.add_component(baseSprite);
 		// Attach Collider by default; sprite-driven sync will populate shapes
-		this.addComponent(new Collider2DComponent({ parentid: this.id, id_local: PRIMARY_COLLIDER_ID }));
+		this.add_component(new Collider2DComponent({ parentid: this.id, id_local: PRIMARY_COLLIDER_ID }));
 	}
 
 	// queueRenderSubmissions removed — handled by SpriteRenderSystem via SpriteComponent

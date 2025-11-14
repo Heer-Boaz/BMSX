@@ -1,5 +1,5 @@
-import { safeclamp } from 'bmsx/utils/safeclamp.ts';
-import type { LuaCallFrame, LuaDebuggerPauseSignal, LuaExceptionResumeStrategy } from './runtime.ts';
+import { safeclamp } from '../utils/safeclamp';
+import type { LuaCallFrame, LuaDebuggerPauseSignal, LuaExceptionResumeStrategy } from './runtime';
 
 export function normalizeLuaChunkName(name: string): string {
 	let normalized = name.trim();

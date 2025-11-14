@@ -117,9 +117,9 @@ export class InputIntentSystem extends ECSystem {
 	}
 
 	private isEligibleObject(owner: WorldObject): boolean {
-		if (owner.disposeFlag) return false;
+		if (owner.dispose_flag) return false;
 		if (owner.active === false) return false;
-		if (!owner.tickEnabled) return false;
+		if (!owner.tick_enabled) return false;
 		return true;
 	}
 }

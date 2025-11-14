@@ -35,7 +35,7 @@ class Toast extends WorldObject {
 		const now = $.platform.clock.now();
 		const t = now - toast.createdAt;
 		// TODO: PRETTY UGLY TO NOT USE A (SIMPLE) STATE MACHINE FOR THIS
-		if (t >= toast.ms) { toast.markForDisposal(); return null; } // time's up
+		if (t >= toast.ms) { toast.mark_for_disposal(); return null; } // time's up
 		const vp = $.view.viewportSize;
 		const centerX = vp.x / 2;
 		const topY = 12;

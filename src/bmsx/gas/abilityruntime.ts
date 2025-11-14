@@ -17,7 +17,7 @@ export class AbilityRuntimeSystem extends ECSystem {
 				if (!owner) {
 					throw new Error(`[AbilityRuntimeSystem] Owner '${command.owner}' not found while activating ability '${command.ability_id}'.`);
 				}
-				asc = owner.getUniqueComponent(AbilitySystemComponent);
+				asc = owner.get_unique_component(AbilitySystemComponent);
 				if (!asc) {
 					throw new Error(`[AbilityRuntimeSystem] AbilitySystemComponent missing on owner '${command.owner}' while activating ability '${command.ability_id}'.`);
 				}

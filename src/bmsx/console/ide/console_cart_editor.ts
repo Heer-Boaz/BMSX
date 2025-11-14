@@ -8,16 +8,16 @@ import type {
 	ConsoleLuaHoverResult,
 	ConsoleLuaSymbolEntry,
 	ConsoleResourceDescriptor,
-} from '../types.ts';
+} from '../types';
 import { ConsoleEditorFont } from '../editor_font';
 import { DEFAULT_CONSOLE_FONT_VARIANT } from '../font';
 import { drawEditorColoredText, drawEditorText } from './text_renderer';
-import { Msx1Colors } from '../../systems/msx.ts';
+import { Msx1Colors } from '../../systems/msx';
 import { EventEmitter, type ListenerSet } from '../../core/eventemitter';
 import { Registry } from '../../core/registry';
 import { SpriteComponent } from '../../component/sprite_component';
 import { renderCodeArea } from './render_code_area';
-import { clamp } from 'bmsx/utils/clamp.ts';
+import { clamp } from '../../utils/clamp';;
 // Intellisense data is handled by CompletionController
 import { CompletionController } from './completion_controller';
 import { ProblemsPanelController } from './problems_panel';
@@ -95,12 +95,12 @@ import type {
 	CustomKeybindingHandler,
 	GlobalSearchJob,
 	DebugPanelKind,
-	// SearchComputationJob migrated to editor_search.ts
+	// SearchComputationJob migrated to editor_search
 	RuntimeErrorOverlayLayout,
 } from './types';
-import type { StackTraceFrame } from 'bmsx/lua/runtime.ts';
-import type { RectBounds } from '../../rompack/rompack.ts';
-import { resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation.ts';
+import type { StackTraceFrame } from 'bmsx/lua/runtime';
+import type { RectBounds } from '../../rompack/rompack';
+import { resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
 	computeSourceLabel,
@@ -124,13 +124,12 @@ import {
 	resetKeyPressRecords,
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
 } from './input_helpers';
-import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast.ts';
-import { CaretNavigationState } from './caret_navigation.ts';
-import type { BmsxConsoleRuntime } from '../../console.ts';
+import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast';
+import { CaretNavigationState } from './caret_navigation';
 import { EDITOR_TOGGLE_KEY, ESCAPE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, GLOBAL_SEARCH_RESULT_LIMIT } from './constants';
 // Search logic moved to editor_search
 import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, ensureSearchJobCompleted, moveSearchSelection, applySearchSelection, ensureSearchSelectionVisible, computeSearchPageStats, getVisibleSearchResultEntries, startSearchJob, forEachMatchInLine } from './editor_search';
-import { formatLuaDocument } from './lua_formatter.ts';
+import { formatLuaDocument } from './lua_formatter';
 import * as constants from './constants';
 import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, workspaceDirtyCache } from './ide_state';
 import { initializeDebuggerUiState } from './debugger_ui_state';
@@ -619,12 +618,6 @@ export function deleteSelection(): void {
 	prepareUndo('delete-selection', false);
 	replaceSelectionWith('');
 }
-
-// Selection manipulation functions moved to text_editing_and_selection.ts
-// They are now available via re-export
-
-// insertClipboardText() moved to text_editing_and_selection.ts
-// charAt() moved to text_editing_and_selection.ts
 
 export function currentLine(): string {
 	if (ide_state.cursorRow < 0 || ide_state.cursorRow >= ide_state.lines.length) {
@@ -4088,9 +4081,6 @@ export function applyLineJump(): void {
 	ide_state.showMessage(`Jumped to line ${target}`, constants.COLOR_STATUS_SUCCESS, 1.5);
 }
 
-// moved to editor_search.ts (duplicate removed)
-// onSearchQueryChanged
-
 export function onGlobalSearchQueryChanged(): void {
 	ide_state.searchDisplayOffset = 0;
 	ide_state.searchHoverIndex = -1;
@@ -4190,21 +4180,9 @@ export function jumpToPreviousMatch(): void {
 	focusSearchResult(ide_state.searchCurrentIndex);
 }
 
-// moved to editor_search.ts startSearchJob
-
-// moved to editor_search.ts runSearchJobSlice
-
-// moved to editor_search.ts collectSearchMatchesForRow
-
-// moved to editor_search.ts forEachMatchInLine
-
-// moved to editor_search.ts completeSearchJob
-
 export function cancelSearchJob(): void {
 	ide_state.searchJob = null;
 }
-
-// moved to editor_search.ts ensureSearchJobCompleted (duplicate removed)
 
 export function startGlobalSearchJob(): void {
 	cancelGlobalSearchJob();
@@ -4364,18 +4342,6 @@ export function buildSearchSnippet(line: string, start: number, end: number): st
 	}
 	return snippet;
 }
-
-// moved to editor_search.ts getVisibleSearchResultEntries
-
-// moved to editor_search.ts ensureSearchSelectionVisible
-
-// moved to editor_search.ts computeSearchPageStats
-
-// moved to editor_search.ts buildSearchResultEntry
-
-// moved to editor_search.ts moveSearchSelection
-
-// moved to editor_search.ts applySearchSelection
 
 export function focusGlobalSearchResult(index: number, previewOnly: boolean = false): void {
 	const match = ide_state.globalSearchMatches[index];
@@ -9045,7 +9011,7 @@ export function ensureResourceViewerSprite(api: BmsxConsoleApi, assetId: string,
 	if (!object) {
 		return;
 	}
-	const sprite = object.getComponentByLocalId(SpriteComponent, 'viewer_sprite');
+	const sprite = object.get_component_by_local_id(SpriteComponent, 'viewer_sprite');
 	if (!sprite) {
 		return;
 	}
@@ -9323,9 +9289,8 @@ export function sliceHighlightedLine(highlight: HighlightLine, columnStart: numb
 }
 
 export function getCachedHighlight(row: number): CachedHighlight {
-	const activeContext = getActiveCodeTabContext();
-	const chunkName = resolveHoverChunkName(activeContext) ?? '<console>';
-	return ide_state.layout.getCachedHighlight(ide_state.lines, row, ide_state.textVersion, chunkName);
+	// const activeContext = getActiveCodeTabContext();
+	return ide_state.layout.getCachedHighlight(ide_state.lines, row);
 }
 
 export function invalidateLine(row: number): void {
@@ -10311,10 +10276,14 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	ide_state.lineHeight = ide_state.font.lineHeight();
 	ide_state.charAdvance = ide_state.font.advance('M');
 	ide_state.spaceAdvance = ide_state.font.advance(' ');
-	ide_state.layout = new ConsoleCodeLayout(ide_state.font, ide_state.semanticWorkspace, {
+	const layoutOptions = {
+		maxHighlightCache: 512,
+		semanticDebounceMs: 200,
 		clockNow: ide_state.clockNow,
 		getBuiltinIdentifiers: () => getBuiltinIdentifierSet(),
-	});
+	};
+	ide_state.layout = new ConsoleCodeLayout(ide_state.font, ide_state.semanticWorkspace, layoutOptions);
+
 	ide_state.inlineFieldMetricsRef = {
 		measureText: (text: string) => measureText(text),
 		advanceChar: (ch: string) => ide_state.font.advance(ch),
@@ -10350,7 +10319,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		openLuaCodeTab: (d) => openLuaCodeTab(d),
 		openResourceViewerTab: (d) => openResourceViewerTab(d),
 		focusEditorFromResourcePanel: () => focusEditorFromResourcePanel(),
-		showMessage:  (text, color, duration) => ide_state.showMessage(text, color, duration),
+		showMessage: (text, color, duration) => ide_state.showMessage(text, color, duration),
 	}, { resourceVertical: ide_state.scrollbars.resourceVertical, resourceHorizontal: ide_state.scrollbars.resourceHorizontal });
 	ide_state.completion = new CompletionController({
 		getPlayerIndex: () => ide_state.playerIndex,
@@ -10438,7 +10407,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		shouldFireRepeat: (keyboard, code, deltaSeconds) => shouldFireRepeat(keyboard, code, deltaSeconds),
 		undo: () => undo(),
 		redo: () => redo(),
-		showMessage:  (text, color, duration) => ide_state.showMessage(text, color, duration),
+		showMessage: (text, color, duration) => ide_state.showMessage(text, color, duration),
 		commitRename: (payload) => commitRename(payload),
 		onRenameSessionClosed: () => focusEditorFromRename(),
 	}, ide_state.referenceState, ide_state.playerIndex);
@@ -10466,7 +10435,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	installPlatformVisibilityListener();
 	installWindowEventListeners();
 	ide_state.navigationHistory.current = createNavigationEntry();
-}export function updateBlink(deltaSeconds: number): void {
+} export function updateBlink(deltaSeconds: number): void {
 	ide_state.blinkTimer += deltaSeconds;
 	if (ide_state.blinkTimer >= constants.CURSOR_BLINK_INTERVAL) {
 		ide_state.blinkTimer -= constants.CURSOR_BLINK_INTERVAL;
@@ -10491,6 +10460,7 @@ export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: n
 	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, constants.CARET_COLOR, info.baseChar, glyphColor);
 }
 import { renderInlineCaret } from './render_caret';
+import type { BmsxConsoleRuntime } from '../runtime';
 export function drawInlineCaret(
 	api: BmsxConsoleApi,
 	field: InlineTextField,

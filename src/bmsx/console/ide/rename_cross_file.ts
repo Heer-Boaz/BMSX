@@ -1,7 +1,7 @@
-import type { LuaSourceRange } from '../../lua/ast.ts';
+import type { LuaSourceRange } from '../../lua/ast';
 import type { ConsoleResourceDescriptor } from '../types';
 import type { CodeTabContext, SearchMatch } from './types';
-import type { LuaSemanticWorkspace } from './semantic_workspace.ts';
+import type { LuaSemanticWorkspace } from './semantic_workspace';
 import { planRenameLineEdits } from './rename_apply';
 
 export type CrossFileRenameDependencies = {

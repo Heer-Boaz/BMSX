@@ -8,17 +8,13 @@ import { HandlerRegistry, type HandlerDescriptor } from '../core/handlerregistry
 import type {
 	EventBagName,
 	listed_sdef_event,
-	Marker,
-	MarkerAt,
 	StateEventDefinition,
 	StateEventHandler,
 	StateExitHandler,
+	StateNextHandler,
 	Stateful,
 	StateGuard,
 	StateMachineBlueprint,
-	StateNextHandler,
-	CompiledMarker,
-	CompiledMarkerCache
 } from "./fsmtypes";
 import { State } from './state';
 import { StateDefinition, validateStateMachine } from './statedefinition';
@@ -117,78 +113,6 @@ function removeScopeFromEventName(name: string): string {
 	return eventNameHasScope(name) ? name.slice(1) : name;
 }
 
-function ensureCompiledCache(def: StateDefinition): CompiledMarkerCache {
-	if (def._compiled_markers) return def._compiled_markers;
-	const cache: CompiledMarkerCache = { byFrame: {} };
-	def._compiled_markers = cache;
-	return cache;
-}
-
-function clampMarkerFrame(at: MarkerAt, length: number): number {
-	if ('frame' in at) {
-		const raw = at.frame;
-		const clamped = Math.max(0, Math.min(length - 1, raw));
-		return clamped;
-	}
-	const normalized = Math.max(0, Math.min(1, at.u));
-	const projected = Math.round(normalized * (length - 1));
-	return Math.max(0, Math.min(length - 1, projected));
-}
-
-function expandWindows(def: StateDefinition, base: Marker[]): Marker[] {
-	if (!def.windows || def.windows.length === 0) return base;
-	const expanded = [...base];
-	for (const windowDef of def.windows) {
-		const tag = windowDef.tag ?? `state.window.${windowDef.name}`;
-		const lane = windowDef.lane ?? 'gameplay';
-		expanded.push(
-			{ ...windowDef.start, event: `window.${windowDef.name}.start`, lane, payload: windowDef.payloadstart, addTags: [tag] },
-			{ ...windowDef.end, event: `window.${windowDef.name}.end`, lane, payload: windowDef.payloadend, removeTags: [tag] },
-		);
-	}
-	return expanded;
-}
-
-export function compileMarkers(def: StateDefinition): void {
-	const cache = ensureCompiledCache(def);
-	const tape = def.tape_data;
-	if (!tape || tape.length === 0) {
-		cache.byFrame = {};
-		return;
-	}
-	const length = tape.length;
-	const rawMarkers = def.markers ? [...def.markers] : [];
-	const expanded = expandWindows(def, rawMarkers);
-	const byFrame: Record<number, CompiledMarker[]> = {};
-	for (const marker of expanded) {
-		const frame = clampMarkerFrame(marker, length);
-		let bucket = byFrame[frame];
-		if (!bucket) {
-			bucket = [];
-			byFrame[frame] = bucket;
-		}
-		bucket.push({
-			frame,
-			event: marker.event,
-			lane: marker.lane ?? 'gameplay',
-			payload: marker.payload,
-			addtags: marker.addTags,
-			removetags: marker.removeTags,
-		});
-	}
-	cache.byFrame = byFrame;
-}
-
-export function compileMarkersTree(def: StateDefinition): void {
-	compileMarkers(def);
-	const states = def.states;
-	if (!states) return;
-	for (const child of Object.values(states) as StateDefinition[]) {
-		if (!child) continue;
-		compileMarkersTree(child);
-	}
-}
-
 function clearDefinitionsForMachine(machineId: Identifier): void {
 	const prefix = `${machineId}:/`;
 	for (const key of Object.keys(StateDefinitions)) {
@@ -268,12 +192,8 @@ export function migrateMachineDiff(root: State<Stateful>, oldRootDef: StateDefin
 		root.currentid = start;
 	}
 
-	// Adjust tape head/ticks if tape changed size
-	clampTape(root);
-
 	// Migrate 'data' for this node and all descendants
 	migrateDataTree(root, oldRootDef, newRootDef);
-	root.reapplyMarkersForCurrentFrame(true);
 }
 
 /** Ensure the instance’s children match the new StateDefinition tree. */
@@ -324,7 +244,6 @@ function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | und
 			} else {
 				childInst.states = undefined;
 			}
-			clampTape(childInst);
 		}
 	}
 }
@@ -383,20 +302,6 @@ function mergeDataWithDefaults(
 	return out;
 }
 
-function clampTape(node: State<Stateful>) {
-	const tape = node.tape;
-	if (!tape) {
-		node.setHeadNoSideEffect(-1);
-		node.setTicksNoSideEffect(0);
-		return;
-	}
-	const maxHead = tape.length - 1;
-	if (node.tapehead_position > maxHead) {
-		node.setHeadNoSideEffect(Math.max(-1, maxHead));
-		node.setTicksNoSideEffect(0);
-	}
-}
-
 function safeStartStateId(def: StateDefinition): Identifier {
 	const states = def.states;
 	if (def.initial && states && states[def.initial]) return def.initial;
@@ -424,7 +329,6 @@ export function setupFSMlibrary(): void {
 		const built = createMachine(machine_name, raw);
 		// HOIST before validate so you can also validate handler existence if you switch to ID strings
 		walkAndHoist(machine_name, built);
-		compileMarkersTree(built);
 
 		validateStateMachine(built);
 		clearDefinitionsForMachine(machine_name);
@@ -443,7 +347,6 @@ export function rebuildStateMachine(machineName: Identifier, blueprint: StateMac
 
 	const built = createMachine(machineName, blueprint);
 	walkAndHoist(machineName, built);
-	compileMarkersTree(built);
 	validateStateMachine(built);
 	clearDefinitionsForMachine(machineName);
 	registerDefinitionTree(built);

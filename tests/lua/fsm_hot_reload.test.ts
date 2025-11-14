@@ -2,7 +2,7 @@ import './test_setup';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ActiveStateMachines, StateDefinitions, rebuildStateMachine, applyPreparedStateMachine } from '../../src/bmsx/fsm/fsmlibrary';
+import { ActiveStateMachines, StateDefinitions, applyPreparedStateMachine } from '../../src/bmsx/fsm/fsmlibrary';
 import { State } from '../../src/bmsx/fsm/state';
 import type { StateMachineBlueprint, Stateful } from '../../src/bmsx/fsm/fsmtypes';
 import { Registry } from '../../src/bmsx/core/registry';
@@ -15,25 +15,11 @@ function cleanupDefinitions(machineId: string): void {
 	}
 }
 
-test('active FSM instances adopt reloaded tape data, ticks, and markers', () => {
+test('active FSM instances adopt reloaded timeline definitions', () => {
 	const registry = Registry.instance;
 	const initialRegistryIds = new Set(registry.getRegisteredEntityIds());
 
 	const machineId = `fsm_hot_reload_${Date.now()}`;
-	const blueprintA: StateMachineBlueprint = {
-		id: machineId,
-		initial: '#idle',
-		states: {
-			'#idle': {
-				enable_tape_autotick: true,
-				ticks2advance_tape: 10,
-				tape_data: ['a', 'b', 'c'],
-			},
-		},
-	};
-	const idleBlueprintA = blueprintA.states!['#idle']!;
-
-	const definitionA = rebuildStateMachine(machineId, blueprintA);
 	assert.ok(StateDefinitions[machineId], 'initial FSM definition must register');
 
 	const targetId = `target_${machineId}`;
@@ -58,37 +44,26 @@ test('active FSM instances adopt reloaded tape data, ticks, and markers', () => 
 	assert.ok(idle, 'idle state should exist after construction');
 	ActiveStateMachines.set(machineId, [root]);
 
-	const firstThreshold = (idle as any)._tapeTickThreshold;
-	assert.equal(
-		firstThreshold,
-		idleBlueprintA.ticks2advance_tape!,
-		'initial tape tick window should match blueprint',
-	);
-
 	const blueprintB: StateMachineBlueprint = {
 		id: machineId,
 		initial: '#idle',
 		states: {
 			'#idle': {
-				enable_tape_autotick: true,
-				ticks2advance_tape: 4,
-				tape_data: ['x', 'y', 'z', 'w'],
+				timeline: {
+					id: `${machineId}.idle`,
+					frames: ['x', 'y', 'z', 'w'],
+					ticksPerFrame: 4,
+				},
 			},
 		},
 	};
 	const idleBlueprintB = blueprintB.states!['#idle']!;
 	applyPreparedStateMachine(machineId, blueprintB, { force: true });
 
-	const refreshedThreshold = (idle as any)._tapeTickThreshold;
-	assert.equal(
-		refreshedThreshold,
-		idleBlueprintB.ticks2advance_tape!,
-		'threshold should refresh after hot reload',
-	);
 	assert.deepEqual(
-		idle.tape,
-		idleBlueprintB.tape_data!,
-		'tape payload should refresh after hot reload',
+		idle.definition.timeline,
+		idleBlueprintB.timeline,
+		'timeline payload should refresh after hot reload',
 	);
 
 	root.dispose();

@@ -18,11 +18,11 @@ UI flow, combat ability gating, cutscenes, dialogue trees, and more.
 
 ## Architecture Overview
 
-- **StateDefinition** – describes a state, its substates, transitions and tape
-  (sequence) data. Definitions can be declared in TypeScript or loaded from JSON
+- **StateDefinition** – describes a state, its substates, transitions and
+  timeline (sequence) data. Definitions can be declared in TypeScript or loaded from JSON
   / YAML. A definition is a tree: substates are just nested `states` objects.
 - **State** – the runtime counterpart to a definition. Holds mutable data, the
-  tape head, history stack, current substate references, etc.
+  timeline head, history stack, current substate references, etc.
 - **StateMachineController** – owns one or more machines attached to an object
   (usually a `WorldObject` or the `World`). It routes events, ticks concurrent
   machines, manages pause/resume, and exposes helpers (`transition_to`,
@@ -51,9 +51,11 @@ UI flow, combat ability gating, cutscenes, dialogue trees, and more.
   transition specs, or declarative action objects. Events can be scoped (`$foo`
   for local) and the controller will subscribe/unsubscribe automatically at
   bind/unbind time.
-- **Tape System** – attach `tape_data`, `ticks2advance_tape`, and related flags
-  to a state to drive sequences (animation frames, quiz steps, etc.). Tape hooks
-  such as `tape_next`, `tape_end` can be handlers or DSL actions.
+- **Timeline System** – attach a `timeline` block to a state to drive sequences
+  (animation frames, quiz steps, cinematic beats, etc.). Timelines are executed
+  by the owning object's `TimelineComponent`, which emits `timeline.frame` /
+  `timeline.end` events, applies marker/tag side effects, and (for existing code)
+  still invokes `tape_next` / `tape_end` handlers for compatibility.
 - **Actions DSL** – the FSM blueprint DSL supports:
   - `set_property` to mutate the owning object or state.
   - `emit` and `dispatch_event` to notify other systems or controller machines.
@@ -75,7 +77,7 @@ FSMs double as a light-weight animation graph system:
 
 - Each animation state can set sprites, trigger audio/FX events, and control
   combat flags through declarative actions.
-- Tapes provide frame stepping (`ticks2advance_tape`, `tape_playback_mode`, `tape_playback_easing`).
+- Timelines provide frame stepping (`ticksPerFrame`, `playbackMode`, `easing`).
 - Concurrency lets you run gameplay logic and animation machines in parallel.
 - Events such as `animationEnd` can fan out to other systems (e.g. AI or combat).
 

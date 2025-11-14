@@ -1135,7 +1135,7 @@ The BMSX FSM system provides a set of features for building simple game logic. I
 
 - **Parallel State Machines**: Multiple state machines can run in parallel within a controller. States or machines with `parallel: true` will execute alongside the current machine, allowing for independent animation, AI, or effect logic.
 - **State Machine Controllers**: The `StateMachineController` class manages multiple state machines, supports switching between them, and can dispatch events to all or selected machines.
-- **Tape/Animation System**: States can define a `tape` (an array of values, e.g., animation frames or question indices). The FSM tracks a `head` (current index) and `ticks` (frame counter), supporting automatic advancement, repetition, and rewinding. Use `auto_tick`, `ticks2advance_tape`, `repetitions`, `tape_playback_mode`, and `tape_playback_easing` for fine control.
+- **Timeline/Animation System**: States can define a `timeline` (an explicit clip with frames, playback mode, easing, and optional markers/windows). The FSM now asks the owning `WorldObject`'s `TimelineComponent` to play that clip, which in turn emits `timeline.frame`/`timeline.end` events and applies marker-side effects (tag windows, marker events, etc.). Existing `tape_next`/`tape_end` handlers still run for backwards compatibility, but we recommend subscribing to the explicit timeline events instead of relying on implicit callbacks.
 - **State History and Pop**: Each state machine maintains a history stack of previous states (up to 10 by default). Use `pop()` to return to the previous state, or `pop_statemachine(id)`/`pop_all_statemachines()` for broader control.
 - **Guards**: States can define `guards` with `canEnter` and `canExit` functions to control whether transitions are allowed. If a guard returns `false`, the transition is blocked.
 - **Event Dispatch and Handling**: The FSM supports event-driven transitions. Use `do(eventName, emitter, ...)` to dispatch events to the current and parallel machines. States can define `on` and `on_input` handlers for event-based transitions.
@@ -1216,7 +1216,7 @@ See `src/bmsx/fsm.ts` and `src/bmsx/fsmtypes.ts` for more details and advanced u
 
 Each event or input handler in a state definition can return the identifier of the next state or perform transitions inside its `do` function. Handlers support:
 
-- **`do`**: A function to execute when the event or input is triggered. It receives the current state (and optionally the game object as `this`) plus any event arguments. Returning a state ID triggers a transition. You can also call `state.transition_to(path)` directly if you need to perform additional logic (like rewinding tapes) before switching.
+- **`do`**: A function to execute when the event or input is triggered. It receives the current state (and optionally the game object as `this`) plus any event arguments. Returning a state ID triggers a transition. You can also call `state.transition_to(path)` directly if you need to perform additional logic (like rewinding a timeline) before switching.
 - **`if`**: A condition function. The transition only occurs if this returns `true`.
 - **`scope`**: Explicitly sets the event scope (`'self'` or `'all'`). Usually inferred from the event name, but can be set manually.
 
@@ -1348,12 +1348,17 @@ public static bouw(): StateMachineBlueprint {
             },
 
             vraag: {
-               tape: Array.from({ length: quizItems.length }, (_, i) => i),
+               timeline: {
+                  id: 'quiz.questions',
+                  frames: Array.from({ length: quizItems.length }, (_, i) => i),
+                  ticksPerFrame: 0,
+                  playbackMode: 'once',
+               },
                auto_reset: 'none',
                enter(this: quiz, state: State, args: string) {
                   if (args === 'prev') { // Previous question for debugging
-                        state.setHeadNoSideEffect(state.head - 2);
-                        if (state.head < 0) {
+                        state.setHeadNoSideEffect(state.tapehead_position - 2);
+                        if (state.tapehead_position < 0) {
                            state.rewind_tape();
                         }
                   }
@@ -1363,10 +1368,10 @@ public static bouw(): StateMachineBlueprint {
                   this.typeNextCharacter();
                },
                next(this: quiz, state: State) {
-                  this.currentQuestionIndex = state.current_tape_value;
+                  this.currentQuestionIndex = state.current_tape_value; // Value stored in the active timeline frame
                },
                end(this: quiz) {
-                  return 'endstate'; // Transition to end state when the tape is exhausted
+                  return 'endstate'; // Transition to end state when the timeline is exhausted
                },
                on_input: {
               'a[j!c]': {
@@ -1418,7 +1423,7 @@ public static bouw(): StateMachineBlueprint {
                            if (this.currentQuestionIndex < quizItems.length - 1) {
                               return 'vraag'; // Transition to next question
                            } else {
-                              return 'endstate'; // Transition to end state when the tape is exhausted
+                              return 'endstate'; // Transition to end state when the timeline is exhausted
                            }
                         },
                   },

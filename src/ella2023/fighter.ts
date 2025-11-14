@@ -1,6 +1,6 @@
-import { $, GameplayCommandBuffer, InputAbilityComponent, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction, type EventPayload, Component, subscribesToParentScopedEvent, type ComponentAttachOptions, type WorldObjectEventPayloads, V3 } from 'bmsx';
+import { $, GameplayCommandBuffer, InputAbilityComponent, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction, type EventPayload, Component, subscribesToParentScopedEvent, type ComponentAttachOptions, type WorldObjectEventPayloads, V3, type TimelineFrameEventPayload, type TimelineEndEventPayload, type TimelineDefinition } from 'bmsx';
 import { createGameEvent, type GameEvent } from 'bmsx/core/game_event';
-import './fighter_fsms';
+import { FIGHTER_TIMELINES } from './fighter_fsms';
 import type { AbilityPayloadFor, AbilityRequestOptions } from 'bmsx/gas/gastypes';
 import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
@@ -82,6 +82,8 @@ export abstract class Fighter extends SpriteObject {
 	public pendingWalkDirection?: Direction;
 	public pendingAttackPayload?: { attackType?: AttackType };
 	public pendingJumpPayload?: { direction?: Direction | null; directional?: boolean | string };
+	private _timelinesRegistered = false;
+	private _activeAnimationTimeline?: string;
 	private get asc(): AbilitySystemComponent { return this.getUniqueComponent(AbilitySystemComponent); }
 
 	public get isAttacking(): boolean { return this.asc.hasGameplayTag('state.attacking'); }
@@ -94,6 +96,35 @@ export abstract class Fighter extends SpriteObject {
 		if (!payload) return;
 		const { direction } = payload;
 		if (direction === 'left' || direction === 'right') this.facing = direction;
+	}
+
+	private ensure_timelines(): void {
+		if (this._timelinesRegistered) return;
+		for (const definition of FIGHTER_TIMELINES) {
+			this.define_timeline(definition);
+		}
+		this._timelinesRegistered = true;
+	}
+
+	protected play_animation_timeline(id: string): void {
+		this.ensure_timelines();
+		this._activeAnimationTimeline = id;
+		this.play_timeline(id);
+	}
+
+	protected handle_animation_timeline_end(id: string): void {
+		if (this._activeAnimationTimeline === id) {
+			this._activeAnimationTimeline = undefined;
+		}
+	}
+
+	public skip_animation_to_end(): void {
+		const id = this._activeAnimationTimeline;
+		if (!id) return;
+		this.ensure_timelines();
+		const timeline = this.get_timeline(id);
+		if (!timeline) return;
+		this.seek_timeline(id, Math.max(0, timeline.length - 1));
 	}
 
 	@build_fsm('hitanimation')
@@ -113,18 +144,26 @@ export abstract class Fighter extends SpriteObject {
 					},
 				},
 				wel_au: {
-					tape_data: [-1, 1],
-					repetitions: 10,
-					enable_tape_autotick: true,
-					ticks2advance_tape: 1,
 					entering_state(this: Fighter) {
 						this.sc.pause_all_except('hitanimation');
+						this.play_timeline('fighter.hitanimation');
 					},
-					tape_next(this: Fighter, state: State) {
-						this.x_nonotify += state.current_tape_value;
-					},
-					tape_end(this: Fighter) {
-						this.sc.transition_to('hitanimation:/geen_au');
+					on: {
+						'timeline.frame': {
+							scope: 'self',
+							do(this: Fighter, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
+								if (event.timeline_id !== 'fighter.hitanimation') return;
+								const delta = typeof event.frame_value === 'number' ? event.frame_value : 0;
+								this.x_nonotify += delta;
+							},
+						},
+						'timeline.end': {
+							scope: 'self',
+							do(this: Fighter, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+								if (event.timeline_id !== 'fighter.hitanimation') return;
+								this.sc.transition_to('hitanimation:/geen_au');
+							},
+						},
 					},
 					exiting_state(this: Fighter) {
 						this.sc.resume_all_statemachines();
@@ -169,6 +208,7 @@ export abstract class Fighter extends SpriteObject {
 		this.sc.dispatch_event(locomotion);
 		const animateIdle = createGameEvent({ type: 'animate_idle', emitter: this });
 		this.sc.dispatch_event(animateIdle);
+		this.ensure_timelines();
 	}
 
 	public getAbilityId<Name extends FighterCoreAbilityName>(name: Name): typeof FIGHTER_CORE_ABILITY_IDS[Name] {
@@ -439,9 +479,9 @@ export abstract class Fighter extends SpriteObject {
 		state.ticks += 1;
 	}
 
-	public handleStoerTapeNext(state?: State, payload?: { tape_rewound: boolean }): void {
-		if (!state || payload?.tape_rewound) return;
-		const nextAnimation = state.current_tape_value;
+	public handleStoerTimelineFrame(state?: State, event?: TimelineFrameEventPayload): void {
+		if (!state || event?.rewound) return;
+		const nextAnimation = event?.frame_value;
 		const data = state.data as StoerheidsdansStateData;
 		data.expectedAnimation = typeof nextAnimation === 'string' ? nextAnimation : null;
 		this.facing = this.facing === 'left' ? 'right' : 'left';

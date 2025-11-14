@@ -1,8 +1,8 @@
 import { BmsxConsoleApi } from '../api';
 import { CONSOLE_API_METHOD_METADATA } from '../api_metadata';
-import { LuaLexer } from '../../lua/lexer.ts';
-import { LuaParser } from '../../lua/parser.ts';
-import { LuaSyntaxError } from '../../lua/errors.ts';
+import { LuaLexer } from '../../lua/lexer';
+import { LuaParser } from '../../lua/parser';
+import { LuaSyntaxError } from '../../lua/errors';
 import {
 	LuaSyntaxKind,
 	type LuaChunk,
@@ -33,9 +33,9 @@ import {
 	type LuaStringLiteralExpression,
 	type LuaDefinitionKind,
 	type LuaSourceRange,
-} from '../../lua/ast.ts';
-import { LuaTableFieldKind } from '../../lua/ast.ts';
-import type { LuaTableArrayField, LuaTableExpressionField, LuaTableIdentifierField } from '../../lua/ast.ts';
+} from '../../lua/ast';
+import { LuaTableFieldKind } from '../../lua/ast';
+import type { LuaTableArrayField, LuaTableExpressionField, LuaTableIdentifierField } from '../../lua/ast';
 import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaSymbolEntry } from '../types';
 import type { ApiCompletionMetadata, LuaCompletionItem } from './types';
 

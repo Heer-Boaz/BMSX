@@ -5,7 +5,7 @@ import { createEntryTabContext, findResourceDescriptorByAssetId, ide_state, init
 import { WORKSPACE_AUTOSAVE_INTERVAL_MS, workspaceDirtyCache } from './ide_state';
 import type { NavigationHistoryEntry } from './ide_state';
 import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position } from './types';
-import { clamp } from 'bmsx/utils/clamp';
+import { clamp } from '../../utils/clamp';;
 import type { StorageService, TimerHandle } from '../../platform/platform';
 import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './debugger_breakpoints';
 

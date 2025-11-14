@@ -1,4 +1,4 @@
-import { getDebuggerRuntimeAccessor } from '../runtime_accessors.ts';
+import { getDebuggerRuntimeAccessor } from '../runtime_accessors';
 import {
 	getLastDebuggerPauseEvent,
 	subscribeDebuggerLifecycleEvents,

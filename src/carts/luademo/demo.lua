@@ -66,7 +66,7 @@ local function ensure_ball_sprite(ball)
 	if not object then
 		return
 	end
-	local sprite = object:getcomponentbyid('ball_sprite')
+	local sprite = object:get_component_by_id('ball_sprite')
 	if sprite then
 		sprite.offset = sprite.offset or { x = 0, y = 0, z = 0 }
 		sprite.offset.x = -ball.radius
@@ -91,7 +91,7 @@ local function apply_ball_sprite_color(ball, color_index)
 	if not object then
 		return
 	end
-	local sprite = object:getcomponentbyid('ball_sprite')
+	local sprite = object:get_component_by_id('ball_sprite')
 	if not sprite then
 		return
 	end

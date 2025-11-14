@@ -121,7 +121,7 @@ export class PreTagSystem extends ECSystem {
 	constructor(private tag: string, priority: number) { super(TickGroup.Input, priority); }
 	update(world: World): void {
 		for (let o of world.objects({ scope: 'active'}) ) {
-			for (let c of o.iterateComponents()) {
+			for (let c of o.iterate_components()) {
 				if (!c.enabled || !c.hasPreprocessingTag(this.tag)) continue;
 				c.preprocessingUpdate();
 			}
@@ -134,7 +134,7 @@ export class PostTagSystem extends ECSystem {
 	constructor(private tag: string, priority: number) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
 		for (let o of world.objects({ scope: 'active' })) {
-			for (let c of o.iterateComponents()) {
+			for (let c of o.iterate_components()) {
 				if (!c.enabled || !c.hasPostprocessingTag(this.tag)) continue;
 				c.postprocessingUpdate({ params: [] });
 			}
@@ -168,11 +168,11 @@ export class BehaviorTreeSystem extends ECSystem {
 	update(world: World): void {
 		for (let o of world.objects({ scope: 'active'})) {
 			if (o.active === false) continue;
-			if (o.tickEnabled === false) continue;
+			if (o.tick_enabled === false) continue;
 			const bts = o.btreecontexts;
 			if (!bts) continue;
 			for (const id in bts) {
-				o.tickTree(id);
+				o.tick_tree(id);
 			}
 		}
 	}
@@ -185,7 +185,7 @@ export class StateMachineSystem extends ECSystem {
 		// Tick all world objects' state machines (gated)
 		for (let o of world.objects({ scope: 'active' })) {
 			if (o.active === false) continue;
-			if (o.tickEnabled === false) continue;
+			if (o.tick_enabled === false) continue;
 			const sc = o.sc;
 			if (!sc.tickEnabled) continue;
 			sc.tick();

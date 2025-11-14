@@ -20,7 +20,7 @@ import { GameView, SkyboxImageIds } from '../render/gameview';
 import { decodeBinary, encodeBinary } from "./binencoder";
 import { Bindable, Identifier } from "bmsx/rompack/rompack";
 import { insavegame, type RevivableObjectArgs, onsave, onload } from './serializationhooks';
-import { typedarray_to_numberarray } from 'bmsx/utils/typedarray_to_numberarray';
+import { typedarray_to_numberarray } from '../utils/typedarray_to_numberarray';
 
 // Decorators onload/onsave are defined locally in this file
 export type ConstructorWithSaveGame<T = Bindable> = (new (...args: any[]) => T) & { __exclude_savegame__?: boolean };

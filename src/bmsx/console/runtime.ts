@@ -12,12 +12,12 @@ import {
 	type LuaDebuggerPauseSignal,
 	type ExecutionSignal,
 	isLuaDebuggerPauseSignal,
-} from '../lua/runtime.ts';
-import { LuaDebuggerController, type LuaDebuggerResumeCommand } from '../lua/debugger.ts';
-import { LuaEnvironment } from '../lua/environment.ts';
-import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from '../lua/value.ts';
-import { createLuaTable, isLuaNativeValue, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../lua/value.ts';
-import { LuaRuntimeError, LuaError, LuaSyntaxError } from '../lua/errors.ts';
+} from '../lua/runtime';
+import { LuaDebuggerController, type LuaDebuggerResumeCommand } from '../lua/debugger';
+import { LuaEnvironment } from '../lua/environment';
+import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from '../lua/value';
+import { createLuaTable, isLuaNativeValue, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../lua/value';
+import { LuaRuntimeError, LuaError, LuaSyntaxError } from '../lua/errors';
 import { $ } from '../core/game';
 import { Service } from '../core/service';
 import { EventEmitter, type EventPayload, type EventHandler } from '../core/eventemitter';
@@ -26,16 +26,16 @@ import type { Identifier, Identifiable } from '../rompack/rompack';
 import { OverlayPipelineController } from '../core/pipelines/overlay_controller';
 import { EditorConsoleRenderBackend } from './render_backend';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
-import { LuaHandlerCache, type LuaHandlerFn, isLuaHandlerFn } from '../lua/handler_cache.ts';
+import { LuaHandlerCache, type LuaHandlerFn, isLuaHandlerFn } from '../lua/handler_cache';
 import { ActiveStateMachines, StateDefinitions, applyPreparedStateMachine } from '../fsm/fsmlibrary';
 import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { instantiateBehaviorTree, unregisterBehaviorTreeBuilder, applyPreparedBehaviorTree, getBehaviorTreeDiagnostics, Blackboard } from '../ai/behaviourtree';
 import type { BehaviorTreeDefinition, BehaviorTreeDiagnostic } from '../ai/behaviourtree';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
-import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
+import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast';
 import { createConsoleCartEditor, type ConsoleCartEditor } from './ide/console_cart_editor';
 import type { RuntimeErrorDetails } from './ide/types';
-import type { StackTraceFrame } from 'bmsx/lua/runtime.ts';
+import type { StackTraceFrame } from 'bmsx/lua/runtime';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { ConsoleFontVariant } from './font';
 import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
@@ -45,7 +45,7 @@ import type { LuaComponentHandlerMap } from '../component/lua_component';
 import { defineAbility, gameplayActions } from '../gas/ability_registry';
 import type { GameplayAbilityDefinition } from '../gas/gameplay_ability';
 import type { AbilityId } from '../gas/gastypes';
-import { deep_clone } from 'bmsx/utils/deep_clone.ts';
+import { deep_clone } from 'bmsx/utils/deep_clone';
 import { WorldObject } from '../core/object/worldobject';
 import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';
@@ -53,14 +53,14 @@ import { Input } from '../input/input';
 import type { PlayerInput } from '../input/playerinput';
 import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputMapping, KeyboardBinding, GamepadBinding, PointerBinding, ButtonState } from '../input/inputtypes';
 import { ConsoleMode } from './console_mode';
-import { setDebuggerRuntimeAccessor } from './runtime_accessors.ts';
+import { setDebuggerRuntimeAccessor } from './runtime_accessors';
 import {
 	emitDebuggerLifecycleEvent,
 	type DebuggerResumeMode,
 	type DebuggerPauseDisplayPayload,
 	type DebuggerPauseFrameHint,
 } from './debugger_lifecycle';
-import { arrayify } from '../utils/arrayify.ts';
+import { arrayify } from '../utils/arrayify';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -6000,7 +6000,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 
 		if (options.tags.length > 0) {
-			const asc = host.getUniqueComponent(AbilitySystemComponent);
+			const asc = host.get_unique_component(AbilitySystemComponent);
 			if (asc) {
 				asc.addTags(...options.tags);
 			} else {
@@ -6071,7 +6071,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!abilities || abilities.length === 0) {
 			return;
 		}
-		const asc = host.getUniqueComponent(AbilitySystemComponent);
+		const asc = host.get_unique_component(AbilitySystemComponent);
 		if (!asc) {
 			this.recordLuaWarning(`[WorldObject:${host.id}] Unable to grant abilities (${abilities.join(', ')}) because AbilitySystemComponent is not attached.`);
 			return;
@@ -6900,10 +6900,10 @@ export class BmsxConsoleRuntime extends Service {
 		if (native instanceof WorldObject) {
 			return { __native__: 'world_object', id: native.id ?? null };
 		}
-		const owner = (native as { owner?: unknown }).owner;
-		if (owner && owner instanceof WorldObject) {
-			const componentId = (native as { id?: unknown }).id ?? null;
-			const className = (native as { constructor?: { name?: string } }).constructor?.name ?? null;
+		const owner = (native as { owner: WorldObject }).owner;
+		if (owner instanceof WorldObject) {
+			const componentId = (native as { id?: string | null }).id ?? null;
+			const className = (native as { constructor: { name?: string } }).constructor?.name ?? null;
 			return {
 				__native__: 'component',
 				ownerId: owner.id ?? null,
@@ -6919,48 +6919,32 @@ export class BmsxConsoleRuntime extends Service {
 
 	private snapshotDecodeNative(token: unknown): object | Function | null {
 		if (!token || typeof token !== 'object') {
+			console.warn('[BmsxConsoleRuntime] Ignoring invalid native snapshot token:', token);
 			return null;
 		}
 		const record = token as { __native__?: string;[key: string]: unknown };
-		switch (record.__native__) {
+			switch (record.__native__) {
 			case 'world_object': {
 				return this.lookupWorldObjectById(record.id);
 			}
 			case 'component': {
 				const owner = this.lookupWorldObjectById(record.ownerId);
 				if (!owner) {
+					console.warn(`[BmsxConsoleRuntime] Failed to resolve owner for component: ${record.ownerId}`);
 					return null;
 				}
-				const byId = (owner as { getComponentById?: (id: unknown) => unknown; getcomponentbyid?: (id: unknown) => unknown });
-				const resolver = typeof byId.getComponentById === 'function'
-					? byId.getComponentById
-					: typeof byId.getcomponentbyid === 'function'
-						? byId.getcomponentbyid
-						: null;
-				if (resolver) {
 					if (record.id !== undefined && record.id !== null) {
-						try {
-							const resolved = resolver.call(owner, record.id);
-							if (resolved) {
-								return resolved as object;
-							}
-						}
-						catch {
-							// ignore lookup failures
+						const resolved = owner.get_component_by_id(record.id as string);
+						if (resolved) {
+							return resolved as object;
 						}
 					}
 					if (record.className) {
-						try {
-							const resolved = resolver.call(owner, record.className);
-							if (resolved) {
-								return resolved as object;
-							}
-						}
-						catch {
-							// ignore lookup failures
+						const resolved = owner.get_component_by_id(record.className as string);
+						if (resolved) {
+							return resolved as object;
 						}
 					}
-				}
 				return null;
 			}
 			default:
@@ -6972,35 +6956,21 @@ export class BmsxConsoleRuntime extends Service {
 		if (id === undefined || id === null) {
 			return null;
 		}
-		try {
-			const registry = ($ as { registry?: { get?: (key: unknown) => unknown } }).registry;
-			if (registry && typeof registry.get === 'function') {
-				const resolved = registry.get(id);
-				if (resolved instanceof WorldObject) {
-					return resolved;
-				}
-				if (resolved && typeof resolved === 'object' && 'id' in (resolved as Record<string, unknown>)) {
-					return resolved as WorldObject;
-				}
-			}
+		const registry = $.registry;
+		const resolvedFromRegistry = registry.get(id as string);
+		if (resolvedFromRegistry instanceof WorldObject) {
+			return resolvedFromRegistry;
 		}
-		catch {
-			// ignore
+		if (resolvedFromRegistry && typeof resolvedFromRegistry === 'object' && 'id' in (resolvedFromRegistry as Record<string, unknown>)) {
+			return resolvedFromRegistry as WorldObject;
 		}
-		try {
-			const world = ($ as { world?: { get?: (key: unknown) => unknown } }).world;
-			if (world && typeof world.get === 'function') {
-				const resolved = world.get(id);
-				if (resolved instanceof WorldObject) {
-					return resolved;
-				}
-				if (resolved && typeof resolved === 'object' && 'id' in (resolved as Record<string, unknown>)) {
-					return resolved as WorldObject;
-				}
-			}
+		const world = $.world;
+		const resolvedFromWorld = world.getWorldObject(id as string);
+		if (resolvedFromWorld instanceof WorldObject) {
+			return resolvedFromWorld;
 		}
-		catch {
-			// ignore
+		if (resolvedFromWorld && typeof resolvedFromWorld === 'object' && 'id' in (resolvedFromWorld as Record<string, unknown>)) {
+			return resolvedFromWorld as WorldObject;
 		}
 		return null;
 	}

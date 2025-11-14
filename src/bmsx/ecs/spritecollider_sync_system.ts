@@ -53,11 +53,11 @@ function resolveColliderForSprite(o: WorldObject, sprite: SpriteComponent): Coll
 	const explicitLocalId = sprite.colliderLocalId;
 	if (explicitLocalId === null) return undefined;
 	if (explicitLocalId) {
-		const bound = o.getComponentByLocalId(Collider2DComponent, explicitLocalId);
+		const bound = o.get_component_by_local_id(Collider2DComponent, explicitLocalId);
 		if (bound) return bound;
 		return undefined;
 	}
-	const primarySprite = o.getFirstComponent(SpriteComponent);
+	const primarySprite = o.get_first_component(SpriteComponent);
 	if (sprite === primarySprite) {
 		return o.getOrCreateCollider();
 	}

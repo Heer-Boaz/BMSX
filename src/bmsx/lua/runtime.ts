@@ -4,7 +4,7 @@ import {
 	LuaUnaryOperator,
 	LuaTableFieldKind,
 	LuaAssignmentOperator,
-} from './ast.ts';
+} from './ast';
 import type {
 	LuaAssignableExpression,
 	LuaAssignmentStatement,
@@ -44,14 +44,14 @@ import type {
 	LuaWhileStatement,
 	LuaSourceRange,
 	LuaDefinitionInfo,
-} from './ast.ts';
-import { LuaEnvironment } from './environment.ts';
-import { LuaRuntimeError, LuaSyntaxError } from './errors.ts';
-import { LuaLexer } from './lexer.ts';
-import { LuaParser } from './parser.ts';
-import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from './value.ts';
-import { createLuaNativeValue, createLuaTable, isLuaTable, isLuaNativeValue } from './value.ts';
-import { LuaDebuggerController, type LuaDebuggerPauseReason } from './debugger.ts';
+} from './ast';
+import { LuaEnvironment } from './environment';
+import { LuaRuntimeError, LuaSyntaxError } from './errors';
+import { LuaLexer } from './lexer';
+import { LuaParser } from './parser';
+import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from './value';
+import { createLuaNativeValue, createLuaTable, isLuaTable, isLuaNativeValue } from './value';
+import { LuaDebuggerController, type LuaDebuggerPauseReason } from './debugger';
 
 export type LuaCallFrame = {
 	readonly functionName: string | null;

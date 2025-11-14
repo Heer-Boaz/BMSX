@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createLuaInterpreter, LuaInterpreter } from '../../src/bmsx/lua/runtime.ts';
+import { createLuaInterpreter, LuaInterpreter } from '../../src/bmsx/lua/runtime';
 
 function run(source: string): ReturnType<LuaInterpreter['execute']> {
 	const interpreter = createLuaInterpreter();

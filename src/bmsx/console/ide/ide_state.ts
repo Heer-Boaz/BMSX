@@ -57,7 +57,7 @@ import type { ReferenceCatalogEntry } from './reference_sources';
 import { ConsoleCodeLayout } from './code_layout';
 import type { TimerHandle } from '../../platform';
 import type { DebuggerExecutionState } from '../debugger_lifecycle';
-import type { LuaDebuggerSessionMetrics } from '../../lua/debugger.ts';
+import type { LuaDebuggerSessionMetrics } from '../../lua/debugger';
 import { EDITOR_TOGGLE_KEY, ESCAPE_KEY } from './constants';
 
 export type NavigationHistoryEntry = {

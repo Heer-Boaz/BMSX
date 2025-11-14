@@ -95,7 +95,7 @@ export class PhysicsOverlayRenderer extends Component {
 			const objects = space.objects;
 			if (!Array.isArray(objects)) throw new Error(`[PhysicsOverlayRenderer] Space '${space.id}' does not expose an object list.`);
 			for (const wo of objects) {
-				const components = wo.getComponents(PhysicsDebugComponent);
+				const components = wo.get_components(PhysicsDebugComponent);
 				if (!Array.isArray(components)) throw new Error(`[PhysicsOverlayRenderer] WorldObject '${wo.id}' returned an invalid PhysicsDebugComponent list.`);
 				for (const component of components) {
 					if (!component) throw new Error(`[PhysicsOverlayRenderer] WorldObject '${wo.id}' returned a null PhysicsDebugComponent instance.`);
@@ -209,17 +209,17 @@ export class HitBoxVisualizer extends CustomVisualComponent {
 	}
 
 	static attachToObject(obj: WorldObject) {
-		if (!obj.getUniqueComponent(HitBoxVisualizer)) {
-			obj.addComponent(new HitBoxVisualizer({ parentid: obj.id }));
+		if (!obj.get_unique_component(HitBoxVisualizer)) {
+			obj.add_component(new HitBoxVisualizer({ parentid: obj.id }));
 		}
 	}
 
 	static detachFromObject(obj: WorldObject) {
-		obj.removeComponents(HitBoxVisualizer);
+		obj.remove_components(HitBoxVisualizer);
 	}
 
 	static attachedToObject(obj: WorldObject) {
-		return obj.getUniqueComponent(HitBoxVisualizer);
+		return obj.get_unique_component(HitBoxVisualizer);
 	}
 
 	constructor(opts: ComponentAttachOptions) {
@@ -227,7 +227,7 @@ export class HitBoxVisualizer extends CustomVisualComponent {
 			...opts, producer: () => {
 				const parent = this.parent as SpriteObject;
 				// Draw polygons if available on the WorldObject
-				if (parent.hasHitPolygon) {
+				if (parent.has_hitpolygon) {
 					for (const poly of parent.hitpolygon) {
 						// Offset polygon by parent position and z
 						$.view.renderer.submit.poly({ points: poly, z: parent.z + 1, color: { ...Msx1Colors[2], a: 0.5 }, thickness: 1, layer: 'ui' });
@@ -255,17 +255,17 @@ export class ObjectHighlighterComponent extends Component {
 	}
 
 	static attachToObject(obj: WorldObject) {
-		if (!obj.getUniqueComponent(ObjectHighlighterComponent)) {
-			obj.addComponent(new ObjectHighlighterComponent({ parentid: obj.id }));
+		if (!obj.get_unique_component(ObjectHighlighterComponent)) {
+			obj.add_component(new ObjectHighlighterComponent({ parentid: obj.id }));
 		}
 	}
 
 	static detachFromObject(obj: WorldObject) {
-		obj.removeComponents(ObjectHighlighterComponent);
+		obj.remove_components(ObjectHighlighterComponent);
 	}
 
 	static attachedToObject(obj: WorldObject) {
-		return obj.getUniqueComponent(ObjectHighlighterComponent);
+		return obj.get_unique_component(ObjectHighlighterComponent);
 	}
 
 	constructor(opts: ComponentAttachOptions) {
@@ -276,7 +276,7 @@ export class ObjectHighlighterComponent extends Component {
 		const parent = this.parent as SpriteObject;
 
 		// Draw polygons if available on the WorldObject
-		if (parent.hasHitPolygon) {
+		if (parent.has_hitpolygon) {
 			for (const poly of parent.hitpolygon) {
 				// Offset polygon by parent position and z
 				$.view.renderer.submit.poly({ points: poly, z: parent.z, color: { ...Msx1Colors[6], a: 0.5 }, thickness: 1, layer: 'ui' });

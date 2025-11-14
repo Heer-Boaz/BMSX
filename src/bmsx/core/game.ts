@@ -185,27 +185,27 @@ export class Game {
 		this.event_emitter.emit(arg0);
 	}
 
-	public emitGameplay(event: GameEvent): void;
-	public emitGameplay(event_name: string, emitter: Identifiable, payload?: EventPayload): void;
-	public emitGameplay(arg0: GameEvent | string, emitter?: Identifiable, payload?: EventPayload): void {
+	public emit_gameplay(event: GameEvent): void;
+	public emit_gameplay(event_name: string, emitter: Identifiable, payload?: EventPayload): void;
+	public emit_gameplay(arg0: GameEvent | string, emitter?: Identifiable, payload?: EventPayload): void {
 		if (typeof arg0 === 'string') {
 			if (!emitter) throw new Error(`[Game.emitGameplay] Emitter required for '${arg0}'.`);
 			if (payload && typeof payload !== 'object') throw new Error(`[Game.emitGameplay] Payload for '${arg0}' must be an object.`);
 			const event = createGameEvent({ type: arg0, emitter, lane: 'gameplay', ...(payload ?? {}) });
-			this.emitGameplay(event);
+			this.emit_gameplay(event);
 			return;
 		}
 		arg0.lane = 'gameplay';
 		this.emit(arg0);
 	}
 
-	public emitPresentation(event: GameEvent): void;
-	public emitPresentation(event_name: string, emitter: Identifiable | null, payload?: EventPayload): void;
-	public emitPresentation(arg0: GameEvent | string, emitter?: Identifiable | null, payload?: EventPayload): void {
+	public emit_presentation(event: GameEvent): void;
+	public emit_presentation(event_name: string, emitter: Identifiable | null, payload?: EventPayload): void;
+	public emit_presentation(arg0: GameEvent | string, emitter?: Identifiable | null, payload?: EventPayload): void {
 		if (typeof arg0 === 'string') {
 			if (payload && typeof payload !== 'object') throw new Error(`[Game.emitPresentation] Payload for '${arg0}' must be an object.`);
 			const event = createGameEvent({ type: arg0, emitter: emitter ?? null, lane: 'presentation', ...(payload ?? {}) });
-			this.emitPresentation(event);
+			this.emit_presentation(event);
 			return;
 		}
 		arg0.lane = 'presentation';
@@ -216,7 +216,7 @@ export class Game {
 		return this.registry.get<T>(id);
 	}
 
-	public getWorldObject<T extends WorldObject>(id: Identifier): T {
+	public get_worldobject<T extends WorldObject>(id: Identifier): T {
 		return this.world.getWorldObject<T>(id);
 	}
 
@@ -238,12 +238,12 @@ export class Game {
 
 	public exile(o: WorldObject): void { this.world.despawnFromAllSpaces(o); }
 
-	public playAudio(id: asset_id, options?: RandomModulationParams | ModulationParams | string | SoundMasterPlayRequest): void {
+	public playaudio(id: asset_id, options?: RandomModulationParams | ModulationParams | string | SoundMasterPlayRequest): void {
 		// Route through AudioEventManager so policies and per-channel handling stay consistent
 		this.aem.playDirect(id, options);
 	}
 
-	public stopMusic(): void {
+	public stopmusic(): void {
 		this.sndmaster.stopMusic();
 	}
 

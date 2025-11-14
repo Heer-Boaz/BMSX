@@ -3,11 +3,11 @@ register('./glsl-loader.mjs', import.meta.url);
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { LuaDebuggerPauseSignal } from '../../src/bmsx/lua/runtime.ts';
-import { createLuaInterpreter, isLuaDebuggerPauseSignal } from '../../src/bmsx/lua/runtime.ts';
-import { LuaDebuggerController } from '../../src/bmsx/lua/debugger.ts';
-import { LuaRuntimeError } from '../../src/bmsx/lua/errors.ts';
-import type { LuaFunctionValue } from '../../src/bmsx/lua/value.ts';
+import type { LuaDebuggerPauseSignal } from '../../src/bmsx/lua/runtime';
+import { createLuaInterpreter, isLuaDebuggerPauseSignal } from '../../src/bmsx/lua/runtime';
+import { LuaDebuggerController } from '../../src/bmsx/lua/debugger';
+import { LuaRuntimeError } from '../../src/bmsx/lua/errors';
+import type { LuaFunctionValue } from '../../src/bmsx/lua/value';
 import { emitDebuggerLifecycleEvent } from '../../src/bmsx/console/debugger_lifecycle';
 import { getDebuggerCommandExecutor, issueDebuggerCommand } from '../../src/bmsx/console/ide/debugger_controls';
 import { setDebuggerRuntimeAccessor } from '../../src/bmsx/console/runtime_accessors';

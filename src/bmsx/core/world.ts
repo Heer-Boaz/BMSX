@@ -531,7 +531,7 @@ export class World implements Stateful, RegisterablePersistent {
 		GameplayEventRecorder.instance.endFrame();
 
 		for (const o of this.objects({ scope: 'active', reverse: true })) {
-			if (o.disposeFlag) this.despawnFromAllSpaces(o);
+			if (o.dispose_flag) this.despawnFromAllSpaces(o);
 		}
 	}
 
@@ -806,7 +806,7 @@ export class World implements Stateful, RegisterablePersistent {
 	/** Iterate objects that have instances of a given component; passes each component instance. */
 	public forEachWorldObjectWithComponents<T extends Component>(component: ComponentConstructor<T>, fn: (o: WorldObject, c: T) => void, opts: { scope?: WorldScope } = {}): void {
 		this.forEachWorldObject((o) => {
-			const list = (o).getComponents?.(component) as T[] | undefined;
+			const list = (o).get_components?.(component) as T[] | undefined;
 			if (list && list.length) for (const c of list) fn(o, c);
 		}, opts);
 	}
@@ -866,7 +866,7 @@ export class World implements Stateful, RegisterablePersistent {
 	 * base class here (ctor) will correctly return true for derived instances.
 	 */
 	public *objectsWithComponents<T extends Component>(component: ConcreteOrAbstractConstructor<T>, opts: { scope?: WorldScope, reverse?: boolean } = {}): IterableIterator<[WorldObject, T]> {
-		for (const o of this.objects(opts)) { for (const c of o.iterateComponentsByType(component)) yield [o!, c!]; }
+		for (const o of this.objects(opts)) { for (const c of o.iterate_components_by_type(component)) yield [o!, c!]; }
 	}
 
 	/**

@@ -25,6 +25,7 @@ import { SpriteColliderSyncSystem } from './spritecollider_sync_system';
 import { Collision2DBroadphaseRebuildSystem } from './collision2d_broadphase_system';
 import { Overlap2DSystem } from './overlap2d_system';
 import { FsmEventDispatchSystem } from './fsm_event_dispatch_system';
+import { TimelineSystem } from './timeline_system';
 
 /** Register built-in ECS systems with sensible defaults. */
 export function registerBuiltinECS(): void {
@@ -47,6 +48,7 @@ export function registerBuiltinECS(): void {
 		{ id: 'collisionBroadphase', group: TickGroup.Physics, create: (p: number) => new Collision2DBroadphaseRebuildSystem(p) },
 		{ id: 'overlapEvents', group: TickGroup.Physics, create: (p: number) => new Overlap2DSystem(p) },
 		{ id: 'transform', group: TickGroup.Physics, create: (p: number) => new TransformSystem(p) },
+		{ id: 'timeline', group: TickGroup.Animation, create: (p: number) => new TimelineSystem(p) },
 		{ id: 'meshAnim', group: TickGroup.Animation, create: (p: number) => new MeshAnimationSystem(p) },
 		{ id: 'textRender', group: TickGroup.Presentation, create: (p: number) => new TextRenderSystem(p) },
 		{ id: 'spriteRender', group: TickGroup.Presentation, create: (p: number) => new SpriteRenderSystem(p) },

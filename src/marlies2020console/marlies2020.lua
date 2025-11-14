@@ -148,13 +148,13 @@ local function register_board(id, object)
     game_state.boards[id] = {
         id = id,
         object = object,
-        sprite = object:getcomponentbyid('board_sprite'),
+        sprite = object:get_component_by_id('board_sprite'),
         filled = false
     }
 end
 
 local function register_ingredient(id, object, kind, contents)
-    local sprite = object:getcomponentbyid('ingredient_sprite')
+    local sprite = object:get_component_by_id('ingredient_sprite')
     game_state.ingredients[id] = {
         id = id,
         object = object,
@@ -201,7 +201,7 @@ local function ability_interact(ctx)
         for _, ingredient in pairs(state.touch_ingredients) do
             if ingredient.kind == 'cucumber' and not ingredient.held then
                 ingredient.kind = 'cucumber_sliced'
-                ingredient.object:getcomponentbyid('ingredient_sprite').imgid = sprites.cucumber_sliced
+                ingredient.object:get_component_by_id('ingredient_sprite').imgid = sprites.cucumber_sliced
                 release_inventory(state)
                 sfx(sounds.select)
                 return
@@ -233,7 +233,7 @@ local function ability_interact(ctx)
                 contents[#contents + 1] = held.kind
                 if held.kind == 'cucumber_sliced' then
                     target.kind = 'pita_filled'
-                    target.object:getcomponentbyid('ingredient_sprite').imgid = sprites.pita_filled
+                    target.object:get_component_by_id('ingredient_sprite').imgid = sprites.pita_filled
                 end
                 release_inventory(state)
                 sfx(sounds.select)

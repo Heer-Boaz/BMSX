@@ -1,7 +1,7 @@
-import { LuaLexer } from '../../lua/lexer.ts';
-import { LuaSyntaxError } from '../../lua/errors.ts';
-import { LuaTokenType } from '../../lua/token.ts';
-import type { LuaToken } from '../../lua/token.ts';
+import { LuaLexer } from '../../lua/lexer';
+import { LuaSyntaxError } from '../../lua/errors';
+import { LuaTokenType } from '../../lua/token';
+import type { LuaToken } from '../../lua/token';
 
 type SemanticRole = 'definition' | 'usage';
 

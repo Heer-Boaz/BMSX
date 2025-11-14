@@ -1,6 +1,6 @@
-import type { LuaInterpreter } from '../lua/runtime.ts';
-import { isLuaDebuggerPauseSignal } from '../lua/runtime.ts';
-import type { LuaFunctionValue } from '../lua/value.ts';
+import type { LuaInterpreter } from '../lua/runtime';
+import { isLuaDebuggerPauseSignal } from '../lua/runtime';
+import type { LuaFunctionValue } from '../lua/value';
 
 export interface LuaHandlerFn extends Function {
 	__hid: string;

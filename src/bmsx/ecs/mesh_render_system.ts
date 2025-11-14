@@ -16,7 +16,7 @@ export class MeshRenderSystem extends ECSystem {
 		for (const [o, mc] of world.objectsWithComponents(MeshComponent, { scope: 'active' })) {
 			if (!mc.enabled) continue;
 			const parent = o as WorldObject;
-			const tc = parent.getUniqueComponent(TransformComponent);
+			const tc = parent.get_unique_component(TransformComponent);
 			if (tc) {
 				M4.copyInto(base, tc.getWorldMatrix());
 			} else {

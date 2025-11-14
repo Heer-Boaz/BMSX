@@ -1,6 +1,6 @@
 import * as constants from './constants';
 import { KEYWORDS } from './intellisense';
-import type { SemanticAnnotations, SymbolKind } from './semantic_model.ts';
+import type { SemanticAnnotations, SymbolKind } from './semantic_model';
 import type { HighlightLine } from './types';
 
 // Lightweight Lua syntax highlighter used by the console editor.
