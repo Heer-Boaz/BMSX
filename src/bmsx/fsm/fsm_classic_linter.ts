@@ -76,5 +76,4 @@ function scanEventBag(bag: unknown, where: string): void {
 function scanEventDef(definition: StateEventDefinition, where: string): void {
 	if (!definition) return;
 	scanSlot(definition.do as unknown, `${where}.do`);
-	scanSlot(definition.if as unknown, `${where}.if`);
 }

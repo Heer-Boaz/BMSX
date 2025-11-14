@@ -142,8 +142,8 @@ function expandWindows(def: StateDefinition, base: Marker[]): Marker[] {
 		const tag = windowDef.tag ?? `state.window.${windowDef.name}`;
 		const lane = windowDef.lane ?? 'gameplay';
 		expanded.push(
-			{ ...windowDef.start, event: `window.${windowDef.name}.start`, lane, payload: windowDef.payloadStart, addTags: [tag] },
-			{ ...windowDef.end, event: `window.${windowDef.name}.end`, lane, payload: windowDef.payloadEnd, removeTags: [tag] },
+			{ ...windowDef.start, event: `window.${windowDef.name}.start`, lane, payload: windowDef.payloadstart, addTags: [tag] },
+			{ ...windowDef.end, event: `window.${windowDef.name}.end`, lane, payload: windowDef.payloadend, removeTags: [tag] },
 		);
 	}
 	return expanded;
@@ -172,8 +172,8 @@ export function compileMarkers(def: StateDefinition): void {
 			event: marker.event,
 			lane: marker.lane ?? 'gameplay',
 			payload: marker.payload,
-			addTags: marker.addTags,
-			removeTags: marker.removeTags,
+			addtags: marker.addTags,
+			removetags: marker.removeTags,
 		});
 	}
 	cache.byFrame = byFrame;
@@ -687,18 +687,6 @@ type StateSlots = { [K in keyof StateDefinition]-?: StateDefinition[K] extends S
 // Removed unused proxy factory (thunks not used in current code path)
 
 // Event definition handlers
-function hoistEventIf(
-	_machineName: string,
-	_stateDef: StateDefinition,
-	_path: string[],
-	_bagName: string,
-	_eventName: string,
-	ownerDef: StateEventDefinition,
-	id: string,
-) {
-	hoistSlot(ownerDef as Record<string, any>, 'if', id);
-}
-
 function hoistEventDo(
 	_machineName: string,
 	_stateDef: StateDefinition,
@@ -768,7 +756,7 @@ function rewriteOnBag(bag: StateMachineBlueprint['on']) {
 		const base = removeScopeFromEventName(raw);
 		const scope = parseEventScope(raw);
 		if (typeof def === 'string') {
-			out[base] = { to: def, scope };
+			out[base] = { scope, do: def };
 			continue;
 		}
 		out[base] = { scope, ...def };
@@ -789,9 +777,6 @@ function hoistEventDef(
 	const eventName = normalizeEventNameForId(rawEventName);
 	const base = [machineName, ...statePath, bagName, eventName];
 
-	if (typeof eventDefinition.if !== 'undefined') {
-		hoistEventIf(machineName, stateDef, statePath, bagName, eventName, eventDefinition, makeId([...base, 'if']));
-	}
 	if (typeof eventDefinition.do !== 'undefined') {
 		hoistEventDo(machineName, stateDef, statePath, bagName, eventName, eventDefinition, makeId([...base, 'do']));
 	}
@@ -839,9 +824,6 @@ function walkAndHoist(
 		rc.forEach((chk, i) => {
 			if (!chk || typeof chk !== 'object') return;
 			const base = [machineName, ...path, `run_checks[${i}]`];
-			if (typeof chk.if !== 'undefined') {
-				hoistEventIf(machineName, sdef, path, `run_checks`, `${i}`, chk, makeId([...base, 'if']));
-			}
 			if (typeof chk.do !== 'undefined') {
 				hoistEventDo(machineName, sdef, path, `run_checks`, `${i}`, chk, makeId([...base, 'do']));
 			}

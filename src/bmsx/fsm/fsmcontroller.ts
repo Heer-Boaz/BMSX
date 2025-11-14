@@ -263,7 +263,7 @@ export class StateMachineController {
 	 * @param newstate The new state to switch to, in the format 'statemachine.state.substate'.
 	 * @param args Optional arguments to pass to the new state.
 	 */
-	transition_to(newstate: Identifier, ...args: any[]): void {
+	transition_to(newstate: Identifier): void {
 		const dotIndex = newstate.indexOf(':/');
 		let machineid = dotIndex !== -1 ? newstate.slice(0, dotIndex) : newstate;
 		let stateids = dotIndex !== -1 ? newstate.slice(dotIndex + 1) : undefined;
@@ -279,7 +279,7 @@ export class StateMachineController {
 		// if (!machine.is_concurrent) { // If the machine is not running in parallel, set it as the current machine
 			// this.current_machine_id = machineid;
 		// }
-		machine.transition_to_path(stateids, ...args);
+		machine.transition_to_path(stateids);
 	}
 
 	/**
@@ -290,7 +290,7 @@ export class StateMachineController {
 	 * @param path - The path to the state machine and state ID, separated by a ':/' (e.g., 'machineID:/stateID').
 	 * @param args - Additional arguments to pass to the state switch function.
 	 */
-	switch_to(path: string, ...args: any[]): void {
+	switch_to(path: string): void {
 		const sepIndex = path.indexOf(':/');
 		const machineid = sepIndex !== -1 ? path.slice(0, sepIndex) : path;
 		const statePath = sepIndex !== -1 ? path.slice(sepIndex + 2) : undefined;
@@ -300,7 +300,7 @@ export class StateMachineController {
 
 		// Only switch the state in the specified machine, without changing the current machine
 		const targetPath = statePath ?? machineid;
-		machine.transition_switch_path(targetPath, ...args);
+		machine.transition_switch_path(targetPath);
 	}
 
 	/**

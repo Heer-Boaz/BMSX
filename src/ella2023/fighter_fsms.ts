@@ -1,4 +1,4 @@
-import { $, build_fsm, State, type StateMachineBlueprint, type EventPayload } from 'bmsx';
+import { $, build_fsm, State, type StateMachineBlueprint, type GameEvent } from 'bmsx';
 import type { Direction } from 'bmsx';
 import type { StateTransition } from 'bmsx/fsm/fsmtypes';
 import type { Fighter, AttackType } from './fighter';
@@ -15,9 +15,12 @@ class FighterFSMs {
 	}
 }
 
-type AttackEventPayload = EventPayload & { attackType?: AttackType };
-type AnimationEventPayload = EventPayload & { animation_name?: string };
-type JumpEventPayload = EventPayload & { direction?: Direction | null; directional?: boolean | string };
+type AttackEventDetail = { attackType?: AttackType };
+type AttackEvent = GameEvent<'mode.action.attack', AttackEventDetail>;
+type AnimationEvent = GameEvent<'animationEnd', { animation_name?: string }>;
+type JumpEventDetail = { direction?: Direction | null; directional?: boolean | string };
+type JumpEvent = GameEvent<'mode.control.jump', JumpEventDetail>;
+type WalkEvent = GameEvent<'mode.locomotion.walk', { direction?: Direction }>;
 
 const ATTACK_FRAMES: Record<AttackType, number> = {
 	punch: 6,
@@ -43,31 +46,37 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 	// input_eval: 'first',
 	on: {
 		'mode.locomotion.idle': {
-			if(this: Fighter) { return !isLocomotionLocked(this); },
-		do(): StateTransition { return { path: GROUND_IDLE_STATE_PATH, transition_type: 'switch' }; },
+			do(this: Fighter): StateTransition | void {
+				if (isLocomotionLocked(this)) return;
+				return { path: GROUND_IDLE_STATE_PATH, transition_type: 'switch' };
+			},
 		},
 		'mode.locomotion.walk': {
-			if(this: Fighter) { return !isLocomotionLocked(this); },
-			do(_state: State, payload?: EventPayload & { direction?: Direction }): StateTransition {
-				return { path: GROUND_WALK_STATE_PATH, transition_type: 'switch', payload };
+			do(this: Fighter, _state: State, event: WalkEvent): StateTransition | void {
+				if (isLocomotionLocked(this)) return;
+				const resolved = resolveWalkPayload(this, event);
+				this.pendingWalkDirection = resolved.direction;
+				return { path: GROUND_WALK_STATE_PATH, transition_type: 'switch' };
 			},
 		},
 		'mode.action.attack': {
-			do(this: Fighter, _state: State, payload?: AttackEventPayload): StateTransition {
-				const resolved = resolveAttackPayload(payload);
+			do(this: Fighter, _state: State, event: AttackEvent): StateTransition {
+				const resolved = resolveAttackPayload(event);
+				this.pendingAttackPayload = resolved;
 				if (resolved.attackType === 'flyingkick') {
 					const asc = this.abilitySystem;
 					if (asc.hasGameplayTag('state.airborne') && !asc.hasGameplayTag('state.airborne.attackUsed')) {
-						return { path: FLYING_KICK_STATE_PATH, payload: resolved, transition_type: 'switch' };
+						return { path: FLYING_KICK_STATE_PATH, transition_type: 'switch' };
 					}
 				}
-				return { path: GROUND_ATTACK_STATE_PATH, payload: resolved, transition_type: 'switch' };
+				return { path: GROUND_ATTACK_STATE_PATH, transition_type: 'switch' };
 			},
 		},
 		'mode.control.duck': GROUND_DUCK_STATE_PATH,
 		'mode.control.jump': {
-			do(this: Fighter, _state: State, payload?: JumpEventPayload): StateTransition {
-				return { path: JUMP_STATE_PATH, payload };
+			do(this: Fighter, _state: State, event: JumpEvent): StateTransition {
+				this.pendingJumpPayload = { direction: event.direction ?? null, directional: event.directional };
+				return { path: JUMP_STATE_PATH };
 			},
 		},
 		'mode.control.stoerheidsdans': '/stoerheidsdans',
@@ -91,8 +100,9 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 					},
 				},
 				walk: {
-					entering_state(this: Fighter, _state: State, payload?: EventPayload & { direction?: Direction }) {
-						const resolved = resolveWalkPayload(this, payload);
+					entering_state(this: Fighter) {
+						const resolved = resolveWalkPayload(this, this.pendingWalkDirection ? { direction: this.pendingWalkDirection } : undefined);
+						this.pendingWalkDirection = undefined;
 						this.applyWalkFacing(undefined, resolved);
 						this.abilitySystem.addTags('state.walking');
 						this.abilitySystem.removeTags('state.attacking', 'state.idle');
@@ -103,8 +113,8 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 					},
 					on: {
 						'mode.locomotion.walk': {
-							do(this: Fighter, _state: State, payload?: EventPayload & { direction?: Direction }) {
-								const resolved = resolveWalkPayload(this, payload);
+							do(this: Fighter, _state: State, event: WalkEvent) {
+								const resolved = resolveWalkPayload(this, event);
 								this.applyWalkFacing(undefined, resolved);
 							},
 						},
@@ -124,15 +134,17 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 					},
 				},
 				attack: {
-					entering_state(this: Fighter, state: State, payload?: AttackEventPayload) {
-						const resolved = resolveAttackPayload(payload);
+					entering_state(this: Fighter, state: State) {
+						const pending = this.pendingAttackPayload;
+						this.pendingAttackPayload = undefined;
+						const resolved = resolveAttackPayload(pending);
 						this.abilitySystem.addTags('state.attacking');
 						this.startAttack(state, resolved);
 					},
 					on: {
 						animationEnd: {
-							do(this: Fighter, _state: State, payload?: AnimationEventPayload): StateTransition | void {
-								const animation = payload?.animation_name;
+							do(this: Fighter, _state: State, event: AnimationEvent): StateTransition | void {
+								const animation = event.animation_name;
 								if (!animation) return undefined;
 								if (animation !== this.currentAttackType) return undefined;
 								if (animation === 'duckkick') {
@@ -142,16 +154,9 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 							},
 						},
 					},
-					exiting_state(this: Fighter, state: State, payload?: AttackEventPayload) {
-						let nextPayload: AttackEventPayload | undefined = payload;
+					exiting_state(this: Fighter, state: State) {
 						const activeType = this.currentAttackType;
-						if (!nextPayload || !nextPayload.attackType) {
-							if (!activeType) {
-								throw new Error('[FighterFSMs] Attack exit missing active attack type.');
-							}
-							nextPayload = { attackType: activeType };
-						}
-						const resolved = resolveAttackPayload(nextPayload);
+						const resolved = resolveAttackPayload(activeType ? { attackType: activeType } : undefined);
 						this.finishAttack(state, resolved);
 						this.hideHitMarker();
 						this.abilitySystem.removeTags('state.attacking');
@@ -163,9 +168,11 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 			states: {
 				_jump: {
 					automatic_reset_mode: 'tree',
-					entering_state(this: Fighter, state: State, payload?: JumpEventPayload) {
+					entering_state(this: Fighter, state: State) {
 						this.abilitySystem.addTags('state.airborne');
 						this.abilitySystem.removeTags('state.grounded', 'state.airborne.attackUsed');
+						const payload = this.pendingJumpPayload;
+						this.pendingJumpPayload = undefined;
 						this.startJump(state, payload);
 						$.emitPresentation('animate_jump', this);
 					},
@@ -194,24 +201,20 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 							states: {
 								_ready: {},
 								active: {
-									entering_state(this: Fighter, state: State, payload?: AttackEventPayload) {
-										let nextPayload: AttackEventPayload | undefined = payload;
-										if (!nextPayload || !nextPayload.attackType) {
-											nextPayload = { attackType: 'flyingkick' };
-										}
-										const resolved = resolveAttackPayload(nextPayload);
+									entering_state(this: Fighter, state: State) {
+										const pending = this.pendingAttackPayload ?? { attackType: 'flyingkick' };
+										this.pendingAttackPayload = undefined;
+										const resolved = resolveAttackPayload(pending);
 										this.abilitySystem.addTags('state.attacking', 'state.airborne.attackUsed');
 										this.startAttack(state, resolved);
 									},
 									on: {
 										animationEnd: {
-											if(this: Fighter, _state: State, payload?: AnimationEventPayload) {
-												if (!payload) return false;
-												const animation = payload.animation_name;
-												if (!animation) return false;
-												return animation === 'flyingkick';
+											do(this: Fighter, _state: State, event: AnimationEvent): StateTransition | void {
+												const animation = event.animation_name;
+												if (animation !== 'flyingkick') return;
+												return { path: '../_ready' };
 											},
-											to: '../_ready',
 										},
 									},
 									exiting_state(this: Fighter) {
@@ -244,12 +247,12 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 			},
 			on: {
 				animationEnd: {
-					do(this: Fighter, state: State, payload?: AnimationEventPayload) {
-						this.handleStoerAnimationEnd(state, payload);
+					do(this: Fighter, state: State, event: AnimationEvent) {
+						this.handleStoerAnimationEnd(state, event);
 					},
 				},
 			},
-			tape_next(this: Fighter, state: State, payload?: EventPayload & { tape_rewound: boolean }) {
+			tape_next(this: Fighter, state: State, payload?: { tape_rewound: boolean }) {
 				this.handleStoerTapeNext(state, payload);
 			},
 			tape_end(this: Fighter, state: State): StateTransition {
@@ -373,14 +376,14 @@ function isLocomotionLocked(self: Fighter): boolean {
 	return false;
 }
 
-function resolveAttackPayload(payload?: AttackEventPayload): AttackEventPayload {
+function resolveAttackPayload(payload?: AttackEvent | AttackEventDetail): AttackEventDetail {
 	if (!payload || !payload.attackType) {
 		throw new Error('[FighterFSMs] Attack payload missing attackType.');
 	}
-	return payload;
+	return { attackType: payload.attackType };
 }
 
-function resolveWalkPayload(self: Fighter, payload?: EventPayload & { direction?: Direction }): { direction: Direction } {
+function resolveWalkPayload(self: Fighter, payload?: WalkEvent | { direction?: Direction }): { direction: Direction } {
 	const direction = payload && payload.direction ? payload.direction : self.facing;
 	if (!direction) {
 		throw new Error(`[FighterFSMs] Unable to resolve walk direction for fighter '${self.id}'.`);

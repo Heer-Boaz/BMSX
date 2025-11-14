@@ -1,4 +1,4 @@
-import { $, WorldObject, StateMachineBlueprint, build_fsm, calculateCenteredBlockX, insavegame, wrapGlyphs, type State, type RevivableObjectArgs, CustomVisualComponent, type EventPayload } from 'bmsx';
+import { $, WorldObject, StateMachineBlueprint, build_fsm, calculateCenteredBlockX, insavegame, wrapGlyphs, type State, type RevivableObjectArgs, CustomVisualComponent } from 'bmsx';
 import { createGameEvent } from 'bmsx/core/game_event';
 import { DataId } from './resourceids';
 import type { sint } from './sint';
@@ -62,6 +62,7 @@ export class quiz extends WorldObject {
 	 * Represents the currently chosen answer option.
 	 */
 	currentAnswerOptionChosen: 'a' | 'b' = 'a';
+	public pendingQuestionNav?: 'prev' | 'next';
 
 	/**
 	 * An array of strings representing the full text lines.
@@ -248,8 +249,10 @@ export class quiz extends WorldObject {
 					},
 					input_event_handlers: {
 						'?(a[j!c], b[j!c])': { // Handle both answer options
-							do() { $.consumeActions(1, 'a', 'b') },
-							to: '/vraag'
+							do() {
+								$.consumeActions(1, 'a', 'b');
+								return '/vraag';
+							},
 						},
 						'down[j]': '/end', // Handle quiz end on "down"
 					}
@@ -258,14 +261,16 @@ export class quiz extends WorldObject {
 				vraag: {
 					tape_data: Array.from({ length: quizItems.length }, (_, i) => i),
 					automatic_reset_mode: 'none',
-					entering_state(this: quiz, state: State, payload: EventPayload & { args?: 'prev' | 'next' } = {}) {
-						if (payload.args === 'prev') {
+					entering_state(this: quiz, state: State) {
+						const nav = this.pendingQuestionNav;
+						this.pendingQuestionNav = undefined;
+						if (nav === 'prev') {
 							state.setHeadNoSideEffect(state.tapehead_position - 2);
 							if (state.tapehead_position < 0) {
 								state.rewind_tape();
 							}
 						}
-						else if (payload.args === 'next') {
+						else if (nav === 'next') {
 							// Do nothing
 						}
 						++state.ticks;
@@ -295,36 +300,38 @@ export class quiz extends WorldObject {
 							do(this: quiz) {
 								$.consumeAction(1, 'a');
 								this.currentAnswerOptionChosen = 'a';
-								return { path: '/antwoord', payload: { gekozen_antwoord: this.currentAnswerOptionChosen } };
+								return { path: '/antwoord' };
 							},
 						},
 						'b[j!c]': { // Handle answer option B
 							do(this: quiz) {
 								$.consumeAction(1, 'b');
 								this.currentAnswerOptionChosen = 'b';
-								return { path: '/antwoord', payload: { gekozen_antwoord: this.currentAnswerOptionChosen } };
+								return { path: '/antwoord' };
 							},
 						},
 						'left[j!c]': { // Handle previous question on "left"
 							do(this: quiz) {
 								$.consumeAction(1, 'left');
-								return { path: '/vraag', payload: { bla: 'prev' }, force_transition_to_same_state: true, transition_type: 'to' };
+								this.pendingQuestionNav = 'prev';
+								return { path: '/vraag', force_transition_to_same_state: true, transition_type: 'to' };
 							},
 						},
 						'right[j!c]': { // Handle next question on "right"
 							do(this: quiz) {
 								$.consumeAction(1, 'right');
-								return { path: '/vraag', payload: { bla: 'next' }, force_transition_to_same_state: true, transition_type: 'to' };
+								this.pendingQuestionNav = 'next';
+								return { path: '/vraag', force_transition_to_same_state: true, transition_type: 'to' };
 							},
 						},
 					},
 				},
 
 				antwoord: {
-					entering_state(this: quiz, _state: State, payload?: { gekozen_antwoord?: string } & EventPayload) {
+					entering_state(this: quiz, _state: State) {
 						this.switchSintToAnswer();
 						const currentQ = quizItems[this.currentQuestionIndex];
-						if (payload.gekozen_antwoord === 'a') {
+						if (this.currentAnswerOptionChosen === 'a') {
 							this.setTextFromLines([currentQ.reactionA]);
 						} else {
 							this.setTextFromLines([currentQ.reactionB]);

@@ -4,7 +4,7 @@ import type { Identifier, Registerable } from '../rompack/rompack';
 import type { StateMachineController } from "./fsmcontroller";
 import type { State } from './state';
 import type { StateDefinition } from './statedefinition';
-import type { EventLane, EventPayload } from '../core/game_event';
+import type { EventLane, EventPayload, GameEvent } from '../core/game_event';
 
 /**
  * Represents a type definition for mapping IDs to `sdef` objects.
@@ -51,19 +51,11 @@ export type id2partial_sdef = Record<Identifier, StateMachineBlueprint>;
 // export type StatePathSpecial = '#this' | '#parent' | '#root';
 // export type StatePath = `${StatePathSpecial}.${StatePathPart}` | `${StatePathPart}`;
 
-/**
- * Represents a state event handler.
- * @template T - The type of the stateful object.
- * @param state - The state object.
- * @param args - Additional arguments for the event handler.
- * @returns A string denoting the next state to transition to (or undefined if no transition should occur).
- */
-export interface StateEventHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P): StateTransition | Identifier | void; }
+export interface StateEventHandler<T extends Stateful = any, E extends GameEvent = GameEvent> {
+	(state: State<T>, event: E): StateTransition | Identifier | void;
+}
 export interface StateExitHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P): void; }
 export interface StateNextHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P & { tape_rewound: boolean }): StateTransition | Identifier | void; }
-export interface StateEventCondition<T extends Stateful & EventSubscriber = any, P extends EventPayload = EventPayload> {
-	(state: State<T>, payload?: P): boolean;
-}
 
 export type listed_sdef_event = { name: string, scope: EventScope, lane?: EventLane | 'any' };
 
@@ -83,8 +75,8 @@ export type Window = {
 	end: MarkerAt;
 	lane?: EventLane | 'any';
 	tag?: string;
-	payloadStart?: Record<string, any>;
-	payloadEnd?: Record<string, any>;
+	payloadstart?: Record<string, any>;
+	payloadend?: Record<string, any>;
 };
 
 export type CompiledMarker = {
@@ -92,8 +84,8 @@ export type CompiledMarker = {
 	event: string;
 	lane: EventLane | 'any';
 	payload?: Record<string, any>;
-	addTags?: string[];
-	removeTags?: string[];
+	addtags?: string[];
+	removetags?: string[];
 };
 
 export interface CompiledMarkerCache {
@@ -108,11 +100,6 @@ export type StateTransition = {
 	 * The next state to transition to.
 	 */
 	path: Identifier;
-
-	/**
-	 * The arguments for the state transition.
-	 */
-	payload?: unknown;
 
 	/**
 	 * The transition type: 'to' or 'switch', where 'to' is the default.
@@ -255,7 +242,6 @@ export interface StateActionTransitionSpec {
 	switch?: StateTransition | Identifier;
 	force_leaf?: StateTransition | Identifier;
 	revert?: boolean | StateTransition | Identifier;
-	payload?: unknown;
 }
 
 export interface StateActionTransitionCompositeSpec extends StateActionTransitionSpec {
@@ -284,52 +270,22 @@ export type StateActionSpec =
 	| StateActionTransitionCompositeSpec
 	| Identifier; // State identifier to transition to
 
-export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
+export interface StateEventDefinition<T extends Stateful & EventSubscriber = any> {
 	/**
-	 * The state ID to transition to. If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
+	 * The action that is executed when the event is handled. Returning a transition triggers a state change.
 	 */
-	to?: StateTransition | Identifier,
-
-	/**
-	 * The state ID to transition to.(as switch-type)  If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
-	 */
-	switch?: StateTransition | Identifier,
-
-	/**
-	 * The state ID to transition to (as revert-type). If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
-	 */
-	revert?: StateTransition | Identifier,
-
-	/**
-	 * The state ID to transition to (as force_leaf-type). If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
-	 */
-	force_leaf?: StateTransition | Identifier,
-
-	/**
-	 * The condition that must be met for the logic under "do" to be executed and/or transition to occur.
-	 */
-	if?: StateEventCondition<T> | StateActionCondition | string,
-
-	/**
-	 * The logic that is executed when the "if"-condition is *not* met. (Not implemented)
-	 */
-	// else?: StateEventCondition<T> | StateActionCondition | string,
-
-	/**
-	 * The action that is executed when the transition occurs.
-	 */
-	do?: StateEventHandler<T> | string | StateActionSpec,
+	do?: StateEventHandler<T> | string | StateActionSpec;
 
 	/**
 	 * (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
 	 */
-	scope?: EventScope,
+	scope?: EventScope;
 
 	/**
 	 * Optional event lane. Defaults inferred at build time.
 	 */
-	lane?: EventLane | 'any',
-};
+	lane?: EventLane | 'any';
+}
 
 /**
  * Represents a state guard that defines conditions for entering or exiting a state.

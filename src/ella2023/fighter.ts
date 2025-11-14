@@ -79,6 +79,9 @@ export abstract class Fighter extends SpriteObject {
 	public get isAIed(): boolean { return this._aied; }
 	public previousAttackType: AttackType | null = null;
 	public currentAttackType: AttackType | null = null;
+	public pendingWalkDirection?: Direction;
+	public pendingAttackPayload?: { attackType?: AttackType };
+	public pendingJumpPayload?: { direction?: Direction | null; directional?: boolean | string };
 	private get asc(): AbilitySystemComponent { return this.getUniqueComponent(AbilitySystemComponent); }
 
 	public get isAttacking(): boolean { return this.asc.hasGameplayTag('state.attacking'); }
@@ -427,16 +430,16 @@ export abstract class Fighter extends SpriteObject {
 		state.ticks += 1;
 	}
 
-	public handleStoerAnimationEnd(state?: State, payload?: EventPayload & { animation_name?: string }): void {
-		if (!state || !payload?.animation_name) return;
+	public handleStoerAnimationEnd(state?: State, event?: GameEvent<'animationEnd', { animation_name?: string }>): void {
+		if (!state || !event?.animation_name) return;
 		const data = state.data as StoerheidsdansStateData;
-		if (data.expectedAnimation !== payload.animation_name) return;
+		if (data.expectedAnimation !== event.animation_name) return;
 		data.expectedAnimation = null;
-		this.completeAttack(payload.animation_name as AttackType);
+		this.completeAttack(event.animation_name as AttackType);
 		state.ticks += 1;
 	}
 
-	public handleStoerTapeNext(state?: State, payload?: EventPayload & { tape_rewound: boolean }): void {
+	public handleStoerTapeNext(state?: State, payload?: { tape_rewound: boolean }): void {
 		if (!state || payload?.tape_rewound) return;
 		const nextAnimation = state.current_tape_value;
 		const data = state.data as StoerheidsdansStateData;

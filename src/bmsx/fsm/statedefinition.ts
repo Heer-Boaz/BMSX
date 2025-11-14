@@ -217,7 +217,14 @@ export class StateDefinition {
 	   * {
 		 *	'$click': 'idle',
 	   *	'game_end': 'prepare_for_end_of_the_world_I_mean_game',
-	 *		'$drag': { if: (state: sstate) => state.data.dragging, do: (state: sstate) => state.data.dragging = false, to: 'idle', scope: 'self' },
+	 *		'$drag': {
+	 *			scope: 'self',
+	 *			do(this: TargetClass, state: sstate) {
+	 *				if (!state.data.dragging) return;
+	 *				state.data.dragging = false;
+	 *				return 'idle';
+	 *			},
+	 *		},
 	   * }
 	 * ```
 	 */
@@ -410,10 +417,12 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 					if (typeof t === 'string') {
 						resolveStateDefPath(stateDef, t, statePath, description);
 					} else {
-						if (typeof t.to === 'string') resolveStateDefPath(stateDef, t.to, statePath, description);
-						if (typeof t.switch === 'string') resolveStateDefPath(stateDef, t.switch, statePath, description);
-						if (typeof t.do === 'string' && !t.do.includes('.handlers.') && !looksLikeStatePath(t.do)) {
-							console.warn(`Handler '${t.do}' referenced in '${statePath}' is missing`);
+						if (typeof t.do === 'string') {
+							if (looksLikeStatePath(t.do)) {
+								resolveStateDefPath(stateDef, t.do, statePath, description);
+							} else if (!t.do.includes('.handlers.')) {
+								console.warn(`Handler '${t.do}' referenced in '${statePath}' is missing`);
+							}
 						}
 					}
 				}
@@ -424,10 +433,10 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 			for (const check of stateDef.run_checks ?? []) {
 				if (typeof check === 'string') {
 					resolveStateDefPath(stateDef, check, statePath, 'run check (string)');
-				} else {
-					if (typeof check.to === 'string') resolveStateDefPath(stateDef, check.to, statePath, 'run check (to)');
-					if (typeof check.switch === 'string') resolveStateDefPath(stateDef, check.switch, statePath, 'run check (switch)');
-					if (typeof check.do === 'string' && !check.do.includes('.handlers.') && !looksLikeStatePath(check.do)) {
+				} else if (typeof check.do === 'string') {
+					if (looksLikeStatePath(check.do)) {
+						resolveStateDefPath(stateDef, check.do, statePath, 'run check (do)');
+					} else if (!check.do.includes('.handlers.')) {
 						console.warn(`Handler '${check.do}' referenced in '${statePath}' is missing`);
 					}
 				}
