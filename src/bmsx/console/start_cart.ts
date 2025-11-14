@@ -8,6 +8,7 @@ import {
 } from '../index';
 import { createBmsxConsoleModule } from './module';
 import { createLuaConsoleCartridge } from './lua';
+import { ConsoleFont } from './font';
 
 type ManifestViewport = { width?: number; height?: number };
 type ManifestWorldViewport = { x?: number; y?: number };
@@ -212,6 +213,8 @@ export async function startCart(args: BootArgs): Promise<void> {
 		platform,
 		viewHost,
 	});
+
+	$.view.default_font = new ConsoleFont();
 
 	const inputMapping = buildInputMapping(manifest);
 	$.setInputMap(playerIndex, {

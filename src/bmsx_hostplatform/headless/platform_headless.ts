@@ -25,6 +25,12 @@ import {
 	PlatformExitEvent,
 	PlatformHIDDevice,
 	PlatformHIDDeviceRequestOptions,
+	WindowEventHub,
+	HostWindowEventType,
+	HostEventListenerTarget,
+	HostEventOptions,
+	GameViewHostCapabilityId,
+	GameViewHostCapabilityMap,
 } from '../platform';
 import { HeadlessGameViewHost } from 'bmsx/render/headless/headless_view';
 
@@ -268,6 +274,23 @@ export interface HeadlessPlatformOptions {
 	rngSeed?: number;
 }
 
+class NoopWindowEventHub implements WindowEventHub {
+	subscribe(_type: HostWindowEventType, _listener: HostEventListenerTarget, _options?: HostEventOptions): () => void {
+		return () => void 0;
+	}
+}
+
+class HeadlessGameViewHostWithWindowEvents extends HeadlessGameViewHost {
+	private readonly windowEvents = new NoopWindowEventHub();
+
+	override getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] | null {
+		if (capability === 'window-events') {
+			return this.windowEvents as GameViewHostCapabilityMap[T];
+		}
+		return super.getCapability(capability);
+	}
+}
+
 export class HeadlessPlatformServices implements Platform {
 	readonly clock: Clock;
 	readonly frames: FrameLoop;
@@ -293,6 +316,6 @@ export class HeadlessPlatformServices implements Platform {
 		this.onscreenGamepad = new HeadlessOnscreenGamepadPlatform();
 		this.audio = new SilentAudioService();
 		this.rng = new SeededRng(options.rngSeed ?? Date.now());
-		this.gameviewHost = new HeadlessGameViewHost(new_vec2(256, 212));
+		this.gameviewHost = new HeadlessGameViewHostWithWindowEvents(new_vec2(256, 212));
 	}
 }

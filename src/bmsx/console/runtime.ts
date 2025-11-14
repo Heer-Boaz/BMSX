@@ -2945,6 +2945,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.serviceDefinitions.clear();
 		this.disposeAllAbilityDefinitions();
 		this.disposeLuaServices();
+		this.luaGenericAssetsExecuted.clear();
 		this.handledLuaErrors = new WeakSet<object>();
 		setLuaTableCaseInsensitiveKeys(this.caseInsensitiveLua);
 	}
