@@ -51,11 +51,13 @@ export type id2partial_sdef = Record<Identifier, StateMachineBlueprint>;
 // export type StatePathSpecial = '#this' | '#parent' | '#root';
 // export type StatePath = `${StatePathSpecial}.${StatePathPart}` | `${StatePathPart}`;
 
+export type transition_target = Identifier;
+
 export interface StateEventHandler<T extends Stateful = any, E extends GameEvent = GameEvent> {
-	(state: State<T>, event: E): StateTransition | Identifier | void;
+	(state: State<T>, event: E): transition_target | void;
 }
 export interface StateExitHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P): void; }
-export interface StateNextHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P & { tape_rewound: boolean }): StateTransition | Identifier | void; }
+export interface StateNextHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P & { tape_rewound: boolean }): transition_target | void; }
 
 export type listed_sdef_event = { name: string, scope: EventScope, lane?: EventLane | 'any' };
 
@@ -91,31 +93,6 @@ export type CompiledMarker = {
 export interface CompiledMarkerCache {
 	byFrame: Record<number, CompiledMarker[]>;
 }
-
-/**
- * Represents a state transition.
- */
-export type StateTransition = {
-	/**
-	 * The next state to transition to.
-	 */
-	path: Identifier;
-
-	/**
-	 * The transition type: 'to' or 'switch', where 'to' is the default.
-	 */
-	transition_type?: TransitionType;
-
-	/**
-	 * If set to `true`, the state will transition to the same state, even if the state is already the current state.
-	 */
-	force_transition_to_same_state?: boolean;
-};
-
-/**
- * Represents a state transition with a type (either 'to' or 'switch').
- */
-export type StateTransitionWithType = StateTransition & { transition_type: TransitionType };
 
 /**
  * Represents the definition of a state event in a state machine.
@@ -237,17 +214,6 @@ export interface StateActionDispatchEventSpec {
 	};
 }
 
-export interface StateActionTransitionSpec {
-	to?: StateTransition | Identifier;
-	switch?: StateTransition | Identifier;
-	force_leaf?: StateTransition | Identifier;
-	revert?: boolean | StateTransition | Identifier;
-}
-
-export interface StateActionTransitionCompositeSpec extends StateActionTransitionSpec {
-	do?: StateActionSpec | StateActionSpec[];
-}
-
 export type StateActionSpec =
 	| StateActionSetTicksSpec
 	| { emit: StateActionEmitSpec }
@@ -266,8 +232,6 @@ export type StateActionSpec =
 	| StateActionInvokeSpec
 	| StateActionConsumeActionSpec
 	| StateActionSubmitCommandSpec
-	| StateActionTransitionSpec
-	| StateActionTransitionCompositeSpec
 	| Identifier; // State identifier to transition to
 
 export interface StateEventDefinition<T extends Stateful & EventSubscriber = any> {
@@ -314,15 +278,6 @@ export interface StateGuard<T extends Stateful & EventSubscriber = any> {
  * @template T - The type of the stateful object.
  */
 export type TickCheckDefinition<T extends Stateful & EventSubscriber = any> = Omit<StateEventDefinition<T>, 'scope'>;
-
-/**
- * Represents the type of a state transition (either 'to', 'switch', 'revert', or 'force_leaf').
- * - 'to': The default transition type, which transitions the whole state machine tree to the new state.
- * - 'switch': A transition type that switches only the lowest level state to the new state.
- * - 'revert': A transition type that reverts the state machine to the previous state.
- * - 'force_leaf': A transition type that doesn't re-enter any of the parents, but does force the leaf state to be re-entered, but only if any of the parent states are not already active.
- */
-export type TransitionType = 'to' | 'switch' | 'revert' | 'force_leaf';
 
 /**
  * Represents a tape used in the BFSM.
