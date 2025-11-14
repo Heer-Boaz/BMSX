@@ -165,16 +165,40 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 		},
 		airborne: {
 			states: {
-				_jump: {
-					automatic_reset_mode: 'tree',
-					entering_state(this: Fighter, state: State) {
-						this.abilitySystem.addTags('state.airborne');
-						this.abilitySystem.removeTags('state.grounded', 'state.airborne.attackUsed');
-						const payload = this.pendingJumpPayload;
-						this.pendingJumpPayload = undefined;
-						this.startJump(state, payload);
-						$.emitPresentation('animate_jump', this);
-					},
+					_jump: {
+						entering_state(this: Fighter, state: State) {
+							state.rewind_tape();
+							const childStates = state.states;
+							if (!childStates) {
+								throw new Error('[FighterFSMs] Jump state has no substates.');
+							}
+							const ascending = childStates._ascending;
+							if (!ascending) {
+								throw new Error('[FighterFSMs] Jump state missing _ascending substate.');
+							}
+							if (state.currentid !== '_ascending') {
+								state.transition_to('_ascending');
+							}
+							ascending.rewind_tape();
+							const flyingKick = childStates.flyingkick;
+							if (!flyingKick) {
+								throw new Error('[FighterFSMs] Jump state missing flyingkick substate.');
+							}
+							flyingKick.rewind_tape();
+							flyingKick.transition_to('_ready');
+							const flyingKickStates = flyingKick.states;
+							if (!flyingKickStates || !flyingKickStates._ready) {
+								throw new Error('[FighterFSMs] Flying kick state missing _ready substate.');
+							}
+							flyingKickStates._ready.rewind_tape();
+
+							this.abilitySystem.addTags('state.airborne');
+							this.abilitySystem.removeTags('state.grounded', 'state.airborne.attackUsed');
+							const payload = this.pendingJumpPayload;
+							this.pendingJumpPayload = undefined;
+							this.startJump(state, payload);
+							$.emitPresentation('animate_jump', this);
+						},
 					exiting_state(this: Fighter, _state: State) {
 						this.abilitySystem.removeTags('state.airborne', 'state.airborne.attackUsed');
 						this.abilitySystem.addTags('state.grounded');
@@ -319,7 +343,14 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 			},
 		},
 		walk: {
-			automatic_reset_mode: 'subtree',
+			entering_state(this: Fighter, state: State) {
+				const children = state.states;
+				if (!children || !children._walk1) {
+					throw new Error('[FighterFSMs] Walk animation state missing _walk1 substate.');
+				}
+				state.transition_to('_walk1');
+				children._walk1.rewind_tape();
+			},
 			states: {
 				_walk1: {
 					ticks2advance_tape: 8,

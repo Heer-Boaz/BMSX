@@ -273,8 +273,7 @@ class EilaOldAndUnused extends Fighter {
 						this.ducking = false;
 					},
 				},
-				jump: {
-					automatic_reset_mode: 'tree',
+					jump: {
 					entering_state(this: EilaOldAndUnused, _state: State, payload: EventPayload & { directional?: boolean } = { directional: false }): StateTransition {
 						this.sc.dispatch_event('animate_jump', this);
 						this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = true;

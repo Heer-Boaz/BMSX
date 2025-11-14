@@ -281,7 +281,6 @@ export class quiz extends WorldObject {
 
 				vraag: {
 					tape_data: Array.from({ length: quizItems.length }, (_, i) => i),
-					automatic_reset_mode: 'none',
 					entering_state(this: quiz, state: State) {
 						this.presentQuestion(state);
 					},

@@ -83,19 +83,6 @@ export class StateDefinition {
 	public input_eval?: 'first' | 'all';
 
 	/**
-	 * Specifies the behavior for automatic state resetting.
-	 *
-	 * @remarks
-	 * When set to 'state', the state will be automatically reset upon entry.
-	 * If set to 'tree', the state and all its states will be reset.
-	 * Choosing 'subtree' will reset only the states, while 'none' disables automatic resetting.
-	 * The default value is 'state'.
-	 *
-	 * @type {'state' | 'tree' | 'subtree' | 'none'}
-	 */
-	public automatic_reset_mode: 'state' | 'tree' | 'subtree' | 'none'; // Automagically reset the state when entered (and optionally also its states) (defaults to 'state')
-
-	/**
 	 * Number of times the tape should be repeated.
 	 * See {@link repeat_tape} for more information.
 	 */
@@ -147,7 +134,6 @@ export class StateDefinition {
 		this.tape_playback_mode ??= 'once';
 		this.repetitions = (this.tape_data ? (this.repetitions ?? 1) : 0);
 		this.enable_tape_autotick = this.enable_tape_autotick ?? (this.ticks2advance_tape !== 0 ? true : false); // If ticks2advance_tape is 0, auto_tick is false. Otherwise, auto_tick is true (unless it was already defined)
-		this.automatic_reset_mode = this.automatic_reset_mode ?? 'state'; // Unless already defined, auto_reset is true
 		this.data ??= {}; // Unless already defined, data is an empty object
 		this.root = root ?? this; // The root state machine is either the provided root or this state machine
 		this.parent = parent; // The parent state machine is either the provided parent or null (for root machines)

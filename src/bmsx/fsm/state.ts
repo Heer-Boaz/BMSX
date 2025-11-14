@@ -1451,12 +1451,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			const curDef = this.current_state_definition;
 			if (curDef.is_concurrent) throw new Error(`Cannot transition to parallel state '${state_id}'!`);
 
-			switch (curDef.automatic_reset_mode) {
-				case 'state': cur.reset(false); break;
-				case 'tree': cur.reset(true); break;
-				case 'subtree': cur.resetSubmachine(true); break;
-			}
-
 			const enterHandler = curDef.entering_state;
 			const next = typeof enterHandler === 'function'
 				? this.runWithTransitionContext(
@@ -1587,21 +1581,22 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		const doHandler = action.do;
 		if (!doHandler) return false;
 
-		if (typeof doHandler === 'string') {
-			if (isNoOpString(doHandler)) return true;
-			this.appendActionEvaluation(`do:string=${doHandler}`);
-			return true;
+		switch (typeof doHandler) {
+			case 'string':
+				if (isNoOpString(doHandler)) return true;
+				this.appendActionEvaluation(`do:string=${doHandler}`);
+				return true;
+			case 'function':
+				const handlerEvent = (event ?? EMPTY_GAME_EVENT) as GameEvent;
+				const next = doHandler.call(this.target, this as State<T>, handlerEvent) as transition_target | void;
+				this.appendActionEvaluation(`do:${doHandler.name || '<anonymous>'}${next ? `->${next}` : ''}`);
+				if (!next) return true;
+				if (isNoOpString(next)) return true;
+				this.transition_to(next);
+				return true;
+			default:
+				return false;
 		}
-
-		if (typeof doHandler !== 'function') return false;
-
-		const handlerEvent = (event ?? EMPTY_GAME_EVENT) as GameEvent;
-		const next = doHandler.call(this.target, this as State<T>, handlerEvent) as transition_target | void;
-		this.appendActionEvaluation(`do:${doHandler.name || '<anonymous>'}${next ? `->${next}` : ''}`);
-		if (!next) return true;
-		if (isNoOpString(next)) return true;
-		this.transition_to(next);
-		return true;
 	}
 
 	/**
