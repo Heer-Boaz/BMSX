@@ -1214,16 +1214,11 @@ See `src/bmsx/fsm.ts` and `src/bmsx/fsmtypes.ts` for more details and advanced u
 
 ### Transition Handler Options
 
-Each event or input handler in a state definition can use a rich object to control transitions and actions. The following properties are supported:
+Each event or input handler in a state definition can return the identifier of the next state or perform transitions inside its `do` function. Handlers support:
 
-- **`do`**: A function to execute when the event or input is triggered. It receives the state (and optionally the game object as `this`) and any event arguments. It can return a transition object or state ID to trigger a transition.
-- **`to`**: The target state to transition to (string or transition object). This is the most common way to specify a transition.
-- **`switch`**: Like `to`, but only switches the lowest-level state (see `fsmtypes.ts` for details).
-- **`if`**: A condition function. The transition/action only occurs if this returns `true`.
+- **`do`**: A function to execute when the event or input is triggered. It receives the current state (and optionally the game object as `this`) plus any event arguments. Returning a state ID triggers a transition. You can also call `state.transition_to(path)` directly if you need to perform additional logic (like rewinding tapes) before switching.
+- **`if`**: A condition function. The transition only occurs if this returns `true`.
 - **`scope`**: Explicitly sets the event scope (`'self'` or `'all'`). Usually inferred from the event name, but can be set manually.
-- **`transition_type`**: `'to'` (default) or `'switch'`. Controls the type of transition (see above).
-- **`force_transition_to_same_state`**: If `true`, allows transitioning to the same state even if already active (useful for re-entering a state).
-- **`args`**: Arguments to pass to the target state.
 
 You can use these options in any `on`, `on_input`, or `run_checks` handler. Example:
 
@@ -1231,19 +1226,23 @@ You can use these options in any `on`, `on_input`, or `run_checks` handler. Exam
 on: {
   '$customEvent': {
     if(this: MyObj, state) { return this.isReady; },
-    do(this: MyObj, state, ...args) { this.prepare(); },
-    to: { state_id: 'ready', args: { foo: 1 }, force_transition_to_same_state: true },
+    do(this: MyObj, state, ...args) {
+      this.prepare();
+      return 'ready';
+    },
     scope: 'self',
   },
   'globalEvent': {
-    do(this: MyObj, state) { this.cleanup(); },
-    switch: 'idle',
+    do(this: MyObj, state) {
+      this.cleanup();
+      return 'idle';
+    },
   },
 },
 run_checks: [
   {
     if(state) { return state.data.shouldEnd; },
-    to: 'end',
+    do(_this: MyObj) { return 'end'; },
   },
 ],
 ```
@@ -1370,32 +1369,32 @@ public static bouw(): StateMachineBlueprint {
                   return 'endstate'; // Transition to end state when the tape is exhausted
                },
                on_input: {
-                  'a[j!c]': {
-                        do(this: quiz) {
-                           $.consumeAction(1, 'a');
-                           this.currentAnswerOptionChosen = 'a';
-                           return { state_id: 'antwoord', args: this.currentAnswerOptionChosen };
-                        },
-                  },
-                  'b[j!c]': {
-                        do(this: quiz) {
-                           $.consumeAction(1, 'b');
-                           this.currentAnswerOptionChosen = 'b';
-                           return { state_id: 'antwoord', args: this.currentAnswerOptionChosen };
-                        },
-                  },
-                  'left[j!c]': {
-                        do(this: quiz) {
-                           $.consumeAction(1, 'left'); // Debugging shortcut to go back to the previous question
-                           return { state_id: 'vraag', args: 'prev', force_transition_to_same_state: true, transition_type: 'to' };
-                        },
-                  },
-                  'right[j!c]': {
-                        do(this: quiz) {
-                           $.consumeAction(1, 'right'); // Debugging shortcut to go to the next question
-                           return { state_id: 'vraag', args: 'next', force_transition_to_same_state: true, transition_type: 'to' };
-                        },
-                  },
+              'a[j!c]': {
+                    do(this: quiz): string {
+                       $.consumeAction(1, 'a');
+                       this.currentAnswerOptionChosen = 'a';
+                       return 'antwoord';
+                    },
+              },
+              'b[j!c]': {
+                    do(this: quiz): string {
+                       $.consumeAction(1, 'b');
+                       this.currentAnswerOptionChosen = 'b';
+                       return 'antwoord';
+                    },
+              },
+              'left[j!c]': {
+                    do(this: quiz, state: State) {
+                       $.consumeAction(1, 'left'); // Debugging shortcut to go back to the previous question
+                       this.presentQuestion(state, 'prev');
+                    },
+              },
+              'right[j!c]': {
+                    do(this: quiz, state: State) {
+                       $.consumeAction(1, 'right'); // Debugging shortcut to go to the next question
+                       this.presentQuestion(state, 'next');
+                    },
+              },
                },
             },
 
@@ -1555,29 +1554,29 @@ The `InputStateManager` tracks a short, rolling history of button events for eac
 	  ```typescript
             on_input: {
                'a[j]': {
-                     do(this: quiz) {
+                     do(this: quiz): string {
                         $.consumeAction(1, 'a');
                         this.currentAnswerOptionChosen = 'a';
-                        return { state_id: 'antwoord', args: this.currentAnswerOptionChosen };
+                        return 'antwoord';
                      },
                },
                'b[j]': {
-                     do(this: quiz) {
+                     do(this: quiz): string {
                         $.consumeAction(1, 'b');
                         this.currentAnswerOptionChosen = 'b';
-                        return { state_id: 'antwoord', args: this.currentAnswerOptionChosen };
+                        return 'antwoord';
                      },
                },
                'left[j]': {
-                     do(this: quiz) {
+                     do(this: quiz, state: State) {
                         $.consumeAction(1, 'left');
-                        return { state_id: 'vraag', args: 'prev', force_transition_to_same_state: true, transition_type: 'to' };
+                        this.presentQuestion(state, 'prev');
                      },
                },
                'right[j]': {
-                     do(this: quiz) {
+                     do(this: quiz, state: State) {
                         $.consumeAction(1, 'right');
-                        return { state_id: 'vraag', args: 'next', force_transition_to_same_state: true, transition_type: 'to' };
+                        this.presentQuestion(state, 'next');
                      },
                },
             },

@@ -62,7 +62,6 @@ export class quiz extends WorldObject {
 	 * Represents the currently chosen answer option.
 	 */
 	currentAnswerOptionChosen: 'a' | 'b' = 'a';
-	public pendingQuestionNav?: 'prev' | 'next';
 
 	/**
 	 * An array of strings representing the full text lines.
@@ -217,6 +216,28 @@ export class quiz extends WorldObject {
 		sint.sc.dispatch_event(event);
 	}
 
+	private presentQuestion(state: State, nav?: 'prev' | 'next'): void {
+		if (nav === 'prev') {
+			state.setHeadNoSideEffect(state.tapehead_position - 2);
+			if (state.tapehead_position < 0) {
+				state.rewind_tape();
+			}
+		}
+		++state.ticks;
+		this.switchSintToQuestion();
+
+		const idx = state.current_tape_value;
+		this.currentQuestionIndex = idx;
+		const currentQ = quizItems[idx];
+		if (currentQ.imgid) {
+			$.getWorldObject<sint>('sint').setimg(currentQ.imgid);
+		}
+		this.setTextFromLines([
+			`Vraag ${idx + 1}/${quizItems.length}: ${currentQ.question}`,
+			...currentQ.options
+		]);
+	}
+
 	@build_fsm()
 	/**
 	 * Constructs and returns a StateMachineBlueprint for the quiz.
@@ -262,29 +283,7 @@ export class quiz extends WorldObject {
 					tape_data: Array.from({ length: quizItems.length }, (_, i) => i),
 					automatic_reset_mode: 'none',
 					entering_state(this: quiz, state: State) {
-						const nav = this.pendingQuestionNav;
-						this.pendingQuestionNav = undefined;
-						if (nav === 'prev') {
-							state.setHeadNoSideEffect(state.tapehead_position - 2);
-							if (state.tapehead_position < 0) {
-								state.rewind_tape();
-							}
-						}
-						else if (nav === 'next') {
-							// Do nothing
-						}
-						++state.ticks;
-						this.switchSintToQuestion();
-
-						const idx = state.current_tape_value;
-						const currentQ = quizItems[idx];
-						if (currentQ.imgid) {
-							$.getWorldObject<sint>('sint').setimg(currentQ.imgid);
-						}
-						this.setTextFromLines([
-							`Vraag ${idx + 1}/${quizItems.length}: ${currentQ.question}`,
-							...currentQ.options
-						]);
+						this.presentQuestion(state);
 					},
 					tick(this: quiz, _state: State) {
 						this.typeNextCharacter();
@@ -297,31 +296,29 @@ export class quiz extends WorldObject {
 					},
 					input_event_handlers: {
 						'a[j!c]': { // Handle answer option A
-							do(this: quiz) {
+							do(this: quiz): string {
 								$.consumeAction(1, 'a');
 								this.currentAnswerOptionChosen = 'a';
-								return { path: '/antwoord' };
+								return '/antwoord';
 							},
 						},
 						'b[j!c]': { // Handle answer option B
-							do(this: quiz) {
+							do(this: quiz): string {
 								$.consumeAction(1, 'b');
 								this.currentAnswerOptionChosen = 'b';
-								return { path: '/antwoord' };
+								return '/antwoord';
 							},
 						},
 						'left[j!c]': { // Handle previous question on "left"
-							do(this: quiz) {
+							do(this: quiz, state: State) {
 								$.consumeAction(1, 'left');
-								this.pendingQuestionNav = 'prev';
-								return { path: '/vraag', force_transition_to_same_state: true, transition_type: 'to' };
+								this.presentQuestion(state, 'prev');
 							},
 						},
 						'right[j!c]': { // Handle next question on "right"
-							do(this: quiz) {
+							do(this: quiz, state: State) {
 								$.consumeAction(1, 'right');
-								this.pendingQuestionNav = 'next';
-								return { path: '/vraag', force_transition_to_same_state: true, transition_type: 'to' };
+								this.presentQuestion(state, 'next');
 							},
 						},
 					},

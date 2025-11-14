@@ -1,6 +1,5 @@
 import { $, build_fsm, State, type StateMachineBlueprint, type GameEvent } from 'bmsx';
 import type { Direction } from 'bmsx';
-import type { StateTransition } from 'bmsx/fsm/fsmtypes';
 import type { Fighter, AttackType } from './fighter';
 
 class FighterFSMs {
@@ -46,37 +45,37 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 	// input_eval: 'first',
 	on: {
 		'mode.locomotion.idle': {
-			do(this: Fighter): StateTransition | void {
+			do(this: Fighter): string | void {
 				if (isLocomotionLocked(this)) return;
-				return { path: GROUND_IDLE_STATE_PATH, transition_type: 'switch' };
+				return GROUND_IDLE_STATE_PATH;
 			},
 		},
 		'mode.locomotion.walk': {
-			do(this: Fighter, _state: State, event: WalkEvent): StateTransition | void {
+			do(this: Fighter, _state: State, event: WalkEvent): string | void {
 				if (isLocomotionLocked(this)) return;
 				const resolved = resolveWalkPayload(this, event);
 				this.pendingWalkDirection = resolved.direction;
-				return { path: GROUND_WALK_STATE_PATH, transition_type: 'switch' };
+				return GROUND_WALK_STATE_PATH;
 			},
 		},
 		'mode.action.attack': {
-			do(this: Fighter, _state: State, event: AttackEvent): StateTransition {
+			do(this: Fighter, _state: State, event: AttackEvent): string {
 				const resolved = resolveAttackPayload(event);
 				this.pendingAttackPayload = resolved;
 				if (resolved.attackType === 'flyingkick') {
 					const asc = this.abilitySystem;
 					if (asc.hasGameplayTag('state.airborne') && !asc.hasGameplayTag('state.airborne.attackUsed')) {
-						return { path: FLYING_KICK_STATE_PATH, transition_type: 'switch' };
+						return FLYING_KICK_STATE_PATH;
 					}
 				}
-				return { path: GROUND_ATTACK_STATE_PATH, transition_type: 'switch' };
+				return GROUND_ATTACK_STATE_PATH;
 			},
 		},
 		'mode.control.duck': GROUND_DUCK_STATE_PATH,
 		'mode.control.jump': {
-			do(this: Fighter, _state: State, event: JumpEvent): StateTransition {
+			do(this: Fighter, _state: State, event: JumpEvent): string {
 				this.pendingJumpPayload = { direction: event.direction ?? null, directional: event.directional };
-				return { path: JUMP_STATE_PATH };
+				return JUMP_STATE_PATH;
 			},
 		},
 		'mode.control.stoerheidsdans': '/stoerheidsdans',
@@ -143,14 +142,14 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 					},
 					on: {
 						animationEnd: {
-							do(this: Fighter, _state: State, event: AnimationEvent): StateTransition | void {
+							do(this: Fighter, _state: State, event: AnimationEvent): string | void {
 								const animation = event.animation_name;
 								if (!animation) return undefined;
 								if (animation !== this.currentAttackType) return undefined;
 								if (animation === 'duckkick') {
-									return { path: GROUND_DUCK_STATE_PATH, transition_type: 'switch' };
+									return GROUND_DUCK_STATE_PATH;
 								}
-								return { path: GROUND_IDLE_STATE_PATH, transition_type: 'switch' };
+								return GROUND_IDLE_STATE_PATH;
 							},
 						},
 					},
@@ -210,10 +209,10 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 									},
 									on: {
 										animationEnd: {
-											do(this: Fighter, _state: State, event: AnimationEvent): StateTransition | void {
+											do(this: Fighter, _state: State, event: AnimationEvent): string | void {
 												const animation = event.animation_name;
 												if (animation !== 'flyingkick') return;
-												return { path: '../_ready' };
+												return '../_ready';
 											},
 										},
 									},
@@ -255,8 +254,8 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 			tape_next(this: Fighter, state: State, payload?: { tape_rewound: boolean }) {
 				this.handleStoerTapeNext(state, payload);
 			},
-			tape_end(this: Fighter, state: State): StateTransition {
-				return { path: this.completeStoerheidsdans(state) };
+			tape_end(this: Fighter, state: State): string {
+				return this.completeStoerheidsdans(state);
 			},
 		},
 		nagenieten: {
@@ -300,8 +299,9 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 		'$animate_idle': '_idle',
 		'$animate_humiliated': 'humiliated',
 		'$animate_walk': {
-			do(): StateTransition {
-				return { path: 'walk/_walk1', transition_type: 'force_leaf' };
+			do(this: Fighter, state: State): string {
+				restartWalkAnimation(state);
+				return 'walk/_walk1';
 			},
 		},
 		'$animate_punch': 'punch',
@@ -423,6 +423,13 @@ function setSpriteFrame(self: Fighter, frameKey: string): void {
 		throw new Error(`[FighterFSMs] Fighter '${self.id}' is missing sprite '${frameKey}'.`);
 	}
 	self.imgid = sprite;
+}
+
+function restartWalkAnimation(state: State): void {
+	state.transition_to('walk/_walk1');
+	const walkState = state.current!;
+	const walkLeaf = walkState.current!;
+	walkLeaf.rewind_tape();
 }
 
 function createAttackAnimationState(name: AttackType, weaponClass: 'light' | 'heavy'): StateMachineBlueprint {
