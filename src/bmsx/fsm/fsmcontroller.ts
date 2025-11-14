@@ -300,7 +300,7 @@ export class StateMachineController {
 
 		// Only switch the state in the specified machine, without changing the current machine
 		const targetPath = statePath ?? machineid;
-		machine.transition_switch_path(targetPath);
+		machine.transition_to_path(targetPath);
 	}
 
 	/**
