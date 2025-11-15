@@ -519,7 +519,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.setEditorOverlayResolution(this.overlayResolutionMode);
 		this.subscribeGlobalDebuggerHotkeys();
 		this.resetFrameTiming();
-		this.boot('constructor');
+		this.boot();
 		void this.prefetchLuaSourceFromFilesystem();
 	}
 
@@ -738,72 +738,43 @@ export class BmsxConsoleRuntime extends Service {
 		return 'continue';
 	}
 
+	private resumeDebugger(command: LuaDebuggerResumeCommand, stepOut = false): void {
+		const suspension = this.requireLuaDebuggerSuspension(command);
+		let options: { stepDepthOverride?: number } | undefined;
+		if (stepOut) {
+			const targetDepth = Math.max(0, suspension.callStack.length - 1);
+			options = { stepDepthOverride: targetDepth };
+		}
+		this.resumeLuaDebugger(command, options);
+	}
+
 	public setLuaBreakpoints(breakpoints: ReadonlyMap<string, ReadonlySet<number>>): void {
-		const controller = breakpoints.size > 0 ? this.ensureLuaDebuggerController() : this.luaDebuggerController;
-		if (!controller) {
-			return;
-		}
-		if (breakpoints.size === 0) {
-			controller.clearBreakpoints();
-			return;
-		}
+		const controller = this.ensureLuaDebuggerController();
 		controller.setBreakpoints(breakpoints);
 	}
 
 	public continueLuaDebugger(): void {
-		if (!this.luaDebuggerSuspension) {
-			console.warn('[LuaDebugger] Continue requested without an active suspension.');
-			return;
-		}
-		this.resumeLuaDebugger('continue');
+		this.resumeDebugger('continue');
 	}
 
 	public stepIntoLuaDebugger(): void {
-		if (!this.luaDebuggerSuspension) {
-			console.warn('[LuaDebugger] Step-into requested without an active suspension.');
-			return;
-		}
-		this.resumeLuaDebugger('stepInto');
+		this.resumeDebugger('stepInto');
 	}
 
 	public stepOverLuaDebugger(): void {
-		if (!this.luaDebuggerSuspension) {
-			console.warn('[LuaDebugger] Step-over requested without an active suspension.');
-			return;
-		}
-		this.resumeLuaDebugger('stepOver');
+		this.resumeDebugger('stepOver');
 	}
 
 	public stepOutLuaDebugger(): void {
-		if (!this.luaDebuggerSuspension) {
-			console.warn('[LuaDebugger] Step-out requested without an active suspension.');
-			return;
-		}
-		const suspension = this.requireLuaDebuggerSuspension('stepOut');
-		const targetDepth = Math.max(0, suspension.callStack.length - 1);
-		this.resumeLuaDebugger('stepOut', { stepDepthOverride: targetDepth });
+		this.resumeDebugger('stepOut', true);
 	}
 
 	public ignoreLuaException(): void {
-		if (!this.luaDebuggerSuspension) {
-			console.warn('[LuaDebugger] Ignore-exception requested without an active suspension.');
-			return;
-		}
-		this.resumeLuaDebugger('ignoreException');
+		this.resumeDebugger('ignoreException');
 	}
 
 	public stepOutLuaException(): void {
-		if (!this.luaDebuggerSuspension) {
-			console.warn('[LuaDebugger] Exception step-out requested without an active suspension.');
-			return;
-		}
-		const suspension = this.requireLuaDebuggerSuspension('stepOutException');
-		const targetDepth = Math.max(0, suspension.callStack.length - 1);
-		this.resumeLuaDebugger('stepOutException', { stepDepthOverride: targetDepth });
-	}
-
-	public getLuaDebuggerSuspension(): LuaDebuggerPauseSignal | null {
-		return this.luaDebuggerSuspension;
+		this.resumeDebugger('stepOutException', true);
 	}
 
 	private requireLuaDebuggerSuspension(context: string): LuaDebuggerPauseSignal {
@@ -1536,16 +1507,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	public boot(reason?: string): void {
-		const bootReason = reason ?? 'unspecified';
-		console.info(`[BmsxConsoleRuntime] Boot: ${bootReason}`);
-		// Guard against unintended reboots while in a failed Lua runtime state.
-		// Explicit callers should provide a reason. Unspecified reboots are ignored
-		// when the Lua VM has failed, to preserve editor resume semantics.
-		if (this.luaRuntimeFailed && bootReason === 'unspecified') {
-			console.warn('[BmsxConsoleRuntime] Ignoring boot without reason during Lua failure state.');
-			return;
-		}
+	public boot(): void {
 		this.luaDebuggerSuspension = null;
 		this.debuggerHaltsGame = false;
 		this.setDebuggerPaused(false);
@@ -1558,18 +1520,15 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaChunkEnvironmentsByChunkName.clear();
 		this.luaGenericAssetsExecuted.clear();
 		if (this.editor) {
-			// Clear overlays across all code tabs to ensure no stale error UI persists
-			// when the editor had focused a specific chunk for the fault.
-			(this.editor as any).clearAllRuntimeErrorOverlays?.() ?? this.editor.clearRuntimeErrorOverlay();
+			this.editor.clearRuntimeErrorOverlay();
 		}
 		if (this.hasBooted) {
 			this.resetWorldState();
 		}
 		this.api.cartdata(this.cart.meta.persistentId);
-		if (this.hasLuaProgram()) {
+		if (this.luaProgram) {
 			this.bootLuaProgram(true);
-		}
-		else {
+		} else {
 			this.resetLuaInteroperabilityState();
 			this.fsmLuaInterpreter = null;
 			const fsmInterpreter = this.ensureFsmLuaInterpreter();
@@ -1707,29 +1666,25 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		try {
-			if (this.hasLuaProgram()) {
+			if (this.luaProgram) {
 				if (!state.haltGame && this.luaUpdateFunction !== null) {
 					this.invokeLuaFunction(this.luaUpdateFunction, [state.deltaSeconds]);
 				}
 				this.tickLuaServices(state.deltaForUpdate);
-			}
-			else {
+			} else {
 				if (!state.haltGame) {
 					this.cart.update(this.api, state.deltaSeconds);
 				}
 				this.tickLuaServices(state.deltaForUpdate);
 			}
-		}
-		catch (error) {
+		} catch (error) {
 			if (isLuaDebuggerPauseSignal(error)) {
 				this.onLuaDebuggerPause(error);
-			}
-			else {
+			} else {
 				state.luaFaulted = true;
 				this.handleLuaError(error);
 			}
-		}
-		finally {
+		} finally {
 			state.updateExecuted = true;
 		}
 	}
@@ -1741,9 +1696,6 @@ export class BmsxConsoleRuntime extends Service {
 		const state = this.ensureFrameState();
 		this.ensureConsoleEvaluation(state);
 		this.ensureEditorEvaluation(state);
-		if (!state) {
-			return;
-		}
 		try {
 			const editor = this.editor;
 			const editorActive = state.editorActive;
@@ -1768,17 +1720,15 @@ export class BmsxConsoleRuntime extends Service {
 				this.finalizeFrame(editorActive);
 				return;
 			}
-			if (this.hasLuaProgram()) {
+			if (this.luaProgram) {
 				try {
 					if (this.luaDrawFunction !== null) {
 						this.invokeLuaFunction(this.luaDrawFunction, []);
 					}
-				}
-				catch (error) {
+				} catch (error) {
 					if (isLuaDebuggerPauseSignal(error)) {
 						this.onLuaDebuggerPause(error);
-					}
-					else {
+					} else {
 						this.handleLuaError(error);
 					}
 					if (editorActive && editor) {
@@ -1789,13 +1739,11 @@ export class BmsxConsoleRuntime extends Service {
 					this.finalizeFrame(editorActive);
 					return;
 				}
-			}
-			else {
+			} else {
 				this.cart.draw(this.api);
 			}
 			this.finalizeFrame(editorActive);
-		}
-		finally {
+		} finally {
 			this.currentFrameState = null;
 		}
 	}
@@ -1873,12 +1821,8 @@ export class BmsxConsoleRuntime extends Service {
 		this.pendingLuaWarnings = [];
 	}
 
-	private hasLuaProgram(): boolean {
-		return this.luaProgram !== null;
-	}
-
 	private initializeEditor(): void {
-		if (!this.hasLuaProgram()) {
+		if (!this.luaProgram) {
 			if (this.editor) {
 				this.editor.shutdown();
 			}
@@ -1924,7 +1868,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public ensureEditorActive(): void {
-		if (!this.hasLuaProgram()) {
+		if (!this.luaProgram) {
 			throw new Error('[BmsxConsoleRuntime] Cannot activate console editor when no Lua program is active.');
 		}
 		const editor = this.editor;
@@ -1941,9 +1885,7 @@ export class BmsxConsoleRuntime extends Service {
 	public override getState(): BmsxConsoleState | undefined {
 		const storageState = this.storage.dump();
 		const luaSnapshot = this.captureLuaSnapshot();
-		const cartState = (!this.hasLuaProgram() && typeof this.cart.captureState === 'function')
-			? this.cart.captureState(this.api)
-			: undefined;
+		const cartState = this.luaProgram ? undefined : this.cart.captureState(this.api);
 		const fallbackLuaState = luaSnapshot === undefined ? this.captureFallbackLuaState() : null;
 		const state: BmsxConsoleState = {
 			frameCounter: this.frameCounter,
@@ -1985,7 +1927,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.luaProgramSourceOverride = null;
 			this.luaChunkName = null;
 		}
-		this.boot('setState:resetFresh');
+		this.boot();
 	}
 
 	private restoreFromStateSnapshot(snapshot: BmsxConsoleState): void {
@@ -2010,11 +1952,11 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.frameCounter = savedFrameCounter;
 
-		if (this.hasLuaProgram()) {
+		if (this.luaProgram) {
 			const shouldRunInit = this.shouldRunInitForSnapshot(snapshot);
 			this.reinitializeLuaProgramFromSnapshot(snapshot, { runInit: shouldRunInit, hotReload: false });
 			this.frameCounter = savedFrameCounter;
-		} else if (snapshot.cartState !== undefined && typeof this.cart.restoreState === 'function') {
+		} else if (snapshot.cartState !== undefined) {
 			this.cart.restoreState(this.api, snapshot.cartState);
 		}
 
@@ -2361,7 +2303,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private redrawAfterStateRestore(): void {
-		if (this.hasLuaProgram()) {
+		if (this.luaProgram) {
 			if (this.luaRuntimeFailed) {
 				return;
 			}
@@ -3067,7 +3009,7 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		let interpreter: LuaInterpreter | null = null;
-		if (this.hasLuaProgram()) {
+		if (this.luaProgram) {
 			interpreter = this.luaInterpreter;
 			if (!interpreter) {
 				// Interpreter will be reinitialised later (for example during resume); defer processing.
@@ -3096,7 +3038,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public async saveLuaProgram(source: string): Promise<void> {
-		if (!this.hasLuaProgram()) {
+		if (!this.luaProgram) {
 			throw new Error('[BmsxConsoleRuntime] Cannot save Lua program when no Lua program is active.');
 		}
 		if (typeof source !== 'string') {
@@ -3181,7 +3123,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public async reloadLuaProgram(source: string): Promise<void> {
-		if (!this.hasLuaProgram()) {
+		if (!this.luaProgram) {
 			throw new Error('[BmsxConsoleRuntime] Cannot reload Lua program when no Lua program is active.');
 		}
 		if (typeof source !== 'string') {
@@ -3217,7 +3159,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public reloadProgramAndResetWorld(source: string): void {
-		if (!this.hasLuaProgram()) {
+		if (!this.luaProgram) {
 			throw new Error('[BmsxConsoleRuntime] Cannot reload Lua program when no Lua program is active.');
 		}
 		const program = this.luaProgram;
@@ -3376,7 +3318,7 @@ export class BmsxConsoleRuntime extends Service {
 		const callStackSnapshot = interpreter ? Array.from(interpreter.getLastFaultCallStack()) : [];
 		const runtimeDetails = this.buildRuntimeErrorDetailsForEditor(error, message);
 		this.pauseDebuggerForException({ chunkName, line, column }, callStackSnapshot);
-		if (!this.editor && this.hasLuaProgram()) {
+		if (!this.editor && this.luaProgram) {
 			this.initializeEditor();
 		}
 		const hint = this.lookupChunkResourceInfoNullable(chunkName);
@@ -7185,7 +7127,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private async prefetchLuaSourceFromFilesystem(): Promise<void> {
-		if (!this.hasLuaProgram()) {
+		if (!this.luaProgram) {
 			return;
 		}
 		const program = this.luaProgram;
@@ -7648,7 +7590,7 @@ export class BmsxConsoleRuntime extends Service {
 			return null;
 		}
 		const root = rompack.projectRootPath;
-		if (typeof root !== 'string' || root.length === 0) {
+		if (!root) {
 			return null;
 		}
 		return this.normalizeWorkspacePath(root);
@@ -7863,9 +7805,6 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public listLuaModuleSymbols(moduleName: string): ConsoleLuaSymbolEntry[] {
-		if (typeof moduleName !== 'string' || moduleName.trim().length === 0) {
-			return [];
-		}
 		this.ensureLuaModuleIndex();
 		const record = this.luaModuleAliases.get(this.normalizeModuleKey(moduleName));
 		if (!record) {

@@ -1120,9 +1120,6 @@ export function focusChunkSource(chunkName: string | null, hint?: { asset_id: st
 }
 
 export function focusResourceByAsset(asset_id: string, preferredPath?: string | null): void {
-	if (typeof asset_id !== 'string' || asset_id.length === 0) {
-		throw new Error('[ConsoleCartEditor] Invalid asset id for runtime error highlight.');
-	}
 	const descriptors = listResourcesStrict();
 	const match = descriptors.find(entry => entry.asset_id === asset_id);
 	const normalizedPreferred = normalizeResourcePath(preferredPath);
@@ -1138,10 +1135,7 @@ export function focusResourceByAsset(asset_id: string, preferredPath?: string | 
 }
 
 export function normalizeChunkName(name: string | null): string {
-	if (typeof name !== 'string' || name.trim().length === 0) {
-		throw new Error('[ConsoleCartEditor] Chunk name unavailable for runtime error.');
-	}
-	let normalized = name.trim();
+	let normalized = (name ?? '').trim();
 	if (normalized.startsWith('@')) {
 		normalized = normalized.slice(1);
 	}
@@ -3487,9 +3481,9 @@ export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string | null {
 }
 
 export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext | null): ReferenceCatalogEntry[] {
-	const descriptor = context?.descriptor ?? null;
-	const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
-	const asset_id = descriptor?.asset_id ?? ide_state.primaryasset_id ?? null;
+	const descriptor = context ? context.descriptor : null;
+	const normalizedPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
+	const asset_id = descriptor && descriptor.asset_id ? descriptor.asset_id : ide_state.primaryasset_id ?? null;
 	const chunkName = resolveHoverChunkName(context) ?? normalizedPath ?? asset_id ?? '<console>';
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: getActiveCodeTabContext(),
@@ -3498,7 +3492,7 @@ export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, con
 		listResources: () => listResourcesStrict(),
 		loadLuaResource: (resourceId: string) => ide_state.loadLuaResourceFn(resourceId),
 	};
-	const sourceLabelPath = descriptor?.path ?? descriptor?.asset_id ?? null;
+	const sourceLabelPath = descriptor ? (descriptor.path ?? descriptor.asset_id ?? null) : null;
 	return buildProjectReferenceCatalog({
 		workspace: ide_state.semanticWorkspace,
 		info,
@@ -3729,7 +3723,7 @@ export function handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: n
 }
 
 export function refreshResourceCatalog(): void {
-	let descriptors: ConsoleResourceDescriptor[];
+		let descriptors: ConsoleResourceDescriptor[];
 	try {
 		descriptors = listResourcesStrict();
 	} catch (error) {
@@ -3741,11 +3735,11 @@ export function refreshResourceCatalog(): void {
 		ide_state.resourceSearchHoverIndex = -1;
 		ide_state.showMessage(`Failed to list resources: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
-	}
-	const augmented = descriptors.slice();
-	const rompack = $.rompack;
-	if (rompack && rompack.img) {
-		const atlasKeys = Object.keys(rompack.img).filter(key => key === '_atlas' || key.startsWith('atlas'));
+		}
+		const augmented = descriptors.slice();
+		const rompack = $.rompack;
+		if (rompack && rompack.img) {
+			const atlasKeys = Object.keys(rompack.img).filter(key => key === '_atlas' || key.startsWith('atlas'));
 		for (const key of atlasKeys) {
 			if (augmented.some(entry => entry.asset_id === key)) {
 				continue;
@@ -5175,9 +5169,9 @@ export function buildProjectReferenceContext(context: CodeTabContext | null): {
 	normalizedPath: string | null;
 	asset_id: string | null;
 } {
-	const descriptor = context?.descriptor ?? null;
-	const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
-	const descriptorasset_id = descriptor?.asset_id ?? null;
+	const descriptor = context ? context.descriptor : null;
+	const normalizedPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
+	const descriptorasset_id = descriptor ? descriptor.asset_id ?? null : null;
 	const resolvedasset_id = descriptorasset_id ?? ide_state.primaryasset_id ?? null;
 	const resolvedChunk = resolveHoverChunkName(context)
 		?? normalizedPath
@@ -5228,9 +5222,9 @@ export function resolveSemanticDefinitionLocation(
 	if (!definition) {
 		return null;
 	}
-	const descriptor = context?.descriptor ?? null;
-	const descriptorPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
-	const descriptorasset_id = descriptor?.asset_id ?? null;
+	const descriptor = context ? context.descriptor : null;
+	const descriptorPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
+	const descriptorasset_id = descriptor ? descriptor.asset_id ?? null : null;
 	const resolvedasset_id = descriptorasset_id ?? asset_id ?? ide_state.primaryasset_id ?? null;
 	const resolvedChunk = chunkName
 		?? descriptorPath
@@ -5459,8 +5453,8 @@ export function clearReferenceHighlights(): void {
 
 export function tryGotoDefinitionAt(row: number, column: number): boolean {
 	const context = getActiveCodeTabContext();
-	const descriptor = context?.descriptor ?? null;
-	const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
+	const descriptor = context ? context.descriptor : null;
+	const normalizedPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
 	const asset_id = resolveHoverasset_id(context);
 	const token = extractHoverExpression(row, column);
 	if (!token) {
@@ -5482,7 +5476,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 	if (!definition) {
 		const resolvedChunkName = chunkName
 			?? normalizedPath
-			?? descriptor?.asset_id
+			?? (descriptor ? descriptor.asset_id : null)
 			?? asset_id
 			?? ide_state.primaryasset_id
 			?? '<console>';
@@ -5500,7 +5494,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 			currentChunkName: resolvedChunkName,
 			currentLines: ide_state.lines,
 			currentasset_id: asset_id,
-			sourceLabelPath: normalizedPath ?? descriptor?.asset_id ?? null,
+			sourceLabelPath: normalizedPath ?? (descriptor ? descriptor.asset_id : null),
 		});
 		if (projectDefinition) {
 			navigateToLuaDefinition(projectDefinition);
@@ -6147,7 +6141,7 @@ export function performReboot(): boolean {
 		if (requiresReload && savedSource !== null) {
 			await runtime.reloadLuaProgram(savedSource);
 		}
-		runtime.boot('editor:reboot');
+		runtime.boot();
 		ide_state.appliedGeneration = targetGeneration;
 		$.paused = false;
 	}, (error) => {
@@ -8432,9 +8426,15 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 		error = 'Rompack unavailable.';
 	} else {
 		lines.push('');
+		const lua = rompack.lua;
+		const data = rompack.data;
+		const img = rompack.img;
+		const audioTable = rompack.audio;
+		const modelTable = rompack.model;
+		const audioevents = rompack.audioevents;
 		switch (descriptor.type) {
 			case 'lua': {
-				const source = rompack.lua?.[descriptor.asset_id];
+				const source = lua?.[descriptor.asset_id];
 				if (typeof source === 'string') {
 					appendResourceViewerLines(lines, ['-- Lua Source --', '']);
 					appendResourceViewerLines(lines, source.split(/\r?\n/));
@@ -8444,7 +8444,7 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 				break;
 			}
 			case 'code': {
-				const dataEntry = rompack.data?.[descriptor.asset_id];
+				const dataEntry = data?.[descriptor.asset_id];
 				if (typeof dataEntry === 'string') {
 					appendResourceViewerLines(lines, ['-- Code --', '']);
 					appendResourceViewerLines(lines, dataEntry.split(/\r?\n/));
@@ -8462,9 +8462,9 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 			}
 			case 'data':
 			case 'rommanifest': {
-				const data = rompack.data?.[descriptor.asset_id];
-				if (data !== undefined) {
-					const json = safeJsonStringify(data);
+				const dataEntry = data?.[descriptor.asset_id];
+				if (dataEntry !== undefined) {
+					const json = safeJsonStringify(dataEntry);
 					appendResourceViewerLines(lines, ['-- Data --', '']);
 					appendResourceViewerLines(lines, json.split(/\r?\n/));
 				} else {
@@ -8475,7 +8475,7 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 			case 'image':
 			case 'atlas':
 			case 'romlabel': {
-				const image = rompack.img?.[descriptor.asset_id];
+				const image = img?.[descriptor.asset_id];
 				if (!image) {
 					error = `Image asset '${descriptor.asset_id}' not found.`;
 					break;
@@ -8513,7 +8513,7 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 				break;
 			}
 			case 'audio': {
-				const audio = rompack.audio?.[descriptor.asset_id];
+				const audio = audioTable?.[descriptor.asset_id];
 				if (!audio) {
 					error = `Audio asset '${descriptor.asset_id}' not found.`;
 					break;
@@ -8530,7 +8530,7 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 				break;
 			}
 			case 'model': {
-				const model = rompack.model?.[descriptor.asset_id];
+				const model = modelTable?.[descriptor.asset_id];
 				if (!model) {
 					error = `Model asset '${descriptor.asset_id}' not found.`;
 					break;
@@ -8540,7 +8540,7 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 				break;
 			}
 			case 'aem': {
-				const events = rompack.audioevents?.[descriptor.asset_id];
+				const events = audioevents?.[descriptor.asset_id];
 				if (!events) {
 					error = `Audio event map '${descriptor.asset_id}' not found.`;
 					break;
