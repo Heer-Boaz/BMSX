@@ -108,7 +108,6 @@ export const Msx1Colors: color[] = [
 	{ r: 160 / 255, g: 161 / 255, b: 167 / 255, a: 1 }, // 44 = Comment grey (#a0a1a7)
 	{ r: 191 / 255, g: 136 / 255, b: 3 / 255, a: 1 }, // 45 = Warning amber (#bf8803)
 	{ r: 66 / 255, g: 173 / 255, b: 225 / 255, a: 1 }, // 46 = Info blue (#42ade1)
-	{ r: 56 / 255, g: 58 / 255, b: 66 / 255, a: 0.047 }, // 47 = Line highlight overlay (#383a420c)
-	{ r: 229 / 255, g: 229 / 255, b: 230 / 255, a: 0.75 }, // 48 = Selection overlay (#e5e5e6bf)
+	{ r: 56 / 255, g: 58 / 255, b: 66 / 255, a: 0 }, // 47 = Line highlight overlay (#383a420c)
+	{ r: 255 / 255, g: 115 / 255, b: 86 / 255, a: 1 }, // 48 = Selection overlay (#e5e5e6bf)
 ];
-export const Msx1ExtColors: color[] = [{ r: 104, g: 104, b: 104, a: 1 }];
