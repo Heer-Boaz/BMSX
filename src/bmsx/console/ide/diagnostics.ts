@@ -6,13 +6,13 @@ export type DiagnosticContextInput = {
     id: string;
     title: string;
     descriptor: ConsoleResourceDescriptor | null;
-    assetId: string | null;
+    asset_id: string | null;
     chunkName: string | null;
     source: string;
 };
 
 export type DiagnosticProviders = {
-    listLocalSymbols(assetId: string | null, chunkName: string | null): ConsoleLuaSymbolEntry[];
+    listLocalSymbols(asset_id: string | null, chunkName: string | null): ConsoleLuaSymbolEntry[];
     listGlobalSymbols(): ConsoleLuaSymbolEntry[];
     listBuiltins(): ConsoleLuaBuiltinDescriptor[];
 };
@@ -35,7 +35,7 @@ export function computeAggregatedEditorDiagnostics(
         const source = ctx.source ?? '';
         if (source.length === 0) continue;
         let localSymbols: ConsoleLuaSymbolEntry[] = [];
-        try { localSymbols = providers.listLocalSymbols(ctx.assetId, chunkName); } catch { localSymbols = []; }
+        try { localSymbols = providers.listLocalSymbols(ctx.asset_id, chunkName); } catch { localSymbols = []; }
         let luaDiagnostics: LuaDiagnostic[];
         try {
             luaDiagnostics = computeLuaDiagnostics({
@@ -61,7 +61,7 @@ export function computeAggregatedEditorDiagnostics(
                 severity: d.severity,
                 contextId: ctx.id,
                 sourceLabel: chunkName,
-                assetId: ctx.assetId,
+                asset_id: ctx.asset_id,
                 chunkName,
             });
         }
@@ -75,7 +75,7 @@ function resolveChunkName(ctx: DiagnosticContextInput): string | null {
     const descriptor = ctx.descriptor;
     if (descriptor) {
         if (descriptor.path && descriptor.path.length > 0) return descriptor.path;
-        if (descriptor.assetId && descriptor.assetId.length > 0) return descriptor.assetId;
+        if (descriptor.asset_id && descriptor.asset_id.length > 0) return descriptor.asset_id;
     }
     return ctx.title ?? null;
 }

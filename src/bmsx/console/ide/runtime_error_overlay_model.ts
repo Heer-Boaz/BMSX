@@ -18,7 +18,7 @@ export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails | null): R
 			line: frame.line,
 			column: frame.column,
 			raw: frame.raw,
-			chunkAssetId: frame.chunkAssetId,
+			chunkasset_id: frame.chunkasset_id,
 			chunkPath: frame.chunkPath,
 		});
 	}
@@ -32,7 +32,7 @@ export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails | null): R
 			line: frame.line,
 			column: frame.column,
 			raw: frame.raw,
-			chunkAssetId: frame.chunkAssetId,
+			chunkasset_id: frame.chunkasset_id,
 			chunkPath: frame.chunkPath,
 		});
 	}

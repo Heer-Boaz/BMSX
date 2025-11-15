@@ -298,10 +298,10 @@ test('project reference catalog resolves globals across chunks', async () => {
 	workspace.updateFile('parameter.lua', parameterSource);
 	workspace.updateFile('local.lua', localSource);
 
-	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', assetId: 'usage' };
-	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', assetId: 'global' };
-	const parameterDescriptor: ConsoleResourceDescriptor = { path: 'parameter.lua', type: 'lua', assetId: 'parameter' };
-	const localDescriptor: ConsoleResourceDescriptor = { path: 'local.lua', type: 'lua', assetId: 'local' };
+	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage' };
+	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', asset_id: 'global' };
+	const parameterDescriptor: ConsoleResourceDescriptor = { path: 'parameter.lua', type: 'lua', asset_id: 'parameter' };
+	const localDescriptor: ConsoleResourceDescriptor = { path: 'local.lua', type: 'lua', asset_id: 'local' };
 
 	const usageContext: CodeTabContext = {
 		id: 'usage',
@@ -324,12 +324,12 @@ test('project reference catalog resolves globals across chunks', async () => {
 		activeLines: usageLines,
 		codeTabContexts: [usageContext],
 		listResources: () => [usageDescriptor, globalDescriptor, parameterDescriptor, localDescriptor],
-		loadLuaResource: (assetId: string) => {
-			if (assetId === 'usage') return usageSource;
-			if (assetId === 'global') return globalSource;
-			if (assetId === 'parameter') return parameterSource;
-			if (assetId === 'local') return localSource;
-			throw new Error(`Unexpected asset ${assetId}`);
+		loadLuaResource: (asset_id: string) => {
+			if (asset_id === 'usage') return usageSource;
+			if (asset_id === 'global') return globalSource;
+			if (asset_id === 'parameter') return parameterSource;
+			if (asset_id === 'local') return localSource;
+			throw new Error(`Unexpected asset ${asset_id}`);
 		},
 	};
 
@@ -361,7 +361,7 @@ test('project reference catalog resolves globals across chunks', async () => {
 		info,
 		lines: usageLines,
 		chunkName: 'usage.lua',
-		assetId: 'usage',
+		asset_id: 'usage',
 		environment,
 		sourceLabelPath: 'usage.lua',
 	});
@@ -393,8 +393,8 @@ test('project definition resolver locates global across chunks', async () => {
 	workspace.updateFile('usage.lua', usageSource);
 	workspace.updateFile('global.lua', globalSource);
 
-	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', assetId: 'usage' };
-	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', assetId: 'global' };
+	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage' };
+	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', asset_id: 'global' };
 
 	const usageContext: CodeTabContext = {
 		id: 'usage',
@@ -418,10 +418,10 @@ test('project definition resolver locates global across chunks', async () => {
 		activeLines: usageLines,
 		codeTabContexts: [usageContext],
 		listResources: () => [usageDescriptor, globalDescriptor],
-		loadLuaResource: (assetId: string) => {
-			if (assetId === 'usage') return usageSource;
-			if (assetId === 'global') return globalSource;
-			throw new Error(`Unexpected asset ${assetId}`);
+		loadLuaResource: (asset_id: string) => {
+			if (asset_id === 'usage') return usageSource;
+			if (asset_id === 'global') return globalSource;
+			throw new Error(`Unexpected asset ${asset_id}`);
 		},
 	};
 
@@ -431,13 +431,13 @@ test('project definition resolver locates global across chunks', async () => {
 		workspace,
 		currentChunkName: 'usage.lua',
 		currentLines: usageLines,
-		currentAssetId: 'usage',
+		currentasset_id: 'usage',
 		sourceLabelPath: 'usage.lua',
 	});
 
 	assert.ok(location, 'global definition location resolved');
 	assert.equal(location!.chunkName, 'global.lua');
-	assert.equal(location!.assetId, 'global');
+	assert.equal(location!.asset_id, 'global');
 	assert.equal(location!.range.startLine, 1);
 	assert.equal(location!.range.startColumn, 1);
 });
@@ -586,8 +586,8 @@ test('intellisense recognizes global variable from another file', async () => {
 	workspace.updateFile('usage.lua', usageSource);
 	workspace.updateFile('global.lua', globalSource);
 
-	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', assetId: 'usage' };
-	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', assetId: 'global' };
+	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage' };
+	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', asset_id: 'global' };
 
 	const usageContext: CodeTabContext = {
 		id: 'usage',
@@ -611,10 +611,10 @@ test('intellisense recognizes global variable from another file', async () => {
 		activeLines: usageLines,
 		codeTabContexts: [usageContext],
 		listResources: () => [usageDescriptor, globalDescriptor],
-		loadLuaResource: (assetId: string) => {
-			if (assetId === 'usage') return usageSource;
-			if (assetId === 'global') return globalSource;
-			throw new Error(`Unexpected asset ${assetId}`);
+		loadLuaResource: (asset_id: string) => {
+			if (asset_id === 'usage') return usageSource;
+			if (asset_id === 'global') return globalSource;
+			throw new Error(`Unexpected asset ${asset_id}`);
 		},
 	};
 
@@ -643,7 +643,7 @@ test('intellisense recognizes global variable from another file', async () => {
 		info,
 		lines: usageLines,
 		chunkName: 'usage.lua',
-		assetId: 'usage',
+		asset_id: 'usage',
 		environment,
 		sourceLabelPath: 'usage.lua',
 	});

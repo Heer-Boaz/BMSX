@@ -25,7 +25,7 @@ export type asset_id = string;
 export interface RomResourcePath {
 	path: string;
 	type: asset_type | 'rommanifest';
-	assetId: asset_id;
+	asset_id: asset_id;
 }
 
 /**

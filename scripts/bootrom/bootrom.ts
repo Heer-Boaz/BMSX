@@ -59,13 +59,13 @@ function mergeRecords<T>(primary: Record<string, T> | undefined, fallback?: Reco
 function combineRompacks(engineRom: RomPack | null | undefined, cartRom: RomPack): RomPack {
 	if (!engineRom) {
 		return cartRom;
-}
+	}
 	const combinedResourcePaths = (() => {
 		const paths = [...(engineRom.resourcePaths ?? []), ...(cartRom.resourcePaths ?? [])];
 		const seen = new Set<string>();
 		const unique: typeof paths = [];
 		for (const entry of paths) {
-			const key = `${entry.type}:${entry.assetId}:${entry.path}`;
+			const key = `${entry.type}:${entry.asset_id}:${entry.path}`;
 			if (seen.has(key)) continue;
 			seen.add(key);
 			unique.push(entry);
@@ -81,14 +81,14 @@ function combineRompacks(engineRom: RomPack | null | undefined, cartRom: RomPack
 		audio: mergeRecords(cartRom.audio, engineRom.audio),
 		model: mergeRecords(cartRom.model, engineRom.model),
 		data: mergeRecords(cartRom.data, engineRom.data),
-	audioevents: mergeRecords(cartRom.audioevents, engineRom.audioevents),
-	lua: mergeRecords(cartRom.lua, engineRom.lua),
-	luaSourcePaths: mergeRecords(cartRom.luaSourcePaths, engineRom.luaSourcePaths),
-	resourcePaths: combinedResourcePaths,
-	projectRootPath: cartRom.projectRootPath ?? engineRom.projectRootPath ?? null,
-	code: cartRom.code ?? engineRom.code ?? null,
-	caseInsensitiveLua: cartRom.caseInsensitiveLua ?? engineRom.caseInsensitiveLua,
-};
+		audioevents: mergeRecords(cartRom.audioevents, engineRom.audioevents),
+		lua: mergeRecords(cartRom.lua, engineRom.lua),
+		luaSourcePaths: mergeRecords(cartRom.luaSourcePaths, engineRom.luaSourcePaths),
+		resourcePaths: combinedResourcePaths,
+		projectRootPath: cartRom.projectRootPath ?? engineRom.projectRootPath ?? null,
+		code: cartRom.code ?? engineRom.code ?? null,
+		caseInsensitiveLua: cartRom.caseInsensitiveLua ?? engineRom.caseInsensitiveLua,
+	};
 	return combined;
 }
 
@@ -336,15 +336,15 @@ export const bootrom = {
 					// @ts-ignore
 					return pako.inflate(ziprom_and_label.zipped_rom).buffer;
 				})
-			.then(rom => loadResources(rom))
-			.then((loadResult: any) => {
-				loadedRomPack = loadResult;
-				loadedRomPack.caseInsensitiveLua = __BOOTROM_CASE_INSENSITIVE_LUA__;
-				const combinedPack = combineRompacks(bootrom.engineRom, loadedRomPack);
-				bootrom.cartRom = loadedRomPack;
-				bootrom.rom = combinedPack;
-				loadedRomPack = combinedPack;
-				return awaitBootComplete().then(() => {  // Return the promise and chain the replace after animation ends
+				.then(rom => loadResources(rom))
+				.then((loadResult: any) => {
+					loadedRomPack = loadResult;
+					loadedRomPack.caseInsensitiveLua = __BOOTROM_CASE_INSENSITIVE_LUA__;
+					const combinedPack = combineRompacks(bootrom.engineRom, loadedRomPack);
+					bootrom.cartRom = loadedRomPack;
+					bootrom.rom = combinedPack;
+					loadedRomPack = combinedPack;
+					return awaitBootComplete().then(() => {  // Return the promise and chain the replace after animation ends
 						replaceBMSXImgWithRomLabel();
 					});
 				})
@@ -506,16 +506,16 @@ async function awaitPressedAnyKeyPromise(): Promise<void> {
 
 		const onuserinteraction = (e: UIEvent) => {
 			try {
-			if (!bootrom.snd_unlocked || !bootrom.theshowsover) {
-				if (bootrom.debug) {
-					console.info(`Did not start game on user interaction because either the sound was not unlocked (bootrom.snd_unlocked=${bootrom.snd_unlocked}) or the boot animation had not ended (bootrom.theshowsover=${bootrom.theshowsover}).`);
+				if (!bootrom.snd_unlocked || !bootrom.theshowsover) {
+					if (bootrom.debug) {
+						console.info(`Did not start game on user interaction because either the sound was not unlocked (bootrom.snd_unlocked=${bootrom.snd_unlocked}) or the boot animation had not ended (bootrom.theshowsover=${bootrom.theshowsover}).`);
+					}
+					return;
 				}
-				return;
-			}
-			if (e.type === 'touchend') {
-				document.documentElement.style.touchAction = 'none';
-				bootrom.enableOnscreenGamepad = true;
-			}
+				if (e.type === 'touchend') {
+					document.documentElement.style.touchAction = 'none';
+					bootrom.enableOnscreenGamepad = true;
+				}
 				startGame();
 			}
 			catch (err) {

@@ -43,7 +43,7 @@
 		}
 	},
 	"lua": {
-		"assetId": "marlies2020",
+		"asset_id": "marlies2020",
 		"chunkName": "marlies2020",
 		"entry": {
 			"init": "init",

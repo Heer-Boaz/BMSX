@@ -12,17 +12,14 @@ local instructions = {
 }
 
 function init()
-	
 end
 
 function update(_dt)
-	error('sdfsf')
-	print('Dit is een test: 5')
 end
 
 function draw()
 	cls(background_color)
-	for index = 1, #instructions+1 do
-		-- print(instructions[index], 8, 8 + (index - 1) * 16, text_color)
+	for index=1, #instructions+0 do
+		write(instructions[index], 8, 8 + (index - 1) * 16, text_color)
 	end
 end

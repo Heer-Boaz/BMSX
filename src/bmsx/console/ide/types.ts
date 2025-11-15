@@ -25,14 +25,14 @@ export type ConsoleEditorOptions = {
 	loadSource: () => string;
 	saveSource: (source: string) => Promise<void>;
 	listResources: () => ConsoleResourceDescriptor[];
-	loadLuaResource: (assetId: string) => string;
-	saveLuaResource: (assetId: string, source: string) => Promise<void>;
+	loadLuaResource: (asset_id: string) => string;
+	saveLuaResource: (asset_id: string, source: string) => Promise<void>;
 	createLuaResource: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
 	inspectLuaExpression: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
 	listLuaObjectMembers: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
 	listLuaModuleSymbols: (moduleName: string) => ConsoleLuaSymbolEntry[];
-	primaryAssetId: string | null;
-	listLuaSymbols: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
+	primaryasset_id: string | null;
+	listLuaSymbols: (asset_id: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
 	listBuiltinLuaFunctions: () => ConsoleLuaBuiltinDescriptor[];
 	fontVariant?: ConsoleFontVariant;
@@ -75,7 +75,7 @@ export type GlobalSearchMatch = {
 	start: number;
 	end: number;
 	snippet: string;
-	assetId: string | null;
+	asset_id: string | null;
 	chunkName: string | null;
 };
 
@@ -214,7 +214,7 @@ export type EditorDiagnostic = {
 	// Optional metadata to identify the originating tab/source
 	contextId?: string;
 	sourceLabel?: string | null;
-	assetId?: string | null;
+	asset_id?: string | null;
 	chunkName?: string | null;
 };
 
@@ -265,7 +265,7 @@ export type CodeHoverTooltip = {
 	valueType: string;
 	scope: ConsoleLuaHoverScope;
 	state: ConsoleLuaHoverValueState;
-	assetId: string | null;
+	asset_id: string | null;
 	row: number;
 	startColumn: number;
 	endColumn: number;
@@ -281,7 +281,7 @@ export type ResourceViewerState = {
 	title: string;
 	scroll: number;
 	image?: {
-		assetId: string;
+		asset_id: string;
 		width: number;
 		height: number;
 		atlassed: boolean;

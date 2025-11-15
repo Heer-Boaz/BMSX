@@ -3357,6 +3357,6 @@ export type StackTraceFrame = {
 	line: number | null;
 	column: number | null;
 	raw: string;
-	chunkAssetId?: string | null;
+	chunkasset_id?: string | null;
 	chunkPath?: string | null;
 };

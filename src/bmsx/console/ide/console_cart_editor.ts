@@ -56,9 +56,9 @@ import {
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
 import { InputController } from './input_controller';
-import { getIdePlayerInput, consumeIdeKey } from './player_input_adapter';
+import { consumeIdeKey } from './player_input_adapter';
 import { ConsoleCodeLayout } from './code_layout';
-import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine as wrapRuntimeErrorLineUtil } from './runtime_error_utils';
+import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine } from './runtime_error_utils';
 import { getBreakpointsForChunk, toggleBreakpoint } from './debugger_breakpoints';
 import type {
 	CachedHighlight,
@@ -126,7 +126,7 @@ import {
 } from './input_helpers';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast';
 import { CaretNavigationState } from './caret_navigation';
-import { EDITOR_TOGGLE_KEY, ESCAPE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, GLOBAL_SEARCH_RESULT_LIMIT } from './constants';
+import { ESCAPE_KEY, GLOBAL_SEARCH_RESULT_LIMIT } from './constants';
 // Search logic moved to editor_search
 import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, ensureSearchJobCompleted, moveSearchSelection, applySearchSelection, ensureSearchSelectionVisible, computeSearchPageStats, getVisibleSearchResultEntries, startSearchJob, forEachMatchInLine } from './editor_search';
 import { formatLuaDocument } from './lua_formatter';
@@ -866,10 +866,10 @@ function symbolCatalogDedupKey(entry: ConsoleLuaSymbolEntry): string {
 	const { location, kind, name } = entry;
 	const chunkName = location.chunkName ?? '';
 	const normalizedPath = location.path ? location.path.replace(/\\/g, '/') : '';
-	const assetId = location.assetId ?? '';
+	const asset_id = location.asset_id ?? '';
 	const locationKey = normalizedPath.length > 0
 		? normalizedPath
-		: (assetId.length > 0 ? assetId : chunkName);
+		: (asset_id.length > 0 ? asset_id : chunkName);
 	const startLine = location.range.startLine;
 	const startColumn = location.range.startColumn;
 	const endLine = location.range.endLine;
@@ -919,7 +919,6 @@ export function resetInputFocusState(keyboard: KeyboardInput | null): void {
 	ide_state.input.resetRepeats();
 	resetKeyPressRecords();
 	ide_state.repeatState.clear();
-	ide_state.toggleInputLatch = false;
 }
 
 export function requestWindowFocusState(hasFocus: boolean, immediate: boolean): void {
@@ -1040,7 +1039,7 @@ export function showRuntimeErrorInChunk(
 	line: number | null,
 	column: number | null,
 	message: string,
-	hint?: { assetId: string | null; path?: string | null },
+	hint?: { asset_id: string | null; path?: string | null },
 	details?: RuntimeErrorDetails | null
 ): void {
 	focusChunkSource(chunkName, hint);
@@ -1101,17 +1100,17 @@ export function showRuntimeError(line: number | null, column: number | null, mes
 	ide_state.showMessage(statusLine, constants.COLOR_STATUS_ERROR, 8.0);
 }
 
-export function focusChunkSource(chunkName: string | null, hint?: { assetId: string | null; path?: string | null }): void {
+export function focusChunkSource(chunkName: string | null, hint?: { asset_id: string | null; path?: string | null }): void {
 	if (!ide_state.active) {
 		activate();
 	}
 	closeSymbolSearch(true);
-	if (hint && typeof hint.assetId === 'string' && hint.assetId.length > 0) {
+	if (hint && typeof hint.asset_id === 'string' && hint.asset_id.length > 0) {
 		const preferredPath = (typeof hint.path === 'string' && hint.path.length > 0) ? hint.path : null;
-		focusResourceByAsset(hint.assetId, preferredPath);
+		focusResourceByAsset(hint.asset_id, preferredPath);
 		return;
 	}
-	if (hint && hint.assetId === null) {
+	if (hint && hint.asset_id === null) {
 		activateCodeTab();
 		return;
 	}
@@ -1120,12 +1119,12 @@ export function focusChunkSource(chunkName: string | null, hint?: { assetId: str
 	openResourceDescriptor(descriptor);
 }
 
-export function focusResourceByAsset(assetId: string, preferredPath?: string | null): void {
-	if (typeof assetId !== 'string' || assetId.length === 0) {
+export function focusResourceByAsset(asset_id: string, preferredPath?: string | null): void {
+	if (typeof asset_id !== 'string' || asset_id.length === 0) {
 		throw new Error('[ConsoleCartEditor] Invalid asset id for runtime error highlight.');
 	}
 	const descriptors = listResourcesStrict();
-	const match = descriptors.find(entry => entry.assetId === assetId);
+	const match = descriptors.find(entry => entry.asset_id === asset_id);
 	const normalizedPreferred = normalizeResourcePath(preferredPath);
 	if (match) {
 		const effectivePath = normalizedPreferred ? normalizedPreferred : match.path;
@@ -1133,9 +1132,9 @@ export function focusResourceByAsset(assetId: string, preferredPath?: string | n
 		return;
 	}
 	if (!normalizedPreferred) {
-		throw new Error(`[ConsoleCartEditor] No resource found for asset '${assetId}'.`);
+		throw new Error(`[ConsoleCartEditor] No resource found for asset '${asset_id}'.`);
 	}
-	openResourceDescriptor({ path: normalizedPreferred, type: 'lua', assetId });
+	openResourceDescriptor({ path: normalizedPreferred, type: 'lua', asset_id });
 }
 
 export function normalizeChunkName(name: string | null): string {
@@ -1161,14 +1160,14 @@ export function normalizeResourcePath(path?: string | null): string | undefined 
 	return normalized.length > 0 ? normalized : undefined;
 }
 
-export function findCodeTabContext(assetId: string | null, chunkName: string | null): CodeTabContext | null {
+export function findCodeTabContext(asset_id: string | null, chunkName: string | null): CodeTabContext | null {
 	const normalizedChunk = normalizeChunkReference(chunkName);
 	for (const context of ide_state.codeTabContexts.values()) {
 		const descriptor = context.descriptor;
-		if (assetId && descriptor && descriptor.assetId === assetId) {
+		if (asset_id && descriptor && descriptor.asset_id === asset_id) {
 			return context;
 		}
-		if (!assetId && normalizedChunk && descriptor) {
+		if (!asset_id && normalizedChunk && descriptor) {
 			const descriptorPath = normalizeChunkReference(descriptor.path);
 			if (descriptorPath && descriptorPath === normalizedChunk) {
 				return context;
@@ -1182,7 +1181,7 @@ export function findCodeTabContext(assetId: string | null, chunkName: string | n
 	if (!entryContext) {
 		return null;
 	}
-	if (assetId !== null) {
+	if (asset_id !== null) {
 		return null;
 	}
 	if (!normalizedChunk) {
@@ -1210,9 +1209,9 @@ export function normalizeChunkReference(reference: string | null): string | null
 	return normalized.replace(/\\/g, '/');
 }
 
-export function resolveResourceDescriptorForSource(assetId: string | null, chunkName: string | null): ConsoleResourceDescriptor | null {
-	if (typeof assetId === 'string' && assetId.length > 0) {
-		const byAsset = findResourceDescriptorByAssetId(assetId);
+export function resolveResourceDescriptorForSource(asset_id: string | null, chunkName: string | null): ConsoleResourceDescriptor | null {
+	if (typeof asset_id === 'string' && asset_id.length > 0) {
+		const byAsset = findResourceDescriptorByasset_id(asset_id);
 		if (byAsset) {
 			return byAsset;
 		}
@@ -1237,9 +1236,9 @@ export function listResourcesStrict(): ConsoleResourceDescriptor[] {
 	return descriptors;
 }
 
-export function findResourceDescriptorByAssetId(assetId: string): ConsoleResourceDescriptor | null {
+export function findResourceDescriptorByasset_id(asset_id: string): ConsoleResourceDescriptor | null {
 	const descriptors = listResourcesStrict();
-	const match = descriptors.find(entry => entry.assetId === assetId);
+	const match = descriptors.find(entry => entry.asset_id === asset_id);
 	return match ?? null;
 }
 
@@ -1253,9 +1252,9 @@ export function findResourceDescriptorForChunk(chunkPath: string): ConsoleResour
 	const segments = normalizedTarget.split('/');
 	const basename = segments.length > 0 ? segments[segments.length - 1] : normalizedTarget;
 	const withoutExt = basename.endsWith('.lua') ? basename.slice(0, -4) : basename;
-	const byAssetId = descriptors.find(entry => entry.assetId === basename || entry.assetId === withoutExt);
-	if (byAssetId) {
-		return byAssetId;
+	const byasset_id = descriptors.find(entry => entry.asset_id === basename || entry.asset_id === withoutExt);
+	if (byasset_id) {
+		return byasset_id;
 	}
 	throw new Error(`[ConsoleCartEditor] Unable to resolve chunk '${normalizedTarget}' to a resource.`);
 }
@@ -1420,7 +1419,7 @@ export function getStatusMessageLines(): string[] {
 	const maxWidth = Math.max(ide_state.viewportWidth - 8, ide_state.charAdvance);
 	const localLines: string[] = [];
 	for (let i = 0; i < rawLines.length; i += 1) {
-		const wrapped = wrapRuntimeErrorLineUtil(rawLines[i], maxWidth, (text) => measureText(text));
+		const wrapped = wrapRuntimeErrorLine(rawLines[i], maxWidth, (text) => measureText(text));
 		for (let j = 0; j < wrapped.length; j += 1) {
 			localLines.push(wrapped[j]);
 		}
@@ -1478,7 +1477,7 @@ export function update(deltaSeconds: number): void {
 	flushWindowFocusState(keyboard);
 	ide_state.updateMessage(deltaSeconds);
 	updateRuntimeErrorOverlay(deltaSeconds);
-	if (handleToggleRequest()) {
+	if (handleEscapeShortcut()) {
 		return;
 	}
 	if (!ide_state.active) {
@@ -1622,14 +1621,14 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			ide_state.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
-		const assetId = resolveHoverAssetId(context);
+		const asset_id = resolveHoverasset_id(context);
 		const chunkName = resolveHoverChunkName(context);
 		let source = '';
 		if (activeId && contextId === activeId) {
 			source = ide_state.lines.join('\n');
 		} else {
 			try {
-				source = getSourceForChunk(assetId, chunkName);
+				source = getSourceForChunk(asset_id, chunkName);
 			} catch {
 				source = '';
 			}
@@ -1643,7 +1642,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			id: context.id,
 			title: context.title,
 			descriptor: context.descriptor,
-			assetId,
+			asset_id,
 			chunkName,
 			source,
 		});
@@ -1680,9 +1679,9 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 
 export function createDiagnosticProviders(): DiagnosticProviders {
 	return {
-		listLocalSymbols: (assetId, chunk) => {
+		listLocalSymbols: (asset_id, chunk) => {
 			try {
-				return ide_state.listLuaSymbolsFn(assetId, chunk);
+				return ide_state.listLuaSymbolsFn(asset_id, chunk);
 			} catch {
 				return [];
 			}
@@ -1785,15 +1784,15 @@ export function findContextByChunk(chunkName: string): CodeTabContext | null {
 		if (descriptor) {
 			const descriptorPath = normalizeChunkReference(descriptor.path);
 			if ((descriptorPath && descriptorPath === normalized)
-				|| descriptor.assetId === chunkName
-				|| descriptor.assetId === normalized) {
+				|| descriptor.asset_id === chunkName
+				|| descriptor.asset_id === normalized) {
 				return context;
 			}
 			continue;
 		}
 		const aliases: string[] = [];
-		if (ide_state.primaryAssetId) {
-			aliases.push(ide_state.primaryAssetId);
+		if (ide_state.primaryasset_id) {
+			aliases.push(ide_state.primaryasset_id);
 		}
 		aliases.push('__entry__', '<console>');
 		for (let index = 0; index < aliases.length; index += 1) {
@@ -1859,8 +1858,8 @@ export function draw(api: BmsxConsoleApi): void {
 	}
 }
 
-export function getSourceForChunk(assetId: string | null, chunkName: string | null): string {
-	const context = findCodeTabContext(assetId, chunkName);
+export function getSourceForChunk(asset_id: string | null, chunkName: string | null): string {
+	const context = findCodeTabContext(asset_id, chunkName);
 	if (context) {
 		if (context.id === ide_state.activeCodeTabContextId) {
 			return ide_state.lines.join('\n');
@@ -1873,11 +1872,11 @@ export function getSourceForChunk(assetId: string | null, chunkName: string | nu
 		}
 		return context.load();
 	}
-	const descriptor = resolveResourceDescriptorForSource(assetId, chunkName);
+	const descriptor = resolveResourceDescriptorForSource(asset_id, chunkName);
 	if (descriptor) {
-		return ide_state.loadLuaResourceFn(descriptor.assetId);
+		return ide_state.loadLuaResourceFn(descriptor.asset_id);
 	}
-	throw new Error(`[ConsoleCartEditor] Unable to locate source for asset '${assetId ?? '<null>'}' and chunk '${chunkName ?? '<null>'}'.`);
+	throw new Error(`[ConsoleCartEditor] Unable to locate source for asset '${asset_id ?? '<null>'}' and chunk '${chunkName ?? '<null>'}'.`);
 }
 
 export function getTabDirtyMarkerMetrics(): { width: number; height: number } {
@@ -2010,7 +2009,6 @@ export function serializeState(): ConsoleEditorSerializedState { // NOTE: UNUSED
 export function restoreState(state: ConsoleEditorSerializedState): void { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
 	if (!state) return;
 	ide_state.input.applyOverrides(false, captureKeys);
-	$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 	ide_state.codeTabContexts.clear();
 	const entryContext = createEntryTabContext();
 	if (entryContext) {
@@ -2152,57 +2150,25 @@ export function getKeyboard(): KeyboardInput {
 	return candidate;
 }
 
-export function handleToggleRequest(): boolean {
-	const playerInput = getIdePlayerInput();
-	const escapeState = getKeyboardButtonState(ide_state.playerIndex, ESCAPE_KEY);
-	if (escapeState && escapeState.pressed === true) {
-		if (shouldAcceptKeyPressGlobal(ESCAPE_KEY, escapeState)) {
-			const handled = handleEscapeKey();
-			if (handled) {
-				consumeIdeKey(ESCAPE_KEY);
-				return true;
-			}
-		}
+export function handleEscapeShortcut(): boolean {
+	const state = getKeyboardButtonState(ide_state.playerIndex, ESCAPE_KEY);
+	if (!state || state.pressed !== true) {
+		return false;
 	}
+	if (!shouldAcceptKeyPressGlobal(ESCAPE_KEY, state)) {
+		return false;
+	}
+	const handled = handleEscapeKey();
+	if (handled) {
+		consumeIdeKey(ESCAPE_KEY);
+	}
+	return handled;
+}
 
-	const toggleKeyState = getKeyboardButtonState(ide_state.playerIndex, EDITOR_TOGGLE_KEY);
-	const selectButton = EDITOR_TOGGLE_GAMEPAD_BUTTONS[0];
-	const startButton = EDITOR_TOGGLE_GAMEPAD_BUTTONS[1];
-	const selectState = playerInput ? playerInput.getButtonState(selectButton, 'gamepad') : null;
-	const startState = playerInput ? playerInput.getButtonState(startButton, 'gamepad') : null;
-	const keyboardPressed = toggleKeyState ? toggleKeyState.pressed === true : false;
-	const selectPressed = selectState ? selectState.pressed === true : false;
-	const startPressed = startState ? startState.pressed === true : false;
-	const gamepadPressed = selectPressed && startPressed;
-	if (!keyboardPressed && !gamepadPressed) {
-		ide_state.toggleInputLatch = false;
-		return false;
-	}
-	if (ide_state.toggleInputLatch) {
-		return false;
-	}
-	const keyboardAccepted = toggleKeyState ? shouldAcceptKeyPressGlobal(EDITOR_TOGGLE_KEY, toggleKeyState) : false;
-	let gamepadAccepted = false;
-	if (gamepadPressed) {
-		const selectAccepted = selectState ? shouldAcceptKeyPressGlobal(selectButton, selectState) : false;
-		const startAccepted = startState ? shouldAcceptKeyPressGlobal(startButton, startState) : false;
-		gamepadAccepted = selectAccepted || startAccepted;
-	}
-	if (!keyboardAccepted && !gamepadAccepted) {
-		return false;
-	}
-	ide_state.toggleInputLatch = true;
+export function toggleEditorFromShortcut(): void {
 	const intercepted = handleEscapeKey();
-	if (keyboardAccepted) {
-		consumeIdeKey(EDITOR_TOGGLE_KEY);
-	}
-	if (gamepadAccepted && playerInput && playerInput.inputHandlers['gamepad']) {
-		const handler = playerInput.inputHandlers['gamepad'];
-		handler.consumeButton(selectButton);
-		handler.consumeButton(startButton);
-	}
 	if (intercepted) {
-		return true;
+		return;
 	}
 	if (ide_state.active) {
 		if (ide_state.dirty) {
@@ -2213,7 +2179,6 @@ export function handleToggleRequest(): boolean {
 	} else {
 		activate();
 	}
-	return true;
 }
 
 export function handleEscapeKey(): boolean {
@@ -2354,7 +2319,6 @@ export function deactivate(): void {
 	ide_state.completion.closeSession();
 	ide_state.repeatState.clear();
 	ide_state.input.applyOverrides(false, captureKeys);
-	$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 	ide_state.selectionAnchor = null;
 	ide_state.pointerSelecting = false;
 	ide_state.pointerPrimaryWasPressed = false;
@@ -2812,12 +2776,12 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 		return;
 	}
 	let normalizedPath: string;
-	let assetId: string;
+	let asset_id: string;
 	let directory: string;
 	try {
 		const result = normalizeCreateResourceRequest(ide_state.createResourcePath);
 		normalizedPath = result.path;
-		assetId = result.assetId;
+		asset_id = result.asset_id;
 		directory = result.directory;
 		applyCreateResourceFieldText(normalizedPath, true);
 		ide_state.createResourceError = null;
@@ -2830,16 +2794,16 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	}
 	ide_state.createResourceWorking = true;
 	resetBlink();
-	const contents = buildDefaultResourceContents(normalizedPath, assetId);
+	const contents = buildDefaultResourceContents(normalizedPath, asset_id);
 	try {
-		const descriptor = await ide_state.createLuaResourceFn({ path: normalizedPath, assetId, contents });
+		const descriptor = await ide_state.createLuaResourceFn({ path: normalizedPath, asset_id, contents });
 		ide_state.lastCreateResourceDirectory = directory;
-		ide_state.pendingResourceSelectionAssetId = descriptor.assetId;
+		ide_state.pendingResourceSelectionasset_id = descriptor.asset_id;
 		if (ide_state.resourcePanelVisible) {
 			refreshResourcePanelContents();
 		}
 		openLuaCodeTab(descriptor);
-		ide_state.showMessage(`Created ${descriptor.path} (asset ${descriptor.assetId})`, constants.COLOR_STATUS_SUCCESS, 2.5);
+		ide_state.showMessage(`Created ${descriptor.path} (asset ${descriptor.asset_id})`, constants.COLOR_STATUS_SUCCESS, 2.5);
 		closeCreateResourcePrompt(false);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -2869,7 +2833,7 @@ export function isValidCreateResourceCharacter(value: string): boolean {
 	return value === '_' || value === '-' || value === '.' || value === '/';
 }
 
-export function normalizeCreateResourceRequest(rawPath: string): { path: string; assetId: string; directory: string } {
+export function normalizeCreateResourceRequest(rawPath: string): { path: string; asset_id: string; directory: string } {
 	let candidate = rawPath.trim();
 	if (candidate.length === 0) {
 		throw new Error('Path must not be empty.');
@@ -2907,7 +2871,7 @@ export function normalizeCreateResourceRequest(rawPath: string): { path: string;
 	if (baseName.length === 0) {
 		throw new Error('Asset id cannot be empty.');
 	}
-	return { path: candidate, assetId: baseName, directory: ensureDirectorySuffix(directory) };
+	return { path: candidate, asset_id: baseName, directory: ensureDirectorySuffix(directory) };
 }
 
 export function determineCreateResourceDefaultPath(): string {
@@ -2943,7 +2907,7 @@ export function ensureDirectorySuffix(path: string): string {
 	return normalized.slice(0, slashIndex + 1);
 }
 
-export function buildDefaultResourceContents(_path: string, _assetId: string): string {
+export function buildDefaultResourceContents(_path: string, _asset_id: string): string {
 	return constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 }
 
@@ -3355,7 +3319,7 @@ export function getCrossFileRenameDependencies(): CrossFileRenameDependencies {
 		setEntryTabId: (id: string | null) => {
 			ide_state.entryTabId = id;
 		},
-		getPrimaryAssetId: () => ide_state.primaryAssetId,
+		getPrimaryasset_id: () => ide_state.primaryasset_id,
 		getCodeTabContext: (id: string) => ide_state.codeTabContexts.get(id) ?? null,
 		setCodeTabContext: (context: CodeTabContext) => {
 			ide_state.codeTabContexts.set(context.id, context);
@@ -3409,18 +3373,18 @@ export function focusEditorFromRename(): void {
 
 export function refreshSymbolCatalog(force: boolean): void {
 	const scope: 'local' | 'global' = ide_state.symbolSearchGlobal ? 'global' : 'local';
-	let assetId: string | null = null;
+	let asset_id: string | null = null;
 	let chunkName: string | null = null;
 	if (scope === 'local') {
 		const context = getActiveCodeTabContext();
-		assetId = resolveHoverAssetId(context);
+		asset_id = resolveHoverasset_id(context);
 		chunkName = resolveHoverChunkName(context);
 	}
 	const existing = ide_state.symbolCatalogContext;
 	const unchanged = existing !== null
 		&& existing.scope === scope
 		&& (scope === 'global'
-			|| (existing.assetId === assetId && existing.chunkName === chunkName));
+			|| (existing.asset_id === asset_id && existing.chunkName === chunkName));
 	if (!force && unchanged) {
 		return;
 	}
@@ -3429,7 +3393,7 @@ export function refreshSymbolCatalog(force: boolean): void {
 		if (scope === 'global') {
 			entries = ide_state.listGlobalLuaSymbolsFn();
 		} else {
-			entries = ide_state.listLuaSymbolsFn(assetId, chunkName);
+			entries = ide_state.listLuaSymbolsFn(asset_id, chunkName);
 		}
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -3441,7 +3405,7 @@ export function refreshSymbolCatalog(force: boolean): void {
 		ide_state.showMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
-	ide_state.symbolCatalogContext = { scope, assetId, chunkName };
+	ide_state.symbolCatalogContext = { scope, asset_id, chunkName };
 	const deduped: ConsoleLuaSymbolEntry[] = [];
 	const seen = new Set<string>();
 	for (let index = 0; index < entries.length; index += 1) {
@@ -3515,7 +3479,7 @@ export function symbolKindLabel(kind: ConsoleLuaSymbolEntry['kind']): string {
 }
 
 export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string | null {
-	const path = entry.location.path ?? entry.location.assetId ?? null;
+	const path = entry.location.path ?? entry.location.asset_id ?? null;
 	if (!path) {
 		return null;
 	}
@@ -3525,8 +3489,8 @@ export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string | null {
 export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext | null): ReferenceCatalogEntry[] {
 	const descriptor = context?.descriptor ?? null;
 	const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
-	const assetId = descriptor?.assetId ?? ide_state.primaryAssetId ?? null;
-	const chunkName = resolveHoverChunkName(context) ?? normalizedPath ?? assetId ?? '<console>';
+	const asset_id = descriptor?.asset_id ?? ide_state.primaryasset_id ?? null;
+	const chunkName = resolveHoverChunkName(context) ?? normalizedPath ?? asset_id ?? '<console>';
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: getActiveCodeTabContext(),
 		activeLines: ide_state.lines,
@@ -3534,13 +3498,13 @@ export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, con
 		listResources: () => listResourcesStrict(),
 		loadLuaResource: (resourceId: string) => ide_state.loadLuaResourceFn(resourceId),
 	};
-	const sourceLabelPath = descriptor?.path ?? descriptor?.assetId ?? null;
+	const sourceLabelPath = descriptor?.path ?? descriptor?.asset_id ?? null;
 	return buildProjectReferenceCatalog({
 		workspace: ide_state.semanticWorkspace,
 		info,
 		lines: ide_state.lines,
 		chunkName,
-		assetId,
+		asset_id,
 		environment,
 		sourceLabelPath,
 	});
@@ -3783,20 +3747,20 @@ export function refreshResourceCatalog(): void {
 	if (rompack && rompack.img) {
 		const atlasKeys = Object.keys(rompack.img).filter(key => key === '_atlas' || key.startsWith('atlas'));
 		for (const key of atlasKeys) {
-			if (augmented.some(entry => entry.assetId === key)) {
+			if (augmented.some(entry => entry.asset_id === key)) {
 				continue;
 			}
-			augmented.push({ path: `atlas/${key}`, type: 'atlas', assetId: key });
+			augmented.push({ path: `atlas/${key}`, type: 'atlas', asset_id: key });
 		}
 	}
 	descriptors = augmented;
 	const entries: ResourceCatalogEntry[] = descriptors.map((descriptor) => {
 		const normalizedPath = descriptor.path.replace(/\\/g, '/');
-		const displayPathSource = normalizedPath.length > 0 ? normalizedPath : (descriptor.assetId ?? '');
+		const displayPathSource = normalizedPath.length > 0 ? normalizedPath : (descriptor.asset_id ?? '');
 		const displayPath = displayPathSource.length > 0 ? displayPathSource : '<unnamed>';
 		const typeLabel = descriptor.type ? descriptor.type.toUpperCase() : '';
-		const assetLabel = descriptor.assetId && descriptor.assetId !== displayPath ? descriptor.assetId : null;
-		const searchKeyParts = [displayPath, descriptor.assetId ?? '', descriptor.type ?? ''];
+		const assetLabel = descriptor.asset_id && descriptor.asset_id !== displayPath ? descriptor.asset_id : null;
+		const searchKeyParts = [displayPath, descriptor.asset_id ?? '', descriptor.type ?? ''];
 		const searchKey = searchKeyParts
 			.filter(part => part.length > 0)
 			.map(part => part.toLowerCase())
@@ -4257,7 +4221,7 @@ export function runGlobalSearchJobSlice(job: GlobalSearchJob): boolean {
 					start,
 					end,
 					snippet: buildSearchSnippet(line, start, end),
-					assetId: descriptor.assetId ?? null,
+					asset_id: descriptor.asset_id ?? null,
 					chunkName: descriptor.path ?? null,
 				};
 				job.matches.push(match);
@@ -4302,11 +4266,11 @@ export function cancelGlobalSearchJob(): void {
 
 export function loadDescriptorLines(descriptor: ConsoleResourceDescriptor): string[] | null {
 	try {
-		const assetId = descriptor.assetId;
-		if (!assetId) {
+		const asset_id = descriptor.asset_id;
+		if (!asset_id) {
 			return null;
 		}
-		const source = ide_state.loadLuaResourceFn(assetId);
+		const source = ide_state.loadLuaResourceFn(asset_id);
 		if (typeof source !== 'string') {
 			return null;
 		}
@@ -4320,8 +4284,8 @@ export function describeDescriptor(descriptor: ConsoleResourceDescriptor): strin
 	if (descriptor.path && descriptor.path.length > 0) {
 		return descriptor.path.replace(/\\/g, '/');
 	}
-	if (descriptor.assetId && descriptor.assetId.length > 0) {
-		return descriptor.assetId;
+	if (descriptor.asset_id && descriptor.asset_id.length > 0) {
+		return descriptor.asset_id;
 	}
 	return '<resource>';
 }
@@ -5005,7 +4969,7 @@ export function updateTabHoverState(snapshot: PointerSnapshot | null): void {
 
 export function updateHoverTooltip(snapshot: PointerSnapshot): void {
 	const context = getActiveCodeTabContext();
-	const assetId = resolveHoverAssetId(context);
+	const asset_id = resolveHoverasset_id(context);
 	const row = resolvePointerRow(snapshot.viewportY);
 	const column = resolvePointerColumn(row, snapshot.viewportX);
 	const token = extractHoverExpression(row, column);
@@ -5015,7 +4979,7 @@ export function updateHoverTooltip(snapshot: PointerSnapshot): void {
 	}
 	const chunkName = resolveHoverChunkName(context);
 	const request: ConsoleLuaHoverRequest = {
-		assetId,
+		asset_id,
 		expression: token.expression,
 		chunkName,
 		row: row + 1,
@@ -5034,12 +4998,12 @@ export function updateHoverTooltip(snapshot: PointerSnapshot): void {
 	}
 	const contentLines = buildHoverContentLines(inspection);
 	const existing = ide_state.hoverTooltip;
-	if (existing && existing.expression === inspection.expression && existing.assetId === assetId) {
+	if (existing && existing.expression === inspection.expression && existing.asset_id === asset_id) {
 		existing.contentLines = contentLines;
 		existing.valueType = inspection.valueType;
 		existing.scope = inspection.scope;
 		existing.state = inspection.state;
-		existing.assetId = assetId;
+		existing.asset_id = asset_id;
 		existing.row = row;
 		existing.startColumn = token.startColumn;
 		existing.endColumn = token.endColumn;
@@ -5060,7 +5024,7 @@ export function updateHoverTooltip(snapshot: PointerSnapshot): void {
 		valueType: inspection.valueType,
 		scope: inspection.scope,
 		state: inspection.state,
-		assetId,
+		asset_id,
 		row,
 		startColumn: token.startColumn,
 		endColumn: token.endColumn,
@@ -5183,11 +5147,11 @@ export function pointerHitsHoverTarget(snapshot: PointerSnapshot, tooltip: CodeH
 	return column >= tooltip.startColumn && column <= tooltip.endColumn;
 }
 
-export function resolveHoverAssetId(context: CodeTabContext | null): string | null {
+export function resolveHoverasset_id(context: CodeTabContext | null): string | null {
 	if (context && context.descriptor) {
-		return context.descriptor.assetId;
+		return context.descriptor.asset_id;
 	}
-	return ide_state.primaryAssetId;
+	return ide_state.primaryasset_id;
 }
 
 export function resolveHoverChunkName(context: CodeTabContext | null): string | null {
@@ -5195,12 +5159,12 @@ export function resolveHoverChunkName(context: CodeTabContext | null): string | 
 		if (context.descriptor.path && context.descriptor.path.length > 0) {
 			return context.descriptor.path;
 		}
-		if (context.descriptor.assetId && context.descriptor.assetId.length > 0) {
-			return context.descriptor.assetId;
+		if (context.descriptor.asset_id && context.descriptor.asset_id.length > 0) {
+			return context.descriptor.asset_id;
 		}
 	}
-	if (ide_state.primaryAssetId) {
-		return ide_state.primaryAssetId;
+	if (ide_state.primaryasset_id) {
+		return ide_state.primaryasset_id;
 	}
 	return null;
 }
@@ -5209,16 +5173,16 @@ export function buildProjectReferenceContext(context: CodeTabContext | null): {
 	environment: ProjectReferenceEnvironment;
 	chunkName: string;
 	normalizedPath: string | null;
-	assetId: string | null;
+	asset_id: string | null;
 } {
 	const descriptor = context?.descriptor ?? null;
 	const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
-	const descriptorAssetId = descriptor?.assetId ?? null;
-	const resolvedAssetId = descriptorAssetId ?? ide_state.primaryAssetId ?? null;
+	const descriptorasset_id = descriptor?.asset_id ?? null;
+	const resolvedasset_id = descriptorasset_id ?? ide_state.primaryasset_id ?? null;
 	const resolvedChunk = resolveHoverChunkName(context)
 		?? normalizedPath
-		?? descriptorAssetId
-		?? resolvedAssetId
+		?? descriptorasset_id
+		?? resolvedasset_id
 		?? '<console>';
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: context,
@@ -5231,7 +5195,7 @@ export function buildProjectReferenceContext(context: CodeTabContext | null): {
 		environment,
 		chunkName: resolvedChunk,
 		normalizedPath,
-		assetId: resolvedAssetId,
+		asset_id: resolvedasset_id,
 	};
 }
 
@@ -5240,7 +5204,7 @@ export function resolveSemanticDefinitionLocation(
 	expression: string,
 	usageRow: number,
 	usageColumn: number,
-	assetId: string | null,
+	asset_id: string | null,
 	chunkName: string | null,
 ): ConsoleLuaDefinitionLocation | null {
 	if (!expression) {
@@ -5266,18 +5230,18 @@ export function resolveSemanticDefinitionLocation(
 	}
 	const descriptor = context?.descriptor ?? null;
 	const descriptorPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
-	const descriptorAssetId = descriptor?.assetId ?? null;
-	const resolvedAssetId = descriptorAssetId ?? assetId ?? ide_state.primaryAssetId ?? null;
+	const descriptorasset_id = descriptor?.asset_id ?? null;
+	const resolvedasset_id = descriptorasset_id ?? asset_id ?? ide_state.primaryasset_id ?? null;
 	const resolvedChunk = chunkName
 		?? descriptorPath
-		?? descriptorAssetId
-		?? assetId
-		?? ide_state.primaryAssetId
+		?? descriptorasset_id
+		?? asset_id
+		?? ide_state.primaryasset_id
 		?? hoverChunkName
 		?? '<console>';
 	const location: ConsoleLuaDefinitionLocation = {
 		chunkName: resolvedChunk,
-		assetId: resolvedAssetId,
+		asset_id: resolvedasset_id,
 		range: {
 			startLine: definition.definition.start.line,
 			startColumn: definition.definition.start.column,
@@ -5460,12 +5424,12 @@ export function refreshGotoHoverHighlight(row: number, column: number, context: 
 		&& existing.expression === token.expression) {
 		return;
 	}
-	const assetId = resolveHoverAssetId(context);
+	const asset_id = resolveHoverasset_id(context);
 	const chunkName = resolveHoverChunkName(context);
-	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, assetId, chunkName);
+	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, asset_id, chunkName);
 	if (!definition) {
 		const inspection = safeInspectLuaExpression({
-			assetId,
+			asset_id,
 			expression: token.expression,
 			chunkName,
 			row: row + 1,
@@ -5497,17 +5461,17 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 	const context = getActiveCodeTabContext();
 	const descriptor = context?.descriptor ?? null;
 	const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
-	const assetId = resolveHoverAssetId(context);
+	const asset_id = resolveHoverasset_id(context);
 	const token = extractHoverExpression(row, column);
 	if (!token) {
 		ide_state.showMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
 		return false;
 	}
 	const chunkName = resolveHoverChunkName(context);
-	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, assetId, chunkName);
+	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, asset_id, chunkName);
 	if (!definition) {
 		const inspection = safeInspectLuaExpression({
-			assetId,
+			asset_id,
 			expression: token.expression,
 			chunkName,
 			row: row + 1,
@@ -5518,9 +5482,9 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 	if (!definition) {
 		const resolvedChunkName = chunkName
 			?? normalizedPath
-			?? descriptor?.assetId
-			?? assetId
-			?? ide_state.primaryAssetId
+			?? descriptor?.asset_id
+			?? asset_id
+			?? ide_state.primaryasset_id
 			?? '<console>';
 		const environment: ProjectReferenceEnvironment = {
 			activeContext: context,
@@ -5535,8 +5499,8 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 			workspace: ide_state.semanticWorkspace,
 			currentChunkName: resolvedChunkName,
 			currentLines: ide_state.lines,
-			currentAssetId: assetId,
-			sourceLabelPath: normalizedPath ?? descriptor?.assetId ?? null,
+			currentasset_id: asset_id,
+			sourceLabelPath: normalizedPath ?? descriptor?.asset_id ?? null,
 		});
 		if (projectDefinition) {
 			navigateToLuaDefinition(projectDefinition);
@@ -5554,14 +5518,14 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 export function navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	clearReferenceHighlights();
-	const hint: { assetId: string | null; path?: string | null } = { assetId: definition.assetId };
+	const hint: { asset_id: string | null; path?: string | null } = { asset_id: definition.asset_id };
 	if (definition.path !== undefined) {
 		hint.path = definition.path;
 	}
 	let targetContextId: string | null = null;
 	try {
 		focusChunkSource(definition.chunkName, hint);
-		const context = findCodeTabContext(definition.assetId ?? null, definition.chunkName ?? null);
+		const context = findCodeTabContext(definition.asset_id ?? null, definition.chunkName ?? null);
 		if (context) {
 			targetContextId = context.id;
 		}
@@ -5641,7 +5605,7 @@ export function pushNavigationEntry(stack: NavigationHistoryEntry[], entry: Navi
 
 export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: NavigationHistoryEntry): boolean {
 	return a.contextId === b.contextId
-		&& a.assetId === b.assetId
+		&& a.asset_id === b.asset_id
 		&& a.chunkName === b.chunkName
 		&& a.path === b.path
 		&& a.row === b.row
@@ -5660,7 +5624,7 @@ export function createNavigationEntry(): NavigationHistoryEntry | null {
 	if (!context) {
 		return null;
 	}
-	const assetId = resolveHoverAssetId(context);
+	const asset_id = resolveHoverasset_id(context);
 	const chunkName = resolveHoverChunkName(context);
 	const path = context.descriptor?.path ?? null;
 	const maxRowIndex = ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0;
@@ -5669,7 +5633,7 @@ export function createNavigationEntry(): NavigationHistoryEntry | null {
 	const column = clamp(ide_state.cursorColumn, 0, line.length);
 	return {
 		contextId: context.id,
-		assetId,
+		asset_id,
 		chunkName,
 		path,
 		row,
@@ -5692,7 +5656,7 @@ export function applyNavigationEntry(entry: NavigationHistoryEntry): void {
 	if (existingContext) {
 		setActiveTab(entry.contextId);
 	} else {
-		const hint: { assetId: string | null; path?: string | null } = { assetId: entry.assetId };
+		const hint: { asset_id: string | null; path?: string | null } = { asset_id: entry.asset_id };
 		if (entry.path) {
 			hint.path = entry.path;
 		}
@@ -7223,7 +7187,7 @@ export function drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: stri
 	const lines: string[] = [];
 	for (let i = 0; i < segments.length; i += 1) {
 		const segment = segments[i].trim();
-		const wrapped = wrapRuntimeErrorLineUtil(segment.length === 0 ? '' : segment, wrapWidth, (text) => measureText(text));
+		const wrapped = wrapRuntimeErrorLine(segment.length === 0 ? '' : segment, wrapWidth, (text) => measureText(text));
 		for (let j = 0; j < wrapped.length; j += 1) {
 			lines.push(wrapped[j]);
 		}
@@ -7665,20 +7629,20 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 		ide_state.showMessage(`Unable to resolve runtime chunk name: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
-	const frameAssetId = typeof frame.chunkAssetId === 'string' && frame.chunkAssetId.length > 0 ? frame.chunkAssetId : null;
+	const frameasset_id = typeof frame.chunkasset_id === 'string' && frame.chunkasset_id.length > 0 ? frame.chunkasset_id : null;
 	const framePath = typeof frame.chunkPath === 'string' && frame.chunkPath.length > 0 ? frame.chunkPath : null;
 	let descriptor: ConsoleResourceDescriptor | null = null;
-	if (!frameAssetId || !framePath) {
+	if (!frameasset_id || !framePath) {
 		try {
 			descriptor = findResourceDescriptorForChunk(normalizedChunk);
 		} catch {
 			descriptor = null;
 		}
 	}
-	const chunkHintAssetId = frameAssetId ?? descriptor?.assetId ?? null;
+	const chunkHintasset_id = frameasset_id ?? descriptor?.asset_id ?? null;
 	const chunkHintPath = framePath ?? descriptor?.path ?? undefined;
 	try {
-		const hint = chunkHintAssetId !== null ? { assetId: chunkHintAssetId, path: chunkHintPath } : (descriptor ? { assetId: descriptor.assetId, path: descriptor.path } : undefined);
+		const hint = chunkHintasset_id !== null ? { asset_id: chunkHintasset_id, path: chunkHintPath } : (descriptor ? { asset_id: descriptor.asset_id, path: descriptor.path } : undefined);
 		focusChunkSource(normalizedChunk, hint);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -7936,7 +7900,7 @@ export function activateCodeTab(): void {
 
 export function openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
 	const navigationCheckpoint = beginNavigationCapture();
-	const tabId: EditorTabId = `lua:${descriptor.assetId}`;
+	const tabId: EditorTabId = `lua:${descriptor.asset_id}`;
 	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
 	if (!ide_state.codeTabContexts.has(tabId)) {
 		const context = createLuaCodeTabContext(descriptor);
@@ -7965,7 +7929,7 @@ export function openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
 }
 
 export function openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
-	const tabId: EditorTabId = `resource:${descriptor.assetId}`;
+	const tabId: EditorTabId = `resource:${descriptor.asset_id}`;
 	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
 	const state = buildResourceViewerState(descriptor);
 	resourceViewerClampScroll(state);
@@ -8205,7 +8169,7 @@ export function resetResourcePanelState(): void {
 	ide_state.resourceBrowserItems = [];
 	ide_state.resourceBrowserSelectionIndex = -1;
 	// max line width handled by controller
-	ide_state.pendingResourceSelectionAssetId = null;
+	ide_state.pendingResourceSelectionasset_id = null;
 	ide_state.resourcePanelResizing = false;
 }
 
@@ -8235,10 +8199,10 @@ export function enterResourceViewer(tab: EditorTabDescriptor): void {
 // updateResourceBrowserMetrics removed; controller computes metrics
 
 export function selectResourceInPanel(descriptor: ConsoleResourceDescriptor): void {
-	if (!descriptor.assetId || descriptor.assetId.length === 0) {
+	if (!descriptor.asset_id || descriptor.asset_id.length === 0) {
 		return;
 	}
-	ide_state.pendingResourceSelectionAssetId = descriptor.assetId;
+	ide_state.pendingResourceSelectionasset_id = descriptor.asset_id;
 	if (!ide_state.resourcePanelVisible) {
 		return;
 	}
@@ -8249,23 +8213,23 @@ export function applyPendingResourceSelection(): void {
 	if (!ide_state.resourcePanelVisible) {
 		return;
 	}
-	const assetId = ide_state.pendingResourceSelectionAssetId;
-	if (!assetId) {
+	const asset_id = ide_state.pendingResourceSelectionasset_id;
+	if (!asset_id) {
 		return;
 	}
-	const index = findResourcePanelIndexByAssetId(assetId);
+	const index = findResourcePanelIndexByasset_id(asset_id);
 	if (index === -1) {
 		return;
 	}
 	ide_state.resourceBrowserSelectionIndex = index;
 	resourceBrowserEnsureSelectionVisible();
-	ide_state.pendingResourceSelectionAssetId = null;
+	ide_state.pendingResourceSelectionasset_id = null;
 }
 
-export function findResourcePanelIndexByAssetId(assetId: string): number {
+export function findResourcePanelIndexByasset_id(asset_id: string): number {
 	for (let i = 0; i < ide_state.resourceBrowserItems.length; i++) {
 		const descriptor = ide_state.resourceBrowserItems[i].descriptor;
-		if (descriptor && descriptor.assetId === assetId) {
+		if (descriptor && descriptor.asset_id === asset_id) {
 			return i;
 		}
 	}
@@ -8279,20 +8243,20 @@ export function findResourcePanelIndexByAssetId(assetId: string): number {
 // clampResourceBrowserHorizontalScroll removed; use controller.clampHScroll()
 
 export function createEntryTabContext(): CodeTabContext | null {
-	const assetId = (typeof ide_state.primaryAssetId === 'string' && ide_state.primaryAssetId.length > 0)
-		? ide_state.primaryAssetId
+	const asset_id = (typeof ide_state.primaryasset_id === 'string' && ide_state.primaryasset_id.length > 0)
+		? ide_state.primaryasset_id
 		: null;
-	const descriptor = assetId ? findResourceDescriptorByAssetId(assetId) : null;
-	const resolvedAssetId = descriptor ? descriptor.assetId : (assetId ?? '__entry__');
-	const tabId: string = `lua:${resolvedAssetId}`;
+	const descriptor = asset_id ? findResourceDescriptorByasset_id(asset_id) : null;
+	const resolvedasset_id = descriptor ? descriptor.asset_id : (asset_id ?? '__entry__');
+	const tabId: string = `lua:${resolvedasset_id}`;
 	const title = descriptor
 		? computeResourceTabTitle(descriptor)
-		: (assetId ?? ide_state.metadata.title ?? 'ENTRY').toUpperCase();
+		: (asset_id ?? ide_state.metadata.title ?? 'ENTRY').toUpperCase();
 	const load = descriptor
-		? () => ide_state.loadLuaResourceFn(descriptor.assetId)
+		? () => ide_state.loadLuaResourceFn(descriptor.asset_id)
 		: () => ide_state.loadSourceFn();
 	const save = descriptor
-		? (source: string) => ide_state.saveLuaResourceFn(descriptor.assetId, source)
+		? (source: string) => ide_state.saveLuaResourceFn(descriptor.asset_id, source)
 		: (source: string) => ide_state.saveSourceFn(source);
 	return {
 		id: tabId,
@@ -8313,11 +8277,11 @@ export function createEntryTabContext(): CodeTabContext | null {
 export function createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): CodeTabContext {
 	const title = computeResourceTabTitle(descriptor);
 	return {
-		id: `lua:${descriptor.assetId}`,
+		id: `lua:${descriptor.asset_id}`,
 		title,
 		descriptor,
-		load: () => ide_state.loadLuaResourceFn(descriptor.assetId),
-		save: (source: string) => ide_state.saveLuaResourceFn(descriptor.assetId, source),
+		load: () => ide_state.loadLuaResourceFn(descriptor.asset_id),
+		save: (source: string) => ide_state.saveLuaResourceFn(descriptor.asset_id, source),
 		snapshot: null,
 		lastSavedSource: '',
 		saveGeneration: 0,
@@ -8453,7 +8417,7 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 	const lines: string[] = [
 		`Path: ${descriptor.path || '<unknown>'}`,
 		`Type: ${descriptor.type}`,
-		`Asset ID: ${descriptor.assetId}`,
+		`Asset ID: ${descriptor.asset_id}`,
 	];
 	const state: ResourceViewerState = {
 		descriptor,
@@ -8470,17 +8434,17 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 		lines.push('');
 		switch (descriptor.type) {
 			case 'lua': {
-				const source = rompack.lua?.[descriptor.assetId];
+				const source = rompack.lua?.[descriptor.asset_id];
 				if (typeof source === 'string') {
 					appendResourceViewerLines(lines, ['-- Lua Source --', '']);
 					appendResourceViewerLines(lines, source.split(/\r?\n/));
 				} else {
-					error = `Lua source '${descriptor.assetId}' unavailable.`;
+					error = `Lua source '${descriptor.asset_id}' unavailable.`;
 				}
 				break;
 			}
 			case 'code': {
-				const dataEntry = rompack.data?.[descriptor.assetId];
+				const dataEntry = rompack.data?.[descriptor.asset_id];
 				if (typeof dataEntry === 'string') {
 					appendResourceViewerLines(lines, ['-- Code --', '']);
 					appendResourceViewerLines(lines, dataEntry.split(/\r?\n/));
@@ -8492,28 +8456,28 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 					appendResourceViewerLines(lines, ['-- Game Code --', '']);
 					appendResourceViewerLines(lines, rompack.code.split(/\r?\n/));
 				} else {
-					error = `Code asset '${descriptor.assetId}' unavailable.`;
+					error = `Code asset '${descriptor.asset_id}' unavailable.`;
 				}
 				break;
 			}
 			case 'data':
 			case 'rommanifest': {
-				const data = rompack.data?.[descriptor.assetId];
+				const data = rompack.data?.[descriptor.asset_id];
 				if (data !== undefined) {
 					const json = safeJsonStringify(data);
 					appendResourceViewerLines(lines, ['-- Data --', '']);
 					appendResourceViewerLines(lines, json.split(/\r?\n/));
 				} else {
-					error = `Data asset '${descriptor.assetId}' not found.`;
+					error = `Data asset '${descriptor.asset_id}' not found.`;
 				}
 				break;
 			}
 			case 'image':
 			case 'atlas':
 			case 'romlabel': {
-				const image = rompack.img?.[descriptor.assetId];
+				const image = rompack.img?.[descriptor.asset_id];
 				if (!image) {
-					error = `Image asset '${descriptor.assetId}' not found.`;
+					error = `Image asset '${descriptor.asset_id}' not found.`;
 					break;
 				}
 				const meta = image.imgmeta ?? {};
@@ -8523,7 +8487,7 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 				const atlassed = (meta as { atlassed?: boolean }).atlassed;
 				if (Number.isFinite(width) && Number.isFinite(height)) {
 					state.image = {
-						assetId: descriptor.assetId,
+						asset_id: descriptor.asset_id,
 						width: Math.max(1, Math.floor(width as number)),
 						height: Math.max(1, Math.floor(height as number)),
 						atlassed: Boolean(atlassed),
@@ -8549,9 +8513,9 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 				break;
 			}
 			case 'audio': {
-				const audio = rompack.audio?.[descriptor.assetId];
+				const audio = rompack.audio?.[descriptor.asset_id];
 				if (!audio) {
-					error = `Audio asset '${descriptor.assetId}' not found.`;
+					error = `Audio asset '${descriptor.asset_id}' not found.`;
 					break;
 				}
 				const meta = audio.audiometa ?? {};
@@ -8566,9 +8530,9 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 				break;
 			}
 			case 'model': {
-				const model = rompack.model?.[descriptor.assetId];
+				const model = rompack.model?.[descriptor.asset_id];
 				if (!model) {
-					error = `Model asset '${descriptor.assetId}' not found.`;
+					error = `Model asset '${descriptor.asset_id}' not found.`;
 					break;
 				}
 				const keys = Object.keys(model);
@@ -8576,9 +8540,9 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 				break;
 			}
 			case 'aem': {
-				const events = rompack.audioevents?.[descriptor.assetId];
+				const events = rompack.audioevents?.[descriptor.asset_id];
 				if (!events) {
-					error = `Audio event map '${descriptor.assetId}' not found.`;
+					error = `Audio event map '${descriptor.asset_id}' not found.`;
 					break;
 				}
 				const json = safeJsonStringify(events);
@@ -8610,8 +8574,8 @@ export function computeResourceTabTitle(descriptor: ConsoleResourceDescriptor): 
 	if (parts.length > 0) {
 		return parts[parts.length - 1];
 	}
-	if (descriptor.assetId && descriptor.assetId.length > 0) {
-		return descriptor.assetId;
+	if (descriptor.asset_id && descriptor.asset_id.length > 0) {
+		return descriptor.asset_id;
 	}
 	return descriptor.type.toUpperCase();
 }
@@ -8985,7 +8949,7 @@ export function resourceViewerTextCapacity(viewer: ResourceViewerState): number 
 	return Math.max(0, Math.floor(availableHeight / ide_state.lineHeight));
 }
 
-export function ensureResourceViewerSprite(api: BmsxConsoleApi, assetId: string, layout: { left: number; top: number; scale: number }): void {
+export function ensureResourceViewerSprite(api: BmsxConsoleApi, asset_id: string, layout: { left: number; top: number; scale: number }): void {
 	if (!ide_state.resourceViewerSpriteId) {
 		ide_state.resourceViewerSpriteId = 'console_resource_viewer_sprite';
 	}
@@ -9000,7 +8964,7 @@ export function ensureResourceViewerSprite(api: BmsxConsoleApi, assetId: string,
 					class: 'SpriteComponent',
 					options: {
 						id_local: 'viewer_sprite',
-						imgid: assetId,
+						imgid: asset_id,
 						layer: 'ui',
 					},
 				},
@@ -9015,9 +8979,9 @@ export function ensureResourceViewerSprite(api: BmsxConsoleApi, assetId: string,
 	if (!sprite) {
 		return;
 	}
-	if (ide_state.resourceViewerSpriteAsset !== assetId) {
-		sprite.imgid = assetId;
-		ide_state.resourceViewerSpriteAsset = assetId;
+	if (ide_state.resourceViewerSpriteAsset !== asset_id) {
+		sprite.imgid = asset_id;
+		ide_state.resourceViewerSpriteAsset = asset_id;
 	}
 	if (ide_state.resourceViewerSpriteScale !== layout.scale) {
 		sprite.scale.x = layout.scale;
@@ -9155,7 +9119,7 @@ export function drawResourceViewer(api: BmsxConsoleApi): void {
 	const layout = resourceViewerImageLayout(viewer);
 	let textTop = contentTop;
 	if (layout && viewer.image) {
-		ensureResourceViewerSprite(api, viewer.image.assetId, { left: layout.left, top: layout.top, scale: layout.scale });
+		ensureResourceViewerSprite(api, viewer.image.asset_id, { left: layout.left, top: layout.top, scale: layout.scale });
 		textTop = Math.floor(layout.bottom + ide_state.lineHeight);
 	} else {
 		hideResourceViewerSprite(api);
@@ -10045,14 +10009,14 @@ export function buildMemberCompletionItems(request: {
 	objectName: string;
 	operator: '.' | ':';
 	prefix: string;
-	assetId: string | null;
+	asset_id: string | null;
 	chunkName: string | null;
 }): LuaCompletionItem[] {
 	if (request.objectName.length === 0) {
 		return [];
 	}
 	const response = ide_state.listLuaObjectMembersFn({
-		assetId: request.assetId ?? null,
+		asset_id: request.asset_id ?? null,
 		chunkName: request.chunkName ?? null,
 		expression: request.objectName,
 		operator: request.operator,
@@ -10098,7 +10062,6 @@ export function resetBlink(): void {
 export function shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean {
 	return ide_state.input.shouldRepeatPublic(keyboard, code, deltaSeconds);
 }
-
 
 export type ConsoleCartEditor = {
 	activate: typeof activate;
@@ -10254,7 +10217,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	ide_state.listLuaSymbolsFn = options.listLuaSymbols;
 	ide_state.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
 	ide_state.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
-	ide_state.primaryAssetId = options.primaryAssetId;
+	ide_state.primaryasset_id = options.primaryasset_id;
 	if ($.debug) {
 		ide_state.listResourcesFn();
 	}
@@ -10339,9 +10302,9 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		getLineHeight: () => ide_state.lineHeight,
 		getSpaceAdvance: () => ide_state.spaceAdvance,
 		getActiveCodeTabContext: () => getActiveCodeTabContext(),
-		resolveHoverAssetId: (ctx) => resolveHoverAssetId(ctx as CodeTabContext),
+		resolveHoverasset_id: (ctx) => resolveHoverasset_id(ctx as CodeTabContext),
 		resolveHoverChunkName: (ctx) => resolveHoverChunkName(ctx as CodeTabContext),
-		listLuaSymbols: (assetId, chunk) => ide_state.listLuaSymbolsFn(assetId, chunk),
+		listLuaSymbols: (asset_id, chunk) => ide_state.listLuaSymbolsFn(asset_id, chunk),
 		listGlobalLuaSymbols: () => ide_state.listGlobalLuaSymbolsFn(),
 		listLuaModuleSymbols: (moduleName) => ide_state.listLuaModuleSymbolsFn(moduleName),
 		listBuiltinLuaFunctions: () => ide_state.listBuiltinLuaFunctionsFn(),
@@ -10429,7 +10392,6 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	assertMonospace();
 	const initialContext = entryContext ? ide_state.codeTabContexts.get(entryContext.id) ?? null : null;
 	ide_state.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
-	$.input.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 	applyResolutionModeToRuntime();
 	ide_state.pendingWindowFocused = ide_state.windowFocused;
 	installPlatformVisibilityListener();

@@ -43,7 +43,7 @@ type CartManifest = {
 		gamepad?: ManifestInputMapping;
 	};
 	lua?: {
-		assetId?: string;
+		asset_id?: string;
 		chunkName?: string;
 		entry?: ManifestLuaEntryPoints;
 	};
@@ -126,16 +126,16 @@ function buildInputMapping(manifest: CartManifest): {
 
 function deriveLuaProgram(manifest: CartManifest) {
 	const luaConfig = manifest.lua ?? {};
-	const assetId = luaConfig.assetId;
-	if (!assetId || assetId.length === 0) {
-		throw new Error('[start_cart] Cart manifest is missing lua.assetId.');
+	const asset_id = luaConfig.asset_id;
+	if (!asset_id || asset_id.length === 0) {
+		throw new Error('[start_cart] Cart manifest is missing lua.asset_id.');
 	}
 	const chunkName = luaConfig.chunkName && luaConfig.chunkName.length > 0
 		? luaConfig.chunkName
-		: assetId;
+		: asset_id;
 	const entry = luaConfig.entry ?? {};
 	return {
-		assetId,
+		asset_id: asset_id,
 		chunkName,
 		entry: {
 			init: entry.init ?? 'init',

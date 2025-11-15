@@ -16,7 +16,7 @@
 		"$ref": "#/definitions/audioEventEntry"
 	},
 	"definitions": {
-		"assetId": {
+		"asset_id": {
 			"description": "Asset identifier (string).",
 			"type": "string"
 		},
@@ -173,7 +173,7 @@
 			"type": "object",
 			"properties": {
 				"audioId": {
-					"$ref": "#/definitions/assetId"
+					"$ref": "#/definitions/asset_id"
 				},
 				"modulationPreset": {
 					"type": "string"
@@ -200,13 +200,13 @@
 					"items": {
 						"anyOf": [
 							{
-								"$ref": "#/definitions/assetId"
+								"$ref": "#/definitions/asset_id"
 							},
 							{
 								"type": "object",
 								"properties": {
 									"audioId": {
-										"$ref": "#/definitions/assetId"
+										"$ref": "#/definitions/asset_id"
 									},
 									"modulationPreset": {
 										"type": "string"
@@ -255,7 +255,7 @@
 					"type": "object",
 					"properties": {
 						"audioId": {
-							"$ref": "#/definitions/assetId"
+							"$ref": "#/definitions/asset_id"
 						},
 						"sync": {
 							"$ref": "#/definitions/musicTransitionSync"
@@ -327,10 +327,10 @@
 			"type": "object",
 			"properties": {
 				"stinger": {
-					"$ref": "#/definitions/assetId"
+					"$ref": "#/definitions/asset_id"
 				},
 				"returnTo": {
-					"$ref": "#/definitions/assetId"
+					"$ref": "#/definitions/asset_id"
 				},
 				"returnToPrevious": {
 					"type": "boolean"

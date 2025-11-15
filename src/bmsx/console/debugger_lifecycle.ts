@@ -1,7 +1,7 @@
 import type { LuaCallFrame, LuaDebuggerPauseSignal } from '../lua/runtime';
 import type { LuaDebuggerSessionMetrics } from '../lua/debugger';
 
-export type DebuggerPauseFrameHint = { assetId: string | null; path?: string | null } | null;
+export type DebuggerPauseFrameHint = { asset_id: string | null; path?: string | null } | null;
 
 export type DebuggerPauseDisplayPayload = {
 	chunk: string;

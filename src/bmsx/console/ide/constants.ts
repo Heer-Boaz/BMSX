@@ -418,6 +418,7 @@ export const COLOR_PARAMETER_HINT_TEXT = PARAMETER_HINT_BASE.text;
 export const COLOR_PARAMETER_HINT_ACTIVE = PARAMETER_HINT_BASE.active;
 export const COMPLETION_AUTO_TRIGGER_DELAY_SECONDS = 0.16;
 export const EDITOR_TOGGLE_KEY = 'F1';
+export const CONSOLE_TOGGLE_KEY = 'F2';
 export const ESCAPE_KEY = 'Escape';
 export const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'start'];
 export const GLOBAL_SEARCH_RESULT_LIMIT = SEARCH_MAX_RESULTS * 4;

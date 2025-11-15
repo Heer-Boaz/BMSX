@@ -1,10 +1,10 @@
 {
-	"title": "BMSX Lua Shell",
-	"short_name": "LuaShell",
-	"rom_name": "luashell",
+	"title": "BMSX Test Cartridge",
+	"short_name": "Test Cart",
+	"rom_name": "testcart",
 	"metadata": {
 		"version": "1.0.0",
-		"persistentId": "bmsx_lua_shell"
+		"persistentId": "bmsx_test_cart"
 	},
 	"console": {
 		"moduleId": "bmsx-console",
@@ -31,7 +31,7 @@
 		}
 	},
 	"lua": {
-		"assetId": "shell_main",
+		"asset_id": "shell_main",
 		"chunkName": "shell_main",
 		"entry": {
 			"init": "init",

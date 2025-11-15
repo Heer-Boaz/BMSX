@@ -23,7 +23,7 @@ type MemberCompletionHostRequest = {
 	objectName: string;
 	operator: '.' | ':';
 	prefix: string;
-	assetId: string | null;
+	asset_id: string | null;
 	chunkName: string | null;
 };
 
@@ -51,9 +51,9 @@ export interface CompletionHost {
 	getSpaceAdvance(): number;
 	// Symbol/source helpers
 	getActiveCodeTabContext(): unknown | null;
-	resolveHoverAssetId(context: unknown | null): string | null;
+	resolveHoverasset_id(context: unknown | null): string | null;
 	resolveHoverChunkName(context: unknown | null): string | null;
-	listLuaSymbols(assetId: string | null, chunkName: string | null): ConsoleLuaSymbolEntry[];
+	listLuaSymbols(asset_id: string | null, chunkName: string | null): ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbols(): ConsoleLuaSymbolEntry[];
 	listLuaModuleSymbols(moduleName: string): ConsoleLuaSymbolEntry[];
 	listBuiltinLuaFunctions(): ConsoleLuaBuiltinDescriptor[];
@@ -525,13 +525,13 @@ export class CompletionController {
 			appendItems(this.getModuleMemberCompletionItems(context));
 			if (this.host.getMemberCompletionItems) {
 				const activeContext = this.host.getActiveCodeTabContext();
-				const assetId = this.host.resolveHoverAssetId(activeContext);
+				const asset_id = this.host.resolveHoverasset_id(activeContext);
 				const chunkName = this.host.resolveHoverChunkName(activeContext);
 				const runtimeItems = this.host.getMemberCompletionItems({
 					objectName: context.objectName,
 					operator: context.operator,
 					prefix: context.prefix,
-					assetId,
+					asset_id,
 					chunkName,
 				});
 				appendItems(runtimeItems);
@@ -625,7 +625,7 @@ export class CompletionController {
 			const entry = entries[i];
 			const origin = (() => {
 				if (entry.location.path && entry.location.path.length > 0) return entry.location.path;
-				if (entry.location.assetId && entry.location.assetId.length > 0) return entry.location.assetId;
+				if (entry.location.asset_id && entry.location.asset_id.length > 0) return entry.location.asset_id;
 				if (entry.location.chunkName && entry.location.chunkName.length > 0) return entry.location.chunkName;
 				return '';
 			})();
@@ -1253,12 +1253,12 @@ export class CompletionController {
 
 	private activeCompletionCacheKey(): string | null {
 		const context = this.host.getActiveCodeTabContext();
-		const assetId = this.host.resolveHoverAssetId(context);
+		const asset_id = this.host.resolveHoverasset_id(context);
 		const chunkName = this.host.resolveHoverChunkName(context);
-		if (assetId || chunkName) {
-			const safeAssetId = assetId ?? '';
+		if (asset_id || chunkName) {
+			const safeasset_id = asset_id ?? '';
 			const safeChunk = chunkName ?? '';
-			return `${safeAssetId}|${safeChunk}`;
+			return `${safeasset_id}|${safeChunk}`;
 		}
 		let contextId = '';
 		if (context && typeof context === 'object') {

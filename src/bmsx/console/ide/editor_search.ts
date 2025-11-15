@@ -26,7 +26,7 @@ export interface GlobalSearchMatch {
 	start: number;
 	end: number;
 	snippet: string;
-	assetId: string | null;
+	asset_id: string | null;
 	chunkName: string | null;
 }
 
@@ -407,7 +407,7 @@ export function runGlobalSearchJobSlice(job: GlobalSearchJob): boolean {
 					start,
 					end,
 					snippet: buildSearchSnippet(line, start, end),
-					assetId: descriptor.assetId ?? null,
+					asset_id: descriptor.asset_id ?? null,
 					chunkName: descriptor.path ?? null,
 				};
 				job.matches.push(match);
@@ -450,9 +450,9 @@ export function cancelGlobalSearchJob(): void {
 
 export function loadDescriptorLines(descriptor: ConsoleResourceDescriptor): string[] | null {
 	try {
-		const assetId = descriptor.assetId;
-		if (!assetId) return null;
-		const source = ide_state.loadLuaResourceFn(assetId);
+		const asset_id = descriptor.asset_id;
+		if (!asset_id) return null;
+		const source = ide_state.loadLuaResourceFn(asset_id);
 		if (typeof source !== 'string') return null;
 		return source.split(/\r?\n/);
 	} catch {
@@ -464,8 +464,8 @@ export function describeDescriptor(descriptor: ConsoleResourceDescriptor): strin
 	if (descriptor.path && descriptor.path.length > 0) {
 		return descriptor.path.replace(/\\/g, '/');
 	}
-	if (descriptor.assetId && descriptor.assetId.length > 0) {
-		return descriptor.assetId;
+	if (descriptor.asset_id && descriptor.asset_id.length > 0) {
+		return descriptor.asset_id;
 	}
 	return '<resource>';
 }

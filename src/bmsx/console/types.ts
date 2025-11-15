@@ -18,9 +18,9 @@ type BmsxConsoleLuaInlineProgram = {
 	readonly source: string;
 };
 
-type BmsxConsoleLuaAssetProgram = {
+export type BmsxConsoleLuaAssetProgram = {
 	readonly chunkName?: string;
-	readonly assetId: string;
+	readonly asset_id: string;
 	readonly overrideSource?: string;
 };
 
@@ -94,12 +94,12 @@ export type Vector2 = vec2;
 export type ConsoleResourceDescriptor = {
 	path: string;
 	type: string;
-	assetId: string;
+	asset_id: string;
 };
 
 export type ConsoleLuaResourceCreationRequest = {
 	path: string;
-	assetId?: string | null;
+	asset_id?: string | null;
 	contents: string;
 };
 
@@ -116,7 +116,7 @@ export type ConsoleLuaDefinitionRange = {
 
 export type ConsoleLuaDefinitionLocation = {
 	chunkName: string;
-	assetId: string | null;
+	asset_id: string | null;
 	path?: string | null;
 	range: ConsoleLuaDefinitionRange;
 };
@@ -145,7 +145,7 @@ export type ConsoleLuaBuiltinDescriptor = {
 };
 
 export type ConsoleLuaHoverRequest = {
-	assetId: string | null;
+	asset_id: string | null;
 	expression: string;
 	chunkName: string | null;
 	row: number;
@@ -153,7 +153,7 @@ export type ConsoleLuaHoverRequest = {
 };
 
 export type ConsoleLuaMemberCompletionRequest = {
-	assetId: string | null;
+	asset_id: string | null;
 	chunkName: string | null;
 	expression: string;
 	operator: '.' | ':';

@@ -53,7 +53,7 @@ export class ResourcePanelController {
   private selectionIndex = -1;
   private hoverIndex = -1;
   private maxLineWidth = 0;
-  private pendingSelectionAssetId: string | null = null;
+  private pendingSelectionasset_id: string | null = null;
   // totalResourceCount intentionally not tracked here now
 
   // Scrollbars for the panel
@@ -235,8 +235,8 @@ export class ResourcePanelController {
   }
 
   selectResource(descriptor: ConsoleResourceDescriptor): void {
-    if (!descriptor.assetId || descriptor.assetId.length === 0) return;
-    this.pendingSelectionAssetId = descriptor.assetId;
+    if (!descriptor.asset_id || descriptor.asset_id.length === 0) return;
+    this.pendingSelectionasset_id = descriptor.asset_id;
     if (!this.visible) return;
     this.applyPendingSelection();
   }
@@ -318,7 +318,7 @@ export class ResourcePanelController {
     this.hoverIndex = -1;
     this.hscroll = 0;
     this.maxLineWidth = 0;
-    this.pendingSelectionAssetId = null;
+    this.pendingSelectionasset_id = null;
   }
 
   private refreshContents(): void {
@@ -338,7 +338,7 @@ export class ResourcePanelController {
       this.items = [{ line: `<failed to load resources: ${message}>`, contentStartColumn: 0, descriptor: null }];
       this.scroll = 0;
       this.selectionIndex = 0;
-      this.pendingSelectionAssetId = null;
+      this.pendingSelectionasset_id = null;
       return;
     }
     // Augment with atlas entries (moved from editor)
@@ -347,8 +347,8 @@ export class ResourcePanelController {
     if (rompack && rompack.img) {
       const atlasKeys = Object.keys(rompack.img).filter(key => key === '_atlas' || key.startsWith('atlas'));
       for (const key of atlasKeys) {
-        if (augmented.some(entry => entry.assetId === key)) continue;
-        augmented.push({ path: `atlas/${key}`, type: 'atlas', assetId: key });
+        if (augmented.some(entry => entry.asset_id === key)) continue;
+        augmented.push({ path: `atlas/${key}`, type: 'atlas', asset_id: key });
       }
     }
     const filtered: ConsoleResourceDescriptor[] = [];
@@ -359,13 +359,13 @@ export class ResourcePanelController {
   // count omitted
     this.items = this.buildItems(filtered);
     this.updateMetrics();
-    const targetAssetId = this.pendingSelectionAssetId ?? (previous.descriptor ? previous.descriptor.assetId : null);
+    const targetasset_id = this.pendingSelectionasset_id ?? (previous.descriptor ? previous.descriptor.asset_id : null);
     let selectionIndex = -1;
-    if (targetAssetId) {
-      const resolved = this.findIndexByAssetId(targetAssetId);
+    if (targetasset_id) {
+      const resolved = this.findIndexByasset_id(targetasset_id);
       if (resolved !== -1) {
         selectionIndex = resolved;
-        if (this.pendingSelectionAssetId === targetAssetId) this.pendingSelectionAssetId = null;
+        if (this.pendingSelectionasset_id === targetasset_id) this.pendingSelectionasset_id = null;
       }
     }
     if (selectionIndex === -1 && previous.index >= 0 && previous.index < this.items.length) selectionIndex = previous.index;
@@ -389,8 +389,8 @@ export class ResourcePanelController {
     if (descriptor.type === 'lua') return true;
     const path = descriptor.path;
     if (typeof path === 'string' && path.length > 0 && path.toLowerCase().endsWith('.lua')) return true;
-    const assetId = descriptor.assetId;
-    if (typeof assetId === 'string' && assetId.length > 0 && assetId.toLowerCase().endsWith('.lua')) return true;
+    const asset_id = descriptor.asset_id;
+    if (typeof asset_id === 'string' && asset_id.length > 0 && asset_id.toLowerCase().endsWith('.lua')) return true;
     return false;
   }
 
@@ -406,10 +406,10 @@ export class ResourcePanelController {
     for (const entry of entries) {
       const rawPath = typeof entry.path === 'string' && entry.path.length > 0
         ? entry.path
-        : (entry.assetId ?? '');
+        : (entry.asset_id ?? '');
       const normalized = rawPath.replace(/\\/g, '/');
       const parts = normalized.split('/').filter(part => part.length > 0 && part !== '.');
-      const fallbackName = rawPath.length > 0 ? rawPath : (entry.assetId ?? '<resource>');
+      const fallbackName = rawPath.length > 0 ? rawPath : (entry.asset_id ?? '<resource>');
       if (parts.length === 0) {
         root.files.push({ name: fallbackName, descriptor: entry });
         continue;
@@ -474,23 +474,23 @@ export class ResourcePanelController {
     this.clampHScroll();
   }
 
-  private findIndexByAssetId(assetId: string): number {
+  private findIndexByasset_id(asset_id: string): number {
     for (let i = 0; i < this.items.length; i++) {
       const descriptor = this.items[i].descriptor;
-      if (descriptor && descriptor.assetId === assetId) return i;
+      if (descriptor && descriptor.asset_id === asset_id) return i;
     }
     return -1;
   }
 
   private applyPendingSelection(): void {
     if (!this.visible) return;
-    const assetId = this.pendingSelectionAssetId;
-    if (!assetId) return;
-    const index = this.findIndexByAssetId(assetId);
+    const asset_id = this.pendingSelectionasset_id;
+    if (!asset_id) return;
+    const index = this.findIndexByasset_id(asset_id);
     if (index === -1) return;
     this.selectionIndex = index;
     this.ensureSelectionVisible();
-    this.pendingSelectionAssetId = null;
+    this.pendingSelectionasset_id = null;
   }
 
   private openSelectedInternal(): void {
@@ -511,8 +511,8 @@ export class ResourcePanelController {
     if (descriptor.type === 'lua') return true;
     const path = descriptor.path;
     if (typeof path === 'string' && path.length > 0 && path.toLowerCase().endsWith('.lua')) return true;
-    const assetId = descriptor.assetId;
-    if (typeof assetId === 'string' && assetId.length > 0 && assetId.toLowerCase().endsWith('.lua')) return true;
+    const asset_id = descriptor.asset_id;
+    if (typeof asset_id === 'string' && asset_id.length > 0 && asset_id.toLowerCase().endsWith('.lua')) return true;
     return false;
   }
 

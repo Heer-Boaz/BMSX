@@ -293,7 +293,7 @@ async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
 	return decodeBinary(new Uint8Array(buffer));
 }
 
-export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, textureBuf?: ArrayBuffer): Promise<GLTFModel> {
+export async function loadModelFromBuffer(asset_id: string, buffer: ArrayBuffer, textureBuf?: ArrayBuffer): Promise<GLTFModel> {
 	const obj = decodeBinary(new Uint8Array(buffer), { zeroCopyBin: true });
 
 	function toIndices(v: any, componentType?: number): Uint8Array | Uint16Array | Uint32Array | undefined {
@@ -427,7 +427,7 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
 			}
 		}
 	}
-	return { name: assetId, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
+	return { name: asset_id, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
 }
 
 async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean; }): Promise<ImageBitmap | TextureSource> {
@@ -598,7 +598,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 			const entry: RomResourcePath = {
 				path: res.sourcePath,
 				type: res.type,
-				assetId: res.resid,
+				asset_id: res.resid,
 			};
 			romResult.resourcePaths.push(entry);
 		}

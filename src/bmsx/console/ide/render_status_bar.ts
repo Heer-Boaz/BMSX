@@ -20,7 +20,7 @@ export interface StatusBarHost {
 	resourcePanelFilterMode: 'lua_only' | 'all';
 	resourcePanelResourceCount: number;
 	isResourceViewActive: () => boolean;
-	getActiveResourceViewer: () => { descriptor: { type: string; assetId: string; path: string } } | null;
+	getActiveResourceViewer: () => { descriptor: { type: string; asset_id: string; path: string } } | null;
 	metadata: BmsxConsoleMetadata;
 	statusLeftInfo?: string | null;
 	serverConnected: boolean;
@@ -56,7 +56,7 @@ export function renderStatusBar(api: BmsxConsoleApi, host: StatusBarHost): void 
 		if (!match) return;
 		const symbol = match.entry.symbol;
 		const location = symbol.location;
-		let displayPath = location.path ?? symbol.path ?? location.chunkName ?? location.assetId ?? '';
+		let displayPath = location.path ?? symbol.path ?? location.chunkName ?? location.asset_id ?? '';
 		if (!displayPath || displayPath.length === 0) {
 			displayPath = symbol.name;
 		}
@@ -79,7 +79,7 @@ export function renderStatusBar(api: BmsxConsoleApi, host: StatusBarHost): void 
 
 	if (host.isResourceViewActive()) {
 		const viewer = host.getActiveResourceViewer();
-		const info = viewer ? `${viewer.descriptor.type.toUpperCase()} ${viewer.descriptor.assetId}` : 'RESOURCE';
+		const info = viewer ? `${viewer.descriptor.type.toUpperCase()} ${viewer.descriptor.asset_id}` : 'RESOURCE';
 		const detail = viewer ? viewer.descriptor.path : '';
 		host.drawText(api, info, 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
 		if (detail.length > 0) {

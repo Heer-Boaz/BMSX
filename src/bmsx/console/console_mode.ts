@@ -49,7 +49,7 @@ type ConsoleModeOptions = {
 	fontVariant?: ConsoleFontVariant;
 	caseInsensitive?: boolean;
 	maxEntries?: number;
-	listLuaSymbols: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
+	listLuaSymbols: (asset_id: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
 	listLuaModuleSymbols: (moduleName: string) => ConsoleLuaSymbolEntry[];
 	listBuiltinLuaFunctions: () => ConsoleLuaBuiltinDescriptor[];
@@ -60,7 +60,7 @@ type CompletionMemberRequest = {
 	objectName: string;
 	operator: '.' | ':';
 	prefix: string;
-	assetId: string | null;
+	asset_id: string | null;
 	chunkName: string | null;
 };
 
@@ -103,7 +103,7 @@ export class ConsoleMode {
 	private readonly caseInsensitive: boolean;
 	private readonly maxEntries: number;
 	private readonly playerIndex: number;
-	private readonly listLuaSymbolsFn: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
+	private readonly listLuaSymbolsFn: (asset_id: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	private readonly listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
 	private readonly listLuaModuleSymbolsFn: (moduleName: string) => ConsoleLuaSymbolEntry[];
 	private readonly listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
@@ -160,9 +160,9 @@ export class ConsoleMode {
 			getLineHeight: () => this.font.lineHeight(),
 			getSpaceAdvance: () => this.font.advance(' '),
 			getActiveCodeTabContext: () => (this.active ? this.completionContextToken : null),
-			resolveHoverAssetId: () => null,
+			resolveHoverasset_id: () => null,
 			resolveHoverChunkName: () => this.consoleChunkName,
-			listLuaSymbols: (assetId, chunkName) => this.listLuaSymbolsFn(assetId, chunkName),
+			listLuaSymbols: (asset_id, chunkName) => this.listLuaSymbolsFn(asset_id, chunkName),
 			listGlobalLuaSymbols: () => this.listGlobalLuaSymbolsFn(),
 			listLuaModuleSymbols: (moduleName) => this.listLuaModuleSymbolsFn(moduleName),
 			listBuiltinLuaFunctions: () => this.listBuiltinLuaFunctionsFn(),
@@ -198,7 +198,7 @@ export class ConsoleMode {
 		this.completion.closeSession();
 	}
 
-	public isActive(): boolean {
+	public get isActive(): boolean {
 		return this.active;
 	}
 
@@ -747,7 +747,7 @@ export class ConsoleMode {
 			return [];
 		}
 		const response = this.listLuaObjectMembersFn({
-			assetId: request.assetId,
+			asset_id: request.asset_id,
 			chunkName: request.chunkName,
 			expression: request.objectName,
 			operator: request.operator,

@@ -691,18 +691,8 @@ class BrowserInputHub implements InputHub {
 		this.devicesList = retained;
 	};
 
-	private shouldBlockBrowserShortcut(event: KeyboardEvent): boolean {
-		const ctrlLike = event.ctrlKey === true || event.metaKey === true;
-		if (ctrlLike && !event.altKey && event.code === 'KeyP') {
-			return true;
-		}
-		if (ctrlLike && event.shiftKey && !event.altKey && event.code === 'KeyR') {
-			return true;
-		}
-		if (!ctrlLike && !event.altKey && event.code === 'F8') {
-			return true;
-		}
-		return false;
+	private shouldBlockBrowserShortcut(_event: KeyboardEvent): boolean {
+		return true;
 	}
 }
 

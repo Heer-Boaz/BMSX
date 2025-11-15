@@ -638,8 +638,8 @@ export class AudioEventManager implements RegisterablePersistent {
 			}
 		};
 
-		for (const assetId in map) {
-			const v: any = map[assetId];
+		for (const asset_id in map) {
+			const v: any = map[asset_id];
 			if (!v || typeof v !== 'object') continue;
 
 			// Case 1: Container with explicit `events` map

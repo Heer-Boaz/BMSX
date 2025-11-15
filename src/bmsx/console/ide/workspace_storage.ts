@@ -1,7 +1,7 @@
 import { $ } from '../../core/game';
 import type { EditorSnapshot } from '../editor';
 import type { ConsoleResourceDescriptor } from '../types';
-import { createEntryTabContext, findResourceDescriptorByAssetId, ide_state, initializeTabs, openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, restoreSnapshot, setActiveTab, setTabDirty, updateActiveContextDirtyFlag, cloneNavigationEntry } from './console_cart_editor';
+import { createEntryTabContext, findResourceDescriptorByasset_id, ide_state, initializeTabs, openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, restoreSnapshot, setActiveTab, setTabDirty, updateActiveContextDirtyFlag, cloneNavigationEntry } from './console_cart_editor';
 import { WORKSPACE_AUTOSAVE_INTERVAL_MS, workspaceDirtyCache } from './ide_state';
 import type { NavigationHistoryEntry } from './ide_state';
 import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position } from './types';
@@ -265,7 +265,7 @@ type SnapshotMetadata = {
 };
 
 export type SerializedDescriptor = {
-	assetId: string;
+	asset_id: string;
 	path: string;
 	type: string;
 };
@@ -508,7 +508,7 @@ export function serializeDescriptor(descriptor: ConsoleResourceDescriptor | null
 		return null;
 	}
 	return {
-		assetId: descriptor.assetId,
+		asset_id: descriptor.asset_id,
 		path: descriptor.path,
 		type: descriptor.type,
 	};
@@ -518,7 +518,7 @@ export function resolveSerializedDescriptor(serialized: SerializedDescriptor | n
 	if (!serialized) {
 		return null;
 	}
-	return findResourceDescriptorByAssetId(serialized.assetId);
+	return findResourceDescriptorByasset_id(serialized.asset_id);
 }
 
 export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise<void> {

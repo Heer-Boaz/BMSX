@@ -11,7 +11,7 @@ export type ProjectReferenceEnvironment = {
 	activeLines: readonly string[];
 	codeTabContexts: Iterable<CodeTabContext>;
 	listResources(): readonly ConsoleResourceDescriptor[];
-	loadLuaResource(assetId: string): string;
+	loadLuaResource(asset_id: string): string;
 };
 
 export type ReferenceSymbolEntry = ConsoleLuaSymbolEntry & {
@@ -53,7 +53,7 @@ export function isLuaResourceDescriptor(descriptor: ConsoleResourceDescriptor): 
 type FileMetadata = {
 	chunkName: string;
 	lines: readonly string[];
-	assetId: string | null;
+	asset_id: string | null;
 	path: string | null;
 	sourceLabel: string;
 };
@@ -63,7 +63,7 @@ type CollectMetadataOptions = {
 	environment: ProjectReferenceEnvironment;
 	currentChunkName: string;
 	currentLines: readonly string[];
-	currentAssetId: string | null;
+	currentasset_id: string | null;
 	sourceLabelPath?: string | null;
 };
 
@@ -72,7 +72,7 @@ type BuildReferenceCatalogOptions = {
 	info: ReferenceMatchInfo;
 	lines: readonly string[];
 	chunkName: string;
-	assetId: string | null;
+	asset_id: string | null;
 	environment: ProjectReferenceEnvironment;
 	sourceLabelPath?: string | null;
 };
@@ -83,7 +83,7 @@ type ResolveDefinitionLocationOptions = {
 	workspace: LuaSemanticWorkspace;
 	currentChunkName: string;
 	currentLines: readonly string[];
-	currentAssetId: string | null;
+	currentasset_id: string | null;
 	sourceLabelPath?: string | null;
 };
 
@@ -103,13 +103,13 @@ type CatalogEntryArgs = {
 };
 
 export function buildReferenceCatalogForExpression(options: BuildReferenceCatalogOptions): ReferenceCatalogEntry[] {
-	const { workspace, info, lines, chunkName, assetId, environment, sourceLabelPath } = options;
+	const { workspace, info, lines, chunkName, asset_id, environment, sourceLabelPath } = options;
 	const metadata = collectFileMetadata({
 		workspace,
 		environment,
 		currentChunkName: chunkName,
 		currentLines: lines,
-		currentAssetId: assetId,
+		currentasset_id: asset_id,
 		sourceLabelPath,
 	});
 	const entries: ReferenceCatalogEntry[] = [];
@@ -156,7 +156,7 @@ export function buildReferenceCatalogForExpression(options: BuildReferenceCatalo
 }
 
 export function resolveDefinitionLocationForExpression(options: ResolveDefinitionLocationOptions): ConsoleLuaDefinitionLocation | null {
-	const { expression, environment, workspace, currentChunkName, currentLines, currentAssetId, sourceLabelPath } = options;
+	const { expression, environment, workspace, currentChunkName, currentLines, currentasset_id, sourceLabelPath } = options;
 	const namePath = expression.split('.').filter(part => part.length > 0);
 	if (namePath.length === 0) {
 		return null;
@@ -166,7 +166,7 @@ export function resolveDefinitionLocationForExpression(options: ResolveDefinitio
 		environment,
 		currentChunkName,
 		currentLines,
-		currentAssetId,
+		currentasset_id,
 		sourceLabelPath,
 	});
 	let bestDecl: Decl | null = null;
@@ -200,7 +200,7 @@ export function resolveDefinitionLocationForExpression(options: ResolveDefinitio
 	const range = bestDecl.range;
 	const location: ConsoleLuaDefinitionLocation = {
 		chunkName: bestMeta.chunkName,
-		assetId: bestMeta.assetId,
+		asset_id: bestMeta.asset_id,
 		range: {
 			startLine: range.start.line,
 			startColumn: range.start.column,
@@ -264,13 +264,13 @@ export function filterReferenceCatalog(options: { catalog: readonly ReferenceCat
 }
 
 function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileMetadata> {
-	const { workspace, environment, currentChunkName, currentLines, currentAssetId, sourceLabelPath } = options;
+	const { workspace, environment, currentChunkName, currentLines, currentasset_id, sourceLabelPath } = options;
 	const metadata: Map<string, FileMetadata> = new Map();
-	const register = (chunkName: string, lines: readonly string[], assetId: string | null, path: string | null, labelHint: string | null): void => {
+	const register = (chunkName: string, lines: readonly string[], asset_id: string | null, path: string | null, labelHint: string | null): void => {
 		if (metadata.has(chunkName)) {
 			return;
 		}
-		const sourceLabel = computeSourceLabel(labelHint ?? path ?? assetId ?? chunkName, chunkName);
+		const sourceLabel = computeSourceLabel(labelHint ?? path ?? asset_id ?? chunkName, chunkName);
 		try {
 			workspace.updateFile(chunkName, lines.join('\n'));
 		} catch {
@@ -279,12 +279,12 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		metadata.set(chunkName, {
 			chunkName,
 			lines,
-			assetId,
+			asset_id,
 			path,
 			sourceLabel,
 		});
 	};
-	register(currentChunkName, currentLines, currentAssetId, null, sourceLabelPath ?? null);
+	register(currentChunkName, currentLines, currentasset_id, null, sourceLabelPath ?? null);
 	const activeContext = environment.activeContext;
 	const contexts = Array.from(environment.codeTabContexts);
 	for (let index = 0; index < contexts.length; index += 1) {
@@ -310,9 +310,9 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		if (!lines) {
 			continue;
 		}
-		const assetId = descriptor && descriptor.assetId ? descriptor.assetId : null;
+		const asset_id = descriptor && descriptor.asset_id ? descriptor.asset_id : null;
 		const path = descriptor && descriptor.path ? normalizePath(descriptor.path) : null;
-		register(chunkName, lines, assetId, path, null);
+		register(chunkName, lines, asset_id, path, null);
 	}
 	const descriptors = environment.listResources();
 	for (let index = 0; index < descriptors.length; index += 1) {
@@ -324,12 +324,12 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		if (metadata.has(chunkName)) {
 			continue;
 		}
-		if (!descriptor.assetId) {
+		if (!descriptor.asset_id) {
 			continue;
 		}
 		let lines: readonly string[] | null = null;
 		try {
-			const source = environment.loadLuaResource(descriptor.assetId);
+			const source = environment.loadLuaResource(descriptor.asset_id);
 			lines = normalizeSourceLines(source);
 		} catch {
 			lines = null;
@@ -337,7 +337,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		if (!lines) {
 			continue;
 		}
-		register(chunkName, lines, descriptor.assetId, normalizePath(descriptor.path ?? null), null);
+		register(chunkName, lines, descriptor.asset_id, normalizePath(descriptor.path ?? null), null);
 	}
 	return metadata;
 }
@@ -347,8 +347,8 @@ function resolveChunkName(descriptor: ConsoleResourceDescriptor | null, fallback
 		if (descriptor.path && descriptor.path.length > 0) {
 			return normalizePath(descriptor.path) ?? descriptor.path;
 		}
-		if (descriptor.assetId && descriptor.assetId.length > 0) {
-			return descriptor.assetId;
+		if (descriptor.asset_id && descriptor.asset_id.length > 0) {
+			return descriptor.asset_id;
 		}
 	}
 	if (fallback && fallback.length > 0) {
@@ -409,7 +409,7 @@ function createCatalogEntry(args: CatalogEntryArgs): ReferenceCatalogEntry {
 	const symbolName = expression.length > 0 ? expression : snippet;
 	const location: ConsoleLuaDefinitionLocation = {
 		chunkName: meta.chunkName,
-		assetId: meta.assetId,
+		asset_id: meta.asset_id,
 		range: {
 			startLine: range.startLine,
 			startColumn: range.startColumn,

@@ -58,11 +58,11 @@ import { ConsoleCodeLayout } from './code_layout';
 import type { TimerHandle } from '../../platform';
 import type { DebuggerExecutionState } from '../debugger_lifecycle';
 import type { LuaDebuggerSessionMetrics } from '../../lua/debugger';
-import { EDITOR_TOGGLE_KEY, ESCAPE_KEY } from './constants';
+import { CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_KEY, ESCAPE_KEY } from './constants';
 
 export type NavigationHistoryEntry = {
 	contextId: string;
-	assetId: string | null;
+	asset_id: string | null;
 	chunkName: string | null;
 	path: string | null;
 	row: number;
@@ -71,6 +71,7 @@ export type NavigationHistoryEntry = {
 
 export const captureKeys: string[] = [...new Set([
 	EDITOR_TOGGLE_KEY,
+	CONSOLE_TOGGLE_KEY,
 	ESCAPE_KEY,
 	'ArrowUp',
 	'ArrowDown',
@@ -131,17 +132,17 @@ export interface IdeState {
 	fontVariant: ConsoleFontVariant;
 	loadSourceFn: () => string;
 	saveSourceFn: (source: string) => Promise<void>;
-	loadLuaResourceFn: (assetId: string) => string;
-	saveLuaResourceFn: (assetId: string, source: string) => Promise<void>;
+	loadLuaResourceFn: (asset_id: string) => string;
+	saveLuaResourceFn: (asset_id: string, source: string) => Promise<void>;
 	createLuaResourceFn: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
 	listResourcesFn: () => ConsoleResourceDescriptor[];
 	inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
 	listLuaObjectMembersFn: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
 	listLuaModuleSymbolsFn: (moduleName: string) => ConsoleLuaSymbolEntry[];
-	listLuaSymbolsFn: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
+	listLuaSymbolsFn: (asset_id: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
 	listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
-	primaryAssetId: string | null;
+	primaryasset_id: string | null;
 	builtinIdentifierCache: { key: string; set: ReadonlySet<string> } | null;
 	hoverTooltip: CodeHoverTooltip | null;
 	lastPointerSnapshot: PointerSnapshot | null;
@@ -207,7 +208,6 @@ export interface IdeState {
 	scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
 	scrollbarController: ScrollbarController;
 	input: InputController;
-	toggleInputLatch: boolean;
 	windowFocused: boolean;
 	pendingWindowFocused: boolean;
 	disposeVisibilityListener: (() => void) | null;
@@ -244,7 +244,7 @@ export interface IdeState {
 	lastCreateResourceDirectory: string | null;
 	symbolCatalog: SymbolCatalogEntry[];
 	referenceCatalog: ReferenceCatalogEntry[];
-	symbolCatalogContext: { scope: 'local' | 'global'; assetId: string | null; chunkName: string | null } | null;
+	symbolCatalogContext: { scope: 'local' | 'global'; asset_id: string | null; chunkName: string | null } | null;
 	symbolSearchMatches: SymbolSearchResult[];
 	symbolSearchSelectionIndex: number;
 	symbolSearchDisplayOffset: number;
@@ -276,7 +276,7 @@ export interface IdeState {
 	resourcePanelVisible: boolean;
 	resourcePanelFocused: boolean;
 	resourcePanelResourceCount: number;
-	pendingResourceSelectionAssetId: string | null;
+	pendingResourceSelectionasset_id: string | null;
 	resourcePanelWidthRatio: number | null;
 	resourcePanelResizing: boolean;
 	resourcePanel: ResourcePanelController;
@@ -339,7 +339,7 @@ export const ide_state: IdeState = {
 	listLuaSymbolsFn: undefined!,
 	listGlobalLuaSymbolsFn: undefined!,
 	listBuiltinLuaFunctionsFn: undefined!,
-	primaryAssetId: null,
+	primaryasset_id: null,
 	builtinIdentifierCache: null,
 	hoverTooltip: null,
 	lastPointerSnapshot: null,
@@ -428,7 +428,6 @@ export const ide_state: IdeState = {
 	scrollbars: undefined!,
 	scrollbarController: undefined!,
 	input: undefined!,
-	toggleInputLatch: false,
 	windowFocused: true,
 	pendingWindowFocused: true,
 	disposeVisibilityListener: null,
@@ -497,7 +496,7 @@ export const ide_state: IdeState = {
 	resourcePanelVisible: false,
 	resourcePanelFocused: false,
 	resourcePanelResourceCount: 0,
-	pendingResourceSelectionAssetId: null,
+	pendingResourceSelectionasset_id: null,
 	resourcePanelWidthRatio: null,
 	resourcePanelResizing: false,
 	resourcePanel: undefined!,

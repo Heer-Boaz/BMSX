@@ -30,18 +30,18 @@ test('cross file rename updates other chunks and workspace', () => {
 
 	const contexts = new Map<string, CodeTabContext>();
 	let entryTabId: string | null = null;
-	const primaryAssetId: string | null = null;
+	const primaryasset_id: string | null = null;
 
 	const makeContext = (descriptor: ConsoleResourceDescriptor): CodeTabContext => ({
-		id: `lua:${descriptor.assetId}`,
-		title: descriptor.assetId,
+		id: `lua:${descriptor.asset_id}`,
+		title: descriptor.asset_id,
 		descriptor,
-		load: () => files.get(descriptor.assetId) ?? '',
+		load: () => files.get(descriptor.asset_id) ?? '',
 		save: async (source: string) => {
-			files.set(descriptor.assetId, source);
+			files.set(descriptor.asset_id, source);
 		},
 		snapshot: null,
-		lastSavedSource: files.get(descriptor.assetId) ?? '',
+		lastSavedSource: files.get(descriptor.asset_id) ?? '',
 		saveGeneration: 0,
 		appliedGeneration: 0,
 		dirty: false,
@@ -65,7 +65,7 @@ test('cross file rename updates other chunks and workspace', () => {
 			if (!files.has(normalized)) {
 				throw new Error(`Missing chunk ${normalized}`);
 			}
-			return { path: normalized, type: 'lua', assetId: normalized };
+			return { path: normalized, type: 'lua', asset_id: normalized };
 		},
 		createLuaCodeTabContext(descriptor) {
 			return makeContext(descriptor);
@@ -79,8 +79,8 @@ test('cross file rename updates other chunks and workspace', () => {
 		setEntryTabId(id) {
 			entryTabId = id;
 		},
-		getPrimaryAssetId() {
-			return primaryAssetId;
+		getPrimaryasset_id() {
+			return primaryasset_id;
 		},
 		getCodeTabContext(id) {
 			return contexts.get(id) ?? null;

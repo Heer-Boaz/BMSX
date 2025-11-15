@@ -568,7 +568,7 @@ function combineRompacks(engineRom: RomPack | null, cartRom: RomPack): RomPack {
 		const seen = new Set<string>();
 		const unique: typeof paths = [];
 		for (const entry of paths) {
-			const key = `${entry.type}:${entry.assetId}:${entry.path}`;
+			const key = `${entry.type}:${entry.asset_id}:${entry.path}`;
 			if (seen.has(key)) continue;
 			seen.add(key);
 			unique.push(entry);

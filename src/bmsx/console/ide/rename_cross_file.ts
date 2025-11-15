@@ -11,7 +11,7 @@ export type CrossFileRenameDependencies = {
 	createEntryTabContext(): CodeTabContext | null;
 	getEntryTabId(): string | null;
 	setEntryTabId(id: string | null): void;
-	getPrimaryAssetId(): string | null;
+	getPrimaryasset_id(): string | null;
 	getCodeTabContext(id: string): CodeTabContext | null;
 	setCodeTabContext(context: CodeTabContext): void;
 	listCodeTabContexts(): Iterable<CodeTabContext>;
@@ -106,7 +106,7 @@ export class CrossFileRenameManager {
 		const normalized = this.deps.normalizeChunkReference(chunkName) ?? chunkName;
 		try {
 			const descriptor = this.deps.findResourceDescriptorForChunk(normalized);
-			const contextId: string = `lua:${descriptor.assetId}`;
+			const contextId: string = `lua:${descriptor.asset_id}`;
 			let context = this.deps.getCodeTabContext(contextId) ?? null;
 			if (!context) {
 				context = this.deps.createLuaCodeTabContext(descriptor);
@@ -115,7 +115,7 @@ export class CrossFileRenameManager {
 			return context;
 		} catch {
 			const entryAliases: string[] = [];
-			const primary = this.deps.getPrimaryAssetId();
+			const primary = this.deps.getPrimaryasset_id();
 			if (primary) {
 				entryAliases.push(primary);
 			}
@@ -149,13 +149,13 @@ export class CrossFileRenameManager {
 			if (descriptor) {
 				const descriptorPath = this.deps.normalizeChunkReference(descriptor.path);
 				if ((descriptorPath && descriptorPath === normalized)
-					|| descriptor.assetId === chunkName
-					|| descriptor.assetId === normalized) {
+					|| descriptor.asset_id === chunkName
+					|| descriptor.asset_id === normalized) {
 					return context;
 				}
 			} else {
 				const entryAliases: string[] = [];
-				const primary = this.deps.getPrimaryAssetId();
+				const primary = this.deps.getPrimaryasset_id();
 				if (primary) {
 					entryAliases.push(primary);
 				}

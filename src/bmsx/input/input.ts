@@ -13,6 +13,7 @@ import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyO
 import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
 import type { OnscreenGamepadLayout } from './onscreengamepad';
+import { GlobalShortcutRegistry } from './global_shortcut_registry';
 
 const NO_GAMEPAD_LAYOUT: OnscreenGamepadLayout = Object.freeze({ left: 0, right: 0, bottom: 0, visible: false }) as OnscreenGamepadLayout;
 const DEBUG_HUD_TOGGLE_KEY = 'F10';
@@ -407,6 +408,7 @@ export class Input implements RegisterablePersistent {
 	private debugHotkeysEnabled = false;
 	private debugHotkeysPaused = false;
 	private readonly additionalCaptureKeys: Set<string> = new Set();
+	private readonly globalShortcuts = new GlobalShortcutRegistry();
 
 	private readonly handleSpaceChanged = (_event: GameEvent): void => {
 		for (const player of this.playerInputs) {
@@ -867,6 +869,7 @@ export class Input implements RegisterablePersistent {
 			this.processDebugHotkeys(player);
 			player.pollInput(now);
 			player.update(now);
+			this.globalShortcuts.pollPlayer(player);
 			const gamepadInput = player.inputHandlers['gamepad'];
 			if (gamepadInput) {
 				const buttonState = gamepadInput.getButtonState('start');
@@ -879,6 +882,10 @@ export class Input implements RegisterablePersistent {
 			}
 		});
 		this.pendingGamepadAssignments.forEach(pending => pending.run());
+	}
+
+	public getGlobalShortcutRegistry(): GlobalShortcutRegistry {
+		return this.globalShortcuts;
 	}
 
 	private pollPlatformDevices(): void {
