@@ -183,7 +183,7 @@ class AbilityTagHUDOverlay {
 			content.textContent = 'AbilitySystemComponent not found on this object.';
 			return;
 		}
-		const snapshot = asc.snapshotTags();
+		const snapshot = asc.snapshot_tags();
 		const lines = describeSnapshot(snapshot);
 		if (asc.effects.length > 0) {
 			lines.push('');

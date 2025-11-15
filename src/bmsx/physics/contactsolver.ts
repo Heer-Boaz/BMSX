@@ -1,4 +1,4 @@
-import { new_vec3 } from 'bmsx/utils/vector_operations';
+import { new_vec3 } from '../utils/vector_operations';
 import type { vec3 } from '../rompack/rompack';
 import { insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import type { Contact } from './narrowphase';

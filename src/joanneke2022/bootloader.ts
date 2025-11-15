@@ -1,6 +1,7 @@
 import { $, base_model_spaces, World, BFont, BGamepadButton, BootArgs, build_fsm, copy_vector, Game, WorldObject, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, GameView, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, CollisionSystem, type Direction } from "bmsx";
 import { subscribesToSelfScopedEvent } from 'bmsx/core/eventemitter';
 import type { GameEvent } from 'bmsx/core/game_event';
+import type { TimelineEndEventPayload, TimelineFrameEventPayload } from 'bmsx/component/timeline_component';
 import { GamepadInputMapping, KeyboardButton, KeyboardInputMapping } from 'bmsx';
 import { GameMenu } from "./gamemenu";
 import { BitmapId } from "./resourceids";
@@ -253,38 +254,34 @@ class hoeraStuff extends SpriteObject {
 };
 
 class uitlegStuff extends SpriteObject {
+	private static readonly TIMELINE_ID = 'joanneke2022.uitleg';
+
 	@build_fsm()
 	public static bouw(): StateMachineBlueprint {
 		return {
 			states: {
 				uitleg: {
-					ticks2move: 300,
-					tape: <Array<number>>[
-						0,
-						1,
-						2,
-						3,
-						4,
-						5,
-						6,
-					],
-					enter(this: uitlegStuff, s: State<uitlegStuff>) {
-						s.reset();
-						if (_model)
-							_model.uitleg_tekst_dinges = s.current_tape_value;
+					enter(this: uitlegStuff) {
+						this.play_timeline(uitlegStuff.TIMELINE_ID, { rewind: true, snapToStart: true });
 					},
-					run(this: uitlegStuff, s: State<uitlegStuff>) {
+					run(this: uitlegStuff) {
 						if (Input.KC_BTN1) {
-							++s.head; // Skip to next tape entry. Note that this will reset nudges and stuff
+							this.advance_timeline(uitlegStuff.TIMELINE_ID);
 						}
 					},
-					next(this: uitlegStuff, s: State<uitlegStuff>) {
-						if (_model)
-							_model.uitleg_tekst_dinges = s.current_tape_value;
-					},
-					end(this: uitlegStuff) {
-						if (_model)
-							_model.sc.to('default');
+					on: {
+						[`timeline.frame:${uitlegStuff.TIMELINE_ID}`]: {
+							scope: 'self',
+							do(this: uitlegStuff, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
+								_model.uitleg_tekst_dinges = event.frame_value ?? 0;
+							},
+						},
+						[`timeline.end:${uitlegStuff.TIMELINE_ID}`]: {
+							scope: 'self',
+							do() {
+								_model.sc.to('default');
+							},
+						},
 					},
 				},
 			}
@@ -293,6 +290,12 @@ class uitlegStuff extends SpriteObject {
 
 	constructor() {
 		super();
+		this.define_timeline({
+			id: uitlegStuff.TIMELINE_ID,
+			frames: [0, 1, 2, 3, 4, 5, 6],
+			ticksPerFrame: 300,
+			playbackMode: 'once',
+		});
 		this.imgid = BitmapId.diamond_front;
 		this.getOrCreateCollider().setLocalArea(new_area(0, 0, this.sx, this.sy));
 		this.pos = trunc_vec3(new_vec3((MSX2ScreenWidth - this.sx) / 2, (MSX2ScreenHeight - this.sy) / 2, 0));
@@ -301,7 +304,6 @@ class uitlegStuff extends SpriteObject {
 	override paint() {
 		let lines: string[];
 
-		if (!_model) return;
 		let bla = _model.uitleg_tekst_dinges;
 		switch (bla) {
 			case 0:
@@ -390,38 +392,30 @@ class hud extends WorldObject {
 }
 
 class stoom extends SpriteObject {
+	private static readonly TIMELINE_ID = 'joanneke2022.steam';
+
 	@build_fsm()
 	public static bouw() {
 		return {
 			states: {
 				doepluim: new StateDefinition('doepluim', {
-					tape: [
-						BitmapId.pluim1,
-						BitmapId.pluim2,
-						BitmapId.pluim3,
-						BitmapId.pluim4,
-						BitmapId.pluim5,
-						BitmapId.pluim6,
-						BitmapId.pluim7,
-						BitmapId.pluim8,
-						BitmapId.pluim9,
-						BitmapId.pluimx,
-						BitmapId.pluimx,
-					],
-					ticks2move: 2,
-					enter(this: stoom, s: State<stoom>) {
-						s.reset();
-						this.imgid = s.current_tape_value;
+					enter(this: stoom) {
+						this.play_timeline(stoom.TIMELINE_ID, { rewind: true, snapToStart: true });
 					},
-					run(this: stoom, s: State<stoom>) {
-						++s.ticks;
+					on: {
+						[`timeline.frame:${stoom.TIMELINE_ID}`]: {
+							scope: 'self',
+							do(this: stoom, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<BitmapId>>) {
+								this.imgid = event.frame_value ?? this.imgid;
+							},
+						},
+						[`timeline.end:${stoom.TIMELINE_ID}`]: {
+							scope: 'self',
+							do(this: stoom, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+								this.markForDisposal();
+							},
+						},
 					},
-					next(this: stoom, s: State<stoom>) {
-						this.imgid = s.current_tape_value;
-					},
-					end(this: stoom) {
-						this.markForDisposal();
-					}
 				}),
 			}
 		};
@@ -429,6 +423,24 @@ class stoom extends SpriteObject {
 
 	constructor() {
 		super();
+		this.define_timeline({
+			id: stoom.TIMELINE_ID,
+			frames: [
+				BitmapId.pluim1,
+				BitmapId.pluim2,
+				BitmapId.pluim3,
+				BitmapId.pluim4,
+				BitmapId.pluim5,
+				BitmapId.pluim6,
+				BitmapId.pluim7,
+				BitmapId.pluim8,
+				BitmapId.pluim9,
+				BitmapId.pluimx,
+				BitmapId.pluimx,
+			],
+			ticksPerFrame: 2,
+			playbackMode: 'once',
+		});
 		this.z = 1010;
 		this.imgid = BitmapId.none;
 	}
@@ -437,6 +449,7 @@ class stoom extends SpriteObject {
 		super.onspawn(spawningPos);
 		this.sc.to('doepluim');
 	}
+
 }
 
 class diamant extends SpriteObject {
@@ -504,6 +517,11 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 };
 
 class draaischijf extends SpriteObject {
+	private static readonly TIMELINE_IDS = {
+		start: 'joanneke2022.draaischijf.startup',
+		active: 'joanneke2022.draaischijf.active',
+		cooldown: 'joanneke2022.draaischijf.cooldown',
+	};
 	@build_fsm()
 	public static bouw() {
 		return {
@@ -519,82 +537,63 @@ class draaischijf extends SpriteObject {
 					process_input: draaischijf.handle_input_idle_state,
 				}),
 				slijpen_opstart: new StateDefinition('slijpen_opstart', {
-					ticks2move: 5,
-					tape_playback_mode: 'once',
-					tape: [
-						BitmapId.slijpschijf2,
-						BitmapId.slijpschijf1,
-						BitmapId.slijpschijf2,
-						BitmapId.slijpschijf1,
-						BitmapId.slijpschijf2,
-						BitmapId.slijpschijf1,
-						BitmapId.slijpschijf2,
-						BitmapId.slijpschijf1,
-						BitmapId.slijpschijf2,
-					],
 					enter(this: draaischijf, s: State<draaischijf>) {
 						s.reset();
-						this.imgid = s.current_tape_value;
+						this.play_timeline(draaischijf.TIMELINE_IDS.start, { rewind: true, snapToStart: true });
 					},
 					process_input: draaischijf.handle_input_slijp_opstart_state,
-					run(this: draaischijf, s: State<draaischijf>) {
-						++s.ticks;
-					},
-					end(this: draaischijf) {
-						this.sc.to('slijpen');
-					},
-					next(this: draaischijf, s: State<draaischijf>) {
-						this.imgid = s.current_tape_value;
+					on: {
+						[`timeline.frame:${draaischijf.TIMELINE_IDS.start}`]: {
+							scope: 'self',
+							do(this: draaischijf, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<BitmapId>>) {
+								this.imgid = event.frame_value ?? this.imgid;
+							},
+						},
+						[`timeline.end:${draaischijf.TIMELINE_IDS.start}`]: {
+							scope: 'self',
+							do(this: draaischijf, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+								this.sc.to('slijpen');
+							},
+						},
 					},
 				}),
 				slijpen: new StateDefinition('slijpen', {
-					ticks2move: 10,
-					tape: [
-						BitmapId.slijpschijf3,
-						BitmapId.slijpschijf4,
-					],
 					enter(this: draaischijf, s: State<draaischijf>) {
 						s.reset();
-						this.imgid = s.current_tape_value;
+						this.play_timeline(draaischijf.TIMELINE_IDS.active, { rewind: true, snapToStart: true });
 					},
 					process_input: draaischijf.handle_input_slijp_state,
-					run(this: draaischijf, s: State<draaischijf>) {
-						++s.ticks;
-					},
-					next(this: draaischijf, s: State<draaischijf>) {
-						this.imgid = s.current_tape_value;
-						if (s.head === 0) ++this.y;
-						else --this.y;
-						_model.spawn(new stoom(), new_vec2(randomInt(this.x, this.x + this.size.x), randomInt(this.y, this.y + this.size.y)));
+					on: {
+						[`timeline.frame:${draaischijf.TIMELINE_IDS.active}`]: {
+							scope: 'self',
+							do(this: draaischijf, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<BitmapId>>) {
+								this.imgid = event.frame_value ?? this.imgid;
+								if (event.frame_index === 0) ++this.y;
+								else --this.y;
+								_model.spawn(new stoom(), new_vec2(randomInt(this.x, this.x + this.size.x), randomInt(this.y, this.y + this.size.y)));
+							},
+						},
 					},
 				}),
 				slijpen_afkoel: new StateDefinition('slijpen_afkoel', {
-					ticks2move: 5,
-					tape_playback_mode: 'once',
-					tape: [
-						BitmapId.slijpschijf2,
-						BitmapId.slijpschijf1,
-						BitmapId.slijpschijf2,
-						BitmapId.slijpschijf1,
-						BitmapId.slijpschijf2,
-						BitmapId.slijpschijf1,
-						BitmapId.slijpschijf2,
-						BitmapId.slijpschijf1,
-						BitmapId.slijpschijf2,
-					],
 					enter(this: draaischijf, s: State<draaischijf>) {
 						s.reset();
-						this.imgid = s.current_tape_value;
+						this.play_timeline(draaischijf.TIMELINE_IDS.cooldown, { rewind: true, snapToStart: true });
 					},
 					process_input: draaischijf.handle_input_slijp_afkoel_state,
-					run(this: draaischijf, s: State<draaischijf>) {
-						++s.ticks;
-					},
-					end(this: draaischijf) {
-						this.sc.to('idle');
-					},
-					next(this: draaischijf, s: State<draaischijf>) {
-						this.imgid = s.current_tape_value;
+					on: {
+						[`timeline.frame:${draaischijf.TIMELINE_IDS.cooldown}`]: {
+							scope: 'self',
+							do(this: draaischijf, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<BitmapId>>) {
+								this.imgid = event.frame_value ?? this.imgid;
+							},
+						},
+						[`timeline.end:${draaischijf.TIMELINE_IDS.cooldown}`]: {
+							scope: 'self',
+							do(this: draaischijf, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+								this.sc.to('idle');
+							},
+						},
 					},
 				}),
 			}
@@ -603,6 +602,47 @@ class draaischijf extends SpriteObject {
 
 	constructor() {
 		super('draaischijf');
+		this.define_timeline({
+			id: draaischijf.TIMELINE_IDS.start,
+			frames: [
+				BitmapId.slijpschijf2,
+				BitmapId.slijpschijf1,
+				BitmapId.slijpschijf2,
+				BitmapId.slijpschijf1,
+				BitmapId.slijpschijf2,
+				BitmapId.slijpschijf1,
+				BitmapId.slijpschijf2,
+				BitmapId.slijpschijf1,
+				BitmapId.slijpschijf2,
+			],
+			ticksPerFrame: 5,
+			playbackMode: 'once',
+		});
+		this.define_timeline({
+			id: draaischijf.TIMELINE_IDS.active,
+			frames: [
+				BitmapId.slijpschijf3,
+				BitmapId.slijpschijf4,
+			],
+			ticksPerFrame: 10,
+			playbackMode: 'loop',
+		});
+		this.define_timeline({
+			id: draaischijf.TIMELINE_IDS.cooldown,
+			frames: [
+				BitmapId.slijpschijf2,
+				BitmapId.slijpschijf1,
+				BitmapId.slijpschijf2,
+				BitmapId.slijpschijf1,
+				BitmapId.slijpschijf2,
+				BitmapId.slijpschijf1,
+				BitmapId.slijpschijf2,
+				BitmapId.slijpschijf1,
+				BitmapId.slijpschijf2,
+			],
+			ticksPerFrame: 5,
+			playbackMode: 'once',
+		});
 		this.imgid = BitmapId.none; // Wordt goed gezet bij ingang start state
 		this.onLeavingScreen = (ik, d, old_x_or_y) => leavingScreenHandler_prohibit(ik, d, old_x_or_y);
 		this.size = { x: 64, y: 64, z: undefined };
@@ -671,14 +711,10 @@ class draaischijf extends SpriteObject {
 
 // Event-driven polish: when the grinding wheel overlaps an imperfection while in 'slijpen' state, nudge its polish state.
 @subscribesToSelfScopedEvent('overlap.stay')
-function onWheelOverlapStay(this: draaischijf, event: GameEvent) {
-	const otherId = (event as { other_id?: string }).other_id;
-	if (!otherId) return;
-	// Only act while in the active grinding state
-	if (this.sc?.current_state?.def_id !== 'slijpen') return;
-	const other = $.world.getWorldObject<onvolmaaktheid>(otherId);
-	if (!other) return;
-	if (other?.is_onvolmaaktheid && other?.polijst_nudge) other.polijst_nudge();
+function onWheelOverlapStay(this: draaischijf, event: GameEvent<'overlap.stay', { other_id: string }>) {
+	if (this.sc.current_state.def_id !== 'slijpen') return;
+	const other = $.world.getWorldObject<onvolmaaktheid>(event.other_id);
+	other.polijst_nudge();
 }
 
 export enum onvolmaaktheid_soort {
@@ -701,6 +737,7 @@ abstract class onvolmaaktheid extends SpriteObject {
 	public soort: onvolmaaktheid_soort;
 	public zijde: zijde;
 	public _ernst!: number;
+	private readonly _timelineIdsByState = new Map<string, string>();
 
 	constructor(_soort: onvolmaaktheid_soort, _zijde: zijde, _plek: vec2, __ernst?: number) {
 		super();
@@ -712,8 +749,20 @@ abstract class onvolmaaktheid extends SpriteObject {
 		__ernst && (this._ernst = __ernst);
 	}
 
+	protected registerStateTimeline(id: string, timelineId: string): void {
+		this._timelineIdsByState.set(id, timelineId);
+	}
+
+	private advanceTimelineForCurrentState(): void {
+		const current = this.sc?.current_state;
+		if (!current) return;
+		const timelineId = this._timelineIdsByState.get(current.localdef_id);
+		if (!timelineId) return;
+		this.advance_timeline(timelineId);
+	}
+
 	public polijst_nudge = (): void => {
-		++this.sc.current_state.ticks;
+		this.advanceTimelineForCurrentState();
 	};
 
 	override paint() {
@@ -724,48 +773,55 @@ abstract class onvolmaaktheid extends SpriteObject {
 }
 
 class burn extends onvolmaaktheid {
+	private static readonly TIMELINE_IDS = {
+		active: 'joanneke2022.burn.active',
+		polished: 'joanneke2022.burn.polished',
+	};
+
 	@build_fsm()
 	public static bouw() {
 		return {
 			states: {
 				wees_een_burn: {
-					ticks2move: 20,
-					tape_playback_mode: 'once',
-					tape: [
-						BitmapId.burn1,
-						BitmapId.burn2,
-						BitmapId.burn3,
-						BitmapId.burn4,
-						BitmapId.burn5,
-					],
 					onenter(this: burn, s: State<burn>) {
 						s.reset();
-						this.imgid = s.current_tape_value;
 						this.ben_ik_nog_onvolmaakt = true;
+						this.play_timeline(burn.TIMELINE_IDS.active, { rewind: true, snapToStart: true });
 					},
-					onend(this: burn) {
-						this.sc.to('gepolijst');
-					},
-					onnext(this: burn, s: State<burn>) {
-						this.imgid = s.current_tape_value;
+					on: {
+						[`timeline.frame:${burn.TIMELINE_IDS.active}`]: {
+							scope: 'self',
+							do(this: burn, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<BitmapId>>) {
+								this.imgid = event.frame_value ?? this.imgid;
+							},
+						},
+						[`timeline.end:${burn.TIMELINE_IDS.active}`]: {
+							scope: 'self',
+							do(this: burn, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+								this.sc.to('gepolijst');
+							},
+						},
 					},
 				},
 				gepolijst: {
-					ticks2move: 20,
-					tape: [
-						BitmapId.none,
-						BitmapId.none,
-						BitmapId.none,
-					],
-					auto_tick: false,
 					onenter(this: burn, s: State<burn>) {
 						s.reset();
-						this.imgid = s.current_tape_value;
 						this.ben_ik_nog_onvolmaakt = false;
+						this.play_timeline(burn.TIMELINE_IDS.polished, { rewind: true, snapToStart: true });
 					},
-					onnext(this: burn) {
-						// BURN!!!!
-						this.sc.to('wees_een_burn');
+					on: {
+						[`timeline.frame:${burn.TIMELINE_IDS.polished}`]: {
+							scope: 'self',
+							do(this: burn, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<BitmapId>>) {
+								this.imgid = event.frame_value ?? this.imgid;
+							},
+						},
+						[`timeline.end:${burn.TIMELINE_IDS.polished}`]: {
+							scope: 'self',
+							do(this: burn, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+								this.sc.to('wees_een_burn');
+							},
+						},
 					}
 				},
 			}
@@ -773,12 +829,37 @@ class burn extends onvolmaaktheid {
 	}
 
 	override onspawn = (spawningPos?: vec2): void => {
-		super.onspawn?.(spawningPos);
+		super.onspawn(spawningPos);
 		this.sc.to('wees_een_burn');
 	};
 
 	constructor(_zijde: zijde, _plek: vec2, __ernst?: number) {
 		super(onvolmaaktheid_soort.Burn, _zijde, _plek, __ernst);
+		this.define_timeline({
+			id: burn.TIMELINE_IDS.active,
+			frames: [
+				BitmapId.burn1,
+				BitmapId.burn2,
+				BitmapId.burn3,
+				BitmapId.burn4,
+				BitmapId.burn5,
+			],
+			ticksPerFrame: 20,
+			playbackMode: 'once',
+		});
+		this.define_timeline({
+			id: burn.TIMELINE_IDS.polished,
+			frames: [
+				BitmapId.none,
+				BitmapId.none,
+				BitmapId.none,
+			],
+			ticksPerFrame: 20,
+			playbackMode: 'once',
+			autotick: false,
+		});
+		this.registerStateTimeline('wees_een_burn', burn.TIMELINE_IDS.active);
+		this.registerStateTimeline('gepolijst', burn.TIMELINE_IDS.polished);
 		this.imgid = BitmapId.none;
 		this.getOrCreateCollider().setLocalArea(new_area(0, 0, this.sx, this.sy));
 		// this.size = new_vec2(40, 31);
@@ -786,44 +867,59 @@ class burn extends onvolmaaktheid {
 }
 
 class barst extends onvolmaaktheid {
+	private static readonly TIMELINE_IDS = {
+		active: 'joanneke2022.barst.active',
+		polished: 'joanneke2022.barst.polished',
+	};
+	private static readonly ACTIVE_FRAMES: BitmapId[] = [
+		BitmapId.break1,
+		BitmapId.break2,
+		BitmapId.break3,
+		BitmapId.break4,
+		BitmapId.break5,
+		BitmapId.break6,
+	];
+	private static readonly POLISHED_FRAMES: BitmapId[] = [BitmapId.none, BitmapId.none];
 	@build_fsm()
 	public static bouw(): StateMachineBlueprint {
 		return {
 			states: {
 				wees_een_barst: {
-					ticks2move: 20,
-					tape: [
-						BitmapId.break1,
-						BitmapId.break2,
-						BitmapId.break3,
-						BitmapId.break4,
-						BitmapId.break5,
-						BitmapId.break6,
-					],
 					enter(this: barst, s: State<barst>) {
 						s.reset();
-						this.imgid = s.current_tape_value;
 						this.ben_ik_nog_onvolmaakt = true;
+						this.play_timeline(barst.TIMELINE_IDS.active, { rewind: true, snapToStart: true });
 					},
-					end(this: barst) {
-						this.sc.to('gepolijst');
-					},
-					next(this: barst, s: State<barst>) {
-						this.imgid = s.current_tape_value;
+					on: {
+						[`timeline.frame:${barst.TIMELINE_IDS.active}`]: {
+							scope: 'self',
+							do(this: barst, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<BitmapId>>) {
+								this.imgid = event.frame_value ?? this.imgid;
+							},
+						},
+						[`timeline.end:${barst.TIMELINE_IDS.active}`]: {
+							scope: 'self',
+							do(this: barst, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+								this.sc.to('gepolijst');
+							},
+						},
 					},
 				},
 				gepolijst: {
-					ticks2move: 40,
-					auto_tick: false,
 					enter(this: barst, s: State<barst>) {
 						s.reset();
 						this.imgid = BitmapId.none;
 						this.ben_ik_nog_onvolmaakt = false;
+						this.play_timeline(barst.TIMELINE_IDS.polished, { rewind: true, snapToStart: true });
 					},
-					next(this: barst) {
-						// BURN!!!!
-						_model.spawn(new burn(this.zijde, copy_vector(this.pos)));
-						this.disposeFlag = true; // Vervang met nieuwe soort onvolmaaktheid
+					on: {
+						[`timeline.end:${barst.TIMELINE_IDS.polished}`]: {
+							scope: 'self',
+							do(this: barst, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+								_model.spawn(new burn(this.zijde, copy_vector(this.pos)));
+								this.disposeFlag = true; // Vervang met nieuwe soort onvolmaaktheid
+							},
+						},
 					}
 				},
 			}
@@ -836,23 +932,36 @@ class barst extends onvolmaaktheid {
 
 	public set ernst(x) {
 		this._ernst = x;
-		let s = this.sc.states['wees_een_barst'];
-		s.reset();
-		s.head = this.max_ernst() - this._ernst;
+		const clamped = Math.max(0, this.max_ernst() - this._ernst);
+		this.seek_timeline(barst.TIMELINE_IDS.active, clamped);
 	}
 
 	private max_ernst() {
-		let s = this.sc.states['wees_een_barst'];
-		return s.tape.length - 1;
+		return barst.ACTIVE_FRAMES.length - 1;
 	}
 
 	override onspawn = (spawningPos?: vec2): void => {
-		super.onspawn?.(spawningPos);
+		super.onspawn(spawningPos);
 		this.sc.to('wees_een_barst');
 	};
 
 	constructor(_zijde: zijde, _plek: vec2, __ernst?: number) {
 		super(onvolmaaktheid_soort.Barst, _zijde, _plek);
+		this.define_timeline({
+			id: barst.TIMELINE_IDS.active,
+			frames: [...barst.ACTIVE_FRAMES],
+			ticksPerFrame: 20,
+			playbackMode: 'once',
+		});
+		this.define_timeline({
+			id: barst.TIMELINE_IDS.polished,
+			frames: [...barst.POLISHED_FRAMES],
+			ticksPerFrame: 40,
+			playbackMode: 'once',
+			autotick: false,
+		});
+		this.registerStateTimeline('wees_een_barst', barst.TIMELINE_IDS.active);
+		this.registerStateTimeline('gepolijst', barst.TIMELINE_IDS.polished);
 		let defaultErnst = this.max_ernst();
 		__ernst && (this.ernst = defaultErnst);
 		this.getOrCreateCollider().setLocalArea(new_area(0, 0, 40, 31));

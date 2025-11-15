@@ -23,8 +23,6 @@ import { ide_state } from './ide/ide_state';
 import {
 	isKeyJustPressed as isKeyJustPressedGlobal,
 	isKeyTyped as isKeyTypedGlobal,
-	consumeKey as consumeKeyboardKey,
-	getKeyboardButtonState,
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
 	clearKeyPressRecord,
 } from './ide/input_helpers';
@@ -36,6 +34,7 @@ import type {
 	ConsoleLuaMemberCompletionRequest,
 	ConsoleLuaSymbolEntry,
 } from './types';
+import { consumeIdeKey, getIdeKeyState } from './ide/player_input_adapter';
 
 type ConsoleOutputKind = 'prompt' | 'stdout' | 'stderr' | 'system';
 
@@ -171,7 +170,7 @@ export class ConsoleMode {
 			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),
 			charAt: (row, column) => this.charAt(row, column),
 			getTextVersion: () => this.textVersion,
-			shouldFireRepeat: (_keyboard, code, deltaSeconds) => this.shouldRepeatKey(code, deltaSeconds, this.playerIndex, this.completionRepeatState),
+			shouldFireRepeat: (_keyboard, code, deltaSeconds) => this.shouldRepeatKey(code, deltaSeconds, this.completionRepeatState),
 		});
 		this.completion.setEnterCommitsEnabled(true);
 	}
@@ -267,8 +266,8 @@ export class ConsoleMode {
 			deltaSeconds,
 			allowSpace: true,
 		};
-		const handlers = this.createInlineHandlers(playerInput);
-		const historyHandled = this.handleHistoryNavigation(playerInput, deltaSeconds, modifiers);
+		const handlers = this.createInlineHandlers();
+		const historyHandled = this.handleHistoryNavigation(deltaSeconds, modifiers);
 		if (historyHandled) {
 			this.resetBlink();
 		}
@@ -364,35 +363,33 @@ export class ConsoleMode {
 		return input.getModifiersState();
 	}
 
-	private createInlineHandlers(playerInput: PlayerInput): InlineFieldEditingHandlers {
-		const playerIndex = playerInput.playerIndex;
+	private createInlineHandlers(): InlineFieldEditingHandlers {
 		return {
-			isKeyJustPressed: (code: string) => isKeyJustPressedGlobal(playerIndex, code),
-			isKeyTyped: (code: string) => isKeyTypedGlobal(playerIndex, code),
-			shouldFireRepeat: (code: string, deltaSeconds: number) => this.shouldRepeatKey(code, deltaSeconds, playerIndex, this.editingRepeatState),
-			consumeKey: (code: string) => consumeKeyboardKey(null, code, playerIndex),
+			isKeyJustPressed: (code: string) => isKeyJustPressedGlobal(code),
+			isKeyTyped: (code: string) => isKeyTypedGlobal(code),
+			shouldFireRepeat: (code: string, deltaSeconds: number) => this.shouldRepeatKey(code, deltaSeconds, this.editingRepeatState),
+			consumeKey: (code: string) => consumeIdeKey(code),
 			readClipboard: () => ide_state.customClipboard,
 			writeClipboard: (payload: string) => { this.writeClipboard(payload); },
 			onClipboardEmpty: () => { console.warn('[BmsxConsoleMode] Clipboard is empty'); },
 		};
 	}
 
-	private handleHistoryNavigation(playerInput: PlayerInput, deltaSeconds: number, modifiers: { ctrl: boolean; alt: boolean; meta: boolean }): boolean {
+	private handleHistoryNavigation(deltaSeconds: number, modifiers: { ctrl: boolean; alt: boolean; meta: boolean }): boolean {
 		if (modifiers.ctrl || modifiers.alt || modifiers.meta) {
 			return false;
 		}
 		if (this.history.length === 0) {
 			return false;
 		}
-		const playerIndex = playerInput.playerIndex;
-		if (this.shouldRepeatKey('ArrowUp', deltaSeconds, playerIndex, this.historyRepeatState)) {
+		if (this.shouldRepeatKey('ArrowUp', deltaSeconds, this.historyRepeatState)) {
 			this.recallHistory(-1);
-			consumeKeyboardKey(null, 'ArrowUp', playerIndex);
+			consumeIdeKey('ArrowUp');
 			return true;
 		}
-		if (this.shouldRepeatKey('ArrowDown', deltaSeconds, playerIndex, this.historyRepeatState)) {
+		if (this.shouldRepeatKey('ArrowDown', deltaSeconds, this.historyRepeatState)) {
 			this.recallHistory(1);
-			consumeKeyboardKey(null, 'ArrowDown', playerIndex);
+			consumeIdeKey('ArrowDown');
 			return true;
 		}
 		return false;
@@ -416,12 +413,12 @@ export class ConsoleMode {
 
 	private trySubmitCommand(playerInput: PlayerInput): string | null {
 		const playerIndex = playerInput.playerIndex;
-		const enterPressed = isKeyJustPressedGlobal(playerIndex, 'Enter') || isKeyJustPressedGlobal(playerIndex, 'NumpadEnter');
+		const enterPressed = isKeyJustPressedGlobal('Enter') || isKeyJustPressedGlobal('NumpadEnter');
 		if (!enterPressed) {
 			return null;
 		}
-		consumeKeyboardKey(null, 'Enter', playerIndex);
-		consumeKeyboardKey(null, 'NumpadEnter', playerIndex);
+		consumeIdeKey('Enter', playerIndex);
+		consumeIdeKey('NumpadEnter', playerIndex);
 		const command = this.field.text.trimEnd();
 		if (command.length === 0) {
 			this.resetBlink();
@@ -471,8 +468,8 @@ export class ConsoleMode {
 		void $.platform.clipboard.writeText(payload).catch(() => { console.warn('[BmsxConsoleMode] Failed to write to clipboard'); });
 	}
 
-	private shouldRepeatKey(code: string, deltaSeconds: number, playerIndex: number, state: Map<string, number>): boolean {
-		const buttonState = getKeyboardButtonState(playerIndex, code);
+	private shouldRepeatKey(code: string, deltaSeconds: number, state: Map<string, number>): boolean {
+		const buttonState = getIdeKeyState(code);
 		if (!buttonState || buttonState.pressed !== true) {
 			state.delete(code);
 			clearKeyPressRecord(code);

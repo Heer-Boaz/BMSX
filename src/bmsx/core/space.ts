@@ -3,7 +3,7 @@ import { insavegame, excludepropfromsavegame, onload, type RevivableObjectArgs }
 import { $ } from './game';
 import { WorldObject } from './object/worldobject';
 import { id2obj, id2objectType, type SpawnReason } from './world';
-import { make_index_proxy } from 'bmsx/utils/make_index_proxy';
+import { make_index_proxy } from '../utils/make_index_proxy';
 export type initial_world_spaces = 'game_start' | 'default' | 'ui';
 
 export type id2spaceType = Record<Identifier, Space>;

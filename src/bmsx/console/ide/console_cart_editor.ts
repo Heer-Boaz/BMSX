@@ -56,7 +56,7 @@ import {
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
 import { InputController } from './input_controller';
-import { consumeIdeKey } from './player_input_adapter';
+import { consumeIdeKey, getIdeKeyState } from './player_input_adapter';
 import { ConsoleCodeLayout } from './code_layout';
 import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine } from './runtime_error_utils';
 import { getBreakpointsForChunk, toggleBreakpoint } from './debugger_breakpoints';
@@ -98,7 +98,7 @@ import type {
 	// SearchComputationJob migrated to editor_search
 	RuntimeErrorOverlayLayout,
 } from './types';
-import type { StackTraceFrame } from 'bmsx/lua/runtime';
+import type { StackTraceFrame } from '../../lua/runtime';
 import type { RectBounds } from '../../rompack/rompack';
 import { resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation';
 import {
@@ -116,8 +116,6 @@ import { RenameController, type RenameCommitPayload, type RenameCommitResult } f
 import { planRenameLineEdits } from './rename_apply';
 import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_cross_file';
 import {
-	consumeKey as consumeKeyboardKey,
-	getKeyboardButtonState,
 	isKeyJustPressed as isKeyJustPressedGlobal,
 	isKeyTyped as isKeyTypedGlobal,
 	isModifierPressed as isModifierPressedGlobal,
@@ -1481,7 +1479,7 @@ export function update(deltaSeconds: number): void {
 	handlePointerWheel();
 	handlePointerInput(deltaSeconds);
 	if (ide_state.pendingActionPrompt) {
-		handleActionPromptInput(keyboard);
+		handleActionPromptInput();
 		return;
 	}
 	handleEditorInput(keyboard, deltaSeconds);
@@ -2145,7 +2143,7 @@ export function getKeyboard(): KeyboardInput {
 }
 
 export function handleEscapeShortcut(): boolean {
-	const state = getKeyboardButtonState(ide_state.playerIndex, ESCAPE_KEY);
+	const state = getIdeKeyState(ESCAPE_KEY, ide_state.playerIndex);
 	if (!state || state.pressed !== true) {
 		return false;
 	}
@@ -2344,24 +2342,24 @@ export function splitLines(source: string): string[] {
 	return source.split(/\r?\n/);
 }
 
-export function handleActionPromptInput(keyboard: KeyboardInput): void {
+export function handleActionPromptInput(): void {
 	if (!ide_state.pendingActionPrompt) {
 		return;
 	}
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Escape')) {
-		consumeKeyboardKey(keyboard, 'Escape');
+	if (isKeyJustPressedGlobal('Escape')) {
+		consumeIdeKey('Escape');
 		resetActionPromptState();
 		return;
 	}
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter')) {
-		consumeKeyboardKey(keyboard, 'Enter');
+	if (isKeyJustPressedGlobal('Enter')) {
+		consumeIdeKey('Enter');
 		void handleActionPromptSelection('save-continue');
 	}
 }
 
 export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number): void {
 	if (ide_state.resourcePanelVisible && ide_state.resourcePanelFocused) {
-		ide_state.resourcePanel.handleKeyboard(keyboard, deltaSeconds);
+		ide_state.resourcePanel.handleKeyboard();
 		const st = ide_state.resourcePanel.getStateForRender();
 		ide_state.resourcePanelFocused = st.focused;
 		return;
@@ -2370,51 +2368,51 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		handleResourceViewerInput(keyboard, deltaSeconds);
 		return;
 	}
-	const ctrlDown = isModifierPressedGlobal(ide_state.playerIndex, 'ControlLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ControlRight');
-	const shiftDown = isModifierPressedGlobal(ide_state.playerIndex, 'ShiftLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ShiftRight');
-	const metaDown = isModifierPressedGlobal(ide_state.playerIndex, 'MetaLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'MetaRight');
-	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
+	const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
+	const shiftDown = isModifierPressedGlobal('ShiftLeft') || isModifierPressedGlobal('ShiftRight');
+	const metaDown = isModifierPressedGlobal('MetaLeft') || isModifierPressedGlobal('MetaRight');
+	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
 	const codeTabActive = isCodeTabActive();
 	const editableCodeTab = isEditableCodeTab();
 	const readOnlyCodeTab = isReadOnlyCodeTab();
 
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyO')) {
-		consumeKeyboardKey(keyboard, 'KeyO');
+	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal('KeyO')) {
+		consumeIdeKey('KeyO');
 		openSymbolSearch();
 		return;
 	}
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyR')) {
-		consumeKeyboardKey(keyboard, 'KeyR');
+	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal('KeyR')) {
+		consumeIdeKey('KeyR');
 		toggleResolutionMode();
 		return;
 	}
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyL')) {
-		consumeKeyboardKey(keyboard, 'KeyL');
+	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal('KeyL')) {
+		consumeIdeKey('KeyL');
 		toggleResourcePanelFilterMode();
 		return;
 	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'Comma')) {
-		consumeKeyboardKey(keyboard, 'Comma');
+	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal('Comma')) {
+		consumeIdeKey('Comma');
 		openResourceSearch();
 		return;
 	}
-	if ((ctrlDown || metaDown) && !altDown && !shiftDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyE')) {
-		consumeKeyboardKey(keyboard, 'KeyE');
+	if ((ctrlDown || metaDown) && !altDown && !shiftDown && isKeyJustPressedGlobal('KeyE')) {
+		consumeIdeKey('KeyE');
 		openResourceSearch();
 		return;
 	}
-	if ((ctrlDown && altDown) && isKeyJustPressedGlobal(ide_state.playerIndex, 'Comma')) {
-		consumeKeyboardKey(keyboard, 'Comma');
+	if ((ctrlDown && altDown) && isKeyJustPressedGlobal('Comma')) {
+		consumeIdeKey('Comma');
 		openSymbolSearch();
 		return;
 	}
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyB')) {
-		consumeKeyboardKey(keyboard, 'KeyB');
+	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('KeyB')) {
+		consumeIdeKey('KeyB');
 		toggleResourcePanel();
 		return;
 	}
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyM')) {
-		consumeKeyboardKey(keyboard, 'KeyM');
+	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal('KeyM')) {
+		consumeIdeKey('KeyM');
 		toggleProblemsPanel();
 		if (ide_state.problemsPanel.isVisible()) {
 			markDiagnosticsDirty();
@@ -2423,8 +2421,8 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		}
 		return;
 	}
-	if (!ctrlDown && !metaDown && altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'Comma')) {
-		consumeKeyboardKey(keyboard, 'Comma');
+	if (!ctrlDown && !metaDown && altDown && isKeyJustPressedGlobal('Comma')) {
+		consumeIdeKey('Comma');
 		openGlobalSymbolSearch();
 		return;
 	}
@@ -2434,24 +2432,24 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		return;
 	}
 
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyN')) {
-		consumeKeyboardKey(keyboard, 'KeyN');
+	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('KeyN')) {
+		consumeIdeKey('KeyN');
 		openCreateResourcePrompt();
 		return;
 	}
 
-	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyF')) {
-		consumeKeyboardKey(keyboard, 'KeyF');
+	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal('KeyF')) {
+		consumeIdeKey('KeyF');
 		openSearch(true, 'global');
 		return;
 	}
-	if ((ctrlDown || metaDown) && !shiftDown && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyF')) {
-		consumeKeyboardKey(keyboard, 'KeyF');
+	if ((ctrlDown || metaDown) && !shiftDown && !altDown && isKeyJustPressedGlobal('KeyF')) {
+		consumeIdeKey('KeyF');
 		openSearch(true, 'local');
 		return;
 	}
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(ide_state.playerIndex, 'Tab')) {
-		consumeKeyboardKey(keyboard, 'Tab');
+	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('Tab')) {
+		consumeIdeKey('Tab');
 		cycleTab(shiftDown ? -1 : 1);
 		return;
 	}
@@ -2461,7 +2459,7 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		|| ide_state.lineJumpActive
 		|| ide_state.createResourceActive
 		|| ide_state.renameController.isActive();
-	if (handleCustomKeybinding(keyboard, deltaSeconds, {
+	if (handleCustomKeybinding({
 		ctrlDown,
 		metaDown,
 		shiftDown,
@@ -2472,16 +2470,16 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 	})) {
 		return;
 	}
-	if (!inlineFieldFocused && isKeyJustPressedGlobal(ide_state.playerIndex, 'F12')) {
-		consumeKeyboardKey(keyboard, 'F12');
+	if (!inlineFieldFocused && isKeyJustPressedGlobal('F12')) {
+		consumeIdeKey('F12');
 		if (shiftDown) {
 			return;
 		}
 		openReferenceSearchPopup();
 		return;
 	}
-	if (!inlineFieldFocused && editableCodeTab && isKeyJustPressedGlobal(ide_state.playerIndex, 'F2')) {
-		consumeKeyboardKey(keyboard, 'F2');
+	if (!inlineFieldFocused && editableCodeTab && isKeyJustPressedGlobal('F2')) {
+		consumeIdeKey('F2');
 		openRenamePrompt();
 		return;
 	}
@@ -2489,8 +2487,8 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		&& !inlineFieldFocused
 		&& !ide_state.resourcePanelFocused
 		&& isCodeTabActive()
-		&& isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyA')) {
-		consumeKeyboardKey(keyboard, 'KeyA');
+		&& isKeyJustPressedGlobal('KeyA')) {
+		consumeIdeKey('KeyA');
 		ide_state.selectionAnchor = { row: 0, column: 0 };
 		const lastRowIndex = ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0;
 		const lastColumn = ide_state.lines.length > 0 ? ide_state.lines[lastRowIndex].length : 0;
@@ -2501,8 +2499,8 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		revealCursor();
 		return;
 	}
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyL')) {
-		consumeKeyboardKey(keyboard, 'KeyL');
+	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('KeyL')) {
+		consumeIdeKey('KeyL');
 		openLineJump();
 		return;
 	}
@@ -2529,39 +2527,39 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 	if (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()) {
 		let handled = false;
 		if (shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'ArrowUp');
+			consumeIdeKey('ArrowUp');
 			handled = ide_state.problemsPanel.handleKeyboardCommand('up');
 		} else if (shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'ArrowDown');
+			consumeIdeKey('ArrowDown');
 			handled = ide_state.problemsPanel.handleKeyboardCommand('down');
 		} else if (shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'PageUp');
+			consumeIdeKey('PageUp');
 			handled = ide_state.problemsPanel.handleKeyboardCommand('page-up');
 		} else if (shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'PageDown');
+			consumeIdeKey('PageDown');
 			handled = ide_state.problemsPanel.handleKeyboardCommand('page-down');
 		} else if (shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'Home');
+			consumeIdeKey('Home');
 			handled = ide_state.problemsPanel.handleKeyboardCommand('home');
 		} else if (shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'End');
+			consumeIdeKey('End');
 			handled = ide_state.problemsPanel.handleKeyboardCommand('end');
-		} else if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter') || isKeyJustPressedGlobal(ide_state.playerIndex, 'NumpadEnter')) {
-			if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter')) consumeKeyboardKey(keyboard, 'Enter'); else consumeKeyboardKey(keyboard, 'NumpadEnter');
+		} else if (isKeyJustPressedGlobal('Enter') || isKeyJustPressedGlobal('NumpadEnter')) {
+			if (isKeyJustPressedGlobal('Enter')) consumeIdeKey('Enter'); else consumeIdeKey('NumpadEnter');
 			handled = ide_state.problemsPanel.handleKeyboardCommand('activate');
-		} else if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Escape')) {
-			consumeKeyboardKey(keyboard, 'Escape');
+		} else if (isKeyJustPressedGlobal('Escape')) {
+			consumeIdeKey('Escape');
 			hideProblemsPanel();
 			focusEditorFromProblemsPanel();
 			return;
 		}
 		// Always swallow caret movement while problems panel is focused
-		if (shouldFireRepeat(keyboard, 'ArrowLeft', deltaSeconds)) consumeKeyboardKey(keyboard, 'ArrowLeft');
-		if (shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) consumeKeyboardKey(keyboard, 'ArrowRight');
+		if (shouldFireRepeat(keyboard, 'ArrowLeft', deltaSeconds)) consumeIdeKey('ArrowLeft');
+		if (shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) consumeIdeKey('ArrowRight');
 		if (handled) return; else return;
 	}
-	if (ide_state.searchQuery.length > 0 && isKeyJustPressedGlobal(ide_state.playerIndex, 'F3')) {
-		consumeKeyboardKey(keyboard, 'F3');
+	if (ide_state.searchQuery.length > 0 && isKeyJustPressedGlobal('F3')) {
+		consumeIdeKey('F3');
 		if (shiftDown) {
 			jumpToPreviousMatch();
 		} else {
@@ -2570,7 +2568,7 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		return;
 	}
 	if ((ctrlDown || metaDown) && shouldFireRepeat(keyboard, 'KeyZ', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'KeyZ');
+		consumeIdeKey('KeyZ');
 		if (!editableCodeTab) {
 			notifyReadOnlyEdit();
 			return;
@@ -2583,7 +2581,7 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		return;
 	}
 	if ((ctrlDown || metaDown) && shouldFireRepeat(keyboard, 'KeyY', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'KeyY');
+		consumeIdeKey('KeyY');
 		if (!editableCodeTab) {
 			notifyReadOnlyEdit();
 			return;
@@ -2591,13 +2589,13 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		redo();
 		return;
 	}
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyW')) {
-		consumeKeyboardKey(keyboard, 'KeyW');
+	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('KeyW')) {
+		consumeIdeKey('KeyW');
 		closeActiveTab();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyS')) {
-		consumeKeyboardKey(keyboard, 'KeyS');
+	if (ctrlDown && isKeyJustPressedGlobal('KeyS')) {
+		consumeIdeKey('KeyS');
 		if (readOnlyCodeTab) {
 			notifyReadOnlyEdit();
 			return;
@@ -2605,13 +2603,13 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		void save();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyC')) {
-		consumeKeyboardKey(keyboard, 'KeyC');
+	if (ctrlDown && isKeyJustPressedGlobal('KeyC')) {
+		consumeIdeKey('KeyC');
 		void copySelectionToClipboard();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyX')) {
-		consumeKeyboardKey(keyboard, 'KeyX');
+	if (ctrlDown && isKeyJustPressedGlobal('KeyX')) {
+		consumeIdeKey('KeyX');
 		if (readOnlyCodeTab) {
 			if (hasSelection()) {
 				void copySelectionToClipboard();
@@ -2627,8 +2625,8 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		}
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyV')) {
-		consumeKeyboardKey(keyboard, 'KeyV');
+	if (ctrlDown && isKeyJustPressedGlobal('KeyV')) {
+		consumeIdeKey('KeyV');
 		if (readOnlyCodeTab) {
 			notifyReadOnlyEdit();
 			return;
@@ -2636,8 +2634,8 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		pasteFromClipboard();
 		return;
 	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'Slash')) {
-		consumeKeyboardKey(keyboard, 'Slash');
+	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal('Slash')) {
+		consumeIdeKey('Slash');
 		if (!editableCodeTab) {
 			notifyReadOnlyEdit();
 			return;
@@ -2645,8 +2643,8 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		toggleLineComments();
 		return;
 	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'NumpadDivide')) {
-		consumeKeyboardKey(keyboard, 'NumpadDivide');
+	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal('NumpadDivide')) {
+		consumeIdeKey('NumpadDivide');
 		if (!editableCodeTab) {
 			notifyReadOnlyEdit();
 			return;
@@ -2654,8 +2652,8 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		toggleLineComments();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'BracketRight')) {
-		consumeKeyboardKey(keyboard, 'BracketRight');
+	if (ctrlDown && isKeyJustPressedGlobal('BracketRight')) {
+		consumeIdeKey('BracketRight');
 		if (!editableCodeTab) {
 			notifyReadOnlyEdit();
 			return;
@@ -2663,8 +2661,8 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 		indentSelectionOrLine();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'BracketLeft')) {
-		consumeKeyboardKey(keyboard, 'BracketLeft');
+	if (ctrlDown && isKeyJustPressedGlobal('BracketLeft')) {
+		consumeIdeKey('BracketLeft');
 		if (!editableCodeTab) {
 			notifyReadOnlyEdit();
 			return;
@@ -2686,25 +2684,20 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 let customKeybindingHandler: CustomKeybindingHandler | null = null;
 
 export function handleCustomKeybinding(
-	keyboard: KeyboardInput,
-	deltaSeconds: number,
 	context: ConsoleEditorShortcutContext,
 ): boolean {
-	if (customKeybindingHandler) {
-		return customKeybindingHandler(keyboard, deltaSeconds, context);
-	}
-	return false;
+	return customKeybindingHandler?.(context) ?? false;
 }
 
 export function handleCreateResourceInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
-	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Escape')) {
-		consumeKeyboardKey(keyboard, 'Escape');
+	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
+	if (isKeyJustPressedGlobal('Escape')) {
+		consumeIdeKey('Escape');
 		cancelCreateResourcePrompt();
 		return;
 	}
-	if (!ide_state.createResourceWorking && isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter')) {
-		consumeKeyboardKey(keyboard, 'Enter');
+	if (!ide_state.createResourceWorking && isKeyJustPressedGlobal('Enter')) {
+		consumeIdeKey('Enter');
 		void confirmCreateResourcePrompt();
 		return;
 	}
@@ -2906,19 +2899,19 @@ export function buildDefaultResourceContents(_path: string, _asset_id: string): 
 }
 
 export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
-	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
-	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyF')) {
-		consumeKeyboardKey(keyboard, 'KeyF');
+	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
+	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal('KeyF')) {
+		consumeIdeKey('KeyF');
 		openSearch(false, 'global');
 		return;
 	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyF')) {
-		consumeKeyboardKey(keyboard, 'KeyF');
+	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal('KeyF')) {
+		consumeIdeKey('KeyF');
 		openSearch(false, 'local');
 		return;
 	}
 	if ((ctrlDown || metaDown) && shouldFireRepeat(keyboard, 'KeyZ', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'KeyZ');
+		consumeIdeKey('KeyZ');
 		if (shiftDown) {
 			redo();
 		} else {
@@ -2927,19 +2920,19 @@ export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number,
 		return;
 	}
 	if ((ctrlDown || metaDown) && shouldFireRepeat(keyboard, 'KeyY', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'KeyY');
+		consumeIdeKey('KeyY');
 		redo();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyS')) {
-		consumeKeyboardKey(keyboard, 'KeyS');
+	if (ctrlDown && isKeyJustPressedGlobal('KeyS')) {
+		consumeIdeKey('KeyS');
 		void save();
 		return;
 	}
 	const hasResults = activeSearchMatchCount() > 0;
 	const previewLocal = ide_state.searchScope === 'local';
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter')) {
-		consumeKeyboardKey(keyboard, 'Enter');
+	if (isKeyJustPressedGlobal('Enter')) {
+		consumeIdeKey('Enter');
 		if (hasResults) {
 			if (shiftDown) {
 				moveSearchSelection(-1, { wrap: true, preview: previewLocal });
@@ -2956,8 +2949,8 @@ export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number,
 		}
 		return;
 	}
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'F3')) {
-		consumeKeyboardKey(keyboard, 'F3');
+	if (isKeyJustPressedGlobal('F3')) {
+		consumeIdeKey('F3');
 		if (shiftDown) {
 			jumpToPreviousMatch();
 		} else {
@@ -2967,27 +2960,27 @@ export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number,
 	}
 	if (hasResults) {
 		if (shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'ArrowUp');
+			consumeIdeKey('ArrowUp');
 			moveSearchSelection(-1, { preview: previewLocal });
 			return;
 		}
 		if (shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'ArrowDown');
+			consumeIdeKey('ArrowDown');
 			moveSearchSelection(1, { preview: previewLocal });
 			return;
 		}
 		if (shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'PageUp');
+			consumeIdeKey('PageUp');
 			moveSearchSelection(-searchPageSize(), { preview: previewLocal });
 			return;
 		}
 		if (shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'PageDown');
+			consumeIdeKey('PageDown');
 			moveSearchSelection(searchPageSize(), { preview: previewLocal });
 			return;
 		}
-		if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Home')) {
-			consumeKeyboardKey(keyboard, 'Home');
+		if (isKeyJustPressedGlobal('Home')) {
+			consumeIdeKey('Home');
 			ide_state.searchCurrentIndex = hasResults ? 0 : -1;
 			ensureSearchSelectionVisible();
 			if (previewLocal) {
@@ -2995,8 +2988,8 @@ export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number,
 			}
 			return;
 		}
-		if (isKeyJustPressedGlobal(ide_state.playerIndex, 'End')) {
-			consumeKeyboardKey(keyboard, 'End');
+		if (isKeyJustPressedGlobal('End')) {
+			consumeIdeKey('End');
 			const lastIndex = hasResults ? activeSearchMatchCount() - 1 : -1;
 			ide_state.searchCurrentIndex = lastIndex;
 			ensureSearchSelectionVisible();
@@ -3025,24 +3018,24 @@ export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number,
 }
 
 export function handleLineJumpInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyL')) {
-		consumeKeyboardKey(keyboard, 'KeyL');
+	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('KeyL')) {
+		consumeIdeKey('KeyL');
 		openLineJump();
 		return;
 	}
-	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter')) {
-		consumeKeyboardKey(keyboard, 'Enter');
+	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
+	if (isKeyJustPressedGlobal('Enter')) {
+		consumeIdeKey('Enter');
 		applyLineJump();
 		return;
 	}
-	if (!shiftDown && isKeyJustPressedGlobal(ide_state.playerIndex, 'NumpadEnter')) {
-		consumeKeyboardKey(keyboard, 'NumpadEnter');
+	if (!shiftDown && isKeyJustPressedGlobal('NumpadEnter')) {
+		consumeIdeKey('NumpadEnter');
 		applyLineJump();
 		return;
 	}
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Escape')) {
-		consumeKeyboardKey(keyboard, 'Escape');
+	if (isKeyJustPressedGlobal('Escape')) {
+		consumeIdeKey('Escape');
 		closeLineJump(false);
 		return;
 	}
@@ -3655,9 +3648,9 @@ export function applySymbolSearchSelection(index: number): void {
 }
 
 export function handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
-	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter')) {
-		consumeKeyboardKey(keyboard, 'Enter');
+	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
+	if (isKeyJustPressedGlobal('Enter')) {
+		consumeIdeKey('Enter');
 		if (shiftDown) {
 			moveSymbolSearchSelection(-1);
 			return;
@@ -3669,39 +3662,39 @@ export function handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: n
 		}
 		return;
 	}
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Escape')) {
-		consumeKeyboardKey(keyboard, 'Escape');
+	if (isKeyJustPressedGlobal('Escape')) {
+		consumeIdeKey('Escape');
 		closeSymbolSearch(true);
 		return;
 	}
 	if (shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'ArrowUp');
+		consumeIdeKey('ArrowUp');
 		moveSymbolSearchSelection(-1);
 		return;
 	}
 	if (shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'ArrowDown');
+		consumeIdeKey('ArrowDown');
 		moveSymbolSearchSelection(1);
 		return;
 	}
 	if (shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'PageUp');
+		consumeIdeKey('PageUp');
 		moveSymbolSearchSelection(-symbolSearchPageSize());
 		return;
 	}
 	if (shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'PageDown');
+		consumeIdeKey('PageDown');
 		moveSymbolSearchSelection(symbolSearchPageSize());
 		return;
 	}
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Home')) {
-		consumeKeyboardKey(keyboard, 'Home');
+	if (isKeyJustPressedGlobal('Home')) {
+		consumeIdeKey('Home');
 		ide_state.symbolSearchSelectionIndex = ide_state.symbolSearchMatches.length > 0 ? 0 : -1;
 		ensureSymbolSearchSelectionVisible();
 		return;
 	}
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'End')) {
-		consumeKeyboardKey(keyboard, 'End');
+	if (isKeyJustPressedGlobal('End')) {
+		consumeIdeKey('End');
 		ide_state.symbolSearchSelectionIndex = ide_state.symbolSearchMatches.length > 0 ? ide_state.symbolSearchMatches.length - 1 : -1;
 		ensureSymbolSearchSelectionVisible();
 		return;
@@ -3723,7 +3716,7 @@ export function handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: n
 }
 
 export function refreshResourceCatalog(): void {
-		let descriptors: ConsoleResourceDescriptor[];
+	let descriptors: ConsoleResourceDescriptor[];
 	try {
 		descriptors = listResourcesStrict();
 	} catch (error) {
@@ -3735,17 +3728,16 @@ export function refreshResourceCatalog(): void {
 		ide_state.resourceSearchHoverIndex = -1;
 		ide_state.showMessage(`Failed to list resources: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
+	}
+	const augmented = descriptors.slice();
+	const rompack = $.rompack;
+	const img = rompack.img;
+	const atlasKeys = Object.keys(img).filter(key => key === '_atlas' || key.startsWith('atlas'));
+	for (const key of atlasKeys) {
+		if (augmented.some(entry => entry.asset_id === key)) {
+			continue;
 		}
-		const augmented = descriptors.slice();
-		const rompack = $.rompack;
-		if (rompack && rompack.img) {
-			const atlasKeys = Object.keys(rompack.img).filter(key => key === '_atlas' || key.startsWith('atlas'));
-		for (const key of atlasKeys) {
-			if (augmented.some(entry => entry.asset_id === key)) {
-				continue;
-			}
-			augmented.push({ path: `atlas/${key}`, type: 'atlas', asset_id: key });
-		}
+		augmented.push({ path: `atlas/${key}`, type: 'atlas', asset_id: key });
 	}
 	descriptors = augmented;
 	const entries: ResourceCatalogEntry[] = descriptors.map((descriptor) => {
@@ -3802,9 +3794,6 @@ export function updateResourceSearchMatches(): void {
 		}
 		if (!valid) {
 			continue;
-		}
-		if (!Number.isFinite(bestIndex)) {
-			bestIndex = 0;
 		}
 		matches.push({ entry, matchIndex: bestIndex });
 	}
@@ -3877,9 +3866,9 @@ export function applyResourceSearchSelection(index: number): void {
 }
 
 export function handleResourceSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
-	const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Enter')) {
-		consumeKeyboardKey(keyboard, 'Enter');
+	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
+	if (isKeyJustPressedGlobal('Enter')) {
+		consumeIdeKey('Enter');
 		if (shiftDown) {
 			moveResourceSearchSelection(-1);
 			return;
@@ -3898,40 +3887,40 @@ export function handleResourceSearchInput(keyboard: KeyboardInput, deltaSeconds:
 		}
 		return;
 	}
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Escape')) {
-		consumeKeyboardKey(keyboard, 'Escape');
+	if (isKeyJustPressedGlobal('Escape')) {
+		consumeIdeKey('Escape');
 		closeResourceSearch(true);
 		focusEditorFromResourceSearch();
 		return;
 	}
 	if (shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'ArrowUp');
+		consumeIdeKey('ArrowUp');
 		moveResourceSearchSelection(-1);
 		return;
 	}
 	if (shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'ArrowDown');
+		consumeIdeKey('ArrowDown');
 		moveResourceSearchSelection(1);
 		return;
 	}
 	if (shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'PageUp');
+		consumeIdeKey('PageUp');
 		moveResourceSearchSelection(-resourceSearchWindowCapacity());
 		return;
 	}
 	if (shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'PageDown');
+		consumeIdeKey('PageDown');
 		moveResourceSearchSelection(resourceSearchWindowCapacity());
 		return;
 	}
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'Home')) {
-		consumeKeyboardKey(keyboard, 'Home');
+	if (isKeyJustPressedGlobal('Home')) {
+		consumeIdeKey('Home');
 		ide_state.resourceSearchSelectionIndex = ide_state.resourceSearchMatches.length > 0 ? 0 : -1;
 		ensureResourceSearchSelectionVisible();
 		return;
 	}
-	if (isKeyJustPressedGlobal(ide_state.playerIndex, 'End')) {
-		consumeKeyboardKey(keyboard, 'End');
+	if (isKeyJustPressedGlobal('End')) {
+		consumeIdeKey('End');
 		ide_state.resourceSearchSelectionIndex = ide_state.resourceSearchMatches.length > 0 ? ide_state.resourceSearchMatches.length - 1 : -1;
 		ensureResourceSearchSelectionVisible();
 		return;
@@ -4259,34 +4248,28 @@ export function cancelGlobalSearchJob(): void {
 }
 
 export function loadDescriptorLines(descriptor: ConsoleResourceDescriptor): string[] | null {
-	try {
-		const asset_id = descriptor.asset_id;
-		if (!asset_id) {
-			return null;
-		}
-		const source = ide_state.loadLuaResourceFn(asset_id);
-		if (typeof source !== 'string') {
-			return null;
-		}
-		return source.split(/\r?\n/);
-	} catch {
+	const asset_id = descriptor.asset_id;
+	if (!asset_id) {
 		return null;
 	}
+	const source = ide_state.loadLuaResourceFn(asset_id);
+	return source.split(/\r?\n/);
 }
 
 export function describeDescriptor(descriptor: ConsoleResourceDescriptor): string {
-	if (descriptor.path && descriptor.path.length > 0) {
+	if (descriptor.path) {
 		return descriptor.path.replace(/\\/g, '/');
 	}
-	if (descriptor.asset_id && descriptor.asset_id.length > 0) {
+	if (descriptor.asset_id) {
 		return descriptor.asset_id;
 	}
-	return '<resource>';
+	throw new Error('Descriptor has no path or asset_id');
 }
 
 export function buildSearchSnippet(line: string, start: number, end: number): string {
 	if (!line || line.length === 0) {
-		return '<blank>';
+		throw new Error('Invalid line');
+		// return '<blank>';
 	}
 	const padding = 32;
 	const sliceStart = Math.max(0, start - padding);
@@ -4340,8 +4323,8 @@ export function showReferenceStatusMessage(): void {
 }
 
 export function handlePointerInput(_deltaSeconds: number): void {
-	const ctrlDown = isModifierPressedGlobal(ide_state.playerIndex, 'ControlLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ControlRight');
-	const metaDown = isModifierPressedGlobal(ide_state.playerIndex, 'MetaLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'MetaRight');
+	const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
+	const metaDown = isModifierPressedGlobal('MetaLeft') || isModifierPressedGlobal('MetaRight');
 	const gotoModifierActive = ctrlDown || metaDown;
 	if (!gotoModifierActive) {
 		clearGotoHoverHighlight();
@@ -4926,7 +4909,7 @@ export function handlePointerInput(_deltaSeconds: number): void {
 		clearGotoHoverHighlight();
 	}
 	if (isCodeTabActive()) {
-		const altDown = isModifierPressedGlobal(ide_state.playerIndex, 'AltLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'AltRight');
+		const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
 		if (!snapshot.primaryPressed && !ide_state.pointerSelecting && insideCodeArea && altDown) {
 			updateHoverTooltip(snapshot);
 		} else {
@@ -5874,7 +5857,7 @@ export function handlePointerWheel(): void {
 	const steps = Math.max(1, Math.round(magnitude / constants.WHEEL_SCROLL_STEP));
 	const direction = delta > 0 ? 1 : -1;
 	const pointer = ide_state.lastPointerSnapshot;
-	const shiftDown = isModifierPressedGlobal(ide_state.playerIndex, 'ShiftLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ShiftRight');
+	const shiftDown = isModifierPressedGlobal('ShiftLeft') || isModifierPressedGlobal('ShiftRight');
 	if (ide_state.hoverTooltip) {
 		let canScrollTooltip = false;
 		if (!pointer) {
@@ -6603,10 +6586,10 @@ export function inlineFieldMetrics(): InlineFieldMetrics {
 
 export function createInlineFieldEditingHandlers(keyboard: KeyboardInput): InlineFieldEditingHandlers {
 	return {
-		isKeyJustPressed: (code) => isKeyJustPressedGlobal(ide_state.playerIndex, code),
-		isKeyTyped: (code) => isKeyTypedGlobal(ide_state.playerIndex, code),
+		isKeyJustPressed: (code) => isKeyJustPressedGlobal(code),
+		isKeyTyped: (code) => isKeyTypedGlobal(code),
 		shouldFireRepeat: (code, deltaSeconds) => ide_state.input.shouldRepeatPublic(keyboard, code, deltaSeconds),
-		consumeKey: (code) => consumeKeyboardKey(keyboard, code),
+		consumeKey: (code) => consumeIdeKey(code),
 		readClipboard: () => ide_state.customClipboard,
 		writeClipboard: (payload, action) => {
 			const message = action === 'copy'
@@ -8415,145 +8398,141 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 	];
 	const state: ResourceViewerState = {
 		descriptor,
-		lines: ide_state.lines,
+		lines,
 		error: null,
 		title,
 		scroll: 0,
 	};
 	let error: string | null = null;
 	const rompack = $.rompack;
-	if (!rompack) {
-		error = 'Rompack unavailable.';
-	} else {
-		lines.push('');
-		const lua = rompack.lua;
-		const data = rompack.data;
-		const img = rompack.img;
-		const audioTable = rompack.audio;
-		const modelTable = rompack.model;
-		const audioevents = rompack.audioevents;
-		switch (descriptor.type) {
-			case 'lua': {
-				const source = lua?.[descriptor.asset_id];
-				if (typeof source === 'string') {
-					appendResourceViewerLines(lines, ['-- Lua Source --', '']);
-					appendResourceViewerLines(lines, source.split(/\r?\n/));
-				} else {
-					error = `Lua source '${descriptor.asset_id}' unavailable.`;
-				}
-				break;
+	lines.push('');
+	const lua = rompack.lua;
+	const data = rompack.data;
+	const img = rompack.img;
+	const audioTable = rompack.audio;
+	const modelTable = rompack.model;
+	const audioevents = rompack.audioevents;
+	switch (descriptor.type) {
+		case 'lua': {
+			const source = lua?.[descriptor.asset_id];
+			if (typeof source === 'string') {
+				appendResourceViewerLines(lines, ['-- Lua Source --', '']);
+				appendResourceViewerLines(lines, source.split(/\r?\n/));
+			} else {
+				error = `Lua source '${descriptor.asset_id}' unavailable.`;
 			}
-			case 'code': {
-				const dataEntry = data?.[descriptor.asset_id];
-				if (typeof dataEntry === 'string') {
-					appendResourceViewerLines(lines, ['-- Code --', '']);
-					appendResourceViewerLines(lines, dataEntry.split(/\r?\n/));
-				} else if (dataEntry !== undefined) {
-					const json = safeJsonStringify(dataEntry);
-					appendResourceViewerLines(lines, ['-- Code --', '']);
-					appendResourceViewerLines(lines, json.split(/\r?\n/));
-				} else if (typeof rompack.code === 'string') {
-					appendResourceViewerLines(lines, ['-- Game Code --', '']);
-					appendResourceViewerLines(lines, rompack.code.split(/\r?\n/));
-				} else {
-					error = `Code asset '${descriptor.asset_id}' unavailable.`;
-				}
-				break;
-			}
-			case 'data':
-			case 'rommanifest': {
-				const dataEntry = data?.[descriptor.asset_id];
-				if (dataEntry !== undefined) {
-					const json = safeJsonStringify(dataEntry);
-					appendResourceViewerLines(lines, ['-- Data --', '']);
-					appendResourceViewerLines(lines, json.split(/\r?\n/));
-				} else {
-					error = `Data asset '${descriptor.asset_id}' not found.`;
-				}
-				break;
-			}
-			case 'image':
-			case 'atlas':
-			case 'romlabel': {
-				const image = img?.[descriptor.asset_id];
-				if (!image) {
-					error = `Image asset '${descriptor.asset_id}' not found.`;
-					break;
-				}
-				const meta = image.imgmeta ?? {};
-				const width = (meta as { width?: number }).width;
-				const height = (meta as { height?: number }).height;
-				const atlasId = (meta as { atlasid?: number }).atlasid;
-				const atlassed = (meta as { atlassed?: boolean }).atlassed;
-				if (Number.isFinite(width) && Number.isFinite(height)) {
-					state.image = {
-						asset_id: descriptor.asset_id,
-						width: Math.max(1, Math.floor(width as number)),
-						height: Math.max(1, Math.floor(height as number)),
-						atlassed: Boolean(atlassed),
-						atlasId: atlasId,
-					};
-				}
-				appendResourceViewerLines(lines, ['-- Image Metadata --']);
-				if (Number.isFinite(width) && Number.isFinite(height)) {
-					appendResourceViewerLines(lines, [`Dimensions: ${width}x${height}`]);
-				}
-				if (typeof atlassed === 'boolean') {
-					appendResourceViewerLines(lines, [`Atlassed: ${atlassed ? 'yes' : 'no'}`]);
-				}
-				if (atlasId !== undefined) {
-					appendResourceViewerLines(lines, [`Atlas ID: ${atlasId}`]);
-				}
-				for (const [key, value] of Object.entries(meta)) {
-					if (['width', 'height', 'atlassed', 'atlasid'].includes(key)) {
-						continue;
-					}
-					appendResourceViewerLines(lines, [`${key}: ${describeMetadataValue(value)}`]);
-				}
-				break;
-			}
-			case 'audio': {
-				const audio = audioTable?.[descriptor.asset_id];
-				if (!audio) {
-					error = `Audio asset '${descriptor.asset_id}' not found.`;
-					break;
-				}
-				const meta = audio.audiometa ?? {};
-				appendResourceViewerLines(lines, ['-- Audio Metadata --']);
-				const bufferSize = (audio.buffer as { byteLength?: number } | undefined)?.byteLength;
-				if (typeof bufferSize === 'number') {
-					appendResourceViewerLines(lines, [`Buffer Size: ${bufferSize} bytes`]);
-				}
-				for (const [key, value] of Object.entries(meta)) {
-					appendResourceViewerLines(lines, [`${key}: ${describeMetadataValue(value)}`]);
-				}
-				break;
-			}
-			case 'model': {
-				const model = modelTable?.[descriptor.asset_id];
-				if (!model) {
-					error = `Model asset '${descriptor.asset_id}' not found.`;
-					break;
-				}
-				const keys = Object.keys(model);
-				appendResourceViewerLines(lines, ['-- Model Metadata --', `Keys: ${keys.join(', ')}`]);
-				break;
-			}
-			case 'aem': {
-				const events = audioevents?.[descriptor.asset_id];
-				if (!events) {
-					error = `Audio event map '${descriptor.asset_id}' not found.`;
-					break;
-				}
-				const json = safeJsonStringify(events);
-				appendResourceViewerLines(lines, ['-- Audio Events --', '']);
+			break;
+		}
+		case 'code': {
+			const dataEntry = data?.[descriptor.asset_id];
+			if (typeof dataEntry === 'string') {
+				appendResourceViewerLines(lines, ['-- Code --', '']);
+				appendResourceViewerLines(lines, dataEntry.split(/\r?\n/));
+			} else if (dataEntry !== undefined) {
+				const json = safeJsonStringify(dataEntry);
+				appendResourceViewerLines(lines, ['-- Code --', '']);
 				appendResourceViewerLines(lines, json.split(/\r?\n/));
+			} else if (typeof rompack.code === 'string') {
+				appendResourceViewerLines(lines, ['-- Game Code --', '']);
+				appendResourceViewerLines(lines, rompack.code.split(/\r?\n/));
+			} else {
+				error = `Code asset '${descriptor.asset_id}' unavailable.`;
+			}
+			break;
+		}
+		case 'data':
+		case 'rommanifest': {
+			const dataEntry = data?.[descriptor.asset_id];
+			if (dataEntry !== undefined) {
+				const json = safeJsonStringify(dataEntry);
+				appendResourceViewerLines(lines, ['-- Data --', '']);
+				appendResourceViewerLines(lines, json.split(/\r?\n/));
+			} else {
+				error = `Data asset '${descriptor.asset_id}' not found.`;
+			}
+			break;
+		}
+		case 'image':
+		case 'atlas':
+		case 'romlabel': {
+			const image = img?.[descriptor.asset_id];
+			if (!image) {
+				error = `Image asset '${descriptor.asset_id}' not found.`;
 				break;
 			}
-			default: {
-				appendResourceViewerLines(lines, ['<no preview available for this asset type>']);
+			const meta = image.imgmeta ?? {};
+			const width = (meta as { width?: number }).width;
+			const height = (meta as { height?: number }).height;
+			const atlasId = (meta as { atlasid?: number }).atlasid;
+			const atlassed = (meta as { atlassed?: boolean }).atlassed;
+			if (Number.isFinite(width) && Number.isFinite(height)) {
+				state.image = {
+					asset_id: descriptor.asset_id,
+					width: Math.max(1, Math.floor(width as number)),
+					height: Math.max(1, Math.floor(height as number)),
+					atlassed: Boolean(atlassed),
+					atlasId: atlasId,
+				};
+			}
+			appendResourceViewerLines(lines, ['-- Image Metadata --']);
+			if (Number.isFinite(width) && Number.isFinite(height)) {
+				appendResourceViewerLines(lines, [`Dimensions: ${width}x${height}`]);
+			}
+			if (typeof atlassed === 'boolean') {
+				appendResourceViewerLines(lines, [`Atlassed: ${atlassed ? 'yes' : 'no'}`]);
+			}
+			if (atlasId !== undefined) {
+				appendResourceViewerLines(lines, [`Atlas ID: ${atlasId}`]);
+			}
+			for (const [key, value] of Object.entries(meta)) {
+				if (['width', 'height', 'atlassed', 'atlasid'].includes(key)) {
+					continue;
+				}
+				appendResourceViewerLines(lines, [`${key}: ${describeMetadataValue(value)}`]);
+			}
+			break;
+		}
+		case 'audio': {
+			const audio = audioTable?.[descriptor.asset_id];
+			if (!audio) {
+				error = `Audio asset '${descriptor.asset_id}' not found.`;
 				break;
 			}
+			const meta = audio.audiometa ?? {};
+			appendResourceViewerLines(lines, ['-- Audio Metadata --']);
+			const bufferSize = (audio.buffer as { byteLength?: number } | undefined)?.byteLength;
+			if (typeof bufferSize === 'number') {
+				appendResourceViewerLines(lines, [`Buffer Size: ${bufferSize} bytes`]);
+			}
+			for (const [key, value] of Object.entries(meta)) {
+				appendResourceViewerLines(lines, [`${key}: ${describeMetadataValue(value)}`]);
+			}
+			break;
+		}
+		case 'model': {
+			const model = modelTable?.[descriptor.asset_id];
+			if (!model) {
+				error = `Model asset '${descriptor.asset_id}' not found.`;
+				break;
+			}
+			const keys = Object.keys(model);
+			appendResourceViewerLines(lines, ['-- Model Metadata --', `Keys: ${keys.join(', ')}`]);
+			break;
+		}
+		case 'aem': {
+			const events = audioevents?.[descriptor.asset_id];
+			if (!events) {
+				error = `Audio event map '${descriptor.asset_id}' not found.`;
+				break;
+			}
+			const json = safeJsonStringify(events);
+			appendResourceViewerLines(lines, ['-- Audio Events --', '']);
+			appendResourceViewerLines(lines, json.split(/\r?\n/));
+			break;
+		}
+		default: {
+			appendResourceViewerLines(lines, ['<no preview available for this asset type>']);
+			break;
 		}
 	}
 	if (error) {
@@ -9057,23 +9036,23 @@ export function handleResourceViewerInput(keyboard: KeyboardInput, deltaSeconds:
 	const viewer = getActiveResourceViewer();
 	if (!viewer) return;
 	if (shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'ArrowUp');
+		consumeIdeKey('ArrowUp');
 		scrollResourceViewer(-1);
 		return;
 	}
 	if (shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'ArrowDown');
+		consumeIdeKey('ArrowDown');
 		scrollResourceViewer(1);
 		return;
 	}
 	if (shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'PageUp');
+		consumeIdeKey('PageUp');
 		const capacity = resourceViewerTextCapacity(viewer);
 		scrollResourceViewer(-Math.max(1, capacity));
 		return;
 	}
 	if (shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'PageDown');
+		consumeIdeKey('PageDown');
 		const capacity = resourceViewerTextCapacity(viewer);
 		scrollResourceViewer(Math.max(1, capacity));
 		return;
@@ -10094,8 +10073,6 @@ const editorFacade: ConsoleCartEditor = {
 };
 
 export function handleCodeFormattingShortcut(
-	keyboard: KeyboardInput,
-	_deltaSeconds: number,
 	context: ConsoleEditorShortcutContext): boolean {
 	if (!context.codeTabActive || context.inlineFieldFocused || context.resourcePanelFocused) {
 		return false;
@@ -10103,10 +10080,10 @@ export function handleCodeFormattingShortcut(
 	if (!context.altDown || !context.shiftDown || context.ctrlDown || context.metaDown) {
 		return false;
 	}
-	if (!isKeyJustPressedGlobal(ide_state.playerIndex, 'KeyF')) {
+	if (!isKeyJustPressedGlobal('KeyF')) {
 		return false;
 	}
-	consumeKeyboardKey(keyboard, 'KeyF');
+	consumeIdeKey('KeyF');
 	applyDocumentFormatting();
 	return true;
 }
@@ -10193,8 +10170,8 @@ function toggleBreakpointAtCursor(): void {
 }
 
 export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleCartEditor {
-	customKeybindingHandler = (keyboard, deltaSeconds, context) =>
-		handleCodeFormattingShortcut(keyboard, deltaSeconds, context);
+	customKeybindingHandler = (context) =>
+		handleCodeFormattingShortcut(context);
 	initializeConsoleCartEditor(options);
 	return editorFacade;
 }
@@ -10373,7 +10350,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		showMessage: (text, color, duration) => ide_state.showMessage(text, color, duration),
 		commitRename: (payload) => commitRename(payload),
 		onRenameSessionClosed: () => focusEditorFromRename(),
-	}, ide_state.referenceState, ide_state.playerIndex);
+	}, ide_state.referenceState);
 	ide_state.codeVerticalScrollbarVisible = false;
 	ide_state.codeHorizontalScrollbarVisible = false;
 	ide_state.cachedVisibleRowCount = 1;

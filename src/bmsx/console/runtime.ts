@@ -32,6 +32,8 @@ import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { instantiateBehaviorTree, unregisterBehaviorTreeBuilder, applyPreparedBehaviorTree, getBehaviorTreeDiagnostics, Blackboard } from '../ai/behaviourtree';
 import type { BehaviorTreeDefinition, BehaviorTreeDiagnostic } from '../ai/behaviourtree';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
+import type { transition_target } from '../fsm/fsmtypes';
+import type { State } from '../fsm/state';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast';
 import { createConsoleCartEditor, toggleEditorFromShortcut, type ConsoleCartEditor } from './ide/console_cart_editor';
 import type { RuntimeErrorDetails } from './ide/types';
@@ -45,7 +47,7 @@ import type { LuaComponentHandlerMap } from '../component/lua_component';
 import { defineAbility, gameplayActions } from '../gas/ability_registry';
 import type { GameplayAbilityDefinition } from '../gas/gameplay_ability';
 import type { AbilityId } from '../gas/gastypes';
-import { deep_clone } from 'bmsx/utils/deep_clone';
+import { deep_clone } from '../utils/deep_clone';
 import { WorldObject } from '../core/object/worldobject';
 import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';
@@ -55,6 +57,8 @@ import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputM
 import { ConsoleMode } from './console_mode';
 import { EDITOR_TOGGLE_KEY, CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS } from './ide/constants';
 import { setDebuggerRuntimeAccessor } from './runtime_accessors';
+import type { TimelineDefinition } from '../timeline/timeline';
+import type { TimelineFrameEventPayload, TimelineEndEventPayload } from '../component/timeline_component';
 import {
 	emitDebuggerLifecycleEvent,
 	type DebuggerResumeMode,
@@ -187,6 +191,13 @@ export type ConsoleWorldObjectSpawnOptions = {
 	defaults?: Record<string, unknown> | null;
 };
 
+type ConsoleTimelineSpec = {
+	id: string;
+	definition: TimelineDefinition;
+	tapeNext?: unknown;
+	tapeEnd?: unknown;
+};
+
 type ConsoleWorldObjectDefinitionRecord = {
 	id: string;
 	base_classname: string;
@@ -272,6 +283,7 @@ class ConsoleScriptService extends Service {
 
 
 export class BmsxConsoleRuntime extends Service {
+	private static readonly CONSOLE_TIMELINE_MARK = '__consoleTimelineTransformed';
 	private static _instance: BmsxConsoleRuntime | null = null;
 	private static preservingWorldResetDepth = 0;
 	private static readonly MAX_FRAME_DELTA_MS = 250;
@@ -3093,7 +3105,7 @@ export class BmsxConsoleRuntime extends Service {
 			await this.persistLuaSourceToFilesystem(savePath, source);
 			const rompack = $.rompack;
 			const programasset_id = ('asset_id' in program && typeof program.asset_id === 'string') ? program.asset_id : null;
-			if (rompack && programasset_id) {
+			if (programasset_id) {
 				if (!rompack.lua) {
 					rompack.lua = {};
 				}
@@ -5041,12 +5053,172 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		if (this.isLuaValue(blueprint)) {
 			const ctx = this.ensureMarshalContext({ moduleId, interpreter, path: ['blueprint'] });
-			return this.luaValueToJs(blueprint as LuaValue, ctx) as StateMachineBlueprint;
+			const converted = this.luaValueToJs(blueprint as LuaValue, ctx) as StateMachineBlueprint;
+			BmsxConsoleRuntime.injectConsoleTimelineMetadata(machineId, converted);
+			return converted;
 		}
 		if (!this.isPlainObject(blueprint)) {
 			throw new Error(`[BmsxConsoleRuntime] FSM '${machineId}' blueprint must be a table.`);
 		}
-		return blueprint as StateMachineBlueprint;
+		const jsBlueprint = blueprint as StateMachineBlueprint;
+		BmsxConsoleRuntime.injectConsoleTimelineMetadata(machineId, jsBlueprint);
+		return jsBlueprint;
+	}
+
+	public static injectConsoleTimelineMetadata(machineId: string, blueprint: StateMachineBlueprint): void {
+		const marker = BmsxConsoleRuntime.CONSOLE_TIMELINE_MARK;
+		const tagged = blueprint as Record<string, unknown>;
+		if (tagged[marker]) return;
+		BmsxConsoleRuntime.rewriteConsoleTimelineBlueprint(machineId, blueprint);
+		tagged[marker] = true;
+	}
+
+	private static rewriteConsoleTimelineBlueprint(machineId: string, blueprint: StateMachineBlueprint): void {
+		if (!blueprint.states) return;
+		for (const [stateId, child] of Object.entries(blueprint.states)) {
+			BmsxConsoleRuntime.rewriteConsoleTimelineState(machineId, [stateId], child as StateMachineBlueprint);
+		}
+	}
+
+	private static rewriteConsoleTimelineState(machineId: string, path: string[], state: StateMachineBlueprint): void {
+		BmsxConsoleRuntime.applyConsoleTimelineCompatibility(machineId, path, state);
+		if (!state.states) return;
+		for (const [childId, child] of Object.entries(state.states)) {
+			BmsxConsoleRuntime.rewriteConsoleTimelineState(machineId, [...path, childId], child as StateMachineBlueprint);
+		}
+	}
+
+	private static applyConsoleTimelineCompatibility(machineId: string, path: string[], state: StateMachineBlueprint): void {
+		const spec = BmsxConsoleRuntime.extractConsoleTimelineSpec(machineId, path, state);
+		if (!spec) return;
+		BmsxConsoleRuntime.injectConsoleTimelineLifecycle(state, spec);
+		BmsxConsoleRuntime.injectConsoleTimelineHandlers(state, spec);
+	}
+
+	private static extractConsoleTimelineSpec(machineId: string, path: string[], state: StateMachineBlueprint): ConsoleTimelineSpec | null {
+		const timelineConfig = (state as { timeline?: unknown }).timeline;
+		const tapeData = (state as { tape_data?: unknown }).tape_data;
+		if (!timelineConfig && (!Array.isArray(tapeData) || tapeData.length === 0)) return null;
+		const timelineId = BmsxConsoleRuntime.makeConsoleTimelineId(machineId, path);
+		let definition: TimelineDefinition;
+		if (timelineConfig && typeof timelineConfig === 'object') {
+			definition = deep_clone(timelineConfig as Record<string, unknown>) as unknown as TimelineDefinition;
+			definition.id = typeof definition.id === 'string' && definition.id.length > 0 ? definition.id : timelineId;
+		} else {
+			const frames = Array.isArray(tapeData) ? [...tapeData as unknown[]] : [];
+			if (frames.length === 0) return null;
+			const legacy = state as Record<string, any>;
+			definition = {
+				id: timelineId,
+				frames,
+				ticksPerFrame: BmsxConsoleRuntime.resolveLegacyNumber(legacy.ticks2advance_tape, legacy.ticks2move),
+				playbackMode: BmsxConsoleRuntime.normalizeLegacyPlaybackMode(legacy.tape_playback_mode),
+				repetitions: typeof legacy.repetitions === 'number' ? legacy.repetitions : undefined,
+				autotick: typeof legacy.enable_tape_autotick === 'boolean' ? legacy.enable_tape_autotick : undefined,
+			};
+			if (Array.isArray(legacy.markers)) {
+				definition.markers = deep_clone(legacy.markers);
+			}
+		}
+		if (definition.autotick === undefined) {
+			definition.autotick = (definition.ticksPerFrame ?? 0) !== 0;
+		}
+		delete (state as Record<string, unknown>).timeline;
+		const spec: ConsoleTimelineSpec = {
+			id: definition.id ?? timelineId,
+			definition,
+			tapeNext: (state as { tape_next?: unknown }).tape_next,
+			tapeEnd: (state as { tape_end?: unknown }).tape_end,
+		};
+		delete (state as Record<string, unknown>).tape_next;
+		delete (state as Record<string, unknown>).tape_end;
+		delete (state as Record<string, unknown>).tape_data;
+		delete (state as Record<string, unknown>).ticks2advance_tape;
+		delete (state as Record<string, unknown>).ticks2move;
+		delete (state as Record<string, unknown>).enable_tape_autotick;
+		delete (state as Record<string, unknown>).tape_playback_mode;
+		delete (state as Record<string, unknown>).markers;
+		return spec;
+	}
+
+	private static injectConsoleTimelineLifecycle(state: StateMachineBlueprint, spec: ConsoleTimelineSpec): void {
+		const originalEnter = typeof state.entering_state === 'function' ? state.entering_state : undefined;
+		const enterReturn = typeof state.entering_state === 'string' ? state.entering_state : undefined;
+		state.entering_state = function(this: WorldObject, runtimeState: State) {
+			this.define_timeline(spec.definition);
+			this.play_timeline(spec.id, { rewind: true, snapToStart: true });
+			(runtimeState as any).current_tape_value = spec.definition.frames.length > 0 ? spec.definition.frames[0] : undefined;
+			(runtimeState as any).is_at_tape_end = false;
+			if (originalEnter) {
+				return originalEnter.call(this, runtimeState);
+			}
+			if (enterReturn) return enterReturn;
+			return undefined;
+		};
+		const originalExit = typeof state.exiting_state === 'function' ? state.exiting_state : undefined;
+		const exitReturn = typeof state.exiting_state === 'string' ? state.exiting_state : undefined;
+		state.exiting_state = function(this: WorldObject, runtimeState: State) {
+			this.stop_timeline(spec.id);
+			if (originalExit) {
+				return originalExit.call(this, runtimeState);
+			}
+			if (exitReturn) return exitReturn;
+			return undefined;
+		};
+	}
+
+	private static injectConsoleTimelineHandlers(state: StateMachineBlueprint, spec: ConsoleTimelineSpec): void {
+		const onBag = state.on ?? (state.on = {});
+		const frameKey = `timeline.frame:${spec.id}`;
+		onBag[frameKey] = {
+			scope: 'self',
+			do(this: any, runtimeState: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload>) {
+				(runtimeState as any).current_tape_value = event.frame_value;
+				return BmsxConsoleRuntime.runConsoleTapeHandler(spec.tapeNext, this, runtimeState, { tape_rewound: event.rewound });
+			},
+		};
+		const endKey = `timeline.end:${spec.id}`;
+		onBag[endKey] = {
+			scope: 'self',
+			do(this: any, runtimeState: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+				(runtimeState as any).is_at_tape_end = true;
+				return BmsxConsoleRuntime.runConsoleTapeHandler(spec.tapeEnd, this, runtimeState, event);
+			},
+		};
+	}
+
+	private static runConsoleTapeHandler(
+		handler: unknown,
+		owner: any,
+		runtimeState: State,
+		payload: Record<string, unknown> | TimelineEndEventPayload | undefined,
+	): transition_target | void {
+		if (!handler) return undefined;
+		if (typeof handler === 'string') return handler;
+		if (typeof handler === 'function') {
+			return handler(owner, runtimeState, payload);
+		}
+		return undefined;
+	}
+
+	private static makeConsoleTimelineId(machineId: string, path: string[]): string {
+		const segments = [machineId, ...path].map(seg => seg.replace(/[:/#]+/g, '.'));
+		const normalized = segments.join('.').replace(/\.+/g, '.');
+		return `${normalized}.timeline`;
+	}
+
+	private static resolveLegacyNumber(...candidates: any[]): number {
+		for (const candidate of candidates) {
+			if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+				return candidate;
+			}
+		}
+		return 0;
+	}
+
+	private static normalizeLegacyPlaybackMode(mode: any): TimelineDefinition['playbackMode'] {
+		if (mode === 'loop' || mode === 'pingpong' || mode === 'once') return mode;
+		return 'once';
 	}
 
 	private unregisterLuaStateMachine(machineId: string): void {
@@ -5960,7 +6132,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (options.tags.length > 0) {
 			const asc = host.get_unique_component(AbilitySystemComponent);
 			if (asc) {
-				asc.addTags(...options.tags);
+				asc.add_tags(...options.tags);
 			} else {
 				this.recordLuaWarning(`[WorldObject:${host.id}] Unable to apply tags (${options.tags.join(', ')}) because AbilitySystemComponent is not attached.`);
 			}
@@ -6048,8 +6220,8 @@ export class BmsxConsoleRuntime extends Service {
 			if (!definition) {
 				throw new Error(`[BmsxConsoleRuntime] World object '${host.id}' declares ability '${abilityId}', but it has not been registered. Ensure 'define_ability' runs before the world object definition attaches abilities.`);
 			}
-			if (!asc.hasAbility(abilityId)) {
-				asc.grantAbility(definition, gameplayActions);
+			if (!asc.has_ability(abilityId)) {
+				asc.grant_ability(definition, gameplayActions);
 			}
 			attached.add(key);
 		}
@@ -6265,11 +6437,11 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		for (const [, asc] of world.objectsWithComponents(AbilitySystemComponent, { scope: 'active' })) {
-			if (!asc.hasAbility(abilityId)) {
+			if (!asc.has_ability(abilityId)) {
 				continue;
 			}
-			asc.revokeAbility(abilityId);
-			asc.grantAbility(definition);
+			asc.revoke_ability(abilityId);
+			asc.grant_ability(definition);
 		}
 	}
 
@@ -6542,10 +6714,8 @@ export class BmsxConsoleRuntime extends Service {
 			['game', $],
 			['registry', $.registry],
 			['events', $.event_emitter],
+			['rompack', rompackView],
 		];
-		if (rompackView) {
-			entries.push(['rompack', rompackView]);
-		}
 		for (const [name, object] of entries) {
 			if (object === undefined || object === null) {
 				continue;
@@ -6557,9 +6727,6 @@ export class BmsxConsoleRuntime extends Service {
 
 	private buildLuaRompackView(): Record<string, unknown> | null {
 		const rompack = $.rompack;
-		if (!rompack) {
-			return null;
-		}
 		return {
 			img: this.serializeRomAssetMap(rompack.img),
 			audio: this.serializeRomAssetMap(rompack.audio),
@@ -7539,25 +7706,12 @@ export class BmsxConsoleRuntime extends Service {
 			return cached;
 		}
 		const rompack = $.rompack;
-		if (!rompack) {
-			this.resourcePathCache.set(asset_id, null);
-			return null;
-		}
-		let luaSources: Record<string, string>;
-		if (rompack.luaSourcePaths) {
-			luaSources = rompack.luaSourcePaths;
-		} else {
-			luaSources = {};
-		}
+		const luaSources = rompack.luaSourcePaths;
 		const luaSource = luaSources[asset_id];
 		if (typeof luaSource === 'string' && luaSource.length > 0) {
 			const normalizedLuaPath = luaSource.replace(/\\/g, '/');
 			this.resourcePathCache.set(asset_id, normalizedLuaPath);
 			return normalizedLuaPath;
-		}
-		if (!Array.isArray(rompack.resourcePaths)) {
-			this.resourcePathCache.set(asset_id, null);
-			return null;
 		}
 		const entry = rompack.resourcePaths.find(candidate => candidate.asset_id === asset_id);
 		if (!entry || typeof entry.path !== 'string' || entry.path.length === 0) {
@@ -8209,11 +8363,8 @@ export class BmsxConsoleRuntime extends Service {
 
 	private resolveRompackLuaSource(asset_id: string): string | null {
 		const rompack = this.api.rompack();
-		if (!rompack || !rompack.lua) {
-			return null;
-		}
 		const source = rompack.lua[asset_id];
-		return typeof source === 'string' ? source : null;
+		return source ?? null;
 	}
 
 	private resolveProgramSourceForChunk(chunkName: string): string | null {

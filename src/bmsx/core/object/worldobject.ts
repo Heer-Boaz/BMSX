@@ -7,8 +7,8 @@ import { insavegame, onload, excludepropfromsavegame, type RevivableObjectArgs }
 import { $ } from '../game';
 import type { Space } from '../space';
 import { ObjectTracker } from "../../utils/objecttracker";
-import { new_vec2, new_vec3 } from 'bmsx/utils/vector_operations';
-import { middlepoint_area, new_area } from 'bmsx/utils/rect_operations';
+import { new_vec2, new_vec3 } from '../../utils/vector_operations';
+import { middlepoint_area, new_area } from '../../utils/rect_operations';
 import { StateDefinitions, registerHandlersForLinkedMachines } from '../../fsm/fsmlibrary';
 import { EventEmitter } from "../eventemitter";
 import { Registry } from "../registry";
@@ -848,7 +848,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	removeComponentsWithTag(tag: ComponentTag): void {
-		const componentsToRemove = this.components.filter(component => component.hasProcessingTag(tag));
+		const componentsToRemove = this.components.filter(component => component.has_processing_tag(tag));
 		componentsToRemove.forEach(component => this.remove_component_instance(component));
 	}
 

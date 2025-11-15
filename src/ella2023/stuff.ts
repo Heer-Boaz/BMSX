@@ -1,10 +1,11 @@
 import { $, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3, type RevivableObjectArgs } from 'bmsx';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { BitmapId } from './resourceids';
-import { createGameEvent } from 'bmsx/core/game_event';
+import { createGameEvent, type GameEvent } from 'bmsx/core/game_event';
+import type { TimelineEndEventPayload, TimelineFrameEventPayload } from 'bmsx/component/timeline_component';
 
 function wrapup(state: State) {
-	$.stopMusic();
+	$.stopmusic();
 	$.world.sc.transition_to('titlescreen');
 	state.reset(); // Make sure that the tick counter is reset.
 }
@@ -16,7 +17,9 @@ export class GameOver extends SpriteObject {
 		return {
 			states: {
 				_default: {
-					ticks2advance_tape: 500,
+					data: {
+						elapsed: 0,
+					},
 					process_input(this: TitleScreen, state: State) {
 						const priorityActions = $.getPressedActions(1, { pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
 
@@ -28,8 +31,11 @@ export class GameOver extends SpriteObject {
 
 						wrapup(state);
 					},
-					tape_end(this: GameOver, state: State) {
-						wrapup(state);
+					tick(this: GameOver, state: State) {
+						state.data.elapsed = (state.data.elapsed ?? 0) + 1;
+						if (state.data.elapsed >= 500) {
+							wrapup(state);
+						}
 					},
 				}
 			}
@@ -55,7 +61,9 @@ export class Hoera extends SpriteObject {
 		return {
 			states: {
 				_default: {
-					ticks2advance_tape: 500,
+					data: {
+						elapsed: 0,
+					},
 					process_input(this: TitleScreen, state: State) {
 						const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
 
@@ -66,8 +74,11 @@ export class Hoera extends SpriteObject {
 						$.input.getPlayerInput(1).consumeActions(...priorityActions);
 						wrapup(state);
 					},
-					tape_end(this: Hoera, state: State) {
-						wrapup(state);
+					tick(this: Hoera, state: State) {
+						state.data.elapsed = (state.data.elapsed ?? 0) + 1;
+						if (state.data.elapsed >= 500) {
+							wrapup(state);
+						}
 					},
 				}
 			}
@@ -90,11 +101,12 @@ export class Hoera extends SpriteObject {
 export class TitleScreen extends SpriteObject {
 	private static readonly SELECT_PLAYER_1_Y = 160 - 16;
 	private static readonly SELECT_PLAYER_2_Y = 160;
+	private static readonly BLINK_TIMELINE_ID = 'title-screen.blink';
 	private cursorY: number;
 	private selectedPlayers: number;
 	private get cursorVisible() { return this._cursorSprite.enabled; }
 	private set cursorVisible(visible: boolean) {
-		if (this._cursorSprite) this._cursorSprite.enabled = !!visible;
+		this._cursorSprite.enabled = !!visible;
 	}
 
 	private _cursorSprite!: SpriteComponent;
@@ -137,7 +149,7 @@ export class TitleScreen extends SpriteObject {
 						this.cursorVisible = true;
 						const pauseEvent = createGameEvent({ type: 'pause_blink', emitter: this });
 						this.sc.dispatch_event(pauseEvent);
-						$.emitPresentation('gamestart_selected', this, { numOfPlayers: this.selectedPlayers });
+						$.emit_presentation('gamestart_selected', this, { numOfPlayers: this.selectedPlayers });
 					},
 					states: {
 						_players_1: {
@@ -149,7 +161,7 @@ export class TitleScreen extends SpriteObject {
 								this.selectedPlayers = 1;
 								this.cursorVisible = true;
 								state.parent.states.blink.reset();
-								if (this._cursorSprite) this._cursorSprite.offset = new_vec3(80, this.cursorY, 1);
+								this._cursorSprite.offset = new_vec3(80, this.cursorY, 1);
 							},
 						},
 						players_2: {
@@ -162,26 +174,26 @@ export class TitleScreen extends SpriteObject {
 								this.selectedPlayers = 2;
 								this.cursorVisible = true;
 								state.parent.states.blink.reset();
-								if (this._cursorSprite) this._cursorSprite.offset = new_vec3(80, this.cursorY, 1);
+								this._cursorSprite.offset = new_vec3(80, this.cursorY, 1);
 							},
 						},
 						blink: {
 							is_concurrent: true,
-							timeline: {
-								id: 'title-screen.blink',
-								frames: [false, true],
-								playbackMode: 'loop',
-								ticksPerFrame: 20,
-							},
 							data: {
 								pause_blink: false,
 							},
 							entering_state(this: TitleScreen) {
 								this.cursorVisible = true;
+								this.play_timeline(TitleScreen.BLINK_TIMELINE_ID, { rewind: true, snapToStart: true });
 							},
-							tape_next(this: TitleScreen, state: State) {
-								if (state.data.pause_blink) return;
-								this.cursorVisible = state.current_tape_value;
+							on: {
+								[`timeline.frame:${TitleScreen.BLINK_TIMELINE_ID}`]: {
+									scope: 'self',
+									do(this: TitleScreen, state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<boolean>>) {
+										if (state.data.pause_blink) return;
+										this.cursorVisible = event.frame_value;
+									},
+								},
 							},
 							states: {
 								_default: {
@@ -213,15 +225,22 @@ export class TitleScreen extends SpriteObject {
 		this.imgid = BitmapId.title;
 		// Cursor sprite component (secondary)
 		this._cursorSprite = new SpriteComponent({ parentid: this.id, imgid: BitmapId.menu_arrow });
-		this.addComponent(this._cursorSprite);
+		this.add_component(this._cursorSprite);
 		this._cursorSprite.layer = 'ui';
 		this._cursorSprite.colliderLocalId = null;
+		this.define_timeline({
+			id: TitleScreen.BLINK_TIMELINE_ID,
+			frames: [false, true],
+			playbackMode: 'loop',
+			ticksPerFrame: 20,
+		});
 	}
 }
 
 @insavegame
 export class Gordijn extends WorldObject {
 	private width: number;
+	private static readonly TIMELINE_ID = 'gordijn.close';
 
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
@@ -240,21 +259,22 @@ export class Gordijn extends WorldObject {
 				its_curtains_for_you: {
 					on: {
 						$curtained: '/_idle',
-					},
-					timeline: {
-						id: 'gordijn.close',
-						frames: [8],
-						ticksPerFrame: 2,
-						repetitions: 256 / 8,
+						[`timeline.frame:${Gordijn.TIMELINE_ID}`]: {
+							scope: 'self',
+							do(this: Gordijn, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
+								this.width += event.frame_value;
+							},
+						},
+						[`timeline.end:${Gordijn.TIMELINE_ID}`]: {
+							scope: 'self',
+							do(this: Gordijn, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+								$.emit_presentation('curtained', this);
+							},
+						},
 					},
 					entering_state(this: Gordijn) {
 						this.width = 0;
-					},
-					tape_next(this: Gordijn, state: State) {
-						this.width += state.current_tape_value;
-					},
-					tape_end(this: Gordijn) {
-						$.emitPresentation('curtained', this);
+						this.play_timeline(Gordijn.TIMELINE_ID, { rewind: true, snapToStart: true });
 					},
 				},
 			}
@@ -263,9 +283,14 @@ export class Gordijn extends WorldObject {
 
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'gordijn', ...opts });
+		this.define_timeline({
+			id: Gordijn.TIMELINE_ID,
+			frames: [8],
+			ticksPerFrame: 2,
+			repetitions: 256 / 8,
+		});
 		this.width = 0;
 		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
-			if (this.width === 0) return;
 			rc.submitRect({ kind: 'fill', area: new_area3d(0, 0, this.z + 1, this.width, 192, this.z), color: Msx1Colors[0], layer: 'ui' });
 		});
 	}

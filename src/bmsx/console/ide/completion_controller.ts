@@ -14,10 +14,11 @@ import {
 } from './types';
 import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaSymbolEntry } from '../types';
 import * as constants from './constants';
-import { consumeKey as consumeKeyboardKey, isKeyJustPressed as isKeyJustPressedGlobal, isKeyPressed as isKeyPressedGlobal } from './input_helpers';
+import { isKeyJustPressed as isKeyJustPressedGlobal, isKeyPressed as isKeyPressedGlobal } from './input_helpers';
 import type { KeyboardInput } from '../../input/keyboardinput';
 import { isWhitespace, isWordChar } from './text_utils';
 import { isLuaCommentContext } from './text_utils_local';
+import { consumeIdeKey } from './player_input_adapter';
 
 type MemberCompletionHostRequest = {
 	objectName: string;
@@ -204,8 +205,8 @@ export class CompletionController {
 		metaDown: boolean,
 	): boolean {
 		// Allow manual open via Ctrl/Cmd+Space
-		if ((ctrlDown || metaDown) && !altDown && this.completionSession === null && this.host.isCodeTabActive() && isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'Space')) {
-			consumeKeyboardKey(keyboard, 'Space');
+		if ((ctrlDown || metaDown) && !altDown && this.completionSession === null && this.host.isCodeTabActive() && isKeyJustPressedGlobal('Space')) {
+			consumeIdeKey('Space');
 			const context = this.analyzeCompletionContext();
 			if (context) this.openCompletionSessionFromContext(context, 'manual'); else this.closeSession();
 			return true;
@@ -213,35 +214,35 @@ export class CompletionController {
 
 		const session = this.completionSession;
 		if (!session) return false;
-		if (isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'Escape')) {
-			consumeKeyboardKey(keyboard, 'Escape');
+		if (isKeyJustPressedGlobal('Escape')) {
+			consumeIdeKey('Escape');
 			this.closeSession();
 			return true;
 		}
 		let handled = false;
 		if (this.host.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'ArrowDown');
+			consumeIdeKey('ArrowDown');
 			this.moveCompletionSelection(1);
 			handled = true;
 		}
 		if (this.host.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'ArrowUp');
+			consumeIdeKey('ArrowUp');
 			this.moveCompletionSelection(-1);
 			handled = true;
 		}
 		if (this.host.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'PageDown');
+			consumeIdeKey('PageDown');
 			this.moveCompletionSelection(session.maxVisibleItems);
 			handled = true;
 		}
 		if (this.host.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'PageUp');
+			consumeIdeKey('PageUp');
 			this.moveCompletionSelection(-session.maxVisibleItems);
 			handled = true;
 		}
 		if (ctrlDown || metaDown) {
 			if (this.host.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
-				consumeKeyboardKey(keyboard, 'Home');
+				consumeIdeKey('Home');
 				if (session.filteredItems.length > 0) {
 					session.selectionIndex = 0;
 					this.ensureCompletionSelectionVisible(session);
@@ -249,7 +250,7 @@ export class CompletionController {
 				handled = true;
 			}
 			if (this.host.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
-				consumeKeyboardKey(keyboard, 'End');
+				consumeIdeKey('End');
 				if (session.filteredItems.length > 0) {
 					session.selectionIndex = session.filteredItems.length - 1;
 					this.ensureCompletionSelectionVisible(session);
@@ -259,30 +260,29 @@ export class CompletionController {
 		}
 		if (handled) return true;
 		if (session.filteredItems.length > 0) {
-			const playerIndex = this.host.getPlayerIndex();
 			let suppressed = false;
-			if (isKeyPressedGlobal(playerIndex, 'ArrowDown')) {
-				consumeKeyboardKey(keyboard, 'ArrowDown');
+			if (isKeyPressedGlobal('ArrowDown')) {
+				consumeIdeKey('ArrowDown');
 				suppressed = true;
 			}
-			if (isKeyPressedGlobal(playerIndex, 'ArrowUp')) {
-				consumeKeyboardKey(keyboard, 'ArrowUp');
+			if (isKeyPressedGlobal('ArrowUp')) {
+				consumeIdeKey('ArrowUp');
 				suppressed = true;
 			}
-			if (isKeyPressedGlobal(playerIndex, 'PageDown')) {
-				consumeKeyboardKey(keyboard, 'PageDown');
+			if (isKeyPressedGlobal('PageDown')) {
+				consumeIdeKey('PageDown');
 				suppressed = true;
 			}
-			if (isKeyPressedGlobal(playerIndex, 'PageUp')) {
-				consumeKeyboardKey(keyboard, 'PageUp');
+			if (isKeyPressedGlobal('PageUp')) {
+				consumeIdeKey('PageUp');
 				suppressed = true;
 			}
-			if (isKeyPressedGlobal(playerIndex, 'Home')) {
-				consumeKeyboardKey(keyboard, 'Home');
+			if (isKeyPressedGlobal('Home')) {
+				consumeIdeKey('Home');
 				suppressed = true;
 			}
-			if (isKeyPressedGlobal(playerIndex, 'End')) {
-				consumeKeyboardKey(keyboard, 'End');
+			if (isKeyPressedGlobal('End')) {
+				consumeIdeKey('End');
 				suppressed = true;
 			}
 			if (suppressed) {
@@ -290,21 +290,21 @@ export class CompletionController {
 			}
 		}
 		if (this.enterCommitsCompletion) {
-			const enterPressed = isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'Enter');
-			const numpadEnterPressed = isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'NumpadEnter');
+			const enterPressed = isKeyJustPressedGlobal('Enter');
+			const numpadEnterPressed = isKeyJustPressedGlobal('NumpadEnter');
 			if (enterPressed || numpadEnterPressed) {
-				if (enterPressed) consumeKeyboardKey(keyboard, 'Enter'); else consumeKeyboardKey(keyboard, 'NumpadEnter');
+				if (enterPressed) consumeIdeKey('Enter'); else consumeIdeKey('NumpadEnter');
 				this.acceptSelectedCompletion();
 				return true;
 			}
 		}
-		if (isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'Tab')) {
-			consumeKeyboardKey(keyboard, 'Tab');
+		if (isKeyJustPressedGlobal('Tab')) {
+			consumeIdeKey('Tab');
 			if (shiftDown) this.moveCompletionSelection(-1); else this.acceptSelectedCompletion();
 			return true;
 		}
-		if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'Space')) {
-			consumeKeyboardKey(keyboard, 'Space');
+		if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal('Space')) {
+			consumeIdeKey('Space');
 			const context = this.analyzeCompletionContext();
 			if (context) this.openCompletionSessionFromContext(context, 'manual'); else this.closeSession();
 			return true;

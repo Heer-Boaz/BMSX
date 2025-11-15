@@ -20,7 +20,7 @@ import { taskGate, GateGroup } from '../core/taskgate';
 import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { setupFSMlibrary } from '../fsm/fsmlibrary';
 import { DirectConsoleRenderBackend, type ConsoleRenderBackend } from './render_backend';
-import { new_vec3 } from 'bmsx/utils/vector_operations';
+import { new_vec3 } from '../utils/vector_operations';
 import { id_to_space_symbol, type Space } from '../core/space';
 import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';
@@ -542,7 +542,7 @@ export class BmsxConsoleApi {
 		if (!definition) {
 			throw new Error(`[BmsxConsoleApi] Lua ability '${ability_id}' is not registered.`);
 		}
-		asc.grantAbility(definition);
+		asc.grant_ability(definition);
 	}
 
 	public request_ability(object_id: Identifier, ability_id: string, options?: { payload?: Record<string, unknown>; source?: Identifier | null }): boolean {
@@ -557,8 +557,8 @@ export class BmsxConsoleApi {
 		const trimmedId = ability_id.trim() as any;
 		const payload = options?.payload as any;
 		const result = payload !== undefined
-			? asc.requestAbility(trimmedId, { payload })
-			: asc.requestAbility(trimmedId);
+			? asc.request_ability(trimmedId, { payload })
+			: asc.request_ability(trimmedId);
 		return result.ok === true;
 	}
 
@@ -715,6 +715,7 @@ export class BmsxConsoleApi {
 		if (typeof blueprint !== 'object' || blueprint === null) {
 			throw new Error('[BmsxConsoleApi] register_prepared_fsm blueprint must be an object.');
 		}
+		BmsxConsoleRuntime.injectConsoleTimelineMetadata(trimmed, blueprint);
 		this.setFsmBlueprintFactory(trimmed, blueprint);
 		if (!options || options.setup !== false) {
 			setupFSMlibrary();

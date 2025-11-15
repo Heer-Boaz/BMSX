@@ -18,7 +18,7 @@ import type { BmsxConsoleState } from '../console/runtime';
 import { Registry } from "../core/registry";
 import { GameView, SkyboxImageIds } from '../render/gameview';
 import { decodeBinary, encodeBinary } from "./binencoder";
-import { Bindable, Identifier } from "bmsx/rompack/rompack";
+import { Bindable, Identifier } from "../rompack/rompack";
 import { insavegame, type RevivableObjectArgs, onsave, onload } from './serializationhooks';
 import { typedarray_to_numberarray } from '../utils/typedarray_to_numberarray';
 

@@ -34,7 +34,7 @@ export type id2sstate = Record<Identifier, State> | undefined;
  *			on: { ... }, // Note: defines the state transitions at the *current* level (thus, not for submachines)
  *			enter(this: TargetClass, state: sstate): { state.reset(); ... },
  *			run(this: TargetClass, state: sstate): { ++state.ticks; },
- *			next(this: TargetClass, state: sstate): { let bla = state.current_tape_value; ... },
+ *			next(this: TargetClass, state: sstate): { optional legacy handler },
  *		},
  *		running: { ... },
  * }
@@ -57,7 +57,6 @@ export interface StateEventHandler<T extends Stateful = any, E extends GameEvent
 	(state: State<T>, event: E): transition_target | void;
 }
 export interface StateExitHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P): void; }
-export interface StateNextHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P & { tape_rewound: boolean }): transition_target | void; }
 export type listed_sdef_event = { name: string, scope: EventScope, lane?: EventLane | 'any' };
 
 
@@ -246,9 +245,6 @@ export interface StateGuard<T extends Stateful & EventSubscriber = any> {
  */
 export type TickCheckDefinition<T extends Stateful & EventSubscriber = any> = Omit<StateEventDefinition<T>, 'scope'>;
 
-/**
- * Represents a tape used in the BFSM.
- */
 /**
  * Represents an object that is stateful and can be registered, and subscribes to events.
  * It also has a player index, that is used to identify the player that the stateful object belongs to, which is used to determine which player's input to process.

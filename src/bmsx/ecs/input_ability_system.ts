@@ -8,7 +8,7 @@ import type { WorldObject } from '../core/object/worldobject';
 import { InputAbilityComponent } from '../component/inputabilitycomponent';
 import { compileProgram, validateProgramAbilities, type CompiledProgram, type CompiledBinding, type EvalContext, type PatternPredicate, type EffectExecutor } from '../gas/input_ability_compiler';
 import { isInputAbilityProgram, type InputAbilityProgram } from '../gas/input_ability_dsl';
-import { filter_iterable } from 'bmsx/utils/filter_iterable';
+import { filter_iterable } from '../utils/filter_iterable';
 import type { GameEvent } from '../core/game_event';
 
 let assetProgramsValidated = false;
@@ -80,9 +80,9 @@ export class InputAbilitySystem extends ECSystem {
 			const ownerId = asc ? (asc.parentid ?? obj.id) : obj.id;
 
 			const queuedEvents: GameEvent[] = [];
-			const hasTag = asc ? (tag: string) => asc.hasGameplayTag(tag) : () => false;
+			const hasTag = asc ? (tag: string) => asc.has_gameplay_tag(tag) : () => false;
 			const requestAbility = asc
-				? <Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>) => asc.requestAbility(id, opts)
+				? <Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>) => asc.request_ability(id, opts)
 				: <Id extends AbilityId>(id: Id) => {
 					throw new Error(`[InputAbilitySystem] Program '${programKey}' attempted to request ability '${id}' on '${obj.id}' without an AbilitySystemComponent.`);
 				};

@@ -68,7 +68,7 @@ export class EilaEventService extends Service {
 
 		if (emitter.hp <= 0) {
 			emitter.hp = 0;
-			$.stopMusic();
+			$.stopmusic();
 
 			// Handle that fighter is down
 			const humiliated = createGameEvent({ type: 'mode.impact.humiliated', emitter });

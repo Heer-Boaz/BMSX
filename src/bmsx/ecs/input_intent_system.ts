@@ -3,8 +3,8 @@ import type { WorldObject } from '../core/object/worldobject';
 import { ECSystem, TickGroup } from './ecsystem';
 import type { PlayerInput } from '../input/playerinput';
 import { InputIntentComponent, type InputIntentBinding, type InputIntentEdgeAssignment } from '../component/inputintentcomponent';
-import { deep_clone } from 'bmsx/utils/deep_clone';
-import { filter_iterable } from 'bmsx/utils/filter_iterable';
+import { deep_clone } from '../utils/deep_clone';
+import { filter_iterable } from '../utils/filter_iterable';
 
 type IntentEdge = 'press' | 'hold' | 'release';
 

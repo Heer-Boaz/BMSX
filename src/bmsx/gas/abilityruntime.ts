@@ -24,7 +24,7 @@ export class AbilityRuntimeSystem extends ECSystem {
 				ascByOwner.set(command.owner, asc);
 			}
 				try {
-					asc.tryActivate(command.ability_id, command.payload);
+					asc.try_activate(command.ability_id, command.payload);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				const runtime = BmsxConsoleRuntime.instance;

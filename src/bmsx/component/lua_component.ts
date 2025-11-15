@@ -1,5 +1,5 @@
 import { Component, type ComponentAttachOptions, type ComponentTag } from './basecomponent';
-import { deep_clone } from 'bmsx/utils/deep_clone';
+import { deep_clone } from '../utils/deep_clone';
 import type { LuaHandlerFn } from '../lua/handler_cache';
 
 export type LuaComponentHandlerMap = {

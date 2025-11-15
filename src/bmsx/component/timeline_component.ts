@@ -218,7 +218,7 @@ export class TimelineComponent extends Component<WorldObject> {
 		if (!abilitySystem) return;
 		const tags = unique_strings(compiled.controlledTags);
 		if (tags.length === 0) return;
-		abilitySystem.removeTags(...tags);
+		abilitySystem.remove_tags(...tags);
 	}
 
 	private apply_markers(entry: RegisteredTimeline, event: TimelineFrameEvent): void {
@@ -232,10 +232,10 @@ export class TimelineComponent extends Component<WorldObject> {
 				throw new Error(`[TimelineComponent] Marker '${marker.event}' requires ability system on '${target.id}'.`);
 			}
 			if (marker.addtags && marker.addtags.length > 0) {
-				target.abilitysystem?.addTags(...unique_strings(marker.addtags));
+				target.abilitysystem?.add_tags(...unique_strings(marker.addtags));
 			}
 			if (marker.removetags && marker.removetags.length > 0) {
-				target.abilitysystem?.removeTags(...unique_strings(marker.removetags));
+				target.abilitysystem?.remove_tags(...unique_strings(marker.removetags));
 			}
 			const payload = marker.payload ? { ...marker.payload } : undefined;
 			emitLaneEvent(marker.lane ?? 'gameplay', marker.event, target, payload);
@@ -243,20 +243,29 @@ export class TimelineComponent extends Component<WorldObject> {
 	}
 
 	private emit_frameevent(entry: RegisteredTimeline, payload: TimelineFrameEventPayload): void {
-		const owner = this.parent;
-		if (!owner) return;
+		const owner = this.parent!;
 		const lane = entry.definition.frameEventLane ?? 'gameplay';
-		emitLaneEvent(lane, 'timeline.frame', owner, payload);
-		const event = createGameEvent({ type: 'timeline.frame', lane, emitter: owner, ...payload });
-		owner.sc?.dispatch_event(event);
+		this.dispatchTimelineEvents(owner, lane, 'timeline.frame', payload);
 	}
 
 	private emit_endevent(payload: TimelineEndEventPayload): void {
-		const owner = this.parent;
-		if (!owner) return;
-		emitLaneEvent('gameplay', 'timeline.end', owner, payload);
-		const event = createGameEvent({ type: 'timeline.end', lane: 'gameplay', emitter: owner, ...payload });
-		owner.sc?.dispatch_event(event);
+		const owner = this.parent!;
+		this.dispatchTimelineEvents(owner, 'gameplay', 'timeline.end', payload);
+	}
+
+	private dispatchTimelineEvents(
+		owner: WorldObject,
+		lane: EventLane | 'any',
+		baseType: 'timeline.frame' | 'timeline.end',
+		payload: TimelineFrameEventPayload | TimelineEndEventPayload,
+	): void {
+		emitLaneEvent(lane, baseType, owner, payload as Record<string, unknown>);
+		const baseEvent = createGameEvent({ type: baseType, lane, emitter: owner, ...payload });
+		owner.sc.dispatch_event(baseEvent);
+		const suffixedType = `${baseType}:${payload.timeline_id}`;
+		emitLaneEvent(lane, suffixedType, owner, payload as Record<string, unknown>);
+		const suffixedEvent = createGameEvent({ type: suffixedType, lane, emitter: owner, ...payload });
+		owner.sc.dispatch_event(suffixedEvent);
 	}
 
 	private dispatch_frame_listeners(id: string, payload: TimelineFrameEventPayload): void {

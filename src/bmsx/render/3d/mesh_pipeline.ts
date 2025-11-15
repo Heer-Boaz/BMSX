@@ -16,7 +16,7 @@ import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { MeshRenderSubmission } from '../gameview';
 import type { DirectionalLight, PointLight } from './light';
 import { M4, V3, float32ToFloat16, isMatrixMirrored, sphereInFrustumPacked, transformBoundingSphereCenter, transformedBoundingSphereRadius, translationDistanceSquared } from './math3d';
-import { arrays_equal } from 'bmsx/utils/arrays_equal';
+import { arrays_equal } from '../../utils/arrays_equal';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
 import {
 	beginMeshQueue,

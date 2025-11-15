@@ -20,9 +20,9 @@ import type { Component, ComponentConstructor } from "../component/basecomponent
 import { Space, id2spaceType, initial_world_spaces, obj_id2space_id_type, obj_id_to_space_id_symbol, id_to_space_symbol } from './space';
 import { EventEmitter } from './eventemitter';
 import { HandlerRegistry } from './handlerregistry';
-import { filter_iterable } from 'bmsx/utils/filter_iterable';
-import { make_index_proxy } from 'bmsx/utils/make_index_proxy';
-import { shallowcopy } from 'bmsx/utils/shallowcopy';
+import { filter_iterable } from '../utils/filter_iterable';
+import { make_index_proxy } from '../utils/make_index_proxy';
+import { shallowcopy } from '../utils/shallowcopy';
 import { Collision2DSystem } from '../service/collision2d_service';
 import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
 import { GameplayEventRecorder } from './replay/gameplayeventrecorder';

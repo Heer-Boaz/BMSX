@@ -3,8 +3,9 @@ import { resolveReferenceLookup, type ReferenceLookupOptions, type ReferenceMatc
 import type { InlineInputOptions, InlineTextField, SearchMatch } from './types';
 import { createInlineTextField } from './inline_text_field';
 import { isIdentifierChar, isIdentifierStartChar } from './text_utils';
-import { consumeKey as consumeKeyboardKey, isKeyJustPressed as isKeyJustPressedGlobal } from './input_helpers';
+import { isKeyJustPressed as isKeyJustPressedGlobal } from './input_helpers';
 import * as constants from './constants';
+import { consumeIdeKey } from './player_input_adapter';
 
 export type RenameCommitPayload = {
 	matches: readonly SearchMatch[];
@@ -35,7 +36,6 @@ export type RenameStartOptions = ReferenceLookupOptions & {
 export class RenameController {
 	private readonly host: RenameControllerHost;
 	private readonly referenceState: ReferenceState;
-	private readonly playerIndex: number;
 	private readonly field: InlineTextField = createInlineTextField();
 	private active = false;
 	private visible = false;
@@ -51,10 +51,9 @@ export class RenameController {
 		return isIdentifierChar(value.charCodeAt(0));
 	};
 
-	public constructor(host: RenameControllerHost, referenceState: ReferenceState, playerIndex: number) {
+	public constructor(host: RenameControllerHost, referenceState: ReferenceState) {
 		this.host = host;
 		this.referenceState = referenceState;
-		this.playerIndex = playerIndex;
 	}
 
 	public begin(options: RenameStartOptions): boolean {
@@ -108,7 +107,7 @@ export class RenameController {
 		}
 		const { ctrlDown, metaDown, shiftDown, altDown } = modifiers;
 		if ((ctrlDown || metaDown) && this.host.shouldFireRepeat(keyboard, 'KeyZ', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'KeyZ');
+			consumeIdeKey('KeyZ');
 			if (shiftDown) {
 				this.host.redo();
 			} else {
@@ -117,21 +116,21 @@ export class RenameController {
 			return;
 		}
 		if ((ctrlDown || metaDown) && this.host.shouldFireRepeat(keyboard, 'KeyY', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'KeyY');
+			consumeIdeKey('KeyY');
 			this.host.redo();
 			return;
 		}
-		if (isKeyJustPressedGlobal(this.playerIndex, 'Escape')) {
-			consumeKeyboardKey(keyboard, 'Escape');
+		if (isKeyJustPressedGlobal('Escape')) {
+			consumeIdeKey('Escape');
 			this.cancel();
 			return;
 		}
-		const enterPressed = isKeyJustPressedGlobal(this.playerIndex, 'Enter') || isKeyJustPressedGlobal(this.playerIndex, 'NumpadEnter');
+		const enterPressed = isKeyJustPressedGlobal('Enter') || isKeyJustPressedGlobal('NumpadEnter');
 		if (enterPressed) {
-			if (isKeyJustPressedGlobal(this.playerIndex, 'Enter')) {
-				consumeKeyboardKey(keyboard, 'Enter');
+			if (isKeyJustPressedGlobal('Enter')) {
+				consumeIdeKey('Enter');
 			} else {
-				consumeKeyboardKey(keyboard, 'NumpadEnter');
+				consumeIdeKey('NumpadEnter');
 			}
 			this.commit();
 			return;

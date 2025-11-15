@@ -1,6 +1,6 @@
 import { EventEmitter, type EventLane, type EventScope } from "../core/eventemitter";
-import { deep_equal } from 'bmsx/utils/deep_equal';
-import { deep_clone } from 'bmsx/utils/deep_clone';
+import { deep_equal } from '../utils/deep_equal';
+import { deep_clone } from '../utils/deep_clone';
 import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';
 import type { Identifier } from '../rompack/rompack';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
@@ -11,7 +11,6 @@ import type {
 	StateEventDefinition,
 	StateEventHandler,
 	StateExitHandler,
-	StateNextHandler,
 	Stateful,
 	StateGuard,
 	StateMachineBlueprint,
@@ -583,7 +582,7 @@ function hoistSlot(owner: Record<string, any>, slot: string, id: string): void {
 type EventSlots = { [K in keyof StateEventDefinition]-?: StateEventDefinition[K] extends Function | undefined ? K : never }[keyof StateEventDefinition];
 // @ts-ignore
 type GuardSlots = { [K in keyof StateGuard]-?: StateGuard[K] extends Function | undefined ? K : never }[keyof StateGuard];
-type StateDefHandlerValue = StateEventHandler | StateExitHandler | StateNextHandler;
+type StateDefHandlerValue = StateEventHandler | StateExitHandler;
 // @ts-ignore
 type StateSlots = { [K in keyof StateDefinition]-?: StateDefinition[K] extends StateDefHandlerValue | undefined ? K : never }[keyof StateDefinition];
 
@@ -626,14 +625,6 @@ function hoistGuardCanExit(
 // StateDefinition handlers
 function hoistStateTick(_machineName: string, _path: string[], ownerDef: StateDefinition, id: string) {
 	hoistSlot(ownerDef as Record<string, any>, 'tick', id);
-}
-
-function hoistStateTapeEnd(_machineName: string, _path: string[], ownerDef: StateDefinition, id: string) {
-	hoistSlot(ownerDef as Record<string, any>, 'tape_end', id);
-}
-
-function hoistStateTapeNext(_machineName: string, _path: string[], ownerDef: StateDefinition, id: string) {
-	hoistSlot(ownerDef as Record<string, any>, 'tape_next', id);
 }
 
 function hoistStateEntering(_machineName: string, _path: string[], ownerDef: StateDefinition, id: string) {
@@ -692,8 +683,6 @@ function walkAndHoist(
 ) {
 	// direct slots — aligned with StateDefinition handler properties
 	if (typeof sdef.tick !== 'undefined') hoistStateTick(machineName, path, sdef, makeId([machineName, ...path, 'tick']));
-	if (typeof sdef.tape_end !== 'undefined') hoistStateTapeEnd(machineName, path, sdef, makeId([machineName, ...path, 'tape_end']));
-	if (typeof sdef.tape_next !== 'undefined') hoistStateTapeNext(machineName, path, sdef, makeId([machineName, ...path, 'tape_next']));
 	if (typeof sdef.entering_state !== 'undefined') hoistStateEntering(machineName, path, sdef, makeId([machineName, ...path, 'entering_state']));
 	if (typeof sdef.exiting_state !== 'undefined') hoistStateExiting(machineName, path, sdef, makeId([machineName, ...path, 'exiting_state']));
 	if (typeof sdef.process_input !== 'undefined') hoistStateProcessInput(machineName, path, sdef, makeId([machineName, ...path, 'process_input']));

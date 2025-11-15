@@ -3,7 +3,7 @@ import type { World } from "../core/world";
 import { id_to_space_symbol, type Space } from "../core/space";
 import { $ } from "../core/game";
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
-import { CustomVisualComponent } from "bmsx/component/customvisual_component";
+import { CustomVisualComponent } from "../component/customvisual_component";
 
 @excludeclassfromsavegame
 export class PreRenderSubmitSystem extends ECSystem {

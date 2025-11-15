@@ -1,7 +1,7 @@
 import type { Area, Polygon, vec2arr } from '../rompack/rompack';
 import type { WorldObject } from '../core/object/worldobject';
 import type { World } from '../core/world';
-import { new_area } from 'bmsx/utils/rect_operations';
+import { new_area } from '../utils/rect_operations';
 import { Service } from '../core/service';
 import { Collider2DComponent } from '../component/collisioncomponents';
 

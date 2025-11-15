@@ -1,7 +1,8 @@
-import { consumeKey as consumeKeyboardKey, isKeyJustPressed as isKeyJustPressedGlobal } from './input_helpers';
 import { evaluateDebuggerShortcuts, type DebuggerShortcutContext } from './debugger_shortcuts_core';
 import { prepareDebuggerStepOverlay } from './debugger_overlay_controller';
 import { getDebuggerCommandExecutor } from './debugger_controls';
+import { isKeyPressed } from './input_helpers';
+import { consumeIdeKey } from './player_input_adapter';
 
 type ShortcutContext = {
 	keyboard: any; // Hack to prevent having to import engine types
@@ -19,8 +20,8 @@ export function handleDebuggerShortcuts(context: ShortcutContext): boolean {
 		altDown: context.altDown,
 		metaDown: context.metaDown,
 		shiftDown: context.shiftDown,
-		isKeyJustPressed: (code) => isKeyJustPressedGlobal(context.playerIndex, code),
-		consumeKey: (code) => consumeKeyboardKey(context.keyboard, code, context.playerIndex),
+		isKeyJustPressed: (code) => isKeyPressed(code),
+		consumeKey: (code) => consumeIdeKey(code),
 	};
 	const handled = evaluateDebuggerShortcuts(evalContext, executor);
 	if (handled) {

@@ -27,10 +27,14 @@ export const PlayerIndexNS = {
 };
 
 export class SelectedPlayerIndexIcon extends SpriteObject {
+	private static readonly TIMELINE_IDS = {
+		assigned: 'controller-assignment.assigned',
+		cancelled: 'controller-assignment.cancelled',
+	};
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
-		const ASSIGNED_TIMELINE_ID = 'controller-assignment.assigned';
-		const CANCELLED_TIMELINE_ID = 'controller-assignment.cancelled';
+		const ASSIGNED_TIMELINE_ID = SelectedPlayerIndexIcon.TIMELINE_IDS.assigned;
+		const CANCELLED_TIMELINE_ID = SelectedPlayerIndexIcon.TIMELINE_IDS.cancelled;
 		return {
 			on: {
 				animation_end: { do(this: SelectedPlayerIndexIcon) { this.mark_for_disposal(); } },
@@ -41,73 +45,51 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 						// Guard transitions so only the icon for the matching gamepad reacts.
 						controller_assigned: {
 							do(this: SelectedPlayerIndexIcon, _src: any, payload: EventPayload & { gamepadIndex?: number }) {
-								const { gamepadIndex } = payload;
-								if (gamepadIndex == null) {
-									throw new Error('[ControllerAssignmentUI] controller_assigned event missing gamepadIndex.');
-								}
-								if (gamepadIndex === this.gamepadIndex) return '/assigned';
-								return undefined;
+								return payload.gamepadIndex === this.gamepadIndex ? '/assigned' : undefined;
 							}
 						},
 						controller_assignment_cancelled: {
 							do(this: SelectedPlayerIndexIcon, _src: any, payload: EventPayload & { gamepadIndex?: number }) {
-								const { gamepadIndex } = payload;
-								if (gamepadIndex == null) {
-									throw new Error('[ControllerAssignmentUI] controller_assignment_cancelled event missing gamepadIndex.');
-								}
-								if (gamepadIndex === this.gamepadIndex) return '/cancelled';
-								return undefined;
+								return payload.gamepadIndex === this.gamepadIndex ? '/cancelled' : undefined;
 							}
 						},
 					},
 				},
 				assigned: {
-					timeline: {
-						id: ASSIGNED_TIMELINE_ID,
-						frames: [true, false],
-						repetitions: 5,
-						playbackMode: 'once',
-						ticksPerFrame: 4,
+					entering_state(this: SelectedPlayerIndexIcon) {
+						this.play_timeline(ASSIGNED_TIMELINE_ID, { rewind: true, snapToStart: true });
 					},
 					on: {
-						'timeline.frame': {
+						[`timeline.frame:${ASSIGNED_TIMELINE_ID}`]: {
 							scope: 'self',
 							do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload>) {
-								if (event.timeline_id !== ASSIGNED_TIMELINE_ID) return;
 								const visible = event.frame_value === true;
 								this.colorize = visible ? { r: 1, g: 1, b: 1, a: .5 } : { r: 0, g: 1, b: 0, a: .75 };
 							},
 						},
-						'timeline.end': {
+						[`timeline.end:${ASSIGNED_TIMELINE_ID}`]: {
 							scope: 'self',
-							do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
-								if (event.timeline_id !== ASSIGNED_TIMELINE_ID) return;
+							do(this: SelectedPlayerIndexIcon, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 								this.notifyAnimationEnd();
 							},
 						},
 					},
 				},
 				cancelled: {
-					timeline: {
-						id: CANCELLED_TIMELINE_ID,
-						frames: [2],
-						repetitions: 16,
-						playbackMode: 'once',
-						ticksPerFrame: 1,
+					entering_state(this: SelectedPlayerIndexIcon) {
+						this.colorize = { r: 1, g: 0, b: 0, a: .75 };
+						this.play_timeline(CANCELLED_TIMELINE_ID, { rewind: true, snapToStart: true });
 					},
-					entering_state(this: SelectedPlayerIndexIcon) { this.colorize = { r: 1, g: 0, b: 0, a: .75 }; },
 					on: {
-						'timeline.frame': {
+						[`timeline.frame:${CANCELLED_TIMELINE_ID}`]: {
 							scope: 'self',
 							do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
-								if (event.timeline_id !== CANCELLED_TIMELINE_ID) return;
 								this.y -= event.frame_value;
 							},
 						},
-						'timeline.end': {
+						[`timeline.end:${CANCELLED_TIMELINE_ID}`]: {
 							scope: 'self',
-							do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
-								if (event.timeline_id !== CANCELLED_TIMELINE_ID) return;
+							do(this: SelectedPlayerIndexIcon, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 								this.notifyAnimationEnd();
 							},
 						},
@@ -124,6 +106,20 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 	}
 	constructor(public gamepadIndex: number) {
 		super({ id: SelectedPlayerIndexIcon.getIconId(gamepadIndex) });
+		this.define_timeline({
+			id: SelectedPlayerIndexIcon.TIMELINE_IDS.assigned,
+			frames: [true, false],
+			repetitions: 5,
+			playbackMode: 'once',
+			ticksPerFrame: 4,
+		});
+		this.define_timeline({
+			id: SelectedPlayerIndexIcon.TIMELINE_IDS.cancelled,
+			frames: [2],
+			repetitions: 16,
+			playbackMode: 'once',
+			ticksPerFrame: 1,
+		});
 		this.z = ZCOORD_MAX; this.colorize = { r: 1, g: 1, b: 1, a: .75 };
 		this.imgid = 'joystick_none';
 

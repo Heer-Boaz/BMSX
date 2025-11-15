@@ -15,7 +15,7 @@ function cleanupDefinitions(machineId: string): void {
 	}
 }
 
-test('active FSM instances adopt reloaded timeline definitions', () => {
+test('active FSM instances adopt reloaded blueprint data', () => {
 	const registry = Registry.instance;
 	const initialRegistryIds = new Set(registry.getRegisteredEntityIds());
 
@@ -25,11 +25,7 @@ test('active FSM instances adopt reloaded timeline definitions', () => {
 		initial: '#idle',
 		states: {
 			'#idle': {
-				timeline: {
-					id: `${machineId}.idle`,
-					frames: ['a', 'b', 'c'],
-					ticksPerFrame: 2,
-				},
+				data: { value: 'first' },
 			},
 		},
 	};
@@ -62,21 +58,16 @@ test('active FSM instances adopt reloaded timeline definitions', () => {
 		initial: '#idle',
 		states: {
 			'#idle': {
-				timeline: {
-					id: `${machineId}.idle`,
-					frames: ['x', 'y', 'z', 'w'],
-					ticksPerFrame: 4,
-				},
+				data: { value: 'updated' },
 			},
 		},
 	};
-	const idleBlueprintB = blueprintB.states!['#idle']!;
 	applyPreparedStateMachine(machineId, blueprintB, { force: true });
 
 	assert.deepEqual(
-		idle.definition.timeline,
-		idleBlueprintB.timeline,
-		'timeline payload should refresh after hot reload',
+		idle.definition.data,
+		{ value: 'updated' },
+		'state data should refresh after hot reload',
 	);
 
 	root.dispose();

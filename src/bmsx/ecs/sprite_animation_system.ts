@@ -3,7 +3,7 @@ import type { WorldObject } from '../core/object/worldobject';
 import { ECSystem, TickGroup } from './ecsystem';
 import { SpriteAnimationComponent, type SpriteAnimationDefinition } from '../component/sprite_animation_component';
 import { SpriteComponent } from '../component/sprite_component';
-import { filter_iterable } from 'bmsx/utils/filter_iterable';
+import { filter_iterable } from '../utils/filter_iterable';
 
 export class SpriteAnimationSystem extends ECSystem {
 	constructor(priority = 0) {

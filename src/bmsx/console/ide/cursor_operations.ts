@@ -285,7 +285,7 @@ export function moveCursorHome(select: boolean): void {
 	} else {
 		clearSelection();
 	}
-	const ctrlDown = isModifierPressedGlobal(ide_state.playerIndex, 'ControlLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ControlRight');
+	const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
 	if (ctrlDown) {
 		ide_state.cursorRow = 0;
 		ide_state.cursorColumn = 0;
@@ -320,7 +320,7 @@ export function moveCursorEnd(select: boolean): void {
 	} else {
 		clearSelection();
 	}
-	const ctrlDown = isModifierPressedGlobal(ide_state.playerIndex, 'ControlLeft') || isModifierPressedGlobal(ide_state.playerIndex, 'ControlRight');
+	const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
 	if (ctrlDown) {
 		const lastRow = ide_state.lines.length - 1;
 		if (lastRow < 0) {

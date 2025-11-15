@@ -21,7 +21,6 @@ import {
 import {
 	GameplayActionRegistry,
 	GameplayAbilityExecution,
-	type AbilityRuntimeBindings,
 	type AbilityWaitInstruction,
 	type GameplayAbilityDefinition
 } from '../gas/gameplay_ability';
@@ -47,8 +46,8 @@ type ActiveAbilityRun = {
 	definition: GameplayAbilityDefinition;
 	execution: GameplayAbilityExecution;
 	wait?: WaitState;
-	grantedTags: TagId[];
-	removeOnEnd: TagId[];
+	granted_tags: TagId[];
+	remove_on_end: TagId[];
 };
 
 type TagMutationOperation = 'add' | 'remove';
@@ -94,12 +93,12 @@ export class AbilitySystemComponent extends Component {
 
 	private _runnerCounter = 0;
 
-	public requestAbility<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult {
+	public request_ability<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult {
 		const payload = opts && 'payload' in opts ? (opts as { payload?: AbilityPayloadFor<Id> }).payload : undefined;
 		abilityRegistry.validate(id, payload);
-		const failure = this.canActivateReason(id);
+		const failure = this.can_activate_reason(id);
 		if (failure) {
-			this.notifyAbilityFailed(id, failure);
+			this.notify_ability_failed(id, failure);
 			if (this.isStructuralActivationFailure(failure)) {
 				throw new Error(`[AbilitySystemComponent] Ability '${id}' request on '${this.parentid}' failed: ${failure}`);
 			}
@@ -119,51 +118,51 @@ export class AbilitySystemComponent extends Component {
 		super(opts);
 	}
 
-	public addTag(tag: TagId): void {
+	public add_tag(tag: TagId): void {
 		this.assertExplicitTagMutationAllowed('add', tag);
 		this.tags.add(tag);
 	}
-	public removeTag(tag: TagId): void {
+	public remove_tag(tag: TagId): void {
 		this.assertExplicitTagMutationAllowed('remove', tag);
 		this.tags.delete(tag);
 	}
 
-	public addTags(...tags: TagId[]): void {
-		for (const tag of tags) this.addTag(tag);
+	public add_tags(...tags: TagId[]): void {
+		for (const tag of tags) this.add_tag(tag);
 	}
 
-	public removeTags(...tags: TagId[]): void {
-		for (const tag of tags) this.removeTag(tag);
+	public remove_tags(...tags: TagId[]): void {
+		for (const tag of tags) this.remove_tag(tag);
 	}
 
-	public hasTag(tag: TagId): boolean {
+	public has_tag(tag: TagId): boolean {
 		return this.tags.has(tag);
 	}
 
-	public hasAllTags(...tags: TagId[]): boolean {
-		return tags.every(tag => this.hasProcessingTag(tag));
+	public has_all_tags(...tags: TagId[]): boolean {
+		return tags.every(tag => this.has_processing_tag(tag));
 	}
 
-	public hasAnyTag(...tags: TagId[]): boolean {
-		return tags.some(tag => this.hasProcessingTag(tag));
+	public has_any_tag(...tags: TagId[]): boolean {
+		return tags.some(tag => this.has_processing_tag(tag));
 	}
 
-	public toggleTag(tag: TagId): void {
+	public toggle_tag(tag: TagId): void {
 		if (this.tags.has(tag)) {
-			this.removeTag(tag);
+			this.remove_tag(tag);
 		} else if (this.grantedTagRefs.has(tag)) {
 			throw new Error(`[AbilitySystemComponent] Cannot toggle granted tag '${tag}'.`);
 		} else {
-			this.addTags(tag);
+			this.add_tags(tag);
 		}
 	}
 
-	public toggleTags(...tags: TagId[]): void {
-		for (const tag of tags) this.toggleTag(tag);
+	public toggle_tags(...tags: TagId[]): void {
+		for (const tag of tags) this.toggle_tag(tag);
 	}
-	public hasGameplayTag(tag: TagId): boolean { return this.tags.has(tag) || ((this.grantedTagRefs.get(tag) ?? 0) > 0); }
+	public has_gameplay_tag(tag: TagId): boolean { return this.tags.has(tag) || ((this.grantedTagRefs.get(tag) ?? 0) > 0); }
 
-	public snapshotTags(): AbilityTagSnapshot {
+	public snapshot_tags(): AbilityTagSnapshot {
 		const explicitList: TagId[] = [];
 		for (const tag of this.tags.values()) {
 			explicitList.push(tag);
@@ -190,7 +189,7 @@ export class AbilitySystemComponent extends Component {
 		return { explicit: explicitList, granted: grantedList, combined };
 	}
 
-	public grantAbility(definition: GameplayAbilityDefinition, actions?: GameplayActionRegistry): void {
+	public grant_ability(definition: GameplayAbilityDefinition, actions?: GameplayActionRegistry): void {
 		if (!definition || !definition.id) {
 			throw new Error('[AbilitySystemComponent] Cannot grant ability without a valid definition id.');
 		}
@@ -198,10 +197,10 @@ export class AbilitySystemComponent extends Component {
 		this._abilities.set(definition.id, definition);
 		this._gameplayActions.set(definition.id, registry);
 	}
-	public hasAbility(id: AbilityId): boolean {
+	public has_ability(id: AbilityId): boolean {
 		return this._abilities.has(id);
 	}
-	public revokeAbility(id: AbilityId): void {
+	public revoke_ability(id: AbilityId): void {
 		this._abilities.delete(id);
 		this._gameplayActions.delete(id);
 		// remove any active instances of this ability
@@ -211,25 +210,25 @@ export class AbilitySystemComponent extends Component {
 		}
 	}
 
-	public applyEffect(effect: GameplayEffect): void {
+	public apply_effect(effect: GameplayEffect): void {
 		const duration = effect.durationMs;
 		const remaining = duration === undefined ? Number.POSITIVE_INFINITY : Math.max(0, duration);
 		this.effects.push({ effect, remainingMs: remaining, elapsedSinceTickMs: 0 });
 		if (effect.grantedTags) for (const t of effect.grantedTags) this.incTagRef(t);
-		if (effect.modifiers && effect.modifiers.length > 0) this.recomputeAttributes();
+		if (effect.modifiers && effect.modifiers.length > 0) this.recompute_attributes();
 	}
 
-	public removeEffect(id: string): void {
+	public remove_effect(id: string): void {
 		const idx = this.effects.findIndex(e => e.effect.id === id);
 		if (idx >= 0) {
 			const eff = this.effects[idx].effect;
 			this.effects.splice(idx, 1);
 			if (eff.grantedTags) for (const t of eff.grantedTags) this.decTagRef(t);
-			if (eff.modifiers && eff.modifiers.length > 0) this.recomputeAttributes();
+			if (eff.modifiers && eff.modifiers.length > 0) this.recompute_attributes();
 		}
 	}
 
-	public recomputeAttributes(): void {
+	public recompute_attributes(): void {
 		const mods = this.effects.flatMap(e => e.effect.modifiers ?? []);
 		const byAttr = new Map<string, { override?: number; mul: number; add: number }>();
 		for (const m of mods) {
@@ -259,21 +258,21 @@ export class AbilitySystemComponent extends Component {
 		}
 	}
 
-	public tryActivate<Id extends AbilityId>(id: Id, payload?: AbilityPayloadFor<Id>): boolean {
+	public try_activate<Id extends AbilityId>(id: Id, payload?: AbilityPayloadFor<Id>): boolean {
 		const definition = this._abilities.get(id);
 		const actions = this._gameplayActions.get(id);
 		if (!definition || !actions) return false;
 		abilityRegistry.validate(id, payload);
 
-		const reason = this.canActivateReason(id);
+		const reason = this.can_activate_reason(id);
 		if (reason) {
-			this.notifyAbilityFailed(id, reason, 'AbilitySystemComponent.tryActivate');
+			this.notify_ability_failed(id, reason, 'AbilitySystemComponent.tryActivate');
 			return false;
 		}
 
 		const unique = definition.unique ?? 'ignore';
 		if (unique !== 'stack') {
-			const existingKey = this.findActiveByAbility(id);
+			const existingKey = this.find_active_by_ability(id);
 			if (existingKey) {
 				if (unique === 'restart') {
 					const entry = this._active.get(existingKey);
@@ -285,11 +284,10 @@ export class AbilitySystemComponent extends Component {
 		}
 
 		const owner = this.ownerOrThrow();
-		const runtime = this.createRuntimeBindings(owner);
-		const execution = new GameplayAbilityExecution(definition, runtime, actions, payload);
+		const execution = new GameplayAbilityExecution(definition, this, actions, owner, payload);
 
 		this.pay(definition);
-		const now = this.currentTimeMs();
+		const now = this.current_time_ms();
 		if (definition.cooldownMs) {
 			const until = now + definition.cooldownMs;
 			this._cooldownUntil.set(id, until);
@@ -304,7 +302,7 @@ export class AbilitySystemComponent extends Component {
 				for (let i = 0; i < tagOps.grant.length; i++) {
 					const tag = tagOps.grant[i];
 					if (!tag) continue;
-					this.addTag(tag);
+					this.add_tag(tag);
 					grantedTags.push(tag);
 				}
 			}
@@ -312,7 +310,7 @@ export class AbilitySystemComponent extends Component {
 				for (let i = 0; i < tagOps.removeOnActivate.length; i++) {
 					const tag = tagOps.removeOnActivate[i];
 					if (!tag) continue;
-					this.removeTag(tag);
+					this.remove_tag(tag);
 				}
 			}
 			if (tagOps.removeOnEnd) {
@@ -328,8 +326,8 @@ export class AbilitySystemComponent extends Component {
 			id,
 			definition,
 			execution,
-			grantedTags,
-			removeOnEnd,
+			granted_tags: grantedTags,
+			remove_on_end: removeOnEnd,
 		});
 		return true;
 	}
@@ -364,10 +362,10 @@ export class AbilitySystemComponent extends Component {
 				continue;
 			}
 		}
-		if (needRecompute) this.recomputeAttributes();
+		if (needRecompute) this.recompute_attributes();
 
 		// Abilities
-		const now = this.currentTimeMs();
+		const now = this.current_time_ms();
 		for (const [aid, until] of [...this._cooldownUntil]) {
 			if (now >= until) {
 				this._cooldownUntil.delete(aid);
@@ -383,7 +381,7 @@ export class AbilitySystemComponent extends Component {
 						run.wait = undefined;
 						break;
 					case 'tag': {
-						const satisfied = this.hasGameplayTag(run.wait.tag) === run.wait.present;
+						const satisfied = this.has_gameplay_tag(run.wait.tag) === run.wait.present;
 						if (!satisfied) continue;
 						run.wait = undefined;
 						break;
@@ -409,9 +407,9 @@ export class AbilitySystemComponent extends Component {
 		if (!this._ref) {
 			this._ref = {
 				parentid: this.parentid,
-				hasTag: (tag: TagId) => this.hasGameplayTag(tag),
-				tryActivate: <Id extends AbilityId>(abilityId: Id, payload?: AbilityPayloadFor<Id>) => this.tryActivate(abilityId, payload),
-				requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => this.requestAbility(abilityId, opts),
+				hasTag: (tag: TagId) => this.has_gameplay_tag(tag),
+				tryActivate: <Id extends AbilityId>(abilityId: Id, payload?: AbilityPayloadFor<Id>) => this.try_activate(abilityId, payload),
+				requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => this.request_ability(abilityId, opts),
 			};
 		} else {
 			this._ref.parentid = this.parentid;
@@ -419,21 +417,21 @@ export class AbilitySystemComponent extends Component {
 		return this._ref;
 	}
 
-	public canActivateReason(id: AbilityId): string | null {
+	public can_activate_reason(id: AbilityId): string | null {
 		const spec = this._abilities.get(id);
 		if (!spec) return `unknown ability: '${id}'`;
-		const now = this.currentTimeMs();
+		const now = this.current_time_ms();
 		const cdUntil = this._cooldownUntil.get(id);
 		if (cdUntil !== undefined && now < cdUntil) return `on cooldown: ${cdUntil - now}`;
-		if (spec.requiredTags && !spec.requiredTags.every(t => this.hasGameplayTag(t))) {
-			const missing = spec.requiredTags.filter(t => !this.hasGameplayTag(t));
+		if (spec.requiredTags && !spec.requiredTags.every(t => this.has_gameplay_tag(t))) {
+			const missing = spec.requiredTags.filter(t => !this.has_gameplay_tag(t));
 			return `missing required tags: ${missing.join(',')}`;
 		}
-		if (spec.blockedTags && spec.blockedTags.some(t => this.hasGameplayTag(t))) {
-			const blocking = spec.blockedTags.filter(t => this.hasGameplayTag(t));
+		if (spec.blockedTags && spec.blockedTags.some(t => this.has_gameplay_tag(t))) {
+			const blocking = spec.blockedTags.filter(t => this.has_gameplay_tag(t));
 			return `blocked by tags: ${blocking.join(',')}`;
 		}
-		if (spec.cost && !this.canPay(spec)) return `insufficient resource: ${spec.cost.map(c => `${c.amount} ${c.attr}`).join(',')}`;
+		if (spec.cost && !this.can_pay(spec)) return `insufficient resource: ${spec.cost.map(c => `${c.amount} ${c.attr}`).join(',')}`;
 		return null;
 	}
 
@@ -460,40 +458,6 @@ export class AbilitySystemComponent extends Component {
 		super.detach();
 	}
 
-	private createRuntimeBindings(owner: WorldObject): AbilityRuntimeBindings {
-		const ownerId = this.parentid;
-		return {
-			owner,
-			ownerId,
-			hasTag: (tag: TagId) => this.hasGameplayTag(tag),
-			addTag: (tag: TagId) => this.addTag(tag),
-			removeTag: (tag: TagId) => this.removeTag(tag),
-			dispatchMode: (event: GameEvent, target: Identifier | undefined) => {
-				this.dispatchModeEvent(owner, event, target);
-			},
-			emitGameplay: (event: GameEvent) => {
-				if (!event.emitter) event.emitter = owner;
-				if (event.lane === 'presentation') {
-					$.emit_presentation(event);
-					return;
-				}
-				if (event.lane === 'any') {
-					$.emit(event);
-					return;
-				}
-				if (event.lane && event.lane !== 'gameplay') {
-					throw new Error(`[AbilitySystemComponent] Unsupported event lane '${event.lane}' for emitGameplay.`);
-				}
-				$.emit_gameplay(event);
-			},
-			pushCommand: (command: GameplayCommand) => GameplayCommandBuffer.instance.push(command),
-			requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => {
-				if (opts && 'payload' in (opts as any)) return this.requestAbility(abilityId, { payload: (opts as any).payload } as any);
-				return this.requestAbility(abilityId);
-			},
-		};
-	}
-
 	private incTagRef(tag: TagId) {
 		this.grantedTagRefs.set(tag, (this.grantedTagRefs.get(tag) ?? 0) + 1);
 	}
@@ -504,16 +468,6 @@ export class AbilitySystemComponent extends Component {
 		else this.grantedTagRefs.delete(tag);
 	}
 
-	private dispatchModeEvent(owner: WorldObject, event: GameEvent, target: Identifier | undefined): void {
-		if (!event.emitter) event.emitter = owner;
-		const targetId = target ?? owner.id;
-		GameplayCommandBuffer.instance.push({
-			kind: 'emit',
-			target_id: targetId,
-			event,
-		});
-	}
-
 	private applyWaitState(key: string, run: ActiveAbilityRun, instruction: AbilityWaitInstruction): void {
 		if (run.wait && run.wait.kind === 'event') run.wait.unsub();
 		switch (instruction.kind) {
@@ -521,7 +475,7 @@ export class AbilitySystemComponent extends Component {
 				run.wait = { kind: 'time', until: instruction.until };
 				return;
 			case 'tag': {
-				const satisfied = this.hasGameplayTag(instruction.tag) === instruction.present;
+				const satisfied = this.has_gameplay_tag(instruction.tag) === instruction.present;
 				if (satisfied) {
 					run.wait = undefined;
 				} else {
@@ -571,23 +525,23 @@ export class AbilitySystemComponent extends Component {
 	}
 
 	private cleanupAbilityTags(run: ActiveAbilityRun): void {
-		for (let i = 0; i < run.grantedTags.length; i++) {
-			const tag = run.grantedTags[i];
-			if (tag) this.removeTag(tag);
+		for (let i = 0; i < run.granted_tags.length; i++) {
+			const tag = run.granted_tags[i];
+			if (tag) this.remove_tag(tag);
 		}
-		for (let i = 0; i < run.removeOnEnd.length; i++) {
-			const tag = run.removeOnEnd[i];
-			if (tag) this.removeTag(tag);
+		for (let i = 0; i < run.remove_on_end.length; i++) {
+			const tag = run.remove_on_end[i];
+			if (tag) this.remove_tag(tag);
 		}
 	}
 
-	private currentTimeMs(): number {
+	private current_time_ms(): number {
 		return this._timeMs;
 	}
 
-	private notifyAbilityFailed(id: AbilityId, reason: string, source?: string): void {
+	private notify_ability_failed(id: AbilityId, reason: string, source?: string): void {
 		const owner = this.ownerOrThrow();
-		const now = this.currentTimeMs();
+		const now = this.current_time_ms();
 		const cdUntil = this._cooldownUntil.get(id);
 		const timeLeftMs = cdUntil !== undefined ? Math.max(0, cdUntil - now) : undefined;
 		const detail: Record<string, unknown> = { id, reason };
@@ -597,12 +551,12 @@ export class AbilitySystemComponent extends Component {
 		$.emit_gameplay(event);
 	}
 
-	private findActiveByAbility(id: AbilityId): string | undefined {
+	private find_active_by_ability(id: AbilityId): string | undefined {
 		for (const [key, run] of this._active) if (run.id === id) return key;
 		return undefined;
 	}
 
-	private canPay(spec: AbilitySpec): boolean {
+	private can_pay(spec: AbilitySpec): boolean {
 		if (!spec.cost || spec.cost.length === 0) return true;
 		for (const c of spec.cost) {
 			const a = this.attrs[c.attr];

@@ -6,7 +6,14 @@
 	"main": "./index.ts",
 	"types": "./index.d.ts",
 	"exports": {
-		".": "./index.ts",
-		"./*": "./*"
+		".": {
+			"types": "./index.ts",
+			"default": "./index.ts"
+		},
+		"./package.json": "./package.json",
+		"./*": {
+			"types": "./*.ts",
+			"default": "./*.ts"
+		}
 	}
 }

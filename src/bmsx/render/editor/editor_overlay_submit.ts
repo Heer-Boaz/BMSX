@@ -1,4 +1,4 @@
-import { new_vec2, new_vec3 } from 'bmsx/utils/vector_operations';
+import { new_vec2, new_vec3 } from '../../utils/vector_operations';
 import * as SpritesPipeline from '../2d/sprites_pipeline';
 import type { RectRenderSubmission } from '../shared/render_types';
 import type { EditorOverlayFrame, OverlayCommand } from './editor_overlay_queue';

@@ -1,6 +1,6 @@
 import { $ } from '../core/game';
 import { normalizeDecoratedClassName } from '../utils/decorators';
-import { deep_clone } from 'bmsx/utils/deep_clone';
+import { deep_clone } from '../utils/deep_clone';
 import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';
 import type { Identifiable, Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';

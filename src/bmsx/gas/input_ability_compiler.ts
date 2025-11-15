@@ -1,4 +1,4 @@
-import { has_own } from 'bmsx/utils/has_own';
+import { has_own } from '../utils/has_own';
 import type { AbilityId, AbilityRequestOptions, AbilityRequestResult } from '../gas/gastypes';
 import { abilityRegistry } from './ability_registry';
 import type { PlayerInput } from '../input/playerinput';

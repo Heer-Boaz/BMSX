@@ -14,7 +14,6 @@ import type {
 } from '../types';
 import type { ConsoleFontVariant } from '../font';
 import type { RectBounds } from '../../rompack/rompack';
-import type { KeyboardInput } from '../../input/keyboardinput';
 import type { StackTraceFrame } from '../../lua/runtime';
 
 export type ConsoleEditorOptions = {
@@ -442,8 +441,6 @@ export type ConsoleEditorShortcutContext = {
 };
 
 export type CustomKeybindingHandler = (
-	keyboard: KeyboardInput,
-	deltaSeconds: number,
 	context: ConsoleEditorShortcutContext
 ) => boolean;
 

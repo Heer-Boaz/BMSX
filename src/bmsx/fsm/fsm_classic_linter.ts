@@ -26,8 +26,6 @@ function walk(node: StateDefinition, path: string): void {
 	scanSlot(node.entering_state, `${path}.entering_state`);
 	scanSlot(node.exiting_state, `${path}.exiting_state`);
 	scanSlot(node.tick, `${path}.tick`);
-	scanSlot(node.tape_next, `${path}.tape_next`);
-	scanSlot(node.tape_end, `${path}.tape_end`);
 	scanSlot(node.process_input, `${path}.process_input`);
 
 	scanEventBag(node.on, `${path}.on`);

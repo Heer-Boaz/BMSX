@@ -27,8 +27,8 @@ export class EilaModelFSM {
 					states: {
 						_ffwachten: {
 							entering_state(this: World, state: State) {
-								$.playAudio(AudioId.start);
-								$.emitPresentation('its_curtains', this);
+								$.playaudio(AudioId.start);
+								$.emit_presentation('its_curtains', this);
 								const data = state.data as { waitTicks?: number };
 								data.waitTicks = 0;
 							},
@@ -47,7 +47,7 @@ export class EilaModelFSM {
 								this.spawn(es.room_mgr.rooms[es.currentRoomId], new_vec3(0, 0, 0));
 								this.spawn(new Eila(), new_vec3(256 - 60, 0, 11));
 								this.spawn(new Hud(), new_vec3(0, 0, 100));
-								$.playAudio(AudioId.trainen);
+								$.playaudio(AudioId.trainen);
 							},
 							tick(this: World): string | void {
 								const player = this.getWorldObject<Fighter>('player');
@@ -78,7 +78,7 @@ export class EilaModelFSM {
 								this.spawn(new Eila(), new_vec3(256 - 60, 0, 11));
 								this.spawn(new Sinterklaas({ aied: ($.get<YieArGameState>('yiear_state')?.numOfPlayers ?? 1) === 1 }), new_vec3(60, 0, 10));
 								this.spawn(new Hud(), new_vec3(0, 0, 100));
-								$.playAudio(AudioId.knokken);
+								$.playaudio(AudioId.knokken);
 							},
 						},
 					},
@@ -89,7 +89,7 @@ export class EilaModelFSM {
 						if (!this.getWorldObject('gameover')) {
 							this.spawn(new GameOver(), new_vec3(0, 0, 0));
 						}
-						$.playAudio(AudioId.gameover);
+						$.playaudio(AudioId.gameover);
 					},
 				},
 				hoera: {
@@ -98,7 +98,7 @@ export class EilaModelFSM {
 						if (!this.getWorldObject('hoera')) {
 							this.spawn(new Hoera(), new_vec3(0, 0, 0));
 						}
-						$.playAudio(AudioId.gameover);
+						$.playaudio(AudioId.gameover);
 					},
 				},
 				titlescreen: {

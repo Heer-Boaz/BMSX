@@ -1,4 +1,4 @@
-import { $, GameplayCommandBuffer, InputAbilityComponent, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction, type EventPayload, Component, subscribesToParentScopedEvent, type ComponentAttachOptions, type WorldObjectEventPayloads, V3, type TimelineFrameEventPayload, type TimelineEndEventPayload, type TimelineDefinition } from 'bmsx';
+import { $, GameplayCommandBuffer, InputAbilityComponent, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction, type EventPayload, Component, subscribesToParentScopedEvent, type ComponentAttachOptions, type WorldObjectEventPayloads, V3, type TimelineFrameEventPayload, type TimelineEndEventPayload  } from 'bmsx';
 import { createGameEvent, type GameEvent } from 'bmsx/core/game_event';
 import { FIGHTER_TIMELINES } from './fighter_fsms';
 import type { AbilityPayloadFor, AbilityRequestOptions } from 'bmsx/gas/gastypes';
@@ -82,15 +82,14 @@ export abstract class Fighter extends SpriteObject {
 	public pendingWalkDirection?: Direction;
 	public pendingAttackPayload?: { attackType?: AttackType };
 	public pendingJumpPayload?: { direction?: Direction | null; directional?: boolean | string };
-	private _timelinesRegistered = false;
 	private _activeAnimationTimeline?: string;
-	private get asc(): AbilitySystemComponent { return this.getUniqueComponent(AbilitySystemComponent); }
+	private get asc(): AbilitySystemComponent { return this.get_unique_component(AbilitySystemComponent); }
 
-	public get isAttacking(): boolean { return this.asc.hasGameplayTag('state.attacking'); }
-	public get isJumping(): boolean { return this.asc.hasGameplayTag('state.airborne'); }
-	public get isDucking(): boolean { return this.asc.hasGameplayTag('state.ducking'); }
-	public get isFighting(): boolean { return !this.asc.hasGameplayTag('state.combat_disabled'); }
-	public get hasUsedAirborneAttack(): boolean { return this.asc.hasGameplayTag('state.airborne.attackUsed'); }
+	public get isAttacking(): boolean { return this.asc.has_gameplay_tag('state.attacking'); }
+	public get isJumping(): boolean { return this.asc.has_gameplay_tag('state.airborne'); }
+	public get isDucking(): boolean { return this.asc.has_gameplay_tag('state.ducking'); }
+	public get isFighting(): boolean { return !this.asc.has_gameplay_tag('state.combat_disabled'); }
+	public get hasUsedAirborneAttack(): boolean { return this.asc.has_gameplay_tag('state.airborne.attackUsed'); }
 
 	public applyWalkFacing(_state: State | undefined, payload: WalkAbilityPayload): void {
 		if (!payload) return;
@@ -98,16 +97,7 @@ export abstract class Fighter extends SpriteObject {
 		if (direction === 'left' || direction === 'right') this.facing = direction;
 	}
 
-	private ensure_timelines(): void {
-		if (this._timelinesRegistered) return;
-		for (const definition of FIGHTER_TIMELINES) {
-			this.define_timeline(definition);
-		}
-		this._timelinesRegistered = true;
-	}
-
 	protected play_animation_timeline(id: string): void {
-		this.ensure_timelines();
 		this._activeAnimationTimeline = id;
 		this.play_timeline(id);
 	}
@@ -121,9 +111,7 @@ export abstract class Fighter extends SpriteObject {
 	public skip_animation_to_end(): void {
 		const id = this._activeAnimationTimeline;
 		if (!id) return;
-		this.ensure_timelines();
-		const timeline = this.get_timeline(id);
-		if (!timeline) return;
+		const timeline = this.get_timeline(id)!;
 		this.seek_timeline(id, Math.max(0, timeline.length - 1));
 	}
 
@@ -149,26 +137,24 @@ export abstract class Fighter extends SpriteObject {
 						this.play_timeline('fighter.hitanimation');
 					},
 					on: {
-						'timeline.frame': {
+						['timeline.frame:fighter.hitanimation']: {
 							scope: 'self',
 							do(this: Fighter, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
-								if (event.timeline_id !== 'fighter.hitanimation') return;
 								const delta = typeof event.frame_value === 'number' ? event.frame_value : 0;
 								this.x_nonotify += delta;
 							},
 						},
-						'timeline.end': {
+						['timeline.end:fighter.hitanimation']: {
 							scope: 'self',
-							do(this: Fighter, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
-								if (event.timeline_id !== 'fighter.hitanimation') return;
+							do(this: Fighter, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 								this.sc.transition_to('hitanimation:/geen_au');
 							},
 						},
 					},
 					exiting_state(this: Fighter) {
 						this.sc.resume_all_statemachines();
-						$.emitGameplay('i_was_hit', this, { fighter: this }); // Allow the player to recuperate from the hit quickly.
-						$.emitGameplay('hit_animation_end', this, { fighter: this }); // The Game Model will handle the hit animation end event, which will hide the hit marker and determine if the fighter is down.
+						$.emit_gameplay('i_was_hit', this, { fighter: this }); // Allow the player to recuperate from the hit quickly.
+						$.emit_gameplay('hit_animation_end', this, { fighter: this }); // The Game Model will handle the hit animation end event, which will hide the hit marker and determine if the fighter is down.
 					},
 				},
 			}
@@ -188,6 +174,9 @@ export abstract class Fighter extends SpriteObject {
 
 	constructor(opts: RevivableObjectArgs & { id: Identifier; fsm_id?: Identifier; facing?: 'left' | 'right'; playerIndex?: number }) {
 		super(opts);
+		for (const definition of FIGHTER_TIMELINES) {
+			this.define_timeline(definition);
+		}
 		this.getOrCreateCollider().setLocalArea(new_area(0, 0, 0, 0)); // Default; updated via sprite metadata when set
 		this.facing = opts.facing ?? 'right';
 		this.currentHitMarker = null;
@@ -197,7 +186,7 @@ export abstract class Fighter extends SpriteObject {
 
 	public override activate(): void {
 		super.activate();
-		const inputAbility = this.getUniqueComponent(InputAbilityComponent);
+		const inputAbility = this.get_unique_component(InputAbilityComponent);
 		if (!inputAbility) throw new Error(`Fighter ${this.id} has no InputAbilityComponent and that's bad! Probably a bug in the @attach_components decorator or the order in which activate() is called relative to component attachment.`);
 
 		inputAbility.playerIndex = this.player_index ?? 1;
@@ -208,7 +197,6 @@ export abstract class Fighter extends SpriteObject {
 		this.sc.dispatch_event(locomotion);
 		const animateIdle = createGameEvent({ type: 'animate_idle', emitter: this });
 		this.sc.dispatch_event(animateIdle);
-		this.ensure_timelines();
 	}
 
 	public getAbilityId<Name extends FighterCoreAbilityName>(name: Name): typeof FIGHTER_CORE_ABILITY_IDS[Name] {
@@ -218,27 +206,27 @@ export abstract class Fighter extends SpriteObject {
 	public requestAbility<I extends FighterAbilityId>(abilityId: I, ...args: AbilityRequestArgs<I>): boolean {
 		const payload = (args.length > 0 ? args[0] : undefined) as FighterAbilityPayloadTable[I] | undefined;
 		// opts argument deprecated; source is no longer supported here
-		const asc = this.getUniqueComponent(AbilitySystemComponent);
+		const asc = this.get_unique_component(AbilitySystemComponent);
 		if (payload === undefined) {
-			const result = asc.requestAbility(abilityId);
+			const result = asc.request_ability(abilityId);
 			return result.ok;
 		}
-		const result = asc.requestAbility(abilityId, { payload } as any);
+		const result = asc.request_ability(abilityId, { payload } as any);
 		return result.ok;
 	}
 
 	public tryActivateAttackAbility(attackType: AttackType): boolean {
 		const abilityId = this.getAttackAbilityId(attackType);
 		const payload = ATTACK_ABILITY_PAYLOADS[attackType];
-		const asc = this.getUniqueComponent(AbilitySystemComponent);
-		const result = asc.requestAbility(abilityId, { source: 'fighter.attack', payload } as AbilityRequestOptions<typeof abilityId>);
+		const asc = this.get_unique_component(AbilitySystemComponent);
+		const result = asc.request_ability(abilityId, { source: 'fighter.attack', payload } as AbilityRequestOptions<typeof abilityId>);
 		return result.ok;
 	}
 
 	public canActivateAttackAbility(attackType: AttackType): boolean {
 		const abilityId = this.getAttackAbilityId(attackType);
-		const asc = this.getUniqueComponent(AbilitySystemComponent);
-		return asc.canActivateReason(abilityId) === null;
+		const asc = this.get_unique_component(AbilitySystemComponent);
+		return asc.can_activate_reason(abilityId) === null;
 	}
 
 	public getAttackAbilityId(attackType: AttackType): FighterAttackAbilityId {
@@ -333,7 +321,7 @@ export abstract class Fighter extends SpriteObject {
 		opponent.sc.transition_to('hitanimation:/doet_au');
 		this.hp -= getDamage(attackType);
 		const weaponClass = (attackType === 'punch') ? 'light' : 'heavy';
-		$.emitGameplay('combat.hit', this, { result: 'hit', weaponClass, actorId: opponent.id, targetId: this.id });
+		$.emit_gameplay('combat.hit', this, { result: 'hit', weaponClass, actorId: opponent.id, targetId: this.id });
 	}
 
 	// queueRenderSubmissions removed; rendering handled by GenericRendererComponent producer
@@ -373,7 +361,7 @@ export abstract class Fighter extends SpriteObject {
 		}
 		if (!this._hitSprite) {
 			this._hitSprite = new SpriteComponent({ parentid: this.id });
-			this.addComponent(this._hitSprite);
+			this.add_component(this._hitSprite);
 			this._hitSprite.colliderLocalId = null;
 		}
 		let imgid: string = BitmapId.poef;
@@ -407,11 +395,11 @@ export abstract class Fighter extends SpriteObject {
 		if (!state) throw new Error('[Eila] startJump invoked without state context.');
 		const data = state.data as JumpStateData;
 		data.direction = payload?.direction;
-		this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = true;
+		this.get_unique_component(JumpingWhileLeavingScreenComponent).enabled = true;
 	}
 
 	public finishJump(): void {
-		this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = false;
+		this.get_unique_component(JumpingWhileLeavingScreenComponent).enabled = false;
 		this.resetVerticalPosition();
 	}
 
@@ -430,8 +418,8 @@ export abstract class Fighter extends SpriteObject {
 	}
 
 	public canStartFlyingKick(): boolean {
-		const asc = this.getUniqueComponent(AbilitySystemComponent);
-		return this.isJumping && !asc.hasGameplayTag('state.airborne.attackUsed');
+		const asc = this.get_unique_component(AbilitySystemComponent);
+		return this.isJumping && !asc.has_gameplay_tag('state.airborne.attackUsed');
 	}
 
 	public onFlyingKickEntered(): void {
@@ -464,7 +452,7 @@ export abstract class Fighter extends SpriteObject {
 		if (!state) throw new Error('[Eila] enterStoerheidsdans invoked without state context.');
 		this.performingStoerheidsdans = true;
 		this.resetVerticalPosition();
-		$.emitPresentation('animate_idle', this);
+		$.emit_presentation('animate_idle', this);
 		const data = state.data as StoerheidsdansStateData;
 		data.expectedAnimation = null;
 		state.ticks += 1;
@@ -501,7 +489,7 @@ export abstract class Fighter extends SpriteObject {
 	}
 
 	public startNagenieten(): void {
-		$.emitPresentation('animate_idle', this);
+		$.emit_presentation('animate_idle', this);
 	}
 
 	public enterHumiliated(): void {

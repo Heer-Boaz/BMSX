@@ -1,37 +1,13 @@
+import { $ } from '../core/game';
 import type { EventScope } from '../core/eventemitter';
 import { createGameEvent, EventLane, type GameEvent } from '../core/game_event';
-import type { GameplayCommand } from '../ecs/gameplay_command_buffer';
+import { GameplayCommandBuffer, type GameplayCommand } from '../ecs/gameplay_command_buffer';
 import type { WorldObject } from '../core/object/worldobject';
 import type { Facing, Identifier } from '../rompack/rompack';
-import type { AbilityId, AbilityRequestOptions, AbilityRequestResult, AbilitySpec, TagId } from './gastypes';
+import type { AbilityId, AbilityRequestOptions, AbilityRequestResult, AbilitySpec, TagId as tag_id } from './gastypes';
+import type { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 
-export interface AbilityRuntimeBindings {
-	readonly owner: WorldObject;
-	readonly ownerId: Identifier;
-	hasTag(tag: TagId): boolean;
-	addTag(tag: TagId): void;
-	removeTag(tag: TagId): void;
-	dispatchMode(event: GameEvent, target: Identifier | undefined): void;
-	emitGameplay(event: GameEvent): void;
-	pushCommand(command: GameplayCommand): void;
-	requestAbility<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult;
-}
-
-export interface GameplayActionContext {
-	readonly owner: WorldObject;
-	readonly ownerId: Identifier;
-	readonly vars: Record<string, unknown>;
-	readonly intentPayload?: unknown;
-	hasTag(tag: TagId): boolean;
-	addTag(tag: TagId): void;
-	removeTag(tag: TagId): void;
-	dispatchMode(event: GameEvent, target: Identifier | undefined): void;
-	emitGameplay(event: GameEvent): void;
-	pushCommand(command: GameplayCommand): void;
-	requestAbility<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult;
-}
-
-export type GameplayAction = (ctx: GameplayActionContext, params: Record<string, unknown> | undefined) => void;
+export type GameplayAction = (ctx: GameplayAbilityExecution, params: Record<string, unknown> | undefined) => void;
 
 export class GameplayActionRegistry {
 	private readonly map = new Map<string, GameplayAction>();
@@ -133,42 +109,42 @@ export interface EmitStep {
 }
 
 export interface WaitEventStep {
-	type: 'waitEvent';
+	type: 'waitevent';
 	event: string;
 	scope?: AbilityEventScopeSpec;
 	lane?: EventLane;
 }
 
 export interface WaitTimeStep {
-	type: 'waitTime';
+	type: 'waittime';
 	durationMs: number;
 }
 
 export interface WaitTagStep {
-	type: 'waitTag';
-	tag: TagId;
+	type: 'waittag';
+	tag: tag_id;
 	present: boolean;
 }
 
 export interface SetVarStep {
-	type: 'setVar';
+	type: 'setvar';
 	name: string;
 	value: AbilityValueSpec;
 }
 
 export interface ClearVarStep {
-	type: 'clearVar';
+	type: 'clearvar';
 	name: string;
 }
 
 export interface ModifyTagsStep {
-	type: 'modifyTags';
-	add?: ReadonlyArray<TagId>;
-	remove?: ReadonlyArray<TagId>;
+	type: 'modifytags';
+	add?: ReadonlyArray<tag_id>;
+	remove?: ReadonlyArray<tag_id>;
 }
 
 export interface RequestAbilityStep {
-	type: 'requestAbility';
+	type: 'requestability';
 	ability: AbilityId;
 	payload?: Record<string, AbilityValueSpec>;
 }
@@ -200,9 +176,9 @@ export type AbilityStep =
 export interface GameplayAbilityDefinition extends AbilitySpec {
 	displayName?: string;
 	tags?: {
-		grant?: ReadonlyArray<TagId>;
-		removeOnActivate?: ReadonlyArray<TagId>;
-		removeOnEnd?: ReadonlyArray<TagId>;
+		grant?: ReadonlyArray<tag_id>;
+		removeOnActivate?: ReadonlyArray<tag_id>;
+		removeOnEnd?: ReadonlyArray<tag_id>;
 	};
 	activation: ReadonlyArray<AbilityStep>;
 	sustain?: ReadonlyArray<AbilityStep>;
@@ -212,7 +188,7 @@ export interface GameplayAbilityDefinition extends AbilitySpec {
 
 export type AbilityWaitInstruction =
 	| { kind: 'time'; until: number }
-	| { kind: 'tag'; tag: TagId; present: boolean }
+	| { kind: 'tag'; tag: tag_id; present: boolean }
 	| { kind: 'event'; event: string; scope?: EventScope; lane?: EventLane };
 
 export type AbilityAdvanceResult =
@@ -225,22 +201,27 @@ interface AbilityExecutionFrame {
 	index: number;
 }
 
-interface AbilityExecutionContext {
-	readonly definition: GameplayAbilityDefinition;
-	readonly runtime: AbilityRuntimeBindings;
-	readonly gameplayActions: GameplayActionRegistry;
-	readonly vars: Record<string, unknown>;
-	readonly intentPayload?: unknown;
-}
 
 export class GameplayAbilityExecution {
-	private readonly ctx: AbilityExecutionContext;
+	private readonly definition: GameplayAbilityDefinition;
+	private readonly abilitySystem: AbilitySystemComponent;
+	private readonly gameplayActions: GameplayActionRegistry;
 	private readonly stack: AbilityExecutionFrame[];
+	public readonly owner: WorldObject;
+	public readonly ownerId: Identifier;
+	public readonly vars: Record<string, unknown>;
+	public readonly intentPayload?: unknown;
 	private finished: boolean;
 	private completionRan: boolean;
 
-	constructor(definition: GameplayAbilityDefinition, runtime: AbilityRuntimeBindings, gameplayActions: GameplayActionRegistry, intentPayload?: unknown) {
-		this.ctx = { definition, runtime, gameplayActions, vars: {}, intentPayload };
+	constructor(definition: GameplayAbilityDefinition, abilitySystem: AbilitySystemComponent, gameplayActions: GameplayActionRegistry, owner: WorldObject, intentPayload?: unknown) {
+		this.definition = definition;
+		this.abilitySystem = abilitySystem;
+		this.gameplayActions = gameplayActions;
+		this.owner = owner;
+		this.ownerId = owner.id;
+		this.intentPayload = intentPayload;
+		this.vars = {};
 		this.stack = [{ steps: definition.activation, index: 0 }];
 		this.finished = false;
 		this.completionRan = false;
@@ -286,49 +267,49 @@ export class GameplayAbilityExecution {
 				this.executeGameplayAction(step);
 				return { kind: 'continue' };
 			case 'dispatch': {
-				const payload = step.payload ? resolveRecord(step.payload, this.ctx) : undefined;
-				const target = step.target ? resolveIdentifier(step.target, this.ctx) : undefined;
+				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
+				const target = step.target ? this.resolveIdentifier(step.target) : undefined;
 				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
-				this.ctx.runtime.dispatchMode(event, target);
+				this.dispatch_mode(event, target);
 				return { kind: 'continue' };
 			}
 			case 'emit': {
-				const payload = step.payload ? resolveRecord(step.payload, this.ctx) : undefined;
+				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
 				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
-				this.ctx.runtime.emitGameplay(event);
+				this.emit_gameplay(event);
 				return { kind: 'continue' };
 			}
-			case 'waitEvent': {
-				const scope = resolveEventScope(step.scope, this.ctx);
+			case 'waitevent': {
+				const scope = this.resolveEventScope(step.scope);
 				return { kind: 'wait', wait: { kind: 'event', event: step.event, scope, lane: step.lane } };
 			}
-			case 'waitTime': {
+			case 'waittime': {
 				const until = nowMs + step.durationMs;
 				return { kind: 'wait', wait: { kind: 'time', until } };
 			}
-			case 'waitTag': {
+			case 'waittag': {
 				return { kind: 'wait', wait: { kind: 'tag', tag: step.tag, present: step.present } };
 			}
-			case 'setVar': {
-				const value = resolveValue(step.value, this.ctx);
-				this.ctx.vars[step.name] = value;
+			case 'setvar': {
+				const value = this.resolveValue(step.value);
+				this.vars[step.name] = value;
 				return { kind: 'continue' };
 			}
-			case 'clearVar': {
-				if (Object.prototype.hasOwnProperty.call(this.ctx.vars, step.name)) delete this.ctx.vars[step.name];
+			case 'clearvar': {
+				if (Object.prototype.hasOwnProperty.call(this.vars, step.name)) delete this.vars[step.name];
 				return { kind: 'continue' };
 			}
-			case 'modifyTags': {
+			case 'modifytags': {
 				if (step.add) {
 					for (let i = 0; i < step.add.length; i++) {
 						const tag = step.add[i];
-						if (tag) this.ctx.runtime.addTag(tag);
+						if (tag) this.add_tag(tag);
 					}
 				}
 				if (step.remove) {
 					for (let i = 0; i < step.remove.length; i++) {
 						const tag = step.remove[i];
-						if (tag) this.ctx.runtime.removeTag(tag);
+						if (tag) this.remove_tag(tag);
 					}
 				}
 				return { kind: 'continue' };
@@ -337,13 +318,10 @@ export class GameplayAbilityExecution {
 				this.applyFaceStep(step.value);
 				return { kind: 'continue' };
 			}
-			case 'requestAbility': {
-				const payload = step.payload ? resolveRecord(step.payload, this.ctx) : undefined;
-				if (payload === undefined) {
-					this.ctx.runtime.requestAbility(step.ability);
-				} else {
-					this.ctx.runtime.requestAbility(step.ability, { payload } as any);
-				}
+			case 'requestability': {
+				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
+				if (payload === undefined) this.request_ability(step.ability);
+				else this.request_ability(step.ability, { payload } as any);
 				return { kind: 'continue' };
 			}
 		}
@@ -352,7 +330,7 @@ export class GameplayAbilityExecution {
 	private runCompletion(): void {
 		if (this.completionRan) return;
 		this.completionRan = true;
-		const steps = this.ctx.definition.completion;
+		const steps = this.definition.completion;
 		if (!steps || steps.length === 0) return;
 		for (let i = 0; i < steps.length; i++) {
 			this.executeImmediateStep(steps[i]);
@@ -360,7 +338,7 @@ export class GameplayAbilityExecution {
 	}
 
 	private runCancel(): void {
-		const steps = this.ctx.definition.cancel;
+		const steps = this.definition.cancel;
 		if (!steps || steps.length === 0) return;
 		for (let i = 0; i < steps.length; i++) {
 			this.executeImmediateStep(steps[i]);
@@ -378,75 +356,190 @@ export class GameplayAbilityExecution {
 				this.executeGameplayAction(step);
 				return;
 			case 'dispatch': {
-				const payload = step.payload ? resolveRecord(step.payload, this.ctx) : undefined;
-				const target = step.target ? resolveIdentifier(step.target, this.ctx) : undefined;
+				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
+				const target = step.target ? this.resolveIdentifier(step.target) : undefined;
 				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
-				this.ctx.runtime.dispatchMode(event, target);
+				this.dispatch_mode(event, target);
 				return;
 			}
 			case 'emit': {
-				const payload = step.payload ? resolveRecord(step.payload, this.ctx) : undefined;
+				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
 				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
-				this.ctx.runtime.emitGameplay(event);
+				this.emit_gameplay(event);
 				return;
 			}
-			case 'setVar': {
-				const value = resolveValue(step.value, this.ctx);
-				this.ctx.vars[step.name] = value;
+			case 'setvar': {
+				const value = this.resolveValue(step.value);
+				this.vars[step.name] = value;
 				return;
 			}
-			case 'clearVar': {
-				if (Object.prototype.hasOwnProperty.call(this.ctx.vars, step.name)) delete this.ctx.vars[step.name];
+			case 'clearvar': {
+				if (Object.prototype.hasOwnProperty.call(this.vars, step.name)) delete this.vars[step.name];
 				return;
 			}
-			case 'modifyTags': {
-				if (step.add) for (let i = 0; i < step.add.length; i++) { const tag = step.add[i]; if (tag) this.ctx.runtime.addTag(tag); }
-				if (step.remove) for (let i = 0; i < step.remove.length; i++) { const tag = step.remove[i]; if (tag) this.ctx.runtime.removeTag(tag); }
+			case 'modifytags': {
+				if (step.add) for (let i = 0; i < step.add.length; i++) { const tag = step.add[i]; if (tag) this.add_tag(tag); }
+				if (step.remove) for (let i = 0; i < step.remove.length; i++) { const tag = step.remove[i]; if (tag) this.remove_tag(tag); }
 				return;
 			}
 			case 'face':
 				this.applyFaceStep(step.value);
 				return;
-			case 'requestAbility': {
-				const payload = step.payload ? resolveRecord(step.payload, this.ctx) : undefined;
-				if (payload === undefined) {
-					this.ctx.runtime.requestAbility(step.ability);
-				} else {
-					this.ctx.runtime.requestAbility(step.ability, { payload } as any);
-				}
+			case 'requestability': {
+				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
+				if (payload === undefined) this.request_ability(step.ability);
+				else this.request_ability(step.ability, { payload } as any);
 				return;
 			}
-			case 'waitEvent':
-			case 'waitTime':
-			case 'waitTag':
+			case 'waitevent':
+			case 'waittime':
+			case 'waittag':
 				throw new Error('[GameplayAbilityExecution] Wait steps are not allowed in completion or cancel sequences.');
 		}
 	}
 
 	private applyFaceStep(value: AbilityValueSpec): void {
-		const resolved = resolveValue(value, this.ctx) as FacingString;
-		const owner = this.ctx.runtime.owner;
-		owner.facing = resolved;
+		const resolved = this.resolveValue(value) as FacingString;
+		this.owner.facing = resolved;
 	}
 
 	private executeGameplayAction(step: CallGameplayActionStep): void {
-		const action = this.ctx.gameplayActions.get(step.gameplayAction);
-		const params = step.params ? resolveRecord(step.params, this.ctx) : undefined;
-		const runtime = this.ctx.runtime;
-		const callCtx: GameplayActionContext = {
-			owner: runtime.owner,
-			ownerId: runtime.ownerId,
-			vars: this.ctx.vars,
-			intentPayload: this.ctx.intentPayload,
-			hasTag: (tag: TagId) => runtime.hasTag(tag),
-			addTag: (tag: TagId) => runtime.addTag(tag),
-			removeTag: (tag: TagId) => runtime.removeTag(tag),
-			dispatchMode: (event: GameEvent, target: Identifier | undefined) => runtime.dispatchMode(event, target),
-			emitGameplay: (event: GameEvent) => runtime.emitGameplay(event),
-			pushCommand: (command: GameplayCommand) => runtime.pushCommand(command),
-			requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => runtime.requestAbility(abilityId, opts),
-		};
-		action(callCtx, params as Record<string, unknown> | undefined);
+		const action = this.gameplayActions.get(step.gameplayAction);
+		const params = step.params ? this.resolveRecord(step.params) : undefined;
+		action(this, params as Record<string, unknown> | undefined);
+	}
+
+	public has_tag(tag: tag_id): boolean {
+		return this.abilitySystem.has_gameplay_tag(tag);
+	}
+
+	public add_tag(tag: tag_id): void {
+		this.abilitySystem.add_tag(tag);
+	}
+
+	public remove_tag(tag: tag_id): void {
+		this.abilitySystem.remove_tag(tag);
+	}
+
+	public toggle_tag(tag: tag_id): void {
+		this.abilitySystem.toggle_tag(tag);
+	}
+
+	public dispatch_mode(event: GameEvent, target: Identifier | undefined): void {
+		if (!event.emitter) event.emitter = this.owner;
+		const targetId = target ?? this.owner.id;
+		GameplayCommandBuffer.instance.push({
+			kind: 'emit',
+			target_id: targetId,
+			event,
+		});
+	}
+
+	public emit_gameplay(event: GameEvent): void {
+		if (!event.emitter) event.emitter = this.owner;
+		if (event.lane === 'presentation') {
+			$.emit_presentation(event);
+			return;
+		}
+		if (event.lane === 'any') {
+			$.emit(event);
+			return;
+		}
+		if (event.lane && event.lane !== 'gameplay') {
+			throw new Error(`[GameplayAbilityExecution] Unsupported event lane '${event.lane}' for emitGameplay.`);
+		}
+		$.emit_gameplay(event);
+	}
+
+	public push_command(command: GameplayCommand): void {
+		GameplayCommandBuffer.instance.push(command);
+	}
+
+	public request_ability<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult {
+		return this.abilitySystem.request_ability(id, opts);
+	}
+
+	private resolveValue(spec: AbilityValueSpec): unknown {
+		switch (spec.kind) {
+			case 'literal':
+				return spec.value;
+			case 'intent':
+				return this.resolveIntent(spec);
+			case 'var':
+				return this.resolveVar(spec);
+			case 'record':
+				return this.resolveRecord(spec.entries);
+			case 'array':
+				return this.resolveArray(spec.items);
+			default:
+				throw new Error(`[GameplayAbilityExecution] Unknown AbilityValueSpec kind '${(spec as any).kind}'.`);
+		}
+	}
+
+	private resolveIntent(spec: IntentValueSpec): unknown {
+		const payload = this.intentPayload;
+		if (!payload) {
+			if (spec.optional) return undefined;
+			if (spec.fallback) return this.resolveValue(spec.fallback);
+			throw new Error('[GameplayAbilityExecution] Ability intent payload is not available.');
+		}
+		if (!spec.path) return payload;
+		const pathParts = spec.path.split('.');
+		let current: any = payload;
+		for (let i = 0; i < pathParts.length; i++) {
+			const key = pathParts[i];
+			if (!key) continue;
+			if (current == null || !(key in current)) {
+				if (spec.optional) return undefined;
+				if (spec.fallback) return this.resolveValue(spec.fallback);
+				throw new Error(`[GameplayAbilityExecution] Intent path '${spec.path}' is undefined.`);
+			}
+			current = current[key];
+		}
+		return current;
+	}
+
+	private resolveVar(spec: VarValueSpec): unknown {
+		if (Object.prototype.hasOwnProperty.call(this.vars, spec.name)) {
+			return this.vars[spec.name];
+		}
+		if (spec.optional) return undefined;
+		if (spec.fallback) return this.resolveValue(spec.fallback);
+		throw new Error(`[GameplayAbilityExecution] Ability variable '${spec.name}' is undefined.`);
+	}
+
+	private resolveRecord(source: Record<string, AbilityValueSpec>): Record<string, unknown> {
+		const result: Record<string, unknown> = {};
+		const keys = Object.keys(source);
+		for (let i = 0; i < keys.length; i++) {
+			const key = keys[i];
+			const spec = source[key];
+			if (spec) result[key] = this.resolveValue(spec);
+		}
+		return result;
+	}
+
+	private resolveArray(items: AbilityValueSpec[]): unknown[] {
+		const result: unknown[] = [];
+		for (let i = 0; i < items.length; i++) {
+			const spec = items[i];
+			if (spec) result.push(this.resolveValue(spec));
+		}
+		return result;
+	}
+
+	private resolveIdentifier(spec: AbilityValueSpec): Identifier {
+		const value = this.resolveValue(spec);
+		if (typeof value === 'string') return value as Identifier;
+		throw new Error(`[GameplayAbilityExecution] Expected identifier string, got '${String(value)}'.`);
+	}
+
+	private resolveEventScope(spec: AbilityEventScopeSpec | undefined): EventScope | undefined {
+		if (!spec) return undefined;
+		if (spec.kind === 'self') return this.ownerId;
+		if (spec.kind === 'world') return undefined;
+		if (spec.kind === 'object') return this.resolveIdentifier(spec.target);
+		return undefined;
 	}
 }
 
@@ -482,87 +575,4 @@ export function fromVar(name: string, options?: VarOptions): VarValueSpec {
 
 export function record(entries: Record<string, AbilityValueSpec>): RecordValueSpec {
 	return { kind: 'record', entries };
-}
-
-function resolveValue(spec: AbilityValueSpec, ctx: AbilityExecutionContext) {
-	switch (spec.kind) {
-		case 'literal':
-			return spec.value;
-		case 'intent':
-			return resolveIntent(spec, ctx);
-		case 'var':
-			return resolveVar(spec, ctx);
-		case 'record':
-			return resolveRecord(spec.entries, ctx);
-		case 'array':
-			return resolveArray(spec.items, ctx);
-		default:
-			throw new Error(`[GameplayAbilityExecution] Unknown AbilityValueSpec kind '${(spec as any).kind}'.`);
-	}
-}
-
-function resolveIntent(spec: IntentValueSpec, ctx: AbilityExecutionContext): unknown {
-	const payload = ctx.intentPayload;
-	if (!payload) {
-		if (spec.optional) return undefined;
-		if (spec.fallback) return resolveValue(spec.fallback, ctx);
-		throw new Error('[GameplayAbilityExecution] Ability intent payload is not available.');
-	}
-	if (!spec.path) return payload;
-	const pathParts = spec.path.split('.');
-	let current: any = payload;
-	for (let i = 0; i < pathParts.length; i++) {
-		const key = pathParts[i];
-		if (!key) continue;
-		if (current == null || !(key in current)) {
-			if (spec.optional) return undefined;
-			if (spec.fallback) return resolveValue(spec.fallback, ctx);
-			throw new Error(`[GameplayAbilityExecution] Intent path '${spec.path}' is undefined.`);
-		}
-		current = current[key];
-	}
-	return current;
-}
-
-function resolveVar(spec: VarValueSpec, ctx: AbilityExecutionContext): unknown {
-	if (Object.prototype.hasOwnProperty.call(ctx.vars, spec.name)) {
-		return ctx.vars[spec.name];
-	}
-	if (spec.optional) return undefined;
-	if (spec.fallback) return resolveValue(spec.fallback, ctx);
-	throw new Error(`[GameplayAbilityExecution] Ability variable '${spec.name}' is undefined.`);
-}
-
-function resolveRecord(source: Record<string, AbilityValueSpec>, ctx: AbilityExecutionContext): Record<string, unknown> {
-	const result: Record<string, unknown> = {};
-	const keys = Object.keys(source);
-	for (let i = 0; i < keys.length; i++) {
-		const key = keys[i];
-		const spec = source[key];
-		if (spec) result[key] = resolveValue(spec, ctx);
-	}
-	return result;
-}
-
-function resolveArray(items: AbilityValueSpec[], ctx: AbilityExecutionContext): unknown[] {
-	const result: unknown[] = [];
-	for (let i = 0; i < items.length; i++) {
-		const spec = items[i];
-		if (spec) result.push(resolveValue(spec, ctx));
-	}
-	return result;
-}
-
-function resolveIdentifier(spec: AbilityValueSpec, ctx: AbilityExecutionContext): Identifier {
-	const value = resolveValue(spec, ctx);
-	if (typeof value === 'string') return value as Identifier;
-	throw new Error(`[GameplayAbilityExecution] Expected identifier string, got '${String(value)}'.`);
-}
-
-function resolveEventScope(spec: AbilityEventScopeSpec | undefined, ctx: AbilityExecutionContext): EventScope | undefined {
-	if (!spec) return undefined;
-	if (spec.kind === 'self') return ctx.runtime.ownerId;
-	if (spec.kind === 'world') return undefined;
-	if (spec.kind === 'object') return resolveIdentifier(spec.target, ctx);
-	return undefined;
 }

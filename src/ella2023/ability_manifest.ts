@@ -1,6 +1,6 @@
 import type { Direction } from 'bmsx';
 import { gameplayActions, defineAbility, type Schema } from 'bmsx/gas/ability_registry';
-import type { GameplayActionContext } from 'bmsx/gas/gameplay_ability';
+import type { GameplayAbilityExecution } from 'bmsx/gas/gameplay_ability';
 import { Fighter, type AttackType } from './fighter';
 import { FIGHTER_ATTACK_ABILITY_IDS, FIGHTER_CORE_ABILITY_IDS } from './ability_catalog';
 
@@ -65,7 +65,7 @@ function attackSchema(expected: AttackType): Schema<{ attackType: AttackType }> 
 	};
 }
 
-function ensureFighterOwner(ctx: GameplayActionContext, actionId: string): Fighter {
+function ensureFighterOwner(ctx: GameplayAbilityExecution, actionId: string): Fighter {
 	const owner = ctx.owner;
 	if (owner instanceof Fighter) return owner;
 	throw new Error(`[GameplayActions] '${actionId}' requires Fighter owner.`);

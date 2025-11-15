@@ -83,7 +83,7 @@ const THEME_BASE = {
 		localTop: PALETTE.white,
 		localFunction: PALETTE.white,
 		functionHandle: PALETTE.lightGreen,
-		selection: PALETTE.black,
+		selection: PALETTE.darkBlue,
 	},
 	status: {
 		background: PALETTE.grey,
@@ -298,30 +298,16 @@ export const DEFAULT_NEW_FSM_RESOURCE_CONTENT = `return {
 \tid = '<MACHINE_ID>',
 \tstates = {
 \t\t_idle = { -- '_'-prefix to make it the initial state
-\t\t\ttimeline = {
-\t\t\t\tid = '<MACHINE_ID>.idle',
-\t\t\t\tframes = { 0 },
-\t\t\t\tticks_per_frame = 50,
-\t\t\t},
 \t\t\tentering_state = function(self, state, payload)
-\t\t\tend,
-\t\t\ttape_next = function(self, state, payload)
-\t\t\t\treturn '../running'
+\t\t\t\t-- play a timeline explicitly, e.g. self:play_timeline('idle.animation')
 \t\t\tend,
 \t\t\ton = {
 \t\t\t\t['$start'] = '../running' -- '$'-prefix to denote self-scoped event
 \t\t\t}
 \t\t},
 \t\trunning = {
-\t\t\ttimeline = {
-\t\t\t\tid = '<MACHINE_ID>.running',
-\t\t\t\tframes = { 0 },
-\t\t\t\tticks_per_frame = 100,
-\t\t\t},
 \t\t\tentering_state = function(self, state, payload)
-\t\t\tend,
-\t\t\ttape_next = function(self, state, payload)
-\t\t\t\treturn '../_idle'
+\t\t\t\t-- start another timeline or run other effects
 \t\t\tend,
 \t\t\ton = {
 \t\t\t\t['$stop'] = '../idle'

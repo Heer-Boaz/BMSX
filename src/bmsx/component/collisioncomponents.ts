@@ -2,8 +2,8 @@ import { EventEmitter, subscribesToParentScopedEvent } from "../core/eventemitte
 import type { GameEvent } from '../core/game_event';
 import { $ } from '../core/game';
 import { WorldObject, WorldObjectEventPayloads } from "../core/object/worldobject";
-import { new_vec2, set_inplace_vec2 } from 'bmsx/utils/vector_operations';
-import { mod } from 'bmsx/utils/mod';
+import { new_vec2, set_inplace_vec2 } from '../utils/vector_operations';
+import { mod } from '../utils/mod';
 import { vec2, type Area, type Polygon } from '../rompack/rompack';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import { TileSize } from "../systems/msx";

@@ -5,18 +5,13 @@ import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { BST_MAX_HISTORY, DEFAULT_BST_ID } from './fsmcontroller';
 import { StateDefinitions } from './fsmlibrary';
-import { type id2sstate, type Stateful, type StateEventDefinition, type StateEventHandler, type StateNextHandler, type TickCheckDefinition, type transition_target } from './fsmtypes';
+import { type id2sstate, type Stateful, type StateEventDefinition, type TickCheckDefinition, type transition_target } from './fsmtypes';
 import { StateDefinition } from './statedefinition';
 import { createGameEvent, EventPayload, GameEvent } from '../core/game_event';
-import type { WorldObject } from '../core/object/worldobject';
-import type { Timeline, TimelineDefinition } from '../timeline/timeline';
-import type { TimelineFrameEventPayload, TimelineEndEventPayload, TimelineListener, TimelinePlayOptions } from '../component/timeline_component';
 
 type TransitionExecutionMode = 'immediate' | 'queued' | 'deferred';
 
 type TransitionTrigger = 'manual' | 'event' | 'input' | 'run-check' | 'process-input' | 'tick' | 'enter' | 'queue-drain';
-
-const TAPE_START_INDEX = -1;
 
 interface TransitionOutcomeSnapshot {
 	from?: Identifier;
@@ -94,27 +89,6 @@ function resolveEventPayload(event: GameEvent | undefined): EventPayload | undef
 	if (Object.keys(rest).length === 0) return undefined;
 	return rest as EventPayload;
 }
-
-type TimelineHost = Stateful & WorldObject & {
-	define_timeline(definition: TimelineDefinition): void;
-	play_timeline(definitionOrId: TimelineDefinition | string, opts?: TimelinePlayOptions): void;
-	stop_timeline(id: string): void;
-	rewind_timeline(id: string): void;
-	seek_timeline(id: string, frame: number): void;
-	force_timeline_head?(id: string, frame: number): void;
-	get_timeline<T = unknown>(id: string): Timeline<T> | undefined;
-	on_timeline_event(id: string, listener: TimelineListener): () => void;
-	advance_timeline(id: string): void;
-};
-
-function isTimelineHost(value: Stateful | undefined): value is TimelineHost {
-	if (!value) return false;
-	const candidate = value as unknown as Partial<TimelineHost>;
-	return typeof candidate.define_timeline === 'function'
-		&& typeof candidate.play_timeline === 'function'
-		&& typeof candidate.on_timeline_event === 'function';
-}
-
 
 @insavegame
 /**
@@ -919,7 +893,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			if (typeof enterStart === 'function') {
 				startNext = enterStart.call(this.target, startInstance);
 			}
-			startInstance.activateTimelineOnEntry(startNext);
 			startInstance.transitionToNextStateIfProvided(startNext);
 		});
 
@@ -1332,7 +1305,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			if (typeof exitHandler === 'function') {
 				exitHandler.call(this.target, prevInstance);
 			}
-			prevInstance.resetTimelineState();
 			this.pushHistory(prevId);
 
 			this.currentid = state_id;
@@ -1354,7 +1326,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 					() => enterHandler.call(this.target, cur),
 				)
 				: undefined;
-			cur.activateTimelineOnEntry(next);
 			cur.transitionToNextStateIfProvided(next);
 
 			if (diagEnabled) {
@@ -1592,28 +1563,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		return id;
 	}
 
-	public get current_tape_value(): any {
-		return this._currentTimelineValue;
-	}
-
-	public get is_at_tape_end(): boolean {
-		return this._timelineIsAtEnd;
-	}
-
-	protected get is_tape_exhausted(): boolean {
-		return this._timelineIsAtEnd;
-	}
-
-	public get is_tape_rewound_to_start(): boolean {
-		return this.tapehead_position === TAPE_START_INDEX;
-	}
-
 	/**
 	 * Disposes the current state machine and deregisters it from the registry.
 	 * Also deregisters all states.
 	 */
 	public dispose(): void {
-		this.resetTimelineState();
 		// Also deregister all states
 		if (!this.states) return;
 		for (let state in this.states) {
@@ -1627,53 +1581,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	public unbind(): void {
 		Registry.instance.deregister(this);
 	}
-
-private _currentTimelineValue: any;
-private _timelineIsAtEnd = false;
-private _timelineListenerUnsub?: () => void;
-private _timelineId?: string;
 protected _ticks: number = 0;
-
-	private get timelineHost(): TimelineHost | undefined {
-		const target = this.target as Stateful | undefined;
-		if (isTimelineHost(target)) return target;
-		return undefined;
-	}
-
-private ensureTimelineHost(): TimelineHost {
-	const host = this.timelineHost;
-	if (!host) {
-		throw new Error(`[State] State '${this.id}' defines a timeline but target '${this.target_id}' does not implement timeline controls.`);
-	}
-	return host;
-}
-
-public get tapehead_position(): number {
-	const host = this.timelineHost;
-	if (!host || !this._timelineId) return TAPE_START_INDEX;
-	const timeline = host.get_timeline(this._timelineId);
-	return timeline ? timeline.head : TAPE_START_INDEX;
-}
-
-public set tapehead_position(v: number) {
-	const host = this.timelineHost;
-	if (!host || !this._timelineId) return;
-	host.seek_timeline(this._timelineId, v);
-}
-
-public setHeadNoSideEffect(v: number): void {
-	const host = this.timelineHost;
-	if (!host || !this._timelineId) return;
-	if (typeof host.force_timeline_head === 'function') {
-		host.force_timeline_head(this._timelineId, v);
-	} else {
-		host.seek_timeline(this._timelineId, v);
-	}
-}
-
-public setTicksNoSideEffect(v: number): void {
-	this._ticks = v;
-}
 
 public get ticks(): number {
 	return this._ticks;
@@ -1681,113 +1589,6 @@ public get ticks(): number {
 
 	public set ticks(v: number) {
 		this._ticks = v;
-		this.advanceTimelineManual();
-	}
-
-	private advanceTimelineManual(): void {
-		const host = this.timelineHost;
-		if (!host || !this._timelineId) return;
-		host.advance_timeline(this._timelineId);
-	}
-
-	private ensureTimelineBinding(): void {
-		const def = this.definition.timeline;
-		if (!def) return;
-		const host = this.ensureTimelineHost();
-		host.define_timeline(def);
-		this._timelineId = def.id;
-		if (this._timelineListenerUnsub) this._timelineListenerUnsub();
-		this._timelineListenerUnsub = host.on_timeline_event(def.id, this.createTimelineListener());
-	}
-
-	private createTimelineListener(): TimelineListener {
-		return {
-			frame: payload => this.handleTimelineFrame(payload),
-			end: payload => this.handleTimelineEnd(payload),
-		};
-	}
-
-	private activateTimelineOnEntry(next_state: transition_target | void): void {
-		this.resetTimelineState();
-		if (next_state !== undefined) return;
-		if (!this.definition.timeline) return;
-		this.ensureTimelineBinding();
-		const host = this.ensureTimelineHost();
-		const def = this.definition.timeline!;
-		this._timelineIsAtEnd = false;
-		this._currentTimelineValue = undefined;
-		host.play_timeline(def, { rewind: true, snapToStart: true });
-	}
-
-	private resetTimelineState(): void {
-		if (this._timelineListenerUnsub) {
-			this._timelineListenerUnsub();
-			this._timelineListenerUnsub = undefined;
-		}
-		const host = this.timelineHost;
-		if (host && this._timelineId) {
-			host.stop_timeline(this._timelineId);
-		}
-		this._timelineId = undefined;
-		this._timelineIsAtEnd = false;
-		this._currentTimelineValue = undefined;
-	}
-
-	private handleTimelineFrame(payload: TimelineFrameEventPayload): void {
-		const def = this.definition.timeline;
-		if (!def || payload.timeline_id !== def.id) return;
-		this._timelineIsAtEnd = false;
-		this._currentTimelineValue = payload.frame_value;
-		this.handleTimelineCallback('next', { tape_rewound: payload.rewound });
-	}
-
-	private handleTimelineEnd(payload: TimelineEndEventPayload): void {
-		const def = this.definition.timeline;
-		if (!def || payload.timeline_id !== def.id) return;
-		this._timelineIsAtEnd = true;
-		this.handleTimelineCallback('end', EMPTY_GAME_EVENT);
-	}
-
-	private handleTimelineCallback(kind: 'next' | 'end', payload: any): void {
-		const handler = kind === 'next' ? this.definition.tape_next : this.definition.tape_end;
-		if (!handler) return;
-		if (typeof handler === 'function') {
-			if (kind === 'next') {
-				const fn = handler as StateNextHandler;
-				const result = this.runWithTransitionContext(
-					() => this.createEventContext('timeline.next', this.target_id, undefined),
-					ctx => {
-						if (ctx) ctx.handlerName = fn.name || '<anonymous>';
-						return fn.call(this.target, this, payload);
-					},
-				);
-				this.transitionToNextStateIfProvided(result);
-			} else {
-				const fn = handler as StateEventHandler;
-				this.runWithTransitionContext(
-					() => this.createEventContext('timeline.end', this.target_id, undefined),
-					ctx => {
-						if (ctx) ctx.handlerName = fn.name || '<anonymous>';
-						const result = fn.call(this.target, this, payload);
-						this.transitionToNextStateIfProvided(result);
-					},
-				);
-			}
-			return;
-		}
-		if (typeof handler === 'string') {
-			this.transitionToNextStateIfProvided(handler);
-			return;
-		}
-		console.warn(`[State] Timeline handler '${kind}' on state '${this.id}' uses unsupported action spec and was ignored.`);
-	}
-
-	public rewind_tape(): void {
-		const host = this.timelineHost;
-		if (!host || !this._timelineId) return;
-		host.rewind_timeline(this._timelineId);
-		this._timelineIsAtEnd = false;
-		this._currentTimelineValue = undefined;
 	}
 
 	public reapplyMarkersForCurrentFrame(recursive: boolean = false): void {
@@ -1799,7 +1600,6 @@ public get ticks(): number {
 
 	/** Resets this state machine's local data and propagates reset to child machines when requested. */
 	public reset(reset_tree: boolean = true): void {
-		this.resetTimelineState();
 		const def = this.definition;
 		this.data = def.data ? { ...def.data } : {};
 		if (reset_tree) this.resetSubmachine(); // Reset the substate machine if it exists

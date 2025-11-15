@@ -5,15 +5,14 @@ import { EventEmitter } from "../core/eventemitter";
 import { $ } from "../core/game";
 import type { WorldObject } from "../core/object/worldobject";
 import { MeshComponent } from "../component/mesh_component";
-import { mod } from 'bmsx/utils/mod';
+import { mod } from '../utils/mod';
 import { PhysicsComponent } from "../physics/physicscomponent";
 import { CollisionEvent, PhysicsWorld } from "../physics/physicsworld";
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { TileSize } from "../systems/msx";
-import { Identifiable } from "bmsx/rompack/rompack";
+import { Identifiable } from "../rompack/rompack";
 import { Service } from '../core/service';
 import { Registry } from '../core/registry';
-
 
 export enum TickGroup {
 	Input = 10,
