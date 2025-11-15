@@ -11,16 +11,20 @@ import type {
 	ConsoleLuaSymbolEntry,
 	ConsoleResourceDescriptor,
 	ConsoleViewport,
+	IdeThemeVariant,
 } from '../types';
 import type { ConsoleFontVariant } from '../font';
 import type { RectBounds } from '../../rompack/rompack';
 import type { StackTraceFrame } from '../../lua/runtime';
+
+export type { IdeThemeVariant } from '../types';
 
 export type ConsoleEditorOptions = {
 	playerIndex: number;
 	viewport: ConsoleViewport;
 	metadata: BmsxConsoleMetadata;
 	caseInsensitiveLua?: boolean;
+	themeVariant?: IdeThemeVariant;
 	loadSource: () => string;
 	saveSource: (source: string) => Promise<void>;
 	listResources: () => ConsoleResourceDescriptor[];

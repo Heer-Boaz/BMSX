@@ -9,6 +9,7 @@ import {
 import { createBmsxConsoleModule } from './module';
 import { createLuaConsoleCartridge } from './lua';
 import { ConsoleFont } from './font';
+import type { IdeThemeVariant } from './types';
 
 type ManifestViewport = { width?: number; height?: number };
 type ManifestWorldViewport = { x?: number; y?: number };
@@ -28,6 +29,7 @@ type CartManifest = {
 	metadata?: {
 		version?: string;
 		persistentId?: string;
+		ideTheme?: IdeThemeVariant;
 	};
 	console?: {
 		moduleId?: string;
@@ -151,6 +153,7 @@ function deriveMetadata(manifest: CartManifest) {
 		title: manifest.title ?? DEFAULT_META.title,
 		version: meta.version ?? DEFAULT_META.version,
 		persistentId: meta.persistentId ?? DEFAULT_META.persistentId,
+		ideTheme: meta.ideTheme,
 	};
 }
 

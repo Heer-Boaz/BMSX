@@ -1,5 +1,6 @@
 import type { BGamepadButton } from '../../input/inputtypes';
 import { Msx1Colors } from '../../systems/msx';
+import type { IdeThemeVariant } from './types';
 
 /**
  * IMPORTANT: MSX PALETTE INDEX DESCRIPTIONS!
@@ -50,239 +51,610 @@ const PALETTE = {
 	grey: 14,
 	white: 15,
 	brown: 16, // Extended palette color
-	veryDarkBlue: 17 // Extended palette color
+	veryDarkBlue: 17, // Extended palette color
+	softWhite: 18,
+	panelGrey: 19,
+	borderGrey: 20,
+	accentBlue: 21,
+	deepGrey: 22,
+	nearBlack: 23,
+	lightBorderGrey: 24,
+	midGrey: 25,
+	gentleWhite: 26,
+	hintGrey: 27,
+	statusTextGrey: 28,
+	listTextGrey: 29,
+	buttonBlue: 30,
+	buttonBlueHover: 31,
+	successGreen: 32,
+	successGreenHover: 33,
+	diffInserted: 34,
+	scrollbarBase: 35,
+	scrollbarHover: 36,
+	scrollbarActive: 37,
+	keywordMagenta: 38,
+	stringGreen: 39,
+	numberBrown: 40,
+	cyanBlue: 41,
+	accentRed: 42,
+	functionBlue: 43,
+	commentGrey: 44,
+	warningAmber: 45,
+	infoBlue: 46,
+	lineHighlightOverlay: 47,
+	selectionOverlay: 48,
 };
 
-const THEME_BASE = {
+type ThemeDefinition = {
 	surfaces: {
-		frame: PALETTE.white,
-		topBar: PALETTE.grey,
-		editor: PALETTE.veryDarkBlue,
-		gutter: PALETTE.grey,
-		resourcePanel: PALETTE.grey,
-		resourcePanelHighlight: PALETTE.black,
-		resourceViewer: PALETTE.black,
-		tabInactive: PALETTE.grey,
-		tabActive: PALETTE.black
-	},
+		frame: number;
+		topBar: number;
+		editor: number;
+		gutter: number;
+		resourcePanel: number;
+		resourcePanelHighlight: number;
+		resourceViewer: number;
+		tabInactive: number;
+		tabActive: number;
+	};
 	text: {
-		topBar: PALETTE.black,
-		primary: PALETTE.white,
-		secondary: PALETTE.black,
-		keyword: PALETTE.brown,
-		string: PALETTE.lightRed,
-		number: PALETTE.lightBlue,
-		comment: PALETTE.darkGreen,
-		operator: PALETTE.white,
-		dim: PALETTE.lightRed,
-		builtin: PALETTE.darkYellow,
-		functionName: PALETTE.white,
-		parameter: PALETTE.red,
-		globalVar: PALETTE.lightYellow,
-		label: PALETTE.darkRed,
-		localTop: PALETTE.white,
-		localFunction: PALETTE.white,
-		functionHandle: PALETTE.lightGreen,
-		selection: PALETTE.darkBlue,
-	},
+		topBar: number;
+		primary: number;
+		secondary: number;
+		keyword: number;
+		string: number;
+		number: number;
+		comment: number;
+		operator: number;
+		dim: number;
+		builtin: number;
+		functionName: number;
+		parameter: number;
+		globalVar: number;
+		label: number;
+		localTop: number;
+		localFunction: number;
+		functionHandle: number;
+		selection: number;
+	};
 	status: {
-		background: PALETTE.grey,
-		text: PALETTE.black,
-		warning: PALETTE.lightRed,
-		success: PALETTE.darkBlue,
-		error: PALETTE.white,
-		alert: PALETTE.red
-	},
+		background: number;
+		text: number;
+		warning: number;
+		success: number;
+		error: number;
+		alert: number;
+	};
 	input: {
-		text: PALETTE.black,
-		secondaryText: PALETTE.magenta,
-		placeholder: PALETTE.lightRed,
-		outline: PALETTE.black
-	},
+		text: number;
+		secondaryText: number;
+		placeholder: number;
+		outline: number;
+	};
 	tab: {
-		border: PALETTE.darkBlue,
-		activeText: PALETTE.grey,
-		inactiveText: PALETTE.black
-	},
+		border: number;
+		activeText: number;
+		inactiveText: number;
+	};
 	server_status: {
-		connected: PALETTE.darkGreen,
-		disconnected: PALETTE.red,
-	}
+		connected: number;
+		disconnected: number;
+	};
+	searchBackground: number;
+	highlightOverlay: number;
+	scrollbarThumb?: number;
+	caret: {
+		editor: number;
+		inline: number;
+	};
 };
 
-const PANEL_BASE = {
-	problems: {
-		background: THEME_BASE.status.background,
-		headerBackground: THEME_BASE.surfaces.topBar,
-		headerText: THEME_BASE.text.topBar,
-		border: THEME_BASE.text.topBar,
-		text: THEME_BASE.status.text,
-		location: THEME_BASE.text.dim,
-		hoverText: THEME_BASE.status.warning
+const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
+	dark: {
+		surfaces: {
+			frame: PALETTE.white,
+			topBar: PALETTE.grey,
+			editor: PALETTE.veryDarkBlue,
+			gutter: PALETTE.grey,
+			resourcePanel: PALETTE.grey,
+			resourcePanelHighlight: PALETTE.black,
+			resourceViewer: PALETTE.black,
+			tabInactive: PALETTE.grey,
+			tabActive: PALETTE.black,
+		},
+		text: {
+			topBar: PALETTE.black,
+			primary: PALETTE.white,
+			secondary: PALETTE.black,
+			keyword: PALETTE.brown,
+			string: PALETTE.lightRed,
+			number: PALETTE.lightBlue,
+			comment: PALETTE.darkGreen,
+			operator: PALETTE.white,
+			dim: PALETTE.lightRed,
+			builtin: PALETTE.darkYellow,
+			functionName: PALETTE.white,
+			parameter: PALETTE.red,
+			globalVar: PALETTE.lightYellow,
+			label: PALETTE.darkRed,
+			localTop: PALETTE.white,
+			localFunction: PALETTE.white,
+			functionHandle: PALETTE.lightGreen,
+			selection: PALETTE.darkBlue,
+		},
+		status: {
+			background: PALETTE.grey,
+			text: PALETTE.black,
+			warning: PALETTE.lightRed,
+			success: PALETTE.darkBlue,
+			error: PALETTE.white,
+			alert: PALETTE.red,
+		},
+		input: {
+			text: PALETTE.black,
+			secondaryText: PALETTE.magenta,
+			placeholder: PALETTE.lightRed,
+			outline: PALETTE.black,
+		},
+		tab: {
+			border: PALETTE.darkBlue,
+			activeText: PALETTE.grey,
+			inactiveText: PALETTE.black,
+		},
+		server_status: {
+			connected: PALETTE.darkGreen,
+			disconnected: PALETTE.red,
+		},
+		searchBackground: PALETTE.lightBlue,
+		highlightOverlay: PALETTE.veryDarkBlue,
+		caret: {
+			editor: PALETTE.white,
+			inline: PALETTE.black,
+		},
 	},
-	resource: {
-		background: THEME_BASE.surfaces.resourcePanel,
-		text: THEME_BASE.status.text,
-		highlight: THEME_BASE.surfaces.resourcePanelHighlight,
-		highlightText: THEME_BASE.text.primary,
-		viewerBackground: THEME_BASE.surfaces.resourceViewer,
-		viewerText: THEME_BASE.text.primary
-	}
+	light: {
+		surfaces: {
+			frame: PALETTE.softWhite,
+			topBar: PALETTE.panelGrey,
+			editor: PALETTE.softWhite,
+			gutter: PALETTE.panelGrey,
+			resourcePanel: PALETTE.panelGrey,
+			resourcePanelHighlight: PALETTE.borderGrey,
+			resourceViewer: PALETTE.gentleWhite,
+			tabInactive: PALETTE.panelGrey,
+			tabActive: PALETTE.softWhite,
+		},
+		text: {
+			topBar: PALETTE.statusTextGrey,
+			primary: PALETTE.deepGrey,
+			secondary: PALETTE.listTextGrey,
+			keyword: PALETTE.keywordMagenta,
+			string: PALETTE.stringGreen,
+			number: PALETTE.numberBrown,
+			comment: PALETTE.commentGrey,
+			operator: PALETTE.deepGrey,
+			dim: PALETTE.commentGrey,
+			builtin: PALETTE.cyanBlue,
+			functionName: PALETTE.functionBlue,
+			parameter: PALETTE.deepGrey,
+			globalVar: PALETTE.numberBrown,
+			label: PALETTE.accentRed,
+			localTop: PALETTE.deepGrey,
+			localFunction: PALETTE.deepGrey,
+			functionHandle: PALETTE.functionBlue,
+			selection: PALETTE.selectionOverlay,
+		},
+		status: {
+			background: PALETTE.panelGrey,
+			text: PALETTE.statusTextGrey,
+			warning: PALETTE.warningAmber,
+			success: PALETTE.successGreen,
+			error: PALETTE.accentRed,
+			alert: PALETTE.accentRed,
+		},
+		input: {
+			text: PALETTE.deepGrey,
+			secondaryText: PALETTE.commentGrey,
+			placeholder: PALETTE.commentGrey,
+			outline: PALETTE.borderGrey,
+		},
+		tab: {
+			border: PALETTE.borderGrey,
+			activeText: PALETTE.deepGrey,
+			inactiveText: PALETTE.listTextGrey,
+		},
+		server_status: {
+			connected: PALETTE.successGreen,
+			disconnected: PALETTE.accentRed,
+		},
+		searchBackground: PALETTE.panelGrey,
+		highlightOverlay: PALETTE.lineHighlightOverlay,
+		scrollbarThumb: PALETTE.scrollbarBase,
+		caret: {
+			editor: PALETTE.accentBlue,
+			inline: PALETTE.deepGrey,
+		},
+	},
 };
 
-const TAB_BASE = {
-	barBackground: THEME_BASE.status.background,
-	border: THEME_BASE.tab.border,
-	inactiveBackground: THEME_BASE.surfaces.tabInactive,
-	activeBackground: THEME_BASE.surfaces.tabActive,
-	inactiveText: THEME_BASE.tab.inactiveText,
-	activeText: THEME_BASE.tab.activeText,
-	dirtyMarker: THEME_BASE.status.warning
-};
+function buildPanelBase(theme: ThemeDefinition) {
+	return {
+		problems: {
+			background: theme.status.background,
+			headerBackground: theme.surfaces.topBar,
+			headerText: theme.text.topBar,
+			border: theme.text.topBar,
+			text: theme.status.text,
+			location: theme.text.dim,
+			hoverText: theme.status.warning,
+		},
+		resource: {
+			background: theme.surfaces.resourcePanel,
+			text: theme.status.text,
+			highlight: theme.surfaces.resourcePanelHighlight,
+			highlightText: theme.text.primary,
+			viewerBackground: theme.surfaces.resourceViewer,
+			viewerText: theme.text.primary,
+		},
+	};
+}
 
-const SEARCH_BASE = {
-	background: PALETTE.lightBlue,
-	text: THEME_BASE.input.text,
-	secondaryText: THEME_BASE.input.secondaryText,
-	placeholder: THEME_BASE.input.placeholder,
-	outline: THEME_BASE.input.outline
-};
+function buildTabBase(theme: ThemeDefinition) {
+	return {
+		barBackground: theme.status.background,
+		border: theme.tab.border,
+		inactiveBackground: theme.surfaces.tabInactive,
+		activeBackground: theme.surfaces.tabActive,
+		inactiveText: theme.tab.inactiveText,
+		activeText: theme.tab.activeText,
+		dirtyMarker: theme.status.warning,
+	};
+}
 
-const COMPLETION_BASE = {
-	background: SEARCH_BASE.background,
-	border: SEARCH_BASE.outline,
-	text: SEARCH_BASE.text,
-	detail: SEARCH_BASE.secondaryText,
-	highlight: TAB_BASE.activeBackground,
-	highlightText: TAB_BASE.activeText
-};
+function buildSearchBase(theme: ThemeDefinition) {
+	return {
+		background: theme.searchBackground,
+		text: theme.input.text,
+		secondaryText: theme.input.secondaryText,
+		placeholder: theme.input.placeholder,
+		outline: theme.input.outline,
+	};
+}
 
-const ACTION_BASE = {
-	dialogBackground: SEARCH_BASE.background,
-	dialogBorder: SEARCH_BASE.outline,
-	dialogText: SEARCH_BASE.text,
-	buttonBackground: THEME_BASE.status.background,
-	buttonText: THEME_BASE.status.text
-};
+function buildCompletionBase(searchBase: ReturnType<typeof buildSearchBase>, tabBase: ReturnType<typeof buildTabBase>) {
+	return {
+		background: searchBase.background,
+		border: searchBase.outline,
+		text: searchBase.text,
+		detail: searchBase.secondaryText,
+		highlight: tabBase.activeBackground,
+		highlightText: tabBase.activeText,
+	};
+}
 
-const HEADER_BUTTON_BASE = {
-	background: THEME_BASE.status.background,
-	border: THEME_BASE.text.topBar,
-	disabledBackground: THEME_BASE.surfaces.gutter,
-	text: THEME_BASE.text.topBar,
-	disabledText: THEME_BASE.text.dim,
-	activeBackground: THEME_BASE.status.warning,
-	activeText: THEME_BASE.text.topBar
-};
+function buildActionBase(theme: ThemeDefinition, searchBase: ReturnType<typeof buildSearchBase>) {
+	return {
+		dialogBackground: searchBase.background,
+		dialogBorder: searchBase.outline,
+		dialogText: searchBase.text,
+		buttonBackground: theme.status.background,
+		buttonText: theme.status.text,
+	};
+}
 
-const SYMBOL_SEARCH_BASE = {
-	background: SEARCH_BASE.background,
-	text: SEARCH_BASE.text,
-	placeholder: SEARCH_BASE.placeholder,
-	outline: SEARCH_BASE.outline,
-	kind: SEARCH_BASE.secondaryText
-};
+function buildHeaderButtonBase(theme: ThemeDefinition) {
+	return {
+		background: theme.status.background,
+		border: theme.text.topBar,
+		disabledBackground: theme.surfaces.gutter,
+		text: theme.text.topBar,
+		disabledText: theme.text.dim,
+		activeBackground: theme.status.warning,
+		activeText: theme.text.topBar,
+	};
+}
 
-const QUICK_OPEN_BASE = {
-	background: SYMBOL_SEARCH_BASE.background,
-	text: SEARCH_BASE.text,
-	placeholder: SEARCH_BASE.placeholder,
-	outline: SEARCH_BASE.outline,
-	kind: SEARCH_BASE.secondaryText
-};
+function buildSymbolSearchBase(searchBase: ReturnType<typeof buildSearchBase>) {
+	return {
+		background: searchBase.background,
+		text: searchBase.text,
+		placeholder: searchBase.placeholder,
+		outline: searchBase.outline,
+		kind: searchBase.secondaryText,
+	};
+}
 
-const PARAMETER_HINT_BASE = {
-	background: SEARCH_BASE.background,
-	border: SEARCH_BASE.outline,
-	text: SEARCH_BASE.text,
-	active: THEME_BASE.status.warning
-};
+function buildQuickOpenBase(symbolSearchBase: ReturnType<typeof buildSymbolSearchBase>, searchBase: ReturnType<typeof buildSearchBase>) {
+	return {
+		background: symbolSearchBase.background,
+		text: searchBase.text,
+		placeholder: searchBase.placeholder,
+		outline: searchBase.outline,
+		kind: searchBase.secondaryText,
+	};
+}
 
-export const COLOR_FRAME = THEME_BASE.surfaces.frame;
-export const COLOR_TOP_BAR = THEME_BASE.surfaces.topBar;
-export const COLOR_TOP_BAR_TEXT = THEME_BASE.text.topBar;
-export const COLOR_CODE_BACKGROUND = THEME_BASE.surfaces.editor;
-export const COLOR_GUTTER_BACKGROUND = THEME_BASE.surfaces.gutter;
-export const COLOR_CODE_TEXT = THEME_BASE.text.primary;
-export const COLOR_KEYWORD = THEME_BASE.text.keyword;
-export const COLOR_STRING = THEME_BASE.text.string;
-export const COLOR_NUMBER = THEME_BASE.text.number;
-export const COLOR_COMMENT = THEME_BASE.text.comment;
-export const COLOR_OPERATOR = THEME_BASE.text.operator;
-export const COLOR_CODE_DIM = THEME_BASE.text.dim;
-export const COLOR_BREAKPOINT_BORDER = Msx1Colors[THEME_BASE.text.topBar];
-export const COLOR_BREAKPOINT_FILL = Msx1Colors[THEME_BASE.status.alert];
-export const COLOR_BUILTIN = THEME_BASE.text.builtin;
-export const COLOR_FUNCTION_NAME = THEME_BASE.text.functionName;
-export const COLOR_PARAMETER = THEME_BASE.text.parameter;
-export const COLOR_GLOBAL_VARIABLE = THEME_BASE.text.globalVar;
-export const COLOR_LABEL = THEME_BASE.text.label;
-export const COLOR_LOCAL_TOP = THEME_BASE.text.localTop;
-export const COLOR_LOCAL_FUNCTION = THEME_BASE.text.localFunction;
-export const COLOR_FUNCTION_HANDLE = THEME_BASE.text.functionHandle;
-export const HIGHLIGHT_OVERLAY = Msx1Colors[THEME_BASE.surfaces.editor]; //Msx1Colors[PALETTE.darkBlue];
-export const SELECTION_OVERLAY = Msx1Colors[THEME_BASE.text.selection];
-export const CARET_COLOR = Msx1Colors[PALETTE.white];
-export const INLINE_CARET_COLOR = Msx1Colors[PALETTE.black];
-export const COLOR_STATUS_BACKGROUND = THEME_BASE.status.background;
-export const COLOR_STATUS_TEXT = THEME_BASE.status.text;
-export const COLOR_STATUS_WARNING = THEME_BASE.status.warning;
-export const COLOR_STATUS_SUCCESS = THEME_BASE.status.success;
-export const COLOR_STATUS_ERROR = THEME_BASE.status.error;
-export const COLOR_STATUS_ALERT = THEME_BASE.status.alert;
+function buildParameterHintBase(theme: ThemeDefinition, searchBase: ReturnType<typeof buildSearchBase>) {
+	return {
+		background: searchBase.background,
+		border: searchBase.outline,
+		text: searchBase.text,
+		active: theme.status.warning,
+	};
+}
+
+const DEFAULT_THEME_VARIANT: IdeThemeVariant = 'light';
+let activeThemeVariant: IdeThemeVariant = DEFAULT_THEME_VARIANT;
+
+export let COLOR_FRAME: number;
+export let COLOR_TOP_BAR: number;
+export let COLOR_TOP_BAR_TEXT: number;
+export let COLOR_CODE_BACKGROUND: number;
+export let COLOR_GUTTER_BACKGROUND: number;
+export let COLOR_CODE_TEXT: number;
+export let COLOR_KEYWORD: number;
+export let COLOR_STRING: number;
+export let COLOR_NUMBER: number;
+export let COLOR_COMMENT: number;
+export let COLOR_OPERATOR: number;
+export let COLOR_CODE_DIM: number;
+export let COLOR_BREAKPOINT_BORDER = Msx1Colors[0];
+export let COLOR_BREAKPOINT_FILL = Msx1Colors[0];
+export let COLOR_BUILTIN: number;
+export let COLOR_FUNCTION_NAME: number;
+export let COLOR_PARAMETER: number;
+export let COLOR_GLOBAL_VARIABLE: number;
+export let COLOR_LABEL: number;
+export let COLOR_LOCAL_TOP: number;
+export let COLOR_LOCAL_FUNCTION: number;
+export let COLOR_FUNCTION_HANDLE: number;
+export let HIGHLIGHT_OVERLAY = Msx1Colors[0];
+export let SELECTION_OVERLAY = Msx1Colors[0];
+export let CARET_COLOR = Msx1Colors[0];
+export let INLINE_CARET_COLOR = Msx1Colors[0];
+export let COLOR_STATUS_BACKGROUND: number;
+export let COLOR_STATUS_TEXT: number;
+export let COLOR_STATUS_WARNING: number;
+export let COLOR_STATUS_SUCCESS: number;
+export let COLOR_STATUS_ERROR: number;
+export let COLOR_STATUS_ALERT: number;
 export const COLOR_DIAGNOSTIC_ERROR = PALETTE.lightRed;
-export const COLOR_DIAGNOSTIC_WARNING = THEME_BASE.status.warning;
-export const COLOR_PROBLEMS_PANEL_BACKGROUND = PANEL_BASE.problems.background;
-export const COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND = PANEL_BASE.problems.headerBackground;
-export const COLOR_PROBLEMS_PANEL_HEADER_TEXT = PANEL_BASE.problems.headerText;
-export const COLOR_PROBLEMS_PANEL_BORDER = PANEL_BASE.problems.border;
-export const COLOR_PROBLEMS_PANEL_TEXT = PANEL_BASE.problems.text;
-export const COLOR_PROBLEMS_PANEL_LOCATION = PANEL_BASE.problems.location;
-export const COLOR_PROBLEMS_PANEL_HOVER_TEXT = PANEL_BASE.problems.hoverText;
-export const COLOR_RESOURCE_PANEL_BACKGROUND = PANEL_BASE.resource.background;
-export const COLOR_RESOURCE_PANEL_TEXT = PANEL_BASE.resource.text;
-export const COLOR_RESOURCE_PANEL_HIGHLIGHT = PANEL_BASE.resource.highlight;
-export const COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT = PANEL_BASE.resource.highlightText;
-export const COLOR_RESOURCE_VIEWER_BACKGROUND = PANEL_BASE.resource.viewerBackground;
-export const COLOR_RESOURCE_VIEWER_TEXT = PANEL_BASE.resource.viewerText;
-export const COLOR_SEARCH_SECONDARY_TEXT = SEARCH_BASE.secondaryText;
-export const COLOR_SEARCH_TEXT = SEARCH_BASE.text;
-export const COLOR_SEARCH_PLACEHOLDER = SEARCH_BASE.placeholder;
-export const COLOR_SEARCH_OUTLINE = SEARCH_BASE.outline;
-export const COLOR_SEARCH_BACKGROUND = SEARCH_BASE.background;
+export let COLOR_DIAGNOSTIC_WARNING: number;
+export let COLOR_PROBLEMS_PANEL_BACKGROUND: number;
+export let COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND: number;
+export let COLOR_PROBLEMS_PANEL_HEADER_TEXT: number;
+export let COLOR_PROBLEMS_PANEL_BORDER: number;
+export let COLOR_PROBLEMS_PANEL_TEXT: number;
+export let COLOR_PROBLEMS_PANEL_LOCATION: number;
+export let COLOR_PROBLEMS_PANEL_HOVER_TEXT: number;
+export let COLOR_RESOURCE_PANEL_BACKGROUND: number;
+export let COLOR_RESOURCE_PANEL_TEXT: number;
+export let COLOR_RESOURCE_PANEL_HIGHLIGHT: number;
+export let COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT: number;
+export let COLOR_RESOURCE_VIEWER_BACKGROUND: number;
+export let COLOR_RESOURCE_VIEWER_TEXT: number;
+export let COLOR_SEARCH_SECONDARY_TEXT: number;
+export let COLOR_SEARCH_TEXT: number;
+export let COLOR_SEARCH_PLACEHOLDER: number;
+export let COLOR_SEARCH_OUTLINE: number;
+export let COLOR_SEARCH_BACKGROUND: number;
 export const SEARCH_MATCH_OVERLAY = { r: 0.9, g: 0.35, b: 0.35, a: 0.38 };
 export const SEARCH_MATCH_ACTIVE_OVERLAY = { r: 1, g: 0.85, b: 0.25, a: 0.6 };
 export const REFERENCES_MATCH_OVERLAY = { r: 0.25, g: 0.62, b: 0.95, a: 0.32 };
 export const REFERENCES_MATCH_ACTIVE_OVERLAY = { r: 0.18, g: 0.44, b: 0.9, a: 0.54 };
 export const SEARCH_BAR_MARGIN_Y = 2;
-export const COLOR_LINE_JUMP_BACKGROUND = SEARCH_BASE.background;
-export const COLOR_LINE_JUMP_TEXT = SEARCH_BASE.text;
-export const COLOR_LINE_JUMP_PLACEHOLDER = SEARCH_BASE.placeholder;
-export const COLOR_LINE_JUMP_OUTLINE = SEARCH_BASE.outline;
+export let COLOR_LINE_JUMP_BACKGROUND: number;
+export let COLOR_LINE_JUMP_TEXT: number;
+export let COLOR_LINE_JUMP_PLACEHOLDER: number;
+export let COLOR_LINE_JUMP_OUTLINE: number;
 export const ERROR_OVERLAY_BACKGROUND = { r: 0.6, g: 0, b: 0, a: 1 };
 export const ERROR_OVERLAY_BACKGROUND_HOVER = { r: 0.75, g: 0.1, b: 0.1, a: 1 };
 export const ERROR_OVERLAY_LINE_HOVER = { r: 1, g: 1, b: 1, a: 0.18 };
 export const ERROR_OVERLAY_PADDING_X = 4;
 export const ERROR_OVERLAY_PADDING_Y = 2;
 export const ERROR_OVERLAY_CONNECTOR_OFFSET = 6;
-export const ERROR_OVERLAY_TEXT_COLOR = THEME_BASE.text.primary;
+export let ERROR_OVERLAY_TEXT_COLOR: number;
 export const EXECUTION_STOP_OVERLAY = { r: 0.95, g: 0.45, b: 0.1, a: 0.45 };
 export const HOVER_TOOLTIP_PADDING_X = 4;
 export const HOVER_TOOLTIP_PADDING_Y = 2;
 export const HOVER_TOOLTIP_BACKGROUND = { r: 0.1, g: 0.1, b: 0.1, a: 0.9 };
-export const HOVER_TOOLTIP_BORDER = THEME_BASE.text.topBar;
+export let HOVER_TOOLTIP_BORDER: number;
 export const HOVER_TOOLTIP_MAX_VISIBLE_LINES = 10;
 export const HOVER_TOOLTIP_MAX_LINE_LENGTH = 160;
 export const LINE_JUMP_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
-export const COLOR_CREATE_RESOURCE_BACKGROUND = SEARCH_BASE.background;
-export const COLOR_CREATE_RESOURCE_TEXT = SEARCH_BASE.text;
-export const COLOR_CREATE_RESOURCE_PLACEHOLDER = SEARCH_BASE.placeholder;
-export const COLOR_CREATE_RESOURCE_OUTLINE = SEARCH_BASE.outline;
-export const COLOR_CREATE_RESOURCE_ERROR = THEME_BASE.status.warning;
-export const COLOR_SERVER_STATUS_CONNECTED = THEME_BASE.server_status.connected;
-export const COLOR_SERVER_STATUS_DISCONNECTED = THEME_BASE.server_status.disconnected;
+export let COLOR_CREATE_RESOURCE_BACKGROUND: number;
+export let COLOR_CREATE_RESOURCE_TEXT: number;
+export let COLOR_CREATE_RESOURCE_PLACEHOLDER: number;
+export let COLOR_CREATE_RESOURCE_OUTLINE: number;
+export let COLOR_CREATE_RESOURCE_ERROR: number;
+export let COLOR_SERVER_STATUS_CONNECTED: number;
+export let COLOR_SERVER_STATUS_DISCONNECTED: number;
+export let COLOR_HEADER_BUTTON_BACKGROUND: number;
+export let COLOR_HEADER_BUTTON_BORDER: number;
+export let COLOR_HEADER_BUTTON_DISABLED_BACKGROUND: number;
+export let COLOR_HEADER_BUTTON_TEXT: number;
+export let COLOR_HEADER_BUTTON_TEXT_DISABLED: number;
+export let COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND: number;
+export let COLOR_HEADER_BUTTON_ACTIVE_TEXT: number;
+export let ACTION_DIALOG_BACKGROUND_COLOR: number;
+export let ACTION_DIALOG_BORDER_COLOR: number;
+export let ACTION_DIALOG_TEXT_COLOR: number;
+export let ACTION_BUTTON_BACKGROUND: number;
+export let ACTION_BUTTON_TEXT: number;
+export let COLOR_TAB_BAR_BACKGROUND: number;
+export let COLOR_TAB_BORDER: number;
+export let COLOR_TAB_INACTIVE_BACKGROUND: number;
+export let COLOR_TAB_ACTIVE_BACKGROUND: number;
+export let COLOR_TAB_INACTIVE_TEXT: number;
+export let COLOR_TAB_ACTIVE_TEXT: number;
+export let COLOR_TAB_DIRTY_MARKER: number;
+export let COLOR_GOTO_UNDERLINE: number;
+export let RESOURCE_PANEL_DIVIDER_COLOR: number;
+export let SCROLLBAR_TRACK_COLOR: number;
+export let SCROLLBAR_THUMB_COLOR: number;
+export let COLOR_SYMBOL_SEARCH_BACKGROUND: number;
+export let COLOR_SYMBOL_SEARCH_TEXT: number;
+export let COLOR_SYMBOL_SEARCH_PLACEHOLDER: number;
+export let COLOR_SYMBOL_SEARCH_OUTLINE: number;
+export let COLOR_SYMBOL_SEARCH_KIND: number;
+export let COLOR_QUICK_OPEN_BACKGROUND: number;
+export let COLOR_QUICK_OPEN_TEXT: number;
+export let COLOR_QUICK_OPEN_PLACEHOLDER: number;
+export let COLOR_QUICK_OPEN_OUTLINE: number;
+export let COLOR_QUICK_OPEN_KIND: number;
+export let COLOR_COMPLETION_BACKGROUND: number;
+export let COLOR_COMPLETION_BORDER: number;
+export let COLOR_COMPLETION_TEXT: number;
+export let COLOR_COMPLETION_DETAIL: number;
+export let COLOR_COMPLETION_HIGHLIGHT: number;
+export let COLOR_COMPLETION_HIGHLIGHT_TEXT: number;
+export let COLOR_PARAMETER_HINT_BACKGROUND: number;
+export let COLOR_PARAMETER_HINT_BORDER: number;
+export let COLOR_PARAMETER_HINT_TEXT: number;
+export let COLOR_PARAMETER_HINT_ACTIVE: number;
 export const CREATE_RESOURCE_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
 export const CREATE_RESOURCE_MAX_PATH_LENGTH = 1024;
+
+applyThemeDefinition(THEME_DEFINITIONS[DEFAULT_THEME_VARIANT]);
+
+export function setIdeThemeVariant(variant: IdeThemeVariant | undefined | null): void {
+	const requestedVariant = variant ?? DEFAULT_THEME_VARIANT;
+	if (requestedVariant === activeThemeVariant) {
+		return;
+	}
+	const nextTheme = THEME_DEFINITIONS[requestedVariant] ?? THEME_DEFINITIONS[DEFAULT_THEME_VARIANT];
+	if (!nextTheme) {
+		throw new Error('[console/ide/constants] Default IDE theme definition missing.');
+	}
+	activeThemeVariant = nextTheme === THEME_DEFINITIONS[requestedVariant]
+		? requestedVariant
+		: DEFAULT_THEME_VARIANT;
+	applyThemeDefinition(nextTheme);
+}
+
+export function getActiveIdeThemeVariant(): IdeThemeVariant {
+	return activeThemeVariant;
+}
+
+function applyThemeDefinition(theme: ThemeDefinition): void {
+	const panel = buildPanelBase(theme);
+	const tab = buildTabBase(theme);
+	const search = buildSearchBase(theme);
+	const completion = buildCompletionBase(search, tab);
+	const action = buildActionBase(theme, search);
+	const headerButtons = buildHeaderButtonBase(theme);
+	const symbolSearch = buildSymbolSearchBase(search);
+	const quickOpen = buildQuickOpenBase(symbolSearch, search);
+	const parameterHint = buildParameterHintBase(theme, search);
+
+	COLOR_FRAME = theme.surfaces.frame;
+	COLOR_TOP_BAR = theme.surfaces.topBar;
+	COLOR_TOP_BAR_TEXT = theme.text.topBar;
+	COLOR_CODE_BACKGROUND = theme.surfaces.editor;
+	COLOR_GUTTER_BACKGROUND = theme.surfaces.gutter;
+	COLOR_CODE_TEXT = theme.text.primary;
+	COLOR_KEYWORD = theme.text.keyword;
+	COLOR_STRING = theme.text.string;
+	COLOR_NUMBER = theme.text.number;
+	COLOR_COMMENT = theme.text.comment;
+	COLOR_OPERATOR = theme.text.operator;
+	COLOR_CODE_DIM = theme.text.dim;
+	COLOR_BREAKPOINT_BORDER = Msx1Colors[theme.text.topBar];
+	COLOR_BREAKPOINT_FILL = Msx1Colors[theme.status.alert];
+	COLOR_BUILTIN = theme.text.builtin;
+	COLOR_FUNCTION_NAME = theme.text.functionName;
+	COLOR_PARAMETER = theme.text.parameter;
+	COLOR_GLOBAL_VARIABLE = theme.text.globalVar;
+	COLOR_LABEL = theme.text.label;
+	COLOR_LOCAL_TOP = theme.text.localTop;
+	COLOR_LOCAL_FUNCTION = theme.text.localFunction;
+	COLOR_FUNCTION_HANDLE = theme.text.functionHandle;
+	HIGHLIGHT_OVERLAY = Msx1Colors[theme.highlightOverlay];
+	SELECTION_OVERLAY = Msx1Colors[theme.text.selection];
+	CARET_COLOR = Msx1Colors[theme.caret.editor];
+	INLINE_CARET_COLOR = Msx1Colors[theme.caret.inline];
+	COLOR_STATUS_BACKGROUND = theme.status.background;
+	COLOR_STATUS_TEXT = theme.status.text;
+	COLOR_STATUS_WARNING = theme.status.warning;
+	COLOR_STATUS_SUCCESS = theme.status.success;
+	COLOR_STATUS_ERROR = theme.status.error;
+	COLOR_STATUS_ALERT = theme.status.alert;
+	COLOR_DIAGNOSTIC_WARNING = theme.status.warning;
+	COLOR_PROBLEMS_PANEL_BACKGROUND = panel.problems.background;
+	COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND = panel.problems.headerBackground;
+	COLOR_PROBLEMS_PANEL_HEADER_TEXT = panel.problems.headerText;
+	COLOR_PROBLEMS_PANEL_BORDER = panel.problems.border;
+	COLOR_PROBLEMS_PANEL_TEXT = panel.problems.text;
+	COLOR_PROBLEMS_PANEL_LOCATION = panel.problems.location;
+	COLOR_PROBLEMS_PANEL_HOVER_TEXT = panel.problems.hoverText;
+	COLOR_RESOURCE_PANEL_BACKGROUND = panel.resource.background;
+	COLOR_RESOURCE_PANEL_TEXT = panel.resource.text;
+	COLOR_RESOURCE_PANEL_HIGHLIGHT = panel.resource.highlight;
+	COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT = panel.resource.highlightText;
+	COLOR_RESOURCE_VIEWER_BACKGROUND = panel.resource.viewerBackground;
+	COLOR_RESOURCE_VIEWER_TEXT = panel.resource.viewerText;
+	COLOR_SEARCH_SECONDARY_TEXT = search.secondaryText;
+	COLOR_SEARCH_TEXT = search.text;
+	COLOR_SEARCH_PLACEHOLDER = search.placeholder;
+	COLOR_SEARCH_OUTLINE = search.outline;
+	COLOR_SEARCH_BACKGROUND = search.background;
+	COLOR_LINE_JUMP_BACKGROUND = search.background;
+	COLOR_LINE_JUMP_TEXT = search.text;
+	COLOR_LINE_JUMP_PLACEHOLDER = search.placeholder;
+	COLOR_LINE_JUMP_OUTLINE = search.outline;
+	ERROR_OVERLAY_TEXT_COLOR = theme.text.primary;
+	HOVER_TOOLTIP_BORDER = theme.text.topBar;
+	COLOR_CREATE_RESOURCE_BACKGROUND = search.background;
+	COLOR_CREATE_RESOURCE_TEXT = search.text;
+	COLOR_CREATE_RESOURCE_PLACEHOLDER = search.placeholder;
+	COLOR_CREATE_RESOURCE_OUTLINE = search.outline;
+	COLOR_CREATE_RESOURCE_ERROR = theme.status.warning;
+	COLOR_SERVER_STATUS_CONNECTED = theme.server_status.connected;
+	COLOR_SERVER_STATUS_DISCONNECTED = theme.server_status.disconnected;
+	COLOR_HEADER_BUTTON_BACKGROUND = headerButtons.background;
+	COLOR_HEADER_BUTTON_BORDER = headerButtons.border;
+	COLOR_HEADER_BUTTON_DISABLED_BACKGROUND = headerButtons.disabledBackground;
+	COLOR_HEADER_BUTTON_TEXT = headerButtons.text;
+	COLOR_HEADER_BUTTON_TEXT_DISABLED = headerButtons.disabledText;
+	COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND = headerButtons.activeBackground;
+	COLOR_HEADER_BUTTON_ACTIVE_TEXT = headerButtons.activeText;
+	ACTION_DIALOG_BACKGROUND_COLOR = action.dialogBackground;
+	ACTION_DIALOG_BORDER_COLOR = action.dialogBorder;
+	ACTION_DIALOG_TEXT_COLOR = action.dialogText;
+	ACTION_BUTTON_BACKGROUND = action.buttonBackground;
+	ACTION_BUTTON_TEXT = action.buttonText;
+	COLOR_TAB_BAR_BACKGROUND = tab.barBackground;
+	COLOR_TAB_BORDER = tab.border;
+	COLOR_TAB_INACTIVE_BACKGROUND = tab.inactiveBackground;
+	COLOR_TAB_ACTIVE_BACKGROUND = tab.activeBackground;
+	COLOR_TAB_INACTIVE_TEXT = tab.inactiveText;
+	COLOR_TAB_ACTIVE_TEXT = tab.activeText;
+	COLOR_TAB_DIRTY_MARKER = tab.dirtyMarker;
+	COLOR_GOTO_UNDERLINE = tab.border;
+	RESOURCE_PANEL_DIVIDER_COLOR = tab.border;
+	SCROLLBAR_TRACK_COLOR = theme.status.background;
+	SCROLLBAR_THUMB_COLOR = theme.scrollbarThumb ?? theme.status.text;
+	COLOR_SYMBOL_SEARCH_BACKGROUND = symbolSearch.background;
+	COLOR_SYMBOL_SEARCH_TEXT = symbolSearch.text;
+	COLOR_SYMBOL_SEARCH_PLACEHOLDER = symbolSearch.placeholder;
+	COLOR_SYMBOL_SEARCH_OUTLINE = symbolSearch.outline;
+	COLOR_SYMBOL_SEARCH_KIND = symbolSearch.kind;
+	COLOR_QUICK_OPEN_BACKGROUND = quickOpen.background;
+	COLOR_QUICK_OPEN_TEXT = quickOpen.text;
+	COLOR_QUICK_OPEN_PLACEHOLDER = quickOpen.placeholder;
+	COLOR_QUICK_OPEN_OUTLINE = quickOpen.outline;
+	COLOR_QUICK_OPEN_KIND = quickOpen.kind;
+	COLOR_COMPLETION_BACKGROUND = completion.background;
+	COLOR_COMPLETION_BORDER = completion.border;
+	COLOR_COMPLETION_TEXT = completion.text;
+	COLOR_COMPLETION_DETAIL = completion.detail;
+	COLOR_COMPLETION_HIGHLIGHT = completion.highlight;
+	COLOR_COMPLETION_HIGHLIGHT_TEXT = completion.highlightText;
+	COLOR_PARAMETER_HINT_BACKGROUND = parameterHint.background;
+	COLOR_PARAMETER_HINT_BORDER = parameterHint.border;
+	COLOR_PARAMETER_HINT_TEXT = parameterHint.text;
+	COLOR_PARAMETER_HINT_ACTIVE = parameterHint.active;
+}
 export const PROBLEMS_PANEL_HEADER_PADDING_X = 6;
 export const PROBLEMS_PANEL_HEADER_PADDING_Y = 2;
 export const PROBLEMS_PANEL_CONTENT_PADDING_X = 6;
@@ -319,55 +691,27 @@ export const DEFAULT_NEW_FSM_RESOURCE_CONTENT = `return {
 export const HEADER_BUTTON_PADDING_X = 5;
 export const HEADER_BUTTON_PADDING_Y = 1;
 export const HEADER_BUTTON_SPACING = 4;
-export const COLOR_HEADER_BUTTON_BACKGROUND = HEADER_BUTTON_BASE.background;
-export const COLOR_HEADER_BUTTON_BORDER = HEADER_BUTTON_BASE.border;
-export const COLOR_HEADER_BUTTON_DISABLED_BACKGROUND = HEADER_BUTTON_BASE.disabledBackground;
-export const COLOR_HEADER_BUTTON_TEXT = HEADER_BUTTON_BASE.text;
-export const COLOR_HEADER_BUTTON_TEXT_DISABLED = HEADER_BUTTON_BASE.disabledText;
-export const COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND = HEADER_BUTTON_BASE.activeBackground;
-export const COLOR_HEADER_BUTTON_ACTIVE_TEXT = HEADER_BUTTON_BASE.activeText;
 export const ACTION_OVERLAY_COLOR = { r: 0, g: 0, b: 0, a: 0.65 };
-export const ACTION_DIALOG_BACKGROUND_COLOR = ACTION_BASE.dialogBackground;
-export const ACTION_DIALOG_BORDER_COLOR = ACTION_BASE.dialogBorder;
-export const ACTION_DIALOG_TEXT_COLOR = ACTION_BASE.dialogText;
-export const ACTION_BUTTON_BACKGROUND = ACTION_BASE.buttonBackground;
-export const ACTION_BUTTON_TEXT = ACTION_BASE.buttonText;
 export const TAB_BUTTON_PADDING_X = 4;
 export const TAB_BUTTON_PADDING_Y = 1;
 export const TAB_BUTTON_SPACING = 3;
 export const TAB_DRAG_ACTIVATION_THRESHOLD = 8;
 export const TAB_DIRTY_MARKER_SPACING = 2;
-export const COLOR_TAB_BAR_BACKGROUND = TAB_BASE.barBackground;
-export const COLOR_TAB_BORDER = TAB_BASE.border;
-export const COLOR_TAB_INACTIVE_BACKGROUND = TAB_BASE.inactiveBackground;
-export const COLOR_TAB_ACTIVE_BACKGROUND = TAB_BASE.activeBackground;
-export const COLOR_TAB_INACTIVE_TEXT = TAB_BASE.inactiveText;
-export const COLOR_TAB_ACTIVE_TEXT = TAB_BASE.activeText;
-export const COLOR_TAB_DIRTY_MARKER = TAB_BASE.dirtyMarker;
 export const TAB_CLOSE_BUTTON_PADDING_X = 3;
 export const TAB_CLOSE_BUTTON_PADDING_Y = 1;
 export const TAB_CLOSE_BUTTON_SYMBOL = 'x';
-export const COLOR_GOTO_UNDERLINE = TAB_BASE.border; // Black
 export const RESOURCE_VIEWER_MAX_LINES = 512;
 export const RESOURCE_PANEL_MIN_RATIO = 0.18;
 export const RESOURCE_PANEL_MAX_RATIO = 0.6;
 export const RESOURCE_PANEL_DEFAULT_RATIO = 0.3;
 export const RESOURCE_PANEL_MIN_EDITOR_RATIO = 0.35;
-export const RESOURCE_PANEL_DIVIDER_COLOR = TAB_BASE.border;
 export const RESOURCE_PANEL_PADDING_X = 4;
 export const RESOURCE_PANEL_DIVIDER_DRAG_MARGIN = 4;
 export const SCROLLBAR_WIDTH = 3;
 export const CODE_AREA_RIGHT_MARGIN = 6;
 export const SCROLLBAR_MIN_THUMB_HEIGHT = 6;
-export const SCROLLBAR_TRACK_COLOR = THEME_BASE.status.background;
-export const SCROLLBAR_THUMB_COLOR = THEME_BASE.status.text;
 export const SYMBOL_SEARCH_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
 export const SYMBOL_SEARCH_MAX_RESULTS = 8;
-export const COLOR_SYMBOL_SEARCH_BACKGROUND = SYMBOL_SEARCH_BASE.background;
-export const COLOR_SYMBOL_SEARCH_TEXT = SYMBOL_SEARCH_BASE.text;
-export const COLOR_SYMBOL_SEARCH_PLACEHOLDER = SYMBOL_SEARCH_BASE.placeholder;
-export const COLOR_SYMBOL_SEARCH_OUTLINE = SYMBOL_SEARCH_BASE.outline;
-export const COLOR_SYMBOL_SEARCH_KIND = SYMBOL_SEARCH_BASE.kind;
 export const SYMBOL_SEARCH_RESULT_PADDING_X = 4;
 export const SYMBOL_SEARCH_RESULT_SPACING = 1;
 export const SEARCH_RESULT_SPACING = SYMBOL_SEARCH_RESULT_SPACING;
@@ -376,11 +720,6 @@ export const SYMBOL_SEARCH_COMPACT_WIDTH = 320;
 export const QUICK_OPEN_BAR_MARGIN_Y = SYMBOL_SEARCH_BAR_MARGIN_Y;
 export const QUICK_OPEN_RESULT_PADDING_X = SYMBOL_SEARCH_RESULT_PADDING_X;
 export const QUICK_OPEN_RESULT_SPACING = SYMBOL_SEARCH_RESULT_SPACING;
-export const COLOR_QUICK_OPEN_BACKGROUND = QUICK_OPEN_BASE.background;
-export const COLOR_QUICK_OPEN_TEXT = QUICK_OPEN_BASE.text;
-export const COLOR_QUICK_OPEN_PLACEHOLDER = QUICK_OPEN_BASE.placeholder;
-export const COLOR_QUICK_OPEN_OUTLINE = QUICK_OPEN_BASE.outline;
-export const COLOR_QUICK_OPEN_KIND = QUICK_OPEN_BASE.kind;
 export const QUICK_OPEN_MAX_RESULTS = SYMBOL_SEARCH_MAX_RESULTS;
 export const QUICK_OPEN_COMPACT_MAX_RESULTS = SYMBOL_SEARCH_COMPACT_MAX_RESULTS;
 export const REFERENCE_SEARCH_MAX_RESULTS = SYMBOL_SEARCH_MAX_RESULTS;
@@ -390,18 +729,8 @@ export const COMPLETION_POPUP_PADDING_Y = 2;
 export const COMPLETION_POPUP_ITEM_SPACING = 1;
 export const COMPLETION_POPUP_MAX_VISIBLE = 8;
 export const COMPLETION_POPUP_MIN_WIDTH = 96;
-export const COLOR_COMPLETION_BACKGROUND = COMPLETION_BASE.background;
-export const COLOR_COMPLETION_BORDER = COMPLETION_BASE.border;
-export const COLOR_COMPLETION_TEXT = COMPLETION_BASE.text;
-export const COLOR_COMPLETION_DETAIL = COMPLETION_BASE.detail;
-export const COLOR_COMPLETION_HIGHLIGHT = COMPLETION_BASE.highlight;
-export const COLOR_COMPLETION_HIGHLIGHT_TEXT = COMPLETION_BASE.highlightText;
 export const PARAMETER_HINT_PADDING_X = 4;
 export const PARAMETER_HINT_PADDING_Y = 2;
-export const COLOR_PARAMETER_HINT_BACKGROUND = PARAMETER_HINT_BASE.background;
-export const COLOR_PARAMETER_HINT_BORDER = PARAMETER_HINT_BASE.border;
-export const COLOR_PARAMETER_HINT_TEXT = PARAMETER_HINT_BASE.text;
-export const COLOR_PARAMETER_HINT_ACTIVE = PARAMETER_HINT_BASE.active;
 export const COMPLETION_AUTO_TRIGGER_DELAY_SECONDS = 0.16;
 export const EDITOR_TOGGLE_KEY = 'F1';
 export const CONSOLE_TOGGLE_KEY = 'F2';

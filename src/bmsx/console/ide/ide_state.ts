@@ -8,6 +8,7 @@ import type {
 	ConsoleLuaResourceCreationRequest,
 	ConsoleLuaSymbolEntry,
 	ConsoleResourceDescriptor,
+	IdeThemeVariant,
 } from '../types';
 import type { ConsoleFontVariant } from '../font';
 import type { ConsoleEditorFont } from '../editor_font';
@@ -58,7 +59,7 @@ import { ConsoleCodeLayout } from './code_layout';
 import type { TimerHandle } from '../../platform';
 import type { DebuggerExecutionState } from '../debugger_lifecycle';
 import type { LuaDebuggerSessionMetrics } from '../../lua/debugger';
-import { CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_KEY, ESCAPE_KEY } from './constants';
+import { CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_KEY, ESCAPE_KEY, getActiveIdeThemeVariant } from './constants';
 
 export type NavigationHistoryEntry = {
 	contextId: string;
@@ -113,6 +114,7 @@ export type DebuggerControlsState = {
 
 export interface IdeState {
 	playerIndex: number;
+	themeVariant: IdeThemeVariant;
 	lines: string[];
 	cursorRow: number;
 	cursorColumn: number;
@@ -310,6 +312,7 @@ export interface IdeState {
 
 export const ide_state: IdeState = {
 	playerIndex: 0,
+	themeVariant: getActiveIdeThemeVariant(),
 	lines: [''],
 	cursorRow: 0,
 	cursorColumn: 0,

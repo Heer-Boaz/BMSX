@@ -10180,6 +10180,8 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	ide_state.playerIndex = options.playerIndex;
 	ide_state.metadata = options.metadata;
 	ide_state.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
+	constants.setIdeThemeVariant(options.themeVariant ?? null);
+	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
 	ide_state.caseInsensitive = options.caseInsensitiveLua ?? true;
 	ide_state.preMutationSource = null;
 	ide_state.loadSourceFn = options.loadSource;

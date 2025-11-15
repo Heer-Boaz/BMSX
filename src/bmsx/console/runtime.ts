@@ -1874,6 +1874,7 @@ export class BmsxConsoleRuntime extends Service {
 			listBuiltinLuaFunctions: () => this.listLuaBuiltinFunctions(),
 			fontVariant: EDITOR_FONT_VARIANT,
 			workspaceRootPath: this.resolveCartProjectRootPath(),
+			themeVariant: this.cart.meta.ideTheme,
 		});
 		this.flushLuaWarnings();
 		this.registerConsoleShortcuts();

@@ -1,10 +1,13 @@
 import type { vec2 } from '../rompack/rompack';
 import type { BmsxConsoleApi } from './api';
 
+export type IdeThemeVariant = string;
+
 export interface BmsxConsoleMetadata {
 	title: string;
 	version: string;
 	persistentId: string;
+	ideTheme?: IdeThemeVariant;
 }
 
 export type BmsxConsoleLuaProgramEntryPoints = {
