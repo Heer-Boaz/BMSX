@@ -216,18 +216,17 @@ export class quiz extends WorldObject {
 		sint.sc.dispatch_event(event);
 	}
 
-	private presentQuestion(state: State, nav?: 'prev' | 'next'): void {
+	private presentQuestion(nav?: 'prev' | 'next'): void {
 		if (nav === 'prev') {
-			state.setHeadNoSideEffect(state.tapehead_position - 2);
-			if (state.tapehead_position < 0) {
-				state.rewind_tape();
-			}
+			this.currentQuestionIndex = Math.max(0, this.currentQuestionIndex - 1);
+		} else if (nav === 'next') {
+			this.currentQuestionIndex = Math.min(quizItems.length - 1, this.currentQuestionIndex + 1);
+		} else {
+			this.currentQuestionIndex = Math.min(this.currentQuestionIndex, quizItems.length - 1);
 		}
-		++state.ticks;
 		this.switchSintToQuestion();
 
-		const idx = state.current_tape_value;
-		this.currentQuestionIndex = idx;
+		const idx = this.currentQuestionIndex;
 		const currentQ = quizItems[idx];
 		if (currentQ.imgid) {
 			$.getWorldObject<sint>('sint').setimg(currentQ.imgid);
@@ -280,23 +279,12 @@ export class quiz extends WorldObject {
 				},
 
 				vraag: {
-					timeline: {
-						id: 'quiz.vraag',
-						frames: Array.from({ length: quizItems.length }, (_, i) => i),
-						playbackMode: 'once',
-						ticksPerFrame: 0,
-					},
-					entering_state(this: quiz, state: State) {
-						this.presentQuestion(state);
+					entering_state(this: quiz) {
+						this.currentQuestionIndex = 0;
+						this.presentQuestion();
 					},
 					tick(this: quiz, _state: State) {
 						this.typeNextCharacter();
-					},
-					tape_next(this: quiz, state: State) {
-						this.currentQuestionIndex = state.current_tape_value;
-					},
-					tape_end(this: quiz) {
-						return '/end';
 					},
 					input_event_handlers: {
 						'a[j!c]': { // Handle answer option A
@@ -314,15 +302,18 @@ export class quiz extends WorldObject {
 							},
 						},
 						'left[j!c]': { // Handle previous question on "left"
-							do(this: quiz, state: State) {
+							do(this: quiz) {
 								$.consumeAction(1, 'left');
-								this.presentQuestion(state, 'prev');
+								this.presentQuestion('prev');
 							},
 						},
 						'right[j!c]': { // Handle next question on "right"
-							do(this: quiz, state: State) {
+							do(this: quiz): string | void {
 								$.consumeAction(1, 'right');
-								this.presentQuestion(state, 'next');
+								if (this.currentQuestionIndex >= quizItems.length - 1) {
+									return '/end';
+								}
+								this.presentQuestion('next');
 							},
 						},
 					},

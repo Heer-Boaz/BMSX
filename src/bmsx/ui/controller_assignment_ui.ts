@@ -11,6 +11,7 @@ import { ZCOORD_MAX } from '../render/backend/webgl/webgl.constants';
 import type { Identifier } from '../rompack/rompack';
 import { Input } from '../input/input';
 import { id_to_space_symbol } from '../core/space';
+import type { TimelineEndEventPayload, TimelineFrameEventPayload } from '../component/timeline_component';
 
 // Branded types (compile-time only)
 export type PlayerIndex = number & { readonly __brand: 'PlayerIndex' };
@@ -28,6 +29,8 @@ export const PlayerIndexNS = {
 export class SelectedPlayerIndexIcon extends SpriteObject {
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
+		const ASSIGNED_TIMELINE_ID = 'controller-assignment.assigned';
+		const CANCELLED_TIMELINE_ID = 'controller-assignment.cancelled';
 		return {
 			on: {
 				animation_end: { do(this: SelectedPlayerIndexIcon) { this.mark_for_disposal(); } },
@@ -60,31 +63,54 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 				},
 				assigned: {
 					timeline: {
-						id: 'controller-assignment.assigned',
+						id: ASSIGNED_TIMELINE_ID,
 						frames: [true, false],
 						repetitions: 5,
 						playbackMode: 'once',
 						ticksPerFrame: 4,
 					},
-					tape_next(this: SelectedPlayerIndexIcon, state: State) { this.colorize = state.current_tape_value ? { r: 1, g: 1, b: 1, a: .5 } : { r: 0, g: 1, b: 0, a: .75 }; },
-					tape_end(this: SelectedPlayerIndexIcon) {
-						const event = createGameEvent({ type: 'animation_end', emitter: this });
-						this.sc.dispatch_event(event);
+					on: {
+						'timeline.frame': {
+							scope: 'self',
+							do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload>) {
+								if (event.timeline_id !== ASSIGNED_TIMELINE_ID) return;
+								const visible = event.frame_value === true;
+								this.colorize = visible ? { r: 1, g: 1, b: 1, a: .5 } : { r: 0, g: 1, b: 0, a: .75 };
+							},
+						},
+						'timeline.end': {
+							scope: 'self',
+							do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+								if (event.timeline_id !== ASSIGNED_TIMELINE_ID) return;
+								this.notifyAnimationEnd();
+							},
+						},
 					},
 				},
 				cancelled: {
 					timeline: {
-						id: 'controller-assignment.cancelled',
+						id: CANCELLED_TIMELINE_ID,
 						frames: [2],
 						repetitions: 16,
 						playbackMode: 'once',
 						ticksPerFrame: 1,
 					},
 					entering_state(this: SelectedPlayerIndexIcon) { this.colorize = { r: 1, g: 0, b: 0, a: .75 }; },
-					tape_next(this: SelectedPlayerIndexIcon, state: State) { this.y -= state.current_tape_value; },
-					tape_end(this: SelectedPlayerIndexIcon) {
-						const event = createGameEvent({ type: 'animation_end', emitter: this });
-						this.sc.dispatch_event(event);
+					on: {
+						'timeline.frame': {
+							scope: 'self',
+							do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
+								if (event.timeline_id !== CANCELLED_TIMELINE_ID) return;
+								this.y -= event.frame_value;
+							},
+						},
+						'timeline.end': {
+							scope: 'self',
+							do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+								if (event.timeline_id !== CANCELLED_TIMELINE_ID) return;
+								this.notifyAnimationEnd();
+							},
+						},
 					},
 				},
 			},
@@ -101,6 +127,11 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 		this.z = ZCOORD_MAX; this.colorize = { r: 1, g: 1, b: 1, a: .75 };
 		this.imgid = 'joystick_none';
 
+	}
+
+	private notifyAnimationEnd(): void {
+		const event = createGameEvent({ type: 'animation_end', emitter: this });
+		this.sc.dispatch_event(event);
 	}
 	public set playerIndex(idx: number | null) { this.imgid = idx == null ? 'joystick_none' : PlayerIndexNS.iconAsset(idx); }
 

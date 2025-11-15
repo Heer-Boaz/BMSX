@@ -2,7 +2,7 @@ import './test_setup';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ActiveStateMachines, StateDefinitions, applyPreparedStateMachine } from '../../src/bmsx/fsm/fsmlibrary';
+import { ActiveStateMachines, StateDefinitions, applyPreparedStateMachine, rebuildStateMachine } from '../../src/bmsx/fsm/fsmlibrary';
 import { State } from '../../src/bmsx/fsm/state';
 import type { StateMachineBlueprint, Stateful } from '../../src/bmsx/fsm/fsmtypes';
 import { Registry } from '../../src/bmsx/core/registry';
@@ -20,7 +20,20 @@ test('active FSM instances adopt reloaded timeline definitions', () => {
 	const initialRegistryIds = new Set(registry.getRegisteredEntityIds());
 
 	const machineId = `fsm_hot_reload_${Date.now()}`;
-	assert.ok(StateDefinitions[machineId], 'initial FSM definition must register');
+	const blueprintA: StateMachineBlueprint = {
+		id: machineId,
+		initial: '#idle',
+		states: {
+			'#idle': {
+				timeline: {
+					id: `${machineId}.idle`,
+					frames: ['a', 'b', 'c'],
+					ticksPerFrame: 2,
+				},
+			},
+		},
+	};
+	rebuildStateMachine(machineId, blueprintA);
 
 	const targetId = `target_${machineId}`;
 	const controllerStub = {
