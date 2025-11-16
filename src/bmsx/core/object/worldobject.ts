@@ -230,6 +230,13 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	public play_timeline(definitionOrId: TimelineDefinition | string, opts?: TimelinePlayOptions): void {
+		if ($.debug) {
+			console.log('[Timeline][play]', {
+				parent: this.id,
+				definition: typeof definitionOrId === 'string' ? definitionOrId : definitionOrId.id,
+				options: opts ?? null,
+			});
+		}
 		if (typeof definitionOrId === 'string') {
 			this.timeline_component.play(definitionOrId, opts);
 			return;

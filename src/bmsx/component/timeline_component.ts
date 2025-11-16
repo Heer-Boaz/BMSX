@@ -6,6 +6,7 @@ import {
 	type TimelineDefinition,
 	type CompiledTimelineMarkerCache,
 	type TimelineEvent,
+	type TimelineEndEvent,
 	type TimelineFrameEvent,
 	type TimelineFrameChangeReason,
 	type TimelinePlaybackMode,
@@ -186,6 +187,15 @@ export class TimelineComponent extends Component<WorldObject> {
 
 	private process_events(entry: RegisteredTimeline, events: TimelineEvent[]): void {
 		for (const evt of events) {
+			if ($.debug) {
+				console.log('[Timeline][event]', {
+					parent: this.parentid,
+					timeline: entry.definition.id,
+					kind: evt.kind,
+					current: (evt as TimelineFrameEvent).current ?? (evt as TimelineEndEvent).frame,
+					value: evt.kind === 'frame' ? (evt as TimelineFrameEvent).value : undefined,
+				});
+			}
 			if (evt.kind === 'frame') {
 				const payload: TimelineFrameEventPayload = {
 					timeline_id: entry.definition.id,

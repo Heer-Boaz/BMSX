@@ -131,6 +131,9 @@ export class TitleScreen extends SpriteObject {
 					},
 					process_input(this: TitleScreen) {
 						const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['up', 'down', 'punch', 'highkick', 'lowkick', 'block'] });
+						console.log('[TitleScreen] process_input', {
+							actions: priorityActions?.map(action => ({ action: action.action, pressed: action.pressed, consumed: action.consumed })),
+						});
 
 						// If no priority actions are pressed, do nothing.
 						if (!priorityActions || priorityActions.length === 0) {
@@ -159,6 +162,7 @@ export class TitleScreen extends SpriteObject {
 							entering_state(this: TitleScreen, state: State) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
 								this.selectedPlayers = 1;
+								console.log('[TitleScreen] entering players_1');
 								this.cursorVisible = true;
 								state.parent.states.blink.reset();
 								this._cursorSprite.offset = new_vec3(80, this.cursorY, 1);
@@ -172,6 +176,7 @@ export class TitleScreen extends SpriteObject {
 							entering_state(this: TitleScreen, state: State) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
 								this.selectedPlayers = 2;
+								console.log('[TitleScreen] entering players_2');
 								this.cursorVisible = true;
 								state.parent.states.blink.reset();
 								this._cursorSprite.offset = new_vec3(80, this.cursorY, 1);
@@ -190,6 +195,7 @@ export class TitleScreen extends SpriteObject {
 								[`timeline.frame:${TitleScreen.BLINK_TIMELINE_ID}`]: {
 									scope: 'self',
 									do(this: TitleScreen, state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<boolean>>) {
+										console.log('[TitleScreen] blink timeline frame', { value: event.frame_value, pause: state.data.pause_blink });
 										if (state.data.pause_blink) return;
 										this.cursorVisible = event.frame_value;
 									},

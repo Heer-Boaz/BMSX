@@ -13,11 +13,14 @@ class OverlayPipelineControllerImpl {
 		} else {
 			this.requests.set(id, { ...request });
 		}
-		this.rebuild();
-	}
-	public clearAllRequests(): void {
-		if (this.requests.size === 0) return;
-		this.requests.clear();
+		if ($.debug) {
+			console.log('[OverlayPipeline] setRequest', {
+				id,
+				includeConsole: request?.includeConsole ?? false,
+				includeEditor: request?.includeEditor ?? false,
+				includePresentation: request?.includePresentation ?? false,
+			});
+		}
 		this.rebuild();
 	}
 
@@ -36,6 +39,9 @@ class OverlayPipelineControllerImpl {
 		if (spec.length === 0) {
 			$.setPipelineOverride(null);
 			return;
+		}
+		if ($.debug) {
+			console.log('[OverlayPipeline] rebuild', { merged });
 		}
 		$.setPipelineOverride(spec);
 	}

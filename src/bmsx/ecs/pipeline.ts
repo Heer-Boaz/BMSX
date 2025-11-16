@@ -151,6 +151,14 @@ export class ECSPipelineRegistry {
 			cycleGroups: anyCycle ? cycleGroups : undefined,
 			buildMs: (t1 - t0),
 		};
+		if ($.debug) {
+			console.log('[ECS][build]', {
+				finalOrder: diag.finalOrder,
+				groupOrders: diag.groupOrders,
+				cyclesDetected: diag.cyclesDetected,
+				cycleGroups: diag.cycleGroups ?? null,
+			});
+		}
 		this._lastDiagnostics = diag;
 		return diag;
 	}

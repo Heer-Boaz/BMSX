@@ -30,7 +30,6 @@ import { registerBuiltinECS } from "../ecs/builtin_pipeline";
 import type { NodeSpec } from "../ecs/pipeline";
 import { collectEcsPipelineExtensions } from "../ecs/extensions";
 import { gameplaySpec } from './pipelines/gameplay';
-import { OverlayPipelineController } from './pipelines/overlay_controller';
 import { BmsxConsoleRuntime } from '../console/runtime';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 // No direct space helpers needed here; Spaces are revived as part of the world.
@@ -319,7 +318,6 @@ export class Game {
 		}
 		platform.gameviewHost = resolvedViewHost;
 		this._platform = platform;
-		OverlayPipelineController.clearAllRequests();
 		$rompack = rompack;
 		this.running = false;
 		this._paused = false;
