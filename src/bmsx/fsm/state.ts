@@ -1448,6 +1448,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			case 'string':
 				if (isNoOpString(doHandler)) return true;
 				this.appendActionEvaluation(`do:string=${doHandler}`);
+				this.transition_to(doHandler);
 				return true;
 			case 'function':
 				const handlerEvent = (event ?? EMPTY_GAME_EVENT) as GameEvent;
