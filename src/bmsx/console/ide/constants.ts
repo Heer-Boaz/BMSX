@@ -116,6 +116,7 @@ type ThemeDefinition = {
 		localFunction: number;
 		functionHandle: number;
 		selection: number;
+		errorOverlayText: number;
 	};
 	status: {
 		background: number;
@@ -181,6 +182,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			localFunction: PALETTE.white,
 			functionHandle: PALETTE.lightGreen,
 			selection: PALETTE.darkBlue,
+			errorOverlayText: PALETTE.white,
 		},
 		status: {
 			background: PALETTE.grey,
@@ -243,6 +245,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			localFunction: PALETTE.deepGrey,
 			functionHandle: PALETTE.functionBlue,
 			selection: PALETTE.selectionOverlay,
+			errorOverlayText: PALETTE.white,
 		},
 		status: {
 			background: PALETTE.panelGrey,
@@ -602,7 +605,7 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_LINE_JUMP_TEXT = search.text;
 	COLOR_LINE_JUMP_PLACEHOLDER = search.placeholder;
 	COLOR_LINE_JUMP_OUTLINE = search.outline;
-	ERROR_OVERLAY_TEXT_COLOR = theme.text.primary;
+	ERROR_OVERLAY_TEXT_COLOR = theme.text.errorOverlayText;
 	HOVER_TOOLTIP_BORDER = theme.text.topBar;
 	COLOR_CREATE_RESOURCE_BACKGROUND = search.background;
 	COLOR_CREATE_RESOURCE_TEXT = search.text;

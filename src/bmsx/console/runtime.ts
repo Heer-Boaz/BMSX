@@ -337,13 +337,8 @@ export class BmsxConsoleRuntime extends Service {
 		'api',
 	]);
 
-	public static ensure(options: BmsxConsoleRuntimeOptions): BmsxConsoleRuntime {
-		if (!BmsxConsoleRuntime._instance) {
-			BmsxConsoleRuntime._instance = new BmsxConsoleRuntime(options);
-			return BmsxConsoleRuntime._instance;
-		}
-		BmsxConsoleRuntime._instance.assertCompatibleOptions(options);
-		return BmsxConsoleRuntime._instance;
+	public static createInstance(options: BmsxConsoleRuntimeOptions): void {
+		BmsxConsoleRuntime._instance = new BmsxConsoleRuntime(options);
 	}
 
 	public static get instance(): BmsxConsoleRuntime | null {
@@ -394,7 +389,7 @@ export class BmsxConsoleRuntime extends Service {
 	private globalInputUnsubscribe: (() => void) | null = null;
 	private readonly validationStrategy: BmsxLuaValidationStrategy = BmsxLuaValidationStrategy.TrustRealRun;
 	private luaProgramSourceOverride: string | null = null;
-	private luaInterpreter: LuaInterpreter | null = null;
+	private luaInterpreter!: LuaInterpreter;
 	private fsmLuaInterpreter: LuaInterpreter | null = null;
 	private luaInitFunction: LuaFunctionValue | null = null;
 	private luaUpdateFunction: LuaFunctionValue | null = null;
@@ -422,6 +417,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly chunkSemanticCache: Map<string, { source: string; model: LuaSemanticModel | null; definitions: ReadonlyArray<LuaDefinitionInfo> }> = new Map();
 	private readonly luaChunkEnvironmentsByasset_id: Map<string, LuaEnvironment> = new Map();
 	private readonly luaChunkEnvironmentsByChunkName: Map<string, LuaEnvironment> = new Map();
+	private readonly chunkFunctionDefinitionKeys: Map<string, Set<string>> = new Map();
 	private readonly consoleFsmMachineIds: Set<string> = new Set<string>();
 	private readonly consoleFsmsByAsset: Map<string, Set<string>> = new Map();
 	private readonly consoleBehaviorTreeIds: Set<string> = new Set<string>();
@@ -484,7 +480,7 @@ export class BmsxConsoleRuntime extends Service {
 		super({ id: 'bmsx_console_runtime' });
 		BmsxConsoleRuntime._instance = this;
 		const rompack = $.rompack;
-		this.caseInsensitiveLua = options.caseInsensitiveLua ?? (rompack?.caseInsensitiveLua ?? true);
+		this.caseInsensitiveLua = options.caseInsensitiveLua ?? (rompack.caseInsensitiveLua ?? true);
 		setLuaTableCaseInsensitiveKeys(this.caseInsensitiveLua);
 		setEditorCaseInsensitivity(this.caseInsensitiveLua);
 		this.consoleMode = new ConsoleMode({
@@ -498,23 +494,6 @@ export class BmsxConsoleRuntime extends Service {
 			listLuaObjectMembers: (request) => this.listLuaObjectMembers(request),
 		});
 		this.enableEvents();
-		const clock = $.platform.clock;
-		clock.scheduleOnce = (delayMs, cb) => {
-			let active = true;
-			const handle = setTimeout(() => {
-				if (!active) return;
-				active = false;
-				cb(clock.now());
-			}, Math.max(0, Math.floor(delayMs)));
-			return {
-				cancel: () => {
-					if (!active) return;
-					active = false;
-					clearTimeout(handle);
-				},
-				isActive: () => active,
-			};
-		};
 		const policyOverride = options.luaSourceFailurePolicy ?? {};
 		this.luaFailurePolicy = { ...DEFAULT_LUA_FAILURE_POLICY, ...policyOverride };
 		this.cart = options.cart;
@@ -663,10 +642,8 @@ export class BmsxConsoleRuntime extends Service {
 			(details.chunkName && details.chunkName.length > 0
 				? details.chunkName
 				: this.luaChunkName) ?? '<chunk>';
-		const line =
-			typeof details.line === 'number' && Number.isFinite(details.line) ? Math.floor(details.line) : 0;
-		const column =
-			typeof details.column === 'number' && Number.isFinite(details.column) ? Math.floor(details.column) : 0;
+		const line = details.line ?? 0;
+		const column = details.column ?? 0;
 		const normalSignal: ExecutionSignal = { kind: 'normal' };
 		const suspension: LuaDebuggerPauseSignal = {
 			kind: 'pause',
@@ -795,23 +772,6 @@ export class BmsxConsoleRuntime extends Service {
 			throw new Error(`[BmsxConsoleRuntime] ${context} requires an active Lua debugger suspension.`);
 		}
 		return suspension;
-	}
-
-	private assertCompatibleOptions(options: BmsxConsoleRuntimeOptions): void {
-		if (options.cart !== this.cart) {
-			throw new Error('[BmsxConsoleRuntime] Runtime already initialised with a cart. Destroy the existing instance before swapping carts.');
-		}
-		if (options.playerIndex !== this.playerIndex) {
-			throw new Error('[BmsxConsoleRuntime] Runtime already initialised with a different player index.');
-		}
-		if (options.storage && options.storage !== this.storageService) {
-			throw new Error('[BmsxConsoleRuntime] Runtime already initialised with a different storage service.');
-		}
-		const rompack = $.rompack;
-		const nextCaseInsensitive = options.caseInsensitiveLua ?? (rompack?.caseInsensitiveLua ?? true);
-		if (nextCaseInsensitive !== this.caseInsensitiveLua) {
-			throw new Error('[BmsxConsoleRuntime] Runtime already initialised with a different Lua case-sensitivity setting.');
-		}
 	}
 
 	private pollConsoleHotkeys(): void {
@@ -2431,11 +2391,6 @@ export class BmsxConsoleRuntime extends Service {
 		if (source.trim().length === 0) {
 			throw new Error('[BmsxConsoleRuntime] Lua resource source cannot be empty.');
 		}
-		const program = this.luaProgram as BmsxConsoleLuaAssetProgram | null;
-		if (program.asset_id) {
-			await this.saveLuaProgram(source);
-			return;
-		}
 		const cartPath = this.resolveLuaResourcePath(asset_id);
 		if (!cartPath) {
 			throw new Error(`[BmsxConsoleRuntime] Lua source path unavailable for asset '${asset_id}'. Rebuild the rompack with filesystem metadata to enable saving.`);
@@ -2853,9 +2808,9 @@ export class BmsxConsoleRuntime extends Service {
 	private restoreFallbackLuaState(snapshot: BmsxConsoleState): void {
 		const interpreter = this.luaInterpreter;
 		if (interpreter === null) {
-			return;
+			throw new Error('[BmsxConsoleRuntime] No Lua interpreter available for state restore.');
 		}
-		if (snapshot.luaRandomSeed !== undefined && Number.isFinite(snapshot.luaRandomSeed)) {
+		if (snapshot.luaRandomSeed !== undefined) {
 			interpreter.setRandomSeed(snapshot.luaRandomSeed);
 		}
 		if (snapshot.luaGlobals) {
@@ -2869,7 +2824,7 @@ export class BmsxConsoleRuntime extends Service {
 	private restoreLuaGlobals(globals: Record<string, unknown>): void {
 		const interpreter = this.luaInterpreter;
 		if (interpreter === null) {
-			return;
+			throw new Error('[BmsxConsoleRuntime] No Lua interpreter available for state restore.');
 		}
 		for (const [name, value] of Object.entries(globals)) {
 			if (!name || this.apiFunctionNames.has(name) || BmsxConsoleRuntime.LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
@@ -5098,29 +5053,10 @@ export class BmsxConsoleRuntime extends Service {
 
 	private static extractConsoleTimelineSpec(machineId: string, path: string[], state: StateMachineBlueprint): ConsoleTimelineSpec | null {
 		const timelineConfig = (state as { timeline?: unknown }).timeline;
-		const tapeData = (state as { tape_data?: unknown }).tape_data;
-		if (!timelineConfig && (!Array.isArray(tapeData) || tapeData.length === 0)) return null;
+		if (!timelineConfig || typeof timelineConfig !== 'object') return null;
 		const timelineId = BmsxConsoleRuntime.makeConsoleTimelineId(machineId, path);
-		let definition: TimelineDefinition;
-		if (timelineConfig && typeof timelineConfig === 'object') {
-			definition = deep_clone(timelineConfig as Record<string, unknown>) as unknown as TimelineDefinition;
-			definition.id = typeof definition.id === 'string' && definition.id.length > 0 ? definition.id : timelineId;
-		} else {
-			const frames = Array.isArray(tapeData) ? [...tapeData as unknown[]] : [];
-			if (frames.length === 0) return null;
-			const legacy = state as Record<string, any>;
-			definition = {
-				id: timelineId,
-				frames,
-				ticksPerFrame: BmsxConsoleRuntime.resolveLegacyNumber(legacy.ticks2advance_tape, legacy.ticks2move),
-				playbackMode: BmsxConsoleRuntime.normalizeLegacyPlaybackMode(legacy.tape_playback_mode),
-				repetitions: typeof legacy.repetitions === 'number' ? legacy.repetitions : undefined,
-				autotick: typeof legacy.enable_tape_autotick === 'boolean' ? legacy.enable_tape_autotick : undefined,
-			};
-			if (Array.isArray(legacy.markers)) {
-				definition.markers = deep_clone(legacy.markers);
-			}
-		}
+		const definition = deep_clone(timelineConfig as Record<string, unknown>) as unknown as TimelineDefinition;
+		definition.id = typeof definition.id === 'string' && definition.id.length > 0 ? definition.id : timelineId;
 		if (definition.autotick === undefined) {
 			definition.autotick = (definition.ticksPerFrame ?? 0) !== 0;
 		}
@@ -5131,21 +5067,13 @@ export class BmsxConsoleRuntime extends Service {
 			tapeNext: (state as { tape_next?: unknown }).tape_next,
 			tapeEnd: (state as { tape_end?: unknown }).tape_end,
 		};
-		delete (state as Record<string, unknown>).tape_next;
-		delete (state as Record<string, unknown>).tape_end;
-		delete (state as Record<string, unknown>).tape_data;
-		delete (state as Record<string, unknown>).ticks2advance_tape;
-		delete (state as Record<string, unknown>).ticks2move;
-		delete (state as Record<string, unknown>).enable_tape_autotick;
-		delete (state as Record<string, unknown>).tape_playback_mode;
-		delete (state as Record<string, unknown>).markers;
 		return spec;
 	}
 
 	private static injectConsoleTimelineLifecycle(state: StateMachineBlueprint, spec: ConsoleTimelineSpec): void {
 		const originalEnter = typeof state.entering_state === 'function' ? state.entering_state : undefined;
 		const enterReturn = typeof state.entering_state === 'string' ? state.entering_state : undefined;
-		state.entering_state = function(this: WorldObject, runtimeState: State) {
+		state.entering_state = function (this: WorldObject, runtimeState: State) {
 			this.define_timeline(spec.definition);
 			this.play_timeline(spec.id, { rewind: true, snapToStart: true });
 			(runtimeState as any).current_tape_value = spec.definition.frames.length > 0 ? spec.definition.frames[0] : undefined;
@@ -5158,7 +5086,7 @@ export class BmsxConsoleRuntime extends Service {
 		};
 		const originalExit = typeof state.exiting_state === 'function' ? state.exiting_state : undefined;
 		const exitReturn = typeof state.exiting_state === 'string' ? state.exiting_state : undefined;
-		state.exiting_state = function(this: WorldObject, runtimeState: State) {
+		state.exiting_state = function (this: WorldObject, runtimeState: State) {
 			this.stop_timeline(spec.id);
 			if (originalExit) {
 				return originalExit.call(this, runtimeState);
@@ -5206,20 +5134,6 @@ export class BmsxConsoleRuntime extends Service {
 		const segments = [machineId, ...path].map(seg => seg.replace(/[:/#]+/g, '.'));
 		const normalized = segments.join('.').replace(/\.+/g, '.');
 		return `${normalized}.timeline`;
-	}
-
-	private static resolveLegacyNumber(...candidates: any[]): number {
-		for (const candidate of candidates) {
-			if (typeof candidate === 'number' && Number.isFinite(candidate)) {
-				return candidate;
-			}
-		}
-		return 0;
-	}
-
-	private static normalizeLegacyPlaybackMode(mode: any): TimelineDefinition['playbackMode'] {
-		if (mode === 'loop' || mode === 'pingpong' || mode === 'once') return mode;
-		return 'once';
 	}
 
 	private unregisterLuaStateMachine(machineId: string): void {
@@ -6352,7 +6266,7 @@ export class BmsxConsoleRuntime extends Service {
 			};
 		}
 		const cooldownMs = (descriptor as ConsoleAbilityRegistrationDescriptor).cooldownMs;
-		if (typeof cooldownMs === 'number' && Number.isFinite(cooldownMs) && cooldownMs >= 0) {
+		if (cooldownMs >= 0) {
 			definition.cooldownMs = cooldownMs;
 		}
 		const costRaw = (descriptor as ConsoleAbilityRegistrationDescriptor).cost;
@@ -6598,7 +6512,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (typeof key === 'string') {
 			return key;
 		}
-		if (typeof key === 'number' && Number.isFinite(key)) {
+		if (typeof key === 'number') {
 			return String(key);
 		}
 		return null;
@@ -7525,10 +7439,83 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		const normalizedChunk = this.normalizeChunkName(chunkName);
+		this.pruneRemovedChunkFunctionExports(
+			normalizedChunk,
+			environment,
+			interpreter.getChunkDefinitions(chunkName),
+			interpreter.getGlobalEnvironment(),
+		);
 		this.luaChunkEnvironmentsByChunkName.set(normalizedChunk, environment);
 		if (asset_id && asset_id.length > 0) {
 			this.luaChunkEnvironmentsByasset_id.set(asset_id, environment);
 		}
+	}
+
+	private collectChunkFunctionDefinitionKeys(definitions: ReadonlyArray<LuaDefinitionInfo> | null): Set<string> {
+		const keys = new Set<string>();
+		if (!definitions) {
+			return keys;
+		}
+		for (let index = 0; index < definitions.length; index += 1) {
+			const entry = definitions[index];
+			if (entry.kind !== 'function') {
+				continue;
+			}
+			if (!entry.namePath || entry.namePath.length === 0) {
+				continue;
+			}
+			const key = entry.namePath.join('.');
+			if (key.length > 0) {
+				keys.add(key);
+			}
+		}
+		return keys;
+	}
+
+	private pruneRemovedChunkFunctionExports(
+		normalizedChunk: string,
+		environment: LuaEnvironment,
+		definitions: ReadonlyArray<LuaDefinitionInfo> | null,
+		globalEnv: LuaEnvironment,
+	): void {
+		if (!environment) {
+			return;
+		}
+		const previousKeys = this.chunkFunctionDefinitionKeys.get(normalizedChunk) ?? null;
+		const currentKeys = this.collectChunkFunctionDefinitionKeys(definitions);
+		if (previousKeys && previousKeys.size > 0) {
+			for (const key of previousKeys) {
+				if (!currentKeys.has(key)) {
+					const path = key.split('.');
+					this.clearExportInEnvironment(environment, path);
+					this.clearExportInEnvironment(globalEnv, path);
+				}
+			}
+		}
+		this.chunkFunctionDefinitionKeys.set(normalizedChunk, currentKeys);
+	}
+
+	private clearExportInEnvironment(env: LuaEnvironment, pathParts: ReadonlyArray<string>): void {
+		if (!env || !pathParts || pathParts.length === 0) {
+			return;
+		}
+		if (pathParts.length === 1) {
+			env.set(pathParts[0], null);
+			return;
+		}
+		const first = env.get(pathParts[0]);
+		if (first === null || !isLuaTable(first)) {
+			return;
+		}
+		let current: LuaTable = first;
+		for (let index = 1; index < pathParts.length - 1; index += 1) {
+			const nextValue = current.get(pathParts[index]);
+			if (nextValue === null || !isLuaTable(nextValue)) {
+				return;
+			}
+			current = nextValue;
+		}
+		current.set(pathParts[pathParts.length - 1], null);
 	}
 
 	private registerLuaModuleAliases(record: LuaRequireModuleRecord, asset_id: string, sourcePath: string | null, chunkName: string, canonicalPath: string): void {

@@ -205,7 +205,7 @@ function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | und
 		if (!newChildren.includes(id)) {
 			if (node.states) {
 				const existing = node.states[id];
-				if (existing && typeof existing.dispose === 'function') existing.dispose();
+				existing?.dispose?.();
 				delete node.states[id];
 			}
 		}

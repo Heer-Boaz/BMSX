@@ -109,5 +109,5 @@ export const Msx1Colors: color[] = [
 	{ r: 191 / 255, g: 136 / 255, b: 3 / 255, a: 1 }, // 45 = Warning amber (#bf8803)
 	{ r: 66 / 255, g: 173 / 255, b: 225 / 255, a: 1 }, // 46 = Info blue (#42ade1)
 	{ r: 56 / 255, g: 58 / 255, b: 66 / 255, a: 0 }, // 47 = Line highlight overlay (#383a420c)
-	{ r: 255 / 255, g: 115 / 255, b: 86 / 255, a: 1 }, // 48 = Selection overlay (#e5e5e6bf)
+	{ r: 0 / 255, g: 0 / 255, b: 64 / 255, a: 1 }, // 48 = Selection overlay (#e5e5e6bf)
 ];

@@ -20,7 +20,7 @@ export class GamepadInput implements InputHandler {
 
 	public get gamepadIndex(): number {
 		const index = parseInt(this.deviceId.split(':')[1] ?? '-1', 10);
-		return Number.isFinite(index) ? index : -1;
+		return index;
 	}
 
 	public get supportsVibrationEffect(): boolean {

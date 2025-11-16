@@ -10,7 +10,7 @@ import { PhysicsComponent } from "../physics/physicscomponent";
 import { CollisionEvent, PhysicsWorld } from "../physics/physicsworld";
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { TileSize } from "../systems/msx";
-import { Identifiable } from "../rompack/rompack";
+import { Identifiable, type Oriented, type Scaled } from "../rompack/rompack";
 import { Service } from '../core/service';
 import { Registry } from '../core/registry';
 
@@ -119,7 +119,7 @@ export class ECSystemManager {
 export class PreTagSystem extends ECSystem {
 	constructor(private tag: string, priority: number) { super(TickGroup.Input, priority); }
 	update(world: World): void {
-		for (let o of world.objects({ scope: 'active'}) ) {
+		for (let o of world.objects({ scope: 'active' })) {
 			for (let c of o.iterate_components()) {
 				if (!c.enabled || !c.hasPreprocessingTag(this.tag)) continue;
 				c.preprocessingUpdate();
@@ -141,31 +141,11 @@ export class PostTagSystem extends ECSystem {
 	}
 }
 
-function hasRotationQ(o: unknown): o is { rotationQ: { x: number; y: number; z: number; w: number } } {
-	if (!o) return false;
-	const r = o as Record<string, unknown>;
-	const q = r['rotationQ'];
-	return q !== undefined && typeof (q as Record<string, unknown>).x === 'number' && typeof (q as Record<string, unknown>).w === 'number';
-}
-
-function hasScale(o: unknown): o is { scale: [number, number, number] | number[] } {
-	if (!o) return false;
-	const r = o as Record<string, unknown>;
-	const s = r['scale'];
-	return Array.isArray(s) && s.length >= 3 && typeof s[0] === 'number';
-}
-
-function hasMarkDirty(o: unknown): o is { markDirty: () => void } {
-	if (!o) return false;
-	const r = o as Record<string, unknown>;
-	return typeof r['markDirty'] === 'function';
-}
-
 /** Updates all BehaviorTrees attached to objects. */
 export class BehaviorTreeSystem extends ECSystem {
 	constructor(priority: number) { super(TickGroup.Input, priority); }
 	update(world: World): void {
-		for (let o of world.objects({ scope: 'active'})) {
+		for (let o of world.objects({ scope: 'active' })) {
 			if (o.active === false) continue;
 			if (o.tick_enabled === false) continue;
 			const bts = o.btreecontexts;
@@ -399,7 +379,7 @@ export class PhysicsWorldStepSystem extends ECSystem {
 export class PhysicsPostSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
-		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'active' })) {
+		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'active' }) as Iterable<[WorldObject & Oriented, PhysicsComponent]>) {
 			if (!c.enabled) continue;
 			if (!c.writeBack) continue;
 			if (!c.body) {
@@ -408,7 +388,7 @@ export class PhysicsPostSystem extends ECSystem {
 			if (c.syncAxis.x) o.x_nonotify = c.body.position.x;
 			if (c.syncAxis.y) o.y_nonotify = c.body.position.y;
 			if (c.syncAxis.z) o.z_nonotify = c.body.position.z;
-			if (hasRotationQ(o) && c.body.rotationQ) {
+			if (c.body.rotationQ) {
 				o.rotationQ.x = c.body.rotationQ.x;
 				o.rotationQ.y = c.body.rotationQ.y;
 				o.rotationQ.z = c.body.rotationQ.z;
@@ -487,7 +467,7 @@ function resolveCollisionObject(userData: unknown, label: 'A' | 'B', world: Worl
 export class TransformSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
-		for (let [o, c] of world.objectsWithComponents(TransformComponent, { scope: 'active' })) {
+		for (let [o, c] of world.objectsWithComponents(TransformComponent, { scope: 'active' }) as Iterable<[WorldObject & Oriented & Scaled, TransformComponent]>) {
 			if (!c.enabled) continue;
 			const pos = o.pos;
 			if (!pos) {
@@ -496,13 +476,11 @@ export class TransformSystem extends ECSystem {
 			c.position[0] = o.x;
 			c.position[1] = o.y;
 			c.position[2] = o.z;
-			if (hasRotationQ(o)) c["orientationQ"] = o.rotationQ;
-			if (hasScale(o)) {
-				c.scale[0] = o.scale[0];
-				c.scale[1] = o.scale[1];
-				c.scale[2] = o.scale[2];
-			}
-			if (hasMarkDirty(c)) c.markDirty();
+			c.orientationQ = o.rotationQ;
+			c.scale[0] = o.scale[0];
+			c.scale[1] = o.scale[1];
+			c.scale[2] = o.scale[2];
+			c.markDirty();
 		}
 	}
 }

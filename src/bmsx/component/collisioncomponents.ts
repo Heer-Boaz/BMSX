@@ -67,24 +67,12 @@ export class Collider2DComponent extends Component<WorldObject> {
 		spaceevents?: 'current' | 'ui' | 'both' | 'all';
 	}) {
 		super(opts);
-		if (typeof opts.hittable === 'boolean') {
-			this.hittable = opts.hittable;
-		}
-		if (typeof opts.layer === 'number' && Number.isFinite(opts.layer)) {
-			this.layer = opts.layer;
-		}
-		if (typeof opts.mask === 'number' && Number.isFinite(opts.mask)) {
-			this.mask = opts.mask;
-		}
-		if (typeof opts.istrigger === 'boolean') {
-			this.isTrigger = opts.istrigger;
-		}
-		if (typeof opts.generateoverlapevents === 'boolean') {
-			this.generateOverlapEvents = opts.generateoverlapevents;
-		}
-		if (opts.spaceevents === 'current' || opts.spaceevents === 'ui' || opts.spaceevents === 'both' || opts.spaceevents === 'all') {
-			this.spaceEvents = opts.spaceevents;
-		}
+		this.hittable = opts.hittable;
+		this.layer = opts.layer;
+		this.mask = opts.mask;
+		this.isTrigger = opts.istrigger;
+		this.generateOverlapEvents = opts.generateoverlapevents;
+		this.spaceEvents = opts.spaceevents;
 	}
 
 	/** Returns world-space AABB. Falls back to object size if no local area is set. */

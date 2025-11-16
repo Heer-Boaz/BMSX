@@ -52,7 +52,13 @@ export function resolveSegmentEnd(line: string, segment: VisualLineSegment): num
 	const lineLength = line.length;
 	const segmentStart = clamp(segment.startColumn, 0, lineLength);
 	const segmentEnd = clamp(Math.max(segment.endColumn, segmentStart), segmentStart, lineLength);
-	return segmentEnd;
+	if (segmentEnd >= lineLength) {
+		return lineLength;
+	}
+	if (segmentEnd <= segmentStart) {
+		return segmentStart;
+	}
+	return segmentEnd - 1;
 }
 
 export function findFirstNonWhitespace(line: string, startColumn: number, endColumn: number): number {

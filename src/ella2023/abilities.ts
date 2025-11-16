@@ -14,8 +14,8 @@ const CORE_ABILITIES: GameplayAbilityDefinition[] = [
 		blockedTags: ['state.attacking', 'state.airborne', 'state.combat_disabled'],
 		activation: [
 			{ type: 'dispatch', event: 'mode.locomotion.walk', payload: { direction: fromIntent('direction') } },
-			{ type: 'waittag', tag: 'state.walking', present: true },
-			{ type: 'waittag', tag: 'state.walking', present: false },
+			{ type: 'waitTag', tag: 'state.walking', present: true },
+			{ type: 'waitTag', tag: 'state.walking', present: false },
 		],
 		cancel: [
 			{ type: 'dispatch', event: 'mode.locomotion.idle' },
@@ -80,11 +80,11 @@ function createAttackAbility(attack: Exclude<AttackType, 'flyingkick'>): Gamepla
 		activation: [
 			{ type: 'dispatch', event: 'mode.action.attack', payload: { attackType: literal(attack) } },
 			{ type: 'emit', event: 'fighter.attack.started', payload: { id: literal(id), attackType: literal(attack) }, lane: 'gameplay' },
-			{ type: 'waitevent', event: 'window.attackActive.start', scope: { kind: 'self' }, lane: 'gameplay' },
+			{ type: 'waitEvent', event: 'window.attackActive.start', scope: { kind: 'self' }, lane: 'gameplay' },
 			{ type: 'call', gameplayAction: 'fighter.attack.tryHit', params: { attackType: literal(attack) } },
-			{ type: 'waitevent', event: 'window.attackActive.end', scope: { kind: 'self' }, lane: 'gameplay' },
+			{ type: 'waitEvent', event: 'window.attackActive.end', scope: { kind: 'self' }, lane: 'gameplay' },
 			{ type: 'call', gameplayAction: 'fighter.attack.hideMarker' },
-			{ type: 'waitevent', event: `fighter.attack.animation.${attack}.finished`, scope: { kind: 'self' }, lane: 'gameplay' },
+			{ type: 'waitEvent', event: `fighter.attack.animation.${attack}.finished`, scope: { kind: 'self' }, lane: 'gameplay' },
 			{ type: 'emit', event: 'fighter.attack.completed', payload: { id: literal(id), attackType: literal(attack) }, lane: 'gameplay' },
 		],
 	};
@@ -100,11 +100,11 @@ function createFlyingKickAbility(): GameplayAbilityDefinition {
 		activation: [
 			{ type: 'dispatch', event: 'mode.action.attack', payload: { attackType: literal(attack) } },
 			{ type: 'emit', event: 'fighter.attack.started', payload: { id: literal(id), attackType: literal(attack) }, lane: 'gameplay' },
-			{ type: 'waitevent', event: 'window.attackActive.start', scope: { kind: 'self' }, lane: 'gameplay' },
+			{ type: 'waitEvent', event: 'window.attackActive.start', scope: { kind: 'self' }, lane: 'gameplay' },
 			{ type: 'call', gameplayAction: 'fighter.attack.tryHit', params: { attackType: literal(attack) } },
-			{ type: 'waitevent', event: 'window.attackActive.end', scope: { kind: 'self' }, lane: 'gameplay' },
+			{ type: 'waitEvent', event: 'window.attackActive.end', scope: { kind: 'self' }, lane: 'gameplay' },
 			{ type: 'call', gameplayAction: 'fighter.attack.hideMarker' },
-			{ type: 'waitevent', event: 'fighter.attack.animation.flyingkick.finished', scope: { kind: 'self' }, lane: 'gameplay' },
+			{ type: 'waitEvent', event: 'fighter.attack.animation.flyingkick.finished', scope: { kind: 'self' }, lane: 'gameplay' },
 			{ type: 'emit', event: 'fighter.attack.completed', payload: { id: literal(id), attackType: literal(attack) }, lane: 'gameplay' },
 		],
 	};

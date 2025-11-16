@@ -17,6 +17,5 @@ export function setDebuggerRuntimeAccessor(accessor: DebuggerRuntimeAccessor | n
 
 export function getDebuggerRuntimeAccessor(): DebuggerRuntimeAccessor | null {
 	const host = globalThis as AccessorHost;
-	const accessor = host[DEBUGGER_RUNTIME_ACCESSOR_KEY];
-	return typeof accessor === 'function' ? accessor : null;
+	return  host[DEBUGGER_RUNTIME_ACCESSOR_KEY];
 }

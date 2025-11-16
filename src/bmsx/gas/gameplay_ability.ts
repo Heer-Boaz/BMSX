@@ -4,7 +4,7 @@ import { createGameEvent, EventLane, type GameEvent } from '../core/game_event';
 import { GameplayCommandBuffer, type GameplayCommand } from '../ecs/gameplay_command_buffer';
 import type { WorldObject } from '../core/object/worldobject';
 import type { Facing, Identifier } from '../rompack/rompack';
-import type { AbilityId, AbilityRequestOptions, AbilityRequestResult, AbilitySpec, TagId as tag_id } from './gastypes';
+import type { AbilityId, AbilityRequestOptions, AbilityRequestResult, AbilitySpec, TagId } from './gastypes';
 import type { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 
 export type GameplayAction = (ctx: GameplayAbilityExecution, params: Record<string, unknown> | undefined) => void;
@@ -109,42 +109,42 @@ export interface EmitStep {
 }
 
 export interface WaitEventStep {
-	type: 'waitevent';
+	type: 'waitEvent';
 	event: string;
 	scope?: AbilityEventScopeSpec;
 	lane?: EventLane;
 }
 
 export interface WaitTimeStep {
-	type: 'waittime';
+	type: 'waitTime';
 	durationMs: number;
 }
 
 export interface WaitTagStep {
-	type: 'waittag';
-	tag: tag_id;
+	type: 'waitTag';
+	tag: TagId;
 	present: boolean;
 }
 
 export interface SetVarStep {
-	type: 'setvar';
+	type: 'setVar';
 	name: string;
 	value: AbilityValueSpec;
 }
 
 export interface ClearVarStep {
-	type: 'clearvar';
+	type: 'clearVar';
 	name: string;
 }
 
 export interface ModifyTagsStep {
-	type: 'modifytags';
-	add?: ReadonlyArray<tag_id>;
-	remove?: ReadonlyArray<tag_id>;
+	type: 'modifyTags';
+	add?: ReadonlyArray<TagId>;
+	remove?: ReadonlyArray<TagId>;
 }
 
 export interface RequestAbilityStep {
-	type: 'requestability';
+	type: 'requestAbility';
 	ability: AbilityId;
 	payload?: Record<string, AbilityValueSpec>;
 }
@@ -176,9 +176,9 @@ export type AbilityStep =
 export interface GameplayAbilityDefinition extends AbilitySpec {
 	displayName?: string;
 	tags?: {
-		grant?: ReadonlyArray<tag_id>;
-		removeOnActivate?: ReadonlyArray<tag_id>;
-		removeOnEnd?: ReadonlyArray<tag_id>;
+		grant?: ReadonlyArray<TagId>;
+		removeOnActivate?: ReadonlyArray<TagId>;
+		removeOnEnd?: ReadonlyArray<TagId>;
 	};
 	activation: ReadonlyArray<AbilityStep>;
 	sustain?: ReadonlyArray<AbilityStep>;
@@ -188,7 +188,7 @@ export interface GameplayAbilityDefinition extends AbilitySpec {
 
 export type AbilityWaitInstruction =
 	| { kind: 'time'; until: number }
-	| { kind: 'tag'; tag: tag_id; present: boolean }
+	| { kind: 'tag'; tag: TagId; present: boolean }
 	| { kind: 'event'; event: string; scope?: EventScope; lane?: EventLane };
 
 export type AbilityAdvanceResult =
@@ -270,36 +270,36 @@ export class GameplayAbilityExecution {
 				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
 				const target = step.target ? this.resolveIdentifier(step.target) : undefined;
 				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
-				this.dispatch_mode(event, target);
+				this.dispatchMode(event, target);
 				return { kind: 'continue' };
 			}
 			case 'emit': {
 				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
 				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
-				this.emit_gameplay(event);
+				this.emitGameplay(event);
 				return { kind: 'continue' };
 			}
-			case 'waitevent': {
+			case 'waitEvent': {
 				const scope = this.resolveEventScope(step.scope);
 				return { kind: 'wait', wait: { kind: 'event', event: step.event, scope, lane: step.lane } };
 			}
-			case 'waittime': {
+			case 'waitTime': {
 				const until = nowMs + step.durationMs;
 				return { kind: 'wait', wait: { kind: 'time', until } };
 			}
-			case 'waittag': {
+			case 'waitTag': {
 				return { kind: 'wait', wait: { kind: 'tag', tag: step.tag, present: step.present } };
 			}
-			case 'setvar': {
+			case 'setVar': {
 				const value = this.resolveValue(step.value);
 				this.vars[step.name] = value;
 				return { kind: 'continue' };
 			}
-			case 'clearvar': {
+			case 'clearVar': {
 				if (Object.prototype.hasOwnProperty.call(this.vars, step.name)) delete this.vars[step.name];
 				return { kind: 'continue' };
 			}
-			case 'modifytags': {
+			case 'modifyTags': {
 				if (step.add) {
 					for (let i = 0; i < step.add.length; i++) {
 						const tag = step.add[i];
@@ -318,7 +318,7 @@ export class GameplayAbilityExecution {
 				this.applyFaceStep(step.value);
 				return { kind: 'continue' };
 			}
-			case 'requestability': {
+			case 'requestAbility': {
 				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
 				if (payload === undefined) this.request_ability(step.ability);
 				else this.request_ability(step.ability, { payload } as any);
@@ -359,25 +359,25 @@ export class GameplayAbilityExecution {
 				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
 				const target = step.target ? this.resolveIdentifier(step.target) : undefined;
 				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
-				this.dispatch_mode(event, target);
+				this.dispatchMode(event, target);
 				return;
 			}
 			case 'emit': {
 				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
 				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
-				this.emit_gameplay(event);
+				this.emitGameplay(event);
 				return;
 			}
-			case 'setvar': {
+			case 'setVar': {
 				const value = this.resolveValue(step.value);
 				this.vars[step.name] = value;
 				return;
 			}
-			case 'clearvar': {
+			case 'clearVar': {
 				if (Object.prototype.hasOwnProperty.call(this.vars, step.name)) delete this.vars[step.name];
 				return;
 			}
-			case 'modifytags': {
+			case 'modifyTags': {
 				if (step.add) for (let i = 0; i < step.add.length; i++) { const tag = step.add[i]; if (tag) this.add_tag(tag); }
 				if (step.remove) for (let i = 0; i < step.remove.length; i++) { const tag = step.remove[i]; if (tag) this.remove_tag(tag); }
 				return;
@@ -385,15 +385,15 @@ export class GameplayAbilityExecution {
 			case 'face':
 				this.applyFaceStep(step.value);
 				return;
-			case 'requestability': {
+			case 'requestAbility': {
 				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
 				if (payload === undefined) this.request_ability(step.ability);
 				else this.request_ability(step.ability, { payload } as any);
 				return;
 			}
-			case 'waitevent':
-			case 'waittime':
-			case 'waittag':
+			case 'waitEvent':
+			case 'waitTime':
+			case 'waitTag':
 				throw new Error('[GameplayAbilityExecution] Wait steps are not allowed in completion or cancel sequences.');
 		}
 	}
@@ -409,20 +409,36 @@ export class GameplayAbilityExecution {
 		action(this, params as Record<string, unknown> | undefined);
 	}
 
-	public has_tag(tag: tag_id): boolean {
+	public has_tag(tag: TagId): boolean {
 		return this.abilitySystem.has_gameplay_tag(tag);
 	}
 
-	public add_tag(tag: tag_id): void {
+	public hasTag(tag: TagId): boolean {
+		return this.has_tag(tag);
+	}
+
+	public add_tag(tag: TagId): void {
 		this.abilitySystem.add_tag(tag);
 	}
 
-	public remove_tag(tag: tag_id): void {
+	public addTag(tag: TagId): void {
+		this.add_tag(tag);
+	}
+
+	public remove_tag(tag: TagId): void {
 		this.abilitySystem.remove_tag(tag);
 	}
 
-	public toggle_tag(tag: tag_id): void {
+	public removeTag(tag: TagId): void {
+		this.remove_tag(tag);
+	}
+
+	public toggle_tag(tag: TagId): void {
 		this.abilitySystem.toggle_tag(tag);
+	}
+
+	public toggleTag(tag: TagId): void {
+		this.toggle_tag(tag);
 	}
 
 	public dispatch_mode(event: GameEvent, target: Identifier | undefined): void {
@@ -433,6 +449,10 @@ export class GameplayAbilityExecution {
 			target_id: targetId,
 			event,
 		});
+	}
+
+	public dispatchMode(event: GameEvent, target: Identifier | undefined): void {
+		this.dispatch_mode(event, target);
 	}
 
 	public emit_gameplay(event: GameEvent): void {
@@ -451,12 +471,24 @@ export class GameplayAbilityExecution {
 		$.emit_gameplay(event);
 	}
 
+	public emitGameplay(event: GameEvent): void {
+		this.emit_gameplay(event);
+	}
+
 	public push_command(command: GameplayCommand): void {
 		GameplayCommandBuffer.instance.push(command);
 	}
 
+	public pushCommand(command: GameplayCommand): void {
+		this.push_command(command);
+	}
+
 	public request_ability<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult {
 		return this.abilitySystem.request_ability(id, opts);
+	}
+
+	public requestAbility<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult {
+		return this.request_ability(id, opts);
 	}
 
 	private resolveValue(spec: AbilityValueSpec): unknown {

@@ -568,12 +568,12 @@ async function main() {
 					}
 				} else {
 					// Prefer embedded PNG slice for non-atlassed images
-					const hasRange = Number.isFinite(selected.start as any) && Number.isFinite(selected.end as any) && selected.end > selected.start;
+					const hasRange = selected.start; // We have a range if start is defined because we trust the ROM pack loader here
 					let rendered = false;
 					if (hasRange) {
 						try {
 							// @ts-ignore
-							const buf: Buffer = Buffer.from((rombin as any).slice(selected.start, selected.end));
+							const buf: Buffer = Buffer.from(rombin.slice(selected.start, selected.end));
 							const png = PNG.sync.read(buf);
 							const sizeString = `Size: ${png.width}x${png.height}\n`;
 							if (png.width <= PER_PIXEL_RENDERING_THRESHOLD && png.height <= PER_PIXEL_RENDERING_THRESHOLD) {

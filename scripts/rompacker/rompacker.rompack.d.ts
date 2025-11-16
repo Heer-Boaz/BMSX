@@ -123,10 +123,3 @@ export interface RomManifest {
 	short_name?: string;
 	rom_name?: string;
 }
-
-export interface ResourceScanOptions {
-	includeCode?: boolean;
-	extraLuaPaths?: string[];
-	atlasIndexResolver?: (filepath: string, currentIndex: number | undefined) => number | undefined;
-	virtualRoot?: string;
-}

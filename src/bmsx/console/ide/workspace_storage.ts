@@ -239,7 +239,7 @@ function attachWorkspaceExitHandler(): void {
 	detachWorkspaceExitHandler();
 	ide_state.disposeWorkspaceExitListener = $.platform.lifecycle.onWillExit(() => {
 		if (!ide_state.workspaceAutosaveEnabled) {
-		       return;
+			return;
 		}
 		void runWorkspaceAutosaveTick();
 	});
@@ -532,12 +532,12 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 		if (!context) {
 			continue;
 		}
-			const contents = await readDirtyBuffer(entry.dirtyPath);
-			if (contents === null) {
-				continue;
-			}
-			workspaceDirtyCache.set(entry.dirtyPath, contents);
-			const snapshot = buildSnapshotFromSource(contents, entry);
+		const contents = await readDirtyBuffer(entry.dirtyPath);
+		if (contents === null) {
+			continue;
+		}
+		workspaceDirtyCache.set(entry.dirtyPath, contents);
+		const snapshot = buildSnapshotFromSource(contents, entry);
 		context.snapshot = snapshot;
 		context.dirty = true;
 		setTabDirty(context.id, true);
@@ -858,12 +858,12 @@ export async function runWorkspaceAutosaveTick(): Promise<void> {
 			}
 		}
 		await persistDirtyContextEntries(dirtyEntries);
-		} catch (error) {
-			console.warn('[ConsoleCartEditor] Workspace autosave failed:', error);
-		} finally {
-			ide_state.workspaceAutosaveRunning = false;
-			if (ide_state.workspaceAutosaveQueued) {
-				ide_state.workspaceAutosaveQueued = false;
+	} catch (error) {
+		console.warn('[ConsoleCartEditor] Workspace autosave failed:', error);
+	} finally {
+		ide_state.workspaceAutosaveRunning = false;
+		if (ide_state.workspaceAutosaveQueued) {
+			ide_state.workspaceAutosaveQueued = false;
 			void runWorkspaceAutosaveTick();
 		}
 	}
@@ -876,18 +876,10 @@ function scheduleServerBackendRetry(): void {
 	serverRetryScheduled = true;
 	const clock = $.platform.clock;
 	const delayMs = WORKSPACE_AUTOSAVE_INTERVAL_MS * 4;
-	if (typeof clock.scheduleOnce === 'function') {
-		serverRetryHandle = clock.scheduleOnce(delayMs, () => {
-			clearServerRetryHandle();
-			void tryReconnectServerBackend();
-		});
-		return;
-	}
-	const timeout = setTimeout(() => {
+	serverRetryHandle = clock.scheduleOnce(delayMs, () => {
 		clearServerRetryHandle();
 		void tryReconnectServerBackend();
-	}, delayMs);
-	serverRetryHandle = timeout;
+	});
 }
 
 async function tryReconnectServerBackend(): Promise<void> {

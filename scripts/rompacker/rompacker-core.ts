@@ -2,10 +2,11 @@ import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
 import type { asset_type, AudioMeta, GLTFMesh, ImgMeta, Polygon, RomAsset } from '../../src/bmsx/rompack/rompack';
-import { createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
+import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
 import type { AtlasResource, ImageResource, Resource, resourcetype, RomManifest, RomPackerTarget } from './rompacker.rompack';
+import { CASE_INSENSITIVE_LUA, GENERATE_AND_USE_TEXTURE_ATLAS } from './rompacker';
 // @ts-ignore
 const { build } = require('esbuild');
 // @ts-ignore
@@ -39,20 +40,6 @@ const yaml = require('js-yaml');
 // @ts-ignore
 const { createHash } = require('crypto');
 
-// Command line parameter for texture atlas usage
-let GENERATE_AND_USE_TEXTURE_ATLAS = true;
-export function setAtlasFlag(enabled: boolean): void {
-	GENERATE_AND_USE_TEXTURE_ATLAS = enabled;
-}
-
-let CASE_INSENSITIVE_LUA = true;
-export function setCaseInsensitiveLua(enabled: boolean): void {
-	CASE_INSENSITIVE_LUA = enabled;
-}
-
-export function getAtlasFlag(): boolean {
-	return GENERATE_AND_USE_TEXTURE_ATLAS;
-}
 export const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
 export const BOOTROM_TS_FILENAME = 'bootrom.ts';
 export const BOOTROM_JS_FILENAME = 'bootrom.js';
@@ -152,7 +139,6 @@ const RESOURCE_SCAN_EXCLUDE = new Set<string>([
  * @param {string} dirPath - The path of the directory to search.
  * @param {string[]} [_arrayOfFiles] - An optional array of files to append to.
  * @param {string} [filterExtension] - An optional file extension to filter by.
- * @returns {string[]} An array of file paths.
  */
 export async function getFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?: string): Promise<string[]> {
 	if (!(await access(dirPath).then(() => true).catch(() => false))) {
@@ -687,16 +673,16 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 		case '.glb':
 			type = 'model';
 			break;
-	case '.yaml':
-	case '.yml':
-		datatype = 'yaml';
-		type = getDataSubtype(name);
-		name = removeExtension(name);
-		break;
-	case '.lua':
-		type = 'lua';
-		break;
-}
+		case '.yaml':
+		case '.yml':
+			datatype = 'yaml';
+			type = getDataSubtype(name);
+			name = removeExtension(name);
+			break;
+		case '.lua':
+			type = 'lua';
+			break;
+	}
 	return { name, ext, type, collisionType, datatype };
 }
 
@@ -709,8 +695,8 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 export type ResourceScanOptions = {
 	includeCode?: boolean;
 	extraLuaPaths?: string[];
-	atlasIndexResolver?: (filepath: string, currentIndex: number | undefined) => number | undefined;
 	virtualRoot?: string;
+	resolveAtlasIndex?: boolean;
 };
 
 const EXTRA_LUA_SCAN_SKIP = new Set<string>([
@@ -740,7 +726,6 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 	const arrayOfFiles: string[] = [];
 	const includeCode = options.includeCode !== false;
 	const extraLuaRoots = options.extraLuaPaths ?? [];
-	const atlasIndexResolver = options.atlasIndexResolver;
 	const seenPaths = new Set<string>();
 	const virtualRoot = normalizeVirtualRootPath(options.virtualRoot);
 
@@ -827,20 +812,21 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 					}
 					throw new Error(`[RomPacker] Duplicate image resource "${name}" defined by "${existingImage.filepath}" and "${filepath}".`);
 				}
-			let targetAtlasIndex = imgMeta.skipAtlas ? undefined : imgMeta.targetAtlas;
-			if (!imgMeta.skipAtlas && typeof atlasIndexResolver === 'function') {
-				const resolvedIndex = atlasIndexResolver(filepath, targetAtlasIndex);
-				if (typeof resolvedIndex === 'number' && Number.isFinite(resolvedIndex)) {
-					imgMeta.targetAtlas = resolvedIndex;
-					targetAtlasIndex = resolvedIndex;
+				let targetAtlasIndex = imgMeta.skipAtlas ? undefined : imgMeta.targetAtlas;
+				if (!imgMeta.skipAtlas && options.resolveAtlasIndex === true) {
+					const resolvedIndex = atlasIndexResolver(filepath, targetAtlasIndex);
+					// Accept 0 as a valid atlas index;
+					if (typeof resolvedIndex === 'number') {
+						imgMeta.targetAtlas = resolvedIndex;
+						targetAtlasIndex = resolvedIndex;
+					}
 				}
-			}
-			// If we are generating and using texture atlases, we need to add the image to the atlas.
-			if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS && !imgMeta.skipAtlas) {
-				if (imgMeta.targetAtlas !== undefined) {
-					targetAtlasIdSet.add(imgMeta.targetAtlas);
+				// If we are generating and using texture atlases, we need to add the image to the atlas.
+				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS && !imgMeta.skipAtlas) {
+					if (imgMeta.targetAtlas !== undefined) {
+						targetAtlasIdSet.add(imgMeta.targetAtlas);
+					}
 				}
-			}
 				result.push({
 					filepath,
 					name,
@@ -864,13 +850,13 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 			case 'romlabel':
 				result.push({ filepath, name, ext, type, id: undefined, sourcePath });
 				break;
-		case 'rommanifest':
-			result.push({ filepath, name, ext, type, id: undefined, sourcePath });
-			break;
-		case 'code':
-			result.push({ filepath, name, ext, type, id: 1, sourcePath });
-			codeFileCount += 1;
-			break;
+			case 'rommanifest':
+				result.push({ filepath, name, ext, type, id: undefined, sourcePath });
+				break;
+			case 'code':
+				result.push({ filepath, name, ext, type, id: 1, sourcePath });
+				codeFileCount += 1;
+				break;
 			case 'data':
 			case 'aem': // AEM files are added to the data asset list
 				// For data files, we use the name as is
@@ -1117,9 +1103,9 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 				};
 			}
 			case 'audio':
-		case 'data':
-		case 'aem':
-		case 'model':
+			case 'data':
+			case 'aem':
+			case 'model':
 			case 'romlabel':
 			case 'rommanifest':
 			case 'atlas':
@@ -1178,7 +1164,7 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
  * @param respaths An array of the paths to the resources to include in the list.
  * @param rom_name The name of the ROM pack to build the list for.
  */
-export async function buildResourceList(respaths: string[], rom_name?: string, options: ResourceScanOptions = {}) {
+export async function buildResourceList(respaths: string[], rom_name?: string, options?: ResourceScanOptions): Promise<void> {
 	const tsimgout = new Array<string>();
 	const tssndout = new Array<string>();
 	const tsdataout = new Array<string>();
@@ -1207,15 +1193,15 @@ export async function buildResourceList(respaths: string[], rom_name?: string, o
 			case 'audio':
 				tssndout.push(`${enum_member_to_add} `);
 				break;
-		case 'data':
-			tsdataout.push(`${enum_member_to_add} `);
-			break;
-		case 'lua':
-			tsluaout.push(`${enum_member_to_add} `);
-			break;
-		case 'model':
-			tsmodelout.push(`${enum_member_to_add} `);
-			break;
+			case 'data':
+				tsdataout.push(`${enum_member_to_add} `);
+				break;
+			case 'lua':
+				tsluaout.push(`${enum_member_to_add} `);
+				break;
+			case 'model':
+				tsmodelout.push(`${enum_member_to_add} `);
+				break;
 			case 'romlabel':
 				// Ignore this part
 				break;
@@ -1270,10 +1256,10 @@ export async function generateRomAssets(resources: Resource[]) {
 		let buffer = res.buffer; // NOTE that we will remove the buffer during the finalization of the ROM pack. To do proper finalization, we need to store the buffer here right now. N.B. the bootrom will also add the buffer to the RomAsset, so that's why the property is relevant in the first place and we are now using it to temporarily hold the buffer per asset.
 
 		switch (type) {
-		case 'romlabel':
-			romlabel_buffer = res.buffer;
-			romAssets.push({ resid, type, imgmeta: undefined, buffer: romlabel_buffer, sourcePath });
-			break;
+			case 'romlabel':
+				romlabel_buffer = res.buffer;
+				romAssets.push({ resid, type, imgmeta: undefined, buffer: romlabel_buffer, sourcePath });
+				break;
 			case 'image': {
 				const imgmeta = buildImgMeta(res);
 				let baseAsset: RomAsset;
@@ -1292,23 +1278,23 @@ export async function generateRomAssets(resources: Resource[]) {
 				const { audiometa } = parseAudioMeta(res.filepath);
 				romAssets.push({ resid, type, audiometa, buffer, sourcePath });
 				break;
-		case 'code':
-			resid = resid.replace('.min', '');
-			romAssets.push({ resid, type, buffer, sourcePath });
-			break;
-		case 'lua': {
-			if (!res.filepath || res.filepath.length === 0) {
-				throw new Error(`[RomPacker] Lua resource "${resid}" is missing its source file path.`);
+			case 'code':
+				resid = resid.replace('.min', '');
+				romAssets.push({ resid, type, buffer, sourcePath });
+				break;
+			case 'lua': {
+				if (!res.filepath || res.filepath.length === 0) {
+					throw new Error(`[RomPacker] Lua resource "${resid}" is missing its source file path.`);
+				}
+				const luaSourcePath = sourcePath && sourcePath.length > 0 ? sourcePath : toWorkspaceRelativePath(res.filepath);
+				romAssets.push({ resid, type, buffer, sourcePath: luaSourcePath });
+				break;
 			}
-			const luaSourcePath = sourcePath && sourcePath.length > 0 ? sourcePath : toWorkspaceRelativePath(res.filepath);
-			romAssets.push({ resid, type, buffer, sourcePath: luaSourcePath });
-			break;
-		}
-	case 'rommanifest':
-		romAssets.push({ resid, type, buffer, sourcePath });
-		break;
-	case 'data':
-	case 'aem':
+			case 'rommanifest':
+				romAssets.push({ resid, type, buffer, sourcePath });
+				break;
+			case 'data':
+			case 'aem':
 				// Encode the JSON-data via the binencoder
 				// Convert the buffer to a JSON string and then encode it
 				switch (res.datatype) {
@@ -1336,12 +1322,12 @@ export async function generateRomAssets(resources: Resource[]) {
 					default:
 						throw new Error(`Unknown data type "${res.datatype}" for resource "${resid}"`);
 				}
-			romAssets.push({ resid, type, buffer, sourcePath });
-			break;
-		case 'model': {
-			const pathInfo = parse(res.filepath);
-			const dir = pathInfo.dir;
-			const ext = (pathInfo.ext || '').toLowerCase();
+				romAssets.push({ resid, type, buffer, sourcePath });
+				break;
+			case 'model': {
+				const pathInfo = parse(res.filepath);
+				const dir = pathInfo.dir;
+				const ext = (pathInfo.ext || '').toLowerCase();
 				let gltfSource: string | ArrayBuffer;
 				if (ext === '.glb') {
 					const bufView = res.buffer;
@@ -1396,24 +1382,24 @@ export async function generateRomAssets(resources: Resource[]) {
 				buffer = Buffer.from(encodedObj);
 				// @ts-ignore
 				const texture_buffer = Buffer.concat(texBuffers);
-			romAssets.push({ resid, type, buffer, texture_buffer, sourcePath });
+				romAssets.push({ resid, type, buffer, texture_buffer, sourcePath });
+			}
+				break;
+			case 'atlas': {
+				const imgmeta = buildImgMetaForAtlas(res);
+				romAssets.push({ resid, type, imgmeta, buffer, sourcePath });
+				break;
+			}
+			case 'romlabel':
+				romAssets.push({ resid, type, buffer, sourcePath });
+				break;
+			case 'rommanifest':
+				break;
+			default:
+				// Skip unknown resource types without failing
+				break;
 		}
-			break;
-		case 'atlas': {
-			const imgmeta = buildImgMetaForAtlas(res);
-			romAssets.push({ resid, type, imgmeta, buffer, sourcePath });
-			break;
-		}
-		case 'romlabel':
-			romAssets.push({ resid, type, buffer, sourcePath });
-			break;
-		case 'rommanifest':
-			break;
-		default:
-			// Skip unknown resource types without failing
-			break;
-		}
- 	}
+	}
 	return romAssets;
 }
 

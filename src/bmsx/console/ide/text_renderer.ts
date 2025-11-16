@@ -14,22 +14,23 @@ type ConsoleApiWithCustomFont = BmsxConsoleApi & {
 	print_with_font?: (text: string, x: number, y: number, colorIndex: number, font: ConsoleFont) => void;
 };
 
-export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, text: string, originX: number, originY: number, color: number): void {
+type DrawEditorTextOptions = {
+	preserveCase?: boolean;
+};
+
+export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, text: string, originX: number, originY: number, color: number, options?: DrawEditorTextOptions): void {
 	const baseX = Math.floor(originX);
 	let cursorY = Math.floor(originY);
 	const lines = text.split('\n');
 	const renderFont = font.getRenderFont();
-	const useUppercase = CASE_INSENSITIVE_EDITOR && font.getVariant() === 'tiny';
+	const preserveCase = options?.preserveCase ?? false;
+	const useUppercase = !preserveCase && CASE_INSENSITIVE_EDITOR && font.getVariant() === 'tiny';
 	const apiWithFont = api as ConsoleApiWithCustomFont;
 	for (let i = 0; i < lines.length; i += 1) {
 		const expanded = expandTabsExternal(lines[i]);
 		if (expanded.length > 0) {
 			const display = useUppercase ? expanded.toUpperCase() : expanded;
-			if (typeof apiWithFont.write_with_font === 'function') {
-				apiWithFont.write_with_font(display, baseX, cursorY, color, renderFont);
-			} else {
-				api.write(display, baseX, cursorY, color);
-			}
+			apiWithFont.write_with_font(display, baseX, cursorY, color, renderFont);
 		}
 		if (i < lines.length - 1) {
 			cursorY += font.lineHeight();
@@ -57,11 +58,7 @@ export function drawEditorColoredText(api: BmsxConsoleApi, font: ConsoleEditorFo
 		}
 		const segment = renderText.slice(index, end);
 		if (segment.length > 0) {
-			if (typeof apiWithFont.write_with_font === 'function') {
-				apiWithFont.write_with_font(segment, cursorX, cursorY, colorIndex, renderFont);
-			} else {
-				api.write(segment, cursorX, cursorY, colorIndex);
-			}
+			apiWithFont.write_with_font(segment, cursorX, cursorY, colorIndex, renderFont);
 			cursorX += font.measure(segment);
 		}
 		index = end;

@@ -1049,9 +1049,9 @@ export function showRuntimeError(line: number | null, column: number | null, mes
 	if (!ide_state.active) {
 		activate();
 	}
-	const hasLocation = typeof line === 'number' && Number.isFinite(line) && line >= 1;
-	const processedLine = hasLocation ? Math.max(1, Math.floor(line!)) : null;
-	const processedColumn = typeof column === 'number' && Number.isFinite(column) ? Math.floor(column!) - 1 : null;
+	const hasLocation = line >= 1 || column >= 0;
+	const processedLine = hasLocation ? line : null
+	const processedColumn = hasLocation ? column - 1 : null;
 	let targetRow = ide_state.cursorRow;
 	if (processedLine !== null) {
 		targetRow = clamp(processedLine - 1, 0, ide_state.lines.length - 1);
@@ -1428,10 +1428,10 @@ export function tryShowLuaErrorOverlay(error: unknown): boolean {
 	} else {
 		throw new Error('[ConsoleCartEditor] Lua error payload is neither an object nor a string.');
 	}
-	const rawLine = typeof candidate.line === 'number' && Number.isFinite(candidate.line) ? candidate.line : null;
-	const rawColumn = typeof candidate.column === 'number' && Number.isFinite(candidate.column) ? candidate.column : null;
-	const chunkName = typeof candidate.chunkName === 'string' && candidate.chunkName.length > 0 ? candidate.chunkName : null;
-	const messageText = typeof candidate.message === 'string' && candidate.message.length > 0 ? candidate.message : null;
+	const rawLine = candidate.line as number;
+	const rawColumn = candidate.column as number;
+	const chunkName = candidate.chunkName as string;
+	const messageText = candidate.message as string;
 	const hasLine = rawLine !== null && rawLine > 0;
 	const hasColumn = rawColumn !== null && rawColumn > 0;
 	if (!hasLine && !hasColumn) {
@@ -1441,9 +1441,9 @@ export function tryShowLuaErrorOverlay(error: unknown): boolean {
 		}
 		return false;
 	}
-	const safeLine = hasLine ? Math.max(1, Math.floor(rawLine!)) : 0;
-	const safeColumn = hasColumn ? Math.max(1, Math.floor(rawColumn!)) : 0;
-	const baseMessage = messageText ?? 'Lua error';
+	const safeLine = hasLine ? rawLine : 0;
+	const safeColumn = hasColumn ? rawColumn : 0;
+	const baseMessage = messageText ?? 'Unprintable error';
 	showRuntimeErrorInChunk(chunkName, safeLine, safeColumn, baseMessage);
 	return true;
 }
@@ -7418,7 +7418,7 @@ export function drawCodeArea(api: BmsxConsoleApi): void {
 		getCodeAreaBounds: () => getCodeAreaBounds(),
 		maximumLineLength: () => maximumLineLength(),
 		getVisualLineCount: () => getVisualLineCount(),
-		positionToVisualIndex: (r: number, c: number) => positionToVisualIndex(r, c),
+		positionToVisualIndex: (r: number, c: number) => ide_state.layout.positionToVisualIndex(ide_state.lines, r, c),
 		visualIndexToSegment: (v: number) => visualIndexToSegment(v),
 		getCachedHighlight: (r: number) => getCachedHighlight(r),
 		sliceHighlightedLine: (hi, start, count) => sliceHighlightedLine(hi, start, count),
@@ -7571,7 +7571,7 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 export function createRuntimeErrorOverlayLayoutHost(): RuntimeErrorOverlayLayoutHost {
 	return {
 		ensureVisualLines: () => ensureVisualLines(),
-		positionToVisualIndex: (row: number, column: number) => positionToVisualIndex(row, column),
+		positionToVisualIndex: (row: number, column: number) => ide_state.layout.positionToVisualIndex(ide_state.lines, row, column),
 		visibleRowCount: () => visibleRowCount(),
 		scrollRow: ide_state.scrollRow,
 		visualIndexToSegment: (visualIndex: number) => visualIndexToSegment(visualIndex),
@@ -8460,27 +8460,21 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 				error = `Image asset '${descriptor.asset_id}' not found.`;
 				break;
 			}
-			const meta = image.imgmeta ?? {};
-			const width = (meta as { width?: number }).width;
-			const height = (meta as { height?: number }).height;
-			const atlasId = (meta as { atlasid?: number }).atlasid;
-			const atlassed = (meta as { atlassed?: boolean }).atlassed;
-			if (Number.isFinite(width) && Number.isFinite(height)) {
-				state.image = {
-					asset_id: descriptor.asset_id,
-					width: Math.max(1, Math.floor(width as number)),
-					height: Math.max(1, Math.floor(height as number)),
-					atlassed: Boolean(atlassed),
-					atlasId: atlasId,
-				};
-			}
+			const meta = image.imgmeta;
+			const width = meta.width;
+			const height = meta.height;
+			const atlasId = meta.atlasid;
+			const atlassed = meta.atlassed;
+			state.image = {
+				asset_id: descriptor.asset_id,
+				width: Math.max(1, Math.floor(width)),
+				height: Math.max(1, Math.floor(height)),
+				atlassed: Boolean(atlassed),
+				atlasId: atlasId,
+			};
 			appendResourceViewerLines(lines, ['-- Image Metadata --']);
-			if (Number.isFinite(width) && Number.isFinite(height)) {
-				appendResourceViewerLines(lines, [`Dimensions: ${width}x${height}`]);
-			}
-			if (typeof atlassed === 'boolean') {
-				appendResourceViewerLines(lines, [`Atlassed: ${atlassed ? 'yes' : 'no'}`]);
-			}
+			appendResourceViewerLines(lines, [`Dimensions: ${width}x${height}`]);
+			appendResourceViewerLines(lines, [`Atlassed: ${atlassed ? 'yes' : 'no'}`]);
 			if (atlasId !== undefined) {
 				appendResourceViewerLines(lines, [`Atlas ID: ${atlasId}`]);
 			}
@@ -10232,7 +10226,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		spaceAdvance: ide_state.spaceAdvance,
 		tabSpaces: constants.TAB_SPACES,
 	};
-	ide_state.gutterWidth = 8;
+	ide_state.gutterWidth = 2;
 	const primaryBarHeight = ide_state.lineHeight + 4;
 	ide_state.headerHeight = primaryBarHeight;
 	ide_state.tabBarHeight = ide_state.lineHeight + 3;
@@ -10397,7 +10391,7 @@ export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: n
 	renderInlineCaret({
 		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, col),
 		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, col),
-		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0),
+		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
 	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, constants.CARET_COLOR, info.baseChar, glyphColor);
 }
 import { renderInlineCaret } from './render_caret';
@@ -10423,6 +10417,6 @@ export function drawInlineCaret(
 	renderInlineCaret({
 		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, col),
 		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, col),
-		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0),
+		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
 	}, left, top, right, bottom, cursorX, active, caretColor, glyph, inverseColor);
 }

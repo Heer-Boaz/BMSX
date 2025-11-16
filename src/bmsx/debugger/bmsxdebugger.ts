@@ -730,34 +730,34 @@ export function handleOpenDebugMenu(e: UIEvent): void {
 	row.onclick = (_) => handleOpenModelMenu(null, dialogDiv);
 
 	row = addContent(table, 'tr', null);
-row.classList.add('selectableoption', 'centered-text');
-addContent(row, 'td', `List all objects in current scene`);
-row.onclick = (_) => handleOpenObjectMenu(null, dialogDiv);
+	row.classList.add('selectableoption', 'centered-text');
+	addContent(row, 'td', `List all objects in current scene`);
+	row.onclick = (_) => handleOpenObjectMenu(null, dialogDiv);
 
-row = addContent(table, 'tr', null);
-row.classList.add('selectableoption', 'centered-text');
-addContent(row, 'td', `List all statemachine definitions`);
-row.onclick = (_) => openObjectDetailMenu(StateDefinitions, 'Statemachine definitions', dialogDiv);
+	row = addContent(table, 'tr', null);
+	row.classList.add('selectableoption', 'centered-text');
+	addContent(row, 'td', `List all statemachine definitions`);
+	row.onclick = (_) => openObjectDetailMenu(StateDefinitions, 'Statemachine definitions', dialogDiv);
 
-row = addContent(table, 'tr', null);
-row.classList.add('selectableoption', 'centered-text');
-addContent(row, 'td', `List all behavior tree definitions`);
-row.onclick = (_) => openObjectDetailMenu(BehaviorTreeDefinitions, 'BT definitions', dialogDiv);
+	row = addContent(table, 'tr', null);
+	row.classList.add('selectableoption', 'centered-text');
+	addContent(row, 'td', `List all behavior tree definitions`);
+	row.onclick = (_) => openObjectDetailMenu(BehaviorTreeDefinitions, 'BT definitions', dialogDiv);
 
-row = addContent(table, 'tr', null);
-row.classList.add('selectableoption', 'centered-text');
-addContent(row, 'td', `See the Event Emitter`);
-row.onclick = (_) => openObjectDetailMenu(EventEmitter.instance, 'Event Emitter', dialogDiv);
+	row = addContent(table, 'tr', null);
+	row.classList.add('selectableoption', 'centered-text');
+	addContent(row, 'td', `See the Event Emitter`);
+	row.onclick = (_) => openObjectDetailMenu(EventEmitter.instance, 'Event Emitter', dialogDiv);
 
-row = addContent(table, 'tr', null);
-row.classList.add('selectableoption', 'centered-text');
-addContent(row, 'td', `See the Event Emitter???`);
-row.onclick = (_) => handleOpenEventEmitterMenu(dialogDiv);
+	row = addContent(table, 'tr', null);
+	row.classList.add('selectableoption', 'centered-text');
+	addContent(row, 'td', `See the Event Emitter???`);
+	row.onclick = (_) => handleOpenEventEmitterMenu(dialogDiv);
 
-row = addContent(table, 'tr', null);
-row.classList.add('selectableoption', 'centered-text');
-addContent(row, 'td', `See da Registry`);
-row.onclick = (_) => openObjectDetailMenu(Registry.instance, 'Da Registry', dialogDiv);
+	row = addContent(table, 'tr', null);
+	row.classList.add('selectableoption', 'centered-text');
+	addContent(row, 'td', `See da Registry`);
+	row.onclick = (_) => openObjectDetailMenu(Registry.instance, 'Da Registry', dialogDiv);
 
 	document.body.insertBefore(dialogDiv, null);
 }
@@ -947,9 +947,7 @@ function refreshDialogs() {
 	// Refresh all state machine visualizers
 	if (typeof stateMachineVisualisers === 'object') {
 		for (const visualiser of Object.values(stateMachineVisualisers)) {
-			if (visualiser && typeof visualiser.frameUpdate === 'function') {
-				visualiser.frameUpdate();
-			}
+			visualiser?.frameUpdate();
 		}
 	}
 }

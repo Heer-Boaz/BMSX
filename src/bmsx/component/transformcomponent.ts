@@ -8,7 +8,7 @@ import { Component, type ComponentAttachOptions } from './basecomponent';
 export class TransformComponent extends Component<WorldObject> {
 	static override unique = true;
 	public position: vec3arr;
-	private orientationQ: quat = { x: 0, y: 0, z: 0, w: 1 }; // authoritative when parent implements Oriented
+	public orientationQ: quat = { x: 0, y: 0, z: 0, w: 1 }; // authoritative when parent implements Oriented
 	public scale: vec3arr;
 
 	private _parentNode: TransformComponent | null = null;

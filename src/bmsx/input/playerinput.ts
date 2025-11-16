@@ -639,7 +639,7 @@ export class PlayerInput {
 			return existing.lastResultAccepted;
 		}
 
-		const previousAcceptedAt = existing && Number.isFinite(existing.lastAcceptedAtMs)
+		const previousAcceptedAt = existing?.lastAcceptedAtMs
 			? existing.lastAcceptedAtMs
 			: null;
 		let accepted = true;
@@ -661,17 +661,17 @@ export class PlayerInput {
 	}
 
 	private normalizeGuardWindow(windowOverride?: number): number {
-		if (typeof windowOverride === 'number' && Number.isFinite(windowOverride) && windowOverride > 0) {
+		if (windowOverride >= 0) {
 			return clamp(windowOverride, ACTION_GUARD_MIN_MS, ACTION_GUARD_MAX_MS);
 		}
 		return this.guardWindowMs;
 	}
 
 	private resolveActionTimestamp(state: ActionState): number {
-		if (typeof state.timestamp === 'number' && Number.isFinite(state.timestamp)) {
+		if (state.timestamp) {
 			return state.timestamp;
 		}
-		if (typeof state.pressedAtMs === 'number' && Number.isFinite(state.pressedAtMs)) {
+		if (state.pressedAtMs) {
 			return state.pressedAtMs;
 		}
 		if (this.lastPollTimestampMs !== null) {

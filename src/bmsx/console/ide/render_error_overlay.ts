@@ -85,9 +85,7 @@ export function renderErrorOverlay(
 	if (highlightLines) {
 		for (let index = 0; index < highlightLines.length; index += 1) {
 			const value = highlightLines[index];
-			if (typeof value === 'number' && Number.isFinite(value)) {
-				highlightSet.add(Math.floor(value));
-			}
+			highlightSet.add(value);
 		}
 	}
 	let currentY = bounds.top + paddingY;

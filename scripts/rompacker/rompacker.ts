@@ -1,18 +1,28 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
 
 import { validateAudioEventReferences } from './audioeventvalidator';
-import { buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag, setCaseInsensitiveLua, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
+import { buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
 import type { RomManifest, RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
 const term = require('terminal-kit').terminal;
 const _colors = require('colors');
 
-import { resolve as resolvePath, join, sep as pathSep, isAbsolute } from 'path';
+import { resolve as resolvePath, join, isAbsolute } from 'path';
 import { existsSync, statSync } from 'node:fs';
 
-const ENGINE_ATLAS_INDEX = 254; // Keep in sync with src/bmsx/render/atlas.ts
-
 // Command line parameter for texture atlas usage
-let GENERATE_AND_USE_TEXTURE_ATLAS = true;
+export let GENERATE_AND_USE_TEXTURE_ATLAS = true;
+// Define common assets path
+export const commonResPath = `./src/bmsx/res`;
+
+// Global flag controlling whether Lua identifier case should be folded to lower-case.
+// This must be declared before any code (including `main`) that may call
+// `setCaseInsensitiveLua(...)`, otherwise modules that call the setter during
+// initialization end up in the temporal-dead-zone for the variable and Node
+// throws "Cannot access 'CASE_INSENSITIVE_LUA' before initialization".
+export let CASE_INSENSITIVE_LUA = true;
+export function setCaseInsensitiveLua(enabled: boolean): void {
+	CASE_INSENSITIVE_LUA = enabled;
+}
 
 const KNOWN_FLAGS = new Set<string>([
 	'-romname',
@@ -241,14 +251,14 @@ function parseOptions(args: string[]): RomPackerOptions {
 		writeOut(`  --debug                Show this help message`, 'warning');
 		writeOut(`  --force                Force the compilation and build of the rompack`, 'warning');
 		writeOut(`  --buildreslist         Build resource list`, 'warning');
-	writeOut(`  --nodeploy             Skip deployment (default)`,'warning');
-	writeOut(`  --deploy               Enable deployment (if configured)`, 'warning');
+		writeOut(`  --nodeploy             Skip deployment (default)`, 'warning');
+		writeOut(`  --deploy               Enable deployment (if configured)`, 'warning');
 		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas (default: yes)`, 'warning');
 		writeOut(`  --preserve-lua-case      Disable Lua case folding (default: enabled)`, 'warning');
 		writeOut(`  --enginedts <dir>        Use engine declarations from <dir> to type-check the game`, 'warning');
 		writeOut(`  --usepkgtsconfig         Use per-game tsconfig.pkg.json for bundling/type-checking`, 'warning');
-	writeOut(`  --platform <target>      Target platform: browser (default), cli, or headless`, 'warning');
-	writeOut(`  --mode <bundle|engine>  Packaging mode (default: bundle)`, 'warning');
+		writeOut(`  --platform <target>      Target platform: browser (default), cli, or headless`, 'warning');
+		writeOut(`  --mode <bundle|engine>  Packaging mode (default: bundle)`, 'warning');
 		process.exit(0);
 	}
 
@@ -509,40 +519,37 @@ async function main() {
 		writeOut(_colors.brightGreen.bold('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n'));
 
 		const args = process.argv.slice(2);
-	let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform, caseInsensitiveLua, mode, shouldBundleCartCode, extraLuaRoots } = parseOptions(args);
-	if (!shouldBundleCartCode && mode !== 'engine') {
-		progress.removeTasks(bundlerTasks);
-		progress.removeTasks(typecheckTasks);
-		removeTaskNamesFromList(romBuildTasks, bundlerTasks);
-	}
-	const isEngineMode = mode === 'engine';
-	const isBundleMode = !isEngineMode;
-	const normalizedBootloader = normalizePathKey(bootloader_path);
-	const cartRootFromRes = respath ? normalizePathKey(join(respath, '..')) : null;
-	const projectRootFromRes = cartRootFromRes ? cartRootFromRes.replace(/^\.\//, '') : '';
-	const projectRootFromBoot = normalizedBootloader.replace(/^\.\//, '');
-	const projectRootPath = projectRootFromRes.length > 0
-		? projectRootFromRes
-		: (projectRootFromBoot.length > 0 ? projectRootFromBoot : null);
-	const virtualRoot = projectRootPath ?? undefined;
+		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform, caseInsensitiveLua, mode, shouldBundleCartCode, extraLuaRoots } = parseOptions(args);
+		if (!shouldBundleCartCode && mode !== 'engine') {
+			progress.removeTasks(bundlerTasks);
+			progress.removeTasks(typecheckTasks);
+			removeTaskNamesFromList(romBuildTasks, bundlerTasks);
+		}
+		const isEngineMode = mode === 'engine';
+		const normalizedBootloader = normalizePathKey(bootloader_path);
+		const cartRootFromRes = respath ? normalizePathKey(join(respath, '..')) : null;
+		const projectRootFromRes = cartRootFromRes ? cartRootFromRes.replace(/^\.\//, '') : '';
+		const projectRootFromBoot = normalizedBootloader.replace(/^\.\//, '');
+		const projectRootPath = projectRootFromRes.length > 0
+			? projectRootFromRes
+			: (projectRootFromBoot.length > 0 ? projectRootFromBoot : null);
+		const virtualRoot = projectRootPath ?? undefined;
 
 		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
 		setAtlasFlag(useTextureAtlas);
 		setCaseInsensitiveLua(caseInsensitiveLua);
 
-		// Define common assets path
-	const commonResPath = `./src/bmsx/res`;
-	let resourceRoots: string[] = [];
-	const extraLuaPathSet = new Set<string>(extraLuaRoots.map(normalizePathKey));
+		let resourceRoots: string[] = [];
+		const extraLuaPathSet = new Set<string>(extraLuaRoots.map(normalizePathKey));
 
-	if (buildreslist) {
-		const primaryResPath = respath || commonResPath;
-		if (!primaryResPath) {
-			throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/testrom/res'.");
-		}
-	resourceRoots = isEngineMode
-		? [primaryResPath]
-		: [primaryResPath, commonResPath];
+		if (buildreslist) {
+			const primaryResPath = respath || commonResPath;
+			if (!primaryResPath) {
+				throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/testrom/res'.");
+			}
+			resourceRoots = isEngineMode
+				? [primaryResPath]
+				: [primaryResPath, commonResPath];
 			if (!isEngineMode) {
 				extraLuaPathSet.add(normalizePathKey(bootloader_path));
 			}
@@ -551,12 +558,12 @@ async function main() {
 			if (rom_name) {
 				writeOut(`Note: ROM name is set to "${rom_name}" (not used for resource list building).\n`);
 			}
-	await buildResourceList(resourceRoots, rom_name || undefined, {
-		extraLuaPaths: Array.from(extraLuaPathSet),
-		includeCode: isEngineMode || shouldBundleCartCode,
-		atlasIndexResolver,
-		virtualRoot,
-	});
+			await buildResourceList(resourceRoots, rom_name || undefined, {
+				extraLuaPaths: Array.from(extraLuaPathSet),
+				includeCode: isEngineMode || shouldBundleCartCode,
+				virtualRoot,
+				resolveAtlasIndex: false,
+			});
 			writeOut(`\n${_colors.brightWhite.bold('[Resource list bouwen ge-DONUT]')} \n`);
 			return;
 		} else {
@@ -571,27 +578,13 @@ async function main() {
 			rom_name = rom_name.toLowerCase();
 		}
 
-	if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
-	resourceRoots = isEngineMode
-		? [respath || commonResPath]
-		: [respath || commonResPath, commonResPath];
-	if (!isEngineMode && shouldBundleCartCode) {
-		extraLuaPathSet.add(normalizePathKey(bootloader_path));
-	}
-	const engineResourceRoots = new Set(
-		[commonResPath]
-			.filter(Boolean)
-			.map((p: string) => resolvePath(p))
-	);
-	const atlasIndexResolver = (filepath: string, current?: number) => {
-		const abs = resolvePath(filepath);
-		for (const base of engineResourceRoots) {
-			if (abs === base || abs.startsWith(base + pathSep)) {
-				return ENGINE_ATLAS_INDEX;
-			}
+		if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
+		resourceRoots = isEngineMode
+			? [respath || commonResPath]
+			: [respath || commonResPath, commonResPath];
+		if (!isEngineMode && shouldBundleCartCode) {
+			extraLuaPathSet.add(normalizePathKey(bootloader_path));
 		}
-		return current ?? 0;
-	};
 
 		writeOut(`Target platform: ${platform}.\n`);
 		if (resourceRoots.length === 1) {
@@ -668,13 +661,13 @@ async function main() {
 			await progress?.taskCompleted(); // Need to complete the initial task as it will be triggered twice or so
 
 			if (!force) {
-	const includeCode = isEngineMode || shouldBundleCartCode;
-				rebuildRequired = await isRebuildRequired(rom_name, bootloader_path, respath, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet) });
+				const includeCode = isEngineMode || shouldBundleCartCode;
+				rebuildRequired = await isRebuildRequired(rom_name, bootloader_path, respath, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: false });
 				if (!rebuildRequired && resourceRoots.length > 1) {
 					for (let i = 1; i < resourceRoots.length; i++) {
 						const candidate = resourceRoots[i];
 						if (!candidate || candidate === respath) continue;
-				const needs = await isRebuildRequired(rom_name, bootloader_path, candidate, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet) });
+						const needs = await isRebuildRequired(rom_name, bootloader_path, candidate, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: true });
 						rebuildRequired = rebuildRequired || needs;
 						if (rebuildRequired) break;
 					}
@@ -699,34 +692,34 @@ async function main() {
 
 			if (rebuildRequired) {
 				// Type-check engine and game prior to bundling unless skipped
-			if (!skipTypecheck && (isEngineMode || shouldBundleCartCode)) {
-				const tsProject = usePkgTsconfig ? `${bootloader_path}/tsconfig.pkg.json` : undefined;
-			try {
-				if (enginedts) typecheckGameWithDts(bootloader_path, enginedts, tsProject);
-				else typecheckBeforeBuild(bootloader_path, tsProject);
-			} catch (e) { throw e; }
+				if (!skipTypecheck && (isEngineMode || shouldBundleCartCode)) {
+					const tsProject = usePkgTsconfig ? `${bootloader_path}/tsconfig.pkg.json` : undefined;
+					try {
+						if (enginedts) typecheckGameWithDts(bootloader_path, enginedts, tsProject);
+						else typecheckBeforeBuild(bootloader_path, tsProject);
+					} catch (e) { throw e; }
 
 					// Ensure tasks are removed
 					await progress?.taskCompleted();
 				}
-			const tsProject = usePkgTsconfig ? `${bootloader_path}/tsconfig.pkg.json` : undefined;
-		if (isEngineMode) {
-			await buildEngineRuntime({ debug });
-		} else if (shouldBundleCartCode) {
-			await esbuild(rom_name, bootloader_path, debug, tsProject);
-		}
-			await progress?.taskCompleted();
-			const romResMetaList = await getResMetaList(resourceRoots, rom_name, {
-				includeCode: isEngineMode || shouldBundleCartCode,
-				extraLuaPaths: Array.from(extraLuaPathSet),
-				atlasIndexResolver,
-				virtualRoot,
-			});
-			await progress?.taskCompleted();
-			// Build resources
-			let resources = await getResourcesList(romResMetaList, rom_name, {
-				includeCode: isEngineMode || shouldBundleCartCode,
-			});
+				const tsProject = usePkgTsconfig ? `${bootloader_path}/tsconfig.pkg.json` : undefined;
+				if (isEngineMode) {
+					await buildEngineRuntime({ debug });
+				} else if (shouldBundleCartCode) {
+					await esbuild(rom_name, bootloader_path, debug, tsProject);
+				}
+				await progress?.taskCompleted();
+				const romResMetaList = await getResMetaList(resourceRoots, rom_name, {
+					includeCode: isEngineMode || shouldBundleCartCode,
+					extraLuaPaths: Array.from(extraLuaPathSet),
+					virtualRoot,
+					resolveAtlasIndex: true,
+				});
+				await progress?.taskCompleted();
+				// Build resources
+				let resources = await getResourcesList(romResMetaList, rom_name, {
+					includeCode: isEngineMode || shouldBundleCartCode,
+				});
 				await progress?.taskCompleted();
 
 				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
@@ -746,11 +739,11 @@ async function main() {
 
 			await buildBootromScriptIfNewer({ debug, forceBuild: force, platform, romName: rom_name, caseInsensitiveLua });
 			await progress?.taskCompleted();
-		if (platform === 'browser') {
-			if (!isEngineMode) {
-				await buildGameHtmlAndManifest(rom_name, title, short_name, debug);
-			}
-		} else {
+			if (platform === 'browser') {
+				if (!isEngineMode) {
+					await buildGameHtmlAndManifest(rom_name, title, short_name, debug);
+				}
+			} else {
 				const launcherName = getNodeLauncherFilename(platform, debug);
 				writeOut(`Generated Node launcher "dist/${launcherName}" for platform "${platform}".\n`);
 			}
@@ -771,4 +764,13 @@ async function main() {
 	}
 }
 
-main();
+main(); export function setAtlasFlag(enabled: boolean): void {
+	GENERATE_AND_USE_TEXTURE_ATLAS = enabled;
+}
+export function getAtlasFlag(): boolean {
+	return GENERATE_AND_USE_TEXTURE_ATLAS;
+}
+export const ENGINE_ATLAS_INDEX = 254; // Keep in sync with src/bmsx/render/atlas.ts
+// CASE_INSENSITIVE_LUA and its setter are declared earlier in the file to avoid
+// temporal-dead-zone issues when they are used during module initialization.
+

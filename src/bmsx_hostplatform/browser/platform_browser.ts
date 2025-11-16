@@ -94,13 +94,13 @@ class BrowserClock implements Clock {
 		const id = window.setTimeout(() => {
 			if (!active) return;
 			active = false;
-			try { cb(this.now()); } catch { /* swallow errors from callbacks */ }
-		}, Math.max(0, Math.floor(delayMs)));
+			try { cb(this.now()); } catch(e) { /* swallow errors from callbacks */ console.warn(`[BrowserClock] Error in scheduled callback: ${e}`); }
+		}, delayMs);
 		return {
 			cancel: () => {
 				if (!active) return;
 				active = false;
-				window.clearTimeout(id as number);
+				window.clearTimeout(id);
 			},
 			isActive: () => active,
 		};

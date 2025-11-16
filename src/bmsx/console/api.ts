@@ -1193,21 +1193,21 @@ export class BmsxConsoleApi {
 		return Msx1Colors[index];
 	}
 
-	private resolveWriteContext(font: ConsoleFont, x: number | undefined, y: number | undefined, colorindex: number | undefined): {
+	private resolveWriteContext(font: ConsoleFont, x: number, y: number, colorindex: number | undefined): {
 		baseX: number;
 		baseY: number;
 		color: color;
 		autoAdvance: boolean;
 		font: ConsoleFont;
 	} {
-		const hasExplicitPosition = typeof x === 'number' && Number.isFinite(x) && typeof y === 'number' && Number.isFinite(y);
+		const hasExplicitPosition = x !== undefined && y !== undefined;
 		if (hasExplicitPosition) {
-			this.textCursorHomeX = Math.floor(x!);
+			this.textCursorHomeX = x;
 			this.textCursorX = this.textCursorHomeX;
-			this.textCursorY = Math.floor(y!);
+			this.textCursorY = y;
 		}
-		if (typeof colorindex === 'number' && Number.isFinite(colorindex)) {
-			this.textCursorColorIndex = Math.floor(colorindex);
+		if (colorindex) {
+			this.textCursorColorIndex = colorindex;
 		}
 		const baseX = this.textCursorX;
 		const baseY = this.textCursorY;

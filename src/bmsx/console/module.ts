@@ -48,7 +48,7 @@ export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: Con
 		},
 		onBoot(_world: World) {
 			const caseInsensitiveLua = options.caseInsensitiveLua ?? ($.rompack.caseInsensitiveLua ?? true);
-			BmsxConsoleRuntime.ensure({
+			BmsxConsoleRuntime.createInstance({
 				cart,
 				playerIndex: options.playerIndex,
 				storage: $.platform.storage,

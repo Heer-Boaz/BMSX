@@ -2,14 +2,12 @@ import { $ } from '../core/game';
 import type { PlayerInput } from '../input/playerinput';
 import { ECSystem, TickGroup } from './ecsystem';
 import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
-import type { AbilityId, AbilityRequestOptions } from '../gas/gastypes';
 import { GameplayCommandBuffer } from './gameplay_command_buffer';
 import type { WorldObject } from '../core/object/worldobject';
 import { InputAbilityComponent } from '../component/inputabilitycomponent';
-import { compileProgram, validateProgramAbilities, type CompiledProgram, type CompiledBinding, type EvalContext, type PatternPredicate, type EffectExecutor } from '../gas/input_ability_compiler';
+import { compileProgram, validateProgramAbilities, type CompiledProgram, type CompiledBinding, type BindingExecutionEnv, type PatternPredicate, type EffectExecutor } from '../gas/input_ability_compiler';
 import { isInputAbilityProgram, type InputAbilityProgram } from '../gas/input_ability_dsl';
 import { filter_iterable } from '../utils/filter_iterable';
-import type { GameEvent } from '../core/game_event';
 
 let assetProgramsValidated = false;
 
@@ -79,30 +77,17 @@ export class InputAbilitySystem extends ECSystem {
 
 			const ownerId = asc ? (asc.parentid ?? obj.id) : obj.id;
 
-			const queuedEvents: GameEvent[] = [];
-			const hasTag = asc ? (tag: string) => asc.has_gameplay_tag(tag) : () => false;
-			const requestAbility = asc
-				? <Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>) => asc.request_ability(id, opts)
-				: <Id extends AbilityId>(id: Id) => {
-					throw new Error(`[InputAbilitySystem] Program '${programKey}' attempted to request ability '${id}' on '${obj.id}' without an AbilitySystemComponent.`);
-				};
-			const ctx: EvalContext = {
-				owner_id: ownerId,
+			const env: BindingExecutionEnv = {
+				owner: obj,
+				ownerId,
 				playerIndex,
-				hasTag,
-				matchesMode: (path: string) => obj.sc.matches_state_path(path),
-				requestAbility,
-				consume: (actions: string[]) => {
-					for (let idx = 0; idx < actions.length; idx++) {
-						input.consumeAction(actions[idx]!);
-					}
-				},
-				pushEvent: (event: GameEvent) => {
-					queuedEvents.push(event);
-				},
+				input,
+				abilitySystem: asc,
+				queuedEvents: [],
 			};
 
-			this.evaluateProgram(program, input, ctx, programKey);
+			this.evaluateProgram(program, env, programKey);
+			const queuedEvents = env.queuedEvents;
 			for (let idx = 0; idx < queuedEvents.length; idx++) {
 				const evt = queuedEvents[idx]!;
 				if (!evt.emitter) evt.emitter = obj;
@@ -152,16 +137,16 @@ export class InputAbilitySystem extends ECSystem {
 
 	private evaluateProgram(
 		program: CompiledProgram,
-		input: PlayerInput,
-		ctx: EvalContext,
+		env: BindingExecutionEnv,
 		programKey: string,
 	): void {
+			const { input } = env;
 			const bindings = program.bindings;
 			for (let i = 0; i < bindings.length; i++) {
 				const binding = bindings[i]!;
-				if (!binding.predicate(ctx)) continue;
+				if (!binding.predicate(env)) continue;
 
-				const bindingKey = this.makeBindingKey(ctx.owner_id, programKey, ctx.playerIndex, binding, i);
+				const bindingKey = this.makeBindingKey(env.ownerId, programKey, env.playerIndex, binding, i);
 				const armed = this.bindingLatch.get(bindingKey) === true;
 				if (armed) this.frameLatchTouched.add(bindingKey);
 
@@ -179,7 +164,7 @@ export class InputAbilitySystem extends ECSystem {
 			let matched = false;
 			const runEffect = (effect: EffectExecutor | undefined): boolean => {
 				if (!effect) return false;
-				effect(ctx);
+				effect(env);
 				return true;
 			};
 

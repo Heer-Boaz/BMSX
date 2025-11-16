@@ -65,12 +65,14 @@ export class LuaParser {
 	private readonly chunkName: string;
 	private readonly sourceLines: string[];
 	private index: number;
+	private previousToken: LuaToken;
 
 	constructor(tokens: ReadonlyArray<LuaToken>, chunkName: string, source: string) {
 		this.tokens = tokens;
 		this.chunkName = chunkName;
 		this.sourceLines = source.split(/\r?\n/);
 		this.index = 0;
+		this.previousToken = this.tokens[0];
 	}
 
 	public parseChunk(): LuaChunk {
@@ -1393,14 +1395,16 @@ export class LuaParser {
 	}
 
 	private previous(): LuaToken {
-		return this.tokens[this.index - 1];
+		return this.previousToken;
 	}
 
 	private advance(): LuaToken {
+		const token = this.tokens[this.index];
 		if (!this.isAtEnd()) {
 			this.index += 1;
 		}
-		return this.tokens[this.index - 1];
+		this.previousToken = token;
+		return token;
 	}
 
 	private check(type: LuaTokenType): boolean {

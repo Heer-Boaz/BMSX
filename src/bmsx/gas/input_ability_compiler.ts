@@ -1,22 +1,23 @@
 import { has_own } from '../utils/has_own';
-import type { AbilityId, AbilityRequestOptions, AbilityRequestResult } from '../gas/gastypes';
+import type { AbilityId } from '../gas/gastypes';
 import { abilityRegistry } from './ability_registry';
 import type { PlayerInput } from '../input/playerinput';
 import type { InputAbilityProgram, Binding, Effect, AbilityRequestDescriptor, EmitGameplayDescriptor } from './input_ability_dsl';
 import { createGameEvent, type GameEvent } from '../core/game_event';
+import type { AbilitySystemComponent } from '../component/abilitysystemcomponent';
+import type { WorldObject } from '../core/object/worldobject';
 
-export interface EvalContext {
-	owner_id: string;
+export interface BindingExecutionEnv {
+	owner: WorldObject;
+	ownerId: string;
 	playerIndex: number;
-	hasTag: (tag: string) => boolean;
-	matchesMode: (path: string) => boolean;
-	requestAbility: <Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>) => AbilityRequestResult;
-	consume: (actions: string[]) => void;
-	pushEvent?: (event: GameEvent) => void;
+	input: PlayerInput;
+	abilitySystem?: AbilitySystemComponent;
+	queuedEvents: GameEvent[];
 }
 
 export type PatternPredicate = (input: PlayerInput) => boolean;
-export type EffectExecutor = (ctx: EvalContext) => void;
+export type EffectExecutor = (env: BindingExecutionEnv) => void;
 
 export interface CompiledCustomEdge {
 	name: string;
@@ -32,7 +33,7 @@ type BindingAnalysis = {
 export interface CompiledBinding {
 	name?: string;
 	priority: number;
-	predicate: (ctx: EvalContext) => boolean;
+	predicate: (env: BindingExecutionEnv) => boolean;
 	press?: PatternPredicate;
 	hold?: PatternPredicate;
 	release?: PatternPredicate;
@@ -133,7 +134,7 @@ function compileBinding(binding: Binding, parse: PatternParser): CompiledBinding
 	};
 }
 
-function compilePredicate(binding: Binding): (ctx: EvalContext) => boolean {
+function compilePredicate(binding: Binding): (env: BindingExecutionEnv) => boolean {
 	const when = binding.when;
 	if (!when) return () => true;
 
@@ -149,24 +150,28 @@ function compilePredicate(binding: Binding): (ctx: EvalContext) => boolean {
 		}
 	}
 
-	return (ctx: EvalContext) => {
+	return (env: BindingExecutionEnv) => {
 		if (tagPred) {
-			if (tagPred.all && tagPred.all.some(tag => !ctx.hasTag(tag))) return false;
+			const asc = env.abilitySystem;
+			if (!asc) {
+				throw new Error(`[InputAbilityCompiler] Binding '${binding.name ?? '(unnamed)'}' requires gameplay tags but no AbilitySystemComponent is available on '${env.ownerId}'.`);
+			}
+			if (tagPred.all && tagPred.all.some(tag => !asc.has_gameplay_tag(tag))) return false;
 			if (tagPred.any && tagPred.any.length > 0) {
 				let anyOk = false;
 				for (let i = 0; i < tagPred.any.length; i++) {
-					if (ctx.hasTag(tagPred.any[i]!)) { anyOk = true; break; }
+					if (asc.has_gameplay_tag(tagPred.any[i]!)) { anyOk = true; break; }
 				}
 				if (!anyOk) return false;
 			}
-			if (tagPred.not && tagPred.not.some(tag => ctx.hasTag(tag))) return false;
+			if (tagPred.not && tagPred.not.some(tag => asc.has_gameplay_tag(tag))) return false;
 		}
 
 		if (modeItems) {
 			for (let i = 0; i < modeItems.length; i++) {
 				const entry = modeItems[i]!;
 				const entryPath = entry.path!;
-				const matches = ctx.matchesMode(entryPath);
+				const matches = env.owner.sc.matches_state_path(entryPath);
 				if (entry.not) {
 					if (matches) return false;
 				} else if (!matches) {
@@ -198,9 +203,9 @@ function compileEffectList(spec: Effect | Effect[] | undefined, slot?: string, a
 	}
 	if (executors.length === 0) throw new Error(`Empty effect list in slot '${slot ?? 'unknown'}'.`);
 	if (executors.length === 1) return executors[0];
-	return (ctx: EvalContext) => {
+	return (env: BindingExecutionEnv) => {
 		for (let i = 0; i < executors.length; i++) {
-			executors[i](ctx);
+			executors[i](env);
 		}
 	};
 }
@@ -211,44 +216,30 @@ function compileEffect(effect: Effect, slot?: string, analysis?: BindingAnalysis
 		const spec = effect['ability.request'];
 		if (!spec) throw new Error(`Missing ability request in effect ${JSON.stringify(effect)}`);
 		if (typeof spec === 'string') {
-			return (ctx: EvalContext) => {
-				const result = ctx.requestAbility(spec);
-				if (result && result.ok === false) {
-					const detail = result.reason ?? 'unknown';
-					throw new Error(`[InputAbilityCompiler] Ability request '${spec}' for owner '${ctx.owner_id}' failed: ${detail}`);
-				}
+			return (env: BindingExecutionEnv) => {
+				executeAbilityRequest(env, spec as AbilityId);
 			};
 		}
-		return (ctx: EvalContext) => {
-			if (spec.payload === undefined) {
-				const result = ctx.requestAbility(spec.id);
-				if (result && result.ok === false) {
-					const detail = result.reason ?? 'unknown';
-					throw new Error(`[InputAbilityCompiler] Ability request '${spec.id}' for owner '${ctx.owner_id}' failed: ${detail}`);
-				}
-			} else {
-				const result = ctx.requestAbility(spec.id, { payload: spec.payload } as any);
-				if (result && result.ok === false) {
-					const detail = result.reason ?? 'unknown';
-					throw new Error(`[InputAbilityCompiler] Ability request '${spec.id}' for owner '${ctx.owner_id}' failed: ${detail}`);
-				}
-			}
+		return (env: BindingExecutionEnv) => {
+			if (spec.payload === undefined) executeAbilityRequest(env, spec.id as AbilityId);
+			else executeAbilityRequest(env, spec.id as AbilityId, spec.payload);
 		};
 	}
 	if (isInputConsume(effect)) {
 		const actions = Array.isArray(effect['input.consume']) ? effect['input.consume'] : [effect['input.consume']];
 		if (actions.length === 0) throw new Error(`Empty actions in input.consume effect ${JSON.stringify(effect)}`);
-		return (ctx: EvalContext) => ctx.consume(actions);
+		return (env: BindingExecutionEnv) => {
+			for (let i = 0; i < actions.length; i++) {
+				env.input.consumeAction(actions[i]!);
+			}
+		};
 	}
 	if (isGameplayEmit(effect)) {
 		const { event, payload } = effect['emit.gameplay'];
 		if (!event) throw new Error(`Missing event name in emit.gameplay effect ${JSON.stringify(effect)}`);
-		return (ctx: EvalContext) => {
-			if (!ctx.pushEvent) {
-				throw new Error(`[InputAbilityCompiler] emit.gameplay used in slot '${slot ?? 'unknown'}' without pushEvent handler.`);
-			}
+		return (env: BindingExecutionEnv) => {
 			const evt = createGameEvent({ type: event, lane: 'gameplay', ...(payload ?? {}) });
-			ctx.pushEvent(evt);
+			env.queuedEvents.push(evt);
 		};
 	}
 	if (isNestedCommands(effect)) {
@@ -257,6 +248,20 @@ function compileEffect(effect: Effect, slot?: string, analysis?: BindingAnalysis
 		return nested;
 	}
 	throw new Error(`[InputAbilityCompiler] Unknown effect in slot '${slot ?? 'unknown'}': ${JSON.stringify(effect)}`);
+}
+
+function executeAbilityRequest(env: BindingExecutionEnv, id: AbilityId, payload?: unknown): void {
+	const asc = env.abilitySystem;
+	if (!asc) {
+		throw new Error(`[InputAbilityCompiler] Ability request '${id}' attempted without AbilitySystemComponent on '${env.ownerId}'.`);
+	}
+	const result = payload === undefined
+		? asc.request_ability(id)
+		: asc.request_ability(id, { payload } as any);
+	if (result && result.ok === false) {
+		const detail = result.reason ?? 'unknown';
+		throw new Error(`[InputAbilityCompiler] Ability request '${id}' for owner '${env.ownerId}' failed: ${detail}`);
+	}
 }
 
 type ValidationContext = {
