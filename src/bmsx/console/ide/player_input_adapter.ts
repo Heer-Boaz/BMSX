@@ -8,7 +8,7 @@ export function getIdeKeyState(code: string, playerIndex: number = ide_state.pla
 }
 
 export function consumeIdeKey(code: string, playerIndex: number = ide_state.playerIndex): void {
-	$.input.getPlayerInput(playerIndex).consumeButton(code, 'keyboard');
+	$.input.getPlayerInput(playerIndex).consumeButton(code, 'keyboard', { sticky: false });
 }
 
 export function getIdeModifierState(playerIndex: number = ide_state.playerIndex): { shift: boolean; ctrl: boolean; alt: boolean; meta: boolean } {

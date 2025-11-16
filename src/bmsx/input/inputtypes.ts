@@ -106,6 +106,7 @@ export type ButtonState = {
 	waspressed: boolean;
 	wasreleased: boolean;
 	consumed: boolean;
+	stickyConsumed?: boolean;
 	// Timing fields
 	presstime: number | null; // ms since pressed
 	timestamp: number | null; // last transition timestamp (ms)
@@ -171,7 +172,7 @@ export interface InputHandler {
 	 * Consumes the specified button, marking it as processed.
 	 * @param button - The button name to consume.
 	 */
-	consumeButton(button: ButtonId): void;
+	consumeButton(button: ButtonId, options?: { sticky?: boolean }): void;
 
 	/**
 	 * Resets the input, optionally excluding specified buttons.

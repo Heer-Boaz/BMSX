@@ -453,12 +453,13 @@ export class PlayerInput {
 		}
 	}
 
-	public consumeButton(button: ButtonId, source: InputSource): void {
+	public consumeButton(button: ButtonId, source: InputSource, options?: { sticky?: boolean }): void {
 		const handler = this.inputHandlers[source];
 		if (!handler) return;
 		const state = handler.getButtonState(button);
-		handler.consumeButton(button);
-		this._stateManager.consumeBufferedEvent(button, state?.pressId ?? undefined);
+		const sticky = options?.sticky ?? true;
+		handler.consumeButton(button, { sticky });
+		this._stateManager.consumeBufferedEvent(button, state?.pressId ?? undefined, { sticky });
 	}
 
 	public consumeButtons(buttons: ButtonId[], source: InputSource): void {

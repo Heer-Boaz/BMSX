@@ -62,14 +62,17 @@ export class KeyboardInput implements InputHandler {
 	 * @param key - The identifier of the key to be consumed.
 	 * @returns void
 	 */
-	public consumeButton(key: string): void {
+	public consumeButton(key: string, options?: { sticky?: boolean }): void {
+		const sticky = options?.sticky ?? true;
 		const state = this.gamepadButtonStates[key] ?? (this.gamepadButtonStates[key] = makeButtonState());
 		state.consumed = true;
+		state.stickyConsumed = sticky ? true : state.stickyConsumed ?? false;
 		// Use the constant to map keyboard keys to gamepad buttons
 		const keyMappedToCorrespondingGamepadButtonId = Input.KEYBOARDKEY2GAMEPADBUTTON[key as keyof typeof Input.KEYBOARDKEY2GAMEPADBUTTON];
 		if (keyMappedToCorrespondingGamepadButtonId) {
 			const mappedState = this.gamepadButtonStates[keyMappedToCorrespondingGamepadButtonId] ?? (this.gamepadButtonStates[keyMappedToCorrespondingGamepadButtonId] = makeButtonState());
 			mappedState.consumed = true;
+			mappedState.stickyConsumed = sticky ? true : mappedState.stickyConsumed ?? false;
 		}
 	}
 
@@ -109,6 +112,7 @@ export class KeyboardInput implements InputHandler {
 
 			let state: ButtonState;
 			if (isDown) {
+				const stickyConsumed = prev.stickyConsumed ?? false;
 				state = {
 					...prev,
 					pressed: true,
@@ -122,7 +126,8 @@ export class KeyboardInput implements InputHandler {
 					timestamp: wasDown ? (prev.timestamp ?? pressedAt) : now,
 					pressId,
 					value: 1,
-					consumed: false,
+					consumed: stickyConsumed,
+					stickyConsumed,
 				};
 			} else {
 				state = {
@@ -139,6 +144,7 @@ export class KeyboardInput implements InputHandler {
 					pressId: wasDown ? (prev.pressId ?? pressId) : null,
 					value: 0,
 					consumed: false,
+					stickyConsumed: false,
 				};
 			}
 
@@ -160,6 +166,7 @@ export class KeyboardInput implements InputHandler {
 				dst.pressId = state.pressId;
 				dst.value = state.value;
 				dst.value2d = state.value2d ?? null;
+				dst.stickyConsumed = state.stickyConsumed;
 				this.gamepadButtonStates[mapped] = dst;
 			}
 		});
