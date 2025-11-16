@@ -26,7 +26,8 @@ export function gameplaySpec(): NodeSpec[] {
 		{ ref: 'overlapEvents', after: ['collisionBroadphase'] },
 		{ ref: 'transform' },
 		// Phase 5: Animation systems
-		{ ref: 'meshAnim' },
+		{ ref: 'timeline' },
+		{ ref: 'meshAnim', after: ['timeline'] },
 		// Phase 6: Presentation (render submission)
 		{ ref: 'textRender' },
 		{ ref: 'spriteRender', after: ['textRender'] },

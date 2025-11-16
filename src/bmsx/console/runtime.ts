@@ -2049,8 +2049,8 @@ export class BmsxConsoleRuntime extends Service {
 
 		this.processPendingLuaAssets('resume');
 
-		const targetChunkName = snapshot.luaChunkName ?? this.resolveLuaProgramChunkName(program);
-		const currentChunk = this.luaChunkName ?? this.resolveLuaProgramChunkName(program);
+		const targetChunkName = this.canonicalizeProgramChunkName(program, snapshot.luaChunkName ?? null);
+		const currentChunk = this.canonicalizeProgramChunkName(program, this.luaChunkName);
 		const normalizedTarget = this.normalizeChunkName(targetChunkName);
 		const normalizedCurrent = this.normalizeChunkName(currentChunk);
 
@@ -2105,7 +2105,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!program) {
 			throw new Error('[BmsxConsoleRuntime] No Lua program available for reload.');
 		}
-		const targetChunkName = snapshot.luaChunkName ?? this.resolveLuaProgramChunkName(program);
+		const targetChunkName = this.canonicalizeProgramChunkName(program, snapshot.luaChunkName ?? null);
 		let override: string | null = null;
 		if (typeof snapshot.luaProgramSourceOverride === 'string') {
 			override = snapshot.luaProgramSourceOverride;
@@ -7323,14 +7323,37 @@ export class BmsxConsoleRuntime extends Service {
 		this.registerProgramChunk(updated, chunkName);
 	}
 
+	private canonicalizeProgramChunkName(program: BmsxConsoleLuaProgram, chunkName: string | null | undefined): string {
+		let candidate: string;
+		if (typeof chunkName === 'string' && chunkName.length > 0) {
+			candidate = chunkName;
+		}
+		else if ('asset_id' in program && typeof program.asset_id === 'string' && program.asset_id.length > 0) {
+			candidate = program.asset_id;
+		}
+		else {
+			return 'bmsx-lua';
+		}
+		if (!('asset_id' in program) || typeof program.asset_id !== 'string' || program.asset_id.length === 0) {
+			return candidate;
+		}
+		const normalizedCandidate = this.normalizeChunkName(candidate);
+		const normalizedAsset = this.normalizeChunkName(program.asset_id);
+		const resolvedPath = this.resolveResourcePath(program.asset_id);
+		if (typeof resolvedPath === 'string' && resolvedPath.length > 0) {
+			const normalizedPath = this.normalizeChunkName(resolvedPath);
+			if (normalizedCandidate === normalizedAsset || normalizedCandidate === normalizedPath) {
+				return `@${resolvedPath}`;
+			}
+		}
+		else if (normalizedCandidate === normalizedAsset) {
+			return `@lua/${program.asset_id}`;
+		}
+		return candidate;
+	}
+
 	private resolveLuaProgramChunkName(program: BmsxConsoleLuaProgram): string {
-		if (program.chunkName && program.chunkName.length > 0) {
-			return program.chunkName;
-		}
-		if ('asset_id' in program && program.asset_id) {
-			return program.asset_id;
-		}
-		return 'bmsx-lua';
+		return this.canonicalizeProgramChunkName(program, program.chunkName);
 	}
 
 	private registerProgramChunk(program: BmsxConsoleLuaProgram, chunkName: string): void {

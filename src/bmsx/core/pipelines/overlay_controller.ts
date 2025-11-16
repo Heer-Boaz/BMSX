@@ -15,6 +15,11 @@ class OverlayPipelineControllerImpl {
 		}
 		this.rebuild();
 	}
+	public clearAllRequests(): void {
+		if (this.requests.size === 0) return;
+		this.requests.clear();
+		this.rebuild();
+	}
 
 	private rebuild(): void {
 		if (this.requests.size === 0) {
