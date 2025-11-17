@@ -1,5 +1,5 @@
 import { $ } from '../core/game';
-import { subscribesToGlobalEvent, type EventPayload } from '../core/eventemitter';
+import { EventEmitter, type EventPayload } from '../core/eventemitter';
 import { create_gameevent, type GameEvent } from '../core/game_event';
 import { excludeclassfromsavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { WorldObject } from '../core/object/worldobject';
@@ -59,20 +59,18 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 					entering_state(this: SelectedPlayerIndexIcon) {
 						this.play_timeline(ASSIGNED_TIMELINE_ID, { rewind: true, snap_to_start: true });
 					},
-					on: {
-						[`timeline.frame:${ASSIGNED_TIMELINE_ID}`]: {
-							scope: 'self',
-							do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload>) {
-								const visible = event.frame_value === true;
-								this.colorize = visible ? { r: 1, g: 1, b: 1, a: .5 } : { r: 0, g: 1, b: 0, a: .75 };
-							},
+				on: {
+					[`timeline.frame:${ASSIGNED_TIMELINE_ID}`]: {
+						do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload>) {
+							const visible = event.frame_value === true;
+							this.colorize = visible ? { r: 1, g: 1, b: 1, a: .5 } : { r: 0, g: 1, b: 0, a: .75 };
 						},
-						[`timeline.end:${ASSIGNED_TIMELINE_ID}`]: {
-							scope: 'self',
-							do(this: SelectedPlayerIndexIcon, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
-								this.notifyAnimationEnd();
-							},
+					},
+					[`timeline.end:${ASSIGNED_TIMELINE_ID}`]: {
+						do(this: SelectedPlayerIndexIcon, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+							this.notifyAnimationEnd();
 						},
+					},
 					},
 				},
 				cancelled: {
@@ -80,19 +78,17 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 						this.colorize = { r: 1, g: 0, b: 0, a: .75 };
 						this.play_timeline(CANCELLED_TIMELINE_ID, { rewind: true, snap_to_start: true });
 					},
-					on: {
-						[`timeline.frame:${CANCELLED_TIMELINE_ID}`]: {
-							scope: 'self',
-							do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
+						on: {
+							[`timeline.frame:${CANCELLED_TIMELINE_ID}`]: {
+								do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
 								this.y -= event.frame_value;
 							},
 						},
 						[`timeline.end:${CANCELLED_TIMELINE_ID}`]: {
-							scope: 'self',
 							do(this: SelectedPlayerIndexIcon, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
-								this.notifyAnimationEnd();
-							},
+							this.notifyAnimationEnd();
 						},
+					},
 					},
 				},
 			},
@@ -161,6 +157,7 @@ export class ControllerAssignmentUI extends WorldObject {
 
 	constructor(opts?: RevivableObjectArgs & { id: Identifier }) {
 		super(opts);
+		this.bindGlobalEvents();
 		// Initial sync: pending assignments may already exist when UI spawns late.
 		const pending = Input.instance.pendingGamepadAssignments;
 		if (!Array.isArray(pending)) {
@@ -191,7 +188,6 @@ export class ControllerAssignmentUI extends WorldObject {
 		return icon;
 	}
 
-	@subscribesToGlobalEvent('controller_assignment_start', true)
 	public startUIAssignmentProcess(event: GameEvent): void {
 		const detail = event as GameEvent<'controller_assignment_start', { gamepadIndex: number; proposedPlayerIndex: number | null }>;
 		const icon = this.ensureIcon(detail.gamepadIndex);
@@ -200,8 +196,6 @@ export class ControllerAssignmentUI extends WorldObject {
 		icon.y = ControllerAssignmentUI.start.y;
 	}
 
-	// Event: emitted from PendingAssignmentProcessor
-	@subscribesToGlobalEvent('controller_assignment_proposed', true)
 	onProposed(event: GameEvent) {
 		const detail = event as GameEvent<'controller_assignment_proposed', { gamepadIndex: number; proposedPlayerIndex: number | null }>;
 		if (!this.icons.has(detail.gamepadIndex)) this.startUIAssignmentProcess(event);
@@ -210,7 +204,6 @@ export class ControllerAssignmentUI extends WorldObject {
 		if (icon) icon.playerIndex = detail.proposedPlayerIndex;
 	}
 
-	@subscribesToGlobalEvent('controller_assigned', true)
 	onAssigned(event: GameEvent) {
 		const detail = event as GameEvent<'controller_assigned', { gamepadIndex: number }>;
 		const { gamepadIndex } = detail;
@@ -220,7 +213,6 @@ export class ControllerAssignmentUI extends WorldObject {
 		this.icons.delete(gamepadIndex);
 	}
 
-	@subscribesToGlobalEvent('controller_assignment_cancelled', true)
 	onCancelled(event: GameEvent) {
 		const detail = event as GameEvent<'controller_assignment_cancelled', { gamepadIndex: number | undefined }>;
 		const { gamepadIndex } = detail;
@@ -228,5 +220,13 @@ export class ControllerAssignmentUI extends WorldObject {
 			throw new Error('[ControllerAssignmentUI] controller_assignment_cancelled event missing gamepadIndex.');
 		}
 		this.icons.delete(gamepadIndex);
+	}
+
+	private bindGlobalEvents(): void {
+		const bus = EventEmitter.instance;
+		bus.on('controller_assignment_start', this.startUIAssignmentProcess, this, { persistent: true });
+		bus.on('controller_assignment_proposed', this.onProposed, this, { persistent: true });
+		bus.on('controller_assigned', this.onAssigned, this, { persistent: true });
+		bus.on('controller_assignment_cancelled', this.onCancelled, this, { persistent: true });
 	}
 }

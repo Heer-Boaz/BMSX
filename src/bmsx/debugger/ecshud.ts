@@ -1,5 +1,5 @@
 import { Registry } from '../core/registry';
-import { EventEmitter, subscribesToGlobalEvent } from '../core/eventemitter';
+import { EventEmitter } from '../core/eventemitter';
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { DefaultECSPipelineRegistry as ECSReg } from '../ecs/pipeline';
 import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';
@@ -77,6 +77,7 @@ export class ECSHUDOverlay {
 	constructor() {
 		this.enabled = false;
 		Registry.instance.register(this);
+		EventEmitter.instance.on('frameend', this.updateNow, this, { persistent: true });
 	}
 
 	public dispose(): void {
@@ -86,7 +87,6 @@ export class ECSHUDOverlay {
 		this.enabled = false;
 	}
 
-	@subscribesToGlobalEvent('frameend', true)
 	updateNow(): void {
 		if (!this.enabled) return;
 		const el = ensureHudElement();
@@ -120,7 +120,6 @@ export class ECSHUDOverlay {
 			}
 		}
 		lines.push('');
-		// World metrics snapshot
 		const world = $.world;
 		if (world) {
 			const spacesList = world.spaces;
@@ -143,13 +142,14 @@ export class ECSHUDOverlay {
 	enable(): void { this.enabled = true; ensureHudElement().style.display = 'block'; this.updateNow(); }
 	disable(): void { this.enabled = false; const el = document.getElementById(HUD_ID); if (el) el.style.display = 'none'; }
 
-	/** Wire decorator-declared subscriptions. */
-	public bind(): void { EventEmitter.instance.initClassBoundEventSubscriptions(this); }
+	public bind(): void { /* events wired in constructor */ }
+
 	public unbind(): void { EventEmitter.instance.removeSubscriber(this); }
+
 }
 
 const overlay: ECSHUDOverlay | null = typeof document === 'undefined' ? null : new ECSHUDOverlay();
-if (overlay) overlay.bind();
+if (overlay) { /* overlay auto-binds itself */ }
 
 export function toggleECSHUD(): void {
 	if (!overlay) return;

@@ -1,5 +1,5 @@
 import { Registry } from '../core/registry';
-import { EventEmitter, subscribesToGlobalEvent } from '../core/eventemitter';
+import { EventEmitter } from '../core/eventemitter';
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';
 import { $ } from '../core/game';
@@ -134,6 +134,7 @@ export class InputHUDOverlay {
 
 	constructor() {
 		Registry.instance.register(this);
+		EventEmitter.instance.on('frameend', this.updateNow, this, { persistent: true });
 	}
 
 	public dispose(): void {
@@ -146,7 +147,6 @@ export class InputHUDOverlay {
 		this.enabled = false;
 	}
 
-	@subscribesToGlobalEvent('frameend', true)
 	updateNow(): void {
 		if (!this.enabled) return;
 		const hud = ensureHudElement();
@@ -229,12 +229,13 @@ export class InputHUDOverlay {
 		el.style.display = 'none';
 	}
 
-	public bind(): void { EventEmitter.instance.initClassBoundEventSubscriptions(this); }
+	public bind(): void { /* events wired in constructor */ }
+
 	public unbind(): void { EventEmitter.instance.removeSubscriber(this); }
 }
 
 const overlay: InputHUDOverlay | null = typeof document === 'undefined' ? null : new InputHUDOverlay();
-if (overlay) overlay.bind();
+if (overlay) { /* overlay auto-binds itself */ }
 
 export function toggleInputHUD(): void {
 	if (!overlay) return;

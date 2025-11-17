@@ -4899,7 +4899,7 @@ export class BmsxConsoleRuntime extends Service {
 			const listener = (event: GameEvent) => {
 				try {
 					const emitterObj = (event.emitter as Identifiable) ?? binding.service;
-					const { type, lane, timeStamp, emitter, target, ...rest } = event as Record<string, unknown>;
+					const { type, timeStamp, emitter, target, ...rest } = event as Record<string, unknown>;
 					const payloadValue = Object.keys(rest).length > 0 ? (rest as EventPayload) : undefined;
 					return handler(binding.table, event.type, emitterObj, payloadValue);
 				} catch (error) {
@@ -4911,7 +4911,7 @@ export class BmsxConsoleRuntime extends Service {
 					return undefined;
 				}
 			};
-			EventEmitter.instance.on(eventName, listener, binding.service.id, { lane: 'any' });
+			EventEmitter.instance.on(eventName, listener, binding.service.id);
 			const key = `${binding.service.id}:${handler.__hid}`;
 			this.consoleServiceEventListeners.set(key, {
 				event: eventName,
@@ -5100,7 +5100,6 @@ export class BmsxConsoleRuntime extends Service {
 		const onBag = state.on ?? (state.on = {});
 		const frameKey = `timeline.frame:${spec.id}`;
 		onBag[frameKey] = {
-			scope: 'self',
 			do(this: any, runtimeState: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload>) {
 				(runtimeState as any).current_tape_value = event.frame_value;
 				return BmsxConsoleRuntime.runConsoleTapeHandler(spec.tapeNext, this, runtimeState, { tape_rewound: event.rewound });
@@ -5108,7 +5107,6 @@ export class BmsxConsoleRuntime extends Service {
 		};
 		const endKey = `timeline.end:${spec.id}`;
 		onBag[endKey] = {
-			scope: 'self',
 			do(this: any, runtimeState: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 				(runtimeState as any).is_at_tape_end = true;
 				return BmsxConsoleRuntime.runConsoleTapeHandler(spec.tapeEnd, this, runtimeState, event);

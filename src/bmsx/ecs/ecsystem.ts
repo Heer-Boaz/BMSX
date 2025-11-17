@@ -1,7 +1,6 @@
 import { PositionUpdateAxisComponent, ScreenBoundaryComponent, TileCollisionComponent } from "../component/collisioncomponents";
 import { TransformComponent } from "../component/transformcomponent";
 import type { World } from "../core/world";
-import { EventEmitter } from "../core/eventemitter";
 import { $ } from "../core/game";
 import type { WorldObject } from "../core/object/worldobject";
 import { MeshComponent } from "../component/mesh_component";
@@ -228,36 +227,36 @@ export class BoundarySystem extends ECSystem {
 			if (newx < oldx) {
 				if (newx + o.size.x < 0) {
 					const payload = { d: 'left' as const, old_x_or_y: oldx };
-					EventEmitter.instance.emit('screen.leave', o, payload);
+					o.events.emit('screen.leave', payload);
 				} else if (newx < 0) {
 					const payload = { d: 'left' as const, old_x_or_y: oldx };
-					EventEmitter.instance.emit('screen.leaving', o, payload);
+					o.events.emit('screen.leaving', payload);
 				}
 			} else if (newx > oldx) {
 				if (newx >= width) {
 					const payload = { d: 'right' as const, old_x_or_y: oldx };
-					EventEmitter.instance.emit('screen.leave', o, payload);
+					o.events.emit('screen.leave', payload);
 				} else if (newx + o.size.x >= width) {
 					const payload = { d: 'right' as const, old_x_or_y: oldx };
-					EventEmitter.instance.emit('screen.leaving', o, payload);
+					o.events.emit('screen.leaving', payload);
 				}
 			}
 			// Y-axis
 			if (newy < oldy) {
 				if (newy + o.size.y < 0) {
 					const payload = { d: 'up' as const, old_x_or_y: oldy };
-					EventEmitter.instance.emit('screen.leave', o, payload);
+					o.events.emit('screen.leave', payload);
 				} else if (newy < 0) {
 					const payload = { d: 'up' as const, old_x_or_y: oldy };
-					EventEmitter.instance.emit('screen.leaving', o, payload);
+					o.events.emit('screen.leaving', payload);
 				}
 			} else if (newy > oldy) {
 				if (newy >= height) {
 					const payload = { d: 'down' as const, old_x_or_y: oldy };
-					EventEmitter.instance.emit('screen.leave', o, payload);
+					o.events.emit('screen.leave', payload);
 				} else if (newy + o.size.y >= height) {
 					const payload = { d: 'down' as const, old_x_or_y: oldy };
-					EventEmitter.instance.emit('screen.leaving', o, payload);
+					o.events.emit('screen.leaving', payload);
 				}
 			}
 			this.prev.set(o, { x: newx, y: newy });
@@ -280,13 +279,13 @@ export class TileCollisionSystem extends ECSystem {
 			// X axis movement
 			if (newx < oldx) {
 				if ($.world.collidesWithTile(o, 'left')) {
-					EventEmitter.instance.emit('wallcollide', o, { d: 'left' as const });
+					o.events.emit('wallcollide', { d: 'left' as const });
 					newx += TileSize - mod(newx, TileSize);
 				}
 				o.x = ~~newx;
 			} else if (newx > oldx) {
 				if ($.world.collidesWithTile(o, 'right')) {
-					EventEmitter.instance.emit('wallcollide', o, { d: 'right' as const });
+					o.events.emit('wallcollide', { d: 'right' as const });
 					newx -= newx % TileSize;
 				}
 				o.x = ~~newx;
@@ -294,13 +293,13 @@ export class TileCollisionSystem extends ECSystem {
 			// Y axis movement
 			if (newy < oldy) {
 				if ($.world.collidesWithTile(o, 'up')) {
-					EventEmitter.instance.emit('wallcollide', o, { d: 'up' as const });
+					o.events.emit('wallcollide', { d: 'up' as const });
 					newy += TileSize - mod(newy, TileSize);
 				}
 				o.y = ~~newy;
 			} else if (newy > oldy) {
 				if ($.world.collidesWithTile(o, 'down')) {
-					EventEmitter.instance.emit('wallcollide', o, { d: 'down' as const });
+					o.events.emit('wallcollide', { d: 'down' as const });
 					newy -= newy % TileSize;
 				}
 				o.y = ~~newy;
@@ -434,13 +433,13 @@ export class PhysicsCollisionEventSystem extends ECSystem {
 				throw new Error('[PhysicsCollisionEventSystem] Collision participants must be identifiable.');
 			}
 			const payloadToB = { type: evt.type, other_id: goBId, point: evt.point, normal: evt.normal };
-			EventEmitter.instance.emit('physicsCollision', goA as WorldObject, payloadToB);
+			(goA as WorldObject).events.emit('physicsCollision', payloadToB);
 			const payloadToA = { type: evt.type, other_id: goAId, point: evt.point, normal: evt.normal };
-			EventEmitter.instance.emit('physicsCollision', goB as WorldObject, payloadToA);
+			(goB as WorldObject).events.emit('physicsCollision', payloadToA);
 			// Also emit typed events if listeners prefer name-specific subscriptions
 			const name = 'physicsCollision_' + evt.type;
-			EventEmitter.instance.emit(name, goA as WorldObject, payloadToB);
-			EventEmitter.instance.emit(name, goB as WorldObject, payloadToA);
+			(goA as WorldObject).events.emit(name, payloadToB);
+			(goB as WorldObject).events.emit(name, payloadToA);
 		}
 	}
 }

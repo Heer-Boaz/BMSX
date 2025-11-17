@@ -1,10 +1,10 @@
 import type { GameplayCommand } from '../ecs/gameplay_command_buffer';
-import type { EventScope, EventSubscriber } from "../core/eventemitter";
+import type { EventPort } from '../core/eventemitter';
 import type { Identifier, Registerable } from '../rompack/rompack';
 import type { StateMachineController } from "./fsmcontroller";
 import type { State } from './state';
 import type { StateDefinition } from './statedefinition';
-import type { EventLane, EventPayload, GameEvent } from '../core/game_event';
+import type { EventPayload, GameEvent } from '../core/game_event';
 import type { TimelineDefinition } from '../timeline/timeline';
 import type { TimelinePlayOptions } from '../component/timeline_component';
 
@@ -72,7 +72,7 @@ export interface StateEventHandler<T extends Stateful = any, E extends GameEvent
 	(state: State<T>, event: E): transition_target | void;
 }
 export interface StateExitHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P): void; }
-export type listed_sdef_event = { name: string, scope: EventScope, lane?: EventLane | 'any' };
+export type listed_sdef_event = { name: string };
 
 
 /**
@@ -83,8 +83,6 @@ export type StateActionEmitSpec = string | {
 	event?: string;
 	payload?: Record<string, unknown>;
 	emitter?: Identifier;
-	scope?: EventScope | string;
-	lane?: EventLane;
 };
 
 export type StateActionSetTicksSpec = {
@@ -215,28 +213,18 @@ export type StateActionSpec =
 	| StateActionSubmitCommandSpec
 	| Identifier; // State identifier to transition to
 
-export interface StateEventDefinition<T extends Stateful & EventSubscriber = any> {
+export interface StateEventDefinition<T extends Stateful = any> {
 	/**
 	 * The action that is executed when the event is handled. Returning a transition triggers a state change.
 	 */
 	do?: StateEventHandler<T> | string | StateActionSpec;
-
-	/**
-	 * (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
-	 */
-	scope?: EventScope;
-
-	/**
-	 * Optional event lane. Defaults inferred at build time.
-	 */
-	lane?: EventLane | 'any';
 }
 
 /**
  * Represents a state guard that defines conditions for entering or exiting a state.
  * @template T - The type of the stateful object that implements `IStateful` and `IEventSubscriber`.
  */
-export interface StateGuard<T extends Stateful & EventSubscriber = any> {
+export interface StateGuard<T extends Stateful = any> {
 	/**
 	 * Checks if the state can be entered.
 	 * @this {T} - The stateful object.
@@ -258,17 +246,22 @@ export interface StateGuard<T extends Stateful & EventSubscriber = any> {
  *
  * @template T - The type of the stateful object.
  */
-export type TickCheckDefinition<T extends Stateful & EventSubscriber = any> = Omit<StateEventDefinition<T>, 'scope'>;
+export type TickCheckDefinition<T extends Stateful = any> = StateEventDefinition<T>;
 
 /**
  * Represents an object that is stateful and can be registered, and subscribes to events.
  * It also has a player index, that is used to identify the player that the stateful object belongs to, which is used to determine which player's input to process.
  */
-export interface Stateful extends Registerable { // removed EventSubscriber from extends to avoid index-signature conflicts
+export interface Stateful extends Registerable {
 	/**
 	 * The StatemachineController of the object.
 	 */
 	sc: StateMachineController;
+
+	/**
+	 * Event channel for object-local events.
+	 */
+	events: EventPort;
 
 	/**
 	 * The player index of the stateful object.

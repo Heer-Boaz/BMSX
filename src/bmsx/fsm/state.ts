@@ -31,8 +31,6 @@ interface TransitionDiagSnapshot {
 	eventName?: string;
 	emitter?: Identifier;
 	handlerName?: string;
-	scope?: string;
-	lane?: string;
 	payloadSummary?: string;
 	timestamp: number;
 	bubbled?: boolean;
@@ -96,7 +94,6 @@ interface TransitionGuardDiagnostics {
 
 const EMPTY_GAME_EVENT: GameEvent = Object.freeze({
 	type: '__fsm.synthetic__',
-	lane: 'any',
 	emitter: null,
 	timestamp: 0,
 });
@@ -108,7 +105,7 @@ function resolveEmitterId(event: GameEvent | undefined, fallback: Identifier): I
 
 function resolveEventPayload(event: GameEvent | undefined): EventPayload | undefined {
 	if (!event) return undefined;
-	const { type, lane, timeStamp, emitter, target, ...rest } = event as Record<string, unknown>;
+	const { type, timeStamp, emitter, target, ...rest } = event as Record<string, unknown>;
 	if (Object.keys(rest).length === 0) return undefined;
 	return rest as EventPayload;
 }
@@ -149,7 +146,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		 * - The source of the event (e.g. input, run check, etc.).
 		 * - The event parameters.
 		 * - The event timestamp.
-		 * - The event scope and lane.
 		 * - The event handler function name, if any.
 		 * - The transition type (immediate, queued, deferred).
 		 * - Whether the event bubbled up.
@@ -233,8 +229,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			eventName: ctx.eventName,
 			emitter: ctx.emitter,
 			handlerName: ctx.handlerName,
-			scope: ctx.scope,
-			lane: ctx.lane,
 			payloadSummary: ctx.payloadSummary,
 			timestamp: ctx.timestamp,
 			bubbled: ctx.bubbled,
@@ -407,8 +401,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}
 		if (entry.context?.description) parts.push(`desc=${entry.context.description}`);
 		if (entry.context?.handlerName) parts.push(`handler=${entry.context.handlerName}`);
-		if (entry.context?.scope) parts.push(`scope=${entry.context.scope}`);
-		if (entry.context?.lane) parts.push(`lane=${entry.context.lane}`);
 		if (entry.context?.emitter) parts.push(`emitter=${entry.context.emitter}`);
 		if (entry.context?.bubbled) parts.push('bubbled=true');
 		if (entry.reason) parts.push(`reason=${entry.reason}`);
@@ -439,8 +431,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 				eventName: snapshot.eventName,
 				emitter: snapshot.emitter,
 				handlerName: snapshot.handlerName,
-				scope: snapshot.scope,
-				lane: snapshot.lane,
 				payloadSummary: snapshot.payloadSummary,
 				timestamp: snapshot.timestamp,
 				bubbled: snapshot.bubbled,
@@ -529,8 +519,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		if (depth > 0) parts.push(`depth=${depth}`);
 		parts.push(`emitter=${emitter}`);
 		if (ctx.handlerName) parts.push(`handler=${ctx.handlerName}`);
-		if (ctx.scope) parts.push(`scope=${ctx.scope}`);
-		if (ctx.lane) parts.push(`lane=${ctx.lane}`);
 		parts.push(`state=${this.currentid}`);
 		if (transition) {
 			parts.push(`target=${transition.to}`);
@@ -1506,22 +1494,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 				if (!handlers) return false;
 				const spec = handlers[eventName];
 				if (!spec) return false;
-				let scope = typeof spec === 'object' && spec.scope ? spec.scope : 'all';
-				if (scope !== 'all') {
-					let matches = false;
-					if (scope === 'self') {
-						matches = emitter_id === this.target_id;
-					} else if (scope === 'parent') {
-						matches = this.parent ? emitter_id === this.parent.target_id : false;
-					} else {
-						matches = emitter_id === scope;
-					}
-					if (!matches) return false;
-				}
 				if (typeof spec === 'string') ctx.handlerName = this.describeStringHandler(spec);
 				else {
-					ctx.scope = scope;
-					if (spec.lane) ctx.lane = String(spec.lane);
 					ctx.handlerName = this.describeActionHandler(spec);
 				}
 				return this.handleStateTransition(spec, event);

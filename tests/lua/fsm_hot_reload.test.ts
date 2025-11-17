@@ -33,7 +33,7 @@ test('active FSM instances adopt reloaded blueprint data', () => {
 
 	const targetId = `target_${machineId}`;
 	const controllerStub = {
-		_subscribedCache: new Set<string>(),
+		unsubscribeEventsFor(): void { /* no-op */ },
 		bind(): void { /* no-op */ },
 		auto_dispatch(): void { /* no-op */ },
 	} as Record<string, any>;

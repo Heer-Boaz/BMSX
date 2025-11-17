@@ -238,7 +238,7 @@ function compileEffect(effect: Effect, slot?: string, analysis?: BindingAnalysis
 		const { event, payload } = effect['emit.gameplay'];
 		if (!event) throw new Error(`Missing event name in emit.gameplay effect ${JSON.stringify(effect)}`);
 		return (env: BindingExecutionEnv) => {
-			const evt = create_gameevent({ type: event, lane: 'gameplay', ...(payload ?? {}) });
+			const evt = create_gameevent({ type: event, ...(payload ?? {}) });
 			env.queuedEvents.push(evt);
 		};
 	}

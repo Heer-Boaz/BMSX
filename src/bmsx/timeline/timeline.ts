@@ -1,4 +1,3 @@
-import { EventLane } from '../core/game_event';
 import { clamp } from '../utils/clamp';
 import { get_easing } from '../utils/easing';
 
@@ -12,7 +11,6 @@ export type TimelineMarkerAt = { frame: number } | { u: number };
 
 export type TimelineMarker = TimelineMarkerAt & {
 	event: string;
-	lane?: EventLane | 'any';
 	payload?: Record<string, any>;
 	add_tags?: string[];
 	remove_tags?: string[];
@@ -22,7 +20,6 @@ export type TimelineWindow = {
 	name: string;
 	start: TimelineMarkerAt;
 	end: TimelineMarkerAt;
-	lane?: EventLane | 'any';
 	tag?: string;
 	payloadstart?: Record<string, any>;
 	payloadend?: Record<string, any>;
@@ -31,7 +28,6 @@ export type TimelineWindow = {
 export interface CompiledTimelineMarker {
 	frame: number;
 	event: string;
-	lane: EventLane | 'any';
 	payload?: Record<string, any>;
 	addtags?: string[];
 	removetags?: string[];
@@ -52,7 +48,6 @@ export interface TimelineDefinition<T = any> {
 	autotick?: boolean;
 	markers?: TimelineMarker[];
 	windows?: TimelineWindow[];
-	frame_event_lane?: EventLane | 'any';
 }
 
 export type TimelineFrameChangeReason = 'advance' | 'seek' | 'snap';
@@ -76,17 +71,14 @@ export interface TimelineEndEvent {
 
 export type TimelineEvent<T = any> = TimelineFrameEvent<T> | TimelineEndEvent;
 
-const DEFAULT_FRAME_LANE: EventLane = 'gameplay';
-
 export function expand_timeline_windows(markers: TimelineMarker[] = [], windows: TimelineWindow[] = []): TimelineMarker[] {
 	if (!windows || windows.length === 0) return markers;
 	const out = [...markers];
 	for (const windowDef of windows) {
 		const tag = windowDef.tag ?? `timeline.window.${windowDef.name}`;
-		const lane = windowDef.lane ?? 'gameplay';
 		out.push(
-			{ ...windowDef.start, event: `window.${windowDef.name}.start`, lane, payload: windowDef.payloadstart, add_tags: [tag] },
-			{ ...windowDef.end, event: `window.${windowDef.name}.end`, lane, payload: windowDef.payloadend, remove_tags: [tag] },
+			{ ...windowDef.start, event: `window.${windowDef.name}.start`, payload: windowDef.payloadstart, add_tags: [tag] },
+			{ ...windowDef.end, event: `window.${windowDef.name}.end`, payload: windowDef.payloadend, remove_tags: [tag] },
 		);
 	}
 	return out;
@@ -111,7 +103,6 @@ export function compile_timeline_markers<T>(def: TimelineDefinition<T>): Compile
 		bucket.push({
 			frame,
 			event: marker.event,
-			lane: marker.lane ?? DEFAULT_FRAME_LANE,
 			payload: marker.payload,
 			addtags: marker.add_tags,
 			removetags: marker.remove_tags,
@@ -151,10 +142,7 @@ export class Timeline<T = any> {
 		if (!Array.isArray(def.frames)) {
 			throw new Error(`[Timeline] Timeline '${def.id}' requires a frames array.`);
 		}
-		this.def = {
-			...def,
-			frame_event_lane: def.frame_event_lane ?? DEFAULT_FRAME_LANE,
-		};
+		this.def = { ...def };
 		this.id = def.id;
 		this.frames = expandTimelineFrames(def.frames, def.repetitions ?? 1);
 		this.ticks_per_frame = def.ticks_per_frame ?? 0;

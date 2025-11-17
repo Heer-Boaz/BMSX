@@ -1,5 +1,5 @@
 import { Registry } from '../core/registry';
-import { EventEmitter, subscribesToGlobalEvent } from '../core/eventemitter';
+import { EventEmitter } from '../core/eventemitter';
 import * as SpritesPipeline from '../render/2d/sprites_pipeline';
 import * as MeshPipeline from '../render/3d/mesh_pipeline';
 import * as ParticlesPipeline from '../render/3d/particles_pipeline';
@@ -112,6 +112,7 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 		this.emaAlpha = 2 / (this.SUMMARY_FREQUENCY + 1);
 		// Register for lifecycle-aware event processing
 		Registry.instance.register(this);
+		EventEmitter.instance.on('frameend', this.updateNow, this, { persistent: true });
 	}
 
 	// Implement Disposable for Registry/Registerable compatibility
@@ -124,7 +125,6 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 		this.enabled = false;
 	}
 
-	@subscribesToGlobalEvent('frameend', true)
 	updateNow(): void {
 		if (!this.enabled) return;
 		const el = ensureHudElement();
@@ -296,16 +296,6 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 		if (el) el.style.display = 'none';
 	}
 
-	/** Wire decorator-declared subscriptions for this overlay. */
-	public bind(): void {
-		EventEmitter.instance.initClassBoundEventSubscriptions(this);
-	}
-
-	/** Unwire overlay subscriptions. */
-	public unbind(): void {
-		EventEmitter.instance.removeSubscriber(this);
-	}
-
 	// Toggle EMA vs fixed window averaging
 	public toggleAverageMode(): void {
 		this.useEMA = !this.useEMA;
@@ -315,10 +305,13 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 			this.emaPerPass = {};
 		}
 	}
+
+	public bind(): void { /* subscriptions are installed in constructor */ }
+
+	public unbind(): void { EventEmitter.instance.removeSubscriber(this); }
 }
 
 const overlay: RenderHUDOverlay | null = typeof document === 'undefined' ? null : new RenderHUDOverlay();
-if (overlay) overlay.bind();
 
 export function toggleRenderHUD(): void {
 	if (!overlay) return;

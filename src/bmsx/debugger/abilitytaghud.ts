@@ -1,5 +1,5 @@
 import { Registry } from '../core/registry';
-import { EventEmitter, subscribesToGlobalEvent } from '../core/eventemitter';
+import { EventEmitter } from '../core/eventemitter';
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';
 import { $ } from '../core/game';
@@ -138,6 +138,7 @@ class AbilityTagHUDOverlay {
 
 	constructor() {
 		Registry.instance.register(this);
+		EventEmitter.instance.on('frameend', this.updateNow, this, { persistent: true });
 	}
 
 	public dispose(): void {
@@ -150,7 +151,6 @@ class AbilityTagHUDOverlay {
 		this.targetId = null;
 	}
 
-	@subscribesToGlobalEvent('frameend', true)
 	updateNow(): void {
 		if (!this.enabled) return;
 		const elements = ensureHudElement();
@@ -232,17 +232,13 @@ class AbilityTagHUDOverlay {
 		return this.targetId;
 	}
 
-	public bind(): void {
-		EventEmitter.instance.initClassBoundEventSubscriptions(this);
-	}
+	public bind(): void { /* events wired in constructor */ }
 
-	public unbind(): void {
-		EventEmitter.instance.removeSubscriber(this);
-	}
+	public unbind(): void { EventEmitter.instance.removeSubscriber(this); }
+
 }
 
 const overlay: AbilityTagHUDOverlay | null = typeof document === 'undefined' ? null : new AbilityTagHUDOverlay();
-if (overlay) overlay.bind();
 
 export function toggleAbilityTagHUD(): void {
 	if (!overlay) return;

@@ -26,7 +26,7 @@ import {
 } from '../gas/gameplay_ability';
 import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
 import type { GameplayCommand } from '../ecs/gameplay_command_buffer';
-import { create_gameevent, EventLane, GameEvent } from '../core/game_event';
+import { GameEvent } from '../core/game_event';
 
 export type AbilityTagSnapshot = {
 	explicit: TagId[];
@@ -291,7 +291,7 @@ export class AbilitySystemComponent extends Component {
 		if (definition.cooldownMs) {
 			const until = now + definition.cooldownMs;
 			this._cooldownUntil.set(id, until);
-			EventEmitter.instance.emit('AbilityCooldownStart', owner, { id, until });
+			owner.events.emit('AbilityCooldownStart', { id, until });
 		}
 
 		const grantedTags: TagId[] = [];
@@ -370,7 +370,7 @@ export class AbilitySystemComponent extends Component {
 			if (now >= until) {
 				this._cooldownUntil.delete(aid);
 				const owner = this.ownerOrThrow();
-				EventEmitter.instance.emit('AbilityCooldownEnd', owner, { id: aid });
+				owner.events.emit('AbilityCooldownEnd', { id: aid });
 			}
 		}
 		for (const [key, run] of [...this._active]) {
@@ -470,7 +470,7 @@ export class AbilitySystemComponent extends Component {
 
 	private applyWaitState(key: string, run: ActiveAbilityRun, instruction: AbilityWaitInstruction): void {
 		if (run.wait && run.wait.kind === 'event') run.wait.unsub();
-		switch (instruction.kind) {
+			switch (instruction.kind) {
 			case 'time':
 				run.wait = { kind: 'time', until: instruction.until };
 				return;
@@ -494,9 +494,8 @@ export class AbilitySystemComponent extends Component {
 						entry.wait = undefined;
 					}
 				};
-				const options: { emitter?: Identifier; persistent?: boolean; lane?: EventLane } = { persistent: false };
-				if (instruction.scope !== undefined) options.emitter = instruction.scope as Identifier;
-				if (instruction.lane) options.lane = instruction.lane;
+				const options: { emitter?: Identifier; persistent?: boolean } = { persistent: false };
+				if (instruction.emitter) options.emitter = instruction.emitter;
 				EventEmitter.instance.on(instruction.event, listener, token, options, false);
 				const unsub = () => EventEmitter.instance.removeSubscriber(token);
 				run.wait = { kind: 'event', instruction, unsub };
@@ -547,8 +546,7 @@ export class AbilitySystemComponent extends Component {
 		const detail: Record<string, unknown> = { id, reason };
 		if (source !== undefined) detail.source = source;
 		if (timeLeftMs !== undefined) detail.timeLeftMs = timeLeftMs;
-		const event = create_gameevent({ type: 'AbilityFailed', emitter: owner, lane: 'gameplay', ...detail });
-		$.emit_gameplay(event);
+		owner.events.emit('AbilityFailed', detail);
 	}
 
 	private find_active_by_ability(id: AbilityId): string | undefined {

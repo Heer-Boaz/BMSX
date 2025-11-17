@@ -19,6 +19,7 @@ import { RewindBuffer, RewindFrame } from "../serializer/rewind";
 import { World, WorldConfiguration, type SpawnReason } from "./world";
 import { EventEmitter } from "./eventemitter";
 import { create_gameevent, EventPayload, GameEvent } from "./game_event";
+import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
 import { WorldObject } from "./object/worldobject";
 import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
@@ -183,7 +184,7 @@ export class Game {
 	public emit(arg0: GameEvent | string, emitter?: Identifiable | null, payload?: EventPayload): void {
 		if (typeof arg0 === 'string') {
 			if (payload && typeof payload !== 'object') throw new Error(`[Game.emit] Payload for '${arg0}' must be an object.`);
-			const event = create_gameevent({ type: arg0, emitter: emitter ?? null, lane: 'any', ...(payload ?? {}) });
+			const event = create_gameevent({ type: arg0, emitter: emitter ?? null, ...(payload ?? {}) });
 			this.emit(event);
 			return;
 		}
@@ -193,15 +194,17 @@ export class Game {
 	public emit_gameplay(event: GameEvent): void;
 	public emit_gameplay(event_name: string, emitter: Identifiable, payload?: EventPayload): void;
 	public emit_gameplay(arg0: GameEvent | string, emitter?: Identifiable, payload?: EventPayload): void {
+		let event: GameEvent;
 		if (typeof arg0 === 'string') {
 			if (!emitter) throw new Error(`[Game.emitGameplay] Emitter required for '${arg0}'.`);
 			if (payload && typeof payload !== 'object') throw new Error(`[Game.emitGameplay] Payload for '${arg0}' must be an object.`);
-			const event = create_gameevent({ type: arg0, emitter, lane: 'gameplay', ...(payload ?? {}) });
-			this.emit_gameplay(event);
-			return;
+			event = create_gameevent({ type: arg0, emitter, ...(payload ?? {}) });
+		} else {
+			event = arg0;
 		}
-		arg0.lane = 'gameplay';
-		this.emit(arg0);
+		if (!event.emitter) throw new Error(`[Game.emitGameplay] Gameplay events require an emitter ('${event.type}').`);
+		GameplayEventRecorder.instance.record(event);
+		this.emit(event);
 	}
 
 	public emit_presentation(event: GameEvent): void;
@@ -209,11 +212,10 @@ export class Game {
 	public emit_presentation(arg0: GameEvent | string, emitter?: Identifiable | null, payload?: EventPayload): void {
 		if (typeof arg0 === 'string') {
 			if (payload && typeof payload !== 'object') throw new Error(`[Game.emitPresentation] Payload for '${arg0}' must be an object.`);
-			const event = create_gameevent({ type: arg0, emitter: emitter ?? null, lane: 'presentation', ...(payload ?? {}) });
-			this.emit_presentation(event);
+			const event = create_gameevent({ type: arg0, emitter: emitter ?? null, ...(payload ?? {}) });
+			this.emit(event);
 			return;
 		}
-		arg0.lane = 'presentation';
 		this.emit(arg0);
 	}
 

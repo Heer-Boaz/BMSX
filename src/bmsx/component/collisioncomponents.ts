@@ -1,7 +1,6 @@
-import { EventEmitter, subscribesToParentScopedEvent } from "../core/eventemitter";
 import type { GameEvent } from '../core/game_event';
 import { $ } from '../core/game';
-import { WorldObject, WorldObjectEventPayloads } from "../core/object/worldobject";
+import { WorldObject, WorldObjectEventPayloads, WorldObjectEvents } from "../core/object/worldobject";
 import { new_vec2, set_inplace_vec2 } from '../utils/vector_operations';
 import { mod } from '../utils/mod';
 import { vec2, type Area, type Polygon } from '../rompack/rompack';
@@ -203,21 +202,21 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
 		if (newx < oldx) {
 			if (newx + parent.size.x < 0) {
 				const payload: WorldObjectEventPayloads['screen.leave'] = { d: 'left', old_x_or_y: oldx };
-				EventEmitter.instance.emit('screen.leave', parent, payload);
+				parent.events.emit('screen.leave', payload);
 			}
 			else if (newx < 0) {
 				const payload: WorldObjectEventPayloads['screen.leaving'] = { d: 'left', old_x_or_y: oldx };
-				EventEmitter.instance.emit('screen.leaving', parent, payload);
+				parent.events.emit('screen.leaving', payload);
 			}
 		}
 		else if (newx > oldx) {
 			if (newx >= $.world.gamewidth) {
 				const payload: WorldObjectEventPayloads['screen.leave'] = { d: 'right', old_x_or_y: oldx };
-				EventEmitter.instance.emit('screen.leave', parent, payload);
+				parent.events.emit('screen.leave', payload);
 			}
 			else if (newx + parent.size.x >= $.world.gamewidth) {
 				const payload: WorldObjectEventPayloads['screen.leaving'] = { d: 'right', old_x_or_y: oldx };
-				EventEmitter.instance.emit('screen.leaving', parent, payload);
+				parent.events.emit('screen.leaving', payload);
 			}
 		}
 	}
@@ -233,21 +232,21 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
 		if (newy < oldy) {
 			if (newy + parent.size.y < 0) {
 				const payload: WorldObjectEventPayloads['screen.leave'] = { d: 'up', old_x_or_y: oldy };
-				EventEmitter.instance.emit('screen.leave', parent, payload);
+				parent.events.emit('screen.leave', payload);
 			}
 			else if (newy < 0) {
 				const payload: WorldObjectEventPayloads['screen.leaving'] = { d: 'up', old_x_or_y: oldy };
-				EventEmitter.instance.emit('screen.leaving', parent, payload);
+				parent.events.emit('screen.leaving', payload);
 			}
 		}
 		else if (newy > oldy) {
 			if (newy >= $.world.gameheight) {
 				const payload: WorldObjectEventPayloads['screen.leave'] = { d: 'down', old_x_or_y: oldy };
-				EventEmitter.instance.emit('screen.leave', parent, payload);
+				parent.events.emit('screen.leave', payload);
 			}
 			else if (newy + parent.size.y >= $.world.gameheight) {
 				const payload: WorldObjectEventPayloads['screen.leaving'] = { d: 'down', old_x_or_y: oldy };
-				EventEmitter.instance.emit('screen.leaving', parent, payload);
+				parent.events.emit('screen.leaving', payload);
 			}
 		}
 	}
@@ -284,14 +283,14 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
 	protected checkTileCollisionForXAxis(parent: WorldObject, oldx: number, newx: number) {
 		if (newx < oldx) {
 			if ($.world.collidesWithTile(parent, 'left')) {
-				EventEmitter.instance.emit('wallcollide', parent, { d: 'left' });
+				parent.events.emit('wallcollide', { d: 'left' });
 				newx += TileSize - mod(newx, TileSize);
 			}
 			parent.x = ~~newx;
 		}
 		else if (newx > oldx) {
 			if ($.world.collidesWithTile(parent, 'right')) {
-				EventEmitter.instance.emit('wallcollide', parent, { d: 'right' });
+				parent.events.emit('wallcollide', { d: 'right' });
 				newx -= newx % TileSize;
 			}
 			parent.x = ~~newx;
@@ -306,14 +305,14 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
 	protected checkTileCollisionForYAxis(parent: WorldObject, oldy: number, newy: number) {
 		if (newy < oldy) {
 			if ($.world.collidesWithTile(parent, 'up')) {
-				EventEmitter.instance.emit('wallcollide', parent, { d: 'up' });
+				parent.events.emit('wallcollide', { d: 'up' });
 				newy += TileSize - mod(newy, TileSize);
 			}
 			parent.y = ~~newy;
 		}
 		else if (newy > oldy) {
 			if ($.world.collidesWithTile(parent, 'down')) {
-				EventEmitter.instance.emit('wallcollide', parent, { d: 'down' });
+				parent.events.emit('wallcollide', { d: 'down' });
 				newy -= newy % TileSize;
 			}
 			parent.y = ~~newy;
@@ -327,13 +326,18 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
  */
 @insavegame
 export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
+	public override bind(): void {
+		super.bind();
+		const owner = this.parent;
+		if (!owner) throw new Error('[ProhibitLeavingScreenComponent] Parent missing during bind.');
+		owner.events.on(WorldObjectEvents.LeavingScreen, this, this.onLeavingScreen);
+	}
 	/**
 	 * Event handler for the 'screen.leaving' event.
 	 * @param emitter - The ID of the world object emitting the event.
 	 * @param d - The direction in which the world object is leaving the screen.
 	 * @param old_x_or_y - The previous x or y coordinate of the world object.
 	 */
-	@subscribesToParentScopedEvent('screen.leaving')
 	public onLeavingScreen(event: GameEvent) {
 		const emitter = event.emitter as WorldObject;
 		const detail = event as GameEvent<'screen.leaving', WorldObjectEventPayloads['screen.leaving']>;

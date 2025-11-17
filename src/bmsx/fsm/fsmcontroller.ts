@@ -1,4 +1,4 @@
-import { EventEmitter } from '../core/eventemitter';
+import type { EventListenerDisposer } from '../core/eventemitter';
 import { create_gameevent, type GameEvent } from '../core/game_event';
 import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload, excludepropfromsavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
@@ -40,7 +40,7 @@ export class StateMachineController {
 	private _started: boolean = false;
 
 	@excludepropfromsavegame
-	public readonly _subscribedCache = new Set<string>();
+	private readonly _eventSubscriptions = new Map<string, EventListenerDisposer>();
 
 	// NOTE THAT THE STATE MACHINES ARE NOT STARTED AUTOMATICALLY
 	// THE TARGET OBJECT MUST CALL start() TO START THE STATE MACHINES
@@ -98,23 +98,10 @@ export class StateMachineController {
 			return;
 		}
 		for (const event of events) {
-			let scope = event.scope;
-			switch (scope) {
-				case 'self':
-					scope = machine.target.id;
-					break;
-				case 'all':
-				default:
-					scope = undefined;
-					break;
-			}
-			const key = `${event.name}-${scope ?? 'global'}-${event.lane ?? 'any'}`;
-			if (this._subscribedCache.has(key)) {
-				continue;
-			}
-			const lane = event.lane ?? 'any';
-			EventEmitter.instance.on(event.name, this.auto_dispatch, machine.target, { emitter: scope, persistent: true, lane });
-			this._subscribedCache.add(key);
+			const key = `${machine.localdef_id}:${event.name}`;
+			if (this._eventSubscriptions.has(key)) continue;
+			const disposer = machine.target.events.on(event.name, machine.target, this.auto_dispatch, { persistent: true });
+			this._eventSubscriptions.set(key, disposer);
 		}
 	}
 
@@ -206,24 +193,23 @@ export class StateMachineController {
 
 	/** Unwire all event subscriptions declared in machine definitions. */
 	public unbind(): void {
+		for (const dispose of this._eventSubscriptions.values()) {
+			dispose();
+		}
+		this._eventSubscriptions.clear();
 		for (const id in this.statemachines) {
-			const machine = this.statemachines[id];
-			const events = machine.definition.event_list;
-			if (!events) {
-				this.unregisterActiveMachine(machine);
-				continue;
+			this.unregisterActiveMachine(this.statemachines[id]);
+		}
+	}
+
+	public unsubscribeEventsFor(machine: State, eventNames: ReadonlyArray<string>): void {
+		for (const name of eventNames) {
+			const key = `${machine.localdef_id}:${name}`;
+			const dispose = this._eventSubscriptions.get(key);
+			if (dispose) {
+				dispose();
+				this._eventSubscriptions.delete(key);
 			}
-			events.forEach(event => {
-				let scope = event.scope;
-				switch (scope) {
-					case 'self': scope = machine.target.id; break;
-					case 'all':
-					default: scope = undefined; break;
-				}
-				// Pass undefined explicitly for global scope so EventEmitter.off removes global listeners
-				EventEmitter.instance.off(event.name, this.auto_dispatch, scope, true);
-			});
-			this.unregisterActiveMachine(machine);
 		}
 	}
 
@@ -232,7 +218,7 @@ export class StateMachineController {
 	 * Initializes all statemachines by subscribing to events defined in the machine definition and allowing dispatching events to the appropriate machines.
 	 */
 	initLoadSetup(): void {
-		this._subscribedCache.clear(); // Clear the subscribed cache
+		this._eventSubscriptions.clear();
 		this.bind();
 	}
 

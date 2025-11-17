@@ -1,6 +1,5 @@
 import { ECSystem, TickGroup } from './ecsystem';
 import type { World } from '../core/world';
-import { EventEmitter } from '../core/eventemitter';
 import { Collider2DComponent } from '../component/collisioncomponents';
 import { $ } from '../core/game';
 import { Collision2DSystem } from '../service/collision2d_service';
@@ -99,10 +98,10 @@ export class Overlap2DSystem extends ECSystem {
 				const c = Collision2DSystem.getContact2D(colA, colB) as Contact2D | undefined;
 				contact = c;
 			}
-			if (emitA) EventEmitter.instance.emit(eventName, ownerA, buildOverlapPayload(colA, colB, ownerB, contact));
+			if (emitA) ownerA.events.emit(eventName, buildOverlapPayload(colA, colB, ownerB, contact));
 			if (emitB) {
 				const flipped: Contact2D | undefined = contact?.normal ? { ...contact, normal: { x: -contact.normal.x, y: -contact.normal.y } } : contact;
-				EventEmitter.instance.emit(eventName, ownerB, buildOverlapPayload(colB, colA, ownerA, flipped));
+				ownerB.events.emit(eventName, buildOverlapPayload(colB, colA, ownerA, flipped));
 			}
 		};
 		const id2col = (id: string): Collider2DComponent => {

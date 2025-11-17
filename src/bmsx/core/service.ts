@@ -1,5 +1,5 @@
 import { type RegisterablePersistent, type Identifier, type Identifiable } from '../rompack/rompack';
-import { EventEmitter } from './eventemitter';
+import { EventEmitter, EventPort, eventsOf } from './eventemitter';
 import { Stateful } from '../fsm/fsmtypes';
 import { StateMachineController } from '../fsm/fsmcontroller';
 import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
@@ -19,6 +19,7 @@ import { onload, type RevivableObjectArgs } from '../serializer/serializationhoo
 export abstract class Service implements Stateful, Identifiable, RegisterablePersistent {
 	/** Unique identifier for the service (override or pass via constructor). */
 	public id: Identifier;
+	public readonly events: EventPort;
 	sc: StateMachineController;
 	/** True when the service participates in gameplay. */
 	public active: boolean = false;
@@ -47,6 +48,7 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 	 */
 	protected constructor(opts?: RevivableObjectArgs & { id?: Identifier; deferBind?: boolean }) {
 		this.id = opts?.id ?? Service.deriveIdFromConstructor(this.constructor.name ?? 'service');
+		this.events = eventsOf(this);
 
 		const fsmName = this.constructor.name;
 		const hasDef = !!StateDefinitionBuilders[fsmName];
@@ -84,7 +86,6 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 	@onload
 	public bind(): void {
 		Registry.instance.register(this);
-		EventEmitter.instance.initClassBoundEventSubscriptions(this);
 		// Bind controller subscriptions (no start on revive/bind)
 		if (!this.sc) {
 			throw new Error(`[Service:${this.id}] State machine controller was not initialized before bind().`);

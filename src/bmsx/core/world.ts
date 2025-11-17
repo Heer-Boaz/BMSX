@@ -18,7 +18,7 @@ import { Registry } from "./registry";
 import { $ } from './game';
 import type { Component, ComponentConstructor } from "../component/basecomponent";
 import { Space, id2spaceType, initial_world_spaces, obj_id2space_id_type, obj_id_to_space_id_symbol, id_to_space_symbol } from './space';
-import { EventEmitter } from './eventemitter';
+import { EventEmitter, EventPort, eventsOf } from './eventemitter';
 import { HandlerRegistry } from './handlerregistry';
 import { filter_iterable } from '../utils/filter_iterable';
 import { make_index_proxy } from '../utils/make_index_proxy';
@@ -110,6 +110,8 @@ export class World implements Stateful, RegisterablePersistent {
 	}
 
 	public get id(): 'world' { return 'world'; } // Required for IStateful and IIdentifiable
+
+	public readonly events: EventPort;
 
 	// Internal physics diagnostic frame counter (temporary instrumentation)
 	private static _physDiagFrames?: number;
@@ -306,8 +308,8 @@ export class World implements Stateful, RegisterablePersistent {
 		origin_space.despawn(obj, true);
 		target_space.spawn(obj, null, { skipOnSpawn: true, reason: 'transfer' });
 		const transition: WorldObjectEventPayloads['space.enter'] = { from: origin_space.id, to: target_space.id };
-		EventEmitter.instance.emit(WorldObjectEvents.SpaceLeave, obj, transition);
-		EventEmitter.instance.emit(WorldObjectEvents.SpaceEnter, obj, transition);
+		obj.events.emit(WorldObjectEvents.SpaceLeave, transition);
+		obj.events.emit(WorldObjectEvents.SpaceEnter, transition);
 	}
 
 	/**
@@ -327,8 +329,8 @@ export class World implements Stateful, RegisterablePersistent {
 		from.despawn(o, suppress);
 		toSpace.spawn(o, undefined, { skipOnSpawn: suppress, reason: 'transfer' });
 		const transition: WorldObjectEventPayloads['space.enter'] = { from: from.id, to: toSpace.id };
-		EventEmitter.instance.emit(WorldObjectEvents.SpaceLeave, o, transition);
-		EventEmitter.instance.emit(WorldObjectEvents.SpaceEnter, o, transition);
+		o.events.emit(WorldObjectEvents.SpaceLeave, transition);
+		o.events.emit(WorldObjectEvents.SpaceEnter, transition);
 	}
 
 	/**
@@ -356,6 +358,7 @@ export class World implements Stateful, RegisterablePersistent {
 	 * while creating new game objects that reference the world or the world states
 	 */
 	constructor(opts: RevivableObjectArgs & WorldConfiguration) {
+		this.events = eventsOf(this);
 		Registry.instance.register(this);
 		if (opts.constructReason === 'revive') return;
 
@@ -400,7 +403,6 @@ export class World implements Stateful, RegisterablePersistent {
 	/** Wire decorator-declared subscriptions for the world. */
 	public bind(): void {
 		// World may have decorator-declared listeners in derived games
-		EventEmitter.instance.initClassBoundEventSubscriptions(this);
 		// Ensure FSM controller event wiring is active on revive as well
 		if (!this.sc) {
 			throw new Error('[World] State machine controller is not initialized before bind().');
@@ -878,6 +880,6 @@ export class World implements Stateful, RegisterablePersistent {
 		this._activeSpaceId = newSpaceId;
 		prev?.deactivate?.();
 		this.activeSpace?.activate?.();
-		EventEmitter.instance.emit('spaceChanged', this, { prev: prev?.id, curr: this._activeSpaceId });
+		this.events.emit('spaceChanged', { prev: prev?.id, curr: this._activeSpaceId });
 	}
 }

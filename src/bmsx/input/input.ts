@@ -1,4 +1,4 @@
-﻿import { EventEmitter } from '../core/eventemitter';
+﻿import { EventEmitter, EventPort, eventsOf } from '../core/eventemitter';
 import type { GameEvent } from '../core/game_event';
 import { $ } from '../core/game';
 import { Registry } from '../core/registry';
@@ -336,6 +336,8 @@ export class Input implements RegisterablePersistent {
 	 */
 	private static _instance: Input;
 
+	public readonly events: EventPort;
+
 	/**
 	 * The maximum number of players allowed.
 	 */
@@ -584,6 +586,7 @@ export class Input implements RegisterablePersistent {
 	 * @param debug Whether to enable debug mode. Default is true.
 	 */
 	constructor(startingGamepadIndex?: number) {
+		this.events = eventsOf(this);
 		this.startupGamepadIndex = typeof startingGamepadIndex === 'number' ? startingGamepadIndex : null;
 		this.bind();
 	}
@@ -1042,7 +1045,7 @@ export class Input implements RegisterablePersistent {
 		if (binding) {
 			binding.assignedPlayer = playerIndex;
 		}
-		EventEmitter.instance.emit('playerjoin', this, { playerIndex: playerIndex });
+		this.events.emit('playerjoin', { playerIndex });
 	}
 
 	public static get KC_F10(): boolean {

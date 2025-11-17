@@ -33,7 +33,6 @@ const eventEmitterStub = {
 	emit: () => {},
 	on: () => {},
 	off: () => {},
-	initClassBoundEventSubscriptions: () => {},
 	removeSubscriber: () => {},
 };
 

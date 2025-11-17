@@ -1,14 +1,13 @@
-import { Identifiable, Identifier, Parentable, type RegisterablePersistent } from '../rompack/rompack';
+import { Identifiable, Identifier, type RegisterablePersistent } from '../rompack/rompack';
 import { Registry } from "./registry";
 import { $ } from './game';
-import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
 import { HandlerRegistry } from './handlerregistry';
-import { create_gameevent, EventLane, EventPayload, GameEvent } from './game_event';
-export { create_gameevent as createGameEvent, EventLane, EventPayload, GameEvent } from './game_event';
+import { create_gameevent, EventPayload, GameEvent } from './game_event';
+export { create_gameevent as createGameEvent, EventPayload, GameEvent } from './game_event';
 
 export type EventHandler<E extends GameEvent = GameEvent> = (event: E) => any;
 
-type Listener = { listener: EventHandler, subscriber: any, persistent: boolean, lane: EventLane | 'any' };
+type Listener = { listener: EventHandler, subscriber: any, persistent: boolean };
 export type ListenerSet = Set<Listener>;
 type EventListenerMap = Record<string, ListenerSet>;
 type EmitterScopeListenerMap = Record<string, EventListenerMap>;
@@ -16,17 +15,49 @@ type EmitterScopeListenerMap = Record<string, EventListenerMap>;
 export interface EventSubscriptionOptions {
 	emitter?: Identifier;
 	persistent?: boolean;
-	lane?: EventLane;
 }
 
-/**
- * Represents an object that can subscribe to events.
- * @remarks
- * The object must implement the Identifiable interface if it subscribes to self-scoped events.
- * The object must implement the Parentable interface if it subscribes to parent-scoped events.
- * The object must implement the EventSubscriber interface if it subscribes to events.
- */
-type EventSubscriberType = EventSubscriber | (EventSubscriber & Parentable) | (EventSubscriber & Identifiable);
+export interface LocalSubscriptionOptions {
+	persistent?: boolean;
+}
+
+export type EventListenerDisposer = () => void;
+
+const portCache = new WeakMap<Identifiable, EventPort>();
+
+export class EventPort {
+	constructor(private readonly emitter: Identifiable) { }
+
+	emit(eventName: string, payload?: EventPayload): GameEvent {
+		const event = create_gameevent({ type: eventName, emitter: this.emitter, ...(payload ?? {}) });
+		EventEmitter.instance.emit(event);
+		return event;
+	}
+
+	emitEvent<T extends GameEvent>(event: T): T {
+		if (!event.emitter) {
+			event.emitter = this.emitter;
+		}
+		EventEmitter.instance.emit(event);
+		return event;
+	}
+
+	on(eventName: string, subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer {
+		const opts: EventSubscriptionOptions = { emitter: this.emitter.id };
+		if (options?.persistent !== undefined) opts.persistent = options.persistent;
+		EventEmitter.instance.on(eventName, handler, subscriber, opts);
+		return () => EventEmitter.instance.off(eventName, handler, this.emitter.id);
+	}
+}
+
+export function eventsOf(emitter: Identifiable): EventPort {
+	let port = portCache.get(emitter);
+	if (!port) {
+		port = new EventPort(emitter);
+		portCache.set(emitter, port);
+	}
+	return port;
+}
 
 /**
  * A generic event dispatcher that can be used to manage listeners and dispatch events.
@@ -74,7 +105,6 @@ export class EventEmitter implements RegisterablePersistent {
 	 * Map of event listeners registered on the global scope.
 	 */
 	public globalScopeListeners: EventListenerMap = {};
-	private readonly eventLaneRegistry = new Map<string, EventLane>();
 
 	/**
 	 * Listeners that receive all events emitted on the bus (wildcard).
@@ -106,117 +136,6 @@ export class EventEmitter implements RegisterablePersistent {
 		EventEmitter.instance.anyListeners = EventEmitter.instance.anyListeners.filter(x => (x.handler !== handler || (forcePersistentRemoval && x.persistent)));
 	}
 
-	/**
-	 * Initialize all decorator-declared event subscriptions for an instance.
-	 *
-	 * Semantics:
-	 * - Auto-registers all methods declared via subscribesTo* decorators on the instance.
-	 * - Idempotent per instance: subsequent calls are no-ops.
-	 * - Throws if the subscriber does not expose an `id` (decorators require Identifiable).
-	 * - Applies lifecycle gating on delivery: eventhandling_enabled/active/enabled flags, id/parent registry checks.
-	 * - Optional `wrapper` allows callers to intercept handler invocation (after gating).
-	 */
-	public initClassBoundEventSubscriptions(subscriber: EventSubscriberType, wrapper?: (handler: EventHandler, event: GameEvent) => any) {
-		const constr = subscriber.constructor;
-		if (!constr?.eventSubscriptions) return;
-
-		const self = EventEmitter.instance;
-
-		// Stable handler cache on the subscriber to avoid duplicate registrations
-		type BoundCarrier = { [EventEmitter._BOUND_HANDLER_MAP]?: Map<string, EventHandler>; [EventEmitter._INIT_DONE]?: boolean; [EventEmitter._REG_KEYS]?: Set<string> };
-		const getHandlerMap = (obj: EventSubscriberType & BoundCarrier): Map<string, EventHandler> => {
-			let m = obj[EventEmitter._BOUND_HANDLER_MAP];
-			if (!m) {
-				Object.defineProperty(obj, EventEmitter._BOUND_HANDLER_MAP, { value: new Map<string, EventHandler>(), enumerable: false, configurable: false });
-				m = obj[EventEmitter._BOUND_HANDLER_MAP]!;
-			}
-			return m;
-		};
-
-		const sid = (subscriber as Identifiable).id;
-		const ctorName = (typeof subscriber === 'object' && subscriber !== null && 'constructor' in subscriber)
-			? ((subscriber as { constructor?: { name?: string } }).constructor?.name ?? 'object')
-			: 'object';
-
-		// Enforce Identifiable for decorator-based subscriptions
-		if (sid == null) throw new Error(`Event-decorated subscriber '${ctorName}' must implement an 'id' to register handlers.`);
-
-		// Skip when already initialized for this instance
-		const carrier = subscriber as EventSubscriberType & BoundCarrier;
-		if (carrier[EventEmitter._INIT_DONE]) return;
-
-		const shouldProcess = (): boolean => {
-			const obj = subscriber as { eventhandling_enabled?: boolean; active?: boolean; enabled?: boolean; id?: Identifier };
-			if (obj.eventhandling_enabled === false) return false;
-			if (obj.active === false) return false;
-			if (obj.enabled === false) return false;
-			if (obj.id != null && !Registry.instance.has(obj.id)) return false;
-			const parentObj = (obj as Parentable).parent;
-			if (parentObj && !Registry.instance.has(parentObj.id)) return false;
-			return true;
-		};
-
-		const handlerMap = getHandlerMap(carrier);
-		// Per-instance registration key set (idempotency)
-		let regKeys = carrier[EventEmitter._REG_KEYS];
-		if (!regKeys) {
-			Object.defineProperty(carrier, EventEmitter._REG_KEYS, { value: new Set<string>(), enumerable: false, configurable: false });
-			regKeys = carrier[EventEmitter._REG_KEYS]!;
-		}
-		constr.eventSubscriptions.forEach(subscription => {
-			const key = `${subscription.scope}|${subscription.eventName}|${subscription.handlerName}`;
-			let handler = handlerMap.get(key);
-			if (!handler) {
-				const method = (subscriber as Record<string, unknown>)[subscription.handlerName];
-				if (typeof method !== 'function') throw new Error(`Event handler '${subscription.handlerName}' is not a function on ${subscriber.constructor?.name ?? 'object'}`);
-				const bound = (method as (...args: any[]) => any).bind(subscriber);
-				// Compose default gating with optional caller-provided wrapper
-				handler = (event: GameEvent) => {
-					if (!shouldProcess()) return;
-					if (wrapper) {
-						wrapper(bound, event);
-						return;
-					}
-					bound(event);
-				};
-				handlerMap.set(key, handler);
-			}
-
-			let emitterFilter: string | undefined;
-			switch (subscription.scope) {
-				case 'all': emitterFilter = undefined; break;
-					case 'parent': {
-						const parentObj = (subscriber as Parentable).parent;
-						if (!parentObj) {
-							if ($.debug) console.warn(`Deferred subscription: '${(subscriber as Identifiable).id}' → '${subscription.eventName}' (scope: parent) because no parent reference is attached yet on ${subscriber.constructor?.name}.`);
-							return;
-						}
-						emitterFilter = parentObj.id;
-						break;
-					}
-				case 'self':
-					emitterFilter = (subscriber as Identifiable).id;
-					if (!emitterFilter) {
-						if ($.debug) console.warn(`Deferred subscription: '${subscription.eventName}' (scope: self) because 'id' is not set yet on ${subscriber.constructor?.name}.`);
-						return;
-					}
-					break;
-				default:
-					// Custom emitter id
-					emitterFilter = subscription.scope as Identifier;
-			}
-			// Idempotent: avoid duplicate registrations for this instance+key
-			if (!regKeys.has(key)) {
-				const options: EventSubscriptionOptions = { persistent: !!subscription.persistent };
-				if (emitterFilter !== undefined) options.emitter = emitterFilter;
-				self.on(subscription.eventName, handler, subscriber, options);
-				regKeys.add(key);
-			}
-		});
-
-		// Remember we initialized this instance
-		Object.defineProperty(carrier, EventEmitter._INIT_DONE, { value: true, enumerable: false, configurable: false });
-	}
 
 	private checkIfListenerExists(event_name: string, listener: EventHandler<any>, subscriber: any, filtered_on_emitter_id?: Identifier): boolean {
 		const self = EventEmitter.instance;
@@ -254,12 +173,10 @@ export class EventEmitter implements RegisterablePersistent {
 		const self = EventEmitter.instance;
 		let filtered_on_emitter_id: Identifier | undefined;
 		let persistent = persistentLegacy ?? false;
-		let lane: EventLane | 'any' = 'any';
 		if (emitterOrOptions && typeof emitterOrOptions === 'object' && !Array.isArray(emitterOrOptions)) {
 			const options = emitterOrOptions as EventSubscriptionOptions;
 			filtered_on_emitter_id = options.emitter;
 			if (typeof options.persistent === 'boolean') persistent = options.persistent;
-			if (options.lane) lane = options.lane;
 		} else if (emitterOrOptions !== undefined) {
 			filtered_on_emitter_id = emitterOrOptions as Identifier;
 		}
@@ -274,7 +191,7 @@ export class EventEmitter implements RegisterablePersistent {
 				if ($.debug) console.warn(`Listener for event "${event_name}" already exists for emitter "${filtered_on_emitter_id}".`);
 				return; // Prevent adding the same listener multiple times
 			}
-			self.emitterScopeListeners[event_name][filtered_on_emitter_id].add({ listener, subscriber, persistent, lane });
+			self.emitterScopeListeners[event_name][filtered_on_emitter_id].add({ listener, subscriber, persistent });
 		} else {
 			if (!self.globalScopeListeners[event_name]) {
 				self.globalScopeListeners[event_name] = new Set();
@@ -283,22 +200,20 @@ export class EventEmitter implements RegisterablePersistent {
 				if ($.debug) console.warn(`Listener for event "${event_name}", listener "${listener}", subscriber: "${subscriber}" already exists in global scope.`);
 				return; // Prevent adding the same listener multiple times
 			}
-			self.globalScopeListeners[event_name].add({ listener, subscriber, persistent, lane });
+			self.globalScopeListeners[event_name].add({ listener, subscriber, persistent });
 		}
 	}
 
 	public emit<E extends GameEvent = GameEvent>(event: E): void;
-	public emit(event_name: string, emitter: Identifiable, payload?: EventPayload): void;
-	public emit<E extends GameEvent = GameEvent>(arg0: E | string, emitterOrSource?: Identifiable, payload?: EventPayload): void {
+	public emit(event_name: string, emitter?: Identifiable | null, payload?: EventPayload): void;
+	public emit<E extends GameEvent = GameEvent>(arg0: E | string, emitterOrSource?: Identifiable | null, payload?: EventPayload): void {
 		if (typeof arg0 === 'string') {
-			if (!emitterOrSource) throw new Error(`Event '${arg0}' emitted without emitter.`);
 			if (payload && typeof payload !== 'object') {
 				throw new Error(`Event '${arg0}' payload must be an object.`);
 			}
 			const event = create_gameevent({
 				type: arg0,
-				lane: 'gameplay',
-				emitter: emitterOrSource,
+				emitter: emitterOrSource ?? null,
 				...(payload ?? {}),
 			});
 			this.emit(event);
@@ -307,26 +222,11 @@ export class EventEmitter implements RegisterablePersistent {
 		const event = arg0;
 		const eventName = event.type;
 		const emitter = event.emitter;
-		const lane: EventLane = event.lane ?? 'gameplay';
-		if (lane === 'gameplay' && !emitter) {
-			throw new Error(`Gameplay events require an Identifiable emitter. Event "${eventName}" missing emitter id.`);
-		}
 		const self = EventEmitter.instance;
-		const previousLane = self.eventLaneRegistry.get(eventName);
-		if (previousLane && previousLane !== lane) {
-			throw new Error(`Event '${eventName}' emitted with lane '${lane}' but was previously seen on lane '${previousLane}'.`);
-		}
-		self.eventLaneRegistry.set(eventName, lane);
-
-		if (lane === 'gameplay' && emitter) {
-			GameplayEventRecorder.instance.record(event);
-		}
-
 		let anyoneSubscribed = false;
 		const deliver = (set?: ListenerSet) => {
 			if (!set) return;
 			for (const item of set) {
-				if (item.lane !== 'any' && item.lane !== lane) throw new Error(`Event '${eventName}' delivered to listener with mismatched lane '${item.lane}' (event lane: '${lane}').`);
 				anyoneSubscribed = true;
 				item.listener.call(item.subscriber, event);
 			}
@@ -360,7 +260,7 @@ export class EventEmitter implements RegisterablePersistent {
 		}
 
 		if (!anyoneSubscribed && $.debug) {
-			// Optional debug logging retained intentionally blank to avoid noise.
+			console.debug(`[EventEmitter] '${eventName}' emitted by '${emitter?.id ?? 'global'}' but no listeners were registered.`);
 		}
 	}
 
@@ -376,7 +276,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param emitter - Optional. The emitter id for scoped listeners. If omitted, the listener is removed from global scope.
 	 * @param forcePersistent - If true, also removes persistent listeners.
 	 */
-	off(event_name: string, listener: EventHandler<any>, emitter?: EventScope, forcePersistent: boolean = false): void {
+	off(event_name: string, listener: EventHandler<any>, emitter?: Identifier | null, forcePersistent: boolean = false): void {
 		const self = EventEmitter.instance;
 		if (emitter === undefined) {
 			// Global-scope removal
@@ -481,200 +381,4 @@ export class EventEmitter implements RegisterablePersistent {
 		// Preserve persistent wildcard listeners; remove non-persistent ones
 		self.anyListeners = self.anyListeners.filter(item => item.persistent);
 	}
-}
-
-/**
- * Represents the scope of an event subscription. The scope determines which instances will receive the event.
- * - 'all': The event will be consumed for all instances.
- * - 'parent': The event will be consumed for events emitted by the parent instance only.
- * - 'self': The event will be consumed for events emitted by the current instance only.
- * - Identifier: The event will be consumed for events emitted by the instance with the given ID only.
- */
-export type EventScope = 'all' | 'parent' | 'self' | Identifier;
-
-/**
- * Represents a subscription to an event.
- */
-export type EventSubscription = {
-	/**
-	 * The name of the event.
-	 */
-	eventName: string;
-
-	/**
-	 * The name of the event handler.
-	 */
-	handlerName: string;
-
-	/**
-	 * The scope of the event subscription.
-	 * - 'all': The event will be consumed for all instances. NOT IMPLEMENTED!
-	 * - 'parent': The event will be consumed for the parent instance only.
-	 * - 'self': The event will be consumed for the current instance only.
-	 */
-	scope: EventScope;
-	/** If true this subscription survives EventEmitter.clear(). */
-	persistent?: boolean;
-};
-
-export type EventSubscriberConstructor = Function & {
-	eventSubscriptions?: EventSubscription[]
-}
-
-/**
- * Represents an event subscriber.
- */
-export interface EventSubscriber {
-	constructor: EventSubscriberConstructor;
-}
-
-// Hidden symbol to store per-instance bound event handler cache
-export namespace EventEmitter {
-	// Using a namespace to hold a private-like symbol that survives downlevel
-	export const _BOUND_HANDLER_MAP: unique symbol = Symbol('bmsx.boundEventHandlers');
-	export const _INIT_DONE: unique symbol = Symbol('bmsx.boundEventHandlersInitDone');
-	export const _REG_KEYS: unique symbol = Symbol('bmsx.boundEventHandlersRegisteredKeys');
-}
-
-export interface EventSubscriberWithIndexedHandlers {
-	[key: string]: EventHandler<any> | EventSubscriberConstructor;
-	constructor: EventSubscriberConstructor;
-}
-
-/**
- * Helper function to update all event subscriptions
- * Updates all event subscriptions for a given constructor by traversing the prototype chain.
- * @param constructor - The constructor function to update event subscriptions for.
- */
-function updateAllEventSubscriptions(constructor: any) {
-	let currentClass: any = constructor;
-	const subscriptions = new Array<EventSubscription>();
-
-	while (currentClass && currentClass !== Object) {
-		if (currentClass.eventSubscriptions) {
-			subscriptions.push(...currentClass.eventSubscriptions);
-		}
-		currentClass = Object.getPrototypeOf(currentClass);
-	}
-
-	constructor.eventSubscriptions = subscriptions;
-}
-
-/**
- * Subscribes a method to a parent-scoped event.
- *
- * Behavior:
- * - Registers the decorated method as a handler when an instance is created (auto-registration).
-	 * - Delivery is lifecycle-gated: the handler is invoked only when the subscriber is enabled (if present),
-	 *   registered in `Registry` (has a valid `id`), and its parent (if any) is also registered.
- * - Requires the decorated class to expose an `id` (own or inherited).
- * - If `persistent` is true, the listener survives EventEmitter.clear() (e.g., across loads) similar to persistent registry objects.
- */
-export function subscribesToParentScopedEvent(eventName: string, persistent?: boolean) {
-	return function (_value: Function, context: ClassMethodDecoratorContext) {
-		const handlerName = String(context.name);
-		const register = (ctor: any) => {
-			ctor.eventSubscriptions ??= [];
-			const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === 'parent');
-			if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'parent', persistent });
-			updateAllEventSubscriptions(ctor);
-		};
-		if (context.static) {
-			context.addInitializer(function () { register(this); });
-		} else {
-			context.addInitializer(function () { register((this).constructor); });
-		}
-	};
-}
-
-/**
- * Subscribes a method to a self-scoped event (only events emitted by the instance itself).
- *
- * See subscribesToParentScopedEvent for lifecycle and persistence semantics.
- */
-export function subscribesToSelfScopedEvent(eventName: string, persistent?: boolean) {
-	return function (_value: Function, context: ClassMethodDecoratorContext) {
-		const handlerName = String(context.name);
-		const register = (ctor: any) => {
-			ctor.eventSubscriptions ??= [];
-			const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === 'self');
-			if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'self', persistent });
-			updateAllEventSubscriptions(ctor);
-		};
-		if (context.static) {
-			context.addInitializer(function () { register(this); });
-		} else {
-			context.addInitializer(function () { register((this).constructor); });
-		}
-	};
-}
-
-/**
- * Subscribes a method to events from a specific emitter id (custom scope).
- *
- * See subscribesToParentScopedEvent for lifecycle and persistence semantics.
- */
-export function subscribesToEmitterScopedEvent(eventName: string, emitter_id: string, persistent?: boolean) {
-	return function (_value: Function, context: ClassMethodDecoratorContext) {
-		const handlerName = String(context.name);
-		const register = (ctor: any) => {
-			ctor.eventSubscriptions ??= [];
-			const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === emitter_id);
-			if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: emitter_id, persistent });
-			updateAllEventSubscriptions(ctor);
-		};
-		if (context.static) {
-			context.addInitializer(function () { register(this); });
-		} else {
-			context.addInitializer(function () { register((this).constructor); });
-		}
-	};
-}
-
-/**
- * Subscribes a method to a global event (all emitters).
- *
- * See subscribesToParentScopedEvent for lifecycle and persistence semantics.
- */
-export function subscribesToGlobalEvent(eventName: string, persistent?: boolean) {
-	return function (_value: Function, context: ClassMethodDecoratorContext) {
-		const handlerName = String(context.name);
-		const register = (ctor: any) => {
-			ctor.eventSubscriptions ??= [];
-			const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === 'all');
-			if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'all', persistent });
-			updateAllEventSubscriptions(ctor);
-		};
-		if (context.static) {
-			context.addInitializer(function () { register(this); });
-		} else {
-			context.addInitializer(function () { register((this).constructor); });
-		}
-	};
-}
-
-/**
- * Decorator function that emits an event when the decorated method is called.
- * @param eventName The name of the event to emit.
- * @returns A decorator function that can be applied to a method.
- */
-export function emits_event(eventName?: string, lane: EventLane = 'gameplay') {
-	return function (value: Function, _context: ClassMethodDecoratorContext) {
-		const originalMethod = value;
-		return function (this: any, ...args: any[]) {
-			const result = originalMethod.apply(this, args);
-			let event: GameEvent;
-			if (result && typeof result === 'object' && 'type' in result && 'lane' in result) {
-				event = result as GameEvent;
-			} else {
-				if (!eventName) {
-					throw new Error(`@emits_event requires the decorated method to return a GameEvent when no event name is provided.`);
-				}
-				event = create_gameevent({ type: eventName, lane, ...(result ?? {}) as Record<string, unknown> });
-			}
-			if (!event.emitter) event.emitter = this as Identifiable;
-			EventEmitter.instance.emit(event);
-			return event;
-		};
-	};
 }

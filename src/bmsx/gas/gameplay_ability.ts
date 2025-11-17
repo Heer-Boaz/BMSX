@@ -1,6 +1,5 @@
 import { $ } from '../core/game';
-import type { EventScope } from '../core/eventemitter';
-import { create_gameevent, EventLane, type GameEvent } from '../core/game_event';
+import { create_gameevent, type GameEvent } from '../core/game_event';
 import { GameplayCommandBuffer, type GameplayCommand } from '../ecs/gameplay_command_buffer';
 import type { WorldObject } from '../core/object/worldobject';
 import type { Facing, Identifier } from '../rompack/rompack';
@@ -98,21 +97,18 @@ export interface DispatchStep {
 	event: string;
 	payload?: Record<string, AbilityValueSpec>;
 	target?: AbilityValueSpec;
-	lane?: EventLane;
 }
 
 export interface EmitStep {
 	type: 'emit';
 	event: string;
 	payload?: Record<string, AbilityValueSpec>;
-	lane?: EventLane;
 }
 
 export interface WaitEventStep {
 	type: 'waitEvent';
 	event: string;
 	scope?: AbilityEventScopeSpec;
-	lane?: EventLane;
 }
 
 export interface WaitTimeStep {
@@ -189,7 +185,7 @@ export interface GameplayAbilityDefinition extends AbilitySpec {
 export type AbilityWaitInstruction =
 	| { kind: 'time'; until: number }
 	| { kind: 'tag'; tag: TagId; present: boolean }
-	| { kind: 'event'; event: string; scope?: EventScope; lane?: EventLane };
+	| { kind: 'event'; event: string; emitter?: Identifier };
 
 export type AbilityAdvanceResult =
 	| { kind: 'wait'; wait: AbilityWaitInstruction }
@@ -269,19 +265,19 @@ export class GameplayAbilityExecution {
 			case 'dispatch': {
 				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
 				const target = step.target ? this.resolveIdentifier(step.target) : undefined;
-				const event = create_gameevent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
+				const event = create_gameevent({ type: step.event, ...(payload ?? {}) });
 				this.dispatchMode(event, target);
 				return { kind: 'continue' };
 			}
 			case 'emit': {
 				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
-				const event = create_gameevent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
+				const event = create_gameevent({ type: step.event, ...(payload ?? {}) });
 				this.emitGameplay(event);
 				return { kind: 'continue' };
 			}
 			case 'waitEvent': {
-				const scope = this.resolveEventScope(step.scope);
-				return { kind: 'wait', wait: { kind: 'event', event: step.event, scope, lane: step.lane } };
+				const emitter = this.resolveEventScope(step.scope);
+				return { kind: 'wait', wait: { kind: 'event', event: step.event, emitter } };
 			}
 			case 'waitTime': {
 				const until = nowMs + step.durationMs;
@@ -355,19 +351,19 @@ export class GameplayAbilityExecution {
 			case 'call':
 				this.executeGameplayAction(step);
 				return;
-			case 'dispatch': {
-				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
-				const target = step.target ? this.resolveIdentifier(step.target) : undefined;
-				const event = create_gameevent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
-				this.dispatchMode(event, target);
-				return;
-			}
-			case 'emit': {
-				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
-				const event = create_gameevent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
-				this.emitGameplay(event);
-				return;
-			}
+		case 'dispatch': {
+			const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
+			const target = step.target ? this.resolveIdentifier(step.target) : undefined;
+			const event = create_gameevent({ type: step.event, ...(payload ?? {}) });
+			this.dispatchMode(event, target);
+			return;
+		}
+		case 'emit': {
+			const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
+			const event = create_gameevent({ type: step.event, ...(payload ?? {}) });
+			this.emitGameplay(event);
+			return;
+		}
 			case 'setVar': {
 				const value = this.resolveValue(step.value);
 				this.vars[step.name] = value;
@@ -457,17 +453,6 @@ export class GameplayAbilityExecution {
 
 	public emit_gameplay(event: GameEvent): void {
 		if (!event.emitter) event.emitter = this.owner;
-		if (event.lane === 'presentation') {
-			$.emit_presentation(event);
-			return;
-		}
-		if (event.lane === 'any') {
-			$.emit(event);
-			return;
-		}
-		if (event.lane && event.lane !== 'gameplay') {
-			throw new Error(`[GameplayAbilityExecution] Unsupported event lane '${event.lane}' for emitGameplay.`);
-		}
 		$.emit_gameplay(event);
 	}
 
@@ -566,10 +551,10 @@ export class GameplayAbilityExecution {
 		throw new Error(`[GameplayAbilityExecution] Expected identifier string, got '${String(value)}'.`);
 	}
 
-	private resolveEventScope(spec: AbilityEventScopeSpec | undefined): EventScope | undefined {
+	private resolveEventScope(spec: AbilityEventScopeSpec | undefined): Identifier | undefined {
 		if (!spec) return undefined;
 		if (spec.kind === 'self') return this.ownerId;
-		if (spec.kind === 'world') return undefined;
+		if (spec.kind === 'world') return $.world.id;
 		if (spec.kind === 'object') return this.resolveIdentifier(spec.target);
 		return undefined;
 	}

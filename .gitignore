@@ -39,3 +39,5 @@ tsconfig.buildinfo
 scripts/tmp
 # Ignore all folders named .bmsx (directories only, not files)
 **/.bmsx/
+# Ignore all files in the `/temp` folder
+temp/**

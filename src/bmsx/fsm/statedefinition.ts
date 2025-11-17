@@ -1,7 +1,6 @@
-import { EventLane, EventScope } from '../core/eventemitter';
 import { type Identifier } from '../rompack/rompack';
 import { excludepropfromsavegame } from '../serializer/serializationhooks';
-import { type StateActionSpec, type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type TickCheckDefinition, type id2partial_sdef, type StateTimelineMap } from './fsmtypes';
+import { type StateActionSpec, type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type TickCheckDefinition, type id2partial_sdef, type StateTimelineMap, type listed_sdef_event } from './fsmtypes';
 import { State } from './state';
 
 function looksLikeStatePath(value: string): boolean {
@@ -55,7 +54,7 @@ export class StateDefinition {
 	 */
 	public root!: StateDefinition; // The root state machine definition
 
-	public event_list: { name: string; scope: EventScope; lane: EventLane | 'any' }[];
+	public event_list: listed_sdef_event[];
 
 	public timelines?: StateTimelineMap;
 

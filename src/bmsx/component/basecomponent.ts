@@ -1,4 +1,4 @@
-import { EventEmitter, type EventSubscriber } from '../core/eventemitter';
+import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
 import { type WorldObject, type WorldObjectConstructorBaseOrAbstract } from '../core/object/worldobject';
 import { Registry } from '../core/registry';
@@ -158,7 +158,7 @@ export type ComponentUpdateParams = {
  * @class
  * @implements IIdentifiable
  */
-export abstract class Component<T extends WorldObject = WorldObject> implements Identifiable, EventSubscriber {
+export abstract class Component<T extends WorldObject = WorldObject> implements Identifiable {
 	static get unique(): boolean { return false; } // If true, only one instance of this component type can be attached to a parent
 
 	/**
@@ -304,10 +304,9 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 		this.bind();
 	}
 
-	/** Wire decorator-declared subscriptions for this component. */
+	/** Wire component-level subscriptions. */
 	public bind(): void {
 		Registry.instance.register(this); // Register the component in the entity registry
-		EventEmitter.instance.initClassBoundEventSubscriptions(this);
 	}
 
 	/** Unwire all subscriptions for this component. */

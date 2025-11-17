@@ -1,4 +1,3 @@
-import { EventEmitter, type EventLane, type EventScope } from "../core/eventemitter";
 import { deep_equal } from '../utils/deep_equal';
 import { deep_clone } from '../utils/deep_clone';
 import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';
@@ -66,23 +65,8 @@ function unsubscribeStateMachineEvents(instances: readonly State<Stateful>[], de
 		const target = instance.target;
 		const controller = target?.sc;
 		if (!controller) continue;
-		const cache = controller._subscribedCache;
-		for (const event of definition.event_list) {
-			let emitter: Identifier | undefined;
-			switch (event.scope) {
-				case 'self':
-					emitter = target.id;
-					break;
-				case 'all':
-				default:
-					emitter = undefined;
-					break;
-			}
-			EventEmitter.instance.off(event.name, controller.auto_dispatch, emitter, true);
-			const lane = event.lane ?? 'any';
-			const cacheKey = `${event.name}-${emitter ?? 'global'}-${lane}`;
-			cache.delete(cacheKey);
-		}
+		const names = definition.event_list.map(entry => entry.name);
+		controller.unsubscribeEventsFor(instance, names);
 	}
 }
 
@@ -100,16 +84,8 @@ function hotReloadStateMachine(machineId: Identifier, previousDefinition: StateD
 	}
 }
 
-function eventNameHasScope(name: string): boolean {
-	return name.startsWith('$');
-}
-
-function parseEventScope(name: string): EventScope {
-	return eventNameHasScope(name) ? 'self' : 'all';
-}
-
-function removeScopeFromEventName(name: string): string {
-	return eventNameHasScope(name) ? name.slice(1) : name;
+function normalizeEventName(name: string): string {
+	return name.startsWith('$') ? name.slice(1) : name;
 }
 
 function clearDefinitionsForMachine(machineId: Identifier): void {
@@ -393,11 +369,10 @@ function addEventsToDef(machine: StateMachineBlueprint): void {
 	machine.on = rewriteOnBag(machine.on);
 	const eventMap = getMachineEvents(machine);
 	eventMap?.forEach(event_entry => {
-		if (machine.event_list!.some(e => e.name === event_entry.name && e.scope === event_entry.scope)) {
-			console.warn(`Duplicate event found in machine ${machine.id}: ${event_entry.name} with scope ${event_entry.scope}`);
-			debugger;
+		if (machine.event_list!.some(e => e.name === event_entry.name)) {
+			return;
 		}
-		machine.event_list!.push({ name: event_entry.name, scope: event_entry.scope, lane: event_entry.lane ?? 'any' });
+		machine.event_list!.push({ name: event_entry.name });
 	});
 }
 
@@ -423,11 +398,9 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 	 * @param name - The name of the state event.
 	 * @param definition - The definition of the state event.
 	 */
-	function add(name: string, definition: string | StateEventDefinition): void {
-		const baseName = removeScopeFromEventName(name);
-		const scope = typeof definition === 'string' ? parseEventScope(name) : (definition.scope ?? parseEventScope(name));
-		const lane = inferLaneForEvent(baseName, definition);
-		addAndReplace(baseName, scope, lane);
+	function add(name: string): void {
+		const normalized = normalizeEventName(name);
+		addAndReplace(normalized);
 	}
 
 	/**
@@ -442,46 +415,20 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 	 * - If a global-scoped event (`scope: 'all'`) is already added, it prevents adding a specific-scoped event with the same name.
 	 * - If the event is not already added, it is added to the `events` set and marked in `addedEvents`.
 	 */
-	function inferLaneForEvent(name: string, definition: string | StateEventDefinition): EventLane | 'any' {
-		if (typeof definition !== 'string') {
-			const lane = (definition as StateEventDefinition & { lane?: EventLane | 'any' }).lane;
-			if (lane) return lane;
-		}
-		const lowered = name.toLowerCase();
-		if (lowered.startsWith('mode.') || lowered.startsWith('state.') || lowered.startsWith('combat.') || lowered.startsWith('ability.') || lowered.startsWith('input.') || lowered.startsWith('hit') || lowered.startsWith('ai.')) {
-			return 'gameplay';
-		}
-		if (lowered.startsWith('animate') || lowered.startsWith('fx.') || lowered.startsWith('sfx.') || lowered.startsWith('ui.') || lowered.startsWith('camera.') || lowered.startsWith('music.') || lowered.startsWith('screen') || lowered.startsWith('presentation.')) {
-			return 'presentation';
-		}
-		return 'any';
-	}
-
-	function addAndReplace(name: string, scope: string, lane: EventLane | 'any'): void {
-		const key = `${name}-${scope}`; // Create a unique key for the event based on its name and scope
-
-		if (addedEvents.has(key)) return; // If the event is already added, don't add it again
-		if (addedEvents.has(`${name}-all`)) return; // If the event is already in the set, and the scope is global, don't replace it with a specific scoped event
-
-		// If the event is not in the set, add it
-		events.add({ name: name, scope: scope, lane });
-
-		// Mark the event as added in the map to prevent duplicates
-		addedEvents.set(key, true);
+	function addAndReplace(name: string): void {
+		if (addedEvents.has(name)) return;
+		events.add({ name });
+		addedEvents.set(name, true);
 	}
 
 	// Get the events from the machine definition
 	const events = eventNamesAndScopes ?? new Set<listed_sdef_event>();
-	const addedEvents = eventMap ?? new Map<string, boolean>(); // Map to track added events to prevent duplicates
+	const addedEvents = eventMap ?? new Map<string, boolean>();
 	machine.on = rewriteOnBag(machine.on);
 	// Start with the events defined in the machine definition
 	if (machine.on) {
-		// Add all events from the machine definition
 		for (const name in machine.on) {
-			// Get the event definition
-			const definition = machine.on[name];
-			// Add the event to the list of events
-			add(name, definition);
+			add(name);
 		}
 	}
 
@@ -494,12 +441,8 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 		if (!state_def) continue;
 		if (state_def.on) {
 			state_def.on = rewriteOnBag(state_def.on);
-			// Add all events from the state definition
 			for (const name in state_def.on) {
-				// Get the event definition
-				const definition = state_def.on[name];
-				// Add the event to the list of events
-				add(name, definition);
+				add(name);
 			}
 		}
 
@@ -647,13 +590,12 @@ function rewriteOnBag(bag: StateMachineBlueprint['on']) {
 	if (!bag) return bag;
 	const out: NonNullable<StateMachineBlueprint['on']> = {};
 	for (const [raw, def] of Object.entries(bag)) {
-		const base = removeScopeFromEventName(raw);
-		const scope = parseEventScope(raw);
+		const base = normalizeEventName(raw);
 		if (typeof def === 'string') {
-			out[base] = { scope, do: def };
+			out[base] = { do: def };
 			continue;
 		}
-		out[base] = { scope, ...def };
+		out[base] = { ...def };
 	}
 	return out;
 }

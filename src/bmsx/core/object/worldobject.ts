@@ -10,7 +10,7 @@ import { ObjectTracker } from "../../utils/objecttracker";
 import { new_vec2, new_vec3 } from '../../utils/vector_operations';
 import { middlepoint_area, new_area } from '../../utils/rect_operations';
 import { StateDefinitions, registerHandlersForLinkedMachines } from '../../fsm/fsmlibrary';
-import { EventEmitter } from "../eventemitter";
+import { EventEmitter, EventPort, eventsOf } from "../eventemitter";
 import { Registry } from "../registry";
 import { CustomVisualComponent } from '../../component/customvisual_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
@@ -58,6 +58,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * Represents a map of components associated with their respective keys.
 	 */
 	public componentMap: KeyToComponentMap = {};
+
+	public readonly events: EventPort;
 
 	public components: Component[] = []; // Array of all components in the object for easy iteration
 	private readonly _timelineComponent: TimelineComponent;
@@ -828,6 +830,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 */
 	constructor(opts?: RevivableObjectArgs & { id?: string, fsm_id?: string }) {
 		this.id = opts?.id ?? this.id ?? this.generateId();
+		this.events = eventsOf(this);
 
 		// Check if the FSM ID refers to a valid state machine in the library, but only if it was explicitly passed as an argument
 		if (opts?.fsm_id && !StateDefinitions[opts.fsm_id]) throw new Error(`[StateMachineController] Invalid FSM ID: '${opts.fsm_id}'`);
@@ -891,7 +894,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/** Wire decorator-declared subscriptions for this object and bind its controller (revive path). */
 	public bind(): void {
 		Registry.instance.register(this);
-		EventEmitter.instance.initClassBoundEventSubscriptions(this);
 	}
 
 	/** Unwire subscriptions and FSM listeners for this object. */
