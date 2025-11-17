@@ -1,4 +1,3 @@
-import { $ } from '../core/game';
 import type { Stateful } from '../fsm/fsmtypes';
 import { State } from '../fsm/state';
 import type { Identifier } from '../rompack/rompack';
@@ -6,54 +5,53 @@ import { FloatingDialog, removeStateMachineVisualizer } from './bmsxdebugger';
 import { createObjectTableElement } from './objectpropertydialog';
 
 export class StateMachineVisualizer {
-	private dialog: FloatingDialog;
-	private parentid: Identifier;
-	private machineElements: Map<string, HTMLElement>;
-	private stateElements: Map<string, HTMLElement>;
+	private dialog: FloatingDialog | null = null;
+	private readonly owner: Stateful;
+	private readonly ownerId: Identifier;
+	private machineElements: Map<string, HTMLElement> | null = null;
+	private stateElements: Map<string, HTMLElement> | null = null;
 
-	constructor(id: string) {
-		this.parentid = id;
+	constructor(owner: Stateful) {
+		this.owner = owner;
+		this.ownerId = owner.id;
 	}
 
 	public frameUpdate(): void {
 		this.openDialog();
-		const [machineElements, stateElements] = [this.machineElements, this.stateElements];
-		highlightCurrentState(stateElements, machineElements, this.parentid);
+		if (!this.machineElements || !this.stateElements) return;
+		highlightCurrentState(this.stateElements, this.machineElements, this.owner);
 	}
 
 	public closeDialog(): void {
-		this.dialog.close();
+		this.dialog?.close();
 		this.dialog = null;
 		this.machineElements = null;
 		this.stateElements = null;
-		removeStateMachineVisualizer(this.parentid);
+		removeStateMachineVisualizer(this.ownerId);
 	}
 
 	public openDialog(): void {
 		if (!this.dialog) {
-			this.dialog = new FloatingDialog(`FSM: [${this.parentid}]`);
+			this.dialog = new FloatingDialog(`FSM: [${this.ownerId}]`);
 		}
 		if (!this.machineElements || !this.stateElements) {
 			[, this.machineElements, this.stateElements] = visualizeStateMachine(
 				this.dialog.getDialogElement(),
 				this.dialog.getContentElement(),
-				this.parentid
+				this.owner
 			);
 			this.dialog.updateSize();
 		}
 	}
 }
 
-export function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElement, bfsmControllerId: Identifier): [HTMLElement, Map<string, HTMLElement>, Map<string, HTMLElement>] {
+export function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElement, owner: Stateful): [HTMLElement, Map<string, HTMLElement>, Map<string, HTMLElement>] {
 	let baseTable = document.createElement('table');
 	container.appendChild(baseTable);
 	let stateElements = new Map<string, HTMLElement>();
 	let machineElements = new Map<string, HTMLElement>();
-
-	const owner = $.get<Stateful>(bfsmControllerId);
-	if (!owner) throw new Error(`[StateMachineVisualizer] Stateful owner '${bfsmControllerId}' not found.`);
 	const bfsmController = owner.sc;
-	if (!bfsmController) throw new Error(`[StateMachineVisualizer] Stateful owner '${bfsmControllerId}' has no state controller instance.`);
+	if (!bfsmController) throw new Error(`[StateMachineVisualizer] Stateful owner '${owner.id}' has no state controller instance.`);
 
 	function visualizeMachine(machine: State, machineName: string, parentElement: HTMLElement, isActive: boolean, path: string): void {
 		let table = document.createElement('table');
@@ -97,7 +95,7 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
 
 	for (let machineName in bfsmController.machines) {
 		let machine = bfsmController.machines[machineName];
-		if (!machine) throw new Error(`[StateMachineVisualizer] Controller '${bfsmControllerId}' lists missing machine '${machineName}'.`);
+		if (!machine) throw new Error(`[StateMachineVisualizer] Controller '${owner.id}' lists missing machine '${machineName}'.`);
 		let machineRow = document.createElement('tr');
 		let machineCell = document.createElement('td');
 		machineCell.textContent = machineName;
@@ -117,11 +115,9 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
 	return [container, machineElements, stateElements];
 }
 
-export function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineElements: Map<string, HTMLElement>, bfsmControllerId: Identifier): void {
-	const owner = $.get<Stateful>(bfsmControllerId);
-	if (!owner) throw new Error(`[StateMachineVisualizer] Stateful owner '${bfsmControllerId}' not found while highlighting current state.`);
+export function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineElements: Map<string, HTMLElement>, owner: Stateful): void {
 	const bfsmController = owner.sc;
-	if (!bfsmController) throw new Error(`[StateMachineVisualizer] Stateful owner '${bfsmControllerId}' lost its state controller.`);
+	if (!bfsmController) throw new Error(`[StateMachineVisualizer] Stateful owner '${owner.id}' lost its state controller.`);
 	function updateMachineClasses(machine: State, machineName: string, isActive: boolean, path: string): void {
 		const states = machine.states ?? {};
 		const hasChildMachines = Object.keys(states).length > 0;
@@ -158,7 +154,7 @@ export function highlightCurrentState(stateElements: Map<string, HTMLElement>, m
 	}
 	for (let machineName in bfsmController.machines) {
 		let machine = bfsmController.machines[machineName];
-		if (!machine) throw new Error(`[StateMachineVisualizer] Controller '${bfsmControllerId}' lost machine '${machineName}'.`);
+		if (!machine) throw new Error(`[StateMachineVisualizer] Controller '${owner.id}' lost machine '${machineName}'.`);
 		updateMachineClasses(machine, machineName, true, machineName + ':');
 	}
 }

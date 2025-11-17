@@ -220,6 +220,13 @@ export class Game {
 		return this.world.getWorldObject<T>(id);
 	}
 
+	public resolve_ref_or_id<T extends Registerable>(ref_or_id: T | Identifier): T {
+		if (typeof ref_or_id === 'string') {
+			return this.registry.get<T>(ref_or_id);
+		}
+		return ref_or_id;
+	}
+
 	public has(id: Identifier): boolean {
 		return this.registry.has(id);
 	}

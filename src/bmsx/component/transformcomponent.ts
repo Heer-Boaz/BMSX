@@ -71,7 +71,7 @@ export class TransformComponent extends Component<WorldObject> {
 	}
 
 	override postprocessingUpdate(): void {
-		const parent = this.parentOrThrow();
+		const parent = this.parent;
 		this.position[0] = parent.x;
 		this.position[1] = parent.y;
 		this.position[2] = parent.z;

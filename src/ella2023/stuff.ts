@@ -45,11 +45,11 @@ export class GameOver extends SpriteObject {
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'gameover', ...opts });
 		this.imgid = BitmapId.gameover;
-		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
-			rc.submitRect({ kind: 'fill', area: new_area3d(0, 136, this.z + 1, 256, 192 - 8, this.z + 1), color: Msx1Colors[0] });
+		this.getOrCreateCustomRenderer().add_producer(({ rc }) => {
+			rc.submit_rect({ kind: 'fill', area: new_area3d(0, 136, this.z + 1, 256, 192 - 8, this.z + 1), color: Msx1Colors[0] });
 			const x = 8, y = 144;
 			const textToWrite = 'je bent toch niet de strijder die ik nodig heb.\nik ben een beetje teleurgesteld in jouw ouders...';
-			rc.submitGlyphs({ x, y, glyphs: textToWrite, wrapChars: 30 });
+			rc.submit_glyphs({ x, y, glyphs: textToWrite, wrap_chars: 30 });
 		});
 	}
 }
@@ -88,11 +88,11 @@ export class Hoera extends SpriteObject {
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'hoera', ...opts });
 		this.imgid = BitmapId.hoera;
-		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
-			rc.submitRect({ kind: 'fill', area: new_area3d(0, 152, this.z + 1, 256, 192, this.z + 1), color: Msx1Colors[0] });
+		this.getOrCreateCustomRenderer().add_producer(({ rc }) => {
+			rc.submit_rect({ kind: 'fill', area: new_area3d(0, 152, this.z + 1, 256, 192, this.z + 1), color: Msx1Colors[0] });
 			const x = 16, y = 160;
 			const textToWrite = 'Dat heb je redelijk gedaan Elly!\nIk bedoel: Ei La!';
-			rc.submitGlyphs({ x, y, glyphs: textToWrite, wrapChars: 30 });
+			rc.submit_glyphs({ x, y, glyphs: textToWrite, wrap_chars: 30 });
 		});
 	}
 }
@@ -131,9 +131,6 @@ export class TitleScreen extends SpriteObject {
 					},
 					process_input(this: TitleScreen) {
 						const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['up', 'down', 'punch', 'highkick', 'lowkick', 'block'] });
-						console.log('[TitleScreen] process_input', {
-							actions: priorityActions?.map(action => ({ action: action.action, pressed: action.pressed, consumed: action.consumed })),
-						});
 
 						// If no priority actions are pressed, do nothing.
 						if (!priorityActions || priorityActions.length === 0) {
@@ -162,7 +159,6 @@ export class TitleScreen extends SpriteObject {
 							entering_state(this: TitleScreen, state: State) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
 								this.selectedPlayers = 1;
-								console.log('[TitleScreen] entering players_1');
 								this.cursorVisible = true;
 								state.parent.states.blink.reset();
 								this._cursorSprite.offset = new_vec3(80, this.cursorY, 1);
@@ -176,7 +172,6 @@ export class TitleScreen extends SpriteObject {
 							entering_state(this: TitleScreen, state: State) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
 								this.selectedPlayers = 2;
-								console.log('[TitleScreen] entering players_2');
 								this.cursorVisible = true;
 								state.parent.states.blink.reset();
 								this._cursorSprite.offset = new_vec3(80, this.cursorY, 1);
@@ -195,7 +190,6 @@ export class TitleScreen extends SpriteObject {
 								[`timeline.frame:${TitleScreen.BLINK_TIMELINE_ID}`]: {
 									scope: 'self',
 									do(this: TitleScreen, state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<boolean>>) {
-										console.log('[TitleScreen] blink timeline frame', { value: event.frame_value, pause: state.data.pause_blink });
 										if (state.data.pause_blink) return;
 										this.cursorVisible = event.frame_value;
 									},
@@ -230,10 +224,10 @@ export class TitleScreen extends SpriteObject {
 		super({ id: 'title', ...opts });
 		this.imgid = BitmapId.title;
 		// Cursor sprite component (secondary)
-		this._cursorSprite = new SpriteComponent({ parentid: this.id, imgid: BitmapId.menu_arrow });
+		this._cursorSprite = new SpriteComponent({ parent_or_id: this, imgid: BitmapId.menu_arrow });
 		this.add_component(this._cursorSprite);
 		this._cursorSprite.layer = 'ui';
-		this._cursorSprite.colliderLocalId = null;
+		this._cursorSprite.collider_local_id = null;
 		this.define_timeline({
 			id: TitleScreen.BLINK_TIMELINE_ID,
 			frames: [false, true],
@@ -296,8 +290,8 @@ export class Gordijn extends WorldObject {
 			repetitions: 256 / 8,
 		});
 		this.width = 0;
-		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
-			rc.submitRect({ kind: 'fill', area: new_area3d(0, 0, this.z + 1, this.width, 192, this.z), color: Msx1Colors[0], layer: 'ui' });
+		this.getOrCreateCustomRenderer().add_producer(({ rc }) => {
+			rc.submit_rect({ kind: 'fill', area: new_area3d(0, 0, this.z + 1, this.width, 192, this.z), color: Msx1Colors[0], layer: 'ui' });
 		});
 	}
 }

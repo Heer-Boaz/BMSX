@@ -1,5 +1,6 @@
 import type { EventPayload } from '../core/eventemitter';
 import type { Identifier } from '../rompack/rompack';
+import type { WorldObject } from '../core/object/worldobject';
 
 export type TagId = string;
 export type AttributeId = string;
@@ -67,7 +68,7 @@ export interface AbilitySpec {
 
 // Minimal surface so we avoid a circular type import
 export interface AbilitySystemRef {
-	parentid: Identifier;
+	owner: WorldObject;
 	hasTag(tag: TagId): boolean;
 	requestAbility<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult;
 	tryActivate<Id extends AbilityId>(id: Id, payload?: AbilityPayloadFor<Id>): boolean;

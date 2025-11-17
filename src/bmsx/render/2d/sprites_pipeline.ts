@@ -216,11 +216,11 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		if (la !== lb) return la - lb;
 		const za = a.options.pos.z ?? 0; const zb = b.options.pos.z ?? 0;
 		if (za !== zb) return za - zb;
-		const ae = (a.options.ambientAffected ? 1 : 0);
-		const be = (b.options.ambientAffected ? 1 : 0);
+		const ae = (a.options.ambient_affected ? 1 : 0);
+		const be = (b.options.ambient_affected ? 1 : 0);
 		if (ae !== be) return ae - be;
-		const af = q(a.options.ambientFactor ?? state.ambientFactorDefault);
-		const bf = q(b.options.ambientFactor ?? state.ambientFactorDefault);
+		const af = q(a.options.ambient_factor ?? state.ambientFactorDefault);
+		const bf = q(b.options.ambient_factor ?? state.ambientFactorDefault);
 		if (af !== bf) return af - bf;
 		return 0;
 	});
@@ -243,8 +243,8 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	forEachSpriteBatch(({ options, imgmeta }) => {
 		const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
 		const layerIsOverlay = options.layer === 'ui' || options.layer === 'editor';
-		const ambE = layerIsOverlay ? 0 : (options.ambientAffected != null ? (options.ambientAffected ? 1 : 0) : ambientDefaultEnabled);
-		const ambF = q(options.ambientFactor != null ? options.ambientFactor : state.ambientFactorDefault);
+		const ambE = layerIsOverlay ? 0 : (options.ambient_affected != null ? (options.ambient_affected ? 1 : 0) : ambientDefaultEnabled);
+		const ambF = q(options.ambient_factor != null ? options.ambient_factor : state.ambientFactorDefault);
 		if (currentAmbientEnabled === null) { currentAmbientEnabled = ambE; currentAmbientFactor = ambF; }
 		else if (ambE !== currentAmbientEnabled || Math.abs(ambF - currentAmbientFactor) > 1e-3) { flush(); currentAmbientEnabled = ambE; currentAmbientFactor = ambF; }
 		const { width, height } = imgmeta;

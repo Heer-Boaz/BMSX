@@ -110,7 +110,7 @@ export interface Identifiable {
 export type MaybeRegisterable = Partial<Registerable>;
 
 export interface Parentable {
-	parentid?: Identifier;
+	parent?: Identifiable | null;
 }
 
 export interface Disposable {

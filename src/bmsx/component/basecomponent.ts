@@ -175,7 +175,7 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 *
 	 * @returns The parent component.
 	 */
-	protected _parent: T;
+	protected _parent: T | null = null;
 	public get parent(): T | undefined {
 		if (!this._parent) throw new Error(`[Component:${this.id}] Parent is not attached.`);
 		return this._parent;

@@ -21,7 +21,7 @@ export class BTVisualizer extends Component {
 
 	override postprocessingUpdate(): void {
 		this.openDialog();
-		[, this.machineElements] = visualizeBehaviorTree(this.dialog.getContentElement(), this.parentid);
+		[, this.machineElements] = visualizeBehaviorTree(this.dialog.getContentElement(), this.parent.id);
 	}
 
 	public closeDialog(): void {
@@ -32,10 +32,10 @@ export class BTVisualizer extends Component {
 
 	public openDialog(): void {
 		if (!this.dialog) {
-			this.dialog = new FloatingDialog(`BT: [${this.parentid}]`);
+			this.dialog = new FloatingDialog(`BT: [${this.parent.id}]`);
 		}
 		if (!this.machineElements) {
-			[, this.machineElements] = visualizeBehaviorTree(this.dialog.getContentElement(), this.parentid);
+			[, this.machineElements] = visualizeBehaviorTree(this.dialog.getContentElement(), this.parent.id);
 			this.dialog.updateSize();
 		}
 	}

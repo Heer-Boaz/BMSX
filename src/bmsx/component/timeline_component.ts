@@ -105,7 +105,7 @@ export class TimelineComponent extends Component<WorldObject> {
 
 	public play(id: string, opts?: TimelinePlayOptions): Timeline {
 		const entry = this.registry.get(id);
-		if (!entry) throw new Error(`[TimelineComponent] Unknown timeline '${id}' requested on '${this.parentid}'.`);
+		if (!entry) throw new Error(`[TimelineComponent] Unknown timeline '${id}' requested on '${this.parent?.id}'.`);
 		const { instance } = entry;
 		const rewind = opts?.rewind ?? true;
 		const snap = opts?.snapToStart ?? true;
@@ -189,7 +189,7 @@ export class TimelineComponent extends Component<WorldObject> {
 		for (const evt of events) {
 			if ($.debug) {
 				console.log('[Timeline][event]', {
-					parent: this.parentid,
+					parent: this.parent.id,
 					timeline: entry.definition.id,
 					kind: evt.kind,
 					current: (evt as TimelineFrameEvent).current ?? (evt as TimelineEndEvent).frame,
@@ -298,7 +298,7 @@ export class TimelineComponent extends Component<WorldObject> {
 export function ensureTimelineComponent(parent: WorldObject): TimelineComponent {
 	const existing = parent.get_unique_component(TimelineComponent);
 	if (existing) return existing;
-	const component = new TimelineComponent({ parentid: parent.id });
+	const component = new TimelineComponent({ parent_or_id: parent });
 	parent.add_component(component);
 	return component;
 }

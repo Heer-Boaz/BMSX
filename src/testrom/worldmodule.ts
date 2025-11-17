@@ -265,8 +265,8 @@ export function createTestromModule() {
 					const py = s.p.y + (Math.random() * 2 - 1) * 2;
 					const pz = s.p.z + Math.sin(angle) * radius;
 					$.spawn(cube, new_vec3(px, py, pz));
-					cube.addComponent(new PhysicsDescriptorComponent({ parentid: cube.id, shape: { kind: 'aabb', halfExtents: new_vec3(0.6, 0.6, 0.6) }, mass: 1, restitution: 0.3, friction: 0.4 }));
-					cube.addComponent(new EnemyHealthComponent({ parentid: cube.id, hp: 30, maxHp: 25 }));
+					cube.addComponent(new PhysicsDescriptorComponent({ parent_or_id: cube, shape: { kind: 'aabb', halfExtents: new_vec3(0.6, 0.6, 0.6) }, mass: 1, restitution: 0.3, friction: 0.4 }));
+					cube.addComponent(new EnemyHealthComponent({ parent_or_id: cube, hp: 30, maxHp: 25 }));
 				}
 			});
 			waves.onSpawn('spawn.enemyBoss', (data) => {
@@ -274,8 +274,8 @@ export function createTestromModule() {
 				const boss = new PhysDynamicCube(size);
 				const s = runner.sample();
 				$.spawn(boss, new_vec3(s.p.x, s.p.y + 4, s.p.z));
-				boss.addComponent(new PhysicsDescriptorComponent({ parentid: boss.id, shape: { kind: 'aabb', halfExtents: new_vec3(size, size, size) }, mass: 5, restitution: 0.2, friction: 0.5 }));
-				boss.addComponent(new EnemyHealthComponent({ parentid: boss.id, hp: 300, maxHp: 1000, boss: true }));
+				boss.addComponent(new PhysicsDescriptorComponent({ parent_or_id: boss, shape: { kind: 'aabb', halfExtents: new_vec3(size, size, size) }, mass: 5, restitution: 0.2, friction: 0.5 }));
+				boss.addComponent(new EnemyHealthComponent({ parent_or_id: boss, hp: 300, maxHp: 1000, boss: true }));
 				bossObjId = boss.id; hud.bossId = bossObjId;
 			});
 

@@ -40,7 +40,7 @@ export class AbilityRuntimeSystem extends ECSystem {
 				asc.step(dtMs);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				const ownerId = asc.parentid ? asc.parentid : '<unknown>';
+				const ownerId = asc.parent.id ? asc.parent.id : '<unknown>';
 				const runtime = BmsxConsoleRuntime.instance;
 				if (runtime) {
 					runtime.reportEngineError(error);

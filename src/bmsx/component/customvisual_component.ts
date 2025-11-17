@@ -20,6 +20,8 @@ export class CustomVisualComponent extends Component<WorldObject> {
 	// private ops: RenderSubmission[] = [];
 	@excludepropfromsavegame
 	private producer?: RenderProducer;
+	private static flushLogCount = 0;
+	private static readonly FLUSH_DEBUG_LIMIT = 20;
 
 	constructor(opts: ComponentAttachOptions & { producer?: RenderProducer }) {
 		super(opts);
@@ -32,12 +34,12 @@ export class CustomVisualComponent extends Component<WorldObject> {
 	}
 
 	public submit = (op: RenderSubmission): void => { $.view.renderer.submit.typed(op); };
-	public submitSprite = (desc: ImgRenderSubmission): void => { $.view.renderer.submit.sprite(desc); };
-	public submitRect = (desc: RectRenderSubmission): void => { $.view.renderer.submit.rect(desc); };
-	public submitPoly = (desc: PolyRenderSubmission): void => { $.view.renderer.submit.poly(desc); };
-	public submitMesh = (desc: MeshRenderSubmission): void => { $.view.renderer.submit.mesh(desc); };
-	public submitParticle = (desc: ParticleRenderSubmission): void => { $.view.renderer.submit.particle(desc); };
-	public submitGlyphs = (opts: GlyphRenderSubmission): void => { $.view.renderer.submit.glyphs(opts); };
+	public submit_sprite = (desc: ImgRenderSubmission): void => { $.view.renderer.submit.sprite(desc); };
+	public submit_rect = (desc: RectRenderSubmission): void => { $.view.renderer.submit.rect(desc); };
+	public submit_poly = (desc: PolyRenderSubmission): void => { $.view.renderer.submit.poly(desc); };
+	public submit_mesh = (desc: MeshRenderSubmission): void => { $.view.renderer.submit.mesh(desc); };
+	public submit_particle = (desc: ParticleRenderSubmission): void => { $.view.renderer.submit.particle(desc); };
+	public submit_glyphs = (opts: GlyphRenderSubmission): void => { $.view.renderer.submit.glyphs(opts); };
 
 	/** Enqueue a pre-typed submission (least overhead). */
 	// public submit(op: RenderSubmission): void { this.ops.push(op); }
@@ -56,7 +58,7 @@ export class CustomVisualComponent extends Component<WorldObject> {
 	// public get queuedOpsCount(): number { return this.ops.length; }
 
 	/** Allow setting/replacing the render producer function. If a producer already exists, compose them. */
-	public addProducer(fn: RenderProducer | undefined): void {
+	public add_producer(fn: RenderProducer | undefined): void {
 		if (!fn) { this.producer = undefined; return; }
 		const prev = this.producer;
 		this.producer = prev ? ((ctx) => { prev(ctx); fn(ctx); }) : fn;
@@ -65,9 +67,13 @@ export class CustomVisualComponent extends Component<WorldObject> {
 	/** Submit accumulated ops into the current frame's renderer and clear the buffer. */
 	public flush(_queue: RenderSubmitQueue): void {
 		const producer = this.producer;
-		if (!producer) return;
-		const parent = this.parentOrThrow();
-		producer({ parent, rc: this });
+		if ($.debug && CustomVisualComponent.flushLogCount < CustomVisualComponent.FLUSH_DEBUG_LIMIT) {
+			CustomVisualComponent.flushLogCount++;
+			const label = producer ? (producer.name && producer.name.length > 0 ? producer.name : 'anonymous') : 'missing';
+			console.debug(`[CustomVisualComponent][flush] parent=${this.parent.id} producer=${label}`);
+		}
+		if (!producer) throw new Error(`[CustomVisualComponent] No producer defined for '${this.parent.id}' while flushing render ops.`);
+		producer({ parent: this.parent, rc: this });
 
 		// for (let i = 0; i < this.ops.length; i++) {
 		// 	queue.submit.typed(this.ops[i]);

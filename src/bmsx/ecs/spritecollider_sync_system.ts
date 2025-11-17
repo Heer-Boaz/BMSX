@@ -50,8 +50,7 @@ export class SpriteColliderSyncSystem extends ECSystem {
 }
 
 function resolveColliderForSprite(o: WorldObject, sprite: SpriteComponent): Collider2DComponent | undefined {
-	const explicitLocalId = sprite.colliderLocalId;
-	if (explicitLocalId === null) return undefined;
+	const explicitLocalId = sprite.collider_local_id;
 	if (explicitLocalId) {
 		const bound = o.get_component_by_local_id(Collider2DComponent, explicitLocalId);
 		if (bound) return bound;

@@ -7,7 +7,7 @@ import { BitmapId, ModelId } from './resourceids';
 export class Cube3D extends WorldObject {
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'cube', ...opts });
-		this.addComponent(new MeshComponent({ parentid: this.id, modelId: ModelId.cube, id_local: 'mesh' }));
+		this.addComponent(new MeshComponent({ parent_or_id: this, modelId: ModelId.cube, id_local: 'mesh' }));
 		const meshComponent = this.getComponentByLocalId(MeshComponent, 'mesh');
 		meshComponent.playClip('clip_0', { loop: true });
 	}
@@ -19,12 +19,12 @@ export class SmallCube3D extends WorldObject {
 	public scale: vec3arr = [.5, .5, .5];
 	constructor(opts?: RevivableObjectArgs & { overrideTextureIndex?: number }) {
 		super({ id: `smallCube${opts?.overrideTextureIndex ?? ''}`, ...opts });
-		this.addComponent(new MeshComponent({ parentid: this.id, modelId: ModelId.cube, id_local: 'mesh' }));
+		this.addComponent(new MeshComponent({ parent_or_id: this, modelId: ModelId.cube, id_local: 'mesh' }));
 		if (opts?.overrideTextureIndex !== undefined) {
 			const rc = this.getFirstComponent(MeshComponent);
 			rc?.setMaterialOverride(0, { albedo: opts.overrideTextureIndex });
 		}
-		this.addComponent(new TransformComponent({ parentid: this.id, id_local: 'transform' }));
+		this.addComponent(new TransformComponent({ parent_or_id: this, id_local: 'transform' }));
 		const transform = this.getUniqueComponent(TransformComponent);
 		transform.scale = this.scale;
 		const meshComponent = this.getComponentByLocalId(MeshComponent, 'mesh');
@@ -37,7 +37,7 @@ export class SmallCube3D extends WorldObject {
 export class AnimatedMorphSphere extends WorldObject {
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'animatedSphere', ...opts });
-		this.addComponent(new MeshComponent({ parentid: this.id, modelId: ModelId.animatedmorphsphere, id_local: 'mesh' }));
+		this.addComponent(new MeshComponent({ parent_or_id: this, modelId: ModelId.animatedmorphsphere, id_local: 'mesh' }));
 		const meshComponent = this.getComponentByLocalId(MeshComponent, 'mesh');
 		meshComponent.playClip('Globe', { loop: true });
 	}
@@ -128,7 +128,7 @@ export class PhysDynamicCube extends WorldObject {
 	constructor(public halfExtent = 0.5) {
 		super({ id: `physDynCube_${PhysDynamicCube._counter++}` });
 		this.scale = [halfExtent * 2, halfExtent * 2, halfExtent * 2];
-		this.addComponent(new MeshComponent({ parentid: this.id, modelId: ModelId.cube }));
+		this.addComponent(new MeshComponent({ parent_or_id: this, modelId: ModelId.cube }));
 	}
 }
 
@@ -139,7 +139,7 @@ export class PhysDynamicSphere extends WorldObject {
 	constructor(public radius = 0.5) {
 		super({ id: `physDynSphere_${PhysDynamicSphere._counter++}` });
 		this.scale = [radius * 2, radius * 2, radius * 2];
-		this.addComponent(new MeshComponent({ parentid: this.id, modelId: ModelId.animatedmorphsphere }));
+		this.addComponent(new MeshComponent({ parent_or_id: this, modelId: ModelId.animatedmorphsphere }));
 	}
 }
 
@@ -169,7 +169,7 @@ export class PhysStaticBox extends WorldObject {
 	) {
 		super({ id: nameId });
 		this.scale = [this.halfExtents[0] * 2, this.halfExtents[1] * 2, this.halfExtents[2] * 2];
-		this.addComponent(new MeshComponent({ parentid: this.id, modelId: ModelId.cube }));
+		this.addComponent(new MeshComponent({ parent_or_id: this, modelId: ModelId.cube }));
 		this.applyOverrides();
 	}
 	private applyOverrides() {
@@ -195,7 +195,7 @@ export class BuildingMesh extends WorldObject {
 	constructor(public halfExtents: vec3arr = [0.5, 0.5, 0.5]) {
 		super({ id: `building_${BuildingMesh._counter++}` });
 		this.scale = [halfExtents[0] * 2, halfExtents[1] * 2, halfExtents[2] * 2];
-		this.addComponent(new MeshComponent({ parentid: this.id, modelId: ModelId.building ?? ModelId.cube }));
+		this.addComponent(new MeshComponent({ parent_or_id: this, modelId: ModelId.building ?? ModelId.cube }));
 	}
 }
 

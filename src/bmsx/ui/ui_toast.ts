@@ -22,7 +22,7 @@ class Toast extends WorldObject {
 		this.text = opts.text;
 		this.font = opts.font;
 		this.ms = opts.ms ?? TOAST_DURATION;
-		this.getOrCreateCustomRenderer().addProducer(this.yeOldePaint);
+		this.getOrCreateCustomRenderer().add_producer(this.yeOldePaint);
 	}
 
 	override onspawn(): void {
@@ -44,8 +44,8 @@ class Toast extends WorldObject {
 		const font = toast.font ?? $.view.default_font;
 		const textWidth = font.textWidth(toast.text) + 2 * padX;
 		const rect = { area: { start: { x: centerX - textWidth / 2 - padX, y: topY - padY, z: toast.z }, end: { x: centerX + textWidth / 2 + padX, y: topY + 10 + padY, z: toast.z } }, color: { r: 0, g: 0, b: 0, a: 0.85 * alpha } };
-		rc.submitGlyphs({ x: centerX - textWidth / 2, y: topY, glyphs: toast.text, z: toast.z, color: { r: 255, g: 255, b: 255, a: Math.max(0, Math.min(1, alpha)) } });
-		rc.submitRect({ ...rect, layer: 'ui', kind: 'fill' });
+		rc.submit_glyphs({ x: centerX - textWidth / 2, y: topY, glyphs: toast.text, z: toast.z, color: { r: 255, g: 255, b: 255, a: Math.max(0, Math.min(1, alpha)) } });
+		rc.submit_rect({ ...rect, layer: 'ui', kind: 'fill' });
 	}
 }
 

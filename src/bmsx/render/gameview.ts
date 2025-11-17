@@ -5,7 +5,7 @@ import { GateGroup, taskGate } from '../core/taskgate';
 import { multiply_vec, multiply_vec2 } from '../utils/vector_operations';
 import { shallowcopy } from '../utils/shallowcopy';
 import { Input } from '../input/input';
-import type { id2imgres, vec2 } from '../rompack/rompack';
+import type { id2imgres, vec2, vec3arr } from '../rompack/rompack';
 import { type RegisterablePersistent } from '../rompack/rompack';
 import * as SpritesPipeline from './2d/sprites_pipeline';
 import * as MeshPipeline from './3d/mesh_pipeline';
@@ -67,6 +67,39 @@ export function generateAtlasName(atlasIndex: number): string {
 	return atlasName;
 }
 
+const RENDER_DEBUG_LOG_LIMIT = 25;
+const renderSubmitDebugCounts: Record<'typed' | 'particle' | 'sprite' | 'mesh' | 'rect' | 'poly' | 'glyphs', number> = {
+	typed: 0,
+	particle: 0,
+	sprite: 0,
+	mesh: 0,
+	rect: 0,
+	poly: 0,
+	glyphs: 0,
+};
+
+function debugRenderSubmit(kind: keyof typeof renderSubmitDebugCounts, message: string): void {
+	if (!$.debug) return;
+	const count = renderSubmitDebugCounts[kind];
+	if (count >= RENDER_DEBUG_LOG_LIMIT) return;
+	renderSubmitDebugCounts[kind] = count + 1;
+	console.debug(`[Renderer][${kind}] ${message}`);
+}
+
+function describeVec3(pos?: { x: number; y: number; z?: number }): string {
+	if (!pos) return 'n/a';
+	const z = (pos as { z?: number }).z;
+	return `${Math.round(pos.x)},${Math.round(pos.y)},${Math.round(z ?? 0)}`;
+}
+
+function describeVec3Arr(arr?: vec3arr): string {
+	if (!arr) return 'n/a';
+	const x = arr[0];
+	const y = arr[1];
+	const z = arr[2];
+	return `${Math.round(x)},${Math.round(y)},${Math.round(z)}`;
+}
+
 export interface GameViewOpts {
 	host: GameViewHost;
 	viewportSize: vec2; // If not provided, defaults to 256x212 (MSX2) TODO: CHECK WHETHER THIS IS TRUE!
@@ -74,10 +107,6 @@ export interface GameViewOpts {
 	offscreenSize?: vec2; // Optional offscreen render resolution; defaults to 2x viewport
 }
 
-/**
- * The `GameView` class is an abstract class that serves as the base for all views in the application.
- * It provides common functionality and properties that are shared across all views.
- */
 export class GameView implements RegisterablePersistent, RenderContext {
 	get registrypersistent(): true {
 		return true;
@@ -232,6 +261,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	} = {
 			submit: {
 				typed: (o: RenderSubmission) => {
+					const typeLabel = o ? o.type : 'unknown';
+					debugRenderSubmit('typed', `type=${typeLabel}`);
 					if (!o) {
 						throw new Error('[GameView] Render submission was not provided.');
 					}
@@ -256,12 +287,31 @@ export class GameView implements RegisterablePersistent, RenderContext {
 							return;
 					}
 				},
-				particle: (o: ParticleRenderSubmission) => { ParticlesPipeline.submitParticle({ ...o }); },
-				sprite: (o: ImgRenderSubmission) => { SpritesPipeline.drawImg(o); },
-				mesh: (o: MeshRenderSubmission) => { MeshPipeline.submitMesh({ ...o }); },
-				rect: (o: RectRenderSubmission) => { o.kind === 'fill' ? SpritesPipeline.fillRectangle(o) : SpritesPipeline.drawRectangle(o); },
-				poly: (o: PolyRenderSubmission) => { SpritesPipeline.drawPolygon(o.points, o.z, o.color, o.thickness ?? 1, o.layer); },
+				particle: (o: ParticleRenderSubmission) => {
+					debugRenderSubmit('particle', `pos=${describeVec3Arr(o.position)} size=${o.size}`);
+					ParticlesPipeline.submitParticle({ ...o });
+				},
+				sprite: (o: ImgRenderSubmission) => {
+					debugRenderSubmit('sprite', `img=${o.imgid} layer=${o.layer ?? 'world'} pos=${describeVec3(o.pos)}`);
+					SpritesPipeline.drawImg(o);
+				},
+				mesh: (o: MeshRenderSubmission) => {
+					const meshName = o.mesh?.name ?? 'unnamed';
+					debugRenderSubmit('mesh', `mesh=${meshName}`);
+					MeshPipeline.submitMesh({ ...o });
+				},
+				rect: (o: RectRenderSubmission) => {
+					debugRenderSubmit('rect', `kind=${o.kind ?? 'rect'} layer=${o.layer ?? 'world'}`);
+					o.kind === 'fill' ? SpritesPipeline.fillRectangle(o) : SpritesPipeline.drawRectangle(o);
+				},
+				poly: (o: PolyRenderSubmission) => {
+					const pointCount = o.points?.length ?? 0;
+					debugRenderSubmit('poly', `points=${pointCount} layer=${o.layer ?? 'world'}`);
+					SpritesPipeline.drawPolygon(o.points, o.z, o.color, o.thickness ?? 1, o.layer);
+				},
 				glyphs: (o: GlyphRenderSubmission) => {
+					const glyphCount = Array.isArray(o.glyphs) ? o.glyphs.length : (typeof o.glyphs === 'string' ? o.glyphs.length : 0);
+					debugRenderSubmit('glyphs', `glyphs=${glyphCount} layer=${o.layer ?? 'ui'}`);
 					let lines: string | string[] = o.glyphs;
 					const resolvedFont = o.font ?? this.default_font;
 					if (!resolvedFont) {
@@ -270,16 +320,16 @@ export class GameView implements RegisterablePersistent, RenderContext {
 					o.font = resolvedFont;
 
 					// Optional char-based wrapping
-					if (typeof lines === 'string' && o.wrapChars !== undefined && o.wrapChars > 0) {
-						lines = wrapGlyphs(lines, o.wrapChars);
+					if (typeof lines === 'string' && o.wrap_chars !== undefined && o.wrap_chars > 0) {
+						lines = wrapGlyphs(lines, o.wrap_chars);
 					}
 					let xx = o.x;
 					// Optional simple centering within a block of width (pixels)
-					if (o.centerBlockWidth && o.centerBlockWidth > 0) {
+					if (o.center_block_width && o.center_block_width > 0) {
 						const arr = Array.isArray(lines) ? lines : [lines];
-						xx += calculateCenteredBlockX(arr, o.font.char_width('a'), o.centerBlockWidth);
+						xx += calculateCenteredBlockX(arr, o.font.char_width('a'), o.center_block_width);
 					}
-					renderGlyphs(xx, o.y, lines, o.z ?? 950, o.font, o.color, o.backgroundColor, o.layer);
+					renderGlyphs(xx, o.y, lines, o.z ?? 950, o.font, o.color, o.background_color, o.layer);
 				},
 			},
 		};

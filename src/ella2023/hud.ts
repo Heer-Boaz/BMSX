@@ -20,7 +20,7 @@ export class Hud extends SpriteObject {
 		super({ id: 'hud', ...opts ?? {} });
 		this.imgid = BitmapId.hud;
 		// Producer: HUD elements (health bars + text)
-		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
+		this.getOrCreateCustomRenderer().add_producer(({ rc }) => {
 			const world = $.world;
 			const player = world.getWorldObject<Fighter>('player');
 			const sinterklaas = world.getWorldObject<Fighter>('sinterklaas');
@@ -33,11 +33,11 @@ export class Hud extends SpriteObject {
 			const hp2 = player?.hp ?? 100; // Note that the compute_bar_area handles clamping
 
 			const area1 = compute_bar_area(HP_BAR1, hp1, MAX_HP, Z, false);
-			rc.submitRect({ kind: 'fill', area: area1, color });
+			rc.submit_rect({ kind: 'fill', area: area1, color });
 			const area2 = compute_bar_area(HP_BAR2, hp2, MAX_HP, Z, true);
-			rc.submitRect({ kind: 'fill', area: area2, color });
-			rc.submitGlyphs({ x: 40, y: 32, glyphs: 'sen kai la' });
-			rc.submitGlyphs({ x: 144, y: 32, glyphs: 'ei la' });
+			rc.submit_rect({ kind: 'fill', area: area2, color });
+			rc.submit_glyphs({ x: 40, y: 32, glyphs: 'sen kai la' });
+			rc.submit_glyphs({ x: 144, y: 32, glyphs: 'ei la' });
 		});
 	}
 

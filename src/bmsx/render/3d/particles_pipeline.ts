@@ -156,12 +156,12 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 		const tex = (p.texture as TextureHandle | undefined) ?? defaultTexture;
 		let byAmbient = batches.get(tex);
 		if (!byAmbient) { byAmbient = new Map(); batches.set(tex, byAmbient); }
-		const mode = (p.ambientMode ?? particleAmbientModeDefault) | 0;
-		const factor = Math.max(0, Math.min(1, p.ambientFactor ?? particleAmbientFactorDefault));
+		const mode = (p.ambient_mode ?? particleAmbientModeDefault) | 0;
+		const factor = Math.max(0, Math.min(1, p.ambient_factor ?? particleAmbientFactorDefault));
 		const key = mode + ':' + factor.toFixed(2);
 		let arr = byAmbient.get(key);
 		if (!arr) { arr = []; byAmbient.set(key, arr); }
-		arr.push({ ...p, ambientMode: mode as 0 | 1, ambientFactor: factor, texture: tex });
+		arr.push({ ...p, ambient_mode: mode as 0 | 1, ambient_factor: factor, texture: tex });
 	});
 	const viewportWidth = safeDimension(resolvedState.width, context.offscreenCanvasSize.x);
 	const viewportHeight = safeDimension(resolvedState.height, context.offscreenCanvasSize.y);

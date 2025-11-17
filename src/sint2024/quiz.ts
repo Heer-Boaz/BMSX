@@ -99,7 +99,7 @@ export class quiz extends WorldObject {
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'quiz', ...opts });
 		this.addComponent(new CustomVisualComponent({
-			parentid: this.id, producer: ({ rc }) => {
+			parent_or_id: this, producer: ({ rc }) => {
 				const charWidth = 8;
 				const startY = 2 * charWidth;
 

@@ -77,7 +77,7 @@ export class Collider2DComponent extends Component<WorldObject> {
 
 	/** Returns world-space AABB. Falls back to object size if no local area is set. */
 	public get worldArea(): Area {
-		const parent = this.parentOrThrow();
+		const parent = this.parent;
 		const p = parent.pos;
 		if (!this._localArea) {
 			const size = parent.size;
@@ -92,7 +92,7 @@ export class Collider2DComponent extends Component<WorldObject> {
 	/** Returns world-space polygons, offset by parent position; null when none. */
 	public get worldPolygons(): Polygon[] | null {
 		if (!this._localPolys || this._localPolys.length === 0) return null;
-		const parent = this.parentOrThrow();
+		const parent = this.parent;
 		const px = parent.x;
 		const py = parent.y;
 		return this._localPolys.map(poly => {
@@ -119,7 +119,7 @@ export class Collider2DComponent extends Component<WorldObject> {
 	/** Returns world-space circle, if any. */
 	public get worldCircle(): { x: number; y: number; r: number } | null {
 		if (!this._localCircle) return null;
-		const parent = this.parentOrThrow();
+		const parent = this.parent;
 		const p = parent.pos;
 		return { x: p.x + this._localCircle.x, y: p.y + this._localCircle.y, r: this._localCircle.r };
 	}
@@ -163,7 +163,7 @@ export abstract class PositionUpdateAxisComponent extends Component<WorldObject>
 	}
 
 	override preprocessingUpdate(): void {
-		const parent = this.parentOrThrow();
+		const parent = this.parent;;
 		set_inplace_vec2(this.oldPos, parent.pos);
 	}
 }
@@ -182,7 +182,7 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
 	 */
 	override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
 		super.postprocessingUpdate({ params, returnvalue });
-		const parent = this.parentOrThrow();
+		const parent = this.parent;
 		const currentPos = parent.pos;
 		if (this.oldPos.x !== currentPos.x) {
 			this.checkBoundaryForXAxis(parent, this.oldPos.x, currentPos.x);
@@ -266,7 +266,7 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
 	 */
 	override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
 		super.postprocessingUpdate({ params, returnvalue });
-		const parent = this.parentOrThrow();
+		const parent = this.parent;
 		const currentPos = parent.pos;
 		if (this.oldPos.x !== currentPos.x) {
 			this.checkTileCollisionForXAxis(parent, this.oldPos.x, currentPos.x);

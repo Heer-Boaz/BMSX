@@ -360,9 +360,9 @@ export abstract class Fighter extends SpriteObject {
 			return;
 		}
 		if (!this._hitSprite) {
-			this._hitSprite = new SpriteComponent({ parentid: this.id });
+			this._hitSprite = new SpriteComponent({ parent_or_id: this });
 			this.add_component(this._hitSprite);
-			this._hitSprite.colliderLocalId = null;
+			this._hitSprite.collider_local_id = null;
 		}
 		let imgid: string = BitmapId.poef;
 		switch (hitMarker.type) {

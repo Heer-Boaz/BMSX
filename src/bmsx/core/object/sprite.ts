@@ -15,21 +15,21 @@ const PRIMARY_COLLIDER_ID = 'primary';
  * Extends the WorldObject class.
  */
 export abstract class SpriteObject extends WorldObject {
-	private get spriteComp(): SpriteComponent {
+	private get sprite_component(): SpriteComponent {
 		const comp = this.get_component_by_local_id(SpriteComponent, BASE_SPRITE_ID);
 		if (!comp) {
 			throw new Error(`[SpriteObject:${this.id}] Missing SpriteComponent '${BASE_SPRITE_ID}'.`);
 		}
 		return comp;
 	}
-	public get flip_h(): boolean { return this.spriteComp.flip.flip_h; }
-	public set flip_h(fh: boolean) { this.spriteComp.flip = { ...this.spriteComp.flip, flip_h: !!fh }; this.updateHitareas(); }
-	public get flip_v(): boolean { return this.spriteComp.flip.flip_v; }
-	public set flip_v(fv: boolean) { this.spriteComp.flip = { ...this.spriteComp.flip, flip_v: !!fv }; this.updateHitareas(); }
-	public get imgid(): string { return this.spriteComp.imgid; }
+	public get flip_h(): boolean { return this.sprite_component.flip.flip_h; }
+	public set flip_h(fh: boolean) { this.sprite_component.flip = { ...this.sprite_component.flip, flip_h: !!fh }; this.updateHitareas(); }
+	public get flip_v(): boolean { return this.sprite_component.flip.flip_v; }
+	public set flip_v(fv: boolean) { this.sprite_component.flip = { ...this.sprite_component.flip, flip_v: !!fv }; this.updateHitareas(); }
+	public get imgid(): string { return this.sprite_component.imgid; }
 	/** Sets the image id and updates object size/hitareas from ROM metadata. */
 	public set imgid(id: string) {
-		const comp = this.spriteComp;
+		const comp = this.sprite_component;
 		comp.imgid = id;
 		const entry = $rompack.img[id];
 		if (!entry) {
@@ -44,8 +44,8 @@ export abstract class SpriteObject extends WorldObject {
 		this.sy = imgmeta['height'];
 		this.updateHitareas();
 	}
-	public get colorize(): color { return this.spriteComp.colorize; }
-	public set colorize(c: color) { this.spriteComp.colorize = c; }
+	public get colorize(): color { return this.sprite_component.colorize; }
+	public set colorize(c: color) { this.sprite_component.colorize = c; }
 
 	private updateHitareas() {
 		const id = this.imgid;
@@ -104,11 +104,11 @@ export abstract class SpriteObject extends WorldObject {
 	constructor(opts: RevivableObjectArgs & { id?: string, fsm_id?: string }) {
 		super(opts);
 		// Attach base SpriteComponent (data-driven sprite handled by SpriteRenderSystem)
-		const baseSprite = new SpriteComponent({ parentid: this.id, imgid: 'none', id_local: BASE_SPRITE_ID, colliderLocalId: PRIMARY_COLLIDER_ID });
+		const baseSprite = new SpriteComponent({ parent_or_id: this, imgid: 'none', id_local: BASE_SPRITE_ID, collider_local_id: PRIMARY_COLLIDER_ID });
 		this.add_component(baseSprite);
 		// Attach Collider by default; sprite-driven sync will populate shapes
-		this.add_component(new Collider2DComponent({ parentid: this.id, id_local: PRIMARY_COLLIDER_ID }));
+		this.add_component(new Collider2DComponent({ parent_or_id: this, id_local: PRIMARY_COLLIDER_ID }));
 	}
 
-	// queueRenderSubmissions removed — handled by SpriteRenderSystem via SpriteComponent
+	// Note: rendering handled by SpriteRenderSystem via SpriteComponent
 }

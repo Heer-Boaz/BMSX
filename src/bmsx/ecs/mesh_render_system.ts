@@ -46,7 +46,7 @@ export class MeshRenderSystem extends ECSystem {
 					const L2 = mc.lodMorphDisableDistance > 0 ? mc.lodMorphDisableDistance * mc.lodMorphDisableDistance : -1;
 					if (L1 > 0 && dist2 > L1) {
 						// Submit a copy without morph weights when far
-						const sub = { ...s, morphWeights: (L2 > 0 && dist2 > L2) ? undefined : s.morphWeights };
+						const sub = { ...s, morphWeights: (L2 > 0 && dist2 > L2) ? undefined : s.morph_weights };
 						$.view.renderer.submit.mesh(sub);
 						continue;
 					}

@@ -537,7 +537,7 @@ export class MeshComponent extends Component {
 	}
 
 	private dispatchMeshAnimationEvent(event: string, payload: Record<string, unknown>, scope?: 'self' | 'global'): void {
-		const parent = this.parentOrThrow();
+		const parent = this.parent;
 		const busEvent = createGameEvent({ type: event, lane: 'any', emitter: parent, ...(payload ?? {}) });
 		$.emit(busEvent);
 		const sc = parent.sc;
@@ -552,7 +552,7 @@ export class MeshComponent extends Component {
 	private applyRootMotionDelta(): void {
 		const delta = this._rootMotionDelta;
 		if (Math.abs(delta[0]) + Math.abs(delta[1]) + Math.abs(delta[2]) <= 1e-4) return;
-		const parent = this.parentOrThrow();
+		const parent = this.parent;
 		parent.x += delta[0];
 		parent.y += delta[1];
 		parent.z += delta[2];
@@ -1091,7 +1091,7 @@ export class MeshComponent extends Component {
 					inst.morphWeights = target;
 				}
 			}
-			out.push({ mesh: inst.mesh, matrix: world, jointMatrices: joints, morphWeights: inst.morphWeights, receiveShadow });
+			out.push({ mesh: inst.mesh, matrix: world, joint_matrices: joints, morph_weights: inst.morphWeights, receive_shadow: receiveShadow });
 		}
 		return out;
 	}

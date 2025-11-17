@@ -92,7 +92,7 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 				const scale = formatScale(options.scale);
 				const flipH = options.flip?.flip_h ? 'H' : '-';
 				const flipV = options.flip?.flip_v ? 'V' : '-';
-				const ambient = formatAmbient(options.ambientAffected ?? resolved.ambientEnabled, options.ambientFactor ?? resolved.ambientFactor);
+				const ambient = formatAmbient(options.ambient_affected ?? resolved.ambientEnabled, options.ambient_factor ?? resolved.ambientFactor);
 				const atlas = imgmeta.atlasid ?? 'na';
 				console.log(`  [sprite#${index}] id=${options.imgid} layer=${layer} pos=${pos} scale=${scale} flip=${flipH}${flipV} ambient=${ambient} atlas=${atlas}`);
 				index += 1;
@@ -128,8 +128,8 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 				const meshName = submission.mesh?.name ?? '<unnamed>';
 				const matrix = submission.matrix;
 				const translation = matrix ? translationFromMatrix(matrix, '(0.00, 0.00, 0.00)') : '(0.00, 0.00, 0.00)';
-				const receivesShadow = submission.receiveShadow === undefined ? 'default' : submission.receiveShadow ? 'yes' : 'no';
-				const morphCount = submission.morphWeights ? submission.morphWeights.length : 0;
+				const receivesShadow = submission.receive_shadow === undefined ? 'default' : submission.receive_shadow ? 'yes' : 'no';
+				const morphCount = submission.morph_weights ? submission.morph_weights.length : 0;
 				console.log(`  [mesh#${index}] mesh=${meshName} translate=${translation} shadow=${receivesShadow} morphs=${morphCount}`);
 				index += 1;
 			});
@@ -162,7 +162,7 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 			let index = 0;
 			forEachParticleQueue((submission: ParticleRenderSubmission) => {
 				const pos = formatVec3(submission.position);
-				const ambient = formatAmbient(submission.ambientMode === undefined ? undefined : submission.ambientMode === 1, submission.ambientFactor);
+				const ambient = formatAmbient(submission.ambient_mode === undefined ? undefined : submission.ambient_mode === 1, submission.ambient_factor);
 				const textureTag = submission.texture ? 'custom' : 'default';
 				console.log(`  [particle#${index}] pos=${pos} size=${formatNumber(submission.size)} texture=${textureTag} ambient=${ambient}`);
 				index += 1;

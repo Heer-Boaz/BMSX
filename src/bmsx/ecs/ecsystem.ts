@@ -90,10 +90,10 @@ export class ECSystemManager {
 
 	/** Runs systems that belong to the exact TickGroup (single phase). */
 	updatePhase(model: World, group: TickGroup): void {
-		if ($.debug) {
-			const systems = this._systems.filter(s => s.group === group).map(s => s.__ecsId ?? s.constructor.name);
-			console.log('[ECS][phase:start]', { group, systems });
-		}
+		// if ($.debug) {
+		// 	const systems = this._systems.filter(s => s.group === group).map(s => s.__ecsId ?? s.constructor.name);
+		// 	console.log('[ECS][phase:start]', { group, systems });
+		// }
 		for (const s of this._systems) {
 			if (s.group === group) {
 				const t0 = $.platform.clock.now();
@@ -101,14 +101,14 @@ export class ECSystemManager {
 				const t1 = $.platform.clock.now();
 				const id = s.__ecsId ?? s.constructor.name;
 				this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
-				if ($.debug) {
-					console.log('[ECS][phase:system]', { group, system: id, ms: (t1 - t0) });
-				}
+				// if ($.debug) {
+				// 	console.log('[ECS][phase:system]', { group, system: id, ms: (t1 - t0) });
+				// }
 			}
 		}
-		if ($.debug) {
-			console.log('[ECS][phase:end]', { group });
-		}
+		// if ($.debug) {
+		// 	console.log('[ECS][phase:end]', { group });
+		// }
 	}
 
 	/** Runs only systems explicitly flagged to run while the game is paused. */
@@ -328,18 +328,12 @@ export class PhysicsPreSystem extends ECSystem {
 			} else {
 				// If not writing back, push WO -> body
 				if (!c.writeBack) {
-					// However, c.parentid points to WO id; prefer that
-					const ownerId = c.parentid ?? o.id;
-					const owner = world.getWorldObject(ownerId);
-					if (!owner) {
-						throw new Error(`[PhysicsPreSystem] Unable to locate owner '${ownerId}' for physics component '${c.id}'.`);
-					}
+					const owner = c.parent;
 					let changed = false;
 					if (c.syncAxis.x && c.body.position.x !== owner.x) { c.body.position.x = owner.x; changed = true; }
 					if (c.syncAxis.y && c.body.position.y !== owner.y) { c.body.position.y = owner.y; changed = true; }
 					if (c.syncAxis.z && c.body.position.z !== owner.z) { c.body.position.z = owner.z; changed = true; }
 					if (changed) {
-						// Mark dirty via PhysicsWorld
 						PhysicsWorld.ensure().markBodyDirty(c.body);
 					}
 				}

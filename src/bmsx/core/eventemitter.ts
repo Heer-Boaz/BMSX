@@ -113,7 +113,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * - Auto-registers all methods declared via subscribesTo* decorators on the instance.
 	 * - Idempotent per instance: subsequent calls are no-ops.
 	 * - Throws if the subscriber does not expose an `id` (decorators require Identifiable).
-	 * - Applies lifecycle gating on delivery: eventhandling_enabled/active/enabled flags, id/parentid registry checks.
+	 * - Applies lifecycle gating on delivery: eventhandling_enabled/active/enabled flags, id/parent registry checks.
 	 * - Optional `wrapper` allows callers to intercept handler invocation (after gating).
 	 */
 	public initClassBoundEventSubscriptions(subscriber: EventSubscriberType, wrapper?: (handler: EventHandler, event: GameEvent) => any) {
@@ -146,12 +146,13 @@ export class EventEmitter implements RegisterablePersistent {
 		if (carrier[EventEmitter._INIT_DONE]) return;
 
 		const shouldProcess = (): boolean => {
-			const obj = subscriber as { eventhandling_enabled?: boolean; active?: boolean; enabled?: boolean; id?: Identifier; parentid?: Identifier };
+			const obj = subscriber as { eventhandling_enabled?: boolean; active?: boolean; enabled?: boolean; id?: Identifier };
 			if (obj.eventhandling_enabled === false) return false;
 			if (obj.active === false) return false;
 			if (obj.enabled === false) return false;
 			if (obj.id != null && !Registry.instance.has(obj.id)) return false;
-			if (obj.parentid != null && !Registry.instance.has(obj.parentid)) return false;
+			const parentObj = (obj as Parentable).parent;
+			if (parentObj && !Registry.instance.has(parentObj.id)) return false;
 			return true;
 		};
 
@@ -184,13 +185,15 @@ export class EventEmitter implements RegisterablePersistent {
 			let emitterFilter: string | undefined;
 			switch (subscription.scope) {
 				case 'all': emitterFilter = undefined; break;
-				case 'parent':
-					emitterFilter = (subscriber as Parentable).parentid;
-					if (!emitterFilter) {
-						if ($.debug) console.warn(`Deferred subscription: '${(subscriber as Identifiable).id}' → '${subscription.eventName}' (scope: parent) because 'parentid' is not set yet on ${subscriber.constructor?.name}.`);
-						return; // Skip for now; callers (e.g., @onload) may re-invoke to bind once parentid exists
+					case 'parent': {
+						const parentObj = (subscriber as Parentable).parent;
+						if (!parentObj) {
+							if ($.debug) console.warn(`Deferred subscription: '${(subscriber as Identifiable).id}' → '${subscription.eventName}' (scope: parent) because no parent reference is attached yet on ${subscriber.constructor?.name}.`);
+							return;
+						}
+						emitterFilter = parentObj.id;
+						break;
 					}
-					break;
 				case 'self':
 					emitterFilter = (subscriber as Identifiable).id;
 					if (!emitterFilter) {
@@ -562,8 +565,8 @@ function updateAllEventSubscriptions(constructor: any) {
  *
  * Behavior:
  * - Registers the decorated method as a handler when an instance is created (auto-registration).
- * - Delivery is lifecycle-gated: the handler is invoked only when the subscriber is enabled (if present),
- *   registered in `Registry` (has a valid `id`), and its `parentid` is registered (for components).
+	 * - Delivery is lifecycle-gated: the handler is invoked only when the subscriber is enabled (if present),
+	 *   registered in `Registry` (has a valid `id`), and its parent (if any) is also registered.
  * - Requires the decorated class to expose an `id` (own or inherited).
  * - If `persistent` is true, the listener survives EventEmitter.clear() (e.g., across loads) similar to persistent registry objects.
  */

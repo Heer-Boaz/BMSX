@@ -58,9 +58,9 @@ export class PhysicsComponent extends Component {
 		// Temporary aggressive sync: always copy WorldObject -> physics body before physics step.
 		// This is a diagnostic change to confirm whether lack of sync is the root cause.
 		if (this.body && !this.writeBack) {
-			const wo = $.world.getWorldObject(this.parentid);
+			const wo = this.parent as WorldObject & Oriented;
 			if (!wo) {
-				throw new Error(`[PhysicsComponent] Parent '${this.parentid}' disappeared while syncing to physics body.`);
+				throw new Error(`[PhysicsComponent] Parent '${this.parent.id}' disappeared while syncing to physics body.`);
 			}
 			let positionChanged = false;
 			if (this.syncAxis.x && this.body.position.x !== wo.x) {
@@ -88,9 +88,9 @@ export class PhysicsComponent extends Component {
 	override postprocessingUpdate(): void {
 		if (!this.body) return;
 		if (!this.writeBack) return;
-		const wo = $.world.getWorldObject<WorldObject & Oriented>(this.parentid);
+		const wo = this.parent as WorldObject & Oriented;
 		if (!wo) {
-			throw new Error(`[PhysicsComponent] Parent '${this.parentid}' disappeared before write-back.`);
+			throw new Error(`[PhysicsComponent] Parent '${this.parent.id}' disappeared before write-back.`);
 		}
 		if (this.syncAxis.x) wo.x_nonotify = this.body.position.x;
 		if (this.syncAxis.y) wo.y_nonotify = this.body.position.y;
@@ -117,7 +117,7 @@ export class PhysicsComponent extends Component {
 		super.dispose();
 		const world = $.get<PhysicsWorld>('physics_world');
 		if (!world && this.body) {
-			throw new Error(`[PhysicsComponent] Physics world is missing while disposing body for '${this.parentid}'.`);
+			throw new Error(`[PhysicsComponent] Physics world is missing while disposing body for '${this.parent.id}'.`);
 		}
 		if (world && this.body) world.removeBody(this.body);
 		this.body = null;
@@ -126,7 +126,7 @@ export class PhysicsComponent extends Component {
 	private tryBuildBody() {
 		if (this._bodyBuilt) return;
 		const world = PhysicsWorld.ensure();
-		const wo = $.world.getWorldObject(this.parentid);
+		const wo = this.parent as WorldObject & Oriented;
 		if (!wo) return; // parent not yet available
 		const startPos = new_vec3(wo.x, wo.y, wo.z);
 		// console.log('[PhysicsComponent] Building body for', wo.id, 'at position', startPos, 'shape:', this.shape, 'mass:', this.mass, 'layer:', this.layer, 'mask:', this.mask);

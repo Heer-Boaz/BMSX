@@ -20,6 +20,9 @@ import { AbilitySystemComponent } from '../../component/abilitysystemcomponent';
 import { ensureTimelineComponent, TimelineComponent, type TimelinePlayOptions, type TimelineListener } from '../../component/timeline_component';
 import type { Timeline, TimelineDefinition } from '../../timeline/timeline';
 
+const COMPONENT_DEBUG_LOG_LIMIT = 50;
+let componentAttachLogCount = 0;
+
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
 const DEFAULT_POSITION_VALUES: [number, number, number] = [0, 0, 0];
@@ -131,8 +134,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @returns {void}
 	 */
 	add_component<T extends Component>(component: T): void {
-		// Ensure parent linkage is correct even if caller used legacy constructor
-		component.linkToParent(this as any);
+		component.parent = this; // Do not use component.attach here, as it would cause infinite recursion
 		this.components.push(component);
 		const key = component.constructor?.name;
 		let arr = this.componentMap[key];
@@ -141,6 +143,11 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 			this.componentMap[key] = arr;
 		}
 		arr.push(component);
+		if ($.debug && componentAttachLogCount < COMPONENT_DEBUG_LOG_LIMIT) {
+			componentAttachLogCount++;
+			const compName = component.constructor?.name ?? 'Component';
+			console.debug(`[Component][attach] ${compName} -> ${this.id} (total=${this.components.length})`);
+		}
 
 		// Late-init: bind component event subscriptions and perform registry registration here,
 		// after the component has been fully constructed and added to the container.
@@ -215,7 +222,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		if (i2 !== -1) this.components.splice(i2, 1);
 		// Unbind and clear parent linkage
 		component.unbind();
-		component.clearParentLink();
 	}
 
 	protected get timeline_component(): TimelineComponent {
@@ -727,7 +733,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	public getOrCreateCustomRenderer(): CustomVisualComponent {
 		const existing = this.get_first_component(CustomVisualComponent);
 		if (existing) return existing;
-		const rc = new CustomVisualComponent({ parentid: this.id });
+		const rc = new CustomVisualComponent({ parent_or_id: this });
 		this.add_component(rc);
 		return rc;
 	}
@@ -736,7 +742,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	public getOrCreateCollider(): Collider2DComponent {
 		const existing = this.get_first_component(Collider2DComponent);
 		if (existing) return existing;
-		const c = new Collider2DComponent({ parentid: this.id, id_local: 'primary' });
+		const c = new Collider2DComponent({ parent_or_id: this, id_local: 'primary' });
 		this.add_component(c);
 		return c;
 	}
@@ -870,10 +876,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	private addAutoComponents() {
 		if ((this.constructor as ConstructorWithAutoAddComponents).autoAddComponents) {
 			for (const componentClass of (this.constructor as ConstructorWithAutoAddComponents).autoAddComponents) {
-				// Pass options object to support revive-compatible constructors
-				const opts: RevivableObjectArgs & { parentid: Identifier } = { parentid: this.id };
-				const component = new componentClass(opts);
-				component.attach(this.id);
+				const component = new componentClass({ parent_or_id: this });
+				component.attach(this);
 			}
 		}
 	}

@@ -1072,9 +1072,10 @@ export class BmsxConsoleApi {
 		const prepared = optionsClone ? { ...optionsClone } : {};
 		const parentField = (prepared as { parentid?: string }).parentid;
 		if (parentField !== undefined && parentField !== object.id) {
-			throw new Error('[BmsxConsoleApi] Component options cannot override parentid.');
+			throw new Error('[BmsxConsoleApi] Component options cannot override parent assignment.');
 		}
-		(prepared as { parentid: string }).parentid = object.id;
+		delete (prepared as { parentid?: string }).parentid;
+		(prepared as { parent_or_id: WorldObject }).parent_or_id = object;
 		const component = new ctor(prepared);
 		object.add_component(component);
 		return component;

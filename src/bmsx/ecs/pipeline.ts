@@ -152,12 +152,14 @@ export class ECSPipelineRegistry {
 			buildMs: (t1 - t0),
 		};
 		if ($.debug) {
-			console.log('[ECS][build]', {
-				finalOrder: diag.finalOrder,
-				groupOrders: diag.groupOrders,
-				cyclesDetected: diag.cyclesDetected,
-				cycleGroups: diag.cycleGroups ?? null,
-			});
+			console.debug(`[ECS][build] ${finalOrder.length} systems (in ${diag.buildMs.toFixed(2)} ms)`);
+			console.group();
+			console.debug('Final order:', finalOrder.map(n => n.ref));
+			for (const [group, refs] of Object.entries(groupOrders)) {
+				console.debug(`Group ${group}:`, refs);
+			}
+			console.debug(`${anyCycle ? 'Cycles detected: ' + JSON.stringify(cycleGroups) : 'No cycles detected.'}`);
+			console.groupEnd();
 		}
 		this._lastDiagnostics = diag;
 		return diag;

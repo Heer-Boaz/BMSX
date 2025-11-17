@@ -210,7 +210,7 @@ export class HitBoxVisualizer extends CustomVisualComponent {
 
 	static attachToObject(obj: WorldObject) {
 		if (!obj.get_unique_component(HitBoxVisualizer)) {
-			obj.add_component(new HitBoxVisualizer({ parentid: obj.id }));
+			obj.add_component(new HitBoxVisualizer({ parent_or_id: obj }));
 		}
 	}
 
@@ -256,7 +256,7 @@ export class ObjectHighlighterComponent extends Component {
 
 	static attachToObject(obj: WorldObject) {
 		if (!obj.get_unique_component(ObjectHighlighterComponent)) {
-			obj.add_component(new ObjectHighlighterComponent({ parentid: obj.id }));
+			obj.add_component(new ObjectHighlighterComponent({ parent_or_id: obj }));
 		}
 	}
 
@@ -885,13 +885,13 @@ export function handleDebugMouseMove(e: DebugPointerEvent): void {
 function highlight_object(o: WorldObject | null) {
 	if (!o) {
 		if (!currentHighlighterComponent) return;
-		if (!currentHighlighterComponent.isAttached) return;
+		if (!currentHighlighterComponent.is_attached) return;
 		currentHighlighterComponent.detach();
 		return;
 	}
 
 	if (!currentHighlighterComponent) {
-		currentHighlighterComponent = new ObjectHighlighterComponent({ parentid: o.id });
+		currentHighlighterComponent = new ObjectHighlighterComponent({ parent_or_id: o });
 	}
 	currentHighlighterComponent.attach(o.id); // Also automatically detaches it
 }
@@ -929,7 +929,7 @@ export function handleContextMenu(e: DebugPointerEvent): void {
 		}
 		else {
 			// If there is no existing state visualiser dialog, create a new one
-			const visualiser = new StateMachineVisualizer(objUnderCursor.id);
+			const visualiser = new StateMachineVisualizer(objUnderCursor);
 			stateMachineVisualisers[objUnderCursor.id] = visualiser;
 			visualiser.openDialog();
 			visualiser.frameUpdate(); // Force an initial update to display the current state

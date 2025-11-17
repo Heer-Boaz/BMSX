@@ -104,7 +104,7 @@ export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
 }
 export function setSkyboxImages(ids: SkyboxImageIds) {
 	// Extract all face ids to avoid unsafe casts
-	const { posX, negX, posY, negY, posZ, negZ } = ids;
+	const { posx: posX, negx: negX, posy: posY, negy: negY, posz: posZ, negz: negZ } = ids;
 
 	// If an id is missing, use null for that face loader so the texture system can use the fallback
 	const loaders = [

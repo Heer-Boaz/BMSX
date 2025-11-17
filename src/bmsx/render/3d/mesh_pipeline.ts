@@ -631,7 +631,7 @@ function buildDrawLists(submissions: MeshRenderSubmission[], state: MeshBatchPip
 	});
 	for (const entry of visible) {
 		const mesh = entry.mesh;
-		const receivesShadow = entry.receiveShadow !== false;
+		const receivesShadow = entry.receive_shadow !== false;
 		if (!mesh.hasSkinning && !mesh.hasMorphTargets && isOpaque(mesh) && receivesShadow) {
 			const key = `G:${mesh.name}|${mesh.materialSignature}`;
 			let group = instanced.get(key);
@@ -873,7 +873,7 @@ function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void {
 function renderSingleMeshes(runtime: MeshPassRuntime, singles: MeshRenderSubmission[], framebuffer: WebGLFramebuffer): void {
 	const { backend, gl } = runtime;
 	setUseInstancing(gl, false);
-	for (const { mesh: m, matrix, jointMatrices, morphWeights, receiveShadow } of singles) {
+	for (const { mesh: m, matrix, joint_matrices: jointMatrices, morph_weights: morphWeights, receive_shadow: receiveShadow } of singles) {
 		const buffers = getMeshBuffers(runtime, m);
 		const srcWeights = morphWeights ?? m.morphWeights ?? [];
 		const hasMorph = m.hasMorphTargets && srcWeights.some(w => w !== 0);

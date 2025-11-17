@@ -1,5 +1,4 @@
 import { Component, type ComponentAttachOptions } from '../component/basecomponent';
-import { $ } from '../core/game';
 import { new_vec3 } from '../utils/vector_operations';
 import { insavegame, onload } from '../serializer/serializationhooks';
 import type { PhysicsBodyDesc } from './physicsbody';
@@ -30,9 +29,9 @@ export class PhysicsDescriptorComponent extends Component {
 		}
 	}
 	private attachRuntime() {
-		const parent = $.world.getWorldObject(this.parentid);
+		const parent = this.parent;
 		if (!parent) {
-			throw new Error(`[PhysicsDescriptorComponent] Parent '${this.parentid}' not found while attaching physics runtime.`);
+			throw new Error(`[PhysicsDescriptorComponent] Parent '${this.parent.id}' not found while attaching physics runtime.`);
 		}
 		if (parent.get_unique_component(PhysicsComponent)) return;
 		// console.log('[PhysicsDescriptorComponent] Attaching runtime physics to', parent.id);
@@ -52,7 +51,7 @@ export class PhysicsDescriptorComponent extends Component {
 			writeBack: this.writeBack,
 			// type: desc.bodyType // future extension
 		};
-		parent.add_component(new PhysicsComponent({ parentid: this.parentid, physicsOptions: opts }));
+		parent.add_component(new PhysicsComponent({ parent_or_id: this.parent, physicsOptions: opts }));
 	}
 	@onload restore() { this.attachRuntime(); }
 	// No-op update hooks (tags present so descriptor participates consistently if needed)

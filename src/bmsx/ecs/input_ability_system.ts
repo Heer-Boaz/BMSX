@@ -75,7 +75,7 @@ export class InputAbilitySystem extends ECSystem {
 				throw new Error(`[InputAbilitySystem] Program '${programKey}' ${summary} but object '${obj.id}' (component '${componentId}') has no AbilitySystemComponent.`);
 			}
 
-			const ownerId = asc ? (asc.parentid ?? obj.id) : obj.id;
+			const ownerId = asc ? (asc.parent.id ?? obj.id) : obj.id;
 
 			const env: BindingExecutionEnv = {
 				owner: obj,
@@ -112,8 +112,8 @@ export class InputAbilitySystem extends ECSystem {
 
 	private describeInlineProgram(component: InputAbilityComponent): string {
 		let ownerId: string;
-		if (component.parentid) {
-			ownerId = component.parentid;
+		if (component.parent.id) {
+			ownerId = component.parent.id;
 		} else {
 			ownerId = '<unattached>';
 		}
@@ -241,7 +241,7 @@ export class InputAbilitySystem extends ECSystem {
 
 		const programId = component.programId;
 		if (!programId) {
-			const hostId = component.parentid ?? component.id ?? '<unknown object>';
+			const hostId = component.parent.id ?? component.id ?? '<unknown object>';
 			throw new Error(`[InputAbilitySystem] Component '${component.constructor.name}' on '${hostId}' is missing both an inline program and a programId.`);
 		}
 

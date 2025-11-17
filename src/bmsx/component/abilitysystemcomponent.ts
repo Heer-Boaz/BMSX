@@ -100,13 +100,13 @@ export class AbilitySystemComponent extends Component {
 		if (failure) {
 			this.notify_ability_failed(id, failure);
 			if (this.isStructuralActivationFailure(failure)) {
-				throw new Error(`[AbilitySystemComponent] Ability '${id}' request on '${this.parentid}' failed: ${failure}`);
+				throw new Error(`[AbilitySystemComponent] Ability '${id}' request on '${this.parent?.id}' failed: ${failure}`);
 			}
 			return { ok: false as const, reason: failure };
 		}
 		const command: GameplayCommand = {
 			kind: 'activateability',
-			owner: this.parentid,
+			owner: this.parent.id,
 			ability_id: id,
 		};
 	if (payload !== undefined) (command as any).payload = payload as AbilityPayloadFor<AbilityId>;
@@ -406,13 +406,13 @@ export class AbilitySystemComponent extends Component {
 	private ref(): AbilitySystemRef {
 		if (!this._ref) {
 			this._ref = {
-				parentid: this.parentid,
+				owner: this.parent,
 				hasTag: (tag: TagId) => this.has_gameplay_tag(tag),
 				tryActivate: <Id extends AbilityId>(abilityId: Id, payload?: AbilityPayloadFor<Id>) => this.try_activate(abilityId, payload),
 				requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => this.request_ability(abilityId, opts),
 			};
 		} else {
-			this._ref.parentid = this.parentid;
+			this._ref.owner = this.parent;
 		}
 		return this._ref;
 	}
@@ -578,8 +578,8 @@ export class AbilitySystemComponent extends Component {
 	}
 
 	private ownerOrThrow(): WorldObject {
-		const owner = $.world.getWorldObject(this.parentid);
-		if (!owner) throw new Error(`[AbilitySystemComponent] Owner '${this.parentid}' not found.`);
+		const owner = this.parent;
+		if (!owner) throw new Error(`[AbilitySystemComponent] Owner '${this.parent?.id}' not found.`);
 		return owner;
 	}
 

@@ -5229,7 +5229,7 @@ export class BmsxConsoleRuntime extends Service {
 			Object.assign(baseState, deep_clone(opts.state));
 		}
 		return new LuaComponent({
-			parentid: opts.parent_id,
+			parent_or_id: opts.parent_id,
 			id_local: opts.id_local ?? undefined,
 			definitionId: definition.id,
 			handlers: definition.handlers,

@@ -30,8 +30,8 @@ export type ImgRenderSubmission = {
 	scale?: vec2;
 	flip?: FlipOptions;
 	colorize?: color;
-	ambientAffected?: boolean;
-	ambientFactor?: number;
+	ambient_affected?: boolean;
+	ambient_factor?: number;
 	layer?: RenderLayer;
 };
 
@@ -46,9 +46,9 @@ export type PolyRenderSubmission = {
 export type MeshRenderSubmission = {
 	mesh: Mesh;
 	matrix: Float32Array;
-	jointMatrices?: Float32Array[];
-	morphWeights?: number[];
-	receiveShadow?: boolean;
+	joint_matrices?: Float32Array[];
+	morph_weights?: number[];
+	receive_shadow?: boolean;
 };
 
 export type ParticleRenderSubmission = {
@@ -56,8 +56,8 @@ export type ParticleRenderSubmission = {
 	size: number;
 	color: color;
 	texture?: TextureHandle | WebGLTexture | null;
-	ambientMode?: 0 | 1;
-	ambientFactor?: number;
+	ambient_mode?: 0 | 1;
+	ambient_factor?: number;
 };
 
 export type GlyphRenderSubmission = {
@@ -67,19 +67,19 @@ export type GlyphRenderSubmission = {
 	glyphs: string | string[];
 	font?: BFont;
 	color?: color;
-	backgroundColor?: color;
-	wrapChars?: number;
-	centerBlockWidth?: number;
+	background_color?: color;
+	wrap_chars?: number;
+	center_block_width?: number;
 	align?: CanvasTextAlign;
 	baseline?: CanvasTextBaseline;
 	layer?: RenderLayer;
 };
 
 export type SkyboxImageIds = {
-	posX: string;
-	negX: string;
-	posY: string;
-	negY: string;
-	posZ: string;
-	negZ: string;
+	posx: string;
+	negx: string;
+	posy: string;
+	negy: string;
+	posz: string;
+	negz: string;
 };
