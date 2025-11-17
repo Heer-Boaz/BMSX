@@ -17,7 +17,7 @@ import { Collider2DComponent } from '../../component/collisioncomponents';
 import { V3 } from '../../render/3d/math3d';
 import type { SpawnReason } from '../world';
 import { AbilitySystemComponent } from '../../component/abilitysystemcomponent';
-import { ensureTimelineComponent, TimelineComponent, type TimelinePlayOptions, type TimelineListener } from '../../component/timeline_component';
+import { TimelineComponent, type TimelinePlayOptions, type TimelineListener } from '../../component/timeline_component';
 import type { Timeline, TimelineDefinition } from '../../timeline/timeline';
 
 const COMPONENT_DEBUG_LOG_LIMIT = 50;

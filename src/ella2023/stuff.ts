@@ -157,7 +157,7 @@ export class TitleScreen extends SpriteObject {
 							on: {
 								$switch: '../players_2',
 							},
-							entering_state(this: TitleScreen, state: State) {
+							entering_state(this: TitleScreen, _state: State) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
 								this.selectedPlayers = 1;
 								this.cursorVisible = true;
@@ -170,7 +170,7 @@ export class TitleScreen extends SpriteObject {
 								$switch: '../_players_1',
 								$players_1: '../_players_1', // For resetting the TitleScreen state.
 							},
-							entering_state(this: TitleScreen, state: State) {
+							entering_state(this: TitleScreen, _state: State) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
 								this.selectedPlayers = 2;
 								this.cursorVisible = true;
