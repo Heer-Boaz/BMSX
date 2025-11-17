@@ -1,7 +1,7 @@
 import { $, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3, type RevivableObjectArgs } from 'bmsx';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { BitmapId } from './resourceids';
-import { createGameEvent, type GameEvent } from 'bmsx/core/game_event';
+import { create_gameevent, type GameEvent } from 'bmsx/core/game_event';
 import type { TimelineEndEventPayload, TimelineFrameEventPayload } from 'bmsx/component/timeline_component';
 
 function wrapup(state: State) {
@@ -21,13 +21,13 @@ export class GameOver extends SpriteObject {
 						elapsed: 0,
 					},
 					process_input(this: TitleScreen, state: State) {
-						const priorityActions = $.getPressedActions(1, { pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
+						const priorityActions = $.get_pressed_actions(1, { pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
 
 						// If no priority actions are pressed, do nothing.
 						if (!priorityActions || priorityActions.length === 0) {
 							return;
 						}
-						$.consumeActions(1, ...priorityActions);
+						$.consume_actions(1, ...priorityActions);
 
 						wrapup(state);
 					},
@@ -122,9 +122,9 @@ export class TitleScreen extends SpriteObject {
 								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
 								this.selectedPlayers = 1;
 								this.cursorVisible = true;
-								const playersEvent = createGameEvent({ type: 'players_1', emitter: this });
+								const playersEvent = create_gameevent({ type: 'players_1', emitter: this });
 								this.sc.dispatch_event(playersEvent);
-								const resumeEvent = createGameEvent({ type: 'resume_blink', emitter: this });
+								const resumeEvent = create_gameevent({ type: 'resume_blink', emitter: this });
 								this.sc.dispatch_event(resumeEvent);
 								this.play_timeline(TitleScreen.BLINK_TIMELINE_ID, { rewind: true, snap_to_start: true });
 							},
@@ -138,17 +138,17 @@ export class TitleScreen extends SpriteObject {
 							return;
 						}
 
-						$.consumeActions(1, ...priorityActions);
+						$.consume_actions(1, ...priorityActions);
 
 						if (priorityActions.some(action => action.action === 'up' || action.action === 'down')) {
-							const switchEvent = createGameEvent({ type: 'switch', emitter: this });
+							const switchEvent = create_gameevent({ type: 'switch', emitter: this });
 							this.sc.dispatch_event(switchEvent);
 							return;
 						}
 
 						// If a priority action is pressed, start the game.
 						this.cursorVisible = true;
-						const pauseEvent = createGameEvent({ type: 'pause_blink', emitter: this });
+						const pauseEvent = create_gameevent({ type: 'pause_blink', emitter: this });
 						this.sc.dispatch_event(pauseEvent);
 						$.emit_presentation('gamestart_selected', this, { numOfPlayers: this.selectedPlayers });
 					},

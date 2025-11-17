@@ -19,7 +19,7 @@ type GameEventInit<TType extends string, TDetail extends object> = {
 	emitter?: Identifiable | null;
 } & TDetail;
 
-export function createGameEvent<TType extends string, TDetail extends object = {}>(init: GameEventInit<TType, TDetail>): GameEvent<TType, TDetail> {
+export function create_gameevent<TType extends string, TDetail extends object = {}>(init: GameEventInit<TType, TDetail>): GameEvent<TType, TDetail> {
 	if (!init || !init.type) {
 		throw new Error('[GameEvent] type is required.');
 	}

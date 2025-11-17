@@ -18,7 +18,7 @@ import { Service } from "./service";
 import { RewindBuffer, RewindFrame } from "../serializer/rewind";
 import { World, WorldConfiguration, type SpawnReason } from "./world";
 import { EventEmitter } from "./eventemitter";
-import { createGameEvent, EventPayload, GameEvent } from "./game_event";
+import { create_gameevent, EventPayload, GameEvent } from "./game_event";
 import { WorldObject } from "./object/worldobject";
 import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
@@ -80,28 +80,28 @@ export class Game {
 	/**
 	 * The target frames per second for the game.
 	 */
-	public targetFPS: number = GAME_FPS;
+	public target_fps: number = GAME_FPS;
 	/**
 	 * The update interval for the bmsx module.
 	 */
-	public updateInterval!: number;
+	public update_interval!: number;
 	/**
 	 * The timestamp of the last update.
 	 */
-	public lastUpdate: number = 0;
+	public last_update: number = 0;
 	/**
 	 * The time difference between the current frame and the previous frame.
 	 */
 	public deltatime: number = 0;
 
-	public get timestep(): number { return 1000 / this.targetFPS; }
+	public get timestep(): number { return 1000 / this.target_fps; }
 
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
 
 	/**
 	 * The accumulated time in milliseconds.
 	 */
-	public accumulatedTime: number = 0;
+	public accumulated_time: number = 0;
 
 	/**
 	 * The timestamp of the last game tick.
@@ -183,7 +183,7 @@ export class Game {
 	public emit(arg0: GameEvent | string, emitter?: Identifiable | null, payload?: EventPayload): void {
 		if (typeof arg0 === 'string') {
 			if (payload && typeof payload !== 'object') throw new Error(`[Game.emit] Payload for '${arg0}' must be an object.`);
-			const event = createGameEvent({ type: arg0, emitter: emitter ?? null, lane: 'any', ...(payload ?? {}) });
+			const event = create_gameevent({ type: arg0, emitter: emitter ?? null, lane: 'any', ...(payload ?? {}) });
 			this.emit(event);
 			return;
 		}
@@ -196,7 +196,7 @@ export class Game {
 		if (typeof arg0 === 'string') {
 			if (!emitter) throw new Error(`[Game.emitGameplay] Emitter required for '${arg0}'.`);
 			if (payload && typeof payload !== 'object') throw new Error(`[Game.emitGameplay] Payload for '${arg0}' must be an object.`);
-			const event = createGameEvent({ type: arg0, emitter, lane: 'gameplay', ...(payload ?? {}) });
+			const event = create_gameevent({ type: arg0, emitter, lane: 'gameplay', ...(payload ?? {}) });
 			this.emit_gameplay(event);
 			return;
 		}
@@ -209,7 +209,7 @@ export class Game {
 	public emit_presentation(arg0: GameEvent | string, emitter?: Identifiable | null, payload?: EventPayload): void {
 		if (typeof arg0 === 'string') {
 			if (payload && typeof payload !== 'object') throw new Error(`[Game.emitPresentation] Payload for '${arg0}' must be an object.`);
-			const event = createGameEvent({ type: arg0, emitter: emitter ?? null, lane: 'presentation', ...(payload ?? {}) });
+			const event = create_gameevent({ type: arg0, emitter: emitter ?? null, lane: 'presentation', ...(payload ?? {}) });
 			this.emit_presentation(event);
 			return;
 		}
@@ -259,44 +259,44 @@ export class Game {
 		this.sndmaster.stopMusic();
 	}
 
-	public setInputMap(playerIndex: number, map: InputMap): void {
+	public set_inputmap(playerIndex: number, map: InputMap): void {
 		this.input.getPlayerInput(playerIndex).setInputMap(map);
 	}
 
-	public checkActionTriggered(playerIndex: number, action: string): boolean {
+	public action_triggered(playerIndex: number, action: string): boolean {
 		return this.input.getPlayerInput(playerIndex).checkActionTriggered(action);
 	}
 
-	public checkActionsTriggered(playerIndex: number, ...actions: { id: string, def: string }[]): string[] {
+	public actions_triggered(playerIndex: number, ...actions: { id: string, def: string }[]): string[] {
 		return this.input.getPlayerInput(playerIndex).checkActionsTriggered(...actions);
 	}
 
-	public getActionState(playerIndex: number, action: string, window?: number) {
+	public get_action_state(playerIndex: number, action: string, window?: number) {
 		return this.input.getPlayerInput(playerIndex).getActionState(action, window);
 	}
 
-	public getPressedActions(playerIndex: number, query?: ActionStateQuery) {
+	public get_pressed_actions(playerIndex: number, query?: ActionStateQuery) {
 		return this.input.getPlayerInput(playerIndex).getPressedActions(query);
 	}
 
-	public consumeAction(playerIndex: number, actionToConsume: ActionState | string) {
+	public consume_action(playerIndex: number, actionToConsume: ActionState | string) {
 		this.input.getPlayerInput(playerIndex).consumeAction(actionToConsume);
 	}
 
-	public consumeActions(playerIndex: number, ...actionsToConsume: (ActionState | string)[]) {
+	public consume_actions(playerIndex: number, ...actionsToConsume: (ActionState | string)[]) {
 		this.input.getPlayerInput(playerIndex).consumeActions(...actionsToConsume);
 	}
 
-	public applyVibrationEffect(playerIndex: number, effectParams: VibrationParams): void {
+	public apply_vibration_effect(playerIndex: number, effectParams: VibrationParams): void {
 		if (!this.input.getPlayerInput(playerIndex).supportsVibrationEffect) return;
 		this.input.getPlayerInput(playerIndex).applyVibrationEffect(effectParams);
 	}
 
-	public hideOnscreenGamepadButtons(gamepad_button_ids: string[]): void {
+	public hide_onscreen_gamepad_buttons(gamepad_button_ids: string[]): void {
 		this.input.hideOnscreenGamepadButtons(gamepad_button_ids);
 	}
 
-	public get viewportSize(): vec2 {
+	public get viewportsize(): vec2 {
 		return this.view.viewportSize;
 	}
 
@@ -334,8 +334,8 @@ export class Game {
 		this.running = false;
 		this._paused = false;
 		this.wasupdated = true;
-		this.updateInterval = 1000 / this.targetFPS;
-		this.rewindBuffer = new RewindBuffer(this.targetFPS, this.REWINDBUFFER_LENGTH_SECONDS);
+		this.update_interval = 1000 / this.target_fps;
+		this.rewindBuffer = new RewindBuffer(this.target_fps, this.REWINDBUFFER_LENGTH_SECONDS);
 
 		this._debug = debug ?? this._debug;
 		$debug = this._debug;
@@ -495,7 +495,7 @@ export class Game {
 		}
 	}
 
-	public setPipelineOverride(spec: NodeSpec[] | null): void {
+	public set_pipeline_override(spec: NodeSpec[] | null): void {
 		if (spec) {
 			this._pipelineOverride = spec.map(node => this.cloneNodeSpec(node));
 		} else {
@@ -506,7 +506,7 @@ export class Game {
 		}
 	}
 
-	public resetToFreshWorld(options?: { preserveConsoleRuntime?: boolean }): void {
+	public reset_to_fresh_world(options?: { preserveConsoleRuntime?: boolean }): void {
 		if (!this.initialized) {
 			throw new Error('[Game] Cannot reset world before initialization.');
 		}
@@ -587,7 +587,7 @@ export class Game {
 		}
 		const platform = this.platform;
 		const now = platform.clock.now();
-		this.lastUpdate = now;
+		this.last_update = now;
 		this.last_gametick_time = now;
 		this._turnCounter = 0;
 		this.frameLoopHandle = platform.frames.start(this.run);
@@ -642,32 +642,31 @@ export class Game {
 
 		Input.instance.pollInput();
 
-		this.deltatime = Math.min(currentTime - this.lastUpdate, MAX_FRAME_DELTA);
-		this.lastUpdate = currentTime;
+		this.deltatime = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
+		this.last_update = currentTime;
 
 		if (this._paused) {
-			this.accumulatedTime = 0;
+			this.accumulated_time = 0;
 			this.world.runTickGroups([TickGroup.Presentation, TickGroup.EventFlush]);
-			const consoleRuntime = BmsxConsoleRuntime.instance;
-			consoleRuntime?.renderPausedFrame();
+			BmsxConsoleRuntime.instance?.renderPausedFrame();
 			this.view.drawgame();
 			return;
 		}
 
-		this.accumulatedTime += this.deltatime;
+		this.accumulated_time += this.deltatime;
 		this.wasupdated = false;
 
 		let steps = 0;
-		while (this.accumulatedTime >= this.updateInterval && steps < MAX_SUBSTEPS) {
+		while (this.accumulated_time >= this.update_interval && steps < MAX_SUBSTEPS) {
 			if (!this.paused) {
 				if (runGate.ready) {
-					this.update(this.updateInterval);
+					this.update(this.update_interval);
 				} else {
-					this.accumulatedTime = 0;
+					this.accumulated_time = 0;
 					break;
 				}
 			}
-			this.accumulatedTime -= this.updateInterval;
+			this.accumulated_time -= this.update_interval;
 			++steps;
 		}
 

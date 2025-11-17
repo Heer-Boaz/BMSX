@@ -26,7 +26,7 @@ class OverlayPipelineControllerImpl {
 
 	private rebuild(): void {
 		if (this.requests.size === 0) {
-			$.setPipelineOverride(null);
+			$.set_pipeline_override(null);
 			return;
 		}
 		const merged: OverlayRequest = { includeConsole: false, includeEditor: false, includePresentation: false };
@@ -37,13 +37,13 @@ class OverlayPipelineControllerImpl {
 		}
 		const spec: NodeSpec[] = buildConsoleOverlaySpec(merged);
 		if (spec.length === 0) {
-			$.setPipelineOverride(null);
+			$.set_pipeline_override(null);
 			return;
 		}
 		if ($.debug) {
 			console.log('[OverlayPipeline] rebuild', { merged });
 		}
-		$.setPipelineOverride(spec);
+		$.set_pipeline_override(spec);
 	}
 }
 

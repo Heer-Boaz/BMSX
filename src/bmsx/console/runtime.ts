@@ -1517,7 +1517,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private resetWorldState(): void {
 		this.abandonFrameState();
-		$.resetToFreshWorld({ preserveConsoleRuntime: true });
+		$.reset_to_fresh_world({ preserveConsoleRuntime: true });
 	}
 
 	private ensureFrameState(): ConsoleFrameState {
@@ -3201,7 +3201,7 @@ export class BmsxConsoleRuntime extends Service {
 			gamepad: gamepadLayer ?? existing?.gamepad ?? {},
 			pointer: pointerLayer ?? existing?.pointer ?? Input.clonePointerMapping(),
 		};
-		$.setInputMap(playerIndex, next);
+		$.set_inputmap(playerIndex, next);
 	}
 
 	private convertLuaInputLayer(value: unknown, interpreter: LuaInterpreter, kind: 'keyboard' | 'gamepad' | 'pointer'): KeyboardInputMapping | GamepadInputMapping | PointerInputMapping | undefined {

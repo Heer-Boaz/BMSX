@@ -1,6 +1,6 @@
 import { $ } from '../core/game';
 import { subscribesToGlobalEvent, type EventPayload } from '../core/eventemitter';
-import { createGameEvent, type GameEvent } from '../core/game_event';
+import { create_gameevent, type GameEvent } from '../core/game_event';
 import { excludeclassfromsavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { WorldObject } from '../core/object/worldobject';
 import { SpriteObject } from '../core/object/sprite';
@@ -126,7 +126,7 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 	}
 
 	private notifyAnimationEnd(): void {
-		const event = createGameEvent({ type: 'animation_end', emitter: this });
+		const event = create_gameevent({ type: 'animation_end', emitter: this });
 		this.sc.dispatch_event(event);
 	}
 	public set playerIndex(idx: number | null) { this.imgid = idx == null ? 'joystick_none' : PlayerIndexNS.iconAsset(idx); }

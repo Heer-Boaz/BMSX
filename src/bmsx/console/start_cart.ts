@@ -220,7 +220,7 @@ export async function startCart(args: BootArgs): Promise<void> {
 	$.view.default_font = new ConsoleFont();
 
 	const inputMapping = buildInputMapping(manifest);
-	$.setInputMap(playerIndex, {
+	$.set_inputmap(playerIndex, {
 		keyboard: inputMapping.keyboard,
 		gamepad: inputMapping.gamepad,
 		pointer: Input.clonePointerMapping(),

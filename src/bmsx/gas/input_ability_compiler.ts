@@ -3,7 +3,7 @@ import type { AbilityId } from '../gas/gastypes';
 import { abilityRegistry } from './ability_registry';
 import type { PlayerInput } from '../input/playerinput';
 import type { InputAbilityProgram, Binding, Effect, AbilityRequestDescriptor, EmitGameplayDescriptor } from './input_ability_dsl';
-import { createGameEvent, type GameEvent } from '../core/game_event';
+import { create_gameevent, type GameEvent } from '../core/game_event';
 import type { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 import type { WorldObject } from '../core/object/worldobject';
 
@@ -238,7 +238,7 @@ function compileEffect(effect: Effect, slot?: string, analysis?: BindingAnalysis
 		const { event, payload } = effect['emit.gameplay'];
 		if (!event) throw new Error(`Missing event name in emit.gameplay effect ${JSON.stringify(effect)}`);
 		return (env: BindingExecutionEnv) => {
-			const evt = createGameEvent({ type: event, lane: 'gameplay', ...(payload ?? {}) });
+			const evt = create_gameevent({ type: event, lane: 'gameplay', ...(payload ?? {}) });
 			env.queuedEvents.push(evt);
 		};
 	}

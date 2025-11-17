@@ -1,5 +1,5 @@
 import { $, World, InputAbilitySystem, Input, insavegame, Service, subscribesToGlobalEvent, TickGroup, type InputMap, type PointerInputMapping, type RevivableObjectArgs, type WorldModule } from 'bmsx';
-import { createGameEvent, type GameEvent } from 'bmsx/core/game_event';
+import { create_gameevent, type GameEvent } from 'bmsx/core/game_event';
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { YieArGameState } from './yieargamestate';
@@ -71,10 +71,10 @@ export class EilaEventService extends Service {
 			$.stopmusic();
 
 			// Handle that fighter is down
-			const humiliated = createGameEvent({ type: 'mode.impact.humiliated', emitter });
+			const humiliated = create_gameevent({ type: 'mode.impact.humiliated', emitter });
 			emitter.sc.dispatch_event(humiliated);
 			if (otherFighter) {
-				const dance = createGameEvent({ type: 'mode.control.stoerheidsdans', emitter: otherFighter });
+				const dance = create_gameevent({ type: 'mode.control.stoerheidsdans', emitter: otherFighter });
 				otherFighter.sc.dispatch_event(dance);
 			}
 		}
@@ -94,11 +94,11 @@ export class EilaEventService extends Service {
 
 		if (hp_player > 0 && hp_sinterklaas > 0) {
 			if (sinterklaas) {
-				const idleS = createGameEvent({ type: 'mode.locomotion.idle', emitter: sinterklaas });
+				const idleS = create_gameevent({ type: 'mode.locomotion.idle', emitter: sinterklaas });
 				sinterklaas.sc.dispatch_event(idleS);
 			}
 			if (player) {
-				const idleP = createGameEvent({ type: 'mode.locomotion.idle', emitter: player });
+				const idleP = create_gameevent({ type: 'mode.locomotion.idle', emitter: player });
 				player.sc.dispatch_event(idleP);
 			}
 			return;

@@ -1,5 +1,5 @@
 import { EventEmitter } from '../eventemitter';
-import { createGameEvent, type GameEvent } from '../game_event';
+import { create_gameevent, type GameEvent } from '../game_event';
 import { EventTimeline } from '../eventtimeline';
 import { WorldObject } from './worldobject';
 
@@ -20,7 +20,7 @@ export class WaveManager extends EventEmitter {
 		this.timeline.on(eventName, (event: GameEvent) => {
 			const wo = factory(event);
 			if (!wo) return;
-			const spawnEvent = createGameEvent({ type: 'spawned', emitter: wo, object: wo });
+			const spawnEvent = create_gameevent({ type: 'spawned', emitter: wo, object: wo });
 			this.emit(spawnEvent);
 		}, this);
 		return this;

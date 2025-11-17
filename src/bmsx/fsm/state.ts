@@ -7,7 +7,7 @@ import { BST_MAX_HISTORY, DEFAULT_BST_ID } from './fsmcontroller';
 import { StateDefinitions } from './fsmlibrary';
 import { type id2sstate, type Stateful, type StateEventDefinition, type TickCheckDefinition, type transition_target } from './fsmtypes';
 import { StateDefinition } from './statedefinition';
-import { createGameEvent, EventPayload, GameEvent } from '../core/game_event';
+import { create_gameevent, EventPayload, GameEvent } from '../core/game_event';
 
 type TransitionExecutionMode = 'immediate' | 'queued' | 'deferred';
 
@@ -76,7 +76,7 @@ interface TransitionGuardDiagnostics {
 	evaluations: GuardEvaluation[];
 }
 
-const EMPTY_GAME_EVENT = Object.freeze(createGameEvent({ type: '__fsm.synthetic__', lane: 'any', emitter: null }));
+const EMPTY_GAME_EVENT = Object.freeze(create_gameevent({ type: '__fsm.synthetic__', lane: 'any', emitter: null }));
 
 function resolveEmitterId(event: GameEvent | undefined, fallback: Identifier): Identifier {
 	if (!event || !event.emitter) return fallback;

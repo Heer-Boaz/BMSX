@@ -148,7 +148,7 @@ export class InputStateManager {
 		return this.toMs(this.bufferframeDuration);
 	}
 
-	private toMs(frames: number) { return frames * 1000 / $.targetFPS; }
+	private toMs(frames: number) { return frames * 1000 / $.target_fps; }
 
 	/**
 	 * Constructs an instance of the InputStateManager.

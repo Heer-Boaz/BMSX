@@ -1,5 +1,5 @@
 import { EventEmitter } from '../core/eventemitter';
-import { createGameEvent, type GameEvent } from '../core/game_event';
+import { create_gameevent, type GameEvent } from '../core/game_event';
 import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload, excludepropfromsavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { ActiveStateMachines } from './fsmlibrary';
@@ -318,7 +318,7 @@ export class StateMachineController {
 			if (payload && typeof payload !== 'object') throw new Error(`[StateMachineController] Payload for '${arg0}' must be an object.`);
 			const resolvedEmitter = typeof emitter === 'string' ? ({ id: emitter } as Identifiable) : emitter;
 			if (payload && typeof payload !== 'object') throw new Error(`[StateMachineController] Payload for '${arg0}' must be an object.`);
-			const legacy = createGameEvent({ type: arg0, emitter: resolvedEmitter, ...(payload ?? {}) });
+			const legacy = create_gameevent({ type: arg0, emitter: resolvedEmitter, ...(payload ?? {}) });
 			this.dispatch_event(legacy);
 			return;
 		}

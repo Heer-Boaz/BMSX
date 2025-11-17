@@ -3,8 +3,8 @@ import { Registry } from "./registry";
 import { $ } from './game';
 import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
 import { HandlerRegistry } from './handlerregistry';
-import { createGameEvent, EventLane, EventPayload, GameEvent } from './game_event';
-export { createGameEvent, EventLane, EventPayload, GameEvent } from './game_event';
+import { create_gameevent, EventLane, EventPayload, GameEvent } from './game_event';
+export { create_gameevent as createGameEvent, EventLane, EventPayload, GameEvent } from './game_event';
 
 export type EventHandler<E extends GameEvent = GameEvent> = (event: E) => any;
 
@@ -295,7 +295,7 @@ export class EventEmitter implements RegisterablePersistent {
 			if (payload && typeof payload !== 'object') {
 				throw new Error(`Event '${arg0}' payload must be an object.`);
 			}
-			const event = createGameEvent({
+			const event = create_gameevent({
 				type: arg0,
 				lane: 'gameplay',
 				emitter: emitterOrSource,
@@ -670,7 +670,7 @@ export function emits_event(eventName?: string, lane: EventLane = 'gameplay') {
 				if (!eventName) {
 					throw new Error(`@emits_event requires the decorated method to return a GameEvent when no event name is provided.`);
 				}
-				event = createGameEvent({ type: eventName, lane, ...(result ?? {}) as Record<string, unknown> });
+				event = create_gameevent({ type: eventName, lane, ...(result ?? {}) as Record<string, unknown> });
 			}
 			if (!event.emitter) event.emitter = this as Identifiable;
 			EventEmitter.instance.emit(event);

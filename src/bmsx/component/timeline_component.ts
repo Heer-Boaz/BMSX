@@ -12,7 +12,7 @@ import {
 	type TimelinePlaybackMode,
 } from '../timeline/timeline';
 import { AbilitySystemComponent } from './abilitysystemcomponent';
-import { createGameEvent, type EventLane } from '../core/game_event';
+import { create_gameevent, type EventLane } from '../core/game_event';
 import { $ } from '../core/game';
 import { insavegame } from '../serializer/serializationhooks';
 import { unique_strings } from '../utils/unique_strings';
@@ -50,7 +50,7 @@ type RegisteredTimeline = {
 
 function emitLaneEvent(lane: EventLane | 'any', event: string, emitter: WorldObject, payload?: Record<string, unknown>): void {
 	const actualLane: EventLane = lane === 'any' ? 'gameplay' : lane;
-	const message = createGameEvent({ type: event, lane: actualLane, emitter, ...(payload ?? {}) });
+	const message = create_gameevent({ type: event, lane: actualLane, emitter, ...(payload ?? {}) });
 	if (lane === 'presentation') {
 		$.emit_presentation(message);
 		return;
@@ -260,11 +260,11 @@ export class TimelineComponent extends Component<WorldObject> {
 		payload: TimelineFrameEventPayload | TimelineEndEventPayload,
 	): void {
 		emitLaneEvent(lane, baseType, owner, payload as Record<string, unknown>);
-		const baseEvent = createGameEvent({ type: baseType, lane, emitter: owner, ...payload });
+		const baseEvent = create_gameevent({ type: baseType, lane, emitter: owner, ...payload });
 		owner.sc.dispatch_event(baseEvent);
 		const suffixedType = `${baseType}:${payload.timeline_id}`;
 		emitLaneEvent(lane, suffixedType, owner, payload as Record<string, unknown>);
-		const suffixedEvent = createGameEvent({ type: suffixedType, lane, emitter: owner, ...payload });
+		const suffixedEvent = create_gameevent({ type: suffixedType, lane, emitter: owner, ...payload });
 		owner.sc.dispatch_event(suffixedEvent);
 	}
 

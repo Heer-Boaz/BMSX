@@ -1,5 +1,5 @@
 import { $, GameplayCommandBuffer, InputAbilityComponent, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction, type EventPayload, Component, subscribesToParentScopedEvent, type ComponentAttachOptions, type WorldObjectEventPayloads, V3, type TimelineFrameEventPayload, type TimelineEndEventPayload } from 'bmsx';
-import { createGameEvent, type GameEvent } from 'bmsx/core/game_event';
+import { create_gameevent, type GameEvent } from 'bmsx/core/game_event';
 import { FIGHTER_TIMELINES } from './fighter_fsms';
 import type { AbilityPayloadFor, AbilityRequestOptions } from 'bmsx/gas/gastypes';
 import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
@@ -193,9 +193,9 @@ export abstract class Fighter extends SpriteObject {
 		inputAbility.program = FIGHTER_INPUT_PROGRAM;
 
 		// Seed locomotion and animation so tags and sprites are valid on the first frame.
-		const locomotion = createGameEvent({ type: 'mode.locomotion.idle', emitter: this });
+		const locomotion = create_gameevent({ type: 'mode.locomotion.idle', emitter: this });
 		this.sc.dispatch_event(locomotion);
-		const animateIdle = createGameEvent({ type: 'animate_idle', emitter: this });
+		const animateIdle = create_gameevent({ type: 'animate_idle', emitter: this });
 		this.sc.dispatch_event(animateIdle);
 	}
 
@@ -242,7 +242,7 @@ export abstract class Fighter extends SpriteObject {
 			throw new Error('[Fighter] startAttack invoked without attack type.');
 		}
 		this.currentAttackType = attackType;
-		const attackEvent = createGameEvent({ type: `animate_${attackType}`, emitter: this });
+		const attackEvent = create_gameevent({ type: `animate_${attackType}`, emitter: this });
 		this.sc.dispatch_event(attackEvent);
 	}
 
@@ -263,7 +263,7 @@ export abstract class Fighter extends SpriteObject {
 
 	public doAttackFlow(attackType: AttackType, opponent: Fighter | null): boolean {
 		if (!opponent) {
-			$.applyVibrationEffect(this.player_index, { effect: 'dual-rumble', duration: 50, intensity: 0.5 });
+			$.apply_vibration_effect(this.player_index, { effect: 'dual-rumble', duration: 50, intensity: 0.5 });
 			return false;
 		}
 		const hitVec2 = this.attackHitsOpponent(attackType, opponent);
@@ -271,12 +271,12 @@ export abstract class Fighter extends SpriteObject {
 		if (hitVec2) {
 			this.handleHittingOpponent(attackType, opponent, hitVec2);
 			opponent.handleBeingHit(attackType, this);
-			$.applyVibrationEffect(this.player_index, { effect: 'dual-rumble', duration: 50, intensity: .6 });
-			$.applyVibrationEffect(opponent.player_index, { effect: 'dual-rumble', duration: 100, intensity: 1 });
+			$.apply_vibration_effect(this.player_index, { effect: 'dual-rumble', duration: 50, intensity: .6 });
+			$.apply_vibration_effect(opponent.player_index, { effect: 'dual-rumble', duration: 100, intensity: 1 });
 			hit = true;
 		}
 		else {
-			$.applyVibrationEffect(this.player_index, { effect: 'dual-rumble', duration: 50, intensity: 0.5 });
+			$.apply_vibration_effect(this.player_index, { effect: 'dual-rumble', duration: 50, intensity: 0.5 });
 		}
 		return hit;
 	}
@@ -475,7 +475,7 @@ export abstract class Fighter extends SpriteObject {
 		this.facing = this.facing === 'left' ? 'right' : 'left';
 		if (typeof nextAnimation === 'string') {
 			const attack = nextAnimation as AttackType;
-			const event = createGameEvent({ type: 'mode.action.attack', attackType: attack, emitter: this });
+			const event = create_gameevent({ type: 'mode.action.attack', attackType: attack, emitter: this });
 			this.sc.dispatch_event(event);
 		}
 	}

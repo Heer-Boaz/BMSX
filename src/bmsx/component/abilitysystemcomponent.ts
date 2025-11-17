@@ -26,7 +26,7 @@ import {
 } from '../gas/gameplay_ability';
 import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
 import type { GameplayCommand } from '../ecs/gameplay_command_buffer';
-import { createGameEvent, EventLane, GameEvent } from '../core/game_event';
+import { create_gameevent, EventLane, GameEvent } from '../core/game_event';
 
 export type AbilityTagSnapshot = {
 	explicit: TagId[];
@@ -547,7 +547,7 @@ export class AbilitySystemComponent extends Component {
 		const detail: Record<string, unknown> = { id, reason };
 		if (source !== undefined) detail.source = source;
 		if (timeLeftMs !== undefined) detail.timeLeftMs = timeLeftMs;
-		const event = createGameEvent({ type: 'AbilityFailed', emitter: owner, lane: 'gameplay', ...detail });
+		const event = create_gameevent({ type: 'AbilityFailed', emitter: owner, lane: 'gameplay', ...detail });
 		$.emit_gameplay(event);
 	}
 

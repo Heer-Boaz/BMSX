@@ -1,6 +1,6 @@
 import { $ } from '../core/game';
 import type { EventScope } from '../core/eventemitter';
-import { createGameEvent, EventLane, type GameEvent } from '../core/game_event';
+import { create_gameevent, EventLane, type GameEvent } from '../core/game_event';
 import { GameplayCommandBuffer, type GameplayCommand } from '../ecs/gameplay_command_buffer';
 import type { WorldObject } from '../core/object/worldobject';
 import type { Facing, Identifier } from '../rompack/rompack';
@@ -269,13 +269,13 @@ export class GameplayAbilityExecution {
 			case 'dispatch': {
 				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
 				const target = step.target ? this.resolveIdentifier(step.target) : undefined;
-				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
+				const event = create_gameevent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
 				this.dispatchMode(event, target);
 				return { kind: 'continue' };
 			}
 			case 'emit': {
 				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
-				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
+				const event = create_gameevent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
 				this.emitGameplay(event);
 				return { kind: 'continue' };
 			}
@@ -358,13 +358,13 @@ export class GameplayAbilityExecution {
 			case 'dispatch': {
 				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
 				const target = step.target ? this.resolveIdentifier(step.target) : undefined;
-				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
+				const event = create_gameevent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
 				this.dispatchMode(event, target);
 				return;
 			}
 			case 'emit': {
 				const payload = step.payload ? this.resolveRecord(step.payload) : undefined;
-				const event = createGameEvent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
+				const event = create_gameevent({ type: step.event, lane: step.lane ?? 'gameplay', ...(payload ?? {}) });
 				this.emitGameplay(event);
 				return;
 			}
