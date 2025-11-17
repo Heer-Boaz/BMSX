@@ -126,6 +126,7 @@ export class TitleScreen extends SpriteObject {
 								this.sc.dispatch_event(playersEvent);
 								const resumeEvent = createGameEvent({ type: 'resume_blink', emitter: this });
 								this.sc.dispatch_event(resumeEvent);
+								this.play_timeline(TitleScreen.BLINK_TIMELINE_ID, { rewind: true, snap_to_start: true });
 							},
 						},
 					},
@@ -160,7 +161,7 @@ export class TitleScreen extends SpriteObject {
 								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
 								this.selectedPlayers = 1;
 								this.cursorVisible = true;
-								state.parent.states.blink.reset();
+								this.play_timeline(TitleScreen.BLINK_TIMELINE_ID, { rewind: true, snap_to_start: true });
 								this._cursorSprite.offset = new_vec3(80, this.cursorY, 1);
 							},
 						},
@@ -173,7 +174,7 @@ export class TitleScreen extends SpriteObject {
 								this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
 								this.selectedPlayers = 2;
 								this.cursorVisible = true;
-								state.parent.states.blink.reset();
+								this.play_timeline(TitleScreen.BLINK_TIMELINE_ID, { rewind: true, snap_to_start: true });
 								this._cursorSprite.offset = new_vec3(80, this.cursorY, 1);
 							},
 						},
@@ -184,7 +185,6 @@ export class TitleScreen extends SpriteObject {
 							},
 							entering_state(this: TitleScreen) {
 								this.cursorVisible = true;
-								this.play_timeline(TitleScreen.BLINK_TIMELINE_ID, { rewind: true, snapToStart: true });
 							},
 							on: {
 								[`timeline.frame:${TitleScreen.BLINK_TIMELINE_ID}`]: {
@@ -231,8 +231,8 @@ export class TitleScreen extends SpriteObject {
 		this.define_timeline({
 			id: TitleScreen.BLINK_TIMELINE_ID,
 			frames: [false, true],
-			playbackMode: 'loop',
-			ticksPerFrame: 20,
+			playback_mode: 'loop',
+			ticks_per_frame: 20,
 		});
 	}
 }
@@ -248,7 +248,13 @@ export class Gordijn extends WorldObject {
 			states: {
 				_idle: {
 					on: {
-						its_curtains: '/its_curtains_for_you',
+						its_curtains: {
+							do(this: Gordijn) {
+								this.width = 0;
+								this.play_timeline(Gordijn.TIMELINE_ID, { rewind: true, snap_to_start: true });
+								return '/its_curtains_for_you';
+							},
+						},
 						reset: {
 							do(this: Gordijn) {
 								this.width = 0;
@@ -272,10 +278,6 @@ export class Gordijn extends WorldObject {
 							},
 						},
 					},
-					entering_state(this: Gordijn) {
-						this.width = 0;
-						this.play_timeline(Gordijn.TIMELINE_ID, { rewind: true, snapToStart: true });
-					},
 				},
 			}
 		}
@@ -286,7 +288,7 @@ export class Gordijn extends WorldObject {
 		this.define_timeline({
 			id: Gordijn.TIMELINE_ID,
 			frames: [8],
-			ticksPerFrame: 2,
+			ticks_per_frame: 2,
 			repetitions: 256 / 8,
 		});
 		this.width = 0;

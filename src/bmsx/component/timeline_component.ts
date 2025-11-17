@@ -2,7 +2,7 @@ import { Component, type ComponentAttachOptions } from './basecomponent';
 import type { WorldObject } from '../core/object/worldobject';
 import {
 	Timeline,
-	compileTimelineMarkers,
+	compile_timeline_markers,
 	type TimelineDefinition,
 	type CompiledTimelineMarkerCache,
 	type TimelineEvent,
@@ -19,7 +19,7 @@ import { unique_strings } from '../utils/unique_strings';
 
 export type TimelinePlayOptions = {
 	rewind?: boolean;
-	snapToStart?: boolean;
+	snap_to_start?: boolean;
 };
 
 export type TimelineFrameEventPayload<T = unknown> = {
@@ -88,19 +88,9 @@ export class TimelineComponent extends Component<WorldObject> {
 			id: definition.id,
 			frames,
 		};
-		const compiled = compileTimelineMarkers(normalized);
+		const compiled = compile_timeline_markers(normalized);
 		const instance = new Timeline(normalized);
 		this.registry.set(definition.id, { definition: normalized, instance, compiled });
-	}
-
-	public ensure(definition: TimelineDefinition): void {
-		if (this.registry.has(definition.id)) return;
-		this.define(definition);
-	}
-
-	public playDefinition(definition: TimelineDefinition, opts?: TimelinePlayOptions): Timeline {
-		this.ensure(definition);
-		return this.play(definition.id, opts);
 	}
 
 	public play(id: string, opts?: TimelinePlayOptions): Timeline {
@@ -108,13 +98,13 @@ export class TimelineComponent extends Component<WorldObject> {
 		if (!entry) throw new Error(`[TimelineComponent] Unknown timeline '${id}' requested on '${this.parent?.id}'.`);
 		const { instance } = entry;
 		const rewind = opts?.rewind ?? true;
-		const snap = opts?.snapToStart ?? true;
+		const snap = opts?.snap_to_start ?? true;
 		if (rewind) {
 			instance.rewind();
 			this.resync_tags(entry);
 		}
 		if (snap && instance.length > 0) {
-			this.process_events(entry, instance.snapToStart());
+			this.process_events(entry, instance.snap_to_start());
 		}
 		this.active.add(id);
 		return instance;
@@ -142,7 +132,7 @@ export class TimelineComponent extends Component<WorldObject> {
 	public forceSeek(id: string, frame: number): void {
 		const entry = this.registry.get(id);
 		if (!entry) return;
-		entry.instance.forceSeek(frame);
+		entry.instance.force_seek(frame);
 		this.resync_tags(entry);
 	}
 
@@ -164,7 +154,7 @@ export class TimelineComponent extends Component<WorldObject> {
 		}
 	}
 
-	public get<T = unknown>(id: string): Timeline<T> | undefined {
+	public get<T = Timeline>(id: string): Timeline<T> | undefined {
 		return this.registry.get(id)?.instance as Timeline<T> | undefined;
 	}
 
@@ -223,10 +213,10 @@ export class TimelineComponent extends Component<WorldObject> {
 
 	private resync_tags(entry: RegisteredTimeline): void {
 		const compiled = entry.compiled;
-		if (!compiled || compiled.controlledTags.length === 0) return;
+		if (!compiled || compiled.controlled_tags.length === 0) return;
 		const abilitySystem = (this.parent as WorldObject & { abilitySystem?: AbilitySystemComponent }).abilitysystem;
 		if (!abilitySystem) return;
-		const tags = unique_strings(compiled.controlledTags);
+		const tags = unique_strings(compiled.controlled_tags);
 		if (tags.length === 0) return;
 		abilitySystem.remove_tags(...tags);
 	}
@@ -234,7 +224,7 @@ export class TimelineComponent extends Component<WorldObject> {
 	private apply_markers(entry: RegisteredTimeline, event: TimelineFrameEvent): void {
 		const compiled = entry.compiled;
 		if (!compiled) return;
-		const bucket = compiled.byFrame[event.current];
+		const bucket = compiled.by_frame[event.current];
 		if (!bucket || bucket.length === 0) return;
 		const target = this.parent as WorldObject & { abilitySystem?: AbilitySystemComponent };
 		for (const marker of bucket) {
@@ -254,7 +244,7 @@ export class TimelineComponent extends Component<WorldObject> {
 
 	private emit_frameevent(entry: RegisteredTimeline, payload: TimelineFrameEventPayload): void {
 		const owner = this.parent!;
-		const lane = entry.definition.frameEventLane ?? 'gameplay';
+		const lane = entry.definition.frame_event_lane ?? 'gameplay';
 		this.dispatchTimelineEvents(owner, lane, 'timeline.frame', payload);
 	}
 
