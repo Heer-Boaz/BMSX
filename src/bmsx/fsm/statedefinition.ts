@@ -1,7 +1,7 @@
 import { EventLane, EventScope } from '../core/eventemitter';
 import { type Identifier } from '../rompack/rompack';
 import { excludepropfromsavegame } from '../serializer/serializationhooks';
-import { type StateActionSpec, type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type TickCheckDefinition, type id2partial_sdef } from './fsmtypes';
+import { type StateActionSpec, type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type TickCheckDefinition, type id2partial_sdef, type StateTimelineMap } from './fsmtypes';
 import { State } from './state';
 
 function looksLikeStatePath(value: string): boolean {
@@ -57,6 +57,8 @@ export class StateDefinition {
 
 	public event_list: { name: string; scope: EventScope; lane: EventLane | 'any' }[];
 
+	public timelines?: StateTimelineMap;
+
 
 	private get is_root(): boolean { return this.root === this; }
 
@@ -83,7 +85,9 @@ export class StateDefinition {
 	 */
 	public constructor(id: Identifier, partialdef?: Partial<StateDefinition>, root: StateDefinition = null, parent: StateDefinition = null) {
 		this.id = id;
+		const timelines = partialdef?.timelines;
 		partialdef && Object.assign(this, partialdef); // Assign the partial definition to the instance
+		this.timelines = timelines ? { ...timelines } : undefined;
 		this.data ??= {}; // Unless already defined, data is an empty object
 		this.root = root ?? this; // The root state machine is either the provided root or this state machine
 		this.parent = parent; // The parent state machine is either the provided parent or null (for root machines)

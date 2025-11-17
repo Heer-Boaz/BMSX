@@ -1,299 +1,361 @@
 import { $, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3, type RevivableObjectArgs } from 'bmsx';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
-import { BitmapId } from './resourceids';
-import { create_gameevent, type GameEvent } from 'bmsx/core/game_event';
+import type { GameEvent } from 'bmsx/core/game_event';
 import type { TimelineEndEventPayload, TimelineFrameEventPayload } from 'bmsx/component/timeline_component';
+import type { ActionState, ActionStateQuery } from 'bmsx/input/inputtypes';
+import { BitmapId } from './resourceids';
 
-function wrapup(state: State) {
-	$.stopmusic();
-	$.world.sc.transition_to('titlescreen');
-	state.reset(); // Make sure that the tick counter is reset.
+const PRIMARY_PLAYER_INDEX = 1;
+const NAVIGATION_ACTIONS = ['up', 'down'] as const;
+const SKIP_ACTIONS = ['punch', 'highkick', 'lowkick', 'block'] as const;
+
+export const RETURN_TO_TITLE_EVENT = 'titlescreen.return_requested';
+
+function readActions(filter: readonly string[], extra?: Partial<ActionStateQuery>): ActionState[] {
+	return $.input.getPlayerInput(PRIMARY_PLAYER_INDEX).getPressedActions({
+		filter: [...filter],
+		consumed: false,
+		justPressed: true,
+		...(extra ?? {}),
+	});
+}
+
+function isConfirmAction(action: ActionState): boolean {
+	for (const actionId of SKIP_ACTIONS) {
+		if (action.action === actionId) return true;
+	}
+	return false;
+}
+
+function isNavigationAction(action: ActionState): boolean {
+	return action.action === 'up' || action.action === 'down';
+}
+
+function emitReturnToTitle(emitter: SpriteObject): void {
+	$.emit_presentation(RETURN_TO_TITLE_EVENT, emitter);
+}
+
+function trySkipToTitle(emitter: SpriteObject): void {
+	const actions = readActions(SKIP_ACTIONS);
+	if (actions.length === 0) return;
+	emitReturnToTitle(emitter);
 }
 
 @insavegame
 export class GameOver extends SpriteObject {
+	public static readonly TIMEOUT_TIMELINE_ID = 'gameover.timeout';
+
 	@build_fsm()
-	static bouw(): StateMachineBlueprint {
+	public static bouw(): StateMachineBlueprint {
 		return {
 			states: {
 				_default: {
-					data: {
-						elapsed: 0,
+					timelines: {
+						[GameOver.TIMEOUT_TIMELINE_ID]: {
+							frames: [true],
+							ticks_per_frame: 500,
+							playback_mode: 'once',
+						},
 					},
-					process_input(this: TitleScreen, state: State) {
-						const priorityActions = $.get_pressed_actions(1, { pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
+					entering_state(this: GameOver) {
+						this.restartTimeout();
+					},
+					on: {
+						reset: {
+							do(this: GameOver) {
+								this.restartTimeout();
+							},
+						},
+					},
+					process_input(this: GameOver) {
+						trySkipToTitle(this);
+					},
+				},
+			},
+		};
+	}
 
-						// If no priority actions are pressed, do nothing.
-						if (!priorityActions || priorityActions.length === 0) {
-							return;
-						}
-						$.consume_actions(1, ...priorityActions);
-
-						wrapup(state);
-					},
-					tick(this: GameOver, state: State) {
-						state.data.elapsed = (state.data.elapsed ?? 0) + 1;
-						if (state.data.elapsed >= 500) {
-							wrapup(state);
-						}
-					},
-				}
-			}
-		}
+	private restartTimeout(): void {
+		this.play_timeline(GameOver.TIMEOUT_TIMELINE_ID, { rewind: true, snap_to_start: true });
 	}
 
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'gameover', ...opts });
 		this.imgid = BitmapId.gameover;
 		this.getOrCreateCustomRenderer().add_producer(({ rc }) => {
-			rc.submit_rect({ kind: 'fill', area: new_area3d(0, 136, this.z + 1, 256, 192 - 8, this.z + 1), color: Msx1Colors[0] });
-			const x = 8, y = 144;
-			const textToWrite = 'je bent toch niet de strijder die ik nodig heb.\nik ben een beetje teleurgesteld in jouw ouders...';
-			rc.submit_glyphs({ x, y, glyphs: textToWrite, wrap_chars: 30 });
+			rc.submit_rect({
+				kind: 'fill',
+				area: new_area3d(0, 136, this.z + 1, 256, 184, this.z + 1),
+				color: Msx1Colors[0],
+			});
+			rc.submit_glyphs({
+				x: 8,
+				y: 144,
+				wrap_chars: 30,
+				glyphs: 'je bent toch niet de strijder die ik nodig heb.\nik ben een beetje teleurgesteld in jouw ouders...',
+			});
 		});
 	}
 }
 
 @insavegame
 export class Hoera extends SpriteObject {
+	public static readonly TIMEOUT_TIMELINE_ID = 'hoera.timeout';
+
 	@build_fsm()
-	static bouw(): StateMachineBlueprint {
+	public static bouw(): StateMachineBlueprint {
 		return {
 			states: {
 				_default: {
-					data: {
-						elapsed: 0,
+					timelines: {
+						[Hoera.TIMEOUT_TIMELINE_ID]: {
+							frames: [true],
+							ticks_per_frame: 500,
+							playback_mode: 'once',
+						},
 					},
-					process_input(this: TitleScreen, state: State) {
-						const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
+					entering_state(this: Hoera) {
+						this.restartTimeout();
+					},
+					on: {
+						reset: {
+							do(this: Hoera) {
+								this.restartTimeout();
+							},
+						},
+					},
+					process_input(this: Hoera) {
+						trySkipToTitle(this);
+					},
+				},
+			},
+		};
+	}
 
-						// If no priority actions are pressed, do nothing.
-						if (!priorityActions || priorityActions.length === 0) {
-							return;
-						}
-						$.input.getPlayerInput(1).consumeActions(...priorityActions);
-						wrapup(state);
-					},
-					tick(this: Hoera, state: State) {
-						state.data.elapsed = (state.data.elapsed ?? 0) + 1;
-						if (state.data.elapsed >= 500) {
-							wrapup(state);
-						}
-					},
-				}
-			}
-		}
+	private restartTimeout(): void {
+		this.play_timeline(Hoera.TIMEOUT_TIMELINE_ID, { rewind: true, snap_to_start: true });
 	}
 
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'hoera', ...opts });
 		this.imgid = BitmapId.hoera;
 		this.getOrCreateCustomRenderer().add_producer(({ rc }) => {
-			rc.submit_rect({ kind: 'fill', area: new_area3d(0, 152, this.z + 1, 256, 192, this.z + 1), color: Msx1Colors[0] });
-			const x = 16, y = 160;
-			const textToWrite = 'Dat heb je redelijk gedaan Elly!\nIk bedoel: Ei La!';
-			rc.submit_glyphs({ x, y, glyphs: textToWrite, wrap_chars: 30 });
+			rc.submit_rect({
+				kind: 'fill',
+				area: new_area3d(0, 152, this.z + 1, 256, 192, this.z + 1),
+				color: Msx1Colors[0],
+			});
+			rc.submit_glyphs({ x: 16, y: 160, wrap_chars: 30, glyphs: 'Dat heb je redelijk gedaan Elly!\nIk bedoel: Ei La!' });
 		});
 	}
 }
 
 @insavegame
 export class TitleScreen extends SpriteObject {
-	private static readonly SELECT_PLAYER_1_Y = 160 - 16;
+	private static readonly SELECT_PLAYER_1_Y = 144;
 	private static readonly SELECT_PLAYER_2_Y = 160;
+	private static readonly CURSOR_X = 80;
 	private static readonly BLINK_TIMELINE_ID = 'title-screen.blink';
-	private cursorY: number;
-	private selectedPlayers: number;
-	private get cursorVisible() { return this._cursorSprite.enabled; }
-	private set cursorVisible(visible: boolean) {
-		this._cursorSprite.enabled = !!visible;
-	}
 
+	private selectedPlayers: 1 | 2 = 1;
+	private cursorY = TitleScreen.SELECT_PLAYER_1_Y;
+	private blinkPaused = false;
 	private _cursorSprite!: SpriteComponent;
 
+	private get cursorVisible(): boolean { return this._cursorSprite.enabled; }
+	private set cursorVisible(visible: boolean) {
+		this._cursorSprite.enabled = visible;
+	}
+
 	@build_fsm()
-	static bouw(): StateMachineBlueprint {
+	public static bouw(): StateMachineBlueprint {
 		return {
 			states: {
 				_default: {
+					timelines: {
+						[TitleScreen.BLINK_TIMELINE_ID]: {
+							frames: [true, false],
+							ticks_per_frame: 20,
+							playback_mode: 'loop',
+							autoplay: true,
+						},
+					},
+					entering_state(this: TitleScreen) {
+						this.resetMenu();
+					},
 					on: {
 						reset: {
 							do(this: TitleScreen) {
-								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
-								this.selectedPlayers = 1;
-								this.cursorVisible = true;
-								const playersEvent = create_gameevent({ type: 'players_1', emitter: this });
-								this.sc.dispatch_event(playersEvent);
-								const resumeEvent = create_gameevent({ type: 'resume_blink', emitter: this });
-								this.sc.dispatch_event(resumeEvent);
-								this.play_timeline(TitleScreen.BLINK_TIMELINE_ID, { rewind: true, snap_to_start: true });
+								this.resetMenu();
+							},
+						},
+						[`timeline.frame:${TitleScreen.BLINK_TIMELINE_ID}`]: {
+							scope: 'self',
+							do(this: TitleScreen, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<boolean>>) {
+								this.handleBlinkFrame(event.frame_value === true);
 							},
 						},
 					},
 					process_input(this: TitleScreen) {
-						const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['up', 'down', 'punch', 'highkick', 'lowkick', 'block'] });
-
-						// If no priority actions are pressed, do nothing.
-						if (!priorityActions || priorityActions.length === 0) {
-							return;
-						}
-
-						$.consume_actions(1, ...priorityActions);
-
-						if (priorityActions.some(action => action.action === 'up' || action.action === 'down')) {
-							const switchEvent = create_gameevent({ type: 'switch', emitter: this });
-							this.sc.dispatch_event(switchEvent);
-							return;
-						}
-
-						// If a priority action is pressed, start the game.
-						this.cursorVisible = true;
-						const pauseEvent = create_gameevent({ type: 'pause_blink', emitter: this });
-						this.sc.dispatch_event(pauseEvent);
-						$.emit_presentation('gamestart_selected', this, { numOfPlayers: this.selectedPlayers });
+						this.processMenuInput();
 					},
-					states: {
-						_players_1: {
-							on: {
-								$switch: '../players_2',
-							},
-							entering_state(this: TitleScreen, _state: State) {
-								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
-								this.selectedPlayers = 1;
-								this.cursorVisible = true;
-								this.play_timeline(TitleScreen.BLINK_TIMELINE_ID, { rewind: true, snap_to_start: true });
-								this._cursorSprite.offset = new_vec3(80, this.cursorY, 1);
-							},
-						},
-						players_2: {
-							on: {
-								$switch: '../_players_1',
-								$players_1: '../_players_1', // For resetting the TitleScreen state.
-							},
-							entering_state(this: TitleScreen, _state: State) {
-								this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
-								this.selectedPlayers = 2;
-								this.cursorVisible = true;
-								this.play_timeline(TitleScreen.BLINK_TIMELINE_ID, { rewind: true, snap_to_start: true });
-								this._cursorSprite.offset = new_vec3(80, this.cursorY, 1);
-							},
-						},
-						blink: {
-							is_concurrent: true,
-							data: {
-								pause_blink: false,
-							},
-							entering_state(this: TitleScreen) {
-								this.cursorVisible = true;
-							},
-							on: {
-								[`timeline.frame:${TitleScreen.BLINK_TIMELINE_ID}`]: {
-									scope: 'self',
-									do(this: TitleScreen, state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<boolean>>) {
-										if (state.data.pause_blink) return;
-										this.cursorVisible = event.frame_value;
-									},
-								},
-							},
-							states: {
-								_default: {
-									on: {
-										$pause_blink: '../paused',
-									},
-									entering_state(state: State) {
-										state.parent.data.pause_blink = false;
-									},
-								},
-								paused: {
-									on: {
-										$resume_blink: '../_default',
-									},
-									entering_state(state: State) {
-										state.parent.data.pause_blink = true;
-									},
-								}
-							}
-						}
-					}
-				}
-			}
-		}
+				},
+			},
+		};
 	}
 
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'title', ...opts });
 		this.imgid = BitmapId.title;
-		// Cursor sprite component (secondary)
 		this._cursorSprite = new SpriteComponent({ parent_or_id: this, imgid: BitmapId.menu_arrow });
-		this.add_component(this._cursorSprite);
 		this._cursorSprite.layer = 'ui';
 		this._cursorSprite.collider_local_id = null;
-		this.define_timeline({
-			id: TitleScreen.BLINK_TIMELINE_ID,
-			frames: [false, true],
-			playback_mode: 'loop',
-			ticks_per_frame: 20,
-		});
+		this.add_component(this._cursorSprite);
+		this.cursorVisible = true;
+		this.updateCursorPosition();
+	}
+
+	private resetMenu(): void {
+		this.selectedPlayers = 1;
+		this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
+		this.updateCursorPosition();
+		this.resumeBlink();
+	}
+
+	private processMenuInput(): void {
+		const confirmActions = readActions(SKIP_ACTIONS);
+		if (confirmActions.length > 0) {
+			this.startGame();
+			return;
+		}
+
+		const navigation = readActions(NAVIGATION_ACTIONS);
+		if (navigation.length === 0) return;
+		const direction: -1 | 1 = navigation[0].action === 'up' ? -1 : 1;
+		this.applySelectionChange(direction);
+	}
+
+	private applySelectionChange(direction: -1 | 1): void {
+		const nextSelection: 1 | 2 = direction < 0 ? 1 : 2;
+		this.setSelection(nextSelection);
+	}
+
+	private setSelection(target: 1 | 2): void {
+		if (this.selectedPlayers === target) {
+			this.resumeBlink();
+			return;
+		}
+		this.selectedPlayers = target;
+		this.cursorY = target === 1 ? TitleScreen.SELECT_PLAYER_1_Y : TitleScreen.SELECT_PLAYER_2_Y;
+		this.updateCursorPosition();
+		this.resumeBlink();
+	}
+
+	private updateCursorPosition(): void {
+		this._cursorSprite.offset = new_vec3(TitleScreen.CURSOR_X, this.cursorY, 1);
+	}
+
+	private handleBlinkFrame(visible: boolean): void {
+		if (this.blinkPaused) {
+			this.cursorVisible = true;
+			return;
+		}
+		this.cursorVisible = visible;
+	}
+
+	private resumeBlink(): void {
+		this.blinkPaused = false;
+		this.cursorVisible = true;
+		this.restartBlinkTimeline();
+	}
+
+	private restartBlinkTimeline(): void {
+		this.play_timeline(TitleScreen.BLINK_TIMELINE_ID, { rewind: true, snap_to_start: true });
+	}
+
+	private pauseBlink(): void {
+		if (this.blinkPaused) return;
+		this.blinkPaused = true;
+		this.cursorVisible = true;
+		this.stop_timeline(TitleScreen.BLINK_TIMELINE_ID);
+	}
+
+	private startGame(): void {
+		this.pauseBlink();
+		$.emit_presentation('gamestart_selected', this, { numOfPlayers: this.selectedPlayers });
 	}
 }
 
 @insavegame
 export class Gordijn extends WorldObject {
-	private width: number;
 	private static readonly TIMELINE_ID = 'gordijn.close';
+	private width = 0;
 
 	@build_fsm()
-	static bouw(): StateMachineBlueprint {
+	public static bouw(): StateMachineBlueprint {
 		return {
 			states: {
-				_idle: {
-					on: {
-						its_curtains: {
-							do(this: Gordijn) {
+				_default: {
+					initial: 'idle',
+					states: {
+						idle: {
+							entering_state(this: Gordijn) {
+								this.width = 0;
+							},
+							on: {
+								its_curtains: '../closing',
+								reset: {
+									do(this: Gordijn) {
+										this.width = 0;
+									},
+								},
+							},
+						},
+						closing: {
+							timelines: {
+								[Gordijn.TIMELINE_ID]: {
+									frames: [8],
+									ticks_per_frame: 2,
+									repetitions: 256 / 8,
+									autoplay: false,
+								},
+							},
+							entering_state(this: Gordijn) {
 								this.width = 0;
 								this.play_timeline(Gordijn.TIMELINE_ID, { rewind: true, snap_to_start: true });
-								return '/its_curtains_for_you';
 							},
-						},
-						reset: {
-							do(this: Gordijn) {
-								this.width = 0;
-							},
-						},
-					},
-				},
-				its_curtains_for_you: {
-					on: {
-						$curtained: '/_idle',
-						[`timeline.frame:${Gordijn.TIMELINE_ID}`]: {
-							scope: 'self',
-							do(this: Gordijn, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
-								this.width += event.frame_value;
-							},
-						},
-						[`timeline.end:${Gordijn.TIMELINE_ID}`]: {
-							scope: 'self',
-							do(this: Gordijn, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
-								$.emit_presentation('curtained', this);
+							on: {
+								[`timeline.frame:${Gordijn.TIMELINE_ID}`]: {
+									scope: 'self',
+									do(this: Gordijn, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
+										this.width += event.frame_value;
+									},
+								},
+					[`timeline.end:${Gordijn.TIMELINE_ID}`]: {
+									scope: 'self',
+									do(this: Gordijn, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+										$.emit_presentation('curtained', this);
+										return '../idle';
+									},
+								},
+								reset: '../idle',
 							},
 						},
 					},
 				},
-			}
-		}
+			},
+		};
 	}
 
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'gordijn', ...opts });
-		this.define_timeline({
-			id: Gordijn.TIMELINE_ID,
-			frames: [8],
-			ticks_per_frame: 2,
-			repetitions: 256 / 8,
-		});
-		this.width = 0;
 		this.getOrCreateCustomRenderer().add_producer(({ rc }) => {
-			rc.submit_rect({ kind: 'fill', area: new_area3d(0, 0, this.z + 1, this.width, 192, this.z), color: Msx1Colors[0], layer: 'ui' });
+			rc.submit_rect({
+				kind: 'fill',
+				area: new_area3d(0, 0, this.z + 1, this.width, 192, this.z),
+				color: Msx1Colors[0],
+				layer: 'ui',
+			});
 		});
 	}
 }

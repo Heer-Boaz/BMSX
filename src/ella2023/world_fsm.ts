@@ -6,7 +6,7 @@ import { Hud } from './hud';
 import { AudioId } from './resourceids';
 import { Sinterklaas } from './sinterklaas';
 import { YieArGameState } from './yieargamestate';
-import { GameOver, Gordijn, Hoera, TitleScreen } from './stuff';
+import { GameOver, Gordijn, Hoera, TitleScreen, RETURN_TO_TITLE_EVENT } from './stuff';
 
 export class EilaModelFSM {
 	@build_fsm('EilaModelFSM')
@@ -97,6 +97,18 @@ export class EilaModelFSM {
 							this.spawn(new GameOver(), new_vec3(0, 0, 0));
 						}
 						$.playaudio(AudioId.gameover);
+						const splash = this.getFromCurrentSpace<GameOver>('gameover');
+						const resetEvent = create_gameevent({ type: 'reset', emitter: this });
+						splash.sc.dispatch_event(resetEvent);
+					},
+					on: {
+						[RETURN_TO_TITLE_EVENT]: '/titlescreen',
+						[`timeline.frame:${GameOver.TIMEOUT_TIMELINE_ID}`]: {
+							scope: 'gameover',
+							do() {
+								return '/titlescreen';
+							},
+						},
 					},
 				},
 				hoera: {
@@ -106,10 +118,23 @@ export class EilaModelFSM {
 							this.spawn(new Hoera(), new_vec3(0, 0, 0));
 						}
 						$.playaudio(AudioId.gameover);
+						const splash = this.getFromCurrentSpace<Hoera>('hoera');
+						const resetEvent = create_gameevent({ type: 'reset', emitter: this });
+						splash.sc.dispatch_event(resetEvent);
+					},
+					on: {
+						[RETURN_TO_TITLE_EVENT]: '/titlescreen',
+						[`timeline.frame:${Hoera.TIMEOUT_TIMELINE_ID}`]: {
+							scope: 'hoera',
+							do() {
+								return '/titlescreen';
+							},
+						},
 					},
 				},
 				titlescreen: {
 					entering_state(this: World) {
+						$.stopmusic();
 						this.set_space('titlescreen');
 						if (!this.getWorldObject('title')) {
 							this.spawn(new TitleScreen(), new_vec3(0, 0, 0));

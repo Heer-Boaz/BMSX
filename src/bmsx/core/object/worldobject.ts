@@ -60,7 +60,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	public componentMap: KeyToComponentMap = {};
 
 	public components: Component[] = []; // Array of all components in the object for easy iteration
-	private _timelineComponent?: TimelineComponent;
+	private readonly _timelineComponent: TimelineComponent;
 
 	/**
 	 * The object tracker for the world object.
@@ -851,6 +851,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 			}
 		}
 		this.sc = new StateMachineController({ constructReason: undefined, fsm_id: initialMachineId, id: this.id });
+		this._timelineComponent = new TimelineComponent({ parent_or_id: this });
+		this.add_component(this._timelineComponent);
 	}
 
 	removeComponentsWithTag(tag: ComponentTag): void {

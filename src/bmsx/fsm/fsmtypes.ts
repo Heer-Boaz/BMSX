@@ -5,6 +5,8 @@ import type { StateMachineController } from "./fsmcontroller";
 import type { State } from './state';
 import type { StateDefinition } from './statedefinition';
 import type { EventLane, EventPayload, GameEvent } from '../core/game_event';
+import type { TimelineDefinition } from '../timeline/timeline';
+import type { TimelinePlayOptions } from '../component/timeline_component';
 
 /**
  * Represents a type definition for mapping IDs to `sdef` objects.
@@ -45,6 +47,19 @@ export type StateMachineBlueprint = Partial<StateDefinition>;
  * A type representing a mapping of state IDs to partial state definitions.
  */
 export type id2partial_sdef = Record<Identifier, StateMachineBlueprint>;
+
+export type StateTimelineConfig<T = any> = Omit<TimelineDefinition<T>, 'id'> & {
+	/** Overrides the generated id for this timeline (defaults to the blueprint key). */
+	id?: string;
+	/** Automatically plays the timeline when the state enters. Defaults to true. */
+	autoplay?: boolean;
+	/** Automatically stops the timeline when the state exits. Defaults to true. */
+	stop_on_exit?: boolean;
+	/** Optional play options used when autoplay starts the timeline. */
+	play_options?: TimelinePlayOptions;
+};
+
+export type StateTimelineMap = Record<string, StateTimelineConfig>;
 
 // export type StateIdentifierStart = 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j' | 'k' | 'l' | 'm' | 'n' | 'o' | 'p' | 'q' | 'r' | 's' | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z' | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' | 'J' | 'K' | 'L' | 'M' | 'N' | 'O' | 'P' | 'Q' | 'R' | 'S' | 'T' | 'U' | 'V' | 'W' | 'X' | 'Y' | 'Z';
 // export type StatePathPart = `${StateIdentifierStart}${Identifier}`;

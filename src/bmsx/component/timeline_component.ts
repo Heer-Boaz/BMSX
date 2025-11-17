@@ -18,8 +18,8 @@ import { insavegame } from '../serializer/serializationhooks';
 import { unique_strings } from '../utils/unique_strings';
 
 export type TimelinePlayOptions = {
-	rewind?: boolean;
-	snap_to_start?: boolean;
+	rewind?: boolean; // if true, will rewind the timeline to start before playing
+	snap_to_start?: boolean; // if true, will emit all frame events up to the current frame after rewinding
 };
 
 export type TimelineFrameEventPayload<T = unknown> = {
@@ -206,7 +206,10 @@ export class TimelineComponent extends Component<WorldObject> {
 				};
 				this.emit_endevent(payload);
 				this.dispatch_end_listeners(entry.definition.id, payload);
-				this.active.delete(entry.definition.id);
+				const shouldStop = evt.mode === 'once';
+				if (shouldStop) {
+					this.active.delete(entry.definition.id);
+				}
 			}
 		}
 	}
@@ -283,12 +286,4 @@ export class TimelineComponent extends Component<WorldObject> {
 			listener.end?.(payload);
 		}
 	}
-}
-
-export function ensureTimelineComponent(parent: WorldObject): TimelineComponent {
-	const existing = parent.get_unique_component(TimelineComponent);
-	if (existing) return existing;
-	const component = new TimelineComponent({ parent_or_id: parent });
-	parent.add_component(component);
-	return component;
 }

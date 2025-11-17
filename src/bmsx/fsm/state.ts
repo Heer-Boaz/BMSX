@@ -5,9 +5,12 @@ import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { BST_MAX_HISTORY, DEFAULT_BST_ID } from './fsmcontroller';
 import { StateDefinitions } from './fsmlibrary';
-import { type id2sstate, type Stateful, type StateEventDefinition, type TickCheckDefinition, type transition_target } from './fsmtypes';
+import { type id2sstate, type Stateful, type StateEventDefinition, type TickCheckDefinition, type transition_target, type StateTimelineConfig } from './fsmtypes';
 import { StateDefinition } from './statedefinition';
-import { create_gameevent, EventPayload, GameEvent } from '../core/game_event';
+import { EventPayload, GameEvent } from '../core/game_event';
+import type { Timeline } from '../timeline/timeline';
+import type { TimelineDefinition } from '../timeline/timeline';
+import type { TimelinePlayOptions } from '../component/timeline_component';
 
 type TransitionExecutionMode = 'immediate' | 'queued' | 'deferred';
 
@@ -62,6 +65,21 @@ interface EventDispatchResult {
 	context?: TransitionDiagSnapshot;
 }
 
+type TimelineHost = Stateful & {
+	define_timeline(definition: TimelineDefinition): void;
+	play_timeline(id: string, opts?: TimelinePlayOptions): void;
+	stop_timeline(id: string): void;
+	get_timeline<T = Timeline>(id: string): Timeline<T> | undefined;
+};
+
+type StateTimelineBinding = {
+	definition: TimelineDefinition;
+	autoplay: boolean;
+	stopOnExit: boolean;
+	playOptions?: TimelinePlayOptions;
+	defined: boolean;
+};
+
 interface GuardEvaluation {
 	side: 'exit' | 'enter';
 	descriptor: string;
@@ -76,7 +94,12 @@ interface TransitionGuardDiagnostics {
 	evaluations: GuardEvaluation[];
 }
 
-const EMPTY_GAME_EVENT = Object.freeze(create_gameevent({ type: '__fsm.synthetic__', lane: 'any', emitter: null }));
+const EMPTY_GAME_EVENT: GameEvent = Object.freeze({
+	type: '__fsm.synthetic__',
+	lane: 'any',
+	emitter: null,
+	timestamp: 0,
+});
 
 function resolveEmitterId(event: GameEvent | undefined, fallback: Identifier): Identifier {
 	if (!event || !event.emitter) return fallback;
@@ -600,6 +623,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	public data: { [key: string]: any; } = {};
 
+	private timelineBindings?: StateTimelineBinding[];
+
 	/**
 	 * Returns the world object or model that this state machine is associated with.
 	 */
@@ -618,6 +643,76 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @returns The definition of the current state machine.
 	 */
 	public get definition(): StateDefinition { return this.definitionOrThrow(); }
+
+	private timelineHost(): TimelineHost {
+		return this.target as unknown as TimelineHost;
+	}
+
+	public timeline<T = unknown>(id: Identifier): Timeline<T> {
+		const host = this.timelineHost();
+		const instance = host.get_timeline<T>(id);
+		if (!instance) {
+			throw new Error(`[State] Timeline '${id}' not found for target '${host.id}'.`);
+		}
+		return instance;
+	}
+
+	private ensureTimelineDefinitions(): StateTimelineBinding[] {
+		if (!this.timelineBindings) {
+			const defs: Array<[string, StateTimelineConfig]> = this.definition.timelines
+				? Object.entries(this.definition.timelines)
+				: [];
+			if (defs.length === 0) {
+				this.timelineBindings = [];
+			} else {
+				const bindings: StateTimelineBinding[] = [];
+				for (const [key, config] of defs) {
+					bindings.push(this.createTimelineBinding(key, config as StateTimelineConfig));
+				}
+				this.timelineBindings = bindings;
+			}
+		}
+		if (!this.timelineBindings || this.timelineBindings.length === 0) return this.timelineBindings ?? [];
+		const host = this.timelineHost();
+		for (const binding of this.timelineBindings) {
+			if (binding.defined) continue;
+			host.define_timeline(binding.definition);
+			binding.defined = true;
+		}
+		return this.timelineBindings;
+	}
+
+	private createTimelineBinding(key: string, config: StateTimelineConfig): StateTimelineBinding {
+		const { autoplay = true, stop_on_exit = true, play_options, id, ...rest } = config;
+		const base = rest as Omit<TimelineDefinition, 'id'>;
+		const definition: TimelineDefinition = { id: id ?? key, ...base };
+		return {
+			definition,
+			autoplay,
+			stopOnExit: stop_on_exit,
+			playOptions: play_options,
+			defined: false,
+		};
+	}
+
+	private activateStateTimelines(): void {
+		const bindings = this.ensureTimelineDefinitions();
+		if (bindings.length === 0) return;
+		const host = this.timelineHost();
+		for (const binding of bindings) {
+			if (!binding.autoplay) continue;
+			host.play_timeline(binding.definition.id, binding.playOptions);
+		}
+	}
+
+	private deactivateStateTimelines(): void {
+		if (!this.timelineBindings || this.timelineBindings.length === 0) return;
+		const host = this.timelineHost();
+		for (const binding of this.timelineBindings) {
+			if (!binding.stopOnExit) continue;
+			host.stop_timeline(binding.definition.id);
+		}
+	}
 
 	/**
 	 * Gets the id of the start state of the FSM.
@@ -872,6 +967,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * If there are states defined but no start state, an error will be thrown as the state machine cannot start without a start state.
 	 */
 	public start(): void {
+		this.activateStateTimelines();
 		const startStateId = this.start_state_id;
 		if (!startStateId) {
 			if (!this.states) return; // If there are no states defined, there is no start state to start the state machine with and we can return early
@@ -888,6 +984,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		// Trigger the enter event for the start state. Note that there is no definition for the none-state, so we don't trigger the enter event for that state.
 		this.withCriticalSection(() => {
+			startInstance.activateStateTimelines();
 			const enterStart = startStateDef.entering_state;
 			let startNext: transition_target | void;
 			if (typeof enterStart === 'function') {
@@ -1301,21 +1398,23 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 				throw new Error(`[State] Previous state '${prevId}' not found in '${this.id}'.`);
 			}
 
-			const exitHandler = prevDef.exiting_state;
-			if (typeof exitHandler === 'function') {
-				exitHandler.call(this.target, prevInstance);
-			}
-			this.pushHistory(prevId);
+		const exitHandler = prevDef.exiting_state;
+		if (typeof exitHandler === 'function') {
+			exitHandler.call(this.target, prevInstance);
+		}
+		prevInstance.deactivateStateTimelines();
+		this.pushHistory(prevId);
 
-			this.currentid = state_id;
-			const cur = this.current;
+		this.currentid = state_id;
+		const cur = this.current;
 			if (!cur) {
 				throw new Error(`[State] State '${this.id}' transitioned to '${state_id}' but the instance was not created.`);
 			}
 			const curDef = this.current_state_definition;
 			if (curDef.is_concurrent) throw new Error(`Cannot transition to parallel state '${state_id}'!`);
 
-			const enterHandler = curDef.entering_state;
+		cur.activateStateTimelines();
+		const enterHandler = curDef.entering_state;
 			const next = typeof enterHandler === 'function'
 				? this.runWithTransitionContext(
 					() => {
@@ -1569,6 +1668,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * Also deregisters all states.
 	 */
 	public dispose(): void {
+		this.deactivateStateTimelines();
 		// Also deregister all states
 		if (!this.states) return;
 		for (let state in this.states) {

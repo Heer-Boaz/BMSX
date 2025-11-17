@@ -1,5 +1,4 @@
 import type { EventPayload } from '../core/eventemitter';
-import type { Identifier } from '../rompack/rompack';
 import type { WorldObject } from '../core/object/worldobject';
 
 export type TagId = string;
