@@ -198,7 +198,7 @@ export class StateMachineSystem extends ECSystem {
 export class PrePositionSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
-		const objs = world.objectsWithComponents(PositionUpdateAxisComponent, { scope: 'active' });
+		const objs = world.objects_with_components(PositionUpdateAxisComponent, { scope: 'active' });
 		// Preprocess all PositionUpdateAxisComponents
 		for (const [, c] of objs) {
 			if (!c.enabled) continue;
@@ -217,7 +217,7 @@ export class BoundarySystem extends ECSystem {
 	update(world: World): void {
 		const width = world.gamewidth;
 		const height = world.gameheight;
-		for (let [o, c] of world.objectsWithComponents(ScreenBoundaryComponent, { scope: 'active' })) {
+		for (let [o, c] of world.objects_with_components(ScreenBoundaryComponent, { scope: 'active' })) {
 			if (!c.enabled) continue;
 			const prev = this.prev.get(o) || { x: o.x, y: o.y };
 			const oldx = prev.x;
@@ -271,7 +271,7 @@ export class BoundarySystem extends ECSystem {
 export class TileCollisionSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
-		for (let [o, c] of world.objectsWithComponents(TileCollisionComponent, { scope: 'active' })) {
+		for (let [o, c] of world.objects_with_components(TileCollisionComponent, { scope: 'active' })) {
 			if (!c.enabled) continue;
 			const oldx = c.oldPos?.x ?? o.x;
 			const oldy = c.oldPos?.y ?? o.y;
@@ -315,7 +315,7 @@ export class TileCollisionSystem extends ECSystem {
 export class PhysicsPreSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
-		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'active' })) {
+		for (let [, c] of world.objects_with_components(PhysicsComponent, { scope: 'active' })) {
 			if (!c.enabled) continue;
 			// Inline tryBuildBody and WO->body sync (subset) via public API
 			// Ensure body exists
@@ -327,7 +327,7 @@ export class PhysicsPreSystem extends ECSystem {
 				c.preprocessingUpdate();
 			} else {
 				// If not writing back, push WO -> body
-				if (!c.writeBack) {
+				if (!c.writeback) {
 					const owner = c.parent;
 					let changed = false;
 					if (c.syncAxis.x && c.body.position.x !== owner.x) { c.body.position.x = owner.x; changed = true; }
@@ -349,12 +349,12 @@ export class PhysicsPreSystem extends ECSystem {
 export class PhysicsSyncBeforeStepSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
-		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'active' })) {
+		for (let [o, c] of world.objects_with_components(PhysicsComponent, { scope: 'active' })) {
 			if (!c.enabled) continue;
 			if (!c.body) {
 				c.preprocessingUpdate();
 			} else {
-				if (c.writeBack) continue;
+				if (c.writeback) continue;
 				let changed = false;
 				if (c.syncAxis.x && c.body.position.x !== o.x) { c.body.position.x = o.x; changed = true; }
 				if (c.syncAxis.y && c.body.position.y !== o.y) { c.body.position.y = o.y; changed = true; }
@@ -370,12 +370,7 @@ export class PhysicsSyncBeforeStepSystem extends ECSystem {
 export class PhysicsWorldStepSystem extends ECSystem {
 	constructor(priority: number = 20) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
-		const dtMs = $.deltaTime as number;
-		if (!Number.isFinite(dtMs)) {
-			throw new Error('[PhysicsWorldStepSystem] Game deltaTime is not finite.');
-		}
-		if (dtMs <= 0) return;
-		world.stepPhysics(dtMs);
+		world.stepPhysics($.deltatime);
 	}
 }
 
@@ -383,9 +378,9 @@ export class PhysicsWorldStepSystem extends ECSystem {
 export class PhysicsPostSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
-		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'active' }) as Iterable<[WorldObject & Oriented, PhysicsComponent]>) {
+		for (let [o, c] of world.objects_with_components(PhysicsComponent, { scope: 'active' }) as Iterable<[WorldObject & Oriented, PhysicsComponent]>) {
 			if (!c.enabled) continue;
-			if (!c.writeBack) continue;
+			if (!c.writeback) continue;
 			if (!c.body) {
 				throw new Error(`[PhysicsPostSystem] Physics component '${c.id}' is missing its body while writeBack=true.`);
 			}
@@ -406,13 +401,13 @@ export class PhysicsPostSystem extends ECSystem {
 export class PhysicsSyncAfterWorldCollisionSystem extends ECSystem {
 	constructor(p = 0) { super(TickGroup.Physics, p); }
 	update(world: World) {
-		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'active' })) {
+		for (let [o, c] of world.objects_with_components(PhysicsComponent, { scope: 'active' })) {
 			if (!c.enabled) continue;
 			if (!c.body) {
 				throw new Error(`[PhysicsSyncAfterWorldCollisionSystem] Physics component '${c.id}' is missing its body.`);
 			}
 			// Only when body is authoritative (writeBack=true), mirror GO correction into the body
-			if (c.writeBack) {
+			if (c.writeback) {
 				const b = c.body;
 				const sa = c.syncAxis;
 				if (sa.x) b.position.x = o.x;
@@ -450,19 +445,19 @@ export class PhysicsCollisionEventSystem extends ECSystem {
 	}
 }
 
-function resolveCollisionObject(userData: unknown, label: 'A' | 'B', world: World): WorldObject {
-	if (userData == null) {
+function resolveCollisionObject(userdata: unknown, label: 'A' | 'B', world: World): WorldObject {
+	if (userdata == null) {
 		throw new Error(`[PhysicsCollisionEventSystem] Body ${label} is missing userData.`);
 	}
-	if (typeof userData === 'string') {
-		const obj = world.getWorldObject(userData);
+	if (typeof userdata === 'string') {
+		const obj = world.getWorldObject(userdata);
 		if (!obj) {
-			throw new Error(`[PhysicsCollisionEventSystem] Body ${label} references unknown object id '${userData}'.`);
+			throw new Error(`[PhysicsCollisionEventSystem] Body ${label} references unknown object id '${userdata}'.`);
 		}
 		return obj;
 	}
-	if (typeof userData === 'object' && 'id' in (userData as Record<string, unknown>)) {
-		return userData as WorldObject;
+	if (typeof userdata === 'object' && 'id' in (userdata as Record<string, unknown>)) {
+		return userdata as WorldObject;
 	}
 	throw new Error(`[PhysicsCollisionEventSystem] Unsupported userData on body ${label}.`);
 }
@@ -471,7 +466,7 @@ function resolveCollisionObject(userData: unknown, label: 'A' | 'B', world: Worl
 export class TransformSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
-		for (let [o, c] of world.objectsWithComponents(TransformComponent, { scope: 'active' }) as Iterable<[WorldObject & Oriented & Scaled, TransformComponent]>) {
+		for (let [o, c] of world.objects_with_components(TransformComponent, { scope: 'active' }) as Iterable<[WorldObject & Oriented & Scaled, TransformComponent]>) {
 			if (!c.enabled) continue;
 			const pos = o.pos;
 			if (!pos) {
@@ -493,11 +488,8 @@ export class TransformSystem extends ECSystem {
 export class MeshAnimationSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Animation, priority); }
 	update(world: World): void {
-		if (!Number.isFinite($.deltaTime)) {
-			throw new Error('[MeshAnimationSystem] Game deltaTime is not finite.');
-		}
-		const dtSec = $.deltaTime / 1000;
-		for (const [, c] of world.objectsWithComponents(MeshComponent, { scope: 'active' })) {
+		const dtSec = $.deltatime_seconds;
+		for (const [, c] of world.objects_with_components(MeshComponent, { scope: 'active' })) {
 			if (!c.enabled) continue;
 			c.stepAnimation(dtSec);
 		}

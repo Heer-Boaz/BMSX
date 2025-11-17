@@ -50,7 +50,9 @@ export interface TimerHandle {
  * to avoid forcing all Clock implementers to adopt platforms that don't support timers
  * (for example, some headless or test harnesses).
  */
-export interface Clock { now(): MonoTime; scheduleOnce: (delayMs: number, cb: (t: MonoTime) => void) => TimerHandle; }
+export interface Clock {
+	now(): MonoTime; scheduleOnce: (delayMs: number, cb: (t: MonoTime) => void) => TimerHandle;
+}
 
 export interface FrameLoop {
 	start(tick: (t: MonoTime) => void): { stop(): void };
@@ -115,7 +117,11 @@ export interface RngService {
 
 export type DeviceKind = 'keyboard' | 'gamepad' | 'pointer' | 'touch' | 'virtual';
 
-export interface VibrationParams { effect: 'dual-rumble'; duration: number; intensity: number; }
+export interface VibrationParams {
+	effect: 'dual-rumble';
+	duration: number;
+	intensity: number;
+}
 
 export interface InputModifiers {
 	ctrl: boolean;

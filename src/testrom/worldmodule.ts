@@ -63,7 +63,7 @@ class RailDemoDriver extends WorldObject {
 	}
 
 	run(): void {
-		const dtSec = $.deltaTime / 1000;
+		const dtSec = $.deltatime_seconds;
 		this.elapsedRef.value += dtSec;
 		const prevParam = this.runner.u;
 		const newParam = Math.min(1, this.elapsedRef.value / this.totalDuration);
@@ -101,7 +101,7 @@ class RailDemoDriver extends WorldObject {
 		for (const impact of this.bullets.popImpacts()) {
 			const enemy = $.world.getWorldObject(impact.enemyId);
 			if (enemy) {
-				const health = enemy.getFirstComponent(EnemyHealthComponent);
+				const health = enemy.get_first_component(EnemyHealthComponent);
 				if (health) {
 					const now = $.platform.clock.now() / 1000;
 					if (health.dead) {
@@ -156,15 +156,15 @@ export function createTestromModule() {
 			world.spawn(lamp);
 
 			$.view.setSkybox({
-				posX: null,
-				negX: null,
-				posY: null,
+				posx: null,
+				negx: null,
+				posy: null,
 				// posX: BitmapId.skybox,
 				// negX: BitmapId.skybox,
 				// posY: BitmapId.skybox,
-				negY: BitmapId.skybox,
-				posZ: BitmapId.skybox,
-				negZ: BitmapId.skybox,
+				negy: BitmapId.skybox,
+				posz: BitmapId.skybox,
+				negz: BitmapId.skybox,
 			});
 
 			world.spawn(new CameraController({ cams: [cam1, cam2] }));
@@ -238,8 +238,8 @@ export function createTestromModule() {
 			// Bind camera to path with look-ahead + auto-rotation
 			const camBinder = new CameraPathBinder(runner, activeCam, { autoRotate: true, lookAheadU: 0.02 });
 			// Hook timeline camera events
-			eventTimeline.on('camera.fovPulse', (_event, _emitter, payload) => camBinder.startFovPulse(payload), this);
-			eventTimeline.on('camera.shake', (_event, _emitter, payload) => camBinder.startShake(payload), this);
+			// eventTimeline.on('camera.fovPulse', (_event, _emitter, payload) => camBinder.startFovPulse(payload), this);
+			// eventTimeline.on('camera.shake', (_event, _emitter, payload) => camBinder.startShake(payload), this);
 
 			// Reticle & bullets setup
 			const reticle = new Reticle();
@@ -265,8 +265,8 @@ export function createTestromModule() {
 					const py = s.p.y + (Math.random() * 2 - 1) * 2;
 					const pz = s.p.z + Math.sin(angle) * radius;
 					$.spawn(cube, new_vec3(px, py, pz));
-					cube.addComponent(new PhysicsDescriptorComponent({ parent_or_id: cube, shape: { kind: 'aabb', halfExtents: new_vec3(0.6, 0.6, 0.6) }, mass: 1, restitution: 0.3, friction: 0.4 }));
-					cube.addComponent(new EnemyHealthComponent({ parent_or_id: cube, hp: 30, maxHp: 25 }));
+					cube.add_component(new PhysicsDescriptorComponent({ parent_or_id: cube, shape: { kind: 'aabb', halfExtents: new_vec3(0.6, 0.6, 0.6) }, mass: 1, restitution: 0.3, friction: 0.4 }));
+					cube.add_component(new EnemyHealthComponent({ parent_or_id: cube, hp: 30, maxHp: 25 }));
 				}
 			});
 			waves.onSpawn('spawn.enemyBoss', (data) => {
@@ -274,8 +274,8 @@ export function createTestromModule() {
 				const boss = new PhysDynamicCube(size);
 				const s = runner.sample();
 				$.spawn(boss, new_vec3(s.p.x, s.p.y + 4, s.p.z));
-				boss.addComponent(new PhysicsDescriptorComponent({ parent_or_id: boss, shape: { kind: 'aabb', halfExtents: new_vec3(size, size, size) }, mass: 5, restitution: 0.2, friction: 0.5 }));
-				boss.addComponent(new EnemyHealthComponent({ parent_or_id: boss, hp: 300, maxHp: 1000, boss: true }));
+				boss.add_component(new PhysicsDescriptorComponent({ parent_or_id: boss, shape: { kind: 'aabb', halfExtents: new_vec3(size, size, size) }, mass: 5, restitution: 0.2, friction: 0.5 }));
+				boss.add_component(new EnemyHealthComponent({ parent_or_id: boss, hp: 300, maxHp: 1000, boss: true }));
 				bossObjId = boss.id; hud.bossId = bossObjId;
 			});
 

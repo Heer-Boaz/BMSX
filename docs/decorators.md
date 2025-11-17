@@ -70,7 +70,7 @@ Provided by `src/bmsx/component/basecomponent.ts`.
 
 ### Lifecycle and binding
 
-- Component constructor no longer binds events. Binding happens once on add via `WorldObject.addComponent` calling `component.onloadSetup()` (late‑init).
+- Component constructor no longer binds events. Binding happens once on add via `WorldObject.add_component` calling `component.onloadSetup()` (late‑init).
 - Components remove their subscriptions on `dispose()` via `EventEmitter.removeSubscriber`.
 
 ### Performance note
@@ -91,7 +91,7 @@ Provided by `src/bmsx/core/eventemitter.ts`.
   - Method decorators that register subscription metadata on the class (stored in `eventSubscriptions`).
   - Binding occurs once per instance at late‑init:
 	- WorldObject: `onLoadSetup()`
-	- Component: `onloadSetup()` (called by `addComponent` and during hydration)
+	- Component: `onloadSetup()` (called by `add_component` and during hydration)
   - Duplicate registration is prevented by the emitter.
 
 - `@emits_event(event)`

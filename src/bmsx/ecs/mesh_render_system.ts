@@ -13,7 +13,7 @@ export class MeshRenderSystem extends ECSystem {
 	update(world: World): void {
 		const cam = $.world.activeCamera3D;
 		const base = new Float32Array(16);
-		for (const [o, mc] of world.objectsWithComponents(MeshComponent, { scope: 'active' })) {
+		for (const [o, mc] of world.objects_with_components(MeshComponent, { scope: 'active' })) {
 			if (!mc.enabled) continue;
 			const parent = o as WorldObject;
 			const tc = parent.get_unique_component(TransformComponent);

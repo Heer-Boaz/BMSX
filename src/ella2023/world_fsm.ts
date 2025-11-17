@@ -47,7 +47,7 @@ export class EilaModelFSM {
 						},
 						oefenen: {
 							entering_state(this: World) {
-								this.setSpace('default');
+								this.set_space('default');
 								this.clear();
 								const es = $.get<YieArGameState>('yiear_state');
 								es.room_mgr.loadRoom('room1');
@@ -65,7 +65,7 @@ export class EilaModelFSM {
 						},
 						ffwachten2: {
 							entering_state(this: World, state: State) {
-								this.setSpace('niets');
+								this.set_space('niets');
 								const data = state.data as { waitTicks?: number };
 								data.waitTicks = 0;
 							},
@@ -77,7 +77,7 @@ export class EilaModelFSM {
 						},
 						knokken: {
 							entering_state(this: World) {
-								this.setSpace('default');
+								this.set_space('default');
 								this.clear();
 								const es = $.get<YieArGameState>('yiear_state');
 								es.room_mgr.loadRoom('room2');
@@ -92,7 +92,7 @@ export class EilaModelFSM {
 				},
 				gameover: {
 					entering_state(this: World) {
-						this.setSpace('gameover');
+						this.set_space('gameover');
 						if (!this.getWorldObject('gameover')) {
 							this.spawn(new GameOver(), new_vec3(0, 0, 0));
 						}
@@ -101,7 +101,7 @@ export class EilaModelFSM {
 				},
 				hoera: {
 					entering_state(this: World) {
-						this.setSpace('hoera');
+						this.set_space('hoera');
 						if (!this.getWorldObject('hoera')) {
 							this.spawn(new Hoera(), new_vec3(0, 0, 0));
 						}
@@ -110,7 +110,7 @@ export class EilaModelFSM {
 				},
 				titlescreen: {
 					entering_state(this: World) {
-						this.setSpace('titlescreen');
+						this.set_space('titlescreen');
 						if (!this.getWorldObject('title')) {
 							this.spawn(new TitleScreen(), new_vec3(0, 0, 0));
 						}

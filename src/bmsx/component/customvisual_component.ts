@@ -53,7 +53,7 @@ export class CustomVisualComponent extends Component<WorldObject> {
 	// /** Convenience: enqueue a mesh submission. */
 	// public submitMesh(desc: MeshRenderSubmission): void { this.ops.push({ type: 'mesh', ...desc }); }
 	// /** Convenience: enqueue a particle submission. */
-	// public submitParticle(desc: ParticleRenderSubmission): void { this.ops.push({ type: 'particle', ...desc }); }
+	// public submit_particle(desc: ParticleRenderSubmission): void { this.ops.push({ type: 'particle', ...desc }); }
 
 	// public get queuedOpsCount(): number { return this.ops.length; }
 

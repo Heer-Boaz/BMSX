@@ -550,7 +550,7 @@ BMSX organizes all interactive entities as `WorldObject` instances, which are ma
   - `id`: Unique identifier for each object.
   - `pos`, `size`, `direction`: Spatial properties for movement and collision.
   - `components`: Map of attached components for modular logic.
-  - `addComponent`, `removeComponent`, `getComponent`: Manage components at runtime.
+  - `add_component`, `removeComponent`, `getComponent`: Manage components at runtime.
   - Lifecycle methods such as `onspawn`, `dispose`, `paint`, `collide`, plus rich event streams (see `WorldObjectEvents`) for collisions, boundary checks, and space transitions.
   - `collides`, `detect_object_collision`, `overlaps_point`: Collision detection utilities.
   - `updateComponentsWithTag(tag, ...)`: Update all components with a given tag (used for preprocessing/postprocessing logic).
@@ -589,7 +589,7 @@ model.currentSpace.exile(player);
 const enemy = model.getGameObject('enemy42');
 
 // Attach a component for collision
-player.addComponent(new TileCollisionComponent(player.id));
+player.add_component(new TileCollisionComponent(player.id));
 
 // Handle collision events using the event system
 @subscribesToSelfScopedEvent(WorldObjectEvents.PhysicsCollisionEnter)
@@ -684,7 +684,7 @@ if (player.collides(enemy)) {
 }
 
 // Attach a collision component
-player.addComponent(new TileCollisionComponent(player.id));
+player.add_component(new TileCollisionComponent(player.id));
 
 // Check if a point overlaps the player
 if (player.overlaps_point({ x: mouseX, y: mouseY })) {
@@ -752,11 +752,11 @@ The BMSX Component System provides a flexible, extensible way to add modular beh
 
 - **Auto-Attach and Decorators:**
   - Use the `attach_components` decorator to automatically add components to all instances of a game object class.
-  - Components can also be added manually at runtime using `addComponent`.
+  - Components can also be added manually at runtime using `add_component`.
   - Decorators make it easy to compose objects with common behaviors (e.g., collision, movement, AI) without inheritance.
 
 - **Component API:**
-  - `addComponent(component)` – Attach a component to a game object.
+  - `add_component(component)` – Attach a component to a game object.
   - `removeComponent(constructor)` – Remove a component by its class.
   - `getComponent(constructor)` – Retrieve a component by its class.
   - `updateComponentsWithTag(tag, ...args)` – Update all components with a given tag.
@@ -783,8 +783,8 @@ class MyComponent extends Component {
 
 // Attach components to a game object
 const obj = new WorldObject('player');
-obj.addComponent(new ScreenBoundaryComponent(obj.id));
-obj.addComponent(new MyComponent(obj.id));
+obj.add_component(new ScreenBoundaryComponent(obj.id));
+obj.add_component(new MyComponent(obj.id));
 
 // Use auto-attach decorator
 @attach_components(ScreenBoundaryComponent, TileCollisionComponent)

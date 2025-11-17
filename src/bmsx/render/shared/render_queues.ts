@@ -63,7 +63,7 @@ export function meshQueueFrontSize(): number {
 
 // --- Particle queue helpers -------------------------------------------------
 
-export function submitParticle(item: ParticleRenderSubmission): void {
+export function submit_particle(item: ParticleRenderSubmission): void {
 	particleQueue.submit(item);
 }
 

@@ -35,7 +35,7 @@ export class BulletManager extends WorldObject {
 	}
 
 	run(): void {
-		const dt = $.deltaTime / 1000;
+		const dt = $.deltatime_seconds;
 		const phys = $.get<PhysicsWorld>('physics_world');
 		this.pool.forEachActive(b => {
 			b.life += dt;
@@ -52,15 +52,15 @@ export class BulletManager extends WorldObject {
 			onCreate: () => ({ active: false, pos: [0, 0, 0], prev: [0, 0, 0], dir: [0, 0, -1], speed: 90, life: 0, maxLife: 0.8, damage: 10 }),
 			onReset: (b) => { b.active = true; b.life = 0; b.maxLife = 0.9; b.damage = 10; }
 		});
-		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
+		this.getOrCreateCustomRenderer().add_producer(({ rc }) => {
 			this.pool.forEachActive(b => {
 				const t = b.life / b.maxLife; const a = 1 - t;
-				rc.submitParticle({ position: [b.pos[0], b.pos[1], b.pos[2]], size: 0.25, color: { r: 1, g: 0.9, b: 0.4, a } });
-				rc.submitParticle({ position: [b.prev[0], b.prev[1], b.prev[2]], size: 0.15, color: { r: 1, g: 0.6, b: 0.2, a: a * 0.6 } });
+				rc.submit_particle({ position: [b.pos[0], b.pos[1], b.pos[2]], size: 0.25, color: { r: 1, g: 0.9, b: 0.4, a } });
+				rc.submit_particle({ position: [b.prev[0], b.prev[1], b.prev[2]], size: 0.15, color: { r: 1, g: 0.6, b: 0.2, a: a * 0.6 } });
 			});
 		});
 	}
-	
+
 	private checkHitsSegment(b: Bullet, phys: PhysicsWorld) {
 		const segFrom = b.prev, segTo = b.pos;
 		const bodies = phys.getBodies();
@@ -68,7 +68,7 @@ export class BulletManager extends WorldObject {
 			if (!body.invMass || body.isTrigger) continue;
 			const wo = $.world.getWorldObject(body.userData);
 			if (!wo) continue;
-			const health = wo.getFirstComponent(EnemyHealthComponent);
+			const health = wo.get_first_component(EnemyHealthComponent);
 			if (!health || health.dead) continue;
 			if (this.segmentIntersectsBody(segFrom, segTo, body)) {
 				health.applyDamage(b.damage);

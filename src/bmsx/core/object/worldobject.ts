@@ -225,29 +225,22 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	protected get timeline_component(): TimelineComponent {
-		if (!this._timelineComponent || this._timelineComponent.parent !== this) {
-			this._timelineComponent = ensureTimelineComponent(this);
-		}
 		return this._timelineComponent;
 	}
 
 	public define_timeline(definition: TimelineDefinition): void {
-		this.timeline_component.ensure(definition);
+		this.timeline_component.define(definition);
 	}
 
-	public play_timeline(definitionOrId: TimelineDefinition | string, opts?: TimelinePlayOptions): void {
+	public play_timeline(definition: string, opts?: TimelinePlayOptions): void {
 		if ($.debug) {
 			console.log('[Timeline][play]', {
-				parent: this.id,
-				definition: typeof definitionOrId === 'string' ? definitionOrId : definitionOrId.id,
+				parent: this,
+				definition: definition,
 				options: opts ?? null,
 			});
 		}
-		if (typeof definitionOrId === 'string') {
-			this.timeline_component.play(definitionOrId, opts);
-			return;
-		}
-		this.timeline_component.playDefinition(definitionOrId, opts);
+		this.timeline_component.play(definition, opts);
 	}
 
 	public stop_timeline(id: string): void {
@@ -263,7 +256,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	public force_timeline_head(id: string, frame: number): void {
-		this.timeline_component.forceSeek(id, frame);
+		this.timeline_component.force_seek(id, frame);
 	}
 
 	public advance_timeline(id: string): void {
@@ -275,7 +268,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	public on_timeline_event(id: string, listener: TimelineListener): () => void {
-		return this.timeline_component.addListener(id, listener);
+		return this.timeline_component.add_listener(id, listener);
 	}
 
 	/**

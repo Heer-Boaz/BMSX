@@ -14,8 +14,8 @@ export class SpriteAnimationSystem extends ECSystem {
 	public override update(): void {
 		const world = $.world;
 		if (!world) return;
-		const deltaSeconds = Number.isFinite($.deltaTime) ? $.deltaTime / 1000 : 0;
-		for (const [owner, component] of filter_iterable(world.objectsWithComponents(SpriteAnimationComponent, { scope: 'active' }), ([obj]) => this.isEligible(obj))) {
+		const deltaSeconds = Number.isFinite($.deltatime) ? $.deltatime_seconds : 0;
+		for (const [owner, component] of filter_iterable(world.objects_with_components(SpriteAnimationComponent, { scope: 'active' }), ([obj]) => this.isEligible(obj))) {
 			if (!component.pending && component.paused) {
 				continue;
 			}

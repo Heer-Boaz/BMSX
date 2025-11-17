@@ -92,7 +92,12 @@ export class Game {
 	/**
 	 * The time difference between the current frame and the previous frame.
 	 */
-	public deltaTime: number = 0;
+	public deltatime: number = 0;
+
+	public get timestep(): number { return 1000 / this.targetFPS; }
+
+	public get deltatime_seconds(): number { return this.deltatime / 1000; }
+
 	/**
 	 * The accumulated time in milliseconds.
 	 */
@@ -637,7 +642,7 @@ export class Game {
 
 		Input.instance.pollInput();
 
-		this.deltaTime = Math.min(currentTime - this.lastUpdate, MAX_FRAME_DELTA);
+		this.deltatime = Math.min(currentTime - this.lastUpdate, MAX_FRAME_DELTA);
 		this.lastUpdate = currentTime;
 
 		if (this._paused) {
@@ -649,7 +654,7 @@ export class Game {
 			return;
 		}
 
-		this.accumulatedTime += this.deltaTime;
+		this.accumulatedTime += this.deltatime;
 		this.wasupdated = false;
 
 		let steps = 0;

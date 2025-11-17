@@ -129,7 +129,7 @@ export class TimelineComponent extends Component<WorldObject> {
 		this.process_events(entry, events);
 	}
 
-	public forceSeek(id: string, frame: number): void {
+	public force_seek(id: string, frame: number): void {
 		const entry = this.registry.get(id);
 		if (!entry) return;
 		entry.instance.force_seek(frame);
@@ -158,7 +158,7 @@ export class TimelineComponent extends Component<WorldObject> {
 		return this.registry.get(id)?.instance as Timeline<T> | undefined;
 	}
 
-	public addListener(id: string, listener: TimelineListener): () => void {
+	public add_listener(id: string, listener: TimelineListener): () => void {
 		let bucket = this.listeners.get(id);
 		if (!bucket) {
 			bucket = new Set();

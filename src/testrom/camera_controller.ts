@@ -1,5 +1,5 @@
 import { $, build_fsm, CameraObject, CameraProjectionType, WorldObject, insavegame, onload, StateMachineBlueprint, type RevivableObjectArgs } from 'bmsx';
-import { Action } from './bootloader';
+import type { InputAction } from './bootloader';
 
 @insavegame
 export class CameraController extends WorldObject {
@@ -61,19 +61,19 @@ export class CameraController extends WorldObject {
 		// console.log(`Camera rotation updated: yaw=${cam.yaw}, pitch=${cam.pitch}, roll=${cam.roll}`);
 
 		// Keyboard camera controls (when mouse is not locked)
-		const moveForward_pressed = input.getActionState('moveforward' satisfies Action).pressed;
-		const moveBackward_pressed = input.getActionState('movebackward' satisfies Action).pressed;
-		const panLeft_pressed = input.getActionState('panleft' satisfies Action).pressed;
-		const panRight_pressed = input.getActionState('panright' satisfies Action).pressed;
-		const panUp_pressed = input.getActionState('panup' satisfies Action).pressed;
-		const panDown_pressed = input.getActionState('pandown' satisfies Action).pressed;
-		const turnLeft_pressed = input.getActionState('turnleft' satisfies Action).pressed;
-		const turnRight_pressed = input.getActionState('turnright' satisfies Action).pressed;
-		const rotateLeft_pressed = input.getActionState('rotateleft' satisfies Action).pressed;
-		const rotateRight_pressed = input.getActionState('rotateright' satisfies Action).pressed;
-		const pitchUp_pressed = input.getActionState('pitchup' satisfies Action).pressed;
-		const pitchDown_pressed = input.getActionState('pitchdown' satisfies Action).pressed;
-		const toggleProjection_pressed = input.getActionState('toggleprojection' satisfies Action).justpressed;
+		const moveForward_pressed = input.getActionState('moveforward' satisfies InputAction).pressed;
+		const moveBackward_pressed = input.getActionState('movebackward' satisfies InputAction).pressed;
+		const panLeft_pressed = input.getActionState('panleft' satisfies InputAction).pressed;
+		const panRight_pressed = input.getActionState('panright' satisfies InputAction).pressed;
+		const panUp_pressed = input.getActionState('panup' satisfies InputAction).pressed;
+		const panDown_pressed = input.getActionState('pandown' satisfies InputAction).pressed;
+		const turnLeft_pressed = input.getActionState('turnleft' satisfies InputAction).pressed;
+		const turnRight_pressed = input.getActionState('turnright' satisfies InputAction).pressed;
+		const rotateLeft_pressed = input.getActionState('rotateleft' satisfies InputAction).pressed;
+		const rotateRight_pressed = input.getActionState('rotateright' satisfies InputAction).pressed;
+		const pitchUp_pressed = input.getActionState('pitchup' satisfies InputAction).pressed;
+		const pitchDown_pressed = input.getActionState('pitchdown' satisfies InputAction).pressed;
+		const toggleProjection_pressed = input.getActionState('toggleprojection' satisfies InputAction).justpressed;
 
 		// Movement (works in both modes)
 		if (moveForward_pressed) cam.moveForward(move);    // Forward movement

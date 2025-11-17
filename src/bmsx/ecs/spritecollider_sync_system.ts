@@ -14,7 +14,7 @@ export class SpriteColliderSyncSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 
 	update(world: World): void {
-		for (const [o, sprite] of world.objectsWithComponents(SpriteComponent, { scope: 'active' })) {
+		for (const [o, sprite] of world.objects_with_components(SpriteComponent, { scope: 'active' })) {
 			const col = resolveColliderForSprite(o, sprite);
 			if (!col) continue;
 			const id = sprite.imgid;

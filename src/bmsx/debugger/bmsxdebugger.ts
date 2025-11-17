@@ -340,7 +340,7 @@ export class ObjectHighlighterComponent extends Component {
 
 //         this.#highlighted_obj = o;
 //         if (!o.getComponent(DebugHighlightComponent)) {
-//             o.addComponent(new DebugHighlightComponent(o.id));
+//             o.add_component(new DebugHighlightComponent(o.id));
 //         }
 //         this.setHighlightPos(o);
 //         this.visible = true;

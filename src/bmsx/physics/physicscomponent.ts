@@ -19,7 +19,7 @@ export class PhysicsComponent extends Component {
 	static override get unique() { return true; }
 	body: PhysicsBody | null = null;
 	syncAxis = { x: true, y: true, z: true };
-	writeBack = true; // if true: body -> WorldObject each frame (default true)
+	writeback = true; // if true: body -> WorldObject each frame (default true)
 	layer = 1;
 	mask = 0xFFFFFFFF;
 	private shape!: PhysicsBodyDesc['shape'];
@@ -36,7 +36,7 @@ export class PhysicsComponent extends Component {
 	constructor(opts: ComponentAttachOptions & { physicsOptions: PhysicsComponentOptions }) {
 		super(opts);
 		this.syncAxis = { ...this.syncAxis, ...(opts.physicsOptions.syncAxis || {}) };
-		this.writeBack = opts.physicsOptions.writeBack ?? true;
+		this.writeback = opts.physicsOptions.writeBack ?? true;
 		this.layer = opts.physicsOptions.layer ?? 1;
 		this.mask = opts.physicsOptions.mask ?? 0xFFFFFFFF;
 		this.shape = opts.physicsOptions.shape;
@@ -57,7 +57,7 @@ export class PhysicsComponent extends Component {
 
 		// Temporary aggressive sync: always copy WorldObject -> physics body before physics step.
 		// This is a diagnostic change to confirm whether lack of sync is the root cause.
-		if (this.body && !this.writeBack) {
+		if (this.body && !this.writeback) {
 			const wo = this.parent as WorldObject & Oriented;
 			if (!wo) {
 				throw new Error(`[PhysicsComponent] Parent '${this.parent.id}' disappeared while syncing to physics body.`);
@@ -87,7 +87,7 @@ export class PhysicsComponent extends Component {
 
 	override postprocessingUpdate(): void {
 		if (!this.body) return;
-		if (!this.writeBack) return;
+		if (!this.writeback) return;
 		const wo = this.parent as WorldObject & Oriented;
 		if (!wo) {
 			throw new Error(`[PhysicsComponent] Parent '${this.parent.id}' disappeared before write-back.`);

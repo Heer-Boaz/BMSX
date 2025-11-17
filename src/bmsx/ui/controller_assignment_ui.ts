@@ -57,7 +57,7 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 				},
 				assigned: {
 					entering_state(this: SelectedPlayerIndexIcon) {
-						this.play_timeline(ASSIGNED_TIMELINE_ID, { rewind: true, snapToStart: true });
+						this.play_timeline(ASSIGNED_TIMELINE_ID, { rewind: true, snap_to_start: true });
 					},
 					on: {
 						[`timeline.frame:${ASSIGNED_TIMELINE_ID}`]: {
@@ -78,7 +78,7 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 				cancelled: {
 					entering_state(this: SelectedPlayerIndexIcon) {
 						this.colorize = { r: 1, g: 0, b: 0, a: .75 };
-						this.play_timeline(CANCELLED_TIMELINE_ID, { rewind: true, snapToStart: true });
+						this.play_timeline(CANCELLED_TIMELINE_ID, { rewind: true, snap_to_start: true });
 					},
 					on: {
 						[`timeline.frame:${CANCELLED_TIMELINE_ID}`]: {
@@ -110,15 +110,15 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 			id: SelectedPlayerIndexIcon.TIMELINE_IDS.assigned,
 			frames: [true, false],
 			repetitions: 5,
-			playbackMode: 'once',
-			ticksPerFrame: 4,
+			playback_mode: 'once',
+			ticks_per_frame: 4,
 		});
 		this.define_timeline({
 			id: SelectedPlayerIndexIcon.TIMELINE_IDS.cancelled,
 			frames: [2],
 			repetitions: 16,
-			playbackMode: 'once',
-			ticksPerFrame: 1,
+			playback_mode: 'once',
+			ticks_per_frame: 1,
 		});
 		this.z = ZCOORD_MAX; this.colorize = { r: 1, g: 1, b: 1, a: .75 };
 		this.imgid = 'joystick_none';

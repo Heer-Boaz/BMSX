@@ -14,8 +14,8 @@ export type TimelineMarker = TimelineMarkerAt & {
 	event: string;
 	lane?: EventLane | 'any';
 	payload?: Record<string, any>;
-	addTags?: string[];
-	removeTags?: string[];
+	add_tags?: string[];
+	remove_tags?: string[];
 };
 
 export type TimelineWindow = {
@@ -38,21 +38,21 @@ export interface CompiledTimelineMarker {
 }
 
 export interface CompiledTimelineMarkerCache {
-	byFrame: Record<number, CompiledTimelineMarker[]>;
-	controlledTags: string[];
+	by_frame: Record<number, CompiledTimelineMarker[]>;
+	controlled_tags: string[];
 }
 
 export interface TimelineDefinition<T = any> {
 	id: string;
 	frames: TimelineTape<T>;
-	ticksPerFrame?: number;
-	playbackMode?: TimelinePlaybackMode;
+	ticks_per_frame?: number;
+	playback_mode?: TimelinePlaybackMode;
 	easing?: string;
 	repetitions?: number;
 	autotick?: boolean;
 	markers?: TimelineMarker[];
 	windows?: TimelineWindow[];
-	frameEventLane?: EventLane | 'any';
+	frame_event_lane?: EventLane | 'any';
 }
 
 export type TimelineFrameChangeReason = 'advance' | 'seek' | 'snap';
@@ -78,50 +78,50 @@ export type TimelineEvent<T = any> = TimelineFrameEvent<T> | TimelineEndEvent;
 
 const DEFAULT_FRAME_LANE: EventLane = 'gameplay';
 
-export function expandTimelineWindows(markers: TimelineMarker[] = [], windows: TimelineWindow[] = []): TimelineMarker[] {
+export function expand_timeline_windows(markers: TimelineMarker[] = [], windows: TimelineWindow[] = []): TimelineMarker[] {
 	if (!windows || windows.length === 0) return markers;
 	const out = [...markers];
 	for (const windowDef of windows) {
 		const tag = windowDef.tag ?? `timeline.window.${windowDef.name}`;
 		const lane = windowDef.lane ?? 'gameplay';
 		out.push(
-			{ ...windowDef.start, event: `window.${windowDef.name}.start`, lane, payload: windowDef.payloadstart, addTags: [tag] },
-			{ ...windowDef.end, event: `window.${windowDef.name}.end`, lane, payload: windowDef.payloadend, removeTags: [tag] },
+			{ ...windowDef.start, event: `window.${windowDef.name}.start`, lane, payload: windowDef.payloadstart, add_tags: [tag] },
+			{ ...windowDef.end, event: `window.${windowDef.name}.end`, lane, payload: windowDef.payloadend, remove_tags: [tag] },
 		);
 	}
 	return out;
 }
 
-export function compileTimelineMarkers<T>(def: TimelineDefinition<T>): CompiledTimelineMarkerCache {
-	const cache: CompiledTimelineMarkerCache = { byFrame: {}, controlledTags: [] };
+export function compile_timeline_markers<T>(def: TimelineDefinition<T>): CompiledTimelineMarkerCache {
+	const cache: CompiledTimelineMarkerCache = { by_frame: {}, controlled_tags: [] };
 	const frames = expandTimelineFrames(def.frames ?? [], def.repetitions ?? 1);
 	if (frames.length === 0) return cache;
 	const rawMarkers = def.markers ? [...def.markers] : [];
-	const expanded = expandTimelineWindows(rawMarkers, def.windows);
+	const expanded = expand_timeline_windows(rawMarkers, def.windows);
 	const controlled = new Set<string>();
 	for (const marker of expanded) {
-		const frame = clampMarkerFrame(marker, frames.length);
-		let bucket = cache.byFrame[frame];
+		const frame = clamp_marker_frame(marker, frames.length);
+		let bucket = cache.by_frame[frame];
 		if (!bucket) {
 			bucket = [];
-			cache.byFrame[frame] = bucket;
+			cache.by_frame[frame] = bucket;
 		}
-		if (marker.addTags) marker.addTags.forEach(tag => controlled.add(tag));
-		if (marker.removeTags) marker.removeTags.forEach(tag => controlled.add(tag));
+		if (marker.add_tags) marker.add_tags.forEach(tag => controlled.add(tag));
+		if (marker.remove_tags) marker.remove_tags.forEach(tag => controlled.add(tag));
 		bucket.push({
 			frame,
 			event: marker.event,
 			lane: marker.lane ?? DEFAULT_FRAME_LANE,
 			payload: marker.payload,
-			addtags: marker.addTags,
-			removetags: marker.removeTags,
+			addtags: marker.add_tags,
+			removetags: marker.remove_tags,
 		});
 	}
-	cache.controlledTags = Array.from(controlled);
+	cache.controlled_tags = Array.from(controlled);
 	return cache;
 }
 
-function clampMarkerFrame(at: TimelineMarkerAt, length: number): number {
+function clamp_marker_frame(at: TimelineMarkerAt, length: number): number {
 	if ('frame' in at) {
 		return clamp(at.frame, 0, Math.max(0, length - 1));
 	}
@@ -134,14 +134,14 @@ export class Timeline<T = any> {
 	public readonly id: string;
 
 	private readonly frames: TimelineTape<T>;
-	private readonly ticksPerFrame: number;
-	private readonly playbackMode: TimelinePlaybackMode;
-	private readonly easingFn?: (t: number) => number;
-	private readonly autoTick: boolean;
+	private readonly ticks_per_frame: number;
+	private readonly playback_mode: TimelinePlaybackMode;
+	private readonly easing_fn?: (t: number) => number;
+	private readonly auto_tick: boolean;
 
 	private _head: number = TIMELINE_START_INDEX;
 	private _ticks = 0;
-	private _tickThreshold = Number.POSITIVE_INFINITY;
+	private _tick_threshold = Number.POSITIVE_INFINITY;
 	private _direction: 1 | -1 = 1;
 
 	constructor(def: TimelineDefinition<T>) {
@@ -153,14 +153,14 @@ export class Timeline<T = any> {
 		}
 		this.def = {
 			...def,
-			frameEventLane: def.frameEventLane ?? DEFAULT_FRAME_LANE,
+			frame_event_lane: def.frame_event_lane ?? DEFAULT_FRAME_LANE,
 		};
 		this.id = def.id;
 		this.frames = expandTimelineFrames(def.frames, def.repetitions ?? 1);
-		this.ticksPerFrame = def.ticksPerFrame ?? 0;
-		this.playbackMode = def.playbackMode ?? 'once';
-		this.easingFn = def.easing ? get_easing(def.easing) : undefined;
-		this.autoTick = def.autotick ?? (this.ticksPerFrame !== 0);
+		this.ticks_per_frame = def.ticks_per_frame ?? 0;
+		this.playback_mode = def.playback_mode ?? 'once';
+		this.easing_fn = def.easing ? get_easing(def.easing) : undefined;
+		this.auto_tick = def.autotick ?? (this.ticks_per_frame !== 0);
 		this.updateTickThreshold();
 	}
 
@@ -189,9 +189,9 @@ export class Timeline<T = any> {
 	}
 
 	public tick(dt: number): TimelineEvent<T>[] {
-		if (!this.autoTick || this.frames.length === 0) return [];
+		if (!this.auto_tick || this.frames.length === 0) return [];
 		this._ticks += dt;
-		if (this.ticksPerFrame <= 0 || this._ticks >= this._tickThreshold) {
+		if (this.ticks_per_frame <= 0 || this._ticks >= this._tick_threshold) {
 			return this.advanceInternal('advance');
 		}
 		return [];
@@ -205,11 +205,11 @@ export class Timeline<T = any> {
 		return this.applyFrame(frame, 'seek');
 	}
 
-	public snapToStart(): TimelineEvent<T>[] {
+	public snap_to_start(): TimelineEvent<T>[] {
 		return this.applyFrame(0, 'snap');
 	}
 
-	public forceSeek(frame: number): void {
+	public force_seek(frame: number): void {
 		if (this.frames.length === 0) {
 			this._head = TIMELINE_START_INDEX;
 			this._ticks = 0;
@@ -220,7 +220,7 @@ export class Timeline<T = any> {
 		const clamped = clamp(frame, TIMELINE_START_INDEX, this.frames.length - 1);
 		this._head = clamped;
 		this._ticks = 0;
-		if (this.playbackMode !== 'pingpong') {
+		if (this.playback_mode !== 'pingpong') {
 			this._direction = 1;
 		} else if (clamped <= 0) {
 			this._direction = 1;
@@ -230,7 +230,7 @@ export class Timeline<T = any> {
 
 	private advanceInternal(reason: TimelineFrameChangeReason): TimelineEvent<T>[] {
 		if (this.frames.length === 0) return [];
-		const delta = this.playbackMode === 'pingpong' ? this._direction : 1;
+		const delta = this.playback_mode === 'pingpong' ? this._direction : 1;
 		const target = this._head + (this._head === TIMELINE_START_INDEX ? 1 : delta);
 		return this.applyFrame(target, reason);
 	}
@@ -256,13 +256,13 @@ export class Timeline<T = any> {
 			this._direction = 1;
 			emitEnd = true;
 		} else if (next > lastIndex) {
-			if (this.playbackMode === 'loop') {
+			if (this.playback_mode === 'loop') {
 				next = 0;
 				rewound = true;
 				emitEnd = true;
 				wrapped = true;
 				this._direction = 1;
-			} else if (this.playbackMode === 'pingpong') {
+			} else if (this.playback_mode === 'pingpong') {
 				next = lastIndex;
 				if (lastIndex > 0) this._direction = -1;
 				if (previous === next) emitFrame = false;
@@ -299,7 +299,7 @@ export class Timeline<T = any> {
 			events.push({
 				kind: 'end',
 				frame: this._head,
-				mode: this.playbackMode,
+				mode: this.playback_mode,
 				wrapped,
 			});
 		}
@@ -308,25 +308,25 @@ export class Timeline<T = any> {
 	}
 
 	private updateTickThreshold(): void {
-		if (!this.easingFn) {
-			this._tickThreshold = this.ticksPerFrame;
+		if (!this.easing_fn) {
+			this._tick_threshold = this.ticks_per_frame;
 			return;
 		}
-		if (this.ticksPerFrame <= 0 || this.frames.length === 0) {
-			this._tickThreshold = this.ticksPerFrame;
+		if (this.ticks_per_frame <= 0 || this.frames.length === 0) {
+			this._tick_threshold = this.ticks_per_frame;
 			return;
 		}
 		const before = computeProgress(this._head, this.frames.length);
 		const after = computeProgress(this._head + this._direction, this.frames.length);
 		if (after === before) {
-			this._tickThreshold = Number.POSITIVE_INFINITY;
+			this._tick_threshold = Number.POSITIVE_INFINITY;
 			return;
 		}
-		const easedBefore = this.easingFn(before);
-		const easedAfter = this.easingFn(after);
+		const easedBefore = this.easing_fn(before);
+		const easedAfter = this.easing_fn(after);
 		const delta = Math.abs(easedAfter - easedBefore);
-		const scaled = this.ticksPerFrame * (delta > 0 ? delta * this.frames.length : 1);
-		this._tickThreshold = Math.max(scaled, Number.EPSILON);
+		const scaled = this.ticks_per_frame * (delta > 0 ? delta * this.frames.length : 1);
+		this._tick_threshold = Math.max(scaled, Number.EPSILON);
 	}
 }
 

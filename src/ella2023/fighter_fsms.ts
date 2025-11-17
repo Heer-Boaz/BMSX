@@ -31,20 +31,20 @@ const ATTACK_FRAMES: Record<AttackType, number> = {
 };
 
 const STATIC_TIMELINES: TimelineDefinition[] = [
-	{ id: 'fighter.jump.ascending', frames: [0], ticksPerFrame: 30, playbackMode: 'once' },
-	{ id: 'fighter.jump.descending', frames: [0], ticksPerFrame: 30, playbackMode: 'once' },
+	{ id: 'fighter.jump.ascending', frames: [0], ticks_per_frame: 30, playback_mode: 'once' },
+	{ id: 'fighter.jump.descending', frames: [0], ticks_per_frame: 30, playback_mode: 'once' },
 	{
 		id: 'fighter.stoerheidsdans',
 		frames: ['highkick', 'lowkick', 'duckkick', 'punch', 'punch'],
 		repetitions: 2,
-		playbackMode: 'once',
-		ticksPerFrame: 0,
+		playback_mode: 'once',
+		ticks_per_frame: 0,
 		autotick: false,
 	},
-	{ id: 'fighter.walk.step1', frames: [0], ticksPerFrame: 8, playbackMode: 'once' },
-	{ id: 'fighter.walk.step2', frames: [0], ticksPerFrame: 8, playbackMode: 'once' },
-	{ id: 'fighter.animation.humiliated', frames: [0], ticksPerFrame: 300, playbackMode: 'once' },
-	{ id: 'fighter.hitanimation', frames: [-1, 1], repetitions: 10, playbackMode: 'once', ticksPerFrame: 1 },
+	{ id: 'fighter.walk.step1', frames: [0], ticks_per_frame: 8, playback_mode: 'once' },
+	{ id: 'fighter.walk.step2', frames: [0], ticks_per_frame: 8, playback_mode: 'once' },
+	{ id: 'fighter.animation.humiliated', frames: [0], ticks_per_frame: 300, playback_mode: 'once' },
+	{ id: 'fighter.hitanimation', frames: [-1, 1], repetitions: 10, playback_mode: 'once', ticks_per_frame: 1 },
 ];
 
 const ATTACK_TIMELINES: TimelineDefinition[] = (Object.keys(ATTACK_FRAMES) as AttackType[]).map(name => createAttackTimelineDefinition(name));
@@ -545,8 +545,8 @@ function createAttackTimelineDefinition(name: AttackType): TimelineDefinition {
 	return {
 		id: `fighter.attack.${name}`,
 		frames,
-		ticksPerFrame: 1,
-		playbackMode: 'once',
+		ticks_per_frame: 1,
+		playback_mode: 'once',
 		windows: [
 			{
 				name: 'attackActive',

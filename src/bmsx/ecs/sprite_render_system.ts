@@ -15,7 +15,7 @@ export class SpriteRenderSystem extends ECSystem {
 	constructor(priority = 8) { super(TickGroup.Presentation, priority); }
 	update(world: World): void {
 		let processed = 0;
-		for (const [o, sc] of world.objectsWithComponents(SpriteComponent, { scope: 'active' })) {
+		for (const [o, sc] of world.objects_with_components(SpriteComponent, { scope: 'active' })) {
 			if (!sc.enabled) continue;
 			const parent = o as WorldObject;
 			const tc = parent.get_unique_component(TransformComponent);

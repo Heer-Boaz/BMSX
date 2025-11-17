@@ -24,18 +24,18 @@ export class RailShooterHUD extends WorldObject {
 		};
 	}
 
-	run(): void { const now = $.platform.clock.now() / 1000; if (now - this.lastHitTime > this.comboWindow) { this.combo = 1; } if (this.comboFade > 0) this.comboFade -= ($.deltaTime / 1000) * 1.5; if (this.hitFlash > 0) this.hitFlash -= $.deltaTime / 1000; }
+	run(): void { const now = $.platform.clock.now() / 1000; if (now - this.lastHitTime > this.comboWindow) { this.combo = 1; } if (this.comboFade > 0) this.comboFade -= ($.deltatime_seconds) * 1.5; if (this.hitFlash > 0) this.hitFlash -= $.deltatime_seconds; }
 	constructor() {
 		super({ id: 'rail_hud' });
-		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
+		this.getOrCreateCustomRenderer().add_producer(({ rc }) => {
 			// Score right aligned top-right
 			const s = `SCORE ${this.score}`;
 			const gw = $.world.gamewidth;
 			const x = gw - s.length * 8 - 4;
-			rc.submitGlyphs( { x, y: 4, glyphs: s });
+			rc.submit_glyphs( { x, y: 4, glyphs: s });
 			if (this.combo > 1 || this.comboFade > 0) {
 				const alpha = Math.min(1, Math.max(0, this.comboFade));
-				rc.submitGlyphs( { x: 4, y: 4, glyphs: `x${this.combo}`, color: Msx1Colors[alpha > 0.5 ? 15 : 11] });
+				rc.submit_glyphs( { x: 4, y: 4, glyphs: `x${this.combo}`, color: Msx1Colors[alpha > 0.5 ? 15 : 11] });
 			}
 			// Reticle (screen center + offset from aiming)
 			const gh = $.world.gameheight;
@@ -45,14 +45,14 @@ export class RailShooterHUD extends WorldObject {
 			const rx = cx + Math.round(ox); const ry = cy + Math.round(oy);
 			const flash = this.hitFlash > 0 ? 1 - (this.hitFlash / 0.12) : 0;
 			const color = Msx1Colors[flash > 0 ? 9 : 15];
-			rc.submitGlyphs({ x: rx - 4, y: ry, glyphs: '+', color });
+			rc.submit_glyphs({ x: rx - 4, y: ry, glyphs: '+', color });
 			if (this.bossId) {
 				const boss = $.world.getWorldObject(this.bossId);
 				if (boss) {
-					const bh = boss.getFirstComponent(EnemyHealthComponent);
+					const bh = boss.get_first_component(EnemyHealthComponent);
 					if (bh && !bh.dead) {
 						const pct = Math.round((bh.hp / bh.maxHp) * 100);
-						rc.submitGlyphs({ x: 4, y: 14, glyphs: `BOSS ${pct}%` });
+						rc.submit_glyphs({ x: 4, y: 14, glyphs: `BOSS ${pct}%` });
 					}
 				}
 			}

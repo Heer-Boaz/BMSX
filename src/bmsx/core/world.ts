@@ -865,14 +865,14 @@ export class World implements Stateful, RegisterablePersistent {
 	 * instanceof checks the prototype chain against ctor.prototype, so using an abstract
 	 * base class here (ctor) will correctly return true for derived instances.
 	 */
-	public *objectsWithComponents<T extends Component>(component: ConcreteOrAbstractConstructor<T>, opts: { scope?: WorldScope, reverse?: boolean } = {}): IterableIterator<[WorldObject, T]> {
+	public *objects_with_components<T extends Component>(component: ConcreteOrAbstractConstructor<T>, opts: { scope?: WorldScope, reverse?: boolean } = {}): IterableIterator<[WorldObject, T]> {
 		for (const o of this.objects(opts)) { for (const c of o.iterate_components_by_type(component)) yield [o!, c!]; }
 	}
 
 	/**
 	 * Activate a new space; fires ondeactivate/onactivate hooks.
 	 */
-	public setSpace(newSpaceId: Identifier) {
+	public set_space(newSpaceId: Identifier) {
 		if (newSpaceId === this._activeSpaceId) return;
 		const prev = this[id_to_space_symbol][this._activeSpaceId];
 		this._activeSpaceId = newSpaceId;

@@ -1,6 +1,6 @@
 import { $ } from 'bmsx';
 import { Component, componenttags_postprocessing } from 'bmsx';
-import type { color_arr, RevivableObjectArgs } from 'bmsx';
+import type { color_arr } from 'bmsx';
 import type { ComponentAttachOptions } from 'bmsx/component/basecomponent';
 import { insavegame } from 'bmsx';
 
@@ -28,7 +28,7 @@ export class EnemyHealthComponent extends Component {
 	override postprocessingUpdate(): void {
 		// Handle damage flash tint (temporarily lerp base color toward flash color then restore)
 		if (this.flashTimer > 0) {
-			this.flashTimer -= $.deltaTime / 1000;
+			this.flashTimer -= $.deltatime_seconds;
 			const wo = this.is_attached ? this.parent : undefined;
 			if (wo && 'meshes' in wo) {
 				const meshObj = wo as { meshes: { material?: { color: color_arr; }; }[] };

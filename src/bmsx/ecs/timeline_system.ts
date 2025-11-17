@@ -8,7 +8,7 @@ export class TimelineSystem extends ECSystem {
 	}
 
 	update(world: World): void {
-		const entries = world.objectsWithComponents(TimelineComponent, { scope: 'active' });
+		const entries = world.objects_with_components(TimelineComponent, { scope: 'active' });
 		for (const [, component] of entries) {
 			if (!component.enabled) continue;
 			component.tick_active(1);

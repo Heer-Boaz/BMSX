@@ -98,7 +98,7 @@ export class quiz extends WorldObject {
 	 */
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'quiz', ...opts });
-		this.addComponent(new CustomVisualComponent({
+		this.add_component(new CustomVisualComponent({
 			parent_or_id: this, producer: ({ rc }) => {
 				const charWidth = 8;
 				const startY = 2 * charWidth;
@@ -106,7 +106,7 @@ export class quiz extends WorldObject {
 				const xOffset = this.centeredBlockX;
 
 				this.text.forEach((line, index) => {
-					rc.submitGlyphs({ x: xOffset, y: index * charWidth + startY, glyphs: line, backgroundColor: { r: 0, g: 0, b: 0, a: 1 } });
+					rc.submit_glyphs({ x: xOffset, y: index * charWidth + startY, glyphs: line, background_color: { r: 0, g: 0, b: 0, a: 1 } });
 				});
 			}
 		}));
@@ -189,7 +189,7 @@ export class quiz extends WorldObject {
 	 * @param this - The current quiz instance.
 	 */
 	switchSintToQuestion(this: quiz) {
-		const sint = $.getWorldObject('sint');
+		const sint = $.get_worldobject('sint');
 		const event = createGameEvent({ type: 'vraag', emitter: sint });
 		sint.sc.dispatch_event(event);
 	}
@@ -200,7 +200,7 @@ export class quiz extends WorldObject {
 	 * @param this - The current quiz instance.
 	 */
 	switchSintToAnswer(this: quiz) {
-		const sint = $.getWorldObject('sint');
+		const sint = $.get_worldobject('sint');
 		const event = createGameEvent({ type: 'antwoord', emitter: sint });
 		sint.sc.dispatch_event(event);
 	}
@@ -211,7 +211,7 @@ export class quiz extends WorldObject {
 	 * @param this - The current instance of the quiz class.
 	 */
 	switchSintToKlaar(this: quiz) {
-		const sint = $.getWorldObject('sint');
+		const sint = $.get_worldobject('sint');
 		const event = createGameEvent({ type: 'klaar', emitter: sint });
 		sint.sc.dispatch_event(event);
 	}
@@ -229,7 +229,7 @@ export class quiz extends WorldObject {
 		const idx = this.currentQuestionIndex;
 		const currentQ = quizItems[idx];
 		if (currentQ.imgid) {
-			$.getWorldObject<sint>('sint').setimg(currentQ.imgid);
+			$.get_worldobject<sint>('sint').setimg(currentQ.imgid);
 		}
 		this.setTextFromLines([
 			`Vraag ${idx + 1}/${quizItems.length}: ${currentQ.question}`,

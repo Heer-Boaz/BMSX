@@ -51,7 +51,7 @@ export class InputAbilitySystem extends ECSystem {
 
 	public override update(): void {
 		this.frameLatchTouched.clear();
-		for (let [obj, component] of filter_iterable($.world.objectsWithComponents(InputAbilityComponent, { scope: 'active' }), (item: [ WorldObject, InputAbilityComponent]) => this.isEligibleObject(item[0]))) {
+		for (let [obj, component] of filter_iterable($.world.objects_with_components(InputAbilityComponent, { scope: 'active' }), (item: [ WorldObject, InputAbilityComponent]) => this.isEligibleObject(item[0]))) {
 			const program = this.resolveCompiledProgram(component);
 			const programKey = this.resolveProgramKey(component, obj);
 			const componentId = component.id ?? component.id_local ?? component.constructor.name;

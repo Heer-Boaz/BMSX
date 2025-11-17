@@ -401,7 +401,7 @@ export class Physics2DSystem extends ECSystem {
 	}
 
 	public override update(_world: World): void {
-		const deltaMs = $.deltaTime;
+		const deltaMs = $.deltatime;
 		if (!Number.isFinite(deltaMs) || deltaMs <= 0) return;
 		// Debug: confirm physics stepping
 		// console.log('[Physics2DSystem] step', deltaMs, this.physics.debugBodyCount?.());

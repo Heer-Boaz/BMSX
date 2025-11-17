@@ -1,4 +1,5 @@
 import type { Identifiable } from '../rompack/rompack';
+import { $ } from './game';
 
 export type EventLane = 'any' | 'gameplay' | 'presentation';
 export type EventPayload = Record<string, any>;
@@ -6,7 +7,7 @@ export type EventPayload = Record<string, any>;
 type BaseEvent<TType extends string> = {
 	type: TType;
 	lane: EventLane;
-	timeStamp: number;
+	timestamp: number;
 	emitter: Identifiable | null;
 };
 
@@ -27,7 +28,7 @@ export function createGameEvent<TType extends string, TDetail extends object = {
 		type,
 		lane,
 		emitter,
-		timeStamp: Date.now(),
+		timestamp: $.platform.clock.now(),
 		...(detail as TDetail),
 	};
 }

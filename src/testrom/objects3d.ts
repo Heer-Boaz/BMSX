@@ -7,8 +7,8 @@ import { BitmapId, ModelId } from './resourceids';
 export class Cube3D extends WorldObject {
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'cube', ...opts });
-		this.addComponent(new MeshComponent({ parent_or_id: this, modelId: ModelId.cube, id_local: 'mesh' }));
-		const meshComponent = this.getComponentByLocalId(MeshComponent, 'mesh');
+		this.add_component(new MeshComponent({ parent_or_id: this, modelId: ModelId.cube, id_local: 'mesh' }));
+		const meshComponent = this.get_component_by_local_id(MeshComponent, 'mesh');
 		meshComponent.playClip('clip_0', { loop: true });
 	}
 }
@@ -19,15 +19,15 @@ export class SmallCube3D extends WorldObject {
 	public scale: vec3arr = [.5, .5, .5];
 	constructor(opts?: RevivableObjectArgs & { overrideTextureIndex?: number }) {
 		super({ id: `smallCube${opts?.overrideTextureIndex ?? ''}`, ...opts });
-		this.addComponent(new MeshComponent({ parent_or_id: this, modelId: ModelId.cube, id_local: 'mesh' }));
+		this.add_component(new MeshComponent({ parent_or_id: this, modelId: ModelId.cube, id_local: 'mesh' }));
 		if (opts?.overrideTextureIndex !== undefined) {
-			const rc = this.getFirstComponent(MeshComponent);
+			const rc = this.get_first_component(MeshComponent);
 			rc?.setMaterialOverride(0, { albedo: opts.overrideTextureIndex });
 		}
-		this.addComponent(new TransformComponent({ parent_or_id: this, id_local: 'transform' }));
-		const transform = this.getUniqueComponent(TransformComponent);
+		this.add_component(new TransformComponent({ parent_or_id: this, id_local: 'transform' }));
+		const transform = this.get_unique_component(TransformComponent);
 		transform.scale = this.scale;
-		const meshComponent = this.getComponentByLocalId(MeshComponent, 'mesh');
+		const meshComponent = this.get_component_by_local_id(MeshComponent, 'mesh');
 		meshComponent.playClip('clip_0', { loop: true });
 	}
 }
@@ -37,8 +37,8 @@ export class SmallCube3D extends WorldObject {
 export class AnimatedMorphSphere extends WorldObject {
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'animatedSphere', ...opts });
-		this.addComponent(new MeshComponent({ parent_or_id: this, modelId: ModelId.animatedmorphsphere, id_local: 'mesh' }));
-		const meshComponent = this.getComponentByLocalId(MeshComponent, 'mesh');
+		this.add_component(new MeshComponent({ parent_or_id: this, modelId: ModelId.animatedmorphsphere, id_local: 'mesh' }));
+		const meshComponent = this.get_component_by_local_id(MeshComponent, 'mesh');
 		meshComponent.playClip('Globe', { loop: true });
 	}
 }
@@ -70,7 +70,7 @@ export class SparkEmitter extends WorldObject {
 	}
 
 	public run(): void {
-		const origin = $.getWorldObject(this.parent_id);
+		const origin = $.get_worldobject(this.parent_id);
 		for (let i = 0; i < 3; i++) {
 			const vel: vec3arr = [
 				(Math.random() - 0.5) * 0.05,
@@ -103,8 +103,8 @@ export class SparkEmitter extends WorldObject {
 		// Request spark texture from Texture Manager
 		this.textureKey = $.texmanager.acquireTexture(this.id, () => $.rompack.img[BitmapId.joystick1].imgbinYFlipped);
 		// Producer: submit particles for each spark
-		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
-			for (const s of this.sparks) rc.submitParticle({ position: s.pos, size: .5, color: s.color, texture: s.texture });
+		this.getOrCreateCustomRenderer().add_producer(({ rc }) => {
+			for (const s of this.sparks) rc.submit_particle({ position: s.pos, size: .5, color: s.color, texture: s.texture });
 		});
 	}
 }
@@ -128,7 +128,7 @@ export class PhysDynamicCube extends WorldObject {
 	constructor(public halfExtent = 0.5) {
 		super({ id: `physDynCube_${PhysDynamicCube._counter++}` });
 		this.scale = [halfExtent * 2, halfExtent * 2, halfExtent * 2];
-		this.addComponent(new MeshComponent({ parent_or_id: this, modelId: ModelId.cube }));
+		this.add_component(new MeshComponent({ parent_or_id: this, modelId: ModelId.cube }));
 	}
 }
 
@@ -139,7 +139,7 @@ export class PhysDynamicSphere extends WorldObject {
 	constructor(public radius = 0.5) {
 		super({ id: `physDynSphere_${PhysDynamicSphere._counter++}` });
 		this.scale = [radius * 2, radius * 2, radius * 2];
-		this.addComponent(new MeshComponent({ parent_or_id: this, modelId: ModelId.animatedmorphsphere }));
+		this.add_component(new MeshComponent({ parent_or_id: this, modelId: ModelId.animatedmorphsphere }));
 	}
 }
 
@@ -169,11 +169,11 @@ export class PhysStaticBox extends WorldObject {
 	) {
 		super({ id: nameId });
 		this.scale = [this.halfExtents[0] * 2, this.halfExtents[1] * 2, this.halfExtents[2] * 2];
-		this.addComponent(new MeshComponent({ parent_or_id: this, modelId: ModelId.cube }));
+		this.add_component(new MeshComponent({ parent_or_id: this, modelId: ModelId.cube }));
 		this.applyOverrides();
 	}
 	private applyOverrides() {
-		const rc = this.getFirstComponent(MeshComponent);
+		const rc = this.get_first_component(MeshComponent);
 		if (!rc) return;
 		const overrides: any = {};
 		if (this.albedoTextureIndex !== undefined) overrides.albedo = this.albedoTextureIndex;
@@ -195,7 +195,7 @@ export class BuildingMesh extends WorldObject {
 	constructor(public halfExtents: vec3arr = [0.5, 0.5, 0.5]) {
 		super({ id: `building_${BuildingMesh._counter++}` });
 		this.scale = [halfExtents[0] * 2, halfExtents[1] * 2, halfExtents[2] * 2];
-		this.addComponent(new MeshComponent({ parent_or_id: this, modelId: ModelId.building ?? ModelId.cube }));
+		this.add_component(new MeshComponent({ parent_or_id: this, modelId: ModelId.building ?? ModelId.cube }));
 	}
 }
 
@@ -337,7 +337,7 @@ export function spawnSimpleCity(rail: CatmullRomPath, options: SpawnCityOptions 
 					const box = new BuildingMesh([he[0], he[1], he[2]]);
 					$.world.spawn(box, V3.of(px, s.p.y + he[1], pz));
 					// Color selection
-					const rc = box.getFirstComponent(MeshComponent);
+					const rc = box.get_first_component(MeshComponent);
 					if (rc) {
 						if (palette && palette.length) {
 							const col = palette[Math.floor(rng() * palette.length)];

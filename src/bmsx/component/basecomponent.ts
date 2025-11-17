@@ -235,7 +235,7 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 		this.id = this.id ?? `${this.parent.id}_${typeName}${opts.id_local ? `_${opts.id_local}` : ''}`;
 		this.id_local = this.id_local ?? opts.id_local;
 		this._enabled = true;
-		// Event binding is performed once from the container at addComponent-time or during deserialization (@onload),
+		// Event binding is performed once from the container at add_component-time or during deserialization (@onload),
 		// so do not bind here to avoid running before derived decorator initializers.
 	}
 

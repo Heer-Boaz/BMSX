@@ -17,7 +17,7 @@ export class InputIntentSystem extends ECSystem {
 	public override update(): void {
 		const world = $.world;
 		if (!world) return;
-		for (const [owner, component] of filter_iterable(world.objectsWithComponents(InputIntentComponent, { scope: 'active' }), ([obj]) => this.isEligibleObject(obj))) {
+		for (const [owner, component] of filter_iterable(world.objects_with_components(InputIntentComponent, { scope: 'active' }), ([obj]) => this.isEligibleObject(obj))) {
 			if (!component.bindings || component.bindings.length === 0) {
 				continue;
 			}

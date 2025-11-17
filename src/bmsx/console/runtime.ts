@@ -5058,7 +5058,7 @@ export class BmsxConsoleRuntime extends Service {
 		const definition = deep_clone(timelineConfig as Record<string, unknown>) as unknown as TimelineDefinition;
 		definition.id = typeof definition.id === 'string' && definition.id.length > 0 ? definition.id : timelineId;
 		if (definition.autotick === undefined) {
-			definition.autotick = (definition.ticksPerFrame ?? 0) !== 0;
+			definition.autotick = (definition.ticks_per_frame ?? 0) !== 0;
 		}
 		delete (state as Record<string, unknown>).timeline;
 		const spec: ConsoleTimelineSpec = {
@@ -5075,7 +5075,7 @@ export class BmsxConsoleRuntime extends Service {
 		const enterReturn = typeof state.entering_state === 'string' ? state.entering_state : undefined;
 		state.entering_state = function (this: WorldObject, runtimeState: State) {
 			this.define_timeline(spec.definition);
-			this.play_timeline(spec.id, { rewind: true, snapToStart: true });
+			this.play_timeline(spec.id, { rewind: true, snap_to_start: true });
 			(runtimeState as any).current_tape_value = spec.definition.frames.length > 0 ? spec.definition.frames[0] : undefined;
 			(runtimeState as any).is_at_tape_end = false;
 			if (originalEnter) {
@@ -6351,7 +6351,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!world) {
 			return;
 		}
-		for (const [, asc] of world.objectsWithComponents(AbilitySystemComponent, { scope: 'active' })) {
+		for (const [, asc] of world.objects_with_components(AbilitySystemComponent, { scope: 'active' })) {
 			if (!asc.has_ability(abilityId)) {
 				continue;
 			}

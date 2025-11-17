@@ -13,7 +13,7 @@ import {
 	forEachParticleQueue,
 	particleQueueBackSize,
 	particleQueueFrontSize,
-	submitParticle as enqueueParticle,
+	submit_particle as enqueueParticle,
 } from '../shared/render_queues';
 import type { ParticleRenderSubmission } from '../shared/render_types';
 
@@ -215,7 +215,7 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 }
 export function setDefaultParticleTexture(tex: TextureHandle): void { defaultTexture = tex; }
 // New submission helper (prefer over touching particlesToDraw)
-export function submitParticle(p: ParticleRenderSubmission): void {
+export function submit_particle(p: ParticleRenderSubmission): void {
 	enqueueParticle({ ...p });
 }
 export function getQueuedParticleCount(): number { return particleQueueBackSize(); }

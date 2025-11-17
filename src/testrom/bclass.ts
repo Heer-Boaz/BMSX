@@ -1,8 +1,8 @@
 import { $, assign_bt, assign_fsm, attach_components, BehaviorTreeDefinition, build_bt, build_fsm, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, vec3, type RevivableObjectArgs } from 'bmsx';
-import { Action } from './bootloader';
 import { mytree_builder } from './mytree_builder';
 import { BitmapId } from './resourceids';
 import { DerivedTestComponent, TestComponent } from './testcomponents';
+import type { InputAction } from './bootloader';
 
 @insavegame
 @assign_fsm('bclass_animation', 'bclass_meuk')
@@ -62,14 +62,14 @@ export class bclass extends SpriteObject {
 		function blarun(this: bclass) {
 			const speed = 2;
 			if (this.sc.matches_state_path('#blap')) {
-				this.tickTree('bclass_tree');
+				this.tick_tree('bclass_tree');
 			}
 
 			// To check if an action is pressed for player 0
 			const pressedActions = $.input.getPlayerInput(1).getPressedActions();
 
 			for (const { action, consumed } of pressedActions) {
-				switch (action as Action) {
+				switch (action as InputAction) {
 					case 'up':
 						this.y -= speed;
 						break;

@@ -276,13 +276,13 @@ class EilaOldAndUnused extends Fighter {
 					jump: {
 					entering_state(this: EilaOldAndUnused, _state: State, payload: EventPayload & { directional?: boolean } = { directional: false }): StateTransition {
 						this.sc.dispatch_event('animate_jump', this);
-						this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = true;
+						this.get_unique_component(JumpingWhileLeavingScreenComponent).enabled = true;
 						this.jumping = true;
 						this.attacked_while_jumping = false;
 						return { state_id: 'jump_up', payload: { directional: payload.directional } };
 					},
 					exiting_state(this: EilaOldAndUnused) {
-						this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = false;
+						this.get_unique_component(JumpingWhileLeavingScreenComponent).enabled = false;
 						this.jumping = false;
 					},
 					process_input(this: EilaOldAndUnused) {

@@ -289,7 +289,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 				},
 				particle: (o: ParticleRenderSubmission) => {
 					debugRenderSubmit('particle', `pos=${describeVec3Arr(o.position)} size=${o.size}`);
-					ParticlesPipeline.submitParticle({ ...o });
+					ParticlesPipeline.submit_particle({ ...o });
 				},
 				sprite: (o: ImgRenderSubmission) => {
 					debugRenderSubmit('sprite', `img=${o.imgid} layer=${o.layer ?? 'world'} pos=${describeVec3(o.pos)}`);

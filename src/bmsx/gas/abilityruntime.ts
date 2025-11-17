@@ -34,8 +34,8 @@ export class AbilityRuntimeSystem extends ECSystem {
 				throw new Error(`[AbilityRuntimeSystem] Activation failed for ability '${command.ability_id}' on owner '${command.owner}': ${message}`);
 			}
 		}
-		const dtMs = $.deltaTime;
-		for (const [, asc] of $.world.objectsWithComponents(AbilitySystemComponent, { scope: 'active' })) {
+		const dtMs = $.deltatime;
+		for (const [, asc] of $.world.objects_with_components(AbilitySystemComponent, { scope: 'active' })) {
 			try {
 				asc.step(dtMs);
 			} catch (error) {
