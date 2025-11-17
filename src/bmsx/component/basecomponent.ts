@@ -58,7 +58,7 @@ export type ComponentId = `${Identifier}_${Identifier}` | `${Identifier}_${Ident
  * - `idLocal` lets callers specify a human-friendly, per-owner suffix (e.g., 'left', 'primary')
  *   without needing to know the parent id. The final id becomes `${parentid}_${Type}_${idLocal}`.
  */
-export type ComponentAttachOptions = RevivableObjectArgs & { parentid: Identifier, id_local?: string };
+export type ComponentAttachOptions = RevivableObjectArgs & { parent_or_id: WorldObject | Identifier, id_local?: string };
 
 /**
  * Represents a container for components.
@@ -159,10 +159,6 @@ export type ComponentUpdateParams = {
  * @implements IIdentifiable
  */
 export abstract class Component<T extends WorldObject = WorldObject> implements Identifiable, EventSubscriber {
-	/**
-	 * The identifier of the parent component.
-	 */
-	public parentid: Identifier;
 	static get unique(): boolean { return false; } // If true, only one instance of this component type can be attached to a parent
 
 	/**
@@ -179,13 +175,14 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 *
 	 * @returns The parent component.
 	 */
-	protected _parentRef?: T;
+	protected _parent: T;
 	public get parent(): T | undefined {
-		if (this._parentRef) return this._parentRef;
-		if (!this.parentid) return undefined;
-		const parent = Registry.instance.get<T>(this.parentid);
-		if (parent) this._parentRef = parent;
-		return parent;
+		if (!this._parent) throw new Error(`[Component:${this.id}] Parent is not attached.`);
+		return this._parent;
+	}
+
+	public set parent(value: T | undefined) {
+		this._parent = value;
 	}
 
 	protected _enabled: boolean;
@@ -202,7 +199,7 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 */
 	public get enabled() { return this._enabled; }
 
-	public get isAttached() { return !!(this._parentRef ?? this.parentid); }
+	public get is_attached() { return !!(this._parent); }
 
 	public get tagsPre() { return (this.constructor as ConstructorWithTagsProperty).tagsPre; }
 	public get tagsPost() { return (this.constructor as ConstructorWithTagsProperty).tagsPost; }
@@ -225,16 +222,17 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	}
 
 	/**
-	 * Constructs a new component with the specified parent id.
+	 * Constructs a new component with the specified parent.
 	 *
-	 * @param parentid - The identifier of the parent.
+	 * @param parent - The parent entity (WorldObject)
 	 */
 	constructor(opts: ComponentAttachOptions) {
-		this.parentid = this.parentid ?? opts.parentid; // Store the parent id for later use
+		this._parent = $.resolve_ref_or_id(opts.parent_or_id) as T;
+
 		// If a local id is supplied, build a compatible id using the parent id and component type name.
 		// Otherwise default to `${parentid}_${Type}`. The container may suffix to ensure uniqueness.
 		const typeName = this.constructor.name;
-		this.id = this.id ?? `${this.parentid}_${typeName}${opts.id_local ? `_${opts.id_local}` : ''}`;
+		this.id = this.id ?? `${this.parent.id}_${typeName}${opts.id_local ? `_${opts.id_local}` : ''}`;
 		this.id_local = this.id_local ?? opts.id_local;
 		this._enabled = true;
 		// Event binding is performed once from the container at addComponent-time or during deserialization (@onload),
@@ -245,21 +243,20 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 * Disposes the component by disabling it, removing event subscriptions, and deregistering it from the entity registry.
 	 */
 	public dispose() {
-		if (this.isAttached) this.detach();
+		if (this.is_attached) this.detach();
 		this.enabled = false;
 		// Remove event subscriptions
 		this.unbind();
 	}
 
-	public attach(newParent?: Identifier) {
+	public attach(new_parent?: ComponentContainer | Identifier) {
 		// If a new parent is specified, detach from the old parent
-		if (newParent) {
-			if (this.isAttached) this.detach();
-			this.parentid = newParent;
-			this._parentRef = undefined;
+		if (new_parent) {
+			if (this.is_attached) this.detach();
+			this._parent = $.resolve_ref_or_id(new_parent) as T;
 		}
 
-		const parent = this.parentOrThrow();
+		const parent = this.parent;
 
 		// Enforce uniqueness if the component class declares it
 		const ctor = this.constructor as ConstructorWithTagsProperty & { unique?: boolean };
@@ -269,17 +266,14 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 		}
 		// Attach always allows multiple instances; container will assign final id and bind
 		parent.add_component(this);
-		this._parentRef = parent;
+		this._parent = parent;
 		this.bind();
 	}
 
 	public detach() {
-		const parent = this.parentOrThrow();
-
 		// Remove this instance from the parent
-		parent.remove_component_instance(this);
-		this._parentRef = undefined;
-		this.parentid = null;
+		this.parent.remove_component_instance(this);
+		this._parent = null;
 	}
 
 	/**
@@ -329,24 +323,6 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 
 	// Implement this method to handle postprocessing updates
 	public postprocessingUpdate(_args: ComponentUpdateParams): void {
-	}
-
-	protected parentOrThrow(): T {
-		const parent = this.parent;
-		if (!parent) {
-			throw new Error(`[Component:${this.id}] Parent '${this.parentid}' is not registered.`);
-		}
-		return parent;
-	}
-
-	public linkToParent(parent: T): void {
-		this._parentRef = parent;
-		this.parentid = parent.id;
-	}
-
-	public clearParentLink(): void {
-		this._parentRef = undefined;
-		this.parentid = null;
 	}
 }
 

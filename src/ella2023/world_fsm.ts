@@ -32,10 +32,17 @@ export class EilaModelFSM {
 								const data = state.data as { waitTicks?: number };
 								data.waitTicks = 0;
 							},
+							on: {
+								curtained: {
+									lane: 'presentation',
+									do() {
+										return '../oefenen';
+									},
+								},
+							},
 							tick(this: World, state: State) {
 								const data = state.data as { waitTicks?: number };
 								data.waitTicks = (data.waitTicks ?? 0) + 1;
-								if (data.waitTicks >= 150) return '../oefenen';
 							},
 						},
 						oefenen: {
