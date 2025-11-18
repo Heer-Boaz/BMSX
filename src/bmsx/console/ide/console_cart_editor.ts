@@ -124,9 +124,9 @@ import {
 } from './input_helpers';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast';
 import { CaretNavigationState } from './caret_navigation';
-import { ESCAPE_KEY, GLOBAL_SEARCH_RESULT_LIMIT } from './constants';
+import { ESCAPE_KEY } from './constants';
 // Search logic moved to editor_search
-import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, ensureSearchJobCompleted, moveSearchSelection, applySearchSelection, ensureSearchSelectionVisible, computeSearchPageStats, getVisibleSearchResultEntries, startSearchJob, forEachMatchInLine } from './editor_search';
+import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, ensureSearchJobCompleted, moveSearchSelection, applySearchSelection, ensureSearchSelectionVisible, computeSearchPageStats, getVisibleSearchResultEntries, startSearchJob, jumpToNextMatch, jumpToPreviousMatch, cancelGlobalSearchJob } from './editor_search';
 import { formatLuaDocument } from './lua_formatter';
 import * as constants from './constants';
 import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, workspaceDirtyCache } from './ide_state';
@@ -792,7 +792,7 @@ export function clampScrollColumn(): void {
 export { activeSearchMatchCount } from './editor_search';
 
 export { searchPageSize } from './editor_search';
-export { openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, ensureSearchJobCompleted, moveSearchSelection, applySearchSelection } from './editor_search';
+export { openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, ensureSearchJobCompleted, moveSearchSelection, applySearchSelection, jumpToNextMatch, jumpToPreviousMatch } from './editor_search';
 
 function searchVisibleResultCount(): number {
 	return computeSearchPageStats().visible;
@@ -4028,31 +4028,6 @@ export function applyLineJump(): void {
 	ide_state.showMessage(`Jumped to line ${target}`, constants.COLOR_STATUS_SUCCESS, 1.5);
 }
 
-export function onGlobalSearchQueryChanged(): void {
-	ide_state.searchDisplayOffset = 0;
-	ide_state.searchHoverIndex = -1;
-	ide_state.searchCurrentIndex = -1;
-	if (ide_state.searchQuery.length === 0) {
-		cancelGlobalSearchJob();
-		ide_state.globalSearchMatches = [];
-		return;
-	}
-	startGlobalSearchJob();
-}
-
-export function focusSearchResult(index: number): void {
-	if (index < 0 || index >= ide_state.searchMatches.length) {
-		return;
-	}
-	const match = ide_state.searchMatches[index];
-	ide_state.cursorRow = match.row;
-	ide_state.cursorColumn = match.start;
-	ide_state.selectionAnchor = { row: match.row, column: match.end };
-	updateDesiredColumn();
-	resetBlink();
-	revealCursor();
-}
-
 export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	// Switch to the originating tab if provided
@@ -4075,242 +4050,10 @@ export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
 	completeNavigation(navigationCheckpoint);
 }
 
-export function jumpToNextMatch(): void {
-	if (ide_state.searchScope === 'global') {
-		if (activeSearchMatchCount() === 0) {
-			ide_state.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
-			return;
-		}
-		moveSearchSelection(1, { wrap: true });
-		applySearchSelection(ide_state.searchCurrentIndex);
-		return;
-	}
-	ensureSearchJobCompleted();
-	if (ide_state.searchMatches.length === 0) {
-		ide_state.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
-		return;
-	}
-	if (ide_state.searchCurrentIndex < 0) {
-		ide_state.searchCurrentIndex = 0;
-	} else {
-		ide_state.searchCurrentIndex += 1;
-		if (ide_state.searchCurrentIndex >= ide_state.searchMatches.length) {
-			ide_state.searchCurrentIndex = 0;
-		}
-	}
-	focusSearchResult(ide_state.searchCurrentIndex);
-}
-
-export function jumpToPreviousMatch(): void {
-	if (ide_state.searchScope === 'global') {
-		if (activeSearchMatchCount() === 0) {
-			ide_state.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
-			return;
-		}
-		moveSearchSelection(-1, { wrap: true });
-		applySearchSelection(ide_state.searchCurrentIndex);
-		return;
-	}
-	ensureSearchJobCompleted();
-	if (ide_state.searchMatches.length === 0) {
-		ide_state.showMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
-		return;
-	}
-	if (ide_state.searchCurrentIndex < 0) {
-		ide_state.searchCurrentIndex = ide_state.searchMatches.length - 1;
-	} else {
-		ide_state.searchCurrentIndex -= 1;
-		if (ide_state.searchCurrentIndex < 0) {
-			ide_state.searchCurrentIndex = ide_state.searchMatches.length - 1;
-		}
-	}
-	focusSearchResult(ide_state.searchCurrentIndex);
-}
-
 export function cancelSearchJob(): void {
 	ide_state.searchJob = null;
 }
 
-export function startGlobalSearchJob(): void {
-	cancelGlobalSearchJob();
-	const normalized = ide_state.searchQuery.toLowerCase();
-	if (normalized.length === 0) {
-		ide_state.globalSearchMatches = [];
-		return;
-	}
-	let descriptors: ConsoleResourceDescriptor[] = [];
-	try {
-		descriptors = listResourcesStrict().filter(entry => entry.type === 'lua');
-	} catch {
-		descriptors = [];
-	}
-	const job: GlobalSearchJob = {
-		query: normalized,
-		descriptors,
-		descriptorIndex: 0,
-		currentLines: null,
-		nextRow: 0,
-		matches: [],
-		limitHit: false,
-	};
-	ide_state.globalSearchJob = job;
-	ide_state.globalSearchMatches = [];
-	ide_state.searchCurrentIndex = -1;
-	ide_state.searchDisplayOffset = 0;
-	ide_state.searchHoverIndex = -1;
-	enqueueBackgroundTask(() => runGlobalSearchJobSlice(job));
-}
-
-export function runGlobalSearchJobSlice(job: GlobalSearchJob): boolean {
-	if (ide_state.globalSearchJob !== job) {
-		return false;
-	}
-	if (job.query.length === 0) {
-		ide_state.globalSearchJob = null;
-		return false;
-	}
-	const rowsPerSlice = 200;
-	let processed = 0;
-	while (job.descriptorIndex < job.descriptors.length && processed < rowsPerSlice && !job.limitHit) {
-		if (!job.currentLines) {
-			const descriptor = job.descriptors[job.descriptorIndex];
-			job.currentLines = loadDescriptorLines(descriptor);
-			job.nextRow = 0;
-			if (!job.currentLines) {
-				job.descriptorIndex += 1;
-				continue;
-			}
-		}
-		const lines = job.currentLines;
-		if (!lines) {
-			job.descriptorIndex += 1;
-			job.currentLines = null;
-			continue;
-		}
-		while (job.nextRow < lines.length && processed < rowsPerSlice && !job.limitHit) {
-			const row = job.nextRow;
-			job.nextRow += 1;
-			processed += 1;
-			const line = lines[row] ?? '';
-			forEachMatchInLine(line, job.query, (start, end) => {
-				if (job.limitHit) {
-					return;
-				}
-				const descriptor = job.descriptors[job.descriptorIndex];
-				const match: GlobalSearchMatch = {
-					descriptor,
-					pathLabel: describeDescriptor(descriptor),
-					row,
-					start,
-					end,
-					snippet: buildSearchSnippet(line, start, end),
-					asset_id: descriptor.asset_id ?? null,
-					chunkName: descriptor.path ?? null,
-				};
-				job.matches.push(match);
-				if (job.matches.length >= GLOBAL_SEARCH_RESULT_LIMIT) {
-					job.limitHit = true;
-				}
-			});
-		}
-		if (job.nextRow >= ide_state.lines.length) {
-			job.currentLines = null;
-			job.nextRow = 0;
-			job.descriptorIndex += 1;
-		}
-	}
-	if (job.limitHit || job.descriptorIndex >= job.descriptors.length) {
-		completeGlobalSearchJob(job);
-		return false;
-	}
-	return true;
-}
-
-export function completeGlobalSearchJob(job: GlobalSearchJob): void {
-	if (ide_state.globalSearchJob !== job) {
-		return;
-	}
-	ide_state.globalSearchJob = null;
-	ide_state.globalSearchMatches = job.matches;
-	if (ide_state.globalSearchMatches.length === 0) {
-		ide_state.searchCurrentIndex = -1;
-		ide_state.searchDisplayOffset = 0;
-		return;
-	}
-	if (ide_state.searchCurrentIndex < 0 || ide_state.searchCurrentIndex >= ide_state.globalSearchMatches.length) {
-		ide_state.searchCurrentIndex = 0;
-	}
-	ensureSearchSelectionVisible();
-}
-
-export function cancelGlobalSearchJob(): void {
-	ide_state.globalSearchJob = null;
-}
-
-export function loadDescriptorLines(descriptor: ConsoleResourceDescriptor): string[] | null {
-	const asset_id = descriptor.asset_id;
-	if (!asset_id) {
-		return null;
-	}
-	const source = ide_state.loadLuaResourceFn(asset_id);
-	return source.split(/\r?\n/);
-}
-
-export function describeDescriptor(descriptor: ConsoleResourceDescriptor): string {
-	if (descriptor.path) {
-		return descriptor.path.replace(/\\/g, '/');
-	}
-	if (descriptor.asset_id) {
-		return descriptor.asset_id;
-	}
-	throw new Error('Descriptor has no path or asset_id');
-}
-
-export function buildSearchSnippet(line: string, start: number, end: number): string {
-	if (!line || line.length === 0) {
-		throw new Error('Invalid line');
-		// return '<blank>';
-	}
-	const padding = 32;
-	const sliceStart = Math.max(0, start - padding);
-	const sliceEnd = Math.min(line.length, end + padding);
-	let snippet = line.slice(sliceStart, sliceEnd).trim();
-	if (sliceStart > 0) {
-		snippet = `…${snippet}`;
-	}
-	if (sliceEnd < line.length) {
-		snippet = `${snippet}…`;
-	}
-	return snippet;
-}
-
-export function focusGlobalSearchResult(index: number, previewOnly: boolean = false): void {
-	const match = ide_state.globalSearchMatches[index];
-	if (!match) {
-		if (!previewOnly) {
-			ide_state.showMessage('Search result unavailable', constants.COLOR_STATUS_WARNING, 1.5);
-		}
-		return;
-	}
-	if (previewOnly) {
-		return;
-	}
-	if (match.descriptor) {
-		openLuaCodeTab(match.descriptor);
-	} else {
-		activateCodeTab();
-	}
-	scheduleNextFrame(() => {
-		const row = clamp(match.row, 0, Math.max(0, ide_state.lines.length - 1));
-		const line = ide_state.lines[row] ?? '';
-		const endColumn = Math.min(match.end, line.length);
-		ide_state.cursorRow = row;
-		ide_state.cursorColumn = clamp(match.start, 0, line.length);
-		ide_state.selectionAnchor = { row, column: endColumn };
-		ensureCursorVisible();
-		resetBlink();
-	});
-}
 
 export function showReferenceStatusMessage(): void {
 	const matches = ide_state.referenceState.getMatches();
