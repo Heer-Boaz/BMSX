@@ -17,11 +17,10 @@ import { AmbientLightObject, LightObject } from './object/lightobject';
 import { Registry } from "./registry";
 import { $ } from './game';
 import type { Component, ComponentConstructor } from "../component/basecomponent";
-import { Space, id2spaceType, initial_world_spaces, obj_id2space_id_type, obj_id_to_space_id_symbol, id_to_space_symbol } from './space';
+import { Space, initial_world_spaces } from './space';
 import { EventEmitter, EventPort, eventsOf } from './eventemitter';
 import { HandlerRegistry } from './handlerregistry';
 import { filter_iterable } from '../utils/filter_iterable';
-import { make_index_proxy } from '../utils/make_index_proxy';
 import { shallowcopy } from '../utils/shallowcopy';
 import { Collision2DSystem } from '../ecs/overlap2d_system';
 import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
@@ -29,11 +28,6 @@ import { build_fsm } from '../fsm/fsmdecorators';
 
 const MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space
 const WORLD_DEFAULT_FSM_ID = 'world_default';
-
-// Backwards-compatible index proxies: runtime uses Map for performance, while
-// external code can still index with [id] due to Proxy handling.
-export type id2objectType = Record<Identifier, WorldObject>;
-export const id2obj = Symbol('id2object');
 
 // Services and module types
 export interface TileCollisionService {
@@ -128,20 +122,26 @@ export class World implements Stateful, RegisterablePersistent {
 	@excludepropfromsavegame
 	public systems: ECSystemManager = new ECSystemManager();
 
-	/**
-	 * An object that maps space IDs to their corresponding Space objects.
-	 * @type {id2spaceType}
-	 */
-	public [id_to_space_symbol]: id2spaceType;
 	@excludepropfromsavegame
 	public _spaceMap: Map<Identifier, Space>;
-	/**
-	 * An object that maps object IDs to their corresponding space IDs.
-	 * @type {obj_id2space_id_type}
-	 */
-	public [obj_id_to_space_id_symbol]: obj_id2space_id_type;
 	@excludepropfromsavegame
 	public objToSpaceMap: Map<Identifier, Identifier>;
+
+	public getSpace(id: Identifier): Space | undefined {
+		return this._spaceMap.get(id);
+	}
+
+	public getSpaceIndex(): ReadonlyMap<Identifier, Space> {
+		return this._spaceMap;
+	}
+
+	private requireSpace(id: Identifier): Space {
+		const space = this._spaceMap.get(id);
+		if (!space) {
+			throw new Error(`[World] Space '${id}' does not exist.`);
+		}
+		return space;
+	}
 
 	/**
 	 * Gets all game objects in the current space.
@@ -184,7 +184,7 @@ export class World implements Stateful, RegisterablePersistent {
 	public spaces: Space[]; // All spaces in the world
 	protected _activeSpaceId: Identifier; // Current space. On world creation, a default space is created with id 'default'
 	public get activeSpaceId(): Identifier { return this._activeSpaceId; } // Current space id. On world creation, a default space is created with id 'default'
-	public get activeSpace(): Space { return this[id_to_space_symbol][this._activeSpaceId]; } // Current space. On world creation, a default space is created with id 'default'
+	public get activeSpace(): Space { return this.requireSpace(this._activeSpaceId); }
 
 	// Model configuration (size, services, modules)
 	private _size: vec2 = { x: 256, y: 192 };
@@ -261,7 +261,7 @@ export class World implements Stateful, RegisterablePersistent {
 		if (!id) return null;
 		const sid = this.objToSpaceMap.get(id);
 		if (!sid) return null;
-		const space = this[id_to_space_symbol][sid];
+		const space = this._spaceMap.get(sid);
 		if (!space) {
 			throw new Error(`[World] Object '${id}' is mapped to missing space '${sid}'.`);
 		}
@@ -269,9 +269,9 @@ export class World implements Stateful, RegisterablePersistent {
 	}
 
 	public getSpaceOfObject(obj_id: Identifier): Space | null {
-		const sid = this[obj_id_to_space_id_symbol][obj_id];
+		const sid = this.objToSpaceMap.get(obj_id);
 		if (!sid) return null;
-		const space = this[id_to_space_symbol][sid];
+		const space = this._spaceMap.get(sid);
 		if (!space) throw new Error(`[World] Space '${sid}' referenced by object '${obj_id}' is missing.`);
 		return space;
 	}
@@ -294,13 +294,13 @@ export class World implements Stateful, RegisterablePersistent {
 	public move_obj_to_space(obj_id: Identifier, spaceid_to_move_obj_to: Identifier): void {
 		const obj = this.getWorldObject<WorldObject>(obj_id);
 		if (!obj) throw Error(`Cannot move unknown object '${obj_id}' to space '${spaceid_to_move_obj_to}'!`);
-		const target_space = this[id_to_space_symbol][spaceid_to_move_obj_to];
+		const target_space = this._spaceMap.get(spaceid_to_move_obj_to);
 		if (!target_space) throw Error(`Cannot move object '${obj_id}' to unknown space '${spaceid_to_move_obj_to}'!`);
 		const fromSid = this.objToSpaceMap.get(obj_id);
 		if (!fromSid) {
 			throw new Error(`Cannot move object '${obj_id}' because it is not registered in any space.`);
 		}
-		const origin_space = this[id_to_space_symbol][fromSid];
+		const origin_space = this._spaceMap.get(fromSid);
 		if (!origin_space) {
 			throw new Error(`Cannot move object '${obj_id}' because source space '${fromSid}' is missing.`);
 		}
@@ -316,10 +316,10 @@ export class World implements Stateful, RegisterablePersistent {
 	 * If opts.suppressLifecycleHooks is true, spawn/leave hooks are suppressed.
 	 */
 	public transfer(o: WorldObject, to: Space | Identifier, opts?: { suppressLifecycleHooks?: boolean }): void {
-		const toSpace = (to instanceof Space) ? to : this[id_to_space_symbol][to];
+		const toSpace = (to instanceof Space) ? to : this._spaceMap.get(to);
 		if (!toSpace) throw new Error(`transfer: target space not found`);
 		const fromSid = this.objToSpaceMap.get(o.id);
-		const from = fromSid ? this[id_to_space_symbol][fromSid] : null;
+		const from = fromSid ? this._spaceMap.get(fromSid) : null;
 		if (!from) {
 			throw new Error(`transfer: object '${o.id}' is not currently assigned to a space.`);
 		}
@@ -363,9 +363,7 @@ export class World implements Stateful, RegisterablePersistent {
 
 		this.spaces = [];
 		this._spaceMap = new Map<Identifier, Space>();
-		this[id_to_space_symbol] = make_index_proxy(this._spaceMap);
 		this.objToSpaceMap = new Map<Identifier, Identifier>();
-		this[obj_id_to_space_id_symbol] = make_index_proxy(this.objToSpaceMap);
 
 		this.paused = false;
 		if (opts.viewportSize) this._size = shallowcopy<vec2>(opts.viewportSize);
@@ -645,7 +643,7 @@ export class World implements Stateful, RegisterablePersistent {
 	}
 
 	public despawnFromSpace(o: WorldObject, space_id: Identifier): void {
-		const space = this[id_to_space_symbol][space_id];
+		const space = this._spaceMap.get(space_id);
 		if (space && space.get(o.id)) {
 			space.despawn(o);
 		}
@@ -682,7 +680,7 @@ export class World implements Stateful, RegisterablePersistent {
 	 * @throws {Error} Throws an error if the space to remove is not found in the world instance.
 	 */
 	public removeSpace(s: Space | Identifier): void {
-		const space: Space = (s instanceof Space ? s : this[id_to_space_symbol][s]);
+		const space: Space | undefined = (s instanceof Space ? s : this._spaceMap.get(s));
 		if (!space) throw Error(`Space '${s}' to remove from world was not found, while calling [World.removeSpace]!`);
 
 		const index = this.spaces.indexOf(space);
@@ -776,7 +774,7 @@ export class World implements Stateful, RegisterablePersistent {
 
 	/** Transfer many objects efficiently; marks spaces dirty once. */
 	public transferMany(objs: Array<WorldObject | Identifier>, to: Space | Identifier, opts?: { suppressLifecycleHooks?: boolean }): void {
-		const toSpace = (to instanceof Space) ? to : this[id_to_space_symbol][to];
+		const toSpace = (to instanceof Space) ? to : this._spaceMap.get(to);
 		if (!toSpace) throw new Error('transferMany: target space not found');
 		this.runDepthBatch(() => {
 			for (const it of objs) {
@@ -871,7 +869,7 @@ export class World implements Stateful, RegisterablePersistent {
 	 */
 	public set_space(newSpaceId: Identifier) {
 		if (newSpaceId === this._activeSpaceId) return;
-		const prev = this[id_to_space_symbol][this._activeSpaceId];
+		const prev = this._spaceMap.get(this._activeSpaceId);
 		this._activeSpaceId = newSpaceId;
 		prev?.deactivate?.();
 		this.activeSpace?.activate?.();

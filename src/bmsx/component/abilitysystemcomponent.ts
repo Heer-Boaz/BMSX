@@ -1,7 +1,5 @@
 import { Component, type ComponentAttachOptions } from './basecomponent';
-import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
-import type { Identifier } from '../rompack/rompack';
 import type { WorldObject } from '../core/object/worldobject';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import { TickGroup } from '../ecs/ecsystem';
@@ -32,7 +30,7 @@ export type AbilityTagSnapshot = {
 	combined: TagId[];
 };
 
-type EventWaitState = { kind: 'event'; instruction: AbilityWaitInstruction & { kind: 'event' }; unsub: () => void };
+type EventWaitState = { kind: 'event'; instruction: AbilityWaitInstruction & { kind: 'event' }; dispose: () => void };
 
 type WaitState =
 	| { kind: 'time'; until: number }
@@ -475,35 +473,32 @@ export class AbilitySystemComponent extends Component {
 				return;
 			}
 			case 'event': {
-				const token: any = { __ascWait: true, key };
 				const listener = (_event: GameEvent) => {
 					const entry = this._active.get(key);
 					if (!entry) return;
 					const pending = entry.wait;
 					if (pending && pending.kind === 'event') {
-						pending.unsub();
+						pending.dispose();
 						entry.wait = undefined;
 					}
 				};
-				const options: { emitter?: Identifier; persistent?: boolean } = { persistent: false };
-				if (instruction.emitter) options.emitter = instruction.emitter;
-				EventEmitter.instance.on(instruction.event, listener, token, options, false);
-				const unsub = () => EventEmitter.instance.removeSubscriber(token);
-				run.wait = { kind: 'event', instruction, unsub };
+				const emitter = this.resolveWaitEmitter(instruction, this.ownerOrThrow());
+				const dispose = emitter.events.on(instruction.event, this, listener);
+				run.wait = { kind: 'event', instruction, dispose };
 				return;
 			}
 		}
 	}
 
 	private finishAbilityRun(key: string, run: ActiveAbilityRun): void {
-		if (run.wait && run.wait.kind === 'event') run.wait.unsub();
+		if (run.wait && run.wait.kind === 'event') run.wait.dispose();
 		run.wait = undefined;
 		this.cleanupAbilityTags(run);
 		this._active.delete(key);
 	}
 
 	private cancelAbilityRun(key: string, run: ActiveAbilityRun): void {
-		if (run.wait && run.wait.kind === 'event') run.wait.unsub();
+		if (run.wait && run.wait.kind === 'event') run.wait.dispose();
 		run.wait = undefined;
 		try {
 			run.execution.cancel();
@@ -538,6 +533,17 @@ export class AbilitySystemComponent extends Component {
 		if (source !== undefined) detail.source = source;
 		if (timeLeftMs !== undefined) detail.timeLeftMs = timeLeftMs;
 		owner.events.emit('AbilityFailed', detail);
+	}
+
+	private resolveWaitEmitter(instruction: AbilityWaitInstruction & { kind: 'event' }, fallback: WorldObject): WorldObject {
+		const target = instruction.emitter;
+		if (!target) return fallback;
+		if (typeof target !== 'string') return target;
+		const resolved = $.registry.get<WorldObject>(target);
+		if (!resolved) {
+			throw new Error(`[AbilitySystemComponent] Wait event emitter '${target}' was not found.`);
+		}
+		return resolved;
 	}
 
 	private find_active_by_ability(id: AbilityId): string | undefined {

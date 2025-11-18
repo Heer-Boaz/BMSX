@@ -8,8 +8,7 @@ import { StateDefinitions } from './fsmlibrary';
 import { type id2sstate, type Stateful, type StateEventDefinition, type TickCheckDefinition, type transition_target, type StateTimelineConfig } from './fsmtypes';
 import { StateDefinition } from './statedefinition';
 import { EventPayload, GameEvent } from '../core/game_event';
-import type { Timeline } from '../timeline/timeline';
-import type { TimelineDefinition } from '../timeline/timeline';
+import type { Timeline, TimelineDefinition } from '../timeline/timeline';
 import type { TimelinePlayOptions } from '../component/timeline_component';
 
 type TransitionExecutionMode = 'immediate' | 'queued' | 'deferred';
@@ -64,14 +63,15 @@ interface EventDispatchResult {
 }
 
 type TimelineHost = Stateful & {
-	define_timeline(definition: TimelineDefinition): void;
+	define_timeline(definition: Timeline | TimelineDefinition): void;
 	play_timeline(id: string, opts?: TimelinePlayOptions): void;
 	stop_timeline(id: string): void;
 	get_timeline<T = Timeline>(id: string): Timeline<T> | undefined;
 };
 
 type StateTimelineBinding = {
-	definition: TimelineDefinition;
+	id: Identifier;
+	create: () => Timeline;
 	autoplay: boolean;
 	stopOnExit: boolean;
 	playOptions?: TimelinePlayOptions;
@@ -664,18 +664,27 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		const host = this.timelineHost();
 		for (const binding of this.timelineBindings) {
 			if (binding.defined) continue;
-			host.define_timeline(binding.definition);
+			const timeline = binding.create();
+			if (!timeline) {
+				throw new Error(`[State] Timeline factory for '${binding.id}' returned no timeline.`);
+			}
+			if (timeline.id !== binding.id) {
+				throw new Error(`[State] Timeline factory for '${binding.id}' returned timeline '${timeline.id}'.`);
+			}
+			host.define_timeline(timeline);
 			binding.defined = true;
 		}
 		return this.timelineBindings;
 	}
 
 	private createTimelineBinding(key: string, config: StateTimelineConfig): StateTimelineBinding {
-		const { autoplay = true, stop_on_exit = true, play_options, id, ...rest } = config;
-		const base = rest as Omit<TimelineDefinition, 'id'>;
-		const definition: TimelineDefinition = { id: id ?? key, ...base };
+		const { autoplay = true, stop_on_exit = true, play_options, id } = config;
+		if (typeof config.create !== 'function') {
+			throw new Error(`[State] Timeline '${key}' is missing a create() factory.`);
+		}
 		return {
-			definition,
+			id: (id ?? key) as Identifier,
+			create: config.create,
 			autoplay,
 			stopOnExit: stop_on_exit,
 			playOptions: play_options,
@@ -689,7 +698,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		const host = this.timelineHost();
 		for (const binding of bindings) {
 			if (!binding.autoplay) continue;
-			host.play_timeline(binding.definition.id, binding.playOptions);
+			host.play_timeline(binding.id, binding.playOptions);
 		}
 	}
 
@@ -698,7 +707,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		const host = this.timelineHost();
 		for (const binding of this.timelineBindings) {
 			if (!binding.stopOnExit) continue;
-			host.stop_timeline(binding.definition.id);
+			host.stop_timeline(binding.id);
 		}
 	}
 

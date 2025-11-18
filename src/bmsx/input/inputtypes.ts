@@ -83,11 +83,9 @@ export interface InputMap {
 	pointer?: PointerInputMapping;
 }
 /**
- * Represents a keyboard button.
- * It can be one of the predefined keys or a custom string.
+ * Represents an entry in a keyboard mapping. Accepts DOM key codes or named button ids.
  */
-
-export type KeyboardButton = string | BGamepadButton; // Back-compat alias for code still referencing this
+export type KeyboardButton = string | BGamepadButton;
 /**
  * Represents a gamepad button.
  * @typedef {keyof typeof Input.BUTTON2INDEX } BGamepadButton

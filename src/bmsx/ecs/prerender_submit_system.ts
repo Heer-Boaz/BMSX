@@ -1,6 +1,6 @@
 import { ECSystem, TickGroup } from "./ecsystem";
 import type { World } from "../core/world";
-import { id_to_space_symbol, type Space } from "../core/space";
+import type { Space } from "../core/space";
 import { $ } from "../core/game";
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { CustomVisualComponent } from "../component/customvisual_component";
@@ -22,7 +22,7 @@ export class PreRenderSubmitSystem extends ECSystem {
 
 	update(world: World): void {
 		this.submitSpace(world.activeSpace);
-		const uiSpace = world[id_to_space_symbol]['ui'];
+		const uiSpace = world.getSpace('ui');
 		if (!uiSpace) {
 			throw new Error('[PreRenderSubmitSystem] UI space is not registered.');
 		}

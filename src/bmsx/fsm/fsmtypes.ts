@@ -4,7 +4,7 @@ import type { StateMachineController } from "./fsmcontroller";
 import type { State } from './state';
 import type { StateDefinition } from './statedefinition';
 import type { EventPayload, GameEvent } from '../core/game_event';
-import type { TimelineDefinition } from '../timeline/timeline';
+import type { Timeline } from '../timeline/timeline';
 import type { TimelinePlayOptions } from '../component/timeline_component';
 
 /**
@@ -47,9 +47,11 @@ export type StateMachineBlueprint = Partial<StateDefinition>;
  */
 export type id2partial_sdef = Record<Identifier, StateMachineBlueprint>;
 
-export type StateTimelineConfig<T = any> = Omit<TimelineDefinition<T>, 'id'> & {
-	/** Overrides the generated id for this timeline (defaults to the blueprint key). */
+export type StateTimelineConfig<T = any> = {
+	/** Optional id override; falls back to the dictionary key. */
 	id?: string;
+	/** Factory that builds the timeline instance for this state. */
+	create: () => Timeline<T>;
 	/** Automatically plays the timeline when the state enters. Defaults to true. */
 	autoplay?: boolean;
 	/** Automatically stops the timeline when the state exits. Defaults to true. */

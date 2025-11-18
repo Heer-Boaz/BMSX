@@ -43,7 +43,6 @@ export type TimelineListener = {
 };
 
 type RegisteredTimeline = {
-	definition: TimelineDefinition;
 	instance: Timeline;
 	compiled: CompiledTimelineMarkerCache;
 };
@@ -64,19 +63,24 @@ export class TimelineComponent extends Component<WorldObject> {
 		return this.registry.has(id);
 	}
 
-	public define(definition: TimelineDefinition): void {
-		if (!definition || typeof definition.id !== 'string' || definition.id.length === 0) {
-			throw new Error('[TimelineComponent] define() requires a timeline definition with an id.');
+	public define(source: TimelineDefinition | Timeline): void {
+		let instance: Timeline;
+		if (source instanceof Timeline) {
+			instance = source;
+		} else {
+			if (!source || typeof source.id !== 'string' || source.id.length === 0) {
+				throw new Error('[TimelineComponent] define() requires a timeline definition with an id.');
+			}
+			const frames = Array.isArray(source.frames) ? [...source.frames] : [];
+			const normalized: TimelineDefinition = {
+				...source,
+				id: source.id,
+				frames,
+			};
+			instance = new Timeline(normalized);
 		}
-		const frames = Array.isArray(definition.frames) ? [...definition.frames] : [];
-		const normalized: TimelineDefinition = {
-			...definition,
-			id: definition.id,
-			frames,
-		};
-		const compiled = compile_timeline_markers(normalized);
-		const instance = new Timeline(normalized);
-		this.registry.set(definition.id, { definition: normalized, instance, compiled });
+		const compiled = compile_timeline_markers(instance.def);
+		this.registry.set(instance.id, { instance, compiled });
 	}
 
 	public play(id: string, opts?: TimelinePlayOptions): Timeline {
@@ -166,7 +170,7 @@ export class TimelineComponent extends Component<WorldObject> {
 			if ($.debug) {
 				console.log('[Timeline][event]', {
 					parent: this.parent.id,
-					timeline: entry.definition.id,
+					timeline: entry.instance.id,
 					kind: evt.kind,
 					current: (evt as TimelineFrameEvent).current ?? (evt as TimelineEndEvent).frame,
 					value: evt.kind === 'frame' ? (evt as TimelineFrameEvent).value : undefined,
@@ -174,7 +178,7 @@ export class TimelineComponent extends Component<WorldObject> {
 			}
 			if (evt.kind === 'frame') {
 				const payload: TimelineFrameEventPayload = {
-					timeline_id: entry.definition.id,
+					timeline_id: entry.instance.id,
 					frame_index: evt.current,
 					frame_value: evt.value,
 					rewound: evt.rewound,
@@ -183,18 +187,18 @@ export class TimelineComponent extends Component<WorldObject> {
 				};
 				this.apply_markers(entry, evt);
 				this.emit_frameevent(entry, payload);
-				this.dispatch_frame_listeners(entry.definition.id, payload);
+				this.dispatch_frame_listeners(entry.instance.id, payload);
 			} else {
 				const payload: TimelineEndEventPayload = {
-					timeline_id: entry.definition.id,
+					timeline_id: entry.instance.id,
 					mode: evt.mode,
 					wrapped: evt.wrapped,
 				};
 				this.emit_endevent(payload);
-				this.dispatch_end_listeners(entry.definition.id, payload);
+				this.dispatch_end_listeners(entry.instance.id, payload);
 				const shouldStop = evt.mode === 'once';
 				if (shouldStop) {
-					this.active.delete(entry.definition.id);
+					this.active.delete(entry.instance.id);
 				}
 			}
 		}

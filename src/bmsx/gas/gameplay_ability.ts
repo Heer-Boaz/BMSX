@@ -184,7 +184,7 @@ export interface GameplayAbilityDefinition extends AbilitySpec {
 export type AbilityWaitInstruction =
 	| { kind: 'time'; until: number }
 	| { kind: 'tag'; tag: TagId; present: boolean }
-	| { kind: 'event'; event: string; emitter?: Identifier };
+	| { kind: 'event'; event: string; emitter?: Identifier | WorldObject };
 
 export type AbilityAdvanceResult =
 	| { kind: 'wait'; wait: AbilityWaitInstruction }

@@ -21,7 +21,6 @@ import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
 import { ControllerAssignmentUI } from '../ui/controller_assignment_ui';
 import { PlayerInput, InputSource } from './playerinput';
 import { PointerInput } from './pointerinput';
-import { id_to_space_symbol } from '../core/space';
 import type { DeviceKind, InputDevice, InputEvt } from '../platform';
 
 import type { GameViewCanvas } from '../platform';
@@ -669,7 +668,7 @@ export class Input implements RegisterablePersistent {
 
 	public bind(): void {
 		Registry.instance.register(this);
-		EventEmitter.instance.on('spaceChanged', this.handleSpaceChanged, this, { persistent: true });
+		$.world.events.on('spaceChanged', this, this.handleSpaceChanged, { persistent: true });
 
 		const player = this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX);
 		const keyboard = new KeyboardInput('keyboard:0');
@@ -867,7 +866,7 @@ export class Input implements RegisterablePersistent {
 		const now = $.platform.clock.now();
 		// Ensure UI controller exists once spaces are ready
 		if (!this.uiControllerSpawned) {
-			const ui = $.world[id_to_space_symbol]['ui'];
+			const ui = $.world.getSpace('ui');
 			if (ui) {
 				const existing = $.world.getWorldObject('controller_assignment_ui');
 				if (!existing) ui.spawn(new ControllerAssignmentUI());

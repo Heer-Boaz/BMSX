@@ -84,10 +84,6 @@ function hotReloadStateMachine(machineId: Identifier, previousDefinition: StateD
 	}
 }
 
-function normalizeEventName(name: string): string {
-	return name.startsWith('$') ? name.slice(1) : name;
-}
-
 function clearDefinitionsForMachine(machineId: Identifier): void {
 	const prefix = `${machineId}:/`;
 	for (const key of Object.keys(StateDefinitions)) {
@@ -378,11 +374,9 @@ function addEventsToDef(machine: StateMachineBlueprint): void {
 
 /**
  * Retrieves the events from a state machine blueprint.
- * The events are retrieved from the machine definition and its submachines. The events are returned as a set of event names and scopes.
- * The reason for using a set is to prevent duplicate events from being added to the set.
- * The reason for creating the set itself is so that the {@link StateMachineController} can subscribe to all the events that are defined in the machine definition and its submachines.
- * Note that the events are returned as a set of event names and scopes, where the scope is 'all' if the event is not prefixed with '$', otherwise it is 'self'.
- * Also note that any existing events with the same name and scope will be replaced if the scope is 'all', otherwise it will not be replaced.
+ * The events are gathered from the machine definition and all of its submachines, returning a set of unique event names.
+ * The set ensures we only subscribe once per event even if multiple states react to the same name.
+ * The set itself allows the {@link StateMachineController} to wire every distinct event upfront.
  *
  * @param machine - The state machine blueprint.
  * @param eventNamesAndScopes - Optional set of event names and scopes to filter the events.
@@ -399,8 +393,7 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 	 * @param definition - The definition of the state event.
 	 */
 	function add(name: string): void {
-		const normalized = normalizeEventName(name);
-		addAndReplace(normalized);
+		addAndReplace(name);
 	}
 
 	/**
@@ -582,20 +575,15 @@ function hoistStateProcessInput(_machineName: string, _path: string[], ownerDef:
 	hoistSlot(ownerDef as Record<string, any>, 'process_input', id);
 }
 
-function normalizeEventNameForId(name: string) {
-	return name.startsWith('$') ? name.slice(1) : name;
-}
-
 function rewriteOnBag(bag: StateMachineBlueprint['on']) {
 	if (!bag) return bag;
 	const out: NonNullable<StateMachineBlueprint['on']> = {};
 	for (const [raw, def] of Object.entries(bag)) {
-		const base = normalizeEventName(raw);
 		if (typeof def === 'string') {
-			out[base] = { do: def };
+			out[raw] = { do: def };
 			continue;
 		}
-		out[base] = { ...def };
+		out[raw] = { ...def };
 	}
 	return out;
 }
@@ -610,11 +598,10 @@ function hoistEventDef(
 ) {
 	if (!eventDefinition || typeof eventDefinition === 'string') return;
 
-	const eventName = normalizeEventNameForId(rawEventName);
-	const base = [machineName, ...statePath, bagName, eventName];
+	const base = [machineName, ...statePath, bagName, rawEventName];
 
 	if (typeof eventDefinition.do !== 'undefined') {
-		hoistEventDo(machineName, stateDef, statePath, bagName, eventName, eventDefinition, makeId([...base, 'do']));
+		hoistEventDo(machineName, stateDef, statePath, bagName, rawEventName, eventDefinition, makeId([...base, 'do']));
 	}
 }
 

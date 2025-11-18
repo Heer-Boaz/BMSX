@@ -230,7 +230,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		return this._timelineComponent;
 	}
 
-	public define_timeline(definition: TimelineDefinition): void {
+	public define_timeline(definition: TimelineDefinition | Timeline): void {
 		this.timeline_component.define(definition);
 	}
 
@@ -615,12 +615,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		const c = this.collider; if (c?.localArea) return this.pos.y + c.localArea.end.y;
 		return this.y_plus_height;
 	}
-
-	/** Back-compat helpers: interpreted hitarea relative to object when collider exists. */
-	public get hitarea_left(): number { const c = this.collider; return this.pos.x + (c?.localArea?.start.x ?? 0); }
-	public get hitarea_top(): number { const c = this.collider; return this.pos.y + (c?.localArea?.start.y ?? 0); }
-	public get hitarea_right(): number { const c = this.collider; return this.pos.x + (c?.localArea?.end.x ?? 0); }
-	public get hitarea_bottom(): number { const c = this.collider; return this.pos.y + (c?.localArea?.end.y ?? 0); }
 
 	/** World-space polygons if present. */
 	public get hitpolygon(): Polygon[] | undefined { return this.collider?.worldPolygons ?? undefined; }

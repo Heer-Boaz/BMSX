@@ -21,7 +21,7 @@ import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { setupFSMlibrary } from '../fsm/fsmlibrary';
 import { DirectConsoleRenderBackend, type ConsoleRenderBackend } from './render_backend';
 import { new_vec3 } from '../utils/vector_operations';
-import { id_to_space_symbol, type Space } from '../core/space';
+import type { Space } from '../core/space';
 import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';
 import { Component } from '../component/basecomponent';
@@ -1082,11 +1082,7 @@ export class BmsxConsoleApi {
 	}
 
 	private lookupSpace(spaceId: string): Space {
-		const spaces = $.world[id_to_space_symbol];
-		if (!spaces) {
-			throw new Error('[BmsxConsoleApi] World spaces are not initialised.');
-		}
-		const space = spaces[spaceId];
+		const space = $.world.getSpace(spaceId);
 		if (!space) {
 			throw new Error(`[BmsxConsoleApi] Space '${spaceId}' not found.`);
 		}

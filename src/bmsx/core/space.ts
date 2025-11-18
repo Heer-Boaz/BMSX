@@ -2,24 +2,16 @@ import { type Identifier, vec3 } from '../rompack/rompack';
 import { insavegame, excludepropfromsavegame, onload, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { $ } from './game';
 import { WorldObject } from './object/worldobject';
-import { id2obj, id2objectType, type SpawnReason } from './world';
-import { make_index_proxy } from '../utils/make_index_proxy';
+import type { SpawnReason } from './world';
 export type initial_world_spaces = 'game_start' | 'default' | 'ui';
-
-export type id2spaceType = Record<Identifier, Space>;
-export type obj_id2space_id_type = Record<Identifier, Identifier>;
-export const id_to_space_symbol = Symbol('id2space');
-export const obj_id_to_space_id_symbol = Symbol('obj_id2obj_space_id');// Optional per-object hooks for space transitions
 
 @insavegame
 /**
  * Represents a space in the game world, which contains a collection of game objects.
  */
 export class Space  {
-	/** Map-backed index of id → object (exposed via Proxy for back-compat). */
-	public [id2obj]: id2objectType;
 	@excludepropfromsavegame
-	private _id2objMap: Map<Identifier, WorldObject>;
+	private readonly objectsById: Map<Identifier, WorldObject>;
 
 	// private static readonly CLASS_REGISTRATION_DONE = Symbol('class_registration_done');
 
@@ -30,7 +22,7 @@ export class Space  {
 	 * @returns {T | undefined} The WorldObject with the specified ID, or undefined if no such object exists in this space.
 	 */
 	public get<T extends WorldObject>(id: Identifier): T | undefined {
-		return this._id2objMap.get(id) as T | undefined;
+		return this.objectsById.get(id) as T | undefined;
 	}
 
 	public id: Identifier;
@@ -60,8 +52,7 @@ export class Space  {
 	public constructor(opts: RevivableObjectArgs & { id: Identifier }) {
 		this.id = opts.id;
 		this.objects = [];
-		this._id2objMap = new Map<Identifier, WorldObject>();
-		this[id2obj] = make_index_proxy(this._id2objMap);
+		this.objectsById = new Map<Identifier, WorldObject>();
 	}
 	[Symbol.dispose](): void {
 		throw new Error('Method not implemented.');
@@ -95,7 +86,7 @@ export class Space  {
 
 		this.objects.push(o); // Add the object to the space
 
-		this._id2objMap.set(o.id, o); // Register the object in the id→object map
+		this.objectsById.set(o.id, o); // Register the object in the id→object map
 		world.objToSpaceMap.set(o.id, this.id); // Register the object in the obj→space map
 		world.onObjectSpawned(this, o);
 		// Ensure we pass a full vec3 to onspawn (z defaults to 0)
@@ -130,7 +121,7 @@ export class Space  {
 			reason: skip_ondespawn_event ? 'transfer' : 'despawn',
 		});
 	if (index > -1) this.objects.splice(index, 1);
-	this._id2objMap.delete(o.id);
+	this.objectsById.delete(o.id);
 	world.objToSpaceMap.delete(o.id);
 	world.onObjectExiled(this, o);
 		if (world.depthDirtyBatch) world.depthDirtyBatch.add(this.id); else this.depthSortDirty = true;
@@ -163,10 +154,10 @@ export class Space  {
 	@onload
 	public onloadSetup(): void {
 		// Rebuild fast id → object map from revived objects array
-		this._id2objMap.clear();
+		this.objectsById.clear();
 		if (!this.objects) throw new Error(`[Space:${this.id}] objects array is undefined during onloadSetup.`);
 		for (const o of this.objects) {
-			this._id2objMap.set(o.id, o);
+			this.objectsById.set(o.id, o);
 			// Register object → space mapping and per-space indexes in world
 			$.world.objToSpaceMap.set(o.id, this.id);
 			$.world.onObjectSpawned(this, o);

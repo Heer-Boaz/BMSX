@@ -10,8 +10,8 @@ import type { State } from '../fsm/state';
 import { ZCOORD_MAX } from '../render/backend/webgl/webgl.constants';
 import type { Identifier } from '../rompack/rompack';
 import { Input } from '../input/input';
-import { id_to_space_symbol } from '../core/space';
 import type { TimelineEndEventPayload, TimelineFrameEventPayload } from '../component/timeline_component';
+import { Timeline } from '../timeline/timeline';
 
 // Branded types (compile-time only)
 export type PlayerIndex = number & { readonly __brand: 'PlayerIndex' };
@@ -102,20 +102,20 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 	}
 	constructor(public gamepadIndex: number) {
 		super({ id: SelectedPlayerIndexIcon.getIconId(gamepadIndex) });
-		this.define_timeline({
+		this.define_timeline(new Timeline({
 			id: SelectedPlayerIndexIcon.TIMELINE_IDS.assigned,
 			frames: [true, false],
 			repetitions: 5,
 			playback_mode: 'once',
 			ticks_per_frame: 4,
-		});
-		this.define_timeline({
+		}));
+		this.define_timeline(new Timeline({
 			id: SelectedPlayerIndexIcon.TIMELINE_IDS.cancelled,
 			frames: [2],
 			repetitions: 16,
 			playback_mode: 'once',
 			ticks_per_frame: 1,
-		});
+		}));
 		this.z = ZCOORD_MAX; this.colorize = { r: 1, g: 1, b: 1, a: .75 };
 		this.imgid = 'joystick_none';
 
@@ -183,7 +183,9 @@ export class ControllerAssignmentUI extends WorldObject {
 		if (!icon) {
 			icon = new SelectedPlayerIndexIcon(gpIndex);
 			this.icons.set(gpIndex, icon);
-			$.world[id_to_space_symbol]['ui'].spawn(icon);
+			const uiSpace = $.world.getSpace('ui');
+			if (!uiSpace) throw new Error('[ControllerAssignmentUI] UI space not found while spawning icon.');
+			uiSpace.spawn(icon);
 		}
 		return icon;
 	}

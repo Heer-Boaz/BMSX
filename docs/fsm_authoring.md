@@ -141,7 +141,7 @@ private handle_path(path: string | string[]): [string, string[], State] {
 ## Authoring‑Richtlijnen (kort)
 
 - Handlers: geen arrows; gebruik `function (this: T, state: State, ...)`.
-- Events: prefix met `$` voor self‑scope; namen worden genormaliseerd; duplicaten worden gelogd.
+- Events: schrijf namen zonder speciale prefix; alles wordt lokaal afgehandeld via het object zijn `events`‑poort en dubbele registraties worden automatisch geweerd.
 - Paden (aanbevolen notatie):
   - Absoluut: `root:/menu/*`, `root:/fight/idle`
   - Relatief: `./jump/up`, `../nagenieten`

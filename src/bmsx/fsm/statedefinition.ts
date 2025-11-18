@@ -127,14 +127,13 @@ export class StateDefinition {
 	/**
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
 	 * At the individual state level, the `on` property defines the transitions that can occur from that specific state.
-	 * NOTE: If the `event_name` starts with a `$` (e.g. `$click`), the event will be triggered on the *local scope* (= self). Otherwise, it will be triggered on the *global scope*.
+	 * Event names are evaluated relative to the object emitting them, so no special `$` prefixes or manual scope declarations are required. Legacy blueprints that still prefix names with `$` are normalized automatically but it is discouraged.
 	 * @example
 	 * ```typescript
 	   * {
-		 *	'$click': 'idle',
+		 *	'click': 'idle',
 	   *	'game_end': 'prepare_for_end_of_the_world_I_mean_game',
-	 *		'$drag': {
-	 *			scope: 'self',
+	 *		'drag': {
 	 *			do(this: TargetClass, state: sstate) {
 	 *				if (!state.data.dragging) return;
 	 *				state.data.dragging = false;

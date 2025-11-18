@@ -1,6 +1,6 @@
 import type { EventListenerDisposer } from '../core/eventemitter';
-import { create_gameevent, type GameEvent } from '../core/game_event';
-import { Identifiable, Identifier } from '../rompack/rompack';
+import { type GameEvent } from '../core/game_event';
+import { Identifier } from '../rompack/rompack';
 import { insavegame, onload, excludepropfromsavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { ActiveStateMachines } from './fsmlibrary';
 import { type Stateful } from './fsmtypes';
@@ -296,19 +296,7 @@ export class StateMachineController {
 	 * @param emitter - The identifier or identifiable object that triggered the event.
 	 * @param args - Additional arguments to be passed to the event handlers.
 	 */
-	public dispatch_event(event: GameEvent): void;
-	public dispatch_event(event_name: string, emitter: Identifier | Identifiable, payload?: Record<string, unknown>): void;
-	public dispatch_event(arg0: GameEvent | string, emitter?: Identifier | Identifiable, payload?: Record<string, unknown>): void {
-		if (typeof arg0 === 'string') {
-			if (!emitter) throw new Error(`[StateMachineController] Legacy dispatch_event '${arg0}' missing emitter.`);
-			if (payload && typeof payload !== 'object') throw new Error(`[StateMachineController] Payload for '${arg0}' must be an object.`);
-			const resolvedEmitter = typeof emitter === 'string' ? ({ id: emitter } as Identifiable) : emitter;
-			if (payload && typeof payload !== 'object') throw new Error(`[StateMachineController] Payload for '${arg0}' must be an object.`);
-			const legacy = create_gameevent({ type: arg0, emitter: resolvedEmitter, ...(payload ?? {}) });
-			this.dispatch_event(legacy);
-			return;
-		}
-		const event = arg0;
+	public dispatch_event(event: GameEvent): void {
 		for (const id in this.statemachines) {
 			this.statemachines[id].dispatch_event(event);
 		}

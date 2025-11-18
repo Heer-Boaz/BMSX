@@ -48,9 +48,10 @@ UI flow, combat ability gating, cutscenes, dialogue trees, and more.
 ## Runtime Capabilities
 
 - **Event Driven** – `on` / `input_event_handlers` map events to strings,
-  transition specs, or declarative action objects. Events can be scoped (`$foo`
-  for local) and the controller will subscribe/unsubscribe automatically at
-  bind/unbind time.
+  transition specs, or declarative action objects. Events are always bound to
+  the object (or service) that emits them, so authoring simply targets the
+  emitter's `events` port; the controller wires and unwires all declared
+  subscriptions automatically.
 - **Timeline System** – attach a `timeline` block to a state to drive sequences
   (animation frames, quiz steps, cinematic beats, etc.). Timelines are executed
   by the owning object's `TimelineComponent`, which emits `timeline.frame` /

@@ -20,7 +20,7 @@ import { createLuaTable, isLuaNativeValue, isLuaTable, setLuaTableCaseInsensitiv
 import { LuaRuntimeError, LuaError, LuaSyntaxError } from '../lua/errors';
 import { $ } from '../core/game';
 import { Service } from '../core/service';
-import { EventEmitter, type EventPayload, type EventHandler } from '../core/eventemitter';
+import { type EventPayload, type EventHandler } from '../core/eventemitter';
 import type { GameEvent } from '../core/game_event';
 import type { Identifier, Identifiable } from '../rompack/rompack';
 import { OverlayPipelineController } from '../core/pipelines/overlay_controller';
@@ -57,8 +57,6 @@ import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputM
 import { ConsoleMode } from './console_mode';
 import { EDITOR_TOGGLE_KEY, CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS } from './ide/constants';
 import { setDebuggerRuntimeAccessor } from './runtime_accessors';
-import type { TimelineDefinition } from '../timeline/timeline';
-import type { TimelineFrameEventPayload, TimelineEndEventPayload } from '../component/timeline_component';
 import {
 	emitDebuggerLifecycleEvent,
 	type DebuggerResumeMode,
@@ -191,12 +189,6 @@ export type ConsoleWorldObjectSpawnOptions = {
 	defaults?: Record<string, unknown> | null;
 };
 
-type ConsoleTimelineSpec = {
-	id: string;
-	definition: TimelineDefinition;
-	tapeNext?: unknown;
-	tapeEnd?: unknown;
-};
 
 type ConsoleWorldObjectDefinitionRecord = {
 	id: string;
@@ -283,7 +275,6 @@ class ConsoleScriptService extends Service {
 
 
 export class BmsxConsoleRuntime extends Service {
-	private static readonly CONSOLE_TIMELINE_MARK = '__consoleTimelineTransformed';
 	private static _instance: BmsxConsoleRuntime | null = null;
 	private static preservingWorldResetDepth = 0;
 	private static readonly MAX_FRAME_DELTA_MS = 250;
@@ -442,7 +433,7 @@ export class BmsxConsoleRuntime extends Service {
 		(fn, interpreter, thisArg, args) => this.invokeLuaHandler(fn, interpreter, thisArg, args),
 		(error, meta) => this.handleLuaHandlerError(error, meta),
 	);
-	private readonly consoleServiceEventListeners = new Map<string, { event: string; listener: EventHandler<any> }>();
+	private readonly consoleServiceEventListeners = new Map<string, () => void>();
 	private handledLuaErrors = new WeakSet<object>();
 	private pendingRuntimeErrorOverlay:
 		| {
@@ -4911,21 +4902,18 @@ export class BmsxConsoleRuntime extends Service {
 					return undefined;
 				}
 			};
-			EventEmitter.instance.on(eventName, listener, binding.service.id);
+			const disposer = binding.service.events.on(eventName, this, listener);
 			const key = `${binding.service.id}:${handler.__hid}`;
-			this.consoleServiceEventListeners.set(key, {
-				event: eventName,
-				listener,
-			});
+			this.consoleServiceEventListeners.set(key, disposer);
 		}
 	}
 
 	private unregisterLuaServiceEvents(serviceId: string): void {
-		for (const [key, entry] of Array.from(this.consoleServiceEventListeners.entries())) {
+		for (const [key, disposer] of Array.from(this.consoleServiceEventListeners.entries())) {
 			if (!key.startsWith(`${serviceId}:`)) {
 				continue;
 			}
-			EventEmitter.instance.off(entry.event, entry.listener);
+			disposer();
 			this.consoleServiceEventListeners.delete(key);
 		}
 	}
@@ -5010,128 +4998,12 @@ export class BmsxConsoleRuntime extends Service {
 		if (this.isLuaValue(blueprint)) {
 			const ctx = this.ensureMarshalContext({ moduleId, interpreter, path: ['blueprint'] });
 			const converted = this.luaValueToJs(blueprint as LuaValue, ctx) as StateMachineBlueprint;
-			BmsxConsoleRuntime.injectConsoleTimelineMetadata(machineId, converted);
 			return converted;
 		}
 		if (!this.isPlainObject(blueprint)) {
 			throw new Error(`[BmsxConsoleRuntime] FSM '${machineId}' blueprint must be a table.`);
 		}
-		const jsBlueprint = blueprint as StateMachineBlueprint;
-		BmsxConsoleRuntime.injectConsoleTimelineMetadata(machineId, jsBlueprint);
-		return jsBlueprint;
-	}
-
-	public static injectConsoleTimelineMetadata(machineId: string, blueprint: StateMachineBlueprint): void {
-		const marker = BmsxConsoleRuntime.CONSOLE_TIMELINE_MARK;
-		const tagged = blueprint as Record<string, unknown>;
-		if (tagged[marker]) return;
-		BmsxConsoleRuntime.rewriteConsoleTimelineBlueprint(machineId, blueprint);
-		tagged[marker] = true;
-	}
-
-	private static rewriteConsoleTimelineBlueprint(machineId: string, blueprint: StateMachineBlueprint): void {
-		if (!blueprint.states) return;
-		for (const [stateId, child] of Object.entries(blueprint.states)) {
-			BmsxConsoleRuntime.rewriteConsoleTimelineState(machineId, [stateId], child as StateMachineBlueprint);
-		}
-	}
-
-	private static rewriteConsoleTimelineState(machineId: string, path: string[], state: StateMachineBlueprint): void {
-		BmsxConsoleRuntime.applyConsoleTimelineCompatibility(machineId, path, state);
-		if (!state.states) return;
-		for (const [childId, child] of Object.entries(state.states)) {
-			BmsxConsoleRuntime.rewriteConsoleTimelineState(machineId, [...path, childId], child as StateMachineBlueprint);
-		}
-	}
-
-	private static applyConsoleTimelineCompatibility(machineId: string, path: string[], state: StateMachineBlueprint): void {
-		const spec = BmsxConsoleRuntime.extractConsoleTimelineSpec(machineId, path, state);
-		if (!spec) return;
-		BmsxConsoleRuntime.injectConsoleTimelineLifecycle(state, spec);
-		BmsxConsoleRuntime.injectConsoleTimelineHandlers(state, spec);
-	}
-
-	private static extractConsoleTimelineSpec(machineId: string, path: string[], state: StateMachineBlueprint): ConsoleTimelineSpec | null {
-		const timelineConfig = (state as { timeline?: unknown }).timeline;
-		if (!timelineConfig || typeof timelineConfig !== 'object') return null;
-		const timelineId = BmsxConsoleRuntime.makeConsoleTimelineId(machineId, path);
-		const definition = deep_clone(timelineConfig as Record<string, unknown>) as unknown as TimelineDefinition;
-		definition.id = typeof definition.id === 'string' && definition.id.length > 0 ? definition.id : timelineId;
-		if (definition.autotick === undefined) {
-			definition.autotick = (definition.ticks_per_frame ?? 0) !== 0;
-		}
-		delete (state as Record<string, unknown>).timeline;
-		const spec: ConsoleTimelineSpec = {
-			id: definition.id ?? timelineId,
-			definition,
-			tapeNext: (state as { tape_next?: unknown }).tape_next,
-			tapeEnd: (state as { tape_end?: unknown }).tape_end,
-		};
-		return spec;
-	}
-
-	private static injectConsoleTimelineLifecycle(state: StateMachineBlueprint, spec: ConsoleTimelineSpec): void {
-		const originalEnter = typeof state.entering_state === 'function' ? state.entering_state : undefined;
-		const enterReturn = typeof state.entering_state === 'string' ? state.entering_state : undefined;
-		state.entering_state = function (this: WorldObject, runtimeState: State) {
-			this.define_timeline(spec.definition);
-			this.play_timeline(spec.id, { rewind: true, snap_to_start: true });
-			(runtimeState as any).current_tape_value = spec.definition.frames.length > 0 ? spec.definition.frames[0] : undefined;
-			(runtimeState as any).is_at_tape_end = false;
-			if (originalEnter) {
-				return originalEnter.call(this, runtimeState);
-			}
-			if (enterReturn) return enterReturn;
-			return undefined;
-		};
-		const originalExit = typeof state.exiting_state === 'function' ? state.exiting_state : undefined;
-		const exitReturn = typeof state.exiting_state === 'string' ? state.exiting_state : undefined;
-		state.exiting_state = function (this: WorldObject, runtimeState: State) {
-			this.stop_timeline(spec.id);
-			if (originalExit) {
-				return originalExit.call(this, runtimeState);
-			}
-			if (exitReturn) return exitReturn;
-			return undefined;
-		};
-	}
-
-	private static injectConsoleTimelineHandlers(state: StateMachineBlueprint, spec: ConsoleTimelineSpec): void {
-		const onBag = state.on ?? (state.on = {});
-		const frameKey = `timeline.frame:${spec.id}`;
-		onBag[frameKey] = {
-			do(this: any, runtimeState: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload>) {
-				(runtimeState as any).current_tape_value = event.frame_value;
-				return BmsxConsoleRuntime.runConsoleTapeHandler(spec.tapeNext, this, runtimeState, { tape_rewound: event.rewound });
-			},
-		};
-		const endKey = `timeline.end:${spec.id}`;
-		onBag[endKey] = {
-			do(this: any, runtimeState: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
-				(runtimeState as any).is_at_tape_end = true;
-				return BmsxConsoleRuntime.runConsoleTapeHandler(spec.tapeEnd, this, runtimeState, event);
-			},
-		};
-	}
-
-	private static runConsoleTapeHandler(
-		handler: unknown,
-		owner: any,
-		runtimeState: State,
-		payload: Record<string, unknown> | TimelineEndEventPayload | undefined,
-	): transition_target | void {
-		if (!handler) return undefined;
-		if (typeof handler === 'string') return handler;
-		if (typeof handler === 'function') {
-			return handler(owner, runtimeState, payload);
-		}
-		return undefined;
-	}
-
-	private static makeConsoleTimelineId(machineId: string, path: string[]): string {
-		const segments = [machineId, ...path].map(seg => seg.replace(/[:/#]+/g, '.'));
-		const normalized = segments.join('.').replace(/\.+/g, '.');
-		return `${normalized}.timeline`;
+		return blueprint as StateMachineBlueprint;
 	}
 
 	private unregisterLuaStateMachine(machineId: string): void {

@@ -3,7 +3,6 @@ import { WorldObject } from '../core/object/worldobject';
 import { $, } from '../core/game';
 import { ZCOORD_MAX } from '../render/backend/webgl/webgl.constants';
 import { BFont } from '../core/font';
-import { id_to_space_symbol } from '../core/space';
 import type { RenderProducerContext } from '../component/customvisual_component';
 
 
@@ -51,7 +50,9 @@ class Toast extends WorldObject {
 
 export function spawnToast(text: string, font?: BFont, ms?: number): void {
 	const o = new Toast({ text, font, ms });
-	$.world[id_to_space_symbol]['ui'].spawn(o);
+	const uiSpace = $.world.getSpace('ui');
+	if (!uiSpace) throw new Error('[UIToast] UI space not found while showing toast.');
+	uiSpace.spawn(o);
 }
 
 export function controllerUnassignedToast(): void {
