@@ -29,12 +29,9 @@ export class CameraPathBinder {
 			throw new Error('[CameraPathBinder] startShake requires a parameter object.');
 		}
 		this.shakeActive = true;
-		const amp = 'amp' in d ? d.amp : undefined;
-		this.shakeAmp = typeof amp === 'number' ? amp : 0.2;
-		const freq = 'freq' in d ? d.freq : undefined;
-		this.shakeFreq = typeof freq === 'number' ? freq : 20;
-		const durationVal = 'duration' in d ? d.duration : undefined;
-		const dur = typeof durationVal === 'number' ? durationVal : 0.5;
+		this.shakeAmp = typeof d.amp === 'number' ? d.amp : 0.2;
+		this.shakeFreq = typeof d.freq === 'number' ? d.freq : 20;
+		const dur = typeof d.duration === 'number' ? d.duration : 0.5;
 		this.shakeStart = this.tAccum;
 		this.shakeEnd = this.tAccum + dur;
 	}
@@ -42,17 +39,14 @@ export class CameraPathBinder {
 		if (!d || typeof d !== 'object') {
 			throw new Error('[CameraPathBinder] startFovPulse requires a parameter object.');
 		}
-		const deltaVal = 'delta' in d ? d.delta : undefined;
-		const delta = typeof deltaVal === 'number' ? deltaVal : 10;
-		const durationVal = 'duration' in d ? d.duration : undefined;
-		this.fovPulseDur = typeof durationVal === 'number' ? durationVal : 0.4;
+		const delta = typeof d.delta === 'number' ? d.delta : 10;
+		this.fovPulseDur = typeof d.duration === 'number' ? d.duration : 0.4;
 		this.fovPulseActive = true;
 		this.fovPulseFrom = this.cameraObj.camera.fovDeg;
 		this.fovPulseTo = this.baseFov + delta;
 		this.fovPulseStart = this.tAccum;
 		this.fovPulseEnd = this.tAccum + this.fovPulseDur;
-		const curveNameValue = 'curve' in d ? d.curve : undefined;
-		const curveName = (typeof curveNameValue === 'string' && curveNameValue.length > 0) ? curveNameValue : 'easeOutQuad';
+		const curveName = (typeof d.curve === 'string' && d.curve.length > 0) ? d.curve : 'easeOutQuad';
 		const curves: Record<string, (t: number) => number> = {
 			linear: t => t,
 			easeOutQuad: t => 1 - (1 - t) * (1 - t),

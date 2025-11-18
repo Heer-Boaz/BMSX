@@ -1,7 +1,7 @@
 import { ECSystem, TickGroup } from '../ecs/ecsystem';
 import { $ } from '../core/game';
 import type { World } from '../core/world';
-import { Collision2DSystem } from '../service/collision2d_service';
+import { Collision2DSystem } from '../ecs/overlap2d_system';
 
 type PhysicsBodyOptions = {
 	mass?: number;

@@ -23,8 +23,7 @@ import { HandlerRegistry } from './handlerregistry';
 import { filter_iterable } from '../utils/filter_iterable';
 import { make_index_proxy } from '../utils/make_index_proxy';
 import { shallowcopy } from '../utils/shallowcopy';
-import { Collision2DSystem } from '../service/collision2d_service';
-import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
+import { Collision2DSystem } from '../ecs/overlap2d_system';
 import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
 import { build_fsm } from '../fsm/fsmdecorators';
 
@@ -489,16 +488,12 @@ export class World implements Stateful, RegisterablePersistent {
 	 */
 	public run(deltaTime: number): void {
 		this.systems.beginFrame();
-		GameplayCommandBuffer.instance.beginFrame($.turnCounter ?? 0);
 		GameplayEventRecorder.instance.beginFrame($.turnCounter ?? 0);
 
 		try {
 			// Phase 1: Input → command submission (no gameplay writes)
 			this._currentPhase = TickGroup.Input;
 			this.systems.updatePhase(this, TickGroup.Input);
-
-			const commandSnapshot = GameplayCommandBuffer.instance.snapshot();
-			if (commandSnapshot.length > 0) GameplayEventRecorder.instance.recordCommands(commandSnapshot);
 
 			// Phase 2: Ability instances / montages
 			this._currentPhase = TickGroup.AbilityUpdate;

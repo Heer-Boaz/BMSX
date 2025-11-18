@@ -4,7 +4,7 @@ import { CameraObject } from '../core/object/cameraobject';
 import { EventEmitter, type ListenerSet } from '../core/eventemitter';
 import { $ } from '../core/game';
 import { WorldObject } from '../core/object/worldobject';
-import { Collision2DSystem } from '../service/collision2d_service';
+import { Collision2DSystem } from '../ecs/overlap2d_system';
 import { Registry } from '../core/registry';
 import { SpriteObject } from '../core/object/sprite';
 import { div_vec2, new_vec2 } from '../utils/vector_operations';

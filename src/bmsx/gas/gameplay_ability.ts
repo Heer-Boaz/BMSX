@@ -1,6 +1,5 @@
 import { $ } from '../core/game';
 import { create_gameevent, type GameEvent } from '../core/game_event';
-import { GameplayCommandBuffer, type GameplayCommand } from '../ecs/gameplay_command_buffer';
 import type { WorldObject } from '../core/object/worldobject';
 import type { Facing, Identifier } from '../rompack/rompack';
 import type { AbilityId, AbilityRequestOptions, AbilityRequestResult, AbilitySpec, TagId } from './gastypes';
@@ -440,11 +439,11 @@ export class GameplayAbilityExecution {
 	public dispatch_mode(event: GameEvent, target: Identifier | undefined): void {
 		if (!event.emitter) event.emitter = this.owner;
 		const targetId = target ?? this.owner.id;
-		GameplayCommandBuffer.instance.push({
-			kind: 'emit',
-			target_id: targetId,
-			event,
-		});
+		const targetOwner = targetId === this.owner.id ? this.owner : $.world.getWorldObject(targetId);
+		if (!targetOwner) {
+			throw new Error(`[GameplayAbilityExecution] Event target '${targetId}' not found for ability '${this.definition.id}'.`);
+		}
+		targetOwner.sc.dispatch_event(event);
 	}
 
 	public dispatchMode(event: GameEvent, target: Identifier | undefined): void {
@@ -458,14 +457,6 @@ export class GameplayAbilityExecution {
 
 	public emitGameplay(event: GameEvent): void {
 		this.emit_gameplay(event);
-	}
-
-	public push_command(command: GameplayCommand): void {
-		GameplayCommandBuffer.instance.push(command);
-	}
-
-	public pushCommand(command: GameplayCommand): void {
-		this.push_command(command);
 	}
 
 	public request_ability<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult {
@@ -506,7 +497,7 @@ export class GameplayAbilityExecution {
 		for (let i = 0; i < pathParts.length; i++) {
 			const key = pathParts[i];
 			if (!key) continue;
-			if (current == null || !(key in current)) {
+			if (current == null || current[key] === undefined) {
 				if (spec.optional) return undefined;
 				if (spec.fallback) return this.resolveValue(spec.fallback);
 				throw new Error(`[GameplayAbilityExecution] Intent path '${spec.path}' is undefined.`);
@@ -574,7 +565,7 @@ type VarOptions =
 
 export function fromIntent(path?: string, options?: IntentOptions): IntentValueSpec {
 	if (!options) return { kind: 'intent', path };
-	if ('optional' in options && options.optional === true) {
+	if (options.optional === true) {
 		return { kind: 'intent', path, optional: true };
 	}
 	const { optional, fallback } = options;
@@ -583,7 +574,7 @@ export function fromIntent(path?: string, options?: IntentOptions): IntentValueS
 
 export function fromVar(name: string, options?: VarOptions): VarValueSpec {
 	if (!options) return { kind: 'var', name };
-	if ('optional' in options && options.optional === true) {
+	if (options.optional === true) {
 		return { kind: 'var', name, optional: true };
 	}
 	const { optional, fallback } = options;

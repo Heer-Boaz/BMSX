@@ -24,8 +24,6 @@ import {
 	type AbilityWaitInstruction,
 	type GameplayAbilityDefinition
 } from '../gas/gameplay_ability';
-import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
-import type { GameplayCommand } from '../ecs/gameplay_command_buffer';
 import { GameEvent } from '../core/game_event';
 
 export type AbilityTagSnapshot = {
@@ -94,8 +92,7 @@ export class AbilitySystemComponent extends Component {
 	private _runnerCounter = 0;
 
 	public request_ability<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult {
-		const payload = opts && 'payload' in opts ? (opts as { payload?: AbilityPayloadFor<Id> }).payload : undefined;
-		abilityRegistry.validate(id, payload);
+		const payload = opts?.payload;
 		const failure = this.can_activate_reason(id);
 		if (failure) {
 			this.notify_ability_failed(id, failure);
@@ -104,14 +101,8 @@ export class AbilitySystemComponent extends Component {
 			}
 			return { ok: false as const, reason: failure };
 		}
-		const command: GameplayCommand = {
-			kind: 'activateability',
-			owner: this.parent.id,
-			ability_id: id,
-		};
-	if (payload !== undefined) (command as any).payload = payload as AbilityPayloadFor<AbilityId>;
-		GameplayCommandBuffer.instance.push(command);
-		return { ok: true };
+		const activated = this.try_activate(id, payload);
+		return activated ? { ok: true } : { ok: false as const, reason: 'activation failed' };
 	}
 
 	constructor(opts: ComponentAttachOptions) {

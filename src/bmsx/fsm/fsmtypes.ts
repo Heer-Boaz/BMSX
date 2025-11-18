@@ -1,4 +1,3 @@
-import type { GameplayCommand } from '../ecs/gameplay_command_buffer';
 import type { EventPort } from '../core/eventemitter';
 import type { Identifier, Registerable } from '../rompack/rompack';
 import type { StateMachineController } from "./fsmcontroller";
@@ -119,10 +118,6 @@ export interface StateActionAdjustSpec {
 	adjust: ApplyAdjustPropertyOptions;
 }
 
-export interface StateActionSubmitCommandSpec {
-	command: GameplayCommand;
-}
-
 export interface StateActionTagsSpec {
 	tags: {
 		add?: any;
@@ -210,7 +205,6 @@ export type StateActionSpec =
 	| StateActionActivateAbilitySpec
 	| StateActionInvokeSpec
 	| StateActionConsumeActionSpec
-	| StateActionSubmitCommandSpec
 	| Identifier; // State identifier to transition to
 
 export interface StateEventDefinition<T extends Stateful = any> {

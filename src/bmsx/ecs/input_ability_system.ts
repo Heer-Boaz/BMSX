@@ -2,12 +2,15 @@ import { $ } from '../core/game';
 import type { PlayerInput } from '../input/playerinput';
 import { ECSystem, TickGroup } from './ecsystem';
 import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
-import { GameplayCommandBuffer } from './gameplay_command_buffer';
 import type { WorldObject } from '../core/object/worldobject';
 import { InputAbilityComponent } from '../component/inputabilitycomponent';
+import { InputIntentComponent, type InputIntentBinding, type InputIntentEdgeAssignment } from '../component/inputintentcomponent';
 import { compileProgram, validateProgramAbilities, type CompiledProgram, type CompiledBinding, type BindingExecutionEnv, type PatternPredicate, type EffectExecutor } from '../gas/input_ability_compiler';
 import { isInputAbilityProgram, type InputAbilityProgram } from '../gas/input_ability_dsl';
 import { filter_iterable } from '../utils/filter_iterable';
+import { deep_clone } from '../utils/deep_clone';
+
+type IntentEdge = 'press' | 'hold' | 'release';
 
 let assetProgramsValidated = false;
 
@@ -51,6 +54,29 @@ export class InputAbilitySystem extends ECSystem {
 
 	public override update(): void {
 		this.frameLatchTouched.clear();
+		this.processInputIntents();
+		this.processInputAbilityPrograms();
+		const latchedKeys = Array.from(this.bindingLatch.keys());
+		for (let idx = 0; idx < latchedKeys.length; idx++) {
+			const key = latchedKeys[idx]!;
+			if (!this.frameLatchTouched.has(key)) this.bindingLatch.delete(key);
+		}
+	}
+
+	private processInputIntents(): void {
+		const world = $.world;
+		for (const [owner, component] of filter_iterable(world.objects_with_components(InputIntentComponent, { scope: 'active' }), ([obj]) => this.isEligibleObject(obj))) {
+			if (!component.bindings || component.bindings.length === 0) continue;
+			const input = this.resolveIntentPlayerInput(component, owner);
+			if (!input) continue;
+			for (let index = 0; index < component.bindings.length; index++) {
+				const binding = component.bindings[index]!;
+				this.evaluateIntentBinding(owner, input, binding);
+			}
+		}
+	}
+
+	private processInputAbilityPrograms(): void {
 		for (let [obj, component] of filter_iterable($.world.objects_with_components(InputAbilityComponent, { scope: 'active' }), (item: [ WorldObject, InputAbilityComponent]) => this.isEligibleObject(item[0]))) {
 			const program = this.resolveCompiledProgram(component);
 			const programKey = this.resolveProgramKey(component, obj);
@@ -91,18 +117,93 @@ export class InputAbilitySystem extends ECSystem {
 			for (let idx = 0; idx < queuedEvents.length; idx++) {
 				const evt = queuedEvents[idx]!;
 				if (!evt.emitter) evt.emitter = obj;
-				GameplayCommandBuffer.instance.push({
-					kind: 'emit',
-					target_id: obj.id,
-					event: evt,
-				});
+				obj.sc.dispatch_event(evt);
 			}
 		}
-		const latchedKeys = Array.from(this.bindingLatch.keys());
-		for (let idx = 0; idx < latchedKeys.length; idx++) {
-			const key = latchedKeys[idx]!;
-			if (!this.frameLatchTouched.has(key)) this.bindingLatch.delete(key);
+	}
+
+	private evaluateIntentBinding(owner: WorldObject, input: PlayerInput, binding: InputIntentBinding): void {
+		const action = binding.action?.trim();
+		if (!action) {
+			return;
 		}
+		const state = input.getActionState(action);
+		if (state.justpressed && binding.press) {
+			this.runIntentAssignments(owner, input, binding, 'press', binding.press);
+		}
+		if (state.pressed && binding.hold) {
+			this.runIntentAssignments(owner, input, binding, 'hold', binding.hold);
+		}
+		if (state.justreleased && binding.release) {
+			this.runIntentAssignments(owner, input, binding, 'release', binding.release);
+		}
+	}
+
+	private runIntentAssignments(
+		owner: WorldObject,
+		input: PlayerInput,
+		binding: InputIntentBinding,
+		edge: IntentEdge,
+		spec: InputIntentEdgeAssignment,
+	): void {
+		const assignments = Array.isArray(spec) ? spec : [spec];
+		for (let i = 0; i < assignments.length; i++) {
+			const assignment = assignments[i];
+			if (!assignment) continue;
+			const path = assignment.path?.trim();
+			if (!path) continue;
+			const shouldClear = assignment.clear === true || (assignment.value === undefined && edge === 'release');
+			const resolvedValue = shouldClear
+				? undefined
+				: assignment.value === undefined
+					? edge === 'hold' || edge === 'press'
+						? true
+						: undefined
+					: assignment.value;
+			this.assignOwnerPath(owner, path, resolvedValue, shouldClear);
+			if (assignment.consume === true) {
+				input.consumeAction(binding.action);
+			}
+		}
+	}
+
+	private assignOwnerPath(owner: WorldObject, path: string, value: unknown, clear: boolean): void {
+		const segments = path.split('.');
+		if (segments.length === 0) return;
+		let target: Record<string, unknown> = owner as unknown as Record<string, unknown>;
+		for (let index = 0; index < segments.length - 1; index++) {
+			const key = segments[index]!;
+			let next = target[key];
+			if (!next || typeof next !== 'object') {
+				next = {};
+				target[key] = next as never;
+			}
+			target = next as Record<string, unknown>;
+		}
+		const finalKey = segments[segments.length - 1]!;
+		if (clear) {
+			if (Array.isArray(target)) {
+				delete (target as unknown as Record<string, unknown>)[finalKey];
+			} else {
+				delete target[finalKey];
+			}
+			return;
+		}
+		if (value && typeof value === 'object') {
+			target[finalKey] = deep_clone(value as Record<string, unknown>);
+			return;
+		}
+		target[finalKey] = value as never;
+	}
+
+	private resolveIntentPlayerInput(component: InputIntentComponent, owner: WorldObject): PlayerInput | null {
+		const explicitIndex = component.playerIndex ?? 0;
+		const fallback = (owner as { player_index?: number }).player_index ?? 0;
+		const resolved = explicitIndex > 0 ? explicitIndex : fallback;
+		if (resolved <= 0) {
+			throw new Error(`[InputAbilitySystem] Unable to resolve player index for object '${owner.id ?? '<unknown>'}'.`);
+		}
+		return $.input.getPlayerInput(resolved);
 	}
 
 	private resolveProgramKey(component: InputAbilityComponent, owner: WorldObject): string {

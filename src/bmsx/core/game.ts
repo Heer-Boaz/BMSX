@@ -388,7 +388,7 @@ export class Game {
 							cursor = undefined;
 							break;
 						}
-						if (cursor && typeof cursor === 'object' && segment in (cursor as Record<string, unknown>)) {
+						if (cursor && typeof cursor === 'object' && (cursor as Record<string, unknown>)[segment] !== undefined) {
 							cursor = (cursor as Record<string, unknown>)[segment];
 						} else {
 							cursor = undefined;
@@ -602,19 +602,19 @@ export class Game {
 	 * @returns void
 	 */
 	public update(deltaTime: number): void {
-        const world = $.world;
-        // Step physics first so world object logic can react to post-collision resolved positions.
-        try {
-            world.run(deltaTime);
-        } catch (error) {
-            // Surface engine/runtime errors to the Console editor when active
-            const consoleRuntime = BmsxConsoleRuntime.instance;
-            if (consoleRuntime) {
-                try { consoleRuntime.reportEngineError(error); } catch { /* ignore secondary failures */ }
-            }
-            // Abort the remainder of this update to keep state coherent this frame.
-            return;
-        }
+		const world = $.world;
+		// Step physics first so world object logic can react to post-collision resolved positions.
+		try {
+			world.run(deltaTime);
+		} catch (error) {
+			// Surface engine/runtime errors to the Console editor when active
+			const consoleRuntime = BmsxConsoleRuntime.instance;
+			if (consoleRuntime) {
+				try { consoleRuntime.reportEngineError(error); } catch { /* ignore secondary failures */ }
+			}
+			// Abort the remainder of this update to keep state coherent this frame.
+			return;
+		}
 
 		if (REWIND_BUFFER_ACTIVATED && ($._turnCounter % REWIND_BUFFER_WRITE_FREQUENCY === 0)) {
 			// --- Rewind snapshot logic ---
