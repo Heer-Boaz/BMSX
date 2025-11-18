@@ -253,10 +253,10 @@ export class TimelineComponent extends Component<WorldObject> {
 		const baseEvent = create_gameevent({ type: baseType, emitter: owner, ...payload });
 		owner.events.emitEvent(baseEvent);
 		owner.sc.dispatch_event(baseEvent);
-		const suffixedType = `${baseType}:${payload.timeline_id}`;
-		const suffixedEvent = create_gameevent({ type: suffixedType, emitter: owner, ...payload });
-		owner.events.emitEvent(suffixedEvent);
-		owner.sc.dispatch_event(suffixedEvent);
+		const scopedType = `${baseType}.${payload.timeline_id}`;
+		const scopedEvent = create_gameevent({ type: scopedType, emitter: owner, ...payload });
+		owner.events.emitEvent(scopedEvent);
+		owner.sc.dispatch_event(scopedEvent);
 	}
 
 	private dispatch_frame_listeners(id: string, payload: TimelineFrameEventPayload): void {

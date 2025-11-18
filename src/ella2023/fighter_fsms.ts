@@ -241,7 +241,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 								this.jumpAscendingTick(state);
 							},
 							on: {
-								[`timeline.end:${TIMELINE_IDS.jumpAscending}`]: {
+								[`timeline.end.${TIMELINE_IDS.jumpAscending}`]: {
 									scope: 'self',
 									do(this: Fighter) {
 										return '../descending';
@@ -257,7 +257,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 								this.jumpDescendingTick(state);
 							},
 							on: {
-								[`timeline.end:${TIMELINE_IDS.jumpDescending}`]: {
+								[`timeline.end.${TIMELINE_IDS.jumpDescending}`]: {
 									scope: 'self',
 									do(this: Fighter) {
 										return GROUND_IDLE_STATE_PATH;
@@ -316,13 +316,13 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 						this.handleStoerAnimationEnd(state, event);
 					},
 				},
-				[`timeline.frame:${TIMELINE_IDS.stoerheidsdans}`]: {
+				[`timeline.frame.${TIMELINE_IDS.stoerheidsdans}`]: {
 					scope: 'self',
 					do(this: Fighter, state: State, event: TimelineFrameEvent) {
 						this.handleStoerTimelineFrame(state, event);
 					},
 				},
-				[`timeline.end:${TIMELINE_IDS.stoerheidsdans}`]: {
+				[`timeline.end.${TIMELINE_IDS.stoerheidsdans}`]: {
 					scope: 'self',
 					do(this: Fighter, state: State) {
 						return this.completeStoerheidsdans(state);
@@ -405,7 +405,7 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 						this.play_animation_timeline(TIMELINE_IDS.walkStep1);
 					},
 					on: {
-						[`timeline.end:${TIMELINE_IDS.walkStep1}`]: {
+						[`timeline.end.${TIMELINE_IDS.walkStep1}`]: {
 							scope: 'self',
 							do(this: Fighter) {
 								this.handle_animation_timeline_end(TIMELINE_IDS.walkStep1);
@@ -420,7 +420,7 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 						this.play_animation_timeline(TIMELINE_IDS.walkStep2);
 					},
 					on: {
-						[`timeline.end:${TIMELINE_IDS.walkStep2}`]: {
+						[`timeline.end.${TIMELINE_IDS.walkStep2}`]: {
 							scope: 'self',
 							do(this: Fighter) {
 								this.handle_animation_timeline_end(TIMELINE_IDS.walkStep2);
@@ -453,7 +453,7 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 				this.play_animation_timeline(TIMELINE_IDS.humiliated);
 			},
 			on: {
-				[`timeline.end:${TIMELINE_IDS.humiliated}`]: {
+				[`timeline.end.${TIMELINE_IDS.humiliated}`]: {
 					scope: 'self',
 					do(this: Fighter) {
 						this.handle_animation_timeline_end(TIMELINE_IDS.humiliated);
@@ -521,7 +521,7 @@ function createAttackAnimationState(name: AttackType, weaponClass: 'light' | 'he
 			$.emit_gameplay('combat.attack', this, { animation_name: name, weaponClass });
 		},
 		on: {
-			[`timeline.end:${timelineId}`]: {
+			[`timeline.end.${timelineId}`]: {
 				scope: 'self',
 				do(this: Fighter, _state: State) {
 					this.handle_animation_timeline_end(timelineId);

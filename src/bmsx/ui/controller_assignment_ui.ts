@@ -60,14 +60,14 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 						this.play_timeline(ASSIGNED_TIMELINE_ID, { rewind: true, snap_to_start: true });
 					},
 				on: {
-					[`timeline.frame:${ASSIGNED_TIMELINE_ID}`]: {
-						do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload>) {
+					[`timeline.frame.${ASSIGNED_TIMELINE_ID}`]: {
+						do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame.assigned', TimelineFrameEventPayload>) {
 							const visible = event.frame_value === true;
 							this.colorize = visible ? { r: 1, g: 1, b: 1, a: .5 } : { r: 0, g: 1, b: 0, a: .75 };
 						},
 					},
-					[`timeline.end:${ASSIGNED_TIMELINE_ID}`]: {
-						do(this: SelectedPlayerIndexIcon, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+					[`timeline.end.${ASSIGNED_TIMELINE_ID}`]: {
+						do(this: SelectedPlayerIndexIcon, _state: State, _event: GameEvent<'timeline.end.assigned', TimelineEndEventPayload>) {
 							this.notifyAnimationEnd();
 						},
 					},
@@ -79,13 +79,13 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 						this.play_timeline(CANCELLED_TIMELINE_ID, { rewind: true, snap_to_start: true });
 					},
 						on: {
-							[`timeline.frame:${CANCELLED_TIMELINE_ID}`]: {
-								do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
+							[`timeline.frame.${CANCELLED_TIMELINE_ID}`]: {
+								do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame.cancelled', TimelineFrameEventPayload<number>>) {
 								this.y -= event.frame_value;
 							},
 						},
-						[`timeline.end:${CANCELLED_TIMELINE_ID}`]: {
-							do(this: SelectedPlayerIndexIcon, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+						[`timeline.end.${CANCELLED_TIMELINE_ID}`]: {
+							do(this: SelectedPlayerIndexIcon, _state: State, _event: GameEvent<'timeline.end.cancelled', TimelineEndEventPayload>) {
 							this.notifyAnimationEnd();
 						},
 					},

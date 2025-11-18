@@ -151,10 +151,9 @@ export class SpriteComponent extends Component {
 
 	private observe_timeline(id: string): void {
 		if (this.timeline_followers.has(id)) return;
-		const remove = this.parent.on_timeline_event(id, {
-			frame: event => {
-				this.imgid = event.frame_value as asset_id;
-			},
+		const channel = this.parent.timeline_events(id);
+		const remove = channel.on_frame(this, event => {
+			this.imgid = event.frame_value as asset_id;
 		});
 		this.timeline_followers.set(id, remove);
 	}

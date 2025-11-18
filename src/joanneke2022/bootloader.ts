@@ -270,13 +270,13 @@ class uitlegStuff extends SpriteObject {
 						}
 					},
 					on: {
-						[`timeline.frame:${uitlegStuff.TIMELINE_ID}`]: {
+						[`timeline.frame.${uitlegStuff.TIMELINE_ID}`]: {
 							scope: 'self',
 							do(this: uitlegStuff, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
 								_model.uitleg_tekst_dinges = event.frame_value ?? 0;
 							},
 						},
-						[`timeline.end:${uitlegStuff.TIMELINE_ID}`]: {
+						[`timeline.end.${uitlegStuff.TIMELINE_ID}`]: {
 							scope: 'self',
 							do() {
 								_model.sc.to('default');
@@ -403,13 +403,13 @@ class stoom extends SpriteObject {
 						this.play_timeline(stoom.TIMELINE_ID, { rewind: true, snapToStart: true });
 					},
 					on: {
-						[`timeline.frame:${stoom.TIMELINE_ID}`]: {
+						[`timeline.frame.${stoom.TIMELINE_ID}`]: {
 							scope: 'self',
 							do(this: stoom, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<BitmapId>>) {
 								this.imgid = event.frame_value ?? this.imgid;
 							},
 						},
-						[`timeline.end:${stoom.TIMELINE_ID}`]: {
+						[`timeline.end.${stoom.TIMELINE_ID}`]: {
 							scope: 'self',
 							do(this: stoom, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 								this.markForDisposal();
@@ -543,13 +543,13 @@ class draaischijf extends SpriteObject {
 					},
 					process_input: draaischijf.handle_input_slijp_opstart_state,
 					on: {
-						[`timeline.frame:${draaischijf.TIMELINE_IDS.start}`]: {
+						[`timeline.frame.${draaischijf.TIMELINE_IDS.start}`]: {
 							scope: 'self',
 							do(this: draaischijf, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<BitmapId>>) {
 								this.imgid = event.frame_value ?? this.imgid;
 							},
 						},
-						[`timeline.end:${draaischijf.TIMELINE_IDS.start}`]: {
+						[`timeline.end.${draaischijf.TIMELINE_IDS.start}`]: {
 							scope: 'self',
 							do(this: draaischijf, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 								this.sc.to('slijpen');
@@ -564,7 +564,7 @@ class draaischijf extends SpriteObject {
 					},
 					process_input: draaischijf.handle_input_slijp_state,
 					on: {
-						[`timeline.frame:${draaischijf.TIMELINE_IDS.active}`]: {
+						[`timeline.frame.${draaischijf.TIMELINE_IDS.active}`]: {
 							scope: 'self',
 							do(this: draaischijf, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<BitmapId>>) {
 								this.imgid = event.frame_value ?? this.imgid;
@@ -582,13 +582,13 @@ class draaischijf extends SpriteObject {
 					},
 					process_input: draaischijf.handle_input_slijp_afkoel_state,
 					on: {
-						[`timeline.frame:${draaischijf.TIMELINE_IDS.cooldown}`]: {
+						[`timeline.frame.${draaischijf.TIMELINE_IDS.cooldown}`]: {
 							scope: 'self',
 							do(this: draaischijf, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<BitmapId>>) {
 								this.imgid = event.frame_value ?? this.imgid;
 							},
 						},
-						[`timeline.end:${draaischijf.TIMELINE_IDS.cooldown}`]: {
+						[`timeline.end.${draaischijf.TIMELINE_IDS.cooldown}`]: {
 							scope: 'self',
 							do(this: draaischijf, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 								this.sc.to('idle');
@@ -789,13 +789,13 @@ class burn extends onvolmaaktheid {
 						this.play_timeline(burn.TIMELINE_IDS.active, { rewind: true, snapToStart: true });
 					},
 					on: {
-						[`timeline.frame:${burn.TIMELINE_IDS.active}`]: {
+						[`timeline.frame.${burn.TIMELINE_IDS.active}`]: {
 							scope: 'self',
 							do(this: burn, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<BitmapId>>) {
 								this.imgid = event.frame_value ?? this.imgid;
 							},
 						},
-						[`timeline.end:${burn.TIMELINE_IDS.active}`]: {
+						[`timeline.end.${burn.TIMELINE_IDS.active}`]: {
 							scope: 'self',
 							do(this: burn, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 								this.sc.to('gepolijst');
@@ -810,13 +810,13 @@ class burn extends onvolmaaktheid {
 						this.play_timeline(burn.TIMELINE_IDS.polished, { rewind: true, snapToStart: true });
 					},
 					on: {
-						[`timeline.frame:${burn.TIMELINE_IDS.polished}`]: {
+						[`timeline.frame.${burn.TIMELINE_IDS.polished}`]: {
 							scope: 'self',
 							do(this: burn, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<BitmapId>>) {
 								this.imgid = event.frame_value ?? this.imgid;
 							},
 						},
-						[`timeline.end:${burn.TIMELINE_IDS.polished}`]: {
+						[`timeline.end.${burn.TIMELINE_IDS.polished}`]: {
 							scope: 'self',
 							do(this: burn, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 								this.sc.to('wees_een_burn');
@@ -891,13 +891,13 @@ class barst extends onvolmaaktheid {
 						this.play_timeline(barst.TIMELINE_IDS.active, { rewind: true, snapToStart: true });
 					},
 					on: {
-						[`timeline.frame:${barst.TIMELINE_IDS.active}`]: {
+						[`timeline.frame.${barst.TIMELINE_IDS.active}`]: {
 							scope: 'self',
 							do(this: barst, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<BitmapId>>) {
 								this.imgid = event.frame_value ?? this.imgid;
 							},
 						},
-						[`timeline.end:${barst.TIMELINE_IDS.active}`]: {
+						[`timeline.end.${barst.TIMELINE_IDS.active}`]: {
 							scope: 'self',
 							do(this: barst, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 								this.sc.to('gepolijst');
@@ -913,7 +913,7 @@ class barst extends onvolmaaktheid {
 						this.play_timeline(barst.TIMELINE_IDS.polished, { rewind: true, snapToStart: true });
 					},
 					on: {
-						[`timeline.end:${barst.TIMELINE_IDS.polished}`]: {
+						[`timeline.end.${barst.TIMELINE_IDS.polished}`]: {
 							scope: 'self',
 							do(this: barst, _state: State, event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 								_model.spawn(new burn(this.zijde, copy_vector(this.pos)));

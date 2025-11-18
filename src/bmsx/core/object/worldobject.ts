@@ -10,7 +10,7 @@ import { ObjectTracker } from "../../utils/objecttracker";
 import { new_vec2, new_vec3 } from '../../utils/vector_operations';
 import { middlepoint_area, new_area } from '../../utils/rect_operations';
 import { StateDefinitions, registerHandlersForLinkedMachines } from '../../fsm/fsmlibrary';
-import { EventEmitter, EventPort, eventsOf } from "../eventemitter";
+import { EventChannel, EventEmitter, EventPort, eventsOf, type EventHandler, type EventListenerDisposer, type LocalSubscriptionOptions } from "../eventemitter";
 import { Registry } from "../registry";
 import { CustomVisualComponent } from '../../component/customvisual_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
@@ -271,6 +271,10 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 
 	public on_timeline_event(id: string, listener: TimelineListener): () => void {
 		return this.timeline_component.add_listener(id, listener);
+	}
+
+	public timeline_events(id: string): TimelineEventChannels {
+		return new TimelineEventChannels(this, id);
 	}
 
 	/**
@@ -954,6 +958,29 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		if (!(this.hitbox_left >= p.x || this.hitbox_right <= p.x || this.hitbox_bottom <= p.y || this.hitbox_top >= p.y))
 			return new_vec2(p.x - this.hitbox_left, p.y - this.hitbox_top);
 		return null;
+	}
+}
+
+export class TimelineEventChannels {
+	constructor(
+		private readonly owner: WorldObject,
+		private readonly timelineId: string,
+	) { }
+
+	public get frame(): EventChannel {
+		return this.owner.events.channel('timeline.frame', this.timelineId);
+	}
+
+	public get end(): EventChannel {
+		return this.owner.events.channel('timeline.end', this.timelineId);
+	}
+
+	public on_frame(subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer {
+		return this.frame.on(subscriber, handler, options);
+	}
+
+	public on_end(subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer {
+		return this.end.on(subscriber, handler, options);
 	}
 }
 

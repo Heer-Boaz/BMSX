@@ -28,6 +28,10 @@ const portCache = new WeakMap<Identifiable, EventPort>();
 export class EventPort {
 	constructor(private readonly emitter: Identifiable) { }
 
+	public channel(path: string, key?: string): EventChannel {
+		return new EventChannel(this, path, key);
+	}
+
 	emit(eventName: string, payload?: EventPayload): GameEvent {
 		const event = create_gameevent({ type: eventName, emitter: this.emitter, ...(payload ?? {}) });
 		EventEmitter.instance.emit(event);
@@ -47,6 +51,47 @@ export class EventPort {
 		if (options?.persistent !== undefined) opts.persistent = options.persistent;
 		EventEmitter.instance.on(eventName, handler, subscriber, opts);
 		return () => EventEmitter.instance.off(eventName, handler, this.emitter.id);
+	}
+}
+
+export class EventChannel {
+	private readonly baseSegments: string[];
+
+	constructor(
+		private readonly port: EventPort,
+		path: string,
+		private readonly key?: string,
+	) {
+		this.baseSegments = path.split('.').filter(segment => segment.length > 0);
+	}
+
+	private resolve(segment?: string): string {
+		const parts = [...this.baseSegments];
+		if (segment && segment.length > 0) parts.push(segment);
+		if (this.key && this.key.length > 0) parts.push(this.key);
+		return parts.join('.');
+	}
+
+	type(segment?: string): string {
+		return this.resolve(segment);
+	}
+
+	public emit(payload?: EventPayload): GameEvent;
+	public emit(segment: string, payload?: EventPayload): GameEvent;
+	public emit(arg?: string | EventPayload, payload?: EventPayload): GameEvent {
+		if (typeof arg === 'string') {
+			return this.port.emit(this.resolve(arg), payload);
+		}
+		return this.port.emit(this.resolve(), arg);
+	}
+
+	public on(subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer;
+	public on(segment: string, subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer;
+	public on(first: string | any, second?: any, third?: EventHandler, fourth?: LocalSubscriptionOptions): EventListenerDisposer {
+		if (typeof first === 'string') {
+			return this.port.on(this.resolve(first), second!, third!, fourth);
+		}
+		return this.port.on(this.resolve(), first, second!, third);
 	}
 }
 

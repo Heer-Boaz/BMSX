@@ -103,7 +103,7 @@ export class EilaModelFSM {
 					},
 					on: {
 						[RETURN_TO_TITLE_EVENT]: '/titlescreen',
-						[`timeline.frame:${GameOver.TIMEOUT_TIMELINE_ID}`]: {
+						[`timeline.frame.${GameOver.TIMEOUT_TIMELINE_ID}`]: {
 							scope: 'gameover',
 							do() {
 								return '/titlescreen';
@@ -124,7 +124,7 @@ export class EilaModelFSM {
 					},
 					on: {
 						[RETURN_TO_TITLE_EVENT]: '/titlescreen',
-						[`timeline.frame:${Hoera.TIMEOUT_TIMELINE_ID}`]: {
+						[`timeline.frame.${Hoera.TIMEOUT_TIMELINE_ID}`]: {
 							scope: 'hoera',
 							do() {
 								return '/titlescreen';

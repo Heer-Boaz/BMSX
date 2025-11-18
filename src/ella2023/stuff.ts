@@ -189,7 +189,7 @@ export class TitleScreen extends SpriteObject {
 								this.resetMenu();
 							},
 						},
-						[`timeline.frame:${TitleScreen.BLINK_TIMELINE_ID}`]: {
+						[`timeline.frame.${TitleScreen.BLINK_TIMELINE_ID}`]: {
 							scope: 'self',
 							do(this: TitleScreen, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<boolean>>) {
 								this.handleBlinkFrame(event.frame_value === true);
@@ -325,13 +325,13 @@ export class Gordijn extends WorldObject {
 								this.play_timeline(Gordijn.TIMELINE_ID, { rewind: true, snap_to_start: true });
 							},
 							on: {
-								[`timeline.frame:${Gordijn.TIMELINE_ID}`]: {
+								[`timeline.frame.${Gordijn.TIMELINE_ID}`]: {
 									scope: 'self',
 									do(this: Gordijn, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
 										this.width += event.frame_value;
 									},
 								},
-					[`timeline.end:${Gordijn.TIMELINE_ID}`]: {
+					[`timeline.end.${Gordijn.TIMELINE_ID}`]: {
 									scope: 'self',
 									do(this: Gordijn, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 										$.emit_presentation('curtained', this);
