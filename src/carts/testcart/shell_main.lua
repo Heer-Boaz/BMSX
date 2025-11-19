@@ -29,7 +29,7 @@ local function track_plain_input()
 	end
 end
 
-local Hero = {}
+Hero = {}
 Hero.__index = Hero
 
 function Hero:create(self)
@@ -109,60 +109,68 @@ local function build_hero_fsm()
 					local moved = self:run_motion(game.deltatime_seconds)
 					self:try_blink()
 					if moved then
-						return 'moving'
+						return '/moving'
 					end
 				end,
-				input_event_handlers = {
-					console_o = 'charging',
-					console_x = 'blinking',
+				process_input = function(self)
+					if game:get_action_state(1, 'console_o').guardedjustpressed then
+						return '/charging'
+					end
+					if game:get_action_state(1, 'console_x').guardedjustpressed then
+						return '/blinking'
+					end
+				end,
+				},
+				moving = {
+					entering_state = function(self)
+						self.active_state = 'moving'
+					end,
+					tick = function(self)
+						local moved = self:run_motion(game.deltatime_seconds)
+						self:try_blink()
+						if not moved then
+							return '/idle'
+						end
+					end,
+				process_input = function(self)
+					if game:get_action_state(1, 'console_o').guardedjustpressed then
+						return '/charging'
+					end
+					if game:get_action_state(1, 'console_x').guardedjustpressed then
+						return '/blinking'
+					end
+				end,
+			},
+				charging = {
+					entering_state = function(self)
+						self.active_state = 'charging'
+						self.charge_time = 0
+					end,
+					tick = function(self)
+						self.charge_time = self.charge_time + game.deltatime_seconds
+						self:run_motion(game.deltatime_seconds * 0.5)
+						self:try_blink()
+						if not game:get_action_state(1, 'console_o').pressed then
+							self.events:emit('demo.hero.charge', { time = self.charge_time })
+							return '/moving'
+						end
+					end,
+				},
+				blinking = {
+					entering_state = function(self)
+						self.active_state = 'blinking'
+						self:try_blink()
+					end,
+					tick = function(self)
+						local asc = self.abilitysystem
+						if not asc:has_gameplay_tag('demo.tag.blinking') then
+							return '/moving'
+						end
+					end,
 				},
 			},
-			moving = {
-				entering_state = function(self)
-					self.active_state = 'moving'
-				end,
-				tick = function(self)
-					local moved = self:run_motion(game.deltatime_seconds)
-					self:try_blink()
-					if not moved then
-						return 'idle'
-					end
-				end,
-				input_event_handlers = {
-					console_o = 'charging',
-					console_x = 'blinking',
-				},
-			},
-			charging = {
-				entering_state = function(self)
-					self.active_state = 'charging'
-					self.charge_time = 0
-				end,
-				tick = function(self)
-					self.charge_time = self.charge_time + game.deltatime_seconds
-					self:run_motion(game.deltatime_seconds * 0.5)
-					self:try_blink()
-					if not game:get_action_state(1, 'console_o').pressed then
-						self.events:emit('demo.hero.charge', { time = self.charge_time })
-						return 'moving'
-					end
-				end,
-			},
-			blinking = {
-				entering_state = function(self)
-					self.active_state = 'blinking'
-					self:try_blink()
-				end,
-				tick = function(self)
-					local asc = self.abilitysystem
-					if not asc:has_gameplay_tag('demo.tag.blinking') then
-						return 'moving'
-					end
-				end,
-			},
-		},
-	})
-end
+		})
+	end
 
 local function register_hero()
 	register_world_object({
@@ -245,7 +253,7 @@ local function build_snapshot()
 			timeline_head = timeline.head,
 		},
 		stats = demo.stats,
-		service = svc:get_state(),
+		service = Director:get_state(),
 		tick = demo.tick,
 	}
 end
@@ -268,8 +276,7 @@ function __bmsx_snapshot_load(snapshot)
 	hero.facing = snapshot.hero.facing
 	hero.active_state = snapshot.hero.active_state
 	hero:force_timeline_head(HERO_TIMELINE_ID, snapshot.hero.timeline_head)
-	local svc = service(SERVICE_ID)
-	svc:set_state(snapshot.service)
+	Director:set_state(snapshot.service)
 end
 
 local function init_runtime()
