@@ -94,17 +94,14 @@ const COMPONENT_DESCRIPTOR_RESERVED_KEYS = new Set<string>([
 	'className',
 	'type',
 	'preset',
-	'presetId',
-	'preset_id',
 	'params',
 	'arguments',
 	'options',
 	'config',
 	'id',
-	'idLocal',
 	'id_local',
 ]);
-const COMPONENT_OPTION_RESERVED_KEYS = new Set<string>(['id', 'idLocal', 'id_local']);
+const COMPONENT_OPTION_RESERVED_KEYS = new Set<string>(['id', 'id_local']);
 
 // Flip back to 'msx' to restore the legacy editor font.
 const EDITOR_FONT_VARIANT: ConsoleFontVariant = 'tiny';
@@ -5290,13 +5287,9 @@ export class BmsxConsoleRuntime extends Service {
 	private componentEntryKey(entry: ConsoleWorldObjectComponentEntry): string | null {
 		const raw =
 			entry.kind === 'component'
-				? (entry.descriptor.options as { id_local?: unknown }).id_local
-				: (entry.params as { id_local?: unknown }).id_local;
-		if (typeof raw !== 'string') {
-			return null;
-		}
-		const trimmed = raw.trim();
-		return trimmed.length > 0 ? trimmed.toLowerCase() : null;
+				? entry.descriptor.options.id_local
+				: entry.params.id_local;
+		return typeof raw === 'string' ? raw.toLowerCase() : null;
 	}
 
 	private prepareComponentOptions(
@@ -5321,12 +5314,8 @@ export class BmsxConsoleRuntime extends Service {
 		if (!source) {
 			return null;
 		}
-		const raw = (source as { id_local?: unknown }).id_local;
-		if (typeof raw !== 'string') {
-			return null;
-		}
-		const trimmed = raw.trim();
-		return trimmed.length > 0 ? trimmed : null;
+		const raw = source.id_local;
+		return typeof raw === 'string' ? raw : null;
 	}
 
 	private normalizeWorldObjectDefaults(raw: unknown, label: string): Record<string, unknown> | undefined {
