@@ -394,7 +394,7 @@ export class BmsxConsoleApi {
 		if (typeof definition_id !== 'string' || definition_id.trim().length === 0) {
 			throw new Error('[BmsxConsoleApi] spawn_object requires a non-empty definition id.');
 		}
-		const runtime = this.require_console_runtime('spawn_object');
+		const runtime = this.require_console_runtime();
 		const definition = runtime.getWorldObjectDefinition(definition_id.trim());
 		if (!definition) {
 			throw new Error(`[BmsxConsoleApi] World object definition '${definition_id}' is not registered.`);
@@ -449,7 +449,7 @@ export class BmsxConsoleApi {
 	}
 
 	public register_component(descriptor: Record<string, unknown>): string {
-		const runtime = this.require_console_runtime('register_component');
+		const runtime = this.require_console_runtime();
 		return runtime.registerComponentDefinition(descriptor);
 	}
 
@@ -458,7 +458,7 @@ export class BmsxConsoleApi {
 	}
 
 	public register_component_preset(descriptor: Record<string, unknown>): string {
-		const runtime = this.require_console_runtime('register_component_preset');
+		const runtime = this.require_console_runtime();
 		return runtime.registerComponentPreset(descriptor);
 	}
 
@@ -467,12 +467,12 @@ export class BmsxConsoleApi {
 	}
 
 	public register_world_object(descriptor: Record<string, unknown>): string {
-		const runtime = this.require_console_runtime('register_world_object');
+		const runtime = this.require_console_runtime();
 		return runtime.registerWorldObjectDefinition(descriptor);
 	}
 
 	public register_service(descriptor: Record<string, unknown>): Record<string, unknown> {
-		const runtime = this.require_console_runtime('register_service');
+		const runtime = this.require_console_runtime();
 		return runtime.registerServiceDefinition(descriptor);
 	}
 
@@ -481,7 +481,7 @@ export class BmsxConsoleApi {
 	}
 
 	public attach_component(object_id: Identifier, component: string | { id: string; id_local?: string; state?: Record<string, unknown> }): string {
-		const runtime = this.require_console_runtime('attach_component');
+		const runtime = this.require_console_runtime();
 		const object = this.require_world_object(object_id, 'attach_component');
 		const options = typeof component === 'string' ? { id: component } : (component ?? {});
 		const rawId = (options as { id?: unknown }).id;
@@ -489,8 +489,7 @@ export class BmsxConsoleApi {
 			throw new Error('[BmsxConsoleApi] attach_component requires an id field.');
 		}
 		const definition_id = rawId.trim();
-		const idLocalRaw = component.id_local;
-		const id_local = idLocalRaw;
+		const id_local = (options as { id_local?: string }).id_local;
 		const stateRaw = (options as { state?: unknown }).state;
 		let state: Record<string, unknown> | undefined;
 		if (stateRaw !== undefined) {
@@ -519,7 +518,7 @@ export class BmsxConsoleApi {
 	}
 
 	public register_ability(descriptor: Record<string, unknown>): string {
-		const runtime = this.require_console_runtime('register_ability');
+		const runtime = this.require_console_runtime();
 		const definition = runtime.registerAbilityDefinition(descriptor);
 		return definition.id;
 	}
@@ -532,7 +531,7 @@ export class BmsxConsoleApi {
 		if (typeof ability_id !== 'string' || ability_id.trim().length === 0) {
 			throw new Error('[BmsxConsoleApi] grant_ability requires a non-empty ability id.');
 		}
-		const runtime = this.require_console_runtime('grant_ability');
+		const runtime = this.require_console_runtime();
 		const object = this.require_world_object(object_id, 'grant_ability');
 		const asc = object.get_unique_component(AbilitySystemComponent);
 		if (!asc) {
@@ -672,9 +671,6 @@ export class BmsxConsoleApi {
 	}
 
 	public taskgate(name: string): GateGroup {
-		if (typeof name !== 'string' || name.length === 0) {
-			throw new Error('[BmsxConsoleApi] taskgate requires a non-empty group name.');
-		}
 		return taskGate.group(name);
 	}
 
@@ -682,12 +678,8 @@ export class BmsxConsoleApi {
 		return runGate;
 	}
 
-	private require_console_runtime(context: string): BmsxConsoleRuntime {
-		const runtime = BmsxConsoleRuntime.instance;
-		if (!runtime) {
-			throw new Error(`[BmsxConsoleApi] ${context} requires the console runtime to be active.`);
-		}
-		return runtime;
+	private require_console_runtime(): BmsxConsoleRuntime {
+		return BmsxConsoleRuntime.instance!;
 	}
 
 	public register_prepared_fsm(id: string, blueprint: StateMachineBlueprint, options?: { setup?: boolean }): void {
@@ -698,10 +690,7 @@ export class BmsxConsoleApi {
 	}
 
 	public register_behavior_tree(descriptor: Record<string, unknown>): void {
-		if (!descriptor || typeof descriptor !== 'object') {
-			throw new Error('[BmsxConsoleApi] register_behavior_tree requires a descriptor table.');
-		}
-		const runtime = this.require_console_runtime('register_behavior_tree');
+		const runtime = this.require_console_runtime();
 		runtime.registerBehaviorTreeDefinition(descriptor);
 	}
 
@@ -711,49 +700,16 @@ export class BmsxConsoleApi {
 	}
 
 	private resolve_world_object_constructor(class_ref: string): new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject {
-		if (typeof class_ref !== 'string' || class_ref.trim().length === 0) {
-			throw new Error('[BmsxConsoleApi] spawn_world_object requires a non-empty class reference.');
-		}
-		if (class_ref === 'WorldObject') {
-			return WorldObject as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
-		}
-		const ctorUnknown = this.resolve_constructor(class_ref.trim());
-		if (typeof ctorUnknown !== 'function') {
-			throw new Error(`[BmsxConsoleApi] World object constructor '${class_ref}' not found.`);
-		}
-		const ctor = ctorUnknown as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
-		if (!(ctor.prototype instanceof WorldObject)) {
-			throw new Error(`[BmsxConsoleApi] Constructor '${class_ref}' does not extend WorldObject.`);
-		}
-		return ctor;
+		return this.resolve_constructor(class_ref.trim()) as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
 	}
 
 	private resolve_component_constructor(class_ref: string): new (opts: Record<string, unknown>) => Component {
-		if (typeof class_ref !== 'string' || class_ref.trim().length === 0) {
-			throw new Error('[BmsxConsoleApi] Component reference must be a non-empty string.');
-		}
-		const ctorUnknown = this.resolve_constructor(class_ref.trim());
-		if (typeof ctorUnknown !== 'function') {
-			throw new Error(`[BmsxConsoleApi] Component constructor '${class_ref}' not found.`);
-		}
-		const ctor = ctorUnknown as new (opts: Record<string, unknown>) => Component;
-		if (!(ctor.prototype instanceof Component)) {
-			throw new Error(`[BmsxConsoleApi] Constructor '${class_ref}' does not extend Component.`);
-		}
-		return ctor;
+		return this.resolve_constructor(class_ref.trim()) as new (opts: Record<string, unknown>) => Component;
 	}
 
 	private resolve_constructor(ref: string): unknown {
-		if (!ref) return undefined;
 		const map = Reviver.constructors;
-		if (map && map[ref]) {
-			return map[ref];
-		}
-		const globalScope = globalThis as Record<string, unknown>;
-		if (globalScope && typeof globalScope[ref] === 'function') {
-			return globalScope[ref];
-		}
-		return undefined;
+		return map?.[ref] ?? (globalThis as Record<string, unknown>)[ref];
 	}
 
 	private normalize_spawn_options(raw: Record<string, unknown>): NormalizedSpawnOptions {
@@ -799,14 +755,14 @@ export class BmsxConsoleApi {
 			normalized.reason = reason as SpawnReason;
 		}
 		if (raw.position !== undefined) {
-			normalized.position = this.normalize_vector3(raw.position, 'spawn_world_object options.position', false, 0);
+			normalized.position = this.normalize_vector3(raw.position, 0);
 		}
 		const orientationSource = raw.rotation !== undefined ? raw.rotation : raw.orientation;
 		if (orientationSource !== undefined) {
-			normalized.orientation = this.normalize_vector3(orientationSource, 'spawn_world_object options.orientation', true, 0);
+			normalized.orientation = this.normalize_vector3(orientationSource, 0);
 		}
 		if (raw.scale !== undefined) {
-			normalized.scale = this.normalize_vector3(raw.scale, 'spawn_world_object options.scale', true, 1);
+			normalized.scale = this.normalize_vector3(raw.scale, 1);
 		}
 		if (raw.components !== undefined) {
 			normalized.components = this.normalize_spawn_component_entries(raw.components);
@@ -832,29 +788,13 @@ export class BmsxConsoleApi {
 		return normalized;
 	}
 
-	private normalize_vector3(source: unknown, context: string, allowPartial: boolean, defaultValue: number): { x: number; y: number; z: number } {
-		if (!this.is_plain_object(source)) {
-			throw new Error(`[BmsxConsoleApi] ${context} must be a table/object.`);
-		}
-		const table = source as Record<string, unknown>;
-		const hasX = table.x !== undefined;
-		const hasY = table.y !== undefined;
-		const result = { x: defaultValue, y: defaultValue, z: defaultValue };
-		if (!allowPartial && (!hasX || !hasY)) {
-			throw new Error(`[BmsxConsoleApi] ${context} requires at least x and y values.`);
-		}
-		if (hasX) {
-			result.x = this.expect_finite_number(table.x, `${context}.x`);
-		}
-		if (hasY) {
-			result.y = this.expect_finite_number(table.y, `${context}.y`);
-		}
-		if (table.z !== undefined) {
-			result.z = this.expect_finite_number(table.z, `${context}.z`);
-		} else {
-			result.z = defaultValue;
-		}
-		return result;
+	private normalize_vector3(source: unknown, defaultValue: number): { x: number; y: number; z: number } {
+		const table = source as { x?: number; y?: number; z?: number };
+		return {
+			x: table.x ?? defaultValue,
+			y: table.y ?? defaultValue,
+			z: table.z ?? defaultValue,
+		};
 	}
 
 	private normalize_spawn_component_entries(raw: unknown): ConsoleWorldObjectComponentEntry[] {
@@ -1064,13 +1004,6 @@ export class BmsxConsoleApi {
 			throw new Error(`[BmsxConsoleApi] World object '${id}' not found.`);
 		}
 		return object;
-	}
-
-	private expect_finite_number(value: unknown, context: string): number {
-		if (typeof value !== 'number' || !Number.isFinite(value)) {
-			throw new Error(`[BmsxConsoleApi] ${context} must be a finite number.`);
-		}
-		return value;
 	}
 
 	private is_plain_object(value: unknown): value is Record<string, unknown> {

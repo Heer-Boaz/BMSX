@@ -89,7 +89,7 @@ export function visualizeBehaviorTree(container: HTMLElement, btControllerId: Id
 		// }
 	}
 
-	const btController = $.get(btControllerId);
+	const btController = $.get(btControllerId) as any;
 	for (let treeName in btController.btreecontexts) {
 		let tree = btController.btreecontexts[treeName].root;
 		let treeRow = document.createElement('tr');

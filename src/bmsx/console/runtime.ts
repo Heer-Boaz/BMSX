@@ -1685,10 +1685,6 @@ export class BmsxConsoleRuntime extends Service {
 		this.runDrawPhase();
 	}
 
-	public flushDeferredState(): void {
-		// No-op; overlay state is applied immediately.
-	}
-
 	private finalizeFrame(editorActive: boolean): void {
 		this.endFrameAndFlush(editorActive);
 		this.frameCounter += 1;
@@ -4513,27 +4509,19 @@ export class BmsxConsoleRuntime extends Service {
 						const table = executionResults[0] as LuaTable;
 						const moduleId = this.moduleIdFor('service', asset_id, chunkName);
 						const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
-						const descriptorRaw = this.luaValueToJs(table, marshalCtx) as Record<string, unknown>;
-						this.instantiateLuaService({
-							table,
-							descriptor: descriptorRaw as Record<string, unknown>,
-							moduleId,
-							interpreter,
-							asset_id,
-						}, snapshots);
-						const collection = this.consoleServicesByAsset.get(asset_id);
-						if (collection) {
-							collection.add(this.ensureLuaServiceId(descriptorRaw));
-						}
-						if (snapshots.has('__service_global__') || snapshots.has(this.ensureLuaServiceId(descriptorRaw))) {
-							this.activateLuaService(descriptorRaw);
-							this.enableLuaServiceEvents(descriptorRaw);
+							const descriptorRaw = this.luaValueToJs(table, marshalCtx) as Record<string, unknown>;
+							this.instantiateLuaService({
+								table,
+								descriptor: descriptorRaw as Record<string, unknown>,
+								moduleId,
+								interpreter,
+								asset_id,
+							}, snapshots);
 						}
 					}
+				finally {
+					this.currentLuaAssetContext = previousAssetContext;
 				}
-			finally {
-				this.currentLuaAssetContext = previousAssetContext;
-			}
 		}
 		for (const [asset_id, bindings] of Array.from(this.consoleServicesByAsset.entries())) {
 			if (processedAssets.has(asset_id) || asset_id === '__service_global__') {
@@ -4577,9 +4565,6 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private tickLuaServices(deltaSeconds: number): void {
-		if (this.consoleServices.size === 0) {
-			return;
-		}
 		for (const binding of this.consoleServices.values()) {
 			if (!binding.hooks.tick) continue;
 			if (!binding.service.active || binding.service.tickEnabled === false) continue;
@@ -4591,9 +4576,6 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private disposeLuaServices(): void {
-		if (this.consoleServices.size === 0) {
-			return;
-		}
 		for (const binding of this.consoleServices.values()) {
 			try {
 				binding.service.dispose();
@@ -4840,10 +4822,6 @@ export class BmsxConsoleRuntime extends Service {
 			tagsPost: definition.tagsPost,
 			unique: definition.unique,
 		});
-	}
-
-	public getComponentDefinition(definitionId: string): LuaComponentDefinitionRecord | undefined {
-		return this.componentDefinitions.get(definitionId);
 	}
 
 	public getWorldObjectDefinition(id: string): ConsoleWorldObjectDefinitionRecord | undefined {
@@ -7059,7 +7037,6 @@ export class BmsxConsoleRuntime extends Service {
 		const luaSources = rompack.lua;
 		const sourcePaths = rompack.luaSourcePaths;
 		for (const asset_id of Object.keys(luaSources)) {
-			const source = luaSources[asset_id];
 			const sourcePath = sourcePaths[asset_id] ?? null;
 			const chunkName = this.resolveLuaModuleChunkName(asset_id, sourcePath);
 			const canonicalPath = this.stripLuaExtension(this.normalizeModulePath(sourcePath ?? asset_id ?? chunkName));

@@ -56,7 +56,7 @@ export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: Con
 			});
 		},
 		onTick(_world: World, _deltaMilliseconds: number) {
-			BmsxConsoleRuntime.instance?.flushDeferredState();
+			// Nothing to do; runtime is ticked by its systems.
 		},
 		onLoad(_world: World) {
 			// Runtime is independent from world save/load cycles.
