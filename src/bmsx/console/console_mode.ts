@@ -35,6 +35,7 @@ import type {
 	ConsoleLuaSymbolEntry,
 } from './types';
 import { consumeIdeKey, getIdeKeyState } from './ide/player_input_adapter';
+import type { asset_id } from '../rompack/rompack';
 
 type ConsoleOutputKind = 'prompt' | 'stdout' | 'stderr' | 'system';
 
@@ -59,7 +60,7 @@ type CompletionMemberRequest = {
 	objectName: string;
 	operator: '.' | ':';
 	prefix: string;
-	asset_id: string | null;
+	asset_id: asset_id | null;
 	chunkName: string | null;
 };
 

@@ -1628,16 +1628,18 @@ export class BmsxConsoleRuntime extends Service {
 			state.updateExecuted = true;
 			return;
 		}
+		if (state.haltGame) {
+			state.updateExecuted = true;
+			return;
+		}
 		try {
 			if (this.luaProgram) {
-				if (!state.haltGame && this.luaUpdateFunction !== null) {
+				if (this.luaUpdateFunction !== null) {
 					this.invokeLuaFunction(this.luaUpdateFunction, [state.deltaSeconds]);
 				}
 				this.tickLuaServices(state.deltaForUpdate);
 			} else {
-				if (!state.haltGame) {
-					this.cart.update(this.api, state.deltaSeconds);
-				}
+				this.cart.update(this.api, state.deltaSeconds);
 				this.tickLuaServices(state.deltaForUpdate);
 			}
 		} catch (error) {

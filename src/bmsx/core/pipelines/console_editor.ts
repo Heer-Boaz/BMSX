@@ -16,12 +16,16 @@ export function buildConsoleOverlaySpec(options: ConsoleOverlaySpecOptions): Nod
 	const includeEditor = options.includeEditor === true;
 	const includePresentation = options.includePresentation !== false || includeConsole || includeEditor;
 	const includeConsoleDraw = options.includeConsoleDraw !== false;
+	const includeConsoleUpdate = includeConsole || includeEditor || includeConsoleDraw;
 	const nodes: NodeSpec[] = [];
 	if (includeConsole) {
 		nodes.push({ ref: 'bmsxConsole.mode' });
 	}
 	if (includeEditor) {
 		nodes.push({ ref: 'bmsxConsole.editor' });
+	}
+	if (includeConsoleUpdate) {
+		nodes.push({ ref: 'bmsxConsole.update' });
 	}
 	if (includePresentation) {
 		nodes.push({ ref: 'transform' });
