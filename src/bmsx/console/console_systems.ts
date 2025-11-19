@@ -21,28 +21,17 @@ export class BmsxConsoleModeSystem extends BaseConsoleSystem {
 	}
 }
 
-export class BmsxConsoleEditorSystem extends BaseConsoleSystem {
-	constructor(priority = 7) {
+export class BmsxConsoleFrameSystem extends BaseConsoleSystem {
+	constructor(priority = 5) {
 		super(TickGroup.Input, priority);
-		this.__ecsId = 'bmsxConsole.editor';
+		this.__ecsId = 'bmsxConsole.frame';
 		this.runsWhileGamePaused = true;
 	}
 
 	public update(_world: World): void {
 		if (!this.runtime) return;
+		this.runtime.runConsoleModePhase();
 		this.runtime.runEditorModePhase();
-	}
-}
-
-export class BmsxConsoleUpdateSystem extends BaseConsoleSystem {
-	constructor(priority = 10) {
-		super(TickGroup.Input, priority);
-		this.__ecsId = 'bmsxConsole.update';
-		this.runsWhileGamePaused = true;
-	}
-
-	public update(_world: World): void {
-		if (!this.runtime) return;
 		this.runtime.runUpdatePhase();
 	}
 }
