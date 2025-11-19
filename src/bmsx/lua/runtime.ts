@@ -213,12 +213,7 @@ export class LuaInterpreter {
 	}
 
 	public setReservedIdentifiers(names: Iterable<string>): void {
-		this.reservedIdentifiers = new Set<string>();
-		for (const name of names) {
-			if (typeof name === 'string' && name.length > 0) {
-				this.reservedIdentifiers.add(name);
-			}
-		}
+		this.reservedIdentifiers = new Set(names as Iterable<string>);
 	}
 
 	public setHostAdapter(adapter: LuaHostAdapter | null): void {
@@ -302,9 +297,7 @@ export class LuaInterpreter {
 	}
 
 	public setRandomSeed(seed: number): void {
-		if (Number.isFinite(seed)) {
-			this.randomSeedValue = seed;
-		}
+		this.randomSeedValue = seed;
 	}
 
 	protected executeChunk(chunk: LuaChunk): LuaValue[] {
@@ -342,10 +335,7 @@ export class LuaInterpreter {
 	}
 
 	public enumerateChunkEntries(): ReadonlyArray<[string, LuaValue]> {
-		if (!this.chunkEnvironment) {
-			return [];
-		}
-		return this.chunkEnvironment.entries();
+		return this.chunkEnvironment!.entries();
 	}
 
 	public getChunkEnvironment(): LuaEnvironment | null {
@@ -358,20 +348,11 @@ export class LuaInterpreter {
 	}
 
 	public hasChunkBinding(name: string): boolean {
-		if (!this.chunkEnvironment) {
-			return false;
-		}
-		return this.chunkEnvironment.resolve(name) !== null;
+		return this.chunkEnvironment!.resolve(name) !== null;
 	}
 
 	public assignChunkValue(name: string, value: LuaValue): void {
-		if (!this.chunkEnvironment) {
-			throw this.runtimeError('Chunk environment not initialised.');
-		}
-		const target = this.chunkEnvironment.resolve(name);
-		if (target === null) {
-			throw this.runtimeError(`Chunk variable '${name}' is not defined.`);
-		}
+		const target = this.chunkEnvironment!.resolve(name);
 		target.assignExisting(name, value);
 	}
 

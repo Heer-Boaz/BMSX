@@ -981,11 +981,7 @@ export function flushWindowFocusState(keyboard?: KeyboardInput): void {
 }
 
 export function scheduleNextFrame(task: () => void): void {
-	if (typeof queueMicrotask === 'function') {
-		queueMicrotask(task);
-		return;
-	}
-	void Promise.resolve().then(task);
+	queueMicrotask(task);
 }
 
 export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void {
@@ -1148,12 +1144,11 @@ export function focusChunkSource(chunkName: string | null, hint?: { asset_id: st
 		activate();
 	}
 	closeSymbolSearch(true);
-	if (hint && typeof hint.asset_id === 'string' && hint.asset_id.length > 0) {
-		const preferredPath = (typeof hint.path === 'string' && hint.path.length > 0) ? hint.path : null;
-		focusResourceByAsset(hint.asset_id, preferredPath);
+	if (hint?.asset_id) {
+		focusResourceByAsset(hint.asset_id, hint.path ?? null);
 		return;
 	}
-	if (hint && hint.asset_id === null) {
+	if (hint?.asset_id === null) {
 		activateCodeTab();
 		return;
 	}
@@ -1209,21 +1204,15 @@ export function normalizeChunkReference(reference: string | null): string | null
 }
 
 export function resolveResourceDescriptorForSource(asset_id: string | null, chunkName: string | null): ConsoleResourceDescriptor | null {
-	if (typeof asset_id === 'string' && asset_id.length > 0) {
-		const byAsset = findResourceDescriptorByasset_id(asset_id);
-		if (byAsset) {
-			return byAsset;
-		}
+	const byAsset = asset_id ? findResourceDescriptorByasset_id(asset_id) : null;
+	if (byAsset) {
+		return byAsset;
 	}
 	const normalizedChunk = normalizeChunkReference(chunkName);
 	if (!normalizedChunk) {
 		return null;
 	}
-	try {
-		return findResourceDescriptorForChunk(normalizedChunk);
-	} catch {
-		return null;
-	}
+	return findResourceDescriptorForChunk(normalizedChunk);
 }
 
 export function listResourcesStrict(): ConsoleResourceDescriptor[] {
