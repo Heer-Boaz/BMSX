@@ -8,43 +8,15 @@ abstract class BaseConsoleSystem extends ECSystem {
 	}
 }
 
-export class BmsxConsoleModeSystem extends BaseConsoleSystem {
-	constructor(priority = 5) {
-		super(TickGroup.Input, priority);
-		this.__ecsId = 'bmsxConsole.mode';
-		this.runsWhileGamePaused = true;
-	}
-
-	public update(_world: World): void {
-		if (!this.runtime) return;
-		this.runtime.runConsoleModePhase();
-	}
-}
-
 export class BmsxConsoleFrameSystem extends BaseConsoleSystem {
-	constructor(priority = 5) {
-		super(TickGroup.Input, priority);
+	constructor(priority = 90) {
+		super(TickGroup.Presentation, priority);
 		this.__ecsId = 'bmsxConsole.frame';
 		this.runsWhileGamePaused = true;
 	}
 
 	public update(_world: World): void {
 		if (!this.runtime) return;
-		this.runtime.runConsoleModePhase();
-		this.runtime.runEditorModePhase();
-		this.runtime.runUpdatePhase();
-	}
-}
-
-export class BmsxConsoleDrawSystem extends BaseConsoleSystem {
-	constructor(priority = 100) {
-		super(TickGroup.Presentation, priority);
-		this.__ecsId = 'bmsxConsole.draw';
-		this.runsWhileGamePaused = true;
-	}
-
-	public update(_world: World): void {
-		if (!this.runtime) return;
-		this.runtime.runDrawPhase();
+		this.runtime.runFrame();
 	}
 }

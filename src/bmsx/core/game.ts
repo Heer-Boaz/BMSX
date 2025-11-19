@@ -599,20 +599,23 @@ export class Game {
 	 * @param deltaTime - The time elapsed since the last update.
 	 * @returns void
 	 */
-	public update(deltaTime: number): void {
-		const world = $.world;
-		// Step physics first so world object logic can react to post-collision resolved positions.
-		try {
-			world.run(deltaTime);
-		} catch (error) {
-			// Surface engine/runtime errors to the Console editor when active
-			const consoleRuntime = BmsxConsoleRuntime.instance;
-			if (consoleRuntime) {
-				try { consoleRuntime.reportEngineError(error); } catch { /* ignore secondary failures */ }
+		public update(deltaTime: number): void {
+			const world = $.world;
+			// Step physics first so world object logic can react to post-collision resolved positions.
+			try {
+				world.run(deltaTime);
+			} catch (error) {
+				// Surface engine/runtime errors to the Console editor when active
+				const consoleRuntime = BmsxConsoleRuntime.instance;
+				if (consoleRuntime) {
+					try {
+						consoleRuntime.reportEngineError(error);
+						consoleRuntime.onWorldStepAborted(error);
+					} catch { /* ignore secondary failures */ }
+				}
+				// Abort the remainder of this update to keep state coherent this frame.
+				return;
 			}
-			// Abort the remainder of this update to keep state coherent this frame.
-			return;
-		}
 
 		if (REWIND_BUFFER_ACTIVATED && ($._turnCounter % REWIND_BUFFER_WRITE_FREQUENCY === 0)) {
 			// --- Rewind snapshot logic ---
@@ -648,7 +651,6 @@ export class Game {
 		if (this._paused) {
 			this.accumulated_time = 0;
 			this.world.runTickGroups([TickGroup.Presentation, TickGroup.EventFlush]);
-			BmsxConsoleRuntime.instance?.renderPausedFrame();
 			this.view.drawgame();
 			return;
 		}

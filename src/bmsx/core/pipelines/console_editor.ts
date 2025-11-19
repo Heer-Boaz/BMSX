@@ -12,10 +12,7 @@ type ModeSpecOptions = Omit<ConsoleOverlaySpecOptions, 'includeConsole' | 'inclu
 
 const PRESENTATION_NODES: NodeSpec[] = GAMEPLAY_PRESENTATION_NODE_REFS.map(ref => ({ ref }));
 
-const CONSOLE_MODE_NODE: NodeSpec = { ref: 'bmsxConsole.mode' };
-const CONSOLE_EDITOR_NODE: NodeSpec = { ref: 'bmsxConsole.editor' };
-const CONSOLE_UPDATE_NODE: NodeSpec = { ref: 'bmsxConsole.update' };
-const CONSOLE_DRAW_NODE: NodeSpec = { ref: 'bmsxConsole.draw' };
+const CONSOLE_FRAME_NODE: NodeSpec = { ref: 'bmsxConsole.frame' };
 
 const cloneNode = (node: NodeSpec): NodeSpec => ({
 	ref: node.ref,
@@ -42,19 +39,9 @@ export function buildConsoleOverlaySpec(options: ConsoleOverlaySpecOptions): Nod
 	const includeConsole = options.includeConsole === true;
 	const includeEditor = options.includeEditor === true;
 	const includePresentation = options.includePresentation !== false || includeConsole || includeEditor;
-	const includeConsoleDraw = options.includeConsoleDraw !== false;
 	const nodes: NodeSpec[] = [];
-	if (includeConsole) {
-		pushNode(nodes, CONSOLE_MODE_NODE);
-	}
-	if (includeEditor) {
-		pushNode(nodes, CONSOLE_EDITOR_NODE);
-	}
 	if (includeConsole || includeEditor) {
-		pushNode(nodes, CONSOLE_UPDATE_NODE);
-		if (includeConsoleDraw) {
-			pushNode(nodes, CONSOLE_DRAW_NODE);
-		}
+		pushNode(nodes, CONSOLE_FRAME_NODE);
 	}
 	if (includePresentation) {
 		pushNodes(nodes, PRESENTATION_NODES);

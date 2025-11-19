@@ -1492,6 +1492,9 @@ export class BmsxConsoleRuntime extends Service {
 		$.reset_to_fresh_world({ preserveConsoleRuntime: true });
 	}
 
+	// Frame state is owned by the runtime: it is created per-frame, kept intact for debugger inspection on faults,
+	// and only cleared via finalize/abandon during explicit reboot/reset flows.
+	// Frame state is owned by the runtime and is always finalized/abandoned by the runtime; faults capture a snapshot for inspection.
 	private beginFrameState(): ConsoleFrameState {
 		if (this.currentFrameState) {
 			throw new Error('[BmsxConsoleRuntime] Attempted to begin a new frame while another frame is active.');
@@ -1537,11 +1540,74 @@ export class BmsxConsoleRuntime extends Service {
 		Input.instance.setDebugHotkeysPaused(consoleActive || editorActive);
 	}
 
+	public runFrame(): void {
+		if (!this.tickEnabled) {
+			return;
+		}
+		let state: ConsoleFrameState | null = null;
+		let fault: unknown = null;
+		try {
+			state = this.beginFrameState();
+			this.runConsolePhase(state);
+			this.runEditorPhase(state);
+			this.runUpdatePhaseInternal(state);
+			this.runDrawPhaseInternal(state);
+		} catch (error) {
+			fault = error;
+			this.recordFrameFault(state ?? this.currentFrameState, error);
+			throw error;
+		} finally {
+			if (fault !== null || this.currentFrameState !== null) {
+				this.abandonFrameState();
+			}
+		}
+	}
+
 	public runConsoleModePhase(): void {
 		if (!this.tickEnabled) {
 			return;
 		}
-		const state = this.beginFrameState();
+		const state = this.currentFrameState ?? this.beginFrameState();
+		this.runConsolePhase(state);
+	}
+
+	public runEditorModePhase(): void {
+		if (!this.tickEnabled) {
+			return;
+		}
+		const state = this.currentFrameState ?? this.beginFrameState();
+		this.runEditorPhase(state);
+	}
+
+	public runUpdatePhase(): void {
+		if (!this.tickEnabled) {
+			return;
+		}
+		const state = this.requireFrameState('update');
+		this.runUpdatePhaseInternal(state);
+	}
+
+	public runDrawPhase(): void {
+		if (!this.tickEnabled) {
+			return;
+		}
+		const state = this.requireFrameState('draw');
+		this.runDrawPhaseInternal(state);
+	}
+
+	public renderPausedFrame(): void {
+		if (!this.tickEnabled) {
+			return;
+		}
+		this.runFrame();
+	}
+
+	public onWorldStepAborted(error: unknown): void {
+		this.recordFrameFault(this.currentFrameState, error);
+		this.abandonFrameState();
+	}
+
+	private runConsolePhase(state: ConsoleFrameState): void {
 		this.pollConsoleHotkeys();
 		this.advanceConsoleMode(state.deltaSeconds);
 		state.consoleEvaluated = true;
@@ -1549,11 +1615,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.updateFrameHaltingState(state);
 	}
 
-	public runEditorModePhase(): void {
-		if (!this.tickEnabled) {
-			return;
-		}
-		const state = this.requireFrameState('editor');
+	private runEditorPhase(state: ConsoleFrameState): void {
 		const editor = this.editor;
 		if (editor && !state.consoleActive) {
 			editor.update(state.deltaSeconds);
@@ -1564,11 +1626,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.updateFrameHaltingState(state);
 	}
 
-	public runUpdatePhase(): void {
-		if (!this.tickEnabled) {
-			return;
-		}
-		const state = this.requireFrameState('update');
+	private runUpdatePhaseInternal(state: ConsoleFrameState): void {
 		const playerInput = this.getPlayerInput();
 		const getState = (code: string) => playerInput.getButtonState(code, 'keyboard');
 		const consume = (code: string) => playerInput.consumeButton(code, 'keyboard');
@@ -1619,11 +1677,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	public runDrawPhase(): void {
-		if (!this.tickEnabled) {
-			return;
-		}
-		const state = this.requireFrameState('draw');
+	private runDrawPhaseInternal(state: ConsoleFrameState): void {
 		try {
 			const editor = this.editor;
 			const editorActive = state.editorActive;
@@ -1674,15 +1728,6 @@ export class BmsxConsoleRuntime extends Service {
 		} finally {
 			this.currentFrameState = null;
 		}
-	}
-
-	public renderPausedFrame(): void {
-		if (!this.tickEnabled) {
-			return;
-		}
-		this.runConsoleModePhase();
-		this.runEditorModePhase();
-		this.runDrawPhase();
 	}
 
 	private finalizeFrame(editorActive: boolean): void {
@@ -1743,6 +1788,20 @@ export class BmsxConsoleRuntime extends Service {
 
 	private prepareForPreservedWorldReset(): void {
 		this.pendingLuaWarnings = [];
+	}
+
+	private lastFrameFault: { snapshot: ConsoleFrameState | null; error: unknown } | null = null;
+
+	private snapshotFrameState(state: ConsoleFrameState | null): ConsoleFrameState | null {
+		return state ? { ...state } : null;
+	}
+
+	private recordFrameFault(state: ConsoleFrameState | null, error: unknown): void {
+		this.lastFrameFault = { snapshot: this.snapshotFrameState(state), error };
+	}
+
+	public getLastFrameFault(): { snapshot: ConsoleFrameState | null; error: unknown } | null {
+		return this.lastFrameFault;
 	}
 
 	private initializeEditor(): void {
