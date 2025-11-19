@@ -1,5 +1,5 @@
 import { BFont } from '../core/font';
-import { $rompack } from '../core/game';
+import { $ } from '../core/game';
 
 export type ConsoleGlyph = {
 	imgId: string;
@@ -208,7 +208,7 @@ export class ConsoleFont extends BFont {
 			return glyph;
 		}
 		const imgId = this.char_to_img(char);
-		const entry = $rompack.img[imgId];
+		const entry = $.rompack.img[imgId];
 		if (!entry || !entry.imgmeta) {
 			throw new Error(`[ConsoleFont] Glyph asset "${imgId}" for character "${char}" not found in rompack.`);
 		}
@@ -268,5 +268,4 @@ export class ConsoleFont extends BFont {
 		target['?'] = this.preset.fallbackSprite;
 		target['¡'] = `${this.preset.prefix}_code_0x80`;
 	}
-
 }

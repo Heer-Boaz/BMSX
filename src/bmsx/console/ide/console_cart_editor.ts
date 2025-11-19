@@ -1,6 +1,5 @@
 import { $ } from '../../core/game';
 import type { KeyboardInput } from '../../input/keyboardinput';
-import type { ViewportMetrics } from '../../platform/platform';
 import { BmsxConsoleApi } from '../api';
 import type {
 	ConsoleLuaDefinitionLocation,
@@ -1198,8 +1197,6 @@ export function normalizeResourcePath(path?: string | null): string | undefined 
 	return normalized.length > 0 ? normalized : undefined;
 }
 
-
-
 export function normalizeChunkReference(reference: string | null): string | null {
 	if (!reference) {
 		return null;
@@ -1228,7 +1225,6 @@ export function resolveResourceDescriptorForSource(asset_id: string | null, chun
 		return null;
 	}
 }
-
 
 export function listResourcesStrict(): ConsoleResourceDescriptor[] {
 	const descriptors = ide_state.listResourcesFn();
@@ -1260,8 +1256,6 @@ export function findResourceDescriptorForChunk(chunkPath: string): ConsoleResour
 	}
 	throw new Error(`[ConsoleCartEditor] Unable to resolve chunk '${normalizedTarget}' to a resource.`);
 }
-
-// resourceDescriptorMatchesFilter removed; controller owns filtering
 
 export function openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
 	selectResourceInPanel(descriptor);
@@ -1334,14 +1328,7 @@ export function getBuiltinIdentifierSet(): ReadonlySet<string> {
 		const names: string[] = [];
 		for (let index = 0; index < descriptors.length; index += 1) {
 			const descriptor = descriptors[index];
-			if (!descriptor || typeof descriptor.name !== 'string') {
-				continue;
-			}
-			const trimmed = descriptor.name.trim();
-			if (trimmed.length === 0) {
-				continue;
-			}
-			names.push(trimmed);
+			names.push(descriptor.name);
 		}
 		names.sort((a, b) => a.localeCompare(b));
 		const key = names.join('\u0000');
@@ -1682,25 +1669,13 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 export function createDiagnosticProviders(): DiagnosticProviders {
 	return {
 		listLocalSymbols: (asset_id, chunk) => {
-			try {
-				return ide_state.listLuaSymbolsFn(asset_id, chunk);
-			} catch {
-				return [];
-			}
+			return ide_state.listLuaSymbolsFn(asset_id, chunk);
 		},
 		listGlobalSymbols: () => {
-			try {
-				return ide_state.listGlobalLuaSymbolsFn();
-			} catch {
-				return [];
-			}
+			return ide_state.listGlobalLuaSymbolsFn();
 		},
 		listBuiltins: () => {
-			try {
-				return ide_state.listBuiltinLuaFunctionsFn();
-			} catch {
-				return [];
-			}
+			return ide_state.listBuiltinLuaFunctionsFn();
 		},
 	};
 }
@@ -1836,7 +1811,7 @@ export function draw(api: BmsxConsoleApi): void {
 		tabHoverId: ide_state.tabHoverId,
 		measureText: (text: string) => measureText(text),
 		drawText: (api2, text, x, y, color) => drawEditorText(api2, ide_state.font, text, x, y, color),
-		getDirtyMarkerMetrics: () => getTabDirtyMarkerMetrics(),
+		getDirtyMarkerMetrics: () => constants.TAB_DIRTY_MARKER_METRICS,
 		tabButtonBounds: ide_state.tabButtonBounds,
 		tabCloseButtonBounds: ide_state.tabCloseButtonBounds,
 	});
@@ -1881,19 +1856,9 @@ export function getSourceForChunk(asset_id: string | null, chunkName: string | n
 	throw new Error(`[ConsoleCartEditor] Unable to locate source for asset '${asset_id ?? '<null>'}' and chunk '${chunkName ?? '<null>'}'.`);
 }
 
-export function getTabDirtyMarkerMetrics(): { width: number; height: number } {
-	return { width: 4, height: 4 };
-}
-
 export function refreshViewportDimensions(force = false): void {
 	const view = $.view;
-	if (!view) {
-		throw new Error('[ConsoleCartEditor] Game view unavailable during editor frame.');
-	}
 	const renderSize = ide_state.resolutionMode === 'offscreen' ? view.offscreenCanvasSize : view.viewportSize;
-	if (!Number.isFinite(renderSize.x) || !Number.isFinite(renderSize.y) || renderSize.x <= 0 || renderSize.y <= 0) {
-		throw new Error('[ConsoleCartEditor] Invalid render dimensions.');
-	}
 	const width = renderSize.x;
 	const height = renderSize.y;
 	if (!force && width === ide_state.viewportWidth && height === ide_state.viewportHeight) {
@@ -5652,13 +5617,13 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 			issueDebuggerCommand('continue');
 			return;
 		case 'debugStepOver':
-			issueDebuggerCommand('stepOver');
+			issueDebuggerCommand('step_over');
 			return;
 		case 'debugStepInto':
-			issueDebuggerCommand('stepInto');
+			issueDebuggerCommand('step_into');
 			return;
 		case 'debugStepOut':
-			issueDebuggerCommand('stepOut');
+			issueDebuggerCommand('step_out');
 			return;
 		case 'problems':
 			toggleProblemsPanel();
@@ -7876,19 +7841,17 @@ function buildDebugPanelLines(kind: DebugPanelKind): string[] {
 }
 
 function collectWorldObjectLines(): string[] {
-	const world = $.world;
-	if (!world) return ['<world unavailable>'];
-	const entries = Array.from(world.objects({ scope: 'all' }));
+	const entries = $.world.allObjectsFromSpaces;
 	if (entries.length === 0) return ['<no world objects>'];
 	const lines: string[] = [`Total Objects: ${entries.length}`, ''];
 	for (let index = 0; index < entries.length; index += 1) {
 		const obj = entries[index]!;
-		const className = obj.constructor?.name ?? 'WorldObject';
+		const className = obj.constructor.name;
 		const id = obj.id ?? '<unnamed>';
-		const posX = Number.isFinite(obj.x) ? Math.round(obj.x) : 0;
-		const posY = Number.isFinite(obj.y) ? Math.round(obj.y) : 0;
-		const posZ = Number.isFinite(obj.z) ? Math.round(obj.z) : 0;
-		const active = obj.active === false ? 'inactive' : 'active';
+		const posX = obj.x;
+		const posY = obj.y;
+		const posZ = obj.z;
+		const active = obj.active;
 		lines.push(`${index + 1}. ${id} [${className}] pos=(${posX}, ${posY}, ${posZ}) ${active}`);
 	}
 	return lines;
@@ -8047,33 +8010,6 @@ export function describeMetadataValue(value: unknown): string {
 	return String(value);
 }
 
-export function getViewportMetrics(): ViewportMetrics {
-	const platform = $.platform;
-	if (!platform) {
-		throw new Error('[ConsoleCartEditor] Platform services unavailable while resolving viewport metrics.');
-	}
-	const host = platform.gameviewHost;
-	if (!host || typeof host.getCapability !== 'function') {
-		throw new Error('[ConsoleCartEditor] Game view host unavailable while resolving viewport metrics.');
-	}
-	const provider = host.getCapability('viewport-metrics');
-	if (!provider) {
-		throw new Error('[ConsoleCartEditor] Viewport metrics capability unavailable on the current platform.');
-	}
-	const metrics = provider.getViewportMetrics();
-	if (!metrics) {
-		throw new Error('[ConsoleCartEditor] Viewport metrics provider returned no data.');
-	}
-	const { windowInner, screen } = metrics;
-	if (!windowInner || !Number.isFinite(windowInner.width) || windowInner.width <= 0) {
-		throw new Error('[ConsoleCartEditor] Viewport metrics reported an invalid inner window width.');
-	}
-	if (!screen || !Number.isFinite(screen.width) || screen.width <= 0) {
-		throw new Error('[ConsoleCartEditor] Viewport metrics reported an invalid screen width.');
-	}
-	return metrics;
-}
-
 export function computePanelRatioBounds(): { min: number; max: number } {
 	const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
 	const minEditorRatio = constants.RESOURCE_PANEL_MIN_EDITOR_RATIO;
@@ -8098,7 +8034,7 @@ export function clampResourcePanelRatio(ratio: number | null): number {
 }
 
 export function defaultResourcePanelRatio(): number {
-	const metrics = getViewportMetrics();
+	const metrics = $.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics();
 	const viewportWidth = metrics.windowInner.width;
 	const screenWidth = metrics.screen.width;
 	const relative = Math.min(1, viewportWidth / screenWidth);

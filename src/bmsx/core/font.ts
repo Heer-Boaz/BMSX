@@ -1,4 +1,4 @@
-import { $rompack } from './game';
+import { $ } from './game';
 
 /**
  * Represents a bitmap font used for rendering text.
@@ -8,8 +8,8 @@ export class BFont {
 	 * The map of font resources.
 	 */
 	protected accessor font_res_map: Record<string, string>;
-	public char_width(letter: string): number { return $rompack.img[this.letter_to_img[letter]].imgmeta.width; }
-	public char_height(letter: string): number { return $rompack.img[this.letter_to_img[letter]].imgmeta.height; }
+	public char_width(letter: string): number { return $.rompack.img[this.letter_to_img[letter]].imgmeta.width; }
+	public char_height(letter: string): number { return $.rompack.img[this.letter_to_img[letter]].imgmeta.height; }
 	readonly letter_to_img: Record<string, string> = {
 		'0': 'letter_0',
 		'1': 'letter_1',

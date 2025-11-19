@@ -4,16 +4,16 @@ import { TextureKey } from '../render/texturemanager';
 import type { GameViewHost, Platform } from '../platform';
 
 export interface RomPack {
-	rom: ArrayBuffer; // The binary buffer of the ROM pack, containing all assets, including images, audio and code.
-	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the cached binary payload.
-	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata.
-	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata.
-	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
-	code: string | null; // The loaded game code in the ROM pack.
-	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata.
-	lua: Record<asset_id, string>; // Loaded Lua sources bundled with the ROM pack.
+	rom: ArrayBuffer; // The binary buffer of the ROM pack, containing all assets, including images, audio and code. ALWAYS PRESENT DURING GAME!
+	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the cached binary payload. ALWAYS PRESENT DURING GAME!
+	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
+	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
+	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
+	code: string; // The loaded game code in the ROM pack. ALWAYS PRESENT DURING GAME!
+	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
+	lua: Record<asset_id, string>; // Loaded Lua sources bundled with the ROM pack. ALWAYS PRESENT DURING GAME!
 	luaSourcePaths: Record<asset_id, string>; // Relative filesystem paths for Lua sources, keyed by Lua asset id.
-	resourcePaths: RomResourcePath[]; // Filesystem metadata for packed resources.
+	resourcePaths: RomResourcePath[]; // Filesystem metadata for packed resources. ALWAYS PRESENT DURING GAME!
 	projectRootPath?: string | null; // Workspace-relative cart root path for resolving filesystem writes.
 	caseInsensitiveLua?: boolean;
 	manifest?: unknown;

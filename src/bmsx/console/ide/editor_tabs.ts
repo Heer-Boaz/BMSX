@@ -28,7 +28,6 @@ import {
 	hideResourcePanel,
 	enterResourceViewer,
 	normalizeChunkReference,
-	getTabDirtyMarkerMetrics,
 	getTabBarTotalHeight,
 	resetPointerClickTracking,
 	resetEditorContent,
@@ -396,8 +395,7 @@ export function measureTabWidth(tab: EditorTabDescriptor): number {
 	if (tab.closable) {
 		indicatorWidth = measureText(constants.TAB_CLOSE_BUTTON_SYMBOL) + constants.TAB_CLOSE_BUTTON_PADDING_X * 2;
 	} else if (tab.dirty) {
-		const metrics = getTabDirtyMarkerMetrics();
-		indicatorWidth = metrics.width + constants.TAB_DIRTY_MARKER_SPACING;
+		indicatorWidth = constants.TAB_DIRTY_MARKER_METRICS.width + constants.TAB_DIRTY_MARKER_SPACING;
 	}
 	return textWidth + constants.TAB_BUTTON_PADDING_X * 2 + indicatorWidth;
 }

@@ -1,10 +1,10 @@
 import { color } from "../../render/gameview";
 import { Area, BoundingBoxPrecalc, type HitPolygonsPrecalc, type Polygon } from "../../rompack/rompack";
 import { insavegame, type RevivableObjectArgs } from '../../serializer/serializationhooks';
-import { $rompack } from '../game';
 import { WorldObject } from "./worldobject";
 import { SpriteComponent } from '../../component/sprite_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
+import { $ } from '../game';
 
 const BASE_SPRITE_ID = 'base_sprite';
 const PRIMARY_COLLIDER_ID = 'primary';
@@ -31,7 +31,7 @@ export abstract class SpriteObject extends WorldObject {
 	public set imgid(id: string) {
 		const comp = this.sprite_component;
 		comp.imgid = id;
-		const entry = $rompack.img[id];
+		const entry = $.rompack.img[id];
 		if (!entry) {
 			if (id === 'none') { this.updateHitareas(); return; }
 			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' not found in rompack.`);
@@ -55,7 +55,7 @@ export abstract class SpriteObject extends WorldObject {
 			collider.setLocalPolygons(null);
 			return;
 		}
-		const entry = $rompack.img[id];
+		const entry = $.rompack.img[id];
 		if (!entry) {
 			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' not found in rompack.`);
 		}

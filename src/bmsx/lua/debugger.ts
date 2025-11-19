@@ -1,3 +1,4 @@
+import type { DebuggerResumeMode } from '../console/debugger_lifecycle';
 import { safeclamp } from '../utils/safeclamp';
 import type { LuaCallFrame, LuaDebuggerPauseSignal, LuaExceptionResumeStrategy } from './runtime';
 
@@ -11,7 +12,7 @@ export function normalizeLuaChunkName(name: string): string {
 
 export type LuaDebuggerStepMode = 'none' | 'into' | 'over';
 export type LuaDebuggerPauseReason = 'breakpoint' | 'step' | 'exception';
-export type LuaDebuggerResumeCommand = 'continue' | 'stepInto' | 'stepOver' | 'stepOut' | 'ignoreException' | 'stepOutException';
+export type LuaDebuggerResumeCommand = DebuggerResumeMode | 'ignore_exception' | 'step_out_exception';
 
 type AsyncCarryContext = {
 	readonly parentCallStack: ReadonlyArray<LuaCallFrame>;
@@ -140,7 +141,7 @@ export class LuaDebuggerController {
 	): LuaExceptionResumeStrategy {
 		const baseDepth = suspension.callStack.length;
 		const fallbackDepth =
-			command === 'stepOut' || command === 'stepOutException'
+			command === 'step_out' || command === 'step_out_exception'
 				? Math.max(0, baseDepth - 1)
 				: baseDepth;
 		const targetDepth =
@@ -151,15 +152,15 @@ export class LuaDebuggerController {
 			case 'continue':
 				this.clearStepping();
 				break;
-			case 'stepInto':
+			case 'step_into':
 				this.requestStepInto();
 				break;
-			case 'stepOver':
-			case 'stepOut':
-			case 'stepOutException':
+			case 'step_over':
+			case 'step_out':
+			case 'step_out_exception':
 				this.requestStepOver(targetDepth);
 				break;
-			case 'ignoreException':
+			case 'ignore_exception':
 				this.sessionMetrics.skippedExceptionCount += 1;
 				this.unsuppressBoundary(suspension.location.chunk, suspension.location.line, baseDepth);
 				console.warn(
@@ -173,9 +174,9 @@ export class LuaDebuggerController {
 
 		const exceptionPause = suspension.reason === 'exception';
 		switch (command) {
-			case 'stepInto':
-			case 'stepOver':
-			case 'stepOut':
+			case 'step_into':
+			case 'step_over':
+			case 'step_out':
 				if (exceptionPause) {
 					this.unsuppressBoundary(suspension.location.chunk, suspension.location.line, baseDepth);
 					this.sessionMetrics.skippedExceptionCount += 1;
@@ -184,7 +185,7 @@ export class LuaDebuggerController {
 					);
 					return 'skip_statement';
 				}
-			case 'stepOutException':
+			case 'step_out_exception':
 				return 'propagate';
 			default:
 				return 'propagate';
@@ -203,9 +204,9 @@ export class LuaDebuggerController {
 			console.log('[LuaDebugger] Cannot carry \'continue\' command across async boundary.');
 			return;
 		}
-		if (command === 'ignoreException') {
+		if (command === 'ignore_exception') {
 			console.log(
-				`[LuaDebugger] Cannot carry 'ignoreException' command across async boundary at ${suspension.location.chunk}:${suspension.location.line}.`,
+				`[LuaDebugger] Cannot carry ${command} command across async boundary at ${suspension.location.chunk}:${suspension.location.line}.`,
 			);
 			return;
 		}

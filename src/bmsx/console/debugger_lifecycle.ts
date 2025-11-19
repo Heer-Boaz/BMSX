@@ -11,7 +11,7 @@ export type DebuggerPauseDisplayPayload = {
 	hint: DebuggerPauseFrameHint;
 };
 
-export type DebuggerResumeMode = 'continue' | 'stepInto' | 'stepOver' | 'stepOut';
+export type DebuggerResumeMode = 'continue' | 'step_into' | 'step_over' | 'step_out';
 
 export type DebuggerLifecyclePausedEvent = {
 	type: 'paused';

@@ -9,11 +9,11 @@ export type DebuggerShortcutContext = {
 
 export type DebuggerCommand =
 	| 'continue'
-	| 'stepOver'
-	| 'stepInto'
-	| 'stepOut'
+	| 'step_over'
+	| 'step_into'
+	| 'step_out'
 	| 'ignoreException'
-	| 'stepOutException';
+	| 'step_out_exception';
 
 export interface DebuggerCommandExecutor {
 	isSuspended(): boolean;
@@ -40,16 +40,16 @@ export function evaluateDebuggerShortcuts(
 	if (context.isKeyJustPressed('F10')) {
 		context.consumeKey('F10');
 		if (context.shiftDown) {
-			return executor.issueDebuggerCommand('stepOutException');
+			return executor.issueDebuggerCommand('step_out_exception');
 		}
-		return executor.issueDebuggerCommand('stepOver');
+		return executor.issueDebuggerCommand('step_over');
 	}
 	if (context.isKeyJustPressed('F11')) {
 		context.consumeKey('F11');
 		if (context.shiftDown) {
-			return executor.issueDebuggerCommand('stepOut');
+			return executor.issueDebuggerCommand('step_out');
 		}
-		return executor.issueDebuggerCommand('stepInto');
+		return executor.issueDebuggerCommand('step_into');
 	}
 	return false;
 }

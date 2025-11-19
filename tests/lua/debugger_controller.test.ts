@@ -83,7 +83,7 @@ test('async carry requests pause on next invocation with augmented stack', () =>
 	const controller = new LuaDebuggerController();
 	controller.requestStepOver(0);
 	const suspension = createPauseSignal('step');
-	controller.handleSilentResumeResult('stepOver', suspension);
+	controller.handleSilentResumeResult('step_over', suspension);
 	assert.equal(controller.isActive(), true);
 	const reason = controller.shouldPause('async.lua', 1, 0);
 	assert.equal(reason, 'step');
@@ -105,7 +105,7 @@ test('ignoreException command toggles skip strategy', () => {
 test('step commands skip exceptions automatically', () => {
 	const controller = new LuaDebuggerController();
 	const suspension = createPauseSignal('exception');
-	const strategy = controller.prepareResume('stepOver', suspension);
+	const strategy = controller.prepareResume('step_over', suspension);
 	assert.equal(strategy, 'skip_statement');
 });
 
@@ -132,7 +132,7 @@ test('active step requests survive until consumed', () => {
 
 	controller.requestStepOver(3);
 	const suspension = createPauseSignal('step');
-	controller.handleSilentResumeResult('stepOver', suspension);
+	controller.handleSilentResumeResult('step_over', suspension);
 	assert.equal(controller.hasActiveSteppingRequest(), true);
 	assert.equal(controller.shouldPause('async.lua', 5, 1), 'step');
 	assert.equal(controller.hasActiveSteppingRequest(), false);

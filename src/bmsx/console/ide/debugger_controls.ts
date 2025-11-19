@@ -81,15 +81,15 @@ class RuntimeDebuggerCommandExecutor implements DebuggerCommandExecutor {
 				runtime.continueLuaDebugger();
 				this.logCommand(command, true, 'ok');
 				return true;
-			case 'stepInto':
+			case 'step_into':
 				runtime.stepIntoLuaDebugger();
 				this.logCommand(command, true, 'ok');
 				return true;
-			case 'stepOver':
+			case 'step_over':
 				runtime.stepOverLuaDebugger();
 				this.logCommand(command, true, 'ok');
 				return true;
-			case 'stepOut':
+			case 'step_out':
 				runtime.stepOutLuaDebugger();
 				this.logCommand(command, true, 'ok');
 				return true;
@@ -97,7 +97,7 @@ class RuntimeDebuggerCommandExecutor implements DebuggerCommandExecutor {
 				runtime.ignoreLuaException();
 				this.logCommand(command, true, 'ok');
 				return true;
-			case 'stepOutException':
+			case 'step_out_exception':
 				runtime.stepOutLuaException();
 				this.logCommand(command, true, 'ok');
 				return true;

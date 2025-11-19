@@ -40,7 +40,6 @@ global = globalScope; // Ensure global is defined
 
 // Register global variables
 // Note that $ is defined at the bottom of the code file
-export var $rompack!: RomPack;
 export var $debug: boolean;
 
 export interface GameInitArgs {
@@ -163,7 +162,7 @@ export class Game {
 	private _pipelineOverride: NodeSpec[] | null = null;
 	private initialWorldConfigSnapshot: WorldConfiguration | null = null;
 
-	public get rompack(): RomPack { return $rompack!; }
+	public get rompack(): RomPack { return $.rompack!; }
 
 	public get world(): World { return this.registry.get<World>('world')!; }
 
@@ -332,7 +331,6 @@ export class Game {
 		}
 		platform.gameviewHost = resolvedViewHost;
 		this._platform = platform;
-		$rompack = rompack;
 		this.running = false;
 		this._paused = false;
 		this.wasupdated = true;

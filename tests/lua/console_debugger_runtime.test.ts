@@ -115,11 +115,11 @@ test('debugger commands dispatch only when a suspension is active', () => {
 	const calls: string[] = [];
 	const runtimeStub = {
 		continueLuaDebugger: () => calls.push('continue'),
-		stepOverLuaDebugger: () => calls.push('stepOver'),
-		stepIntoLuaDebugger: () => calls.push('stepInto'),
-		stepOutLuaDebugger: () => calls.push('stepOut'),
+		stepOverLuaDebugger: () => calls.push('step_over'),
+		stepIntoLuaDebugger: () => calls.push('step_into'),
+		stepOutLuaDebugger: () => calls.push('step_out'),
 		ignoreLuaException: () => calls.push('ignoreException'),
-		stepOutLuaException: () => calls.push('stepOutException'),
+		stepOutLuaException: () => calls.push('step_out_exception'),
 	};
 	setDebuggerRuntimeAccessor(() => runtimeStub);
 	try {
@@ -150,15 +150,15 @@ test('debugger commands dispatch only when a suspension is active', () => {
 		});
 		assert.equal(executor.isSuspended(), true);
 
-		assert.equal(issueDebuggerCommand('stepInto'), true);
+		assert.equal(issueDebuggerCommand('step_into'), true);
 		assert.equal(issueDebuggerCommand('ignoreException'), true);
-		assert.equal(issueDebuggerCommand('stepOutException'), true);
-		assert.deepEqual(calls, ['stepInto', 'ignoreException', 'stepOutException']);
+		assert.equal(issueDebuggerCommand('step_out_exception'), true);
+		assert.deepEqual(calls, ['step_into', 'ignoreException', 'step_out_exception']);
 
 		emitDebuggerLifecycleEvent({ type: 'continued', mode: 'continue' });
 		assert.equal(executor.isSuspended(), false);
-		assert.equal(issueDebuggerCommand('stepOut'), false);
-		assert.deepEqual(calls, ['stepInto', 'ignoreException', 'stepOutException']);
+		assert.equal(issueDebuggerCommand('step_out'), false);
+		assert.deepEqual(calls, ['step_into', 'ignoreException', 'step_out_exception']);
 	}
 	finally {
 		setDebuggerRuntimeAccessor(null);

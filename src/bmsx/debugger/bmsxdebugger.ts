@@ -2,7 +2,6 @@ import { BehaviorTreeDefinitions } from '../ai/behaviourtree';
 import { Component, componenttags_postprocessing, componenttags_preprocessing, type ComponentAttachOptions } from '../component/basecomponent';
 import { CameraObject } from '../core/object/cameraobject';
 import { EventEmitter, type ListenerSet } from '../core/eventemitter';
-import { $ } from '../core/game';
 import { WorldObject } from '../core/object/worldobject';
 import { Collision2DSystem } from '../ecs/overlap2d_system';
 import { Registry } from '../core/registry';
@@ -19,6 +18,7 @@ import { StateMachineVisualizer } from './statemachinevisualizer';
 import { CustomVisualComponent } from '../component/customvisual_component';
 import { setAbilityTagHudTarget } from './abilitytaghud';
 import { debuggerOverlayManager } from './overlay_manager';
+import { $ } from '../core/game';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 const PHYSICS_OVERLAY_ID = 'physics_overlay_canvas';
 

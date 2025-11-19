@@ -6,8 +6,8 @@ import type { color, FlipOptions, RenderLayer } from '../render/gameview';
 import type { TimelinePlayOptions, TimelineFrameEventPayload } from './timeline_component';
 import { new_vec2 } from '../utils/vector_operations';
 import { Collider2DComponent } from './collisioncomponents';
-import { $rompack } from '../core/game';
 import type { GameEvent } from '../core/game_event';
+import { $ } from '../core/game';
 
 @insavegame
 @componenttags_postprocessing('render')
@@ -131,7 +131,7 @@ export class SpriteComponent extends Component {
 			return;
 		}
 
-		const entry = $rompack.img[id];
+		const entry = $.rompack.img[id];
 		if (!entry) {
 			const ownerId = this.parent.id ?? '<unknown>';
 			const componentId = this.id ?? this.constructor.name;

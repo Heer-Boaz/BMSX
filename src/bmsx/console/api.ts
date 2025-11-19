@@ -1,4 +1,4 @@
-import { $, $rompack, runGate } from '../core/game';
+import { $, runGate } from '../core/game';
 import { Input } from '../input/input';
 import type { PlayerInput } from '../input/playerinput';
 import type { color, RectRenderSubmission } from '../render/shared/render_types';
@@ -489,7 +489,7 @@ export class BmsxConsoleApi {
 			throw new Error('[BmsxConsoleApi] attach_component requires an id field.');
 		}
 		const definition_id = rawId.trim();
-		const idLocalRaw = options.id_local;
+		const idLocalRaw = component.id_local;
 		const id_local = idLocalRaw;
 		const stateRaw = (options as { state?: unknown }).state;
 		let state: Record<string, unknown> | undefined;
@@ -619,7 +619,7 @@ export class BmsxConsoleApi {
 	}
 
 	public rompack(): RomPack | undefined {
-		return $rompack;
+		return $.rompack;
 	}
 
 	public events(): EventEmitter {

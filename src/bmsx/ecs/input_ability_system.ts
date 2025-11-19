@@ -16,14 +16,7 @@ let assetProgramsValidated = false;
 
 function validateProgramAssetsOnBoot(): void {
 	if (assetProgramsValidated) return;
-	const rompack = $.rompack;
-	if (!rompack) {
-		throw new Error('[InputAbilitySystem] Rompack unavailable while validating input ability programs.');
-	}
-	const data = rompack.data;
-	if (!data || typeof data !== 'object') {
-		throw new Error('[InputAbilitySystem] Rompack data unavailable while validating input ability programs.');
-	}
+	const data = $.rompack.data;
 	const entries = Object.keys(data);
 	for (let i = 0; i < entries.length; i++) {
 		const key = entries[i]!;
@@ -80,17 +73,10 @@ export class InputAbilitySystem extends ECSystem {
 		for (let [obj, component] of filter_iterable($.world.objects_with_components(InputAbilityComponent, { scope: 'active' }), (item: [ WorldObject, InputAbilityComponent]) => this.isEligibleObject(item[0]))) {
 			const program = this.resolveCompiledProgram(component);
 			const programKey = this.resolveProgramKey(component, obj);
-			const componentId = component.id ?? component.id_local ?? component.constructor.name;
+			const componentId = component.id;
 
-			const componentPlayerIndex = component.playerIndex ?? 0;
-			const fallbackPlayerIndex = obj.player_index ?? 0;
-			const playerIndex = componentPlayerIndex > 0 ? componentPlayerIndex : fallbackPlayerIndex;
-			if (playerIndex <= 0) {
-				throw new Error(`[InputAbilitySystem] Unable to resolve player index for object '${obj.id}' (component '${componentId}').`);
-			}
-
+			const playerIndex = component.playerIndex;
 			const input = $.input.getPlayerInput(playerIndex);
-			if (!input) continue;
 
 			const asc = obj.get_unique_component(AbilitySystemComponent);
 			if (!asc && (program.usesAbilityRequests || program.usesTagConditions)) {
@@ -193,7 +179,6 @@ export class InputAbilitySystem extends ECSystem {
 			target[finalKey] = deep_clone(value as Record<string, unknown>);
 			return;
 		}
-		target[finalKey] = value as never;
 	}
 
 	private resolveIntentPlayerInput(component: InputIntentComponent, owner: WorldObject): PlayerInput | null {
@@ -363,12 +348,7 @@ export class InputAbilitySystem extends ECSystem {
 			throw new Error(`[InputAbilitySystem] Program '${programId}' is marked as missing.`);
 		}
 
-		const rompack = $.rompack;
-		const rompackData = rompack.data;
-		if (!rompackData) {
-			throw new Error('[InputAbilitySystem] Rompack data unavailable while resolving programs.');
-		}
-		const data = rompackData[programId as keyof typeof rompackData];
+		const data = $.rompack.data[programId as keyof typeof $.rompack.data];
 		if (!isInputAbilityProgram(data)) {
 			this.missingProgramIds.add(programId);
 			throw new Error(`[InputAbilitySystem] Program '${programId}' not found or invalid.`);
