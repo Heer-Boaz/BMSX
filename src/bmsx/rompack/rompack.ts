@@ -96,6 +96,10 @@ export type Constructor<T> = new (...args: any[]) => T;
 export type ConcreteOrAbstractConstructor<T> = Function & { prototype: T; };
 // export type AbstractConstructor<T> = (abstract new (...args: any[]) => T);
 
+export interface Native {
+	__native__: string;
+}
+
 /**
  * Represents the direction values.
  */

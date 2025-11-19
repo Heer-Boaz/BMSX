@@ -2,7 +2,7 @@ import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
 import { type WorldObject, type WorldObjectConstructorBaseOrAbstract } from '../core/object/worldobject';
 import { Registry } from '../core/registry';
-import type { Disposable, Identifiable, Identifier, Registerable } from '../rompack/rompack';
+import type { Disposable, Identifiable, Identifier, Native, Registerable } from '../rompack/rompack';
 import { ConcreteOrAbstractConstructor } from '../rompack/rompack';
 import { insavegame, onload, type RevivableObjectArgs } from '../serializer/serializationhooks';
 
@@ -158,7 +158,9 @@ export type ComponentUpdateParams = {
  * @class
  * @implements IIdentifiable
  */
-export abstract class Component<T extends WorldObject = WorldObject> implements Identifiable {
+export abstract class Component<T extends WorldObject = WorldObject> implements Identifiable, Native {
+	public get __native__(): string { return 'component'; }
+
 	static get unique(): boolean { return false; } // If true, only one instance of this component type can be attached to a parent
 
 	/**

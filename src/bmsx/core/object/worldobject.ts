@@ -2,7 +2,7 @@ import { BehaviorTreeContext, BehaviorTreeID, instantiateBehaviorTree, Blackboar
 import { Component, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap, ComponentConstructor } from "../../component/basecomponent";
 import { StateMachineController } from "../../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
-import { ConcreteOrAbstractConstructor, Direction, vec3, type Area, type Identifier, type vec2, type Facing, type Polygon } from "../../rompack/rompack";
+import { ConcreteOrAbstractConstructor, Direction, vec3, type Area, type Identifier, type vec2, type Facing, type Polygon, type Native } from "../../rompack/rompack";
 import { excludepropfromsavegame, insavegame, type RevivableObjectArgs, onload } from '../../serializer/serializationhooks';
 import { $ } from '../game';
 import type { Space } from '../space';
@@ -53,7 +53,9 @@ export const WorldObjectEvents = {
 } as const;
 
 @insavegame
-export class WorldObject implements vec3, ComponentContainer, Stateful {
+export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
+	public get __native__(): string { return 'world_object'; }
+
 	/**
 	 * Represents a map of components associated with their respective keys.
 	 */

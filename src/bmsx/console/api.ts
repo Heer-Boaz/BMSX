@@ -88,7 +88,7 @@ export class BmsxConsoleApi {
 		this.playerindex = options.playerindex;
 		this.storage = options.storage;
 		this.font = new ConsoleFont();
-		this.resetPrintCursor();
+		this.reset_print_cursor();
 	}
 
 	public set_render_backend(backend: ConsoleRenderBackend | null): void {
@@ -131,21 +131,21 @@ export class BmsxConsoleApi {
 	}
 
 	public mousebtn(button: BmsxConsolePointerButton): boolean {
-		const state = this.getPlayerInput().getActionState(this.pointerAction(button));
+		const state = this.get_player_input().getActionState(this.pointer_action(button));
 		return state.pressed;
 	}
 
 	public mousebtnp(button: BmsxConsolePointerButton): boolean {
-		const state = this.getPlayerInput().getActionState(this.pointerAction(button));
+		const state = this.get_player_input().getActionState(this.pointer_action(button));
 		return state.guardedjustpressed;
 	}
 
 	public mousebtnr(button: BmsxConsolePointerButton): boolean {
-		const state = this.getPlayerInput().getActionState(this.pointerAction(button));
+		const state = this.get_player_input().getActionState(this.pointer_action(button));
 		return state.justreleased;
 	}
 
-	private getPlayerInput(): PlayerInput {
+	private get_player_input(): PlayerInput {
 		const playerInput = Input.instance.getPlayerInput(this.playerindex);
 		if (!playerInput) {
 			throw new Error(`[BmsxConsoleApi] Player input handler for index ${this.playerindex} is not initialised.`);
@@ -153,7 +153,7 @@ export class BmsxConsoleApi {
 		return playerInput;
 	}
 
-	private pointerAction(button: BmsxConsolePointerButton): string {
+	private pointer_action(button: BmsxConsolePointerButton): string {
 		const action = POINTER_ACTIONS[button];
 		if (!action) {
 			throw new Error(`[BmsxConsoleApi] Pointer button index ${button} outside supported range 0-${POINTER_ACTIONS.length - 1}.`);
@@ -166,7 +166,7 @@ export class BmsxConsoleApi {
 	}
 
 	public pointer_screen_position(): ConsolePointerVector {
-		const state = this.getPlayerInput().getActionState('pointer_position');
+		const state = this.get_player_input().getActionState('pointer_position');
 		const coords = state.value2d;
 		if (!coords) {
 			return { x: 0, y: 0, valid: false };
@@ -175,7 +175,7 @@ export class BmsxConsoleApi {
 	}
 
 	public pointer_delta(): ConsolePointerVector {
-		const state = this.getPlayerInput().getActionState('pointer_delta');
+		const state = this.get_player_input().getActionState('pointer_delta');
 		const delta = state.value2d;
 		if (!delta) {
 			return { x: 0, y: 0, valid: false };
@@ -184,11 +184,11 @@ export class BmsxConsoleApi {
 	}
 
 	public pointer_viewport_position(): ConsolePointerViewport {
-		return this.pointerViewportPositionInternal();
+		return this.pointer_viewport_position_internal();
 	}
 
 	public mousewheel(): ConsolePointerWheel {
-		const state = this.getPlayerInput().getActionState('pointer_wheel');
+		const state = this.get_player_input().getActionState('pointer_wheel');
 		const value = typeof state.value === 'number' ? state.value : 0;
 		const valid = typeof state.value === 'number';
 		return { value, valid };
@@ -201,21 +201,21 @@ export class BmsxConsoleApi {
 		const value = Math.trunc(index);
 		switch (value) {
 			case 32: {
-				const viewport = this.pointerViewportPositionInternal();
+				const viewport = this.pointer_viewport_position_internal();
 				if (!viewport.valid) {
 					return 0;
 				}
 				return Math.floor(viewport.x);
 			}
 			case 33: {
-				const viewport = this.pointerViewportPositionInternal();
+				const viewport = this.pointer_viewport_position_internal();
 				if (!viewport.valid) {
 					return 0;
 				}
 				return Math.floor(viewport.y);
 			}
 			case 34: {
-				return this.computePointerButtonMask();
+				return this.compute_pointer_button_mask();
 			}
 			case 36: {
 				const wheel = this.mousewheel();
@@ -230,7 +230,7 @@ export class BmsxConsoleApi {
 	}
 
 	public cls(colorindex: number = 0): void {
-		const color = this.paletteColor(colorindex);
+		const color = this.palette_color(colorindex);
 		this.renderBackend.drawRect({
 			kind: 'fill',
 			x0: 0,
@@ -240,15 +240,15 @@ export class BmsxConsoleApi {
 			color,
 			layer: DRAW_LAYER,
 		});
-		this.resetPrintCursor();
+		this.reset_print_cursor();
 	}
 
 	public rect(x0: number, y0: number, x1: number, y1: number, colorindex: number): void {
-		this.renderBackend.drawRect({ kind: 'rect', x0, y0, x1, y1, color: this.paletteColor(colorindex), layer: DRAW_LAYER });
+		this.renderBackend.drawRect({ kind: 'rect', x0, y0, x1, y1, color: this.palette_color(colorindex), layer: DRAW_LAYER });
 	}
 
 	public rectfill(x0: number, y0: number, x1: number, y1: number, colorindex: number): void {
-		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: this.paletteColor(colorindex), layer: DRAW_LAYER });
+		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: this.palette_color(colorindex), layer: DRAW_LAYER });
 	}
 
 	public rectfill_color(x0: number, y0: number, x1: number, y1: number, colorvalue: color): void {
@@ -256,19 +256,19 @@ export class BmsxConsoleApi {
 	}
 
 	public write(text: string, x?: number, y?: number, colorindex?: number): void {
-		const { baseX, baseY, color, font, autoAdvance } = this.resolveWriteContext(this.font, x, y, colorindex);
-		this.drawMultilineText(text, baseX, baseY, color, font);
+		const { baseX, baseY, color, font, autoAdvance } = this.resolve_write_context(this.font, x, y, colorindex);
+		this.draw_multiline_text(text, baseX, baseY, color, font);
 		if (autoAdvance) {
-			this.advancePrintCursor(font.lineHeight());
+			this.advance_print_cursor(font.lineHeight());
 		}
 	}
 
 	public write_with_font(text: string, x?: number, y?: number, colorindex?: number, font?: ConsoleFont): void {
 		const renderFont = font ?? this.font;
-		const { baseX, baseY, color, autoAdvance } = this.resolveWriteContext(renderFont, x, y, colorindex);
-		this.drawMultilineText(text, baseX, baseY, color, renderFont);
+		const { baseX, baseY, color, autoAdvance } = this.resolve_write_context(renderFont, x, y, colorindex);
+		this.draw_multiline_text(text, baseX, baseY, color, renderFont);
 		if (autoAdvance) {
-			this.advancePrintCursor(renderFont.lineHeight());
+			this.advance_print_cursor(renderFont.lineHeight());
 		}
 	}
 
@@ -351,33 +351,33 @@ export class BmsxConsoleApi {
 	}
 
 	public spawn_world_object(class_ref: string, options?: Record<string, unknown>): string {
-		const rawOptions = options ? this.cloneStateMachineData(options) : {};
-		if (rawOptions && !this.isPlainObject(rawOptions)) {
+		const rawOptions = options ? this.clone_state_machine_data(options) : {};
+		if (rawOptions && !this.is_plain_object(rawOptions)) {
 			throw new Error('[BmsxConsoleApi] spawn_world_object options must be a table/object.');
 		}
-		const normalized = this.normalizeSpawnOptions(rawOptions as Record<string, unknown>);
+		const normalized = this.normalize_spawn_options(rawOptions as Record<string, unknown>);
 		const runtime = BmsxConsoleRuntime.instance;
 		if (runtime) {
 			runtime.applyConsoleWorldObjectDefaults(class_ref, normalized);
 		}
-		const ctor = this.resolveWorldObjectConstructor(class_ref);
+		const ctor = this.resolve_world_object_constructor(class_ref);
 		if (normalized.id && $.world.exists(normalized.id)) {
 			throw new Error(`[BmsxConsoleApi] World object '${normalized.id}' already exists.`);
 		}
 		const ctorOptions: RevivableObjectArgs & { id?: string; fsm_id?: string } = {};
 		if (normalized.id) ctorOptions.id = normalized.id;
 		const instance = new ctor(ctorOptions);
-		this.applySpawnOrientation(instance, normalized);
+		this.apply_spawn_orientation(instance, normalized);
 		const componentDescriptors = runtime
 			? runtime.materializeComponentEntries(normalized.components)
-			: this.materializeComponentEntriesFallback(normalized.components);
-		this.attachSpawnComponents(instance, componentDescriptors);
+			: this.materialize_component_entries_fallback(normalized.components);
+		this.attach_spawn_components(instance, componentDescriptors);
 		if (runtime) {
 			runtime.primeLuaWorldObjectInstance(instance, normalized);
 		}
 		const spawnPos = normalized.position ? new_vec3(normalized.position.x, normalized.position.y, normalized.position.z) : undefined;
 		if (normalized.space) {
-			const space = this.lookupSpace(normalized.space);
+			const space = this.lookup_space(normalized.space);
 			const reasonOpts = normalized.reason ? { reason: normalized.reason } : undefined;
 			space.spawn(instance, spawnPos, reasonOpts);
 		} else {
@@ -394,20 +394,20 @@ export class BmsxConsoleApi {
 		if (typeof definition_id !== 'string' || definition_id.trim().length === 0) {
 			throw new Error('[BmsxConsoleApi] spawn_object requires a non-empty definition id.');
 		}
-		const runtime = this.requireConsoleRuntime('spawn_object');
+		const runtime = this.require_console_runtime('spawn_object');
 		const definition = runtime.getWorldObjectDefinition(definition_id.trim());
 		if (!definition) {
 			throw new Error(`[BmsxConsoleApi] World object definition '${definition_id}' is not registered.`);
 		}
-		const overridesClone = overrides ? this.cloneStateMachineData(overrides) : {};
-		if (overridesClone && !this.isPlainObject(overridesClone)) {
+		const overridesClone = overrides ? this.clone_state_machine_data(overrides) : {};
+		if (overridesClone && !this.is_plain_object(overridesClone)) {
 			throw new Error('[BmsxConsoleApi] spawn_object overrides must be a table/object.');
 		}
 		return this.spawn_world_object(definition.class_ref, overridesClone as Record<string, unknown>);
 	}
 
 	public despawn(id: Identifier, options?: { dispose?: boolean }): void {
-		const object = this.requireWorldObject(id, 'despawn');
+		const object = this.require_world_object(id, 'despawn');
 		$.exile(object);
 		if (options && options.dispose === true) {
 			object.dispose();
@@ -415,7 +415,7 @@ export class BmsxConsoleApi {
 	}
 
 	public attach_fsm(object_id: Identifier, machine_id: Identifier): void {
-		const object = this.requireWorldObject(object_id, 'attach_fsm');
+		const object = this.require_world_object(object_id, 'attach_fsm');
 		object.sc.ensureStatemachine(machine_id, object.id);
 	}
 
@@ -427,7 +427,7 @@ export class BmsxConsoleApi {
 		if (!behaviorTreeExists(trimmed)) {
 			throw new Error(`[BmsxConsoleApi] Behavior tree '${trimmed}' is not registered.`);
 		}
-		const object = this.requireWorldObject(object_id, 'attach_bt');
+		const object = this.require_world_object(object_id, 'attach_bt');
 		const ctor = object.constructor as ConstructorWithBTProperty;
 		if (Object.prototype.hasOwnProperty.call(ctor, 'linkedBTs')) {
 			const linked = ctor.linkedBTs ?? new Set<BehaviorTreeID>();
@@ -449,7 +449,7 @@ export class BmsxConsoleApi {
 	}
 
 	public register_component(descriptor: Record<string, unknown>): string {
-		const runtime = this.requireConsoleRuntime('register_component');
+		const runtime = this.require_console_runtime('register_component');
 		return runtime.registerComponentDefinition(descriptor);
 	}
 
@@ -458,7 +458,7 @@ export class BmsxConsoleApi {
 	}
 
 	public register_component_preset(descriptor: Record<string, unknown>): string {
-		const runtime = this.requireConsoleRuntime('register_component_preset');
+		const runtime = this.require_console_runtime('register_component_preset');
 		return runtime.registerComponentPreset(descriptor);
 	}
 
@@ -466,13 +466,13 @@ export class BmsxConsoleApi {
 		return this.register_component_preset(descriptor);
 	}
 
-	public register_worldobject(descriptor: Record<string, unknown>): string {
-		const runtime = this.requireConsoleRuntime('register_worldobject');
+	public register_world_object(descriptor: Record<string, unknown>): string {
+		const runtime = this.require_console_runtime('register_world_object');
 		return runtime.registerWorldObjectDefinition(descriptor);
 	}
 
 	public register_service(descriptor: Record<string, unknown>): Record<string, unknown> {
-		const runtime = this.requireConsoleRuntime('register_service');
+		const runtime = this.require_console_runtime('register_service');
 		return runtime.registerServiceDefinition(descriptor);
 	}
 
@@ -481,25 +481,25 @@ export class BmsxConsoleApi {
 	}
 
 	public attach_component(object_id: Identifier, component: string | { id: string; id_local?: string; state?: Record<string, unknown> }): string {
-		const runtime = this.requireConsoleRuntime('attach_component');
-		const object = this.requireWorldObject(object_id, 'attach_component');
+		const runtime = this.require_console_runtime('attach_component');
+		const object = this.require_world_object(object_id, 'attach_component');
 		const options = typeof component === 'string' ? { id: component } : (component ?? {});
 		const rawId = (options as { id?: unknown }).id;
 		if (typeof rawId !== 'string' || rawId.trim().length === 0) {
 			throw new Error('[BmsxConsoleApi] attach_component requires an id field.');
 		}
 		const definition_id = rawId.trim();
-		const idLocalRaw = (options as { id_local?: unknown }).id_local;
-		const id_local = typeof idLocalRaw === 'string' && idLocalRaw.trim().length > 0 ? idLocalRaw.trim() : undefined;
+		const idLocalRaw = options.id_local;
+		const id_local = idLocalRaw;
 		const stateRaw = (options as { state?: unknown }).state;
 		let state: Record<string, unknown> | undefined;
 		if (stateRaw !== undefined) {
-			if (!this.isPlainObject(stateRaw)) {
+			if (!this.is_plain_object(stateRaw)) {
 				throw new Error('[BmsxConsoleApi] attach_component state must be a table/object.');
 			}
-			state = this.cloneStateMachineData(stateRaw as Record<string, unknown>);
+			state = this.clone_state_machine_data(stateRaw as Record<string, unknown>);
 		}
-		if (state && !this.isPlainObject(state)) {
+		if (state && !this.is_plain_object(state)) {
 			throw new Error('[BmsxConsoleApi] attach_component state must be a plain object.');
 		}
 		const instance = runtime.createComponentInstance({
@@ -519,7 +519,7 @@ export class BmsxConsoleApi {
 	}
 
 	public register_ability(descriptor: Record<string, unknown>): string {
-		const runtime = this.requireConsoleRuntime('register_ability');
+		const runtime = this.require_console_runtime('register_ability');
 		const definition = runtime.registerAbilityDefinition(descriptor);
 		return definition.id;
 	}
@@ -532,8 +532,8 @@ export class BmsxConsoleApi {
 		if (typeof ability_id !== 'string' || ability_id.trim().length === 0) {
 			throw new Error('[BmsxConsoleApi] grant_ability requires a non-empty ability id.');
 		}
-		const runtime = this.requireConsoleRuntime('grant_ability');
-		const object = this.requireWorldObject(object_id, 'grant_ability');
+		const runtime = this.require_console_runtime('grant_ability');
+		const object = this.require_world_object(object_id, 'grant_ability');
 		const asc = object.get_unique_component(AbilitySystemComponent);
 		if (!asc) {
 			throw new Error(`[BmsxConsoleApi] World object '${object_id}' does not have an AbilitySystemComponent.`);
@@ -549,7 +549,7 @@ export class BmsxConsoleApi {
 		if (typeof ability_id !== 'string' || ability_id.trim().length === 0) {
 			throw new Error('[BmsxConsoleApi] request_ability requires a non-empty ability id.');
 		}
-		const object = this.requireWorldObject(object_id, 'request_ability');
+		const object = this.require_world_object(object_id, 'request_ability');
 		const asc = object.get_unique_component(AbilitySystemComponent);
 		if (!asc) {
 			throw new Error(`[BmsxConsoleApi] World object '${object_id}' does not have an AbilitySystemComponent.`);
@@ -563,16 +563,16 @@ export class BmsxConsoleApi {
 	}
 
 	public add_component(object_id: Identifier, component_ref: string, options?: Record<string, unknown>): string {
-		const object = this.requireWorldObject(object_id, 'add_component');
-		const rawOptions = options ? this.cloneStateMachineData(options) : {};
-		if (rawOptions && !this.isPlainObject(rawOptions)) {
+		const object = this.require_world_object(object_id, 'add_component');
+		const rawOptions = options ? this.clone_state_machine_data(options) : {};
+		if (rawOptions && !this.is_plain_object(rawOptions)) {
 			throw new Error('[BmsxConsoleApi] add_component options must be a table/object.');
 		}
 		const descriptor: ConsoleComponentDescriptor = {
 			className: component_ref,
 			options: rawOptions as Record<string, unknown>,
 		};
-		const component = this.attachComponentByDescriptor(object, descriptor);
+		const component = this.attach_component_by_descriptor(object, descriptor);
 		return component.id;
 	}
 
@@ -580,7 +580,7 @@ export class BmsxConsoleApi {
 		if (typeof component_id !== 'string' || component_id.length === 0) {
 			throw new Error('[BmsxConsoleApi] remove_component component_id must be a non-empty string.');
 		}
-		const object = this.requireWorldObject(object_id, 'remove_component');
+		const object = this.require_world_object(object_id, 'remove_component');
 		const component = object.get_component_by_id(component_id);
 		if (!component) {
 			throw new Error(`[BmsxConsoleApi] Component '${component_id}' not found on object '${object_id}'.`);
@@ -626,14 +626,14 @@ export class BmsxConsoleApi {
 		return $.event_emitter;
 	}
 
-	private getEmitter(emitter_or_id: Identifier | null): Registerable | null {
+	private get_emitter(emitter_or_id: Identifier | null): Registerable | null {
 		if (typeof emitter_or_id === 'string') {
 			return $.registry.get(emitter_or_id);
 		}
 		return emitter_or_id;
 	}
 
-	private validateEmitter(emitter_or_id: Identifier | Registerable, emitter?: Registerable): void {
+	private validate_emitter(emitter_or_id: Identifier | Registerable, emitter?: Registerable): void {
 		if (emitter_or_id && !emitter) {
 			throw new Error(`[BmsxConsoleApi] Emitter '${emitter_or_id}' not found.`);
 		}
@@ -644,8 +644,8 @@ export class BmsxConsoleApi {
 		if (typeof event_name !== 'string' || event_name.length === 0) {
 			throw new Error('[BmsxConsoleApi] emit requires a non-empty event name.');
 		}
-		const emitter: Registerable | null = this.getEmitter(emitter_or_id);
-		this.validateEmitter(emitter_or_id, emitter);
+		const emitter: Registerable | null = this.get_emitter(emitter_or_id);
+		this.validate_emitter(emitter_or_id, emitter);
 		$.emit(event_name, emitter, payload);
 	}
 
@@ -653,8 +653,8 @@ export class BmsxConsoleApi {
 		if (typeof event_name !== 'string' || event_name.length === 0) {
 			throw new Error('[BmsxConsoleApi] emit_gameplay requires a non-empty event name.');
 		}
-		const emitter = this.getEmitter(emitter_or_id);
-		this.validateEmitter(emitter_or_id, emitter);
+		const emitter = this.get_emitter(emitter_or_id);
+		this.validate_emitter(emitter_or_id, emitter);
 		$.emit_gameplay(event_name, emitter as any, payload);
 	}
 
@@ -662,8 +662,8 @@ export class BmsxConsoleApi {
 		if (typeof event_name !== 'string' || event_name.length === 0) {
 			throw new Error('[BmsxConsoleApi] emit_presentation requires a non-empty event name.');
 		}
-		const emitter = this.getEmitter(emitter_or_id);
-		this.validateEmitter(emitter_or_id, emitter);
+		const emitter = this.get_emitter(emitter_or_id);
+		this.validate_emitter(emitter_or_id, emitter);
 		$.emit_presentation(event_name, emitter, payload);
 	}
 
@@ -682,7 +682,7 @@ export class BmsxConsoleApi {
 		return runGate;
 	}
 
-	private requireConsoleRuntime(context: string): BmsxConsoleRuntime {
+	private require_console_runtime(context: string): BmsxConsoleRuntime {
 		const runtime = BmsxConsoleRuntime.instance;
 		if (!runtime) {
 			throw new Error(`[BmsxConsoleApi] ${context} requires the console runtime to be active.`);
@@ -691,7 +691,7 @@ export class BmsxConsoleApi {
 	}
 
 	public register_prepared_fsm(id: string, blueprint: StateMachineBlueprint, options?: { setup?: boolean }): void {
-		this.setFsmBlueprintFactory(id, blueprint);
+		this.set_fsm_blueprint_factory(id, blueprint);
 		if (!options || options.setup !== false) {
 			setupFSMlibrary();
 		}
@@ -701,23 +701,23 @@ export class BmsxConsoleApi {
 		if (!descriptor || typeof descriptor !== 'object') {
 			throw new Error('[BmsxConsoleApi] register_behavior_tree requires a descriptor table.');
 		}
-		const runtime = this.requireConsoleRuntime('register_behavior_tree');
+		const runtime = this.require_console_runtime('register_behavior_tree');
 		runtime.registerBehaviorTreeDefinition(descriptor);
 	}
 
-	private setFsmBlueprintFactory(id: string, blueprint: StateMachineBlueprint): void {
-		const snapshot = this.cloneStateMachineData(blueprint);
-		StateDefinitionBuilders[id] = () => this.cloneStateMachineData(snapshot);
+	private set_fsm_blueprint_factory(id: string, blueprint: StateMachineBlueprint): void {
+		const snapshot = this.clone_state_machine_data(blueprint);
+		StateDefinitionBuilders[id] = () => this.clone_state_machine_data(snapshot);
 	}
 
-	private resolveWorldObjectConstructor(class_ref: string): new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject {
+	private resolve_world_object_constructor(class_ref: string): new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject {
 		if (typeof class_ref !== 'string' || class_ref.trim().length === 0) {
 			throw new Error('[BmsxConsoleApi] spawn_world_object requires a non-empty class reference.');
 		}
 		if (class_ref === 'WorldObject') {
 			return WorldObject as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
 		}
-		const ctorUnknown = this.resolveConstructor(class_ref.trim());
+		const ctorUnknown = this.resolve_constructor(class_ref.trim());
 		if (typeof ctorUnknown !== 'function') {
 			throw new Error(`[BmsxConsoleApi] World object constructor '${class_ref}' not found.`);
 		}
@@ -728,11 +728,11 @@ export class BmsxConsoleApi {
 		return ctor;
 	}
 
-	private resolveComponentConstructor(class_ref: string): new (opts: Record<string, unknown>) => Component {
+	private resolve_component_constructor(class_ref: string): new (opts: Record<string, unknown>) => Component {
 		if (typeof class_ref !== 'string' || class_ref.trim().length === 0) {
 			throw new Error('[BmsxConsoleApi] Component reference must be a non-empty string.');
 		}
-		const ctorUnknown = this.resolveConstructor(class_ref.trim());
+		const ctorUnknown = this.resolve_constructor(class_ref.trim());
 		if (typeof ctorUnknown !== 'function') {
 			throw new Error(`[BmsxConsoleApi] Component constructor '${class_ref}' not found.`);
 		}
@@ -743,7 +743,7 @@ export class BmsxConsoleApi {
 		return ctor;
 	}
 
-	private resolveConstructor(ref: string): unknown {
+	private resolve_constructor(ref: string): unknown {
 		if (!ref) return undefined;
 		const map = Reviver.constructors;
 		if (map && map[ref]) {
@@ -756,7 +756,7 @@ export class BmsxConsoleApi {
 		return undefined;
 	}
 
-	private normalizeSpawnOptions(raw: Record<string, unknown>): NormalizedSpawnOptions {
+	private normalize_spawn_options(raw: Record<string, unknown>): NormalizedSpawnOptions {
 		const normalized: NormalizedSpawnOptions = {
 			id: undefined,
 			space: undefined,
@@ -780,7 +780,7 @@ export class BmsxConsoleApi {
 		}
 		const fsmsRaw = raw.fsms;
 		if (fsmsRaw !== undefined) {
-			normalized.fsms = this.normalizeSpawnSystemEntries(fsmsRaw, 'fsms', false);
+			normalized.fsms = this.normalize_spawn_system_entries(fsmsRaw, 'fsms', false);
 		}
 		if (raw.space !== undefined) {
 			if (typeof raw.space !== 'string' || raw.space.trim().length === 0) {
@@ -799,41 +799,41 @@ export class BmsxConsoleApi {
 			normalized.reason = reason as SpawnReason;
 		}
 		if (raw.position !== undefined) {
-			normalized.position = this.normalizeVector3(raw.position, 'spawn_world_object options.position', false, 0);
+			normalized.position = this.normalize_vector3(raw.position, 'spawn_world_object options.position', false, 0);
 		}
 		const orientationSource = raw.rotation !== undefined ? raw.rotation : raw.orientation;
 		if (orientationSource !== undefined) {
-			normalized.orientation = this.normalizeVector3(orientationSource, 'spawn_world_object options.orientation', true, 0);
+			normalized.orientation = this.normalize_vector3(orientationSource, 'spawn_world_object options.orientation', true, 0);
 		}
 		if (raw.scale !== undefined) {
-			normalized.scale = this.normalizeVector3(raw.scale, 'spawn_world_object options.scale', true, 1);
+			normalized.scale = this.normalize_vector3(raw.scale, 'spawn_world_object options.scale', true, 1);
 		}
 		if (raw.components !== undefined) {
-			normalized.components = this.normalizeSpawnComponentEntries(raw.components);
+			normalized.components = this.normalize_spawn_component_entries(raw.components);
 		}
 
 		const behaviorTreesRaw = raw.behavior_trees;
 		if (behaviorTreesRaw !== undefined) {
-			normalized.behavior_trees = this.normalizeSpawnSystemEntries(behaviorTreesRaw, 'behavior trees', true);
+			normalized.behavior_trees = this.normalize_spawn_system_entries(behaviorTreesRaw, 'behavior trees', true);
 		}
 
 		if (raw.abilities !== undefined) {
-			normalized.abilities = this.normalizeStringList(raw.abilities);
+			normalized.abilities = this.normalize_string_list(raw.abilities);
 		}
 		if (raw.tags !== undefined) {
-			normalized.tags = this.normalizeStringList(raw.tags);
+			normalized.tags = this.normalize_string_list(raw.tags);
 		}
 		if (raw.defaults !== undefined) {
-			if (!this.isPlainObject(raw.defaults)) {
+			if (!this.is_plain_object(raw.defaults)) {
 				throw new Error('[BmsxConsoleApi] spawn_world_object defaults must be a table/object.');
 			}
-			normalized.defaults = this.cloneStateMachineData(raw.defaults as Record<string, unknown>);
+			normalized.defaults = this.clone_state_machine_data(raw.defaults as Record<string, unknown>);
 		}
 		return normalized;
 	}
 
-	private normalizeVector3(source: unknown, context: string, allowPartial: boolean, defaultValue: number): { x: number; y: number; z: number } {
-		if (!this.isPlainObject(source)) {
+	private normalize_vector3(source: unknown, context: string, allowPartial: boolean, defaultValue: number): { x: number; y: number; z: number } {
+		if (!this.is_plain_object(source)) {
 			throw new Error(`[BmsxConsoleApi] ${context} must be a table/object.`);
 		}
 		const table = source as Record<string, unknown>;
@@ -844,20 +844,20 @@ export class BmsxConsoleApi {
 			throw new Error(`[BmsxConsoleApi] ${context} requires at least x and y values.`);
 		}
 		if (hasX) {
-			result.x = this.expectFiniteNumber(table.x, `${context}.x`);
+			result.x = this.expect_finite_number(table.x, `${context}.x`);
 		}
 		if (hasY) {
-			result.y = this.expectFiniteNumber(table.y, `${context}.y`);
+			result.y = this.expect_finite_number(table.y, `${context}.y`);
 		}
 		if (table.z !== undefined) {
-			result.z = this.expectFiniteNumber(table.z, `${context}.z`);
+			result.z = this.expect_finite_number(table.z, `${context}.z`);
 		} else {
 			result.z = defaultValue;
 		}
 		return result;
 	}
 
-	private normalizeSpawnComponentEntries(raw: unknown): ConsoleWorldObjectComponentEntry[] {
+	private normalize_spawn_component_entries(raw: unknown): ConsoleWorldObjectComponentEntry[] {
 		if (!Array.isArray(raw)) {
 			throw new Error('[BmsxConsoleApi] spawn_world_object options.components must be an array.');
 		}
@@ -872,21 +872,18 @@ export class BmsxConsoleApi {
 				entries.push({ kind: 'component', descriptor: { classname: trimmed, options: {} } });
 				continue;
 			}
-			if (!this.isPlainObject(entry)) {
+			if (!this.is_plain_object(entry)) {
 				throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}] must be a string or table/object.`);
 			}
 			const record = entry as Record<string, unknown>;
-			const preset = record.preset ?? record.presetId ?? record.preset_id;
-			if (typeof preset === 'string' && preset.trim().length > 0) {
-				const paramsRaw = record.params ?? record.arguments ?? record.options ?? record.config;
+			const preset = record.preset;
+			if (typeof preset === 'string') {
+				const paramsRaw = record.params;
 				let params: Record<string, unknown> = {};
 				if (paramsRaw !== undefined) {
-					if (!this.isPlainObject(paramsRaw)) {
-						throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}] preset params must be a table/object.`);
-					}
-					params = this.cloneStateMachineData(paramsRaw as Record<string, unknown>);
+					params = this.clone_state_machine_data(paramsRaw as Record<string, unknown>);
 				}
-				entries.push({ kind: 'preset', presetId: preset.trim(), params });
+				entries.push({ kind: 'preset', presetId: preset, params });
 				continue;
 			}
 			const classCandidate = record.class ?? record.className ?? record.type ?? record.name;
@@ -895,22 +892,18 @@ export class BmsxConsoleApi {
 			}
 			let options: Record<string, unknown>;
 			if (record.options !== undefined) {
-				if (!this.isPlainObject(record.options)) {
+				if (!this.is_plain_object(record.options)) {
 					throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}].options must be a table/object.`);
 				}
-				options = this.cloneStateMachineData(record.options as Record<string, unknown>);
+				options = this.clone_state_machine_data(record.options as Record<string, unknown>);
 			} else {
-				const clone = this.cloneStateMachineData(record);
+				const clone = this.clone_state_machine_data(record);
 				delete clone.class;
 				delete clone.className;
 				delete clone.type;
 				delete clone.name;
 				delete clone.preset;
-				delete clone.presetId;
-				delete clone.preset_id;
 				delete clone.params;
-				delete clone.arguments;
-				delete clone.config;
 				delete clone.options;
 				options = clone;
 			}
@@ -919,7 +912,7 @@ export class BmsxConsoleApi {
 		return entries;
 	}
 
-	private normalizeSpawnSystemEntries(raw: unknown, label: string, allowAutoTick: boolean): ConsoleWorldObjectSystemEntry[] {
+	private normalize_spawn_system_entries(raw: unknown, label: string, allowAutoTick: boolean): ConsoleWorldObjectSystemEntry[] {
 		if (raw === undefined || raw === null) {
 			return [];
 		}
@@ -965,21 +958,21 @@ export class BmsxConsoleApi {
 					entries.push({ id: trimmed });
 					continue;
 				}
-				if (!this.isPlainObject(value)) {
+				if (!this.is_plain_object(value)) {
 					throw new Error(`[BmsxConsoleApi] ${label}[${index}] must be a string or table/object.`);
 				}
 				push(value as Record<string, unknown>, `[${index}]`);
 			}
 			return entries;
 		}
-		if (this.isPlainObject(raw)) {
+		if (this.is_plain_object(raw)) {
 			push(raw as Record<string, unknown>, '');
 			return entries;
 		}
 		throw new Error(`[BmsxConsoleApi] ${label} must be provided as a string, table, or array.`);
 	}
 
-	private normalizeStringList(value: unknown): string[] {
+	private normalize_string_list(value: unknown): string[] {
 		if (value === undefined || value === null) {
 			return [];
 		}
@@ -1004,7 +997,7 @@ export class BmsxConsoleApi {
 		return result;
 	}
 
-	private applySpawnOrientation(instance: WorldObject, options: NormalizedSpawnOptions): void {
+	private apply_spawn_orientation(instance: WorldObject, options: NormalizedSpawnOptions): void {
 		if (options.orientation) {
 			instance.orientation = new_vec3(options.orientation.x, options.orientation.y, options.orientation.z);
 		}
@@ -1015,13 +1008,13 @@ export class BmsxConsoleApi {
 		}
 	}
 
-	private attachSpawnComponents(object: WorldObject, descriptors: ConsoleComponentDescriptor[]): void {
+	private attach_spawn_components(object: WorldObject, descriptors: ConsoleComponentDescriptor[]): void {
 		for (let index = 0; index < descriptors.length; index += 1) {
-			this.attachComponentByDescriptor(object, descriptors[index]);
+			this.attach_component_by_descriptor(object, descriptors[index]);
 		}
 	}
 
-	private materializeComponentEntriesFallback(entries: ReadonlyArray<ConsoleWorldObjectComponentEntry>): ConsoleComponentDescriptor[] {
+	private materialize_component_entries_fallback(entries: ReadonlyArray<ConsoleWorldObjectComponentEntry>): ConsoleComponentDescriptor[] {
 		const descriptors: ConsoleComponentDescriptor[] = [];
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index]!;
@@ -1030,16 +1023,16 @@ export class BmsxConsoleApi {
 			}
 			descriptors.push({
 				className: entry.descriptor.classname,
-				options: this.cloneStateMachineData(entry.descriptor.options),
+				options: this.clone_state_machine_data(entry.descriptor.options),
 			});
 		}
 		return descriptors;
 	}
 
-	private attachComponentByDescriptor(object: WorldObject, descriptor: ConsoleComponentDescriptor): Component {
-		const ctor = this.resolveComponentConstructor(descriptor.className);
-		const optionsClone = this.cloneStateMachineData(descriptor.options);
-		if (optionsClone && !this.isPlainObject(optionsClone)) {
+	private attach_component_by_descriptor(object: WorldObject, descriptor: ConsoleComponentDescriptor): Component {
+		const ctor = this.resolve_component_constructor(descriptor.className);
+		const optionsClone = this.clone_state_machine_data(descriptor.options);
+		if (optionsClone && !this.is_plain_object(optionsClone)) {
 			throw new Error('[BmsxConsoleApi] Component options must be a table/object.');
 		}
 		const prepared = optionsClone ? { ...optionsClone } : {};
@@ -1054,7 +1047,7 @@ export class BmsxConsoleApi {
 		return component;
 	}
 
-	private lookupSpace(spaceId: string): Space {
+	private lookup_space(spaceId: string): Space {
 		const space = $.world.getSpace(spaceId);
 		if (!space) {
 			throw new Error(`[BmsxConsoleApi] Space '${spaceId}' not found.`);
@@ -1062,7 +1055,7 @@ export class BmsxConsoleApi {
 		return space;
 	}
 
-	private requireWorldObject(id: Identifier, context: string): WorldObject {
+	private require_world_object(id: Identifier, context: string): WorldObject {
 		if (typeof id !== 'string' || id.length === 0) {
 			throw new Error(`[BmsxConsoleApi] ${context} requires a non-empty object id.`);
 		}
@@ -1073,25 +1066,25 @@ export class BmsxConsoleApi {
 		return object;
 	}
 
-	private expectFiniteNumber(value: unknown, context: string): number {
+	private expect_finite_number(value: unknown, context: string): number {
 		if (typeof value !== 'number' || !Number.isFinite(value)) {
 			throw new Error(`[BmsxConsoleApi] ${context} must be a finite number.`);
 		}
 		return value;
 	}
 
-	private isPlainObject(value: unknown): value is Record<string, unknown> {
+	private is_plain_object(value: unknown): value is Record<string, unknown> {
 		if (value === null) return false;
 		if (typeof value !== 'object') return false;
 		const proto = Object.getPrototypeOf(value);
 		return proto === Object.prototype || proto === null;
 	}
 
-	private cloneStateMachineData<T>(source: T): T {
+	private clone_state_machine_data<T>(source: T): T {
 		return JSON.parse(JSON.stringify(source)) as T;
 	}
 
-	private pointerViewportPositionInternal(): ConsolePointerViewport {
+	private pointer_viewport_position_internal(): ConsolePointerViewport {
 		const screen = this.pointer_screen_position();
 		if (!screen.valid) {
 			return { x: 0, y: 0, valid: false, inside: false };
@@ -1114,7 +1107,7 @@ export class BmsxConsoleApi {
 		return { x: viewportX, y: viewportY, valid: true, inside };
 	}
 
-	private computePointerButtonMask(): number {
+	private compute_pointer_button_mask(): number {
 		let mask = 0;
 		if (this.mousebtn(BmsxConsolePointerButton.Primary)) {
 			mask |= 1;
@@ -1134,7 +1127,7 @@ export class BmsxConsoleApi {
 		return mask;
 	}
 
-	private expandTabs(text: string): string {
+	private expand_tabs(text: string): string {
 		if (text.indexOf('\t') === -1) {
 			return text;
 		}
@@ -1153,7 +1146,7 @@ export class BmsxConsoleApi {
 	}
 
 
-	private paletteColor(index: number): color {
+	private palette_color(index: number): color {
 		if (!Number.isInteger(index)) {
 			throw new Error('[BmsxConsoleApi] Color index must be an integer.');
 		}
@@ -1163,7 +1156,7 @@ export class BmsxConsoleApi {
 		return Msx1Colors[index];
 	}
 
-	private resolveWriteContext(font: ConsoleFont, x: number, y: number, colorindex: number | undefined): {
+	private resolve_write_context(font: ConsoleFont, x: number, y: number, colorindex: number | undefined): {
 		baseX: number;
 		baseY: number;
 		color: color;
@@ -1181,15 +1174,15 @@ export class BmsxConsoleApi {
 		}
 		const baseX = this.textCursorX;
 		const baseY = this.textCursorY;
-		const color = this.paletteColor(this.textCursorColorIndex);
+		const color = this.palette_color(this.textCursorColorIndex);
 		return { baseX, baseY, color, autoAdvance: true, font };
 	}
 
-	private drawMultilineText(text: string, x: number, y: number, color: color, font: ConsoleFont): number {
+	private draw_multiline_text(text: string, x: number, y: number, color: color, font: ConsoleFont): number {
 		const lines = text.split('\n');
 		let cursorY = y;
 		for (let i = 0; i < lines.length; i += 1) {
-			const expanded = this.expandTabs(lines[i]);
+			const expanded = this.expand_tabs(lines[i]);
 			if (expanded.length > 0) {
 				this.renderBackend.drawText({ kind: 'print', text: expanded, x, y: cursorY, color }, font);
 			}
@@ -1202,7 +1195,7 @@ export class BmsxConsoleApi {
 		return cursorY;
 	}
 
-	private advancePrintCursor(lineHeight: number): void {
+	private advance_print_cursor(lineHeight: number): void {
 		this.textCursorY += lineHeight;
 		const limit = this.display_height - lineHeight;
 		if (this.textCursorY >= limit) {
@@ -1210,7 +1203,7 @@ export class BmsxConsoleApi {
 		}
 	}
 
-	private resetPrintCursor(): void {
+	private reset_print_cursor(): void {
 		this.textCursorHomeX = 0;
 		this.textCursorX = 0;
 		this.textCursorY = 0;

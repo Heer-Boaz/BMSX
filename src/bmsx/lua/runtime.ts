@@ -90,7 +90,7 @@ export interface LuaHostAdapter {
 	toLua(value: unknown, interpreter: LuaInterpreter): LuaValue;
 	toJs(value: LuaValue, interpreter: LuaInterpreter): unknown;
 	serializeNative?(native: object | Function): unknown;
-	deserializeNative?(token: unknown): object | Function | null;
+	deserializeNative?(token: unknown): object | Function;
 }
 
 class LuaNativeFunction implements LuaFunctionValue {
