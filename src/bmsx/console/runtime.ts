@@ -89,6 +89,22 @@ const CONSOLE_BUTTON_ACTIONS: ReadonlyArray<string> = [
 
 const CONSOLE_PREVIEW_MAX_ENTRIES = 12;
 const CONSOLE_PREVIEW_MAX_DEPTH = 2;
+const COMPONENT_DESCRIPTOR_RESERVED_KEYS = new Set<string>([
+	'class',
+	'className',
+	'type',
+	'preset',
+	'presetId',
+	'preset_id',
+	'params',
+	'arguments',
+	'options',
+	'config',
+	'id',
+	'idLocal',
+	'id_local',
+]);
+const COMPONENT_OPTION_RESERVED_KEYS = new Set<string>(['id', 'idLocal', 'id_local']);
 
 // Flip back to 'msx' to restore the legacy editor font.
 const EDITOR_FONT_VARIANT: ConsoleFontVariant = 'tiny';
@@ -388,7 +404,7 @@ export class BmsxConsoleRuntime extends Service {
 	private luaSnapshotSave: LuaFunctionValue | null = null;
 	private luaSnapshotLoad: LuaFunctionValue | null = null;
 	private luaRuntimeFailed = false;
-	private luaDebuggerController: LuaDebuggerController | null = null;
+	private readonly luaDebuggerController: LuaDebuggerController = new LuaDebuggerController();
 	private luaDebuggerSuspension: LuaDebuggerPauseSignal | null = null;
 	private debuggerHaltsGame = false;
 	private debuggerAutoActivateOnNextPause = false;
@@ -544,7 +560,6 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private configureInterpreter(interpreter: LuaInterpreter): void {
-		this.ensureLuaDebuggerController();
 		interpreter.setCaseInsensitiveNativeAccess(this.caseInsensitiveLua);
 		interpreter.setHostAdapter({
 			toLua: (value, ctx) => this.jsToLua(value, ctx),
@@ -559,13 +574,6 @@ export class BmsxConsoleRuntime extends Service {
 		this.refreshDebuggerAttachment(interpreter);
 	}
 
-	private ensureLuaDebuggerController(): LuaDebuggerController {
-		if (!this.luaDebuggerController) {
-			this.luaDebuggerController = new LuaDebuggerController();
-		}
-		return this.luaDebuggerController;
-	}
-
 	private refreshDebuggerAttachment(interpreter: LuaInterpreter): void {
 		interpreter.attachDebugger(this.luaDebuggerController);
 	}
@@ -576,7 +584,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const autoActivateOnPause = this.debuggerAutoActivateOnNextPause;
 		this.debuggerAutoActivateOnNextPause = false;
-		const controller = this.ensureLuaDebuggerController();
+		const controller = this.luaDebuggerController;
 		const sessionMetrics = controller.handlePause(signal);
 		this.luaDebuggerSuspension = signal;
 		this.debuggerHaltsGame = true;
@@ -619,7 +627,7 @@ export class BmsxConsoleRuntime extends Service {
 		details: { chunkName: string | null; line: number | null; column: number | null },
 		callStackOverride?: ReadonlyArray<LuaCallFrame>,
 	): void {
-		const controller = this.ensureLuaDebuggerController();
+		const controller = this.luaDebuggerController;
 		const interpreter = this.luaInterpreter;
 		const callStack =
 			callStackOverride !== undefined
@@ -727,7 +735,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public setLuaBreakpoints(breakpoints: ReadonlyMap<string, ReadonlySet<number>>): void {
-		const controller = this.ensureLuaDebuggerController();
+		const controller = this.luaDebuggerController;
 		controller.setBreakpoints(breakpoints);
 	}
 
@@ -864,7 +872,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.stepOverLuaDebugger();
 			return;
 		}
-		const controller = this.ensureLuaDebuggerController();
+		const controller = this.luaDebuggerController;
 		if (this.editor?.isActive() !== true) {
 			this.debuggerAutoActivateOnNextPause = true;
 		}
@@ -1509,10 +1517,9 @@ export class BmsxConsoleRuntime extends Service {
 		$.reset_to_fresh_world({ preserveConsoleRuntime: true });
 	}
 
-	private ensureFrameState(): ConsoleFrameState {
-		const existing = this.currentFrameState;
-		if (existing) {
-			return existing;
+	private beginFrameState(): ConsoleFrameState {
+		if (this.currentFrameState) {
+			throw new Error('[BmsxConsoleRuntime] Attempted to begin a new frame while another frame is active.');
 		}
 		const deltaSeconds = this.computeFrameDeltaSeconds();
 		this.overlayRenderedThisFrame = false;
@@ -1535,23 +1542,12 @@ export class BmsxConsoleRuntime extends Service {
 		return state;
 	}
 
-	private ensureConsoleEvaluation(state: ConsoleFrameState): void {
-		if (state.consoleEvaluated) {
-			return;
+	private requireFrameState(phase: string): ConsoleFrameState {
+		const state = this.currentFrameState;
+		if (!state) {
+			throw new Error(`[BmsxConsoleRuntime] Frame state unavailable during ${phase}. runConsoleModePhase() must run first.`);
 		}
-		state.consoleEvaluated = true;
-		state.consoleActive = this.consoleMode.isActive;
-		this.updateFrameHaltingState(state);
-	}
-
-	private ensureEditorEvaluation(state: ConsoleFrameState): void {
-		if (state.editorEvaluated) {
-			return;
-		}
-		const editorActive = this.editor?.isActive() === true && !state.consoleActive;
-		state.editorEvaluated = true;
-		state.editorActive = editorActive;
-		this.updateFrameHaltingState(state);
+		return state;
 	}
 
 	private updateFrameHaltingState(state: ConsoleFrameState): void {
@@ -1570,10 +1566,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!this.tickEnabled) {
 			return;
 		}
-		if (this.currentFrameState) {
-			this.abandonFrameState();
-		}
-		const state = this.ensureFrameState();
+		const state = this.beginFrameState();
 		this.pollConsoleHotkeys();
 		this.advanceConsoleMode(state.deltaSeconds);
 		state.consoleEvaluated = true;
@@ -1585,8 +1578,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!this.tickEnabled) {
 			return;
 		}
-		const state = this.ensureFrameState();
-		this.ensureConsoleEvaluation(state);
+		const state = this.requireFrameState('editor');
 		const editor = this.editor;
 		if (editor && !state.consoleActive) {
 			editor.update(state.deltaSeconds);
@@ -1601,9 +1593,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!this.tickEnabled) {
 			return;
 		}
-		const state = this.ensureFrameState();
-		this.ensureConsoleEvaluation(state);
-		this.ensureEditorEvaluation(state);
+		const state = this.requireFrameState('update');
 		const playerInput = this.getPlayerInput();
 		const getState = (code: string) => playerInput.getButtonState(code, 'keyboard');
 		const consume = (code: string) => playerInput.consumeButton(code, 'keyboard');
@@ -1658,9 +1648,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!this.tickEnabled) {
 			return;
 		}
-		const state = this.ensureFrameState();
-		this.ensureConsoleEvaluation(state);
-		this.ensureEditorEvaluation(state);
+		const state = this.requireFrameState('draw');
 		try {
 			const editor = this.editor;
 			const editorActive = state.editorActive;
@@ -4481,11 +4469,7 @@ export class BmsxConsoleRuntime extends Service {
 			throw new Error(`[BmsxConsoleRuntime] Duplicate Lua service id '${serviceId}' detected.`);
 		}
 
-		let autoActivate = true;
-		const autoActivateRaw = this.getLuaRecordEntry<boolean>(descriptor, ['auto_activate', 'autoActivate']);
-		if (typeof autoActivateRaw === 'boolean') {
-			autoActivate = autoActivateRaw;
-		}
+		const autoActivate = (descriptor as { auto_activate?: boolean }).auto_activate ?? true;
 
 		const hooks: LuaServiceHooks = {};
 		const bootCandidate = this.getLuaTableEntry(table, ['on_boot', 'boot', 'initialize']);
@@ -4586,7 +4570,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 
 		const machines: Identifier[] = [];
-		const machinesValue = this.getLuaRecordEntry<unknown>(descriptor, ['machines', 'state_machines', 'stateMachines']);
+		const machinesValue = (descriptor as { machines?: unknown }).machines;
 		if (Array.isArray(machinesValue)) {
 			for (let index = 0; index < machinesValue.length; index += 1) {
 				const value = machinesValue[index];
@@ -5176,32 +5160,18 @@ export class BmsxConsoleRuntime extends Service {
 		if (!descriptor || typeof descriptor !== 'object') {
 			throw new Error('[BmsxConsoleRuntime] define_service requires a descriptor table.');
 		}
-		const serviceIdRaw = this.getLuaRecordEntry<string>(descriptor, ['id', 'name']);
-		if (typeof serviceIdRaw !== 'string' || serviceIdRaw.trim().length === 0) {
-			throw new Error('[BmsxConsoleRuntime] define_service requires a non-empty id.');
-		}
-		const serviceId = this.normalizeLuaIdentifier(serviceIdRaw, 'define_service');
-		const fsmsRaw = (descriptor as { fsms?: unknown; state_machines?: unknown; stateMachines?: unknown; machines?: unknown }).fsms
-			?? (descriptor as { state_machines?: unknown }).state_machines
-			?? (descriptor as { stateMachines?: unknown }).stateMachines
-			?? (descriptor as { machines?: unknown }).machines;
-		const btRaw = (descriptor as { bts?: unknown; behavior_trees?: unknown; behaviorTrees?: unknown }).bts
-			?? (descriptor as { behavior_trees?: unknown }).behavior_trees
-			?? (descriptor as { behaviorTrees?: unknown }).behaviorTrees;
-		const abilitiesRaw = (descriptor as { abilities?: unknown }).abilities;
-		const tagsRaw = (descriptor as { tags?: unknown }).tags;
-		const autoActivateRaw = this.getLuaRecordEntry<boolean>(descriptor, ['auto_activate', 'autoActivate']);
-		const fsms = this.cloneSystemEntries(this.normalizeWorldObjectFsmList(fsmsRaw));
-		const behaviorTrees = this.cloneSystemEntries(this.normalizeWorldObjectBehaviorTreeList(btRaw));
-		const abilities = this.normalizeStringArray(abilitiesRaw) ?? [];
-		const tags = this.normalizeStringArray(tagsRaw) ?? [];
-		const autoActivate = typeof autoActivateRaw === 'boolean' ? autoActivateRaw : true;
+		const serviceId = this.normalizeLuaIdentifier((descriptor as { id?: unknown }).id, 'define_service');
+		const fsms = this.normalizeWorldObjectFsmList((descriptor as { fsms?: unknown }).fsms);
+		const behaviorTrees = this.normalizeWorldObjectBehaviorTreeList((descriptor as { behavior_trees?: unknown }).behavior_trees);
+		const abilities = this.normalizeStringArray((descriptor as { abilities?: unknown }).abilities) ?? [];
+		const tags = this.normalizeStringArray((descriptor as { tags?: unknown }).tags) ?? [];
+		const autoActivate = (descriptor as { auto_activate?: boolean }).auto_activate ?? true;
 		const record: ConsoleServiceDefinitionRecord = {
 			id: serviceId,
 			fsms,
 			behavior_trees: behaviorTrees,
-			abilities: abilities.slice(),
-			tags: tags.slice(),
+			abilities,
+			tags,
 			auto_activate: autoActivate,
 			asset_id: this.currentLuaAssetContext?.asset_id ?? null,
 		};
@@ -5224,7 +5194,7 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			set.add(serviceId);
 		}
-		if (!Object.prototype.hasOwnProperty.call(descriptor, 'auto_activate') && !Object.prototype.hasOwnProperty.call(descriptor, 'autoActivate')) {
+		if (!Object.prototype.hasOwnProperty.call(descriptor, 'auto_activate')) {
 			(descriptor as { auto_activate?: boolean }).auto_activate = autoActivate;
 		}
 		return descriptor;
@@ -5254,13 +5224,13 @@ export class BmsxConsoleRuntime extends Service {
 			const record = entry as Record<string, unknown>;
 			const presetCandidate = this.getLuaRecordEntry<string>(record, ['preset', 'presetId', 'preset_id']);
 			if (typeof presetCandidate === 'string' && presetCandidate.trim().length > 0) {
-				const paramsRaw = this.getLuaRecordEntry<unknown>(record, ['params', 'arguments', 'options', 'config']);
+				const paramsRaw = this.getLuaRecordEntry<Record<string, unknown>>(record, ['params', 'arguments', 'options', 'config']);
 				let params: Record<string, unknown> = {};
 				if (paramsRaw !== undefined) {
 					if (!this.isPlainObject(paramsRaw)) {
 						throw new Error(`[BmsxConsoleRuntime] Component preset '${presetCandidate}' params must be a table/object.`);
 					}
-					params = deep_clone(paramsRaw as Record<string, unknown>);
+					params = this.prepareComponentOptions(paramsRaw as Record<string, unknown>, COMPONENT_OPTION_RESERVED_KEYS);
 				}
 				normalized.push({ kind: 'preset', presetId: presetCandidate.trim(), params });
 				continue;
@@ -5274,60 +5244,13 @@ export class BmsxConsoleRuntime extends Service {
 				if (!this.isPlainObject(record.options)) {
 					throw new Error(`[BmsxConsoleRuntime] Component descriptor at index ${i} options must be a table/object.`);
 				}
-				options = deep_clone(record.options as Record<string, unknown>);
+				options = this.prepareComponentOptions(record.options as Record<string, unknown>, COMPONENT_OPTION_RESERVED_KEYS);
 			} else {
-				options = deep_clone(record);
-				delete options.class;
-				delete options.className;
-				delete options.type;
-				delete options.preset;
-				delete options.presetId;
-				delete options.preset_id;
-				delete options.params;
-				delete options.arguments;
-				delete options.options;
-				delete options.config;
+				options = this.prepareComponentOptions(record);
 			}
 			normalized.push({ kind: 'component', descriptor: { classname: className.trim(), options } });
 		}
 		return normalized;
-	}
-
-	private cloneComponentEntries(source: ConsoleWorldObjectComponentEntry[]): ConsoleWorldObjectComponentEntry[] {
-		const cloned: ConsoleWorldObjectComponentEntry[] = [];
-		for (let i = 0; i < source.length; i += 1) {
-			const item = source[i]!;
-			if (item.kind === 'component') {
-				cloned.push({
-					kind: 'component',
-					descriptor: {
-						classname: item.descriptor.classname,
-						options: deep_clone(item.descriptor.options),
-					},
-				});
-				continue;
-			}
-			cloned.push({
-				kind: 'preset',
-				presetId: item.presetId,
-				params: deep_clone(item.params),
-			});
-		}
-		return cloned;
-	}
-
-	private cloneSystemEntries(entries: ConsoleWorldObjectSystemEntry[]): ConsoleWorldObjectSystemEntry[] {
-		const cloned: ConsoleWorldObjectSystemEntry[] = [];
-		for (let i = 0; i < entries.length; i += 1) {
-			const entry = entries[i]!;
-			cloned.push({
-				id: entry.id,
-				context: entry.context ?? undefined,
-				auto_tick: entry.auto_tick ?? undefined,
-				active: entry.active ?? undefined,
-			});
-		}
-		return cloned;
 	}
 
 	private expandComponentEntries(entries: ConsoleWorldObjectComponentEntry[]): Array<{ className: string; options: Record<string, unknown> }> {
@@ -5337,7 +5260,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (entry.kind === 'component') {
 				descriptors.push({
 					className: entry.descriptor.classname,
-					options: deep_clone(entry.descriptor.options),
+					options: entry.descriptor.options,
 				});
 				continue;
 			}
@@ -5351,13 +5274,12 @@ export class BmsxConsoleRuntime extends Service {
 				const className = this.getLuaRecordEntry<string>(record, ['class', 'className', 'type'])!.trim();
 				let options: Record<string, unknown>;
 				if (record.options !== undefined) {
-					options = deep_clone(record.options as Record<string, unknown>);
+					if (!this.isPlainObject(record.options)) {
+						throw new Error(`[BmsxConsoleRuntime] Component preset '${entry.presetId}' options must be a table/object.`);
+					}
+					options = this.prepareComponentOptions(record.options as Record<string, unknown>, COMPONENT_OPTION_RESERVED_KEYS);
 				} else {
-					options = deep_clone(record);
-					delete options.class;
-					delete options.className;
-					delete options.type;
-					delete options.options;
+					options = this.prepareComponentOptions(record);
 				}
 				descriptors.push({ className, options });
 			}
@@ -5366,31 +5288,45 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private componentEntryKey(entry: ConsoleWorldObjectComponentEntry): string | null {
-		if (entry.kind === 'component') {
-			const options = entry.descriptor.options;
-			const raw =
-				(options as { id_local?: unknown }).id_local ??
-				(options as { idLocal?: unknown }).idLocal ??
-				(options as { id?: unknown }).id;
-			if (typeof raw === 'string') {
-				const trimmed = raw.trim();
-				return trimmed.length > 0 ? trimmed.toLowerCase() : null;
-			}
-			return null;
-		}
-		const params = entry.params;
-		if (!params) {
-			return null;
-		}
 		const raw =
-			(params as { id_local?: unknown }).id_local ??
-			(params as { idLocal?: unknown }).idLocal ??
-			(params as { id?: unknown }).id;
-		if (typeof raw === 'string') {
-			const trimmed = raw.trim();
-			return trimmed.length > 0 ? trimmed.toLowerCase() : null;
+			entry.kind === 'component'
+				? (entry.descriptor.options as { id_local?: unknown }).id_local
+				: (entry.params as { id_local?: unknown }).id_local;
+		if (typeof raw !== 'string') {
+			return null;
 		}
-		return null;
+		const trimmed = raw.trim();
+		return trimmed.length > 0 ? trimmed.toLowerCase() : null;
+	}
+
+	private prepareComponentOptions(
+		source: Record<string, unknown>,
+		reservedKeys: ReadonlySet<string> = COMPONENT_DESCRIPTOR_RESERVED_KEYS,
+	): Record<string, unknown> {
+		const options: Record<string, unknown> = {};
+		for (const [key, value] of Object.entries(source)) {
+			if (reservedKeys.has(key)) {
+				continue;
+			}
+			options[key] = value;
+		}
+		const idLocal = this.extractCanonicalComponentId(source);
+		if (idLocal) {
+			options.id_local = idLocal;
+		}
+		return options;
+	}
+
+	private extractCanonicalComponentId(source: Record<string, unknown> | undefined | null): string | null {
+		if (!source) {
+			return null;
+		}
+		const raw = (source as { id_local?: unknown }).id_local;
+		if (typeof raw !== 'string') {
+			return null;
+		}
+		const trimmed = raw.trim();
+		return trimmed.length > 0 ? trimmed : null;
 	}
 
 	private normalizeWorldObjectDefaults(raw: unknown, label: string): Record<string, unknown> | undefined {
@@ -5406,10 +5342,10 @@ export class BmsxConsoleRuntime extends Service {
 	private normalizeWorldObjectFsmList(raw: unknown): ConsoleWorldObjectSystemEntry[] {
 		const entries = this.normalizeWorldObjectSystemEntries(raw, {
 			label: 'fsms',
-			idKeys: ['id', 'fsm', 'fsmId', 'state_machine', 'stateMachine', 'machine', 'machineId'],
-			contextKeys: ['context', 'slot', 'scope'],
+			idKeys: ['id'],
+			contextKeys: ['context'],
 			allowAutoTick: false,
-			activeKeys: ['active', 'enabled'],
+			activeKeys: ['active'],
 		});
 		return entries;
 	}
@@ -5417,10 +5353,10 @@ export class BmsxConsoleRuntime extends Service {
 	private normalizeWorldObjectBehaviorTreeList(raw: unknown): ConsoleWorldObjectSystemEntry[] {
 		return this.normalizeWorldObjectSystemEntries(raw, {
 			label: 'behavior trees',
-			idKeys: ['id', 'bt', 'btId', 'tree', 'treeId', 'behaviorTree', 'behaviourTree', 'behavior_tree', 'behaviour_tree'],
-			contextKeys: ['context', 'slot', 'alias'],
+			idKeys: ['id'],
+			contextKeys: ['context'],
 			allowAutoTick: true,
-			activeKeys: ['active', 'enabled', 'running'],
+			activeKeys: ['active'],
 		});
 	}
 
@@ -5445,7 +5381,7 @@ export class BmsxConsoleRuntime extends Service {
 				}
 			}
 			if (options.allowAutoTick) {
-				const autoValue = this.getLuaRecordEntry<unknown>(value, ['auto_tick', 'autoTick', 'auto']);
+				const autoValue = this.getLuaRecordEntry<unknown>(value, ['auto_tick']);
 				if (typeof autoValue === 'boolean') {
 					entry.auto_tick = autoValue;
 				}
@@ -5583,30 +5519,30 @@ export class BmsxConsoleRuntime extends Service {
 		const defaults = defaultsSource !== undefined ? this.normalizeWorldObjectDefaults(defaultsSource, 'register_worldobject.defaults') : undefined;
 
 		const fsmCandidate =
-			this.getLuaRecordEntry<string | string[] | Record<string, unknown>>(descriptor, ['fsms', 'state_machines', 'stateMachines', 'machines']) ??
+			(descriptor as { fsms?: unknown }).fsms ??
 			(() => {
-				const value = this.getLuaTableEntry(classTable, ['fsms', 'state_machines', 'stateMachines', 'machines']);
+				const value = this.getLuaTableEntry(classTable, ['fsms']);
 				return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.fsms'));
 			})();
 		const fsms = this.normalizeWorldObjectFsmList(fsmCandidate);
 
-		const behaviorTreesRaw = this.getLuaRecordEntry<unknown>(descriptor, ['bts', 'behavior_trees', 'behaviorTrees']) ??
+		const behaviorTreesRaw = (descriptor as { behavior_trees?: unknown }).behavior_trees ??
 			(() => {
-				const value = this.getLuaTableEntry(classTable, ['bts', 'behavior_trees', 'behaviorTrees']);
+				const value = this.getLuaTableEntry(classTable, ['behavior_trees']);
 				return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.behavior_trees'));
 			})();
 		const behaviorTrees = this.normalizeWorldObjectBehaviorTreeList(behaviorTreesRaw);
 
 		const abilitiesList = this.normalizeStringArray(
-			this.getLuaRecordEntry<unknown>(descriptor, ['abilities', 'ability_ids', 'abilityIds']) ??
+			(descriptor as { abilities?: unknown }).abilities ??
 			(() => {
-				const value = this.getLuaTableEntry(classTable, ['abilities', 'ability_ids', 'abilityIds']);
+				const value = this.getLuaTableEntry(classTable, ['abilities']);
 				return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.abilities'));
 			})(),
 		) ?? [];
 
 		const tagsList = this.normalizeStringArray(
-			this.getLuaRecordEntry<unknown>(descriptor, ['tags']) ??
+			(descriptor as { tags?: unknown }).tags ??
 			(() => {
 				const value = this.getLuaTableEntry(classTable, ['tags']);
 				return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.tags'));
@@ -5621,12 +5557,12 @@ export class BmsxConsoleRuntime extends Service {
 			constructor: WorldObject as unknown as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject,
 			class_ref: normalizedClassRef,
 			class_table: classTable,
-			components: this.cloneComponentEntries(componentEntries),
+			components: componentEntries,
 			defaults,
-			fsms: this.cloneSystemEntries(fsms),
-			behavior_trees: this.cloneSystemEntries(behaviorTrees),
-			abilities: abilitiesList.slice(),
-			tags: tagsList.slice(),
+			fsms,
+			behavior_trees: behaviorTrees,
+			abilities: abilitiesList,
+			tags: tagsList,
 			asset_id: asset_id,
 		};
 
@@ -5861,9 +5797,9 @@ export class BmsxConsoleRuntime extends Service {
 		if (!def) {
 			return;
 		}
-		const mergedComponents = this.cloneComponentEntries(def.components);
+		const mergedComponents = [...def.components];
 		if (target.components.length > 0) {
-			const overrideEntries = this.cloneComponentEntries(target.components);
+			const overrideEntries = target.components;
 			for (let index = 0; index < overrideEntries.length; index += 1) {
 				const entry = overrideEntries[index]!;
 				const key = this.componentEntryKey(entry);

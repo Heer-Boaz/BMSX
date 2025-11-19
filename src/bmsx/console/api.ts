@@ -778,7 +778,7 @@ export class BmsxConsoleApi {
 			}
 			normalized.id = trimmed;
 		}
-		const fsmsRaw = raw.fsms ?? raw.state_machines ?? raw.stateMachines ?? raw.machines;
+		const fsmsRaw = raw.fsms;
 		if (fsmsRaw !== undefined) {
 			normalized.fsms = this.normalizeSpawnSystemEntries(fsmsRaw, 'fsms', false);
 		}
@@ -812,7 +812,7 @@ export class BmsxConsoleApi {
 			normalized.components = this.normalizeSpawnComponentEntries(raw.components);
 		}
 
-		const behaviorTreesRaw = raw.bts ?? raw.behavior_trees ?? raw.behaviorTrees;
+		const behaviorTreesRaw = raw.behavior_trees;
 		if (behaviorTreesRaw !== undefined) {
 			normalized.behavior_trees = this.normalizeSpawnSystemEntries(behaviorTreesRaw, 'behavior trees', true);
 		}
@@ -925,24 +925,22 @@ export class BmsxConsoleApi {
 		}
 		const entries: ConsoleWorldObjectSystemEntry[] = [];
 		const push = (value: Record<string, unknown>, indexLabel: string) => {
-			const idCandidate = value.id
-				?? value.fsm ?? value.fsmId ?? value.machine ?? value.machine_id
-				?? value.tree ?? value.tree_id ?? value.bt ?? value.btId;
+			const idCandidate = value.id;
 			if (typeof idCandidate !== 'string' || idCandidate.trim().length === 0) {
 				throw new Error(`[BmsxConsoleApi] ${label} entry ${indexLabel} is missing a valid id.`);
 			}
 			const entry: ConsoleWorldObjectSystemEntry = { id: idCandidate.trim() };
-			const contextCandidate = value.context ?? value.slot ?? value.scope ?? value.alias;
+			const contextCandidate = value.context;
 			if (typeof contextCandidate === 'string' && contextCandidate.trim().length > 0) {
 				entry.context = contextCandidate.trim();
 			}
 			if (allowAutoTick) {
-				const autoCandidate = value.auto_tick ?? value.autoTick ?? value.auto;
+				const autoCandidate = value.auto_tick;
 				if (typeof autoCandidate === 'boolean') {
 					entry.auto_tick = autoCandidate;
 				}
 			}
-			const activeCandidate = value.active ?? value.enabled ?? value.running;
+			const activeCandidate = value.active;
 			if (typeof activeCandidate === 'boolean') {
 				entry.active = activeCandidate;
 			}
