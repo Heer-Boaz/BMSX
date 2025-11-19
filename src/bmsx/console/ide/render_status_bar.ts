@@ -97,9 +97,9 @@ export function renderStatusBar(api: BmsxConsoleApi, host: StatusBarHost): void 
 	let textX = leftX + glyphSize;
 	if (host.statusLeftInfo && host.statusLeftInfo.length > 0) {
 		host.drawText(api, host.statusLeftInfo, textX, statusTop + 2, constants.COLOR_STATUS_TEXT);
-		if (host.debugPauseActive) {
-			console.log(`${STATUS_LOG_PREFIX} ${host.statusLeftInfo}`);
-		}
+		// if (host.debugPauseActive) {
+			// console.log(`${STATUS_LOG_PREFIX} ${host.statusLeftInfo}`);
+		// }
 	}
 	host.drawText(api, filenameInfo, host.viewportWidth - host.measureText(filenameInfo) - 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
 }
