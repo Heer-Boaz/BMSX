@@ -1,7 +1,10 @@
-
-import { $ } from '../core/game';
 import type { World } from "../core/world";
-import { ECSystem, ECSystemManager, TickGroup } from "./ecsystem";
+import { ECSystem, TickGroup } from "./ecsystem";
+
+// Helper to access global game instance without importing it (avoids circular dependency)
+function getGame() {
+	return (globalThis as any).$;
+}
 
 export interface SystemDescriptor {
 	id: string;
@@ -18,10 +21,6 @@ export interface NodeSpec {
 	group?: TickGroup;
 	/** Override priority */
 	priority?: number;
-	/** Must run before these refs (same group only) */
-	before?: string[];
-	/** Must run after these refs (same group only) */
-	after?: string[];
 	/** Enable by predicate */
 	when?: (world: World) => boolean;
 }
@@ -29,17 +28,12 @@ export interface NodeSpec {
 type NodeResolved = Required<Pick<NodeSpec, "ref">> & {
 	group: TickGroup;
 	priority: number;
-	before: string[];
-	after: string[];
 	index: number; // insertion order for stability
 };
 
 export interface BuildDiagnostics {
 	finalOrder: string[];
 	groupOrders: Record<number, string[]>; // key: TickGroup
-	constraints: { ref: string; before: string[]; after: string[] }[];
-	cyclesDetected: boolean;
-	cycleGroups?: { group: TickGroup; refs: string[] }[];
 	buildMs: number;
 }
 
@@ -58,7 +52,8 @@ export class ECSPipelineRegistry {
 
 	/** Build and assign systems to the world's ECSystemManager based on nodes. */
 	build(world: World, nodes: NodeSpec[]): BuildDiagnostics {
-		const t0 = $.platform.clock.now();
+		const $ = getGame();
+		const t0 = $?.platform.clock.now() ?? Date.now();
 		const filtered = nodes.filter(n => (n.when ? n.when(world) : true));
 		const resolved: NodeResolved[] = [];
 		for (let i = 0; i < filtered.length; i++) {
@@ -68,99 +63,46 @@ export class ECSPipelineRegistry {
 			resolved.push({
 				ref: n.ref,
 				group: n.group ?? d.group,
-				priority: n.priority ?? d.defaultPriority,
-				before: n.before?.slice() ?? [],
-				after: n.after?.slice() ?? [],
+				priority: n.priority ?? d.defaultPriority ?? 0,
 				index: i,
 			});
 		}
 
-		// Partition by group and order groups
-		const groups = new Map<TickGroup, NodeResolved[]>();
-		for (const r of resolved) {
-			if (!groups.has(r.group)) groups.set(r.group, []);
-			groups.get(r.group)!.push(r);
-		}
-		const orderedGroups = Array.from(groups.keys()).sort((a, b) => a - b);
+		// Sort by group, then priority, then index
+		resolved.sort((a, b) => {
+			if (a.group !== b.group) return a.group - b.group;
+			if (a.priority !== b.priority) return a.priority - b.priority;
+			return a.index - b.index;
+		});
 
-		// Sort within each group honoring constraints with stable Kahn + priority
-		const finalOrder: NodeResolved[] = [];
+		const finalOrder: NodeResolved[] = resolved;
 		const groupOrders: Record<number, string[]> = {};
-		let anyCycle = false;
-		const cycleGroups: { group: TickGroup; refs: string[] }[] = [];
-		for (const g of orderedGroups) {
-			const list = groups.get(g)!;
-			// Build adjacency using before/after (ignore cross-group constraints)
-			const id2idx = new Map<string, number>();
-			list.forEach((n, idx) => id2idx.set(n.ref, idx));
-			const adj: number[][] = list.map(() => [] as number[]);
-			const indeg = list.map(() => 0);
-			function addEdge(u: number, v: number) { adj[u].push(v); indeg[v]++; }
-			for (let i = 0; i < list.length; i++) {
-				const n = list[i];
-				// before: n -> b
-				for (const b of n.before) {
-					const j = id2idx.get(b); if (j !== undefined) addEdge(i, j);
-				}
-				// after: a -> n
-				for (const a of n.after) {
-					const j = id2idx.get(a); if (j !== undefined) addEdge(j, i);
-				}
-			}
-			// Kahn with priority + insertion order for stability
-			const ready: number[] = [];
-			for (let i = 0; i < indeg.length; i++) if (indeg[i] === 0) ready.push(i);
-			const out: number[] = [];
-			while (ready.length) {
-				// pick lowest (priority, index)
-				ready.sort((a, b) => (list[a].priority - list[b].priority) || (list[a].index - list[b].index));
-				const u = ready.shift()!;
-				out.push(u);
-				for (const v of adj[u]) {
-					indeg[v]--; if (indeg[v] === 0) ready.push(v);
-				}
-			}
-			if (out.length !== list.length) {
-				// Cycle detected; fall back to priority order + insertion order
-				anyCycle = true;
-				list.sort((a, b) => (a.priority - b.priority) || (a.index - b.index));
-				finalOrder.push(...list);
-				cycleGroups.push({ group: g, refs: list.map(n => n.ref) });
-			} else {
-				for (const idx of out) finalOrder.push(list[idx]);
-			}
-			groupOrders[g] = (groupOrders[g] ?? []).concat((out.length ? out.map(i => list[i].ref) : list.map(n => n.ref)));
+
+		// Populate groupOrders for diagnostics
+		for (const r of finalOrder) {
+			if (!groupOrders[r.group]) groupOrders[r.group] = [];
+			groupOrders[r.group].push(r.ref);
 		}
 
-		// Materialize systems
-		const SM: ECSystemManager = world.systems;
-		SM.clear();
-		for (const n of finalOrder) {
-			const d = this._descs.get(n.ref)!;
-			const sys = d.create(n.priority);
-			// Attach debug id for stats reporting
-			sys.__ecsId = d.id;
-			SM.register(sys);
+		// Instantiate systems
+		const systems: ECSystem[] = [];
+		for (const r of finalOrder) {
+			const d = this._descs.get(r.ref)!;
+			const sys = d.create(r.priority);
+			sys.__ecsId = r.ref;
+			systems.push(sys);
 		}
-		const t1 = $.platform.clock.now();
+
+		// Apply to world
+		world.systems.clear();
+		for (const s of systems) world.systems.register(s);
+
+		const t1 = $?.platform.clock.now() ?? Date.now();
 		const diag: BuildDiagnostics = {
-			finalOrder: finalOrder.map(n => n.ref),
+			finalOrder: finalOrder.map(r => r.ref),
 			groupOrders,
-			constraints: resolved.map(n => ({ ref: n.ref, before: n.before.slice(), after: n.after.slice() })),
-			cyclesDetected: anyCycle,
-			cycleGroups: anyCycle ? cycleGroups : undefined,
-			buildMs: (t1 - t0),
+			buildMs: t1 - t0,
 		};
-		if ($.debug) {
-			console.debug(`[ECS][build] ${finalOrder.length} systems (in ${diag.buildMs.toFixed(2)} ms)`);
-			console.group();
-			console.debug('Final order:', finalOrder.map(n => n.ref));
-			for (const [group, refs] of Object.entries(groupOrders)) {
-				console.debug(`Group ${group}:`, refs);
-			}
-			console.debug(`${anyCycle ? 'Cycles detected: ' + JSON.stringify(cycleGroups) : 'No cycles detected.'}`);
-			console.groupEnd();
-		}
 		this._lastDiagnostics = diag;
 		return diag;
 	}

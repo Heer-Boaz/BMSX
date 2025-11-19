@@ -131,11 +131,6 @@ export class ECSHUDOverlay {
 			const lights = world.activeLights.length;
 			lines.push(`World: spaces=${spaces} active='${activeSpace}' objs=${objCount} cams=${cams} lights=${lights}`);
 		}
-		if (diag.cyclesDetected) {
-			lines.push('');
-			lines.push('Warning: cycle(s) detected; priority order used.');
-			for (const g of diag.cycleGroups ?? []) lines.push(`  group=${String(g.group)}: [${g.refs.join(', ')}]`);
-		}
 		contentEl.textContent = lines.join('\n');
 	}
 

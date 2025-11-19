@@ -21,18 +21,17 @@ export function buildConsoleOverlaySpec(options: ConsoleOverlaySpecOptions): Nod
 		nodes.push({ ref: 'bmsxConsole.mode' });
 	}
 	if (includeEditor) {
-		nodes.push({ ref: 'bmsxConsole.editor', after: includeConsole ? ['bmsxConsole.mode'] : undefined });
+		nodes.push({ ref: 'bmsxConsole.editor' });
 	}
 	if (includePresentation) {
 		nodes.push({ ref: 'transform' });
 		nodes.push({ ref: 'textRender' });
-		nodes.push({ ref: 'spriteRender', after: ['textRender'] });
-		nodes.push({ ref: 'meshRender', after: ['spriteRender'] });
-		nodes.push({ ref: 'renderSubmit', after: ['meshRender'] });
+		nodes.push({ ref: 'spriteRender' });
+		nodes.push({ ref: 'meshRender' });
+		nodes.push({ ref: 'renderSubmit' });
 	}
 	if (includeConsoleDraw) {
-		const drawAfter = includePresentation ? ['renderSubmit'] : undefined;
-		nodes.push({ ref: 'bmsxConsole.draw', after: drawAfter });
+		nodes.push({ ref: 'bmsxConsole.draw' });
 	}
 	return nodes;
 }

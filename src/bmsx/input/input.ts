@@ -14,6 +14,7 @@ import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
 import type { OnscreenGamepadLayout } from './onscreengamepad';
 import { GlobalShortcutRegistry } from './global_shortcut_registry';
+import { excludepropfromsavegame } from '../serializer/serializationhooks';
 
 const NO_GAMEPAD_LAYOUT: OnscreenGamepadLayout = Object.freeze({ left: 0, right: 0, bottom: 0, visible: false }) as OnscreenGamepadLayout;
 const DEBUG_HUD_TOGGLE_KEY = 'F10';
@@ -335,6 +336,7 @@ export class Input implements RegisterablePersistent {
 	 */
 	private static _instance: Input;
 
+	@excludepropfromsavegame
 	public readonly events: EventPort;
 
 	/**
@@ -587,7 +589,7 @@ export class Input implements RegisterablePersistent {
 	constructor(startingGamepadIndex?: number) {
 		this.events = eventsOf(this);
 		this.startupGamepadIndex = typeof startingGamepadIndex === 'number' ? startingGamepadIndex : null;
-		this.bind();
+		// this.bind(); // Bind is called explicitly in Game.initialize after the world is created
 	}
 
 	/**

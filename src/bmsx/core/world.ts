@@ -104,6 +104,7 @@ export class World implements Stateful, RegisterablePersistent {
 
 	public get id(): 'world' { return 'world'; } // Required for IStateful and IIdentifiable
 
+	@excludepropfromsavegame
 	public readonly events: EventPort;
 
 	// Internal physics diagnostic frame counter (temporary instrumentation)

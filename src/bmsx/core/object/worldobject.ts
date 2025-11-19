@@ -2,8 +2,8 @@ import { BehaviorTreeContext, BehaviorTreeID, instantiateBehaviorTree, Blackboar
 import { Component, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap, ComponentConstructor } from "../../component/basecomponent";
 import { StateMachineController } from "../../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
-import { ConcreteOrAbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon, type Facing } from "../../rompack/rompack";
-import { insavegame, onload, excludepropfromsavegame, type RevivableObjectArgs } from '../../serializer/serializationhooks';
+import { ConcreteOrAbstractConstructor, Direction, vec3, type Area, type vec2arr, type Identifier, type vec2, type Facing, type Polygon } from "../../rompack/rompack";
+import { excludepropfromsavegame, insavegame, type RevivableObjectArgs, onload } from '../../serializer/serializationhooks';
 import { $ } from '../game';
 import type { Space } from '../space';
 import { ObjectTracker } from "../../utils/objecttracker";
@@ -59,6 +59,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 */
 	public componentMap: KeyToComponentMap = {};
 
+	@excludepropfromsavegame
 	public readonly events: EventPort;
 
 	public components: Component[] = []; // Array of all components in the object for easy iteration

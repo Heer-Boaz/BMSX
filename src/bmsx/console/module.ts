@@ -40,10 +40,10 @@ export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: Con
 				},
 			],
 			nodes: [
-				{ ref: modeSystemId, after: ['behaviorTrees'] },
-				{ ref: editorSystemId, after: [modeSystemId] },
-				{ ref: updateSystemId, after: [editorSystemId] },
-				{ ref: drawSystemId, after: ['renderSubmit'] },
+				{ ref: modeSystemId },
+				{ ref: editorSystemId },
+				{ ref: updateSystemId },
+				{ ref: drawSystemId },
 			],
 		},
 		onBoot(_world: World) {

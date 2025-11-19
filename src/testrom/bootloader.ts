@@ -33,7 +33,7 @@ globalTarget.h406A = (args: BootArgs): Promise<any> => {
 		viewHost,
 	}).then(() => {
 		$.view.default_font = new BFont(BitmapId);
-		$.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, pointer: Input.clonePointerMapping() });
+		$.set_inputmap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, pointer: Input.clonePointerMapping() });
 		$.start();
 	});
 };

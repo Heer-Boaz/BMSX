@@ -417,6 +417,7 @@ export class Game {
 		if (!worldConfig) throw new Error('World configuration not passed to game init!');
 		this.initialWorldConfigSnapshot = this.cloneWorldConfig(worldConfig);
 		new World(worldConfig);
+		Input.instance.bind();
 		// Register built-in ECS systems; allow modules to register extensions on boot
 		registerBuiltinECS();
 		// Initialize world (spaces, FSM/BT libraries, modules onBoot)
@@ -468,8 +469,6 @@ export class Game {
 			ref: node.ref,
 			group: node.group,
 			priority: node.priority,
-			before: node.before ? [...node.before] : undefined,
-			after: node.after ? [...node.after] : undefined,
 			when: node.when,
 		};
 	}
@@ -490,11 +489,7 @@ export class Game {
 			}
 		}
 		const diag = DefaultECSPipelineRegistry.build(this.world, spec);
-		if (diag.cyclesDetected) {
-			const cycleDetails = diag.cycleGroups?.map(group => group.refs.join(' -> ')) ?? [];
-			const cycles = cycleDetails.length > 0 ? cycleDetails.join(', ') : 'unknown';
-			throw new Error(`[ECS] Cannot initialize ECS pipeline with cycles! Final order: ${diag.finalOrder.join(' -> ')}; Detected cycles: ${cycles}`);
-		}
+		// No cycle detection needed with simple sort
 	}
 
 	public set_pipeline_override(spec: NodeSpec[] | null): void {

@@ -16,7 +16,7 @@ export const EILA_MODULE: WorldModule = {
 			defaultPriority: 10,
 			create: (priority: number) => new InputAbilitySystem(priority),
 		}],
-		nodes: [{ ref: 'ella.inputAbility', after: ['behaviorTrees'] }],
+		nodes: [{ ref: 'ella.inputAbility' }],
 	},
 	onBoot(world: World) {
 		// Spaces

@@ -4,7 +4,7 @@ import { Stateful } from '../fsm/fsmtypes';
 import { StateMachineController } from '../fsm/fsmcontroller';
 import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { Registry } from './registry';
-import { onload, type RevivableObjectArgs } from '../serializer/serializationhooks';
+import { onload, excludepropfromsavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 
 /**
  * Base class for non-world-bound, persistent services (UE-style Subsystems).
@@ -19,6 +19,7 @@ import { onload, type RevivableObjectArgs } from '../serializer/serializationhoo
 export abstract class Service implements Stateful, Identifiable, RegisterablePersistent {
 	/** Unique identifier for the service (override or pass via constructor). */
 	public id: Identifier;
+	@excludepropfromsavegame
 	public readonly events: EventPort;
 	sc: StateMachineController;
 	/** True when the service participates in gameplay. */

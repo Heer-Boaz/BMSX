@@ -1,5 +1,5 @@
 -- new lua resource
-function bladieblap()
+function draw()
 	cls(4)
-	write('bla',0,200,15)
+	write('bla',0,200,1)
 end
