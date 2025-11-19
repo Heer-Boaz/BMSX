@@ -20,7 +20,7 @@ import { createLuaTable, isLuaNativeValue, isLuaTable, setLuaTableCaseInsensitiv
 import { LuaRuntimeError, LuaError, LuaSyntaxError } from '../lua/errors';
 import { $ } from '../core/game';
 import { Service } from '../core/service';
-import { type EventPayload, type EventHandler } from '../core/eventemitter';
+import { type EventPayload } from '../core/eventemitter';
 import type { GameEvent } from '../core/game_event';
 import type { Identifier, Identifiable } from '../rompack/rompack';
 import { OverlayPipelineController } from '../core/pipelines/overlay_controller';
@@ -32,8 +32,6 @@ import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { instantiateBehaviorTree, unregisterBehaviorTreeBuilder, applyPreparedBehaviorTree, getBehaviorTreeDiagnostics, Blackboard } from '../ai/behaviourtree';
 import type { BehaviorTreeDefinition, BehaviorTreeDiagnostic } from '../ai/behaviourtree';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
-import type { transition_target } from '../fsm/fsmtypes';
-import type { State } from '../fsm/state';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast';
 import { createConsoleCartEditor, toggleEditorFromShortcut, type ConsoleCartEditor } from './ide/console_cart_editor';
 import type { RuntimeErrorDetails } from './ide/types';
@@ -1559,11 +1557,13 @@ export class BmsxConsoleRuntime extends Service {
 	private updateFrameHaltingState(state: ConsoleFrameState): void {
 		const debugPaused = $.paused === true;
 		state.debugPaused = debugPaused;
-		const haltGame = debugPaused || this.debuggerHaltsGame || state.consoleActive || state.editorActive;
+		const consoleActive = state.consoleEvaluated ? state.consoleActive : this.overlayState.console;
+		const editorActive = state.editorEvaluated ? state.editorActive : this.overlayState.editor;
+		const haltGame = debugPaused || this.debuggerHaltsGame || consoleActive || editorActive;
 		state.haltGame = haltGame;
 		state.deltaForUpdate = haltGame ? 0 : state.deltaSeconds;
-		this.updateOverlayState(state.consoleActive, state.editorActive);
-		Input.instance.setDebugHotkeysPaused(state.consoleActive || state.editorActive);
+		this.updateOverlayState(consoleActive, editorActive);
+		Input.instance.setDebugHotkeysPaused(consoleActive || editorActive);
 	}
 
 	public runConsoleModePhase(): void {

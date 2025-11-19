@@ -394,23 +394,28 @@ export let COLOR_TOP_BAR: number;
 export let COLOR_TOP_BAR_TEXT: number;
 export let COLOR_CODE_BACKGROUND: number;
 export let COLOR_GUTTER_BACKGROUND: number;
-export let COLOR_CODE_TEXT: number;
-export let COLOR_KEYWORD: number;
-export let COLOR_STRING: number;
-export let COLOR_NUMBER: number;
-export let COLOR_COMMENT: number;
-export let COLOR_OPERATOR: number;
-export let COLOR_CODE_DIM: number;
 export let COLOR_BREAKPOINT_BORDER = Msx1Colors[0];
 export let COLOR_BREAKPOINT_FILL = Msx1Colors[0];
-export let COLOR_BUILTIN: number;
-export let COLOR_FUNCTION_NAME: number;
-export let COLOR_PARAMETER: number;
-export let COLOR_GLOBAL_VARIABLE: number;
-export let COLOR_LABEL: number;
-export let COLOR_LOCAL_TOP: number;
-export let COLOR_LOCAL_FUNCTION: number;
-export let COLOR_FUNCTION_HANDLE: number;
+export let COLOR_SYNTAX_HIGHLIGHTS = {
+	COLOR_CODE_TEXT: undefined as number,
+	COLOR_KEYWORD: undefined as number,
+	COLOR_STRING: undefined as number,
+	COLOR_NUMBER: undefined as number,
+	COLOR_COMMENT: undefined as number,
+	COLOR_OPERATOR: undefined as number,
+	COLOR_CODE_DIM: undefined as number,
+	COLOR_BUILTIN: undefined as number,
+	COLOR_FUNCTION_NAME: undefined as number,
+	COLOR_PARAMETER: undefined as number,
+	COLOR_GLOBAL_VARIABLE: undefined as number,
+	COLOR_MODULE: undefined as number,
+	COLOR_TYPE: undefined as number,
+	COLOR_LABEL: undefined as number,
+	COLOR_LOCAL_TOP: undefined as number,
+	COLOR_LOCAL_FUNCTION: undefined as number,
+	COLOR_LOCAL_TABLE_FIELD: undefined as number,
+	COLOR_FUNCTION_HANDLE: undefined as number,
+};
 export let HIGHLIGHT_OVERLAY = Msx1Colors[0];
 export let SELECTION_OVERLAY = Msx1Colors[0];
 export let CARET_COLOR = Msx1Colors[0];
@@ -555,23 +560,23 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_TOP_BAR_TEXT = theme.text.topBar;
 	COLOR_CODE_BACKGROUND = theme.surfaces.editor;
 	COLOR_GUTTER_BACKGROUND = theme.surfaces.gutter;
-	COLOR_CODE_TEXT = theme.text.primary;
-	COLOR_KEYWORD = theme.text.keyword;
-	COLOR_STRING = theme.text.string;
-	COLOR_NUMBER = theme.text.number;
-	COLOR_COMMENT = theme.text.comment;
-	COLOR_OPERATOR = theme.text.operator;
-	COLOR_CODE_DIM = theme.text.dim;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT = theme.text.primary;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_KEYWORD = theme.text.keyword;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING = theme.text.string;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_NUMBER = theme.text.number;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_COMMENT = theme.text.comment;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR = theme.text.operator;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM = theme.text.dim;
 	COLOR_BREAKPOINT_BORDER = Msx1Colors[theme.text.topBar];
 	COLOR_BREAKPOINT_FILL = Msx1Colors[theme.status.alert];
-	COLOR_BUILTIN = theme.text.builtin;
-	COLOR_FUNCTION_NAME = theme.text.functionName;
-	COLOR_PARAMETER = theme.text.parameter;
-	COLOR_GLOBAL_VARIABLE = theme.text.globalVar;
-	COLOR_LABEL = theme.text.label;
-	COLOR_LOCAL_TOP = theme.text.localTop;
-	COLOR_LOCAL_FUNCTION = theme.text.localFunction;
-	COLOR_FUNCTION_HANDLE = theme.text.functionHandle;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN = theme.text.builtin;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_NAME = theme.text.functionName;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_PARAMETER = theme.text.parameter;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_GLOBAL_VARIABLE = theme.text.globalVar;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LABEL = theme.text.label;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_TOP = theme.text.localTop;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_FUNCTION = theme.text.localFunction;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_HANDLE = theme.text.functionHandle;
 	HIGHLIGHT_OVERLAY = Msx1Colors[theme.highlightOverlay];
 	SELECTION_OVERLAY = Msx1Colors[theme.text.selection];
 	CARET_COLOR = Msx1Colors[theme.caret.editor];

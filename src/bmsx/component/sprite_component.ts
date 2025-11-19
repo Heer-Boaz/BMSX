@@ -3,10 +3,11 @@ import { Component } from '../component/basecomponent';
 import type { asset_id, Identifier, vec2, vec3, BoundingBoxPrecalc, HitPolygonsPrecalc, Area } from '../rompack/rompack';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import type { color, FlipOptions, RenderLayer } from '../render/gameview';
-import type { TimelinePlayOptions } from './timeline_component';
+import type { TimelinePlayOptions, TimelineFrameEventPayload } from './timeline_component';
 import { new_vec2 } from '../utils/vector_operations';
 import { Collider2DComponent } from './collisioncomponents';
 import { $rompack } from '../core/game';
+import type { GameEvent } from '../core/game_event';
 
 @insavegame
 @componenttags_postprocessing('render')
@@ -152,7 +153,7 @@ export class SpriteComponent extends Component {
 	private observe_timeline(id: string): void {
 		if (this.timeline_followers.has(id)) return;
 		const channel = this.parent.timeline_events(id);
-		const remove = channel.on_frame(this, event => {
+		const remove = channel.on_frame(this, (event: GameEvent<'timeline.frame', TimelineFrameEventPayload<asset_id>>) => {
 			this.imgid = event.frame_value as asset_id;
 		});
 		this.timeline_followers.set(id, remove);

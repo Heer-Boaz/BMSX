@@ -2,7 +2,7 @@ import type { BmsxConsoleApi } from '../api';
 import type { ConsoleEditorFont } from '../editor_font';
 import type { ConsoleFont } from '../font';
 import { expandTabs as expandTabsExternal } from './text_utils_local';
-import { COLOR_STRING } from './constants';
+import * as constants from './constants';
 
 let CASE_INSENSITIVE_EDITOR = true;
 
@@ -73,7 +73,7 @@ function toUpperExceptStrings(text: string, colors: readonly number[], fallbackC
 	for (let i = 0; i < text.length; i += 1) {
 		const ch = text.charAt(i);
 		const color = colors[i] ?? fallbackColor;
-		buffer[i] = color === COLOR_STRING ? ch : ch.toUpperCase();
+		buffer[i] = color === constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING ? ch : ch.toUpperCase();
 	}
 	return buffer.join('');
 }

@@ -489,7 +489,9 @@ export class Game {
 			}
 		}
 		const diag = DefaultECSPipelineRegistry.build(this.world, spec);
-		// No cycle detection needed with simple sort
+		if (this.debug) {
+			console.log('[Game] ECS Pipeline rebuilt. Diagnostics:', diag);
+		}
 	}
 
 	public set_pipeline_override(spec: NodeSpec[] | null): void {

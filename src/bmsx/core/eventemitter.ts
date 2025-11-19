@@ -87,11 +87,16 @@ export class EventChannel {
 
 	public on(subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer;
 	public on(segment: string, subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer;
-	public on(first: string | any, second?: any, third?: EventHandler, fourth?: LocalSubscriptionOptions): EventListenerDisposer {
+	public on(
+		first: string | any,
+		second?: any,
+		third?: EventHandler | LocalSubscriptionOptions,
+		fourth?: LocalSubscriptionOptions,
+	): EventListenerDisposer {
 		if (typeof first === 'string') {
-			return this.port.on(this.resolve(first), second!, third!, fourth);
+			return this.port.on(this.resolve(first), second!, third as EventHandler, fourth);
 		}
-		return this.port.on(this.resolve(), first, second!, third);
+		return this.port.on(this.resolve(), first, second!, third as LocalSubscriptionOptions);
 	}
 }
 

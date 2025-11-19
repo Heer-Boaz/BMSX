@@ -252,17 +252,25 @@ function extractIdentifierAt(line: string, column: number): string {
 function resolveColorForSymbolKind(kind: SymbolKind): number {
 	switch (kind) {
 		case 'parameter':
-			return constants.COLOR_PARAMETER;
+			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_PARAMETER;
 		case 'local':
-			return constants.COLOR_LOCAL_FUNCTION;
+			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_FUNCTION;
 		case 'function':
-			return constants.COLOR_FUNCTION_HANDLE;
+			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_HANDLE;
 		case 'global':
-			return constants.COLOR_GLOBAL_VARIABLE;
+			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_GLOBAL_VARIABLE;
 		case 'tableField':
-			return constants.COLOR_LOCAL_TOP;
+			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_TABLE_FIELD;
+		case 'module':
+			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_MODULE;
+		case 'type':
+			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_TYPE;
+		case 'label':
+			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_LABEL;
+		case 'keyword':
+			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_KEYWORD;
 		default:
-			return constants.COLOR_CODE_TEXT;
+			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 	}
 }
 
@@ -273,7 +281,7 @@ function highlightCommentAnnotations(line: string, start: number, end: number, c
 		let matchIndex = upper.indexOf(annotation, start);
 		while (matchIndex !== -1 && matchIndex < end) {
 			const limit = Math.min(end, matchIndex + annotation.length);
-			for (let column = matchIndex; column < limit; column += 1) columnColors[column] = constants.COLOR_KEYWORD;
+			for (let column = matchIndex; column < limit; column += 1) columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_KEYWORD;
 			matchIndex = upper.indexOf(annotation, matchIndex + annotation.length);
 		}
 	}
@@ -289,12 +297,12 @@ function highlightComment(line: string, start: number, columnColors: number[]): 
 			const searchStart = start + 2 + blockMatch[0].length;
 			const closeIndex = line.indexOf(terminator, searchStart);
 			const end = closeIndex !== -1 ? closeIndex + terminator.length : length;
-			for (let index = start; index < end; index += 1) columnColors[index] = constants.COLOR_COMMENT;
+			for (let index = start; index < end; index += 1) columnColors[index] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_COMMENT;
 			highlightCommentAnnotations(line, start, end, columnColors);
 			return end;
 		}
 	}
-	for (let index = start; index < length; index += 1) columnColors[index] = constants.COLOR_COMMENT;
+	for (let index = start; index < length; index += 1) columnColors[index] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_COMMENT;
 	highlightCommentAnnotations(line, start, length, columnColors);
 	return length;
 }
@@ -309,7 +317,7 @@ function highlightScopedLabel(line: string, start: number, columnColors: number[
 	index = skipWhitespace(line, labelEnd);
 	if (!line.startsWith('::', index)) return start;
 	const end = index + 2;
-	for (let column = start; column < end; column += 1) columnColors[column] = constants.COLOR_LABEL;
+	for (let column = start; column < end; column += 1) columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_LABEL;
 	return end;
 }
 
@@ -321,7 +329,7 @@ function highlightFunctionNamePath(line: string, start: number, columnColors: nu
 		index = readIdentifier(line, index);
 		segments.push({ start: segmentStart, end: index });
 		if (index < line.length && (line.charAt(index) === '.' || line.charAt(index) === ':')) {
-			columnColors[index] = constants.COLOR_OPERATOR;
+			columnColors[index] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
 			index += 1;
 			continue;
 		}
@@ -330,7 +338,7 @@ function highlightFunctionNamePath(line: string, start: number, columnColors: nu
 	for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
 		const segment = segments[segmentIndex];
 		for (let column = segment.start; column < segment.end; column += 1) {
-			columnColors[column] = constants.COLOR_FUNCTION_NAME;
+			columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_NAME;
 		}
 	}
 	return index;
@@ -338,30 +346,30 @@ function highlightFunctionNamePath(line: string, start: number, columnColors: nu
 
 function highlightParameterList(line: string, openParenIndex: number, columnColors: number[]): number {
 	const length = line.length;
-	columnColors[openParenIndex] = constants.COLOR_OPERATOR;
+	columnColors[openParenIndex] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
 	let index = openParenIndex + 1;
 	while (index < length) {
 		index = skipWhitespace(line, index);
 		if (index >= length) break;
 		const ch = line.charAt(index);
 		if (ch === ')') {
-			columnColors[index] = constants.COLOR_OPERATOR;
+			columnColors[index] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
 			return index + 1;
 		}
 		if (index + 3 <= length && line.slice(index, index + 3) === '...') {
-			columnColors[index] = constants.COLOR_PARAMETER;
-			columnColors[index + 1] = constants.COLOR_PARAMETER;
-			columnColors[index + 2] = constants.COLOR_PARAMETER;
+			columnColors[index] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_PARAMETER;
+			columnColors[index + 1] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_PARAMETER;
+			columnColors[index + 2] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_PARAMETER;
 			index += 3;
 			continue;
 		}
 		if (isIdentifierStart(ch)) {
 			const end = readIdentifier(line, index);
-			for (let column = index; column < end; column += 1) columnColors[column] = constants.COLOR_PARAMETER;
+			for (let column = index; column < end; column += 1) columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_PARAMETER;
 			index = end;
 			continue;
 		}
-		columnColors[index] = constants.COLOR_OPERATOR;
+		columnColors[index] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
 		index += 1;
 	}
 	return length;
@@ -381,7 +389,7 @@ function highlightGotoLabel(line: string, start: number, columnColors: number[])
 	let index = skipWhitespace(line, start);
 	if (index >= line.length || !isIdentifierStart(line.charAt(index))) return index;
 	const labelEnd = readIdentifier(line, index);
-	for (let column = index; column < labelEnd; column += 1) columnColors[column] = constants.COLOR_LABEL;
+	for (let column = index; column < labelEnd; column += 1) columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_LABEL;
 	return labelEnd;
 }
 
@@ -410,7 +418,7 @@ function applySemanticAnnotations(
 			const searchStart = Math.max(0, start - 1);
 			const searchEnd = Math.min(columnColors.length, Math.max(end + 1, searchStart + 1));
 			for (let column = searchStart; column < searchEnd; column += 1) {
-				if (columnColors[column] !== constants.COLOR_BUILTIN) {
+				if (columnColors[column] !== constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN) {
 					continue;
 				}
 				const identifier = extractIdentifierAt(line, column);
@@ -469,12 +477,12 @@ export function highlightLine(
 	}
 	const line = row >= 0 && row < lines.length ? lines[row] ?? '' : '';
 	const length = line.length;
-	const columnColors: number[] = new Array(length).fill(constants.COLOR_CODE_TEXT);
+	const columnColors: number[] = new Array(length).fill(constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
 	const builtinLookup = getBuiltinLookup(builtinCollection);
 	let i = 0;
 	while (i < length) {
 		if (i === 0 && line.startsWith('#!')) {
-			for (let column = 0; column < length; column += 1) columnColors[column] = constants.COLOR_COMMENT;
+			for (let column = 0; column < length; column += 1) columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_COMMENT;
 			break;
 		}
 		if (line.startsWith('--', i)) {
@@ -492,20 +500,20 @@ export function highlightLine(
 			const terminator = ']' + '='.repeat(equalsCount) + ']';
 			const closeIndex = line.indexOf(terminator, i + longStringMatch[0].length);
 			const end = closeIndex !== -1 ? closeIndex + terminator.length : length;
-			for (let column = i; column < end; column += 1) columnColors[column] = constants.COLOR_STRING;
+			for (let column = i; column < end; column += 1) columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING;
 			i = end;
 			continue;
 		}
 		const ch = line.charAt(i);
 		if (ch === '"' || ch === '\'') {
 			const delimiter = ch;
-			columnColors[i] = constants.COLOR_STRING;
+			columnColors[i] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING;
 			i += 1;
 			while (i < length) {
 				const current = line.charAt(i);
-				columnColors[i] = constants.COLOR_STRING;
+				columnColors[i] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING;
 				if (current === '\\' && i + 1 < length) {
-					columnColors[i + 1] = constants.COLOR_STRING;
+					columnColors[i + 1] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING;
 					i += 2;
 					continue;
 				}
@@ -518,24 +526,24 @@ export function highlightLine(
 			continue;
 		}
 		if (i + 3 <= length && line.slice(i, i + 3) === '...') {
-			columnColors[i] = constants.COLOR_OPERATOR;
-			columnColors[i + 1] = constants.COLOR_OPERATOR;
-			columnColors[i + 2] = constants.COLOR_OPERATOR;
+			columnColors[i] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
+			columnColors[i + 1] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
+			columnColors[i + 2] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
 			i += 3;
 			continue;
 		}
 		if (i + 2 <= length) {
 			const pair = line.slice(i, i + 2);
 			if (MULTI_CHAR_OPERATORS.has(pair)) {
-				columnColors[i] = constants.COLOR_OPERATOR;
-				columnColors[i + 1] = constants.COLOR_OPERATOR;
+				columnColors[i] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
+				columnColors[i + 1] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
 				i += 2;
 				continue;
 			}
 		}
 		if (isNumberStart(line, i)) {
 			const end = readNumber(line, i);
-			for (let column = i; column < end; column += 1) columnColors[column] = constants.COLOR_NUMBER;
+			for (let column = i; column < end; column += 1) columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_NUMBER;
 			i = end;
 			continue;
 		}
@@ -543,13 +551,13 @@ export function highlightLine(
 			const end = readIdentifier(line, i);
 			const word = line.slice(i, end);
 			const lowerWord = word.toLowerCase();
-			let color = constants.COLOR_CODE_TEXT;
+			let color = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 			if (KEYWORDS.has(lowerWord)) {
-				color = constants.COLOR_KEYWORD;
+				color = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_KEYWORD;
 			} else if (builtinLookup.isBuiltin(word)) {
-				color = constants.COLOR_BUILTIN;
+				color = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN;
 			}
-			if (color !== constants.COLOR_CODE_TEXT) {
+			if (color !== constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT) {
 				for (let column = i; column < end; column += 1) columnColors[column] = color;
 			}
 			if (lowerWord === 'function') {
@@ -560,11 +568,18 @@ export function highlightLine(
 				i = highlightGotoLabel(line, end, columnColors);
 				continue;
 			}
+			if (lowerWord === '::') {
+				i = highlightScopedLabel(line, end, columnColors);
+				continue;
+			}
+			if (lowerWord === 'end' || lowerWord === 'until') {
+				for (let column = i; column < end; column += 1) columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_KEYWORD;
+			}
 			i = end;
 			continue;
 		}
 		if (isOperatorChar(ch)) {
-			columnColors[i] = constants.COLOR_OPERATOR;
+			columnColors[i] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
 		}
 		i += 1;
 	}

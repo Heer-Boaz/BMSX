@@ -1,6 +1,6 @@
 import { $ } from '../../core/game';
-import { clamp } from '../../utils/clamp';;
 import type { TimerHandle } from '../../platform/platform';
+import { clamp } from '../../utils/clamp';
 import type { ConsoleEditorFont } from '../editor_font';
 import { highlightLine as highlightLineExternal } from './syntax_highlight';
 import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from './semantic_model';
@@ -31,22 +31,6 @@ type PendingSemanticUpdate = {
 	chunkName: string;
 	requestId: number;
 };
-
-// type SemanticWorkerResponse =
-// 	| {
-// 		type: 'semantic-result';
-// 		requestId: number;
-// 		version: number;
-// 		chunkName: string;
-// 		data: SerializedFileSemanticData;
-// 	}
-// 	| {
-// 		type: 'semantic-error';
-// 		requestId: number;
-// 		version: number;
-// 		chunkName: string;
-// 		errorMessage?: string;
-// 	};
 
 /**
  * ConsoleCodeLayout owns syntax highlight caching and visual line layout for the cart editor.
@@ -101,7 +85,7 @@ export class ConsoleCodeLayout {
 			return;
 		}
 		const now = this.clockNow();
-		const delay = this.semanticDueAtMs !== null ? Math.max(0, this.semanticDueAtMs - now) : 0;
+		const delay = this.semanticDueAtMs !== null ? clamp(this.semanticDueAtMs - now, 0, this.semanticDebounceMs) : 0;
 		if (this.semanticTimer) {
 			this.semanticTimer.cancel();
 			this.semanticTimer = null;
@@ -599,11 +583,9 @@ export class ConsoleCodeLayout {
 		this.semanticDueAtMs = null;
 		if (strategy === 'force' || this.semanticWorker === null) {
 			this.pendingSemantic = null;
-			// this.inFlightSemantic = null;
 			this.applySemanticUpdateSync(pending);
 			return;
 		}
-		// this.inFlightSemantic = pending;
 		this.pendingSemantic = null;
 		const worker = this.semanticWorker;
 		try {
@@ -711,61 +693,18 @@ export class ConsoleCodeLayout {
 				return 4;
 			case 'tableField':
 				return 5;
+			case 'module':
+				return 6;
+			case 'type':
+				return 7;
+			case 'label':
+				return 8;
+			case 'keyword':
+				return 9;
 			default:
 				return 0;
 		}
 	}
-
-	// private handleSemanticWorkerMessage(message: unknown): void {
-	// 	const response = message as SemanticWorkerResponse;
-	// 	const inFlight = this.inFlightSemantic;
-	// 	if (!inFlight || response.requestId !== inFlight.requestId) {
-	// 		return;
-	// 	}
-	// 	this.inFlightSemantic = null;
-	// 	if (response.type === 'semantic-result') {
-	// 		let model: LuaSemanticModel | null = null;
-	// 		try {
-	// 			model = this.workspace.applySerializedFileData(response.data);
-	// 		} catch {
-	// 			model = null;
-	// 		}
-	// 		const annotations = model ? model.annotations : null;
-	// 		this.finalizeSemanticUpdate(model, response.version, response.chunkName, annotations);
-	// 		return;
-	// 	}
-	// 	this.semanticDueAtMs = null;
-	// 	if (this.semanticTimer) {
-	// 		this.semanticTimer.cancel();
-	// 		this.semanticTimer = null;
-	// 	}
-	// 	this.semanticUpdateScheduled = false;
-	// 	this.lastSemanticError = response.errorMessage ?? 'Failed to update semantic model.';
-	// }
-
-	// private tryCreateSemanticWorker(): Worker | null {
-	// 	if (typeof Worker === 'undefined') {
-	// 		return null;
-	// 	}
-	// 	try {
-	// 		const worker = new Worker(new URL('./semantic_worker', import.meta.url), { type: 'module' });
-	// 		worker.onmessage = (event: MessageEvent) => {
-	// 			this.handleSemanticWorkerMessage(event.data);
-	// 		};
-	// 		worker.onerror = () => {
-	// 			const inFlight = this.inFlightSemantic;
-	// 			this.inFlightSemantic = null;
-	// 			worker.terminate();
-	// 			this.semanticWorker = null;
-	// 			if (inFlight) {
-	// 				this.applySemanticUpdateSync(inFlight);
-	// 			}
-	// 		};
-	// 		return worker;
-	// 	} catch {
-	// 		return null;
-	// 	}
-	// }
 
 	private computeHotRowWindow(lineCount: number, scrollRow: number, visibleRows: number): { start: number; end: number } {
 		if (lineCount === 0) {

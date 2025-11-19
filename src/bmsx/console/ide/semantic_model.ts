@@ -24,7 +24,7 @@ import {
 import type { LuaToken } from '../../lua/token';
 import { LuaTokenType } from '../../lua/token';
 
-export type SymbolKind = 'parameter' | 'local' | 'function' | 'global' | 'tableField';
+export type SymbolKind = 'parameter' | 'local' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
 
 export type SymbolID = string;
 

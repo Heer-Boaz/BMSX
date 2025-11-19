@@ -214,16 +214,16 @@ export class BmsxConsoleApi {
 				}
 				return Math.floor(viewport.y);
 			}
-		case 34: {
-			return this.computePointerButtonMask();
-		}
-		case 36: {
-			const wheel = this.mousewheel();
-			if (!wheel.valid) {
-				return 0;
+			case 34: {
+				return this.computePointerButtonMask();
 			}
-			return Math.floor(wheel.value);
-		}
+			case 36: {
+				const wheel = this.mousewheel();
+				if (!wheel.valid) {
+					return 0;
+				}
+				return Math.floor(wheel.value);
+			}
 			default:
 				return 0;
 		}
@@ -690,33 +690,8 @@ export class BmsxConsoleApi {
 		return runtime;
 	}
 
-	public register_fsm(blueprint: Record<string, unknown>): void {
-		if (!blueprint || typeof blueprint !== 'object') {
-			throw new Error('[BmsxConsoleApi] register_fsm blueprint must be a table/object.');
-		}
-		const idValue = (blueprint as { id?: unknown }).id;
-		if (typeof idValue !== 'string' || idValue.trim().length === 0) {
-			throw new Error('[BmsxConsoleApi] register_fsm blueprint requires a non-empty id field.');
-		}
-		const runtime = BmsxConsoleRuntime.instance;
-		if (runtime) {
-			runtime.registerStateMachineDefinition(blueprint);
-			return;
-		}
-		const prepared = this.cloneStateMachineData(blueprint) as StateMachineBlueprint;
-		this.register_prepared_fsm(idValue.trim(), prepared);
-	}
-
 	public register_prepared_fsm(id: string, blueprint: StateMachineBlueprint, options?: { setup?: boolean }): void {
-		const trimmed = typeof id === 'string' ? id.trim() : '';
-		if (trimmed.length === 0) {
-			throw new Error('[BmsxConsoleApi] register_prepared_fsm id must be a non-empty string.');
-		}
-		if (typeof blueprint !== 'object' || blueprint === null) {
-			throw new Error('[BmsxConsoleApi] register_prepared_fsm blueprint must be an object.');
-		}
-		BmsxConsoleRuntime.injectConsoleTimelineMetadata(trimmed, blueprint);
-		this.setFsmBlueprintFactory(trimmed, blueprint);
+		this.setFsmBlueprintFactory(id, blueprint);
 		if (!options || options.setup !== false) {
 			setupFSMlibrary();
 		}

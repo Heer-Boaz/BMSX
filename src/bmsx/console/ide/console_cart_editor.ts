@@ -134,14 +134,12 @@ import type {
 	RuntimeErrorOverlay,
 	RuntimeErrorDetails,
 	ScrollbarKind,
-	GlobalSearchMatch,
 	SymbolSearchResult,
 	TopBarButtonId,
 	VisualLineSegment,
 	LuaCompletionItem,
 	ConsoleEditorShortcutContext,
 	CustomKeybindingHandler,
-	GlobalSearchJob,
 	DebugPanelKind,
 	// SearchComputationJob migrated to editor_search
 	RuntimeErrorOverlayLayout,
@@ -174,7 +172,7 @@ import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast';
 import { CaretNavigationState } from './caret_navigation';
 import { ESCAPE_KEY } from './constants';
 // Search logic moved to editor_search
-import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, ensureSearchJobCompleted, moveSearchSelection, applySearchSelection, ensureSearchSelectionVisible, computeSearchPageStats, getVisibleSearchResultEntries, startSearchJob, jumpToNextMatch, jumpToPreviousMatch, cancelGlobalSearchJob } from './editor_search';
+import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, moveSearchSelection, applySearchSelection, ensureSearchSelectionVisible, computeSearchPageStats, getVisibleSearchResultEntries, startSearchJob, jumpToNextMatch, jumpToPreviousMatch, cancelGlobalSearchJob } from './editor_search';
 import { formatLuaDocument } from './lua_formatter';
 import * as constants from './constants';
 import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, workspaceDirtyCache } from './ide_state';
@@ -7123,7 +7121,7 @@ export function drawCodeArea(api: BmsxConsoleApi): void {
 		getCachedHighlight: (r: number) => getCachedHighlight(r),
 		sliceHighlightedLine: (hi, start, count) => sliceHighlightedLine(hi, start, count),
 		columnToDisplay: (hi, c) => columnToDisplay(hi, c),
-		drawColoredText: (a, t, cols, x, y) => drawEditorColoredText(a, ide_state.font, t, cols, x, y, constants.COLOR_CODE_TEXT),
+		drawColoredText: (a, t, cols, x, y) => drawEditorColoredText(a, ide_state.font, t, cols, x, y, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT),
 		drawReferenceHighlightsForRow: (a, ri, e, ox, oy, s, ed) => drawReferenceHighlightsForRow(a, ri, e, ox, oy, s, ed),
 		drawSearchHighlightsForRow: (a, ri, e, ox, oy, s, ed) => drawSearchHighlightsForRow(a, ri, e, ox, oy, s, ed),
 		computeSelectionSlice: (ri, hi, s, e) => computeSelectionSlice(ri, hi, s, e),
@@ -8466,7 +8464,7 @@ export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number
 	const cursorX = textLeft + measureRangeFast(entry, sliceStartDisplay, limitedDisplayIndex);
 	let cursorWidth = ide_state.charAdvance;
 	let baseChar = ' ';
-	let baseColor = constants.COLOR_CODE_TEXT;
+	let baseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 	if (cursorDisplayIndex < highlight.chars.length) {
 		baseChar = highlight.chars[cursorDisplayIndex];
 		baseColor = highlight.colors[cursorDisplayIndex];
@@ -9101,7 +9099,7 @@ export function resolvePaletteIndex(color: { r: number; g: number; b: number; a:
 export function invertColorIndex(colorIndex: number): number {
 	const color = Msx1Colors[colorIndex];
 	if (!color) {
-		return constants.COLOR_CODE_TEXT;
+		return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 	}
 	const luminance = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
 	return luminance > 0.5 ? 0 : 15;
@@ -9523,7 +9521,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		charAdvance: ide_state.charAdvance,
 		measureText: (t) => measureText(t),
 		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
-		drawColoredText: (a, t, colors, x, y) => drawEditorColoredText(a, ide_state.font, t, colors, x, y, constants.COLOR_CODE_TEXT),
+		drawColoredText: (a, t, colors, x, y) => drawEditorColoredText(a, ide_state.font, t, colors, x, y, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT),
 		drawRectOutlineColor: (a, l, t, r, b, col) => drawRectOutlineColor(a, l, t, r, b, col),
 		playerIndex: ide_state.playerIndex,
 		listResources: () => listResourcesStrict(),
@@ -9653,6 +9651,20 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	}
 }
 export const caretNavigation = new CaretNavigationState();
+
+function getCaretGlyphForDisplay(baseChar: string, baseColor?: number): string {
+	if (!ide_state.caseInsensitive) {
+		return baseChar;
+	}
+	if (ide_state.font.getVariant() !== 'tiny') {
+		return baseChar;
+	}
+	if (baseColor === constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING) {
+		return baseChar;
+	}
+	return baseChar.toUpperCase();
+}
+
 export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): void {
 	const cursorX = info.x;
 	const cursorY = info.y;
@@ -9663,11 +9675,12 @@ export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: n
 	const problemsPanelHasFocus = ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused();
 	const active = !(ide_state.searchActive || ide_state.lineJumpActive || ide_state.resourcePanelFocused || ide_state.createResourceActive || problemsPanelHasFocus);
 	const glyphColor = Msx1Colors[1];
+	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);
 	renderInlineCaret({
 		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, col),
 		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, col),
 		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
-	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, constants.CARET_COLOR, info.baseChar, glyphColor);
+	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, constants.CARET_COLOR, caretGlyph, glyphColor);
 }
 import { renderInlineCaret } from './render_caret';
 import type { BmsxConsoleRuntime } from '../runtime';
@@ -9684,7 +9697,8 @@ export function drawInlineCaret(
 	baseTextColor: number = constants.COLOR_STATUS_TEXT
 ): void {
 	if (!ide_state.cursorVisible) return;
-	const glyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
+	const rawGlyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
+	const caretGlyph = getCaretGlyphForDisplay(rawGlyph);
 	const caretIndex = resolvePaletteIndex(caretColor);
 	const inverseColorIndex = caretIndex !== null ? invertColorIndex(caretIndex) : invertColorIndex(baseTextColor);
 	// Map palette index to color object using Msx1Colors
@@ -9693,5 +9707,5 @@ export function drawInlineCaret(
 		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, col),
 		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, col),
 		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
-	}, left, top, right, bottom, cursorX, active, caretColor, glyph, inverseColor);
+	}, left, top, right, bottom, cursorX, active, caretColor, caretGlyph, inverseColor);
 }

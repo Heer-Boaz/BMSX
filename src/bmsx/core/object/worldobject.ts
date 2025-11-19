@@ -2,7 +2,7 @@ import { BehaviorTreeContext, BehaviorTreeID, instantiateBehaviorTree, Blackboar
 import { Component, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap, ComponentConstructor } from "../../component/basecomponent";
 import { StateMachineController } from "../../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
-import { ConcreteOrAbstractConstructor, Direction, vec3, type Area, type vec2arr, type Identifier, type vec2, type Facing, type Polygon } from "../../rompack/rompack";
+import { ConcreteOrAbstractConstructor, Direction, vec3, type Area, type Identifier, type vec2, type Facing, type Polygon } from "../../rompack/rompack";
 import { excludepropfromsavegame, insavegame, type RevivableObjectArgs, onload } from '../../serializer/serializationhooks';
 import { $ } from '../game';
 import type { Space } from '../space';

@@ -90,7 +90,7 @@ export class AbilitySystemComponent extends Component {
 	private _runnerCounter = 0;
 
 	public request_ability<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult {
-		const payload = opts?.payload;
+		const payload = opts?.payload as AbilityPayloadFor<Id> | undefined;
 		const failure = this.can_activate_reason(id);
 		if (failure) {
 			this.notify_ability_failed(id, failure);
@@ -458,8 +458,8 @@ export class AbilitySystemComponent extends Component {
 	}
 
 	private applyWaitState(key: string, run: ActiveAbilityRun, instruction: AbilityWaitInstruction): void {
-		if (run.wait && run.wait.kind === 'event') run.wait.unsub();
-			switch (instruction.kind) {
+		if (run.wait && run.wait.kind === 'event') run.wait.dispose();
+		switch (instruction.kind) {
 			case 'time':
 				run.wait = { kind: 'time', until: instruction.until };
 				return;

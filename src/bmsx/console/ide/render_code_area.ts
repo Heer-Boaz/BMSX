@@ -133,12 +133,12 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
 			break;
 		}
 		if (visualIndex >= visualCount) {
-			host.drawColoredText(api, '~', [constants.COLOR_CODE_DIM], bounds.textLeft, rowY);
+			host.drawColoredText(api, '~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY);
 			continue;
 		}
 		const segment = host.visualIndexToSegment(visualIndex);
 		if (!segment) {
-			host.drawColoredText(api, '~', [constants.COLOR_CODE_DIM], bounds.textLeft, rowY);
+			host.drawColoredText(api, '~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY);
 			continue;
 		}
 		const lineIndex = segment.row;
@@ -318,7 +318,7 @@ function computeCursorScreenInfo(host: CodeAreaHost, entry: CachedHighlight, tex
 	const cursorX = textLeft + host.measureRangeFast(entry, sliceStartDisplay, limitedDisplayIndex);
 	let cursorWidth = host.charAdvance;
 	let baseChar = ' ';
-	let baseColor = constants.COLOR_CODE_TEXT;
+	let baseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 	if (cursorDisplayIndex < highlight.chars.length) {
 		baseChar = highlight.chars[cursorDisplayIndex];
 		baseColor = highlight.colors[cursorDisplayIndex];
