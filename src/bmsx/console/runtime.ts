@@ -586,7 +586,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaDebuggerSuspension = signal;
 		this.debuggerHaltsGame = true;
 		this.setDebuggerPaused(true, { syncGlobal: false });
-		const shouldActivateEditor = signal.reason === 'exception' || autoActivateOnPause;
+		const shouldActivateEditor = signal.reason === 'exception' || signal.reason === 'breakpoint' || autoActivateOnPause;
 		if (shouldActivateEditor) {
 			try {
 				this.ensureEditorActive();
