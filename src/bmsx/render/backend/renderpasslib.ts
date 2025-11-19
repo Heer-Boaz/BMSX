@@ -80,7 +80,7 @@ export class RenderPassLibrary {
 	private passes: RenderPassDef[] = []; // Mutable list for ordering/scheduling
 	private passEnabled = new Map<string, boolean>();
 	private registered = new Map<string, RegisteredPassRec>();
-
+	private readonly tokensById = new Map<string, RenderPassToken>();
 	constructor(private backend: GPUBackend) { }
 
 	registerBuiltin(backend: GPUBackend) {
@@ -436,6 +436,35 @@ export class RenderPassLibrary {
 	}
 
 	// Enable/disable passes at runtime (debug/editor)
-	setPassEnabled(id: string, enabled: boolean): void { this.passEnabled.set(id, !!enabled); }
+	setPassEnabled(id: string, enabled: boolean): void {
+		this.passEnabled.set(id, !!enabled);
+	}
 	isPassEnabled(id: string): boolean { return this.passEnabled.get(id) !== false; }
+
+	public createPassToken(id: string, options?: { enabled?: boolean }): RenderPassToken {
+		const normalized = String(id);
+		if (this.tokensById.has(normalized)) {
+			return this.tokensById.get(normalized)!;
+		}
+		if (options && 'enabled' in options) {
+			this.setPassEnabled(normalized, !!options.enabled);
+		}
+		const token: RenderPassToken = {
+			id: normalized,
+			enable: () => this.setPassEnabled(normalized, true),
+			disable: () => this.setPassEnabled(normalized, false),
+			set: (enabled: boolean) => this.setPassEnabled(normalized, enabled),
+			isEnabled: () => this.isPassEnabled(normalized),
+		};
+		this.tokensById.set(normalized, token);
+		return token;
+	}
+}
+
+export interface RenderPassToken {
+	readonly id: string;
+	enable(): void;
+	disable(): void;
+	set(enabled: boolean): void;
+	isEnabled(): boolean;
 }

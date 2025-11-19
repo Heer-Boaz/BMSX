@@ -1,5 +1,7 @@
 import type { NodeSpec } from "../../ecs/pipeline";
 
+export const GAMEPLAY_PRESENTATION_NODE_REFS: readonly string[] = ['textRender', 'spriteRender', 'meshRender', 'renderSubmit'];
+
 /** Gameplay pipeline spec (id-based). */
 export function gameplaySpec(): NodeSpec[] {
 	return [
@@ -25,9 +27,6 @@ export function gameplaySpec(): NodeSpec[] {
 		{ ref: 'timeline' },
 		{ ref: 'meshAnim' },
 		// Phase 6: Presentation (render submission)
-		{ ref: 'textRender' },
-		{ ref: 'spriteRender' },
-		{ ref: 'meshRender' },
-		{ ref: 'renderSubmit' },
+		...GAMEPLAY_PRESENTATION_NODE_REFS.map(ref => ({ ref })),
 	];
 }

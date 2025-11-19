@@ -12,7 +12,7 @@ import * as MeshPipeline from './3d/mesh_pipeline';
 import * as ParticlesPipeline from './3d/particles_pipeline';
 import * as SkyboxPipeline from './3d/skybox_pipeline';
 import type { GPUBackend, RenderContext, TextureHandle } from './backend/pipeline_interfaces';
-import { RenderPassLibrary } from './backend/renderpasslib';
+import { RenderPassLibrary, type RenderPassToken } from './backend/renderpasslib';
 import { RenderGraphRuntime, buildFrameData } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
 import { GameOptions } from '../core/gameoptions';
@@ -66,6 +66,8 @@ export function generateAtlasName(atlasIndex: number): string {
 	atlasNameCache.set(atlasIndex, atlasName);
 	return atlasName;
 }
+
+const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'sprites', 'crt'];
 
 export interface GameViewOpts {
 	host: GameViewHost;
@@ -183,6 +185,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public textures: { [k: string]: unknown | null } = {};
 	private _dynamicAtlasIndex: number | null = null;
 	public pipelineRegistry?: RenderPassLibrary;
+	private presentationPassTokens: RenderPassToken[] = [];
+	private presentationEnabled = true;
 	// Texture binding cache
 	private _activeTexUnit: number | null = null;
 	private _activeTexture2D: unknown | null = null;
@@ -297,6 +301,32 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public setSpritesAmbient(enabled: boolean, factor = 1.0): void {
 		this.spriteAmbientEnabledDefault = !!enabled;
 		this.spriteAmbientFactorDefault = Math.max(0, Math.min(1, factor));
+	}
+
+	private applyPresentationPassState(): void {
+		if (this.presentationPassTokens.length === 0) {
+			return;
+		}
+		for (const token of this.presentationPassTokens) {
+			token.set(this.presentationEnabled);
+		}
+	}
+
+	public initializePresentationPassTokens(): void {
+		if (!this.pipelineRegistry) {
+			return;
+		}
+		this.presentationPassTokens = PRESENTATION_PASS_IDS.map(id => this.pipelineRegistry!.createPassToken(id));
+		this.applyPresentationPassState();
+	}
+
+	public setPresentationPassesEnabled(enabled: boolean): void {
+		const normalized = !!enabled;
+		if (this.presentationEnabled === normalized) {
+			return;
+		}
+		this.presentationEnabled = normalized;
+		this.applyPresentationPassState();
 	}
 
 	constructor(opts: GameViewOpts) {

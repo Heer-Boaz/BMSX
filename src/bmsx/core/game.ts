@@ -366,6 +366,7 @@ export class Game {
 		const pipelineRegistry = new RenderPassLibrary(gpuBackend);
 		pipelineRegistry.registerBuiltin(gpuBackend);
 		gview.pipelineRegistry = pipelineRegistry;
+		gview.initializePresentationPassTokens();
 		gview.init();
 		await gview.initializeDefaultTextures();
 

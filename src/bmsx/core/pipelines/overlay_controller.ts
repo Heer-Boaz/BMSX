@@ -1,8 +1,14 @@
 import { $ } from '../game';
 import type { NodeSpec } from '../../ecs/pipeline';
-import { buildConsoleOverlaySpec, type ConsoleOverlaySpecOptions } from './console_editor';
+import {
+	consoleModeSpec,
+	consoleEditorSpec,
+	editorModeSpec,
+	presentationOnlySpec,
+	type ConsoleOverlaySpecOptions,
+} from './console_editor';
 
-type OverlayRequest = ConsoleOverlaySpecOptions & { includePresentation?: boolean };
+type OverlayRequest = ConsoleOverlaySpecOptions;
 
 class OverlayPipelineControllerImpl {
 	private readonly requests = new Map<string, OverlayRequest>();
@@ -29,13 +35,32 @@ class OverlayPipelineControllerImpl {
 			$.set_pipeline_override(null);
 			return;
 		}
-		const merged: OverlayRequest = { includeConsole: false, includeEditor: false, includePresentation: false };
+		const merged: OverlayRequest = {
+			includeConsole: false,
+			includeEditor: false,
+			includePresentation: false,
+		};
 		for (const request of this.requests.values()) {
 			if (request.includeConsole) merged.includeConsole = true;
 			if (request.includeEditor) merged.includeEditor = true;
 			if (request.includePresentation) merged.includePresentation = true;
+			if (request.includeConsoleDraw === false) merged.includeConsoleDraw = false;
 		}
-		const spec: NodeSpec[] = buildConsoleOverlaySpec(merged);
+		const presentationEnabled = merged.includePresentation !== false;
+		$.view.setPresentationPassesEnabled(presentationEnabled);
+		let spec: NodeSpec[] = [];
+		if (merged.includeConsole && merged.includeEditor) {
+			spec = consoleEditorSpec({ includePresentation: merged.includePresentation, includeConsoleDraw: merged.includeConsoleDraw });
+		} else if (merged.includeConsole) {
+			spec = consoleModeSpec({ includePresentation: merged.includePresentation, includeConsoleDraw: merged.includeConsoleDraw });
+		} else if (merged.includeEditor) {
+			spec = editorModeSpec({ includePresentation: merged.includePresentation, includeConsoleDraw: merged.includeConsoleDraw });
+		} else if (merged.includePresentation) {
+			spec = presentationOnlySpec();
+		} else {
+			$.set_pipeline_override(null);
+			return;
+		}
 		if (spec.length === 0) {
 			$.set_pipeline_override(null);
 			return;
