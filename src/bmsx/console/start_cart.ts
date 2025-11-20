@@ -13,8 +13,8 @@ import type { IdeThemeVariant } from './types';
 import { MSX2ScreenHeight } from '../index';
 import { MSX2ScreenWidth } from '../index';
 
-type ManifestViewport = { width?: number; height?: number };
-type ManifestWorldViewport = { x?: number; y?: number };
+type ManifestViewport = { width: number; height: number };
+type ManifestWorldViewport = { x: number; y: number };
 
 type ManifestInputMapping = Record<string, string[] | undefined>;
 
@@ -62,6 +62,7 @@ const DEFAULT_META = {
 const DEFAULT_MODULE_ID = 'bmsx-console';
 const DEFAULT_PLAYER_INDEX = 1;
 const DEFAULT_WORLD_VIEWPORT = { x: MSX2ScreenWidth, y: MSX2ScreenHeight };
+const DEFAULT_WORLD_VIEWPORT_SIZE = { width: MSX2ScreenWidth, height: MSX2ScreenHeight };
 
 const DEFAULT_KEYBOARD_MAPPING: ManifestInputMapping = {
 	console_left: ['ArrowLeft'],
@@ -80,18 +81,6 @@ const DEFAULT_GAMEPAD_MAPPING: ManifestInputMapping = {
 	console_b: ['b'],
 	console_a: ['a'],
 };
-
-function normalizeViewport(candidate?: ManifestViewport): { width: number; height: number } {
-	const width = Number(candidate?.width) || DEFAULT_WORLD_VIEWPORT.x;
-	const height = Number(candidate?.height) || DEFAULT_WORLD_VIEWPORT.y;
-	return { width, height };
-}
-
-function normalizeWorldViewport(candidate?: ManifestWorldViewport): { x: number; y: number } {
-	const x = Number(candidate?.x) || DEFAULT_WORLD_VIEWPORT.x;
-	const y = Number(candidate?.y) || DEFAULT_WORLD_VIEWPORT.y;
-	return { x, y };
-}
 
 function coerceInputMapping<T extends string>(mapping: ManifestInputMapping | undefined): Record<string, T[]> {
 	const result: Record<string, T[]> = {};
@@ -160,11 +149,11 @@ function deriveMetadata(manifest: CartManifest) {
 
 function deriveConsoleOptions(manifest: CartManifest) {
 	const consoleConfig = manifest.console ?? {};
-	const viewport = normalizeViewport(consoleConfig.viewport);
+	const viewport = consoleConfig.viewport ?? DEFAULT_WORLD_VIEWPORT_SIZE;
 	const playerIndex = Number(consoleConfig.playerIndex) || DEFAULT_PLAYER_INDEX;
 	const moduleId = consoleConfig.moduleId ?? DEFAULT_MODULE_ID;
 	const caseInsensitiveLua = consoleConfig.caseInsensitiveLua;
-	const worldViewport = normalizeWorldViewport(consoleConfig.world?.viewportSize);
+	const worldViewport = consoleConfig.world?.viewportSize ?? DEFAULT_WORLD_VIEWPORT;
 	return {
 		moduleId,
 		playerIndex,
