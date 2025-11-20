@@ -83,8 +83,16 @@ const CONSOLE_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'console_right',
 	'console_up',
 	'console_down',
-	'console_o',
+	'console_b',
+	'console_a',
 	'console_x',
+	'console_y',
+	'console_start',
+	'console_select',
+	'console_rt',
+	'console_lt',
+	'console_rb',
+	'console_lb',
 ];
 
 const CONSOLE_PREVIEW_MAX_ENTRIES = 12;

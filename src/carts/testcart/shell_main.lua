@@ -87,7 +87,7 @@ function Hero:run_motion(dt)
 end
 
 function Hero:try_blink()
-	local action = game:get_action_state(1, 'console_x')
+	local action = game:get_action_state(1, 'console_a')
 	if not action.guardedjustpressed then
 		return
 	end
@@ -113,10 +113,10 @@ local function build_hero_fsm()
 					end
 				end,
 				process_input = function(self)
-					if game:get_action_state(1, 'console_o').guardedjustpressed then
+					if game:get_action_state(1, 'console_b').guardedjustpressed then
 						return '/charging'
 					end
-					if game:get_action_state(1, 'console_x').guardedjustpressed then
+					if game:get_action_state(1, 'console_a').guardedjustpressed then
 						return '/blinking'
 					end
 				end,
@@ -133,10 +133,10 @@ local function build_hero_fsm()
 						end
 					end,
 				process_input = function(self)
-					if game:get_action_state(1, 'console_o').guardedjustpressed then
+					if game:get_action_state(1, 'console_b').guardedjustpressed then
 						return '/charging'
 					end
-					if game:get_action_state(1, 'console_x').guardedjustpressed then
+					if game:get_action_state(1, 'console_a').guardedjustpressed then
 						return '/blinking'
 					end
 				end,
@@ -150,7 +150,7 @@ local function build_hero_fsm()
 						self.charge_time = self.charge_time + game.deltatime_seconds
 						self:run_motion(game.deltatime_seconds * 0.5)
 						self:try_blink()
-						if not game:get_action_state(1, 'console_o').pressed then
+						if not game:get_action_state(1, 'console_b').pressed then
 							self.events:emit('demo.hero.charge', { time = self.charge_time })
 							return '/moving'
 						end

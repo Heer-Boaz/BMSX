@@ -10,6 +10,8 @@ import { createBmsxConsoleModule } from './module';
 import { createLuaConsoleCartridge } from './lua';
 import { ConsoleFont } from './font';
 import type { IdeThemeVariant } from './types';
+import { MSX2ScreenHeight } from '../index';
+import { MSX2ScreenWidth } from '../index';
 
 type ManifestViewport = { width?: number; height?: number };
 type ManifestWorldViewport = { x?: number; y?: number };
@@ -59,16 +61,15 @@ const DEFAULT_META = {
 
 const DEFAULT_MODULE_ID = 'bmsx-console';
 const DEFAULT_PLAYER_INDEX = 1;
-const DEFAULT_VIEWPORT = { width: 128, height: 128 };
-const DEFAULT_WORLD_VIEWPORT = { x: 256, y: 212 };
+const DEFAULT_WORLD_VIEWPORT = { x: MSX2ScreenWidth, y: MSX2ScreenHeight };
 
 const DEFAULT_KEYBOARD_MAPPING: ManifestInputMapping = {
 	console_left: ['ArrowLeft'],
 	console_right: ['ArrowRight'],
 	console_up: ['ArrowUp'],
 	console_down: ['ArrowDown'],
-	console_o: ['KeyZ'],
-	console_x: ['KeyX'],
+	console_b: ['KeyZ'],
+	console_a: ['KeyX'],
 };
 
 const DEFAULT_GAMEPAD_MAPPING: ManifestInputMapping = {
@@ -76,13 +77,13 @@ const DEFAULT_GAMEPAD_MAPPING: ManifestInputMapping = {
 	console_right: ['right'],
 	console_up: ['up'],
 	console_down: ['down'],
-	console_o: ['b'],
-	console_x: ['a'],
+	console_b: ['b'],
+	console_a: ['a'],
 };
 
 function normalizeViewport(candidate?: ManifestViewport): { width: number; height: number } {
-	const width = Number(candidate?.width) || DEFAULT_VIEWPORT.width;
-	const height = Number(candidate?.height) || DEFAULT_VIEWPORT.height;
+	const width = Number(candidate?.width) || DEFAULT_WORLD_VIEWPORT.x;
+	const height = Number(candidate?.height) || DEFAULT_WORLD_VIEWPORT.y;
 	return { width, height };
 }
 
