@@ -285,7 +285,6 @@ local function init_runtime()
 	define_blink()
 	register_hero()
 	spawn_object(HERO_DEF_ID, { id = HERO_INSTANCE_ID, position = { x = 48, y = 64, z = 0 } })
-	grant_ability(HERO_INSTANCE_ID, ABILITY_ID)
 	register_service(Director)
 	demo.snapshot = build_snapshot()
 end
