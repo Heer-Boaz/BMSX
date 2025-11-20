@@ -207,18 +207,6 @@ export class Game {
 		this.emit(event);
 	}
 
-	public emit_presentation(event: GameEvent): void;
-	public emit_presentation(event_name: string, emitter: Identifiable | null, payload?: EventPayload): void;
-	public emit_presentation(arg0: GameEvent | string, emitter?: Identifiable | null, payload?: EventPayload): void {
-		if (typeof arg0 === 'string') {
-			if (payload && typeof payload !== 'object') throw new Error(`[Game.emitPresentation] Payload for '${arg0}' must be an object.`);
-			const event = create_gameevent({ type: arg0, emitter: emitter ?? null, ...(payload ?? {}) });
-			this.emit(event);
-			return;
-		}
-		this.emit(arg0);
-	}
-
 	public get<T extends Registerable>(id: Identifier): T {
 		return this.registry.get<T>(id);
 	}
@@ -489,10 +477,11 @@ export class Game {
 				spec.push(this.cloneNodeSpec(node));
 			}
 		}
-		const diag = DefaultECSPipelineRegistry.build(this.world, spec);
-		if (this.debug) {
-			console.log('[Game] ECS Pipeline rebuilt. Diagnostics:', diag);
-		}
+		// const diag = DefaultECSPipelineRegistry.build(this.world, spec);
+		DefaultECSPipelineRegistry.build(this.world, spec);
+		// if (this.debug) {
+		// 	console.log('[Game] ECS Pipeline rebuilt. Diagnostics:', diag);
+		// }
 	}
 
 	public set_pipeline_override(spec: NodeSpec[] | null): void {

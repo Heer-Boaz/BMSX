@@ -32,7 +32,7 @@ function isNavigationAction(action: ActionState): boolean {
 }
 
 function emitReturnToTitle(emitter: SpriteObject): void {
-	$.emit_presentation(RETURN_TO_TITLE_EVENT, emitter);
+	$.emit(RETURN_TO_TITLE_EVENT, emitter);
 }
 
 function trySkipToTitle(emitter: SpriteObject): void {
@@ -282,7 +282,7 @@ export class TitleScreen extends SpriteObject {
 
 	private startGame(): void {
 		this.pauseBlink();
-		$.emit_presentation('gamestart_selected', this, { numOfPlayers: this.selectedPlayers });
+		$.emit('gamestart_selected', this, { numOfPlayers: this.selectedPlayers });
 	}
 }
 
@@ -334,7 +334,7 @@ export class Gordijn extends WorldObject {
 					[`timeline.end.${Gordijn.TIMELINE_ID}`]: {
 									scope: 'self',
 									do(this: Gordijn, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
-										$.emit_presentation('curtained', this);
+										$.emit('curtained', this);
 										return '../idle';
 									},
 								},

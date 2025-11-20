@@ -273,11 +273,11 @@ export class EventEmitter implements RegisterablePersistent {
 		const eventName = event.type;
 		const emitter = event.emitter;
 		const self = EventEmitter.instance;
-		let anyoneSubscribed = false;
+		// let anyoneSubscribed = false;
 		const deliver = (set?: ListenerSet) => {
 			if (!set) return;
 			for (const item of set) {
-				anyoneSubscribed = true;
+				// anyoneSubscribed = true;
 				item.listener.call(item.subscriber, event);
 			}
 		};
@@ -288,14 +288,15 @@ export class EventEmitter implements RegisterablePersistent {
 		deliver(self.globalScopeListeners[eventName]);
 
 		for (const item of self.anyListeners) {
-			if (item.handler(event)) { anyoneSubscribed = true; }
+			if (item.handler(event)) { // anyoneSubscribed = true;
+			}
 		}
 
 		const dispatchRegistrySlot = (slotId: string): boolean => {
 			const stub = HandlerRegistry.instance.get(slotId);
 			if (!stub) return false;
 			const outcome = stub.call(emitter ?? null, event);
-			anyoneSubscribed = true;
+			// anyoneSubscribed = true;
 			return outcome === HandlerRegistry.STOP;
 		};
 
@@ -309,9 +310,9 @@ export class EventEmitter implements RegisterablePersistent {
 			return;
 		}
 
-		if (!anyoneSubscribed && $.debug) {
-			console.debug(`[EventEmitter] '${eventName}' emitted by '${emitter?.id ?? 'global'}' but no listeners were registered.`);
-		}
+		// if (!anyoneSubscribed && $.debug) {
+		// 	console.debug(`[EventEmitter] '${eventName}' emitted by '${emitter?.id ?? 'global'}' but no listeners were registered.`);
+		// }
 	}
 
 	/**

@@ -18,16 +18,16 @@
 			"console_right": ["ArrowRight"],
 			"console_up": ["ArrowUp"],
 			"console_down": ["ArrowDown"],
-			"console_o": ["KeyZ"],
-			"console_x": ["KeyX"]
+			"console_b": ["KeyZ"],
+			"console_a": ["KeyX"]
 		},
 		"gamepad": {
 			"console_left": ["left"],
 			"console_right": ["right"],
 			"console_up": ["up"],
 			"console_down": ["down"],
-			"console_o": ["b"],
-			"console_x": ["a"]
+			"console_b": ["b"],
+			"console_a": ["a"]
 		}
 	},
 	"lua": {

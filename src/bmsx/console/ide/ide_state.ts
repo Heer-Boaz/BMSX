@@ -268,6 +268,7 @@ export interface IdeState {
 	lastReportedSemanticError: string | null;
 	referenceState: ReferenceState;
 	textVersion: number;
+	lastContentEditAtMs: number | null;
 	saveGeneration: number;
 	appliedGeneration: number;
 	lastSavedSource: string;
@@ -489,6 +490,7 @@ export const ide_state: IdeState = {
 	lastReportedSemanticError: null,
 	referenceState: new ReferenceState(),
 	textVersion: 0,
+	lastContentEditAtMs: null,
 	saveGeneration: 0,
 	appliedGeneration: 0,
 	lastSavedSource: '',

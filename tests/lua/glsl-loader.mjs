@@ -3,7 +3,6 @@ const STUB_MODULES = new Map([
 export class BmsxConsoleApi {
 	emit(_eventName, _payload, _emitterId) {}
 	emit_gameplay(_eventName, _emitterId, _payload) {}
-	emit_presentation(_eventName, _emitterId, _payload) {}
 }
 `],
 	['src/bmsx/serializer/gameserializer.ts', `

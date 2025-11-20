@@ -172,6 +172,7 @@ export class ConsoleMode {
 			charAt: (row, column) => this.charAt(row, column),
 			getTextVersion: () => this.textVersion,
 			shouldFireRepeat: (_keyboard, code, deltaSeconds) => this.shouldRepeatKey(code, deltaSeconds, this.completionRepeatState),
+			shouldAutoTriggerCompletions: () => false,
 		});
 		this.completion.setEnterCommitsEnabled(true);
 	}

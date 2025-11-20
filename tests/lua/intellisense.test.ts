@@ -66,11 +66,6 @@ const consoleApiExports = {
 			void emitterId;
 			void payload;
 		}
-		public emit_presentation(eventName: string, emitterId: string | null, payload?: unknown): void {
-			void eventName;
-			void emitterId;
-			void payload;
-		}
 	},
 };
 registerStubModule(consoleApiPath, consoleApiExports);

@@ -208,6 +208,7 @@ export function jumpToNextMatch(): void {
 			ide_state.searchCurrentIndex = 0;
 		}
 	}
+	ensureSearchSelectionVisible();
 	focusSearchResult(ide_state.searchCurrentIndex);
 }
 
@@ -234,6 +235,7 @@ export function jumpToPreviousMatch(): void {
 			ide_state.searchCurrentIndex = ide_state.searchMatches.length - 1;
 		}
 	}
+	ensureSearchSelectionVisible();
 	focusSearchResult(ide_state.searchCurrentIndex);
 }
 

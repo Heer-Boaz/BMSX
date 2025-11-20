@@ -2,6 +2,8 @@
 
 `BmsxConsoleApi` is the Lua-facing facade for the runtime. Every cart receives an instance named `api` inside its lifecycle hooks, letting it talk to the renderer, input stack, audio engine, world/registry, and task gates without touching browser specifics.
 
+For a Lua-centric shape reference (ActionState fields, timeline events, FSM return conventions, and ability context), see `docs/bmsx_console_lua_api.md`.
+
 ## Conventions
 - All API functions use `lowercase_snake_case`. Private helpers now follow the same convention to keep the file searchable.
 - Tokens shown in this document use `UPPERCASE` (e.g. `"PLAYER_HIT"`, `"SPAWN_ENEMY"`). Keep actual engine literals such as `'pointer_primary'` or spawn reasons like `'fresh'` exactly as defined in the engine.
@@ -38,7 +40,7 @@
 
 ## Events, Timelines & Task Gates
 - `events` returns the shared `EventEmitter`.
-- `emit`, `emit_gameplay`, and `emit_presentation` emit events (example: `api.emit('PLAYER_HIT', 'PLAYER_CORE', { damage = 2 })`).
+- `emit` and `emit_gameplay` emit events (example: `api.emit('PLAYER_HIT', 'PLAYER_CORE', { damage = 2 })`).
 - `timelines` enumerates registered `EventTimeline`s to coordinate scripted sequences.
 - `taskgate(name)` fetches a named `GateGroup`, while `rungate()` returns the global run gate for coarse execution control.
 

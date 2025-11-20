@@ -452,7 +452,7 @@ export abstract class Fighter extends SpriteObject {
 		if (!state) throw new Error('[Eila] enterStoerheidsdans invoked without state context.');
 		this.performingStoerheidsdans = true;
 		this.resetVerticalPosition();
-		$.emit_presentation('animate_idle', this);
+		$.emit('animate_idle', this);
 		const data = state.data as StoerheidsdansStateData;
 		data.expectedAnimation = null;
 		state.ticks += 1;
@@ -489,7 +489,7 @@ export abstract class Fighter extends SpriteObject {
 	}
 
 	public startNagenieten(): void {
-		$.emit_presentation('animate_idle', this);
+		$.emit('animate_idle', this);
 	}
 
 	public enterHumiliated(): void {

@@ -65,6 +65,7 @@ export interface CompletionHost {
 	charAt(row: number, column: number): string;
 	getTextVersion(): number;
 	shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean;
+	shouldAutoTriggerCompletions?(): boolean;
 }
 
 const keywordCompletions = getKeywordCompletions();
@@ -95,6 +96,14 @@ export class CompletionController {
 
 	constructor(host: CompletionHost) {
 		this.host = host;
+	}
+
+	private autoTriggerEnabled(): boolean {
+		const allowAuto = this.host.shouldAutoTriggerCompletions;
+		if (allowAuto) {
+			return allowAuto();
+		}
+		return true;
 	}
 
 	// Public API for editor integration
@@ -159,6 +168,7 @@ export class CompletionController {
 		const pending = this.pendingCompletionRequest;
 		if (!pending) return;
 		if (!this.host.isCodeTabActive()) { this.cancelPendingCompletion(); return; }
+		if (!this.autoTriggerEnabled()) { this.cancelPendingCompletion(); return; }
 		if (this.completionSession) { this.cancelPendingCompletion(); return; }
 		pending.elapsed += deltaSeconds;
 		if (pending.elapsed < constants.COMPLETION_AUTO_TRIGGER_DELAY_SECONDS) return;
@@ -903,6 +913,7 @@ export class CompletionController {
 	}
 
 	private determineAutoCompletionTrigger(context: CompletionContext, edit: EditContext): CompletionTrigger | null {
+		if (!this.autoTriggerEnabled()) return null;
 		if (!edit || edit.kind === 'delete') return null;
 		if (edit.text.length === 0) return null;
 		const lastChar = edit.text.charAt(edit.text.length - 1);
@@ -928,6 +939,7 @@ export class CompletionController {
 			return;
 		}
 		if (!edit || !analyzed) { this.cancelPendingCompletion(); return; }
+		if (!this.autoTriggerEnabled()) { this.cancelPendingCompletion(); return; }
 		const trigger = this.determineAutoCompletionTrigger(analyzed, edit);
 		if (!trigger) { this.cancelPendingCompletion(); return; }
 		this.pendingCompletionRequest = { context: analyzed, trigger, elapsed: 0 };
@@ -1128,6 +1140,10 @@ export class CompletionController {
 	}
 
 	private refreshParameterHint(): void {
+		if (!this.autoTriggerEnabled()) {
+			this.parameterHint = null;
+			return;
+		}
 		const info = this.resolveParameterHintContext();
 		this.parameterHint = info;
 	}

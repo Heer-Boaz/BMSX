@@ -28,7 +28,7 @@ export class EilaModelFSM {
 						_ffwachten: {
 							entering_state(this: World, state: State) {
 								$.playaudio(AudioId.start);
-								$.emit_presentation('its_curtains', this);
+								$.emit('its_curtains', this);
 								const data = state.data as { waitTicks?: number };
 								data.waitTicks = 0;
 							},

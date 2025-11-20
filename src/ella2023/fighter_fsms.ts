@@ -122,7 +122,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 			states: {
 				_idle: {
 					entering_state(this: Fighter) {
-						$.emit_presentation('animate_idle', this);
+						$.emit('animate_idle', this);
 						this.abilitysystem.add_tags('state.idle');
 						this.abilitysystem.remove_tags('state.attacking', 'state.walking');
 					},
@@ -137,7 +137,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 						this.applyWalkFacing(undefined, resolved);
 						this.abilitysystem.add_tags('state.walking');
 						this.abilitysystem.remove_tags('state.attacking', 'state.idle');
-						$.emit_presentation('animate_walk', this);
+						$.emit('animate_walk', this);
 					},
 					tick(this: Fighter) {
 						this.walkTick();
@@ -158,7 +158,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 					entering_state(this: Fighter) {
 						this.abilitysystem.add_tags('state.ducking');
 						this.abilitysystem.remove_tags('state.attacking');
-						$.emit_presentation('animate_duck', this);
+						$.emit('animate_duck', this);
 					},
 					exiting_state(this: Fighter) {
 						this.abilitysystem.remove_tags('state.ducking');
@@ -207,10 +207,10 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 							if (!ascending) {
 								throw new Error('[FighterFSMs] Jump state missing _ascending substate.');
 							}
-							if (state.currentid !== '_ascending') {
-								state.transition_to('_ascending');
-							}
-							const flyingKick = childStates.flyingkick;
+						if (state.currentid !== '_ascending') {
+							state.transition_to('_ascending');
+						}
+						const flyingKick = childStates.flyingkick;
 							if (!flyingKick) {
 								throw new Error('[FighterFSMs] Jump state missing flyingkick substate.');
 							}
@@ -225,7 +225,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 							const payload = this.pendingJumpPayload;
 							this.pendingJumpPayload = undefined;
 							this.startJump(state, payload);
-							$.emit_presentation('animate_jump', this);
+							$.emit('animate_jump', this);
 						},
 					exiting_state(this: Fighter, _state: State) {
 						this.abilitysystem.remove_tags('state.airborne', 'state.airborne.attackUsed');
@@ -290,7 +290,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 										this.completeAttack('flyingkick');
 										this.hideHitMarker();
 										this.abilitysystem.remove_tags('state.attacking');
-										$.emit_presentation('animate_jump', this);
+										$.emit('animate_jump', this);
 									},
 								},
 							},
@@ -344,7 +344,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 				this.abilitysystem.add_tags('state.combat_disabled', 'state.grounded');
 				this.abilitysystem.remove_tags('state.attacking', 'state.airborne');
 				this.enterHumiliated();
-				$.emit_presentation('animate_humiliated', this);
+				$.emit('animate_humiliated', this);
 			},
 			exiting_state(this: Fighter) {
 				this.abilitysystem.remove_tags('state.combat_disabled');
@@ -449,7 +449,7 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 		humiliated: {
 			entering_state(this: Fighter) {
 				setSpriteFrame(this, 'humiliated');
-				$.emit_presentation('humiliated_animation_start', this, { fighter: this });
+				$.emit('humiliated_animation_start', this, { fighter: this });
 				this.play_animation_timeline(TIMELINE_IDS.humiliated);
 			},
 			on: {
@@ -457,7 +457,7 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 					scope: 'self',
 					do(this: Fighter) {
 						this.handle_animation_timeline_end(TIMELINE_IDS.humiliated);
-						$.emit_presentation('humiliated_animation_end', this, { fighter: this });
+						$.emit('humiliated_animation_end', this, { fighter: this });
 					},
 				},
 			},

@@ -8512,6 +8512,7 @@ export function markTextMutated(): void {
 }
 
 export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
+	ide_state.lastContentEditAtMs = ide_state.clockNow();
 	ide_state.pendingEditContext = { kind, text };
 }
 
@@ -9505,6 +9506,26 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		charAt: (r, c) => charAt(r, c),
 		getTextVersion: () => ide_state.textVersion,
 		shouldFireRepeat: (kb, code, dt) => ide_state.input.shouldRepeatPublic(kb, code, dt),
+		shouldAutoTriggerCompletions: () => {
+			if (!isCodeTabActive()) {
+				return false;
+			}
+			if (isReadOnlyCodeTab()) {
+				return false;
+			}
+			if (!ide_state.windowFocused) {
+				return false;
+			}
+			if (ide_state.searchActive || ide_state.symbolSearchActive || ide_state.lineJumpActive || ide_state.resourceSearchActive || ide_state.createResourceActive) {
+				return false;
+			}
+			const lastEditAt = ide_state.lastContentEditAtMs;
+			if (lastEditAt === null) {
+				return false;
+			}
+			const now = ide_state.clockNow();
+			return now - lastEditAt <= constants.COMPLETION_TYPING_GRACE_MS;
+		},
 	});
 	ide_state.completion.setEnterCommitsEnabled(false);
 	ide_state.input = new InputController({

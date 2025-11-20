@@ -629,45 +629,41 @@ export class BmsxConsoleApi {
 		return $.event_emitter;
 	}
 
-	private get_emitter(emitter_or_id: Identifier | null): Registerable | null {
+	private resolveEmitter(
+		emitter_or_id: Identifier | Registerable | null | undefined,
+		options?: { required?: boolean; context?: string }
+	): Registerable | null {
+		const context = options?.context ?? 'emit';
+		if (emitter_or_id === undefined || emitter_or_id === null) {
+			if (options?.required) {
+				throw new Error(`[BmsxConsoleApi] ${context} requires a non-empty emitter or emitter id.`);
+			}
+			return null;
+		}
 		if (typeof emitter_or_id === 'string') {
-			return $.registry.get(emitter_or_id);
+			const emitter = $.registry.get(emitter_or_id);
+			if (!emitter) {
+				throw new Error(`[BmsxConsoleApi] Emitter '${emitter_or_id}' not found.`);
+			}
+			return emitter;
 		}
 		return emitter_or_id;
 	}
 
-	private validate_emitter(emitter_or_id: Identifier | Registerable, emitter?: Registerable): void {
-		if (emitter_or_id && !emitter) {
-			throw new Error(`[BmsxConsoleApi] Emitter '${emitter_or_id}' not found.`);
-		}
-		if (!emitter_or_id) throw new Error('[BmsxConsoleApi] emit requires a non-empty emitter or emitter id.');
-	}
-
-	public emit(event_name: string, emitter_or_id?: Identifier, payload?: EventPayload): void {
+	public emit(event_name: string, emitter_or_id?: Identifier | Registerable | null, payload?: EventPayload): void {
 		if (typeof event_name !== 'string' || event_name.length === 0) {
 			throw new Error('[BmsxConsoleApi] emit requires a non-empty event name.');
 		}
-		const emitter: Registerable | null = this.get_emitter(emitter_or_id);
-		this.validate_emitter(emitter_or_id, emitter);
+		const emitter = this.resolveEmitter(emitter_or_id);
 		$.emit(event_name, emitter, payload);
 	}
 
-	public emit_gameplay(event_name: string, emitter_or_id: Identifier | null, payload?: EventPayload): void {
+	public emit_gameplay(event_name: string, emitter_or_id: Identifier | Registerable | null, payload?: EventPayload): void {
 		if (typeof event_name !== 'string' || event_name.length === 0) {
 			throw new Error('[BmsxConsoleApi] emit_gameplay requires a non-empty event name.');
 		}
-		const emitter = this.get_emitter(emitter_or_id);
-		this.validate_emitter(emitter_or_id, emitter);
+		const emitter = this.resolveEmitter(emitter_or_id, { required: true, context: 'emit_gameplay' });
 		$.emit_gameplay(event_name, emitter as any, payload);
-	}
-
-	public emit_presentation(event_name: string, emitter_or_id: Identifier | null, payload?: EventPayload): void {
-		if (typeof event_name !== 'string' || event_name.length === 0) {
-			throw new Error('[BmsxConsoleApi] emit_presentation requires a non-empty event name.');
-		}
-		const emitter = this.get_emitter(emitter_or_id);
-		this.validate_emitter(emitter_or_id, emitter);
-		$.emit_presentation(event_name, emitter, payload);
 	}
 
 	public timelines(): EventTimeline[] {

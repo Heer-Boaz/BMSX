@@ -6,14 +6,12 @@ import {
 	type TimelineDefinition,
 	type CompiledTimelineMarkerCache,
 	type TimelineEvent,
-	type TimelineEndEvent,
 	type TimelineFrameEvent,
 	type TimelineFrameChangeReason,
 	type TimelinePlaybackMode,
 } from '../timeline/timeline';
 import { AbilitySystemComponent } from './abilitysystemcomponent';
 import { create_gameevent } from '../core/game_event';
-import { $ } from '../core/game';
 import { insavegame } from '../serializer/serializationhooks';
 import { unique_strings } from '../utils/unique_strings';
 
@@ -167,15 +165,15 @@ export class TimelineComponent extends Component<WorldObject> {
 
 	private process_events(entry: RegisteredTimeline, events: TimelineEvent[]): void {
 		for (const evt of events) {
-			if ($.debug) {
-				console.log('[Timeline][event]', {
-					parent: this.parent.id,
-					timeline: entry.instance.id,
-					kind: evt.kind,
-					current: (evt as TimelineFrameEvent).current ?? (evt as TimelineEndEvent).frame,
-					value: evt.kind === 'frame' ? (evt as TimelineFrameEvent).value : undefined,
-				});
-			}
+			// if ($.debug) {
+			// 	console.log('[Timeline][event]', {
+			// 		parent: this.parent.id,
+			// 		timeline: entry.instance.id,
+			// 		kind: evt.kind,
+			// 		current: (evt as TimelineFrameEvent).current ?? (evt as TimelineEndEvent).frame,
+			// 		value: evt.kind === 'frame' ? (evt as TimelineFrameEvent).value : undefined,
+			// 	});
+			// }
 			if (evt.kind === 'frame') {
 				const payload: TimelineFrameEventPayload = {
 					timeline_id: entry.instance.id,
