@@ -1,3 +1,5 @@
+Coding policies: *no defensive checks, trust the types, trust proper initialization and configuration (thus: no `ensure`), let the code just fail (thus: trust the code and just let runtime errors pop-up)!, and no legacy fallbacks permitted!*
+
 *. Ensure that you have the latest version of Node.js installed (preferably v22 or later).
 *. Install the necessary dependencies by running:
    ```bash
