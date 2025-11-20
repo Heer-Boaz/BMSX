@@ -2,7 +2,7 @@ import { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
 import type { BmsxConsoleMetadata, ConsoleLuaSymbolEntry } from '../types';
 
-const STATUS_LOG_PREFIX = '[IDE Status]';
+// const STATUS_LOG_PREFIX = '[IDE Status]';
 
 export interface StatusBarHost {
 	viewportWidth: number;

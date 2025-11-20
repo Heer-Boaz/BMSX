@@ -45,16 +45,12 @@ export type SpriteCommand = {
 };
 
 export interface ConsoleRenderBackend {
-	beginFrame(): void;
 	drawRect(command: RectCommand): void;
 	drawText(command: PrintCommand, font: ConsoleFont): void;
 	drawSprite(command: SpriteCommand): void;
-	endFrame(): void;
 }
 
 export class DirectConsoleRenderBackend implements ConsoleRenderBackend {
-	public beginFrame(): void {}
-
 	public drawRect(command: RectCommand): void {
 		const layer = command.layer ?? 'ui';
 		const x0 = Math.floor(command.x0);
@@ -85,8 +81,6 @@ export class DirectConsoleRenderBackend implements ConsoleRenderBackend {
 			colorize: command.colorize ? { ...command.colorize } : undefined,
 		});
 	}
-
-	public endFrame(): void {}
 }
 
 export class EditorConsoleRenderBackend implements ConsoleRenderBackend {

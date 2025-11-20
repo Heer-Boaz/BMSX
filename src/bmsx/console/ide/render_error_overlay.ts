@@ -18,6 +18,7 @@ export interface ErrorOverlayRenderConfig {
 	paddingY: number;
 	highlightLines?: ReadonlyArray<number>;
 	highlightColor?: { r: number; g: number; b: number; a: number };
+	contentRightInset?: number;
 	connector?: {
 		left: number;
 		right: number;
@@ -81,6 +82,8 @@ export function renderErrorOverlay(
 	const { bounds, background, textColor, paddingX, paddingY, connector, highlightLines, highlightColor } = config;
 	api.rectfill_color(bounds.left, bounds.top, bounds.right, bounds.bottom, background);
 	const startX = bounds.left + paddingX;
+	const contentRightInset = config.contentRightInset ?? 0;
+	const lineRightLimit = Math.max(startX, bounds.right - paddingX - contentRightInset);
 	const highlightSet = new Set<number>();
 	if (highlightLines) {
 		for (let index = 0; index < highlightLines.length; index += 1) {
@@ -92,7 +95,7 @@ export function renderErrorOverlay(
 	for (let i = 0; i < lines.length; i += 1) {
 		if (highlightSet.has(i)) {
 			const lineLeft = startX;
-			const lineRight = bounds.right - paddingX;
+			const lineRight = lineRightLimit;
 			if (lineRight > lineLeft) {
 				const color = highlightColor ?? background;
 				api.rectfill_color(lineLeft, currentY, lineRight, currentY + lineHeight, color);

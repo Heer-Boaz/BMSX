@@ -404,6 +404,8 @@ export type RuntimeErrorOverlayLineDescriptor = {
 export type RuntimeErrorOverlayLayout = {
 	bounds: RectBounds;
 	lineRects: ReadonlyArray<RectBounds>;
+	copyButtonRect: RectBounds;
+	contentRightInset: number;
 	// Visual line content produced by layout (word-wrapped)
 	displayLines?: ReadonlyArray<string>;
 	// Map from visual line index to descriptor index in 'lineDescriptors'
@@ -428,6 +430,7 @@ export type RuntimeErrorOverlay = {
 	expanded: boolean;
 	hovered: boolean;
 	hoverLine: number;
+	copyButtonHovered: boolean;
 };
 
 export type RepeatEntry = {

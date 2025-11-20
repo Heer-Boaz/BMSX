@@ -72,7 +72,6 @@ export class BmsxConsoleApi {
 	private textCursorY = 0;
 	private textCursorHomeX = 0;
 	private textCursorColorIndex = 0;
-	private frameIndex: number = 0;
 	private deltaSecondsValue: number = 0;
 	private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 
@@ -95,31 +94,8 @@ export class BmsxConsoleApi {
 		this.renderBackend = backend ?? new DirectConsoleRenderBackend();
 	}
 
-	public begin_frame(frame: number, deltaSeconds: number): void {
-		if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) {
-			throw new Error('[BmsxConsoleApi] Delta seconds must be a finite non-negative number.');
-		}
-		this.frameIndex = frame;
+	public begin_frame(deltaSeconds: number): void {
 		this.deltaSecondsValue = deltaSeconds;
-		this.renderBackend.beginFrame();
-	}
-
-	public begin_paused_frame(frame: number): void {
-		this.frameIndex = frame;
-		this.deltaSecondsValue = 0;
-		this.renderBackend.beginFrame();
-	}
-
-	public end_frame(): void {
-		this.renderBackend.endFrame();
-	}
-
-	public frame_number(): number {
-		return this.frameIndex;
-	}
-
-	public delta_seconds(): number {
-		return this.deltaSecondsValue;
 	}
 
 	public get display_width(): number {
@@ -253,6 +229,39 @@ export class BmsxConsoleApi {
 
 	public rectfill_color(x0: number, y0: number, x1: number, y1: number, colorvalue: color): void {
 		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: colorvalue, layer: DRAW_LAYER });
+	}
+
+	public sprite(
+		img_id: string,
+		x: number,
+		y: number,
+		options?: { scale?: number; flip_h?: boolean; flip_v?: boolean; colorize?: color }
+	): void {
+		const entry = $.rompack.img[img_id];
+		const width = entry.imgmeta.width;
+		const height = entry.imgmeta.height;
+		const scale = options?.scale ?? 1;
+		this.renderBackend.drawSprite({
+			kind: 'sprite',
+			imgId: img_id,
+			spriteIndex: null,
+			originX: 0,
+			originY: 0,
+			baseX: x,
+			baseY: y,
+			drawX: x,
+			drawY: y,
+			scale,
+			layer: DRAW_LAYER,
+			flipH: options?.flip_h === true,
+			flipV: options?.flip_v === true,
+			spriteId: null,
+			instanceId: img_id,
+			width,
+			height,
+			positionDirty: false,
+			colorize: options?.colorize,
+		});
 	}
 
 	public write(text: string, x?: number, y?: number, colorindex?: number): void {

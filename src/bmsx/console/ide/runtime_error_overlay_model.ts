@@ -54,6 +54,7 @@ export function rebuildRuntimeErrorOverlayView(overlay: RuntimeErrorOverlay): vo
 	overlay.layout = null;
 	overlay.hovered = false;
 	overlay.hoverLine = -1;
+	overlay.copyButtonHovered = false;
 }
 
 function buildRuntimeErrorOverlayDescriptors(
@@ -123,6 +124,20 @@ function buildCombinedRuntimeErrorStack(details: RuntimeErrorDetails | null): St
 		combined.push(jsFrames[index]);
 	}
 	return combined;
+}
+
+export function buildRuntimeErrorOverlayCopyText(overlay: RuntimeErrorOverlay): string {
+	if (overlay.lineDescriptors.length > 0) {
+		const buffer: string[] = [];
+		for (let index = 0; index < overlay.lineDescriptors.length; index += 1) {
+			buffer.push(overlay.lineDescriptors[index].text);
+		}
+		return buffer.join('\n');
+	}
+	if (overlay.lines.length > 0) {
+		return overlay.lines.join('\n');
+	}
+	return 'Runtime error';
 }
 
 function formatRuntimeErrorStackFrame(frame: StackTraceFrame): string {

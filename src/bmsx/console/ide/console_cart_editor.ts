@@ -91,7 +91,8 @@ import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, rend
 import { renderErrorOverlayText } from './render_error_overlay';
 import {
 	cloneRuntimeErrorDetails,
-	rebuildRuntimeErrorOverlayView
+	rebuildRuntimeErrorOverlayView,
+	buildRuntimeErrorOverlayCopyText
 } from './runtime_error_overlay_model';
 import {
 	computeRuntimeErrorOverlayLayout,
@@ -140,8 +141,6 @@ import type {
 	ConsoleEditorShortcutContext,
 	CustomKeybindingHandler,
 	DebugPanelKind,
-	// SearchComputationJob migrated to editor_search
-	RuntimeErrorOverlayLayout,
 } from './types';
 import type { StackTraceFrame } from '../../lua/runtime';
 import type { RectBounds } from '../../rompack/rompack';
@@ -1126,12 +1125,13 @@ export function showRuntimeError(line: number | null, column: number | null, mes
 		timer: Number.POSITIVE_INFINITY,
 		messageLines,
 		lineDescriptors: [],
-		layout: null,
-		details: overlayDetails,
-		expanded: false,
-		hovered: false,
-		hoverLine: -1,
-	};
+	layout: null,
+	details: overlayDetails,
+	expanded: false,
+	hovered: false,
+	hoverLine: -1,
+	copyButtonHovered: false,
+};
 	rebuildRuntimeErrorOverlayView(overlay);
 	setActiveRuntimeErrorOverlay(overlay);
 	setExecutionStopHighlight(processedLine !== null ? targetRow : null);
@@ -7130,7 +7130,7 @@ export function drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, co
 	if (overlay.hovered && overlay.hoverLine >= 0 && overlay.hoverLine < overlay.lineDescriptors.length) {
 		const descriptor = overlay.lineDescriptors[overlay.hoverLine];
 		if (descriptor && descriptor.role === 'frame') {
-			const mapping = (layout as RuntimeErrorOverlayLayout).displayLineMap as number[] | undefined;
+			const mapping = layout.displayLineMap as number[] | undefined;
 			if (Array.isArray(mapping) && mapping.length > 0) {
 				for (let i = 0; i < mapping.length; i += 1) {
 					if (mapping[i] === overlay.hoverLine) highlightLines.push(i);
@@ -7170,17 +7170,20 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 	if (!layout) {
 		overlay.hovered = false;
 		overlay.hoverLine = -1;
+		overlay.copyButtonHovered = false;
 		return false;
 	}
 	if (!snapshot.valid || !snapshot.insideViewport) {
 		overlay.hovered = false;
 		overlay.hoverLine = -1;
+		overlay.copyButtonHovered = false;
 		return false;
 	}
 	const insideBubble = pointInRect(snapshot.viewportX, snapshot.viewportY, layout.bounds);
 	if (!insideBubble) {
 		overlay.hovered = false;
 		overlay.hoverLine = -1;
+		overlay.copyButtonHovered = false;
 		if (justPressed && overlay.expanded) {
 			overlay.expanded = false;
 			rebuildRuntimeErrorOverlayView(overlay);
@@ -7188,6 +7191,18 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 		return false;
 	}
 	overlay.hovered = true;
+	overlay.copyButtonHovered = pointInRect(snapshot.viewportX, snapshot.viewportY, layout.copyButtonRect);
+	if (overlay.copyButtonHovered) {
+		overlay.hoverLine = -1;
+		if (!justPressed) {
+			return true;
+		}
+		ide_state.pointerSelecting = false;
+		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+		resetPointerClickTracking();
+		copyRuntimeErrorOverlayToClipboard(overlay);
+		return true;
+	}
 	overlay.hoverLine = findRuntimeErrorOverlayLineAtPosition(overlay, snapshot.viewportX, snapshot.viewportY);
 	if (!justPressed) {
 		return true;
@@ -7218,6 +7233,11 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 			return true;
 		}
 	}
+}
+
+function copyRuntimeErrorOverlayToClipboard(overlay: RuntimeErrorOverlay): void {
+	const payload = buildRuntimeErrorOverlayCopyText(overlay);
+	void writeClipboard(payload, 'Copied runtime error to clipboard');
 }
 
 export function createRuntimeErrorOverlayLayoutHost(): RuntimeErrorOverlayLayoutHost {
