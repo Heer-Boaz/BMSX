@@ -1010,6 +1010,15 @@ export class BmsxConsoleRuntime extends Service {
 		this.executeConsoleCommand(trimmed);
 	}
 
+	private drawEditorFrame(editor: ConsoleCartEditor): void {
+		this.editorRenderBackend.beginFrame();
+		try {
+			editor.draw(this.api);
+		} finally {
+			this.editorRenderBackend.endFrame();
+		}
+	}
+
 	private executeConsoleCommand(command: string): void {
 		const source = this.prepareConsoleChunk(command);
 		if (source.length === 0) {
@@ -1655,14 +1664,14 @@ export class BmsxConsoleRuntime extends Service {
 			const editorActive = state.editorActive;
 			state.frameBegan = true;
 			if (editorActive && editor) {
-				editor.draw(this.api);
+				this.drawEditorFrame(editor);
 				this.finalizeFrame(true);
 				return;
 			}
 			const luaFaulted = state.luaFaulted || this.luaRuntimeFailed;
 			if (luaFaulted) {
 				if (editorActive && editor) {
-					editor.draw(this.api);
+					this.drawEditorFrame(editor);
 					this.finalizeFrame(true);
 					return;
 				}
@@ -1681,7 +1690,7 @@ export class BmsxConsoleRuntime extends Service {
 						this.handleLuaError(error);
 					}
 					if (editorActive && editor) {
-						editor.draw(this.api);
+						this.drawEditorFrame(editor);
 						this.finalizeFrame(true);
 						return;
 					}
