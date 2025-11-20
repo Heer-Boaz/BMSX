@@ -12,7 +12,6 @@ const romFolder = args[0];
 const cartRoots = {
 	luademo: 'src/carts/luademo',
 	luashell: 'src/luashell',
-	marlies2020console: 'src/marlies2020console',
 };
 
 // Map folder name -> rom base filename when rommanifest differs from folder name

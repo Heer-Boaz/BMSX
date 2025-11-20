@@ -1,4 +1,3 @@
-import { $ } from '../../core/game';
 import type { TimerHandle } from '../../platform/platform';
 import { clamp } from '../../utils/clamp';
 import type { ConsoleEditorFont } from '../editor_font';
@@ -7,6 +6,7 @@ import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type 
 import { LuaSemanticWorkspace } from './semantic_workspace';
 import type { LuaDefinitionInfo } from '../../lua/ast';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types';
+import { scheduleIdeOnce } from './ide_timers';
 
 interface VisualLinesContext {
 	lines: readonly string[];
@@ -91,7 +91,7 @@ export class ConsoleCodeLayout {
 			this.semanticTimer = null;
 		}
 		this.semanticUpdateScheduled = true;
-		this.semanticTimer = $.platform.clock.scheduleOnce!(delay, () => {
+		this.semanticTimer = scheduleIdeOnce(delay, () => {
 			this.semanticTimer = null;
 			this.semanticUpdateScheduled = false;
 			const pending = this.pendingSemantic;

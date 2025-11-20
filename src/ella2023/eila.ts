@@ -3,7 +3,6 @@ import { BitmapId } from './resourceids';
 import { Fighter, JumpingWhileLeavingScreenComponent } from './fighter';
 import { EILA_START_HP } from './gameconstants';
 import { EilaEventService } from './worldmodule';
-import { registerFighterAbilities } from './abilities';
 
 @insavegame
 @assign_fsm('fighter_control', 'player_animation')
@@ -34,7 +33,6 @@ export class Eila extends Fighter {
 
 	public override activate(): void {
 		super.activate();
-		registerFighterAbilities(this);
 	}
 
 	public override getAttackOpponent(): Fighter | null {

@@ -4,7 +4,6 @@ import { Fighter } from "./fighter";
 import { SINTERKLAAS_START_HP } from './gameconstants';
 import { EilaEventService } from './worldmodule';
 import { BitmapId } from "./resourceids";
-import { registerFighterAbilities } from './abilities';
 
 function theOtherFighter(f: Fighter) {
 	return $.get<EilaEventService>('eila_events').theOtherFighter(f);
@@ -41,7 +40,6 @@ export class Sinterklaas extends Fighter {
 
 	override onspawn(spawningPos?: vec3): void {
 		super.onspawn(spawningPos);
-		registerFighterAbilities(this);
 		// Note: this is a hack to make sure the sinterklaasBT is initialized before the sinterklaasBT can be stopped.
 		if (!this.isAIed) { // Only the player can control Sinterklaas
 			this.btreecontexts['sinterklaasBT'].running = false;

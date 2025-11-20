@@ -4,14 +4,14 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 
-const ROM_NAME = 'marlies2020console';
+const ROM_NAME = 'testcart';
 const ROM_DEBUG_PATH = path.resolve('dist', `${ROM_NAME}.debug.rom`);
 const HEADLESS_BUNDLE = path.resolve('dist', 'headless_debug.js');
 const TIMELINE_PATH = path.resolve('tests', 'headless', 'timelines', 'debugger_step_f8.json');
 const MAX_BUFFER = 8 * 1024 * 1024;
 const STATUS_ENTRY = /\[IDE Status] LINE (?<line>\d+)\/(?<total>\d+)/g;
 const EXCEPTION_LOG = /\[LuaDebugger] Exception at (?<chunk>[^:]+):(?<line>\d+)/;
-const WORKSPACE_ROOT = path.resolve('src', ROM_NAME);
+const WORKSPACE_ROOT = path.resolve('src', 'carts', ROM_NAME);
 const WORKSPACE_DIR = path.resolve(WORKSPACE_ROOT, '.bmsx');
 const WORKSPACE_STATE_PATH = path.resolve(WORKSPACE_DIR, 'ide-state.json');
 
@@ -22,7 +22,7 @@ function prepareBreakpointWorkspaceState(): () => void {
 	}
 	const payload = {
 		version: 1,
-		savedAt: Date.now(),
+		savedAt: performance.now(),
 		entryTabId: null,
 		activeTabId: null,
 		tabs: [],
@@ -33,8 +33,8 @@ function prepareBreakpointWorkspaceState(): () => void {
 		lastHistoryTimestamp: 0,
 		navigationHistory: { back: [], forward: [], current: null },
 		breakpoints: {
-			marlies2020: [571],
-			'src/marlies2020console/marlies2020.lua': [571],
+			testcart: [140],
+			'src/carts/testcart/shell_main.lua': [140],
 		},
 	};
 	writeFileSync(WORKSPACE_STATE_PATH, `${JSON.stringify(payload)}\n`, 'utf-8');

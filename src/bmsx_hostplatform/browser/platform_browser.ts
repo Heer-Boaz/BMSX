@@ -35,6 +35,8 @@ import {
 import { WebAudioService } from './web_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
 
+declare const $: any; // avoid circular dependency issues
+
 /**
  * Platform wiring for the web-hosted runtime.
  *
@@ -379,7 +381,7 @@ class BrowserRngService implements RngService {
 	private state: number;
 
 	constructor(seed?: number) {
-		this.state = this.normalizeSeed(seed ?? Date.now());
+		this.state = this.normalizeSeed(seed ?? performance.now());
 	}
 
 	seed(value: number): void {

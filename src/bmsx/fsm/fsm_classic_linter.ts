@@ -11,7 +11,7 @@ const FORBIDDEN_DSL_KEYS = new Set([
 	'tags',
 	'add_tag',
 	'remove_tag',
-	'activate_ability',
+	'trigger_effect',
 	'invoke',
 	'consume_action',
 	'command',

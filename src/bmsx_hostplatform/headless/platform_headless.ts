@@ -35,30 +35,27 @@ import {
 import { HeadlessGameViewHost } from 'bmsx/render/headless/headless_view';
 
 class HeadlessClock implements Clock {
-	private readonly origin = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-	public scheduleOnce!: NonNullable<Clock['scheduleOnce']>;
-	now(): MonoTime {
-		const base = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-		return base - this.origin;
-	}
-}
-
-HeadlessClock.prototype.scheduleOnce = function (delayMs: number, cb: (t: MonoTime) => void) {
-	let active = true;
-	const handle = setTimeout(() => {
-		if (!active) return;
-		active = false;
-		cb(this.now());
-	}, Math.max(0, Math.floor(delayMs)));
-	return {
-		cancel: () => {
+	private readonly origin = performance.now();
+	public scheduleOnce(delayMs: number, cb: (t: MonoTime) => void) {
+		let active = true;
+		const handle = setTimeout(() => {
 			if (!active) return;
 			active = false;
-			clearTimeout(handle);
-		},
-		isActive: () => active,
-	};
-};
+			cb(this.now());
+		}, delayMs);
+		return {
+			cancel: () => {
+				if (!active) return;
+				active = false;
+				clearTimeout(handle);
+			},
+			isActive: () => active,
+		};
+	}
+	now(): MonoTime {
+		return performance.now() - this.origin;
+	}
+}
 
 class HeadlessFrameLoop implements FrameLoop {
 	constructor(private readonly clock: Clock, private readonly stepMs: number) { }
@@ -315,7 +312,7 @@ export class HeadlessPlatformServices implements Platform {
 		this.hid = new UnsupportedHID();
 		this.onscreenGamepad = new HeadlessOnscreenGamepadPlatform();
 		this.audio = new SilentAudioService();
-		this.rng = new SeededRng(options.rngSeed ?? Date.now());
+		this.rng = new SeededRng(options.rngSeed ?? this.clock.now());
 		this.gameviewHost = new HeadlessGameViewHostWithWindowEvents(new_vec2(256, 212));
 	}
 }

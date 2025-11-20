@@ -6,7 +6,7 @@ import type { RomManifest, RomPackerMode, RomPackerOptions, RomPackerTarget } fr
 const term = require('terminal-kit').terminal;
 const _colors = require('colors');
 
-import { resolve as resolvePath, join, isAbsolute } from 'path';
+import { join, isAbsolute } from 'path';
 import { existsSync, statSync } from 'node:fs';
 
 // Command line parameter for texture atlas usage

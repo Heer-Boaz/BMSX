@@ -52,6 +52,7 @@ import { LuaParser } from './parser';
 import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from './value';
 import { createLuaNativeValue, createLuaTable, isLuaTable, isLuaNativeValue } from './value';
 import { LuaDebuggerController, type LuaDebuggerPauseReason } from './debugger';
+import { $ } from '../core/game';
 
 export type LuaCallFrame = {
 	readonly functionName: string | null;
@@ -196,7 +197,7 @@ export class LuaInterpreter {
 	 	 	 this.globals = globals;
 	 	 }
 	 	 this.currentChunk = '<chunk>';
-	 	 this.randomSeedValue = Date.now();
+	 	 this.randomSeedValue = $.platform.clock.now();
 	 	 this.packageTable = createLuaTable();
 	 	 this.packageLoaded = createLuaTable();
 	 	 this.initializeBuiltins();
@@ -2887,7 +2888,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			return [lowerInt + Math.floor(randomValue * span)];
 		}));
 		mathTable.set('randomseed', new LuaNativeFunction('math.randomseed', this, (interpreter, args) => {
-			const seedValue = args.length > 0 ? interpreter.expectNumber(args[0], 'math.randomseed expects a number.', null) : Date.now();
+			const seedValue = args.length > 0 ? interpreter.expectNumber(args[0], 'math.randomseed expects a number.', null) : $.platform.clock.now();
 			interpreter.randomSeedValue = Math.floor(seedValue) >>> 0;
 			return [];
 		}));
@@ -3111,7 +3112,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		const osTable = createLuaTable();
 		osTable.set('time', new LuaNativeFunction('os.time', this, (interpreter, args) => {
 			if (args.length === 0) {
-				return [Math.floor(Date.now() / 1000)];
+				return [Math.floor($.platform.clock.now() / 1000)];
 			}
 			const tableArg = args[0];
 			if (!(isLuaTable(tableArg))) {
@@ -3136,7 +3137,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		osTable.set('date', new LuaNativeFunction('os.date', this, (interpreter, args) => {
 			const formatValue = args.length > 0 ? args[0] : null;
 			const timestampValue = args.length > 1 ? args[1] : null;
-			const timestamp = timestampValue === null ? Math.floor(Date.now() / 1000) : Math.floor(interpreter.expectNumber(timestampValue, 'os.date expects numeric timestamp.', null));
+			const timestamp = timestampValue === null ? Math.floor($.platform.clock.now() / 1000) : Math.floor(interpreter.expectNumber(timestampValue, 'os.date expects numeric timestamp.', null));
 			const date = new Date(timestamp * 1000);
 			if (formatValue === null) {
 				return [date.toISOString()];

@@ -32,6 +32,23 @@ export class EventPort {
 		return new EventChannel(this, path, key);
 	}
 
+	public on(spec: { event_name?: string; event?: string; handler: EventHandler; subscriber?: any; emitter?: Identifier; persistent?: boolean }): EventListenerDisposer {
+		if (!spec || typeof spec !== 'object') {
+			throw new Error('[EventPort] on(spec) requires a spec object.');
+		}
+		const eventNameRaw = spec.event_name ?? spec.event;
+		const eventName = typeof eventNameRaw === 'string' && eventNameRaw.trim().length > 0 ? eventNameRaw.trim() : null;
+		if (!eventName) {
+			throw new Error('[EventPort] on(spec) requires spec.event to be a non-empty string.');
+		}
+		if (typeof spec.handler !== 'function') {
+			throw new Error('[EventPort] on(spec) requires spec.handler to be a function.');
+		}
+		const emitterId = spec.emitter ?? this.emitter.id;
+		EventEmitter.instance.on({ event_name: eventName, handler: spec.handler, subscriber: spec.subscriber, emitter: emitterId, persistent: spec.persistent });
+		return () => EventEmitter.instance.off(eventName, spec.handler, emitterId);
+	}
+
 	emit(eventName: string, payload?: EventPayload): GameEvent {
 		const event = create_gameevent({ type: eventName, emitter: this.emitter, ...(payload ?? {}) });
 		EventEmitter.instance.emit(event);
@@ -44,13 +61,6 @@ export class EventPort {
 		}
 		EventEmitter.instance.emit(event);
 		return event;
-	}
-
-	on(eventName: string, subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer {
-		const opts: EventSubscriptionOptions = { emitter: this.emitter.id };
-		if (options?.persistent !== undefined) opts.persistent = options.persistent;
-		EventEmitter.instance.on(eventName, handler, subscriber, opts);
-		return () => EventEmitter.instance.off(eventName, handler, this.emitter.id);
 	}
 }
 
@@ -85,18 +95,9 @@ export class EventChannel {
 		return this.port.emit(this.resolve(), arg);
 	}
 
-	public on(subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer;
-	public on(segment: string, subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer;
-	public on(
-		first: string | any,
-		second?: any,
-		third?: EventHandler | LocalSubscriptionOptions,
-		fourth?: LocalSubscriptionOptions,
-	): EventListenerDisposer {
-		if (typeof first === 'string') {
-			return this.port.on(this.resolve(first), second!, third as EventHandler, fourth);
-		}
-		return this.port.on(this.resolve(), first, second!, third as LocalSubscriptionOptions);
+	public on(spec: { handler: EventHandler; subscriber?: any; persistent?: boolean; event_name?: string; event?: string; segment?: string; emitter?: Identifier }): EventListenerDisposer {
+		const eventName = spec.event_name ?? spec.event ?? this.resolve(spec.segment);
+		return this.port.on({ event_name: eventName, handler: spec.handler, subscriber: spec.subscriber, persistent: spec.persistent, emitter: spec.emitter });
 	}
 }
 
@@ -219,38 +220,43 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param filtered_on_emitter_id Optional emitter id filter (self/parent/custom). If omitted the listener is global.
 	 * @param persistent If true the listener survives EventEmitter.clear() just like registry persistent objects.
 	 */
-	on(event_name: string, listener: EventHandler<any>, subscriber: any, emitterOrOptions?: Identifier | EventSubscriptionOptions, persistentLegacy: boolean = false): void {
-		const self = EventEmitter.instance;
-		let filtered_on_emitter_id: Identifier | undefined;
-		let persistent = persistentLegacy ?? false;
-		if (emitterOrOptions && typeof emitterOrOptions === 'object' && !Array.isArray(emitterOrOptions)) {
-			const options = emitterOrOptions as EventSubscriptionOptions;
-			filtered_on_emitter_id = options.emitter;
-			if (typeof options.persistent === 'boolean') persistent = options.persistent;
-		} else if (emitterOrOptions !== undefined) {
-			filtered_on_emitter_id = emitterOrOptions as Identifier;
+	public on(spec: { event_name?: string; event?: string; handler: EventHandler<any>; subscriber?: any; emitter?: Identifier; persistent?: boolean }): void {
+		if (!spec || typeof spec !== 'object') {
+			throw new Error('[EventEmitter] on(spec) requires a spec object.');
 		}
+		const eventNameRaw = spec.event_name ?? spec.event;
+		const eventName = typeof eventNameRaw === 'string' && eventNameRaw.trim().length > 0 ? eventNameRaw.trim() : null;
+		if (!eventName) {
+			throw new Error('[EventEmitter] on(spec) requires spec.event_name (or spec.event) to be a non-empty string.');
+		}
+		if (typeof spec.handler !== 'function') {
+			throw new Error(`[EventEmitter] Listener for event '${eventName}' must be a function.`);
+		}
+		const subscriber = spec.subscriber;
+		const filtered_on_emitter_id = spec.emitter;
+		const persistent = !!spec.persistent;
+		const self = EventEmitter.instance;
 		if (filtered_on_emitter_id) {
-			if (!self.emitterScopeListeners[event_name]) {
-				self.emitterScopeListeners[event_name] = {};
+			if (!self.emitterScopeListeners[eventName]) {
+				self.emitterScopeListeners[eventName] = {};
 			}
-			if (!self.emitterScopeListeners[event_name][filtered_on_emitter_id]) {
-				self.emitterScopeListeners[event_name][filtered_on_emitter_id] = new Set();
+			if (!self.emitterScopeListeners[eventName][filtered_on_emitter_id]) {
+				self.emitterScopeListeners[eventName][filtered_on_emitter_id] = new Set();
 			}
-			if (self.checkIfListenerExists(event_name, listener, subscriber, filtered_on_emitter_id)) {
-				if ($.debug) console.warn(`Listener for event "${event_name}" already exists for emitter "${filtered_on_emitter_id}".`);
+			if (self.checkIfListenerExists(eventName, spec.handler, subscriber, filtered_on_emitter_id)) {
+				if ($.debug) console.warn(`Listener for event "${eventName}" already exists for emitter "${filtered_on_emitter_id}".`);
 				return; // Prevent adding the same listener multiple times
 			}
-			self.emitterScopeListeners[event_name][filtered_on_emitter_id].add({ listener, subscriber, persistent });
+			self.emitterScopeListeners[eventName][filtered_on_emitter_id].add({ listener: spec.handler, subscriber, persistent });
 		} else {
-			if (!self.globalScopeListeners[event_name]) {
-				self.globalScopeListeners[event_name] = new Set();
+			if (!self.globalScopeListeners[eventName]) {
+				self.globalScopeListeners[eventName] = new Set();
 			}
-			if (self.checkIfListenerExists(event_name, listener, subscriber)) {
-				if ($.debug) console.warn(`Listener for event "${event_name}", listener "${listener}", subscriber: "${subscriber}" already exists in global scope.`);
+			if (self.checkIfListenerExists(eventName, spec.handler, subscriber)) {
+				if ($.debug) console.warn(`Listener for event "${eventName}", listener "${spec.handler}", subscriber: "${subscriber}" already exists in global scope.`);
 				return; // Prevent adding the same listener multiple times
 			}
-			self.globalScopeListeners[event_name].add({ listener, subscriber, persistent });
+			self.globalScopeListeners[eventName].add({ listener: spec.handler, subscriber, persistent });
 		}
 	}
 
@@ -273,14 +279,14 @@ export class EventEmitter implements RegisterablePersistent {
 		const eventName = event.type;
 		const emitter = event.emitter;
 		const self = EventEmitter.instance;
-		// let anyoneSubscribed = false;
-		const deliver = (set?: ListenerSet) => {
-			if (!set) return;
-			for (const item of set) {
-				// anyoneSubscribed = true;
-				item.listener.call(item.subscriber, event);
-			}
-		};
+			// let anyoneSubscribed = false;
+			const deliver = (set?: ListenerSet) => {
+				if (!set) return;
+				for (const item of set) {
+					// anyoneSubscribed = true;
+					item.listener.call(item.subscriber, event);
+				}
+			};
 		if (emitter) {
 			const scoped = self.emitterScopeListeners[eventName]?.[emitter.id];
 			deliver(scoped);

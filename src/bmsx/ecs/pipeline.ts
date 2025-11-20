@@ -1,10 +1,7 @@
 import type { World } from "../core/world";
 import { ECSystem, TickGroup } from "./ecsystem";
 
-// Helper to access global game instance without importing it (avoids circular dependency)
-function getGame() {
-	return (globalThis as any).$;
-}
+declare const $: any; // avoid circular dependency issues
 
 export interface SystemDescriptor {
 	id: string;
@@ -52,8 +49,7 @@ export class ECSPipelineRegistry {
 
 	/** Build and assign systems to the world's ECSystemManager based on nodes. */
 	build(world: World, nodes: NodeSpec[]): BuildDiagnostics {
-		const $ = getGame();
-		const t0 = $?.platform.clock.now() ?? Date.now();
+		const t0 = $.platform.clock.now();
 		const filtered = nodes.filter(n => (n.when ? n.when(world) : true));
 		const resolved: NodeResolved[] = [];
 		for (let i = 0; i < filtered.length; i++) {
@@ -97,7 +93,7 @@ export class ECSPipelineRegistry {
 		world.systems.clear();
 		for (const s of systems) world.systems.register(s);
 
-		const t1 = $?.platform.clock.now() ?? Date.now();
+		const t1 = $.platform.clock.now();
 		const diag: BuildDiagnostics = {
 			finalOrder: finalOrder.map(r => r.ref),
 			groupOrders,

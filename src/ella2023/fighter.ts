@@ -1,12 +1,9 @@
-import { $, GameplayCommandBuffer, InputAbilityComponent, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction, type EventPayload, Component, subscribesToParentScopedEvent, type ComponentAttachOptions, type WorldObjectEventPayloads, V3, type TimelineFrameEventPayload, type TimelineEndEventPayload } from 'bmsx';
+import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction, type EventPayload, Component, type ComponentAttachOptions, type WorldObjectEventPayloads, type TimelineFrameEventPayload, type TimelineEndEventPayload } from 'bmsx';
 import { create_gameevent, type GameEvent } from 'bmsx/core/game_event';
 import { FIGHTER_TIMELINES } from './fighter_fsms';
-import type { AbilityPayloadFor, AbilityRequestOptions } from 'bmsx/gas/gastypes';
-import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { VERTICAL_POSITION_FIGHTERS } from './gameconstants';
 import { BitmapId } from './resourceids';
-import { FIGHTER_INPUT_PROGRAM } from './input/fighter_input_program';
 import type { Eila } from './eila';
 import {
 	FIGHTER_ATTACK_ABILITY_IDS,
@@ -24,34 +21,6 @@ type JumpStateData = { direction: Direction };
 
 export type AttackType = FighterAttackType;
 
-type FighterAbilityPayloadTable = {
-	[FIGHTER_CORE_ABILITY_IDS.walk]: { direction: Direction };
-	[FIGHTER_CORE_ABILITY_IDS.walk_stop]: undefined;
-	[FIGHTER_CORE_ABILITY_IDS.duck_hold]: undefined;
-	[FIGHTER_CORE_ABILITY_IDS.duck_release]: undefined;
-	[FIGHTER_CORE_ABILITY_IDS.jump]: { direction?: Direction };
-	[FIGHTER_ATTACK_ABILITY_IDS.punch]: { attackType: 'punch' };
-	[FIGHTER_ATTACK_ABILITY_IDS.highkick]: { attackType: 'highkick' };
-	[FIGHTER_ATTACK_ABILITY_IDS.lowkick]: { attackType: 'lowkick' };
-	[FIGHTER_ATTACK_ABILITY_IDS.duckkick]: { attackType: 'duckkick' };
-	[FIGHTER_ATTACK_ABILITY_IDS.flyingkick]: { attackType: 'flyingkick' };
-};
-
-type AttackAbilityPayloadMap = {
-	[K in AttackType]: FighterAbilityPayloadTable[typeof FIGHTER_ATTACK_ABILITY_IDS[K]];
-};
-
-const ATTACK_ABILITY_PAYLOADS: AttackAbilityPayloadMap = {
-	punch: { attackType: 'punch' },
-	highkick: { attackType: 'highkick' },
-	lowkick: { attackType: 'lowkick' },
-	duckkick: { attackType: 'duckkick' },
-	flyingkick: { attackType: 'flyingkick' },
-};
-
-type AbilityRequestArgs<I extends FighterAbilityId> = [payload?: FighterAbilityPayloadTable[I], opts?: { source?: string }];
-
-type WalkAbilityPayload = AbilityPayloadFor<typeof FIGHTER_CORE_ABILITY_IDS.walk>;
 
 export type HitMarkerType = 'player_hit' | 'enemy_hit' | 'poef';
 
@@ -68,7 +37,7 @@ function getDamage(attackType: AttackType): number {
 }
 
 @insavegame
-@attach_components(ProhibitLeavingScreenComponent, AbilitySystemComponent, InputAbilityComponent)
+@attach_components(ProhibitLeavingScreenComponent)
 @assign_fsm('hitanimation')
 export abstract class Fighter extends SpriteObject {
 	public static readonly ATTACK_DURATION = 15;
@@ -83,15 +52,33 @@ export abstract class Fighter extends SpriteObject {
 	public pendingAttackPayload?: { attackType?: AttackType };
 	public pendingJumpPayload?: { direction?: Direction | null; directional?: boolean | string };
 	private _activeAnimationTimeline?: string;
-	private get asc(): AbilitySystemComponent { return this.get_unique_component(AbilitySystemComponent); }
+	private readonly stateTags: Set<string> = new Set();
+	private readonly tagFacade = {
+		add_tags: (...tags: string[]) => this.addTags(...tags),
+		remove_tags: (...tags: string[]) => this.removeTags(...tags),
+		has_gameplay_tag: (tag: string) => this.hasTag(tag),
+	};
 
-	public get isAttacking(): boolean { return this.asc.has_gameplay_tag('state.attacking'); }
-	public get isJumping(): boolean { return this.asc.has_gameplay_tag('state.airborne'); }
-	public get isDucking(): boolean { return this.asc.has_gameplay_tag('state.ducking'); }
-	public get isFighting(): boolean { return !this.asc.has_gameplay_tag('state.combat_disabled'); }
-	public get hasUsedAirborneAttack(): boolean { return this.asc.has_gameplay_tag('state.airborne.attackUsed'); }
+	public get isAttacking(): boolean { return this.stateTags.has('state.attacking'); }
+	public get isJumping(): boolean { return this.stateTags.has('state.airborne'); }
+	public get isDucking(): boolean { return this.stateTags.has('state.ducking'); }
+	public get isFighting(): boolean { return !this.stateTags.has('state.combat_disabled'); }
+	public get hasUsedAirborneAttack(): boolean { return this.stateTags.has('state.airborne.attackUsed'); }
+	public get abilitysystem(): typeof this.tagFacade { return this.tagFacade; }
 
-	public applyWalkFacing(_state: State | undefined, payload: WalkAbilityPayload): void {
+	public addTags(...tags: string[]): void {
+		for (const tag of tags) this.stateTags.add(tag);
+	}
+
+	public removeTags(...tags: string[]): void {
+		for (const tag of tags) this.stateTags.delete(tag);
+	}
+
+	public hasTag(tag: string): boolean {
+		return this.stateTags.has(tag);
+	}
+
+	public applyWalkFacing(_state: State | undefined, payload: { direction?: Direction } | undefined): void {
 		if (!payload) return;
 		const { direction } = payload;
 		if (direction === 'left' || direction === 'right') this.facing = direction;
@@ -138,14 +125,12 @@ export abstract class Fighter extends SpriteObject {
 					},
 					on: {
 						['timeline.frame.fighter.hitanimation']: {
-							scope: 'self',
 							do(this: Fighter, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
 								const delta = typeof event.frame_value === 'number' ? event.frame_value : 0;
 								this.x_nonotify += delta;
 							},
 						},
 						['timeline.end.fighter.hitanimation']: {
-							scope: 'self',
 							do(this: Fighter, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 								this.sc.transition_to('hitanimation:/geen_au');
 							},
@@ -186,12 +171,6 @@ export abstract class Fighter extends SpriteObject {
 
 	public override activate(): void {
 		super.activate();
-		const inputAbility = this.get_unique_component(InputAbilityComponent);
-		if (!inputAbility) throw new Error(`Fighter ${this.id} has no InputAbilityComponent and that's bad! Probably a bug in the @attach_components decorator or the order in which activate() is called relative to component attachment.`);
-
-		inputAbility.playerIndex = this.player_index ?? 1;
-		inputAbility.program = FIGHTER_INPUT_PROGRAM;
-
 		// Seed locomotion and animation so tags and sprites are valid on the first frame.
 		const locomotion = create_gameevent({ type: 'mode.locomotion.idle', emitter: this });
 		this.sc.dispatch_event(locomotion);
@@ -203,30 +182,21 @@ export abstract class Fighter extends SpriteObject {
 		return FIGHTER_CORE_ABILITY_IDS[name];
 	}
 
-	public requestAbility<I extends FighterAbilityId>(abilityId: I, ...args: AbilityRequestArgs<I>): boolean {
-		const payload = (args.length > 0 ? args[0] : undefined) as FighterAbilityPayloadTable[I] | undefined;
-		// opts argument deprecated; source is no longer supported here
-		const asc = this.get_unique_component(AbilitySystemComponent);
-		if (payload === undefined) {
-			const result = asc.request_ability(abilityId);
-			return result.ok;
-		}
-		const result = asc.request_ability(abilityId, { payload } as any);
-		return result.ok;
+	public requestAbility(abilityId: FighterAbilityId, payload?: Record<string, unknown>): boolean {
+		const event = create_gameevent({ type: `effect.${abilityId}`, emitter: this, ...(payload ?? {}) });
+		this.sc.dispatch_event(event);
+		return true;
 	}
 
 	public tryActivateAttackAbility(attackType: AttackType): boolean {
 		const abilityId = this.getAttackAbilityId(attackType);
-		const payload = ATTACK_ABILITY_PAYLOADS[attackType];
-		const asc = this.get_unique_component(AbilitySystemComponent);
-		const result = asc.request_ability(abilityId, { source: 'fighter.attack', payload } as AbilityRequestOptions<typeof abilityId>);
-		return result.ok;
+		const event = create_gameevent({ type: `effect.${abilityId}`, emitter: this, attackType });
+		this.sc.dispatch_event(event);
+		return true;
 	}
 
-	public canActivateAttackAbility(attackType: AttackType): boolean {
-		const abilityId = this.getAttackAbilityId(attackType);
-		const asc = this.get_unique_component(AbilitySystemComponent);
-		return asc.can_activate_reason(abilityId) === null;
+	public canActivateAttackAbility(_attackType: AttackType): boolean {
+		return true;
 	}
 
 	public getAttackAbilityId(attackType: AttackType): FighterAttackAbilityId {
@@ -348,8 +318,7 @@ export abstract class Fighter extends SpriteObject {
 		let dx = 0;
 		if (this.facing === 'left') dx = -this.walkSpeed;
 		else if (this.facing === 'right') dx = this.walkSpeed;
-		if (dx === 0) return;
-		GameplayCommandBuffer.instance.push({ kind: 'moveby2d', target_id: this.id, delta: { x: dx, y: 0, z: 0 } });
+		this.pos.x += dx;
 	}
 
 	private _hitSprite?: SpriteComponent;
@@ -405,21 +374,14 @@ export abstract class Fighter extends SpriteObject {
 
 	public jumpAscendingTick(state?: State): void {
 		if (!state) throw new Error('[Eila] jumpAscendingTick invoked without state context.');
-		const data = state.data as JumpStateData;
-		const dx = this.resolveJumpHorizontal(data);
-		GameplayCommandBuffer.instance.push({ kind: 'moveby2d', target_id: this.id, delta: V3.of(dx, -Fighter.JUMP_SPEED, 0), space: 'world' });
 	}
 
 	public jumpDescendingTick(state?: State): void {
 		if (!state) throw new Error('[Eila] jumpDescendingTick invoked without state context.');
-		const data = state.data as JumpStateData;
-		const dx = this.resolveJumpHorizontal(data);
-		GameplayCommandBuffer.instance.push({ kind: 'moveby2d', target_id: this.id, delta: V3.of(dx, Fighter.JUMP_SPEED, 0), space: 'world' });
 	}
 
 	public canStartFlyingKick(): boolean {
-		const asc = this.get_unique_component(AbilitySystemComponent);
-		return this.isJumping && !asc.has_gameplay_tag('state.airborne.attackUsed');
+		return this.isJumping && !this.stateTags.has('state.airborne.attackUsed');
 	}
 
 	public onFlyingKickEntered(): void {
@@ -439,13 +401,6 @@ export abstract class Fighter extends SpriteObject {
 		if (!jump) return;
 		const data = jump.data as JumpStateData;
 		data.direction = direction;
-	}
-
-	private resolveJumpHorizontal(data: JumpStateData): number {
-		const dir = data.direction ?? this.facing ?? 'right';
-		if (dir === 'left') return -this.walkSpeed;
-		if (dir === 'right') return this.walkSpeed;
-		return 0;
 	}
 
 	public enterStoerheidsdans(state?: State): void {
@@ -508,7 +463,6 @@ export class JumpingWhileLeavingScreenComponent extends Component {
 		this.enabled = false;
 	}
 
-	@subscribesToParentScopedEvent('screen.leaving')
 	public onLeavingScreen(event: GameEvent): void {
 		const emitter = event.emitter as Eila;
 		const detail = event as GameEvent<'screen.leaving', WorldObjectEventPayloads['screen.leaving']>;

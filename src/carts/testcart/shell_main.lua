@@ -3,7 +3,7 @@ local HERO_INSTANCE_ID = 'demo.hero.instance'
 local HERO_FSM_ID = 'demo.hero.fsm'
 local HERO_TIMELINE_ID = 'demo.hero.timeline'
 local SERVICE_ID = 'demo.service.director'
-local ABILITY_ID = 'demo.ability.blink'
+local EFFECT_ID = 'demo.effect.blink'
 
 local demo = {
 	stats = { saves = 0, loads = 0 },
@@ -42,6 +42,8 @@ function Hero:create(self)
 	self.facing = 'right'
 	self.charge_time = 0
 	self.active_state = 'idle'
+	self.tempo_ready = true
+	self.blinking_timer = 0
 end
 
 function Hero:on_spawn()
@@ -51,12 +53,38 @@ function Hero:on_spawn()
 		ticks_per_frame = 0.35,
 		playback_mode = 'loop',
 		markers = {
-			{ frame = 0, event = 'demo.timeline.frame', payload = { label = 'rise' }, add_tags = { 'demo.tempo.ready' } },
-			{ frame = 1, event = 'demo.timeline.frame', payload = { label = 'peak' }, remove_tags = { 'demo.tempo.ready' } },
-			{ frame = 3, event = 'demo.timeline.frame', payload = { label = 'reset' }, add_tags = { 'demo.tempo.ready' } },
+			{ frame = 0, event = 'demo.timeline.frame', payload = { label = 'rise' } },
+			{ frame = 1, event = 'demo.timeline.frame', payload = { label = 'peak' } },
+			{ frame = 3, event = 'demo.timeline.frame', payload = { label = 'reset' } },
 		},
 	})
 	self:play_timeline(HERO_TIMELINE_ID)
+	self.events:on({
+		event = 'demo.timeline.frame',
+		subscriber = self,
+		handler = function(event)
+		local label = event and event.label
+		if label == 'peak' then
+			self.tempo_ready = false
+		elseif label == 'rise' or label == 'reset' then
+			self.tempo_ready = true
+		end
+	end,
+	})
+	self.events:on({
+		event = 'demo.hero.blink',
+		subscriber = self,
+		handler = function(event)
+		local facing = (event and event.facing) or self.facing or 'right'
+		local offset = facing == 'left' and -24 or 24
+		self.x = self.x + offset
+		self.y = self.y - 2
+		self.blinking_timer = 0.2
+		self.events:emit('demo.hero.effect', { phase = 'active', facing = facing, offset = offset })
+		emit('demo.hero.effect.global', self, { phase = 'active', facing = facing, offset = offset })
+		self.events:emit('demo.hero.effect', { phase = 'done' })
+	end,
+	})
 end
 
 function Hero:emit_move(dx, dy)
@@ -91,9 +119,12 @@ function Hero:try_blink()
 	if not action.guardedjustpressed then
 		return
 	end
-	local ok = request_ability(self.id, ABILITY_ID, { payload = { facing = self.facing, t = demo.tick } })
+	if not self.tempo_ready then
+		return
+	end
+	local ok = trigger_effect(self.id, EFFECT_ID, { payload = { facing = self.facing, t = demo.tick } })
 	if ok then
-		self.events:emit('demo.hero.ability', { phase = 'request', facing = self.facing })
+		self.events:emit('demo.hero.effect', { phase = 'request', facing = self.facing })
 	end
 end
 
@@ -162,10 +193,8 @@ local function build_hero_fsm()
 						self:try_blink()
 					end,
 					tick = function(self)
-						local asc = self.abilitysystem
-						if not asc:has_gameplay_tag('demo.tag.blinking') then
-							return '/moving'
-						end
+						self.blinking_timer = math.max(0, self.blinking_timer - game.deltatime_seconds)
+						if self.blinking_timer <= 0 then return '/moving' end
 					end,
 				},
 			},
@@ -176,26 +205,25 @@ local function register_hero()
 	register_world_object({
 		id = HERO_DEF_ID,
 		class = 'Hero',
-		components = { 'AbilitySystemComponent' },
+		components = { 'ActionEffectComponent' },
 		fsms = { { id = HERO_FSM_ID } },
-		abilities = { ABILITY_ID },
-		tags = { 'demo.hero' },
+		effects = { EFFECT_ID },
 		defaults = { speed = 54 },
 	})
 end
 
-local Director = { id = SERVICE_ID, stats = { moves = 0, pulses = 0, ability = 0, charges = 0 } }
+local Director = { id = SERVICE_ID, stats = { moves = 0, pulses = 0, effects = 0, charges = 0 } }
 
 function Director:on_boot()
-	self.stats = { moves = 0, pulses = 0, ability = 0, charges = 0 }
+	self.stats = { moves = 0, pulses = 0, effects = 0, charges = 0 }
 end
 
 function Director:on_activate()
 	events:on('demo.hero.move', function(event)
 		self.stats.moves = self.stats.moves + 1
 	end, self)
-	events:on('demo.hero.ability', function(event)
-		self.stats.ability = self.stats.ability + 1
+	events:on('demo.hero.effect', function(event)
+		self.stats.effects = self.stats.effects + 1
 	end, self)
 	events:on('demo.hero.charge', function(event)
 		self.stats.charges = self.stats.charges + 1
@@ -219,23 +247,14 @@ function Director:set_state(state)
 end
 
 local function define_blink()
-	define_ability({
-		id = ABILITY_ID,
-		requiredTags = { 'demo.tempo.ready' },
-		grantTags = { 'demo.tag.blinking' },
-		removeOnEnd = { 'demo.tag.blinking' },
-		cooldownMs = 420,
-		activation = function(ctx, payload)
+	define_effect({
+		id = EFFECT_ID,
+		event = 'demo.hero.blink',
+		cooldown_ms = 420,
+		on_trigger = function(ctx, payload)
 			local owner = ctx.owner
 			local facing = payload and payload.facing or owner.facing or 'right'
-			local offset = facing == 'left' and -24 or 24
-			owner.x = owner.x + offset
-			owner.y = owner.y - 2
-			owner.events:emit('demo.hero.ability', { phase = 'active', facing = facing, offset = offset })
-			emit('demo.hero.ability.global', owner, { phase = 'active', facing = facing, offset = offset })
-		end,
-		completion = function(ctx)
-			ctx.owner.events:emit('demo.hero.ability', { phase = 'done' })
+			return { facing = facing }
 		end,
 	})
 end
@@ -306,9 +325,8 @@ function update(dt)
 end
 
 local function draw_hero(hero)
-	local asc = hero.abilitysystem
-	local ready = asc:has_gameplay_tag('demo.tempo.ready')
-	local blinking = asc:has_gameplay_tag('demo.tag.blinking')
+	local ready = hero.tempo_ready
+	local blinking = hero.blinking_timer > 0
 	local baseColor = blinking and 8 or (ready and 10 or 12)
 	rectfill(hero.x, hero.y, hero.x + hero.sx, hero.y + hero.sy, baseColor)
 end
@@ -320,17 +338,17 @@ local function draw_hud(hero)
 	write('Service     : ' .. SERVICE_ID, 6, 22, 11)
 	write('FSM state   : ' .. hero.active_state, 6, 30, 7)
 	write('Timeline    : ' .. HERO_TIMELINE_ID, 6, 38, 7)
-	write('Ability     : ' .. ABILITY_ID, 6, 46, 7)
+	write('Effect      : ' .. EFFECT_ID, 6, 46, 7)
 	write('Plain input : ' .. demo.last_plain_input, 6, 60, 6)
 	write('Moves       : ' .. stats.moves, 6, 69, 6)
 	write('Pulses      : ' .. stats.pulses, 6, 78, 6)
-	write('Abilities   : ' .. stats.ability, 6, 87, 6)
+	write('Effects     : ' .. stats.effects, 6, 87, 6)
 	write('Charges     : ' .. stats.charges, 6, 96, 6)
 	write('Saves/Loads : ' .. demo.stats.saves .. '/' .. demo.stats.loads, 6, 105, 6)
 	write('Controls:', 6, 118, 13)
 	write('- Arrows: move world object', 6, 128, 13)
 	write('- O: hold to charge (FSM + input)', 6, 138, 13)
-	write('- X: blink ability (GAS + input)', 6, 148, 13)
+	write('- X: blink effect (InputActionToEffect + input)', 6, 148, 13)
 	write('- Down/Up: save/load snapshot', 6, 158, 13)
 end
 

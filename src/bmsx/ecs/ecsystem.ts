@@ -15,7 +15,7 @@ import { Registry } from '../core/registry';
 
 export enum TickGroup {
 	Input = 10,
-	AbilityUpdate = 20,
+	ActionEffect = 20,
 	ModeResolution = 30,
 	Physics = 40,
 	Animation = 50,
@@ -343,7 +343,7 @@ export class PhysicsPreSystem extends ECSystem {
 
 /**
  * PhysicsSyncBeforeStepSystem: same as PhysicsPreSystem but scheduled in Simulation
- * after abilities so GO -> body sync includes ability impulses before the physics step.
+ * after action effects so GO -> body sync includes effect impulses before the physics step.
  */
 export class PhysicsSyncBeforeStepSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }

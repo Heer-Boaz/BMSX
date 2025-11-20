@@ -112,7 +112,7 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 		this.emaAlpha = 2 / (this.SUMMARY_FREQUENCY + 1);
 		// Register for lifecycle-aware event processing
 		Registry.instance.register(this);
-		EventEmitter.instance.on('frameend', this.updateNow, this, { persistent: true });
+		EventEmitter.instance.on({ event_name: 'frameend', handler: this.updateNow, subscriber: this, persistent: true });
 	}
 
 	// Implement Disposable for Registry/Registerable compatibility

@@ -226,9 +226,9 @@ export class ControllerAssignmentUI extends WorldObject {
 
 	private bindGlobalEvents(): void {
 		const bus = EventEmitter.instance;
-		bus.on('controller_assignment_start', this.startUIAssignmentProcess, this, { persistent: true });
-		bus.on('controller_assignment_proposed', this.onProposed, this, { persistent: true });
-		bus.on('controller_assigned', this.onAssigned, this, { persistent: true });
-		bus.on('controller_assignment_cancelled', this.onCancelled, this, { persistent: true });
+		bus.on({ event_name: 'controller_assignment_start', handler: this.startUIAssignmentProcess, subscriber: this, persistent: true });
+		bus.on({ event_name: 'controller_assignment_proposed', handler: this.onProposed, subscriber: this, persistent: true });
+		bus.on({ event_name: 'controller_assigned', handler: this.onAssigned, subscriber: this, persistent: true });
+		bus.on({ event_name: 'controller_assignment_cancelled', handler: this.onCancelled, subscriber: this, persistent: true });
 	}
 }

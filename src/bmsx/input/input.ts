@@ -670,7 +670,7 @@ export class Input implements RegisterablePersistent {
 
 	public bind(): void {
 		Registry.instance.register(this);
-		$.world.events.on('spaceChanged', this, this.handleSpaceChanged, { persistent: true });
+		$.world.events.on({ event_name: 'spaceChanged', handler: this.handleSpaceChanged, subscriber: this, persistent: true });
 
 		const player = this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX);
 		const keyboard = new KeyboardInput('keyboard:0');

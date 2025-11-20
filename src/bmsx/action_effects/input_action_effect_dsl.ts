@@ -1,16 +1,9 @@
 import type { EventPayload } from '../core/eventemitter';
-import type { AbilityId, AbilityPayloadFor, AbilityTableKeys } from '../gas/gastypes';
 import type { Identifier } from '../rompack/rompack';
+import type { ActionEffectId, ActionEffectPayloadFor, ActionEffectTableKeys } from './effect_types';
 
-export type TagId = string;
-export type AbilityIdentifier = AbilityId;
+export type ActionEffectIdentifier = ActionEffectId;
 export type ProgramIdentifier = Identifier;
-
-export interface TagPredicate {
-	all?: TagId[];
-	any?: TagId[];
-	not?: TagId[];
-}
 
 export interface ModePredicate {
 	path?: string;
@@ -18,7 +11,6 @@ export interface ModePredicate {
 }
 
 export interface WhenClause {
-	tags?: TagPredicate;
 	mode?: ModePredicate | ModePredicate[];
 }
 
@@ -29,19 +21,19 @@ export interface OnClause {
 	custom?: Array<{ name: string; pattern: string }>;
 }
 
-type KnownAbilityRequestDescriptor = AbilityTableKeys extends never
+type KnownEffectTriggerDescriptor = ActionEffectTableKeys extends never
 	? never
 	: {
-		[Id in AbilityTableKeys]: {
+		[Id in ActionEffectTableKeys]: {
 			id: Id;
-		} & { payload?: AbilityPayloadFor<Id> };
-	}[AbilityTableKeys];
+		} & { payload?: ActionEffectPayloadFor<Id> };
+	}[ActionEffectTableKeys];
 
-type FallbackAbilityRequestDescriptor = AbilityTableKeys extends never
-	? { id: AbilityIdentifier; payload?: unknown }
+type FallbackEffectTriggerDescriptor = ActionEffectTableKeys extends never
+	? { id: ActionEffectIdentifier; payload?: unknown }
 	: never;
 
-export type AbilityRequestDescriptor = KnownAbilityRequestDescriptor | FallbackAbilityRequestDescriptor;
+export type ActionEffectTriggerDescriptor = KnownEffectTriggerDescriptor | FallbackEffectTriggerDescriptor;
 
 export interface EmitGameplayDescriptor {
 	event: string;
@@ -49,7 +41,7 @@ export interface EmitGameplayDescriptor {
 }
 
 export type Effect =
-	| { 'ability.request': AbilityIdentifier | AbilityRequestDescriptor }
+	| { 'effect.trigger': ActionEffectIdentifier | ActionEffectTriggerDescriptor }
 	| { 'input.consume': string | string[] }
 	| { 'emit.gameplay': EmitGameplayDescriptor }
 	| { commands: Effect[] };
@@ -69,17 +61,15 @@ export interface Binding {
 	do: EffectTable;
 }
 
-export interface InputAbilityProgram {
-	schema: 1;
+export interface InputActionEffectProgram {
 	eval?: 'first' | 'all';
 	priority?: number;
 	bindings: Binding[];
 }
 
-export function isInputAbilityProgram(value: unknown): value is InputAbilityProgram {
+export function isInputActionEffectProgram(value: unknown): value is InputActionEffectProgram {
 	if (!value || typeof value !== 'object') return false;
-	const prog = value as Partial<InputAbilityProgram>;
-	if (prog.schema !== 1) return false;
+	const prog = value as Partial<InputActionEffectProgram>;
 	if (!Array.isArray(prog.bindings)) return false;
 	return true;
 }

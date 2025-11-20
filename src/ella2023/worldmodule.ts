@@ -1,4 +1,4 @@
-import { $, World, InputAbilitySystem, Input, insavegame, Service, subscribesToGlobalEvent, TickGroup, type InputMap, type PointerInputMapping, type RevivableObjectArgs, type WorldModule } from 'bmsx';
+import { $, World, InputActionEffectSystem, Input, insavegame, Service, subscribesToGlobalEvent, TickGroup, type InputMap, type PointerInputMapping, type RevivableObjectArgs, type WorldModule } from 'bmsx';
 import { create_gameevent, type GameEvent } from 'bmsx/core/game_event';
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
@@ -14,7 +14,7 @@ export const EILA_MODULE: WorldModule = {
 			id: 'ella.inputAbility',
 			group: TickGroup.Input,
 			defaultPriority: 10,
-			create: (priority: number) => new InputAbilitySystem(priority),
+			create: (priority: number) => new InputActionEffectSystem(priority),
 		}],
 		nodes: [{ ref: 'ella.inputAbility' }],
 	},

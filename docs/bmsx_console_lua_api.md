@@ -35,7 +35,7 @@ Use `guardedjustpressed` for single-fire input (as in `console_a` and `console_b
 }
 ```
 
-- Define a timeline on a world object via `self:define_timeline({ id, frames, ticks_per_frame?, playback_mode?, markers? })`. Markers can add/remove tags for the owner’s `AbilitySystemComponent` and fire custom events adopted by `events:on`.
+- Define a timeline on a world object via `self:define_timeline({ id, frames, ticks_per_frame?, playback_mode?, markers? })`. Markers now emit events only; use the payload to drive your own flags.
 
 ## FSMs
 
@@ -45,25 +45,21 @@ Use `guardedjustpressed` for single-fire input (as in `console_a` and `console_b
 - `process_input(self)` lets you branch on input separately; it follows the same `'/target'` convention.
 - `entering_state/leaving_state` are optional hooks.
 
-## Gameplay Abilities
+## InputActionToEffect
 
-`define_ability({ id, activation(ctx, payload), completion?, cancel?, requiredTags?, blockedTags?, grantTags?, removeOnActivate?, removeOnEnd?, cooldownMs?, cost? })`
-
-- `ctx` is a `GameplayAbilityExecution` instance: `ctx.owner`, `ctx.ownerId`, `ctx.vars` (per-run scratch), `ctx.intentPayload` (payload forwarded via `request_ability`), tag helpers (`has_tag`, `add_tag`, `remove_tag`, `toggle_tag`), and `request_ability` for chaining.
-- `grantTags`/`removeOnActivate`/`removeOnEnd` mutate gameplay tags via the owner’s `AbilitySystemComponent`.
-- `request_ability(objectId, abilityId, { payload? })` forwards `payload` to the ability as `ctx.intentPayload` and as the `payload` argument passed to `activation`.
+TODO: REWRITE THIS SECTION BASED ON RECENT CHANGES
 
 ## World Objects & Services
 
-- `register_world_object({ id, class = 'WorldObject' | ClassTable, components?, fsms?, behavior_trees?, abilities?, tags?, defaults?, asset_id? })` registers descriptors that `spawn_object` can clone.
-- `register_service({ id, fsms?, behavior_trees?, abilities?, tags?, auto_activate?, asset_id? })` registers services; `register_service` accepts a Lua table with hooks (`on_boot`, `on_activate`, `on_deactivate`, `on_tick`, `get_state`, `set_state`, `dispose`).
+- `register_world_object({ id, class = 'WorldObject' | ClassTable, components?, fsms?, behavior_trees?, effects?, tags?, defaults?, asset_id? })` registers descriptors that `spawn_object` can clone. Use `ActionEffectComponent` in `components` when using `effects`.
+- `register_service({ id, fsms?, behavior_trees?, effects?, tags?, auto_activate?, asset_id? })` registers services; `register_service` accepts a Lua table with hooks (`on_boot`, `on_activate`, `on_deactivate`, `on_tick`, `get_state`, `set_state`, `dispose`).
 
 ## Cartridge Skeleton
 
 ```lua
 local HERO = 'demo.hero'
 local HERO_FSM = 'demo.hero.fsm'
-local BLINK = 'demo.ability.blink'
+local BLINK = 'demo.effect.blink'
 
 function init()
   cartdata('demo_cart')
@@ -89,17 +85,12 @@ function init()
     },
   })
 
-  define_ability({
+  define_effect({
     id = BLINK,
-    grantTags = { 'demo.tag.blinking' },
-    cooldownMs = 300,
-    activation = function(ctx, payload)
-      local dir = payload and payload.dir or 'right'
-      ctx.owner.x = ctx.owner.x + (dir == 'left' and -24 or 24)
-      ctx.owner.events:emit('demo.hero.blink', { dir = dir })
-    end,
-    completion = function(ctx)
-      ctx.owner.events:emit('demo.hero.blink', { phase = 'done' })
+    event = 'demo.hero.blink',
+    cooldown_ms = 300,
+    on_trigger = function(ctx, payload)
+      return { dir = payload and payload.dir or 'right' }
     end,
   })
 
@@ -107,8 +98,8 @@ function init()
     id = HERO,
     class = 'Hero',
     fsms = { { id = HERO_FSM } },
-    abilities = { BLINK },
-    components = { 'AbilitySystemComponent' },
+    effects = { BLINK },
+    components = { 'ActionEffectComponent' },
     defaults = { x = 48, y = 64 },
   })
 
@@ -117,7 +108,7 @@ end
 
 function update(dt)
   if game:get_action_state(1, 'console_a').guardedjustpressed then
-    request_ability('hero.instance', BLINK, { payload = { dir = 'right' } })
+    trigger_effect('hero.instance', BLINK, { payload = { dir = 'right' } })
   end
 end
 

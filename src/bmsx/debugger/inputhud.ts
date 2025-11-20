@@ -134,7 +134,7 @@ export class InputHUDOverlay {
 
 	constructor() {
 		Registry.instance.register(this);
-		EventEmitter.instance.on('frameend', this.updateNow, this, { persistent: true });
+		EventEmitter.instance.on({ event_name: 'frameend', handler: this.updateNow, subscriber: this, persistent: true });
 	}
 
 	public dispose(): void {

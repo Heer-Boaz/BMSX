@@ -17,12 +17,16 @@ export class WaveManager extends EventEmitter {
 
 	public onSpawn(eventName: string, factory: SpawnFactory): this {
 		this.handlers.push({ name: eventName, fn: factory });
-		this.timeline.on(eventName, (event: GameEvent) => {
-			const wo = factory(event);
-			if (!wo) return;
-			const spawnEvent = create_gameevent({ type: 'spawned', emitter: wo, object: wo });
-			this.emit(spawnEvent);
-		}, this);
+		this.timeline.on({
+			event_name: eventName,
+			handler: (event: GameEvent) => {
+				const wo = factory(event);
+				if (!wo) return;
+				const spawnEvent = create_gameevent({ type: 'spawned', emitter: wo, object: wo });
+				this.emit(spawnEvent);
+			},
+			subscriber: this,
+		});
 		return this;
 	}
 }

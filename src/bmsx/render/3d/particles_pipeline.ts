@@ -16,6 +16,7 @@ import {
 	submit_particle as enqueueParticle,
 } from '../shared/render_queues';
 import type { ParticleRenderSubmission } from '../shared/render_types';
+import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
 
 const camRight = new Float32Array(3);
 const camUp = new Float32Array(3);
@@ -35,46 +36,34 @@ let particleProgram: WebGLProgram; let vao: WebGLVertexArrayObject; let quadBuff
 let framePage = 0;
 
 const fallbackParticleState: ParticlePipelineState = {
-	width: 0,
-	height: 0,
-	viewProj: new Float32Array(16),
-	camRight: new Float32Array([1, 0, 0]),
-	camUp: new Float32Array([0, -1, 0]),
+	width: FALLBACK_CAMERA.width,
+	height: FALLBACK_CAMERA.height,
+	viewProj: FALLBACK_CAMERA.viewProj,
+	camRight: FALLBACK_CAMERA.camRight,
+	camUp: FALLBACK_CAMERA.camUp,
 };
 
 const cameraParticleState: ParticlePipelineState = {
-	width: 0,
-	height: 0,
+	width: 1,
+	height: 1,
 	viewProj: new Float32Array(16),
 	camRight: new Float32Array(3),
 	camUp: new Float32Array(3),
 };
 
-function safeDimension(value: number, fallback: number): number {
-	if (Number.isFinite(value) && value > 0) {
-		return value;
-	}
-	return fallback > 0 ? fallback : 1;
-}
-
 function updateOrthographicParticleState(width: number, height: number): ParticlePipelineState {
-	const safeWidth = safeDimension(width, fallbackParticleState.width);
-	const safeHeight = safeDimension(height, fallbackParticleState.height);
-	fallbackParticleState.width = safeWidth;
-	fallbackParticleState.height = safeHeight;
-	M4.orthographicInto(fallbackParticleState.viewProj, 0, safeWidth, safeHeight, 0, -1, 1);
-	fallbackParticleState.camRight[0] = 1;
-	fallbackParticleState.camRight[1] = 0;
-	fallbackParticleState.camRight[2] = 0;
-	fallbackParticleState.camUp[0] = 0;
-	fallbackParticleState.camUp[1] = -1;
-	fallbackParticleState.camUp[2] = 0;
+	const fallback = updateFallbackCamera(width, height);
+	fallbackParticleState.width = fallback.width;
+	fallbackParticleState.height = fallback.height;
 	return fallbackParticleState;
 }
 
 function updateCameraParticleState(width: number, height: number, cam: Camera): ParticlePipelineState {
-	cameraParticleState.width = safeDimension(width, cameraParticleState.width);
-	cameraParticleState.height = safeDimension(height, cameraParticleState.height);
+	if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+		throw new Error(`[ParticlesPipeline] Invalid particle camera dimensions (${width}x${height}).`);
+	}
+	cameraParticleState.width = width;
+	cameraParticleState.height = height;
 	cameraParticleState.viewProj = cam.viewProjection;
 	M4.viewRightUpInto(cam.view, cameraParticleState.camRight, cameraParticleState.camUp);
 	return cameraParticleState;
@@ -84,10 +73,8 @@ function resolveParticleState(state: ParticlePipelineState | undefined, context:
 	if (!state) {
 		return updateOrthographicParticleState(context.offscreenCanvasSize.x, context.offscreenCanvasSize.y);
 	}
-	const width = safeDimension(state.width, context.offscreenCanvasSize.x);
-	const height = safeDimension(state.height, context.offscreenCanvasSize.y);
-	if (state.width !== width || state.height !== height) {
-		return updateOrthographicParticleState(width, height);
+	if (!Number.isFinite(state.width) || state.width <= 0 || !Number.isFinite(state.height) || state.height <= 0) {
+		throw new Error('[ParticlesPipeline] Pipeline state has invalid dimensions; ensure GameView sizes are initialized before rendering particles.');
 	}
 	return state;
 }
@@ -163,9 +150,10 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 		if (!arr) { arr = []; byAmbient.set(key, arr); }
 		arr.push({ ...p, ambient_mode: mode as 0 | 1, ambient_factor: factor, texture: tex });
 	});
-	const viewportWidth = safeDimension(resolvedState.width, context.offscreenCanvasSize.x);
-	const viewportHeight = safeDimension(resolvedState.height, context.offscreenCanvasSize.y);
-	backend.setViewport({ x: 0, y: 0, w: viewportWidth, h: viewportHeight });
+	if (!Number.isFinite(resolvedState.width) || !Number.isFinite(resolvedState.height)) {
+		throw new Error(`[ParticlesPipeline] Invalid viewport dimensions (${resolvedState.width}x${resolvedState.height}).`);
+	}
+	backend.setViewport({ x: 0, y: 0, w: resolvedState.width, h: resolvedState.height });
 	gl.enable(gl.BLEND);
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	gl.depthMask(false);

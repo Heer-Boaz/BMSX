@@ -1,10 +1,16 @@
 import { has_own } from '../utils/has_own';
-import type { AbilityId } from '../gas/gastypes';
-import { abilityRegistry } from './ability_registry';
 import type { PlayerInput } from '../input/playerinput';
-import type { InputAbilityProgram, Binding, Effect, AbilityRequestDescriptor, EmitGameplayDescriptor } from './input_ability_dsl';
+import type {
+	InputActionEffectProgram,
+	Binding,
+	Effect,
+	ActionEffectTriggerDescriptor,
+	EmitGameplayDescriptor,
+} from './input_action_effect_dsl';
 import { create_gameevent, type GameEvent } from '../core/game_event';
-import type { AbilitySystemComponent } from '../component/abilitysystemcomponent';
+import type { ActionEffectId } from './effect_types';
+import { actionEffectRegistry } from './effect_registry';
+import type { ActionEffectComponent } from '../component/actioneffectcomponent';
 import type { WorldObject } from '../core/object/worldobject';
 
 export interface BindingExecutionEnv {
@@ -12,7 +18,7 @@ export interface BindingExecutionEnv {
 	ownerId: string;
 	playerIndex: number;
 	input: PlayerInput;
-	abilitySystem?: AbilitySystemComponent;
+	effects?: ActionEffectComponent;
 	queuedEvents: GameEvent[];
 }
 
@@ -26,8 +32,7 @@ export interface CompiledCustomEdge {
 }
 
 type BindingAnalysis = {
-	usesTags: boolean;
-	usesAbilityRequests: boolean;
+	usesEffectTriggers: boolean;
 };
 
 export interface CompiledBinding {
@@ -41,24 +46,22 @@ export interface CompiledBinding {
 	holdEffect?: EffectExecutor;
 	releaseEffect?: EffectExecutor;
 	customEdges: CompiledCustomEdge[];
-	usesTagConditions: boolean;
-	usesAbilityRequests: boolean;
+	usesEffectTriggers: boolean;
 }
 
 export interface CompiledProgram {
 	evalMode: 'first' | 'all';
 	priority: number;
 	bindings: CompiledBinding[];
-	usesTagConditions: boolean;
-	usesAbilityRequests: boolean;
+	usesEffectTriggers: boolean;
 }
 
 export type PatternParser = (pattern: string) => PatternPredicate;
 
-export function compileProgram(program: InputAbilityProgram, parse: PatternParser): CompiledProgram {
+export function compileProgram(program: InputActionEffectProgram, parse: PatternParser): CompiledProgram {
 	const progPriority = program.priority ?? 0;
 	const evalMode = program.eval ?? 'first';
-	const bindings = (program.bindings ?? []);
+	const bindings = program.bindings ?? [];
 
 	const compiledEntries = bindings.map((binding, index) => ({
 		index,
@@ -66,46 +69,33 @@ export function compileProgram(program: InputAbilityProgram, parse: PatternParse
 	}));
 
 	compiledEntries.sort((a, b) => {
-		const prio = (b.compiled.priority - a.compiled.priority);
+		const prio = b.compiled.priority - a.compiled.priority;
 		if (prio !== 0) return prio;
 		return a.index - b.index;
 	});
 
-	let usesTagConditions = false;
-	let usesAbilityRequests = false;
+	let usesEffectTriggers = false;
 	for (let i = 0; i < compiledEntries.length; i++) {
 		const entry = compiledEntries[i]!;
-		if (entry.compiled.usesTagConditions) usesTagConditions = true;
-		if (entry.compiled.usesAbilityRequests) usesAbilityRequests = true;
+		if (entry.compiled.usesEffectTriggers) usesEffectTriggers = true;
 	}
 
 	return {
 		evalMode,
 		priority: progPriority,
 		bindings: compiledEntries.map(entry => entry.compiled),
-		usesTagConditions,
-		usesAbilityRequests,
+		usesEffectTriggers,
 	};
-}
-
-function hasTagConditions(binding: Binding): boolean {
-	const tags = binding.when?.tags;
-	if (!tags) return false;
-	if (tags.all && tags.all.length > 0) return true;
-	if (tags.any && tags.any.length > 0) return true;
-	if (tags.not && tags.not.length > 0) return true;
-	return false;
 }
 
 function compileBinding(binding: Binding, parse: PatternParser): CompiledBinding {
 	const priority = binding.priority ?? 0;
 	const analysis: BindingAnalysis = {
-		usesTags: hasTagConditions(binding),
-		usesAbilityRequests: false,
+		usesEffectTriggers: false,
 	};
 	const predicate = compilePredicate(binding);
 	if (!binding.on) {
-		throw new Error(`[InputAbilityCompiler] Binding '${binding.name ?? '(unnamed)'}' is missing an 'on' clause.`);
+		throw new Error(`[InputActionEffectCompiler] Binding '${binding.name ?? '(unnamed)'}' is missing an 'on' clause.`);
 	}
 	const press = binding.on.press ? parse(binding.on.press) : undefined;
 	const hold = binding.on.hold ? parse(binding.on.hold) : undefined;
@@ -129,8 +119,7 @@ function compileBinding(binding: Binding, parse: PatternParser): CompiledBinding
 		holdEffect: compileEffectList(binding.do?.hold, 'hold', analysis),
 		releaseEffect: compileEffectList(binding.do?.release, 'release', analysis),
 		customEdges,
-		usesTagConditions: analysis.usesTags,
-		usesAbilityRequests: analysis.usesAbilityRequests,
+		usesEffectTriggers: analysis.usesEffectTriggers,
 	};
 }
 
@@ -138,48 +127,30 @@ function compilePredicate(binding: Binding): (env: BindingExecutionEnv) => boole
 	const when = binding.when;
 	if (!when) return () => true;
 
-	const tagPred = when.tags;
 	const modePred = when.mode;
 	const modeItems = modePred ? (Array.isArray(modePred) ? modePred : [modePred]) : undefined;
 	if (modeItems) {
 		for (let i = 0; i < modeItems.length; i++) {
 			const item = modeItems[i]!;
 			if (!item.path) {
-				throw new Error(`[InputAbilityCompiler] 'mode' clause missing 'path' in binding '${binding.name ?? '(unnamed)'}'.`);
+				throw new Error(`[InputActionEffectCompiler] 'mode' clause missing 'path' in binding '${binding.name ?? '(unnamed)'}'.`);
 			}
 		}
 	}
 
+	if (!modeItems) return () => true;
+
 	return (env: BindingExecutionEnv) => {
-		if (tagPred) {
-			const asc = env.abilitySystem;
-			if (!asc) {
-				throw new Error(`[InputAbilityCompiler] Binding '${binding.name ?? '(unnamed)'}' requires gameplay tags but no AbilitySystemComponent is available on '${env.ownerId}'.`);
-			}
-			if (tagPred.all && tagPred.all.some(tag => !asc.has_gameplay_tag(tag))) return false;
-			if (tagPred.any && tagPred.any.length > 0) {
-				let anyOk = false;
-				for (let i = 0; i < tagPred.any.length; i++) {
-					if (asc.has_gameplay_tag(tagPred.any[i]!)) { anyOk = true; break; }
-				}
-				if (!anyOk) return false;
-			}
-			if (tagPred.not && tagPred.not.some(tag => asc.has_gameplay_tag(tag))) return false;
-		}
-
-		if (modeItems) {
-			for (let i = 0; i < modeItems.length; i++) {
-				const entry = modeItems[i]!;
-				const entryPath = entry.path!;
-				const matches = env.owner.sc.matches_state_path(entryPath);
-				if (entry.not) {
-					if (matches) return false;
-				} else if (!matches) {
-					return false;
-				}
+		for (let i = 0; i < modeItems.length; i++) {
+			const entry = modeItems[i]!;
+			const entryPath = entry.path!;
+			const matches = env.owner.sc.matches_state_path(entryPath);
+			if (entry.not) {
+				if (matches) return false;
+			} else if (!matches) {
+				return false;
 			}
 		}
-
 		return true;
 	};
 }
@@ -211,18 +182,18 @@ function compileEffectList(spec: Effect | Effect[] | undefined, slot?: string, a
 }
 
 function compileEffect(effect: Effect, slot?: string, analysis?: BindingAnalysis): EffectExecutor {
-	if (isAbilityRequest(effect)) {
-		if (analysis) analysis.usesAbilityRequests = true;
-		const spec = effect['ability.request'];
-		if (!spec) throw new Error(`Missing ability request in effect ${JSON.stringify(effect)}`);
+	if (isEffectTrigger(effect)) {
+		if (analysis) analysis.usesEffectTriggers = true;
+		const spec = effect['effect.trigger'];
+		if (!spec) throw new Error(`Missing effect trigger in effect ${JSON.stringify(effect)}`);
 		if (typeof spec === 'string') {
 			return (env: BindingExecutionEnv) => {
-				executeAbilityRequest(env, spec as AbilityId);
+				executeEffectTrigger(env, spec as ActionEffectId);
 			};
 		}
 		return (env: BindingExecutionEnv) => {
-			if (spec.payload === undefined) executeAbilityRequest(env, spec.id as AbilityId);
-			else executeAbilityRequest(env, spec.id as AbilityId, spec.payload);
+			if (spec.payload === undefined) executeEffectTrigger(env, spec.id as ActionEffectId);
+			else executeEffectTrigger(env, spec.id as ActionEffectId, spec.payload);
 		};
 	}
 	if (isInputConsume(effect)) {
@@ -247,21 +218,16 @@ function compileEffect(effect: Effect, slot?: string, analysis?: BindingAnalysis
 		if (!nested) throw new Error(`Empty commands in nested effect ${JSON.stringify(effect)}`);
 		return nested;
 	}
-	throw new Error(`[InputAbilityCompiler] Unknown effect in slot '${slot ?? 'unknown'}': ${JSON.stringify(effect)}`);
+	throw new Error(`[InputActionEffectCompiler] Unknown effect in slot '${slot ?? 'unknown'}': ${JSON.stringify(effect)}`);
 }
 
-function executeAbilityRequest(env: BindingExecutionEnv, id: AbilityId, payload?: unknown): void {
-	const asc = env.abilitySystem;
-	if (!asc) {
-		throw new Error(`[InputAbilityCompiler] Ability request '${id}' attempted without AbilitySystemComponent on '${env.ownerId}'.`);
+function executeEffectTrigger(env: BindingExecutionEnv, id: ActionEffectId, payload?: unknown) {
+	const effects = env.effects;
+	if (!effects) {
+		throw new Error(`[InputActionEffectCompiler] Effect trigger '${id}' attempted without ActionEffectComponent on '${env.ownerId}'.`);
 	}
-	const result = payload === undefined
-		? asc.request_ability(id)
-		: asc.request_ability(id, { payload } as any);
-	if (result && result.ok === false) {
-		const detail = result.reason ?? 'unknown';
-		throw new Error(`[InputAbilityCompiler] Ability request '${id}' for owner '${env.ownerId}' failed: ${detail}`);
-	}
+	const result = effects.trigger(id, payload);
+	return result;
 }
 
 type ValidationContext = {
@@ -270,14 +236,14 @@ type ValidationContext = {
 	slot: string;
 };
 
-export function validateProgramAbilities(program: InputAbilityProgram, programId: string): void {
+export function validateProgramEffects(program: InputActionEffectProgram, programId: string): void {
 	const bindings = program.bindings;
 	for (let index = 0; index < bindings.length; index++) {
 		const binding = bindings[index]!;
 		const bindingName = binding.name ? binding.name : `#${index}`;
 		const table = binding.do;
 		if (!table) {
-			throw new Error(`[InputAbilityProgramValidation] Program '${programId}' binding '${bindingName}' missing effect table.`);
+			throw new Error(`[InputActionEffectProgramValidation] Program '${programId}' binding '${bindingName}' missing effect table.`);
 		}
 		validateEffectSpec(table.press, { programId, bindingName, slot: 'press' });
 		validateEffectSpec(table.hold, { programId, bindingName, slot: 'hold' });
@@ -294,7 +260,6 @@ export function validateProgramAbilities(program: InputAbilityProgram, programId
 	}
 }
 function validateEffectSpec(spec: Effect | Effect[] | undefined, ctx: ValidationContext): void {
-	if (!spec) return;
 	if (Array.isArray(spec)) {
 		for (let i = 0; i < spec.length; i++) {
 			const entry = spec[i]!;
@@ -307,29 +272,29 @@ function validateEffectSpec(spec: Effect | Effect[] | undefined, ctx: Validation
 }
 
 function validateEffect(effect: Effect, ctx: ValidationContext): void {
-	if (isAbilityRequest(effect)) {
-		const descriptor = effect['ability.request'];
+	if (isEffectTrigger(effect)) {
+		const descriptor = effect['effect.trigger'];
 		if (!descriptor) {
-			throw new Error(`[InputAbilityProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' missing ability request descriptor.`);
+			throw new Error(`[InputActionEffectProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' missing effect trigger descriptor.`);
 		}
-		let abilityId: AbilityId;
+		let effectId: ActionEffectId;
 		let payload: unknown;
 		if (typeof descriptor === 'string') {
-			abilityId = descriptor as AbilityId;
+			effectId = descriptor as ActionEffectId;
 			payload = undefined;
 		} else {
 			const id = descriptor.id;
 			if (!id) {
-				throw new Error(`[InputAbilityProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' ability request missing id.`);
+				throw new Error(`[InputActionEffectProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' effect trigger missing id.`);
 			}
-			abilityId = id as AbilityId;
+			effectId = id as ActionEffectId;
 			payload = descriptor.payload;
 		}
 		try {
-			abilityRegistry.validate(abilityId, payload);
+			actionEffectRegistry.validate(effectId, payload);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			throw new Error(`[InputAbilityProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' ability '${abilityId}' validation failed: ${message}`);
+			throw new Error(`[InputActionEffectProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' effect '${effectId}' validation failed: ${message}`);
 		}
 		return;
 	}
@@ -343,8 +308,8 @@ function validateEffect(effect: Effect, ctx: ValidationContext): void {
 	}
 }
 
-function isAbilityRequest(effect: Effect): effect is { 'ability.request': AbilityId | AbilityRequestDescriptor } {
-	return has_own(effect, 'ability.request');
+function isEffectTrigger(effect: Effect): effect is { 'effect.trigger': ActionEffectId | ActionEffectTriggerDescriptor } {
+	return has_own(effect, 'effect.trigger');
 }
 
 function isInputConsume(effect: Effect): effect is { 'input.consume': string | string[] } {

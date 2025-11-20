@@ -1,5 +1,5 @@
-import { AbilityRuntimeSystem } from '../gas/abilityruntime';
-import { InputAbilitySystem } from './input_ability_system';
+import { ActionEffectRuntimeSystem } from './action_effect_runtime_system';
+import { InputActionEffectSystem } from './input_action_effect_system';
 import {
 	BehaviorTreeSystem,
 	BoundarySystem,
@@ -27,8 +27,8 @@ import { TimelineSystem } from './timeline_system';
 export function registerBuiltinECS(): void {
 	R.registerMany([
 		{ id: 'behaviorTrees', group: TickGroup.Input, create: (p: number) => new BehaviorTreeSystem(p) },
-		{ id: 'inputAbility', group: TickGroup.Input, defaultPriority: 10, create: (p: number) => new InputAbilitySystem(p) },
-		{ id: 'abilityRuntime', group: TickGroup.AbilityUpdate, create: (p: number) => new AbilityRuntimeSystem(p) },
+		{ id: 'inputActionEffects', group: TickGroup.Input, defaultPriority: 10, create: (p: number) => new InputActionEffectSystem(p) },
+		{ id: 'actionEffectRuntime', group: TickGroup.ActionEffect, create: (p: number) => new ActionEffectRuntimeSystem(p) },
 		{ id: 'objectFSM', group: TickGroup.ModeResolution, create: (p: number) => new StateMachineSystem(p) },
 		{ id: 'prePosition', group: TickGroup.Physics, create: (p: number) => new PrePositionSystem(p) },
 		{ id: 'physicsSyncBefore', group: TickGroup.Physics, create: (p: number) => new PhysicsSyncBeforeStepSystem(p) },

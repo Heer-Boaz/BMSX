@@ -150,8 +150,8 @@ export interface StateActionAddTagSpec { add_tag: any; }
 
 export interface StateActionRemoveTagSpec { remove_tag: any; }
 
-export interface StateActionActivateAbilitySpec {
-	activate_ability: string | { id: string; payload?: Record<string, unknown>; source?: string };
+export interface StateActionTriggerEffectSpec {
+	trigger_effect: string | { id: string; payload?: Record<string, unknown> };
 }
 
 export interface StateActionConsumeActionSpec {
@@ -204,7 +204,7 @@ export type StateActionSpec =
 	| StateActionDispatchSpec
 	| StateActionAddTagSpec
 	| StateActionRemoveTagSpec
-	| StateActionActivateAbilitySpec
+	| StateActionTriggerEffectSpec
 	| StateActionInvokeSpec
 	| StateActionConsumeActionSpec
 	| Identifier; // State identifier to transition to
@@ -281,7 +281,9 @@ export type ConstructorWithFSMProperty = Function & {
 	linkedFSMs?: Set<FSMName>;
 };
 
-export type EventBagName = keyof Pick<StateDefinition, 'on' | 'input_event_handlers'>; export type FsmHandlerDecl = {
+export type EventBagName = keyof Pick<StateDefinition, 'on' | 'input_event_handlers'>;
+
+export type FsmHandlerDecl = {
 	name: string; // method/field name on the instance
 	keys: string[]; // resolved keys this member answers to
 };

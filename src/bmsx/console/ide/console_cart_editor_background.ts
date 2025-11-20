@@ -1,5 +1,6 @@
 import { $ } from '../../core/game';
 import type { TimerHandle } from '../../platform/platform';
+import { scheduleIdeOnce } from './ide_timers';
 
 export type BackgroundTask = () => boolean;
 
@@ -10,7 +11,7 @@ const backgroundTaskBudgetMs = 2.0;
 export function enqueueBackgroundTask(task: BackgroundTask): void {
 	backgroundTasks.push(task);
 	if (backgroundTaskHandle === null) {
-		backgroundTaskHandle = $.platform.clock.scheduleOnce!(0, runBackgroundTasks);
+		backgroundTaskHandle = scheduleIdeOnce(0, runBackgroundTasks);
 	}
 }
 
@@ -35,7 +36,7 @@ export function runBackgroundTasks(): void {
 		}
 	}
 	if (backgroundTasks.length > 0 && backgroundTaskHandle === null) {
-		backgroundTaskHandle = $.platform.clock.scheduleOnce!(0, runBackgroundTasks);
+		backgroundTaskHandle = scheduleIdeOnce(0, runBackgroundTasks);
 	}
 }
 

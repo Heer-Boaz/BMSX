@@ -8,6 +8,7 @@ import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position } fr
 import { clamp } from '../../utils/clamp';;
 import type { StorageService, TimerHandle } from '../../platform/platform';
 import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './debugger_breakpoints';
+import { scheduleIdeOnce } from './ide_timers';
 
 const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 const METADATA_DIR_NAME = '.bmsx';
@@ -356,23 +357,11 @@ export function scheduleWorkspaceAutosaveLoop(): void {
 	if (!ide_state.workspaceAutosaveEnabled || ide_state.workspaceAutosaveHandle) {
 		return;
 	}
-	const scheduleOnce = $.platform.clock.scheduleOnce;
-	if (typeof scheduleOnce === 'function') {
-		ide_state.workspaceAutosaveHandle = scheduleOnce.call($.platform.clock, WORKSPACE_AUTOSAVE_INTERVAL_MS, () => {
-			ide_state.workspaceAutosaveHandle = null;
-			void runWorkspaceAutosaveTick();
-			scheduleWorkspaceAutosaveLoop();
-		});
-		return;
-	}
-	const timeoutId = setTimeout(() => {
+	ide_state.workspaceAutosaveHandle = scheduleIdeOnce(WORKSPACE_AUTOSAVE_INTERVAL_MS, () => {
 		ide_state.workspaceAutosaveHandle = null;
 		void runWorkspaceAutosaveTick();
 		scheduleWorkspaceAutosaveLoop();
-	}, WORKSPACE_AUTOSAVE_INTERVAL_MS);
-	ide_state.workspaceAutosaveHandle = {
-		cancel: () => clearTimeout(timeoutId),
-	};
+	});
 }
 
 export function stopWorkspaceAutosaveLoop(): void {
@@ -798,7 +787,7 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 	};
 	return {
 		version: 1,
-		savedAt: Date.now(),
+		savedAt: $.platform.clock.now(),
 		entryTabId: ide_state.entryTabId ?? null,
 		activeTabId: ide_state.activeTabId ?? null,
 		tabs,
@@ -874,9 +863,8 @@ function scheduleServerBackendRetry(): void {
 		return;
 	}
 	serverRetryScheduled = true;
-	const clock = $.platform.clock;
 	const delayMs = WORKSPACE_AUTOSAVE_INTERVAL_MS * 4;
-	serverRetryHandle = clock.scheduleOnce(delayMs, () => {
+	serverRetryHandle = scheduleIdeOnce(delayMs, () => {
 		clearServerRetryHandle();
 		void tryReconnectServerBackend();
 	});

@@ -97,13 +97,18 @@ export class StateMachineController {
 		if (!events || events.length === 0) {
 			return;
 		}
-		for (const event of events) {
-			const key = `${machine.localdef_id}:${event.name}`;
-			if (this._eventSubscriptions.has(key)) continue;
-			const disposer = machine.target.events.on(event.name, machine.target, this.auto_dispatch, { persistent: true });
-			this._eventSubscriptions.set(key, disposer);
+			for (const event of events) {
+				const key = `${machine.localdef_id}:${event.name}`;
+				if (this._eventSubscriptions.has(key)) continue;
+				const disposer = machine.target.events.on({
+					event: event.name,
+					handler: this.auto_dispatch,
+					subscriber: machine.target,
+					persistent: true,
+				});
+				this._eventSubscriptions.set(key, disposer);
+			}
 		}
-	}
 
 	public ensureStatemachine(id: Identifier, targetId: Identifier): State {
 		if (typeof id !== 'string' || id.length === 0) {

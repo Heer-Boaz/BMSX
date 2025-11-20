@@ -40,11 +40,10 @@ import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { ConsoleFontVariant } from './font';
 import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
 import { LuaComponent } from '../component/lua_component';
-import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
+import { ActionEffectComponent } from '../component/actioneffectcomponent';
 import type { LuaComponentHandlerMap } from '../component/lua_component';
-import { defineAbility, gameplayActions } from '../gas/ability_registry';
-import type { GameplayAbilityDefinition } from '../gas/gameplay_ability';
-import type { AbilityId } from '../gas/gastypes';
+import { defineActionEffect } from '../action_effects/effect_registry';
+import type { ActionEffectDefinition, ActionEffectHandlerContext, ActionEffectHandlerResult, ActionEffectId, ScriptHandler } from '../action_effects/effect_types';
 import { deep_clone } from '../utils/deep_clone';
 import { WorldObject } from '../core/object/worldobject';
 import { Reviver } from '../serializer/gameserializer';
@@ -202,7 +201,7 @@ export type ConsoleWorldObjectSpawnOptions = {
 	components: ConsoleWorldObjectComponentEntry[];
 	fsms: ConsoleWorldObjectSystemEntry[];
 	behavior_trees: ConsoleWorldObjectSystemEntry[];
-	abilities: string[];
+	effects: string[];
 	tags: string[];
 	defaults?: Record<string, unknown> | null;
 };
@@ -219,7 +218,7 @@ type ConsoleWorldObjectDefinitionRecord = {
 	defaults?: Record<string, unknown>;
 	fsms: ConsoleWorldObjectSystemEntry[];
 	behavior_trees: ConsoleWorldObjectSystemEntry[];
-	abilities: string[];
+	effects: string[];
 	tags: string[];
 	asset_id: string | null;
 };
@@ -228,7 +227,7 @@ type ConsoleServiceDefinitionRecord = {
 	id: string;
 	fsms: ConsoleWorldObjectSystemEntry[];
 	behavior_trees: ConsoleWorldObjectSystemEntry[];
-	abilities: string[];
+	effects: string[];
 	tags: string[];
 	auto_activate: boolean;
 	asset_id: string | null;
@@ -263,21 +262,6 @@ type ConsoleFrameState = {
 	editorEvaluated: boolean;
 };
 
-
-type ConsoleAbilityRegistrationDescriptor = {
-	id: string;
-	unique?: 'ignore' | 'restart' | 'stack';
-	requiredTags?: ReadonlyArray<string>;
-	blockedTags?: ReadonlyArray<string>;
-	grantTags?: ReadonlyArray<string>;
-	removeOnActivate?: ReadonlyArray<string>;
-	removeOnEnd?: ReadonlyArray<string>;
-	cooldownMs?: number;
-	cost?: ReadonlyArray<{ attr: string; amount: number }>;
-	activation?: LuaHandlerFn;
-	completion?: LuaHandlerFn;
-	cancel?: LuaHandlerFn;
-};
 
 type LuaMarshalContext = {
 	moduleId: string;
@@ -440,11 +424,10 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly consoleServiceDefinitionsByAsset: Map<string, Set<string>> = new Map();
 	private readonly consoleServicesByAsset: Map<string, Set<string>> = new Map();
 	private readonly luaGenericAssetsExecuted: Set<string> = new Set();
-	private readonly abilityDefinitions: Map<AbilityId, GameplayAbilityDefinition> = new Map();
-	private readonly gameplayActionIds: Map<AbilityId, string[]> = new Map();
+	private readonly effectDefinitions: Map<ActionEffectId, ActionEffectDefinition> = new Map();
 	private readonly worldObjectFsmAttachments: WeakMap<WorldObject, Set<string>> = new WeakMap();
 	private readonly worldObjectBtAttachments: WeakMap<WorldObject, Set<string>> = new WeakMap();
-	private readonly worldObjectAbilityAttachments: WeakMap<WorldObject, Set<string>> = new WeakMap();
+	private readonly worldObjectEffectAttachments: WeakMap<WorldObject, Set<string>> = new WeakMap();
 	private readonly serviceFsmAttachments: WeakMap<Service, Set<string>> = new WeakMap();
 	private readonly luaHandlerCache = new LuaHandlerCache(
 		(fn, interpreter, thisArg, args) => this.invokeLuaHandler(fn, interpreter, thisArg, args),
@@ -2793,7 +2776,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.disposeAllWorldObjectDefinitions();
 		this.componentPresets.clear();
 		this.serviceDefinitions.clear();
-		this.disposeAllAbilityDefinitions();
+		this.disposeAllEffectDefinitions();
 		this.disposeLuaServices();
 		this.luaGenericAssetsExecuted.clear();
 		this.handledLuaErrors = new WeakSet<object>();
@@ -3514,13 +3497,13 @@ export class BmsxConsoleRuntime extends Service {
 				continue;
 			}
 			if (kind === 'method') {
-				if (name === 'define_ability') {
-					const native = createLuaNativeFunction('api.define_ability', interpreter, (luaInterpreter, args) => {
+				if (name === 'define_effect') {
+					const native = createLuaNativeFunction('api.define_effect', interpreter, (luaInterpreter, args) => {
 						if (args.length === 0 || !isLuaTable(args[0])) {
-							throw this.createApiRuntimeError(luaInterpreter, 'define_ability(def) requires a table argument.');
+							throw this.createApiRuntimeError(luaInterpreter, 'define_effect(def) requires a table argument.');
 						}
 						try {
-							const id = this.registerAbilityDefinitionFromLua(args[0] as LuaTable, luaInterpreter);
+							const id = this.registerEffectDefinitionFromLua(args[0] as LuaTable, luaInterpreter);
 							return this.wrapResultValue(id, interpreter);
 						} catch (error) {
 							if (this.isLuaError(error)) {
@@ -3528,13 +3511,13 @@ export class BmsxConsoleRuntime extends Service {
 								return [];
 							}
 							const message = this.extractErrorMessage(error);
-							const runtimeError = this.createApiRuntimeError(luaInterpreter, `[api.define_ability] ${message}`);
+							const runtimeError = this.createApiRuntimeError(luaInterpreter, `[api.define_effect] ${message}`);
 							this.handleLuaError(runtimeError);
 							return [];
 						}
 					});
 					this.registerLuaGlobal(env, name, native);
-					this.registerLuaBuiltin({ name, params: ['def'], signature: 'define_ability(def)' });
+					this.registerLuaBuiltin({ name, params: ['def'], signature: 'define_effect(def)' });
 					continue;
 				}
 				if (name === 'register_service') {
@@ -4425,8 +4408,8 @@ export class BmsxConsoleRuntime extends Service {
 			if (definition.behavior_trees.length > 0) {
 				this.recordLuaWarning(`[Service:${serviceId}] Behavior trees are not currently supported for services.`);
 			}
-			if (definition.abilities.length > 0) {
-				this.recordLuaWarning(`[Service:${serviceId}] Abilities are not currently supported for services.`);
+			if (definition.effects.length > 0) {
+				this.recordLuaWarning(`[Service:${serviceId}] Effects are not currently supported for services.`);
 			}
 			if (definition.tags.length > 0) {
 				this.recordLuaWarning(`[Service:${serviceId}] Tags are not currently supported for services.`);
@@ -4635,7 +4618,7 @@ export class BmsxConsoleRuntime extends Service {
 					return undefined;
 				}
 			};
-			const disposer = binding.service.events.on(eventName, this, listener);
+			const disposer = binding.service.events.on({ event_name: eventName, handler: listener, subscriber: this });
 			const key = `${binding.service.id}:${handler.__hid}`;
 			this.consoleServiceEventListeners.set(key, disposer);
 		}
@@ -4898,14 +4881,14 @@ export class BmsxConsoleRuntime extends Service {
 		const serviceId = this.normalizeLuaIdentifier((descriptor as { id?: unknown }).id, 'define_service');
 		const fsms = this.normalizeWorldObjectFsmList((descriptor as { fsms?: unknown }).fsms);
 		const behaviorTrees = this.normalizeWorldObjectBehaviorTreeList((descriptor as { behavior_trees?: unknown }).behavior_trees);
-		const abilities = this.normalizeStringArray((descriptor as { abilities?: unknown }).abilities) ?? [];
+		const effects = this.normalizeStringArray((descriptor as { effects?: unknown }).effects) ?? [];
 		const tags = this.normalizeStringArray((descriptor as { tags?: unknown }).tags) ?? [];
 		const autoActivate = (descriptor as { auto_activate?: boolean }).auto_activate ?? true;
 		const record: ConsoleServiceDefinitionRecord = {
 			id: serviceId,
 			fsms,
 			behavior_trees: behaviorTrees,
-			abilities,
+			effects,
 			tags,
 			auto_activate: autoActivate,
 			asset_id: this.currentLuaAssetContext?.asset_id ?? null,
@@ -5260,11 +5243,11 @@ export class BmsxConsoleRuntime extends Service {
 			})();
 		const behaviorTrees = this.normalizeWorldObjectBehaviorTreeList(behaviorTreesRaw);
 
-		const abilitiesList = this.normalizeStringArray(
-			(descriptor as { abilities?: unknown }).abilities ??
+		const effectsList = this.normalizeStringArray(
+			(descriptor as { effects?: unknown }).effects ??
 			(() => {
-				const value = this.getLuaTableEntry(classTable, ['abilities']);
-				return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.abilities'));
+				const value = this.getLuaTableEntry(classTable, ['effects']);
+				return value === null ? undefined : this.luaValueToJs(value, this.extendMarshalContext(marshalCtx, 'class.effects'));
 			})(),
 		) ?? [];
 
@@ -5288,7 +5271,7 @@ export class BmsxConsoleRuntime extends Service {
 			defaults,
 			fsms,
 			behavior_trees: behaviorTrees,
-			abilities: abilitiesList,
+			effects: effectsList,
 			tags: tagsList,
 			asset_id: asset_id,
 		};
@@ -5539,7 +5522,7 @@ export class BmsxConsoleRuntime extends Service {
 
 		target.fsms = this.mergeSystemEntries(def.fsms, target.fsms);
 		target.behavior_trees = this.mergeSystemEntries(def.behavior_trees, target.behavior_trees);
-		target.abilities = this.mergeStringLists(def.abilities, target.abilities);
+		target.effects = this.mergeStringLists(def.effects, target.effects);
 		target.tags = this.mergeStringLists(def.tags, target.tags);
 	}
 
@@ -5564,15 +5547,10 @@ export class BmsxConsoleRuntime extends Service {
 		}
 
 		if (options.tags.length > 0) {
-			const asc = host.get_unique_component(AbilitySystemComponent);
-			if (asc) {
-				asc.add_tags(...options.tags);
-			} else {
-				this.recordLuaWarning(`[WorldObject:${host.id}] Unable to apply tags (${options.tags.join(', ')}) because AbilitySystemComponent is not attached.`);
-			}
+			this.recordLuaWarning(`[WorldObject:${host.id}] Tags are not supported by the InputActionToEffect system.`);
 		}
 
-		this.attachWorldObjectAbilities(host, options.abilities);
+		this.attachWorldObjectEffects(host, options.effects);
 	}
 	private attachWorldObjectFsms(host: WorldObject, entries: ReadonlyArray<ConsoleWorldObjectSystemEntry>): void {
 		if (!entries || entries.length === 0) {
@@ -5631,32 +5609,30 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private attachWorldObjectAbilities(host: WorldObject, abilities: ReadonlyArray<string>): void {
-		if (!abilities || abilities.length === 0) {
+	private attachWorldObjectEffects(host: WorldObject, effects: ReadonlyArray<string>): void {
+		if (!effects || effects.length === 0) {
 			return;
 		}
-		const asc = host.get_unique_component(AbilitySystemComponent);
-		if (!asc) {
-			this.recordLuaWarning(`[WorldObject:${host.id}] Unable to grant abilities (${abilities.join(', ')}) because AbilitySystemComponent is not attached.`);
+		const component = host.get_unique_component(ActionEffectComponent);
+		if (!component) {
+			this.recordLuaWarning(`[WorldObject:${host.id}] Unable to grant effects (${effects.join(', ')}) because ActionEffectComponent is not attached.`);
 			return;
 		}
-		const attached = this.ensureAttachmentSet(this.worldObjectAbilityAttachments, host);
-		for (const abilityIdRaw of abilities) {
-			if (typeof abilityIdRaw !== 'string' || abilityIdRaw.trim().length === 0) {
+		const attached = this.ensureAttachmentSet(this.worldObjectEffectAttachments, host);
+		for (const effectIdRaw of effects) {
+			if (typeof effectIdRaw !== 'string' || effectIdRaw.trim().length === 0) {
 				continue;
 			}
-			const abilityId = abilityIdRaw.trim() as AbilityId;
-			const key = abilityId.toLowerCase();
+			const effectId = effectIdRaw.trim() as ActionEffectId;
+			const key = effectId.toLowerCase();
 			if (attached.has(key)) {
 				continue;
 			}
-			const definition = this.abilityDefinitions.get(abilityId);
+			const definition = this.effectDefinitions.get(effectId);
 			if (!definition) {
-				throw new Error(`[BmsxConsoleRuntime] World object '${host.id}' declares ability '${abilityId}', but it has not been registered. Ensure 'define_ability' runs before the world object definition attaches abilities.`);
+				throw new Error(`[BmsxConsoleRuntime] World object '${host.id}' declares effect '${effectId}', but it has not been registered. Ensure 'define_effect' runs before the world object definition attaches effects.`);
 			}
-			if (!asc.has_ability(abilityId)) {
-				asc.grant_ability(definition, gameplayActions);
-			}
+			component.grant_effect(definition);
 			attached.add(key);
 		}
 	}
@@ -5686,201 +5662,160 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private registerGameplayAction(abilityId: AbilityId, slot: string, handler: LuaHandlerFn): string {
-		const actionId = `lua.ability.${abilityId}.${slot}`;
-		gameplayActions.register(actionId, (ctx, params) => {
-			const abilityCtx = ctx as { intentPayload?: unknown; payload?: EventPayload };
-			abilityCtx.payload = ctx.intentPayload as EventPayload | undefined;
-			const effectiveParams = params ?? abilityCtx.payload;
-			const binding = this.luaHandlerCache.unwrap(handler);
-			if (!binding) {
-				throw new Error(`[BmsxConsoleRuntime] Lua ability handler '${handler.__hid}' is not bound.`);
-			}
-			try {
-				this.callLuaFunctionWithInterpreter(binding.fn, [ctx, effectiveParams], binding.interpreter);
-			}
-			catch (error) {
-				if (isLuaDebuggerPauseSignal(error)) {
-					this.onLuaDebuggerPause(error);
-					return;
-				}
-				this.handleLuaError(error);
-			}
-		});
-		let actionList = this.gameplayActionIds.get(abilityId);
-		if (!actionList) {
-			actionList = [];
-			this.gameplayActionIds.set(abilityId, actionList);
-		}
-		actionList.push(actionId);
-		return actionId;
-	}
-
-	private disposeAbilityHandlers(abilityId: AbilityId): void {
-		const actions = this.gameplayActionIds.get(abilityId);
-		if (actions) {
-			for (const actionId of actions) {
-				gameplayActions.unregister(actionId);
-			}
-			this.gameplayActionIds.delete(abilityId);
-		}
-		this.abilityDefinitions.delete(abilityId);
-	}
-
-	private ensureAbilityHandler(abilityId: AbilityId, slot: string, candidate: LuaHandlerFn | LuaValue | undefined): LuaHandlerFn | undefined {
+	private ensureEffectHandler(effectId: ActionEffectId, candidate: ScriptHandler<[ActionEffectHandlerContext], ActionEffectHandlerResult> | undefined): ScriptHandler<[ActionEffectHandlerContext], ActionEffectHandlerResult> {
 		if (!candidate) {
-			return undefined;
+			throw new Error(`[BmsxConsoleRuntime] Effect '${effectId}' requires a handler.`);
 		}
-		if (!isLuaHandlerFn(candidate)) {
-			return undefined;
+		if (isLuaHandlerFn(candidate)) {
+			const binding = this.luaHandlerCache.unwrap(candidate);
+			if (!binding) {
+				return candidate;
+			}
+			const moduleId = this.moduleIdFor('effect', this.currentLuaAssetContext?.asset_id ?? null, this.luaChunkName ?? null);
+			const path = ['effect', effectId, 'on_trigger'];
+			return this.luaHandlerCache.getOrCreate(binding.fn, { moduleId, interpreter: binding.interpreter, path });
 		}
-		const binding = this.luaHandlerCache.unwrap(candidate);
-		if (!binding) {
+		if (typeof candidate === 'function') {
 			return candidate;
 		}
-		const moduleId = this.moduleIdFor('ability', this.currentLuaAssetContext?.asset_id ?? null, this.luaChunkName ?? null);
-		const path = ['ability', abilityId, slot];
-		return this.luaHandlerCache.getOrCreate(binding.fn, { moduleId, interpreter: binding.interpreter, path });
+		throw new Error(`[BmsxConsoleRuntime] Effect '${effectId}' handler must be a function.`);
 	}
 
-	public registerAbilityDefinition(descriptor: Record<string, unknown>): GameplayAbilityDefinition {
-		if (!descriptor || typeof descriptor !== 'object') {
-			throw new Error('[BmsxConsoleRuntime] define_ability requires a descriptor table.');
+	public registerEffectDefinition(descriptor: ActionEffectDefinition & { handler?: ScriptHandler<[ActionEffectHandlerContext], ActionEffectHandlerResult> }): ActionEffectDefinition {
+		if (!descriptor) {
+			throw new Error('[BmsxConsoleRuntime] define_effect requires a descriptor table.');
 		}
-		const abilityId = this.normalizeLuaIdentifier<AbilityId>((descriptor as { id?: unknown }).id, 'define_ability');
-		this.disposeAbilityHandlers(abilityId);
-		const activationFn = this.ensureAbilityHandler(abilityId, 'activation', (descriptor as ConsoleAbilityRegistrationDescriptor).activation);
-		if (!activationFn || typeof activationFn !== 'function' || !isLuaHandlerFn(activationFn)) {
-			throw new Error(`[BmsxConsoleRuntime] Lua ability '${abilityId}' requires an activation handler.`);
-		}
-		(descriptor as ConsoleAbilityRegistrationDescriptor).activation = activationFn;
-		const completionFn = this.ensureAbilityHandler(abilityId, 'completion', (descriptor as ConsoleAbilityRegistrationDescriptor).completion);
-		if (completionFn) (descriptor as ConsoleAbilityRegistrationDescriptor).completion = completionFn;
-		const cancelFn = this.ensureAbilityHandler(abilityId, 'cancel', (descriptor as ConsoleAbilityRegistrationDescriptor).cancel);
-		if (cancelFn) (descriptor as ConsoleAbilityRegistrationDescriptor).cancel = cancelFn;
-		const activationActionId = this.registerGameplayAction(abilityId, 'activation', activationFn);
-		const completionActionId = completionFn && typeof completionFn === 'function' && isLuaHandlerFn(completionFn)
-			? this.registerGameplayAction(abilityId, 'completion', completionFn)
-			: null;
-		const cancelActionId = cancelFn && typeof cancelFn === 'function' && isLuaHandlerFn(cancelFn)
-			? this.registerGameplayAction(abilityId, 'cancel', cancelFn)
-			: null;
-		const definition: GameplayAbilityDefinition = {
-			id: abilityId,
-			unique: (descriptor as ConsoleAbilityRegistrationDescriptor).unique ?? 'ignore',
-			requiredTags: this.normalizeStringArray((descriptor as ConsoleAbilityRegistrationDescriptor).requiredTags),
-			blockedTags: this.normalizeStringArray((descriptor as ConsoleAbilityRegistrationDescriptor).blockedTags),
-			activation: [{ type: 'call', gameplayAction: activationActionId }],
-			completion: completionActionId ? [{ type: 'call', gameplayAction: completionActionId }] : undefined,
-			cancel: cancelActionId ? [{ type: 'call', gameplayAction: cancelActionId }] : undefined,
+		const effectId = this.normalizeLuaIdentifier<ActionEffectId>(descriptor.id, 'define_effect');
+		this.disposeEffectDefinition(effectId);
+		const onTrigger = this.ensureEffectHandler(effectId, descriptor.handler);
+		const eventName = descriptor.event && descriptor.event.trim().length > 0 ? descriptor.event.trim() : undefined;
+		const definition: ActionEffectDefinition = {
+			id: effectId,
+			event: eventName,
+			cooldown_ms: descriptor.cooldown_ms,
+			handler: ctx => this.invokeEffectHandler(effectId, onTrigger, ctx),
 		};
-		const grantTags = this.normalizeStringArray((descriptor as ConsoleAbilityRegistrationDescriptor).grantTags);
-		const removeOnActivate = this.normalizeStringArray((descriptor as ConsoleAbilityRegistrationDescriptor).removeOnActivate);
-		const removeOnEnd = this.normalizeStringArray((descriptor as ConsoleAbilityRegistrationDescriptor).removeOnEnd);
-		if ((grantTags && grantTags.length > 0) || (removeOnActivate && removeOnActivate.length > 0) || (removeOnEnd && removeOnEnd.length > 0)) {
-			definition.tags = {
-				grant: grantTags && grantTags.length > 0 ? grantTags : undefined,
-				removeOnActivate: removeOnActivate && removeOnActivate.length > 0 ? removeOnActivate : undefined,
-				removeOnEnd: removeOnEnd && removeOnEnd.length > 0 ? removeOnEnd : undefined,
-			};
-		}
-		const cooldownMs = (descriptor as ConsoleAbilityRegistrationDescriptor).cooldownMs;
-		if (cooldownMs >= 0) {
-			definition.cooldownMs = cooldownMs;
-		}
-		const costRaw = (descriptor as ConsoleAbilityRegistrationDescriptor).cost;
-		if (Array.isArray(costRaw) && costRaw.length > 0) {
-			const sanitized = [];
-			for (const entry of costRaw) {
-				if (!entry || typeof entry !== 'object') {
-					continue;
-				}
-				const attr = (entry as { attr?: unknown }).attr;
-				const amount = (entry as { amount?: unknown }).amount;
-				if (typeof attr !== 'string' || attr.trim().length === 0) {
-					throw new Error(`[BmsxConsoleRuntime] Lua ability '${abilityId}' cost entries require a non-empty attr.`);
-				}
-				if (typeof amount !== 'number' || !Number.isFinite(amount)) {
-					throw new Error(`[BmsxConsoleRuntime] Lua ability '${abilityId}' cost entries require a finite amount.`);
-				}
-				sanitized.push({ attr: attr.trim(), amount });
-			}
-			if (sanitized.length > 0) {
-				definition.cost = sanitized;
-			}
-		}
 		try {
-			defineAbility(abilityId);
-		}
-		catch (error) {
+			defineActionEffect(definition);
+		} catch (error) {
 			const message = this.extractErrorMessage(error);
 			if (!message.includes('already registered')) {
 				throw error;
 			}
 		}
-		this.abilityDefinitions.set(abilityId, definition);
-		this.refreshAbilityGrants(abilityId, definition);
+		this.effectDefinitions.set(effectId, definition);
+		this.refreshEffectGrants(effectId, definition);
 		return definition;
 	}
 
-	private disposeAllAbilityDefinitions(): void {
-		for (const abilityId of [...this.gameplayActionIds.keys()]) {
-			this.disposeAbilityHandlers(abilityId);
+	private invokeEffectHandler(effectId: ActionEffectId, handler: ScriptHandler<[ActionEffectHandlerContext], ActionEffectHandlerResult>, ctx: ActionEffectHandlerContext): ActionEffectHandlerResult {
+		if (isLuaHandlerFn(handler)) {
+			const binding = this.luaHandlerCache.unwrap(handler);
+			if (!binding) {
+				throw new Error(`[BmsxConsoleRuntime] Lua effect handler '${handler.__hid}' is not bound.`);
+			}
+			let result: unknown;
+			try {
+				result = this.callLuaFunctionWithInterpreter(binding.fn, [ctx, ctx.payload], binding.interpreter);
+			}
+			catch (error) {
+				if (isLuaDebuggerPauseSignal(error)) {
+					this.onLuaDebuggerPause(error);
+					return undefined;
+				}
+				this.handleLuaError(error);
+				return undefined;
+			}
+			const moduleId = handler.__hmod ?? this.moduleIdFor('effect', this.currentLuaAssetContext?.asset_id ?? null, this.luaChunkName ?? null);
+			const path = handler.__hpath ? handler.__hpath.split('.') : ['effect', String(effectId), 'on_trigger'];
+			const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter: binding.interpreter, path });
+			const normalized = this.luaValueToJs(result as LuaValue, marshalCtx);
+			return this.normalizeEffectHandlerResult(normalized);
 		}
-		this.abilityDefinitions.clear();
-		this.gameplayActionIds.clear();
+		// JS handler
+		return (handler as (ctx: ActionEffectHandlerContext) => ActionEffectHandlerResult)(ctx);
 	}
 
-	public registerAbilityDefinitionFromLua(descriptorTable: LuaTable, interpreter: LuaInterpreter): GameplayAbilityDefinition {
-		const moduleId = this.moduleIdFor('ability', this.currentLuaAssetContext?.asset_id ?? null, this.luaChunkName ?? null);
-		const baseCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
-		let abilityIdSeed: string | null = null;
-		const idValue = descriptorTable.get('id');
-		if (typeof idValue === 'string' && idValue.trim().length > 0) {
-			abilityIdSeed = idValue.trim();
+	private normalizeEffectHandlerResult(result: unknown): ActionEffectHandlerResult {
+		if (result === undefined) return undefined;
+		if (result && typeof result === 'object' && !Array.isArray(result)) {
+			const payloadObj = result as { event?: unknown; payload?: unknown };
+			const event = typeof payloadObj.event === 'string' && payloadObj.event.trim().length > 0 ? payloadObj.event.trim() : undefined;
+			if (payloadObj.payload !== undefined || event !== undefined) {
+				return { event, payload: payloadObj.payload };
+			}
 		}
-		const descriptor: Record<string, unknown> = {};
+		return { payload: result as unknown };
+	}
+
+	private disposeEffectDefinition(effectId: ActionEffectId): void {
+		this.effectDefinitions.delete(effectId);
+	}
+
+	private disposeAllEffectDefinitions(): void {
+		this.effectDefinitions.clear();
+	}
+
+	public registerEffectDefinitionFromLua(descriptorTable: LuaTable, interpreter: LuaInterpreter): ActionEffectDefinition {
+		const moduleId = this.moduleIdFor('effect', this.currentLuaAssetContext?.asset_id ?? null, this.luaChunkName ?? null);
+		let idValue: string | null = null;
+		let idHint = 'anon'; // For error messages only (before we know the real id)?????????????????????
+		let eventValue: string | undefined;
+		let cooldownValue: number | undefined;
+		let onTrigger: LuaHandlerFn | undefined;
 		for (const [rawKey, rawValue] of descriptorTable.entriesArray()) {
-			const keyText = typeof rawKey === 'string' ? rawKey : String(rawKey);
-			if (keyText === 'activation' || keyText === 'completion' || keyText === 'cancel') {
-				if (this.isLuaFunctionValue(rawValue)) {
-					const handler = this.luaHandlerCache.getOrCreate(rawValue, {
-						moduleId,
-						interpreter,
-						path: ['ability', abilityIdSeed ?? 'anon', keyText],
-					});
-					descriptor[keyText] = handler;
-					continue;
-				}
-				if (rawValue === null) {
-					descriptor[keyText] = undefined;
-					continue;
-				}
+			const keyText = String(rawKey);
+			switch (keyText) {
+				case 'id':
+					idValue = rawValue as string;
+					idHint = rawValue as string;
+					break;
+				case 'event':
+					eventValue = rawValue as string | undefined;
+					break;
+				case 'cooldown_ms':
+					cooldownValue = rawValue as number | undefined;
+					break;
+				case 'on_trigger':
+					if (this.isLuaFunctionValue(rawValue)) {
+						onTrigger = this.luaHandlerCache.getOrCreate(rawValue, {
+							moduleId,
+							interpreter,
+							path: ['effect', idHint, 'on_trigger'],
+						});
+					}
+					else throw new Error(`[BmsxConsoleRuntime] Effect '${idHint}' on_trigger must be a function.`);
+					break;
+				default:
+					// Handle unknown keys
+					console.warn(`[BmsxConsoleRuntime] Effect '${idHint}' has unknown key '${keyText}'.`);
+					break;
 			}
-			descriptor[keyText] = this.luaValueToJs(rawValue, this.extendMarshalContext(baseCtx, keyText));
 		}
-		if (abilityIdSeed && (typeof descriptor.id !== 'string' || descriptor.id.trim().length === 0)) {
-			descriptor.id = abilityIdSeed;
+		const finalId = this.normalizeLuaIdentifier<ActionEffectId>(idValue, 'define_effect');
+		if (!finalId) {
+			throw new Error('[BmsxConsoleRuntime] define_effect requires a non-empty id.');
 		}
-		return this.registerAbilityDefinition(descriptor);
+
+		const descriptor: ActionEffectDefinition & { handler?: ScriptHandler<[ActionEffectHandlerContext], ActionEffectHandlerResult> } = {
+			id: finalId,
+			event: eventValue,
+			cooldown_ms: cooldownValue,
+			handler: onTrigger,
+		};
+		return this.registerEffectDefinition(descriptor);
 	}
 
-	private refreshAbilityGrants(abilityId: AbilityId, definition: GameplayAbilityDefinition): void {
-		const world = $.world;
-		if (!world) {
-			return;
-		}
-		for (const [, asc] of world.objects_with_components(AbilitySystemComponent, { scope: 'active' })) {
-			if (!asc.has_ability(abilityId)) {
-				continue;
-			}
-			asc.revoke_ability(abilityId);
-			asc.grant_ability(definition);
+	private refreshEffectGrants(effectId: ActionEffectId, definition: ActionEffectDefinition): void {
+		for (const [host, component] of $.world.objects_with_components(ActionEffectComponent, { scope: 'active' })) {
+			const attached = this.worldObjectEffectAttachments.get(host);
+			if (!attached || !attached.has(effectId.toLowerCase())) continue;
+			component.grant_effect(definition);
 		}
 	}
 
-	public getAbilityDefinition(id: string): GameplayAbilityDefinition | undefined {
-		return this.abilityDefinitions.get(id as AbilityId);
+	public getEffectDefinition(id: string): ActionEffectDefinition | undefined {
+		return this.effectDefinitions.get(id as ActionEffectId);
 	}
 
 	private resolveWorldObjectConstructor(ref: string | null | undefined): new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject {
@@ -6019,7 +5954,7 @@ export class BmsxConsoleRuntime extends Service {
 
 
 	private moduleIdFor(
-		category: 'fsm' | 'behavior_tree' | 'service' | 'component' | 'ability' | 'worldobject' | 'other',
+		category: 'fsm' | 'behavior_tree' | 'service' | 'component' | 'effect' | 'worldobject' | 'other',
 		asset_id?: string | null,
 		chunkName?: string | null,
 	): string {
@@ -6027,10 +5962,10 @@ export class BmsxConsoleRuntime extends Service {
 		const trimmedAsset = (asset_id ?? '').trim();
 		let raw: string;
 		if (trimmedChunk.length > 0) {
-			// Important: ability handlers must not share the plain chunk module id to avoid
+			// Important: effect handlers must not share the plain chunk module id to avoid
 			// being swapped out by generic hot-reload when the script does not export symbols.
-			// Prefix ability handlers with a distinct namespace.
-			raw = category === 'ability' ? `${category}/${trimmedChunk}` : trimmedChunk;
+			// Prefix effect handlers with a distinct namespace.
+			raw = category === 'effect' ? `${category}/${trimmedChunk}` : trimmedChunk;
 		}
 		else if (trimmedAsset.length > 0) {
 			raw = `${category}/${trimmedAsset}`;
@@ -6049,7 +5984,7 @@ export class BmsxConsoleRuntime extends Service {
 		return this.normalizeChunkName(raw);
 	}
 
-	private resolveApiMethodMarshalCategory(name: string): 'fsm' | 'behavior_tree' | 'service' | 'component' | 'ability' | 'worldobject' | 'other' {
+	private resolveApiMethodMarshalCategory(name: string): 'fsm' | 'behavior_tree' | 'service' | 'component' | 'effect' | 'worldobject' | 'other' {
 		switch (name) {
 			case 'register_fsm':
 				return 'fsm';
@@ -6062,9 +5997,9 @@ export class BmsxConsoleRuntime extends Service {
 			case 'define_component_preset':
 			case 'register_component_preset':
 				return 'component';
-			case 'define_ability':
-			case 'register_ability':
-				return 'ability';
+			case 'define_effect':
+			case 'register_effect':
+				return 'effect';
 			case 'register_worldobject':
 				return 'worldobject';
 			default:
@@ -6074,7 +6009,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	/**
 	 * Report an engine/runtime error (non-Lua) to the Console editor overlay.
-	 * Useful for surfacing exceptions thrown by engine systems (e.g., ability runtime).
+	 * Useful for surfacing exceptions thrown by engine systems (e.g., action-effect runtime).
 	 */
 	public reportEngineError(error: unknown): void {
 		this.handleLuaError(error);

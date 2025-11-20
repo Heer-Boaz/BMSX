@@ -330,7 +330,7 @@ export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
 		super.bind();
 		const owner = this.parent;
 		if (!owner) throw new Error('[ProhibitLeavingScreenComponent] Parent missing during bind.');
-		owner.events.on(WorldObjectEvents.LeavingScreen, this, this.onLeavingScreen);
+		owner.events.on({ event_name: WorldObjectEvents.LeavingScreen, handler: this.onLeavingScreen, subscriber: this });
 	}
 	/**
 	 * Event handler for the 'screen.leaving' event.

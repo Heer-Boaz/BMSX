@@ -54,10 +54,10 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 			{ name: 'colorindex', optional: true, description: 'Palette index to fill the screen with (defaults to 0).' },
 		],
 	},
-	define_ability: {
-		description: 'Registers a Lua ability with activation/completion/cancel handlers and gameplay tag/cooldown metadata.',
+	define_effect: {
+		description: 'Registers a Lua input-action effect with a coded on_trigger handler and optional event/cooldown metadata.',
 		parameters: [
-			{ name: 'descriptor', description: 'Ability descriptor with id, activation(ctx,payload), optional completion/cancel, tag grants/removals, cooldownMs, cost, and uniqueness policy.' },
+			{ name: 'descriptor', description: 'Effect descriptor with id, on_trigger(ctx,payload) handler, optional event override, and optional cooldown_ms.' },
 		],
 	},
 	define_component: {
@@ -75,7 +75,7 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 	define_service: {
 		description: 'Registers a Lua service (alias of register_service).',
 		parameters: [
-			{ name: 'descriptor', description: 'Service descriptor with id, hooks (on_boot, on_activate, on_tick, etc.), and optional systems/abilities/tags.' },
+			{ name: 'descriptor', description: 'Service descriptor with id, hooks (on_boot, on_activate, on_tick, etc.), and optional systems/effects/tags.' },
 		],
 	},
 	despawn: {
@@ -117,11 +117,11 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 			{ name: 'payload', optional: true, description: 'Optional gameplay event payload.' },
 		],
 	},
-	grant_ability: {
-		description: 'Grants a registered ability definition to a world object with an AbilitySystemComponent.',
+	grant_effect: {
+		description: 'Grants a registered effect definition to a world object with an ActionEffectComponent.',
 		parameters: [
-			{ name: 'object_id', description: 'World object receiving the ability.' },
-			{ name: 'ability_id', description: 'Identifier of the ability to grant.' },
+			{ name: 'object_id', description: 'World object receiving the effect.' },
+			{ name: 'effect_id', description: 'Identifier of the effect to grant.' },
 		],
 	},
 	music: {
@@ -143,10 +143,10 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 			{ name: 'text', optional: true, description: 'Text string to print to the console log.' },
 		],
 	},
-	register_ability: {
-		description: 'Registers a Lua ability descriptor (same shape as define_ability).',
+	register_effect: {
+		description: 'Registers a Lua effect descriptor (same shape as define_effect).',
 		parameters: [
-			{ name: 'descriptor', description: 'Ability descriptor with id, activation(ctx,payload), optional completion/cancel, tag grants/removals, cooldownMs, cost, and uniqueness policy.' },
+			{ name: 'descriptor', description: 'Effect descriptor with id, on_trigger(ctx,payload), optional event override, and optional cooldown_ms.' },
 		],
 	},
 	register_behavior_tree: {
@@ -179,13 +179,13 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 	register_service: {
 		description: 'Registers a Lua service descriptor.',
 		parameters: [
-			{ name: 'descriptor', description: 'Service descriptor with id, lifecycle hooks, optional systems/abilities/tags, and auto_activate flag.' },
+			{ name: 'descriptor', description: 'Service descriptor with id, lifecycle hooks, optional systems/effects/tags, and auto_activate flag.' },
 		],
 	},
 	register_world_object: {
 		description: 'Registers a world object descriptor that can be spawned later.',
 		parameters: [
-			{ name: 'descriptor', description: 'Descriptor with id, class/class_ref, components, fsms, behavior_trees, abilities, tags, and defaults.' },
+			{ name: 'descriptor', description: 'Descriptor with id, class/class_ref, components, fsms, behavior_trees, effects, tags, and defaults.' },
 		],
 	},
 	remove_component: {
@@ -195,13 +195,13 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 			{ name: 'component_id', description: 'Component id or local id to remove.' },
 		],
 	},
-	request_ability: {
+	trigger_effect: {
 		optionalParameters: ['options'],
-		description: 'Queues an ability execution request for a world object. Payload is forwarded to the ability activation as intent.',
+		description: 'Triggers an effect for a world object. Payload is forwarded to the effect handler as intent.',
 		parameters: [
-			{ name: 'object_id', description: 'Identifier of the world object requesting the ability.' },
-			{ name: 'ability_id', description: 'Ability identifier to trigger.' },
-			{ name: 'options', optional: true, description: 'Optional request options such as payload data or source information.' },
+			{ name: 'object_id', description: 'Identifier of the world object triggering the effect.' },
+			{ name: 'effect_id', description: 'Effect identifier to trigger.' },
+			{ name: 'options', optional: true, description: 'Optional request options such as payload data.' },
 		],
 	},
 	resume_audio: {

@@ -26,10 +26,12 @@ import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';
 import { Component } from '../component/basecomponent';
 import { LuaComponent } from '../component/lua_component';
-import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
+import { ActionEffectComponent } from '../component/actioneffectcomponent';
+import type { ActionEffectDefinition } from '../action_effects/effect_types';
 import { BmsxConsoleRuntime } from './runtime';
 import type { ConsoleWorldObjectComponentEntry, ConsoleWorldObjectSystemEntry, ConsoleWorldObjectSpawnOptions } from './runtime';
 import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type BehaviorTreeContext, type ConstructorWithBTProperty } from '../ai/behaviourtree';
+import type { ScriptHandler } from '../action_effects/effect_types';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
 
@@ -521,48 +523,48 @@ export class BmsxConsoleApi {
 		return instance.id;
 	}
 
-	public register_ability(descriptor: Record<string, unknown>): string {
+	public register_effect(descriptor: ActionEffectDefinition & { handler?: ScriptHandler<[ActionEffectDefinition<any> extends never ? never : any], any> }): string {
 		const runtime = this.require_console_runtime();
-		const definition = runtime.registerAbilityDefinition(descriptor);
+		const definition = runtime.registerEffectDefinition(descriptor);
 		return definition.id;
 	}
 
-	public define_ability(descriptor: Record<string, unknown>): string {
-		return this.register_ability(descriptor);
+	public define_effect(descriptor: ActionEffectDefinition & { handler?: ScriptHandler<[ActionEffectDefinition<any> extends never ? never : any], any> }): string {
+		return this.register_effect(descriptor);
 	}
 
-	public grant_ability(object_id: Identifier, ability_id: string): void {
-		if (typeof ability_id !== 'string' || ability_id.trim().length === 0) {
-			throw new Error('[BmsxConsoleApi] grant_ability requires a non-empty ability id.');
+	public grant_effect(object_id: Identifier, effect_id: string): void {
+		if (typeof effect_id !== 'string' || effect_id.trim().length === 0) {
+			throw new Error('[BmsxConsoleApi] grant_effect requires a non-empty effect id.');
 		}
 		const runtime = this.require_console_runtime();
-		const object = this.require_world_object(object_id, 'grant_ability');
-		const asc = object.get_unique_component(AbilitySystemComponent);
-		if (!asc) {
-			throw new Error(`[BmsxConsoleApi] World object '${object_id}' does not have an AbilitySystemComponent.`);
+		const object = this.require_world_object(object_id, 'grant_effect');
+		const component = object.get_unique_component(ActionEffectComponent);
+		if (!component) {
+			throw new Error(`[BmsxConsoleApi] World object '${object_id}' does not have an ActionEffectComponent.`);
 		}
-		const definition = runtime.getAbilityDefinition(ability_id.trim());
+		const definition = runtime.getEffectDefinition(effect_id.trim());
 		if (!definition) {
-			throw new Error(`[BmsxConsoleApi] Lua ability '${ability_id}' is not registered.`);
+			throw new Error(`[BmsxConsoleApi] Lua effect '${effect_id}' is not registered.`);
 		}
-		asc.grant_ability(definition);
+		component.grant_effect(definition);
 	}
 
-	public request_ability(object_id: Identifier, ability_id: string, options?: { payload?: Record<string, unknown>; source?: Identifier | null }): boolean {
-		if (typeof ability_id !== 'string' || ability_id.trim().length === 0) {
-			throw new Error('[BmsxConsoleApi] request_ability requires a non-empty ability id.');
+	public trigger_effect(object_id: Identifier, effect_id: string, options?: { payload?: Record<string, unknown> }): boolean {
+		if (typeof effect_id !== 'string' || effect_id.trim().length === 0) {
+			throw new Error('[BmsxConsoleApi] trigger_effect requires a non-empty effect id.');
 		}
-		const object = this.require_world_object(object_id, 'request_ability');
-		const asc = object.get_unique_component(AbilitySystemComponent);
-		if (!asc) {
-			throw new Error(`[BmsxConsoleApi] World object '${object_id}' does not have an AbilitySystemComponent.`);
+		const object = this.require_world_object(object_id, 'trigger_effect');
+		const component = object.get_unique_component(ActionEffectComponent);
+		if (!component) {
+			throw new Error(`[BmsxConsoleApi] World object '${object_id}' does not have an ActionEffectComponent.`);
 		}
-		const trimmedId = ability_id.trim() as any;
+		const trimmedId = effect_id.trim() as any;
 		const payload = options?.payload as any;
 		const result = payload !== undefined
-			? asc.request_ability(trimmedId, { payload })
-			: asc.request_ability(trimmedId);
-		return result.ok === true;
+			? component.trigger(trimmedId, { payload })
+			: component.trigger(trimmedId);
+		return result === 'ok';
 	}
 
 	public add_component(object_id: Identifier, component_ref: string, options?: Record<string, unknown>): string {
@@ -723,7 +725,7 @@ export class BmsxConsoleApi {
 			components: [],
 			fsms: [],
 			behavior_trees: [],
-			abilities: [],
+			effects: [],
 			tags: [],
 			defaults: undefined,
 		};
@@ -773,8 +775,8 @@ export class BmsxConsoleApi {
 			normalized.behavior_trees = this.normalize_spawn_system_entries(behaviorTreesRaw, 'behavior trees', true);
 		}
 
-		if (raw.abilities !== undefined) {
-			normalized.abilities = this.normalize_string_list(raw.abilities);
+		if (raw.effects !== undefined) {
+			normalized.effects = this.normalize_string_list(raw.effects);
 		}
 		if (raw.tags !== undefined) {
 			normalized.tags = this.normalize_string_list(raw.tags);

@@ -16,7 +16,7 @@ import { CustomVisualComponent } from '../../component/customvisual_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
 import { V3 } from '../../render/3d/math3d';
 import type { SpawnReason } from '../world';
-import { AbilitySystemComponent } from '../../component/abilitysystemcomponent';
+import { ActionEffectComponent } from '../../component/actioneffectcomponent';
 import { TimelineComponent, type TimelinePlayOptions, type TimelineListener } from '../../component/timeline_component';
 import type { Timeline, TimelineDefinition } from '../../timeline/timeline';
 
@@ -280,11 +280,9 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 		return new TimelineEventChannels(this, id);
 	}
 
-	/**
-	 * Shorthand getter for retrieving the ability system component attached to this object.
-	 */
-	public get abilitysystem(): AbilitySystemComponent | undefined {
-		return this.get_unique_component(AbilitySystemComponent);
+	/** Shorthand getter for retrieving the action-effect component attached to this object. */
+	public get actioneffects(): ActionEffectComponent | undefined {
+		return this.get_unique_component(ActionEffectComponent);
 	}
 
 	/**
@@ -979,11 +977,11 @@ export class TimelineEventChannels {
 	}
 
 	public on_frame(subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer {
-		return this.frame.on(subscriber, handler, options);
+		return this.frame.on({ handler, subscriber, persistent: options?.persistent });
 	}
 
 	public on_end(subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer {
-		return this.end.on(subscriber, handler, options);
+		return this.end.on({ handler, subscriber, persistent: options?.persistent });
 	}
 }
 

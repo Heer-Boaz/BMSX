@@ -693,7 +693,7 @@ export function prepareUndo(key: string, allowMerge: boolean): void {
 		return;
 	}
 	capturePreMutationSource();
-	const now = Date.now();
+	const now = $.platform.clock.now();
 	const shouldMerge = allowMerge
 		&& ide_state.lastHistoryKey === key
 		&& now - ide_state.lastHistoryTimestamp <= constants.UNDO_COALESCE_INTERVAL_MS;

@@ -532,7 +532,7 @@ export class Savegame {
 	bmsxConsoleState?: BmsxConsoleState;
 
 	constructor(_opts?: RevivableObjectArgs) {
-		this.timestamp = Date.now();
+		this.timestamp = $.platform.clock.now();
 	}
 
 	@onsave

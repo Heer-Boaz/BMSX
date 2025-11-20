@@ -16,7 +16,6 @@ import { createObjectTableElement } from './objectpropertydialog';
 import { ObjectPropertyDialog, refreshAllObjectPropertyDialogs } from './objectpropertydialogimproved';
 import { StateMachineVisualizer } from './statemachinevisualizer';
 import { CustomVisualComponent } from '../component/customvisual_component';
-import { setAbilityTagHudTarget } from './abilitytaghud';
 import { debuggerOverlayManager } from './overlay_manager';
 import { $ } from '../core/game';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
@@ -776,9 +775,6 @@ function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): 
 	if (obj) {
 		if (obj.id != null) {
 			ObjectPropertyDialog.openDialogById(obj.id, title, ['objects']);
-			if (typeof obj.id === 'string') {
-				setAbilityTagHudTarget(obj.id);
-			}
 		}
 		else {
 			const [dialogDiv, contentDiv] = createDebugDialog(title, previous);
@@ -921,7 +917,6 @@ export function handleContextMenu(e: DebugPointerEvent): void {
 	const { objUnderCursor } = getWorldObjectAtCursor(e);
 	// Add state visualiser to the UI
 	if (objUnderCursor) {
-		setAbilityTagHudTarget(objUnderCursor.id);
 		// Verify that there is no existing state visualiser dialog on screen
 		if (stateMachineVisualisers[objUnderCursor.id]) {
 			// If there is an existing state visualiser dialog, close it

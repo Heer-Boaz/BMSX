@@ -242,7 +242,6 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 							},
 							on: {
 								[`timeline.end.${TIMELINE_IDS.jumpAscending}`]: {
-									scope: 'self',
 									do(this: Fighter) {
 										return '../descending';
 									},
@@ -258,7 +257,6 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 							},
 							on: {
 								[`timeline.end.${TIMELINE_IDS.jumpDescending}`]: {
-									scope: 'self',
 									do(this: Fighter) {
 										return GROUND_IDLE_STATE_PATH;
 									},
@@ -317,13 +315,11 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 					},
 				},
 				[`timeline.frame.${TIMELINE_IDS.stoerheidsdans}`]: {
-					scope: 'self',
 					do(this: Fighter, state: State, event: TimelineFrameEvent) {
 						this.handleStoerTimelineFrame(state, event);
 					},
 				},
 				[`timeline.end.${TIMELINE_IDS.stoerheidsdans}`]: {
-					scope: 'self',
 					do(this: Fighter, state: State) {
 						return this.completeStoerheidsdans(state);
 					},
@@ -406,7 +402,6 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 					},
 					on: {
 						[`timeline.end.${TIMELINE_IDS.walkStep1}`]: {
-							scope: 'self',
 							do(this: Fighter) {
 								this.handle_animation_timeline_end(TIMELINE_IDS.walkStep1);
 								return '../walk2';
@@ -421,7 +416,6 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 					},
 					on: {
 						[`timeline.end.${TIMELINE_IDS.walkStep2}`]: {
-							scope: 'self',
 							do(this: Fighter) {
 								this.handle_animation_timeline_end(TIMELINE_IDS.walkStep2);
 								return '../_walk1';
@@ -454,7 +448,6 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 			},
 			on: {
 				[`timeline.end.${TIMELINE_IDS.humiliated}`]: {
-					scope: 'self',
 					do(this: Fighter) {
 						this.handle_animation_timeline_end(TIMELINE_IDS.humiliated);
 						$.emit('humiliated_animation_end', this, { fighter: this });
@@ -522,7 +515,6 @@ function createAttackAnimationState(name: AttackType, weaponClass: 'light' | 'he
 		},
 		on: {
 			[`timeline.end.${timelineId}`]: {
-				scope: 'self',
 				do(this: Fighter, _state: State) {
 					this.handle_animation_timeline_end(timelineId);
 					$.emit('animationEnd', this, { animation_name: name });
@@ -553,11 +545,10 @@ function createAttackTimelineDefinition(name: AttackType): TimelineDefinition {
 				start: { frame: startFrame },
 				end: { frame: endFrame },
 				tag: 'attack.active',
-				lane: 'gameplay',
 			},
 		],
 		markers: [
-			{ frame: 0, lane: 'presentation', event: `fx.${name}.windup` },
+			{ frame: 0, event: `fx.${name}.windup` },
 		],
 	};
 }

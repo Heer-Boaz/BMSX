@@ -1,5 +1,6 @@
 import { $ } from '../../core/game';
 import { RenderPassLibrary, SpritesPipelineState, MeshBatchPipelineState, ParticlePipelineState } from '../backend/renderpasslib';
+import { M4 } from '../3d/math3d';
 import {
 	beginSpriteQueue,
 	forEachSpriteQueue,
@@ -7,16 +8,44 @@ import {
 	forEachMeshQueue,
 	beginParticleQueue,
 	forEachParticleQueue,
+	meshQueueBackSize,
+	particleQueueBackSize,
 	type SpriteQueueItem,
 } from '../shared/render_queues';
 import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/render_types';
+import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
+
+export function registerHeadlessPasses(registry: RenderPassLibrary): void {
+	registerFramePasses(registry);
+	registerSpritePass(registry);
+	registerMeshPass(registry);
+	registerParticlePass(registry);
+}
+
+function registerFramePasses(registry: RenderPassLibrary): void {
+	registry.register({ id: 'frame_resolve', label: 'frame_resolve', name: 'HeadlessFrameResolve', stateOnly: true, exec: () => { /* noop */ } });
+	registry.register({ id: 'frame_shared', label: 'frame_shared', name: 'HeadlessFrameShared', stateOnly: true, exec: () => { /* noop */ } });
+}
+
+type Snapshot = string[];
+
+let previousSpriteSnapshot: Snapshot | undefined;
+let previousMeshSnapshot: Snapshot | undefined;
+let previousParticleSnapshot: Snapshot | undefined;
+
+const headlessFallbackParticleState: ParticlePipelineState = {
+	width: FALLBACK_CAMERA.width,
+	height: FALLBACK_CAMERA.height,
+	viewProj: FALLBACK_CAMERA.viewProj,
+	camRight: FALLBACK_CAMERA.camRight,
+	camUp: FALLBACK_CAMERA.camUp,
+};
 
 function formatNumber(value: number): string {
 	return Number.isFinite(value) ? value.toFixed(2) : 'NaN';
 }
 
-function formatVec3(input: { x: number; y: number; z: number } | Float32Array | [number, number, number] | undefined): string {
-	if (!input) return '(0.00, 0.00, 0.00)';
+function formatVec3(input: { x: number; y: number; z: number } | Float32Array | [number, number, number]): string {
 	if (input instanceof Float32Array) {
 		return `(${formatNumber(input[0] ?? 0)}, ${formatNumber(input[1] ?? 0)}, ${formatNumber(input[2] ?? 0)})`;
 	}
@@ -37,36 +66,50 @@ function formatAmbient(enabled: boolean | undefined, factor: number | undefined)
 	return `${flag}@${f}`;
 }
 
-function translationFromMatrix(m: Float32Array, fallback: string): string {
-	if (!m || m.length < 16) return fallback;
-	return `(${formatNumber(m[12]), formatNumber(m[13]), formatNumber(m[14])})`;
+function translationFromMatrix(m: Float32Array): string {
+	return `(${formatNumber(m[12])}, ${formatNumber(m[13])}, ${formatNumber(m[14])})`;
 }
 
-export function registerHeadlessPasses(registry: RenderPassLibrary): void {
-	registerFramePasses(registry);
-	registerSpritePass(registry);
-	registerMeshPass(registry);
-	registerParticlePass(registry);
+function computeDiff(previous: Snapshot | undefined, current: Snapshot): Snapshot {
+	if (!previous) return current.map((line) => `+ ${line}`);
+	const max = Math.max(previous.length, current.length);
+	const diff: Snapshot = [];
+	for (let i = 0; i < max; i += 1) {
+		const prevLine = previous[i];
+		const nextLine = current[i];
+		if (prevLine === nextLine) continue;
+		if (prevLine === undefined) {
+			diff.push(`+ ${nextLine}`);
+		} else if (nextLine === undefined) {
+			diff.push(`- ${prevLine}`);
+		} else {
+			diff.push(`~ ${nextLine}`);
+		}
+	}
+	return diff;
 }
 
-function registerFramePasses(registry: RenderPassLibrary): void {
-	registry.register({ id: 'frame_resolve', label: 'frame_resolve', name: 'HeadlessFrameResolve', stateOnly: true, exec: () => { /* noop */ } });
-	registry.register({ id: 'frame_shared', label: 'frame_shared', name: 'HeadlessFrameShared', stateOnly: true, exec: () => { /* noop */ } });
+function emitDiff(label: string, previous: Snapshot | undefined, current: Snapshot): Snapshot {
+	const diff = computeDiff(previous, current);
+	if (diff.length !== 0) {
+		console.log(`[headless:${label}] diff`);
+		for (const line of diff) console.log(`  ${line}`);
+	}
+	return current;
 }
 
-let spriteFrameIndex = 0;
-let meshFrameIndex = 0;
-let particleFrameIndex = 0;
-
-function resolveSpriteMetrics(state: SpritesPipelineState | undefined): { width: number; height: number; baseWidth: number; baseHeight: number; ambientEnabled: boolean; ambientFactor: number; } {
-	const view = $.view;
+function makeSpriteState(): SpritesPipelineState {
+	const gv = $.view;
 	return {
-		width: state?.width ?? view.viewportSize.x,
-		height: state?.height ?? view.viewportSize.y,
-		baseWidth: state?.baseWidth ?? view.canvasSize.x,
-		baseHeight: state?.baseHeight ?? view.canvasSize.y,
-		ambientEnabled: state?.ambientEnabledDefault ?? view.spriteAmbientEnabledDefault,
-		ambientFactor: state?.ambientFactorDefault ?? view.spriteAmbientFactorDefault,
+		width: gv.offscreenCanvasSize.x,
+		height: gv.offscreenCanvasSize.y,
+		baseWidth: gv.viewportSize.x,
+		baseHeight: gv.viewportSize.y,
+		atlasTex: null,
+		atlasDynamicTex: null,
+		atlasEngineTex: null,
+		ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
+		ambientFactorDefault: gv.spriteAmbientFactorDefault ?? 1.0,
 	};
 }
 
@@ -76,36 +119,48 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 		label: 'sprites_headless',
 		name: 'HeadlessSprites',
 		stateOnly: true,
+		prepare: () => {
+			registry.setState('sprites', makeSpriteState());
+		},
 		exec: (_backend, _fbo, state: unknown) => {
-			const resolved = resolveSpriteMetrics(state as SpritesPipelineState | undefined);
+			const spriteState = state as SpritesPipelineState;
 			const count = beginSpriteQueue();
-			if (count === 0) {
-				console.log('[headless:sprites] draws=0');
-				return;
+			const snapshot: Snapshot = [
+				`draws=${count} viewport=${spriteState.width}x${spriteState.height} base=${spriteState.baseWidth}x${spriteState.baseHeight} ambient_default=${formatAmbient(spriteState.ambientEnabledDefault, spriteState.ambientFactorDefault)}`,
+			];
+			if (count > 0) {
+				let index = 0;
+				forEachSpriteQueue((submission: SpriteQueueItem) => {
+					const { options, imgmeta } = submission;
+					const layer = options.layer ?? 'world';
+					const pos = formatVec3({ x: options.pos.x, y: options.pos.y, z: options.pos.z ?? 0 });
+					const scale = formatScale(options.scale);
+					const flipH = options.flip?.flip_h ? 'H' : '-';
+					const flipV = options.flip?.flip_v ? 'V' : '-';
+					const ambient = formatAmbient(options.ambient_affected ?? spriteState.ambientEnabledDefault, options.ambient_factor ?? spriteState.ambientFactorDefault);
+					const atlas = imgmeta.atlasid ?? 'na';
+					snapshot.push(`[sprite#${index}] id=${options.imgid} layer=${layer} pos=${pos} scale=${scale} flip=${flipH}${flipV} ambient=${ambient} atlas=${atlas}`);
+					index += 1;
+				});
 			}
-			console.log(`[headless:sprites] frame=${spriteFrameIndex++} draws=${count} viewport=${resolved.width}x${resolved.height} base=${resolved.baseWidth}x${resolved.baseHeight}`);
-			let index = 0;
-			forEachSpriteQueue((submission: SpriteQueueItem) => {
-				const { options, imgmeta } = submission;
-				const layer = options.layer ?? 'world';
-				const pos = formatVec3({ x: options.pos.x, y: options.pos.y, z: options.pos.z ?? 0 });
-				const scale = formatScale(options.scale);
-				const flipH = options.flip?.flip_h ? 'H' : '-';
-				const flipV = options.flip?.flip_v ? 'V' : '-';
-				const ambient = formatAmbient(options.ambient_affected ?? resolved.ambientEnabled, options.ambient_factor ?? resolved.ambientFactor);
-				const atlas = imgmeta.atlasid ?? 'na';
-				console.log(`  [sprite#${index}] id=${options.imgid} layer=${layer} pos=${pos} scale=${scale} flip=${flipH}${flipV} ambient=${ambient} atlas=${atlas}`);
-				index += 1;
-			});
+			previousSpriteSnapshot = emitDiff('sprites', previousSpriteSnapshot, snapshot);
 		},
 	});
 }
 
-function resolveMeshMetrics(state: MeshBatchPipelineState | undefined): { width: number; height: number; } {
-	const view = $.view;
+function makeMeshState(registry: RenderPassLibrary): MeshBatchPipelineState {
+	const gv = $.view;
+	const cam = $.world.activeCamera3D;
+	const mats = cam.getMatrices();
+	const frustum = cam.frustumPlanesPacked.slice();
+	const frameShared = registry.getState('frame_shared');
 	return {
-		width: state?.width ?? view.viewportSize.x,
-		height: state?.height ?? view.viewportSize.y,
+		width: gv.offscreenCanvasSize.x,
+		height: gv.offscreenCanvasSize.y,
+		camPos: cam.position,
+		viewProj: mats.vp,
+		cameraFrustum: frustum,
+		lighting: frameShared ? frameShared.lighting : undefined,
 	};
 }
 
@@ -115,33 +170,49 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 		label: 'mesh_headless',
 		name: 'HeadlessMeshes',
 		stateOnly: true,
+		shouldExecute: () => meshQueueBackSize() > 0,
+		prepare: () => {
+			registry.setState('meshbatch', makeMeshState(registry));
+		},
 		exec: (_backend, _fbo, state: unknown) => {
-			const metrics = resolveMeshMetrics(state as MeshBatchPipelineState | undefined);
+			const meshState = state as MeshBatchPipelineState;
 			const count = beginMeshQueue();
-			if (count === 0) {
-				console.log('[headless:mesh] draws=0');
-				return;
+			const snapshot: Snapshot = [`draws=${count} viewport=${meshState.width}x${meshState.height}`];
+			if (count > 0) {
+				let index = 0;
+				forEachMeshQueue((submission: MeshRenderSubmission) => {
+					const translation = translationFromMatrix(submission.matrix);
+					const shadow = submission.receive_shadow === undefined ? 'default' : submission.receive_shadow ? 'yes' : 'no';
+					const morphCount = submission.morph_weights ? submission.morph_weights.length : 0;
+					snapshot.push(`[mesh#${index}] mesh=${submission.mesh.name} translate=${translation} shadow=${shadow} morphs=${morphCount}`);
+					index += 1;
+				});
 			}
-			console.log(`[headless:mesh] frame=${meshFrameIndex++} draws=${count} viewport=${metrics.width}x${metrics.height}`);
-			let index = 0;
-			forEachMeshQueue((submission: MeshRenderSubmission) => {
-				const meshName = submission.mesh?.name ?? '<unnamed>';
-				const matrix = submission.matrix;
-				const translation = matrix ? translationFromMatrix(matrix, '(0.00, 0.00, 0.00)') : '(0.00, 0.00, 0.00)';
-				const receivesShadow = submission.receive_shadow === undefined ? 'default' : submission.receive_shadow ? 'yes' : 'no';
-				const morphCount = submission.morph_weights ? submission.morph_weights.length : 0;
-				console.log(`  [mesh#${index}] mesh=${meshName} translate=${translation} shadow=${receivesShadow} morphs=${morphCount}`);
-				index += 1;
-			});
+			previousMeshSnapshot = emitDiff('mesh', previousMeshSnapshot, snapshot);
 		},
 	});
 }
 
-function resolveParticleMetrics(state: ParticlePipelineState | undefined): { width: number; height: number; } {
-	const view = $.view;
+function makeParticleState(): ParticlePipelineState {
+	const gv = $.view;
+	const width = gv.offscreenCanvasSize.x;
+	const height = gv.offscreenCanvasSize.y;
+	const cam = $.world.activeCamera3D;
+	if (!cam) {
+		const fallback = updateFallbackCamera(width, height);
+		headlessFallbackParticleState.width = fallback.width;
+		headlessFallbackParticleState.height = fallback.height;
+		return headlessFallbackParticleState;
+	}
+	const camRight = new Float32Array(3);
+	const camUp = new Float32Array(3);
+	M4.viewRightUpInto(cam.view, camRight, camUp);
 	return {
-		width: state?.width ?? view.viewportSize.x,
-		height: state?.height ?? view.viewportSize.y,
+		width,
+		height,
+		viewProj: cam.viewProjection,
+		camRight,
+		camUp,
 	};
 }
 
@@ -151,22 +222,24 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 		label: 'particles_headless',
 		name: 'HeadlessParticles',
 		stateOnly: true,
+		shouldExecute: () => particleQueueBackSize() > 0,
+		prepare: () => {
+			registry.setState('particles', makeParticleState());
+		},
 		exec: (_backend, _fbo, state: unknown) => {
-			const metrics = resolveParticleMetrics(state as ParticlePipelineState | undefined);
+			const particleState = state as ParticlePipelineState;
 			const count = beginParticleQueue();
-			if (count === 0) {
-				console.log('[headless:particles] draws=0');
-				return;
+			const snapshot: Snapshot = [`draws=${count} viewport=${particleState.width}x${particleState.height}`];
+			if (count > 0) {
+				let index = 0;
+				forEachParticleQueue((submission: ParticleRenderSubmission) => {
+					const ambient = formatAmbient(submission.ambient_mode === undefined ? undefined : submission.ambient_mode === 1, submission.ambient_factor);
+					const textureTag = submission.texture ? 'custom' : 'default';
+					snapshot.push(`[particle#${index}] pos=${formatVec3(submission.position)} size=${formatNumber(submission.size)} texture=${textureTag} ambient=${ambient}`);
+					index += 1;
+				});
 			}
-			console.log(`[headless:particles] frame=${particleFrameIndex++} draws=${count} viewport=${metrics.width}x${metrics.height}`);
-			let index = 0;
-			forEachParticleQueue((submission: ParticleRenderSubmission) => {
-				const pos = formatVec3(submission.position);
-				const ambient = formatAmbient(submission.ambient_mode === undefined ? undefined : submission.ambient_mode === 1, submission.ambient_factor);
-				const textureTag = submission.texture ? 'custom' : 'default';
-				console.log(`  [particle#${index}] pos=${pos} size=${formatNumber(submission.size)} texture=${textureTag} ambient=${ambient}`);
-				index += 1;
-			});
+			previousParticleSnapshot = emitDiff('particles', previousParticleSnapshot, snapshot);
 		},
 	});
 }

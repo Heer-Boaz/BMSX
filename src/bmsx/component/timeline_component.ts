@@ -10,10 +10,8 @@ import {
 	type TimelineFrameChangeReason,
 	type TimelinePlaybackMode,
 } from '../timeline/timeline';
-import { AbilitySystemComponent } from './abilitysystemcomponent';
 import { create_gameevent } from '../core/game_event';
 import { insavegame } from '../serializer/serializationhooks';
-import { unique_strings } from '../utils/unique_strings';
 
 export type TimelinePlayOptions = {
 	rewind?: boolean; // if true, will rewind the timeline to start before playing
@@ -89,7 +87,6 @@ export class TimelineComponent extends Component<WorldObject> {
 		const snap = opts?.snap_to_start ?? true;
 		if (rewind) {
 			instance.rewind();
-			this.resync_tags(entry);
 		}
 		if (snap && instance.length > 0) {
 			this.process_events(entry, instance.snap_to_start());
@@ -106,7 +103,6 @@ export class TimelineComponent extends Component<WorldObject> {
 		const entry = this.registry.get(id);
 		if (!entry) return;
 		entry.instance.rewind();
-		this.resync_tags(entry);
 	}
 
 	public seek(id: string, frame: number): void {
@@ -121,7 +117,6 @@ export class TimelineComponent extends Component<WorldObject> {
 		const entry = this.registry.get(id);
 		if (!entry) return;
 		entry.instance.force_seek(frame);
-		this.resync_tags(entry);
 	}
 
 	public advance(id: string): void {
@@ -202,32 +197,13 @@ export class TimelineComponent extends Component<WorldObject> {
 		}
 	}
 
-	private resync_tags(entry: RegisteredTimeline): void {
-		const compiled = entry.compiled;
-		if (!compiled || compiled.controlled_tags.length === 0) return;
-		const abilitySystem = (this.parent as WorldObject & { abilitySystem?: AbilitySystemComponent }).abilitysystem;
-		if (!abilitySystem) return;
-		const tags = unique_strings(compiled.controlled_tags);
-		if (tags.length === 0) return;
-		abilitySystem.remove_tags(...tags);
-	}
-
 	private apply_markers(entry: RegisteredTimeline, event: TimelineFrameEvent): void {
 		const compiled = entry.compiled;
 		if (!compiled) return;
 		const bucket = compiled.by_frame[event.current];
 		if (!bucket || bucket.length === 0) return;
-		const target = this.parent as WorldObject & { abilitySystem?: AbilitySystemComponent };
+		const target = this.parent as WorldObject;
 		for (const marker of bucket) {
-			if ((marker.addtags || marker.removetags) && !target.abilitysystem) {
-				throw new Error(`[TimelineComponent] Marker '${marker.event}' requires ability system on '${target.id}'.`);
-			}
-			if (marker.addtags && marker.addtags.length > 0) {
-				target.abilitysystem?.add_tags(...unique_strings(marker.addtags));
-			}
-			if (marker.removetags && marker.removetags.length > 0) {
-				target.abilitysystem?.remove_tags(...unique_strings(marker.removetags));
-			}
 			const payload = marker.payload ? { ...marker.payload } : undefined;
 			target.events.emit(marker.event, payload);
 		}

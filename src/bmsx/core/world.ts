@@ -495,8 +495,8 @@ export class World implements Stateful, RegisterablePersistent {
 			this.systems.updatePhase(this, TickGroup.Input);
 
 			// Phase 2: Ability instances / montages
-			this._currentPhase = TickGroup.AbilityUpdate;
-			this.systems.updatePhase(this, TickGroup.AbilityUpdate);
+			this._currentPhase = TickGroup.ActionEffect;
+			this.systems.updatePhase(this, TickGroup.ActionEffect);
 
 			// Phase 3: ModeGraph resolution (FSMs own tag writes)
 			this._currentPhase = TickGroup.ModeResolution;

@@ -64,7 +64,7 @@ export function registerCRT_WebGL(registry: RenderPassLibrary): void {
 }
 
 function bindCRTUniforms(gl: WebGL2RenderingContext, st: CRTState): void {
-	const now = Date.now() / 1000;
+	const now = $.platform.clock.now() / 1000;
 	const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null; if (!program) return;
 	const u = (n: string) => gl.getUniformLocation(program, n);
 	const outW = st.outWidth ?? st.width;

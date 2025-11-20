@@ -2,7 +2,7 @@
 
 `BmsxConsoleApi` is the Lua-facing facade for the runtime. Every cart receives an instance named `api` inside its lifecycle hooks, letting it talk to the renderer, input stack, audio engine, world/registry, and task gates without touching browser specifics.
 
-For a Lua-centric shape reference (ActionState fields, timeline events, FSM return conventions, and ability context), see `docs/bmsx_console_lua_api.md`.
+For a Lua-centric shape reference (ActionState fields, timelines, FSM return conventions, and InputActionToEffect helpers), see `docs/bmsx_console_lua_api.md`.
 
 ## Conventions
 - All API functions use `lowercase_snake_case`. Private helpers now follow the same convention to keep the file searchable.
@@ -32,7 +32,7 @@ For a Lua-centric shape reference (ActionState fields, timeline events, FSM retu
 - Registration helpers:
   - `register_world_object` registers console-level descriptors that carts can spawn later.
   - `register_component`, `define_component`, `register_component_preset`, `define_component_preset`, and `attach_component` manage component definitions and instances.
-  - `register_service`, `define_service`, `register_ability`, `define_ability`, `grant_ability`, `request_ability`, `add_component`, and `remove_component` forward to the runtime to keep ECS wiring centralized.
+  - `register_service`, `define_service`, `register_effect`, `define_effect`, `grant_effect`, `trigger_effect`, `add_component`, and `remove_component` forward to the runtime to keep ECS wiring centralized.
 
 ## Registry, Services & Game Metadata
 - `registry`, `registry_ids`, `rget`, `services`, and `service` give carts read access to the global registry and service instances.
