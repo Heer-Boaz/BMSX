@@ -1662,7 +1662,6 @@ export class BmsxConsoleRuntime extends Service {
 		try {
 			const editor = this.editor;
 			const editorActive = state.editorActive;
-			this.api.begin_frame((state.haltGame || state.debugPaused) ? 0 : state.deltaSeconds);
 			state.frameBegan = true;
 			if (editorActive && editor) {
 				editor.draw(this.api);
@@ -2265,7 +2264,6 @@ export class BmsxConsoleRuntime extends Service {
 			if (this.luaRuntimeFailed) {
 				return;
 			}
-			this.api.begin_frame(0);
 			if (this.luaDrawFunction !== null) {
 				try {
 					this.invokeLuaFunction(this.luaDrawFunction, []);
@@ -2280,20 +2278,12 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			return;
 		}
-		this.api.begin_frame(0);
 		this.cart.draw(this.api);
 	}
 
 	private clearEditorErrorOverlaysIfNoFault(): void {
 		if (this.luaRuntimeFailed) return;
-		const editor = this.editor as unknown as { clearAllRuntimeErrorOverlays?: () => void } | null;
-		if (!editor) return;
-		if (typeof editor.clearAllRuntimeErrorOverlays === 'function') {
-			editor.clearAllRuntimeErrorOverlays();
-		} else {
-			// Fallback for older editors: clear only the active tab overlay
-			(this.editor as any).clearRuntimeErrorOverlay();
-		}
+		this.editor.clearRuntimeErrorOverlay();
 		publishOverlayFrame(null);
 	}
 

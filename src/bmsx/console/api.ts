@@ -72,7 +72,6 @@ export class BmsxConsoleApi {
 	private textCursorY = 0;
 	private textCursorHomeX = 0;
 	private textCursorColorIndex = 0;
-	private deltaSecondsValue: number = 0;
 	private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 
 	constructor(options: BmsxConsoleApiOptions) {
@@ -92,10 +91,6 @@ export class BmsxConsoleApi {
 
 	public set_render_backend(backend: ConsoleRenderBackend | null): void {
 		this.renderBackend = backend ?? new DirectConsoleRenderBackend();
-	}
-
-	public begin_frame(deltaSeconds: number): void {
-		this.deltaSecondsValue = deltaSeconds;
 	}
 
 	public get display_width(): number {
