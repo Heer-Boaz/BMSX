@@ -35,7 +35,7 @@
 		}
 	},
 	"lua": {
-		"asset_id": "shell_main",
+		"asset_id": "testcart",
 		"entry": {
 			"init": "init",
 			"update": "update",
