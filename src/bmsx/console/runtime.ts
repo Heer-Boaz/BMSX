@@ -332,6 +332,13 @@ export class BmsxConsoleRuntime extends Service {
 	]);
 
 	public static createInstance(options: BmsxConsoleRuntimeOptions): void {
+		const existing = BmsxConsoleRuntime._instance;
+		if (existing) {
+			const sameCart = existing.cart.meta.persistent_id === options.cart.meta.persistent_id;
+			if (!sameCart) {
+				existing.dispose();
+			}
+		}
 		BmsxConsoleRuntime._instance = new BmsxConsoleRuntime(options);
 	}
 
@@ -491,7 +498,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.cart = options.cart;
 		this.playerIndex = options.playerIndex;
 		this.storageService = options.storage ?? $.platform.storage;
-		this.storage = new BmsxConsoleStorage(this.storageService, options.cart.meta.persistentId);
+		this.storage = new BmsxConsoleStorage(this.storageService, options.cart.meta.persistent_id);
 		this.api = new BmsxConsoleApi({
 			playerindex: this.playerIndex,
 			storage: this.storage,
@@ -1451,7 +1458,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (this.hasBooted) {
 			this.resetWorldState();
 		}
-		this.api.cartdata(this.cart.meta.persistentId);
+		this.api.cartdata(this.cart.meta.persistent_id);
 		if (this.luaProgram) {
 			this.bootLuaProgram(true);
 		} else {
@@ -1904,7 +1911,7 @@ export class BmsxConsoleRuntime extends Service {
 		// cooperation to restore.
 		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
 
-		this.api.cartdata(this.cart.meta.persistentId);
+		this.api.cartdata(this.cart.meta.persistent_id);
 		if (snapshot.storage !== undefined) {
 			this.storage.restore(snapshot.storage);
 		}

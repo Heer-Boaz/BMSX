@@ -92,6 +92,9 @@ export class CompletionController {
 	private parameterHint: ParameterHintState | null = null;
 	private parameterHintAnchor: { row: number; column: number } | null = null;
 	private parameterHintTriggerPending = false;
+	private parameterHintIdleElapsed = 0;
+	private lastCursorPosition: { row: number; column: number } | null = null;
+	private lastTextVersion = -1;
 	private builtinDescriptors: ConsoleLuaBuiltinDescriptor[] | null = null;
 	private readonly builtinDescriptorMap: Map<string, ConsoleLuaBuiltinDescriptor> = new Map();
 	private completionPopupBounds: { left: number; top: number; right: number; bottom: number } | null = null;
@@ -168,6 +171,7 @@ export class CompletionController {
 	}
 
 	public processPending(deltaSeconds: number): void {
+		this.updateParameterHintIdle(deltaSeconds);
 		const pending = this.pendingCompletionRequest;
 		if (!pending) return;
 		if (!this.host.isCodeTabActive()) { this.cancelPendingCompletion(); return; }
@@ -181,10 +185,17 @@ export class CompletionController {
 		if (pending.trigger === 'typing' && analyzed.kind === 'global' && analyzed.prefix.length === 0) { this.cancelPendingCompletion(); return; }
 		this.openCompletionSessionFromContext(analyzed, pending.trigger);
 		this.pendingCompletionRequest = null;
+		this.updateParameterHintIdle(deltaSeconds);
 	}
 
 	public onCursorMoved(): void {
 		this.cancelPendingCompletion();
+		this.parameterHint = null;
+		this.parameterHintAnchor = null;
+		this.parameterHintTriggerPending = false;
+		this.parameterHintIdleElapsed = 0;
+		this.lastCursorPosition = { row: this.host.getCursorRow(), column: this.host.getCursorColumn() };
+		this.lastTextVersion = this.host.getTextVersion();
 		if (this.completionSession) {
 			const context = this.analyzeCompletionContext();
 			if (!context) this.closeSession();
@@ -199,6 +210,9 @@ export class CompletionController {
 		this.cachedGlobalCompletionItems = null;
 		this.sharedCompletionItems = null;
 		this.sharedCompletionMap = null;
+		this.parameterHintIdleElapsed = 0;
+		this.lastCursorPosition = { row: this.host.getCursorRow(), column: this.host.getCursorColumn() };
+		this.lastTextVersion = this.host.getTextVersion();
 		if (edit && edit.kind === 'insert') {
 			if (edit.text.indexOf('(') !== -1 || edit.text.indexOf(',') !== -1) {
 				this.parameterHintTriggerPending = true;
@@ -1152,6 +1166,7 @@ export class CompletionController {
 			this.parameterHint = null;
 			this.parameterHintAnchor = null;
 			this.parameterHintTriggerPending = false;
+			this.parameterHintIdleElapsed = 0;
 			return;
 		}
 		const info = this.resolveParameterHintContext();
@@ -1159,12 +1174,14 @@ export class CompletionController {
 			this.parameterHint = null;
 			this.parameterHintAnchor = null;
 			this.parameterHintTriggerPending = false;
+			this.parameterHintIdleElapsed = 0;
 			return;
 		}
 		if (this.parameterHintTriggerPending) {
 			this.parameterHintTriggerPending = false;
 			this.parameterHintAnchor = { row: info.anchorRow, column: info.anchorColumn };
 			this.parameterHint = info;
+			this.parameterHintIdleElapsed = 0;
 			return;
 		}
 		const anchor = this.parameterHintAnchor;
@@ -1174,6 +1191,30 @@ export class CompletionController {
 		}
 		this.parameterHint = null;
 		this.parameterHintAnchor = null;
+		this.parameterHintIdleElapsed = 0;
+	}
+
+	private updateParameterHintIdle(deltaSeconds: number): void {
+		if (!this.host.shouldShowParameterHints()) {
+			this.parameterHintIdleElapsed = 0;
+			return;
+		}
+		const currentRow = this.host.getCursorRow();
+		const currentColumn = this.host.getCursorColumn();
+		const currentVersion = this.host.getTextVersion();
+		const last = this.lastCursorPosition;
+		if (!last || last.row !== currentRow || last.column !== currentColumn || this.lastTextVersion !== currentVersion) {
+			this.lastCursorPosition = { row: currentRow, column: currentColumn };
+			this.lastTextVersion = currentVersion;
+			this.parameterHintIdleElapsed = 0;
+			return;
+		}
+		this.parameterHintIdleElapsed += deltaSeconds;
+		if (this.parameterHintIdleElapsed >= constants.PARAMETER_HINT_IDLE_DELAY_SECONDS) {
+			this.parameterHintTriggerPending = true;
+			this.parameterHintIdleElapsed = 0;
+			this.refreshParameterHint();
+		}
 	}
 
 	private resolveParameterHintContext(): ParameterHintState | null {

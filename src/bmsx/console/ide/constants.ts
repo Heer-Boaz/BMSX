@@ -741,6 +741,7 @@ export const PARAMETER_HINT_PADDING_X = 4;
 export const PARAMETER_HINT_PADDING_Y = 2;
 export const COMPLETION_AUTO_TRIGGER_DELAY_SECONDS = 0.16;
 export const COMPLETION_TYPING_GRACE_MS = 1200;
+export const PARAMETER_HINT_IDLE_DELAY_SECONDS = 0.32;
 export const EDITOR_TOGGLE_KEY = 'F1';
 export const CONSOLE_TOGGLE_KEY = 'F2';
 export const ESCAPE_KEY = 'Escape';
