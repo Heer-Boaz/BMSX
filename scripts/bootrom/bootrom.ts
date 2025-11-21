@@ -160,10 +160,6 @@ export const bootrom = {
 			parent.removeChild(element);
 		};
 
-		if (HAS_DOM_ENVIRONMENT && bootrom.enableOnscreenGamepad !== true) {
-			bootrom.enableOnscreenGamepad = shouldEnableOnscreenGamepad();
-		}
-
 		const wrapup = () => {
 			if (!HAS_DOM_ENVIRONMENT) return;
 			const loadingElement = document.querySelector('#loading') as HTMLElement | null;
@@ -554,16 +550,6 @@ function setClassForLoader(cls: string) {
 	const loading = document.querySelector<HTMLElement>('#loading');
 	if (loading) loading.className = cls;
 }
-
-function shouldEnableOnscreenGamepad(): boolean {
-	const nav = typeof navigator !== 'undefined' ? navigator : undefined;
-	const hasTouch = typeof nav?.maxTouchPoints === 'number' && nav.maxTouchPoints > 0;
-	const coarsePointer = typeof window !== 'undefined'
-		&& typeof window.matchMedia === 'function'
-		&& window.matchMedia('(pointer: coarse)').matches;
-	return hasTouch || coarsePointer;
-}
-
 
 /**
  * Fetches the text content from the specified URL.

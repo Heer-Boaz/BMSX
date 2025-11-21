@@ -1125,13 +1125,13 @@ export function showRuntimeError(line: number | null, column: number | null, mes
 		timer: Number.POSITIVE_INFINITY,
 		messageLines,
 		lineDescriptors: [],
-	layout: null,
-	details: overlayDetails,
-	expanded: false,
-	hovered: false,
-	hoverLine: -1,
-	copyButtonHovered: false,
-};
+		layout: null,
+		details: overlayDetails,
+		expanded: false,
+		hovered: false,
+		hoverLine: -1,
+		copyButtonHovered: false,
+	};
 	rebuildRuntimeErrorOverlayView(overlay);
 	setActiveRuntimeErrorOverlay(overlay);
 	setExecutionStopHighlight(processedLine !== null ? targetRow : null);
