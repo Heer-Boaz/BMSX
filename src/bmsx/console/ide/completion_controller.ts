@@ -356,7 +356,7 @@ export class CompletionController {
 		if (visibleCount <= 0) return;
 		let maxLineWidth = constants.COMPLETION_POPUP_MIN_WIDTH;
 		const detailSpacing = this.host.getSpaceAdvance();
-		for (let i = startIndex; i < endIndex; i += 1) {
+		for (let i = 0; i < session.filteredItems.length; i += 1) {
 			const item = session.filteredItems[i];
 			const labelWidth = this.host.measureText(item.label);
 			const detailText = item.detail ?? '';

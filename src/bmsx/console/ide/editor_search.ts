@@ -118,29 +118,18 @@ export function closeSearch(clearQuery: boolean, forceHide = false): void {
 }
 
 export function focusEditorFromSearch(): void {
-	// if (!ide_state.searchActive && !ide_state.searchVisible) {
-	// 	return;
-	// }
 	ide_state.searchActive = false;
-	ide_state.searchScope = 'local';
-	ide_state.searchDisplayOffset = 0;
 	ide_state.searchHoverIndex = -1;
-	cancelGlobalSearchJob();
+	ide_state.searchField.selectionAnchor = null as any;
+	ide_state.searchField.pointerSelecting = false;
 	if (ide_state.searchQuery.length === 0) {
 		ide_state.searchVisible = false;
 		ide_state.searchMatches = [];
 		ide_state.globalSearchMatches = [];
 		ide_state.searchCurrentIndex = -1;
-	} else {
-		ide_state.searchMatches = [];
-		ide_state.globalSearchMatches = [];
-		ide_state.searchCurrentIndex = -1;
+		cancelSearchJob();
+		cancelGlobalSearchJob();
 	}
-	ide_state.selectionAnchor = null;
-	ide_state.searchField.selectionAnchor = null as any;
-	ide_state.searchField.pointerSelecting = false;
-	cancelSearchJob();
-	cancelGlobalSearchJob();
 	resetBlink();
 }
 
@@ -583,8 +572,10 @@ export function applySearchSelection(index: number, options?: { preview?: boolea
 		ide_state.searchCurrentIndex = targetIndex;
 	}
 	ide_state.searchCurrentIndex = targetIndex;
+	if (options?.preview) {
+		return;
+	}
 	if (ide_state.searchScope === 'global') {
-		if (options?.preview) return;
 		focusGlobalSearchResult(targetIndex, options?.preview === true);
 	} else {
 		focusSearchResult(targetIndex);
