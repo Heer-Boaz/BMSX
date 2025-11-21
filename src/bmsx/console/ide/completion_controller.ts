@@ -50,6 +50,7 @@ export interface CompletionHost {
 	getCursorScreenInfo(): CursorScreenInfo | null;
 	getLineHeight(): number;
 	getSpaceAdvance(): number;
+	shouldShowParameterHints(): boolean;
 	// Symbol/source helpers
 	getActiveCodeTabContext(): unknown | null;
 	resolveHoverasset_id(context: unknown | null): string | null;
@@ -89,6 +90,8 @@ export class CompletionController {
 	private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } | null = null;
 	private suppressNextAutoCompletion = false;
 	private parameterHint: ParameterHintState | null = null;
+	private parameterHintAnchor: { row: number; column: number } | null = null;
+	private parameterHintTriggerPending = false;
 	private builtinDescriptors: ConsoleLuaBuiltinDescriptor[] | null = null;
 	private readonly builtinDescriptorMap: Map<string, ConsoleLuaBuiltinDescriptor> = new Map();
 	private completionPopupBounds: { left: number; top: number; right: number; bottom: number } | null = null;
@@ -196,6 +199,11 @@ export class CompletionController {
 		this.cachedGlobalCompletionItems = null;
 		this.sharedCompletionItems = null;
 		this.sharedCompletionMap = null;
+		if (edit && edit.kind === 'insert') {
+			if (edit.text.indexOf('(') !== -1 || edit.text.indexOf(',') !== -1) {
+				this.parameterHintTriggerPending = true;
+			}
+		}
 		if (this.suppressNextAutoCompletion) {
 			this.suppressNextAutoCompletion = false;
 			this.cancelPendingCompletion();
@@ -1140,12 +1148,32 @@ export class CompletionController {
 	}
 
 	private refreshParameterHint(): void {
-		if (!this.autoTriggerEnabled()) {
+		if (!this.host.shouldShowParameterHints()) {
 			this.parameterHint = null;
+			this.parameterHintAnchor = null;
+			this.parameterHintTriggerPending = false;
 			return;
 		}
 		const info = this.resolveParameterHintContext();
-		this.parameterHint = info;
+		if (!info) {
+			this.parameterHint = null;
+			this.parameterHintAnchor = null;
+			this.parameterHintTriggerPending = false;
+			return;
+		}
+		if (this.parameterHintTriggerPending) {
+			this.parameterHintTriggerPending = false;
+			this.parameterHintAnchor = { row: info.anchorRow, column: info.anchorColumn };
+			this.parameterHint = info;
+			return;
+		}
+		const anchor = this.parameterHintAnchor;
+		if (anchor && anchor.row === info.anchorRow && anchor.column === info.anchorColumn) {
+			this.parameterHint = info;
+			return;
+		}
+		this.parameterHint = null;
+		this.parameterHintAnchor = null;
 	}
 
 	private resolveParameterHintContext(): ParameterHintState | null {

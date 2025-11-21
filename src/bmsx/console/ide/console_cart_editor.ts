@@ -9476,6 +9476,21 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		focusEditorFromResourcePanel: () => focusEditorFromResourcePanel(),
 		showMessage: (text, color, duration) => ide_state.showMessage(text, color, duration),
 	}, { resourceVertical: ide_state.scrollbars.resourceVertical, resourceHorizontal: ide_state.scrollbars.resourceHorizontal });
+	const intellisenseUiReady = (): boolean => {
+		if (!isCodeTabActive()) {
+			return false;
+		}
+		if (isReadOnlyCodeTab()) {
+			return false;
+		}
+		if (!ide_state.windowFocused) {
+			return false;
+		}
+		if (ide_state.searchActive || ide_state.symbolSearchActive || ide_state.lineJumpActive || ide_state.resourceSearchActive || ide_state.createResourceActive) {
+			return false;
+		}
+		return true;
+	};
 	ide_state.completion = new CompletionController({
 		getPlayerIndex: () => ide_state.playerIndex,
 		isCodeTabActive: () => isCodeTabActive(),
@@ -9507,16 +9522,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 		getTextVersion: () => ide_state.textVersion,
 		shouldFireRepeat: (kb, code, dt) => ide_state.input.shouldRepeatPublic(kb, code, dt),
 		shouldAutoTriggerCompletions: () => {
-			if (!isCodeTabActive()) {
-				return false;
-			}
-			if (isReadOnlyCodeTab()) {
-				return false;
-			}
-			if (!ide_state.windowFocused) {
-				return false;
-			}
-			if (ide_state.searchActive || ide_state.symbolSearchActive || ide_state.lineJumpActive || ide_state.resourceSearchActive || ide_state.createResourceActive) {
+			if (!intellisenseUiReady()) {
 				return false;
 			}
 			const lastEditAt = ide_state.lastContentEditAtMs;
@@ -9526,6 +9532,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 			const now = ide_state.clockNow();
 			return now - lastEditAt <= constants.COMPLETION_TYPING_GRACE_MS;
 		},
+		shouldShowParameterHints: () => intellisenseUiReady(),
 	});
 	ide_state.completion.setEnterCommitsEnabled(false);
 	ide_state.input = new InputController({
