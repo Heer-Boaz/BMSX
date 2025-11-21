@@ -110,4 +110,14 @@ export const Msx1Colors: color[] = [
 	{ r: 66 / 255, g: 173 / 255, b: 225 / 255, a: 1 }, // 46 = Info blue (#42ade1)
 	{ r: 56 / 255, g: 58 / 255, b: 66 / 255, a: 0 }, // 47 = Line highlight overlay (#383a420c)
 	{ r: 0 / 255, g: 0 / 255, b: 64 / 255, a: 1 }, // 48 = Selection overlay (#e5e5e6bf)
+	{ r: 0.9, g: 0.35, b: 0.35, a: 0.38 }, // 49 = Search match overlay
+	{ r: 1, g: 0.85, b: 0.25, a: 0.6 }, // 50 = Search match active overlay
+	{ r: 0.25, g: 0.62, b: 0.95, a: 0.32 }, // 51 = References match overlay
+	{ r: 0.18, g: 0.44, b: 0.9, a: 0.54 }, // 52 = References match active overlay
+	{ r: 0.6, g: 0, b: 0, a: 1 }, // 53 = Error overlay background
+	{ r: 0.75, g: 0.1, b: 0.1, a: 1 }, // 54 = Error overlay background hover
+	{ r: 1, g: 1, b: 1, a: 0.18 }, // 55 = Error overlay line hover
+	{ r: 0.95, g: 0.45, b: 0.1, a: 0.45 }, // 56 = Execution stop overlay
+	{ r: 0.1, g: 0.1, b: 0.1, a: 0.9 }, // 57 = Hover tooltip background
+	{ r: 0, g: 0, b: 0, a: 0.65 }, // 58 = Action overlay
 ];

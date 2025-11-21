@@ -48,7 +48,6 @@ type CartManifest = {
 	};
 	lua?: {
 		asset_id?: string;
-		chunkName?: string;
 		entry?: ManifestLuaEntryPoints;
 	};
 };
@@ -122,9 +121,7 @@ function deriveLuaProgram(manifest: CartManifest) {
 	if (!asset_id || asset_id.length === 0) {
 		throw new Error('[start_cart] Cart manifest is missing lua.asset_id.');
 	}
-	const chunkName = luaConfig.chunkName && luaConfig.chunkName.length > 0
-		? luaConfig.chunkName
-		: asset_id;
+	const chunkName = asset_id;
 	const entry = luaConfig.entry ?? {};
 	return {
 		asset_id: asset_id,

@@ -8812,14 +8812,15 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 }
 
 
-export function drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void {
+export function drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number } | number): void {
 	if (right <= left || bottom <= top) {
 		return;
 	}
-	api.rectfill_color(left, top, right, top + 1, color);
-	api.rectfill_color(left, bottom - 1, right, bottom, color);
-	api.rectfill_color(left, top, left + 1, bottom, color);
-	api.rectfill_color(right - 1, top, right, bottom, color);
+	const resolved = typeof color === 'number' ? Msx1Colors[color] : color;
+	api.rectfill_color(left, top, right, top + 1, resolved);
+	api.rectfill_color(left, bottom - 1, right, bottom, resolved);
+	api.rectfill_color(left, top, left + 1, bottom, resolved);
+	api.rectfill_color(right - 1, top, right, bottom, resolved);
 }
 
 export function computeSelectionSlice(lineIndex: number, highlight: HighlightLine, sliceStart: number, sliceEnd: number): { startDisplay: number; endDisplay: number } | null {
@@ -9037,7 +9038,10 @@ export function columnToDisplay(highlight: HighlightLine, column: number): numbe
 	return ide_state.layout.columnToDisplay(highlight, column);
 }
 
-export function resolvePaletteIndex(color: { r: number; g: number; b: number; a: number }): number | null {
+export function resolvePaletteIndex(color: { r: number; g: number; b: number; a: number } | number): number | null {
+	if (typeof color === 'number') {
+		return color;
+	}
 	const index = Msx1Colors.indexOf(color);
 	return index === -1 ? null : index;
 }
@@ -9653,7 +9657,7 @@ export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: n
 		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, col),
 		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, col),
 		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
-	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, constants.CARET_COLOR, caretGlyph, glyphColor);
+	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, Msx1Colors[constants.CARET_COLOR], caretGlyph, glyphColor);
 }
 import { renderInlineCaret } from './render_caret';
 import type { BmsxConsoleRuntime } from '../runtime';
@@ -9666,19 +9670,20 @@ export function drawInlineCaret(
 	bottom: number,
 	cursorX: number,
 	active: boolean,
-	caretColor: { r: number; g: number; b: number; a: number; } = constants.CARET_COLOR,
+	caretColor: { r: number; g: number; b: number; a: number; } | number = constants.CARET_COLOR,
 	baseTextColor: number = constants.COLOR_STATUS_TEXT
 ): void {
 	if (!ide_state.cursorVisible) return;
 	const rawGlyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
 	const caretGlyph = getCaretGlyphForDisplay(rawGlyph);
 	const caretIndex = resolvePaletteIndex(caretColor);
-	const inverseColorIndex = caretIndex !== null ? invertColorIndex(caretIndex) : invertColorIndex(baseTextColor);
-	// Map palette index to color object using Msx1Colors
+	const caretColorIndex = caretIndex ?? baseTextColor;
+	const inverseColorIndex = invertColorIndex(caretColorIndex);
+	const caretValue = Msx1Colors[caretColorIndex];
 	const inverseColor = Msx1Colors[inverseColorIndex];
 	renderInlineCaret({
 		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, col),
 		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, col),
 		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
-	}, left, top, right, bottom, cursorX, active, caretColor, caretGlyph, inverseColor);
+	}, left, top, right, bottom, cursorX, active, caretValue, caretGlyph, inverseColor);
 }

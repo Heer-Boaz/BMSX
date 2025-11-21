@@ -12,12 +12,12 @@ export interface ErrorOverlayBounds {
 
 export interface ErrorOverlayRenderConfig {
 	bounds: ErrorOverlayBounds;
-	background: { r: number; g: number; b: number; a: number };
+	background: number;
 	textColor: number;
 	paddingX: number;
 	paddingY: number;
 	highlightLines?: ReadonlyArray<number>;
-	highlightColor?: { r: number; g: number; b: number; a: number };
+	highlightColor?: number;
 	contentRightInset?: number;
 	connector?: {
 		left: number;

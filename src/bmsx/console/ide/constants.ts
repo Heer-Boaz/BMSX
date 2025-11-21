@@ -1,5 +1,4 @@
 import type { BGamepadButton } from '../../input/inputtypes';
-import { Msx1Colors } from '../../systems/msx';
 import type { IdeThemeVariant } from './types';
 
 /**
@@ -394,8 +393,8 @@ export let COLOR_TOP_BAR: number;
 export let COLOR_TOP_BAR_TEXT: number;
 export let COLOR_CODE_BACKGROUND: number;
 export let COLOR_GUTTER_BACKGROUND: number;
-export let COLOR_BREAKPOINT_BORDER = Msx1Colors[0];
-export let COLOR_BREAKPOINT_FILL = Msx1Colors[0];
+export let COLOR_BREAKPOINT_BORDER = 0;
+export let COLOR_BREAKPOINT_FILL = 0;
 export let COLOR_SYNTAX_HIGHLIGHTS = {
 	COLOR_CODE_TEXT: undefined as number,
 	COLOR_KEYWORD: undefined as number,
@@ -416,10 +415,12 @@ export let COLOR_SYNTAX_HIGHLIGHTS = {
 	COLOR_LOCAL_TABLE_FIELD: undefined as number,
 	COLOR_FUNCTION_HANDLE: undefined as number,
 };
-export let HIGHLIGHT_OVERLAY = Msx1Colors[0];
-export let SELECTION_OVERLAY = Msx1Colors[0];
-export let CARET_COLOR = Msx1Colors[0];
-export let INLINE_CARET_COLOR = Msx1Colors[0];
+export let HIGHLIGHT_OVERLAY = 0;
+export let SELECTION_OVERLAY = 0;
+export let CARET_COLOR = 0;
+export let INLINE_CARET_COLOR = 0;
+export let SEARCH_RESULT_SELECTION_OVERLAY = 0;
+export let SEARCH_RESULT_HOVER_OVERLAY = 0;
 export let COLOR_STATUS_BACKGROUND: number;
 export let COLOR_STATUS_TEXT: number;
 export let COLOR_STATUS_WARNING: number;
@@ -446,26 +447,26 @@ export let COLOR_SEARCH_TEXT: number;
 export let COLOR_SEARCH_PLACEHOLDER: number;
 export let COLOR_SEARCH_OUTLINE: number;
 export let COLOR_SEARCH_BACKGROUND: number;
-export const SEARCH_MATCH_OVERLAY = { r: 0.9, g: 0.35, b: 0.35, a: 0.38 };
-export const SEARCH_MATCH_ACTIVE_OVERLAY = { r: 1, g: 0.85, b: 0.25, a: 0.6 };
-export const REFERENCES_MATCH_OVERLAY = { r: 0.25, g: 0.62, b: 0.95, a: 0.32 };
-export const REFERENCES_MATCH_ACTIVE_OVERLAY = { r: 0.18, g: 0.44, b: 0.9, a: 0.54 };
+export const SEARCH_MATCH_OVERLAY = 49;
+export const SEARCH_MATCH_ACTIVE_OVERLAY = 50;
+export const REFERENCES_MATCH_OVERLAY = 51;
+export const REFERENCES_MATCH_ACTIVE_OVERLAY = 52;
 export const SEARCH_BAR_MARGIN_Y = 2;
 export let COLOR_LINE_JUMP_BACKGROUND: number;
 export let COLOR_LINE_JUMP_TEXT: number;
 export let COLOR_LINE_JUMP_PLACEHOLDER: number;
 export let COLOR_LINE_JUMP_OUTLINE: number;
-export const ERROR_OVERLAY_BACKGROUND = { r: 0.6, g: 0, b: 0, a: 1 };
-export const ERROR_OVERLAY_BACKGROUND_HOVER = { r: 0.75, g: 0.1, b: 0.1, a: 1 };
-export const ERROR_OVERLAY_LINE_HOVER = { r: 1, g: 1, b: 1, a: 0.18 };
+export const ERROR_OVERLAY_BACKGROUND = 53;
+export const ERROR_OVERLAY_BACKGROUND_HOVER = 54;
+export const ERROR_OVERLAY_LINE_HOVER = 55;
 export const ERROR_OVERLAY_PADDING_X = 4;
 export const ERROR_OVERLAY_PADDING_Y = 2;
 export const ERROR_OVERLAY_CONNECTOR_OFFSET = 6;
 export let ERROR_OVERLAY_TEXT_COLOR: number;
-export const EXECUTION_STOP_OVERLAY = { r: 0.95, g: 0.45, b: 0.1, a: 0.45 };
+export const EXECUTION_STOP_OVERLAY = 56;
 export const HOVER_TOOLTIP_PADDING_X = 4;
 export const HOVER_TOOLTIP_PADDING_Y = 2;
-export const HOVER_TOOLTIP_BACKGROUND = { r: 0.1, g: 0.1, b: 0.1, a: 0.9 };
+export const HOVER_TOOLTIP_BACKGROUND = 57;
 export let HOVER_TOOLTIP_BORDER: number;
 export const HOVER_TOOLTIP_MAX_VISIBLE_LINES = 10;
 export const HOVER_TOOLTIP_MAX_LINE_LENGTH = 160;
@@ -567,8 +568,8 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_COMMENT = theme.text.comment;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR = theme.text.operator;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM = theme.text.dim;
-	COLOR_BREAKPOINT_BORDER = Msx1Colors[theme.text.topBar];
-	COLOR_BREAKPOINT_FILL = Msx1Colors[theme.status.alert];
+	COLOR_BREAKPOINT_BORDER = theme.text.topBar;
+	COLOR_BREAKPOINT_FILL = theme.status.alert;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN = theme.text.builtin;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_NAME = theme.text.functionName;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_PARAMETER = theme.text.parameter;
@@ -577,10 +578,12 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_TOP = theme.text.localTop;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_FUNCTION = theme.text.localFunction;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_HANDLE = theme.text.functionHandle;
-	HIGHLIGHT_OVERLAY = Msx1Colors[theme.highlightOverlay];
-	SELECTION_OVERLAY = Msx1Colors[theme.text.selection];
-	CARET_COLOR = Msx1Colors[theme.caret.editor];
-	INLINE_CARET_COLOR = Msx1Colors[theme.caret.inline];
+	HIGHLIGHT_OVERLAY = theme.highlightOverlay;
+	SELECTION_OVERLAY = theme.text.selection;
+	CARET_COLOR = theme.caret.editor;
+	INLINE_CARET_COLOR = theme.caret.inline;
+	SEARCH_RESULT_SELECTION_OVERLAY = theme.text.selection;
+	SEARCH_RESULT_HOVER_OVERLAY = theme.highlightOverlay;
 	COLOR_STATUS_BACKGROUND = theme.status.background;
 	COLOR_STATUS_TEXT = theme.status.text;
 	COLOR_STATUS_WARNING = theme.status.warning;
@@ -673,33 +676,12 @@ export const PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS = 10;
 // Maximum wrapped lines per problem row in the problems panel
 export const PROBLEMS_PANEL_MAX_WRAP_LINES = 3;
 export const PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN = 4;
-export const DEFAULT_NEW_LUA_RESOURCE_CONTENT = '-- New Lua resource\n';
-export const DEFAULT_NEW_FSM_RESOURCE_CONTENT = `return {
-\tid = '<MACHINE_ID>',
-\tstates = {
-\t\t_idle = { -- '_'-prefix to make it the initial state
-\t\t\tentering_state = function(self, state, payload)
-\t\t\t\t-- play a timeline explicitly, e.g. self:play_timeline('idle.animation')
-\t\t\tend,
-\t\t\ton = {
-\t\t\t\t['$start'] = '../running' -- '$'-prefix to denote self-scoped event
-\t\t\t}
-\t\t},
-\t\trunning = {
-\t\t\tentering_state = function(self, state, payload)
-\t\t\t\t-- start another timeline or run other effects
-\t\t\tend,
-\t\t\ton = {
-\t\t\t\t['$stop'] = '../idle'
-\t\t\t}
-\t\t}
-\t}
-}
-`;
+export const DEFAULT_NEW_LUA_RESOURCE_CONTENT = '\n';
+export const DEFAULT_NEW_FSM_RESOURCE_CONTENT = `\n`;
 export const HEADER_BUTTON_PADDING_X = 5;
 export const HEADER_BUTTON_PADDING_Y = 1;
 export const HEADER_BUTTON_SPACING = 4;
-export const ACTION_OVERLAY_COLOR = { r: 0, g: 0, b: 0, a: 0.65 };
+export const ACTION_OVERLAY_COLOR = 58;
 export const TAB_BUTTON_PADDING_X = 4;
 export const TAB_BUTTON_PADDING_Y = 1;
 export const TAB_BUTTON_SPACING = 3;

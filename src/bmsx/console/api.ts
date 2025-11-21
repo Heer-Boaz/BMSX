@@ -223,8 +223,9 @@ export class BmsxConsoleApi {
 		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: this.palette_color(colorindex), layer: DRAW_LAYER });
 	}
 
-	public rectfill_color(x0: number, y0: number, x1: number, y1: number, colorvalue: color): void {
-		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: colorvalue, layer: DRAW_LAYER });
+	public rectfill_color(x0: number, y0: number, x1: number, y1: number, colorvalue: number | color): void {
+		const resolved = typeof colorvalue === 'number' ? this.palette_color(colorvalue) : colorvalue;
+		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: resolved, layer: DRAW_LAYER });
 	}
 
 	public sprite(

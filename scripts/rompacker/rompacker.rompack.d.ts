@@ -45,6 +45,15 @@ export type AtlasTexcoords = [
 	number, number
 ];
 
+export type RomManifestLuaConfig = {
+	asset_id?: string;
+	entry?: {
+		init?: string;
+		update?: string;
+		draw?: string;
+	};
+};
+
 interface BaseResource<TType extends resourcetype> {
 	type: TType;
 	name: string;
@@ -122,4 +131,5 @@ export interface RomManifest {
 	title?: string;
 	short_name?: string;
 	rom_name?: string;
+	lua?: RomManifestLuaConfig;
 }

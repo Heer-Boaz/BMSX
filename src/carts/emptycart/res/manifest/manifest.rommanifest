@@ -32,7 +32,6 @@
 	},
 	"lua": {
 		"asset_id": "shell_main",
-		"chunkName": "shell_main",
 		"entry": {
 			"init": "init",
 			"update": "update",

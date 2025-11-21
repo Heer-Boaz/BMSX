@@ -63,8 +63,8 @@ export type RuntimeErrorOverlayDrawOptions = {
 	textColor: number;
 	paddingX: number;
 	paddingY: number;
-	backgroundColor: { r: number; g: number; b: number; a: number };
-	highlightColor: { r: number; g: number; b: number; a: number };
+	backgroundColor: number;
+	highlightColor: number;
 	highlightLines: ReadonlyArray<number> | null;
 };
 

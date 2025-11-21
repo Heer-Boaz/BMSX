@@ -374,12 +374,12 @@ export type KeyPressRecord = {
 
 export type InlineTextField = {
 	text: string;
-	cursor: number;
-	selectionAnchor: number | null;
-	desiredColumn: number;
-	pointerSelecting: boolean;
-	lastPointerClickTimeMs: number;
-	lastPointerClickColumn: number;
+	cursor?: number;
+	selectionAnchor?: number | null;
+	desiredColumn?: number;
+	pointerSelecting?: boolean;
+	lastPointerClickTimeMs?: number;
+	lastPointerClickColumn?: number;
 };
 
 export type InlineInputOptions = {

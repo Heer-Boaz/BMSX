@@ -575,6 +575,9 @@ export function applySearchSelection(index: number, options?: { preview?: boolea
 	if (options?.preview) {
 		return;
 	}
+	ide_state.searchActive = false;
+	ide_state.searchField.selectionAnchor = null as any;
+	ide_state.searchField.pointerSelecting = false;
 	if (ide_state.searchScope === 'global') {
 		focusGlobalSearchResult(targetIndex, options?.preview === true);
 	} else {

@@ -1,5 +1,7 @@
 import { BmsxConsoleApi } from '../api';
+import type { drawInlineCaret } from './console_cart_editor';
 import * as constants from './constants';
+import type { InlineTextField } from './types';
 
 type InlineResultListOptions<T> = {
 	entries: readonly T[] | null | undefined;
@@ -26,7 +28,7 @@ export interface InlineBarsHost {
 	inlineFieldMetrics: () => { spaceAdvance: number };
 	createResourceActive: boolean;
 	createResourceVisible: boolean;
-	createResourceField: unknown;
+	createResourceField: InlineTextField;
 	createResourceWorking: boolean;
 	createResourceError: string | null;
 	drawCreateResourceErrorDialog: (api: BmsxConsoleApi, errorText: string) => void;
@@ -37,18 +39,7 @@ export interface InlineBarsHost {
 	getSymbolSearchBarHeight: () => number;
 	getRenameBarHeight: () => number;
 	getLineJumpBarHeight: () => number;
-	drawInlineCaret: (
-		api: BmsxConsoleApi,
-		field: unknown,
-		left: number,
-		top: number,
-		right: number,
-		bottom: number,
-		baseX: number,
-		active: boolean,
-		caretColor: { r: number; g: number; b: number; a: number },
-		textColor: number,
-	) => void;
+	drawInlineCaret: typeof drawInlineCaret;
 	inlineFieldSelectionRange: (field: unknown) => { start: number; end: number } | null;
 	inlineFieldMeasureRange: (field: unknown, metrics: { spaceAdvance: number }, start: number, end: number) => number;
 	inlineFieldCaretX: (field: unknown, originX: number, measureText: (text: string) => number) => number;
@@ -123,7 +114,7 @@ export function renderCreateResourceBar(api: BmsxConsoleApi, host: InlineBarsHos
 	const labelY = barTop + constants.CREATE_RESOURCE_BAR_MARGIN_Y;
 	host.drawText(api, label, labelX, labelY, constants.COLOR_CREATE_RESOURCE_TEXT);
 
-	const field = host.createResourceField as { text: string };
+	const field = host.createResourceField;
 	const pathX = labelX + host.measureText(label + ' ');
 	let displayPath = field.text;
 	let pathColor = constants.COLOR_CREATE_RESOURCE_TEXT;
@@ -465,9 +456,9 @@ function renderResultList<T>(api: BmsxConsoleApi, options: InlineResultListOptio
 		const rowTop = options.rowTop + i * options.rowHeight;
 		const rowBottom = rowTop + options.rowHeight;
 		if (matchIndex === options.selectionIndex) {
-			api.rectfill_color(0, rowTop, options.viewportWidth, rowBottom, constants.HIGHLIGHT_OVERLAY);
+			api.rectfill_color(0, rowTop, options.viewportWidth, rowBottom, constants.SEARCH_RESULT_SELECTION_OVERLAY);
 		} else if (matchIndex === options.hoverIndex) {
-			api.rectfill_color(0, rowTop, options.viewportWidth, rowBottom, constants.SELECTION_OVERLAY);
+			api.rectfill_color(0, rowTop, options.viewportWidth, rowBottom, constants.SEARCH_RESULT_HOVER_OVERLAY);
 		}
 		options.drawRow(entry, rowTop);
 	}

@@ -2,7 +2,7 @@
 
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
-import type { RomManifest, RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
+import type { Resource, RomManifest, RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
 const term = require('terminal-kit').terminal;
 const _colors = require('colors');
 
@@ -232,6 +232,23 @@ function findBootloaderDirectory(candidates: Array<string | undefined>): string 
 		}
 	}
 	return undefined;
+}
+
+function ensureMainLuaAssetPresent(manifest: RomManifest, resources: Resource[]): void {
+	const luaConfig = manifest.lua;
+	if (!luaConfig || !luaConfig.asset_id) {
+		throw new Error(`Rom manifest must specify "lua.asset_id" for the primary Lua entry.`);
+	}
+	const assetId = luaConfig.asset_id.trim();
+	if (assetId.length === 0) {
+		throw new Error(`Rom manifest must specify "lua.asset_id" for the primary Lua entry.`);
+	}
+	const luaAssets = resources.filter(res => res.type === 'lua');
+	const matchFound = luaAssets.some(res => res.name === assetId);
+	if (!matchFound) {
+		const available = luaAssets.map(res => res.name).join(', ') || '<none>';
+		throw new Error(`Rom manifest references lua.asset_id "${assetId}", but no matching Lua resource was found in the packed resources. Available Lua assets: ${available}.`);
+	}
 }
 
 function parseOptions(args: string[]): RomPackerOptions {
@@ -716,6 +733,7 @@ async function main() {
 					resolveAtlasIndex: true,
 				});
 				await progress?.taskCompleted();
+				ensureMainLuaAssetPresent(romManifest, romResMetaList);
 				// Build resources
 				let resources = await getResourcesList(romResMetaList, rom_name, {
 					includeCode: isEngineMode || shouldBundleCartCode,
@@ -773,4 +791,3 @@ export function getAtlasFlag(): boolean {
 export const ENGINE_ATLAS_INDEX = 254; // Keep in sync with src/bmsx/render/atlas.ts
 // CASE_INSENSITIVE_LUA and its setter are declared earlier in the file to avoid
 // temporal-dead-zone issues when they are used during module initialization.
-
