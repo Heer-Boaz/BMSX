@@ -6,9 +6,7 @@ local SERVICE_ID = 'demo.service.director'
 local EFFECT_ID = 'demo.effect.blink'
 
 local demo = {
-	stats = { saves = 0, loads = 0 },
 	last_plain_input = 'none',
-	snapshot = nil,
 	tick = 0,
 }
 
@@ -219,18 +217,34 @@ function Director:on_boot()
 end
 
 function Director:on_activate()
-	events:on('demo.hero.move', function(event)
-		self.stats.moves = self.stats.moves + 1
-	end, self)
-	events:on('demo.hero.effect', function(event)
-		self.stats.effects = self.stats.effects + 1
-	end, self)
-	events:on('demo.hero.charge', function(event)
-		self.stats.charges = self.stats.charges + 1
-	end, self)
-	events:on('timeline.frame.' .. HERO_TIMELINE_ID, function(event)
-		self.stats.pulses = self.stats.pulses + 1
-	end, self)
+	events:on({
+		event = 'demo.hero.move',
+		subscriber = self,
+		handler = function(event)
+			self.stats.moves = self.stats.moves + 1
+		end,
+	})
+	events:on({
+		event = 'demo.hero.effect',
+		subscriber = self,
+		handler = function(event)
+			self.stats.effects = self.stats.effects + 1
+		end,
+	})
+	events:on({
+		event = 'demo.hero.charge',
+		subscriber = self,
+		handler = function(event)
+			self.stats.charges = self.stats.charges + 1
+		end,
+	})
+	events:on({
+		event = 'timeline.frame.' .. HERO_TIMELINE_ID,
+		subscriber = self,
+		handler = function(event)
+			self.stats.pulses = self.stats.pulses + 1
+		end,
+	})
 end
 
 function Director:on_tick(dt)
@@ -259,69 +273,17 @@ local function define_blink()
 	})
 end
 
-local function build_snapshot()
-	local hero = world_object(HERO_INSTANCE_ID)
-	local timeline = hero:get_timeline(HERO_TIMELINE_ID)
-	local svc = service(SERVICE_ID)
-	return {
-		hero = {
-			x = hero.x,
-			y = hero.y,
-			facing = hero.facing,
-			active_state = hero.active_state,
-			timeline_head = timeline.head,
-		},
-		stats = demo.stats,
-		service = Director:get_state(),
-		tick = demo.tick,
-	}
-end
-
-function __bmsx_snapshot_save()
-	local snapshot = build_snapshot()
-	demo.snapshot = snapshot
-	demo.stats.saves = demo.stats.saves + 1
-	return snapshot
-end
-
-function __bmsx_snapshot_load(snapshot)
-	demo.snapshot = snapshot
-	demo.stats.loads = demo.stats.loads + 1
-	demo.stats = snapshot.stats
-	demo.tick = snapshot.tick
-	local hero = world_object(HERO_INSTANCE_ID)
-	hero.x = snapshot.hero.x
-	hero.y = snapshot.hero.y
-	hero.facing = snapshot.hero.facing
-	hero.active_state = snapshot.hero.active_state
-	hero:force_timeline_head(HERO_TIMELINE_ID, snapshot.hero.timeline_head)
-	Director:set_state(snapshot.service)
-end
-
-local function init_runtime()
+function init()
 	cartdata('bmsx_test_cart_demo')
 	build_hero_fsm()
 	define_blink()
 	register_hero()
 	spawn_object(HERO_DEF_ID, { id = HERO_INSTANCE_ID, position = { x = 48, y = 64, z = 0 } })
 	register_service(Director)
-	demo.snapshot = build_snapshot()
-end
-
-function init()
-	init_runtime()
 end
 
 function update(dt)
 	track_plain_input()
-	local save = game:get_action_state(1, 'console_down')
-	if save.guardedjustpressed then
-		__bmsx_snapshot_save()
-	end
-	local load = game:get_action_state(1, 'console_up')
-	if load.guardedjustpressed then
-		__bmsx_snapshot_load(demo.snapshot)
-	end
 end
 
 local function draw_hero(hero)
@@ -344,12 +306,10 @@ local function draw_hud(hero)
 	write('Pulses      : ' .. stats.pulses, 6, 78, 6)
 	write('Effects     : ' .. stats.effects, 6, 87, 6)
 	write('Charges     : ' .. stats.charges, 6, 96, 6)
-	write('Saves/Loads : ' .. demo.stats.saves .. '/' .. demo.stats.loads, 6, 105, 6)
 	write('Controls:', 6, 118, 13)
 	write('- Arrows: move world object', 6, 128, 13)
-	write('- O: hold to charge (FSM + input)', 6, 138, 13)
-	write('- X: blink effect (InputActionToEffect + input)', 6, 148, 13)
-	write('- Down/Up: save/load snapshot', 6, 158, 13)
+	write('- A: blink (InputActionToEffect + input)', 6, 148, 13)
+	write('- B: hold (FSM + input)', 6, 138, 13)
 end
 
 function draw()
