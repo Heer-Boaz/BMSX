@@ -2,7 +2,7 @@
  * Represents a query to retrieve the state of one or more actions.
  * Used to query the state of actions in the input system, such as whether a button is pressed or consumed or whether there is a long-press.
  * @see ActionState for the structure of the query result.
- * @see PlayerInput.getPressedActions for how this query is used.
+ * @see PlayerInput.checkActionTriggered for the preferred way to evaluate action patterns.
  */
 
 import type { Input } from "./input";

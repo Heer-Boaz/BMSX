@@ -2,7 +2,6 @@ import { $, assign_bt, assign_fsm, attach_components, BehaviorTreeDefinition, bu
 import { mytree_builder } from './mytree_builder';
 import { BitmapId } from './resourceids';
 import { DerivedTestComponent, TestComponent } from './testcomponents';
-import type { InputAction } from './bootloader';
 
 @insavegame
 @assign_fsm('bclass_animation', 'bclass_meuk')
@@ -61,48 +60,32 @@ export class bclass extends SpriteObject {
 	public static bouw(): StateMachineBlueprint {
 		function blarun(this: bclass) {
 			const speed = 2;
+			const input = $.input.getPlayerInput(1);
 			if (this.sc.matches_state_path('#blap')) {
 				this.tick_tree('bclass_tree');
 			}
 
-			// To check if an action is pressed for player 0
-			const pressedActions = $.input.getPlayerInput(1).getPressedActions();
+			if (input.checkActionTriggered('up[p]')) this.y -= speed;
+			if (input.checkActionTriggered('right[p]')) this.x += speed;
+			if (input.checkActionTriggered('down[p]')) this.y += speed;
+			if (input.checkActionTriggered('left[p]')) this.x -= speed;
 
-			for (const { action, consumed } of pressedActions) {
-				switch (action as InputAction) {
-					case 'up':
-						this.y -= speed;
-						break;
-					case 'right':
-						this.x += speed;
-						break;
-					case 'down':
-						this.y += speed;
-						break;
-					case 'left':
-						this.x -= speed;
-						break;
-					case 'bla':
-						if (consumed) break;
-						$.input.getPlayerInput(1).consumeAction(action);
-						this.testmeuk();
-						$.emit('testEvent', this);
+			if (input.checkActionTriggered('bla[j]')) {
+				input.consumeAction('bla');
+				this.testmeuk();
+				$.emit('testEvent', this);
+				this.sc.machines.bclass_animation.transition_to('#ani2');
+				this.sc.transition_to('bclass:/bla');
+			}
 
-						this.sc.machines.bclass_animation.transition_to('#ani2');
-						this.sc.transition_to('bclass:/bla'); // Ugly, transitioning another state machine
-					case 'blap':
-						if (consumed) break;
-						$.input.getPlayerInput(1).consumeAction(action);
-						$.emit('testEventOnce', this);
-
-						this.sc.machines.bclass_animation.transition_to('ani1');
-						if (this.sc.matches_state_path('bclass_meuk:/#meuk1.blupperblop1')) {
-							return this.sc.transition_to('bclass_meuk:/#meuk1/blupperblop1'); // Ugly, transitioning another state machine
-						}
-						else {
-							return this.sc.transition_to('bclass_meuk:/#meuk1/blupperblop2'); // Ugly, transitioning another state machine
-						}
+			if (input.checkActionTriggered('blap[j]')) {
+				input.consumeAction('blap');
+				$.emit('testEventOnce', this);
+				this.sc.machines.bclass_animation.transition_to('ani1');
+				if (this.sc.matches_state_path('bclass_meuk:/#meuk1.blupperblop1')) {
+					return this.sc.transition_to('bclass_meuk:/#meuk1/blupperblop1');
 				}
+				return this.sc.transition_to('bclass_meuk:/#meuk1/blupperblop2');
 			}
 			return undefined; // No state transition
 		}

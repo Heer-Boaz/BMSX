@@ -19,8 +19,7 @@ local function track_plain_input()
 	}
 	for index = 1, #bindings do
 		local entry = bindings[index]
-		local state = game:get_action_state(1, entry[1])
-		if state.guardedjustpressed then
+		if game:action_triggered(1, entry[1] .. '[gp]') then
 			demo.last_plain_input = entry[2]
 			emit('demo.input', nil, { action = entry[2], t = demo.tick })
 		end
@@ -78,12 +77,12 @@ function hero:emit_move(dx, dy)
 end
 
 function hero:run_motion(dt)
-	local left = game:get_action_state(1, 'console_left')
-	local right = game:get_action_state(1, 'console_right')
-	local up = game:get_action_state(1, 'console_up')
-	local down = game:get_action_state(1, 'console_down')
-	local dx = (right.pressed and 1 or 0) - (left.pressed and 1 or 0)
-	local dy = (down.pressed and 1 or 0) - (up.pressed and 1 or 0)
+	local left = game:action_triggered(1, 'console_left[p]')
+	local right = game:action_triggered(1, 'console_right[p]')
+	local up = game:action_triggered(1, 'console_up[p]')
+	local down = game:action_triggered(1, 'console_down[p]')
+	local dx = (right and 1 or 0) - (left and 1 or 0)
+	local dy = (down and 1 or 0) - (up and 1 or 0)
 	local moved = dx ~= 0 or dy ~= 0
 	if moved then
 		self.x = self.x + dx * self.speed * dt
@@ -99,8 +98,7 @@ function hero:run_motion(dt)
 end
 
 function hero:try_blink()
-	local action = game:get_action_state(1, 'console_a')
-	if not action.guardedjustpressed then
+	if not game:action_triggered(1, 'console_a[gp]') then
 		return
 	end
 	if not self.tempo_ready then
@@ -127,61 +125,71 @@ local function build_hero_fsm()
 						return '/moving'
 					end
 				end,
-				process_input = function(self)
-					if game:get_action_state(1, 'console_b').guardedjustpressed then
-						return '/charging'
-					end
-					if game:get_action_state(1, 'console_a').guardedjustpressed then
-						return '/blinking'
+				input_eval = 'first',
+				input_event_handlers = {
+					['console_b[gp]'] = {
+						do = function(self)
+							return '/charging'
+						end,
+					},
+					['console_a[gp]'] = {
+						do = function(self)
+							return '/blinking'
+						end,
+					},
+				},
+			},
+			moving = {
+				entering_state = function(self)
+					self.active_state = 'moving'
+				end,
+				tick = function(self)
+					local moved = self:run_motion(game.deltatime_seconds)
+					self:try_blink()
+					if not moved then
+						return '/idle'
 					end
 				end,
+				input_eval = 'first',
+				input_event_handlers = {
+					['console_b[gp]'] = {
+						do = function(self)
+							return '/charging'
+						end,
+					},
+					['console_a[gp]'] = {
+						do = function(self)
+							return '/blinking'
+						end,
+					},
 				},
-				moving = {
-					entering_state = function(self)
-						self.active_state = 'moving'
-					end,
-					tick = function(self)
-						local moved = self:run_motion(game.deltatime_seconds)
-						self:try_blink()
-						if not moved then
-							return '/idle'
-						end
-					end,
-				process_input = function(self)
-					if game:get_action_state(1, 'console_b').guardedjustpressed then
-						return '/charging'
-					end
-					if game:get_action_state(1, 'console_a').guardedjustpressed then
-						return '/blinking'
+			},
+			charging = {
+				entering_state = function(self)
+					self.active_state = 'charging'
+					self.charge_time = 0
+				end,
+				tick = function(self)
+					self.charge_time = self.charge_time + game.deltatime_seconds
+					self:run_motion(1)
+					self:try_blink()
+					if not game:action_triggered(1, 'console_b[p]') then
+						self.events:emit('demo.hero.charge', { time = self.charge_time })
+						return '/moving'
 					end
 				end,
 			},
-				charging = {
-					entering_state = function(self)
-						self.active_state = 'charging'
-						self.charge_time = 0
-					end,
-					tick = function(self)
-						self.charge_time = self.charge_time + game.deltatime_seconds
-						self:run_motion(1)
-						self:try_blink()
-						if not game:get_action_state(1, 'console_b').pressed then
-							self.events:emit('demo.hero.charge', { time = self.charge_time })
-							return '/moving'
-						end
-					end,
-				},
-				blinking = {
-					entering_state = function(self)
-						self.active_state = 'blinking'
-						self:try_blink()
-					end,
-					tick = function(self)
-						self.blinking_timer = math.max(0, self.blinking_timer - game.deltatime_seconds)
-						if self.blinking_timer <= 0 then return '/moving' end
-					end,
-				},
+			blinking = {
+				entering_state = function(self)
+					self.active_state = 'blinking'
+					self:try_blink()
+				end,
+				tick = function(self)
+					self.blinking_timer = math.max(0, self.blinking_timer - game.deltatime_seconds)
+					if self.blinking_timer <= 0 then return '/moving' end
+				end,
 			},
+		},
 		})
 	end
 

@@ -265,6 +265,7 @@ export class Game {
 		return this.input.getPlayerInput(playerIndex).getActionState(action, window);
 	}
 
+	/** @deprecated Use {@link action_triggered} / {@link actions_triggered} with ActionParser definitions instead. */
 	public get_pressed_actions(playerIndex: number, query?: ActionStateQuery) {
 		return this.input.getPlayerInput(playerIndex).getPressedActions(query);
 	}

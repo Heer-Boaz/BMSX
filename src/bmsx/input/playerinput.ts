@@ -47,7 +47,6 @@ export class PlayerInput {
 		pointer: null,
 	};
 
-
 	/** Manages buffered input events and button state aggregation. */
 	private _stateManager: InputStateManager;
 
@@ -76,7 +75,7 @@ export class PlayerInput {
 	 * @returns {void}
 	 * @throws {Error} Throws an error if the player index is out of range.
 	 * @throws {Error} Throws an error if the input map is invalid.
-	 * @see {@link this.getActionState} and {@link this.getPressedActions} for checking if an action is pressed for a player.
+	 * @see {@link this.getActionState} and {@link this.checkActionTriggered} for checking if an action is pressed for a player.
 	 * @example
 	 * this.setInputMap(0, {
 	 *     keyboard: {
@@ -149,9 +148,18 @@ export class PlayerInput {
 	public pushContext(id: string, keyboard: KeyboardInputMapping | undefined, gamepad: GamepadInputMapping | undefined, pointer: PointerInputMapping | undefined, priority = 100, enabled = true): void {
 		this.contexts.push(new MappingContext(id, priority, enabled, keyboard ?? {}, gamepad ?? {}, pointer ?? {}));
 	}
-	public popContext(id?: string): void { this.contexts.pop(id); }
-	public enableContext(id: string, enabled: boolean): void { this.contexts.enable(id, enabled); }
-	public setContextPriority(id: string, priority: number): void { this.contexts.setPriority(id, priority); }
+
+	public popContext(id?: string): void {
+		this.contexts.pop(id);
+	}
+
+	public enableContext(id: string, enabled: boolean): void {
+		this.contexts.enable(id, enabled);
+	}
+
+	public setContextPriority(id: string, priority: number): void {
+		this.contexts.setPriority(id, priority);
+	}
 
 	public get supportsVibrationEffect(): boolean {
 		for (const source of INPUT_SOURCES) {
@@ -375,6 +383,7 @@ export class PlayerInput {
 	 * Retrieves an array of pressed ActionStates based on the provided filter.
 	 * If no filter is provided, all pressed ActionStates are returned.
 	 * if `actionsByPriority` is given, it retrieves the priority actions for a given player index based on the action priority list.
+	 * @deprecated Prefer {@link checkActionTriggered} with an ActionParser definition to query actions.
 	 * @param filter - An optional array of strings representing the actions to filter.
 	 * @returns An array of pressed ActionStates.
 	 */
@@ -517,7 +526,7 @@ export class PlayerInput {
 	 */
 	public isButtonDown(button: ButtonId, source: InputSource): boolean {
 		const buttonState = this.getButtonState(button, source);
-		return buttonState?.pressed; // Use optional chaining to avoid errors as a button might not be registered on an e.g. disconnected gamepad
+		return buttonState.pressed;
 	}
 
 	/**

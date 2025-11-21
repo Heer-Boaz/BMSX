@@ -2,7 +2,6 @@ import { $, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint,
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import type { GameEvent } from 'bmsx/core/game_event';
 import type { TimelineEndEventPayload, TimelineFrameEventPayload } from 'bmsx/component/timeline_component';
-import type { ActionState, ActionStateQuery } from 'bmsx/input/inputtypes';
 import { BitmapId } from './resourceids';
 
 const PRIMARY_PLAYER_INDEX = 1;
@@ -11,24 +10,12 @@ const SKIP_ACTIONS = ['punch', 'highkick', 'lowkick', 'block'] as const;
 
 export const RETURN_TO_TITLE_EVENT = 'titlescreen.return_requested';
 
-function readActions(filter: readonly string[], extra?: Partial<ActionStateQuery>): ActionState[] {
-	return $.input.getPlayerInput(PRIMARY_PLAYER_INDEX).getPressedActions({
-		filter: [...filter],
-		consumed: false,
-		justPressed: true,
-		...(extra ?? {}),
-	});
-}
-
-function isConfirmAction(action: ActionState): boolean {
-	for (const actionId of SKIP_ACTIONS) {
-		if (action.action === actionId) return true;
+function findTriggeredAction(filter: readonly string[]): string | null {
+	const input = $.input.getPlayerInput(PRIMARY_PLAYER_INDEX);
+	for (const action of filter) {
+		if (input.checkActionTriggered(`${action}[j]`)) return action;
 	}
-	return false;
-}
-
-function isNavigationAction(action: ActionState): boolean {
-	return action.action === 'up' || action.action === 'down';
+	return null;
 }
 
 function emitReturnToTitle(emitter: SpriteObject): void {
@@ -36,8 +23,7 @@ function emitReturnToTitle(emitter: SpriteObject): void {
 }
 
 function trySkipToTitle(emitter: SpriteObject): void {
-	const actions = readActions(SKIP_ACTIONS);
-	if (actions.length === 0) return;
+	if (!findTriggeredAction(SKIP_ACTIONS)) return;
 	emitReturnToTitle(emitter);
 }
 
@@ -223,15 +209,15 @@ export class TitleScreen extends SpriteObject {
 	}
 
 	private processMenuInput(): void {
-		const confirmActions = readActions(SKIP_ACTIONS);
-		if (confirmActions.length > 0) {
+		const confirmAction = findTriggeredAction(SKIP_ACTIONS);
+		if (confirmAction) {
 			this.startGame();
 			return;
 		}
 
-		const navigation = readActions(NAVIGATION_ACTIONS);
-		if (navigation.length === 0) return;
-		const direction: -1 | 1 = navigation[0].action === 'up' ? -1 : 1;
+		const navigation = findTriggeredAction(NAVIGATION_ACTIONS);
+		if (!navigation) return;
+		const direction: -1 | 1 = navigation === 'up' ? -1 : 1;
 		this.applySelectionChange(direction);
 	}
 
