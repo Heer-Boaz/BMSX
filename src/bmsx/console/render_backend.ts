@@ -53,13 +53,9 @@ export interface ConsoleRenderBackend {
 export class DirectConsoleRenderBackend implements ConsoleRenderBackend {
 	public drawRect(command: RectCommand): void {
 		const layer = command.layer ?? 'ui';
-		const x0 = Math.floor(command.x0);
-		const y0 = Math.floor(command.y0);
-		const x1 = Math.floor(command.x1);
-		const y1 = Math.floor(command.y1);
 		$.view.renderer.submit.rect({
 			kind: command.kind,
-			area: { start: { x: x0, y: y0 }, end: { x: x1, y: y1 } },
+			area: { start: { x: command.x0, y: command.y0 }, end: { x: command.x1, y: command.y1 } },
 			color: command.color,
 			layer,
 		});
@@ -70,11 +66,9 @@ export class DirectConsoleRenderBackend implements ConsoleRenderBackend {
 	}
 
 	public drawSprite(command: SpriteCommand): void {
-		const posX = Math.floor(command.baseX);
-		const posY = Math.floor(command.baseY);
 		$.view.renderer.submit.sprite({
 			imgid: command.imgId,
-			pos: { x: posX, y: posY, z: 0 },
+			pos: { x: command.baseX, y: command.baseY, z: 0 },
 			scale: { x: command.scale, y: command.scale },
 			flip: command.flipH || command.flipV ? { flip_h: command.flipH, flip_v: command.flipV } : undefined,
 			layer: command.layer ?? 'ui',
@@ -92,25 +86,13 @@ export class EditorConsoleRenderBackend implements ConsoleRenderBackend {
 	private overrideSize: { width: number; height: number } | null = null;
 
 	public setFrameOverride(size: { width: number; height: number } | null): void {
-		if (size && (!Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width <= 0 || size.height <= 0)) {
-			throw new Error('[EditorConsoleRenderBackend] Invalid frame override dimensions.');
-		}
 		this.overrideSize = size ? { width: size.width, height: size.height } : null;
 	}
 
 	public beginFrame(): void {
 		const view = $.view;
-		if (!view) {
-			throw new Error('[EditorConsoleRenderBackend] Game view unavailable during editor overlay capture.');
-		}
 		const offscreen = view.offscreenCanvasSize;
 		const logical = view.viewportSize;
-		if (!Number.isFinite(offscreen.x) || !Number.isFinite(offscreen.y) || offscreen.x <= 0 || offscreen.y <= 0) {
-			throw new Error('[EditorConsoleRenderBackend] Invalid offscreen dimensions.');
-		}
-		if (!Number.isFinite(logical.x) || !Number.isFinite(logical.y) || logical.x <= 0 || logical.y <= 0) {
-			throw new Error('[EditorConsoleRenderBackend] Invalid logical dimensions.');
-		}
 		const renderWidth = this.overrideSize ? this.overrideSize.width : offscreen.x;
 		const renderHeight = this.overrideSize ? this.overrideSize.height : offscreen.y;
 		this.frameLogicalWidth = logical.x;

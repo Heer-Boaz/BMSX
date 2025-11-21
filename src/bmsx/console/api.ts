@@ -31,7 +31,6 @@ import type { ActionEffectDefinition } from '../action_effects/effect_types';
 import { BmsxConsoleRuntime } from './runtime';
 import type { ConsoleWorldObjectComponentEntry, ConsoleWorldObjectSystemEntry, ConsoleWorldObjectSpawnOptions } from './runtime';
 import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type BehaviorTreeContext, type ConstructorWithBTProperty } from '../ai/behaviourtree';
-import type { ScriptHandler } from '../action_effects/effect_types';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
 
@@ -523,13 +522,13 @@ export class BmsxConsoleApi {
 		return instance.id;
 	}
 
-	public register_effect(descriptor: ActionEffectDefinition & { handler?: ScriptHandler<[ActionEffectDefinition<any> extends never ? never : any], any> }): string {
+	public register_effect(descriptor: ActionEffectDefinition): string {
 		const runtime = this.require_console_runtime();
 		const definition = runtime.registerEffectDefinition(descriptor);
 		return definition.id;
 	}
 
-	public define_effect(descriptor: ActionEffectDefinition & { handler?: ScriptHandler<[ActionEffectDefinition<any> extends never ? never : any], any> }): string {
+	public define_effect(descriptor: ActionEffectDefinition): string {
 		return this.register_effect(descriptor);
 	}
 

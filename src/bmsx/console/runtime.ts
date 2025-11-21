@@ -43,7 +43,8 @@ import { LuaComponent } from '../component/lua_component';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
 import type { LuaComponentHandlerMap } from '../component/lua_component';
 import { defineActionEffect } from '../action_effects/effect_registry';
-import type { ActionEffectDefinition, ActionEffectHandlerContext, ActionEffectHandlerResult, ActionEffectId, ScriptHandler } from '../action_effects/effect_types';
+import type { ActionEffectDefinition, ActionEffectHandlerContext, ActionEffectHandlerResult, ActionEffectId } from '../action_effects/effect_types';
+import type { ScriptHandler } from '../lua/script_handler';
 import { deep_clone } from '../utils/deep_clone';
 import { WorldObject } from '../core/object/worldobject';
 import { Reviver } from '../serializer/gameserializer';
@@ -3126,7 +3127,7 @@ export class BmsxConsoleRuntime extends Service {
 		return normalized;
 	}
 
-	private handleLuaError(error: unknown): void {
+	public handleLuaError(error: unknown): void {
 		// Pause signal has its own handler
 		if (isLuaDebuggerPauseSignal(error)) {
 			console.info('[BmsxConsoleRuntime] Lua debugger pause signal received: ', error);
@@ -3955,7 +3956,6 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 	}
-
 
 	private loadLuaBehaviorTreeScripts(interpreter: LuaInterpreter): void {
 		this.executeGenericLuaAssets(interpreter);
@@ -5690,7 +5690,7 @@ export class BmsxConsoleRuntime extends Service {
 		throw new Error(`[BmsxConsoleRuntime] Effect '${effectId}' handler must be a function.`);
 	}
 
-	public registerEffectDefinition(descriptor: ActionEffectDefinition & { handler?: ScriptHandler<[ActionEffectHandlerContext], ActionEffectHandlerResult> }): ActionEffectDefinition {
+	public registerEffectDefinition(descriptor: ActionEffectDefinition): ActionEffectDefinition {
 		if (!descriptor) {
 			throw new Error('[BmsxConsoleRuntime] define_effect requires a descriptor table.');
 		}
@@ -5806,7 +5806,7 @@ export class BmsxConsoleRuntime extends Service {
 			throw new Error('[BmsxConsoleRuntime] define_effect requires a non-empty id.');
 		}
 
-		const descriptor: ActionEffectDefinition & { handler?: ScriptHandler<[ActionEffectHandlerContext], ActionEffectHandlerResult> } = {
+		const descriptor: ActionEffectDefinition = {
 			id: finalId,
 			event: eventValue,
 			cooldown_ms: cooldownValue,
@@ -6014,14 +6014,6 @@ export class BmsxConsoleRuntime extends Service {
 			default:
 				return 'other';
 		}
-	}
-
-	/**
-	 * Report an engine/runtime error (non-Lua) to the Console editor overlay.
-	 * Useful for surfacing exceptions thrown by engine systems (e.g., action-effect runtime).
-	 */
-	public reportEngineError(error: unknown): void {
-		this.handleLuaError(error);
 	}
 
 	private mergeLuaChunkEnvironmentState(previous: LuaEnvironment, next: LuaEnvironment): void {

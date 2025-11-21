@@ -1,5 +1,6 @@
 import type { EventPayload } from '../core/eventemitter';
 import type { WorldObject } from '../core/object/worldobject';
+import type { ScriptHandler } from '../lua/script_handler';
 
 export interface ActionEffectPayloadTable {
 	// Games and engine modules augment this interface with effect ids and their payload contracts.
@@ -20,16 +21,13 @@ export type ActionEffectTriggerOptions<Id extends ActionEffectId> = Id extends A
 export type ActionEffectTriggerResult = 'ok' | 'on_cooldown' | 'failed';
 export type ActionEffectHandlerResult = { event?: string; payload?: EventPayload } | undefined;
 
-export type ScriptHandler<TArgs extends unknown[] = unknown[], TResult = unknown> =
-	((...args: TArgs) => TResult) | import('../lua/handler_cache').LuaHandlerFn;
-
 export interface ActionEffectHandlerContext<Id extends ActionEffectId = ActionEffectId> {
 	owner: WorldObject;
 	payload?: ActionEffectPayloadFor<Id>;
 }
 
 export type ActionEffectHandler<Id extends ActionEffectId = ActionEffectId> =
-	(ctx: ActionEffectHandlerContext<Id>) => ActionEffectHandlerResult;
+	ScriptHandler<[ActionEffectHandlerContext<Id>], ActionEffectHandlerResult>;
 
 export interface ActionEffectDefinition<Id extends ActionEffectId = ActionEffectId> {
 	id: Id;

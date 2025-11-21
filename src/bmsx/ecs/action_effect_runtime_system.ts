@@ -18,7 +18,7 @@ export class ActionEffectRuntimeSystem extends ECSystem {
 				const ownerId = component.parent.id ? component.parent.id : '<unknown>';
 				const runtime = BmsxConsoleRuntime.instance;
 				if (runtime) {
-					runtime.reportEngineError(error);
+					runtime.handleLuaError(error);
 				}
 				throw new Error(`[ActionEffectRuntimeSystem] Tick failed for ActionEffectComponent '${ownerId}': ${message}`);
 			}

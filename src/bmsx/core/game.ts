@@ -598,7 +598,7 @@ export class Game {
 				const consoleRuntime = BmsxConsoleRuntime.instance;
 				if (consoleRuntime) {
 					try {
-						consoleRuntime.reportEngineError(error);
+						consoleRuntime.handleLuaError(error);
 						consoleRuntime.onWorldStepAborted(error);
 					} catch { /* ignore secondary failures */ }
 				}

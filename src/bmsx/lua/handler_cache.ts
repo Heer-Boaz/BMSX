@@ -3,6 +3,7 @@ import { isLuaDebuggerPauseSignal } from '../lua/runtime';
 import type { LuaFunctionValue } from '../lua/value';
 
 export interface LuaHandlerFn extends Function {
+	(...args: unknown[]): unknown;
 	__hid: string;
 	__hmod: string;
 	__hpath?: string;
