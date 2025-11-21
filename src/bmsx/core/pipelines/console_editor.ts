@@ -1,5 +1,6 @@
-import type { NodeSpec } from "../../ecs/pipeline";
-import { GAMEPLAY_PRESENTATION_NODE_REFS } from "./gameplay";
+import { $ } from "../game";
+import { TickGroup } from "../../ecs/ecsystem";
+import { DefaultECSPipelineRegistry, type NodeSpec } from "../../ecs/pipeline";
 
 export type ConsoleOverlaySpecOptions = {
 	includeConsole?: boolean;
@@ -10,9 +11,8 @@ export type ConsoleOverlaySpecOptions = {
 
 type ModeSpecOptions = Omit<ConsoleOverlaySpecOptions, 'includeConsole' | 'includeEditor'>;
 
-const PRESENTATION_NODES: NodeSpec[] = GAMEPLAY_PRESENTATION_NODE_REFS.map(ref => ({ ref }));
-
-const CONSOLE_FRAME_NODE: NodeSpec = { ref: 'bmsxConsole.frame' };
+const CONSOLE_FRAME_REF = 'bmsxConsole.frame';
+const CONSOLE_FRAME_NODE: NodeSpec = { ref: CONSOLE_FRAME_REF };
 
 const cloneNode = (node: NodeSpec): NodeSpec => ({
 	ref: node.ref,
@@ -31,6 +31,19 @@ const pushNodes = (target: NodeSpec[], nodes: NodeSpec[]): void => {
 	}
 };
 
+const collectPresentationNodes = (includeConsoleFrame: boolean, includeConsoleDraw?: boolean): NodeSpec[] => {
+	const spec = $.get_gameplay_pipeline_spec();
+	const nodes: NodeSpec[] = [];
+	for (const node of spec) {
+		const desc = DefaultECSPipelineRegistry.get(node.ref)!;
+		const group = node.group ?? desc.group;
+		if (group !== TickGroup.Presentation) continue;
+		if (node.ref === CONSOLE_FRAME_REF && (!includeConsoleFrame || includeConsoleDraw === false)) continue;
+		nodes.push(cloneNode(node));
+	}
+	return nodes;
+};
+
 /**
  * Pipeline variant tailored for console/editor overlays.
  * Keeps rendering systems active while omitting gameplay/physics updates.
@@ -38,13 +51,18 @@ const pushNodes = (target: NodeSpec[], nodes: NodeSpec[]): void => {
 export function buildConsoleOverlaySpec(options: ConsoleOverlaySpecOptions): NodeSpec[] {
 	const includeConsole = options.includeConsole === true;
 	const includeEditor = options.includeEditor === true;
-	const includePresentation = options.includePresentation !== false || includeConsole || includeEditor;
+	const includeConsoleFrame = includeConsole || includeEditor;
+	const includePresentation = options.includePresentation !== false || includeConsoleFrame;
 	const nodes: NodeSpec[] = [];
-	if (includeConsole || includeEditor) {
-		pushNode(nodes, CONSOLE_FRAME_NODE);
-	}
 	if (includePresentation) {
-		pushNodes(nodes, PRESENTATION_NODES);
+		const presentationNodes = collectPresentationNodes(includeConsoleFrame, options.includeConsoleDraw);
+		const hasConsoleFrame = presentationNodes.some(node => node.ref === CONSOLE_FRAME_REF);
+		if (includeConsoleFrame && options.includeConsoleDraw !== false && !hasConsoleFrame) {
+			pushNode(presentationNodes, CONSOLE_FRAME_NODE);
+		}
+		pushNodes(nodes, presentationNodes);
+	} else if (includeConsoleFrame && options.includeConsoleDraw !== false) {
+		pushNode(nodes, CONSOLE_FRAME_NODE);
 	}
 	return nodes;
 }
@@ -62,7 +80,5 @@ export function consoleEditorSpec(options?: ModeSpecOptions): NodeSpec[] {
 }
 
 export function presentationOnlySpec(): NodeSpec[] {
-	const nodes: NodeSpec[] = [];
-	pushNodes(nodes, PRESENTATION_NODES);
-	return nodes;
+	return collectPresentationNodes(false);
 }
