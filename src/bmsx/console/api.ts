@@ -31,6 +31,7 @@ import type { ActionEffectDefinition } from '../action_effects/effect_types';
 import { BmsxConsoleRuntime } from './runtime';
 import type { ConsoleWorldObjectComponentEntry, ConsoleWorldObjectSystemEntry, ConsoleWorldObjectSpawnOptions } from './runtime';
 import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type BehaviorTreeContext, type ConstructorWithBTProperty } from '../ai/behaviourtree';
+import { deep_clone } from '../utils/deep_clone';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
 
@@ -1016,7 +1017,7 @@ export class BmsxConsoleApi {
 	}
 
 	private clone_state_machine_data<T>(source: T): T {
-		return JSON.parse(JSON.stringify(source)) as T;
+		return deep_clone(source);
 	}
 
 	private pointer_viewport_position_internal(): ConsolePointerViewport {

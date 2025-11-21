@@ -69,20 +69,6 @@ function hero:on_spawn()
 		end
 	end,
 	})
-	self.events:on({
-		event = 'demo.hero.blink',
-		subscriber = self,
-		handler = function(event)
-		local facing = (event and event.facing) or self.facing or 'right'
-		local offset = facing == 'left' and -24 or 24
-		self.x = self.x + offset
-		self.y = self.y - 2
-		self.blinking_timer = 0.2
-		self.events:emit('demo.hero.effect', { phase = 'active', facing = facing, offset = offset })
-		emit('demo.hero.effect.global', self, { phase = 'active', facing = facing, offset = offset })
-		self.events:emit('demo.hero.effect', { phase = 'done' })
-	end,
-	})
 end
 
 function hero:emit_move(dx, dy)
@@ -268,6 +254,13 @@ local function define_blink()
 		on_trigger = function(ctx, payload)
 			local owner = ctx.owner
 			local facing = payload and payload.facing or owner.facing or 'right'
+			local offset = facing == 'left' and -24 or 24
+			owner.x = owner.x + offset
+			owner.y = owner.y - 2
+			owner.blinking_timer = 0.2
+			owner.events:emit('demo.hero.effect', { phase = 'active', facing = facing, offset = offset })
+			emit('demo.hero.effect.global', owner, { phase = 'active', facing = facing, offset = offset })
+			owner.events:emit('demo.hero.effect', { phase = 'done' })
 			return { facing = facing }
 		end,
 	})
