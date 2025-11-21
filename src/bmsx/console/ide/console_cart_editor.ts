@@ -732,7 +732,7 @@ export function undo(): void {
 		ide_state.redoStack.shift();
 	}
 	ide_state.redoStack.push(current);
-	restoreSnapshot(snapshot, { preserveSelection: true });
+	restoreSnapshot(snapshot);
 	breakUndoSequence();
 }
 
@@ -753,7 +753,7 @@ export function redo(): void {
 		ide_state.undoStack.shift();
 	}
 	ide_state.undoStack.push(current);
-	restoreSnapshot(snapshot, { preserveSelection: true });
+	restoreSnapshot(snapshot);
 	breakUndoSequence();
 }
 
@@ -6447,15 +6447,10 @@ export function captureSnapshot(): EditorSnapshot {
 }
 
 type RestoreSnapshotOptions = {
-	preserveSelection?: boolean;
 	preserveScroll?: boolean;
 };
 
 export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnapshotOptions): void {
-	const preserveSelection = options?.preserveSelection === true;
-	const preservedSelection = preserveSelection && ide_state.selectionAnchor
-		? { row: ide_state.selectionAnchor.row, column: ide_state.selectionAnchor.column }
-		: null;
 	ide_state.lines = snapshot.lines.slice();
 	invalidateVisualLines();
 	invalidateAllHighlights();
@@ -6464,15 +6459,7 @@ export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnaps
 	ide_state.cursorColumn = snapshot.cursorColumn;
 	ide_state.scrollRow = snapshot.scrollRow;
 	ide_state.scrollColumn = snapshot.scrollColumn;
-	if (!preserveSelection) {
-		if (snapshot.selectionAnchor) {
-			ide_state.selectionAnchor = { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column };
-		} else {
-			ide_state.selectionAnchor = null;
-		}
-	} else {
-		ide_state.selectionAnchor = clampSelectionPosition(preservedSelection);
-	}
+	ide_state.selectionAnchor = null;
 	ide_state.dirty = snapshot.dirty;
 	bumpTextVersion();
 	updateDesiredColumn();
