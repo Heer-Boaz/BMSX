@@ -584,7 +584,10 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaDebuggerSuspension = signal;
 		this.debuggerHaltsGame = true;
 		this.setDebuggerPaused(true, { syncGlobal: false });
-		const shouldActivateEditor = signal.reason === 'exception' || signal.reason === 'breakpoint' || autoActivateOnPause;
+		const editorActive = this.editor?.isActive() === true;
+		const shouldActivateEditor = signal.reason === 'exception'
+			? editorActive || autoActivateOnPause
+			: signal.reason === 'breakpoint' || autoActivateOnPause;
 		if (shouldActivateEditor) {
 			try {
 				this.ensureEditorActive();
@@ -595,8 +598,12 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		if (signal.reason === 'exception') {
 			this.prepareDebuggerExceptionOverlay(signal);
+			if (editorActive || shouldActivateEditor) {
+				this.flushPendingRuntimeErrorOverlay();
+			}
+		} else {
+			this.flushPendingRuntimeErrorOverlay();
 		}
-		this.flushPendingRuntimeErrorOverlay();
 		const state = this.currentFrameState;
 		if (state) {
 			state.haltGame = true;
@@ -676,7 +683,17 @@ export class BmsxConsoleRuntime extends Service {
 		if (interpreter) {
 			interpreter.setExceptionResumeStrategy(strategy);
 		}
+		const shouldClearRuntimeErrorOverlay =
+			!!suspension &&
+			suspension.reason === 'exception' &&
+			(command === 'continue' || command === 'ignore_exception' || command === 'step_out_exception');
 		this.luaRuntimeFailed = false;
+		if (shouldClearRuntimeErrorOverlay) {
+			this.pendingRuntimeErrorOverlay = null;
+			if (this.editor) {
+				this.editor.clearRuntimeErrorOverlay();
+			}
+		}
 		const resumeMode = this.toDebuggerResumeMode(command);
 		emitDebuggerLifecycleEvent({ type: 'continued', mode: resumeMode });
 		this.luaDebuggerSuspension = null;
@@ -907,6 +924,9 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		toggleEditorFromShortcut();
+		if (this.editor.isActive()) {
+			this.flushPendingRuntimeErrorOverlay();
+		}
 	}
 
 	private registerConsoleShortcuts(): void {
@@ -1008,6 +1028,9 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		if (normalized === 'cont') {
+			if (this.luaDebuggerSuspension) {
+				this.continueLuaDebugger();
+			}
 			this.closeConsoleMode(true);
 			return;
 		}
@@ -1851,6 +1874,7 @@ export class BmsxConsoleRuntime extends Service {
 			activator.activate();
 		}
 		this.updateOverlayState(true, true, true);
+		this.flushPendingRuntimeErrorOverlay();
 	}
 
 	public override getState(): BmsxConsoleState | undefined {
@@ -2318,6 +2342,78 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		catch (error) {
 			console.warn('[BmsxConsoleRuntime] Deferred runtime error overlay rendering failed; will retry.', error);
+		}
+	}
+
+	private formatRuntimeErrorLocation(chunkName: string | null, line: number | null, column: number | null): string | null {
+		let label = chunkName && chunkName.length > 0 ? chunkName : null;
+		if (line !== null) {
+			const suffix = column !== null ? `${line}:${column}` : `${line}`;
+			label = label ? `${label}:${suffix}` : suffix;
+		}
+		return label;
+	}
+
+	private formatRuntimeStackFrameForConsole(frame: StackTraceFrame): string {
+		const origin = frame.origin === 'lua' ? 'Lua' : 'JS';
+		let name = frame.functionName && frame.functionName.length > 0 ? frame.functionName : '';
+		if (name.length === 0 && frame.raw && frame.raw.length > 0) {
+			name = frame.raw;
+		}
+		if (name.length === 0 && frame.source && frame.source.length > 0) {
+			name = frame.source;
+		}
+		if (name.length === 0) {
+			name = '(anonymous)';
+		}
+		let location = '';
+		if (frame.source && frame.source.length > 0) {
+			location = frame.source;
+		}
+		if (frame.line !== null) {
+			location = location.length > 0 ? `${location}:${frame.line}` : `${frame.line}`;
+			if (frame.column !== null) {
+				location += `:${frame.column}`;
+			}
+		}
+		return location.length > 0 ? `[${origin}] ${name} (${location})` : `[${origin}] ${name}`;
+	}
+
+	private buildConsoleStackLines(details: RuntimeErrorDetails | null): string[] {
+		if (!details) {
+			return [];
+		}
+		const frames: StackTraceFrame[] = [];
+		for (let index = 0; index < details.luaStack.length; index += 1) {
+			frames.push(details.luaStack[index]);
+		}
+		for (let index = 0; index < details.jsStack.length; index += 1) {
+			frames.push(details.jsStack[index]);
+		}
+		if (frames.length === 0) {
+			return [];
+		}
+		const lines: string[] = ['Stack trace:'];
+		for (let index = 0; index < frames.length; index += 1) {
+			const frame = frames[index];
+			lines.push(`  ${this.formatRuntimeStackFrameForConsole(frame)}`);
+		}
+		return lines;
+	}
+
+	private presentRuntimeErrorInConsole(
+		chunkName: string | null,
+		line: number | null,
+		column: number | null,
+		message: string,
+		details: RuntimeErrorDetails | null,
+	): void {
+		const location = this.formatRuntimeErrorLocation(chunkName, line, column);
+		const headline = location ? `Runtime error at ${location}: ${message}` : `Runtime error: ${message}`;
+		this.consoleMode.appendStderr(headline);
+		const stackLines = this.buildConsoleStackLines(details);
+		for (let index = 0; index < stackLines.length; index += 1) {
+			this.consoleMode.appendStderr(stackLines[index]);
 		}
 	}
 
@@ -3151,6 +3247,7 @@ export class BmsxConsoleRuntime extends Service {
 		// Extract message and location info
 		const message = this.extractErrorMessage(error);
 		const { line, column, chunkName } = this.extractErrorLocation(error);
+		const editorWasActive = this.editor?.isActive() === true;
 
 		this.luaRuntimeFailed = true;
 		const interpreter = this.luaInterpreter;
@@ -3160,6 +3257,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!this.editor && this.luaProgram) {
 			this.initializeEditor();
 		}
+		const editorIsActive = this.editor?.isActive() === true;
 		const hint = this.lookupChunkResourceInfoNullable(chunkName);
 		this.pendingRuntimeErrorOverlay = {
 			chunkName,
@@ -3169,7 +3267,13 @@ export class BmsxConsoleRuntime extends Service {
 			hint,
 			details: runtimeDetails,
 		};
-		this.flushPendingRuntimeErrorOverlay();
+		if (editorIsActive || editorWasActive) {
+			this.flushPendingRuntimeErrorOverlay();
+		} else {
+			this.openConsoleMode();
+			this.presentRuntimeErrorInConsole(chunkName, line, column, message, runtimeDetails);
+			this.updateOverlayState(true, false, true);
+		}
 		const logMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
 		console.error('[BmsxConsoleRuntime] Lua runtime error:', logMessage, error);
 		if (chunkName && chunkName.startsWith('console:')) {
