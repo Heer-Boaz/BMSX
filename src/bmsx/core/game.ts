@@ -485,6 +485,15 @@ export class Game {
 		// }
 	}
 
+	public get_gameplay_pipeline_spec(): NodeSpec[] {
+		const baseSpec = this._gameplayPipelineSpec.map(node => this.cloneNodeSpec(node));
+		const extensions = collectEcsPipelineExtensions({ world: this.world, registry: DefaultECSPipelineRegistry });
+		for (const node of extensions) {
+			baseSpec.push(this.cloneNodeSpec(node));
+		}
+		return baseSpec;
+	}
+
 	public set_pipeline_override(spec: NodeSpec[] | null): void {
 		if (spec) {
 			this._pipelineOverride = spec.map(node => this.cloneNodeSpec(node));
@@ -600,7 +609,7 @@ export class Game {
 				if (consoleRuntime) {
 					try {
 						consoleRuntime.handleLuaError(error);
-						consoleRuntime.onWorldStepAborted(error);
+						consoleRuntime.onWorldStepAborted();
 					} catch { /* ignore secondary failures */ }
 				}
 				// Abort the remainder of this update to keep state coherent this frame.

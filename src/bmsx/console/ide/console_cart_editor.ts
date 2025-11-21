@@ -1159,17 +1159,29 @@ export function focusChunkSource(chunkName: string | null, hint?: { asset_id: st
 
 export function focusResourceByAsset(asset_id: string, preferredPath?: string | null): void {
 	const descriptors = listResourcesStrict();
-	const match = descriptors.find(entry => entry.asset_id === asset_id);
 	const normalizedPreferred = normalizeResourcePath(preferredPath);
-	if (match) {
-		const effectivePath = normalizedPreferred ? normalizedPreferred : match.path;
-		openResourceDescriptor({ ...match, path: effectivePath });
+	if (normalizedPreferred) {
+		const byAssetAndPath = descriptors.find(entry =>
+			entry.asset_id === asset_id && normalizeResourcePath(entry.path) === normalizedPreferred
+		);
+		if (byAssetAndPath) {
+			openResourceDescriptor(byAssetAndPath);
+			return;
+		}
+		const byPath = descriptors.find(entry => normalizeResourcePath(entry.path) === normalizedPreferred);
+		if (byPath) {
+			openResourceDescriptor(byPath);
+			return;
+		}
+		openResourceDescriptor({ path: normalizedPreferred, type: 'lua', asset_id });
 		return;
 	}
-	if (!normalizedPreferred) {
-		throw new Error(`[ConsoleCartEditor] No resource found for asset '${asset_id}'.`);
+	const match = descriptors.find(entry => entry.asset_id === asset_id);
+	if (match) {
+		openResourceDescriptor(match);
+		return;
 	}
-	openResourceDescriptor({ path: normalizedPreferred, type: 'lua', asset_id });
+	throw new Error(`[ConsoleCartEditor] No resource found for asset '${asset_id}'.`);
 }
 
 export function normalizeChunkName(name: string | null): string {
@@ -1203,12 +1215,46 @@ export function normalizeChunkReference(reference: string | null): string | null
 	return normalized.replace(/\\/g, '/');
 }
 
-export function resolveResourceDescriptorForSource(asset_id: string | null, chunkName: string | null): ConsoleResourceDescriptor | null {
-	const byAsset = asset_id ? findResourceDescriptorByasset_id(asset_id) : null;
-	if (byAsset) {
-		return byAsset;
+function stripExtension(value: string): string {
+	const lastDot = value.lastIndexOf('.');
+	if (lastDot <= 0) {
+		return value;
 	}
+	return value.slice(0, lastDot);
+}
+
+export function resolveResourceDescriptorForSource(asset_id: string | null, chunkName: string | null): ConsoleResourceDescriptor | null {
+	const descriptors = listResourcesStrict();
 	const normalizedChunk = normalizeChunkReference(chunkName);
+	if (normalizedChunk) {
+		const byPath = descriptors.find(entry => entry.path.replace(/\\/g, '/') === normalizedChunk);
+		if (byPath && byPath.type === 'lua') {
+			return byPath;
+		}
+		const segments = normalizedChunk.split('/');
+		const basename = segments.length > 0 ? segments[segments.length - 1] : normalizedChunk;
+		const withoutExt = stripExtension(basename);
+		const byChunkAsset = descriptors.find(entry =>
+			entry.asset_id === basename
+			|| entry.asset_id === withoutExt
+			|| stripExtension(entry.path.replace(/\\/g, '/').split('/').pop() ?? '') === basename
+		);
+		if (byChunkAsset && byChunkAsset.type === 'lua') {
+			return byChunkAsset;
+		}
+		if (byPath) {
+			return byPath;
+		}
+		if (byChunkAsset) {
+			return byChunkAsset;
+		}
+	}
+	if (asset_id) {
+		const byAsset = descriptors.find(entry => entry.asset_id === asset_id) ?? null;
+		if (byAsset) {
+			return byAsset;
+		}
+	}
 	if (!normalizedChunk) {
 		return null;
 	}
@@ -1238,7 +1284,7 @@ export function findResourceDescriptorForChunk(chunkPath: string): ConsoleResour
 	}
 	const segments = normalizedTarget.split('/');
 	const basename = segments.length > 0 ? segments[segments.length - 1] : normalizedTarget;
-	const withoutExt = basename.endsWith('.lua') ? basename.slice(0, -4) : basename;
+	const withoutExt = stripExtension(basename);
 	const byasset_id = descriptors.find(entry => entry.asset_id === basename || entry.asset_id === withoutExt);
 	if (byasset_id) {
 		return byasset_id;
@@ -2072,11 +2118,7 @@ export function toggleEditorFromShortcut(): void {
 		return;
 	}
 	if (ide_state.active) {
-		if (ide_state.dirty) {
-			openActionPrompt('close');
-		} else {
-			deactivate();
-		}
+		deactivate();
 	} else {
 		activate();
 	}
@@ -5643,15 +5685,11 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 		case 'debugRegistry':
 			openDebugPanelTab('registry');
 			return;
-		case 'resume':
-		case 'reboot':
-			activateCodeTab();
-			if (ide_state.dirty) {
-				openActionPrompt(button);
-				return;
-			}
-			performAction(button);
-			return;
+	case 'resume':
+	case 'reboot':
+		activateCodeTab();
+		performAction(button);
+		return;
 	}
 }
 

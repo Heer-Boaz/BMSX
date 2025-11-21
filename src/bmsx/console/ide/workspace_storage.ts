@@ -5,17 +5,22 @@ import { createEntryTabContext, findResourceDescriptorByasset_id, ide_state, ini
 import { WORKSPACE_AUTOSAVE_INTERVAL_MS, workspaceDirtyCache } from './ide_state';
 import type { NavigationHistoryEntry } from './ide_state';
 import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position } from './types';
-import { clamp } from '../../utils/clamp';;
+import { clamp } from '../../utils/clamp';
 import type { StorageService, TimerHandle } from '../../platform/platform';
 import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './debugger_breakpoints';
 import { scheduleIdeOnce } from './ide_timers';
-
-const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
-const METADATA_DIR_NAME = '.bmsx';
-const DIRTY_DIR_NAME = 'dirty';
-const STATE_FILE_NAME = 'ide-state.json';
-const MARKER_FILE_NAME = '~workspace';
-const LOCAL_STORAGE_PREFIX = 'bmsx.workspace';
+import {
+	WORKSPACE_FILE_ENDPOINT,
+	WORKSPACE_MARKER_FILE,
+	buildWorkspaceDirtyDir,
+	buildWorkspaceDirtyEntryPath,
+	buildWorkspaceMetadataPath,
+	buildWorkspaceScratchDirtyPath,
+	buildWorkspaceStateFilePath,
+	buildWorkspaceStorageKey,
+	joinWorkspacePaths,
+	normalizeWorkspacePath,
+} from '../workspace_paths';
 
 export type WorkspaceStoragePaths = {
 	projectRootPath: string;
@@ -51,16 +56,16 @@ export async function configureWorkspaceStorage(projectRootPath: string | null):
 		resetWorkspaceBackends();
 		return;
 	}
-	const normalizedRoot = normalizeRelativePath(projectRootPath);
+	const normalizedRoot = normalizeWorkspacePath(projectRootPath);
 	if (normalizedRoot.length === 0) {
 		storagePaths = null;
 		resetWorkspaceBackends();
 		return;
 	}
 	resetWorkspaceBackends();
-	const metadataDir = joinRelativePaths(normalizedRoot, METADATA_DIR_NAME);
-	const dirtyDir = joinRelativePaths(metadataDir, DIRTY_DIR_NAME);
-	const stateFile = joinRelativePaths(metadataDir, STATE_FILE_NAME);
+	const metadataDir = buildWorkspaceMetadataPath(normalizedRoot);
+	const dirtyDir = buildWorkspaceDirtyDir(normalizedRoot);
+	const stateFile = buildWorkspaceStateFilePath(normalizedRoot);
 	storagePaths = {
 		projectRootPath: normalizedRoot,
 		metadataDir,
@@ -93,25 +98,14 @@ export function buildDirtyFilePath(resourcePath: string): string {
 	if (!storagePaths) {
 		throw new Error('[WorkspaceStorage] Workspace storage not configured.');
 	}
-	const normalizedResource = normalizeRelativePath(resourcePath);
-	if (normalizedResource.length === 0) {
-		throw new Error('[WorkspaceStorage] Resource path is required to build dirty file path.');
-	}
-	const segments = normalizedResource.split('/');
-	const baseName = segments.pop() ?? normalizedResource;
-	const tempName = baseName.startsWith('~') ? baseName : `~${baseName}`;
-	segments.push(tempName);
-	return joinRelativePaths(storagePaths.dirtyDir, ...segments);
+	return buildWorkspaceDirtyEntryPath(storagePaths.projectRootPath, resourcePath);
 }
 
 export function buildScratchDirtyFilePath(contextId: string): string {
 	if (!storagePaths) {
 		throw new Error('[WorkspaceStorage] Workspace storage not configured.');
 	}
-	const sanitized = sanitizeFilenameSegment(contextId);
-	const baseName = sanitized.endsWith('.lua') ? sanitized : `${sanitized}.lua`;
-	const tempName = baseName.startsWith('~') ? baseName : `~${baseName}`;
-	return joinRelativePaths(storagePaths.dirtyDir, '__scratch__', tempName);
+	return buildWorkspaceScratchDirtyPath(storagePaths.projectRootPath, contextId);
 }
 
 export async function readWorkspaceStateFile(): Promise<string | null> {
@@ -201,41 +195,6 @@ async function safeReadText(response: Response): Promise<string> {
 	}
 }
 
-function normalizeRelativePath(input: string): string {
-	const replaced = input.replace(/\\/g, '/').trim();
-	if (replaced.length === 0) {
-		return '';
-	}
-	const parts = replaced.split('/');
-	const stack: string[] = [];
-	for (const part of parts) {
-		if (!part || part === '.') {
-			continue;
-		}
-		if (part === '..') {
-			if (stack.length > 0) {
-				stack.pop();
-			}
-			continue;
-		}
-		stack.push(part);
-	}
-	return stack.join('/');
-}
-
-function joinRelativePaths(...segments: string[]): string {
-	return segments
-		.filter(segment => segment.length > 0)
-		.join('/')
-		.replace(/\/+/g, '/');
-}
-
-function sanitizeFilenameSegment(value: string): string {
-	const replaced = value.replace(/[^A-Za-z0-9._-]/g, '_').replace(/_+/g, '_');
-	const trimmed = replaced.replace(/^[_\.]+/, '');
-	return trimmed.length > 0 ? trimmed : 'untitled';
-}
-
 function attachWorkspaceExitHandler(): void {
 	detachWorkspaceExitHandler();
 	ide_state.disposeWorkspaceExitListener = $.platform.lifecycle.onWillExit(() => {
@@ -321,7 +280,7 @@ export function setupWorkspacePersistence(projectRootPath: string | null): void 
 		ide_state.serverWorkspaceConnected = false;
 		return;
 	}
-	const normalizedRoot = normalizeRelativePath(projectRootPath);
+	const normalizedRoot = normalizeWorkspacePath(projectRootPath);
 	if (normalizedRoot.length === 0) {
 		ide_state.workspaceAutosaveEnabled = false;
 		storagePaths = null;
@@ -606,7 +565,7 @@ class LocalWorkspaceBackend {
 	constructor(private readonly projectRootPath: string, private readonly storage: StorageService) { }
 
 	private makeKey(relativePath: string): string {
-		return `${LOCAL_STORAGE_PREFIX}:${this.projectRootPath}:${relativePath}`;
+		return buildWorkspaceStorageKey(this.projectRootPath, relativePath);
 	}
 
 	async ensureReady(): Promise<void> {
@@ -630,8 +589,8 @@ class ServerWorkspaceBackend {
 	constructor(private readonly projectRootPath: string) { }
 
 	async ensureReady(): Promise<void> {
-		const metadataDir = joinRelativePaths(this.projectRootPath, METADATA_DIR_NAME);
-		const markerPath = joinRelativePaths(metadataDir, MARKER_FILE_NAME);
+		const metadataDir = buildWorkspaceMetadataPath(this.projectRootPath);
+		const markerPath = joinWorkspacePaths(metadataDir, WORKSPACE_MARKER_FILE);
 		await this.writeFile(markerPath, '');
 	}
 

@@ -39,6 +39,7 @@ import type { StackTraceFrame } from 'bmsx/lua/runtime';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { ConsoleFontVariant } from './font';
 import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
+import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, WORKSPACE_FILE_ENDPOINT } from './workspace_paths';
 import { LuaComponent } from '../component/lua_component';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
 import { InputIntentComponent } from '../component/inputintentcomponent';
@@ -399,6 +400,7 @@ export class BmsxConsoleRuntime extends Service {
 	private luaChunkName: string | null = null;
 	private luaSnapshotSave: LuaFunctionValue | null = null;
 	private luaSnapshotLoad: LuaFunctionValue | null = null;
+	private luaVmInitialized = false;
 	private luaRuntimeFailed = false;
 	private readonly luaDebuggerController: LuaDebuggerController = new LuaDebuggerController();
 	private luaDebuggerSuspension: LuaDebuggerPauseSignal | null = null;
@@ -457,7 +459,10 @@ export class BmsxConsoleRuntime extends Service {
 	private currentLuaAssetContext: { category: 'fsm' | 'behavior_tree' | 'service' | 'component_preset' | 'worldobject' | 'other'; asset_id: string } | null = null;
 	private readonly behaviorTreeDiagnostics: Map<string, BehaviorTreeDiagnostic[]> = new Map();
 	private readonly consoleServices: Map<string, LuaServiceBinding> = new Map();
+	private readonly rompackOriginalLua: Map<string, string> = new Map();
 	private hasBooted = false;
+	private workspaceOverrideToken = 0;
+	private hasWorkspaceLuaOverrides = false;
 	private static readonly WORLD_OBJECT_RESERVED_DEFAULT_KEYS = new Set<string>(['id', 'sc', 'btreecontexts']);
 	private static readonly CONSOLE_SINGLE_ARG_KEYWORDS = new Set([
 		'if',
@@ -505,6 +510,9 @@ export class BmsxConsoleRuntime extends Service {
 			storage: this.storage,
 		});
 		this.luaProgram = this.cart.luaProgram ?? null;
+		for (const [asset_id, source] of Object.entries(rompack.lua)) {
+			this.rompackOriginalLua.set(asset_id, source);
+		}
 		this.seedDefaultLuaBuiltins();
 		this.initializeEditor();
 		this.setEditorOverlayResolution(this.overlayResolutionMode);
@@ -590,7 +598,7 @@ export class BmsxConsoleRuntime extends Service {
 			: signal.reason === 'breakpoint' || autoActivateOnPause;
 		if (shouldActivateEditor) {
 			try {
-				this.ensureEditorActive();
+				this.openEditor();
 			}
 			catch (activationError) {
 				console.warn('[BmsxConsoleRuntime] Failed to activate console editor during debugger pause.', activationError);
@@ -920,7 +928,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		if (this.consoleMode.isActive) {
 			this.closeConsoleMode(true);
-			this.ensureEditorActive();
+			this.openEditor();
 			return;
 		}
 		toggleEditorFromShortcut();
@@ -1036,7 +1044,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		if (normalized === 'ide') {
 			this.closeConsoleMode(false);
-			this.ensureEditorActive();
+			this.openEditor();
 			return;
 		}
 		this.executeConsoleCommand(trimmed);
@@ -1438,7 +1446,8 @@ export class BmsxConsoleRuntime extends Service {
 			OverlayPipelineController.setRequest('console', null);
 			return;
 		}
-		this.api.set_render_backend(this.editorRenderBackend);
+		const useEditorBackend = includeEditor;
+		this.api.set_render_backend(useEditorBackend ? this.editorRenderBackend : null);
 		OverlayPipelineController.setRequest('console', {
 			includeConsole,
 			includeEditor,
@@ -1470,12 +1479,14 @@ export class BmsxConsoleRuntime extends Service {
 		this.debuggerHaltsGame = false;
 		this.setDebuggerPaused(false);
 		this.luaRuntimeFailed = false;
+		this.luaVmInitialized = false;
 		this.luaChunkResourceMap.clear();
 		this.resourcePathCache.clear();
 		this.invalidateLuaModuleIndex();
 		this.luaChunkEnvironmentsByAssetId.clear();
 		this.luaChunkEnvironmentsByChunkName.clear();
 		this.luaGenericAssetsExecuted.clear();
+		this.applyLocalWorkspaceDirtyLuaOverrides();
 		if (this.editor) {
 			this.editor.clearRuntimeErrorOverlay();
 		}
@@ -1498,6 +1509,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.resetFrameTiming();
 		this.hasBooted = true;
+		void this.applyServerWorkspaceDirtyLuaOverrides();
 	}
 
 	private resetWorldState(): void {
@@ -1533,14 +1545,6 @@ export class BmsxConsoleRuntime extends Service {
 		return state;
 	}
 
-	private requireFrameState(phase: string): ConsoleFrameState {
-		const state = this.currentFrameState;
-		if (!state) {
-			throw new Error(`[BmsxConsoleRuntime] Frame state unavailable during ${phase}. runConsoleModePhase() must run first.`);
-		}
-		return state;
-	}
-
 	private updateFrameHaltingState(state: ConsoleFrameState): void {
 		const debugPaused = $.paused === true;
 		state.debugPaused = debugPaused;
@@ -1567,7 +1571,6 @@ export class BmsxConsoleRuntime extends Service {
 			this.runDrawPhaseInternal(state);
 		} catch (error) {
 			fault = error;
-			this.recordFrameFault(state ?? this.currentFrameState, error);
 			throw error;
 		} finally {
 			if (fault !== null || this.currentFrameState !== null) {
@@ -1576,47 +1579,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	public runConsoleModePhase(): void {
-		if (!this.tickEnabled) {
-			return;
-		}
-		const state = this.currentFrameState ?? this.beginFrameState();
-		this.runConsolePhase(state);
-	}
-
-	public runEditorModePhase(): void {
-		if (!this.tickEnabled) {
-			return;
-		}
-		const state = this.currentFrameState ?? this.beginFrameState();
-		this.runEditorPhase(state);
-	}
-
-	public runUpdatePhase(): void {
-		if (!this.tickEnabled) {
-			return;
-		}
-		const state = this.requireFrameState('update');
-		this.runUpdatePhaseInternal(state);
-	}
-
-	public runDrawPhase(): void {
-		if (!this.tickEnabled) {
-			return;
-		}
-		const state = this.requireFrameState('draw');
-		this.runDrawPhaseInternal(state);
-	}
-
-	public renderPausedFrame(): void {
-		if (!this.tickEnabled) {
-			return;
-		}
-		this.runFrame();
-	}
-
-	public onWorldStepAborted(error: unknown): void {
-		this.recordFrameFault(this.currentFrameState, error);
+	public onWorldStepAborted(): void {
 		this.abandonFrameState();
 	}
 
@@ -1781,6 +1744,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.consoleMode.deactivate();
 		this.unsubscribeGlobalDebuggerHotkeys();
 		this.updateOverlayState(false, false, true);
+		this.luaVmInitialized = false;
 		if (this.editor) {
 			this.editor.shutdown();
 			this.editor = null;
@@ -1800,19 +1764,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.pendingLuaWarnings = [];
 	}
 
-	private lastFrameFault: { snapshot: ConsoleFrameState | null; error: unknown } | null = null;
 
-	private snapshotFrameState(state: ConsoleFrameState | null): ConsoleFrameState | null {
-		return state ? { ...state } : null;
-	}
-
-	private recordFrameFault(state: ConsoleFrameState | null, error: unknown): void {
-		this.lastFrameFault = { snapshot: this.snapshotFrameState(state), error };
-	}
-
-	public getLastFrameFault(): { snapshot: ConsoleFrameState | null; error: unknown } | null {
-		return this.lastFrameFault;
-	}
 
 	private initializeEditor(): void {
 		if (!this.luaProgram) {
@@ -1824,17 +1776,11 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		const view = $.view;
-		if (!view) {
-			throw new Error('[BmsxConsoleRuntime] Game view unavailable during editor initialization.');
-		}
 		const offscreen = view.offscreenCanvasSize;
-		if (!Number.isFinite(offscreen.x) || !Number.isFinite(offscreen.y) || offscreen.x <= 0 || offscreen.y <= 0) {
-			throw new Error('[BmsxConsoleRuntime] Invalid offscreen dimensions during editor initialization.');
-		}
 		const viewport = { width: offscreen.x, height: offscreen.y };
-		const primaryasset_id = (this.luaProgram && 'asset_id' in this.luaProgram)
-			? (typeof this.luaProgram.asset_id === 'string' ? this.luaProgram.asset_id : null)
-			: null;
+		// Check the primary asset ID for the currently loaded program
+		// Note that this can be null if the program was not loaded from source or has not been saved yet (then the type is BmsxConsoleLuaInlineProgram)!
+		const primaryasset_id = (this.luaProgram as BmsxConsoleLuaAssetProgram).asset_id;
 		this.editor = createConsoleCartEditor({
 			playerIndex: this.playerIndex,
 			metadata: this.cart.meta,
@@ -1861,27 +1807,18 @@ export class BmsxConsoleRuntime extends Service {
 		this.registerConsoleShortcuts();
 	}
 
-	public ensureEditorActive(): void {
-		if (!this.luaProgram) {
-			throw new Error('[BmsxConsoleRuntime] Cannot activate console editor when no Lua program is active.');
-		}
-		const editor = this.editor;
-		if (!editor) {
-			throw new Error('[BmsxConsoleRuntime] Console editor unavailable.');
-		}
-		if (!editor.isActive()) {
-			const activator = editor as unknown as { activate(): void };
-			activator.activate();
-		}
+	public openEditor(): void {
+		this.editor.activate();
 		this.updateOverlayState(true, true, true);
 		this.flushPendingRuntimeErrorOverlay();
 	}
 
 	public override getState(): BmsxConsoleState | undefined {
+		const interpreterReady = this.luaInterpreter !== null && this.luaInterpreter.getChunkEnvironment() !== null;
 		const storageState = this.storage.dump();
 		const luaSnapshot = this.captureLuaSnapshot();
 		const cartState = this.luaProgram ? undefined : this.cart.captureState(this.api);
-		const fallbackLuaState = luaSnapshot === undefined ? this.captureFallbackLuaState() : null;
+		const fallbackLuaState = this.luaVmInitialized && interpreterReady && luaSnapshot === undefined ? this.captureFallbackLuaState() : null;
 		const state: BmsxConsoleState = {
 			luaRuntimeFailed: this.luaRuntimeFailed,
 			luaProgramSourceOverride: this.luaProgramSourceOverride,
@@ -1921,6 +1858,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.luaProgramSourceOverride = null;
 			this.luaChunkName = null;
 		}
+		this.luaVmInitialized = false;
 		this.boot();
 	}
 
@@ -1986,6 +1924,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.resetFrameTiming();
 		this.updateOverlayState(this.consoleMode.isActive, this.editor.isActive(), true);
 		this.redrawAfterStateRestore();
+		this.luaVmInitialized = this.luaInterpreter !== null;
 	}
 
 	private applyLuaProgramHotReload(params: { source: string; chunkName: string; override?: string | null }): void {
@@ -2019,6 +1958,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaRuntimeFailed = false;
 		this.luaProgramSourceOverride = params.override ?? params.source;
 		this.luaChunkName = params.chunkName;
+		this.luaVmInitialized = true;
 		const hotSource = params.override ?? params.source;
 		this.refreshLuaHandlersForChunk(normalizedChunk, hotSource);
 		this.refreshLuaHandlersAfterResume(normalizedChunk);
@@ -2044,6 +1984,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.resetFrameTiming();
 		this.updateOverlayState(this.consoleMode.isActive, this.editor.isActive() === true, true);
 		this.redrawAfterStateRestore();
+		this.luaVmInitialized = this.luaInterpreter !== null;
 	}
 
 	private shouldRunInitForSnapshot(snapshot: BmsxConsoleState): boolean {
@@ -2256,6 +2197,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (program) {
 			this.cacheChunkEnvironment(interpreter, params.chunkName, programasset_id);
 		}
+		this.luaVmInitialized = true;
 
 		const env = interpreter.getGlobalEnvironment();
 		const initName = program?.entry?.init ?? 'init';
@@ -2930,6 +2872,7 @@ export class BmsxConsoleRuntime extends Service {
 				programasset_id = program.asset_id;
 			}
 			this.cacheChunkEnvironment(interpreter, chunkName, programasset_id);
+			this.luaVmInitialized = true;
 		}
 		catch (error) {
 			console.info(`[BmsxConsoleRuntime] Lua boot '${chunkName}' failed.`);
@@ -5671,7 +5614,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.recordLuaWarning(`[WorldObject:${host.id}] Tags are not supported by the InputActionToEffect system.`);
 		}
 
-		if (host.get_component(InputIntentComponent) && !host.get_unique_component(ActionEffectComponent)) {
+		if (host.get_unique_component(InputIntentComponent) && !host.get_unique_component(ActionEffectComponent)) {
 			this.recordLuaWarning(`[WorldObject:${host.id}] InputIntentComponent present without ActionEffectComponent; effect triggers will be unavailable.`);
 		}
 		if (host.get_unique_component(ActionEffectComponent) && options.effects.length === 0) {
@@ -6590,7 +6533,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		let response: HttpResponse;
 		try {
-			response = await fetch('/__bmsx__/lua', {
+			response = await fetch(WORKSPACE_FILE_ENDPOINT, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ path, contents: source }),
@@ -6651,7 +6594,7 @@ export class BmsxConsoleRuntime extends Service {
 			return null;
 		}
 		let response: HttpResponse;
-		const url = `/__bmsx__/lua?path=${encodeURIComponent(path)}`;
+		const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
 		try {
 			response = await fetch(url, { method: 'GET', cache: 'no-store' });
 		} catch (error) {
@@ -6736,6 +6679,9 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private async prefetchLuaSourceFromFilesystem(): Promise<void> {
+		if (this.hasWorkspaceLuaOverrides) {
+			return;
+		}
 		const program = this.luaProgram!;
 		const path = this.resolveLuaSourcePath(program)!;
 		const fetched = await this.fetchLuaSourceFromFilesystem(path);
@@ -7227,6 +7173,192 @@ export class BmsxConsoleRuntime extends Service {
 			return normalizedCart;
 		}
 		return this.normalizeWorkspacePath(`${root}/${normalizedCart}`);
+	}
+
+	private applyLocalWorkspaceDirtyLuaOverrides(): void {
+		const root = this.resolveCartProjectRootPath();
+		if (!root) {
+			return;
+		}
+		const rompack = $.rompack;
+		const overrides = new Map<string, string>();
+		for (const [asset_id, cartPath] of Object.entries(rompack.luaSourcePaths)) {
+			if (typeof cartPath !== 'string' || cartPath.length === 0) {
+				continue;
+			}
+			const workspacePath = this.resolveFilesystemPathForCartPath(cartPath);
+			const dirtyPath = buildWorkspaceDirtyEntryPath(root, workspacePath);
+			const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
+			const stored = this.storageService.getItem(storageKey);
+			if (stored === null) {
+				continue;
+			}
+			overrides.set(asset_id, stored);
+		}
+		if (overrides.size === 0) {
+			return;
+		}
+		this.applyWorkspaceLuaOverrides(overrides, false);
+	}
+
+	private applyWorkspaceLuaOverrides(overrides: Map<string, string>, hotReload: boolean): void {
+		const rompack = $.rompack;
+		let updated = false;
+		let mainUpdated = false;
+		const programasset_id = this.luaProgram && 'asset_id' in this.luaProgram ? this.luaProgram.asset_id : null;
+		for (const [asset_id, source] of overrides) {
+			if (rompack.lua[asset_id] === source) {
+				continue;
+			}
+			rompack.lua[asset_id] = source;
+			updated = true;
+			if (programasset_id && asset_id === programasset_id) {
+				this.luaProgramSourceOverride = source;
+				mainUpdated = true;
+			}
+		}
+		if (!updated) {
+			return;
+		}
+		this.hasWorkspaceLuaOverrides = true;
+		this.luaGenericAssetsExecuted.clear();
+		if (!hotReload) {
+			return;
+		}
+		if (!this.luaInterpreter) {
+			return;
+		}
+		if (mainUpdated && this.luaProgram) {
+			const chunkName = this.resolveLuaProgramChunkName(this.luaProgram);
+			const source = this.luaProgramSourceOverride ?? this.resolveLuaProgramSource(this.luaProgram);
+			this.reloadLuaProgramState(source, chunkName, source);
+			return;
+		}
+		this.processPendingLuaAssets('workspace:dirty');
+	}
+
+	private async applyServerWorkspaceDirtyLuaOverrides(): Promise<void> {
+		const token = this.workspaceOverrideToken;
+		const root = this.resolveCartProjectRootPath();
+		if (!root) {
+			return;
+		}
+		const overrides = await this.fetchWorkspaceDirtyLuaOverrides(root);
+		if (token !== this.workspaceOverrideToken) {
+			return;
+		}
+		if (overrides.size === 0) {
+			return;
+		}
+		this.applyWorkspaceLuaOverrides(overrides, true);
+	}
+
+	private async fetchWorkspaceDirtyLuaOverrides(root: string): Promise<Map<string, string>> {
+		const rompack = $.rompack;
+		const tasks: Array<Promise<{ asset_id: string; contents: string } | null>> = [];
+		for (const [asset_id, cartPath] of Object.entries(rompack.luaSourcePaths)) {
+			if (typeof cartPath !== 'string' || cartPath.length === 0) {
+				continue;
+			}
+			const workspacePath = this.resolveFilesystemPathForCartPath(cartPath);
+			const dirtyPath = buildWorkspaceDirtyEntryPath(root, workspacePath);
+			tasks.push(this.fetchWorkspaceFile(dirtyPath).then((contents) => {
+				if (contents === null) {
+					return null;
+				}
+				return { asset_id, contents };
+			}));
+		}
+		if (tasks.length === 0) {
+			return new Map();
+		}
+		const results = await Promise.all(tasks);
+		const overrides = new Map<string, string>();
+		for (let index = 0; index < results.length; index += 1) {
+			const result = results[index];
+			if (!result) {
+				continue;
+			}
+			overrides.set(result.asset_id, result.contents);
+		}
+		return overrides;
+	}
+
+	private async fetchWorkspaceFile(path: string): Promise<string | null> {
+		if (typeof fetch !== 'function') {
+			return null;
+		}
+		const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
+		let response: HttpResponse;
+		try {
+			response = await fetch(url, { method: 'GET', cache: 'no-store' });
+		} catch {
+			return null;
+		}
+		if (!response.ok) {
+			return null;
+		}
+		let payload: unknown;
+		try {
+			payload = await response.json();
+		} catch {
+			return null;
+		}
+		if (!payload || typeof payload !== 'object') {
+			return null;
+		}
+		const record = payload as { contents?: unknown };
+		if (typeof record.contents !== 'string') {
+			return null;
+		}
+		return record.contents;
+	}
+
+	private async deleteWorkspaceFile(path: string): Promise<void> {
+		if (typeof fetch !== 'function') {
+			return;
+		}
+		const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
+		try {
+			await fetch(url, { method: 'DELETE' });
+		} catch {
+			return;
+		}
+	}
+
+	public clearWorkspaceLuaOverrides(): void {
+		this.workspaceOverrideToken = this.workspaceOverrideToken + 1;
+		const rompack = $.rompack;
+		let mainSource: string | null = null;
+		const programasset_id = this.luaProgram && 'asset_id' in this.luaProgram ? this.luaProgram.asset_id : null;
+		for (const [asset_id, source] of this.rompackOriginalLua) {
+			rompack.lua[asset_id] = source;
+			if (programasset_id && asset_id === programasset_id) {
+				mainSource = source;
+			}
+		}
+		this.luaProgramSourceOverride = null;
+		this.hasWorkspaceLuaOverrides = false;
+		this.luaGenericAssetsExecuted.clear();
+		const root = this.resolveCartProjectRootPath();
+		if (root) {
+			for (const cartPath of Object.values(rompack.luaSourcePaths)) {
+				if (typeof cartPath !== 'string' || cartPath.length === 0) {
+					continue;
+				}
+				const workspacePath = this.resolveFilesystemPathForCartPath(cartPath);
+				const dirtyPath = buildWorkspaceDirtyEntryPath(root, workspacePath);
+				const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
+				this.storageService.removeItem(storageKey);
+				void this.deleteWorkspaceFile(dirtyPath);
+			}
+		}
+		if (!this.luaInterpreter || !this.luaProgram || mainSource === null) {
+			return;
+		}
+		const chunkName = this.resolveLuaProgramChunkName(this.luaProgram);
+		this.reloadLuaProgramState(mainSource, chunkName, mainSource);
+		this.processPendingLuaAssets('workspace:reset');
 	}
 
 	private inspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult | null {
