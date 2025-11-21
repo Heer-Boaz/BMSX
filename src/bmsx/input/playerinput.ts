@@ -214,6 +214,7 @@ export class PlayerInput {
 		// Aggregate a single action across multiple bindings (keyboard / gamepad / pointer).
 		// Treat bindings as an OR: anyPressed drives `pressed`, while `all*` flags stay true only when every binding matches.
 		// Track the freshest pressId so guardedjustpressed can distinguish a fresh edge even when multiple buttons map to one action.
+		// More complex OR-of-AND expressions should use ActionDefinitionEvaluator (ActionParser); getActionState is the raw per-binding reader.
 		const getStates = (keys_or_buttons: ButtonId[], getStateFunc: (key: ButtonId, framewindow?: number) => ButtonState): Agg => {
 			let allPressed = true;
 			let allJustPressed = true;
@@ -652,7 +653,7 @@ export class PlayerInput {
 		}
 
 		// Guard is per-action and per-pressId: if the same press has already been accepted this frame,
-		// let it through so multi-binding combos don't suppress fresh edges.
+		// let it through so multi-binding combos don't suppress fresh edges. Use this for one-shots; raw justpressed stays unguarded.
 		const timestamp = this.resolveActionTimestamp(state);
 		const guardMs = this.normalizeGuardWindow(windowOverride);
 		const existing = this.actionGuardRecords.get(action);
