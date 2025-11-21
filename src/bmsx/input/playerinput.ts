@@ -211,6 +211,9 @@ export class PlayerInput {
 			anyConsumed: boolean; leastPressTime: number | null; recentestTimestamp: number | null;
 			lastPressId: number | null; best1DVal: number | null; best1DAbs: number; best2DVal: [number, number] | null; best2DAbs: number;
 		};
+		// Aggregate a single action across multiple bindings (keyboard / gamepad / pointer).
+		// Treat bindings as an OR: anyPressed drives `pressed`, while `all*` flags stay true only when every binding matches.
+		// Track the freshest pressId so guardedjustpressed can distinguish a fresh edge even when multiple buttons map to one action.
 		const getStates = (keys_or_buttons: ButtonId[], getStateFunc: (key: ButtonId, framewindow?: number) => ButtonState): Agg => {
 			let allPressed = true;
 			let allJustPressed = true;
@@ -571,6 +574,7 @@ export class PlayerInput {
 			if (this.lastPollTimestampMs !== null) {
 				const delta = currentTime - this.lastPollTimestampMs;
 				if (Number.isFinite(delta) && delta > 0) {
+					// Guard window follows the observed poll cadence so justpressed remains reliable even if frame timing shifts.
 					this.guardWindowMs = clamp(delta, ACTION_GUARD_MIN_MS, ACTION_GUARD_MAX_MS);
 				}
 			}
@@ -647,9 +651,12 @@ export class PlayerInput {
 			return false;
 		}
 
+		// Guard is per-action and per-pressId: if the same press has already been accepted this frame,
+		// let it through so multi-binding combos don't suppress fresh edges.
 		const timestamp = this.resolveActionTimestamp(state);
 		const guardMs = this.normalizeGuardWindow(windowOverride);
 		const existing = this.actionGuardRecords.get(action);
+		// If the same pressId already passed the guard this frame, don't re-block duplicates from multi-binding combos.
 		const pressId = state.pressId ?? null;
 		if (existing) {
 			if (existing.lastPressId !== null && pressId !== null && existing.lastPressId === pressId) {

@@ -1017,6 +1017,7 @@ export class BmsxConsoleApi {
 	}
 
 	private clone_state_machine_data<T>(source: T): T {
+		// Preserve function handlers on FSM blueprints (JSON stringify would drop them).
 		return deep_clone(source);
 	}
 

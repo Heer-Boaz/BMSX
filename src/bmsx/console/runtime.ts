@@ -41,6 +41,7 @@ import type { ConsoleFontVariant } from './font';
 import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
 import { LuaComponent } from '../component/lua_component';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
+import { InputIntentComponent } from '../component/inputintentcomponent';
 import type { LuaComponentHandlerMap } from '../component/lua_component';
 import { defineActionEffect } from '../action_effects/effect_registry';
 import type { ActionEffectDefinition, ActionEffectHandlerContext, ActionEffectHandlerResult, ActionEffectId } from '../action_effects/effect_types';
@@ -5566,6 +5567,13 @@ export class BmsxConsoleRuntime extends Service {
 			this.recordLuaWarning(`[WorldObject:${host.id}] Tags are not supported by the InputActionToEffect system.`);
 		}
 
+		if (host.get_component(InputIntentComponent) && !host.get_unique_component(ActionEffectComponent)) {
+			this.recordLuaWarning(`[WorldObject:${host.id}] InputIntentComponent present without ActionEffectComponent; effect triggers will be unavailable.`);
+		}
+		if (host.get_unique_component(ActionEffectComponent) && options.effects.length === 0) {
+			this.recordLuaWarning(`[WorldObject:${host.id}] ActionEffectComponent attached but no effects declared on the definition.`);
+		}
+
 		this.attachWorldObjectEffects(host, options.effects);
 	}
 	private attachWorldObjectFsms(host: WorldObject, entries: ReadonlyArray<ConsoleWorldObjectSystemEntry>): void {
@@ -5645,6 +5653,7 @@ export class BmsxConsoleRuntime extends Service {
 				continue;
 			}
 			const definition = this.effectDefinitions.get(effectId);
+			// Effects must be defined before the world object is registered/spawned; ensures handlers are wired once and rehydrated on reload.
 			if (!definition) {
 				throw new Error(`[BmsxConsoleRuntime] World object '${host.id}' declares effect '${effectId}', but it has not been registered. Ensure 'define_effect' runs before the world object definition attaches effects.`);
 			}

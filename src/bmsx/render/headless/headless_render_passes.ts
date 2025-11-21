@@ -92,6 +92,8 @@ function computeDiff(previous: Snapshot | undefined, current: Snapshot): Snapsho
 function emitDiff(label: string, previous: Snapshot | undefined, current: Snapshot): Snapshot {
 	const diff = computeDiff(previous, current);
 	if (diff.length !== 0) {
+		// Headless output is a state diff between frames (first frame is effectively full listing).
+		// Kept verbose for regression hunting; can be gated later with a verbosity flag if needed.
 		console.log(`[headless:${label}] diff`);
 		for (const line of diff) console.log(`  ${line}`);
 	}

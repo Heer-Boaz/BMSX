@@ -18,7 +18,17 @@ export class ActionEffectComponent extends Component {
 
 	private readonly definitions = new Map<ActionEffectId, ActionEffectDefinition>();
 	@excludepropfromsavegame private readonly cooldownUntil = new Map<ActionEffectId, number>();
+	// Component-local clock (advanced by ActionEffectRuntimeSystem); cooldowns depend on this.
 	@excludepropfromsavegame private timeMs = 0;
+
+	/*
+		Wiring map (effects):
+		- Effects are registered via define_effect/register_effect (Lua/console runtime) into the ActionEffectRegistry.
+		- World objects attach ActionEffectComponent and list effect ids in their definition; attachWorldObjectEffects grants those definitions here.
+		- Input-driven triggers: FSM/process_input or InputActionEffect programs call api.trigger_effect/component.trigger(...).
+		- This component enforces cooldown (timeMs advanced by ActionEffectRuntimeSystem) and emits owner events (owner.events + owner.sc.dispatch_event).
+		- Handlers should apply side effects directly and optionally return { event, payload } to customize the emitted event.
+	*/
 
 	constructor(opts: ComponentAttachOptions) {
 		super(opts);
@@ -75,6 +85,7 @@ export class ActionEffectComponent extends Component {
 
 		const owner = this.ownerOrThrow();
 		const outcome = this.invokeHandler(definition, owner, payload);
+		// Effects emit owner-scoped events; handlers should apply side effects directly and return optional payload/event name.
 		const eventType = outcome?.event ?? definition.event ?? (definition.id as string);
 		const eventPayload = outcome && outcome.payload !== undefined ? outcome.payload : payload;
 		const event = this.createOwnerEvent(owner, eventType, eventPayload);

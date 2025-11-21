@@ -56,6 +56,7 @@ export class InputActionEffectSystem extends ECSystem {
 	public override update(): void {
 		this.frameLatchTouched.clear();
 		this.processInputIntents();
+		// InputActionEffect programs run early (TickGroup.Input) so FSM/input checks see consumed events and effect triggers immediately.
 		this.processInputActionPrograms();
 		const latchedKeys = Array.from(this.bindingLatch.keys());
 		for (let idx = 0; idx < latchedKeys.length; idx++) {
@@ -87,6 +88,7 @@ export class InputActionEffectSystem extends ECSystem {
 			const input = $.input.getPlayerInput(playerIndex);
 
 			const effects = obj.get_unique_component(ActionEffectComponent);
+			// Programs that emit effects require ActionEffectComponent on the same object; we fail fast to keep wiring predictable.
 			if (!effects && program.usesEffectTriggers) {
 				throw new Error(`[InputActionEffectSystem] Program '${programKey}' triggers effects but object '${obj.id}' (component '${componentId}') has no ActionEffectComponent.`);
 			}
@@ -190,6 +192,7 @@ export class InputActionEffectSystem extends ECSystem {
 		const explicitIndex = component.playerIndex ?? 0;
 		const fallback = (owner as { player_index?: number }).player_index ?? 0;
 		const resolved = explicitIndex > 0 ? explicitIndex : fallback;
+		// Require a positive player index; avoids silently reading player 0 (unset) and keeps intent bindings deterministic.
 		if (resolved <= 0) {
 			throw new Error(`[InputActionEffectSystem] Unable to resolve player index for object '${owner.id ?? '<unknown>'}'.`);
 		}

@@ -251,6 +251,7 @@ local function define_blink()
 		id = effect_id,
 		event = 'demo.hero.blink',
 		cooldown_ms = 420,
+		-- Handle the blink directly in the effect so a single trigger applies movement/timer/emits without relying on a separate listener.
 		on_trigger = function(ctx, payload)
 			local owner = ctx.owner
 			local facing = payload and payload.facing or owner.facing or 'right'
