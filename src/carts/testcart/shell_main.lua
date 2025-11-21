@@ -1,9 +1,9 @@
-local HERO_DEF_ID = 'demo.hero'
-local HERO_INSTANCE_ID = 'demo.hero.instance'
-local HERO_FSM_ID = 'demo.hero.fsm'
-local HERO_TIMELINE_ID = 'demo.hero.timeline'
-local SERVICE_ID = 'demo.service.director'
-local EFFECT_ID = 'demo.effect.blink'
+local hero_def_id = 'demo.hero'
+local hero_instance_id = 'demo.hero.instance'
+local hero_fsm_id = 'demo.hero.fsm'
+local hero_timeline_id = 'demo.hero.timeline'
+local service_id = 'demo.service.director'
+local effect_id = 'demo.effect.blink'
 
 local demo = {
 	last_plain_input = 'none',
@@ -27,10 +27,10 @@ local function track_plain_input()
 	end
 end
 
-Hero = {}
-Hero.__index = Hero
+hero = {}
+hero.__index = hero
 
-function Hero:create(self)
+function hero:create(self)
 	self.label = 'hero'
 	self.x = 48
 	self.y = 64
@@ -44,9 +44,9 @@ function Hero:create(self)
 	self.blinking_timer = 0
 end
 
-function Hero:on_spawn()
+function hero:on_spawn()
 	self:define_timeline({
-		id = HERO_TIMELINE_ID,
+		id = hero_timeline_id,
 		frames = { 'rise', 'peak', 'cool', 'reset' },
 		ticks_per_frame = 0.35,
 		playback_mode = 'loop',
@@ -56,7 +56,7 @@ function Hero:on_spawn()
 			{ frame = 3, event = 'demo.timeline.frame', payload = { label = 'reset' } },
 		},
 	})
-	self:play_timeline(HERO_TIMELINE_ID)
+	self:play_timeline(hero_timeline_id)
 	self.events:on({
 		event = 'demo.timeline.frame',
 		subscriber = self,
@@ -85,13 +85,13 @@ function Hero:on_spawn()
 	})
 end
 
-function Hero:emit_move(dx, dy)
+function hero:emit_move(dx, dy)
 	local payload = { x = self.x, y = self.y, dx = dx, dy = dy }
 	self.events:emit('demo.hero.move', payload)
 	emit('demo.hero.global_move', self, payload)
 end
 
-function Hero:run_motion(dt)
+function hero:run_motion(dt)
 	local left = game:get_action_state(1, 'console_left')
 	local right = game:get_action_state(1, 'console_right')
 	local up = game:get_action_state(1, 'console_up')
@@ -112,7 +112,7 @@ function Hero:run_motion(dt)
 	return moved
 end
 
-function Hero:try_blink()
+function hero:try_blink()
 	local action = game:get_action_state(1, 'console_a')
 	if not action.guardedjustpressed then
 		return
@@ -120,14 +120,14 @@ function Hero:try_blink()
 	if not self.tempo_ready then
 		return
 	end
-	local ok = trigger_effect(self.id, EFFECT_ID, { payload = { facing = self.facing, t = demo.tick } })
+	local ok = trigger_effect(self.id, effect_id, { payload = { facing = self.facing, t = demo.tick } })
 	if ok then
 		self.events:emit('demo.hero.effect', { phase = 'request', facing = self.facing })
 	end
 end
 
 local function build_hero_fsm()
-	register_prepared_fsm(HERO_FSM_ID, {
+	register_prepared_fsm(hero_fsm_id, {
 		initial = 'idle',
 		states = {
 			idle = {
@@ -177,7 +177,7 @@ local function build_hero_fsm()
 					end,
 					tick = function(self)
 						self.charge_time = self.charge_time + game.deltatime_seconds
-						self:run_motion(game.deltatime_seconds * 0.5)
+						self:run_motion(1)
 						self:try_blink()
 						if not game:get_action_state(1, 'console_b').pressed then
 							self.events:emit('demo.hero.charge', { time = self.charge_time })
@@ -201,22 +201,22 @@ local function build_hero_fsm()
 
 local function register_hero()
 	register_world_object({
-		id = HERO_DEF_ID,
+		id = hero_def_id,
 		class = 'Hero',
 		components = { 'ActionEffectComponent' },
-		fsms = { { id = HERO_FSM_ID } },
-		effects = { EFFECT_ID },
+		fsms = { { id = hero_fsm_id } },
+		effects = { effect_id },
 		defaults = { speed = 54 },
 	})
 end
 
-local Director = { id = SERVICE_ID, stats = { moves = 0, pulses = 0, effects = 0, charges = 0 } }
+local director = { id = service_id, stats = { moves = 0, pulses = 0, effects = 0, charges = 0 } }
 
-function Director:on_boot()
+function director:on_boot()
 	self.stats = { moves = 0, pulses = 0, effects = 0, charges = 0 }
 end
 
-function Director:on_activate()
+function director:on_activate()
 	events:on({
 		event = 'demo.hero.move',
 		subscriber = self,
@@ -239,7 +239,7 @@ function Director:on_activate()
 		end,
 	})
 	events:on({
-		event = 'timeline.frame.' .. HERO_TIMELINE_ID,
+		event = 'timeline.frame.' .. hero_timeline_id,
 		subscriber = self,
 		handler = function(event)
 			self.stats.pulses = self.stats.pulses + 1
@@ -247,22 +247,22 @@ function Director:on_activate()
 	})
 end
 
-function Director:on_tick(dt)
+function director:on_tick(dt)
 	demo.tick = demo.tick + dt
 end
 
-function Director:get_state()
+function director:get_state()
 	return { stats = self.stats, tick = demo.tick }
 end
 
-function Director:set_state(state)
+function director:set_state(state)
 	self.stats = state.stats
 	demo.tick = state.tick
 end
 
 local function define_blink()
 	define_effect({
-		id = EFFECT_ID,
+		id = effect_id,
 		event = 'demo.hero.blink',
 		cooldown_ms = 420,
 		on_trigger = function(ctx, payload)
@@ -278,8 +278,8 @@ function init()
 	build_hero_fsm()
 	define_blink()
 	register_hero()
-	spawn_object(HERO_DEF_ID, { id = HERO_INSTANCE_ID, position = { x = 48, y = 64, z = 0 } })
-	register_service(Director)
+	spawn_object(hero_def_id, { id = hero_instance_id, position = { x = 48, y = 64, z = 0 } })
+	register_service(director)
 end
 
 function update(dt)
@@ -289,18 +289,18 @@ end
 local function draw_hero(hero)
 	local ready = hero.tempo_ready
 	local blinking = hero.blinking_timer > 0
-	local baseColor = blinking and 8 or (ready and 10 or 12)
-	rectfill(hero.x, hero.y, hero.x + hero.sx, hero.y + hero.sy, baseColor)
+	local basecolor = blinking and 8 or (ready and 10 or 12)
+	rectfill(hero.x, hero.y, hero.x + hero.sx, hero.y + hero.sy, basecolor)
 end
 
 local function draw_hud(hero)
-	local stats = Director.stats
+	local stats = director.stats
 	write('BMSX Lua Engine Tour', 6, 4, 15)
 	write('WorldObject : ' .. hero.id, 6, 14, 11)
-	write('Service     : ' .. SERVICE_ID, 6, 22, 11)
+	write('Service     : ' .. service_id, 6, 22, 11)
 	write('FSM state   : ' .. hero.active_state, 6, 30, 7)
-	write('Timeline    : ' .. HERO_TIMELINE_ID, 6, 38, 7)
-	write('Effect      : ' .. EFFECT_ID, 6, 46, 7)
+	write('Timeline    : ' .. hero_timeline_id, 6, 38, 7)
+	write('Effect      : ' .. effect_id, 6, 46, 7)
 	write('Plain input : ' .. demo.last_plain_input, 6, 60, 6)
 	write('Moves       : ' .. stats.moves, 6, 69, 6)
 	write('Pulses      : ' .. stats.pulses, 6, 78, 6)
@@ -314,7 +314,7 @@ end
 
 function draw()
 	cls(1)
-	local hero = world_object(HERO_INSTANCE_ID)
+	local hero = world_object(hero_instance_id)
 	draw_hero(hero)
 	draw_hud(hero)
 end
