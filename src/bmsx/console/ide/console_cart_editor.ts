@@ -2143,7 +2143,6 @@ export function activate(): void {
 		installWindowEventListeners();
 	}
 	ide_state.input.applyOverrides(true, captureKeys);
-	getConsoleRuntime().overlayResolutionMode = ide_state.resolutionMode;
 	if (ide_state.activeCodeTabContextId) {
 		const existingTab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeCodeTabContextId);
 		if (existingTab) {
@@ -6496,7 +6495,7 @@ export function drawTopBar(api: BmsxConsoleApi): void {
 		measureText: (text: string) => measureText(text),
 		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, ide_state.font, text, x, y, color),
 		wordWrapEnabled: ide_state.wordWrapEnabled,
-		resolutionMode: ide_state.resolutionMode,
+		resolutionMode: getConsoleRuntime().overlayResolutionMode,
 		metadata: ide_state.metadata,
 		dirty: ide_state.dirty,
 		resourcePanelVisible: ide_state.resourcePanelVisible,
@@ -7392,11 +7391,10 @@ export function toggleResourcePanelFilterMode(): void {
 }
 
 export function toggleResolutionMode(): void {
-	ide_state.resolutionMode = ide_state.resolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
+	const mode = getConsoleRuntime().toggleOverlayResolutionMode();
 	ensureCursorVisible();
 	ide_state.cursorRevealSuspended = false;
-	getConsoleRuntime().overlayResolutionMode = ide_state.resolutionMode;
-	const modeLabel = ide_state.resolutionMode === 'offscreen' ? 'OFFSCREEN' : 'NATIVE';
+	const modeLabel = mode === 'offscreen' ? 'OFFSCREEN' : 'NATIVE';
 	ide_state.showMessage(`Editor resolution: ${modeLabel}`, constants.COLOR_STATUS_TEXT, 0.5);
 }
 
@@ -9605,7 +9603,6 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	assertMonospace();
 	const initialContext = entryContext ? ide_state.codeTabContexts.get(entryContext.id) ?? null : null;
 	ide_state.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
-	getConsoleRuntime().overlayResolutionMode = ide_state.resolutionMode;
 	ide_state.pendingWindowFocused = ide_state.windowFocused;
 	installPlatformVisibilityListener();
 	installWindowEventListeners();
@@ -9619,4 +9616,3 @@ export function updateBlink(deltaSeconds: number): void {
 		ide_state.cursorVisible = !ide_state.cursorVisible;
 	}
 }
-

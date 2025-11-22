@@ -823,7 +823,7 @@ export class BmsxConsoleRuntime extends Service {
 			const resolutionState = getState('KeyR');
 			if (this.shouldAcceptConsoleHotkey('console-resolution', resolutionState)) {
 				consume('KeyR');
-				this.toggleConsoleResolutionMode();
+				this.toggleOverlayResolutionMode();
 			}
 		}
 		const editorActive = this.editor?.isActive() === true;
@@ -1002,9 +1002,10 @@ export class BmsxConsoleRuntime extends Service {
 		this.consoleMode.deactivate();
 	}
 
-	private toggleConsoleResolutionMode(): void {
+	public toggleOverlayResolutionMode(): 'offscreen' | 'viewport' {
 		const next = this._overlayResolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
 		this.overlayResolutionMode = next;
+		return next;
 	}
 
 	private getPlayerInput(): PlayerInput {

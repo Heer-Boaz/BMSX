@@ -38,7 +38,6 @@ import type {
 	PendingActionPrompt,
 	TabDragState,
 	CrtOptionsSnapshot,
-	EditorResolutionMode,
 	EditContext,
 	CursorScreenInfo,
 	SymbolCatalogEntry,
@@ -220,7 +219,6 @@ export interface IdeState {
 	tabHoverId: string | null;
 	tabDragState: TabDragState | null;
 	crtOptionsSnapshot: CrtOptionsSnapshot | null;
-	resolutionMode: EditorResolutionMode;
 	cursorRevealSuspended: boolean;
 	searchActive: boolean;
 	searchVisible: boolean;
@@ -442,7 +440,6 @@ export const ide_state: IdeState = {
 	tabHoverId: null,
 	tabDragState: null,
 	crtOptionsSnapshot: null,
-	resolutionMode: 'viewport',
 	cursorRevealSuspended: false,
 	searchActive: false,
 	searchVisible: false,
