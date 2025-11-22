@@ -20,7 +20,7 @@ import {
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
 	normalizeWorkspacePath,
-} from '../workspace_paths';
+} from '../workspace';
 
 export type WorkspaceStoragePaths = {
 	projectRootPath: string;

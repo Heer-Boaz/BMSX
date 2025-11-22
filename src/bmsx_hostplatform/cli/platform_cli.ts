@@ -128,6 +128,9 @@ export class CLIPlatformServices implements Platform {
 	readonly lifecycle: Lifecycle;
 	readonly input: InputHub;
 	readonly storage: StorageService;
+	requestShutdown(): void {
+		process.exit(0);
+	}
 	readonly clipboard: ClipboardService;
 	readonly hid: HIDService;
 	readonly onscreenGamepad: OnscreenGamepadPlatform;

@@ -52,6 +52,13 @@ export class BrowserPlatform implements Platform {
 	lifecycle: Lifecycle;
 	input: InputHub;
 	storage: StorageService;
+	requestShutdown(): void {
+		const target = window;
+		target.close();
+		if (!target.closed) {
+			throw new Error('[BrowserPlatform] Window refused to close; close the tab manually.');
+		}
+	}
 	clipboard: ClipboardService;
 	hid: HIDService;
 	onscreenGamepad: OnscreenGamepadPlatform;

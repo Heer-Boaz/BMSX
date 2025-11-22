@@ -39,7 +39,7 @@ import { $ } from '../../core/game';
 import { bvec } from './vertexutils2d';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
-import { drainOverlayFrameIntoSpriteQueue } from '../editor/editor_overlay_submit';
+import { drainOverlayFrameIntoSpriteQueue } from 'bmsx/console/indirect_renderer';
 import {
 	beginSpriteQueue,
 	forEachSpriteQueue,
@@ -122,7 +122,7 @@ export function setupSpriteShaderLocations(backend: GPUBackend): void {
 	texture0Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture0')!;
 	texture1Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture1')!;
 	texture2Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture2')!;
-texture2Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture2')!;
+	texture2Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture2')!;
 	spriteAmbientEnabledLocation = gl.getUniformLocation(spriteShaderProgram, 'u_spriteAmbientEnabled')!;
 	spriteAmbientFactorLocation = gl.getUniformLocation(spriteShaderProgram, 'u_spriteAmbientFactor')!;
 	spriteShaderScaleLocation = gl.getUniformLocation(spriteShaderProgram, 'u_scale');
@@ -416,20 +416,20 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			if (!atlasTexture) {
 				throw new Error("[SpritesPipeline] Texture '_atlas' missing from view textures.");
 			}
-		const dynamicAtlasTexture = gv.textures['_atlas_dynamic'] as WebGLTexture | null | undefined;
-		const engineAtlasTexture = gv.textures[ENGINE_ATLAS_TEXTURE_KEY] as WebGLTexture | null | undefined;
-		const spriteState: SpritesPipelineState = {
-			width,
-			height,
-			baseWidth,
-			baseHeight,
-			// Provide atlas textures for direct binding in render step when needed
-			atlasTex: atlasTexture as WebGLTexture,
-			atlasDynamicTex: (dynamicAtlasTexture ?? null) as WebGLTexture | null,
-			atlasEngineTex: (engineAtlasTexture ?? null) as WebGLTexture | null,
-			ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
-			ambientFactorDefault: gv.spriteAmbientFactorDefault ?? 1.0,
-		};
+			const dynamicAtlasTexture = gv.textures['_atlas_dynamic'] as WebGLTexture | null | undefined;
+			const engineAtlasTexture = gv.textures[ENGINE_ATLAS_TEXTURE_KEY] as WebGLTexture | null | undefined;
+			const spriteState: SpritesPipelineState = {
+				width,
+				height,
+				baseWidth,
+				baseHeight,
+				// Provide atlas textures for direct binding in render step when needed
+				atlasTex: atlasTexture as WebGLTexture,
+				atlasDynamicTex: (dynamicAtlasTexture ?? null) as WebGLTexture | null,
+				atlasEngineTex: (engineAtlasTexture ?? null) as WebGLTexture | null,
+				ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
+				ambientFactorDefault: gv.spriteAmbientFactorDefault ?? 1.0,
+			};
 			registry.setState('sprites', spriteState);
 			// Validate binding layout vs resources
 			registry.validatePassResources('sprites', backend);

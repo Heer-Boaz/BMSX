@@ -12,6 +12,7 @@ import { ConsoleFont } from './font';
 import type { IdeThemeVariant } from './types';
 import { MSX2ScreenHeight } from '../index';
 import { MSX2ScreenWidth } from '../index';
+import type { RomPack } from '../rompack/rompack';
 
 type ManifestViewport = { width: number; height: number };
 type ManifestWorldViewport = { x: number; y: number };
@@ -115,7 +116,7 @@ function buildInputMapping(manifest: CartManifest): {
 	return { keyboard, gamepad };
 }
 
-function deriveLuaProgram(manifest: CartManifest) {
+function deriveLuaProgram(manifest: CartManifest, rompack: RomPack) {
 	const luaConfig = manifest.lua ?? {};
 	const asset_id = luaConfig.asset_id;
 	if (!asset_id || asset_id.length === 0) {
@@ -126,6 +127,8 @@ function deriveLuaProgram(manifest: CartManifest) {
 	return {
 		asset_id: asset_id,
 		chunkName,
+		source: rompack.lua[asset_id],
+		main: true,
 		entry: {
 			init: entry.init ?? 'init',
 			update: entry.update ?? 'update',
@@ -168,7 +171,7 @@ export async function startCart(args: BootArgs): Promise<void> {
 
 	const { moduleId, playerIndex, viewport, worldViewport, caseInsensitiveLua } = deriveConsoleOptions(manifest);
 	const meta = deriveMetadata(manifest);
-	const program = deriveLuaProgram(manifest);
+	const program = deriveLuaProgram(manifest, args.rompack);
 	const cartridge = createLuaConsoleCartridge({ meta, program });
 	const module = createBmsxConsoleModule(cartridge, {
 		moduleId,

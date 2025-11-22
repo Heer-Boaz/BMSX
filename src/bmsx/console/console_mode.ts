@@ -17,7 +17,7 @@ import {
 } from './ide/inline_text_field';
 import type { InlineInputOptions, InlineTextField, CursorScreenInfo, EditContext, LuaCompletionItem } from './ide/types';
 import { INITIAL_REPEAT_DELAY, REPEAT_INTERVAL, TAB_SPACES } from './ide/constants';
-import { EditorConsoleRenderBackend } from './render_backend';
+import { EditorConsoleRenderBackend } from './indirect_renderer';
 import { renderInlineCaret, type CaretDrawOps } from './ide/render_caret';
 import { ide_state } from './ide/ide_state';
 import {
@@ -37,11 +37,18 @@ import type {
 import { consumeIdeKey, getIdeKeyState } from './ide/player_input_adapter';
 import type { asset_id } from '../rompack/rompack';
 
-type ConsoleOutputKind = 'prompt' | 'stdout' | 'stderr' | 'system';
+type ConsoleOutputKind =
+	| 'prompt'
+	| 'stdout'
+	| 'stdout_saved'
+	| 'stdout_dirty'
+	| 'stdout_saved_dirty'
+	| 'stderr'
+	| 'system';
 
 type ConsoleOutputEntry = {
 	text: string;
-	kind: ConsoleOutputKind;
+	color: number;
 };
 
 type ConsoleModeOptions = {
@@ -68,7 +75,6 @@ type Viewport = { width: number; height: number };
 
 const MAX_OUTPUT_ENTRIES = 512;
 const MAX_HISTORY_ENTRIES = 256;
-const PROMPT_TEXT = '> ';
 // const PROMPT_GAP = 4;
 const PADDING_X = 10;
 const PADDING_Y = 10;
@@ -80,6 +86,9 @@ const ENABLE_PANEL_BACKDROP = false;
 const OUTPUT_COLORS: Record<ConsoleOutputKind, number> = {
 	prompt: 15,
 	stdout: 15,
+	stdout_saved: 2,
+	stdout_dirty: 5,
+	stdout_saved_dirty: 13,
 	stderr: 9,
 	system: 11,
 };
@@ -129,12 +138,13 @@ export class ConsoleMode {
 	private textVersion = 0;
 	private cachedLines: string[] = [''];
 	private cachedLinesVersion = -1;
+	private promptPrefix = '> ';
 	private cursorScreenInfo: CursorScreenInfo | null = null;
-	private activeCompletionRenderer: EditorConsoleRenderBackend | null = null;
+	private renderer: EditorConsoleRenderBackend | null = null;
 
 	constructor(options: ConsoleModeOptions) {
 		this.font = new ConsoleEditorFont(options.fontVariant);
-		this.caseInsensitive = options.caseInsensitive ?? true;
+		this.caseInsensitive = options.caseInsensitive ?? false;
 		this.maxEntries = options.maxEntries ?? MAX_OUTPUT_ENTRIES;
 		this.playerIndex = options.playerIndex;
 		this.listLuaSymbolsFn = options.listLuaSymbols;
@@ -208,20 +218,24 @@ export class ConsoleMode {
 		this.output.length = 0;
 	}
 
-	public appendPromptEcho(command: string): void {
-		this.appendEntry({ kind: 'prompt', text: `${PROMPT_TEXT}${command}` });
+	public setPromptPrefix(prefix: string): void {
+		this.promptPrefix = prefix;
 	}
 
-	public appendStdout(text: string): void {
-		this.appendEntry({ kind: 'stdout', text });
+	public appendPromptEcho(command: string): void {
+		this.appendEntry({ color: 15, text: `${this.promptPrefix}${command}` });
+	}
+
+	public appendStdout(text: string, color: number = 15): void {
+		this.appendEntry({ color, text });
 	}
 
 	public appendStderr(text: string): void {
-		this.appendEntry({ kind: 'stderr', text });
+		this.appendEntry({ color: 6, text });
 	}
 
 	public appendSystemMessage(text: string): void {
-		this.appendEntry({ kind: 'system', text });
+		this.appendEntry({ color: 14, text });
 	}
 
 	private resolveKeyboardInput(playerInput: PlayerInput): KeyboardInput {
@@ -299,7 +313,7 @@ export class ConsoleMode {
 		const contentWidth = Math.max(0, surface.width - PADDING_X * 2);
 
 		// compute prompt layout and wrapped input segments
-		const promptWidth = this.measureDisplayText(PROMPT_TEXT);
+		const promptWidth = this.measureDisplayText(this.promptPrefix);
 		const firstLineMax = Math.max(8, contentWidth - promptWidth);
 		const otherLineMax = Math.max(8, contentWidth);
 		const displayInput = this.toDisplayText(this.field.text);
@@ -323,9 +337,9 @@ export class ConsoleMode {
 		// draw visible output lines starting at top padding
 		let y = PADDING_Y;
 		for (const line of visibleLines) {
-			const color = resolvePaletteColor(OUTPUT_COLORS[line.kind]);
+			const color = line.color;
 			this.drawGlyphBackgrounds(renderer, line.text, PADDING_X, y);
-			this.drawGlyphRun(renderer, line.text, PADDING_X, y, color);
+			this.drawGlyphRun(renderer, line.text, PADDING_X, y, Msx1Colors[color]);
 			y += lineHeight;
 		}
 
@@ -335,8 +349,8 @@ export class ConsoleMode {
 
 		// draw prompt at the first input line then draw wrapped input lines (first segment after prompt)
 		const promptColor = resolvePaletteColor(OUTPUT_COLORS.prompt);
-		this.drawGlyphBackgrounds(renderer, PROMPT_TEXT, PADDING_X, inputStartY);
-		this.drawGlyphRun(renderer, PROMPT_TEXT, PADDING_X, inputStartY, promptColor);
+		this.drawGlyphBackgrounds(renderer, this.promptPrefix, PADDING_X, inputStartY);
+		this.drawGlyphRun(renderer, this.promptPrefix, PADDING_X, inputStartY, promptColor);
 
 		// draw multi-line input (handles selection and caret)
 		this.drawMultilineInput(renderer, PADDING_X, inputStartY, promptWidth, inputWrap);
@@ -443,13 +457,13 @@ export class ConsoleMode {
 		this.caretVisible = true;
 	}
 
-	private buildWrappedLines(maxWidth: number, maxLines: number): Array<{ text: string; kind: ConsoleOutputKind }> {
-		const lines: Array<{ text: string; kind: ConsoleOutputKind }> = [];
+	private buildWrappedLines(maxWidth: number, maxLines: number): Array<{ text: string; color: number }> {
+		const lines: Array<{ text: string; color: number }> = [];
 		for (let i = 0; i < this.output.length; i += 1) {
 			const entry = this.output[i];
 			const segments = this.wrapText(entry.text, maxWidth);
 			for (let j = 0; j < segments.length; j += 1) {
-				lines.push({ text: segments[j], kind: entry.kind });
+				lines.push({ text: segments[j], color: entry.color });
 			}
 		}
 		if (lines.length > maxLines) {
@@ -691,10 +705,7 @@ export class ConsoleMode {
 	}
 
 	private drawCompletionText(_api: CompletionRenderApi, text: string, x: number, y: number, colorIndex: number): void {
-		const renderer = this.activeCompletionRenderer;
-		if (!renderer) {
-			return;
-		}
+		const renderer = this.renderer;
 		const renderFont = this.font.getRenderFont();
 		renderer.drawText({ kind: 'print', text, x, y, color: resolvePaletteColor(colorIndex) }, renderFont);
 	}
@@ -721,7 +732,7 @@ export class ConsoleMode {
 	}
 
 	private drawCompletionOverlays(renderer: EditorConsoleRenderBackend, surface: Viewport, promptWidth: number): void {
-		this.activeCompletionRenderer = renderer;
+		this.renderer = renderer;
 		const api = this.createCompletionRenderApi(renderer);
 		const bounds = {
 			codeTop: PADDING_Y,
@@ -732,7 +743,7 @@ export class ConsoleMode {
 		};
 		this.completion.drawCompletionPopup(api, bounds);
 		this.completion.drawParameterHintOverlay(api, bounds);
-		this.activeCompletionRenderer = null;
+		this.renderer = null;
 	}
 
 	private buildConsoleModuleAliases(): Map<string, string> {

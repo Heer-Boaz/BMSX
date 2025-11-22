@@ -836,6 +836,10 @@ export class Game {
 		if (idx === -1) return frames.length - 1;
 		return frames.length - 1 - idx;
 	}
+
+	public request_shutdown(): void {
+		this.platform.requestShutdown();
+	}
 }
 
 export var $: Game = new Game()!;

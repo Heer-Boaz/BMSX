@@ -16,19 +16,13 @@ export type BmsxConsoleLuaProgramEntryPoints = {
 	draw?: string;
 };
 
-type BmsxConsoleLuaInlineProgram = {
-	readonly chunkName?: string;
-	readonly source: string;
-};
-
-export type BmsxConsoleLuaAssetProgram = {
+export type BmsxConsoleLuaProgram = {
 	readonly chunkName?: string;
 	readonly asset_id: string;
+	readonly source: string;
 	readonly overrideSource?: string;
-};
-
-export type BmsxConsoleLuaProgram = (BmsxConsoleLuaInlineProgram | BmsxConsoleLuaAssetProgram) & {
 	readonly entry?: BmsxConsoleLuaProgramEntryPoints;
+	readonly main: boolean;
 };
 
 export interface BmsxConsoleCartridge {

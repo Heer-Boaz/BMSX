@@ -2,7 +2,7 @@ import type { StorageService, InputEvt } from '../platform/platform';
 import { BmsxConsoleApi } from './api';
 import { CONSOLE_API_METHOD_METADATA } from './api_metadata';
 import { BmsxConsoleStorage } from './storage';
-import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor, ConsoleLuaMemberCompletionRequest, ConsoleLuaMemberCompletion, BmsxConsoleLuaAssetProgram } from './types';
+import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor, ConsoleLuaMemberCompletionRequest, ConsoleLuaMemberCompletion } from './types';
 import type { RomResourcePath } from '../rompack/rompack';
 import {
 	createLuaInterpreter,
@@ -24,7 +24,7 @@ import { type EventPayload } from '../core/eventemitter';
 import type { GameEvent } from '../core/game_event';
 import type { Identifier, Identifiable } from '../rompack/rompack';
 import { OverlayPipelineController } from '../core/pipelines/overlay_controller';
-import { EditorConsoleRenderBackend } from './render_backend';
+import { EditorConsoleRenderBackend } from './indirect_renderer';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { LuaHandlerCache, type LuaHandlerFn, isLuaHandlerFn } from '../lua/handler_cache';
 import { ActiveStateMachines, StateDefinitions, applyPreparedStateMachine } from '../fsm/fsmlibrary';
@@ -39,7 +39,8 @@ import type { StackTraceFrame } from 'bmsx/lua/runtime';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { ConsoleFontVariant } from './font';
 import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
-import { buildWorkspaceDirtyEntryPath, buildWorkspaceStateFilePath, buildWorkspaceStorageKey, WORKSPACE_FILE_ENDPOINT } from './workspace_paths';
+import { buildWorkspaceDirtyEntryPath, buildWorkspaceStateFilePath, buildWorkspaceStorageKey, WORKSPACE_FILE_ENDPOINT } from './workspace';
+import { collectWorkspaceOverrides, type WorkspaceOverrideRecord } from './workspace';
 import { LuaComponent } from '../component/lua_component';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
 import { InputIntentComponent } from '../component/inputintentcomponent';
@@ -462,7 +463,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly behaviorTreeDiagnostics: Map<string, BehaviorTreeDiagnostic[]> = new Map();
 	private readonly consoleServices: Map<string, LuaServiceBinding> = new Map();
 	private readonly rompackOriginalLua: Map<string, string> = new Map();
-	private readonly workspaceLuaOverrides: Map<string, { source: string; path: string | null }> = new Map();
+	private readonly workspaceLuaOverrides: Map<string, WorkspaceOverrideRecord> = new Map();
 	private hasBooted = false;
 	private workspaceOverrideToken = 0;
 	private hasWorkspaceLuaOverrides = false;
@@ -509,8 +510,9 @@ export class BmsxConsoleRuntime extends Service {
 			openEditor: () => { this.closeConsoleMode(false); this.openEditor(); },
 			resetWorkspace: () => { this.clearWorkspaceLuaOverrides(); },
 			nukeWorkspace: () => { this.nukeWorkspace(); },
+			refreshWorkspaceOverrides: (hotReload) => { this.refreshWorkspaceOverrides(hotReload); },
 			getWorkspaceOverrides: () => this.workspaceLuaOverrides,
-			appendStdout: (text, kind) => { this.consoleMode.appendStdout(text, kind); },
+			appendStdout: (text, color) => { this.consoleMode.appendStdout(text, color); },
 			appendStderr: (text) => { this.consoleMode.appendStderr(text); },
 			appendSystem: (text) => { this.consoleMode.appendSystemMessage(text); },
 		});
@@ -1503,7 +1505,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaChunkEnvironmentsByAssetId.clear();
 		this.luaChunkEnvironmentsByChunkName.clear();
 		this.luaGenericAssetsExecuted.clear();
-		this.applyLocalWorkspaceDirtyLuaOverrides();
+		this.applyLocalWorkspaceDirtyLuaOverrides(false);
 		if (this.editor) {
 			this.editor.clearRuntimeErrorOverlay();
 		}
@@ -1797,7 +1799,7 @@ export class BmsxConsoleRuntime extends Service {
 		const viewport = { width: offscreen.x, height: offscreen.y };
 		// Check the primary asset ID for the currently loaded program
 		// Note that this can be null if the program was not loaded from source or has not been saved yet (then the type is BmsxConsoleLuaInlineProgram)!
-		const primaryasset_id = (this.luaProgram as BmsxConsoleLuaAssetProgram).asset_id;
+		const primaryasset_id = this.luaProgram.asset_id;
 		this.editor = createConsoleCartEditor({
 			playerIndex: this.playerIndex,
 			metadata: this.cart.meta,
@@ -1950,8 +1952,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!program) {
 			throw new Error('[BmsxConsoleRuntime] No Lua program available for hot reload.');
 		}
-		let programasset_id: string | null = null;
-		programasset_id = (program as BmsxConsoleLuaAssetProgram).asset_id;
+		let programasset_id: string | null = program.asset_id;
 		const normalizedChunk = this.normalizeChunkName(params.chunkName);
 		const previousEnvironment = this.luaChunkEnvironmentsByChunkName.get(normalizedChunk) ?? null;
 		interpreter.clearLastFaultEnvironment();
@@ -1984,10 +1985,6 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private reloadLuaProgramState(source: string, chunkName: string, override?: string | null): void {
-		const program = this.luaProgram;
-		if (!program) {
-			throw new Error('[BmsxConsoleRuntime] No Lua program available for reload.');
-		}
 		this.applyProgramSourceToCartridge(source, chunkName);
 		const hotReloadSource = override ?? source;
 		this.luaProgramSourceOverride = hotReloadSource;
@@ -2199,7 +2196,7 @@ export class BmsxConsoleRuntime extends Service {
 		let programasset_id: string | null = null;
 		if (program) {
 			this.registerProgramChunk(program, params.chunkName);
-			programasset_id = (program as BmsxConsoleLuaAssetProgram).asset_id;
+			programasset_id = program.asset_id;
 		}
 
 		this.registerApiBuiltins(interpreter);
@@ -6740,19 +6737,19 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private resolveLuaProgramSource(program: BmsxConsoleLuaProgram): string {
-		if ('source' in program) {
-			return program.source;
-		}
-		if ('overrideSource' in program && program.overrideSource !== undefined) {
+		if (program.overrideSource !== undefined && program.overrideSource !== null) {
 			return program.overrideSource;
+		}
+		if (program.source !== undefined && program.source !== null) {
+			return program.source;
 		}
 		return $.rompack.lua[program.asset_id];
 	}
 
 	private applyProgramSourceToCartridge(source: string, chunkName: string): void {
 		const program = this.luaProgram!;
-		if ('source' in program) {
-			const mutable = program as { source: string; chunkName?: string };
+		if (program.source !== undefined && program.source !== null) {
+			const mutable = program as typeof program & { source: string; chunkName: string };
 			mutable.source = source;
 			mutable.chunkName = chunkName;
 			this.registerProgramChunk(mutable, chunkName);
@@ -6764,6 +6761,8 @@ export class BmsxConsoleRuntime extends Service {
 			overrideSource: source,
 			chunkName,
 			entry: program.entry,
+			source: program.source,
+			main: program.main,
 		};
 		cartridge.luaProgram = updated;
 		this.luaProgram = updated;
@@ -7200,59 +7199,35 @@ export class BmsxConsoleRuntime extends Service {
 		return this.normalizeWorkspacePath(`${root}/${normalizedCart}`);
 	}
 
-	private applyLocalWorkspaceDirtyLuaOverrides(): void {
+	private applyLocalWorkspaceDirtyLuaOverrides(hotReload: boolean): void {
 		const root = this.resolveCartProjectRootPath();
-		if (!root) {
-			return;
-		}
-		const rompack = $.rompack;
-		const overrides = new Map<string, { source: string; path: string | null }>();
-		for (const [asset_id, cartPath] of Object.entries(rompack.luaSourcePaths)) {
-			if (typeof cartPath !== 'string' || cartPath.length === 0) {
-				continue;
-			}
-			const workspacePath = this.resolveFilesystemPathForCartPath(cartPath);
-			const dirtyPath = buildWorkspaceDirtyEntryPath(root, workspacePath);
-			const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
-			const stored = this.storageService.getItem(storageKey);
-			if (stored === null) {
-				continue;
-			}
-			overrides.set(asset_id, { source: stored, path: dirtyPath });
-		}
+		const overrides = collectWorkspaceOverrides({ rompack: $.rompack, projectRootPath: root, storage: this.storageService });
 		if (overrides.size === 0) {
 			return;
 		}
-		this.applyWorkspaceLuaOverrides(overrides, false);
+		this.applyWorkspaceLuaOverrides(overrides, hotReload);
 	}
 
-	private applyWorkspaceLuaOverrides(overrides: Map<string, { source: string; path: string | null }>, hotReload: boolean): void {
+	private applyWorkspaceLuaOverrides(overrides: Map<string, WorkspaceOverrideRecord>, hotReload: boolean): void {
 		const rompack = $.rompack;
 		let updated = false;
 		let mainUpdated = false;
-		const programasset_id = this.luaProgram && 'asset_id' in this.luaProgram ? this.luaProgram.asset_id : null;
+		const mainAssetId = this.luaProgram && this.luaProgram.main === true ? this.luaProgram.asset_id : null;
 		for (const [asset_id, record] of overrides) {
-			const { source, path } = record;
-			if (rompack.lua[asset_id] === source) {
-				continue;
-			}
-			rompack.lua[asset_id] = source;
-			this.workspaceLuaOverrides.set(asset_id, { source, path });
-			updated = true;
-			if (programasset_id && asset_id === programasset_id) {
-				this.luaProgramSourceOverride = source;
-				mainUpdated = true;
+			const { source, path, cartPath } = record;
+			this.workspaceLuaOverrides.set(asset_id, { source, path, cartPath });
+			if (rompack.lua[asset_id] !== source) {
+				rompack.lua[asset_id] = source;
+				updated = true;
+				if (mainAssetId && asset_id === mainAssetId) {
+					this.luaProgramSourceOverride = source;
+					mainUpdated = true;
+				}
 			}
 		}
-		if (!updated) {
-			return;
-		}
-		this.hasWorkspaceLuaOverrides = true;
+		this.hasWorkspaceLuaOverrides = this.workspaceLuaOverrides.size > 0;
 		this.luaGenericAssetsExecuted.clear();
-		if (!hotReload) {
-			return;
-		}
-		if (!this.luaInterpreter) {
+		if (!updated || !hotReload) {
 			return;
 		}
 		if (mainUpdated && this.luaProgram) {
@@ -7280,9 +7255,13 @@ export class BmsxConsoleRuntime extends Service {
 		this.applyWorkspaceLuaOverrides(overrides, true);
 	}
 
-	private async fetchWorkspaceDirtyLuaOverrides(root: string): Promise<Map<string, { source: string; path: string | null }>> {
+	public refreshWorkspaceOverrides(hotReload: boolean): void {
+		this.applyLocalWorkspaceDirtyLuaOverrides(hotReload);
+	}
+
+	private async fetchWorkspaceDirtyLuaOverrides(root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
 		const rompack = $.rompack;
-		const tasks: Array<Promise<{ asset_id: string; contents: string; path: string | null } | null>> = [];
+		const tasks: Array<Promise<{ asset_id: string; contents: string; path: string | null; cartPath: string } | null>> = [];
 		for (const [asset_id, cartPath] of Object.entries(rompack.luaSourcePaths)) {
 			if (typeof cartPath !== 'string' || cartPath.length === 0) {
 				continue;
@@ -7293,20 +7272,20 @@ export class BmsxConsoleRuntime extends Service {
 				if (contents === null) {
 					return null;
 				}
-				return { asset_id, contents, path: dirtyPath };
+				return { asset_id, contents, path: dirtyPath, cartPath: workspacePath };
 			}));
 		}
 		if (tasks.length === 0) {
-			return new Map<string, { source: string; path: string | null }>();
+			return new Map<string, WorkspaceOverrideRecord>();
 		}
 		const results = await Promise.all(tasks);
-		const overrides = new Map<string, { source: string; path: string | null }>();
+		const overrides = new Map<string, WorkspaceOverrideRecord>();
 		for (let index = 0; index < results.length; index += 1) {
 			const result = results[index];
 			if (!result) {
 				continue;
 			}
-			overrides.set(result.asset_id, { source: result.contents, path: result.path });
+			overrides.set(result.asset_id, { source: result.contents, path: result.path, cartPath: result.cartPath });
 		}
 		return overrides;
 	}

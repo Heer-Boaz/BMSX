@@ -18,6 +18,7 @@ export interface Platform {
 	lifecycle: Lifecycle;
 	input: InputHub;
 	storage: StorageService;
+	requestShutdown(): void;
 	clipboard: ClipboardService;
 	hid: HIDService;
 	onscreenGamepad: OnscreenGamepadPlatform;

@@ -1,7 +1,5 @@
 import { $ } from '../core/game';
-import { normalizeWorkspacePath } from './workspace_paths';
-
-type ConsoleOutputKind = 'prompt' | 'stdout' | 'stdout_saved' | 'stdout_dirty' | 'stdout_saved_dirty' | 'stderr' | 'system';
+import { normalizeWorkspacePath } from './workspace';
 
 type ConsoleCommandHooks = {
 	clearScreen: () => void;
@@ -11,19 +9,20 @@ type ConsoleCommandHooks = {
 	openEditor: () => void;
 	resetWorkspace: () => void;
 	nukeWorkspace: () => void;
-	getWorkspaceOverrides: () => ReadonlyMap<string, { source: string; path: string | null }>;
-	appendStdout: (text: string, kind?: ConsoleOutputKind) => void;
+	refreshWorkspaceOverrides: (hotReload: boolean) => void;
+	getWorkspaceOverrides: () => ReadonlyMap<string, { source: string; path: string | null; cartPath: string }>;
+	appendStdout: (text: string, color?: number) => void;
 	appendStderr: (text: string) => void;
 	appendSystem: (text: string) => void;
 };
 
+type PathEntryKind = 'rom' | 'saved' | 'dirty';
+
 type PathEntry = {
 	path: string;
-	kind: 'rom' | 'saved' | 'dirty';
+	kind: PathEntryKind;
 	label: string;
 };
-
-type ListingKind = 'stdout' | 'stdout_saved' | 'stdout_dirty' | 'stdout_saved_dirty';
 
 const HELP_TEXT = [
 	'----------------------------------------',
@@ -184,6 +183,9 @@ export class ConsoleCommandDispatcher {
 			this.hooks.appendStderr(ERROR_ILLEGAL);
 			return;
 		}
+		if (mode === '-DIRTY' || mode === '-ALL' || mode === '') {
+			this.hooks.refreshWorkspaceOverrides(false);
+		}
 		const paths = this.collectPaths(mode);
 		const cwd = this.cwd;
 		const listing = this.buildListing(paths, cwd);
@@ -194,7 +196,19 @@ export class ConsoleCommandDispatcher {
 		}
 		for (let index = 0; index < filtered.length; index += 1) {
 			const entry = filtered[index];
-			this.hooks.appendStdout(entry.text, entry.kind);
+			let color;
+			switch (entry.kind) {
+				case 'rom':
+					color = 15;
+					break;
+				case 'saved':
+					color = 2;
+					break;
+				case 'dirty':
+					color = 5;
+					break;
+			}
+			this.hooks.appendStdout(entry.text, color);
 		}
 	}
 
@@ -221,7 +235,7 @@ export class ConsoleCommandDispatcher {
 			return;
 		}
 		const next = this.normalizePath(targetRaw.startsWith('/') ? targetRaw : `${this.cwd}/${targetRaw}`);
-		const paths = this.collectPaths('ALL');
+		const paths = this.collectPaths('-ALL');
 		const hasDir = paths.some(entry => this.isAncestor(next, entry.path) || entry.path === next);
 		if (!hasDir) {
 			this.hooks.appendStderr(ERROR_FOLDER);
@@ -254,38 +268,34 @@ export class ConsoleCommandDispatcher {
 		};
 		const includeRom = mode === '' || mode === 'ROM' || mode === '-ALL';
 		const includeSaved = mode === '-SAVED' || mode === '-ALL' || mode === '';
-		const includeDirty = mode === '-DIRTY' || mode === '-ALL';
+		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || mode === '';
 		if (includeRom) {
 			for (const entry of rompack.resourcePaths) {
-				pushPath(entry.path, 'rom', `${entry.type}:${entry.asset_id}`);
+				pushPath(entry.path, 'rom', `${entry.type}`);
 			}
-			for (const [asset_id, path] of Object.entries(rompack.luaSourcePaths)) {
-				pushPath(path, 'rom', `lua:${asset_id}`);
+			for (const [_, path] of Object.entries(rompack.luaSourcePaths)) {
+				pushPath(path, 'rom', `lua`);
 			}
 		}
 		if (includeSaved) {
-			for (const [asset_id, path] of Object.entries(rompack.luaSourcePaths)) {
-				pushPath(path, 'saved', `lua:${asset_id}`);
+			for (const [_, path] of Object.entries(rompack.luaSourcePaths)) {
+				pushPath(path, 'saved', `lua`);
 			}
 		}
 		if (includeDirty) {
 			const overrides = this.hooks.getWorkspaceOverrides();
 			for (const [asset_id, record] of overrides) {
-				const label = `ws:${asset_id}`;
-				if (record.path) {
-					pushPath(record.path, 'dirty', label);
-				} else {
-					const luaPath = rompack.luaSourcePaths[asset_id];
-					if (luaPath) {
-						pushPath(luaPath, 'dirty', label);
-					}
+				const label = `*`;
+				const targetPath = record.cartPath ?? rompack.luaSourcePaths[asset_id];
+				if (targetPath) {
+					pushPath(targetPath, 'dirty', label);
 				}
 			}
 		}
 		return entries;
 	}
 
-	private buildListing(entries: PathEntry[], cwd: string): Array<{ text: string; kind: ListingKind; isDir: boolean }> {
+	private buildListing(entries: PathEntry[], cwd: string): Array<{ text: string; kind: PathEntryKind; isDir: boolean }> {
 		const dirs = new Set<string>();
 		const files = new Map<string, { labels: Set<string>; hasRom: boolean; hasSaved: boolean; hasDirty: boolean }>();
 		for (let index = 0; index < entries.length; index += 1) {
@@ -310,27 +320,27 @@ export class ConsoleCommandDispatcher {
 			const dirName = relative.slice(0, slashIndex);
 			dirs.add(dirName);
 		}
-		const lines: Array<{ text: string; kind: ListingKind; isDir: boolean }> = [];
+		const lines: Array<{ text: string; kind: PathEntryKind; isDir: boolean }> = [];
 		const sortedDirs = Array.from(dirs).sort();
 		for (let i = 0; i < sortedDirs.length; i += 1) {
-			lines.push({ text: `${sortedDirs[i]}/`, kind: 'stdout', isDir: true });
+			lines.push({ text: `${sortedDirs[i]}/`, kind: 'rom', isDir: true });
 		}
 		const sortedFiles = Array.from(files.entries()).sort((a, b) => a[0].localeCompare(b[0]));
 		for (let i = 0; i < sortedFiles.length; i += 1) {
 			const [name, meta] = sortedFiles[i];
 			const label = Array.from(meta.labels).join(', ');
-			let kind: ListingKind = 'stdout';
+			let kind: PathEntryKind = 'rom';
 			if (meta.hasDirty) {
-				kind = meta.hasSaved ? 'stdout_dirty' : 'stdout_dirty';
+				kind = 'dirty';
 			} else if (meta.hasSaved) {
-				kind = 'stdout_saved';
+				kind = 'saved';
 			}
 			lines.push({ text: `${name} (${label})`, kind, isDir: false });
 		}
 		return lines;
 	}
 
-	private filterListing(listing: Array<{ text: string; kind: ListingKind; isDir: boolean }>, filter: string): Array<{ text: string; kind: ListingKind; isDir: boolean }> {
+	private filterListing(listing: Array<{ text: string; kind: PathEntryKind; isDir: boolean }>, filter: string): Array<{ text: string; kind: PathEntryKind; isDir: boolean }> {
 		const normalized = filter.replace(/\/+$/, '');
 		return listing.filter(entry => {
 			const target = entry.text.replace(/\/+$/, '');

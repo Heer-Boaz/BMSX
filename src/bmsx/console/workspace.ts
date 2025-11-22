@@ -1,3 +1,6 @@
+import type { StorageService } from '../platform';
+import type { RomPack } from '../rompack/rompack';
+
 export const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 export const WORKSPACE_STORAGE_PREFIX = 'bmsx.workspace';
 export const WORKSPACE_METADATA_DIR = '.bmsx';
@@ -81,3 +84,34 @@ export function buildWorkspaceStorageKey(projectRootPath: string, relativePath: 
 	const normalizedPath = normalizeWorkspacePath(relativePath);
 	return `${WORKSPACE_STORAGE_PREFIX}:${normalizedRoot}:${normalizedPath}`;
 }
+
+export type WorkspaceOverrideRecord = { source: string; path: string | null; cartPath: string; };
+
+export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRootPath: string | null | undefined; storage: StorageService; }): Map<string, WorkspaceOverrideRecord> {
+	const overrides = new Map<string, WorkspaceOverrideRecord>();
+	const rootRaw = params.projectRootPath ?? null;
+	if (!rootRaw) {
+		return overrides;
+	}
+	const root = normalizeWorkspacePath(rootRaw);
+	if (root.length === 0) {
+		return overrides;
+	}
+	const storage = params.storage;
+	const luaSources = params.rompack.luaSourcePaths;
+	for (const [assetId, cartPath] of Object.entries(luaSources)) {
+		if (typeof cartPath !== 'string' || cartPath.length === 0) {
+			continue;
+		}
+		const normalizedCart = normalizeWorkspacePath(cartPath);
+		const dirtyPath = buildWorkspaceDirtyEntryPath(root, normalizedCart);
+		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
+		const stored = storage.getItem(storageKey);
+		if (stored === null || stored === undefined) {
+			continue;
+		}
+		overrides.set(assetId, { source: stored, path: dirtyPath, cartPath: normalizedCart });
+	}
+	return overrides;
+}
+
