@@ -28,7 +28,7 @@ type MemberCompletionHostRequest = {
 	chunkName: string | null;
 };
 
-export type CompletionRenderApi = Pick<BmsxConsoleApi, 'rect' | 'rectfill'>;
+export type CompletionRenderApi = BmsxConsoleApi;
 
 export interface CompletionHost {
 	// Editor state accessors

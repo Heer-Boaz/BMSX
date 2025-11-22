@@ -28,11 +28,9 @@ export interface TexDesc {
 	transient?: boolean; // hint: contents not needed after pass (storeOp dont_care)
 }
 
-export interface Viewport { x: number; y: number; w: number; h: number; }
-
 export interface View {
 	name: string;
-	viewport: Viewport;
+	viewport: { x: number; y: number; w: number; h: number; };
 	viewMatrix: Float32Array;
 	projMatrix: Float32Array;
 	viewProj: Float32Array;

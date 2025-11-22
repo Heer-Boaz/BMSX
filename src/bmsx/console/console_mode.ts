@@ -26,7 +26,7 @@ import {
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
 	clearKeyPressRecord,
 } from './ide/input_helpers';
-import { CompletionController, type CompletionRenderApi } from './ide/completion_controller';
+import { CompletionController } from './ide/completion_controller';
 import { collectLuaModuleAliases } from './ide/intellisense';
 import type {
 	ConsoleLuaBuiltinDescriptor,
@@ -35,7 +35,9 @@ import type {
 	ConsoleLuaSymbolEntry,
 } from './types';
 import { consumeIdeKey, getIdeKeyState } from './ide/player_input_adapter';
-import type { asset_id } from '../rompack/rompack';
+import type { asset_id, Viewport } from '../rompack/rompack';
+import { drawEditorText } from './ide/text_renderer';
+import type { BmsxConsoleApi } from './api';
 
 type ConsoleOutputKind =
 	| 'prompt'
@@ -70,8 +72,6 @@ type CompletionMemberRequest = {
 	asset_id: asset_id | null;
 	chunkName: string | null;
 };
-
-type Viewport = { width: number; height: number };
 
 const MAX_OUTPUT_ENTRIES = 512;
 const MAX_HISTORY_ENTRIES = 256;
@@ -122,8 +122,6 @@ export class ConsoleMode {
 	private cachedLinesVersion = -1;
 	private promptPrefix = '> ';
 	private cursorScreenInfo: CursorScreenInfo | null = null;
-	private renderer: ConsoleRenderFacade | null = null;
-
 	constructor(options: ConsoleModeOptions) {
 		this.font = new ConsoleEditorFont(options.fontVariant);
 		this.caseInsensitive = options.caseInsensitive ?? false;
@@ -147,7 +145,7 @@ export class ConsoleMode {
 			resetBlink: () => { this.resetBlink(); },
 			revealCursor: () => {},
 			measureText: (text) => this.measureRawText(text),
-			drawText: (api, text, x, y, color) => { this.drawCompletionText(api, text, x, y, color); },
+			drawText: (api, text, x, y, color) => { this.drawCompletionText(api as BmsxConsoleApi, text, x, y, color); },
 			getCursorScreenInfo: () => this.cursorScreenInfo,
 			getLineHeight: () => this.font.lineHeight(),
 			getSpaceAdvance: () => this.font.advance(' '),
@@ -275,8 +273,7 @@ export class ConsoleMode {
 		return submit;
 	}
 
-	public draw(renderer: ConsoleRenderFacade): void {
-		const surface = this.renderer.viewportSize();
+	public draw(api: BmsxConsoleApi, renderer: ConsoleRenderFacade, surface: Viewport): void {
 		const lineHeight = this.font.lineHeight();
 		const contentWidth = Math.max(0, surface.width - PADDING_X * 2);
 
@@ -316,7 +313,7 @@ export class ConsoleMode {
 
 		// draw multi-line input (handles selection and caret)
 		this.drawMultilineInput(renderer, PADDING_X, inputStartY, promptWidth, inputWrap);
-		this.drawCompletionOverlays(renderer, surface, promptWidth);
+		this.drawCompletionOverlays(api, renderer, surface, promptWidth);
 	}
 
 	public recordHistory(command: string): void {
@@ -662,36 +659,11 @@ export class ConsoleMode {
 		return result;
 	}
 
-	private drawCompletionText(_api: CompletionRenderApi, text: string, x: number, y: number, colorIndex: number): void {
-		const renderer = this.renderer;
-		const renderFont = this.font.getRenderFont();
-		renderer.drawText({ kind: 'print', text, x, y, color: Msx1Colors[colorIndex] }, renderFont);
+	private drawCompletionText(api: BmsxConsoleApi, text: string, x: number, y: number, colorIndex: number): void {
+		drawEditorText(api, this.font, text, x, y, colorIndex);
 	}
 
-	private createCompletionRenderApi(renderer: ConsoleRenderFacade): CompletionRenderApi {
-		return {
-			rect: (x0, y0, x1, y1, colorIndex) => renderer.drawRect({
-				kind: 'rect',
-				x0,
-				y0,
-				x1,
-				y1,
-				color: Msx1Colors[colorIndex],
-			}),
-			rectfill: (x0, y0, x1, y1, colorIndex) => renderer.drawRect({
-				kind: 'fill',
-				x0,
-				y0,
-				x1,
-				y1,
-				color: Msx1Colors[colorIndex],
-			}),
-		};
-	}
-
-	private drawCompletionOverlays(renderer: ConsoleRenderFacade, surface: Viewport, promptWidth: number): void {
-		this.renderer = renderer;
-		const api = this.createCompletionRenderApi(renderer);
+	private drawCompletionOverlays(api: BmsxConsoleApi, _renderer: ConsoleRenderFacade, surface: Viewport, promptWidth: number): void {
 		const bounds = {
 			codeTop: PADDING_Y,
 			codeBottom: surface.height - PADDING_Y,
@@ -701,7 +673,6 @@ export class ConsoleMode {
 		};
 		this.completion.drawCompletionPopup(api, bounds);
 		this.completion.drawParameterHintOverlay(api, bounds);
-		this.renderer = null;
 	}
 
 	private buildConsoleModuleAliases(): Map<string, string> {

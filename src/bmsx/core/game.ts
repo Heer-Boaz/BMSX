@@ -341,11 +341,9 @@ export class Game {
 		if (typeof document !== 'undefined') {
 			ensureBrowserBackendFactory();
 		}
-		const viewportSize = worldConfig.viewportSize ?? { x: 256, y: 192 };
+		const viewportSize = { x: worldConfig.viewportSize.width, y: worldConfig.viewportSize.height }; // Ugly and needs to be refactored in the GameView
 		const gview = new GameView({
 			viewportSize,
-			// canvasSize: worldConfig.viewCanvasSize,
-			// offscreenSize: worldConfig.viewOffscreenSize,
 			host: resolvedViewHost,
 		});
 		this._view = gview;
@@ -361,35 +359,25 @@ export class Game {
 
 		const modulationResolver: ModulationPresetResolver = {
 			resolve: (key: asset_id) => {
-				if (key === undefined || key === null) return undefined;
 				const data = rompack.data;
-				if (!data || typeof data !== 'object') return undefined;
-				const keyString = String(key);
-				const direct = (data as Record<string, unknown>)[keyString];
-				if (direct && typeof direct === 'object') {
-					return direct as (RandomModulationParams | ModulationParams);
-				}
-				if (typeof key === 'string') {
-					const segments = key.split('.');
-					let cursor: unknown = data;
-					for (let i = 0; i < segments.length; i++) {
-						const segment = segments[i];
-						if (segment.length === 0) {
-							cursor = undefined;
-							break;
-						}
-						if (cursor && typeof cursor === 'object' && (cursor as Record<string, unknown>)[segment] !== undefined) {
-							cursor = (cursor as Record<string, unknown>)[segment];
-						} else {
-							cursor = undefined;
-							break;
-						}
+				const segments = key.split('.');
+				let cursor: unknown = data;
+				for (let i = 0; i < segments.length; i++) {
+					const segment = segments[i];
+					if (segment.length === 0) {
+						cursor = undefined;
+						break;
 					}
-					if (cursor && typeof cursor === 'object') {
-						return cursor as (RandomModulationParams | ModulationParams);
+					if (cursor && typeof cursor === 'object' && (cursor as Record<string, unknown>)[segment] !== undefined) {
+						cursor = (cursor as Record<string, unknown>)[segment];
+					} else {
+						cursor = undefined;
+						break;
 					}
 				}
-				return undefined;
+				if (cursor && typeof cursor === 'object') {
+					return cursor as (RandomModulationParams | ModulationParams);
+				}
 			},
 		};
 		await SoundMaster.instance.init(rompack.audio, GameOptions.volumePercentage, modulationResolver);
@@ -598,23 +586,23 @@ export class Game {
 	 * @param deltaTime - The time elapsed since the last update.
 	 * @returns void
 	 */
-		public update(deltaTime: number): void {
-			const world = $.world;
-			// Step physics first so world object logic can react to post-collision resolved positions.
-			try {
-				world.run(deltaTime);
-			} catch (error) {
-				// Surface engine/runtime errors to the Console editor when active
-				const consoleRuntime = BmsxConsoleRuntime.instance;
-				if (consoleRuntime) {
-					try {
-						consoleRuntime.handleLuaError(error);
-						consoleRuntime.onWorldStepAborted();
-					} catch { /* ignore secondary failures */ }
-				}
-				// Abort the remainder of this update to keep state coherent this frame.
-				return;
+	public update(deltaTime: number): void {
+		const world = $.world;
+		// Step physics first so world object logic can react to post-collision resolved positions.
+		try {
+			world.run(deltaTime);
+		} catch (error) {
+			// Surface engine/runtime errors to the Console editor when active
+			const consoleRuntime = BmsxConsoleRuntime.instance;
+			if (consoleRuntime) {
+				try {
+					consoleRuntime.handleLuaError(error);
+					consoleRuntime.onWorldStepAborted();
+				} catch { /* ignore secondary failures */ }
 			}
+			// Abort the remainder of this update to keep state coherent this frame.
+			return;
+		}
 
 		if (REWIND_BUFFER_ACTIVATED && ($._turnCounter % REWIND_BUFFER_WRITE_FREQUENCY === 0)) {
 			// --- Rewind snapshot logic ---

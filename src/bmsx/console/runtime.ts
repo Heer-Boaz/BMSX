@@ -1015,13 +1015,12 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 
-	private renderConsoleOverlay(): void {
+		private renderConsoleOverlay(): void {
 		if (!this.consoleMode.isActive) {
 			return;
 		}
-		const view = $.view;
 		this.overlayRenderBackend.beginFrame();
-		this.consoleMode.draw(this.overlayRenderBackend);
+		this.consoleMode.draw(this.api, this.overlayRenderBackend, this.overlayRenderBackend.viewportSize);
 		this.overlayRenderBackend.endFrame();
 		this.overlayRenderedThisFrame = true;
 	}

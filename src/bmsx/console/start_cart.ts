@@ -5,6 +5,7 @@ import {
 	type WorldConfiguration,
 	type KeyboardButton,
 	type BGamepadButton,
+	shallowcopy,
 } from '../index';
 import { createBmsxConsoleModule } from './module';
 import { createLuaConsoleCartridge } from './lua';
@@ -12,10 +13,7 @@ import { ConsoleFont } from './font';
 import type { IdeThemeVariant } from './types';
 import { MSX2ScreenHeight } from '../index';
 import { MSX2ScreenWidth } from '../index';
-import type { RomPack } from '../rompack/rompack';
-
-type ManifestViewport = { width: number; height: number };
-type ManifestWorldViewport = { x: number; y: number };
+import type { RomPack, Viewport } from '../rompack/rompack';
 
 type ManifestInputMapping = Record<string, string[] | undefined>;
 
@@ -37,9 +35,9 @@ type CartManifest = {
 	console?: {
 		moduleId?: string;
 		playerIndex?: number;
-		viewport?: ManifestViewport;
+		viewport?: Viewport;
 		world?: {
-			viewportSize?: ManifestWorldViewport;
+			viewportSize?: Viewport;
 		};
 		caseInsensitiveLua?: boolean;
 	};
@@ -61,8 +59,7 @@ const DEFAULT_META = {
 
 const DEFAULT_MODULE_ID = 'bmsx-console';
 const DEFAULT_PLAYER_INDEX = 1;
-const DEFAULT_WORLD_VIEWPORT = { x: MSX2ScreenWidth, y: MSX2ScreenHeight };
-const DEFAULT_WORLD_VIEWPORT_SIZE = { width: MSX2ScreenWidth, height: MSX2ScreenHeight };
+const DEFAULT_WORLD_VIEWPORT: Viewport = { width: MSX2ScreenWidth, height: MSX2ScreenHeight };
 
 const DEFAULT_KEYBOARD_MAPPING: ManifestInputMapping = {
 	console_left: ['ArrowLeft'],
@@ -149,7 +146,7 @@ function deriveMetadata(manifest: CartManifest) {
 
 function deriveConsoleOptions(manifest: CartManifest) {
 	const consoleConfig = manifest.console ?? {};
-	const viewport = consoleConfig.viewport ?? DEFAULT_WORLD_VIEWPORT_SIZE;
+	const viewport = consoleConfig.viewport ?? DEFAULT_WORLD_VIEWPORT;
 	const playerIndex = Number(consoleConfig.playerIndex) || DEFAULT_PLAYER_INDEX;
 	const moduleId = consoleConfig.moduleId ?? DEFAULT_MODULE_ID;
 	const caseInsensitiveLua = consoleConfig.caseInsensitiveLua;
@@ -181,7 +178,7 @@ export async function startCart(args: BootArgs): Promise<void> {
 	});
 
 	const worldConfig: WorldConfiguration = {
-		viewportSize: { x: worldViewport.x, y: worldViewport.y },
+		viewportSize: shallowcopy(worldViewport),
 		modules: [module],
 	};
 

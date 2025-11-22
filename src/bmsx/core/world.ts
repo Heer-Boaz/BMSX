@@ -6,7 +6,7 @@ import { Stateful, type StateMachineBlueprint } from "../fsm/fsmtypes";
 import { State } from '../fsm/state';
 import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
 import { Camera } from '../render/3d/camera3d';
-import type { ConcreteOrAbstractConstructor, Identifier, RegisterablePersistent, vec2 } from '../rompack/rompack';
+import type { ConcreteOrAbstractConstructor, Identifier, RegisterablePersistent, Viewport } from '../rompack/rompack';
 import type { NodeSpec, SystemDescriptor } from '../ecs/pipeline';
 import type { ECSPipelineExtensionContext } from '../ecs/extensions';
 import { Direction, vec3, type Area, type vec2arr } from "../rompack/rompack";
@@ -63,9 +63,7 @@ export type WorldModule = {
 };
 
 export type WorldConfiguration = {
-	viewportSize?: vec2;
-	// viewCanvasSize?: vec2;
-	// viewOffscreenSize?: vec2;
+	viewportSize: Viewport;
 	collisionService?: TileCollisionService;
 	modules?: Array<WorldModule>;
 	fsmId?: string;
@@ -188,14 +186,14 @@ export class World implements Stateful, RegisterablePersistent {
 	public get activeSpace(): Space { return this.requireSpace(this._activeSpaceId); }
 
 	// Model configuration (size, services, modules)
-	private _size: vec2 = { x: 256, y: 192 };
+	private _size: Viewport = { width: 256, height: 192 };
 	private _collision?: TileCollisionService;
 	private _modules: Array<WorldModule> = [];
 	public get modules(): Array<WorldModule> { return this._modules; }
 	private _fsmId: string = 'world';
 
-	public get gamewidth(): number { return this._size.x; }
-	public get gameheight(): number { return this._size.y; }
+	public get gamewidth(): number { return this._size.width; }
+	public get gameheight(): number { return this._size.height; }
 
 	protected idCounter = 0;
 
@@ -367,7 +365,7 @@ export class World implements Stateful, RegisterablePersistent {
 		this.objToSpaceMap = new Map<Identifier, Identifier>();
 
 		this.paused = false;
-		if (opts.viewportSize) this._size = shallowcopy<vec2>(opts.viewportSize);
+		if (opts.viewportSize) this._size = shallowcopy<Viewport>(opts.viewportSize);
 		if (opts.collisionService) this._collision = opts.collisionService;
 		if (opts.modules) this._modules = opts.modules.slice();
 		if (opts.fsmId) this._fsmId = opts.fsmId;

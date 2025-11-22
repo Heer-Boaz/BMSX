@@ -347,3 +347,4 @@ export interface ImgMeta {
 }
 
 export type TextureSource = unknown & { close?(): void; width: number; height: number; }; // platform-specific source type (e.g. ImageBitmap in browsers)
+export type Viewport = { width: number; height: number; };

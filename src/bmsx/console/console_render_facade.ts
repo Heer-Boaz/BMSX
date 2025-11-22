@@ -4,7 +4,7 @@ import { renderGlyphs } from '../render/glyphs';
 import { $ } from '../core/game';
 import { consumeOverlayFrame, publishOverlayFrame, type EditorOverlayFrame, type OverlayCommand } from '../render/editor/editor_overlay_queue';
 import { new_vec3, new_vec2 } from '../utils/vector_operations';
-import type { vec2 } from '../rompack/rompack';
+import type { Viewport } from '../rompack/rompack';
 
 export type RectCommand = {
 	kind: 'rect' | 'fill';
@@ -53,31 +53,27 @@ export class ConsoleRenderFacade {
 	private frameLogicalHeight = 0;
 	private frameRenderWidth = 0;
 	private frameRenderHeight = 0;
-	private overrideSize: { x: number; y: number } | null = null;
+	private overrideSize: Viewport | null = null;
 	private capturingFrame = false;
 	private static readonly RECT_Z = 0;
 	private static readonly SPRITE_Z = 0;
 
 	public setRenderingViewportType(type: 'viewport' | 'offscreen'): void {
-		let targetSize: vec2;
+		let targetSize: Viewport;
 		switch (type) {
 			case 'viewport':
-				targetSize = $.view.viewportSize;
+				targetSize = { width: $.view.viewportSize.x, height: $.view.viewportSize.y };
 				break;
 			case 'offscreen':
 			default:
-				targetSize = null; // use offscreen size by default
+				targetSize = { width: $.view.offscreenCanvasSize.x, height: $.view.offscreenCanvasSize.y };
 				break;
 		}
-		this.setFrameOverride(targetSize);
+		this.overrideSize = targetSize;
 	}
 
-	public viewportSize(): { width: number; height: number } {
-		return this.overrideSize ? { width: this.overrideSize.x, height: this.overrideSize.y } : { width: $.view.offscreenCanvasSize.x, height: $.view.offscreenCanvasSize.y };
-	}
-
-	private setFrameOverride(size: { x: number; y: number } | null): void {
-		this.overrideSize = size;
+	public get viewportSize(): Viewport {
+		return this.overrideSize;
 	}
 
 	public beginFrame(): void {
@@ -85,8 +81,8 @@ export class ConsoleRenderFacade {
 		const view = $.view;
 		const offscreen = view.offscreenCanvasSize;
 		const logical = view.viewportSize;
-		const renderWidth = this.overrideSize ? this.overrideSize.x : offscreen.x;
-		const renderHeight = this.overrideSize ? this.overrideSize.y : offscreen.y;
+		const renderWidth = this.overrideSize ? this.overrideSize.width : offscreen.x;
+		const renderHeight = this.overrideSize ? this.overrideSize.height : offscreen.y;
 		this.frameLogicalWidth = logical.x;
 		this.frameLogicalHeight = logical.y;
 		this.frameRenderWidth = renderWidth;
