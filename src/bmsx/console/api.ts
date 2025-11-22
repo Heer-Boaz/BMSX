@@ -1,7 +1,7 @@
 import { $, runGate } from '../core/game';
 import { Input } from '../input/input';
 import type { PlayerInput } from '../input/playerinput';
-import type { color, RectRenderSubmission } from '../render/shared/render_types';
+import type { color } from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
 import { ConsoleFont } from './font';
 import { BmsxConsoleStorage } from './storage';
@@ -40,7 +40,6 @@ export type BmsxConsoleApiOptions = {
 	storage: BmsxConsoleStorage;
 };
 
-const DRAW_LAYER: RectRenderSubmission['layer'] = 'ui';
 const CONSOLE_TAB_SPACES = 2;
 
 const POINTER_ACTIONS: readonly string[] = [
@@ -213,22 +212,21 @@ export class BmsxConsoleApi {
 			x1: this.display_width,
 			y1: this.display_height,
 			color,
-			layer: DRAW_LAYER,
 		});
 		this.reset_print_cursor();
 	}
 
 	public rect(x0: number, y0: number, x1: number, y1: number, colorindex: number): void {
-		this.renderBackend.drawRect({ kind: 'rect', x0, y0, x1, y1, color: this.palette_color(colorindex), layer: DRAW_LAYER });
+		this.renderBackend.drawRect({ kind: 'rect', x0, y0, x1, y1, color: this.palette_color(colorindex) });
 	}
 
 	public rectfill(x0: number, y0: number, x1: number, y1: number, colorindex: number): void {
-		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: this.palette_color(colorindex), layer: DRAW_LAYER });
+		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: this.palette_color(colorindex) });
 	}
 
 	public rectfill_color(x0: number, y0: number, x1: number, y1: number, colorvalue: number | color): void {
 		const resolved = typeof colorvalue === 'number' ? this.palette_color(colorvalue) : colorvalue;
-		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: resolved, layer: DRAW_LAYER });
+		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: resolved });
 	}
 
 	public sprite(
@@ -252,7 +250,6 @@ export class BmsxConsoleApi {
 			drawX: x,
 			drawY: y,
 			scale,
-			layer: DRAW_LAYER,
 			flipH: options?.flip_h === true,
 			flipV: options?.flip_v === true,
 			spriteId: null,
