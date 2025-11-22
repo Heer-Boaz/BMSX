@@ -92,7 +92,9 @@ export class BmsxConsoleApi {
 	}
 
 	public set_render_backend(backend: ConsoleRenderFacade | null): void {
-		this.renderBackend = backend ?? new ConsoleRenderFacade();
+		if (backend) {
+			this.renderBackend = backend;
+		}
 	}
 
 	public get display_width(): number {

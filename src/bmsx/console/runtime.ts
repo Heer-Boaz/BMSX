@@ -384,10 +384,18 @@ export class BmsxConsoleRuntime extends Service {
 	private luaProgram: BmsxConsoleLuaProgram | null;
 	private playerIndex: number;
 	private editor: ConsoleCartEditor | null = null;
-	private readonly editorRenderBackend = new ConsoleRenderFacade();
-	private readonly consoleOverlayBackend = new ConsoleRenderFacade();
+	private readonly overlayRenderBackend = new ConsoleRenderFacade();
 	private readonly consoleMode: ConsoleMode;
-	private overlayResolutionMode: 'offscreen' | 'viewport' = 'offscreen';
+	private _overlayResolutionMode: 'offscreen' | 'viewport'; // Set in constructor
+	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
+		this._overlayResolutionMode = value;
+		this.overlayRenderBackend.setRenderingViewportType(value);
+	}
+
+	public get overlayResolutionMode() {
+		return this._overlayResolutionMode;
+	}
+
 	private overlayRenderedThisFrame = false;
 	private readonly consoleCommands: ConsoleCommandDispatcher;
 	private readonly consoleHotkeyLatch = new Map<string, number | null>();
@@ -528,13 +536,14 @@ export class BmsxConsoleRuntime extends Service {
 			playerindex: this.playerIndex,
 			storage: this.storage,
 		});
+		this.api.set_render_backend(this.overlayRenderBackend);
 		this.luaProgram = this.cart.luaProgram ?? null;
 		for (const [asset_id, source] of Object.entries(rompack.lua)) {
 			this.rompackOriginalLua.set(asset_id, source);
 		}
 		this.seedDefaultLuaBuiltins();
 		this.initializeEditor();
-		this.setEditorOverlayResolution(this.overlayResolutionMode);
+		this.overlayResolutionMode = 'offscreen';
 		this.subscribeGlobalDebuggerHotkeys();
 		this.resetFrameTiming();
 		this.boot();
@@ -993,10 +1002,8 @@ export class BmsxConsoleRuntime extends Service {
 		this.consoleMode.deactivate();
 	}
 	private toggleConsoleResolutionMode(): void {
-		const next = this.overlayResolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
-		this.setEditorOverlayResolution(next);
-		// const label = next === 'offscreen' ? 'LOW-RES' : 'HI-RES';
-		// this.consoleMode.appendSystemMessage(`Resolution: ${label}`);
+		const next = this._overlayResolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
+		this.overlayResolutionMode = next;
 	}
 
 	private getPlayerInput(): PlayerInput {
@@ -1013,10 +1020,9 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		const view = $.view;
-		this.consoleOverlayBackend.beginFrame();
-		const targetSize = this.overlayResolutionMode === 'viewport' ? view.viewportSize : view.offscreenCanvasSize;
-		this.consoleMode.draw(this.consoleOverlayBackend, { width: targetSize.x, height: targetSize.y });
-		this.consoleOverlayBackend.endFrame();
+		this.overlayRenderBackend.beginFrame();
+		this.consoleMode.draw(this.overlayRenderBackend);
+		this.overlayRenderBackend.endFrame();
 		this.overlayRenderedThisFrame = true;
 	}
 
@@ -1056,11 +1062,11 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private drawEditorFrame(editor: ConsoleCartEditor): void {
-		this.editorRenderBackend.beginFrame();
+		this.overlayRenderBackend.beginFrame();
 		try {
 			editor.draw(this.api);
 		} finally {
-			this.editorRenderBackend.endFrame();
+			this.overlayRenderBackend.endFrame();
 		}
 	}
 
@@ -1070,7 +1076,6 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.closeConsoleMode(true);
 	}
-
 
 	private executeConsoleCommand(command: string): void {
 		const source = this.prepareConsoleChunk(command);
@@ -1454,37 +1459,16 @@ export class BmsxConsoleRuntime extends Service {
 		this.overlayState = { console: includeConsole, editor: includeEditor };
 		const anyOverlay = includeConsole || includeEditor;
 		if (!anyOverlay) {
-			this.api.set_render_backend(null);
 			publishOverlayFrame(null);
 			OverlayPipelineController.setRequest('console', null);
 			return;
 		}
-		const useEditorBackend = includeEditor;
-		this.api.set_render_backend(useEditorBackend ? this.editorRenderBackend : null);
+		this.api.set_render_backend(this.overlayRenderBackend);
 		OverlayPipelineController.setRequest('console', {
 			includeConsole,
 			includeEditor,
 			includePresentation: true,
 		});
-	}
-
-	public setEditorOverlayResolution(mode: 'offscreen' | 'viewport'): void {
-		const view = $.view;
-		if (!view) {
-			throw new Error('[BmsxConsoleRuntime] Game view unavailable while setting editor overlay resolution.');
-		}
-		const useViewport = mode === 'viewport';
-		if (useViewport) {
-			this.editorRenderBackend.setFrameOverride({ width: view.viewportSize.x, height: view.viewportSize.y });
-		} else {
-			this.editorRenderBackend.setFrameOverride(null);
-		}
-		this.overlayResolutionMode = mode;
-		if (useViewport) {
-			this.consoleOverlayBackend.setFrameOverride({ width: view.viewportSize.x, height: view.viewportSize.y });
-		} else {
-			this.consoleOverlayBackend.setFrameOverride(null);
-		}
 	}
 
 	public boot(): void {

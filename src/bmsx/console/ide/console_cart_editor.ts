@@ -87,7 +87,7 @@ import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar } from './render_top_bar';
 import { renderTabBar } from './render_tab_bar';
 import { renderStatusBar } from './render_status_bar';
-import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderRenameBar, renderLineJumpBar } from './render_inline_bars';
+import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderRenameBar, renderLineJumpBar, type InlineBarsHost } from './render_inline_bars';
 import { renderErrorOverlayText } from './render_error_overlay';
 import {
 	cloneRuntimeErrorDetails,
@@ -2165,7 +2165,7 @@ export function activate(): void {
 		installWindowEventListeners();
 	}
 	ide_state.input.applyOverrides(true, captureKeys);
-	applyResolutionModeToRuntime();
+	getConsoleRuntime().overlayResolutionMode = ide_state.resolutionMode;
 	if (ide_state.activeCodeTabContextId) {
 		const existingTab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeCodeTabContextId);
 		if (existingTab) {
@@ -6579,7 +6579,7 @@ export function drawCreateResourceBar(api: BmsxConsoleApi): void {
 }
 
 export function drawSearchBar(api: BmsxConsoleApi): void {
-	const host: import('./render_inline_bars').InlineBarsHost = {
+	const host: InlineBarsHost = {
 		viewportWidth: ide_state.viewportWidth,
 		headerHeight: ide_state.headerHeight,
 		tabBarHeight: getTabBarTotalHeight(),
@@ -6636,7 +6636,7 @@ export function drawSearchBar(api: BmsxConsoleApi): void {
 }
 
 export function drawResourceSearchBar(api: BmsxConsoleApi): void {
-	const host: import('./render_inline_bars').InlineBarsHost = {
+	const host: InlineBarsHost = {
 		viewportWidth: ide_state.viewportWidth,
 		headerHeight: ide_state.headerHeight,
 		tabBarHeight: getTabBarTotalHeight(),
@@ -6688,7 +6688,7 @@ export function drawResourceSearchBar(api: BmsxConsoleApi): void {
 }
 
 export function drawSymbolSearchBar(api: BmsxConsoleApi): void {
-	const host: import('./render_inline_bars').InlineBarsHost = {
+	const host: InlineBarsHost = {
 		viewportWidth: ide_state.viewportWidth,
 		headerHeight: ide_state.headerHeight,
 		tabBarHeight: getTabBarTotalHeight(),
@@ -6742,7 +6742,7 @@ export function drawSymbolSearchBar(api: BmsxConsoleApi): void {
 }
 
 export function drawRenameBar(api: BmsxConsoleApi): void {
-	const host: import('./render_inline_bars').InlineBarsHost = {
+	const host: InlineBarsHost = {
 		viewportWidth: ide_state.viewportWidth,
 		headerHeight: ide_state.headerHeight,
 		tabBarHeight: getTabBarTotalHeight(),
@@ -6790,7 +6790,7 @@ export function drawRenameBar(api: BmsxConsoleApi): void {
 }
 
 export function drawLineJumpBar(api: BmsxConsoleApi): void {
-	const host: import('./render_inline_bars').InlineBarsHost = {
+	const host: InlineBarsHost = {
 		viewportWidth: ide_state.viewportWidth,
 		headerHeight: ide_state.headerHeight,
 		tabBarHeight: getTabBarTotalHeight(),
@@ -7418,9 +7418,9 @@ export function toggleResolutionMode(): void {
 	refreshViewportDimensions(true);
 	ensureCursorVisible();
 	ide_state.cursorRevealSuspended = false;
-	applyResolutionModeToRuntime();
+	getConsoleRuntime().overlayResolutionMode = ide_state.resolutionMode;
 	const modeLabel = ide_state.resolutionMode === 'offscreen' ? 'OFFSCREEN' : 'NATIVE';
-	ide_state.showMessage(`Editor resolution: ${modeLabel}`, constants.COLOR_STATUS_TEXT, 2.5);
+	ide_state.showMessage(`Editor resolution: ${modeLabel}`, constants.COLOR_STATUS_TEXT, 0.5);
 }
 
 export function toggleWordWrap(): void {
@@ -7464,16 +7464,6 @@ export function toggleWordWrap(): void {
 	ide_state.showMessage(message, constants.COLOR_STATUS_TEXT, 2.5);
 }
 
-export function applyResolutionModeToRuntime(): void {
-	const runtime = getConsoleRuntime();
-	if (!runtime) {
-		return;
-	}
-	runtime.setEditorOverlayResolution(ide_state.resolutionMode);
-}
-
-// showResourcePanel removed; controller handles visibility via toggle/show()
-
 export function hideResourcePanel(): void {
 	// Forward to controller; it resets its internal state
 	ide_state.resourcePanel.hide();
@@ -7482,8 +7472,6 @@ export function hideResourcePanel(): void {
 	resetResourcePanelState();
 	invalidateVisualLines();
 }
-
-
 
 export function openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
 	const navigationCheckpoint = beginNavigationCapture();
@@ -9640,7 +9628,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	assertMonospace();
 	const initialContext = entryContext ? ide_state.codeTabContexts.get(entryContext.id) ?? null : null;
 	ide_state.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
-	applyResolutionModeToRuntime();
+	getConsoleRuntime().overlayResolutionMode = ide_state.resolutionMode;
 	ide_state.pendingWindowFocused = ide_state.windowFocused;
 	installPlatformVisibilityListener();
 	installWindowEventListeners();

@@ -78,10 +78,8 @@ const MAX_HISTORY_ENTRIES = 256;
 // const PROMPT_GAP = 4;
 const PADDING_X = 10;
 const PADDING_Y = 10;
-const PANEL_BACKGROUND_ALPHA = 0.72;
 const CHARACTER_TILE_ALPHA = 1.0;
 const CURSOR_BLINK_PERIOD = 0.8;
-const ENABLE_PANEL_BACKDROP = false;
 
 const OUTPUT_COLORS: Record<ConsoleOutputKind, number> = {
 	prompt: 15,
@@ -93,20 +91,6 @@ const OUTPUT_COLORS: Record<ConsoleOutputKind, number> = {
 	system: 11,
 };
 
-function cloneColor(source: color, alphaOverride?: number): color {
-	return {
-		r: source.r,
-		g: source.g,
-		b: source.b,
-		a: typeof alphaOverride === 'number' ? alphaOverride : source.a ?? 1,
-	};
-}
-
-function resolvePaletteColor(index: number, alpha?: number): color {
-	const base = Msx1Colors[index] ?? Msx1Colors[15];
-	return cloneColor(base, alpha ?? base.a ?? 1);
-}
-
 export class ConsoleMode {
 	private readonly font: ConsoleEditorFont;
 	private readonly caseInsensitive: boolean;
@@ -117,11 +101,9 @@ export class ConsoleMode {
 	private readonly listLuaModuleSymbolsFn: (moduleName: string) => ConsoleLuaSymbolEntry[];
 	private readonly listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
 	private readonly listLuaObjectMembersFn: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
-	private readonly panelBackgroundColor = resolvePaletteColor(0, PANEL_BACKGROUND_ALPHA);
 	private readonly characterBackgroundColor = { r: 0, g: 0, b: 0, a: CHARACTER_TILE_ALPHA } as color;
-	private readonly caretColor = resolvePaletteColor(15);
-	private readonly selectionColor = resolvePaletteColor(11, 0.55);
-	private showBackdrop = ENABLE_PANEL_BACKDROP;
+	private readonly caretColor = Msx1Colors[15];
+	private readonly selectionColor = Msx1Colors[11];
 	private readonly field: InlineTextField = createInlineTextField();
 	private readonly output: ConsoleOutputEntry[] = [];
 	private readonly history: string[] = [];
@@ -188,10 +170,6 @@ export class ConsoleMode {
 		this.completion.setEnterCommitsEnabled(true);
 	}
 
-	public setBackdropVisibility(enabled: boolean): void {
-		this.showBackdrop = enabled;
-	}
-
 	public activate(): void {
 		this.active = true;
 		this.resetInputField('');
@@ -238,14 +216,6 @@ export class ConsoleMode {
 		this.appendEntry({ color: 14, text });
 	}
 
-	private resolveKeyboardInput(playerInput: PlayerInput): KeyboardInput {
-		const handler = playerInput.inputHandlers['keyboard'];
-		if (!handler) {
-			throw new Error('[ConsoleMode] Keyboard handler unavailable.');
-		}
-		return handler as KeyboardInput;
-	}
-
 	public update(deltaSeconds: number): void {
 		if (!this.active) {
 			return;
@@ -262,8 +232,8 @@ export class ConsoleMode {
 		if (!this.active) {
 			return null;
 		}
-		const modifiers = this.resolveModifiers(playerInput);
-		const keyboard = this.resolveKeyboardInput(playerInput);
+		const modifiers = playerInput.getModifiersState();
+		const keyboard = playerInput.inputHandlers['keyboard'] as KeyboardInput;
 		if (this.completion.handleKeybindings(
 			keyboard,
 			deltaSeconds,
@@ -305,10 +275,8 @@ export class ConsoleMode {
 		return submit;
 	}
 
-	public draw(renderer: ConsoleRenderFacade, surface: Viewport): void {
-		if (!this.active) {
-			return;
-		}
+	public draw(renderer: ConsoleRenderFacade): void {
+		const surface = this.renderer.viewportSize();
 		const lineHeight = this.font.lineHeight();
 		const contentWidth = Math.max(0, surface.width - PADDING_X * 2);
 
@@ -328,12 +296,6 @@ export class ConsoleMode {
 		const visibleStart = Math.max(0, wrappedLines.length - maxContentLines);
 		const visibleLines = wrappedLines.slice(visibleStart);
 
-		// draw backdrop sized to visible content + input area
-		if (this.showBackdrop) {
-			const panelHeight = visibleLines.length * lineHeight + inputWrap.segments.length * lineHeight;
-			this.drawBackdrop(renderer, surface.width, panelHeight);
-		}
-
 		// draw visible output lines starting at top padding
 		let y = PADDING_Y;
 		for (const line of visibleLines) {
@@ -348,7 +310,7 @@ export class ConsoleMode {
 		const inputStartY = PADDING_Y + visibleLines.length * lineHeight;
 
 		// draw prompt at the first input line then draw wrapped input lines (first segment after prompt)
-		const promptColor = resolvePaletteColor(OUTPUT_COLORS.prompt);
+		const promptColor = Msx1Colors[OUTPUT_COLORS.prompt];
 		this.drawGlyphBackgrounds(renderer, this.promptPrefix, PADDING_X, inputStartY);
 		this.drawGlyphRun(renderer, this.promptPrefix, PADDING_X, inputStartY, promptColor);
 
@@ -374,10 +336,6 @@ export class ConsoleMode {
 		if (this.output.length > this.maxEntries) {
 			this.output.splice(0, this.output.length - this.maxEntries);
 		}
-	}
-
-	private resolveModifiers(input: PlayerInput): { ctrl: boolean; alt: boolean; shift: boolean; meta: boolean } {
-		return input.getModifiersState();
 	}
 
 	private createInlineHandlers(): InlineFieldEditingHandlers {
@@ -707,7 +665,7 @@ export class ConsoleMode {
 	private drawCompletionText(_api: CompletionRenderApi, text: string, x: number, y: number, colorIndex: number): void {
 		const renderer = this.renderer;
 		const renderFont = this.font.getRenderFont();
-		renderer.drawText({ kind: 'print', text, x, y, color: resolvePaletteColor(colorIndex) }, renderFont);
+		renderer.drawText({ kind: 'print', text, x, y, color: Msx1Colors[colorIndex] }, renderFont);
 	}
 
 	private createCompletionRenderApi(renderer: ConsoleRenderFacade): CompletionRenderApi {
@@ -718,7 +676,7 @@ export class ConsoleMode {
 				y0,
 				x1,
 				y1,
-				color: resolvePaletteColor(colorIndex),
+				color: Msx1Colors[colorIndex],
 			}),
 			rectfill: (x0, y0, x1, y1, colorIndex) => renderer.drawRect({
 				kind: 'fill',
@@ -726,7 +684,7 @@ export class ConsoleMode {
 				y0,
 				x1,
 				y1,
-				color: resolvePaletteColor(colorIndex),
+				color: Msx1Colors[colorIndex],
 			}),
 		};
 	}
@@ -843,7 +801,7 @@ export class ConsoleMode {
 
 	// Replace single-line drawInputField with multi-line aware renderer
 	private drawMultilineInput(renderer: ConsoleRenderFacade, baseX: number, baseY: number, promptWidth: number, wrap: { segments: string[]; starts: number[] }): void {
-		const inputColor = resolvePaletteColor(OUTPUT_COLORS.stdout);
+		const inputColor = Msx1Colors[OUTPUT_COLORS.stdout];
 		const sel = selectionRange(this.field);
 		const cursorIndex = this.field.cursor;
 		const displayText = this.toDisplayText(this.field.text);
@@ -971,22 +929,6 @@ export class ConsoleMode {
 			}
 			cursorX += advance;
 		}
-	}
-
-	private drawBackdrop(renderer: ConsoleRenderFacade, surfaceWidth: number, contentHeight: number): void {
-		const padding = 6;
-		const x0 = Math.max(0, PADDING_X - padding);
-		const x1 = Math.max(x0 + 1, surfaceWidth - PADDING_X + padding);
-		const y0 = Math.max(0, PADDING_Y - padding);
-		const y1 = Math.max(y0 + 1, y0 + contentHeight + padding * 2);
-		renderer.drawRect({
-			kind: 'fill',
-			x0,
-			y0,
-			x1,
-			y1,
-			color: this.panelBackgroundColor,
-		});
 	}
 
 	private toDisplayText(value: string): string {
