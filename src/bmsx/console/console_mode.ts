@@ -17,7 +17,7 @@ import {
 } from './ide/inline_text_field';
 import type { InlineInputOptions, InlineTextField, CursorScreenInfo, EditContext, LuaCompletionItem } from './ide/types';
 import { INITIAL_REPEAT_DELAY, REPEAT_INTERVAL, TAB_SPACES } from './ide/constants';
-import { EditorConsoleRenderBackend } from './indirect_renderer';
+import { ConsoleRenderFacade } from './console_render_facade';
 import { renderInlineCaret, type CaretDrawOps } from './ide/render_caret';
 import { ide_state } from './ide/ide_state';
 import {
@@ -140,7 +140,7 @@ export class ConsoleMode {
 	private cachedLinesVersion = -1;
 	private promptPrefix = '> ';
 	private cursorScreenInfo: CursorScreenInfo | null = null;
-	private renderer: EditorConsoleRenderBackend | null = null;
+	private renderer: ConsoleRenderFacade | null = null;
 
 	constructor(options: ConsoleModeOptions) {
 		this.font = new ConsoleEditorFont(options.fontVariant);
@@ -305,7 +305,7 @@ export class ConsoleMode {
 		return submit;
 	}
 
-	public draw(renderer: EditorConsoleRenderBackend, surface: Viewport): void {
+	public draw(renderer: ConsoleRenderFacade, surface: Viewport): void {
 		if (!this.active) {
 			return;
 		}
@@ -710,7 +710,7 @@ export class ConsoleMode {
 		renderer.drawText({ kind: 'print', text, x, y, color: resolvePaletteColor(colorIndex) }, renderFont);
 	}
 
-	private createCompletionRenderApi(renderer: EditorConsoleRenderBackend): CompletionRenderApi {
+	private createCompletionRenderApi(renderer: ConsoleRenderFacade): CompletionRenderApi {
 		return {
 			rect: (x0, y0, x1, y1, colorIndex) => renderer.drawRect({
 				kind: 'rect',
@@ -731,7 +731,7 @@ export class ConsoleMode {
 		};
 	}
 
-	private drawCompletionOverlays(renderer: EditorConsoleRenderBackend, surface: Viewport, promptWidth: number): void {
+	private drawCompletionOverlays(renderer: ConsoleRenderFacade, surface: Viewport, promptWidth: number): void {
 		this.renderer = renderer;
 		const api = this.createCompletionRenderApi(renderer);
 		const bounds = {
@@ -842,7 +842,7 @@ export class ConsoleMode {
 	}
 
 	// Replace single-line drawInputField with multi-line aware renderer
-	private drawMultilineInput(renderer: EditorConsoleRenderBackend, baseX: number, baseY: number, promptWidth: number, wrap: { segments: string[]; starts: number[] }): void {
+	private drawMultilineInput(renderer: ConsoleRenderFacade, baseX: number, baseY: number, promptWidth: number, wrap: { segments: string[]; starts: number[] }): void {
 		const inputColor = resolvePaletteColor(OUTPUT_COLORS.stdout);
 		const sel = selectionRange(this.field);
 		const cursorIndex = this.field.cursor;
@@ -927,7 +927,7 @@ export class ConsoleMode {
 		}
 	}
 
-	private drawGlyphBackgrounds(renderer: EditorConsoleRenderBackend, text: string, originX: number, originY: number): void {
+	private drawGlyphBackgrounds(renderer: ConsoleRenderFacade, text: string, originX: number, originY: number): void {
 		const display = this.toDisplayText(text);
 		let cursorX = originX;
 		for (let i = 0; i < display.length; i += 1) {
@@ -952,7 +952,7 @@ export class ConsoleMode {
 		}
 	}
 
-	private drawGlyphRun(renderer: EditorConsoleRenderBackend, text: string, originX: number, originY: number, tint: color): void {
+	private drawGlyphRun(renderer: ConsoleRenderFacade, text: string, originX: number, originY: number, tint: color): void {
 		const renderFont = this.font.getRenderFont();
 		const display = this.toDisplayText(text);
 		let cursorX = originX;
@@ -973,7 +973,7 @@ export class ConsoleMode {
 		}
 	}
 
-	private drawBackdrop(renderer: EditorConsoleRenderBackend, surfaceWidth: number, contentHeight: number): void {
+	private drawBackdrop(renderer: ConsoleRenderFacade, surfaceWidth: number, contentHeight: number): void {
 		const padding = 6;
 		const x0 = Math.max(0, PADDING_X - padding);
 		const x1 = Math.max(x0 + 1, surfaceWidth - PADDING_X + padding);

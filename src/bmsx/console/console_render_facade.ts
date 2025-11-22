@@ -21,6 +21,7 @@ export type PrintCommand = {
 	x: number;
 	y: number;
 	color: color;
+	layer?: RenderLayer;
 };
 
 export type SpriteCommand = {
@@ -45,46 +46,14 @@ export type SpriteCommand = {
 	colorize?: color;
 };
 
-export interface AbstractRenderBackend {
-	drawRect(command: RectCommand): void;
-	drawText(command: PrintCommand, font: ConsoleFont): void;
-	drawSprite(command: SpriteCommand): void;
-}
-
-export class DirectConsoleRenderBackend implements AbstractRenderBackend {
-	public drawRect(command: RectCommand): void {
-		const layer = command.layer ?? 'ui';
-		$.view.renderer.submit.rect({
-			kind: command.kind,
-			area: { start: { x: command.x0, y: command.y0 }, end: { x: command.x1, y: command.y1 } },
-			color: command.color,
-			layer,
-		});
-	}
-
-	public drawText(command: PrintCommand, font: ConsoleFont): void {
-		renderGlyphs(command.x, command.y, command.text, 0, font, command.color, undefined, 'ui');
-	}
-
-	public drawSprite(command: SpriteCommand): void {
-		$.view.renderer.submit.sprite({
-			imgid: command.imgId,
-			pos: { x: command.baseX, y: command.baseY, z: 0 },
-			scale: { x: command.scale, y: command.scale },
-			flip: command.flipH || command.flipV ? { flip_h: command.flipH, flip_v: command.flipV } : undefined,
-			layer: command.layer ?? 'ui',
-			colorize: command.colorize ? { ...command.colorize } : undefined,
-		});
-	}
-}
-
-export class EditorConsoleRenderBackend implements AbstractRenderBackend {
+export class ConsoleRenderFacade {
 	private readonly commands: OverlayCommand[] = [];
 	private frameLogicalWidth = 0;
 	private frameLogicalHeight = 0;
 	private frameRenderWidth = 0;
 	private frameRenderHeight = 0;
 	private overrideSize: { width: number; height: number } | null = null;
+	private capturingFrame = false;
 	private static readonly RECT_Z = 0;
 	private static readonly SPRITE_Z = 0;
 
@@ -93,6 +62,7 @@ export class EditorConsoleRenderBackend implements AbstractRenderBackend {
 	}
 
 	public beginFrame(): void {
+		this.capturingFrame = true;
 		const view = $.view;
 		const offscreen = view.offscreenCanvasSize;
 		const logical = view.viewportSize;
@@ -106,19 +76,34 @@ export class EditorConsoleRenderBackend implements AbstractRenderBackend {
 	}
 
 	public drawRect(command: RectCommand): void {
+		const layer = command.layer ?? (this.capturingFrame ? 'editor' : 'ui');
+		if (!this.capturingFrame) {
+			$.view.renderer.submit.rect({
+				kind: command.kind,
+				area: { start: { x: command.x0, y: command.y0, z: ConsoleRenderFacade.RECT_Z }, end: { x: command.x1, y: command.y1, z: ConsoleRenderFacade.RECT_Z } },
+				color: command.color,
+				layer,
+			});
+			return;
+		}
 		const rect: RectRenderSubmission = {
 			kind: command.kind,
 			area: {
-				start: { x: command.x0, y: command.y0, z: EditorConsoleRenderBackend.RECT_Z },
-				end: { x: command.x1, y: command.y1, z: EditorConsoleRenderBackend.RECT_Z },
+				start: { x: command.x0, y: command.y0, z: ConsoleRenderFacade.RECT_Z },
+				end: { x: command.x1, y: command.y1, z: ConsoleRenderFacade.RECT_Z },
 			},
 			color: { ...command.color },
-			layer: command.layer ?? 'editor',
+			layer,
 		};
 		this.commands.push(rect);
 	}
 
 	public drawText(command: PrintCommand, font: ConsoleFont): void {
+		const layer = command.layer ?? (this.capturingFrame ? 'editor' : 'ui');
+		if (!this.capturingFrame) {
+			renderGlyphs(command.x, command.y, command.text, ConsoleRenderFacade.SPRITE_Z, font, command.color, undefined, layer);
+			return;
+		}
 		let cursorX = command.x;
 		let cursorY = command.y;
 		for (let i = 0; i < command.text.length; i++) {
@@ -132,11 +117,11 @@ export class EditorConsoleRenderBackend implements AbstractRenderBackend {
 			const advance = font.char_width(ch);
 			const sprite: ImgRenderSubmission = {
 				imgid: imgId,
-				pos: { x: cursorX, y: cursorY, z: EditorConsoleRenderBackend.SPRITE_Z },
+				pos: { x: cursorX, y: cursorY, z: ConsoleRenderFacade.SPRITE_Z },
 				scale: { x: 1, y: 1 },
 				flip: undefined,
 				colorize: { ...command.color },
-				layer: 'editor',
+				layer,
 			};
 			this.commands.push(sprite);
 			cursorX += advance;
@@ -144,18 +129,31 @@ export class EditorConsoleRenderBackend implements AbstractRenderBackend {
 	}
 
 	public drawSprite(command: SpriteCommand): void {
+		const layer = command.layer ?? (this.capturingFrame ? 'editor' : 'ui');
+		if (!this.capturingFrame) {
+			$.view.renderer.submit.sprite({
+				imgid: command.imgId,
+				pos: { x: command.baseX, y: command.baseY, z: ConsoleRenderFacade.SPRITE_Z },
+				scale: { x: command.scale, y: command.scale },
+				flip: command.flipH || command.flipV ? { flip_h: command.flipH, flip_v: command.flipV } : undefined,
+				colorize: command.colorize ? { ...command.colorize } : undefined,
+				layer,
+			});
+			return;
+		}
 		const sprite: ImgRenderSubmission = {
 			imgid: command.imgId,
-			pos: { x: command.baseX, y: command.baseY, z: EditorConsoleRenderBackend.SPRITE_Z },
+			pos: { x: command.baseX, y: command.baseY, z: ConsoleRenderFacade.SPRITE_Z },
 			scale: { x: command.scale, y: command.scale },
 			flip: command.flipH || command.flipV ? { flip_h: command.flipH, flip_v: command.flipV } : undefined,
 			colorize: command.colorize ? { ...command.colorize } : undefined,
-			layer: command.layer ?? 'editor',
+			layer,
 		};
 		this.commands.push(sprite);
 	}
 
 	public endFrame(): void {
+		this.capturingFrame = false;
 		if (this.commands.length === 0) {
 			publishOverlayFrame(null);
 			return;

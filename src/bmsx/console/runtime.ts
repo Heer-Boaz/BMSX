@@ -24,7 +24,7 @@ import { type EventPayload } from '../core/eventemitter';
 import type { GameEvent } from '../core/game_event';
 import type { Identifier, Identifiable } from '../rompack/rompack';
 import { OverlayPipelineController } from '../core/pipelines/overlay_controller';
-import { EditorConsoleRenderBackend } from './indirect_renderer';
+import { ConsoleRenderFacade } from './console_render_facade';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { LuaHandlerCache, type LuaHandlerFn, isLuaHandlerFn } from '../lua/handler_cache';
 import { ActiveStateMachines, StateDefinitions, applyPreparedStateMachine } from '../fsm/fsmlibrary';
@@ -384,8 +384,8 @@ export class BmsxConsoleRuntime extends Service {
 	private luaProgram: BmsxConsoleLuaProgram | null;
 	private playerIndex: number;
 	private editor: ConsoleCartEditor | null = null;
-	private readonly editorRenderBackend = new EditorConsoleRenderBackend();
-	private readonly consoleOverlayBackend = new EditorConsoleRenderBackend();
+	private readonly editorRenderBackend = new ConsoleRenderFacade();
+	private readonly consoleOverlayBackend = new ConsoleRenderFacade();
 	private readonly consoleMode: ConsoleMode;
 	private overlayResolutionMode: 'offscreen' | 'viewport' = 'offscreen';
 	private overlayRenderedThisFrame = false;
@@ -1013,14 +1013,8 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		const view = $.view;
-		if (!view) {
-			throw new Error('[BmsxConsoleRuntime] Game view unavailable while rendering console overlay.');
-		}
 		this.consoleOverlayBackend.beginFrame();
 		const targetSize = this.overlayResolutionMode === 'viewport' ? view.viewportSize : view.offscreenCanvasSize;
-		if (!Number.isFinite(targetSize.x) || !Number.isFinite(targetSize.y) || targetSize.x <= 0 || targetSize.y <= 0) {
-			throw new Error('[BmsxConsoleRuntime] Invalid console overlay dimensions.');
-		}
 		this.consoleMode.draw(this.consoleOverlayBackend, { width: targetSize.x, height: targetSize.y });
 		this.consoleOverlayBackend.endFrame();
 		this.overlayRenderedThisFrame = true;

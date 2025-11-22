@@ -19,7 +19,7 @@ import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { taskGate, GateGroup } from '../core/taskgate';
 import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { setupFSMlibrary } from '../fsm/fsmlibrary';
-import { DirectConsoleRenderBackend, type AbstractRenderBackend } from './indirect_renderer';
+import { ConsoleRenderFacade } from './console_render_facade';
 import { new_vec3 } from '../utils/vector_operations';
 import type { Space } from '../core/space';
 import { Reviver } from '../serializer/gameserializer';
@@ -74,7 +74,7 @@ export class BmsxConsoleApi {
 	private textCursorY = 0;
 	private textCursorHomeX = 0;
 	private textCursorColorIndex = 0;
-	private renderBackend: AbstractRenderBackend = new DirectConsoleRenderBackend();
+	private renderBackend: ConsoleRenderFacade = new ConsoleRenderFacade();
 
 	constructor(options: BmsxConsoleApiOptions) {
 		const view = $.view;
@@ -91,8 +91,8 @@ export class BmsxConsoleApi {
 		this.reset_print_cursor();
 	}
 
-	public set_render_backend(backend: AbstractRenderBackend | null): void {
-		this.renderBackend = backend ?? new DirectConsoleRenderBackend();
+	public set_render_backend(backend: ConsoleRenderFacade | null): void {
+		this.renderBackend = backend ?? new ConsoleRenderFacade();
 	}
 
 	public get display_width(): number {
