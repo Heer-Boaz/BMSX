@@ -543,7 +543,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.seedDefaultLuaBuiltins();
 		this.initializeEditor();
-		this.overlayResolutionMode = 'offscreen';
+		this.overlayResolutionMode = 'viewport';
 		this.subscribeGlobalDebuggerHotkeys();
 		this.resetFrameTiming();
 		this.boot();
@@ -1001,6 +1001,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.consoleMode.deactivate();
 	}
+
 	private toggleConsoleResolutionMode(): void {
 		const next = this._overlayResolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
 		this.overlayResolutionMode = next;
@@ -1014,8 +1015,7 @@ export class BmsxConsoleRuntime extends Service {
 		return playerInput;
 	}
 
-
-		private renderConsoleOverlay(): void {
+	private renderConsoleOverlay(): void {
 		if (!this.consoleMode.isActive) {
 			return;
 		}

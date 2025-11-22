@@ -1500,7 +1500,6 @@ export function safeInspectLuaExpression(request: ConsoleLuaHoverRequest): Conso
 }
 
 export function update(deltaSeconds: number): void {
-	refreshViewportDimensions();
 	const keyboard = getKeyboard();
 	flushWindowFocusState(keyboard);
 	ide_state.updateMessage(deltaSeconds);
@@ -1831,7 +1830,6 @@ export function isActive(): boolean {
 }
 
 export function draw(api: BmsxConsoleApi): void {
-	refreshViewportDimensions();
 	if (!ide_state.active) {
 		return;
 	}
@@ -1894,30 +1892,6 @@ export function getSourceForChunk(asset_id: string | null, chunkName: string | n
 	}
 	throw new Error(`[ConsoleCartEditor] Unable to locate source for asset '${asset_id ?? '<null>'}' and chunk '${chunkName ?? '<null>'}'.`);
 }
-
-export function refreshViewportDimensions(force = false): void {
-	const view = $.view;
-	const renderSize = ide_state.resolutionMode === 'offscreen' ? view.offscreenCanvasSize : view.viewportSize;
-	const width = renderSize.x;
-	const height = renderSize.y;
-	if (!force && width === ide_state.viewportWidth && height === ide_state.viewportHeight) {
-		return;
-	}
-	ide_state.viewportWidth = width;
-	ide_state.viewportHeight = height;
-	invalidateVisualLines();
-	if (ide_state.resourcePanelWidthRatio !== null) {
-		ide_state.resourcePanelWidthRatio = clampResourcePanelRatio(ide_state.resourcePanelWidthRatio);
-		if (ide_state.resourcePanelVisible && computePanelPixelWidth(ide_state.resourcePanelWidthRatio) <= 0) {
-			hideResourcePanel();
-		}
-	}
-	if (ide_state.resourcePanelVisible) {
-		resourceBrowserEnsureSelectionVisible();
-	}
-}
-
-
 
 export function getActiveResourceViewer(): ResourceViewerState | null {
 	const tab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeTabId);
@@ -7419,7 +7393,6 @@ export function toggleResourcePanelFilterMode(): void {
 
 export function toggleResolutionMode(): void {
 	ide_state.resolutionMode = ide_state.resolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
-	refreshViewportDimensions(true);
 	ensureCursorVisible();
 	ide_state.cursorRevealSuspended = false;
 	getConsoleRuntime().overlayResolutionMode = ide_state.resolutionMode;
