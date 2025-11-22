@@ -224,11 +224,15 @@ export {
 	revealCursor,
 } from './cursor_operations';
 
+export const caretNavigation = new CaretNavigationState();
+
 // Re-export ALL text editing and selection operations for backward compatibility
 // This makes them available both internally and to external consumers
 export * from './text_editing_and_selection';
 // Import them for internal use in this module
 import * as TextEditing from './text_editing_and_selection';
+import { drawCursor, drawInlineCaret } from './render_caret';
+import type { BmsxConsoleRuntime } from '../runtime';
 
 // Use shorter aliases for commonly used functions
 const {
@@ -9633,70 +9637,13 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	installPlatformVisibilityListener();
 	installWindowEventListeners();
 	ide_state.navigationHistory.current = createNavigationEntry();
-} export function updateBlink(deltaSeconds: number): void {
+}
+
+export function updateBlink(deltaSeconds: number): void {
 	ide_state.blinkTimer += deltaSeconds;
 	if (ide_state.blinkTimer >= constants.CURSOR_BLINK_INTERVAL) {
 		ide_state.blinkTimer -= constants.CURSOR_BLINK_INTERVAL;
 		ide_state.cursorVisible = !ide_state.cursorVisible;
 	}
 }
-export const caretNavigation = new CaretNavigationState();
 
-function getCaretGlyphForDisplay(baseChar: string, baseColor?: number): string {
-	if (!ide_state.caseInsensitive) {
-		return baseChar;
-	}
-	if (ide_state.font.getVariant() !== 'tiny') {
-		return baseChar;
-	}
-	if (baseColor === constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING) {
-		return baseChar;
-	}
-	return baseChar.toUpperCase();
-}
-
-export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): void {
-	const cursorX = info.x;
-	const cursorY = info.y;
-	const caretLeft = Math.floor(Math.max(textX, cursorX - 1));
-	const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + info.width));
-	const caretTop = Math.floor(cursorY);
-	const caretBottom = caretTop + info.height;
-	const problemsPanelHasFocus = ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused();
-	const active = !(ide_state.searchActive || ide_state.lineJumpActive || ide_state.resourcePanelFocused || ide_state.createResourceActive || problemsPanelHasFocus);
-	const glyphColor = Msx1Colors[1];
-	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);
-	renderInlineCaret({
-		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, col),
-		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, col),
-		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
-	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, Msx1Colors[constants.CARET_COLOR], caretGlyph, glyphColor);
-}
-import { renderInlineCaret } from './render_caret';
-import type { BmsxConsoleRuntime } from '../runtime';
-export function drawInlineCaret(
-	api: BmsxConsoleApi,
-	field: InlineTextField,
-	left: number,
-	top: number,
-	right: number,
-	bottom: number,
-	cursorX: number,
-	active: boolean,
-	caretColor: { r: number; g: number; b: number; a: number; } | number = constants.CARET_COLOR,
-	baseTextColor: number = constants.COLOR_STATUS_TEXT
-): void {
-	if (!ide_state.cursorVisible) return;
-	const rawGlyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
-	const caretGlyph = getCaretGlyphForDisplay(rawGlyph);
-	const caretIndex = resolvePaletteIndex(caretColor);
-	const caretColorIndex = caretIndex ?? baseTextColor;
-	const inverseColorIndex = invertColorIndex(caretColorIndex);
-	const caretValue = Msx1Colors[caretColorIndex];
-	const inverseColor = Msx1Colors[inverseColorIndex];
-	renderInlineCaret({
-		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, col),
-		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, col),
-		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
-	}, left, top, right, bottom, cursorX, active, caretValue, caretGlyph, inverseColor);
-}

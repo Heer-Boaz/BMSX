@@ -341,7 +341,8 @@ export class Game {
 		if (typeof document !== 'undefined') {
 			ensureBrowserBackendFactory();
 		}
-		const viewportSize = { x: worldConfig.viewportSize.width, y: worldConfig.viewportSize.height }; // Ugly and needs to be refactored in the GameView
+		const viewportInput = worldConfig.viewportSize as { width?: number; height?: number; x?: number; y?: number };
+		const viewportSize = { x: (viewportInput.width ?? viewportInput.x)!, y: (viewportInput.height ?? viewportInput.y)! }; // Ugly and needs to be refactored in the GameView
 		const gview = new GameView({
 			viewportSize,
 			host: resolvedViewHost,

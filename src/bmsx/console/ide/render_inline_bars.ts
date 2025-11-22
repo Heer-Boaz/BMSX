@@ -1,5 +1,5 @@
 import { BmsxConsoleApi } from '../api';
-import type { drawInlineCaret } from './console_cart_editor';
+import type { drawInlineCaret } from './render_caret';
 import * as constants from './constants';
 import type { InlineTextField } from './types';
 

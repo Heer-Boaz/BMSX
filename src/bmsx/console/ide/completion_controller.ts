@@ -444,20 +444,20 @@ export class CompletionController {
 		const lineHeight = this.host.getLineHeight();
 		const lineSpacing = 2;
 		const totalLines = 1 + descriptionLines.length;
-		const popupWidth = Math.floor(maxLineWidth + constants.PARAMETER_HINT_PADDING_X * 2);
+		const popupWidth = maxLineWidth + constants.PARAMETER_HINT_PADDING_X * 2;
 		const popupHeight = Math.floor(totalLines * lineHeight + constants.PARAMETER_HINT_PADDING_Y * 2 + Math.max(0, totalLines - 1) * lineSpacing);
-		let popupLeft = Math.floor(cursorInfo.x);
+		let popupLeft = cursorInfo.x;
 		if (popupLeft + popupWidth > bounds.codeRight) popupLeft = bounds.codeRight - popupWidth;
 		if (popupLeft < bounds.textLeft) popupLeft = bounds.textLeft;
-		let popupTop = Math.floor(cursorInfo.y - popupHeight - 2);
+		let popupTop = cursorInfo.y - popupHeight - 2;
 		if (popupTop < bounds.codeTop) {
-			popupTop = Math.floor(cursorInfo.y + cursorInfo.height + 2);
+			popupTop = cursorInfo.y + cursorInfo.height + 2;
 			if (popupTop + popupHeight > bounds.codeBottom) popupTop = Math.max(bounds.codeTop, bounds.codeBottom - popupHeight);
 		}
 		const popupRight = popupLeft + popupWidth;
 		const popupBottom = popupTop + popupHeight;
-		api.rectfill(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BACKGROUND);
 		api.rect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BORDER);
+		api.rectfill(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BACKGROUND);
 		let textX = popupLeft + constants.PARAMETER_HINT_PADDING_X;
 		let currentY = popupTop + constants.PARAMETER_HINT_PADDING_Y;
 		for (let i = 0; i < segments.length; i += 1) {
