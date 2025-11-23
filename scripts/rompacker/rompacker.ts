@@ -1,12 +1,13 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
 
+import pc from 'picocolors';
+import { Presets, SingleBar } from 'cli-progress';
+
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
 import type { Resource, RomManifest, RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
-const term = require('terminal-kit').terminal;
-const _colors = require('colors');
 
-import { join, isAbsolute } from 'path';
+import { join, isAbsolute } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
 
 // Command line parameter for texture atlas usage
@@ -439,13 +440,14 @@ function parseOptions(args: string[]): RomPackerOptions {
 }
 
 function writeOut(_tolog: string, type?: logentryType): void {
-	let tolog: string;
-	switch (type) {
-		case 'error': tolog = _colors.red(_tolog); break;
-		case 'warning': tolog = _colors.yellow(_tolog); break;
-		default: tolog = _tolog; break;
-	}
-	term(tolog);
+	let tolog = _tolog;
+	if (type === 'error') tolog = pc.red(_tolog);
+	else if (type === 'warning') tolog = pc.yellow(_tolog);
+	process.stdout.write(tolog);
+}
+
+function clearScreen(): void {
+	process.stdout.write('\u001b[2J\u001b[0f');
 }
 
 function timer(ms: number) {
@@ -453,45 +455,55 @@ function timer(ms: number) {
 }
 
 class ProgressReporter {
-	private gauge: any;
+	private bar: SingleBar;
 	private tasks: string[];
 	private totalTasks: number;
-	private completedTasks: number = 0;
+	private completedTasks = 0;
+	private started = false;
 
 	constructor(tasks: string[]) {
-		// @ts-ignore
-		const Gauge = require('gauge');
-		this.gauge = new Gauge(process.stdout, {
-			updateInterval: 20,
-			cleanupOnExit: false,
-			autoSize: false,
-		});
-		this.gauge.setTemplate([
-			{ type: 'progressbar', length: 50 },
-			{ type: 'section', kerning: 1, default: '' },
-			{ type: 'subsection', kerning: 1, default: '' },
-		]);
 		this.tasks = [...tasks];
-		this.totalTasks = tasks.length;
+		this.totalTasks = this.tasks.length;
+		this.bar = new SingleBar({
+			format: `${pc.dim('[')}${pc.green('{bar}')}${pc.dim(']')} {percentage}% {task}`,
+			barCompleteChar: '█',
+			barIncompleteChar: '░',
+			hideCursor: true,
+			stopOnComplete: false,
+		}, Presets.shades_classic);
+	}
+
+	private currentTask(): string {
+		return this.tasks[0] ?? '';
+	}
+
+	private recalcTotals(): void {
+		this.totalTasks = this.completedTasks + this.tasks.length;
+	}
+
+	private sync(label?: string): void {
+		if (!this.started) return;
+		const total = this.totalTasks || 1;
+		this.bar.setTotal(total);
+		this.bar.update(this.completedTasks, { task: label ?? this.currentTask() });
 	}
 
 	public async taskCompleted() {
+		const finishedTask = this.tasks.shift() ?? '';
 		this.completedTasks++;
-		const progressPercentage = this.completedTasks / this.totalTasks;
-		if (this.tasks.length) {
-			const currentTask = this.tasks.shift()!;
-			this.gauge.show(currentTask, progressPercentage);
-			await this.pulse();
-		} else {
-			await this.showDone();
+		this.recalcTotals();
+		this.sync(this.currentTask() || finishedTask);
+		await this.pulse();
+		if (!this.tasks.length) {
+			this.bar.update(this.completedTasks, { task: finishedTask });
 		}
 	}
 
 	public showInitial() {
-		if (this.tasks.length) {
-			this.gauge.show(this.tasks[0], 0);
-			this.gauge.pulse();
-		}
+		if (this.started) return;
+		this.started = true;
+		const total = this.totalTasks || 1;
+		this.bar.start(total, this.completedTasks, { task: this.currentTask() });
 	}
 
 	public skipTasks(count: number) {
@@ -499,14 +511,18 @@ class ProgressReporter {
 			this.tasks.shift();
 			this.completedTasks++;
 		}
+		this.recalcTotals();
+		this.sync();
 	}
 
 	public removeTask(task: string) {
 		const index = this.tasks.indexOf(task);
-		if (index !== -1) {
-			this.tasks.splice(index, 1);
-			this.totalTasks--;
+		if (index === -1) {
+			throw new Error(`ProgressReporter cannot remove unknown task "${task}".`);
 		}
+		this.tasks.splice(index, 1);
+		this.recalcTotals();
+		this.sync();
 	}
 
 	public removeTasks(tasks: string[]) {
@@ -516,12 +532,14 @@ class ProgressReporter {
 	}
 
 	public async showDone() {
-		// this.gauge.show('ROM PACKING GE-DONUT!! :-)', 1);
+		if (this.started) {
+			this.bar.update(this.totalTasks || this.completedTasks, { task: 'Gereed' });
+			this.bar.stop();
+		}
 		await this.pulse();
 	}
 
 	public async pulse() {
-		this.gauge.pulse();
 		await timer(20);
 	}
 }
@@ -530,10 +548,10 @@ async function main() {
 	const outputError = (e: any) => writeOut(`\n[GEFAALD] ${e?.stack ?? e?.message ?? e ?? 'Geen melding en/of stacktrace beschikbaar :-('} \n`, 'error');
 	const progress = new ProgressReporter(taskList);
 	try {
-		term.clear();
-		writeOut(_colors.brightGreen.bold('┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n'));
-		writeOut(_colors.brightGreen.bold('┃                          BMSX ROMPACKER DOOR BOAZ©®™                           ┃\n'));
-		writeOut(_colors.brightGreen.bold('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n'));
+		clearScreen();
+		writeOut(pc.bold(pc.green('┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n')));
+		writeOut(pc.bold(pc.green('┃                          BMSX ROMPACKER DOOR BOAZ©®™                           ┃\n')));
+		writeOut(pc.bold(pc.green('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n')));
 
 		const args = process.argv.slice(2);
 		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform, caseInsensitiveLua, mode, shouldBundleCartCode, extraLuaRoots } = parseOptions(args);
@@ -581,7 +599,7 @@ async function main() {
 				virtualRoot,
 				resolveAtlasIndex: false,
 			});
-			writeOut(`\n${_colors.brightWhite.bold('[Resource list bouwen ge-DONUT]')} \n`);
+			writeOut(`\n${pc.bold(pc.white('[Resource list bouwen ge-DONUT]'))} \n`);
 			return;
 		} else {
 			// Check for required arguments
@@ -634,33 +652,33 @@ async function main() {
 
 		let rebuildRequired = true;
 		if (force) {
-			writeOut(`Note: Recompilation and building forced via ${_colors.yellow.bold('--force')} \n`);
+			writeOut(`Note: Recompilation and building forced via ${pc.bold(pc.yellow('--force'))} \n`);
 			progress.removeTasks(rebuildCheckTasks);
 		}
 		else {
 			writeOut(`Note: Recompilation and building only if required (based on file modification times).\n`);
 		}
 		if (useTextureAtlas) {
-			writeOut(`Note: Texture atlas generation enabled via ${_colors.brightGreen.bold('--textureatlas yes')} \n`);
+			writeOut(`Note: Texture atlas generation enabled via ${pc.bold(pc.green('--textureatlas yes'))} \n`);
 		}
 		else {
-			writeOut(`Note: Texture atlas generation disabled via ${_colors.brightRed.bold('--textureatlas no')} \n`);
+			writeOut(`Note: Texture atlas generation disabled via ${pc.bold(pc.red('--textureatlas no'))} \n`);
 		}
 		if (caseInsensitiveLua) {
 			writeOut(`Note: Lua case folding enabled (engine expects lowercase Lua identifiers).\n`);
 		} else {
-			writeOut(`Note: Lua case folding disabled via ${_colors.brightRed.bold('--preserve-lua-case')} or ROM_CASE_INSENSITIVE_LUA.\n`);
+			writeOut(`Note: Lua case folding disabled via ${pc.bold(pc.red('--preserve-lua-case'))} or ROM_CASE_INSENSITIVE_LUA.\n`);
 		}
 		if (!deploy) {
-			writeOut(`Note: Deploy to FTP server disabled via ${_colors.brightRed.bold('--nodeploy')} \n`);
+			writeOut(`Note: Deploy to FTP server disabled via ${pc.bold(pc.red('--nodeploy'))} \n`);
 			progress.removeTasks(deployTasks);
 		}
 		if (skipTypecheck) {
-			writeOut(`Skipping type-checking of the game as per ${_colors.brightRed.bold('--skiptypecheck')}.\n`);
+			writeOut(`Skipping type-checking of the game as per ${pc.bold(pc.red('--skiptypecheck'))}.\n`);
 			progress.removeTasks(typecheckTasks);
 		}
 		// split-engine removed
-		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${rom_name}`)}...\n`);
+		writeOut(`Starting ROM packing and deployment process for ROM ${pc.bold(pc.blue(`${rom_name}`))}...\n`);
 		if (resourceRoots.length === 1) {
 			writeOut(`Using resources from "${resourceRoots[0]}"...\n`);
 		} else {
@@ -668,14 +686,14 @@ async function main() {
 		}
 		if (usePkgTsconfig) writeOut(`Using per-game tsconfig.pkg.json for bundling/type-checking.\n`);
 		if (debug) {
-			writeOut(`${_colors.cyan.bold('Building DEBUG version of rompack.')}.\n`);
+			writeOut(`${pc.bold(pc.cyan('Building DEBUG version of rompack.'))}.\n`);
 		}
 		else {
-			writeOut(`${_colors.cyan.bold('Building NON-DEBUG version of rompack.')}.\n`);
+			writeOut(`${pc.bold(pc.cyan('Building NON-DEBUG version of rompack.'))}.\n`);
 		}
 		try {
 			progress.showInitial();
-			await progress?.taskCompleted(); // Need to complete the initial task as it will be triggered twice or so
+			await progress.taskCompleted(); // Need to complete the initial task as it will be triggered twice or so
 
 			if (!force) {
 				const includeCode = isEngineMode || shouldBundleCartCode;
@@ -692,10 +710,10 @@ async function main() {
 				if (!rebuildRequired) {
 					writeOut('Rebuild skipped: game rom was newer than code/assets (use --force option to ignore this check).\n');
 				}
-				await progress?.taskCompleted();
+				await progress.taskCompleted();
 			} else rebuildRequired = true;
 			if (!rebuildRequired) {
-				progress?.removeTasks(romBuildTasks);
+				progress.removeTasks(romBuildTasks);
 			}
 
 			let romManifest: RomManifest;
@@ -717,7 +735,7 @@ async function main() {
 					} catch (e) { throw e; }
 
 					// Ensure tasks are removed
-					await progress?.taskCompleted();
+					await progress.taskCompleted();
 				}
 				const tsProject = usePkgTsconfig ? `${bootloader_path}/tsconfig.pkg.json` : undefined;
 				if (isEngineMode) {
@@ -725,38 +743,38 @@ async function main() {
 				} else if (shouldBundleCartCode) {
 					await esbuild(rom_name, bootloader_path, debug, tsProject);
 				}
-				await progress?.taskCompleted();
+				await progress.taskCompleted();
 				const romResMetaList = await getResMetaList(resourceRoots, rom_name, {
 					includeCode: isEngineMode || shouldBundleCartCode,
 					extraLuaPaths: Array.from(extraLuaPathSet),
 					virtualRoot,
 					resolveAtlasIndex: true,
 				});
-				await progress?.taskCompleted();
+				await progress.taskCompleted();
 				ensureMainLuaAssetPresent(romManifest, romResMetaList);
 				// Build resources
 				let resources = await getResourcesList(romResMetaList, rom_name, {
 					includeCode: isEngineMode || shouldBundleCartCode,
 				});
-				await progress?.taskCompleted();
+				await progress.taskCompleted();
 
 				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 					await createAtlasses(resources);
 				}
-				await progress?.taskCompleted();
+				await progress.taskCompleted();
 
 				// Validate AEM references against loaded resources
 				validateAudioEventReferences(resources);
 
 				const romAssets = await generateRomAssets(resources);
-				await progress?.taskCompleted();
+				await progress.taskCompleted();
 
 				await finalizeRompack(romAssets, rom_name, debug, { projectRootPath });
-				await progress?.taskCompleted();
+				await progress.taskCompleted();
 			}
 
 			await buildBootromScriptIfNewer({ debug, forceBuild: force, platform, romName: rom_name, caseInsensitiveLua });
-			await progress?.taskCompleted();
+			await progress.taskCompleted();
 			if (platform === 'browser') {
 				if (!isEngineMode) {
 					await buildGameHtmlAndManifest(rom_name, title, short_name, debug);
@@ -765,12 +783,12 @@ async function main() {
 				const launcherName = getNodeLauncherFilename(platform, debug);
 				writeOut(`Generated Node launcher "dist/${launcherName}" for platform "${platform}".\n`);
 			}
-			await progress?.taskCompleted();
+			await progress.taskCompleted();
 			if (deploy) {
 				await deployToServer(rom_name, title);
-				await progress?.taskCompleted();
+				await progress.taskCompleted();
 			}
-			await progress?.showDone();
+			await progress.showDone();
 			writeOut(`\n`);
 		} catch (e) {
 			await progress.pulse();
