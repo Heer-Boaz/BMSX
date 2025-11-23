@@ -3,7 +3,7 @@ import { BmsxConsoleApi } from './api';
 import { CONSOLE_API_METHOD_METADATA } from './api_metadata';
 import { BmsxConsoleStorage } from './storage';
 import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor, ConsoleLuaMemberCompletionRequest, ConsoleLuaMemberCompletion } from './types';
-import type { RomResourcePath } from '../rompack/rompack';
+import type { RomResourcePath, Viewport } from '../rompack/rompack';
 import {
 	createLuaInterpreter,
 	LuaInterpreter,
@@ -390,10 +390,16 @@ export class BmsxConsoleRuntime extends Service {
 	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
 		this._overlayResolutionMode = value;
 		this.overlayRenderBackend.setRenderingViewportType(value);
+		const editor = this.editor;
+		if (editor) editor.updateViewport(this.overlayRenderBackend.viewportSize);
 	}
 
 	public get overlayResolutionMode() {
 		return this._overlayResolutionMode;
+	}
+
+	public get overlayViewportSize(): Viewport {
+		return this.overlayRenderBackend.viewportSize;
 	}
 
 	private overlayRenderedThisFrame = false;
@@ -537,13 +543,13 @@ export class BmsxConsoleRuntime extends Service {
 			storage: this.storage,
 		});
 		this.api.set_render_backend(this.overlayRenderBackend);
+		this.overlayResolutionMode = 'viewport';
 		this.luaProgram = this.cart.luaProgram ?? null;
 		for (const [asset_id, source] of Object.entries(rompack.lua)) {
 			this.rompackOriginalLua.set(asset_id, source);
 		}
 		this.seedDefaultLuaBuiltins();
 		this.initializeEditor();
-		this.overlayResolutionMode = 'viewport';
 		this.subscribeGlobalDebuggerHotkeys();
 		this.resetFrameTiming();
 		this.boot();
@@ -1772,9 +1778,8 @@ export class BmsxConsoleRuntime extends Service {
 			this.disposeShortcutHandlers();
 			return;
 		}
-		const view = $.view;
-		const offscreen = view.offscreenCanvasSize;
-		const viewport = { width: offscreen.x, height: offscreen.y };
+		const viewportSize = this.overlayViewportSize;
+		const viewport = { width: viewportSize.width, height: viewportSize.height };
 		// Check the primary asset ID for the currently loaded program
 		// Note that this can be null if the program was not loaded from source or has not been saved yet (then the type is BmsxConsoleLuaInlineProgram)!
 		const primaryasset_id = this.luaProgram.asset_id;

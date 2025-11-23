@@ -5957,6 +5957,12 @@ export function shiftPositionsForRemoval(row: number, column: number, length: nu
 	}
 }
 
+function applyViewportSize(viewport: { width: number; height: number }): void {
+	ide_state.viewportWidth = viewport.width;
+	ide_state.viewportHeight = viewport.height;
+	ide_state.lastPointerRowResolution = null;
+}
+
 export function readPointerSnapshot(): PointerSnapshot | null {
 	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
 	if (!playerInput) {
@@ -7388,6 +7394,14 @@ export function hideProblemsPanel(): void {
 export function toggleResourcePanelFilterMode(): void {
 	// Controller owns filter state and messaging
 	ide_state.resourcePanel.toggleFilterMode();
+}
+
+export function updateViewport(viewport: { width: number; height: number }): void {
+	applyViewportSize(viewport);
+	ide_state.resourcePanel.clampHScroll();
+	ide_state.resourcePanel.ensureSelectionVisiblePublic();
+	ide_state.cursorRevealSuspended = false;
+	ensureCursorVisible();
 }
 
 export function toggleResolutionMode(): void {
@@ -9254,6 +9268,7 @@ export type ConsoleCartEditor = {
 	update: typeof update;
 	draw: typeof draw;
 	shutdown: typeof shutdown;
+	updateViewport: typeof updateViewport;
 	showWarningBanner: typeof ide_state.showWarningBanner;
 	showRuntimeErrorInChunk: typeof showRuntimeErrorInChunk;
 	showRuntimeError: typeof showRuntimeError;
@@ -9269,6 +9284,7 @@ const editorFacade: ConsoleCartEditor = {
 	update,
 	draw,
 	shutdown,
+	updateViewport,
 	showWarningBanner: ide_state.showWarningBanner,
 	showRuntimeErrorInChunk,
 	showRuntimeError,
@@ -9405,8 +9421,7 @@ function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	if ($.debug) {
 		ide_state.listResourcesFn();
 	}
-	ide_state.viewportWidth = options.viewport.width;
-	ide_state.viewportHeight = options.viewport.height;
+	applyViewportSize(options.viewport);
 	ide_state.font = new ConsoleEditorFont(ide_state.fontVariant);
 	ide_state.clockNow = $.platform.clock.now;
 	ide_state.searchField = createInlineTextField();

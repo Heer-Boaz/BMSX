@@ -128,12 +128,12 @@ local function build_hero_fsm()
 				input_eval = 'first',
 				input_event_handlers = {
 					['console_b[gp]'] = {
-						do = function(self)
+						['do'] = function(self)
 							return '/charging'
 						end,
 					},
 					['console_a[gp]'] = {
-						do = function(self)
+						['do'] = function(self)
 							return '/blinking'
 						end,
 					},
@@ -153,12 +153,12 @@ local function build_hero_fsm()
 				input_eval = 'first',
 				input_event_handlers = {
 					['console_b[gp]'] = {
-						do = function(self)
+						['do'] = function(self)
 							return '/charging'
 						end,
 					},
 					['console_a[gp]'] = {
-						do = function(self)
+						['do'] = function(self)
 							return '/blinking'
 						end,
 					},
@@ -196,8 +196,8 @@ local function build_hero_fsm()
 local function register_hero()
 	register_world_object({
 		id = hero_def_id,
-		class = 'Hero',
-		components = { 'ActionEffectComponent' },
+		class = 'hero',
+		components = { 'actioneffectcomponent' },
 		fsms = { { id = hero_fsm_id } },
 		effects = { effect_id },
 		defaults = { speed = 54 },
@@ -259,7 +259,7 @@ local function define_blink()
 		id = effect_id,
 		event = 'demo.hero.blink',
 		cooldown_ms = 420,
-		-- Handle the blink directly in the effect so a single trigger applies movement/timer/emits without relying on a separate listener.
+		-- handle the blink directly in the effect so a single trigger applies movement/timer/emits without relying on a separate listener.
 		on_trigger = function(ctx, payload)
 			local owner = ctx.owner
 			local facing = payload and payload.facing or owner.facing or 'right'
@@ -297,21 +297,21 @@ end
 
 local function draw_hud(hero)
 	local stats = director.stats
-	write('BMSX Lua Engine Tour', 6, 4, 15)
-	write('WorldObject : ' .. hero.id, 6, 14, 11)
-	write('Service     : ' .. service_id, 6, 22, 11)
-	write('FSM state   : ' .. hero.active_state, 6, 30, 7)
-	write('Timeline    : ' .. hero_timeline_id, 6, 38, 7)
-	write('Effect      : ' .. effect_id, 6, 46, 7)
-	write('Plain input : ' .. demo.last_plain_input, 6, 60, 6)
-	write('Moves       : ' .. stats.moves, 6, 69, 6)
-	write('Pulses      : ' .. stats.pulses, 6, 78, 6)
-	write('Effects     : ' .. stats.effects, 6, 87, 6)
-	write('Charges     : ' .. stats.charges, 6, 96, 6)
-	write('Controls:', 6, 118, 13)
-	write('- Arrows: move world object', 6, 128, 13)
-	write('- A: blink (InputActionToEffect + input)', 6, 148, 13)
-	write('- B: hold (FSM + input)', 6, 138, 13)
+	write('bmsx lua engine tour', 6, 4, 15)
+	write('worldobject : ' .. hero.id, 6, 14, 11)
+	write('service     : ' .. service_id, 6, 22, 11)
+	write('fsm state   : ' .. hero.active_state, 6, 30, 7)
+	write('timeline    : ' .. hero_timeline_id, 6, 38, 7)
+	write('effect      : ' .. effect_id, 6, 46, 7)
+	write('plain input : ' .. demo.last_plain_input, 6, 60, 6)
+	write('moves       : ' .. stats.moves, 6, 69, 6)
+	write('pulses      : ' .. stats.pulses, 6, 78, 6)
+	write('effects     : ' .. stats.effects, 6, 87, 6)
+	write('charges     : ' .. stats.charges, 6, 96, 6)
+	write('controls:', 6, 118, 13)
+	write('- arrows: move world object', 6, 128, 13)
+	write('- a: blink (inputactiontoeffect + input)', 6, 148, 13)
+	write('- b: hold (fsm + input)', 6, 138, 13)
 end
 
 function draw()
