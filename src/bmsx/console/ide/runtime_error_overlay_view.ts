@@ -14,6 +14,7 @@ import type {
 	CachedHighlight,
 	RuntimeErrorOverlay
 } from './types';
+import { wrapRuntimeErrorLine } from './runtime_error_utils';
 import type { StackTraceFrame } from '../../lua/runtime';
 import type { RectBounds } from '../../rompack/rompack';
 
@@ -122,42 +123,14 @@ export function computeRuntimeErrorOverlayLayout(
 	const displayLineMap: number[] = [];
 	for (let d = 0; d < sourceLines.length; d += 1) {
 		const text = sourceLines[d];
-		if (text.length === 0) {
+		const wrapped = wrapRuntimeErrorLine(text, wrapWidth, (value) => host.measureText(value));
+		for (let i = 0; i < wrapped.length; i += 1) {
+			displayLines.push(wrapped[i]);
+			displayLineMap.push(d);
+		}
+		if (wrapped.length === 0) {
 			displayLines.push('');
 			displayLineMap.push(d);
-			continue;
-		}
-		let current = '';
-		for (let i = 0; i < text.length; i += 1) {
-			const ch = text.charAt(i);
-			const candidate = current + ch;
-			const w = host.measureText(candidate);
-			if (current.length > 0 && w > wrapWidth) {
-				displayLines.push(current);
-				displayLineMap.push(d);
-				current = ch;
-				if (host.measureText(current) > wrapWidth) {
-					displayLines.push(current);
-					displayLineMap.push(d);
-					current = '';
-				}
-				continue;
-			}
-			if (current.length === 0 && w > wrapWidth) {
-				displayLines.push(ch);
-				displayLineMap.push(d);
-				current = '';
-				continue;
-			}
-			current = candidate;
-		}
-		if (current.length > 0) {
-			displayLines.push(current);
-			displayLineMap.push(d);
-		}
-		if (displayLineMap.length === 0 || displayLineMap[displayLineMap.length - 1] !== d) {
-			// Ensure at least one display line per descriptor
-			// (needed if a single character was wider than max width and got pushed above)
 		}
 	}
 	const availableBottom = host.viewportHeight - host.bottomMargin;

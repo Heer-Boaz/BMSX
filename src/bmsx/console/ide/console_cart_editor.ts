@@ -2087,7 +2087,7 @@ export function handleEscapeShortcut(): boolean {
 	if (!shouldAcceptKeyPressGlobal(ESCAPE_KEY, state)) {
 		return false;
 	}
-	const handled = handleEscapeKey();
+	const handled = handleEscapeKey({ allowRuntimeErrorToggle: true });
 	if (handled) {
 		consumeIdeKey(ESCAPE_KEY);
 	}
@@ -2095,7 +2095,7 @@ export function handleEscapeShortcut(): boolean {
 }
 
 export function toggleEditorFromShortcut(): void {
-	const intercepted = handleEscapeKey();
+	const intercepted = handleEscapeKey({ allowRuntimeErrorToggle: false });
 	if (intercepted) {
 		return;
 	}
@@ -2106,11 +2106,15 @@ export function toggleEditorFromShortcut(): void {
 	}
 }
 
-export function handleEscapeKey(): boolean {
+type EscapeHandlingOptions = { allowRuntimeErrorToggle?: boolean };
+
+export function handleEscapeKey(options?: EscapeHandlingOptions): boolean {
+	const allowRuntimeErrorToggle = options?.allowRuntimeErrorToggle !== false;
 	if (ide_state.pendingActionPrompt) {
 		resetActionPromptState();
 		return true;
 	}
+	const overlay = ide_state.runtimeErrorOverlay;
 	if (ide_state.createResourceVisible) {
 		closeCreateResourcePrompt(true);
 		return true;
@@ -2131,9 +2135,12 @@ export function handleEscapeKey(): boolean {
 		closeSearch(false, true);
 		return true;
 	}
-	const overlay = ide_state.runtimeErrorOverlay;
-	if (overlay) {
+	if (overlay && allowRuntimeErrorToggle) {
 		overlay.hidden = !overlay.hidden;
+		overlay.hovered = false;
+		overlay.hoverLine = -1;
+		overlay.copyButtonHovered = false;
+		overlay.layout = null;
 		ide_state.message.visible = false;
 		return true;
 	}
