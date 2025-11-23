@@ -1054,7 +1054,7 @@ export class Input implements RegisterablePersistent {
 	}
 
 	public static get KC_F1(): boolean {
-		return Input.KC_F10;
+		return Input.instance.getPlayerInput(1).checkAndConsume('F1');
 	}
 
 	public static get KC_F12(): boolean {
@@ -1121,7 +1121,7 @@ export class Input implements RegisterablePersistent {
 		return Input.instance.getPlayerInput(1).getButtonState(DEBUG_HUD_TOGGLE_KEY, 'keyboard').pressed;
 	}
 	public static get KD_F1(): boolean {
-		return Input.KD_F10;
+		return Input.instance.getPlayerInput(1).getButtonState('F1', 'keyboard').pressed;
 	}
 	public static get KD_F12(): boolean {
 		return Input.instance.getPlayerInput(1).getButtonState('F12', 'keyboard').pressed;

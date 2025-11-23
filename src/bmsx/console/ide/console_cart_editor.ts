@@ -204,6 +204,8 @@ export { ide_state };
 
 initializeDebuggerUiState();
 
+let lastEscapePressId: number | null = null;
+
 // Re-export cursor operations from their dedicated module
 export {
 	setCursorPosition,
@@ -2082,11 +2084,16 @@ export function getKeyboard(): KeyboardInput {
 export function handleEscapeShortcut(): boolean {
 	const state = getIdeKeyState(ESCAPE_KEY, ide_state.playerIndex);
 	if (!state || state.pressed !== true) {
+		lastEscapePressId = null;
 		return false;
 	}
-	if (!shouldAcceptKeyPressGlobal(ESCAPE_KEY, state)) {
-		return false;
-	}
+	const pressId = typeof state.pressId === 'number' ? state.pressId : null;
+	const allow =
+		shouldAcceptKeyPressGlobal(ESCAPE_KEY, state)
+		|| state.justpressed === true
+		|| (pressId !== null && pressId !== lastEscapePressId);
+	if (!allow) return false;
+	lastEscapePressId = pressId;
 	const handled = handleEscapeKey({ allowRuntimeErrorToggle: true });
 	if (handled) {
 		consumeIdeKey(ESCAPE_KEY);
