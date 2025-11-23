@@ -16,7 +16,7 @@
 		],
 		"typeRoots": ["node_modules/@types", "node_modules"],
 		"types": ["node", "@webgpu/types"],
-		"pretty": true,
+		"pretty": false,
 		// Skip type-checking of declaration files. This helps avoid type errors
 		// originating from differing lib declarations (e.g., SharedArrayBuffer vs ArrayBuffer)
 		"skipLibCheck": true,
