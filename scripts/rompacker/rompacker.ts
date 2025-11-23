@@ -104,6 +104,7 @@ const taskList: TaskName[] = [
 // --- Individual lists that allow us to easily remove tasks from the main task list (visualisation only!) ---
 const romBuildTasks: TaskName[] = [
 	'Rom manifest zoekeren en parseren',
+	'Game type-checkeren',
 	'Game compileren+bundleren',
 	'Resource lijst bouwen',
 	'Resources laden en metadata genereren',
@@ -612,7 +613,7 @@ class ProgressReporter {
 	}
 
 	public async pulse() {
-		await timer(20);
+		await timer(100);
 	}
 
 	public setDetail(detail: string) {
@@ -827,7 +828,6 @@ async function main() {
 		let typeCheckError: Error | null = null;
 		logInfo(`Starting for ${pc.bold(pc.blue(`${rom_name}`))}`);
 		progress.showInitial();
-		await progress.taskCompleted(); // Need to complete the initial task as it will be triggered twice or so
 
 		if (!force) {
 			const includeCode = isEngineMode || shouldBundleCartCode;
