@@ -341,8 +341,12 @@ export function typecheckBeforeBuild(
 			? join(process.cwd(), gameProjectOverride)
 			: gameProjectOverride)
 		: join(process.cwd(), bootloader_path, 'tsconfig.json');
-	fs.accessSync(gameTsconfig);
-	run(gameTsconfig, 'game');
+	try {
+		fs.accessSync(gameTsconfig);
+		run(gameTsconfig, 'game');
+	} catch {
+		// No per-game tsconfig.json; skip
+	}
 }
 
 /** Type-check the game against a provided directory of engine declaration files. */

@@ -676,7 +676,6 @@ class ProgressReporter {
 }
 
 async function main() {
-	const outputError = (e: any) => writeOut(`\n[GEFAALD] ${e?.message ?? e ?? 'Geen melding beschikbaar :-('} \n`, 'error');
 	const progress = new ProgressReporter(taskList);
 	let romOutputPath = '';
 	const bufferedLogs: string[] = [];
@@ -770,6 +769,7 @@ async function main() {
 		if (bootloaderFallbackPath) {
 			logWarn(`Bootloader not found for ROM "${rom_name}". Using default cart bootloader at ${pc.white(bootloaderFallbackPath)}.`);
 		}
+		let pkgTsconfigPath: string | undefined;
 		if (usePkgTsconfig) {
 			logBullet('tsconfig', pc.white('tsconfig.pkg.json (per-game)'));
 			const path = require('path');
@@ -790,6 +790,12 @@ async function main() {
 					'error'
 				);
 				throw new Error('Missing package "bmsx" for --usepkgtsconfig');
+			}
+			const candidatePkgTsconfig = normalizePathKey(join(bootloader_path, 'tsconfig.pkg.json'));
+			if (existsSync(candidatePkgTsconfig)) {
+				pkgTsconfigPath = candidatePkgTsconfig;
+			} else {
+				logWarn(`tsconfig.pkg.json not found at ${candidatePkgTsconfig}; falling back to default tsconfig.json`);
 			}
 		}
 
@@ -817,174 +823,150 @@ async function main() {
 		// split-engine removed
 		logDivider('Pipeline');
 		logInfo(`Starting for ${pc.bold(pc.blue(`${rom_name}`))}`);
-		try {
-			progress.showInitial();
-			await progress.taskCompleted(); // Need to complete the initial task as it will be triggered twice or so
+		progress.showInitial();
+		await progress.taskCompleted(); // Need to complete the initial task as it will be triggered twice or so
 
-			if (!force) {
-				const includeCode = isEngineMode || shouldBundleCartCode;
-				rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: false }));
-				if (!rebuildRequired && resourceRoots.length > 1) {
-					for (let i = 1; i < resourceRoots.length; i++) {
-						const candidate = resourceRoots[i];
-						if (!candidate || candidate === respath) continue;
-						const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: true }));
-						rebuildRequired = rebuildRequired || needs;
-						if (rebuildRequired) break;
-					}
+		if (!force) {
+			const includeCode = isEngineMode || shouldBundleCartCode;
+			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: false }));
+			if (!rebuildRequired && resourceRoots.length > 1) {
+				for (let i = 1; i < resourceRoots.length; i++) {
+					const candidate = resourceRoots[i];
+					if (!candidate || candidate === respath) continue;
+					const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: true }));
+					rebuildRequired = rebuildRequired || needs;
+					if (rebuildRequired) break;
 				}
-				if (!rebuildRequired) {
-					logInfo('Rebuild skipped: game rom is newer than code/assets (use --force to override)');
-				}
-				await progress.taskCompleted();
-			} else rebuildRequired = true;
+			}
 			if (!rebuildRequired) {
-				progress.removeTasks(romBuildTasks);
-			}
-
-			let romManifest: RomManifest;
-			let short_name: string = 'BMSX';
-			romManifest = await getRomManifest(respath);
-			await progress.taskCompleted();
-			if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
-			rom_name = romManifest?.rom_name ?? rom_name;
-			title = romManifest?.title ?? title;
-			short_name = romManifest?.short_name ?? short_name;
-			romOutputPath = `dist/${rom_name}${debug ? '.debug' : ''}.rom`;
-
-			if (rebuildRequired) {
-				// Type-check engine and game prior to bundling unless skipped
-				if (!skipTypecheck && (isEngineMode || shouldBundleCartCode)) {
-					const tsProject = usePkgTsconfig ? `${bootloader_path}/tsconfig.pkg.json` : undefined;
-					const stepLogs: string[] = [];
-					const push = (text: string) => { if (text) stepLogs.push(text); };
-					try {
-						await progress.runWithOutput('Type-check', async () => {
-							if (enginedts) typecheckGameWithDts(bootloader_path, enginedts, tsProject, push);
-							else typecheckBeforeBuild(bootloader_path, tsProject, push);
-						});
-					} catch (err) {
-						stepLogs.forEach(captureLog);
-						throw err;
-					}
-
-					// Ensure tasks are removed
-					await progress.taskCompleted();
-				}
-				const tsProject = usePkgTsconfig ? `${bootloader_path}/tsconfig.pkg.json` : undefined;
-				if (isEngineMode) {
-					await progress.runWithOutput('Build engine runtime', () => buildEngineRuntime({ debug }));
-				} else if (shouldBundleCartCode) {
-					const stepLogs: string[] = [];
-					try {
-						await progress.runWithOutput('Bundle cart code', () => esbuild(rom_name, bootloader_path, debug, tsProject));
-					} catch (err) {
-						stepLogs.push(...formatEsbuildErrors(err));
-						if (err && (err as any).message) stepLogs.push((err as any).message);
-						for (const line of stepLogs) captureLog(line);
-						throw err;
-					}
-				}
-				await progress.taskCompleted();
-				const romResMetaList = await progress.runWithDetail('Scan resources', () => getResMetaList(resourceRoots, rom_name, {
-					includeCode: isEngineMode || shouldBundleCartCode,
-					extraLuaPaths: Array.from(extraLuaPathSet),
-					virtualRoot,
-					resolveAtlasIndex: true,
-				}));
-				await progress.taskCompleted();
-				ensureMainLuaAssetPresent(romManifest, romResMetaList);
-				// Build resources
-				let resources = await progress.runWithDetail('Load resources', () => getResourcesList(romResMetaList, rom_name, {
-					includeCode: isEngineMode || shouldBundleCartCode,
-				}));
-				await progress.taskCompleted();
-
-				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-					await progress.runWithDetail('Generate atlases', () => createAtlasses(resources, message => progress.setDetail(message)));
-				}
-				await progress.taskCompleted();
-
-				// Validate AEM references against loaded resources
-				validateAudioEventReferences(resources);
-
-				const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
-				await progress.taskCompleted();
-
-				await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, debug, { projectRootPath, status: message => progress.setDetail(message) }));
-				await progress.taskCompleted();
-			}
-
-			await progress.runWithDetail('Build boot ROM', () => buildBootromScriptIfNewer({ debug, forceBuild: force, platform, romName: rom_name, caseInsensitiveLua }));
-			await progress.taskCompleted();
-			if (platform === 'browser') {
-				if (!isEngineMode) {
-					await progress.runWithDetail('Build game HTML/manifest', () => buildGameHtmlAndManifest(rom_name, title, short_name, debug));
-				}
-			} else {
-				const launcherName = getNodeLauncherFilename(platform, debug);
-				logOk(`Generated Node launcher ${pc.white(`dist/${launcherName}`)} for platform ${pc.bold(platform)}`);
+				logInfo('Rebuild skipped: game rom is newer than code/assets (use --force to override)');
 			}
 			await progress.taskCompleted();
+		} else rebuildRequired = true;
+		if (!rebuildRequired) {
+			progress.removeTasks(romBuildTasks);
+		}
+
+		let romManifest: RomManifest;
+		let short_name: string = 'BMSX';
+		romManifest = await getRomManifest(respath);
+		await progress.taskCompleted();
+		if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
+		rom_name = romManifest?.rom_name ?? rom_name;
+		title = romManifest?.title ?? title;
+		short_name = romManifest?.short_name ?? short_name;
+		romOutputPath = `dist/${rom_name}${debug ? '.debug' : ''}.rom`;
+
+		if (rebuildRequired) {
+			// Type-check engine and game prior to bundling unless skipped
+			if (!skipTypecheck && (isEngineMode || shouldBundleCartCode)) {
+				const tsProject = pkgTsconfigPath;
+				const stepLogs: string[] = [];
+				const push = (text: string) => { if (text) stepLogs.push(text); };
+				try {
+					await progress.runWithOutput('Type-check', async () => {
+						if (enginedts) typecheckGameWithDts(bootloader_path, enginedts, tsProject, push);
+						else typecheckBeforeBuild(bootloader_path, tsProject, push);
+					});
+				} catch (err) {
+					stepLogs.forEach(captureLog);
+					throw err;
+				}
+
+				// Ensure tasks are removed
+				await progress.taskCompleted();
+			}
+			const tsProject = pkgTsconfigPath;
+			if (isEngineMode) {
+				await progress.runWithOutput('Build engine runtime', () => buildEngineRuntime({ debug }));
+			} else if (shouldBundleCartCode) {
+				const stepLogs: string[] = [];
+				try {
+					await progress.runWithOutput('Bundle cart code', () => esbuild(rom_name, bootloader_path, debug, tsProject));
+				} catch (err) {
+					stepLogs.push(...formatEsbuildErrors(err));
+					if (err && (err as any).message) stepLogs.push((err as any).message);
+					for (const line of stepLogs) captureLog(line);
+					throw err;
+				}
+			}
+			await progress.taskCompleted();
+			const romResMetaList = await progress.runWithDetail('Scan resources', () => getResMetaList(resourceRoots, rom_name, {
+				includeCode: isEngineMode || shouldBundleCartCode,
+				extraLuaPaths: Array.from(extraLuaPathSet),
+				virtualRoot,
+				resolveAtlasIndex: true,
+			}));
+			await progress.taskCompleted();
+			ensureMainLuaAssetPresent(romManifest, romResMetaList);
+			// Build resources
+			let resources = await progress.runWithDetail('Load resources', () => getResourcesList(romResMetaList, rom_name, {
+				includeCode: isEngineMode || shouldBundleCartCode,
+			}));
+			await progress.taskCompleted();
+
+			if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+				await progress.runWithDetail('Generate atlases', () => createAtlasses(resources, message => progress.setDetail(message)));
+			}
+			await progress.taskCompleted();
+
+			// Validate AEM references against loaded resources
+			validateAudioEventReferences(resources);
+
+			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
+			await progress.taskCompleted();
+
+			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, debug, { projectRootPath, status: message => progress.setDetail(message) }));
+			await progress.taskCompleted();
+		}
+
+		await progress.runWithDetail('Build boot ROM', () => buildBootromScriptIfNewer({ debug, forceBuild: force, platform, romName: rom_name, caseInsensitiveLua }));
+		await progress.taskCompleted();
+		if (platform === 'browser') {
+			if (!isEngineMode) {
+				await progress.runWithDetail('Build game HTML/manifest', () => buildGameHtmlAndManifest(rom_name, title, short_name, debug));
+			}
+		} else {
+			const launcherName = getNodeLauncherFilename(platform, debug);
+			logOk(`Generated Node launcher ${pc.white(`dist/${launcherName}`)} for platform ${pc.bold(platform)}`);
+		}
+		await progress.taskCompleted();
 		if (deploy) {
 			await progress.runWithDetail('Deploy to server', () => deployToServer(rom_name, title));
 			await progress.taskCompleted();
 		}
 		await progress.showDone();
-			const romOutput = romOutputPath.length > 0 ? pc.white(romOutputPath) : pc.white('dist/<rom>.rom');
-			logOk(`ROM packing complete → ${romOutput}`);
-			writeOut(`\n`);
-		} catch (e) {
-			progress.stop();
-			await progress.pulse();
-			writeOut(`\n`);
-			throw e;
-		}
+		const romOutput = romOutputPath.length > 0 ? pc.white(romOutputPath) : pc.white('dist/<rom>.rom');
+		logOk(`ROM packing complete → ${romOutput}`);
+		writeOut(`\n`);
 	} catch (e) {
+		progress.stop();
+		await progress.pulse();
 		const failedTask = progress.getCurrentTask();
 		const summary = (e as any)?.message?.split?.('\n')?.[0] ?? String(e);
 		if (failedTask) {
 			progress.fail(failedTask, summary);
-			writeOut(`\n${pc.red(`✘ Failed during: ${failedTask}`)}\n`, 'error');
+			writeOut(`${pc.red(`✘ Failed during: ${failedTask}`)}`, 'error');
 		}
-		// Start with any buffered logs captured from subprocesses / helpers
-		const prettyErrors: string[] = [...bufferedLogs];
 
-		// Also append the main error message if it is non-trivial and not already present
-		const mainMessage = (e as any)?.message as string | undefined;
-		if (mainMessage && mainMessage.trim().length > 0) {
-			const lines = mainMessage.split('\n').map(l => l.trimEnd()).filter(l => l.length > 0);
-			for (const line of lines) {
-				prettyErrors.push(line);
-			}
-		}
-		const esErrors = (e as any)?.errors as Array<{ text?: string; location?: { file?: string; line?: number; column?: number }; notes?: Array<{ text?: string; location?: { file?: string; line?: number; column?: number } }> }> | undefined;
-		if (Array.isArray(esErrors) && esErrors.length) {
-			for (const err of esErrors) {
-				const loc = err.location;
-				const locStr = loc?.file ? `${loc.file}${loc.line ? `:${loc.line}` : ''}${loc.column ? `:${loc.column}` : ''}` : '';
-				const msg = err.text ?? 'esbuild error';
-				prettyErrors.push(locStr ? `${locStr}: ${msg}` : msg);
-				if (err.notes) {
-					for (const note of err.notes) {
-						const nloc = note.location;
-						const nlocStr = nloc?.file ? `${nloc.file}${nloc.line ? `:${nloc.line}` : ''}${nloc.column ? `:${nloc.column}` : ''}` : '';
-						const nmsg = note.text ?? '';
-						if (nmsg) prettyErrors.push(nlocStr ? `  note: ${nlocStr}: ${nmsg}` : `  note: ${nmsg}`);
-					}
+		const prettyErrors = new Set<string>(bufferedLogs);
+
+		// If no logs were buffered, try to extract info from the error object
+		if (prettyErrors.size === 0) {
+			const esErrors = formatEsbuildErrors(e);
+			for (const line of esErrors) prettyErrors.add(line);
+
+			const mainMessage = (e as any)?.message as string | undefined;
+			if (mainMessage && mainMessage.trim().length > 0) {
+				const lines = mainMessage.split('\n').map(l => l.trimEnd()).filter(l => l.length > 0);
+				for (const line of lines) {
+					prettyErrors.add(line);
 				}
 			}
 		}
-		if (prettyErrors.length > 0) {
-			const uniq: string[] = [];
-			const seen = new Set<string>();
-			for (const line of prettyErrors) {
-				if (seen.has(line)) continue;
-				seen.add(line);
-				uniq.push(line);
-			}
-			writeOut(`${pc.red('Error output')}\n`);
-			writeOut(`${uniq.join('\n')}\n`);
+
+		if (prettyErrors.size > 0) {
+			writeOut(`\n${Array.from(prettyErrors).join('\n')}\n`);
 		}
 	}
 }
