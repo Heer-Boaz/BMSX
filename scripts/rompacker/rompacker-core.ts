@@ -40,6 +40,8 @@ const yaml = require('js-yaml');
 // @ts-ignore
 const { createHash } = require('crypto');
 
+type ProgressNote = (message: string) => void;
+
 export const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
 export const BOOTROM_TS_FILENAME = 'bootrom.ts';
 export const BOOTROM_JS_FILENAME = 'bootrom.js';
@@ -243,6 +245,7 @@ export async function esbuild(romname: string, bootloader_path: string, debug: b
 			keepNames: true,
 			external: ['ts-key-enum'],
 			treeShaking: true,
+			logLevel: 'silent',
 		});
 	}
 	else {
@@ -263,6 +266,7 @@ export async function esbuild(romname: string, bootloader_path: string, debug: b
 			keepNames: true,
 			external: ['ts-key-enum'],
 			treeShaking: true,
+			logLevel: 'silent',
 		});
 	}
 	return null;
@@ -302,7 +306,11 @@ export async function buildEngineRuntime(options: { debug: boolean }): Promise<v
  * Type-check the engine and the selected game without emitting files.
  * Aborts on first error.
  */
-export function typecheckBeforeBuild(bootloader_path: string, gameProjectOverride?: string): void {
+export function typecheckBeforeBuild(
+	bootloader_path: string,
+	gameProjectOverride?: string,
+	emitOutput?: (text: string) => void
+): void {
 	// Resolve local TypeScript CLI entry
 	let tscBin: string;
 	try {
@@ -314,43 +322,44 @@ export function typecheckBeforeBuild(bootloader_path: string, gameProjectOverrid
 
 	const run = (projectPath: string, label: string) => {
 		const args = [tscBin, '-p', projectPath, '--noEmit'];
-		const res = spawnSync(process.execPath, args, { stdio: 'inherit' });
+		const res = spawnSync(process.execPath, args, { stdio: 'pipe', encoding: 'utf8' });
+		if (res.stdout) emitOutput?.(res.stdout);
+		if (res.stderr) emitOutput?.(res.stderr);
 		if (res.status !== 0) {
-			throw new Error(`Type-check failed for ${label} (project: ${projectPath}).`);
+			const reason = res.stderr?.trim() || res.stdout?.trim() || 'Type-check failed';
+			throw new Error(`Type-check failed for ${label} (project: ${projectPath}). ${reason}`);
 		}
 	};
 
-	// Engine (if project config exists)
-	try {
-		require('fs').accessSync('src/bmsx/tsconfig.json');
-		run('src/bmsx/tsconfig.json', 'engine');
-	} catch {
-		// No engine tsconfig found; skip engine type-check
-	}
-	// Game (optional if no local tsconfig exists)
-	try {
-		const fs = require('fs');
-		const gameTsconfig = gameProjectOverride
-			? (gameProjectOverride.startsWith('.') || gameProjectOverride.startsWith('src/')
-				? join(process.cwd(), gameProjectOverride)
-				: gameProjectOverride)
-			: join(process.cwd(), bootloader_path, 'tsconfig.json');
-		fs.accessSync(gameTsconfig);
-		run(gameTsconfig, 'game');
-	} catch {
-		// No per-game tsconfig.json; skip
-	}
+	const fs = require('fs');
+	const engineProject = 'src/bmsx/tsconfig.json';
+	fs.accessSync(engineProject);
+	run(engineProject, 'engine');
+
+	const gameTsconfig = gameProjectOverride
+		? (gameProjectOverride.startsWith('.') || gameProjectOverride.startsWith('src/')
+			? join(process.cwd(), gameProjectOverride)
+			: gameProjectOverride)
+		: join(process.cwd(), bootloader_path, 'tsconfig.json');
+	fs.accessSync(gameTsconfig);
+	run(gameTsconfig, 'game');
 }
 
 /** Type-check the game against a provided directory of engine declaration files. */
-export function typecheckGameWithDts(bootloader_path: string, dtsDir: string, baseProjectOverride?: string): void {
+export function typecheckGameWithDts(
+	bootloader_path: string,
+	dtsDir: string,
+	baseProjectOverride?: string,
+	emitOutput?: (text: string) => void
+): void {
 	let tscBin: string;
 	try { tscBin = require.resolve('typescript/bin/tsc'); }
 	catch { throw new Error('TypeScript is not installed locally. Install it with: npm i -D typescript'); }
 
 	const fs = require('fs');
-	const path = require('path');
-	const gameTsconfig = (() => {
+	const path = require('path'); // Prefer the game's tsconfig.json if present to ensure path mappings (e.g. "bmsx") resolve correctly
+
+	const gameTsconfig = (() => { // Try to locate the game's tsconfig.json if present (cart games don't always have one)
 		try {
 			const p = path.join(process.cwd(), bootloader_path, 'tsconfig.json');
 			fs.accessSync(p);
@@ -382,8 +391,13 @@ export function typecheckGameWithDts(bootloader_path: string, dtsDir: string, ba
 	if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 	fs.writeFileSync(tmpCfg, JSON.stringify(cfg, null, 2));
 
-	const res = spawnSync(process.execPath, [tscBin, '-p', tmpCfg], { stdio: 'inherit' });
-	if (res.status !== 0) throw new Error('Type-check with engine declarations failed.');
+	const res = spawnSync(process.execPath, [tscBin, '-p', tmpCfg], { stdio: 'pipe', encoding: 'utf8' });
+	if (res.stdout) emitOutput?.(res.stdout);
+	if (res.stderr) emitOutput?.(res.stderr);
+	if (res.status !== 0) {
+		const reason = res.stderr?.trim() || res.stdout?.trim() || 'Type-check with engine declarations failed.';
+		throw new Error(reason);
+	}
 }
 
 /**
@@ -1237,7 +1251,7 @@ export async function buildResourceList(respaths: string[], rom_name?: string, o
  * - `assetList` - The array of generated asset metadata objects (to be binary-encoded).
  * - `romlabel_buffer` - The buffer data for the "romlabel.png" resource if present.
  */
-export async function generateRomAssets(resources: Resource[]) {
+export async function generateRomAssets(resources: Resource[], reportProgress?: ProgressNote) {
 	const romAssets: RomAsset[] = [];
 	// @ts-ignore
 	let romlabel_buffer: Buffer | undefined;
@@ -1254,6 +1268,7 @@ export async function generateRomAssets(resources: Resource[]) {
 		}
 		let resid = res.name;
 		let buffer = res.buffer; // NOTE that we will remove the buffer during the finalization of the ROM pack. To do proper finalization, we need to store the buffer here right now. N.B. the bootrom will also add the buffer to the RomAsset, so that's why the property is relevant in the first place and we are now using it to temporarily hold the buffer per asset.
+		reportProgress?.(`asset ${res.type}:${resid}`);
 
 		switch (type) {
 			case 'romlabel':
@@ -1492,7 +1507,7 @@ export function buildImgMetaForAtlas(res: AtlasResource): ImgMeta {
  * @param buffers - An array of Buffers where the atlas image data will be appended.
  * @returns A Promise that resolves once the atlas image is written to disk and metadata is updated.
  */
-export async function createAtlasses(resources: Resource[]) {
+export async function createAtlasses(resources: Resource[], reportProgress?: ProgressNote) {
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		const atlasses = resources.filter((res): res is AtlasResource => res.type === 'atlas');
 		if (atlasses.length === 0) throw new Error('No atlas resources found in the "resources"-list. The process of preparing the list of all resources (assets) should also add any atlasses that are to be generated. Thus, this is a bug in the code that prepares the list of resources :-(');
@@ -1500,10 +1515,12 @@ export async function createAtlasses(resources: Resource[]) {
 		for (const atlas of atlasses) {
 			const image_assets = resources.filter((resource): resource is ImageResource => resource.type === 'image');
 			const filteredImages = image_assets.filter(resource => resource.targetAtlasIndex === atlas.atlasid);
+			reportProgress?.(`atlas ${atlas.name} (${filteredImages.length} images)`);
 			const atlasCanvas = createOptimizedAtlas(filteredImages);
 			if (!atlasCanvas) throw new Error(`Failed to create texture atlas for ${atlas.name}.`);
 			atlas.img = atlasCanvas; // Store the canvas in the resource (to extract the image properties later during `processResources`)
 			atlas.buffer = atlasCanvas.toBuffer('image/png'); // Convert canvas to PNG buffer
+			reportProgress?.(`write atlas ${atlas.name}`);
 			await writeFile(`./rom/_ignore/${generateAtlasName(atlas.atlasid)}.png`, atlas.buffer);
 		}
 	}
@@ -1528,11 +1545,12 @@ export async function finalizeRompack(
 	assetList: RomAsset[],
 	rom_name: string,
 	debug: boolean,
-	options: { projectRootPath?: string | null } = {}
+	options: { projectRootPath?: string | null, status?: ProgressNote } = {}
 ) {
 	const outfileBasename = `${rom_name}${debug ? '.debug' : ''}.rom`;
 	const distPath = `./dist/${outfileBasename}`;
 	const ignoreDir = './rom/_ignore';
+	const status = options.status;
 
 	await mkdir('./dist', { recursive: true });
 	await mkdir(ignoreDir, { recursive: true });
@@ -1561,6 +1579,7 @@ export async function finalizeRompack(
 
 	try {
 		for (const asset of assetList) {
+			status?.(`pack ${asset.type}:${asset.resid}`);
 			if (asset.buffer && asset.buffer.length > 0) {
 				const mainBuffer = Buffer.from(asset.buffer);
 				asset.start = offset;
@@ -1575,6 +1594,7 @@ export async function finalizeRompack(
 			}
 			const perMeta = asset.imgmeta ?? asset.audiometa;
 			if (perMeta) {
+				status?.(`meta ${asset.type}:${asset.resid}`);
 				const encoded = Buffer.from(encodeBinary(perMeta));
 				asset.metabuffer_start = offset;
 				asset.metabuffer_end = offset + encoded.length;
@@ -1586,6 +1606,7 @@ export async function finalizeRompack(
 			delete asset.texture_buffer;
 		}
 
+		status?.('encode manifest');
 		const metadataPayload = {
 			assets: assetList,
 			projectRootPath: options.projectRootPath ?? null,
@@ -1595,6 +1616,7 @@ export async function finalizeRompack(
 		const globalMetadataLength = metadataBuffer.length;
 		await writeBuffer(metadataBuffer);
 
+		status?.('write footer');
 		const footer = Buffer.alloc(16);
 		footer.writeBigUInt64LE(BigInt(globalMetadataOffset), 0);
 		footer.writeBigUInt64LE(BigInt(globalMetadataLength), 8);

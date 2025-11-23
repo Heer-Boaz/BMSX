@@ -13,6 +13,7 @@ import { existsSync, statSync } from 'node:fs';
 const glyph = {
 	info: pc.blue('ℹ'),
 	warn: pc.yellow('⚠'),
+	error: pc.red('✖'),
 	ok: pc.green('✔'),
 	arrow: pc.cyan('›'),
 	muted: pc.dim('•'),
@@ -491,18 +492,41 @@ function timer(ms: number) {
 	return new Promise(res => setTimeout(res, ms));
 }
 
+function formatEsbuildErrors(err: any): string[] {
+	const result: string[] = [];
+	const errors = (err?.errors ?? []) as Array<{ text?: string; location?: { file?: string; line?: number; column?: number }; notes?: Array<{ text?: string; location?: { file?: string; line?: number; column?: number } }> }>;
+	for (const e of errors) {
+		const loc = e.location;
+		const locStr = loc?.file ? `${loc.file}${loc.line ? `:${loc.line}` : ''}${loc.column ? `:${loc.column}` : ''}` : '';
+		const msg = e.text ?? 'esbuild error';
+		result.push(locStr ? `${locStr}: ${msg}` : msg);
+		if (e.notes) {
+			for (const note of e.notes) {
+				const nloc = note.location;
+				const nlocStr = nloc?.file ? `${nloc.file}${nloc.line ? `:${nloc.line}` : ''}${nloc.column ? `:${nloc.column}` : ''}` : '';
+				const nmsg = note.text ?? '';
+				if (nmsg) result.push(nlocStr ? `  note: ${nlocStr}: ${nmsg}` : `  note: ${nmsg}`);
+			}
+		}
+	}
+	return result;
+}
+
 class ProgressReporter {
 	private bar: SingleBar;
 	private tasks: string[];
 	private totalTasks: number;
 	private completedTasks = 0;
 	private started = false;
+	private detail = '';
+	private suspended = false;
+	private failed = false;
 
 	constructor(tasks: string[]) {
 		this.tasks = [...tasks];
 		this.totalTasks = this.tasks.length;
 		this.bar = new SingleBar({
-			format: `${pc.dim('[')}${pc.green('{bar}')}${pc.dim(']')} ${pc.cyan('{percentage}%')} ${pc.white('{task}')}`,
+			format: `${pc.dim('[')}${pc.green('{bar}')}${pc.dim(']')} ${pc.dim('{value}/{total}')} ${pc.cyan('{percentage}%')} {task} {detail}`,
 			barCompleteChar: '█',
 			barIncompleteChar: '░',
 			barsize: 80,
@@ -510,10 +534,14 @@ class ProgressReporter {
 			stopOnComplete: false,
 			align: 'left',
 			fps: 10,
+			clearOnComplete: false,
 		}, Presets.shades_classic);
 	}
 	private currentTask(): string {
 		return this.tasks[0] ?? '';
+	}
+	public getCurrentTask(): string {
+		return this.currentTask();
 	}
 
 	private recalcTotals(): void {
@@ -524,12 +552,15 @@ class ProgressReporter {
 		if (!this.started) return;
 		const total = this.totalTasks || 1;
 		this.bar.setTotal(total);
-		this.bar.update(this.completedTasks, { task: label ?? this.currentTask() });
+		const taskLabel = label ?? this.currentTask();
+		const detailLabel = this.detail ? pc.dim(`· ${this.detail}`) : '';
+		this.bar.update(this.completedTasks, { task: taskLabel, detail: detailLabel });
 	}
 
 	public async taskCompleted() {
 		const finishedTask = this.tasks.shift() ?? '';
 		this.completedTasks++;
+		this.detail = '';
 		this.recalcTotals();
 		this.sync(this.currentTask() || finishedTask);
 		await this.pulse();
@@ -571,7 +602,7 @@ class ProgressReporter {
 	}
 
 	public async showDone() {
-		if (this.started) {
+		if (this.started && !this.suspended && !this.failed) {
 			this.bar.update(this.totalTasks || this.completedTasks, { task: 'Gereed' });
 			this.bar.stop();
 		}
@@ -581,12 +612,80 @@ class ProgressReporter {
 	public async pulse() {
 		await timer(20);
 	}
+
+	public setDetail(detail: string) {
+		this.detail = detail;
+		this.sync();
+	}
+
+	public clearDetail() {
+		this.detail = '';
+		this.sync();
+	}
+
+	public async runWithDetail<T>(detail: string, action: () => Promise<T>): Promise<T> {
+		this.setDetail(detail);
+		try {
+			return await action();
+		} finally {
+			this.clearDetail();
+		}
+	}
+
+	public suspend() {
+		if (!this.started || this.suspended) return;
+		this.bar.stop();
+		this.suspended = true;
+		process.stdout.write('\n');
+	}
+
+	public resume(label?: string) {
+		if (!this.started || !this.suspended) return;
+		this.suspended = false;
+		const total = this.totalTasks || 1;
+		this.bar.start(total, this.completedTasks, {
+			task: label ?? this.currentTask(),
+			detail: this.detail ? pc.dim(`· ${this.detail}`) : '',
+		});
+	}
+
+	public async runWithOutput<T>(detail: string, action: () => Promise<T>): Promise<T> {
+		this.setDetail(detail);
+		try {
+			return await action();
+		} finally {
+			this.clearDetail();
+		}
+	}
+
+	public stop() {
+		if (!this.started) return;
+		if (!this.suspended) this.bar.stop();
+		this.started = false;
+	}
+
+	public fail(task: string, summary: string) {
+		if (!this.started) return;
+		this.failed = true;
+		const taskLabel = task || 'Pipeline';
+		const detailLabel = pc.red(`✘ ${summary}`);
+		this.bar.update(this.completedTasks, { task: pc.red(taskLabel), detail: detailLabel });
+		this.bar.stop();
+		this.suspended = true;
+	}
 }
 
 async function main() {
-	const outputError = (e: any) => writeOut(`\n[GEFAALD] ${e?.stack ?? e?.message ?? e ?? 'Geen melding en/of stacktrace beschikbaar :-('} \n`, 'error');
+	const outputError = (e: any) => writeOut(`\n[GEFAALD] ${e?.message ?? e ?? 'Geen melding beschikbaar :-('} \n`, 'error');
 	const progress = new ProgressReporter(taskList);
 	let romOutputPath = '';
+	const bufferedLogs: string[] = [];
+	const captureLog = (text: string) => {
+		if (!text) return;
+		const trimmed = text.trimEnd();
+		if (trimmed.length === 0) return;
+		bufferedLogs.push(trimmed);
+	};
 	try {
 		printBanner();
 
@@ -724,12 +823,12 @@ async function main() {
 
 			if (!force) {
 				const includeCode = isEngineMode || shouldBundleCartCode;
-				rebuildRequired = await isRebuildRequired(rom_name, bootloader_path, respath, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: false });
+				rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: false }));
 				if (!rebuildRequired && resourceRoots.length > 1) {
 					for (let i = 1; i < resourceRoots.length; i++) {
 						const candidate = resourceRoots[i];
 						if (!candidate || candidate === respath) continue;
-						const needs = await isRebuildRequired(rom_name, bootloader_path, candidate, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: true });
+						const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: true }));
 						rebuildRequired = rebuildRequired || needs;
 						if (rebuildRequired) break;
 					}
@@ -757,76 +856,136 @@ async function main() {
 				// Type-check engine and game prior to bundling unless skipped
 				if (!skipTypecheck && (isEngineMode || shouldBundleCartCode)) {
 					const tsProject = usePkgTsconfig ? `${bootloader_path}/tsconfig.pkg.json` : undefined;
+					const stepLogs: string[] = [];
+					const push = (text: string) => { if (text) stepLogs.push(text); };
 					try {
-						if (enginedts) typecheckGameWithDts(bootloader_path, enginedts, tsProject);
-						else typecheckBeforeBuild(bootloader_path, tsProject);
-					} catch (e) { throw e; }
+						await progress.runWithOutput('Type-check', async () => {
+							if (enginedts) typecheckGameWithDts(bootloader_path, enginedts, tsProject, push);
+							else typecheckBeforeBuild(bootloader_path, tsProject, push);
+						});
+					} catch (err) {
+						stepLogs.forEach(captureLog);
+						throw err;
+					}
 
 					// Ensure tasks are removed
 					await progress.taskCompleted();
 				}
 				const tsProject = usePkgTsconfig ? `${bootloader_path}/tsconfig.pkg.json` : undefined;
 				if (isEngineMode) {
-					await buildEngineRuntime({ debug });
+					await progress.runWithOutput('Build engine runtime', () => buildEngineRuntime({ debug }));
 				} else if (shouldBundleCartCode) {
-					await esbuild(rom_name, bootloader_path, debug, tsProject);
+					const stepLogs: string[] = [];
+					try {
+						await progress.runWithOutput('Bundle cart code', () => esbuild(rom_name, bootloader_path, debug, tsProject));
+					} catch (err) {
+						stepLogs.push(...formatEsbuildErrors(err));
+						if (err && (err as any).message) stepLogs.push((err as any).message);
+						for (const line of stepLogs) captureLog(line);
+						throw err;
+					}
 				}
 				await progress.taskCompleted();
-				const romResMetaList = await getResMetaList(resourceRoots, rom_name, {
+				const romResMetaList = await progress.runWithDetail('Scan resources', () => getResMetaList(resourceRoots, rom_name, {
 					includeCode: isEngineMode || shouldBundleCartCode,
 					extraLuaPaths: Array.from(extraLuaPathSet),
 					virtualRoot,
 					resolveAtlasIndex: true,
-				});
+				}));
 				await progress.taskCompleted();
 				ensureMainLuaAssetPresent(romManifest, romResMetaList);
 				// Build resources
-				let resources = await getResourcesList(romResMetaList, rom_name, {
+				let resources = await progress.runWithDetail('Load resources', () => getResourcesList(romResMetaList, rom_name, {
 					includeCode: isEngineMode || shouldBundleCartCode,
-				});
+				}));
 				await progress.taskCompleted();
 
 				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-					await createAtlasses(resources);
+					await progress.runWithDetail('Generate atlases', () => createAtlasses(resources, message => progress.setDetail(message)));
 				}
 				await progress.taskCompleted();
 
 				// Validate AEM references against loaded resources
 				validateAudioEventReferences(resources);
 
-				const romAssets = await generateRomAssets(resources);
+				const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
 				await progress.taskCompleted();
 
-				await finalizeRompack(romAssets, rom_name, debug, { projectRootPath });
+				await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, debug, { projectRootPath, status: message => progress.setDetail(message) }));
 				await progress.taskCompleted();
 			}
 
-			await buildBootromScriptIfNewer({ debug, forceBuild: force, platform, romName: rom_name, caseInsensitiveLua });
+			await progress.runWithDetail('Build boot ROM', () => buildBootromScriptIfNewer({ debug, forceBuild: force, platform, romName: rom_name, caseInsensitiveLua }));
 			await progress.taskCompleted();
 			if (platform === 'browser') {
 				if (!isEngineMode) {
-					await buildGameHtmlAndManifest(rom_name, title, short_name, debug);
+					await progress.runWithDetail('Build game HTML/manifest', () => buildGameHtmlAndManifest(rom_name, title, short_name, debug));
 				}
 			} else {
 				const launcherName = getNodeLauncherFilename(platform, debug);
 				logOk(`Generated Node launcher ${pc.white(`dist/${launcherName}`)} for platform ${pc.bold(platform)}`);
 			}
 			await progress.taskCompleted();
-			if (deploy) {
-				await deployToServer(rom_name, title);
-				await progress.taskCompleted();
-			}
-			await progress.showDone();
+		if (deploy) {
+			await progress.runWithDetail('Deploy to server', () => deployToServer(rom_name, title));
+			await progress.taskCompleted();
+		}
+		await progress.showDone();
 			const romOutput = romOutputPath.length > 0 ? pc.white(romOutputPath) : pc.white('dist/<rom>.rom');
 			logOk(`ROM packing complete → ${romOutput}`);
 			writeOut(`\n`);
 		} catch (e) {
+			progress.stop();
 			await progress.pulse();
 			writeOut(`\n`);
 			throw e;
 		}
 	} catch (e) {
-		outputError(e);
+		const failedTask = progress.getCurrentTask();
+		const summary = (e as any)?.message?.split?.('\n')?.[0] ?? String(e);
+		if (failedTask) {
+			progress.fail(failedTask, summary);
+			writeOut(`\n${pc.red(`✘ Failed during: ${failedTask}`)}\n`, 'error');
+		}
+		// Start with any buffered logs captured from subprocesses / helpers
+		const prettyErrors: string[] = [...bufferedLogs];
+
+		// Also append the main error message if it is non-trivial and not already present
+		const mainMessage = (e as any)?.message as string | undefined;
+		if (mainMessage && mainMessage.trim().length > 0) {
+			const lines = mainMessage.split('\n').map(l => l.trimEnd()).filter(l => l.length > 0);
+			for (const line of lines) {
+				prettyErrors.push(line);
+			}
+		}
+		const esErrors = (e as any)?.errors as Array<{ text?: string; location?: { file?: string; line?: number; column?: number }; notes?: Array<{ text?: string; location?: { file?: string; line?: number; column?: number } }> }> | undefined;
+		if (Array.isArray(esErrors) && esErrors.length) {
+			for (const err of esErrors) {
+				const loc = err.location;
+				const locStr = loc?.file ? `${loc.file}${loc.line ? `:${loc.line}` : ''}${loc.column ? `:${loc.column}` : ''}` : '';
+				const msg = err.text ?? 'esbuild error';
+				prettyErrors.push(locStr ? `${locStr}: ${msg}` : msg);
+				if (err.notes) {
+					for (const note of err.notes) {
+						const nloc = note.location;
+						const nlocStr = nloc?.file ? `${nloc.file}${nloc.line ? `:${nloc.line}` : ''}${nloc.column ? `:${nloc.column}` : ''}` : '';
+						const nmsg = note.text ?? '';
+						if (nmsg) prettyErrors.push(nlocStr ? `  note: ${nlocStr}: ${nmsg}` : `  note: ${nmsg}`);
+					}
+				}
+			}
+		}
+		if (prettyErrors.length > 0) {
+			const uniq: string[] = [];
+			const seen = new Set<string>();
+			for (const line of prettyErrors) {
+				if (seen.has(line)) continue;
+				seen.add(line);
+				uniq.push(line);
+			}
+			writeOut(`${pc.red('Error output')}\n`);
+			writeOut(`${uniq.join('\n')}\n`);
+		}
 	}
 }
 
