@@ -1135,6 +1135,7 @@ export function showRuntimeError(line: number | null, column: number | null, mes
 		hovered: false,
 		hoverLine: -1,
 		copyButtonHovered: false,
+		hidden: false,
 	};
 	rebuildRuntimeErrorOverlayView(overlay);
 	setActiveRuntimeErrorOverlay(overlay);
@@ -1327,6 +1328,9 @@ export function clearAllRuntimeErrorOverlays(): void {
 }
 
 export function setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay | null): void {
+	if (overlay && overlay.hidden === undefined) {
+		overlay.hidden = false;
+	}
 	ide_state.runtimeErrorOverlay = overlay;
 	const context = getActiveCodeTabContext();
 	if (context) {
@@ -2107,11 +2111,6 @@ export function handleEscapeKey(): boolean {
 		resetActionPromptState();
 		return true;
 	}
-	if (ide_state.runtimeErrorOverlay) {
-		clearRuntimeErrorOverlay();
-		ide_state.message.visible = false;
-		return true;
-	}
 	if (ide_state.createResourceVisible) {
 		closeCreateResourcePrompt(true);
 		return true;
@@ -2130,6 +2129,12 @@ export function handleEscapeKey(): boolean {
 	}
 	if (ide_state.searchActive || ide_state.searchVisible) {
 		closeSearch(false, true);
+		return true;
+	}
+	const overlay = ide_state.runtimeErrorOverlay;
+	if (overlay) {
+		overlay.hidden = !overlay.hidden;
+		ide_state.message.visible = false;
 		return true;
 	}
 	return false;
@@ -7117,7 +7122,7 @@ export function drawCodeArea(api: BmsxConsoleApi): void {
 
 export function drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
 	const overlay = ide_state.runtimeErrorOverlay;
-	if (!overlay) {
+	if (!overlay || overlay.hidden) {
 		return;
 	}
 	const layoutHost = createRuntimeErrorOverlayLayoutHost();
@@ -7161,7 +7166,7 @@ export function drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, co
 
 export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, justPressed: boolean, codeTop: number, codeRight: number, textLeft: number): boolean {
 	const overlay = ide_state.runtimeErrorOverlay;
-	if (!overlay) {
+	if (!overlay || overlay.hidden) {
 		return false;
 	}
 	const layoutHost = createRuntimeErrorOverlayLayoutHost();

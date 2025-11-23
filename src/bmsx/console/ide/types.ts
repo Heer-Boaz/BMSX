@@ -431,6 +431,7 @@ export type RuntimeErrorOverlay = {
 	hovered: boolean;
 	hoverLine: number;
 	copyButtonHovered: boolean;
+	hidden: boolean;
 };
 
 export type RepeatEntry = {
