@@ -963,15 +963,17 @@ async function main() {
 		// Add buffered logs (e.g., TypeScript errors)
 		prettyErrors.push(...bufferedLogs);
 
-		// Add esbuild-specific errors
+		// Add esbuild-specific errors if available
 		const esErrors = formatEsbuildErrors(e);
-		prettyErrors.push(...esErrors);
-
-		// Add main error message if not already covered
-		const mainMessage = (e as any)?.message as string | undefined;
-		if (mainMessage && mainMessage.trim().length > 0) {
-			const lines = mainMessage.split('\n').map(l => l.trimEnd()).filter(l => l.length > 0);
-			prettyErrors.push(...lines);
+		if (esErrors.length > 0) {
+			prettyErrors.push(...esErrors);
+		} else {
+			// Only add main error message if no esbuild errors were extracted
+			const mainMessage = (e as any)?.message as string | undefined;
+			if (mainMessage && mainMessage.trim().length > 0) {
+				const lines = mainMessage.split('\n').map(l => l.trimEnd()).filter(l => l.length > 0);
+				prettyErrors.push(...lines);
+			}
 		}
 
 		// Deduplicate
