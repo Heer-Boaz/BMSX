@@ -822,6 +822,7 @@ async function main() {
 		}
 		// split-engine removed
 		logDivider('Pipeline');
+		let typeCheckError: Error | null = null;
 		logInfo(`Starting for ${pc.bold(pc.blue(`${rom_name}`))}`);
 		progress.showInitial();
 		await progress.taskCompleted(); // Need to complete the initial task as it will be triggered twice or so
@@ -868,9 +869,13 @@ async function main() {
 						if (enginedts) typecheckGameWithDts(bootloader_path, enginedts, tsProject, push);
 						else typecheckBeforeBuild(bootloader_path, tsProject, push);
 					});
+					// Capture type-check output even if it didn't throw
+					if (stepLogs.length > 0) {
+						stepLogs.forEach(captureLog);
+					}
 				} catch (err) {
 					stepLogs.forEach(captureLog);
-					throw err;
+					typeCheckError = err as Error;
 				}
 
 				// Ensure tasks are removed
@@ -939,6 +944,10 @@ async function main() {
 		const romOutput = romOutputPath.length > 0 ? pc.white(romOutputPath) : pc.white('dist/<rom>.rom');
 		logOk(`ROM packing complete → ${romOutput}`);
 		writeOut(`\n`);
+		if (typeCheckError) {
+			writeOut(`\n${pc.red('⚠ Build completed with type-check errors')}\n`, 'error');
+			throw typeCheckError;
+		}
 	} catch (e) {
 		progress.stop();
 		await progress.pulse();
@@ -949,24 +958,27 @@ async function main() {
 			writeOut(`${pc.red(`✘ Failed during: ${failedTask}`)}`, 'error');
 		}
 
-		const prettyErrors = new Set<string>(bufferedLogs);
+		const prettyErrors: string[] = [];
 
-		// If no logs were buffered, try to extract info from the error object
-		if (prettyErrors.size === 0) {
-			const esErrors = formatEsbuildErrors(e);
-			for (const line of esErrors) prettyErrors.add(line);
+		// Add buffered logs (e.g., TypeScript errors)
+		prettyErrors.push(...bufferedLogs);
 
-			const mainMessage = (e as any)?.message as string | undefined;
-			if (mainMessage && mainMessage.trim().length > 0) {
-				const lines = mainMessage.split('\n').map(l => l.trimEnd()).filter(l => l.length > 0);
-				for (const line of lines) {
-					prettyErrors.add(line);
-				}
-			}
+		// Add esbuild-specific errors
+		const esErrors = formatEsbuildErrors(e);
+		prettyErrors.push(...esErrors);
+
+		// Add main error message if not already covered
+		const mainMessage = (e as any)?.message as string | undefined;
+		if (mainMessage && mainMessage.trim().length > 0) {
+			const lines = mainMessage.split('\n').map(l => l.trimEnd()).filter(l => l.length > 0);
+			prettyErrors.push(...lines);
 		}
 
-		if (prettyErrors.size > 0) {
-			writeOut(`\n${Array.from(prettyErrors).join('\n')}\n`);
+		// Deduplicate
+		const uniqueErrors = Array.from(new Set(prettyErrors));
+
+		if (uniqueErrors.length > 0) {
+			writeOut(`\n${uniqueErrors.join('\n')}\n`);
 		}
 	}
 }
