@@ -10,6 +10,17 @@ import type { Resource, RomManifest, RomPackerMode, RomPackerOptions, RomPackerT
 import { join, isAbsolute } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
 
+const glyph = {
+	info: pc.blue('ℹ'),
+	warn: pc.yellow('⚠'),
+	ok: pc.green('✔'),
+	arrow: pc.cyan('›'),
+	muted: pc.dim('•'),
+	title: pc.magenta('◆'),
+};
+const labelWidth = 14;
+type ParsedOptions = RomPackerOptions & { bootloaderFallbackPath?: string };
+
 // Command line parameter for texture atlas usage
 export let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 // Define common assets path
@@ -252,7 +263,7 @@ function ensureMainLuaAssetPresent(manifest: RomManifest, resources: Resource[])
 	}
 }
 
-function parseOptions(args: string[]): RomPackerOptions {
+function parseOptions(args: string[]): ParsedOptions {
 	const seenFlags = parseArgsVector(args);
 	const unknownFlags = [...seenFlags].filter(flag => !KNOWN_FLAGS.has(flag));
 	if (unknownFlags.length > 0) {
@@ -382,6 +393,7 @@ function parseOptions(args: string[]): RomPackerOptions {
 		bootloader_path = consoleBootloaderPath;
 		bootloaderFallbackApplied = true;
 	}
+	const bootloaderFallbackPath = bootloaderFallbackApplied ? consoleBootloaderPath : undefined;
 
 	const resCandidates: Array<string | undefined> = [
 		respath,
@@ -397,10 +409,6 @@ function parseOptions(args: string[]): RomPackerOptions {
 	}
 	respath = normalizePathKey(resolvedResPath);
 	const derivedCartRoot = normalizePathKey(join(respath, '..'));
-
-	if (bootloaderFallbackApplied && normalizedRomName.length > 0) {
-		writeOut(`Bootloader not found for ROM "${rom_name}". Using default cart bootloader at ${consoleBootloaderPath}.\n`, 'warning');
-	}
 
 	const isEngineMode = (mode === 'engine');
 	let shouldBundleCartCode = !isEngineMode && cartBootloaderFound;
@@ -436,6 +444,7 @@ function parseOptions(args: string[]): RomPackerOptions {
 		mode,
 		shouldBundleCartCode,
 		extraLuaRoots,
+		bootloaderFallbackPath,
 	};
 }
 
@@ -448,6 +457,34 @@ function writeOut(_tolog: string, type?: logentryType): void {
 
 function clearScreen(): void {
 	process.stdout.write('\u001b[2J\u001b[0f');
+}
+
+function printBanner(): void {
+	clearScreen();
+	writeOut(pc.bold(pc.green('╔════════════════════════════════════════════════════════════════════════════════╗\n')));
+	writeOut(pc.bold(pc.green(`║  ${' '.repeat(25)}${pc.white('BMSX ROMPACKER')} by Boaz©®℗™${' '.repeat(27)}║\n`)));
+	writeOut(pc.bold(pc.green('╚════════════════════════════════════════════════════════════════════════════════╝\n')));
+}
+
+function logInfo(message: string): void {
+	writeOut(`${glyph.info} ${message}\n`);
+}
+
+function logWarn(message: string): void {
+	writeOut(`${glyph.warn} ${message}\n`, 'warning');
+}
+
+function logOk(message: string): void {
+	writeOut(`${glyph.ok} ${message}\n`);
+}
+
+function logBullet(label: string, value: string): void {
+	const padded = label.padEnd(labelWidth, ' ');
+	writeOut(`${glyph.arrow} ${pc.bold(padded)} ${pc.dim('·')} ${value}\n`);
+}
+
+function logDivider(title: string): void {
+	writeOut(`\n${glyph.title} ${pc.bold(title)}\n`);
 }
 
 function timer(ms: number) {
@@ -465,14 +502,16 @@ class ProgressReporter {
 		this.tasks = [...tasks];
 		this.totalTasks = this.tasks.length;
 		this.bar = new SingleBar({
-			format: `${pc.dim('[')}${pc.green('{bar}')}${pc.dim(']')} {percentage}% {task}`,
+			format: `${pc.dim('[')}${pc.green('{bar}')}${pc.dim(']')} ${pc.cyan('{percentage}%')} ${pc.white('{task}')}`,
 			barCompleteChar: '█',
 			barIncompleteChar: '░',
+			barsize: 80,
 			hideCursor: true,
 			stopOnComplete: false,
+			align: 'left',
+			fps: 10,
 		}, Presets.shades_classic);
 	}
-
 	private currentTask(): string {
 		return this.tasks[0] ?? '';
 	}
@@ -547,14 +586,12 @@ class ProgressReporter {
 async function main() {
 	const outputError = (e: any) => writeOut(`\n[GEFAALD] ${e?.stack ?? e?.message ?? e ?? 'Geen melding en/of stacktrace beschikbaar :-('} \n`, 'error');
 	const progress = new ProgressReporter(taskList);
+	let romOutputPath = '';
 	try {
-		clearScreen();
-		writeOut(pc.bold(pc.green('┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n')));
-		writeOut(pc.bold(pc.green('┃                          BMSX ROMPACKER DOOR BOAZ©®™                           ┃\n')));
-		writeOut(pc.bold(pc.green('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n')));
+		printBanner();
 
 		const args = process.argv.slice(2);
-		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform, caseInsensitiveLua, mode, shouldBundleCartCode, extraLuaRoots } = parseOptions(args);
+		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform, caseInsensitiveLua, mode, shouldBundleCartCode, extraLuaRoots, bootloaderFallbackPath } = parseOptions(args);
 		if (!shouldBundleCartCode && mode !== 'engine') {
 			progress.removeTasks(bundlerTasks);
 			progress.removeTasks(typecheckTasks);
@@ -588,10 +625,11 @@ async function main() {
 			if (!isEngineMode) {
 				extraLuaPathSet.add(normalizePathKey(bootloader_path));
 			}
-			writeOut(`Building resource list from ${resourceRoots.map(r => `"${r}"`).join(' and ')}...\n`);
-			writeOut('Note: ROM packing and deployment are skipped.\n');
+			logDivider('Resource list');
+			logInfo(`Building from ${resourceRoots.map(r => pc.white(`"${r}"`)).join(pc.dim(' and '))}`);
+			logWarn('ROM packing and deployment are skipped');
 			if (rom_name) {
-				writeOut(`Note: ROM name is set to "${rom_name}" (not used for resource list building).\n`);
+				logInfo(`ROM name set to ${pc.bold(`"${rom_name}"`)} (not used for list building)`);
 			}
 			await buildResourceList(resourceRoots, rom_name || undefined, {
 				extraLuaPaths: Array.from(extraLuaPathSet),
@@ -621,14 +659,20 @@ async function main() {
 			extraLuaPathSet.add(normalizePathKey(bootloader_path));
 		}
 
-		writeOut(`Target platform: ${platform}.\n`);
-		if (resourceRoots.length === 1) {
-			writeOut(`Using resources from "${resourceRoots[0]}"...\n`);
-		} else {
-			writeOut(`Using resources from "${resourceRoots[0]}" and common resources from "${resourceRoots[1]}"...\n`);
+		logDivider('Run setup');
+		logBullet('ROM', pc.bold(pc.white(rom_name)));
+		logBullet('Title', pc.white(title));
+		logBullet('Mode', pc.magenta(mode));
+		logBullet('Platform', pc.cyan(platform));
+		logBullet('Bootloader', pc.white(normalizePathKey(bootloader_path)));
+		logBullet('Resources', resourceRoots.length === 1
+			? pc.white(resourceRoots[0])
+			: `${pc.white(resourceRoots[0])} ${pc.dim('+ common ' + resourceRoots[1])}`);
+		if (bootloaderFallbackPath) {
+			logWarn(`Bootloader not found for ROM "${rom_name}". Using default cart bootloader at ${pc.white(bootloaderFallbackPath)}.`);
 		}
 		if (usePkgTsconfig) {
-			writeOut(`Using per-game tsconfig.pkg.json for bundling/type-checking.\n`);
+			logBullet('tsconfig', pc.white('tsconfig.pkg.json (per-game)'));
 			const path = require('path');
 			const fs = require('fs');
 			const candidates = [
@@ -650,47 +694,30 @@ async function main() {
 			}
 		}
 
+		logDivider('Options');
+		logBullet('Rebuild', force ? pc.yellow('force') : pc.green('auto (mtime check)'));
+		logBullet('Atlas', useTextureAtlas ? pc.green('enabled') : pc.red('disabled'));
+		logBullet('Lua case', caseInsensitiveLua ? pc.green('fold lower') : pc.yellow('preserve case'));
+		logBullet('Deploy', deploy ? pc.green('enabled') : pc.dim('disabled'));
+		logBullet('Typecheck', skipTypecheck ? pc.red('skipped') : pc.green('enabled'));
+		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
+
 		let rebuildRequired = true;
 		if (force) {
-			writeOut(`Note: Recompilation and building forced via ${pc.bold(pc.yellow('--force'))} \n`);
 			progress.removeTasks(rebuildCheckTasks);
 		}
 		else {
-			writeOut(`Note: Recompilation and building only if required (based on file modification times).\n`);
-		}
-		if (useTextureAtlas) {
-			writeOut(`Note: Texture atlas generation enabled via ${pc.bold(pc.green('--textureatlas yes'))} \n`);
-		}
-		else {
-			writeOut(`Note: Texture atlas generation disabled via ${pc.bold(pc.red('--textureatlas no'))} \n`);
-		}
-		if (caseInsensitiveLua) {
-			writeOut(`Note: Lua case folding enabled (engine expects lowercase Lua identifiers).\n`);
-		} else {
-			writeOut(`Note: Lua case folding disabled via ${pc.bold(pc.red('--preserve-lua-case'))} or ROM_CASE_INSENSITIVE_LUA.\n`);
+			logInfo('Rebuild only if inputs are newer than outputs');
 		}
 		if (!deploy) {
-			writeOut(`Note: Deploy to FTP server disabled via ${pc.bold(pc.red('--nodeploy'))} \n`);
 			progress.removeTasks(deployTasks);
 		}
 		if (skipTypecheck) {
-			writeOut(`Skipping type-checking of the game as per ${pc.bold(pc.red('--skiptypecheck'))}.\n`);
 			progress.removeTasks(typecheckTasks);
 		}
 		// split-engine removed
-		writeOut(`Starting ROM packing and deployment process for ROM ${pc.bold(pc.blue(`${rom_name}`))}...\n`);
-		if (resourceRoots.length === 1) {
-			writeOut(`Using resources from "${resourceRoots[0]}"...\n`);
-		} else {
-			writeOut(`Using resources from "${resourceRoots[0]}" and common resources from "${resourceRoots[1]}"...\n`);
-		}
-		if (usePkgTsconfig) writeOut(`Using per-game tsconfig.pkg.json for bundling/type-checking.\n`);
-		if (debug) {
-			writeOut(`${pc.bold(pc.cyan('Building DEBUG version of rompack.'))}.\n`);
-		}
-		else {
-			writeOut(`${pc.bold(pc.cyan('Building NON-DEBUG version of rompack.'))}.\n`);
-		}
+		logDivider('Pipeline');
+		logInfo(`Starting for ${pc.bold(pc.blue(`${rom_name}`))}`);
 		try {
 			progress.showInitial();
 			await progress.taskCompleted(); // Need to complete the initial task as it will be triggered twice or so
@@ -708,7 +735,7 @@ async function main() {
 					}
 				}
 				if (!rebuildRequired) {
-					writeOut('Rebuild skipped: game rom was newer than code/assets (use --force option to ignore this check).\n');
+					logInfo('Rebuild skipped: game rom is newer than code/assets (use --force to override)');
 				}
 				await progress.taskCompleted();
 			} else rebuildRequired = true;
@@ -724,6 +751,7 @@ async function main() {
 			rom_name = romManifest?.rom_name ?? rom_name;
 			title = romManifest?.title ?? title;
 			short_name = romManifest?.short_name ?? short_name;
+			romOutputPath = `dist/${rom_name}${debug ? '.debug' : ''}.rom`;
 
 			if (rebuildRequired) {
 				// Type-check engine and game prior to bundling unless skipped
@@ -781,7 +809,7 @@ async function main() {
 				}
 			} else {
 				const launcherName = getNodeLauncherFilename(platform, debug);
-				writeOut(`Generated Node launcher "dist/${launcherName}" for platform "${platform}".\n`);
+				logOk(`Generated Node launcher ${pc.white(`dist/${launcherName}`)} for platform ${pc.bold(platform)}`);
 			}
 			await progress.taskCompleted();
 			if (deploy) {
@@ -789,6 +817,8 @@ async function main() {
 				await progress.taskCompleted();
 			}
 			await progress.showDone();
+			const romOutput = romOutputPath.length > 0 ? pc.white(romOutputPath) : pc.white('dist/<rom>.rom');
+			logOk(`ROM packing complete → ${romOutput}`);
 			writeOut(`\n`);
 		} catch (e) {
 			await progress.pulse();
