@@ -10,7 +10,7 @@ set -euo pipefail
 # Run them again if you want to re-apply the same moves on another checkout.
 
 # diagnostics -> diagnostics.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/diagnostics.ts \
   -n enqueueDiagnosticsJob -n executeDiagnosticsComputation -n findContextByChunk \
@@ -25,7 +25,7 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n findFunctionDefinitionRowInActiveFile -n getActiveBreakpointChunkName -n toggleBreakpointAtCursor -n toggleBreakpointForEditorRow
 
 # search_ui -> search_ui.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/search_ui.ts \
   -n searchVisibleResultCount -n searchResultEntryHeight -n computeSearchResultBounds \
@@ -33,14 +33,14 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n applySearchFilter -n computeSearchMatches -n collectSymbolSearchResults -n symbolCatalogDedupKey
 
 # window_listeners -> window_listeners.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/window_listeners.ts \
   -n installPlatformVisibilityListener -n installWindowEventListeners \
   -n resetInputFocusState -n requestWindowFocusState -n flushWindowFocusState
 
 # runtime_overlay -> runtime_overlay.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/runtime_overlay.ts \
   -n syncRuntimeErrorOverlayFromContext -n updateRuntimeErrorOverlay \
@@ -48,41 +48,41 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n handleRuntimeHover -n clearRuntimeOverlay -n enqueueRuntimeOverlayUpdate -n processRuntimeOverlayQueue
 
 # draw -> draw.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/draw.ts \
   -n drawCodeArea -n drawRuntimeErrorOverlay -n drawTopBar -n drawStatusArea
 
 # ui_layout -> ui_layout.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/ui_layout.ts \
   -n computeEditorBounds -n getSymbolSearchBarHeight -n computeInlineBarBounds \
   -n topBarHeight -n computeTabBarHeight -n visibleRowCount -n statusAreaHeight -n computeProblemsPanelHeight
 
 # topbar -> topbar.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/topbar.ts \
   -n renderTopBar -n handleTopBarButtonClick -n updateTopBarState -n openActionPrompt \
   -n closeActionPrompt -n computeTopBarButtonBounds -n topBarPointerHandler -n drawTopBarButtons -n updateTopBarTooltip
 
 # pointer -> pointer.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/pointer.ts \
   -n registerPointerClick -n resetPointerClickTracking -n handlePointerMove -n handlePointerDown \
   -n handlePointerUp -n handlePointerLeave -n updateHoverState -n pointerHoverTooltip -n processPointerWheel -n computePointerPosition -n handlePointerDoubleClick
 
 # navigation -> navigation.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/navigation.ts \
   -n beginNavigationCapture -n completeNavigation -n setActiveTab -n closeTab -n navigateToSymbol \
   -n navigateBackward -n navigateForward -n computeNavigationCheckpoint -n saveNavigationState -n restoreNavigationState
 
 # editor_core -> editor_core.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/editor_core.ts \
   -n invalidateLineRange -n findWordLeft -n findWordRight -n getLineRangeForMovement \
@@ -91,7 +91,7 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n scheduleDiagnosticsComputation -n runDiagnosticsForContexts -n updateDiagnosticsAggregates -n refreshActiveDiagnostics -n markDiagnosticsDirtyForChunk -n isActive
 
 # lifecycle -> lifecycle.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/lifecycle.ts \
   -n serializeState -n restoreState -n shutdown -n getKeyboard -n handleEscapeShortcut \
@@ -105,20 +105,20 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n splitLines -n update -n updateBlink
 
 # input_and_prompt -> input_and_prompt.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/input_and_prompt.ts \
   -n splitLines -n handleActionPromptInput -n handleEditorInput -n handleCustomKeybinding \
   -n handleCreateResourceInput -n openCreateResourcePrompt -n closeCreateResourcePrompt -n cancelCreateResourcePrompt
 
 # symbols_focus -> symbols_focus.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/symbols_focus.ts \
   -n symbolPriority -n symbolKindLabel -n symbolSourceLabel -n focusEditorFromProblemsPanel -n focusEditorFromResourcePanel
 
 # topbar_pointer_actions -> topbar_pointer_actions.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/topbar_pointer_actions.ts \
   -n handleActionPromptPointer -n handleTopBarPointer -n handleTabBarPointer -n handleTabBarMiddleClick \
@@ -127,14 +127,14 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n performAction -n performReboot -n performResume -n handleActionPromptPointer
 
 # pointer_inline -> pointer_inline.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/pointer_inline.ts \
   -n applySymbolSearchFieldText -n inlineFieldMetrics -n createInlineFieldEditingHandlers \
   -n processInlineFieldEditing -n processInlineFieldPointer -n updateRuntimeErrorOverlay -n pasteFromClipboard -n registerPointerClick -n resetPointerClickTracking
 
 # resource_panel -> resource_panel.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/resource_panel.ts \
   -n findFunctionDefinitionRowInActiveFile -n notifyReadOnlyEdit -n toggleResourcePanel -n toggleProblemsPanel \
@@ -151,7 +151,7 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n toggleResourcePanel -n toggleResourcePanelFilterMode -n toggleWordWrap -n trimResourceViewerLines
 
 # text_editing -> text_editing.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/text_editing.ts \
   -n addLineComments -n countLeadingIndent -n currentLine -n deleteActiveLines \
@@ -162,14 +162,14 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n copySelectionToClipboard -n cutLineToClipboard -n cutSelectionToClipboard -n pasteFromClipboard -n save -n writeClipboard
 
 # undo_snapshot -> undo_snapshot.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/undo_snapshot.ts \
   -n breakUndoSequence -n captureSnapshot -n prepareUndo -n recordSnapshotPre \
   -n recordSnapshotPost -n redo -n restoreSnapshot -n undo
 
 # viewport -> viewport.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/viewport.ts \
   -n applyScrollbarScroll -n clampScrollColumn -n clampScrollRow -n codeViewportTop \
@@ -178,7 +178,7 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n resolvePointerRow -n scrollRows -n visualIndexToSegment -n visibleColumnCount -n visibleRowCount
 
 # cursor -> cursor.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/cursor.ts \
   -n centerCursorVertically -n clampCursorColumn -n clampCursorRow -n clampSelectionPosition \
@@ -188,7 +188,7 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n setCursorFromVisualIndex -n setCursorPosition -n updateDesiredColumn
 
 # search_navigation -> search_navigation.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/search_navigation.ts \
   -n applyDefinitionSelection -n applyLineJump -n applySearchFieldText -n applySymbolSearchSelection \
@@ -205,7 +205,7 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n buildMemberCompletionItems
 
 # resources -> resources.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/resources.ts \
   -n applyCreateResourceFieldText -n applyResourceSearchFieldText -n applyResourceSearchSelection \
@@ -219,7 +219,7 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n stripExtension -n updateResourceSearchMatches -n appendResourceViewerLines -n trimResourceViewerLines
 
 # ui_render -> ui_render.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/ui_render.ts \
   -n adjustHoverTooltipScroll -n assertMonospace -n buildHoverContentLines -n buildStatusLeftInfo \
@@ -241,7 +241,7 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n updateHoverTooltip -n updateTabHoverState
 
 # input_handlers -> input_handlers.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/input_handlers.ts \
   -n createInlineFieldEditingHandlers -n handleActionPromptInput -n handleActionPromptPointer \
@@ -252,7 +252,7 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n registerPointerClick -n resetPointerClickTracking -n shouldFireRepeat -n toggleEditorFromShortcut
 
 # tabs_nav -> tabs_nav.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/tabs_nav.ts \
   -n applyNavigationEntry -n areNavigationEntriesEqual -n beginNavigationCapture -n cloneNavigationEntry \
@@ -261,7 +261,7 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n openResourceViewerTab -n pushNavigationEntry -n withNavigationCaptureSuspended
 
 # utils_editor -> utils_editor.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/utils_editor.ts \
   -n bottomMargin -n buildDebugPanelLines -n buildProjectReferenceContext -n debugPanelTabId \
@@ -269,7 +269,7 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n notifyReadOnlyEdit -n pointInRect -n showProblemsPanel -n statusAreaHeight
 
 # search_helpers -> search_helpers.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/search_helpers.ts \
   -n isResourceSearchCompactMode -n isSymbolSearchCompactMode -n resourceSearchEntryHeight \
@@ -278,165 +278,165 @@ node scripts/move_exported_functions_with_tsmorph.js \
   -n symbolSearchPageSize -n symbolSearchVisibleResultCount -n symbolCatalogDedupKey
 
 # Merge debugger files into debugger.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/debugger_breakpoints.ts \
   --dest src/bmsx/console/ide/debugger.ts \
   -n hasBreakpoint -n getBreakpointsForChunk -n toggleBreakpoint -n serializeBreakpoints -n restoreBreakpointsFromPayload -n syncRuntimeBreakpoints
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/debugger_controls.ts \
   --dest src/bmsx/console/ide/debugger.ts \
   -n getDebuggerCommandExecutor -n issueDebuggerCommand
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/debugger_overlay_controller.ts \
   --dest src/bmsx/console/ide/debugger.ts \
   -n showDebuggerPauseOverlay -n clearDebuggerPauseOverlay -n prepareDebuggerStepOverlay
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/debugger_shortcuts.ts \
   --dest src/bmsx/console/ide/debugger.ts \
   -n handleDebuggerShortcuts
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/debugger_shortcuts_core.ts \
   --dest src/bmsx/console/ide/debugger.ts \
   -n evaluateDebuggerShortcuts
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/debugger_ui_state.ts \
   --dest src/bmsx/console/ide/debugger.ts \
   -n initializeDebuggerUiState
 
 # Merge render files into render.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/render_caret.ts \
   --dest src/bmsx/console/ide/render.ts \
   -n renderInlineCaret -n drawInlineCaret -n getCaretGlyphForDisplay -n drawCursor
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/render_code_area.ts \
   --dest src/bmsx/console/ide/render.ts \
   -n renderCodeArea
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/render_error_overlay.ts \
   --dest src/bmsx/console/ide/render.ts \
   -n renderRuntimeErrorOverlay
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/render_inline_bars.ts \
   --dest src/bmsx/console/ide/render.ts \
   -n renderCreateResourceBar -n renderSearchBar -n renderResourceSearchBar -n renderSymbolSearchBar -n renderRenameBar -n renderLineJumpBar
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/render_resource_panel.ts \
   --dest src/bmsx/console/ide/render.ts \
   -n renderResourcePanel
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/render_status_bar.ts \
   --dest src/bmsx/console/ide/render.ts \
   -n renderStatusBar
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/render_tab_bar.ts \
   --dest src/bmsx/console/ide/render.ts \
   -n renderTabBar
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/render_top_bar.ts \
   --dest src/bmsx/console/ide/render.ts \
   -n renderTopBar
 
 # Merge runtime error overlay files into runtime_error_overlay.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/runtime_error_overlay_model.ts \
   --dest src/bmsx/console/ide/runtime_error_overlay.ts \
   -n cloneRuntimeErrorDetails -n rebuildRuntimeErrorOverlayView -n buildRuntimeErrorOverlayCopyText
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/runtime_error_overlay_navigation.ts \
   --dest src/bmsx/console/ide/runtime_error_overlay.ts \
   -n navigateRuntimeErrorOverlay
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/runtime_error_overlay_view.ts \
   --dest src/bmsx/console/ide/runtime_error_overlay.ts \
   -n renderRuntimeErrorOverlayView
 
 # Merge rename files into rename.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/rename_apply.ts \
   --dest src/bmsx/console/ide/rename.ts \
   -n applyRename
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/rename_controller.ts \
   --dest src/bmsx/console/ide/rename.ts \
   -n handleRename
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/rename_cross_file.ts \
   --dest src/bmsx/console/ide/rename.ts \
   -n renameCrossFile
 
 # Merge reference files into reference.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/reference_navigation.ts \
   --dest src/bmsx/console/ide/reference.ts \
   -n navigateReferences
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/reference_sources.ts \
   --dest src/bmsx/console/ide/reference.ts \
   -n getReferenceSources
 
 # Merge text utils files into text_utils.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/text_utils_local.ts \
   --dest src/bmsx/console/ide/text_utils.ts \
   -n localTextUtils
 
 # Merge input files into input.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/input_controller.ts \
   --dest src/bmsx/console/ide/input.ts \
   -n handleInput
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/input_helpers.ts \
   --dest src/bmsx/console/ide/input.ts \
   -n resetKeyPressRecords -n clearKeyPressRecord -n shouldAcceptKeyPress -n isKeyJustPressed -n isModifierPressed -n isKeyPressed -n isKeyTyped
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/player_input_adapter.ts \
   --dest src/bmsx/console/ide/input.ts \
   -n adaptPlayerInput
 
 # Merge semantic files into semantic.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/semantic_model.ts \
   --dest src/bmsx/console/ide/semantic.ts \
   -n buildSemanticModel
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/semantic_worker.ts \
   --dest src/bmsx/console/ide/semantic.ts \
   -n runSemanticWorker
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/semantic_workspace.ts \
   --dest src/bmsx/console/ide/semantic.ts \
   -n manageSemanticWorkspace
 
 # Merge editor inputs into editor_inputs.ts
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/editor_modal_inputs.ts \
   --dest src/bmsx/console/ide/editor_inputs.ts \
   -n handleModalInputs
 
-node scripts/move_exported_functions_with_tsmorph.js \
+node scripts/move_functions.js \
   --source src/bmsx/console/ide/inline_text_field.ts \
   --dest src/bmsx/console/ide/editor_inputs.ts \
   -n handleInlineTextField
