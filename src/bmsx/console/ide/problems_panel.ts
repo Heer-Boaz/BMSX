@@ -61,14 +61,6 @@ export class ProblemsPanelController {
         return headerHeight + contentHeight + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2;
     }
 
-    public toggle(): void {
-        if (this.visible) {
-            this.hide();
-        } else {
-            this.show();
-        }
-    }
-
     public show(): void {
         if (this.visible) return;
         this.visible = true;

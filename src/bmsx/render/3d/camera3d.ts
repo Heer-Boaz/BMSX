@@ -1,5 +1,6 @@
 import { Oriented, vec3 } from '../../rompack/rompack';
 import { excludepropfromsavegame, insavegame, onload, onsave, type RevivableObjectArgs } from '../../serializer/serializationhooks';
+import { clamp } from '../../utils/clamp';
 import { extractFrustumPlanesInto, M4, Mat4Float32, Q, quat, sphereInFrustumPacked, V3 } from './math3d';
 
 // +-------------------------------------------------------------------------------------------------------------------------------------------------------------+
@@ -333,4 +334,3 @@ function unwrapAngle(prev: number, now: number): number {
 	while (d < -Math.PI) d += 2 * Math.PI;
 	return prev + d;
 }
-function clamp(x: number, a: number, b: number) { return Math.max(a, Math.min(b, x)); }

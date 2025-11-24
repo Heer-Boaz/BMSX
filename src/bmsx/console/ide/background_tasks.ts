@@ -1,6 +1,5 @@
 import { $ } from '../../core/game';
 import type { TimerHandle } from '../../platform/platform';
-import { scheduleIdeOnce } from './ide_timers';
 
 export type BackgroundTask = () => boolean;
 
@@ -46,4 +45,8 @@ export function clearBackgroundTasks(): void {
 		backgroundTaskHandle.cancel();
 		backgroundTaskHandle = null;
 	}
+}export function scheduleIdeOnce(delayMs: number, cb: () => void): TimerHandle {
+	const clock = $.platform.clock;
+	return clock.scheduleOnce(delayMs, () => cb());
 }
+

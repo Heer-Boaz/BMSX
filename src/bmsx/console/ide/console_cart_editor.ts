@@ -55,6 +55,7 @@ import {
 	measureRange as inlineFieldMeasureRange,
 	selectionRange as inlineFieldSelectionRange,
 	setFieldText,
+	updateBlink,
 } from './inline_text_field';
 import { buildHoverContentLines as buildHoverContentLinesExternal } from './hover_content';
 import { isLuaCommentContext, measureTextGeneric, truncateTextToWidth as truncateTextToWidthExternal } from './text_utils_local';
@@ -79,7 +80,7 @@ import {
 } from './runtime_error_overlay_view';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
-import { InputController } from './input_controller';
+import { handleEscapeKey, InputController } from './input_controller';
 import { consumeIdeKey, getIdeKeyState } from './player_input_adapter';
 import { ConsoleCodeLayout } from './code_layout';
 import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine } from './runtime_error_utils';
@@ -129,11 +130,11 @@ import {
 	type ReferenceCatalogEntry,
 	type ReferenceSymbolEntry,
 } from './reference_sources';
-import { clearBackgroundTasks, enqueueBackgroundTask } from './console_cart_editor_background';
+import { clearBackgroundTasks, enqueueBackgroundTask } from './background_tasks';
 
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
-import { planRenameLineEdits } from './rename_apply';
-import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_cross_file';
+import { planRenameLineEdits } from './rename_controller';
+import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_controller';
 import {
 	isKeyJustPressed as isKeyJustPressedGlobal,
 	isKeyTyped as isKeyTypedGlobal,
@@ -172,7 +173,7 @@ import {
 
 import * as TextEditing from './text_editing_and_selection';
 import { drawCursor, drawInlineCaret } from './render_caret';
-import type { BmsxConsoleRuntime } from '../runtime';
+import { api, type BmsxConsoleRuntime } from '../runtime';
 
 export type ConsoleCartEditor = {
 	activate: typeof activate;
@@ -205,7 +206,6 @@ const editorFacade: ConsoleCartEditor = {
 	clearAllRuntimeErrorOverlays,
 	getSourceForChunk,
 };
-
 
 export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleCartEditor {
 	initializeConsoleCartEditor(options);
@@ -955,82 +955,6 @@ export function breakUndoSequence(): void {
 	ide_state.lastHistoryKey = null;
 	ide_state.lastHistoryTimestamp = 0;
 }
-
-export function extractIdentifierAt(row: number, column: number): string | null {
-	if (row < 0 || row >= ide_state.lines.length) {
-		return null;
-	}
-	const line = ide_state.lines[row];
-	if (column < 0 || column > line.length) {
-		return null;
-	}
-	let start = column;
-	let end = column;
-	while (start > 0) {
-		const previous = line.charCodeAt(start - 1);
-		if (!isIdentifierChar(previous)) {
-			break;
-		}
-		start -= 1;
-	}
-	while (end < line.length) {
-		const next = line.charCodeAt(end);
-		if (!isIdentifierChar(next)) {
-			break;
-		}
-		end += 1;
-	}
-	const identifier = line.slice(start, end);
-	if (!identifier || !isIdentifierStartChar(identifier.charCodeAt(0))) {
-		return null;
-	}
-	return identifier;
-}
-
-export function clampScrollRow(): void {
-	ensureVisualLines();
-	const rows = visibleRowCount();
-	const totalVisual = getVisualLineCount();
-	const cursorVisualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
-	if (cursorVisualIndex < ide_state.scrollRow) {
-		ide_state.scrollRow = cursorVisualIndex;
-	}
-	if (cursorVisualIndex >= ide_state.scrollRow + rows) {
-		ide_state.scrollRow = cursorVisualIndex - rows + 1;
-	}
-	const maxScrollRow = Math.max(0, totalVisual - rows);
-	ide_state.scrollRow = clamp(ide_state.scrollRow, 0, maxScrollRow);
-}
-
-export function clampScrollColumn(): void {
-	if (ide_state.wordWrapEnabled) {
-		ide_state.scrollColumn = 0;
-		return;
-	}
-	const columns = visibleColumnCount();
-	if (ide_state.cursorColumn < ide_state.scrollColumn) {
-		ide_state.scrollColumn = ide_state.cursorColumn;
-	}
-	const maxScrollColumn = ide_state.cursorColumn - columns + 1;
-	if (maxScrollColumn > ide_state.scrollColumn) {
-		ide_state.scrollColumn = maxScrollColumn;
-	}
-	if (ide_state.scrollColumn < 0) {
-		ide_state.scrollColumn = 0;
-	}
-	const lineLength = currentLine().length;
-	const maxColumn = lineLength - columns;
-	if (maxColumn < 0) {
-		ide_state.scrollColumn = 0;
-	} else if (ide_state.scrollColumn > maxColumn) {
-		ide_state.scrollColumn = maxColumn;
-	}
-}
-
-export { activeSearchMatchCount } from './editor_search';
-
-export { searchPageSize } from './editor_search';
-export { openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, ensureSearchJobCompleted, moveSearchSelection, applySearchSelection, jumpToNextMatch, jumpToPreviousMatch } from './editor_search';
 
 export function searchVisibleResultCount(): number {
 	return computeSearchPageStats().visible;
@@ -2023,7 +1947,7 @@ export function isActive(): boolean {
 	return ide_state.active;
 }
 
-export function draw(api: BmsxConsoleApi): void {
+export function draw(): void {
 	if (!ide_state.active) {
 		return;
 	}
@@ -2031,7 +1955,9 @@ export function draw(api: BmsxConsoleApi): void {
 	ide_state.codeHorizontalScrollbarVisible = false;
 	const frameColor = Msx1Colors[constants.COLOR_FRAME];
 	api.rectfill_color(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
-	drawTopBar(api);
+
+	renderTopBar();
+
 	ide_state.tabBarRowCount = renderTabBar(api, {
 		viewportWidth: ide_state.viewportWidth,
 		headerHeight: ide_state.headerHeight,
@@ -2299,47 +2225,6 @@ export function toggleEditorFromShortcut(): void {
 	} else {
 		activate();
 	}
-}
-
-type EscapeHandlingOptions = { allowRuntimeErrorToggle?: boolean };
-
-export function handleEscapeKey(options?: EscapeHandlingOptions): boolean {
-	const allowRuntimeErrorToggle = options?.allowRuntimeErrorToggle !== false;
-	if (ide_state.pendingActionPrompt) {
-		resetActionPromptState();
-		return true;
-	}
-	const overlay = ide_state.runtimeErrorOverlay;
-	if (ide_state.createResourceVisible) {
-		closeCreateResourcePrompt(true);
-		return true;
-	}
-	if (ide_state.symbolSearchActive || ide_state.symbolSearchVisible) {
-		closeSymbolSearch(false);
-		return true;
-	}
-	if (ide_state.resourceSearchActive || ide_state.resourceSearchVisible) {
-		closeResourceSearch(false);
-		return true;
-	}
-	if (ide_state.lineJumpActive || ide_state.lineJumpVisible) {
-		closeLineJump(false);
-		return true;
-	}
-	if (ide_state.searchActive || ide_state.searchVisible) {
-		closeSearch(false, true);
-		return true;
-	}
-	if (overlay && allowRuntimeErrorToggle) {
-		overlay.hidden = !overlay.hidden;
-		overlay.hovered = false;
-		overlay.hoverLine = -1;
-		overlay.copyButtonHovered = false;
-		overlay.layout = null;
-		ide_state.message.visible = false;
-		return true;
-	}
-	return false;
 }
 
 export function activate(): void {
@@ -5869,11 +5754,11 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 		case 'debugRegistry':
 			openDebugPanelTab('registry');
 			return;
-	case 'resume':
-	case 'reboot':
-		activateCodeTab();
-		performAction(button);
-		return;
+		case 'resume':
+		case 'reboot':
+			activateCodeTab();
+			performAction(button);
+			return;
 	}
 }
 
@@ -6698,31 +6583,6 @@ export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnaps
 		ensureCursorVisible();
 	}
 	requestSemanticRefresh();
-}
-
-export function drawTopBar(api: BmsxConsoleApi): void {
-	const host = {
-		viewportWidth: ide_state.viewportWidth,
-		headerHeight: ide_state.headerHeight,
-		lineHeight: ide_state.lineHeight,
-		measureText: (text: string) => measureText(text),
-		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, ide_state.font, text, x, y, color),
-		wordWrapEnabled: ide_state.wordWrapEnabled,
-		resolutionMode: getConsoleRuntime().overlayResolutionMode,
-		metadata: ide_state.metadata,
-		dirty: ide_state.dirty,
-		resourcePanelVisible: ide_state.resourcePanelVisible,
-		resourcePanelFilterMode: ide_state.resourcePanel.getFilterMode(),
-		problemsPanelVisible: ide_state.problemsPanel.isVisible(),
-		topBarButtonBounds: ide_state.topBarButtonBounds,
-		debugPanels: {
-			objectsActive: isDebugPanelActive('objects'),
-			eventsActive: isDebugPanelActive('events'),
-			registryActive: isDebugPanelActive('registry'),
-		},
-		debuggerControls: ide_state.debuggerControls,
-	};
-	renderTopBar(api, host);
 }
 
 export function drawCreateResourceBar(api: BmsxConsoleApi): void {
@@ -9563,12 +9423,4 @@ export function toggleBreakpointForEditorRow(row: number): boolean {
 
 export function toggleBreakpointAtCursor(): void {
 	void toggleBreakpointForEditorRow(ide_state.cursorRow);
-}
-
-export function updateBlink(deltaSeconds: number): void {
-	ide_state.blinkTimer += deltaSeconds;
-	if (ide_state.blinkTimer >= constants.CURSOR_BLINK_INTERVAL) {
-		ide_state.blinkTimer -= constants.CURSOR_BLINK_INTERVAL;
-		ide_state.cursorVisible = !ide_state.cursorVisible;
-	}
 }

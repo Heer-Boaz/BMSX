@@ -235,7 +235,7 @@ export class BmsxConsoleApi {
 		y: number,
 		options?: { scale?: number; flip_h?: boolean; flip_v?: boolean; colorize?: color }
 	): void {
-		const entry = $.rompack.img[img_id];
+		const entry = this.rompack.img[img_id];
 		const width = entry.imgmeta.width;
 		const height = entry.imgmeta.height;
 		const scale = options?.scale ?? 1;
@@ -619,15 +619,15 @@ export class BmsxConsoleApi {
 		return $.registry.get<Service>(id);
 	}
 
-	public game(): Game {
+	public get game(): Game {
 		return $;
 	}
 
-	public rompack(): RomPack | undefined {
+	public get rompack(): RomPack | undefined {
 		return $.rompack;
 	}
 
-	public events(): EventEmitter {
+	public get events(): EventEmitter {
 		return $.event_emitter;
 	}
 

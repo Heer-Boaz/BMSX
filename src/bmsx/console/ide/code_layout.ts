@@ -6,7 +6,7 @@ import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type 
 import { LuaSemanticWorkspace } from './semantic_workspace';
 import type { LuaDefinitionInfo } from '../../lua/ast';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types';
-import { scheduleIdeOnce } from './ide_timers';
+import { scheduleIdeOnce } from './background_tasks';
 
 interface VisualLinesContext {
 	lines: readonly string[];

@@ -6,7 +6,7 @@ import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position, Edi
 import { clamp } from '../../utils/clamp';
 import type { StorageService, TimerHandle } from '../../platform/platform';
 import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './debugger_breakpoints';
-import { scheduleIdeOnce } from './ide_timers';
+import { scheduleIdeOnce } from './background_tasks';
 import {
 	WORKSPACE_FILE_ENDPOINT,
 	WORKSPACE_MARKER_FILE,

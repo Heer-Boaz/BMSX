@@ -1,4 +1,6 @@
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
+import * as constants from './constants';
+import { ide_state } from './ide_state';
 import { isWhitespace, isWordChar } from './text_utils';
 import type { InlineInputOptions, InlineTextField } from './types';
 
@@ -607,4 +609,11 @@ export function applyInlineFieldPointer(field: InlineTextField, options: InlineF
 		clampSelectionAnchor(field);
 	}
 	return { requestBlinkReset: false };
+}
+export function updateBlink(deltaSeconds: number): void {
+	ide_state.blinkTimer += deltaSeconds;
+	if (ide_state.blinkTimer >= constants.CURSOR_BLINK_INTERVAL) {
+		ide_state.blinkTimer -= constants.CURSOR_BLINK_INTERVAL;
+		ide_state.cursorVisible = !ide_state.cursorVisible;
+	}
 }

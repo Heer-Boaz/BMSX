@@ -1,3 +1,4 @@
+import { clamp01 } from 'bmsx/utils/clamp';
 import {
 	AudioService,
 	AudioClipHandle,
@@ -6,12 +7,6 @@ import {
 	VoiceEndedEvent,
 	AudioFilterParams,
 } from '../platform';
-
-function clamp01(x: number): number {
-	if (x < 0) return 0;
-	if (x > 1) return 1;
-	return x;
-}
 
 class WebClip implements AudioClipHandle {
 	constructor(public readonly buffer: AudioBuffer) {}

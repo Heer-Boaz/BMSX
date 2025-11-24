@@ -31,15 +31,11 @@ export class ReferenceState {
 	private matches: SearchMatch[] = [];
 	private activeIndex = -1;
 	private expression: string | null = null;
-	private definitionKey: string | null = null;
-	private documentVersion = -1;
 
 	public clear(): void {
 		this.matches = [];
 		this.activeIndex = -1;
 		this.expression = null;
-		this.definitionKey = null;
-		this.documentVersion = -1;
 	}
 
 	public getMatches(): readonly SearchMatch[] {
@@ -54,12 +50,6 @@ export class ReferenceState {
 		return this.expression;
 	}
 
-	public hasSameQuery(info: ReferenceMatchInfo): boolean {
-		return this.definitionKey === info.definitionKey
-			&& this.expression === info.expression
-			&& this.documentVersion === info.documentVersion;
-	}
-
 	public apply(info: ReferenceMatchInfo, activeIndex: number): void {
 		this.matches = info.matches.slice();
 		if (this.matches.length === 0) {
@@ -69,18 +59,6 @@ export class ReferenceState {
 			this.activeIndex = clampedIndex;
 		}
 		this.expression = info.expression;
-		this.definitionKey = info.definitionKey;
-		this.documentVersion = info.documentVersion;
-	}
-
-	public advance(delta: number): number {
-		if (this.matches.length === 0) {
-			this.activeIndex = -1;
-			return -1;
-		}
-		const next = (this.activeIndex + delta + this.matches.length) % this.matches.length;
-		this.activeIndex = next;
-		return this.activeIndex;
 	}
 
 	public setActiveIndex(index: number): void {
@@ -97,13 +75,6 @@ export class ReferenceState {
 			return;
 		}
 		this.activeIndex = index;
-	}
-
-	public getCurrentMatch(): SearchMatch | null {
-		if (this.activeIndex < 0 || this.activeIndex >= this.matches.length) {
-			return null;
-		}
-		return this.matches[this.activeIndex];
 	}
 }
 

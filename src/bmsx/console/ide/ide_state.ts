@@ -21,7 +21,7 @@ import { ResourcePanelController } from './resource_panel_controller';
 import type { RenameController } from './rename_controller';
 import { LuaSemanticWorkspace } from './semantic_workspace';
 import type { CompletionController } from './completion_controller';
-import { createMessageController } from './console_cart_editor_messages';
+import { createMessageController } from './message_controller';
 import { ReferenceState } from './reference_navigation';
 import { CHARACTER_CODES } from './character_map';
 import type {

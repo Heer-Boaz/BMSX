@@ -5,6 +5,9 @@ import * as constants from './constants';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import { handleDebuggerShortcuts } from './debugger_shortcuts';
 import { consumeIdeKey, getIdeKeyState } from './player_input_adapter';
+import { resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump } from './console_cart_editor';
+import { closeSearch } from './editor_search';
+import { ide_state } from './ide_state';
 
 export interface InputHost {
 	// State queries
@@ -274,4 +277,45 @@ export class InputController {
 			input.setKeyboardCapture(captureKeys[i], active);
 		}
 	}
+}
+
+type EscapeHandlingOptions = { allowRuntimeErrorToggle?: boolean; };
+
+export function handleEscapeKey(options?: EscapeHandlingOptions): boolean {
+	const allowRuntimeErrorToggle = options?.allowRuntimeErrorToggle !== false;
+	if (ide_state.pendingActionPrompt) {
+		resetActionPromptState();
+		return true;
+	}
+	const overlay = ide_state.runtimeErrorOverlay;
+	if (ide_state.createResourceVisible) {
+		closeCreateResourcePrompt(true);
+		return true;
+	}
+	if (ide_state.symbolSearchActive || ide_state.symbolSearchVisible) {
+		closeSymbolSearch(false);
+		return true;
+	}
+	if (ide_state.resourceSearchActive || ide_state.resourceSearchVisible) {
+		closeResourceSearch(false);
+		return true;
+	}
+	if (ide_state.lineJumpActive || ide_state.lineJumpVisible) {
+		closeLineJump(false);
+		return true;
+	}
+	if (ide_state.searchActive || ide_state.searchVisible) {
+		closeSearch(false, true);
+		return true;
+	}
+	if (overlay && allowRuntimeErrorToggle) {
+		overlay.hidden = !overlay.hidden;
+		overlay.hovered = false;
+		overlay.hoverLine = -1;
+		overlay.copyButtonHovered = false;
+		overlay.layout = null;
+		ide_state.message.visible = false;
+		return true;
+	}
+	return false;
 }

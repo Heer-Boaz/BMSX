@@ -731,3 +731,6 @@ export const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select
 export const GLOBAL_SEARCH_RESULT_LIMIT = SEARCH_MAX_RESULTS * 4;
 
 export const TAB_DIRTY_MARKER_METRICS = { width: 4, height: 4 };
+export const TAB_DIRTY_LEFT_MARGIN = 4;
+export const TAB_DIRTY_RIGHT_MARGIN = 4;
+

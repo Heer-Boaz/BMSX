@@ -2,6 +2,7 @@ import { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
 import type { EditorTabDescriptor } from './types';
 import type { RectBounds } from '../../rompack/rompack';
+import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from './constants';
 
 type TabMetrics = {
 	tab: EditorTabDescriptor;
@@ -34,9 +35,6 @@ export interface TabBarHost {
 	tabButtonBounds: Map<string, RectBounds>;
 	tabCloseButtonBounds: Map<string, RectBounds>;
 }
-
-const LEFT_MARGIN = 4;
-const RIGHT_MARGIN = 4;
 
 export function renderTabBar(api: BmsxConsoleApi, host: TabBarHost): number {
 	host.tabButtonBounds.clear();
@@ -89,7 +87,7 @@ export function renderTabBar(api: BmsxConsoleApi, host: TabBarHost): number {
 
 	const n = metrics.length;
 	const spacing = constants.TAB_BUTTON_SPACING;
-	const maxWidth = Math.max(LEFT_MARGIN + RIGHT_MARGIN + 1, host.viewportWidth - RIGHT_MARGIN);
+	const maxWidth = Math.max(TAB_DIRTY_LEFT_MARGIN + TAB_DIRTY_RIGHT_MARGIN + 1, host.viewportWidth - TAB_DIRTY_RIGHT_MARGIN);
 	const costs: number[] = new Array(n + 1).fill(0);
 	const nextBreak: number[] = new Array(n).fill(n);
 
@@ -97,14 +95,14 @@ export function renderTabBar(api: BmsxConsoleApi, host: TabBarHost): number {
 		let bestRows = Number.POSITIVE_INFINITY;
 		let bestPenalty = Number.POSITIVE_INFINITY;
 		let bestBreak = i + 1;
-		let cursor = LEFT_MARGIN;
+		let cursor = TAB_DIRTY_LEFT_MARGIN;
 		for (let j = i; j < n; j += 1) {
 			const entry = metrics[j];
 			const candidateRight = cursor + entry.tabWidth;
-			if (cursor > LEFT_MARGIN && candidateRight > maxWidth) {
+			if (cursor > TAB_DIRTY_LEFT_MARGIN && candidateRight > maxWidth) {
 				break;
 			}
-			const fits = candidateRight <= maxWidth || cursor === LEFT_MARGIN;
+			const fits = candidateRight <= maxWidth || cursor === TAB_DIRTY_LEFT_MARGIN;
 			if (!fits) {
 				break;
 			}
@@ -132,7 +130,7 @@ export function renderTabBar(api: BmsxConsoleApi, host: TabBarHost): number {
 	let rowIndex = 0;
 	while (rowStart < n) {
 		const rowEnd = Math.max(rowStart + 1, nextBreak[rowStart] ?? rowStart + 1);
-		let cursor = LEFT_MARGIN;
+		let cursor = TAB_DIRTY_LEFT_MARGIN;
 		for (let i = rowStart; i < rowEnd; i += 1) {
 			const entry = metrics[i];
 			const left = cursor;

@@ -61,16 +61,13 @@ export interface CompletionHost {
 	listBuiltinLuaFunctions(): ConsoleLuaBuiltinDescriptor[];
 	getSemanticDefinitions(): readonly LuaDefinitionInfo[] | null;
 	getLuaModuleAliases(chunkName: string | null): Map<string, string>;
-	getMemberCompletionItems?(request: MemberCompletionHostRequest): LuaCompletionItem[];
+	getMemberCompletionItems(request: MemberCompletionHostRequest): LuaCompletionItem[];
 	// Utilities
 	charAt(row: number, column: number): string;
 	getTextVersion(): number;
 	shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean;
-	shouldAutoTriggerCompletions?(): boolean;
+	shouldAutoTriggerCompletions(): boolean;
 }
-
-const keywordCompletions = getKeywordCompletions();
-const apiCompletionData = getApiCompletionData();
 
 type LocalCompletionCacheEntry = {
 	parsedVersion: number;
@@ -102,14 +99,6 @@ export class CompletionController {
 
 	constructor(host: CompletionHost) {
 		this.host = host;
-	}
-
-	private autoTriggerEnabled(): boolean {
-		const allowAuto = this.host.shouldAutoTriggerCompletions;
-		if (allowAuto) {
-			return allowAuto();
-		}
-		return true;
 	}
 
 	// Public API for editor integration
@@ -175,7 +164,7 @@ export class CompletionController {
 		const pending = this.pendingCompletionRequest;
 		if (!pending) return;
 		if (!this.host.isCodeTabActive()) { this.cancelPendingCompletion(); return; }
-		if (!this.autoTriggerEnabled()) { this.cancelPendingCompletion(); return; }
+		if (!this.host.shouldAutoTriggerCompletions()) { this.cancelPendingCompletion(); return; }
 		if (this.completionSession) { this.cancelPendingCompletion(); return; }
 		pending.elapsed += deltaSeconds;
 		if (pending.elapsed < constants.COMPLETION_AUTO_TRIGGER_DELAY_SECONDS) return;
@@ -516,8 +505,8 @@ export class CompletionController {
 					map.set(item.sortKey, item);
 				}
 			};
-			for (let i = 0; i < keywordCompletions.length; i += 1) {
-				register(keywordCompletions[i]);
+			for (let i = 0; i < getKeywordCompletions().length; i += 1) {
+				register(getKeywordCompletions()[i]);
 			}
 			const globalItems = this.getGlobalCompletionItems();
 			for (let i = 0; i < globalItems.length; i += 1) {
@@ -538,7 +527,7 @@ export class CompletionController {
 	private collectCompletionItems(context: CompletionContext): LuaCompletionItem[] {
 		if (context.kind === 'member') {
 			if (context.objectName.toLowerCase() === 'api') {
-				return apiCompletionData.items.slice();
+				return getApiCompletionData().items.slice();
 			}
 			const merged: LuaCompletionItem[] = [];
 			const seen = new Map<string, LuaCompletionItem>();
@@ -555,19 +544,17 @@ export class CompletionController {
 				}
 			};
 			appendItems(this.getModuleMemberCompletionItems(context));
-			if (this.host.getMemberCompletionItems) {
-				const activeContext = this.host.getActiveCodeTabContext();
-				const asset_id = this.host.resolveHoverasset_id(activeContext);
-				const chunkName = this.host.resolveHoverChunkName(activeContext);
-				const runtimeItems = this.host.getMemberCompletionItems({
-					objectName: context.objectName,
-					operator: context.operator,
-					prefix: context.prefix,
-					asset_id,
-					chunkName,
-				});
-				appendItems(runtimeItems);
-			}
+			const activeContext = this.host.getActiveCodeTabContext();
+			const asset_id = this.host.resolveHoverasset_id(activeContext);
+			const chunkName = this.host.resolveHoverChunkName(activeContext);
+			const runtimeItems = this.host.getMemberCompletionItems({
+				objectName: context.objectName,
+				operator: context.operator,
+				prefix: context.prefix,
+				asset_id,
+				chunkName,
+			});
+			appendItems(runtimeItems);
 			if (merged.length > 0) {
 				return merged;
 			}
@@ -884,7 +871,7 @@ export class CompletionController {
 
 		// Also expose API methods as global built-ins if not already present,
 		// since the runtime registers them globally too.
-		for (const [name, meta] of apiCompletionData.signatures) {
+		for (const [name, meta] of getApiCompletionData().signatures) {
 			const key = name.toLowerCase();
 			if (!this.builtinDescriptorMap.has(key)) {
 				const optionalParams = meta.optionalParams ?? [];
@@ -935,7 +922,7 @@ export class CompletionController {
 	}
 
 	private determineAutoCompletionTrigger(context: CompletionContext, edit: EditContext): CompletionTrigger | null {
-		if (!this.autoTriggerEnabled()) return null;
+		if (!this.host.shouldAutoTriggerCompletions()) return null;
 		if (!edit || edit.kind === 'delete') return null;
 		if (edit.text.length === 0) return null;
 		const lastChar = edit.text.charAt(edit.text.length - 1);
@@ -961,7 +948,7 @@ export class CompletionController {
 			return;
 		}
 		if (!edit || !analyzed) { this.cancelPendingCompletion(); return; }
-		if (!this.autoTriggerEnabled()) { this.cancelPendingCompletion(); return; }
+		if (!this.host.shouldAutoTriggerCompletions()) { this.cancelPendingCompletion(); return; }
 		const trigger = this.determineAutoCompletionTrigger(analyzed, edit);
 		if (!trigger) { this.cancelPendingCompletion(); return; }
 		this.pendingCompletionRequest = { context: analyzed, trigger, elapsed: 0 };
@@ -1271,7 +1258,7 @@ export class CompletionController {
 		const isApiObject = objectName !== null && objectName.toLowerCase() === 'api';
 		const normalizedMethodName = methodName.toLowerCase();
 		if (isApiObject) {
-			const apiMeta = apiCompletionData.signatures.get(normalizedMethodName);
+			const apiMeta = getApiCompletionData().signatures.get(normalizedMethodName);
 			if (apiMeta) {
 				const optionalSet = apiMeta.optionalParams && apiMeta.optionalParams.length > 0 ? new Set(apiMeta.optionalParams) : null;
 				const params = apiMeta.params.map(param => (optionalSet && optionalSet.has(param) ? `${param}?` : param));
@@ -1294,7 +1281,7 @@ export class CompletionController {
 			let paramDescriptions = Array.isArray(builtin.parameterDescriptions) ? builtin.parameterDescriptions.slice() : undefined;
 			let methodDescription = builtin.description ?? null;
 			if ((!paramDescriptions || paramDescriptions.length === 0) || !methodDescription) {
-				const apiMetaFallback = apiCompletionData.signatures.get(normalizedMethodName);
+				const apiMetaFallback = getApiCompletionData().signatures.get(normalizedMethodName);
 				if (apiMetaFallback) {
 					if (!paramDescriptions || paramDescriptions.length === 0) {
 						paramDescriptions = apiMetaFallback.parameterDescriptions ? apiMetaFallback.parameterDescriptions.slice() : undefined;
@@ -1316,7 +1303,7 @@ export class CompletionController {
 			};
 		}
 		if (!objectName || isApiObject) {
-			const apiMetaGlobal = apiCompletionData.signatures.get(normalizedMethodName);
+			const apiMetaGlobal = getApiCompletionData().signatures.get(normalizedMethodName);
 			if (apiMetaGlobal) {
 				const optionalSet = apiMetaGlobal.optionalParams && apiMetaGlobal.optionalParams.length > 0 ? new Set(apiMetaGlobal.optionalParams) : null;
 				const params = apiMetaGlobal.params.map(param => (optionalSet && optionalSet.has(param) ? `${param}?` : param));

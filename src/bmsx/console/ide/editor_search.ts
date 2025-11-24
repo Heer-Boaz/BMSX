@@ -4,7 +4,7 @@ import { clamp } from '../../utils/clamp';;
 import { getSelectionRange, getSelectionText } from './text_editing_and_selection';
 
 import type { ConsoleResourceDescriptor } from '../types';
-import { enqueueBackgroundTask } from './console_cart_editor_background';
+import { enqueueBackgroundTask } from './background_tasks';
 import { applySearchFieldText, clearReferenceHighlights, closeSymbolSearch, closeResourceSearch, closeLineJump, resetBlink, updateDesiredColumn, listResourcesStrict, openLuaCodeTab, scheduleNextFrame, ensureCursorVisible } from './console_cart_editor';
 import { revealCursor } from './cursor_operations';
 import { activateCodeTab } from './editor_tabs';
