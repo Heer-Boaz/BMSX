@@ -2,7 +2,7 @@
 /* Move root-level `export function <name>` blocks between files using ts-morph.
 
    Usage:
-     node scripts/move_exported_functions_with_tsmorph.js \
+     node scripts/move_functions.js \
        --source src/file.ts \
        --dest   src/other.ts \
        -n foo -n bar \
@@ -19,6 +19,8 @@
 const { Project } = require('ts-morph');
 const fs = require('fs');
 const path = require('path');
+let sourcePath = null;
+let destPath = null;
 
 function parseArgs(argv) {
 	const args = {
@@ -49,7 +51,7 @@ function parseArgs(argv) {
 
 	if (!args.source || !args.dest) {
 		console.error(
-			'Usage: move_exported_functions_with_tsmorph.js ' +
+			'Usage: move_functions.js ' +
 			'--source src.ts --dest dest.ts -n foo [-n bar] [--names-file list.txt] [--dry-run]'
 		);
 		process.exit(2);
@@ -88,19 +90,20 @@ function locateExportedFunctionSpan(sf, name) {
 	);
 
 	if (candidates.length === 0) {
-		throw new Error(`exported root-level function '${name}' not found`);
+		console.warn(`No exported root-level function '${name}' found in '${sourcePath}'.`);
+		// throw new Error(`exported root-level function '${name}' not found`);
 	}
 
 	// Overloads + implementation: grab the whole contiguous block
 	const start = Math.min(...candidates.map(fn => fn.getFullStart()));
-	const end = Math.max(...candidates.map(fn => fn.getFullEnd()));
+	const end = Math.max(...candidates.map(fn => fn.getFullStart() + fn.getFullWidth()));
 	return { start, end };
 }
 
 function main() {
 	const args = parseArgs(process.argv.slice(2));
-	const sourcePath = path.resolve(args.source);
-	const destPath = path.resolve(args.dest);
+	sourcePath = path.resolve(args.source);
+	destPath = path.resolve(args.dest);
 
 	if (!fs.existsSync(sourcePath)) {
 		console.error('Source file not found:', sourcePath);

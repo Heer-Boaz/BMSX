@@ -28,7 +28,7 @@ node scripts/move_functions.js \
 node scripts/move_functions.js \
   --source src/bmsx/console/ide/console_cart_editor.ts \
   --dest src/bmsx/console/ide/search_ui.ts \
-  -n searchVisibleResultCount -n searchResultEntryHeight -n computeSearchResultBounds \
+  -n searchVisibleResultCount -n searchResultEntryHeight \
   -n renderSearchResults -n openSearch -n closeSearch -n toggleSearch -n focusSearchField \
   -n applySearchFilter -n computeSearchMatches -n collectSymbolSearchResults -n symbolCatalogDedupKey
 
