@@ -16,11 +16,9 @@ import {
 	ensureCursorVisible,
 	refreshActiveDiagnostics,
 	resolveHoverChunkName,
-	splitLines,
 	invalidateVisualLines,
 	markDiagnosticsDirty,
 	bumpTextVersion,
-	resetBlink,
 	findResourceDescriptorByasset_id,
 	beginNavigationCapture,
 	completeNavigation,
@@ -33,6 +31,8 @@ import {
 	resetEditorContent,
 	measureText,
 } from './console_cart_editor';
+import { resetBlink } from './render_caret';
+import { splitLines } from './text_utils';
 
 export function createEntryTabContext(): CodeTabContext | null {
 	const asset_id = (typeof ide_state.primaryasset_id === 'string' && ide_state.primaryasset_id.length > 0)

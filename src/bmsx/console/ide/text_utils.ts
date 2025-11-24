@@ -26,3 +26,6 @@ export function isIdentifierStartChar(code: number): boolean {
 export function isIdentifierChar(code: number): boolean {
 	return isIdentifierStartChar(code) || (code >= 48 && code <= 57);
 }
+export function splitLines(source: string): string[] {
+	return source.split(/\r?\n/);
+}

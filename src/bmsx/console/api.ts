@@ -119,6 +119,10 @@ export class BmsxConsoleApi {
 		return state.justreleased;
 	}
 
+	public get keyboard() {
+		return $.input.getPlayerInput(1).inputHandlers.keyboard;
+	}
+
 	private get_player_input(): PlayerInput {
 		const playerInput = Input.instance.getPlayerInput(this.playerindex);
 		if (!playerInput) {

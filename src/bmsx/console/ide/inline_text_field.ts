@@ -1,6 +1,7 @@
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
+import { isAltDown, isCtrlDown, isMetaDown, isShiftDown } from './input_controller';
 import { isWhitespace, isWordChar } from './text_utils';
 import type { InlineInputOptions, InlineTextField } from './types';
 
@@ -408,7 +409,8 @@ export function applyInlineFieldEditing(
 	options: InlineInputOptions,
 	handlers: InlineFieldEditingHandlers,
 ): boolean {
-	const { ctrlDown, metaDown, shiftDown, altDown, deltaSeconds, allowSpace } = options;
+	const { ctrlDown, metaDown, shiftDown, altDown } = { ctrlDown: isCtrlDown(), metaDown: isMetaDown(), shiftDown: isShiftDown(), altDown: isAltDown() };
+	const { deltaSeconds, allowSpace } = options;
 	const characterFilter = options.characterFilter;
 	const maxLength = options.maxLength !== undefined ? options.maxLength : null;
 	const useCtrl = ctrlDown || metaDown;

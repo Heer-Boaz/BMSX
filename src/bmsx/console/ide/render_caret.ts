@@ -105,4 +105,8 @@ export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: n
 		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
 	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, Msx1Colors[constants.CARET_COLOR], caretGlyph, glyphColor);
 }
+export function resetBlink(): void {
+	ide_state.blinkTimer = 0;
+	ide_state.cursorVisible = true;
+}
 

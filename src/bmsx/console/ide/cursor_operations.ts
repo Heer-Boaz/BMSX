@@ -1,13 +1,10 @@
-/**
- * Cursor/Caret movement and navigation operations
- */
-
 import { clamp } from '../../utils/clamp';;
 import { caretNavigation, ide_state } from './ide_state';
 import type { Position } from './types';
 import { resolveIndentAwareHome, resolveSegmentEnd } from './caret_navigation';
-import { isModifierPressed as isModifierPressedGlobal } from './input_helpers';
-import { breakUndoSequence, currentLine, ensureVisualLines, getVisualLineCount, onCursorMoved, resetBlink, updateDesiredColumn, ensureCursorVisible, positionToVisualIndex, setCursorFromVisualIndex, visibleRowCount, visualIndexToSegment } from './console_cart_editor';
+import { isCtrlDown, isModifierPressed as isModifierPressedGlobal, isShiftDown } from './input_controller';
+import { breakUndoSequence, currentLine, ensureVisualLines, getVisualLineCount, onCursorMoved, updateDesiredColumn, ensureCursorVisible, positionToVisualIndex, setCursorFromVisualIndex, visibleRowCount, visualIndexToSegment } from './console_cart_editor';
+import { resetBlink } from './render_caret';
 import { clearSelection, collapseSelectionTo, ensureSelectionAnchor, findWordLeft, findWordRight, hasSelection } from './text_editing_and_selection';
 
 /**
@@ -169,8 +166,10 @@ export function moveWordRight(): void {
 /**
  * Move cursor left by character or word
  */
-export function moveCursorLeft(byWord: boolean, select: boolean): void {
+export function moveCursorLeft(): void {
 	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
+	const select = isShiftDown();
+	const byWord = isCtrlDown();
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else if (hasSelection()) {
@@ -193,8 +192,11 @@ export function moveCursorLeft(byWord: boolean, select: boolean): void {
 /**
  * Move cursor right by character or word
  */
-export function moveCursorRight(byWord: boolean, select: boolean): void {
+export function moveCursorRight(): void {
 	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
+	const select = isShiftDown();
+	const byWord = isCtrlDown();
+
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else if (hasSelection()) {
@@ -217,8 +219,9 @@ export function moveCursorRight(byWord: boolean, select: boolean): void {
 /**
  * Move cursor up one line
  */
-export function moveCursorUp(select: boolean): void {
+export function moveCursorUp(): void {
 	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
+	const select = isShiftDown();
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else if (hasSelection()) {
@@ -237,8 +240,9 @@ export function moveCursorUp(select: boolean): void {
 /**
  * Move cursor down one line
  */
-export function moveCursorDown(select: boolean): void {
+export function moveCursorDown(): void {
 	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
+	const select = isShiftDown();
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else if (hasSelection()) {
@@ -257,10 +261,11 @@ export function moveCursorDown(select: boolean): void {
 /**
  * Move cursor to start of line or document
  */
-export function moveCursorHome(select: boolean): void {
+export function moveCursorHome(): void {
 	const previousOverride = caretNavigation.peek(ide_state.cursorRow, ide_state.cursorColumn);
 	caretNavigation.clear();
 	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
+	const select = isShiftDown();
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else {
@@ -292,10 +297,11 @@ export function moveCursorHome(select: boolean): void {
 /**
  * Move cursor to end of line or document
  */
-export function moveCursorEnd(select: boolean): void {
+export function moveCursorEnd(): void {
 	const previousOverride = caretNavigation.peek(ide_state.cursorRow, ide_state.cursorColumn);
 	caretNavigation.clear();
 	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
+	const select = isShiftDown();
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else {
@@ -333,8 +339,9 @@ export function moveCursorEnd(select: boolean): void {
 /**
  * Move cursor up one page
  */
-export function pageUp(select: boolean): void {
+export function pageUp(): void {
 	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
+	const select = isShiftDown();
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else {
@@ -354,8 +361,9 @@ export function pageUp(select: boolean): void {
 /**
  * Move cursor down one page
  */
-export function pageDown(select: boolean): void {
+export function pageDown(): void {
 	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
+	const select = isShiftDown();
 	if (select) {
 		ensureSelectionAnchor(previous);
 	} else {

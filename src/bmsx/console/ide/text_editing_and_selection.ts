@@ -19,10 +19,10 @@ import { isWhitespace, isWordChar } from './text_utils';
 import {
 	revealCursor,
 	clampCursorColumn,
+	setCursorPosition,
 } from './cursor_operations';
 import {
 	updateDesiredColumn,
-	resetBlink,
 	markTextMutated,
 	invalidateLine,
 	invalidateLineRange,
@@ -31,8 +31,12 @@ import {
 	prepareUndo,
 	currentLine,
 	capturePreMutationSource,
+	markDiagnosticsDirty,
+	resolveOffsetPosition,
 } from './console_cart_editor';
+import { resetBlink } from './render_caret';
 import * as constants from './constants';
+import { formatLuaDocument } from './lua_formatter';
 
 function editorAllowsMutation(): boolean {
 	return ide_state.activeContextReadOnly !== true;
@@ -1153,3 +1157,43 @@ export async function writeClipboard(text: string, successMessage: string): Prom
 		ide_state.showMessage('System clipboard write failed. Editor clipboard updated.', constants.COLOR_STATUS_WARNING, 3.5);
 	}
 }
+
+export function applyDocumentFormatting(): void {
+	const originalLines = [...ide_state.lines];
+	const originalSource = originalLines.join('\n');
+	try {
+		const formatted = formatLuaDocument(originalSource);
+		if (formatted === originalSource) {
+			ide_state.showMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
+			return;
+		}
+		const cursorOffset = computeDocumentOffset(originalLines, ide_state.cursorRow, ide_state.cursorColumn);
+		prepareUndo('format-document', false);
+		if (ide_state.lines.length === 0) {
+			setSelectionAnchorPosition({ row: 0, column: 0 });
+			setCursorPosition(0, 0);
+		} else {
+			const lastRow = ide_state.lines.length - 1;
+			setSelectionAnchorPosition({ row: 0, column: 0 });
+			setCursorPosition(lastRow, ide_state.lines[lastRow].length);
+		}
+		replaceSelectionWith(formatted);
+		const updatedLines = [...ide_state.lines];
+		const target = resolveOffsetPosition(updatedLines, cursorOffset);
+		setCursorPosition(target.row, target.column);
+		clearSelection();
+		markDiagnosticsDirty();
+		ide_state.showMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		ide_state.showMessage(`Formatting failed: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
+	}
+}
+export function computeDocumentOffset(lines: readonly string[], row: number, column: number): number {
+	let offset = 0;
+	for (let index = 0; index < row; index += 1) {
+		offset += lines[index].length + 1;
+	}
+	return offset + column;
+}
+

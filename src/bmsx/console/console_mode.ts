@@ -4,7 +4,6 @@ import { Msx1Colors } from '../systems/msx';
 import { ConsoleEditorFont } from './editor_font';
 import type { ConsoleFontVariant } from './font';
 import type { PlayerInput } from '../input/playerinput';
-import type { KeyboardInput } from '../input/keyboardinput';
 import { wrapRuntimeErrorLine } from './ide/runtime_error_utils';
 import {
 	createInlineTextField,
@@ -24,8 +23,8 @@ import {
 	isKeyJustPressed as isKeyJustPressedGlobal,
 	isKeyTyped as isKeyTypedGlobal,
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
-	clearKeyPressRecord,
-} from './ide/input_helpers';
+	clearKeyPressRecord
+} from './ide/input_controller';
 import { CompletionController } from './ide/completion_controller';
 import { collectLuaModuleAliases } from './ide/intellisense';
 import type {
@@ -161,7 +160,7 @@ export class ConsoleMode {
 			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),
 			charAt: (row, column) => this.charAt(row, column),
 			getTextVersion: () => this.textVersion,
-			shouldFireRepeat: (_keyboard, code, deltaSeconds) => this.shouldRepeatKey(code, deltaSeconds, this.completionRepeatState),
+			shouldFireRepeat: (code, deltaSeconds) => this.shouldRepeatKey(code, deltaSeconds, this.completionRepeatState),
 			shouldAutoTriggerCompletions: () => false,
 			shouldShowParameterHints: () => false,
 		});
@@ -231,26 +230,11 @@ export class ConsoleMode {
 			return null;
 		}
 		const modifiers = playerInput.getModifiersState();
-		const keyboard = playerInput.inputHandlers['keyboard'] as KeyboardInput;
-		if (this.completion.handleKeybindings(
-			keyboard,
-			deltaSeconds,
-			modifiers.shift,
-			modifiers.ctrl,
-			modifiers.alt,
-			modifiers.meta,
-		)) {
+		if (this.completion.handleKeybindings(deltaSeconds)) {
 			this.resetBlink();
 			return null;
 		}
-		const options: InlineInputOptions = {
-			ctrlDown: modifiers.ctrl,
-			metaDown: modifiers.meta,
-			shiftDown: modifiers.shift,
-			altDown: modifiers.alt,
-			deltaSeconds,
-			allowSpace: true,
-		};
+		const options: InlineInputOptions = { deltaSeconds, allowSpace: true };
 		const handlers = this.createInlineHandlers();
 		const historyHandled = this.handleHistoryNavigation(deltaSeconds, modifiers);
 		if (historyHandled) {
@@ -266,7 +250,7 @@ export class ConsoleMode {
 		} else if (previousCursor !== this.field.cursor || previousAnchor !== this.field.selectionAnchor) {
 			this.completion.onCursorMoved();
 		}
-		const submit = this.trySubmitCommand(playerInput);
+		const submit = this.trySubmitCommand();
 		if (submit !== null) {
 			this.completion.closeSession();
 		}
@@ -383,14 +367,13 @@ export class ConsoleMode {
 		this.resetInputField(entry);
 	}
 
-	private trySubmitCommand(playerInput: PlayerInput): string | null {
-		const playerIndex = playerInput.playerIndex;
+	private trySubmitCommand(): string | null {
 		const enterPressed = isKeyJustPressedGlobal('Enter') || isKeyJustPressedGlobal('NumpadEnter');
 		if (!enterPressed) {
 			return null;
 		}
-		consumeIdeKey('Enter', playerIndex);
-		consumeIdeKey('NumpadEnter', playerIndex);
+		consumeIdeKey('Enter');
+		consumeIdeKey('NumpadEnter');
 		const command = this.field.text.trimEnd();
 		if (command.length === 0) {
 			this.resetBlink();

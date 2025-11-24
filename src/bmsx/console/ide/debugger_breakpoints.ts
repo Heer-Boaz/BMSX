@@ -1,6 +1,9 @@
 import { normalizeLuaChunkName } from '../../lua/debugger';
 import { clamp } from '../../utils/clamp';;
 import { getDebuggerRuntimeAccessor } from '../runtime_accessors';
+import { resolveHoverChunkName } from './console_cart_editor';
+import * as constants from './constants';
+import { getActiveCodeTabContext } from './editor_tabs';
 import { ide_state } from './ide_state';
 
 export type SerializedBreakpointMap = Record<string, number[]>;
@@ -123,4 +126,31 @@ export function syncRuntimeBreakpoints(): void {
 		serialized.set(chunk, new Set(lines));
 	}
 	runtime.setLuaBreakpoints(serialized);
+}
+export function getActiveBreakpointChunkName(): string | null {
+	const context = getActiveCodeTabContext();
+	return resolveHoverChunkName(context);
+}
+
+export function toggleBreakpointForEditorRow(row: number): boolean {
+	if (row < 0 || row >= ide_state.lines.length) {
+		return false;
+	}
+	const chunkName = getActiveBreakpointChunkName();
+	if (!chunkName) {
+		ide_state.showMessage('No active chunk available for breakpoints.', constants.COLOR_STATUS_WARNING, 1.6);
+		return false;
+	}
+	const lineNumber = row + 1;
+	const result = toggleBreakpoint(chunkName, lineNumber);
+	if (result === 'unchanged') {
+		return false;
+	}
+	const verb = result === 'added' ? 'set' : 'cleared';
+	ide_state.showMessage(`Breakpoint ${verb} at ${chunkName}:${lineNumber}`, constants.COLOR_STATUS_TEXT, 1.4);
+	return true;
+}
+
+export function toggleBreakpointAtCursor(): void {
+	void toggleBreakpointForEditorRow(ide_state.cursorRow);
 }

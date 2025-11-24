@@ -383,10 +383,6 @@ export type InlineTextField = {
 };
 
 export type InlineInputOptions = {
-	ctrlDown: boolean;
-	metaDown: boolean;
-	shiftDown: boolean;
-	altDown: boolean;
 	deltaSeconds: number;
 	allowSpace: boolean;
 	characterFilter?: (value: string) => boolean;
@@ -437,20 +433,6 @@ export type RuntimeErrorOverlay = {
 export type RepeatEntry = {
 	cooldown: number;
 };
-
-export type ConsoleEditorShortcutContext = {
-	ctrlDown: boolean;
-	shiftDown: boolean;
-	altDown: boolean;
-	metaDown: boolean;
-	inlineFieldFocused: boolean;
-	resourcePanelFocused: boolean;
-	codeTabActive: boolean;
-};
-
-export type CustomKeybindingHandler = (
-	context: ConsoleEditorShortcutContext
-) => boolean;
 
 export type DiagnosticsCacheEntry = {
 	contextId: string;

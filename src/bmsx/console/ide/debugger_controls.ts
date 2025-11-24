@@ -4,7 +4,7 @@ import {
 	subscribeDebuggerLifecycleEvents,
 	type DebuggerLifecycleEvent,
 } from '../debugger_lifecycle';
-import type { DebuggerCommandExecutor, DebuggerCommand } from './debugger_shortcuts_core';
+import type { DebuggerCommand } from './input_controller';
 
 type RuntimeDebuggerApi = {
 	continueLuaDebugger(): void;
@@ -17,7 +17,7 @@ type RuntimeDebuggerApi = {
 
 const DEBUGGER_LOG_PREFIX = '[DebuggerCommandExecutor]';
 
-class RuntimeDebuggerCommandExecutor implements DebuggerCommandExecutor {
+class RuntimeDebuggerCommandExecutor {
 	private hasActiveSuspension = getLastDebuggerPauseEvent() !== null;
 
 	constructor() {
@@ -112,12 +112,4 @@ class RuntimeDebuggerCommandExecutor implements DebuggerCommandExecutor {
 	}
 }
 
-const debuggerCommandExecutor = new RuntimeDebuggerCommandExecutor();
-
-export function getDebuggerCommandExecutor(): DebuggerCommandExecutor {
-	return debuggerCommandExecutor;
-}
-
-export function issueDebuggerCommand(command: DebuggerCommand): boolean {
-	return debuggerCommandExecutor.issueDebuggerCommand(command);
-}
+export const debuggerCommandExecutor = new RuntimeDebuggerCommandExecutor();

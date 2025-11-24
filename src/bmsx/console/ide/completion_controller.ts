@@ -14,11 +14,11 @@ import {
 } from './types';
 import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaSymbolEntry } from '../types';
 import * as constants from './constants';
-import { isKeyJustPressed as isKeyJustPressedGlobal, isKeyPressed as isKeyPressedGlobal } from './input_helpers';
-import type { KeyboardInput } from '../../input/keyboardinput';
+import { isAltDown, isCtrlDown, isKeyJustPressed as isKeyJustPressedGlobal, isKeyPressed as isKeyPressedGlobal, isMetaDown, isShiftDown } from './input_controller';
 import { isWhitespace, isWordChar } from './text_utils';
 import { isLuaCommentContext } from './text_utils_local';
 import { consumeIdeKey } from './player_input_adapter';
+import { ide_state } from './ide_state';
 
 type MemberCompletionHostRequest = {
 	objectName: string;
@@ -65,7 +65,7 @@ export interface CompletionHost {
 	// Utilities
 	charAt(row: number, column: number): string;
 	getTextVersion(): number;
-	shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean;
+	shouldFireRepeat(code: string, deltaSeconds: number): boolean;
 	shouldAutoTriggerCompletions(): boolean;
 }
 
@@ -217,15 +217,9 @@ export class CompletionController {
 		this.refreshParameterHint();
 	}
 
-	public handleKeybindings(
-		keyboard: KeyboardInput,
-		deltaSeconds: number,
-		shiftDown: boolean,
-		ctrlDown: boolean,
-		altDown: boolean,
-		metaDown: boolean,
-	): boolean {
+	public handleKeybindings(deltaSeconds: number): boolean {
 		// Allow manual open via Ctrl/Cmd+Space
+		const { ctrlDown, altDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
 		if ((ctrlDown || metaDown) && !altDown && this.completionSession === null && this.host.isCodeTabActive() && isKeyJustPressedGlobal('Space')) {
 			consumeIdeKey('Space');
 			const context = this.analyzeCompletionContext();
@@ -241,28 +235,28 @@ export class CompletionController {
 			return true;
 		}
 		let handled = false;
-		if (this.host.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+		if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
 			consumeIdeKey('ArrowDown');
 			this.moveCompletionSelection(1);
 			handled = true;
 		}
-		if (this.host.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+		if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
 			consumeIdeKey('ArrowUp');
 			this.moveCompletionSelection(-1);
 			handled = true;
 		}
-		if (this.host.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
+		if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
 			consumeIdeKey('PageDown');
 			this.moveCompletionSelection(session.maxVisibleItems);
 			handled = true;
 		}
-		if (this.host.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
+		if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
 			consumeIdeKey('PageUp');
 			this.moveCompletionSelection(-session.maxVisibleItems);
 			handled = true;
 		}
 		if (ctrlDown || metaDown) {
-			if (this.host.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
+			if (ide_state.input.shouldRepeat('Home', deltaSeconds)) {
 				consumeIdeKey('Home');
 				if (session.filteredItems.length > 0) {
 					session.selectionIndex = 0;
@@ -270,7 +264,7 @@ export class CompletionController {
 				}
 				handled = true;
 			}
-			if (this.host.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
+			if (ide_state.input.shouldRepeat('End', deltaSeconds)) {
 				consumeIdeKey('End');
 				if (session.filteredItems.length > 0) {
 					session.selectionIndex = session.filteredItems.length - 1;

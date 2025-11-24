@@ -2,6 +2,7 @@ import { BmsxConsoleApi } from '../api';
 import type { drawInlineCaret } from './render_caret';
 import * as constants from './constants';
 import type { InlineTextField } from './types';
+import { ide_state } from './ide_state';
 
 type InlineResultListOptions<T> = {
 	entries: readonly T[] | null | undefined;
@@ -125,8 +126,8 @@ export function renderCreateResourceBar(api: BmsxConsoleApi, host: InlineBarsHos
 
 	const selection = host.inlineFieldSelectionRange(field);
 	if (selection && field.text.length > 0) {
-		const selectionLeft = pathX + host.inlineFieldMeasureRange(field, host.inlineFieldMetrics(), 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field, host.inlineFieldMetrics(), selection.start, selection.end);
+		const selectionLeft = pathX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
+		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
 			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}
@@ -178,8 +179,8 @@ export function renderSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 
 	const selection = field ? host.inlineFieldSelectionRange(field) : null;
 	if (selection && field!.text.length > 0) {
-		const selectionLeft = queryX + host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), selection.start, selection.end);
+		const selectionLeft = queryX + host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, 0, selection.start);
+		const selectionWidth = host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
 			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}
@@ -275,8 +276,8 @@ export function renderResourceSearchBar(api: BmsxConsoleApi, host: InlineBarsHos
 
 	const selection = field ? host.inlineFieldSelectionRange(field) : null;
 	if (selection && field!.text.length > 0) {
-		const selectionLeft = queryX + host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), selection.start, selection.end);
+		const selectionLeft = queryX + host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, 0, selection.start);
+		const selectionWidth = host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
 			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}
@@ -361,8 +362,8 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 
 	const selection = field ? host.inlineFieldSelectionRange(field) : null;
 	if (selection && field!.text.length > 0) {
-		const selectionLeft = queryX + host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), selection.start, selection.end);
+		const selectionLeft = queryX + host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, 0, selection.start);
+		const selectionWidth = host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
 			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}
@@ -495,8 +496,8 @@ export function renderRenameBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 
 	const selection = field ? host.inlineFieldSelectionRange(field) : null;
 	if (selection && field!.text.length > 0) {
-		const selectionLeft = valueX + host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), selection.start, selection.end);
+		const selectionLeft = valueX + host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, 0, selection.start);
+		const selectionWidth = host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
 			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}
@@ -560,8 +561,8 @@ export function renderLineJumpBar(api: BmsxConsoleApi, host: InlineBarsHost): vo
 
 	const selection = field ? host.inlineFieldSelectionRange(field) : null;
 	if (selection && field!.text.length > 0) {
-		const selectionLeft = valueX + host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), selection.start, selection.end);
+		const selectionLeft = valueX + host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, 0, selection.start);
+		const selectionWidth = host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
 			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}

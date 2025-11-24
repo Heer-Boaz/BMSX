@@ -5,7 +5,8 @@ import { getSelectionRange, getSelectionText } from './text_editing_and_selectio
 
 import type { ConsoleResourceDescriptor } from '../types';
 import { enqueueBackgroundTask } from './background_tasks';
-import { applySearchFieldText, clearReferenceHighlights, closeSymbolSearch, closeResourceSearch, closeLineJump, resetBlink, updateDesiredColumn, listResourcesStrict, openLuaCodeTab, scheduleNextFrame, ensureCursorVisible } from './console_cart_editor';
+import { applySearchFieldText, clearReferenceHighlights, closeSymbolSearch, closeResourceSearch, closeLineJump, updateDesiredColumn, listResourcesStrict, openLuaCodeTab, scheduleNextFrame, ensureCursorVisible } from './console_cart_editor';
+import { resetBlink } from './render_caret';
 import { revealCursor } from './cursor_operations';
 import { activateCodeTab } from './editor_tabs';
 

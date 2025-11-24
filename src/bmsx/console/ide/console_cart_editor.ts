@@ -1,5 +1,4 @@
 import { $ } from '../../core/game';
-import type { KeyboardInput } from '../../input/keyboardinput';
 import { BmsxConsoleApi } from '../api';
 import type {
 	ConsoleLuaDefinitionLocation,
@@ -37,7 +36,6 @@ import {
 	setActiveTab,
 	activateCodeTab,
 	closeTab,
-	cycleTab,
 	updateTabDrag,
 	endTabDrag,
 	findCodeTabContext,
@@ -45,7 +43,7 @@ import {
 	beginTabDrag,
 } from './editor_tabs';
 
-import { isIdentifierChar, isIdentifierStartChar, isWhitespace, isWordChar } from './text_utils';
+import { isIdentifierChar, isIdentifierStartChar, isWhitespace, isWordChar, splitLines } from './text_utils';
 import type { InlineFieldEditingHandlers, InlineFieldMetrics } from './inline_text_field';
 import {
 	applyInlineFieldEditing,
@@ -80,11 +78,11 @@ import {
 } from './runtime_error_overlay_view';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
-import { handleEscapeKey, InputController } from './input_controller';
-import { consumeIdeKey, getIdeKeyState } from './player_input_adapter';
+import { handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handleTopBarButtonPress, InputController, isAltDown, isCtrlDown, isKeyJustPressed, isKeyTyped, isMetaDown, isShiftDown } from './input_controller';
+import { consumeIdeKey } from './player_input_adapter';
 import { ConsoleCodeLayout } from './code_layout';
 import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine } from './runtime_error_utils';
-import { getBreakpointsForChunk, toggleBreakpoint } from './debugger_breakpoints';
+import { getBreakpointsForChunk, toggleBreakpointAtCursor, toggleBreakpointForEditorRow } from './debugger_breakpoints';
 import type {
 	CachedHighlight,
 	CodeHoverTooltip,
@@ -111,11 +109,8 @@ import type {
 	RuntimeErrorDetails,
 	ScrollbarKind,
 	SymbolSearchResult,
-	TopBarButtonId,
 	VisualLineSegment,
 	LuaCompletionItem,
-	ConsoleEditorShortcutContext,
-	CustomKeybindingHandler,
 	DebugPanelKind,
 } from './types';
 import type { StackTraceFrame } from '../../lua/runtime';
@@ -137,30 +132,17 @@ import { planRenameLineEdits } from './rename_controller';
 import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_controller';
 import {
 	isKeyJustPressed as isKeyJustPressedGlobal,
-	isKeyTyped as isKeyTypedGlobal,
 	isModifierPressed as isModifierPressedGlobal,
-	resetKeyPressRecords,
-	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
-} from './input_helpers';
+	resetKeyPressRecords
+} from './input_controller';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast';
-import { ESCAPE_KEY } from './constants';
 // Search logic moved to editor_search
 import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, moveSearchSelection, applySearchSelection, ensureSearchSelectionVisible, computeSearchPageStats, getVisibleSearchResultEntries, startSearchJob, jumpToNextMatch, jumpToPreviousMatch, cancelGlobalSearchJob } from './editor_search';
-import { formatLuaDocument } from './lua_formatter';
 import * as constants from './constants';
 import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, workspaceDirtyCache, caretNavigation } from './ide_state';
 import { initializeDebuggerUiState } from './debugger_ui_state';
-import { issueDebuggerCommand } from './debugger_controls';
 import {
 	setCursorPosition,
-	moveCursorLeft,
-	moveCursorRight,
-	moveCursorUp,
-	moveCursorDown,
-	moveCursorHome,
-	moveCursorEnd,
-	pageUp,
-	pageDown,
 	revealCursor,
 	clampCursorRow,
 	clampCursorColumn,
@@ -172,8 +154,9 @@ import {
 } from './workspace_storage';
 
 import * as TextEditing from './text_editing_and_selection';
-import { drawCursor, drawInlineCaret } from './render_caret';
+import { drawCursor, drawInlineCaret, resetBlink } from './render_caret';
 import { api, type BmsxConsoleRuntime } from '../runtime';
+import { insertText, writeClipboard } from './text_editing_and_selection';
 
 export type ConsoleCartEditor = {
 	activate: typeof activate;
@@ -213,8 +196,6 @@ export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleC
 }
 
 export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
-	customKeybindingHandler = (context) =>
-		handleCodeFormattingShortcut(context);
 	initializeDebuggerUiState();
 
 	ide_state.playerIndex = options.playerIndex;
@@ -346,7 +327,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		getMemberCompletionItems: (request) => buildMemberCompletionItems(request),
 		charAt: (r, c) => TextEditing.charAt(r, c),
 		getTextVersion: () => ide_state.textVersion,
-		shouldFireRepeat: (kb, code, dt) => ide_state.input.shouldRepeatPublic(kb, code, dt),
+		shouldFireRepeat: (code, dt) => ide_state.input.shouldRepeat(code, dt),
 		shouldAutoTriggerCompletions: () => {
 			if (!intellisenseUiReady()) {
 				return false;
@@ -385,15 +366,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		deleteWordBackward: () => deleteWordBackward(),
 		deleteWordForward: () => deleteWordForward(),
 		insertNewline: () => insertNewline(),
-		insertText: (text) => TextEditing.insertText(text),
-		moveCursorLeft: (byWord, select) => moveCursorLeft(byWord, select),
-		moveCursorRight: (byWord, select) => moveCursorRight(byWord, select),
-		moveCursorUp: (select) => moveCursorUp(select),
-		moveCursorDown: (select) => moveCursorDown(select),
-		moveCursorHome: (select) => moveCursorHome(select),
-		moveCursorEnd: (select) => moveCursorEnd(select),
-		pageDown: (select) => pageDown(select),
-		pageUp: (select) => pageUp(select),
+		insertText: (text) => insertText(text),
 		moveSelectionLines: (delta) => moveSelectionLines(delta),
 		indentSelectionOrLine: () => indentSelectionOrLine(),
 		unindentSelectionOrLine: () => unindentSelectionOrLine(),
@@ -411,8 +384,8 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	});
 	ide_state.problemsPanel.setDiagnostics(ide_state.diagnostics);
 	ide_state.renameController = new RenameController({
-		processFieldEdit: (field, keyboard, options) => processInlineFieldEditing(field, keyboard, options),
-		shouldFireRepeat: (keyboard, code, deltaSeconds) => shouldFireRepeat(keyboard, code, deltaSeconds),
+		processFieldEdit: (field, options) => processInlineFieldEditing(field, options),
+		shouldFireRepeat: (code, deltaSeconds) => ide_state.input.shouldRepeat(code, deltaSeconds),
 		undo: () => undo(),
 		redo: () => redo(),
 		showMessage: (text, color, duration) => ide_state.showMessage(text, color, duration),
@@ -1072,10 +1045,9 @@ export function installWindowEventListeners(): void {
 	};
 }
 
-export function resetInputFocusState(keyboard: KeyboardInput | null): void {
-	if (keyboard) {
-		keyboard.reset();
-	}
+export function resetInputFocusState(): void {
+	if (!api.keyboard) return;
+	api.keyboard.reset();
 	ide_state.input.resetRepeats();
 	resetKeyPressRecords();
 	ide_state.repeatState.clear();
@@ -1088,13 +1060,12 @@ export function requestWindowFocusState(hasFocus: boolean, immediate: boolean): 
 	}
 }
 
-export function flushWindowFocusState(keyboard?: KeyboardInput): void {
+export function flushWindowFocusState(): void {
 	if (ide_state.pendingWindowFocused === ide_state.windowFocused) {
 		return;
 	}
 	ide_state.windowFocused = ide_state.pendingWindowFocused;
-	const effectiveKeyboard = keyboard ?? getKeyboard();
-	resetInputFocusState(effectiveKeyboard);
+	resetInputFocusState();
 }
 
 export function scheduleNextFrame(task: () => void): void {
@@ -1618,8 +1589,7 @@ export function safeInspectLuaExpression(request: ConsoleLuaHoverRequest): Conso
 }
 
 export function update(deltaSeconds: number): void {
-	const keyboard = getKeyboard();
-	flushWindowFocusState(keyboard);
+	flushWindowFocusState();
 	ide_state.updateMessage(deltaSeconds);
 	updateRuntimeErrorOverlay(deltaSeconds);
 	if (handleEscapeShortcut()) {
@@ -1635,7 +1605,7 @@ export function update(deltaSeconds: number): void {
 		handleActionPromptInput();
 		return;
 	}
-	handleEditorInput(keyboard, deltaSeconds);
+	handleEditorInput(deltaSeconds);
 	ide_state.completion.processPending(deltaSeconds);
 	const semanticError = ide_state.layout.getLastSemanticError();
 	if (semanticError && semanticError !== ide_state.lastReportedSemanticError) {
@@ -2179,54 +2149,6 @@ export function shutdown(): void {
 	activateCodeTab();
 }
 
-export function getKeyboard(): KeyboardInput {
-	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
-	if (!playerInput) {
-		throw new Error(`[ConsoleCartEditor] Player ide_state.input ${ide_state.playerIndex} unavailable.`);
-	}
-	const handler = playerInput.inputHandlers['keyboard'];
-	if (!handler) {
-		throw new Error(`[ConsoleCartEditor] Keyboard handler missing for player ${ide_state.playerIndex}.`);
-	}
-	const candidate = handler as KeyboardInput;
-	if (typeof candidate.keydown !== 'function') {
-		throw new Error(`[ConsoleCartEditor] Keyboard handler for player ${ide_state.playerIndex} is invalid.`);
-	}
-	return candidate;
-}
-
-export function handleEscapeShortcut(): boolean {
-	const state = getIdeKeyState(ESCAPE_KEY, ide_state.playerIndex);
-	if (!state || state.pressed !== true) {
-		ide_state.lastEscapePressId = null;
-		return false;
-	}
-	const pressId = typeof state.pressId === 'number' ? state.pressId : null;
-	const allow =
-		shouldAcceptKeyPressGlobal(ESCAPE_KEY, state)
-		|| state.justpressed === true
-		|| (pressId !== null && pressId !== ide_state.lastEscapePressId);
-	if (!allow) return false;
-	ide_state.lastEscapePressId = pressId;
-	const handled = handleEscapeKey({ allowRuntimeErrorToggle: true });
-	if (handled) {
-		consumeIdeKey(ESCAPE_KEY);
-	}
-	return handled;
-}
-
-export function toggleEditorFromShortcut(): void {
-	const intercepted = handleEscapeKey({ allowRuntimeErrorToggle: false });
-	if (intercepted) {
-		return;
-	}
-	if (ide_state.active) {
-		deactivate();
-	} else {
-		activate();
-	}
-}
-
 export function activate(): void {
 	if (!ide_state.disposeVisibilityListener) {
 		installPlatformVisibilityListener();
@@ -2358,359 +2280,7 @@ export function deactivate(): void {
 	ide_state.lastReportedSemanticError = null;
 }
 
-export function splitLines(source: string): string[] {
-	return source.split(/\r?\n/);
-}
-
-export function handleActionPromptInput(): void {
-	if (!ide_state.pendingActionPrompt) {
-		return;
-	}
-	if (isKeyJustPressedGlobal('Escape')) {
-		consumeIdeKey('Escape');
-		resetActionPromptState();
-		return;
-	}
-	if (isKeyJustPressedGlobal('Enter')) {
-		consumeIdeKey('Enter');
-		void handleActionPromptSelection('save-continue');
-	}
-}
-
-export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number): void {
-	if (ide_state.resourcePanelVisible && ide_state.resourcePanelFocused) {
-		ide_state.resourcePanel.handleKeyboard();
-		const st = ide_state.resourcePanel.getStateForRender();
-		ide_state.resourcePanelFocused = st.focused;
-		return;
-	}
-	if (isResourceViewActive()) {
-		handleResourceViewerInput(keyboard, deltaSeconds);
-		return;
-	}
-	const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
-	const shiftDown = isModifierPressedGlobal('ShiftLeft') || isModifierPressedGlobal('ShiftRight');
-	const metaDown = isModifierPressedGlobal('MetaLeft') || isModifierPressedGlobal('MetaRight');
-	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
-	const codeTabActive = isCodeTabActive();
-	const editableCodeTab = isEditableCodeTab();
-	const readOnlyCodeTab = isReadOnlyCodeTab();
-
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal('KeyO')) {
-		consumeIdeKey('KeyO');
-		openSymbolSearch();
-		return;
-	}
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal('KeyR')) {
-		consumeIdeKey('KeyR');
-		toggleResolutionMode();
-		return;
-	}
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal('KeyL')) {
-		consumeIdeKey('KeyL');
-		toggleResourcePanelFilterMode();
-		return;
-	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal('Comma')) {
-		consumeIdeKey('Comma');
-		openResourceSearch();
-		return;
-	}
-	if ((ctrlDown || metaDown) && !altDown && !shiftDown && isKeyJustPressedGlobal('KeyE')) {
-		consumeIdeKey('KeyE');
-		openResourceSearch();
-		return;
-	}
-	if ((ctrlDown && altDown) && isKeyJustPressedGlobal('Comma')) {
-		consumeIdeKey('Comma');
-		openSymbolSearch();
-		return;
-	}
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('KeyB')) {
-		consumeIdeKey('KeyB');
-		toggleResourcePanel();
-		return;
-	}
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal('KeyM')) {
-		consumeIdeKey('KeyM');
-		toggleProblemsPanel();
-		if (ide_state.problemsPanel.isVisible()) {
-			markDiagnosticsDirty();
-		} else {
-			focusEditorFromProblemsPanel();
-		}
-		return;
-	}
-	if (!ctrlDown && !metaDown && altDown && isKeyJustPressedGlobal('Comma')) {
-		consumeIdeKey('Comma');
-		openGlobalSymbolSearch();
-		return;
-	}
-
-	if (ide_state.createResourceActive) {
-		handleCreateResourceInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
-		return;
-	}
-
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('KeyN')) {
-		consumeIdeKey('KeyN');
-		openCreateResourcePrompt();
-		return;
-	}
-
-	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal('KeyF')) {
-		consumeIdeKey('KeyF');
-		openSearch(true, 'global');
-		return;
-	}
-	if ((ctrlDown || metaDown) && !shiftDown && !altDown && isKeyJustPressedGlobal('KeyF')) {
-		consumeIdeKey('KeyF');
-		openSearch(true, 'local');
-		return;
-	}
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('Tab')) {
-		consumeIdeKey('Tab');
-		cycleTab(shiftDown ? -1 : 1);
-		return;
-	}
-	const inlineFieldFocused = ide_state.searchActive
-		|| ide_state.symbolSearchActive
-		|| ide_state.resourceSearchActive
-		|| ide_state.lineJumpActive
-		|| ide_state.createResourceActive
-		|| ide_state.renameController.isActive();
-	if (handleCustomKeybinding({
-		ctrlDown,
-		metaDown,
-		shiftDown,
-		altDown,
-		inlineFieldFocused,
-		resourcePanelFocused: ide_state.resourcePanelFocused,
-		codeTabActive,
-	})) {
-		return;
-	}
-	if (!inlineFieldFocused && isKeyJustPressedGlobal('F12')) {
-		consumeIdeKey('F12');
-		if (shiftDown) {
-			return;
-		}
-		openReferenceSearchPopup();
-		return;
-	}
-	if (!inlineFieldFocused && editableCodeTab && isKeyJustPressedGlobal('F2')) {
-		consumeIdeKey('F2');
-		openRenamePrompt();
-		return;
-	}
-	if ((ctrlDown || metaDown)
-		&& !inlineFieldFocused
-		&& !ide_state.resourcePanelFocused
-		&& isCodeTabActive()
-		&& isKeyJustPressedGlobal('KeyA')) {
-		consumeIdeKey('KeyA');
-		ide_state.selectionAnchor = { row: 0, column: 0 };
-		const lastRowIndex = ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0;
-		const lastColumn = ide_state.lines.length > 0 ? ide_state.lines[lastRowIndex].length : 0;
-		ide_state.cursorRow = lastRowIndex;
-		ide_state.cursorColumn = lastColumn;
-		updateDesiredColumn();
-		resetBlink();
-		revealCursor();
-		return;
-	}
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('KeyL')) {
-		consumeIdeKey('KeyL');
-		openLineJump();
-		return;
-	}
-	if (ide_state.renameController.isActive()) {
-		ide_state.renameController.handleInput(keyboard, deltaSeconds, { ctrlDown, metaDown, shiftDown, altDown });
-		return;
-	}
-	if (ide_state.resourceSearchActive) {
-		handleResourceSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
-		return;
-	}
-	if (ide_state.symbolSearchActive) {
-		handleSymbolSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
-		return;
-	}
-	if (ide_state.lineJumpActive) {
-		handleLineJumpInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
-		return;
-	}
-	if (ide_state.searchActive) {
-		handleSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
-		return;
-	}
-	if (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()) {
-		let handled = false;
-		if (shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
-			consumeIdeKey('ArrowUp');
-			handled = ide_state.problemsPanel.handleKeyboardCommand('up');
-		} else if (shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
-			consumeIdeKey('ArrowDown');
-			handled = ide_state.problemsPanel.handleKeyboardCommand('down');
-		} else if (shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
-			consumeIdeKey('PageUp');
-			handled = ide_state.problemsPanel.handleKeyboardCommand('page-up');
-		} else if (shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
-			consumeIdeKey('PageDown');
-			handled = ide_state.problemsPanel.handleKeyboardCommand('page-down');
-		} else if (shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
-			consumeIdeKey('Home');
-			handled = ide_state.problemsPanel.handleKeyboardCommand('home');
-		} else if (shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
-			consumeIdeKey('End');
-			handled = ide_state.problemsPanel.handleKeyboardCommand('end');
-		} else if (isKeyJustPressedGlobal('Enter') || isKeyJustPressedGlobal('NumpadEnter')) {
-			if (isKeyJustPressedGlobal('Enter')) consumeIdeKey('Enter'); else consumeIdeKey('NumpadEnter');
-			handled = ide_state.problemsPanel.handleKeyboardCommand('activate');
-		} else if (isKeyJustPressedGlobal('Escape')) {
-			consumeIdeKey('Escape');
-			hideProblemsPanel();
-			focusEditorFromProblemsPanel();
-			return;
-		}
-		// Always swallow caret movement while problems panel is focused
-		if (shouldFireRepeat(keyboard, 'ArrowLeft', deltaSeconds)) consumeIdeKey('ArrowLeft');
-		if (shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) consumeIdeKey('ArrowRight');
-		if (handled) return; else return;
-	}
-	if (ide_state.searchQuery.length > 0 && isKeyJustPressedGlobal('F3')) {
-		consumeIdeKey('F3');
-		if (shiftDown) {
-			jumpToPreviousMatch();
-		} else {
-			jumpToNextMatch();
-		}
-		return;
-	}
-	if ((ctrlDown || metaDown) && shouldFireRepeat(keyboard, 'KeyZ', deltaSeconds)) {
-		consumeIdeKey('KeyZ');
-		if (!editableCodeTab) {
-			notifyReadOnlyEdit();
-			return;
-		}
-		if (shiftDown) {
-			redo();
-		} else {
-			undo();
-		}
-		return;
-	}
-	if ((ctrlDown || metaDown) && shouldFireRepeat(keyboard, 'KeyY', deltaSeconds)) {
-		consumeIdeKey('KeyY');
-		if (!editableCodeTab) {
-			notifyReadOnlyEdit();
-			return;
-		}
-		redo();
-		return;
-	}
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('KeyW')) {
-		consumeIdeKey('KeyW');
-		closeActiveTab();
-		return;
-	}
-	if (ctrlDown && isKeyJustPressedGlobal('KeyS')) {
-		consumeIdeKey('KeyS');
-		if (readOnlyCodeTab) {
-			notifyReadOnlyEdit();
-			return;
-		}
-		void save();
-		return;
-	}
-	if (ctrlDown && isKeyJustPressedGlobal('KeyC')) {
-		consumeIdeKey('KeyC');
-		void copySelectionToClipboard();
-		return;
-	}
-	if (ctrlDown && isKeyJustPressedGlobal('KeyX')) {
-		consumeIdeKey('KeyX');
-		if (readOnlyCodeTab) {
-			if (TextEditing.hasSelection()) {
-				void copySelectionToClipboard();
-			} else {
-				notifyReadOnlyEdit();
-			}
-			return;
-		}
-		if (TextEditing.hasSelection()) {
-			void cutSelectionToClipboard();
-		} else {
-			void cutLineToClipboard();
-		}
-		return;
-	}
-	if (ctrlDown && isKeyJustPressedGlobal('KeyV')) {
-		consumeIdeKey('KeyV');
-		if (readOnlyCodeTab) {
-			notifyReadOnlyEdit();
-			return;
-		}
-		pasteFromClipboard();
-		return;
-	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal('Slash')) {
-		consumeIdeKey('Slash');
-		if (!editableCodeTab) {
-			notifyReadOnlyEdit();
-			return;
-		}
-		toggleLineComments();
-		return;
-	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal('NumpadDivide')) {
-		consumeIdeKey('NumpadDivide');
-		if (!editableCodeTab) {
-			notifyReadOnlyEdit();
-			return;
-		}
-		toggleLineComments();
-		return;
-	}
-	if (ctrlDown && isKeyJustPressedGlobal('BracketRight')) {
-		consumeIdeKey('BracketRight');
-		if (!editableCodeTab) {
-			notifyReadOnlyEdit();
-			return;
-		}
-		indentSelectionOrLine();
-		return;
-	}
-	if (ctrlDown && isKeyJustPressedGlobal('BracketLeft')) {
-		consumeIdeKey('BracketLeft');
-		if (!editableCodeTab) {
-			notifyReadOnlyEdit();
-			return;
-		}
-		unindentSelectionOrLine();
-		return;
-	}
-	// Manual ide_state.completion open/close handled by CompletionController via handleCompletionKeybindings
-	if (handleCompletionKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown)) {
-		return;
-	}
-	ide_state.input.handleEditorInput(keyboard, deltaSeconds);
-	if (ctrlDown || metaDown || altDown) {
-		return;
-	}
-	// Remaining character ide_state.input after controller handled modifiers is no-op here
-}
-
-let customKeybindingHandler: CustomKeybindingHandler | null = null;
-
-export function handleCustomKeybinding(
-	context: ConsoleEditorShortcutContext,
-): boolean {
-	return customKeybindingHandler?.(context) ?? false;
-}
-
-export function handleCreateResourceInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
-	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
+export function handleCreateResourceInput(deltaSeconds: number): void {
 	if (isKeyJustPressedGlobal('Escape')) {
 		consumeIdeKey('Escape');
 		cancelCreateResourcePrompt();
@@ -2724,11 +2294,7 @@ export function handleCreateResourceInput(keyboard: KeyboardInput, deltaSeconds:
 	if (ide_state.createResourceWorking) {
 		return;
 	}
-	const textChanged = processInlineFieldEditing(ide_state.createResourceField, keyboard, {
-		ctrlDown,
-		metaDown,
-		shiftDown,
-		altDown,
+	const textChanged = processInlineFieldEditing(ide_state.createResourceField, {
 		deltaSeconds,
 		allowSpace: true,
 		characterFilter: (value: string): boolean => isValidCreateResourceCharacter(value),
@@ -2918,8 +2484,8 @@ export function buildDefaultResourceContents(_path: string, _asset_id: string): 
 	return constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 }
 
-export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
-	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
+export function handleSearchInput(deltaSeconds: number): void {
+	const { shiftDown, ctrlDown, metaDown, altDown } = { shiftDown: isShiftDown(), ctrlDown: isCtrlDown(), metaDown: isMetaDown(), altDown: isAltDown() };
 	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal('KeyF')) {
 		consumeIdeKey('KeyF');
 		openSearch(false, 'global');
@@ -2930,7 +2496,7 @@ export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number,
 		openSearch(false, 'local');
 		return;
 	}
-	if ((ctrlDown || metaDown) && shouldFireRepeat(keyboard, 'KeyZ', deltaSeconds)) {
+	if ((ctrlDown || metaDown) && ide_state.input.shouldRepeat('KeyZ', deltaSeconds)) {
 		consumeIdeKey('KeyZ');
 		if (shiftDown) {
 			redo();
@@ -2939,7 +2505,7 @@ export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number,
 		}
 		return;
 	}
-	if ((ctrlDown || metaDown) && shouldFireRepeat(keyboard, 'KeyY', deltaSeconds)) {
+	if ((ctrlDown || metaDown) && ide_state.input.shouldRepeat('KeyY', deltaSeconds)) {
 		consumeIdeKey('KeyY');
 		redo();
 		return;
@@ -2979,22 +2545,22 @@ export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number,
 		return;
 	}
 	if (hasResults) {
-		if (shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+		if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
 			consumeIdeKey('ArrowUp');
 			moveSearchSelection(-1, { preview: previewLocal });
 			return;
 		}
-		if (shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+		if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
 			consumeIdeKey('ArrowDown');
 			moveSearchSelection(1, { preview: previewLocal });
 			return;
 		}
-		if (shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
+		if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
 			consumeIdeKey('PageUp');
 			moveSearchSelection(-searchPageSize(), { preview: previewLocal });
 			return;
 		}
-		if (shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
+		if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
 			consumeIdeKey('PageDown');
 			moveSearchSelection(searchPageSize(), { preview: previewLocal });
 			return;
@@ -3020,11 +2586,7 @@ export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number,
 		}
 	}
 
-	const textChanged = processInlineFieldEditing(ide_state.searchField, keyboard, {
-		ctrlDown,
-		metaDown,
-		shiftDown,
-		altDown,
+	const textChanged = processInlineFieldEditing(ide_state.searchField, {
 		deltaSeconds,
 		allowSpace: true,
 		characterFilter: undefined,
@@ -3037,13 +2599,13 @@ export function handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number,
 	}
 }
 
-export function handleLineJumpInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
+export function handleLineJumpInput(deltaSeconds: number): void {
+	const { shiftDown, ctrlDown, metaDown } = { shiftDown: isShiftDown(), ctrlDown: isCtrlDown(), metaDown: isMetaDown() };
 	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('KeyL')) {
 		consumeIdeKey('KeyL');
 		openLineJump();
 		return;
 	}
-	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
 	if (isKeyJustPressedGlobal('Enter')) {
 		consumeIdeKey('Enter');
 		applyLineJump();
@@ -3061,11 +2623,7 @@ export function handleLineJumpInput(keyboard: KeyboardInput, deltaSeconds: numbe
 	}
 
 	const digitFilter = (value: string): boolean => value >= '0' && value <= '9';
-	const textChanged = processInlineFieldEditing(ide_state.lineJumpField, keyboard, {
-		ctrlDown,
-		metaDown,
-		shiftDown,
-		altDown,
+	const textChanged = processInlineFieldEditing(ide_state.lineJumpField, {
 		deltaSeconds,
 		allowSpace: false,
 		characterFilter: digitFilter,
@@ -3667,8 +3225,8 @@ export function applySymbolSearchSelection(index: number): void {
 	});
 }
 
-export function handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
-	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
+export function handleSymbolSearchInput(deltaSeconds: number): void {
+	const { shiftDown } = { shiftDown: isShiftDown() };
 	if (isKeyJustPressedGlobal('Enter')) {
 		consumeIdeKey('Enter');
 		if (shiftDown) {
@@ -3687,22 +3245,22 @@ export function handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: n
 		closeSymbolSearch(true);
 		return;
 	}
-	if (shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+	if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
 		consumeIdeKey('ArrowUp');
 		moveSymbolSearchSelection(-1);
 		return;
 	}
-	if (shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+	if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
 		consumeIdeKey('ArrowDown');
 		moveSymbolSearchSelection(1);
 		return;
 	}
-	if (shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
+	if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
 		consumeIdeKey('PageUp');
 		moveSymbolSearchSelection(-symbolSearchPageSize());
 		return;
 	}
-	if (shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
+	if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
 		consumeIdeKey('PageDown');
 		moveSymbolSearchSelection(symbolSearchPageSize());
 		return;
@@ -3719,11 +3277,7 @@ export function handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: n
 		ensureSymbolSearchSelectionVisible();
 		return;
 	}
-	const textChanged = processInlineFieldEditing(ide_state.symbolSearchField, keyboard, {
-		ctrlDown,
-		metaDown,
-		shiftDown,
-		altDown,
+	const textChanged = processInlineFieldEditing(ide_state.symbolSearchField, {
 		deltaSeconds,
 		allowSpace: true,
 		characterFilter: undefined,
@@ -3885,8 +3439,8 @@ export function applyResourceSearchSelection(index: number): void {
 	});
 }
 
-export function handleResourceSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
-	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
+export function handleResourceSearchInput(deltaSeconds: number): void {
+	const { shiftDown } = { shiftDown: isShiftDown() };
 	if (isKeyJustPressedGlobal('Enter')) {
 		consumeIdeKey('Enter');
 		if (shiftDown) {
@@ -3913,22 +3467,22 @@ export function handleResourceSearchInput(keyboard: KeyboardInput, deltaSeconds:
 		focusEditorFromResourceSearch();
 		return;
 	}
-	if (shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+	if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
 		consumeIdeKey('ArrowUp');
 		moveResourceSearchSelection(-1);
 		return;
 	}
-	if (shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+	if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
 		consumeIdeKey('ArrowDown');
 		moveResourceSearchSelection(1);
 		return;
 	}
-	if (shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
+	if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
 		consumeIdeKey('PageUp');
 		moveResourceSearchSelection(-resourceSearchWindowCapacity());
 		return;
 	}
-	if (shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
+	if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
 		consumeIdeKey('PageDown');
 		moveResourceSearchSelection(resourceSearchWindowCapacity());
 		return;
@@ -3945,11 +3499,7 @@ export function handleResourceSearchInput(keyboard: KeyboardInput, deltaSeconds:
 		ensureResourceSearchSelectionVisible();
 		return;
 	}
-	const textChanged = processInlineFieldEditing(ide_state.resourceSearchField, keyboard, {
-		ctrlDown,
-		metaDown,
-		shiftDown,
-		altDown,
+	const textChanged = processInlineFieldEditing(ide_state.resourceSearchField, {
 		deltaSeconds,
 		allowSpace: true,
 		characterFilter: undefined,
@@ -5711,57 +5261,6 @@ export function handlePointerWheel(): void {
 	playerInput.consumeAction('pointer_wheel');
 }
 
-export function handleTopBarButtonPress(button: TopBarButtonId): void {
-	switch (button) {
-		case 'debugContinue':
-			issueDebuggerCommand('continue');
-			return;
-		case 'debugStepOver':
-			issueDebuggerCommand('step_over');
-			return;
-		case 'debugStepInto':
-			issueDebuggerCommand('step_into');
-			return;
-		case 'debugStepOut':
-			issueDebuggerCommand('step_out');
-			return;
-		case 'problems':
-			toggleProblemsPanel();
-			return;
-		case 'filter':
-			toggleResourcePanelFilterMode();
-			return;
-		case 'wrap':
-			toggleWordWrap();
-			return;
-		case 'resolution':
-			toggleResolutionMode();
-			return;
-		case 'resources':
-			toggleResourcePanel();
-			return;
-		case 'save':
-			if (ide_state.dirty) {
-				void save();
-			}
-			return;
-		case 'debugObjects':
-			openDebugPanelTab('objects');
-			return;
-		case 'debugEvents':
-			openDebugPanelTab('events');
-			return;
-		case 'debugRegistry':
-			openDebugPanelTab('registry');
-			return;
-		case 'resume':
-		case 'reboot':
-			activateCodeTab();
-			performAction(button);
-			return;
-	}
-}
-
 export function openActionPrompt(action: PendingActionPrompt['action']): void {
 	activateCodeTab();
 	ide_state.pendingActionPrompt = { action };
@@ -6345,15 +5844,11 @@ export function applyCreateResourceFieldText(value: string, moveCursorToEnd: boo
 	setFieldText(ide_state.createResourceField, value, moveCursorToEnd);
 }
 
-export function inlineFieldMetrics(): InlineFieldMetrics {
-	return ide_state.inlineFieldMetricsRef;
-}
-
-export function createInlineFieldEditingHandlers(keyboard: KeyboardInput): InlineFieldEditingHandlers {
+export function createInlineFieldEditingHandlers(): InlineFieldEditingHandlers {
 	return {
-		isKeyJustPressed: (code) => isKeyJustPressedGlobal(code),
-		isKeyTyped: (code) => isKeyTypedGlobal(code),
-		shouldFireRepeat: (code, deltaSeconds) => ide_state.input.shouldRepeatPublic(keyboard, code, deltaSeconds),
+		isKeyJustPressed: (code) => isKeyJustPressed(code),
+		isKeyTyped: (code) => isKeyTyped(code),
+		shouldFireRepeat: (code, deltaSeconds) => ide_state.input.shouldRepeat(code, deltaSeconds),
 		consumeKey: (code) => consumeIdeKey(code),
 		readClipboard: () => ide_state.customClipboard,
 		writeClipboard: (payload, action) => {
@@ -6368,13 +5863,13 @@ export function createInlineFieldEditingHandlers(keyboard: KeyboardInput): Inlin
 	};
 }
 
-export function processInlineFieldEditing(field: InlineTextField, keyboard: KeyboardInput, options: InlineInputOptions): boolean {
-	return applyInlineFieldEditing(field, options, createInlineFieldEditingHandlers(keyboard));
+export function processInlineFieldEditing(field: InlineTextField, options: InlineInputOptions): boolean {
+	return applyInlineFieldEditing(field, options, createInlineFieldEditingHandlers());
 }
 
 export function processInlineFieldPointer(field: InlineTextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {
 	const result = applyInlineFieldPointer(field, {
-		metrics: inlineFieldMetrics(),
+		metrics: ide_state.inlineFieldMetricsRef,
 		textLeft,
 		pointerX,
 		justPressed,
@@ -6460,88 +5955,6 @@ export function updateRuntimeErrorOverlay(deltaSeconds: number): void {
 	}
 }
 
-export async function copySelectionToClipboard(): Promise<void> {
-	const text = TextEditing.getSelectionText();
-	if (text === null) {
-		ide_state.showMessage('Nothing selected to copy', constants.COLOR_STATUS_WARNING, 1.5);
-		return;
-	}
-	await writeClipboard(text, 'Copied selection to clipboard');
-}
-
-export async function cutSelectionToClipboard(): Promise<void> {
-	const text = TextEditing.getSelectionText();
-	if (text === null) {
-		ide_state.showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
-		return;
-	}
-	prepareUndo('cut', false);
-	await writeClipboard(text, 'Cut selection to clipboard');
-	TextEditing.replaceSelectionWith('');
-}
-
-export async function cutLineToClipboard(): Promise<void> {
-	if (ide_state.lines.length === 0) {
-		ide_state.showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
-		return;
-	}
-	const currentLineValue = currentLine();
-	const isLastLine = ide_state.cursorRow >= ide_state.lines.length - 1;
-	const text = isLastLine ? currentLineValue : currentLineValue + '\n';
-	prepareUndo('cut-line', false);
-	await writeClipboard(text, 'Cut line to clipboard');
-	if (ide_state.lines.length === 1) {
-		ide_state.lines[0] = '';
-		ide_state.cursorColumn = 0;
-	} else {
-		const removedRow = ide_state.cursorRow;
-		ide_state.lines.splice(ide_state.cursorRow, 1);
-		if (ide_state.cursorRow >= ide_state.lines.length) {
-			ide_state.cursorRow = ide_state.lines.length - 1;
-		}
-		const newLength = ide_state.lines[ide_state.cursorRow].length;
-		if (ide_state.cursorColumn > newLength) {
-			ide_state.cursorColumn = newLength;
-		}
-		invalidateHighlightsFromRow(Math.min(removedRow, ide_state.lines.length - 1));
-	}
-	invalidateLine(ide_state.cursorRow);
-	ide_state.selectionAnchor = null;
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
-}
-
-export function pasteFromClipboard(): void {
-	const text = ide_state.customClipboard;
-	if (text === null || text.length === 0) {
-		ide_state.showMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
-		return;
-	}
-	prepareUndo('paste', false);
-	TextEditing.deleteSelectionIfPresent();
-	TextEditing.insertClipboardText(text);
-	ide_state.showMessage('Pasted from editor clipboard', constants.COLOR_STATUS_SUCCESS, 1.5);
-}
-
-export async function writeClipboard(text: string, successMessage: string): Promise<void> {
-	ide_state.customClipboard = text;
-	const clipboard = $.platform.clipboard;
-	if (!clipboard.isSupported()) {
-		const message = successMessage + ' (Editor clipboard only)';
-		ide_state.showMessage(message, constants.COLOR_STATUS_SUCCESS, 1.5);
-		return;
-	}
-	try {
-		await clipboard.writeText(text);
-		ide_state.showMessage(successMessage, constants.COLOR_STATUS_SUCCESS, 1.5);
-	}
-	catch (error) {
-		ide_state.showMessage('System clipboard write failed. Editor clipboard updated.', constants.COLOR_STATUS_WARNING, 3.5);
-	}
-}
-
 export function captureSnapshot(): EditorSnapshot {
 	const linesCopy = ide_state.lines.slice();
 	let selectionCopy: Position | null = null;
@@ -6595,7 +6008,7 @@ export function drawCreateResourceBar(api: BmsxConsoleApi): void {
 		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
 		drawText: (api2: BmsxConsoleApi, t: string, x: number, y: number, c: number) => drawEditorText(api2, ide_state.font, t, x, y, c),
-		inlineFieldMetrics: () => inlineFieldMetrics(),
+		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
 		createResourceActive: ide_state.createResourceActive,
 		createResourceVisible: ide_state.createResourceVisible,
 		createResourceField: ide_state.createResourceField,
@@ -6638,7 +6051,7 @@ export function drawSearchBar(api: BmsxConsoleApi): void {
 		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
 		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
-		inlineFieldMetrics: () => inlineFieldMetrics(),
+		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
 		createResourceActive: ide_state.createResourceActive,
 		createResourceVisible: ide_state.createResourceVisible,
 		createResourceField: ide_state.createResourceField,
@@ -6695,7 +6108,7 @@ export function drawResourceSearchBar(api: BmsxConsoleApi): void {
 		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
 		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
-		inlineFieldMetrics: () => inlineFieldMetrics(),
+		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
 		createResourceActive: ide_state.createResourceActive,
 		createResourceVisible: ide_state.createResourceVisible,
 		createResourceField: ide_state.createResourceField,
@@ -6747,7 +6160,7 @@ export function drawSymbolSearchBar(api: BmsxConsoleApi): void {
 		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
 		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
-		inlineFieldMetrics: () => inlineFieldMetrics(),
+		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
 		createResourceActive: ide_state.createResourceActive,
 		createResourceVisible: ide_state.createResourceVisible,
 		createResourceField: ide_state.createResourceField,
@@ -6801,7 +6214,7 @@ export function drawRenameBar(api: BmsxConsoleApi): void {
 		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
 		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
-		inlineFieldMetrics: () => inlineFieldMetrics(),
+		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
 		createResourceActive: ide_state.createResourceActive,
 		createResourceVisible: ide_state.createResourceVisible,
 		createResourceField: ide_state.createResourceField,
@@ -6849,7 +6262,7 @@ export function drawLineJumpBar(api: BmsxConsoleApi): void {
 		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
 		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
-		inlineFieldMetrics: () => inlineFieldMetrics(),
+		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
 		createResourceActive: ide_state.createResourceActive,
 		createResourceVisible: ide_state.createResourceVisible,
 		createResourceField: ide_state.createResourceField,
@@ -8312,27 +7725,27 @@ export function scrollResourceViewer(amount: number): void {
 // moved to ResourcePanelController
 
 
-export function handleResourceViewerInput(keyboard: KeyboardInput, deltaSeconds: number): void {
+export function handleResourceViewerInput(deltaSeconds: number): void {
 	// Resource viewer specific keys
 	const viewer = getActiveResourceViewer();
 	if (!viewer) return;
-	if (shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+	if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
 		consumeIdeKey('ArrowUp');
 		scrollResourceViewer(-1);
 		return;
 	}
-	if (shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+	if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
 		consumeIdeKey('ArrowDown');
 		scrollResourceViewer(1);
 		return;
 	}
-	if (shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
+	if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
 		consumeIdeKey('PageUp');
 		const capacity = resourceViewerTextCapacity(viewer);
 		scrollResourceViewer(-Math.max(1, capacity));
 		return;
 	}
-	if (shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
+	if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
 		consumeIdeKey('PageDown');
 		const capacity = resourceViewerTextCapacity(viewer);
 		scrollResourceViewer(Math.max(1, capacity));
@@ -8740,18 +8153,11 @@ export function handlePostEditMutation(): void {
 	ide_state.completion.updateAfterEdit(finalContext);
 }
 
-export function handleCompletionKeybindings(
-	keyboard: KeyboardInput,
-	deltaSeconds: number,
-	shiftDown: boolean,
-	ctrlDown: boolean,
-	altDown: boolean,
-	metaDown: boolean,
-): boolean {
+export function handleCompletionKeybindings(deltaSeconds: number): boolean {
 	if (isReadOnlyCodeTab()) {
 		return false;
 	}
-	return ide_state.completion.handleKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown);
+	return ide_state.completion.handleKeybindings(deltaSeconds);
 }
 
 export function onCursorMoved(): void {
@@ -9319,68 +8725,6 @@ export function visibleColumnCount(): number {
 	return ide_state.cachedVisibleColumnCount > 0 ? ide_state.cachedVisibleColumnCount : 1;
 }
 
-export function resetBlink(): void {
-	ide_state.blinkTimer = 0;
-	ide_state.cursorVisible = true;
-}
-
-export function shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean {
-	return ide_state.input.shouldRepeatPublic(keyboard, code, deltaSeconds);
-}
-
-export function handleCodeFormattingShortcut(
-	context: ConsoleEditorShortcutContext): boolean {
-	if (!context.codeTabActive || context.inlineFieldFocused || context.resourcePanelFocused) {
-		return false;
-	}
-	if (!context.altDown || !context.shiftDown || context.ctrlDown || context.metaDown) {
-		return false;
-	}
-	if (!isKeyJustPressedGlobal('KeyF')) {
-		return false;
-	}
-	consumeIdeKey('KeyF');
-	applyDocumentFormatting();
-	return true;
-}
-export function applyDocumentFormatting(): void {
-	const originalLines = [...ide_state.lines];
-	const originalSource = originalLines.join('\n');
-	try {
-		const formatted = formatLuaDocument(originalSource);
-		if (formatted === originalSource) {
-			ide_state.showMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
-			return;
-		}
-		const cursorOffset = computeDocumentOffset(originalLines, ide_state.cursorRow, ide_state.cursorColumn);
-		prepareUndo('format-document', false);
-		if (ide_state.lines.length === 0) {
-			TextEditing.setSelectionAnchorPosition({ row: 0, column: 0 });
-			setCursorPosition(0, 0);
-		} else {
-			const lastRow = ide_state.lines.length - 1;
-			TextEditing.setSelectionAnchorPosition({ row: 0, column: 0 });
-			setCursorPosition(lastRow, ide_state.lines[lastRow].length);
-		}
-		TextEditing.replaceSelectionWith(formatted);
-		const updatedLines = [...ide_state.lines];
-		const target = resolveOffsetPosition(updatedLines, cursorOffset);
-		setCursorPosition(target.row, target.column);
-		TextEditing.clearSelection();
-		markDiagnosticsDirty();
-		ide_state.showMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		ide_state.showMessage(`Formatting failed: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
-	}
-}
-export function computeDocumentOffset(lines: readonly string[], row: number, column: number): number {
-	let offset = 0;
-	for (let index = 0; index < row; index += 1) {
-		offset += lines[index].length + 1;
-	}
-	return offset + column;
-}
 export function resolveOffsetPosition(lines: readonly string[], offset: number): { row: number; column: number; } {
 	let remaining = offset;
 	for (let row = 0; row < lines.length; row += 1) {
@@ -9395,32 +8739,4 @@ export function resolveOffsetPosition(lines: readonly string[], offset: number):
 	}
 	const lastRow = ide_state.lines.length - 1;
 	return { row: lastRow, column: ide_state.lines[lastRow].length };
-}
-
-export function getActiveBreakpointChunkName(): string | null {
-	const context = getActiveCodeTabContext();
-	return resolveHoverChunkName(context);
-}
-
-export function toggleBreakpointForEditorRow(row: number): boolean {
-	if (row < 0 || row >= ide_state.lines.length) {
-		return false;
-	}
-	const chunkName = getActiveBreakpointChunkName();
-	if (!chunkName) {
-		ide_state.showMessage('No active chunk available for breakpoints.', constants.COLOR_STATUS_WARNING, 1.6);
-		return false;
-	}
-	const lineNumber = row + 1;
-	const result = toggleBreakpoint(chunkName, lineNumber);
-	if (result === 'unchanged') {
-		return false;
-	}
-	const verb = result === 'added' ? 'set' : 'cleared';
-	ide_state.showMessage(`Breakpoint ${verb} at ${chunkName}:${lineNumber}`, constants.COLOR_STATUS_TEXT, 1.4);
-	return true;
-}
-
-export function toggleBreakpointAtCursor(): void {
-	void toggleBreakpointForEditorRow(ide_state.cursorRow);
 }

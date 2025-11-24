@@ -1,15 +1,15 @@
-import type { KeyboardInput } from '../../input/keyboardinput';
 import { resolveReferenceLookup, type ReferenceLookupOptions, type ReferenceMatchInfo, ReferenceState } from './reference_navigation';
 import type { CodeTabContext, InlineInputOptions, InlineTextField, SearchMatch } from './types';
 import { createInlineTextField } from './inline_text_field';
 import { isIdentifierChar, isIdentifierStartChar } from './text_utils';
-import { isKeyJustPressed as isKeyJustPressedGlobal } from './input_helpers';
+import { isCtrlDown, isKeyJustPressed as isKeyJustPressedGlobal, isMetaDown, isShiftDown } from './input_controller';
 import * as constants from './constants';
 import { consumeIdeKey } from './player_input_adapter';
 import type { LuaSourceRange } from '../../lua/ast';
 import { clamp } from '../../utils/clamp';
 import type { ConsoleResourceDescriptor } from '../types';
 import type { LuaSemanticWorkspace } from './semantic_workspace';
+import { ide_state } from './ide_state';
 
 export type RenameCommitPayload = {
 	matches: readonly SearchMatch[];
@@ -24,8 +24,8 @@ export type RenameCommitResult = {
 };
 
 export type RenameControllerHost = {
-	processFieldEdit(field: InlineTextField, keyboard: KeyboardInput, options: InlineInputOptions): boolean;
-	shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean;
+	processFieldEdit(field: InlineTextField, options: InlineInputOptions): boolean;
+	shouldFireRepeat(code: string, deltaSeconds: number): boolean;
 	undo(): void;
 	redo(): void;
 	showMessage(text: string, color: number, duration: number): void;
@@ -105,12 +105,13 @@ export class RenameController {
 		this.host.onRenameSessionClosed();
 	}
 
-	public handleInput(keyboard: KeyboardInput, deltaSeconds: number, modifiers: { ctrlDown: boolean; metaDown: boolean; shiftDown: boolean; altDown: boolean }): void {
+	public handleInput(deltaSeconds: number): void {
 		if (!this.active) {
 			return;
 		}
-		const { ctrlDown, metaDown, shiftDown, altDown } = modifiers;
-		if ((ctrlDown || metaDown) && this.host.shouldFireRepeat(keyboard, 'KeyZ', deltaSeconds)) {
+		const { ctrlDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
+
+		if ((ctrlDown || metaDown) && ide_state.input.shouldRepeat('KeyZ', deltaSeconds)) {
 			consumeIdeKey('KeyZ');
 			if (shiftDown) {
 				this.host.redo();
@@ -119,7 +120,7 @@ export class RenameController {
 			}
 			return;
 		}
-		if ((ctrlDown || metaDown) && this.host.shouldFireRepeat(keyboard, 'KeyY', deltaSeconds)) {
+		if ((ctrlDown || metaDown) && ide_state.input.shouldRepeat('KeyY', deltaSeconds)) {
 			consumeIdeKey('KeyY');
 			this.host.redo();
 			return;
@@ -140,16 +141,12 @@ export class RenameController {
 			return;
 		}
 		const options: InlineInputOptions = {
-			ctrlDown,
-			metaDown,
-			shiftDown,
-			altDown,
 			deltaSeconds,
 			allowSpace: false,
 			characterFilter: this.identifierFilter,
 			maxLength: null,
 		};
-		const changed = this.host.processFieldEdit(this.field, keyboard, options);
+		const changed = this.host.processFieldEdit(this.field, options);
 		if (!changed) {
 			return;
 		}
