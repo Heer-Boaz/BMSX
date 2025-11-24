@@ -35,9 +35,13 @@ def locate_function_block(text: str, name: str) -> Tuple[str, int, int]:
 	start = text.find(marker)
 	if start == -1:
 		raise FunctionExtractionError(name, 'definition not found')
-	brace_start = text.find('{', start)
-	if brace_start == -1:
-		raise FunctionExtractionError(name, 'opening brace not found')
+	# Find the opening brace that starts the function body. We must ignore
+	# braces that appear inside the parameter list (e.g. TypeScript object
+	# type annotations) or inside strings/comments. To do this we scan from
+	# the marker and track parentheses depth and string/comment state; the
+	# function body opening brace is the first '{' we encounter while not
+	# being inside parentheses, strings or comments.
+	brace_start = -1
 	line_start = text.rfind('\n', 0, start)
 	segment_start = line_start + 1 if line_start != -1 else 0
 	depth = 0
@@ -47,7 +51,14 @@ def locate_function_block(text: str, name: str) -> Tuple[str, int, int]:
 	in_line_comment = False
 	in_block_comment = False
 	escape = False
-	i = brace_start
+	i = start
+	paren_depth = 0
+
+	# Single-pass scanner: track parentheses depth (to ignore braces inside
+	# parameter/type lists), string/comment state, and brace nesting depth for
+	# the function body. When we encounter the first '{' outside of any
+	# parentheses we treat it as the start of the body and begin tracking
+	# brace depth until the matching closing '}' is found.
 	while i < len(text):
 		ch = text[i]
 		nxt = text[i + 1] if i + 1 < len(text) else ''
@@ -92,25 +103,54 @@ def locate_function_block(text: str, name: str) -> Tuple[str, int, int]:
 				in_single = True
 			elif ch == '`':
 				in_backtick = True
+			elif ch == '(':
+				paren_depth += 1
+			elif ch == ')':
+				if paren_depth > 0:
+					paren_depth -= 1
 			elif ch == '{':
-				depth += 1
+				# Only treat '{' as the start of the function body when
+				# we're not inside a parenthesized parameter list.
+				if paren_depth == 0:
+					if brace_start == -1:
+						brace_start = i
+						depth = 1
+					else:
+						depth += 1
+				else:
+					# brace inside parameter/type list - ignore
+					pass
 			elif ch == '}':
-				depth -= 1
-				if depth == 0:
-					line_start = text.rfind('\n', segment_start, i)
-					column = i if line_start == -1 else i - line_start - 1
-					if column != 0:
-						raise FunctionExtractionError(name, 'closing brace is not at column 0')
-					end = i + 1
-					while end < len(text) and text[end] in '\r\n':
-						end += 1
-					return text[segment_start:end], segment_start, end
+				if depth > 0:
+					depth -= 1
+					if depth == 0:
+						# capture from the start of the line containing the
+						# function signature through the closing brace and any
+						# following newline characters
+						line_start = text.rfind('\n', segment_start, i)
+						end = i + 1
+						while end < len(text) and text[end] in '\r\n':
+							end += 1
+						return text[segment_start:end], segment_start, end
+				# otherwise '}' outside function body - ignore
 		i += 1
+
+	if brace_start == -1:
+		raise FunctionExtractionError(name, 'opening brace not found')
+	# We found an opening brace but did not find a matching closing brace.
 	raise FunctionExtractionError(name, 'matching closing brace not found')
 
 def migrate_functions(source: Path, dest: Path, names: Sequence[str], dry_run: bool) -> None:
 	source_text = source.read_text(encoding='utf-8')
 	dest_text = dest.read_text(encoding='utf-8')
+	# Prevent accidental duplicate appends: if the destination already
+	# contains any of the function markers we're about to move, abort to
+	# avoid creating partially-duplicated files. If the user really wants to
+	# overwrite or re-add functions they should clean the destination first
+	# or use a separate destination file.
+	already_present = [name for name in names if f"export function {name}" in dest_text]
+	if already_present:
+		raise SystemExit(f'The destination file {dest} already contains definitions for: {", ".join(already_present)}\nPlease remove them or choose a different destination before running this tool.')
 	extracted: List[Tuple[str, str]] = []
 	working_text = source_text
 	for name in names:
@@ -127,6 +167,9 @@ def migrate_functions(source: Path, dest: Path, names: Sequence[str], dry_run: b
 	print(f'Extracted {len(extracted)} functions: {", ".join(name for name, _ in extracted)}')
 	if dry_run:
 		print('Dry run enabled; no files were modified.')
+		print('\n--- BEGIN DRY-RUN PREVIEW OF DESTINATION FILE ---\n')
+		print(processed_dest)
+		print('\n--- END DRY-RUN PREVIEW OF DESTINATION FILE ---')
 		return
 	source.write_text(working_text, encoding='utf-8')
 	dest.write_text(processed_dest, encoding='utf-8')
