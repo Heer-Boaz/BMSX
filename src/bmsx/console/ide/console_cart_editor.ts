@@ -844,31 +844,31 @@ export { activeSearchMatchCount } from './editor_search';
 export { searchPageSize } from './editor_search';
 export { openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, ensureSearchJobCompleted, moveSearchSelection, applySearchSelection, jumpToNextMatch, jumpToPreviousMatch } from './editor_search';
 
-function searchVisibleResultCount(): number {
+export function searchVisibleResultCount(): number {
 	return computeSearchPageStats().visible;
 }
 
-function searchResultEntryHeight(): number {
+export function searchResultEntryHeight(): number {
 	return ide_state.lineHeight * 2;
 }
 
-function isResourceSearchCompactMode(): boolean {
+export function isResourceSearchCompactMode(): boolean {
 	return ide_state.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
 }
 
-function resourceSearchEntryHeight(): number {
+export function resourceSearchEntryHeight(): number {
 	return isResourceSearchCompactMode() ? ide_state.lineHeight * 2 : ide_state.lineHeight;
 }
 
-function resourceSearchPageSize(): number {
+export function resourceSearchPageSize(): number {
 	return isResourceSearchCompactMode() ? constants.QUICK_OPEN_COMPACT_MAX_RESULTS : constants.QUICK_OPEN_MAX_RESULTS;
 }
 
-function resourceSearchWindowCapacity(): number {
+export function resourceSearchWindowCapacity(): number {
 	return ide_state.resourceSearchVisible ? resourceSearchPageSize() : 0;
 }
 
-function resourceSearchVisibleResultCount(): number {
+export function resourceSearchVisibleResultCount(): number {
 	if (!ide_state.resourceSearchVisible) {
 		return 0;
 	}
@@ -880,18 +880,18 @@ function resourceSearchVisibleResultCount(): number {
 	return Math.min(remaining, capacity);
 }
 
-function isSymbolSearchCompactMode(): boolean {
+export function isSymbolSearchCompactMode(): boolean {
 	return ide_state.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
 }
 
-function symbolSearchEntryHeight(): number {
+export function symbolSearchEntryHeight(): number {
 	if (ide_state.symbolSearchMode === 'references') {
 		return ide_state.lineHeight * 2;
 	}
 	return ide_state.symbolSearchGlobal && isSymbolSearchCompactMode() ? ide_state.lineHeight * 2 : ide_state.lineHeight;
 }
 
-function symbolSearchPageSize(): number {
+export function symbolSearchPageSize(): number {
 	if (ide_state.symbolSearchMode === 'references') {
 		return constants.REFERENCE_SEARCH_MAX_RESULTS;
 	}
@@ -901,7 +901,7 @@ function symbolSearchPageSize(): number {
 	return isSymbolSearchCompactMode() ? constants.SYMBOL_SEARCH_COMPACT_MAX_RESULTS : constants.SYMBOL_SEARCH_MAX_RESULTS;
 }
 
-function symbolSearchVisibleResultCount(): number {
+export function symbolSearchVisibleResultCount(): number {
 	if (!ide_state.symbolSearchVisible) {
 		return 0;
 	}
@@ -910,7 +910,7 @@ function symbolSearchVisibleResultCount(): number {
 	return Math.min(remaining, maxResults);
 }
 
-function symbolCatalogDedupKey(entry: ConsoleLuaSymbolEntry): string {
+export function symbolCatalogDedupKey(entry: ConsoleLuaSymbolEntry): string {
 	const { location, kind, name } = entry;
 	const chunkName = location.chunkName ?? '';
 	const normalizedPath = location.path ? location.path.replace(/\\/g, '/') : '';
@@ -1222,7 +1222,7 @@ export function normalizeChunkReference(reference: string | null): string | null
 	return normalized.replace(/\\/g, '/');
 }
 
-function stripExtension(value: string): string {
+export function stripExtension(value: string): string {
 	const lastDot = value.lastIndexOf('.');
 	if (lastDot <= 0) {
 		return value;
@@ -5976,7 +5976,7 @@ export function shiftPositionsForRemoval(row: number, column: number, length: nu
 	}
 }
 
-function applyViewportSize(viewport: { width: number; height: number }): void {
+export function applyViewportSize(viewport: { width: number; height: number }): void {
 	ide_state.viewportWidth = viewport.width;
 	ide_state.viewportHeight = viewport.height;
 	ide_state.lastPointerRowResolution = null;
@@ -7262,7 +7262,7 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 	}
 }
 
-function copyRuntimeErrorOverlayToClipboard(overlay: RuntimeErrorOverlay): void {
+export function copyRuntimeErrorOverlayToClipboard(overlay: RuntimeErrorOverlay): void {
 	const payload = buildRuntimeErrorOverlayCopyText(overlay);
 	void writeClipboard(payload, 'Copied runtime error to clipboard');
 }
@@ -7383,7 +7383,7 @@ export function findFunctionDefinitionRowInActiveFile(functionName: string): num
 	return null;
 }
 
-function notifyReadOnlyEdit(): void {
+export function notifyReadOnlyEdit(): void {
 	ide_state.showMessage('Tab is read-only', constants.COLOR_STATUS_WARNING, 1.5);
 }
 
@@ -7846,11 +7846,11 @@ const DEBUG_PANEL_TITLES: Record<DebugPanelKind, string> = {
 	registry: 'Registry',
 };
 
-function debugPanelTabId(kind: DebugPanelKind): string {
+export function debugPanelTabId(kind: DebugPanelKind): string {
 	return `debug:${kind}`;
 }
 
-function buildDebugPanelLines(kind: DebugPanelKind): string[] {
+export function buildDebugPanelLines(kind: DebugPanelKind): string[] {
 	const lines: string[] = [`${DEBUG_PANEL_TITLES[kind]} Overview`, ''];
 	switch (kind) {
 		case 'objects':
@@ -7870,7 +7870,7 @@ function buildDebugPanelLines(kind: DebugPanelKind): string[] {
 	return lines;
 }
 
-function collectWorldObjectLines(): string[] {
+export function collectWorldObjectLines(): string[] {
 	const entries = $.world.allObjectsFromSpaces;
 	if (entries.length === 0) return ['<no world objects>'];
 	const lines: string[] = [`Total Objects: ${entries.length}`, ''];
@@ -7887,7 +7887,7 @@ function collectWorldObjectLines(): string[] {
 	return lines;
 }
 
-function describeListenerSet(set: ListenerSet): string {
+export function describeListenerSet(set: ListenerSet): string {
 	const names: string[] = [];
 	for (const entry of set) {
 		const subscriber = entry.subscriber as { id?: string; constructor?: { name?: string } } | undefined;
@@ -7901,7 +7901,7 @@ function describeListenerSet(set: ListenerSet): string {
 	return `${base} (${suffix})`;
 }
 
-function collectEventEmitterLines(): string[] {
+export function collectEventEmitterLines(): string[] {
 	const emitter = EventEmitter.instance;
 	const lines: string[] = [];
 	const globalEntries = Object.entries(emitter.globalScopeListeners ?? {});
@@ -7930,7 +7930,7 @@ function collectEventEmitterLines(): string[] {
 	return lines;
 }
 
-function collectRegistryLines(): string[] {
+export function collectRegistryLines(): string[] {
 	const registry = Registry.instance;
 	const entities = registry.getRegisteredEntities();
 	const lines: string[] = [`Registered Entities: ${entities.length}`, ''];
@@ -7994,7 +7994,7 @@ export function openDebugPanelTab(kind: DebugPanelKind): void {
 	setActiveTab(tabId);
 }
 
-function isDebugPanelActive(kind: DebugPanelKind): boolean {
+export function isDebugPanelActive(kind: DebugPanelKind): boolean {
 	return ide_state.activeTabId === debugPanelTabId(kind);
 }
 
@@ -8537,7 +8537,7 @@ export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: s
 	ide_state.pendingEditContext = { kind, text };
 }
 
-function serializeCurrentSource(): string {
+export function serializeCurrentSource(): string {
 	return ide_state.lines.join('\n');
 }
 
@@ -8550,7 +8550,7 @@ export function capturePreMutationSource(): void {
 	}
 }
 
-function applySourceToDocument(source: string): void {
+export function applySourceToDocument(source: string): void {
 	const nextLines = source.split('\n');
 	const previousLength = ide_state.lines.length;
 	const limit = Math.min(previousLength, nextLines.length);
@@ -8570,7 +8570,7 @@ function applySourceToDocument(source: string): void {
 	invalidateVisualLines();
 }
 
-function normalizeCaseOutsideStrings(text: string): string {
+export function normalizeCaseOutsideStrings(text: string): string {
 	if (text.length === 0) {
 		return text;
 	}
@@ -8641,7 +8641,7 @@ function normalizeCaseOutsideStrings(text: string): string {
 	return result;
 }
 
-function computeEditContextFromSources(previous: string, next: string): EditContext | null {
+export function computeEditContextFromSources(previous: string, next: string): EditContext | null {
 	if (previous === next) {
 		return null;
 	}
@@ -8663,7 +8663,7 @@ function computeEditContextFromSources(previous: string, next: string): EditCont
 	return deleted.length > 0 ? { kind: 'delete', text: deleted } : null;
 }
 
-function applyCaseNormalizationIfNeeded(editContext: EditContext | null): EditContext | null {
+export function applyCaseNormalizationIfNeeded(editContext: EditContext | null): EditContext | null {
 	if (!ide_state.caseInsensitive) {
 		ide_state.preMutationSource = null;
 		return editContext;
@@ -9327,7 +9327,7 @@ export function handleCodeFormattingShortcut(
 	applyDocumentFormatting();
 	return true;
 }
-function applyDocumentFormatting(): void {
+export function applyDocumentFormatting(): void {
 	const originalLines = [...ide_state.lines];
 	const originalSource = originalLines.join('\n');
 	try {
@@ -9358,14 +9358,14 @@ function applyDocumentFormatting(): void {
 		ide_state.showMessage(`Formatting failed: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
 	}
 }
-function computeDocumentOffset(lines: readonly string[], row: number, column: number): number {
+export function computeDocumentOffset(lines: readonly string[], row: number, column: number): number {
 	let offset = 0;
 	for (let index = 0; index < row; index += 1) {
 		offset += lines[index].length + 1;
 	}
 	return offset + column;
 }
-function resolveOffsetPosition(lines: readonly string[], offset: number): { row: number; column: number; } {
+export function resolveOffsetPosition(lines: readonly string[], offset: number): { row: number; column: number; } {
 	let remaining = offset;
 	for (let row = 0; row < lines.length; row += 1) {
 		const lineLength = lines[row].length;
@@ -9381,12 +9381,12 @@ function resolveOffsetPosition(lines: readonly string[], offset: number): { row:
 	return { row: lastRow, column: ide_state.lines[lastRow].length };
 }
 
-function getActiveBreakpointChunkName(): string | null {
+export function getActiveBreakpointChunkName(): string | null {
 	const context = getActiveCodeTabContext();
 	return resolveHoverChunkName(context);
 }
 
-function toggleBreakpointForEditorRow(row: number): boolean {
+export function toggleBreakpointForEditorRow(row: number): boolean {
 	if (row < 0 || row >= ide_state.lines.length) {
 		return false;
 	}
@@ -9405,7 +9405,7 @@ function toggleBreakpointForEditorRow(row: number): boolean {
 	return true;
 }
 
-function toggleBreakpointAtCursor(): void {
+export function toggleBreakpointAtCursor(): void {
 	void toggleBreakpointForEditorRow(ide_state.cursorRow);
 }
 
@@ -9416,7 +9416,7 @@ export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleC
 	return editorFacade;
 }
 
-function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
+export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	ide_state.playerIndex = options.playerIndex;
 	ide_state.metadata = options.metadata;
 	ide_state.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
