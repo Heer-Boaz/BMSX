@@ -7,7 +7,7 @@ import type { ConsoleResourceDescriptor } from '../types';
 import { enqueueBackgroundTask } from './background_tasks';
 import { applySearchFieldText, clearReferenceHighlights, closeSymbolSearch, closeResourceSearch, closeLineJump, updateDesiredColumn, listResourcesStrict, openLuaCodeTab, scheduleNextFrame, ensureCursorVisible } from './console_cart_editor';
 import { resetBlink } from './render_caret';
-import { revealCursor } from './cursor_operations';
+import { revealCursor } from './caret_navigation';
 import { activateCodeTab } from './editor_tabs';
 
 // Types used by search pipelines

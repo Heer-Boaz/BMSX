@@ -33,7 +33,7 @@ import type {
 	ConsoleLuaMemberCompletionRequest,
 	ConsoleLuaSymbolEntry,
 } from './types';
-import { consumeIdeKey, getIdeKeyState } from './ide/player_input_adapter';
+import { consumeIdeKey, getIdeKeyState } from './ide/input_controller';
 import type { asset_id, Viewport } from '../rompack/rompack';
 import { drawEditorText } from './ide/text_renderer';
 import type { BmsxConsoleApi } from './api';

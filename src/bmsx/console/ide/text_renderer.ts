@@ -1,7 +1,7 @@
 import type { BmsxConsoleApi } from '../api';
 import type { ConsoleEditorFont } from '../editor_font';
 import type { ConsoleFont } from '../font';
-import { expandTabs as expandTabsExternal } from './text_utils_local';
+import { expandTabs as expandTabsExternal } from './text_utils';
 import * as constants from './constants';
 
 let CASE_INSENSITIVE_EDITOR = true;

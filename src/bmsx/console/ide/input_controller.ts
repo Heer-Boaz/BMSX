@@ -1,7 +1,6 @@
 import { $ } from '../../core/game';
 import * as constants from './constants';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
-import { consumeIdeKey, getIdeKeyState } from './player_input_adapter';
 import { resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, activate, deactivate, closeActiveTab, focusEditorFromProblemsPanel, handleActionPromptSelection, handleCompletionKeybindings, handleCreateResourceInput, handleLineJumpInput, handleResourceSearchInput, handleResourceViewerInput, handleSearchInput, handleSymbolSearchInput, hideProblemsPanel, indentSelectionOrLine, markDiagnosticsDirty, notifyReadOnlyEdit, openCreateResourcePrompt, openGlobalSymbolSearch, openLineJump, openReferenceSearchPopup, openRenamePrompt, openResourceSearch, openSymbolSearch, redo, save, toggleLineComments, toggleProblemsPanel, toggleResolutionMode, toggleResourcePanel, toggleResourcePanelFilterMode, undo, unindentSelectionOrLine, updateDesiredColumn, openDebugPanelTab, performAction, toggleWordWrap } from './console_cart_editor';
 import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, cutSelectionToClipboard, pasteFromClipboard } from './text_editing_and_selection';
 import { resetBlink } from './render_caret';
@@ -10,7 +9,7 @@ import { ide_state } from './ide_state';
 import { ESCAPE_KEY } from './constants';
 import type { ButtonState } from '../../input/inputtypes';
 import type { KeyPressRecord, TopBarButtonId } from './types';
-import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp, revealCursor } from './cursor_operations';
+import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp, revealCursor } from './caret_navigation';
 import { isResourceViewActive, isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab, cycleTab, activateCodeTab } from './editor_tabs';
 import * as TextEditing from './text_editing_and_selection';
 import { prepareDebuggerStepOverlay } from './debugger_overlay_controller';
@@ -862,5 +861,12 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 			performAction(button);
 			return;
 	}
+}
+export function getIdeKeyState(code: string): ButtonState | null {
+	return $.input.getPlayerInput(ide_state.playerIndex).getButtonState(code, 'keyboard');
+}
+
+export function consumeIdeKey(code: string): void {
+	$.input.getPlayerInput(ide_state.playerIndex).consumeButton(code, 'keyboard', { sticky: false });
 }
 

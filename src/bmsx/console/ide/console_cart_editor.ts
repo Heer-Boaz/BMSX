@@ -55,8 +55,8 @@ import {
 	setFieldText,
 	updateBlink,
 } from './inline_text_field';
-import { buildHoverContentLines as buildHoverContentLinesExternal } from './hover_content';
-import { isLuaCommentContext, measureTextGeneric, truncateTextToWidth as truncateTextToWidthExternal } from './text_utils_local';
+import { buildHoverContentLines as buildHoverContentLinesExternal } from './intellisense';
+import { isLuaCommentContext, measureTextGeneric, truncateTextToWidth as truncateTextToWidthExternal } from './text_utils';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar } from './render_top_bar';
 import { renderTabBar } from './render_tab_bar';
@@ -79,7 +79,7 @@ import {
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
 import { handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handleTopBarButtonPress, InputController, isAltDown, isCtrlDown, isKeyJustPressed, isKeyTyped, isMetaDown, isShiftDown } from './input_controller';
-import { consumeIdeKey } from './player_input_adapter';
+import { consumeIdeKey } from './input_controller';
 import { ConsoleCodeLayout } from './code_layout';
 import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine } from './runtime_error_utils';
 import { getBreakpointsForChunk, toggleBreakpointAtCursor, toggleBreakpointForEditorRow } from './debugger_breakpoints';
@@ -115,7 +115,7 @@ import type {
 } from './types';
 import type { StackTraceFrame } from '../../lua/runtime';
 import type { RectBounds } from '../../rompack/rompack';
-import { resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation';
+import { resolveReferenceLookup, type ReferenceMatchInfo } from './code_reference';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
 	computeSourceLabel,
@@ -124,7 +124,7 @@ import {
 	filterReferenceCatalog,
 	type ReferenceCatalogEntry,
 	type ReferenceSymbolEntry,
-} from './reference_sources';
+} from './code_reference';
 import { clearBackgroundTasks, enqueueBackgroundTask } from './background_tasks';
 
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
@@ -145,8 +145,8 @@ import {
 	setCursorPosition,
 	revealCursor,
 	clampCursorRow,
-	clampCursorColumn,
-} from './cursor_operations';
+	clampCursorColumn
+} from './caret_navigation';
 import {
 	runWorkspaceAutosaveTick,
 	setupWorkspacePersistence,

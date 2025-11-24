@@ -22,7 +22,7 @@ import type { RenameController } from './rename_controller';
 import { LuaSemanticWorkspace } from './semantic_workspace';
 import type { CompletionController } from './completion_controller';
 import { createMessageController } from './message_controller';
-import { ReferenceState } from './reference_navigation';
+import { ReferenceState } from './code_reference';
 import { CHARACTER_CODES } from './character_map';
 import type {
 	Position,
@@ -53,7 +53,7 @@ import type {
 	VisualLineSegment,
 } from './types';
 import type { RectBounds } from '../../rompack/rompack';
-import type { ReferenceCatalogEntry } from './reference_sources';
+import type { ReferenceCatalogEntry } from './code_reference';
 import { ConsoleCodeLayout } from './code_layout';
 import type { TimerHandle } from '../../platform';
 import type { DebuggerExecutionState } from '../debugger_lifecycle';

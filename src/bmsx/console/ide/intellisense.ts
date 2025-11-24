@@ -35,8 +35,9 @@ import {
 } from '../../lua/ast';
 import { LuaTableFieldKind } from '../../lua/ast';
 import type { LuaTableArrayField, LuaTableExpressionField, LuaTableIdentifierField } from '../../lua/ast';
-import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaSymbolEntry } from '../types';
+import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaHoverResult, ConsoleLuaSymbolEntry } from '../types';
 import type { ApiCompletionMetadata, LuaCompletionItem } from './types';
+import * as constants from './constants';
 
 export const KEYWORDS = new Set([
 	'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
@@ -1254,4 +1255,27 @@ function truncateSourceAtSyntaxError(source: string, error: LuaSyntaxError): str
 		}
 	}
 	return truncated.join('\n');
+}function truncateLine(text: string): string {
+	if (text.length <= constants.HOVER_TOOLTIP_MAX_LINE_LENGTH) return text;
+	return text.slice(0, constants.HOVER_TOOLTIP_MAX_LINE_LENGTH - 3) + '...';
 }
+
+export function buildHoverContentLines(result: ConsoleLuaHoverResult): string[] {
+	const lines: string[] = [];
+	const push = (value: string) => { lines.push(truncateLine(value)); };
+	if (result.state === 'not_defined') {
+		push(`${result.expression} = not defined`);
+		return lines;
+	}
+	const valueLines = result.lines.length > 0 ? result.lines : [''];
+	if (valueLines.length === 1) {
+		const suffix = result.valueType && result.valueType !== 'unknown' ? ` (${result.valueType})` : '';
+		push(`${result.expression} = ${valueLines[0]}${suffix}`);
+		return lines;
+	}
+	const suffix = result.valueType && result.valueType !== 'unknown' ? ` (${result.valueType})` : '';
+	push(`${result.expression}${suffix}`);
+	for (const line of valueLines) push(`  ${line}`);
+	return lines;
+}
+

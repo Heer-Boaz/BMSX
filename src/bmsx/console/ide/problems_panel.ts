@@ -2,7 +2,7 @@ import type { BmsxConsoleApi } from '../api';
 import type { EditorDiagnostic, PointerSnapshot } from './types';
 import type { RectBounds } from '../../rompack/rompack';
 import * as constants from './constants';
-import { wrapTextDynamic as wrapMessageLinesGeneric } from './text_utils_local';
+import { wrapTextDynamic as wrapMessageLinesGeneric } from './text_utils';
 import { clamp } from '../../utils/clamp';
 
 type PanelLayout = {

@@ -1,10 +1,10 @@
-import { resolveReferenceLookup, type ReferenceLookupOptions, type ReferenceMatchInfo, ReferenceState } from './reference_navigation';
+import { resolveReferenceLookup, type ReferenceLookupOptions, type ReferenceMatchInfo, ReferenceState } from './code_reference';
 import type { CodeTabContext, InlineInputOptions, InlineTextField, SearchMatch } from './types';
 import { createInlineTextField } from './inline_text_field';
 import { isIdentifierChar, isIdentifierStartChar } from './text_utils';
 import { isCtrlDown, isKeyJustPressed as isKeyJustPressedGlobal, isMetaDown, isShiftDown } from './input_controller';
 import * as constants from './constants';
-import { consumeIdeKey } from './player_input_adapter';
+import { consumeIdeKey } from './input_controller';
 import type { LuaSourceRange } from '../../lua/ast';
 import { clamp } from '../../utils/clamp';
 import type { ConsoleResourceDescriptor } from '../types';

@@ -19,8 +19,8 @@ import { isWhitespace, isWordChar } from './text_utils';
 import {
 	revealCursor,
 	clampCursorColumn,
-	setCursorPosition,
-} from './cursor_operations';
+	setCursorPosition
+} from './caret_navigation';
 import {
 	updateDesiredColumn,
 	markTextMutated,

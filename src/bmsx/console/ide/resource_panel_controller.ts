@@ -8,7 +8,7 @@ import type { ResourceBrowserItem } from './types';
 import type { RectBounds } from '../../rompack/rompack';
 import type { ConsoleResourceDescriptor } from '../types';
 import { isKeyJustPressed as isKeyJustPressedGlobal, isModifierPressed as isModifierPressedGlobal } from './input_controller';
-import { consumeIdeKey } from './player_input_adapter';
+import { consumeIdeKey } from './input_controller';
 
 export interface ResourcePanelBridge {
 	// Metrics and geometry

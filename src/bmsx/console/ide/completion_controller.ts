@@ -16,8 +16,8 @@ import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLua
 import * as constants from './constants';
 import { isAltDown, isCtrlDown, isKeyJustPressed as isKeyJustPressedGlobal, isKeyPressed as isKeyPressedGlobal, isMetaDown, isShiftDown } from './input_controller';
 import { isWhitespace, isWordChar } from './text_utils';
-import { isLuaCommentContext } from './text_utils_local';
-import { consumeIdeKey } from './player_input_adapter';
+import { isLuaCommentContext } from './text_utils';
+import { consumeIdeKey } from './input_controller';
 import { ide_state } from './ide_state';
 
 type MemberCompletionHostRequest = {
