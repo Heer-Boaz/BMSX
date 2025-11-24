@@ -33,7 +33,7 @@ import { instantiateBehaviorTree, unregisterBehaviorTreeBuilder, applyPreparedBe
 import type { BehaviorTreeDefinition, BehaviorTreeDiagnostic } from '../ai/behaviourtree';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast';
-import { createConsoleCartEditor, toggleEditorFromShortcut, type ConsoleCartEditor } from './ide/console_cart_editor';
+import { createConsoleCartEditor, toggleEditorFromShortcut, type ConsoleCartEditor, } from './ide/console_cart_editor';
 import type { RuntimeErrorDetails } from './ide/types';
 import type { StackTraceFrame } from 'bmsx/lua/runtime';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';

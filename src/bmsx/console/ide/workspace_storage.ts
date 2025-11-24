@@ -1,10 +1,8 @@
 import { $ } from '../../core/game';
-import type { EditorSnapshot } from '../editor';
 import type { ConsoleResourceDescriptor } from '../types';
-import { createEntryTabContext, findResourceDescriptorByasset_id, ide_state, initializeTabs, openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, restoreSnapshot, setActiveTab, setTabDirty, updateActiveContextDirtyFlag, cloneNavigationEntry } from './console_cart_editor';
-import { WORKSPACE_AUTOSAVE_INTERVAL_MS, workspaceDirtyCache } from './ide_state';
+import { ide_state, WORKSPACE_AUTOSAVE_INTERVAL_MS, workspaceDirtyCache } from './ide_state';
 import type { NavigationHistoryEntry } from './ide_state';
-import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position } from './types';
+import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position, EditorSnapshot } from './types';
 import { clamp } from '../../utils/clamp';
 import type { StorageService, TimerHandle } from '../../platform/platform';
 import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './debugger_breakpoints';
@@ -21,6 +19,8 @@ import {
 	joinWorkspacePaths,
 	normalizeWorkspacePath,
 } from '../workspace';
+import { cloneNavigationEntry, openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, findResourceDescriptorByasset_id, restoreSnapshot } from './console_cart_editor';
+import { createEntryTabContext, initializeTabs, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 
 export type WorkspaceStoragePaths = {
 	projectRootPath: string;

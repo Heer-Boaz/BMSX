@@ -16,8 +16,7 @@ import { EventEmitter, type ListenerSet } from '../../core/eventemitter';
 import { Registry } from '../../core/registry';
 import { SpriteComponent } from '../../component/sprite_component';
 import { renderCodeArea } from './render_code_area';
-import { clamp } from '../../utils/clamp';;
-// Intellisense data is handled by CompletionController
+import { clamp } from '../../utils/clamp';
 import { CompletionController } from './completion_controller';
 import { ProblemsPanelController } from './problems_panel';
 import { computeAggregatedEditorDiagnostics, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
@@ -46,30 +45,6 @@ import {
 	beginTabDrag,
 } from './editor_tabs';
 
-export {
-	createEntryTabContext,
-	createLuaCodeTabContext,
-	getActiveCodeTabContext,
-	storeActiveCodeTabContext,
-	activateCodeEditorTab,
-	initializeTabs,
-	setTabDirty,
-	updateActiveContextDirtyFlag,
-	getActiveTabKind,
-	isCodeTabActive,
-	isReadOnlyCodeTab,
-	isEditableCodeTab,
-	isResourceViewActive,
-	setActiveTab,
-	activateCodeTab,
-	closeTab,
-	cycleTab,
-	updateTabDrag,
-	endTabDrag,
-	findCodeTabContext,
-	computeResourceTabTitle,
-	beginTabDrag,
-};
 import { isIdentifierChar, isIdentifierStartChar, isWhitespace, isWordChar } from './text_utils';
 import type { InlineFieldEditingHandlers, InlineFieldMetrics } from './inline_text_field';
 import {
@@ -167,13 +142,12 @@ import {
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
 } from './input_helpers';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast';
-import { CaretNavigationState } from './caret_navigation';
 import { ESCAPE_KEY } from './constants';
 // Search logic moved to editor_search
 import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, moveSearchSelection, applySearchSelection, ensureSearchSelectionVisible, computeSearchPageStats, getVisibleSearchResultEntries, startSearchJob, jumpToNextMatch, jumpToPreviousMatch, cancelGlobalSearchJob } from './editor_search';
 import { formatLuaDocument } from './lua_formatter';
 import * as constants from './constants';
-import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, workspaceDirtyCache } from './ide_state';
+import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, workspaceDirtyCache, caretNavigation } from './ide_state';
 import { initializeDebuggerUiState } from './debugger_ui_state';
 import { issueDebuggerCommand } from './debugger_controls';
 import {
@@ -196,42 +170,6 @@ import {
 	stopWorkspaceAutosaveLoop,
 } from './workspace_storage';
 
-// Re-export commonly used constants for convenience
-export { captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT } from './ide_state';
-
-// Export ide_state for direct access
-export { ide_state };
-
-initializeDebuggerUiState();
-
-let lastEscapePressId: number | null = null;
-
-// Re-export cursor operations from their dedicated module
-export {
-	setCursorPosition,
-	moveCursorVertical,
-	moveCursorHorizontal,
-	moveWordLeft,
-	moveWordRight,
-	moveCursorLeft,
-	moveCursorRight,
-	moveCursorUp,
-	moveCursorDown,
-	moveCursorHome,
-	moveCursorEnd,
-	pageUp,
-	pageDown,
-	clampCursorRow,
-	clampCursorColumn,
-	revealCursor,
-} from './cursor_operations';
-
-export const caretNavigation = new CaretNavigationState();
-
-// Re-export ALL text editing and selection operations for backward compatibility
-// This makes them available both internally and to external consumers
-export * from './text_editing_and_selection';
-// Import them for internal use in this module
 import * as TextEditing from './text_editing_and_selection';
 import { drawCursor, drawInlineCaret } from './render_caret';
 import type { BmsxConsoleRuntime } from '../runtime';
@@ -2084,16 +2022,16 @@ export function getKeyboard(): KeyboardInput {
 export function handleEscapeShortcut(): boolean {
 	const state = getIdeKeyState(ESCAPE_KEY, ide_state.playerIndex);
 	if (!state || state.pressed !== true) {
-		lastEscapePressId = null;
+		ide_state.lastEscapePressId = null;
 		return false;
 	}
 	const pressId = typeof state.pressId === 'number' ? state.pressId : null;
 	const allow =
 		shouldAcceptKeyPressGlobal(ESCAPE_KEY, state)
 		|| state.justpressed === true
-		|| (pressId !== null && pressId !== lastEscapePressId);
+		|| (pressId !== null && pressId !== ide_state.lastEscapePressId);
 	if (!allow) return false;
-	lastEscapePressId = pressId;
+	ide_state.lastEscapePressId = pressId;
 	const handled = handleEscapeKey({ allowRuntimeErrorToggle: true });
 	if (handled) {
 		consumeIdeKey(ESCAPE_KEY);
@@ -9410,13 +9348,15 @@ export function toggleBreakpointAtCursor(): void {
 }
 
 export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleCartEditor {
-	customKeybindingHandler = (context) =>
-		handleCodeFormattingShortcut(context);
 	initializeConsoleCartEditor(options);
 	return editorFacade;
 }
 
 export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
+	customKeybindingHandler = (context) =>
+		handleCodeFormattingShortcut(context);
+	initializeDebuggerUiState();
+
 	ide_state.playerIndex = options.playerIndex;
 	ide_state.metadata = options.metadata;
 	ide_state.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;

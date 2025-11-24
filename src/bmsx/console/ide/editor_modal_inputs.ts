@@ -2,12 +2,12 @@
 // This module centralizes all non-core text editing input flows to shrink console_cart_editor.ts
 // Follows project guidelines: no defensive coding unless necessary, assumes ide_state integrity.
 import type { KeyboardInput } from '../../input/keyboardinput';
-import { isKeyJustPressed as isKeyJustPressedGlobal, isModifierPressed as isModifierPressedGlobal } from './input_helpers';
+import { isKeyJustPressed, isModifierPressed } from './input_helpers';
 import { handleDebuggerShortcuts } from './debugger_shortcuts';
 import { ide_state } from './ide_state';
-// Use re-exported helpers from main editor module (still hosted there)
-import { jumpToNextMatch, jumpToPreviousMatch, moveSearchSelection, applySearchSelection, resetBlink, updateDesiredColumn, revealCursor } from './console_cart_editor';
+import { jumpToNextMatch, jumpToPreviousMatch, moveSearchSelection, applySearchSelection, resetBlink, updateDesiredColumn } from './console_cart_editor';
 import { consumeIdeKey } from './player_input_adapter';
+import { revealCursor } from './cursor_operations';
 
 declare function applySearchFieldText(text: string, resetSelection: boolean): void;
 declare function processInlineFieldEditing(field: any, keyboard: KeyboardInput, opts: any): boolean;
@@ -51,40 +51,40 @@ declare function shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSe
 
 // Central dispatcher previously named handleEditorInput (subset dealing with high-level shortcuts)
 export function handleHighLevelEditorShortcuts(): boolean {
-	const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
-	const shiftDown = isModifierPressedGlobal('ShiftLeft') || isModifierPressedGlobal('ShiftRight');
-	const metaDown = isModifierPressedGlobal('MetaLeft') || isModifierPressedGlobal('MetaRight');
-	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
+	const ctrlDown = isModifierPressed('ControlLeft') || isModifierPressed('ControlRight');
+	const shiftDown = isModifierPressed('ShiftLeft') || isModifierPressed('ShiftRight');
+	const metaDown = isModifierPressed('MetaLeft') || isModifierPressed('MetaRight');
+	const altDown = isModifierPressed('AltLeft') || isModifierPressed('AltRight');
 
 	// Search toggles
-	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal('KeyF')) {
+	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressed('KeyF')) {
 		consumeIdeKey('KeyF');
 		openSearch(true, 'global');
 		return true;
 	}
-	if ((ctrlDown || metaDown) && !shiftDown && !altDown && isKeyJustPressedGlobal('KeyF')) {
+	if ((ctrlDown || metaDown) && !shiftDown && !altDown && isKeyJustPressed('KeyF')) {
 		consumeIdeKey('KeyF');
 		openSearch(true, 'local');
 		return true;
 	}
 	// Symbol/resource toggles
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal('KeyO')) {
+	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyO')) {
 		consumeIdeKey('KeyO');
 		openSymbolSearch();
 		return true;
 	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal('Comma')) {
+	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressed('Comma')) {
 		consumeIdeKey('Comma');
 		openResourceSearch();
 		return true;
 	}
-	if (!ctrlDown && !metaDown && altDown && isKeyJustPressedGlobal('Comma')) {
+	if (!ctrlDown && !metaDown && altDown && isKeyJustPressed('Comma')) {
 		consumeIdeKey('Comma');
 		openGlobalSymbolSearch();
 		return true;
 	}
 	// Problems panel toggle
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal('KeyM')) {
+	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyM')) {
 		consumeIdeKey('KeyM');
 		// Delegate to original toggleProblemsPanel inside main file via global side-effects
 		// (not extracted yet to avoid deep dependency chain)
@@ -100,25 +100,25 @@ export function handleHighLevelEditorShortcuts(): boolean {
 		return true;
 	}
 	// Tabs
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('Tab')) {
+	if ((ctrlDown || metaDown) && isKeyJustPressed('Tab')) {
 		consumeIdeKey('Tab');
 		cycleTab(shiftDown ? -1 : 1);
 		return true;
 	}
 	// Line jump
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('KeyL')) {
+	if ((ctrlDown || metaDown) && isKeyJustPressed('KeyL')) {
 		consumeIdeKey('KeyL');
 		openLineJump();
 		return true;
 	}
 	// Rename
-	if (!isInlineFieldFocused() && isCodeTabActive() && isKeyJustPressedGlobal('F2')) {
+	if (!isInlineFieldFocused() && isCodeTabActive() && isKeyJustPressed('F2')) {
 		consumeIdeKey('F2');
 		openRenamePrompt();
 		return true;
 	}
 	// References
-	if (!isInlineFieldFocused() && isKeyJustPressedGlobal('F12')) {
+	if (!isInlineFieldFocused() && isKeyJustPressed('F12')) {
 		consumeIdeKey('F12');
 		if (!shiftDown) {
 			openReferenceSearchPopup();
@@ -126,7 +126,7 @@ export function handleHighLevelEditorShortcuts(): boolean {
 		return true;
 	}
 	// Select all
-	if ((ctrlDown || metaDown) && !isInlineFieldFocused() && !ide_state.resourcePanelFocused && isCodeTabActive() && isKeyJustPressedGlobal('KeyA')) {
+	if ((ctrlDown || metaDown) && !isInlineFieldFocused() && !ide_state.resourcePanelFocused && isCodeTabActive() && isKeyJustPressed('KeyA')) {
 		consumeIdeKey('KeyA');
 		ide_state.selectionAnchor = { row: 0, column: 0 };
 		const lastRowIndex = ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0;
@@ -156,17 +156,17 @@ declare function isCodeTabActive(): boolean;
 
 // Search field key handling (simplified extraction wrapper)
 export function handleSearchFieldInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): boolean {
-	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
+	const altDown = isModifierPressed('AltLeft') || isModifierPressed('AltRight');
 	if (!ide_state.searchActive) return false;
 	// Undo/redo repeat now delegated to original handler; kept simple
-	if (ctrlDown && isKeyJustPressedGlobal('KeyS')) {
+	if (ctrlDown && isKeyJustPressed('KeyS')) {
 		consumeIdeKey('KeyS');
 		void save();
 		return true;
 	}
 	const hasResults = activeSearchMatchCount() > 0;
 	const previewLocal = ide_state.searchScope === 'local';
-	if (isKeyJustPressedGlobal('Enter')) {
+	if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
 		if (hasResults) {
 			if (shiftDown) {
@@ -184,7 +184,7 @@ export function handleSearchFieldInput(keyboard: KeyboardInput, deltaSeconds: nu
 		}
 		return true;
 	}
-	if (isKeyJustPressedGlobal('F3')) {
+	if (isKeyJustPressed('F3')) {
 		consumeIdeKey('F3');
 		if (shiftDown) jumpToPreviousMatch(); else jumpToNextMatch();
 		return true;
@@ -214,19 +214,19 @@ declare function activeSearchMatchCount(): number;
 
 // Clipboard shortcuts extracted from editor input
 export function handleClipboardShortcuts(): boolean {
-	const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
+	const ctrlDown = isModifierPressed('ControlLeft') || isModifierPressed('ControlRight');
 	if (!ctrlDown) return false;
-	if (isKeyJustPressedGlobal('KeyC')) {
+	if (isKeyJustPressed('KeyC')) {
 		consumeIdeKey('KeyC');
 		void copySelectionToClipboard();
 		return true;
 	}
-	if (isKeyJustPressedGlobal('KeyX')) {
+	if (isKeyJustPressed('KeyX')) {
 		consumeIdeKey('KeyX');
 		if (hasSelection()) void cutSelectionToClipboard(); else void cutLineToClipboard();
 		return true;
 	}
-	if (isKeyJustPressedGlobal('KeyV')) {
+	if (isKeyJustPressed('KeyV')) {
 		consumeIdeKey('KeyV');
 		pasteFromClipboard();
 		return true;
@@ -236,25 +236,25 @@ export function handleClipboardShortcuts(): boolean {
 
 // Indentation + comments shortcuts
 export function handleFormattingShortcuts(): boolean {
-	const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
-	const metaDown = isModifierPressedGlobal('MetaLeft') || isModifierPressedGlobal('MetaRight');
-	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
-	if (ctrlDown && isKeyJustPressedGlobal('BracketRight')) {
+	const ctrlDown = isModifierPressed('ControlLeft') || isModifierPressed('ControlRight');
+	const metaDown = isModifierPressed('MetaLeft') || isModifierPressed('MetaRight');
+	const altDown = isModifierPressed('AltLeft') || isModifierPressed('AltRight');
+	if (ctrlDown && isKeyJustPressed('BracketRight')) {
 		consumeIdeKey('BracketRight');
 		indentSelectionOrLine();
 		return true;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal('BracketLeft')) {
+	if (ctrlDown && isKeyJustPressed('BracketLeft')) {
 		consumeIdeKey('BracketLeft');
 		unindentSelectionOrLine();
 		return true;
 	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal('Slash')) {
+	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressed('Slash')) {
 		consumeIdeKey('Slash');
 		toggleLineComments();
 		return true;
 	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal('NumpadDivide')) {
+	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressed('NumpadDivide')) {
 		consumeIdeKey('NumpadDivide');
 		toggleLineComments();
 		return true;
@@ -264,19 +264,19 @@ export function handleFormattingShortcuts(): boolean {
 
 // Completion integration passthrough
 export function handleCompletionIntegration(keyboard: KeyboardInput, deltaSeconds: number): boolean {
-	const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
-	const shiftDown = isModifierPressedGlobal('ShiftLeft') || isModifierPressedGlobal('ShiftRight');
-	const metaDown = isModifierPressedGlobal('MetaLeft') || isModifierPressedGlobal('MetaRight');
-	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
+	const ctrlDown = isModifierPressed('ControlLeft') || isModifierPressed('ControlRight');
+	const shiftDown = isModifierPressed('ShiftLeft') || isModifierPressed('ShiftRight');
+	const metaDown = isModifierPressed('MetaLeft') || isModifierPressed('MetaRight');
+	const altDown = isModifierPressed('AltLeft') || isModifierPressed('AltRight');
 	return handleCompletionKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown);
 }
 
 // Route active modals to their respective input handlers; mirrors console_cart_editor's branching
 export function processActiveModalInput(keyboard: KeyboardInput, deltaSeconds: number): boolean {
-	const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
-	const shiftDown = isModifierPressedGlobal('ShiftLeft') || isModifierPressedGlobal('ShiftRight');
-	const metaDown = isModifierPressedGlobal('MetaLeft') || isModifierPressedGlobal('MetaRight');
-	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
+	const ctrlDown = isModifierPressed('ControlLeft') || isModifierPressed('ControlRight');
+	const shiftDown = isModifierPressed('ShiftLeft') || isModifierPressed('ShiftRight');
+	const metaDown = isModifierPressed('MetaLeft') || isModifierPressed('MetaRight');
+	const altDown = isModifierPressed('AltLeft') || isModifierPressed('AltRight');
 
 	if (ide_state.renameController.isActive()) {
 		ide_state.renameController.handleInput(keyboard, deltaSeconds, { ctrlDown, metaDown, shiftDown, altDown });
@@ -317,10 +317,10 @@ export function processActiveModalInput(keyboard: KeyboardInput, deltaSeconds: n
 		} else if (shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
 			consumeIdeKey('End');
 			ide_state.problemsPanel.handleKeyboardCommand('end');
-		} else if (isKeyJustPressedGlobal('Enter') || isKeyJustPressedGlobal('NumpadEnter')) {
-			if (isKeyJustPressedGlobal('Enter')) consumeIdeKey('Enter'); else consumeIdeKey('NumpadEnter');
+		} else if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
+			if (isKeyJustPressed('Enter')) consumeIdeKey('Enter'); else consumeIdeKey('NumpadEnter');
 			ide_state.problemsPanel.handleKeyboardCommand('activate');
-		} else if (isKeyJustPressedGlobal('Escape')) {
+		} else if (isKeyJustPressed('Escape')) {
 			consumeIdeKey('Escape');
 			hideProblemsPanel();
 			focusEditorFromProblemsPanel();
@@ -337,10 +337,10 @@ export function processActiveModalInput(keyboard: KeyboardInput, deltaSeconds: n
 // Aggregate handler to replace portions of handleEditorInput
 export function processModalAndShortcutInput(keyboard: KeyboardInput, deltaSeconds: number): void {
 	const playerIndex = ide_state.playerIndex;
-	const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
-	const shiftDown = isModifierPressedGlobal('ShiftLeft') || isModifierPressedGlobal('ShiftRight');
-	const metaDown = isModifierPressedGlobal('MetaLeft') || isModifierPressedGlobal('MetaRight');
-	const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
+	const ctrlDown = isModifierPressed('ControlLeft') || isModifierPressed('ControlRight');
+	const shiftDown = isModifierPressed('ShiftLeft') || isModifierPressed('ShiftRight');
+	const metaDown = isModifierPressed('MetaLeft') || isModifierPressed('MetaRight');
+	const altDown = isModifierPressed('AltLeft') || isModifierPressed('AltRight');
 	if (handleDebuggerShortcuts({
 		keyboard,
 		playerIndex,

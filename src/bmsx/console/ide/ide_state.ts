@@ -59,6 +59,7 @@ import type { TimerHandle } from '../../platform';
 import type { DebuggerExecutionState } from '../debugger_lifecycle';
 import type { LuaDebuggerSessionMetrics } from '../../lua/debugger';
 import { CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_KEY, ESCAPE_KEY, getActiveIdeThemeVariant } from './constants';
+import { CaretNavigationState } from './caret_navigation';
 
 export type NavigationHistoryEntry = {
 	contextId: string;
@@ -307,6 +308,7 @@ export interface IdeState {
 	disposeWorkspaceExitListener: (() => void) | null;
 	workspaceRestorePromise: Promise<void> | null;
 	serverWorkspaceConnected: boolean;
+	lastEscapePressId: number | null;
 }
 
 export const ide_state: IdeState = {
@@ -528,6 +530,7 @@ export const ide_state: IdeState = {
 	disposeWorkspaceExitListener: null,
 	workspaceRestorePromise: null,
 	serverWorkspaceConnected: false,
+	lastEscapePressId: null,
 };
 
 // Initialize message controller
@@ -536,6 +539,8 @@ const messageController = createMessageController({
 	getDeferredDuration: () => ide_state.deferredMessageDuration,
 	setDeferredDuration: (value) => { ide_state.deferredMessageDuration = value; },
 });
+
+export const caretNavigation = new CaretNavigationState();
 
 ide_state.message = messageController.message;
 ide_state.showMessage = messageController.showMessage;

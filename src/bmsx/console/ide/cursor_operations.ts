@@ -3,31 +3,12 @@
  */
 
 import { clamp } from '../../utils/clamp';;
-import { ide_state } from './ide_state';
+import { caretNavigation, ide_state } from './ide_state';
 import type { Position } from './types';
 import { resolveIndentAwareHome, resolveSegmentEnd } from './caret_navigation';
-import {
-	caretNavigation,
-	updateDesiredColumn,
-	resetBlink,
-	onCursorMoved,
-	ensureVisualLines,
-	getVisualLineCount,
-	positionToVisualIndex,
-	visualIndexToSegment,
-	setCursorFromVisualIndex,
-	ensureCursorVisible,
-	currentLine,
-	findWordLeft,
-	findWordRight,
-	ensureSelectionAnchor,
-	hasSelection,
-	collapseSelectionTo,
-	clearSelection,
-	breakUndoSequence,
-	visibleRowCount,
-} from './console_cart_editor';
 import { isModifierPressed as isModifierPressedGlobal } from './input_helpers';
+import { breakUndoSequence, currentLine, ensureVisualLines, getVisualLineCount, onCursorMoved, resetBlink, updateDesiredColumn, ensureCursorVisible, positionToVisualIndex, setCursorFromVisualIndex, visibleRowCount, visualIndexToSegment } from './console_cart_editor';
+import { clearSelection, collapseSelectionTo, ensureSelectionAnchor, findWordLeft, findWordRight, hasSelection } from './text_editing_and_selection';
 
 /**
  * Set cursor to a specific row and column position
