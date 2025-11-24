@@ -70,14 +70,6 @@ export class ConsoleCommandDispatcher {
 		this.hooks = hooks;
 	}
 
-	public getCwd(): string {
-		return this.cwd;
-	}
-
-	public setCwd(path: string): void {
-		this.cwd = this.normalizePath(path);
-	}
-
 	public getPrompt(): string {
 		return `${this.drive}:${this.cwd}> `;
 	}
