@@ -174,25 +174,275 @@ import * as TextEditing from './text_editing_and_selection';
 import { drawCursor, drawInlineCaret } from './render_caret';
 import type { BmsxConsoleRuntime } from '../runtime';
 
-// Use shorter aliases for commonly used functions
-const {
-	hasSelection,
-	getSelectionRange,
-	getSelectionText,
-	selectWordAtPosition,
-	deleteSelectionIfPresent,
-	replaceSelectionWith,
-	setSelectionAnchorPosition,
-	clearSelection,
-	stepLeft,
-	stepRight,
-	charAt,
-	backspace,
-	deleteForward,
-	insertText,
-	insertLineBreak,
-	insertClipboardText,
-} = TextEditing;
+export type ConsoleCartEditor = {
+	activate: typeof activate;
+	deactivate: typeof deactivate;
+	isActive: typeof isActive;
+	update: typeof update;
+	draw: typeof draw;
+	shutdown: typeof shutdown;
+	updateViewport: typeof updateViewport;
+	showWarningBanner: typeof ide_state.showWarningBanner;
+	showRuntimeErrorInChunk: typeof showRuntimeErrorInChunk;
+	showRuntimeError: typeof showRuntimeError;
+	clearRuntimeErrorOverlay: typeof clearRuntimeErrorOverlay;
+	clearAllRuntimeErrorOverlays: typeof clearAllRuntimeErrorOverlays;
+	getSourceForChunk: typeof getSourceForChunk;
+};
+
+const editorFacade: ConsoleCartEditor = {
+	activate,
+	deactivate,
+	isActive,
+	update,
+	draw,
+	shutdown,
+	updateViewport,
+	showWarningBanner: ide_state.showWarningBanner,
+	showRuntimeErrorInChunk,
+	showRuntimeError,
+	clearRuntimeErrorOverlay,
+	clearAllRuntimeErrorOverlays,
+	getSourceForChunk,
+};
+
+
+export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleCartEditor {
+	initializeConsoleCartEditor(options);
+	return editorFacade;
+}
+
+export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
+	customKeybindingHandler = (context) =>
+		handleCodeFormattingShortcut(context);
+	initializeDebuggerUiState();
+
+	ide_state.playerIndex = options.playerIndex;
+	ide_state.metadata = options.metadata;
+	ide_state.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
+	constants.setIdeThemeVariant(options.themeVariant ?? null);
+	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
+	ide_state.caseInsensitive = options.caseInsensitiveLua ?? true;
+	ide_state.preMutationSource = null;
+	ide_state.loadSourceFn = options.loadSource;
+	ide_state.saveSourceFn = options.saveSource;
+	ide_state.listResourcesFn = options.listResources;
+	ide_state.loadLuaResourceFn = options.loadLuaResource;
+	ide_state.saveLuaResourceFn = options.saveLuaResource;
+	ide_state.createLuaResourceFn = options.createLuaResource;
+	ide_state.inspectLuaExpressionFn = options.inspectLuaExpression;
+	ide_state.listLuaObjectMembersFn = options.listLuaObjectMembers;
+	ide_state.listLuaModuleSymbolsFn = options.listLuaModuleSymbols;
+	ide_state.listLuaSymbolsFn = options.listLuaSymbols;
+	ide_state.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
+	ide_state.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
+	ide_state.primaryasset_id = options.primaryasset_id;
+	if ($.debug) {
+		ide_state.listResourcesFn();
+	}
+	applyViewportSize(options.viewport);
+	ide_state.font = new ConsoleEditorFont(ide_state.fontVariant);
+	ide_state.clockNow = $.platform.clock.now;
+	ide_state.searchField = createInlineTextField();
+	ide_state.symbolSearchField = createInlineTextField();
+	ide_state.resourceSearchField = createInlineTextField();
+	ide_state.lineJumpField = createInlineTextField();
+	ide_state.createResourceField = createInlineTextField();
+	setupWorkspacePersistence(options.workspaceRootPath ?? null);
+	applySearchFieldText(ide_state.searchQuery, true);
+	applySymbolSearchFieldText(ide_state.symbolSearchQuery, true);
+	applyResourceSearchFieldText(ide_state.resourceSearchQuery, true);
+	applyLineJumpFieldText(ide_state.lineJumpValue, true);
+	applyCreateResourceFieldText(ide_state.createResourcePath, true);
+	ide_state.lineHeight = ide_state.font.lineHeight();
+	ide_state.charAdvance = ide_state.font.advance('M');
+	ide_state.spaceAdvance = ide_state.font.advance(' ');
+	const layoutOptions = {
+		maxHighlightCache: 512,
+		semanticDebounceMs: 200,
+		clockNow: ide_state.clockNow,
+		getBuiltinIdentifiers: () => getBuiltinIdentifierSet(),
+	};
+	ide_state.layout = new ConsoleCodeLayout(ide_state.font, ide_state.semanticWorkspace, layoutOptions);
+
+	ide_state.inlineFieldMetricsRef = {
+		measureText: (text: string) => measureText(text),
+		advanceChar: (ch: string) => ide_state.font.advance(ch),
+		spaceAdvance: ide_state.spaceAdvance,
+		tabSpaces: constants.TAB_SPACES,
+	};
+	ide_state.gutterWidth = 2;
+	const primaryBarHeight = ide_state.lineHeight + 4;
+	ide_state.headerHeight = primaryBarHeight;
+	ide_state.tabBarHeight = ide_state.lineHeight + 3;
+	ide_state.baseBottomMargin = ide_state.lineHeight + 6;
+	ide_state.scrollbars = {
+		codeVertical: new ConsoleScrollbar('codeVertical', 'vertical'),
+		codeHorizontal: new ConsoleScrollbar('codeHorizontal', 'horizontal'),
+		resourceVertical: new ConsoleScrollbar('resourceVertical', 'vertical'),
+		resourceHorizontal: new ConsoleScrollbar('resourceHorizontal', 'horizontal'),
+		viewerVertical: new ConsoleScrollbar('viewerVertical', 'vertical'),
+	};
+	ide_state.scrollbarController = new ScrollbarController(ide_state.scrollbars);
+	ide_state.resourcePanel = new ResourcePanelController({
+		getViewportWidth: () => ide_state.viewportWidth,
+		getViewportHeight: () => ide_state.viewportHeight,
+		getBottomMargin: () => bottomMargin(),
+		codeViewportTop: () => codeViewportTop(),
+		lineHeight: ide_state.lineHeight,
+		charAdvance: ide_state.charAdvance,
+		measureText: (t) => measureText(t),
+		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
+		drawColoredText: (a, t, colors, x, y) => drawEditorColoredText(a, ide_state.font, t, colors, x, y, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT),
+		drawRectOutlineColor: (a, l, t, r, b, col) => drawRectOutlineColor(a, l, t, r, b, col),
+		playerIndex: ide_state.playerIndex,
+		listResources: () => listResourcesStrict(),
+		openLuaCodeTab: (d) => openLuaCodeTab(d),
+		openResourceViewerTab: (d) => openResourceViewerTab(d),
+		focusEditorFromResourcePanel: () => focusEditorFromResourcePanel(),
+		showMessage: (text, color, duration) => ide_state.showMessage(text, color, duration),
+	}, { resourceVertical: ide_state.scrollbars.resourceVertical, resourceHorizontal: ide_state.scrollbars.resourceHorizontal });
+	const intellisenseUiReady = (): boolean => {
+		if (!isCodeTabActive()) {
+			return false;
+		}
+		if (isReadOnlyCodeTab()) {
+			return false;
+		}
+		if (!ide_state.windowFocused) {
+			return false;
+		}
+		if (ide_state.searchActive || ide_state.symbolSearchActive || ide_state.lineJumpActive || ide_state.resourceSearchActive || ide_state.createResourceActive) {
+			return false;
+		}
+		return true;
+	};
+	ide_state.completion = new CompletionController({
+		getPlayerIndex: () => ide_state.playerIndex,
+		isCodeTabActive: () => isCodeTabActive(),
+		getLines: () => ide_state.lines,
+		getCursorRow: () => ide_state.cursorRow,
+		getCursorColumn: () => ide_state.cursorColumn,
+		setCursorPosition: (row, column) => { ide_state.cursorRow = row; ide_state.cursorColumn = column; },
+		setSelectionAnchor: (row, column) => { ide_state.selectionAnchor = { row, column }; },
+		replaceSelectionWith: (text) => TextEditing.replaceSelectionWith(text),
+		updateDesiredColumn: () => updateDesiredColumn(),
+		resetBlink: () => resetBlink(),
+		revealCursor: () => revealCursor(),
+		measureText: (text) => measureText(text),
+		drawText: (api, text, x, y, color) => drawEditorText(api as BmsxConsoleApi, ide_state.font, text, x, y, color),
+		getCursorScreenInfo: () => ide_state.cursorScreenInfo,
+		getLineHeight: () => ide_state.lineHeight,
+		getSpaceAdvance: () => ide_state.spaceAdvance,
+		getActiveCodeTabContext: () => getActiveCodeTabContext(),
+		resolveHoverasset_id: (ctx) => resolveHoverasset_id(ctx as CodeTabContext),
+		resolveHoverChunkName: (ctx) => resolveHoverChunkName(ctx as CodeTabContext),
+		listLuaSymbols: (asset_id, chunk) => ide_state.listLuaSymbolsFn(asset_id, chunk),
+		listGlobalLuaSymbols: () => ide_state.listGlobalLuaSymbolsFn(),
+		listLuaModuleSymbols: (moduleName) => ide_state.listLuaModuleSymbolsFn(moduleName),
+		listBuiltinLuaFunctions: () => ide_state.listBuiltinLuaFunctionsFn(),
+		getSemanticDefinitions: () => getActiveSemanticDefinitions(),
+		getLuaModuleAliases: (chunkName) => getLuaModuleAliases(chunkName),
+		getMemberCompletionItems: (request) => buildMemberCompletionItems(request),
+		charAt: (r, c) => TextEditing.charAt(r, c),
+		getTextVersion: () => ide_state.textVersion,
+		shouldFireRepeat: (kb, code, dt) => ide_state.input.shouldRepeatPublic(kb, code, dt),
+		shouldAutoTriggerCompletions: () => {
+			if (!intellisenseUiReady()) {
+				return false;
+			}
+			const lastEditAt = ide_state.lastContentEditAtMs;
+			if (lastEditAt === null) {
+				return false;
+			}
+			const now = ide_state.clockNow();
+			return now - lastEditAt <= constants.COMPLETION_TYPING_GRACE_MS;
+		},
+		shouldShowParameterHints: () => intellisenseUiReady(),
+	});
+	ide_state.completion.setEnterCommitsEnabled(false);
+	ide_state.input = new InputController({
+		getPlayerIndex: () => ide_state.playerIndex,
+		isCodeTabActive: () => isCodeTabActive(),
+		getLines: () => ide_state.lines,
+		setLines: (lines) => { ide_state.lines = lines; markDiagnosticsDirty(); },
+		getCursorRow: () => ide_state.cursorRow,
+		getCursorColumn: () => ide_state.cursorColumn,
+		setCursorPosition: (row, column) => { ide_state.cursorRow = row; ide_state.cursorColumn = column; },
+		setSelectionAnchor: (row, column) => { ide_state.selectionAnchor = { row, column }; },
+		getSelection: () => TextEditing.getSelectionRange(),
+		clearSelection: () => { ide_state.selectionAnchor = null; },
+		updateDesiredColumn: () => updateDesiredColumn(),
+		resetBlink: () => resetBlink(),
+		revealCursor: () => revealCursor(),
+		ensureCursorVisible: () => ensureCursorVisible(),
+		recordPreMutationSnapshot: (key) => recordSnapshotPre(key),
+		pushPostMutationSnapshot: (key) => recordSnapshotPost(key),
+		deleteSelection: () => deleteSelection(),
+		deleteCharLeft: () => deleteCharLeft(),
+		deleteCharRight: () => deleteCharRight(),
+		deleteActiveLines: () => deleteActiveLines(),
+		deleteWordBackward: () => deleteWordBackward(),
+		deleteWordForward: () => deleteWordForward(),
+		insertNewline: () => insertNewline(),
+		insertText: (text) => TextEditing.insertText(text),
+		moveCursorLeft: (byWord, select) => moveCursorLeft(byWord, select),
+		moveCursorRight: (byWord, select) => moveCursorRight(byWord, select),
+		moveCursorUp: (select) => moveCursorUp(select),
+		moveCursorDown: (select) => moveCursorDown(select),
+		moveCursorHome: (select) => moveCursorHome(select),
+		moveCursorEnd: (select) => moveCursorEnd(select),
+		pageDown: (select) => pageDown(select),
+		pageUp: (select) => pageUp(select),
+		moveSelectionLines: (delta) => moveSelectionLines(delta),
+		indentSelectionOrLine: () => indentSelectionOrLine(),
+		unindentSelectionOrLine: () => unindentSelectionOrLine(),
+		navigateBackward: () => goBackwardInNavigationHistory(),
+		navigateForward: () => goForwardInNavigationHistory(),
+		toggleBreakpointAtCursor: () => toggleBreakpointAtCursor(),
+	});
+	ide_state.problemsPanel = new ProblemsPanelController({
+		lineHeight: ide_state.lineHeight,
+		measureText: (text) => measureText(text),
+		drawText: (api, text, x, y, color) => drawEditorText(api, ide_state.font, text, x, y, color),
+		drawRectOutlineColor: (api, l, t, r, b, col) => drawRectOutlineColor(api, l, t, r, b, col),
+		truncateTextToWidth: (text, maxWidth) => truncateTextToWidth(text, maxWidth),
+		gotoDiagnostic: (diagnostic) => gotoDiagnostic(diagnostic),
+	});
+	ide_state.problemsPanel.setDiagnostics(ide_state.diagnostics);
+	ide_state.renameController = new RenameController({
+		processFieldEdit: (field, keyboard, options) => processInlineFieldEditing(field, keyboard, options),
+		shouldFireRepeat: (keyboard, code, deltaSeconds) => shouldFireRepeat(keyboard, code, deltaSeconds),
+		undo: () => undo(),
+		redo: () => redo(),
+		showMessage: (text, color, duration) => ide_state.showMessage(text, color, duration),
+		commitRename: (payload) => commitRename(payload),
+		onRenameSessionClosed: () => focusEditorFromRename(),
+	}, ide_state.referenceState);
+	ide_state.codeVerticalScrollbarVisible = false;
+	ide_state.codeHorizontalScrollbarVisible = false;
+	ide_state.cachedVisibleRowCount = 1;
+	ide_state.cachedVisibleColumnCount = 1;
+	const entryContext = createEntryTabContext();
+	if (entryContext) {
+		ide_state.entryTabId = entryContext.id;
+		ide_state.codeTabContexts.set(entryContext.id, entryContext);
+	}
+	initializeTabs(entryContext);
+	resetResourcePanelState();
+	if (entryContext) {
+		activateCodeEditorTab(entryContext.id);
+	}
+	ide_state.desiredColumn = ide_state.cursorColumn;
+	assertMonospace();
+	const initialContext = entryContext ? ide_state.codeTabContexts.get(entryContext.id) ?? null : null;
+	ide_state.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
+	ide_state.pendingWindowFocused = ide_state.windowFocused;
+	installPlatformVisibilityListener();
+	installWindowEventListeners();
+	ide_state.navigationHistory.current = createNavigationEntry();
+}
+
 export function invalidateLineRange(startRow: number, endRow: number): void {
 	if (ide_state.lines.length === 0) {
 		return;
@@ -229,16 +479,16 @@ export function computeMaximumScrollColumn(): number {
 }
 
 export function deleteWordBackward(): void {
-	if (!hasSelection() && ide_state.cursorColumn === 0 && ide_state.cursorRow === 0) {
+	if (!(TextEditing.hasSelection()) && ide_state.cursorColumn === 0 && ide_state.cursorRow === 0) {
 		return;
 	}
 	prepareUndo('delete-word-backward', false);
-	if (deleteSelectionIfPresent()) {
+	if (TextEditing.deleteSelectionIfPresent()) {
 		return;
 	}
 	const target = findWordLeft(ide_state.cursorRow, ide_state.cursorColumn);
 	if (target.row === ide_state.cursorRow && target.column === ide_state.cursorColumn) {
-		backspace();
+		TextEditing.backspace();
 		return;
 	}
 	const startRow = target.row;
@@ -280,16 +530,16 @@ export function deleteWordBackward(): void {
 }
 
 export function deleteWordForward(): void {
-	if (!hasSelection() && ide_state.cursorRow >= ide_state.lines.length - 1 && ide_state.cursorColumn >= currentLine().length) {
+	if (!TextEditing.hasSelection() && ide_state.cursorRow >= ide_state.lines.length - 1 && ide_state.cursorColumn >= currentLine().length) {
 		return;
 	}
 	prepareUndo('delete-word-forward', false);
-	if (deleteSelectionIfPresent()) {
+	if (TextEditing.deleteSelectionIfPresent()) {
 		return;
 	}
 	const destination = findWordRight(ide_state.cursorRow, ide_state.cursorColumn);
 	if (destination.row === ide_state.cursorRow && destination.column === ide_state.cursorColumn) {
-		deleteForward();
+		TextEditing.deleteForward();
 		return;
 	}
 	const startRow = ide_state.cursorRow;
@@ -328,31 +578,31 @@ export function deleteWordForward(): void {
 export function findWordLeft(row: number, column: number): { row: number; column: number } {
 	let currentRow = row;
 	let currentColumn = column;
-	let step = stepLeft(currentRow, currentColumn);
+	let step = TextEditing.stepLeft(currentRow, currentColumn);
 	if (!step) {
 		return { row: 0, column: 0 };
 	}
 	currentRow = step.row;
 	currentColumn = step.column;
-	let currentChar = charAt(currentRow, currentColumn);
+	let currentChar = TextEditing.charAt(currentRow, currentColumn);
 	while (isWhitespace(currentChar)) {
-		const previous = stepLeft(currentRow, currentColumn);
+		const previous = TextEditing.stepLeft(currentRow, currentColumn);
 		if (!previous) {
 			return { row: 0, column: 0 };
 		}
 		currentRow = previous.row;
 		currentColumn = previous.column;
-		currentChar = charAt(currentRow, currentColumn);
+		currentChar = TextEditing.charAt(currentRow, currentColumn);
 	}
 	const word = isWordChar(currentChar);
 	while (true) {
-		const previous = stepLeft(currentRow, currentColumn);
+		const previous = TextEditing.stepLeft(currentRow, currentColumn);
 		if (!previous) {
 			currentRow = 0;
 			currentColumn = 0;
 			break;
 		}
-		const previousChar = charAt(previous.row, previous.column);
+		const previousChar = TextEditing.charAt(previous.row, previous.column);
 		if (isWhitespace(previousChar) || isWordChar(previousChar) !== word) {
 			break;
 		}
@@ -365,34 +615,34 @@ export function findWordLeft(row: number, column: number): { row: number; column
 export function findWordRight(row: number, column: number): { row: number; column: number } {
 	let currentRow = row;
 	let currentColumn = column;
-	let step = stepRight(currentRow, currentColumn);
+	let step = TextEditing.stepRight(currentRow, currentColumn);
 	if (!step) {
 		const lastRow = ide_state.lines.length - 1;
 		return { row: lastRow, column: ide_state.lines[lastRow].length };
 	}
 	currentRow = step.row;
 	currentColumn = step.column;
-	let currentChar = charAt(currentRow, currentColumn);
+	let currentChar = TextEditing.charAt(currentRow, currentColumn);
 	while (isWhitespace(currentChar)) {
-		const next = stepRight(currentRow, currentColumn);
+		const next = TextEditing.stepRight(currentRow, currentColumn);
 		if (!next) {
 			const lastRow = ide_state.lines.length - 1;
 			return { row: lastRow, column: ide_state.lines[lastRow].length };
 		}
 		currentRow = next.row;
 		currentColumn = next.column;
-		currentChar = charAt(currentRow, currentColumn);
+		currentChar = TextEditing.charAt(currentRow, currentColumn);
 	}
 	const word = isWordChar(currentChar);
 	while (true) {
-		const next = stepRight(currentRow, currentColumn);
+		const next = TextEditing.stepRight(currentRow, currentColumn);
 		if (!next) {
 			const lastRow = ide_state.lines.length - 1;
 			currentRow = lastRow;
 			currentColumn = ide_state.lines[lastRow].length;
 			break;
 		}
-		const nextChar = charAt(next.row, next.column);
+		const nextChar = TextEditing.charAt(next.row, next.column);
 		if (isWhitespace(nextChar) || isWordChar(nextChar) !== word) {
 			currentRow = next.row;
 			currentColumn = next.column;
@@ -401,8 +651,8 @@ export function findWordRight(row: number, column: number): { row: number; colum
 		currentRow = next.row;
 		currentColumn = next.column;
 	}
-	while (isWhitespace(charAt(currentRow, currentColumn))) {
-		const next = stepRight(currentRow, currentColumn);
+	while (isWhitespace(TextEditing.charAt(currentRow, currentColumn))) {
+		const next = TextEditing.stepRight(currentRow, currentColumn);
 		if (!next) {
 			const lastRow = ide_state.lines.length - 1;
 			currentRow = lastRow;
@@ -420,7 +670,7 @@ export function deleteActiveLines(): void {
 		return;
 	}
 	prepareUndo('delete-ide_state.active-ide_state.lines', false);
-	const range = getSelectionRange();
+	const range = TextEditing.getSelectionRange();
 	if (!range) {
 		const removedRow = ide_state.cursorRow;
 		ide_state.lines.splice(removedRow, 1);
@@ -504,7 +754,7 @@ export function moveSelectionLines(delta: number): void {
 }
 
 export function getLineRangeForMovement(): { startRow: number; endRow: number } {
-	const range = getSelectionRange();
+	const range = TextEditing.getSelectionRange();
 	if (!range) {
 		return { startRow: ide_state.cursorRow, endRow: ide_state.cursorRow };
 	}
@@ -517,7 +767,7 @@ export function getLineRangeForMovement(): { startRow: number; endRow: number } 
 
 export function indentSelectionOrLine(): void {
 	prepareUndo('indent', false);
-	const range = getSelectionRange();
+	const range = TextEditing.getSelectionRange();
 	if (!range) {
 		const line = currentLine();
 		ide_state.lines[ide_state.cursorRow] = '\t' + line;
@@ -547,7 +797,7 @@ export function indentSelectionOrLine(): void {
 
 export function unindentSelectionOrLine(): void {
 	prepareUndo('unindent', false);
-	const range = getSelectionRange();
+	const range = TextEditing.getSelectionRange();
 	if (!range) {
 		const line = currentLine();
 		const indentation = countLeadingIndent(line);
@@ -598,11 +848,11 @@ export function countLeadingIndent(line: string): number {
 }
 
 export function deleteSelection(): void {
-	if (!hasSelection()) {
+	if (!TextEditing.hasSelection()) {
 		return;
 	}
 	prepareUndo('delete-selection', false);
-	replaceSelectionWith('');
+	TextEditing.replaceSelectionWith('');
 }
 
 export function currentLine(): string {
@@ -2496,14 +2746,14 @@ export function handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number)
 	if (ctrlDown && isKeyJustPressedGlobal('KeyX')) {
 		consumeIdeKey('KeyX');
 		if (readOnlyCodeTab) {
-			if (hasSelection()) {
+			if (TextEditing.hasSelection()) {
 				void copySelectionToClipboard();
 			} else {
 				notifyReadOnlyEdit();
 			}
 			return;
 		}
-		if (hasSelection()) {
+		if (TextEditing.hasSelection()) {
 			void cutSelectionToClipboard();
 		} else {
 			void cutLineToClipboard();
@@ -3907,7 +4157,7 @@ export function applyLineJump(): void {
 		return;
 	}
 	setCursorPosition(target - 1, 0);
-	clearSelection();
+	TextEditing.clearSelection();
 	breakUndoSequence();
 	closeLineJump(true);
 	ide_state.showMessage(`Jumped to line ${target}`, constants.COLOR_STATUS_SUCCESS, 1.5);
@@ -3929,7 +4179,7 @@ export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
 	const line = ide_state.lines[targetRow] ?? '';
 	const targetColumn = clamp(diagnostic.startColumn, 0, line.length);
 	setCursorPosition(targetRow, targetColumn);
-	clearSelection();
+	TextEditing.clearSelection();
 	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();
 	completeNavigation(navigationCheckpoint);
@@ -4511,7 +4761,7 @@ export function handlePointerInput(_deltaSeconds: number): void {
 		}
 		const doubleClick = registerPointerClick(targetRow, targetColumn);
 		if (doubleClick) {
-			selectWordAtPosition(targetRow, targetColumn);
+			TextEditing.selectWordAtPosition(targetRow, targetColumn);
 			ide_state.pointerSelecting = false;
 		} else {
 			ide_state.selectionAnchor = { row: targetRow, column: targetColumn };
@@ -5281,7 +5531,7 @@ export function applyNavigationEntry(entry: NavigationHistoryEntry): void {
 	const line = ide_state.lines[targetRow] ?? '';
 	const targetColumn = clamp(entry.column, 0, line.length);
 	setCursorPosition(targetRow, targetColumn);
-	clearSelection();
+	TextEditing.clearSelection();
 	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();
 }
@@ -6172,15 +6422,15 @@ export function recordSnapshotPost(_key: string): void {
 }
 
 export function deleteCharLeft(): void {
-	backspace();
+	TextEditing.backspace();
 }
 
 export function deleteCharRight(): void {
-	deleteForward();
+	TextEditing.deleteForward();
 }
 
 export function insertNewline(): void {
-	insertLineBreak();
+	TextEditing.insertLineBreak();
 }
 
 // cursor/grid manipulation now resides in ConsoleCartEditorTextOps base class.
@@ -6326,7 +6576,7 @@ export function updateRuntimeErrorOverlay(deltaSeconds: number): void {
 }
 
 export async function copySelectionToClipboard(): Promise<void> {
-	const text = getSelectionText();
+	const text = TextEditing.getSelectionText();
 	if (text === null) {
 		ide_state.showMessage('Nothing selected to copy', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
@@ -6335,14 +6585,14 @@ export async function copySelectionToClipboard(): Promise<void> {
 }
 
 export async function cutSelectionToClipboard(): Promise<void> {
-	const text = getSelectionText();
+	const text = TextEditing.getSelectionText();
 	if (text === null) {
 		ide_state.showMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	prepareUndo('cut', false);
 	await writeClipboard(text, 'Cut selection to clipboard');
-	replaceSelectionWith('');
+	TextEditing.replaceSelectionWith('');
 }
 
 export async function cutLineToClipboard(): Promise<void> {
@@ -6385,8 +6635,8 @@ export function pasteFromClipboard(): void {
 		return;
 	}
 	prepareUndo('paste', false);
-	deleteSelectionIfPresent();
-	insertClipboardText(text);
+	TextEditing.deleteSelectionIfPresent();
+	TextEditing.insertClipboardText(text);
 	ide_state.showMessage('Pasted from editor clipboard', constants.COLOR_STATUS_SUCCESS, 1.5);
 }
 
@@ -8783,7 +9033,7 @@ export function drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: num
 }
 
 export function computeSelectionSlice(lineIndex: number, highlight: HighlightLine, sliceStart: number, sliceEnd: number): { startDisplay: number; endDisplay: number } | null {
-	const range = getSelectionRange();
+	const range = TextEditing.getSelectionRange();
 	if (!range) {
 		return null;
 	}
@@ -9218,38 +9468,6 @@ export function shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSec
 	return ide_state.input.shouldRepeatPublic(keyboard, code, deltaSeconds);
 }
 
-export type ConsoleCartEditor = {
-	activate: typeof activate;
-	deactivate: typeof deactivate;
-	isActive: typeof isActive;
-	update: typeof update;
-	draw: typeof draw;
-	shutdown: typeof shutdown;
-	updateViewport: typeof updateViewport;
-	showWarningBanner: typeof ide_state.showWarningBanner;
-	showRuntimeErrorInChunk: typeof showRuntimeErrorInChunk;
-	showRuntimeError: typeof showRuntimeError;
-	clearRuntimeErrorOverlay: typeof clearRuntimeErrorOverlay;
-	clearAllRuntimeErrorOverlays: typeof clearAllRuntimeErrorOverlays;
-	getSourceForChunk: typeof getSourceForChunk;
-};
-
-const editorFacade: ConsoleCartEditor = {
-	activate,
-	deactivate,
-	isActive,
-	update,
-	draw,
-	shutdown,
-	updateViewport,
-	showWarningBanner: ide_state.showWarningBanner,
-	showRuntimeErrorInChunk,
-	showRuntimeError,
-	clearRuntimeErrorOverlay,
-	clearAllRuntimeErrorOverlays,
-	getSourceForChunk,
-};
-
 export function handleCodeFormattingShortcut(
 	context: ConsoleEditorShortcutContext): boolean {
 	if (!context.codeTabActive || context.inlineFieldFocused || context.resourcePanelFocused) {
@@ -9277,18 +9495,18 @@ export function applyDocumentFormatting(): void {
 		const cursorOffset = computeDocumentOffset(originalLines, ide_state.cursorRow, ide_state.cursorColumn);
 		prepareUndo('format-document', false);
 		if (ide_state.lines.length === 0) {
-			setSelectionAnchorPosition({ row: 0, column: 0 });
+			TextEditing.setSelectionAnchorPosition({ row: 0, column: 0 });
 			setCursorPosition(0, 0);
 		} else {
 			const lastRow = ide_state.lines.length - 1;
-			setSelectionAnchorPosition({ row: 0, column: 0 });
+			TextEditing.setSelectionAnchorPosition({ row: 0, column: 0 });
 			setCursorPosition(lastRow, ide_state.lines[lastRow].length);
 		}
-		replaceSelectionWith(formatted);
+		TextEditing.replaceSelectionWith(formatted);
 		const updatedLines = [...ide_state.lines];
 		const target = resolveOffsetPosition(updatedLines, cursorOffset);
 		setCursorPosition(target.row, target.column);
-		clearSelection();
+		TextEditing.clearSelection();
 		markDiagnosticsDirty();
 		ide_state.showMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
 	} catch (error) {
@@ -9345,242 +9563,6 @@ export function toggleBreakpointForEditorRow(row: number): boolean {
 
 export function toggleBreakpointAtCursor(): void {
 	void toggleBreakpointForEditorRow(ide_state.cursorRow);
-}
-
-export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleCartEditor {
-	initializeConsoleCartEditor(options);
-	return editorFacade;
-}
-
-export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
-	customKeybindingHandler = (context) =>
-		handleCodeFormattingShortcut(context);
-	initializeDebuggerUiState();
-
-	ide_state.playerIndex = options.playerIndex;
-	ide_state.metadata = options.metadata;
-	ide_state.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
-	constants.setIdeThemeVariant(options.themeVariant ?? null);
-	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
-	ide_state.caseInsensitive = options.caseInsensitiveLua ?? true;
-	ide_state.preMutationSource = null;
-	ide_state.loadSourceFn = options.loadSource;
-	ide_state.saveSourceFn = options.saveSource;
-	ide_state.listResourcesFn = options.listResources;
-	ide_state.loadLuaResourceFn = options.loadLuaResource;
-	ide_state.saveLuaResourceFn = options.saveLuaResource;
-	ide_state.createLuaResourceFn = options.createLuaResource;
-	ide_state.inspectLuaExpressionFn = options.inspectLuaExpression;
-	ide_state.listLuaObjectMembersFn = options.listLuaObjectMembers;
-	ide_state.listLuaModuleSymbolsFn = options.listLuaModuleSymbols;
-	ide_state.listLuaSymbolsFn = options.listLuaSymbols;
-	ide_state.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
-	ide_state.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
-	ide_state.primaryasset_id = options.primaryasset_id;
-	if ($.debug) {
-		ide_state.listResourcesFn();
-	}
-	applyViewportSize(options.viewport);
-	ide_state.font = new ConsoleEditorFont(ide_state.fontVariant);
-	ide_state.clockNow = $.platform.clock.now;
-	ide_state.searchField = createInlineTextField();
-	ide_state.symbolSearchField = createInlineTextField();
-	ide_state.resourceSearchField = createInlineTextField();
-	ide_state.lineJumpField = createInlineTextField();
-	ide_state.createResourceField = createInlineTextField();
-	setupWorkspacePersistence(options.workspaceRootPath ?? null);
-	applySearchFieldText(ide_state.searchQuery, true);
-	applySymbolSearchFieldText(ide_state.symbolSearchQuery, true);
-	applyResourceSearchFieldText(ide_state.resourceSearchQuery, true);
-	applyLineJumpFieldText(ide_state.lineJumpValue, true);
-	applyCreateResourceFieldText(ide_state.createResourcePath, true);
-	ide_state.lineHeight = ide_state.font.lineHeight();
-	ide_state.charAdvance = ide_state.font.advance('M');
-	ide_state.spaceAdvance = ide_state.font.advance(' ');
-	const layoutOptions = {
-		maxHighlightCache: 512,
-		semanticDebounceMs: 200,
-		clockNow: ide_state.clockNow,
-		getBuiltinIdentifiers: () => getBuiltinIdentifierSet(),
-	};
-	ide_state.layout = new ConsoleCodeLayout(ide_state.font, ide_state.semanticWorkspace, layoutOptions);
-
-	ide_state.inlineFieldMetricsRef = {
-		measureText: (text: string) => measureText(text),
-		advanceChar: (ch: string) => ide_state.font.advance(ch),
-		spaceAdvance: ide_state.spaceAdvance,
-		tabSpaces: constants.TAB_SPACES,
-	};
-	ide_state.gutterWidth = 2;
-	const primaryBarHeight = ide_state.lineHeight + 4;
-	ide_state.headerHeight = primaryBarHeight;
-	ide_state.tabBarHeight = ide_state.lineHeight + 3;
-	ide_state.baseBottomMargin = ide_state.lineHeight + 6;
-	ide_state.scrollbars = {
-		codeVertical: new ConsoleScrollbar('codeVertical', 'vertical'),
-		codeHorizontal: new ConsoleScrollbar('codeHorizontal', 'horizontal'),
-		resourceVertical: new ConsoleScrollbar('resourceVertical', 'vertical'),
-		resourceHorizontal: new ConsoleScrollbar('resourceHorizontal', 'horizontal'),
-		viewerVertical: new ConsoleScrollbar('viewerVertical', 'vertical'),
-	};
-	ide_state.scrollbarController = new ScrollbarController(ide_state.scrollbars);
-	ide_state.resourcePanel = new ResourcePanelController({
-		getViewportWidth: () => ide_state.viewportWidth,
-		getViewportHeight: () => ide_state.viewportHeight,
-		getBottomMargin: () => bottomMargin(),
-		codeViewportTop: () => codeViewportTop(),
-		lineHeight: ide_state.lineHeight,
-		charAdvance: ide_state.charAdvance,
-		measureText: (t) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
-		drawColoredText: (a, t, colors, x, y) => drawEditorColoredText(a, ide_state.font, t, colors, x, y, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT),
-		drawRectOutlineColor: (a, l, t, r, b, col) => drawRectOutlineColor(a, l, t, r, b, col),
-		playerIndex: ide_state.playerIndex,
-		listResources: () => listResourcesStrict(),
-		openLuaCodeTab: (d) => openLuaCodeTab(d),
-		openResourceViewerTab: (d) => openResourceViewerTab(d),
-		focusEditorFromResourcePanel: () => focusEditorFromResourcePanel(),
-		showMessage: (text, color, duration) => ide_state.showMessage(text, color, duration),
-	}, { resourceVertical: ide_state.scrollbars.resourceVertical, resourceHorizontal: ide_state.scrollbars.resourceHorizontal });
-	const intellisenseUiReady = (): boolean => {
-		if (!isCodeTabActive()) {
-			return false;
-		}
-		if (isReadOnlyCodeTab()) {
-			return false;
-		}
-		if (!ide_state.windowFocused) {
-			return false;
-		}
-		if (ide_state.searchActive || ide_state.symbolSearchActive || ide_state.lineJumpActive || ide_state.resourceSearchActive || ide_state.createResourceActive) {
-			return false;
-		}
-		return true;
-	};
-	ide_state.completion = new CompletionController({
-		getPlayerIndex: () => ide_state.playerIndex,
-		isCodeTabActive: () => isCodeTabActive(),
-		getLines: () => ide_state.lines,
-		getCursorRow: () => ide_state.cursorRow,
-		getCursorColumn: () => ide_state.cursorColumn,
-		setCursorPosition: (row, column) => { ide_state.cursorRow = row; ide_state.cursorColumn = column; },
-		setSelectionAnchor: (row, column) => { ide_state.selectionAnchor = { row, column }; },
-		replaceSelectionWith: (text) => replaceSelectionWith(text),
-		updateDesiredColumn: () => updateDesiredColumn(),
-		resetBlink: () => resetBlink(),
-		revealCursor: () => revealCursor(),
-		measureText: (text) => measureText(text),
-		drawText: (api, text, x, y, color) => drawEditorText(api as BmsxConsoleApi, ide_state.font, text, x, y, color),
-		getCursorScreenInfo: () => ide_state.cursorScreenInfo,
-		getLineHeight: () => ide_state.lineHeight,
-		getSpaceAdvance: () => ide_state.spaceAdvance,
-		getActiveCodeTabContext: () => getActiveCodeTabContext(),
-		resolveHoverasset_id: (ctx) => resolveHoverasset_id(ctx as CodeTabContext),
-		resolveHoverChunkName: (ctx) => resolveHoverChunkName(ctx as CodeTabContext),
-		listLuaSymbols: (asset_id, chunk) => ide_state.listLuaSymbolsFn(asset_id, chunk),
-		listGlobalLuaSymbols: () => ide_state.listGlobalLuaSymbolsFn(),
-		listLuaModuleSymbols: (moduleName) => ide_state.listLuaModuleSymbolsFn(moduleName),
-		listBuiltinLuaFunctions: () => ide_state.listBuiltinLuaFunctionsFn(),
-		getSemanticDefinitions: () => getActiveSemanticDefinitions(),
-		getLuaModuleAliases: (chunkName) => getLuaModuleAliases(chunkName),
-		getMemberCompletionItems: (request) => buildMemberCompletionItems(request),
-		charAt: (r, c) => charAt(r, c),
-		getTextVersion: () => ide_state.textVersion,
-		shouldFireRepeat: (kb, code, dt) => ide_state.input.shouldRepeatPublic(kb, code, dt),
-		shouldAutoTriggerCompletions: () => {
-			if (!intellisenseUiReady()) {
-				return false;
-			}
-			const lastEditAt = ide_state.lastContentEditAtMs;
-			if (lastEditAt === null) {
-				return false;
-			}
-			const now = ide_state.clockNow();
-			return now - lastEditAt <= constants.COMPLETION_TYPING_GRACE_MS;
-		},
-		shouldShowParameterHints: () => intellisenseUiReady(),
-	});
-	ide_state.completion.setEnterCommitsEnabled(false);
-	ide_state.input = new InputController({
-		getPlayerIndex: () => ide_state.playerIndex,
-		isCodeTabActive: () => isCodeTabActive(),
-		getLines: () => ide_state.lines,
-		setLines: (lines) => { ide_state.lines = lines; markDiagnosticsDirty(); },
-		getCursorRow: () => ide_state.cursorRow,
-		getCursorColumn: () => ide_state.cursorColumn,
-		setCursorPosition: (row, column) => { ide_state.cursorRow = row; ide_state.cursorColumn = column; },
-		setSelectionAnchor: (row, column) => { ide_state.selectionAnchor = { row, column }; },
-		getSelection: () => getSelectionRange(),
-		clearSelection: () => { ide_state.selectionAnchor = null; },
-		updateDesiredColumn: () => updateDesiredColumn(),
-		resetBlink: () => resetBlink(),
-		revealCursor: () => revealCursor(),
-		ensureCursorVisible: () => ensureCursorVisible(),
-		recordPreMutationSnapshot: (key) => recordSnapshotPre(key),
-		pushPostMutationSnapshot: (key) => recordSnapshotPost(key),
-		deleteSelection: () => deleteSelection(),
-		deleteCharLeft: () => deleteCharLeft(),
-		deleteCharRight: () => deleteCharRight(),
-		deleteActiveLines: () => deleteActiveLines(),
-		deleteWordBackward: () => deleteWordBackward(),
-		deleteWordForward: () => deleteWordForward(),
-		insertNewline: () => insertNewline(),
-		insertText: (text) => insertText(text),
-		moveCursorLeft: (byWord, select) => moveCursorLeft(byWord, select),
-		moveCursorRight: (byWord, select) => moveCursorRight(byWord, select),
-		moveCursorUp: (select) => moveCursorUp(select),
-		moveCursorDown: (select) => moveCursorDown(select),
-		moveCursorHome: (select) => moveCursorHome(select),
-		moveCursorEnd: (select) => moveCursorEnd(select),
-		pageDown: (select) => pageDown(select),
-		pageUp: (select) => pageUp(select),
-		moveSelectionLines: (delta) => moveSelectionLines(delta),
-		indentSelectionOrLine: () => indentSelectionOrLine(),
-		unindentSelectionOrLine: () => unindentSelectionOrLine(),
-		navigateBackward: () => goBackwardInNavigationHistory(),
-		navigateForward: () => goForwardInNavigationHistory(),
-		toggleBreakpointAtCursor: () => toggleBreakpointAtCursor(),
-	});
-	ide_state.problemsPanel = new ProblemsPanelController({
-		lineHeight: ide_state.lineHeight,
-		measureText: (text) => measureText(text),
-		drawText: (api, text, x, y, color) => drawEditorText(api, ide_state.font, text, x, y, color),
-		drawRectOutlineColor: (api, l, t, r, b, col) => drawRectOutlineColor(api, l, t, r, b, col),
-		truncateTextToWidth: (text, maxWidth) => truncateTextToWidth(text, maxWidth),
-		gotoDiagnostic: (diagnostic) => gotoDiagnostic(diagnostic),
-	});
-	ide_state.problemsPanel.setDiagnostics(ide_state.diagnostics);
-	ide_state.renameController = new RenameController({
-		processFieldEdit: (field, keyboard, options) => processInlineFieldEditing(field, keyboard, options),
-		shouldFireRepeat: (keyboard, code, deltaSeconds) => shouldFireRepeat(keyboard, code, deltaSeconds),
-		undo: () => undo(),
-		redo: () => redo(),
-		showMessage: (text, color, duration) => ide_state.showMessage(text, color, duration),
-		commitRename: (payload) => commitRename(payload),
-		onRenameSessionClosed: () => focusEditorFromRename(),
-	}, ide_state.referenceState);
-	ide_state.codeVerticalScrollbarVisible = false;
-	ide_state.codeHorizontalScrollbarVisible = false;
-	ide_state.cachedVisibleRowCount = 1;
-	ide_state.cachedVisibleColumnCount = 1;
-	const entryContext = createEntryTabContext();
-	if (entryContext) {
-		ide_state.entryTabId = entryContext.id;
-		ide_state.codeTabContexts.set(entryContext.id, entryContext);
-	}
-	initializeTabs(entryContext);
-	resetResourcePanelState();
-	if (entryContext) {
-		activateCodeEditorTab(entryContext.id);
-	}
-	ide_state.desiredColumn = ide_state.cursorColumn;
-	assertMonospace();
-	const initialContext = entryContext ? ide_state.codeTabContexts.get(entryContext.id) ?? null : null;
-	ide_state.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
-	ide_state.pendingWindowFocused = ide_state.windowFocused;
-	installPlatformVisibilityListener();
-	installWindowEventListeners();
-	ide_state.navigationHistory.current = createNavigationEntry();
 }
 
 export function updateBlink(deltaSeconds: number): void {
