@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Utility to migrate exported functions between editor source files."""
+"""Utility to migrate exported functions between source files."""
 from __future__ import annotations
 
 import argparse
