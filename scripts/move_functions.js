@@ -91,7 +91,7 @@ function locateExportedFunctionSpan(sf, name) {
 
 	if (candidates.length === 0) {
 		console.warn(`No exported root-level function '${name}' found in '${sourcePath}'.`);
-		// throw new Error(`exported root-level function '${name}' not found`);
+		return null;
 	}
 
 	// Overloads + implementation: grab the whole contiguous block
@@ -141,12 +141,27 @@ function main() {
 	// Compute spans once against the original source text
 	const spans = [];
 	const snippets = [];
+	const missing = [];
 
 	for (const name of args.names) {
-		const { start, end } = locateExportedFunctionSpan(sourceFile, name);
+		const span = locateExportedFunctionSpan(sourceFile, name);
+		if (!span) {
+			missing.push(name);
+			continue;
+		}
+		const { start, end } = span;
 		spans.push({ start, end, name });
 		const raw = sourceText.slice(start, end);
 		snippets.push({ name, text: raw.replace(/\s+$/, '') }); // trim trailing whitespace
+	}
+
+	if (missing.length > 0) {
+		console.warn(`Skipped missing functions: ${missing.join(', ')}`);
+	}
+
+	if (snippets.length === 0) {
+		console.log('No functions were moved.');
+		return;
 	}
 
 	// Remove blocks from source text, working from the end so offsets stay valid
@@ -157,9 +172,12 @@ function main() {
 	}
 
 	// Append snippets to destination text with clean spacing
-	let newDest = destText.replace(/\s+$/, '');
-	if (newDest.length > 0) newDest += '\n\n';
-	newDest += snippets.map(s => s.text).join('\n\n') + '\n';
+	let newDest = destText;
+	if (snippets.length > 0) {
+		newDest = destText.replace(/\s+$/, '');
+		if (newDest.length > 0) newDest += '\n\n';
+		newDest += snippets.map(s => s.text).join('\n\n') + '\n';
+	}
 
 	console.log(
 		`Extracted ${snippets.length} functions: ${snippets.map(s => s.name).join(', ')}`
