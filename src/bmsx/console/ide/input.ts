@@ -147,9 +147,7 @@ export class InputController {
 			consumeIdeKey('Backspace');
 			if (ctrlDown) {
 				TextEditing.deleteWordBackward();
-			} else if (getSelection()) {
-				TextEditing.deleteSelection();
-			} else {
+			} else if (!TextEditing.deleteSelectionIfPresent()) {
 				TextEditing.backspace();
 			}
 			return;
@@ -160,9 +158,7 @@ export class InputController {
 				TextEditing.deleteActiveLines();
 			} else if (ctrlDown) {
 				TextEditing.deleteWordForward();
-			} else if (getSelection()) {
-				TextEditing.deleteSelection();
-			} else {
+			} else if (!TextEditing.deleteSelectionIfPresent()) {
 				TextEditing.deleteForward();
 			}
 			return;
