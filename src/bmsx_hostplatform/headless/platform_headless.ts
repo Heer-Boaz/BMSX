@@ -33,7 +33,7 @@ import {
 	HostEventOptions,
 	GameViewHostCapabilityId,
 	GameViewHostCapabilityMap,
-} from '../platform';
+} from 'bmsx/platform';
 import { HeadlessGameViewHost } from 'bmsx/render/headless/headless_view';
 
 class HeadlessClock implements Clock {

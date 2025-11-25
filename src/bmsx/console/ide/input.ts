@@ -688,7 +688,6 @@ export function handleEditorInput(deltaSeconds: number): void {
 		TextEditing.unindentSelectionOrLine();
 		return;
 	}
-	// Manual ide_state.completion open/close handled by CompletionController via handleCompletionKeybindings
 	if (handleCompletionKeybindings(deltaSeconds)) {
 		return;
 	}
@@ -696,10 +695,6 @@ export function handleEditorInput(deltaSeconds: number): void {
 		return;
 	}
 	ide_state.input.handleEditorInput(deltaSeconds);
-	if (ctrlDown || metaDown || altDown) {
-		return;
-	}
-	// Remaining character ide_state.input after controller handled modifiers is no-op here
 }
 
 export function handleDebuggerShortcuts(): boolean {

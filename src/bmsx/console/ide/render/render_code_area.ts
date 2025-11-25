@@ -152,7 +152,7 @@ export function renderCodeArea(): void {
 		}
 		const lineIndex = segment.row;
 		const entry = getCachedHighlight(lineIndex);
-		const hasBreakpointForRow = getBreakpointsForChunk(resolveHoverChunkName(getActiveCodeTabContext())).has(lineIndex + 1) ?? false;
+		const hasBreakpointForRow = getBreakpointsForChunk(resolveHoverChunkName(getActiveCodeTabContext()))?.has(lineIndex + 1) ?? false;
 		if (hasBreakpointForRow && bounds.gutterRight > bounds.gutterLeft) {
 			const markerLeft = bounds.gutterLeft;
 			const gutterWidth = Math.max(1, bounds.gutterRight - bounds.gutterLeft);

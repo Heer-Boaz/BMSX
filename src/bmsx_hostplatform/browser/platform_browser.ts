@@ -33,7 +33,7 @@ import {
 	OnscreenGamepadHandleProvider,
 	GameViewHostCapabilityId,
 	GameViewHostCapabilityMap,
-} from '../platform';
+} from 'bmsx/platform';
 import { WebAudioService } from './web_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
 
