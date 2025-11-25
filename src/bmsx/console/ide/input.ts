@@ -272,11 +272,11 @@ export function handleEscapeShortcut(): boolean {
 		ide_state.lastEscapePressId = null;
 		return false;
 	}
-	const pressId = state.pressId;
-	const allow = shouldAcceptKeyPress(ESCAPE_KEY, state)
-		|| state.justpressed === true
-		|| (pressId !== null && pressId !== ide_state.lastEscapePressId);
-	if (!allow) return false;
+	const pressId = state.pressId ?? null;
+	const isNewPress = state.justpressed === true || pressId !== ide_state.lastEscapePressId;
+	if (!isNewPress) {
+		return false;
+	}
 	ide_state.lastEscapePressId = pressId;
 	const handled = handleEscapeKey({ allowRuntimeErrorToggle: true });
 	if (handled) {

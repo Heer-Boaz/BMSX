@@ -219,15 +219,17 @@ export class CompletionController {
 	}
 
 	public handleKeybindings(deltaSeconds: number): boolean {
-		// Allow manual open via Ctrl/Cmd+Space
 		const { ctrlDown, altDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
-		if ((ctrlDown || metaDown) && !altDown && this.completionSession === null && this.host.isCodeTabActive() && isKeyJustPressedGlobal('Space')) {
+		if ((ctrlDown || metaDown) && !altDown && this.host.isCodeTabActive() && isKeyJustPressedGlobal('Space')) {
 			consumeIdeKey('Space');
-			const context = this.analyzeCompletionContext();
-			if (context) this.openCompletionSessionFromContext(context, 'manual'); else this.closeSession();
+			if (this.completionSession) {
+				this.closeSession();
+			} else {
+				const context = this.analyzeCompletionContext();
+				if (context) this.openCompletionSessionFromContext(context, 'manual'); else this.closeSession();
+			}
 			return true;
 		}
-
 		const session = this.completionSession;
 		if (!session) return false;
 		if (isKeyJustPressedGlobal('Escape')) {
@@ -317,12 +319,6 @@ export class CompletionController {
 		if (isKeyJustPressedGlobal('Tab')) {
 			consumeIdeKey('Tab');
 			if (shiftDown) this.moveCompletionSelection(-1); else this.acceptSelectedCompletion();
-			return true;
-		}
-		if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal('Space')) {
-			consumeIdeKey('Space');
-			const context = this.analyzeCompletionContext();
-			if (context) this.openCompletionSessionFromContext(context, 'manual'); else this.closeSession();
 			return true;
 		}
 		return false;
@@ -1357,4 +1353,3 @@ export function handleCompletionKeybindings(deltaSeconds: number): boolean {
 	}
 	return ide_state.completion.handleKeybindings(deltaSeconds);
 }
-
