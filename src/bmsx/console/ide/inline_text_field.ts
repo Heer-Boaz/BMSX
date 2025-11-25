@@ -4,7 +4,8 @@ import * as constants from './constants';
 import { ide_state } from './ide_state';
 import { isAltDown, isCtrlDown, isMetaDown, isShiftDown } from './input';
 import { isWhitespace, isWordChar } from './text_utils';
-import type { InlineInputOptions, InlineTextField } from './types';
+import type { InlineInputOptions, Position, TextField } from './types';
+import { clamp } from '../../utils/clamp';
 
 export type InlineFieldMetrics = {
 	measureText: (text: string) => number;
@@ -13,10 +14,80 @@ export type InlineFieldMetrics = {
 	tabSpaces: number;
 };
 
-export function createInlineTextField(): InlineTextField {
+const NEWLINE = '\n';
+
+const normalizeLines = (lines: string[]): string[] => (lines.length === 0 ? [''] : lines);
+
+const textFromLines = (lines: string[]): string => normalizeLines(lines).join(NEWLINE);
+
+const splitText = (text: string): string[] => {
+	const parts = text.split(NEWLINE);
+	return normalizeLines(parts);
+};
+
+const positionToOffset = (lines: string[], position: Position): number => {
+	let offset = 0;
+	for (let row = 0; row < position.row; row += 1) {
+		offset += lines[row].length + 1;
+	}
+	return offset + position.column;
+};
+
+const offsetToPosition = (lines: string[], offset: number): Position => {
+	let remaining = Math.max(0, offset);
+	for (let row = 0; row < lines.length; row += 1) {
+		const line = lines[row];
+		const lineLength = line.length;
+		if (remaining <= lineLength) {
+			return { row, column: remaining };
+		}
+		remaining -= lineLength;
+		if (remaining === 0) {
+			return { row, column: lineLength };
+		}
+		remaining -= 1; // newline
+	}
+	const lastRow = Math.max(0, lines.length - 1);
+	return { row: lastRow, column: lines[lastRow]?.length ?? 0 };
+};
+
+const clampRowColumn = (field: TextField, row: number, column: number): Position => {
+	const clampedRow = Math.max(0, Math.min(row, field.lines.length - 1));
+	const line = field.lines[clampedRow] ?? '';
+	const clampedColumn = Math.max(0, Math.min(column, line.length));
+	return { row: clampedRow, column: clampedColumn };
+};
+
+const applyTextUpdate = (field: TextField, nextText: string, nextCursorOffset: number): void => {
+	const lines = splitText(nextText);
+	field.lines = lines;
+	const cursor = offsetToPosition(lines, nextCursorOffset);
+	field.cursorRow = cursor.row;
+	field.cursorColumn = cursor.column;
+	field.desiredColumn = field.cursorColumn;
+	field.selectionAnchor = null;
+};
+
+const cursorOffset = (field: TextField): number => positionToOffset(field.lines, { row: field.cursorRow, column: field.cursorColumn });
+
+const totalLength = (field: TextField): number => {
+	let length = 0;
+	for (let row = 0; row < field.lines.length; row += 1) {
+		length += field.lines[row].length;
+		if (row < field.lines.length - 1) {
+			length += 1;
+		}
+	}
+	return length;
+};
+
+const fieldText = (field: TextField): string => textFromLines(field.lines);
+
+export function createInlineTextField(): TextField {
 	return {
-		text: '',
-		cursor: 0,
+		lines: [''],
+		cursorRow: 0,
+		cursorColumn: 0,
 		selectionAnchor: null,
 		desiredColumn: 0,
 		pointerSelecting: false,
@@ -25,59 +96,82 @@ export function createInlineTextField(): InlineTextField {
 	};
 }
 
-export function clampCursor(field: InlineTextField): void {
-	if (field.cursor < 0) {
-		field.cursor = 0;
-	}
-	const length = field.text.length;
-	if (field.cursor > length) {
-		field.cursor = length;
-	}
+export function getFieldText(field: TextField): string {
+	return fieldText(field);
 }
 
-export function selectionRange(field: InlineTextField): { start: number; end: number } | null {
+export function getCursorOffset(field: TextField): number {
+	return cursorOffset(field);
+}
+
+export function setCursorFromOffset(field: TextField, offset: number): void {
+	const length = totalLength(field);
+	const clamped = clamp(offset, 0, length);
+	const next = offsetToPosition(field.lines, clamped);
+	field.cursorRow = next.row;
+	field.cursorColumn = next.column;
+	field.desiredColumn = field.cursorColumn;
+}
+
+export function selectionAnchorOffset(field: TextField): number | null {
+	if (!field.selectionAnchor) {
+		return null;
+	}
+	return positionToOffset(field.lines, field.selectionAnchor);
+}
+
+export function setSelectionAnchorFromOffset(field: TextField, offset: number | null): void {
+	if (offset === null) {
+		field.selectionAnchor = null;
+		return;
+	}
+	const length = totalLength(field);
+	const clamped = clamp(offset, 0, length);
+	field.selectionAnchor = offsetToPosition(field.lines, clamped);
+}
+
+export function clampCursor(field: TextField): void {
+	const { row, column } = clampRowColumn(field, field.cursorRow, field.cursorColumn);
+	field.cursorRow = row;
+	field.cursorColumn = column;
+}
+
+export function selectionRange(field: TextField): { start: number; end: number } | null {
 	const anchor = field.selectionAnchor;
-	if (anchor === null) {
+	if (!anchor) {
 		return null;
 	}
-	const cursor = field.cursor;
-	if (anchor === cursor) {
+	const cursor: Position = { row: field.cursorRow, column: field.cursorColumn };
+	if (anchor.row === cursor.row && anchor.column === cursor.column) {
 		return null;
 	}
-	if (anchor < cursor) {
-		return { start: Math.max(0, anchor), end: Math.min(field.text.length, cursor) };
+	const start = positionToOffset(field.lines, anchor);
+	const end = positionToOffset(field.lines, cursor);
+	if (start < end) {
+		return { start, end };
 	}
-	return { start: Math.max(0, cursor), end: Math.min(field.text.length, anchor) };
+	return { start: end, end: start };
 }
 
-export function clampSelectionAnchor(field: InlineTextField): void {
-	if (field.selectionAnchor === null) {
-		return;
-	}
-	const length = field.text.length;
-	if (field.selectionAnchor < 0) {
-		field.selectionAnchor = 0;
-		return;
-	}
-	if (field.selectionAnchor > length) {
-		field.selectionAnchor = length;
-	}
+export function clampSelectionAnchor(field: TextField): void {
+	const anchor = field.selectionAnchor;
+	if (!anchor) return;
+	const clamped = clampRowColumn(field, anchor.row, anchor.column);
+	field.selectionAnchor = clamped;
 }
 
-export function deleteSelection(field: InlineTextField): boolean {
+export function deleteSelection(field: TextField): boolean {
 	const range = selectionRange(field);
 	if (!range) {
 		return false;
 	}
-	const text = field.text;
-	field.text = text.slice(0, range.start) + text.slice(range.end);
-	field.cursor = range.start;
-	field.selectionAnchor = null;
-	field.desiredColumn = field.cursor;
+	const text = fieldText(field);
+	const nextText = text.slice(0, range.start) + text.slice(range.end);
+	applyTextUpdate(field, nextText, range.start);
 	return true;
 }
 
-export function selectionLength(field: InlineTextField): number {
+export function selectionLength(field: TextField): number {
 	const range = selectionRange(field);
 	if (!range) {
 		return 0;
@@ -85,56 +179,59 @@ export function selectionLength(field: InlineTextField): number {
 	return range.end - range.start;
 }
 
-export function insertValue(field: InlineTextField, value: string): boolean {
+export function insertValue(field: TextField, value: string): boolean {
 	if (value.length === 0) {
 		return false;
 	}
-	deleteSelection(field);
-	const text = field.text;
-	const before = text.slice(0, field.cursor);
-	const after = text.slice(field.cursor);
-	field.text = before + value + after;
-	field.cursor += value.length;
-	field.desiredColumn = field.cursor;
+	if (deleteSelection(field)) {
+		// selection already removed, cursor updated
+	}
+	const text = fieldText(field);
+	const offset = cursorOffset(field);
+	const nextText = text.slice(0, offset) + value + text.slice(offset);
+	const nextCursor = offset + value.length;
+	applyTextUpdate(field, nextText, nextCursor);
 	return true;
 }
 
-export function backspace(field: InlineTextField): boolean {
+export function backspace(field: TextField): boolean {
 	if (deleteSelection(field)) {
 		return true;
 	}
-	if (field.cursor === 0) {
+	const offset = cursorOffset(field);
+	if (offset === 0) {
 		return false;
 	}
-	const text = field.text;
-	field.text = text.slice(0, field.cursor - 1) + text.slice(field.cursor);
-	field.cursor -= 1;
-	field.desiredColumn = field.cursor;
+	const text = fieldText(field);
+	const nextText = text.slice(0, offset - 1) + text.slice(offset);
+	applyTextUpdate(field, nextText, offset - 1);
 	return true;
 }
 
-export function deleteForward(field: InlineTextField): boolean {
+export function deleteForward(field: TextField): boolean {
 	if (deleteSelection(field)) {
 		return true;
 	}
-	if (field.cursor >= field.text.length) {
+	const text = fieldText(field);
+	const offset = cursorOffset(field);
+	if (offset >= text.length) {
 		return false;
 	}
-	const text = field.text;
-	field.text = text.slice(0, field.cursor) + text.slice(field.cursor + 1);
-	field.desiredColumn = field.cursor;
+	const nextText = text.slice(0, offset) + text.slice(offset + 1);
+	applyTextUpdate(field, nextText, offset);
 	return true;
 }
 
-export function deleteWordBackward(field: InlineTextField): boolean {
+export function deleteWordBackward(field: TextField): boolean {
 	if (deleteSelection(field)) {
 		return true;
 	}
-	if (field.cursor === 0) {
+	const text = fieldText(field);
+	const offset = cursorOffset(field);
+	if (offset === 0) {
 		return false;
 	}
-	const text = field.text;
-	let index = field.cursor;
+	let index = offset;
 	while (index > 0 && isWhitespace(text.charAt(index - 1))) {
 		index -= 1;
 	}
@@ -144,70 +241,73 @@ export function deleteWordBackward(field: InlineTextField): boolean {
 	while (index > 0 && isWordChar(text.charAt(index - 1))) {
 		index -= 1;
 	}
-	if (index === field.cursor) {
+	if (index === offset) {
 		return false;
 	}
-	field.text = text.slice(0, index) + text.slice(field.cursor);
-	field.cursor = index;
-	field.desiredColumn = field.cursor;
-	field.selectionAnchor = null;
+	const nextText = text.slice(0, index) + text.slice(offset);
+	applyTextUpdate(field, nextText, index);
 	return true;
 }
 
-export function deleteWordForward(field: InlineTextField): boolean {
+export function deleteWordForward(field: TextField): boolean {
 	if (deleteSelection(field)) {
 		return true;
 	}
-	const length = field.text.length;
-	if (field.cursor >= length) {
+	const text = fieldText(field);
+	const offset = cursorOffset(field);
+	if (offset >= text.length) {
 		return false;
 	}
-	const text = field.text;
-	let index = field.cursor;
-	while (index < length && isWhitespace(text.charAt(index))) {
+	let index = offset;
+	while (index < text.length && isWhitespace(text.charAt(index))) {
 		index += 1;
 	}
-	while (index < length && !isWhitespace(text.charAt(index)) && !isWordChar(text.charAt(index))) {
+	while (index < text.length && !isWhitespace(text.charAt(index)) && !isWordChar(text.charAt(index))) {
 		index += 1;
 	}
-	while (index < length && isWordChar(text.charAt(index))) {
+	while (index < text.length && isWordChar(text.charAt(index))) {
 		index += 1;
 	}
-	if (index === field.cursor) {
+	if (index === offset) {
 		return false;
 	}
-	field.text = text.slice(0, field.cursor) + text.slice(index);
-	field.desiredColumn = field.cursor;
-	field.selectionAnchor = null;
+	const nextText = text.slice(0, offset) + text.slice(index);
+	applyTextUpdate(field, nextText, offset);
 	return true;
 }
 
-export function moveCursor(field: InlineTextField, column: number, extendSelection: boolean): void {
-	const clamped = Math.max(0, Math.min(field.text.length, column));
+export function moveCursor(field: TextField, row: number, column: number, extendSelection: boolean): void {
+	const clamped = clampRowColumn(field, row, column);
 	if (extendSelection) {
-		if (field.selectionAnchor === null) {
-			field.selectionAnchor = field.cursor;
+		if (!field.selectionAnchor) {
+			field.selectionAnchor = { row: field.cursorRow, column: field.cursorColumn };
 		}
 	} else {
 		field.selectionAnchor = null;
 	}
-	field.cursor = clamped;
-	field.desiredColumn = clamped;
+	field.cursorRow = clamped.row;
+	field.cursorColumn = clamped.column;
+	field.desiredColumn = field.cursorColumn;
 }
 
-export function moveCursorRelative(field: InlineTextField, delta: number, extendSelection: boolean): void {
-	moveCursor(field, field.cursor + delta, extendSelection);
+export function moveCursorRelative(field: TextField, delta: number, extendSelection: boolean): void {
+	const offset = cursorOffset(field);
+	const length = totalLength(field);
+	const nextOffset = clamp(offset + delta, 0, length);
+	const nextPosition = offsetToPosition(field.lines, nextOffset);
+	moveCursor(field, nextPosition.row, nextPosition.column, extendSelection);
 }
 
-export function moveWordLeft(field: InlineTextField, extendSelection: boolean): void {
-	if (field.cursor === 0) {
+export function moveWordLeft(field: TextField, extendSelection: boolean): void {
+	const text = fieldText(field);
+	const offset = cursorOffset(field);
+	if (offset === 0) {
 		if (!extendSelection) {
 			field.selectionAnchor = null;
 		}
 		return;
 	}
-	const text = field.text;
-	let index = field.cursor;
+	let index = offset;
 	while (index > 0 && isWhitespace(text.charAt(index - 1))) {
 		index -= 1;
 	}
@@ -217,67 +317,74 @@ export function moveWordLeft(field: InlineTextField, extendSelection: boolean): 
 	while (index > 0 && isWordChar(text.charAt(index - 1))) {
 		index -= 1;
 	}
-	moveCursor(field, index, extendSelection);
+	const next = offsetToPosition(field.lines, index);
+	moveCursor(field, next.row, next.column, extendSelection);
 }
 
-export function moveWordRight(field: InlineTextField, extendSelection: boolean): void {
-	const length = field.text.length;
-	if (field.cursor >= length) {
+export function moveWordRight(field: TextField, extendSelection: boolean): void {
+	const text = fieldText(field);
+	const offset = cursorOffset(field);
+	if (offset >= text.length) {
 		if (!extendSelection) {
 			field.selectionAnchor = null;
 		}
 		return;
 	}
-	const text = field.text;
-	let index = field.cursor;
-	while (index < length && isWhitespace(text.charAt(index))) {
+	let index = offset;
+	while (index < text.length && isWhitespace(text.charAt(index))) {
 		index += 1;
 	}
-	while (index < length && !isWhitespace(text.charAt(index)) && !isWordChar(text.charAt(index))) {
+	while (index < text.length && !isWhitespace(text.charAt(index)) && !isWordChar(text.charAt(index))) {
 		index += 1;
 	}
-	while (index < length && isWordChar(text.charAt(index))) {
+	while (index < text.length && isWordChar(text.charAt(index))) {
 		index += 1;
 	}
-	moveCursor(field, index, extendSelection);
+	const next = offsetToPosition(field.lines, index);
+	moveCursor(field, next.row, next.column, extendSelection);
 }
 
-export function moveToStart(field: InlineTextField, extendSelection: boolean): void {
-	moveCursor(field, 0, extendSelection);
+export function moveToStart(field: TextField, extendSelection: boolean): void {
+	moveCursor(field, 0, 0, extendSelection);
 }
 
-export function moveToEnd(field: InlineTextField, extendSelection: boolean): void {
-	moveCursor(field, field.text.length, extendSelection);
+export function moveToEnd(field: TextField, extendSelection: boolean): void {
+	const lastRow = Math.max(0, field.lines.length - 1);
+	const lastColumn = field.lines[lastRow]?.length ?? 0;
+	moveCursor(field, lastRow, lastColumn, extendSelection);
 }
 
-export function selectAll(field: InlineTextField): void {
-	field.selectionAnchor = 0;
-	field.cursor = field.text.length;
-	field.desiredColumn = field.cursor;
+export function selectAll(field: TextField): void {
+	field.selectionAnchor = { row: 0, column: 0 };
+	const lastRow = Math.max(0, field.lines.length - 1);
+	const lastColumn = field.lines[lastRow]?.length ?? 0;
+	field.cursorRow = lastRow;
+	field.cursorColumn = lastColumn;
+	field.desiredColumn = field.cursorColumn;
 }
 
-export function selectedText(field: InlineTextField): string | null {
+export function selectedText(field: TextField): string | null {
 	const range = selectionRange(field);
 	if (!range) {
 		return null;
 	}
-	return field.text.slice(range.start, range.end);
+	const text = fieldText(field);
+	return text.slice(range.start, range.end);
 }
 
-export function selectWordAt(field: InlineTextField, column: number): void {
-	const text = field.text;
+export function selectWordAt(field: TextField, row: number, column: number): void {
+	const clamped = clampRowColumn(field, row, column);
+	const text = fieldText(field);
 	if (text.length === 0) {
 		field.selectionAnchor = null;
-		field.cursor = 0;
+		field.cursorRow = 0;
+		field.cursorColumn = 0;
 		field.desiredColumn = 0;
 		return;
 	}
-	let index = column;
+	let index = positionToOffset(field.lines, clamped);
 	if (index >= text.length) {
-		index = text.length - 1;
-	}
-	if (index < 0) {
-		index = 0;
+		index = Math.max(0, text.length - 1);
 	}
 	const ch = text.charAt(index);
 	let start = index;
@@ -312,33 +419,34 @@ export function selectWordAt(field: InlineTextField, column: number): void {
 			end += 1;
 		}
 	}
-	if (end < start) {
-		end = start;
-	}
-	field.selectionAnchor = start;
-	field.cursor = end;
-	field.desiredColumn = field.cursor;
+	const startPos = offsetToPosition(field.lines, start);
+	const endPos = offsetToPosition(field.lines, end);
+	field.selectionAnchor = startPos;
+	field.cursorRow = endPos.row;
+	field.cursorColumn = endPos.column;
+	field.desiredColumn = field.cursorColumn;
 }
 
-export function measureRange(field: InlineTextField, metrics: InlineFieldMetrics, start: number, end: number): number {
-	const clampedStart = Math.max(0, Math.min(start, field.text.length));
-	const clampedEnd = Math.max(clampedStart, Math.min(end, field.text.length));
+export function measureRange(field: TextField, metrics: InlineFieldMetrics, start: number, end: number): number {
+	const length = totalLength(field);
+	const clampedStart = clamp(start, 0, length);
+	const clampedEnd = clamp(end, clampedStart, length);
 	if (clampedEnd <= clampedStart) {
 		return 0;
 	}
-	const slice = field.text.slice(clampedStart, clampedEnd);
+	const slice = fieldText(field).slice(clampedStart, clampedEnd);
 	return metrics.measureText(slice);
 }
 
-export function resolveColumn(field: InlineTextField, metrics: InlineFieldMetrics, textLeft: number, pointerX: number): number {
+export function resolveColumn(field: TextField, metrics: InlineFieldMetrics, textLeft: number, pointerX: number): number {
 	const relative = pointerX - textLeft;
 	if (relative <= 0) {
 		return 0;
 	}
 	let advance = 0;
-	const length = field.text.length;
-	for (let index = 0; index < length; index += 1) {
-		const ch = field.text.charAt(index);
+	const line = field.lines[field.cursorRow] ?? '';
+	for (let index = 0; index < line.length; index += 1) {
+		const ch = line.charAt(index);
 		const width = ch === '\t'
 			? metrics.spaceAdvance * metrics.tabSpaces
 			: metrics.advanceChar(ch);
@@ -351,18 +459,19 @@ export function resolveColumn(field: InlineTextField, metrics: InlineFieldMetric
 			return index + 1;
 		}
 	}
-	return length;
+	return line.length;
 }
 
-export function caretX(field: InlineTextField, textLeft: number, measureText: (text: string) => number): number {
-	if (field.cursor <= 0) {
+export function caretX(field: TextField, textLeft: number, measureText: (text: string) => number): number {
+	const line = field.lines[field.cursorRow] ?? '';
+	if (field.cursorColumn <= 0) {
 		return textLeft;
 	}
-	const slice = field.text.slice(0, field.cursor);
+	const slice = line.slice(0, field.cursorColumn);
 	return textLeft + measureText(slice);
 }
 
-export function registerPointerClick(field: InlineTextField, column: number, doubleClickInterval: number): boolean {
+export function registerPointerClick(field: TextField, column: number, doubleClickInterval: number): boolean {
 	const timestamp = $.platform.clock.now();
 	const interval = timestamp - field.lastPointerClickTimeMs;
 	const sameColumn = column === field.lastPointerClickColumn;
@@ -374,20 +483,18 @@ export function registerPointerClick(field: InlineTextField, column: number, dou
 	return isDouble;
 }
 
-export function setFieldText(field: InlineTextField, value: string, moveCursorToEnd: boolean): void {
-	field.text = value;
+export function setFieldText(field: TextField, value: string, moveCursorToEnd: boolean): void {
+	const lines = splitText(value);
+	field.lines = lines;
 	if (moveCursorToEnd) {
-		field.cursor = value.length;
+		const lastRow = Math.max(0, lines.length - 1);
+		field.cursorRow = lastRow;
+		field.cursorColumn = lines[lastRow]?.length ?? 0;
 	} else {
-		if (field.cursor > value.length) {
-			field.cursor = value.length;
-		}
-		if (field.cursor < 0) {
-			field.cursor = 0;
-		}
+		clampCursor(field);
 	}
 	field.selectionAnchor = null;
-	field.desiredColumn = field.cursor;
+	field.desiredColumn = field.cursorColumn;
 	field.pointerSelecting = false;
 	field.lastPointerClickTimeMs = 0;
 	field.lastPointerClickColumn = -1;
@@ -406,7 +513,7 @@ export type InlineFieldEditingHandlers = {
 };
 
 export function applyInlineFieldEditing(
-	field: InlineTextField,
+	field: TextField,
 	options: InlineInputOptions,
 	handlers: InlineFieldEditingHandlers,
 ): boolean {
@@ -415,8 +522,9 @@ export function applyInlineFieldEditing(
 	const characterFilter = options.characterFilter;
 	const maxLength = options.maxLength !== undefined ? options.maxLength : null;
 	const useCtrl = ctrlDown || metaDown;
-	const initialText = field.text;
-	const initialCursor = field.cursor;
+	const initialText = fieldText(field);
+	const initialCursorRow = field.cursorRow;
+	const initialCursorColumn = field.cursorColumn;
 	const initialAnchor = field.selectionAnchor;
 
 	if (useCtrl && handlers.isKeyJustPressed('KeyA')) {
@@ -426,7 +534,7 @@ export function applyInlineFieldEditing(
 
 	if (useCtrl && handlers.isKeyJustPressed('KeyC')) {
 		const selected = selectedText(field);
-		const payload = selected && selected.length > 0 ? selected : field.text;
+		const payload = selected && selected.length > 0 ? selected : fieldText(field);
 		if (payload.length > 0) {
 			void handlers.writeClipboard(payload, 'copy');
 		}
@@ -437,7 +545,7 @@ export function applyInlineFieldEditing(
 		const selected = selectedText(field);
 		let payload = selected;
 		if (!payload || payload.length === 0) {
-			payload = field.text;
+			payload = fieldText(field);
 			if (payload.length > 0) {
 				selectAll(field);
 			}
@@ -453,13 +561,13 @@ export function applyInlineFieldEditing(
 		const clipboard = handlers.readClipboard();
 		if (clipboard && clipboard.length > 0) {
 			const normalized = clipboard.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-			const merged = normalized.split('\n').join('');
+			const merged = normalized;
 			if (merged.length > 0) {
 				const filtered = characterFilter ? merged.split('').filter(characterFilter).join('') : merged;
 				if (filtered.length > 0) {
 					let insertion = filtered;
 					if (maxLength !== null) {
-						const remaining = Math.max(0, maxLength - (field.text.length - selectionLength(field)));
+						const remaining = Math.max(0, maxLength - (totalLength(field) - selectionLength(field)));
 						if (remaining <= 0) {
 							insertion = '';
 						} else if (insertion.length > remaining) {
@@ -526,7 +634,7 @@ export function applyInlineFieldEditing(
 	if (allowSpace && !useCtrl && !metaDown && !altDown && handlers.shouldFireRepeat('Space', deltaSeconds)) {
 		handlers.consumeKey('Space');
 		const remaining = maxLength !== null
-			? Math.max(0, maxLength - (field.text.length - selectionLength(field)))
+			? Math.max(0, maxLength - (totalLength(field) - selectionLength(field)))
 			: undefined;
 		if (remaining === undefined || remaining > 0) {
 			insertValue(field, ' ');
@@ -550,7 +658,7 @@ export function applyInlineFieldEditing(
 				continue;
 			}
 			if (maxLength !== null) {
-				const available = maxLength - (field.text.length - selectionLength(field));
+				const available = maxLength - (totalLength(field) - selectionLength(field));
 				if (available <= 0) {
 					handlers.consumeKey(code);
 					continue;
@@ -563,8 +671,11 @@ export function applyInlineFieldEditing(
 
 	clampCursor(field);
 	clampSelectionAnchor(field);
-	const textChanged = field.text !== initialText;
-	if (!textChanged && field.cursor === initialCursor && field.selectionAnchor === initialAnchor) {
+	const textChanged = fieldText(field) !== initialText;
+	const anchorChanged = initialAnchor
+		? !field.selectionAnchor || field.selectionAnchor.row !== initialAnchor.row || field.selectionAnchor.column !== initialAnchor.column
+		: field.selectionAnchor !== null;
+	if (!textChanged && field.cursorRow === initialCursorRow && field.cursorColumn === initialCursorColumn && !anchorChanged) {
 		return false;
 	}
 	return textChanged;
@@ -584,17 +695,18 @@ export type InlineFieldPointerResult = {
 	requestBlinkReset: boolean;
 };
 
-export function applyInlineFieldPointer(field: InlineTextField, options: InlineFieldPointerOptions): InlineFieldPointerResult {
+export function applyInlineFieldPointer(field: TextField, options: InlineFieldPointerOptions): InlineFieldPointerResult {
 	const { metrics, textLeft, pointerX, justPressed, pointerPressed, doubleClickInterval } = options;
 	const column = resolveColumn(field, metrics, textLeft, pointerX);
 	if (justPressed) {
 		const isDouble = registerPointerClick(field, column, doubleClickInterval);
 		if (isDouble) {
-			selectWordAt(field, column);
+			selectWordAt(field, field.cursorRow, column);
 			field.pointerSelecting = false;
 		} else {
-			field.selectionAnchor = column;
-			field.cursor = column;
+			field.selectionAnchor = { row: field.cursorRow, column };
+			field.cursorRow = field.cursorRow;
+			field.cursorColumn = column;
 			field.desiredColumn = column;
 			field.pointerSelecting = true;
 		}
@@ -607,7 +719,7 @@ export function applyInlineFieldPointer(field: InlineTextField, options: InlineF
 		return { requestBlinkReset: false };
 	}
 	if (field.pointerSelecting) {
-		moveCursor(field, column, true);
+		moveCursor(field, field.cursorRow, column, true);
 		clampCursor(field);
 		clampSelectionAnchor(field);
 	}

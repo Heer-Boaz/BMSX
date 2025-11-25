@@ -1,6 +1,6 @@
 import { resolveReferenceLookup, type ReferenceLookupOptions, type ReferenceMatchInfo, ReferenceState } from './code_reference';
-import type { CodeTabContext, InlineInputOptions, InlineTextField, SearchMatch } from './types';
-import { createInlineTextField } from './inline_text_field';
+import type { CodeTabContext, InlineInputOptions, TextField, SearchMatch } from './types';
+import { createInlineTextField, getFieldText, setFieldText } from './inline_text_field';
 import { isIdentifierChar, isIdentifierStartChar } from './text_utils';
 import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown } from './input';
 import * as constants from './constants';
@@ -24,7 +24,7 @@ export type RenameCommitResult = {
 };
 
 export type RenameControllerHost = {
-	processFieldEdit(field: InlineTextField, options: InlineInputOptions): boolean;
+	processFieldEdit(field: TextField, options: InlineInputOptions): boolean;
 	shouldFireRepeat(code: string, deltaSeconds: number): boolean;
 	undo(): void;
 	redo(): void;
@@ -40,7 +40,7 @@ export type RenameStartOptions = ReferenceLookupOptions & {
 export class RenameController {
 	private readonly host: RenameControllerHost;
 	private readonly referenceState: ReferenceState;
-	private readonly field: InlineTextField = createInlineTextField();
+	private readonly field: TextField = createInlineTextField();
 	private active = false;
 	private visible = false;
 	private matches: SearchMatch[] = [];
@@ -152,7 +152,7 @@ export class RenameController {
 		}
 	}
 
-	public getField(): InlineTextField {
+	public getField(): TextField {
 		return this.field;
 	}
 
@@ -184,7 +184,7 @@ export class RenameController {
 		if (!this.active || !this.info) {
 			return;
 		}
-		const nextName = this.field.text.trim();
+		const nextName = getFieldText(this.field).trim();
 		if (nextName.length === 0) {
 			this.host.showMessage('Identifier cannot be empty', constants.COLOR_STATUS_WARNING, 1.6);
 			return;
@@ -224,10 +224,9 @@ export class RenameController {
 	}
 
 	private resetInlineField(value: string): void {
-		this.field.text = value;
-		this.field.cursor = value.length;
-		this.field.selectionAnchor = 0;
-		this.field.desiredColumn = this.field.cursor;
+		setFieldText(this.field, value, true);
+		this.field.selectionAnchor = { row: 0, column: 0 };
+		this.field.desiredColumn = this.field.cursorColumn;
 		this.field.pointerSelecting = false;
 		this.field.lastPointerClickTimeMs = 0;
 		this.field.lastPointerClickColumn = -1;
@@ -454,4 +453,3 @@ export function convertRangeToSearchMatch(range: LuaSourceRange | null | undefin
 	}
 	return { row: rowIndex, start: startColumn, end: endExclusive };
 }
-

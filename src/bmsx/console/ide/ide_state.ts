@@ -12,7 +12,7 @@ import type {
 } from '../types';
 import type { ConsoleFontVariant } from '../font';
 import type { ConsoleEditorFont } from '../editor_font';
-import type { InlineTextField, ScrollbarKind, MessageState } from './types';
+import type { TextField, ScrollbarKind, MessageState } from './types';
 import type { InlineFieldMetrics } from './inline_text_field';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import type { InputController } from './input';
@@ -201,11 +201,11 @@ export interface IdeState {
 	pointerSelecting: boolean;
 	pointerPrimaryWasPressed: boolean;
 	pointerAuxWasPressed: boolean;
-	searchField: InlineTextField;
-	symbolSearchField: InlineTextField;
-	resourceSearchField: InlineTextField;
-	lineJumpField: InlineTextField;
-	createResourceField: InlineTextField;
+	searchField: TextField;
+	symbolSearchField: TextField;
+	resourceSearchField: TextField;
+	lineJumpField: TextField;
+	createResourceField: TextField;
 	inlineFieldMetricsRef: InlineFieldMetrics;
 	scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
 	scrollbarController: ScrollbarController;

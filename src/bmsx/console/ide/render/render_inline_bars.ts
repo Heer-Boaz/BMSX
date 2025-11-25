@@ -1,8 +1,9 @@
 import { BmsxConsoleApi } from '../../api';
 import type { drawInlineCaret } from './render_caret';
 import * as constants from '../constants';
-import type { InlineTextField } from '../types';
+import type { TextField } from '../types';
 import { ide_state } from '../ide_state';
+import { getFieldText } from '../inline_text_field';
 
 type InlineResultListOptions<T> = {
 	entries: readonly T[] | null | undefined;
@@ -29,7 +30,7 @@ export interface InlineBarsHost {
 	inlineFieldMetrics: () => { spaceAdvance: number };
 	createResourceActive: boolean;
 	createResourceVisible: boolean;
-	createResourceField: InlineTextField;
+	createResourceField: TextField;
 	createResourceWorking: boolean;
 	createResourceError: string | null;
 	drawCreateResourceErrorDialog: (api: BmsxConsoleApi, errorText: string) => void;
@@ -117,7 +118,8 @@ export function renderCreateResourceBar(api: BmsxConsoleApi, host: InlineBarsHos
 
 	const field = host.createResourceField;
 	const pathX = labelX + host.measureText(label + ' ');
-	let displayPath = field.text;
+	const fieldText = getFieldText(field);
+	let displayPath = fieldText;
 	let pathColor = constants.COLOR_CREATE_RESOURCE_TEXT;
 	if (displayPath.length === 0 && !host.createResourceActive) {
 		displayPath = 'ENTER LUA PATH';
@@ -125,7 +127,7 @@ export function renderCreateResourceBar(api: BmsxConsoleApi, host: InlineBarsHos
 	}
 
 	const selection = host.inlineFieldSelectionRange(field);
-	if (selection && field.text.length > 0) {
+	if (selection && fieldText.length > 0) {
 		const selectionLeft = pathX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
 		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
@@ -162,14 +164,15 @@ export function renderSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, constants.COLOR_SEARCH_OUTLINE);
 	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, constants.COLOR_SEARCH_OUTLINE);
 
-	const field = host.searchField as { text: string } | undefined;
+	const field = host.searchField as TextField | undefined;
 	const label = host.searchScope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
 	const labelX = 4;
 	const labelY = barTop + constants.SEARCH_BAR_MARGIN_Y;
 	host.drawText(api, label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
 
     const active = !!host.searchActive && !host.blockActiveCarets;
-	let queryText = field?.text ?? '';
+	const fieldText = field ? getFieldText(field) : '';
+	let queryText = fieldText;
 	let queryColor = constants.COLOR_SEARCH_TEXT;
 	if (queryText.length === 0 && !active) {
 		queryText = 'TYPE TO SEARCH';
@@ -178,9 +181,9 @@ export function renderSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 	const queryX = labelX + host.measureText(label + ' ');
 
 	const selection = field ? host.inlineFieldSelectionRange(field) : null;
-	if (selection && field!.text.length > 0) {
-		const selectionLeft = queryX + host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
+	if (selection && fieldText.length > 0) {
+		const selectionLeft = queryX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
+		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
 			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}
@@ -259,14 +262,15 @@ export function renderResourceSearchBar(api: BmsxConsoleApi, host: InlineBarsHos
 	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, constants.COLOR_QUICK_OPEN_OUTLINE);
 	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, constants.COLOR_QUICK_OPEN_OUTLINE);
 
-	const field = host.resourceSearchField as { text: string } | undefined;
+	const field = host.resourceSearchField as TextField | undefined;
 	const label = 'FILE :';
 	const labelX = 4;
 	const labelY = barTop + constants.QUICK_OPEN_BAR_MARGIN_Y;
 	host.drawText(api, label, labelX, labelY, constants.COLOR_QUICK_OPEN_TEXT);
 
     const active = !!host.resourceSearchActive && !host.blockActiveCarets;
-	let queryText = field?.text ?? '';
+	const fieldText = field ? getFieldText(field) : '';
+	let queryText = fieldText;
 	let queryColor = constants.COLOR_QUICK_OPEN_TEXT;
 	if (queryText.length === 0 && !active) {
 		queryText = 'TYPE TO FILTER (@/# PREFIX)';
@@ -275,9 +279,9 @@ export function renderResourceSearchBar(api: BmsxConsoleApi, host: InlineBarsHos
 	const queryX = labelX + host.measureText(label + ' ');
 
 	const selection = field ? host.inlineFieldSelectionRange(field) : null;
-	if (selection && field!.text.length > 0) {
-		const selectionLeft = queryX + host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
+	if (selection && fieldText.length > 0) {
+		const selectionLeft = queryX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
+		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
 			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}
@@ -343,7 +347,7 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 
-	const field = host.symbolSearchField as { text: string } | undefined;
+	const field = host.symbolSearchField as TextField | undefined;
 	const mode = host.symbolSearchMode ?? 'symbols';
 	const label = mode === 'references' ? 'REFS :' : host.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
 	const labelX = 4;
@@ -351,7 +355,8 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 	host.drawText(api, label, labelX, labelY, constants.COLOR_SYMBOL_SEARCH_TEXT);
 
 	const active = !!host.symbolSearchActive;
-	let queryText = field?.text ?? '';
+	const fieldText = field ? getFieldText(field) : '';
+	let queryText = fieldText;
 	let queryColor = constants.COLOR_SYMBOL_SEARCH_TEXT;
 	const placeholder = mode === 'references' ? 'FILTER REFERENCES' : 'TYPE TO FILTER';
 	if (queryText.length === 0 && !active) {
@@ -361,9 +366,9 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 	const queryX = labelX + host.measureText(label + ' ');
 
 	const selection = field ? host.inlineFieldSelectionRange(field) : null;
-	if (selection && field!.text.length > 0) {
-		const selectionLeft = queryX + host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
+	if (selection && fieldText.length > 0) {
+		const selectionLeft = queryX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
+		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
 			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}
@@ -479,14 +484,15 @@ export function renderRenameBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, constants.COLOR_SEARCH_OUTLINE);
 	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, constants.COLOR_SEARCH_OUTLINE);
 
-	const field = host.renameField as { text: string } | undefined;
+	const field = host.renameField as TextField | undefined;
 	const label = 'RENAME:';
 	const labelX = 4;
 	const labelY = barTop + constants.SEARCH_BAR_MARGIN_Y;
 	host.drawText(api, label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
 
 	const active = !!host.renameActive && !host.blockActiveCarets;
-	let valueText = field?.text ?? '';
+	const fieldText = field ? getFieldText(field) : '';
+	let valueText = fieldText;
 	let valueColor = constants.COLOR_SEARCH_TEXT;
 	if (valueText.length === 0 && !active) {
 		valueText = 'TYPE NEW NAME';
@@ -495,9 +501,9 @@ export function renderRenameBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 	const valueX = labelX + host.measureText(label + ' ');
 
 	const selection = field ? host.inlineFieldSelectionRange(field) : null;
-	if (selection && field!.text.length > 0) {
-		const selectionLeft = valueX + host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
+	if (selection && fieldText.length > 0) {
+		const selectionLeft = valueX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
+		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
 			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}
@@ -549,9 +555,10 @@ export function renderLineJumpBar(api: BmsxConsoleApi, host: InlineBarsHost): vo
 	const labelY = barTop + constants.LINE_JUMP_BAR_MARGIN_Y;
 	host.drawText(api, label, labelX, labelY, constants.COLOR_LINE_JUMP_TEXT);
 
-	const field = host.lineJumpField as { text: string } | undefined;
+	const field = host.lineJumpField as TextField | undefined;
 	const active = !!host.lineJumpActive;
-	let valueText = field?.text ?? '';
+	const fieldText = field ? getFieldText(field) : '';
+	let valueText = fieldText;
 	let valueColor = constants.COLOR_LINE_JUMP_TEXT;
 	if (valueText.length === 0 && !active) {
 		valueText = 'ENTER LINE NUMBER';
@@ -560,9 +567,9 @@ export function renderLineJumpBar(api: BmsxConsoleApi, host: InlineBarsHost): vo
 	const valueX = labelX + host.measureText(label + ' ');
 
 	const selection = field ? host.inlineFieldSelectionRange(field) : null;
-	if (selection && field!.text.length > 0) {
-		const selectionLeft = valueX + host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field!, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
+	if (selection && fieldText.length > 0) {
+		const selectionLeft = valueX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
+		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
 			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}

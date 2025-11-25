@@ -5,7 +5,8 @@ import { resolvePaletteIndex, invertColorIndex } from '../console_cart_editor';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
 import { drawEditorText } from '../text_renderer';
-import type { CursorScreenInfo, InlineTextField } from '../types';
+import type { CursorScreenInfo, TextField } from '../types';
+import { getCursorOffset, getFieldText } from '../inline_text_field';
 
 export interface CaretDrawOps {
 	fillRect(x0: number, y0: number, x1: number, y1: number, color: color): void;
@@ -52,7 +53,7 @@ export function renderInlineCaret(
 
 export function drawInlineCaret(
 	api: BmsxConsoleApi,
-	field: InlineTextField,
+	field: TextField,
 	left: number,
 	top: number,
 	right: number,
@@ -63,7 +64,9 @@ export function drawInlineCaret(
 	baseTextColor: number = constants.COLOR_STATUS_TEXT
 ): void {
 	if (!ide_state.cursorVisible) return;
-	const rawGlyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
+	const text = getFieldText(field);
+	const cursorIndex = getCursorOffset(field);
+	const rawGlyph = cursorIndex < text.length ? text.charAt(cursorIndex) : ' ';
 	const caretGlyph = getCaretGlyphForDisplay(rawGlyph);
 	const caretIndex = resolvePaletteIndex(caretColor);
 	const caretColorIndex = caretIndex ?? baseTextColor;
@@ -121,4 +124,3 @@ export function drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: num
 	api.rectfill_color(left, top, left + 1, bottom, resolved);
 	api.rectfill_color(right - 1, top, right, bottom, resolved);
 }
-

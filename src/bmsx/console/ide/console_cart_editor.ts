@@ -47,6 +47,7 @@ import {
 	applyInlineFieldPointer,
 	caretX as inlineFieldCaretX,
 	createInlineTextField,
+	getFieldText,
 	measureRange as inlineFieldMeasureRange,
 	selectionRange as inlineFieldSelectionRange,
 	setFieldText,
@@ -92,7 +93,7 @@ import type {
 	EditorDiagnostic,
 	HighlightLine,
 	InlineInputOptions,
-	InlineTextField,
+	TextField,
 	MessageState,
 	PendingActionPrompt,
 	PointerSnapshot,
@@ -1852,7 +1853,7 @@ export function handleCreateResourceInput(deltaSeconds: number): void {
 		ide_state.createResourceError = null;
 		resetBlink();
 	}
-	ide_state.createResourcePath = ide_state.createResourceField.text;
+	ide_state.createResourcePath = getFieldText(ide_state.createResourceField);
 }
 
 export function openCreateResourcePrompt(): void {
@@ -2141,7 +2142,7 @@ export function handleSearchInput(deltaSeconds: number): void {
 		maxLength: null,
 	});
 
-	ide_state.searchQuery = ide_state.searchField.text;
+	ide_state.searchQuery = getFieldText(ide_state.searchField);
 	if (textChanged) {
 		onSearchQueryChanged();
 	}
@@ -2177,7 +2178,7 @@ export function handleLineJumpInput(deltaSeconds: number): void {
 		characterFilter: digitFilter,
 		maxLength: 6,
 	});
-	ide_state.lineJumpValue = ide_state.lineJumpField.text;
+	ide_state.lineJumpValue = getFieldText(ide_state.lineJumpField);
 	if (textChanged) {
 		// keep value in sync; no additional processing required
 	}
@@ -2831,7 +2832,7 @@ export function handleSymbolSearchInput(deltaSeconds: number): void {
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	ide_state.symbolSearchQuery = ide_state.symbolSearchField.text;
+	ide_state.symbolSearchQuery = getFieldText(ide_state.symbolSearchField);
 	if (textChanged) {
 		updateSymbolSearchMatches();
 	}
@@ -3053,7 +3054,7 @@ export function handleResourceSearchInput(deltaSeconds: number): void {
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	ide_state.resourceSearchQuery = ide_state.resourceSearchField.text;
+	ide_state.resourceSearchQuery = getFieldText(ide_state.resourceSearchField);
 	if (textChanged) {
 		if (ide_state.resourceSearchQuery.startsWith('@')) {
 			const query = ide_state.resourceSearchQuery.slice(1).trimStart();
@@ -4345,11 +4346,11 @@ export function createInlineFieldEditingHandlers(): InlineFieldEditingHandlers {
 	};
 }
 
-export function processInlineFieldEditing(field: InlineTextField, options: InlineInputOptions): boolean {
+export function processInlineFieldEditing(field: TextField, options: InlineInputOptions): boolean {
 	return applyInlineFieldEditing(field, options, createInlineFieldEditingHandlers());
 }
 
-export function processInlineFieldPointer(field: InlineTextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {
+export function processInlineFieldPointer(field: TextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {
 	const result = applyInlineFieldPointer(field, {
 		metrics: ide_state.inlineFieldMetricsRef,
 		textLeft,
@@ -4505,7 +4506,7 @@ export function drawCreateResourceBar(): void {
 		getLineJumpBarHeight: () => getLineJumpBarHeight(),
 		drawInlineCaret: (
 			api3: BmsxConsoleApi,
-			field: InlineTextField,
+			field: TextField,
 			l: number,
 			t: number,
 			r: number,
@@ -4515,9 +4516,9 @@ export function drawCreateResourceBar(): void {
 			caretColor: { r: number; g: number; b: number; a: number },
 			textColor: number,
 		) => drawInlineCaret(api3, field, l, t, r, b, baseX, active, caretColor, textColor),
-		inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
-		inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
+		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
 		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
 	};
 	renderCreateResourceBar(api, host);
@@ -4548,7 +4549,7 @@ export function drawSearchBar(): void {
 		getLineJumpBarHeight: () => getLineJumpBarHeight(),
 		drawInlineCaret: (
 			a: BmsxConsoleApi,
-			f: InlineTextField,
+			f: TextField,
 			l: number,
 			t: number,
 			r: number,
@@ -4558,9 +4559,9 @@ export function drawSearchBar(): void {
 			cc: { r: number; g: number; b: number; a: number },
 			tc: number,
 		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
-		inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
-		inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
+		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
 		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
 		searchActive: ide_state.searchActive,
 		searchField: ide_state.searchField,
@@ -4605,7 +4606,7 @@ export function drawResourceSearchBar(): void {
 		getLineJumpBarHeight: () => getLineJumpBarHeight(),
 		drawInlineCaret: (
 			a: BmsxConsoleApi,
-			f: InlineTextField,
+			f: TextField,
 			l: number,
 			t: number,
 			r: number,
@@ -4615,9 +4616,9 @@ export function drawResourceSearchBar(): void {
 			cc: { r: number; g: number; b: number; a: number },
 			tc: number,
 		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
-		inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
-		inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
+		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
 		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
 		resourceSearchActive: ide_state.resourceSearchActive,
 		resourceSearchField: ide_state.resourceSearchField,
@@ -4657,7 +4658,7 @@ export function drawSymbolSearchBar(): void {
 		getLineJumpBarHeight: () => getLineJumpBarHeight(),
 		drawInlineCaret: (
 			a: BmsxConsoleApi,
-			f: InlineTextField,
+			f: TextField,
 			l: number,
 			t: number,
 			r: number,
@@ -4667,9 +4668,9 @@ export function drawSymbolSearchBar(): void {
 			cc: { r: number; g: number; b: number; a: number },
 			tc: number,
 		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
-		inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
-		inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
+		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
 		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
 		symbolSearchGlobal: ide_state.symbolSearchGlobal,
 		symbolSearchActive: ide_state.symbolSearchActive,
@@ -4711,7 +4712,7 @@ export function drawRenameBar(): void {
 		getLineJumpBarHeight: () => getLineJumpBarHeight(),
 		drawInlineCaret: (
 			a: BmsxConsoleApi,
-			f: InlineTextField,
+			f: TextField,
 			l: number,
 			t: number,
 			r: number,
@@ -4721,9 +4722,9 @@ export function drawRenameBar(): void {
 			cc: { r: number; g: number; b: number; a: number },
 			tc: number,
 		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
-		inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
-		inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
+		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
 		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
 		renameActive: ide_state.renameController.isActive(),
 		renameField: ide_state.renameController.getField(),
@@ -4759,7 +4760,7 @@ export function drawLineJumpBar(): void {
 		getLineJumpBarHeight: () => getLineJumpBarHeight(),
 		drawInlineCaret: (
 			a: BmsxConsoleApi,
-			f: InlineTextField,
+			f: TextField,
 			l: number,
 			t: number,
 			r: number,
@@ -4769,9 +4770,9 @@ export function drawLineJumpBar(): void {
 			cc: { r: number; g: number; b: number; a: number },
 			tc: number,
 		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
-		inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
-		inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
+		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
 		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
 		lineJumpActive: ide_state.lineJumpActive,
 		lineJumpField: ide_state.lineJumpField,

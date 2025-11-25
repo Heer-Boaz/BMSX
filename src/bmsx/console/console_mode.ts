@@ -11,8 +11,13 @@ import {
 	selectionRange,
 	deleteSelection,
 	insertValue,
+	getFieldText,
+	getCursorOffset,
+	setCursorFromOffset,
+	selectionAnchorOffset,
+	setSelectionAnchorFromOffset,
 } from './ide/inline_text_field';
-import type { InlineInputOptions, InlineTextField, CursorScreenInfo, EditContext, LuaCompletionItem } from './ide/types';
+import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext, LuaCompletionItem } from './ide/types';
 import { INITIAL_REPEAT_DELAY, REPEAT_INTERVAL, TAB_SPACES } from './ide/constants';
 import { ConsoleRenderFacade } from './console_render_facade';
 import { renderInlineCaret, type CaretDrawOps } from './ide/render/render_caret';
@@ -104,7 +109,7 @@ export class ConsoleMode {
 	private readonly characterBackgroundColor = { r: 0, g: 0, b: 0, a: CHARACTER_TILE_ALPHA } as color;
 	private readonly caretColor = Msx1Colors[15];
 	private readonly selectionColor = Msx1Colors[11];
-	private readonly field: InlineTextField = createInlineTextField();
+	private readonly field: TextField = createInlineTextField();
 	private readonly output: ConsoleOutputEntry[] = [];
 	private readonly history: string[] = [];
 	private historyIndex: number | null = null;
@@ -118,6 +123,26 @@ export class ConsoleMode {
 	private caretVisible = true;
 	private active = false;
 	private textVersion = 0;
+
+	private fieldText(): string {
+		return getFieldText(this.field);
+	}
+
+	private cursorOffset(): number {
+		return getCursorOffset(this.field);
+	}
+
+	private setCursorOffset(offset: number): void {
+		setCursorFromOffset(this.field, offset);
+	}
+
+	private anchorOffset(): number | null {
+		return selectionAnchorOffset(this.field);
+	}
+
+	private setSelectionAnchor(offset: number | null): void {
+		setSelectionAnchorFromOffset(this.field, offset);
+	}
 	private cachedLines: string[] = [''];
 	private cachedLinesVersion = -1;
 	private promptPrefix = '> ';
@@ -141,7 +166,7 @@ export class ConsoleMode {
 			setCursorPosition: (row, column) => { this.setCursorFromPosition(row, column); },
 			setSelectionAnchor: (row, column) => { this.setSelectionAnchorFromPosition(row, column); },
 			replaceSelectionWith: (text) => { this.replaceSelectionWithText(text); },
-			updateDesiredColumn: () => { this.field.desiredColumn = this.field.cursor; },
+			updateDesiredColumn: () => { this.field.desiredColumn = this.field.cursorColumn; },
 			resetBlink: () => { this.resetBlink(); },
 			revealCursor: () => { },
 			measureText: (text) => this.measureRawText(text),
@@ -248,14 +273,14 @@ export class ConsoleMode {
 		if (historyHandled) {
 			this.resetBlink();
 		}
-		const previousText = this.field.text;
-		const previousCursor = this.field.cursor;
-		const previousAnchor = this.field.selectionAnchor;
+		const previousText = this.fieldText();
+		const previousCursor = this.cursorOffset();
+		const previousAnchor = this.anchorOffset();
 		const textChanged = applyInlineFieldEditing(this.field, options, handlers);
 		if (textChanged) {
-			const editContext = this.buildEditContext(previousText, this.field.text);
+			const editContext = this.buildEditContext(previousText, this.fieldText());
 			this.handleTextMutation(previousText, editContext);
-		} else if (previousCursor !== this.field.cursor || previousAnchor !== this.field.selectionAnchor) {
+		} else if (previousCursor !== this.cursorOffset() || previousAnchor !== this.anchorOffset()) {
 			this.completion.onCursorMoved();
 		}
 		const submit = this.trySubmitCommand();
@@ -273,7 +298,7 @@ export class ConsoleMode {
 		const promptWidth = this.measureDisplayText(this.promptPrefix);
 		const firstLineMax = Math.max(8, contentWidth - promptWidth);
 		const otherLineMax = Math.max(8, contentWidth);
-		const displayInput = this.toDisplayText(this.field.text);
+		const displayInput = this.toDisplayText(this.fieldText());
 		const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax);
 
 		// space available for output lines above the input area
@@ -371,7 +396,7 @@ export class ConsoleMode {
 		}
 		consumeIdeKey('Enter');
 		consumeIdeKey('NumpadEnter');
-		const command = this.field.text.trimEnd();
+		const command = this.fieldText().trimEnd();
 		if (command.length === 0) {
 			this.resetBlink();
 			return null;
@@ -382,7 +407,7 @@ export class ConsoleMode {
 	}
 
 	private resetInputField(value: string): void {
-		const previous = this.field.text;
+		const previous = this.fieldText();
 		setFieldText(this.field, value, true);
 		this.onExternalFieldMutation(previous, value);
 	}
@@ -447,7 +472,7 @@ export class ConsoleMode {
 
 	private getLinesSnapshot(): string[] {
 		if (this.cachedLinesVersion !== this.textVersion) {
-			this.cachedLines = this.field.text.split('\n');
+			this.cachedLines = this.field.lines.slice();
 			this.cachedLinesVersion = this.textVersion;
 		}
 		if (this.cachedLines.length === 0) {
@@ -457,17 +482,7 @@ export class ConsoleMode {
 	}
 
 	private getCursorPosition(): { row: number; column: number } {
-		const lines = this.getLinesSnapshot();
-		let remaining = this.field.cursor;
-		for (let row = 0; row < lines.length; row += 1) {
-			const line = lines[row];
-			if (remaining <= line.length) {
-				return { row, column: remaining };
-			}
-			remaining -= line.length + 1;
-		}
-		const lastRow = Math.max(0, lines.length - 1);
-		return { row: lastRow, column: lines[lastRow]?.length ?? 0 };
+		return { row: this.field.cursorRow, column: this.field.cursorColumn };
 	}
 
 	private positionToIndex(row: number, column: number): number {
@@ -484,24 +499,24 @@ export class ConsoleMode {
 
 	private setCursorFromPosition(row: number, column: number): void {
 		const index = this.positionToIndex(row, column);
-		this.field.cursor = index;
-		this.field.desiredColumn = index;
+		this.setCursorOffset(index);
 		this.field.selectionAnchor = null;
 		this.completion.onCursorMoved();
 	}
 
 	private setSelectionAnchorFromPosition(row: number, column: number): void {
-		this.field.selectionAnchor = this.positionToIndex(row, column);
+		const index = this.positionToIndex(row, column);
+		this.setSelectionAnchor(index);
 		this.completion.onCursorMoved();
 	}
 
 	private replaceSelectionWithText(text: string): void {
-		const previous = this.field.text;
+		const previous = this.fieldText();
 		deleteSelection(this.field);
 		if (text.length > 0) {
 			insertValue(this.field, text);
 		}
-		const context = text.length > 0 ? { kind: 'insert', text } as EditContext : this.buildEditContext(previous, this.field.text);
+		const context = text.length > 0 ? { kind: 'insert', text } as EditContext : this.buildEditContext(previous, this.fieldText());
 		this.handleTextMutation(previous, context);
 	}
 
@@ -529,12 +544,15 @@ export class ConsoleMode {
 
 	private handleTextMutation(previousText: string | null, editContext: EditContext | null): void {
 		if (this.caseInsensitive) {
-			const normalized = this.normalizeInputCase(this.field.text);
-			if (normalized !== this.field.text) {
-				this.field.text = normalized;
+			const before = this.fieldText();
+			const normalized = this.normalizeInputCase(before);
+			if (normalized !== before) {
+				const offset = this.cursorOffset();
+				setFieldText(this.field, normalized, false);
+				this.setCursorOffset(Math.min(offset, getFieldText(this.field).length));
 			}
 		}
-		const context = previousText !== null ? this.buildEditContext(previousText, this.field.text) : editContext;
+		const context = previousText !== null ? this.buildEditContext(previousText, this.fieldText()) : editContext;
 		this.textVersion += 1;
 		this.cachedLinesVersion = -1;
 		this.completion.updateAfterEdit(context);
@@ -656,10 +674,10 @@ export class ConsoleMode {
 	}
 
 	private buildConsoleModuleAliases(): Map<string, string> {
-		if (this.field.text.trim().length === 0) {
+		if (this.fieldText().trim().length === 0) {
 			return new Map();
 		}
-		return collectLuaModuleAliases({ source: this.field.text, chunkName: this.consoleChunkName });
+		return collectLuaModuleAliases({ source: this.fieldText(), chunkName: this.consoleChunkName });
 	}
 
 	private buildMemberCompletionItems(request: CompletionMemberRequest): LuaCompletionItem[] {
@@ -754,8 +772,8 @@ export class ConsoleMode {
 	private drawMultilineInput(renderer: ConsoleRenderFacade, baseX: number, baseY: number, promptWidth: number, wrap: { segments: string[]; starts: number[] }): void {
 		const inputColor = Msx1Colors[OUTPUT_COLORS.stdout];
 		const sel = selectionRange(this.field);
-		const cursorIndex = this.field.cursor;
-		const displayText = this.toDisplayText(this.field.text);
+		const cursorIndex = this.cursorOffset();
+		const displayText = this.toDisplayText(this.fieldText());
 		let nextCursorInfo: CursorScreenInfo | null = null;
 		const cursorPosition = this.getCursorPosition();
 

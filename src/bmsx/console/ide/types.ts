@@ -372,10 +372,11 @@ export type KeyPressRecord = {
 	downLatched?: boolean;
 };
 
-export type InlineTextField = {
-	text: string;
-	cursor?: number;
-	selectionAnchor?: number | null;
+export type TextField = {
+	lines: string[];
+	cursorRow: number;
+	cursorColumn: number;
+	selectionAnchor?: Position | null;
 	desiredColumn?: number;
 	pointerSelecting?: boolean;
 	lastPointerClickTimeMs?: number;

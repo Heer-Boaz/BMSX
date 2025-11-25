@@ -10,6 +10,7 @@ import { ensureCursorVisible } from './caret';
 import { resetBlink } from './render/render_caret';
 import { revealCursor } from './caret';
 import { activateCodeTab } from './editor_tabs';
+import { getFieldText } from './inline_text_field';
 
 // Types used by search pipelines
 export interface SearchMatch { row: number; start: number; end: number }
@@ -81,10 +82,10 @@ export function openSearch(useSelection: boolean, scope: 'local' | 'global' = 'l
 			appliedSelection = true;
 		}
 	}
-	if (!appliedSelection && ide_state.searchField.text.length === 0) {
+	if (!appliedSelection && getFieldText(ide_state.searchField).length === 0) {
 		ide_state.searchCurrentIndex = -1;
 	}
-	ide_state.searchQuery = ide_state.searchField.text;
+	ide_state.searchQuery = getFieldText(ide_state.searchField);
 	onSearchQueryChanged();
 	resetBlink();
 }
@@ -96,7 +97,7 @@ export function closeSearch(clearQuery: boolean, forceHide = false): void {
 	if (clearQuery) {
 		applySearchFieldText('', true);
 	}
-	ide_state.searchQuery = ide_state.searchField.text;
+	ide_state.searchQuery = getFieldText(ide_state.searchField);
 	const shouldHide = forceHide || clearQuery || ide_state.searchQuery.length === 0;
 	if (shouldHide) {
 		ide_state.searchVisible = false;
