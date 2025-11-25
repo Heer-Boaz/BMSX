@@ -23,7 +23,7 @@ export function renderStatusBar(): void {
 	}
 	const statusLeftInfo = buildStatusLeftInfo();
 	// When Problems panel owns the status (focused), show its info and stop
-	if (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused() && statusLeftInfo && statusLeftInfo.length > 0) {
+	if (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused && statusLeftInfo && statusLeftInfo.length > 0) {
 		drawEditorText(api, ide_state.font, statusLeftInfo, 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
 		return;
 	}
@@ -79,9 +79,9 @@ export function renderStatusBar(): void {
 }
 
 export function buildStatusLeftInfo(): string {
-	if (ide_state.problemsPanel.isVisible()) {
-		if (ide_state.problemsPanel.isFocused()) {
-			const sel = ide_state.problemsPanel.getSelectedDiagnostic();
+	if (ide_state.problemsPanel.isVisible) {
+		if (ide_state.problemsPanel.isFocused) {
+			const sel = ide_state.problemsPanel.selectedDiagnostic;
 			if (sel) {
 				const file = sel.sourceLabel ?? (sel.chunkName ?? '');
 				const parts: string[] = [];

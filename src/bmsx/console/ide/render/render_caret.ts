@@ -97,7 +97,7 @@ export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: n
 	const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + info.width));
 	const caretTop = Math.floor(cursorY);
 	const caretBottom = caretTop + info.height;
-	const problemsPanelHasFocus = ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused();
+	const problemsPanelHasFocus = ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused;
 	const active = !(ide_state.searchActive || ide_state.lineJumpActive || ide_state.resourcePanelFocused || ide_state.createResourceActive || problemsPanelHasFocus);
 	const glyphColor = Msx1Colors[1];
 	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);

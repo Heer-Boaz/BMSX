@@ -1,4 +1,3 @@
-import type { BmsxConsoleApi } from '../api';
 import type { EditorDiagnostic, PointerSnapshot } from './types';
 import type { RectBounds } from '../../rompack/rompack';
 import { measureText, truncateTextToWidth, wrapTextDynamic as wrapMessageLinesGeneric } from './text_utils';
@@ -27,22 +26,22 @@ export class ProblemsPanelController {
 	private fixedHeightPx: number | null = null;
 	private lastAvailableWidth = 0;
 
-	public isVisible(): boolean {
+	public get isVisible(): boolean {
 		return this.visible;
 	}
 
-	public isFocused(): boolean {
+	public get isFocused(): boolean {
 		return this.focused;
 	}
 
-    public getSelectedDiagnostic(): EditorDiagnostic | null {
+    public get selectedDiagnostic(): EditorDiagnostic | null {
         if (this.selectionIndex < 0 || this.selectionIndex >= this.diagnostics.length) return null;
         return this.diagnostics[this.selectionIndex];
     }
 
-    public getVisibleHeight(): number {
+    public get visibleHeight(): number {
         if (!this.visible) return 0;
-        const headerHeight = this.headerHeight();
+        const headerHeight = this.headerHeight;
         if (this.fixedHeightPx && this.fixedHeightPx > headerHeight + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2) {
             return this.fixedHeightPx;
         }
@@ -344,7 +343,7 @@ export class ProblemsPanelController {
 
     private computeLayout(bounds: RectBounds): PanelLayout {
         const headerTop = bounds.top;
-        const headerBottom = headerTop + this.headerHeight();
+        const headerBottom = headerTop + this.headerHeight;
         const contentTop = headerBottom;
         const contentBottom = bounds.bottom - constants.PROBLEMS_PANEL_CONTENT_PADDING_Y;
         const visibleHeight = Math.max(0, contentBottom - contentTop - constants.PROBLEMS_PANEL_CONTENT_PADDING_Y);
@@ -368,7 +367,7 @@ export class ProblemsPanelController {
 		);
 	}
 
-	private headerHeight(): number {
+	private get headerHeight(): number {
 		return ide_state.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
 	}
 

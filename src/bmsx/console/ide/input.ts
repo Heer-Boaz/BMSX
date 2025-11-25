@@ -459,7 +459,7 @@ export function handleEditorInput(deltaSeconds: number): void {
 	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyM')) {
 		consumeIdeKey('KeyM');
 		toggleProblemsPanel();
-		if (ide_state.problemsPanel.isVisible()) {
+		if (ide_state.problemsPanel.isVisible) {
 			markDiagnosticsDirty();
 		} else {
 			focusEditorFromProblemsPanel();
@@ -558,7 +558,7 @@ export function handleEditorInput(deltaSeconds: number): void {
 		handleSearchInput(deltaSeconds);
 		return;
 	}
-	if (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()) {
+	if (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused) {
 		let handled = false;
 		if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
 			consumeIdeKey('ArrowUp');
@@ -1051,17 +1051,17 @@ export function handlePointerWheel(): void {
 		playerInput.consumeAction('pointer_wheel');
 		return;
 	}
-	if (ide_state.problemsPanel.isVisible()) {
+	if (ide_state.problemsPanel.isVisible) {
 		const bounds = getProblemsPanelBounds();
 		if (bounds) {
 			let allowScroll = false;
 			if (!pointer) {
-				allowScroll = ide_state.problemsPanel.isFocused();
+				allowScroll = ide_state.problemsPanel.isFocused;
 			} else if (pointer.valid && pointer.insideViewport && pointInRect(pointer.viewportX, pointer.viewportY, bounds)) {
 				allowScroll = true;
 			}
 			const stepsAbs = Math.max(1, Math.round(Math.abs(steps)));
-			if (ide_state.problemsPanel.isFocused()) {
+			if (ide_state.problemsPanel.isFocused) {
 				// Match quick-open/symbol behavior: focused wheel moves selection
 				for (let i = 0; i < stepsAbs; i += 1) {
 					void ide_state.problemsPanel.handleKeyboardCommand(direction > 0 ? 'down' : 'up');
@@ -1246,7 +1246,7 @@ export function handleTextEditorPointerInput(): void {
 		clearGotoHoverHighlight();
 		return;
 	}
-	if (justPressed && ide_state.problemsPanel.isVisible() && isPointerOverProblemsPanelDivider(snapshot.viewportX, snapshot.viewportY)) {
+	if (justPressed && ide_state.problemsPanel.isVisible && isPointerOverProblemsPanelDivider(snapshot.viewportX, snapshot.viewportY)) {
 		ide_state.problemsPanelResizing = true;
 		ide_state.pointerSelecting = false;
 		resetPointerClickTracking();
@@ -1318,7 +1318,7 @@ export function handleTextEditorPointerInput(): void {
 		ide_state.resourcePanel.setHoverIndex(-1);
 	}
 	const problemsBounds = getProblemsPanelBounds();
-	if (ide_state.problemsPanel.isVisible() && problemsBounds) {
+	if (ide_state.problemsPanel.isVisible && problemsBounds) {
 		const insideProblems = pointInRect(snapshot.viewportX, snapshot.viewportY, problemsBounds);
 		if (insideProblems) {
 			if (ide_state.problemsPanel.handlePointer(snapshot, justPressed, justReleased, problemsBounds)) {

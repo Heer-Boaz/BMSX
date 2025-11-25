@@ -50,7 +50,7 @@ export function drawSearchBar(): void {
 		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
+		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
 		searchActive: ide_state.searchActive,
 		searchField: ide_state.searchField,
 		searchQuery: ide_state.searchQuery,
@@ -107,7 +107,7 @@ export function drawSymbolSearchBar(): void {
 		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
+		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
 		symbolSearchGlobal: ide_state.symbolSearchGlobal,
 		symbolSearchActive: ide_state.symbolSearchActive,
 		symbolSearchMode: ide_state.symbolSearchMode,
@@ -159,7 +159,7 @@ export function drawSymbolSearchBar(): void {
 		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
+		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
 		lineJumpActive: ide_state.lineJumpActive,
 		lineJumpField: ide_state.lineJumpField,
 	};
@@ -203,7 +203,7 @@ export function drawRenameBar(): void {
 		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
+		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
 		renameActive: ide_state.renameController.isActive(),
 		renameField: ide_state.renameController.getField(),
 		renameMatchCount: ide_state.renameController.getMatchCount(),
@@ -250,7 +250,7 @@ export function drawResourceSearchBar(): void {
 		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
+		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
 		resourceSearchActive: ide_state.resourceSearchActive,
 		resourceSearchField: ide_state.resourceSearchField,
 		resourceSearchVisibleResultCount: () => resourceSearchVisibleResultCount(),
@@ -301,7 +301,7 @@ export function drawCreateResourceBar(): void {
 		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
+		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
 	};
 	renderCreateResourceBar(api, host);
 }

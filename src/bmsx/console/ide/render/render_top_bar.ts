@@ -180,7 +180,7 @@ function buildMenuEntries(): MenuEntry[] {
 	const filterMode = ide_state.resourcePanel.getFilterMode();
 	const debuggerPaused = ide_state.debuggerControls.executionState === 'paused';
 	const resolutionActive = getConsoleRuntime()!.overlayResolutionMode === 'viewport';
-	const problemsActive = ide_state.problemsPanel.isVisible();
+	const problemsActive = ide_state.problemsPanel.isVisible;
 	const debugObjectsActive = isDebugPanelActive('objects');
 	const debugEventsActive = isDebugPanelActive('events');
 	const debugRegistryActive = isDebugPanelActive('registry');

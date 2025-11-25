@@ -1040,10 +1040,10 @@ export function bottomMargin(): number {
 }
 
 export function getVisibleProblemsPanelHeight(): number {
-	if (!ide_state.problemsPanel.isVisible()) {
+	if (!ide_state.problemsPanel.isVisible) {
 		return 0;
 	}
-	const planned = ide_state.problemsPanel.getVisibleHeight();
+	const planned = ide_state.problemsPanel.visibleHeight;
 	if (planned <= 0) {
 		return 0;
 	}
@@ -4727,7 +4727,7 @@ export function toggleResourcePanel(): void {
 }
 
 export function toggleProblemsPanel(): void {
-	if (ide_state.problemsPanel.isVisible()) {
+	if (ide_state.problemsPanel.isVisible) {
 		hideProblemsPanel();
 		return;
 	}
