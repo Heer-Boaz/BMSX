@@ -37,22 +37,6 @@ let localBackend: LocalWorkspaceBackend | null = null;
 let serverRetryScheduled = false;
 let serverRetryHandle: TimerHandle | NodeJS.Timeout | null = null;
 
-class MemoryWorkspaceStorage implements StorageService {
-	private readonly store = new Map<string, string>();
-
-	getItem(key: string): string | null {
-		return this.store.get(key) ?? null;
-	}
-
-	setItem(key: string, value: string): void {
-		this.store.set(key, value);
-	}
-
-	removeItem(key: string): void {
-		this.store.delete(key);
-	}
-}
-
 function resetWorkspaceBackends(): void {
 	serverBackend = null;
 	localBackend = null;
@@ -88,9 +72,18 @@ export async function configureWorkspaceStorage(projectRootPath: string | null):
 		dirtyDir,
 		stateFile,
 	};
-	const storage = $.platform.storage ?? new MemoryWorkspaceStorage();
-	localBackend = new LocalWorkspaceBackend(normalizedRoot, storage);
-	await localBackend.ensureReady();
+	localBackend = null;
+	const storage = $.platform.storage ?? null;
+	if (storage) {
+		try {
+			const backend = new LocalWorkspaceBackend(normalizedRoot, storage);
+			await backend.ensureReady();
+			localBackend = backend;
+		} catch {
+			// Ignore storage failures; rely on server backend if available.
+			localBackend = null;
+		}
+	}
 	serverBackendFailureNotified = false;
 	serverBackendAvailable = false;
 	try {
