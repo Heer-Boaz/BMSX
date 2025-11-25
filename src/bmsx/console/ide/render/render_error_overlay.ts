@@ -80,7 +80,7 @@ export function renderErrorOverlay(
 	config: ErrorOverlayRenderConfig
 ): void {
 	const { bounds, background, textColor, paddingX, paddingY, connector, highlightLines, highlightColor } = config;
-	api.rectfill_color(bounds.left, bounds.top, bounds.right, bounds.bottom, background);
+	api.rectfill_color(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, background);
 	const startX = bounds.left + paddingX;
 	const contentRightInset = config.contentRightInset ?? 0;
 	const lineRightLimit = Math.max(startX, bounds.right - paddingX - contentRightInset);
@@ -98,10 +98,10 @@ export function renderErrorOverlay(
 			const lineRight = lineRightLimit;
 			if (lineRight > lineLeft) {
 				const color = highlightColor ?? background;
-				api.rectfill_color(lineLeft, currentY, lineRight, currentY + lineHeight, color);
+				api.rectfill_color(lineLeft, currentY, lineRight, currentY + lineHeight, undefined, color);
 			}
 		}
-		drawEditorText(api, font, lines[i], startX, currentY, textColor);
+		drawEditorText(api, font, lines[i], startX, currentY, undefined, textColor);
 		currentY += lineHeight;
 	}
 
@@ -116,7 +116,7 @@ export function renderErrorOverlay(
 
 	const connectorTop = Math.min(startY, endY);
 	const connectorBottom = Math.max(startY, endY);
-	api.rectfill_color(left, connectorTop, right, connectorBottom, background);
+	api.rectfill_color(left, connectorTop, right, connectorBottom, undefined, background);
 }
 
 export function renderErrorOverlayText(
@@ -130,7 +130,7 @@ export function renderErrorOverlayText(
 ): void {
 	let currentY = originY;
 	for (let i = 0; i < lines.length; i += 1) {
-		drawEditorText(api, font, lines[i], originX, currentY, color);
+		drawEditorText(api, font, lines[i], originX, currentY, undefined, color);
 		currentY += lineHeight;
 	}
 }

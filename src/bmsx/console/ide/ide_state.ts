@@ -35,6 +35,7 @@ import type {
 	DiagnosticsCacheEntry,
 	CodeTabContext,
 	TopBarButtonId,
+	MenuId,
 	PendingActionPrompt,
 	TabDragState,
 	CrtOptionsSnapshot,
@@ -180,6 +181,9 @@ export interface IdeState {
 	activeCodeTabContextId: string | null;
 	entryTabId: string | null;
 	topBarButtonBounds: Record<TopBarButtonId, RectBounds>;
+	menuEntryBounds: Record<MenuId, RectBounds>;
+	menuDropdownBounds: RectBounds | null;
+	openMenuId: MenuId | null;
 	debuggerControls: DebuggerControlsState;
 	breakpoints: Map<string, Set<number>>;
 	tabButtonBounds: Map<string, RectBounds>;
@@ -395,6 +399,14 @@ export const ide_state: IdeState = {
 		debugEvents: { left: 0, top: 0, right: 0, bottom: 0 },
 		debugRegistry: { left: 0, top: 0, right: 0, bottom: 0 },
 	},
+	menuEntryBounds: {
+		file: { left: 0, top: 0, right: 0, bottom: 0 },
+		run: { left: 0, top: 0, right: 0, bottom: 0 },
+		view: { left: 0, top: 0, right: 0, bottom: 0 },
+		debug: { left: 0, top: 0, right: 0, bottom: 0 },
+	},
+	menuDropdownBounds: null,
+	openMenuId: null,
 	debuggerControls: {
 		executionState: 'inactive',
 		sessionMetrics: null,

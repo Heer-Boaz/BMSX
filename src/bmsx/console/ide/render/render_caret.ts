@@ -74,9 +74,9 @@ export function drawInlineCaret(
 	const caretValue = Msx1Colors[caretColorIndex];
 	const inverseColor = Msx1Colors[inverseColorIndex];
 	renderInlineCaret({
-		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, col),
-		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, col),
-		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
+		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, undefined, col),
+		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, undefined, col),
+		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, undefined, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
 	}, left, top, right, bottom, cursorX, active, caretValue, caretGlyph, inverseColor);
 }
 
@@ -102,22 +102,24 @@ export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: n
 	const glyphColor = Msx1Colors[1];
 	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);
 	renderInlineCaret({
-		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, col),
-		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, col),
-		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
+		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, undefined,col),
+		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, undefined, col),
+		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, undefined, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
 	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, Msx1Colors[constants.CARET_COLOR], caretGlyph, glyphColor);
 }
+
 export function resetBlink(): void {
 	ide_state.blinkTimer = 0;
 	ide_state.cursorVisible = true;
 }
-export function drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number; } | number): void {
+
+export function drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, z: number, color: { r: number; g: number; b: number; a: number; } | number): void {
 	if (right <= left || bottom <= top) {
 		return;
 	}
 	const resolved = typeof color === 'number' ? Msx1Colors[color] : color;
-	api.rectfill_color(left, top, right, top + 1, resolved);
-	api.rectfill_color(left, bottom - 1, right, bottom, resolved);
-	api.rectfill_color(left, top, left + 1, bottom, resolved);
-	api.rectfill_color(right - 1, top, right, bottom, resolved);
+	api.rectfill_color(left, top, right, top + 1, z, resolved);
+	api.rectfill_color(left, bottom - 1, right, bottom, z, resolved);
+	api.rectfill_color(left, top, left + 1, bottom, z, resolved);
+	api.rectfill_color(right - 1, top, right, bottom, z, resolved);
 }

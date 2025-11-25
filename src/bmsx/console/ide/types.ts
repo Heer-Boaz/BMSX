@@ -253,6 +253,8 @@ export type TopBarButtonId =
 	| 'debugEvents'
 	| 'debugRegistry';
 
+export type MenuId = 'file' | 'run' | 'view' | 'debug';
+
 export type DebugPanelKind = 'objects' | 'events' | 'registry';
 
 export type EditorTabId = `resource:${string}` | `lua:${string}` | `debug:${string}`;

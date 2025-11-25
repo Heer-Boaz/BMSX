@@ -121,9 +121,9 @@ export function renderCodeArea(): void {
     const contentBottom = bounds.codeBottom - (ide_state.codeHorizontalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
     const trackRight = bounds.codeRight - (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
 
-    api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, constants.COLOR_CODE_BACKGROUND);
+    api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, undefined, constants.COLOR_CODE_BACKGROUND);
     if (bounds.gutterRight > bounds.gutterLeft) {
-        api.rectfill(bounds.gutterLeft, bounds.codeTop, bounds.gutterRight, contentBottom, constants.COLOR_GUTTER_BACKGROUND);
+        api.rectfill(bounds.gutterLeft, bounds.codeTop, bounds.gutterRight, contentBottom, undefined, constants.COLOR_GUTTER_BACKGROUND);
     }
 
     const activeGotoHighlight = ide_state.gotoHoverHighlight;
@@ -142,12 +142,12 @@ export function renderCodeArea(): void {
 			break;
 		}
 		if (visualIndex >= visualCount) {
-			drawEditorColoredText(ide_state.font,'~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
+			drawEditorColoredText(ide_state.font,'~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY, undefined,constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
 			continue;
 		}
 		const segment = visualIndexToSegment(visualIndex);
 		if (!segment) {
-			drawEditorColoredText(ide_state.font,'~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
+			drawEditorColoredText(ide_state.font,'~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY, undefined,constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
 			continue;
 		}
 		const lineIndex = segment.row;
@@ -160,14 +160,14 @@ export function renderCodeArea(): void {
 			const markerHeight = Math.max(2, ide_state.lineHeight - 2);
 			const markerTop = rowY + Math.max(1, Math.floor((ide_state.lineHeight - markerHeight) / 2));
 			const markerBottom = Math.min(rowY + ide_state.lineHeight - 1, markerTop + markerHeight);
-			api.rectfill_color(markerLeft, markerTop, markerRight, markerBottom, constants.COLOR_BREAKPOINT_BORDER);
+			api.rectfill_color(markerLeft, markerTop, markerRight, markerBottom, undefined,constants.COLOR_BREAKPOINT_BORDER);
 		}
 		const isExecutionStopRow = ide_state.executionStopRow !== null && lineIndex === ide_state.executionStopRow;
 		const isCursorLine = lineIndex === ide_state.cursorRow;
 		if (isExecutionStopRow) {
-			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, constants.EXECUTION_STOP_OVERLAY);
+			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined,constants.EXECUTION_STOP_OVERLAY);
 		} else if (isCursorLine) {
-			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, constants.HIGHLIGHT_OVERLAY);
+			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined,constants.HIGHLIGHT_OVERLAY);
 		}
 		const highlight = entry.hi;
 		let columnStart = wrapEnabled ? segment.startColumn : ide_state.scrollColumn;
@@ -191,10 +191,10 @@ export function renderCodeArea(): void {
 			const clampedLeft = clamp(selectionStartX, bounds.textLeft, contentRight);
 			const clampedRight = clamp(selectionEndX, clampedLeft, contentRight);
 			if (clampedRight > clampedLeft) {
-				api.rectfill_color(clampedLeft, rowY, clampedRight, rowY + ide_state.lineHeight, constants.SELECTION_OVERLAY);
+				api.rectfill_color(clampedLeft, rowY, clampedRight, rowY + ide_state.lineHeight, undefined,constants.SELECTION_OVERLAY);
 			}
 		}
-		drawEditorColoredText(ide_state.font, slice.text, slice.colors, bounds.textLeft, rowY, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT, { forceUppercase: true });
+		drawEditorColoredText(ide_state.font, slice.text, slice.colors, bounds.textLeft, rowY, undefined,constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT, { forceUppercase: true });
 		const rowDiagnostics = getDiagnosticsForRow(lineIndex);
 		for (let i = 0; i < rowDiagnostics.length; i += 1) {
 			const diagnostic = rowDiagnostics[i];
@@ -242,7 +242,7 @@ export function renderCodeArea(): void {
 			const underlineColor = diagnostic.severity === 'warning'
 				? constants.COLOR_DIAGNOSTIC_WARNING
 				: constants.COLOR_DIAGNOSTIC_ERROR;
-			api.rectfill(drawLeft, underlineY, drawRight, underlineY + 1, underlineColor);
+			api.rectfill(drawLeft, underlineY, drawRight, underlineY + 1, undefined, underlineColor);
 		}
 		if (activeGotoHighlight && gotoVisualIndex !== null && visualIndex === gotoVisualIndex && activeGotoHighlight.row === lineIndex) {
 			const startDisplayFull = columnToDisplay(highlight, activeGotoHighlight.startColumn);
@@ -260,7 +260,7 @@ export function renderCodeArea(): void {
 				if (drawRight > drawLeft) {
 					const underlineY = Math.min(contentBottom - 1, rowY + ide_state.lineHeight - 1);
 					if (underlineY >= rowY && underlineY < contentBottom) {
-						api.rectfill(drawLeft, underlineY, drawRight, underlineY + 1, constants.COLOR_GOTO_UNDERLINE);
+						api.rectfill(drawLeft, underlineY, drawRight, underlineY + 1, undefined, constants.COLOR_GOTO_UNDERLINE);
 					}
 				}
 			}
@@ -380,7 +380,7 @@ export function drawReferenceHighlightsForRow(api: BmsxConsoleApi, rowIndex: num
 		const startX = originX + measureRangeFast(entry, sliceStartDisplay, visibleStart);
 		const endX = originX + measureRangeFast(entry, sliceStartDisplay, visibleEnd);
 		const overlay = i === activeIndex ? constants.REFERENCES_MATCH_ACTIVE_OVERLAY : constants.REFERENCES_MATCH_OVERLAY;
-		api.rectfill_color(startX, originY, endX, originY + ide_state.lineHeight, overlay);
+		api.rectfill_color(startX, originY, endX, originY + ide_state.lineHeight, undefined, overlay);
 	}
 }
 
@@ -404,6 +404,6 @@ export function drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number
 		const startX = originX + measureRangeFast(entry, sliceStartDisplay, visibleStart);
 		const endX = originX + measureRangeFast(entry, sliceStartDisplay, visibleEnd);
 		const overlay = i === ide_state.searchCurrentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
-		api.rectfill_color(startX, originY, endX, originY + ide_state.lineHeight, overlay);
+		api.rectfill_color(startX, originY, endX, originY + ide_state.lineHeight, undefined, overlay);
 	}
 }

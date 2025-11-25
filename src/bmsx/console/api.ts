@@ -209,41 +209,37 @@ export class BmsxConsoleApi {
 
 	public cls(colorindex: number = 0): void {
 		const color = this.palette_color(colorindex);
-		this.renderBackend.drawRect({
+		this.renderBackend.rect({
 			kind: 'fill',
 			x0: 0,
 			y0: 0,
 			x1: this.display_width,
 			y1: this.display_height,
+			z: 0,
 			color,
 		});
 		this.reset_print_cursor();
 	}
 
-	public rect(x0: number, y0: number, x1: number, y1: number, colorindex: number): void {
-		this.renderBackend.drawRect({ kind: 'rect', x0, y0, x1, y1, color: this.palette_color(colorindex) });
+	public rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
+		this.renderBackend.rect({ kind: 'rect', x0, y0, x1, y1, z, color: this.palette_color(colorindex) });
 	}
 
-	public rectfill(x0: number, y0: number, x1: number, y1: number, colorindex: number): void {
-		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: this.palette_color(colorindex) });
+	public rectfill(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
+		this.renderBackend.rect({ kind: 'fill', x0, y0, x1, y1, z, color: this.palette_color(colorindex) });
 	}
 
-	public rectfill_color(x0: number, y0: number, x1: number, y1: number, colorvalue: number | color): void {
+	public rectfill_color(x0: number, y0: number, x1: number, y1: number, z: number, colorvalue: number | color): void {
 		const resolved = typeof colorvalue === 'number' ? this.palette_color(colorvalue) : colorvalue;
-		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: resolved });
+		this.renderBackend.rect({ kind: 'fill', x0, y0, x1, y1, z, color: resolved });
 	}
 
-	public sprite(
-		img_id: string,
-		x: number,
-		y: number,
-		options?: { scale?: number; flip_h?: boolean; flip_v?: boolean; colorize?: color }
-	): void {
+	public sprite(img_id: string, x: number, y: number, z: number, options?: { scale?: number; flip_h?: boolean; flip_v?: boolean; colorize?: color, }): void {
 		const entry = this.rompack.img[img_id];
 		const width = entry.imgmeta.width;
 		const height = entry.imgmeta.height;
 		const scale = options?.scale ?? 1;
-		this.renderBackend.drawSprite({
+		this.renderBackend.sprite({
 			kind: 'sprite',
 			imgId: img_id,
 			spriteIndex: null,
@@ -253,6 +249,7 @@ export class BmsxConsoleApi {
 			baseY: y,
 			drawX: x,
 			drawY: y,
+			z,
 			scale,
 			flipH: options?.flip_h === true,
 			flipV: options?.flip_v === true,
@@ -265,18 +262,18 @@ export class BmsxConsoleApi {
 		});
 	}
 
-	public write(text: string, x?: number, y?: number, colorindex?: number): void {
-		const { baseX, baseY, color, font, autoAdvance } = this.resolve_write_context(this.font, x, y, colorindex);
-		this.draw_multiline_text(text, baseX, baseY, color, font);
+	public write(text: string, x?: number, y?: number, z?: number, colorindex?: number): void {
+		const { baseX, baseY, color, font, autoAdvance } = this.resolve_write_context(this.font, x, y, z, colorindex);
+		this.draw_multiline_text(text, baseX, baseY, z, color, font);
 		if (autoAdvance) {
 			this.advance_print_cursor(font.lineHeight());
 		}
 	}
 
-	public write_with_font(text: string, x?: number, y?: number, colorindex?: number, font?: ConsoleFont): void {
+	public write_with_font(text: string, x?: number, y?: number, z?: number, colorindex?: number, font?: ConsoleFont): void {
 		const renderFont = font ?? this.font;
-		const { baseX, baseY, color, autoAdvance } = this.resolve_write_context(renderFont, x, y, colorindex);
-		this.draw_multiline_text(text, baseX, baseY, color, renderFont);
+		const { baseX, baseY, color, autoAdvance } = this.resolve_write_context(renderFont, x, y, z, colorindex);
+		this.draw_multiline_text(text, baseX, baseY, z, color, renderFont);
 		if (autoAdvance) {
 			this.advance_print_cursor(renderFont.lineHeight());
 		}
@@ -1096,13 +1093,7 @@ export class BmsxConsoleApi {
 		return Msx1Colors[index];
 	}
 
-	private resolve_write_context(font: ConsoleFont, x: number, y: number, colorindex: number | undefined): {
-		baseX: number;
-		baseY: number;
-		color: color;
-		autoAdvance: boolean;
-		font: ConsoleFont;
-	} {
+	private resolve_write_context(font: ConsoleFont, x: number, y: number, z: number, colorindex: number | undefined) {
 		const hasExplicitPosition = x !== undefined && y !== undefined;
 		if (hasExplicitPosition) {
 			this.textCursorHomeX = x;
@@ -1115,16 +1106,16 @@ export class BmsxConsoleApi {
 		const baseX = this.textCursorX;
 		const baseY = this.textCursorY;
 		const color = this.palette_color(this.textCursorColorIndex);
-		return { baseX, baseY, color, autoAdvance: true, font };
+		return { baseX, baseY, color, autoAdvance: true, font, z };
 	}
 
-	private draw_multiline_text(text: string, x: number, y: number, color: color, font: ConsoleFont): number {
+	private draw_multiline_text(text: string, x: number, y: number, z: number, color: color, font: ConsoleFont): number {
 		const lines = text.split('\n');
 		let cursorY = y;
 		for (let i = 0; i < lines.length; i += 1) {
 			const expanded = this.expand_tabs(lines[i]);
 			if (expanded.length > 0) {
-				this.renderBackend.drawText({ kind: 'print', text: expanded, x, y: cursorY, color }, font);
+				this.renderBackend.glyphs({ kind: 'print', text: expanded, x, y: cursorY, z, color, font });
 			}
 			if (i < lines.length - 1) {
 				cursorY += font.lineHeight();

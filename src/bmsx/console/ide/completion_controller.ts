@@ -357,8 +357,8 @@ export class CompletionController {
 		}
 		const popupRight = popupLeft + popupWidth;
 		const popupBottom = popupTop + popupHeight;
-		api.rectfill(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_COMPLETION_BACKGROUND);
-		api.rect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_COMPLETION_BORDER);
+		api.rectfill(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_COMPLETION_BACKGROUND);
+		api.rect(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_COMPLETION_BORDER);
 		this.completionPopupBounds = { left: popupLeft, top: popupTop, right: popupRight, bottom: popupBottom };
 		for (let drawIndex = 0; drawIndex < visibleCount; drawIndex += 1) {
 			const itemIndex = startIndex + drawIndex;
@@ -370,7 +370,7 @@ export class CompletionController {
 			if (isSelected) {
 				const highlightTop = lineTop - 1;
 				const highlightBottom = highlightTop + this.host.getLineHeight() + 2;
-				api.rectfill(popupLeft + 1, highlightTop, popupRight - 1, highlightBottom, constants.COLOR_COMPLETION_HIGHLIGHT);
+				api.rectfill(popupLeft + 1, highlightTop, popupRight - 1, highlightBottom, undefined, constants.COLOR_COMPLETION_HIGHLIGHT);
 			}
 			let textX = popupLeft + constants.COMPLETION_POPUP_PADDING_X;
 			const labelWidth = this.host.measureText(item.label);
@@ -436,8 +436,8 @@ export class CompletionController {
 		}
 		const popupRight = popupLeft + popupWidth;
 		const popupBottom = popupTop + popupHeight;
-		api.rect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BORDER);
-		api.rectfill(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BACKGROUND);
+		api.rect(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_PARAMETER_HINT_BORDER);
+		api.rectfill(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_PARAMETER_HINT_BACKGROUND);
 		let textX = popupLeft + constants.PARAMETER_HINT_PADDING_X;
 		let currentY = popupTop + constants.PARAMETER_HINT_PADDING_Y;
 		for (let i = 0; i < segments.length; i += 1) {

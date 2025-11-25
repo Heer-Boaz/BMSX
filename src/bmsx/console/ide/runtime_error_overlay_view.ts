@@ -235,11 +235,11 @@ function drawCopyButton(
 	options: RuntimeErrorOverlayDrawOptions
 ): void {
 	const background = hovered ? options.highlightColor : options.backgroundColor;
-	api.rectfill_color(rect.left, rect.top, rect.right, rect.bottom, background);
-	api.rect(rect.left, rect.top, rect.right, rect.bottom, constants.ERROR_OVERLAY_TEXT_COLOR);
+	api.rectfill_color(rect.left, rect.top, rect.right, rect.bottom, undefined, background);
+	api.rect(rect.left, rect.top, rect.right, rect.bottom, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
 	const iconX = rect.left + Math.floor((rect.right - rect.left - COPY_ICON_WIDTH) / 2);
 	const iconY = rect.top + Math.floor((rect.bottom - rect.top - COPY_ICON_HEIGHT) / 2);
-	api.sprite(COPY_ICON_ID, iconX, iconY, { colorize: Msx1Colors[constants.ERROR_OVERLAY_TEXT_COLOR] });
+	api.sprite(COPY_ICON_ID, iconX, iconY, undefined, { colorize: Msx1Colors[constants.ERROR_OVERLAY_TEXT_COLOR] });
 }
 
 export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverlay, x: number, y: number): number {

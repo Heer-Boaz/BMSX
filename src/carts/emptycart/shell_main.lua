@@ -1,16 +1,16 @@
-local y = 0 
--- new lua resource
-function draw()
-	cls(4)
-	write('bla',0,200,1)
-	bla(y)
-	-- asdfsdfsdsdff
-end
+LOCAL Y = 0 
+-- NEW LUA RESOURCE
+FUNCTION DRAW()
+	CLS(4)
+	WRITE('bla',0,200,1)
+	BLA(Y)
+	-- ASDFSDFSDSDFF
+END
 
-function update()
-	y = y + 1
-end
+FUNCTION UPDATE()
+	Y = Y + 1
+END
 
-function test(b)
-	y = b
-end
+FUNCTION TEST(B)
+	Y = B
+END

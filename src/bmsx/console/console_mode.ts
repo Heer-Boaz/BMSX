@@ -38,7 +38,6 @@ import type {
 } from './types';
 import { consumeIdeKey, getIdeKeyState } from './ide/input';
 import type { asset_id, Viewport } from '../rompack/rompack';
-import { drawEditorText } from './ide/text_renderer';
 import type { BmsxConsoleApi } from './api';
 
 type ConsoleOutputKind =
@@ -170,7 +169,7 @@ export class ConsoleMode {
 			resetBlink: () => { this.resetBlink(); },
 			revealCursor: () => { },
 			measureText: (text) => this.measureRawText(text),
-			drawText: (api, text, x, y, color) => { this.drawCompletionText(api as BmsxConsoleApi, text, x, y, color); },
+			drawText: (api, text, x, y, color) => { api.write(text, x, y, undefined, color); },
 			getCursorScreenInfo: () => this.cursorScreenInfo,
 			getLineHeight: () => this.font.lineHeight(),
 			getSpaceAdvance: () => this.font.advance(' '),
@@ -647,10 +646,6 @@ export class ConsoleMode {
 		return result;
 	}
 
-	private drawCompletionText(api: BmsxConsoleApi, text: string, x: number, y: number, colorIndex: number): void {
-		drawEditorText(api, this.font, text, x, y, colorIndex);
-	}
-
 	private drawCompletionOverlays(api: BmsxConsoleApi, _renderer: ConsoleRenderFacade, surface: Viewport, promptWidth: number): void {
 		const bounds = {
 			codeTop: PADDING_Y,
@@ -791,12 +786,13 @@ export class ConsoleMode {
 					const selected = displayText.slice(selStart, selEnd);
 					const startWidth = this.measureDisplayText(before, uppercaseDisplay);
 					const selWidth = this.measureDisplayText(selected, uppercaseDisplay);
-					renderer.drawRect({
+					renderer.rect({
 						kind: 'fill',
 						x0: x + startWidth,
 						y0: y,
 						x1: x + startWidth + selWidth,
 						y1: y + this.font.lineHeight(),
+						z: undefined,
 						color: this.selectionColor,
 					});
 				}
@@ -831,9 +827,9 @@ export class ConsoleMode {
 				if (this.caretVisible) {
 					const renderFont = this.font.getRenderFont();
 					const ops: CaretDrawOps = {
-						fillRect: (x0, y0, x1, y1, color) => renderer.drawRect({ kind: 'fill', x0, y0, x1, y1, color }),
-						strokeRect: (x0, y0, x1, y1, color) => renderer.drawRect({ kind: 'rect', x0, y0, x1, y1, color }),
-						drawGlyph: (text, gx, gy, color) => renderer.drawText({ kind: 'print', text, x: gx, y: gy, color }, renderFont),
+						fillRect: (x0, y0, x1, y1, color) => renderer.rect({ kind: 'fill', x0, y0, x1, y1, z: undefined, color }),
+						strokeRect: (x0, y0, x1, y1, color) => renderer.rect({ kind: 'rect', x0, y0, x1, y1, z: undefined, color }),
+						drawGlyph: (text, gx, gy, color) => renderer.glyphs({ kind: 'print', text, x: gx, y: gy, z: undefined, color, font: renderFont }),
 					};
 					renderInlineCaret(ops, left, topY, right, bottom, left, true, this.caretColor, nextChar, this.characterBackgroundColor);
 				}
@@ -858,12 +854,13 @@ export class ConsoleMode {
 				continue;
 			}
 			const advance = this.font.advance(ch);
-			renderer.drawRect({
+			renderer.rect({
 				kind: 'fill',
 				x0: cursorX,
 				y0: originY,
 				x1: cursorX + advance,
 				y1: originY + this.font.lineHeight(),
+				z: undefined,
 				color: this.characterBackgroundColor,
 			});
 			cursorX += advance;
@@ -885,7 +882,7 @@ export class ConsoleMode {
 			}
 			const advance = this.font.advance(ch);
 			if (ch !== ' ') {
-				renderer.drawText({ kind: 'print', text: ch, x: cursorX, y: originY, color: tint }, renderFont);
+				renderer.glyphs({ kind: 'print', text: ch, x: cursorX, y: originY, z: undefined, color: tint, font: renderFont });
 			}
 			cursorX += advance;
 		}

@@ -86,7 +86,7 @@ export function renderResourcePanel(host: ResourcePanelHost): void {
 
 	host.resourceBrowserHorizontalScroll = horizontalScrollbar.getScroll();
 
-	api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_RESOURCE_PANEL_BACKGROUND);
+	api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_RESOURCE_PANEL_BACKGROUND);
 
 	const contentTop = bounds.top + 2;
 	const scrollStart = Math.floor(host.resourceBrowserScroll);
@@ -121,7 +121,7 @@ export function renderResourcePanel(host: ResourcePanelHost): void {
 			const caretBottom = caretTop + host.lineHeight;
 			if (panelActive) {
 				if (visibleRight > visibleLeft) {
-					api.rectfill_color(visibleLeft, caretTop, visibleRight, caretBottom, highlightColor);
+					api.rectfill_color(visibleLeft, caretTop, visibleRight, caretBottom, undefined, highlightColor);
 				}
 				const colors = new Array<number>(contentText.length).fill(constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
 				if (contentText.length > 0) {
@@ -143,7 +143,7 @@ export function renderResourcePanel(host: ResourcePanelHost): void {
 		horizontalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
 	if (dividerLeft >= bounds.left && dividerLeft < bounds.right) {
-		api.rectfill(dividerLeft, bounds.top, bounds.right, bounds.bottom, constants.RESOURCE_PANEL_DIVIDER_COLOR);
+		api.rectfill(dividerLeft, bounds.top, bounds.right, bounds.bottom, undefined, constants.RESOURCE_PANEL_DIVIDER_COLOR);
 	}
 }
 
@@ -184,7 +184,7 @@ function resourcePanelLineCapacity(host: ResourcePanelHost, bounds: RectBounds):
 	const verticalVisible = verticalScrollbar.isVisible();
 	viewer.scroll = clamp(verticalScrollbar.getScroll(), 0, Math.max(0, totalLines - capacity));
 
-	api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
+	api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, undefined, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
 
 	const contentTop = bounds.codeTop + 2;
 	const layout = resourceViewerImageLayout(viewer);
@@ -199,9 +199,9 @@ function resourcePanelLineCapacity(host: ResourcePanelHost, bounds: RectBounds):
 		if (viewer.lines.length > 0) {
 			const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.floor(viewer.scroll)))] ?? '';
 			const fallbackY = Math.min(textTop, bounds.codeBottom - ide_state.lineHeight);
-			drawEditorText(api, ide_state.font, line, contentLeft, fallbackY, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			drawEditorText(api, ide_state.font, line, contentLeft, fallbackY, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		} else {
-			drawEditorText(api, ide_state.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			drawEditorText(api, ide_state.font, '<empty>', contentLeft, textTop, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		}
 		if (verticalVisible) {
 			verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
@@ -212,7 +212,7 @@ function resourcePanelLineCapacity(host: ResourcePanelHost, bounds: RectBounds):
 	viewer.scroll = clamp(viewer.scroll, 0, maxScroll);
 	const end = Math.min(totalLines, Math.floor(viewer.scroll) + capacity);
 	if (viewer.lines.length === 0) {
-		drawEditorText(api, ide_state.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
+		drawEditorText(api, ide_state.font, '<empty>', contentLeft, textTop, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 	} else {
 		for (let lineIndex = Math.floor(viewer.scroll), drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
 			const line = viewer.lines[lineIndex] ?? '';
@@ -220,7 +220,7 @@ function resourcePanelLineCapacity(host: ResourcePanelHost, bounds: RectBounds):
 			if (y >= bounds.codeBottom) {
 				break;
 			}
-			drawEditorText(api, ide_state.font, line, contentLeft, y, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			drawEditorText(api, ide_state.font, line, contentLeft, y, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		}
 	}
 	if (verticalVisible) {

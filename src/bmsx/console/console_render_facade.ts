@@ -12,6 +12,7 @@ export type RectCommand = {
 	y0: number;
 	x1: number;
 	y1: number;
+	z: number;
 	color: color;
 	layer?: RenderLayer;
 };
@@ -21,7 +22,9 @@ export type PrintCommand = {
 	text: string;
 	x: number;
 	y: number;
+	z: number;
 	color: color;
+	font?: ConsoleFont;
 	layer?: RenderLayer;
 };
 
@@ -35,7 +38,8 @@ export type SpriteCommand = {
 	baseY: number;
 	drawX: number;
 	drawY: number;
-	scale: number;
+	z: number;
+	scale: number; // TODO: Should be vec2
 	layer?: RenderLayer;
 	flipH: boolean;
 	flipV: boolean;
@@ -90,7 +94,7 @@ export class ConsoleRenderFacade {
 		this.commands.length = 0;
 	}
 
-	public drawRect(command: RectCommand): void {
+	public rect(command: RectCommand): void {
 		const layer = command.layer ?? (this.capturingFrame ? 'editor' : 'ui');
 		if (!this.capturingFrame) {
 			$.view.renderer.submit.rect({
@@ -113,10 +117,10 @@ export class ConsoleRenderFacade {
 		this.commands.push(rect);
 	}
 
-	public drawText(command: PrintCommand, font: ConsoleFont): void {
+	public glyphs(command: PrintCommand): void {
 		const layer = command.layer ?? (this.capturingFrame ? 'editor' : 'ui');
 		if (!this.capturingFrame) {
-			renderGlyphs(command.x, command.y, command.text, ConsoleRenderFacade.SPRITE_Z, font, command.color, undefined, layer);
+			renderGlyphs(command.x, command.y, command.text, command.z ?? ConsoleRenderFacade.SPRITE_Z, command.font, command.color, undefined, layer);
 			return;
 		}
 		let cursorX = command.x;
@@ -125,14 +129,14 @@ export class ConsoleRenderFacade {
 			const ch = command.text.charAt(i);
 			if (ch === '\n') {
 				cursorX = command.x;
-				cursorY += font.lineHeight();
+				cursorY += command.font.lineHeight();
 				continue;
 			}
-			const imgId = font.char_to_img(ch);
-			const advance = font.char_width(ch);
+			const imgId = command.font.char_to_img(ch);
+			const advance = command.font.char_width(ch);
 			const sprite: ImgRenderSubmission = {
 				imgid: imgId,
-				pos: { x: cursorX, y: cursorY, z: ConsoleRenderFacade.SPRITE_Z },
+				pos: { x: cursorX, y: cursorY, z: command.z ?? ConsoleRenderFacade.SPRITE_Z },
 				scale: { x: 1, y: 1 },
 				flip: undefined,
 				colorize: { ...command.color },
@@ -143,12 +147,12 @@ export class ConsoleRenderFacade {
 		}
 	}
 
-	public drawSprite(command: SpriteCommand): void {
+	public sprite(command: SpriteCommand): void {
 		const layer = command.layer ?? (this.capturingFrame ? 'editor' : 'ui');
 		if (!this.capturingFrame) {
 			$.view.renderer.submit.sprite({
 				imgid: command.imgId,
-				pos: { x: command.baseX, y: command.baseY, z: ConsoleRenderFacade.SPRITE_Z },
+				pos: { x: command.baseX, y: command.baseY, z: command.z ?? ConsoleRenderFacade.SPRITE_Z },
 				scale: { x: command.scale, y: command.scale },
 				flip: command.flipH || command.flipV ? { flip_h: command.flipH, flip_v: command.flipV } : undefined,
 				colorize: command.colorize ? { ...command.colorize } : undefined,
@@ -158,7 +162,7 @@ export class ConsoleRenderFacade {
 		}
 		const sprite: ImgRenderSubmission = {
 			imgid: command.imgId,
-			pos: { x: command.baseX, y: command.baseY, z: ConsoleRenderFacade.SPRITE_Z },
+			pos: { x: command.baseX, y: command.baseY, z: command.z ?? ConsoleRenderFacade.SPRITE_Z },
 			scale: { x: command.scale, y: command.scale },
 			flip: command.flipH || command.flipV ? { flip_h: command.flipH, flip_v: command.flipV } : undefined,
 			colorize: command.colorize ? { ...command.colorize } : undefined,

@@ -15,7 +15,7 @@ type DrawEditorTextOptions = {
 	forceUppercase?: boolean;
 };
 
-export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, text: string, originX: number, originY: number, color: number, options?: DrawEditorTextOptions): void {
+export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, text: string, originX: number, originY: number, z: number, color: number, options?: DrawEditorTextOptions): void {
 	const baseX = Math.floor(originX);
 	let cursorY = Math.floor(originY);
 	const lines = text.split('\n');
@@ -27,7 +27,7 @@ export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, tex
 		const expanded = expandTabsExternal(lines[i]);
 		if (expanded.length > 0) {
 			const display = useUppercase ? expanded.toUpperCase() : expanded;
-			api.write_with_font(display, baseX, cursorY, color, renderFont);
+			api.write_with_font(display, baseX, cursorY, z, color, renderFont);
 		}
 		if (i < lines.length - 1) {
 			cursorY += font.lineHeight();
@@ -35,7 +35,7 @@ export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, tex
 	}
 }
 
-export function drawEditorColoredText(font: ConsoleEditorFont, text: string, colors: readonly number[], originX: number, originY: number, fallbackColor: number, options?: DrawEditorTextOptions): void {
+export function drawEditorColoredText(font: ConsoleEditorFont, text: string, colors: readonly number[], originX: number, originY: number, z: number, fallbackColor: number, options?: DrawEditorTextOptions): void {
 	let cursorX = Math.floor(originX);
 	const cursorY = Math.floor(originY);
 	const renderFont = font.getRenderFont();
@@ -57,7 +57,7 @@ export function drawEditorColoredText(font: ConsoleEditorFont, text: string, col
 		}
 		const segment = renderText.slice(index, end);
 		if (segment.length > 0) {
-			apiWithFont.write_with_font(segment, cursorX, cursorY, colorIndex, renderFont);
+			apiWithFont.write_with_font(segment, cursorX, cursorY, z, colorIndex, renderFont);
 			cursorX += font.measure(segment);
 		}
 		index = end;

@@ -5,141 +5,58 @@ import { ide_state } from '../ide_state';
 import { getConsoleRuntime, isDebugPanelActive } from '../console_cart_editor';
 import { measureText } from '../text_utils';
 import { drawEditorText } from '../text_renderer';
-import { TopBarButtonId } from '../types';
+import { MenuId, TopBarButtonId } from '../types';
 import { api } from '../../runtime';
 
-export function renderTopBar(): void {
-	const primaryBarHeight = ide_state.headerHeight;
-	api.rectfill(0, 0, ide_state.viewportWidth, primaryBarHeight, constants.COLOR_TOP_BAR);
+type MenuSeparator = { type: 'separator' };
+type MenuItem = {
+	type: 'command';
+	command: TopBarButtonId;
+	label: string;
+	active: boolean;
+	disabled: boolean;
+};
+type MenuEntry = {
+	id: MenuId;
+	label: string;
+	items: Array<MenuItem | MenuSeparator>;
+};
 
-	const buttonTop = 1;
-	const buttonHeight = ide_state.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
-	const iconButtonSize = buttonHeight;
-	const resolutionRight = ide_state.viewportWidth - 4;
-	const resolutionLeft = resolutionRight - iconButtonSize;
-	const resolutionBottom = buttonTop + buttonHeight;
-	const wrapRight = resolutionLeft - constants.HEADER_BUTTON_SPACING;
-	const wrapLeft = wrapRight - iconButtonSize;
-	ide_state.topBarButtonBounds.resolution = { left: resolutionLeft, top: buttonTop, right: resolutionRight, bottom: resolutionBottom };
-	ide_state.topBarButtonBounds.wrap = { left: wrapLeft, top: buttonTop, right: wrapRight, bottom: resolutionBottom };
-	ide_state.topBarButtonBounds.resume = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.topBarButtonBounds.reboot = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.topBarButtonBounds.save = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.topBarButtonBounds.resources = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.topBarButtonBounds.problems = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.topBarButtonBounds.filter = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.topBarButtonBounds.debugObjects = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.topBarButtonBounds.debugEvents = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.topBarButtonBounds.debugRegistry = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.topBarButtonBounds.debugContinue = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.topBarButtonBounds.debugStepOver = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.topBarButtonBounds.debugStepInto = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.topBarButtonBounds.debugStepOut = { left: 0, top: 0, right: 0, bottom: 0 };
-	let buttonX = 4;
-	const buttonEntries: Array<{ id: TopBarButtonId; label: string; disabled: boolean; active?: boolean }> = [
-		{ id: 'resume', label: 'RESUME', disabled: false },
-		{ id: 'reboot', label: 'REBOOT', disabled: false },
-		{ id: 'save', label: 'SAVE', disabled: !ide_state.dirty },
-		{ id: 'resources', label: 'FILES', disabled: false, active: ide_state.resourcePanelVisible },
-	];
+const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
+const TOP_BAR_COMMANDS: TopBarButtonId[] = [
+	'resume',
+	'reboot',
+	'save',
+	'resources',
+	'problems',
+	'filter',
+	'resolution',
+	'wrap',
+	'debugContinue',
+	'debugStepOver',
+	'debugStepInto',
+	'debugStepOut',
+	'debugObjects',
+	'debugEvents',
+	'debugRegistry',
+];
+
+export function renderTopBar(): void {
+	clearMenuBounds();
+	const primaryBarHeight = ide_state.headerHeight;
+	api.rectfill(0, 0, ide_state.viewportWidth, primaryBarHeight, undefined, constants.COLOR_TOP_BAR);
+
+	const menuEntries = buildMenuEntries();
+	renderMenuRow(menuEntries);
+
 	const debuggerPaused = ide_state.debuggerControls.executionState === 'paused';
-	const debuggerButtonDisabled = !debuggerPaused;
-	buttonEntries.push(
-		{ id: 'debugContinue', label: 'CONT', disabled: debuggerButtonDisabled },
-		{ id: 'debugStepOver', label: 'OVER', disabled: debuggerButtonDisabled },
-		{ id: 'debugStepInto', label: 'INTO', disabled: debuggerButtonDisabled },
-		{ id: 'debugStepOut', label: 'OUT', disabled: debuggerButtonDisabled },
-	);
-	buttonEntries.push({ id: 'problems', label: 'PROBLEMS', disabled: false, active: ide_state.problemsPanel.isVisible() });
-	buttonEntries.push({ id: 'debugObjects', label: 'OBJECTS', disabled: false, active: isDebugPanelActive('objects') });
-	buttonEntries.push({ id: 'debugEvents', label: 'EVENTS', disabled: false, active: isDebugPanelActive('events') });
-	buttonEntries.push({ id: 'debugRegistry', label: 'REGISTRY', disabled: false, active: isDebugPanelActive('registry') });
-	if (ide_state.resourcePanelVisible) {
-		const filterMode = ide_state.resourcePanel.getFilterMode();
-		const filterLabel = filterMode === 'lua_only' ? 'LUA' : 'ALL';
-		buttonEntries.push({
-			id: 'filter',
-			label: filterLabel,
-			disabled: false,
-			active: filterMode === 'lua_only',
-		});
-	}
-	const availableRight = wrapLeft - constants.HEADER_BUTTON_SPACING;
-	for (let i = 0; i < buttonEntries.length; i++) {
-		const entry = buttonEntries[i];
-		const textWidth = measureText(entry.label);
-		const buttonWidth = textWidth + constants.HEADER_BUTTON_PADDING_X * 2;
-		const right = buttonX + buttonWidth;
-		if (right > availableRight) {
-			ide_state.topBarButtonBounds[entry.id] = { left: 0, top: 0, right: 0, bottom: 0 };
-			break;
-		}
-		const bottom = buttonTop + buttonHeight;
-		const bounds: RectBounds = { left: buttonX, top: buttonTop, right, bottom };
-		ide_state.topBarButtonBounds[entry.id] = bounds;
-		const fillColor = entry.active
-			? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND
-			: (entry.disabled ? constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND);
-		const textColor = entry.active
-			? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT
-			: (entry.disabled ? constants.COLOR_HEADER_BUTTON_TEXT_DISABLED : constants.COLOR_HEADER_BUTTON_TEXT);
-		api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, fillColor);
-		api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_HEADER_BUTTON_BORDER);
-		drawEditorText(api, ide_state.font, entry.label, bounds.left + constants.HEADER_BUTTON_PADDING_X, bounds.top + constants.HEADER_BUTTON_PADDING_Y, textColor);
-		buttonX = right + constants.HEADER_BUTTON_SPACING;
-	}
 	const debuggerSummary =
 		debuggerPaused && ide_state.debuggerControls.sessionMetrics
 			? formatDebuggerTopBarMetrics(ide_state.debuggerControls.sessionMetrics)
 			: null;
 
-	const wrapActive = ide_state.wordWrapEnabled;
-	const wrapFill = wrapActive ? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND;
-	const wrapTextColor = wrapActive ? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_TEXT;
-	const wrapBounds = ide_state.topBarButtonBounds.wrap;
-	api.rectfill(wrapBounds.left, wrapBounds.top, wrapBounds.right, wrapBounds.bottom, wrapFill);
-	api.rect(wrapBounds.left, wrapBounds.top, wrapBounds.right, wrapBounds.bottom, constants.COLOR_HEADER_BUTTON_BORDER);
-	const wrapLabel = 'w';
-	const wrapLabelWidth = measureText(wrapLabel);
-	const wrapLabelX = wrapBounds.left + Math.max(1, Math.floor((iconButtonSize - wrapLabelWidth) / 2));
-	const wrapLabelY = wrapBounds.top + constants.HEADER_BUTTON_PADDING_Y;
-	drawEditorText(api, ide_state.font, wrapLabel, wrapLabelX, wrapLabelY, wrapTextColor);
-
-	const resolutionActive = getConsoleRuntime().overlayResolutionMode === 'viewport';
-	const resolutionFill = resolutionActive ? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND;
-	const resolutionTextColor = resolutionActive ? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_TEXT;
-	api.rectfill(resolutionLeft, buttonTop, resolutionRight, resolutionBottom, resolutionFill);
-	api.rect(resolutionLeft, buttonTop, resolutionRight, resolutionBottom, constants.COLOR_HEADER_BUTTON_BORDER);
-	const iconPadding = Math.max(2, Math.floor(constants.HEADER_BUTTON_PADDING_X * 0.75));
-
-	const frameX = resolutionLeft + iconPadding;
-	const frameY = buttonTop + iconPadding;
-	const frameSize = iconButtonSize - iconPadding * 2;
-	api.rectfill(frameX, frameY, frameX + frameSize, frameY + frameSize, resolutionTextColor);
-	const innerMargin = Math.max(1, Math.floor(frameSize / 4));
-	api.rectfill(
-		frameX + innerMargin,
-		frameY + innerMargin,
-		frameX + frameSize - innerMargin,
-		frameY + frameSize - innerMargin,
-		constants.COLOR_TOP_BAR,
-	);
-	const indicatorY = frameY + frameSize - innerMargin - 1;
-	const indicatorHeight = Math.max(1, Math.floor(frameSize / 5));
-	if (getConsoleRuntime().overlayResolutionMode === 'viewport') {
-		api.rectfill(frameX + innerMargin, indicatorY, frameX + frameSize - innerMargin, indicatorY + indicatorHeight, resolutionTextColor);
-	} else {
-		const segmentWidth = Math.max(1, Math.floor((frameSize - innerMargin * 2) / 2));
-		api.rectfill(frameX + innerMargin, indicatorY, frameX + innerMargin + segmentWidth, indicatorY + indicatorHeight, resolutionTextColor);
-		api.rectfill(frameX + frameSize - innerMargin - segmentWidth, indicatorY, frameX + frameSize - innerMargin, indicatorY + indicatorHeight, resolutionTextColor);
-	}
-	const resolutionLabel = 'R';
-	const resolutionLabelX = resolutionLeft + Math.max(1, Math.floor((iconButtonSize - measureText(resolutionLabel)) / 2));
-	const resolutionLabelY = buttonTop + constants.HEADER_BUTTON_PADDING_Y;
-	drawEditorText(api, ide_state.font, resolutionLabel, resolutionLabelX, resolutionLabelY, resolutionTextColor);
-
 	const titleY = primaryBarHeight + 1;
-	drawEditorText(api, ide_state.font, ide_state.metadata.title.toUpperCase(), 4, titleY, constants.COLOR_TOP_BAR_TEXT);
+	drawEditorText(api, ide_state.font, ide_state.metadata.title.toUpperCase(), 4, titleY, undefined, constants.COLOR_TOP_BAR_TEXT);
 	const versionSuffix = ide_state.dirty ? '*' : '';
 	const version = `v${ide_state.metadata.version}${versionSuffix}`;
 	const versionWidth = measureText(version);
@@ -147,10 +64,202 @@ export function renderTopBar(): void {
 	if (debuggerSummary) {
 		const summaryWidth = measureText(debuggerSummary);
 		const summaryX = Math.max(4, versionX - summaryWidth - 8);
-		drawEditorText(api, ide_state.font, debuggerSummary, summaryX, titleY, constants.COLOR_TOP_BAR_TEXT);
+		drawEditorText(api, ide_state.font, debuggerSummary, summaryX, titleY, undefined, constants.COLOR_TOP_BAR_TEXT);
 		versionX = Math.max(summaryX - 4, versionX);
 	}
-	drawEditorText(api, ide_state.font, version, versionX, titleY, constants.COLOR_TOP_BAR_TEXT);
+	drawEditorText(api, ide_state.font, version, versionX, titleY, undefined, constants.COLOR_TOP_BAR_TEXT);
+}
+
+export function renderMenuDropdownOverlay(): void {
+	if (ide_state.openMenuId === null) {
+		ide_state.menuDropdownBounds = null;
+		return;
+	}
+	const menuEntries = buildMenuEntries();
+	const openMenu = menuEntries.find((entry) => entry.id === ide_state.openMenuId);
+	if (!openMenu) {
+		ide_state.menuDropdownBounds = null;
+		return;
+	}
+	const anchor = ide_state.menuEntryBounds[openMenu.id];
+	if (anchor.right === 0 && anchor.bottom === 0) {
+		ide_state.menuDropdownBounds = null;
+		return;
+	}
+	const buttonHeight = ide_state.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
+	renderMenuDropdown(openMenu, anchor, buttonHeight);
+}
+
+function renderMenuRow(menuEntries: MenuEntry[]): void {
+	const buttonTop = 1;
+	const buttonHeight = ide_state.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
+	let buttonX = 4;
+	const availableRight = ide_state.viewportWidth - 4;
+	for (let i = 0; i < menuEntries.length; i += 1) {
+		const entry = menuEntries[i];
+		const textWidth = measureText(entry.label);
+		const buttonWidth = textWidth + constants.HEADER_BUTTON_PADDING_X * 2;
+		const right = buttonX + buttonWidth;
+		if (right > availableRight) {
+			ide_state.menuEntryBounds[entry.id] = { left: 0, top: 0, right: 0, bottom: 0 };
+			continue;
+		}
+		const bottom = buttonTop + buttonHeight;
+		const bounds: RectBounds = { left: buttonX, top: buttonTop, right, bottom };
+		ide_state.menuEntryBounds[entry.id] = bounds;
+		const isOpen = ide_state.openMenuId === entry.id;
+		const fillColor = isOpen ? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND;
+		const textColor = isOpen ? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_TEXT;
+		api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, fillColor);
+		api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_HEADER_BUTTON_BORDER);
+		drawEditorText(api, ide_state.font, entry.label, bounds.left + constants.HEADER_BUTTON_PADDING_X, bounds.top + constants.HEADER_BUTTON_PADDING_Y, undefined, textColor);
+		buttonX = right + constants.HEADER_BUTTON_SPACING;
+	}
+	ide_state.menuDropdownBounds = null;
+}
+
+function renderMenuDropdown(menu: MenuEntry, anchor: RectBounds, itemHeight: number): void {
+	const markerSize = Math.max(2, Math.floor(ide_state.lineHeight / 2));
+	const paddingX = constants.HEADER_BUTTON_PADDING_X;
+	const dropdownWidth = computeDropdownWidth(menu, markerSize, paddingX);
+	let currentTop = ide_state.headerHeight;
+	const dropdownLeft = anchor.left;
+	const dropdownRight = dropdownLeft + dropdownWidth;
+	for (let index = 0; index < menu.items.length; index += 1) {
+		const item = menu.items[index];
+		if (item.type === 'separator') {
+			const separatorHeight = Math.max(2, constants.HEADER_BUTTON_PADDING_Y + 1);
+			const separatorTop = currentTop + Math.max(1, Math.floor(separatorHeight / 2));
+			api.rectfill(dropdownLeft + paddingX, separatorTop, dropdownRight - paddingX, separatorTop + 1, undefined, constants.COLOR_HEADER_BUTTON_BORDER);
+			currentTop += separatorHeight;
+			continue;
+		}
+		const bounds: RectBounds = {
+			left: dropdownLeft,
+			top: currentTop,
+			right: dropdownRight,
+			bottom: currentTop + itemHeight,
+		};
+		ide_state.topBarButtonBounds[item.command] = bounds;
+		const fillColor = item.active
+			? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND
+			: (item.disabled ? constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND);
+		const textColor = item.disabled
+			? constants.COLOR_HEADER_BUTTON_TEXT_DISABLED
+			: (item.active ? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_TEXT);
+		api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, fillColor);
+		api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_HEADER_BUTTON_BORDER);
+		if (item.active) {
+			const markerTop = bounds.top + Math.max(1, Math.floor((itemHeight - markerSize) / 2));
+			const markerLeft = bounds.left + paddingX;
+			api.rectfill(markerLeft, markerTop, markerLeft + markerSize, markerTop + markerSize, undefined, constants.COLOR_HEADER_BUTTON_BORDER);
+		}
+		const textX = bounds.left + paddingX * 2 + markerSize;
+		const textY = bounds.top + constants.HEADER_BUTTON_PADDING_Y;
+		drawEditorText(api, ide_state.font, item.label, textX, textY, undefined, textColor);
+		currentTop = bounds.bottom;
+	}
+	ide_state.menuDropdownBounds = { left: dropdownLeft, top: ide_state.headerHeight, right: dropdownRight, bottom: currentTop };
+	api.rect(dropdownLeft, ide_state.headerHeight, dropdownRight, currentTop, undefined, constants.COLOR_HEADER_BUTTON_BORDER);
+}
+
+function buildMenuEntries(): MenuEntry[] {
+	const resourcePanelActive = ide_state.resourcePanelVisible;
+	const filterMode = ide_state.resourcePanel.getFilterMode();
+	const debuggerPaused = ide_state.debuggerControls.executionState === 'paused';
+	const resolutionActive = getConsoleRuntime()!.overlayResolutionMode === 'viewport';
+	const problemsActive = ide_state.problemsPanel.isVisible();
+	const debugObjectsActive = isDebugPanelActive('objects');
+	const debugEventsActive = isDebugPanelActive('events');
+	const debugRegistryActive = isDebugPanelActive('registry');
+	const filterActive = filterMode === 'lua_only';
+	return [
+		{
+			id: 'file',
+			label: 'FILE',
+			items: [
+				{ type: 'command', command: 'save', label: 'Save', active: false, disabled: !ide_state.dirty },
+				{
+					type: 'command',
+					command: 'resources',
+					label: resourcePanelActive ? 'Hide Files' : 'Show Files',
+					active: resourcePanelActive,
+					disabled: false,
+				},
+			],
+		},
+		{
+			id: 'run',
+			label: 'RUN',
+			items: [
+				{ type: 'command', command: 'resume', label: 'Resume', active: false, disabled: false },
+				{ type: 'command', command: 'reboot', label: 'Reboot', active: false, disabled: false },
+			],
+		},
+		{
+			id: 'view',
+			label: 'VIEW',
+			items: [
+				{ type: 'command', command: 'problems', label: 'Problems Panel', active: problemsActive, disabled: false },
+				{ type: 'command', command: 'wrap', label: 'Word Wrap', active: ide_state.wordWrapEnabled, disabled: false },
+				{
+					type: 'command',
+					command: 'resolution',
+					label: 'Viewport Resolution',
+					active: resolutionActive,
+					disabled: false,
+				},
+				{
+					type: 'command',
+					command: 'filter',
+					label: filterActive ? 'Lua Files Only' : 'All Resources',
+					active: filterActive,
+					disabled: !resourcePanelActive,
+				},
+			],
+		},
+		{
+			id: 'debug',
+			label: 'DEBUG',
+			items: [
+				{ type: 'command', command: 'debugContinue', label: 'Continue', active: false, disabled: !debuggerPaused },
+				{ type: 'command', command: 'debugStepOver', label: 'Step Over', active: false, disabled: !debuggerPaused },
+				{ type: 'command', command: 'debugStepInto', label: 'Step Into', active: false, disabled: !debuggerPaused },
+				{ type: 'command', command: 'debugStepOut', label: 'Step Out', active: false, disabled: !debuggerPaused },
+				{ type: 'separator' },
+				{ type: 'command', command: 'debugObjects', label: 'Inspect Objects', active: debugObjectsActive, disabled: false },
+				{ type: 'command', command: 'debugEvents', label: 'Inspect Events', active: debugEventsActive, disabled: false },
+				{ type: 'command', command: 'debugRegistry', label: 'Inspect Registry', active: debugRegistryActive, disabled: false },
+			],
+		},
+	];
+}
+
+function computeDropdownWidth(menu: MenuEntry, markerSize: number, paddingX: number): number {
+	let maxLabelWidth = 0;
+	for (let index = 0; index < menu.items.length; index += 1) {
+		const item = menu.items[index];
+		if (item.type === 'separator') {
+			continue;
+		}
+		const width = measureText(item.label);
+		if (width > maxLabelWidth) {
+			maxLabelWidth = width;
+		}
+	}
+	return markerSize + paddingX * 3 + maxLabelWidth;
+}
+
+function clearMenuBounds(): void {
+	for (let i = 0; i < MENU_IDS.length; i += 1) {
+		const id = MENU_IDS[i];
+		ide_state.menuEntryBounds[id] = { left: 0, top: 0, right: 0, bottom: 0 };
+	}
+	for (let i = 0; i < TOP_BAR_COMMANDS.length; i += 1) {
+		const command = TOP_BAR_COMMANDS[i];
+		ide_state.topBarButtonBounds[command] = { left: 0, top: 0, right: 0, bottom: 0 };
+	}
+	ide_state.menuDropdownBounds = null;
 }
 
 function formatDebuggerTopBarMetrics(metrics: LuaDebuggerSessionMetrics): string {

@@ -107,9 +107,9 @@ export function renderCreateResourceBar(api: BmsxConsoleApi, host: InlineBarsHos
 	if (height <= 0) return;
 	const barTop = host.headerHeight + host.tabBarHeight;
 	const barBottom = barTop + height;
-	api.rectfill(0, barTop, host.viewportWidth, barBottom, constants.COLOR_CREATE_RESOURCE_BACKGROUND);
-	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, constants.COLOR_CREATE_RESOURCE_OUTLINE);
-	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, constants.COLOR_CREATE_RESOURCE_OUTLINE);
+	api.rectfill(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_CREATE_RESOURCE_BACKGROUND);
+	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_CREATE_RESOURCE_OUTLINE);
+	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_CREATE_RESOURCE_OUTLINE);
 
 	const label = 'NEW FILE:';
 	const labelX = 4;
@@ -131,7 +131,7 @@ export function renderCreateResourceBar(api: BmsxConsoleApi, host: InlineBarsHos
 		const selectionLeft = pathX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
 		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
-			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
+			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, undefined, constants.SELECTION_OVERLAY);
 		}
 	}
 
@@ -160,9 +160,9 @@ export function renderSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 	if (height <= 0) return;
 	const barTop = host.headerHeight + host.tabBarHeight + host.getCreateResourceBarHeight();
 	const barBottom = barTop + height;
-	api.rectfill(0, barTop, host.viewportWidth, barBottom, constants.COLOR_SEARCH_BACKGROUND);
-	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, constants.COLOR_SEARCH_OUTLINE);
-	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, constants.COLOR_SEARCH_OUTLINE);
+	api.rectfill(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_SEARCH_BACKGROUND);
+	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_SEARCH_OUTLINE);
+	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_SEARCH_OUTLINE);
 
 	const field = host.searchField as TextField | undefined;
 	const label = host.searchScope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
@@ -185,7 +185,7 @@ export function renderSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 		const selectionLeft = queryX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
 		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
-			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
+			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, undefined, constants.SELECTION_OVERLAY);
 		}
 	}
 
@@ -220,7 +220,7 @@ export function renderSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 	}
 	const baseHeight = host.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 	const separatorTop = barTop + baseHeight;
-	api.rectfill(0, separatorTop, host.viewportWidth, separatorTop + constants.SEARCH_RESULT_SPACING, constants.COLOR_SEARCH_OUTLINE);
+	api.rectfill(0, separatorTop, host.viewportWidth, separatorTop + constants.SEARCH_RESULT_SPACING, undefined, constants.COLOR_SEARCH_OUTLINE);
 	const resultsTop = separatorTop + constants.SEARCH_RESULT_SPACING;
 	const rowHeight = host.searchResultEntryHeight ? host.searchResultEntryHeight() : host.lineHeight * 2;
 
@@ -258,9 +258,9 @@ export function renderResourceSearchBar(api: BmsxConsoleApi, host: InlineBarsHos
 	if (height <= 0) return;
 	const barTop = host.headerHeight + host.tabBarHeight + host.getCreateResourceBarHeight() + host.getSearchBarHeight();
 	const barBottom = barTop + height;
-	api.rectfill(0, barTop, host.viewportWidth, barBottom, constants.COLOR_QUICK_OPEN_BACKGROUND);
-	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, constants.COLOR_QUICK_OPEN_OUTLINE);
-	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, constants.COLOR_QUICK_OPEN_OUTLINE);
+	api.rectfill(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_QUICK_OPEN_BACKGROUND);
+	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_QUICK_OPEN_OUTLINE);
+	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_QUICK_OPEN_OUTLINE);
 
 	const field = host.resourceSearchField as TextField | undefined;
 	const label = 'FILE :';
@@ -283,7 +283,7 @@ export function renderResourceSearchBar(api: BmsxConsoleApi, host: InlineBarsHos
 		const selectionLeft = queryX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
 		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
-			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
+			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, undefined, constants.SELECTION_OVERLAY);
 		}
 	}
 
@@ -302,7 +302,7 @@ export function renderResourceSearchBar(api: BmsxConsoleApi, host: InlineBarsHos
 	if (visible <= 0) return;
 	const baseHeight = host.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
 	const separatorTop = barTop + baseHeight;
-	api.rectfill(0, separatorTop, host.viewportWidth, separatorTop + constants.QUICK_OPEN_RESULT_SPACING, constants.COLOR_QUICK_OPEN_OUTLINE);
+	api.rectfill(0, separatorTop, host.viewportWidth, separatorTop + constants.QUICK_OPEN_RESULT_SPACING, undefined, constants.COLOR_QUICK_OPEN_OUTLINE);
 	const resultsTop = separatorTop + constants.QUICK_OPEN_RESULT_SPACING;
 	const rowHeight = host.resourceSearchEntryHeight ? host.resourceSearchEntryHeight() : host.lineHeight * 2;
 	const compactMode = host.isResourceSearchCompactMode ? host.isResourceSearchCompactMode() : false;
@@ -343,9 +343,9 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 	if (height <= 0) return;
 	const barTop = host.headerHeight + host.tabBarHeight + host.getCreateResourceBarHeight() + host.getSearchBarHeight() + host.getResourceSearchBarHeight();
 	const barBottom = barTop + height;
-	api.rectfill(0, barTop, host.viewportWidth, barBottom, constants.COLOR_SYMBOL_SEARCH_BACKGROUND);
-	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
-	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
+	api.rectfill(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_SYMBOL_SEARCH_BACKGROUND);
+	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
+	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 
 	const field = host.symbolSearchField as TextField | undefined;
 	const mode = host.symbolSearchMode ?? 'symbols';
@@ -370,7 +370,7 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 		const selectionLeft = queryX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
 		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
-			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
+			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, undefined, constants.SELECTION_OVERLAY);
 		}
 	}
 
@@ -391,7 +391,7 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 	}
 	const baseHeight = host.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
 	const separatorTop = barTop + baseHeight;
-	api.rectfill(0, separatorTop, host.viewportWidth, separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
+	api.rectfill(0, separatorTop, host.viewportWidth, separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING, undefined, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 	const resultsTop = separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING;
 	const entryHeight = host.symbolSearchEntryHeight ? host.symbolSearchEntryHeight() : host.lineHeight * 2;
 	const compactMode = mode === 'references'
@@ -462,9 +462,9 @@ function renderResultList<T>(api: BmsxConsoleApi, options: InlineResultListOptio
 		const rowTop = options.rowTop + i * options.rowHeight;
 		const rowBottom = rowTop + options.rowHeight;
 		if (matchIndex === options.selectionIndex) {
-			api.rectfill_color(0, rowTop, options.viewportWidth, rowBottom, constants.SEARCH_RESULT_SELECTION_OVERLAY);
+			api.rectfill_color(0, rowTop, options.viewportWidth, rowBottom, undefined, constants.SEARCH_RESULT_SELECTION_OVERLAY);
 		} else if (matchIndex === options.hoverIndex) {
-			api.rectfill_color(0, rowTop, options.viewportWidth, rowBottom, constants.SEARCH_RESULT_HOVER_OVERLAY);
+			api.rectfill_color(0, rowTop, options.viewportWidth, rowBottom, undefined, constants.SEARCH_RESULT_HOVER_OVERLAY);
 		}
 		options.drawRow(entry, rowTop);
 	}
@@ -480,9 +480,9 @@ export function renderRenameBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 		+ host.getSymbolSearchBarHeight()
 		+ host.getRenameBarHeight();
 	const barBottom = barTop + height;
-	api.rectfill(0, barTop, host.viewportWidth, barBottom, constants.COLOR_SEARCH_BACKGROUND);
-	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, constants.COLOR_SEARCH_OUTLINE);
-	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, constants.COLOR_SEARCH_OUTLINE);
+	api.rectfill(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_SEARCH_BACKGROUND);
+	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_SEARCH_OUTLINE);
+	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_SEARCH_OUTLINE);
 
 	const field = host.renameField as TextField | undefined;
 	const label = 'RENAME:';
@@ -505,7 +505,7 @@ export function renderRenameBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 		const selectionLeft = valueX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
 		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
-			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
+			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, undefined, constants.SELECTION_OVERLAY);
 		}
 	}
 
@@ -546,9 +546,9 @@ export function renderLineJumpBar(api: BmsxConsoleApi, host: InlineBarsHost): vo
 		+ host.getResourceSearchBarHeight()
 		+ host.getSymbolSearchBarHeight();
 	const barBottom = barTop + height;
-	api.rectfill(0, barTop, host.viewportWidth, barBottom, constants.COLOR_LINE_JUMP_BACKGROUND);
-	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, constants.COLOR_LINE_JUMP_OUTLINE);
-	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, constants.COLOR_LINE_JUMP_OUTLINE);
+	api.rectfill(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_LINE_JUMP_BACKGROUND);
+	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_LINE_JUMP_OUTLINE);
+	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_LINE_JUMP_OUTLINE);
 
 	const label = 'LINE #:';
 	const labelX = 4;
@@ -571,7 +571,7 @@ export function renderLineJumpBar(api: BmsxConsoleApi, host: InlineBarsHost): vo
 		const selectionLeft = valueX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
 		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
-			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
+			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, undefined, constants.SELECTION_OVERLAY);
 		}
 	}
 

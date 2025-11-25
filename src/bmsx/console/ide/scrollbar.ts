@@ -65,12 +65,12 @@ export class ConsoleScrollbar {
 		if (!this.track) {
 			return;
 		}
-		api.rectfill(this.track.left, this.track.top, this.track.right, this.track.bottom, trackColor);
+		api.rectfill(this.track.left, this.track.top, this.track.right, this.track.bottom, undefined, trackColor);
 		const thumbRect = this.thumb;
 		if (!thumbRect) {
 			return;
 		}
-		api.rectfill(thumbRect.left, thumbRect.top, thumbRect.right, thumbRect.bottom, thumbColor);
+		api.rectfill(thumbRect.left, thumbRect.top, thumbRect.right, thumbRect.bottom, undefined, thumbColor);
 	}
 
 	public isVisible(): boolean {

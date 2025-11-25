@@ -56,7 +56,7 @@ import {
 import { buildMemberCompletionItems, clearHoverTooltip, describeMetadataValue, intellisenseUiReady, resolveHoverAssetId, resolveHoverChunkName, safeJsonStringify, shouldAutoTriggerCompletions } from './intellisense';
 import { isLuaCommentContext } from './text_utils';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
-import { renderTopBar } from './render/render_top_bar';
+import { renderMenuDropdownOverlay, renderTopBar } from './render/render_top_bar';
 import { renderTabBar } from './render/render_tab_bar';
 import { drawStatusBar } from './render/render_status_bar';
 import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderRenameBar, renderLineJumpBar, type InlineBarsHost } from './render/render_inline_bars';
@@ -141,6 +141,7 @@ import { drawInlineCaret, drawRectOutlineColor, resetBlink } from './render/rend
 import { api, type BmsxConsoleRuntime } from '../runtime';
 import { computeEditContextFromSources, handlePostEditMutation, writeClipboard } from './text_editing_and_selection';
 import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
+import { drawActionPromptOverlay } from './render/render_prompt';
 
 const editorFacade = {
 	activate,
@@ -222,9 +223,9 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		lineHeight: ide_state.lineHeight,
 		charAdvance: ide_state.charAdvance,
 		measureText: (t) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
-		drawColoredText: (t, colors, x, y) => drawEditorColoredText(ide_state.font, t, colors, x, y, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT),
-		drawRectOutlineColor: (a, l, t, r, b, col) => drawRectOutlineColor(a, l, t, r, b, col),
+		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, undefined, c),
+		drawColoredText: (t, colors, x, y) => drawEditorColoredText(ide_state.font, t, colors, x, y, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT),
+		drawRectOutlineColor: (a, l, t, r, b, col) => drawRectOutlineColor(a, l, t, r, b, undefined, col),
 		playerIndex: ide_state.playerIndex,
 		listResources: () => listResourcesStrict(),
 		openLuaCodeTab: (d) => openLuaCodeTab(d),
@@ -245,7 +246,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		resetBlink: () => resetBlink(),
 		revealCursor: () => revealCursor(),
 		measureText: (text) => measureText(text),
-		drawText: (api, text, x, y, color) => drawEditorText(api as BmsxConsoleApi, ide_state.font, text, x, y, color),
+		drawText: (api, text, x, y, color) => drawEditorText(api as BmsxConsoleApi, ide_state.font, text, x, y, undefined, color),
 		getCursorScreenInfo: () => ide_state.cursorScreenInfo,
 		getLineHeight: () => ide_state.lineHeight,
 		getSpaceAdvance: () => ide_state.spaceAdvance,
@@ -270,8 +271,8 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.problemsPanel = new ProblemsPanelController({
 		lineHeight: ide_state.lineHeight,
 		measureText: (text) => measureText(text),
-		drawText: (api, text, x, y, color) => drawEditorText(api, ide_state.font, text, x, y, color),
-		drawRectOutlineColor: (api, l, t, r, b, col) => drawRectOutlineColor(api, l, t, r, b, col),
+		drawText: (api, text, x, y, color) => drawEditorText(api, ide_state.font, text, x, y, undefined, color),
+		drawRectOutlineColor: (api, l, t, r, b, col) => drawRectOutlineColor(api, l, t, r, b, undefined, col),
 		truncateTextToWidth: (text, maxWidth) => truncateTextToWidth(text, maxWidth, (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance),
 		gotoDiagnostic: (diagnostic) => gotoDiagnostic(diagnostic),
 	});
@@ -690,11 +691,11 @@ export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBotto
 	if (bubbleTop + bubbleHeight > codeBottom) {
 		bubbleTop = Math.max(codeTop, codeBottom - bubbleHeight);
 	}
-	api.rectfill_color(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, constants.HOVER_TOOLTIP_BACKGROUND);
-	api.rect(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, constants.HOVER_TOOLTIP_BORDER);
+	api.rectfill_color(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, undefined, constants.HOVER_TOOLTIP_BACKGROUND);
+	api.rect(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, undefined, constants.HOVER_TOOLTIP_BORDER);
 	for (let i = 0; i < visibleLines.length; i += 1) {
 		const lineY = bubbleTop + constants.HOVER_TOOLTIP_PADDING_Y + i * ide_state.lineHeight;
-		drawEditorText(api, ide_state.font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, constants.COLOR_STATUS_TEXT);
+		drawEditorText(api, ide_state.font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, undefined, constants.COLOR_STATUS_TEXT);
 	}
 	tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleLeft + bubbleWidth, bottom: bubbleTop + bubbleHeight };
 }
@@ -1463,7 +1464,7 @@ export function draw(): void {
 	ide_state.codeVerticalScrollbarVisible = false;
 	ide_state.codeHorizontalScrollbarVisible = false;
 	const frameColor = Msx1Colors[constants.COLOR_FRAME];
-	api.rectfill_color(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
+	api.rectfill_color(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, undefined, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
 
 	renderTopBar();
 
@@ -1476,7 +1477,7 @@ export function draw(): void {
 		activeTabId: ide_state.activeTabId,
 		tabHoverId: ide_state.tabHoverId,
 		measureText: (text: string) => measureText(text),
-		drawText: (api2, text, x, y, color) => drawEditorText(api2, ide_state.font, text, x, y, color),
+		drawText: (api2, text, x, y, color) => drawEditorText(api2, ide_state.font, text, x, y, undefined, color),
 		getDirtyMarkerMetrics: () => constants.TAB_DIRTY_MARKER_METRICS,
 		tabButtonBounds: ide_state.tabButtonBounds,
 		tabCloseButtonBounds: ide_state.tabCloseButtonBounds,
@@ -1496,6 +1497,7 @@ export function draw(): void {
 	}
 	drawProblemsPanel();
 	drawStatusBar();
+	renderMenuDropdownOverlay();
 	if (ide_state.pendingActionPrompt) {
 		drawActionPromptOverlay();
 	}
@@ -4461,7 +4463,7 @@ export function drawCreateResourceBar(): void {
 		spaceAdvance: ide_state.spaceAdvance,
 		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
-		drawText: (api2: BmsxConsoleApi, t: string, x: number, y: number, c: number) => drawEditorText(api2, ide_state.font, t, x, y, c),
+		drawText: (api2: BmsxConsoleApi, t: string, x: number, y: number, c: number) => drawEditorText(api2, ide_state.font, t, x, y, undefined, c),
 		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
 		createResourceActive: ide_state.createResourceActive,
 		createResourceVisible: ide_state.createResourceVisible,
@@ -4504,7 +4506,7 @@ export function drawSearchBar(): void {
 		spaceAdvance: ide_state.spaceAdvance,
 		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
+		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, undefined, c),
 		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
 		createResourceActive: ide_state.createResourceActive,
 		createResourceVisible: ide_state.createResourceVisible,
@@ -4561,7 +4563,7 @@ export function drawResourceSearchBar(): void {
 		spaceAdvance: ide_state.spaceAdvance,
 		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
+		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, undefined, c),
 		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
 		createResourceActive: ide_state.createResourceActive,
 		createResourceVisible: ide_state.createResourceVisible,
@@ -4613,7 +4615,7 @@ export function drawSymbolSearchBar(): void {
 		spaceAdvance: ide_state.spaceAdvance,
 		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
+		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, undefined, c),
 		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
 		createResourceActive: ide_state.createResourceActive,
 		createResourceVisible: ide_state.createResourceVisible,
@@ -4667,7 +4669,7 @@ export function drawRenameBar(): void {
 		spaceAdvance: ide_state.spaceAdvance,
 		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
+		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, undefined, c),
 		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
 		createResourceActive: ide_state.createResourceActive,
 		createResourceVisible: ide_state.createResourceVisible,
@@ -4715,7 +4717,7 @@ export function drawLineJumpBar(): void {
 		spaceAdvance: ide_state.spaceAdvance,
 		charAdvance: ide_state.charAdvance,
 		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
+		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, undefined, c),
 		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
 		createResourceActive: ide_state.createResourceActive,
 		createResourceVisible: ide_state.createResourceVisible,
@@ -4776,8 +4778,8 @@ export function drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: stri
 	const top = Math.max(8, Math.floor((ide_state.viewportHeight - dialogHeight) / 2));
 	const right = left + dialogWidth;
 	const bottom = top + dialogHeight;
-	api.rectfill(left, top, right, bottom, constants.COLOR_STATUS_BACKGROUND);
-	api.rect(left, top, right, bottom, constants.COLOR_CREATE_RESOURCE_ERROR);
+	api.rectfill(left, top, right, bottom, undefined, constants.COLOR_STATUS_BACKGROUND);
+	api.rect(left, top, right, bottom, undefined, constants.COLOR_CREATE_RESOURCE_ERROR);
 	const dialogPaddingX = constants.ERROR_OVERLAY_PADDING_X + 6;
 	const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
 	renderErrorOverlayText(
@@ -6240,100 +6242,6 @@ export function applyCaseNormalizationIfNeeded(editContext: EditContext | null):
 	requestSemanticRefresh();
 	const derived = computeEditContextFromSources(previousSource ?? currentSource, normalized);
 	return derived ?? editContext;
-}
-
-export function drawActionPromptOverlay(): void {
-	const prompt = ide_state.pendingActionPrompt;
-	if (!prompt) {
-		return;
-	}
-	api.rectfill_color(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, constants.ACTION_OVERLAY_COLOR);
-
-	let messageLines: string[];
-	let primaryLabel: string;
-	let secondaryLabel: string;
-	switch (prompt.action) {
-		case 'resume':
-			messageLines = [
-				'UNSAVED CHANGES DETECTED.',
-				'SAVE BEFORE RESUME TO APPLY CODE UPDATES?',
-			];
-			primaryLabel = 'SAVE & RESUME';
-			secondaryLabel = 'RESUME WITHOUT SAVING';
-			break;
-		case 'reboot':
-			messageLines = [
-				'UNSAVED CHANGES DETECTED.',
-				'SAVE BEFORE REBOOT TO APPLY CODE UPDATES?',
-			];
-			primaryLabel = 'SAVE & REBOOT';
-			secondaryLabel = 'REBOOT WITHOUT SAVING';
-			break;
-		case 'close':
-		default:
-			messageLines = [
-				'UNSAVED CHANGES DETECTED.',
-				'SAVE BEFORE HIDING THE EDITOR?',
-			];
-			primaryLabel = 'SAVE & HIDE';
-			secondaryLabel = 'HIDE WITHOUT SAVING';
-			break;
-	}
-	let maxMessageWidth = 0;
-	for (let i = 0; i < messageLines.length; i++) {
-		const width = measureText(messageLines[i]);
-		if (width > maxMessageWidth) {
-			maxMessageWidth = width;
-		}
-	}
-	const cancelLabel = 'CANCEL';
-	const primaryWidth = measureText(primaryLabel) + constants.HEADER_BUTTON_PADDING_X * 2;
-	const secondaryWidth = measureText(secondaryLabel) + constants.HEADER_BUTTON_PADDING_X * 2;
-	const cancelWidth = measureText(cancelLabel) + constants.HEADER_BUTTON_PADDING_X * 2;
-	const buttonSpacing = constants.HEADER_BUTTON_SPACING;
-	const buttonRowWidth = primaryWidth + secondaryWidth + cancelWidth + buttonSpacing * 2;
-	const paddingX = 12;
-	const paddingY = 12;
-	const buttonHeight = ide_state.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
-	const messageSpacing = ide_state.lineHeight + 2;
-	const dialogWidth = Math.max(maxMessageWidth + paddingX * 2, buttonRowWidth + paddingX * 2);
-	const dialogHeight = paddingY * 2 + messageLines.length * messageSpacing + 6 + buttonHeight;
-	const left = Math.max(4, Math.floor((ide_state.viewportWidth - dialogWidth) / 2));
-	const top = Math.max(4, Math.floor((ide_state.viewportHeight - dialogHeight) / 2));
-	const right = left + dialogWidth;
-	const bottom = top + dialogHeight;
-
-	api.rectfill(left, top, right, bottom, constants.ACTION_DIALOG_BACKGROUND_COLOR);
-	api.rect(left, top, right, bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-
-	let textY = top + paddingY;
-	const textX = left + paddingX;
-	for (let i = 0; i < messageLines.length; i++) {
-		drawEditorText(api, ide_state.font, messageLines[i], textX, textY, constants.ACTION_DIALOG_TEXT_COLOR);
-		textY += messageSpacing;
-	}
-
-	const buttonY = bottom - paddingY - buttonHeight;
-	let buttonX = left + paddingX;
-	const saveBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + primaryWidth, bottom: buttonY + buttonHeight };
-	api.rectfill(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, constants.ACTION_BUTTON_BACKGROUND);
-	api.rect(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(api, ide_state.font, primaryLabel, saveBounds.left + constants.HEADER_BUTTON_PADDING_X, saveBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
-	ide_state.actionPromptButtons.saveAndContinue = saveBounds;
-	buttonX = saveBounds.right + buttonSpacing;
-
-	const continueBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + secondaryWidth, bottom: buttonY + buttonHeight };
-	api.rectfill(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, constants.ACTION_BUTTON_BACKGROUND);
-	api.rect(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(api, ide_state.font, secondaryLabel, continueBounds.left + constants.HEADER_BUTTON_PADDING_X, continueBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
-	ide_state.actionPromptButtons.continue = continueBounds;
-	buttonX = continueBounds.right + buttonSpacing;
-
-	const cancelBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + cancelWidth, bottom: buttonY + buttonHeight };
-	api.rectfill(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND);
-	api.rect(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(api, ide_state.font, cancelLabel, cancelBounds.left + constants.HEADER_BUTTON_PADDING_X, cancelBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.COLOR_HEADER_BUTTON_TEXT);
-	ide_state.actionPromptButtons.cancel = cancelBounds;
 }
 
 export function columnToDisplay(highlight: HighlightLine, column: number): number {

@@ -38,7 +38,7 @@ export interface StatusBarHost {
 export function renderStatusBar(host: StatusBarHost): void {
 	const statusTop = host.viewportHeight - host.bottomMargin;
 	const statusBottom = host.viewportHeight;
-	api.rectfill(0, statusTop, host.viewportWidth, statusBottom, constants.COLOR_STATUS_BACKGROUND);
+	api.rectfill(0, statusTop, host.viewportWidth, statusBottom, undefined, constants.COLOR_STATUS_BACKGROUND);
 
 	if (host.message.visible) {
 		const lines = host.getStatusMessageLines();
@@ -115,7 +115,7 @@ export function renderStatusBar(host: StatusBarHost): void {
 		bottomMargin: statusAreaHeight(),
 		lineHeight: ide_state.lineHeight,
 		measureText: (text: string) => measureText(text),
-		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, ide_state.font, text, x, y, color),
+		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, ide_state.font, text, x, y, undefined, color),
 		truncateTextToWidth: (text: string, maxWidth: number) => truncateTextToWidth(text, maxWidth, (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance),
 		message: ide_state.message,
 		getStatusMessageLines: () => getStatusMessageLines(),

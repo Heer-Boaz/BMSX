@@ -1,4 +1,4 @@
--- new lua resource
-function bla(y)
-	write('bla',0,y,13)
-end
+-- NEW LUA RESOURCE
+FUNCTION BLA(Y)
+	WRITE('bla',0,Y,0,13)
+END

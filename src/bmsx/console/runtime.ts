@@ -7212,25 +7212,16 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private applyWorkspaceLuaOverrides(overrides: Map<string, WorkspaceOverrideRecord>, hotReload: boolean): void {
+		// IMPORTANT: Workspace dirty sources (unsaved edits) must always be honored.
+		// The editor can hot-reload or resume using in-memory dirty buffers that were never persisted
+		// to disk/server. That is intentional: losing unsaved changes on resume would be incorrect.
+		// Therefore we do NOT revert to ROM when the backend lacks a dirty file; we only overlay ROM
+		// with whatever dirty sources we currently have (from memory or backend) and keep them active
+		// until the user explicitly resets or nukes the workspace.
 		const rompack = $.rompack;
 		let updated = false;
 		let mainUpdated = false;
 		const mainAssetId = this.luaProgram && this.luaProgram.main === true ? this.luaProgram.asset_id : null;
-		for (const asset_id of Array.from(this.workspaceLuaOverrides.keys())) {
-			if (overrides.has(asset_id)) {
-				continue;
-			}
-			const originalSource = this.rompackOriginalLua.get(asset_id)!;
-			if (rompack.lua[asset_id] !== originalSource) {
-				rompack.lua[asset_id] = originalSource;
-				updated = true;
-				if (mainAssetId && asset_id === mainAssetId) {
-					this.luaProgramSourceOverride = null;
-					mainUpdated = true;
-				}
-			}
-			this.workspaceLuaOverrides.delete(asset_id);
-		}
 		for (const [asset_id, record] of overrides) {
 			const { source, path, cartPath } = record;
 			this.workspaceLuaOverrides.set(asset_id, { source, path, cartPath });
@@ -7263,14 +7254,10 @@ export class BmsxConsoleRuntime extends Service {
 		if (!root) {
 			return;
 		}
-		const { overrides, reachedServer } = await this.fetchWorkspaceDirtyLuaOverrides(root);
-		if (!reachedServer) {
-			return;
-		}
+		const overrides = await this.fetchWorkspaceDirtyLuaOverrides(root);
 		if (token !== this.workspaceOverrideToken) {
 			return;
 		}
-		this.syncLocalWorkspaceDirtyCopies(root, overrides);
 		this.applyWorkspaceLuaOverrides(overrides, hotReload);
 	}
 
@@ -7284,45 +7271,26 @@ export class BmsxConsoleRuntime extends Service {
 		return buildWorkspaceDirtyEntryPath(root, normalizedCart);
 	}
 
-	private syncLocalWorkspaceDirtyCopies(root: string, overrides: Map<string, WorkspaceOverrideRecord>): void {
-		const rompack = $.rompack;
-		for (const [asset_id, cartPath] of Object.entries(rompack.luaSourcePaths)) {
-			if (typeof cartPath !== 'string' || cartPath.length === 0) {
-				continue;
-			}
-			const dirtyPath = this.buildDirtyPathForCartPath(cartPath, root);
-			const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
-			const override = overrides.get(asset_id) ?? null;
-			if (override) {
-				this.storageService.setItem(storageKey, override.source);
-				continue;
-			}
-			this.storageService.removeItem(storageKey);
-		}
-	}
-
-	private async fetchWorkspaceDirtyLuaOverrides(root: string): Promise<{ overrides: Map<string, WorkspaceOverrideRecord>; reachedServer: boolean }> {
+	private async fetchWorkspaceDirtyLuaOverrides(root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
 		const rompack = $.rompack;
 		const tasks: Array<Promise<{ asset_id: string; contents: string; path: string | null; cartPath: string } | null>> = [];
-		let reachedServer = false;
+		// Fetching dirty files from backend is best-effort. Missing files do NOT mean we should
+		// discard in-memory dirty edits; they simply yield no extra overrides.
 		for (const [asset_id, cartPath] of Object.entries(rompack.luaSourcePaths)) {
 			if (typeof cartPath !== 'string' || cartPath.length === 0) {
 				continue;
 			}
 			const dirtyPath = this.buildDirtyPathForCartPath(cartPath, root);
-			tasks.push(this.fetchWorkspaceFile(dirtyPath).then((result) => {
-				if (result.reached) {
-					reachedServer = true;
-				}
-				if (result.contents === null) {
+			tasks.push(this.fetchWorkspaceFile(dirtyPath).then((contents) => {
+				if (contents === null) {
 					return null;
 				}
 				const normalizedCartPath = this.normalizeWorkspacePath(cartPath);
-				return { asset_id, contents: result.contents, path: dirtyPath, cartPath: normalizedCartPath };
+				return { asset_id, contents, path: dirtyPath, cartPath: normalizedCartPath };
 			}));
 		}
 		if (tasks.length === 0) {
-			return { overrides: new Map<string, WorkspaceOverrideRecord>(), reachedServer };
+			return new Map<string, WorkspaceOverrideRecord>();
 		}
 		const results = await Promise.all(tasks);
 		const overrides = new Map<string, WorkspaceOverrideRecord>();
@@ -7333,37 +7301,37 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			overrides.set(result.asset_id, { source: result.contents, path: result.path, cartPath: result.cartPath });
 		}
-		return { overrides, reachedServer };
+		return overrides;
 	}
 
-	private async fetchWorkspaceFile(path: string): Promise<{ contents: string | null; reached: boolean }> {
+	private async fetchWorkspaceFile(path: string): Promise<string | null> {
 		if (typeof fetch !== 'function') {
-			return { contents: null, reached: false };
+			return null;
 		}
 		const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
 		let response: HttpResponse;
 		try {
 			response = await fetch(url, { method: 'GET', cache: 'no-store' });
 		} catch {
-			return { contents: null, reached: false };
+			return null;
 		}
 		if (!response.ok) {
-			return { contents: null, reached: true };
+			return null;
 		}
 		let payload: unknown;
 		try {
 			payload = await response.json();
 		} catch {
-			return { contents: null, reached: true };
+			return null;
 		}
 		if (!payload || typeof payload !== 'object') {
-			return { contents: null, reached: true };
+			return null;
 		}
 		const record = payload as { contents?: unknown };
 		if (typeof record.contents !== 'string') {
-			return { contents: null, reached: true };
+			return null;
 		}
-		return { contents: record.contents, reached: true };
+		return record.contents;
 	}
 
 	private async deleteWorkspaceFile(path: string): Promise<void> {
