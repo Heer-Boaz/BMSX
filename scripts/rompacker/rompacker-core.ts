@@ -960,7 +960,7 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 	return result;
 }
 
-type LuaLowercaseState =
+type LuaUppercaseState =
 	| { kind: 'normal' }
 	| { kind: 'shortString'; delimiter: '\'' | '"'; escaped: boolean }
 	| { kind: 'lineComment' }
@@ -988,12 +988,12 @@ function matchLuaLongBracket(source: string, start: number): LuaLongBracketMatch
 	return { length: openingLength, closing };
 }
 
-function lowercaseLuaSourceExceptStrings(source: string): string {
+function uppercaseLuaSourceExceptStrings(source: string): string {
 	if (source.length === 0) {
 		return source;
 	}
 	const builder: string[] = [];
-	let state: LuaLowercaseState = { kind: 'normal' };
+	let state: LuaUppercaseState = { kind: 'normal' };
 	let index = 0;
 	while (index < source.length) {
 		const current = source.charAt(index);
@@ -1032,12 +1032,12 @@ function lowercaseLuaSourceExceptStrings(source: string): string {
 					state = { kind: 'normal' };
 					break;
 				}
-				builder.push(current.toLowerCase());
+				builder.push(current.toUpperCase());
 				index += 1;
 				break;
 			}
 			case 'lineComment': {
-				builder.push(current.toLowerCase());
+				builder.push(current.toUpperCase());
 				index += 1;
 				if (current === '\n' || current === '\r') {
 					state = { kind: 'normal' };
@@ -1076,7 +1076,7 @@ function lowercaseLuaSourceExceptStrings(source: string): string {
 						break;
 					}
 				}
-				builder.push(current.toLowerCase());
+				builder.push(current.toUpperCase());
 				index += 1;
 				break;
 			}
@@ -1143,11 +1143,11 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 					};
 				}
 				const source = buffer.toString('utf8');
-				const lowered = lowercaseLuaSourceExceptStrings(source);
-				const loweredBuffer = Buffer.from(lowered, 'utf8');
+				const uppercased = uppercaseLuaSourceExceptStrings(source);
+				const upperBuffer = Buffer.from(uppercased, 'utf8');
 				return {
 					...meta,
-					buffer: loweredBuffer,
+					buffer: upperBuffer,
 				};
 			}
 			default:

@@ -52,8 +52,8 @@ export type LuaTable = {
 
 type TableState = {
 	metatable: LuaTable | null;
-	stringKeys: Map<string, { key: LuaValue; lower?: string }>;
-	lowercaseIndex?: Map<string, string>;
+	stringKeys: Map<string, { key: LuaValue; upper?: string }>;
+	uppercaseIndex?: Map<string, string>;
 	nonPrimitiveKeys?: Map<LuaValue, LuaValue>;
 	numericKeys: Set<number>;
 };
@@ -78,7 +78,7 @@ export function createLuaTable(): LuaTable {
 	tableState.set(table, {
 		metatable: null,
 		stringKeys: new Map(),
-		lowercaseIndex: caseInsensitiveKeys ? new Map() : undefined,
+		uppercaseIndex: caseInsensitiveKeys ? new Map() : undefined,
 		nonPrimitiveKeys: undefined,
 		numericKeys: new Set(),
 	});
@@ -97,34 +97,34 @@ function getState(table: LuaTable): TableState {
 	return state;
 }
 
-function ensureLowercaseIndex(state: TableState): Map<string, string> {
-	if (!state.lowercaseIndex) {
+function ensureUppercaseIndex(state: TableState): Map<string, string> {
+	if (!state.uppercaseIndex) {
 		const index = new Map<string, string>();
 		for (const [property, info] of state.stringKeys.entries()) {
 			if (typeof info.key === 'string') {
-				const lower = info.key.toLowerCase();
-				index.set(lower, property);
-				if (info.lower === undefined) {
-					info.lower = lower;
+				const upper = info.key.toUpperCase();
+				index.set(upper, property);
+				if (info.upper === undefined) {
+					info.upper = upper;
 				}
 			}
 		}
-		state.lowercaseIndex = index;
+		state.uppercaseIndex = index;
 	}
-	return state.lowercaseIndex;
+	return state.uppercaseIndex;
 }
 
 function resolveStringPropertyForWrite(state: TableState, key: string): string {
 	if (!caseInsensitiveKeys) {
 		return key;
 	}
-	const lower = key.toLowerCase();
-	const index = ensureLowercaseIndex(state);
-	const existing = index.get(lower);
+	const upper = key.toUpperCase();
+	const index = ensureUppercaseIndex(state);
+	const existing = index.get(upper);
 	if (existing !== undefined) {
 		return existing;
 	}
-	index.set(lower, key);
+	index.set(upper, key);
 	return key;
 }
 
@@ -132,9 +132,9 @@ function resolveStringPropertyForRead(state: TableState, key: string): string {
 	if (!caseInsensitiveKeys) {
 		return key;
 	}
-	const lower = key.toLowerCase();
-	const index = ensureLowercaseIndex(state);
-	const existing = index.get(lower);
+	const upper = key.toUpperCase();
+	const index = ensureUppercaseIndex(state);
+	const existing = index.get(upper);
 	return existing !== undefined ? existing : key;
 }
 
@@ -155,12 +155,12 @@ function tableSet(this: LuaTable, key: LuaValue, value: LuaValue): void {
 		const property = resolveStringPropertyForWrite(state, key);
 		this[property] = value;
 		if (!state.stringKeys.has(property)) {
-			const lower = caseInsensitiveKeys ? key.toLowerCase() : undefined;
+			const upper = caseInsensitiveKeys ? key.toUpperCase() : undefined;
 			if (caseInsensitiveKeys) {
-				const index = ensureLowercaseIndex(state);
-				index.set(lower!, property);
+				const index = ensureUppercaseIndex(state);
+				index.set(upper!, property);
 			}
-			state.stringKeys.set(property, { key, lower });
+			state.stringKeys.set(property, { key, upper });
 		}
 		return;
 	}
@@ -216,10 +216,10 @@ function tableDelete(this: LuaTable, key: LuaValue): void {
 		}
 		const entry = state.stringKeys.get(property);
 		if (entry) {
-			if (entry.lower && state.lowercaseIndex) {
-				const current = state.lowercaseIndex.get(entry.lower);
+			if (entry.upper && state.uppercaseIndex) {
+				const current = state.uppercaseIndex.get(entry.upper);
 				if (current === property) {
-					state.lowercaseIndex.delete(entry.lower);
+					state.uppercaseIndex.delete(entry.upper);
 				}
 			}
 			state.stringKeys.delete(property);

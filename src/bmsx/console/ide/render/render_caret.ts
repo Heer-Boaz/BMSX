@@ -84,9 +84,6 @@ export function getCaretGlyphForDisplay(baseChar: string, baseColor?: number): s
 	if (!ide_state.caseInsensitive) {
 		return baseChar;
 	}
-	if (ide_state.font.getVariant() !== 'tiny') {
-		return baseChar;
-	}
 	if (baseColor === constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING) {
 		return baseChar;
 	}

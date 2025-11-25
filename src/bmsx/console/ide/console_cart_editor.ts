@@ -6178,7 +6178,7 @@ export function normalizeCaseOutsideStrings(text: string): string {
 			quote = ch;
 			continue;
 		}
-		if (ch !== ch.toLowerCase()) {
+		if (ch !== ch.toUpperCase()) {
 			needsNormalization = true;
 			break;
 		}
@@ -6214,7 +6214,7 @@ export function normalizeCaseOutsideStrings(text: string): string {
 			result += ch;
 			continue;
 		}
-		result += ch.toLowerCase();
+		result += ch.toUpperCase();
 	}
 	return result;
 }

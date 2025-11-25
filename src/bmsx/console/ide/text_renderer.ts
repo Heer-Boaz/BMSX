@@ -21,7 +21,8 @@ export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, tex
 	const lines = text.split('\n');
 	const renderFont = font.getRenderFont();
 	const preserveCase = options?.preserveCase ?? false;
-	const useUppercase = !preserveCase && CASE_INSENSITIVE_EDITOR && (options?.forceUppercase === true || font.getVariant() === 'tiny');
+	const forceUppercase = options?.forceUppercase ?? (font.getVariant() === 'tiny');
+	const useUppercase = !preserveCase && CASE_INSENSITIVE_EDITOR && forceUppercase;
 	for (let i = 0; i < lines.length; i += 1) {
 		const expanded = expandTabsExternal(lines[i]);
 		if (expanded.length > 0) {
@@ -40,7 +41,8 @@ export function drawEditorColoredText(font: ConsoleEditorFont, text: string, col
 	const renderFont = font.getRenderFont();
 	const apiWithFont = api;
 	const preserveCase = options?.preserveCase ?? false;
-	const useUppercase = !preserveCase && CASE_INSENSITIVE_EDITOR && (options?.forceUppercase === true || font.getVariant() === 'tiny');
+	const forceUppercase = options?.forceUppercase ?? (font.getVariant() === 'tiny');
+	const useUppercase = !preserveCase && CASE_INSENSITIVE_EDITOR && forceUppercase;
 	const renderText = useUppercase ? toUpperExceptStrings(text, colors, fallbackColor) : text;
 	let index = 0;
 	while (index < renderText.length) {

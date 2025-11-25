@@ -59,6 +59,7 @@ type ConsoleModeOptions = {
 	playerIndex: number;
 	fontVariant?: ConsoleFontVariant;
 	caseInsensitive?: boolean;
+	caseInsensitiveUppercaseDisplay?: boolean;
 	maxEntries?: number;
 	listLuaSymbols: (asset_id: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
@@ -96,6 +97,7 @@ const OUTPUT_COLORS: Record<ConsoleOutputKind, number> = {
 export class ConsoleMode {
 	private font: ConsoleEditorFont;
 	private readonly caseInsensitive: boolean;
+	private readonly uppercaseDisplayOverride: boolean;
 	private readonly maxEntries: number;
 	private readonly playerIndex: number;
 	private readonly listLuaSymbolsFn: (asset_id: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
@@ -147,6 +149,7 @@ export class ConsoleMode {
 	constructor(options: ConsoleModeOptions) {
 		this.font = new ConsoleEditorFont(options.fontVariant);
 		this.caseInsensitive = options.caseInsensitive ?? false;
+		this.uppercaseDisplayOverride = options.caseInsensitiveUppercaseDisplay ?? false;
 		this.maxEntries = options.maxEntries ?? MAX_OUTPUT_ENTRIES;
 		this.playerIndex = options.playerIndex;
 		this.listLuaSymbolsFn = options.listLuaSymbols;
@@ -289,10 +292,11 @@ export class ConsoleMode {
 		const contentWidth = Math.max(0, surface.width - PADDING_X * 2);
 
 		// compute prompt layout and wrapped input segments
-		const promptWidth = this.measureDisplayText(this.promptPrefix);
+		const uppercaseDisplay = this.useUppercaseDisplay();
+		const promptWidth = this.measureDisplayText(this.promptPrefix, uppercaseDisplay);
 		const firstLineMax = Math.max(8, contentWidth - promptWidth);
 		const otherLineMax = Math.max(8, contentWidth);
-		const displayInput = this.toDisplayText(this.fieldText());
+		const displayInput = this.toDisplayText(this.fieldText(), uppercaseDisplay);
 		const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax);
 
 		// space available for output lines above the input area
@@ -308,8 +312,8 @@ export class ConsoleMode {
 		let y = PADDING_Y;
 		for (const line of visibleLines) {
 			const color = line.color;
-			this.drawGlyphBackgrounds(renderer, line.text, PADDING_X, y);
-			this.drawGlyphRun(renderer, line.text, PADDING_X, y, Msx1Colors[color]);
+			this.drawGlyphBackgrounds(renderer, line.text, PADDING_X, y, uppercaseDisplay);
+			this.drawGlyphRun(renderer, line.text, PADDING_X, y, Msx1Colors[color], uppercaseDisplay);
 			y += lineHeight;
 		}
 
@@ -319,8 +323,8 @@ export class ConsoleMode {
 
 		// draw prompt at the first input line then draw wrapped input lines (first segment after prompt)
 		const promptColor = Msx1Colors[OUTPUT_COLORS.prompt];
-		this.drawGlyphBackgrounds(renderer, this.promptPrefix, PADDING_X, inputStartY);
-		this.drawGlyphRun(renderer, this.promptPrefix, PADDING_X, inputStartY, promptColor);
+		this.drawGlyphBackgrounds(renderer, this.promptPrefix, PADDING_X, inputStartY, uppercaseDisplay);
+		this.drawGlyphRun(renderer, this.promptPrefix, PADDING_X, inputStartY, promptColor, uppercaseDisplay);
 
 		// draw multi-line input (handles selection and caret)
 		this.drawMultilineInput(renderer, PADDING_X, inputStartY, promptWidth, inputWrap);
@@ -430,8 +434,9 @@ export class ConsoleMode {
 		if (text.length === 0) {
 			return [''];
 		}
-		const normalized = this.toDisplayText(text);
-		return wrapRuntimeErrorLine(normalized, Math.max(8, maxWidth), (value) => this.measureDisplayText(value));
+		const uppercaseDisplay = this.useUppercaseDisplay();
+		const normalized = this.toDisplayText(text, uppercaseDisplay);
+		return wrapRuntimeErrorLine(normalized, Math.max(8, maxWidth), (value) => this.measureDisplayText(value, uppercaseDisplay));
 	}
 
 	private shouldRepeatKey(code: string, deltaSeconds: number, state: Map<string, number>): boolean {
@@ -568,11 +573,7 @@ export class ConsoleMode {
 	}
 
 	private measureRawText(text: string): number {
-		if (!text) {
-			return 0;
-		}
-		const normalized = this.caseInsensitive && this.font.getVariant() === 'tiny' ? text.toUpperCase() : text;
-		return this.font.measure(normalized);
+		return this.measureDisplayText(text, this.useUppercaseDisplay());
 	}
 
 	private normalizeInputCase(text: string): string {
@@ -605,7 +606,7 @@ export class ConsoleMode {
 				quote = ch;
 				continue;
 			}
-			if (ch !== ch.toLowerCase()) {
+			if (ch !== ch.toUpperCase()) {
 				needsNormalization = true;
 				break;
 			}
@@ -635,13 +636,13 @@ export class ConsoleMode {
 				}
 				continue;
 			}
-			if (ch === '"' || ch === '\'') {
-				inString = true;
-				quote = ch;
-				result += ch;
-				continue;
-			}
-			result += ch.toLowerCase();
+				if (ch === '"' || ch === '\'') {
+					inString = true;
+					quote = ch;
+					result += ch;
+					continue;
+				}
+			result += ch.toUpperCase();
 		}
 		return result;
 	}
@@ -762,7 +763,8 @@ export class ConsoleMode {
 		const inputColor = Msx1Colors[OUTPUT_COLORS.stdout];
 		const sel = selectionRange(this.field);
 		const cursorIndex = this.cursorOffset();
-		const displayText = this.toDisplayText(this.fieldText());
+		const uppercaseDisplay = this.useUppercaseDisplay();
+		const displayText = this.toDisplayText(this.fieldText(), uppercaseDisplay);
 		let nextCursorInfo: CursorScreenInfo | null = null;
 		const cursorPosition = this.getCursorPosition();
 
@@ -778,7 +780,7 @@ export class ConsoleMode {
 			}
 
 			// draw glyph backgrounds before overlays/text so selection remains visible
-			this.drawGlyphBackgrounds(renderer, seg, x, y);
+			this.drawGlyphBackgrounds(renderer, seg, x, y, uppercaseDisplay);
 
 			// draw selection background for this segment if selection overlaps
 			if (sel) {
@@ -787,8 +789,8 @@ export class ConsoleMode {
 				if (selStart < selEnd) {
 					const before = displayText.slice(segStart, selStart);
 					const selected = displayText.slice(selStart, selEnd);
-					const startWidth = this.measureDisplayText(before);
-					const selWidth = this.measureDisplayText(selected);
+					const startWidth = this.measureDisplayText(before, uppercaseDisplay);
+					const selWidth = this.measureDisplayText(selected, uppercaseDisplay);
 					renderer.drawRect({
 						kind: 'fill',
 						x0: x + startWidth,
@@ -801,7 +803,7 @@ export class ConsoleMode {
 			}
 
 			// draw the glyph run for this segment
-			this.drawGlyphRun(renderer, seg, x, y, inputColor);
+			this.drawGlyphRun(renderer, seg, x, y, inputColor, uppercaseDisplay);
 
 			// caret rendering: use shared caret style from console_cart_editor
 			const segEnd = segStart + segLen;
@@ -809,7 +811,7 @@ export class ConsoleMode {
 			const caretInSeg = cursorIndex >= segStart && (cursorIndex < segEnd || (isLastSegment && cursorIndex === segEnd));
 			if (caretInSeg) {
 				const local = displayText.slice(segStart, cursorIndex);
-				const caretOffset = this.measureDisplayText(local);
+				const caretOffset = this.measureDisplayText(local, uppercaseDisplay);
 				const nextChar = cursorIndex < displayText.length ? displayText.charAt(cursorIndex) : ' ';
 				const caretWidth = this.font.advance(nextChar);
 				const left = Math.floor(x + caretOffset);
@@ -843,8 +845,8 @@ export class ConsoleMode {
 		}
 	}
 
-	private drawGlyphBackgrounds(renderer: ConsoleRenderFacade, text: string, originX: number, originY: number): void {
-		const display = this.toDisplayText(text);
+	private drawGlyphBackgrounds(renderer: ConsoleRenderFacade, text: string, originX: number, originY: number, uppercase: boolean): void {
+		const display = this.toDisplayText(text, uppercase);
 		let cursorX = originX;
 		for (let i = 0; i < display.length; i += 1) {
 			const ch = display.charAt(i);
@@ -868,9 +870,9 @@ export class ConsoleMode {
 		}
 	}
 
-	private drawGlyphRun(renderer: ConsoleRenderFacade, text: string, originX: number, originY: number, tint: color): void {
+	private drawGlyphRun(renderer: ConsoleRenderFacade, text: string, originX: number, originY: number, tint: color, uppercase: boolean): void {
 		const renderFont = this.font.getRenderFont();
-		const display = this.toDisplayText(text);
+		const display = this.toDisplayText(text, uppercase);
 		let cursorX = originX;
 		for (let i = 0; i < display.length; i += 1) {
 			const ch = display.charAt(i);
@@ -889,19 +891,23 @@ export class ConsoleMode {
 		}
 	}
 
-	private toDisplayText(value: string): string {
-		if (this.caseInsensitive && this.font.getVariant() === 'tiny') {
+	private toDisplayText(value: string, uppercase: boolean): string {
+		if (uppercase && this.caseInsensitive) {
 			return value.toUpperCase();
 		}
 		return value;
 	}
 
-	private measureDisplayText(value: string): number {
+	private measureDisplayText(value: string, uppercase: boolean): number {
 		if (!value) {
 			return 0;
 		}
 		// Match renderer/tab handling: expand tabs to TAB_SPACES spaces before measuring
-		const display = this.toDisplayText(value).replace(/\t/g, ' '.repeat(TAB_SPACES));
+		const display = this.toDisplayText(value, uppercase).replace(/\t/g, ' '.repeat(TAB_SPACES));
 		return this.font.measure(display);
+	}
+
+	private useUppercaseDisplay(): boolean {
+		return this.font.getVariant() === 'tiny' || this.uppercaseDisplayOverride;
 	}
 }

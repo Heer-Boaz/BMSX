@@ -2141,7 +2141,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		if (!this.caseInsensitiveNativeAccess) {
 			return null;
 		}
-		const lower = propertyName.toLowerCase();
+		const upper = propertyName.toUpperCase();
 		let prototype: object | null = native;
 		while (prototype && prototype !== Object.prototype) {
 			const names = Object.getOwnPropertyNames(prototype);
@@ -2150,7 +2150,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 				if (candidate === propertyName) {
 					return candidate;
 				}
-				if (candidate.toLowerCase() === lower) {
+				if (candidate.toUpperCase() === upper) {
 					return candidate;
 				}
 			}

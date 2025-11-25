@@ -205,7 +205,7 @@ export class ConsoleCommandDispatcher {
 					color = 5;
 					break;
 			}
-			this.hooks.appendStdout(entry.text, color);
+			this.hooks.appendStdout(entry.text.toUpperCase(), color);
 		}
 	}
 
