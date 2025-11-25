@@ -1,9 +1,10 @@
 import { normalizeDecoratedClassName } from '../utils/decorators';
 import * as GameSerializer from './gameserializer';
 import type { ConstructorWithSaveGame } from './gameserializer';
+import { scheduleMicrotask } from '../platform/platform';
 
 function queueRegistration(fn: () => void): void {
-	queueMicrotask(fn);
+	scheduleMicrotask(fn);
 }
 
 function getSerializer() {

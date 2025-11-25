@@ -1,5 +1,6 @@
 import { $ } from '../../core/game';
 import { BmsxConsoleApi } from '../api';
+import { scheduleMicrotask } from '../../platform/platform';
 import type {
 	ConsoleLuaDefinitionLocation,
 	ConsoleLuaHoverRequest,
@@ -140,23 +141,7 @@ import { api, type BmsxConsoleRuntime } from '../runtime';
 import { computeEditContextFromSources, handlePostEditMutation, writeClipboard } from './text_editing_and_selection';
 import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
 
-export type ConsoleCartEditor = {
-	activate: typeof activate;
-	deactivate: typeof deactivate;
-	isActive: typeof isActive;
-	update: typeof update;
-	draw: typeof draw;
-	shutdown: typeof shutdown;
-	updateViewport: typeof updateViewport;
-	showWarningBanner: typeof ide_state.showWarningBanner;
-	showRuntimeErrorInChunk: typeof showRuntimeErrorInChunk;
-	showRuntimeError: typeof showRuntimeError;
-	clearRuntimeErrorOverlay: typeof clearRuntimeErrorOverlay;
-	clearAllRuntimeErrorOverlays: typeof clearAllRuntimeErrorOverlays;
-	getSourceForChunk: typeof getSourceForChunk;
-};
-
-const editorFacade: ConsoleCartEditor = {
+const editorFacade = {
 	activate,
 	deactivate,
 	isActive,
@@ -171,6 +156,8 @@ const editorFacade: ConsoleCartEditor = {
 	clearAllRuntimeErrorOverlays,
 	getSourceForChunk,
 };
+
+export type ConsoleCartEditor = typeof editorFacade;
 
 export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleCartEditor {
 	initializeConsoleCartEditor(options);
@@ -564,94 +551,6 @@ export function findWordRight(row: number, column: number): { row: number; colum
 	return { row: currentRow, column: currentColumn };
 }
 
-export function deleteActiveLines(): void {
-	if (ide_state.lines.length === 0) {
-		return;
-	}
-	prepareUndo('delete-ide_state.active-ide_state.lines', false);
-	const range = TextEditing.getSelectionRange();
-	if (!range) {
-		const removedRow = ide_state.cursorRow;
-		ide_state.lines.splice(removedRow, 1);
-		if (ide_state.lines.length === 0) {
-			ide_state.lines = [''];
-			ide_state.cursorRow = 0;
-			ide_state.cursorColumn = 0;
-		} else if (ide_state.cursorRow >= ide_state.lines.length) {
-			ide_state.cursorRow = ide_state.lines.length - 1;
-			ide_state.cursorColumn = ide_state.lines[ide_state.cursorRow].length;
-		} else {
-			const line = ide_state.lines[ide_state.cursorRow];
-			ide_state.cursorColumn = Math.min(ide_state.cursorColumn, line.length);
-		}
-		invalidateLine(ide_state.cursorRow);
-		invalidateHighlightsFromRow(Math.min(removedRow, ide_state.lines.length - 1));
-		recordEditContext('delete', '\n');
-		markTextMutated();
-		resetBlink();
-		updateDesiredColumn();
-		revealCursor();
-		return;
-	}
-	const { start, end } = range;
-	const deletionStart = start.row;
-	let deletionEnd = end.row;
-	if (end.column === 0 && end.row > start.row) {
-		deletionEnd -= 1;
-	}
-	const count = deletionEnd - deletionStart + 1;
-	const deletedLines = ide_state.lines.slice(deletionStart, deletionStart + count);
-	ide_state.lines.splice(deletionStart, count);
-	if (ide_state.lines.length === 0) {
-		ide_state.lines = [''];
-	}
-	ide_state.cursorRow = clamp(deletionStart, 0, ide_state.lines.length - 1);
-	ide_state.cursorColumn = 0;
-	ide_state.selectionAnchor = null;
-	invalidateLine(ide_state.cursorRow);
-	invalidateHighlightsFromRow(deletionStart);
-	recordEditContext('delete', deletedLines.join('\n'));
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
-}
-
-export function moveSelectionLines(delta: number): void {
-	if (delta === 0) {
-		return;
-	}
-	const range = getLineRangeForMovement();
-	if (delta < 0 && range.startRow === 0) {
-		return;
-	}
-	if (delta > 0 && range.endRow >= ide_state.lines.length - 1) {
-		return;
-	}
-	prepareUndo('move-ide_state.lines', false);
-	const count = range.endRow - range.startRow + 1;
-	const block = ide_state.lines.splice(range.startRow, count);
-	const targetIndex = range.startRow + delta;
-	ide_state.lines.splice(targetIndex, 0, ...block);
-	const affectedStart = Math.max(0, Math.min(range.startRow, targetIndex));
-	const affectedEnd = Math.min(ide_state.lines.length - 1, Math.max(range.endRow, targetIndex + count - 1));
-	if (affectedStart <= affectedEnd) {
-		for (let row = affectedStart; row <= affectedEnd; row += 1) {
-			invalidateLine(row);
-		}
-	}
-	invalidateHighlightsFromRow(affectedStart);
-	ide_state.cursorRow += delta;
-	if (ide_state.selectionAnchor) {
-		ide_state.selectionAnchor = { row: ide_state.selectionAnchor.row + delta, column: ide_state.selectionAnchor.column };
-	}
-	clampCursorColumn();
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
-}
-
 export function getLineRangeForMovement(): { startRow: number; endRow: number } {
 	const range = TextEditing.getSelectionRange();
 	if (!range) {
@@ -995,7 +894,7 @@ export function flushWindowFocusState(): void {
 }
 
 export function scheduleNextFrame(task: () => void): void {
-	queueMicrotask(task);
+	scheduleMicrotask(task);
 }
 
 export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void {
@@ -6763,19 +6662,9 @@ export function prepareRuntimeSnapshotForResume(snapshot: unknown): Record<strin
 }
 
 export function scheduleRuntimeTask(task: () => void | Promise<void>, onError: (error: unknown) => void): void {
-	const invoke = (fn: () => void): void => {
-		if (typeof queueMicrotask === 'function') {
-			queueMicrotask(fn);
-			return;
-		}
-		void Promise.resolve().then(fn);
-	};
-	invoke(() => {
+	scheduleMicrotask(() => {
 		try {
-			const result = task();
-			if (result && typeof (result as Promise<void>).then === 'function') {
-				(result as Promise<void>).catch(onError);
-			}
+			Promise.resolve(task()).catch(onError);
 		} catch (error) {
 			onError(error);
 		}

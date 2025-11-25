@@ -24,6 +24,8 @@ import {
 	PlatformHIDDevice,
 	PlatformHIDDeviceRequestOptions,
 	ViewportMetrics,
+	MicrotaskQueue,
+	defaultMicrotaskQueue,
 	ViewportMetricsProvider,
 	OverlayManager,
 	WindowEventHub,
@@ -65,12 +67,14 @@ export class BrowserPlatform implements Platform {
 	audio: AudioService;
 	rng: RngService;
 	gameviewHost: BrowserGameViewHost;
+	microtasks: MicrotaskQueue;
 
 	constructor(surface: HTMLElement, canvas: HTMLCanvasElement) {
 		this.clock = new BrowserClock();
 		this.frames = new BrowserFrameLoop();
 		this.lifecycle = new BrowserLifecycle();
 		this.storage = new BrowserStorage();
+		this.microtasks = defaultMicrotaskQueue;
 		this.clipboard = new BrowserClipboardService(surface);
 		this.input = new BrowserInputHub(surface, this.clock);
 		const ownerDoc = surface.ownerDocument;

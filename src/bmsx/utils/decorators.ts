@@ -1,4 +1,5 @@
 import { CLASS_REGISTRATION_DONE } from './symbols';
+import { scheduleMicrotask } from '../platform/platform';
 
 /**
  * Shared helpers for decorator initializers.
@@ -10,16 +11,7 @@ import { CLASS_REGISTRATION_DONE } from './symbols';
 
 /** Defer a function to run after the current turn/microtask. */
 export function defer(fn: () => void): void {
-	try {
-		// Prefer microtask if available on globalThis
-		const qm =(globalThis).queueMicrotask;
-		if (typeof qm === 'function') { qm(fn); return; }
-		// Fallback to Promise microtask
-		Promise.resolve().then(fn);
-	} catch {
-		// Last-resort macro task
-		setTimeout(fn, 0);
-	}
+	scheduleMicrotask(fn);
 }
 
 /**

@@ -11,6 +11,7 @@ import { TextureManager } from "../render/texturemanager";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_factory";
 import type { GameViewHost, Platform, PlatformExitEvent } from '../platform';
+import { setMicrotaskQueue } from '../platform';
 import { asset_id, Identifiable, Identifier, Registerable, RomPack, type vec3, type vec2 } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
@@ -340,6 +341,7 @@ export class Game {
 		$rompack = rompack;
 		platform.gameviewHost = resolvedViewHost;
 		this._platform = platform;
+		setMicrotaskQueue(platform.microtasks);
 		this.running = false;
 		this._paused = false;
 		this.wasupdated = true;

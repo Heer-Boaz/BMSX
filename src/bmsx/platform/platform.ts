@@ -12,12 +12,33 @@
  * tracking focus/blur transitions, and mapping host-specific hit testing to canonical control IDs.
  * This is fundamental for layout — the renderer explicitly negotiates canvas space with these controls.
  */
+export interface MicrotaskQueue {
+	schedule(task: () => void): void;
+}
+
+export const defaultMicrotaskQueue: MicrotaskQueue = {
+	schedule: (task: () => void) => {
+		queueMicrotask(task);
+	},
+};
+
+let activeMicrotaskQueue: MicrotaskQueue = defaultMicrotaskQueue;
+
+export function setMicrotaskQueue(queue: MicrotaskQueue): void {
+	activeMicrotaskQueue = queue;
+}
+
+export function scheduleMicrotask(task: () => void): void {
+	activeMicrotaskQueue.schedule(task);
+}
+
 export interface Platform {
 	clock: Clock;
 	frames: FrameLoop;
 	lifecycle: Lifecycle;
 	input: InputHub;
 	storage: StorageService;
+	microtasks: MicrotaskQueue;
 	requestShutdown(): void;
 	clipboard: ClipboardService;
 	hid: HIDService;

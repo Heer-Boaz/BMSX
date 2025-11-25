@@ -20,6 +20,7 @@ import {
 	GameViewHostCapabilityId,
 	GameViewHostCapabilityMap,
 	OnscreenGamepadHandles,
+	MicrotaskQueue,
 } from '../platform';
 import { HeadlessPlatformServices, HeadlessPlatformOptions } from '../headless/platform_headless';
 import { HeadlessGameViewHost } from 'bmsx/render/headless/headless_view';
@@ -128,6 +129,7 @@ export class CLIPlatformServices implements Platform {
 	readonly lifecycle: Lifecycle;
 	readonly input: InputHub;
 	readonly storage: StorageService;
+	readonly microtasks: MicrotaskQueue;
 	requestShutdown(): void {
 		process.exit(0);
 	}
@@ -145,6 +147,7 @@ export class CLIPlatformServices implements Platform {
 		this.lifecycle = base.lifecycle;
 		this.input = base.input;
 		this.storage = base.storage;
+		this.microtasks = base.microtasks;
 		this.clipboard = base.clipboard;
 		this.hid = base.hid;
 		this.onscreenGamepad = base.onscreenGamepad;
