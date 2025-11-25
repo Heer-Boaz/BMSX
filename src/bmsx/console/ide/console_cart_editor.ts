@@ -56,7 +56,7 @@ import {
 import { buildMemberCompletionItems, clearHoverTooltip, describeMetadataValue, intellisenseUiReady, resolveHoverAssetId, resolveHoverChunkName, safeJsonStringify, shouldAutoTriggerCompletions } from './intellisense';
 import { isLuaCommentContext } from './text_utils';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
-import { renderMenuDropdownOverlay, renderTopBar } from './render/render_top_bar';
+import { renderTopBar } from './render/render_top_bar';
 import { renderTabBar } from './render/render_tab_bar';
 import { drawStatusBar } from './render/render_status_bar';
 import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderRenameBar, renderLineJumpBar, type InlineBarsHost } from './render/render_inline_bars';
@@ -1497,7 +1497,6 @@ export function draw(): void {
 	}
 	drawProblemsPanel();
 	drawStatusBar();
-	renderMenuDropdownOverlay();
 	if (ide_state.pendingActionPrompt) {
 		drawActionPromptOverlay();
 	}

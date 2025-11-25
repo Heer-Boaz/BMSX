@@ -96,10 +96,11 @@ export class ConsoleRenderFacade {
 
 	public rect(command: RectCommand): void {
 		const layer = command.layer ?? (this.capturingFrame ? 'editor' : 'ui');
+		const z = command.z ?? ConsoleRenderFacade.RECT_Z;
 		if (!this.capturingFrame) {
 			$.view.renderer.submit.rect({
 				kind: command.kind,
-				area: { start: { x: command.x0, y: command.y0, z: ConsoleRenderFacade.RECT_Z }, end: { x: command.x1, y: command.y1, z: ConsoleRenderFacade.RECT_Z } },
+				area: { start: { x: command.x0, y: command.y0, z }, end: { x: command.x1, y: command.y1, z } },
 				color: command.color,
 				layer,
 			});
@@ -108,8 +109,8 @@ export class ConsoleRenderFacade {
 		const rect: RectRenderSubmission = {
 			kind: command.kind,
 			area: {
-				start: { x: command.x0, y: command.y0, z: ConsoleRenderFacade.RECT_Z },
-				end: { x: command.x1, y: command.y1, z: ConsoleRenderFacade.RECT_Z },
+				start: { x: command.x0, y: command.y0, z },
+				end: { x: command.x1, y: command.y1, z },
 			},
 			color: { ...command.color },
 			layer,

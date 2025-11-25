@@ -41,13 +41,22 @@ const TOP_BAR_COMMANDS: TopBarButtonId[] = [
 	'debugRegistry',
 ];
 
+const Z_TOP_BAR_BACKGROUND = 10;
+const Z_TOP_BAR_TEXT = 12;
+const Z_MENU_BUTTON = 14;
+const Z_MENU_BUTTON_TEXT = 15;
+const Z_MENU_DROPDOWN = 20;
+const Z_MENU_DROPDOWN_TEXT = 21;
+const Z_MENU_MARKER = 22;
+
 export function renderTopBar(): void {
 	clearMenuBounds();
 	const primaryBarHeight = ide_state.headerHeight;
-	api.rectfill(0, 0, ide_state.viewportWidth, primaryBarHeight, undefined, constants.COLOR_TOP_BAR);
+	api.rectfill(0, 0, ide_state.viewportWidth, primaryBarHeight, Z_TOP_BAR_BACKGROUND, constants.COLOR_TOP_BAR);
 
 	const menuEntries = buildMenuEntries();
-	renderMenuRow(menuEntries);
+	const menuButtonHeight = renderMenuRow(menuEntries);
+	renderOpenMenuDropdown(menuEntries, menuButtonHeight);
 
 	const debuggerPaused = ide_state.debuggerControls.executionState === 'paused';
 	const debuggerSummary =
@@ -56,7 +65,7 @@ export function renderTopBar(): void {
 			: null;
 
 	const titleY = primaryBarHeight + 1;
-	drawEditorText(api, ide_state.font, ide_state.metadata.title.toUpperCase(), 4, titleY, undefined, constants.COLOR_TOP_BAR_TEXT);
+	drawEditorText(api, ide_state.font, ide_state.metadata.title.toUpperCase(), 4, titleY, Z_TOP_BAR_TEXT, constants.COLOR_TOP_BAR_TEXT);
 	const versionSuffix = ide_state.dirty ? '*' : '';
 	const version = `v${ide_state.metadata.version}${versionSuffix}`;
 	const versionWidth = measureText(version);
@@ -64,33 +73,13 @@ export function renderTopBar(): void {
 	if (debuggerSummary) {
 		const summaryWidth = measureText(debuggerSummary);
 		const summaryX = Math.max(4, versionX - summaryWidth - 8);
-		drawEditorText(api, ide_state.font, debuggerSummary, summaryX, titleY, undefined, constants.COLOR_TOP_BAR_TEXT);
+		drawEditorText(api, ide_state.font, debuggerSummary, summaryX, titleY, Z_TOP_BAR_TEXT, constants.COLOR_TOP_BAR_TEXT);
 		versionX = Math.max(summaryX - 4, versionX);
 	}
-	drawEditorText(api, ide_state.font, version, versionX, titleY, undefined, constants.COLOR_TOP_BAR_TEXT);
+	drawEditorText(api, ide_state.font, version, versionX, titleY, Z_TOP_BAR_TEXT, constants.COLOR_TOP_BAR_TEXT);
 }
 
-export function renderMenuDropdownOverlay(): void {
-	if (ide_state.openMenuId === null) {
-		ide_state.menuDropdownBounds = null;
-		return;
-	}
-	const menuEntries = buildMenuEntries();
-	const openMenu = menuEntries.find((entry) => entry.id === ide_state.openMenuId);
-	if (!openMenu) {
-		ide_state.menuDropdownBounds = null;
-		return;
-	}
-	const anchor = ide_state.menuEntryBounds[openMenu.id];
-	if (anchor.right === 0 && anchor.bottom === 0) {
-		ide_state.menuDropdownBounds = null;
-		return;
-	}
-	const buttonHeight = ide_state.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
-	renderMenuDropdown(openMenu, anchor, buttonHeight);
-}
-
-function renderMenuRow(menuEntries: MenuEntry[]): void {
+function renderMenuRow(menuEntries: MenuEntry[]): number {
 	const buttonTop = 1;
 	const buttonHeight = ide_state.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
 	let buttonX = 4;
@@ -110,12 +99,27 @@ function renderMenuRow(menuEntries: MenuEntry[]): void {
 		const isOpen = ide_state.openMenuId === entry.id;
 		const fillColor = isOpen ? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND;
 		const textColor = isOpen ? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_TEXT;
-		api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, fillColor);
-		api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_HEADER_BUTTON_BORDER);
-		drawEditorText(api, ide_state.font, entry.label, bounds.left + constants.HEADER_BUTTON_PADDING_X, bounds.top + constants.HEADER_BUTTON_PADDING_Y, undefined, textColor);
+		api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_BUTTON, fillColor);
+		api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_BUTTON, constants.COLOR_HEADER_BUTTON_BORDER);
+		drawEditorText(api, ide_state.font, entry.label, bounds.left + constants.HEADER_BUTTON_PADDING_X, bounds.top + constants.HEADER_BUTTON_PADDING_Y, Z_MENU_BUTTON_TEXT, textColor);
 		buttonX = right + constants.HEADER_BUTTON_SPACING;
 	}
 	ide_state.menuDropdownBounds = null;
+	return buttonHeight;
+}
+
+function renderOpenMenuDropdown(menuEntries: MenuEntry[], buttonHeight: number): void {
+	const openMenu = menuEntries.find((entry) => entry.id === ide_state.openMenuId);
+	if (!openMenu) {
+		ide_state.menuDropdownBounds = null;
+		return;
+	}
+	const anchor = ide_state.menuEntryBounds[openMenu.id];
+	if (anchor.right === 0 && anchor.bottom === 0) {
+		ide_state.menuDropdownBounds = null;
+		return;
+	}
+	renderMenuDropdown(openMenu, anchor, buttonHeight);
 }
 
 function renderMenuDropdown(menu: MenuEntry, anchor: RectBounds, itemHeight: number): void {
@@ -130,7 +134,7 @@ function renderMenuDropdown(menu: MenuEntry, anchor: RectBounds, itemHeight: num
 		if (item.type === 'separator') {
 			const separatorHeight = Math.max(2, constants.HEADER_BUTTON_PADDING_Y + 1);
 			const separatorTop = currentTop + Math.max(1, Math.floor(separatorHeight / 2));
-			api.rectfill(dropdownLeft + paddingX, separatorTop, dropdownRight - paddingX, separatorTop + 1, undefined, constants.COLOR_HEADER_BUTTON_BORDER);
+			api.rectfill(dropdownLeft + paddingX, separatorTop, dropdownRight - paddingX, separatorTop + 1, Z_MENU_DROPDOWN, constants.COLOR_HEADER_BUTTON_BORDER);
 			currentTop += separatorHeight;
 			continue;
 		}
@@ -147,20 +151,20 @@ function renderMenuDropdown(menu: MenuEntry, anchor: RectBounds, itemHeight: num
 		const textColor = item.disabled
 			? constants.COLOR_HEADER_BUTTON_TEXT_DISABLED
 			: (item.active ? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_TEXT);
-		api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, fillColor);
-		api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_HEADER_BUTTON_BORDER);
+		api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_DROPDOWN, fillColor);
+		api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_DROPDOWN, constants.COLOR_HEADER_BUTTON_BORDER);
 		if (item.active) {
 			const markerTop = bounds.top + Math.max(1, Math.floor((itemHeight - markerSize) / 2));
 			const markerLeft = bounds.left + paddingX;
-			api.rectfill(markerLeft, markerTop, markerLeft + markerSize, markerTop + markerSize, undefined, constants.COLOR_HEADER_BUTTON_BORDER);
+			api.rectfill(markerLeft, markerTop, markerLeft + markerSize, markerTop + markerSize, Z_MENU_MARKER, constants.COLOR_HEADER_BUTTON_BORDER);
 		}
 		const textX = bounds.left + paddingX * 2 + markerSize;
 		const textY = bounds.top + constants.HEADER_BUTTON_PADDING_Y;
-		drawEditorText(api, ide_state.font, item.label, textX, textY, undefined, textColor);
+		drawEditorText(api, ide_state.font, item.label, textX, textY, Z_MENU_DROPDOWN_TEXT, textColor);
 		currentTop = bounds.bottom;
 	}
 	ide_state.menuDropdownBounds = { left: dropdownLeft, top: ide_state.headerHeight, right: dropdownRight, bottom: currentTop };
-	api.rect(dropdownLeft, ide_state.headerHeight, dropdownRight, currentTop, undefined, constants.COLOR_HEADER_BUTTON_BORDER);
+	api.rect(dropdownLeft, ide_state.headerHeight, dropdownRight, currentTop, Z_MENU_DROPDOWN, constants.COLOR_HEADER_BUTTON_BORDER);
 }
 
 function buildMenuEntries(): MenuEntry[] {
