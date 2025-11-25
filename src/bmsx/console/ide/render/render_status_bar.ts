@@ -6,6 +6,7 @@ import { isResourceViewActive } from '../editor_tabs';
 import { ide_state } from '../ide_state';
 import { drawEditorText } from '../text_renderer';
 import { measureText, truncateTextToWidth } from '../text_utils';
+import { api } from '../../runtime';
 
 // const STATUS_LOG_PREFIX = '[IDE Status]';
 
@@ -34,7 +35,7 @@ export interface StatusBarHost {
 	problemsPanelFocused?: boolean;
 }
 
-export function renderStatusBar(api: BmsxConsoleApi, host: StatusBarHost): void {
+export function renderStatusBar(host: StatusBarHost): void {
 	const statusTop = host.viewportHeight - host.bottomMargin;
 	const statusBottom = host.viewportHeight;
 	api.rectfill(0, statusTop, host.viewportWidth, statusBottom, constants.COLOR_STATUS_BACKGROUND);
@@ -107,7 +108,7 @@ export function renderStatusBar(api: BmsxConsoleApi, host: StatusBarHost): void 
 		// }
 	}
 	host.drawText(api, filenameInfo, host.viewportWidth - host.measureText(filenameInfo) - 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
-}export function drawStatusBar(api: BmsxConsoleApi): void {
+}export function drawStatusBar(): void {
 	const host = {
 		viewportWidth: ide_state.viewportWidth,
 		viewportHeight: ide_state.viewportHeight,
@@ -131,7 +132,7 @@ export function renderStatusBar(api: BmsxConsoleApi, host: StatusBarHost): void 
 		debugPauseActive: ide_state.executionStopRow !== null,
 		problemsPanelFocused: ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused(),
 	};
-	renderStatusBar(api, host);
+	renderStatusBar(host);
 }
 
 export function buildStatusLeftInfo(): string {

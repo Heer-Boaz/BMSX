@@ -6,6 +6,7 @@ import { clamp } from '../../utils/clamp';
 import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight } from './console_cart_editor';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
+import { api } from '../runtime';
 
 type PanelLayout = {
     headerTop: number;
@@ -97,7 +98,7 @@ export class ProblemsPanelController {
         this.cachedLayout = null;
     }
 
-    public draw(api: BmsxConsoleApi, bounds: RectBounds): void {
+    public draw(bounds: RectBounds): void {
 		if (!this.visible) {
 			this.cachedLayout = null;
 			return;
@@ -473,12 +474,12 @@ export class ProblemsPanelController {
 		}
 	}
 }
-export function drawProblemsPanel(api: BmsxConsoleApi): void {
+export function drawProblemsPanel(): void {
 	const bounds = getProblemsPanelBounds();
 	if (!bounds) {
 		return;
 	}
-	ide_state.problemsPanel.draw(api, bounds);
+	ide_state.problemsPanel.draw(bounds);
 }
 
 export function getProblemsPanelBounds(): RectBounds | null {

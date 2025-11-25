@@ -21,7 +21,7 @@ export interface ResourcePanelBridge {
 	// Text rendering
 	measureText(text: string): number;
 	drawText(api: BmsxConsoleApi, text: string, x: number, y: number, color: number): void;
-	drawColoredText(api: BmsxConsoleApi, text: string, colors: number[], x: number, y: number): void;
+	drawColoredText(text: string, colors: number[], x: number, y: number): void;
 	drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void;
 
 	// Editor integration
@@ -106,7 +106,7 @@ export class ResourcePanelController {
 	}
 
 	// === Rendering ===
-	draw(api: BmsxConsoleApi): void {
+	draw(): void {
 		if (!this.visible) return;
 		const proxyHost = {
 			resourcePanelVisible: this.visible,
@@ -114,7 +114,7 @@ export class ResourcePanelController {
 			lineHeight: this.host.lineHeight,
 			measureText: (t: string) => this.host.measureText(t),
 			drawText: (a: BmsxConsoleApi, t: string, x: number, y: number, c: number) => this.host.drawText(a, t, x, y, c),
-			drawColoredText: (a: BmsxConsoleApi, t: string, colors: number[], x: number, y: number) => this.host.drawColoredText(a, t, colors, x, y),
+			drawColoredText: (t: string, colors: number[], x: number, y: number) => this.host.drawColoredText(t, colors, x, y),
 			drawRectOutlineColor: (a: BmsxConsoleApi, l: number, t: number, r: number, b: number, col: { r: number; g: number; b: number; a: number }) => this.host.drawRectOutlineColor(a, l, t, r, b, col),
 			resourceBrowserItems: this.items,
 			resourceBrowserScroll: this.scroll,
@@ -148,7 +148,7 @@ export class ResourcePanelController {
 			resourceHorizontal = proxyHost.resourceHorizontal;
 		}
 		const hostImpl = new HostProxy();
-		renderResourcePanel(api, hostImpl);
+		renderResourcePanel(hostImpl);
 		this.scroll = hostImpl.resourceBrowserScroll;
 		this.hscroll = hostImpl.resourceBrowserHorizontalScroll;
 	}

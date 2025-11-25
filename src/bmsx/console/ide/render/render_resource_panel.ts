@@ -9,6 +9,7 @@ import { getActiveResourceViewer, getCodeAreaBounds, resourceViewerTextCapacity,
 import { resourceViewerClampScroll } from '../input';
 import { ide_state } from '../ide_state';
 import { drawEditorText } from '../text_renderer';
+import { api } from '../../runtime';
 
 export interface ResourcePanelHost {
 	// Visibility and geometry
@@ -19,7 +20,7 @@ export interface ResourcePanelHost {
 	// Text rendering
 	measureText(text: string): number;
 	drawText(api: BmsxConsoleApi, text: string, x: number, y: number, color: number): void;
-	drawColoredText(api: BmsxConsoleApi, text: string, colors: number[], x: number, y: number): void;
+	drawColoredText(text: string, colors: number[], x: number, y: number): void;
 	drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void;
 
 	// Data/state
@@ -37,7 +38,7 @@ export interface ResourcePanelHost {
 	readonly resourceHorizontal: ConsoleScrollbar;
 }
 
-export function renderResourcePanel(api: BmsxConsoleApi, host: ResourcePanelHost): void {
+export function renderResourcePanel(host: ResourcePanelHost): void {
 	if (!host.resourcePanelVisible) {
 		return;
 	}
@@ -124,7 +125,7 @@ export function renderResourcePanel(api: BmsxConsoleApi, host: ResourcePanelHost
 				}
 				const colors = new Array<number>(contentText.length).fill(constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
 				if (contentText.length > 0) {
-					host.drawColoredText(api, contentText, colors, contentX, y);
+					host.drawColoredText(contentText, colors, contentX, y);
 				}
 			} else if (visibleRight > visibleLeft) {
 				host.drawRectOutlineColor(api, visibleLeft, caretTop, visibleRight, caretBottom, highlightColor);
@@ -162,7 +163,7 @@ function resourcePanelLineCapacity(host: ResourcePanelHost, bounds: RectBounds):
 		initialCapacity = Math.max(1, Math.floor(contentHeight / host.lineHeight));
 	}
 	return initialCapacity;
-}export function drawResourceViewer(api: BmsxConsoleApi): void {
+}export function drawResourceViewer(): void {
 	const viewer = getActiveResourceViewer();
 	if (!viewer) {
 		return;
@@ -189,10 +190,10 @@ function resourcePanelLineCapacity(host: ResourcePanelHost, bounds: RectBounds):
 	const layout = resourceViewerImageLayout(viewer);
 	let textTop = contentTop;
 	if (layout && viewer.image) {
-		ensureResourceViewerSprite(api, viewer.image.asset_id, { left: layout.left, top: layout.top, scale: layout.scale });
-		textTop = Math.floor(layout.bottom + ide_state.lineHeight);
+		ensureResourceViewerSprite(viewer.image.asset_id, { left: layout.left, top: layout.top, scale: layout.scale });
+		textTop = layout.bottom + ide_state.lineHeight;
 	} else {
-		hideResourceViewerSprite(api);
+		hideResourceViewerSprite();
 	}
 	if (capacity <= 0) {
 		if (viewer.lines.length > 0) {
@@ -226,9 +227,9 @@ function resourcePanelLineCapacity(host: ResourcePanelHost, bounds: RectBounds):
 		verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
 }
-export function drawResourcePanel(api: BmsxConsoleApi): void {
+export function drawResourcePanel(): void {
 	// Delegate full drawing to controller and then mirror back minimal state used elsewhere
-	ide_state.resourcePanel.draw(api);
+	ide_state.resourcePanel.draw();
 	const s = ide_state.resourcePanel.getStateForRender();
 	ide_state.resourcePanelVisible = s.visible;
 	ide_state.resourceBrowserItems = s.items;

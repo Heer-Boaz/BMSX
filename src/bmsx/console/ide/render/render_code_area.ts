@@ -2,9 +2,16 @@ import type { BmsxConsoleApi } from '../../api';
 import type { CachedHighlight, CursorScreenInfo, EditorDiagnostic } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { clamp } from '../../../utils/clamp';
-import { columnToDisplay, measureRangeFast } from '../console_cart_editor';
+import { columnToDisplay, computeMaximumScrollColumn, drawHoverTooltip, drawRuntimeErrorOverlay, getCachedHighlight, getCodeAreaBounds, getDiagnosticsForRow, maximumLineLength, measureRangeFast, sliceHighlightedLine } from '../console_cart_editor';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
+import { drawEditorColoredText } from '../text_renderer';
+import { getBreakpointsForChunk } from '../debugger_breakpoints';
+import { resolveHoverChunkName } from '../intellisense';
+import { getActiveCodeTabContext } from '../editor_tabs';
+import { api } from '../../runtime';
+import { computeSelectionSlice, ensureVisualLines, getVisualLineCount, visualIndexToSegment } from '../text_utils';
+import { drawCursor } from './render_caret';
 
 export type CodeAreaBounds = { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; gutterLeft: number; gutterRight: number; textLeft: number };
 
@@ -68,22 +75,22 @@ export interface CodeAreaHost {
     hasBreakpoint?: (rowIndex: number) => boolean;
 }
 
-export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
-    host.ensureVisualLines();
-    const bounds = host.getCodeAreaBounds();
+export function renderCodeArea(): void {
+    ensureVisualLines();
+    const bounds = getCodeAreaBounds();
     const gutterOffset = bounds.textLeft - bounds.codeLeft;
-    const advance = host.warnNonMonospace ? host.spaceAdvance : host.charAdvance;
-    const wrapEnabled = host.wordWrapEnabled;
+    const advance = ide_state.warnNonMonospace ? ide_state.spaceAdvance : ide_state.charAdvance;
+    const wrapEnabled = ide_state.wordWrapEnabled;
 
-    let horizontalVisible = !wrapEnabled && host.codeHorizontalScrollbarVisible;
-    let verticalVisible = host.codeVerticalScrollbarVisible;
+    let horizontalVisible = !wrapEnabled && ide_state.codeHorizontalScrollbarVisible;
+    let verticalVisible = ide_state.codeVerticalScrollbarVisible;
     let rowCapacity = 1;
     let columnCapacity = 1;
-    const visualCount = host.getVisualLineCount();
+    const visualCount = getVisualLineCount();
 
     for (let i = 0; i < 3; i += 1) {
         const availableHeight = Math.max(0, (bounds.codeBottom - bounds.codeTop) - (horizontalVisible ? constants.SCROLLBAR_WIDTH : 0));
-        rowCapacity = Math.max(1, Math.floor(availableHeight / host.lineHeight));
+        rowCapacity = Math.max(1, Math.floor(availableHeight / ide_state.lineHeight));
         verticalVisible = visualCount > rowCapacity;
         const availableWidth = Math.max(
             0,
@@ -96,99 +103,99 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
         if (wrapEnabled) {
             horizontalVisible = false;
         } else {
-            horizontalVisible = host.maximumLineLength() > columnCapacity;
+            horizontalVisible = maximumLineLength() > columnCapacity;
         }
     }
 
-    host.codeVerticalScrollbarVisible = verticalVisible;
-    host.codeHorizontalScrollbarVisible = !wrapEnabled && horizontalVisible;
-    host.cachedVisibleRowCount = rowCapacity;
-    host.cachedVisibleColumnCount = columnCapacity;
+    ide_state.codeVerticalScrollbarVisible = verticalVisible;
+    ide_state.codeHorizontalScrollbarVisible = !wrapEnabled && horizontalVisible;
+    ide_state.cachedVisibleRowCount = rowCapacity;
+    ide_state.cachedVisibleColumnCount = columnCapacity;
 
     const contentRight = Math.max(
         bounds.textLeft,
         bounds.codeRight
-            - (host.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
+            - (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
             - constants.CODE_AREA_RIGHT_MARGIN
     );
-    const contentBottom = bounds.codeBottom - (host.codeHorizontalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
-    const trackRight = bounds.codeRight - (host.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
+    const contentBottom = bounds.codeBottom - (ide_state.codeHorizontalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
+    const trackRight = bounds.codeRight - (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
 
     api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, constants.COLOR_CODE_BACKGROUND);
     if (bounds.gutterRight > bounds.gutterLeft) {
         api.rectfill(bounds.gutterLeft, bounds.codeTop, bounds.gutterRight, contentBottom, constants.COLOR_GUTTER_BACKGROUND);
     }
 
-    const activeGotoHighlight = host.gotoHoverHighlight;
+    const activeGotoHighlight = ide_state.gotoHoverHighlight;
     const gotoVisualIndex = activeGotoHighlight
-        ? host.positionToVisualIndex(activeGotoHighlight.row, activeGotoHighlight.startColumn)
+        ? ide_state.layout.positionToVisualIndex(ide_state.lines, activeGotoHighlight.row, activeGotoHighlight.startColumn)
         : null;
-	const cursorVisualIndex = host.positionToVisualIndex(host.cursorRow, host.cursorColumn);
+	const cursorVisualIndex = ide_state.layout.positionToVisualIndex(ide_state.lines, ide_state.cursorRow, ide_state.cursorColumn);
 	let cursorEntry: CachedHighlight | null = null;
 	let cursorInfo: CursorScreenInfo | null = null;
 	const sliceWidth = columnCapacity + 2;
 
 	for (let i = 0; i < rowCapacity; i += 1) {
-		const visualIndex = host.scrollRow + i;
-		const rowY = bounds.codeTop + i * host.lineHeight;
+		const visualIndex = ide_state.scrollRow + i;
+		const rowY = bounds.codeTop + i * ide_state.lineHeight;
 		if (rowY >= contentBottom) {
 			break;
 		}
 		if (visualIndex >= visualCount) {
-			host.drawColoredText(api, '~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY);
+			drawEditorColoredText(ide_state.font,'~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
 			continue;
 		}
-		const segment = host.visualIndexToSegment(visualIndex);
+		const segment = visualIndexToSegment(visualIndex);
 		if (!segment) {
-			host.drawColoredText(api, '~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY);
+			drawEditorColoredText(ide_state.font,'~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
 			continue;
 		}
 		const lineIndex = segment.row;
-		const entry = host.getCachedHighlight(lineIndex);
-		const hasBreakpointForRow = host.hasBreakpoint(lineIndex);
+		const entry = getCachedHighlight(lineIndex);
+		const hasBreakpointForRow = getBreakpointsForChunk(resolveHoverChunkName(getActiveCodeTabContext())).has(lineIndex + 1) ?? false;
 		if (hasBreakpointForRow && bounds.gutterRight > bounds.gutterLeft) {
 			const markerLeft = bounds.gutterLeft;
 			const gutterWidth = Math.max(1, bounds.gutterRight - bounds.gutterLeft);
 			const markerRight = Math.max(markerLeft + 1, markerLeft + gutterWidth);
-			const markerHeight = Math.max(2, host.lineHeight - 2);
-			const markerTop = rowY + Math.max(1, Math.floor((host.lineHeight - markerHeight) / 2));
-			const markerBottom = Math.min(rowY + host.lineHeight - 1, markerTop + markerHeight);
+			const markerHeight = Math.max(2, ide_state.lineHeight - 2);
+			const markerTop = rowY + Math.max(1, Math.floor((ide_state.lineHeight - markerHeight) / 2));
+			const markerBottom = Math.min(rowY + ide_state.lineHeight - 1, markerTop + markerHeight);
 			api.rectfill_color(markerLeft, markerTop, markerRight, markerBottom, constants.COLOR_BREAKPOINT_BORDER);
 		}
-		const isExecutionStopRow = host.executionStopRow !== null && lineIndex === host.executionStopRow;
-		const isCursorLine = lineIndex === host.cursorRow;
+		const isExecutionStopRow = ide_state.executionStopRow !== null && lineIndex === ide_state.executionStopRow;
+		const isCursorLine = lineIndex === ide_state.cursorRow;
 		if (isExecutionStopRow) {
-			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + host.lineHeight, constants.EXECUTION_STOP_OVERLAY);
+			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, constants.EXECUTION_STOP_OVERLAY);
 		} else if (isCursorLine) {
-			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + host.lineHeight, constants.HIGHLIGHT_OVERLAY);
+			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, constants.HIGHLIGHT_OVERLAY);
 		}
 		const highlight = entry.hi;
-		let columnStart = wrapEnabled ? segment.startColumn : host.scrollColumn;
+		let columnStart = wrapEnabled ? segment.startColumn : ide_state.scrollColumn;
 		if (wrapEnabled) {
 			if (columnStart < segment.startColumn || columnStart > segment.endColumn) {
 				columnStart = segment.startColumn;
 			}
 		}
-		const maxColumn = wrapEnabled ? segment.endColumn : host.lines[lineIndex].length;
+		const maxColumn = wrapEnabled ? segment.endColumn : ide_state.lines[lineIndex].length;
 		const columnCount = wrapEnabled ? Math.max(0, maxColumn - columnStart) : sliceWidth;
-		const slice = host.sliceHighlightedLine(highlight, columnStart, columnCount);
+		const slice = sliceHighlightedLine(highlight, columnStart, columnCount);
 		const sliceStartDisplay = slice.startDisplay;
-		const sliceEndLimit = wrapEnabled ? host.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
+		const sliceEndLimit = wrapEnabled ? columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
 		const sliceEndDisplay = wrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
-        host.drawReferenceHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
-        host.drawSearchHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
-		const selectionSlice = host.computeSelectionSlice(lineIndex, highlight, sliceStartDisplay, sliceEndDisplay);
+        drawReferenceHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
+        drawSearchHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
+		const selectionSlice = computeSelectionSlice(lineIndex, highlight, sliceStartDisplay, sliceEndDisplay);
 		if (selectionSlice) {
-			const selectionStartX = bounds.textLeft + host.measureRangeFast(entry, sliceStartDisplay, selectionSlice.startDisplay);
-			const selectionEndX = bounds.textLeft + host.measureRangeFast(entry, sliceStartDisplay, selectionSlice.endDisplay);
+			const selectionStartX = bounds.textLeft + measureRangeFast(entry, sliceStartDisplay, selectionSlice.startDisplay);
+			const selectionEndX = bounds.textLeft + measureRangeFast(entry, sliceStartDisplay, selectionSlice.endDisplay);
 			const clampedLeft = clamp(selectionStartX, bounds.textLeft, contentRight);
 			const clampedRight = clamp(selectionEndX, clampedLeft, contentRight);
 			if (clampedRight > clampedLeft) {
-				api.rectfill_color(clampedLeft, rowY, clampedRight, rowY + host.lineHeight, constants.SELECTION_OVERLAY);
+				api.rectfill_color(clampedLeft, rowY, clampedRight, rowY + ide_state.lineHeight, constants.SELECTION_OVERLAY);
 			}
 		}
-		host.drawColoredText(api, slice.text, slice.colors, bounds.textLeft, rowY);
-		const rowDiagnostics = host.getDiagnosticsForRow(lineIndex);
+		drawEditorColoredText(ide_state.font, slice.text, slice.colors, bounds.textLeft, rowY, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
+		const rowDiagnostics = getDiagnosticsForRow(lineIndex);
 		for (let i = 0; i < rowDiagnostics.length; i += 1) {
 			const diagnostic = rowDiagnostics[i];
 			let diagStartColumn = diagnostic.startColumn;
@@ -211,24 +218,24 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
 			if (diagEndColumn <= diagStartColumn) {
 				continue;
 			}
-			const startDisplayFull = host.columnToDisplay(highlight, diagStartColumn);
-			const endDisplayFull = host.columnToDisplay(highlight, diagEndColumn);
+			const startDisplayFull = columnToDisplay(highlight, diagStartColumn);
+			const endDisplayFull = columnToDisplay(highlight, diagEndColumn);
 			const clampedStartDisplay = clamp(startDisplayFull, sliceStartDisplay, sliceEndDisplay);
 			const clampedEndDisplay = clamp(endDisplayFull, clampedStartDisplay, sliceEndDisplay);
 			if (clampedEndDisplay <= clampedStartDisplay) {
 				continue;
 			}
-			const underlineStartX = bounds.textLeft + host.measureRangeFast(entry, sliceStartDisplay, clampedStartDisplay);
-			const underlineEndX = bounds.textLeft + host.measureRangeFast(entry, sliceStartDisplay, clampedEndDisplay);
+			const underlineStartX = bounds.textLeft + measureRangeFast(entry, sliceStartDisplay, clampedStartDisplay);
+			const underlineEndX = bounds.textLeft + measureRangeFast(entry, sliceStartDisplay, clampedEndDisplay);
 			let drawLeft = Math.floor(underlineStartX);
 			let drawRight = Math.ceil(underlineEndX);
 			if (drawRight <= drawLeft) {
-				drawRight = drawLeft + Math.max(1, Math.floor(host.charAdvance));
+				drawRight = drawLeft + Math.max(1, Math.floor(ide_state.charAdvance));
 			}
 			if (drawRight <= drawLeft) {
 				continue;
 			}
-			const underlineY = Math.min(contentBottom - 1, rowY + host.lineHeight - 1);
+			const underlineY = Math.min(contentBottom - 1, rowY + ide_state.lineHeight - 1);
 			if (underlineY < rowY || underlineY >= contentBottom) {
 				continue;
 			}
@@ -238,20 +245,20 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
 			api.rectfill(drawLeft, underlineY, drawRight, underlineY + 1, underlineColor);
 		}
 		if (activeGotoHighlight && gotoVisualIndex !== null && visualIndex === gotoVisualIndex && activeGotoHighlight.row === lineIndex) {
-			const startDisplayFull = host.columnToDisplay(highlight, activeGotoHighlight.startColumn);
-			const endDisplayFull = host.columnToDisplay(highlight, activeGotoHighlight.endColumn);
+			const startDisplayFull = columnToDisplay(highlight, activeGotoHighlight.startColumn);
+			const endDisplayFull = columnToDisplay(highlight, activeGotoHighlight.endColumn);
 			const clampedStartDisplay = clamp(startDisplayFull, sliceStartDisplay, sliceEndDisplay);
 			const clampedEndDisplay = clamp(endDisplayFull, clampedStartDisplay, sliceEndDisplay);
 			if (clampedEndDisplay > clampedStartDisplay) {
-				const underlineStartX = bounds.textLeft + host.measureRangeFast(entry, sliceStartDisplay, clampedStartDisplay);
-				const underlineEndX = bounds.textLeft + host.measureRangeFast(entry, sliceStartDisplay, clampedEndDisplay);
+				const underlineStartX = bounds.textLeft + measureRangeFast(entry, sliceStartDisplay, clampedStartDisplay);
+				const underlineEndX = bounds.textLeft + measureRangeFast(entry, sliceStartDisplay, clampedEndDisplay);
 				let drawLeft = Math.floor(underlineStartX);
 				let drawRight = Math.ceil(underlineEndX);
 				if (drawRight <= drawLeft) {
-					drawRight = drawLeft + Math.max(1, Math.floor(host.charAdvance));
+					drawRight = drawLeft + Math.max(1, Math.floor(ide_state.charAdvance));
 				}
 				if (drawRight > drawLeft) {
-					const underlineY = Math.min(contentBottom - 1, rowY + host.lineHeight - 1);
+					const underlineY = Math.min(contentBottom - 1, rowY + ide_state.lineHeight - 1);
 					if (underlineY >= rowY && underlineY < contentBottom) {
 						api.rectfill(drawLeft, underlineY, drawRight, underlineY + 1, constants.COLOR_GOTO_UNDERLINE);
 					}
@@ -260,11 +267,11 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
 		}
 		if (visualIndex === cursorVisualIndex) {
 			cursorEntry = entry;
-			cursorInfo = computeCursorScreenInfo(host, entry, bounds.textLeft, rowY, sliceStartDisplay);
+			cursorInfo = computeCursorScreenInfo(entry, bounds.textLeft, rowY, sliceStartDisplay);
 		}
 	}
 
-	host.cursorScreenInfo = cursorInfo;
+	ide_state.cursorScreenInfo = cursorInfo;
 
     const verticalTrackLeft = bounds.codeRight - constants.SCROLLBAR_WIDTH;
     const verticalTrack: RectBounds = {
@@ -273,9 +280,10 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
         right: verticalTrackLeft + constants.SCROLLBAR_WIDTH,
         bottom: contentBottom,
     };
-    host.scrollbars.codeVertical.layout(verticalTrack, Math.max(visualCount, 1), rowCapacity, host.scrollRow);
-	host.scrollRow = clamp(Math.round(host.scrollbars.codeVertical.getScroll()), 0, Math.max(0, visualCount - rowCapacity));
-	host.codeVerticalScrollbarVisible = host.scrollbars.codeVertical.isVisible();
+
+    ide_state.scrollbars.codeVertical.layout(verticalTrack, Math.max(visualCount, 1), rowCapacity, ide_state.scrollRow);
+	ide_state.scrollRow = clamp(Math.round(ide_state.scrollbars.codeVertical.getScroll()), 0, Math.max(0, visualCount - rowCapacity));
+	ide_state.codeVerticalScrollbarVisible = ide_state.scrollbars.codeVertical.isVisible();
 
 	if (!wrapEnabled) {
             const horizontalTrack: RectBounds = {
@@ -284,41 +292,41 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
                 right: trackRight,
                 bottom: contentBottom + constants.SCROLLBAR_WIDTH,
             };
-		const maxColumns = columnCapacity + host.computeMaximumScrollColumn();
-	host.scrollbars.codeHorizontal.layout(horizontalTrack, maxColumns, columnCapacity, host.scrollColumn);
-	host.scrollColumn = clamp(Math.round(host.scrollbars.codeHorizontal.getScroll()), 0, host.computeMaximumScrollColumn());
-	host.codeHorizontalScrollbarVisible = host.scrollbars.codeHorizontal.isVisible();
+		const maxColumns = columnCapacity + computeMaximumScrollColumn();
+		ide_state.scrollbars.codeHorizontal.layout(horizontalTrack, maxColumns, columnCapacity, ide_state.scrollColumn);
+		ide_state.scrollColumn = clamp(Math.round(ide_state.scrollbars.codeHorizontal.getScroll()), 0, computeMaximumScrollColumn());
+		ide_state.codeHorizontalScrollbarVisible = ide_state.scrollbars.codeHorizontal.isVisible();
 	} else {
-		host.scrollColumn = 0;
-		host.codeHorizontalScrollbarVisible = false;
+		ide_state.scrollColumn = 0;
+		ide_state.codeHorizontalScrollbarVisible = false;
 	}
 
-	host.drawRuntimeErrorOverlay(api, bounds.codeTop, contentRight, bounds.textLeft);
-	host.drawHoverTooltip(api, bounds.codeTop, contentBottom, bounds.textLeft);
+	drawRuntimeErrorOverlay(api, bounds.codeTop, contentRight, bounds.textLeft);
+	drawHoverTooltip(api, bounds.codeTop, contentBottom, bounds.textLeft);
 
-	if (host.cursorVisible && cursorEntry && cursorInfo) {
-		host.drawCursor(api, cursorInfo, bounds.textLeft);
+	if (ide_state.cursorVisible && cursorEntry && cursorInfo) {
+		drawCursor(api, cursorInfo, bounds.textLeft);
 	}
-	host.drawCompletionPopup(api, bounds);
-	host.drawParameterHintOverlay(api, bounds);
-	if (host.codeVerticalScrollbarVisible) {
-		host.scrollbars.codeVertical.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+	ide_state.completion.drawCompletionPopup(api, bounds);
+	ide_state.completion.drawParameterHintOverlay(api, bounds);
+	if (ide_state.codeVerticalScrollbarVisible) {
+		ide_state.scrollbars.codeVertical.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
-	if (host.codeHorizontalScrollbarVisible) {
-		host.scrollbars.codeHorizontal.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+	if (ide_state.codeHorizontalScrollbarVisible) {
+		ide_state.scrollbars.codeHorizontal.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
 }
 
-function computeCursorScreenInfo(host: CodeAreaHost, entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo {
+function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo {
 	const highlight = entry.hi;
 	const columnToDisplay = highlight.columnToDisplay;
 	const clampedColumn = columnToDisplay.length > 0
-		? clamp(host.cursorColumn, 0, columnToDisplay.length - 1)
+		? clamp(ide_state.cursorColumn, 0, columnToDisplay.length - 1)
 		: 0;
 	const cursorDisplayIndex = columnToDisplay.length > 0 ? columnToDisplay[clampedColumn] : 0;
 	const limitedDisplayIndex = Math.max(sliceStartDisplay, cursorDisplayIndex);
-	const cursorX = textLeft + host.measureRangeFast(entry, sliceStartDisplay, limitedDisplayIndex);
-	let cursorWidth = host.charAdvance;
+	const cursorX = textLeft + measureRangeFast(entry, sliceStartDisplay, limitedDisplayIndex);
+	let cursorWidth = ide_state.charAdvance;
 	let baseChar = ' ';
 	let baseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 	if (cursorDisplayIndex < highlight.chars.length) {
@@ -330,25 +338,27 @@ function computeCursorScreenInfo(host: CodeAreaHost, entry: CachedHighlight, tex
 			if (widthValue > 0) {
 				cursorWidth = widthValue;
 			} else {
-				cursorWidth = host.charAdvance;
+				cursorWidth = ide_state.charAdvance;
 			}
 		}
 	}
-	const currentChar = host.lines[host.cursorRow]?.charAt(host.cursorColumn) ?? '';
+	const currentChar = ide_state.lines[ide_state.cursorRow]?.charAt(ide_state.cursorColumn) ?? '';
 	if (currentChar === '\t') {
-		cursorWidth = host.spaceAdvance * constants.TAB_SPACES;
+		cursorWidth = ide_state.spaceAdvance * constants.TAB_SPACES;
 	}
 	return {
-		row: host.cursorRow,
-		column: host.cursorColumn,
+		row: ide_state.cursorRow,
+		column: ide_state.cursorColumn,
 		x: cursorX,
 		y: rowTop,
 		width: cursorWidth,
-		height: host.lineHeight,
+		height: ide_state.lineHeight,
 		baseChar,
 		baseColor,
 	};
-}export function drawReferenceHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
+}
+
+export function drawReferenceHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
 	const matches = ide_state.referenceState.getMatches();
 	if (matches.length === 0) {
 		return;

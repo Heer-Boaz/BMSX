@@ -1,18 +1,14 @@
 import type { BmsxConsoleApi } from '../api';
 import type { ConsoleEditorFont } from '../editor_font';
-import type { ConsoleFont } from '../font';
 import { expandTabs as expandTabsExternal } from './text_utils';
 import * as constants from './constants';
+import { api } from '../runtime';
 
 let CASE_INSENSITIVE_EDITOR = true;
 
 export function setEditorCaseInsensitivity(enabled: boolean): void {
 	CASE_INSENSITIVE_EDITOR = enabled;
 }
-
-type ConsoleApiWithCustomFont = BmsxConsoleApi & {
-	print_with_font?: (text: string, x: number, y: number, colorIndex: number, font: ConsoleFont) => void;
-};
 
 type DrawEditorTextOptions = {
 	preserveCase?: boolean;
@@ -25,12 +21,11 @@ export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, tex
 	const renderFont = font.getRenderFont();
 	const preserveCase = options?.preserveCase ?? false;
 	const useUppercase = !preserveCase && CASE_INSENSITIVE_EDITOR && font.getVariant() === 'tiny';
-	const apiWithFont = api as ConsoleApiWithCustomFont;
 	for (let i = 0; i < lines.length; i += 1) {
 		const expanded = expandTabsExternal(lines[i]);
 		if (expanded.length > 0) {
 			const display = useUppercase ? expanded.toUpperCase() : expanded;
-			apiWithFont.write_with_font(display, baseX, cursorY, color, renderFont);
+			api.write_with_font(display, baseX, cursorY, color, renderFont);
 		}
 		if (i < lines.length - 1) {
 			cursorY += font.lineHeight();
@@ -38,11 +33,11 @@ export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, tex
 	}
 }
 
-export function drawEditorColoredText(api: BmsxConsoleApi, font: ConsoleEditorFont, text: string, colors: readonly number[], originX: number, originY: number, fallbackColor: number): void {
+export function drawEditorColoredText(font: ConsoleEditorFont, text: string, colors: readonly number[], originX: number, originY: number, fallbackColor: number): void {
 	let cursorX = Math.floor(originX);
 	const cursorY = Math.floor(originY);
 	const renderFont = font.getRenderFont();
-	const apiWithFont = api as ConsoleApiWithCustomFont;
+	const apiWithFont = api;
 	const useUppercase = CASE_INSENSITIVE_EDITOR && font.getVariant() === 'tiny';
 	const renderText = useUppercase ? toUpperExceptStrings(text, colors, fallbackColor) : text;
 	let index = 0;

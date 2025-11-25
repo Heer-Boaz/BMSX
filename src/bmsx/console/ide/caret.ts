@@ -1,13 +1,12 @@
-import { clamp } from '../../utils/clamp';import { updateDesiredColumn, breakUndoSequence, currentLine, columnToDisplay, getCachedHighlight, measureRangeFast } from './console_cart_editor';
+import { clamp } from '../../utils/clamp';
+import { updateDesiredColumn, breakUndoSequence, currentLine, columnToDisplay, getCachedHighlight } from './console_cart_editor';
 import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from './text_utils';
 import { visibleRowCount, visibleColumnCount } from './text_utils';
 import { caretNavigation, ide_state } from './ide_state';
 import { isShiftDown, isCtrlDown } from './input';
 import { resetBlink } from './render/render_caret';
 import { findWordLeft, findWordRight, ensureSelectionAnchor, hasSelection, collapseSelectionTo, clearSelection } from './text_editing_and_selection';
-;
-import type { CachedHighlight, CursorScreenInfo, Position, VisualLineSegment } from './types';
-import * as constants from './constants';
+import type { Position, VisualLineSegment } from './types';
 
 export type VisualCursorOverride = {
 	row: number;
@@ -614,44 +613,3 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 export function onCursorMoved(): void {
 	ide_state.completion.onCursorMoved();
 }
-export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo {
-	const highlight = entry.hi;
-	const columnToDisplay = highlight.columnToDisplay;
-	const clampedColumn = columnToDisplay.length > 0
-		? clamp(ide_state.cursorColumn, 0, columnToDisplay.length - 1)
-		: 0;
-	const cursorDisplayIndex = columnToDisplay.length > 0 ? columnToDisplay[clampedColumn] : 0;
-	const limitedDisplayIndex = Math.max(sliceStartDisplay, cursorDisplayIndex);
-	const cursorX = textLeft + measureRangeFast(entry, sliceStartDisplay, limitedDisplayIndex);
-	let cursorWidth = ide_state.charAdvance;
-	let baseChar = ' ';
-	let baseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
-	if (cursorDisplayIndex < highlight.chars.length) {
-		baseChar = highlight.chars[cursorDisplayIndex];
-		baseColor = highlight.colors[cursorDisplayIndex];
-		const widthIndex = cursorDisplayIndex + 1;
-		if (widthIndex < entry.advancePrefix.length) {
-			const widthValue = entry.advancePrefix[widthIndex] - entry.advancePrefix[cursorDisplayIndex];
-			if (widthValue > 0) {
-				cursorWidth = widthValue;
-			} else {
-				cursorWidth = ide_state.font.advance(baseChar);
-			}
-		}
-	}
-	const currentChar = currentLine().charAt(ide_state.cursorColumn);
-	if (currentChar === '\t') {
-		cursorWidth = ide_state.spaceAdvance * constants.TAB_SPACES;
-	}
-	return {
-		row: ide_state.cursorRow,
-		column: ide_state.cursorColumn,
-		x: cursorX,
-		y: rowTop,
-		width: cursorWidth,
-		height: ide_state.lineHeight,
-		baseChar,
-		baseColor,
-	};
-}
-

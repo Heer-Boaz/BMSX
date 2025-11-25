@@ -14,7 +14,7 @@ import { Msx1Colors } from '../../systems/msx';
 import { EventEmitter, type ListenerSet } from '../../core/eventemitter';
 import { Registry } from '../../core/registry';
 import { SpriteComponent } from '../../component/sprite_component';
-import { drawReferenceHighlightsForRow, drawSearchHighlightsForRow, renderCodeArea } from './render/render_code_area';
+import { renderCodeArea } from './render/render_code_area';
 import { clamp } from '../../utils/clamp';
 import { CompletionController } from './completion_controller';
 import { drawProblemsPanel, ProblemsPanelController } from './problems_panel';
@@ -39,7 +39,7 @@ import {
 	computeResourceTabTitle,
 } from './editor_tabs';
 
-import { assertMonospace, computeSelectionSlice, ensureVisualLines, getVisualLineCount, invalidateVisualLines, isIdentifierChar, isIdentifierStartChar, isWhitespace, isWordChar, measureText, positionToVisualIndex, splitLines, truncateTextToWidth, visibleColumnCount, visibleRowCount, visualIndexToSegment } from './text_utils';
+import { assertMonospace, ensureVisualLines, getVisualLineCount, invalidateVisualLines, isIdentifierChar, isIdentifierStartChar, isWhitespace, isWordChar, measureText, positionToVisualIndex, splitLines, truncateTextToWidth, visibleColumnCount, visibleRowCount, visualIndexToSegment } from './text_utils';
 import type { InlineFieldEditingHandlers, InlineFieldMetrics } from './inline_text_field';
 import {
 	applyInlineFieldEditing,
@@ -78,7 +78,6 @@ import { handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handl
 import { consumeIdeKey } from './input';
 import { ConsoleCodeLayout } from './code_layout';
 import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine } from './runtime_error_utils';
-import { getBreakpointsForChunk } from './debugger_breakpoints';
 import type {
 	CachedHighlight,
 	CodeHoverTooltip,
@@ -128,7 +127,7 @@ import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusE
 import * as constants from './constants';
 import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, workspaceDirtyCache, caretNavigation } from './ide_state';
 import { initializeDebuggerUiState } from './debugger_ui_state';
-import { centerCursorVertically, clampCursorColumn, computeCursorScreenInfo, ensureCursorVisible, revealCursor, setCursorPosition } from './caret';
+import { centerCursorVertically, clampCursorColumn, ensureCursorVisible, revealCursor, setCursorPosition } from './caret';
 import {
 	runWorkspaceAutosaveTick,
 	setupWorkspacePersistence,
@@ -136,7 +135,7 @@ import {
 } from './workspace_storage';
 
 import * as TextEditing from './text_editing_and_selection';
-import { drawCursor, drawInlineCaret, drawRectOutlineColor, resetBlink } from './render/render_caret';
+import { drawInlineCaret, drawRectOutlineColor, resetBlink } from './render/render_caret';
 import { api, type BmsxConsoleRuntime } from '../runtime';
 import { computeEditContextFromSources, handlePostEditMutation, writeClipboard } from './text_editing_and_selection';
 import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
@@ -257,7 +256,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		charAdvance: ide_state.charAdvance,
 		measureText: (t) => measureText(t),
 		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, c),
-		drawColoredText: (a, t, colors, x, y) => drawEditorColoredText(a, ide_state.font, t, colors, x, y, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT),
+		drawColoredText: (t, colors, x, y) => drawEditorColoredText(ide_state.font, t, colors, x, y, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT),
 		drawRectOutlineColor: (a, l, t, r, b, col) => drawRectOutlineColor(a, l, t, r, b, col),
 		playerIndex: ide_state.playerIndex,
 		listResources: () => listResourcesStrict(),
@@ -1869,23 +1868,23 @@ export function draw(): void {
 		tabButtonBounds: ide_state.tabButtonBounds,
 		tabCloseButtonBounds: ide_state.tabCloseButtonBounds,
 	});
-	drawResourcePanel(api);
+	drawResourcePanel();
 	if (isResourceViewActive()) {
-		drawResourceViewer(api);
+		drawResourceViewer();
 	} else {
-		hideResourceViewerSprite(api);
-		drawCreateResourceBar(api);
-		drawSearchBar(api);
-		drawResourceSearchBar(api);
-		drawSymbolSearchBar(api);
-		drawRenameBar(api);
-		drawLineJumpBar(api);
-		drawCodeArea(api);
+		hideResourceViewerSprite();
+		drawCreateResourceBar();
+		drawSearchBar();
+		drawResourceSearchBar();
+		drawSymbolSearchBar();
+		drawRenameBar();
+		drawLineJumpBar();
+		renderCodeArea();
 	}
-	drawProblemsPanel(api);
-	drawStatusBar(api);
+	drawProblemsPanel();
+	drawStatusBar();
 	if (ide_state.pendingActionPrompt) {
-		drawActionPromptOverlay(api);
+		drawActionPromptOverlay();
 	}
 }
 
@@ -4859,7 +4858,7 @@ export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnaps
 	requestSemanticRefresh();
 }
 
-export function drawCreateResourceBar(api: BmsxConsoleApi): void {
+export function drawCreateResourceBar(): void {
 	const host = {
 		viewportWidth: ide_state.viewportWidth,
 		headerHeight: ide_state.headerHeight,
@@ -4902,7 +4901,7 @@ export function drawCreateResourceBar(api: BmsxConsoleApi): void {
 	renderCreateResourceBar(api, host);
 }
 
-export function drawSearchBar(api: BmsxConsoleApi): void {
+export function drawSearchBar(): void {
 	const host: InlineBarsHost = {
 		viewportWidth: ide_state.viewportWidth,
 		headerHeight: ide_state.headerHeight,
@@ -4959,7 +4958,7 @@ export function drawSearchBar(api: BmsxConsoleApi): void {
 	renderSearchBar(api, host);
 }
 
-export function drawResourceSearchBar(api: BmsxConsoleApi): void {
+export function drawResourceSearchBar(): void {
 	const host: InlineBarsHost = {
 		viewportWidth: ide_state.viewportWidth,
 		headerHeight: ide_state.headerHeight,
@@ -5011,7 +5010,7 @@ export function drawResourceSearchBar(api: BmsxConsoleApi): void {
 	renderResourceSearchBar(api, host);
 }
 
-export function drawSymbolSearchBar(api: BmsxConsoleApi): void {
+export function drawSymbolSearchBar(): void {
 	const host: InlineBarsHost = {
 		viewportWidth: ide_state.viewportWidth,
 		headerHeight: ide_state.headerHeight,
@@ -5065,7 +5064,7 @@ export function drawSymbolSearchBar(api: BmsxConsoleApi): void {
 	renderSymbolSearchBar(api, host);
 }
 
-export function drawRenameBar(api: BmsxConsoleApi): void {
+export function drawRenameBar(): void {
 	const host: InlineBarsHost = {
 		viewportWidth: ide_state.viewportWidth,
 		headerHeight: ide_state.headerHeight,
@@ -5113,7 +5112,7 @@ export function drawRenameBar(api: BmsxConsoleApi): void {
 	renderRenameBar(api, host);
 }
 
-export function drawLineJumpBar(api: BmsxConsoleApi): void {
+export function drawLineJumpBar(): void {
 	const host: InlineBarsHost = {
 		viewportWidth: ide_state.viewportWidth,
 		headerHeight: ide_state.headerHeight,
@@ -5379,73 +5378,6 @@ export function getRenameBarBounds(): { top: number; bottom: number; left: numbe
 		left: 0,
 		right: ide_state.viewportWidth,
 	};
-}
-
-export function drawCodeArea(api: BmsxConsoleApi): void {
-	const activeContext = getActiveCodeTabContext();
-	const activeChunkName = resolveHoverChunkName(activeContext);
-	const activeChunkBreakpoints = getBreakpointsForChunk(activeChunkName);
-	const host: import('./render/render_code_area').CodeAreaHost = {
-		// Geometry and metrics
-		lineHeight: ide_state.lineHeight,
-		spaceAdvance: ide_state.spaceAdvance,
-		charAdvance: ide_state.charAdvance,
-		warnNonMonospace: ide_state.warnNonMonospace,
-		// Editor state
-		wordWrapEnabled: ide_state.wordWrapEnabled,
-		codeHorizontalScrollbarVisible: ide_state.codeHorizontalScrollbarVisible,
-		codeVerticalScrollbarVisible: ide_state.codeVerticalScrollbarVisible,
-		cachedVisibleRowCount: ide_state.cachedVisibleRowCount,
-		cachedVisibleColumnCount: ide_state.cachedVisibleColumnCount,
-		scrollRow: ide_state.scrollRow,
-		scrollColumn: ide_state.scrollColumn,
-		cursorRow: ide_state.cursorRow,
-		cursorColumn: ide_state.cursorColumn,
-		cursorVisible: ide_state.cursorVisible,
-		cursorScreenInfo: ide_state.cursorScreenInfo,
-		gotoHoverHighlight: ide_state.gotoHoverHighlight,
-		executionStopRow: ide_state.executionStopRow,
-		lines: ide_state.lines,
-		// Helpers
-		ensureVisualLines: () => ensureVisualLines(),
-		getCodeAreaBounds: () => getCodeAreaBounds(),
-		maximumLineLength: () => maximumLineLength(),
-		getVisualLineCount: () => getVisualLineCount(),
-		positionToVisualIndex: (r: number, c: number) => ide_state.layout.positionToVisualIndex(ide_state.lines, r, c),
-		visualIndexToSegment: (v: number) => visualIndexToSegment(v),
-		getCachedHighlight: (r: number) => getCachedHighlight(r),
-		sliceHighlightedLine: (hi, start, count) => sliceHighlightedLine(hi, start, count),
-		columnToDisplay: (hi, c) => columnToDisplay(hi, c),
-		drawColoredText: (a, t, cols, x, y) => drawEditorColoredText(a, ide_state.font, t, cols, x, y, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT),
-		drawReferenceHighlightsForRow: (a, ri, e, ox, oy, s, ed) => drawReferenceHighlightsForRow(a, ri, e, ox, oy, s, ed),
-		drawSearchHighlightsForRow: (a, ri, e, ox, oy, s, ed) => drawSearchHighlightsForRow(a, ri, e, ox, oy, s, ed),
-		computeSelectionSlice: (ri, hi, s, e) => computeSelectionSlice(ri, hi, s, e),
-		measureRangeFast: (entry, from, to) => measureRangeFast(entry, from, to),
-		getDiagnosticsForRow: (row) => getDiagnosticsForRow(row),
-		scrollbars: {
-			codeVertical: ide_state.scrollbars.codeVertical,
-			codeHorizontal: ide_state.scrollbars.codeHorizontal,
-		},
-		computeMaximumScrollColumn: () => computeMaximumScrollColumn(),
-		// Overlays
-		drawRuntimeErrorOverlay: (a, ct, cr, tl) => drawRuntimeErrorOverlay(a, ct, cr, tl),
-		drawHoverTooltip: (a, ct, cb, tl) => drawHoverTooltip(a, ct, cb, tl),
-		drawCursor: (a, info, tx) => drawCursor(a, info, tx),
-		computeCursorScreenInfo: (entry, tl, rt, ssd) => computeCursorScreenInfo(entry, tl, rt, ssd),
-		drawCompletionPopup: (a, b) => ide_state.completion.drawCompletionPopup(a, b),
-		drawParameterHintOverlay: (a, b) => ide_state.completion.drawParameterHintOverlay(a, b),
-		hasBreakpoint: (rowIndex: number) => activeChunkBreakpoints?.has(rowIndex + 1) ?? false,
-	};
-	renderCodeArea(api, host);
-	// write back mutable state possibly changed by renderer
-	ide_state.wordWrapEnabled = host.wordWrapEnabled;
-	ide_state.codeHorizontalScrollbarVisible = host.codeHorizontalScrollbarVisible;
-	ide_state.codeVerticalScrollbarVisible = host.codeVerticalScrollbarVisible;
-	ide_state.cachedVisibleRowCount = host.cachedVisibleRowCount;
-	ide_state.cachedVisibleColumnCount = host.cachedVisibleColumnCount;
-	ide_state.scrollRow = host.scrollRow;
-	ide_state.scrollColumn = host.scrollColumn;
-	ide_state.cursorScreenInfo = host.cursorScreenInfo;
 }
 
 export function drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
@@ -6410,7 +6342,7 @@ export function resourceViewerTextCapacity(viewer: ResourceViewerState): number 
 	return Math.max(0, Math.floor(availableHeight / ide_state.lineHeight));
 }
 
-export function ensureResourceViewerSprite(api: BmsxConsoleApi, asset_id: string, layout: { left: number; top: number; scale: number }): void {
+export function ensureResourceViewerSprite(asset_id: string, layout: { left: number; top: number; scale: number }): void {
 	if (!ide_state.resourceViewerSpriteId) {
 		ide_state.resourceViewerSpriteId = 'console_resource_viewer_sprite';
 	}
@@ -6454,7 +6386,7 @@ export function ensureResourceViewerSprite(api: BmsxConsoleApi, asset_id: string
 	object.visible = true;
 }
 
-export function hideResourceViewerSprite(api: BmsxConsoleApi): void {
+export function hideResourceViewerSprite(): void {
 	if (!ide_state.resourceViewerSpriteId) {
 		return;
 	}
@@ -6531,7 +6463,12 @@ export function markDiagnosticsDirty(contextId?: string): void {
 }
 
 export function markTextMutated(): void {
+	ide_state.saveGeneration = ide_state.saveGeneration + 1;
 	ide_state.dirty = true;
+	const context = getActiveCodeTabContext();
+	if (context) {
+		context.saveGeneration = ide_state.saveGeneration;
+	}
 	markDiagnosticsDirty();
 	bumpTextVersion();
 	clearReferenceHighlights();
@@ -6674,7 +6611,7 @@ export function applyCaseNormalizationIfNeeded(editContext: EditContext | null):
 	return derived ?? editContext;
 }
 
-export function drawActionPromptOverlay(api: BmsxConsoleApi): void {
+export function drawActionPromptOverlay(): void {
 	const prompt = ide_state.pendingActionPrompt;
 	if (!prompt) {
 		return;
