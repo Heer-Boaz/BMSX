@@ -54,7 +54,6 @@ import { WorldObject } from '../core/object/worldobject';
 import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';
 import { Input } from '../input/input';
-import type { PlayerInput } from '../input/playerinput';
 import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputMapping, KeyboardBinding, GamepadBinding, PointerBinding, ButtonState } from '../input/inputtypes';
 import { ConsoleMode } from './console_mode';
 import { EDITOR_TOGGLE_KEY, CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, GAME_PAUSE_KEY } from './ide/constants';
@@ -814,7 +813,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private pollConsoleHotkeys(): void {
-		const playerInput = this.getPlayerInput();
+		const playerInput = $.input.getPlayerInput(this.playerIndex);
 		const getState = (code: string) => playerInput.getButtonState(code, 'keyboard');
 		const consume = (code: string) => playerInput.consumeButton(code, 'keyboard');
 		const shiftDown = getState('ShiftLeft')?.pressed === true || getState('ShiftRight')?.pressed === true;
@@ -856,10 +855,8 @@ export class BmsxConsoleRuntime extends Service {
 		if (event.type !== 'button' || event.code !== 'F8' || event.down !== true) {
 			return;
 		}
-		if (typeof event.deviceId !== 'string' || !event.deviceId.startsWith('keyboard')) {
-			return;
-		}
-		const playerInput = this.getPlayerInput();
+		const playerInput = $.input.getPlayerInput(this.playerIndex);
+
 		const modifiers = playerInput.getModifiersState();
 		if (modifiers.ctrl) {
 			return;
@@ -1012,14 +1009,6 @@ export class BmsxConsoleRuntime extends Service {
 		const next = this._overlayResolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
 		this.overlayResolutionMode = next;
 		return next;
-	}
-
-	private getPlayerInput(): PlayerInput {
-		const playerInput = Input.instance.getPlayerInput(this.playerIndex);
-		if (!playerInput) {
-			throw new Error(`[BmsxConsoleRuntime] Player input handler for index ${this.playerIndex} is not initialised.`);
-		}
-		return playerInput;
 	}
 
 	private renderConsoleOverlay(): void {
@@ -1601,7 +1590,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private runUpdatePhaseInternal(state: ConsoleFrameState): void {
-		const playerInput = this.getPlayerInput();
+		const playerInput = $.input.getPlayerInput(this.playerIndex);
 		const getState = (code: string) => playerInput.getButtonState(code, 'keyboard');
 		const consume = (code: string) => playerInput.consumeButton(code, 'keyboard');
 		const shiftDown = getState('ShiftLeft')?.pressed === true || getState('ShiftRight')?.pressed === true;
