@@ -1,5 +1,5 @@
 import { clamp } from '../../utils/clamp';
-import { updateDesiredColumn, breakUndoSequence, currentLine, columnToDisplay, getCachedHighlight } from './console_cart_editor';
+import { updateDesiredColumn, breakUndoSequence, currentLine, columnToDisplay } from './console_cart_editor';
 import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from './text_utils';
 import { visibleRowCount, visibleColumnCount } from './text_utils';
 import { caretNavigation, ide_state } from './ide_state';
@@ -552,7 +552,7 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	if (!segment) {
 		return;
 	}
-	const entry = getCachedHighlight(segment.row);
+	const entry = ide_state.layout.getCachedHighlight(ide_state.lines, segment.row);
 	const highlight = entry.hi;
 	const line = ide_state.lines[segment.row] ?? '';
 	const hasDesiredHint = desiredColumnHint !== undefined;

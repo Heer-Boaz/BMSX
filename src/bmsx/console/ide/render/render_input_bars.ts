@@ -1,16 +1,15 @@
 import { BmsxConsoleApi } from '../../api';
 import { api } from '../../runtime';
-import { getTabBarTotalHeight, getCreateResourceBarHeight, getSearchBarHeight, getResourceSearchBarHeight, getSymbolSearchBarHeight, getRenameBarHeight, getLineJumpBarHeight, searchVisibleResultCount, searchResultEntryHeight, symbolSearchVisibleResultCount, symbolSearchEntryHeight, isSymbolSearchCompactMode, isResourceSearchCompactMode, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../console_cart_editor';
+import { getTabBarTotalHeight, getCreateResourceBarHeight, getSearchBarHeight, getResourceSearchBarHeight, getSymbolSearchBarHeight, getRenameBarHeight, getLineJumpBarHeight, searchVisibleResultCount, searchResultEntryHeight, symbolSearchVisibleResultCount, symbolSearchEntryHeight, isSymbolSearchCompactMode } from '../console_cart_editor';
 import { drawCreateResourceErrorDialog } from './render_resource_panel';
 import { activeSearchMatchCount, getVisibleSearchResultEntries } from '../editor_search';
 import { ide_state } from '../ide_state';
 import { selectionRange as inlineFieldSelectionRange, type InlineFieldMetrics, measureRange as inlineFieldMeasureRange, caretX as inlineFieldCaretX } from '../inline_text_field';
 import { drawInlineCaret } from './render_caret';
-import { type InlineBarsHost, renderCreateResourceBar, renderLineJumpBar, renderRenameBar, renderResourceSearchBar, renderSearchBar, renderSymbolSearchBar } from './render_inline_bars';
+import { type InlineBarsHost, renderCreateResourceBar, renderLineJumpBar, renderRenameBar, renderSearchBar, renderSymbolSearchBar } from './render_inline_bars';
 import { drawEditorText } from '../text_renderer';
 import { measureText } from '../text_utils';
 import type { TextField } from '../types';
-
 
 export function drawSearchBar(): void {
 	const host: InlineBarsHost = {
@@ -212,57 +211,7 @@ export function drawRenameBar(): void {
 	};
 	renderRenameBar(api, host);
 }
-export function drawResourceSearchBar(): void {
-	const host: InlineBarsHost = {
-		viewportWidth: ide_state.viewportWidth,
-		headerHeight: ide_state.headerHeight,
-		tabBarHeight: getTabBarTotalHeight(),
-		lineHeight: ide_state.lineHeight,
-		spaceAdvance: ide_state.spaceAdvance,
-		charAdvance: ide_state.charAdvance,
-		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, undefined, c),
-		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
-		createResourceActive: ide_state.createResourceActive,
-		createResourceVisible: ide_state.createResourceVisible,
-		createResourceField: ide_state.createResourceField,
-		createResourceWorking: ide_state.createResourceWorking,
-		createResourceError: ide_state.createResourceError,
-		drawCreateResourceErrorDialog: (a, m) => drawCreateResourceErrorDialog(a, m),
-		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
-		getSearchBarHeight: () => getSearchBarHeight(),
-		getResourceSearchBarHeight: () => getResourceSearchBarHeight(),
-		getSymbolSearchBarHeight: () => getSymbolSearchBarHeight(),
-		getRenameBarHeight: () => getRenameBarHeight(),
-		getLineJumpBarHeight: () => getLineJumpBarHeight(),
-		drawInlineCaret: (
-			a: BmsxConsoleApi,
-			f: TextField,
-			l: number,
-			t: number,
-			r: number,
-			b: number,
-			bx: number,
-			ac: boolean,
-			cc: { r: number; g: number; b: number; a: number; },
-			tc: number
-		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
-		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
-		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
-		resourceSearchActive: ide_state.resourceSearchActive,
-		resourceSearchField: ide_state.resourceSearchField,
-		resourceSearchVisibleResultCount: () => resourceSearchVisibleResultCount(),
-		resourceSearchEntryHeight: () => resourceSearchEntryHeight(),
-		isResourceSearchCompactMode: () => isResourceSearchCompactMode(),
-		resourceSearchMatches: ide_state.resourceSearchMatches,
-		resourceSearchSelectionIndex: ide_state.resourceSearchSelectionIndex,
-		resourceSearchHoverIndex: ide_state.resourceSearchHoverIndex,
-		resourceSearchDisplayOffset: ide_state.resourceSearchDisplayOffset,
-	};
-	renderResourceSearchBar(api, host);
-}
+
 export function drawCreateResourceBar(): void {
 	const host = {
 		viewportWidth: ide_state.viewportWidth,

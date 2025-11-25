@@ -11,7 +11,6 @@ import {
 	captureSnapshot,
 	restoreSnapshot,
 	syncRuntimeErrorOverlayFromContext,
-	invalidateAllHighlights,
 	updateDesiredColumn,
 	refreshActiveDiagnostics,
 	markDiagnosticsDirty,
@@ -139,7 +138,7 @@ export function activateCodeEditorTab(tabId: string | null): void {
 		context.dirty = ide_state.dirty;
 		setTabDirty(context.id, context.dirty);
 		syncRuntimeErrorOverlayFromContext(context);
-		invalidateAllHighlights();
+		ide_state.layout.invalidateAllHighlights();
 		updateDesiredColumn();
 		ensureCursorVisible();
 		refreshActiveDiagnostics();
@@ -155,7 +154,7 @@ export function activateCodeEditorTab(tabId: string | null): void {
 	if (ide_state.lines.length === 0) {
 		ide_state.lines.push('');
 	}
-	invalidateAllHighlights();
+	ide_state.layout.invalidateAllHighlights();
 	ide_state.cursorRow = 0;
 	ide_state.cursorColumn = 0;
 	ide_state.scrollRow = 0;

@@ -5,7 +5,7 @@ import { Registry } from '../core/registry';
 import { toggleRenderHUD } from '../debugger/renderhud';
 import { toggleECSHUD } from '../debugger/ecshud';
 import { toggleInputHUD } from '../debugger/inputhud';
-import { openDebugOverviewTab, openObjectInspectorTab } from '../console/ide/console_cart_editor';
+import { openDebugOverviewTab, openEventInspectorTab, openObjectInspectorTab } from '../console/ide/console_cart_editor';
 import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
 import { GamepadInput } from './gamepad';
 import { controllerUnassignedToast } from '../ui/ui_toast';
@@ -991,6 +991,12 @@ export class Input implements RegisterablePersistent {
 			if (objectMenu?.justpressed) {
 				openObjectInspectorTab();
 				keyboardHandler.consumeButton('F7');
+			}
+
+			const eventMenu = player.getButtonState('F8', 'keyboard');
+			if (eventMenu?.justpressed) {
+				openEventInspectorTab();
+				keyboardHandler.consumeButton('F8');
 			}
 
 			const fullscreenToggle = player.getButtonState('F11', 'keyboard');

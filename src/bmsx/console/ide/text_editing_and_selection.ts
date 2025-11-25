@@ -24,7 +24,6 @@ import {
 import {
 	updateDesiredColumn,
 	markTextMutated,
-	invalidateLine,
 	invalidateLineRange,
 	invalidateHighlightsFromRow,
 	recordEditContext,
@@ -507,7 +506,7 @@ export function insertText(text: string): void {
 	const before = line.slice(0, ide_state.cursorColumn);
 	const after = line.slice(ide_state.cursorColumn);
 	ide_state.lines[ide_state.cursorRow] = before + text + after;
-	invalidateLine(ide_state.cursorRow);
+	ide_state.layout.invalidateLine(ide_state.cursorRow);
 	recordEditContext('insert', text);
 	ide_state.cursorColumn += text.length;
 	markTextMutated();
@@ -600,7 +599,7 @@ export function insertClipboardText(text: string): void {
 	if (fragments.length === 1) {
 		const fragment = fragments[0];
 		ide_state.lines[ide_state.cursorRow] = before + fragment + after;
-		invalidateLine(ide_state.cursorRow);
+		ide_state.layout.invalidateLine(ide_state.cursorRow);
 		ide_state.cursorColumn = before.length + fragment.length;
 		recordEditContext('insert', fragment);
 	} else {
@@ -652,7 +651,7 @@ export function backspace(): void {
 		const before = line.slice(0, ide_state.cursorColumn - 1);
 		const after = line.slice(ide_state.cursorColumn);
 		ide_state.lines[ide_state.cursorRow] = before + after;
-		invalidateLine(ide_state.cursorRow);
+		ide_state.layout.invalidateLine(ide_state.cursorRow);
 		ide_state.cursorColumn -= 1;
 		recordEditContext('delete', removedChar);
 		markTextMutated();
@@ -670,7 +669,7 @@ export function backspace(): void {
 	recordEditContext('delete', '\n');
 	ide_state.lines[mergedRow] = previousLine + currentLineValue;
 	ide_state.lines.splice(ide_state.cursorRow, 1);
-	invalidateLine(mergedRow);
+	ide_state.layout.invalidateLine(mergedRow);
 	invalidateHighlightsFromRow(mergedRow);
 	ide_state.cursorRow = mergedRow;
 	ide_state.cursorColumn = previousLine.length;
@@ -701,7 +700,7 @@ export function deleteForward(): void {
 		const before = line.slice(0, ide_state.cursorColumn);
 		const after = line.slice(ide_state.cursorColumn + 1);
 		ide_state.lines[ide_state.cursorRow] = before + after;
-		invalidateLine(ide_state.cursorRow);
+		ide_state.layout.invalidateLine(ide_state.cursorRow);
 		recordEditContext('delete', removedChar);
 		markTextMutated();
 		resetBlink();
@@ -716,7 +715,7 @@ export function deleteForward(): void {
 	const updatedLine = line + nextLine;
 	ide_state.lines[ide_state.cursorRow] = updatedLine;
 	ide_state.lines.splice(ide_state.cursorRow + 1, 1);
-	invalidateLine(ide_state.cursorRow);
+	ide_state.layout.invalidateLine(ide_state.cursorRow);
 	invalidateHighlightsFromRow(ide_state.cursorRow);
 	recordEditContext('delete', '\n');
 	markTextMutated();
@@ -753,7 +752,7 @@ export function deleteWordBackward(): void {
 		const removed = line.slice(startColumn, endColumn);
 		ide_state.lines[startRow] = line.slice(0, startColumn) + line.slice(endColumn);
 		ide_state.cursorColumn = startColumn;
-		invalidateLine(startRow);
+		ide_state.layout.invalidateLine(startRow);
 		recordEditContext('delete', removed);
 		markTextMutated();
 		resetBlink();
@@ -773,7 +772,7 @@ export function deleteWordBackward(): void {
 	ide_state.lines.splice(startRow + 1, endRow - startRow);
 	ide_state.cursorRow = startRow;
 	ide_state.cursorColumn = startColumn;
-	invalidateLine(startRow);
+	ide_state.layout.invalidateLine(startRow);
 	invalidateHighlightsFromRow(startRow);
 	recordEditContext('delete', removedParts.join('\n'));
 	markTextMutated();
@@ -809,7 +808,7 @@ export function deleteWordForward(): void {
 		const line = ide_state.lines[startRow];
 		const removed = line.slice(startColumn, endColumn);
 		ide_state.lines[startRow] = line.slice(0, startColumn) + line.slice(endColumn);
-		invalidateLine(startRow);
+		ide_state.layout.invalidateLine(startRow);
 		recordEditContext('delete', removed);
 	} else {
 		const firstLine = ide_state.lines[startRow];
@@ -822,7 +821,7 @@ export function deleteWordForward(): void {
 		removedParts.push(lastLine.slice(0, endColumn));
 		ide_state.lines[startRow] = firstLine.slice(0, startColumn) + lastLine.slice(endColumn);
 		ide_state.lines.splice(startRow + 1, endRow - startRow);
-		invalidateLine(startRow);
+		ide_state.layout.invalidateLine(startRow);
 		invalidateHighlightsFromRow(startRow);
 		recordEditContext('delete', removedParts.join('\n'));
 	}
@@ -865,7 +864,7 @@ export function deleteActiveLines(): void {
 			const line = ide_state.lines[ide_state.cursorRow];
 			ide_state.cursorColumn = Math.min(ide_state.cursorColumn, line.length);
 		}
-		invalidateLine(ide_state.cursorRow);
+		ide_state.layout.invalidateLine(ide_state.cursorRow);
 		invalidateHighlightsFromRow(Math.min(removedRow, ide_state.lines.length - 1));
 		recordEditContext('delete', '\n');
 		markTextMutated();
@@ -889,7 +888,7 @@ export function deleteActiveLines(): void {
 	ide_state.cursorRow = clamp(deletionStart, 0, ide_state.lines.length - 1);
 	ide_state.cursorColumn = 0;
 	ide_state.selectionAnchor = null;
-	invalidateLine(ide_state.cursorRow);
+	ide_state.layout.invalidateLine(ide_state.cursorRow);
 	invalidateHighlightsFromRow(deletionStart);
 	recordEditContext('delete', deletedLines.join('\n'));
 	markTextMutated();
@@ -942,7 +941,7 @@ export function moveSelectionLines(delta: number): void {
 	const affectedEnd = Math.min(ide_state.lines.length - 1, Math.max(range.endRow, targetIndex + count - 1));
 	if (affectedStart <= affectedEnd) {
 		for (let row = affectedStart; row <= affectedEnd; row += 1) {
-			invalidateLine(row);
+			ide_state.layout.invalidateLine(row);
 		}
 	}
 	invalidateHighlightsFromRow(affectedStart);
@@ -974,7 +973,7 @@ export function indentSelectionOrLine(): void {
 		const line = currentLine();
 		ide_state.lines[ide_state.cursorRow] = '\t' + line;
 		ide_state.cursorColumn += 1;
-		invalidateLine(ide_state.cursorRow);
+		ide_state.layout.invalidateLine(ide_state.cursorRow);
 		recordEditContext('insert', '\t');
 		markTextMutated();
 		resetBlink();
@@ -984,7 +983,7 @@ export function indentSelectionOrLine(): void {
 	}
 	for (let row = range.start.row; row <= range.end.row; row += 1) {
 		ide_state.lines[row] = '\t' + ide_state.lines[row];
-		invalidateLine(row);
+		ide_state.layout.invalidateLine(row);
 	}
 	if (ide_state.selectionAnchor) {
 		ide_state.selectionAnchor = { row: ide_state.selectionAnchor.row, column: ide_state.selectionAnchor.column + 1 };
@@ -1015,7 +1014,7 @@ export function unindentSelectionOrLine(): void {
 		const remove = Math.min(indentation, 1);
 		ide_state.lines[ide_state.cursorRow] = line.slice(remove);
 		ide_state.cursorColumn = Math.max(0, ide_state.cursorColumn - remove);
-		invalidateLine(ide_state.cursorRow);
+		ide_state.layout.invalidateLine(ide_state.cursorRow);
 		recordEditContext('delete', line.slice(0, remove));
 		markTextMutated();
 		resetBlink();
@@ -1028,7 +1027,7 @@ export function unindentSelectionOrLine(): void {
 		const indentation = countLeadingIndent(line);
 		if (indentation > 0) {
 			ide_state.lines[row] = line.slice(1);
-			invalidateLine(row);
+			ide_state.layout.invalidateLine(row);
 		}
 	}
 	if (ide_state.selectionAnchor) {
@@ -1110,7 +1109,7 @@ export async function cutLineToClipboard(): Promise<void> {
 		}
 		invalidateHighlightsFromRow(Math.min(removedRow, ide_state.lines.length - 1));
 	}
-	invalidateLine(ide_state.cursorRow);
+	ide_state.layout.invalidateLine(ide_state.cursorRow);
 	ide_state.selectionAnchor = null;
 	markTextMutated();
 	resetBlink();

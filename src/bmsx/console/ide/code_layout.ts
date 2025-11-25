@@ -110,7 +110,7 @@ export class ConsoleCodeLayout {
 		});
 	}
 
-	public invalidateHighlight(row: number): void {
+	public invalidateLine(row: number): void {
 		this.highlightCache.delete(row);
 	}
 

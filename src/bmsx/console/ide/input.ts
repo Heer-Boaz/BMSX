@@ -20,9 +20,9 @@ import { applyScrollbarScroll } from './scrollbar';
 import { clearHoverTooltip, updateHoverTooltip } from './intellisense';
 import * as TextEditing from './text_editing_and_selection';
 import { clamp } from '../../utils/clamp';
-import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, deactivate, activate, handleActionPromptSelection, openSymbolSearch, toggleResolutionMode, toggleResourcePanelFilterMode, openResourceSearch, toggleResourcePanel, toggleProblemsPanel, markDiagnosticsDirty, focusEditorFromProblemsPanel, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, handleLineJumpInput, handleSearchInput, hideProblemsPanel, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openDebugPanelTab, performAction, pointInRect, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, scrollResourceBrowser, getCodeAreaBounds, scrollRows, clearGotoHoverHighlight, readPointerSnapshot, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, isRenameVisible, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, processRuntimeErrorOverlayPointer, resolvePointerRow, clearReferenceHighlights, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, tryGotoDefinitionAt, handlePointerAutoScroll, refreshGotoHoverHighlight, getActiveResourceViewer, resourceViewerTextCapacity, moveSymbolSearchSelection, processInlineFieldEditing, symbolSearchPageSize, updateSymbolSearchMatches, applyLineJumpFieldText, resourceSearchWindowCapacity, updateResourceSearchMatches } from './console_cart_editor';
+import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, deactivate, activate, handleActionPromptSelection, openSymbolSearch, toggleResolutionMode, openResourceSearch, toggleProblemsPanel, markDiagnosticsDirty, focusEditorFromProblemsPanel, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, handleLineJumpInput, handleSearchInput, hideProblemsPanel, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openDebugPanelTab, performAction, pointInRect, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, scrollResourceBrowser, getCodeAreaBounds, scrollRows, clearGotoHoverHighlight, readPointerSnapshot, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, processRuntimeErrorOverlayPointer, resolvePointerRow, clearReferenceHighlights, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, tryGotoDefinitionAt, handlePointerAutoScroll, refreshGotoHoverHighlight, getActiveResourceViewer, resourceViewerTextCapacity, moveSymbolSearchSelection, symbolSearchPageSize, updateSymbolSearchMatches, applyLineJumpFieldText, resourceSearchWindowCapacity, updateResourceSearchMatches } from './console_cart_editor';
 import * as constants from './constants';
-import { getFieldText } from './inline_text_field';
+import { applyInlineFieldEditing, getFieldText } from './inline_text_field';
 
 const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
 const MENU_COMMANDS: TopBarButtonId[] = [
@@ -433,7 +433,7 @@ export function handleEditorInput(deltaSeconds: number): void {
 	}
 	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyL')) {
 		consumeIdeKey('KeyL');
-		toggleResourcePanelFilterMode();
+		ide_state.resourcePanel.toggleFilterMode();
 		return;
 	}
 	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressed('Comma')) {
@@ -453,7 +453,7 @@ export function handleEditorInput(deltaSeconds: number): void {
 	}
 	if ((ctrlDown || metaDown) && isKeyJustPressed('KeyB')) {
 		consumeIdeKey('KeyB');
-		toggleResourcePanel();
+		ide_state.resourcePanel.togglePanel();
 		return;
 	}
 	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyM')) {
@@ -806,7 +806,7 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 			toggleProblemsPanel();
 			return;
 		case 'filter':
-			toggleResourcePanelFilterMode();
+			ide_state.resourcePanel.toggleFilterMode();
 			return;
 		case 'wrap':
 			toggleWordWrap();
@@ -815,7 +815,7 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 			toggleResolutionMode();
 			return;
 		case 'resources':
-			toggleResourcePanel();
+			ide_state.resourcePanel.togglePanel();
 			return;
 		case 'save':
 			if (ide_state.dirty) {
@@ -1501,7 +1501,7 @@ export function handleTextEditorPointerInput(): void {
 	}
 
 	const renameBounds = getRenameBarBounds();
-	if (isRenameVisible() && renameBounds) {
+	if (ide_state.renameController.isVisible() && renameBounds) {
 		const insideRename = pointInRect(snapshot.viewportX, snapshot.viewportY, renameBounds);
 		if (insideRename) {
 			if (justPressed) {
@@ -1860,7 +1860,7 @@ export function handleSymbolSearchInput(deltaSeconds: number): void {
 		ensureSymbolSearchSelectionVisible();
 		return;
 	}
-	const textChanged = processInlineFieldEditing(ide_state.symbolSearchField, {
+	const textChanged = applyInlineFieldEditing(ide_state.symbolSearchField, {
 		deltaSeconds,
 		allowSpace: true,
 		characterFilter: undefined,
@@ -1933,7 +1933,7 @@ export function handleResourceSearchInput(deltaSeconds: number): void {
 		ensureResourceSearchSelectionVisible();
 		return;
 	}
-	const textChanged = processInlineFieldEditing(ide_state.resourceSearchField, {
+	const textChanged = applyInlineFieldEditing(ide_state.resourceSearchField, {
 		deltaSeconds,
 		allowSpace: true,
 		characterFilter: undefined,

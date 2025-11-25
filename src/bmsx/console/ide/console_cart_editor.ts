@@ -75,7 +75,6 @@ import { consumeIdeKey } from './input';
 import { ConsoleCodeLayout } from './code_layout';
 import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine } from './runtime_error_utils';
 import type {
-	CachedHighlight,
 	CodeHoverTooltip,
 	CodeTabContext,
 	EditContext,
@@ -86,7 +85,6 @@ import type {
 	EditorTabId,
 	EditorDiagnostic,
 	HighlightLine,
-	InlineInputOptions,
 	TextField,
 	MessageState,
 	PendingActionPrompt,
@@ -136,9 +134,9 @@ import { api, type BmsxConsoleRuntime } from '../runtime';
 import { computeEditContextFromSources, handlePostEditMutation, writeClipboard } from './text_editing_and_selection';
 import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
 import { drawCreateResourceBar } from './render/render_input_bars';
-import { drawResourceSearchBar } from './render/render_input_bars';
 import { drawActionPromptOverlay } from './render/render_prompt';
 import { drawLineJumpBar, drawRenameBar, drawSearchBar, drawSymbolSearchBar } from './render/render_input_bars';
+import { renderResourceSearchBar } from './render/render_inline_bars';
 
 const editorFacade = {
 	activate,
@@ -268,7 +266,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.problemsPanel = new ProblemsPanelController();
 	ide_state.problemsPanel.setDiagnostics(ide_state.diagnostics);
 	ide_state.renameController = new RenameController({
-		processFieldEdit: (field, options) => processInlineFieldEditing(field, options),
+		processFieldEdit: (field, options) => applyInlineFieldEditing(field, options),
 		shouldFireRepeat: (code, deltaSeconds) => ide_state.input.shouldRepeat(code, deltaSeconds),
 		undo: () => undo(),
 		redo: () => redo(),
@@ -310,7 +308,7 @@ export function invalidateLineRange(startRow: number, endRow: number): void {
 	from = clamp(from, 0, lastRow);
 	to = clamp(to, 0, lastRow);
 	for (let row = from; row <= to; row += 1) {
-		invalidateLine(row);
+		ide_state.layout.invalidateLine(row);
 	}
 }
 
@@ -625,7 +623,7 @@ export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBotto
 		tooltip.bubbleBounds = null;
 		return;
 	}
-	const entry = getCachedHighlight(segment.row);
+	const entry = ide_state.layout.getCachedHighlight(ide_state.lines, segment.row);
 	const highlight = entry.hi;
 	let columnStart = ide_state.wordWrapEnabled ? segment.startColumn : ide_state.scrollColumn;
 	if (ide_state.wordWrapEnabled) {
@@ -636,7 +634,7 @@ export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBotto
 	const columnCount = ide_state.wordWrapEnabled
 		? Math.max(0, segment.endColumn - columnStart)
 		: visibleColumnCount() + 8;
-	const slice = sliceHighlightedLine(highlight, columnStart, columnCount);
+	const slice = ide_state.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
 	const sliceStartDisplay = slice.startDisplay;
 	const sliceEndLimit = ide_state.wordWrapEnabled ? columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
 	const sliceEndDisplay = ide_state.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
@@ -644,8 +642,8 @@ export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBotto
 	const endDisplay = columnToDisplay(highlight, tooltip.endColumn);
 	const clampedStartDisplay = clamp(startDisplay, sliceStartDisplay, sliceEndDisplay);
 	const clampedEndDisplay = clamp(endDisplay, clampedStartDisplay, sliceEndDisplay);
-	const expressionStartX = textLeft + measureRangeFast(entry, sliceStartDisplay, clampedStartDisplay);
-	const expressionEndX = textLeft + measureRangeFast(entry, sliceStartDisplay, clampedEndDisplay);
+	const expressionStartX = textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, clampedStartDisplay);
+	const expressionEndX = textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, clampedEndDisplay);
 	const maxVisible = Math.max(1, Math.min(constants.HOVER_TOOLTIP_MAX_VISIBLE_LINES, content.length));
 	const maxOffset = Math.max(0, content.length - maxVisible);
 	tooltip.scrollOffset = clamp(tooltip.scrollOffset, 0, maxOffset);
@@ -1479,7 +1477,7 @@ export function draw(): void {
 		hideResourceViewerSprite();
 		drawCreateResourceBar();
 		drawSearchBar();
-		drawResourceSearchBar();
+		renderResourceSearchBar();
 		drawSymbolSearchBar();
 		drawRenameBar();
 		drawLineJumpBar();
@@ -1824,7 +1822,7 @@ export function handleCreateResourceInput(deltaSeconds: number): void {
 	if (ide_state.createResourceWorking) {
 		return;
 	}
-	const textChanged = processInlineFieldEditing(ide_state.createResourceField, {
+	const textChanged = applyInlineFieldEditing(ide_state.createResourceField, {
 		deltaSeconds,
 		allowSpace: true,
 		characterFilter: (value: string): boolean => isValidCreateResourceCharacter(value),
@@ -1897,7 +1895,7 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	}
 	ide_state.createResourceWorking = true;
 	resetBlink();
-	const contents = buildDefaultResourceContents(normalizedPath, asset_id);
+	const contents = constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 	try {
 		const descriptor = await ide_state.createLuaResourceFn({ path: normalizedPath, asset_id, contents });
 		ide_state.lastCreateResourceDirectory = directory;
@@ -1910,7 +1908,7 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 		closeCreateResourcePrompt(false);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		const simplified = simplifyRuntimeErrorMessage(message);
+		const simplified = message.replace(/^\[BmsxConsoleRuntime\]\s*/, '');
 		ide_state.createResourceError = simplified;
 		ide_state.showMessage(`Failed to create resource: ${simplified}`, constants.COLOR_STATUS_WARNING, 4.0);
 	} finally {
@@ -2008,10 +2006,6 @@ export function ensureDirectorySuffix(path: string): string {
 		return '';
 	}
 	return normalized.slice(0, slashIndex + 1);
-}
-
-export function buildDefaultResourceContents(_path: string, _asset_id: string): string {
-	return constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 }
 
 export function handleSearchInput(deltaSeconds: number): void {
@@ -2116,7 +2110,7 @@ export function handleSearchInput(deltaSeconds: number): void {
 		}
 	}
 
-	const textChanged = processInlineFieldEditing(ide_state.searchField, {
+	const textChanged = applyInlineFieldEditing(ide_state.searchField, {
 		deltaSeconds,
 		allowSpace: true,
 		characterFilter: undefined,
@@ -2153,7 +2147,7 @@ export function handleLineJumpInput(deltaSeconds: number): void {
 	}
 
 	const digitFilter = (value: string): boolean => value >= '0' && value <= '9';
-	const textChanged = processInlineFieldEditing(ide_state.lineJumpField, {
+	const textChanged = applyInlineFieldEditing(ide_state.lineJumpField, {
 		deltaSeconds,
 		allowSpace: false,
 		characterFilter: digitFilter,
@@ -2164,7 +2158,6 @@ export function handleLineJumpInput(deltaSeconds: number): void {
 		// keep value in sync; no additional processing required
 	}
 }
-
 
 export function openResourceSearch(initialQuery: string = ''): void {
 	clearReferenceHighlights();
@@ -2341,7 +2334,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 			for (let index = 0; index < edits.length; index += 1) {
 				const edit = edits[index];
 				ide_state.lines[edit.row] = edit.text;
-				invalidateLine(edit.row);
+				ide_state.layout.invalidateLine(edit.row);
 			}
 			markTextMutated();
 			activeEditsApplied = true;
@@ -3463,7 +3456,7 @@ export function beginNavigationCapture(): NavigationHistoryEntry | null {
 		ide_state.navigationHistory.current = createNavigationEntry();
 	}
 	const current = ide_state.navigationHistory.current;
-	return current ? cloneNavigationEntry(current) : null;
+	return current ? { ...current } : null;
 }
 
 export function completeNavigation(previous: NavigationHistoryEntry | null): void {
@@ -3501,10 +3494,6 @@ export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: Navigati
 		&& a.path === b.path
 		&& a.row === b.row
 		&& a.column === b.column;
-}
-
-export function cloneNavigationEntry(entry: NavigationHistoryEntry): NavigationHistoryEntry {
-	return { ...entry };
 }
 
 export function createNavigationEntry(): NavigationHistoryEntry | null {
@@ -3742,9 +3731,6 @@ export function performReboot(): boolean {
 	return true;
 }
 
-// Indentation adjustments delegated to base class implementation.
-
-
 export function toggleLineComments(): void {
 	if (!isEditableCodeTab()) {
 		notifyReadOnlyEdit();
@@ -3798,7 +3784,7 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 		}
 		const updatedLine = originalLine.slice(0, insertIndex) + insertion + originalLine.slice(insertIndex);
 		ide_state.lines[row] = updatedLine;
-		invalidateLine(row);
+		ide_state.layout.invalidateLine(row);
 		shiftPositionsForInsertion(row, insertIndex, insertion.length);
 		changed = true;
 	}
@@ -3842,7 +3828,7 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 		}
 		const updatedLine = originalLine.slice(0, commentIndex) + originalLine.slice(commentIndex + removal);
 		ide_state.lines[row] = updatedLine;
-		invalidateLine(row);
+		ide_state.layout.invalidateLine(row);
 		shiftPositionsForRemoval(row, commentIndex, removal);
 		changed = true;
 	}
@@ -3993,7 +3979,7 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 	if (line.length === 0) {
 		return 0;
 	}
-	const entry = getCachedHighlight(row);
+	const entry = ide_state.layout.getCachedHighlight(ide_state.lines, row);
 	const highlight = entry.hi;
 	let segmentStartColumn = ide_state.scrollColumn;
 	let segmentEndColumn = line.length;
@@ -4150,10 +4136,6 @@ export function applyCreateResourceFieldText(value: string, moveCursorToEnd: boo
 	setFieldText(ide_state.createResourceField, value, moveCursorToEnd);
 }
 
-export function processInlineFieldEditing(field: TextField, options: InlineInputOptions): boolean {
-	return applyInlineFieldEditing(field, options);
-}
-
 export function processInlineFieldPointer(field: TextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {
 	const result = applyInlineFieldPointer(field, {
 		metrics: ide_state.inlineFieldMetricsRef,
@@ -4175,7 +4157,7 @@ export function updateDesiredColumn(): void {
 	if (ide_state.cursorRow < 0 || ide_state.cursorRow >= ide_state.lines.length) {
 		return;
 	}
-	const entry = getCachedHighlight(ide_state.cursorRow);
+	const entry = ide_state.layout.getCachedHighlight(ide_state.lines, ide_state.cursorRow);
 	const highlight = entry.hi;
 	const cursorDisplay = columnToDisplay(highlight, ide_state.cursorColumn);
 	let segmentStartColumn = 0;
@@ -4266,7 +4248,7 @@ type RestoreSnapshotOptions = {
 export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnapshotOptions): void {
 	ide_state.lines = snapshot.lines.slice();
 	invalidateVisualLines();
-	invalidateAllHighlights();
+	ide_state.layout.invalidateAllHighlights();
 	markDiagnosticsDirty();
 	ide_state.cursorRow = snapshot.cursorRow;
 	ide_state.cursorColumn = snapshot.cursorColumn;
@@ -4283,10 +4265,6 @@ export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnaps
 		ensureCursorVisible();
 	}
 	requestSemanticRefresh();
-}
-
-export function simplifyRuntimeErrorMessage(message: string): string {
-	return message.replace(/^\[BmsxConsoleRuntime\]\s*/, '');
 }
 
 export function codeViewportTop(): number {
@@ -4319,7 +4297,7 @@ export function getSearchBarHeight(): number {
 }
 
 export function getResourceSearchBarHeight(): number {
-	if (!isResourceSearchVisible()) {
+	if (!ide_state.resourceSearchVisible) {
 		return 0;
 	}
 	const baseHeight = ide_state.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
@@ -4330,12 +4308,8 @@ export function getResourceSearchBarHeight(): number {
 	return baseHeight + constants.QUICK_OPEN_RESULT_SPACING + visible * resourceSearchEntryHeight();
 }
 
-export function isResourceSearchVisible(): boolean {
-	return ide_state.resourceSearchVisible;
-}
-
 export function getSymbolSearchBarHeight(): number {
-	if (!isSymbolSearchVisible()) {
+	if (!ide_state.symbolSearchVisible) {
 		return 0;
 	}
 	const baseHeight = ide_state.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
@@ -4346,30 +4320,18 @@ export function getSymbolSearchBarHeight(): number {
 	return baseHeight + constants.SYMBOL_SEARCH_RESULT_SPACING + visible * symbolSearchEntryHeight();
 }
 
-export function isSymbolSearchVisible(): boolean {
-	return ide_state.symbolSearchVisible;
-}
-
 export function getRenameBarHeight(): number {
-	if (!isRenameVisible()) {
+	if (!ide_state.renameController.isVisible()) {
 		return 0;
 	}
 	return ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 }
 
-export function isRenameVisible(): boolean {
-	return ide_state.renameController.isVisible();
-}
-
 export function getLineJumpBarHeight(): number {
-	if (!isLineJumpVisible()) {
+	if (!ide_state.lineJumpVisible) {
 		return 0;
 	}
 	return ide_state.lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;
-}
-
-export function isLineJumpVisible(): boolean {
-	return ide_state.lineJumpVisible;
 }
 
 export function getCreateResourceBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
@@ -4561,7 +4523,9 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 		ide_state.pointerSelecting = false;
 		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		resetPointerClickTracking();
-		copyRuntimeErrorOverlayToClipboard(overlay);
+		const payload = buildRuntimeErrorOverlayCopyText(overlay);
+		void writeClipboard(payload, 'Copied runtime error to clipboard');
+
 		return true;
 	}
 	overlay.hoverLine = findRuntimeErrorOverlayLineAtPosition(overlay, snapshot.viewportX, snapshot.viewportY);
@@ -4596,11 +4560,6 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 	}
 }
 
-export function copyRuntimeErrorOverlayToClipboard(overlay: RuntimeErrorOverlay): void {
-	const payload = buildRuntimeErrorOverlayCopyText(overlay);
-	void writeClipboard(payload, 'Copied runtime error to clipboard');
-}
-
 export function createRuntimeErrorOverlayLayoutHost(): RuntimeErrorOverlayLayoutHost {
 	return {
 		ensureVisualLines: () => ensureVisualLines(),
@@ -4608,13 +4567,13 @@ export function createRuntimeErrorOverlayLayoutHost(): RuntimeErrorOverlayLayout
 		visibleRowCount: () => visibleRowCount(),
 		scrollRow: ide_state.scrollRow,
 		visualIndexToSegment: (visualIndex: number) => visualIndexToSegment(visualIndex),
-		getCachedHighlight: (rowIndex: number) => getCachedHighlight(rowIndex),
+		getCachedHighlight: (rowIndex: number) => ide_state.layout.getCachedHighlight(ide_state.lines, rowIndex),
 		wordWrapEnabled: ide_state.wordWrapEnabled,
 		scrollColumn: ide_state.scrollColumn,
 		visibleColumnCount: () => visibleColumnCount(),
-		sliceHighlightedLine: (highlight, columnStart, columnCount) => sliceHighlightedLine(highlight, columnStart, columnCount),
-		columnToDisplay: (highlight, column) => columnToDisplay(highlight, column),
-		measureRangeFast: (entry, fromDisplay, toDisplay) => measureRangeFast(entry, fromDisplay, toDisplay),
+		sliceHighlightedLine: (highlight, columnStart, columnCount) => ide_state.layout.sliceHighlightedLine(highlight, columnStart, columnCount),
+		columnToDisplay: (highlight, column) => ide_state.layout.columnToDisplay(highlight, column),
+		measureRangeFast: (entry, fromDisplay, toDisplay) => ide_state.layout.measureRangeFast(entry, fromDisplay, toDisplay),
 		lineHeight: ide_state.lineHeight,
 		viewportHeight: ide_state.viewportHeight,
 		bottomMargin: bottomMargin(),
@@ -4721,11 +4680,6 @@ export function notifyReadOnlyEdit(): void {
 	ide_state.showMessage('Tab is read-only', constants.COLOR_STATUS_WARNING, 1.5);
 }
 
-export function toggleResourcePanel(): void {
-	// Keep editor/controller visibility in sync by delegating to controller
-	ide_state.resourcePanel.togglePanel();
-}
-
 export function toggleProblemsPanel(): void {
 	if (ide_state.problemsPanel.isVisible) {
 		hideProblemsPanel();
@@ -4742,10 +4696,6 @@ export function showProblemsPanel(): void {
 export function hideProblemsPanel(): void {
 	ide_state.problemsPanel.hide();
 	focusEditorFromProblemsPanel();
-}
-
-export function toggleResourcePanelFilterMode(): void {
-	ide_state.resourcePanel.toggleFilterMode();
 }
 
 export function updateViewport(viewport: { width: number; height: number }): void {
@@ -4781,7 +4731,7 @@ export function setFontVariant(variant: ConsoleFontVariant): void {
 	if (ide_state.resourcePanel) {
 		ide_state.resourcePanel.setFontMetrics(ide_state.lineHeight, ide_state.charAdvance);
 	}
-	invalidateAllHighlights();
+	ide_state.layout.invalidateAllHighlights();
 	invalidateVisualLines();
 	ensureVisualLines();
 	ide_state.cursorRevealSuspended = false;
@@ -4794,8 +4744,7 @@ export function toggleResolutionMode(): void {
 	const mode = getConsoleRuntime().toggleOverlayResolutionMode();
 	ensureCursorVisible();
 	ide_state.cursorRevealSuspended = false;
-	const modeLabel = mode === 'offscreen' ? 'OFFSCREEN' : 'NATIVE';
-	ide_state.showMessage(`Editor resolution: ${modeLabel}`, constants.COLOR_STATUS_TEXT, 0.5);
+	ide_state.showMessage(`Editor resolution: ${mode}`, constants.COLOR_STATUS_TEXT, 0.5);
 }
 
 export function toggleWordWrap(): void {
@@ -4919,7 +4868,7 @@ export function resetEditorContent(): void {
 	ide_state.scrollColumn = 0;
 	ide_state.selectionAnchor = null;
 	ide_state.lastSavedSource = '';
-	invalidateAllHighlights();
+	ide_state.layout.invalidateAllHighlights();
 	bumpTextVersion();
 	ide_state.dirty = false;
 	updateActiveContextDirtyFlag();
@@ -5170,8 +5119,6 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 	return state;
 }
 
-
-
 export function appendResourceViewerLines(target: string[], additions: Iterable<string>): void {
 	for (const entry of additions) {
 		if (target.length >= constants.RESOURCE_VIEWER_MAX_LINES - 1) {
@@ -5369,21 +5316,6 @@ export function computePanelRatioBounds(): { min: number; max: number } {
 	return { min: minRatio, max: maxRatio };
 }
 
-export function clampResourcePanelRatio(ratio: number | null): number {
-	const bounds = computePanelRatioBounds();
-	let resolved = ratio ?? defaultResourcePanelRatio();
-	if (!Number.isFinite(resolved)) {
-		resolved = constants.RESOURCE_PANEL_DEFAULT_RATIO;
-	}
-	if (resolved < bounds.min) {
-		resolved = bounds.min;
-	}
-	if (resolved > bounds.max) {
-		resolved = bounds.max;
-	}
-	return resolved;
-}
-
 export function defaultResourcePanelRatio(): number {
 	const metrics = $.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics();
 	const viewportWidth = metrics.windowInner.width;
@@ -5393,13 +5325,6 @@ export function defaultResourcePanelRatio(): number {
 	const ratio = constants.RESOURCE_PANEL_DEFAULT_RATIO + responsiveness * (constants.RESOURCE_PANEL_MAX_RATIO - constants.RESOURCE_PANEL_DEFAULT_RATIO) * 0.6;
 	const bounds = computePanelRatioBounds();
 	return Math.max(bounds.min, Math.min(bounds.max, ratio));
-}
-
-export function computePanelPixelWidth(ratio: number): number {
-	if (!Number.isFinite(ratio) || ratio <= 0 || ide_state.viewportWidth <= 0) {
-		return 0;
-	}
-	return Math.floor(ide_state.viewportWidth * ratio);
 }
 
 export function getResourcePanelWidth(): number {
@@ -5518,29 +5443,8 @@ export function hideResourceViewerSprite(): void {
 	}
 }
 
-export function sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
-	return ide_state.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
-}
-
-export function getCachedHighlight(row: number): CachedHighlight {
-	// const activeContext = getActiveCodeTabContext();
-	return ide_state.layout.getCachedHighlight(ide_state.lines, row);
-}
-
-export function invalidateLine(row: number): void {
-	ide_state.layout.invalidateHighlight(row);
-}
-
-export function invalidateAllHighlights(): void {
-	ide_state.layout.invalidateAllHighlights();
-}
-
 export function invalidateHighlightsFromRow(startRow: number): void {
 	ide_state.layout.invalidateHighlightsFrom(Math.max(0, startRow));
-}
-
-export function measureRangeFast(entry: CachedHighlight, startDisplay: number, endDisplay: number): number {
-	return ide_state.layout.measureRangeFast(entry, startDisplay, endDisplay);
 }
 
 export function requestSemanticRefresh(context?: CodeTabContext | null): void {

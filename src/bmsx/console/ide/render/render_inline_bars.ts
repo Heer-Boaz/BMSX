@@ -1,10 +1,12 @@
 import { BmsxConsoleApi } from '../../api';
-import type { drawInlineCaret } from './render_caret';
+import { drawInlineCaret } from './render_caret';
 import * as constants from '../constants';
 import type { TextField } from '../types';
 import { ide_state } from '../ide_state';
-import { getFieldText } from '../inline_text_field';
+import { caretX, getFieldText, measureRange, selectionRange } from '../inline_text_field';
 import { api } from '../../runtime';
+import { getCreateResourceBarHeight, getResourceSearchBarHeight, getSearchBarHeight, isResourceSearchCompactMode, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../console_cart_editor';
+import { measureText } from '../text_utils';
 
 type InlineResultListOptions<T> = {
 	entries: readonly T[] | null | undefined;
@@ -171,7 +173,7 @@ export function renderSearchBar(host: InlineBarsHost): void {
 	const labelY = barTop + constants.SEARCH_BAR_MARGIN_Y;
 	host.drawText(api, label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
 
-    const active = !!host.searchActive && !host.blockActiveCarets;
+	const active = !!host.searchActive && !host.blockActiveCarets;
 	const fieldText = field ? getFieldText(field) : '';
 	let queryText = fieldText;
 	let queryColor = constants.COLOR_SEARCH_TEXT;
@@ -198,7 +200,7 @@ export function renderSearchBar(host: InlineBarsHost): void {
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + (host.charAdvance ?? host.spaceAdvance)));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + host.lineHeight;
-    host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretX, active, constants.INLINE_CARET_COLOR, queryColor);
+		host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretX, active, constants.INLINE_CARET_COLOR, queryColor);
 	}
 
 	const infoX = host.viewportWidth - 4;
@@ -225,7 +227,7 @@ export function renderSearchBar(host: InlineBarsHost): void {
 	const resultsTop = separatorTop + constants.SEARCH_RESULT_SPACING;
 	const rowHeight = host.searchResultEntryHeight ? host.searchResultEntryHeight() : host.lineHeight * 2;
 
-	renderResultList(api, {
+	renderResultList({
 		entries: host.searchResultEntries,
 		visibleCount: visible,
 		displayOffset: host.searchDisplayOffset ?? 0,
@@ -254,22 +256,22 @@ export function renderSearchBar(host: InlineBarsHost): void {
 	});
 }
 
-export function renderResourceSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void {
-	const height = host.getResourceSearchBarHeight();
+export function renderResourceSearchBar(): void {
+	const height = getResourceSearchBarHeight();
 	if (height <= 0) return;
-	const barTop = host.headerHeight + host.tabBarHeight + host.getCreateResourceBarHeight() + host.getSearchBarHeight();
+	const barTop = ide_state.headerHeight + ide_state.tabBarHeight + getCreateResourceBarHeight() + getSearchBarHeight();
 	const barBottom = barTop + height;
-	api.rectfill(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_QUICK_OPEN_BACKGROUND);
-	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_QUICK_OPEN_OUTLINE);
-	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_QUICK_OPEN_OUTLINE);
+	api.rectfill(0, barTop, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_QUICK_OPEN_BACKGROUND);
+	api.rectfill(0, barTop, ide_state.viewportWidth, barTop + 1, undefined, constants.COLOR_QUICK_OPEN_OUTLINE);
+	api.rectfill(0, barBottom - 1, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_QUICK_OPEN_OUTLINE);
 
-	const field = host.resourceSearchField as TextField | undefined;
+	const field = ide_state.resourceSearchField as TextField | undefined;
 	const label = 'FILE :';
 	const labelX = 4;
 	const labelY = barTop + constants.QUICK_OPEN_BAR_MARGIN_Y;
-	host.drawText(api, label, labelX, labelY, constants.COLOR_QUICK_OPEN_TEXT);
+	api.write(label, labelX, labelY, undefined, constants.COLOR_QUICK_OPEN_TEXT);
 
-    const active = !!host.resourceSearchActive && !host.blockActiveCarets;
+	const active = !!ide_state.resourceSearchActive && !ide_state.problemsPanel.isVisible && !ide_state.problemsPanel.isFocused;
 	const fieldText = field ? getFieldText(field) : '';
 	let queryText = fieldText;
 	let queryColor = constants.COLOR_QUICK_OPEN_TEXT;
@@ -277,63 +279,63 @@ export function renderResourceSearchBar(api: BmsxConsoleApi, host: InlineBarsHos
 		queryText = 'TYPE TO FILTER (@/# PREFIX)';
 		queryColor = constants.COLOR_QUICK_OPEN_PLACEHOLDER;
 	}
-	const queryX = labelX + host.measureText(label + ' ');
+	const queryX = labelX + measureText(label + ' ');
 
-	const selection = field ? host.inlineFieldSelectionRange(field) : null;
+	const selection = field ? selectionRange(field) : null;
 	if (selection && fieldText.length > 0) {
-		const selectionLeft = queryX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
+		const selectionLeft = queryX + measureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
+		const selectionWidth = measureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
 		if (selectionWidth > 0) {
-			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, undefined, constants.SELECTION_OVERLAY);
+			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + ide_state.lineHeight, undefined, constants.SELECTION_OVERLAY);
 		}
 	}
 
-	host.drawText(api, queryText, queryX, labelY, queryColor);
+	api.write(queryText, queryX, labelY, undefined, queryColor);
 
 	if (field) {
-		const caretX = host.inlineFieldCaretX(field, queryX, host.measureText);
-		const caretLeft = Math.floor(caretX);
-		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + (host.charAdvance ?? host.spaceAdvance)));
-		const caretTop = Math.floor(labelY);
-		const caretBottom = caretTop + host.lineHeight;
-	host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretX, active, constants.INLINE_CARET_COLOR, queryColor);
+		const caretLeft = caretX(field, queryX, measureText);
+		const caretRight = Math.max(caretLeft + 1, caretLeft + (ide_state.charAdvance));
+		const caretTop = labelY;
+		const caretBottom = caretTop + ide_state.lineHeight;
+		drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretLeft, active, constants.INLINE_CARET_COLOR, queryColor);
 	}
 
-	const visible = host.resourceSearchVisibleResultCount ? host.resourceSearchVisibleResultCount() : 0;
+	const visible = resourceSearchVisibleResultCount();
 	if (visible <= 0) return;
-	const baseHeight = host.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
+	const baseHeight = ide_state.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
 	const separatorTop = barTop + baseHeight;
-	api.rectfill(0, separatorTop, host.viewportWidth, separatorTop + constants.QUICK_OPEN_RESULT_SPACING, undefined, constants.COLOR_QUICK_OPEN_OUTLINE);
+	api.rectfill(0, separatorTop, ide_state.viewportWidth, separatorTop + constants.QUICK_OPEN_RESULT_SPACING, undefined, constants.COLOR_QUICK_OPEN_OUTLINE);
 	const resultsTop = separatorTop + constants.QUICK_OPEN_RESULT_SPACING;
-	const rowHeight = host.resourceSearchEntryHeight ? host.resourceSearchEntryHeight() : host.lineHeight * 2;
-	const compactMode = host.isResourceSearchCompactMode ? host.isResourceSearchCompactMode() : false;
-	renderResultList(api, {
-		entries: host.resourceSearchMatches,
+	const rowHeight = resourceSearchEntryHeight();
+	const compactMode = isResourceSearchCompactMode();
+
+	renderResultList({
+		entries: ide_state.resourceSearchMatches,
 		visibleCount: visible,
-		displayOffset: host.resourceSearchDisplayOffset ?? 0,
+		displayOffset: ide_state.resourceSearchDisplayOffset ?? 0,
 		rowHeight,
 		rowTop: resultsTop,
-		viewportWidth: host.viewportWidth,
-		selectionIndex: host.resourceSearchSelectionIndex ?? -1,
-		hoverIndex: host.resourceSearchHoverIndex ?? -1,
+		viewportWidth: ide_state.viewportWidth,
+		selectionIndex: ide_state.resourceSearchSelectionIndex ?? -1,
+		hoverIndex: ide_state.resourceSearchHoverIndex ?? -1,
 		drawRow: (match, rowTop) => {
 			let textX = constants.QUICK_OPEN_RESULT_PADDING_X;
 			const kindText = match?.entry.typeLabel ?? '';
 			const detail = match?.entry.assetLabel ?? '';
 			if (kindText.length > 0) {
-				host.drawText(api, kindText, textX, rowTop, constants.COLOR_QUICK_OPEN_KIND);
-				textX += host.measureText(kindText + ' ');
+				api.write(kindText, textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
+				textX += measureText(kindText + ' ');
 			}
-			host.drawText(api, match?.entry.displayPath ?? '', textX, rowTop, constants.COLOR_QUICK_OPEN_TEXT);
+			api.write(match?.entry.displayPath ?? '', textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_TEXT);
 			if (compactMode) {
-				const secondaryY = rowTop + host.lineHeight;
+				const secondaryY = rowTop + ide_state.lineHeight;
 				if (detail.length > 0) {
-					host.drawText(api, detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, constants.COLOR_QUICK_OPEN_KIND);
+					api.write(detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, undefined, constants.COLOR_QUICK_OPEN_KIND);
 				}
 			} else if (detail.length > 0) {
-				const detailWidth = host.measureText(detail);
-				const detailX = host.viewportWidth - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
-				host.drawText(api, detail, detailX, rowTop, constants.COLOR_QUICK_OPEN_KIND);
+				const detailWidth = measureText(detail);
+				const detailX = ide_state.viewportWidth - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
+				api.write(detail, detailX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
 			}
 		},
 	});
@@ -398,7 +400,7 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 	const compactMode = mode === 'references'
 		? true
 		: (host.symbolSearchGlobal && host.isSymbolSearchCompactMode ? host.isSymbolSearchCompactMode() : false) as boolean;
-	renderResultList(api, {
+	renderResultList({
 		entries: host.symbolSearchMatches,
 		visibleCount: visible,
 		displayOffset: host.symbolSearchDisplayOffset ?? 0,
@@ -444,7 +446,7 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 	});
 }
 
-function renderResultList<T>(api: BmsxConsoleApi, options: InlineResultListOptions<T>): void {
+function renderResultList<T>(options: InlineResultListOptions<T>): void {
 	const { entries, visibleCount } = options;
 	if (!entries || visibleCount <= 0) {
 		return;

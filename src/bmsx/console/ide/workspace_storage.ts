@@ -19,7 +19,7 @@ import {
 	joinWorkspacePaths,
 	normalizeWorkspacePath,
 } from '../workspace';
-import { cloneNavigationEntry, openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, findResourceDescriptorByasset_id, restoreSnapshot, setFontVariant, getConsoleRuntime } from './console_cart_editor';
+import { openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, findResourceDescriptorByasset_id, restoreSnapshot, setFontVariant, getConsoleRuntime } from './console_cart_editor';
 import { createEntryTabContext, initializeTabs, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { ConsoleFontVariant } from '../font';
 
@@ -409,10 +409,10 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 		? payload.lastHistoryTimestamp
 		: 0;
 	if (payload.navigationHistory) {
-		ide_state.navigationHistory.back = payload.navigationHistory.back.map(entry => cloneNavigationEntry(entry));
-		ide_state.navigationHistory.forward = payload.navigationHistory.forward.map(entry => cloneNavigationEntry(entry));
+		ide_state.navigationHistory.back = payload.navigationHistory.back.map(entry => ({ ...entry }));
+		ide_state.navigationHistory.forward = payload.navigationHistory.forward.map(entry => ({ ...entry }));
 		ide_state.navigationHistory.current = payload.navigationHistory.current
-			? cloneNavigationEntry(payload.navigationHistory.current)
+			? { ...payload.navigationHistory.current }
 			: null;
 	} else {
 		ide_state.navigationHistory.back = [];
@@ -760,9 +760,9 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 	const undoStack = ide_state.undoStack.map(cloneEditorSnapshot);
 	const redoStack = ide_state.redoStack.map(cloneEditorSnapshot);
 	const navigationHistory = {
-		back: ide_state.navigationHistory.back.map(entry => cloneNavigationEntry(entry)),
-		forward: ide_state.navigationHistory.forward.map(entry => cloneNavigationEntry(entry)),
-		current: ide_state.navigationHistory.current ? cloneNavigationEntry(ide_state.navigationHistory.current) : null,
+		back: ide_state.navigationHistory.back.map(entry => ({ ...entry })),
+		forward: ide_state.navigationHistory.forward.map(entry => ({ ...entry })),
+		current: ide_state.navigationHistory.current ? { ...ide_state.navigationHistory.current } : null,
 	};
 	const runtime = getConsoleRuntime();
 	return {
