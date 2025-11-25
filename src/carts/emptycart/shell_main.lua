@@ -4,8 +4,11 @@ function draw()
 	cls(4)
 	write('bla',0,200,1)
 	bla(y)
-	y = y + 1
 	-- asdfsdfsdsdff
+end
+
+function update()
+	y = y + 1
 end
 
 function test(b)

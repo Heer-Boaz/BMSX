@@ -37,6 +37,22 @@ let localBackend: LocalWorkspaceBackend | null = null;
 let serverRetryScheduled = false;
 let serverRetryHandle: TimerHandle | NodeJS.Timeout | null = null;
 
+class MemoryWorkspaceStorage implements StorageService {
+	private readonly store = new Map<string, string>();
+
+	getItem(key: string): string | null {
+		return this.store.get(key) ?? null;
+	}
+
+	setItem(key: string, value: string): void {
+		this.store.set(key, value);
+	}
+
+	removeItem(key: string): void {
+		this.store.delete(key);
+	}
+}
+
 function resetWorkspaceBackends(): void {
 	serverBackend = null;
 	localBackend = null;
@@ -72,10 +88,7 @@ export async function configureWorkspaceStorage(projectRootPath: string | null):
 		dirtyDir,
 		stateFile,
 	};
-	const storage = $.platform.storage;
-	if (!storage) {
-		throw new Error('[WorkspaceStorage] Platform storage service unavailable.');
-	}
+	const storage = $.platform.storage ?? new MemoryWorkspaceStorage();
 	localBackend = new LocalWorkspaceBackend(normalizedRoot, storage);
 	await localBackend.ensureReady();
 	serverBackendFailureNotified = false;
