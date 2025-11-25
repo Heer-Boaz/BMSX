@@ -2,7 +2,7 @@ import { $ } from '../../core/game';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
-import { isAltDown, isCtrlDown, isMetaDown, isShiftDown } from './input';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isKeyTyped, isMetaDown, isShiftDown } from './input';
 import { isWhitespace, isWordChar } from './text_utils';
 import type { InlineInputOptions, Position, TextField } from './types';
 import { clamp } from '../../utils/clamp';
@@ -52,9 +52,9 @@ const offsetToPosition = (lines: string[], offset: number): Position => {
 };
 
 const clampRowColumn = (field: TextField, row: number, column: number): Position => {
-	const clampedRow = Math.max(0, Math.min(row, field.lines.length - 1));
+	const clampedRow = clamp(row, 0, field.lines.length - 1);
 	const line = field.lines[clampedRow] ?? '';
-	const clampedColumn = Math.max(0, Math.min(column, line.length));
+	const clampedColumn = clamp(column, 0, line.length);
 	return { row: clampedRow, column: clampedColumn };
 };
 
@@ -185,6 +185,7 @@ export function insertValue(field: TextField, value: string): boolean {
 	}
 	if (deleteSelection(field)) {
 		// selection already removed, cursor updated
+		// TODO: Why is the if-statement then still here?
 	}
 	const text = fieldText(field);
 	const offset = cursorOffset(field);
@@ -500,22 +501,9 @@ export function setFieldText(field: TextField, value: string, moveCursorToEnd: b
 	field.lastPointerClickColumn = -1;
 }
 
-export type InlineFieldClipboardAction = 'copy' | 'cut';
-
-export type InlineFieldEditingHandlers = {
-	isKeyJustPressed(code: string): boolean;
-	isKeyTyped(code: string): boolean;
-	shouldFireRepeat(code: string, deltaSeconds: number): boolean;
-	consumeKey(code: string): void;
-	readClipboard(): string | null;
-	writeClipboard(payload: string, action: InlineFieldClipboardAction): void | Promise<void>;
-	onClipboardEmpty?(): void;
-};
-
 export function applyInlineFieldEditing(
 	field: TextField,
 	options: InlineInputOptions,
-	handlers: InlineFieldEditingHandlers,
 ): boolean {
 	const { ctrlDown, metaDown, shiftDown, altDown } = { ctrlDown: isCtrlDown(), metaDown: isMetaDown(), shiftDown: isShiftDown(), altDown: isAltDown() };
 	const { deltaSeconds, allowSpace } = options;
@@ -527,21 +515,33 @@ export function applyInlineFieldEditing(
 	const initialCursorColumn = field.cursorColumn;
 	const initialAnchor = field.selectionAnchor;
 
-	if (useCtrl && handlers.isKeyJustPressed('KeyA')) {
-		handlers.consumeKey('KeyA');
+	const shouldRepeat = (code: string): boolean => ide_state.input.shouldRepeat(code, deltaSeconds);
+
+	const readClipboard = (): string | null => ide_state.customClipboard ?? null;
+	const writeClipboard = (payload: string): void => {
+		ide_state.customClipboard = payload;
+		try {
+			void $.platform.clipboard.writeText(payload);
+		} catch {
+			// ignore clipboard failures
+		}
+	};
+
+	if (useCtrl && isKeyJustPressed('KeyA')) {
+		consumeIdeKey('KeyA');
 		selectAll(field);
 	}
 
-	if (useCtrl && handlers.isKeyJustPressed('KeyC')) {
+	if (useCtrl && isKeyJustPressed('KeyC')) {
 		const selected = selectedText(field);
 		const payload = selected && selected.length > 0 ? selected : fieldText(field);
 		if (payload.length > 0) {
-			void handlers.writeClipboard(payload, 'copy');
+			writeClipboard(payload);
 		}
-		handlers.consumeKey('KeyC');
+		consumeIdeKey('KeyC');
 	}
 
-	if (useCtrl && handlers.isKeyJustPressed('KeyX')) {
+	if (useCtrl && isKeyJustPressed('KeyX')) {
 		const selected = selectedText(field);
 		let payload = selected;
 		if (!payload || payload.length === 0) {
@@ -551,14 +551,14 @@ export function applyInlineFieldEditing(
 			}
 		}
 		if (payload && payload.length > 0) {
-			void handlers.writeClipboard(payload, 'cut');
+			writeClipboard(payload);
 			deleteSelection(field);
 		}
-		handlers.consumeKey('KeyX');
+		consumeIdeKey('KeyX');
 	}
 
-	if (useCtrl && handlers.isKeyJustPressed('KeyV')) {
-		const clipboard = handlers.readClipboard();
+	if (useCtrl && isKeyJustPressed('KeyV')) {
+		const clipboard = readClipboard();
 		if (clipboard && clipboard.length > 0) {
 			const normalized = clipboard.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 			const merged = normalized;
@@ -579,14 +579,12 @@ export function applyInlineFieldEditing(
 					}
 				}
 			}
-		} else {
-			handlers.onClipboardEmpty();
 		}
-		handlers.consumeKey('KeyV');
+		consumeIdeKey('KeyV');
 	}
 
-	if (handlers.shouldFireRepeat('Backspace', deltaSeconds)) {
-		handlers.consumeKey('Backspace');
+	if (shouldRepeat('Backspace')) {
+		consumeIdeKey('Backspace');
 		if (useCtrl) {
 			deleteWordBackward(field);
 		} else {
@@ -594,8 +592,8 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (handlers.shouldFireRepeat('Delete', deltaSeconds)) {
-		handlers.consumeKey('Delete');
+	if (shouldRepeat('Delete')) {
+		consumeIdeKey('Delete');
 		if (useCtrl) {
 			deleteWordForward(field);
 		} else {
@@ -603,8 +601,8 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (handlers.shouldFireRepeat('ArrowLeft', deltaSeconds)) {
-		handlers.consumeKey('ArrowLeft');
+	if (shouldRepeat('ArrowLeft')) {
+		consumeIdeKey('ArrowLeft');
 		if (useCtrl) {
 			moveWordLeft(field, shiftDown);
 		} else {
@@ -612,8 +610,8 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (handlers.shouldFireRepeat('ArrowRight', deltaSeconds)) {
-		handlers.consumeKey('ArrowRight');
+	if (shouldRepeat('ArrowRight')) {
+		consumeIdeKey('ArrowRight');
 		if (useCtrl) {
 			moveWordRight(field, shiftDown);
 		} else {
@@ -621,18 +619,18 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (handlers.shouldFireRepeat('Home', deltaSeconds)) {
-		handlers.consumeKey('Home');
+	if (shouldRepeat('Home')) {
+		consumeIdeKey('Home');
 		moveToStart(field, shiftDown);
 	}
 
-	if (handlers.shouldFireRepeat('End', deltaSeconds)) {
-		handlers.consumeKey('End');
+	if (shouldRepeat('End')) {
+		consumeIdeKey('End');
 		moveToEnd(field, shiftDown);
 	}
 
-	if (allowSpace && !useCtrl && !metaDown && !altDown && handlers.shouldFireRepeat('Space', deltaSeconds)) {
-		handlers.consumeKey('Space');
+	if (allowSpace && !useCtrl && !metaDown && !altDown && shouldRepeat('Space')) {
+		consumeIdeKey('Space');
 		const remaining = maxLength !== null
 			? Math.max(0, maxLength - (totalLength(field) - selectionLength(field)))
 			: undefined;
@@ -644,28 +642,28 @@ export function applyInlineFieldEditing(
 	if (!altDown) {
 		for (let i = 0; i < CHARACTER_CODES.length; i += 1) {
 			const code = CHARACTER_CODES[i];
-			if (!handlers.isKeyTyped(code)) {
+			if (!isKeyTyped(code)) {
 				continue;
 			}
 			const entry = CHARACTER_MAP[code];
 			const value = shiftDown ? entry.shift : entry.normal;
 			if (value.length === 0) {
-				handlers.consumeKey(code);
+				consumeIdeKey(code);
 				continue;
 			}
 			if (characterFilter && !characterFilter(value)) {
-				handlers.consumeKey(code);
+				consumeIdeKey(code);
 				continue;
 			}
 			if (maxLength !== null) {
 				const available = maxLength - (totalLength(field) - selectionLength(field));
 				if (available <= 0) {
-					handlers.consumeKey(code);
+					consumeIdeKey(code);
 					continue;
 				}
 			}
 			insertValue(field, value);
-			handlers.consumeKey(code);
+			consumeIdeKey(code);
 		}
 	}
 

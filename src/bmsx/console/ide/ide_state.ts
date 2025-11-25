@@ -534,11 +534,7 @@ export const ide_state: IdeState = {
 };
 
 // Initialize message controller
-const messageController = createMessageController({
-	isActive: () => ide_state.active,
-	getDeferredDuration: () => ide_state.deferredMessageDuration,
-	setDeferredDuration: (value) => { ide_state.deferredMessageDuration = value; },
-});
+const messageController = createMessageController();
 
 export const caretNavigation = new CaretNavigationState();
 

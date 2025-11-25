@@ -1,20 +1,8 @@
 import * as constants from './constants';
+import { ide_state } from './ide_state';
 import type { MessageState } from './types';
 
-export type MessageControllerDeps = {
-	isActive: () => boolean;
-	getDeferredDuration: () => number | null;
-	setDeferredDuration: (value: number | null) => void;
-};
-
-export type MessageController = {
-	message: MessageState;
-	showMessage: (text: string, color: number, durationSeconds: number) => void;
-	updateMessage: (deltaSeconds: number) => void;
-	showWarningBanner: (text: string, durationSeconds?: number) => void;
-};
-
-export function createMessageController(deps: MessageControllerDeps): MessageController {
+export function createMessageController(){
 	const message: MessageState = {
 		text: '',
 		color: constants.COLOR_STATUS_TEXT,
@@ -41,11 +29,11 @@ export function createMessageController(deps: MessageControllerDeps): MessageCon
 
 	function showWarningBanner(text: string, durationSeconds = 4.0): void {
 		showMessage(text, constants.COLOR_STATUS_WARNING, durationSeconds);
-		if (!deps.isActive()) {
+		if (!ide_state.active) {
 			message.timer = Number.POSITIVE_INFINITY;
-			deps.setDeferredDuration(durationSeconds);
+			ide_state.deferredMessageDuration = durationSeconds;
 		} else {
-			deps.setDeferredDuration(null);
+			ide_state.deferredMessageDuration = null;
 		}
 	}
 

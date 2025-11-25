@@ -41,7 +41,7 @@ import {
 } from './editor_tabs';
 
 import { assertMonospace, ensureVisualLines, getVisualLineCount, invalidateVisualLines, isIdentifierChar, isIdentifierStartChar, measureText, positionToVisualIndex, splitLines, truncateTextToWidth, visibleColumnCount, visibleRowCount, visualIndexToSegment } from './text_utils';
-import type { InlineFieldEditingHandlers, InlineFieldMetrics } from './inline_text_field';
+import type { InlineFieldMetrics } from './inline_text_field';
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
@@ -76,7 +76,7 @@ import {
 } from './runtime_error_overlay_view';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
-import { handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handleTextEditorPointerInput, handlePointerWheel, InputController, isAltDown, isCtrlDown, isKeyJustPressed, isKeyTyped, isMetaDown, isShiftDown, resetKeyPressRecords, resourceViewerClampScroll } from './input';
+import { handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handleTextEditorPointerInput, handlePointerWheel, InputController, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, resetKeyPressRecords, resourceViewerClampScroll } from './input';
 import { consumeIdeKey } from './input';
 import { ConsoleCodeLayout } from './code_layout';
 import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine } from './runtime_error_utils';
@@ -4327,27 +4327,8 @@ export function applyCreateResourceFieldText(value: string, moveCursorToEnd: boo
 	setFieldText(ide_state.createResourceField, value, moveCursorToEnd);
 }
 
-export function createInlineFieldEditingHandlers(): InlineFieldEditingHandlers {
-	return {
-		isKeyJustPressed: (code) => isKeyJustPressed(code),
-		isKeyTyped: (code) => isKeyTyped(code),
-		shouldFireRepeat: (code, deltaSeconds) => ide_state.input.shouldRepeat(code, deltaSeconds),
-		consumeKey: (code) => consumeIdeKey(code),
-		readClipboard: () => ide_state.customClipboard,
-		writeClipboard: (payload, action) => {
-			const message = action === 'copy'
-				? 'Copied to editor clipboard'
-				: 'Cut to editor clipboard';
-			void writeClipboard(payload, message);
-		},
-		onClipboardEmpty: () => {
-			ide_state.showMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
-		},
-	};
-}
-
 export function processInlineFieldEditing(field: TextField, options: InlineInputOptions): boolean {
-	return applyInlineFieldEditing(field, options, createInlineFieldEditingHandlers());
+	return applyInlineFieldEditing(field, options);
 }
 
 export function processInlineFieldPointer(field: TextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {

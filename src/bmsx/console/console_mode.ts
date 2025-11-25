@@ -1,4 +1,3 @@
-import { $ } from '../core/game';
 import type { color } from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
 import { ConsoleEditorFont } from './editor_font';
@@ -21,10 +20,8 @@ import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext, LuaC
 import { INITIAL_REPEAT_DELAY, REPEAT_INTERVAL, TAB_SPACES } from './ide/constants';
 import { ConsoleRenderFacade } from './console_render_facade';
 import { renderInlineCaret, type CaretDrawOps } from './ide/render/render_caret';
-import { ide_state } from './ide/ide_state';
 import {
 	isKeyJustPressed as isKeyJustPressed,
-	isKeyTyped as isKeyTyped,
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
 	clearKeyPressRecord,
 	isCtrlDown,
@@ -260,15 +257,6 @@ export class ConsoleMode {
 			return null;
 		}
 		const options: InlineInputOptions = { deltaSeconds, allowSpace: true };
-		const handlers = {
-			isKeyJustPressed: (code: string) => isKeyJustPressed(code),
-			isKeyTyped: (code: string) => isKeyTyped(code),
-			shouldFireRepeat: (code: string, deltaSeconds: number) => this.shouldRepeatKey(code, deltaSeconds, this.editingRepeatState),
-			consumeKey: (code: string) => consumeIdeKey(code),
-			readClipboard: () => ide_state.customClipboard,
-			writeClipboard: (payload: string) => { this.writeClipboard(payload); },
-			onClipboardEmpty: () => { console.warn('[BmsxConsoleMode] Clipboard is empty'); },
-		};
 		const historyHandled = this.handleHistoryNavigation(deltaSeconds);
 		if (historyHandled) {
 			this.resetBlink();
@@ -276,7 +264,7 @@ export class ConsoleMode {
 		const previousText = this.fieldText();
 		const previousCursor = this.cursorOffset();
 		const previousAnchor = this.anchorOffset();
-		const textChanged = applyInlineFieldEditing(this.field, options, handlers);
+		const textChanged = applyInlineFieldEditing(this.field, options);
 		if (textChanged) {
 			const editContext = this.buildEditContext(previousText, this.fieldText());
 			this.handleTextMutation(previousText, editContext);
@@ -438,11 +426,6 @@ export class ConsoleMode {
 		}
 		const normalized = this.toDisplayText(text);
 		return wrapRuntimeErrorLine(normalized, Math.max(8, maxWidth), (value) => this.measureDisplayText(value));
-	}
-
-	private writeClipboard(payload: string): void {
-		ide_state.customClipboard = payload;
-		void $.platform.clipboard.writeText(payload).catch(() => { console.warn('[BmsxConsoleMode] Failed to write to clipboard'); });
 	}
 
 	private shouldRepeatKey(code: string, deltaSeconds: number, state: Map<string, number>): boolean {
