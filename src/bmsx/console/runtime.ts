@@ -34,7 +34,7 @@ import type { BehaviorTreeDefinition, BehaviorTreeDiagnostic } from '../ai/behav
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast';
 import { createConsoleCartEditor, type ConsoleCartEditor, } from './ide/console_cart_editor';
-import { toggleEditorFromShortcut } from './ide/input_controller';
+import { toggleEditorFromShortcut } from './ide/input';
 import type { RuntimeErrorDetails } from './ide/types';
 import type { StackTraceFrame } from 'bmsx/lua/runtime';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
@@ -57,7 +57,7 @@ import { Input } from '../input/input';
 import type { PlayerInput } from '../input/playerinput';
 import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputMapping, KeyboardBinding, GamepadBinding, PointerBinding, ButtonState } from '../input/inputtypes';
 import { ConsoleMode } from './console_mode';
-import { EDITOR_TOGGLE_KEY, CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS } from './ide/constants';
+import { EDITOR_TOGGLE_KEY, CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, GAME_PAUSE_KEY } from './ide/constants';
 import { setDebuggerRuntimeAccessor } from './runtime_accessors';
 import {
 	emitDebuggerLifecycleEvent,
@@ -627,7 +627,7 @@ export class BmsxConsoleRuntime extends Service {
 		const sessionMetrics = controller.handlePause(signal);
 		this.luaDebuggerSuspension = signal;
 		this.debuggerHaltsGame = true;
-		this.setDebuggerPaused(true, { syncGlobal: false });
+		this.setDebuggerPaused(true);
 		const editorActive = this.editor?.isActive() === true;
 		const shouldActivateEditor = signal.reason === 'exception'
 			? editorActive || autoActivateOnPause
@@ -699,10 +699,7 @@ export class BmsxConsoleRuntime extends Service {
 		controller.clearStepping();
 	}
 
-	private setDebuggerPaused(paused: boolean, { syncGlobal }: { syncGlobal?: boolean } = {}): void {
-		if (syncGlobal !== false) {
-			$.paused = paused;
-		}
+	private setDebuggerPaused(paused: boolean): void {
 		const state = this.currentFrameState;
 		if (state) {
 			state.debugPaused = paused;
@@ -713,7 +710,7 @@ export class BmsxConsoleRuntime extends Service {
 		const hadSuspension = this.luaDebuggerSuspension !== null;
 		this.luaDebuggerSuspension = null;
 		this.debuggerHaltsGame = false;
-		this.setDebuggerPaused(false, { syncGlobal: false });
+		this.setDebuggerPaused(false);
 		if (hadSuspension) {
 			emitDebuggerLifecycleEvent({ type: 'continued', mode: 'continue' });
 		}
@@ -980,6 +977,7 @@ export class BmsxConsoleRuntime extends Service {
 		disposers.push(registry.registerKeyboardShortcut(this.playerIndex, EDITOR_TOGGLE_KEY, () => this.handleEditorShortcutToggle()));
 		disposers.push(registry.registerKeyboardShortcut(this.playerIndex, CONSOLE_TOGGLE_KEY, () => this.toggleConsoleMode()));
 		disposers.push(registry.registerGamepadChord(this.playerIndex, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => this.handleEditorShortcutToggle()));
+		disposers.push(registry.registerKeyboardShortcut(this.playerIndex, GAME_PAUSE_KEY, () => $.toggleDebuggerControls()));
 		this.shortcutDisposers = disposers;
 	}
 
@@ -1039,8 +1037,7 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		this.consoleMode.update(deltaSeconds);
-		const playerInput = this.getPlayerInput();
-		const command = this.consoleMode.handleInput(playerInput, deltaSeconds);
+		const command = this.consoleMode.handleInput(deltaSeconds);
 		if (command === null) {
 			return;
 		}
@@ -1584,10 +1581,6 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	public onWorldStepAborted(): void {
-		this.abandonFrameState();
-	}
-
 	private runConsolePhase(state: ConsoleFrameState): void {
 		this.pollConsoleHotkeys();
 		this.advanceConsoleMode(state.deltaSeconds);
@@ -1729,7 +1722,7 @@ export class BmsxConsoleRuntime extends Service {
 		return deltaMs / 1000;
 	}
 
-	private abandonFrameState(): void {
+	public abandonFrameState(): void {
 		const state = this.currentFrameState;
 		if (!state) {
 			return;

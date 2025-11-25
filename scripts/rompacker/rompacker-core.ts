@@ -343,10 +343,11 @@ export function typecheckBeforeBuild(
 		: join(process.cwd(), bootloader_path, 'tsconfig.json');
 	try {
 		fs.accessSync(gameTsconfig);
-		run(gameTsconfig, 'game');
 	} catch {
 		// No per-game tsconfig.json; skip
+		return;
 	}
+	run(gameTsconfig, 'game');
 }
 
 /** Type-check the game against a provided directory of engine declaration files. */

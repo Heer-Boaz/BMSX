@@ -1,10 +1,13 @@
-import { clamp } from '../../utils/clamp';import { updateDesiredColumn, onCursorMoved, ensureCursorVisible, ensureVisualLines, getVisualLineCount, positionToVisualIndex, setCursorFromVisualIndex, visualIndexToSegment, breakUndoSequence, currentLine, visibleRowCount } from './console_cart_editor';
+import { clamp } from '../../utils/clamp';import { updateDesiredColumn, breakUndoSequence, currentLine, columnToDisplay, getCachedHighlight, measureRangeFast } from './console_cart_editor';
+import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from './text_utils';
+import { visibleRowCount, visibleColumnCount } from './text_utils';
 import { caretNavigation, ide_state } from './ide_state';
-import { isShiftDown, isCtrlDown, isModifierPressed as isModifierPressedGlobal } from './input_controller';
-import { resetBlink } from './render_caret';
+import { isShiftDown, isCtrlDown } from './input';
+import { resetBlink } from './render/render_caret';
 import { findWordLeft, findWordRight, ensureSelectionAnchor, hasSelection, collapseSelectionTo, clearSelection } from './text_editing_and_selection';
 ;
-import type { Position, VisualLineSegment } from './types';
+import type { CachedHighlight, CursorScreenInfo, Position, VisualLineSegment } from './types';
+import * as constants from './constants';
 
 export type VisualCursorOverride = {
 	row: number;
@@ -340,7 +343,7 @@ export function moveCursorHome(): void {
 	} else {
 		clearSelection();
 	}
-	const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
+	const ctrlDown = isCtrlDown();
 	if (ctrlDown) {
 		ide_state.cursorRow = 0;
 		ide_state.cursorColumn = 0;
@@ -376,7 +379,7 @@ export function moveCursorEnd(): void {
 	} else {
 		clearSelection();
 	}
-	const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
+	const ctrlDown = isCtrlDown();
 	if (ctrlDown) {
 		const lastRow = ide_state.lines.length - 1;
 		if (lastRow < 0) {
@@ -473,4 +476,182 @@ export function clampCursorColumn(): void {
 	if (ide_state.cursorColumn > length) {
 		ide_state.cursorColumn = length;
 	}
+}export function centerCursorVertically(): void {
+	ensureVisualLines();
+	const rows = visibleRowCount();
+	const totalVisual = getVisualLineCount();
+	const cursorVisualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
+	const maxScroll = Math.max(0, totalVisual - rows);
+	if (rows <= 1) {
+		ide_state.scrollRow = clamp(cursorVisualIndex, 0, maxScroll);
+		return;
+	}
+	let target = cursorVisualIndex - Math.floor(rows / 2);
+	if (target < 0) {
+		target = 0;
+	}
+	if (target > maxScroll) {
+		target = maxScroll;
+	}
+	ide_state.scrollRow = target;
 }
+
+export function ensureCursorVisible(): void {
+	clampCursorRow();
+	clampCursorColumn();
+
+	ensureVisualLines();
+	const rows = visibleRowCount();
+	const totalVisual = getVisualLineCount();
+	const cursorVisualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
+
+	if (cursorVisualIndex < ide_state.scrollRow) {
+		ide_state.scrollRow = cursorVisualIndex;
+	}
+	if (cursorVisualIndex >= ide_state.scrollRow + rows) {
+		ide_state.scrollRow = cursorVisualIndex - rows + 1;
+	}
+	const maxScrollRow = Math.max(0, totalVisual - rows);
+	ide_state.scrollRow = clamp(ide_state.scrollRow, 0, maxScrollRow);
+
+	if (ide_state.wordWrapEnabled) {
+		ide_state.scrollColumn = 0;
+		return;
+	}
+
+	const columns = visibleColumnCount();
+	if (ide_state.cursorColumn < ide_state.scrollColumn) {
+		ide_state.scrollColumn = ide_state.cursorColumn;
+	}
+	const maxScrollColumn = ide_state.cursorColumn - columns + 1;
+	if (maxScrollColumn > ide_state.scrollColumn) {
+		ide_state.scrollColumn = maxScrollColumn;
+	}
+	if (ide_state.scrollColumn < 0) {
+		ide_state.scrollColumn = 0;
+	}
+	const lineLength = currentLine().length;
+	const maxColumn = lineLength - columns;
+	if (maxColumn < 0) {
+		ide_state.scrollColumn = 0;
+	} else if (ide_state.scrollColumn > maxColumn) {
+		ide_state.scrollColumn = maxColumn;
+	}
+}
+export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?: number, desiredOffsetHint?: number): void {
+	ensureVisualLines();
+	caretNavigation.clear();
+	const visualLines = ide_state.layout.getVisualLines();
+	if (visualLines.length === 0) {
+		ide_state.cursorRow = 0;
+		ide_state.cursorColumn = 0;
+		updateDesiredColumn();
+		return;
+	}
+	const clampedIndex = clamp(visualIndex, 0, visualLines.length - 1);
+	const segment = visualLines[clampedIndex];
+	if (!segment) {
+		return;
+	}
+	const entry = getCachedHighlight(segment.row);
+	const highlight = entry.hi;
+	const line = ide_state.lines[segment.row] ?? '';
+	const hasDesiredHint = desiredColumnHint !== undefined;
+	const hasOffsetHint = desiredOffsetHint !== undefined;
+	let targetColumn = hasDesiredHint ? desiredColumnHint! : ide_state.cursorColumn;
+	if (ide_state.wordWrapEnabled) {
+		const segmentEndColumn = Math.max(segment.endColumn, segment.startColumn);
+		const segmentDisplayStart = columnToDisplay(highlight, segment.startColumn);
+		const segmentDisplayEnd = columnToDisplay(highlight, segmentEndColumn);
+		const segmentWidth = Math.max(0, segmentDisplayEnd - segmentDisplayStart);
+		if (hasOffsetHint) {
+			const clampedOffset = clamp(Math.round(desiredOffsetHint!), 0, segmentWidth);
+			const targetDisplay = clamp(segmentDisplayStart + clampedOffset, segmentDisplayStart, segmentDisplayEnd);
+			let columnFromOffset = entry.displayToColumn[targetDisplay];
+			if (columnFromOffset === undefined) {
+				columnFromOffset = ide_state.lines[segment.row].length;
+			}
+			targetColumn = clamp(columnFromOffset, segment.startColumn, segmentEndColumn);
+		} else {
+			targetColumn = clamp(Math.round(targetColumn), segment.startColumn, segmentEndColumn);
+			if (targetColumn > line.length) {
+				targetColumn = line.length;
+			}
+		}
+	} else {
+		targetColumn = clamp(Math.round(targetColumn), 0, line.length);
+	}
+	ide_state.cursorRow = segment.row;
+	ide_state.cursorColumn = clamp(targetColumn, 0, line.length);
+	const cursorDisplay = columnToDisplay(highlight, ide_state.cursorColumn);
+	if (ide_state.wordWrapEnabled) {
+		const hasNextSegmentSameRow = (clampedIndex + 1 < visualLines.length)
+			&& visualLines[clampedIndex + 1].row === segment.row;
+		const segmentEnd = Math.max(segment.endColumn, segment.startColumn);
+		if (ide_state.cursorColumn < segment.startColumn) {
+			ide_state.cursorColumn = segment.startColumn;
+		}
+		if (segmentEnd >= segment.startColumn && ide_state.cursorColumn > segmentEnd) {
+			ide_state.cursorColumn = Math.min(segmentEnd, line.length);
+		}
+		if (hasNextSegmentSameRow && ide_state.cursorColumn >= segmentEnd) {
+			ide_state.cursorColumn = Math.max(segment.startColumn, segmentEnd - 1);
+		}
+		const segmentDisplayStart = columnToDisplay(highlight, segment.startColumn);
+		ide_state.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
+	} else {
+		ide_state.desiredDisplayOffset = cursorDisplay;
+	}
+	if (hasDesiredHint) {
+		ide_state.desiredColumn = Math.max(0, desiredColumnHint!);
+	} else {
+		ide_state.desiredColumn = ide_state.cursorColumn;
+	}
+	if (ide_state.desiredDisplayOffset < 0) {
+		ide_state.desiredDisplayOffset = 0;
+	}
+}
+export function onCursorMoved(): void {
+	ide_state.completion.onCursorMoved();
+}
+export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo {
+	const highlight = entry.hi;
+	const columnToDisplay = highlight.columnToDisplay;
+	const clampedColumn = columnToDisplay.length > 0
+		? clamp(ide_state.cursorColumn, 0, columnToDisplay.length - 1)
+		: 0;
+	const cursorDisplayIndex = columnToDisplay.length > 0 ? columnToDisplay[clampedColumn] : 0;
+	const limitedDisplayIndex = Math.max(sliceStartDisplay, cursorDisplayIndex);
+	const cursorX = textLeft + measureRangeFast(entry, sliceStartDisplay, limitedDisplayIndex);
+	let cursorWidth = ide_state.charAdvance;
+	let baseChar = ' ';
+	let baseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
+	if (cursorDisplayIndex < highlight.chars.length) {
+		baseChar = highlight.chars[cursorDisplayIndex];
+		baseColor = highlight.colors[cursorDisplayIndex];
+		const widthIndex = cursorDisplayIndex + 1;
+		if (widthIndex < entry.advancePrefix.length) {
+			const widthValue = entry.advancePrefix[widthIndex] - entry.advancePrefix[cursorDisplayIndex];
+			if (widthValue > 0) {
+				cursorWidth = widthValue;
+			} else {
+				cursorWidth = ide_state.font.advance(baseChar);
+			}
+		}
+	}
+	const currentChar = currentLine().charAt(ide_state.cursorColumn);
+	if (currentChar === '\t') {
+		cursorWidth = ide_state.spaceAdvance * constants.TAB_SPACES;
+	}
+	return {
+		row: ide_state.cursorRow,
+		column: ide_state.cursorColumn,
+		x: cursorX,
+		y: rowTop,
+		width: cursorWidth,
+		height: ide_state.lineHeight,
+		baseChar,
+		baseColor,
+	};
+}
+

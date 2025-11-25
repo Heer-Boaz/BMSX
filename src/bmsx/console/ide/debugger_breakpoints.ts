@@ -1,7 +1,7 @@
 import { normalizeLuaChunkName } from '../../lua/debugger';
 import { clamp } from '../../utils/clamp';;
 import { getDebuggerRuntimeAccessor } from '../runtime_accessors';
-import { resolveHoverChunkName } from './console_cart_editor';
+import { resolveHoverChunkName } from './intellisense';
 import * as constants from './constants';
 import { getActiveCodeTabContext } from './editor_tabs';
 import { ide_state } from './ide_state';

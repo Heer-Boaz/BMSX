@@ -14,13 +14,13 @@
 import { $ } from '../../core/game';
 import { clamp } from '../../utils/clamp';;
 import { ide_state } from './ide_state';
-import type { Position } from './types';
+import type { EditContext, Position } from './types';
 import { isWhitespace, isWordChar } from './text_utils';
 import {
 	revealCursor,
 	clampCursorColumn,
 	setCursorPosition
-} from './caret_navigation';
+} from './caret';
 import {
 	updateDesiredColumn,
 	markTextMutated,
@@ -32,9 +32,10 @@ import {
 	currentLine,
 	capturePreMutationSource,
 	markDiagnosticsDirty,
-	resolveOffsetPosition,
+	applyCaseNormalizationIfNeeded,
 } from './console_cart_editor';
-import { resetBlink } from './render_caret';
+import { resolveOffsetPosition } from './lua_formatter';
+import { resetBlink } from './render/render_caret';
 import * as constants from './constants';
 import { formatLuaDocument } from './lua_formatter';
 
@@ -1195,5 +1196,32 @@ export function computeDocumentOffset(lines: readonly string[], row: number, col
 		offset += lines[index].length + 1;
 	}
 	return offset + column;
+}
+export function handlePostEditMutation(): void {
+	const editContext = ide_state.pendingEditContext;
+	ide_state.pendingEditContext = null;
+	const finalContext = applyCaseNormalizationIfNeeded(editContext);
+	ide_state.completion.updateAfterEdit(finalContext);
+}
+export function computeEditContextFromSources(previous: string, next: string): EditContext | null {
+	if (previous === next) {
+		return null;
+	}
+	let start = 0;
+	while (start < previous.length && start < next.length && previous.charAt(start) === next.charAt(start)) {
+		start += 1;
+	}
+	let endPrev = previous.length;
+	let endNext = next.length;
+	while (endPrev > start && endNext > start && previous.charAt(endPrev - 1) === next.charAt(endNext - 1)) {
+		endPrev -= 1;
+		endNext -= 1;
+	}
+	if (next.length >= previous.length) {
+		const inserted = next.slice(start, endNext);
+		return inserted.length > 0 ? { kind: 'insert', text: inserted } : null;
+	}
+	const deleted = previous.slice(start, endPrev);
+	return deleted.length > 0 ? { kind: 'delete', text: deleted } : null;
 }
 

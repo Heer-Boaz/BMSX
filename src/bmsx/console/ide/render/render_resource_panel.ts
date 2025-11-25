@@ -1,10 +1,14 @@
-import type { BmsxConsoleApi } from '../api';
-import * as constants from './constants';
-import type { ResourceBrowserItem } from './types';
-import type { RectBounds } from '../../rompack/rompack';
-import { Msx1Colors } from '../../systems/msx';
-import { ConsoleScrollbar } from './scrollbar';
-import { clamp } from '../../utils/clamp';
+import type { BmsxConsoleApi } from '../../api';
+import * as constants from '../constants';
+import type { ResourceBrowserItem } from '../types';
+import type { RectBounds } from '../../../rompack/rompack';
+import { Msx1Colors } from '../../../systems/msx';
+import { ConsoleScrollbar } from '../scrollbar';
+import { clamp } from '../../../utils/clamp';
+import { getActiveResourceViewer, getCodeAreaBounds, resourceViewerTextCapacity, resourceViewerImageLayout, ensureResourceViewerSprite, hideResourceViewerSprite } from '../console_cart_editor';
+import { resourceViewerClampScroll } from '../input';
+import { ide_state } from '../ide_state';
+import { drawEditorText } from '../text_renderer';
 
 export interface ResourcePanelHost {
 	// Visibility and geometry
@@ -158,4 +162,78 @@ function resourcePanelLineCapacity(host: ResourcePanelHost, bounds: RectBounds):
 		initialCapacity = Math.max(1, Math.floor(contentHeight / host.lineHeight));
 	}
 	return initialCapacity;
+}export function drawResourceViewer(api: BmsxConsoleApi): void {
+	const viewer = getActiveResourceViewer();
+	if (!viewer) {
+		return;
+	}
+	resourceViewerClampScroll(viewer);
+	const bounds = getCodeAreaBounds();
+	const contentLeft = bounds.codeLeft + constants.RESOURCE_PANEL_PADDING_X;
+	const capacity = resourceViewerTextCapacity(viewer);
+	const totalLines = viewer.lines.length;
+	const verticalScrollbar = ide_state.scrollbars.viewerVertical;
+	const verticalTrack: RectBounds = {
+		left: bounds.codeRight - constants.SCROLLBAR_WIDTH,
+		top: bounds.codeTop,
+		right: bounds.codeRight,
+		bottom: bounds.codeBottom,
+	};
+	verticalScrollbar.layout(verticalTrack, totalLines, Math.max(1, capacity), viewer.scroll);
+	const verticalVisible = verticalScrollbar.isVisible();
+	viewer.scroll = clamp(verticalScrollbar.getScroll(), 0, Math.max(0, totalLines - capacity));
+
+	api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
+
+	const contentTop = bounds.codeTop + 2;
+	const layout = resourceViewerImageLayout(viewer);
+	let textTop = contentTop;
+	if (layout && viewer.image) {
+		ensureResourceViewerSprite(api, viewer.image.asset_id, { left: layout.left, top: layout.top, scale: layout.scale });
+		textTop = Math.floor(layout.bottom + ide_state.lineHeight);
+	} else {
+		hideResourceViewerSprite(api);
+	}
+	if (capacity <= 0) {
+		if (viewer.lines.length > 0) {
+			const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.floor(viewer.scroll)))] ?? '';
+			const fallbackY = Math.min(textTop, bounds.codeBottom - ide_state.lineHeight);
+			drawEditorText(api, ide_state.font, line, contentLeft, fallbackY, constants.COLOR_RESOURCE_VIEWER_TEXT);
+		} else {
+			drawEditorText(api, ide_state.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
+		}
+		if (verticalVisible) {
+			verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+		}
+		return;
+	}
+	const maxScroll = Math.max(0, totalLines - capacity);
+	viewer.scroll = clamp(viewer.scroll, 0, maxScroll);
+	const end = Math.min(totalLines, Math.floor(viewer.scroll) + capacity);
+	if (viewer.lines.length === 0) {
+		drawEditorText(api, ide_state.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
+	} else {
+		for (let lineIndex = Math.floor(viewer.scroll), drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
+			const line = viewer.lines[lineIndex] ?? '';
+			const y = textTop + drawIndex * ide_state.lineHeight;
+			if (y >= bounds.codeBottom) {
+				break;
+			}
+			drawEditorText(api, ide_state.font, line, contentLeft, y, constants.COLOR_RESOURCE_VIEWER_TEXT);
+		}
+	}
+	if (verticalVisible) {
+		verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+	}
 }
+export function drawResourcePanel(api: BmsxConsoleApi): void {
+	// Delegate full drawing to controller and then mirror back minimal state used elsewhere
+	ide_state.resourcePanel.draw(api);
+	const s = ide_state.resourcePanel.getStateForRender();
+	ide_state.resourcePanelVisible = s.visible;
+	ide_state.resourceBrowserItems = s.items;
+	ide_state.resourcePanelFocused = s.focused;
+	ide_state.resourceBrowserSelectionIndex = s.selectionIndex;
+	ide_state.resourcePanelResourceCount = s.items.length;
+}
+

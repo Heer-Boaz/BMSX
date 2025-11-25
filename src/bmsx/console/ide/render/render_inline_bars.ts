@@ -1,8 +1,8 @@
-import { BmsxConsoleApi } from '../api';
+import { BmsxConsoleApi } from '../../api';
 import type { drawInlineCaret } from './render_caret';
-import * as constants from './constants';
-import type { InlineTextField } from './types';
-import { ide_state } from './ide_state';
+import * as constants from '../constants';
+import type { InlineTextField } from '../types';
+import { ide_state } from '../ide_state';
 
 type InlineResultListOptions<T> = {
 	entries: readonly T[] | null | undefined;

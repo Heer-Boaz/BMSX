@@ -14,11 +14,12 @@ import {
 } from './types';
 import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaSymbolEntry } from '../types';
 import * as constants from './constants';
-import { isAltDown, isCtrlDown, isKeyJustPressed as isKeyJustPressedGlobal, isKeyPressed as isKeyPressedGlobal, isMetaDown, isShiftDown } from './input_controller';
+import { isAltDown, isCtrlDown, isKeyJustPressed as isKeyJustPressedGlobal, isKeyPressed as isKeyPressedGlobal, isMetaDown, isShiftDown } from './input';
 import { isWhitespace, isWordChar } from './text_utils';
 import { isLuaCommentContext } from './text_utils';
-import { consumeIdeKey } from './input_controller';
 import { ide_state } from './ide_state';
+import { isReadOnlyCodeTab } from './editor_tabs';
+import { consumeIdeKey } from './input';
 
 type MemberCompletionHostRequest = {
 	objectName: string;
@@ -1350,3 +1351,10 @@ export class CompletionController {
 		this.localCompletionCache.delete(key);
 	}
 }
+export function handleCompletionKeybindings(deltaSeconds: number): boolean {
+	if (isReadOnlyCodeTab()) {
+		return false;
+	}
+	return ide_state.completion.handleKeybindings(deltaSeconds);
+}
+

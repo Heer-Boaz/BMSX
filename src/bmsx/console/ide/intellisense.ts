@@ -35,9 +35,12 @@ import {
 } from '../../lua/ast';
 import { LuaTableFieldKind } from '../../lua/ast';
 import type { LuaTableArrayField, LuaTableExpressionField, LuaTableIdentifierField } from '../../lua/ast';
-import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaHoverResult, ConsoleLuaSymbolEntry } from '../types';
-import type { ApiCompletionMetadata, LuaCompletionItem } from './types';
+import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaSymbolEntry } from '../types';
+import type { ApiCompletionMetadata, CodeTabContext, LuaCompletionItem, PointerSnapshot } from './types';
 import * as constants from './constants';
+import { getActiveCodeTabContext, isCodeTabActive, isReadOnlyCodeTab } from './editor_tabs';
+import { ide_state } from './ide_state';
+import { resolvePointerRow, resolvePointerColumn, extractHoverExpression, safeInspectLuaExpression } from './console_cart_editor';
 
 export const KEYWORDS = new Set([
 	'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
@@ -493,10 +496,10 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 				visitExpression(unary.operand, true);
 				break;
 			}
-		case LuaSyntaxKind.FunctionExpression: {
-			visitFunctionExpression(expression as LuaFunctionExpression, false, null);
-			break;
-		}
+			case LuaSyntaxKind.FunctionExpression: {
+				visitFunctionExpression(expression as LuaFunctionExpression, false, null);
+				break;
+			}
 			case LuaSyntaxKind.TableConstructorExpression: {
 				const tableExpression = expression as LuaTableConstructorExpression;
 				for (let i = 0; i < tableExpression.fields.length; i += 1) {
@@ -1255,7 +1258,9 @@ function truncateSourceAtSyntaxError(source: string, error: LuaSyntaxError): str
 		}
 	}
 	return truncated.join('\n');
-}function truncateLine(text: string): string {
+}
+
+function truncateLine(text: string): string {
 	if (text.length <= constants.HOVER_TOOLTIP_MAX_LINE_LENGTH) return text;
 	return text.slice(0, constants.HOVER_TOOLTIP_MAX_LINE_LENGTH - 3) + '...';
 }
@@ -1277,5 +1282,194 @@ export function buildHoverContentLines(result: ConsoleLuaHoverResult): string[] 
 	push(`${result.expression}${suffix}`);
 	for (const line of valueLines) push(`  ${line}`);
 	return lines;
+}
+
+export function intellisenseUiReady(): boolean {
+	if (!isCodeTabActive()) {
+		return false;
+	}
+	if (isReadOnlyCodeTab()) {
+		return false;
+	}
+	if (!ide_state.windowFocused) {
+		return false;
+	}
+	if (ide_state.searchActive || ide_state.symbolSearchActive || ide_state.lineJumpActive || ide_state.resourceSearchActive || ide_state.createResourceActive) {
+		return false;
+	}
+	return true;
+}
+
+export function shouldAutoTriggerCompletions(): boolean {
+	if (!intellisenseUiReady()) {
+		return false;
+	}
+	const lastEditAt = ide_state.lastContentEditAtMs;
+	if (lastEditAt === null) {
+		return false;
+	}
+	const now = ide_state.clockNow();
+	return now - lastEditAt <= constants.COMPLETION_TYPING_GRACE_MS;
+}export function updateHoverTooltip(snapshot: PointerSnapshot): void {
+	const context = getActiveCodeTabContext();
+	const asset_id = resolveHoverAssetId(context);
+	const row = resolvePointerRow(snapshot.viewportY);
+	const column = resolvePointerColumn(row, snapshot.viewportX);
+	const token = extractHoverExpression(row, column);
+	if (!token) {
+		clearHoverTooltip();
+		return;
+	}
+	const chunkName = resolveHoverChunkName(context);
+	const request: ConsoleLuaHoverRequest = {
+		asset_id,
+		expression: token.expression,
+		chunkName,
+		row: row + 1,
+		column: token.startColumn + 1,
+	};
+	const inspection = safeInspectLuaExpression(request);
+	const previousInspection = ide_state.lastInspectorResult;
+	ide_state.lastInspectorResult = inspection;
+	if (!inspection) {
+		clearHoverTooltip();
+		return;
+	}
+	if (inspection.isFunction && (inspection.isLocalFunction || inspection.isBuiltin)) {
+		clearHoverTooltip();
+		return;
+	}
+	const contentLines = buildHoverContentLines(inspection);
+	const existing = ide_state.hoverTooltip;
+	if (existing && existing.expression === inspection.expression && existing.asset_id === asset_id) {
+		existing.contentLines = contentLines;
+		existing.valueType = inspection.valueType;
+		existing.scope = inspection.scope;
+		existing.state = inspection.state;
+		existing.asset_id = asset_id;
+		existing.row = row;
+		existing.startColumn = token.startColumn;
+		existing.endColumn = token.endColumn;
+		existing.bubbleBounds = null;
+		if (!previousInspection || previousInspection.expression !== inspection.expression) {
+			existing.scrollOffset = 0;
+			existing.visibleLineCount = 0;
+		}
+		const maxOffset = Math.max(0, contentLines.length - Math.max(1, existing.visibleLineCount));
+		if (existing.scrollOffset > maxOffset) {
+			existing.scrollOffset = maxOffset;
+		}
+		return;
+	}
+	ide_state.hoverTooltip = {
+		expression: inspection.expression,
+		contentLines,
+		valueType: inspection.valueType,
+		scope: inspection.scope,
+		state: inspection.state,
+		asset_id,
+		row,
+		startColumn: token.startColumn,
+		endColumn: token.endColumn,
+		scrollOffset: 0,
+		visibleLineCount: 0,
+		bubbleBounds: null,
+	};
+}
+
+export function clearHoverTooltip(): void {
+	ide_state.hoverTooltip = null;
+	ide_state.lastInspectorResult = null;
+}
+export function resolveHoverAssetId(context: CodeTabContext | null): string | null {
+	if (context && context.descriptor) {
+		return context.descriptor.asset_id;
+	}
+	return ide_state.primaryasset_id;
+}
+
+export function resolveHoverChunkName(context: CodeTabContext | null): string | null {
+	if (context && context.descriptor) {
+		if (context.descriptor.path && context.descriptor.path.length > 0) {
+			return context.descriptor.path;
+		}
+		if (context.descriptor.asset_id && context.descriptor.asset_id.length > 0) {
+			return context.descriptor.asset_id;
+		}
+	}
+	if (ide_state.primaryasset_id) {
+		return ide_state.primaryasset_id;
+	}
+	return null;
+}
+export function buildMemberCompletionItems(request: {
+	objectName: string;
+	operator: '.' | ':';
+	prefix: string;
+	asset_id: string | null;
+	chunkName: string | null;
+}): LuaCompletionItem[] {
+	if (request.objectName.length === 0) {
+		return [];
+	}
+	const response = ide_state.listLuaObjectMembersFn({
+		asset_id: request.asset_id ?? null,
+		chunkName: request.chunkName ?? null,
+		expression: request.objectName,
+		operator: request.operator,
+	});
+	if (response.length === 0) {
+		return [];
+	}
+	const items: LuaCompletionItem[] = [];
+	for (let index = 0; index < response.length; index += 1) {
+		const entry = response[index];
+		if (!entry || !entry.name || entry.name.length === 0) {
+			continue;
+		}
+		const kind = entry.kind === 'method' ? 'native_method' : 'native_property';
+		const parameters = entry.parameters && entry.parameters.length > 0 ? entry.parameters.slice() : undefined;
+		const detail = entry.detail ?? null;
+		items.push({
+			label: entry.name,
+			insertText: entry.name,
+			sortKey: `${kind}:${entry.name.toLowerCase()}`,
+			kind,
+			detail,
+			parameters,
+		});
+	}
+	items.sort((a, b) => a.label.localeCompare(b.label));
+	return items;
+}
+
+export function safeJsonStringify(value: unknown, space = 2): string {
+	return JSON.stringify(value, (_key, val) => {
+		if (typeof val === 'bigint') {
+			return Number(val);
+		}
+		return val;
+	}, space);
+}
+
+export function describeMetadataValue(value: unknown): string {
+	if (value === null || value === undefined) {
+		return '<none>';
+	}
+	if (typeof value === 'string') {
+		return value;
+	}
+	if (typeof value === 'number' || typeof value === 'boolean') {
+		return String(value);
+	}
+	if (Array.isArray(value)) {
+		const preview = value.slice(0, 4).map(entry => describeMetadataValue(entry)).join(', ');
+		return `[${preview}${value.length > 4 ? ', …' : ''}]`;
+	}
+	if (typeof value === 'object') {
+		const keys = Object.keys(value as Record<string, unknown>);
+		return `{${keys.join(', ')}}`;
+	}
+	return String(value);
 }
 

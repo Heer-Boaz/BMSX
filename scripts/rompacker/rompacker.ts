@@ -878,6 +878,7 @@ async function main() {
 				} catch (err) {
 					stepLogs.forEach(captureLog);
 					typeCheckError = err as Error;
+					throw typeCheckError;
 				}
 
 				// Ensure tasks are removed

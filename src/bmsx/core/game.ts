@@ -1,7 +1,7 @@
 ﻿import { AudioEventManager } from '../audio/audioeventmanager';
 import { PSG } from "../audio/psg";
 import { ModulationParams, ModulationPresetResolver, RandomModulationParams, SoundMaster, SoundMasterPlayRequest } from "../audio/soundmaster";
-import { gamePaused, gameResumed } from "../debugger/rewindui";
+import { showRewindDialog } from "../debugger/rewindui";
 import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
@@ -134,17 +134,35 @@ export class Game {
 		this._paused = value;
 		if (this._paused === true) {
 			this.sndmaster.pause();
-			this.view.showPauseOverlay();
-			if (this.debug) {
-				// Show debug information
-				gamePaused();
-			}
 		}
 		else if (this._paused === false) {
-			this.view.showResumeOverlay();
-			gameResumed();
 			this.sndmaster.resume();
 		}
+	}
+
+	private _debuggerControlsVisible: boolean = false;
+
+	public toggleDebuggerControls(): void {
+		if (this._debuggerControlsVisible) {
+			$.paused = false;
+			this.hideDebuggerControls();
+		} else {
+			$.paused = true;
+			this.showDebuggerControls();
+		}
+	}
+
+	private showDebuggerControls(): void {
+		this._debuggerControlsVisible = true;
+		$.view.showPauseOverlay();
+		showRewindDialog();
+	}
+
+	private hideDebuggerControls(): void {
+		this._debuggerControlsVisible = false;
+		$.view.showResumeOverlay();
+		let rewindOverlay = document.getElementById('rewind-overlay');
+		if (rewindOverlay) rewindOverlay.remove();
 	}
 
 	/**
@@ -588,17 +606,16 @@ export class Game {
 	 * @returns void
 	 */
 	public update(deltaTime: number): void {
-		const world = $.world;
 		// Step physics first so world object logic can react to post-collision resolved positions.
 		try {
-			world.run(deltaTime);
+			$.world.run(deltaTime);
 		} catch (error) {
 			// Surface engine/runtime errors to the Console editor when active
 			const consoleRuntime = BmsxConsoleRuntime.instance;
 			if (consoleRuntime) {
 				try {
 					consoleRuntime.handleLuaError(error);
-					consoleRuntime.onWorldStepAborted();
+					consoleRuntime.abandonFrameState();
 				} catch { /* ignore secondary failures */ }
 			}
 			// Abort the remainder of this update to keep state coherent this frame.

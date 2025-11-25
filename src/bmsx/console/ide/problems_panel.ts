@@ -1,9 +1,11 @@
 import type { BmsxConsoleApi } from '../api';
 import type { EditorDiagnostic, PointerSnapshot } from './types';
 import type { RectBounds } from '../../rompack/rompack';
-import * as constants from './constants';
 import { wrapTextDynamic as wrapMessageLinesGeneric } from './text_utils';
 import { clamp } from '../../utils/clamp';
+import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight } from './console_cart_editor';
+import * as constants from './constants';
+import { ide_state } from './ide_state';
 
 type PanelLayout = {
     headerTop: number;
@@ -471,3 +473,48 @@ export class ProblemsPanelController {
 		}
 	}
 }
+export function drawProblemsPanel(api: BmsxConsoleApi): void {
+	const bounds = getProblemsPanelBounds();
+	if (!bounds) {
+		return;
+	}
+	ide_state.problemsPanel.draw(api, bounds);
+}
+
+export function getProblemsPanelBounds(): RectBounds | null {
+	const panelHeight = getVisibleProblemsPanelHeight();
+	if (panelHeight <= 0) {
+		return null;
+	}
+	const statusHeight = statusAreaHeight();
+	const bottom = ide_state.viewportHeight - statusHeight;
+	const top = bottom - panelHeight;
+	if (bottom <= top) {
+		return null;
+	}
+	return { left: 0, top, right: ide_state.viewportWidth, bottom };
+}
+
+export function isPointerOverProblemsPanelDivider(x: number, y: number): boolean {
+	const bounds = getProblemsPanelBounds();
+	if (!bounds) {
+		return false;
+	}
+	const margin = constants.PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
+	const dividerTop = bounds.top;
+	return y >= dividerTop - margin && y <= dividerTop + margin && x >= bounds.left && x <= bounds.right;
+}
+
+export function setProblemsPanelHeightFromViewportY(viewportY: number): void {
+	const statusHeight = statusAreaHeight();
+	const bottom = ide_state.viewportHeight - statusHeight;
+	const minTop = ide_state.headerHeight + getTabBarTotalHeight() + 1;
+	const headerH = ide_state.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
+	const minContent = Math.max(1, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS) * ide_state.lineHeight;
+	const minHeight = headerH + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2 + minContent;
+	const maxTop = Math.max(minTop, bottom - minHeight);
+	const top = clamp(viewportY, minTop, maxTop);
+	const height = clamp(bottom - top, minHeight, Math.max(minHeight, bottom - minTop));
+	ide_state.problemsPanel.setFixedHeightPx(height);
+}
+

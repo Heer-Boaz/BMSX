@@ -3,12 +3,10 @@ import type { color } from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
 import { ConsoleEditorFont } from './editor_font';
 import type { ConsoleFontVariant } from './font';
-import type { PlayerInput } from '../input/playerinput';
 import { wrapRuntimeErrorLine } from './ide/runtime_error_utils';
 import {
 	createInlineTextField,
 	applyInlineFieldEditing,
-	type InlineFieldEditingHandlers,
 	setFieldText,
 	selectionRange,
 	deleteSelection,
@@ -17,14 +15,17 @@ import {
 import type { InlineInputOptions, InlineTextField, CursorScreenInfo, EditContext, LuaCompletionItem } from './ide/types';
 import { INITIAL_REPEAT_DELAY, REPEAT_INTERVAL, TAB_SPACES } from './ide/constants';
 import { ConsoleRenderFacade } from './console_render_facade';
-import { renderInlineCaret, type CaretDrawOps } from './ide/render_caret';
+import { renderInlineCaret, type CaretDrawOps } from './ide/render/render_caret';
 import { ide_state } from './ide/ide_state';
 import {
-	isKeyJustPressed as isKeyJustPressedGlobal,
-	isKeyTyped as isKeyTypedGlobal,
+	isKeyJustPressed as isKeyJustPressed,
+	isKeyTyped as isKeyTyped,
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
-	clearKeyPressRecord
-} from './ide/input_controller';
+	clearKeyPressRecord,
+	isCtrlDown,
+	isMetaDown,
+	isAltDown
+} from './ide/input';
 import { CompletionController } from './ide/completion_controller';
 import { collectLuaModuleAliases } from './ide/intellisense';
 import type {
@@ -33,7 +34,7 @@ import type {
 	ConsoleLuaMemberCompletionRequest,
 	ConsoleLuaSymbolEntry,
 } from './types';
-import { consumeIdeKey, getIdeKeyState } from './ide/input_controller';
+import { consumeIdeKey, getIdeKeyState } from './ide/input';
 import type { asset_id, Viewport } from '../rompack/rompack';
 import { drawEditorText } from './ide/text_renderer';
 import type { BmsxConsoleApi } from './api';
@@ -142,7 +143,7 @@ export class ConsoleMode {
 			replaceSelectionWith: (text) => { this.replaceSelectionWithText(text); },
 			updateDesiredColumn: () => { this.field.desiredColumn = this.field.cursor; },
 			resetBlink: () => { this.resetBlink(); },
-			revealCursor: () => {},
+			revealCursor: () => { },
 			measureText: (text) => this.measureRawText(text),
 			drawText: (api, text, x, y, color) => { this.drawCompletionText(api as BmsxConsoleApi, text, x, y, color); },
 			getCursorScreenInfo: () => this.cursorScreenInfo,
@@ -225,18 +226,25 @@ export class ConsoleMode {
 		this.completion.processPending(deltaSeconds);
 	}
 
-	public handleInput(playerInput: PlayerInput, deltaSeconds: number): string | null {
+	public handleInput(deltaSeconds: number): string | null {
 		if (!this.active) {
 			return null;
 		}
-		const modifiers = playerInput.getModifiersState();
 		if (this.completion.handleKeybindings(deltaSeconds)) {
 			this.resetBlink();
 			return null;
 		}
 		const options: InlineInputOptions = { deltaSeconds, allowSpace: true };
-		const handlers = this.createInlineHandlers();
-		const historyHandled = this.handleHistoryNavigation(deltaSeconds, modifiers);
+		const handlers = {
+			isKeyJustPressed: (code: string) => isKeyJustPressed(code),
+			isKeyTyped: (code: string) => isKeyTyped(code),
+			shouldFireRepeat: (code: string, deltaSeconds: number) => this.shouldRepeatKey(code, deltaSeconds, this.editingRepeatState),
+			consumeKey: (code: string) => consumeIdeKey(code),
+			readClipboard: () => ide_state.customClipboard,
+			writeClipboard: (payload: string) => { this.writeClipboard(payload); },
+			onClipboardEmpty: () => { console.warn('[BmsxConsoleMode] Clipboard is empty'); },
+		};
+		const historyHandled = this.handleHistoryNavigation(deltaSeconds);
 		if (historyHandled) {
 			this.resetBlink();
 		}
@@ -319,20 +327,9 @@ export class ConsoleMode {
 		}
 	}
 
-	private createInlineHandlers(): InlineFieldEditingHandlers {
-		return {
-			isKeyJustPressed: (code: string) => isKeyJustPressedGlobal(code),
-			isKeyTyped: (code: string) => isKeyTypedGlobal(code),
-			shouldFireRepeat: (code: string, deltaSeconds: number) => this.shouldRepeatKey(code, deltaSeconds, this.editingRepeatState),
-			consumeKey: (code: string) => consumeIdeKey(code),
-			readClipboard: () => ide_state.customClipboard,
-			writeClipboard: (payload: string) => { this.writeClipboard(payload); },
-			onClipboardEmpty: () => { console.warn('[BmsxConsoleMode] Clipboard is empty'); },
-		};
-	}
-
-	private handleHistoryNavigation(deltaSeconds: number, modifiers: { ctrl: boolean; alt: boolean; meta: boolean }): boolean {
-		if (modifiers.ctrl || modifiers.alt || modifiers.meta) {
+	private handleHistoryNavigation(deltaSeconds: number): boolean {
+		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
+		if (ctrlDown || altDown || metaDown) {
 			return false;
 		}
 		if (this.history.length === 0) {
@@ -368,7 +365,7 @@ export class ConsoleMode {
 	}
 
 	private trySubmitCommand(): string | null {
-		const enterPressed = isKeyJustPressedGlobal('Enter') || isKeyJustPressedGlobal('NumpadEnter');
+		const enterPressed = isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter');
 		if (!enterPressed) {
 			return null;
 		}

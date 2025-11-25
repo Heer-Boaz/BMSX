@@ -1,11 +1,12 @@
-import * as constants from './constants';
-import type { RectBounds } from '../../rompack/rompack';
-import type { LuaDebuggerSessionMetrics } from '../../lua/debugger';
-import { ide_state } from './ide_state';
-import { getConsoleRuntime, isDebugPanelActive, measureText } from './console_cart_editor';
-import { drawEditorText } from './text_renderer';
-import { TopBarButtonId } from './types';
-import { api } from '../runtime';
+import * as constants from '../constants';
+import type { RectBounds } from '../../../rompack/rompack';
+import type { LuaDebuggerSessionMetrics } from '../../../lua/debugger';
+import { ide_state } from '../ide_state';
+import { getConsoleRuntime, isDebugPanelActive } from '../console_cart_editor';
+import { measureText } from '../text_utils';
+import { drawEditorText } from '../text_renderer';
+import { TopBarButtonId } from '../types';
+import { api } from '../../runtime';
 
 export function renderTopBar(): void {
 	const primaryBarHeight = ide_state.headerHeight;

@@ -9,7 +9,7 @@ import {
 	renderErrorOverlay,
 	type ErrorOverlayBounds,
 	type ErrorOverlayRenderConfig
-} from './render_error_overlay';
+} from './render/render_error_overlay';
 import type {
 	CachedHighlight,
 	RuntimeErrorOverlay

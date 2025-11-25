@@ -13,10 +13,7 @@ import {
 	syncRuntimeErrorOverlayFromContext,
 	invalidateAllHighlights,
 	updateDesiredColumn,
-	ensureCursorVisible,
 	refreshActiveDiagnostics,
-	resolveHoverChunkName,
-	invalidateVisualLines,
 	markDiagnosticsDirty,
 	bumpTextVersion,
 	findResourceDescriptorByasset_id,
@@ -29,9 +26,12 @@ import {
 	getTabBarTotalHeight,
 	resetPointerClickTracking,
 	resetEditorContent,
-	measureText,
 } from './console_cart_editor';
-import { resetBlink } from './render_caret';
+import { invalidateVisualLines } from './text_utils';
+import { measureText } from './text_utils';
+import { ensureCursorVisible } from './caret';
+import { resolveHoverChunkName } from './intellisense';
+import { resetBlink } from './render/render_caret';
 import { splitLines } from './text_utils';
 
 export function createEntryTabContext(): CodeTabContext | null {

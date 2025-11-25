@@ -1,6 +1,7 @@
 import { LuaLexer } from '../../lua/lexer';
 import type { LuaToken } from '../../lua/token';
 import { LuaTokenType } from '../../lua/token';
+import { ide_state } from './ide_state';
 
 type LineMetadata = {
 	decreaseBefore: number;
@@ -202,4 +203,19 @@ function repeatIndent(count: number): string {
 		return '';
 	}
 	return '\t'.repeat(count);
+}
+export function resolveOffsetPosition(lines: readonly string[], offset: number): { row: number; column: number; } {
+	let remaining = offset;
+	for (let row = 0; row < lines.length; row += 1) {
+		const lineLength = lines[row].length;
+		if (remaining <= lineLength) {
+			return { row, column: remaining };
+		}
+		remaining -= lineLength + 1;
+	}
+	if (ide_state.lines.length === 0) {
+		return { row: 0, column: 0 };
+	}
+	const lastRow = ide_state.lines.length - 1;
+	return { row: lastRow, column: ide_state.lines[lastRow].length };
 }

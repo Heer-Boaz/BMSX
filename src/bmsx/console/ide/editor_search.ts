@@ -5,9 +5,10 @@ import { getSelectionRange, getSelectionText } from './text_editing_and_selectio
 
 import type { ConsoleResourceDescriptor } from '../types';
 import { enqueueBackgroundTask } from './background_tasks';
-import { applySearchFieldText, clearReferenceHighlights, closeSymbolSearch, closeResourceSearch, closeLineJump, updateDesiredColumn, listResourcesStrict, openLuaCodeTab, scheduleNextFrame, ensureCursorVisible } from './console_cart_editor';
-import { resetBlink } from './render_caret';
-import { revealCursor } from './caret_navigation';
+import { applySearchFieldText, clearReferenceHighlights, closeSymbolSearch, closeResourceSearch, closeLineJump, updateDesiredColumn, listResourcesStrict, openLuaCodeTab, scheduleNextFrame } from './console_cart_editor';
+import { ensureCursorVisible } from './caret';
+import { resetBlink } from './render/render_caret';
+import { revealCursor } from './caret';
 import { activateCodeTab } from './editor_tabs';
 
 // Types used by search pipelines

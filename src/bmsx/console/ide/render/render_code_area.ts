@@ -1,8 +1,10 @@
-import type { BmsxConsoleApi } from '../api';
-import * as constants from './constants';
-import type { CachedHighlight, CursorScreenInfo, EditorDiagnostic } from './types';
-import type { RectBounds } from '../../rompack/rompack';
-import { clamp } from '../../utils/clamp';
+import type { BmsxConsoleApi } from '../../api';
+import type { CachedHighlight, CursorScreenInfo, EditorDiagnostic } from '../types';
+import type { RectBounds } from '../../../rompack/rompack';
+import { clamp } from '../../../utils/clamp';
+import { columnToDisplay, measureRangeFast } from '../console_cart_editor';
+import * as constants from '../constants';
+import { ide_state } from '../ide_state';
 
 export type CodeAreaBounds = { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; gutterLeft: number; gutterRight: number; textLeft: number };
 
@@ -346,4 +348,53 @@ function computeCursorScreenInfo(host: CodeAreaHost, entry: CachedHighlight, tex
 		baseChar,
 		baseColor,
 	};
+}export function drawReferenceHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
+	const matches = ide_state.referenceState.getMatches();
+	if (matches.length === 0) {
+		return;
+	}
+	const activeIndex = ide_state.referenceState.getActiveIndex();
+	const highlight = entry.hi;
+	for (let i = 0; i < matches.length; i += 1) {
+		const match = matches[i];
+		if (match.row !== rowIndex) {
+			continue;
+		}
+		const startDisplay = columnToDisplay(highlight, match.start);
+		const endDisplay = columnToDisplay(highlight, match.end);
+		const visibleStart = Math.max(sliceStartDisplay, startDisplay);
+		const visibleEnd = Math.min(sliceEndDisplay, endDisplay);
+		if (visibleEnd <= visibleStart) {
+			continue;
+		}
+		const startX = originX + measureRangeFast(entry, sliceStartDisplay, visibleStart);
+		const endX = originX + measureRangeFast(entry, sliceStartDisplay, visibleEnd);
+		const overlay = i === activeIndex ? constants.REFERENCES_MATCH_ACTIVE_OVERLAY : constants.REFERENCES_MATCH_OVERLAY;
+		api.rectfill_color(startX, originY, endX, originY + ide_state.lineHeight, overlay);
+	}
 }
+
+export function drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
+	if (ide_state.searchScope !== 'local' || ide_state.searchMatches.length === 0 || ide_state.searchQuery.length === 0) {
+		return;
+	}
+	const highlight = entry.hi;
+	for (let i = 0; i < ide_state.searchMatches.length; i++) {
+		const match = ide_state.searchMatches[i];
+		if (match.row !== rowIndex) {
+			continue;
+		}
+		const startDisplay = columnToDisplay(highlight, match.start);
+		const endDisplay = columnToDisplay(highlight, match.end);
+		const visibleStart = Math.max(sliceStartDisplay, startDisplay);
+		const visibleEnd = Math.min(sliceEndDisplay, endDisplay);
+		if (visibleEnd <= visibleStart) {
+			continue;
+		}
+		const startX = originX + measureRangeFast(entry, sliceStartDisplay, visibleStart);
+		const endX = originX + measureRangeFast(entry, sliceStartDisplay, visibleEnd);
+		const overlay = i === ide_state.searchCurrentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
+		api.rectfill_color(startX, originY, endX, originY + ide_state.lineHeight, overlay);
+	}
+}
+

@@ -1,8 +1,8 @@
-import { BmsxConsoleApi } from '../api';
-import * as constants from './constants';
-import type { EditorTabDescriptor } from './types';
-import type { RectBounds } from '../../rompack/rompack';
-import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from './constants';
+import { BmsxConsoleApi } from '../../api';
+import * as constants from '../constants';
+import type { EditorTabDescriptor } from '../types';
+import type { RectBounds } from '../../../rompack/rompack';
+import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../constants';
 
 type TabMetrics = {
 	tab: EditorTabDescriptor;

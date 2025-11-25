@@ -3,6 +3,9 @@ import { clamp } from '../../utils/clamp';
 import { SCROLLBAR_MIN_THUMB_HEIGHT } from './constants';
 import type { ScrollbarKind } from './types';
 import type { RectBounds } from '../../rompack/rompack';
+import { computeMaximumScrollColumn, getActiveResourceViewer, resourceViewerTextCapacity } from './console_cart_editor';
+import { ensureVisualLines, getVisualLineCount } from './text_utils';
+import { ide_state } from './ide_state';
 
 export class ConsoleScrollbar {
 	public readonly orientation: 'vertical' | 'horizontal';
@@ -226,3 +229,53 @@ export class ScrollbarController {
 		return x >= r.left && x < r.right && y >= r.top && y < r.bottom;
 	}
 }
+export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void {
+	if (Number.isNaN(scroll)) {
+		return;
+	}
+	switch (kind) {
+		case 'codeVertical': {
+			ensureVisualLines();
+			const rowCount = Math.max(1, ide_state.cachedVisibleRowCount);
+			const maxScroll = Math.max(0, getVisualLineCount() - rowCount);
+			ide_state.scrollRow = clamp(Math.round(scroll), 0, maxScroll);
+			ide_state.cursorRevealSuspended = true;
+			break;
+		}
+		case 'codeHorizontal': {
+			if (ide_state.wordWrapEnabled) {
+				ide_state.scrollColumn = 0;
+				break;
+			}
+			const maxScroll = computeMaximumScrollColumn();
+			ide_state.scrollColumn = clamp(Math.round(scroll), 0, maxScroll);
+			ide_state.cursorRevealSuspended = true;
+			break;
+		}
+		case 'resourceVertical': {
+			ide_state.resourcePanel.setScroll(scroll);
+			ide_state.resourcePanel.setFocused(true);
+			const s = ide_state.resourcePanel.getStateForRender();
+			ide_state.resourcePanelFocused = s.focused;
+			break;
+		}
+		case 'resourceHorizontal': {
+			ide_state.resourcePanel.setHScroll(scroll);
+			ide_state.resourcePanel.setFocused(true);
+			const s = ide_state.resourcePanel.getStateForRender();
+			ide_state.resourcePanelFocused = s.focused;
+			break;
+		}
+		case 'viewerVertical': {
+			const viewer = getActiveResourceViewer();
+			if (!viewer) {
+				break;
+			}
+			const capacity = resourceViewerTextCapacity(viewer);
+			const maxScroll = Math.max(0, viewer.lines.length - capacity);
+			viewer.scroll = clamp(Math.round(scroll), 0, maxScroll);
+			break;
+		}
+	}
+}
+

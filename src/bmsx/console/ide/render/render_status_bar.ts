@@ -1,6 +1,11 @@
-import { BmsxConsoleApi } from '../api';
-import * as constants from './constants';
-import type { BmsxConsoleMetadata, ConsoleLuaSymbolEntry } from '../types';
+import { BmsxConsoleApi } from '../../api';
+import * as constants from '../constants';
+import type { BmsxConsoleMetadata, ConsoleLuaSymbolEntry } from '../../types';
+import { statusAreaHeight, getStatusMessageLines, getActiveSymbolSearchMatch, getActiveResourceViewer } from '../console_cart_editor';
+import { isResourceViewActive } from '../editor_tabs';
+import { ide_state } from '../ide_state';
+import { drawEditorText } from '../text_renderer';
+import { measureText, truncateTextToWidth } from '../text_utils';
 
 // const STATUS_LOG_PREFIX = '[IDE Status]';
 
@@ -102,4 +107,48 @@ export function renderStatusBar(api: BmsxConsoleApi, host: StatusBarHost): void 
 		// }
 	}
 	host.drawText(api, filenameInfo, host.viewportWidth - host.measureText(filenameInfo) - 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
+}export function drawStatusBar(api: BmsxConsoleApi): void {
+	const host = {
+		viewportWidth: ide_state.viewportWidth,
+		viewportHeight: ide_state.viewportHeight,
+		bottomMargin: statusAreaHeight(),
+		lineHeight: ide_state.lineHeight,
+		measureText: (text: string) => measureText(text),
+		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, ide_state.font, text, x, y, color),
+		truncateTextToWidth: (text: string, maxWidth: number) => truncateTextToWidth(text, maxWidth, (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance),
+		message: ide_state.message,
+		getStatusMessageLines: () => getStatusMessageLines(),
+		symbolSearchVisible: ide_state.symbolSearchVisible,
+		getActiveSymbolSearchMatch: () => getActiveSymbolSearchMatch(),
+		resourcePanelVisible: ide_state.resourcePanelVisible,
+		resourcePanelFilterMode: ide_state.resourcePanel.getFilterMode(),
+		resourcePanelResourceCount: ide_state.resourcePanelResourceCount,
+		isResourceViewActive: () => isResourceViewActive(),
+		getActiveResourceViewer: () => getActiveResourceViewer(),
+		metadata: ide_state.metadata,
+		statusLeftInfo: buildStatusLeftInfo(),
+		serverConnected: ide_state.serverWorkspaceConnected,
+		debugPauseActive: ide_state.executionStopRow !== null,
+		problemsPanelFocused: ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused(),
+	};
+	renderStatusBar(api, host);
 }
+
+export function buildStatusLeftInfo(): string {
+	if (ide_state.problemsPanel.isVisible()) {
+		if (ide_state.problemsPanel.isFocused()) {
+			const sel = ide_state.problemsPanel.getSelectedDiagnostic();
+			if (sel) {
+				const file = sel.sourceLabel ?? (sel.chunkName ?? '');
+				const parts: string[] = [];
+				parts.push(`Ln ${sel.row + 1}, Col ${sel.startColumn + 1}`);
+				if (file.length > 0) parts.push(file);
+				return parts.join(' • ');
+			}
+		}
+		// When Problems panel is visible but not focused or no selection, don't render default editor position
+		return '';
+	}
+	return `LINE ${ide_state.cursorRow + 1}/${ide_state.lines.length} COL ${ide_state.cursorColumn + 1}`;
+}
+

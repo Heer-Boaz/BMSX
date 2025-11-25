@@ -1,5 +1,6 @@
-import { focusChunkSource, normalizeChunkName, setExecutionStopHighlight, clearExecutionStopHighlights, updateDesiredColumn, ensureCursorVisible, clearRuntimeErrorOverlay } from './console_cart_editor';
-import { resetBlink } from './render_caret';
+import { focusChunkSource, normalizeChunkName, setExecutionStopHighlight, clearExecutionStopHighlights, updateDesiredColumn, clearRuntimeErrorOverlay } from './console_cart_editor';
+import { ensureCursorVisible } from './caret';
+import { resetBlink } from './render/render_caret';
 import { ide_state } from './ide_state';
 import * as constants from './constants';
 import { clamp } from '../../utils/clamp';

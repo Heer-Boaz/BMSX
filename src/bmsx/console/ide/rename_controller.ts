@@ -2,9 +2,9 @@ import { resolveReferenceLookup, type ReferenceLookupOptions, type ReferenceMatc
 import type { CodeTabContext, InlineInputOptions, InlineTextField, SearchMatch } from './types';
 import { createInlineTextField } from './inline_text_field';
 import { isIdentifierChar, isIdentifierStartChar } from './text_utils';
-import { isCtrlDown, isKeyJustPressed as isKeyJustPressedGlobal, isMetaDown, isShiftDown } from './input_controller';
+import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown } from './input';
 import * as constants from './constants';
-import { consumeIdeKey } from './input_controller';
+import { consumeIdeKey } from './input';
 import type { LuaSourceRange } from '../../lua/ast';
 import { clamp } from '../../utils/clamp';
 import type { ConsoleResourceDescriptor } from '../types';
@@ -125,14 +125,14 @@ export class RenameController {
 			this.host.redo();
 			return;
 		}
-		if (isKeyJustPressedGlobal('Escape')) {
+		if (isKeyJustPressed('Escape')) {
 			consumeIdeKey('Escape');
 			this.cancel();
 			return;
 		}
-		const enterPressed = isKeyJustPressedGlobal('Enter') || isKeyJustPressedGlobal('NumpadEnter');
+		const enterPressed = isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter');
 		if (enterPressed) {
-			if (isKeyJustPressedGlobal('Enter')) {
+			if (isKeyJustPressed('Enter')) {
 				consumeIdeKey('Enter');
 			} else {
 				consumeIdeKey('NumpadEnter');

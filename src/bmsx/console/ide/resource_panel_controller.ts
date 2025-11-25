@@ -3,12 +3,11 @@ import type { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
 import { clamp } from '../../utils/clamp';
 import { ConsoleScrollbar } from './scrollbar';
-import { renderResourcePanel } from './render_resource_panel';
+import { renderResourcePanel } from './render/render_resource_panel';
 import type { ResourceBrowserItem } from './types';
 import type { RectBounds } from '../../rompack/rompack';
 import type { ConsoleResourceDescriptor } from '../types';
-import { isKeyJustPressed as isKeyJustPressedGlobal, isModifierPressed as isModifierPressedGlobal } from './input_controller';
-import { consumeIdeKey } from './input_controller';
+import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './input';
 
 export interface ResourcePanelBridge {
 	// Metrics and geometry
@@ -157,26 +156,24 @@ export class ResourcePanelController {
 	// === Keyboard ===
 	handleKeyboard(): void {
 		if (!this.visible) return;
-		const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
-		const metaDown = isModifierPressedGlobal('MetaLeft') || isModifierPressedGlobal('MetaRight');
-		const shiftDown = isModifierPressedGlobal('ShiftLeft') || isModifierPressedGlobal('ShiftRight');
-		if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal('KeyR')) {
+		const { ctrlDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
+		if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyR')) {
 			consumeIdeKey('KeyR');
 			// Resolution is editor concern; let host surface a message
 			this.host.showMessage('Resolution toggle not handled by panel controller.', constants.COLOR_STATUS_TEXT, 1.2);
 			return;
 		}
-		if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('KeyB')) {
+		if ((ctrlDown || metaDown) && isKeyJustPressed('KeyB')) {
 			consumeIdeKey('KeyB');
 			this.togglePanel();
 			return;
 		}
-		if (isKeyJustPressedGlobal('Escape')) {
+		if (isKeyJustPressed('Escape')) {
 			consumeIdeKey('Escape');
 			this.hide();
 			return;
 		}
-		if (isKeyJustPressedGlobal('Tab')) {
+		if (isKeyJustPressed('Tab')) {
 			consumeIdeKey('Tab');
 			this.focused = false;
 			this.host.focusEditorFromResourcePanel();
@@ -187,8 +184,8 @@ export class ResourcePanelController {
 		// Horizontal scroll with ArrowLeft/Right
 		const horizontalStep = this.host.charAdvance * 4;
 		const horizontalMoves: Array<{ key: string; predicate: boolean; delta: number }> = [
-			{ key: 'ArrowLeft', predicate: isKeyJustPressedGlobal('ArrowLeft'), delta: -horizontalStep },
-			{ key: 'ArrowRight', predicate: isKeyJustPressedGlobal('ArrowRight'), delta: horizontalStep },
+			{ key: 'ArrowLeft', predicate: isKeyJustPressed('ArrowLeft'), delta: -horizontalStep },
+			{ key: 'ArrowRight', predicate: isKeyJustPressed('ArrowRight'), delta: horizontalStep },
 		];
 		for (const entry of horizontalMoves) {
 			if (entry.predicate) {
@@ -198,7 +195,7 @@ export class ResourcePanelController {
 				return;
 			}
 		}
-		if (isKeyJustPressedGlobal('Enter')) {
+		if (isKeyJustPressed('Enter')) {
 			consumeIdeKey('Enter');
 			this.openSelected();
 			return;
@@ -212,7 +209,7 @@ export class ResourcePanelController {
 			{ code: 'End', action: () => this.moveSelection(Number.POSITIVE_INFINITY) },
 		];
 		for (const entry of moves) {
-			const triggered = isKeyJustPressedGlobal(entry.code);
+			const triggered = isKeyJustPressed(entry.code);
 			if (triggered) {
 				consumeIdeKey(entry.code);
 				entry.action();

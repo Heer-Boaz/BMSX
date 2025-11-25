@@ -1,11 +1,11 @@
-import type { color } from '../../render/shared/render_types';
-import { Msx1Colors } from '../../systems/msx';
-import type { BmsxConsoleApi } from '../api';
-import { resolvePaletteIndex, invertColorIndex, drawRectOutlineColor } from './console_cart_editor';
-import * as constants from './constants';
-import { ide_state } from './ide_state';
-import { drawEditorText } from './text_renderer';
-import type { CursorScreenInfo, InlineTextField } from './types';
+import type { color } from '../../../render/shared/render_types';
+import { Msx1Colors } from '../../../systems/msx';
+import type { BmsxConsoleApi } from '../../api';
+import { resolvePaletteIndex, invertColorIndex } from '../console_cart_editor';
+import * as constants from '../constants';
+import { ide_state } from '../ide_state';
+import { drawEditorText } from '../text_renderer';
+import type { CursorScreenInfo, InlineTextField } from '../types';
 
 export interface CaretDrawOps {
 	fillRect(x0: number, y0: number, x1: number, y1: number, color: color): void;
@@ -75,7 +75,9 @@ export function drawInlineCaret(
 		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, col),
 		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
 	}, left, top, right, bottom, cursorX, active, caretValue, caretGlyph, inverseColor);
-}export function getCaretGlyphForDisplay(baseChar: string, baseColor?: number): string {
+}
+
+export function getCaretGlyphForDisplay(baseChar: string, baseColor?: number): string {
 	if (!ide_state.caseInsensitive) {
 		return baseChar;
 	}
@@ -108,5 +110,15 @@ export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: n
 export function resetBlink(): void {
 	ide_state.blinkTimer = 0;
 	ide_state.cursorVisible = true;
+}
+export function drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number; } | number): void {
+	if (right <= left || bottom <= top) {
+		return;
+	}
+	const resolved = typeof color === 'number' ? Msx1Colors[color] : color;
+	api.rectfill_color(left, top, right, top + 1, resolved);
+	api.rectfill_color(left, bottom - 1, right, bottom, resolved);
+	api.rectfill_color(left, top, left + 1, bottom, resolved);
+	api.rectfill_color(right - 1, top, right, bottom, resolved);
 }
 

@@ -14,10 +14,10 @@ import { Msx1Colors } from '../../systems/msx';
 import { EventEmitter, type ListenerSet } from '../../core/eventemitter';
 import { Registry } from '../../core/registry';
 import { SpriteComponent } from '../../component/sprite_component';
-import { renderCodeArea } from './render_code_area';
+import { drawReferenceHighlightsForRow, drawSearchHighlightsForRow, renderCodeArea } from './render/render_code_area';
 import { clamp } from '../../utils/clamp';
 import { CompletionController } from './completion_controller';
-import { ProblemsPanelController } from './problems_panel';
+import { drawProblemsPanel, ProblemsPanelController } from './problems_panel';
 import { computeAggregatedEditorDiagnostics, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
 import {
 	createEntryTabContext,
@@ -30,20 +30,16 @@ import {
 	updateActiveContextDirtyFlag,
 	getActiveTabKind,
 	isCodeTabActive,
-	isReadOnlyCodeTab,
 	isEditableCodeTab,
 	isResourceViewActive,
 	setActiveTab,
 	activateCodeTab,
 	closeTab,
-	updateTabDrag,
-	endTabDrag,
 	findCodeTabContext,
 	computeResourceTabTitle,
-	beginTabDrag,
 } from './editor_tabs';
 
-import { isIdentifierChar, isIdentifierStartChar, isWhitespace, isWordChar, splitLines } from './text_utils';
+import { assertMonospace, computeSelectionSlice, ensureVisualLines, getVisualLineCount, invalidateVisualLines, isIdentifierChar, isIdentifierStartChar, isWhitespace, isWordChar, measureText, positionToVisualIndex, splitLines, truncateTextToWidth, visibleColumnCount, visibleRowCount, visualIndexToSegment } from './text_utils';
 import type { InlineFieldEditingHandlers, InlineFieldMetrics } from './inline_text_field';
 import {
 	applyInlineFieldEditing,
@@ -55,14 +51,14 @@ import {
 	setFieldText,
 	updateBlink,
 } from './inline_text_field';
-import { buildHoverContentLines as buildHoverContentLinesExternal } from './intellisense';
-import { isLuaCommentContext, measureTextGeneric, truncateTextToWidth as truncateTextToWidthExternal } from './text_utils';
+import { buildMemberCompletionItems, clearHoverTooltip, describeMetadataValue, intellisenseUiReady, resolveHoverAssetId, resolveHoverChunkName, safeJsonStringify, shouldAutoTriggerCompletions } from './intellisense';
+import { isLuaCommentContext } from './text_utils';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
-import { renderTopBar } from './render_top_bar';
-import { renderTabBar } from './render_tab_bar';
-import { renderStatusBar } from './render_status_bar';
-import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderRenameBar, renderLineJumpBar, type InlineBarsHost } from './render_inline_bars';
-import { renderErrorOverlayText } from './render_error_overlay';
+import { renderTopBar } from './render/render_top_bar';
+import { renderTabBar } from './render/render_tab_bar';
+import { drawStatusBar } from './render/render_status_bar';
+import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderRenameBar, renderLineJumpBar, type InlineBarsHost } from './render/render_inline_bars';
+import { renderErrorOverlayText } from './render/render_error_overlay';
 import {
 	cloneRuntimeErrorDetails,
 	rebuildRuntimeErrorOverlayView,
@@ -78,11 +74,11 @@ import {
 } from './runtime_error_overlay_view';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
-import { handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handleTopBarButtonPress, InputController, isAltDown, isCtrlDown, isKeyJustPressed, isKeyTyped, isMetaDown, isShiftDown } from './input_controller';
-import { consumeIdeKey } from './input_controller';
+import { handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handleTextEditorPointerInput, handlePointerWheel, InputController, isAltDown, isCtrlDown, isKeyJustPressed, isKeyTyped, isMetaDown, isShiftDown, resetKeyPressRecords, resourceViewerClampScroll } from './input';
+import { consumeIdeKey } from './input';
 import { ConsoleCodeLayout } from './code_layout';
 import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine } from './runtime_error_utils';
-import { getBreakpointsForChunk, toggleBreakpointAtCursor, toggleBreakpointForEditorRow } from './debugger_breakpoints';
+import { getBreakpointsForChunk } from './debugger_breakpoints';
 import type {
 	CachedHighlight,
 	CodeHoverTooltip,
@@ -90,7 +86,6 @@ import type {
 	EditContext,
 	ConsoleEditorOptions,
 	ConsoleEditorSerializedState,
-	CursorScreenInfo,
 	EditorSnapshot,
 	EditorTabDescriptor,
 	EditorTabId,
@@ -107,10 +102,7 @@ import type {
 	ResourceViewerState,
 	RuntimeErrorOverlay,
 	RuntimeErrorDetails,
-	ScrollbarKind,
 	SymbolSearchResult,
-	VisualLineSegment,
-	LuaCompletionItem,
 	DebugPanelKind,
 } from './types';
 import type { StackTraceFrame } from '../../lua/runtime';
@@ -130,23 +122,13 @@ import { clearBackgroundTasks, enqueueBackgroundTask } from './background_tasks'
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
 import { planRenameLineEdits } from './rename_controller';
 import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_controller';
-import {
-	isKeyJustPressed as isKeyJustPressedGlobal,
-	isModifierPressed as isModifierPressedGlobal,
-	resetKeyPressRecords
-} from './input_controller';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast';
 // Search logic moved to editor_search
 import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, moveSearchSelection, applySearchSelection, ensureSearchSelectionVisible, computeSearchPageStats, getVisibleSearchResultEntries, startSearchJob, jumpToNextMatch, jumpToPreviousMatch, cancelGlobalSearchJob } from './editor_search';
 import * as constants from './constants';
 import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, workspaceDirtyCache, caretNavigation } from './ide_state';
 import { initializeDebuggerUiState } from './debugger_ui_state';
-import {
-	setCursorPosition,
-	revealCursor,
-	clampCursorRow,
-	clampCursorColumn
-} from './caret_navigation';
+import { centerCursorVertically, clampCursorColumn, computeCursorScreenInfo, ensureCursorVisible, revealCursor, setCursorPosition } from './caret';
 import {
 	runWorkspaceAutosaveTick,
 	setupWorkspacePersistence,
@@ -154,9 +136,10 @@ import {
 } from './workspace_storage';
 
 import * as TextEditing from './text_editing_and_selection';
-import { drawCursor, drawInlineCaret, resetBlink } from './render_caret';
+import { drawCursor, drawInlineCaret, drawRectOutlineColor, resetBlink } from './render/render_caret';
 import { api, type BmsxConsoleRuntime } from '../runtime';
-import { insertText, writeClipboard } from './text_editing_and_selection';
+import { computeEditContextFromSources, handlePostEditMutation, writeClipboard } from './text_editing_and_selection';
+import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
 
 export type ConsoleCartEditor = {
 	activate: typeof activate;
@@ -283,21 +266,6 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		focusEditorFromResourcePanel: () => focusEditorFromResourcePanel(),
 		showMessage: (text, color, duration) => ide_state.showMessage(text, color, duration),
 	}, { resourceVertical: ide_state.scrollbars.resourceVertical, resourceHorizontal: ide_state.scrollbars.resourceHorizontal });
-	const intellisenseUiReady = (): boolean => {
-		if (!isCodeTabActive()) {
-			return false;
-		}
-		if (isReadOnlyCodeTab()) {
-			return false;
-		}
-		if (!ide_state.windowFocused) {
-			return false;
-		}
-		if (ide_state.searchActive || ide_state.symbolSearchActive || ide_state.lineJumpActive || ide_state.resourceSearchActive || ide_state.createResourceActive) {
-			return false;
-		}
-		return true;
-	};
 	ide_state.completion = new CompletionController({
 		getPlayerIndex: () => ide_state.playerIndex,
 		isCodeTabActive: () => isCodeTabActive(),
@@ -316,7 +284,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		getLineHeight: () => ide_state.lineHeight,
 		getSpaceAdvance: () => ide_state.spaceAdvance,
 		getActiveCodeTabContext: () => getActiveCodeTabContext(),
-		resolveHoverasset_id: (ctx) => resolveHoverasset_id(ctx as CodeTabContext),
+		resolveHoverasset_id: (ctx) => resolveHoverAssetId(ctx as CodeTabContext),
 		resolveHoverChunkName: (ctx) => resolveHoverChunkName(ctx as CodeTabContext),
 		listLuaSymbols: (asset_id, chunk) => ide_state.listLuaSymbolsFn(asset_id, chunk),
 		listGlobalLuaSymbols: () => ide_state.listGlobalLuaSymbolsFn(),
@@ -328,58 +296,17 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		charAt: (r, c) => TextEditing.charAt(r, c),
 		getTextVersion: () => ide_state.textVersion,
 		shouldFireRepeat: (code, dt) => ide_state.input.shouldRepeat(code, dt),
-		shouldAutoTriggerCompletions: () => {
-			if (!intellisenseUiReady()) {
-				return false;
-			}
-			const lastEditAt = ide_state.lastContentEditAtMs;
-			if (lastEditAt === null) {
-				return false;
-			}
-			const now = ide_state.clockNow();
-			return now - lastEditAt <= constants.COMPLETION_TYPING_GRACE_MS;
-		},
+		shouldAutoTriggerCompletions: () => shouldAutoTriggerCompletions(),
 		shouldShowParameterHints: () => intellisenseUiReady(),
 	});
 	ide_state.completion.setEnterCommitsEnabled(false);
-	ide_state.input = new InputController({
-		getPlayerIndex: () => ide_state.playerIndex,
-		isCodeTabActive: () => isCodeTabActive(),
-		getLines: () => ide_state.lines,
-		setLines: (lines) => { ide_state.lines = lines; markDiagnosticsDirty(); },
-		getCursorRow: () => ide_state.cursorRow,
-		getCursorColumn: () => ide_state.cursorColumn,
-		setCursorPosition: (row, column) => { ide_state.cursorRow = row; ide_state.cursorColumn = column; },
-		setSelectionAnchor: (row, column) => { ide_state.selectionAnchor = { row, column }; },
-		getSelection: () => TextEditing.getSelectionRange(),
-		clearSelection: () => { ide_state.selectionAnchor = null; },
-		updateDesiredColumn: () => updateDesiredColumn(),
-		resetBlink: () => resetBlink(),
-		revealCursor: () => revealCursor(),
-		ensureCursorVisible: () => ensureCursorVisible(),
-		recordPreMutationSnapshot: (key) => recordSnapshotPre(key),
-		pushPostMutationSnapshot: (key) => recordSnapshotPost(key),
-		deleteSelection: () => deleteSelection(),
-		deleteCharLeft: () => deleteCharLeft(),
-		deleteCharRight: () => deleteCharRight(),
-		deleteActiveLines: () => deleteActiveLines(),
-		deleteWordBackward: () => deleteWordBackward(),
-		deleteWordForward: () => deleteWordForward(),
-		insertNewline: () => insertNewline(),
-		insertText: (text) => insertText(text),
-		moveSelectionLines: (delta) => moveSelectionLines(delta),
-		indentSelectionOrLine: () => indentSelectionOrLine(),
-		unindentSelectionOrLine: () => unindentSelectionOrLine(),
-		navigateBackward: () => goBackwardInNavigationHistory(),
-		navigateForward: () => goForwardInNavigationHistory(),
-		toggleBreakpointAtCursor: () => toggleBreakpointAtCursor(),
-	});
+	ide_state.input = new InputController();
 	ide_state.problemsPanel = new ProblemsPanelController({
 		lineHeight: ide_state.lineHeight,
 		measureText: (text) => measureText(text),
 		drawText: (api, text, x, y, color) => drawEditorText(api, ide_state.font, text, x, y, color),
 		drawRectOutlineColor: (api, l, t, r, b, col) => drawRectOutlineColor(api, l, t, r, b, col),
-		truncateTextToWidth: (text, maxWidth) => truncateTextToWidth(text, maxWidth),
+		truncateTextToWidth: (text, maxWidth) => truncateTextToWidth(text, maxWidth, (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance),
 		gotoDiagnostic: (diagnostic) => gotoDiagnostic(diagnostic),
 	});
 	ide_state.problemsPanel.setDiagnostics(ide_state.diagnostics);
@@ -1600,7 +1527,7 @@ export function update(deltaSeconds: number): void {
 	}
 	updateBlink(deltaSeconds);
 	handlePointerWheel();
-	handlePointerInput(deltaSeconds);
+	handleTextEditorPointerInput();
 	if (ide_state.pendingActionPrompt) {
 		handleActionPromptInput();
 		return;
@@ -1736,7 +1663,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			ide_state.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
-		const asset_id = resolveHoverasset_id(context);
+		const asset_id = resolveHoverAssetId(context);
 		const chunkName = resolveHoverChunkName(context);
 		let source = '';
 		if (activeId && contextId === activeId) {
@@ -2281,12 +2208,12 @@ export function deactivate(): void {
 }
 
 export function handleCreateResourceInput(deltaSeconds: number): void {
-	if (isKeyJustPressedGlobal('Escape')) {
+	if (isKeyJustPressed('Escape')) {
 		consumeIdeKey('Escape');
 		cancelCreateResourcePrompt();
 		return;
 	}
-	if (!ide_state.createResourceWorking && isKeyJustPressedGlobal('Enter')) {
+	if (!ide_state.createResourceWorking && isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
 		void confirmCreateResourcePrompt();
 		return;
@@ -2486,12 +2413,12 @@ export function buildDefaultResourceContents(_path: string, _asset_id: string): 
 
 export function handleSearchInput(deltaSeconds: number): void {
 	const { shiftDown, ctrlDown, metaDown, altDown } = { shiftDown: isShiftDown(), ctrlDown: isCtrlDown(), metaDown: isMetaDown(), altDown: isAltDown() };
-	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressedGlobal('KeyF')) {
+	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressed('KeyF')) {
 		consumeIdeKey('KeyF');
 		openSearch(false, 'global');
 		return;
 	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal('KeyF')) {
+	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressed('KeyF')) {
 		consumeIdeKey('KeyF');
 		openSearch(false, 'local');
 		return;
@@ -2510,14 +2437,14 @@ export function handleSearchInput(deltaSeconds: number): void {
 		redo();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressedGlobal('KeyS')) {
+	if (ctrlDown && isKeyJustPressed('KeyS')) {
 		consumeIdeKey('KeyS');
 		void save();
 		return;
 	}
 	const hasResults = activeSearchMatchCount() > 0;
 	const previewLocal = ide_state.searchScope === 'local';
-	if (isKeyJustPressedGlobal('Enter')) {
+	if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
 		if (hasResults) {
 			if (shiftDown) {
@@ -2535,7 +2462,7 @@ export function handleSearchInput(deltaSeconds: number): void {
 		}
 		return;
 	}
-	if (isKeyJustPressedGlobal('F3')) {
+	if (isKeyJustPressed('F3')) {
 		consumeIdeKey('F3');
 		if (shiftDown) {
 			jumpToPreviousMatch();
@@ -2565,7 +2492,7 @@ export function handleSearchInput(deltaSeconds: number): void {
 			moveSearchSelection(searchPageSize(), { preview: previewLocal });
 			return;
 		}
-		if (isKeyJustPressedGlobal('Home')) {
+		if (isKeyJustPressed('Home')) {
 			consumeIdeKey('Home');
 			ide_state.searchCurrentIndex = hasResults ? 0 : -1;
 			ensureSearchSelectionVisible();
@@ -2574,7 +2501,7 @@ export function handleSearchInput(deltaSeconds: number): void {
 			}
 			return;
 		}
-		if (isKeyJustPressedGlobal('End')) {
+		if (isKeyJustPressed('End')) {
 			consumeIdeKey('End');
 			const lastIndex = hasResults ? activeSearchMatchCount() - 1 : -1;
 			ide_state.searchCurrentIndex = lastIndex;
@@ -2601,22 +2528,22 @@ export function handleSearchInput(deltaSeconds: number): void {
 
 export function handleLineJumpInput(deltaSeconds: number): void {
 	const { shiftDown, ctrlDown, metaDown } = { shiftDown: isShiftDown(), ctrlDown: isCtrlDown(), metaDown: isMetaDown() };
-	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal('KeyL')) {
+	if ((ctrlDown || metaDown) && isKeyJustPressed('KeyL')) {
 		consumeIdeKey('KeyL');
 		openLineJump();
 		return;
 	}
-	if (isKeyJustPressedGlobal('Enter')) {
+	if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
 		applyLineJump();
 		return;
 	}
-	if (!shiftDown && isKeyJustPressedGlobal('NumpadEnter')) {
+	if (!shiftDown && isKeyJustPressed('NumpadEnter')) {
 		consumeIdeKey('NumpadEnter');
 		applyLineJump();
 		return;
 	}
-	if (isKeyJustPressedGlobal('Escape')) {
+	if (isKeyJustPressed('Escape')) {
 		consumeIdeKey('Escape');
 		closeLineJump(false);
 		return;
@@ -2942,7 +2869,7 @@ export function refreshSymbolCatalog(force: boolean): void {
 	let chunkName: string | null = null;
 	if (scope === 'local') {
 		const context = getActiveCodeTabContext();
-		asset_id = resolveHoverasset_id(context);
+		asset_id = resolveHoverAssetId(context);
 		chunkName = resolveHoverChunkName(context);
 	}
 	const existing = ide_state.symbolCatalogContext;
@@ -3227,7 +3154,7 @@ export function applySymbolSearchSelection(index: number): void {
 
 export function handleSymbolSearchInput(deltaSeconds: number): void {
 	const { shiftDown } = { shiftDown: isShiftDown() };
-	if (isKeyJustPressedGlobal('Enter')) {
+	if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
 		if (shiftDown) {
 			moveSymbolSearchSelection(-1);
@@ -3240,7 +3167,7 @@ export function handleSymbolSearchInput(deltaSeconds: number): void {
 		}
 		return;
 	}
-	if (isKeyJustPressedGlobal('Escape')) {
+	if (isKeyJustPressed('Escape')) {
 		consumeIdeKey('Escape');
 		closeSymbolSearch(true);
 		return;
@@ -3265,13 +3192,13 @@ export function handleSymbolSearchInput(deltaSeconds: number): void {
 		moveSymbolSearchSelection(symbolSearchPageSize());
 		return;
 	}
-	if (isKeyJustPressedGlobal('Home')) {
+	if (isKeyJustPressed('Home')) {
 		consumeIdeKey('Home');
 		ide_state.symbolSearchSelectionIndex = ide_state.symbolSearchMatches.length > 0 ? 0 : -1;
 		ensureSymbolSearchSelectionVisible();
 		return;
 	}
-	if (isKeyJustPressedGlobal('End')) {
+	if (isKeyJustPressed('End')) {
 		consumeIdeKey('End');
 		ide_state.symbolSearchSelectionIndex = ide_state.symbolSearchMatches.length > 0 ? ide_state.symbolSearchMatches.length - 1 : -1;
 		ensureSymbolSearchSelectionVisible();
@@ -3441,7 +3368,7 @@ export function applyResourceSearchSelection(index: number): void {
 
 export function handleResourceSearchInput(deltaSeconds: number): void {
 	const { shiftDown } = { shiftDown: isShiftDown() };
-	if (isKeyJustPressedGlobal('Enter')) {
+	if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
 		if (shiftDown) {
 			moveResourceSearchSelection(-1);
@@ -3461,7 +3388,7 @@ export function handleResourceSearchInput(deltaSeconds: number): void {
 		}
 		return;
 	}
-	if (isKeyJustPressedGlobal('Escape')) {
+	if (isKeyJustPressed('Escape')) {
 		consumeIdeKey('Escape');
 		closeResourceSearch(true);
 		focusEditorFromResourceSearch();
@@ -3487,13 +3414,13 @@ export function handleResourceSearchInput(deltaSeconds: number): void {
 		moveResourceSearchSelection(resourceSearchWindowCapacity());
 		return;
 	}
-	if (isKeyJustPressedGlobal('Home')) {
+	if (isKeyJustPressed('Home')) {
 		consumeIdeKey('Home');
 		ide_state.resourceSearchSelectionIndex = ide_state.resourceSearchMatches.length > 0 ? 0 : -1;
 		ensureResourceSearchSelectionVisible();
 		return;
 	}
-	if (isKeyJustPressedGlobal('End')) {
+	if (isKeyJustPressed('End')) {
 		consumeIdeKey('End');
 		ide_state.resourceSearchSelectionIndex = ide_state.resourceSearchMatches.length > 0 ? ide_state.resourceSearchMatches.length - 1 : -1;
 		ensureResourceSearchSelectionVisible();
@@ -3635,755 +3562,6 @@ export function showReferenceStatusMessage(): void {
 	ide_state.showMessage(`Reference ${activeIndex + 1}/${matches.length} for ${label}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 }
 
-export function handlePointerInput(_deltaSeconds: number): void {
-	const ctrlDown = isModifierPressedGlobal('ControlLeft') || isModifierPressedGlobal('ControlRight');
-	const metaDown = isModifierPressedGlobal('MetaLeft') || isModifierPressedGlobal('MetaRight');
-	const gotoModifierActive = ctrlDown || metaDown;
-	if (!gotoModifierActive) {
-		clearGotoHoverHighlight();
-	}
-	const activeContext = getActiveCodeTabContext();
-	const snapshot = readPointerSnapshot();
-	updateTabHoverState(snapshot);
-	ide_state.lastPointerSnapshot = snapshot && snapshot.valid ? snapshot : null;
-	if (!snapshot) {
-		ide_state.pointerPrimaryWasPressed = false;
-		ide_state.scrollbarController.cancel();
-		ide_state.lastPointerRowResolution = null;
-		clearHoverTooltip();
-		clearGotoHoverHighlight();
-		return;
-	}
-	if (!snapshot.valid) {
-		ide_state.scrollbarController.cancel();
-		clearGotoHoverHighlight();
-		ide_state.lastPointerRowResolution = null;
-	} else if (ide_state.scrollbarController.hasActiveDrag() && !snapshot.primaryPressed) {
-		ide_state.scrollbarController.cancel();
-	} else if (ide_state.scrollbarController.hasActiveDrag() && snapshot.primaryPressed) {
-		if (ide_state.scrollbarController.update(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, (k, s) => applyScrollbarScroll(k, s))) {
-			ide_state.pointerSelecting = false;
-			clearHoverTooltip();
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			return;
-		}
-	}
-	if (!snapshot.primaryPressed) {
-		ide_state.searchField.pointerSelecting = false;
-		ide_state.symbolSearchField.pointerSelecting = false;
-		ide_state.resourceSearchField.pointerSelecting = false;
-		ide_state.lineJumpField.pointerSelecting = false;
-		ide_state.createResourceField.pointerSelecting = false;
-		ide_state.symbolSearchHoverIndex = -1;
-		ide_state.resourceSearchHoverIndex = -1;
-	}
-	let pointerAuxJustPressed = false;
-	let pointerAuxPressed = false;
-	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
-	if (playerInput) {
-		const auxAction = playerInput.getActionState('pointer_aux');
-		if (auxAction && auxAction.justpressed === true && auxAction.consumed !== true) {
-			pointerAuxJustPressed = true;
-			pointerAuxPressed = true;
-		} else if (auxAction && auxAction.pressed === true && auxAction.consumed !== true) {
-			pointerAuxPressed = true;
-			pointerAuxJustPressed = !ide_state.pointerAuxWasPressed;
-		}
-	}
-	ide_state.pointerAuxWasPressed = pointerAuxPressed;
-	const wasPressed = ide_state.pointerPrimaryWasPressed;
-	const justPressed = snapshot.primaryPressed && !wasPressed;
-	const justReleased = !snapshot.primaryPressed && wasPressed;
-	if (justReleased || (!snapshot.primaryPressed && ide_state.pointerSelecting)) {
-		ide_state.pointerSelecting = false;
-	}
-	if (ide_state.tabDragState) {
-		if (!snapshot.primaryPressed) {
-			endTabDrag();
-			ide_state.pointerSelecting = false;
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			clearGotoHoverHighlight();
-			clearHoverTooltip();
-			return;
-		}
-		if (snapshot.valid) {
-			updateTabDrag(snapshot.viewportX, snapshot.viewportY);
-		}
-		ide_state.pointerSelecting = false;
-		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		clearGotoHoverHighlight();
-		clearHoverTooltip();
-		return;
-	}
-	if (justPressed && ide_state.scrollbarController.begin(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, bottomMargin(), (k, s) => applyScrollbarScroll(k, s))) {
-		ide_state.pointerSelecting = false;
-		clearHoverTooltip();
-		clearGotoHoverHighlight();
-		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		return;
-	}
-	if (ide_state.resourcePanelResizing && !snapshot.valid) {
-		ide_state.resourcePanelResizing = false;
-		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		clearGotoHoverHighlight();
-		return;
-	}
-	if (!snapshot.valid) {
-		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		clearHoverTooltip();
-		clearGotoHoverHighlight();
-		return;
-	}
-	if (ide_state.resourcePanelResizing) {
-		if (!snapshot.primaryPressed) {
-			ide_state.resourcePanelResizing = false;
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		} else {
-			const ok = ide_state.resourcePanel.setRatioFromViewportX(snapshot.viewportX, ide_state.viewportWidth);
-			if (!ok) {
-				hideResourcePanel();
-			} else {
-				invalidateVisualLines();
-				/* hscroll handled inside controller */
-			}
-			ide_state.resourcePanelFocused = true;
-			ide_state.pointerSelecting = false;
-			resetPointerClickTracking();
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		}
-		clearGotoHoverHighlight();
-		return;
-	}
-	if (ide_state.problemsPanelResizing) {
-		if (!snapshot.primaryPressed) {
-			ide_state.problemsPanelResizing = false;
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		} else {
-			setProblemsPanelHeightFromViewportY(snapshot.viewportY);
-			ide_state.pointerSelecting = false;
-			resetPointerClickTracking();
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		}
-		clearGotoHoverHighlight();
-		return;
-	}
-	if (justPressed && snapshot.viewportY >= 0 && snapshot.viewportY < ide_state.headerHeight) {
-		if (handleTopBarPointer(snapshot)) {
-			ide_state.pointerSelecting = false;
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			resetPointerClickTracking();
-			clearGotoHoverHighlight();
-			return;
-		}
-	}
-	if (ide_state.resourcePanelVisible && justPressed && isPointerOverResourcePanelDivider(snapshot.viewportX, snapshot.viewportY)) {
-		if (getResourcePanelWidth() > 0) {
-			ide_state.resourcePanelResizing = true;
-			ide_state.resourcePanelFocused = true;
-			ide_state.pointerSelecting = false;
-			resetPointerClickTracking();
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		}
-		clearGotoHoverHighlight();
-		return;
-	}
-	if (justPressed && ide_state.problemsPanel.isVisible() && isPointerOverProblemsPanelDivider(snapshot.viewportX, snapshot.viewportY)) {
-		ide_state.problemsPanelResizing = true;
-		ide_state.pointerSelecting = false;
-		resetPointerClickTracking();
-		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		clearGotoHoverHighlight();
-		return;
-	}
-	const tabTop = ide_state.headerHeight;
-	const tabBottom = tabTop + getTabBarTotalHeight();
-	if (pointerAuxJustPressed && handleTabBarMiddleClick(snapshot)) {
-		if (playerInput) {
-			playerInput.consumeAction('pointer_aux');
-		}
-		ide_state.pointerSelecting = false;
-		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		resetPointerClickTracking();
-		clearGotoHoverHighlight();
-		return;
-	}
-	if (justPressed && snapshot.viewportY >= tabTop && snapshot.viewportY < tabBottom) {
-		if (handleTabBarPointer(snapshot)) {
-			ide_state.pointerSelecting = false;
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			resetPointerClickTracking();
-			clearGotoHoverHighlight();
-			return;
-		}
-	}
-	const panelBounds = ide_state.resourcePanel.getBounds();
-	const pointerInPanel = ide_state.resourcePanelVisible
-		&& panelBounds !== null
-		&& pointInRect(snapshot.viewportX, snapshot.viewportY, panelBounds);
-	if (pointerInPanel) {
-		ide_state.resourcePanel.setFocused(true);
-		resetPointerClickTracking();
-		clearHoverTooltip();
-		const margin = Math.max(4, ide_state.lineHeight);
-		if (snapshot.viewportY < panelBounds.top + margin) {
-			ide_state.resourcePanel.scrollBy(-1);
-		} else if (snapshot.viewportY >= panelBounds.bottom - margin) {
-			ide_state.resourcePanel.scrollBy(1);
-		}
-		const hoverIndex = ide_state.resourcePanel.indexAtPosition(snapshot.viewportX, snapshot.viewportY);
-		ide_state.resourcePanel.setHoverIndex(hoverIndex);
-		if (hoverIndex >= 0) {
-			if (hoverIndex !== ide_state.resourceBrowserSelectionIndex) {
-				ide_state.resourcePanel.setSelectionIndex(hoverIndex);
-			}
-			if (justPressed) {
-				ide_state.resourcePanel.openSelected();
-				ide_state.resourcePanel.setFocused(false);
-			}
-		}
-		if (!snapshot.primaryPressed && hoverIndex === -1) {
-			ide_state.resourcePanel.setHoverIndex(-1);
-		}
-		ide_state.pointerSelecting = false;
-		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		clearGotoHoverHighlight();
-		const s = ide_state.resourcePanel.getStateForRender();
-		ide_state.resourcePanelFocused = s.focused;
-		ide_state.resourceBrowserSelectionIndex = s.selectionIndex;
-		return;
-	}
-	if (justPressed && !pointerInPanel) {
-		ide_state.resourcePanel.setFocused(false);
-	}
-	if (ide_state.resourcePanelVisible && !snapshot.primaryPressed) {
-		ide_state.resourcePanel.setHoverIndex(-1);
-	}
-	const problemsBounds = getProblemsPanelBounds();
-	if (ide_state.problemsPanel.isVisible() && problemsBounds) {
-		const insideProblems = pointInRect(snapshot.viewportX, snapshot.viewportY, problemsBounds);
-		if (insideProblems) {
-			if (ide_state.problemsPanel.handlePointer(snapshot, justPressed, justReleased, problemsBounds)) {
-				ide_state.pointerSelecting = false;
-				ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-				resetPointerClickTracking();
-				clearHoverTooltip();
-				clearGotoHoverHighlight();
-				return;
-			}
-		} else if (justPressed) {
-			ide_state.problemsPanel.setFocused(false);
-		}
-	}
-	if (isResourceViewActive()) {
-		resetPointerClickTracking();
-		ide_state.pointerSelecting = false;
-		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		clearHoverTooltip();
-		clearGotoHoverHighlight();
-		return;
-	}
-	if (ide_state.pendingActionPrompt) {
-		resetPointerClickTracking();
-		if (justPressed) {
-			handleActionPromptPointer(snapshot);
-		}
-		ide_state.pointerSelecting = false;
-		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		clearHoverTooltip();
-		clearGotoHoverHighlight();
-		return;
-	}
-	const createResourceBounds = getCreateResourceBarBounds();
-	if (ide_state.createResourceVisible && createResourceBounds) {
-		const insideCreateBar = pointInRect(snapshot.viewportX, snapshot.viewportY, createResourceBounds);
-		if (insideCreateBar) {
-			if (justPressed) {
-				ide_state.createResourceActive = true;
-				ide_state.cursorVisible = true;
-				resetBlink();
-				ide_state.resourcePanelFocused = false;
-			}
-			const label = 'NEW FILE:';
-			const labelX = 4;
-			const textLeft = labelX + measureText(label + ' ');
-			processInlineFieldPointer(ide_state.createResourceField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-			ide_state.pointerSelecting = false;
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			clearHoverTooltip();
-			clearGotoHoverHighlight();
-			return;
-		}
-		if (justPressed) {
-			ide_state.createResourceActive = false;
-		}
-	}
-	const resourceSearchBounds = getResourceSearchBarBounds();
-	if (ide_state.resourceSearchVisible && resourceSearchBounds) {
-		const insideResourceSearch = pointInRect(snapshot.viewportX, snapshot.viewportY, resourceSearchBounds);
-		if (insideResourceSearch) {
-			const baseHeight = ide_state.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
-			const fieldBottom = resourceSearchBounds.top + baseHeight;
-			const resultsStart = fieldBottom + constants.QUICK_OPEN_RESULT_SPACING;
-			if (snapshot.viewportY < fieldBottom) {
-				if (justPressed) {
-					closeLineJump(false);
-					closeSearch(false, true);
-					closeSymbolSearch(false);
-					ide_state.resourceSearchVisible = true;
-					ide_state.resourceSearchActive = true;
-					ide_state.resourcePanelFocused = false;
-					ide_state.cursorVisible = true;
-					resetBlink();
-				}
-				const label = 'FILE :';
-				const labelX = 4;
-				const textLeft = labelX + measureText(label + ' ');
-				processInlineFieldPointer(ide_state.resourceSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-				ide_state.pointerSelecting = false;
-				ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-				clearHoverTooltip();
-				clearGotoHoverHighlight();
-				return;
-			}
-			const rowHeight = resourceSearchEntryHeight();
-			const visibleCount = resourceSearchVisibleResultCount();
-			let hoverIndex = -1;
-			if (snapshot.viewportY >= resultsStart) {
-				const relative = snapshot.viewportY - resultsStart;
-				const indexWithin = Math.floor(relative / rowHeight);
-				if (indexWithin >= 0 && indexWithin < visibleCount) {
-					hoverIndex = ide_state.resourceSearchDisplayOffset + indexWithin;
-				}
-			}
-			ide_state.resourceSearchHoverIndex = hoverIndex;
-			if (hoverIndex >= 0 && justPressed) {
-				if (hoverIndex !== ide_state.resourceSearchSelectionIndex) {
-					ide_state.resourceSearchSelectionIndex = hoverIndex;
-					ensureResourceSearchSelectionVisible();
-				}
-				applyResourceSearchSelection(hoverIndex);
-				ide_state.pointerSelecting = false;
-				ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-				clearHoverTooltip();
-				clearGotoHoverHighlight();
-				return;
-			}
-			ide_state.pointerSelecting = false;
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			clearHoverTooltip();
-			clearGotoHoverHighlight();
-			return;
-		}
-		if (justPressed) {
-			ide_state.resourceSearchActive = false;
-		}
-		ide_state.resourceSearchHoverIndex = -1;
-	}
-	const symbolBounds = getSymbolSearchBarBounds();
-	if (ide_state.symbolSearchVisible && symbolBounds) {
-		const insideSymbol = pointInRect(snapshot.viewportX, snapshot.viewportY, symbolBounds);
-		if (insideSymbol) {
-			const baseHeight = ide_state.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
-			const fieldBottom = symbolBounds.top + baseHeight;
-			const resultsStart = fieldBottom + constants.SYMBOL_SEARCH_RESULT_SPACING;
-			if (snapshot.viewportY < fieldBottom) {
-				if (justPressed) {
-					closeLineJump(false);
-					closeSearch(false, true);
-					ide_state.symbolSearchVisible = true;
-					ide_state.symbolSearchActive = true;
-					ide_state.resourcePanelFocused = false;
-					ide_state.cursorVisible = true;
-					resetBlink();
-				}
-				const label = ide_state.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
-				const labelX = 4;
-				const textLeft = labelX + measureText(label + ' ');
-				processInlineFieldPointer(ide_state.symbolSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-				ide_state.pointerSelecting = false;
-				ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-				clearHoverTooltip();
-				clearGotoHoverHighlight();
-				return;
-			}
-			const visibleCount = symbolSearchVisibleResultCount();
-			let hoverIndex = -1;
-			if (snapshot.viewportY >= resultsStart) {
-				const relative = snapshot.viewportY - resultsStart;
-				const entryHeight = symbolSearchEntryHeight();
-				const indexWithin = entryHeight > 0 ? Math.floor(relative / entryHeight) : -1;
-				if (indexWithin >= 0 && indexWithin < visibleCount) {
-					hoverIndex = ide_state.symbolSearchDisplayOffset + indexWithin;
-				}
-			}
-			ide_state.symbolSearchHoverIndex = hoverIndex;
-			if (hoverIndex >= 0 && justPressed) {
-				if (hoverIndex !== ide_state.symbolSearchSelectionIndex) {
-					ide_state.symbolSearchSelectionIndex = hoverIndex;
-					ensureSymbolSearchSelectionVisible();
-				}
-				applySymbolSearchSelection(hoverIndex);
-				ide_state.pointerSelecting = false;
-				ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-				clearHoverTooltip();
-				clearGotoHoverHighlight();
-				return;
-			}
-			ide_state.pointerSelecting = false;
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			clearHoverTooltip();
-			clearGotoHoverHighlight();
-			return;
-		}
-		if (justPressed) {
-			ide_state.symbolSearchActive = false;
-		}
-		ide_state.symbolSearchHoverIndex = -1;
-	}
-
-	const renameBounds = getRenameBarBounds();
-	if (isRenameVisible() && renameBounds) {
-		const insideRename = pointInRect(snapshot.viewportX, snapshot.viewportY, renameBounds);
-		if (insideRename) {
-			if (justPressed) {
-				ide_state.resourcePanelFocused = false;
-				ide_state.cursorVisible = true;
-				resetBlink();
-			}
-			const label = 'RENAME:';
-			const labelX = 4;
-			const textLeft = labelX + measureText(label + ' ');
-			processInlineFieldPointer(ide_state.renameController.getField(), textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-			ide_state.pointerSelecting = false;
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			clearHoverTooltip();
-			clearGotoHoverHighlight();
-			return;
-		}
-		if (justPressed) {
-			ide_state.renameController.cancel();
-		}
-	}
-
-	const lineJumpBounds = getLineJumpBarBounds();
-	if (ide_state.lineJumpVisible && lineJumpBounds) {
-		const insideLineJump = pointInRect(snapshot.viewportX, snapshot.viewportY, lineJumpBounds);
-		if (insideLineJump) {
-			if (justPressed) {
-				closeSearch(false, true);
-				ide_state.lineJumpActive = true;
-				resetBlink();
-			}
-			const label = 'LINE #:';
-			const labelX = 4;
-			const textLeft = labelX + measureText(label + ' ');
-			processInlineFieldPointer(ide_state.lineJumpField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-			ide_state.pointerSelecting = false;
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			clearHoverTooltip();
-			clearGotoHoverHighlight();
-			return;
-		}
-		if (justPressed) {
-			ide_state.lineJumpActive = false;
-		}
-	}
-	const searchBounds = getSearchBarBounds();
-	if (ide_state.searchVisible && searchBounds) {
-		const insideSearch = pointInRect(snapshot.viewportX, snapshot.viewportY, searchBounds);
-		const baseHeight = ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
-		const fieldBottom = searchBounds.top + baseHeight;
-		const visibleResults = searchVisibleResultCount();
-		if (insideSearch) {
-			ide_state.searchHoverIndex = -1;
-			if (snapshot.viewportY < fieldBottom) {
-				if (justPressed) {
-					closeLineJump(false);
-					ide_state.searchVisible = true;
-					ide_state.searchActive = true;
-					ide_state.resourcePanelFocused = false;
-					ide_state.cursorVisible = true;
-					resetBlink();
-				}
-				const label = ide_state.searchScope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
-				const labelX = 4;
-				const textLeft = labelX + measureText(label + ' ');
-				processInlineFieldPointer(ide_state.searchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
-				ide_state.pointerSelecting = false;
-				ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-				clearHoverTooltip();
-				clearGotoHoverHighlight();
-				return;
-			}
-			if (visibleResults > 0) {
-				const resultsStart = fieldBottom + constants.SEARCH_RESULT_SPACING;
-				const rowHeight = searchResultEntryHeight();
-				let hoverIndex = -1;
-				if (snapshot.viewportY >= resultsStart) {
-					const relative = snapshot.viewportY - resultsStart;
-					const indexWithin = Math.floor(relative / rowHeight);
-					if (indexWithin >= 0 && indexWithin < visibleResults) {
-						hoverIndex = ide_state.searchDisplayOffset + indexWithin;
-					}
-				}
-				ide_state.searchHoverIndex = hoverIndex;
-				if (hoverIndex >= 0 && justPressed) {
-					if (hoverIndex !== ide_state.searchCurrentIndex) {
-						ide_state.searchCurrentIndex = hoverIndex;
-						ensureSearchSelectionVisible();
-						if (ide_state.searchScope === 'local') {
-							applySearchSelection(hoverIndex, { preview: true });
-						}
-					}
-					applySearchSelection(hoverIndex);
-					ide_state.pointerSelecting = false;
-					ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-					clearHoverTooltip();
-					clearGotoHoverHighlight();
-					return;
-				}
-				ide_state.pointerSelecting = false;
-				ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-				clearHoverTooltip();
-				clearGotoHoverHighlight();
-				return;
-			}
-		} else if (justPressed) {
-			ide_state.searchActive = false;
-			ide_state.searchHoverIndex = -1;
-		}
-	} else {
-		ide_state.searchHoverIndex = -1;
-	}
-
-	const bounds = getCodeAreaBounds();
-	if (processRuntimeErrorOverlayPointer(snapshot, justPressed, bounds.codeTop, bounds.codeRight, bounds.textLeft)) {
-		// Keep primary pressed state in sync when overlay handles the event
-		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		return;
-	}
-	const insideCodeArea = snapshot.viewportY >= bounds.codeTop
-		&& snapshot.viewportY < bounds.codeBottom
-		&& snapshot.viewportX >= bounds.codeLeft
-		&& snapshot.viewportX < bounds.codeRight;
-	const inGutter = insideCodeArea
-		&& snapshot.viewportX >= bounds.gutterLeft
-		&& snapshot.viewportX < bounds.gutterRight;
-	if (justPressed && inGutter) {
-		const targetRow = resolvePointerRow(snapshot.viewportY);
-		if (toggleBreakpointForEditorRow(targetRow)) {
-			ide_state.pointerSelecting = false;
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			resetPointerClickTracking();
-			return;
-		}
-	}
-	if (justPressed && insideCodeArea) {
-		clearReferenceHighlights();
-		ide_state.resourcePanelFocused = false;
-		focusEditorFromLineJump();
-		focusEditorFromSearch();
-		focusEditorFromResourceSearch();
-		focusEditorFromSymbolSearch();
-		ide_state.completion.closeSession();
-		const targetRow = resolvePointerRow(snapshot.viewportY);
-		const targetColumn = resolvePointerColumn(targetRow, snapshot.viewportX);
-		if (gotoModifierActive && tryGotoDefinitionAt(targetRow, targetColumn)) {
-			ide_state.pointerSelecting = false;
-			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			resetPointerClickTracking();
-			return;
-		}
-		const doubleClick = registerPointerClick(targetRow, targetColumn);
-		if (doubleClick) {
-			TextEditing.selectWordAtPosition(targetRow, targetColumn);
-			ide_state.pointerSelecting = false;
-		} else {
-			ide_state.selectionAnchor = { row: targetRow, column: targetColumn };
-			setCursorPosition(targetRow, targetColumn);
-			ide_state.pointerSelecting = true;
-		}
-	}
-	if (ide_state.pointerSelecting && snapshot.primaryPressed) {
-		clearGotoHoverHighlight();
-		handlePointerAutoScroll(snapshot.viewportX, snapshot.viewportY);
-		const targetRow = resolvePointerRow(snapshot.viewportY);
-		const targetColumn = resolvePointerColumn(targetRow, snapshot.viewportX);
-		if (!ide_state.selectionAnchor) {
-			ide_state.selectionAnchor = { row: targetRow, column: targetColumn };
-		}
-		setCursorPosition(targetRow, targetColumn);
-	}
-	if (isCodeTabActive() && !snapshot.primaryPressed && !ide_state.pointerSelecting && insideCodeArea && gotoModifierActive) {
-		const hoverRow = resolvePointerRow(snapshot.viewportY);
-		const hoverColumn = resolvePointerColumn(hoverRow, snapshot.viewportX);
-		refreshGotoHoverHighlight(hoverRow, hoverColumn, activeContext);
-	} else if (!gotoModifierActive || !insideCodeArea || snapshot.primaryPressed || ide_state.pointerSelecting || !isCodeTabActive()) {
-		clearGotoHoverHighlight();
-	}
-	if (isCodeTabActive()) {
-		const altDown = isModifierPressedGlobal('AltLeft') || isModifierPressedGlobal('AltRight');
-		if (!snapshot.primaryPressed && !ide_state.pointerSelecting && insideCodeArea && altDown) {
-			updateHoverTooltip(snapshot);
-		} else {
-			clearHoverTooltip();
-		}
-	} else {
-		clearHoverTooltip();
-	}
-	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-}
-
-export function updateTabHoverState(snapshot: PointerSnapshot | null): void {
-	if (!snapshot || !snapshot.valid || !snapshot.insideViewport) {
-		ide_state.tabHoverId = null;
-		return;
-	}
-	const tabTop = ide_state.headerHeight;
-	const tabBottom = tabTop + getTabBarTotalHeight();
-	const y = snapshot.viewportY;
-	if (y < tabTop || y >= tabBottom) {
-		ide_state.tabHoverId = null;
-		return;
-	}
-	const x = snapshot.viewportX;
-	let hovered: string | null = null;
-	for (const [tabId, bounds] of ide_state.tabButtonBounds) {
-		if (pointInRect(x, y, bounds)) {
-			hovered = tabId;
-			break;
-		}
-	}
-	ide_state.tabHoverId = hovered;
-}
-
-export function updateHoverTooltip(snapshot: PointerSnapshot): void {
-	const context = getActiveCodeTabContext();
-	const asset_id = resolveHoverasset_id(context);
-	const row = resolvePointerRow(snapshot.viewportY);
-	const column = resolvePointerColumn(row, snapshot.viewportX);
-	const token = extractHoverExpression(row, column);
-	if (!token) {
-		clearHoverTooltip();
-		return;
-	}
-	const chunkName = resolveHoverChunkName(context);
-	const request: ConsoleLuaHoverRequest = {
-		asset_id,
-		expression: token.expression,
-		chunkName,
-		row: row + 1,
-		column: token.startColumn + 1,
-	};
-	const inspection = safeInspectLuaExpression(request);
-	const previousInspection = ide_state.lastInspectorResult;
-	ide_state.lastInspectorResult = inspection;
-	if (!inspection) {
-		clearHoverTooltip();
-		return;
-	}
-	if (inspection.isFunction && (inspection.isLocalFunction || inspection.isBuiltin)) {
-		clearHoverTooltip();
-		return;
-	}
-	const contentLines = buildHoverContentLines(inspection);
-	const existing = ide_state.hoverTooltip;
-	if (existing && existing.expression === inspection.expression && existing.asset_id === asset_id) {
-		existing.contentLines = contentLines;
-		existing.valueType = inspection.valueType;
-		existing.scope = inspection.scope;
-		existing.state = inspection.state;
-		existing.asset_id = asset_id;
-		existing.row = row;
-		existing.startColumn = token.startColumn;
-		existing.endColumn = token.endColumn;
-		existing.bubbleBounds = null;
-		if (!previousInspection || previousInspection.expression !== inspection.expression) {
-			existing.scrollOffset = 0;
-			existing.visibleLineCount = 0;
-		}
-		const maxOffset = Math.max(0, contentLines.length - Math.max(1, existing.visibleLineCount));
-		if (existing.scrollOffset > maxOffset) {
-			existing.scrollOffset = maxOffset;
-		}
-		return;
-	}
-	ide_state.hoverTooltip = {
-		expression: inspection.expression,
-		contentLines,
-		valueType: inspection.valueType,
-		scope: inspection.scope,
-		state: inspection.state,
-		asset_id,
-		row,
-		startColumn: token.startColumn,
-		endColumn: token.endColumn,
-		scrollOffset: 0,
-		visibleLineCount: 0,
-		bubbleBounds: null,
-	};
-}
-
-export function buildHoverContentLines(result: ConsoleLuaHoverResult): string[] {
-	return buildHoverContentLinesExternal(result);
-}
-
-export function clearHoverTooltip(): void {
-	ide_state.hoverTooltip = null;
-	ide_state.lastInspectorResult = null;
-}
-
-// Scrollbar drag is handled via ide_state.scrollbarController
-
-export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void {
-	if (Number.isNaN(scroll)) {
-		return;
-	}
-	switch (kind) {
-		case 'codeVertical': {
-			ensureVisualLines();
-			const rowCount = Math.max(1, ide_state.cachedVisibleRowCount);
-			const maxScroll = Math.max(0, getVisualLineCount() - rowCount);
-			ide_state.scrollRow = clamp(Math.round(scroll), 0, maxScroll);
-			ide_state.cursorRevealSuspended = true;
-			break;
-		}
-		case 'codeHorizontal': {
-			if (ide_state.wordWrapEnabled) {
-				ide_state.scrollColumn = 0;
-				break;
-			}
-			const maxScroll = computeMaximumScrollColumn();
-			ide_state.scrollColumn = clamp(Math.round(scroll), 0, maxScroll);
-			ide_state.cursorRevealSuspended = true;
-			break;
-		}
-		case 'resourceVertical': {
-			ide_state.resourcePanel.setScroll(scroll);
-			ide_state.resourcePanel.setFocused(true);
-			const s = ide_state.resourcePanel.getStateForRender();
-			ide_state.resourcePanelFocused = s.focused;
-			break;
-		}
-		case 'resourceHorizontal': {
-			ide_state.resourcePanel.setHScroll(scroll);
-			ide_state.resourcePanel.setFocused(true);
-			const s = ide_state.resourcePanel.getStateForRender();
-			ide_state.resourcePanelFocused = s.focused;
-			break;
-		}
-		case 'viewerVertical': {
-			const viewer = getActiveResourceViewer();
-			if (!viewer) {
-				break;
-			}
-			const capacity = resourceViewerTextCapacity(viewer);
-			const maxScroll = Math.max(0, viewer.lines.length - capacity);
-			viewer.scroll = clamp(Math.round(scroll), 0, maxScroll);
-			break;
-		}
-	}
-}
 
 export function adjustHoverTooltipScroll(stepCount: number): boolean {
 	if (!ide_state.hoverTooltip) {
@@ -4435,28 +3613,6 @@ export function pointerHitsHoverTarget(snapshot: PointerSnapshot, tooltip: CodeH
 	}
 	const column = resolvePointerColumn(row, snapshot.viewportX);
 	return column >= tooltip.startColumn && column <= tooltip.endColumn;
-}
-
-export function resolveHoverasset_id(context: CodeTabContext | null): string | null {
-	if (context && context.descriptor) {
-		return context.descriptor.asset_id;
-	}
-	return ide_state.primaryasset_id;
-}
-
-export function resolveHoverChunkName(context: CodeTabContext | null): string | null {
-	if (context && context.descriptor) {
-		if (context.descriptor.path && context.descriptor.path.length > 0) {
-			return context.descriptor.path;
-		}
-		if (context.descriptor.asset_id && context.descriptor.asset_id.length > 0) {
-			return context.descriptor.asset_id;
-		}
-	}
-	if (ide_state.primaryasset_id) {
-		return ide_state.primaryasset_id;
-	}
-	return null;
 }
 
 export function buildProjectReferenceContext(context: CodeTabContext | null): {
@@ -4714,7 +3870,7 @@ export function refreshGotoHoverHighlight(row: number, column: number, context: 
 		&& existing.expression === token.expression) {
 		return;
 	}
-	const asset_id = resolveHoverasset_id(context);
+	const asset_id = resolveHoverAssetId(context);
 	const chunkName = resolveHoverChunkName(context);
 	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, asset_id, chunkName);
 	if (!definition) {
@@ -4751,7 +3907,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 	const context = getActiveCodeTabContext();
 	const descriptor = context ? context.descriptor : null;
 	const normalizedPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
-	const asset_id = resolveHoverasset_id(context);
+	const asset_id = resolveHoverAssetId(context);
 	const token = extractHoverExpression(row, column);
 	if (!token) {
 		ide_state.showMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
@@ -4914,7 +4070,7 @@ export function createNavigationEntry(): NavigationHistoryEntry | null {
 	if (!context) {
 		return null;
 	}
-	const asset_id = resolveHoverasset_id(context);
+	const asset_id = resolveHoverAssetId(context);
 	const chunkName = resolveHoverChunkName(context);
 	const path = context.descriptor?.path ?? null;
 	const maxRowIndex = ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0;
@@ -5009,256 +4165,6 @@ export function goForwardInNavigationHistory(): void {
 		applyNavigationEntry(target);
 	});
 	ide_state.navigationHistory.current = createNavigationEntry();
-}
-
-export function handleActionPromptPointer(snapshot: PointerSnapshot): void {
-	if (!ide_state.pendingActionPrompt) {
-		return;
-	}
-	const x = snapshot.viewportX;
-	const y = snapshot.viewportY;
-	const saveBounds = ide_state.actionPromptButtons.saveAndContinue;
-	if (saveBounds && pointInRect(x, y, saveBounds)) {
-		void handleActionPromptSelection('save-continue');
-		return;
-	}
-	if (pointInRect(x, y, ide_state.actionPromptButtons.continue)) {
-		void handleActionPromptSelection('continue');
-		return;
-	}
-	if (pointInRect(x, y, ide_state.actionPromptButtons.cancel)) {
-		void handleActionPromptSelection('cancel');
-	}
-}
-
-export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
-	const y = snapshot.viewportY;
-	if (y < 0 || y >= ide_state.headerHeight) {
-		return false;
-	}
-	const x = snapshot.viewportX;
-	const debuggerButtonsEnabled = ide_state.debuggerControls.executionState === 'paused';
-	if (pointInRect(x, y, ide_state.topBarButtonBounds.resume)) {
-		handleTopBarButtonPress('resume');
-		return true;
-	}
-	if (pointInRect(x, y, ide_state.topBarButtonBounds.reboot)) {
-		handleTopBarButtonPress('reboot');
-		return true;
-	}
-	if (ide_state.dirty && pointInRect(x, y, ide_state.topBarButtonBounds.save)) {
-		handleTopBarButtonPress('save');
-		return true;
-	}
-	if (pointInRect(x, y, ide_state.topBarButtonBounds.resources)) {
-		handleTopBarButtonPress('resources');
-		return true;
-	}
-	if (pointInRect(x, y, ide_state.topBarButtonBounds.problems)) {
-		handleTopBarButtonPress('problems');
-		return true;
-	}
-	if (ide_state.resourcePanelVisible && pointInRect(x, y, ide_state.topBarButtonBounds.filter)) {
-		handleTopBarButtonPress('filter');
-		return true;
-	}
-	if (debuggerButtonsEnabled && pointInRect(x, y, ide_state.topBarButtonBounds.debugContinue)) {
-		handleTopBarButtonPress('debugContinue');
-		return true;
-	}
-	if (debuggerButtonsEnabled && pointInRect(x, y, ide_state.topBarButtonBounds.debugStepOver)) {
-		handleTopBarButtonPress('debugStepOver');
-		return true;
-	}
-	if (debuggerButtonsEnabled && pointInRect(x, y, ide_state.topBarButtonBounds.debugStepInto)) {
-		handleTopBarButtonPress('debugStepInto');
-		return true;
-	}
-	if (debuggerButtonsEnabled && pointInRect(x, y, ide_state.topBarButtonBounds.debugStepOut)) {
-		handleTopBarButtonPress('debugStepOut');
-		return true;
-	}
-	if (pointInRect(x, y, ide_state.topBarButtonBounds.debugObjects)) {
-		handleTopBarButtonPress('debugObjects');
-		return true;
-	}
-	if (pointInRect(x, y, ide_state.topBarButtonBounds.debugEvents)) {
-		handleTopBarButtonPress('debugEvents');
-		return true;
-	}
-	if (pointInRect(x, y, ide_state.topBarButtonBounds.debugRegistry)) {
-		handleTopBarButtonPress('debugRegistry');
-		return true;
-	}
-	if (pointInRect(x, y, ide_state.topBarButtonBounds.wrap)) {
-		handleTopBarButtonPress('wrap');
-		return true;
-	}
-	if (pointInRect(x, y, ide_state.topBarButtonBounds.resolution)) {
-		handleTopBarButtonPress('resolution');
-		return true;
-	}
-	return false;
-}
-
-export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {
-	const tabTop = ide_state.headerHeight;
-	const tabBottom = tabTop + getTabBarTotalHeight();
-	const y = snapshot.viewportY;
-	if (y < tabTop || y >= tabBottom) {
-		return false;
-	}
-	const x = snapshot.viewportX;
-	for (let index = 0; index < ide_state.tabs.length; index += 1) {
-		const tab = ide_state.tabs[index];
-		const closeBounds = ide_state.tabCloseButtonBounds.get(tab.id);
-		if (closeBounds && pointInRect(x, y, closeBounds)) {
-			endTabDrag();
-			closeTab(tab.id);
-			ide_state.tabHoverId = null;
-			return true;
-		}
-		const tabBounds = ide_state.tabButtonBounds.get(tab.id);
-		if (tabBounds && pointInRect(x, y, tabBounds)) {
-			beginTabDrag(tab.id, x);
-			setActiveTab(tab.id);
-			return true;
-		}
-	}
-	return false;
-}
-
-export function handleTabBarMiddleClick(snapshot: PointerSnapshot): boolean {
-	const tabTop = ide_state.headerHeight;
-	const tabBottom = tabTop + getTabBarTotalHeight();
-	const y = snapshot.viewportY;
-	if (y < tabTop || y >= tabBottom) {
-		return false;
-	}
-	const x = snapshot.viewportX;
-	for (let index = 0; index < ide_state.tabs.length; index += 1) {
-		const tab = ide_state.tabs[index];
-		if (!tab.closable) {
-			continue;
-		}
-		const bounds = ide_state.tabButtonBounds.get(tab.id);
-		if (!bounds) {
-			continue;
-		}
-		if (pointInRect(x, y, bounds)) {
-			closeTab(tab.id);
-			return true;
-		}
-	}
-	return false;
-}
-
-export function handlePointerWheel(): void {
-	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
-	if (!playerInput) {
-		return;
-	}
-	const wheelAction = playerInput.getActionState('pointer_wheel');
-	if (wheelAction.consumed === true) {
-		return;
-	}
-	const delta = typeof wheelAction.value === 'number' ? wheelAction.value : 0;
-	if (!Number.isFinite(delta) || delta === 0) {
-		return;
-	}
-	const magnitude = Math.abs(delta);
-	const steps = Math.max(1, Math.round(magnitude / constants.WHEEL_SCROLL_STEP));
-	const direction = delta > 0 ? 1 : -1;
-	const pointer = ide_state.lastPointerSnapshot;
-	const shiftDown = isModifierPressedGlobal('ShiftLeft') || isModifierPressedGlobal('ShiftRight');
-	if (ide_state.hoverTooltip) {
-		let canScrollTooltip = false;
-		if (!pointer) {
-			canScrollTooltip = true;
-		} else if (pointer.valid && pointer.insideViewport) {
-			if (isPointInHoverTooltip(pointer.viewportX, pointer.viewportY) || pointerHitsHoverTarget(pointer, ide_state.hoverTooltip)) {
-				canScrollTooltip = true;
-			}
-		}
-		if (canScrollTooltip && adjustHoverTooltipScroll(direction * steps)) {
-			playerInput.consumeAction('pointer_wheel');
-			return;
-		}
-	}
-	if (ide_state.resourceSearchVisible) {
-		const bounds = getResourceSearchBarBounds();
-		const pointerInQuickOpen = bounds !== null
-			&& pointer
-			&& pointer.valid
-			&& pointer.insideViewport
-			&& pointInRect(pointer.viewportX, pointer.viewportY, bounds);
-		if (pointerInQuickOpen || ide_state.resourceSearchActive) {
-			moveResourceSearchSelection(direction * steps);
-			playerInput.consumeAction('pointer_wheel');
-			return;
-		}
-	}
-	const panelBounds = ide_state.resourcePanel.getBounds();
-	const pointerInPanel = ide_state.resourcePanelVisible
-		&& panelBounds !== null
-		&& pointer
-		&& pointer.valid
-		&& pointer.insideViewport
-		&& pointInRect(pointer.viewportX, pointer.viewportY, panelBounds);
-	if (pointerInPanel) {
-		if (shiftDown) {
-			const horizontalPixels = direction * steps * ide_state.charAdvance * 4;
-			scrollResourceBrowserHorizontal(horizontalPixels);
-			resourceBrowserEnsureSelectionVisible();
-		} else {
-			scrollResourceBrowser(direction * steps);
-		}
-		playerInput.consumeAction('pointer_wheel');
-		return;
-	}
-	if (ide_state.problemsPanel.isVisible()) {
-		const bounds = getProblemsPanelBounds();
-		if (bounds) {
-			let allowScroll = false;
-			if (!pointer) {
-				allowScroll = ide_state.problemsPanel.isFocused();
-			} else if (pointer.valid && pointer.insideViewport && pointInRect(pointer.viewportX, pointer.viewportY, bounds)) {
-				allowScroll = true;
-			}
-			const stepsAbs = Math.max(1, Math.round(Math.abs(steps)));
-			if (ide_state.problemsPanel.isFocused()) {
-				// Match quick-open/symbol behavior: focused wheel moves selection
-				for (let i = 0; i < stepsAbs; i += 1) {
-					void ide_state.problemsPanel.handleKeyboardCommand(direction > 0 ? 'down' : 'up');
-				}
-				playerInput.consumeAction('pointer_wheel');
-				return;
-			}
-			if (allowScroll && ide_state.problemsPanel.handlePointerWheel(direction, stepsAbs)) {
-				playerInput.consumeAction('pointer_wheel');
-				return;
-			}
-		}
-	}
-	if (ide_state.completion.handlePointerWheel(direction, steps, pointer && pointer.valid && pointer.insideViewport ? { x: pointer.viewportX, y: pointer.viewportY } : null)) {
-		playerInput.consumeAction('pointer_wheel');
-		return;
-	}
-	if (isResourceViewActive()) {
-		scrollResourceViewer(direction * steps);
-		playerInput.consumeAction('pointer_wheel');
-		return;
-	}
-	if (isCodeTabActive() && pointer) {
-		const bounds = getCodeAreaBounds();
-		if (!pointer.valid || !pointer.insideViewport || pointer.viewportY < bounds.codeTop || pointer.viewportY >= bounds.codeBottom || pointer.viewportX < bounds.codeLeft || pointer.viewportX >= bounds.codeRight) {
-			playerInput.consumeAction('pointer_wheel');
-			return;
-		}
-	}
-	scrollRows(direction * steps);
-	ide_state.cursorRevealSuspended = true;
-	playerInput.consumeAction('pointer_wheel');
 }
 
 export function openActionPrompt(action: PendingActionPrompt['action']): void {
@@ -5758,21 +4664,6 @@ export function handlePointerAutoScroll(viewportX: number, viewportY: number): v
 	}
 }
 
-export function registerPointerClick(row: number, column: number): boolean {
-	const now = $.platform.clock.now();
-	const interval = now - ide_state.lastPointerClickTimeMs;
-	const sameRow = row === ide_state.lastPointerClickRow;
-	const columnDelta = Math.abs(column - ide_state.lastPointerClickColumn);
-	const doubleClick = ide_state.lastPointerClickTimeMs > 0
-		&& interval <= constants.DOUBLE_CLICK_MAX_INTERVAL_MS
-		&& sameRow
-		&& columnDelta <= 2;
-	ide_state.lastPointerClickTimeMs = now;
-	ide_state.lastPointerClickRow = row;
-	ide_state.lastPointerClickColumn = column;
-	return doubleClick;
-}
-
 export function resetPointerClickTracking(): void {
 	ide_state.lastPointerClickTimeMs = 0;
 	ide_state.lastPointerClickRow = -1;
@@ -5788,36 +4679,6 @@ export function scrollRows(deltaRows: number): void {
 	const targetRow = clamp(ide_state.scrollRow + deltaRows, 0, maxScrollRow);
 	ide_state.scrollRow = targetRow;
 }
-
-// Cursor movement handled in ConsoleCartEditorTextOps base class.
-
-// Word navigation implemented in base class.
-
-// === InputController host wrappers ===
-// Snapshot helpers used by controllers to bracket mutations
-export function recordSnapshotPre(key: string): void {
-	// Use non-coalesced snapshot to ensure distinct undo step
-	prepareUndo(key, false);
-}
-
-export function recordSnapshotPost(_key: string): void {
-	// Break coalescing to avoid merging unrelated edits
-	breakUndoSequence();
-}
-
-export function deleteCharLeft(): void {
-	TextEditing.backspace();
-}
-
-export function deleteCharRight(): void {
-	TextEditing.deleteForward();
-}
-
-export function insertNewline(): void {
-	TextEditing.insertLineBreak();
-}
-
-// cursor/grid manipulation now resides in ConsoleCartEditorTextOps base class.
 
 export function applySearchFieldText(value: string, moveCursorToEnd: boolean): void {
 	ide_state.searchQuery = value;
@@ -6352,18 +5213,14 @@ export function codeViewportTop(): number {
 }
 
 export function getCreateResourceBarHeight(): number {
-	if (!isCreateResourceVisible()) {
+	if (!ide_state.createResourceVisible) {
 		return 0;
 	}
 	return ide_state.lineHeight + constants.CREATE_RESOURCE_BAR_MARGIN_Y * 2;
 }
 
-export function isCreateResourceVisible(): boolean {
-	return ide_state.createResourceVisible;
-}
-
 export function getSearchBarHeight(): number {
-	if (!isSearchVisible()) {
+	if (!ide_state.searchVisible) {
 		return 0;
 	}
 	const baseHeight = ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
@@ -6372,10 +5229,6 @@ export function getSearchBarHeight(): number {
 		return baseHeight;
 	}
 	return baseHeight + constants.SEARCH_RESULT_SPACING + visible * searchResultEntryHeight();
-}
-
-export function isSearchVisible(): boolean {
-	return ide_state.searchVisible;
 }
 
 export function getResourceSearchBarHeight(): number {
@@ -6532,7 +5385,7 @@ export function drawCodeArea(api: BmsxConsoleApi): void {
 	const activeContext = getActiveCodeTabContext();
 	const activeChunkName = resolveHoverChunkName(activeContext);
 	const activeChunkBreakpoints = getBreakpointsForChunk(activeChunkName);
-	const host: import('./render_code_area').CodeAreaHost = {
+	const host: import('./render/render_code_area').CodeAreaHost = {
 		// Geometry and metrics
 		lineHeight: ide_state.lineHeight,
 		spaceAdvance: ide_state.spaceAdvance,
@@ -6872,7 +5725,6 @@ export function hideProblemsPanel(): void {
 }
 
 export function toggleResourcePanelFilterMode(): void {
-	// Controller owns filter state and messaging
 	ide_state.resourcePanel.toggleFilterMode();
 }
 
@@ -7003,10 +5855,6 @@ export function closeActiveTab(): void {
 	closeTab(ide_state.activeTabId);
 }
 
-
-
-
-
 export function resetEditorContent(): void {
 	ide_state.lines = [''];
 	invalidateVisualLines();
@@ -7057,10 +5905,6 @@ export function enterResourceViewer(tab: EditorTabDescriptor): void {
 	resourceViewerClampScroll(tab.resource);
 }
 
-// buildResourceBrowserItems removed; ResourcePanelController owns item tree construction
-
-// updateResourceBrowserMetrics removed; controller computes metrics
-
 export function selectResourceInPanel(descriptor: ConsoleResourceDescriptor): void {
 	if (!descriptor.asset_id || descriptor.asset_id.length === 0) {
 		return;
@@ -7098,14 +5942,6 @@ export function findResourcePanelIndexByasset_id(asset_id: string): number {
 	}
 	return -1;
 }
-
-// getSelectedResourceDescriptor removed; controller + local state provide selection
-
-// computeResourceBrowserMaxHorizontalScroll removed; use controller.computeMaxHScroll()
-
-// clampResourceBrowserHorizontalScroll removed; use controller.clampHScroll()
-
-
 
 export function getMainProgramSourceForReload(): string {
 	const entryId = ide_state.entryTabId;
@@ -7471,36 +6307,6 @@ export function openEventInspectorTab(): void {
 	openDebugPanelTab('events');
 }
 
-export function safeJsonStringify(value: unknown, space = 2): string {
-	return JSON.stringify(value, (_key, val) => {
-		if (typeof val === 'bigint') {
-			return Number(val);
-		}
-		return val;
-	}, space);
-}
-
-export function describeMetadataValue(value: unknown): string {
-	if (value === null || value === undefined) {
-		return '<none>';
-	}
-	if (typeof value === 'string') {
-		return value;
-	}
-	if (typeof value === 'number' || typeof value === 'boolean') {
-		return String(value);
-	}
-	if (Array.isArray(value)) {
-		const preview = value.slice(0, 4).map(entry => describeMetadataValue(entry)).join(', ');
-		return `[${preview}${value.length > 4 ? ', …' : ''}]`;
-	}
-	if (typeof value === 'object') {
-		const keys = Object.keys(value as Record<string, unknown>);
-		return `{${keys.join(', ')}}`;
-	}
-	return String(value);
-}
-
 export function computePanelRatioBounds(): { min: number; max: number } {
 	const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
 	const minEditorRatio = constants.RESOURCE_PANEL_MIN_EDITOR_RATIO;
@@ -7547,24 +6353,6 @@ export function getResourcePanelWidth(): number {
 	const bounds = ide_state.resourcePanel.getBounds();
 	return bounds ? Math.max(0, bounds.right - bounds.left) : 0;
 }
-
-// getResourcePanelBounds removed; use ide_state.resourcePanel.getBounds()
-
-export function isPointerOverResourcePanelDivider(x: number, y: number): boolean {
-	if (!ide_state.resourcePanelVisible) {
-		return false;
-	}
-	const bounds = ide_state.resourcePanel.getBounds();
-	if (!bounds) {
-		return false;
-	}
-	const margin = constants.RESOURCE_PANEL_DIVIDER_DRAG_MARGIN;
-	const left = bounds.right - margin;
-	const right = bounds.right + margin;
-	return y >= bounds.top && y <= bounds.bottom && x >= left && x <= right;
-}
-
-// resourcePanelLineCapacity removed; use ide_state.resourcePanel.lineCapacity()
 
 export function scrollResourceBrowser(amount: number): void {
 	if (!ide_state.resourcePanelVisible) return;
@@ -7676,249 +6464,11 @@ export function hideResourceViewerSprite(api: BmsxConsoleApi): void {
 	}
 }
 
-export function resourceViewerClampScroll(viewer: ResourceViewerState): void {
-	const capacity = resourceViewerTextCapacity(viewer);
-	if (capacity <= 0) {
-		viewer.scroll = 0;
-		return;
-	}
-	const maxScroll = Math.max(0, viewer.lines.length - capacity);
-	if (!Number.isFinite(viewer.scroll) || viewer.scroll < 0) {
-		viewer.scroll = 0;
-		return;
-	}
-	if (viewer.scroll > maxScroll) {
-		viewer.scroll = maxScroll;
-	}
-}
-
 // Bridge wrappers to the ResourcePanelController (temporary during migration)
 export function resourceBrowserEnsureSelectionVisible(): void {
 	if (!ide_state.resourcePanelVisible) return;
 	ide_state.resourcePanel.ensureSelectionVisiblePublic();
 	// controller owns scroll; no local mirror required
-}
-
-export function scrollResourceBrowserHorizontal(delta: number): void {
-	if (!ide_state.resourcePanelVisible) return;
-	const s = ide_state.resourcePanel.getStateForRender();
-	ide_state.resourcePanel.setHScroll(s.hscroll + delta);
-}
-
-// moved to ResourcePanelController
-
-export function scrollResourceViewer(amount: number): void {
-	const viewer = getActiveResourceViewer();
-	if (!viewer) {
-		return;
-	}
-	const capacity = resourceViewerTextCapacity(viewer);
-	if (capacity <= 0) {
-		viewer.scroll = 0;
-		return;
-	}
-	const maxScroll = Math.max(0, viewer.lines.length - capacity);
-	viewer.scroll = clamp(viewer.scroll + amount, 0, maxScroll);
-	resourceViewerClampScroll(viewer);
-}
-
-// moved to ResourcePanelController
-
-
-export function handleResourceViewerInput(deltaSeconds: number): void {
-	// Resource viewer specific keys
-	const viewer = getActiveResourceViewer();
-	if (!viewer) return;
-	if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
-		consumeIdeKey('ArrowUp');
-		scrollResourceViewer(-1);
-		return;
-	}
-	if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
-		consumeIdeKey('ArrowDown');
-		scrollResourceViewer(1);
-		return;
-	}
-	if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
-		consumeIdeKey('PageUp');
-		const capacity = resourceViewerTextCapacity(viewer);
-		scrollResourceViewer(-Math.max(1, capacity));
-		return;
-	}
-	if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
-		consumeIdeKey('PageDown');
-		const capacity = resourceViewerTextCapacity(viewer);
-		scrollResourceViewer(Math.max(1, capacity));
-		return;
-	}
-}
-
-export function drawResourcePanel(api: BmsxConsoleApi): void {
-	// Delegate full drawing to controller and then mirror back minimal state used elsewhere
-	ide_state.resourcePanel.draw(api);
-	const s = ide_state.resourcePanel.getStateForRender();
-	ide_state.resourcePanelVisible = s.visible;
-	ide_state.resourceBrowserItems = s.items;
-	ide_state.resourcePanelFocused = s.focused;
-	ide_state.resourceBrowserSelectionIndex = s.selectionIndex;
-	ide_state.resourcePanelResourceCount = s.items.length;
-	// max line width handled by controller
-}
-
-export function drawResourceViewer(api: BmsxConsoleApi): void {
-	const viewer = getActiveResourceViewer();
-	if (!viewer) {
-		return;
-	}
-	resourceViewerClampScroll(viewer);
-	const bounds = getCodeAreaBounds();
-	const contentLeft = bounds.codeLeft + constants.RESOURCE_PANEL_PADDING_X;
-	const capacity = resourceViewerTextCapacity(viewer);
-	const totalLines = viewer.lines.length;
-	const verticalScrollbar = ide_state.scrollbars.viewerVertical;
-	const verticalTrack: RectBounds = {
-		left: bounds.codeRight - constants.SCROLLBAR_WIDTH,
-		top: bounds.codeTop,
-		right: bounds.codeRight,
-		bottom: bounds.codeBottom,
-	};
-	verticalScrollbar.layout(verticalTrack, totalLines, Math.max(1, capacity), viewer.scroll);
-	const verticalVisible = verticalScrollbar.isVisible();
-	viewer.scroll = clamp(verticalScrollbar.getScroll(), 0, Math.max(0, totalLines - capacity));
-
-	api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
-
-	const contentTop = bounds.codeTop + 2;
-	const layout = resourceViewerImageLayout(viewer);
-	let textTop = contentTop;
-	if (layout && viewer.image) {
-		ensureResourceViewerSprite(api, viewer.image.asset_id, { left: layout.left, top: layout.top, scale: layout.scale });
-		textTop = Math.floor(layout.bottom + ide_state.lineHeight);
-	} else {
-		hideResourceViewerSprite(api);
-	}
-	if (capacity <= 0) {
-		if (viewer.lines.length > 0) {
-			const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.floor(viewer.scroll)))] ?? '';
-			const fallbackY = Math.min(textTop, bounds.codeBottom - ide_state.lineHeight);
-			drawEditorText(api, ide_state.font, line, contentLeft, fallbackY, constants.COLOR_RESOURCE_VIEWER_TEXT);
-		} else {
-			drawEditorText(api, ide_state.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
-		}
-		if (verticalVisible) {
-			verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
-		}
-		return;
-	}
-	const maxScroll = Math.max(0, totalLines - capacity);
-	viewer.scroll = clamp(viewer.scroll, 0, maxScroll);
-	const end = Math.min(totalLines, Math.floor(viewer.scroll) + capacity);
-	if (viewer.lines.length === 0) {
-		drawEditorText(api, ide_state.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
-	} else {
-		for (let lineIndex = Math.floor(viewer.scroll), drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
-			const line = viewer.lines[lineIndex] ?? '';
-			const y = textTop + drawIndex * ide_state.lineHeight;
-			if (y >= bounds.codeBottom) {
-				break;
-			}
-			drawEditorText(api, ide_state.font, line, contentLeft, y, constants.COLOR_RESOURCE_VIEWER_TEXT);
-		}
-	}
-	if (verticalVisible) {
-		verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
-	}
-}
-
-export function drawReferenceHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
-	const matches = ide_state.referenceState.getMatches();
-	if (matches.length === 0) {
-		return;
-	}
-	const activeIndex = ide_state.referenceState.getActiveIndex();
-	const highlight = entry.hi;
-	for (let i = 0; i < matches.length; i += 1) {
-		const match = matches[i];
-		if (match.row !== rowIndex) {
-			continue;
-		}
-		const startDisplay = columnToDisplay(highlight, match.start);
-		const endDisplay = columnToDisplay(highlight, match.end);
-		const visibleStart = Math.max(sliceStartDisplay, startDisplay);
-		const visibleEnd = Math.min(sliceEndDisplay, endDisplay);
-		if (visibleEnd <= visibleStart) {
-			continue;
-		}
-		const startX = originX + measureRangeFast(entry, sliceStartDisplay, visibleStart);
-		const endX = originX + measureRangeFast(entry, sliceStartDisplay, visibleEnd);
-		const overlay = i === activeIndex ? constants.REFERENCES_MATCH_ACTIVE_OVERLAY : constants.REFERENCES_MATCH_OVERLAY;
-		api.rectfill_color(startX, originY, endX, originY + ide_state.lineHeight, overlay);
-	}
-}
-
-export function drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
-	if (ide_state.searchScope !== 'local' || ide_state.searchMatches.length === 0 || ide_state.searchQuery.length === 0) {
-		return;
-	}
-	const highlight = entry.hi;
-	for (let i = 0; i < ide_state.searchMatches.length; i++) {
-		const match = ide_state.searchMatches[i];
-		if (match.row !== rowIndex) {
-			continue;
-		}
-		const startDisplay = columnToDisplay(highlight, match.start);
-		const endDisplay = columnToDisplay(highlight, match.end);
-		const visibleStart = Math.max(sliceStartDisplay, startDisplay);
-		const visibleEnd = Math.min(sliceEndDisplay, endDisplay);
-		if (visibleEnd <= visibleStart) {
-			continue;
-		}
-		const startX = originX + measureRangeFast(entry, sliceStartDisplay, visibleStart);
-		const endX = originX + measureRangeFast(entry, sliceStartDisplay, visibleEnd);
-		const overlay = i === ide_state.searchCurrentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
-		api.rectfill_color(startX, originY, endX, originY + ide_state.lineHeight, overlay);
-	}
-}
-
-export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo {
-	const highlight = entry.hi;
-	const columnToDisplay = highlight.columnToDisplay;
-	const clampedColumn = columnToDisplay.length > 0
-		? clamp(ide_state.cursorColumn, 0, columnToDisplay.length - 1)
-		: 0;
-	const cursorDisplayIndex = columnToDisplay.length > 0 ? columnToDisplay[clampedColumn] : 0;
-	const limitedDisplayIndex = Math.max(sliceStartDisplay, cursorDisplayIndex);
-	const cursorX = textLeft + measureRangeFast(entry, sliceStartDisplay, limitedDisplayIndex);
-	let cursorWidth = ide_state.charAdvance;
-	let baseChar = ' ';
-	let baseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
-	if (cursorDisplayIndex < highlight.chars.length) {
-		baseChar = highlight.chars[cursorDisplayIndex];
-		baseColor = highlight.colors[cursorDisplayIndex];
-		const widthIndex = cursorDisplayIndex + 1;
-		if (widthIndex < entry.advancePrefix.length) {
-			const widthValue = entry.advancePrefix[widthIndex] - entry.advancePrefix[cursorDisplayIndex];
-			if (widthValue > 0) {
-				cursorWidth = widthValue;
-			} else {
-				cursorWidth = ide_state.font.advance(baseChar);
-			}
-		}
-	}
-	const currentChar = currentLine().charAt(ide_state.cursorColumn);
-	if (currentChar === '\t') {
-		cursorWidth = ide_state.spaceAdvance * constants.TAB_SPACES;
-	}
-	return {
-		row: ide_state.cursorRow,
-		column: ide_state.cursorColumn,
-		x: cursorX,
-		y: rowTop,
-		width: cursorWidth,
-		height: ide_state.lineHeight,
-		baseChar,
-		baseColor,
-	};
 }
 
 export function sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
@@ -8102,28 +6652,6 @@ export function normalizeCaseOutsideStrings(text: string): string {
 	return result;
 }
 
-export function computeEditContextFromSources(previous: string, next: string): EditContext | null {
-	if (previous === next) {
-		return null;
-	}
-	let start = 0;
-	while (start < previous.length && start < next.length && previous.charAt(start) === next.charAt(start)) {
-		start += 1;
-	}
-	let endPrev = previous.length;
-	let endNext = next.length;
-	while (endPrev > start && endNext > start && previous.charAt(endPrev - 1) === next.charAt(endNext - 1)) {
-		endPrev -= 1;
-		endNext -= 1;
-	}
-	if (next.length >= previous.length) {
-		const inserted = next.slice(start, endNext);
-		return inserted.length > 0 ? { kind: 'insert', text: inserted } : null;
-	}
-	const deleted = previous.slice(start, endPrev);
-	return deleted.length > 0 ? { kind: 'delete', text: deleted } : null;
-}
-
 export function applyCaseNormalizationIfNeeded(editContext: EditContext | null): EditContext | null {
 	if (!ide_state.caseInsensitive) {
 		ide_state.preMutationSource = null;
@@ -8144,275 +6672,6 @@ export function applyCaseNormalizationIfNeeded(editContext: EditContext | null):
 	requestSemanticRefresh();
 	const derived = computeEditContextFromSources(previousSource ?? currentSource, normalized);
 	return derived ?? editContext;
-}
-
-export function handlePostEditMutation(): void {
-	const editContext = ide_state.pendingEditContext;
-	ide_state.pendingEditContext = null;
-	const finalContext = applyCaseNormalizationIfNeeded(editContext);
-	ide_state.completion.updateAfterEdit(finalContext);
-}
-
-export function handleCompletionKeybindings(deltaSeconds: number): boolean {
-	if (isReadOnlyCodeTab()) {
-		return false;
-	}
-	return ide_state.completion.handleKeybindings(deltaSeconds);
-}
-
-export function onCursorMoved(): void {
-	ide_state.completion.onCursorMoved();
-}
-
-export function invalidateVisualLines(): void {
-	ide_state.layout.markVisualLinesDirty();
-}
-
-export function ensureVisualLines(): void {
-	const activeContext = getActiveCodeTabContext();
-	const chunkName = resolveHoverChunkName(activeContext) ?? '<console>';
-	ide_state.scrollRow = ide_state.layout.ensureVisualLines({
-		lines: ide_state.lines,
-		wordWrapEnabled: ide_state.wordWrapEnabled,
-		scrollRow: ide_state.scrollRow,
-		documentVersion: ide_state.textVersion,
-		chunkName,
-		computeWrapWidth: () => computeWrapWidth(),
-		estimatedVisibleRowCount: Math.max(1, ide_state.cachedVisibleRowCount),
-	});
-	if (ide_state.scrollRow < 0) {
-		ide_state.scrollRow = 0;
-	}
-}
-
-export function computeWrapWidth(): number {
-	const resourceWidth = ide_state.resourcePanelVisible ? getResourcePanelWidth() : 0;
-	const gutterSpace = ide_state.gutterWidth + 2;
-	const verticalScrollbarSpace = 0;
-	const available = ide_state.viewportWidth - resourceWidth - gutterSpace - verticalScrollbarSpace;
-	return Math.max(ide_state.charAdvance, available - 2);
-}
-
-export function getVisualLineCount(): number {
-	ensureVisualLines();
-	return ide_state.layout.getVisualLineCount();
-}
-
-export function visualIndexToSegment(index: number): VisualLineSegment | null {
-	ensureVisualLines();
-	return ide_state.layout.visualIndexToSegment(index);
-}
-
-export function positionToVisualIndex(row: number, column: number): number {
-	ensureVisualLines();
-	const override = caretNavigation.peek(row, column);
-	if (override) {
-		return override.visualIndex;
-	}
-	return ide_state.layout.positionToVisualIndex(ide_state.lines, row, column);
-}
-
-export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?: number, desiredOffsetHint?: number): void {
-	ensureVisualLines();
-	caretNavigation.clear();
-	const visualLines = ide_state.layout.getVisualLines();
-	if (visualLines.length === 0) {
-		ide_state.cursorRow = 0;
-		ide_state.cursorColumn = 0;
-		updateDesiredColumn();
-		return;
-	}
-	const clampedIndex = clamp(visualIndex, 0, visualLines.length - 1);
-	const segment = visualLines[clampedIndex];
-	if (!segment) {
-		return;
-	}
-	const entry = getCachedHighlight(segment.row);
-	const highlight = entry.hi;
-	const line = ide_state.lines[segment.row] ?? '';
-	const hasDesiredHint = desiredColumnHint !== undefined;
-	const hasOffsetHint = desiredOffsetHint !== undefined;
-	let targetColumn = hasDesiredHint ? desiredColumnHint! : ide_state.cursorColumn;
-	if (ide_state.wordWrapEnabled) {
-		const segmentEndColumn = Math.max(segment.endColumn, segment.startColumn);
-		const segmentDisplayStart = columnToDisplay(highlight, segment.startColumn);
-		const segmentDisplayEnd = columnToDisplay(highlight, segmentEndColumn);
-		const segmentWidth = Math.max(0, segmentDisplayEnd - segmentDisplayStart);
-		if (hasOffsetHint) {
-			const clampedOffset = clamp(Math.round(desiredOffsetHint!), 0, segmentWidth);
-			const targetDisplay = clamp(segmentDisplayStart + clampedOffset, segmentDisplayStart, segmentDisplayEnd);
-			let columnFromOffset = entry.displayToColumn[targetDisplay];
-			if (columnFromOffset === undefined) {
-				columnFromOffset = ide_state.lines[segment.row].length;
-			}
-			targetColumn = clamp(columnFromOffset, segment.startColumn, segmentEndColumn);
-		} else {
-			targetColumn = clamp(Math.round(targetColumn), segment.startColumn, segmentEndColumn);
-			if (targetColumn > line.length) {
-				targetColumn = line.length;
-			}
-		}
-	} else {
-		targetColumn = clamp(Math.round(targetColumn), 0, line.length);
-	}
-	ide_state.cursorRow = segment.row;
-	ide_state.cursorColumn = clamp(targetColumn, 0, line.length);
-	const cursorDisplay = columnToDisplay(highlight, ide_state.cursorColumn);
-	if (ide_state.wordWrapEnabled) {
-		const hasNextSegmentSameRow = (clampedIndex + 1 < visualLines.length)
-			&& visualLines[clampedIndex + 1].row === segment.row;
-		const segmentEnd = Math.max(segment.endColumn, segment.startColumn);
-		if (ide_state.cursorColumn < segment.startColumn) {
-			ide_state.cursorColumn = segment.startColumn;
-		}
-		if (segmentEnd >= segment.startColumn && ide_state.cursorColumn > segmentEnd) {
-			ide_state.cursorColumn = Math.min(segmentEnd, line.length);
-		}
-		if (hasNextSegmentSameRow && ide_state.cursorColumn >= segmentEnd) {
-			ide_state.cursorColumn = Math.max(segment.startColumn, segmentEnd - 1);
-		}
-		const segmentDisplayStart = columnToDisplay(highlight, segment.startColumn);
-		ide_state.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
-	} else {
-		ide_state.desiredDisplayOffset = cursorDisplay;
-	}
-	if (hasDesiredHint) {
-		ide_state.desiredColumn = Math.max(0, desiredColumnHint!);
-	} else {
-		ide_state.desiredColumn = ide_state.cursorColumn;
-	}
-	if (ide_state.desiredDisplayOffset < 0) {
-		ide_state.desiredDisplayOffset = 0;
-	}
-}
-
-
-export function drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number } | number): void {
-	if (right <= left || bottom <= top) {
-		return;
-	}
-	const resolved = typeof color === 'number' ? Msx1Colors[color] : color;
-	api.rectfill_color(left, top, right, top + 1, resolved);
-	api.rectfill_color(left, bottom - 1, right, bottom, resolved);
-	api.rectfill_color(left, top, left + 1, bottom, resolved);
-	api.rectfill_color(right - 1, top, right, bottom, resolved);
-}
-
-export function computeSelectionSlice(lineIndex: number, highlight: HighlightLine, sliceStart: number, sliceEnd: number): { startDisplay: number; endDisplay: number } | null {
-	const range = TextEditing.getSelectionRange();
-	if (!range) {
-		return null;
-	}
-	const { start, end } = range;
-	if (lineIndex < start.row || lineIndex > end.row) {
-		return null;
-	}
-	let selectionStartColumn = lineIndex === start.row ? start.column : 0;
-	let selectionEndColumn = lineIndex === end.row ? end.column : ide_state.lines[lineIndex].length;
-	if (lineIndex === end.row && end.column === 0 && end.row > start.row) {
-		selectionEndColumn = 0;
-	}
-	if (selectionStartColumn === selectionEndColumn) {
-		return null;
-	}
-	const startDisplay = columnToDisplay(highlight, selectionStartColumn);
-	const endDisplay = columnToDisplay(highlight, selectionEndColumn);
-	const visibleStart = Math.max(sliceStart, startDisplay);
-	const visibleEnd = Math.min(sliceEnd, endDisplay);
-	if (visibleEnd <= visibleStart) {
-		return null;
-	}
-	return { startDisplay: visibleStart, endDisplay: visibleEnd };
-}
-
-export function drawStatusBar(api: BmsxConsoleApi): void {
-	const host = {
-		viewportWidth: ide_state.viewportWidth,
-		viewportHeight: ide_state.viewportHeight,
-		bottomMargin: statusAreaHeight(),
-		lineHeight: ide_state.lineHeight,
-		measureText: (text: string) => measureText(text),
-		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, ide_state.font, text, x, y, color),
-		truncateTextToWidth: (text: string, maxWidth: number) => truncateTextToWidth(text, maxWidth),
-		message: ide_state.message,
-		getStatusMessageLines: () => getStatusMessageLines(),
-		symbolSearchVisible: ide_state.symbolSearchVisible,
-		getActiveSymbolSearchMatch: () => getActiveSymbolSearchMatch(),
-		resourcePanelVisible: ide_state.resourcePanelVisible,
-		resourcePanelFilterMode: ide_state.resourcePanel.getFilterMode(),
-		resourcePanelResourceCount: ide_state.resourcePanelResourceCount,
-		isResourceViewActive: () => isResourceViewActive(),
-		getActiveResourceViewer: () => getActiveResourceViewer(),
-		metadata: ide_state.metadata,
-		statusLeftInfo: buildStatusLeftInfo(),
-		serverConnected: ide_state.serverWorkspaceConnected,
-		debugPauseActive: ide_state.executionStopRow !== null,
-		problemsPanelFocused: ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused(),
-	};
-	renderStatusBar(api, host);
-}
-
-export function buildStatusLeftInfo(): string {
-	if (ide_state.problemsPanel.isVisible()) {
-		if (ide_state.problemsPanel.isFocused()) {
-			const sel = ide_state.problemsPanel.getSelectedDiagnostic();
-			if (sel) {
-				const file = sel.sourceLabel ?? (sel.chunkName ?? '');
-				const parts: string[] = [];
-				parts.push(`Ln ${sel.row + 1}, Col ${sel.startColumn + 1}`);
-				if (file.length > 0) parts.push(file);
-				return parts.join(' • ');
-			}
-		}
-		// When Problems panel is visible but not focused or no selection, don't render default editor position
-		return '';
-	}
-	return `LINE ${ide_state.cursorRow + 1}/${ide_state.lines.length} COL ${ide_state.cursorColumn + 1}`;
-}
-
-export function drawProblemsPanel(api: BmsxConsoleApi): void {
-	const bounds = getProblemsPanelBounds();
-	if (!bounds) {
-		return;
-	}
-	ide_state.problemsPanel.draw(api, bounds);
-}
-
-export function getProblemsPanelBounds(): RectBounds | null {
-	const panelHeight = getVisibleProblemsPanelHeight();
-	if (panelHeight <= 0) {
-		return null;
-	}
-	const statusHeight = statusAreaHeight();
-	const bottom = ide_state.viewportHeight - statusHeight;
-	const top = bottom - panelHeight;
-	if (bottom <= top) {
-		return null;
-	}
-	return { left: 0, top, right: ide_state.viewportWidth, bottom };
-}
-
-export function isPointerOverProblemsPanelDivider(x: number, y: number): boolean {
-	const bounds = getProblemsPanelBounds();
-	if (!bounds) {
-		return false;
-	}
-	const margin = constants.PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
-	const dividerTop = bounds.top;
-	return y >= dividerTop - margin && y <= dividerTop + margin && x >= bounds.left && x <= bounds.right;
-}
-
-export function setProblemsPanelHeightFromViewportY(viewportY: number): void {
-	const statusHeight = statusAreaHeight();
-	const bottom = ide_state.viewportHeight - statusHeight;
-	const minTop = ide_state.headerHeight + getTabBarTotalHeight() + 1;
-	const headerH = ide_state.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
-	const minContent = Math.max(1, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS) * ide_state.lineHeight;
-	const minHeight = headerH + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2 + minContent;
-	const maxTop = Math.max(minTop, bottom - minHeight);
-	const top = clamp(viewportY, minTop, maxTop);
-	const height = clamp(bottom - top, minHeight, Math.max(minHeight, bottom - minTop));
-	ide_state.problemsPanel.setFixedHeightPx(height);
 }
 
 export function drawActionPromptOverlay(api: BmsxConsoleApi): void {
@@ -8591,152 +6850,4 @@ export function handleRuntimeTaskError(error: unknown, fallbackMessage: string):
 	$.paused = true;
 	activate();
 	ide_state.showMessage(`${fallbackMessage}: ${message}`, constants.COLOR_STATUS_ERROR, 4.0);
-}
-
-export function truncateTextToWidth(text: string, maxWidth: number): string {
-	return truncateTextToWidthExternal(text, maxWidth, (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance);
-}
-
-export function measureText(text: string): number {
-	return measureTextGeneric(text, (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance);
-}
-
-export function assertMonospace(): void {
-	const sample = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-*/%<>=#(){}[]:,.;\'"`~!@^&|\\?_ ';
-	const reference = ide_state.font.advance('M');
-	for (let i = 0; i < sample.length; i++) {
-		const candidate = ide_state.font.advance(sample.charAt(i));
-		if (candidate !== reference) {
-			ide_state.warnNonMonospace = true;
-			break;
-		}
-	}
-}
-
-export function centerCursorVertically(): void {
-	ensureVisualLines();
-	const rows = visibleRowCount();
-	const totalVisual = getVisualLineCount();
-	const cursorVisualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
-	const maxScroll = Math.max(0, totalVisual - rows);
-	if (rows <= 1) {
-		ide_state.scrollRow = clamp(cursorVisualIndex, 0, maxScroll);
-		return;
-	}
-	let target = cursorVisualIndex - Math.floor(rows / 2);
-	if (target < 0) {
-		target = 0;
-	}
-	if (target > maxScroll) {
-		target = maxScroll;
-	}
-	ide_state.scrollRow = target;
-}
-
-export function ensureCursorVisible(): void {
-	clampCursorRow();
-	clampCursorColumn();
-
-	ensureVisualLines();
-	const rows = visibleRowCount();
-	const totalVisual = getVisualLineCount();
-	const cursorVisualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
-
-	if (cursorVisualIndex < ide_state.scrollRow) {
-		ide_state.scrollRow = cursorVisualIndex;
-	}
-	if (cursorVisualIndex >= ide_state.scrollRow + rows) {
-		ide_state.scrollRow = cursorVisualIndex - rows + 1;
-	}
-	const maxScrollRow = Math.max(0, totalVisual - rows);
-	ide_state.scrollRow = clamp(ide_state.scrollRow, 0, maxScrollRow);
-
-	if (ide_state.wordWrapEnabled) {
-		ide_state.scrollColumn = 0;
-		return;
-	}
-
-	const columns = visibleColumnCount();
-	if (ide_state.cursorColumn < ide_state.scrollColumn) {
-		ide_state.scrollColumn = ide_state.cursorColumn;
-	}
-	const maxScrollColumn = ide_state.cursorColumn - columns + 1;
-	if (maxScrollColumn > ide_state.scrollColumn) {
-		ide_state.scrollColumn = maxScrollColumn;
-	}
-	if (ide_state.scrollColumn < 0) {
-		ide_state.scrollColumn = 0;
-	}
-	const lineLength = currentLine().length;
-	const maxColumn = lineLength - columns;
-	if (maxColumn < 0) {
-		ide_state.scrollColumn = 0;
-	} else if (ide_state.scrollColumn > maxColumn) {
-		ide_state.scrollColumn = maxColumn;
-	}
-}
-
-export function buildMemberCompletionItems(request: {
-	objectName: string;
-	operator: '.' | ':';
-	prefix: string;
-	asset_id: string | null;
-	chunkName: string | null;
-}): LuaCompletionItem[] {
-	if (request.objectName.length === 0) {
-		return [];
-	}
-	const response = ide_state.listLuaObjectMembersFn({
-		asset_id: request.asset_id ?? null,
-		chunkName: request.chunkName ?? null,
-		expression: request.objectName,
-		operator: request.operator,
-	});
-	if (response.length === 0) {
-		return [];
-	}
-	const items: LuaCompletionItem[] = [];
-	for (let index = 0; index < response.length; index += 1) {
-		const entry = response[index];
-		if (!entry || !entry.name || entry.name.length === 0) {
-			continue;
-		}
-		const kind = entry.kind === 'method' ? 'native_method' : 'native_property';
-		const parameters = entry.parameters && entry.parameters.length > 0 ? entry.parameters.slice() : undefined;
-		const detail = entry.detail ?? null;
-		items.push({
-			label: entry.name,
-			insertText: entry.name,
-			sortKey: `${kind}:${entry.name.toLowerCase()}`,
-			kind,
-			detail,
-			parameters,
-		});
-	}
-	items.sort((a, b) => a.label.localeCompare(b.label));
-	return items;
-}
-
-export function visibleRowCount(): number {
-	return ide_state.cachedVisibleRowCount > 0 ? ide_state.cachedVisibleRowCount : 1;
-}
-
-export function visibleColumnCount(): number {
-	return ide_state.cachedVisibleColumnCount > 0 ? ide_state.cachedVisibleColumnCount : 1;
-}
-
-export function resolveOffsetPosition(lines: readonly string[], offset: number): { row: number; column: number; } {
-	let remaining = offset;
-	for (let row = 0; row < lines.length; row += 1) {
-		const lineLength = lines[row].length;
-		if (remaining <= lineLength) {
-			return { row, column: remaining };
-		}
-		remaining -= lineLength + 1;
-	}
-	if (ide_state.lines.length === 0) {
-		return { row: 0, column: 0 };
-	}
-	const lastRow = ide_state.lines.length - 1;
-	return { row: lastRow, column: ide_state.lines[lastRow].length };
 }

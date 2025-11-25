@@ -1,7 +1,7 @@
-import type { BmsxConsoleApi } from '../api';
-import type { ConsoleEditorFont } from '../editor_font';
-import { drawEditorText } from './text_renderer';
-import * as constants from './constants';
+import type { BmsxConsoleApi } from '../../api';
+import type { ConsoleEditorFont } from '../../editor_font';
+import { drawEditorText } from '../text_renderer';
+import * as constants from '../constants';
 
 export interface ErrorOverlayBounds {
 	left: number;

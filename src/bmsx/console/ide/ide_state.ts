@@ -15,7 +15,7 @@ import type { ConsoleEditorFont } from '../editor_font';
 import type { InlineTextField, ScrollbarKind, MessageState } from './types';
 import type { InlineFieldMetrics } from './inline_text_field';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
-import type { InputController } from './input_controller';
+import type { InputController } from './input';
 import type { ProblemsPanelController } from './problems_panel';
 import { ResourcePanelController } from './resource_panel_controller';
 import type { RenameController } from './rename_controller';
@@ -59,7 +59,7 @@ import type { TimerHandle } from '../../platform';
 import type { DebuggerExecutionState } from '../debugger_lifecycle';
 import type { LuaDebuggerSessionMetrics } from '../../lua/debugger';
 import { CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_KEY, ESCAPE_KEY, getActiveIdeThemeVariant } from './constants';
-import { CaretNavigationState } from './caret_navigation';
+import { CaretNavigationState } from './caret';
 
 export type NavigationHistoryEntry = {
 	contextId: string;

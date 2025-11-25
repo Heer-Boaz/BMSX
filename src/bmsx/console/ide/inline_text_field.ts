@@ -1,7 +1,8 @@
+import { $ } from '../../core/game';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
-import { isAltDown, isCtrlDown, isMetaDown, isShiftDown } from './input_controller';
+import { isAltDown, isCtrlDown, isMetaDown, isShiftDown } from './input';
 import { isWhitespace, isWordChar } from './text_utils';
 import type { InlineInputOptions, InlineTextField } from './types';
 
@@ -361,8 +362,8 @@ export function caretX(field: InlineTextField, textLeft: number, measureText: (t
 	return textLeft + measureText(slice);
 }
 
-export function registerPointerClick(field: InlineTextField, column: number, now: () => number, doubleClickInterval: number): boolean {
-	const timestamp = now();
+export function registerPointerClick(field: InlineTextField, column: number, doubleClickInterval: number): boolean {
+	const timestamp = $.platform.clock.now();
 	const interval = timestamp - field.lastPointerClickTimeMs;
 	const sameColumn = column === field.lastPointerClickColumn;
 	const isDouble = field.lastPointerClickTimeMs > 0
@@ -584,10 +585,10 @@ export type InlineFieldPointerResult = {
 };
 
 export function applyInlineFieldPointer(field: InlineTextField, options: InlineFieldPointerOptions): InlineFieldPointerResult {
-	const { metrics, textLeft, pointerX, justPressed, pointerPressed, now, doubleClickInterval } = options;
+	const { metrics, textLeft, pointerX, justPressed, pointerPressed, doubleClickInterval } = options;
 	const column = resolveColumn(field, metrics, textLeft, pointerX);
 	if (justPressed) {
-		const isDouble = registerPointerClick(field, column, now, doubleClickInterval);
+		const isDouble = registerPointerClick(field, column, doubleClickInterval);
 		if (isDouble) {
 			selectWordAt(field, column);
 			field.pointerSelecting = false;

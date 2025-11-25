@@ -1,4 +1,10 @@
+import { columnToDisplay, getResourcePanelWidth } from './console_cart_editor';
 import * as constants from './constants';
+import { getActiveCodeTabContext } from './editor_tabs';
+import { caretNavigation, ide_state } from './ide_state';
+import { resolveHoverChunkName } from './intellisense';
+import * as TextEditing from './text_editing_and_selection';
+import type { HighlightLine, VisualLineSegment } from './types';
 
 export function isWhitespace(ch: string): boolean {
 	return ch === '' || ch === ' ' || ch === '\t';
@@ -222,3 +228,101 @@ function truncateWithMeasure(text: string, maxWidth: number, measure: (t: string
 	}
 	return best;
 }
+
+export function measureText(text: string): number {
+	return measureTextGeneric(text, (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance);
+}
+
+export function assertMonospace(): void {
+	const sample = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-*/%<>=#(){}[]:,.;\'"`~!@^&|\\?_ ';
+	const reference = ide_state.font.advance('M');
+	for (let i = 0; i < sample.length; i++) {
+		const candidate = ide_state.font.advance(sample.charAt(i));
+		if (candidate !== reference) {
+			ide_state.warnNonMonospace = true;
+			break;
+		}
+	}
+}
+
+export function visibleRowCount(): number {
+	return ide_state.cachedVisibleRowCount > 0 ? ide_state.cachedVisibleRowCount : 1;
+}
+
+export function visibleColumnCount(): number {
+	return ide_state.cachedVisibleColumnCount > 0 ? ide_state.cachedVisibleColumnCount : 1;
+}
+export function computeSelectionSlice(lineIndex: number, highlight: HighlightLine, sliceStart: number, sliceEnd: number): { startDisplay: number; endDisplay: number; } | null {
+	const range = TextEditing.getSelectionRange();
+	if (!range) {
+		return null;
+	}
+	const { start, end } = range;
+	if (lineIndex < start.row || lineIndex > end.row) {
+		return null;
+	}
+	let selectionStartColumn = lineIndex === start.row ? start.column : 0;
+	let selectionEndColumn = lineIndex === end.row ? end.column : ide_state.lines[lineIndex].length;
+	if (lineIndex === end.row && end.column === 0 && end.row > start.row) {
+		selectionEndColumn = 0;
+	}
+	if (selectionStartColumn === selectionEndColumn) {
+		return null;
+	}
+	const startDisplay = columnToDisplay(highlight, selectionStartColumn);
+	const endDisplay = columnToDisplay(highlight, selectionEndColumn);
+	const visibleStart = Math.max(sliceStart, startDisplay);
+	const visibleEnd = Math.min(sliceEnd, endDisplay);
+	if (visibleEnd <= visibleStart) {
+		return null;
+	}
+	return { startDisplay: visibleStart, endDisplay: visibleEnd };
+}
+export function invalidateVisualLines(): void {
+	ide_state.layout.markVisualLinesDirty();
+}
+
+export function ensureVisualLines(): void {
+	const activeContext = getActiveCodeTabContext();
+	const chunkName = resolveHoverChunkName(activeContext) ?? '<console>';
+	ide_state.scrollRow = ide_state.layout.ensureVisualLines({
+		lines: ide_state.lines,
+		wordWrapEnabled: ide_state.wordWrapEnabled,
+		scrollRow: ide_state.scrollRow,
+		documentVersion: ide_state.textVersion,
+		chunkName,
+		computeWrapWidth: () => computeWrapWidth(),
+		estimatedVisibleRowCount: Math.max(1, ide_state.cachedVisibleRowCount),
+	});
+	if (ide_state.scrollRow < 0) {
+		ide_state.scrollRow = 0;
+	}
+}
+
+export function computeWrapWidth(): number {
+	const resourceWidth = ide_state.resourcePanelVisible ? getResourcePanelWidth() : 0;
+	const gutterSpace = ide_state.gutterWidth + 2;
+	const verticalScrollbarSpace = 0;
+	const available = ide_state.viewportWidth - resourceWidth - gutterSpace - verticalScrollbarSpace;
+	return Math.max(ide_state.charAdvance, available - 2);
+}
+
+export function getVisualLineCount(): number {
+	ensureVisualLines();
+	return ide_state.layout.getVisualLineCount();
+}
+
+export function visualIndexToSegment(index: number): VisualLineSegment | null {
+	ensureVisualLines();
+	return ide_state.layout.visualIndexToSegment(index);
+}
+
+export function positionToVisualIndex(row: number, column: number): number {
+	ensureVisualLines();
+	const override = caretNavigation.peek(row, column);
+	if (override) {
+		return override.visualIndex;
+	}
+	return ide_state.layout.positionToVisualIndex(ide_state.lines, row, column);
+}
+
