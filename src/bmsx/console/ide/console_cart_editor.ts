@@ -449,6 +449,11 @@ export function undo(): void {
 	}
 	ide_state.redoStack.push(current);
 	restoreSnapshot(snapshot);
+	ide_state.saveGeneration = ide_state.saveGeneration + 1;
+	const context = getActiveCodeTabContext();
+	if (context) {
+		context.saveGeneration = ide_state.saveGeneration;
+	}
 	breakUndoSequence();
 }
 
@@ -470,6 +475,11 @@ export function redo(): void {
 	}
 	ide_state.undoStack.push(current);
 	restoreSnapshot(snapshot);
+	ide_state.saveGeneration = ide_state.saveGeneration + 1;
+	const context = getActiveCodeTabContext();
+	if (context) {
+		context.saveGeneration = ide_state.saveGeneration;
+	}
 	breakUndoSequence();
 }
 
