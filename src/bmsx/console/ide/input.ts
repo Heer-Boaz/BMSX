@@ -20,8 +20,9 @@ import { applyScrollbarScroll } from './scrollbar';
 import { clearHoverTooltip, updateHoverTooltip } from './intellisense';
 import * as TextEditing from './text_editing_and_selection';
 import { clamp } from '../../utils/clamp';
+import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, deactivate, activate, handleActionPromptSelection, openSymbolSearch, toggleResolutionMode, toggleResourcePanelFilterMode, openResourceSearch, toggleResourcePanel, toggleProblemsPanel, markDiagnosticsDirty, focusEditorFromProblemsPanel, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, handleLineJumpInput, handleSearchInput, hideProblemsPanel, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openDebugPanelTab, performAction, pointInRect, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, scrollResourceBrowser, getCodeAreaBounds, scrollRows, clearGotoHoverHighlight, readPointerSnapshot, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, isRenameVisible, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, processRuntimeErrorOverlayPointer, resolvePointerRow, clearReferenceHighlights, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, tryGotoDefinitionAt, handlePointerAutoScroll, refreshGotoHoverHighlight, getActiveResourceViewer, resourceViewerTextCapacity, moveSymbolSearchSelection, processInlineFieldEditing, symbolSearchPageSize, updateSymbolSearchMatches, applyLineJumpFieldText, resourceSearchWindowCapacity, updateResourceSearchMatches } from './console_cart_editor';
 import * as constants from './constants';
-import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, deactivate, activate, handleActionPromptSelection, openSymbolSearch, toggleResolutionMode, toggleResourcePanelFilterMode, openResourceSearch, toggleResourcePanel, toggleProblemsPanel, markDiagnosticsDirty, focusEditorFromProblemsPanel, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, handleResourceSearchInput, handleSymbolSearchInput, handleLineJumpInput, handleSearchInput, hideProblemsPanel, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openDebugPanelTab, performAction, pointInRect, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, resourceBrowserEnsureSelectionVisible, scrollResourceBrowser, getCodeAreaBounds, scrollRows, clearGotoHoverHighlight, readPointerSnapshot, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, isRenameVisible, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, processRuntimeErrorOverlayPointer, resolvePointerRow, clearReferenceHighlights, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, tryGotoDefinitionAt, handlePointerAutoScroll, refreshGotoHoverHighlight, getActiveResourceViewer, resourceViewerTextCapacity } from './console_cart_editor';
+import { getFieldText } from './inline_text_field';
 
 const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
 const MENU_COMMANDS: TopBarButtonId[] = [
@@ -1043,7 +1044,7 @@ export function handlePointerWheel(): void {
 		if (shiftDown) {
 			const horizontalPixels = direction * steps * ide_state.charAdvance * 4;
 			scrollResourceBrowserHorizontal(horizontalPixels);
-			resourceBrowserEnsureSelectionVisible();
+			ide_state.resourcePanel.ensureSelectionVisible();
 		} else {
 			scrollResourceBrowser(direction * steps);
 		}
@@ -1731,7 +1732,6 @@ export function updateTabHoverState(snapshot: PointerSnapshot | null): void {
 	}
 	ide_state.tabHoverId = hovered;
 }
-// moved to ResourcePanelController
 
 export function handleResourceViewerInput(deltaSeconds: number): void {
 	// Resource viewer specific keys
@@ -1807,4 +1807,162 @@ export function isPointerOverResourcePanelDivider(x: number, y: number): boolean
 	const left = bounds.right - margin;
 	const right = bounds.right + margin;
 	return y >= bounds.top && y <= bounds.bottom && x >= left && x <= right;
+}
+export function handleSymbolSearchInput(deltaSeconds: number): void {
+	const { shiftDown } = { shiftDown: isShiftDown() };
+	if (isKeyJustPressed('Enter')) {
+		consumeIdeKey('Enter');
+		if (shiftDown) {
+			moveSymbolSearchSelection(-1);
+			return;
+		}
+		if (ide_state.symbolSearchSelectionIndex >= 0) {
+			applySymbolSearchSelection(ide_state.symbolSearchSelectionIndex);
+		} else {
+			ide_state.showMessage('No symbol selected', constants.COLOR_STATUS_WARNING, 1.5);
+		}
+		return;
+	}
+	if (isKeyJustPressed('Escape')) {
+		consumeIdeKey('Escape');
+		closeSymbolSearch(true);
+		return;
+	}
+	if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
+		consumeIdeKey('ArrowUp');
+		moveSymbolSearchSelection(-1);
+		return;
+	}
+	if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
+		consumeIdeKey('ArrowDown');
+		moveSymbolSearchSelection(1);
+		return;
+	}
+	if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
+		consumeIdeKey('PageUp');
+		moveSymbolSearchSelection(-symbolSearchPageSize());
+		return;
+	}
+	if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
+		consumeIdeKey('PageDown');
+		moveSymbolSearchSelection(symbolSearchPageSize());
+		return;
+	}
+	if (isKeyJustPressed('Home')) {
+		consumeIdeKey('Home');
+		ide_state.symbolSearchSelectionIndex = ide_state.symbolSearchMatches.length > 0 ? 0 : -1;
+		ensureSymbolSearchSelectionVisible();
+		return;
+	}
+	if (isKeyJustPressed('End')) {
+		consumeIdeKey('End');
+		ide_state.symbolSearchSelectionIndex = ide_state.symbolSearchMatches.length > 0 ? ide_state.symbolSearchMatches.length - 1 : -1;
+		ensureSymbolSearchSelectionVisible();
+		return;
+	}
+	const textChanged = processInlineFieldEditing(ide_state.symbolSearchField, {
+		deltaSeconds,
+		allowSpace: true,
+		characterFilter: undefined,
+		maxLength: null,
+	});
+	ide_state.symbolSearchQuery = getFieldText(ide_state.symbolSearchField);
+	if (textChanged) {
+		updateSymbolSearchMatches();
+	}
+}
+
+export function handleResourceSearchInput(deltaSeconds: number): void {
+	const { shiftDown } = { shiftDown: isShiftDown() };
+	if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
+		consumeIdeKey('Enter');
+		consumeIdeKey('NumpadEnter');
+		if (shiftDown) {
+			moveResourceSearchSelection(-1);
+			return;
+		}
+		if (ide_state.resourceSearchSelectionIndex >= 0) {
+			applyResourceSearchSelection(ide_state.resourceSearchSelectionIndex);
+			return;
+		} else {
+			const trimmed = ide_state.resourceSearchQuery.trim();
+			if (trimmed.length === 0) {
+				closeResourceSearch(true);
+				focusEditorFromResourceSearch();
+			} else {
+				ide_state.showMessage('No resource selected', constants.COLOR_STATUS_WARNING, 1.5);
+			}
+		}
+		return;
+	}
+	if (isKeyJustPressed('Escape')) {
+		consumeIdeKey('Escape');
+		closeResourceSearch(true);
+		focusEditorFromResourceSearch();
+		return;
+	}
+	if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
+		consumeIdeKey('ArrowUp');
+		moveResourceSearchSelection(-1);
+		return;
+	}
+	if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
+		consumeIdeKey('ArrowDown');
+		moveResourceSearchSelection(1);
+		return;
+	}
+	if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
+		consumeIdeKey('PageUp');
+		moveResourceSearchSelection(-resourceSearchWindowCapacity());
+		return;
+	}
+	if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
+		consumeIdeKey('PageDown');
+		moveResourceSearchSelection(resourceSearchWindowCapacity());
+		return;
+	}
+	if (isKeyJustPressed('Home')) {
+		consumeIdeKey('Home');
+		ide_state.resourceSearchSelectionIndex = ide_state.resourceSearchMatches.length > 0 ? 0 : -1;
+		ensureResourceSearchSelectionVisible();
+		return;
+	}
+	if (isKeyJustPressed('End')) {
+		consumeIdeKey('End');
+		ide_state.resourceSearchSelectionIndex = ide_state.resourceSearchMatches.length > 0 ? ide_state.resourceSearchMatches.length - 1 : -1;
+		ensureResourceSearchSelectionVisible();
+		return;
+	}
+	const textChanged = processInlineFieldEditing(ide_state.resourceSearchField, {
+		deltaSeconds,
+		allowSpace: true,
+		characterFilter: undefined,
+		maxLength: null,
+	});
+	ide_state.resourceSearchQuery = getFieldText(ide_state.resourceSearchField);
+	if (textChanged) {
+		if (ide_state.resourceSearchQuery.startsWith('@')) {
+			const query = ide_state.resourceSearchQuery.slice(1).trimStart();
+			closeResourceSearch(true);
+			openSymbolSearch(query);
+			return;
+		}
+		if (ide_state.resourceSearchQuery.startsWith('#')) {
+			const query = ide_state.resourceSearchQuery.slice(1).trimStart();
+			closeResourceSearch(true);
+			openGlobalSymbolSearch(query);
+			return;
+		}
+		if (ide_state.resourceSearchQuery.startsWith(':')) {
+			const query = ide_state.resourceSearchQuery.slice(1).trimStart();
+			closeResourceSearch(true);
+			openLineJump();
+			if (query.length > 0) {
+				applyLineJumpFieldText(query, true);
+				ide_state.lineJumpValue = query;
+			}
+			return;
+		}
+		updateResourceSearchMatches();
+	}
 }

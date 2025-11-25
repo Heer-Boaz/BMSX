@@ -4,6 +4,7 @@ import * as constants from '../constants';
 import type { TextField } from '../types';
 import { ide_state } from '../ide_state';
 import { getFieldText } from '../inline_text_field';
+import { api } from '../../runtime';
 
 type InlineResultListOptions<T> = {
 	entries: readonly T[] | null | undefined;
@@ -155,7 +156,7 @@ export function renderCreateResourceBar(api: BmsxConsoleApi, host: InlineBarsHos
 	}
 }
 
-export function renderSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void {
+export function renderSearchBar(host: InlineBarsHost): void {
 	const height = host.getSearchBarHeight();
 	if (height <= 0) return;
 	const barTop = host.headerHeight + host.tabBarHeight + host.getCreateResourceBarHeight();

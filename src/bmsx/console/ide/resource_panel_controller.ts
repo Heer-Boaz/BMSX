@@ -39,7 +39,6 @@ export interface ResourcePanelScrollbars {
 }
 
 export class ResourcePanelController {
-	// Public panel state (read via getters)
 	private visible = false;
 	private focused = false;
 	private widthRatio: number | null = null;
@@ -283,16 +282,8 @@ export class ResourcePanelController {
 		this.clampHScroll();
 	}
 
-	moveSelectionBy(delta: number): void {
-		this.moveSelection(delta);
-	}
-
 	openSelected(): void {
 		this.openSelectedInternal();
-	}
-
-	ensureSelectionVisiblePublic(): void {
-		this.ensureSelectionVisible();
 	}
 
 	setRatioFromViewportX(viewportX: number, viewportWidth: number): boolean {
@@ -543,7 +534,7 @@ export class ResourcePanelController {
 		this.clampHScroll();
 	}
 
-	private ensureSelectionVisible(): void {
+	public ensureSelectionVisible(): void {
 		if (!this.visible) return;
 		const index = this.selectionIndex;
 		if (index < 0) return;

@@ -1,6 +1,6 @@
 import * as constants from '../constants';
 import type { RectBounds } from '../../../rompack/rompack';
-import type { LuaDebuggerSessionMetrics } from '../../../lua/debugger';
+// import type { LuaDebuggerSessionMetrics } from '../../../lua/debugger';
 import { ide_state } from '../ide_state';
 import { getConsoleRuntime, isDebugPanelActive } from '../console_cart_editor';
 import { measureText } from '../text_utils';
@@ -42,12 +42,13 @@ const TOP_BAR_COMMANDS: TopBarButtonId[] = [
 ];
 
 const Z_TOP_BAR_BACKGROUND = 10;
-const Z_TOP_BAR_TEXT = 12;
+// const Z_TOP_BAR_TEXT = 12;
 const Z_MENU_BUTTON = 14;
 const Z_MENU_BUTTON_TEXT = 15;
 const Z_MENU_DROPDOWN = 20;
 const Z_MENU_DROPDOWN_TEXT = 21;
 const Z_MENU_MARKER = 22;
+const Z_MENU_SHADOW = 19;
 
 export function renderTopBar(): void {
 	clearMenuBounds();
@@ -58,25 +59,25 @@ export function renderTopBar(): void {
 	const menuButtonHeight = renderMenuRow(menuEntries);
 	renderOpenMenuDropdown(menuEntries, menuButtonHeight);
 
-	const debuggerPaused = ide_state.debuggerControls.executionState === 'paused';
-	const debuggerSummary =
-		debuggerPaused && ide_state.debuggerControls.sessionMetrics
-			? formatDebuggerTopBarMetrics(ide_state.debuggerControls.sessionMetrics)
-			: null;
+	// const debuggerPaused = ide_state.debuggerControls.executionState === 'paused';
+	// const debuggerSummary =
+		// debuggerPaused && ide_state.debuggerControls.sessionMetrics
+			// ? formatDebuggerTopBarMetrics(ide_state.debuggerControls.sessionMetrics)
+			// : null;
 
-	const titleY = primaryBarHeight + 1;
-	drawEditorText(api, ide_state.font, ide_state.metadata.title.toUpperCase(), 4, titleY, Z_TOP_BAR_TEXT, constants.COLOR_TOP_BAR_TEXT);
-	const versionSuffix = ide_state.dirty ? '*' : '';
-	const version = `v${ide_state.metadata.version}${versionSuffix}`;
-	const versionWidth = measureText(version);
-	let versionX = ide_state.viewportWidth - versionWidth - 4;
-	if (debuggerSummary) {
-		const summaryWidth = measureText(debuggerSummary);
-		const summaryX = Math.max(4, versionX - summaryWidth - 8);
-		drawEditorText(api, ide_state.font, debuggerSummary, summaryX, titleY, Z_TOP_BAR_TEXT, constants.COLOR_TOP_BAR_TEXT);
-		versionX = Math.max(summaryX - 4, versionX);
-	}
-	drawEditorText(api, ide_state.font, version, versionX, titleY, Z_TOP_BAR_TEXT, constants.COLOR_TOP_BAR_TEXT);
+	// const titleY = primaryBarHeight + 1;
+	// drawEditorText(api, ide_state.font, ide_state.metadata.title.toUpperCase(), 4, titleY, Z_TOP_BAR_TEXT, constants.COLOR_TOP_BAR_TEXT);
+	// const versionSuffix = ide_state.dirty ? '*' : '';
+	// const version = `v${ide_state.metadata.version}${versionSuffix}`;
+	// const versionWidth = measureText(version);
+	// let versionX = ide_state.viewportWidth - versionWidth - 4;
+	// if (debuggerSummary) {
+	// 	const summaryWidth = measureText(debuggerSummary);
+	// 	const summaryX = Math.max(4, versionX - summaryWidth - 8);
+	// 	drawEditorText(api, ide_state.font, debuggerSummary, summaryX, titleY, Z_TOP_BAR_TEXT, constants.COLOR_TOP_BAR_TEXT);
+	// 	versionX = Math.max(summaryX - 4, versionX);
+	// }
+	// drawEditorText(api, ide_state.font, version, versionX, titleY, Z_TOP_BAR_TEXT, constants.COLOR_TOP_BAR_TEXT);
 }
 
 function renderMenuRow(menuEntries: MenuEntry[]): number {
@@ -125,14 +126,22 @@ function renderOpenMenuDropdown(menuEntries: MenuEntry[], buttonHeight: number):
 function renderMenuDropdown(menu: MenuEntry, anchor: RectBounds, itemHeight: number): void {
 	const markerSize = Math.max(2, Math.floor(ide_state.lineHeight / 2));
 	const paddingX = constants.HEADER_BUTTON_PADDING_X;
-	const dropdownWidth = computeDropdownWidth(menu, markerSize, paddingX);
-	let currentTop = ide_state.headerHeight;
+	const dropdownWidth = computeDropdownWidth(menu, markerSize, paddingX, anchor.right - anchor.left);
+	const separatorHeight = Math.max(2, constants.HEADER_BUTTON_PADDING_Y + 1);
 	const dropdownLeft = anchor.left;
+	const dropdownTop = ide_state.headerHeight;
 	const dropdownRight = dropdownLeft + dropdownWidth;
+	const totalHeight = computeDropdownHeight(menu, itemHeight, separatorHeight);
+	const shadowOffset = 2;
+
+	api.rectfill(dropdownLeft + shadowOffset, dropdownTop + shadowOffset, dropdownRight + shadowOffset, dropdownTop + totalHeight + shadowOffset, Z_MENU_SHADOW, constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND);
+	api.rectfill(dropdownLeft, dropdownTop, dropdownRight, dropdownTop + totalHeight, Z_MENU_DROPDOWN, constants.COLOR_HEADER_BUTTON_BACKGROUND);
+	api.rect(dropdownLeft, dropdownTop, dropdownRight, dropdownTop + totalHeight, Z_MENU_DROPDOWN, constants.COLOR_HEADER_BUTTON_BORDER);
+
+	let currentTop = dropdownTop;
 	for (let index = 0; index < menu.items.length; index += 1) {
 		const item = menu.items[index];
 		if (item.type === 'separator') {
-			const separatorHeight = Math.max(2, constants.HEADER_BUTTON_PADDING_Y + 1);
 			const separatorTop = currentTop + Math.max(1, Math.floor(separatorHeight / 2));
 			api.rectfill(dropdownLeft + paddingX, separatorTop, dropdownRight - paddingX, separatorTop + 1, Z_MENU_DROPDOWN, constants.COLOR_HEADER_BUTTON_BORDER);
 			currentTop += separatorHeight;
@@ -163,8 +172,7 @@ function renderMenuDropdown(menu: MenuEntry, anchor: RectBounds, itemHeight: num
 		drawEditorText(api, ide_state.font, item.label, textX, textY, Z_MENU_DROPDOWN_TEXT, textColor);
 		currentTop = bounds.bottom;
 	}
-	ide_state.menuDropdownBounds = { left: dropdownLeft, top: ide_state.headerHeight, right: dropdownRight, bottom: currentTop };
-	api.rect(dropdownLeft, ide_state.headerHeight, dropdownRight, currentTop, Z_MENU_DROPDOWN, constants.COLOR_HEADER_BUTTON_BORDER);
+	ide_state.menuDropdownBounds = { left: dropdownLeft, top: dropdownTop, right: dropdownRight, bottom: dropdownTop + totalHeight };
 }
 
 function buildMenuEntries(): MenuEntry[] {
@@ -239,7 +247,7 @@ function buildMenuEntries(): MenuEntry[] {
 	];
 }
 
-function computeDropdownWidth(menu: MenuEntry, markerSize: number, paddingX: number): number {
+function computeDropdownWidth(menu: MenuEntry, markerSize: number, paddingX: number, anchorWidth: number): number {
 	let maxLabelWidth = 0;
 	for (let index = 0; index < menu.items.length; index += 1) {
 		const item = menu.items[index];
@@ -251,7 +259,17 @@ function computeDropdownWidth(menu: MenuEntry, markerSize: number, paddingX: num
 			maxLabelWidth = width;
 		}
 	}
-	return markerSize + paddingX * 3 + maxLabelWidth;
+	const labelWidth = markerSize + paddingX * 3 + maxLabelWidth;
+	return Math.max(labelWidth, anchorWidth + paddingX * 2);
+}
+
+function computeDropdownHeight(menu: MenuEntry, itemHeight: number, separatorHeight: number): number {
+	let total = 0;
+	for (let index = 0; index < menu.items.length; index += 1) {
+		const item = menu.items[index];
+		total += item.type === 'separator' ? separatorHeight : itemHeight;
+	}
+	return total;
 }
 
 function clearMenuBounds(): void {
@@ -266,13 +284,13 @@ function clearMenuBounds(): void {
 	ide_state.menuDropdownBounds = null;
 }
 
-function formatDebuggerTopBarMetrics(metrics: LuaDebuggerSessionMetrics): string {
-	const parts: string[] = [`S${metrics.sessionId}`, `P${metrics.pauseCount}`];
-	if (metrics.exceptionCount > 0) {
-		parts.push(`E${metrics.exceptionCount}`);
-	}
-	if (metrics.skippedExceptionCount > 0) {
-		parts.push(`Sk${metrics.skippedExceptionCount}`);
-	}
-	return parts.join(' ');
-}
+// function formatDebuggerTopBarMetrics(metrics: LuaDebuggerSessionMetrics): string {
+// 	const parts: string[] = [`S${metrics.sessionId}`, `P${metrics.pauseCount}`];
+// 	if (metrics.exceptionCount > 0) {
+// 		parts.push(`E${metrics.exceptionCount}`);
+// 	}
+// 	if (metrics.skippedExceptionCount > 0) {
+// 		parts.push(`Sk${metrics.skippedExceptionCount}`);
+// 	}
+// 	return parts.join(' ');
+// }

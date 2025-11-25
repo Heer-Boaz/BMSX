@@ -1,4 +1,4 @@
 -- NEW LUA RESOURCE
 FUNCTION BLA(Y)
-	WRITE('bla',0,Y,0,13)
+	WRITE('bla',0,Y,12)
 END

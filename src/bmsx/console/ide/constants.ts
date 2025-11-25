@@ -115,6 +115,7 @@ type ThemeDefinition = {
 		localFunction: number;
 		functionHandle: number;
 		selection: number;
+		selectionBorder: number;
 		errorOverlayText: number;
 	};
 	status: {
@@ -181,6 +182,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			localFunction: PALETTE.white,
 			functionHandle: PALETTE.lightGreen,
 			selection: PALETTE.darkBlue,
+			selectionBorder: PALETTE.blue,
 			errorOverlayText: PALETTE.white,
 		},
 		status: {
@@ -244,6 +246,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			localFunction: PALETTE.deepGrey,
 			functionHandle: PALETTE.functionBlue,
 			selection: PALETTE.selectionOverlay,
+			selectionBorder: PALETTE.midGrey,
 			errorOverlayText: PALETTE.white,
 		},
 		status: {
@@ -289,6 +292,7 @@ function buildPanelBase(theme: ThemeDefinition) {
 			text: theme.status.text,
 			location: theme.text.dim,
 			hoverText: theme.status.warning,
+			selectionBorder: theme.text.topBar,
 		},
 		resource: {
 			background: theme.surfaces.resourcePanel,
@@ -427,12 +431,13 @@ export let COLOR_STATUS_WARNING: number;
 export let COLOR_STATUS_SUCCESS: number;
 export let COLOR_STATUS_ERROR: number;
 export let COLOR_STATUS_ALERT: number;
-export const COLOR_DIAGNOSTIC_ERROR = PALETTE.lightRed;
+export let COLOR_DIAGNOSTIC_ERROR: number = PALETTE.lightRed;
 export let COLOR_DIAGNOSTIC_WARNING: number;
 export let COLOR_PROBLEMS_PANEL_BACKGROUND: number;
 export let COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND: number;
 export let COLOR_PROBLEMS_PANEL_HEADER_TEXT: number;
 export let COLOR_PROBLEMS_PANEL_BORDER: number;
+export let COLOR_PROBLEMS_PANEL_SELECTION_BORDER: number;
 export let COLOR_PROBLEMS_PANEL_TEXT: number;
 export let COLOR_PROBLEMS_PANEL_LOCATION: number;
 export let COLOR_PROBLEMS_PANEL_HOVER_TEXT: number;
@@ -598,6 +603,7 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_PROBLEMS_PANEL_TEXT = panel.problems.text;
 	COLOR_PROBLEMS_PANEL_LOCATION = panel.problems.location;
 	COLOR_PROBLEMS_PANEL_HOVER_TEXT = panel.problems.hoverText;
+	COLOR_PROBLEMS_PANEL_SELECTION_BORDER = panel.problems.selectionBorder;
 	COLOR_RESOURCE_PANEL_BACKGROUND = panel.resource.background;
 	COLOR_RESOURCE_PANEL_TEXT = panel.resource.text;
 	COLOR_RESOURCE_PANEL_HIGHLIGHT = panel.resource.highlight;

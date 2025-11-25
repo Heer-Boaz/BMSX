@@ -1,9 +1,9 @@
 import type { BmsxConsoleApi } from '../api';
 import type { EditorDiagnostic, PointerSnapshot } from './types';
 import type { RectBounds } from '../../rompack/rompack';
-import { wrapTextDynamic as wrapMessageLinesGeneric } from './text_utils';
+import { measureText, truncateTextToWidth, wrapTextDynamic as wrapMessageLinesGeneric } from './text_utils';
 import { clamp } from '../../utils/clamp';
-import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight } from './console_cart_editor';
+import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight, gotoDiagnostic } from './console_cart_editor';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
 import { api } from '../runtime';
@@ -16,15 +16,6 @@ type PanelLayout = {
     visibleHeight: number;
 };
 
-export interface ProblemsPanelHost {
-	lineHeight: number;
-	measureText(text: string): number;
-	drawText(api: BmsxConsoleApi, text: string, x: number, y: number, color: number): void;
-	drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void;
-	truncateTextToWidth(text: string, maxWidth: number): string;
-	gotoDiagnostic(diagnostic: EditorDiagnostic): void;
-}
-
 export class ProblemsPanelController {
     private visible = false;
     private focused = false;
@@ -35,13 +26,6 @@ export class ProblemsPanelController {
     private cachedLayout: PanelLayout | null = null;
 	private fixedHeightPx: number | null = null;
 	private lastAvailableWidth = 0;
-
-	constructor(private readonly host: ProblemsPanelHost) {}
-
-	public setLineHeight(lineHeight: number): void {
-		this.host.lineHeight = lineHeight;
-		this.cachedLayout = null;
-	}
 
 	public isVisible(): boolean {
 		return this.visible;
@@ -64,7 +48,7 @@ export class ProblemsPanelController {
         }
         // Default height based on heuristics and item count
         const baseRows = this.targetVisibleRows();
-        const lineHeight = this.host.lineHeight;
+        const lineHeight = ide_state.lineHeight;
         const contentHeight = Math.max(lineHeight, baseRows * lineHeight);
         return headerHeight + contentHeight + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2;
     }
@@ -120,21 +104,20 @@ export class ProblemsPanelController {
 		const headerLabel = `PROBLEMS (${count})`;
 		const headerX = bounds.left + constants.PROBLEMS_PANEL_HEADER_PADDING_X;
 		const headerY = layout.headerTop + constants.PROBLEMS_PANEL_HEADER_PADDING_Y;
-		this.host.drawText(api, headerLabel, headerX, headerY, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
-        // Right-aligned ERR/WARN summary removed per requirement
+		api.write(headerLabel, headerX, headerY, undefined, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
 
 		const contentLeft = bounds.left + constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
         const contentRight = bounds.right - constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
         const availableWidth = Math.max(0, contentRight - contentLeft);
         this.lastAvailableWidth = availableWidth;
         if (this.focused && this.selectionIndex >= 0) this.ensureSelectionWithinView(layout, availableWidth);
-        const lineHeight = this.host.lineHeight;
+        const lineHeight = ide_state.lineHeight;
 
 		if (this.diagnostics.length === 0) {
 			const message = 'No problems detected.';
-			const truncated = this.host.truncateTextToWidth(message, availableWidth);
+			const truncated = truncateTextToWidth(message, availableWidth, (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance);
 			const rowTop = layout.contentTop;
-			this.host.drawText(api, truncated, contentLeft, rowTop, constants.COLOR_PROBLEMS_PANEL_TEXT);
+			api.write(truncated, contentLeft, rowTop, undefined, constants.COLOR_PROBLEMS_PANEL_TEXT);
 			return;
 		}
 
@@ -151,12 +134,12 @@ export class ProblemsPanelController {
             // Hover highlight should show regardless of focus
             const isHovered = diagIndex === this.hoverIndex;
             const severityLabel = this.renderSeverityLabel(severity);
-            const severityWidth = severityLabel ? this.host.measureText(severityLabel) + constants.PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS : 0;
+            const severityWidth = severityLabel ? measureText(severityLabel) + constants.PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS : 0;
             // Only severity label is drawn; message uses remaining width
             const firstLineMessageWidth = Math.max(0, availableWidth - severityWidth);
 
             // Wrap message across variable lines
-            const wrapped = wrapMessageLinesGeneric(baseMessage, firstLineMessageWidth, availableWidth, (t) => this.host.measureText(t), constants.PROBLEMS_PANEL_MAX_WRAP_LINES);
+            const wrapped = wrapMessageLinesGeneric(baseMessage, firstLineMessageWidth, availableWidth, (t) => measureText(t), constants.PROBLEMS_PANEL_MAX_WRAP_LINES);
             const rowHeight = Math.max(lineHeight, wrapped.length * lineHeight);
             const rowBottom = rowTop + rowHeight;
             // Selection presentation depends on focus
@@ -165,13 +148,13 @@ export class ProblemsPanelController {
                     const overlay = constants.SELECTION_OVERLAY;
                     api.rectfill_color(bounds.left, rowTop, bounds.right, rowBottom, undefined, overlay);
                 } else {
-                    this.host.drawRectOutlineColor(api, bounds.left, rowTop, bounds.right, rowBottom, { r: 1, g: 1, b: 1, a: 1 });
+                    api.rect(bounds.left, rowTop, bounds.right, rowBottom, undefined, constants.COLOR_PROBLEMS_PANEL_SELECTION_BORDER);
                 }
             }
             let textCursorX = contentLeft;
             if (severityLabel) {
                 const sevColor = isHovered && !isSelected ? constants.COLOR_PROBLEMS_PANEL_HOVER_TEXT : this.severityColor(severity);
-                this.host.drawText(api, severityLabel, textCursorX, rowTop, sevColor);
+                api.write(severityLabel, textCursorX, rowTop, undefined, sevColor);
                 textCursorX += severityWidth;
             }
             // Do not display location/source in the list; leave space for message
@@ -179,9 +162,9 @@ export class ProblemsPanelController {
                 ? constants.COLOR_COMPLETION_HIGHLIGHT_TEXT
                 : (isHovered ? constants.COLOR_PROBLEMS_PANEL_HOVER_TEXT : constants.COLOR_PROBLEMS_PANEL_TEXT);
             for (let li = 0; li < wrapped.length; li += 1) {
-                const y = rowTop + li * this.host.lineHeight;
+                const y = rowTop + li * ide_state.lineHeight;
                 const x = li === 0 ? textCursorX : contentLeft;
-                this.host.drawText(api, wrapped[li], x, y, messageColor);
+                api.write(wrapped[li], x, y, undefined, messageColor);
             }
             cursorY = rowBottom;
         }
@@ -243,7 +226,7 @@ export class ProblemsPanelController {
         if (justPressed) {
             this.selectionIndex = diagnosticIndex;
             this.ensureSelectionWithinView(layout, Math.max(0, (bounds.right - bounds.left) - constants.PROBLEMS_PANEL_CONTENT_PADDING_X * 2));
-            this.host.gotoDiagnostic(this.diagnostics[diagnosticIndex]);
+            gotoDiagnostic(this.diagnostics[diagnosticIndex]);
         }
         return true;
     }
@@ -255,7 +238,7 @@ export class ProblemsPanelController {
         // Advance by approximately 'steps' rows worth of pixels, accounting for variable heights
         const panelWidth = this.cachedPanelWidth();
         let advance = 0;
-        let pixels = Math.max(1, steps) * this.host.lineHeight;
+        let pixels = Math.max(1, steps) * ide_state.lineHeight;
         if (direction > 0) {
             let idx = this.scrollIndex;
             while (idx < this.diagnostics.length - 1 && pixels > 0) {
@@ -294,7 +277,7 @@ export class ProblemsPanelController {
         switch (command) {
 			case 'activate':
 				if (this.selectionIndex >= 0 && this.selectionIndex < this.diagnostics.length) {
-					this.host.gotoDiagnostic(this.diagnostics[this.selectionIndex]);
+					gotoDiagnostic(this.diagnostics[this.selectionIndex]);
 					return true;
 				}
 				return false;
@@ -386,7 +369,7 @@ export class ProblemsPanelController {
 	}
 
 	private headerHeight(): number {
-		return this.host.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
+		return ide_state.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
 	}
 
     public setFixedHeightPx(height: number | null): void { this.fixedHeightPx = (height && height > 0) ? Math.floor(height) : null; this.cachedLayout = null; }
@@ -408,12 +391,12 @@ export class ProblemsPanelController {
     }
 
     private computeItemHeight(d: EditorDiagnostic, availableWidth: number): number {
-        const lineHeight = this.host.lineHeight;
+        const lineHeight = ide_state.lineHeight;
         const severityLabel = this.renderSeverityLabel(d.severity);
-        const severityWidth = severityLabel ? this.host.measureText(severityLabel) + constants.PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS : 0;
+        const severityWidth = severityLabel ? measureText(severityLabel) + constants.PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS : 0;
         const firstLineWidth = Math.max(0, availableWidth - severityWidth);
         const msg = d.message.length > 0 ? d.message : '(no details)';
-        const lines = wrapMessageLinesGeneric(msg, firstLineWidth, availableWidth, (t) => this.host.measureText(t), constants.PROBLEMS_PANEL_MAX_WRAP_LINES);
+        const lines = wrapMessageLinesGeneric(msg, firstLineWidth, availableWidth, (t) => measureText(t), constants.PROBLEMS_PANEL_MAX_WRAP_LINES);
         return Math.max(lineHeight, lines.length * lineHeight);
     }
 

@@ -1,5 +1,4 @@
 import type { BmsxConsoleApi } from '../../api';
-import * as constants from '../constants';
 import type { ResourceBrowserItem } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { Msx1Colors } from '../../../systems/msx';
@@ -10,6 +9,10 @@ import { resourceViewerClampScroll } from '../input';
 import { ide_state } from '../ide_state';
 import { drawEditorText } from '../text_renderer';
 import { api } from '../../runtime';
+import { measureText } from '../text_utils';
+import * as constants from '../constants';
+import { wrapRuntimeErrorLine } from '../runtime_error_utils';
+import { renderErrorOverlayText } from './render_error_overlay';
 
 export interface ResourcePanelHost {
 	// Visibility and geometry
@@ -236,5 +239,45 @@ export function drawResourcePanel(): void {
 	ide_state.resourcePanelFocused = s.focused;
 	ide_state.resourceBrowserSelectionIndex = s.selectionIndex;
 	ide_state.resourcePanelResourceCount = s.items.length;
+}
+
+export function drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: string): void {
+	const maxDialogWidth = Math.min(ide_state.viewportWidth - 16, 360);
+	const wrapWidth = Math.max(ide_state.charAdvance, maxDialogWidth - (constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
+	const segments = message.split(/\r?\n/);
+	const lines: string[] = [];
+	for (let i = 0; i < segments.length; i += 1) {
+		const segment = segments[i].trim();
+		const wrapped = wrapRuntimeErrorLine(segment.length === 0 ? '' : segment, wrapWidth, (text) => measureText(text));
+		for (let j = 0; j < wrapped.length; j += 1) {
+			lines.push(wrapped[j]);
+		}
+	}
+	if (lines.length === 0) {
+		lines.push('');
+	}
+	let contentWidth = 0;
+	for (let i = 0; i < lines.length; i += 1) {
+		contentWidth = Math.max(contentWidth, measureText(lines[i]));
+	}
+	const dialogWidth = Math.min(ide_state.viewportWidth - 16, Math.max(180, contentWidth + constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
+	const dialogHeight = Math.min(ide_state.viewportHeight - 16, lines.length * ide_state.lineHeight + constants.ERROR_OVERLAY_PADDING_Y * 2 + 16);
+	const left = Math.max(8, Math.floor((ide_state.viewportWidth - dialogWidth) / 2));
+	const top = Math.max(8, Math.floor((ide_state.viewportHeight - dialogHeight) / 2));
+	const right = left + dialogWidth;
+	const bottom = top + dialogHeight;
+	api.rectfill(left, top, right, bottom, undefined, constants.COLOR_STATUS_BACKGROUND);
+	api.rect(left, top, right, bottom, undefined, constants.COLOR_CREATE_RESOURCE_ERROR);
+	const dialogPaddingX = constants.ERROR_OVERLAY_PADDING_X + 6;
+	const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
+	renderErrorOverlayText(
+		api,
+		ide_state.font,
+		ide_state.lines,
+		left + dialogPaddingX,
+		top + dialogPaddingY,
+		ide_state.lineHeight,
+		constants.COLOR_STATUS_TEXT
+	);
 }
 

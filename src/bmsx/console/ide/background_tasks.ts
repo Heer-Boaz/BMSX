@@ -1,5 +1,5 @@
 import { $ } from '../../core/game';
-import type { TimerHandle } from '../../platform/platform';
+import { scheduleMicrotask, type TimerHandle } from '../../platform/platform';
 
 export type BackgroundTask = () => boolean;
 
@@ -48,5 +48,14 @@ export function clearBackgroundTasks(): void {
 }export function scheduleIdeOnce(delayMs: number, cb: () => void): TimerHandle {
 	const clock = $.platform.clock;
 	return clock.scheduleOnce(delayMs, () => cb());
+}
+export function scheduleRuntimeTask(task: () => void | Promise<void>, onError: (error: unknown) => void): void {
+	scheduleMicrotask(() => {
+		try {
+			Promise.resolve(task()).catch(onError);
+		} catch (error) {
+			onError(error);
+		}
+	});
 }
 

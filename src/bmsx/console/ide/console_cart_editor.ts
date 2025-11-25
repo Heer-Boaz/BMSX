@@ -40,16 +40,12 @@ import {
 	computeResourceTabTitle,
 } from './editor_tabs';
 
-import { assertMonospace, ensureVisualLines, getVisualLineCount, invalidateVisualLines, isIdentifierChar, isIdentifierStartChar, measureText, positionToVisualIndex, splitLines, truncateTextToWidth, visibleColumnCount, visibleRowCount, visualIndexToSegment } from './text_utils';
-import type { InlineFieldMetrics } from './inline_text_field';
+import { assertMonospace, ensureVisualLines, getVisualLineCount, invalidateVisualLines, isIdentifierChar, isIdentifierStartChar, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment } from './text_utils';
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
-	caretX as inlineFieldCaretX,
 	createInlineTextField,
 	getFieldText,
-	measureRange as inlineFieldMeasureRange,
-	selectionRange as inlineFieldSelectionRange,
 	setFieldText,
 	updateBlink,
 } from './inline_text_field';
@@ -58,9 +54,7 @@ import { isLuaCommentContext } from './text_utils';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar } from './render/render_top_bar';
 import { renderTabBar } from './render/render_tab_bar';
-import { drawStatusBar } from './render/render_status_bar';
-import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderRenameBar, renderLineJumpBar, type InlineBarsHost } from './render/render_inline_bars';
-import { renderErrorOverlayText } from './render/render_error_overlay';
+import { renderStatusBar } from './render/render_status_bar';
 import {
 	cloneRuntimeErrorDetails,
 	rebuildRuntimeErrorOverlayView,
@@ -118,14 +112,14 @@ import {
 	type ReferenceCatalogEntry,
 	type ReferenceSymbolEntry,
 } from './code_reference';
-import { clearBackgroundTasks, enqueueBackgroundTask } from './background_tasks';
+import { clearBackgroundTasks, enqueueBackgroundTask, scheduleRuntimeTask } from './background_tasks';
 
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
 import { planRenameLineEdits } from './rename_controller';
 import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_controller';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast';
 // Search logic moved to editor_search
-import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, moveSearchSelection, applySearchSelection, ensureSearchSelectionVisible, computeSearchPageStats, getVisibleSearchResultEntries, startSearchJob, jumpToNextMatch, jumpToPreviousMatch, cancelGlobalSearchJob } from './editor_search';
+import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, moveSearchSelection, applySearchSelection, ensureSearchSelectionVisible, computeSearchPageStats, startSearchJob, jumpToNextMatch, jumpToPreviousMatch, cancelGlobalSearchJob } from './editor_search';
 import * as constants from './constants';
 import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, workspaceDirtyCache, caretNavigation } from './ide_state';
 import { initializeDebuggerUiState } from './debugger_ui_state';
@@ -137,11 +131,14 @@ import {
 } from './workspace_storage';
 
 import * as TextEditing from './text_editing_and_selection';
-import { drawInlineCaret, drawRectOutlineColor, resetBlink } from './render/render_caret';
+import { drawRectOutlineColor, resetBlink } from './render/render_caret';
 import { api, type BmsxConsoleRuntime } from '../runtime';
 import { computeEditContextFromSources, handlePostEditMutation, writeClipboard } from './text_editing_and_selection';
 import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
+import { drawCreateResourceBar } from './render/render_input_bars';
+import { drawResourceSearchBar } from './render/render_input_bars';
 import { drawActionPromptOverlay } from './render/render_prompt';
+import { drawLineJumpBar, drawRenameBar, drawSearchBar, drawSymbolSearchBar } from './render/render_input_bars';
 
 const editorFacade = {
 	activate,
@@ -268,14 +265,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	});
 	ide_state.completion.setEnterCommitsEnabled(false);
 	ide_state.input = new InputController();
-	ide_state.problemsPanel = new ProblemsPanelController({
-		lineHeight: ide_state.lineHeight,
-		measureText: (text) => measureText(text),
-		drawText: (api, text, x, y, color) => drawEditorText(api, ide_state.font, text, x, y, undefined, color),
-		drawRectOutlineColor: (api, l, t, r, b, col) => drawRectOutlineColor(api, l, t, r, b, undefined, col),
-		truncateTextToWidth: (text, maxWidth) => truncateTextToWidth(text, maxWidth, (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance),
-		gotoDiagnostic: (diagnostic) => gotoDiagnostic(diagnostic),
-	});
+	ide_state.problemsPanel = new ProblemsPanelController();
 	ide_state.problemsPanel.setDiagnostics(ide_state.diagnostics);
 	ide_state.renameController = new RenameController({
 		processFieldEdit: (field, options) => processInlineFieldEditing(field, options),
@@ -1496,7 +1486,7 @@ export function draw(): void {
 		renderCodeArea();
 	}
 	drawProblemsPanel();
-	drawStatusBar();
+	renderStatusBar();
 	if (ide_state.pendingActionPrompt) {
 		drawActionPromptOverlay();
 	}
@@ -2765,70 +2755,6 @@ export function applySymbolSearchSelection(index: number): void {
 	});
 }
 
-export function handleSymbolSearchInput(deltaSeconds: number): void {
-	const { shiftDown } = { shiftDown: isShiftDown() };
-	if (isKeyJustPressed('Enter')) {
-		consumeIdeKey('Enter');
-		if (shiftDown) {
-			moveSymbolSearchSelection(-1);
-			return;
-		}
-		if (ide_state.symbolSearchSelectionIndex >= 0) {
-			applySymbolSearchSelection(ide_state.symbolSearchSelectionIndex);
-		} else {
-			ide_state.showMessage('No symbol selected', constants.COLOR_STATUS_WARNING, 1.5);
-		}
-		return;
-	}
-	if (isKeyJustPressed('Escape')) {
-		consumeIdeKey('Escape');
-		closeSymbolSearch(true);
-		return;
-	}
-	if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
-		consumeIdeKey('ArrowUp');
-		moveSymbolSearchSelection(-1);
-		return;
-	}
-	if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
-		consumeIdeKey('ArrowDown');
-		moveSymbolSearchSelection(1);
-		return;
-	}
-	if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
-		consumeIdeKey('PageUp');
-		moveSymbolSearchSelection(-symbolSearchPageSize());
-		return;
-	}
-	if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
-		consumeIdeKey('PageDown');
-		moveSymbolSearchSelection(symbolSearchPageSize());
-		return;
-	}
-	if (isKeyJustPressed('Home')) {
-		consumeIdeKey('Home');
-		ide_state.symbolSearchSelectionIndex = ide_state.symbolSearchMatches.length > 0 ? 0 : -1;
-		ensureSymbolSearchSelectionVisible();
-		return;
-	}
-	if (isKeyJustPressed('End')) {
-		consumeIdeKey('End');
-		ide_state.symbolSearchSelectionIndex = ide_state.symbolSearchMatches.length > 0 ? ide_state.symbolSearchMatches.length - 1 : -1;
-		ensureSymbolSearchSelectionVisible();
-		return;
-	}
-	const textChanged = processInlineFieldEditing(ide_state.symbolSearchField, {
-		deltaSeconds,
-		allowSpace: true,
-		characterFilter: undefined,
-		maxLength: null,
-	});
-	ide_state.symbolSearchQuery = getFieldText(ide_state.symbolSearchField);
-	if (textChanged) {
-		updateSymbolSearchMatches();
-	}
-}
-
 export function refreshResourceCatalog(): void {
 	let descriptors: ConsoleResourceDescriptor[];
 	try {
@@ -2977,100 +2903,6 @@ export function applyResourceSearchSelection(index: number): void {
 	scheduleNextFrame(() => {
 		openResourceDescriptor(match.entry.descriptor);
 	});
-}
-
-export function handleResourceSearchInput(deltaSeconds: number): void {
-	const { shiftDown } = { shiftDown: isShiftDown() };
-	if (isKeyJustPressed('Enter')) {
-		consumeIdeKey('Enter');
-		if (shiftDown) {
-			moveResourceSearchSelection(-1);
-			return;
-		}
-		if (ide_state.resourceSearchSelectionIndex >= 0) {
-			applyResourceSearchSelection(ide_state.resourceSearchSelectionIndex);
-			return;
-		} else {
-			const trimmed = ide_state.resourceSearchQuery.trim();
-			if (trimmed.length === 0) {
-				closeResourceSearch(true);
-				focusEditorFromResourceSearch();
-			} else {
-				ide_state.showMessage('No resource selected', constants.COLOR_STATUS_WARNING, 1.5);
-			}
-		}
-		return;
-	}
-	if (isKeyJustPressed('Escape')) {
-		consumeIdeKey('Escape');
-		closeResourceSearch(true);
-		focusEditorFromResourceSearch();
-		return;
-	}
-	if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
-		consumeIdeKey('ArrowUp');
-		moveResourceSearchSelection(-1);
-		return;
-	}
-	if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
-		consumeIdeKey('ArrowDown');
-		moveResourceSearchSelection(1);
-		return;
-	}
-	if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
-		consumeIdeKey('PageUp');
-		moveResourceSearchSelection(-resourceSearchWindowCapacity());
-		return;
-	}
-	if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
-		consumeIdeKey('PageDown');
-		moveResourceSearchSelection(resourceSearchWindowCapacity());
-		return;
-	}
-	if (isKeyJustPressed('Home')) {
-		consumeIdeKey('Home');
-		ide_state.resourceSearchSelectionIndex = ide_state.resourceSearchMatches.length > 0 ? 0 : -1;
-		ensureResourceSearchSelectionVisible();
-		return;
-	}
-	if (isKeyJustPressed('End')) {
-		consumeIdeKey('End');
-		ide_state.resourceSearchSelectionIndex = ide_state.resourceSearchMatches.length > 0 ? ide_state.resourceSearchMatches.length - 1 : -1;
-		ensureResourceSearchSelectionVisible();
-		return;
-	}
-	const textChanged = processInlineFieldEditing(ide_state.resourceSearchField, {
-		deltaSeconds,
-		allowSpace: true,
-		characterFilter: undefined,
-		maxLength: null,
-	});
-	ide_state.resourceSearchQuery = getFieldText(ide_state.resourceSearchField);
-	if (textChanged) {
-		if (ide_state.resourceSearchQuery.startsWith('@')) {
-			const query = ide_state.resourceSearchQuery.slice(1).trimStart();
-			closeResourceSearch(true);
-			openSymbolSearch(query);
-			return;
-		}
-		if (ide_state.resourceSearchQuery.startsWith('#')) {
-			const query = ide_state.resourceSearchQuery.slice(1).trimStart();
-			closeResourceSearch(true);
-			openGlobalSymbolSearch(query);
-			return;
-		}
-		if (ide_state.resourceSearchQuery.startsWith(':')) {
-			const query = ide_state.resourceSearchQuery.slice(1).trimStart();
-			closeResourceSearch(true);
-			openLineJump();
-			if (query.length > 0) {
-				applyLineJumpFieldText(query, true);
-				ide_state.lineJumpValue = query;
-			}
-			return;
-		}
-		updateResourceSearchMatches();
-	}
 }
 
 export function openLineJump(): void {
@@ -4453,345 +4285,6 @@ export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnaps
 	requestSemanticRefresh();
 }
 
-export function drawCreateResourceBar(): void {
-	const host = {
-		viewportWidth: ide_state.viewportWidth,
-		headerHeight: ide_state.headerHeight,
-		tabBarHeight: getTabBarTotalHeight(),
-		lineHeight: ide_state.lineHeight,
-		spaceAdvance: ide_state.spaceAdvance,
-		charAdvance: ide_state.charAdvance,
-		measureText: (t: string) => measureText(t),
-		drawText: (api2: BmsxConsoleApi, t: string, x: number, y: number, c: number) => drawEditorText(api2, ide_state.font, t, x, y, undefined, c),
-		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
-		createResourceActive: ide_state.createResourceActive,
-		createResourceVisible: ide_state.createResourceVisible,
-		createResourceField: ide_state.createResourceField,
-		createResourceWorking: ide_state.createResourceWorking,
-		createResourceError: ide_state.createResourceError,
-		drawCreateResourceErrorDialog: (api4: BmsxConsoleApi, err: string) => drawCreateResourceErrorDialog(api4, err),
-		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
-		getSearchBarHeight: () => getSearchBarHeight(),
-		getResourceSearchBarHeight: () => getResourceSearchBarHeight(),
-		getSymbolSearchBarHeight: () => getSymbolSearchBarHeight(),
-		getRenameBarHeight: () => getRenameBarHeight(),
-		getLineJumpBarHeight: () => getLineJumpBarHeight(),
-		drawInlineCaret: (
-			api3: BmsxConsoleApi,
-			field: TextField,
-			l: number,
-			t: number,
-			r: number,
-			b: number,
-			baseX: number,
-			active: boolean,
-			caretColor: { r: number; g: number; b: number; a: number },
-			textColor: number,
-		) => drawInlineCaret(api3, field, l, t, r, b, baseX, active, caretColor, textColor),
-		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
-		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
-	};
-	renderCreateResourceBar(api, host);
-}
-
-export function drawSearchBar(): void {
-	const host: InlineBarsHost = {
-		viewportWidth: ide_state.viewportWidth,
-		headerHeight: ide_state.headerHeight,
-		tabBarHeight: getTabBarTotalHeight(),
-		lineHeight: ide_state.lineHeight,
-		spaceAdvance: ide_state.spaceAdvance,
-		charAdvance: ide_state.charAdvance,
-		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, undefined, c),
-		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
-		createResourceActive: ide_state.createResourceActive,
-		createResourceVisible: ide_state.createResourceVisible,
-		createResourceField: ide_state.createResourceField,
-		createResourceWorking: ide_state.createResourceWorking,
-		createResourceError: ide_state.createResourceError,
-		drawCreateResourceErrorDialog: (a, m) => drawCreateResourceErrorDialog(a, m),
-		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
-		getSearchBarHeight: () => getSearchBarHeight(),
-		getResourceSearchBarHeight: () => getResourceSearchBarHeight(),
-		getSymbolSearchBarHeight: () => getSymbolSearchBarHeight(),
-		getRenameBarHeight: () => getRenameBarHeight(),
-		getLineJumpBarHeight: () => getLineJumpBarHeight(),
-		drawInlineCaret: (
-			a: BmsxConsoleApi,
-			f: TextField,
-			l: number,
-			t: number,
-			r: number,
-			b: number,
-			bx: number,
-			ac: boolean,
-			cc: { r: number; g: number; b: number; a: number },
-			tc: number,
-		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
-		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
-		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
-		searchActive: ide_state.searchActive,
-		searchField: ide_state.searchField,
-		searchQuery: ide_state.searchQuery,
-		searchMatchesCount: activeSearchMatchCount(),
-		searchCurrentIndex: ide_state.searchCurrentIndex,
-		searchScope: ide_state.searchScope,
-		searchWorking: ide_state.searchScope === 'global' ? ide_state.globalSearchJob !== null : ide_state.searchJob !== null,
-		searchVisibleResultCount: () => searchVisibleResultCount(),
-		searchResultEntryHeight: () => searchResultEntryHeight(),
-		searchResultEntries: getVisibleSearchResultEntries(),
-		searchResultEntriesBaseOffset: ide_state.searchDisplayOffset,
-		searchSelectionIndex: ide_state.searchCurrentIndex,
-		searchHoverIndex: ide_state.searchHoverIndex,
-		searchDisplayOffset: ide_state.searchDisplayOffset,
-	};
-	renderSearchBar(api, host);
-}
-
-export function drawResourceSearchBar(): void {
-	const host: InlineBarsHost = {
-		viewportWidth: ide_state.viewportWidth,
-		headerHeight: ide_state.headerHeight,
-		tabBarHeight: getTabBarTotalHeight(),
-		lineHeight: ide_state.lineHeight,
-		spaceAdvance: ide_state.spaceAdvance,
-		charAdvance: ide_state.charAdvance,
-		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, undefined, c),
-		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
-		createResourceActive: ide_state.createResourceActive,
-		createResourceVisible: ide_state.createResourceVisible,
-		createResourceField: ide_state.createResourceField,
-		createResourceWorking: ide_state.createResourceWorking,
-		createResourceError: ide_state.createResourceError,
-		drawCreateResourceErrorDialog: (a, m) => drawCreateResourceErrorDialog(a, m),
-		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
-		getSearchBarHeight: () => getSearchBarHeight(),
-		getResourceSearchBarHeight: () => getResourceSearchBarHeight(),
-		getSymbolSearchBarHeight: () => getSymbolSearchBarHeight(),
-		getRenameBarHeight: () => getRenameBarHeight(),
-		getLineJumpBarHeight: () => getLineJumpBarHeight(),
-		drawInlineCaret: (
-			a: BmsxConsoleApi,
-			f: TextField,
-			l: number,
-			t: number,
-			r: number,
-			b: number,
-			bx: number,
-			ac: boolean,
-			cc: { r: number; g: number; b: number; a: number },
-			tc: number,
-		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
-		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
-		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
-		resourceSearchActive: ide_state.resourceSearchActive,
-		resourceSearchField: ide_state.resourceSearchField,
-		resourceSearchVisibleResultCount: () => resourceSearchVisibleResultCount(),
-		resourceSearchEntryHeight: () => resourceSearchEntryHeight(),
-		isResourceSearchCompactMode: () => isResourceSearchCompactMode(),
-		resourceSearchMatches: ide_state.resourceSearchMatches,
-		resourceSearchSelectionIndex: ide_state.resourceSearchSelectionIndex,
-		resourceSearchHoverIndex: ide_state.resourceSearchHoverIndex,
-		resourceSearchDisplayOffset: ide_state.resourceSearchDisplayOffset,
-	};
-	renderResourceSearchBar(api, host);
-}
-
-export function drawSymbolSearchBar(): void {
-	const host: InlineBarsHost = {
-		viewportWidth: ide_state.viewportWidth,
-		headerHeight: ide_state.headerHeight,
-		tabBarHeight: getTabBarTotalHeight(),
-		lineHeight: ide_state.lineHeight,
-		spaceAdvance: ide_state.spaceAdvance,
-		charAdvance: ide_state.charAdvance,
-		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, undefined, c),
-		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
-		createResourceActive: ide_state.createResourceActive,
-		createResourceVisible: ide_state.createResourceVisible,
-		createResourceField: ide_state.createResourceField,
-		createResourceWorking: ide_state.createResourceWorking,
-		createResourceError: ide_state.createResourceError,
-		drawCreateResourceErrorDialog: (a, m) => drawCreateResourceErrorDialog(a, m),
-		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
-		getSearchBarHeight: () => getSearchBarHeight(),
-		getResourceSearchBarHeight: () => getResourceSearchBarHeight(),
-		getSymbolSearchBarHeight: () => getSymbolSearchBarHeight(),
-		getRenameBarHeight: () => getRenameBarHeight(),
-		getLineJumpBarHeight: () => getLineJumpBarHeight(),
-		drawInlineCaret: (
-			a: BmsxConsoleApi,
-			f: TextField,
-			l: number,
-			t: number,
-			r: number,
-			b: number,
-			bx: number,
-			ac: boolean,
-			cc: { r: number; g: number; b: number; a: number },
-			tc: number,
-		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
-		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
-		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
-		symbolSearchGlobal: ide_state.symbolSearchGlobal,
-		symbolSearchActive: ide_state.symbolSearchActive,
-		symbolSearchMode: ide_state.symbolSearchMode,
-		symbolSearchField: ide_state.symbolSearchField,
-		symbolSearchVisibleResultCount: () => symbolSearchVisibleResultCount(),
-		symbolSearchEntryHeight: () => symbolSearchEntryHeight(),
-		isSymbolSearchCompactMode: () => isSymbolSearchCompactMode(),
-		symbolSearchMatches: ide_state.symbolSearchMatches,
-		symbolSearchSelectionIndex: ide_state.symbolSearchSelectionIndex,
-		symbolSearchHoverIndex: ide_state.symbolSearchHoverIndex,
-		symbolSearchDisplayOffset: ide_state.symbolSearchDisplayOffset,
-	};
-	renderSymbolSearchBar(api, host);
-}
-
-export function drawRenameBar(): void {
-	const host: InlineBarsHost = {
-		viewportWidth: ide_state.viewportWidth,
-		headerHeight: ide_state.headerHeight,
-		tabBarHeight: getTabBarTotalHeight(),
-		lineHeight: ide_state.lineHeight,
-		spaceAdvance: ide_state.spaceAdvance,
-		charAdvance: ide_state.charAdvance,
-		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, undefined, c),
-		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
-		createResourceActive: ide_state.createResourceActive,
-		createResourceVisible: ide_state.createResourceVisible,
-		createResourceField: ide_state.createResourceField,
-		createResourceWorking: ide_state.createResourceWorking,
-		createResourceError: ide_state.createResourceError,
-		drawCreateResourceErrorDialog: (a, m) => drawCreateResourceErrorDialog(a, m),
-		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
-		getSearchBarHeight: () => getSearchBarHeight(),
-		getResourceSearchBarHeight: () => getResourceSearchBarHeight(),
-		getSymbolSearchBarHeight: () => getSymbolSearchBarHeight(),
-		getRenameBarHeight: () => getRenameBarHeight(),
-		getLineJumpBarHeight: () => getLineJumpBarHeight(),
-		drawInlineCaret: (
-			a: BmsxConsoleApi,
-			f: TextField,
-			l: number,
-			t: number,
-			r: number,
-			b: number,
-			bx: number,
-			ac: boolean,
-			cc: { r: number; g: number; b: number; a: number },
-			tc: number,
-		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
-		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
-		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
-		renameActive: ide_state.renameController.isActive(),
-		renameField: ide_state.renameController.getField(),
-		renameMatchCount: ide_state.renameController.getMatchCount(),
-		renameExpression: ide_state.renameController.getExpressionLabel(),
-		renameOriginalName: ide_state.renameController.getOriginalName(),
-	};
-	renderRenameBar(api, host);
-}
-
-export function drawLineJumpBar(): void {
-	const host: InlineBarsHost = {
-		viewportWidth: ide_state.viewportWidth,
-		headerHeight: ide_state.headerHeight,
-		tabBarHeight: getTabBarTotalHeight(),
-		lineHeight: ide_state.lineHeight,
-		spaceAdvance: ide_state.spaceAdvance,
-		charAdvance: ide_state.charAdvance,
-		measureText: (t: string) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, undefined, c),
-		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
-		createResourceActive: ide_state.createResourceActive,
-		createResourceVisible: ide_state.createResourceVisible,
-		createResourceField: ide_state.createResourceField,
-		createResourceWorking: ide_state.createResourceWorking,
-		createResourceError: ide_state.createResourceError,
-		drawCreateResourceErrorDialog: (a, m) => drawCreateResourceErrorDialog(a, m),
-		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
-		getSearchBarHeight: () => getSearchBarHeight(),
-		getResourceSearchBarHeight: () => getResourceSearchBarHeight(),
-		getSymbolSearchBarHeight: () => getSymbolSearchBarHeight(),
-		getRenameBarHeight: () => getRenameBarHeight(),
-		getLineJumpBarHeight: () => getLineJumpBarHeight(),
-		drawInlineCaret: (
-			a: BmsxConsoleApi,
-			f: TextField,
-			l: number,
-			t: number,
-			r: number,
-			b: number,
-			bx: number,
-			ac: boolean,
-			cc: { r: number; g: number; b: number; a: number },
-			tc: number,
-		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
-		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
-		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
-		blockActiveCarets: (ide_state.problemsPanel.isVisible() && ide_state.problemsPanel.isFocused()),
-		lineJumpActive: ide_state.lineJumpActive,
-		lineJumpField: ide_state.lineJumpField,
-	};
-	renderLineJumpBar(api, host);
-}
-
-export function drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: string): void {
-	const maxDialogWidth = Math.min(ide_state.viewportWidth - 16, 360);
-	const wrapWidth = Math.max(ide_state.charAdvance, maxDialogWidth - (constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
-	const segments = message.split(/\r?\n/);
-	const lines: string[] = [];
-	for (let i = 0; i < segments.length; i += 1) {
-		const segment = segments[i].trim();
-		const wrapped = wrapRuntimeErrorLine(segment.length === 0 ? '' : segment, wrapWidth, (text) => measureText(text));
-		for (let j = 0; j < wrapped.length; j += 1) {
-			lines.push(wrapped[j]);
-		}
-	}
-	if (lines.length === 0) {
-		lines.push('');
-	}
-	let contentWidth = 0;
-	for (let i = 0; i < lines.length; i += 1) {
-		contentWidth = Math.max(contentWidth, measureText(lines[i]));
-	}
-	const dialogWidth = Math.min(ide_state.viewportWidth - 16, Math.max(180, contentWidth + constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
-	const dialogHeight = Math.min(ide_state.viewportHeight - 16, lines.length * ide_state.lineHeight + constants.ERROR_OVERLAY_PADDING_Y * 2 + 16);
-	const left = Math.max(8, Math.floor((ide_state.viewportWidth - dialogWidth) / 2));
-	const top = Math.max(8, Math.floor((ide_state.viewportHeight - dialogHeight) / 2));
-	const right = left + dialogWidth;
-	const bottom = top + dialogHeight;
-	api.rectfill(left, top, right, bottom, undefined, constants.COLOR_STATUS_BACKGROUND);
-	api.rect(left, top, right, bottom, undefined, constants.COLOR_CREATE_RESOURCE_ERROR);
-	const dialogPaddingX = constants.ERROR_OVERLAY_PADDING_X + 6;
-	const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
-	renderErrorOverlayText(
-		api,
-		ide_state.font,
-		ide_state.lines,
-		left + dialogPaddingX,
-		top + dialogPaddingY,
-		ide_state.lineHeight,
-		constants.COLOR_STATUS_TEXT
-	);
-}
-
 export function simplifyRuntimeErrorMessage(message: string): string {
 	return message.replace(/^\[BmsxConsoleRuntime\]\s*/, '');
 }
@@ -5258,7 +4751,7 @@ export function toggleResourcePanelFilterMode(): void {
 export function updateViewport(viewport: { width: number; height: number }): void {
 	applyViewportSize(viewport);
 	ide_state.resourcePanel.clampHScroll();
-	ide_state.resourcePanel.ensureSelectionVisiblePublic();
+	ide_state.resourcePanel.ensureSelectionVisible();
 	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();
 }
@@ -5287,9 +4780,6 @@ export function setFontVariant(variant: ConsoleFontVariant): void {
 	});
 	if (ide_state.resourcePanel) {
 		ide_state.resourcePanel.setFontMetrics(ide_state.lineHeight, ide_state.charAdvance);
-	}
-	if (ide_state.problemsPanel) {
-		ide_state.problemsPanel.setLineHeight(ide_state.lineHeight);
 	}
 	invalidateAllHighlights();
 	invalidateVisualLines();
@@ -5493,7 +4983,7 @@ export function applyPendingResourceSelection(): void {
 		return;
 	}
 	ide_state.resourceBrowserSelectionIndex = index;
-	resourceBrowserEnsureSelectionVisible();
+	ide_state.resourcePanel.ensureSelectionVisible();
 	ide_state.pendingResourceSelectionasset_id = null;
 }
 
@@ -6028,13 +5518,6 @@ export function hideResourceViewerSprite(): void {
 	}
 }
 
-// Bridge wrappers to the ResourcePanelController (temporary during migration)
-export function resourceBrowserEnsureSelectionVisible(): void {
-	if (!ide_state.resourcePanelVisible) return;
-	ide_state.resourcePanel.ensureSelectionVisiblePublic();
-	// controller owns scroll; no local mirror required
-}
-
 export function sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
 	return ide_state.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
 }
@@ -6298,16 +5781,6 @@ export function prepareRuntimeSnapshotForResume(snapshot: unknown): Record<strin
 		sanitized.luaRuntimeFailed = sanitized.luaRuntimeFailed ?? false;
 	}
 	return sanitized;
-}
-
-export function scheduleRuntimeTask(task: () => void | Promise<void>, onError: (error: unknown) => void): void {
-	scheduleMicrotask(() => {
-		try {
-			Promise.resolve(task()).catch(onError);
-		} catch (error) {
-			onError(error);
-		}
-	});
 }
 
 export function handleRuntimeTaskError(error: unknown, fallbackMessage: string): void {
