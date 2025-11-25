@@ -47,7 +47,7 @@ import type {
 } from './ast';
 import { LuaEnvironment } from './environment';
 import { LuaRuntimeError, LuaSyntaxError } from './errors';
-import { LuaLexer } from './lexer';
+import { LuaLexer, type CanonicalizationType } from './lexer';
 import { LuaParser } from './parser';
 import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from './value';
 import { createLuaNativeValue, createLuaTable, isLuaTable, isLuaNativeValue } from './value';
@@ -180,6 +180,7 @@ export class LuaInterpreter {
 	private exceptionResumeStrategy: LuaExceptionResumeStrategy = 'propagate';
 	private hostAdapter: LuaHostAdapter | null = null;
 	private caseInsensitiveNativeAccess = true;
+	private identifierCanonicalizationMode: CanonicalizationType = 'none';
 	private nativeValueCache: WeakMap<object | Function, LuaNativeValue> = new WeakMap();
 	private readonly nativeMethodCache: WeakMap<LuaNativeValue, Map<string, LuaFunctionValue>> = new WeakMap<
 		LuaNativeValue,
@@ -189,22 +190,22 @@ export class LuaInterpreter {
 	private readonly packageLoaded: LuaTable;
 	private requireHandler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) | null = null;
 
-	 constructor(globals: LuaEnvironment | null) {
-	 	 if (globals === null) {
-	 	 	 this.globals = LuaEnvironment.createRoot();
-	 	 }
-	 	 else {
-	 	 	 this.globals = globals;
-	 	 }
-	 	 this.currentChunk = '<chunk>';
-	 	 this.randomSeedValue = $.platform.clock.now();
-	 	 this.packageTable = createLuaTable();
-	 	 this.packageLoaded = createLuaTable();
-	 	 this.initializeBuiltins();
-	 }
+	constructor(globals: LuaEnvironment | null) {
+		if (globals === null) {
+			this.globals = LuaEnvironment.createRoot();
+		}
+		else {
+			this.globals = globals;
+		}
+		this.currentChunk = '<chunk>';
+		this.randomSeedValue = $.platform.clock.now();
+		this.packageTable = createLuaTable();
+		this.packageLoaded = createLuaTable();
+		this.initializeBuiltins();
+	}
 
 	public execute(source: string, chunkName: string): LuaValue[] {
-		const lexer = new LuaLexer(source, chunkName);
+		const lexer = new LuaLexer(source, chunkName, { canonicalizeIdentifiers: this.identifierCanonicalizationMode });
 		const tokens = lexer.scanTokens();
 		const parser = new LuaParser(tokens, chunkName, source);
 		const chunk = parser.parseChunk();
@@ -223,6 +224,10 @@ export class LuaInterpreter {
 
 	public setCaseInsensitiveNativeAccess(enabled: boolean): void {
 		this.caseInsensitiveNativeAccess = enabled;
+	}
+
+	public setIdentifierCanonicalization(mode: CanonicalizationType): void {
+		this.identifierCanonicalizationMode = mode;
 	}
 
 	public setRequireHandler(handler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) | null): void {
@@ -271,7 +276,7 @@ export class LuaInterpreter {
 	}
 
 	public parseChunk(source: string, chunkName: string): LuaChunk {
-		const lexer = new LuaLexer(source, chunkName);
+		const lexer = new LuaLexer(source, chunkName, { canonicalizeIdentifiers: this.identifierCanonicalizationMode });
 		const tokens = lexer.scanTokens();
 		const parser = new LuaParser(tokens, chunkName, source);
 		return parser.parseChunk();
@@ -2560,7 +2565,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 	}
 
 	private ensureIdentifierNotReserved(name: string, range: LuaSourceRange): void {
-		if (this.reservedIdentifiers.has(name)) {
+		if (this.reservedIdentifiers.has(this.canonicalizeRuntimeIdentifier(name))) {
 			throw new LuaSyntaxError(`'${name}' is reserved and cannot be redefined.`, range.chunkName, range.start.line, range.start.column);
 		}
 	}
@@ -2570,6 +2575,16 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			this.ensureIdentifierNotReserved(parameter.name, parameter.range);
 		}
 		this.validateReservedIdentifiers(expression.body.body);
+	}
+
+	private canonicalizeRuntimeIdentifier(name: string): string {
+		if (this.identifierCanonicalizationMode === 'upper') {
+			return name.toUpperCase();
+		}
+		if (this.identifierCanonicalizationMode === 'lower') {
+			return name.toLowerCase();
+		}
+		return name;
 	}
 
 	private initializeBuiltins(): void {

@@ -1,5 +1,6 @@
 import { LuaLexer } from '../../lua/lexer';
 import { LuaParser } from '../../lua/parser';
+import { ide_state } from './ide_state';
 import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
@@ -172,7 +173,7 @@ type TokenInfo = {
 export function buildLuaFileSemanticData(source: string, chunkName: string): FileSemanticData {
 	const normalized = normalizeSource(source);
 	const lines = normalized.split('\n');
-	const lexer = new LuaLexer(normalized, chunkName);
+	const lexer = new LuaLexer(normalized, chunkName, { canonicalizeIdentifiers: ide_state.caseInsensitive ? 'upper' : 'none' });
 	const tokens = lexer.scanTokens();
 	const parser = new LuaParser(tokens, chunkName, normalized);
 	const chunk = parser.parseChunk();

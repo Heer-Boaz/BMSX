@@ -2,6 +2,8 @@ import { LuaSyntaxError } from './errors';
 import type { LuaToken, LuaTokenLiteral } from './token';
 import { LuaTokenType, resolveKeyword } from './token';
 
+export type CanonicalizationType = 'none' | 'upper' | 'lower';
+
 export class LuaLexer {
 	private readonly source: string;
 	private readonly chunkName: string;
@@ -11,8 +13,9 @@ export class LuaLexer {
 	private tokenStartIndex: number;
 	private tokenStartLine: number;
 	private tokenStartColumn: number;
+	private readonly identifierCanonicalization: CanonicalizationType;
 
-	constructor(source: string, chunkName: string) {
+	constructor(source: string, chunkName: string, options?: { canonicalizeIdentifiers?: CanonicalizationType }) {
 		this.source = source;
 		this.chunkName = chunkName;
 		this.currentIndex = 0;
@@ -21,6 +24,13 @@ export class LuaLexer {
 		this.tokenStartIndex = 0;
 		this.tokenStartLine = 1;
 		this.tokenStartColumn = 1;
+		if (options?.canonicalizeIdentifiers === 'upper') {
+			this.identifierCanonicalization = 'upper';
+		} else if (options?.canonicalizeIdentifiers === 'lower') {
+			this.identifierCanonicalization = 'lower';
+		} else {
+			this.identifierCanonicalization = 'none';
+		}
 	}
 
 	public scanTokens(): LuaToken[] {
@@ -245,24 +255,25 @@ export class LuaLexer {
 			this.advance();
 		}
 		const lexeme = this.currentLexeme();
-		const keywordType = resolveKeyword(lexeme);
+		const canonical = this.canonicalizeIdentifier(lexeme);
+		const keywordType = resolveKeyword(canonical);
 		if (keywordType !== null) {
 			if (keywordType === LuaTokenType.True) {
-				this.pushToken(tokens, keywordType, true);
+				this.pushIdentifierToken(tokens, keywordType, true, canonical);
 				return;
 			}
 			if (keywordType === LuaTokenType.False) {
-				this.pushToken(tokens, keywordType, false);
+				this.pushIdentifierToken(tokens, keywordType, false, canonical);
 				return;
 			}
 			if (keywordType === LuaTokenType.Nil) {
-				this.pushToken(tokens, keywordType, null);
+				this.pushIdentifierToken(tokens, keywordType, null, canonical);
 				return;
 			}
-			this.pushToken(tokens, keywordType, null);
+			this.pushIdentifierToken(tokens, keywordType, null, canonical);
 			return;
 		}
-		this.pushToken(tokens, LuaTokenType.Identifier, null);
+		this.pushIdentifierToken(tokens, LuaTokenType.Identifier, null, canonical);
 	}
 
 	private scanNumber(tokens: LuaToken[], startedWithDot: boolean): void {
@@ -588,6 +599,27 @@ export class LuaLexer {
 			literal,
 		};
 		tokens.push(token);
+	}
+
+	private pushIdentifierToken(tokens: LuaToken[], type: LuaTokenType, literal: LuaTokenLiteral, lexeme: string): void {
+		const token: LuaToken = {
+			type,
+			lexeme,
+			line: this.tokenStartLine,
+			column: this.tokenStartColumn,
+			literal,
+		};
+		tokens.push(token);
+	}
+
+	private canonicalizeIdentifier(value: string): string {
+		if (this.identifierCanonicalization === 'upper') {
+			return value.toUpperCase();
+		}
+		if (this.identifierCanonicalization === 'lower') {
+			return value.toLowerCase();
+		}
+		return value;
 	}
 
 	private advance(): string {

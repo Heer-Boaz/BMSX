@@ -1005,8 +1005,9 @@ export function getBuiltinIdentifierSet(): ReadonlySet<string> {
 		const set = new Set<string>();
 		for (let i = 0; i < names.length; i += 1) {
 			const name = names[i];
+			const canonical = ide_state.caseInsensitive ? name.toUpperCase() : name;
+			set.add(canonical);
 			set.add(name);
-			set.add(name.toLowerCase());
 		}
 		const entry = { key, set };
 		ide_state.builtinIdentifierCache = entry;
@@ -5261,7 +5262,7 @@ export function updateViewport(viewport: { width: number; height: number }): voi
 	ensureCursorVisible();
 }
 
-function setFontVariant(variant: ConsoleFontVariant): void {
+export function setFontVariant(variant: ConsoleFontVariant): void {
 	ide_state.fontVariant = variant;
 	ide_state.font = new ConsoleEditorFont(variant);
 	ide_state.lineHeight = ide_state.font.lineHeight();

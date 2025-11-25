@@ -10,9 +10,6 @@ export class GlobalShortcutRegistry {
 	private readonly latch = new Map<string, number | null>();
 
 	public registerKeyboardShortcut(playerIndex: number, key: string, handler: () => void): ShortcutDisposer {
-		if (!key || typeof handler !== 'function') {
-			throw new Error('[GlobalShortcutRegistry] Invalid keyboard shortcut registration.');
-		}
 		Input.instance.setKeyboardCapture(key, true);
 		let shortcuts = this.keyboardShortcuts.get(playerIndex);
 		if (!shortcuts) {
@@ -42,7 +39,7 @@ export class GlobalShortcutRegistry {
 			}
 			return button;
 		});
-		const entries = this.gamepadChords.get(playerIndex) ?? []; 
+		const entries = this.gamepadChords.get(playerIndex) ?? [];
 		if (!this.gamepadChords.has(playerIndex)) {
 			this.gamepadChords.set(playerIndex, entries);
 		}

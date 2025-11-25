@@ -728,7 +728,7 @@ export const EDITOR_TOGGLE_KEY = 'F1';
 export const CONSOLE_TOGGLE_KEY = 'F2';
 export const ESCAPE_KEY = 'Escape';
 export const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'start'];
-export const GAME_PAUSE_KEY = 'F12';
+export const GAME_PAUSE_KEY = 'F5';
 export const GLOBAL_SEARCH_RESULT_LIMIT = SEARCH_MAX_RESULTS * 4;
 
 export const TAB_DIRTY_MARKER_METRICS = { width: 4, height: 4 };

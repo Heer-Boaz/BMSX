@@ -21,14 +21,16 @@ export class LuaEnvironment {
 		return new LuaEnvironment(parent);
 	}
 
-	public set(name: string, value: LuaValue, range?: LuaSourceRange | null): void {
+	public set(_name: string, value: LuaValue, range?: LuaSourceRange | null): void {
+		const name = _name;
 		this.values.set(name, value);
 		if (range && !this.definitions.has(name)) {
 			this.definitions.set(name, range);
 		}
 	}
 
-	public assignExisting(name: string, value: LuaValue): void {
+	public assignExisting(_name: string, value: LuaValue): void {
+		const name = _name;
 		const resolved = this.resolve(name);
 		if (resolved === null) {
 			throw new LuaRuntimeError(`[LuaEnvironment] Attempted to assign to undefined variable '${name}'.`, '<environment>', 0, 0);
@@ -36,7 +38,8 @@ export class LuaEnvironment {
 		resolved.values.set(name, value);
 	}
 
-	public get(name: string): LuaValue | null {
+	public get(_name: string): LuaValue | null {
+		const name = _name;
 		const value = this.values.get(name);
 		if (value !== undefined) {
 			return value;
@@ -47,7 +50,8 @@ export class LuaEnvironment {
 		return null;
 	}
 
-	public getDefinition(name: string): LuaSourceRange | null {
+	public getDefinition(_name: string): LuaSourceRange | null {
+		const name = _name;
 		const local = this.definitions.get(name);
 		if (local) {
 			return local;
@@ -58,11 +62,13 @@ export class LuaEnvironment {
 		return null;
 	}
 
-	public hasLocal(name: string): boolean {
+	public hasLocal(_name: string): boolean {
+		const name = _name;
 		return this.values.has(name);
 	}
 
-	public resolve(name: string): LuaEnvironment | null {
+	public resolve(_name: string): LuaEnvironment | null {
+		const name = _name;
 		if (this.values.has(name)) {
 			return this;
 		}

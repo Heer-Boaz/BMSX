@@ -67,6 +67,7 @@ import {
 import { arrayify } from '../utils/arrayify';
 import { safeclamp } from '../utils/safeclamp';
 import { ConsoleCommandDispatcher } from './console_commands';
+import { CanonicalizationType } from '../lua/lexer';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -143,7 +144,6 @@ enum BmsxLuaValidationStrategy {
 	FullExecution = 'full_execution',
 }
 
-setDebuggerRuntimeAccessor(() => BmsxConsoleRuntime.instance);
 
 type HttpResponse = {
 	ok: boolean;
@@ -282,6 +282,16 @@ class ConsoleScriptService extends Service {
 
 export var api: BmsxConsoleApi; // Initialized in BmsxConsoleRuntime constructor
 
+export function canonicalizeIdentifier(name: string, canonicalization: CanonicalizationType): string {
+	if (canonicalization === 'upper') {
+		return name.toUpperCase();
+	}
+	if (canonicalization === 'lower') {
+		return name.toLowerCase();
+	}
+	return name;
+}
+
 export class BmsxConsoleRuntime extends Service {
 	private static _instance: BmsxConsoleRuntime | null = null;
 	private static preservingWorldResetDepth = 0;
@@ -337,6 +347,7 @@ export class BmsxConsoleRuntime extends Service {
 	]);
 
 	public static createInstance(options: BmsxConsoleRuntimeOptions): void {
+		setDebuggerRuntimeAccessor(() => BmsxConsoleRuntime.instance);
 		const existing = BmsxConsoleRuntime._instance;
 		if (existing) {
 			const sameCart = existing.cart.meta.persistentId === options.cart.meta.persistentId;
@@ -600,6 +611,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private configureInterpreter(interpreter: LuaInterpreter): void {
 		interpreter.setCaseInsensitiveNativeAccess(this.caseInsensitiveLua);
+		interpreter.setIdentifierCanonicalization(this.caseInsensitiveLua ? 'upper' : 'none');
 		interpreter.setHostAdapter({
 			toLua: (value, ctx) => this.jsToLua(value, ctx),
 			toJs: (luaValue, ctx) => {
@@ -846,6 +858,10 @@ export class BmsxConsoleRuntime extends Service {
 	private toggleFontVariant(): void {
 		const next = this.consoleFontVariant === 'tiny' ? 'msx' : 'tiny';
 		this.applyFontVariant(next);
+	}
+
+	public setFontVariant(variant: ConsoleFontVariant): void {
+		this.applyFontVariant(variant);
 	}
 
 	private applyFontVariant(variant: ConsoleFontVariant): void {
@@ -3714,7 +3730,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private registerLuaBuiltin(metadata: ConsoleLuaBuiltinDescriptor): void {
-		const normalizedName = metadata.name.trim();
+		const normalizedName = this.canonicalizeIdentifier(metadata.name.trim());
 		if (normalizedName.length === 0) {
 			throw new Error(`Invalid Lua builtin name for '${normalizedName}'.`);
 		}
@@ -3773,37 +3789,20 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private registerLuaGlobal(env: LuaEnvironment, name: string, value: LuaValue): void {
-		env.set(name, value);
-		this.apiFunctionNames.add(name);
-		if (!this.caseInsensitiveLua) {
-			return;
-		}
-		const normalized = name.toLowerCase();
-		if (normalized !== name) {
-			env.set(normalized, value);
-			this.apiFunctionNames.add(normalized);
-		}
+		const key = this.canonicalizeIdentifier(name);
+		env.set(key, value);
+		this.apiFunctionNames.add(key);
 	}
 
 	private getLuaGlobalValue(env: LuaEnvironment, name: string | null | undefined): LuaValue | null {
 		if (!name) {
 			return null;
 		}
-		const direct = env.get(name);
-		if (direct !== null) {
-			return direct;
-		}
-		if (!this.caseInsensitiveLua) {
-			return null;
-		}
-		const normalized = name.toLowerCase();
-		if (normalized !== name) {
-			const fallback = env.get(normalized);
-			if (fallback !== null) {
-				return fallback;
-			}
-		}
-		return null;
+		return env.get(this.canonicalizeIdentifier(name));
+	}
+
+	private canonicalizeIdentifier(name: string): string {
+		return this.caseInsensitiveLua ? name.toUpperCase() : name;
 	}
 
 	private registerLuaClass(className: string, classTable: LuaTable, interpreter: LuaInterpreter): void {

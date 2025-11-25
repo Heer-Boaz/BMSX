@@ -1231,7 +1231,7 @@ function validateCallArity(
 }
 
 function parseLuaChunk(source: string, chunkName: string): LuaChunk {
-	const lexer = new LuaLexer(source, chunkName);
+	const lexer = new LuaLexer(source, chunkName, { canonicalizeIdentifiers: ide_state.caseInsensitive ? 'upper' : 'none' });
 	const tokens = lexer.scanTokens();
 	const parser = new LuaParser(tokens, chunkName, source);
 	return parser.parseChunk();
@@ -1472,4 +1472,3 @@ export function describeMetadataValue(value: unknown): string {
 	}
 	return String(value);
 }
-

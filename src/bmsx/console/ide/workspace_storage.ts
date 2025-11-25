@@ -19,8 +19,9 @@ import {
 	joinWorkspacePaths,
 	normalizeWorkspacePath,
 } from '../workspace';
-import { cloneNavigationEntry, openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, findResourceDescriptorByasset_id, restoreSnapshot } from './console_cart_editor';
+import { cloneNavigationEntry, openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, findResourceDescriptorByasset_id, restoreSnapshot, setFontVariant, getConsoleRuntime } from './console_cart_editor';
 import { createEntryTabContext, initializeTabs, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
+import { ConsoleFontVariant } from '../font';
 
 export type WorkspaceStoragePaths = {
 	projectRootPath: string;
@@ -254,7 +255,7 @@ export type PersistedDirtyEntry = {
 };
 
 export type WorkspaceAutosavePayload = {
-	version: 1;
+	version: 1 | 2;
 	savedAt: number;
 	entryTabId: string | null;
 	activeTabId: string | null;
@@ -270,6 +271,8 @@ export type WorkspaceAutosavePayload = {
 		current: NavigationHistoryEntry | null;
 	};
 	breakpoints?: SerializedBreakpointMap;
+	fontVariant?: ConsoleFontVariant;
+	overlayResolutionMode?: 'offscreen' | 'viewport';
 };
 
 export type DirtyContextEntry = PersistedDirtyEntry & { text: string };
@@ -353,7 +356,7 @@ export async function restoreWorkspaceSessionFromDisk(): Promise<void> {
 		console.warn('[ConsoleCartEditor] Failed to parse workspace session state:', error);
 		return;
 	}
-	if (!payload || payload.version !== 1) {
+	if (!payload || (payload.version !== 1 && payload.version !== 2)) {
 		return;
 	}
 	await applyWorkspaceAutosavePayload(payload);
@@ -372,6 +375,17 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 	initializeTabs(entryContext ?? null);
 	if (entryContext) {
 		ide_state.activeCodeTabContextId = entryContext.id;
+	}
+	const runtime = getConsoleRuntime();
+	if (payload.fontVariant) {
+		if (runtime) {
+			runtime.setFontVariant(payload.fontVariant);
+		} else {
+			setFontVariant(payload.fontVariant);
+		}
+	}
+	if (payload.overlayResolutionMode && runtime) {
+		runtime.overlayResolutionMode = payload.overlayResolutionMode;
 	}
 	for (const tabEntry of payload.tabs) {
 		restorePersistedTab(tabEntry);
@@ -750,8 +764,9 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 		forward: ide_state.navigationHistory.forward.map(entry => cloneNavigationEntry(entry)),
 		current: ide_state.navigationHistory.current ? cloneNavigationEntry(ide_state.navigationHistory.current) : null,
 	};
+	const runtime = getConsoleRuntime();
 	return {
-		version: 1,
+		version: 2,
 		savedAt: $.platform.clock.now(),
 		entryTabId: ide_state.entryTabId ?? null,
 		activeTabId: ide_state.activeTabId ?? null,
@@ -763,6 +778,8 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 		lastHistoryTimestamp: ide_state.lastHistoryTimestamp ?? 0,
 		navigationHistory,
 		breakpoints: serializeBreakpoints(),
+		fontVariant: ide_state.fontVariant,
+		overlayResolutionMode: runtime ? runtime.overlayResolutionMode : undefined,
 	};
 }
 
