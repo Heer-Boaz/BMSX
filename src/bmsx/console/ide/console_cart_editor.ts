@@ -9,7 +9,7 @@ import type {
 	ConsoleResourceDescriptor,
 } from '../types';
 import { ConsoleEditorFont } from '../editor_font';
-import { DEFAULT_CONSOLE_FONT_VARIANT } from '../font';
+import { ConsoleFontVariant, DEFAULT_CONSOLE_FONT_VARIANT } from '../font';
 import { drawEditorColoredText, drawEditorText } from './text_renderer';
 import { Msx1Colors } from '../../systems/msx';
 import { EventEmitter, type ListenerSet } from '../../core/eventemitter';
@@ -150,6 +150,7 @@ const editorFacade = {
 	draw,
 	shutdown,
 	updateViewport,
+	setFontVariant,
 	showWarningBanner: ide_state.showWarningBanner,
 	showRuntimeErrorInChunk,
 	showRuntimeError,
@@ -192,8 +193,8 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		ide_state.listResourcesFn();
 	}
 	applyViewportSize(options.viewport);
-	ide_state.font = new ConsoleEditorFont(ide_state.fontVariant);
 	ide_state.clockNow = $.platform.clock.now;
+	setFontVariant(ide_state.fontVariant);
 	ide_state.searchField = createInlineTextField();
 	ide_state.symbolSearchField = createInlineTextField();
 	ide_state.resourceSearchField = createInlineTextField();
@@ -205,28 +206,6 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	applyResourceSearchFieldText(ide_state.resourceSearchQuery, true);
 	applyLineJumpFieldText(ide_state.lineJumpValue, true);
 	applyCreateResourceFieldText(ide_state.createResourcePath, true);
-	ide_state.lineHeight = ide_state.font.lineHeight();
-	ide_state.charAdvance = ide_state.font.advance('M');
-	ide_state.spaceAdvance = ide_state.font.advance(' ');
-	const layoutOptions = {
-		maxHighlightCache: 512,
-		semanticDebounceMs: 200,
-		clockNow: ide_state.clockNow,
-		getBuiltinIdentifiers: () => getBuiltinIdentifierSet(),
-	};
-	ide_state.layout = new ConsoleCodeLayout(ide_state.font, ide_state.semanticWorkspace, layoutOptions);
-
-	ide_state.inlineFieldMetricsRef = {
-		measureText: (text: string) => measureText(text),
-		advanceChar: (ch: string) => ide_state.font.advance(ch),
-		spaceAdvance: ide_state.spaceAdvance,
-		tabSpaces: constants.TAB_SPACES,
-	};
-	ide_state.gutterWidth = 2;
-	const primaryBarHeight = ide_state.lineHeight + 4;
-	ide_state.headerHeight = primaryBarHeight;
-	ide_state.tabBarHeight = ide_state.lineHeight + 3;
-	ide_state.baseBottomMargin = ide_state.lineHeight + 6;
 	ide_state.scrollbars = {
 		codeVertical: new ConsoleScrollbar('codeVertical', 'vertical'),
 		codeHorizontal: new ConsoleScrollbar('codeHorizontal', 'horizontal'),
@@ -5280,6 +5259,43 @@ export function updateViewport(viewport: { width: number; height: number }): voi
 	ide_state.resourcePanel.ensureSelectionVisiblePublic();
 	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();
+}
+
+function setFontVariant(variant: ConsoleFontVariant): void {
+	ide_state.fontVariant = variant;
+	ide_state.font = new ConsoleEditorFont(variant);
+	ide_state.lineHeight = ide_state.font.lineHeight();
+	ide_state.charAdvance = ide_state.font.advance('M');
+	ide_state.spaceAdvance = ide_state.font.advance(' ');
+	ide_state.inlineFieldMetricsRef = {
+		measureText: (text: string) => measureText(text),
+		advanceChar: (ch: string) => ide_state.font.advance(ch),
+		spaceAdvance: ide_state.spaceAdvance,
+		tabSpaces: constants.TAB_SPACES,
+	};
+	ide_state.gutterWidth = 2;
+	ide_state.headerHeight = ide_state.lineHeight + 4;
+	ide_state.tabBarHeight = ide_state.lineHeight + 3;
+	ide_state.baseBottomMargin = ide_state.lineHeight + 6;
+	ide_state.layout = new ConsoleCodeLayout(ide_state.font, ide_state.semanticWorkspace, {
+		maxHighlightCache: 512,
+		semanticDebounceMs: 200,
+		clockNow: ide_state.clockNow,
+		getBuiltinIdentifiers: () => getBuiltinIdentifierSet(),
+	});
+	if (ide_state.resourcePanel) {
+		ide_state.resourcePanel.setFontMetrics(ide_state.lineHeight, ide_state.charAdvance);
+	}
+	if (ide_state.problemsPanel) {
+		ide_state.problemsPanel.setLineHeight(ide_state.lineHeight);
+	}
+	invalidateAllHighlights();
+	invalidateVisualLines();
+	ensureVisualLines();
+	ide_state.cursorRevealSuspended = false;
+	ensureCursorVisible();
+	requestSemanticRefresh();
+	markDiagnosticsDirty();
 }
 
 export function toggleResolutionMode(): void {

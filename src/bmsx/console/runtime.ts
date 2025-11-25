@@ -34,7 +34,7 @@ import type { BehaviorTreeDefinition, BehaviorTreeDiagnostic } from '../ai/behav
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast';
 import { createConsoleCartEditor, type ConsoleCartEditor, } from './ide/console_cart_editor';
-import { toggleEditorFromShortcut } from './ide/input';
+import { toggleEditorFromShortcut, isAltDown, isCtrlDown, isMetaDown, isShiftDown } from './ide/input';
 import type { RuntimeErrorDetails } from './ide/types';
 import type { StackTraceFrame } from 'bmsx/lua/runtime';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
@@ -381,6 +381,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly apiFunctionNames = new Set<string>();
 	private readonly luaBuiltinMetadata = new Map<string, ConsoleLuaBuiltinDescriptor>();
 	private readonly caseInsensitiveLua: boolean;
+	private consoleFontVariant: ConsoleFontVariant = EDITOR_FONT_VARIANT;
 	private luaProgram: BmsxConsoleLuaProgram | null;
 	private playerIndex: number;
 	private editor: ConsoleCartEditor | null = null;
@@ -508,7 +509,7 @@ export class BmsxConsoleRuntime extends Service {
 		setEditorCaseInsensitivity(this.caseInsensitiveLua);
 		this.consoleMode = new ConsoleMode({
 			playerIndex: options.playerIndex,
-			fontVariant: EDITOR_FONT_VARIANT,
+			fontVariant: this.consoleFontVariant,
 			caseInsensitive: this.caseInsensitiveLua,
 			listLuaSymbols: (asset_id, chunkName) => this.listLuaSymbols(asset_id, chunkName),
 			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
@@ -816,14 +817,20 @@ export class BmsxConsoleRuntime extends Service {
 		const playerInput = $.input.getPlayerInput(this.playerIndex);
 		const getState = (code: string) => playerInput.getButtonState(code, 'keyboard');
 		const consume = (code: string) => playerInput.consumeButton(code, 'keyboard');
-		const shiftDown = getState('ShiftLeft')?.pressed === true || getState('ShiftRight')?.pressed === true;
-		const ctrlDown = getState('ControlLeft')?.pressed === true || getState('ControlRight')?.pressed === true;
-		if (ctrlDown && this.shouldAcceptConsoleHotkey('KeyP', getState('KeyP'))) {
+		const { ctrlDown, metaDown, altDown } = { ctrlDown: isCtrlDown(), metaDown: isMetaDown(), altDown: isAltDown() };
+		const ctrlOrMetaDown = ctrlDown || metaDown;
+		const shiftDown = isShiftDown();
+		if (ctrlOrMetaDown && this.shouldAcceptConsoleHotkey('KeyP', getState('KeyP'))) {
 			consume('KeyP');
 			this.toggleConsoleMode();
 			return;
 		}
-		if (this.consoleMode.isActive && ctrlDown && shiftDown) {
+		if (ctrlOrMetaDown && altDown && this.shouldAcceptConsoleHotkey('console-font-variant', getState('KeyR'))) {
+			consume('KeyR');
+			this.toggleFontVariant();
+			return;
+		}
+		if (this.consoleMode.isActive && ctrlOrMetaDown && shiftDown) {
 			const resolutionState = getState('KeyR');
 			if (this.shouldAcceptConsoleHotkey('console-resolution', resolutionState)) {
 				consume('KeyR');
@@ -833,6 +840,19 @@ export class BmsxConsoleRuntime extends Service {
 		const editorActive = this.editor?.isActive() === true;
 		if (this.handleGlobalDebuggerHotkeys({ shiftDown, ctrlDown, editorActive, getState, consume })) {
 			return;
+		}
+	}
+
+	private toggleFontVariant(): void {
+		const next = this.consoleFontVariant === 'tiny' ? 'msx' : 'tiny';
+		this.applyFontVariant(next);
+	}
+
+	private applyFontVariant(variant: ConsoleFontVariant): void {
+		this.consoleFontVariant = variant;
+		this.consoleMode.setFontVariant(variant);
+		if (this.editor) {
+			this.editor.setFontVariant(variant);
 		}
 	}
 
@@ -1785,7 +1805,7 @@ export class BmsxConsoleRuntime extends Service {
 			listLuaSymbols: (asset_id: string | null, chunkName: string | null) => this.listLuaSymbols(asset_id, chunkName),
 			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
 			listBuiltinLuaFunctions: () => this.listLuaBuiltinFunctions(),
-			fontVariant: EDITOR_FONT_VARIANT,
+			fontVariant: this.consoleFontVariant,
 			workspaceRootPath: this.resolveCartProjectRootPath(),
 			themeVariant: this.cart.meta.ideTheme,
 		});

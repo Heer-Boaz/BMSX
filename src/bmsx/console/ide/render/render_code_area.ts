@@ -194,7 +194,7 @@ export function renderCodeArea(): void {
 				api.rectfill_color(clampedLeft, rowY, clampedRight, rowY + ide_state.lineHeight, constants.SELECTION_OVERLAY);
 			}
 		}
-		drawEditorColoredText(ide_state.font, slice.text, slice.colors, bounds.textLeft, rowY, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
+		drawEditorColoredText(ide_state.font, slice.text, slice.colors, bounds.textLeft, rowY, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT, { forceUppercase: true });
 		const rowDiagnostics = getDiagnosticsForRow(lineIndex);
 		for (let i = 0; i < rowDiagnostics.length; i += 1) {
 			const diagnostic = rowDiagnostics[i];
@@ -407,4 +407,3 @@ export function drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number
 		api.rectfill_color(startX, originY, endX, originY + ide_state.lineHeight, overlay);
 	}
 }
-

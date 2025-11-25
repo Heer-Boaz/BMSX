@@ -69,6 +69,11 @@ export class ResourcePanelController {
 		}
 	}
 
+	public setFontMetrics(lineHeight: number, charAdvance: number): void {
+		this.host.lineHeight = lineHeight;
+		this.host.charAdvance = charAdvance;
+	}
+
 	// === Panel lifecycle ===
 	isVisible(): boolean { return this.visible; }
 	isFocused(): boolean { return this.focused; }

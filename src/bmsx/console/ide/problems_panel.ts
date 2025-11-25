@@ -33,10 +33,15 @@ export class ProblemsPanelController {
     private hoverIndex = -1;
     private scrollIndex = 0;
     private cachedLayout: PanelLayout | null = null;
-    private fixedHeightPx: number | null = null;
-    private lastAvailableWidth = 0;
+	private fixedHeightPx: number | null = null;
+	private lastAvailableWidth = 0;
 
 	constructor(private readonly host: ProblemsPanelHost) {}
+
+	public setLineHeight(lineHeight: number): void {
+		this.host.lineHeight = lineHeight;
+		this.cachedLayout = null;
+	}
 
 	public isVisible(): boolean {
 		return this.visible;
@@ -518,4 +523,3 @@ export function setProblemsPanelHeightFromViewportY(viewportY: number): void {
 	const height = clamp(bottom - top, minHeight, Math.max(minHeight, bottom - minTop));
 	ide_state.problemsPanel.setFixedHeightPx(height);
 }
-

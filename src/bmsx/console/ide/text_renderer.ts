@@ -12,6 +12,7 @@ export function setEditorCaseInsensitivity(enabled: boolean): void {
 
 type DrawEditorTextOptions = {
 	preserveCase?: boolean;
+	forceUppercase?: boolean;
 };
 
 export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, text: string, originX: number, originY: number, color: number, options?: DrawEditorTextOptions): void {
@@ -20,7 +21,7 @@ export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, tex
 	const lines = text.split('\n');
 	const renderFont = font.getRenderFont();
 	const preserveCase = options?.preserveCase ?? false;
-	const useUppercase = !preserveCase && CASE_INSENSITIVE_EDITOR && font.getVariant() === 'tiny';
+	const useUppercase = !preserveCase && CASE_INSENSITIVE_EDITOR && (options?.forceUppercase === true || font.getVariant() === 'tiny');
 	for (let i = 0; i < lines.length; i += 1) {
 		const expanded = expandTabsExternal(lines[i]);
 		if (expanded.length > 0) {
@@ -33,12 +34,13 @@ export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, tex
 	}
 }
 
-export function drawEditorColoredText(font: ConsoleEditorFont, text: string, colors: readonly number[], originX: number, originY: number, fallbackColor: number): void {
+export function drawEditorColoredText(font: ConsoleEditorFont, text: string, colors: readonly number[], originX: number, originY: number, fallbackColor: number, options?: DrawEditorTextOptions): void {
 	let cursorX = Math.floor(originX);
 	const cursorY = Math.floor(originY);
 	const renderFont = font.getRenderFont();
 	const apiWithFont = api;
-	const useUppercase = CASE_INSENSITIVE_EDITOR && font.getVariant() === 'tiny';
+	const preserveCase = options?.preserveCase ?? false;
+	const useUppercase = !preserveCase && CASE_INSENSITIVE_EDITOR && (options?.forceUppercase === true || font.getVariant() === 'tiny');
 	const renderText = useUppercase ? toUpperExceptStrings(text, colors, fallbackColor) : text;
 	let index = 0;
 	while (index < renderText.length) {

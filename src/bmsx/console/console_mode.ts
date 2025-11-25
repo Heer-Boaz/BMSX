@@ -94,7 +94,7 @@ const OUTPUT_COLORS: Record<ConsoleOutputKind, number> = {
 };
 
 export class ConsoleMode {
-	private readonly font: ConsoleEditorFont;
+	private font: ConsoleEditorFont;
 	private readonly caseInsensitive: boolean;
 	private readonly maxEntries: number;
 	private readonly playerIndex: number;
@@ -206,6 +206,12 @@ export class ConsoleMode {
 		this.editingRepeatState.clear();
 		this.historyRepeatState.clear();
 		this.completion.closeSession();
+	}
+
+	public setFontVariant(variant: ConsoleFontVariant): void {
+		this.font = new ConsoleEditorFont(variant);
+		this.cachedLinesVersion = -1;
+		this.resetBlink();
 	}
 
 	public get isActive(): boolean {
