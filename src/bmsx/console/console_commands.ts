@@ -11,6 +11,7 @@ type ConsoleCommandHooks = {
 	nukeWorkspace: () => void;
 	refreshWorkspaceOverrides: (hotReload: boolean) => void;
 	getWorkspaceOverrides: () => ReadonlyMap<string, { source: string; path: string | null; cartPath: string }>;
+	getWorkspaceSavedAssetIds: () => ReadonlySet<string>;
 	appendStdout: (text: string, color?: number) => void;
 	appendStderr: (text: string) => void;
 	appendSystem: (text: string) => void;
@@ -180,7 +181,7 @@ export class ConsoleCommandDispatcher {
 			this.hooks.appendStderr(ERROR_ILLEGAL);
 			return;
 		}
-		if (mode === '-DIRTY' || mode === '-ALL' || mode === '') {
+		if (mode === '-DIRTY' || mode === '-ALL' || mode === '' || mode === '-SAVED') {
 			this.hooks.refreshWorkspaceOverrides(false);
 		}
 		const paths = this.collectPaths(mode);
@@ -266,6 +267,7 @@ export class ConsoleCommandDispatcher {
 		const includeRom = mode === '' || mode === '-ROM' || mode === '-ALL';
 		const includeSaved = mode === '-SAVED' || mode === '-ALL' || mode === '';
 		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || mode === '';
+		const savedAssets = includeSaved ? this.hooks.getWorkspaceSavedAssetIds() : new Set<string>();
 		if (includeRom) {
 			for (const entry of rompack.resourcePaths) {
 				pushPath(entry.path, 'rom');
@@ -275,8 +277,10 @@ export class ConsoleCommandDispatcher {
 			}
 		}
 		if (includeSaved) {
-			for (const [_, path] of Object.entries(rompack.luaSourcePaths)) {
-				pushPath(path, 'saved');
+			for (const [asset_id, path] of Object.entries(rompack.luaSourcePaths)) {
+				if (savedAssets.has(asset_id)) {
+					pushPath(path, 'saved');
+				}
 			}
 		}
 		if (includeDirty) {

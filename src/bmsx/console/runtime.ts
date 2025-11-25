@@ -538,6 +538,7 @@ export class BmsxConsoleRuntime extends Service {
 			nukeWorkspace: () => { this.nukeWorkspace(); },
 			refreshWorkspaceOverrides: (hotReload) => { this.refreshWorkspaceOverrides(hotReload); },
 			getWorkspaceOverrides: () => this.workspaceLuaOverrides,
+			getWorkspaceSavedAssetIds: () => this.getWorkspaceSavedAssetIds(),
 			appendStdout: (text, color) => { this.consoleMode.appendStdout(text, color); },
 			appendStderr: (text) => { this.consoleMode.appendStderr(text); },
 			appendSystem: (text) => { this.consoleMode.appendSystemMessage(text); },
@@ -1536,7 +1537,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.resetFrameTiming();
 		this.hasBooted = true;
-		void this.applyServerWorkspaceDirtyLuaOverrides();
+		void this.applyServerWorkspaceDirtyLuaOverrides(false);
 	}
 
 	private resetWorldState(): void {
@@ -5894,8 +5895,27 @@ export class BmsxConsoleRuntime extends Service {
 		return this.resolveCartProjectRootPath();
 	}
 
-	public getWorkspaceOverrides(): ReadonlyMap<string, { source: string; path: string | null }> {
+	public getWorkspaceOverrides(): ReadonlyMap<string, { source: string; path: string | null; cartPath: string }> {
 		return this.workspaceLuaOverrides;
+	}
+
+	public getWorkspaceSavedAssetIds(): ReadonlySet<string> {
+		const saved = new Set<string>();
+		for (const [asset_id, original] of this.rompackOriginalLua.entries()) {
+			if (this.workspaceLuaOverrides.has(asset_id)) {
+				continue;
+			}
+			const current = $.rompack.lua[asset_id];
+			if (current === undefined) {
+				continue;
+			}
+			const normalizedOriginal = original.replace(/\r\n/g, '\n');
+			const normalizedCurrent = current.replace(/\r\n/g, '\n');
+			if (normalizedCurrent !== normalizedOriginal) {
+				saved.add(asset_id);
+			}
+		}
+		return saved;
 	}
 
 	private resolveWorldObjectConstructor(ref: string | null | undefined): new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject {
@@ -7188,9 +7208,6 @@ export class BmsxConsoleRuntime extends Service {
 	private applyLocalWorkspaceDirtyLuaOverrides(hotReload: boolean): void {
 		const root = this.resolveCartProjectRootPath();
 		const overrides = collectWorkspaceOverrides({ rompack: $.rompack, projectRootPath: root, storage: this.storageService });
-		if (overrides.size === 0) {
-			return;
-		}
 		this.applyWorkspaceLuaOverrides(overrides, hotReload);
 	}
 
@@ -7199,6 +7216,21 @@ export class BmsxConsoleRuntime extends Service {
 		let updated = false;
 		let mainUpdated = false;
 		const mainAssetId = this.luaProgram && this.luaProgram.main === true ? this.luaProgram.asset_id : null;
+		for (const asset_id of Array.from(this.workspaceLuaOverrides.keys())) {
+			if (overrides.has(asset_id)) {
+				continue;
+			}
+			const originalSource = this.rompackOriginalLua.get(asset_id)!;
+			if (rompack.lua[asset_id] !== originalSource) {
+				rompack.lua[asset_id] = originalSource;
+				updated = true;
+				if (mainAssetId && asset_id === mainAssetId) {
+					this.luaProgramSourceOverride = null;
+					mainUpdated = true;
+				}
+			}
+			this.workspaceLuaOverrides.delete(asset_id);
+		}
 		for (const [asset_id, record] of overrides) {
 			const { source, path, cartPath } = record;
 			this.workspaceLuaOverrides.set(asset_id, { source, path, cartPath });
@@ -7225,44 +7257,72 @@ export class BmsxConsoleRuntime extends Service {
 		this.processPendingLuaAssets('workspace:dirty');
 	}
 
-	private async applyServerWorkspaceDirtyLuaOverrides(): Promise<void> {
+	private async applyServerWorkspaceDirtyLuaOverrides(hotReload: boolean): Promise<void> {
 		const token = this.workspaceOverrideToken;
 		const root = this.resolveCartProjectRootPath();
 		if (!root) {
 			return;
 		}
-		const overrides = await this.fetchWorkspaceDirtyLuaOverrides(root);
+		const { overrides, reachedServer } = await this.fetchWorkspaceDirtyLuaOverrides(root);
+		if (!reachedServer) {
+			return;
+		}
 		if (token !== this.workspaceOverrideToken) {
 			return;
 		}
-		if (overrides.size === 0) {
-			return;
-		}
-		this.applyWorkspaceLuaOverrides(overrides, true);
+		this.syncLocalWorkspaceDirtyCopies(root, overrides);
+		this.applyWorkspaceLuaOverrides(overrides, hotReload);
 	}
 
 	public refreshWorkspaceOverrides(hotReload: boolean): void {
 		this.applyLocalWorkspaceDirtyLuaOverrides(hotReload);
+		void this.applyServerWorkspaceDirtyLuaOverrides(hotReload);
 	}
 
-	private async fetchWorkspaceDirtyLuaOverrides(root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
+	private buildDirtyPathForCartPath(cartPath: string, root: string): string {
+		const normalizedCart = this.normalizeWorkspacePath(cartPath);
+		return buildWorkspaceDirtyEntryPath(root, normalizedCart);
+	}
+
+	private syncLocalWorkspaceDirtyCopies(root: string, overrides: Map<string, WorkspaceOverrideRecord>): void {
 		const rompack = $.rompack;
-		const tasks: Array<Promise<{ asset_id: string; contents: string; path: string | null; cartPath: string } | null>> = [];
 		for (const [asset_id, cartPath] of Object.entries(rompack.luaSourcePaths)) {
 			if (typeof cartPath !== 'string' || cartPath.length === 0) {
 				continue;
 			}
-			const workspacePath = this.resolveFilesystemPathForCartPath(cartPath);
-			const dirtyPath = buildWorkspaceDirtyEntryPath(root, workspacePath);
-			tasks.push(this.fetchWorkspaceFile(dirtyPath).then((contents) => {
-				if (contents === null) {
+			const dirtyPath = this.buildDirtyPathForCartPath(cartPath, root);
+			const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
+			const override = overrides.get(asset_id) ?? null;
+			if (override) {
+				this.storageService.setItem(storageKey, override.source);
+				continue;
+			}
+			this.storageService.removeItem(storageKey);
+		}
+	}
+
+	private async fetchWorkspaceDirtyLuaOverrides(root: string): Promise<{ overrides: Map<string, WorkspaceOverrideRecord>; reachedServer: boolean }> {
+		const rompack = $.rompack;
+		const tasks: Array<Promise<{ asset_id: string; contents: string; path: string | null; cartPath: string } | null>> = [];
+		let reachedServer = false;
+		for (const [asset_id, cartPath] of Object.entries(rompack.luaSourcePaths)) {
+			if (typeof cartPath !== 'string' || cartPath.length === 0) {
+				continue;
+			}
+			const dirtyPath = this.buildDirtyPathForCartPath(cartPath, root);
+			tasks.push(this.fetchWorkspaceFile(dirtyPath).then((result) => {
+				if (result.reached) {
+					reachedServer = true;
+				}
+				if (result.contents === null) {
 					return null;
 				}
-				return { asset_id, contents, path: dirtyPath, cartPath: workspacePath };
+				const normalizedCartPath = this.normalizeWorkspacePath(cartPath);
+				return { asset_id, contents: result.contents, path: dirtyPath, cartPath: normalizedCartPath };
 			}));
 		}
 		if (tasks.length === 0) {
-			return new Map<string, WorkspaceOverrideRecord>();
+			return { overrides: new Map<string, WorkspaceOverrideRecord>(), reachedServer };
 		}
 		const results = await Promise.all(tasks);
 		const overrides = new Map<string, WorkspaceOverrideRecord>();
@@ -7273,37 +7333,37 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			overrides.set(result.asset_id, { source: result.contents, path: result.path, cartPath: result.cartPath });
 		}
-		return overrides;
+		return { overrides, reachedServer };
 	}
 
-	private async fetchWorkspaceFile(path: string): Promise<string | null> {
+	private async fetchWorkspaceFile(path: string): Promise<{ contents: string | null; reached: boolean }> {
 		if (typeof fetch !== 'function') {
-			return null;
+			return { contents: null, reached: false };
 		}
 		const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
 		let response: HttpResponse;
 		try {
 			response = await fetch(url, { method: 'GET', cache: 'no-store' });
 		} catch {
-			return null;
+			return { contents: null, reached: false };
 		}
 		if (!response.ok) {
-			return null;
+			return { contents: null, reached: true };
 		}
 		let payload: unknown;
 		try {
 			payload = await response.json();
 		} catch {
-			return null;
+			return { contents: null, reached: true };
 		}
 		if (!payload || typeof payload !== 'object') {
-			return null;
+			return { contents: null, reached: true };
 		}
 		const record = payload as { contents?: unknown };
 		if (typeof record.contents !== 'string') {
-			return null;
+			return { contents: null, reached: true };
 		}
-		return record.contents;
+		return { contents: record.contents, reached: true };
 	}
 
 	private async deleteWorkspaceFile(path: string): Promise<void> {
@@ -7339,8 +7399,7 @@ export class BmsxConsoleRuntime extends Service {
 				if (typeof cartPath !== 'string' || cartPath.length === 0) {
 					continue;
 				}
-				const workspacePath = this.resolveFilesystemPathForCartPath(cartPath);
-				const dirtyPath = buildWorkspaceDirtyEntryPath(root, workspacePath);
+				const dirtyPath = this.buildDirtyPathForCartPath(cartPath, root);
 				const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
 				this.storageService.removeItem(storageKey);
 				void this.deleteWorkspaceFile(dirtyPath);
