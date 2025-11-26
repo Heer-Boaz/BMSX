@@ -2,16 +2,16 @@
 /* Move root-level `export function <name>` blocks between files using ts-morph.
 
    Usage:
-     node scripts/move_functions.js \
-       --source src/file.ts \
-       --dest   src/other.ts \
-       -n foo -n bar \
-       [--names-file names.txt] \
-       [--dry-run]
+	 node scripts/move_functions.js \
+	   --source src/file.ts \
+	   --dest   src/other.ts \
+	   -n foo -n bar \
+	   [--names-file names.txt] \
+	   [--dry-run]
 
    Only root-level exported function declarations are moved:
-     export function foo() {}
-     export async function bar<T extends { a: number }>(x: T): { b: string } { ... }
+	 export function foo() {}
+	 export async function bar<T extends { a: number }>(x: T): { b: string } { ... }
 
    Overload sets are moved as a single contiguous block.
 */

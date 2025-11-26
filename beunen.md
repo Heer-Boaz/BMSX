@@ -75,12 +75,12 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 No, not at all. The new architecture can be a complete rewrite. I even temporarily removed the existing game project folders to avoid any temptation to keep compatibility. Note that you will see a lot of changes when checking Git diffs via `git status`, but those are just because I moved files around and can be ignored.
 
 • - Adopt snake_case consistently across the new APIs so Lua-facing glue matches engine expectations: e.g. entity:activate_ability, timeline.frame.TIMEOUT, clip_id, timeline_events(owner, clip_id), and DSL helpers like events.channel('timeline', clip_id) all use
-    underscores; same for context slots such as ctx.wait_event, ctx.add_tags, input_intent_component.
+	underscores; same for context slots such as ctx.wait_event, ctx.add_tags, input_intent_component.
   - Update the planned EventPort helper to expose channel(namespace: string, key?: string) and timeline_events(owner, clip_id) using snake-case event ids (timeline.frame.timeout, timeline.end.timeout), ensuring direct subscriptions rely on emitter-owned ports (src/bmsx/
-    core/eventemitter.ts:28-60, src/bmsx/component/timeline_component.ts:248-259, src/bmsx/core/object/worldobject.ts:229-274).
+	core/eventemitter.ts:28-60, src/bmsx/component/timeline_component.ts:248-259, src/bmsx/core/object/worldobject.ts:229-274).
   - Keep the merged ECS responsibilities (input ability, overlap, sprite timeline/collider) as currently implemented (src/bmsx/ecs/input_ability_system.ts:55-205, src/bmsx/ecs/overlap2d_system.ts:21-605, src/bmsx/component/sprite_component.ts:65-160), but rename the
-    remaining camelCase runtime helpers (e.g. resolveIntentPlayerInput, makePairKey) when you touch those files so the Lua bridge keeps snake_case parity.
+	remaining camelCase runtime helpers (e.g. resolveIntentPlayerInput, makePairKey) when you touch those files so the Lua bridge keeps snake_case parity.
   - Build the programmatic timeline builder and generator-based ability runtime with snake_case identifiers (timeline_builder, play_clip, wait_event, apply_effect), then surface Lua bindings like timeline.define(entity, 'attack', builder_fn) and ability.register('dash',
-    dash_fn) through HandlerRegistry (src/bmsx/core/handlerregistry.ts:368-406) so scripts stay pure Lua without defensive fallbacks.
+	dash_fn) through HandlerRegistry (src/bmsx/core/handlerregistry.ts:368-406) so scripts stay pure Lua without defensive fallbacks.
 
   Next steps: update the concrete TypeScript surfaces with snake_case names, add the events.channel/timeline_events helpers, and prototype one Lua cart using the generator-based ability flow to validate the API end-to-end.

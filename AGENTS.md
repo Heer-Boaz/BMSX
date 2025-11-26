@@ -15,7 +15,7 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 *. **Project Structure**: Understand the overall structure of the project, including key directories and files.
 * **No legacy fallback**: Avoid adding legacy code or fallbacks.
 * **No defensive coding**: Prevent any bug-concealing techniques, silent failures and defensive coding. For example:
-  	```typescript
+	  ```typescript
 	private getViewportMetrics(): ViewportMetrics | null {
 		const platform = $.platform;
 		if (!platform) {

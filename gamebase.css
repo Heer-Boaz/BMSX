@@ -462,12 +462,12 @@
 }
 
 #button-controls {
- 	opacity: 1;
+	opacity: 1;
 	/* Remember to set this to .5 when you want to have the canvas take priority over the buttons in relation to sizing. */
 }
 
 #d-pad-controls {
- 	opacity: 1;
+	opacity: 1;
 	/* Remember to set this to .5 when you want to have the canvas take priority over the buttons in relation to sizing. */
 }
 

@@ -439,32 +439,32 @@ export class LuaInterpreter {
 	}
 
 	private recordFaultCallStack(): void {
-        const depth = this.callStack.length;
-        if (depth === 0) {
-            this.lastFaultCallStack = [];
-            this.lastFaultDepth = 0;
-            return;
-        }
-        // Preserve the most-detailed stack captured in this fault path
-        if (this.lastFaultCallStack.length > 0 && depth < this.lastFaultDepth) {
-            return;
-        }
-        const snapshot = this.callStack.map(frame => ({
-            functionName: frame.functionName,
-            source: frame.source,
-            line: frame.line,
-            column: frame.column,
-        }));
-        const controller = this.debuggerController;
-        const decorated = controller ? controller.decorateCallStack(snapshot, { consume: false }) : snapshot;
-        this.lastFaultCallStack = decorated.map(frame => ({
-            functionName: frame.functionName,
-            source: frame.source,
-            line: frame.line,
-            column: frame.column,
-        }));
-        this.lastFaultDepth = depth;
-    }
+		const depth = this.callStack.length;
+		if (depth === 0) {
+			this.lastFaultCallStack = [];
+			this.lastFaultDepth = 0;
+			return;
+		}
+		// Preserve the most-detailed stack captured in this fault path
+		if (this.lastFaultCallStack.length > 0 && depth < this.lastFaultDepth) {
+			return;
+		}
+		const snapshot = this.callStack.map(frame => ({
+			functionName: frame.functionName,
+			source: frame.source,
+			line: frame.line,
+			column: frame.column,
+		}));
+		const controller = this.debuggerController;
+		const decorated = controller ? controller.decorateCallStack(snapshot, { consume: false }) : snapshot;
+		this.lastFaultCallStack = decorated.map(frame => ({
+			functionName: frame.functionName,
+			source: frame.source,
+			line: frame.line,
+			column: frame.column,
+		}));
+		this.lastFaultDepth = depth;
+	}
 
 	private cloneCallStack(): LuaCallFrame[] {
 		return this.callStack.map(frame => ({
@@ -2401,26 +2401,26 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		return new LuaScriptFunction(name, this, expression, environment, implicitSelfName);
 	}
 
-    private invokeFunction(functionValue: LuaFunctionValue, args: ReadonlyArray<LuaValue>, range: LuaSourceRange): LuaValue[] {
-        // Ensure native calls appear in the call stack with the call-site location.
-        // Script functions already push a frame inside invokeScriptFunction().
-        return this.withCurrentCallRange(range, () => {
-            if (functionValue instanceof LuaNativeFunction) {
-                this.pushCallFrame(functionValue.name && functionValue.name.length > 0 ? functionValue.name : null, range.chunkName, range.start.line, range.start.column);
-                try {
-                    return functionValue.call(args);
-                } catch (error) {
-                    if (!isLuaDebuggerPauseSignal(error)) {
-                        this.recordFaultCallStack();
-                    }
-                    throw error;
-                } finally {
-                    this.callStack.pop();
-                }
-            }
-            return functionValue.call(args);
-        });
-    }
+	private invokeFunction(functionValue: LuaFunctionValue, args: ReadonlyArray<LuaValue>, range: LuaSourceRange): LuaValue[] {
+		// Ensure native calls appear in the call stack with the call-site location.
+		// Script functions already push a frame inside invokeScriptFunction().
+		return this.withCurrentCallRange(range, () => {
+			if (functionValue instanceof LuaNativeFunction) {
+				this.pushCallFrame(functionValue.name && functionValue.name.length > 0 ? functionValue.name : null, range.chunkName, range.start.line, range.start.column);
+				try {
+					return functionValue.call(args);
+				} catch (error) {
+					if (!isLuaDebuggerPauseSignal(error)) {
+						this.recordFaultCallStack();
+					}
+					throw error;
+				} finally {
+					this.callStack.pop();
+				}
+			}
+			return functionValue.call(args);
+		});
+	}
 
 	private withCurrentCallRange<T>(range: LuaSourceRange, callback: () => T): T {
 		const previous = this.currentCallRange;

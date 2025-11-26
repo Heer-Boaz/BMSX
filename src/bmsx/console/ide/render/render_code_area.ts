@@ -16,120 +16,120 @@ import { drawCursor } from './render_caret';
 export type CodeAreaBounds = { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; gutterLeft: number; gutterRight: number; textLeft: number };
 
 export interface CodeAreaHost {
-    // Geometry and metrics
-    readonly lineHeight: number;
-    readonly spaceAdvance: number;
-    readonly charAdvance: number;
-    readonly warnNonMonospace: boolean;
+	// Geometry and metrics
+	readonly lineHeight: number;
+	readonly spaceAdvance: number;
+	readonly charAdvance: number;
+	readonly warnNonMonospace: boolean;
 
-    // Editor state
-    wordWrapEnabled: boolean;
-    codeHorizontalScrollbarVisible: boolean;
-    codeVerticalScrollbarVisible: boolean;
-    cachedVisibleRowCount: number;
-    cachedVisibleColumnCount: number;
-    scrollRow: number;
-    scrollColumn: number;
-    cursorRow: number;
-    cursorColumn: number;
-    cursorVisible: boolean;
-    cursorScreenInfo: CursorScreenInfo | null;
-    gotoHoverHighlight: { row: number; startColumn: number; endColumn: number } | null;
-    executionStopRow: number | null;
-    readonly lines: string[];
+	// Editor state
+	wordWrapEnabled: boolean;
+	codeHorizontalScrollbarVisible: boolean;
+	codeVerticalScrollbarVisible: boolean;
+	cachedVisibleRowCount: number;
+	cachedVisibleColumnCount: number;
+	scrollRow: number;
+	scrollColumn: number;
+	cursorRow: number;
+	cursorColumn: number;
+	cursorVisible: boolean;
+	cursorScreenInfo: CursorScreenInfo | null;
+	gotoHoverHighlight: { row: number; startColumn: number; endColumn: number } | null;
+	executionStopRow: number | null;
+	readonly lines: string[];
 
-    // Derived and helper APIs
-    ensureVisualLines(): void;
-    getCodeAreaBounds(): CodeAreaBounds;
-    maximumLineLength(): number;
-    getVisualLineCount(): number;
-    positionToVisualIndex(row: number, column: number): number;
-    visualIndexToSegment(visualIndex: number): { row: number; startColumn: number; endColumn: number } | null;
-    getCachedHighlight(rowIndex: number): CachedHighlight;
-    sliceHighlightedLine(
-        highlight: CachedHighlight['hi'],
-        columnStart: number,
-        columnCount: number,
-    ): { text: string; colors: number[]; startDisplay: number; endDisplay: number };
-    columnToDisplay(highlight: CachedHighlight['hi'], column: number): number;
-    drawColoredText(api: BmsxConsoleApi, text: string, colors: number[], x: number, y: number): void;
-    drawReferenceHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void;
-    drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void;
-    computeSelectionSlice(rowIndex: number, highlight: CachedHighlight['hi'], sliceStartDisplay: number, sliceEndDisplay: number): { startDisplay: number; endDisplay: number } | null;
-    measureRangeFast(entry: CachedHighlight, fromDisplay: number, toDisplay: number): number;
-    getDiagnosticsForRow(rowIndex: number): readonly EditorDiagnostic[];
-    // Scrollbars
-    readonly scrollbars: {
-        codeVertical: { layout(track: RectBounds, content: number, viewport: number, scroll: number): void; getScroll(): number; isVisible(): boolean; draw(api: BmsxConsoleApi, trackColor: number, thumbColor: number): void };
-        codeHorizontal: { layout(track: RectBounds, content: number, viewport: number, scroll: number): void; getScroll(): number; isVisible(): boolean; draw(api: BmsxConsoleApi, trackColor: number, thumbColor: number): void };
-    };
-    computeMaximumScrollColumn(): number;
+	// Derived and helper APIs
+	ensureVisualLines(): void;
+	getCodeAreaBounds(): CodeAreaBounds;
+	maximumLineLength(): number;
+	getVisualLineCount(): number;
+	positionToVisualIndex(row: number, column: number): number;
+	visualIndexToSegment(visualIndex: number): { row: number; startColumn: number; endColumn: number } | null;
+	getCachedHighlight(rowIndex: number): CachedHighlight;
+	sliceHighlightedLine(
+		highlight: CachedHighlight['hi'],
+		columnStart: number,
+		columnCount: number,
+	): { text: string; colors: number[]; startDisplay: number; endDisplay: number };
+	columnToDisplay(highlight: CachedHighlight['hi'], column: number): number;
+	drawColoredText(api: BmsxConsoleApi, text: string, colors: number[], x: number, y: number): void;
+	drawReferenceHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void;
+	drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void;
+	computeSelectionSlice(rowIndex: number, highlight: CachedHighlight['hi'], sliceStartDisplay: number, sliceEndDisplay: number): { startDisplay: number; endDisplay: number } | null;
+	measureRangeFast(entry: CachedHighlight, fromDisplay: number, toDisplay: number): number;
+	getDiagnosticsForRow(rowIndex: number): readonly EditorDiagnostic[];
+	// Scrollbars
+	readonly scrollbars: {
+		codeVertical: { layout(track: RectBounds, content: number, viewport: number, scroll: number): void; getScroll(): number; isVisible(): boolean; draw(api: BmsxConsoleApi, trackColor: number, thumbColor: number): void };
+		codeHorizontal: { layout(track: RectBounds, content: number, viewport: number, scroll: number): void; getScroll(): number; isVisible(): boolean; draw(api: BmsxConsoleApi, trackColor: number, thumbColor: number): void };
+	};
+	computeMaximumScrollColumn(): number;
 
-    // Overlays and popups
-    drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void;
-    drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void;
-    drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): void;
-    computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo;
-    drawCompletionPopup(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void;
-    drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void;
-    hasBreakpoint?: (rowIndex: number) => boolean;
+	// Overlays and popups
+	drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void;
+	drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void;
+	drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): void;
+	computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo;
+	drawCompletionPopup(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void;
+	drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void;
+	hasBreakpoint?: (rowIndex: number) => boolean;
 }
 
 export function renderCodeArea(): void {
-    ensureVisualLines();
-    const bounds = getCodeAreaBounds();
-    const gutterOffset = bounds.textLeft - bounds.codeLeft;
-    const advance = ide_state.warnNonMonospace ? ide_state.spaceAdvance : ide_state.charAdvance;
-    const wrapEnabled = ide_state.wordWrapEnabled;
+	ensureVisualLines();
+	const bounds = getCodeAreaBounds();
+	const gutterOffset = bounds.textLeft - bounds.codeLeft;
+	const advance = ide_state.warnNonMonospace ? ide_state.spaceAdvance : ide_state.charAdvance;
+	const wrapEnabled = ide_state.wordWrapEnabled;
 
-    let horizontalVisible = !wrapEnabled && ide_state.codeHorizontalScrollbarVisible;
-    let verticalVisible = ide_state.codeVerticalScrollbarVisible;
-    let rowCapacity = 1;
-    let columnCapacity = 1;
-    const visualCount = getVisualLineCount();
+	let horizontalVisible = !wrapEnabled && ide_state.codeHorizontalScrollbarVisible;
+	let verticalVisible = ide_state.codeVerticalScrollbarVisible;
+	let rowCapacity = 1;
+	let columnCapacity = 1;
+	const visualCount = getVisualLineCount();
 
-    for (let i = 0; i < 3; i += 1) {
-        const availableHeight = Math.max(0, (bounds.codeBottom - bounds.codeTop) - (horizontalVisible ? constants.SCROLLBAR_WIDTH : 0));
-        rowCapacity = Math.max(1, Math.floor(availableHeight / ide_state.lineHeight));
-        verticalVisible = visualCount > rowCapacity;
-        const availableWidth = Math.max(
-            0,
-            (bounds.codeRight - bounds.codeLeft)
-            - (verticalVisible ? constants.SCROLLBAR_WIDTH : 0)
-            - gutterOffset
-            - constants.CODE_AREA_RIGHT_MARGIN
-        );
-        columnCapacity = Math.max(1, Math.floor(availableWidth / advance));
-        if (wrapEnabled) {
-            horizontalVisible = false;
-        } else {
-            horizontalVisible = maximumLineLength() > columnCapacity;
-        }
-    }
+	for (let i = 0; i < 3; i += 1) {
+		const availableHeight = Math.max(0, (bounds.codeBottom - bounds.codeTop) - (horizontalVisible ? constants.SCROLLBAR_WIDTH : 0));
+		rowCapacity = Math.max(1, Math.floor(availableHeight / ide_state.lineHeight));
+		verticalVisible = visualCount > rowCapacity;
+		const availableWidth = Math.max(
+			0,
+			(bounds.codeRight - bounds.codeLeft)
+			- (verticalVisible ? constants.SCROLLBAR_WIDTH : 0)
+			- gutterOffset
+			- constants.CODE_AREA_RIGHT_MARGIN
+		);
+		columnCapacity = Math.max(1, Math.floor(availableWidth / advance));
+		if (wrapEnabled) {
+			horizontalVisible = false;
+		} else {
+			horizontalVisible = maximumLineLength() > columnCapacity;
+		}
+	}
 
-    ide_state.codeVerticalScrollbarVisible = verticalVisible;
-    ide_state.codeHorizontalScrollbarVisible = !wrapEnabled && horizontalVisible;
-    ide_state.cachedVisibleRowCount = rowCapacity;
-    ide_state.cachedVisibleColumnCount = columnCapacity;
+	ide_state.codeVerticalScrollbarVisible = verticalVisible;
+	ide_state.codeHorizontalScrollbarVisible = !wrapEnabled && horizontalVisible;
+	ide_state.cachedVisibleRowCount = rowCapacity;
+	ide_state.cachedVisibleColumnCount = columnCapacity;
 
-    const contentRight = Math.max(
-        bounds.textLeft,
-        bounds.codeRight
-            - (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
-            - constants.CODE_AREA_RIGHT_MARGIN
-    );
-    const contentBottom = bounds.codeBottom - (ide_state.codeHorizontalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
-    const trackRight = bounds.codeRight - (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
+	const contentRight = Math.max(
+		bounds.textLeft,
+		bounds.codeRight
+			- (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
+			- constants.CODE_AREA_RIGHT_MARGIN
+	);
+	const contentBottom = bounds.codeBottom - (ide_state.codeHorizontalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
+	const trackRight = bounds.codeRight - (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
 
-    api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, undefined, constants.COLOR_CODE_BACKGROUND);
-    if (bounds.gutterRight > bounds.gutterLeft) {
-        api.rectfill(bounds.gutterLeft, bounds.codeTop, bounds.gutterRight, contentBottom, undefined, constants.COLOR_GUTTER_BACKGROUND);
-    }
+	api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, undefined, constants.COLOR_CODE_BACKGROUND);
+	if (bounds.gutterRight > bounds.gutterLeft) {
+		api.rectfill(bounds.gutterLeft, bounds.codeTop, bounds.gutterRight, contentBottom, undefined, constants.COLOR_GUTTER_BACKGROUND);
+	}
 
-    const activeGotoHighlight = ide_state.gotoHoverHighlight;
-    const gotoVisualIndex = activeGotoHighlight
-        ? ide_state.layout.positionToVisualIndex(ide_state.lines, activeGotoHighlight.row, activeGotoHighlight.startColumn)
-        : null;
+	const activeGotoHighlight = ide_state.gotoHoverHighlight;
+	const gotoVisualIndex = activeGotoHighlight
+		? ide_state.layout.positionToVisualIndex(ide_state.lines, activeGotoHighlight.row, activeGotoHighlight.startColumn)
+		: null;
 	const cursorVisualIndex = ide_state.layout.positionToVisualIndex(ide_state.lines, ide_state.cursorRow, ide_state.cursorColumn);
 	let cursorEntry: CachedHighlight | null = null;
 	let cursorInfo: CursorScreenInfo | null = null;
@@ -182,8 +182,8 @@ export function renderCodeArea(): void {
 		const sliceStartDisplay = slice.startDisplay;
 		const sliceEndLimit = wrapEnabled ? columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
 		const sliceEndDisplay = wrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
-        drawReferenceHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
-        drawSearchHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
+		drawReferenceHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
+		drawSearchHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
 		const selectionSlice = computeSelectionSlice(lineIndex, highlight, sliceStartDisplay, sliceEndDisplay);
 		if (selectionSlice) {
 			const selectionStartX = bounds.textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, selectionSlice.startDisplay);
@@ -273,25 +273,25 @@ export function renderCodeArea(): void {
 
 	ide_state.cursorScreenInfo = cursorInfo;
 
-    const verticalTrackLeft = bounds.codeRight - constants.SCROLLBAR_WIDTH;
-    const verticalTrack: RectBounds = {
-        left: verticalTrackLeft,
-        top: bounds.codeTop,
-        right: verticalTrackLeft + constants.SCROLLBAR_WIDTH,
-        bottom: contentBottom,
-    };
+	const verticalTrackLeft = bounds.codeRight - constants.SCROLLBAR_WIDTH;
+	const verticalTrack: RectBounds = {
+		left: verticalTrackLeft,
+		top: bounds.codeTop,
+		right: verticalTrackLeft + constants.SCROLLBAR_WIDTH,
+		bottom: contentBottom,
+	};
 
-    ide_state.scrollbars.codeVertical.layout(verticalTrack, Math.max(visualCount, 1), rowCapacity, ide_state.scrollRow);
+	ide_state.scrollbars.codeVertical.layout(verticalTrack, Math.max(visualCount, 1), rowCapacity, ide_state.scrollRow);
 	ide_state.scrollRow = clamp(Math.round(ide_state.scrollbars.codeVertical.getScroll()), 0, Math.max(0, visualCount - rowCapacity));
 	ide_state.codeVerticalScrollbarVisible = ide_state.scrollbars.codeVertical.isVisible();
 
 	if (!wrapEnabled) {
-            const horizontalTrack: RectBounds = {
-                left: bounds.codeLeft,
-                top: contentBottom,
-                right: trackRight,
-                bottom: contentBottom + constants.SCROLLBAR_WIDTH,
-            };
+			const horizontalTrack: RectBounds = {
+				left: bounds.codeLeft,
+				top: contentBottom,
+				right: trackRight,
+				bottom: contentBottom + constants.SCROLLBAR_WIDTH,
+			};
 		const maxColumns = columnCapacity + computeMaximumScrollColumn();
 		ide_state.scrollbars.codeHorizontal.layout(horizontalTrack, maxColumns, columnCapacity, ide_state.scrollColumn);
 		ide_state.scrollColumn = clamp(Math.round(ide_state.scrollbars.codeHorizontal.getScroll()), 0, computeMaximumScrollColumn());
