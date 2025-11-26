@@ -14,12 +14,12 @@ import {
 } from './types';
 import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaSymbolEntry } from '../types';
 import * as constants from './constants';
-import { isAltDown, isCtrlDown, isKeyJustPressed as isKeyJustPressedGlobal, isKeyPressed as isKeyPressedGlobal, isMetaDown, isShiftDown } from './input';
+import { isAltDown, isCtrlDown, isKeyJustPressed as isKeyJustPressedGlobal, isKeyPressed as isKeyPressedGlobal, isMetaDown, isShiftDown } from './ide_input';
 import { isWhitespace, isWordChar } from './text_utils';
 import { isLuaCommentContext } from './text_utils';
 import { ide_state } from './ide_state';
 import { isReadOnlyCodeTab } from './editor_tabs';
-import { consumeIdeKey } from './input';
+import { consumeIdeKey } from './ide_input';
 
 type MemberCompletionHostRequest = {
 	objectName: string;

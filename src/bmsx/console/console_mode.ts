@@ -27,7 +27,7 @@ import {
 	isCtrlDown,
 	isMetaDown,
 	isAltDown
-} from './ide/input';
+} from './ide/ide_input';
 import { CompletionController } from './ide/completion_controller';
 import { collectLuaModuleAliases } from './ide/intellisense';
 import type {
@@ -36,9 +36,10 @@ import type {
 	ConsoleLuaMemberCompletionRequest,
 	ConsoleLuaSymbolEntry,
 } from './types';
-import { consumeIdeKey, getIdeKeyState } from './ide/input';
+import { consumeIdeKey, getIdeKeyState } from './ide/ide_input';
 import type { asset_id, Viewport } from '../rompack/rompack';
 import type { BmsxConsoleApi } from './api';
+import { CanonicalizationType } from '../lua/lexer';
 
 type ConsoleOutputKind =
 	| 'prompt'
@@ -57,7 +58,7 @@ type ConsoleOutputEntry = {
 type ConsoleModeOptions = {
 	playerIndex: number;
 	fontVariant?: ConsoleFontVariant;
-	caseInsensitive?: boolean;
+	canonicalization?: CanonicalizationType;
 	caseInsensitiveUppercaseDisplay?: boolean;
 	maxEntries?: number;
 	listLuaSymbols: (asset_id: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
@@ -95,7 +96,7 @@ const OUTPUT_COLORS: Record<ConsoleOutputKind, number> = {
 
 export class ConsoleMode {
 	private font: ConsoleEditorFont;
-	private readonly caseInsensitive: boolean;
+	private readonly canonicalization: CanonicalizationType;
 	private readonly uppercaseDisplayOverride: boolean;
 	private readonly maxEntries: number;
 	private readonly playerIndex: number;
@@ -147,7 +148,7 @@ export class ConsoleMode {
 	private cursorScreenInfo: CursorScreenInfo | null = null;
 	constructor(options: ConsoleModeOptions) {
 		this.font = new ConsoleEditorFont(options.fontVariant);
-		this.caseInsensitive = options.caseInsensitive ?? false;
+		this.canonicalization = options.canonicalization ?? 'none';
 		this.uppercaseDisplayOverride = options.caseInsensitiveUppercaseDisplay ?? false;
 		this.maxEntries = options.maxEntries ?? MAX_OUTPUT_ENTRIES;
 		this.playerIndex = options.playerIndex;
@@ -536,7 +537,7 @@ export class ConsoleMode {
 	}
 
 	private handleTextMutation(previousText: string | null, editContext: EditContext | null): void {
-		if (this.caseInsensitive) {
+		if (this.canonicalization !== 'none') {
 			const before = this.fieldText();
 			const normalized = this.normalizeInputCase(before);
 			if (normalized !== before) {
@@ -576,9 +577,19 @@ export class ConsoleMode {
 	}
 
 	private normalizeInputCase(text: string): string {
-		if (!this.caseInsensitive) {
+		if (this.canonicalization === 'none') {
 			return text;
 		}
+
+		const toCanonical = (ch: string): string => {
+			if (this.canonicalization === 'upper') {
+				return ch.toUpperCase();
+			} else if (this.canonicalization === 'lower') {
+				return ch.toLowerCase();
+			}
+			return ch;
+		}
+
 		let inString = false;
 		let quote: string | null = null;
 		let escapeNext = false;
@@ -605,7 +616,7 @@ export class ConsoleMode {
 				quote = ch;
 				continue;
 			}
-			if (ch !== ch.toUpperCase()) {
+			if (ch !== toCanonical(ch)) {
 				needsNormalization = true;
 				break;
 			}
@@ -641,7 +652,7 @@ export class ConsoleMode {
 					result += ch;
 					continue;
 				}
-			result += ch.toUpperCase();
+			result += toCanonical(ch);
 		}
 		return result;
 	}
@@ -889,8 +900,8 @@ export class ConsoleMode {
 	}
 
 	private toDisplayText(value: string, uppercase: boolean): string {
-		if (uppercase && this.caseInsensitive) {
-			return value.toUpperCase();
+		if (uppercase && this.canonicalization !== 'none') {
+			value = this.canonicalization === 'upper' ? value.toUpperCase() : value.toLowerCase();
 		}
 		return value;
 	}

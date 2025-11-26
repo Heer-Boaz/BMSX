@@ -3,7 +3,7 @@ import { updateDesiredColumn, breakUndoSequence, currentLine, columnToDisplay } 
 import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from './text_utils';
 import { visibleRowCount, visibleColumnCount } from './text_utils';
 import { caretNavigation, ide_state } from './ide_state';
-import { isShiftDown, isCtrlDown } from './input';
+import { isShiftDown, isCtrlDown } from './ide_input';
 import { resetBlink } from './render/render_caret';
 import { findWordLeft, findWordRight, ensureSelectionAnchor, hasSelection, collapseSelectionTo, clearSelection } from './text_editing_and_selection';
 import type { Position, VisualLineSegment } from './types';

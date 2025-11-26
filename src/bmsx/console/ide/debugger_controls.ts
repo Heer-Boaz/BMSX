@@ -4,7 +4,7 @@ import {
 	subscribeDebuggerLifecycleEvents,
 	type DebuggerLifecycleEvent,
 } from '../debugger_lifecycle';
-import type { DebuggerCommand } from './input';
+import type { DebuggerCommand } from './ide_input';
 
 type RuntimeDebuggerApi = {
 	continueLuaDebugger(): void;

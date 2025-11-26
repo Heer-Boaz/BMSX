@@ -70,8 +70,8 @@ import {
 } from './runtime_error_overlay_view';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
-import { handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handleTextEditorPointerInput, handlePointerWheel, InputController, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, resetKeyPressRecords, resourceViewerClampScroll } from './input';
-import { consumeIdeKey } from './input';
+import { handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handleTextEditorPointerInput, handlePointerWheel, InputController, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, resetKeyPressRecords, resourceViewerClampScroll } from './ide_input';
+import { consumeIdeKey } from './ide_input';
 import { ConsoleCodeLayout } from './code_layout';
 import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine } from './runtime_error_utils';
 import type {

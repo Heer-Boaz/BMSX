@@ -5,7 +5,7 @@ import { Msx1Colors } from '../../../systems/msx';
 import { ConsoleScrollbar } from '../scrollbar';
 import { clamp } from '../../../utils/clamp';
 import { getActiveResourceViewer, getCodeAreaBounds, resourceViewerTextCapacity, resourceViewerImageLayout, ensureResourceViewerSprite, hideResourceViewerSprite } from '../console_cart_editor';
-import { resourceViewerClampScroll } from '../input';
+import { resourceViewerClampScroll } from '../ide_input';
 import { ide_state } from '../ide_state';
 import { drawEditorText } from '../text_renderer';
 import { api } from '../../runtime';

@@ -7,7 +7,7 @@ import { renderResourcePanel } from './render/render_resource_panel';
 import type { ResourceBrowserItem } from './types';
 import type { RectBounds } from '../../rompack/rompack';
 import type { ConsoleResourceDescriptor } from '../types';
-import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './input';
+import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
 
 export interface ResourcePanelBridge {
 	// Metrics and geometry

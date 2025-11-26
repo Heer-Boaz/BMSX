@@ -2,7 +2,7 @@ import { $ } from '../../core/game';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isKeyTyped, isMetaDown, isShiftDown } from './input';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isKeyTyped, isMetaDown, isShiftDown } from './ide_input';
 import { isWhitespace, isWordChar } from './text_utils';
 import type { InlineInputOptions, Position, TextField } from './types';
 import { clamp } from '../../utils/clamp';

@@ -15,7 +15,7 @@ import type { ConsoleEditorFont } from '../editor_font';
 import type { TextField, ScrollbarKind, MessageState } from './types';
 import type { InlineFieldMetrics } from './inline_text_field';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
-import type { InputController } from './input';
+import type { InputController } from './ide_input';
 import type { ProblemsPanelController } from './problems_panel';
 import { ResourcePanelController } from './resource_panel_controller';
 import type { RenameController } from './rename_controller';
