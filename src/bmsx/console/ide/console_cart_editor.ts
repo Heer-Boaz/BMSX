@@ -170,7 +170,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
 	constants.setIdeThemeVariant(options.themeVariant ?? null);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
-	ide_state.caseInsensitive = options.caseInsensitiveLua ?? true;
+	ide_state.caseInsensitive = (options.canonicalization ?? 'upper') !== 'none';
 	ide_state.preMutationSource = null;
 	ide_state.loadSourceFn = options.loadSource;
 	ide_state.saveSourceFn = options.saveSource;
