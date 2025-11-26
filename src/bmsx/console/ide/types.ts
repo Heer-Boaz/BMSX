@@ -14,7 +14,7 @@ import type {
 	IdeThemeVariant,
 } from '../types';
 import type { ConsoleFontVariant } from '../font';
-import type { RectBounds } from '../../rompack/rompack';
+import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
 import type { StackTraceFrame } from '../../lua/runtime';
 
 export type { IdeThemeVariant } from '../types';
@@ -23,7 +23,7 @@ export type ConsoleEditorOptions = {
 	playerIndex: number;
 	viewport: ConsoleViewport;
 	metadata: BmsxConsoleMetadata;
-	caseInsensitiveLua?: boolean;
+	canonicalization?: CanonicalizationType;
 	themeVariant?: IdeThemeVariant;
 	loadSource: () => string;
 	saveSource: (source: string) => Promise<void>;

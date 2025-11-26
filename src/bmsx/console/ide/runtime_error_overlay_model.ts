@@ -2,7 +2,7 @@ import type {
 	RuntimeErrorDetails,
 	RuntimeErrorOverlay,
 	RuntimeErrorOverlayLineDescriptor} from './types';
-import type { StackTraceFrame } from 'bmsx/lua/runtime';
+import type { StackTraceFrame } from '../../lua/runtime';
 
 export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails | null): RuntimeErrorDetails | null {
 	if (!details) {

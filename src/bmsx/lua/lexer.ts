@@ -1,8 +1,7 @@
+import { CanonicalizationType } from '../rompack/rompack';
 import { LuaSyntaxError } from './errors';
 import type { LuaToken, LuaTokenLiteral } from './token';
 import { LuaTokenType, resolveKeyword } from './token';
-
-export type CanonicalizationType = 'none' | 'upper' | 'lower';
 
 export class LuaLexer {
 	private readonly source: string;
@@ -24,13 +23,7 @@ export class LuaLexer {
 		this.tokenStartIndex = 0;
 		this.tokenStartLine = 1;
 		this.tokenStartColumn = 1;
-		if (options?.canonicalizeIdentifiers === 'upper') {
-			this.identifierCanonicalization = 'upper';
-		} else if (options?.canonicalizeIdentifiers === 'lower') {
-			this.identifierCanonicalization = 'lower';
-		} else {
-			this.identifierCanonicalization = 'none';
-		}
+		this.identifierCanonicalization = options?.canonicalizeIdentifiers ?? 'none';
 	}
 
 	public scanTokens(): LuaToken[] {

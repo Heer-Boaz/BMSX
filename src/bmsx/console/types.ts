@@ -1,4 +1,4 @@
-import type { vec2 } from '../rompack/rompack';
+import type { vec2, CanonicalizationType } from '../rompack/rompack';
 import type { BmsxConsoleApi } from './api';
 
 export type IdeThemeVariant = string;
@@ -83,7 +83,7 @@ export type ConsoleModuleOptions = {
 	playerIndex: number;
 	viewport: ConsoleViewport;
 	moduleId: string;
-	caseInsensitiveLua?: boolean;
+	canonicalization?: CanonicalizationType;
 };
 
 export type Vector2 = vec2;

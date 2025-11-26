@@ -1,19 +1,11 @@
-import {
-	$,
-	Input,
-	type BootArgs,
-	type WorldConfiguration,
-	type KeyboardButton,
-	type BGamepadButton,
-	shallowcopy,
-} from '../index';
+import { $, Input, type BootArgs, type WorldConfiguration, type KeyboardButton, type BGamepadButton, shallowcopy, } from '../index';
 import { createBmsxConsoleModule } from './module';
 import { createLuaConsoleCartridge } from './lua';
 import { ConsoleFont } from './font';
 import type { IdeThemeVariant } from './types';
 import { MSX2ScreenHeight } from '../index';
 import { MSX2ScreenWidth } from '../index';
-import type { RomPack, Viewport } from '../rompack/rompack';
+import type { CanonicalizationType, RomPack, Viewport } from '../rompack/rompack';
 
 type ManifestInputMapping = Record<string, string[] | undefined>;
 
@@ -39,7 +31,7 @@ type CartManifest = {
 		world?: {
 			viewportSize?: Viewport;
 		};
-		caseInsensitiveLua?: boolean;
+		canonicalization?: CanonicalizationType;
 	};
 	input?: {
 		keyboard?: ManifestInputMapping;
@@ -149,14 +141,14 @@ function deriveConsoleOptions(manifest: CartManifest) {
 	const viewport = consoleConfig.viewport ?? DEFAULT_WORLD_VIEWPORT;
 	const playerIndex = Number(consoleConfig.playerIndex) || DEFAULT_PLAYER_INDEX;
 	const moduleId = consoleConfig.moduleId ?? DEFAULT_MODULE_ID;
-	const caseInsensitiveLua = consoleConfig.caseInsensitiveLua;
 	const worldViewport = consoleConfig.world?.viewportSize ?? DEFAULT_WORLD_VIEWPORT;
+	const canonicalization = consoleConfig.canonicalization;
 	return {
 		moduleId,
 		playerIndex,
 		viewport,
 		worldViewport,
-		caseInsensitiveLua,
+		canonicalization,
 	};
 }
 
@@ -166,7 +158,7 @@ export async function startCart(args: BootArgs): Promise<void> {
 		throw new Error('[start_cart] Cart manifest not found in rompack.');
 	}
 
-	const { moduleId, playerIndex, viewport, worldViewport, caseInsensitiveLua } = deriveConsoleOptions(manifest);
+	const { moduleId, playerIndex, viewport, worldViewport, canonicalization } = deriveConsoleOptions(manifest);
 	const meta = deriveMetadata(manifest);
 	const program = deriveLuaProgram(manifest, args.rompack);
 	const cartridge = createLuaConsoleCartridge({ meta, program });
@@ -174,7 +166,7 @@ export async function startCart(args: BootArgs): Promise<void> {
 		moduleId,
 		playerIndex,
 		viewport,
-		caseInsensitiveLua,
+		canonicalization,
 	});
 
 	const worldConfig: WorldConfiguration = {

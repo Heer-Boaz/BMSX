@@ -15,7 +15,7 @@ export interface RomPack {
 	luaSourcePaths: Record<asset_id, string>; // Relative filesystem paths for Lua sources, keyed by Lua asset id.
 	resourcePaths: RomResourcePath[]; // Filesystem metadata for packed resources. ALWAYS PRESENT DURING GAME!
 	projectRootPath?: string | null; // Workspace-relative cart root path for resolving filesystem writes.
-	caseInsensitiveLua?: boolean;
+	canonicalization?: CanonicalizationType; // Canonicalization type for Lua identifiers in this ROM pack.
 	manifest?: unknown;
 }
 
@@ -83,7 +83,7 @@ export interface BootArgs {
 	enableOnscreenGamepad?: boolean;
 	platform: Platform;
 	viewHost?: GameViewHost;
-	caseInsensitiveLua?: boolean;
+	canonicalization?: CanonicalizationType;
 }
 
 export type Constructor<T> = new (...args: any[]) => T;
@@ -348,3 +348,5 @@ export interface ImgMeta {
 
 export type TextureSource = unknown & { close?(): void; width: number; height: number; }; // platform-specific source type (e.g. ImageBitmap in browsers)
 export type Viewport = { width: number; height: number; };
+export type CanonicalizationType = 'none' | 'upper' | 'lower';
+

@@ -36,7 +36,7 @@ import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lu
 import { createConsoleCartEditor, type ConsoleCartEditor, } from './ide/console_cart_editor';
 import { toggleEditorFromShortcut, isAltDown, isCtrlDown, isMetaDown, isShiftDown } from './ide/ide_input';
 import type { RuntimeErrorDetails } from './ide/types';
-import type { StackTraceFrame } from 'bmsx/lua/runtime';
+import type { StackTraceFrame } from '../lua/runtime';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { ConsoleFontVariant } from './font';
 import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
@@ -67,7 +67,7 @@ import {
 import { arrayify } from '../utils/arrayify';
 import { safeclamp } from '../utils/safeclamp';
 import { ConsoleCommandDispatcher } from './console_commands';
-import { CanonicalizationType } from '../lua/lexer';
+import { CanonicalizationType } from '../rompack/rompack';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -483,7 +483,6 @@ export class BmsxConsoleRuntime extends Service {
 	private workspaceOverrideToken = 0;
 	private hasWorkspaceLuaOverrides = false;
 	private readonly canonicalization: CanonicalizationType;
-	private readonly caseInsensitiveLua: boolean;
 
 	private static readonly WORLD_OBJECT_RESERVED_DEFAULT_KEYS = new Set<string>(['id', 'sc', 'btreecontexts']);
 	private static readonly CONSOLE_SINGLE_ARG_KEYWORDS = new Set([
@@ -507,11 +506,10 @@ export class BmsxConsoleRuntime extends Service {
 		super({ id: 'bmsx_console_runtime' });
 		BmsxConsoleRuntime._instance = this;
 		const rompack = $.rompack;
-		const resolvedCanonicalization = options.canonicalization ?? (rompack.caseInsensitiveLua === true ? 'upper' : 'none');
+		const resolvedCanonicalization = options.canonicalization ?? 'none';
 		this.canonicalization = resolvedCanonicalization;
-		this.caseInsensitiveLua = this.canonicalization !== 'none';
-		setLuaTableCaseInsensitiveKeys(this.caseInsensitiveLua);
-		setEditorCaseInsensitivity(this.caseInsensitiveLua);
+		setLuaTableCaseInsensitiveKeys(this.canonicalization !== 'none');
+		setEditorCaseInsensitivity(this.canonicalization !== 'none');
 		this.consoleMode = new ConsoleMode({
 			playerIndex: options.playerIndex,
 			fontVariant: this.consoleFontVariant,
@@ -605,7 +603,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private configureInterpreter(interpreter: LuaInterpreter): void {
-		interpreter.setCaseInsensitiveNativeAccess(this.caseInsensitiveLua);
+		interpreter.setCaseInsensitiveNativeAccess(this.canonicalization !== 'none');
 		interpreter.setIdentifierCanonicalization(this.canonicalization);
 		interpreter.setHostAdapter({
 			toLua: (value, ctx) => this.jsToLua(value, ctx),
@@ -1116,14 +1114,14 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const env = interpreter.getGlobalEnvironment();
 		const previousPrint = env.get('print');
-		const previousInsensitivePrint = this.caseInsensitiveLua ? env.get('PRINT') : null;
+		const previousInsensitivePrint = this.canonicalization ? env.get('PRINT') : null;
 		const consolePrint = createLuaNativeFunction('console_print', interpreter, (_ctx, args) => {
 			const text = args.map(arg => this.consoleValueToString(arg)).join('\t');
 			this.consoleMode.appendStdout(text);
 			return [];
 		});
 		env.set('print', consolePrint);
-		if (this.caseInsensitiveLua) {
+		if (this.canonicalization) {
 			env.set('PRINT', consolePrint);
 		}
 		try {
@@ -1146,7 +1144,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (previousPrint !== null) {
 				env.set('print', previousPrint);
 			}
-			if (this.caseInsensitiveLua && previousInsensitivePrint !== null) {
+			if (this.canonicalization && previousInsensitivePrint !== null) {
 				env.set('PRINT', previousInsensitivePrint);
 			}
 		}
@@ -2849,7 +2847,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.disposeLuaServices();
 		this.luaGenericAssetsExecuted.clear();
 		this.handledLuaErrors = new WeakSet<object>();
-		setLuaTableCaseInsensitiveKeys(this.caseInsensitiveLua);
+		setLuaTableCaseInsensitiveKeys(this.canonicalization !== 'none');
 	}
 
 	private bootLuaProgram(runInit: boolean): void {
@@ -3798,7 +3796,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private canonicalizeIdentifier(name: string): string {
-		if (this.caseInsensitiveLua) {
+		if (this.canonicalization) {
 			if (this.canonicalization === 'upper') {
 				return name.toUpperCase();
 			}
@@ -3815,7 +3813,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const env = interpreter.getGlobalEnvironment();
 		env.set(className, classTable);
-		if (this.caseInsensitiveLua) {
+		if (this.canonicalization) {
 			const normalized = this.canonicalizeIdentifier(className);
 			if (normalized !== className) {
 				env.set(normalized, classTable);
@@ -6171,7 +6169,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private buildLuaRompackView(): Record<string, unknown> | null {
+	private buildLuaRompackView() {
 		const rompack = $.rompack;
 		return {
 			img: this.serializeRomAssetMap(rompack.img),
@@ -6185,7 +6183,7 @@ export class BmsxConsoleRuntime extends Service {
 				? rompack.resourcePaths.map(entry => ({ path: entry.path, type: entry.type, asset_id: entry.asset_id }))
 				: [],
 			code: rompack.code,
-			caseInsensitiveLua: rompack.caseInsensitiveLua ?? null,
+			canonicalization: rompack.canonicalization,
 		};
 	}
 

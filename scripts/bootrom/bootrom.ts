@@ -5,7 +5,7 @@ import { createAudioContext, startAudioOnIos } from './bootaudio';
 import { getSubBufferFromBufferWithMeta, getZippedRomAndRomLabelFromBlob, loadAssetList, loadResources, parseMetaFromBuffer } from './bootresources';
 
 const HAS_DOM_ENVIRONMENT = typeof document !== 'undefined' && document !== null;
-declare const __BOOTROM_CASE_INSENSITIVE_LUA__: boolean;
+declare const __BOOTROM_CANONICALIZATION__: BootArgs['canonicalization'];
 const initialStartingGamepadIndex: number | null = null;
 
 declare global {
@@ -87,7 +87,7 @@ function combineRompacks(engineRom: RomPack | null | undefined, cartRom: RomPack
 		resourcePaths: combinedResourcePaths,
 		projectRootPath: cartRom.projectRootPath ?? engineRom.projectRootPath ?? null,
 		code: cartRom.code ?? engineRom.code ?? null,
-		caseInsensitiveLua: cartRom.caseInsensitiveLua ?? engineRom.caseInsensitiveLua,
+		canonicalization: cartRom.canonicalization ?? engineRom.canonicalization,
 	};
 	return combined;
 }
@@ -133,7 +133,7 @@ export const bootrom = {
 	enableOnscreenGamepad: false as BootArgs['enableOnscreenGamepad'],
 	platform: null as BootArgs['platform'],
 	viewHost: null as BootArgs['viewHost'],
-	caseInsensitiveLua: __BOOTROM_CASE_INSENSITIVE_LUA__,
+	canonicalization: __BOOTROM_CANONICALIZATION__,
 
 	/**
 	 * Sets the boot ROM pack.
@@ -223,7 +223,7 @@ export const bootrom = {
 			enableOnscreenGamepad: bootrom.enableOnscreenGamepad,
 			platform,
 			viewHost: bootrom.viewHost ?? undefined,
-			caseInsensitiveLua: __BOOTROM_CASE_INSENSITIVE_LUA__,
+			canonicalization: __BOOTROM_CANONICALIZATION__,
 		} as BootArgs).then(() => {
 			wrapup();
 			bootrom.rom = undefined;
@@ -285,7 +285,7 @@ export const bootrom = {
 				// @ts-ignore
 				const inflated = pako.inflate(ziprom_and_label.zipped_rom).buffer;
 				const enginePack = await loadResources(inflated);
-				enginePack.caseInsensitiveLua = __BOOTROM_CASE_INSENSITIVE_LUA__;
+				enginePack.canonicalization = __BOOTROM_CANONICALIZATION__;
 				bootrom.engineRom = enginePack;
 				return enginePack;
 			} catch (err) {
@@ -335,7 +335,7 @@ export const bootrom = {
 				.then(rom => loadResources(rom))
 				.then((loadResult: any) => {
 					loadedRomPack = loadResult;
-					loadedRomPack.caseInsensitiveLua = __BOOTROM_CASE_INSENSITIVE_LUA__;
+					loadedRomPack.canonicalization = __BOOTROM_CANONICALIZATION__;
 					const combinedPack = combineRompacks(bootrom.engineRom, loadedRomPack);
 					bootrom.cartRom = loadedRomPack;
 					bootrom.rom = combinedPack;

@@ -6,6 +6,7 @@ import { Presets, SingleBar } from 'cli-progress';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
 import type { Resource, RomManifest, RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
+import type { CanonicalizationType } from '../../src/bmsx/rompack/rompack';
 
 import { join, isAbsolute } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
@@ -26,16 +27,7 @@ type ParsedOptions = RomPackerOptions & { bootloaderFallbackPath?: string };
 export let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 // Define common assets path
 export const commonResPath = `./src/bmsx/res`;
-
-// Global flag controlling whether Lua identifier case should be folded to lower-case.
-// This must be declared before any code (including `main`) that may call
-// `setCaseInsensitiveLua(...)`, otherwise modules that call the setter during
-// initialization end up in the temporal-dead-zone for the variable and Node
-// throws "Cannot access 'CASE_INSENSITIVE_LUA' before initialization".
-export let CASE_INSENSITIVE_LUA = true;
-export function setCaseInsensitiveLua(enabled: boolean): void {
-	CASE_INSENSITIVE_LUA = enabled;
-}
+export let LUA_CANONICALIZATION: CanonicalizationType = 'none';
 
 const KNOWN_FLAGS = new Set<string>([
 	'-romname',
@@ -351,22 +343,17 @@ function parseOptions(args: string[]): ParsedOptions {
 	}
 
 	const preserveLuaCase = seenFlags.has('--preserve-lua-case');
-	const caseInsensitiveEnv = process.env.ROM_CASE_INSENSITIVE_LUA;
-	let caseInsensitiveLua = true;
-	if (caseInsensitiveEnv && caseInsensitiveEnv.length > 0) {
-		const normalized = caseInsensitiveEnv.toLowerCase();
-		if (normalized === '0' || normalized === 'false' || normalized === 'no') {
-			caseInsensitiveLua = false;
-		}
-		else if (normalized === '1' || normalized === 'true' || normalized === 'yes') {
-			caseInsensitiveLua = true;
-		}
-		else {
-			throw new Error(`Unsupported value "${caseInsensitiveEnv}" for ROM_CASE_INSENSITIVE_LUA. Expected one of: yes, no, true, false, 1, 0.`);
+	const canonicalizationEnv = process.env.ROM_LUA_CANONICALIZATION;
+	let canonicalization: CanonicalizationType = 'upper'; // By default we fold to upper case and that is the default behavior
+	if (canonicalizationEnv && canonicalizationEnv.length > 0) {
+		if (canonicalizationEnv === 'none' || canonicalizationEnv === 'lower' || canonicalizationEnv === 'upper') {
+			canonicalization = canonicalizationEnv;
+		} else {
+			throw new Error(`Unsupported value "${canonicalizationEnv}" for ROM_LUA_CANONICALIZATION. Expected one of: 'none', 'lower', 'upper'.`);
 		}
 	}
 	else if (preserveLuaCase) {
-		caseInsensitiveLua = false;
+		canonicalization = 'none';
 	}
 
 	const normalizedRomName = rom_name.replace(/^[./\\]+/, '').replace(/\\/g, '/');
@@ -442,7 +429,7 @@ function parseOptions(args: string[]): ParsedOptions {
 		usePkgTsconfig,
 		skipTypecheck,
 		platform,
-		caseInsensitiveLua,
+		canonicalization,
 		mode,
 		shouldBundleCartCode,
 		extraLuaRoots,
@@ -692,7 +679,7 @@ async function main() {
 		printBanner();
 
 		const args = process.argv.slice(2);
-		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform, caseInsensitiveLua, mode, shouldBundleCartCode, extraLuaRoots, bootloaderFallbackPath } = parseOptions(args);
+		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform, canonicalization, mode, shouldBundleCartCode, extraLuaRoots, bootloaderFallbackPath } = parseOptions(args);
 		if (!shouldBundleCartCode && mode !== 'engine') {
 			progress.removeTasks(bundlerTasks);
 			progress.removeTasks(typecheckTasks);
@@ -710,7 +697,7 @@ async function main() {
 
 		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
 		setAtlasFlag(useTextureAtlas);
-		setCaseInsensitiveLua(caseInsensitiveLua);
+		LUA_CANONICALIZATION = canonicalization;
 
 		let resourceRoots: string[] = [];
 		const extraLuaPathSet = new Set<string>(extraLuaRoots.map(normalizePathKey));
@@ -805,7 +792,7 @@ async function main() {
 		logDivider('Options');
 		logBullet('Rebuild', force ? pc.yellow('force') : pc.green('auto (mtime check)'));
 		logBullet('Atlas', useTextureAtlas ? pc.green('enabled') : pc.red('disabled'));
-		logBullet('Lua case', caseInsensitiveLua ? pc.green('fold lower') : pc.yellow('preserve case'));
+		logBullet('Lua case', canonicalization !== 'none' ? pc.green(`fold ${canonicalization}`) : pc.yellow('preserve case'));
 		logBullet('Deploy', deploy ? pc.green('enabled') : pc.dim('disabled'));
 		logBullet('Typecheck', skipTypecheck ? pc.red('skipped') : pc.green('enabled'));
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
@@ -928,7 +915,7 @@ async function main() {
 			await progress.taskCompleted();
 		}
 
-		await progress.runWithDetail('Build boot ROM', () => buildBootromScriptIfNewer({ debug, forceBuild: force, platform, romName: rom_name, caseInsensitiveLua }));
+		await progress.runWithDetail('Build boot ROM', () => buildBootromScriptIfNewer({ debug, forceBuild: force, platform, romName: rom_name, canonicalization }));
 		await progress.taskCompleted();
 		if (platform === 'browser') {
 			if (!isEngineMode) {

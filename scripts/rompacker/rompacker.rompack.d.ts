@@ -4,6 +4,7 @@
 import { Buffer } from 'buffer';
 import type { Canvas, Image as NodeCanvasImage } from 'canvas';
 import type { asset_type } from '../../src/bmsx/rompack/rompack';
+import type { CanonicalizationType } from '../../src/bmsx/rompack/rompack';
 
 export type RomPackerTarget = 'browser' | 'cli' | 'headless';
 export type RomPackerMode = 'bundle' | 'engine';
@@ -26,7 +27,7 @@ export interface RomPackerOptions {
 	/** When true, skip type-checking for the game. */
 	skipTypecheck?: boolean;
 	/** When true (default), rompacker folds Lua identifiers to lowercase for case-insensitive mode. */
-	caseInsensitiveLua: boolean;
+	canonicalization: CanonicalizationType;
 	mode: RomPackerMode;
 	shouldBundleCartCode: boolean;
 	extraLuaRoots: string[];

@@ -47,7 +47,8 @@ import type {
 } from './ast';
 import { LuaEnvironment } from './environment';
 import { LuaRuntimeError, LuaSyntaxError } from './errors';
-import { LuaLexer, type CanonicalizationType } from './lexer';
+import { LuaLexer } from './lexer';
+import { type CanonicalizationType } from '../rompack/rompack';
 import { LuaParser } from './parser';
 import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from './value';
 import { createLuaNativeValue, createLuaTable, isLuaTable, isLuaNativeValue } from './value';

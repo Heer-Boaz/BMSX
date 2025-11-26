@@ -1,12 +1,12 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import type { asset_type, AudioMeta, GLTFMesh, ImgMeta, Polygon, RomAsset } from '../../src/bmsx/rompack/rompack';
+import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset } from '../../src/bmsx/rompack/rompack';
 import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
 import type { AtlasResource, ImageResource, Resource, resourcetype, RomManifest, RomPackerTarget } from './rompacker.rompack';
-import { CASE_INSENSITIVE_LUA, GENERATE_AND_USE_TEXTURE_ATLAS } from './rompacker';
+import { GENERATE_AND_USE_TEXTURE_ATLAS, LUA_CANONICALIZATION } from './rompacker';
 // @ts-ignore
 const { build } = require('esbuild');
 // @ts-ignore
@@ -960,7 +960,7 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 	return result;
 }
 
-type LuaUppercaseState =
+type LuaCaseState =
 	| { kind: 'normal' }
 	| { kind: 'shortString'; delimiter: '\'' | '"'; escaped: boolean }
 	| { kind: 'lineComment' }
@@ -988,12 +988,22 @@ function matchLuaLongBracket(source: string, start: number): LuaLongBracketMatch
 	return { length: openingLength, closing };
 }
 
-function uppercaseLuaSourceExceptStrings(source: string): string {
+function changeCasingLuaSourceExceptStrings(source: string): string {
 	if (source.length === 0) {
 		return source;
 	}
 	const builder: string[] = [];
-	let state: LuaUppercaseState = { kind: 'normal' };
+	const changeCasing = (text: string) => {
+		switch (LUA_CANONICALIZATION) {
+			case 'none':
+				return text;
+			case 'upper':
+				return text.toUpperCase();
+			case 'lower':
+				return text.toLowerCase();
+		}
+	};
+	let state: LuaCaseState = { kind: 'normal' };
 	let index = 0;
 	while (index < source.length) {
 		const current = source.charAt(index);
@@ -1032,12 +1042,12 @@ function uppercaseLuaSourceExceptStrings(source: string): string {
 					state = { kind: 'normal' };
 					break;
 				}
-				builder.push(current.toUpperCase());
+				builder.push(changeCasing(current));
 				index += 1;
 				break;
 			}
 			case 'lineComment': {
-				builder.push(current.toUpperCase());
+				builder.push(changeCasing(current));
 				index += 1;
 				if (current === '\n' || current === '\r') {
 					state = { kind: 'normal' };
@@ -1076,7 +1086,7 @@ function uppercaseLuaSourceExceptStrings(source: string): string {
 						break;
 					}
 				}
-				builder.push(current.toUpperCase());
+				builder.push(changeCasing(current));
 				index += 1;
 				break;
 			}
@@ -1136,14 +1146,14 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 				if (!buffer) {
 					throw new Error(`[RomPacker] Lua resource "${meta.name}" is missing its source file payload.`);
 				}
-				if (!CASE_INSENSITIVE_LUA) {
+				if (!LUA_CANONICALIZATION) {
 					return {
 						...meta,
 						buffer,
 					};
 				}
 				const source = buffer.toString('utf8');
-				const uppercased = uppercaseLuaSourceExceptStrings(source);
+				const uppercased = changeCasingLuaSourceExceptStrings(source);
 				const upperBuffer = Buffer.from(uppercased, 'utf8');
 				return {
 					...meta,
@@ -1659,10 +1669,10 @@ export interface BootromBuildOptions {
 	forceBuild: boolean;
 	platform: RomPackerTarget;
 	romName: string;
-	caseInsensitiveLua: boolean;
+	canonicalization: CanonicalizationType;
 }
 
-async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolean; caseInsensitiveLua: boolean; }): Promise<void> {
+async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolean; canonicalization: CanonicalizationType; }): Promise<void> {
 	const romTsPath = join(__dirname, BOOTROM_TS_RELATIVE_PATH);
 	const romJsPath = join(__dirname, BOOTROM_JS_RELATIVE_PATH);
 
@@ -1687,7 +1697,7 @@ async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolea
 	}
 
 	const define = {
-		'__BOOTROM_CASE_INSENSITIVE_LUA__': options.caseInsensitiveLua ? 'true' : 'false',
+		'__BOOTROM_CANONICALIZATION__': JSON.stringify(options.canonicalization),
 	};
 
 	const esbuildOptions: any = {
@@ -1752,7 +1762,7 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 		'__BOOTROM_TARGET__': JSON.stringify(options.platform),
 		'__BOOTROM_ROM_NAME__': JSON.stringify(options.romName),
 		'__BOOTROM_DEBUG__': options.debug ? 'true' : 'false',
-		'__BOOTROM_CASE_INSENSITIVE_LUA__': options.caseInsensitiveLua ? 'true' : 'false',
+		'__BOOTROM_CANONICALIZATION__': JSON.stringify(options.canonicalization),
 	};
 
 	const esbuildOptions: any = {
@@ -1780,7 +1790,7 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 
 export async function buildBootromScriptIfNewer(options: BootromBuildOptions): Promise<void> {
 	if (options.platform === 'browser') {
-		await buildBrowserBootrom({ debug: options.debug, forceBuild: options.forceBuild, caseInsensitiveLua: options.caseInsensitiveLua });
+		await buildBrowserBootrom({ debug: options.debug, forceBuild: options.forceBuild, canonicalization: options.canonicalization });
 		return;
 	}
 	if (options.platform === 'cli' || options.platform === 'headless') {

@@ -23,12 +23,12 @@ export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: Con
 			],
 		},
 		onBoot(_world: World) {
-			const caseInsensitiveLua = options.caseInsensitiveLua ?? ($.rompack.caseInsensitiveLua ?? true);
+			const canonicalization = options.canonicalization ?? ($.rompack.canonicalization ?? 'none');
 			BmsxConsoleRuntime.createInstance({
 				cart,
 				playerIndex: options.playerIndex,
 				storage: $.platform.storage,
-				caseInsensitiveLua,
+				canonicalization,
 			});
 		},
 		onTick(_world: World, _deltaMilliseconds: number) {

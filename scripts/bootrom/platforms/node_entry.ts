@@ -14,7 +14,7 @@ import type { Platform, InputEvt } from '../../../src/bmsx_hostplatform/platform
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
 declare const __BOOTROM_ROM_NAME__: string;
 declare const __BOOTROM_DEBUG__: boolean;
-declare const __BOOTROM_CASE_INSENSITIVE_LUA__: boolean;
+declare const __BOOTROM_CANONICALIZATION__: BootArgs['canonicalization'];
 
 interface LaunchOptions {
 	romPath?: string;
@@ -445,7 +445,7 @@ async function loadRomPack(arrayBuffer: ArrayBuffer): Promise<RomPack> {
 			return image as TextureSource;
 		},
 	});
-	rompack.caseInsensitiveLua = __BOOTROM_CASE_INSENSITIVE_LUA__;
+	rompack.canonicalization = __BOOTROM_CANONICALIZATION__;
 	return rompack;
 }
 
@@ -590,7 +590,7 @@ function combineRompacks(engineRom: RomPack | null, cartRom: RomPack): RomPack {
 	resourcePaths: combinedResourcePaths,
 	projectRootPath: cartRom.projectRootPath ?? engineRom.projectRootPath ?? null,
 	code: cartRom.code ?? engineRom.code ?? null,
-	caseInsensitiveLua: cartRom.caseInsensitiveLua ?? engineRom.caseInsensitiveLua,
+	canonicalization: cartRom.canonicalization ?? engineRom.canonicalization,
 	manifest: cartRom.manifest ?? engineRom.manifest,
 	};
 	return combined;
@@ -714,7 +714,7 @@ async function main(): Promise<void> {
 		rompack: activeRompack,
 		platform,
 		viewHost: platform.gameviewHost,
-		caseInsensitiveLua: __BOOTROM_CASE_INSENSITIVE_LUA__,
+		canonicalization: __BOOTROM_CANONICALIZATION__,
 	};
 	if (debugFlag) {
 		bootArgs.debug = true;

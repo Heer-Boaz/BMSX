@@ -37,9 +37,8 @@ import type {
 	ConsoleLuaSymbolEntry,
 } from './types';
 import { consumeIdeKey, getIdeKeyState } from './ide/ide_input';
-import type { asset_id, Viewport } from '../rompack/rompack';
+import type { asset_id, Viewport, CanonicalizationType } from '../rompack/rompack';
 import type { BmsxConsoleApi } from './api';
-import { CanonicalizationType } from '../lua/lexer';
 
 type ConsoleOutputKind =
 	| 'prompt'

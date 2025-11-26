@@ -1,5 +1,5 @@
-import { clamp } from '../../utils/clamp';;
-import type { StackTraceFrame } from 'bmsx/lua/runtime';
+import { clamp } from '../../utils/clamp';
+import type { StackTraceFrame } from '../../lua/runtime';
 
 export interface RuntimeErrorOverlayNavigationHost {
 	getLineCount(): number;
