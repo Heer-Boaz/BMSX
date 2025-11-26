@@ -1569,7 +1569,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaChunkEnvironmentsByAssetId.clear();
 		this.luaChunkEnvironmentsByChunkName.clear();
 		this.luaGenericAssetsExecuted.clear();
-		this.applyLocalWorkspaceDirtyLuaOverrides(false);
+		this.applyLocalWorkspaceDirtyLuaOverrides(true);
 		if (this.editor) {
 			this.editor.clearRuntimeErrorOverlay();
 		}
@@ -1592,7 +1592,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.resetFrameTiming();
 		this.hasBooted = true;
-		void this.applyServerWorkspaceDirtyLuaOverrides(false);
+		void this.applyServerWorkspaceDirtyLuaOverrides(true);
 	}
 
 	private resetWorldState(): void {
@@ -1997,6 +1997,7 @@ export class BmsxConsoleRuntime extends Service {
 		// Clear flag and any queued overlay frame before we resume swapping handlers.
 		this.luaRuntimeFailed = false;
 		publishOverlayFrame(null);
+		this.refreshWorkspaceOverrides(true);
 		this.processPendingLuaAssets('resume');
 		this.resumeLuaProgramState(snapshot, { runInit: false });
 		this.resetFrameTiming();
@@ -2469,41 +2470,10 @@ export class BmsxConsoleRuntime extends Service {
 		await this.persistLuaSourceToFilesystem(filesystemPath, source);
 		const rompack = $.rompack;
 		rompack.lua[asset_id] = source;
-		try {
-			const category = this.resolveLuaHotReloadCategory(asset_id);
-			const normalizedPath = cartPath.replace(/\\/g, '/');
-			let chunkName: string;
-			switch (category) {
-				case 'fsm':
-					chunkName = this.resolveLuaFsmChunkName(asset_id, normalizedPath);
-					break;
-				case 'behavior_tree':
-					chunkName = this.resolveLuaBehaviorTreeChunkName(asset_id, normalizedPath);
-					break;
-				case 'service':
-					chunkName = this.resolveLuaServiceChunkName(asset_id, normalizedPath);
-					break;
-				default:
-					chunkName = `@${normalizedPath}`;
-					break;
-			}
-			this.registerLuaChunkResource(chunkName, { asset_id, path: normalizedPath });
-			this.luaGenericAssetsExecuted.delete(asset_id);
-			let loadError: unknown = null;
-			try {
-				this.processPendingLuaAssets('lua:save');
-			} catch (error) {
-				loadError = error;
-			}
-			this.refreshLuaHandlersForChunk(chunkName, source);
-			if (loadError) {
-				const message = this.extractErrorMessage(loadError);
-				this.recordLuaWarning(`[BmsxConsoleRuntime] Hot reload of '${asset_id}' after save failed: ${message}`);
-			}
-		} catch (error) {
-			const message = this.extractErrorMessage(error);
-			this.recordLuaWarning(`[BmsxConsoleRuntime] Hot reload of '${asset_id}' after save failed: ${message}`);
-		}
+		const normalizedPath = cartPath.replace(/\\/g, '/');
+		const chunkName = `@${normalizedPath}`;
+		this.registerLuaChunkResource(chunkName, { asset_id, path: normalizedPath });
+		this.luaGenericAssetsExecuted.delete(asset_id);
 	}
 
 	private async createLuaResource(request: ConsoleLuaResourceCreationRequest): Promise<ConsoleResourceDescriptor> {
@@ -2587,39 +2557,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.resourcePathCache.set(asset_id, normalizedPath);
 		this.registerLuaChunkResource(normalizedPath, { asset_id: asset_id, path: normalizedPath });
 		this.luaGenericAssetsExecuted.delete(asset_id);
-		let hotLoadError: unknown = null;
-		try {
-			this.processPendingLuaAssets('lua:create');
-		} catch (error) {
-			hotLoadError = error;
-		}
 		const descriptor: ConsoleResourceDescriptor = { path: normalizedPath, type: 'lua', asset_id };
-		try {
-			const category = this.resolveLuaHotReloadCategory(asset_id);
-			let chunkName: string;
-			switch (category) {
-				case 'fsm':
-					chunkName = this.resolveLuaFsmChunkName(asset_id, normalizedPath);
-					break;
-				case 'behavior_tree':
-					chunkName = this.resolveLuaBehaviorTreeChunkName(asset_id, normalizedPath);
-					break;
-				case 'service':
-					chunkName = this.resolveLuaServiceChunkName(asset_id, normalizedPath);
-					break;
-				default:
-					chunkName = `@${normalizedPath}`;
-					break;
-			}
-			this.refreshLuaHandlersForChunk(chunkName, contents);
-			if (hotLoadError) {
-				const message = this.extractErrorMessage(hotLoadError);
-				this.recordLuaWarning(`[BmsxConsoleRuntime] Hot load of new resource '${asset_id}' encountered issues: ${message}`);
-			}
-		} catch (error) {
-			const message = this.extractErrorMessage(error);
-			this.recordLuaWarning(`[BmsxConsoleRuntime] Hot load of new resource '${asset_id}' failed: ${message}`);
-		}
 		return descriptor;
 	}
 
@@ -4793,25 +4731,6 @@ export class BmsxConsoleRuntime extends Service {
 			this.handleLuaError(error);
 			return undefined;
 		}
-	}
-
-	private resolveLuaHotReloadCategory(asset_id: string): LuaAssetCategory {
-		if (this.consoleFsmsByAsset.has(asset_id)) {
-			return 'fsm';
-		}
-		if (this.consoleBehaviorTreesByAsset.has(asset_id)) {
-			return 'behavior_tree';
-		}
-		if (this.consoleServiceDefinitionsByAsset.has(asset_id) || this.consoleServicesByAsset.has(asset_id)) {
-			return 'service';
-		}
-		if (this.consoleComponentPresetsByAsset.has(asset_id)) {
-			return 'component';
-		}
-		if (this.consoleWorldObjectsByAsset.has(asset_id)) {
-			return 'worldobject';
-		}
-		return 'other';
 	}
 
 	private resolveLuaBehaviorTreeChunkName(asset_id: string, sourcePath: string | null): string {
@@ -6991,24 +6910,10 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private resolveLuaModuleChunkName(asset_id: string, sourcePath: string | null): string {
-		const category = this.resolveLuaHotReloadCategory(asset_id);
-		switch (category) {
-			case 'fsm':
-				return this.resolveLuaFsmChunkName(asset_id, sourcePath);
-			case 'behavior_tree':
-				return this.resolveLuaBehaviorTreeChunkName(asset_id, sourcePath);
-			case 'service':
-				return this.resolveLuaServiceChunkName(asset_id, sourcePath);
-			case 'component':
-				return this.resolveLuaComponentPresetChunkName(asset_id, sourcePath);
-			case 'worldobject':
-				return this.resolveLuaWorldObjectChunkName(asset_id, sourcePath);
-			default:
-				if (sourcePath && sourcePath.length > 0) {
-					return `@${sourcePath}`;
-				}
-				return `@lua/${asset_id}`;
+		if (sourcePath && sourcePath.length > 0) {
+			return `@${sourcePath}`;
 		}
+		return `@lua/${asset_id}`;
 	}
 
 	private registerLuaChunkResource(chunkName: string, info: { asset_id: string | null; path?: string | null }): void {
@@ -7030,9 +6935,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const normalizedChunk = this.normalizeChunkName(chunkName);
 		const definitions = interpreter.getChunkDefinitions(chunkName);
-		const category = asset_id ? this.resolveLuaHotReloadCategory(asset_id) : null;
-		const effectiveCategory: LuaAssetCategory = category ?? 'other';
-		const effectiveModuleId = moduleId ?? this.moduleIdFor(effectiveCategory, asset_id, chunkName);
+		const effectiveModuleId = moduleId ?? this.moduleIdFor('other', asset_id, chunkName);
 		this.pruneRemovedChunkFunctionExports(normalizedChunk, environment, definitions, interpreter.getGlobalEnvironment());
 		this.installFunctionRedirectsForChunk(effectiveModuleId, environment, definitions, interpreter);
 		this.luaChunkEnvironmentsByChunkName.set(normalizedChunk, environment);
