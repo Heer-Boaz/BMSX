@@ -12,6 +12,8 @@ const romFolder = args[0];
 const cartRoots = {
 	luademo: 'src/carts/luademo',
 	luashell: 'src/luashell',
+	testcart: 'src/carts/testcart',
+	emptycart: 'src/carts/emptycart',
 };
 
 // Map folder name -> rom base filename when rommanifest differs from folder name

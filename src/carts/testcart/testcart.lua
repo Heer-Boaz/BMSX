@@ -22,6 +22,7 @@ local function track_plain_input()
 		if game:action_triggered(1, entry[1] .. '[gp]') then
 			demo.last_plain_input = entry[2]
 			emit('demo.input', nil, { action = entry[2], t = demo.tick })
+			print('[hotreload-test] input action=' .. entry[2] .. ' tick=' .. demo.tick)
 		end
 	end
 end
@@ -270,6 +271,7 @@ local function define_blink()
 			owner.events:emit('demo.hero.effect', { phase = 'active', facing = facing, offset = offset })
 			emit('demo.hero.effect.global', owner, { phase = 'active', facing = facing, offset = offset })
 			owner.events:emit('demo.hero.effect', { phase = 'done' })
+			print('[hotreload-test] blink facing=' .. facing .. ' offset=' .. offset .. ' tick=' .. demo.tick)
 			return { facing = facing }
 		end,
 	})
@@ -282,6 +284,7 @@ function init()
 	register_hero()
 	spawn_object(hero_def_id, { id = hero_instance_id, position = { x = 48, y = 64, z = 0 } })
 	register_service(director)
+	print('[hotreload-test] init completed')
 end
 
 function update(dt)
