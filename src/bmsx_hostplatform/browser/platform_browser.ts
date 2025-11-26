@@ -552,8 +552,8 @@ class BrowserInputHub implements InputHub {
 		this.devicesList.push(keyboard);
 		this.devicesList.push(pointer);
 
-		window.addEventListener('keydown', this.onKeyDown, { passive: false });
-		window.addEventListener('keyup', this.onKeyUp, { passive: false });
+		window.addEventListener('keydown', this.onKeyDown, { passive: false, capture: true });
+		window.addEventListener('keyup', this.onKeyUp, { passive: false, capture: true });
 		surface.addEventListener('pointerdown', this.onPointerDown, { passive: false });
 		surface.addEventListener('pointerup', this.onPointerUp, { passive: false });
 		surface.addEventListener('pointermove', this.onPointerMove, { passive: false });
@@ -595,6 +595,7 @@ class BrowserInputHub implements InputHub {
 			event.preventDefault();
 			event.stopPropagation();
 			event.stopImmediatePropagation();
+			event.returnValue = false;
 		}
 		const now = this.clock.now();
 		this.post({ type: 'button', deviceId: 'keyboard:0', code: event.code, down: true, value: 1, timestamp: now, pressId: null });
@@ -606,6 +607,7 @@ class BrowserInputHub implements InputHub {
 			event.preventDefault();
 			event.stopPropagation();
 			event.stopImmediatePropagation();
+			event.returnValue = false;
 		}
 		const now = this.clock.now();
 		this.post({ type: 'button', deviceId: 'keyboard:0', code: event.code, down: false, value: 0, timestamp: now, pressId: null });
