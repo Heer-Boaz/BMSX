@@ -344,16 +344,17 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 
 function resolveChunkName(descriptor: ConsoleResourceDescriptor | null, fallback: string | null): string {
 	if (descriptor) {
-		if (descriptor.path && descriptor.path.length > 0) {
-			return normalizePath(descriptor.path) ?? descriptor.path;
+		if (descriptor.path) {
+			return normalizePath(descriptor.path);
 		}
-		if (descriptor.asset_id && descriptor.asset_id.length > 0) {
+		if (descriptor.asset_id) {
 			return descriptor.asset_id;
 		}
 	}
-	if (fallback && fallback.length > 0) {
+	if (fallback) {
 		return fallback;
 	}
+	console.warn('Unable to resolve chunk name for Lua resource; using \'<console>\' fallback.');
 	return '<console>';
 }
 
@@ -362,10 +363,7 @@ function normalizeSourceLines(source: string): string[] {
 }
 
 function normalizePath(path: string | null): string | null {
-	if (!path) {
-		return null;
-	}
-	return path.replace(/\\/g, '/');
+	return path?.replace(/\\/g, '/');
 }
 
 

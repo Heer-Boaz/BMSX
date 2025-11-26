@@ -2583,12 +2583,21 @@ export class BmsxConsoleRuntime extends Service {
 
 	private captureChunkState(chunkName: string): Record<string, unknown> | null {
 		const normalized = this.normalizeChunkName(chunkName);
-		const env = this.luaChunkEnvironmentsByChunkName.get(normalized);
+		let env = this.luaChunkEnvironmentsByChunkName.get(normalized);
 		if (!env) {
-			return null;
+			const info = this.lookupChunkResourceInfo(normalized);
+			if (info?.asset_id) {
+				env = this.luaChunkEnvironmentsByAssetId.get(info.asset_id) ?? null;
+				if (!env && info.path) {
+					const canonicalChunk = this.resolveLuaModuleChunkName(info.asset_id, info.path);
+					env = this.luaChunkEnvironmentsByChunkName.get(this.normalizeChunkName(canonicalChunk)) ?? null;
+				}
+			}
 		}
-		const entries = env.entries();
-		return this.captureLuaEntryCollection(entries);
+		if (!env) {
+			throw new Error(`[BmsxConsoleRuntime] Missing chunk environment for '${chunkName}'.`);
+		}
+		return this.captureLuaEntryCollection(env.entries());
 	}
 
 	private restoreChunkState(env: LuaEnvironment | null, snapshot: Record<string, unknown> | null, interpreter: LuaInterpreter): void {

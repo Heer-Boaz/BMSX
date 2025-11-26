@@ -19,7 +19,7 @@ import {
 	joinWorkspacePaths,
 	normalizeWorkspacePath,
 } from '../workspace';
-import { openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, findResourceDescriptorByasset_id, restoreSnapshot, setFontVariant, getConsoleRuntime } from './console_cart_editor';
+import { openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, findResourceDescriptorByAssetId, restoreSnapshot, setFontVariant, getConsoleRuntime } from './console_cart_editor';
 import { createEntryTabContext, initializeTabs, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { ConsoleFontVariant } from '../font';
 
@@ -486,7 +486,7 @@ export function resolveSerializedDescriptor(serialized: SerializedDescriptor | n
 	if (!serialized) {
 		return null;
 	}
-	return findResourceDescriptorByasset_id(serialized.asset_id);
+	return findResourceDescriptorByAssetId(serialized.asset_id);
 }
 
 export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise<void> {

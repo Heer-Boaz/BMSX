@@ -15,7 +15,7 @@ import {
 	refreshActiveDiagnostics,
 	markDiagnosticsDirty,
 	bumpTextVersion,
-	findResourceDescriptorByasset_id,
+	findResourceDescriptorByAssetId as findResourceDescriptorByAssetId,
 	beginNavigationCapture,
 	completeNavigation,
 	closeSymbolSearch,
@@ -34,15 +34,13 @@ import { resetBlink } from './render/render_caret';
 import { splitLines } from './text_utils';
 
 export function createEntryTabContext(): CodeTabContext | null {
-	const asset_id = (typeof ide_state.primaryasset_id === 'string' && ide_state.primaryasset_id.length > 0)
-		? ide_state.primaryasset_id
-		: null;
-	const descriptor = asset_id ? findResourceDescriptorByasset_id(asset_id) : null;
+	const asset_id = ide_state.primaryAssetId;
+	const descriptor = asset_id ? findResourceDescriptorByAssetId(asset_id) : null;
 	const resolvedasset_id = descriptor ? descriptor.asset_id : (asset_id ?? '__entry__');
 	const tabId: string = `lua:${resolvedasset_id}`;
 	const title = descriptor
 		? computeResourceTabTitle(descriptor)
-		: (asset_id ?? ide_state.metadata.title ?? 'ENTRY').toUpperCase();
+		: (asset_id ?? ide_state.metadata.title ?? 'ENTRY');
 	const load = descriptor
 		? () => ide_state.loadLuaResourceFn(descriptor.asset_id)
 		: () => ide_state.loadSourceFn();
@@ -544,7 +542,7 @@ export function computeResourceTabTitle(descriptor: ConsoleResourceDescriptor): 
 	if (parts.length > 0) {
 		return parts[parts.length - 1];
 	}
-	if (descriptor.asset_id && descriptor.asset_id.length > 0) {
+	if (descriptor.asset_id) {
 		return descriptor.asset_id;
 	}
 	return descriptor.type.toUpperCase();

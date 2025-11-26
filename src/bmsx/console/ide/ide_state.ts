@@ -145,7 +145,7 @@ export interface IdeState {
 	listLuaSymbolsFn: (asset_id: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
 	listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
-	primaryasset_id: string | null;
+	primaryAssetId: string | null;
 	builtinIdentifierCache: { key: string; set: ReadonlySet<string> } | null;
 	hoverTooltip: CodeHoverTooltip | null;
 	lastPointerSnapshot: PointerSnapshot | null;
@@ -282,7 +282,7 @@ export interface IdeState {
 	resourcePanelVisible: boolean;
 	resourcePanelFocused: boolean;
 	resourcePanelResourceCount: number;
-	pendingResourceSelectionasset_id: string | null;
+	pendingResourceSelectionAssetId: string | null;
 	resourcePanelWidthRatio: number | null;
 	resourcePanelResizing: boolean;
 	resourcePanel: ResourcePanelController;
@@ -347,7 +347,7 @@ export const ide_state: IdeState = {
 	listLuaSymbolsFn: undefined!,
 	listGlobalLuaSymbolsFn: undefined!,
 	listBuiltinLuaFunctionsFn: undefined!,
-	primaryasset_id: null,
+	primaryAssetId: null,
 	builtinIdentifierCache: null,
 	hoverTooltip: null,
 	lastPointerSnapshot: null,
@@ -512,7 +512,7 @@ export const ide_state: IdeState = {
 	resourcePanelVisible: false,
 	resourcePanelFocused: false,
 	resourcePanelResourceCount: 0,
-	pendingResourceSelectionasset_id: null,
+	pendingResourceSelectionAssetId: null,
 	resourcePanelWidthRatio: null,
 	resourcePanelResizing: false,
 	resourcePanel: undefined!,

@@ -2,7 +2,7 @@ import { $ } from '../../core/game';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, cutSelectionToClipboard, insertText, pasteFromClipboard } from './text_editing_and_selection';
 import { resetBlink } from './render/render_caret';
-import { applySearchSelection, closeSearch, ensureSearchSelectionVisible, focusEditorFromSearch, jumpToNextMatch, jumpToPreviousMatch, openSearch } from './editor_search';
+import { activeSearchMatchCount, applySearchSelection, closeSearch, ensureSearchSelectionVisible, focusEditorFromSearch, jumpToNextMatch, jumpToPreviousMatch, moveSearchSelection, onSearchQueryChanged, openSearch, searchPageSize } from './editor_search';
 import { ide_state } from './ide_state';
 import { ESCAPE_KEY } from './constants';
 import type { ButtonState } from '../../input/inputtypes';
@@ -20,9 +20,10 @@ import { applyScrollbarScroll } from './scrollbar';
 import { clearHoverTooltip, updateHoverTooltip } from './intellisense';
 import * as TextEditing from './text_editing_and_selection';
 import { clamp } from '../../utils/clamp';
-import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, deactivate, activate, handleActionPromptSelection, openSymbolSearch, toggleResolutionMode, openResourceSearch, toggleProblemsPanel, markDiagnosticsDirty, focusEditorFromProblemsPanel, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, handleLineJumpInput, handleSearchInput, hideProblemsPanel, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openDebugPanelTab, performAction, pointInRect, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, scrollResourceBrowser, getCodeAreaBounds, scrollRows, clearGotoHoverHighlight, readPointerSnapshot, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, processRuntimeErrorOverlayPointer, resolvePointerRow, clearReferenceHighlights, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, tryGotoDefinitionAt, handlePointerAutoScroll, refreshGotoHoverHighlight, getActiveResourceViewer, resourceViewerTextCapacity, moveSymbolSearchSelection, symbolSearchPageSize, updateSymbolSearchMatches, applyLineJumpFieldText, resourceSearchWindowCapacity, updateResourceSearchMatches } from './console_cart_editor';
+import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, deactivate, activate, handleActionPromptSelection, openSymbolSearch, toggleResolutionMode, openResourceSearch, toggleProblemsPanel, markDiagnosticsDirty, focusEditorFromProblemsPanel, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, hideProblemsPanel, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openDebugPanelTab, performAction, pointInRect, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, scrollResourceBrowser, getCodeAreaBounds, scrollRows, clearGotoHoverHighlight, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, processRuntimeErrorOverlayPointer, resolvePointerRow, clearReferenceHighlights, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, tryGotoDefinitionAt, handlePointerAutoScroll, refreshGotoHoverHighlight, getActiveResourceViewer, resourceViewerTextCapacity, moveSymbolSearchSelection, symbolSearchPageSize, updateSymbolSearchMatches, applyLineJumpFieldText, resourceSearchWindowCapacity, updateResourceSearchMatches, applyLineJump, mapScreenPointToViewport } from './console_cart_editor';
 import * as constants from './constants';
 import { applyInlineFieldEditing, getFieldText } from './inline_text_field';
+import { api } from '../runtime';
 
 const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
 const MENU_COMMANDS: TopBarButtonId[] = [
@@ -1966,3 +1967,202 @@ export function handleResourceSearchInput(deltaSeconds: number): void {
 		updateResourceSearchMatches();
 	}
 }
+export function handleSearchInput(deltaSeconds: number): void {
+	const { shiftDown, ctrlDown, metaDown, altDown } = { shiftDown: isShiftDown(), ctrlDown: isCtrlDown(), metaDown: isMetaDown(), altDown: isAltDown() };
+	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressed('KeyF')) {
+		consumeIdeKey('KeyF');
+		openSearch(false, 'global');
+		return;
+	}
+	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressed('KeyF')) {
+		consumeIdeKey('KeyF');
+		openSearch(false, 'local');
+		return;
+	}
+	if ((ctrlDown || metaDown) && ide_state.input.shouldRepeat('KeyZ', deltaSeconds)) {
+		consumeIdeKey('KeyZ');
+		if (shiftDown) {
+			redo();
+		} else {
+			undo();
+		}
+		return;
+	}
+	if ((ctrlDown || metaDown) && ide_state.input.shouldRepeat('KeyY', deltaSeconds)) {
+		consumeIdeKey('KeyY');
+		redo();
+		return;
+	}
+	if (ctrlDown && isKeyJustPressed('KeyS')) {
+		consumeIdeKey('KeyS');
+		void save();
+		return;
+	}
+	const hasResults = activeSearchMatchCount() > 0;
+	const previewLocal = ide_state.searchScope === 'local';
+	if (isKeyJustPressed('Enter')) {
+		consumeIdeKey('Enter');
+		if (hasResults) {
+			if (shiftDown) {
+				moveSearchSelection(-1, { wrap: true, preview: previewLocal });
+			} else if (ide_state.searchCurrentIndex === -1) {
+				ide_state.searchCurrentIndex = 0;
+			} else {
+				moveSearchSelection(1, { wrap: true, preview: previewLocal });
+			}
+			applySearchSelection(ide_state.searchCurrentIndex);
+		} else if (shiftDown) {
+			jumpToPreviousMatch();
+		} else {
+			jumpToNextMatch();
+		}
+		return;
+	}
+	if (isKeyJustPressed('F3')) {
+		consumeIdeKey('F3');
+		if (shiftDown) {
+			jumpToPreviousMatch();
+		} else {
+			jumpToNextMatch();
+		}
+		return;
+	}
+	if (hasResults) {
+		if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
+			consumeIdeKey('ArrowUp');
+			moveSearchSelection(-1, { preview: previewLocal });
+			return;
+		}
+		if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
+			consumeIdeKey('ArrowDown');
+			moveSearchSelection(1, { preview: previewLocal });
+			return;
+		}
+		if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
+			consumeIdeKey('PageUp');
+			moveSearchSelection(-searchPageSize(), { preview: previewLocal });
+			return;
+		}
+		if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
+			consumeIdeKey('PageDown');
+			moveSearchSelection(searchPageSize(), { preview: previewLocal });
+			return;
+		}
+		if (isKeyJustPressed('Home')) {
+			consumeIdeKey('Home');
+			ide_state.searchCurrentIndex = hasResults ? 0 : -1;
+			ensureSearchSelectionVisible();
+			if (previewLocal) {
+				applySearchSelection(ide_state.searchCurrentIndex, { preview: true });
+			}
+			return;
+		}
+		if (isKeyJustPressed('End')) {
+			consumeIdeKey('End');
+			const lastIndex = hasResults ? activeSearchMatchCount() - 1 : -1;
+			ide_state.searchCurrentIndex = lastIndex;
+			ensureSearchSelectionVisible();
+			if (previewLocal) {
+				applySearchSelection(ide_state.searchCurrentIndex, { preview: true });
+			}
+			return;
+		}
+	}
+
+	const textChanged = applyInlineFieldEditing(ide_state.searchField, {
+		deltaSeconds,
+		allowSpace: true,
+		characterFilter: undefined,
+		maxLength: null,
+	});
+
+	ide_state.searchQuery = getFieldText(ide_state.searchField);
+	if (textChanged) {
+		onSearchQueryChanged();
+	}
+}
+
+export function handleLineJumpInput(deltaSeconds: number): void {
+	const { shiftDown, ctrlDown, metaDown } = { shiftDown: isShiftDown(), ctrlDown: isCtrlDown(), metaDown: isMetaDown() };
+	if ((ctrlDown || metaDown) && isKeyJustPressed('KeyL')) {
+		consumeIdeKey('KeyL');
+		openLineJump();
+		return;
+	}
+	if (isKeyJustPressed('Enter')) {
+		consumeIdeKey('Enter');
+		applyLineJump();
+		return;
+	}
+	if (!shiftDown && isKeyJustPressed('NumpadEnter')) {
+		consumeIdeKey('NumpadEnter');
+		applyLineJump();
+		return;
+	}
+	if (isKeyJustPressed('Escape')) {
+		consumeIdeKey('Escape');
+		closeLineJump(false);
+		return;
+	}
+
+	const digitFilter = (value: string): boolean => value >= '0' && value <= '9';
+	const textChanged = applyInlineFieldEditing(ide_state.lineJumpField, {
+		deltaSeconds,
+		allowSpace: false,
+		characterFilter: digitFilter,
+		maxLength: 6,
+	});
+	ide_state.lineJumpValue = getFieldText(ide_state.lineJumpField);
+	if (textChanged) {
+		// keep value in sync; no additional processing required
+	}
+}export function readPointerSnapshot(): PointerSnapshot | null {
+	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
+	if (!playerInput) {
+		return null;
+	}
+	const primaryAction = playerInput.getActionState('pointer_primary');
+	const primaryPressed = primaryAction.pressed === true && primaryAction.consumed !== true;
+
+	const positionAction = playerInput.getActionState('pointer_position');
+	const coords = positionAction.value2d;
+	if (!coords) {
+		return {
+			viewportX: 0,
+			viewportY: 0,
+			insideViewport: false,
+			valid: false,
+			primaryPressed,
+		};
+	}
+	const mapped = mapScreenPointToViewport(coords[0], coords[1]);
+	return {
+		viewportX: mapped.x,
+		viewportY: mapped.y,
+		insideViewport: mapped.inside,
+		valid: mapped.valid,
+		primaryPressed,
+	};
+}
+export function resetInputFocusState(): void {
+	if (!api.keyboard) return;
+	api.keyboard.reset();
+	ide_state.input.resetRepeats();
+	resetKeyPressRecords();
+	ide_state.repeatState.clear();
+}
+export function requestWindowFocusState(hasFocus: boolean, immediate: boolean): void {
+	ide_state.pendingWindowFocused = hasFocus;
+	if (immediate) {
+		flushWindowFocusState();
+	}
+}
+
+export function flushWindowFocusState(): void {
+	if (ide_state.pendingWindowFocused === ide_state.windowFocused) {
+		return;
+	}
+	ide_state.windowFocused = ide_state.pendingWindowFocused;
+	resetInputFocusState();
+}
+

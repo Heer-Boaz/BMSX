@@ -70,7 +70,7 @@ import {
 } from './runtime_error_overlay_view';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
-import { handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handleTextEditorPointerInput, handlePointerWheel, InputController, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, resetKeyPressRecords, resourceViewerClampScroll } from './ide_input';
+import { flushWindowFocusState, handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, requestWindowFocusState, resetKeyPressRecords, resourceViewerClampScroll } from './ide_input';
 import { consumeIdeKey } from './ide_input';
 import { ConsoleCodeLayout } from './code_layout';
 import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine } from './runtime_error_utils';
@@ -117,7 +117,7 @@ import { planRenameLineEdits } from './rename_controller';
 import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_controller';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast';
 // Search logic moved to editor_search
-import { activeSearchMatchCount, searchPageSize, openSearch, closeSearch, focusEditorFromSearch, onSearchQueryChanged, moveSearchSelection, applySearchSelection, ensureSearchSelectionVisible, computeSearchPageStats, startSearchJob, jumpToNextMatch, jumpToPreviousMatch, cancelGlobalSearchJob } from './editor_search';
+import { closeSearch, focusEditorFromSearch, computeSearchPageStats, startSearchJob, cancelGlobalSearchJob } from './editor_search';
 import * as constants from './constants';
 import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, workspaceDirtyCache, caretNavigation } from './ide_state';
 import { initializeDebuggerUiState } from './debugger_ui_state';
@@ -184,7 +184,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.listLuaSymbolsFn = options.listLuaSymbols;
 	ide_state.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
 	ide_state.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
-	ide_state.primaryasset_id = options.primaryasset_id;
+	ide_state.primaryAssetId = options.primaryasset_id;
 	if ($.debug) {
 		ide_state.listResourcesFn();
 	}
@@ -572,33 +572,6 @@ export function installWindowEventListeners(): void {
 	};
 }
 
-export function resetInputFocusState(): void {
-	if (!api.keyboard) return;
-	api.keyboard.reset();
-	ide_state.input.resetRepeats();
-	resetKeyPressRecords();
-	ide_state.repeatState.clear();
-}
-
-export function requestWindowFocusState(hasFocus: boolean, immediate: boolean): void {
-	ide_state.pendingWindowFocused = hasFocus;
-	if (immediate) {
-		flushWindowFocusState();
-	}
-}
-
-export function flushWindowFocusState(): void {
-	if (ide_state.pendingWindowFocused === ide_state.windowFocused) {
-		return;
-	}
-	ide_state.windowFocused = ide_state.pendingWindowFocused;
-	resetInputFocusState();
-}
-
-export function scheduleNextFrame(task: () => void): void {
-	scheduleMicrotask(task);
-}
-
 export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void {
 	const tooltip = ide_state.hoverTooltip;
 	if (!tooltip) {
@@ -886,7 +859,7 @@ export function listResourcesStrict(): ConsoleResourceDescriptor[] {
 	return descriptors;
 }
 
-export function findResourceDescriptorByasset_id(asset_id: string): ConsoleResourceDescriptor | null {
+export function findResourceDescriptorByAssetId(asset_id: string): ConsoleResourceDescriptor | null {
 	const descriptors = listResourcesStrict();
 	const match = descriptors.find(entry => entry.asset_id === asset_id);
 	return match ?? null;
@@ -1174,7 +1147,7 @@ export function scheduleDiagnosticsComputation(): void {
 		return;
 	}
 	ide_state.diagnosticsComputationScheduled = true;
-	scheduleNextFrame(() => {
+	scheduleMicrotask(() => {
 		ide_state.diagnosticsComputationScheduled = false;
 		executeDiagnosticsComputation();
 	});
@@ -1422,8 +1395,8 @@ export function findContextByChunk(chunkName: string): CodeTabContext | null {
 			continue;
 		}
 		const aliases: string[] = [];
-		if (ide_state.primaryasset_id) {
-			aliases.push(ide_state.primaryasset_id);
+		if (ide_state.primaryAssetId) {
+			aliases.push(ide_state.primaryAssetId);
 		}
 		aliases.push('__entry__', '<console>');
 		for (let index = 0; index < aliases.length; index += 1) {
@@ -1899,7 +1872,7 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	try {
 		const descriptor = await ide_state.createLuaResourceFn({ path: normalizedPath, asset_id, contents });
 		ide_state.lastCreateResourceDirectory = directory;
-		ide_state.pendingResourceSelectionasset_id = descriptor.asset_id;
+		ide_state.pendingResourceSelectionAssetId = descriptor.asset_id;
 		if (ide_state.resourcePanelVisible) {
 			refreshResourcePanelContents();
 		}
@@ -2006,157 +1979,6 @@ export function ensureDirectorySuffix(path: string): string {
 		return '';
 	}
 	return normalized.slice(0, slashIndex + 1);
-}
-
-export function handleSearchInput(deltaSeconds: number): void {
-	const { shiftDown, ctrlDown, metaDown, altDown } = { shiftDown: isShiftDown(), ctrlDown: isCtrlDown(), metaDown: isMetaDown(), altDown: isAltDown() };
-	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressed('KeyF')) {
-		consumeIdeKey('KeyF');
-		openSearch(false, 'global');
-		return;
-	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressed('KeyF')) {
-		consumeIdeKey('KeyF');
-		openSearch(false, 'local');
-		return;
-	}
-	if ((ctrlDown || metaDown) && ide_state.input.shouldRepeat('KeyZ', deltaSeconds)) {
-		consumeIdeKey('KeyZ');
-		if (shiftDown) {
-			redo();
-		} else {
-			undo();
-		}
-		return;
-	}
-	if ((ctrlDown || metaDown) && ide_state.input.shouldRepeat('KeyY', deltaSeconds)) {
-		consumeIdeKey('KeyY');
-		redo();
-		return;
-	}
-	if (ctrlDown && isKeyJustPressed('KeyS')) {
-		consumeIdeKey('KeyS');
-		void save();
-		return;
-	}
-	const hasResults = activeSearchMatchCount() > 0;
-	const previewLocal = ide_state.searchScope === 'local';
-	if (isKeyJustPressed('Enter')) {
-		consumeIdeKey('Enter');
-		if (hasResults) {
-			if (shiftDown) {
-				moveSearchSelection(-1, { wrap: true, preview: previewLocal });
-			} else if (ide_state.searchCurrentIndex === -1) {
-				ide_state.searchCurrentIndex = 0;
-			} else {
-				moveSearchSelection(1, { wrap: true, preview: previewLocal });
-			}
-			applySearchSelection(ide_state.searchCurrentIndex);
-		} else if (shiftDown) {
-			jumpToPreviousMatch();
-		} else {
-			jumpToNextMatch();
-		}
-		return;
-	}
-	if (isKeyJustPressed('F3')) {
-		consumeIdeKey('F3');
-		if (shiftDown) {
-			jumpToPreviousMatch();
-		} else {
-			jumpToNextMatch();
-		}
-		return;
-	}
-	if (hasResults) {
-		if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
-			consumeIdeKey('ArrowUp');
-			moveSearchSelection(-1, { preview: previewLocal });
-			return;
-		}
-		if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
-			consumeIdeKey('ArrowDown');
-			moveSearchSelection(1, { preview: previewLocal });
-			return;
-		}
-		if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
-			consumeIdeKey('PageUp');
-			moveSearchSelection(-searchPageSize(), { preview: previewLocal });
-			return;
-		}
-		if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
-			consumeIdeKey('PageDown');
-			moveSearchSelection(searchPageSize(), { preview: previewLocal });
-			return;
-		}
-		if (isKeyJustPressed('Home')) {
-			consumeIdeKey('Home');
-			ide_state.searchCurrentIndex = hasResults ? 0 : -1;
-			ensureSearchSelectionVisible();
-			if (previewLocal) {
-				applySearchSelection(ide_state.searchCurrentIndex, { preview: true });
-			}
-			return;
-		}
-		if (isKeyJustPressed('End')) {
-			consumeIdeKey('End');
-			const lastIndex = hasResults ? activeSearchMatchCount() - 1 : -1;
-			ide_state.searchCurrentIndex = lastIndex;
-			ensureSearchSelectionVisible();
-			if (previewLocal) {
-				applySearchSelection(ide_state.searchCurrentIndex, { preview: true });
-			}
-			return;
-		}
-	}
-
-	const textChanged = applyInlineFieldEditing(ide_state.searchField, {
-		deltaSeconds,
-		allowSpace: true,
-		characterFilter: undefined,
-		maxLength: null,
-	});
-
-	ide_state.searchQuery = getFieldText(ide_state.searchField);
-	if (textChanged) {
-		onSearchQueryChanged();
-	}
-}
-
-export function handleLineJumpInput(deltaSeconds: number): void {
-	const { shiftDown, ctrlDown, metaDown } = { shiftDown: isShiftDown(), ctrlDown: isCtrlDown(), metaDown: isMetaDown() };
-	if ((ctrlDown || metaDown) && isKeyJustPressed('KeyL')) {
-		consumeIdeKey('KeyL');
-		openLineJump();
-		return;
-	}
-	if (isKeyJustPressed('Enter')) {
-		consumeIdeKey('Enter');
-		applyLineJump();
-		return;
-	}
-	if (!shiftDown && isKeyJustPressed('NumpadEnter')) {
-		consumeIdeKey('NumpadEnter');
-		applyLineJump();
-		return;
-	}
-	if (isKeyJustPressed('Escape')) {
-		consumeIdeKey('Escape');
-		closeLineJump(false);
-		return;
-	}
-
-	const digitFilter = (value: string): boolean => value >= '0' && value <= '9';
-	const textChanged = applyInlineFieldEditing(ide_state.lineJumpField, {
-		deltaSeconds,
-		allowSpace: false,
-		characterFilter: digitFilter,
-		maxLength: 6,
-	});
-	ide_state.lineJumpValue = getFieldText(ide_state.lineJumpField);
-	if (textChanged) {
-		// keep value in sync; no additional processing required
-	}
 }
 
 export function openResourceSearch(initialQuery: string = ''): void {
@@ -2407,7 +2229,7 @@ export function getCrossFileRenameDependencies(): CrossFileRenameDependencies {
 		setEntryTabId: (id: string | null) => {
 			ide_state.entryTabId = id;
 		},
-		getPrimaryasset_id: () => ide_state.primaryasset_id,
+		getPrimaryasset_id: () => ide_state.primaryAssetId,
 		getCodeTabContext: (id: string) => ide_state.codeTabContexts.get(id) ?? null,
 		setCodeTabContext: (context: CodeTabContext) => {
 			ide_state.codeTabContexts.set(context.id, context);
@@ -2577,7 +2399,7 @@ export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string | null {
 export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext | null): ReferenceCatalogEntry[] {
 	const descriptor = context ? context.descriptor : null;
 	const normalizedPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
-	const asset_id = descriptor && descriptor.asset_id ? descriptor.asset_id : ide_state.primaryasset_id ?? null;
+	const asset_id = descriptor && descriptor.asset_id ? descriptor.asset_id : ide_state.primaryAssetId ?? null;
 	const chunkName = resolveHoverChunkName(context) ?? normalizedPath ?? asset_id ?? '<console>';
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: getActiveCodeTabContext(),
@@ -2743,7 +2565,7 @@ export function applySymbolSearchSelection(index: number): void {
 	}
 	const location = match.entry.symbol.location;
 	closeSymbolSearch(true);
-	scheduleNextFrame(() => {
+	scheduleMicrotask(() => {
 		navigateToLuaDefinition(location);
 	});
 }
@@ -2893,7 +2715,7 @@ export function applyResourceSearchSelection(index: number): void {
 	}
 	const match = ide_state.resourceSearchMatches[index];
 	closeResourceSearch(true);
-	scheduleNextFrame(() => {
+	scheduleMicrotask(() => {
 		openResourceDescriptor(match.entry.descriptor);
 	});
 }
@@ -3062,7 +2884,7 @@ export function buildProjectReferenceContext(context: CodeTabContext | null): {
 	const descriptor = context ? context.descriptor : null;
 	const normalizedPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
 	const descriptorasset_id = descriptor ? descriptor.asset_id ?? null : null;
-	const resolvedasset_id = descriptorasset_id ?? ide_state.primaryasset_id ?? null;
+	const resolvedasset_id = descriptorasset_id ?? ide_state.primaryAssetId ?? null;
 	const resolvedChunk = resolveHoverChunkName(context)
 		?? normalizedPath
 		?? descriptorasset_id
@@ -3115,12 +2937,12 @@ export function resolveSemanticDefinitionLocation(
 	const descriptor = context ? context.descriptor : null;
 	const descriptorPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
 	const descriptorasset_id = descriptor ? descriptor.asset_id ?? null : null;
-	const resolvedasset_id = descriptorasset_id ?? asset_id ?? ide_state.primaryasset_id ?? null;
+	const resolvedasset_id = descriptorasset_id ?? asset_id ?? ide_state.primaryAssetId ?? null;
 	const resolvedChunk = chunkName
 		?? descriptorPath
 		?? descriptorasset_id
 		?? asset_id
-		?? ide_state.primaryasset_id
+		?? ide_state.primaryAssetId
 		?? hoverChunkName
 		?? '<console>';
 	const location: ConsoleLuaDefinitionLocation = {
@@ -3368,7 +3190,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 			?? normalizedPath
 			?? (descriptor ? descriptor.asset_id : null)
 			?? asset_id
-			?? ide_state.primaryasset_id
+			?? ide_state.primaryAssetId
 			?? '<console>';
 		const environment: ProjectReferenceEnvironment = {
 			activeContext: context,
@@ -3668,12 +3490,6 @@ export function performResume(): boolean {
 		ide_state.showMessage('Console runtime unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
 		return false;
 	}
-	if (!runtime.isLuaRuntimeFailed() && !hasPendingRuntimeReload()) {
-		clearExecutionStopHighlights();
-		deactivate();
-		$.paused = false;
-		return true;
-	}
 	let snapshot: unknown = null;
 	try {
 		snapshot = runtime.getState();
@@ -3889,35 +3705,6 @@ export function applyViewportSize(viewport: { width: number; height: number }): 
 	ide_state.viewportWidth = viewport.width;
 	ide_state.viewportHeight = viewport.height;
 	ide_state.lastPointerRowResolution = null;
-}
-
-export function readPointerSnapshot(): PointerSnapshot | null {
-	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
-	if (!playerInput) {
-		return null;
-	}
-	const primaryAction = playerInput.getActionState('pointer_primary');
-	const primaryPressed = primaryAction.pressed === true && primaryAction.consumed !== true;
-
-	const positionAction = playerInput.getActionState('pointer_position');
-	const coords = positionAction.value2d;
-	if (!coords) {
-		return {
-			viewportX: 0,
-			viewportY: 0,
-			insideViewport: false,
-			valid: false,
-			primaryPressed,
-		};
-	}
-	const mapped = mapScreenPointToViewport(coords[0], coords[1]);
-	return {
-		viewportX: mapped.x,
-		viewportY: mapped.y,
-		insideViewport: mapped.inside,
-		valid: mapped.valid,
-		primaryPressed,
-	};
 }
 
 export function mapScreenPointToViewport(screenX: number, screenY: number): { x: number; y: number; inside: boolean; valid: boolean } {
@@ -4883,7 +4670,7 @@ export function resetResourcePanelState(): void {
 	ide_state.resourceBrowserItems = [];
 	ide_state.resourceBrowserSelectionIndex = -1;
 	// max line width handled by controller
-	ide_state.pendingResourceSelectionasset_id = null;
+	ide_state.pendingResourceSelectionAssetId = null;
 	ide_state.resourcePanelResizing = false;
 }
 
@@ -4912,7 +4699,7 @@ export function selectResourceInPanel(descriptor: ConsoleResourceDescriptor): vo
 	if (!descriptor.asset_id || descriptor.asset_id.length === 0) {
 		return;
 	}
-	ide_state.pendingResourceSelectionasset_id = descriptor.asset_id;
+	ide_state.pendingResourceSelectionAssetId = descriptor.asset_id;
 	if (!ide_state.resourcePanelVisible) {
 		return;
 	}
@@ -4923,7 +4710,7 @@ export function applyPendingResourceSelection(): void {
 	if (!ide_state.resourcePanelVisible) {
 		return;
 	}
-	const asset_id = ide_state.pendingResourceSelectionasset_id;
+	const asset_id = ide_state.pendingResourceSelectionAssetId;
 	if (!asset_id) {
 		return;
 	}
@@ -4933,7 +4720,7 @@ export function applyPendingResourceSelection(): void {
 	}
 	ide_state.resourceBrowserSelectionIndex = index;
 	ide_state.resourcePanel.ensureSelectionVisible();
-	ide_state.pendingResourceSelectionasset_id = null;
+	ide_state.pendingResourceSelectionAssetId = null;
 }
 
 export function findResourcePanelIndexByasset_id(asset_id: string): number {

@@ -5,12 +5,13 @@ import { getSelectionRange, getSelectionText } from './text_editing_and_selectio
 
 import type { ConsoleResourceDescriptor } from '../types';
 import { enqueueBackgroundTask } from './background_tasks';
-import { applySearchFieldText, clearReferenceHighlights, closeSymbolSearch, closeResourceSearch, closeLineJump, updateDesiredColumn, listResourcesStrict, openLuaCodeTab, scheduleNextFrame } from './console_cart_editor';
+import { applySearchFieldText, clearReferenceHighlights, closeSymbolSearch, closeResourceSearch, closeLineJump, updateDesiredColumn, listResourcesStrict, openLuaCodeTab } from './console_cart_editor';
 import { ensureCursorVisible } from './caret';
 import { resetBlink } from './render/render_caret';
 import { revealCursor } from './caret';
 import { activateCodeTab } from './editor_tabs';
 import { getFieldText } from './inline_text_field';
+import { scheduleMicrotask } from '../../platform';
 
 // Types used by search pipelines
 export interface SearchMatch { row: number; start: number; end: number }
@@ -604,7 +605,7 @@ export function focusGlobalSearchResult(index: number, previewOnly: boolean = fa
 	} else {
 		activateCodeTab();
 	}
-	scheduleNextFrame(() => {
+	scheduleMicrotask(() => {
 		const row = clamp(match.row, 0, Math.max(0, ide_state.lines.length - 1));
 		const line = ide_state.lines[row] ?? '';
 		const endColumn = Math.min(match.end, line.length);
@@ -617,6 +618,7 @@ export function focusGlobalSearchResult(index: number, previewOnly: boolean = fa
 }
 
 export function searchPageSize(): number {
+	// TODO: What does the comment below mean? Consider viewport adaptive sizing or should we get rid of this?
 	// Mirror legacy behavior based on constant limit (viewport adaptive sizing handled elsewhere)
 	return constants.SEARCH_MAX_RESULTS;
 }

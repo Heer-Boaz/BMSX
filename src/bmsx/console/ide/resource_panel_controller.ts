@@ -382,7 +382,7 @@ export class ResourcePanelController {
 		const path = descriptor.path;
 		if (typeof path === 'string' && path.length > 0 && path.toLowerCase().endsWith('.lua')) return true;
 		const asset_id = descriptor.asset_id;
-		if (typeof asset_id === 'string' && asset_id.length > 0 && asset_id.toLowerCase().endsWith('.lua')) return true;
+		if (typeof asset_id === 'string' && asset_id.toLowerCase().endsWith('.lua')) return true;
 		return false;
 	}
 
@@ -504,7 +504,7 @@ export class ResourcePanelController {
 		const path = descriptor.path;
 		if (typeof path === 'string' && path.length > 0 && path.toLowerCase().endsWith('.lua')) return true;
 		const asset_id = descriptor.asset_id;
-		if (typeof asset_id === 'string' && asset_id.length > 0 && asset_id.toLowerCase().endsWith('.lua')) return true;
+		if (typeof asset_id === 'string' && asset_id.toLowerCase().endsWith('.lua')) return true;
 		return false;
 	}
 

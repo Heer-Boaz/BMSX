@@ -1385,7 +1385,7 @@ export function resolveHoverAssetId(context: CodeTabContext | null): string | nu
 	if (context && context.descriptor) {
 		return context.descriptor.asset_id;
 	}
-	return ide_state.primaryasset_id;
+	return ide_state.primaryAssetId;
 }
 
 export function resolveHoverChunkName(context: CodeTabContext | null): string | null {
@@ -1393,12 +1393,12 @@ export function resolveHoverChunkName(context: CodeTabContext | null): string | 
 		if (context.descriptor.path && context.descriptor.path.length > 0) {
 			return context.descriptor.path;
 		}
-		if (context.descriptor.asset_id && context.descriptor.asset_id.length > 0) {
+		if (context.descriptor.asset_id) {
 			return context.descriptor.asset_id;
 		}
 	}
-	if (ide_state.primaryasset_id) {
-		return ide_state.primaryasset_id;
+	if (ide_state.primaryAssetId) {
+		return ide_state.primaryAssetId;
 	}
 	return null;
 }
