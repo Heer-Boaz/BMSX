@@ -25,7 +25,6 @@ import {
 	updateDesiredColumn,
 	markTextMutated,
 	invalidateLineRange,
-	invalidateHighlightsFromRow,
 	recordEditContext,
 	prepareUndo,
 	currentLine,
@@ -473,7 +472,7 @@ export function replaceSelectionWith(text: string): void {
 		ide_state.cursorColumn = lastFragment.length;
 	}
 	invalidateLineRange(start.row, start.row + fragments.length - 1);
-	invalidateHighlightsFromRow(start.row);
+	ide_state.layout.invalidateHighlightsFromRow(start.row);
 	ide_state.selectionAnchor = null;
 	markTextMutated();
 	resetBlink();
@@ -535,7 +534,7 @@ export function insertLineBreak(): void {
 	const newLine = indentation + after;
 	ide_state.lines.splice(sourceRow + 1, 0, newLine);
 	invalidateLineRange(sourceRow, sourceRow + 1);
-	invalidateHighlightsFromRow(sourceRow);
+	ide_state.layout.invalidateHighlightsFromRow(sourceRow);
 	ide_state.cursorRow = sourceRow + 1;
 	ide_state.cursorColumn = indentation.length;
 	recordEditContext('insert', '\n');
@@ -615,7 +614,7 @@ export function insertClipboardText(text: string): void {
 		const insertionRow = ide_state.cursorRow;
 		ide_state.lines.splice(insertionRow, 1, ...newLines);
 		invalidateLineRange(insertionRow, insertionRow + newLines.length - 1);
-		invalidateHighlightsFromRow(insertionRow);
+		ide_state.layout.invalidateHighlightsFromRow(insertionRow);
 		ide_state.cursorRow = insertionRow + lastIndex;
 		ide_state.cursorColumn = lastFragment.length;
 		recordEditContext('insert', normalized);
@@ -670,7 +669,7 @@ export function backspace(): void {
 	ide_state.lines[mergedRow] = previousLine + currentLineValue;
 	ide_state.lines.splice(ide_state.cursorRow, 1);
 	ide_state.layout.invalidateLine(mergedRow);
-	invalidateHighlightsFromRow(mergedRow);
+	ide_state.layout.invalidateHighlightsFromRow(mergedRow);
 	ide_state.cursorRow = mergedRow;
 	ide_state.cursorColumn = previousLine.length;
 	markTextMutated();
@@ -716,7 +715,7 @@ export function deleteForward(): void {
 	ide_state.lines[ide_state.cursorRow] = updatedLine;
 	ide_state.lines.splice(ide_state.cursorRow + 1, 1);
 	ide_state.layout.invalidateLine(ide_state.cursorRow);
-	invalidateHighlightsFromRow(ide_state.cursorRow);
+	ide_state.layout.invalidateHighlightsFromRow(ide_state.cursorRow);
 	recordEditContext('delete', '\n');
 	markTextMutated();
 	resetBlink();
@@ -773,7 +772,7 @@ export function deleteWordBackward(): void {
 	ide_state.cursorRow = startRow;
 	ide_state.cursorColumn = startColumn;
 	ide_state.layout.invalidateLine(startRow);
-	invalidateHighlightsFromRow(startRow);
+	ide_state.layout.invalidateHighlightsFromRow(startRow);
 	recordEditContext('delete', removedParts.join('\n'));
 	markTextMutated();
 	resetBlink();
@@ -822,7 +821,7 @@ export function deleteWordForward(): void {
 		ide_state.lines[startRow] = firstLine.slice(0, startColumn) + lastLine.slice(endColumn);
 		ide_state.lines.splice(startRow + 1, endRow - startRow);
 		ide_state.layout.invalidateLine(startRow);
-		invalidateHighlightsFromRow(startRow);
+		ide_state.layout.invalidateHighlightsFromRow(startRow);
 		recordEditContext('delete', removedParts.join('\n'));
 	}
 	ide_state.cursorRow = startRow;
@@ -865,7 +864,7 @@ export function deleteActiveLines(): void {
 			ide_state.cursorColumn = Math.min(ide_state.cursorColumn, line.length);
 		}
 		ide_state.layout.invalidateLine(ide_state.cursorRow);
-		invalidateHighlightsFromRow(Math.min(removedRow, ide_state.lines.length - 1));
+		ide_state.layout.invalidateHighlightsFromRow(Math.min(removedRow, ide_state.lines.length - 1));
 		recordEditContext('delete', '\n');
 		markTextMutated();
 		resetBlink();
@@ -889,7 +888,7 @@ export function deleteActiveLines(): void {
 	ide_state.cursorColumn = 0;
 	ide_state.selectionAnchor = null;
 	ide_state.layout.invalidateLine(ide_state.cursorRow);
-	invalidateHighlightsFromRow(deletionStart);
+	ide_state.layout.invalidateHighlightsFromRow(deletionStart);
 	recordEditContext('delete', deletedLines.join('\n'));
 	markTextMutated();
 	resetBlink();
@@ -944,7 +943,7 @@ export function moveSelectionLines(delta: number): void {
 			ide_state.layout.invalidateLine(row);
 		}
 	}
-	invalidateHighlightsFromRow(affectedStart);
+	ide_state.layout.invalidateHighlightsFromRow(affectedStart);
 	ide_state.cursorRow += delta;
 	if (ide_state.selectionAnchor) {
 		ide_state.selectionAnchor = { row: ide_state.selectionAnchor.row + delta, column: ide_state.selectionAnchor.column };
@@ -1107,7 +1106,7 @@ export async function cutLineToClipboard(): Promise<void> {
 		if (ide_state.cursorColumn > newLength) {
 			ide_state.cursorColumn = newLength;
 		}
-		invalidateHighlightsFromRow(Math.min(removedRow, ide_state.lines.length - 1));
+		ide_state.layout.invalidateHighlightsFromRow(Math.min(removedRow, ide_state.lines.length - 1));
 	}
 	ide_state.layout.invalidateLine(ide_state.cursorRow);
 	ide_state.selectionAnchor = null;

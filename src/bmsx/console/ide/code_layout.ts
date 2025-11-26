@@ -114,7 +114,7 @@ export class ConsoleCodeLayout {
 		this.highlightCache.delete(row);
 	}
 
-	public invalidateHighlightsFrom(row: number): void {
+	public invalidateHighlightsFromRow(row: number): void {
 		if (this.highlightCache.size === 0) {
 			return;
 		}

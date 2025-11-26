@@ -5443,10 +5443,6 @@ export function hideResourceViewerSprite(): void {
 	}
 }
 
-export function invalidateHighlightsFromRow(startRow: number): void {
-	ide_state.layout.invalidateHighlightsFrom(Math.max(0, startRow));
-}
-
 export function requestSemanticRefresh(context?: CodeTabContext | null): void {
 	const activeContext = context ?? getActiveCodeTabContext();
 	const chunkName = resolveHoverChunkName(activeContext) ?? '<console>';
@@ -5533,7 +5529,7 @@ export function applySourceToDocument(source: string): void {
 	} else if (nextLines.length < previousLength) {
 		ide_state.lines.length = nextLines.length;
 	}
-	invalidateHighlightsFromRow(0);
+	ide_state.layout.invalidateHighlightsFromRow(0);
 	invalidateVisualLines();
 }
 
