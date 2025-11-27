@@ -97,38 +97,17 @@ export class StateMachineController {
 		if (!events || events.length === 0) {
 			return;
 		}
-			for (const event of events) {
-				const key = `${machine.localdef_id}:${event.name}`;
-				if (this._eventSubscriptions.has(key)) continue;
-				const disposer = machine.target.events.on({
-					event: event.name,
-					handler: this.auto_dispatch,
-					subscriber: machine.target,
-					persistent: true,
-				});
-				this._eventSubscriptions.set(key, disposer);
-			}
+		for (const event of events) {
+			const key = `${machine.localdef_id}:${event.name}`;
+			if (this._eventSubscriptions.has(key)) continue;
+			const disposer = machine.target.events.on({
+				event: event.name,
+				handler: this.auto_dispatch,
+				subscriber: machine.target,
+				persistent: true,
+			});
+			this._eventSubscriptions.set(key, disposer);
 		}
-
-	public ensureStatemachine(id: Identifier, targetId: Identifier): State {
-		if (typeof id !== 'string' || id.length === 0) {
-			throw new Error('[StateMachineController] ensureStatemachine requires a non-empty machine id.');
-		}
-		if (typeof targetId !== 'string' || targetId.length === 0) {
-			throw new Error('[StateMachineController] ensureStatemachine requires a non-empty target id.');
-		}
-		const existing = this.statemachines[id];
-		if (existing) {
-			return existing;
-		}
-		const machine = State.create(id, targetId);
-		this.statemachines[id] = machine;
-		this.registerActiveMachine(machine);
-		if (this._started) {
-			this.bindMachine(machine);
-			machine.start();
-		}
-		return machine;
 	}
 
 	/**
@@ -268,7 +247,7 @@ export class StateMachineController {
 		const machine = this.statemachines[machineid];
 		if (!machine) throw new Error(`No machine with ID '${machineid}'`);
 		// if (!machine.is_concurrent) { // If the machine is not running in parallel, set it as the current machine
-			// this.current_machine_id = machineid;
+		// this.current_machine_id = machineid;
 		// }
 		machine.transition_to_path(stateids);
 	}
@@ -327,7 +306,9 @@ export class StateMachineController {
 	 * @param target_id - The ID of the target machine.
 	 */
 	add_statemachine(id: Identifier, target_id: Identifier): void {
-		this.ensureStatemachine(id, target_id);
+		const machine = State.create(id, target_id);
+		this.statemachines[id] = machine;
+		this.registerActiveMachine(machine);
 	}
 
 	/**

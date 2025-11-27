@@ -10,7 +10,7 @@ import { ObjectTracker } from "../../utils/objecttracker";
 import { new_vec2, new_vec3 } from '../../utils/vector_operations';
 import { middlepoint_area, new_area } from '../../utils/rect_operations';
 import { StateDefinitions, registerHandlersForLinkedMachines } from '../../fsm/fsmlibrary';
-import { EventChannel, EventEmitter, EventPort, eventsOf, type EventHandler, type EventListenerDisposer, type LocalSubscriptionOptions } from "../eventemitter";
+import { EventEmitter, EventPort, eventsOf } from "../eventemitter";
 import { Registry } from "../registry";
 import { CustomVisualComponent } from '../../component/customvisual_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
@@ -18,10 +18,7 @@ import { V3 } from '../../render/3d/math3d';
 import type { SpawnReason } from '../world';
 import { ActionEffectComponent } from '../../component/actioneffectcomponent';
 import { TimelineComponent, type TimelinePlayOptions, type TimelineListener } from '../../component/timeline_component';
-import type { Timeline, TimelineDefinition } from '../../timeline/timeline';
-
-const COMPONENT_DEBUG_LOG_LIMIT = 50;
-let componentAttachLogCount = 0;
+import { TimelineEventChannels, type Timeline, type TimelineDefinition } from '../../timeline/timeline';
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -54,7 +51,7 @@ export const WorldObjectEvents = {
 
 @insavegame
 export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
-	public get __native__(): string { return 'world_object'; }
+	public get __NATIVE__(): string { return 'world_object'; }
 
 	/**
 	 * Represents a map of components associated with their respective keys.
@@ -148,11 +145,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 			this.componentMap[key] = arr;
 		}
 		arr.push(component);
-		if ($.debug && componentAttachLogCount < COMPONENT_DEBUG_LOG_LIMIT) {
-			componentAttachLogCount++;
-			const compName = component.constructor?.name ?? 'Component';
-			console.debug(`[Component][attach] ${compName} -> ${this.id} (total=${this.components.length})`);
-		}
 
 		// Late-init: bind component event subscriptions and perform registry registration here,
 		// after the component has been fully constructed and added to the container.
@@ -959,29 +951,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 		if (!(this.hitbox_left >= p.x || this.hitbox_right <= p.x || this.hitbox_bottom <= p.y || this.hitbox_top >= p.y))
 			return new_vec2(p.x - this.hitbox_left, p.y - this.hitbox_top);
 		return null;
-	}
-}
-
-export class TimelineEventChannels {
-	constructor(
-		private readonly owner: WorldObject,
-		private readonly timelineId: string,
-	) { }
-
-	public get frame(): EventChannel {
-		return this.owner.events.channel('timeline.frame', this.timelineId);
-	}
-
-	public get end(): EventChannel {
-		return this.owner.events.channel('timeline.end', this.timelineId);
-	}
-
-	public on_frame(subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer {
-		return this.frame.on({ handler, subscriber, persistent: options?.persistent });
-	}
-
-	public on_end(subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer {
-		return this.end.on({ handler, subscriber, persistent: options?.persistent });
 	}
 }
 

@@ -1,5 +1,5 @@
 import type { BmsxConsoleApi } from '../../api';
-import type { CachedHighlight, CursorScreenInfo, EditorDiagnostic } from '../types';
+import type { CachedHighlight, CursorScreenInfo } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { clamp } from '../../../utils/clamp';
 import { columnToDisplay, computeMaximumScrollColumn, drawHoverTooltip, drawRuntimeErrorOverlay, getCodeAreaBounds, getDiagnosticsForRow, maximumLineLength, } from '../console_cart_editor';

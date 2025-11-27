@@ -97,7 +97,7 @@ export type ConcreteOrAbstractConstructor<T> = Function & { prototype: T; };
 // export type AbstractConstructor<T> = (abstract new (...args: any[]) => T);
 
 export interface Native {
-	__native__: string;
+	__NATIVE__: string;
 }
 
 /**

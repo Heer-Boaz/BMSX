@@ -1,4 +1,3 @@
-import type { LuaInterpreter } from '../lua/runtime';
 import { isLuaDebuggerPauseSignal } from '../lua/runtime';
 import type { LuaFunctionValue } from '../lua/value';
 
@@ -7,12 +6,11 @@ export interface LuaHandlerFn extends Function {
 	__hid: string;
 	__hmod: string;
 	__hpath?: string;
-	__rebind(fn: LuaFunctionValue, interpreter: LuaInterpreter): void;
+	__rebind(fn: LuaFunctionValue): void;
 }
 
 export type LuaHandlerCallFn = (
 	fn: LuaFunctionValue,
-	interpreter: LuaInterpreter,
 	thisArg: unknown,
 	args: ReadonlyArray<unknown>,
 ) => unknown;
@@ -24,7 +22,6 @@ export type LuaHandlerErrorReporter = (
 
 export type LuaHandlerContext = {
 	moduleId: string;
-	interpreter: LuaInterpreter;
 	path?: ReadonlyArray<string>;
 };
 
@@ -33,15 +30,15 @@ type HandlerRecord = {
 	moduleId: string;
 	key: string;
 	path?: string;
-	current: { fn: LuaFunctionValue; interpreter: LuaInterpreter };
+	current: { fn: LuaFunctionValue };
 };
 
 export class LuaHandlerCache {
-	private readonly byLuaFn = new WeakMap<LuaFunctionValue, LuaHandlerFn>();
-	private readonly byHid = new Map<string, HandlerRecord>();
-	private readonly byModule = new Map<string, Map<string, HandlerRecord>>();
-	private readonly byHandler = new WeakMap<LuaHandlerFn, HandlerRecord>();
-	private readonly anonCounters = new Map<string, number>();
+	private readonly byLuaFn = new WeakMap<LuaFunctionValue, LuaHandlerFn>(); // fn -> handler
+	private readonly byHid = new Map<string, HandlerRecord>(); // hid -> record
+	private readonly byModule = new Map<string, Map<string, HandlerRecord>>(); // moduleId -> (key -> record)
+	private readonly byHandler = new WeakMap<LuaHandlerFn, HandlerRecord>(); // reverse lookup
+	private readonly anonCounters = new Map<string, number>(); // moduleId -> next anon counter
 
 	constructor(
 		private readonly callLua: LuaHandlerCallFn,
@@ -63,19 +60,19 @@ export class LuaHandlerCache {
 		const existing = this.byHid.get(hid);
 		if (existing) {
 			this.byLuaFn.set(fn, existing.handler);
-			existing.current = { fn, interpreter: ctx.interpreter };
-			existing.handler.__rebind(fn, ctx.interpreter);
+			existing.current = { fn };
+			existing.handler.__rebind(fn);
 			return existing.handler;
 		}
 
 		const pathText = this.pathToText(ctx.path);
-		const handler = this.createHandler(hid, moduleId, pathText, fn, ctx.interpreter);
+		const handler = this.createHandler(hid, moduleId, pathText, fn);
 		const record: HandlerRecord = {
 			handler,
 			moduleId,
 			key,
 			path: pathText ?? undefined,
-			current: { fn, interpreter: ctx.interpreter },
+			current: { fn },
 		};
 		this.byLuaFn.set(fn, handler);
 		this.byHid.set(hid, record);
@@ -84,7 +81,7 @@ export class LuaHandlerCache {
 		return handler;
 	}
 
-	public rebind(moduleId: string, path: ReadonlyArray<string> | undefined, fn: LuaFunctionValue, interpreter: LuaInterpreter): void {
+	public rebind(moduleId: string, path: ReadonlyArray<string> | undefined, fn: LuaFunctionValue): void {
 		const normalizedModule = this.normalizeModuleId(moduleId);
 		const key = this.resolveKey(normalizedModule, path, { reuseOnly: true });
 		if (!key) {
@@ -95,12 +92,12 @@ export class LuaHandlerCache {
 		if (!record) {
 			return;
 		}
-		record.current = { fn, interpreter };
-		record.handler.__rebind(fn, interpreter);
+		record.current = { fn };
+		record.handler.__rebind(fn);
 		this.byLuaFn.set(fn, record.handler);
 	}
 
-	public unwrap(handler: LuaHandlerFn): { fn: LuaFunctionValue; interpreter: LuaInterpreter } | null {
+	public unwrap(handler: LuaHandlerFn): { fn: LuaFunctionValue } | null {
 		const record = this.byHandler.get(handler);
 		return record ? record.current : null;
 	}
@@ -138,17 +135,15 @@ export class LuaHandlerCache {
 		moduleId: string,
 		path: string | undefined,
 		fn: LuaFunctionValue,
-		interpreter: LuaInterpreter,
 	): LuaHandlerFn {
 		let currentFn = fn;
-		let currentInterpreter = interpreter;
 		const cache = this;
 		const callLua = this.callLua;
 		const reportError = this.reportError;
 
 		const handler = function luaHandler(this: unknown, ...args: unknown[]) {
 			try {
-				return callLua(currentFn, currentInterpreter, this, args);
+				return callLua(currentFn, this, args);
 			} catch (error) {
 				if (isLuaDebuggerPauseSignal(error)) {
 					throw error;
@@ -163,9 +158,8 @@ export class LuaHandlerCache {
 			__hmod: { value: moduleId, enumerable: false, writable: false, configurable: false },
 			__hpath: { value: path, enumerable: false, writable: false, configurable: true },
 			__rebind: {
-				value: (nextFn: LuaFunctionValue, nextInterpreter: LuaInterpreter) => {
+				value: (nextFn: LuaFunctionValue) => {
 					currentFn = nextFn;
-					currentInterpreter = nextInterpreter;
 					cache.byLuaFn.set(nextFn, handler);
 				},
 				enumerable: false,
