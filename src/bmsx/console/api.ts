@@ -347,7 +347,7 @@ export class BmsxConsoleApi {
 		$.sndmaster.resume();
 	}
 
-	public world(): World {
+	public get world(): World {
 		return $.world;
 	}
 
@@ -355,7 +355,7 @@ export class BmsxConsoleApi {
 		return $.world.getFromCurrentSpace(id);
 	}
 
-	public world_objects(): WorldObject[] {
+	public get world_objects(): WorldObject[] {
 		return $.world.allObjectsFromSpaces;
 	}
 
@@ -518,11 +518,11 @@ export class BmsxConsoleApi {
 		return result;
 	}
 
-	public registry(): Registry {
+	public get registry(): Registry {
 		return $.registry;
 	}
 
-	public registry_ids(): Identifier[] {
+	public get registry_ids(): Identifier[] {
 		return $.registry.getRegisteredEntityIds();
 	}
 
@@ -533,7 +533,7 @@ export class BmsxConsoleApi {
 		return $.registry.get(id);
 	}
 
-	public services(): Service[] {
+	public get services(): Service[] {
 		return Array.from($.registry.iterate(Service));
 	}
 
@@ -545,6 +545,10 @@ export class BmsxConsoleApi {
 	}
 
 	public get game(): Game {
+		return $;
+	}
+
+	public get $(): Game {
 		return $;
 	}
 
@@ -593,7 +597,7 @@ export class BmsxConsoleApi {
 		$.emit_gameplay(event_name, emitter as any, payload);
 	}
 
-	public timelines(): EventTimeline[] {
+	public get timelines(): EventTimeline[] {
 		return Array.from($.registry.iterate(EventTimeline));
 	}
 
@@ -601,7 +605,7 @@ export class BmsxConsoleApi {
 		return taskGate.group(name);
 	}
 
-	public rungate(): GateGroup {
+	public get rungate(): GateGroup {
 		return runGate;
 	}
 

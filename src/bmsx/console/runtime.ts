@@ -408,6 +408,11 @@ export class BmsxConsoleRuntime extends Service {
 		return this.luaInterpreter;
 	}
 
+	public wrapLuaHandler(fn: LuaFunctionValue, path?: ReadonlyArray<string>): LuaHandlerFn {
+		const moduleId = this.moduleIdFor(null, this.luaChunkName ?? null);
+		return this.luaHandlerCache.getOrCreate(fn, { moduleId, path });
+	}
+
 	private static readonly CONSOLE_SINGLE_ARG_KEYWORDS = new Set([
 		'if',
 		'then',
