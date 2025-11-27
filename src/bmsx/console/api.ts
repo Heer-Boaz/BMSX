@@ -21,11 +21,13 @@ import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { setupFSMlibrary } from '../fsm/fsmlibrary';
 import { ConsoleRenderFacade } from './console_render_facade';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
-import type { ActionEffectDefinition } from '../action_effects/effect_types';
+import type { ActionEffectDefinition, ActionEffectId } from '../action_effects/effect_types';
 import { BmsxConsoleRuntime } from './runtime';
 import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type ConstructorWithBTProperty, BehaviorTreeDefinition } from '../ai/behaviourtree';
 import { deep_clone } from '../utils/deep_clone';
-import { Component } from '../component/basecomponent';
+import { Component, type ComponentAttachOptions } from '../component/basecomponent';
+import { actionEffectRegistry } from '../action_effects/effect_registry';
+import { Reviver } from '../serializer/gameserializer';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
 
@@ -49,6 +51,7 @@ export class BmsxConsoleApi {
 	private readonly storage: BmsxConsoleStorage;
 	private readonly font: ConsoleFont;
 	private readonly defaultPrintColorIndex = 15;
+	private readonly worldObjectDefs = new Map<string, Partial<WorldObject>>();
 	private textCursorX = 0;
 	private textCursorY = 0;
 	private textCursorHomeX = 0;
@@ -58,11 +61,11 @@ export class BmsxConsoleApi {
 	constructor(options: BmsxConsoleApiOptions) {
 		const view = $.view;
 		if (!view) {
-			throw new Error('[BmsxConsoleApi] Game view not initialised.');
+			throw new Error('Game view not initialised.');
 		}
 		const viewport = view.viewportSize;
 		if (viewport.x <= 0 || viewport.y <= 0) {
-			throw new Error('[BmsxConsoleApi] Invalid viewport size.');
+			throw new Error('Invalid viewport size.');
 		}
 		this.playerindex = options.playerindex;
 		this.storage = options.storage;
@@ -106,7 +109,7 @@ export class BmsxConsoleApi {
 	private get_player_input(): PlayerInput {
 		const playerInput = Input.instance.getPlayerInput(this.playerindex);
 		if (!playerInput) {
-			throw new Error(`[BmsxConsoleApi] Player input handler for index ${this.playerindex} is not initialised.`);
+			throw new Error(`Player input handler for index ${this.playerindex} is not initialised.`);
 		}
 		return playerInput;
 	}
@@ -114,7 +117,7 @@ export class BmsxConsoleApi {
 	private pointer_action(button: BmsxConsolePointerButton): string {
 		const action = POINTER_ACTIONS[button];
 		if (!action) {
-			throw new Error(`[BmsxConsoleApi] Pointer button index ${button} outside supported range 0-${POINTER_ACTIONS.length - 1}.`);
+			throw new Error(`Pointer button index ${button} outside supported range 0-${POINTER_ACTIONS.length - 1}.`);
 		}
 		return action;
 	}
@@ -154,7 +157,7 @@ export class BmsxConsoleApi {
 
 	public stat(index: number): number {
 		if (!Number.isFinite(index)) {
-			throw new Error('[BmsxConsoleApi] stat index must be finite.');
+			throw new Error('stat index must be finite.');
 		}
 		const value = Math.trunc(index);
 		switch (value) {
@@ -261,18 +264,18 @@ export class BmsxConsoleApi {
 
 	public check_action_state(playerindex: number, actiondefinition: string): boolean {
 		if (!Number.isInteger(playerindex) || playerindex <= 0) {
-			throw new Error('[BmsxConsoleApi] check_action_state requires a positive integer player index.');
+			throw new Error('check_action_state requires a positive integer player index.');
 		}
 		if (typeof actiondefinition !== 'string') {
-			throw new Error('[BmsxConsoleApi] check_action_state requires an action definition string.');
+			throw new Error('check_action_state requires an action definition string.');
 		}
 		const trimmed = actiondefinition.trim();
 		if (trimmed.length === 0) {
-			throw new Error('[BmsxConsoleApi] check_action_state requires a non-empty action definition.');
+			throw new Error('check_action_state requires a non-empty action definition.');
 		}
 		const playerInput = Input.instance.getPlayerInput(playerindex);
 		if (!playerInput) {
-			throw new Error(`[BmsxConsoleApi] Player input handler for index ${playerindex} is not initialised.`);
+			throw new Error(`Player input handler for index ${playerindex} is not initialised.`);
 		}
 		return playerInput.checkActionTriggered(trimmed);
 	}
@@ -328,7 +331,7 @@ export class BmsxConsoleApi {
 
 	public world_object(id: Identifier): WorldObject | null {
 		if (typeof id !== 'string' || id.length === 0) {
-			throw new Error('[BmsxConsoleApi] world_object id must be a non-empty string.');
+			throw new Error('world_object id must be a non-empty string.');
 		}
 		return $.world.getFromCurrentSpace(id);
 	}
@@ -338,7 +341,7 @@ export class BmsxConsoleApi {
 	}
 
 	public spawn_world_object(class_ref: string, options?: Partial<WorldObject>): Identifier {
-		const instance = $.world.spawnObject(class_ref, options);
+		const instance = $.world.spawn(class_ref, options);
 		return instance.id;
 	}
 
@@ -348,10 +351,10 @@ export class BmsxConsoleApi {
 
 	public attach_bt(object_id: Identifier, tree_id: BehaviorTreeID): void {
 		if (typeof tree_id !== 'string' || tree_id.trim().length === 0) {
-			throw new Error('[BmsxConsoleApi] attach_bt requires a non-empty behavior tree id.');
+			throw new Error('attach_bt requires a non-empty behavior tree id.');
 		}
 		if (!behaviorTreeExists(tree_id)) {
-			throw new Error(`[BmsxConsoleApi] Behavior tree '${tree_id}' is not registered.`);
+			throw new Error(`Behavior tree '${tree_id}' is not registered.`);
 		}
 		const obj = $.world.getWorldObject(object_id);
 		const ctor = obj.constructor as ConstructorWithBTProperty;
@@ -374,48 +377,118 @@ export class BmsxConsoleApi {
 	}
 
 	public register_component(descriptor: Partial<Component>): string {
-
+		return descriptor.id as string;
 	}
 
-	public register_world_object(descriptor: Record<string, unknown>): string {
-		const runtime = this.runtime();
-		return runtime.registerWorldObjectDefinition(descriptor);
+	public register_world_object(descriptor: Partial<WorldObject>): string {
+		const id = descriptor.id as string;
+		this.worldObjectDefs.set(id, descriptor);
+		return id;
 	}
 
-	public register_service(descriptor: Record<string, unknown>): Record<string, unknown> {
-		const runtime = this.runtime();
-		return runtime.registerServiceDefinition(descriptor);
+	public register_service(descriptor: Partial<Service>) {
+		return descriptor;
 	}
 
 	public attach_component(object_id: Identifier, component: string | { id: string; id_local?: string; state?: Record<string, unknown> }): string {
-		object.add_component(instance);
+		const obj = $.world.getWorldObject(object_id);
+		const componentId = typeof component === 'string' ? component : component.id;
+		const ctor = (Reviver.constructors?.[componentId] as new (opts: ComponentAttachOptions) => Component)
+			|| ((globalThis as Record<string, unknown>)[componentId] as new (opts: ComponentAttachOptions) => Component);
+		const instanceOpts: ComponentAttachOptions = {
+			parent_or_id: obj,
+			id_local: typeof component === 'object' ? component.id_local : undefined,
+		};
+		const instance = new ctor(instanceOpts);
+		if (typeof component === 'object' && component.state) {
+			Object.assign(instance, component.state);
+		}
+		obj.add_component(instance);
 		return instance.id;
 	}
 
 	public register_effect(descriptor: ActionEffectDefinition): string {
-		return definition.id;
+		actionEffectRegistry.register(descriptor);
+		return descriptor.id;
+	}
+
+	public spawn_object(definition_id: Identifier, overrides?: Partial<WorldObject>): Identifier {
+		const def = this.worldObjectDefs.get(definition_id) as {
+			class?: string;
+			components?: Array<string | { id: string; id_local?: string; state?: Record<string, unknown> }>;
+			fsms?: Identifier[];
+			effects?: ActionEffectId[];
+			defaults?: Record<string, unknown>;
+		};
+		const ctorRef = def?.class as string;
+		const ctor = (Reviver.constructors?.[ctorRef] as new (opts?: { id?: Identifier }) => WorldObject)
+			|| ((globalThis as Record<string, unknown>)[ctorRef] as new (opts?: { id?: Identifier }) => WorldObject);
+		const instance = new ctor({ id: overrides?.id });
+		if (def?.defaults) {
+			Object.assign(instance, def.defaults);
+		}
+		if (overrides) {
+			Object.assign(instance, overrides);
+		}
+		const components = def?.components;
+		if (components) {
+			for (let index = 0; index < components.length; index += 1) {
+				this.attach_component(instance.id, components[index]);
+			}
+		}
+		const fsms = def?.fsms;
+		if (fsms) {
+			for (let i = 0; i < fsms.length; i += 1) {
+				instance.sc.add_statemachine(fsms[i], instance.id);
+			}
+		}
+		const effects = def?.effects;
+		if (effects && effects.length > 0) {
+			let effectComponent = instance.get_unique_component(ActionEffectComponent);
+			if (!effectComponent) {
+				effectComponent = new ActionEffectComponent({ parent_or_id: instance });
+				instance.add_component(effectComponent);
+			}
+			for (let i = 0; i < effects.length; i += 1) {
+				effectComponent.grant_effect_by_id(effects[i]);
+			}
+		}
+		const position = (overrides as { position?: { x: number; y: number; z?: number } })?.position;
+		if (position) {
+			(instance as unknown as { x?: number; y?: number; z?: number }).x = position.x;
+			(instance as unknown as { y?: number }).y = position.y;
+			if ('z' in position) {
+				(instance as unknown as { z?: number }).z = position.z;
+			}
+		}
+		($.world as unknown as World).spawn(instance, position as any, { reason: 'spawn' as SpawnReason });
+		return instance.id;
 	}
 
 	public grant_effect(object_id: Identifier, effect_id: string): void {
 		if (typeof effect_id !== 'string' || effect_id.trim().length === 0) {
-			throw new Error('[BmsxConsoleApi] grant_effect requires a non-empty effect id.');
+			throw new Error('grant_effect requires a non-empty effect id.');
 		}
 		const obj = $.world.getWorldObject(object_id);
 		const component = obj.get_unique_component(ActionEffectComponent);
 		if (!component) {
-			throw new Error(`[BmsxConsoleApi] World object '${object_id}' does not have an ActionEffectComponent.`);
+			throw new Error(`World object '${object_id}' does not have an ActionEffectComponent.`);
 		}
-		component.grant_effect(effect_id); // TODO: Get definition from id? Should be possible?
+		const effect = actionEffectRegistry.get(effect_id);
+		if (!effect) {
+			throw new Error(`Action effect '${effect_id}' is not registered.`);
+		}
+		component.grant_effect(effect);
 	}
 
 	public trigger_effect(object_id: Identifier, effect_id: string, options?: { payload?: Record<string, unknown> }) {
 		if (typeof effect_id !== 'string' || effect_id.trim().length === 0) {
-			throw new Error('[BmsxConsoleApi] trigger_effect requires a non-empty effect id.');
+			throw new Error('trigger_effect requires a non-empty effect id.');
 		}
 		const obj = $.world.getWorldObject(object_id);
 		const component = obj.get_unique_component(ActionEffectComponent);
 		if (!component) {
-			throw new Error(`[BmsxConsoleApi] World object '${object_id}' does not have an ActionEffectComponent.`);
+			throw new Error(`World object '${object_id}' does not have an ActionEffectComponent.`);
 		}
 		const trimmedId = effect_id.trim() as any;
 		const payload = options?.payload as any;
@@ -435,7 +508,7 @@ export class BmsxConsoleApi {
 
 	public rget(id: Identifier): Registerable | null {
 		if (typeof id !== 'string' || id.length === 0) {
-			throw new Error('[BmsxConsoleApi] rget id must be a non-empty string.');
+			throw new Error('rget id must be a non-empty string.');
 		}
 		return $.registry.get(id);
 	}
@@ -446,7 +519,7 @@ export class BmsxConsoleApi {
 
 	public service(id: Identifier): Service | null {
 		if (typeof id !== 'string' || id.length === 0) {
-			throw new Error('[BmsxConsoleApi] service id must be a non-empty string.');
+			throw new Error('service id must be a non-empty string.');
 		}
 		return $.registry.get<Service>(id);
 	}
@@ -470,14 +543,14 @@ export class BmsxConsoleApi {
 		const context = options?.context ?? 'emit';
 		if (emitter_or_id === undefined || emitter_or_id === null) {
 			if (options?.required) {
-				throw new Error(`[BmsxConsoleApi] ${context} requires a non-empty emitter or emitter id.`);
+				throw new Error(`${context} requires a non-empty emitter or emitter id.`);
 			}
 			return null;
 		}
 		if (typeof emitter_or_id === 'string') {
 			const emitter = $.registry.get(emitter_or_id);
 			if (!emitter) {
-				throw new Error(`[BmsxConsoleApi] Emitter '${emitter_or_id}' not found.`);
+				throw new Error(`Emitter '${emitter_or_id}' not found.`);
 			}
 			return emitter;
 		}
@@ -486,7 +559,7 @@ export class BmsxConsoleApi {
 
 	public emit(event_name: string, emitter_or_id?: Identifier | Registerable | null, payload?: EventPayload): void {
 		if (typeof event_name !== 'string' || event_name.length === 0) {
-			throw new Error('[BmsxConsoleApi] emit requires a non-empty event name.');
+			throw new Error('emit requires a non-empty event name.');
 		}
 		const emitter = this.resolveEmitter(emitter_or_id);
 		$.emit(event_name, emitter, payload);
@@ -494,7 +567,7 @@ export class BmsxConsoleApi {
 
 	public emit_gameplay(event_name: string, emitter_or_id: Identifier | Registerable | null, payload?: EventPayload): void {
 		if (typeof event_name !== 'string' || event_name.length === 0) {
-			throw new Error('[BmsxConsoleApi] emit_gameplay requires a non-empty event name.');
+			throw new Error('emit_gameplay requires a non-empty event name.');
 		}
 		const emitter = this.resolveEmitter(emitter_or_id, { required: true, context: 'emit_gameplay' });
 		$.emit_gameplay(event_name, emitter as any, payload);
@@ -512,7 +585,7 @@ export class BmsxConsoleApi {
 		return runGate;
 	}
 
-	private get runtime(): BmsxConsoleRuntime {
+	public get runtime(): BmsxConsoleRuntime {
 		return BmsxConsoleRuntime.instance!;
 	}
 
@@ -523,7 +596,7 @@ export class BmsxConsoleApi {
 		}
 	}
 
-	public register_behavior_tree(descriptor: BehaviorTreeDefinition): void {
+	public register_behavior_tree(_descriptor: BehaviorTreeDefinition): void {
 		// TODO: Implement
 	}
 
@@ -539,7 +612,7 @@ export class BmsxConsoleApi {
 		}
 		const view = $.view;
 		if (!view) {
-			throw new Error('[BmsxConsoleApi] Game view not initialised.');
+			throw new Error('Game view not initialised.');
 		}
 		const rect = view.surface.measureDisplay();
 		const width = rect.width;
@@ -596,10 +669,10 @@ export class BmsxConsoleApi {
 
 	private palette_color(index: number): color {
 		if (!Number.isInteger(index)) {
-			throw new Error('[BmsxConsoleApi] Color index must be an integer.');
+			throw new Error('Color index must be an integer.');
 		}
 		if (index < 0 || index >= Msx1Colors.length) {
-			throw new Error(`[BmsxConsoleApi] Color index ${index} outside palette range 0-${Msx1Colors.length - 1}.`);
+			throw new Error(`Color index ${index} outside palette range 0-${Msx1Colors.length - 1}.`);
 		}
 		return Msx1Colors[index];
 	}
