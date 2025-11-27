@@ -15,6 +15,8 @@ type ConsoleCommandHooks = {
 	appendStdout: (text: string, color?: number) => void;
 	appendStderr: (text: string) => void;
 	appendSystem: (text: string) => void;
+	setConsoleJsStackEnabled: (enabled: boolean) => void;
+	getConsoleJsStackEnabled: () => boolean;
 };
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty';
@@ -36,6 +38,7 @@ const HELP_TEXT = [
 	' RESET            Reboot game (cold start)',
 	' EXIT / QUIT      Close this application',
 	' PRINT / ?        Print value or expression',
+	' JSSTACK [ON/OFF] Toggle JS stack frames in console errors',
 	' LS               List assets in current directory',
 	' LS -ROM          List assets in ROM',
 	' LS -DIRTY / -D   List dirty workspace files',
@@ -107,6 +110,10 @@ export class ConsoleCommandDispatcher {
 		}
 		// Support flexible spacing for WS subcommands, e.g. "WS   RESET", "WS\tEDIT", etc.
 		const tokens = this.tokenize(trimmed);
+		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'JSSTACK') {
+			this.handleJsStack(tokens);
+			return true;
+		}
 		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'WS') {
 			if (tokens.length !== 2) {
 				this.hooks.appendStderr(ERROR_SYNTAX);
@@ -137,9 +144,9 @@ export class ConsoleCommandDispatcher {
 	}
 
 	private runWorkspaceReset(): void {
-		this.hooks.appendStdout('[WS] Discarding dirty files...');
+		this.hooks.appendStdout('Discarding dirty files...');
 		this.hooks.resetWorkspace();
-		this.hooks.appendStdout('[WS] Restored to last save');
+		this.hooks.appendStdout('Restored to last save');
 	}
 
 	private runWorkspaceNuke(): void {
@@ -147,10 +154,10 @@ export class ConsoleCommandDispatcher {
 			this.hooks.appendStderr(ERROR_NOTHING);
 			return;
 		}
-		this.hooks.appendStdout('[WS] Warning: this will erase workspace!');
+		this.hooks.appendStdout('Warning: this will erase workspace!');
 		this.hooks.nukeWorkspace();
-		this.hooks.appendStdout('[WS] Workspace deleted');
-		this.hooks.appendStdout('[WS] Reverted to ROM-only sources');
+		this.hooks.appendStdout('Workspace deleted');
+		this.hooks.appendStdout('Reverted to ROM-only sources');
 	}
 
 	private hasWorkspaceState(): boolean {
@@ -208,6 +215,28 @@ export class ConsoleCommandDispatcher {
 			}
 			this.hooks.appendStdout(entry.text.toUpperCase(), color);
 		}
+	}
+
+	private handleJsStack(tokens: string[]): void {
+		if (tokens.length === 1) {
+			const enabled = this.hooks.getConsoleJsStackEnabled();
+			this.hooks.appendStdout(`JS stack traces ${enabled ? 'ON' : 'OFF'}`);
+			return;
+		}
+		if (tokens.length === 2) {
+			const mode = tokens[1].toUpperCase();
+			if (mode === 'ON') {
+				this.hooks.setConsoleJsStackEnabled(true);
+				this.hooks.appendStdout('JS stack traces ON');
+				return;
+			}
+			if (mode === 'OFF') {
+				this.hooks.setConsoleJsStackEnabled(false);
+				this.hooks.appendStdout('JS stack traces OFF');
+				return;
+			}
+		}
+		this.hooks.appendStderr(ERROR_SYNTAX);
 	}
 
 	private handleCd(command: string): void {

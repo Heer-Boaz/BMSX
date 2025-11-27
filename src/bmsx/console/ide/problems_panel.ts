@@ -6,6 +6,7 @@ import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight, 
 import * as constants from './constants';
 import { ide_state } from './ide_state';
 import { api } from '../runtime';
+import { drawEditorText } from './text_renderer';
 
 type PanelLayout = {
 	headerTop: number;
@@ -103,7 +104,7 @@ export class ProblemsPanelController {
 		const headerLabel = `PROBLEMS (${count})`;
 		const headerX = bounds.left + constants.PROBLEMS_PANEL_HEADER_PADDING_X;
 		const headerY = layout.headerTop + constants.PROBLEMS_PANEL_HEADER_PADDING_Y;
-		api.write(headerLabel, headerX, headerY, undefined, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
+		drawEditorText(api, ide_state.font, headerLabel, headerX, headerY, undefined, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
 
 		const contentLeft = bounds.left + constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
 		const contentRight = bounds.right - constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
@@ -116,7 +117,7 @@ export class ProblemsPanelController {
 			const message = 'No problems detected.';
 			const truncated = truncateTextToWidth(message, availableWidth, (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance);
 			const rowTop = layout.contentTop;
-			api.write(truncated, contentLeft, rowTop, undefined, constants.COLOR_PROBLEMS_PANEL_TEXT);
+			drawEditorText(api, ide_state.font, truncated, contentLeft, rowTop, undefined, constants.COLOR_PROBLEMS_PANEL_TEXT);
 			return;
 		}
 
@@ -153,7 +154,7 @@ export class ProblemsPanelController {
 			let textCursorX = contentLeft;
 			if (severityLabel) {
 				const sevColor = isHovered && !isSelected ? constants.COLOR_PROBLEMS_PANEL_HOVER_TEXT : this.severityColor(severity);
-				api.write(severityLabel, textCursorX, rowTop, undefined, sevColor);
+				drawEditorText(api, ide_state.font, severityLabel, textCursorX, rowTop, undefined, sevColor);
 				textCursorX += severityWidth;
 			}
 			// Do not display location/source in the list; leave space for message
@@ -163,7 +164,7 @@ export class ProblemsPanelController {
 			for (let li = 0; li < wrapped.length; li += 1) {
 				const y = rowTop + li * ide_state.lineHeight;
 				const x = li === 0 ? textCursorX : contentLeft;
-				api.write(wrapped[li], x, y, undefined, messageColor);
+				drawEditorText(api, ide_state.font, wrapped[li], x, y, undefined, messageColor);
 			}
 			cursorY = rowBottom;
 		}
@@ -461,15 +462,8 @@ export class ProblemsPanelController {
 		}
 	}
 }
-export function drawProblemsPanel(): void {
-	const bounds = getProblemsPanelBounds();
-	if (!bounds) {
-		return;
-	}
-	ide_state.problemsPanel.draw(bounds);
-}
 
-export function getProblemsPanelBounds(): RectBounds | null {
+export function drawProblemsPanel() {
 	const panelHeight = getVisibleProblemsPanelHeight();
 	if (panelHeight <= 0) {
 		return null;
@@ -480,11 +474,13 @@ export function getProblemsPanelBounds(): RectBounds | null {
 	if (bottom <= top) {
 		return null;
 	}
-	return { left: 0, top, right: ide_state.viewportWidth, bottom };
+	const bounds = { left: 0, top, right: ide_state.viewportWidth, bottom };
+	ide_state.problemsPanel.draw(bounds);
+	return bounds;
 }
 
 export function isPointerOverProblemsPanelDivider(x: number, y: number): boolean {
-	const bounds = getProblemsPanelBounds();
+	const bounds = drawProblemsPanel();
 	if (!bounds) {
 		return false;
 	}

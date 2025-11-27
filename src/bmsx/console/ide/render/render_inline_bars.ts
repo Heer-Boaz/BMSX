@@ -5,6 +5,7 @@ import type { TextField } from '../types';
 import { ide_state } from '../ide_state';
 import { caretX, getFieldText, measureRange, selectionRange } from '../inline_text_field';
 import { api } from '../../runtime';
+import { drawEditorText } from '../text_renderer';
 import { getCreateResourceBarHeight, getResourceSearchBarHeight, getSearchBarHeight, isResourceSearchCompactMode, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../console_cart_editor';
 import { measureText } from '../text_utils';
 
@@ -269,7 +270,7 @@ export function renderResourceSearchBar(): void {
 	const label = 'FILE :';
 	const labelX = 4;
 	const labelY = barTop + constants.QUICK_OPEN_BAR_MARGIN_Y;
-	api.write(label, labelX, labelY, undefined, constants.COLOR_QUICK_OPEN_TEXT);
+	drawEditorText(api, ide_state.font, label, labelX, labelY, undefined, constants.COLOR_QUICK_OPEN_TEXT);
 
 	const active = !!ide_state.resourceSearchActive && !ide_state.problemsPanel.isVisible && !ide_state.problemsPanel.isFocused;
 	const fieldText = field ? getFieldText(field) : '';
@@ -290,7 +291,7 @@ export function renderResourceSearchBar(): void {
 		}
 	}
 
-	api.write(queryText, queryX, labelY, undefined, queryColor);
+	drawEditorText(api, ide_state.font, queryText, queryX, labelY, undefined, queryColor);
 
 	if (field) {
 		const caretLeft = caretX(field, queryX, measureText);
@@ -323,19 +324,19 @@ export function renderResourceSearchBar(): void {
 			const kindText = match?.entry.typeLabel ?? '';
 			const detail = match?.entry.assetLabel ?? '';
 			if (kindText.length > 0) {
-				api.write(kindText, textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
+				drawEditorText(api, ide_state.font, kindText, textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
 				textX += measureText(kindText + ' ');
 			}
-			api.write(match?.entry.displayPath ?? '', textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_TEXT);
+			drawEditorText(api, ide_state.font, match?.entry.displayPath ?? '', textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_TEXT);
 			if (compactMode) {
 				const secondaryY = rowTop + ide_state.lineHeight;
 				if (detail.length > 0) {
-					api.write(detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, undefined, constants.COLOR_QUICK_OPEN_KIND);
+					drawEditorText(api, ide_state.font, detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, undefined, constants.COLOR_QUICK_OPEN_KIND);
 				}
 			} else if (detail.length > 0) {
 				const detailWidth = measureText(detail);
 				const detailX = ide_state.viewportWidth - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
-				api.write(detail, detailX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
+				drawEditorText(api, ide_state.font, detail, detailX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
 			}
 		},
 	});

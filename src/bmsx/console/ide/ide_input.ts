@@ -14,7 +14,7 @@ import { debuggerCommandExecutor } from './debugger_controls';
 import { toggleBreakpointAtCursor, toggleBreakpointForEditorRow } from './debugger_breakpoints';
 import { handleCompletionKeybindings } from './completion_controller';
 import { invalidateVisualLines } from './text_utils';
-import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from './problems_panel';
+import { drawProblemsPanel, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from './problems_panel';
 import { measureText } from './text_utils';
 import { applyScrollbarScroll } from './scrollbar';
 import { clearHoverTooltip, updateHoverTooltip } from './intellisense';
@@ -1053,7 +1053,7 @@ export function handlePointerWheel(): void {
 		return;
 	}
 	if (ide_state.problemsPanel.isVisible) {
-		const bounds = getProblemsPanelBounds();
+		const bounds = drawProblemsPanel();
 		if (bounds) {
 			let allowScroll = false;
 			if (!pointer) {
@@ -1318,7 +1318,7 @@ export function handleTextEditorPointerInput(): void {
 	if (ide_state.resourcePanelVisible && !snapshot.primaryPressed) {
 		ide_state.resourcePanel.setHoverIndex(-1);
 	}
-	const problemsBounds = getProblemsPanelBounds();
+	const problemsBounds = drawProblemsPanel();
 	if (ide_state.problemsPanel.isVisible && problemsBounds) {
 		const insideProblems = pointInRect(snapshot.viewportX, snapshot.viewportY, problemsBounds);
 		if (insideProblems) {

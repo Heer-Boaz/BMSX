@@ -488,6 +488,7 @@ export class BmsxConsoleRuntime extends Service {
 	private debuggerAutoActivateOnNextPause = false;
 	private lastFrameTimestampMs = 0;
 	private overlayState = { console: false, editor: false };
+	private includeJsStackTraces = false;
 	private currentFrameState: ConsoleFrameState | null = null;
 	private readonly luaFailurePolicy: LuaPersistenceFailurePolicy;
 	private pendingLuaWarnings: string[] = [];
@@ -597,6 +598,8 @@ export class BmsxConsoleRuntime extends Service {
 			appendStdout: (text, color) => { this.consoleMode.appendStdout(text, color); },
 			appendStderr: (text) => { this.consoleMode.appendStderr(text); },
 			appendSystem: (text) => { this.consoleMode.appendSystemMessage(text); },
+			setConsoleJsStackEnabled: (enabled) => { this.setConsoleJsStackEnabled(enabled); },
+			getConsoleJsStackEnabled: () => this.includeJsStackTraces,
 		});
 		this.consoleMode.setPromptPrefix(this.consoleCommands.getPrompt());
 		this.enableEvents();
@@ -1135,6 +1138,10 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		this.executeConsoleCommand(trimmed);
+	}
+
+	private setConsoleJsStackEnabled(enabled: boolean): void {
+		this.includeJsStackTraces = enabled;
 	}
 
 	private drawEditorFrame(editor: ConsoleCartEditor): void {
@@ -2384,8 +2391,10 @@ export class BmsxConsoleRuntime extends Service {
 		for (let index = 0; index < details.luaStack.length; index += 1) {
 			frames.push(details.luaStack[index]);
 		}
-		for (let index = 0; index < details.jsStack.length; index += 1) {
-			frames.push(details.jsStack[index]);
+		if (this.includeJsStackTraces) {
+			for (let index = 0; index < details.jsStack.length; index += 1) {
+				frames.push(details.jsStack[index]);
+			}
 		}
 		if (frames.length === 0) {
 			return [];
@@ -3329,10 +3338,10 @@ export class BmsxConsoleRuntime extends Service {
 			interpreter.clearLastFaultCallStack();
 		}
 		let stackText: string | null = null;
-		if (error instanceof Error && typeof error.stack === 'string') {
+		if (this.includeJsStackTraces && error instanceof Error && typeof error.stack === 'string') {
 			stackText = error.stack;
 		}
-		const jsFrames = this.parseJsStackFrames(stackText);
+		const jsFrames = this.includeJsStackTraces ? this.parseJsStackFrames(stackText) : [];
 		if (luaFrames.length === 0 && jsFrames.length === 0) {
 			return null;
 		}
@@ -3483,11 +3492,11 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			const defTable = args[0] as LuaTable;
 			const moduleId = this.moduleIdFor('worldobject', this.currentLuaAssetContext?.asset_id ?? null, this.luaChunkName ?? null);
-			const idValue = defTable.get('id');
+			const idValue = this.getLuaTableEntry(defTable, ['id']);
 			if (typeof idValue !== 'string' || idValue.trim().length === 0) {
 				throw this.createApiRuntimeError(luaInterpreter, 'register_worldobject(def) requires def.id to be a non-empty string.');
 			}
-			const classValue = defTable.get('class');
+			const classValue = this.getLuaTableEntry(defTable, ['class']);
 			let className: string;
 			if (typeof classValue === 'string' && classValue.trim().length > 0) {
 				className = classValue.trim();
@@ -3504,7 +3513,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (!descriptor || typeof descriptor !== 'object') {
 				throw this.createApiRuntimeError(luaInterpreter, 'register_worldobject(def) failed to marshal descriptor table.');
 			}
-			const id = this.registerWorldObjectDefinition(descriptor as Record<string, unknown>);
+			const id = this.registerWorldObjectDefinition(descriptor);
 			return [id];
 		});
 		this.registerLuaGlobal(env, 'register_worldobject', registerWorldobject);
@@ -3890,7 +3899,7 @@ export class BmsxConsoleRuntime extends Service {
 		return null;
 	}
 
-	private getLuaRecordEntry<T>(record: Record<string, unknown> | null | undefined, keys: readonly string[]): T | undefined {
+	private getLuaRecordEntry<T>(record: Record<string, any> | null | undefined, keys: readonly string[]): T | undefined {
 		if (!record) {
 			return undefined;
 		}
@@ -4354,7 +4363,7 @@ export class BmsxConsoleRuntime extends Service {
 	): Identifier {
 		const { table, descriptor, moduleId, interpreter, asset_id } = opts;
 		const marshalCtx = this.ensureMarshalContext({ moduleId, interpreter, path: [] });
-		const idValue = descriptor.id;
+		const idValue = this.getLuaRecordEntry(descriptor as Record<string, unknown>, ['id']);
 		if (typeof idValue !== 'string' || idValue.trim().length === 0) {
 			throw new Error('[BmsxConsoleRuntime] Service descriptor requires a non-empty id.');
 		}
@@ -4363,7 +4372,7 @@ export class BmsxConsoleRuntime extends Service {
 			throw new Error(`[BmsxConsoleRuntime] Duplicate Lua service id '${serviceId}' detected.`);
 		}
 
-		const autoActivate = (descriptor as { auto_activate?: boolean }).auto_activate ?? true;
+		const autoActivate: boolean = this.getLuaRecordEntry<boolean>(descriptor as Partial<Service>, ['auto_activate']) ?? true;
 
 		const hooks: LuaServiceHooks = {};
 		const bootCandidate = this.getLuaTableEntry(table, ['on_boot', 'boot', 'initialize']);
@@ -4483,7 +4492,7 @@ export class BmsxConsoleRuntime extends Service {
 			table,
 			hooks,
 			events,
-			auto_activate: autoActivate,
+			auto_activate: Boolean(autoActivate),
 		};
 
 		this.consoleServices.set(serviceId, binding);
@@ -4878,9 +4887,9 @@ export class BmsxConsoleRuntime extends Service {
 		if (!descriptor || typeof descriptor !== 'object') {
 			throw new Error('[BmsxConsoleRuntime] define_component requires a descriptor table.');
 		}
-		const idValue = (descriptor as { id?: unknown; name?: unknown }).id ?? (descriptor as { name?: unknown }).name;
+		const idValue = this.getLuaRecordEntry<string>(descriptor, ['id', 'name']);
 		const componentId = this.normalizeLuaIdentifier(idValue, 'define_component');
-		const handlersRaw = (descriptor as { handlers?: unknown }).handlers;
+		const handlersRaw = this.getLuaRecordEntry<Record<string, unknown>>(descriptor, ['handlers']);
 		const handlers: LuaComponentHandlerMap = {};
 		if (handlersRaw && typeof handlersRaw === 'object') {
 			const handlerEntries = handlersRaw as Record<string, unknown>;
@@ -4891,10 +4900,10 @@ export class BmsxConsoleRuntime extends Service {
 				handlers[rawKey] = candidate;
 			}
 		}
-		const tagsPre = this.normalizeStringArray((descriptor as { tagsPre?: unknown; tags_pre?: unknown }).tagsPre ?? (descriptor as { tags_pre?: unknown }).tags_pre);
-		const tagsPost = this.normalizeStringArray((descriptor as { tagsPost?: unknown; tags_post?: unknown }).tagsPost ?? (descriptor as { tags_post?: unknown }).tags_post);
-		const unique = Boolean((descriptor as { unique?: unknown }).unique);
-		const initialStateRaw = (descriptor as { state?: unknown; initialState?: unknown }).state ?? (descriptor as { initialState?: unknown }).initialState;
+		const tagsPre = this.normalizeStringArray(this.getLuaRecordEntry(descriptor, ['tagsPre', 'tags_pre']));
+		const tagsPost = this.normalizeStringArray(this.getLuaRecordEntry(descriptor, ['tagsPost', 'tags_post']));
+		const unique = Boolean(this.getLuaRecordEntry(descriptor, ['unique']));
+		const initialStateRaw = this.getLuaRecordEntry(descriptor, ['state', 'initialState']);
 		const initialState = initialStateRaw && typeof initialStateRaw === 'object' ? deep_clone(initialStateRaw as Record<string, unknown>) : undefined;
 		const record: LuaComponentDefinitionRecord = {
 			id: componentId,
@@ -4944,7 +4953,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const presetId = this.normalizeLuaIdentifier(idValue, 'define_component_preset');
 		this.disposeComponentPreset(presetId);
-		const buildCandidate = (descriptor as { build?: unknown }).build;
+		const buildCandidate = this.getLuaRecordEntry(descriptor, ['build']);
 		if (!buildCandidate || typeof buildCandidate !== 'function' || !isLuaHandlerFn(buildCandidate as Function)) {
 			throw new Error(`[BmsxConsoleRuntime] Component preset '${presetId}' requires a Lua build function.`);
 		}
@@ -4989,19 +4998,19 @@ export class BmsxConsoleRuntime extends Service {
 		if (!descriptor || typeof descriptor !== 'object') {
 			throw new Error('[BmsxConsoleRuntime] define_service requires a descriptor table.');
 		}
-		const serviceId = this.normalizeLuaIdentifier((descriptor as { id?: unknown }).id, 'define_service');
-		const fsms = this.normalizeWorldObjectFsmList((descriptor as { fsms?: unknown }).fsms);
-		const behaviorTrees = this.normalizeWorldObjectBehaviorTreeList((descriptor as { behavior_trees?: unknown }).behavior_trees);
-		const effects = this.normalizeStringArray((descriptor as { effects?: unknown }).effects) ?? [];
-		const tags = this.normalizeStringArray((descriptor as { tags?: unknown }).tags) ?? [];
-		const autoActivate = (descriptor as { auto_activate?: boolean }).auto_activate ?? true;
+		const serviceId = this.normalizeLuaIdentifier(this.getLuaRecordEntry(descriptor, ['id']), 'define_service');
+		const fsms = this.normalizeWorldObjectFsmList(this.getLuaRecordEntry(descriptor, ['fsms']));
+		const behaviorTrees = this.normalizeWorldObjectBehaviorTreeList(this.getLuaRecordEntry(descriptor, ['behavior_trees']));
+		const effects = this.normalizeStringArray(this.getLuaRecordEntry(descriptor, ['effects'])) ?? [];
+		const tags = this.normalizeStringArray(this.getLuaRecordEntry(descriptor, ['tags'])) ?? [];
+		const autoActivate = this.getLuaRecordEntry(descriptor, ['auto_activate']) ?? true;
 		const record: ConsoleServiceDefinitionRecord = {
 			id: serviceId,
 			fsms,
 			behavior_trees: behaviorTrees,
 			effects,
 			tags,
-			auto_activate: autoActivate,
+			auto_activate: Boolean(autoActivate),
 			asset_id: this.currentLuaAssetContext?.asset_id ?? null,
 		};
 		const previous = this.serviceDefinitions.get(serviceId);
@@ -5024,7 +5033,7 @@ export class BmsxConsoleRuntime extends Service {
 			set.add(serviceId);
 		}
 		if (!Object.prototype.hasOwnProperty.call(descriptor, 'auto_activate')) {
-			(descriptor as { auto_activate?: boolean }).auto_activate = autoActivate;
+			(descriptor as { auto_activate?: boolean }).auto_activate = Boolean(autoActivate);
 		}
 		return descriptor;
 	}
@@ -5301,7 +5310,7 @@ export class BmsxConsoleRuntime extends Service {
 		return set;
 	}
 
-	public registerWorldObjectDefinition(descriptor: Record<string, unknown>): string {
+	public registerWorldObjectDefinition(descriptor: Partial<WorldObject>): string {
 		if (!descriptor || typeof descriptor !== 'object') {
 			throw new Error('[BmsxConsoleRuntime] register_worldobject requires a descriptor table.');
 		}
@@ -5804,10 +5813,11 @@ export class BmsxConsoleRuntime extends Service {
 		if (!descriptor) {
 			throw new Error('[BmsxConsoleRuntime] define_effect requires a descriptor table.');
 		}
-		const effectId = this.normalizeLuaIdentifier<ActionEffectId>(descriptor.id, 'define_effect');
+		const effectId = this.normalizeLuaIdentifier<ActionEffectId>(this.getLuaRecordEntry(descriptor, ['id']), 'define_effect');
 		this.disposeEffectDefinition(effectId);
-		const onTrigger = this.ensureEffectHandler(effectId, descriptor.handler);
-		const eventName = descriptor.event && descriptor.event.trim().length > 0 ? descriptor.event.trim() : undefined;
+		const onTrigger = this.ensureEffectHandler(effectId, this.getLuaRecordEntry(descriptor, ['handler']));
+		const eventRaw = this.getLuaRecordEntry<string | undefined>(descriptor, ['event']);
+		const eventName = eventRaw && eventRaw.trim().length > 0 ? eventRaw.trim() : undefined;
 		const definition: ActionEffectDefinition = {
 			id: effectId,
 			event: eventName,
@@ -5877,6 +5887,10 @@ export class BmsxConsoleRuntime extends Service {
 
 	public registerEffectDefinitionFromLua(descriptorTable: LuaTable, interpreter: LuaInterpreter): ActionEffectDefinition {
 		const moduleId = this.moduleIdFor('effect', this.currentLuaAssetContext?.asset_id ?? null, this.luaChunkName ?? null);
+		const idKey = this.canonicalizeIdentifier('id');
+		const eventKey = this.canonicalizeIdentifier('event');
+		const cooldownKey = this.canonicalizeIdentifier('cooldown_ms');
+		const triggerKey = this.canonicalizeIdentifier('on_trigger');
 		let idValue: string | null = null;
 		let idHint = 'anon'; // For error messages only (before we know the real id)?????????????????????
 		let eventValue: string | undefined;
@@ -5884,18 +5898,19 @@ export class BmsxConsoleRuntime extends Service {
 		let onTrigger: LuaHandlerFn | undefined;
 		for (const [rawKey, rawValue] of descriptorTable.entriesArray()) {
 			const keyText = String(rawKey);
-			switch (keyText) {
-				case 'id':
+			const normalizedKey = this.canonicalizeIdentifier(keyText);
+			switch (normalizedKey) {
+				case idKey:
 					idValue = rawValue as string;
 					idHint = rawValue as string;
 					break;
-				case 'event':
+				case eventKey:
 					eventValue = rawValue as string | undefined;
 					break;
-				case 'cooldown_ms':
+				case cooldownKey:
 					cooldownValue = rawValue as number | undefined;
 					break;
-				case 'on_trigger':
+				case triggerKey:
 					if (this.isLuaFunctionValue(rawValue)) {
 						onTrigger = this.luaHandlerCache.getOrCreate(rawValue, {
 							moduleId,
@@ -7421,6 +7436,7 @@ export class BmsxConsoleRuntime extends Service {
 		const changedAssets = new Set<string>();
 		for (const [asset_id, record] of overrides) {
 			const { source, path, cartPath } = record;
+			if (!source || source.length === 0) continue; // Ignore empty sources. This can happen if the backend file is empty or missing.
 			this.workspaceLuaOverrides.set(asset_id, { source, path, cartPath });
 			if (rompack.lua[asset_id] !== source) {
 				rompack.lua[asset_id] = source;
@@ -7544,23 +7560,24 @@ export class BmsxConsoleRuntime extends Service {
 		try {
 			response = await fetch(url, { method: 'GET', cache: 'no-store' });
 		} catch {
-			throw new Error('[BmsxConsoleRuntime] Failed to fetch workspace file: ' + url);
+			console.info(`[BmsxConsoleRuntime] Failed to fetch workspace file: ${url}. No server response.`);
+			return null;
 		}
 		if (!response.ok) {
-			throw new Error('[BmsxConsoleRuntime] Failed to fetch workspace file: ' + response.statusText);
+			console.info('No workspace file found on server. Starting with clean slate.');
 		}
 		let payload: unknown;
 		try {
 			payload = await response.json();
 		} catch {
-			throw new Error('[BmsxConsoleRuntime] Failed to parse workspace file response JSON.');
+			console.warn('[BmsxConsoleRuntime] Failed to parse workspace file response JSON.');
 		}
 		if (!payload || typeof payload !== 'object') {
-			throw new Error('[BmsxConsoleRuntime] Invalid workspace file response payload.');
+			console.warn('[BmsxConsoleRuntime] Invalid workspace file response payload.');
 		}
-		const record = payload as { contents?: unknown };
+		const record = payload as { contents?: string };
 		if (typeof record.contents !== 'string') {
-			throw new Error('[BmsxConsoleRuntime] Invalid workspace file response payload.');
+			console.warn('[BmsxConsoleRuntime] Invalid workspace file response payload.');
 		}
 		return record.contents;
 	}
@@ -7574,7 +7591,7 @@ export class BmsxConsoleRuntime extends Service {
 		try {
 			await fetch(url, { method: 'DELETE' });
 		} catch {
-			console.warn('[BmsxConsoleRuntime] Failed to delete workspace file:', url);
+			console.info('[BmsxConsoleRuntime] Failed to delete workspace file:', url);
 			return;
 		}
 	}

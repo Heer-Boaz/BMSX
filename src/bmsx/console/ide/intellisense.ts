@@ -46,6 +46,10 @@ export const KEYWORDS = new Set([
 	'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
 ]);
 
+function canonicalizeIdeIdentifier(name: string): string {
+	return ide_state.caseInsensitive ? name.toUpperCase() : name;
+}
+
 export type LuaScopedSymbol = {
 	name: string;
 	path: string;
@@ -761,15 +765,26 @@ function buildGlobalKnownNameSet(
 	apiSignatures: Map<string, ApiCompletionMetadata>,
 ): Set<string> {
 	const names = new Set<string>();
-	names.add('api');
+	const add = (value: string | undefined | null) => {
+		if (!value) {
+			return;
+		}
+		const normalized = canonicalizeIdeIdentifier(value);
+		names.add(normalized);
+	};
+	add('api');
 	const defaultGlobals = ['math', 'string', 'table', 'os', 'coroutine', 'debug', 'io', 'utf8', 'bit32'];
+	const engineGlobals = ['world', 'game', 'registry', 'events', 'rompack'];
+	const jsGlobals = ['Game', 'World', 'Registry', 'Events', 'Rompack', 'Math'];
 	for (let i = 0; i < defaultGlobals.length; i += 1) {
-		names.add(defaultGlobals[i]);
+		add(defaultGlobals[i]);
 	}
+	for (let i = 0; i < engineGlobals.length; i += 1) add(engineGlobals[i]);
+	for (let i = 0; i < jsGlobals.length; i += 1) add(jsGlobals[i]);
 	for (let index = 0; index < localSymbols.length; index += 1) {
 		const entry = localSymbols[index];
 		if (entry && entry.name.length > 0) {
-			names.add(entry.name);
+			add(entry.name);
 		}
 	}
 	for (let index = 0; index < globalSymbols.length; index += 1) {
@@ -781,12 +796,12 @@ function buildGlobalKnownNameSet(
 		if (symbolName.length === 0) {
 			continue;
 		}
-		names.add(symbolName);
+		add(symbolName);
 		const dotIndex = symbolName.indexOf('.');
 		if (dotIndex !== -1) {
 			const root = symbolName.slice(0, dotIndex);
 			if (root.length > 0) {
-				names.add(root);
+				add(root);
 			}
 		}
 	}
@@ -799,19 +814,19 @@ function buildGlobalKnownNameSet(
 		if (dotIndex !== -1) {
 			const root = descriptor.name.slice(0, dotIndex);
 			if (root.length > 0) {
-				names.add(root);
+				add(root);
 			}
 		} else {
-			names.add(descriptor.name);
+			add(descriptor.name);
 		}
 	}
 	// Also expose API method names as globals, since the runtime registers them globally
 	for (const [name] of apiSignatures) {
 		if (name && name.length > 0) {
-			names.add(name);
+			add(name);
 		}
 	}
-	names.add('self');
+	add('self');
 	return names;
 }
 
