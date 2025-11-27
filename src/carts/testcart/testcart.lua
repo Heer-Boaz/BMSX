@@ -112,7 +112,7 @@ function hero:try_blink()
 end
 
 local function build_hero_fsm()
-	register_prepared_fsm(hero_fsm_id, {
+	register_fsm(hero_fsm_id, {
 		initial = 'idle',
 		states = {
 			idle = {
@@ -198,9 +198,9 @@ local function register_hero()
 	register_world_object({
 		id = hero_def_id,
 		class = 'hero',
-		components = { 'actioneffectcomponent' },
-		fsms = { { id = hero_fsm_id } },
-		effects = { effect_id },
+		components = { 'actioneffectcomponent', },
+		fsms = { hero_fsm_id, },
+		effects = { effect_id, },
 		defaults = { speed = 54 },
 	})
 end

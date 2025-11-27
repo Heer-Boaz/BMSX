@@ -11,10 +11,12 @@ const PRIMARY_COLLIDER_ID = 'primary';
 
 @insavegame
 /**
- * An abstract class representing a world object that can be rendered as a sprite.
+ * A class representing a world object that can be rendered as a sprite.
  * Extends the WorldObject class.
  */
-export abstract class SpriteObject extends WorldObject {
+export class SpriteObject extends WorldObject {
+	public override get __NATIVE__(): string { return 'sprite_object'; }
+
 	private get sprite_component(): SpriteComponent {
 		const comp = this.get_component_by_local_id(SpriteComponent, BASE_SPRITE_ID);
 		if (!comp) {

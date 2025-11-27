@@ -16,7 +16,7 @@ import { onload, excludepropfromsavegame, type RevivableObjectArgs } from '../se
  * - Decorator-driven event subscriptions are initialized via the shared decorator logic
  *   (they will run after construction and after Registry.register due to deferred init).
  */
-export abstract class Service implements Stateful, Identifiable, RegisterablePersistent {
+export class Service implements Stateful, Identifiable, RegisterablePersistent {
 	/** Unique identifier for the service (override or pass via constructor). */
 	public id: Identifier;
 	@excludepropfromsavegame
@@ -39,6 +39,7 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 	public eventhandling_enabled: boolean = false;
 
 	// Default no-op state hooks; subclasses override to participate in Savegame.
+	// TODO: WILL THIS WORK WITH LUA EXTENSIONS AND THE LUA RUNTIME WHERE ONLY BASE SERVICE IS CREATED?
 	public getState(): unknown { return undefined; }
 	public setState(_: unknown): void { /* no-op by default */ }
 
@@ -47,7 +48,7 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 	 * @param id Unique identifier. If omitted, defaults to the class name in lower_snake_case.
 	 * @param opts Optional flags for initial state. Pass `deferBind: true` to delay registration until the subclass calls `bind()`.
 	 */
-	protected constructor(opts?: RevivableObjectArgs & { id?: Identifier; deferBind?: boolean }) {
+	public constructor(opts?: RevivableObjectArgs & { id?: Identifier; deferBind?: boolean }) {
 		this.id = opts?.id ?? Service.deriveIdFromConstructor(this.constructor.name ?? 'service');
 		this.events = eventsOf(this);
 

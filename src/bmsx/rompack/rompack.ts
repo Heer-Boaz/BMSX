@@ -100,6 +100,8 @@ export interface Native {
 	__NATIVE__: string;
 }
 
+export type NativeClass<T> = Constructor<T> & Native; // Used to mark native classes in the console API
+
 /**
  * Represents the direction values.
  */

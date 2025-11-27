@@ -7,8 +7,8 @@ import { ConsoleFont } from './font';
 import { BmsxConsoleStorage } from './storage';
 import { BmsxConsolePointerButton, ConsolePointerVector, ConsolePointerViewport, ConsolePointerWheel } from './types';
 import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest } from '../audio/soundmaster';
-import type { Identifier, Registerable, RomPack } from '../rompack/rompack';
-import type { World, SpawnReason } from '../core/world';
+import type { ConcreteOrAbstractConstructor, Identifier, Native, NativeClass, Registerable, RomPack, vec2, vec3 } from '../rompack/rompack';
+import type { World } from '../core/world';
 import type { Registry } from '../core/registry';
 import { Service } from '../core/service';
 import type { EventEmitter, EventPayload } from '../core/eventemitter';
@@ -21,13 +21,13 @@ import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { setupFSMlibrary } from '../fsm/fsmlibrary';
 import { ConsoleRenderFacade } from './console_render_facade';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
-import type { ActionEffectDefinition, ActionEffectId } from '../action_effects/effect_types';
+import type { ActionEffectDefinition } from '../action_effects/effect_types';
 import { BmsxConsoleRuntime } from './runtime';
 import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type ConstructorWithBTProperty, BehaviorTreeDefinition } from '../ai/behaviourtree';
 import { deep_clone } from '../utils/deep_clone';
 import { Component, type ComponentAttachOptions } from '../component/basecomponent';
 import { actionEffectRegistry } from '../action_effects/effect_registry';
-import { Reviver } from '../serializer/gameserializer';
+import { SpriteObject } from '../core/object/sprite';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
 
@@ -46,12 +46,36 @@ const POINTER_ACTIONS: readonly string[] = [
 	'pointer_forward',
 ] as const;
 
+type LuaExtendedClass<TBase extends ConcreteOrAbstractConstructor<any>> =
+	TBase & Native & {
+		def_id: Identifier; // Id of the definition this class was registered with
+		overrides?: Partial<TBase extends new (...args: any) => infer R ? R : TBase extends abstract new (...args: any) => infer R ? R : any>;
+		defaults?: Record<string, any>;
+	};
+
+type WorldObjectExtensions = LuaExtendedClass<typeof WorldObject> & {
+	fsms?: Identifier[];
+	components?: string[];
+	effects?: string[];
+	bts?: BehaviorTreeID[];
+};
+
+type SpriteExtensions = WorldObjectExtensions & LuaExtendedClass<typeof SpriteObject> & {
+	// No additional properties required for now
+};
+
+type ServiceExtensions = LuaExtendedClass<typeof Service> & {
+	fsms?: Identifier[];
+	// No additional properties required for now
+}
+
 export class BmsxConsoleApi {
 	private readonly playerindex: number;
 	private readonly storage: BmsxConsoleStorage;
 	private readonly font: ConsoleFont;
 	private readonly defaultPrintColorIndex = 15;
-	private readonly worldObjectDefs = new Map<string, Partial<WorldObject>>();
+	private readonly serviceExts = new Map<string, ServiceExtensions>();
+	private readonly worldObjectExts = new Map<string, WorldObjectExtensions>();
 	private textCursorX = 0;
 	private textCursorY = 0;
 	private textCursorHomeX = 0;
@@ -74,9 +98,7 @@ export class BmsxConsoleApi {
 	}
 
 	public set_render_backend(backend: ConsoleRenderFacade | null): void {
-		if (backend) {
-			this.renderBackend = backend;
-		}
+		this.renderBackend = backend;
 	}
 
 	public get display_width(): number {
@@ -330,9 +352,6 @@ export class BmsxConsoleApi {
 	}
 
 	public world_object(id: Identifier): WorldObject | null {
-		if (typeof id !== 'string' || id.length === 0) {
-			throw new Error('world_object id must be a non-empty string.');
-		}
 		return $.world.getFromCurrentSpace(id);
 	}
 
@@ -340,23 +359,15 @@ export class BmsxConsoleApi {
 		return $.world.allObjectsFromSpaces;
 	}
 
-	public spawn_world_object(class_ref: string, options?: Partial<WorldObject>): Identifier {
-		const instance = $.world.spawn(class_ref, options);
-		return instance.id;
-	}
-
 	public attach_fsm(id: Identifier, machine_id: Identifier): void {
 		$.world.getWorldObject(id).sc.add_statemachine(id, machine_id);
 	}
 
 	public attach_bt(object_id: Identifier, tree_id: BehaviorTreeID): void {
-		if (typeof tree_id !== 'string' || tree_id.trim().length === 0) {
-			throw new Error('attach_bt requires a non-empty behavior tree id.');
-		}
-		if (!behaviorTreeExists(tree_id)) {
-			throw new Error(`Behavior tree '${tree_id}' is not registered.`);
-		}
+		if (typeof tree_id !== 'string' || tree_id.trim().length === 0) throw new Error('attach_bt requires a non-empty behavior tree id.');
+		if (!behaviorTreeExists(tree_id)) throw new Error(`Behavior tree '${tree_id}' is not registered.`);
 		const obj = $.world.getWorldObject(object_id);
+		if (!obj) throw new Error(`World object '${object_id}' not found.`);
 		const ctor = obj.constructor as ConstructorWithBTProperty;
 		const linked = ctor.linkedBTs ?? new Set<BehaviorTreeID>();
 		if (!linked.has(tree_id)) {
@@ -366,7 +377,7 @@ export class BmsxConsoleApi {
 		}
 
 		const contexts = obj.btreecontexts;
-		if (!contexts?.[tree_id]) {
+		if (!contexts[tree_id]) {
 			contexts[tree_id] = {
 				tree_id: tree_id,
 				running: true,
@@ -376,25 +387,42 @@ export class BmsxConsoleApi {
 		}
 	}
 
-	public register_component(descriptor: Partial<Component>): string {
-		return descriptor.id as string;
+	public register_component(descriptor: Partial<Component>): void {
+		throw new Error('register_component is not implemented yet.');
 	}
 
-	public register_world_object(descriptor: Partial<WorldObject>): string {
-		const id = descriptor.id as string;
-		this.worldObjectDefs.set(id, descriptor);
-		return id;
+	public register_world_object(descriptor: WorldObjectExtensions): void {
+		this.worldObjectExts.set(descriptor.def_id, descriptor);
 	}
 
-	public register_service(descriptor: Partial<Service>) {
-		return descriptor;
+	public register_service(descriptor: ServiceExtensions): void {
+		this.serviceExts.set(descriptor.def_id, descriptor);
 	}
 
-	public attach_component(object_id: Identifier, component: string | { id: string; id_local?: string; state?: Record<string, unknown> }): string {
+	public create_service<T extends Service>(serviceClass: ConcreteOrAbstractConstructor<T>, id?: Identifier, defer_bind?: boolean): T {
+		const ext = this.serviceExts.get(serviceClass.name);
+		const instance = new Service( { id, deferBind: defer_bind } ) as T;
+		// Apply definition
+		if (ext) {
+			if (ext.defaults) {
+				Object.assign(instance, ext.defaults);
+			}
+			if (ext.overrides) {
+				Object.assign(instance, ext.overrides);
+			}
+			if (ext.fsms) {
+				for (let i = 0; i < ext.fsms.length; i += 1) {
+					instance.sc.add_statemachine(ext.fsms[i], instance.id);
+				}
+			}
+		}
+		return instance;
+	}
+
+	public attach_component(object_id: Identifier, component: string | { id: string; id_local?: string; state?: object }): string {
 		const obj = $.world.getWorldObject(object_id);
 		const componentId = typeof component === 'string' ? component : component.id;
-		const ctor = (Reviver.constructors?.[componentId] as new (opts: ComponentAttachOptions) => Component)
-			|| ((globalThis as Record<string, unknown>)[componentId] as new (opts: ComponentAttachOptions) => Component);
+		const ctor = (globalThis as Record<string, any>)[componentId] as new (opts: ComponentAttachOptions) => Component;
 		const instanceOpts: ComponentAttachOptions = {
 			parent_or_id: obj,
 			id_local: typeof component === 'object' ? component.id_local : undefined,
@@ -407,61 +435,53 @@ export class BmsxConsoleApi {
 		return instance.id;
 	}
 
-	public register_effect(descriptor: ActionEffectDefinition): string {
+	public register_effect(descriptor: ActionEffectDefinition): void {
 		actionEffectRegistry.register(descriptor);
-		return descriptor.id;
 	}
 
-	public spawn_object(definition_id: Identifier, overrides?: Partial<WorldObject>): Identifier {
-		const def = this.worldObjectDefs.get(definition_id) as {
-			class?: string;
-			components?: Array<string | { id: string; id_local?: string; state?: Record<string, unknown> }>;
-			fsms?: Identifier[];
-			effects?: ActionEffectId[];
-			defaults?: Record<string, unknown>;
-		};
-		const ctorRef = def?.class as string;
-		const ctor = (Reviver.constructors?.[ctorRef] as new (opts?: { id?: Identifier }) => WorldObject)
-			|| ((globalThis as Record<string, unknown>)[ctorRef] as new (opts?: { id?: Identifier }) => WorldObject);
-		const instance = new ctor({ id: overrides?.id });
-		if (def?.defaults) {
-			Object.assign(instance, def.defaults);
+	public spawn_object(definition_id: Identifier, id?: Identifier, pos?: vec3, overrides?: Partial<WorldObject>): Identifier {
+		const ext = this.worldObjectExts.get(definition_id);
+		const instance = new WorldObject({ id, constructReason: undefined });
+
+		// Apply definition
+		if (ext) {
+			if (ext.defaults) {
+				Object.assign(instance, ext.defaults);
+			}
+			if (ext.overrides) {
+				Object.assign(instance, ext.overrides);
+			}
+			if (ext.components) {
+				for (let i = 0; i < ext.components.length; i += 1) {
+					this.attach_component(instance.id, ext.components[i]);
+				}
+			}
+			if (ext.fsms) {
+				for (let i = 0; i < ext.fsms.length; i += 1) {
+					instance.sc.add_statemachine(ext.fsms[i], instance.id);
+				}
+			}
+			if (ext.effects && ext.effects.length > 0) {
+				let effectComponent = instance.get_unique_component(ActionEffectComponent);
+				if (!effectComponent) {
+					effectComponent = new ActionEffectComponent({ parent_or_id: instance });
+					instance.add_component(effectComponent);
+				}
+				for (let i = 0; i < ext.effects.length; i += 1) {
+					effectComponent.grant_effect_by_id(ext.effects[i]);
+				}
+			}
+			if (ext.bts) {
+				for (let i = 0; i < ext.bts.length; i += 1) {
+					this.attach_bt(instance.id, ext.bts[i]);
+				}
+			}
 		}
+		// Apply overrides (these are applied last to take precedence and are distinct from definition overrides)
 		if (overrides) {
 			Object.assign(instance, overrides);
 		}
-		const components = def?.components;
-		if (components) {
-			for (let index = 0; index < components.length; index += 1) {
-				this.attach_component(instance.id, components[index]);
-			}
-		}
-		const fsms = def?.fsms;
-		if (fsms) {
-			for (let i = 0; i < fsms.length; i += 1) {
-				instance.sc.add_statemachine(fsms[i], instance.id);
-			}
-		}
-		const effects = def?.effects;
-		if (effects && effects.length > 0) {
-			let effectComponent = instance.get_unique_component(ActionEffectComponent);
-			if (!effectComponent) {
-				effectComponent = new ActionEffectComponent({ parent_or_id: instance });
-				instance.add_component(effectComponent);
-			}
-			for (let i = 0; i < effects.length; i += 1) {
-				effectComponent.grant_effect_by_id(effects[i]);
-			}
-		}
-		const position = (overrides as { position?: { x: number; y: number; z?: number } })?.position;
-		if (position) {
-			(instance as unknown as { x?: number; y?: number; z?: number }).x = position.x;
-			(instance as unknown as { y?: number }).y = position.y;
-			if ('z' in position) {
-				(instance as unknown as { z?: number }).z = position.z;
-			}
-		}
-		($.world as unknown as World).spawn(instance, position as any, { reason: 'spawn' as SpawnReason });
+		$.world.spawn(instance, pos, { reason: 'fresh' });
 		return instance.id;
 	}
 
@@ -481,7 +501,7 @@ export class BmsxConsoleApi {
 		component.grant_effect(effect);
 	}
 
-	public trigger_effect(object_id: Identifier, effect_id: string, options?: { payload?: Record<string, unknown> }) {
+	public trigger_effect(object_id: Identifier, effect_id: string, options?: { payload?: object }) {
 		if (typeof effect_id !== 'string' || effect_id.trim().length === 0) {
 			throw new Error('trigger_effect requires a non-empty effect id.');
 		}
@@ -665,7 +685,6 @@ export class BmsxConsoleApi {
 		}
 		return result;
 	}
-
 
 	private palette_color(index: number): color {
 		if (!Number.isInteger(index)) {
