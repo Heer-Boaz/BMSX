@@ -142,7 +142,6 @@ export * from './utils/pool';
 export * from './utils/randomint';
 export * from './utils/rect_operations';
 export * from './utils/ring_buffer';
-export * from './utils/safeclamp';
 export * from './utils/scratchbatch';
 export * from './utils/shallowcopy';
 export * from './utils/svg_to_png';

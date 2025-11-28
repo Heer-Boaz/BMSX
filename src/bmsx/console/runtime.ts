@@ -20,6 +20,7 @@ import { createLuaTable, isLuaNativeValue, isLuaTable, setLuaTableCaseInsensitiv
 import { LuaRuntimeError, LuaError, LuaSyntaxError } from '../lua/errors';
 import { $ } from '../core/game';
 import { Service } from '../core/service';
+import { taskGate } from '../core/taskgate';
 import { OverlayPipelineController } from '../core/pipelines/overlay_controller';
 import { ConsoleRenderFacade } from './console_render_facade';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
@@ -48,7 +49,7 @@ import {
 	type DebuggerPauseFrameHint,
 } from './debugger_lifecycle';
 import { arrayify } from '../utils/arrayify';
-import { safeclamp } from '../utils/safeclamp';
+import { fallbackclamp } from 'bmsx/utils/clamp';
 import { ConsoleCommandDispatcher } from './console_commands';
 import { CanonicalizationType } from '../rompack/rompack';
 
@@ -280,8 +281,8 @@ export class BmsxConsoleRuntime extends Service {
 		await BmsxConsoleRuntime._instance.startup();
 	}
 
-	public static get instance(): BmsxConsoleRuntime | null {
-		return BmsxConsoleRuntime._instance;
+	public static get instance(): BmsxConsoleRuntime {
+		return BmsxConsoleRuntime._instance!;
 	}
 
 	public static beginPreservedWorldReset(): void {
@@ -314,11 +315,11 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly apiFunctionNames = new Set<string>();
 	private readonly luaBuiltinMetadata = new Map<string, ConsoleLuaBuiltinDescriptor>();
 	private consoleFontVariant: ConsoleFontVariant = EDITOR_FONT_VARIANT;
-	private luaProgram: BmsxConsoleLuaProgram | null;
+	private luaProgram!: BmsxConsoleLuaProgram;
 	private playerIndex: number;
-	private editor: ConsoleCartEditor | null = null;
+	private editor!: ConsoleCartEditor;
 	private readonly overlayRenderBackend = new ConsoleRenderFacade();
-	public readonly consoleMode: ConsoleMode;
+	public readonly consoleMode!: ConsoleMode;
 	private _overlayResolutionMode: 'offscreen' | 'viewport'; // Set in constructor
 	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
 		this._overlayResolutionMode = value;
@@ -374,6 +375,7 @@ export class BmsxConsoleRuntime extends Service {
 		(fn, thisArg, args) => this.invokeLuaHandler(fn, thisArg, args),
 		(error, meta) => this.handleLuaHandlerError(error, meta),
 	);
+	private readonly luaVmGate = taskGate.group('console:lua_vm');
 	private readonly _workspaceScratchPaths: Set<string> = new Set();
 	private handledLuaErrors = new WeakSet<object>();
 	private pendingRuntimeErrorOverlay:
@@ -419,6 +421,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private constructor(options: BmsxConsoleRuntimeOptions) {
 		super({ id: 'bmsx_console_runtime' });
+		if (!this.cart.luaProgram) throw new Error('[BmsxConsoleRuntime] Cartridge is missing Lua program.');
 		BmsxConsoleRuntime._instance = this;
 		const rompack = $.rompack;
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
@@ -451,7 +454,7 @@ export class BmsxConsoleRuntime extends Service {
 		});
 		api.set_render_backend(this.overlayRenderBackend);
 		this.overlayResolutionMode = 'viewport';
-		this.luaProgram = this.cart.luaProgram ?? null;
+		this.luaProgram = this.cart.luaProgram;
 		for (const [asset_id, source] of Object.entries(rompack.lua)) {
 			this.rompackOriginalLua.set(asset_id, source);
 		}
@@ -1384,34 +1387,43 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public async boot(): Promise<void> {
-		this.luaDebuggerSuspension = null;
-		this.debuggerHaltsGame = false;
-		this.setDebuggerPaused(false);
-		this.luaRuntimeFailed = false;
-		this.luaVmInitialized = false;
-		this.luaChunkResourceMap.clear();
-		this.resourcePathCache.clear();
-		this.invalidateLuaModuleIndex();
-		this.luaChunkEnvironmentsByAssetId.clear();
-		this.luaChunkEnvironmentsByChunkName.clear();
-		this.luaGenericAssetsExecuted.clear();
-		await this.applyWorkspaceOverridesForBoot();
-		if (this.editor) {
-			this.editor.clearRuntimeErrorOverlay();
+		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'boot' });
+		try {
+			this.luaDebuggerSuspension = null;
+			this.debuggerHaltsGame = false;
+			this.setDebuggerPaused(false);
+			this.luaRuntimeFailed = false;
+			this.luaVmInitialized = false;
+			this.luaChunkResourceMap.clear();
+			this.resourcePathCache.clear();
+			this.invalidateLuaModuleIndex();
+			this.luaChunkEnvironmentsByAssetId.clear();
+			this.luaChunkEnvironmentsByChunkName.clear();
+			this.luaGenericAssetsExecuted.clear();
+			await this.refreshWorkspaceSources(false);
+			if (this.editor) {
+				this.editor.clearRuntimeErrorOverlay();
+			}
+			if (this.hasBooted) {
+				await this.resetWorldState();
+			}
+			api.cartdata(this.cart.meta.persistentId);
+			if (this.luaProgram) {
+				this.bootLuaProgram(true);
+			} else {
+				this.resetLuaInteroperabilityState();
+				this.cart.init(api);
+			}
+			this.resetFrameTiming();
+			this.hasBooted = true;
+			void this.applyServerWorkspaceDirtyLuaOverrides(true);
 		}
-		if (this.hasBooted) {
-			await this.resetWorldState();
+		catch (error) {
+			throw '[BmsxConsoleRuntime]: Failed to boot runtime: ' + error;
 		}
-		api.cartdata(this.cart.meta.persistentId);
-		if (this.luaProgram) {
-			this.bootLuaProgram(true);
-		} else {
-			this.resetLuaInteroperabilityState();
-			this.cart.init(api);
+		finally {
+			this.luaVmGate.end(vmToken);
 		}
-		this.resetFrameTiming();
-		this.hasBooted = true;
-		void this.applyServerWorkspaceDirtyLuaOverrides(true);
 	}
 
 	private async resetWorldState(): Promise<void> {
@@ -1521,6 +1533,10 @@ export class BmsxConsoleRuntime extends Service {
 			state.updateExecuted = true;
 			return;
 		}
+		if (!this.luaVmGate.ready) {
+			state.updateExecuted = true;
+			return;
+		}
 		if (state.luaFaulted || this.luaRuntimeFailed) {
 			state.luaFaulted = true;
 			state.updateExecuted = true;
@@ -1567,6 +1583,10 @@ export class BmsxConsoleRuntime extends Service {
 					this.finalizeFrame(true);
 					return;
 				}
+				this.finalizeFrame(editorActive);
+				return;
+			}
+			if (!this.luaVmGate.ready) {
 				this.finalizeFrame(editorActive);
 				return;
 			}
@@ -1703,7 +1723,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.flushPendingRuntimeErrorOverlay();
 	}
 
-	public override getState(): BmsxConsoleState | undefined {
+	public get state(): BmsxConsoleState | undefined {
 		const storage = this.storage.dump();
 		const vmState = this.captureVmState();
 		const state: BmsxConsoleState = {
@@ -1725,24 +1745,15 @@ export class BmsxConsoleRuntime extends Service {
 		return state;
 	}
 
-	public override setState(state: unknown) {
-		if (!state || typeof state !== 'object') {
-			return this.resetRuntimeToFreshState();
-		}
-		this.restoreFromStateSnapshot(state as BmsxConsoleState);
+	public set state(state: BmsxConsoleState) {
+		if (!state) this.resetRuntimeToFreshState();
+		this.restoreFromStateSnapshot(state);
 	}
 
 	private async resetRuntimeToFreshState() {
-		const program = this.luaProgram;
-		if (program) {
-			const asset = this.resolveEntryAsset(program);
-			this.workspaceLuaOverrides.delete(asset.asset_id);
-		}
-		if (program) {
-			this.luaChunkName = this.resolveProgramEntryChunkName(program);
-		} else {
-			this.luaChunkName = null;
-		}
+		const asset = this.resolveEntryAsset(this.luaProgram);
+		this.workspaceLuaOverrides.delete(asset.asset_id);
+		this.luaChunkName = this.resolveProgramEntryChunkName(this.luaProgram);
 		this.luaVmInitialized = false;
 		await this.boot();
 	}
@@ -1800,7 +1811,7 @@ export class BmsxConsoleRuntime extends Service {
 		// Clear flag and any queued overlay frame before we resume swapping handlers.
 		this.luaRuntimeFailed = false;
 		publishOverlayFrame(null);
-		void this.applyWorkspaceOverridesForBoot();
+		void this.refreshWorkspaceSources(false);
 		this.processPendingLuaAssets('resume');
 		this.resumeLuaProgramState(snapshot, { runInit: false });
 		this.resetFrameTiming();
@@ -2184,10 +2195,10 @@ export class BmsxConsoleRuntime extends Service {
 		if (!chunkName || chunkName.length === 0) {
 			chunkName = signal.location.chunk;
 		}
-		const normalizedLine = safeclamp(exception.line, 1, Number.MAX_SAFE_INTEGER, null);
-		const normalizedColumn = safeclamp(exception.column, 1, Number.MAX_SAFE_INTEGER, null);
-		const fallbackLine = safeclamp(signal.location.line, 1, Number.MAX_SAFE_INTEGER, null);
-		const fallbackColumn = safeclamp(signal.location.column, 1, Number.MAX_SAFE_INTEGER, null);
+		const normalizedLine = fallbackclamp(exception.line, 1, Number.MAX_SAFE_INTEGER, null);
+		const normalizedColumn = fallbackclamp(exception.column, 1, Number.MAX_SAFE_INTEGER, null);
+		const fallbackLine = fallbackclamp(signal.location.line, 1, Number.MAX_SAFE_INTEGER, null);
+		const fallbackColumn = fallbackclamp(signal.location.column, 1, Number.MAX_SAFE_INTEGER, null);
 		const hint = this.lookupChunkResourceInfoNullable(chunkName);
 		const details = this.buildRuntimeErrorDetailsForEditor(exception, message);
 		this.pendingRuntimeErrorOverlay = {
@@ -2897,6 +2908,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public async reloadLuaProgram(source: string): Promise<void> {
+		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'reload_program' });
 		if (!this.luaProgram) {
 			throw new Error('[BmsxConsoleRuntime] Cannot reload Lua program when no Lua program is active.');
 		}
@@ -2929,18 +2941,27 @@ export class BmsxConsoleRuntime extends Service {
 				return;
 			}
 		}
+		finally {
+			this.luaVmGate.end(vmToken);
+		}
 	}
 
 	public async reloadProgramAndResetWorld(source: string): Promise<void> {
-		const program = this.luaProgram;
-		const chunkName = this.luaChunkName ?? this.resolveProgramEntryChunkName(program);
-		await this.resetWorldState();
+		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'reload_and_reset' });
 		try {
-			const asset = this.resolveEntryAsset(program, chunkName);
-			this.reloadLuaProgramState(source, chunkName, asset.asset_id);
-		} catch (error) {
-			this.handleLuaError(error);
-			throw error;
+			const program = this.luaProgram;
+			const chunkName = this.luaChunkName ?? this.resolveProgramEntryChunkName(program);
+			await this.resetWorldState();
+			try {
+				const asset = this.resolveEntryAsset(program, chunkName);
+				this.reloadLuaProgramState(source, chunkName, asset.asset_id);
+			} catch (error) {
+				this.handleLuaError(error);
+				throw error;
+			}
+		}
+		finally {
+			this.luaVmGate.end(vmToken);
 		}
 	}
 
@@ -3077,10 +3098,7 @@ export class BmsxConsoleRuntime extends Service {
 		const callStackSnapshot = interpreter ? Array.from(interpreter.lastFaultCallStack) : [];
 		const runtimeDetails = this.buildRuntimeErrorDetailsForEditor(error, message);
 		this.pauseDebuggerForException({ chunkName, line, column }, callStackSnapshot);
-		if (!this.editor && this.luaProgram) {
-			this.initializeEditor();
-		}
-		const editorIsActive = this.editor?.isActive() === true;
+		const editorIsActive = this.editor.isActive() === true;
 		const hint = this.lookupChunkResourceInfoNullable(chunkName);
 		this.pendingRuntimeErrorOverlay = {
 			chunkName,
@@ -5148,10 +5166,6 @@ export class BmsxConsoleRuntime extends Service {
 			this.rompackOriginalLua.set(asset_id, saved);
 		}
 		return changed;
-	}
-
-	private async applyWorkspaceOverridesForBoot(): Promise<void> {
-		await this.refreshWorkspaceSources(false);
 	}
 
 	public async refreshWorkspaceSources(hotReload: boolean): Promise<void> {

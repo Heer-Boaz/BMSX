@@ -8,10 +8,10 @@ export interface RomPack {
 	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the cached binary payload. ALWAYS PRESENT DURING GAME!
 	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
+	lua: id2lua; // Loaded Lua sources bundled with the ROM pack. ALWAYS PRESENT DURING GAME!
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	code: string; // The loaded game code in the ROM pack. ALWAYS PRESENT DURING GAME!
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
-	lua: Record<asset_id, string>; // Loaded Lua sources bundled with the ROM pack. ALWAYS PRESENT DURING GAME!
 	luaSourcePaths: Record<asset_id, string>; // Relative filesystem paths for Lua sources, keyed by Lua asset id.
 	resourcePaths: RomResourcePath[]; // Filesystem metadata for packed resources. ALWAYS PRESENT DURING GAME!
 	projectRootPath?: string | null; // Workspace-relative cart root path for resolving filesystem writes.
@@ -24,7 +24,7 @@ export type asset_id = string;
 
 export interface RomResourcePath {
 	path: string;
-	type: asset_type | 'rommanifest';
+	type: asset_type;
 	asset_id: asset_id;
 }
 
@@ -54,6 +54,10 @@ export interface RomImgAsset extends RomAsset {
 	get imgbinYFlipped(): Promise<TextureSource>;
 }
 
+export type RomLuaAsset = string;
+	// sourcecode?: string; // The Lua source code of the asset, if it is a Lua script.
+// }
+
 export interface RomMeta {
 	start: number; // The start offset of the RomPack metadata in the ROM (file) buffer itself.
 	end: number; // The end offset of the RomPack metadata in the ROM (file) buffer itself.
@@ -63,6 +67,7 @@ export type id2res = Record<asset_id, RomAsset>;
 export type id2imgres = Record<asset_id, RomImgAsset>;
 export type id2model = Record<asset_id, GLTFModel>;
 export type id2data = Record<asset_id, any>;
+export type id2lua = Record<asset_id, RomLuaAsset>;
 export type id2audioevent = Record<asset_id, AudioEventMapEntry>;
 
 export type BitmapId = asset_id;

@@ -726,18 +726,7 @@ export class Game {
 		sg.modelprops = data;
 		sg.spaces = this.world.spaces; // Spaces and their contained objects are serialized directly via references.
 
-		// Capture service state DTOs (opt-in via getState)
-		const servicesState: Record<string, unknown> = {};
-		for (const ent of this.registry.iterate(Service, true)) {
-			const dto = ent.getState();
-			if (dto !== undefined) servicesState[ent.id] = dto;
-		}
-		if (Object.keys(servicesState).length > 0) sg.servicesState = servicesState;
-
-		const consoleRuntime = BmsxConsoleRuntime.instance;
-		if (consoleRuntime) {
-			sg.bmsxConsoleState = consoleRuntime.getState();
-		}
+		sg.bmsxConsoleState = BmsxConsoleRuntime.instance?.state;
 		const serialized = Serializer.serialize(sg) as Uint8Array;
 		return compress ? BinaryCompressor.compressBinary(serialized) : serialized;
 	}
@@ -767,26 +756,14 @@ export class Game {
 				if (typeof v !== 'function') (this.world as { [key: string]: any })[k] = v;
 			}
 
-			// Recreate spaces; revived Space.@onload wires internal maps and world indexes.
-			// sg.spaces.forEach(space => this.world.addSpace(space));
-
-			// Wiring phase (revive): bind all registered entities; no FSM start on revived instances
-			// for (const ent of this.registry.getRegisteredEntities()) { ent.bind(); }
-
 			// Module load hooks
 			for (const p of this.world.modules ?? []) p.onLoad?.(this.world);
 
 			// Do not override revived flags or controller state; onspawn('revive') and @onload hooks handled wiring.
 
 			// Restore service state (opt-in)
-			const services = sg.servicesState ?? {};
-			for (const [id, dto] of Object.entries(services)) {
-				const svc = this.registry.get(id) as Service | undefined;
-				svc?.setState?.(dto);
-			}
-			const consoleRuntime = BmsxConsoleRuntime.instance;
-			if (consoleRuntime) {
-				consoleRuntime.setState(sg.bmsxConsoleState ?? null);
+			if (sg.bmsxConsoleState) {
+				BmsxConsoleRuntime.instance.state = sg.bmsxConsoleState;
 			}
 		} catch (e) {
 			console.error(`Error loading game state: ${e}`);

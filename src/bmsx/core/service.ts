@@ -49,11 +49,6 @@ export class Service implements Stateful, Identifiable, RegisterablePersistent {
 	 */
 	public eventhandling_enabled: boolean = false;
 
-	// Default no-op state hooks; subclasses override to participate in Savegame.
-	// TODO: WILL THIS WORK WITH LUA EXTENSIONS AND THE LUA RUNTIME WHERE ONLY BASE SERVICE IS CREATED?
-	public getState(): unknown { return undefined; }
-	public setState(_: unknown): void { /* no-op by default */ }
-
 	/**
 	 * Construct a new Service.
 	 * @param id Unique identifier. If omitted, defaults to the class name in lower_snake_case.

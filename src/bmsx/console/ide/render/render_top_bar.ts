@@ -2,11 +2,11 @@ import * as constants from '../constants';
 import type { RectBounds } from '../../../rompack/rompack';
 // import type { LuaDebuggerSessionMetrics } from '../../../lua/debugger';
 import { ide_state } from '../ide_state';
-import { getConsoleRuntime, isDebugPanelActive } from '../console_cart_editor';
+import { isDebugPanelActive } from '../console_cart_editor';
 import { measureText } from '../text_utils';
 import { drawEditorText } from '../text_renderer';
 import { MenuId, TopBarButtonId } from '../types';
-import { api } from '../../runtime';
+import { api, BmsxConsoleRuntime } from '../../runtime';
 
 type MenuSeparator = { type: 'separator' };
 type MenuItem = {
@@ -179,7 +179,7 @@ function buildMenuEntries(): MenuEntry[] {
 	const resourcePanelActive = ide_state.resourcePanelVisible;
 	const filterMode = ide_state.resourcePanel.getFilterMode();
 	const debuggerPaused = ide_state.debuggerControls.executionState === 'paused';
-	const resolutionActive = getConsoleRuntime()!.overlayResolutionMode === 'viewport';
+	const resolutionActive = BmsxConsoleRuntime.instance!.overlayResolutionMode === 'viewport';
 	const problemsActive = ide_state.problemsPanel.isVisible;
 	const debugObjectsActive = isDebugPanelActive('objects');
 	const debugEventsActive = isDebugPanelActive('events');

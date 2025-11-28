@@ -151,87 +151,81 @@ export const bootrom = {
 	 * @returns 255 after the game is started.
 	 */
 	usr(x: number): number {
-		const remove = (selector: string) => {
-			if (!HAS_DOM_ENVIRONMENT) return;
-			const element = document.querySelector(selector);
-			if (!element) return;
-			const parent = element.parentElement;
-			if (!parent) return;
-			parent.removeChild(element);
-		};
+		try {
+			const remove = (selector: string) => {
+				if (!HAS_DOM_ENVIRONMENT) return;
+				const element = document.querySelector(selector);
+				if (!element) return;
+				const parent = element.parentElement;
+				if (!parent) return;
+				parent.removeChild(element);
+			};
 
-		const wrapup = () => {
-			if (!HAS_DOM_ENVIRONMENT) return;
-			const loadingElement = document.querySelector('#loading') as HTMLElement | null;
-			if (loadingElement) loadingElement.hidden = true;
-			window.removeEventListener('resize', bootrom.resizeHandler);
-			remove('#msx');
-			remove('#hidor');
-			remove('#bootrom');
-			remove('#loading');
-			remove('#extra-message');
-			remove('#pacojs');
-			remove('#bload-script');
-			document.body.classList.add('game-started'); // Change background color of body
-		};
+			const wrapup = () => {
+				if (!HAS_DOM_ENVIRONMENT) return;
+				const loadingElement = document.querySelector('#loading') as HTMLElement | null;
+				if (loadingElement) loadingElement.hidden = true;
+				window.removeEventListener('resize', bootrom.resizeHandler);
+				remove('#msx');
+				remove('#hidor');
+				remove('#bootrom');
+				remove('#loading');
+				remove('#extra-message');
+				remove('#pacojs');
+				remove('#bload-script');
+				document.body.classList.add('game-started'); // Change background color of body
+			};
 
-		function showUnhandledRejectionError(err: Error | string) {
-			console.error("Unhandled promise rejection:", err);
+			if (!h406A) throw new Error(`h406A(${x}) is not defined!`);
 			if (HAS_DOM_ENVIRONMENT) {
 				const gamescreen = document.getElementById('gamescreen');
-				if (gamescreen instanceof HTMLElement) {
-					gamescreen.hidden = true;
-					gamescreen.style.display = 'none';
+				if (!(gamescreen instanceof HTMLElement)) {
+					throw new Error('[bootrom] #gamescreen element not found; cannot bootstrap platform.');
 				}
+				gamescreen.hidden = false;
+				gamescreen.style.display = 'block';
+				if (!(gamescreen instanceof HTMLCanvasElement)) {
+					throw new Error('[bootrom] #gamescreen must be a <canvas> to construct a Platform.');
+				}
+				const platform = constructPlatformFromViewHostHandle(gamescreen);
+				bootrom.platform = platform;
+				bootrom.viewHost = platform.gameviewHost;
 			}
-			throw new Error(`Error in usr(0): "${typeof err === 'string' ? err : err?.message ?? 'unknown error :-('}"`);
-		}
 
-		if (!h406A) throw new Error(`h406A(${x}) is not defined!`);
-		if (HAS_DOM_ENVIRONMENT) {
-			const gamescreen = document.getElementById('gamescreen');
-			if (!(gamescreen instanceof HTMLElement)) {
-				throw new Error('[bootrom] #gamescreen element not found; cannot bootstrap platform.');
+			if (typeof window !== 'undefined') {
+				// Remove the global error handler to prevent useless stack traces
+				window.onunhandledrejection = null;
+				// Remove the global error handler to prevent useless stack traces
+				window.onerror = null;
 			}
-			gamescreen.hidden = false;
-			gamescreen.style.display = 'block';
-			if (!(gamescreen instanceof HTMLCanvasElement)) {
-				throw new Error('[bootrom] #gamescreen must be a <canvas> to construct a Platform.');
+
+			const platform = bootrom.platform;
+			if (!platform) {
+				throw new Error('[bootrom] Platform not initialized before starting the game.');
 			}
-			const platform = constructPlatformFromViewHostHandle(gamescreen);
-			bootrom.platform = platform;
-			bootrom.viewHost = platform.gameviewHost;
+			h406A({
+				rompack: bootrom.rom!,
+				sndcontext: bootrom.sndcontext ?? undefined,
+				gainnode: bootrom.gainnode ?? undefined,
+				debug: this.debug,
+				startingGamepadIndex: bootrom.startingGamepadIndex,
+				enableOnscreenGamepad: bootrom.enableOnscreenGamepad,
+				platform,
+				viewHost: bootrom.viewHost ?? undefined,
+				canonicalization: __BOOTROM_CANONICALIZATION__,
+			} as BootArgs).then(() => {
+				wrapup();
+				bootrom.rom = undefined;
+				delete bootrom.rom;
+			}).catch(err => {
+				bootrom.outputError(err);
+				return -1;
+			});
+			return 255;
+		} catch (err) {
+			bootrom.outputError(err);
+			return -1;
 		}
-
-		if (typeof window !== 'undefined') {
-			// Remove the global error handler to prevent useless stack traces
-			window.onunhandledrejection = null;
-			// Remove the global error handler to prevent useless stack traces
-			window.onerror = null;
-		}
-
-		const platform = bootrom.platform;
-		if (!platform) {
-			throw new Error('[bootrom] Platform not initialized before starting the game.');
-		}
-		h406A({
-			rompack: bootrom.rom!,
-			sndcontext: bootrom.sndcontext ?? undefined,
-			gainnode: bootrom.gainnode ?? undefined,
-			debug: this.debug,
-			startingGamepadIndex: bootrom.startingGamepadIndex,
-			enableOnscreenGamepad: bootrom.enableOnscreenGamepad,
-			platform,
-			viewHost: bootrom.viewHost ?? undefined,
-			canonicalization: __BOOTROM_CANONICALIZATION__,
-		} as BootArgs).then(() => {
-			wrapup();
-			bootrom.rom = undefined;
-			delete bootrom.rom;
-		}).catch(err => {
-			showUnhandledRejectionError(err);
-		});
-		return 255;
 	},
 
 	/**
@@ -289,8 +283,7 @@ export const bootrom = {
 				bootrom.engineRom = enginePack;
 				return enginePack;
 			} catch (err) {
-				console.error('[bootrom] Failed to load engine ROM:', err);
-				throw err;
+				throw '[bootrom] Failed to load engine ROM:\n' + err;
 			}
 		}
 
@@ -351,8 +344,7 @@ export const bootrom = {
 				})
 				.then(() => resolve(loadedRomPack))
 				.catch(err => {
-					console.error('[bload] Top-level error:', err);
-					reject(err);
+					reject('[bload] Top-level error:\n' + err);
 				});
 		});
 	},
@@ -365,8 +357,8 @@ export const bootrom = {
 		return this.bload(url, 'cart');
 	},
 
-	outputError(errormsg: string) {
-		console.error(errormsg);
+	outputError(error: Error | string) {
+		console.error(error);
 		bootrom.theshowsover = true;
 		const loadingElement = document.querySelector<HTMLElement>('#loading')
 		if (loadingElement) loadingElement.hidden = false;
@@ -374,9 +366,11 @@ export const bootrom = {
 		if (msxElement) msxElement.onanimationend = undefined;
 		const hidorElement = document.querySelector<HTMLElement>('#hidor');
 		if (hidorElement) hidorElement.className = 'showsover';
+		const gamescreen = document.getElementById('gamescreen');
+		if (gamescreen) gamescreen.style.display = 'none';
 		document.body.className = "showsover";
 		setClassForLoader('');
-		setLoaderText(errormsg);
+		setLoaderText(error instanceof Error ? error.message : error);
 	},
 
 	resizeHandler() {

@@ -3,7 +3,7 @@ import type { ConsoleResourceDescriptor } from '../types';
 import { ide_state, WORKSPACE_AUTOSAVE_INTERVAL_MS, workspaceDirtyCache } from './ide_state';
 import type { NavigationHistoryEntry } from './ide_state';
 import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position, EditorSnapshot } from './types';
-import { clamp } from '../../utils/clamp';
+import { safeclamp } from '../../utils/clamp';
 import type { StorageService, TimerHandle } from '../../platform/platform';
 import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './debugger_breakpoints';
 import { scheduleIdeOnce } from './background_tasks';
@@ -19,9 +19,10 @@ import {
 	joinWorkspacePaths,
 	normalizeWorkspacePath,
 } from '../workspace';
-import { openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, findResourceDescriptorByAssetId, restoreSnapshot, setFontVariant, getConsoleRuntime } from './console_cart_editor';
+import { openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, findResourceDescriptorByAssetId, restoreSnapshot, setFontVariant } from './console_cart_editor';
 import { createEntryTabContext, initializeTabs, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { ConsoleFontVariant } from '../font';
+import { BmsxConsoleRuntime } from '../runtime';
 
 export type WorkspaceStoragePaths = {
 	projectRootPath: string;
@@ -376,7 +377,7 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 	if (entryContext) {
 		ide_state.activeCodeTabContextId = entryContext.id;
 	}
-	const runtime = getConsoleRuntime();
+	const runtime = BmsxConsoleRuntime.instance;
 	if (payload.fontVariant) {
 		if (runtime) {
 			runtime.setFontVariant(payload.fontVariant);
@@ -520,16 +521,16 @@ export function buildSnapshotFromSource(source: string, metadata?: SnapshotMetad
 	const normalized = source.replace(/\r\n/g, '\n');
 	const lines = normalized.split('\n');
 	const lastRow = lines.length > 0 ? lines.length - 1 : 0;
-	const cursorRow = clampRow(metadata?.cursorRow ?? 0, lastRow);
-	const cursorColumn = clampColumn(metadata?.cursorColumn ?? 0, lines[cursorRow] ?? '');
+	const cursorRow = safeclamp(metadata?.cursorRow, 0, lastRow);
+	const cursorColumn = safeclamp(metadata?.cursorColumn, 0, lines[cursorRow].length ?? 0);
 	return {
 		lines,
 		cursorRow,
 		cursorColumn,
-		scrollRow: clampRow(metadata?.scrollRow ?? 0, lastRow),
+		scrollRow: safeclamp(metadata?.scrollRow, 0, lastRow),
 		scrollColumn: Math.max(0, metadata?.scrollColumn ?? 0),
 		selectionAnchor: clampSelection(metadata?.selectionAnchor ?? null, lines),
-		dirty: true,
+		dirty: ide_state.dirty,
 	};
 }
 
@@ -547,23 +548,13 @@ function cloneEditorSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
 	};
 }
 
-function clampRow(value: number, maxRow: number): number {
-	const normalized = Number.isFinite(value) ? value : 0;
-	return clamp(normalized, 0, Math.max(0, maxRow));
-}
-
-function clampColumn(value: number, line: string): number {
-	const normalized = Number.isFinite(value) ? value : 0;
-	return clamp(normalized, 0, Math.max(0, line.length));
-}
-
 function clampSelection(anchor: Position | null, lines: string[]): Position | null {
 	if (!anchor) {
 		return null;
 	}
-	const row = clampRow(anchor.row ?? 0, Math.max(0, lines.length - 1));
+	const row = safeclamp(anchor.row ?? 0, 0, lines.length - 1);
 	const line = lines[row] ?? '';
-	const column = clampColumn(anchor.column ?? 0, line);
+	const column = safeclamp(anchor.column ?? 0, 0, line.length);
 	return { row, column };
 }
 
@@ -764,7 +755,7 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 		forward: ide_state.navigationHistory.forward.map(entry => ({ ...entry })),
 		current: ide_state.navigationHistory.current ? { ...ide_state.navigationHistory.current } : null,
 	};
-	const runtime = getConsoleRuntime();
+	const runtime = BmsxConsoleRuntime.instance;
 	return {
 		version: 2,
 		savedAt: $.platform.clock.now(),
@@ -851,7 +842,7 @@ export async function runWorkspaceAutosaveTick(): Promise<void> {
 			}
 		}
 		await persistDirtyContextEntries(dirtyEntries);
-		const runtime = getConsoleRuntime();
+		const runtime = BmsxConsoleRuntime.instance;
 		if (runtime) {
 			runtime.refreshWorkspaceOverrides(false, { includeServer: false });
 		}

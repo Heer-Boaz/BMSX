@@ -1,5 +1,5 @@
 import type { DebuggerResumeMode } from '../console/debugger_lifecycle';
-import { safeclamp } from '../utils/safeclamp';
+import { fallbackclamp } from 'bmsx/utils/clamp';
 import type { LuaCallFrame, LuaDebuggerPauseSignal, LuaExceptionResumeStrategy } from './runtime';
 
 export function normalizeLuaChunkName(name: string): string {
@@ -295,7 +295,7 @@ export class LuaDebuggerController {
 	}
 
 	private normalizeLineNumber(value: number): number | null {
-		return safeclamp(value, 1, Number.MAX_SAFE_INTEGER, null);
+		return fallbackclamp(value, 1, Number.MAX_SAFE_INTEGER, null);
 	}
 
 	private clearAsyncContinuation(): void {

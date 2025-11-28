@@ -131,7 +131,7 @@ import {
 
 import * as TextEditing from './text_editing_and_selection';
 import { drawRectOutlineColor, resetBlink } from './render/render_caret';
-import { api, type BmsxConsoleRuntime } from '../runtime';
+import { api, BmsxConsoleRuntime, BmsxConsoleState } from '../runtime';
 import { computeEditContextFromSources, handlePostEditMutation, writeClipboard } from './text_editing_and_selection';
 import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
 import { drawCreateResourceBar } from './render/render_input_bars';
@@ -3468,44 +3468,34 @@ export function executePendingAction(): boolean {
 }
 
 export function performAction(action: PendingActionPrompt['action']): boolean {
-	if (action === 'resume') {
-		return performResume();
+	switch (action) {
+		case 'resume':
+			return performResume();
+		case 'reboot':
+			return performReboot();
+		case 'close':
+			deactivate();
+			return true;
 	}
-	if (action === 'reboot') {
-		return performReboot();
-	}
-	if (action === 'close') {
-		deactivate();
-		return true;
-	}
-	return false;
 }
 
 export function performResume(): boolean {
-	const runtime = getConsoleRuntime();
-	if (!runtime) {
-		ide_state.showMessage('Console runtime unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
-		return false;
-	}
-	let snapshot: unknown = null;
+	const runtime = BmsxConsoleRuntime.instance;
+	let snapshot: BmsxConsoleState = null;
 	try {
-		snapshot = runtime.getState();
+		snapshot = runtime.state;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		ide_state.showMessage(`Failed to capture runtime state: ${message}`, constants.COLOR_STATUS_ERROR, 4.0);
+		ide_state.showMessage(`Failed to capture runtime state: ${message}`, constants.COLOR_STATUS_ERROR, 2.0);
 		return false;
 	}
-	const sanitizedSnapshot = prepareRuntimeSnapshotForResume(snapshot);
-	if (!sanitizedSnapshot) {
-		ide_state.showMessage('Runtime state unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
-		return false;
-	}
+	snapshot.luaRuntimeFailed = false;
 	const targetGeneration = ide_state.saveGeneration;
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
 	clearExecutionStopHighlights();
 	deactivate();
 	scheduleRuntimeTask(() => {
-		runtime.resumeFromSnapshot(sanitizedSnapshot);
+		runtime.resumeFromSnapshot(snapshot);
 		if (shouldUpdateGeneration) {
 			ide_state.appliedGeneration = targetGeneration;
 		}
@@ -3517,11 +3507,7 @@ export function performResume(): boolean {
 }
 
 export function performReboot(): boolean {
-	const runtime = getConsoleRuntime();
-	if (!runtime) {
-		ide_state.showMessage('Console runtime unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
-		return false;
-	}
+	const runtime = BmsxConsoleRuntime.instance;
 	const requiresReload = hasPendingRuntimeReload();
 	const savedSource = requiresReload ? getMainProgramSourceForReload() : null;
 	const targetGeneration = ide_state.saveGeneration;
@@ -4521,7 +4507,7 @@ export function setFontVariant(variant: ConsoleFontVariant): void {
 }
 
 export function toggleResolutionMode(): void {
-	const mode = getConsoleRuntime().toggleOverlayResolutionMode();
+	const mode = BmsxConsoleRuntime.instance.toggleOverlayResolutionMode();
 	ensureCursorVisible();
 	ide_state.cursorRevealSuspended = false;
 	ide_state.showMessage(`Editor resolution: ${mode}`, constants.COLOR_STATUS_TEXT, 0.5);
@@ -5445,27 +5431,11 @@ export function hasPendingRuntimeReload(): boolean {
 	return ide_state.saveGeneration > ide_state.appliedGeneration;
 }
 
-export function getConsoleRuntime(): BmsxConsoleRuntime | null {
-	return $.get('bmsx_console_runtime');
-}
-
-export function prepareRuntimeSnapshotForResume(snapshot: unknown): Record<string, unknown> | null {
-	if (!snapshot || typeof snapshot !== 'object') {
-		return null;
-	}
-	const base = snapshot as Record<string, unknown>;
-	const sanitized: Record<string, unknown> = { ...base };
-	if (sanitized.luaRuntimeFailed === true) {
-		sanitized.luaRuntimeFailed = false;
-	} else {
-		sanitized.luaRuntimeFailed = sanitized.luaRuntimeFailed ?? false;
-	}
-	return sanitized;
-}
-
 export function handleRuntimeTaskError(error: unknown, fallbackMessage: string): void {
-	const message = error instanceof Error ? error.message : String(error);
+	const errormsg = error instanceof Error ? error.message : String(error);
 	$.paused = true;
 	activate();
-	ide_state.showMessage(`${fallbackMessage}: ${message}`, constants.COLOR_STATUS_ERROR, 4.0);
+	const message = `${fallbackMessage}: ${errormsg}`;
+	BmsxConsoleRuntime.instance.consoleMode.appendStderr(message);
+	ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 2.0);
 }
