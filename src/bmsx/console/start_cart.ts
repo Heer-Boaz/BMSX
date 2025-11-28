@@ -38,7 +38,6 @@ type CartManifest = {
 		gamepad?: ManifestInputMapping;
 	};
 	lua?: {
-		asset_id?: string;
 		entry?: ManifestLuaEntryPoints;
 	};
 };
@@ -105,19 +104,37 @@ function buildInputMapping(manifest: CartManifest): {
 	return { keyboard, gamepad };
 }
 
-function deriveLuaProgram(manifest: CartManifest, rompack: RomPack) {
-	const luaConfig = manifest.lua ?? {};
-	const asset_id = luaConfig.asset_id;
-	if (!asset_id || asset_id.length === 0) {
-		throw new Error('[start_cart] Cart manifest is missing lua.asset_id.');
+function ensureLuaProgram(rompack: RomPack, manifest: CartManifest) {
+	const placeholderId = 'placeholder';
+	const placeholderSource = [
+		'FUNCTION INIT()',
+		'END',
+		'',
+		'FUNCTION UPDATE()',
+		'END',
+		'',
+		'FUNCTION DRAW()',
+		'\tCLS(4)',
+		'END',
+	].join('\n');
+
+	const luaIds = Object.keys(rompack.lua);
+	let asset_id: string;
+	if (luaIds.length === 0) {
+		rompack.lua[placeholderId] = placeholderSource;
+		rompack.luaSourcePaths[placeholderId] = rompack.luaSourcePaths[placeholderId] ?? 'placeholder.lua';
+		asset_id = placeholderId;
+	} else {
+		asset_id = luaIds.sort()[0];
+	}
+	const source = rompack.lua[asset_id];
+	if (typeof source !== 'string') {
+		throw new Error(`[start_cart] Lua source '${asset_id}' is missing from the rompack.`);
 	}
 	const chunkName = asset_id;
-	const entry = luaConfig.entry ?? {};
+	const entry = manifest.lua?.entry ?? {};
 	return {
-		asset_id: asset_id,
-		chunkName,
-		source: rompack.lua[asset_id],
-		main: true,
+		assets: [{ asset_id, chunkName }],
 		entry: {
 			init: entry.init ?? 'init',
 			update: entry.update ?? 'update',
@@ -160,7 +177,7 @@ export async function startCart(args: BootArgs): Promise<void> {
 
 	const { moduleId, playerIndex, viewport, worldViewport, canonicalization } = deriveConsoleOptions(manifest);
 	const meta = deriveMetadata(manifest);
-	const program = deriveLuaProgram(manifest, args.rompack);
+	const program = ensureLuaProgram(args.rompack, manifest);
 	const cartridge = createLuaConsoleCartridge({ meta, program });
 	const module = createBmsxConsoleModule(cartridge, {
 		moduleId,
