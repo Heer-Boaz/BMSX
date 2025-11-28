@@ -194,7 +194,7 @@ local function build_hero_fsm()
 local function register_hero()
 	define_world_object({
 		def_id = hero_def_id,
-		class = 'hero',
+		class = hero,
 		components = { 'ACTIONEFFECTCOMPONENT', },
 		fsms = { hero_fsm_id, },
 		effects = { effect_id, },

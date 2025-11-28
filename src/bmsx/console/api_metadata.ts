@@ -24,7 +24,7 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 		description: 'Attaches a registered behaviour tree to a world object.',
 		parameters: [
 			{ name: 'object_id', description: 'World object identifier.' },
-			{ name: 'tree_id', description: 'Behaviour tree id registered via register_behavior_tree.' },
+			{ name: 'tree_id', description: 'Behaviour tree id registered via define_bt.' },
 		],
 	},
 	attach_component: {
@@ -61,19 +61,19 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 		],
 	},
 	define_component: {
-		description: 'Registers a Lua component (alias of register_component).',
+		description: 'Registers a Lua component (alias of define_component).',
 		parameters: [
 			{ name: 'descriptor', description: 'Component descriptor table defining handlers and defaults.' },
 		],
 	},
 	define_component_preset: {
-		description: 'Registers a reusable component preset (alias of register_component_preset).',
+		description: 'Registers a reusable component preset (alias of define_component_preset).',
 		parameters: [
 			{ name: 'descriptor', description: 'Preset descriptor table with id and build function/options.' },
 		],
 	},
 	define_service: {
-		description: 'Registers a Lua service (alias of register_service).',
+		description: 'Registers a Lua service (alias of define_service).',
 		parameters: [
 			{ name: 'descriptor', description: 'Service descriptor with id, hooks (on_boot, on_activate, on_tick, etc.), and optional systems/effects/tags.' },
 		],
@@ -143,25 +143,25 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 			{ name: 'text', optional: true, description: 'Text string to print to the console log.' },
 		],
 	},
-	register_effect: {
+	define_effect: {
 		description: 'Registers a Lua effect descriptor (same shape as define_effect).',
 		parameters: [
 			{ name: 'descriptor', description: 'Effect descriptor with id, on_trigger(ctx,payload), optional event override, and optional cooldown_ms.' },
 		],
 	},
-	register_behavior_tree: {
+	define_bt: {
 		description: 'Registers a behaviour tree definition provided as a descriptor table.',
 		parameters: [
 			{ name: 'descriptor', description: 'Behaviour tree descriptor containing the root node definition.' },
 		],
 	},
-	register_component: {
+	define_component: {
 		description: 'Registers a Lua component definition.',
 		parameters: [
 			{ name: 'descriptor', description: 'Component descriptor table defining handlers and defaults.' },
 		],
 	},
-	register_component_preset: {
+	define_component_preset: {
 		description: 'Registers a reusable component preset.',
 		parameters: [
 			{ name: 'descriptor', description: 'Preset descriptor table with id and build function/options.' },
@@ -176,13 +176,13 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 			{ name: 'options', optional: true, description: 'Optional registration settings, e.g. immediate setup.' },
 		],
 	},
-	register_service: {
+	define_service: {
 		description: 'Registers a Lua service descriptor.',
 		parameters: [
 			{ name: 'descriptor', description: 'Service descriptor with id, lifecycle hooks, optional systems/effects/tags, and auto_activate flag.' },
 		],
 	},
-	register_world_object: {
+	define_world_object: {
 		description: 'Registers a world object descriptor that can be spawned later.',
 		parameters: [
 			{ name: 'descriptor', description: 'Descriptor with id, class/class_ref, components, fsms, behavior_trees, effects, tags, and defaults.' },

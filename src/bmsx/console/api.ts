@@ -28,6 +28,7 @@ import { deep_clone } from '../utils/deep_clone';
 import { Component, type ComponentAttachOptions } from '../component/basecomponent';
 import { actionEffectRegistry } from '../action_effects/effect_registry';
 import { SpriteObject } from '../core/object/sprite';
+import { LuaTable } from '../lua/value';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
 
@@ -49,8 +50,8 @@ const POINTER_ACTIONS: readonly string[] = [
 type LuaExtendedClass<TBase extends ConcreteOrAbstractConstructor<any>> =
 	TBase & Native & {
 		def_id: Identifier; // Id of the definition this class was registered with
-		overrides?: Partial<TBase extends new (...args: any) => infer R ? R : TBase extends abstract new (...args: any) => infer R ? R : any>;
-		defaults?: Record<string, any>;
+		class?: (Partial<TBase extends new (...args: any) => infer R ? R : TBase extends abstract new (...args: any) => infer R ? R : any> & LuaTable); // Reference to Lua class that overrides this native class (if any). LuaTable entries can override properties of the base class.
+		defaults?: Record<string, any>; // Default property values to apply when constructing instances of this class. Will not include Lua methods/properties and is separate from 'class' to avoid polluting the prototype with instance data. In addition, class overrides are applied after defaults so that overrides can set default values for properties defined in Lua classes.
 	};
 
 type WorldObjectExtensions = LuaExtendedClass<typeof WorldObject> & {
@@ -95,6 +96,23 @@ export class BmsxConsoleApi {
 		this.storage = options.storage;
 		this.font = new ConsoleFont();
 		this.reset_print_cursor();
+	}
+
+	/**
+	 * Apply Lua class overrides to a constructed instance.
+	 *
+	 * Filters out non-instance keys (def_id, class, defaults) and bulk-assigns the
+	 * remaining properties to the instance. This mimics Object.assign(instance, overrides).
+	 */
+	private applyClassOverrides<T>(instance: T, classTable: Partial<T> & LuaTable): void {
+		if (!classTable) return; // No overrides to apply
+		// Filter out non-instance override keys, then bulk-assign.
+		const overrides: Record<string, any> = {};
+		for (const [key, value] of Object.entries(classTable)) {
+			if (key === 'def_id' || key === 'class' || key === 'defaults') continue;
+			overrides[key] = value;
+		}
+		Object.assign(instance, overrides);
 	}
 
 	public set_render_backend(backend: ConsoleRenderFacade | null): void {
@@ -399,24 +417,37 @@ export class BmsxConsoleApi {
 		this.serviceExts.set(descriptor.def_id, descriptor);
 	}
 
-	public create_service<T extends Service>(serviceClass: ConcreteOrAbstractConstructor<T>, id?: Identifier, defer_bind?: boolean): T {
-		const ext = this.serviceExts.get(serviceClass.name);
-		const instance = new Service( { id, deferBind: defer_bind } ) as T;
+	/**
+	 * Create a Service instance from a previously defined service descriptor.
+	 *
+	 * Behavior:
+	 * - Looks up the descriptor registered via define_service(definition).
+	 * - Instantiates Service. If a Lua class override exists, uses its `id` as instance id.
+	 * - Applies `defaults` to the instance, then applies Lua class overrides (if any).
+	 * - Attaches any FSMs declared on the descriptor to the Service's state controller.
+	 *
+	 * @param definition_id The id of the registered service definition to instantiate.
+	 * @param defer_bind Optional flag forwarded to Service constructor to defer binding.
+	 * @returns The id of the created service instance.
+	 */
+	public create_service(definition_id: Identifier, defer_bind?: boolean): Identifier {
+		const ext = this.serviceExts.get(definition_id);
+		// Default the id of the instance to the Lua-class' definition id and otherwise defaults to the definition id
+		const instance = new Service({ id: ext?.class?.id ?? definition_id, deferBind: defer_bind });
 		// Apply definition
 		if (ext) {
 			if (ext.defaults) {
 				Object.assign(instance, ext.defaults);
 			}
-			if (ext.overrides) {
-				Object.assign(instance, ext.overrides);
-			}
+			this.applyClassOverrides(instance, ext.class); // Apply Lua class overrides
+
 			if (ext.fsms) {
 				for (let i = 0; i < ext.fsms.length; i += 1) {
 					instance.sc.add_statemachine(ext.fsms[i], instance.id);
 				}
 			}
 		}
-		return instance;
+		return instance.id;
 	}
 
 	public attach_component(object_id: Identifier, component: string | { id: string; id_local?: string; state?: object }): string {
@@ -439,18 +470,34 @@ export class BmsxConsoleApi {
 		actionEffectRegistry.register(descriptor);
 	}
 
+	/**
+	 * Spawn a WorldObject instance from a previously defined descriptor.
+	 *
+	 * Behavior:
+	 * - Looks up the world-object extensions registered via define_world_object(definition).
+	 * - Creates a new WorldObject. Instance id defaults to the Lua class override id (if present)
+	 *   and can be overridden via overrides.id.
+	 * - Applies descriptor defaults, then Lua class overrides to the instance.
+	 * - Attaches declared components, FSMs, effects, and behavior trees from the descriptor.
+	 * - Finally applies user-supplied overrides so they take precedence, then spawns the object
+	 *   into the world, honoring overrides.pos if provided.
+	 *
+	 * @param definition_id The id used when registering the world object definition.
+	 * @param overrides Optional partial properties to apply last; may include id and pos.
+	 * @returns The id of the spawned object.
+	 */
 	public spawn_object(definition_id: Identifier, overrides?: Partial<WorldObject>): Identifier {
 		const ext = this.worldObjectExts.get(definition_id);
-		const instance = new WorldObject({ id: overrides?.id, constructReason: undefined });
+		// Default the id of the instance to the Lua-class' definition id if not overridden
+		const instance = new WorldObject({ id: overrides?.id ?? ext?.class?.id, constructReason: undefined });
 
 		// Apply definition
 		if (ext) {
 			if (ext.defaults) {
 				Object.assign(instance, ext.defaults);
 			}
-			if (ext.overrides) {
-				Object.assign(instance, ext.overrides);
-			}
+			this.applyClassOverrides(instance, ext.class); // Apply Lua class overrides
+
 			if (ext.components) {
 				for (let i = 0; i < ext.components.length; i += 1) {
 					this.attach_component(instance.id, ext.components[i]);

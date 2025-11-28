@@ -6,6 +6,17 @@ import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { Registry } from './registry';
 import { onload, excludepropfromsavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 
+function deriveIdFromConstructor(name: string): Identifier {
+	// Convert PascalCase/MyService to lower_snake_case: my_service
+	const snake = name
+		.replace(/^_+/, '') // strip leading underscores
+		.replace(/([a-z0-9])([A-Z])/g, '$1_$2') // aA -> a_A
+		.replace(/[-\s]+/g, '_') // dashes/spaces -> underscore
+		.replace(/__+/g, '_') // collapse duplicate underscores
+		.toLowerCase();
+	return (snake || 'service') as Identifier;
+}
+
 /**
  * Base class for non-world-bound, persistent services (UE-style Subsystems).
  *
@@ -49,7 +60,7 @@ export class Service implements Stateful, Identifiable, RegisterablePersistent {
 	 * @param opts Optional flags for initial state. Pass `deferBind: true` to delay registration until the subclass calls `bind()`.
 	 */
 	public constructor(opts?: RevivableObjectArgs & { id?: Identifier; deferBind?: boolean }) {
-		this.id = opts?.id ?? Service.deriveIdFromConstructor(this.constructor.name ?? 'service');
+		this.id = opts?.id ?? deriveIdFromConstructor(this.constructor.name ?? 'service');
 		this.events = eventsOf(this);
 
 		const fsmName = this.constructor.name;
@@ -113,16 +124,5 @@ export class Service implements Stateful, Identifiable, RegisterablePersistent {
 		this.active = false;
 		this.disableEvents();
 		this.sc.pause();
-	}
-
-	private static deriveIdFromConstructor(name: string): Identifier {
-		// Convert PascalCase/MyService to lower_snake_case: my_service
-		const snake = name
-			.replace(/^_+/, '') // strip leading underscores
-			.replace(/([a-z0-9])([A-Z])/g, '$1_$2') // aA -> a_A
-			.replace(/[-\s]+/g, '_') // dashes/spaces -> underscore
-			.replace(/__+/g, '_') // collapse duplicate underscores
-			.toLowerCase();
-		return (snake || 'service') as Identifier;
 	}
 }
