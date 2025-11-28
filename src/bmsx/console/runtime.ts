@@ -421,8 +421,11 @@ export class BmsxConsoleRuntime extends Service {
 
 	private constructor(options: BmsxConsoleRuntimeOptions) {
 		super({ id: 'bmsx_console_runtime' });
-		if (!this.cart.luaProgram) throw new Error('[BmsxConsoleRuntime] Cartridge is missing Lua program.');
 		BmsxConsoleRuntime._instance = this;
+		this.cart = options.cart;
+		this.playerIndex = options.playerIndex;
+		this.storageService = options.storage ?? $.platform.storage;
+		this.storage = new BmsxConsoleStorage(this.storageService, options.cart.meta.persistentId);
 		const rompack = $.rompack;
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
 		this.canonicalization = resolvedCanonicalization;
@@ -443,10 +446,6 @@ export class BmsxConsoleRuntime extends Service {
 		this.enableEvents();
 		const policyOverride = options.luaSourceFailurePolicy ?? {};
 		this.luaFailurePolicy = { ...DEFAULT_LUA_FAILURE_POLICY, ...policyOverride };
-		this.cart = options.cart;
-		this.playerIndex = options.playerIndex;
-		this.storageService = options.storage ?? $.platform.storage;
-		this.storage = new BmsxConsoleStorage(this.storageService, options.cart.meta.persistentId);
 
 		api = new BmsxConsoleApi({
 			playerindex: this.playerIndex,

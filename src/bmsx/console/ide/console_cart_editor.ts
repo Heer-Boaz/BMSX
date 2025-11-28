@@ -727,7 +727,7 @@ export function showRuntimeError(line: number | null, column: number | null, mes
 	setActiveRuntimeErrorOverlay(overlay);
 	setExecutionStopHighlight(processedLine !== null ? targetRow : null);
 	const statusLine = overlay.lines.length > 0 ? overlay.lines[0] : 'Runtime error';
-	ide_state.showMessage(statusLine, constants.COLOR_STATUS_ERROR, 8.0);
+	ide_state.showMessage(statusLine, constants.COLOR_STATUS_ERROR, 2.0);
 }
 
 export function focusChunkSource(chunkName: string | null, hint?: { asset_id: string | null; path?: string | null }): void {
