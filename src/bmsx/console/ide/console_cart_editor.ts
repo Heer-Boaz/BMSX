@@ -186,7 +186,6 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.listLuaSymbolsFn = options.listLuaSymbols;
 	ide_state.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
 	ide_state.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
-	ide_state.primaryAssetId = options.primaryasset_id;
 	if ($.debug) {
 		ide_state.listResourcesFn();
 	}
@@ -1396,11 +1395,7 @@ export function findContextByChunk(chunkName: string): CodeTabContext | null {
 			}
 			continue;
 		}
-		const aliases: string[] = [];
-		if (ide_state.primaryAssetId) {
-			aliases.push(ide_state.primaryAssetId);
-		}
-		aliases.push('__entry__', '<console>');
+		const aliases: string[] = ['__entry__', '<console>'];
 		for (let index = 0; index < aliases.length; index += 1) {
 			const alias = aliases[index];
 			if (alias === chunkName || alias === normalized) {
@@ -2231,7 +2226,7 @@ export function getCrossFileRenameDependencies(): CrossFileRenameDependencies {
 		setEntryTabId: (id: string | null) => {
 			ide_state.entryTabId = id;
 		},
-		getPrimaryasset_id: () => ide_state.primaryAssetId,
+		getEntryAssetId: () => ide_state.entryAssetId,
 		getCodeTabContext: (id: string) => ide_state.codeTabContexts.get(id) ?? null,
 		setCodeTabContext: (context: CodeTabContext) => {
 			ide_state.codeTabContexts.set(context.id, context);
@@ -2401,7 +2396,7 @@ export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string | null {
 export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext | null): ReferenceCatalogEntry[] {
 	const descriptor = context ? context.descriptor : null;
 	const normalizedPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
-	const asset_id = descriptor && descriptor.asset_id ? descriptor.asset_id : ide_state.primaryAssetId ?? null;
+	const asset_id = descriptor && descriptor.asset_id ? descriptor.asset_id : null;
 	const chunkName = resolveHoverChunkName(context) ?? normalizedPath ?? asset_id ?? '<console>';
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: getActiveCodeTabContext(),
@@ -2886,7 +2881,7 @@ export function buildProjectReferenceContext(context: CodeTabContext | null): {
 	const descriptor = context ? context.descriptor : null;
 	const normalizedPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
 	const descriptorasset_id = descriptor ? descriptor.asset_id ?? null : null;
-	const resolvedasset_id = descriptorasset_id ?? ide_state.primaryAssetId ?? null;
+	const resolvedasset_id = descriptorasset_id ?? ide_state.entryAssetId ?? null;
 	const resolvedChunk = resolveHoverChunkName(context)
 		?? normalizedPath
 		?? descriptorasset_id
@@ -2938,18 +2933,18 @@ export function resolveSemanticDefinitionLocation(
 	}
 	const descriptor = context ? context.descriptor : null;
 	const descriptorPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
-	const descriptorasset_id = descriptor ? descriptor.asset_id ?? null : null;
-	const resolvedasset_id = descriptorasset_id ?? asset_id ?? ide_state.primaryAssetId ?? null;
+	const descriptorAssetId = descriptor ? descriptor.asset_id ?? null : null;
+	const resolvedAssetId = descriptorAssetId ?? asset_id ?? null;
 	const resolvedChunk = chunkName
 		?? descriptorPath
-		?? descriptorasset_id
+		?? descriptorAssetId
 		?? asset_id
-		?? ide_state.primaryAssetId
+		?? ide_state.entryAssetId
 		?? hoverChunkName
 		?? '<console>';
 	const location: ConsoleLuaDefinitionLocation = {
 		chunkName: resolvedChunk,
-		asset_id: resolvedasset_id,
+		asset_id: resolvedAssetId,
 		range: {
 			startLine: definition.definition.start.line,
 			startColumn: definition.definition.start.column,
@@ -3192,7 +3187,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 			?? normalizedPath
 			?? (descriptor ? descriptor.asset_id : null)
 			?? asset_id
-			?? ide_state.primaryAssetId
+			?? ide_state.entryAssetId
 			?? '<console>';
 		const environment: ProjectReferenceEnvironment = {
 			activeContext: context,

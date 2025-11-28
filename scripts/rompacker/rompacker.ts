@@ -240,23 +240,6 @@ function findBootloaderDirectory(candidates: Array<string | undefined>): string 
 	return undefined;
 }
 
-function ensureMainLuaAssetPresent(manifest: RomManifest, resources: Resource[]): void {
-	const luaConfig = manifest.lua;
-	if (!luaConfig || !luaConfig.asset_id) {
-		throw new Error(`Rom manifest must specify "lua.asset_id" for the primary Lua entry.`);
-	}
-	const assetId = luaConfig.asset_id.trim();
-	if (assetId.length === 0) {
-		throw new Error(`Rom manifest must specify "lua.asset_id" for the primary Lua entry.`);
-	}
-	const luaAssets = resources.filter(res => res.type === 'lua');
-	const matchFound = luaAssets.some(res => res.name === assetId);
-	if (!matchFound) {
-		const available = luaAssets.map(res => res.name).join(', ') || '<none>';
-		throw new Error(`Rom manifest references lua.asset_id "${assetId}", but no matching Lua resource was found in the packed resources. Available Lua assets: ${available}.`);
-	}
-}
-
 function parseOptions(args: string[]): ParsedOptions {
 	const seenFlags = parseArgsVector(args);
 	const unknownFlags = [...seenFlags].filter(flag => !KNOWN_FLAGS.has(flag));
@@ -893,7 +876,6 @@ async function main() {
 				resolveAtlasIndex: true,
 			}));
 			await progress.taskCompleted();
-			ensureMainLuaAssetPresent(romManifest, romResMetaList);
 			// Build resources
 			let resources = await progress.runWithDetail('Load resources', () => getResourcesList(romResMetaList, rom_name, {
 				includeCode: isEngineMode || shouldBundleCartCode,

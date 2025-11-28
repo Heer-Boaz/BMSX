@@ -5,46 +5,35 @@ export type IdeThemeVariant = string;
 
 export interface BmsxConsoleMetadata {
 	title: string;
-	version: string;
 	persistentId: string;
 	ideTheme?: IdeThemeVariant;
 }
 
-export type BmsxConsoleLuaProgramEntryPoints = {
-	init?: string;
-	update?: string;
-	draw?: string;
+export type BmsxConsoleLuaPrimaryAsset = {
+	readonly asset_id: string;
+	readonly chunkName?: string;
+};
+
+export type BmsxConsoleLuaPrimaryAssetWithSource = {
+	readonly asset_id?: string;
+	readonly chunkName: string;
+	readonly source: string;
 };
 
 export type BmsxConsoleLuaProgram = {
-	readonly chunkName?: string;
-	readonly asset_id: string;
-	readonly source: string;
-	readonly overrideSource?: string;
-	readonly entry?: BmsxConsoleLuaProgramEntryPoints;
-	readonly main: boolean;
+	readonly assets: ReadonlyArray<BmsxConsoleLuaPrimaryAsset>;
+	readonly entryAssetId?: string;
 };
+
+export type LifeCycleHandlerName = 'init' | 'update' | 'draw';
 
 export interface BmsxConsoleCartridge {
 	readonly meta: BmsxConsoleMetadata;
 	init(api: BmsxConsoleApi): void;
 	update(api: BmsxConsoleApi, deltaSeconds: number): void;
 	draw(api: BmsxConsoleApi): void;
-	captureState?(api: BmsxConsoleApi): unknown;
-	restoreState?(api: BmsxConsoleApi, state: unknown): void;
-	readonly luaProgram?: BmsxConsoleLuaProgram;
+	readonly luaProgram: BmsxConsoleLuaProgram;
 }
-
-export const enum BmsxConsoleButton {
-	Left = 0,
-	Right = 1,
-	Up = 2,
-	Down = 3,
-	ActionO = 4,
-	ActionX = 5,
-}
-
-export const BmsxConsoleButtonCount: number = 6;
 
 export const enum BmsxConsolePointerButton {
 	Primary = 0,
@@ -53,8 +42,6 @@ export const enum BmsxConsolePointerButton {
 	Back = 3,
 	Forward = 4,
 }
-
-export const BmsxConsolePointerButtonCount: number = 5;
 
 export type ConsolePointerVector = {
 	x: number;

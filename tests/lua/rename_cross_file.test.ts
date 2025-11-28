@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import type { CodeTabContext, SearchMatch } from '../../src/bmsx/console/ide/types';
 import type { ConsoleResourceDescriptor } from '../../src/bmsx/console/types';
 import { LuaSemanticWorkspace } from '../../src/bmsx/console/ide/semantic_workspace';
-import { CrossFileRenameManager, convertRangeToSearchMatch, type CrossFileRenameDependencies } from '../../src/bmsx/console/ide/rename_cross_file';
+import { CrossFileRenameManager, convertRangeToSearchMatch, type CrossFileRenameDependencies } from '../../src/bmsx/console/ide/rename_controller';
 
 function normalizeSource(source: string): string[] {
 	return source.replace(/\r\n/g, '\n').split('\n');
@@ -30,7 +30,7 @@ test('cross file rename updates other chunks and workspace', () => {
 
 	const contexts = new Map<string, CodeTabContext>();
 	let entryTabId: string | null = null;
-	const primaryasset_id: string | null = null;
+	const entryAssetId: string | null = null;
 
 	const makeContext = (descriptor: ConsoleResourceDescriptor): CodeTabContext => ({
 		id: `lua:${descriptor.asset_id}`,
@@ -79,8 +79,8 @@ test('cross file rename updates other chunks and workspace', () => {
 		setEntryTabId(id) {
 			entryTabId = id;
 		},
-		getPrimaryasset_id() {
-			return primaryasset_id;
+		getEntryAssetId() {
+			return entryAssetId;
 		},
 		getCodeTabContext(id) {
 			return contexts.get(id) ?? null;

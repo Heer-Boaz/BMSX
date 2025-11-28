@@ -38,6 +38,7 @@ type CartManifest = {
 		gamepad?: ManifestInputMapping;
 	};
 	lua?: {
+		entryAssetId?: string;
 		entry?: ManifestLuaEntryPoints;
 	};
 };
@@ -119,22 +120,19 @@ function ensureLuaProgram(rompack: RomPack, manifest: CartManifest) {
 	].join('\n');
 
 	const luaIds = Object.keys(rompack.lua);
-	let asset_id: string;
 	if (luaIds.length === 0) {
 		rompack.lua[placeholderId] = placeholderSource;
 		rompack.luaSourcePaths[placeholderId] = rompack.luaSourcePaths[placeholderId] ?? 'placeholder.lua';
-		asset_id = placeholderId;
-	} else {
-		asset_id = luaIds.sort()[0];
 	}
-	const source = rompack.lua[asset_id];
-	if (typeof source !== 'string') {
-		throw new Error(`[start_cart] Lua source '${asset_id}' is missing from the rompack.`);
-	}
-	const chunkName = asset_id;
+	const assetIds = Object.keys(rompack.lua).sort();
+	const assets = assetIds.map(id => ({ asset_id: id, chunkName: id }));
+	const entryAssetId = manifest.lua?.entryAssetId && rompack.lua[manifest.lua.entryAssetId] !== undefined
+		? manifest.lua.entryAssetId
+		: assets[0]?.asset_id;
 	const entry = manifest.lua?.entry ?? {};
 	return {
-		assets: [{ asset_id, chunkName }],
+		assets,
+		entryAssetId,
 		entry: {
 			init: entry.init ?? 'init',
 			update: entry.update ?? 'update',

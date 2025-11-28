@@ -22,7 +22,7 @@ type IntentEdge = 'press' | 'hold' | 'release';
 
 let assetProgramsValidated = false;
 
-function validateProgramAssetsOnBoot(): void {
+function validatePrimaryAssetsOnBoot(): void {
 	if (assetProgramsValidated) return;
 	const data = $.rompack.data;
 	const entries = Object.keys(data);
@@ -49,7 +49,7 @@ export class InputActionEffectSystem extends ECSystem {
 
 	constructor(priority = 0) {
 		super(TickGroup.Input, priority);
-		validateProgramAssetsOnBoot();
+		validatePrimaryAssetsOnBoot();
 		this.__ecsId = 'inputActionEffectSystem';
 	}
 

@@ -15,7 +15,6 @@ import {
 	refreshActiveDiagnostics,
 	markDiagnosticsDirty,
 	bumpTextVersion,
-	findResourceDescriptorByAssetId as findResourceDescriptorByAssetId,
 	beginNavigationCapture,
 	completeNavigation,
 	closeSymbolSearch,
@@ -34,13 +33,11 @@ import { resetBlink } from './render/render_caret';
 import { splitLines } from './text_utils';
 
 export function createEntryTabContext(): CodeTabContext | null {
-	const asset_id = ide_state.primaryAssetId;
-	const descriptor = asset_id ? findResourceDescriptorByAssetId(asset_id) : null;
-	const resolvedasset_id = descriptor ? descriptor.asset_id : (asset_id ?? '__entry__');
+	const luaDescriptors = ide_state.listResourcesFn().filter(r => r.type === 'lua');
+	const descriptor = luaDescriptors.length > 0 ? luaDescriptors[0] : null;
+	const resolvedasset_id = descriptor ? descriptor.asset_id : '__entry__';
 	const tabId: string = `lua:${resolvedasset_id}`;
-	const title = descriptor
-		? computeResourceTabTitle(descriptor)
-		: (asset_id ?? ide_state.metadata.title ?? 'ENTRY');
+	const title = descriptor ? computeResourceTabTitle(descriptor) : (ide_state.metadata.title ?? 'ENTRY');
 	const load = descriptor
 		? () => ide_state.loadLuaResourceFn(descriptor.asset_id)
 		: () => ide_state.loadSourceFn();

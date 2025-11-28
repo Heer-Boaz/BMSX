@@ -145,7 +145,6 @@ export interface IdeState {
 	listLuaSymbolsFn: (asset_id: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
 	listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
-	primaryAssetId: string | null;
 	builtinIdentifierCache: { key: string; set: ReadonlySet<string> } | null;
 	hoverTooltip: CodeHoverTooltip | null;
 	lastPointerSnapshot: PointerSnapshot | null;
@@ -179,6 +178,7 @@ export interface IdeState {
 	diagnosticsComputationScheduled: boolean;
 	codeTabContexts: Map<string, CodeTabContext>;
 	activeCodeTabContextId: string | null;
+	entryAssetId: string | null;
 	entryTabId: string | null;
 	topBarButtonBounds: Record<TopBarButtonId, RectBounds>;
 	menuEntryBounds: Record<MenuId, RectBounds>;
@@ -347,8 +347,8 @@ export const ide_state: IdeState = {
 	listLuaSymbolsFn: undefined!,
 	listGlobalLuaSymbolsFn: undefined!,
 	listBuiltinLuaFunctionsFn: undefined!,
-	primaryAssetId: null,
 	builtinIdentifierCache: null,
+	entryAssetId: null,
 	hoverTooltip: null,
 	lastPointerSnapshot: null,
 	lastInspectorResult: null,

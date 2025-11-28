@@ -34,7 +34,7 @@ export type ConsoleEditorOptions = {
 	inspectLuaExpression: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
 	listLuaObjectMembers: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
 	listLuaModuleSymbols: (moduleName: string) => ConsoleLuaSymbolEntry[];
-	primaryasset_id: string | null;
+	entryAssetId: string | null;
 	listLuaSymbols: (asset_id: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
 	listBuiltinLuaFunctions: () => ConsoleLuaBuiltinDescriptor[];

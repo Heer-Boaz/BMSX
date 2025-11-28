@@ -275,7 +275,7 @@ export function planRenameLineEdits(lines: readonly string[], matches: readonly 
 	createEntryTabContext(): CodeTabContext | null;
 	getEntryTabId(): string | null;
 	setEntryTabId(id: string | null): void;
-	getPrimaryasset_id(): string | null;
+	getEntryAssetId(): string | null;
 	getCodeTabContext(id: string): CodeTabContext | null;
 	setCodeTabContext(context: CodeTabContext): void;
 	listCodeTabContexts(): Iterable<CodeTabContext>;
@@ -379,7 +379,7 @@ export class CrossFileRenameManager {
 			return context;
 		} catch {
 			const entryAliases: string[] = [];
-			const primary = this.deps.getPrimaryasset_id();
+			const primary = this.deps.getEntryAssetId();
 			if (primary) {
 				entryAliases.push(primary);
 			}
@@ -419,7 +419,7 @@ export class CrossFileRenameManager {
 				}
 			} else {
 				const entryAliases: string[] = [];
-				const primary = this.deps.getPrimaryasset_id();
+				const primary = this.deps.getEntryAssetId();
 				if (primary) {
 					entryAliases.push(primary);
 				}

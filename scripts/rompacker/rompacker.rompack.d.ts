@@ -47,7 +47,7 @@ export type AtlasTexcoords = [
 ];
 
 export type RomManifestLuaConfig = {
-	asset_id?: string;
+	entryAssetId?: string;
 	entry?: {
 		init?: string;
 		update?: string;

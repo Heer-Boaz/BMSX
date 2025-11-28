@@ -2,7 +2,7 @@ import type { StorageService, InputEvt } from '../platform/platform';
 import { BmsxConsoleApi } from './api';
 import { CONSOLE_API_METHOD_METADATA } from './api_metadata';
 import { BmsxConsoleStorage } from './storage';
-import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, BmsxConsoleLuaProgramAsset, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor, ConsoleLuaMemberCompletionRequest, ConsoleLuaMemberCompletion, BmsxConsoleLuaProgramAssetWithChunk } from './types';
+import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, BmsxConsoleLuaPrimaryAsset, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor, ConsoleLuaMemberCompletionRequest, ConsoleLuaMemberCompletion, BmsxConsoleLuaPrimaryAssetWithSource, LifeCycleHandlerName } from './types';
 import type { RomResourcePath, Viewport } from '../rompack/rompack';
 import {
 	createLuaInterpreter,
@@ -105,8 +105,6 @@ type LuaSnapshotContext = { ids: WeakMap<LuaTable, number>; objects: LuaSnapshot
 export type BmsxConsoleState = {
 	luaRuntimeFailed: boolean;
 	luaChunkName: string | null;
-	luaSnapshot?: unknown;
-	cartState?: unknown;
 	storage?: { namespace: string; entries: Array<{ index: number; value: number }> };
 	luaGlobals?: LuaEntrySnapshot;
 	luaLocals?: LuaEntrySnapshot;
@@ -348,8 +346,6 @@ export class BmsxConsoleRuntime extends Service {
 	private luaUpdateFunction: LuaFunctionValue | null = null;
 	private luaDrawFunction: LuaFunctionValue | null = null;
 	private luaChunkName: string | null = null;
-	private luaSnapshotSave: LuaFunctionValue | null = null;
-	private luaSnapshotLoad: LuaFunctionValue | null = null;
 	private luaVmInitialized = false;
 	private luaRuntimeFailed = false;
 	private readonly luaDebuggerController: LuaDebuggerController = new LuaDebuggerController();
@@ -1674,13 +1670,13 @@ export class BmsxConsoleRuntime extends Service {
 		const viewport = { width: viewportSize.width, height: viewportSize.height };
 		// Check the primary asset ID for the currently loaded program
 		// Note that this can be null if the program was not loaded from source or has not been saved yet (then the type is BmsxConsoleLuaInlineProgram)!
-		const primaryasset_id = this.resolveProgramAsset(this.luaProgram).asset_id;
+		const entryAssetId = this.resolveEntryAsset(this.luaProgram).asset_id;
 		this.editor = createConsoleCartEditor({
 			playerIndex: this.playerIndex,
 			metadata: this.cart.meta,
 			viewport,
 			canonicalization: this.canonicalization,
-			loadSource: () => this.luaProgram ? this.getLuaProgramSource(this.luaProgram) : '',
+			loadSource: () => this.luaProgram ? this.getProgramEntrySource(this.luaProgram) : '',
 			saveSource: (source: string) => this.saveLuaProgram(source),
 			listResources: () => this.getResourceDescriptors(),
 			loadLuaResource: (asset_id: string) => $.rompack.lua[asset_id],
@@ -1689,7 +1685,7 @@ export class BmsxConsoleRuntime extends Service {
 			inspectLuaExpression: (request: ConsoleLuaHoverRequest) => this.inspectLuaExpression(request),
 			listLuaObjectMembers: (request) => this.listLuaObjectMembers(request),
 			listLuaModuleSymbols: (moduleName) => this.listLuaModuleSymbols(moduleName),
-			primaryasset_id,
+			entryAssetId: entryAssetId,
 			listLuaSymbols: (asset_id: string | null, chunkName: string | null) => this.listLuaSymbols(asset_id, chunkName),
 			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
 			listBuiltinLuaFunctions: () => this.listLuaBuiltinFunctions(),
@@ -1708,27 +1704,22 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public override getState(): BmsxConsoleState | undefined {
-		const interpreterReady = this.luaInterpreter?.chunkEnvironment;
 		const storage = this.storage.dump();
-		const luaSnapshot = this.captureLuaSnapshot();
-		const cartState = this.luaProgram ? undefined : this.cart.captureState(api);
-		const fallbackLuaState = this.luaVmInitialized && interpreterReady && luaSnapshot === undefined ? this.captureFallbackLuaState() : null;
+		const vmState = this.captureVmState();
 		const state: BmsxConsoleState = {
 			luaRuntimeFailed: this.luaRuntimeFailed,
 			luaChunkName: this.luaChunkName,
-			luaSnapshot,
-			cartState,
 			storage,
 		};
-		if (fallbackLuaState) {
-			if (fallbackLuaState.globals) {
-				state.luaGlobals = fallbackLuaState.globals;
+		if (vmState) {
+			if (vmState.globals) {
+				state.luaGlobals = vmState.globals;
 			}
-			if (fallbackLuaState.locals) {
-				state.luaLocals = fallbackLuaState.locals;
+			if (vmState.locals) {
+				state.luaLocals = vmState.locals;
 			}
-			if (fallbackLuaState.randomSeed !== undefined) {
-				state.luaRandomSeed = fallbackLuaState.randomSeed;
+			if (vmState.randomSeed !== undefined) {
+				state.luaRandomSeed = vmState.randomSeed;
 			}
 		}
 		return state;
@@ -1744,11 +1735,11 @@ export class BmsxConsoleRuntime extends Service {
 	private async resetRuntimeToFreshState() {
 		const program = this.luaProgram;
 		if (program) {
-			const asset = this.resolveProgramAsset(program);
+			const asset = this.resolveEntryAsset(program);
 			this.workspaceLuaOverrides.delete(asset.asset_id);
 		}
 		if (program) {
-			this.luaChunkName = this.resolveLuaProgramChunkName(program);
+			this.luaChunkName = this.resolveProgramEntryChunkName(program);
 		} else {
 			this.luaChunkName = null;
 		}
@@ -1776,12 +1767,8 @@ export class BmsxConsoleRuntime extends Service {
 			this.editor.clearRuntimeErrorOverlay();
 		}
 
-		if (this.luaProgram) {
-			const shouldRunInit = this.shouldRunInitForSnapshot(snapshot);
-			this.reinitializeLuaProgramFromSnapshot(snapshot, { runInit: shouldRunInit, hotReload: false });
-		} else if (snapshot.cartState !== undefined) {
-			this.cart.restoreState(api, snapshot.cartState);
-		}
+		const shouldRunInit = this.shouldRunInitForSnapshot(snapshot);
+		this.reinitializeLuaProgramFromSnapshot(snapshot, { runInit: shouldRunInit, hotReload: false });
 
 		if (savedRuntimeFailed) {
 			this.luaRuntimeFailed = true;
@@ -1822,34 +1809,23 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaVmInitialized = this.luaInterpreter !== null;
 	}
 
-	private applyLuaProgramHotReload(params: BmsxConsoleLuaProgramAssetWithChunk): void {
+	private hotReloadProgramEntry(params: BmsxConsoleLuaPrimaryAssetWithSource): void {
 		const previousChunkState = this.captureChunkState(params.chunkName);
 		const previousGlobals = this.captureGlobalStateForReload();
 		const interpreter = this.luaInterpreter;
 		const program = this.luaProgram;
-		if (!program) {
-			throw new Error('[BmsxConsoleRuntime] No Lua program available for hot reload.');
-		}
-		const programAsset = this.resolveProgramAsset(program, params.chunkName);
-		let programasset_id: string | null = params.asset_id || programAsset.asset_id;
+		const entryAsset = this.resolveEntryAsset(program, params.chunkName);
+		let entryAssetId: string | null = params.asset_id || entryAsset.asset_id;
 		const normalizedChunk = this.normalizeChunkName(params.chunkName);
-		const hotModuleId = this.moduleIdFor(programasset_id, params.chunkName);
+		const hotModuleId = this.moduleIdFor(entryAssetId, params.chunkName);
 		interpreter.clearLastFaultEnvironment();
 		const results = interpreter.execute(params.source, params.chunkName);
 		this.wrapLuaExecutionResults(hotModuleId, results);
-		this.cacheChunkEnvironment(params.chunkName, programasset_id, hotModuleId);
+		this.cacheChunkEnvironment(params.chunkName, entryAssetId, hotModuleId);
 		this.restoreChunkState(interpreter.chunkEnvironment, previousChunkState);
 		this.restoreGlobalStateForReload(previousGlobals);
 		this.rebindChunkEnvironmentHandlers(hotModuleId);
-		const env = interpreter.globalEnvironment;
-		const initName = program.entry?.init ?? 'init';
-		const updateName = program.entry?.update ?? 'update';
-		const drawName = program.entry?.draw ?? 'draw';
-		this.luaInitFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, initName));
-		this.luaUpdateFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, updateName));
-		this.luaDrawFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, drawName));
-		this.luaSnapshotSave = this.resolveLuaFunction(this.getLuaGlobalValue(env, '__bmsx_snapshot_save'));
-		this.luaSnapshotLoad = this.resolveLuaFunction(this.getLuaGlobalValue(env, '__bmsx_snapshot_load'));
+		this.bindLifecycleHandlers();
 		this.luaRuntimeFailed = false;
 		this.luaChunkName = params.chunkName;
 		this.luaVmInitialized = true;
@@ -1860,15 +1836,23 @@ export class BmsxConsoleRuntime extends Service {
 		this.clearEditorErrorOverlaysIfNoFault();
 	}
 
+	private bindLifecycleHandlers(): void {
+		const env = this.luaInterpreter.globalEnvironment;
+		this.luaInitFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'init' as LifeCycleHandlerName));
+		this.luaUpdateFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'update' as LifeCycleHandlerName));
+		this.luaDrawFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'draw' as LifeCycleHandlerName));
+	}
+
+
 	private reloadLuaProgramState(source: string, chunkName: string, asset_id?: string): void {
-		const programAssetId = asset_id ?? this.resolveProgramAsset(this.luaProgram!, chunkName).asset_id;
-		this.applyProgramSourceToCartridge(source, chunkName, programAssetId);
+		const programAssetId = asset_id ?? this.resolveEntryAsset(this.luaProgram!, chunkName).asset_id;
+		this.applyProgramEntrySourceToCartridge(source, chunkName, programAssetId);
 		this.luaChunkName = chunkName;
 		if (!this.luaInterpreter) {
 			this.bootLuaProgram(false);
 		}
 		else {
-			this.applyLuaProgramHotReload({ asset_id: programAssetId, source, chunkName });
+			this.hotReloadProgramEntry({ asset_id: programAssetId, source, chunkName });
 		}
 		this.resetFrameTiming();
 		this.updateOverlayState(this.consoleMode.isActive, this.editor.isActive(), true);
@@ -1877,12 +1861,8 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private shouldRunInitForSnapshot(snapshot: BmsxConsoleState): boolean {
-		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
-		const hasStructuredSnapshot = snapshot.luaSnapshot !== undefined && snapshot.luaSnapshot !== null;
-		const hasFallbackState = snapshot.luaGlobals !== undefined
-			|| snapshot.luaLocals !== undefined
-			|| snapshot.luaRandomSeed !== undefined;
-		return !savedRuntimeFailed && !hasStructuredSnapshot && !hasFallbackState;
+		const hasVmState = snapshot.luaGlobals !== undefined || snapshot.luaLocals !== undefined || snapshot.luaRandomSeed !== undefined;
+		return snapshot.luaRuntimeFailed !== true && !hasVmState;
 	}
 
 	private resumeLuaProgramState(snapshot: BmsxConsoleState, options: { runInit: boolean }): void {
@@ -1897,19 +1877,19 @@ export class BmsxConsoleRuntime extends Service {
 
 		this.processPendingLuaAssets('resume');
 
-		const targetChunkName = this.canonicalizeProgramChunkName(program, snapshot.luaChunkName ?? null);
+		const targetChunkName = this.canonicalizeProgramEntryChunkName(program, snapshot.luaChunkName ?? null);
 		const normalizedTarget = this.normalizeChunkName(targetChunkName);
 		let source: string;
 		try {
-			source = this.getLuaProgramSource(program);
+			source = this.getProgramEntrySource(program);
 		}
 		catch (error) {
 			throw this.normalizeError(error);
 		}
-		this.applyProgramSourceToCartridge(source, targetChunkName);
+		this.applyProgramEntrySourceToCartridge(source, targetChunkName);
 		this.luaChunkName = targetChunkName;
 		try {
-			this.applyLuaProgramHotReload({ source, chunkName: targetChunkName });
+			this.hotReloadProgramEntry({ source, chunkName: targetChunkName });
 		}
 		catch (error) {
 			this.handleLuaError(error);
@@ -1917,37 +1897,21 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.refreshLuaModulesOnResume(normalizedTarget);
 		this.clearNativeMemberCompletionCache();
-		this.applyLuaResumeState(snapshot);
-	}
-
-	private applyLuaResumeState(snapshot: BmsxConsoleState): void {
-		const interpreter = this.luaInterpreter;
-		if (!interpreter) {
-			throw new Error('[BmsxConsoleRuntime] No Lua interpreter available for resume.');
-		}
-		const hasStructuredSnapshot = snapshot.luaSnapshot !== undefined && snapshot.luaSnapshot !== null;
-		if (hasStructuredSnapshot && this.luaSnapshotLoad !== null) {
-			this.applyLuaSnapshot(snapshot.luaSnapshot);
-			return;
-		}
-		this.restoreFallbackLuaState(snapshot);
+		this.restoreVmState(snapshot);
 	}
 
 	private reinitializeLuaProgramFromSnapshot(snapshot: BmsxConsoleState, options: { runInit: boolean; hotReload: boolean }): void {
 		const program = this.luaProgram;
-		if (!program) {
-			throw new Error('[BmsxConsoleRuntime] No Lua program available for reload.');
-		}
-		const targetChunkName = this.canonicalizeProgramChunkName(program, snapshot.luaChunkName ?? null);
+		const targetChunkName = this.canonicalizeProgramEntryChunkName(program, snapshot.luaChunkName ?? null);
 		let source: string;
 		try {
-			source = this.getLuaProgramSource(program);
+			source = this.getProgramEntrySource(program);
 		}
 		catch (error) {
 			throw this.normalizeError(error);
 		}
 
-		this.applyProgramSourceToCartridge(source, targetChunkName);
+		this.applyProgramEntrySourceToCartridge(source, targetChunkName);
 		this.luaChunkName = targetChunkName;
 
 		this.initializeLuaInterpreterFromSnapshot({
@@ -2028,7 +1992,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private initializeLuaInterpreterFromSnapshot(params: { source: string; chunkName: string; snapshot: BmsxConsoleState; runInit: boolean; hotReload: boolean }): void {
 		if (params.hotReload) {
-			this.applyLuaProgramHotReload({ source: params.source, chunkName: params.chunkName });
+			this.hotReloadProgramEntry({ source: params.source, chunkName: params.chunkName });
 			return;
 		}
 
@@ -2037,8 +2001,6 @@ export class BmsxConsoleRuntime extends Service {
 		this.configureInterpreter(interpreter);
 		interpreter.clearLastFaultEnvironment();
 		this.luaInterpreter = interpreter;
-		this.luaSnapshotSave = null;
-		this.luaSnapshotLoad = null;
 		this.luaInitFunction = null;
 		this.luaUpdateFunction = null;
 		this.luaDrawFunction = null;
@@ -2046,7 +2008,7 @@ export class BmsxConsoleRuntime extends Service {
 		const program = this.luaProgram;
 		let programasset_id: string | null = null;
 		if (program) {
-			const asset = this.resolveProgramAsset(program, params.chunkName);
+			const asset = this.resolveEntryAsset(program, params.chunkName);
 			this.registerProgramChunk(asset, params.chunkName);
 			programasset_id = asset.asset_id;
 		}
@@ -2062,24 +2024,11 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.luaVmInitialized = true;
 
-		const env = interpreter.globalEnvironment;
-		const initName = program?.entry?.init ?? 'init';
-		const updateName = program?.entry?.update ?? 'update';
-		const drawName = program?.entry?.draw ?? 'draw';
-		this.luaInitFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, initName));
-		this.luaUpdateFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, updateName));
-		this.luaDrawFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, drawName));
-		this.luaSnapshotSave = this.resolveLuaFunction(this.getLuaGlobalValue(env, '__bmsx_snapshot_save'));
-		this.luaSnapshotLoad = this.resolveLuaFunction(this.getLuaGlobalValue(env, '__bmsx_snapshot_load'));
+		this.bindLifecycleHandlers();
 
 		const snapshot = params.snapshot;
 		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
-		if (snapshot.luaSnapshot !== undefined && snapshot.luaSnapshot !== null && this.luaSnapshotLoad !== null) {
-			this.applyLuaSnapshot(snapshot.luaSnapshot);
-		}
-		else {
-			this.restoreFallbackLuaState(snapshot);
-		}
+		this.restoreVmState(snapshot);
 
 		if (params.runInit && this.luaInitFunction !== null && !savedRuntimeFailed) {
 			try {
@@ -2350,8 +2299,9 @@ export class BmsxConsoleRuntime extends Service {
 		return descriptor;
 	}
 
-	private captureFallbackLuaState(): { globals?: LuaEntrySnapshot; locals?: LuaEntrySnapshot; randomSeed?: number } | null {
+	private captureVmState(): { globals?: LuaEntrySnapshot; locals?: LuaEntrySnapshot; randomSeed?: number } | null {
 		const interpreter = this.luaInterpreter;
+		if (!this.luaVmInitialized || !interpreter?.chunkEnvironment) return null;
 		const globals = this.captureLuaEntryCollection(interpreter.enumerateGlobalEntries());
 		const locals = this.captureLuaEntryCollection(interpreter.enumerateChunkEntries());
 		const randomSeed = interpreter.getRandomSeed();
@@ -2763,42 +2713,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private captureLuaSnapshot(): unknown {
-		if (!this.luaSnapshotSave || this.luaRuntimeFailed) {
-			return undefined;
-		}
-		try {
-			const results = this.invokeLuaFunction(this.luaSnapshotSave, []);
-			if (!results || results.length === 0) return undefined;
-			return this.luaValueToJs(results[0]);
-		}
-		catch (error) {
-			if (isLuaDebuggerPauseSignal(error)) {
-				this.onLuaDebuggerPause(error);
-				return undefined;
-			}
-			console.error('[BmsxConsoleRuntime] Failed to capture Lua snapshot:', error);
-			return undefined;
-		}
-	}
-
-	private applyLuaSnapshot(snapshot: unknown): void {
-		if (!this.luaSnapshotLoad || snapshot === undefined) {
-			return;
-		}
-		try {
-			this.invokeLuaFunction(this.luaSnapshotLoad, [snapshot]);
-		}
-		catch (error) {
-			if (isLuaDebuggerPauseSignal(error)) {
-				this.onLuaDebuggerPause(error);
-				return;
-			}
-			console.error('[BmsxConsoleRuntime] Failed to restore Lua snapshot:', error);
-		}
-	}
-
-	private restoreFallbackLuaState(snapshot: BmsxConsoleState): void {
+	private restoreVmState(snapshot: BmsxConsoleState): void {
 		const interpreter = this.luaInterpreter;
 		if (snapshot.luaRandomSeed !== undefined) {
 			interpreter.setRandomSeed(snapshot.luaRandomSeed);
@@ -2856,12 +2771,10 @@ export class BmsxConsoleRuntime extends Service {
 
 	private bootLuaProgram(runInit: boolean): void {
 		const program = this.luaProgram;
-		const source = this.getLuaProgramSource(program);
-		const chunkName = this.resolveLuaProgramChunkName(program);
+		const source = this.getProgramEntrySource(program);
+		const chunkName = this.resolveProgramEntryChunkName(program);
 
 		this.resetLuaInteroperabilityState();
-		this.luaSnapshotSave = null;
-		this.luaSnapshotLoad = null;
 		const interpreter = createLuaInterpreter(this.canonicalization);
 		this.configureInterpreter(interpreter);
 		interpreter.clearLastFaultEnvironment();
@@ -2873,7 +2786,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaRuntimeFailed = false;
 
 		try {
-			const asset = this.resolveProgramAsset(program, chunkName);
+			const asset = this.resolveEntryAsset(program, chunkName);
 			this.registerProgramChunk(asset, chunkName);
 			this.registerApiBuiltins(interpreter);
 			interpreter.setReservedIdentifiers(this.apiFunctionNames);
@@ -2890,17 +2803,9 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 
-		const env = interpreter.globalEnvironment;
-		const initName = program.entry?.init ?? 'init';
-		const updateName = program.entry?.update ?? 'update';
-		const drawName = program.entry?.draw ?? 'draw';
-		this.luaInitFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, initName));
-		this.luaUpdateFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, updateName));
-		this.luaDrawFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, drawName));
-		this.luaSnapshotSave = this.resolveLuaFunction(this.getLuaGlobalValue(env, '__bmsx_snapshot_save'));
-		this.luaSnapshotLoad = this.resolveLuaFunction(this.getLuaGlobalValue(env, '__bmsx_snapshot_load'));
+		this.bindLifecycleHandlers();
 
-		if (runInit && this.luaInitFunction !== null) {
+		if (runInit && this.luaInitFunction !== null) { // NOTE THAT THE INIT-FUNCTION APPARENTLY IS OPTIONAL!
 			try {
 				this.invokeLuaFunction(this.luaInitFunction, []);
 			}
@@ -2912,25 +2817,31 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private processPendingLuaAssets(context: string): void {
-		if (context === 'resume' || context === 'boot') {
-			const editorOverrides = this.overlayEditorBuffersToRompack();
-			if (editorOverrides.size > 0) {
-				this.applyWorkspaceLuaOverrides(editorOverrides, false);
-				this.reloadChangedLuaAssets(new Set(editorOverrides.keys()));
-			}
+	private processPendingLuaAssets(context: 'resume' | 'boot' | 'workspace:reset'): void {
+		switch (context) {
+			case 'resume':
+			case 'boot':
+				const editorOverrides = this.overlayEditorBuffersToRompack();
+				if (editorOverrides.size > 0) {
+					this.applyWorkspaceLuaOverrides(editorOverrides, false);
+					this.reloadChangedLuaAssets(new Set(editorOverrides.keys()));
+				}
+				break;
+			case 'workspace:reset':
+				this.clearWorkspaceLuaOverrides();
+				break;
 		}
 	}
 
 	public async saveLuaProgram(source: string): Promise<void> {
 		const program = this.luaProgram;
-		const cartSavePath = this.resolveLuaSourcePath(program);
+		const cartSavePath = this.resolveLuaEntrySourcePath(program);
 		if (!cartSavePath) {
 			throw new Error('[BmsxConsoleRuntime] Lua source path unavailable for active Lua asset.');
 		}
 		const savePath = this.resolveFilesystemPathForCartPath(cartSavePath);
-		const previousChunkName = this.resolveLuaProgramChunkName(program);
-		const previousSource = this.getLuaProgramSource(program);
+		const previousChunkName = this.resolveProgramEntryChunkName(program);
+		const previousSource = this.getProgramEntrySource(program);
 		const targetChunkName = previousChunkName;
 		const shouldValidate = this.validationStrategy === BmsxLuaValidationStrategy.FullExecution;
 		if (!shouldValidate && $.debug === true) {
@@ -2940,11 +2851,11 @@ export class BmsxConsoleRuntime extends Service {
 			this.validateLuaSource(source, targetChunkName);
 		}
 		try {
-			this.applyProgramSourceToCartridge(source, targetChunkName);
+			this.applyProgramEntrySourceToCartridge(source, targetChunkName);
 		}
 		catch (error) {
 			try {
-				this.applyProgramSourceToCartridge(previousSource, previousChunkName);
+				this.applyProgramEntrySourceToCartridge(previousSource, previousChunkName);
 			}
 			catch (restoreError) {
 				this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after apply failure', { error: restoreError });
@@ -2959,20 +2870,20 @@ export class BmsxConsoleRuntime extends Service {
 		try {
 			await this.persistLuaSourceToFilesystem(savePath, source);
 			const rompack = $.rompack;
-			const programasset_id = this.resolveProgramAsset(program, targetChunkName).asset_id;
+			const programasset_id = this.resolveEntryAsset(program, targetChunkName).asset_id;
 			rompack.lua[programasset_id] = source;
 			this.updateWorkspaceOverrideMap(programasset_id, source, cartSavePath);
-		try {
-			const asset = this.resolveProgramAsset(program, targetChunkName);
-			this.reloadLuaProgramState(source, targetChunkName, asset.asset_id);
-		}
+			try {
+				const asset = this.resolveEntryAsset(program, targetChunkName);
+				this.reloadLuaProgramState(source, targetChunkName, asset.asset_id);
+			}
 			catch (error) {
 				this.handleLuaError(error);
 				throw error;
 			}
 		} catch (error) {
 			try {
-				this.applyProgramSourceToCartridge(previousSource, previousChunkName);
+				this.applyProgramEntrySourceToCartridge(previousSource, previousChunkName);
 			} catch (restoreError) {
 				this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after persistence failure', { error: restoreError });
 				return;
@@ -2999,14 +2910,15 @@ export class BmsxConsoleRuntime extends Service {
 		if (!program) {
 			throw new Error('[BmsxConsoleRuntime] Lua program reference unavailable.');
 		}
-		const previousChunkName = this.resolveLuaProgramChunkName(program);
-		const previousSource = this.getLuaProgramSource(program);
+		const previousChunkName = this.resolveProgramEntryChunkName(program);
+		const previousSource = this.getProgramEntrySource(program);
 		try {
 			await this.saveLuaProgram(source);
 		}
 		catch (error) {
 			try {
-				this.reloadLuaProgramState(previousSource, previousChunkName);
+				const asset = this.resolveEntryAsset(program, previousChunkName);
+				this.reloadLuaProgramState(previousSource, previousChunkName, asset.asset_id);
 			}
 			catch (restoreError) {
 				this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after reload failure', { error: restoreError });
@@ -3021,10 +2933,11 @@ export class BmsxConsoleRuntime extends Service {
 
 	public async reloadProgramAndResetWorld(source: string): Promise<void> {
 		const program = this.luaProgram;
-		const chunkName = this.luaChunkName ?? this.resolveLuaProgramChunkName(program);
+		const chunkName = this.luaChunkName ?? this.resolveProgramEntryChunkName(program);
 		await this.resetWorldState();
 		try {
-			this.reloadLuaProgramState(source, chunkName);
+			const asset = this.resolveEntryAsset(program, chunkName);
+			this.reloadLuaProgramState(source, chunkName, asset.asset_id);
 		} catch (error) {
 			this.handleLuaError(error);
 			throw error;
@@ -3036,7 +2949,8 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaChunkName = chunkName;
 		const currentProgram = this.luaProgram;
 		if (currentProgram) {
-			this.registerProgramChunk(currentProgram, chunkName);
+			const asset = this.resolveEntryAsset(currentProgram, chunkName);
+			this.registerProgramChunk(asset, chunkName);
 		}
 		try {
 			const interpreter = createLuaInterpreter(this.canonicalization);
@@ -4267,7 +4181,7 @@ export class BmsxConsoleRuntime extends Service {
 		return null;
 	}
 
-	private resolveProgramAsset(program: BmsxConsoleLuaProgram, chunkName?: string | null): BmsxConsoleLuaProgramAsset {
+	private resolveEntryAsset(program: BmsxConsoleLuaProgram, chunkName?: string | null): BmsxConsoleLuaPrimaryAsset {
 		if (program.assets.length === 0) {
 			return { asset_id: '' };
 		}
@@ -4280,16 +4194,18 @@ export class BmsxConsoleRuntime extends Service {
 				}
 			}
 		}
-		return program.assets[0];
+		const entryId = program.entryAssetId ?? program.assets[0].asset_id;
+		const entry = program.assets.find(a => a.asset_id === entryId) ?? program.assets[0];
+		return entry;
 	}
 
-	private getLuaProgramSource(program: BmsxConsoleLuaProgram): string {
-		const asset = this.resolveProgramAsset(program);
+	private getProgramEntrySource(program: BmsxConsoleLuaProgram): string {
+		const asset = this.resolveEntryAsset(program);
 		return $.rompack.lua[asset.asset_id];
 	}
 
-	private resolveLuaSourcePath(program: BmsxConsoleLuaProgram): string | null {
-		const asset = this.resolveProgramAsset(program);
+	private resolveLuaEntrySourcePath(program: BmsxConsoleLuaProgram): string | null {
+		const asset = this.resolveEntryAsset(program);
 		return $.rompack.luaSourcePaths[asset.asset_id] ?? null;
 	}
 
@@ -4446,22 +4362,24 @@ export class BmsxConsoleRuntime extends Service {
 
 	private async prefetchLuaSourceFromFilesystem(): Promise<void> {
 		const program = this.luaProgram!;
-		const path = this.resolveLuaSourcePath(program)!;
+		const path = this.resolveLuaEntrySourcePath(program)!;
 		const fetched = await this.fetchLuaSourceFromFilesystem(path);
 		if (fetched === null) {
 			return;
 		}
-		const currentSource = this.getLuaProgramSource(program);
+		const currentSource = this.getProgramEntrySource(program);
 		if (currentSource === fetched) {
 			return;
 		}
-		const chunkName = this.resolveLuaProgramChunkName(program);
+		const chunkName = this.resolveProgramEntryChunkName(program);
 		try {
-			this.reloadLuaProgramState(fetched, chunkName);
+			const asset = this.resolveEntryAsset(program, chunkName);
+			this.reloadLuaProgramState(fetched, chunkName, asset.asset_id);
 		}
 		catch (error) {
 			try {
-				this.reloadLuaProgramState(currentSource, chunkName);
+				const asset = this.resolveEntryAsset(program, chunkName);
+				this.reloadLuaProgramState(currentSource, chunkName, asset.asset_id);
 			}
 			catch (restoreError) {
 				this.handleLuaPersistenceFailure('restore', `[BmsxConsoleRuntime] Failed to restore Lua source after prefetched apply error`, { error: restoreError });
@@ -4475,30 +4393,30 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private applyProgramSourceToCartridge(source: string, chunkName: string, asset_id?: string): void {
+	private applyProgramEntrySourceToCartridge(source: string, chunkName: string, asset_id?: string): void {
 		const program = this.luaProgram!;
-		const asset = asset_id ? this.resolveProgramAsset(program, chunkName) : this.resolveProgramAsset(program, chunkName);
+		const asset = asset_id ? this.resolveEntryAsset(program, chunkName) : this.resolveEntryAsset(program, chunkName);
 		const mutable = program as typeof program & { assets: typeof program.assets };
 		const assets = [...mutable.assets];
 		assets[0] = { asset_id: asset.asset_id, chunkName };
 		mutable.assets = assets;
 		$.rompack.lua[asset.asset_id] = source;
 		this.registerProgramChunk({ asset_id: asset.asset_id, chunkName }, chunkName);
-		this.updateWorkspaceOverrideMap(asset.asset_id, source, this.resolveLuaSourcePath(program));
+		this.updateWorkspaceOverrideMap(asset.asset_id, source, this.resolveLuaEntrySourcePath(program));
 	}
 
-	private canonicalizeProgramChunkName(program: BmsxConsoleLuaProgram, chunkName: string | null | undefined): string {
+	private canonicalizeProgramEntryChunkName(program: BmsxConsoleLuaProgram, chunkName: string | null | undefined): string {
 		let candidate: string;
 		if (typeof chunkName === 'string') {
 			candidate = chunkName;
 		}
 		else {
-			const asset = this.resolveProgramAsset(program, chunkName);
+			const asset = this.resolveEntryAsset(program, chunkName);
 			candidate = asset.asset_id;
 		}
 
 		const normalizedCandidate = this.normalizeChunkName(candidate);
-		const asset = this.resolveProgramAsset(program, chunkName);
+		const asset = this.resolveEntryAsset(program, chunkName);
 		const normalizedAsset = this.normalizeChunkName(asset.asset_id);
 		const resolvedPath = this.resolveResourcePath(asset.asset_id);
 		if (resolvedPath) {
@@ -4513,9 +4431,9 @@ export class BmsxConsoleRuntime extends Service {
 		return candidate;
 	}
 
-	private resolveLuaProgramChunkName(program: BmsxConsoleLuaProgram): string {
-		const asset = this.resolveProgramAsset(program);
-		return this.canonicalizeProgramChunkName(program, asset.chunkName);
+	private resolveProgramEntryChunkName(program: BmsxConsoleLuaProgram): string {
+		const asset = this.resolveEntryAsset(program);
+		return this.canonicalizeProgramEntryChunkName(program, asset.chunkName);
 	}
 
 	private registerProgramChunk(asset: { asset_id: string; chunkName?: string }, chunkName: string): void {
@@ -4623,8 +4541,8 @@ export class BmsxConsoleRuntime extends Service {
 				info.path = sourcePath;
 			}
 			const source = $.rompack.lua[asset_id];
-			if (asset_id === this.resolveProgramAsset(this.luaProgram).asset_id) {
-				this.applyLuaProgramHotReload({ source, chunkName });
+			if (asset_id === this.resolveEntryAsset(this.luaProgram).asset_id) {
+				this.hotReloadProgramEntry({ source, chunkName, asset_id });
 				continue;
 			}
 			this.reloadGenericLuaChunk(chunkName, info, source);
@@ -5479,8 +5397,8 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		await this.refreshWorkspaceSources(false);
 		if (this.luaInterpreter && this.luaProgram) {
-			const asset = this.resolveProgramAsset(this.luaProgram);
-			const chunkName = this.resolveLuaProgramChunkName(this.luaProgram);
+			const asset = this.resolveEntryAsset(this.luaProgram);
+			const chunkName = this.resolveProgramEntryChunkName(this.luaProgram);
 			const finalSource = rompack.lua[asset.asset_id];
 			this.reloadLuaProgramState(finalSource, chunkName);
 			this.processPendingLuaAssets('workspace:reset');
@@ -5779,7 +5697,7 @@ export class BmsxConsoleRuntime extends Service {
 		const programasset_id = (() => {
 			const program = this.luaProgram;
 			if (!program) return null;
-			return this.resolveProgramAsset(program).asset_id;
+			return this.resolveEntryAsset(program).asset_id;
 		})();
 
 		for (const descriptor of descriptors) {
@@ -5807,8 +5725,8 @@ export class BmsxConsoleRuntime extends Service {
 
 		const program = this.luaProgram;
 		if (program) {
-			const programChunk = this.normalizeChunkName(this.resolveLuaProgramChunkName(program));
-			const primary = this.resolveProgramAsset(program);
+			const programChunk = this.normalizeChunkName(this.resolveProgramEntryChunkName(program));
+			const primary = this.resolveEntryAsset(program);
 			const programInfo: { asset_id: string | null; path?: string | null } = { asset_id: primary.asset_id, path: this.resolveResourcePath(primary.asset_id) ?? undefined };
 			enqueueCandidate(programChunk, programInfo);
 		}
@@ -6094,12 +6012,12 @@ export class BmsxConsoleRuntime extends Service {
 		if (!this.luaProgram) {
 			return null;
 		}
-		const programChunk = this.normalizeChunkName(this.resolveLuaProgramChunkName(this.luaProgram));
+		const programChunk = this.normalizeChunkName(this.resolveProgramEntryChunkName(this.luaProgram));
 		const normalizedChunk = this.normalizeChunkName(chunkName);
 		if (programChunk !== normalizedChunk) {
 			return null;
 		}
-		return this.getLuaProgramSource(this.luaProgram);
+		return this.getProgramEntrySource(this.luaProgram);
 	}
 
 

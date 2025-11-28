@@ -1400,7 +1400,7 @@ export function resolveHoverAssetId(context: CodeTabContext | null): string | nu
 	if (context && context.descriptor) {
 		return context.descriptor.asset_id;
 	}
-	return ide_state.primaryAssetId;
+	return null;
 }
 
 export function resolveHoverChunkName(context: CodeTabContext | null): string | null {
@@ -1411,9 +1411,6 @@ export function resolveHoverChunkName(context: CodeTabContext | null): string | 
 		if (context.descriptor.asset_id) {
 			return context.descriptor.asset_id;
 		}
-	}
-	if (ide_state.primaryAssetId) {
-		return ide_state.primaryAssetId;
 	}
 	return null;
 }

@@ -31,7 +31,6 @@
 		}
 	},
 	"lua": {
-		"asset_id": "shell_main",
 		"entry": {
 			"init": "init",
 			"update": "update",
