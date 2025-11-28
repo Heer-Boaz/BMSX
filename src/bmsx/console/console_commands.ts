@@ -2,7 +2,7 @@ import { $ } from '../core/game';
 import { BmsxConsoleRuntime } from './runtime';
 import { normalizeWorkspacePath } from './workspace';
 
-type PathEntryKind = 'rom' | 'saved' | 'dirty';
+type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
 
 type PathEntry = {
 	path: string;
@@ -125,8 +125,9 @@ export class ConsoleCommandDispatcher {
 
 	private runWorkspaceReset(): void {
 		this.runtime.consoleMode.appendStdout('Discarding dirty files...');
-		this.runtime.clearWorkspaceLuaOverrides();
-		this.runtime.consoleMode.appendStdout('Restored to last save');
+		void this.runtime.clearWorkspaceLuaOverrides().then(() => {
+			this.runtime.consoleMode.appendStdout('Restored to saved workspace');
+		});
 	}
 
 	private runWorkspaceNuke(): void {
@@ -135,9 +136,10 @@ export class ConsoleCommandDispatcher {
 			return;
 		}
 		this.runtime.consoleMode.appendStdout('Warning: this will erase workspace!');
-		this.runtime.nukeWorkspace();
-		this.runtime.consoleMode.appendStdout('Workspace deleted');
-		this.runtime.consoleMode.appendStdout('Reverted to ROM-only sources');
+		void this.runtime.nukeWorkspace().then(() => {
+			this.runtime.consoleMode.appendStdout('Workspace deleted');
+			this.runtime.consoleMode.appendStdout('Reverted to saved workspace sources');
+		});
 	}
 
 	private hasWorkspaceState(): boolean {
@@ -172,23 +174,29 @@ export class ConsoleCommandDispatcher {
 			this.runtime.consoleMode.appendStderr(ERROR_FILE_NOT_FOUND);
 			return;
 		}
-		for (let index = 0; index < filtered.length; index += 1) {
-			const entry = filtered[index];
-			let color;
-			switch (entry.kind) {
-				case 'rom':
-					color = 15;
-					break;
-				case 'saved':
-					color = 2;
-					break;
-				case 'dirty':
-					color = 5;
-					break;
+			for (let index = 0; index < filtered.length; index += 1) {
+				const entry = filtered[index];
+				let color;
+				switch (entry.kind) {
+					case 'rom':
+						color = 15;
+						break;
+					case 'saved':
+						color = 2;
+						break;
+					case 'saved_dirty':
+						color = 13;
+						break;
+					case 'dirty':
+						color = 5;
+						break;
+					case 'unsaved':
+						color = 6;
+						break;
+				}
+				this.runtime.consoleMode.appendStdout(entry.text.toUpperCase(), color);
 			}
-			this.runtime.consoleMode.appendStdout(entry.text.toUpperCase(), color);
 		}
-	}
 
 	private handleJsStack(tokens: string[]): void {
 		if (tokens.length === 1) {
@@ -270,6 +278,7 @@ export class ConsoleCommandDispatcher {
 		const includeSaved = mode === '-SAVED' || mode === '-ALL' || !mode;
 		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || !mode;
 		const savedAssets = includeSaved ? this.runtime.getWorkspaceSavedAssetIds() : new Set<string>();
+		const scratchPaths = includeDirty ? this.runtime.workspaceScratchPaths : new Set<string>();
 		if (includeRom) {
 			for (const entry of rompack.resourcePaths) {
 				pushPath(entry.path, 'rom');
@@ -293,13 +302,16 @@ export class ConsoleCommandDispatcher {
 					pushPath(targetPath, 'dirty');
 				}
 			}
+			for (const path of scratchPaths) {
+				pushPath(path, 'unsaved');
+			}
 		}
 		return entries;
 	}
 
 	private buildListing(entries: PathEntry[], cwd: string): Array<{ text: string; kind: PathEntryKind; isDir: boolean }> {
 		const dirs = new Set<string>();
-		const files = new Map<string, { labels: Set<string>; hasRom: boolean; hasSaved: boolean; hasDirty: boolean }>();
+		const files = new Map<string, { labels: Set<string>; hasRom: boolean; hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }>();
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
 			if (!this.isAncestor(cwd, entry.path) && entry.path !== cwd) {
@@ -311,11 +323,12 @@ export class ConsoleCommandDispatcher {
 			}
 			const slashIndex = relative.indexOf('/');
 			if (slashIndex === -1) {
-				const existing = files.get(relative) ?? { labels: new Set<string>(), hasRom: false, hasSaved: false, hasDirty: false };
+				const existing = files.get(relative) ?? { labels: new Set<string>(), hasRom: false, hasSaved: false, hasDirty: false, hasUnsaved: false };
 				// existing.labels.add(entry.label);
 				if (entry.kind === 'rom') existing.hasRom = true;
 				if (entry.kind === 'saved') existing.hasSaved = true;
 				if (entry.kind === 'dirty') existing.hasDirty = true;
+				if (entry.kind === 'unsaved') existing.hasUnsaved = true;
 				files.set(relative, existing);
 				continue;
 			}
@@ -332,10 +345,14 @@ export class ConsoleCommandDispatcher {
 			const [name, meta] = sortedFiles[i];
 			// const label = Array.from(meta.labels).join(', ');
 			let kind: PathEntryKind = 'rom';
-			if (meta.hasDirty) {
+			if (meta.hasDirty && meta.hasSaved) {
+				kind = 'saved_dirty';
+			} else if (meta.hasDirty) {
 				kind = 'dirty';
 			} else if (meta.hasSaved) {
 				kind = 'saved';
+			} else if (meta.hasUnsaved) {
+				kind = 'unsaved';
 			}
 			// lines.push({ text: `${name} (${label})`, kind, isDir: false });
 			lines.push({ text: `${name}`, kind, isDir: false });
