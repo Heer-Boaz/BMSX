@@ -85,7 +85,7 @@ export function buildWorkspaceStorageKey(projectRootPath: string, relativePath: 
 	return `${WORKSPACE_STORAGE_PREFIX}:${normalizedRoot}:${normalizedPath}`;
 }
 
-export type WorkspaceOverrideRecord = { source: string; path: string | null; cartPath: string; };
+export type WorkspaceOverrideRecord = { source: string; path: string | null; cartPath: string; updatedAt?: number };
 
 export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRootPath: string | null | undefined; storage: StorageService; }): Map<string, WorkspaceOverrideRecord> {
 	const overrides = new Map<string, WorkspaceOverrideRecord>();
@@ -110,8 +110,20 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 		if (stored === null || stored === undefined) {
 			continue;
 		}
-		overrides.set(assetId, { source: stored, path: dirtyPath, cartPath: normalizedCart });
+		let source = stored;
+		let updatedAt: number | undefined;
+		try {
+			const parsed = JSON.parse(stored) as { contents?: string; updatedAt?: number };
+			if (typeof parsed.contents === 'string') {
+				source = parsed.contents;
+				if (typeof parsed.updatedAt === 'number') {
+					updatedAt = parsed.updatedAt;
+				}
+			}
+		} catch {
+			// Fall back to raw string for legacy entries.
+		}
+		overrides.set(assetId, { source, path: dirtyPath, cartPath: normalizedCart, updatedAt });
 	}
 	return overrides;
 }
-

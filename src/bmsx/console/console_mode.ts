@@ -240,7 +240,7 @@ export class ConsoleMode {
 		this.appendEntry({ color: 6, text });
 	}
 
-	public appendSystemMessage(text: string): void {
+	public appendSystem(text: string): void {
 		this.appendEntry({ color: 14, text });
 	}
 

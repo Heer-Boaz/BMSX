@@ -1,23 +1,6 @@
 import { $ } from '../core/game';
+import { BmsxConsoleRuntime } from './runtime';
 import { normalizeWorkspacePath } from './workspace';
-
-type ConsoleCommandHooks = {
-	clearScreen: () => void;
-	continueExecution: () => void;
-	exitApplication: () => void;
-	reboot: () => void;
-	openEditor: () => void;
-	resetWorkspace: () => void;
-	nukeWorkspace: () => void;
-	refreshWorkspaceOverrides: (hotReload: boolean) => void;
-	getWorkspaceOverrides: () => ReadonlyMap<string, { source: string; path: string | null; cartPath: string }>;
-	getWorkspaceSavedAssetIds: () => ReadonlySet<string>;
-	appendStdout: (text: string, color?: number) => void;
-	appendStderr: (text: string) => void;
-	appendSystem: (text: string) => void;
-	setConsoleJsStackEnabled: (enabled: boolean) => void;
-	getConsoleJsStackEnabled: () => boolean;
-};
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty';
 
@@ -59,19 +42,16 @@ const HELP_TEXT = [
 	'----------------------------------------',
 ];
 
-const ERROR_SYNTAX = 'Syntax error';
-const ERROR_FOLDER = 'Folder not found';
-const ERROR_FILE = 'File not found';
-const ERROR_ILLEGAL = 'Illegal function call';
-const ERROR_NOTHING = 'Nothing to nuke';
+const ERROR_SYNTAX_ERROR = 'Syntax error';
+const ERROR_FOLDER_NOT_FOUND = 'Folder not found';
+const ERROR_FILE_NOT_FOUND = 'File not found';
+const ERROR_ILLEGAL_FUNCTION_CALL = 'Illegal function call';
+const ERROR_NOTHING_TO_NUKE = 'Nothing to nuke';
 
 export class ConsoleCommandDispatcher {
 	private cwd = '/';
 	private readonly drive = 'ROM';
-	private readonly hooks: ConsoleCommandHooks;
-
-	constructor(hooks: ConsoleCommandHooks) {
-		this.hooks = hooks;
+	constructor(private readonly runtime: BmsxConsoleRuntime) {
 	}
 
 	public getPrompt(): string {
@@ -89,23 +69,23 @@ export class ConsoleCommandDispatcher {
 			return true;
 		}
 		if (upper === 'CLS') {
-			this.hooks.clearScreen();
+			this.runtime.consoleMode.clearOutput()
 			return true;
 		}
 		if (upper === 'CONT') {
-			this.hooks.continueExecution();
+			this.runtime.continueFromConsole();
 			return true;
 		}
 		if (upper === 'RESET') {
-			this.hooks.reboot();
+			this.runtime.boot();
 			return true;
 		}
 		if (upper === 'EXIT' || upper === 'QUIT') {
-			this.hooks.exitApplication();
+			$.request_shutdown();
 			return true;
 		}
 		if (upper === 'IDE' || upper === 'WSE') {
-			this.hooks.openEditor();
+			this.runtime.openEditor();
 			return true;
 		}
 		// Support flexible spacing for WS subcommands, e.g. "WS   RESET", "WS\tEDIT", etc.
@@ -116,14 +96,14 @@ export class ConsoleCommandDispatcher {
 		}
 		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'WS') {
 			if (tokens.length !== 2) {
-				this.hooks.appendStderr(ERROR_SYNTAX);
+				this.runtime.consoleMode.appendStderr(ERROR_SYNTAX_ERROR);
 				return true;
 			}
 			const sub = tokens[1].toUpperCase();
 			if (sub === 'RESET') { this.runWorkspaceReset(); return true; }
 			if (sub === 'NUKE') { this.runWorkspaceNuke(); return true; }
-			if (sub === 'EDIT') { this.hooks.openEditor(); return true; }
-			this.hooks.appendStderr(ERROR_SYNTAX);
+			if (sub === 'EDIT') { this.runtime.openEditor(); return true; }
+			this.runtime.consoleMode.appendStderr(ERROR_SYNTAX_ERROR);
 			return true;
 		}
 		if (upper === 'LS' || upper.startsWith('LS ')) {
@@ -139,36 +119,36 @@ export class ConsoleCommandDispatcher {
 
 	private printHelp(): void {
 		for (let index = 0; index < HELP_TEXT.length; index += 1) {
-			this.hooks.appendSystem(HELP_TEXT[index]);
+			this.runtime.consoleMode.appendSystem(HELP_TEXT[index]);
 		}
 	}
 
 	private runWorkspaceReset(): void {
-		this.hooks.appendStdout('Discarding dirty files...');
-		this.hooks.resetWorkspace();
-		this.hooks.appendStdout('Restored to last save');
+		this.runtime.consoleMode.appendStdout('Discarding dirty files...');
+		this.runtime.clearWorkspaceLuaOverrides();
+		this.runtime.consoleMode.appendStdout('Restored to last save');
 	}
 
 	private runWorkspaceNuke(): void {
 		if (!this.hasWorkspaceState()) {
-			this.hooks.appendStderr(ERROR_NOTHING);
+			this.runtime.consoleMode.appendStderr(ERROR_NOTHING_TO_NUKE);
 			return;
 		}
-		this.hooks.appendStdout('Warning: this will erase workspace!');
-		this.hooks.nukeWorkspace();
-		this.hooks.appendStdout('Workspace deleted');
-		this.hooks.appendStdout('Reverted to ROM-only sources');
+		this.runtime.consoleMode.appendStdout('Warning: this will erase workspace!');
+		this.runtime.nukeWorkspace();
+		this.runtime.consoleMode.appendStdout('Workspace deleted');
+		this.runtime.consoleMode.appendStdout('Reverted to ROM-only sources');
 	}
 
 	private hasWorkspaceState(): boolean {
-		const overrides = this.hooks.getWorkspaceOverrides();
+		const overrides = this.runtime.workspaceLuaOverrides;
 		return overrides.size > 0;
 	}
 
 	private handleLs(command: string): void {
 		const tokens = this.tokenize(command);
 		if (tokens.length > 2) {
-			this.hooks.appendStderr(ERROR_SYNTAX);
+			this.runtime.consoleMode.appendStderr(ERROR_SYNTAX_ERROR);
 			return;
 		}
 		let mode = '';
@@ -184,19 +164,12 @@ export class ConsoleCommandDispatcher {
 		if (mode === '-D') mode = '-DIRTY';
 		if (mode === '-S' || mode === '=S') mode = '-SAVED';
 		if (mode === '-A') mode = '-ALL';
-		if (mode && mode !== '-DIRTY' && mode !== '-SAVED' && mode !== '-ALL' && mode !== 'ROM') {
-			this.hooks.appendStderr(ERROR_ILLEGAL);
-			return;
-		}
-		if (mode === '-DIRTY' || mode === '-ALL' || mode === '' || mode === '-SAVED') {
-			this.hooks.refreshWorkspaceOverrides(false);
-		}
 		const paths = this.collectPaths(mode);
 		const cwd = this.cwd;
 		const listing = this.buildListing(paths, cwd);
 		const filtered = filter ? this.filterListing(listing, filter) : listing;
 		if (filtered.length === 0) {
-			this.hooks.appendStderr(ERROR_FILE);
+			this.runtime.consoleMode.appendStderr(ERROR_FILE_NOT_FOUND);
 			return;
 		}
 		for (let index = 0; index < filtered.length; index += 1) {
@@ -213,63 +186,63 @@ export class ConsoleCommandDispatcher {
 					color = 5;
 					break;
 			}
-			this.hooks.appendStdout(entry.text.toUpperCase(), color);
+			this.runtime.consoleMode.appendStdout(entry.text.toUpperCase(), color);
 		}
 	}
 
 	private handleJsStack(tokens: string[]): void {
 		if (tokens.length === 1) {
-			const enabled = this.hooks.getConsoleJsStackEnabled();
-			this.hooks.appendStdout(`JS stack traces ${enabled ? 'ON' : 'OFF'}`);
+			const enabled = this.runtime.consoleJsStackEnabled;
+			this.runtime.consoleMode.appendStdout(`JS stack traces ${enabled ? 'ON' : 'OFF'}`);
 			return;
 		}
 		if (tokens.length === 2) {
 			const mode = tokens[1].toUpperCase();
 			if (mode === 'ON') {
-				this.hooks.setConsoleJsStackEnabled(true);
-				this.hooks.appendStdout('JS stack traces ON');
+				this.runtime.consoleJsStackEnabled = true;
+				this.runtime.consoleMode.appendStdout('JS stack traces ON');
 				return;
 			}
 			if (mode === 'OFF') {
-				this.hooks.setConsoleJsStackEnabled(false);
-				this.hooks.appendStdout('JS stack traces OFF');
+				this.runtime.consoleJsStackEnabled = false;
+				this.runtime.consoleMode.appendStdout('JS stack traces OFF');
 				return;
 			}
 		}
-		this.hooks.appendStderr(ERROR_SYNTAX);
+		this.runtime.consoleMode.appendStderr(ERROR_SYNTAX_ERROR);
 	}
 
 	private handleCd(command: string): void {
 		const shortcutUp = command.toUpperCase() === 'CD..';
 		const tokens = shortcutUp ? ['CD', '..'] : this.tokenize(command);
 		if (tokens.length > 2) {
-			this.hooks.appendStderr(ERROR_SYNTAX);
+			this.runtime.consoleMode.appendStderr(ERROR_SYNTAX_ERROR);
 			return;
 		}
 		if (tokens.length === 1) {
-			this.hooks.appendStdout(this.cwd);
+			this.runtime.consoleMode.appendStdout(this.cwd);
 			return;
 		}
 		const targetRaw = tokens[1];
 		if (targetRaw === '..') {
 			this.cwd = this.parentPath(this.cwd);
-			this.hooks.appendStdout(this.cwd);
+			this.runtime.consoleMode.appendStdout(this.cwd);
 			return;
 		}
 		if (targetRaw === '/') {
 			this.cwd = '/';
-			this.hooks.appendStdout(this.cwd);
+			this.runtime.consoleMode.appendStdout(this.cwd);
 			return;
 		}
 		const next = this.normalizePath(targetRaw.startsWith('/') ? targetRaw : `${this.cwd}/${targetRaw}`);
 		const paths = this.collectPaths('-ALL');
 		const hasDir = paths.some(entry => this.isAncestor(next, entry.path) || entry.path === next);
 		if (!hasDir) {
-			this.hooks.appendStderr(ERROR_FOLDER);
+			this.runtime.consoleMode.appendStderr(ERROR_FOLDER_NOT_FOUND);
 			return;
 		}
 		this.cwd = next;
-		this.hooks.appendStdout(this.cwd);
+		this.runtime.consoleMode.appendStdout(this.cwd);
 	}
 
 	private tokenize(command: string): string[] {
@@ -278,7 +251,7 @@ export class ConsoleCommandDispatcher {
 
 	private collectPaths(mode: string): PathEntry[] {
 		if (mode && mode !== '-DIRTY' && mode !== '-SAVED' && mode !== '-ALL' && mode !== '-ROM') {
-			this.hooks.appendStderr(ERROR_ILLEGAL);
+			this.runtime.consoleMode.appendStderr(ERROR_ILLEGAL_FUNCTION_CALL);
 			return [];
 		}
 		const rompack = $.rompack;
@@ -293,10 +266,10 @@ export class ConsoleCommandDispatcher {
 			seen.add(key);
 			entries.push({ path: normalized, kind });
 		};
-		const includeRom = mode === '' || mode === '-ROM' || mode === '-ALL';
-		const includeSaved = mode === '-SAVED' || mode === '-ALL' || mode === '';
-		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || mode === '';
-		const savedAssets = includeSaved ? this.hooks.getWorkspaceSavedAssetIds() : new Set<string>();
+		const includeRom = mode === '-ROM' || mode === '-ALL' || !mode;
+		const includeSaved = mode === '-SAVED' || mode === '-ALL' || !mode;
+		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || !mode;
+		const savedAssets = includeSaved ? this.runtime.getWorkspaceSavedAssetIds() : new Set<string>();
 		if (includeRom) {
 			for (const entry of rompack.resourcePaths) {
 				pushPath(entry.path, 'rom');
@@ -313,7 +286,7 @@ export class ConsoleCommandDispatcher {
 			}
 		}
 		if (includeDirty) {
-			const overrides = this.hooks.getWorkspaceOverrides();
+			const overrides = this.runtime.workspaceLuaOverrides;
 			for (const [asset_id, record] of overrides) {
 				const targetPath = record.cartPath ?? rompack.luaSourcePaths[asset_id];
 				if (targetPath) {

@@ -97,15 +97,19 @@ export type BmsxConsoleRuntimeOptions = {
 	canonicalization?: CanonicalizationType;
 };
 
+export type LuaSnapshotObjects = Record<number, unknown>;
+export type LuaSnapshotGraph = { root: unknown; objects: LuaSnapshotObjects };
+export type LuaEntrySnapshot = Record<string, unknown> | LuaSnapshotGraph;
+type LuaSnapshotContext = { ids: WeakMap<LuaTable, number>; objects: LuaSnapshotObjects; nextId: number };
+
 export type BmsxConsoleState = {
 	luaRuntimeFailed: boolean;
-	luaProgramSourceOverride: string | null;
 	luaChunkName: string | null;
 	luaSnapshot?: unknown;
 	cartState?: unknown;
 	storage?: { namespace: string; entries: Array<{ index: number; value: number }> };
-	luaGlobals?: Record<string, unknown>;
-	luaLocals?: Record<string, unknown>;
+	luaGlobals?: LuaEntrySnapshot;
+	luaLocals?: LuaEntrySnapshot;
 	luaRandomSeed?: number;
 };
 
@@ -349,7 +353,6 @@ export class BmsxConsoleRuntime extends Service {
 	private shortcutDisposers: Array<() => void> = [];
 	private globalInputUnsubscribe: (() => void) | null = null;
 	private readonly validationStrategy: BmsxLuaValidationStrategy = BmsxLuaValidationStrategy.TrustRealRun;
-	private luaProgramSourceOverride: string | null = null;
 	private luaInterpreter!: LuaInterpreter;
 	private luaInitFunction: LuaFunctionValue | null = null;
 	private luaUpdateFunction: LuaFunctionValue | null = null;
@@ -397,10 +400,12 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		| null = null;
 	private readonly rompackOriginalLua: Map<string, string> = new Map();
-	private readonly workspaceLuaOverrides: Map<string, WorkspaceOverrideRecord> = new Map();
+	public readonly workspaceLuaOverrides: Map<string, WorkspaceOverrideRecord> = new Map();
 	private hasBooted = false;
 	private workspaceOverrideToken = 0;
-	private hasWorkspaceLuaOverrides = false;
+	private get hasWorkspaceLuaOverrides(): boolean {
+		return this.workspaceLuaOverrides.size > 0;
+	}
 	private readonly canonicalization: CanonicalizationType;
 
 	public get interpreter(): LuaInterpreter {
@@ -447,23 +452,7 @@ export class BmsxConsoleRuntime extends Service {
 			listBuiltinLuaFunctions: () => this.listLuaBuiltinFunctions(),
 			listLuaObjectMembers: (request) => this.listLuaObjectMembers(request),
 		});
-		this.consoleCommands = new ConsoleCommandDispatcher({
-			clearScreen: () => { this.consoleMode.clearOutput(); },
-			continueExecution: () => { this.continueFromConsole(); },
-			exitApplication: () => { $.request_shutdown(); },
-			reboot: () => { this.boot(); },
-			openEditor: () => { this.closeConsoleMode(false); this.openEditor(); },
-			resetWorkspace: () => { this.clearWorkspaceLuaOverrides(); },
-			nukeWorkspace: () => { this.nukeWorkspace(); },
-			refreshWorkspaceOverrides: (hotReload) => { this.refreshWorkspaceOverrides(hotReload); },
-			getWorkspaceOverrides: () => this.workspaceLuaOverrides,
-			getWorkspaceSavedAssetIds: () => this.getWorkspaceSavedAssetIds(),
-			appendStdout: (text, color) => { this.consoleMode.appendStdout(text, color); },
-			appendStderr: (text) => { this.consoleMode.appendStderr(text); },
-			appendSystem: (text) => { this.consoleMode.appendSystemMessage(text); },
-			setConsoleJsStackEnabled: (enabled) => { this.setConsoleJsStackEnabled(enabled); },
-			getConsoleJsStackEnabled: () => this.includeJsStackTraces,
-		});
+		this.consoleCommands = new ConsoleCommandDispatcher(this);
 		this.consoleMode.setPromptPrefix(this.consoleCommands.getPrompt());
 		this.enableEvents();
 		const policyOverride = options.luaSourceFailurePolicy ?? {};
@@ -1003,8 +992,12 @@ export class BmsxConsoleRuntime extends Service {
 		this.executeConsoleCommand(trimmed);
 	}
 
-	private setConsoleJsStackEnabled(enabled: boolean): void {
+	public set consoleJsStackEnabled(enabled: boolean) {
 		this.includeJsStackTraces = enabled;
+	}
+
+	public get consoleJsStackEnabled(): boolean {
+		return this.includeJsStackTraces;
 	}
 
 	private drawEditorFrame(editor: ConsoleCartEditor): void {
@@ -1727,17 +1720,16 @@ export class BmsxConsoleRuntime extends Service {
 
 	public override getState(): BmsxConsoleState | undefined {
 		const interpreterReady = this.luaInterpreter?.chunkEnvironment;
-		const storageState = this.storage.dump();
+		const storage = this.storage.dump();
 		const luaSnapshot = this.captureLuaSnapshot();
 		const cartState = this.luaProgram ? undefined : this.cart.captureState(api);
 		const fallbackLuaState = this.luaVmInitialized && interpreterReady && luaSnapshot === undefined ? this.captureFallbackLuaState() : null;
 		const state: BmsxConsoleState = {
 			luaRuntimeFailed: this.luaRuntimeFailed,
-			luaProgramSourceOverride: this.luaProgramSourceOverride,
 			luaChunkName: this.luaChunkName,
 			luaSnapshot,
 			cartState,
-			storage: storageState,
+			storage,
 		};
 		if (fallbackLuaState) {
 			if (fallbackLuaState.globals) {
@@ -1764,10 +1756,11 @@ export class BmsxConsoleRuntime extends Service {
 	private resetRuntimeToFreshState(): void {
 		const program = this.luaProgram;
 		if (program) {
-			this.luaProgramSourceOverride = null;
+			this.workspaceLuaOverrides.delete(program.asset_id);
+		}
+		if (program) {
 			this.luaChunkName = this.resolveLuaProgramChunkName(program);
 		} else {
-			this.luaProgramSourceOverride = null;
 			this.luaChunkName = null;
 		}
 		this.luaVmInitialized = false;
@@ -1840,7 +1833,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaVmInitialized = this.luaInterpreter !== null;
 	}
 
-	private applyLuaProgramHotReload(params: { source: string; chunkName: string; override?: string | null }): void {
+	private applyLuaProgramHotReload(params: { source: string; chunkName: string }): void {
 		const previousChunkState = this.captureChunkState(params.chunkName);
 		const previousGlobals = this.captureGlobalStateForReload();
 		const interpreter = this.luaInterpreter;
@@ -1868,26 +1861,23 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaSnapshotSave = this.resolveLuaFunction(this.getLuaGlobalValue(env, '__bmsx_snapshot_save'));
 		this.luaSnapshotLoad = this.resolveLuaFunction(this.getLuaGlobalValue(env, '__bmsx_snapshot_load'));
 		this.luaRuntimeFailed = false;
-		this.luaProgramSourceOverride = params.override ?? params.source;
 		this.luaChunkName = params.chunkName;
 		this.luaVmInitialized = true;
-		const hotSource = params.override ?? params.source;
+		const hotSource = params.source;
 		this.refreshLuaHandlersForChunk(normalizedChunk, hotSource);
 		this.refreshLuaModulesOnResume(normalizedChunk);
 		this.clearNativeMemberCompletionCache();
 		this.clearEditorErrorOverlaysIfNoFault();
 	}
 
-	private reloadLuaProgramState(source: string, chunkName: string, override?: string | null): void {
+	private reloadLuaProgramState(source: string, chunkName: string): void {
 		this.applyProgramSourceToCartridge(source, chunkName);
-		const hotReloadSource = override ?? source;
-		this.luaProgramSourceOverride = hotReloadSource;
 		this.luaChunkName = chunkName;
 		if (!this.luaInterpreter) {
 			this.bootLuaProgram(false);
 		}
 		else {
-			this.applyLuaProgramHotReload({ source: hotReloadSource, chunkName, override: hotReloadSource });
+			this.applyLuaProgramHotReload({ source, chunkName });
 		}
 		this.resetFrameTiming();
 		this.updateOverlayState(this.consoleMode.isActive, this.editor.isActive(), true);
@@ -1917,43 +1907,26 @@ export class BmsxConsoleRuntime extends Service {
 		this.processPendingLuaAssets('resume');
 
 		const targetChunkName = this.canonicalizeProgramChunkName(program, snapshot.luaChunkName ?? null);
-		const currentChunk = this.canonicalizeProgramChunkName(program, this.luaChunkName);
 		const normalizedTarget = this.normalizeChunkName(targetChunkName);
-		const normalizedCurrent = this.normalizeChunkName(currentChunk);
-
-		const requestedOverride = snapshot.luaProgramSourceOverride ?? null;
-
-		const currentOverride = this.luaProgramSourceOverride ?? null;
-		const shouldHotReload = (requestedOverride !== null && requestedOverride !== currentOverride)
-			|| (normalizedTarget !== normalizedCurrent);
-
-		if (shouldHotReload) {
-			let source: string;
-			try {
-				source = requestedOverride ?? this.resolveLuaProgramSource(program);
-			}
-			catch (error) {
-				throw this.normalizeError(error);
-			}
-			this.applyProgramSourceToCartridge(source, targetChunkName);
-			this.luaProgramSourceOverride = requestedOverride;
-			this.luaChunkName = targetChunkName;
-			try {
-				this.applyLuaProgramHotReload({ source, chunkName: targetChunkName, override: requestedOverride });
-			}
-			catch (error) {
-				this.handleLuaError(error);
-				throw error;
-			}
-			// No init on resume, and ensure other modules swap cleanly.
-			this.refreshLuaModulesOnResume(targetChunkName);
-			this.clearNativeMemberCompletionCache();
-			this.applyLuaResumeState(snapshot);
-			return;
+		let source: string;
+		try {
+			source = this.resolveLuaProgramSource(program);
 		}
-		// Interpreter already has the original chunk; reapply the captured Lua state.
+		catch (error) {
+			throw this.normalizeError(error);
+		}
+		this.applyProgramSourceToCartridge(source, targetChunkName);
+		this.luaChunkName = targetChunkName;
+		try {
+			this.applyLuaProgramHotReload({ source, chunkName: targetChunkName });
+		}
+		catch (error) {
+			this.handleLuaError(error);
+			throw error;
+		}
+		this.refreshLuaModulesOnResume(normalizedTarget);
+		this.clearNativeMemberCompletionCache();
 		this.applyLuaResumeState(snapshot);
-		this.refreshLuaModulesOnResume(currentChunk);
 	}
 
 	private applyLuaResumeState(snapshot: BmsxConsoleState): void {
@@ -1975,23 +1948,15 @@ export class BmsxConsoleRuntime extends Service {
 			throw new Error('[BmsxConsoleRuntime] No Lua program available for reload.');
 		}
 		const targetChunkName = this.canonicalizeProgramChunkName(program, snapshot.luaChunkName ?? null);
-		let override: string | null = null;
-		if (typeof snapshot.luaProgramSourceOverride === 'string') {
-			override = snapshot.luaProgramSourceOverride;
-		}
-		else if (typeof this.luaProgramSourceOverride === 'string') {
-			override = this.luaProgramSourceOverride;
-		}
 		let source: string;
 		try {
-			source = override ?? this.resolveLuaProgramSource(program);
+			source = this.getLuaProgramSource(program);
 		}
 		catch (error) {
 			throw this.normalizeError(error);
 		}
 
 		this.applyProgramSourceToCartridge(source, targetChunkName);
-		this.luaProgramSourceOverride = override;
 		this.luaChunkName = targetChunkName;
 
 		this.initializeLuaInterpreterFromSnapshot({
@@ -2072,7 +2037,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private initializeLuaInterpreterFromSnapshot(params: { source: string; chunkName: string; snapshot: BmsxConsoleState; runInit: boolean; hotReload: boolean }): void {
 		if (params.hotReload) {
-			this.applyLuaProgramHotReload({ source: params.source, chunkName: params.chunkName, override: params.snapshot.luaProgramSourceOverride ?? null });
+			this.applyLuaProgramHotReload({ source: params.source, chunkName: params.chunkName });
 			return;
 		}
 
@@ -2391,7 +2356,7 @@ export class BmsxConsoleRuntime extends Service {
 		return descriptor;
 	}
 
-	private captureFallbackLuaState(): { globals?: Record<string, unknown>; locals?: Record<string, unknown>; randomSeed?: number } | null {
+	private captureFallbackLuaState(): { globals?: LuaEntrySnapshot; locals?: LuaEntrySnapshot; randomSeed?: number } | null {
 		const interpreter = this.luaInterpreter;
 		const globals = this.captureLuaEntryCollection(interpreter.enumerateGlobalEntries());
 		const locals = this.captureLuaEntryCollection(interpreter.enumerateChunkEntries());
@@ -2403,7 +2368,7 @@ export class BmsxConsoleRuntime extends Service {
 		};
 	}
 
-	private captureLuaEntryCollection(entries: ReadonlyArray<[string, LuaValue]>): Record<string, unknown> | null {
+	private captureLuaEntryCollection(entries: ReadonlyArray<[string, LuaValue]>): LuaEntrySnapshot | null {
 		// The console editor uses this fallback snapshot when a cart does not expose
 		// __bmsx_snapshot_save/__bmsx_snapshot_load. It exists purely to let the editor
 		// "resume" after a runtime failure without rebooting the whole cart. Unlike a
@@ -2416,25 +2381,26 @@ export class BmsxConsoleRuntime extends Service {
 		if (!entries || entries.length === 0) {
 			return null;
 		}
-		const snapshot: Record<string, unknown> = {};
+		const ctx = this.createLuaSnapshotContext();
+		const snapshotRoot: Record<string, unknown> = {};
 		let count = 0;
 		for (const [name, value] of entries) {
 			if (this.shouldSkipLuaSnapshotEntry(name, value)) {
 				continue;
 			}
 			try {
-				const serialized = this.serializeLuaValueForSnapshot(value, new Set<LuaTable>());
-				snapshot[name] = serialized;
+				const serialized = this.serializeLuaValueForSnapshot(value, ctx);
+				snapshotRoot[name] = serialized;
 				count += 1;
 			}
 			catch (error) {
 				console.warn(`[BmsxConsoleRuntime] Skipped Lua snapshot entry '${name}':`, error);
 			}
 		}
-		return count > 0 ? snapshot : null;
+		return count > 0 ? { root: snapshotRoot, objects: ctx.objects } : null;
 	}
 
-	private captureChunkState(chunkName: string): Record<string, unknown> | null {
+	private captureChunkState(chunkName: string): LuaEntrySnapshot | null {
 		const normalized = this.normalizeChunkName(chunkName);
 		let env = this.luaChunkEnvironmentsByChunkName.get(normalized);
 		if (!env) {
@@ -2453,11 +2419,12 @@ export class BmsxConsoleRuntime extends Service {
 		return this.captureLuaEntryCollection(env.entries());
 	}
 
-	private restoreChunkState(env: LuaEnvironment | null, snapshot: Record<string, unknown> | null): void {
+	private restoreChunkState(env: LuaEnvironment | null, snapshot: LuaEntrySnapshot | null): void {
 		if (!env || !snapshot) {
 			return;
 		}
-		for (const [name, value] of Object.entries(snapshot)) {
+		const entries = this.materializeLuaEntrySnapshot(snapshot);
+		for (const [name, value] of entries) {
 			if (!name) {
 				continue;
 			}
@@ -2465,20 +2432,20 @@ export class BmsxConsoleRuntime extends Service {
 			if (this.isLuaFunctionValue(existing)) {
 				continue;
 			}
-			const luaValue = this.jsToLua(value);
-			env.set(name, luaValue);
+			env.set(name, value);
 		}
 	}
 
-	private captureGlobalStateForReload(): Record<string, unknown> | null {
+	private captureGlobalStateForReload(): LuaEntrySnapshot | null {
 		return this.captureLuaEntryCollection(this.luaInterpreter.enumerateGlobalEntries());
 	}
 
-	private restoreGlobalStateForReload(globals: Record<string, unknown> | null): void {
+	private restoreGlobalStateForReload(globals: LuaEntrySnapshot | null): void {
 		if (!globals) {
 			return;
 		}
-		for (const [name, value] of Object.entries(globals)) {
+		const entries = this.materializeLuaEntrySnapshot(globals);
+		for (const [name, value] of entries) {
 			if (!name || this.apiFunctionNames.has(name) || BmsxConsoleRuntime.LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
 				continue;
 			}
@@ -2486,8 +2453,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (this.isLuaFunctionValue(existing)) {
 				continue;
 			}
-			const luaValue = this.jsToLua(value);
-			this.luaInterpreter.setGlobal(name, luaValue);
+			this.luaInterpreter.setGlobal(name, value);
 		}
 	}
 
@@ -2511,7 +2477,11 @@ export class BmsxConsoleRuntime extends Service {
 		return typeof (value as { call?: unknown }).call === 'function';
 	}
 
-	private serializeLuaValueForSnapshot(value: LuaValue, visited: Set<LuaTable>): unknown {
+	private createLuaSnapshotContext(): LuaSnapshotContext {
+		return { ids: new WeakMap<LuaTable, number>(), objects: {}, nextId: 1 };
+	}
+
+	private serializeLuaValueForSnapshot(value: LuaValue, ctx: LuaSnapshotContext): unknown {
 		if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
 			return value;
 		}
@@ -2520,103 +2490,114 @@ export class BmsxConsoleRuntime extends Service {
 			return encoded !== undefined ? encoded : null;
 		}
 		if (isLuaTable(value)) {
-			if (visited.has(value)) {
-				throw new Error('Cyclic Lua table structures are not supported by the console snapshot.');
-			}
-			visited.add(value);
-			try {
-				const entries = value.entriesArray();
-				if (entries.length === 0) {
-					return {};
-				}
-				const numericEntries = new Map<number, unknown>();
-				const objectEntries: Record<string, unknown> = {};
-				const complexEntries: Array<{ key: unknown; value: unknown }> = [];
-				let hasStringKey = false;
-				let maxNumericIndex = 0;
-				let hasComplexKeys = false;
-				for (const [key, entryValue] of entries) {
-					if (this.isLuaFunctionValue(entryValue)) {
-						continue;
-					}
-					if (typeof key === 'string' && key === '__index') {
-						continue;
-					}
-					let serializedEntry: unknown;
-					try {
-						if (isLuaNativeValue(entryValue)) {
-							const encoded = this.snapshotEncodeNative(entryValue.native);
-							if (encoded === undefined) {
-								continue;
-							}
-							serializedEntry = encoded;
-						} else {
-							serializedEntry = this.serializeLuaValueForSnapshot(entryValue, visited);
-						}
-					}
-					catch (error) {
-						if ($.debug) {
-							console.warn(`[BmsxConsoleRuntime] Skipping Lua table entry '${String(key)}' during snapshot:`, error);
-						}
-						continue;
-					}
-					let serializedKey: unknown;
-					try {
-						serializedKey = this.serializeLuaSnapshotKey(key, visited);
-					} catch (error) {
-						if ($.debug) {
-							console.warn(`[BmsxConsoleRuntime] Skipping Lua table key '${String(key)}' during snapshot:`, error);
-						}
-						continue;
-					}
-					if (serializedKey === undefined) {
-						continue;
-					}
-					complexEntries.push({ key: serializedKey, value: serializedEntry });
-					if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
-						numericEntries.set(key, serializedEntry);
-						if (key > maxNumericIndex) {
-							maxNumericIndex = key;
-						}
-						continue;
-					}
-					if (typeof key === 'string') {
-						hasStringKey = true;
-						objectEntries[key] = serializedEntry;
-						continue;
-					}
-					hasComplexKeys = true;
-				}
-				const numericCount = numericEntries.size;
-				const isSequential = numericCount > 0 && !hasStringKey && numericCount === maxNumericIndex;
-				const needsMap = hasComplexKeys || (numericCount > 0 && (!isSequential || hasStringKey));
-				if (needsMap) {
-					return {
-						__bmsx_table__: 'map',
-						entries: complexEntries,
-					};
-				}
-				if (isSequential) {
-					const result: unknown[] = new Array(maxNumericIndex);
-					for (let index = 1; index <= maxNumericIndex; index += 1) {
-						const entry = numericEntries.get(index);
-						result[index - 1] = entry === undefined ? null : entry;
-					}
-					return result;
-				}
-				for (const [numericKey, numericValue] of numericEntries.entries()) {
-					objectEntries[String(numericKey)] = numericValue;
-				}
-				return objectEntries;
-			}
-			finally {
-				visited.delete(value);
-			}
+			return this.serializeLuaTableForSnapshot(value, ctx);
 		}
 		throw new Error('Unsupported Lua value encountered during snapshot serialization.');
 	}
 
-	private serializeLuaSnapshotKey(key: LuaValue, visited: Set<LuaTable>): unknown {
+	private serializeLuaTableForSnapshot(table: LuaTable, ctx: LuaSnapshotContext): { r: number } {
+		const existing = ctx.ids.get(table);
+		if (existing !== undefined) {
+			return { r: existing };
+		}
+		const id = ctx.nextId;
+		ctx.nextId = id + 1;
+		ctx.ids.set(table, id);
+		ctx.objects[id] = this.buildLuaTableSnapshotPayload(table, ctx);
+		return { r: id };
+	}
+
+	private shouldSkipLuaSnapshotMetamethodKey(key: string): boolean {
+		return key.toLowerCase() === '__index';
+	}
+
+	private buildLuaTableSnapshotPayload(table: LuaTable, ctx: LuaSnapshotContext): unknown {
+		const entries = table.entriesArray();
+		if (entries.length === 0) {
+			return {};
+		}
+		const numericEntries = new Map<number, unknown>();
+		const objectEntries: Record<string, unknown> = {};
+		const complexEntries: Array<{ key: unknown; value: unknown }> = [];
+		let hasStringKey = false;
+		let maxNumericIndex = 0;
+		let hasComplexKeys = false;
+		for (const [key, entryValue] of entries) {
+			if (this.isLuaFunctionValue(entryValue)) {
+				continue;
+			}
+			if (typeof key === 'string' && this.shouldSkipLuaSnapshotMetamethodKey(key)) {
+				continue;
+			}
+			let serializedEntry: unknown;
+			try {
+				if (isLuaNativeValue(entryValue)) {
+					const encoded = this.snapshotEncodeNative(entryValue.native);
+					if (encoded === undefined) {
+						continue;
+					}
+					serializedEntry = encoded;
+				} else {
+					serializedEntry = this.serializeLuaValueForSnapshot(entryValue, ctx);
+				}
+			}
+			catch (error) {
+				if ($.debug) {
+					console.warn(`[BmsxConsoleRuntime] Skipping Lua table entry '${String(key)}' during snapshot:`, error);
+				}
+				continue;
+			}
+			let serializedKey: unknown;
+			try {
+				serializedKey = this.serializeLuaSnapshotKey(key, ctx);
+			} catch (error) {
+				if ($.debug) {
+					console.warn(`[BmsxConsoleRuntime] Skipping Lua table key '${String(key)}' during snapshot:`, error);
+				}
+				continue;
+			}
+			if (serializedKey === undefined) {
+				continue;
+			}
+			complexEntries.push({ key: serializedKey, value: serializedEntry });
+			if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+				numericEntries.set(key, serializedEntry);
+				if (key > maxNumericIndex) {
+					maxNumericIndex = key;
+				}
+				continue;
+			}
+			if (typeof key === 'string') {
+				hasStringKey = true;
+				objectEntries[key] = serializedEntry;
+				continue;
+			}
+			hasComplexKeys = true;
+		}
+		const numericCount = numericEntries.size;
+		const isSequential = numericCount > 0 && !hasStringKey && numericCount === maxNumericIndex;
+		const needsMap = hasComplexKeys || (numericCount > 0 && (!isSequential || hasStringKey));
+		if (needsMap) {
+			return {
+				__bmsx_table__: 'map',
+				entries: complexEntries,
+			};
+		}
+		if (isSequential) {
+			const result: unknown[] = new Array(maxNumericIndex);
+			for (let index = 1; index <= maxNumericIndex; index += 1) {
+				const entry = numericEntries.get(index);
+				result[index - 1] = entry === undefined ? null : entry;
+			}
+			return result;
+		}
+		for (const [numericKey, numericValue] of numericEntries.entries()) {
+			objectEntries[String(numericKey)] = numericValue;
+		}
+		return objectEntries;
+	}
+
+	private serializeLuaSnapshotKey(key: LuaValue, ctx: LuaSnapshotContext): unknown {
 		if (key === null || typeof key === 'boolean' || typeof key === 'number' || typeof key === 'string') {
 			return key;
 		}
@@ -2627,12 +2608,12 @@ export class BmsxConsoleRuntime extends Service {
 			return undefined;
 		}
 		if (isLuaTable(key)) {
-			return this.serializeLuaValueForSnapshot(key, visited);
+			return this.serializeLuaTableForSnapshot(key, ctx);
 		}
-		return this.serializeLuaValueForSnapshot(key, visited);
+		return this.serializeLuaValueForSnapshot(key, ctx);
 	}
 
-	private deserializeLuaSnapshotKey(raw: unknown): LuaValue {
+	private deserializeLuaSnapshotKey(raw: unknown, resolver?: (value: unknown) => LuaValue): LuaValue {
 		if (raw === null || typeof raw === 'boolean' || typeof raw === 'number' || typeof raw === 'string') {
 			return raw as LuaValue;
 		}
@@ -2642,7 +2623,150 @@ export class BmsxConsoleRuntime extends Service {
 				return this.wrapNativeValue(decoded);
 			}
 		}
+		if (resolver) {
+			return resolver(raw);
+		}
 		return this.jsToLua(raw);
+	}
+
+	private isLuaSnapshotGraph(value: unknown): value is LuaSnapshotGraph {
+		if (!value || typeof value !== 'object') {
+			return false;
+		}
+		const record = value as Record<string, unknown>;
+		return Object.prototype.hasOwnProperty.call(record, 'root') && Object.prototype.hasOwnProperty.call(record, 'objects');
+	}
+
+	private materializeLuaEntrySnapshot(snapshot: LuaEntrySnapshot): Array<[string, LuaValue]> {
+		if (this.isLuaSnapshotGraph(snapshot)) {
+			return this.deserializeLuaSnapshotGraph(snapshot);
+		}
+		const entries: Array<[string, LuaValue]> = [];
+		for (const [name, value] of Object.entries(snapshot)) {
+			entries.push([name, this.jsToLua(value)]);
+		}
+		return entries;
+	}
+
+	private deserializeLuaSnapshotGraph(graph: LuaSnapshotGraph): Array<[string, LuaValue]> {
+		const tableMap = new Map<number, LuaTable>();
+		const ensureTable = (id: number): LuaTable => {
+			let table = tableMap.get(id);
+			if (table) {
+				return table;
+			}
+			const created = createLuaTable();
+			tableMap.set(id, created);
+			return created;
+		};
+		const parseRefId = (value: unknown): number => {
+			const id = Number((value as { r: unknown }).r);
+			if (!Number.isFinite(id)) {
+				throw new Error(`[BmsxConsoleRuntime] Invalid Lua snapshot reference id '${String((value as { r: unknown }).r)}'.`);
+			}
+			return id;
+		};
+		const resolveSnapshotValue = (raw: unknown): LuaValue => {
+			if (raw === null || typeof raw === 'boolean' || typeof raw === 'number' || typeof raw === 'string') {
+				return raw as LuaValue;
+			}
+			if (raw && typeof raw === 'object') {
+				if ('r' in (raw as Record<string, unknown>)) {
+					return ensureTable(parseRefId(raw));
+				}
+				const decoded = this.snapshotDecodeNative(raw as Record<string, unknown>);
+				if (decoded) {
+					return this.wrapNativeValue(decoded);
+				}
+			}
+			if (Array.isArray(raw)) {
+				const table = createLuaTable();
+				for (let index = 0; index < raw.length; index += 1) {
+					table.set(index + 1, resolveSnapshotValue(raw[index]));
+				}
+				return table;
+			}
+			if (raw && typeof raw === 'object') {
+				const record = raw as Record<string, unknown>;
+				if (record.__bmsx_table__ === 'map' && Array.isArray((record as { entries?: unknown }).entries)) {
+					const table = createLuaTable();
+					this.applyLuaSnapshotPayload(table, record, resolveSnapshotValue);
+					return table;
+				}
+				return this.jsToLua(raw);
+			}
+			return null;
+		};
+
+		for (const idText of Object.keys(graph.objects)) {
+			const id = Number.parseInt(idText, 10);
+			if (!Number.isFinite(id)) {
+				throw new Error(`[BmsxConsoleRuntime] Invalid Lua snapshot object id '${idText}'.`);
+			}
+			ensureTable(id);
+		}
+		for (const [idText, payload] of Object.entries(graph.objects)) {
+			const id = Number.parseInt(idText, 10);
+			if (!Number.isFinite(id)) {
+				throw new Error(`[BmsxConsoleRuntime] Invalid Lua snapshot object id '${idText}'.`);
+			}
+			this.applyLuaSnapshotPayload(ensureTable(id), payload, resolveSnapshotValue);
+		}
+
+		const rootRef = graph.root as unknown;
+		const resolvedRoot = rootRef && typeof rootRef === 'object' && 'r' in (rootRef as Record<string, unknown>)
+			? ensureTable(parseRefId(rootRef))
+			: rootRef;
+
+		if (isLuaTable(resolvedRoot)) {
+			const entries: Array<[string, LuaValue]> = [];
+			for (const [key, value] of resolvedRoot.entriesArray()) {
+				const stringKey = typeof key === 'string' ? key : String(key);
+				entries.push([stringKey, value]);
+			}
+			return entries;
+		}
+		if (resolvedRoot && typeof resolvedRoot === 'object') {
+			const entries: Array<[string, LuaValue]> = [];
+			for (const [name, value] of Object.entries(resolvedRoot as Record<string, unknown>)) {
+				entries.push([name, resolveSnapshotValue(value)]);
+			}
+			return entries;
+		}
+		return [];
+	}
+
+	private applyLuaSnapshotPayload(target: LuaTable, payload: unknown, resolve: (value: unknown) => LuaValue): void {
+		if (Array.isArray(payload)) {
+			for (let index = 0; index < payload.length; index += 1) {
+				target.set(index + 1, resolve(payload[index]));
+			}
+			return;
+		}
+		if (!payload || typeof payload !== 'object') {
+			return;
+		}
+		const record = payload as { __bmsx_table__?: unknown; entries?: Array<{ key: unknown; value: unknown }> } & Record<string, unknown>;
+		if (record.__bmsx_table__ === 'map' && Array.isArray(record.entries)) {
+			for (const entry of record.entries) {
+				const keyValue = this.deserializeLuaSnapshotKey(entry.key, resolve);
+				if (keyValue === undefined || keyValue === null) {
+					continue;
+				}
+				const valueValue = resolve(entry.value);
+				target.set(keyValue, valueValue);
+			}
+			return;
+		}
+		for (const [prop, entry] of Object.entries(record)) {
+			if (prop === '__bmsx_table__') {
+				continue;
+			}
+			const numericKey = Number.parseInt(prop, 10);
+			const keyValue = Number.isFinite(numericKey) && String(numericKey) === prop ? numericKey : prop;
+			const valueValue = resolve(entry);
+			target.set(keyValue as LuaValue, valueValue);
+		}
 	}
 
 	private captureLuaSnapshot(): unknown {
@@ -2693,15 +2817,15 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private restoreLuaGlobals(globals: Record<string, unknown>): void {
+	private restoreLuaGlobals(globals: LuaEntrySnapshot): void {
 		const interpreter = this.luaInterpreter;
-		for (const [name, value] of Object.entries(globals)) {
+		const entries = this.materializeLuaEntrySnapshot(globals);
+		for (const [name, value] of entries) {
 			if (!name || this.apiFunctionNames.has(name) || BmsxConsoleRuntime.LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
 				continue;
 			}
 			try {
-				const luaValue = this.jsToLua(value);
-				interpreter.setGlobal(name, luaValue);
+				interpreter.setGlobal(name, value);
 			}
 			catch (error) {
 				if ($.debug) {
@@ -2711,15 +2835,15 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private restoreLuaLocals(locals: Record<string, unknown>): void {
+	private restoreLuaLocals(locals: LuaEntrySnapshot): void {
 		const interpreter = this.luaInterpreter;
-		for (const [name, value] of Object.entries(locals)) {
+		const entries = this.materializeLuaEntrySnapshot(locals);
+		for (const [name, value] of entries) {
 			if (!name || !interpreter.hasChunkBinding(name)) {
 				continue;
 			}
 			try {
-				const luaValue = this.jsToLua(value);
-				interpreter.assignChunkValue(name, luaValue);
+				interpreter.assignChunkValue(name, value);
 			}
 			catch (error) {
 				if ($.debug) {
@@ -2816,7 +2940,6 @@ export class BmsxConsoleRuntime extends Service {
 			throw new Error('[BmsxConsoleRuntime] Lua program does not reference a filesystem source.');
 		}
 		const savePath = this.resolveFilesystemPathForCartPath(cartSavePath);
-		const previousOverride = this.luaProgramSourceOverride;
 		const previousChunkName = this.resolveLuaProgramChunkName(program);
 		const previousSource = this.getLuaProgramSource(program);
 		const targetChunkName = previousChunkName;
@@ -2828,11 +2951,9 @@ export class BmsxConsoleRuntime extends Service {
 			this.validateLuaSource(source, targetChunkName);
 		}
 		try {
-			this.luaProgramSourceOverride = source;
 			this.applyProgramSourceToCartridge(source, targetChunkName);
 		}
 		catch (error) {
-			this.luaProgramSourceOverride = previousOverride;
 			try {
 				this.applyProgramSourceToCartridge(previousSource, previousChunkName);
 			}
@@ -2854,14 +2975,13 @@ export class BmsxConsoleRuntime extends Service {
 				rompack.lua[programasset_id] = source;
 			}
 			try {
-				this.reloadLuaProgramState(source, targetChunkName, source);
+				this.reloadLuaProgramState(source, targetChunkName);
 			}
 			catch (error) {
 				this.handleLuaError(error);
 				throw error;
 			}
 		} catch (error) {
-			this.luaProgramSourceOverride = previousOverride;
 			try {
 				this.applyProgramSourceToCartridge(previousSource, previousChunkName);
 			} catch (restoreError) {
@@ -2890,16 +3010,14 @@ export class BmsxConsoleRuntime extends Service {
 		if (!program) {
 			throw new Error('[BmsxConsoleRuntime] Lua program reference unavailable.');
 		}
-		const previousOverride = this.luaProgramSourceOverride;
 		const previousChunkName = this.resolveLuaProgramChunkName(program);
 		const previousSource = this.getLuaProgramSource(program);
 		try {
 			await this.saveLuaProgram(source);
 		}
 		catch (error) {
-			this.luaProgramSourceOverride = previousOverride;
 			try {
-				this.reloadLuaProgramState(previousSource, previousChunkName, previousOverride ?? previousSource);
+				this.reloadLuaProgramState(previousSource, previousChunkName);
 			}
 			catch (restoreError) {
 				this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after reload failure', { error: restoreError });
@@ -2917,7 +3035,7 @@ export class BmsxConsoleRuntime extends Service {
 		const chunkName = this.luaChunkName ?? this.resolveLuaProgramChunkName(program);
 		this.resetWorldState();
 		try {
-			this.reloadLuaProgramState(source, chunkName, source);
+			this.reloadLuaProgramState(source, chunkName);
 		} catch (error) {
 			this.handleLuaError(error);
 			throw error;
@@ -3924,52 +4042,78 @@ export class BmsxConsoleRuntime extends Service {
 
 	public luaValueToJs(value: LuaValue, context?: LuaMarshalContext): unknown {
 		const marshalCtx = this.ensureMarshalContext(context);
+		return this.luaValueToJsWithVisited(value, marshalCtx, new WeakMap<LuaTable, unknown>());
+	}
+
+	private luaValueToJsWithVisited(value: LuaValue, context: LuaMarshalContext, visited: WeakMap<LuaTable, unknown>): unknown {
 		if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
 			return value;
 		}
 		if (this.isLuaFunctionValue(value)) {
 			return this.luaHandlerCache.getOrCreate(value, {
-				moduleId: marshalCtx.moduleId,
-				path: marshalCtx.path.slice(),
+				moduleId: context.moduleId,
+				path: context.path.slice(),
 			});
 		}
 		if (isLuaNativeValue(value)) {
 			return value.native;
 		}
 		if (isLuaTable(value)) {
-			const entries = value.entriesArray();
-			if (entries.length === 0) {
-				return {};
-			}
-			const arrayValues: unknown[] = [];
-			const objectValues: Record<string, unknown> = {};
-			let sequentialCount = 0;
-			let processedEntries = 0;
-			for (const [key, entryValue] of entries) {
-				processedEntries += 1;
-				const segment = this.describeMarshalSegment(key);
-				const converted = this.luaValueToJs(entryValue, segment ? this.extendMarshalContext(marshalCtx, segment) : marshalCtx);
-				if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
-					arrayValues[key - 1] = converted;
-					sequentialCount += 1;
-				} else {
-					objectValues[String(key)] = converted;
-				}
-			}
-			if (processedEntries === 0) {
-				return {};
-			}
-			if (sequentialCount === processedEntries) {
-				return arrayValues;
-			}
-			for (const [index, entryValue] of arrayValues.entries()) {
-				if (entryValue !== undefined) {
-					objectValues[String(index + 1)] = entryValue;
-				}
-			}
-			return objectValues;
+			return this.convertLuaTableToJs(value, context, visited);
 		}
 		return null;
+	}
+
+	private convertLuaTableToJs(table: LuaTable, context: LuaMarshalContext, visited: WeakMap<LuaTable, unknown>): unknown {
+		const cached = visited.get(table);
+		if (cached !== undefined) {
+			return cached;
+		}
+		const entries = table.entriesArray();
+		if (entries.length === 0) {
+			const empty: Record<string, unknown> = {};
+			visited.set(table, empty);
+			return empty;
+		}
+		const numericEntries: Array<{ key: number; value: LuaValue }> = [];
+		const otherEntries: Array<{ key: LuaValue; value: LuaValue }> = [];
+		let maxNumericIndex = 0;
+		for (let i = 0; i < entries.length; i += 1) {
+			const [key, entryValue] = entries[i];
+			if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+				numericEntries.push({ key, value: entryValue });
+				if (key > maxNumericIndex) {
+					maxNumericIndex = key;
+				}
+				continue;
+			}
+			otherEntries.push({ key, value: entryValue });
+		}
+		const isSequential = numericEntries.length === entries.length && numericEntries.length === maxNumericIndex;
+		if (isSequential) {
+			const result: unknown[] = new Array(maxNumericIndex);
+			visited.set(table, result);
+			for (let index = 0; index < numericEntries.length; index += 1) {
+				const entry = numericEntries[index];
+				const segment = this.describeMarshalSegment(entry.key);
+				const converted = this.luaValueToJsWithVisited(entry.value, segment ? this.extendMarshalContext(context, segment) : context, visited);
+				result[entry.key - 1] = converted;
+			}
+			return result;
+		}
+		const objectResult: Record<string, unknown> = {};
+		visited.set(table, objectResult);
+		for (let index = 0; index < numericEntries.length; index += 1) {
+			const entry = numericEntries[index];
+			const segment = this.describeMarshalSegment(entry.key);
+			objectResult[String(entry.key)] = this.luaValueToJsWithVisited(entry.value, segment ? this.extendMarshalContext(context, segment) : context, visited);
+		}
+		for (let index = 0; index < otherEntries.length; index += 1) {
+			const entry = otherEntries[index];
+			const segment = this.describeMarshalSegment(entry.key);
+			objectResult[String(entry.key)] = this.luaValueToJsWithVisited(entry.value, segment ? this.extendMarshalContext(context, segment) : context, visited);
+		}
+		return objectResult;
 	}
 
 	public jsToLua(value: unknown): LuaValue {
@@ -4135,9 +4279,6 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private getLuaProgramSource(program: BmsxConsoleLuaProgram): string {
-		if (this.luaProgramSourceOverride !== null) {
-			return this.luaProgramSourceOverride;
-		}
 		return this.resolveLuaProgramSource(program);
 	}
 
@@ -4314,14 +4455,12 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		const chunkName = this.resolveLuaProgramChunkName(program);
-		const previousOverride = this.luaProgramSourceOverride;
 		try {
-			this.reloadLuaProgramState(fetched, chunkName, fetched);
+			this.reloadLuaProgramState(fetched, chunkName);
 		}
 		catch (error) {
-			this.luaProgramSourceOverride = previousOverride;
 			try {
-				this.reloadLuaProgramState(currentSource, chunkName, previousOverride ?? currentSource);
+				this.reloadLuaProgramState(currentSource, chunkName);
 			}
 			catch (restoreError) {
 				this.handleLuaPersistenceFailure('restore', `[BmsxConsoleRuntime] Failed to restore Lua source after prefetched apply error`, { error: restoreError });
@@ -4509,7 +4648,7 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			const source = $.rompack.lua[asset_id];
 			if (asset_id === this.luaProgram.asset_id) {
-				this.applyLuaProgramHotReload({ source, chunkName, override: source });
+				this.applyLuaProgramHotReload({ source, chunkName });
 				continue;
 			}
 			this.reloadGenericLuaChunk(chunkName, info, source);
@@ -4969,7 +5108,6 @@ export class BmsxConsoleRuntime extends Service {
 		if (!this.editor) {
 			return overrides;
 		}
-		this.workspaceLuaOverrides.clear();
 		const sourcePaths = rompack.luaSourcePaths;
 		let touched = false;
 		for (const asset_id of Object.keys(rompack.lua)) {
@@ -4987,15 +5125,11 @@ export class BmsxConsoleRuntime extends Service {
 			if (normalizedLatest !== normalizedOriginal) {
 				overrides.set(asset_id, { source: latest, path: null, cartPath });
 				this.workspaceLuaOverrides.set(asset_id, { source: latest, path: null, cartPath });
-				if (this.luaProgram && asset_id === this.luaProgram.asset_id) {
-					this.luaProgramSourceOverride = latest;
-				}
 			}
 		}
 		if (touched) {
 			this.luaGenericAssetsExecuted.clear();
 		}
-		this.hasWorkspaceLuaOverrides = this.workspaceLuaOverrides.size > 0;
 		return overrides;
 	}
 
@@ -5016,18 +5150,28 @@ export class BmsxConsoleRuntime extends Service {
 			if (rompack.lua[asset_id] !== source) {
 				rompack.lua[asset_id] = source;
 				updated = true;
-				if (this.luaProgram && asset_id === this.luaProgram.asset_id) {
-					this.luaProgramSourceOverride = source;
-				}
 				changedAssets.add(asset_id);
 			}
 		}
-		this.hasWorkspaceLuaOverrides = this.workspaceLuaOverrides.size > 0;
 		this.luaGenericAssetsExecuted.clear();
 		if (!updated || !hotReload) {
 			return;
 		}
 		this.reloadChangedLuaAssets(changedAssets);
+	}
+
+	private persistWorkspaceOverridesToLocalStorage(root: string, overrides: Map<string, WorkspaceOverrideRecord>): void {
+		for (const record of overrides.values()) {
+			if (!record.path) {
+				continue;
+			}
+			const storageKey = buildWorkspaceStorageKey(root, record.path);
+			const payload = {
+				contents: record.source,
+				updatedAt: record.updatedAt ?? Date.now(),
+			};
+			this.storageService.setItem(storageKey, JSON.stringify(payload));
+		}
 	}
 
 	private async applyServerWorkspaceDirtyLuaOverrides(hotReload: boolean): Promise<void> {
@@ -5036,7 +5180,13 @@ export class BmsxConsoleRuntime extends Service {
 		if (!root) {
 			return;
 		}
-		const overrides = await this.fetchWorkspaceDirtyLuaOverrides(root);
+		const localOverrides = collectWorkspaceOverrides({
+			rompack: $.rompack,
+			projectRootPath: root,
+			storage: this.storageService,
+		});
+		const serverOverrides = await this.fetchWorkspaceDirtyLuaOverrides(root);
+		const overrides = await this.mergeWorkspaceOverrides(root, localOverrides, serverOverrides);
 		if (token !== this.workspaceOverrideToken) {
 			return;
 		}
@@ -5045,26 +5195,24 @@ export class BmsxConsoleRuntime extends Service {
 
 	public refreshWorkspaceOverrides(hotReload: boolean): void {
 		this.applyLocalWorkspaceDirtyLuaOverrides(hotReload);
-		void this.applyServerWorkspaceDirtyLuaOverrides(hotReload);
+		void this.applyServerWorkspaceDirtyLuaOverrides(hotReload).catch((error) => {
+			console.warn('[BmsxConsoleRuntime] Failed to refresh server workspace overrides; keeping local overrides active.', error);
+		});
 	}
 
 	private async applyWorkspaceOverridesForBoot(): Promise<void> {
-		const serverOverrides = await this.fetchWorkspaceOverridesPriority();
-		if (serverOverrides.size > 0) {
-			this.applyWorkspaceLuaOverrides(serverOverrides, false);
-		}
+		const root = this.resolveCartProjectRootPath();
 		const localOverrides = collectWorkspaceOverrides({
 			rompack: $.rompack,
-			projectRootPath: this.resolveCartProjectRootPath(),
+			projectRootPath: root,
 			storage: this.storageService,
 		});
-		if (localOverrides.size > 0) {
-			for (const key of serverOverrides.keys()) {
-				localOverrides.delete(key);
-			}
-			if (localOverrides.size > 0) {
-				this.applyWorkspaceLuaOverrides(localOverrides, false);
-			}
+		const serverOverrides = await this.fetchWorkspaceOverridesPriority();
+		if (serverOverrides) {
+			const merged = await this.mergeWorkspaceOverrides(root, localOverrides, serverOverrides);
+			this.applyWorkspaceLuaOverrides(merged, false);
+		} else {
+			this.applyWorkspaceLuaOverrides(localOverrides, false);
 		}
 		const editorOverrides = this.overlayEditorBuffersToRompack();
 		if (editorOverrides.size > 0) {
@@ -5072,17 +5220,52 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private async fetchWorkspaceOverridesPriority(): Promise<Map<string, WorkspaceOverrideRecord>> {
+	private async mergeWorkspaceOverrides(
+		root: string | null,
+		localOverrides: Map<string, WorkspaceOverrideRecord>,
+		serverOverrides: Map<string, WorkspaceOverrideRecord>,
+	): Promise<Map<string, WorkspaceOverrideRecord>> {
+		const merged = new Map<string, WorkspaceOverrideRecord>();
+		const assetIds = new Set<string>([
+			...localOverrides.keys(),
+			...serverOverrides.keys(),
+		]);
+		for (const asset_id of assetIds) {
+			const local = localOverrides.get(asset_id);
+			const remote = serverOverrides.get(asset_id);
+			const localTime = local?.updatedAt ?? 0;
+			const remoteTime = remote?.updatedAt ?? 0;
+			if (local && (!remote || localTime >= remoteTime)) {
+				merged.set(asset_id, local);
+				if (remoteTime < localTime && local.path) {
+					await this.persistLuaSourceToFilesystem(local.path, local.source);
+				}
+				if (root) {
+					this.persistWorkspaceOverridesToLocalStorage(root, new Map([[asset_id, local]]));
+				}
+				continue;
+			}
+			if (remote) {
+				merged.set(asset_id, remote);
+				if (root) {
+					this.persistWorkspaceOverridesToLocalStorage(root, new Map([[asset_id, remote]]));
+				}
+			}
+		}
+		return merged;
+	}
+
+	private async fetchWorkspaceOverridesPriority(): Promise<Map<string, WorkspaceOverrideRecord> | null> {
 		const root = this.resolveCartProjectRootPath();
 		if (!root) {
-			return new Map<string, WorkspaceOverrideRecord>();
+			return null;
 		}
 		try {
 			const serverOverrides = await this.fetchWorkspaceDirtyLuaOverrides(root);
 			return serverOverrides;
 		} catch (error) {
 			console.warn('[BmsxConsoleRuntime] Failed to load server workspace overrides; falling back to local overrides.', error);
-			return new Map<string, WorkspaceOverrideRecord>();
+			return null;
 		}
 	}
 
@@ -5093,7 +5276,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private async fetchWorkspaceDirtyLuaOverrides(root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
 		const rompack = $.rompack;
-		const tasks: Array<Promise<{ asset_id: string; contents: string; path: string | null; cartPath: string } | null>> = [];
+		const tasks: Array<Promise<{ asset_id: string; contents: string; path: string | null; cartPath: string; updatedAt?: number } | null>> = [];
 		// Fetching dirty files from backend is best-effort. Missing files do NOT mean we should
 		// discard in-memory dirty edits; they simply yield no extra overrides.
 		for (const [asset_id, cartPath] of Object.entries(rompack.luaSourcePaths)) {
@@ -5102,12 +5285,12 @@ export class BmsxConsoleRuntime extends Service {
 				continue;
 			}
 			const dirtyPath = this.buildDirtyPathForCartPath(cartPath, root);
-			tasks.push(this.fetchWorkspaceFile(dirtyPath).then((contents) => {
-				if (contents === null) {
+			tasks.push(this.fetchWorkspaceFile(dirtyPath).then((result) => {
+				if (result === null) {
 					return null;
 				}
 				const normalizedCartPath = this.normalizeWorkspacePath(cartPath);
-				return { asset_id, contents, path: dirtyPath, cartPath: normalizedCartPath };
+				return { asset_id, contents: result.contents, path: dirtyPath, cartPath: normalizedCartPath, updatedAt: result.updatedAt };
 			}));
 		}
 		if (tasks.length === 0) {
@@ -5120,12 +5303,12 @@ export class BmsxConsoleRuntime extends Service {
 			if (!result) {
 				continue;
 			}
-			overrides.set(result.asset_id, { source: result.contents, path: result.path, cartPath: result.cartPath });
+			overrides.set(result.asset_id, { source: result.contents, path: result.path, cartPath: result.cartPath, updatedAt: result.updatedAt });
 		}
 		return overrides;
 	}
 
-	private async fetchWorkspaceFile(path: string): Promise<string | null> {
+	private async fetchWorkspaceFile(path: string): Promise<{ contents: string; updatedAt?: number } | null> {
 		if (typeof fetch !== 'function') { // TODO: Use platform service fetcher (abstraction)
 			console.warn('[BmsxConsoleRuntime] Fetch API is not available.');
 			return null;
@@ -5140,21 +5323,25 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		if (!response.ok) {
 			console.info('No workspace file found on server. Starting with clean slate.');
+			return null;
 		}
 		let payload: unknown;
 		try {
 			payload = await response.json();
 		} catch {
 			console.warn('[BmsxConsoleRuntime] Failed to parse workspace file response JSON.');
+			return null;
 		}
 		if (!payload || typeof payload !== 'object') {
-			console.warn('[BmsxConsoleRuntime] Invalid workspace file response payload.');
+			console.warn(`[BmsxConsoleRuntime] Invalid workspace file response payload: ${JSON.stringify(payload)}`);
+			return null;
 		}
-		const record = payload as { contents?: string };
+		const record = payload as { contents?: string; updatedAt?: number };
 		if (typeof record.contents !== 'string') {
-			console.warn('[BmsxConsoleRuntime] Invalid workspace file response payload.');
+			console.warn(`[BmsxConsoleRuntime] Invalid workspace file response payload: ${JSON.stringify(payload)}`);
+			return null;
 		}
-		return record.contents;
+		return { contents: record.contents, updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : undefined };
 	}
 
 	private async deleteWorkspaceFile(path: string): Promise<void> {
@@ -5182,10 +5369,8 @@ export class BmsxConsoleRuntime extends Service {
 				mainSource = source;
 			}
 		}
-		this.luaProgramSourceOverride = null;
-		this.hasWorkspaceLuaOverrides = false;
-		this.luaGenericAssetsExecuted.clear();
 		this.workspaceLuaOverrides.clear();
+		this.luaGenericAssetsExecuted.clear();
 		const root = this.resolveCartProjectRootPath();
 		if (root) {
 			for (const cartPath of Object.values(rompack.luaSourcePaths)) {
@@ -5206,14 +5391,13 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		const chunkName = this.resolveLuaProgramChunkName(this.luaProgram);
-		this.reloadLuaProgramState(mainSource, chunkName, mainSource);
+		this.reloadLuaProgramState(mainSource, chunkName);
 		this.processPendingLuaAssets('workspace:reset');
 	}
 
 	public nukeWorkspace(): void {
 		this.clearWorkspaceLuaOverrides();
 		this.workspaceLuaOverrides.clear();
-		this.hasWorkspaceLuaOverrides = false;
 	}
 
 	private inspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult | null {
@@ -5998,7 +6182,8 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		if (isLuaTable(value)) {
 			try {
-				const serialized = this.serializeLuaValueForSnapshot(value, new Set<LuaTable>());
+				const ctx = this.createLuaSnapshotContext();
+				const serialized = { root: this.serializeLuaValueForSnapshot(value, ctx), objects: ctx.objects };
 				const json = JSON.stringify(serialized, null, 2) ?? 'null';
 				const rawLines = json.split('\n');
 				const lines: string[] = [];

@@ -3505,10 +3505,6 @@ export function performResume(): boolean {
 	}
 	const targetGeneration = ide_state.saveGeneration;
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
-	if (shouldUpdateGeneration) {
-		const overrideSource = getMainProgramSourceForReload();
-		(sanitizedSnapshot as Record<string, unknown> & { luaProgramSourceOverride?: string | null }).luaProgramSourceOverride = overrideSource;
-	}
 	clearExecutionStopHighlights();
 	deactivate();
 	scheduleRuntimeTask(() => {

@@ -360,8 +360,9 @@ async function handleWorkspaceFetch(descriptor: WorkspaceFetchDescriptor, worksp
 		}
 		try {
 			const filePath = resolveWorkspaceFilePath(workspaceRoot, targetPath);
+			const stats = await fs.stat(filePath);
 			const contents = await fs.readFile(filePath, 'utf8');
-			return jsonResponse(200, { path: targetPath, contents });
+			return jsonResponse(200, { path: targetPath, contents, updatedAt: stats.mtimeMs });
 		} catch (error) {
 			const message = toErrorMessage(error);
 			if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
