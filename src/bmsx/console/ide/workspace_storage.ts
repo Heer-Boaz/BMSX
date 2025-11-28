@@ -829,6 +829,10 @@ export async function runWorkspaceAutosaveTick(): Promise<void> {
 			}
 		}
 		await persistDirtyContextEntries(dirtyEntries);
+		const runtime = getConsoleRuntime();
+		if (runtime) {
+			runtime.refreshWorkspaceOverrides(false, { includeServer: false });
+		}
 	} catch (error) {
 		console.warn('[ConsoleCartEditor] Workspace autosave failed:', error);
 	} finally {
