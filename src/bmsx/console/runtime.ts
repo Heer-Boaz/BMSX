@@ -23,7 +23,7 @@ import { Service } from '../core/service';
 import { OverlayPipelineController } from '../core/pipelines/overlay_controller';
 import { ConsoleRenderFacade } from './console_render_facade';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
-import { LuaHandlerCache, isLuaHandlerFn } from '../lua/handler_cache';
+import { LuaHandlerCache, LuaHandlerFn, isLuaHandlerFn } from '../lua/handler_cache';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast';
 import { createConsoleCartEditor, type ConsoleCartEditor, } from './ide/console_cart_editor';
 import { toggleEditorFromShortcut, isAltDown, isCtrlDown, isMetaDown, isShiftDown } from './ide/ide_input';
@@ -36,7 +36,6 @@ import { buildWorkspaceDirtyEntryPath, buildWorkspaceStateFilePath, buildWorkspa
 import { collectWorkspaceOverrides, type WorkspaceOverrideRecord } from './workspace';
 import { deep_clone } from '../utils/deep_clone';
 import { WorldObject } from '../core/object/worldobject';
-import { Reviver } from '../serializer/gameserializer';
 import { Input } from '../input/input';
 import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputMapping, KeyboardBinding, GamepadBinding, PointerBinding, ButtonState } from '../input/inputtypes';
 import { ConsoleMode } from './console_mode';
@@ -3569,60 +3568,6 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		return name;
 	}
-
-	private registerLuaClass(className: string, classTable: LuaTable): void {
-		if (!className || className.length === 0) {
-			return;
-		}
-		const env = this.luaInterpreter.globalEnvironment;
-		env.set(className, classTable);
-		if (this.canonicalization) {
-			const normalized = this.canonicalizeIdentifier(className);
-			if (normalized !== className) {
-				env.set(normalized, classTable);
-			}
-		}
-	}
-
-	private getLuaTableEntry(table: LuaTable, keys: readonly string[]): LuaValue | null {
-		for (let index = 0; index < keys.length; index += 1) {
-			const key = keys[index];
-			let candidate = table.get(key);
-			if (candidate !== null) {
-				return candidate;
-			}
-			if (this.canonicalization !== 'none') {
-				const normalized = this.canonicalizeIdentifier(key);
-				if (normalized !== key) {
-					candidate = table.get(normalized);
-					if (candidate !== null) {
-						return candidate;
-					}
-				}
-			}
-		}
-		return null;
-	}
-
-	private getLuaRecordEntry<T>(record: Record<string, any> | null | undefined, keys: readonly string[]): T | undefined {
-		if (!record) {
-			return undefined;
-		}
-		for (let index = 0; index < keys.length; index += 1) {
-			const key = keys[index];
-			if (Object.prototype.hasOwnProperty.call(record, key)) {
-				return record[key] as T;
-			}
-			if (this.canonicalization !== 'none') {
-				const normalized = this.canonicalizeIdentifier(key);
-				if (normalized !== key && Object.prototype.hasOwnProperty.call(record, normalized)) {
-					return record[normalized] as T;
-				}
-			}
-		}
-		return undefined;
-	}
-
 	private extractFunctionParameters(fn: (...args: unknown[]) => unknown): string[] {
 		const source = Function.prototype.toString.call(fn);
 		const openIndex = source.indexOf('(');
@@ -3698,50 +3643,6 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private geConsoleClassDefinitionForHost(host: WorldObject): ConsoleClassDefinition | null {
-		const marker = host as { __lua_definition_id?: string };
-		const defId = marker.__lua_definition_id;
-		if (!defId) {
-			return null;
-		}
-		const def = this.classDefinitions.get(defId);
-		return def ?? null;
-	}
-
-	private ensureConsoleClassPrototype(classTable: LuaTable): void {
-		const meta = classTable.getMetatable();
-		const indexValue = meta ? meta.get('__index') : classTable.get('__index');
-		if (indexValue === null) {
-			classTable.set('__index', classTable);
-		}
-	}
-
-	private resolveLuaClassTable(classRef: string, interpreter: LuaInterpreter): LuaTable {
-		const env = interpreter.globalEnvironment;
-		const segments = classRef.split('.');
-		if (segments.length === 0) {
-			throw new Error('[BmsxConsoleRuntime] class requires a non-empty identifier.');
-		}
-		let value = this.getLuaGlobalValue(env, segments[0]) as LuaValue | null;
-		if (value === null) {
-			throw new Error(`[BmsxConsoleRuntime] Lua class '${classRef}' not found.`);
-		}
-		for (let index = 1; index < segments.length; index += 1) {
-			if (!isLuaTable(value)) {
-				throw new Error(`[BmsxConsoleRuntime] Lua class path '${classRef}' resolved to a non-table value.`);
-			}
-			const next = this.getLuaTableEntry(value, [segments[index]!]);
-			if (next === null) {
-				throw new Error(`[BmsxConsoleRuntime] Lua class '${classRef}' not found.`);
-			}
-			value = next;
-		}
-		if (!isLuaTable(value)) {
-			throw new Error(`[BmsxConsoleRuntime] Lua class '${classRef}' resolved to a non-table value.`);
-		}
-		return value;
-	}
-
 	public getWorkspaceSavedAssetIds(): ReadonlySet<string> {
 		const saved = new Set<string>();
 		for (const [asset_id, original] of this.rompackOriginalLua.entries()) {
@@ -3759,51 +3660,6 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 		return saved;
-	}
-
-	private resolveConstructorReference(ref: string): unknown {
-		if (!ref) {
-			return undefined;
-		}
-		const constructors = Reviver.constructors;
-		if (constructors && Object.prototype.hasOwnProperty.call(constructors, ref)) {
-			return constructors[ref];
-		}
-		const globalScope = globalThis as Record<string, unknown>;
-		if (globalScope && typeof globalScope[ref] === 'function') {
-			return globalScope[ref];
-		}
-		return undefined;
-	}
-
-	private normalizeLuaIdentifier<T extends string = string>(value: unknown, context: string): T {
-		if (typeof value === 'string') {
-			const trimmed = value.trim();
-			if (trimmed.length > 0) {
-				return trimmed as T;
-			}
-		}
-		throw new Error(`[BmsxConsoleRuntime] ${context} requires a non-empty id.`);
-	}
-
-	private normalizeStringArray(value: unknown): string[] | undefined {
-		if (value === undefined || value === null) {
-			return undefined;
-		}
-		if (typeof value === 'string') {
-			const trimmed = value.trim();
-			return trimmed.length > 0 ? [trimmed] : undefined;
-		}
-		if (Array.isArray(value)) {
-			const out: string[] = [];
-			for (const entry of value) {
-				if (typeof entry !== 'string') continue;
-				const trimmed = entry.trim();
-				if (trimmed.length > 0) out.push(trimmed);
-			}
-			return out.length > 0 ? out : undefined;
-		}
-		return undefined;
 	}
 
 	public callLuaFunction(fn: LuaFunctionValue, args: unknown[]): unknown[] {

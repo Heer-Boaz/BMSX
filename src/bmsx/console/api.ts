@@ -7,7 +7,7 @@ import { ConsoleFont } from './font';
 import { BmsxConsoleStorage } from './storage';
 import { BmsxConsolePointerButton, ConsolePointerVector, ConsolePointerViewport, ConsolePointerWheel } from './types';
 import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest } from '../audio/soundmaster';
-import type { ConcreteOrAbstractConstructor, Identifier, Native, NativeClass, Registerable, RomPack, vec2, vec3 } from '../rompack/rompack';
+import type { ConcreteOrAbstractConstructor, Identifier, Native, Registerable, RomPack } from '../rompack/rompack';
 import type { World } from '../core/world';
 import type { Registry } from '../core/registry';
 import { Service } from '../core/service';
@@ -54,29 +54,22 @@ type LuaExtendedClass<TBase extends ConcreteOrAbstractConstructor<any>> =
 		defaults?: Record<string, any>; // Default property values to apply when constructing instances of this class. Will not include Lua methods/properties and is separate from 'class' to avoid polluting the prototype with instance data. In addition, class overrides are applied after defaults so that overrides can set default values for properties defined in Lua classes.
 	};
 
-type WorldObjectExtensions = LuaExtendedClass<typeof WorldObject> & {
+type EntityExtensions = LuaExtendedClass<typeof WorldObject | typeof SpriteObject | typeof Component | typeof Service> & {
 	fsms?: Identifier[];
 	components?: string[];
 	effects?: string[];
 	bts?: BehaviorTreeID[];
 };
 
-type SpriteExtensions = WorldObjectExtensions & LuaExtendedClass<typeof SpriteObject> & {
-	// No additional properties required for now
-};
-
-type ServiceExtensions = LuaExtendedClass<typeof Service> & {
-	fsms?: Identifier[];
-	// No additional properties required for now
-}
-
 export class BmsxConsoleApi {
 	private readonly playerindex: number;
 	private readonly storage: BmsxConsoleStorage;
 	private readonly font: ConsoleFont;
 	private readonly defaultPrintColorIndex = 15;
-	private readonly serviceExts = new Map<string, ServiceExtensions>();
-	private readonly worldObjectExts = new Map<string, WorldObjectExtensions>();
+	private readonly serviceExts = new Map<string, EntityExtensions>();
+	private readonly worldObjectExts = new Map<string, EntityExtensions>();
+	private readonly spriteObjectExts = new Map<string, EntityExtensions>();
+	private readonly componentExts = new Map<string, EntityExtensions>();
 	private textCursorX = 0;
 	private textCursorY = 0;
 	private textCursorHomeX = 0;
@@ -405,15 +398,15 @@ export class BmsxConsoleApi {
 		}
 	}
 
-	public define_component(descriptor: Partial<Component>): void {
-		throw new Error('define_component is not implemented yet.');
+	public define_component(descriptor: EntityExtensions): void {
+		this.componentExts.set(descriptor.def_id, descriptor);
 	}
 
-	public define_world_object(descriptor: WorldObjectExtensions): void {
+	public define_world_object(descriptor: EntityExtensions): void {
 		this.worldObjectExts.set(descriptor.def_id, descriptor);
 	}
 
-	public define_service(descriptor: ServiceExtensions): void {
+	public define_service(descriptor: EntityExtensions): void {
 		this.serviceExts.set(descriptor.def_id, descriptor);
 	}
 
@@ -435,21 +428,11 @@ export class BmsxConsoleApi {
 		// Default the id of the instance to the Lua-class' definition id and otherwise defaults to the definition id
 		const instance = new Service({ id: ext?.class?.id ?? definition_id, deferBind: defer_bind });
 		// Apply definition
-		if (ext) {
-			if (ext.defaults) {
-				Object.assign(instance, ext.defaults);
-			}
-			this.applyClassOverrides(instance, ext.class); // Apply Lua class overrides
-
-			if (ext.fsms) {
-				for (let i = 0; i < ext.fsms.length; i += 1) {
-					instance.sc.add_statemachine(ext.fsms[i], instance.id);
-				}
-			}
-		}
+		this.applyObjectExtensionAndOverrides(ext, instance, undefined);
 		return instance.id;
 	}
 
+	// TODO: Cannot handle Lua class overrides yet and doesn't apply component extensions or definition overrides
 	public attach_component(object_id: Identifier, component: string | { id: string; id_local?: string; state?: object }): string {
 		const obj = $.world.getWorldObject(object_id);
 		const componentId = typeof component === 'string' ? component : component.id;
@@ -471,27 +454,26 @@ export class BmsxConsoleApi {
 	}
 
 	/**
-	 * Spawn a WorldObject instance from a previously defined descriptor.
+	 * Apply an entity extension descriptor to a constructed instance,
+	 * then apply any user-supplied overrides.
 	 *
 	 * Behavior:
-	 * - Looks up the world-object extensions registered via define_world_object(definition).
-	 * - Creates a new WorldObject. Instance id defaults to the Lua class override id (if present)
-	 *   and can be overridden via overrides.id.
-	 * - Applies descriptor defaults, then Lua class overrides to the instance.
-	 * - Attaches declared components, FSMs, effects, and behavior trees from the descriptor.
-	 * - Finally applies user-supplied overrides so they take precedence, then spawns the object
-	 *   into the world, honoring overrides.pos if provided.
+	 * - If an extension descriptor is provided, apply its `defaults` to the instance.
+	 * - Apply Lua class overrides from `ext.class` (filtered to instance fields).
+	 * - Attach any declared components, FSMs and action effects to the instance.
+	 * - Attach any declared behavior trees.
+	 * - After processing the extension descriptor, apply the `overrides` object last so
+	 *   that user-specified properties take precedence.
 	 *
-	 * @param definition_id The id used when registering the world object definition.
-	 * @param overrides Optional partial properties to apply last; may include id and pos.
-	 * @returns The id of the spawned object.
+	 * Notes:
+	 * - This function does not spawn the object into the world; it only configures
+	 *   the instance. Callers are expected to call `$.world.spawn` or similar when ready.
+	 *
+	 * @param ext Optional extension descriptor returned from define_world_object/define_service/etc.
+	 * @param instance The constructed instance to modify
+	 * @param overrides Optional final overrides to apply to the instance (applied last)
 	 */
-	public spawn_object(definition_id: Identifier, overrides?: Partial<WorldObject>): Identifier {
-		const ext = this.worldObjectExts.get(definition_id);
-		// Default the id of the instance to the Lua-class' definition id if not overridden
-		const instance = new WorldObject({ id: overrides?.id ?? ext?.class?.id, constructReason: undefined });
-
-		// Apply definition
+	private applyObjectExtensionAndOverrides(ext: EntityExtensions, instance: any, overrides?: Partial<any>): void {
 		if (ext) {
 			if (ext.defaults) {
 				Object.assign(instance, ext.defaults);
@@ -528,6 +510,59 @@ export class BmsxConsoleApi {
 		if (overrides) {
 			Object.assign(instance, overrides);
 		}
+	}
+
+	/**
+	 * Spawn a WorldObject instance from a previously defined descriptor.
+	 *
+	 * Behavior:
+	 * - Looks up the world-object extensions registered via define_world_object(definition).
+	 * - Creates a new WorldObject. Instance id defaults to the Lua class override id (if present)
+	 *   and can be overridden via overrides.id.
+	 * - Applies descriptor defaults, then Lua class overrides to the instance.
+	 * - Attaches declared components, FSMs, effects, and behavior trees from the descriptor.
+	 * - Finally applies user-supplied overrides so they take precedence, then spawns the object
+	 *   into the world, honoring overrides.pos if provided.
+	 *
+	 * @param definition_id The id used when registering the world object definition.
+	 * @param overrides Optional partial properties to apply last; may include id and pos.
+	 * @returns The id of the spawned object.
+	 */
+	public spawn_object(definition_id: Identifier, overrides?: Partial<WorldObject>): Identifier {
+		const ext = this.worldObjectExts.get(definition_id);
+		// Default the id of the instance to the Lua-class' definition id if not overridden
+		const instance = new WorldObject({ id: overrides?.id ?? ext?.class?.id, constructReason: undefined });
+
+		// Apply definition
+		this.applyObjectExtensionAndOverrides(ext, instance, overrides);
+
+		$.world.spawn(instance, overrides?.pos, { reason: 'fresh' });
+		return instance.id;
+	}
+
+	/**
+	 * Spawn a SpriteObject instance from a previously defined sprite descriptor.
+	 *
+	 * Behavior:
+	 * - Looks up the sprite-object extensions registered via define_world_object(definition).
+	 * - Creates a new SpriteObject. Instance id defaults to the Lua class override id (if present)
+	 *   and can be overridden via overrides.id.
+	 * - Applies descriptor defaults, then Lua class overrides to the instance.
+	 * - Attaches declared components, FSMs, effects, and behavior trees from the descriptor.
+	 * - Finally applies user-supplied overrides so they take precedence, then spawns the sprite
+	 *   into the world, honoring overrides.pos if provided.
+	 *
+	 * @param definition_id The id used when registering the sprite definition.
+	 * @param overrides Optional partial properties to apply last; may include id and pos.
+	 * @returns The id of the spawned sprite instance.
+	 */
+	public spawn_sprite(definition_id: Identifier, overrides?: Partial<SpriteObject>): Identifier {
+		const ext = this.spriteObjectExts.get(definition_id);
+		// Default the id of the instance to the Lua-class' definition_id if not overridden
+		const instance = new SpriteObject({ id: overrides?.id ?? ext?.class?.id, constructReason: undefined });
+		// Apply definition
+		this.applyObjectExtensionAndOverrides(ext, instance, overrides);
+
 		$.world.spawn(instance, overrides?.pos, { reason: 'fresh' });
 		return instance.id;
 	}
