@@ -436,7 +436,7 @@ export class BmsxConsoleApi {
 	public attach_component(object_id: Identifier, component: string | { id: string; id_local?: string; state?: object }): string {
 		const obj = $.world.getWorldObject(object_id);
 		const componentId = typeof component === 'string' ? component : component.id;
-		const ctor = (globalThis as Record<string, any>)[componentId] as new (opts: ComponentAttachOptions) => Component;
+		const ctor = this.resolve_component_ctor(componentId);
 		const instanceOpts: ComponentAttachOptions = {
 			parent_or_id: obj,
 			id_local: typeof component === 'object' ? component.id_local : undefined,
@@ -450,7 +450,9 @@ export class BmsxConsoleApi {
 	}
 
 	public define_effect(descriptor: ActionEffectDefinition): void {
-		actionEffectRegistry.register(descriptor);
+		const id = (descriptor as { def_id?: Identifier }).def_id ?? descriptor.id;
+		const def: ActionEffectDefinition = { ...descriptor, id };
+		actionEffectRegistry.register(def);
 	}
 
 	/**
@@ -510,6 +512,16 @@ export class BmsxConsoleApi {
 		if (overrides) {
 			Object.assign(instance, overrides);
 		}
+	}
+
+	private resolve_component_ctor(id: string): new (opts: ComponentAttachOptions) => Component {
+		const ctor = (globalThis as Record<string, unknown>)[id] as new (opts: ComponentAttachOptions) => Component | undefined;
+		if (ctor) return ctor;
+		const normalized = id.toLowerCase();
+		if (normalized === 'actioneffectcomponent') {
+			return ActionEffectComponent as unknown as new (opts: ComponentAttachOptions) => Component;
+		}
+		throw new Error(`Component constructor '${id}' not found.`);
 	}
 
 	/**

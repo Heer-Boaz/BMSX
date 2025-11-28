@@ -242,7 +242,7 @@ local function define_blink()
 		event = 'demo.hero.blink',
 		cooldown_ms = 420,
 		-- handle the blink directly in the effect so a single trigger applies movement/timer/emits without relying on a separate listener.
-		on_trigger = function(ctx, payload)
+		handler = function(ctx, payload)
 			local owner = ctx.owner
 			local facing = payload and payload.facing or owner.facing or 'right'
 			local offset = facing == 'left' and -24 or 24
