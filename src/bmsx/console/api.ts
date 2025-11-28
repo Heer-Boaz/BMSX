@@ -387,15 +387,15 @@ export class BmsxConsoleApi {
 		}
 	}
 
-	public register_component(descriptor: Partial<Component>): void {
-		throw new Error('register_component is not implemented yet.');
+	public define_component(descriptor: Partial<Component>): void {
+		throw new Error('define_component is not implemented yet.');
 	}
 
-	public register_world_object(descriptor: WorldObjectExtensions): void {
+	public define_world_object(descriptor: WorldObjectExtensions): void {
 		this.worldObjectExts.set(descriptor.def_id, descriptor);
 	}
 
-	public register_service(descriptor: ServiceExtensions): void {
+	public define_service(descriptor: ServiceExtensions): void {
 		this.serviceExts.set(descriptor.def_id, descriptor);
 	}
 
@@ -435,13 +435,13 @@ export class BmsxConsoleApi {
 		return instance.id;
 	}
 
-	public register_effect(descriptor: ActionEffectDefinition): void {
+	public define_effect(descriptor: ActionEffectDefinition): void {
 		actionEffectRegistry.register(descriptor);
 	}
 
-	public spawn_object(definition_id: Identifier, id?: Identifier, pos?: vec3, overrides?: Partial<WorldObject>): Identifier {
+	public spawn_object(definition_id: Identifier, overrides?: Partial<WorldObject>): Identifier {
 		const ext = this.worldObjectExts.get(definition_id);
-		const instance = new WorldObject({ id, constructReason: undefined });
+		const instance = new WorldObject({ id: overrides?.id, constructReason: undefined });
 
 		// Apply definition
 		if (ext) {
@@ -481,7 +481,7 @@ export class BmsxConsoleApi {
 		if (overrides) {
 			Object.assign(instance, overrides);
 		}
-		$.world.spawn(instance, pos, { reason: 'fresh' });
+		$.world.spawn(instance, overrides?.pos, { reason: 'fresh' });
 		return instance.id;
 	}
 
@@ -613,14 +613,14 @@ export class BmsxConsoleApi {
 		return BmsxConsoleRuntime.instance!;
 	}
 
-	public register_fsm(id: string, blueprint: StateMachineBlueprint, options?: { setup?: boolean }): void {
+	public define_fsm(id: string, blueprint: StateMachineBlueprint, options?: { setup?: boolean }): void {
 		this.set_fsm_blueprint_factory(id, blueprint);
 		if (!options || options.setup !== false) {
 			setupFSMlibrary();
 		}
 	}
 
-	public register_behavior_tree(_descriptor: BehaviorTreeDefinition): void {
+	public define_bt(_descriptor: BehaviorTreeDefinition): void {
 		// TODO: Implement
 	}
 
