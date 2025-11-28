@@ -24,7 +24,7 @@ export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: Con
 		},
 		onBoot(_world: World) {
 			const canonicalization = options.canonicalization ?? ($.rompack.canonicalization ?? 'none');
-			BmsxConsoleRuntime.createInstance({
+			return BmsxConsoleRuntime.createInstance({
 				cart,
 				playerIndex: options.playerIndex,
 				storage: $.platform.storage,

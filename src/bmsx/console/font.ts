@@ -72,7 +72,7 @@ function buildMsxCharMap(prefix: string): CharMap {
 		'=': withPrefix('code_0x3d'),
 		'>': withPrefix('code_0x3e'),
 		'?': withPrefix('question'),
-		'@': withPrefix('code_0x40'),
+		'@': withPrefix('at_sign'),
 		'[': withPrefix('code_0x5b'),
 		'\\': withPrefix('code_0x5c'),
 		']': withPrefix('code_0x5d'),
@@ -108,11 +108,12 @@ function buildTinyCharMap(prefix: string): CharMap {
 	const map: CharMap = {
 		' ': withPrefix('space'),
 		'!': withPrefix('exclamation'),
-		'"': withPrefix('quote'),
+		'@': withPrefix('at_sign'),
 		'#': withPrefix('hash'),
 		'$': withPrefix('dollar'),
 		'%': withPrefix('percent'),
 		'&': withPrefix('ampersand'),
+		'"': withPrefix('quote'),
 		'\'': withPrefix('apostroph'),
 		'(': withPrefix('parenopen'),
 		')': withPrefix('parenclose'),
@@ -129,7 +130,6 @@ function buildTinyCharMap(prefix: string): CharMap {
 		'=': withPrefix('equals'),
 		'>': withPrefix('greaterthan'),
 		'?': withPrefix('question'),
-		'@': withPrefix('empty'),
 		'[': withPrefix('bracketopen'),
 		'\\': withPrefix('backslash'),
 		']': withPrefix('bracketclose'),
@@ -259,7 +259,7 @@ export class ConsoleFont extends BFont {
 		for (let i = 0; i < keys.length; i++) {
 			delete target[keys[i]];
 		}
-	const map = this.preset.buildCharMap();
+		const map = this.preset.buildCharMap();
 		const entries = Object.keys(map);
 		for (let i = 0; i < entries.length; i++) {
 			const ch = entries[i];

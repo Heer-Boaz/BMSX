@@ -126,6 +126,7 @@ import {
 	runWorkspaceAutosaveTick,
 	setupWorkspacePersistence,
 	stopWorkspaceAutosaveLoop,
+	clearWorkspaceDirtyBuffers,
 } from './workspace_storage';
 
 import * as TextEditing from './text_editing_and_selection';
@@ -153,6 +154,7 @@ const editorFacade = {
 	clearRuntimeErrorOverlay,
 	clearAllRuntimeErrorOverlays,
 	getSourceForChunk,
+	clearWorkspaceDirtyBuffers,
 };
 
 export type ConsoleCartEditor = typeof editorFacade;
@@ -3534,7 +3536,7 @@ export function performReboot(): boolean {
 		if (requiresReload && savedSource !== null) {
 			await runtime.reloadLuaProgram(savedSource);
 		}
-		runtime.boot();
+		await runtime.boot();
 		ide_state.appliedGeneration = targetGeneration;
 		$.paused = false;
 	}, (error) => {

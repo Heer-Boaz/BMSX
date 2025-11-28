@@ -47,7 +47,7 @@ function resetWorkspaceBackends(): void {
 	ide_state.serverWorkspaceConnected = false;
 }
 
-export function getWorkspaceStoragePaths(): WorkspaceStoragePaths | null {
+export function workspaceStoragePaths(): WorkspaceStoragePaths | null {
 	return storagePaths;
 }
 
@@ -657,7 +657,7 @@ class ServerWorkspaceBackend {
 }
 
 export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
-	if (!getWorkspaceStoragePaths()) {
+	if (!workspaceStoragePaths()) {
 		return new Map();
 	}
 	const entries = new Map<string, DirtyContextEntry>();
@@ -797,6 +797,28 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 			workspaceDirtyCache.delete(cachedPath);
 		}
 	}
+}
+
+export function clearWorkspaceDirtyBuffers(): void {
+	workspaceDirtyCache.clear();
+	ide_state.workspaceAutosaveSignature = null;
+	ide_state.saveGeneration = ide_state.appliedGeneration;
+	ide_state.dirty = false;
+	for (const context of ide_state.codeTabContexts.values()) {
+		const source = context.load();
+		const snapshot = buildSnapshotFromSource(source);
+		context.snapshot = snapshot;
+		context.dirty = false;
+		context.saveGeneration = ide_state.saveGeneration;
+		context.appliedGeneration = ide_state.appliedGeneration;
+		context.lastSavedSource = source;
+		setTabDirty(context.id, false);
+		if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
+			restoreSnapshot(snapshot, { preserveScroll: false });
+			updateActiveContextDirtyFlag();
+		}
+	}
+	updateActiveContextDirtyFlag();
 }
 
 export async function runWorkspaceAutosaveTick(): Promise<void> {

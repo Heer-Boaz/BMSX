@@ -420,7 +420,7 @@ export class Game {
 		// Register built-in ECS systems; allow modules to register extensions on boot
 		registerBuiltinECS();
 		// Initialize world (spaces, FSM/BT libraries, modules onBoot)
-		this.world.init_on_boot();
+		await this.world.init_on_boot();
 		// Compose pipeline spec from profile/custom and module extensions
 		const baseSpec: NodeSpec[] = Array.isArray(ecsPipeline)
 			? ecsPipeline
@@ -514,7 +514,7 @@ export class Game {
 		}
 	}
 
-	public reset_to_fresh_world(options?: { preserveConsoleRuntime?: boolean }): void {
+	public async reset_to_fresh_world(options?: { preserveConsoleRuntime?: boolean }): Promise<void> {
 		if (!this.initialized) {
 			throw new Error('[Game] Cannot reset world before initialization.');
 		}
@@ -555,7 +555,7 @@ export class Game {
 			}
 			const freshConfig = this.cloneWorldConfig(config);
 			const world = new World(freshConfig);
-			world.init_on_boot();
+			await world.init_on_boot();
 
 			this.rebuildPipeline();
 
@@ -612,13 +612,15 @@ export class Game {
 		try {
 			$.world.run(deltaTime);
 		} catch (error) {
-			// Surface engine/runtime errors to the Console editor when active
+			// Surface engine/runtime errors to the in-game terminal when active
 			const consoleRuntime = BmsxConsoleRuntime.instance;
 			if (consoleRuntime) {
 				try {
 					consoleRuntime.handleLuaError(error);
 					consoleRuntime.abandonFrameState();
-				} catch { /* ignore secondary failures */ }
+				} catch { /* ignore secondary failures, but log them */
+					console.error(`Error while handling surfaced game error in console runtime: ${error}`);
+				}
 			}
 			// Abort the remainder of this update to keep state coherent this frame.
 			return;

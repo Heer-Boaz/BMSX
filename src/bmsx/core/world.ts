@@ -55,7 +55,7 @@ export type WorldModule = {
 	dependencyIDs?: string[];
 	// A brief description of the module's purpose (optional, informational only)
 	description?: string;
-	onBoot: (world: World) => void;
+	onBoot: (world: World) => void | Promise<void>;
 	onTick?: (world: World, dt: number) => void;
 	onLoad?: (world: World) => void;
 	dispose?: () => void;
@@ -372,16 +372,16 @@ export class World implements Stateful, RegisterablePersistent {
 		// Note: ECS pipeline is configured by the Game (see ECSPipeline.md).
 	}
 
-	public init_on_boot(): void {
+	public async init_on_boot(): Promise<void> {
 		// Order is important: build FSM & BT libraries before modules spawn objects that construct state machines.
 		// Previous order invoked registerModuleHooks (spawning objects) before setupStateMachineLib, causing
 		// StateDefinitions to be undefined during WorldObject construction (e.g. accessing 'Cube3D').
 		this
 			.initializeWorldSpaces()
-			.setupStateMachineLib()      // ensures StateDefinitions populated
-			.setupBTLib()                // behavior trees available prior to module object creation
-			.registerModuleHooks()       // modules may now safely spawn objects relying on FSM/BT definitions
-			.startWorldStateMachine();
+			.setupStateMachineLib()
+			.setupBTLib();
+		await this.registerModuleHooks();       // modules may now safely spawn objects relying on FSM/BT definitions
+		this.startWorldStateMachine();
 	}
 
 	public dispose(): void {
@@ -467,16 +467,19 @@ export class World implements Stateful, RegisterablePersistent {
 		return this; // Return the current instance of the World for chaining
 	}
 
-	public registerModuleHooks(): this {
+	public async registerModuleHooks(): Promise<this> {
 		// Modules boot hooks (explicit lifecycle; no property chaining)
 		for (const p of this._modules) {
 			p.dependencyIDs?.forEach(depId => {
 				if (!this._modules.find(m => m.id === depId)) { throw new Error(`[World] Module ${p.id} has unmet dependency: ${depId}`); }
 			});
-			p.onBoot(this);
+			const result = p.onBoot(this);
+			if (result instanceof Promise) {
+				await result;
+			}
 		}
 
-		return this; // Return the current instance of the World for chaining
+		return this;
 	}
 
 	/**

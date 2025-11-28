@@ -58,7 +58,7 @@ export class ConsoleCommandDispatcher {
 		return `${this.drive}:${this.cwd}> `;
 	}
 
-	public handle(raw: string): boolean {
+	public async handle(raw: string): Promise<boolean> {
 		const trimmed = raw.trim();
 		if (trimmed.length === 0) {
 			return true;
@@ -77,7 +77,7 @@ export class ConsoleCommandDispatcher {
 			return true;
 		}
 		if (upper === 'RESET') {
-			this.runtime.boot();
+			await this.runtime.boot();
 			return true;
 		}
 		if (upper === 'EXIT' || upper === 'QUIT') {
