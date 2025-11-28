@@ -1,5 +1,4 @@
-import { Component, componenttags_preprocessing, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from 'bmsx';
-
+import { Component, componenttags_preprocessing, insavegame } from 'bmsx';
 
 @insavegame
 @componenttags_preprocessing('test')
@@ -9,14 +8,6 @@ export class TestComponent extends Component {
 	}
 
 	// Implement event handlers
-	@subscribesToParentScopedEvent('testEvent')
-	onTestEvent() {
-	}
-
-	@subscribesToSelfScopedEvent('testEvent2')
-	onTestEvent2() {
-	}
-
 	onTestEvent3() {
 	}
 }

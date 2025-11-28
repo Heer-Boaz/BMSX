@@ -55,27 +55,27 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 		],
 	},
 	define_effect: {
-		description: 'Registers a Lua input-action effect with a coded on_trigger handler and optional event/cooldown metadata.',
+		description: 'Registers a Lua input-action effect with a handler and optional event/cooldown metadata.',
 		parameters: [
-			{ name: 'descriptor', description: 'Effect descriptor with id, on_trigger(ctx,payload) handler, optional event override, and optional cooldown_ms.' },
+			{ name: 'descriptor', description: 'Effect descriptor with id (or def_id), handler(ctx,payload), optional event override, and optional cooldown_ms.' },
 		],
 	},
 	define_component: {
-		description: 'Registers a Lua component (alias of define_component).',
+		description: 'Registers a Lua component definition.',
 		parameters: [
 			{ name: 'descriptor', description: 'Component descriptor table defining handlers and defaults.' },
 		],
 	},
 	define_component_preset: {
-		description: 'Registers a reusable component preset (alias of define_component_preset).',
+		description: 'Registers a reusable component preset.',
 		parameters: [
 			{ name: 'descriptor', description: 'Preset descriptor table with id and build function/options.' },
 		],
 	},
 	define_service: {
-		description: 'Registers a Lua service (alias of define_service).',
+		description: 'Registers a Lua service descriptor.',
 		parameters: [
-			{ name: 'descriptor', description: 'Service descriptor with id, hooks (on_boot, on_activate, on_tick, etc.), and optional systems/effects/tags.' },
+			{ name: 'descriptor', description: 'Service descriptor with id, lifecycle hooks, optional systems/effects/tags, and auto_activate flag.' },
 		],
 	},
 	despawn: {
@@ -143,28 +143,10 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 			{ name: 'text', optional: true, description: 'Text string to print to the console log.' },
 		],
 	},
-	define_effect: {
-		description: 'Registers a Lua effect descriptor (same shape as define_effect).',
-		parameters: [
-			{ name: 'descriptor', description: 'Effect descriptor with id, on_trigger(ctx,payload), optional event override, and optional cooldown_ms.' },
-		],
-	},
 	define_bt: {
 		description: 'Registers a behaviour tree definition provided as a descriptor table.',
 		parameters: [
 			{ name: 'descriptor', description: 'Behaviour tree descriptor containing the root node definition.' },
-		],
-	},
-	define_component: {
-		description: 'Registers a Lua component definition.',
-		parameters: [
-			{ name: 'descriptor', description: 'Component descriptor table defining handlers and defaults.' },
-		],
-	},
-	define_component_preset: {
-		description: 'Registers a reusable component preset.',
-		parameters: [
-			{ name: 'descriptor', description: 'Preset descriptor table with id and build function/options.' },
 		],
 	},
 	register_prepared_fsm: {
@@ -174,12 +156,6 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 			{ name: 'id', description: 'Identifier for the FSM to register.' },
 			{ name: 'blueprint', description: 'FSM blueprint object produced by the builder.' },
 			{ name: 'options', optional: true, description: 'Optional registration settings, e.g. immediate setup.' },
-		],
-	},
-	define_service: {
-		description: 'Registers a Lua service descriptor.',
-		parameters: [
-			{ name: 'descriptor', description: 'Service descriptor with id, lifecycle hooks, optional systems/effects/tags, and auto_activate flag.' },
 		],
 	},
 	define_world_object: {

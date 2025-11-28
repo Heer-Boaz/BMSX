@@ -5182,23 +5182,23 @@ export function ensureResourceViewerSprite(asset_id: string, layout: { left: num
 	}
 	const spriteId = ide_state.resourceViewerSpriteId;
 	let object = api.world_object(spriteId);
-	if (!object) {
-		api.spawn_world_object('WorldObject', {
-			id: spriteId,
-			position: { x: layout.left, y: layout.top, z: 0 },
-			components: [
-				{
-					class: 'SpriteComponent',
-					options: {
-						id_local: 'viewer_sprite',
-						imgid: asset_id,
-						layer: 'ui',
-					},
-				},
-			],
-		});
-		object = api.world_object(spriteId);
-	}
+	// if (!object) {
+	// 	api.spawn_object('WorldObject', {
+	// 		id: spriteId,
+	// 		position: { x: layout.left, y: layout.top, z: 0 },
+	// 		components: [
+	// 			{
+	// 				class: 'SpriteComponent',
+	// 				options: {
+	// 					id_local: 'viewer_sprite',
+	// 					imgid: asset_id,
+	// 					layer: 'ui',
+	// 				},
+	// 			},
+	// 		],
+	// 	});
+	// 	object = api.world_object(spriteId);
+	// }
 	if (!object) {
 		return;
 	}

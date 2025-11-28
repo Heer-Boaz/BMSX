@@ -19,7 +19,7 @@ globalTarget.h406A = (args: BootArgs): Promise<any> => {
 	if (!viewHost) {
 		throw new Error('[Bootloader:testrom] View host not provided by Platform.');
 	}
-	const worldConfiguration: WorldConfiguration = { viewportSize: { x: 320, y: 240 }, fsmId: 'testrom_world_fsm', modules: [createTestromModule()] };
+	const worldConfiguration: WorldConfiguration = { viewportSize: { width: 320, height: 240 }, fsmId: 'testrom_world_fsm', modules: [createTestromModule()] };
 
 	return $.init({
 		rompack: args.rompack,
