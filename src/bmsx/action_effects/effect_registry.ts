@@ -5,12 +5,17 @@ export type Schema<T> = {
 	describe?: string;
 };
 
+export type RegisterEffectOptions<P> = {
+	schema?: Schema<P>;
+	validate?: (payload: P) => void;
+};
+
 class ActionEffectRegistry {
 	private readonly schemas = new Map<ActionEffectId, Schema<unknown>>();
 	private readonly validators = new Map<ActionEffectId, (payload: unknown) => void>();
 	private readonly definitions = new Map<ActionEffectId, ActionEffectDefinition>();
 
-	public register<Id extends ActionEffectId, P>(definition: ActionEffectDefinition<Id>, opts?: { schema?: Schema<P>; validate?: (payload: P) => void }): ActionEffectDefinition<Id> {
+	public register<Id extends ActionEffectId, P>(definition: ActionEffectDefinition<Id>, opts?: RegisterEffectOptions<P>): ActionEffectDefinition<Id> {
 		const id = definition.id;
 		if (this.definitions.has(id)) {
 			throw new Error(`[ActionEffectRegistry] '${id}' already registered.`);

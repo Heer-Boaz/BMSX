@@ -26,7 +26,7 @@ import { BmsxConsoleRuntime } from './runtime';
 import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type ConstructorWithBTProperty, BehaviorTreeDefinition } from '../ai/behaviourtree';
 import { deep_clone } from '../utils/deep_clone';
 import { Component, type ComponentAttachOptions } from '../component/basecomponent';
-import { actionEffectRegistry } from '../action_effects/effect_registry';
+import { actionEffectRegistry, RegisterEffectOptions } from '../action_effects/effect_registry';
 import { SpriteObject } from '../core/object/sprite';
 import { LuaTable } from '../lua/value';
 
@@ -449,10 +449,9 @@ export class BmsxConsoleApi {
 		return instance.id;
 	}
 
-	public define_effect(descriptor: ActionEffectDefinition): void {
-		const id = (descriptor as { def_id?: Identifier }).def_id ?? descriptor.id;
-		const def: ActionEffectDefinition = { ...descriptor, id };
-		actionEffectRegistry.register(def);
+	public define_effect(descriptor: ActionEffectDefinition, opts?: RegisterEffectOptions<any>): void {
+		if (!descriptor.id) throw new Error('Action effect definition must have a valid id.');
+		actionEffectRegistry.register(descriptor, opts);
 	}
 
 	/**

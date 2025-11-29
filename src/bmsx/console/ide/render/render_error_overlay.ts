@@ -302,7 +302,14 @@ export function computeRuntimeErrorOverlayLayout(
 	const sourceLines = overlay.lines.length > 0 ? overlay.lines : ['Runtime error'];
 	const buttonSize = Math.max(anchor.lineHeight, COPY_ICON_HEIGHT + 2);
 	const reserveWidth = buttonSize + COPY_BUTTON_GAP;
-	const wrapWidth = Math.max(1, maxTextWidth - reserveWidth);
+	const maxLineWidthLimit = Math.max(
+		ide_state.charAdvance,
+		Math.min(
+			maxTextWidth,
+			(codeRight - textLeft) - constants.ERROR_OVERLAY_CONNECTOR_OFFSET - paddingX * 2
+		)
+	);
+	const wrapWidth = Math.max(1, maxLineWidthLimit - reserveWidth);
 	const displayLines: string[] = [];
 	const displayLineMap: number[] = [];
 	for (let d = 0; d < sourceLines.length; d += 1) {
