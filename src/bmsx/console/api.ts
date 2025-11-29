@@ -426,7 +426,7 @@ export class BmsxConsoleApi {
 	public create_service(definition_id: Identifier, defer_bind?: boolean): Identifier {
 		const ext = this.serviceExts.get(definition_id);
 		// Default the id of the instance to the Lua-class' definition id and otherwise defaults to the definition id
-		const instance = new Service({ id: ext?.class?.id ?? definition_id, deferBind: defer_bind });
+		const instance = new Service({ id: ext?.class?.id ?? definition_id, deferBind: defer_bind ?? false });
 		// Apply definition
 		this.applyObjectExtensionAndOverrides(ext, instance, undefined);
 		return instance.id;

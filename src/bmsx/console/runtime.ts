@@ -5214,9 +5214,6 @@ export class BmsxConsoleRuntime extends Service {
 			const remoteTime = remote?.updatedAt ?? 0;
 			if (local && (!remote || localTime >= remoteTime)) {
 				merged.set(asset_id, local);
-				if (remoteTime < localTime && local.path) {
-					await this.persistLuaSourceToFilesystem(local.path, local.source);
-				}
 				if (root) {
 					this.persistWorkspaceOverridesToLocalStorage(root, new Map([[asset_id, local]]));
 				}
