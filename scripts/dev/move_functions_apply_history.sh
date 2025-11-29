@@ -18,7 +18,7 @@ node scripts/move_functions.js \
   -n getLuaModuleAliases -n handleRuntimeTaskError -n buildRuntimeErrorLines \
   -n clearAllRuntimeErrorOverlays -n clearExecutionStopHighlights -n clearRuntimeErrorOverlay \
   -n collectDiagnosticsBatch -n copyRuntimeErrorOverlayToClipboard -n createDiagnosticProviders \
-  -n createRuntimeErrorOverlayLayoutHost -n hasPendingRuntimeReload -n markDiagnosticsDirty \
+  -n hasPendingRuntimeReload -n markDiagnosticsDirty \
   -n navigateToRuntimeErrorFrameTarget -n prepareRuntimeSnapshotForResume -n processRuntimeErrorOverlayPointer \
   -n scheduleRuntimeTask -n setActiveRuntimeErrorOverlay -n setExecutionStopHighlight \
   -n showRuntimeError -n showRuntimeErrorInChunk -n simplifyRuntimeErrorMessage -n tryShowLuaErrorOverlay \

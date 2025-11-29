@@ -1,5 +1,4 @@
 import { pointInRect } from '../../utils/rect_operations';
-import { clamp } from '../../utils/clamp';
 import { Msx1Colors } from '../../systems/msx';
 import * as constants from './constants';
 import type { BmsxConsoleApi } from '../api';
@@ -10,10 +9,8 @@ import {
 	type ErrorOverlayBounds,
 	type ErrorOverlayRenderConfig
 } from './render/render_error_overlay';
-import type {
-	CachedHighlight,
-	RuntimeErrorOverlay
-} from './types';
+import { measureText } from './text_utils';
+import type { RuntimeErrorOverlay } from './types';
 import { wrapRuntimeErrorLine } from './runtime_error_utils';
 import type { StackTraceFrame } from '../../lua/runtime';
 import type { RectBounds } from '../../rompack/rompack';
@@ -23,32 +20,12 @@ const COPY_ICON_WIDTH = 6;
 const COPY_ICON_HEIGHT = 8;
 const COPY_BUTTON_GAP = 2;
 
-function copyButtonSize(lineHeight: number): number {
-	return Math.max(lineHeight, COPY_ICON_HEIGHT + 2);
-}
-
-export interface RuntimeErrorOverlayLayoutHost {
-	ensureVisualLines(): void;
-	positionToVisualIndex(row: number, column: number): number;
-	visibleRowCount(): number;
-	scrollRow: number;
-	visualIndexToSegment(visualIndex: number): { row: number; startColumn: number; endColumn: number } | null;
-	getCachedHighlight(rowIndex: number): CachedHighlight;
-	wordWrapEnabled: boolean;
-	scrollColumn: number;
-	visibleColumnCount(): number;
-	sliceHighlightedLine(
-		highlight: CachedHighlight['hi'],
-		columnStart: number,
-		columnCount: number,
-	): { text: string; colors: number[]; startDisplay: number; endDisplay: number };
-	columnToDisplay(highlight: CachedHighlight['hi'], column: number): number;
-	measureRangeFast(entry: CachedHighlight, fromDisplay: number, toDisplay: number): number;
+export type RuntimeErrorOverlayAnchor = {
+	anchorX: number;
+	rowTop: number;
 	lineHeight: number;
-	viewportHeight: number;
-	bottomMargin: number;
-	measureText(text: string): number;
-}
+	availableBottom: number;
+};
 
 export type RuntimeErrorOverlayLayoutResult = {
 	bounds: ErrorOverlayBounds;
@@ -76,8 +53,8 @@ export type RuntimeErrorOverlayClickResult =
 	| { kind: 'noop' };
 
 export function computeRuntimeErrorOverlayLayout(
-	host: RuntimeErrorOverlayLayoutHost,
 	overlay: RuntimeErrorOverlay,
+	anchor: RuntimeErrorOverlayAnchor,
 	codeTop: number,
 	codeRight: number,
 	textLeft: number,
@@ -85,38 +62,8 @@ export function computeRuntimeErrorOverlayLayout(
 	paddingY: number,
 	maxTextWidth: number
 ): RuntimeErrorOverlayLayoutResult | null {
-	host.ensureVisualLines();
-	const visualIndex = host.positionToVisualIndex(overlay.row, overlay.column);
-	const visibleRows = host.visibleRowCount();
-	const relativeRow = visualIndex - host.scrollRow;
-	if (relativeRow < 0 || relativeRow >= visibleRows) {
-		overlay.layout = null;
-		return null;
-	}
-	const segment = host.visualIndexToSegment(visualIndex);
-	if (!segment) {
-		overlay.layout = null;
-		return null;
-	}
-	const entry = host.getCachedHighlight(segment.row);
-	const highlight = entry.hi;
-	let columnStart = host.wordWrapEnabled ? segment.startColumn : host.scrollColumn;
-	if (host.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
-		columnStart = segment.startColumn;
-	}
-	const columnCount = host.wordWrapEnabled
-		? Math.max(0, segment.endColumn - columnStart)
-		: host.visibleColumnCount() + 4;
-	const slice = host.sliceHighlightedLine(highlight, columnStart, columnCount);
-	const sliceStartDisplay = slice.startDisplay;
-	const sliceEndLimit = host.wordWrapEnabled ? host.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
-	const sliceEndDisplay = host.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
-	const anchorDisplay = host.columnToDisplay(highlight, overlay.column);
-	const clampedAnchorDisplay = clamp(anchorDisplay, sliceStartDisplay, sliceEndDisplay);
-	const anchorX = textLeft + host.measureRangeFast(entry, sliceStartDisplay, clampedAnchorDisplay);
-	const rowTop = codeTop + relativeRow * host.lineHeight;
 	const sourceLines = overlay.lines.length > 0 ? overlay.lines : ['Runtime error'];
-	const buttonSize = copyButtonSize(host.lineHeight);
+	const buttonSize = Math.max(anchor.lineHeight, COPY_ICON_HEIGHT + 2);
 	const reserveWidth = buttonSize + COPY_BUTTON_GAP;
 	const wrapWidth = Math.max(1, maxTextWidth - reserveWidth);
 	const displayLines: string[] = [];
@@ -133,30 +80,30 @@ export function computeRuntimeErrorOverlayLayout(
 			displayLineMap.push(d);
 		}
 	}
-	const availableBottom = host.viewportHeight - host.bottomMargin;
-	const belowTop = rowTop + host.lineHeight + 2;
+	const availableBottom = anchor.availableBottom;
+	const belowTop = anchor.rowTop + anchor.lineHeight + 2;
 	const bubbleBounds = computeErrorOverlayBounds(
-		anchorX,
-		rowTop,
+		anchor.anchorX,
+		anchor.rowTop,
 		displayLines,
-		(text) => host.measureText(text) + reserveWidth,
+		(text) => measureText(text) + reserveWidth,
 		{
 			left: textLeft,
 			top: codeTop,
 			right: codeRight,
 			bottom: availableBottom
 		},
-		host.lineHeight
+		anchor.lineHeight
 	);
 
 	const placedBelow = bubbleBounds.top >= belowTop - 1;
-	const connectorLeft = Math.max(textLeft, anchorX);
+	const connectorLeft = Math.max(textLeft, anchor.anchorX);
 	const connectorRight = Math.min(bubbleBounds.left, connectorLeft + 3);
 
 	let connector: ErrorOverlayRenderConfig['connector'] = undefined;
 	if (connectorRight > connectorLeft) {
 		if (placedBelow) {
-			const connectorStartY = rowTop + host.lineHeight;
+			const connectorStartY = anchor.rowTop + anchor.lineHeight;
 			if (bubbleBounds.top > connectorStartY) {
 				connector = {
 					left: connectorLeft,
@@ -165,12 +112,12 @@ export function computeRuntimeErrorOverlayLayout(
 					endY: bubbleBounds.top
 				};
 			}
-		} else if (bubbleBounds.bottom < rowTop) {
+		} else if (bubbleBounds.bottom < anchor.rowTop) {
 			connector = {
 				left: connectorLeft,
 				right: connectorRight,
 				startY: bubbleBounds.bottom,
-				endY: rowTop
+				endY: anchor.rowTop
 			};
 		}
 	}
@@ -180,8 +127,8 @@ export function computeRuntimeErrorOverlayLayout(
 	const lineRight = Math.max(lineLeft, bubbleBounds.right - paddingX - reserveWidth);
 	let currentY = bubbleBounds.top + paddingY;
 	for (let index = 0; index < displayLines.length; index += 1) {
-		lineRects.push({ left: lineLeft, top: currentY, right: lineRight, bottom: currentY + host.lineHeight });
-		currentY += host.lineHeight;
+		lineRects.push({ left: lineLeft, top: currentY, right: lineRight, bottom: currentY + anchor.lineHeight });
+		currentY += anchor.lineHeight;
 	}
 	const copyButtonRight = bubbleBounds.right - paddingX;
 	const copyButtonLeft = copyButtonRight - buttonSize;

@@ -239,7 +239,7 @@ export function renderCodeArea(): void {
 		ide_state.codeHorizontalScrollbarVisible = false;
 	}
 
-	drawRuntimeErrorOverlay(api, bounds.codeTop, contentRight, bounds.textLeft);
+	drawRuntimeErrorOverlay(api, bounds.codeTop, bounds.codeRight, bounds.textLeft);
 	drawHoverTooltip(api, bounds.codeTop, contentBottom, bounds.textLeft);
 
 	if (ide_state.cursorVisible && cursorEntry && cursorInfo) {

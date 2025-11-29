@@ -65,7 +65,7 @@ import {
 	drawRuntimeErrorOverlay as drawRuntimeErrorOverlayBubble,
 	evaluateRuntimeErrorOverlayClick,
 	findRuntimeErrorOverlayLineAtPosition,
-	type RuntimeErrorOverlayLayoutHost,
+	type RuntimeErrorOverlayAnchor,
 	type RuntimeErrorOverlayDrawOptions
 } from './runtime_error_overlay_view';
 // Resource panel rendering is handled via ResourcePanelController
@@ -4193,23 +4193,91 @@ export function getRenameBarBounds(): { top: number; bottom: number; left: numbe
 	};
 }
 
+function computeRuntimeErrorOverlayGeometry(codeRight: number, textLeft: number): { contentRight: number; availableBottom: number } {
+	const contentRight = Math.max(
+		textLeft,
+		codeRight
+			- (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
+			- constants.CODE_AREA_RIGHT_MARGIN
+	);
+	const codeBottom = ide_state.viewportHeight - bottomMargin();
+	const availableBottom = ide_state.codeHorizontalScrollbarVisible
+		? codeBottom - constants.SCROLLBAR_WIDTH
+		: codeBottom;
+	return { contentRight, availableBottom };
+}
+
+function resolveRuntimeErrorOverlayAnchor(
+	overlay: RuntimeErrorOverlay,
+	codeTop: number,
+	textLeft: number,
+	contentRight: number,
+	availableBottom: number
+): RuntimeErrorOverlayAnchor | null {
+	ensureVisualLines();
+	const visualIndex = positionToVisualIndex(overlay.row, overlay.column);
+	const visibleRows = Math.max(1, Math.floor((availableBottom - codeTop) / ide_state.lineHeight));
+	const relativeRow = visualIndex - ide_state.scrollRow;
+	if (relativeRow < 0 || relativeRow >= visibleRows) {
+		return null;
+	}
+	const segment = visualIndexToSegment(visualIndex);
+	if (!segment) {
+		return null;
+	}
+	const entry = ide_state.layout.getCachedHighlight(ide_state.lines, segment.row);
+	const highlight = entry.hi;
+	let columnStart = ide_state.wordWrapEnabled ? segment.startColumn : ide_state.scrollColumn;
+	if (ide_state.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
+		columnStart = segment.startColumn;
+	}
+	let columnCount: number;
+	if (ide_state.wordWrapEnabled) {
+		columnCount = Math.max(0, segment.endColumn - columnStart);
+	} else {
+		const availableWidth = Math.max(0, contentRight - textLeft);
+		const visibleColumns = Math.max(1, Math.floor(availableWidth / ide_state.charAdvance));
+		columnCount = visibleColumns + 4;
+	}
+	const slice = ide_state.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
+	const sliceStartDisplay = slice.startDisplay;
+	const sliceEndLimit = ide_state.wordWrapEnabled ? ide_state.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
+	const sliceEndDisplay = ide_state.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
+	const anchorDisplay = ide_state.layout.columnToDisplay(highlight, overlay.column);
+	const clampedAnchorDisplay = clamp(anchorDisplay, sliceStartDisplay, sliceEndDisplay);
+	const anchorX = textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, clampedAnchorDisplay);
+	const rowTop = codeTop + relativeRow * ide_state.lineHeight;
+	return {
+		anchorX,
+		rowTop,
+		lineHeight: ide_state.lineHeight,
+		availableBottom,
+	};
+}
+
 export function drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
 	const overlay = ide_state.runtimeErrorOverlay;
 	if (!overlay || overlay.hidden) {
 		return;
 	}
-	const layoutHost = createRuntimeErrorOverlayLayoutHost();
+	const geometry = computeRuntimeErrorOverlayGeometry(codeRight, textLeft);
+	const anchor = resolveRuntimeErrorOverlayAnchor(overlay, codeTop, textLeft, geometry.contentRight, geometry.availableBottom);
+	if (!anchor) {
+		overlay.layout = null;
+		return;
+	}
 	const layout = computeRuntimeErrorOverlayLayout(
-		layoutHost,
 		overlay,
+		anchor,
 		codeTop,
-		codeRight,
+		geometry.contentRight,
 		textLeft,
 		constants.ERROR_OVERLAY_PADDING_X,
 		constants.ERROR_OVERLAY_PADDING_Y,
 		computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth)
 	);
 	if (!layout) {
+		overlay.layout = null;
 		return;
 	}
 	const highlightLines: number[] = [];
@@ -4234,7 +4302,7 @@ export function drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, co
 		highlightColor: constants.ERROR_OVERLAY_LINE_HOVER,
 		highlightLines: highlightLines.length > 0 ? highlightLines : null,
 	};
-	drawRuntimeErrorOverlayBubble(api, ide_state.font, overlay, layout, ide_state.lineHeight, drawOptions);
+	drawRuntimeErrorOverlayBubble(api, ide_state.font, overlay, layout, anchor.lineHeight, drawOptions);
 }
 
 export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, justPressed: boolean, codeTop: number, codeRight: number, textLeft: number): boolean {
@@ -4242,18 +4310,27 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 	if (!overlay || overlay.hidden) {
 		return false;
 	}
-	const layoutHost = createRuntimeErrorOverlayLayoutHost();
+	const geometry = computeRuntimeErrorOverlayGeometry(codeRight, textLeft);
+	const anchor = resolveRuntimeErrorOverlayAnchor(overlay, codeTop, textLeft, geometry.contentRight, geometry.availableBottom);
+	if (!anchor) {
+		overlay.layout = null;
+		overlay.hovered = false;
+		overlay.hoverLine = -1;
+		overlay.copyButtonHovered = false;
+		return false;
+	}
 	const layout = computeRuntimeErrorOverlayLayout(
-		layoutHost,
 		overlay,
+		anchor,
 		codeTop,
-		codeRight,
+		geometry.contentRight,
 		textLeft,
 		constants.ERROR_OVERLAY_PADDING_X,
 		constants.ERROR_OVERLAY_PADDING_Y,
 		computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth)
 	);
 	if (!layout) {
+		overlay.layout = null;
 		overlay.hovered = false;
 		overlay.hoverLine = -1;
 		overlay.copyButtonHovered = false;
@@ -4321,27 +4398,6 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 			return true;
 		}
 	}
-}
-
-export function createRuntimeErrorOverlayLayoutHost(): RuntimeErrorOverlayLayoutHost {
-	return {
-		ensureVisualLines: () => ensureVisualLines(),
-		positionToVisualIndex: (row: number, column: number) => ide_state.layout.positionToVisualIndex(ide_state.lines, row, column),
-		visibleRowCount: () => visibleRowCount(),
-		scrollRow: ide_state.scrollRow,
-		visualIndexToSegment: (visualIndex: number) => visualIndexToSegment(visualIndex),
-		getCachedHighlight: (rowIndex: number) => ide_state.layout.getCachedHighlight(ide_state.lines, rowIndex),
-		wordWrapEnabled: ide_state.wordWrapEnabled,
-		scrollColumn: ide_state.scrollColumn,
-		visibleColumnCount: () => visibleColumnCount(),
-		sliceHighlightedLine: (highlight, columnStart, columnCount) => ide_state.layout.sliceHighlightedLine(highlight, columnStart, columnCount),
-		columnToDisplay: (highlight, column) => ide_state.layout.columnToDisplay(highlight, column),
-		measureRangeFast: (entry, fromDisplay, toDisplay) => ide_state.layout.measureRangeFast(entry, fromDisplay, toDisplay),
-		lineHeight: ide_state.lineHeight,
-		viewportHeight: ide_state.viewportHeight,
-		bottomMargin: bottomMargin(),
-		measureText: (text: string) => measureText(text),
-	};
 }
 
 export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void {
