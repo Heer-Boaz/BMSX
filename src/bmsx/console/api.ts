@@ -28,7 +28,6 @@ import { Component, type ComponentAttachOptions } from '../component/basecompone
 import { ActionEffectRegistry, RegisterEffectOptions } from '../action_effects/effect_registry';
 import { SpriteObject } from '../core/object/sprite';
 import { LuaTable } from '../lua/value';
-import { LuaError } from '../lua/errors';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
 

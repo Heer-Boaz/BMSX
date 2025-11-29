@@ -22,8 +22,8 @@ const HELP_TEXT = [
 	' EXIT / QUIT      Close this application',
 	' PRINT / ?        Print value or expression',
 	' JSSTACK [ON/OFF] Toggle JS stack frames in console errors',
-	' SYS 			   Show system information',
-	' SYS FAULT	   	   Show faulted state',
+	' SYS              Show system information',
+	' SYS FAULT        Show faulted state',
 	' SYS FAULT CLEAR  Clear faulted state', // SYS CLEAR FAULT is also allowed
 	' LS               List assets in current directory',
 	' LS -ROM          List assets in ROM',
@@ -97,6 +97,10 @@ export class ConsoleCommandDispatcher {
 			this.handleJsStack(tokens);
 			return true;
 		}
+		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'SYS') {
+			this.handleSys(tokens);
+			return true;
+		}
 		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'WS') {
 			if (tokens.length !== 2) {
 				this.runtime.consoleMode.appendStderr(ERROR_SYNTAX_ERROR);
@@ -148,6 +152,60 @@ export class ConsoleCommandDispatcher {
 	private hasWorkspaceState(): boolean {
 		const overrides = this.runtime.workspaceLuaOverrides;
 		return overrides.size > 0;
+	}
+
+	private handleSys(tokens: string[]): void {
+		if (tokens.length === 1) {
+			this.printSystemInfo();
+			return;
+		}
+		if (tokens.length === 2 && tokens[1].toUpperCase() === 'FAULT') {
+			this.printFaultState();
+			return;
+		}
+		if (tokens.length === 3) {
+			const second = tokens[1].toUpperCase();
+			const third = tokens[2].toUpperCase();
+			if ((second === 'FAULT' && third === 'CLEAR') || (second === 'CLEAR' && third === 'FAULT')) {
+				this.clearFaultState();
+				return;
+			}
+		}
+		this.runtime.consoleMode.appendStderr(ERROR_SYNTAX_ERROR);
+	}
+
+	private printSystemInfo(): void {
+		this.runtime.consoleMode.appendSystem('SYSTEM INFO');
+		const lines = this.runtime.getSystemStatusLines();
+		for (let index = 0; index < lines.length; index += 1) {
+			this.runtime.consoleMode.appendStdout(lines[index]);
+		}
+	}
+
+	private printFaultState(): void {
+		const { lines, active } = this.runtime.getFaultStatusLines();
+		this.runtime.consoleMode.appendSystem('FAULT STATE');
+		for (let index = 0; index < lines.length; index += 1) {
+			const line = lines[index];
+			if (index === 0 && active) {
+				this.runtime.consoleMode.appendStdout(line, 9);
+				continue;
+			}
+			this.runtime.consoleMode.appendStdout(line);
+		}
+	}
+
+	private clearFaultState(): void {
+		const result = this.runtime.clearFaultState();
+		if (!result.cleared) {
+			this.runtime.consoleMode.appendStdout('No fault to clear');
+			return;
+		}
+		if (result.resumedDebugger) {
+			this.runtime.consoleMode.appendStdout('Fault cleared; debugger resumed');
+			return;
+		}
+		this.runtime.consoleMode.appendStdout('Fault state cleared');
 	}
 
 	private handleLs(command: string): void {

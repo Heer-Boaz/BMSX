@@ -161,6 +161,15 @@ type LuaFunctionRedirectRecord = {
 	redirect: LuaFunctionValue;
 };
 
+type FaultInfoSnapshot = {
+	message: string;
+	chunkName: string | null;
+	line: number | null;
+	column: number | null;
+	details: RuntimeErrorDetails | null;
+	timestampMs: number;
+};
+
 class LuaFunctionRedirectCache {
 	private readonly byKey = new Map<string, LuaFunctionRedirectRecord>();
 	private readonly byModule = new Map<string, Set<string>>();
@@ -390,6 +399,7 @@ export class BmsxConsoleRuntime extends Service {
 			details: RuntimeErrorDetails | null;
 		}
 		| null = null;
+	private lastFault: FaultInfoSnapshot | null = null;
 	private readonly rompackOriginalLua: Map<string, string> = new Map();
 	public readonly workspaceLuaOverrides: Map<string, WorkspaceOverrideRecord> = new Map();
 	private hasBooted = false;
@@ -1061,6 +1071,94 @@ export class BmsxConsoleRuntime extends Service {
 		return `${callee}(${argument})`;
 	}
 
+	public getSystemStatusLines(): string[] {
+		const overlay = this.overlayViewportSize;
+		const workspaceSaved = this.getWorkspaceSavedAssetIds().size;
+		const workspaceDirty = this.workspaceLuaOverrides.size;
+		const workspaceScratch = this.workspaceScratchPaths.size;
+		const chunkLabel = this.luaChunkName ?? '<none>';
+		const vmState = this.luaVmInitialized ? 'initialized' : 'not initialized';
+		const suspension = this.luaDebuggerSuspension;
+		const suspensionLocation = suspension
+			? this.formatRuntimeErrorLocation(suspension.location.chunk, suspension.location.line, suspension.location.column)
+			: null;
+		const debuggerLabel = suspension ? `${suspension.reason} @ ${suspensionLocation ?? suspension.location.chunk}` : 'idle';
+		const faultLabel = this.luaRuntimeFailed ? 'FAULTED' : 'OK';
+		const root = this.resolveCartProjectRootPath();
+		const lines: string[] = [];
+		lines.push(`Cart: ${this.cart.meta.title} (${this.cart.meta.persistentId})`);
+		lines.push(`Lua VM: ${vmState} | Entry: ${chunkLabel}`);
+		lines.push(`Status: ${faultLabel} | Debugger: ${debuggerLabel}`);
+		lines.push(`Canonicalization: ${this.canonicalization}`);
+		lines.push(`Overlay: ${this.overlayResolutionMode} ${Math.round(overlay.width)}x${Math.round(overlay.height)}`);
+		if (root) {
+			lines.push(`Workspace root: ${root}`);
+		}
+		lines.push(`Workspace: dirty=${workspaceDirty} saved=${workspaceSaved} scratch=${workspaceScratch}`);
+		lines.push(`JS stack traces: ${this.consoleJsStackEnabled ? 'ON' : 'OFF'}`);
+		return lines;
+	}
+
+	public getFaultStatusLines(): { lines: string[]; active: boolean } {
+		const lines: string[] = [];
+		const suspension = this.luaDebuggerSuspension;
+		const overlay = this.pendingRuntimeErrorOverlay;
+		const faultInfo = overlay ?? this.lastFault;
+		const active = this.luaRuntimeFailed || (suspension !== null && suspension.reason === 'exception');
+		lines.push(`Faulted: ${active ? 'YES' : 'NO'}`);
+		if (suspension) {
+			const suspensionLocation = this.formatRuntimeErrorLocation(
+				suspension.location.chunk,
+				suspension.location.line,
+				suspension.location.column,
+			);
+			lines.push(`Debugger: ${suspension.reason} @ ${suspensionLocation ?? suspension.location.chunk}`);
+		} else {
+			lines.push('Debugger: idle');
+		}
+		if (faultInfo) {
+			const location = this.formatRuntimeErrorLocation(faultInfo.chunkName, faultInfo.line, faultInfo.column);
+			if (location) {
+				lines.push(`Location: ${location}`);
+			}
+			lines.push(`Message: ${faultInfo.message}`);
+			const stackLines = this.buildStackLines(faultInfo.details);
+			const maxStackLines = 6;
+			for (let index = 0; index < stackLines.length && index < maxStackLines; index += 1) {
+				lines.push(stackLines[index]);
+			}
+			if (stackLines.length > maxStackLines) {
+				lines.push(`... ${stackLines.length - maxStackLines} more frame(s)`);
+			}
+			if (this.lastFault) {
+				lines.push(`Recorded: ${new Date(this.lastFault.timestampMs).toISOString()}`);
+			}
+			return { lines, active };
+		}
+		lines.push('No fault information recorded.');
+		return { lines, active };
+	}
+
+	public clearFaultState(): { cleared: boolean; resumedDebugger: boolean } {
+		const suspension = this.luaDebuggerSuspension;
+		if (suspension && suspension.reason === 'exception') {
+			this.ignoreLuaException();
+			return { cleared: true, resumedDebugger: true };
+		}
+		if (this.luaRuntimeFailed || this.pendingRuntimeErrorOverlay) {
+			this.luaRuntimeFailed = false;
+			this.pendingRuntimeErrorOverlay = null;
+			this.luaInterpreter.clearLastFaultEnvironment();
+			this.luaInterpreter.clearLastFaultCallStack();
+			if (this.editor) {
+				this.editor.clearRuntimeErrorOverlay();
+			}
+			publishOverlayFrame(null);
+			return { cleared: true, resumedDebugger: false };
+		}
+		return { cleared: false, resumedDebugger: false };
+	}
+
 	private consoleValueToString(value: LuaValue, depth = 0, visited: Set<unknown> = new Set()): string {
 		if (value === null) {
 			return 'nil';
@@ -1374,6 +1472,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.setDebuggerPaused(false);
 			this.luaRuntimeFailed = false;
 			this.luaVmInitialized = false;
+			this.lastFault = null;
 			this.luaChunkResourceMap.clear();
 			this.resourcePathCache.clear();
 			this.invalidateLuaModuleIndex();
@@ -3054,6 +3153,14 @@ export class BmsxConsoleRuntime extends Service {
 		const interpreter = this.luaInterpreter;
 		const callStackSnapshot = interpreter ? Array.from(interpreter.lastFaultCallStack) : [];
 		const runtimeDetails = this.buildRuntimeErrorDetailsForEditor(error, message);
+		this.lastFault = {
+			message,
+			chunkName,
+			line,
+			column,
+			details: runtimeDetails,
+			timestampMs: Date.now(),
+		};
 		this.pauseDebuggerForException({ chunkName, line, column }, callStackSnapshot);
 		const editorIsActive = this.editor.isActive() === true;
 		const hint = this.lookupChunkResourceInfoNullable(chunkName);
