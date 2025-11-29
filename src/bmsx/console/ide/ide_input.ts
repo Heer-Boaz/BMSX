@@ -1502,7 +1502,7 @@ export function handleTextEditorPointerInput(): void {
 	}
 
 	const renameBounds = getRenameBarBounds();
-	if (ide_state.renameController.isVisible() && renameBounds) {
+	if (ide_state.renameController?.isVisible() && renameBounds) {
 		const insideRename = point_in_rect(snapshot.viewportX, snapshot.viewportY, renameBounds);
 		if (insideRename) {
 			if (justPressed) {

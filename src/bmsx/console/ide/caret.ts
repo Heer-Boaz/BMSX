@@ -1,11 +1,11 @@
 import { clamp } from '../../utils/clamp';
-import { updateDesiredColumn, breakUndoSequence, currentLine } from './console_cart_editor';
+import { getCodeAreaBounds, maximumLineLength, updateDesiredColumn, breakUndoSequence, currentLine } from './console_cart_editor';
 import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from './text_utils';
-import { visibleRowCount, visibleColumnCount } from './text_utils';
 import { caretNavigation, ide_state } from './ide_state';
 import { isShiftDown, isCtrlDown } from './ide_input';
 import { resetBlink } from './render/render_caret';
 import { findWordLeft, findWordRight, ensureSelectionAnchor, hasSelection, collapseSelectionTo, clearSelection } from './text_editing_and_selection';
+import * as constants from './constants';
 import type { Position, VisualLineSegment } from './types';
 
 export type VisualCursorOverride = {
@@ -418,8 +418,7 @@ export function pageUp(): void {
 	} else {
 		clearSelection();
 	}
-	const rows = visibleRowCount();
-	ensureVisualLines();
+	const { rows } = resolveViewportCapacity();
 	const visualCount = getVisualLineCount();
 	const currentVisual = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
 	const targetVisual = clamp(currentVisual - rows, 0, Math.max(0, visualCount - 1));
@@ -440,8 +439,7 @@ export function pageDown(): void {
 	} else {
 		clearSelection();
 	}
-	const rows = visibleRowCount();
-	ensureVisualLines();
+	const { rows } = resolveViewportCapacity();
 	const visualCount = getVisualLineCount();
 	const currentVisual = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
 	const targetVisual = clamp(currentVisual + rows, 0, Math.max(0, visualCount - 1));
@@ -477,9 +475,48 @@ export function clampCursorColumn(): void {
 	}
 }
 
-export function centerCursorVertically(): void {
+function resolveViewportCapacity(): { rows: number; columns: number } {
 	ensureVisualLines();
-	const rows = visibleRowCount();
+	const bounds = getCodeAreaBounds();
+	const gutterOffset = bounds.textLeft - bounds.codeLeft;
+	const wrapEnabled = ide_state.wordWrapEnabled;
+	const advance = ide_state.warnNonMonospace ? ide_state.spaceAdvance : ide_state.charAdvance;
+	const visualCount = getVisualLineCount();
+
+	let horizontalVisible = !wrapEnabled && ide_state.codeHorizontalScrollbarVisible;
+	let verticalVisible = ide_state.codeVerticalScrollbarVisible;
+	let rowCapacity = 1;
+	let columnCapacity = 1;
+
+	for (let i = 0; i < 3; i += 1) {
+		const availableHeight = Math.max(0, (bounds.codeBottom - bounds.codeTop) - (horizontalVisible ? constants.SCROLLBAR_WIDTH : 0));
+		rowCapacity = Math.max(1, Math.floor(availableHeight / ide_state.lineHeight));
+		verticalVisible = visualCount > rowCapacity;
+		const availableWidth = Math.max(
+			0,
+			(bounds.codeRight - bounds.codeLeft)
+			- (verticalVisible ? constants.SCROLLBAR_WIDTH : 0)
+			- gutterOffset
+			- constants.CODE_AREA_RIGHT_MARGIN,
+		);
+		columnCapacity = Math.max(1, Math.floor(availableWidth / advance));
+		if (wrapEnabled) {
+			horizontalVisible = false;
+		} else {
+			horizontalVisible = maximumLineLength() > columnCapacity;
+		}
+	}
+
+	ide_state.codeVerticalScrollbarVisible = verticalVisible;
+	ide_state.codeHorizontalScrollbarVisible = !wrapEnabled && horizontalVisible;
+	ide_state.cachedVisibleRowCount = rowCapacity;
+	ide_state.cachedVisibleColumnCount = columnCapacity;
+
+	return { rows: rowCapacity, columns: columnCapacity };
+}
+
+export function centerCursorVertically(): void {
+	const { rows } = resolveViewportCapacity();
 	const totalVisual = getVisualLineCount();
 	const cursorVisualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
 	const maxScroll = Math.max(0, totalVisual - rows);
@@ -501,42 +538,47 @@ export function ensureCursorVisible(): void {
 	clampCursorRow();
 	clampCursorColumn();
 
-	ensureVisualLines();
-	const rows = visibleRowCount();
+	const { rows, columns } = resolveViewportCapacity();
 	const totalVisual = getVisualLineCount();
 	const cursorVisualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
-
-	if (cursorVisualIndex < ide_state.scrollRow) {
-		ide_state.scrollRow = cursorVisualIndex;
-	}
-	if (cursorVisualIndex >= ide_state.scrollRow + rows) {
-		ide_state.scrollRow = cursorVisualIndex - rows + 1;
-	}
 	const maxScrollRow = Math.max(0, totalVisual - rows);
-	ide_state.scrollRow = clamp(ide_state.scrollRow, 0, maxScrollRow);
+	const verticalMargin = Math.min(3, Math.max(0, Math.floor(rows / 6)));
+	const topGuard = ide_state.scrollRow + verticalMargin;
+	const bottomGuard = ide_state.scrollRow + rows - 1 - verticalMargin;
+
+	if (cursorVisualIndex < topGuard) {
+		ide_state.scrollRow = clamp(cursorVisualIndex - verticalMargin, 0, maxScrollRow);
+	} else if (cursorVisualIndex > bottomGuard) {
+		ide_state.scrollRow = clamp(cursorVisualIndex - rows + 1 + verticalMargin, 0, maxScrollRow);
+	} else if (ide_state.scrollRow > maxScrollRow) {
+		ide_state.scrollRow = maxScrollRow;
+	}
+	if (ide_state.scrollRow < 0) {
+		ide_state.scrollRow = 0;
+	}
 
 	if (ide_state.wordWrapEnabled) {
 		ide_state.scrollColumn = 0;
 		return;
 	}
 
-	const columns = visibleColumnCount();
-	if (ide_state.cursorColumn < ide_state.scrollColumn) {
-		ide_state.scrollColumn = ide_state.cursorColumn;
-	}
-	const maxScrollColumn = ide_state.cursorColumn - columns + 1;
-	if (maxScrollColumn > ide_state.scrollColumn) {
+	const lineLength = currentLine().length;
+	const docMaxScrollColumn = Math.max(0, maximumLineLength() - columns);
+	const lineMaxScrollColumn = Math.max(0, lineLength - columns);
+	const maxScrollColumn = Math.min(docMaxScrollColumn, lineMaxScrollColumn);
+	const horizontalMargin = Math.min(4, Math.max(0, Math.floor(columns / 6)));
+	const leftGuard = ide_state.scrollColumn + horizontalMargin;
+	const rightGuard = ide_state.scrollColumn + columns - 1 - horizontalMargin;
+
+	if (ide_state.cursorColumn < leftGuard) {
+		ide_state.scrollColumn = clamp(ide_state.cursorColumn - horizontalMargin, 0, maxScrollColumn);
+	} else if (ide_state.cursorColumn > rightGuard) {
+		ide_state.scrollColumn = clamp(ide_state.cursorColumn - columns + 1 + horizontalMargin, 0, maxScrollColumn);
+	} else if (ide_state.scrollColumn > maxScrollColumn) {
 		ide_state.scrollColumn = maxScrollColumn;
 	}
 	if (ide_state.scrollColumn < 0) {
 		ide_state.scrollColumn = 0;
-	}
-	const lineLength = currentLine().length;
-	const maxColumn = lineLength - columns;
-	if (maxColumn < 0) {
-		ide_state.scrollColumn = 0;
-	} else if (ide_state.scrollColumn > maxColumn) {
-		ide_state.scrollColumn = maxColumn;
 	}
 }
 

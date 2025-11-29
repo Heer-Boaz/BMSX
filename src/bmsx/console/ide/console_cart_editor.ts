@@ -927,7 +927,7 @@ export function bottomMargin(): number {
 }
 
 export function getVisibleProblemsPanelHeight(): number {
-	if (!ide_state.problemsPanel.isVisible) {
+	if (!ide_state.problemsPanel?.isVisible) {
 		return 0;
 	}
 	const planned = ide_state.problemsPanel.visibleHeight;
@@ -3993,7 +3993,7 @@ export function getSymbolSearchBarHeight(): number {
 }
 
 export function getRenameBarHeight(): number {
-	if (!ide_state.renameController.isVisible()) {
+	if (!ide_state.renameController?.isVisible()) {
 		return 0;
 	}
 	return ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;

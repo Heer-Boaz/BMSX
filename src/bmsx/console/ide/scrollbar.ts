@@ -207,7 +207,7 @@ export class ScrollbarController {
 			return false;
 		}
 		const scrollbar = this.scrollbars[this.active.kind];
-		if (!scrollbar.isVisible()) {
+		if (!scrollbar?.isVisible()) {
 			this.active = null;
 			return false;
 		}
