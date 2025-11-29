@@ -18,7 +18,7 @@ const HELP_TEXT = [
 	' COMMANDS:',
 	' CLS              Clear screen',
 	' CONT             Continue (after error)',
-	' RESET            Reboot game (cold start)',
+	' REBOOT           Reboot game (cold start)',
 	' EXIT / QUIT      Close this application',
 	' PRINT / ?        Print value or expression',
 	' JSSTACK [ON/OFF] Toggle JS stack frames in console errors',
@@ -79,7 +79,7 @@ export class ConsoleCommandDispatcher {
 			this.runtime.continueFromConsole();
 			return true;
 		}
-		if (upper === 'RESET') {
+		if (upper === 'REBOOT') {
 			await this.runtime.boot();
 			return true;
 		}
