@@ -27,7 +27,6 @@ import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { LuaHandlerCache, isLuaHandlerFn } from '../lua/handler_cache';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast';
 import { createConsoleCartEditor, type ConsoleCartEditor, } from './ide/console_cart_editor';
-import { isAltDown, isCtrlDown, isMetaDown, isShiftDown } from './ide/ide_input';
 import type { RuntimeErrorDetails } from './ide/types';
 import type { StackTraceFrame } from '../lua/runtime';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
@@ -38,7 +37,7 @@ import { collectWorkspaceOverrides, type WorkspaceOverrideRecord } from './works
 import { deep_clone } from '../utils/deep_clone';
 import { WorldObject } from '../core/object/worldobject';
 import { Input } from '../input/input';
-import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputMapping, KeyboardBinding, GamepadBinding, PointerBinding, ButtonState } from '../input/inputtypes';
+import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputMapping, KeyboardBinding, GamepadBinding, PointerBinding } from '../input/inputtypes';
 import { ConsoleMode } from './console_mode';
 import { EDITOR_TOGGLE_KEY, CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, GAME_PAUSE_KEY } from './ide/constants';
 import { setDebuggerRuntimeAccessor } from './runtime_accessors';
@@ -53,6 +52,7 @@ import { fallbackclamp } from 'bmsx/utils/clamp';
 import { ConsoleCommandDispatcher } from './console_commands';
 import { CanonicalizationType } from '../rompack/rompack';
 import { ActionEffectRegistry } from '../action_effects/effect_registry';
+import { KeyModifier } from '../input/playerinput';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -715,33 +715,23 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private pollConsoleHotkeys(): void {
-		const playerInput = $.input.getPlayerInput(this.playerIndex);
-		const getState = (code: string) => playerInput.getButtonState(code, 'keyboard');
-		const consume = (code: string) => playerInput.consumeButton(code, 'keyboard');
-		const { ctrlDown, metaDown, altDown } = { ctrlDown: isCtrlDown(), metaDown: isMetaDown(), altDown: isAltDown() };
-		const ctrlOrMetaDown = ctrlDown || metaDown;
-		const shiftDown = isShiftDown();
-		if (ctrlOrMetaDown && this.shouldAcceptConsoleHotkey('KeyP', getState('KeyP'))) {
-			consume('KeyP');
+		if (this.shouldAcceptConsoleHotkey('KeyP', 'KeyP', KeyModifier.ctrl)) {
+			$.consume_button(this.playerIndex, 'KeyP', 'keyboard');
 			this.toggleConsoleMode();
 			return;
 		}
-		if (ctrlOrMetaDown && altDown && this.shouldAcceptConsoleHotkey('console-font-variant', getState('KeyR'))) {
-			consume('KeyR');
+		if (this.shouldAcceptConsoleHotkey('console-font-variant', 'KeyR', KeyModifier.ctrl | KeyModifier.alt)) {
+			$.consume_button(this.playerIndex, 'KeyR', 'keyboard');
 			this.toggleFontVariant();
 			return;
 		}
-		if (this.consoleMode.isActive && ctrlOrMetaDown && shiftDown) {
-			const resolutionState = getState('KeyR');
-			if (this.shouldAcceptConsoleHotkey('console-resolution', resolutionState)) {
-				consume('KeyR');
+		if (this.consoleMode.isActive) {
+			if (this.shouldAcceptConsoleHotkey('console-resolution', 'KeyR', KeyModifier.ctrl | KeyModifier.shift)) {
+				$.consume_button(this.playerIndex, 'KeyR', 'keyboard');
 				this.toggleOverlayResolutionMode();
 			}
 		}
-		const editorActive = this.editor?.isActive() === true;
-		if (this.handleGlobalDebuggerHotkeys({ shiftDown, ctrlDown, editorActive, getState, consume })) {
-			return;
-		}
+		this.handleGlobalDebuggerHotkeys();
 	}
 
 	private toggleFontVariant(): void {
@@ -749,16 +739,10 @@ export class BmsxConsoleRuntime extends Service {
 		this.applyFontVariant(next);
 	}
 
-	public setFontVariant(variant: ConsoleFontVariant): void {
-		this.applyFontVariant(variant);
-	}
-
-	private applyFontVariant(variant: ConsoleFontVariant): void {
+	public applyFontVariant(variant: ConsoleFontVariant): void {
 		this.consoleFontVariant = variant;
 		this.consoleMode.setFontVariant(variant);
-		if (this.editor) {
-			this.editor.setFontVariant(variant);
-		}
+		this.editor?.setFontVariant(variant);
 	}
 
 	private subscribeGlobalDebuggerHotkeys(): void {
@@ -804,23 +788,10 @@ export class BmsxConsoleRuntime extends Service {
 		this.beginGlobalDebuggerStepping();
 	}
 
-	private handleGlobalDebuggerHotkeys(args: {
-		shiftDown: boolean;
-		ctrlDown: boolean;
-		editorActive: boolean;
-		getState: (code: string) => ButtonState | null | undefined;
-		consume: (code: string) => void;
-	}): boolean {
-		if (args.ctrlDown) {
-			return false;
-		}
-		const { getState, consume } = args;
-		const f8State = getState('F8');
-		if (this.shouldAcceptConsoleHotkey('debugger-f8-step', f8State)) {
-			consume('F8');
-			console.log(
-				`[LuaDebugger] Global F8 hotkey detected (suspended=${this.luaDebuggerSuspension ? 'yes' : 'no'}).`,
-			);
+	private handleGlobalDebuggerHotkeys(): boolean {
+		if (this.shouldAcceptConsoleHotkey('debugger-f8-step', 'F8', KeyModifier.ctrl)) {
+			$.consume_button(this.playerIndex, 'F8', 'keyboard');
+			console.log(`[LuaDebugger] Global F8 hotkey detected (suspended=${this.luaDebuggerSuspension ? 'yes' : 'no'}).`);
 			this.beginGlobalDebuggerStepping();
 			return true;
 		}
@@ -848,18 +819,18 @@ export class BmsxConsoleRuntime extends Service {
 		controller.requestStepInto();
 	}
 
-	private shouldAcceptConsoleHotkey(code: string, state: ButtonState | null | undefined): boolean {
-		if (!state || state.pressed !== true) {
+	private shouldAcceptConsoleHotkey(code: string, key: string, modifiers: KeyModifier): boolean {
+		const state = $.get_key_state(this.playerIndex, key, modifiers);
+		if (state.pressed !== true) {
 			this.consoleHotkeyLatch.delete(code);
 			return false;
 		}
-		const pressId = typeof state.pressId === 'number' ? state.pressId : null;
-		if (pressId !== null) {
+		if (typeof state.pressId === 'number') {
 			const existing = this.consoleHotkeyLatch.get(code);
-			if (existing === pressId) {
+			if (existing === state.pressId) {
 				return false;
 			}
-			this.consoleHotkeyLatch.set(code, pressId);
+			this.consoleHotkeyLatch.set(code, state.pressId);
 			return true;
 		}
 		if (state.justpressed !== true) {
@@ -1524,18 +1495,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private runUpdatePhaseInternal(state: ConsoleFrameState): void {
-		const playerInput = $.input.getPlayerInput(this.playerIndex);
-		const getState = (code: string) => playerInput.getButtonState(code, 'keyboard');
-		const consume = (code: string) => playerInput.consumeButton(code, 'keyboard');
-		const shiftDown = getState('ShiftLeft')?.pressed === true || getState('ShiftRight')?.pressed === true;
-		const ctrlDown = getState('ControlLeft')?.pressed === true || getState('ControlRight')?.pressed === true;
-		this.handleGlobalDebuggerHotkeys({
-			shiftDown,
-			ctrlDown,
-			editorActive: state.editorActive === true,
-			getState,
-			consume,
-		});
+		this.handleGlobalDebuggerHotkeys();
 		if (state.updateExecuted) {
 			return;
 		}

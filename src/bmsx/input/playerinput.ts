@@ -31,6 +31,17 @@ type ActionRepeatRecord = {
 export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
 export type InputSource = typeof INPUT_SOURCES[number];
 
+/** Bitwise flags representing keyboard modifier keys. */
+export enum KeyModifier {
+	none = 0,
+	shift = 1 << 0,
+	ctrl = 1 << 1,
+	alt = 1 << 2,
+	meta = 1 << 3,
+}
+
+
+
 /**
  * Represents the Input class responsible for handling user input.
  */
@@ -508,6 +519,27 @@ export class PlayerInput {
 		return { shift, ctrl, alt, meta };
 	}
 
+	/** Returns current pressed modifiers as a bitmask composed of KeyModifier flags. */
+	public getModifiersMask(): KeyModifier {
+		const { shift, ctrl, alt, meta } = this.getModifiersState();
+		let mask: KeyModifier = KeyModifier.none;
+		if (shift) mask |= KeyModifier.shift;
+		if (ctrl) mask |= KeyModifier.ctrl;
+		if (alt) mask |= KeyModifier.alt;
+		if (meta) mask |= KeyModifier.meta;
+		return mask;
+	}
+
+	/** Utility to expand a KeyModifier mask back into an object form. */
+	public static modifiersFromMask(mask: KeyModifier): { shift: boolean; ctrl: boolean; alt: boolean; meta: boolean } {
+		return {
+			shift: (mask & KeyModifier.shift) !== 0,
+			ctrl: (mask & KeyModifier.ctrl) !== 0,
+			alt: (mask & KeyModifier.alt) !== 0,
+			meta: (mask & KeyModifier.meta) !== 0,
+		};
+	}
+
 	/**
 	 * Retrieves the state of a gamepad button.
 	 * @param button - The gamepad button identifier.
@@ -517,6 +549,27 @@ export class PlayerInput {
 		const handler = this.inputHandlers[source];
 		if (!handler) return makeButtonState();
 		return handler.getButtonState(button);
+	}
+
+	public getKeyState(key: ButtonId, modifiers: KeyModifier): ButtonState {
+		const state = this.getButtonState(key, 'keyboard');
+		// If no modifiers are required, return the state as is
+		if (modifiers === KeyModifier.none) return state;
+
+		// Check the current state of each modifier key
+		const { shift, ctrl, alt, meta } = PlayerInput.modifiersFromMask(modifiers);
+		const modState = this.getModifiersState();
+
+		// Verify that the current modifier states match the required modifiers
+		if ((shift && !modState.shift) ||
+			(ctrl && !modState.ctrl) ||
+			(alt && !modState.alt) ||
+			(meta && !modState.meta)) {
+			// If any required modifier is not active, return a non-pressed state
+			return makeButtonState();
+		}
+
+		return state;
 	}
 
 	/**

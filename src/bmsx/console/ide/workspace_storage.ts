@@ -380,7 +380,7 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 	const runtime = BmsxConsoleRuntime.instance;
 	if (payload.fontVariant) {
 		if (runtime) {
-			runtime.setFontVariant(payload.fontVariant);
+			runtime.applyFontVariant(payload.fontVariant);
 		} else {
 			setFontVariant(payload.fontVariant);
 		}

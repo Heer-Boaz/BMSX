@@ -35,6 +35,7 @@ import { gameplaySpec } from './pipelines/gameplay';
 import { BmsxConsoleRuntime } from '../console/runtime';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { ActionEffectRegistry } from '../action_effects/effect_registry';
+import { InputSource, KeyModifier } from '../input/playerinput';
 // No direct space helpers needed here; Spaces are revived as part of the world.
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -286,6 +287,10 @@ export class Game {
 		return this.input.getPlayerInput(playerIndex).getActionState(action, window);
 	}
 
+	public get_key_state(playerIndex: number, keyCode: string, modifiers: KeyModifier) {
+		return this.input.getPlayerInput(playerIndex).getKeyState(keyCode, modifiers);
+	}
+
 	/** @deprecated Use {@link action_triggered} / {@link actions_triggered} with ActionParser definitions instead. */
 	public get_pressed_actions(playerIndex: number, query?: ActionStateQuery) {
 		return this.input.getPlayerInput(playerIndex).getPressedActions(query);
@@ -297,6 +302,10 @@ export class Game {
 
 	public consume_actions(playerIndex: number, ...actionsToConsume: (ActionState | string)[]) {
 		this.input.getPlayerInput(playerIndex).consumeActions(...actionsToConsume);
+	}
+
+	public consume_button(playerIndex: number, buttonCode: string, source: InputSource) {
+		this.input.getPlayerInput(playerIndex).consumeButton(buttonCode, source);
 	}
 
 	public apply_vibration_effect(playerIndex: number, effectParams: VibrationParams): void {

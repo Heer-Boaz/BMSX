@@ -22,6 +22,9 @@ const HELP_TEXT = [
 	' EXIT / QUIT      Close this application',
 	' PRINT / ?        Print value or expression',
 	' JSSTACK [ON/OFF] Toggle JS stack frames in console errors',
+	' SYS 			   Show system information',
+	' SYS FAULT	   	   Show faulted state',
+	' SYS FAULT CLEAR  Clear faulted state', // SYS CLEAR FAULT is also allowed
 	' LS               List assets in current directory',
 	' LS -ROM          List assets in ROM',
 	' LS -DIRTY / -D   List dirty workspace files',
