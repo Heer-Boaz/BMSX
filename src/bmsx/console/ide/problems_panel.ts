@@ -2,11 +2,12 @@ import type { EditorDiagnostic, PointerSnapshot } from './types';
 import type { RectBounds } from '../../rompack/rompack';
 import { measureText, truncateTextToWidth, wrapTextDynamic as wrapMessageLinesGeneric } from './text_utils';
 import { clamp } from '../../utils/clamp';
-import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight, gotoDiagnostic } from './console_cart_editor';
+import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight, gotoDiagnostic, focusEditorFromProblemsPanel } from './console_cart_editor';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
 import { api } from '../runtime';
 import { drawEditorText } from './text_renderer';
+import { markDiagnosticsDirty } from './diagnostics';
 
 type PanelLayout = {
 	headerTop: number;
@@ -500,4 +501,21 @@ export function setProblemsPanelHeightFromViewportY(viewportY: number): void {
 	const top = clamp(viewportY, minTop, maxTop);
 	const height = clamp(bottom - top, minHeight, Math.max(minHeight, bottom - minTop));
 	ide_state.problemsPanel.setFixedHeightPx(height);
+}
+export function toggleProblemsPanel(): void {
+	if (ide_state.problemsPanel.isVisible) {
+		hideProblemsPanel();
+		return;
+	}
+	showProblemsPanel();
+}
+
+export function showProblemsPanel(): void {
+	ide_state.problemsPanel.show();
+	markDiagnosticsDirty();
+}
+
+export function hideProblemsPanel(): void {
+	ide_state.problemsPanel.hide();
+	focusEditorFromProblemsPanel();
 }

@@ -222,18 +222,6 @@ function getBuiltinLookup(extra: Iterable<string> | null | undefined): BuiltinLo
 	return lookup;
 }
 
-function extractIdentifierAt(line: string, column: number): string {
-	let start = column;
-	while (start > 0 && isIdentifierPart(line.charAt(start - 1))) {
-		start -= 1;
-	}
-	let end = column;
-	while (end < line.length && isIdentifierPart(line.charAt(end))) {
-		end += 1;
-	}
-	return line.slice(start, end);
-}
-
 function resolveIdentifierPathAt(line: string, column: number): string | null {
 	if (column < 0 || column >= line.length) {
 		return null;
@@ -481,40 +469,10 @@ function applySemanticAnnotations(
 			continue;
 		}
 		const end = Math.min(rawEnd, columnColors.length);
-		let skip = false;
-		if (annotation.role === 'usage' && annotation.kind === 'tableField') {
-			const pathName = resolveIdentifierPathAt(line, start);
-			if (pathName && builtinLookup(pathName)) {
-				skip = true;
-			}
-		}
-		if (annotation.role === 'usage' && (annotation.kind === 'global' || annotation.kind === 'function')) {
-			const searchStart = Math.max(0, start - 1);
-			const searchEnd = Math.min(columnColors.length, Math.max(end + 1, searchStart + 1));
-			for (let column = searchStart; column < searchEnd; column += 1) {
-				if (columnColors[column] !== constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN) {
-					continue;
-				}
-				const identifier = extractIdentifierAt(line, column);
-				if (identifier.length === 0) {
-					continue;
-				}
-				if (builtinLookup(identifier)) {
-					skip = true;
-					break;
-				}
-			}
-			if (!skip) {
-				const trimmed = line.slice(start, Math.min(rawEnd, line.length)).trim();
-				if (trimmed.length > 0 && builtinLookup(trimmed)) {
-					skip = true;
-				}
-			}
-		}
-		if (skip) {
-			continue;
-		}
-		const color = resolveColorForSymbolKind(annotation.kind);
+		const pathName = resolveIdentifierPathAt(line, start);
+		const tokenText = line.slice(start, Math.min(rawEnd, line.length)).trim();
+		const isBuiltin = (pathName && builtinLookup(pathName)) || (tokenText.length > 0 && builtinLookup(tokenText));
+		const color = isBuiltin ? constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN : resolveColorForSymbolKind(annotation.kind);
 		for (let column = start; column < end && column < columnColors.length; column += 1) {
 			columnColors[column] = color;
 		}

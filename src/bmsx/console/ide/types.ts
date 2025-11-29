@@ -16,6 +16,7 @@ import type {
 import type { ConsoleFontVariant } from '../font';
 import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
 import type { StackTraceFrame } from '../../lua/runtime';
+import { MENU_COMMANDS } from './ide_input';
 
 export type { IdeThemeVariant } from '../types';
 
@@ -236,23 +237,7 @@ export type VisualLineSegment = {
 	endColumn: number;
 };
 
-export type TopBarButtonId =
-	| 'resume'
-	| 'reboot'
-	| 'save'
-	| 'resources'
-	| 'problems'
-	| 'filter'
-	| 'resolution'
-	| 'wrap'
-	| 'debugContinue'
-	| 'debugStepOver'
-	| 'debugStepInto'
-	| 'debugStepOut'
-	| 'debugObjects'
-	| 'debugEvents'
-	| 'debugRegistry';
-
+export type TopBarButtonId = typeof MENU_COMMANDS[number];
 export type MenuId = 'file' | 'run' | 'view' | 'debug';
 
 export type DebugPanelKind = 'objects' | 'events' | 'registry';
@@ -340,7 +325,7 @@ export type CodeTabContext = {
 };
 
 export type PendingActionPrompt = {
-	action: 'resume' | 'reboot' | 'close';
+	action: 'hot-reload-and-resume' | 'reboot' | 'close' | 'theme-toggle';
 };
 
 export type ConsoleEditorSerializedState = {

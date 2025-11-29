@@ -310,28 +310,9 @@ export class LuaProjectIndex {
 		return this.storeFileData(data.file, hydrated);
 	}
 
-	public removeFile(file: string): void {
-		const record = this.files.get(file);
-		if (!record) {
-			return;
-		}
-		this.removeFileData(record.data);
-		this.files.delete(file);
-		this.fileOrder.delete(file);
-	}
-
 	public getFileModel(file: string): LuaSemanticModel | null {
 		const record = this.files.get(file);
 		return record ? record.data.model : null;
-	}
-
-	public getDefinitionAt(file: string, position: Position): Decl | null {
-		const record = this.files.get(file);
-		if (!record) {
-			return null;
-		}
-		const result = this.findSymbolAt(record, position);
-		return result ? result.decl : null;
 	}
 
 	public symbolAt(file: string, position: Position): { id: SymbolID; decl: Decl } | null {
@@ -352,14 +333,6 @@ export class LuaProjectIndex {
 		return decl ?? null;
 	}
 
-	public listFileDecls(file: string): readonly Decl[] {
-		const record = this.files.get(file);
-		if (!record) {
-			return [];
-		}
-		return record.data.decls;
-	}
-
 	public getFileData(file: string): FileSemanticData | null {
 		const record = this.files.get(file);
 		return record ? record.data : null;
@@ -368,7 +341,6 @@ export class LuaProjectIndex {
 	public listFiles(): string[] {
 		return Array.from(this.files.keys());
 	}
-
 
 	private registerReference(symbolId: SymbolID, ref: Ref): void {
 		let bucket = this.refsBySymbol.get(symbolId);
@@ -827,21 +799,21 @@ class SemanticBuilder {
 				const scope = this.currentScope();
 				let decl = this.tableFields.get(symbolKey);
 				if (!decl) {
-			const scopeRange = scope.range;
-			const isGlobal = scope.kind === 'chunk';
-			const tokenInfo = findFunctionNameToken(functionDeclaration, this.tokens, this.tokenMap);
-			const range = tokenInfo
-				? buildRangeFromToken(tokenInfo, this.chunkName)
-				: buildRangeFromPosition(functionDeclaration.range.start, namePath[namePath.length - 1].length, this.chunkName);
-			decl = this.createDecl({
-				namePath,
-				name: namePath[namePath.length - 1],
-				kind: 'function',
-				range,
-				scopeRange,
-				scopeRef: scope,
-				isGlobal,
-				active: true,
+					const scopeRange = scope.range;
+					const isGlobal = scope.kind === 'chunk';
+					const tokenInfo = findFunctionNameToken(functionDeclaration, this.tokens, this.tokenMap);
+					const range = tokenInfo
+						? buildRangeFromToken(tokenInfo, this.chunkName)
+						: buildRangeFromPosition(functionDeclaration.range.start, namePath[namePath.length - 1].length, this.chunkName);
+					decl = this.createDecl({
+						namePath,
+						name: namePath[namePath.length - 1],
+						kind: 'function',
+						range,
+						scopeRange,
+						scopeRef: scope,
+						isGlobal,
+						active: true,
 					});
 					this.tableFields.set(symbolKey, decl);
 					if (isGlobal) {
@@ -861,9 +833,9 @@ class SemanticBuilder {
 					const targetInfo = index < targets.length ? targets[index] : targets[targets.length - 1] ?? null;
 					const context: ExpressionContext = targetInfo
 						? {
-								tableBaseDecl: targetInfo.decl,
-								tableBasePath: targetInfo.decl ? targetInfo.decl.namePath : targetInfo.namePath,
-							}
+							tableBaseDecl: targetInfo.decl,
+							tableBasePath: targetInfo.decl ? targetInfo.decl.namePath : targetInfo.namePath,
+						}
 						: { tableBaseDecl: null, tableBasePath: null };
 					this.visitExpression(assignment.right[index], context);
 				}
@@ -1297,23 +1269,23 @@ class SemanticBuilder {
 	}): InternalDecl {
 		const { namePath, name, kind, range, scopeRange, scopeRef, isGlobal, active } = options;
 		const id = createSymbolId(this.chunkName, range, kind, namePath);
-	const decl: InternalDecl = {
-		id,
-		file: this.chunkName,
-		name,
-		namePath: namePath.slice(),
-		symbolKey: joinNamePath(namePath),
-		kind,
-		range,
-		scope: scopeRange,
-		isGlobal,
-		scopeRef,
-		active,
-	};
-	this.decls.push(decl);
-	this.declById.set(id, decl);
-	return decl;
-}
+		const decl: InternalDecl = {
+			id,
+			file: this.chunkName,
+			name,
+			namePath: namePath.slice(),
+			symbolKey: joinNamePath(namePath),
+			kind,
+			range,
+			scope: scopeRange,
+			isGlobal,
+			scopeRef,
+			active,
+		};
+		this.decls.push(decl);
+		this.declById.set(id, decl);
+		return decl;
+	}
 
 	private recordDefinitionAnnotation(decl: InternalDecl): void {
 		this.annotate(decl.range, decl.name.length, decl.kind, 'definition');
@@ -1326,20 +1298,20 @@ class SemanticBuilder {
 		target: SymbolID | null;
 		isWrite: boolean;
 	}): void {
-	const ref: Ref = {
-		file: this.chunkName,
-		name: options.name,
-		namePath: options.namePath.slice(),
-		symbolKey: joinNamePath(options.namePath),
-		range: options.range,
-		target: options.target,
-		isWrite: options.isWrite,
-	};
-	this.refs.push(ref);
-	const targetDecl = options.target ? this.declById.get(options.target) ?? null : null;
-	const kind = targetDecl ? targetDecl.kind : inferReferenceKind(ref);
-	this.annotate(ref.range, ref.name.length, kind, 'usage');
-}
+		const ref: Ref = {
+			file: this.chunkName,
+			name: options.name,
+			namePath: options.namePath.slice(),
+			symbolKey: joinNamePath(options.namePath),
+			range: options.range,
+			target: options.target,
+			isWrite: options.isWrite,
+		};
+		this.refs.push(ref);
+		const targetDecl = options.target ? this.declById.get(options.target) ?? null : null;
+		const kind = targetDecl ? targetDecl.kind : inferReferenceKind(ref);
+		this.annotate(ref.range, ref.name.length, kind, 'usage');
+	}
 
 	private annotate(range: LuaSourceRange, length: number, kind: SymbolKind, role: SemanticRole): void {
 		const rowIndex = range.start.line - 1;

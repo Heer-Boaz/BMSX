@@ -136,6 +136,7 @@ export * from './utils/easing';
 export * from './utils/feature_queue';
 export * from './utils/filter_iterable';
 export * from './utils/has_own';
+export * from './utils/lower_bound';
 export * from './utils/mod';
 export * from './utils/objecttracker';
 export * from './utils/pool';

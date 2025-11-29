@@ -9,9 +9,7 @@ import type { ButtonState } from '../../input/inputtypes';
 import type { KeyPressRecord, MenuId, PointerSnapshot, ResourceViewerState, RuntimeErrorOverlay, TopBarButtonId } from './types';
 import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp, revealCursor, setCursorPosition } from './caret';
 import { isResourceViewActive, isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab, cycleTab, activateCodeTab, beginTabDrag, closeTab, endTabDrag, setActiveTab, getActiveCodeTabContext, updateTabDrag } from './editor_tabs';
-import { prepareDebuggerStepOverlay } from './debugger_overlay_controller';
-import { debuggerCommandExecutor } from './debugger_controls';
-import { toggleBreakpointAtCursor, toggleBreakpointForEditorRow } from './debugger_breakpoints';
+import { prepareDebuggerStepOverlay } from './ide_debugger';
 import { handleCompletionKeybindings } from './completion_controller';
 import { computeRuntimeErrorOverlayMaxWidth } from './text_utils';
 import { drawProblemsPanel, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from './problems_panel';
@@ -20,16 +18,22 @@ import { applyScrollbarScroll } from './scrollbar';
 import { clearHoverTooltip, updateHoverTooltip } from './intellisense';
 import * as TextEditing from './text_editing_and_selection';
 import { clamp } from '../../utils/clamp';
-import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, handleActionPromptSelection, openSymbolSearch, toggleResolutionMode, openResourceSearch, toggleProblemsPanel, markDiagnosticsDirty, focusEditorFromProblemsPanel, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, hideProblemsPanel, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openDebugPanelTab, performAction, pointInRect, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, scrollResourceBrowser, getCodeAreaBounds, scrollRows, clearGotoHoverHighlight, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, resolvePointerRow, clearReferenceHighlights, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, tryGotoDefinitionAt, handlePointerAutoScroll, refreshGotoHoverHighlight, getActiveResourceViewer, resourceViewerTextCapacity, moveSymbolSearchSelection, symbolSearchPageSize, updateSymbolSearchMatches, applyLineJumpFieldText, resourceSearchWindowCapacity, updateResourceSearchMatches, applyLineJump, mapScreenPointToViewport, navigateToRuntimeErrorFrameTarget } from './console_cart_editor';
+import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, handleActionPromptSelection, openSymbolSearch, openResourceSearch, focusEditorFromProblemsPanel, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openDebugPanelTab, performAction, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, scrollResourceBrowser, getCodeAreaBounds, scrollRows, clearGotoHoverHighlight, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, resolvePointerRow, clearReferenceHighlights, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, tryGotoDefinitionAt, handlePointerAutoScroll, refreshGotoHoverHighlight, getActiveResourceViewer, resourceViewerTextCapacity, moveSymbolSearchSelection, symbolSearchPageSize, updateSymbolSearchMatches, applyLineJumpFieldText, resourceSearchWindowCapacity, updateResourceSearchMatches, applyLineJump, mapScreenPointToViewport } from './console_cart_editor';
+import { navigateToRuntimeErrorFrameTarget } from './ide_debugger';
+import { toggleProblemsPanel, hideProblemsPanel } from './problems_panel';
+import { markDiagnosticsDirty } from './diagnostics';
+import { point_in_rect } from 'bmsx/utils/rect_operations';
 import { applyInlineFieldEditing, getFieldText } from './inline_text_field';
-import { api } from '../runtime';
-import * as constants from './constants';
+import { api, BmsxConsoleRuntime } from '../runtime';
 import { computeRuntimeErrorOverlayGeometry, resolveRuntimeErrorOverlayAnchor, computeRuntimeErrorOverlayLayout, findRuntimeErrorOverlayLineAtPosition, RuntimeErrorOverlayClickResult } from './render/render_error_overlay';
-import { rebuildRuntimeErrorOverlayView, buildRuntimeErrorOverlayCopyText } from './runtime_error_overlay_model';
+import { rebuildRuntimeErrorOverlayView, buildRuntimeErrorOverlayCopyText } from './runtime_error_overlay';
+import * as constants from './constants';
+import { RuntimeDebuggerCommandExecutor } from './ide_debugger';
+import { toggleBreakpointForEditorRow } from './ide_debugger';
 
 const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
-const MENU_COMMANDS: TopBarButtonId[] = [
-	'resume',
+export const MENU_COMMANDS = [
+	'hot-reload-and-resume',
 	'reboot',
 	'save',
 	'resources',
@@ -57,7 +61,7 @@ export class InputController {
 		}
 		if (isKeyJustPressed('F9')) {
 			consumeIdeKey('F9');
-			toggleBreakpointAtCursor();
+			toggleBreakpointForEditorRow();
 			return;
 		}
 		// Navigation
@@ -412,14 +416,28 @@ export function handleEditorInput(deltaSeconds: number): void {
 	const editableCodeTab = isEditableCodeTab();
 	const readOnlyCodeTab = isReadOnlyCodeTab();
 
+	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyS')) {
+		consumeIdeKey('KeyS');
+		activateCodeTab();
+		performAction('hot-reload-and-resume');
+		return;
+	}
+
+	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyR')) {
+		consumeIdeKey('KeyR');
+		activateCodeTab();
+		performAction('reboot');
+		return;
+	}
+	if ((ctrlDown || metaDown) && altDown && isKeyJustPressed('KeyT')) {
+		consumeIdeKey('KeyT');
+		activateCodeTab();
+		performAction('theme-toggle');
+		return;
+	}
 	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyO')) {
 		consumeIdeKey('KeyO');
 		openSymbolSearch();
-		return;
-	}
-	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyR')) {
-		consumeIdeKey('KeyR');
-		toggleResolutionMode();
 		return;
 	}
 	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyL')) {
@@ -619,7 +637,7 @@ export function handleEditorInput(deltaSeconds: number): void {
 		closeActiveTab();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressed('KeyS')) {
+	if (ctrlDown && !shiftDown && isKeyJustPressed('KeyS')) {
 		consumeIdeKey('KeyS');
 		if (readOnlyCodeTab) {
 			notifyReadOnlyEdit();
@@ -650,7 +668,7 @@ export function handleEditorInput(deltaSeconds: number): void {
 		}
 		return;
 	}
-	if (ctrlDown && isKeyJustPressed('KeyV')) {
+	if (ctrlDown && !shiftDown && isKeyJustPressed('KeyV')) {
 		consumeIdeKey('KeyV');
 		if (readOnlyCodeTab) {
 			notifyReadOnlyEdit();
@@ -712,19 +730,11 @@ export function handleDebuggerShortcuts(): boolean {
 	return handled;
 }
 
-export type DebuggerCommand = 'continue' |
-	'step_over' |
-	'step_into' |
-	'step_out' |
-	'ignoreException' |
-	'step_out_exception';
-
 export function evaluateDebuggerShortcuts(): boolean {
-	const executor = debuggerCommandExecutor;
+	const executor = RuntimeDebuggerCommandExecutor.instance;
 	const { ctrlDown, metaDown, shiftDown, altDown } = { ctrlDown: isCtrlDown(), metaDown: isMetaDown(), shiftDown: isShiftDown(), altDown: isAltDown() };
 
-
-	if (!executor || !executor.isSuspended()) {
+	if (!executor || !executor.suspended) {
 		return false;
 	}
 	if (ctrlDown || altDown || metaDown) {
@@ -733,7 +743,7 @@ export function evaluateDebuggerShortcuts(): boolean {
 	if (isKeyJustPressed('F5')) {
 		consumeIdeKey('F5');
 		if (shiftDown) {
-			return executor.issueDebuggerCommand('ignoreException');
+			return executor.issueDebuggerCommand('ignore_exception');
 		}
 		return executor.issueDebuggerCommand('continue');
 	}
@@ -782,16 +792,16 @@ function handleCodeFormattingShortcut(): boolean {
 export function handleTopBarButtonPress(button: TopBarButtonId): void {
 	switch (button) {
 		case 'debugContinue':
-			debuggerCommandExecutor.issueDebuggerCommand('continue');
+			RuntimeDebuggerCommandExecutor.instance.issueDebuggerCommand('continue');
 			return;
 		case 'debugStepOver':
-			debuggerCommandExecutor.issueDebuggerCommand('step_over');
+			RuntimeDebuggerCommandExecutor.instance.issueDebuggerCommand('step_over');
 			return;
 		case 'debugStepInto':
-			debuggerCommandExecutor.issueDebuggerCommand('step_into');
+			RuntimeDebuggerCommandExecutor.instance.issueDebuggerCommand('step_into');
 			return;
 		case 'debugStepOut':
-			debuggerCommandExecutor.issueDebuggerCommand('step_out');
+			RuntimeDebuggerCommandExecutor.instance.issueDebuggerCommand('step_out');
 			return;
 		case 'problems':
 			toggleProblemsPanel();
@@ -803,7 +813,7 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 			toggleWordWrap();
 			return;
 		case 'resolution':
-			toggleResolutionMode();
+			BmsxConsoleRuntime.instance.toggleOverlayResolutionMode();
 			return;
 		case 'resources':
 			ide_state.resourcePanel.togglePanel();
@@ -822,7 +832,7 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 		case 'debugRegistry':
 			openDebugPanelTab('registry');
 			return;
-		case 'resume':
+		case 'hot-reload-and-resume':
 		case 'reboot':
 			activateCodeTab();
 			performAction(button);
@@ -843,15 +853,15 @@ export function handleActionPromptPointer(snapshot: PointerSnapshot): void {
 	const x = snapshot.viewportX;
 	const y = snapshot.viewportY;
 	const saveBounds = ide_state.actionPromptButtons.saveAndContinue;
-	if (saveBounds && pointInRect(x, y, saveBounds)) {
+	if (saveBounds && point_in_rect(x, y, saveBounds)) {
 		void handleActionPromptSelection('save-continue');
 		return;
 	}
-	if (pointInRect(x, y, ide_state.actionPromptButtons.continue)) {
+	if (point_in_rect(x, y, ide_state.actionPromptButtons.continue)) {
 		void handleActionPromptSelection('continue');
 		return;
 	}
-	if (pointInRect(x, y, ide_state.actionPromptButtons.cancel)) {
+	if (point_in_rect(x, y, ide_state.actionPromptButtons.cancel)) {
 		void handleActionPromptSelection('cancel');
 	}
 }
@@ -861,7 +871,7 @@ export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 	const y = snapshot.viewportY;
 	const menuOpen = ide_state.openMenuId !== null;
 	const inHeader = y >= 0 && y < ide_state.headerHeight;
-	const inDropdown = menuOpen && pointInRect(x, y, ide_state.menuDropdownBounds);
+	const inDropdown = menuOpen && point_in_rect(x, y, ide_state.menuDropdownBounds);
 	if (!inHeader && !inDropdown) {
 		if (menuOpen) {
 			ide_state.openMenuId = null;
@@ -898,7 +908,7 @@ export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 function findTopMenuAtPoint(x: number, y: number): MenuId | null {
 	for (let index = 0; index < MENU_IDS.length; index += 1) {
 		const id = MENU_IDS[index];
-		if (pointInRect(x, y, ide_state.menuEntryBounds[id])) {
+		if (point_in_rect(x, y, ide_state.menuEntryBounds[id])) {
 			return id;
 		}
 	}
@@ -908,7 +918,7 @@ function findTopMenuAtPoint(x: number, y: number): MenuId | null {
 function findMenuCommandAtPoint(x: number, y: number): TopBarButtonId | null {
 	for (let index = 0; index < MENU_COMMANDS.length; index += 1) {
 		const command = MENU_COMMANDS[index];
-		if (pointInRect(x, y, ide_state.topBarButtonBounds[command])) {
+		if (point_in_rect(x, y, ide_state.topBarButtonBounds[command])) {
 			return command;
 		}
 	}
@@ -939,14 +949,14 @@ export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {
 	for (let index = 0; index < ide_state.tabs.length; index += 1) {
 		const tab = ide_state.tabs[index];
 		const closeBounds = ide_state.tabCloseButtonBounds.get(tab.id);
-		if (closeBounds && pointInRect(x, y, closeBounds)) {
+		if (closeBounds && point_in_rect(x, y, closeBounds)) {
 			endTabDrag();
 			closeTab(tab.id);
 			ide_state.tabHoverId = null;
 			return true;
 		}
 		const tabBounds = ide_state.tabButtonBounds.get(tab.id);
-		if (tabBounds && pointInRect(x, y, tabBounds)) {
+		if (tabBounds && point_in_rect(x, y, tabBounds)) {
 			beginTabDrag(tab.id, x);
 			setActiveTab(tab.id);
 			return true;
@@ -972,7 +982,7 @@ export function handleTabBarMiddleClick(snapshot: PointerSnapshot): boolean {
 		if (!bounds) {
 			continue;
 		}
-		if (pointInRect(x, y, bounds)) {
+		if (point_in_rect(x, y, bounds)) {
 			closeTab(tab.id);
 			return true;
 		}
@@ -1017,7 +1027,7 @@ export function handlePointerWheel(): void {
 			&& pointer
 			&& pointer.valid
 			&& pointer.insideViewport
-			&& pointInRect(pointer.viewportX, pointer.viewportY, bounds);
+			&& point_in_rect(pointer.viewportX, pointer.viewportY, bounds);
 		if (pointerInQuickOpen || ide_state.resourceSearchActive) {
 			moveResourceSearchSelection(direction * steps);
 			playerInput.consumeAction('pointer_wheel');
@@ -1030,7 +1040,7 @@ export function handlePointerWheel(): void {
 		&& pointer
 		&& pointer.valid
 		&& pointer.insideViewport
-		&& pointInRect(pointer.viewportX, pointer.viewportY, panelBounds);
+		&& point_in_rect(pointer.viewportX, pointer.viewportY, panelBounds);
 	if (pointerInPanel) {
 		if (shiftDown) {
 			const horizontalPixels = direction * steps * ide_state.charAdvance * 4;
@@ -1048,7 +1058,7 @@ export function handlePointerWheel(): void {
 			let allowScroll = false;
 			if (!pointer) {
 				allowScroll = ide_state.problemsPanel.isFocused;
-			} else if (pointer.valid && pointer.insideViewport && pointInRect(pointer.viewportX, pointer.viewportY, bounds)) {
+			} else if (pointer.valid && pointer.insideViewport && point_in_rect(pointer.viewportX, pointer.viewportY, bounds)) {
 				allowScroll = true;
 			}
 			const stepsAbs = Math.max(1, Math.round(Math.abs(steps)));
@@ -1269,7 +1279,7 @@ export function handleTextEditorPointerInput(): void {
 	const panelBounds = ide_state.resourcePanel.getBounds();
 	const pointerInPanel = ide_state.resourcePanelVisible
 		&& panelBounds !== null
-		&& pointInRect(snapshot.viewportX, snapshot.viewportY, panelBounds);
+		&& point_in_rect(snapshot.viewportX, snapshot.viewportY, panelBounds);
 	if (pointerInPanel) {
 		ide_state.resourcePanel.setFocused(true);
 		resetPointerClickTracking();
@@ -1310,7 +1320,7 @@ export function handleTextEditorPointerInput(): void {
 	}
 	const problemsBounds = drawProblemsPanel();
 	if (ide_state.problemsPanel.isVisible && problemsBounds) {
-		const insideProblems = pointInRect(snapshot.viewportX, snapshot.viewportY, problemsBounds);
+		const insideProblems = point_in_rect(snapshot.viewportX, snapshot.viewportY, problemsBounds);
 		if (insideProblems) {
 			if (ide_state.problemsPanel.handlePointer(snapshot, justPressed, justReleased, problemsBounds)) {
 				ide_state.pointerSelecting = false;
@@ -1345,7 +1355,7 @@ export function handleTextEditorPointerInput(): void {
 	}
 	const createResourceBounds = getCreateResourceBarBounds();
 	if (ide_state.createResourceVisible && createResourceBounds) {
-		const insideCreateBar = pointInRect(snapshot.viewportX, snapshot.viewportY, createResourceBounds);
+		const insideCreateBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, createResourceBounds);
 		if (insideCreateBar) {
 			if (justPressed) {
 				ide_state.createResourceActive = true;
@@ -1369,7 +1379,7 @@ export function handleTextEditorPointerInput(): void {
 	}
 	const resourceSearchBounds = getResourceSearchBarBounds();
 	if (ide_state.resourceSearchVisible && resourceSearchBounds) {
-		const insideResourceSearch = pointInRect(snapshot.viewportX, snapshot.viewportY, resourceSearchBounds);
+		const insideResourceSearch = point_in_rect(snapshot.viewportX, snapshot.viewportY, resourceSearchBounds);
 		if (insideResourceSearch) {
 			const baseHeight = ide_state.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
 			const fieldBottom = resourceSearchBounds.top + baseHeight;
@@ -1431,7 +1441,7 @@ export function handleTextEditorPointerInput(): void {
 	}
 	const symbolBounds = getSymbolSearchBarBounds();
 	if (ide_state.symbolSearchVisible && symbolBounds) {
-		const insideSymbol = pointInRect(snapshot.viewportX, snapshot.viewportY, symbolBounds);
+		const insideSymbol = point_in_rect(snapshot.viewportX, snapshot.viewportY, symbolBounds);
 		if (insideSymbol) {
 			const baseHeight = ide_state.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
 			const fieldBottom = symbolBounds.top + baseHeight;
@@ -1493,7 +1503,7 @@ export function handleTextEditorPointerInput(): void {
 
 	const renameBounds = getRenameBarBounds();
 	if (ide_state.renameController.isVisible() && renameBounds) {
-		const insideRename = pointInRect(snapshot.viewportX, snapshot.viewportY, renameBounds);
+		const insideRename = point_in_rect(snapshot.viewportX, snapshot.viewportY, renameBounds);
 		if (insideRename) {
 			if (justPressed) {
 				ide_state.resourcePanelFocused = false;
@@ -1517,7 +1527,7 @@ export function handleTextEditorPointerInput(): void {
 
 	const lineJumpBounds = getLineJumpBarBounds();
 	if (ide_state.lineJumpVisible && lineJumpBounds) {
-		const insideLineJump = pointInRect(snapshot.viewportX, snapshot.viewportY, lineJumpBounds);
+		const insideLineJump = point_in_rect(snapshot.viewportX, snapshot.viewportY, lineJumpBounds);
 		if (insideLineJump) {
 			if (justPressed) {
 				closeSearch(false, true);
@@ -1540,7 +1550,7 @@ export function handleTextEditorPointerInput(): void {
 	}
 	const searchBounds = getSearchBarBounds();
 	if (ide_state.searchVisible && searchBounds) {
-		const insideSearch = pointInRect(snapshot.viewportX, snapshot.viewportY, searchBounds);
+		const insideSearch = point_in_rect(snapshot.viewportX, snapshot.viewportY, searchBounds);
 		const baseHeight = ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 		const fieldBottom = searchBounds.top + baseHeight;
 		const visibleResults = searchVisibleResultCount();
@@ -1716,7 +1726,7 @@ export function updateTabHoverState(snapshot: PointerSnapshot | null): void {
 	const x = snapshot.viewportX;
 	let hovered: string | null = null;
 	for (const [tabId, bounds] of ide_state.tabButtonBounds) {
-		if (pointInRect(x, y, bounds)) {
+		if (point_in_rect(x, y, bounds)) {
 			hovered = tabId;
 			break;
 		}
@@ -2192,7 +2202,7 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 		overlay.copyButtonHovered = false;
 		return false;
 	}
-	const insideBubble = pointInRect(snapshot.viewportX, snapshot.viewportY, layout.bounds);
+	const insideBubble = point_in_rect(snapshot.viewportX, snapshot.viewportY, layout.bounds);
 	if (!insideBubble) {
 		overlay.hovered = false;
 		overlay.hoverLine = -1;
@@ -2204,7 +2214,7 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 		return false;
 	}
 	overlay.hovered = true;
-	overlay.copyButtonHovered = pointInRect(snapshot.viewportX, snapshot.viewportY, layout.copyButtonRect);
+	overlay.copyButtonHovered = point_in_rect(snapshot.viewportX, snapshot.viewportY, layout.copyButtonRect);
 	if (overlay.copyButtonHovered) {
 		overlay.hoverLine = -1;
 		if (!justPressed) {
@@ -2267,4 +2277,12 @@ export function evaluateRuntimeErrorOverlayClick(
 		return { kind: 'noop' };
 	}
 	return { kind: 'collapse' };
+}export function toggleThemeMode() {
+	const currentVariant = constants.getActiveIdeThemeVariant();
+	const nextVariant = currentVariant === 'dark' ? 'light' : 'dark';
+	constants.setIdeThemeVariant(nextVariant);
+	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
+	ide_state.metadata.ideTheme = ide_state.themeVariant;
+	ide_state.layout.invalidateAllHighlights();
 }
+

@@ -1,12 +1,16 @@
-import { getResourcePanelWidth } from './console_cart_editor';
+import { applySourceToDocument, clearReferenceHighlights, getResourcePanelWidth } from './console_cart_editor';
+import { requestSemanticRefresh } from './intellisense';
+import { markDiagnosticsDirty } from './diagnostics';
 import * as constants from './constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from './constants';
-import { getActiveCodeTabContext } from './editor_tabs';
+import { startSearchJob } from './editor_search';
+import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from './editor_tabs';
 import { caretNavigation, ide_state } from './ide_state';
 import { resolveHoverChunkName } from './intellisense';
-import { rebuildRuntimeErrorOverlayView } from './runtime_error_overlay_model';
+import { rebuildRuntimeErrorOverlayView } from './runtime_error_overlay';
 import * as TextEditing from './text_editing_and_selection';
-import type { HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from './types';
+import { computeEditContextFromSources, handlePostEditMutation } from './text_editing_and_selection';
+import type { EditContext, HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from './types';
 
 export function isWhitespace(ch: string): boolean {
 	return ch === '' || ch === ' ' || ch === '\t';
@@ -460,3 +464,66 @@ export function rewrapRuntimeErrorOverlays(): void {
 		}
 	}
 }
+export function normalizeCaseOutsideStrings(text: string): string {
+	if (!ide_state.caseInsensitive || ide_state.canonicalization === 'none') {
+		return text;
+	}
+	const transform = ide_state.canonicalization === 'upper'
+		? (ch: string) => ch.toUpperCase()
+		: (ch: string) => ch.toLowerCase();
+	return applyCaseOutsideStrings(text, transform);
+}
+
+export function applyCaseNormalizationIfNeeded(editContext: EditContext | null): EditContext | null {
+	if (!ide_state.caseInsensitive) {
+		ide_state.preMutationSource = null;
+		return editContext;
+	}
+	const currentSource = serializeCurrentSource();
+	const normalized = normalizeCaseOutsideStrings(currentSource);
+	const previousSource = ide_state.preMutationSource;
+	ide_state.preMutationSource = null;
+	if (normalized === currentSource) {
+		if (!previousSource) {
+			return editContext;
+		}
+		return computeEditContextFromSources(previousSource, currentSource) ?? editContext;
+	}
+	applySourceToDocument(normalized);
+	bumpTextVersion();
+	requestSemanticRefresh();
+	const derived = computeEditContextFromSources(previousSource ?? currentSource, normalized);
+	return derived ?? editContext;
+}export function serializeCurrentSource(): string {
+	return ide_state.lines.join('\n');
+}
+
+export function capturePreMutationSource(): void {
+	if (!ide_state.caseInsensitive) {
+		return;
+	}
+	if (ide_state.preMutationSource === null) {
+		ide_state.preMutationSource = serializeCurrentSource();
+	}
+}
+export function markTextMutated(): void {
+	ide_state.saveGeneration = ide_state.saveGeneration + 1;
+	ide_state.dirty = true;
+	const context = getActiveCodeTabContext();
+	if (context) {
+		context.saveGeneration = ide_state.saveGeneration;
+	}
+	markDiagnosticsDirty();
+	bumpTextVersion();
+	clearReferenceHighlights();
+	updateActiveContextDirtyFlag();
+	ide_state.layout.markVisualLinesDirty();
+	requestSemanticRefresh();
+	ide_state.navigationHistory.forward.length = 0;
+	handlePostEditMutation();
+	if (ide_state.searchQuery.length > 0) startSearchJob();
+}
+export function bumpTextVersion(): void {
+	ide_state.textVersion += 1;
+}
+

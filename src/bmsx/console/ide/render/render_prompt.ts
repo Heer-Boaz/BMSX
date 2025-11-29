@@ -17,7 +17,7 @@ export function drawActionPromptOverlay(): void {
 	let primaryLabel: string;
 	let secondaryLabel: string;
 	switch (prompt.action) {
-		case 'resume':
+		case 'hot-reload-and-resume':
 			messageLines = [
 				'UNSAVED CHANGES DETECTED.',
 				'SAVE BEFORE RESUME TO APPLY CODE UPDATES?',

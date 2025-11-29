@@ -3,6 +3,8 @@ import type {
 	RuntimeErrorOverlay,
 	RuntimeErrorOverlayLineDescriptor} from './types';
 import type { StackTraceFrame } from '../../lua/runtime';
+import { setActiveRuntimeErrorOverlay } from './console_cart_editor';
+import { ide_state } from './ide_state';
 
 export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails | null): RuntimeErrorDetails | null {
 	if (!details) {
@@ -164,4 +166,17 @@ function formatRuntimeErrorStackFrame(frame: StackTraceFrame): string {
 	}
 	const suffix = location.length > 0 ? `(${location})` : '';
 	return `[${originLabel}] ${name}${suffix}`;
+}
+export function updateRuntimeErrorOverlay(deltaSeconds: number): void {
+	const overlay = ide_state.runtimeErrorOverlay;
+	if (!overlay) {
+		return;
+	}
+	if (!Number.isFinite(overlay.timer)) {
+		return;
+	}
+	overlay.timer -= deltaSeconds;
+	if (overlay.timer <= 0) {
+		setActiveRuntimeErrorOverlay(null);
+	}
 }

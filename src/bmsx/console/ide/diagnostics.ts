@@ -1,6 +1,7 @@
 import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaSymbolEntry, ConsoleResourceDescriptor } from '../types';
 import type { EditorDiagnostic } from './types';
 import { computeLuaDiagnostics, getApiCompletionData, type LuaDiagnostic } from './intellisense';
+import { ide_state, diagnosticsDebounceMs } from './ide_state';
 
 export type DiagnosticContextInput = {
 	id: string;
@@ -78,5 +79,14 @@ function resolveChunkName(ctx: DiagnosticContextInput): string | null {
 		if (descriptor.asset_id && descriptor.asset_id.length > 0) return descriptor.asset_id;
 	}
 	return ctx.title ?? null;
+}
+export function markDiagnosticsDirty(contextId?: string): void {
+	const targetId = contextId ?? ide_state.activeCodeTabContextId;
+	if (!targetId) {
+		return;
+	}
+	ide_state.diagnosticsDirty = true;
+	ide_state.dirtyDiagnosticContexts.add(targetId);
+	ide_state.diagnosticsDueAtMs = ide_state.clockNow() + diagnosticsDebounceMs;
 }
 

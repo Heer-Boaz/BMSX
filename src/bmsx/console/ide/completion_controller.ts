@@ -14,7 +14,7 @@ import {
 } from './types';
 import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaSymbolEntry } from '../types';
 import * as constants from './constants';
-import { isAltDown, isCtrlDown, isKeyJustPressed as isKeyJustPressedGlobal, isKeyPressed as isKeyPressedGlobal, isMetaDown, isShiftDown } from './ide_input';
+import { isAltDown, isCtrlDown, isKeyJustPressed, isKeyPressed, isMetaDown, isShiftDown } from './ide_input';
 import { isWhitespace, isWordChar } from './text_utils';
 import { isLuaCommentContext } from './text_utils';
 import { ide_state } from './ide_state';
@@ -97,7 +97,7 @@ export class CompletionController {
 	private builtinDescriptors: ConsoleLuaBuiltinDescriptor[] | null = null;
 	private readonly builtinDescriptorMap: Map<string, ConsoleLuaBuiltinDescriptor> = new Map();
 	private completionPopupBounds: { left: number; top: number; right: number; bottom: number } | null = null;
-	private enterCommitsCompletion = false;
+	public enterCommitsCompletion = false;
 
 	constructor(host: CompletionHost) {
 		this.host = host;
@@ -108,10 +108,6 @@ export class CompletionController {
 		this.completionSession = null;
 		this.completionPopupBounds = null;
 		this.cancelPendingCompletion();
-	}
-
-	public setEnterCommitsEnabled(enabled: boolean): void {
-		this.enterCommitsCompletion = enabled;
 	}
 
 	public handlePointerWheel(direction: number, steps: number, pointer: { x: number; y: number } | null): boolean {
@@ -221,7 +217,7 @@ export class CompletionController {
 
 	public handleKeybindings(deltaSeconds: number): boolean {
 		const { ctrlDown, altDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
-		if ((ctrlDown || metaDown) && !altDown && this.host.isCodeTabActive() && isKeyJustPressedGlobal('Space')) {
+		if ((ctrlDown || metaDown) && !altDown && this.host.isCodeTabActive() && isKeyJustPressed('Space')) {
 			consumeIdeKey('Space');
 			if (this.completionSession) {
 				this.closeSession();
@@ -233,7 +229,7 @@ export class CompletionController {
 		}
 		const session = this.completionSession;
 		if (!session) return false;
-		if (isKeyJustPressedGlobal('Escape')) {
+		if (isKeyJustPressed('Escape')) {
 			consumeIdeKey('Escape');
 			this.closeSession();
 			return true;
@@ -280,27 +276,27 @@ export class CompletionController {
 		if (handled) return true;
 		if (session.filteredItems.length > 0) {
 			let suppressed = false;
-			if (isKeyPressedGlobal('ArrowDown')) {
+			if (isKeyPressed('ArrowDown')) {
 				consumeIdeKey('ArrowDown');
 				suppressed = true;
 			}
-			if (isKeyPressedGlobal('ArrowUp')) {
+			if (isKeyPressed('ArrowUp')) {
 				consumeIdeKey('ArrowUp');
 				suppressed = true;
 			}
-			if (isKeyPressedGlobal('PageDown')) {
+			if (isKeyPressed('PageDown')) {
 				consumeIdeKey('PageDown');
 				suppressed = true;
 			}
-			if (isKeyPressedGlobal('PageUp')) {
+			if (isKeyPressed('PageUp')) {
 				consumeIdeKey('PageUp');
 				suppressed = true;
 			}
-			if (isKeyPressedGlobal('Home')) {
+			if (isKeyPressed('Home')) {
 				consumeIdeKey('Home');
 				suppressed = true;
 			}
-			if (isKeyPressedGlobal('End')) {
+			if (isKeyPressed('End')) {
 				consumeIdeKey('End');
 				suppressed = true;
 			}
@@ -309,15 +305,15 @@ export class CompletionController {
 			}
 		}
 		if (this.enterCommitsCompletion) {
-			const enterPressed = isKeyJustPressedGlobal('Enter');
-			const numpadEnterPressed = isKeyJustPressedGlobal('NumpadEnter');
+			const enterPressed = isKeyJustPressed('Enter');
+			const numpadEnterPressed = isKeyJustPressed('NumpadEnter');
 			if (enterPressed || numpadEnterPressed) {
 				if (enterPressed) consumeIdeKey('Enter'); else consumeIdeKey('NumpadEnter');
 				this.acceptSelectedCompletion();
 				return true;
 			}
 		}
-		if (isKeyJustPressedGlobal('Tab')) {
+		if (isKeyJustPressed('Tab')) {
 			consumeIdeKey('Tab');
 			if (shiftDown) this.moveCompletionSelection(-1); else this.acceptSelectedCompletion();
 			return true;

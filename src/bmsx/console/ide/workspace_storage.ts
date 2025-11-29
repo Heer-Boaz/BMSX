@@ -5,7 +5,7 @@ import type { NavigationHistoryEntry } from './ide_state';
 import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position, EditorSnapshot } from './types';
 import { safeclamp } from '../../utils/clamp';
 import type { StorageService, TimerHandle } from '../../platform/platform';
-import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './debugger_breakpoints';
+import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './ide_debugger';
 import { scheduleIdeOnce } from './background_tasks';
 import {
 	WORKSPACE_FILE_ENDPOINT,
@@ -380,7 +380,7 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 	const runtime = BmsxConsoleRuntime.instance;
 	if (payload.fontVariant) {
 		if (runtime) {
-			runtime.applyFontVariant(payload.fontVariant);
+			runtime.activeIdeFontVariant = payload.fontVariant;
 		} else {
 			setFontVariant(payload.fontVariant);
 		}

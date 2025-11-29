@@ -7,20 +7,8 @@ export class LuaSemanticWorkspace {
 		return this.index.updateFile(file, source);
 	}
 
-	public applySerializedFileData(data: SerializedFileSemanticData): LuaSemanticModel {
-		return this.index.applySerializedFileData(data);
-	}
-
-	public removeFile(file: string): void {
-		this.index.removeFile(file);
-	}
-
 	public getModel(file: string): LuaSemanticModel | null {
 		return this.index.getFileModel(file);
-	}
-
-	public getDefinitionAt(file: string, row: number, column: number): Decl | null {
-		return this.index.getDefinitionAt(file, { line: row, column });
 	}
 
 	public symbolAt(file: string, row: number, column: number): { id: SymbolID; decl: Decl } | null {
@@ -46,10 +34,6 @@ export class LuaSemanticWorkspace {
 
 	public getFileData(file: string): FileSemanticData | null {
 		return this.index.getFileData(file);
-	}
-
-	public getProjectIndex(): LuaProjectIndex {
-		return this.index;
 	}
 
 	public listFiles(): string[] {

@@ -18,7 +18,7 @@ import { renderCodeArea } from './render/render_code_area';
 import { clamp } from '../../utils/clamp';
 import { CompletionController } from './completion_controller';
 import { drawProblemsPanel, ProblemsPanelController } from './problems_panel';
-import { computeAggregatedEditorDiagnostics, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
+import { computeAggregatedEditorDiagnostics, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
 import {
 	createEntryTabContext,
 	createLuaCodeTabContext,
@@ -39,7 +39,7 @@ import {
 	computeResourceTabTitle,
 } from './editor_tabs';
 
-import { applyCaseOutsideStrings, assertMonospace, ensureVisualLines, getVisualLineCount, isIdentifierChar, isIdentifierStartChar, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapRuntimeErrorLine } from './text_utils';
+import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, isIdentifierChar, isIdentifierStartChar, markTextMutated, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapRuntimeErrorLine } from './text_utils';
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
@@ -48,7 +48,7 @@ import {
 	setFieldText,
 	updateBlink,
 } from './inline_text_field';
-import { buildMemberCompletionItems, clearHoverTooltip, describeMetadataValue, intellisenseUiReady, resolveHoverAssetId, resolveHoverChunkName, safeJsonStringify, shouldAutoTriggerCompletions } from './intellisense';
+import { buildMemberCompletionItems, clearHoverTooltip, describeMetadataValue, intellisenseUiReady, requestSemanticRefresh, resolveHoverAssetId, resolveHoverChunkName, safeJsonStringify, shouldAutoTriggerCompletions } from './intellisense';
 import { isLuaCommentContext } from './text_utils';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar } from './render/render_top_bar';
@@ -56,13 +56,12 @@ import { renderTabBar } from './render/render_tab_bar';
 import { renderStatusBar } from './render/render_status_bar';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
-import { flushWindowFocusState, handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, requestWindowFocusState, resetKeyPressRecords, resourceViewerClampScroll } from './ide_input';
+import { flushWindowFocusState, handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, requestWindowFocusState, resetKeyPressRecords, resourceViewerClampScroll, toggleThemeMode } from './ide_input';
 import { consumeIdeKey } from './ide_input';
 import { ConsoleCodeLayout } from './code_layout';
 import type {
 	CodeHoverTooltip,
 	CodeTabContext,
-	EditContext,
 	ConsoleEditorOptions,
 	ConsoleEditorSerializedState,
 	EditorSnapshot,
@@ -81,8 +80,6 @@ import type {
 	SymbolSearchResult,
 	DebugPanelKind,
 } from './types';
-import type { StackTraceFrame } from '../../lua/runtime';
-import type { RectBounds } from '../../rompack/rompack';
 import { resolveReferenceLookup, type ReferenceMatchInfo } from './code_reference';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
@@ -103,8 +100,8 @@ import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast';
 import { closeSearch, focusEditorFromSearch, computeSearchPageStats, startSearchJob, cancelGlobalSearchJob } from './editor_search';
 import * as constants from './constants';
 import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, workspaceDirtyCache, caretNavigation } from './ide_state';
-import { initializeDebuggerUiState } from './debugger_ui_state';
-import { centerCursorVertically, clampCursorColumn, ensureCursorVisible, revealCursor, setCursorPosition } from './caret';
+import { initializeDebuggerUiState } from './ide_debugger';
+import { clampCursorColumn, ensureCursorVisible, revealCursor, setCursorPosition } from './caret';
 import {
 	runWorkspaceAutosaveTick,
 	setupWorkspacePersistence,
@@ -115,7 +112,6 @@ import {
 import * as TextEditing from './text_editing_and_selection';
 import { resetBlink } from './render/render_caret';
 import { api, BmsxConsoleRuntime, BmsxConsoleState } from '../runtime';
-import { computeEditContextFromSources, handlePostEditMutation } from './text_editing_and_selection';
 import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
 import { drawCreateResourceBar } from './render/render_input_bars';
 import { drawActionPromptOverlay } from './render/render_prompt';
@@ -123,6 +119,9 @@ import { drawLineJumpBar, drawRenameBar, drawSearchBar, drawSymbolSearchBar } fr
 import { renderResourceSearchBar } from './render/render_inline_bars';
 import { rewrapRuntimeErrorOverlays } from './text_utils';
 import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRuntimeErrorInChunk } from './render/render_error_overlay';
+import { point_in_rect } from '../../utils/rect_operations';
+import { lower_bound } from '../../utils/lower_bound';
+import { updateRuntimeErrorOverlay } from './runtime_error_overlay';
 
 export const editorFacade = {
 	activate,
@@ -235,7 +234,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		shouldAutoTriggerCompletions: () => shouldAutoTriggerCompletions(),
 		shouldShowParameterHints: () => intellisenseUiReady(),
 	});
-	ide_state.completion.setEnterCommitsEnabled(false);
+	ide_state.completion.enterCommitsCompletion = false;
 	ide_state.input = new InputController();
 	ide_state.problemsPanel = new ProblemsPanelController();
 	ide_state.problemsPanel.setDiagnostics(ide_state.diagnostics);
@@ -2778,7 +2777,7 @@ export function isPointInHoverTooltip(x: number, y: number): boolean {
 	if (!tooltip || !tooltip.bubbleBounds) {
 		return false;
 	}
-	return pointInRect(x, y, tooltip.bubbleBounds);
+	return point_in_rect(x, y, tooltip.bubbleBounds);
 }
 
 export function pointerHitsHoverTarget(snapshot: PointerSnapshot, tooltip: CodeHoverTooltip): boolean {
@@ -3253,8 +3252,7 @@ export function createNavigationEntry(): NavigationHistoryEntry | null {
 	const path = context.descriptor?.path ?? null;
 	const maxRowIndex = ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0;
 	const row = clamp(ide_state.cursorRow, 0, maxRowIndex);
-	const line = ide_state.lines[row] ?? '';
-	const column = clamp(ide_state.cursorColumn, 0, line.length);
+	const column = clamp(ide_state.cursorColumn, 0, ide_state.lines[row]?.length ?? 0);
 	return {
 		contextId: context.id,
 		asset_id,
@@ -3369,9 +3367,8 @@ export async function handleActionPromptSelection(choice: 'save-continue' | 'con
 			return;
 		}
 	}
-	const success = executePendingAction();
-	if (success) {
-		resetActionPromptState();
+	if (performAction(ide_state.pendingActionPrompt.action)) {
+		resetActionPromptState(); // Only reset if action was performed
 	}
 }
 
@@ -3384,27 +3381,24 @@ export async function attemptPromptSave(action: PendingActionPrompt['action']): 
 	return ide_state.dirty === false;
 }
 
-export function executePendingAction(): boolean {
-	const prompt = ide_state.pendingActionPrompt;
-	if (!prompt) {
-		return false;
-	}
-	return performAction(prompt.action);
-}
-
 export function performAction(action: PendingActionPrompt['action']): boolean {
 	switch (action) {
-		case 'resume':
-			return performResume();
+		case 'hot-reload-and-resume':
+			return performHotReloadAndResume();
 		case 'reboot':
 			return performReboot();
 		case 'close':
 			deactivate();
 			return true;
+		case 'theme-toggle':
+			toggleThemeMode();
+			return true;
+		default:
+			return false;
 	}
 }
 
-export function performResume(): boolean {
+export function performHotReloadAndResume(): boolean {
 	const runtime = BmsxConsoleRuntime.instance;
 	let snapshot: BmsxConsoleState = null;
 	try {
@@ -3698,7 +3692,7 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 	}
 	const baseAdvance = entry.advancePrefix[startDisplay] ?? 0;
 	const target = baseAdvance + offset;
-	const lower = lowerBound(entry.advancePrefix, target, startDisplay + 1, entry.advancePrefix.length);
+	const lower = lower_bound(entry.advancePrefix, target, startDisplay + 1, entry.advancePrefix.length);
 	let displayIndex = lower - 1;
 	if (displayIndex < startDisplay) {
 		displayIndex = startDisplay;
@@ -3901,20 +3895,6 @@ export async function save(): Promise<void> {
 	}
 }
 
-export function updateRuntimeErrorOverlay(deltaSeconds: number): void {
-	const overlay = ide_state.runtimeErrorOverlay;
-	if (!overlay) {
-		return;
-	}
-	if (!Number.isFinite(overlay.timer)) {
-		return;
-	}
-	overlay.timer -= deltaSeconds;
-	if (overlay.timer <= 0) {
-		setActiveRuntimeErrorOverlay(null);
-	}
-}
-
 export function captureSnapshot(): EditorSnapshot {
 	const linesCopy = ide_state.lines.slice();
 	let selectionCopy: Position | null = null;
@@ -3932,7 +3912,7 @@ export function captureSnapshot(): EditorSnapshot {
 	};
 }
 
-type RestoreSnapshotOptions = {
+export type RestoreSnapshotOptions = {
 	preserveScroll?: boolean;
 };
 
@@ -3951,7 +3931,6 @@ export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnaps
 	updateDesiredColumn();
 	resetBlink();
 	ide_state.cursorRevealSuspended = false;
-	updateActiveContextDirtyFlag();
 	if (options?.preserveScroll !== true) {
 		ensureCursorVisible();
 	}
@@ -4121,80 +4100,6 @@ export function getRenameBarBounds(): { top: number; bottom: number; left: numbe
 	};
 }
 
-export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void {
-	if (frame.origin !== 'lua') {
-		return;
-	}
-	const source = frame.source ?? '';
-	if (source.length === 0) {
-		ide_state.showMessage('Runtime frame is missing a chunk reference.', constants.COLOR_STATUS_ERROR, 3.0);
-		return;
-	}
-	let normalizedChunk: string;
-	try {
-		normalizedChunk = normalizeChunkName(source);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		ide_state.showMessage(`Unable to resolve runtime chunk name: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
-		return;
-	}
-	const frameasset_id = typeof frame.chunkasset_id === 'string' && frame.chunkasset_id.length > 0 ? frame.chunkasset_id : null;
-	const framePath = typeof frame.chunkPath === 'string' && frame.chunkPath.length > 0 ? frame.chunkPath : null;
-	let descriptor: ConsoleResourceDescriptor | null = null;
-	if (!frameasset_id || !framePath) {
-		try {
-			descriptor = findResourceDescriptorForChunk(normalizedChunk);
-		} catch {
-			descriptor = null;
-		}
-	}
-	const chunkHintasset_id = frameasset_id ?? descriptor?.asset_id ?? null;
-	const chunkHintPath = framePath ?? descriptor?.path ?? undefined;
-	try {
-		const hint = chunkHintasset_id !== null ? { asset_id: chunkHintasset_id, path: chunkHintPath } : (descriptor ? { asset_id: descriptor.asset_id, path: descriptor.path } : undefined);
-		focusChunkSource(normalizedChunk, hint);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		ide_state.showMessage(`Failed to open runtime chunk: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
-		return;
-	}
-	const activeContext = getActiveCodeTabContext();
-	if (!activeContext) {
-		ide_state.showMessage('Unable to activate editor context for runtime frame.', constants.COLOR_STATUS_ERROR, 3.0);
-		return;
-	}
-	const lastRowIndex = Math.max(0, ide_state.lines.length - 1);
-	let targetRow: number | null = null;
-	if (typeof frame.line === 'number' && frame.line > 0) {
-		targetRow = clamp(frame.line - 1, 0, lastRowIndex);
-	}
-	if (targetRow === null && frame.functionName) {
-		targetRow = findFunctionDefinitionRowInActiveFile(frame.functionName);
-	}
-	if (targetRow === null) {
-		targetRow = 0;
-	}
-	const targetLine = ide_state.lines[targetRow] ?? '';
-	let targetColumn = 0;
-	if (typeof frame.column === 'number' && frame.column > 0) {
-		targetColumn = clamp(frame.column - 1, 0, targetLine.length);
-	}
-	if (targetColumn === 0 && frame.functionName && frame.functionName.length > 0) {
-		const nameIndex = targetLine.indexOf(frame.functionName);
-		if (nameIndex >= 0) {
-			targetColumn = nameIndex;
-		}
-	}
-	ide_state.selectionAnchor = null;
-	ide_state.pointerSelecting = false;
-	resetPointerClickTracking();
-	setCursorPosition(targetRow, targetColumn);
-	ide_state.cursorRevealSuspended = false;
-	centerCursorVertically();
-	ensureCursorVisible();
-	ide_state.showMessage('Navigated to call site', constants.COLOR_STATUS_SUCCESS, 1.6);
-}
-
 export function findFunctionDefinitionRowInActiveFile(functionName: string): number | null {
 	if (typeof functionName !== 'string' || functionName.length === 0) {
 		return null;
@@ -4218,24 +4123,6 @@ export function findFunctionDefinitionRowInActiveFile(functionName: string): num
 
 export function notifyReadOnlyEdit(): void {
 	ide_state.showMessage('Tab is read-only', constants.COLOR_STATUS_WARNING, 1.5);
-}
-
-export function toggleProblemsPanel(): void {
-	if (ide_state.problemsPanel.isVisible) {
-		hideProblemsPanel();
-		return;
-	}
-	showProblemsPanel();
-}
-
-export function showProblemsPanel(): void {
-	ide_state.problemsPanel.show();
-	markDiagnosticsDirty();
-}
-
-export function hideProblemsPanel(): void {
-	ide_state.problemsPanel.hide();
-	focusEditorFromProblemsPanel();
 }
 
 export function updateViewport(viewport: { width: number; height: number }): void {
@@ -4282,13 +4169,6 @@ export function setFontVariant(variant: ConsoleFontVariant): void {
 	rewrapRuntimeErrorOverlays();
 	requestSemanticRefresh();
 	markDiagnosticsDirty();
-}
-
-export function toggleResolutionMode(): void {
-	const mode = BmsxConsoleRuntime.instance.toggleOverlayResolutionMode();
-	ensureCursorVisible();
-	ide_state.cursorRevealSuspended = false;
-	ide_state.showMessage(`Editor resolution: ${mode}`, constants.COLOR_STATUS_TEXT, 0.5);
 }
 
 export function toggleWordWrap(): void {
@@ -4987,74 +4867,9 @@ export function hideResourceViewerSprite(): void {
 	}
 }
 
-export function requestSemanticRefresh(context?: CodeTabContext | null): void {
-	const activeContext = context ?? getActiveCodeTabContext();
-	const chunkName = resolveHoverChunkName(activeContext) ?? '<console>';
-	ide_state.layout.requestSemanticUpdate(ide_state.lines, ide_state.textVersion, chunkName);
-}
-
-export function lowerBound(values: number[], target: number, lo = 0, hi = values.length): number {
-	let left = lo;
-	let right = hi;
-	while (left < right) {
-		const mid = (left + right) >>> 1;
-		if (values[mid] < target) {
-			left = mid + 1;
-		} else {
-			right = mid;
-		}
-	}
-	return left;
-}
-
-export function bumpTextVersion(): void {
-	ide_state.textVersion += 1;
-}
-
-export function markDiagnosticsDirty(contextId?: string): void {
-	const targetId = contextId ?? ide_state.activeCodeTabContextId;
-	if (!targetId) {
-		return;
-	}
-	ide_state.diagnosticsDirty = true;
-	ide_state.dirtyDiagnosticContexts.add(targetId);
-	ide_state.diagnosticsDueAtMs = ide_state.clockNow() + diagnosticsDebounceMs;
-}
-
-export function markTextMutated(): void {
-	ide_state.saveGeneration = ide_state.saveGeneration + 1;
-	ide_state.dirty = true;
-	const context = getActiveCodeTabContext();
-	if (context) {
-		context.saveGeneration = ide_state.saveGeneration;
-	}
-	markDiagnosticsDirty();
-	bumpTextVersion();
-	clearReferenceHighlights();
-	updateActiveContextDirtyFlag();
-	ide_state.layout.markVisualLinesDirty();
-	requestSemanticRefresh();
-	ide_state.navigationHistory.forward.length = 0;
-	handlePostEditMutation();
-	if (ide_state.searchQuery.length > 0) startSearchJob();
-}
-
 export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
 	ide_state.lastContentEditAtMs = ide_state.clockNow();
 	ide_state.pendingEditContext = { kind, text };
-}
-
-export function serializeCurrentSource(): string {
-	return ide_state.lines.join('\n');
-}
-
-export function capturePreMutationSource(): void {
-	if (!ide_state.caseInsensitive) {
-		return;
-	}
-	if (ide_state.preMutationSource === null) {
-		ide_state.preMutationSource = serializeCurrentSource();
-	}
 }
 
 export function applySourceToDocument(source: string): void {
@@ -5077,67 +4892,11 @@ export function applySourceToDocument(source: string): void {
 	ide_state.layout.markVisualLinesDirty();
 }
 
-export function normalizeCaseOutsideStrings(text: string): string {
-	if (!ide_state.caseInsensitive || ide_state.canonicalization === 'none') {
-		return text;
-	}
-	const transform = ide_state.canonicalization === 'upper'
-		? (ch: string) => ch.toUpperCase()
-		: (ch: string) => ch.toLowerCase();
-	return applyCaseOutsideStrings(text, transform);
-}
-
-export function applyCaseNormalizationIfNeeded(editContext: EditContext | null): EditContext | null {
-	if (!ide_state.caseInsensitive) {
-		ide_state.preMutationSource = null;
-		return editContext;
-	}
-	const currentSource = serializeCurrentSource();
-	const normalized = normalizeCaseOutsideStrings(currentSource);
-	const previousSource = ide_state.preMutationSource;
-	ide_state.preMutationSource = null;
-	if (normalized === currentSource) {
-		if (!previousSource) {
-			return editContext;
-		}
-		return computeEditContextFromSources(previousSource, currentSource) ?? editContext;
-	}
-	applySourceToDocument(normalized);
-	bumpTextVersion();
-	requestSemanticRefresh();
-	const derived = computeEditContextFromSources(previousSource ?? currentSource, normalized);
-	return derived ?? editContext;
-}
-
-export function resolvePaletteIndex(color: { r: number; g: number; b: number; a: number } | number): number | null {
-	if (typeof color === 'number') {
-		return color;
-	}
-	const index = Msx1Colors.indexOf(color);
-	return index === -1 ? null : index;
-}
-
-export function invertColorIndex(colorIndex: number): number {
-	const color = Msx1Colors[colorIndex];
-	if (!color) {
-		return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
-	}
-	const luminance = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
-	return luminance > 0.5 ? 0 : 15;
-}
-
 export function resetActionPromptState(): void {
 	ide_state.pendingActionPrompt = null;
 	ide_state.actionPromptButtons.saveAndContinue = null;
 	ide_state.actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
 	ide_state.actionPromptButtons.cancel = { left: 0, top: 0, right: 0, bottom: 0 };
-}
-
-export function pointInRect(x: number, y: number, rect: RectBounds | null): boolean {
-	if (!rect) {
-		return false;
-	}
-	return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
 }
 
 export function hasPendingRuntimeReload(): boolean {

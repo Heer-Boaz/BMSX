@@ -1493,3 +1493,8 @@ export function describeMetadataValue(value: unknown): string {
 	}
 	return String(value);
 }
+export function requestSemanticRefresh(context?: CodeTabContext | null): void {
+	const activeContext = context ?? getActiveCodeTabContext();
+	const chunkName = resolveHoverChunkName(activeContext) ?? '<console>';
+	ide_state.layout.requestSemanticUpdate(ide_state.lines, ide_state.textVersion, chunkName);
+}

@@ -18,17 +18,10 @@ export class ActionEffectRegistry implements RegisterablePersistent {
 	 */
 	public static instance: ActionEffectRegistry = new ActionEffectRegistry();
 
-	// Toggle to enable verbose event logs
 	get registrypersistent(): true {
 		return true;
 	}
 
-	/**
-	 * Gets the identifier of the event emitter.
-	 * Hardcoded to 'event_emitter'.
-	 *
-	 * @returns The identifier of the event emitter.
-	 */
 	public get id(): 'ae_registry' { return 'ae_registry'; }
 
 	/**

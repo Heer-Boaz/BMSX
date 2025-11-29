@@ -7,7 +7,7 @@ import { renderRuntimeErrorOverlay } from './render_error_overlay';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
 import { drawEditorColoredText } from '../text_renderer';
-import { getBreakpointsForChunk } from '../debugger_breakpoints';
+import { getBreakpointsForChunk } from '../ide_debugger';
 import { resolveHoverChunkName } from '../intellisense';
 import { getActiveCodeTabContext } from '../editor_tabs';
 import { api } from '../../runtime';

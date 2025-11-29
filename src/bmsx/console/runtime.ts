@@ -42,7 +42,6 @@ import { Input } from '../input/input';
 import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputMapping, KeyboardBinding, GamepadBinding, PointerBinding } from '../input/inputtypes';
 import { ConsoleMode } from './console_mode';
 import { EDITOR_TOGGLE_KEY, CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, GAME_PAUSE_KEY } from './ide/constants';
-import { setDebuggerRuntimeAccessor } from './runtime_accessors';
 import {
 	emitDebuggerLifecycleEvent,
 	type DebuggerResumeMode,
@@ -245,7 +244,6 @@ export class BmsxConsoleRuntime extends Service {
 	]);
 
 	public static async createInstance(options: BmsxConsoleRuntimeOptions): Promise<void> {
-		setDebuggerRuntimeAccessor(() => BmsxConsoleRuntime.instance);
 		const existing = BmsxConsoleRuntime._instance;
 		if (existing) {
 			const sameCart = existing.cart.meta.persistentId === options.cart.meta.persistentId;
@@ -292,7 +290,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly storageService: StorageService;
 	private readonly apiFunctionNames = new Set<string>();
 	private readonly luaBuiltinMetadata = new Map<string, ConsoleLuaBuiltinDescriptor>();
-	private consoleFontVariant: ConsoleFontVariant = EDITOR_FONT_VARIANT;
+	private _activeIdeFontVariant: ConsoleFontVariant = EDITOR_FONT_VARIANT;
 	private luaProgram!: BmsxConsoleLuaProgram;
 	private playerIndex: number;
 	private editor!: ConsoleCartEditor;
@@ -411,7 +409,7 @@ export class BmsxConsoleRuntime extends Service {
 		setEditorCaseInsensitivity(this.canonicalization !== 'none');
 		this.consoleMode = new ConsoleMode({
 			playerIndex: options.playerIndex,
-			fontVariant: this.consoleFontVariant,
+			fontVariant: this._activeIdeFontVariant,
 			canonicalization: this.canonicalization,
 			listLuaSymbols: (asset_id, chunkName) => this.listLuaSymbols(asset_id, chunkName),
 			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
@@ -652,10 +650,10 @@ export class BmsxConsoleRuntime extends Service {
 		return 'continue';
 	}
 
-	private resumeDebugger(command: LuaDebuggerResumeCommand, stepOut = false): void {
+	public resumeDebugger(command: LuaDebuggerResumeCommand): void {
 		const suspension = this.luaDebuggerSuspension;
 		let options: { stepDepthOverride?: number } | undefined;
-		if (stepOut) {
+		if (command === 'step_out' || command === 'step_out_exception') {
 			const targetDepth = Math.max(0, suspension.callStack.length - 1);
 			options = { stepDepthOverride: targetDepth };
 		}
@@ -667,57 +665,28 @@ export class BmsxConsoleRuntime extends Service {
 		controller.setBreakpoints(breakpoints);
 	}
 
-	public continueLuaDebugger(): void {
-		this.resumeDebugger('continue');
-	}
-
-	public stepIntoLuaDebugger(): void {
-		this.resumeDebugger('step_into');
-	}
-
-	public stepOverLuaDebugger(): void {
-		this.resumeDebugger('step_over');
-	}
-
-	public stepOutLuaDebugger(): void {
-		this.resumeDebugger('step_out', true);
-	}
-
-	public ignoreLuaException(): void {
-		this.resumeDebugger('ignore_exception');
-	}
-
-	public stepOutLuaException(): void {
-		this.resumeDebugger('step_out_exception', true);
-	}
-
 	private pollConsoleHotkeys(): void {
-		if (this.shouldAcceptConsoleHotkey('KeyP', 'KeyP', KeyModifier.ctrl)) {
-			$.consume_button(this.playerIndex, 'KeyP', 'keyboard');
-			this.toggleConsoleMode();
-			return;
-		}
-		if (this.shouldAcceptConsoleHotkey('console-font-variant', 'KeyR', KeyModifier.ctrl | KeyModifier.alt)) {
-			$.consume_button(this.playerIndex, 'KeyR', 'keyboard');
-			this.toggleFontVariant();
+		if (this.shouldAcceptConsoleHotkey('console-font-variant', 'KeyT', KeyModifier.ctrl | KeyModifier.alt)) {
+			$.consume_button(this.playerIndex, 'KeyT', 'keyboard');
+			const next = this._activeIdeFontVariant === 'tiny' ? 'msx' : 'tiny';
+			this.activeIdeFontVariant = next; // Toggle font variant and apply to both console and editor
 			return;
 		}
 		if (this.consoleMode.isActive) {
-			if (this.shouldAcceptConsoleHotkey('console-resolution', 'KeyR', KeyModifier.ctrl | KeyModifier.shift)) {
-				$.consume_button(this.playerIndex, 'KeyR', 'keyboard');
+			if (this.shouldAcceptConsoleHotkey('console-resolution', 'KeyV', KeyModifier.ctrl | KeyModifier.alt)) {
+				$.consume_button(this.playerIndex, 'KeyV', 'keyboard');
 				this.toggleOverlayResolutionMode();
 			}
 		}
 		this.handleGlobalDebuggerHotkeys();
 	}
 
-	private toggleFontVariant(): void {
-		const next = this.consoleFontVariant === 'tiny' ? 'msx' : 'tiny';
-		this.applyFontVariant(next);
+	public get activeIdeFontVariant(): ConsoleFontVariant {
+		return this._activeIdeFontVariant;
 	}
 
-	public applyFontVariant(variant: ConsoleFontVariant): void {
-		this.consoleFontVariant = variant;
+	public set activeIdeFontVariant(variant: ConsoleFontVariant) {
+		this._activeIdeFontVariant = variant;
 		this.consoleMode.setFontVariant(variant);
 		this.editor?.setFontVariant(variant);
 	}
@@ -781,7 +750,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (this.editor?.isActive !== true) {
 				this.debuggerAutoActivateOnNextPause = true;
 			}
-			this.stepOverLuaDebugger();
+			this.resumeDebugger('step_over');
 			return;
 		}
 		const controller = this.luaDebuggerController;
@@ -954,7 +923,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	public continueFromConsole(): void {
 		if (this.luaDebuggerSuspension) {
-			this.continueLuaDebugger();
+			this.resumeDebugger('continue');
 		}
 		this.deactivateConsoleMode(true);
 	}
@@ -1114,7 +1083,7 @@ export class BmsxConsoleRuntime extends Service {
 	public clearFaultState(): { cleared: boolean; resumedDebugger: boolean } {
 		const suspension = this.luaDebuggerSuspension;
 		if (suspension && suspension.reason === 'exception') {
-			this.ignoreLuaException();
+			this.resumeDebugger('ignore_exception');
 			return { cleared: true, resumedDebugger: true };
 		}
 		if (this.luaRuntimeFailed || this.faultSnapshot) {
@@ -1746,7 +1715,7 @@ export class BmsxConsoleRuntime extends Service {
 			listLuaSymbols: (asset_id: string | null, chunkName: string | null) => this.listLuaSymbols(asset_id, chunkName),
 			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
 			listBuiltinLuaFunctions: () => this.listLuaBuiltinFunctions(),
-			fontVariant: this.consoleFontVariant,
+			fontVariant: this._activeIdeFontVariant,
 			workspaceRootPath: this.resolveCartProjectRootPath(),
 			themeVariant: this.cart.meta.ideTheme,
 		});
@@ -5368,40 +5337,35 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private async fetchWorkspaceFile(path: string): Promise<{ contents: string; updatedAt?: number } | null> {
-		if (typeof fetch !== 'function') { // TODO: Use platform service fetcher (abstraction)
-			console.warn('[BmsxConsoleRuntime] Fetch API is not available.');
-			return null;
-		}
 		const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
 		let response: HttpResponse;
 		try {
 			response = await fetch(url, { method: 'GET', cache: 'no-store' });
 		} catch {
-			console.info(`[BmsxConsoleRuntime] Failed to fetch workspace file: ${url}. No server response.`);
+			console.info(`[BmsxConsoleRuntime] Failed to fetch workspace file '${path}'. No server response.`);
+			return null;
+		}
+		if (response.status === 404) {
 			return null;
 		}
 		if (!response.ok) {
-			if (response.status === 404) {
-				console.info(`[BmsxConsoleRuntime] Workspace file not found on server: ${url}.`);
-				return null;
-			}
-			console.info(`[BmsxConsoleRuntime] Failed to fetch workspace file: ${url}. HTTP status ${response.status}.`);
+			console.info(`[BmsxConsoleRuntime] Workspace file request failed for '${path}' (HTTP ${response.status}).`);
 			return null;
 		}
 		let payload: unknown;
 		try {
 			payload = await response.json();
 		} catch {
-			console.warn('[BmsxConsoleRuntime] Failed to parse workspace file response JSON.');
+			console.warn(`[BmsxConsoleRuntime] Failed to parse workspace file response JSON for '${path}'.`);
 			return null;
 		}
 		if (!payload || typeof payload !== 'object') {
-			console.warn(`[BmsxConsoleRuntime] Invalid workspace file response payload: ${JSON.stringify(payload)}`);
+			console.warn(`[BmsxConsoleRuntime] Invalid workspace file response payload for '${path}': ${JSON.stringify(payload)}`);
 			return null;
 		}
 		const record = payload as { contents?: string; updatedAt?: number };
 		if (typeof record.contents !== 'string') {
-			console.warn(`[BmsxConsoleRuntime] Invalid workspace file response payload: ${JSON.stringify(payload)}`);
+			console.warn(`[BmsxConsoleRuntime] Invalid workspace file response payload for '${path}': ${JSON.stringify(payload)}`);
 			return null;
 		}
 		return { contents: record.contents, updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : undefined };

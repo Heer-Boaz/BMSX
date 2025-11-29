@@ -13,8 +13,6 @@ import {
 	syncRuntimeErrorOverlayFromContext,
 	updateDesiredColumn,
 	refreshActiveDiagnostics,
-	markDiagnosticsDirty,
-	bumpTextVersion,
 	beginNavigationCapture,
 	completeNavigation,
 	closeSymbolSearch,
@@ -25,6 +23,8 @@ import {
 	resetPointerClickTracking,
 	resetEditorContent,
 } from './console_cart_editor';
+import { markDiagnosticsDirty } from './diagnostics';
+import { bumpTextVersion } from './text_utils';
 import { measureText } from './text_utils';
 import { ensureCursorVisible } from './caret';
 import { resolveHoverChunkName } from './intellisense';

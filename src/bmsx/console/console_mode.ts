@@ -189,7 +189,7 @@ export class ConsoleMode {
 			shouldAutoTriggerCompletions: () => false,
 			shouldShowParameterHints: () => false,
 		});
-		this.completion.setEnterCommitsEnabled(true);
+		this.completion.enterCommitsCompletion = true;
 	}
 
 	public activate(): void {

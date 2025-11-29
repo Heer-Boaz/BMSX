@@ -1,3 +1,4 @@
+import * as constants from '../console/ide/constants';
 import { color } from "../render/gameview";
 import { vec2 } from "../rompack/rompack";
 
@@ -121,3 +122,19 @@ export const Msx1Colors: color[] = [
 	{ r: 0.1, g: 0.1, b: 0.1, a: 0.9 }, // 57 = Hover tooltip background
 	{ r: 0, g: 0, b: 0, a: 0.65 }, // 58 = Action overlay
 ];
+export function resolvePaletteIndex(color: { r: number; g: number; b: number; a: number; } | number): number | null {
+	if (typeof color === 'number') {
+		return color;
+	}
+	const index = Msx1Colors.indexOf(color);
+	return index === -1 ? null : index;
+}
+
+export function invertColorIndex(colorIndex: number): number {
+	const color = Msx1Colors[colorIndex];
+	if (!color) {
+		return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
+	}
+	const luminance = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
+	return luminance > 0.5 ? 0 : 15;
+}

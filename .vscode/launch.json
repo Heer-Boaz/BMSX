@@ -97,7 +97,7 @@
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process,web-security",
 				"--remote-debugging-port=9222",
-				// "--app=http://localhost:8080/game_debug.html"
+				"--app=http://localhost:8080/game_debug.html"
 			],
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,
@@ -108,7 +108,7 @@
 			},
 			"showAsyncStacks": true,
 			"smartStep": true,
-			"disableNetworkCache": true
+			"disableNetworkCache": true,
 		}
 	],
 }

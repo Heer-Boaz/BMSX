@@ -13,7 +13,7 @@ import { pointInRect } from '../../../utils/rect_operations';
 import { api, BmsxConsoleRuntime } from '../../runtime';
 import { clampCursorColumn, centerCursorVertically, revealCursor } from '../caret';
 import * as constants from '../constants';
-import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../runtime_error_overlay_model';
+import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../runtime_error_overlay';
 import { resetBlink } from './render_caret';
 
 export interface ErrorOverlayBounds {

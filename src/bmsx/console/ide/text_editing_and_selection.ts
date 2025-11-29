@@ -23,15 +23,15 @@ import {
 } from './caret';
 import {
 	updateDesiredColumn,
-	markTextMutated,
 	invalidateLineRange,
 	recordEditContext,
 	prepareUndo,
 	currentLine,
-	capturePreMutationSource,
-	markDiagnosticsDirty,
-	applyCaseNormalizationIfNeeded,
 } from './console_cart_editor';
+import { markDiagnosticsDirty } from './diagnostics';
+import { markTextMutated } from './text_utils';
+import { capturePreMutationSource } from './text_utils';
+import { applyCaseNormalizationIfNeeded } from './text_utils';
 import { resolveOffsetPosition } from './lua_formatter';
 import { resetBlink } from './render/render_caret';
 import * as constants from './constants';
