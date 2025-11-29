@@ -324,8 +324,7 @@ export class BmsxConsoleRuntime extends Service {
 	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
 		this._overlayResolutionMode = value;
 		this.overlayRenderBackend.setRenderingViewportType(value);
-		const editor = this.editor;
-		if (editor) editor.updateViewport(this.overlayRenderBackend.viewportSize);
+		this.editor?.updateViewport(this.overlayRenderBackend.viewportSize);
 	}
 
 	public get overlayResolutionMode() {

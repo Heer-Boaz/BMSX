@@ -13,7 +13,7 @@ import { prepareDebuggerStepOverlay } from './debugger_overlay_controller';
 import { debuggerCommandExecutor } from './debugger_controls';
 import { toggleBreakpointAtCursor, toggleBreakpointForEditorRow } from './debugger_breakpoints';
 import { handleCompletionKeybindings } from './completion_controller';
-import { computeRuntimeErrorOverlayMaxWidth, invalidateVisualLines } from './text_utils';
+import { computeRuntimeErrorOverlayMaxWidth } from './text_utils';
 import { drawProblemsPanel, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from './problems_panel';
 import { measureText } from './text_utils';
 import { applyScrollbarScroll } from './scrollbar';
@@ -1195,7 +1195,7 @@ export function handleTextEditorPointerInput(): void {
 			if (!ok) {
 				hideResourcePanel();
 			} else {
-				invalidateVisualLines();
+				ide_state.layout.markVisualLinesDirty();
 				/* hscroll handled inside controller */
 			}
 			ide_state.resourcePanelFocused = true;

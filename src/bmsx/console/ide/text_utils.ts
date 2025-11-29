@@ -275,9 +275,6 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 	}
 	return { startDisplay: visibleStart, endDisplay: visibleEnd };
 }
-export function invalidateVisualLines(): void {
-	ide_state.layout.markVisualLinesDirty();
-}
 
 export function ensureVisualLines(): void {
 	const activeContext = getActiveCodeTabContext();

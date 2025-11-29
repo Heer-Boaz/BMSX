@@ -25,7 +25,6 @@ import {
 	resetPointerClickTracking,
 	resetEditorContent,
 } from './console_cart_editor';
-import { invalidateVisualLines } from './text_utils';
 import { measureText } from './text_utils';
 import { ensureCursorVisible } from './caret';
 import { resolveHoverChunkName } from './intellisense';
@@ -144,7 +143,7 @@ export function activateCodeEditorTab(tabId: string | null): void {
 	const source = context.load();
 	context.lastSavedSource = source;
 	ide_state.lines = splitLines(source);
-	invalidateVisualLines();
+	ide_state.layout.markVisualLinesDirty();
 	markDiagnosticsDirty();
 	if (ide_state.lines.length === 0) {
 		ide_state.lines.push('');

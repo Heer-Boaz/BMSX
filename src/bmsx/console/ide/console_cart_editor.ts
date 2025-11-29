@@ -39,7 +39,7 @@ import {
 	computeResourceTabTitle,
 } from './editor_tabs';
 
-import { assertMonospace, buildRuntimeErrorLines, ensureVisualLines, getVisualLineCount, invalidateVisualLines, isIdentifierChar, isIdentifierStartChar, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapRuntimeErrorLine } from './text_utils';
+import { assertMonospace, buildRuntimeErrorLines, ensureVisualLines, getVisualLineCount, isIdentifierChar, isIdentifierStartChar, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapRuntimeErrorLine } from './text_utils';
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
@@ -3983,7 +3983,7 @@ type RestoreSnapshotOptions = {
 
 export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnapshotOptions): void {
 	ide_state.lines = snapshot.lines.slice();
-	invalidateVisualLines();
+	ide_state.layout.markVisualLinesDirty();
 	ide_state.layout.invalidateAllHighlights();
 	markDiagnosticsDirty();
 	ide_state.cursorRow = snapshot.cursorRow;
@@ -4287,6 +4287,8 @@ export function updateViewport(viewport: { width: number; height: number }): voi
 	applyViewportSize(viewport);
 	ide_state.resourcePanel.clampHScroll();
 	ide_state.resourcePanel.ensureSelectionVisible();
+	ide_state.layout.markVisualLinesDirty();
+	ide_state.layout.invalidateAllHighlights();
 	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();
 	rewrapRuntimeErrorOverlays();
@@ -4318,7 +4320,7 @@ export function setFontVariant(variant: ConsoleFontVariant): void {
 		ide_state.resourcePanel.setFontMetrics(ide_state.lineHeight, ide_state.charAdvance);
 	}
 	ide_state.layout.invalidateAllHighlights();
-	invalidateVisualLines();
+	ide_state.layout.markVisualLinesDirty();
 	ensureVisualLines();
 	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();
@@ -4351,7 +4353,7 @@ export function toggleWordWrap(): void {
 
 	ide_state.wordWrapEnabled = !previousWrap;
 	ide_state.cursorRevealSuspended = false;
-	invalidateVisualLines();
+	ide_state.layout.markVisualLinesDirty();
 	ensureVisualLines();
 
 	ide_state.cursorRow = clamp(previousCursorRow, 0, ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0);
@@ -4381,7 +4383,7 @@ export function hideResourcePanel(): void {
 	ide_state.resourcePanelFocused = false;
 	ide_state.resourcePanelResizing = false;
 	resetResourcePanelState();
-	invalidateVisualLines();
+	ide_state.layout.invalidateAllHighlights();
 }
 
 export function openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
@@ -4447,7 +4449,7 @@ export function closeActiveTab(): void {
 
 export function resetEditorContent(): void {
 	ide_state.lines = [''];
-	invalidateVisualLines();
+	ide_state.layout.markVisualLinesDirty();
 	markDiagnosticsDirty();
 	ide_state.cursorRow = 0;
 	ide_state.cursorColumn = 0;
@@ -5075,7 +5077,7 @@ export function markTextMutated(): void {
 	bumpTextVersion();
 	clearReferenceHighlights();
 	updateActiveContextDirtyFlag();
-	invalidateVisualLines();
+	ide_state.layout.markVisualLinesDirty();
 	requestSemanticRefresh();
 	ide_state.navigationHistory.forward.length = 0;
 	handlePostEditMutation();
@@ -5117,7 +5119,7 @@ export function applySourceToDocument(source: string): void {
 		ide_state.lines.length = nextLines.length;
 	}
 	ide_state.layout.invalidateHighlightsFromRow(0);
-	invalidateVisualLines();
+	ide_state.layout.markVisualLinesDirty();
 }
 
 export function normalizeCaseOutsideStrings(text: string): string {
