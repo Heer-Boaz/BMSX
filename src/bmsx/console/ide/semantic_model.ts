@@ -173,7 +173,7 @@ type TokenInfo = {
 export function buildLuaFileSemanticData(source: string, chunkName: string): FileSemanticData {
 	const normalized = normalizeSource(source);
 	const lines = normalized.split('\n');
-	const lexer = new LuaLexer(normalized, chunkName, { canonicalizeIdentifiers: ide_state.caseInsensitive ? 'upper' : 'none' });
+	const lexer = new LuaLexer(normalized, chunkName, { canonicalizeIdentifiers: ide_state.caseInsensitive ? ide_state.canonicalization : 'none' });
 	const tokens = lexer.scanTokens();
 	const parser = new LuaParser(tokens, chunkName, normalized);
 	const chunk = parser.parseChunk();

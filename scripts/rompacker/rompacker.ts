@@ -327,7 +327,7 @@ function parseOptions(args: string[]): ParsedOptions {
 
 	const preserveLuaCase = seenFlags.has('--preserve-lua-case');
 	const canonicalizationEnv = process.env.ROM_LUA_CANONICALIZATION;
-	let canonicalization: CanonicalizationType = 'upper'; // By default we fold to upper case and that is the default behavior
+	let canonicalization: CanonicalizationType = 'lower'; // By default we fold to lower case to align with JS conventions
 	if (canonicalizationEnv && canonicalizationEnv.length > 0) {
 		if (canonicalizationEnv === 'none' || canonicalizationEnv === 'lower' || canonicalizationEnv === 'upper') {
 			canonicalization = canonicalizationEnv;

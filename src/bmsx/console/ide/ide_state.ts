@@ -53,7 +53,7 @@ import type {
 	ResourceBrowserItem,
 	VisualLineSegment,
 } from './types';
-import type { RectBounds } from '../../rompack/rompack';
+import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
 import type { ReferenceCatalogEntry } from './code_reference';
 import { ConsoleCodeLayout } from './code_layout';
 import type { TimerHandle } from '../../platform';
@@ -120,6 +120,7 @@ export interface IdeState {
 	cursorRow: number;
 	cursorColumn: number;
 	caseInsensitive: boolean;
+	canonicalization: CanonicalizationType;
 	preMutationSource: string | null;
 	scrollRow: number;
 	scrollColumn: number;
@@ -322,6 +323,7 @@ export const ide_state: IdeState = {
 	cursorRow: 0,
 	cursorColumn: 0,
 	caseInsensitive: true,
+	canonicalization: 'lower',
 	preMutationSource: null,
 	scrollRow: 0,
 	scrollColumn: 0,

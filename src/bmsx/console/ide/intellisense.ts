@@ -47,7 +47,16 @@ export const KEYWORDS = new Set([
 ]);
 
 function canonicalizeIdeIdentifier(name: string): string {
-	return ide_state.caseInsensitive ? name.toUpperCase() : name;
+	if (!ide_state.caseInsensitive) {
+		return name;
+	}
+	if (ide_state.canonicalization === 'upper') {
+		return name.toUpperCase();
+	}
+	if (ide_state.canonicalization === 'lower') {
+		return name.toLowerCase();
+	}
+	return name;
 }
 
 export type LuaScopedSymbol = {
@@ -1246,7 +1255,7 @@ function validateCallArity(
 }
 
 function parseLuaChunk(source: string, chunkName: string): LuaChunk {
-	const lexer = new LuaLexer(source, chunkName, { canonicalizeIdentifiers: ide_state.caseInsensitive ? 'upper' : 'none' });
+	const lexer = new LuaLexer(source, chunkName, { canonicalizeIdentifiers: ide_state.caseInsensitive ? ide_state.canonicalization : 'none' });
 	const tokens = lexer.scanTokens();
 	const parser = new LuaParser(tokens, chunkName, source);
 	return parser.parseChunk();

@@ -1,5 +1,5 @@
 import type { ConsoleEditorFont } from '../editor_font';
-import { expandTabs as expandTabsExternal } from './text_utils';
+import { applyCaseOutsideStrings, expandTabs as expandTabsExternal } from './text_utils';
 import * as constants from './constants';
 import { api } from '../runtime';
 
@@ -25,7 +25,7 @@ export function drawEditorText(font: ConsoleEditorFont, text: string, originX: n
 	for (let i = 0; i < lines.length; i += 1) {
 		const expanded = expandTabsExternal(lines[i]);
 		if (expanded.length > 0) {
-			const display = useUppercase ? expanded.toUpperCase() : expanded;
+			const display = useUppercase ? applyCaseOutsideStrings(expanded, (ch) => ch.toUpperCase()) : expanded;
 			api.write_with_font(display, baseX, cursorY, z, color, renderFont);
 		}
 		if (i < lines.length - 1) {

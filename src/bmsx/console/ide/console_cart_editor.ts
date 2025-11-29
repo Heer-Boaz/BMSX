@@ -39,7 +39,7 @@ import {
 	computeResourceTabTitle,
 } from './editor_tabs';
 
-import { assertMonospace, buildRuntimeErrorLines, ensureVisualLines, getVisualLineCount, isIdentifierChar, isIdentifierStartChar, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapRuntimeErrorLine } from './text_utils';
+import { applyCaseOutsideStrings, assertMonospace, buildRuntimeErrorLines, ensureVisualLines, getVisualLineCount, isIdentifierChar, isIdentifierStartChar, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapRuntimeErrorLine } from './text_utils';
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
@@ -160,7 +160,9 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
 	constants.setIdeThemeVariant(options.themeVariant ?? null);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
-	ide_state.caseInsensitive = (options.canonicalization ?? 'upper') !== 'none';
+	const canonicalization = options.canonicalization ?? 'lower';
+	ide_state.canonicalization = canonicalization;
+	ide_state.caseInsensitive = canonicalization !== 'none';
 	ide_state.preMutationSource = null;
 	ide_state.loadSourceFn = options.loadSource;
 	ide_state.saveSourceFn = options.saveSource;
@@ -923,6 +925,19 @@ export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext | nul
 	ide_state.executionStopRow = context ? context.executionStopRow ?? null : null;
 }
 
+function canonicalizeEditorIdentifier(name: string): string {
+	if (!ide_state.caseInsensitive) {
+		return name;
+	}
+	if (ide_state.canonicalization === 'upper') {
+		return name.toUpperCase();
+	}
+	if (ide_state.canonicalization === 'lower') {
+		return name.toLowerCase();
+	}
+	return name;
+}
+
 export function getBuiltinIdentifierSet(): ReadonlySet<string> {
 	try {
 		const descriptors = ide_state.listBuiltinLuaFunctionsFn();
@@ -940,7 +955,7 @@ export function getBuiltinIdentifierSet(): ReadonlySet<string> {
 		const set = new Set<string>();
 		for (let i = 0; i < names.length; i += 1) {
 			const name = names[i];
-			const canonical = ide_state.caseInsensitive ? name.toUpperCase() : name;
+			const canonical = canonicalizeEditorIdentifier(name);
 			set.add(canonical);
 			set.add(name);
 		}
@@ -5122,74 +5137,13 @@ export function applySourceToDocument(source: string): void {
 }
 
 export function normalizeCaseOutsideStrings(text: string): string {
-	if (text.length === 0) {
+	if (!ide_state.caseInsensitive || ide_state.canonicalization === 'none') {
 		return text;
 	}
-	let inString = false;
-	let quote: string | null = null;
-	let escapeNext = false;
-	let needsNormalization = false;
-	for (let i = 0; i < text.length; i += 1) {
-		const ch = text.charAt(i);
-		if (inString) {
-			if (escapeNext) {
-				escapeNext = false;
-				continue;
-			}
-			if (ch === '\\') {
-				escapeNext = true;
-				continue;
-			}
-			if (ch === quote) {
-				inString = false;
-				quote = null;
-			}
-			continue;
-		}
-		if (ch === '"' || ch === '\'') {
-			inString = true;
-			quote = ch;
-			continue;
-		}
-		if (ch !== ch.toUpperCase()) {
-			needsNormalization = true;
-			break;
-		}
-	}
-	if (!needsNormalization) {
-		return text;
-	}
-	let result = '';
-	inString = false;
-	quote = null;
-	escapeNext = false;
-	for (let i = 0; i < text.length; i += 1) {
-		const ch = text.charAt(i);
-		if (inString) {
-			result += ch;
-			if (escapeNext) {
-				escapeNext = false;
-				continue;
-			}
-			if (ch === '\\') {
-				escapeNext = true;
-				continue;
-			}
-			if (ch === quote) {
-				inString = false;
-				quote = null;
-			}
-			continue;
-		}
-		if (ch === '"' || ch === '\'') {
-			inString = true;
-			quote = ch;
-			result += ch;
-			continue;
-		}
-		result += ch.toUpperCase();
-	}
-	return result;
+	const transform = ide_state.canonicalization === 'upper'
+		? (ch: string) => ch.toUpperCase()
+		: (ch: string) => ch.toLowerCase();
+	return applyCaseOutsideStrings(text, transform);
 }
 
 export function applyCaseNormalizationIfNeeded(editContext: EditContext | null): EditContext | null {

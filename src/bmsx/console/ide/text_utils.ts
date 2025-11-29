@@ -54,6 +54,77 @@ export function expandTabs(source: string): string {
 	return result;
 }
 
+export function applyCaseOutsideStrings(text: string, transform: (ch: string) => string): string {
+	if (text.length === 0) {
+		return text;
+	}
+	let inString = false;
+	let quote: string | null = null;
+	let escapeNext = false;
+	let mutated = false;
+	for (let i = 0; i < text.length; i += 1) {
+		const ch = text.charAt(i);
+		if (inString) {
+			if (escapeNext) {
+				escapeNext = false;
+				continue;
+			}
+			if (ch === '\\') {
+				escapeNext = true;
+				continue;
+			}
+			if (ch === quote) {
+				inString = false;
+				quote = null;
+			}
+			continue;
+		}
+		if (ch === '"' || ch === '\'' || ch === '`') {
+			inString = true;
+			quote = ch;
+			continue;
+		}
+		if (transform(ch) !== ch) {
+			mutated = true;
+			break;
+		}
+	}
+	if (!mutated) {
+		return text;
+	}
+	let result = '';
+	inString = false;
+	quote = null;
+	escapeNext = false;
+	for (let i = 0; i < text.length; i += 1) {
+		const ch = text.charAt(i);
+		if (inString) {
+			result += ch;
+			if (escapeNext) {
+				escapeNext = false;
+				continue;
+			}
+			if (ch === '\\') {
+				escapeNext = true;
+				continue;
+			}
+			if (ch === quote) {
+				inString = false;
+				quote = null;
+			}
+			continue;
+		}
+		if (ch === '"' || ch === '\'' || ch === '`') {
+			inString = true;
+			quote = ch;
+			result += ch;
+			continue;
+		}
+		result += transform(ch);
+	}
+	return result;
+}
+
 export function measureText(text: string): number {
 	let width = 0;
 	for (let i = 0; i < text.length; i++) {

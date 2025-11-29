@@ -2,7 +2,7 @@ import type { color } from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
 import { ConsoleEditorFont } from './editor_font';
 import type { ConsoleFontVariant } from './font';
-import { wrapRuntimeErrorLine } from './ide/text_utils';
+import { wrapRuntimeErrorLine, applyCaseOutsideStrings } from './ide/text_utils';
 import {
 	createInlineTextField,
 	applyInlineFieldEditing,
@@ -580,80 +580,10 @@ export class ConsoleMode {
 			return text;
 		}
 
-		const toCanonical = (ch: string): string => {
-			if (this.canonicalization === 'upper') {
-				return ch.toUpperCase();
-			} else if (this.canonicalization === 'lower') {
-				return ch.toLowerCase();
-			}
-			return ch;
-		}
-
-		let inString = false;
-		let quote: string | null = null;
-		let escapeNext = false;
-		let needsNormalization = false;
-		for (let i = 0; i < text.length; i += 1) {
-			const ch = text.charAt(i);
-			if (inString) {
-				if (escapeNext) {
-					escapeNext = false;
-					continue;
-				}
-				if (ch === '\\') {
-					escapeNext = true;
-					continue;
-				}
-				if (ch === quote) {
-					inString = false;
-					quote = null;
-				}
-				continue;
-			}
-			if (ch === '"' || ch === '\'') {
-				inString = true;
-				quote = ch;
-				continue;
-			}
-			if (ch !== toCanonical(ch)) {
-				needsNormalization = true;
-				break;
-			}
-		}
-		if (!needsNormalization) {
-			return text;
-		}
-		let result = '';
-		inString = false;
-		quote = null;
-		escapeNext = false;
-		for (let i = 0; i < text.length; i += 1) {
-			const ch = text.charAt(i);
-			if (inString) {
-				result += ch;
-				if (escapeNext) {
-					escapeNext = false;
-					continue;
-				}
-				if (ch === '\\') {
-					escapeNext = true;
-					continue;
-				}
-				if (ch === quote) {
-					inString = false;
-					quote = null;
-				}
-				continue;
-			}
-				if (ch === '"' || ch === '\'') {
-					inString = true;
-					quote = ch;
-					result += ch;
-					continue;
-				}
-			result += toCanonical(ch);
-		}
-		return result;
+		const transform = this.canonicalization === 'upper'
+			? (ch: string) => ch.toUpperCase()
+			: (ch: string) => ch.toLowerCase();
+		return applyCaseOutsideStrings(text, transform);
 	}
 
 	private drawCompletionOverlays(surface: Viewport, promptWidth: number): void {
@@ -900,7 +830,7 @@ export class ConsoleMode {
 
 	private toDisplayText(value: string, uppercase: boolean): string {
 		if (uppercase && this.canonicalization !== 'none') {
-			value = this.canonicalization === 'upper' ? value.toUpperCase() : value.toLowerCase();
+			return applyCaseOutsideStrings(value, (ch) => ch.toUpperCase());
 		}
 		return value;
 	}
