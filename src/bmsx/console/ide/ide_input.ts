@@ -48,7 +48,7 @@ export const MENU_COMMANDS = [
 	'debugObjects',
 	'debugEvents',
 	'debugRegistry',
-];
+] as const;
 
 export class InputController {
 	private readonly repeatState: Map<string, { cooldown: number }> = new Map();
