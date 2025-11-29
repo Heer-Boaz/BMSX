@@ -40,7 +40,7 @@ export function renderStatusBar(): void {
 		const range = location.range;
 		const positionSuffix = range ? `:${range.startLine}:${range.startColumn}` : '';
 		const fullText = `${displayPath}${positionSuffix}`;
-		const pathText = truncateTextToWidth(fullText, Math.max(0, ide_state.viewportWidth - 8), (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance);
+		const pathText = truncateTextToWidth(fullText, Math.max(0, ide_state.viewportWidth - 8));
 		drawEditorText(api, ide_state.font, pathText, 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
 		return;
 	}
@@ -66,7 +66,7 @@ export function renderStatusBar(): void {
 	}
 
 	// Draw filename info on the right. The line/col info remains rendered by the editor for now.
-	const filenameInfo = `${ide_state.metadata.title || 'UNTITLED'}.lua`;
+	// const filenameInfo = `${ide_state.metadata.title || 'UNTITLED'}.lua`;
 	const leftX = 0;
 	const glyphSize = measureText('•');
 	const indicatorColor = ide_state.serverWorkspaceConnected ? constants.COLOR_SERVER_STATUS_CONNECTED : constants.COLOR_SERVER_STATUS_DISCONNECTED;
@@ -75,7 +75,7 @@ export function renderStatusBar(): void {
 	if (statusLeftInfo && statusLeftInfo.length > 0) {
 		drawEditorText(api, ide_state.font, statusLeftInfo, textX, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
 	}
-	drawEditorText(api, ide_state.font, filenameInfo, ide_state.viewportWidth - measureText(filenameInfo) - 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
+	// drawEditorText(api, ide_state.font, filenameInfo, ide_state.viewportWidth - measureText(filenameInfo) - 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
 }
 
 export function buildStatusLeftInfo(): string {

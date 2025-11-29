@@ -123,7 +123,7 @@ export function computeRuntimeErrorOverlayLayout(
 	const displayLineMap: number[] = [];
 	for (let d = 0; d < sourceLines.length; d += 1) {
 		const text = sourceLines[d];
-		const wrapped = wrapRuntimeErrorLine(text, wrapWidth, (value) => host.measureText(value));
+		const wrapped = wrapRuntimeErrorLine(text, wrapWidth);
 		for (let i = 0; i < wrapped.length; i += 1) {
 			displayLines.push(wrapped[i]);
 			displayLineMap.push(d);

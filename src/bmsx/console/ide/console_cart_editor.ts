@@ -706,7 +706,7 @@ export function showRuntimeError(line: number | null, column: number | null, mes
 	resetBlink();
 	const normalizedMessage = message && message.length > 0 ? message.trim() : 'Runtime error';
 	const overlayMessage = processedLine !== null ? `Line ${processedLine}:${normalizedMessage}` : normalizedMessage;
-	const messageLines = buildRuntimeErrorLines(overlayMessage);
+	const messageLines = buildRuntimeErrorLinesUtil(overlayMessage);
 	const overlayDetails = cloneRuntimeErrorDetails(details ?? null);
 	const overlay: RuntimeErrorOverlay = {
 		row: targetRow,
@@ -985,11 +985,6 @@ export function getBuiltinIdentifierSet(): ReadonlySet<string> {
 	}
 }
 
-export function buildRuntimeErrorLines(message: string): string[] {
-	const maxWidth = computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth);
-	return buildRuntimeErrorLinesUtil(message, maxWidth, (text) => measureText(text));
-}
-
 export function getTabBarTotalHeight(): number {
 	return ide_state.tabBarHeight * Math.max(1, ide_state.tabBarRowCount);
 }
@@ -1038,7 +1033,7 @@ export function getStatusMessageLines(): string[] {
 	const maxWidth = Math.max(ide_state.viewportWidth - 8, ide_state.charAdvance);
 	const localLines: string[] = [];
 	for (let i = 0; i < rawLines.length; i += 1) {
-		const wrapped = wrapRuntimeErrorLine(rawLines[i], maxWidth, (text) => measureText(text));
+		const wrapped = wrapRuntimeErrorLine(rawLines[i], maxWidth);
 		for (let j = 0; j < wrapped.length; j += 1) {
 			localLines.push(wrapped[j]);
 		}

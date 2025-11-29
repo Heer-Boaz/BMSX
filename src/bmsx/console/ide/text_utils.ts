@@ -37,7 +37,6 @@ export function isIdentifierChar(code: number): boolean {
 export function splitLines(source: string): string[] {
 	return source.split(/\r?\n/);
 }
-export type AdvanceMeasure = (ch: string) => number;
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;
@@ -53,28 +52,28 @@ export function expandTabs(source: string): string {
 	return result;
 }
 
-export function measureTextGeneric(text: string, advance: AdvanceMeasure, spaceAdvance: number): number {
+export function measureText(text: string): number {
 	let width = 0;
 	for (let i = 0; i < text.length; i++) {
 		const ch = text.charAt(i);
-		if (ch === '\t') { width += spaceAdvance * constants.TAB_SPACES; continue; }
+		if (ch === '\t') { width += ide_state.spaceAdvance * constants.TAB_SPACES; continue; }
 		if (ch === '\n') continue;
-		width += advance(ch);
+		width += ide_state.font.advance(ch);
 	}
 	return width;
 }
 
-export function truncateTextToWidth(text: string, maxWidth: number, advance: AdvanceMeasure, spaceAdvance: number): string {
+export function truncateTextToWidth(text: string, maxWidth: number): string {
 	if (maxWidth <= 0) return '';
-	if (measureTextGeneric(text, advance, spaceAdvance) <= maxWidth) return text;
+	if (measureText(text) <= maxWidth) return text;
 	const ellipsis = '...';
-	const ellipsisWidth = measureTextGeneric(ellipsis, advance, spaceAdvance);
+	const ellipsisWidth = measureText(ellipsis);
 	if (ellipsisWidth > maxWidth) return '';
 	let low = 0, high = text.length, best = '';
 	while (low <= high) {
 		const mid = Math.floor((low + high) / 2);
 		const candidate = text.slice(0, mid) + ellipsis;
-		if (measureTextGeneric(candidate, advance, spaceAdvance) <= maxWidth) {
+		if (measureText(candidate) <= maxWidth) {
 			best = candidate; low = mid + 1;
 		} else {
 			high = mid - 1;
@@ -227,10 +226,6 @@ function truncateWithMeasure(text: string, maxWidth: number, measure: (t: string
 		else { high = mid - 1; }
 	}
 	return best;
-}
-
-export function measureText(text: string): number {
-	return measureTextGeneric(text, (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance);
 }
 
 export function assertMonospace(): void {

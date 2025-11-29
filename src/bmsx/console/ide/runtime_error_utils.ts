@@ -1,4 +1,6 @@
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from './constants';
+import { ide_state } from './ide_state';
+import { measureText } from './text_utils';
 
 export function computeRuntimeErrorOverlayMaxWidth(
 	viewportWidth: number,
@@ -13,16 +15,13 @@ export function computeRuntimeErrorOverlayMaxWidth(
 	return available;
 }
 
-export function buildRuntimeErrorLines(
-	message: string,
-	maxWidth: number,
-	measureText: (text: string) => number,
-): string[] {
+export function buildRuntimeErrorLines(message: string): string[] {
 	const sanitized = message.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 	const rawLines = sanitized.split('\n');
 	const result: string[] = [];
+	const maxWidth = computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth); // Don't recompute for each line
 	for (let i = 0; i < rawLines.length; i += 1) {
-		const segments = wrapRuntimeErrorLine(rawLines[i], maxWidth, measureText);
+		const segments = wrapRuntimeErrorLine(rawLines[i], maxWidth);
 		if (segments.length === 0) {
 			result.push('');
 			continue;
@@ -37,7 +36,7 @@ export function buildRuntimeErrorLines(
 	return result;
 }
 
-export function wrapRuntimeErrorLine(line: string, maxWidth: number, measureText: (text: string) => number): string[] {
+export function wrapRuntimeErrorLine(line: string, maxWidth: number): string[] {
 	if (line.length === 0) return [''];
 	const segments: string[] = [];
 	let segmentStart = 0;

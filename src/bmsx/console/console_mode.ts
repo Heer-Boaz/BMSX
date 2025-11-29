@@ -435,7 +435,7 @@ export class ConsoleMode {
 		}
 		const uppercaseDisplay = this.useUppercaseDisplay();
 		const normalized = this.toDisplayText(text, uppercaseDisplay);
-		return wrapRuntimeErrorLine(normalized, Math.max(8, maxWidth), (value) => this.measureDisplayText(value, uppercaseDisplay));
+		return wrapRuntimeErrorLine(normalized, Math.max(8, maxWidth));
 	}
 
 	private shouldRepeatKey(code: string, deltaSeconds: number, state: Map<string, number>): boolean {

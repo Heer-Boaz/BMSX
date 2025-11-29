@@ -248,7 +248,7 @@ export function drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: stri
 	const lines: string[] = [];
 	for (let i = 0; i < segments.length; i += 1) {
 		const segment = segments[i].trim();
-		const wrapped = wrapRuntimeErrorLine(segment.length === 0 ? '' : segment, wrapWidth, (text) => measureText(text));
+		const wrapped = wrapRuntimeErrorLine(segment.length === 0 ? '' : segment, wrapWidth);
 		for (let j = 0; j < wrapped.length; j += 1) {
 			lines.push(wrapped[j]);
 		}

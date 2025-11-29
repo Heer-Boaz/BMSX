@@ -115,7 +115,7 @@ export class ProblemsPanelController {
 
 		if (this.diagnostics.length === 0) {
 			const message = 'No problems detected.';
-			const truncated = truncateTextToWidth(message, availableWidth, (ch) => ide_state.font.advance(ch), ide_state.spaceAdvance);
+			const truncated = truncateTextToWidth(message, availableWidth);
 			const rowTop = layout.contentTop;
 			drawEditorText(api, ide_state.font, truncated, contentLeft, rowTop, undefined, constants.COLOR_PROBLEMS_PANEL_TEXT);
 			return;
