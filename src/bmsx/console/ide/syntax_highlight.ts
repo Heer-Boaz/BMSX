@@ -234,6 +234,51 @@ function extractIdentifierAt(line: string, column: number): string {
 	return line.slice(start, end);
 }
 
+function resolveIdentifierPathAt(line: string, column: number): string | null {
+	if (column < 0 || column >= line.length) {
+		return null;
+	}
+	let start = column;
+	while (start > 0) {
+		const prev = line.charAt(start - 1);
+		if (isIdentifierPart(prev) || prev === '.' || prev === ':') {
+			start -= 1;
+			continue;
+		}
+		break;
+	}
+	while (start < line.length && !isIdentifierStart(line.charAt(start))) {
+		if (start >= column) {
+			return null;
+		}
+		start += 1;
+	}
+	if (!isIdentifierStart(line.charAt(start))) {
+		return null;
+	}
+	const path = readIdentifierPath(line, start);
+	if (path.segments.length === 0) {
+		return null;
+	}
+	let inside = false;
+	for (let index = 0; index < path.segments.length; index += 1) {
+		const segment = path.segments[index];
+		if (column >= segment.start && column < segment.end) {
+			inside = true;
+			break;
+		}
+	}
+	if (!inside) {
+		return null;
+	}
+	const names: string[] = [];
+	for (let index = 0; index < path.segments.length; index += 1) {
+		const segment = path.segments[index];
+		names.push(line.slice(segment.start, segment.end));
+	}
+	return names.join('.');
+}
+
 function resolveColorForSymbolKind(kind: SymbolKind): number {
 	switch (kind) {
 		case 'parameter':
@@ -437,6 +482,12 @@ function applySemanticAnnotations(
 		}
 		const end = Math.min(rawEnd, columnColors.length);
 		let skip = false;
+		if (annotation.role === 'usage' && annotation.kind === 'tableField') {
+			const pathName = resolveIdentifierPathAt(line, start);
+			if (pathName && builtinLookup(pathName)) {
+				skip = true;
+			}
+		}
 		if (annotation.role === 'usage' && (annotation.kind === 'global' || annotation.kind === 'function')) {
 			const searchStart = Math.max(0, start - 1);
 			const searchEnd = Math.min(columnColors.length, Math.max(end + 1, searchStart + 1));
