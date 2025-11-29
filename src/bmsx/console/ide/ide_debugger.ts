@@ -16,7 +16,14 @@ import * as constants from './constants';
 const DEBUGGER_LOG_PREFIX = '[Debugger]';
 
 export class RuntimeDebuggerCommandExecutor implements RegisterablePersistent {
-	public static instance: RuntimeDebuggerCommandExecutor = new RuntimeDebuggerCommandExecutor();
+	private static _instance: RuntimeDebuggerCommandExecutor | null = null;
+
+	public static get instance(): RuntimeDebuggerCommandExecutor {
+		if (!RuntimeDebuggerCommandExecutor._instance) {
+			RuntimeDebuggerCommandExecutor._instance = new RuntimeDebuggerCommandExecutor();
+		}
+		return RuntimeDebuggerCommandExecutor._instance;
+	}
 
 	get registrypersistent(): true {
 		return true;
@@ -25,8 +32,10 @@ export class RuntimeDebuggerCommandExecutor implements RegisterablePersistent {
 	public get id(): 'dce' { return 'dce'; }
 
 	public dispose(): void {
-		// No resources to dispose
-		RuntimeDebuggerCommandExecutor.instance.unbind();
+		this.unbind();
+		if (RuntimeDebuggerCommandExecutor._instance === this) {
+			RuntimeDebuggerCommandExecutor._instance = null;
+		}
 	}
 
 	public bind(): void {
@@ -293,15 +302,6 @@ function formatDebuggerMetrics(metrics: LuaDebuggerSessionMetrics | null): strin
 	return parts.join(' · ');
 }
 
-subscribeDebuggerLifecycleEvents((event: DebuggerLifecycleEvent) => {
-	if (event.type === 'paused' || event.type === 'exception_frame_focus') {
-		showDebuggerPauseOverlay(event.payload, event.type === 'paused' ? event.metrics ?? null : null);
-		return;
-	}
-	if (event.type === 'continued') {
-		clearDebuggerPauseOverlay();
-	}
-});
 export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void {
 	if (frame.origin !== 'lua') {
 		return;
@@ -453,3 +453,13 @@ export function getDebuggerExecutionState(): DebuggerExecutionState {
 export function getLastDebuggerPauseEvent(): DebuggerLifecyclePausedEvent | null {
 	return lastPausedEvent;
 }
+
+subscribeDebuggerLifecycleEvents((event: DebuggerLifecycleEvent) => {
+	if (event.type === 'paused' || event.type === 'exception_frame_focus') {
+		showDebuggerPauseOverlay(event.payload, event.type === 'paused' ? event.metrics ?? null : null);
+		return;
+	}
+	if (event.type === 'continued') {
+		clearDebuggerPauseOverlay();
+	}
+});
