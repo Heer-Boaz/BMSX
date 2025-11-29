@@ -164,8 +164,8 @@ function buildMenuEntries(): MenuEntry[] {
 			id: 'run',
 			label: 'RUN',
 			items: [
-				{ type: 'command', command: 'resume', label: 'Resume', active: false, disabled: false },
-				{ type: 'command', command: 'reboot', label: 'Reboot', active: false, disabled: false },
+				{ type: 'command', command: 'hot-reload-and-resume' as TopBarButtonId, label: 'R & R', active: false, disabled: false },
+				{ type: 'command', command: 'reboot' as TopBarButtonId, label: 'Reboot', active: false, disabled: false },
 			],
 		},
 		{
