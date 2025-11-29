@@ -1,12 +1,11 @@
 import type { RectBounds } from '../../../rompack/rompack';
 import type { ResourcePanelController } from '../resource_panel_controller';
 import { Msx1Colors } from '../../../systems/msx';
-import { ConsoleScrollbar } from '../scrollbar';
 import { clamp } from '../../../utils/clamp';
 import { getActiveResourceViewer, getCodeAreaBounds, resourceViewerTextCapacity, resourceViewerImageLayout, ensureResourceViewerSprite, hideResourceViewerSprite } from '../console_cart_editor';
 import { resourceViewerClampScroll } from '../ide_input';
 import { ide_state } from '../ide_state';
-import { drawEditorText } from '../text_renderer';
+import { drawEditorText, drawEditorColoredText } from '../text_renderer';
 import { api } from '../../runtime';
 import { measureText, wrapRuntimeErrorLine } from '../text_utils';
 import * as constants from '../constants';
@@ -73,7 +72,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 
 	for (let itemIndex = scrollStart, drawIndex = 0; itemIndex < scrollEnd; itemIndex += 1, drawIndex += 1) {
 		const item = controller.items[itemIndex];
-		const y = contentTop + drawIndex * controller.host.lineHeight;
+		const y = contentTop + drawIndex * controller.lineHeight;
 		if (y >= effectiveBottom) {
 			break;
 		}
@@ -81,33 +80,33 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 		const contentText = item.line.slice(item.contentStartColumn);
 		const indentX = contentLeft - scrollX;
 		if (indentText.length > 0) {
-			controller.host.drawText(indentText, indentX, y, constants.COLOR_RESOURCE_PANEL_TEXT);
+			drawEditorText(ide_state.font, indentText, indentX, y, undefined, constants.COLOR_RESOURCE_PANEL_TEXT);
 		}
-		const indentWidth = controller.host.measureText(indentText);
+		const indentWidth = measureText(indentText);
 		const contentX = indentX + indentWidth;
 		const isHighlighted = itemIndex === highlightIndex;
 		if (isHighlighted) {
-			const highlightWidth = controller.host.measureText(contentText);
+			const highlightWidth = measureText(contentText);
 			const caretLeft = Math.floor(contentX);
 			const caretRight = Math.max(caretLeft + 1, Math.floor(contentX + highlightWidth));
 			const visibleLeft = clamp(caretLeft, contentLeft, contentRight);
 			const visibleRight = clamp(caretRight, visibleLeft, contentRight);
 			const caretTop = Math.floor(y);
-			const caretBottom = caretTop + controller.host.lineHeight;
+			const caretBottom = caretTop + controller.lineHeight;
 			if (panelActive) {
 				if (visibleRight > visibleLeft) {
 					api.rectfill_color(visibleLeft, caretTop, visibleRight, caretBottom, undefined, highlightColor);
 				}
 				const colors = new Array<number>(contentText.length).fill(constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
 				if (contentText.length > 0) {
-					controller.host.drawColoredText(contentText, colors, contentX, y);
+					drawEditorColoredText(ide_state.font, contentText, colors, contentX, y, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
 				}
 			} else if (visibleRight > visibleLeft) {
 				drawRectOutlineColor(visibleLeft, caretTop, visibleRight, caretBottom, undefined, highlightColor);
 			}
 		}
 		if (!isHighlighted || contentText.length === 0 || !panelActive) {
-			controller.host.drawText(contentText, contentX, y, constants.COLOR_RESOURCE_PANEL_TEXT);
+			drawEditorText(ide_state.font, contentText, contentX, y, undefined, constants.COLOR_RESOURCE_PANEL_TEXT);
 		}
 	}
 
@@ -126,7 +125,7 @@ function resourcePanelLineCapacity(controller: ResourcePanelController, bounds: 
 	const overlayTop = bounds.top;
 	const overlayBottom = bounds.bottom;
 	let contentHeight = Math.max(0, overlayBottom - overlayTop);
-	let initialCapacity = Math.max(1, Math.floor(contentHeight / controller.host.lineHeight));
+	let initialCapacity = Math.max(1, Math.floor(contentHeight / controller.lineHeight));
 	const needsVerticalScrollbar = controller.items.length > initialCapacity;
 	const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
 	const dividerLeft = bounds.right - 1;
@@ -135,7 +134,7 @@ function resourcePanelLineCapacity(controller: ResourcePanelController, bounds: 
 	const needsHorizontalScrollbar = controller.maxLineWidth > availableWidth;
 	if (needsHorizontalScrollbar) {
 		contentHeight = Math.max(0, contentHeight - constants.SCROLLBAR_WIDTH);
-		initialCapacity = Math.max(1, Math.floor(contentHeight / controller.host.lineHeight));
+		initialCapacity = Math.max(1, Math.floor(contentHeight / controller.lineHeight));
 	}
 	return initialCapacity;
 }

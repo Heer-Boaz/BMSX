@@ -9,7 +9,7 @@ import type {
 } from '../types';
 import { ConsoleEditorFont } from '../editor_font';
 import { ConsoleFontVariant, DEFAULT_CONSOLE_FONT_VARIANT } from '../font';
-import { drawEditorColoredText, drawEditorText } from './text_renderer';
+import { drawEditorText } from './text_renderer';
 import { Msx1Colors } from '../../systems/msx';
 import { EventEmitter, type ListenerSet } from '../../core/eventemitter';
 import { Registry } from '../../core/registry';
@@ -118,7 +118,7 @@ import {
 } from './workspace_storage';
 
 import * as TextEditing from './text_editing_and_selection';
-import { drawRectOutlineColor, resetBlink } from './render/render_caret';
+import { resetBlink } from './render/render_caret';
 import { api, BmsxConsoleRuntime, BmsxConsoleState } from '../runtime';
 import { computeEditContextFromSources, handlePostEditMutation } from './text_editing_and_selection';
 import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
@@ -200,24 +200,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		viewerVertical: new ConsoleScrollbar('viewerVertical', 'vertical'),
 	};
 	ide_state.scrollbarController = new ScrollbarController(ide_state.scrollbars);
-	ide_state.resourcePanel = new ResourcePanelController({
-		getViewportWidth: () => ide_state.viewportWidth,
-		getViewportHeight: () => ide_state.viewportHeight,
-		getBottomMargin: () => bottomMargin(),
-		codeViewportTop: () => codeViewportTop(),
-		lineHeight: ide_state.lineHeight,
-		charAdvance: ide_state.charAdvance,
-		measureText: (t) => measureText(t),
-		drawText: (t, x, y, c) => drawEditorText(ide_state.font, t, x, y, undefined, c),
-		drawColoredText: (t, colors, x, y) => drawEditorColoredText(ide_state.font, t, colors, x, y, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT),
-		drawRectOutlineColor: (l, t, r, b, col) => drawRectOutlineColor(l, t, r, b, undefined, col),
-		playerIndex: ide_state.playerIndex,
-		listResources: () => listResourcesStrict(),
-		openLuaCodeTab: (d) => openLuaCodeTab(d),
-		openResourceViewerTab: (d) => openResourceViewerTab(d),
-		focusEditorFromResourcePanel: () => focusEditorFromResourcePanel(),
-		showMessage: (text, color, duration) => ide_state.showMessage(text, color, duration),
-	}, { resourceVertical: ide_state.scrollbars.resourceVertical, resourceHorizontal: ide_state.scrollbars.resourceHorizontal });
+	ide_state.resourcePanel = new ResourcePanelController({ resourceVertical: ide_state.scrollbars.resourceVertical, resourceHorizontal: ide_state.scrollbars.resourceHorizontal });
 	ide_state.completion = new CompletionController({
 		getPlayerIndex: () => ide_state.playerIndex,
 		isCodeTabActive: () => isCodeTabActive(),

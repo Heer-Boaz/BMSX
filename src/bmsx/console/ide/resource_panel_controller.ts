@@ -7,6 +7,9 @@ import type { ResourceBrowserItem } from './types';
 import type { RectBounds } from '../../rompack/rompack';
 import type { ConsoleResourceDescriptor } from '../types';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
+import { ide_state } from './ide_state';
+import { bottomMargin, codeViewportTop, focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab, openResourceViewerTab } from './console_cart_editor';
+import { measureText } from './text_utils';
 
 export interface ResourcePanelScrollbars {
 	resourceVertical: ConsoleScrollbar;
@@ -18,6 +21,8 @@ export class ResourcePanelController {
 	public focused = false;
 	private widthRatio: number | null = null;
 	private filterMode: 'lua_only' | 'all' = 'lua_only';
+	public lineHeight: number;
+	private charAdvance: number;
 
 	// Browser state
 	public items: ResourceBrowserItem[] = [];
@@ -27,13 +32,14 @@ export class ResourcePanelController {
 	public hoverIndex = -1;
 	public maxLineWidth = 0;
 	private pendingSelectionasset_id: string | null = null;
-	// totalResourceCount intentionally not tracked here now
 
 	// Scrollbars for the panel
 	public readonly resourceVertical: ConsoleScrollbar;
 	public readonly resourceHorizontal: ConsoleScrollbar;
 
-	constructor(public readonly host: ResourcePanelBridge, scrollbars?: ResourcePanelScrollbars) {
+	constructor(scrollbars?: ResourcePanelScrollbars) {
+		this.lineHeight = ide_state.lineHeight;
+		this.charAdvance = ide_state.charAdvance;
 		if (scrollbars) {
 			this.resourceVertical = scrollbars.resourceVertical;
 			this.resourceHorizontal = scrollbars.resourceHorizontal;
@@ -44,8 +50,8 @@ export class ResourcePanelController {
 	}
 
 	public setFontMetrics(lineHeight: number, charAdvance: number): void {
-		this.host.lineHeight = lineHeight;
-		this.host.charAdvance = charAdvance;
+		this.lineHeight = lineHeight;
+		this.charAdvance = charAdvance;
 	}
 
 	// === Panel lifecycle ===
@@ -61,7 +67,7 @@ export class ResourcePanelController {
 		const clamped = this.clampRatio(desiredRatio);
 		const widthPx = this.computePixelWidth(clamped);
 		if (clamped <= 0 || widthPx <= 0) {
-			this.host.showMessage('Viewport too small for resource panel.', constants.COLOR_STATUS_WARNING, 3.0);
+			ide_state.showMessage('Viewport too small for resource panel.', constants.COLOR_STATUS_WARNING, 3.0);
 			return;
 		}
 		this.widthRatio = clamped;
@@ -81,7 +87,7 @@ export class ResourcePanelController {
 		this.filterMode = this.filterMode === 'lua_only' ? 'all' : 'lua_only';
 		if (this.visible) this.refreshContents();
 		const modeLabel = this.filterMode === 'lua_only' ? 'Lua resources' : 'all resources';
-		this.host.showMessage(`Files panel: showing ${modeLabel}`, constants.COLOR_STATUS_TEXT, 2.5);
+		ide_state.showMessage(`Files panel: showing ${modeLabel}`, constants.COLOR_STATUS_TEXT, 2.5);
 	}
 
 	// === Rendering ===
@@ -97,7 +103,7 @@ export class ResourcePanelController {
 		if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyR')) {
 			consumeIdeKey('KeyR');
 			// Resolution is editor concern; let host surface a message
-			this.host.showMessage('Resolution toggle not handled by panel controller.', constants.COLOR_STATUS_TEXT, 1.2);
+			ide_state.showMessage('Resolution toggle not handled by panel controller.', constants.COLOR_STATUS_TEXT, 1.2);
 			return;
 		}
 		if ((ctrlDown || metaDown) && isKeyJustPressed('KeyB')) {
@@ -113,13 +119,13 @@ export class ResourcePanelController {
 		if (isKeyJustPressed('Tab')) {
 			consumeIdeKey('Tab');
 			this.focused = false;
-			this.host.focusEditorFromResourcePanel();
+			focusEditorFromResourcePanel();
 			return;
 		}
 		if (this.items.length === 0) return;
 
 		// Horizontal scroll with ArrowLeft/Right
-		const horizontalStep = this.host.charAdvance * 4;
+		const horizontalStep = this.charAdvance * 4;
 		const horizontalMoves: Array<{ key: string; predicate: boolean; delta: number }> = [
 			{ key: 'ArrowLeft', predicate: isKeyJustPressed('ArrowLeft'), delta: -horizontalStep },
 			{ key: 'ArrowRight', predicate: isKeyJustPressed('ArrowRight'), delta: horizontalStep },
@@ -163,7 +169,7 @@ export class ResourcePanelController {
 		const contentTop = bounds.top + 2;
 		const relativeY = y - contentTop;
 		if (relativeY < 0) return -1;
-		const index = this.scroll + Math.floor(relativeY / this.host.lineHeight);
+		const index = this.scroll + Math.floor(relativeY / this.lineHeight);
 		if (index < 0 || index >= this.items.length) return -1;
 		return index;
 	}
@@ -256,10 +262,10 @@ export class ResourcePanelController {
 		} as const;
 		let descriptors: ConsoleResourceDescriptor[];
 		try {
-			descriptors = this.host.listResources();
+			descriptors = listResourcesStrict();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			this.host.showMessage(`Failed to enumerate resources: ${message}`, constants.COLOR_STATUS_WARNING, 3.0);
+			ide_state.showMessage(`Failed to enumerate resources: ${message}`, constants.COLOR_STATUS_WARNING, 3.0);
 			// count omitted
 			this.items = [{ line: `<failed to load resources: ${message}>`, contentStartColumn: 0, descriptor: null }];
 			this.scroll = 0;
@@ -287,7 +293,7 @@ export class ResourcePanelController {
 		const targetasset_id = this.pendingSelectionasset_id ?? (previous.descriptor ? previous.descriptor.asset_id : null);
 		let selectionIndex = -1;
 		if (targetasset_id) {
-			const resolved = this.findIndexByasset_id(targetasset_id);
+			const resolved = this.findIndexByAssetId(targetasset_id);
 			if (resolved !== -1) {
 				selectionIndex = resolved;
 				if (this.pendingSelectionasset_id === targetasset_id) this.pendingSelectionasset_id = null;
@@ -392,14 +398,14 @@ export class ResourcePanelController {
 		for (const item of this.items) {
 			const indent = item.line.slice(0, item.contentStartColumn);
 			const content = item.line.slice(item.contentStartColumn);
-			const width = this.host.measureText(indent) + this.host.measureText(content);
+			const width = measureText(indent) + measureText(content);
 			if (width > maxWidth) maxWidth = width;
 		}
 		this.maxLineWidth = maxWidth;
 		this.clampHScroll();
 	}
 
-	private findIndexByasset_id(asset_id: string): number {
+	private findIndexByAssetId(asset_id: string): number {
 		for (let i = 0; i < this.items.length; i++) {
 			const descriptor = this.items[i].descriptor;
 			if (descriptor && descriptor.asset_id === asset_id) return i;
@@ -411,7 +417,7 @@ export class ResourcePanelController {
 		if (!this.visible) return;
 		const asset_id = this.pendingSelectionasset_id;
 		if (!asset_id) return;
-		const index = this.findIndexByasset_id(asset_id);
+		const index = this.findIndexByAssetId(asset_id);
 		if (index === -1) return;
 		this.selectionIndex = index;
 		this.ensureSelectionVisible();
@@ -424,12 +430,12 @@ export class ResourcePanelController {
 		if (!item.descriptor) return;
 		const d = item.descriptor;
 		if (d.type === 'atlas') {
-			this.host.showMessage('Atlas resources cannot be previewed in the console editor.', constants.COLOR_STATUS_WARNING, 3.2);
-			this.host.focusEditorFromResourcePanel();
+			ide_state.showMessage('Atlas resources cannot be previewed in the console editor.', constants.COLOR_STATUS_WARNING, 3.2);
+			focusEditorFromResourcePanel();
 			return;
 		}
-		if (d.type === 'lua' || this.isLuaLike(d)) this.host.openLuaCodeTab(d); else this.host.openResourceViewerTab(d);
-		this.host.focusEditorFromResourcePanel();
+		if (d.type === 'lua' || this.isLuaLike(d)) openLuaCodeTab(d); else openResourceViewerTab(d);
+		focusEditorFromResourcePanel();
 	}
 
 	private isLuaLike(descriptor: ConsoleResourceDescriptor): boolean {
@@ -484,10 +490,10 @@ export class ResourcePanelController {
 
 	public lineCapacity(): number {
 		const bounds = this.getBounds();
-		const overlayTop = bounds ? bounds.top : this.host.codeViewportTop();
-		const overlayBottom = bounds ? bounds.bottom : (this.host.getViewportHeight() - this.host.getBottomMargin());
+		const overlayTop = bounds ? bounds.top : codeViewportTop();
+		const overlayBottom = bounds ? bounds.bottom : (ide_state.viewportHeight - bottomMargin());
 		let contentHeight = Math.max(0, overlayBottom - overlayTop);
-		let initialCapacity = Math.max(1, Math.floor(contentHeight / this.host.lineHeight));
+		let initialCapacity = Math.max(1, Math.floor(contentHeight / this.lineHeight));
 		if (bounds) {
 			const needsVerticalScrollbar = this.items.length > initialCapacity;
 			const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
@@ -497,7 +503,7 @@ export class ResourcePanelController {
 			const needsHorizontalScrollbar = this.maxLineWidth > availableWidth;
 			if (needsHorizontalScrollbar) {
 				contentHeight = Math.max(0, contentHeight - constants.SCROLLBAR_WIDTH);
-				initialCapacity = Math.max(1, Math.floor(contentHeight / this.host.lineHeight));
+				initialCapacity = Math.max(1, Math.floor(contentHeight / this.lineHeight));
 			}
 		}
 		return initialCapacity;
@@ -507,8 +513,8 @@ export class ResourcePanelController {
 		if (!this.visible) return null;
 		const width = this.getWidth();
 		if (width <= 0) return null;
-		const top = this.host.codeViewportTop();
-		const bottom = this.host.getViewportHeight() - this.host.getBottomMargin();
+		const top = codeViewportTop();
+		const bottom = ide_state.viewportHeight - bottomMargin();
 		if (bottom <= top) return null;
 		return { left: 0, top, right: width, bottom };
 	}
@@ -542,8 +548,8 @@ export class ResourcePanelController {
 	}
 
 	private defaultRatio(): number {
-		const viewportWidth = this.host.getViewportWidth();
-		const screenWidth = this.host.getViewportWidth();
+		const viewportWidth = ide_state.viewportWidth;
+		const screenWidth = ide_state.viewportWidth;
 		const relative = Math.min(1, viewportWidth / screenWidth);
 		const responsiveness = 1 - relative;
 		const ratio = constants.RESOURCE_PANEL_DEFAULT_RATIO + responsiveness * (constants.RESOURCE_PANEL_MAX_RATIO - constants.RESOURCE_PANEL_DEFAULT_RATIO) * 0.6;
@@ -563,8 +569,8 @@ export class ResourcePanelController {
 	}
 
 	private computePixelWidth(ratio: number): number {
-		if (!Number.isFinite(ratio) || ratio <= 0 || this.host.getViewportWidth() <= 0) return 0;
-		return Math.floor(this.host.getViewportWidth() * ratio);
+		if (!Number.isFinite(ratio) || ratio <= 0 || ide_state.viewportWidth <= 0) return 0;
+		return Math.floor(ide_state.viewportWidth * ratio);
 	}
 
 	// Expose snapshot for editor sync
