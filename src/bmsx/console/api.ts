@@ -700,7 +700,6 @@ export class BmsxConsoleApi {
 
 	public define_fsm(id: string, blueprint: StateMachineBlueprint): void {
 		buildFSMDefinition(id, blueprint);
-		setupFSMlibrary();
 	}
 
 	public define_bt(_descriptor: BehaviorTreeDefinition): void {
