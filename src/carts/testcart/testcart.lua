@@ -12,7 +12,7 @@ local demo = {
 
 local function track_plain_input()
 	local bindings = {
-		{ 'console_left', 'left' },
+		{ 'console_left[j]', 'left' },
 		{ 'console_right', 'right' },
 		{ 'console_up', 'up' },
 		{ 'console_down', 'down' },
@@ -125,12 +125,12 @@ local function build_hero_fsm()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
-					['console_b[gp]'] = {
+					['console_b[jp]'] = {
 						['do'] = function(self)
 							return '/charging'
 						end,
 					},
-					['console_a[gp]'] = {
+					['console_a[jp]'] = {
 						['do'] = function(self)
 							return '/blinking'
 						end,
@@ -150,12 +150,12 @@ local function build_hero_fsm()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
-					['console_b[gp]'] = {
+					['console_b[jp]'] = {
 						['do'] = function(self)
 							return '/charging'
 						end,
 					},
-					['console_a[gp]'] = {
+					['console_a[jp]'] = {
 						['do'] = function(self)
 							return '/blinking'
 						end,

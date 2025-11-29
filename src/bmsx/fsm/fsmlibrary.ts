@@ -16,7 +16,6 @@ import type {
 } from "./fsmtypes";
 import { State } from './state';
 import { StateDefinition, validateStateMachine } from './statedefinition';
-import { assertClassicAuthoring } from './fsm_classic_linter';
 
 /**
  * Represents the machine definitions.
@@ -289,14 +288,11 @@ function safeStartStateId(def: StateDefinition): Identifier {
  */
 export function setupFSMlibrary(): void {
 	for (const machine_name in StateDefinitionBuilders) {
-		const raw = StateDefinitionBuilders[machine_name]();
-		if (!raw) continue;
+		buildFSMDefinition(machine_name, StateDefinitionBuilders[machine_name]());
+	}
+}
 
-		const allowDsl = (raw as { allowDsl?: boolean }).allowDsl === true;
-		if (!allowDsl) {
-			assertClassicAuthoring(raw);
-		}
-
+export function buildFSMDefinition(machine_name: Identifier, raw: Partial<StateDefinition>): void {
 		const built = createMachine(machine_name, raw);
 		// HOIST before validate so you can also validate handler existence if you switch to ID strings
 		walkAndHoist(machine_name, built);
@@ -306,16 +302,9 @@ export function setupFSMlibrary(): void {
 		registerDefinitionTree(built);
 
 		addEventsToDef(built);
-	}
-
 }
 
 export function rebuildStateMachine(machineName: Identifier, blueprint: StateMachineBlueprint): StateDefinition {
-	const allowDsl = (blueprint as { allowDsl?: boolean }).allowDsl === true;
-	if (!allowDsl) {
-		assertClassicAuthoring(blueprint);
-	}
-
 	const built = createMachine(machineName, blueprint);
 	walkAndHoist(machineName, built);
 	validateStateMachine(built);

@@ -16,14 +16,12 @@ import { EventTimeline } from '../core/eventtimeline';
 import { WorldObject } from '../core/object/worldobject';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { taskGate, GateGroup } from '../core/taskgate';
-import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
-import { setupFSMlibrary } from '../fsm/fsmlibrary';
+import { buildFSMDefinition, setupFSMlibrary } from '../fsm/fsmlibrary';
 import { ConsoleRenderFacade } from './console_render_facade';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
 import type { ActionEffectDefinition } from '../action_effects/effect_types';
 import { BmsxConsoleRuntime } from './runtime';
 import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type ConstructorWithBTProperty, BehaviorTreeDefinition } from '../ai/behaviourtree';
-import { deep_clone } from '../utils/deep_clone';
 import { Component, type ComponentAttachOptions } from '../component/basecomponent';
 import { ActionEffectRegistry, RegisterEffectOptions } from '../action_effects/effect_registry';
 import { SpriteObject } from '../core/object/sprite';
@@ -700,20 +698,13 @@ export class BmsxConsoleApi {
 		return BmsxConsoleRuntime.instance!;
 	}
 
-	public define_fsm(id: string, blueprint: StateMachineBlueprint, options?: { setup?: boolean }): void {
-		this.set_fsm_blueprint_factory(id, blueprint);
-		if (!options || options.setup !== false) {
-			setupFSMlibrary();
-		}
+	public define_fsm(id: string, blueprint: StateMachineBlueprint): void {
+		buildFSMDefinition(id, blueprint);
+		setupFSMlibrary();
 	}
 
 	public define_bt(_descriptor: BehaviorTreeDefinition): void {
 		// TODO: Implement
-	}
-
-	private set_fsm_blueprint_factory(id: string, blueprint: StateMachineBlueprint): void {
-		const snapshot = deep_clone(blueprint);
-		StateDefinitionBuilders[id] = () => deep_clone(snapshot);
 	}
 
 	private pointer_viewport_position_internal(): ConsolePointerViewport {

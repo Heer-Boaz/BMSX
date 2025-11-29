@@ -1856,7 +1856,6 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaDrawFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'draw' as LifeCycleHandlerName));
 	}
 
-
 	private reloadLuaProgramState(source: string, chunkName: string, asset_id?: string): void {
 		const program = this.luaProgram!;
 		const canonicalChunk = this.canonicalizeProgramEntryChunkName(program, chunkName);

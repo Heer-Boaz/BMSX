@@ -58,6 +58,7 @@ export const CONSOLE_API_METHOD_METADATA: Record<string, ConsoleApiMethodMetadat
 		description: 'Registers a Lua input-action effect with a handler and optional event/cooldown metadata.',
 		parameters: [
 			{ name: 'descriptor', description: 'Effect descriptor with id (or def_id), handler(ctx,payload), optional event override, and optional cooldown_ms.' },
+			{ name: 'opts', optional: true, description: 'Optional effect configuration such as "schema" and "validate".' },
 		],
 	},
 	define_component: {
