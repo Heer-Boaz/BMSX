@@ -52,6 +52,7 @@ import { arrayify } from '../utils/arrayify';
 import { fallbackclamp } from 'bmsx/utils/clamp';
 import { ConsoleCommandDispatcher } from './console_commands';
 import { CanonicalizationType } from '../rompack/rompack';
+import { ActionEffectRegistry } from '../action_effects/effect_registry';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -273,9 +274,11 @@ export class BmsxConsoleRuntime extends Service {
 		const existing = BmsxConsoleRuntime._instance;
 		if (existing) {
 			const sameCart = existing.cart.meta.persistentId === options.cart.meta.persistentId;
-			if (!sameCart) {
-				existing.dispose();
+			const preserving = BmsxConsoleRuntime.preservingWorldResetDepth > 0;
+			if (sameCart && preserving) {
+				return;
 			}
+			existing.dispose();
 		}
 		BmsxConsoleRuntime._instance = new BmsxConsoleRuntime(options);
 		await BmsxConsoleRuntime._instance.startup();
@@ -1434,6 +1437,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private async resetWorldState(): Promise<void> {
 		this.abandonFrameState();
+		ActionEffectRegistry.instance.clear();
 		await $.reset_to_fresh_world({ preserveConsoleRuntime: true });
 	}
 
@@ -1513,7 +1517,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (editor && !state.consoleActive) {
 			editor.update(state.deltaSeconds);
 		}
-		const editorActive = editor.isActive() === true && !state.consoleActive;
+		const editorActive = editor?.isActive() === true && !state.consoleActive;
 		state.editorEvaluated = true;
 		state.editorActive = editorActive;
 		this.updateFrameHaltingState(state);
@@ -2816,7 +2820,7 @@ export class BmsxConsoleRuntime extends Service {
 				this.invokeLuaFunction(this.luaInitFunction, []);
 			}
 			catch (error) {
-				console.info(`[BmsxConsoleRuntime] Lua init for '${chunkName}' failed.`);
+				console.warn(`[BmsxConsoleRuntime] Lua init for '${chunkName}' failed: ${error}`);
 				this.handleLuaError(error);
 				return;
 			}
@@ -3785,6 +3789,7 @@ export class BmsxConsoleRuntime extends Service {
 		const entries: Array<[string, unknown]> = [
 			['world', $.world],
 			['game', $],
+			['$', $],
 			['registry', $.registry],
 			['events', $.event_emitter],
 			['rompack', rompackView],
@@ -5328,7 +5333,11 @@ export class BmsxConsoleRuntime extends Service {
 			return null;
 		}
 		if (!response.ok) {
-			console.info('No workspace file found on server. Starting with clean slate.');
+			if (response.status === 404) {
+				console.info(`[BmsxConsoleRuntime] Workspace file not found on server: ${url}.`);
+				return null;
+			}
+			console.info(`[BmsxConsoleRuntime] Failed to fetch workspace file: ${url}. HTTP status ${response.status}.`);
 			return null;
 		}
 		let payload: unknown;

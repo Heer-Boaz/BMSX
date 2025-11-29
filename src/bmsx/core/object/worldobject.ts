@@ -310,19 +310,19 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	public get dispose_flag(): boolean { return this._dispose_flag; }
 
 	protected _pos: vec3 = new_vec3(...DEFAULT_POSITION_VALUES);
+
 	/**
 	 * The position of the world object. The position is represented as a 3D vector with x, y, and z coordinates.
 	 */
 	public get pos(): vec3 { return this._pos; }
 
-	/**
-	 * The position of the world object. The position is represented as a 3D vector with x, y, and z coordinates.
-	 * The z-coordinate is used for layering objects in the game world.
-	 * see {@link setPosZ} for setting the z-coordinate, as it handles the z-coordinate bounds.
-	 */
-	// public set pos(pos: vec3) {
-	// 	this._pos = pos;
-	// }
+	public set pos(value: vec3) {
+		this.x = value.x;
+		this.y = value.y;
+		if (value.z !== undefined) {
+			this.z = value.z;
+		}
+	}
 
 	/**
 	 * Gets the x-coordinate of the world object.

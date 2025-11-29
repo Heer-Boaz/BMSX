@@ -238,7 +238,7 @@ end
 
 local function define_blink()
 	define_effect({
-		id = 'bladiebla',
+		id = effect_id,
 		event = 'demo.hero.blink',
 		cooldown_ms = 420,
 		-- handle the blink directly in the effect so a single trigger applies movement/timer/emits without relying on a separate listener.

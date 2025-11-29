@@ -669,7 +669,7 @@ export class LuaLexer {
 	}
 
 	private isIdentifierStart(char: string): boolean {
-		return (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char === '_';
+		return (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char === '_' || char === '$'; // Allow '$' for my own extensions
 	}
 
 	private isIdentifierPart(char: string): boolean {

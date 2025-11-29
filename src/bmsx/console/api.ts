@@ -7,14 +7,13 @@ import { ConsoleFont } from './font';
 import { BmsxConsoleStorage } from './storage';
 import { BmsxConsolePointerButton, ConsolePointerVector, ConsolePointerViewport, ConsolePointerWheel } from './types';
 import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest } from '../audio/soundmaster';
-import type { ConcreteOrAbstractConstructor, Identifier, Native, Registerable, RomPack } from '../rompack/rompack';
+import type { ConcreteOrAbstractConstructor, Identifier, Native, Registerable } from '../rompack/rompack';
 import type { World } from '../core/world';
 import type { Registry } from '../core/registry';
 import { Service } from '../core/service';
-import type { EventEmitter, EventPayload } from '../core/eventemitter';
+import type { EventPayload } from '../core/eventemitter';
 import { EventTimeline } from '../core/eventtimeline';
 import { WorldObject } from '../core/object/worldobject';
-import type { Game } from '../core/game';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { taskGate, GateGroup } from '../core/taskgate';
 import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
@@ -251,7 +250,7 @@ export class BmsxConsoleApi {
 	}
 
 	public sprite(img_id: string, x: number, y: number, z: number, options?: { scale?: number; flip_h?: boolean; flip_v?: boolean; colorize?: color, }): void {
-		const entry = this.rompack.img[img_id];
+		const entry = $.rompack.img[img_id];
 		const width = entry.imgmeta.width;
 		const height = entry.imgmeta.height;
 		const scale = options?.scale ?? 1;
@@ -433,20 +432,18 @@ export class BmsxConsoleApi {
 	}
 
 	// TODO: Cannot handle Lua class overrides yet and doesn't apply component extensions or definition overrides
-	public attach_component(object_id: Identifier, component: string | { id: string; id_local?: string; state?: object }): string {
-		const obj = $.world.getWorldObject(object_id);
-		const componentId = typeof component === 'string' ? component : component.id;
-		if (!obj) throw new Error(`Cannot attach component '${componentId}', ${object_id ? `object '${object_id}' not found` : 'no object_id was provided.'}`);
-		const ctor = this.resolve_component_ctor(componentId);
+	public attach_component(object_or_id: WorldObject | Identifier, component_name: string): string {
+		const obj = typeof object_or_id === 'string' ? $.world.getWorldObject(object_or_id) : object_or_id;
+		if (!obj) throw new Error(`Cannot attach component '${component_name}', ${object_or_id ? `object '${object_or_id}' not found` : 'no object (or id) was provided.'}`);
+		const ctor = this.resolve_component_ctor(component_name);
 		const instanceOpts: ComponentAttachOptions = {
 			parent_or_id: obj,
-			id_local: typeof component === 'object' ? component.id_local : undefined,
 		};
 		const instance = new ctor(instanceOpts);
-		if (!instance) throw new Error(`Failed to instantiate component '${componentId}'.`);
-		if (typeof component === 'object' && component.state) {
-			Object.assign(instance, component.state);
-		}
+		if (!instance) throw new Error(`Failed to instantiate component '${component_name}'.`);
+		// if (typeof component === 'object' && component.state) {
+			// Object.assign(instance, component.state);
+		// }
 		obj.add_component(instance);
 		return instance.id;
 	}
@@ -485,7 +482,17 @@ export class BmsxConsoleApi {
 
 			if (ext.components) {
 				for (let i = 0; i < ext.components.length; i += 1) {
-					instance.add_component(ext.components[i]); // We must pass the instance as the parent, because the object is not yet spawned into the world and cannot be looked up by id.
+					this.attach_component(instance, ext.components[i]);
+					// const ctor = this.resolve_component_ctor(componentId);
+					// const componentExt = this.componentExts.get(componentId);
+					// const component = new ctor({ parent_or_id: instance });
+					// if (componentExt && componentExt.defaults) {
+					// 	Object.assign(component, componentExt.defaults);
+					// }
+					// if (componentExt && componentExt.class) {
+					// 	this.applyClassOverrides(component, componentExt.class);
+					// }
+					// instance.add_component(component); // We must pass the instance as the parent, because the object is not yet spawned into the world and cannot be looked up by id.
 				}
 			}
 			if (ext.fsms) {
@@ -638,22 +645,6 @@ export class BmsxConsoleApi {
 			throw new Error('service id must be a non-empty string.');
 		}
 		return $.registry.get<Service>(id);
-	}
-
-	public get game(): Game {
-		return $;
-	}
-
-	public get $(): Game {
-		return $;
-	}
-
-	public get rompack(): RomPack | undefined {
-		return $.rompack;
-	}
-
-	public get events(): EventEmitter {
-		return $.event_emitter;
 	}
 
 	private resolveEmitter(

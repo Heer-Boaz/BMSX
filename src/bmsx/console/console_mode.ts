@@ -78,10 +78,10 @@ type CompletionMemberRequest = {
 const MAX_OUTPUT_ENTRIES = 512;
 const MAX_HISTORY_ENTRIES = 256;
 // const PROMPT_GAP = 4;
-const PADDING_X = 10;
-const PADDING_Y = 10;
+const PADDING_X = 0;
+const PADDING_Y = 0;
 const CHARACTER_TILE_ALPHA = 1.0;
-const CURSOR_BLINK_PERIOD = 0.8;
+const CURSOR_BLINK_PERIOD = 0.5;
 
 const OUTPUT_COLORS: Record<ConsoleOutputKind, number> = {
 	prompt: 15,
