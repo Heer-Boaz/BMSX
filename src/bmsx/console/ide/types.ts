@@ -420,6 +420,7 @@ export type RuntimeErrorDetails = {
 export type RuntimeErrorOverlay = {
 	row: number;
 	column: number;
+	message: string;
 	lines: string[];
 	timer: number;
 	messageLines: string[];

@@ -2,7 +2,7 @@ import type { color } from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
 import { ConsoleEditorFont } from './editor_font';
 import type { ConsoleFontVariant } from './font';
-import { wrapRuntimeErrorLine } from './ide/runtime_error_utils';
+import { wrapRuntimeErrorLine } from './ide/text_utils';
 import {
 	createInlineTextField,
 	applyInlineFieldEditing,

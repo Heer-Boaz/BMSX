@@ -85,10 +85,6 @@ export class ConsoleScrollbar {
 		return this.thumb;
 	}
 
-	public getMaxScroll(): number {
-		return this.maxScrollValue;
-	}
-
 	public getScroll(): number {
 		return this.scrollValue;
 	}
@@ -166,10 +162,6 @@ export class ScrollbarController {
 		return this.active !== null;
 	}
 
-	public getActive(): { kind: ScrollbarKind; pointerOffset: number } | null {
-		return this.active;
-	}
-
 	public cancel(): void {
 		this.active = null;
 	}
@@ -229,6 +221,7 @@ export class ScrollbarController {
 		return x >= r.left && x < r.right && y >= r.top && y < r.bottom;
 	}
 }
+
 export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void {
 	if (Number.isNaN(scroll)) {
 		return;

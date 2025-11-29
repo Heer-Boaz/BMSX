@@ -40,7 +40,7 @@ import {
 	computeResourceTabTitle,
 } from './editor_tabs';
 
-import { assertMonospace, ensureVisualLines, getVisualLineCount, invalidateVisualLines, isIdentifierChar, isIdentifierStartChar, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment } from './text_utils';
+import { assertMonospace, buildRuntimeErrorLines, ensureVisualLines, getVisualLineCount, invalidateVisualLines, isIdentifierChar, isIdentifierStartChar, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapRuntimeErrorLine } from './text_utils';
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
@@ -57,23 +57,12 @@ import { renderTabBar } from './render/render_tab_bar';
 import { renderStatusBar } from './render/render_status_bar';
 import {
 	cloneRuntimeErrorDetails,
-	rebuildRuntimeErrorOverlayView,
-	buildRuntimeErrorOverlayCopyText
-} from './runtime_error_overlay_model';
-import {
-	computeRuntimeErrorOverlayLayout,
-	drawRuntimeErrorOverlay as drawRuntimeErrorOverlayBubble,
-	evaluateRuntimeErrorOverlayClick,
-	findRuntimeErrorOverlayLineAtPosition,
-	type RuntimeErrorOverlayAnchor,
-	type RuntimeErrorOverlayDrawOptions
-} from './runtime_error_overlay_view';
+	rebuildRuntimeErrorOverlayView} from './runtime_error_overlay_model';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
 import { flushWindowFocusState, handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, requestWindowFocusState, resetKeyPressRecords, resourceViewerClampScroll } from './ide_input';
 import { consumeIdeKey } from './ide_input';
 import { ConsoleCodeLayout } from './code_layout';
-import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine } from './runtime_error_utils';
 import type {
 	CodeHoverTooltip,
 	CodeTabContext,
@@ -132,12 +121,13 @@ import {
 import * as TextEditing from './text_editing_and_selection';
 import { drawRectOutlineColor, resetBlink } from './render/render_caret';
 import { api, BmsxConsoleRuntime, BmsxConsoleState } from '../runtime';
-import { computeEditContextFromSources, handlePostEditMutation, writeClipboard } from './text_editing_and_selection';
+import { computeEditContextFromSources, handlePostEditMutation } from './text_editing_and_selection';
 import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
 import { drawCreateResourceBar } from './render/render_input_bars';
 import { drawActionPromptOverlay } from './render/render_prompt';
 import { drawLineJumpBar, drawRenameBar, drawSearchBar, drawSymbolSearchBar } from './render/render_input_bars';
 import { renderResourceSearchBar } from './render/render_inline_bars';
+import { rewrapRuntimeErrorOverlays } from './text_utils';
 
 const editorFacade = {
 	activate,
@@ -706,11 +696,12 @@ export function showRuntimeError(line: number | null, column: number | null, mes
 	resetBlink();
 	const normalizedMessage = message && message.length > 0 ? message.trim() : 'Runtime error';
 	const overlayMessage = processedLine !== null ? `Line ${processedLine}:${normalizedMessage}` : normalizedMessage;
-	const messageLines = buildRuntimeErrorLinesUtil(overlayMessage);
+	const messageLines = buildRuntimeErrorLines(overlayMessage);
 	const overlayDetails = cloneRuntimeErrorDetails(details ?? null);
 	const overlay: RuntimeErrorOverlay = {
 		row: targetRow,
 		column: targetColumn,
+		message: overlayMessage,
 		lines: [],
 		timer: Number.POSITIVE_INFINITY,
 		messageLines,
@@ -4193,213 +4184,6 @@ export function getRenameBarBounds(): { top: number; bottom: number; left: numbe
 	};
 }
 
-function computeRuntimeErrorOverlayGeometry(codeRight: number, textLeft: number): { contentRight: number; availableBottom: number } {
-	const contentRight = Math.max(
-		textLeft,
-		codeRight
-			- (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
-			- constants.CODE_AREA_RIGHT_MARGIN
-	);
-	const codeBottom = ide_state.viewportHeight - bottomMargin();
-	const availableBottom = ide_state.codeHorizontalScrollbarVisible
-		? codeBottom - constants.SCROLLBAR_WIDTH
-		: codeBottom;
-	return { contentRight, availableBottom };
-}
-
-function resolveRuntimeErrorOverlayAnchor(
-	overlay: RuntimeErrorOverlay,
-	codeTop: number,
-	textLeft: number,
-	contentRight: number,
-	availableBottom: number
-): RuntimeErrorOverlayAnchor | null {
-	ensureVisualLines();
-	const visualIndex = positionToVisualIndex(overlay.row, overlay.column);
-	const visibleRows = Math.max(1, Math.floor((availableBottom - codeTop) / ide_state.lineHeight));
-	const relativeRow = visualIndex - ide_state.scrollRow;
-	if (relativeRow < 0 || relativeRow >= visibleRows) {
-		return null;
-	}
-	const segment = visualIndexToSegment(visualIndex);
-	if (!segment) {
-		return null;
-	}
-	const entry = ide_state.layout.getCachedHighlight(ide_state.lines, segment.row);
-	const highlight = entry.hi;
-	let columnStart = ide_state.wordWrapEnabled ? segment.startColumn : ide_state.scrollColumn;
-	if (ide_state.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
-		columnStart = segment.startColumn;
-	}
-	let columnCount: number;
-	if (ide_state.wordWrapEnabled) {
-		columnCount = Math.max(0, segment.endColumn - columnStart);
-	} else {
-		const availableWidth = Math.max(0, contentRight - textLeft);
-		const visibleColumns = Math.max(1, Math.floor(availableWidth / ide_state.charAdvance));
-		columnCount = visibleColumns + 4;
-	}
-	const slice = ide_state.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
-	const sliceStartDisplay = slice.startDisplay;
-	const sliceEndLimit = ide_state.wordWrapEnabled ? ide_state.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
-	const sliceEndDisplay = ide_state.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
-	const anchorDisplay = ide_state.layout.columnToDisplay(highlight, overlay.column);
-	const clampedAnchorDisplay = clamp(anchorDisplay, sliceStartDisplay, sliceEndDisplay);
-	const anchorX = textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, clampedAnchorDisplay);
-	const rowTop = codeTop + relativeRow * ide_state.lineHeight;
-	return {
-		anchorX,
-		rowTop,
-		lineHeight: ide_state.lineHeight,
-		availableBottom,
-	};
-}
-
-export function drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
-	const overlay = ide_state.runtimeErrorOverlay;
-	if (!overlay || overlay.hidden) {
-		return;
-	}
-	const geometry = computeRuntimeErrorOverlayGeometry(codeRight, textLeft);
-	const anchor = resolveRuntimeErrorOverlayAnchor(overlay, codeTop, textLeft, geometry.contentRight, geometry.availableBottom);
-	if (!anchor) {
-		overlay.layout = null;
-		return;
-	}
-	const layout = computeRuntimeErrorOverlayLayout(
-		overlay,
-		anchor,
-		codeTop,
-		geometry.contentRight,
-		textLeft,
-		constants.ERROR_OVERLAY_PADDING_X,
-		constants.ERROR_OVERLAY_PADDING_Y,
-		computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth)
-	);
-	if (!layout) {
-		overlay.layout = null;
-		return;
-	}
-	const highlightLines: number[] = [];
-	if (overlay.hovered && overlay.hoverLine >= 0 && overlay.hoverLine < overlay.lineDescriptors.length) {
-		const descriptor = overlay.lineDescriptors[overlay.hoverLine];
-		if (descriptor && descriptor.role === 'frame') {
-			const mapping = layout.displayLineMap as number[] | undefined;
-			if (Array.isArray(mapping) && mapping.length > 0) {
-				for (let i = 0; i < mapping.length; i += 1) {
-					if (mapping[i] === overlay.hoverLine) highlightLines.push(i);
-				}
-			} else {
-				highlightLines.push(overlay.hoverLine);
-			}
-		}
-	}
-	const drawOptions: RuntimeErrorOverlayDrawOptions = {
-		textColor: constants.ERROR_OVERLAY_TEXT_COLOR,
-		paddingX: constants.ERROR_OVERLAY_PADDING_X,
-		paddingY: constants.ERROR_OVERLAY_PADDING_Y,
-		backgroundColor: overlay.hovered ? constants.ERROR_OVERLAY_BACKGROUND_HOVER : constants.ERROR_OVERLAY_BACKGROUND,
-		highlightColor: constants.ERROR_OVERLAY_LINE_HOVER,
-		highlightLines: highlightLines.length > 0 ? highlightLines : null,
-	};
-	drawRuntimeErrorOverlayBubble(api, ide_state.font, overlay, layout, anchor.lineHeight, drawOptions);
-}
-
-export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, justPressed: boolean, codeTop: number, codeRight: number, textLeft: number): boolean {
-	const overlay = ide_state.runtimeErrorOverlay;
-	if (!overlay || overlay.hidden) {
-		return false;
-	}
-	const geometry = computeRuntimeErrorOverlayGeometry(codeRight, textLeft);
-	const anchor = resolveRuntimeErrorOverlayAnchor(overlay, codeTop, textLeft, geometry.contentRight, geometry.availableBottom);
-	if (!anchor) {
-		overlay.layout = null;
-		overlay.hovered = false;
-		overlay.hoverLine = -1;
-		overlay.copyButtonHovered = false;
-		return false;
-	}
-	const layout = computeRuntimeErrorOverlayLayout(
-		overlay,
-		anchor,
-		codeTop,
-		geometry.contentRight,
-		textLeft,
-		constants.ERROR_OVERLAY_PADDING_X,
-		constants.ERROR_OVERLAY_PADDING_Y,
-		computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth)
-	);
-	if (!layout) {
-		overlay.layout = null;
-		overlay.hovered = false;
-		overlay.hoverLine = -1;
-		overlay.copyButtonHovered = false;
-		return false;
-	}
-	if (!snapshot.valid || !snapshot.insideViewport) {
-		overlay.hovered = false;
-		overlay.hoverLine = -1;
-		overlay.copyButtonHovered = false;
-		return false;
-	}
-	const insideBubble = pointInRect(snapshot.viewportX, snapshot.viewportY, layout.bounds);
-	if (!insideBubble) {
-		overlay.hovered = false;
-		overlay.hoverLine = -1;
-		overlay.copyButtonHovered = false;
-		if (justPressed && overlay.expanded) {
-			overlay.expanded = false;
-			rebuildRuntimeErrorOverlayView(overlay);
-		}
-		return false;
-	}
-	overlay.hovered = true;
-	overlay.copyButtonHovered = pointInRect(snapshot.viewportX, snapshot.viewportY, layout.copyButtonRect);
-	if (overlay.copyButtonHovered) {
-		overlay.hoverLine = -1;
-		if (!justPressed) {
-			return true;
-		}
-		ide_state.pointerSelecting = false;
-		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		resetPointerClickTracking();
-		const payload = buildRuntimeErrorOverlayCopyText(overlay);
-		void writeClipboard(payload, 'Copied runtime error to clipboard');
-
-		return true;
-	}
-	overlay.hoverLine = findRuntimeErrorOverlayLineAtPosition(overlay, snapshot.viewportX, snapshot.viewportY);
-	if (!justPressed) {
-		return true;
-	}
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
-	resetPointerClickTracking();
-	const clickResult = evaluateRuntimeErrorOverlayClick(overlay, overlay.hoverLine);
-	switch (clickResult.kind) {
-		case 'expand': {
-			overlay.expanded = true;
-			rebuildRuntimeErrorOverlayView(overlay);
-			return true;
-		}
-		case 'collapse': {
-			overlay.expanded = false;
-			rebuildRuntimeErrorOverlayView(overlay);
-			return true;
-		}
-		case 'navigate': {
-			overlay.expanded = false;
-			rebuildRuntimeErrorOverlayView(overlay);
-			navigateToRuntimeErrorFrameTarget(clickResult.frame);
-			return true;
-		}
-		case 'noop':
-		default: {
-			return true;
-		}
-	}
-}
-
 export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void {
 	if (frame.origin !== 'lua') {
 		return;
@@ -4523,6 +4307,7 @@ export function updateViewport(viewport: { width: number; height: number }): voi
 	ide_state.resourcePanel.ensureSelectionVisible();
 	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();
+	rewrapRuntimeErrorOverlays();
 }
 
 export function setFontVariant(variant: ConsoleFontVariant): void {
@@ -4555,6 +4340,7 @@ export function setFontVariant(variant: ConsoleFontVariant): void {
 	ensureVisualLines();
 	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();
+	rewrapRuntimeErrorOverlays();
 	requestSemanticRefresh();
 	markDiagnosticsDirty();
 }

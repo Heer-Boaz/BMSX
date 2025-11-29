@@ -360,11 +360,6 @@ node scripts/move_functions.js \
   --dest src/bmsx/console/ide/runtime_error_overlay.ts \
   -n navigateRuntimeErrorOverlay
 
-node scripts/move_functions.js \
-  --source src/bmsx/console/ide/runtime_error_overlay_view.ts \
-  --dest src/bmsx/console/ide/runtime_error_overlay.ts \
-  -n renderRuntimeErrorOverlayView
-
 # Merge rename files into rename.ts
 node scripts/move_functions.js \
   --source src/bmsx/console/ide/rename_apply.ts \

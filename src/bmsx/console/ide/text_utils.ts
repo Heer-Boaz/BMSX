@@ -1,10 +1,12 @@
 import { columnToDisplay, getResourcePanelWidth } from './console_cart_editor';
 import * as constants from './constants';
+import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from './constants';
 import { getActiveCodeTabContext } from './editor_tabs';
 import { caretNavigation, ide_state } from './ide_state';
 import { resolveHoverChunkName } from './intellisense';
+import { rebuildRuntimeErrorOverlayView } from './runtime_error_overlay_model';
 import * as TextEditing from './text_editing_and_selection';
-import type { HighlightLine, VisualLineSegment } from './types';
+import type { HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from './types';
 
 export function isWhitespace(ch: string): boolean {
 	return ch === '' || ch === ' ' || ch === '\t';
@@ -319,5 +321,93 @@ export function positionToVisualIndex(row: number, column: number): number {
 		return override.visualIndex;
 	}
 	return ide_state.layout.positionToVisualIndex(ide_state.lines, row, column);
+}
+export function computeRuntimeErrorOverlayMaxWidth(
+	viewportWidth: number,
+	charAdvance: number,
+	gutterWidth: number
+): number {
+	const horizontalMargin = gutterWidth + ERROR_OVERLAY_CONNECTOR_OFFSET + ERROR_OVERLAY_PADDING_X * 2 + 2;
+	const available = viewportWidth - horizontalMargin;
+	if (available <= charAdvance) {
+		return charAdvance;
+	}
+	return available;
+}
+
+export function buildRuntimeErrorLines(message: string): string[] {
+	const sanitized = message.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+	const rawLines = sanitized.split('\n');
+	const result: string[] = [];
+	const maxWidth = computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth); // Don't recompute for each line
+	for (let i = 0; i < rawLines.length; i += 1) {
+		const segments = wrapRuntimeErrorLine(rawLines[i], maxWidth);
+		if (segments.length === 0) {
+			result.push('');
+			continue;
+		}
+		for (let s = 0; s < segments.length; s += 1) {
+			result.push(segments[s]);
+		}
+	}
+	if (result.length === 0) {
+		result.push('');
+	}
+	return result;
+}
+
+export function wrapRuntimeErrorLine(line: string, maxWidth: number): string[] {
+	if (line.length === 0) return [''];
+	const segments: string[] = [];
+	let segmentStart = 0;
+	let lastBreak = -1;
+	for (let index = 0; index < line.length; index += 1) {
+		const ch = line.charAt(index);
+		if (ch === ' ' || ch === '\t') {
+			lastBreak = index;
+		}
+		const candidateWidth = measureText(line.slice(segmentStart, index + 1));
+		if (candidateWidth <= maxWidth) {
+			continue;
+		}
+		if (lastBreak >= segmentStart) {
+			segments.push(line.slice(segmentStart, lastBreak));
+			segmentStart = lastBreak + 1;
+			lastBreak = -1;
+			index = segmentStart - 1;
+			continue;
+		}
+		if (index === segmentStart) {
+			segments.push(line.charAt(index));
+			segmentStart = index + 1;
+		} else {
+			segments.push(line.slice(segmentStart, index));
+			segmentStart = index;
+		}
+		lastBreak = -1;
+	}
+	if (segmentStart < line.length) {
+		segments.push(line.slice(segmentStart));
+	}
+	return segments.length > 0 ? segments : [''];
+}
+function rewrapRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {
+	overlay.messageLines = buildRuntimeErrorLines(overlay.message);
+	rebuildRuntimeErrorOverlayView(overlay);
+}
+
+export function rewrapRuntimeErrorOverlays(): void {
+	const visited = new Set<RuntimeErrorOverlay>();
+	if (ide_state.runtimeErrorOverlay) {
+		visited.add(ide_state.runtimeErrorOverlay);
+		rewrapRuntimeErrorOverlay(ide_state.runtimeErrorOverlay);
+	}
+	for (const context of ide_state.codeTabContexts.values()) {
+		const overlay = context.runtimeErrorOverlay;
+		if (overlay && !visited.has(overlay)) {
+			visited.add(overlay);
+			rewrapRuntimeErrorOverlay(overlay);
+		}
+	}
 }
 

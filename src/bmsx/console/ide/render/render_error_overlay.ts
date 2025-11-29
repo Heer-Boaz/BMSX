@@ -1,6 +1,15 @@
 import type { BmsxConsoleApi } from '../../api';
 import type { ConsoleEditorFont } from '../../editor_font';
 import { drawEditorText } from '../text_renderer';
+import { clamp } from '../../../utils/clamp';
+import { bottomMargin } from '../console_cart_editor';
+import { ide_state } from '../ide_state';
+import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapRuntimeErrorLine } from '../text_utils';
+import type { RuntimeErrorOverlay } from '../types';
+import type { StackTraceFrame } from '../../../lua/runtime';
+import type { RectBounds } from '../../../rompack/rompack';
+import { Msx1Colors } from '../../../systems/msx';
+import { pointInRect } from '../../../utils/rect_operations';
 import * as constants from '../constants';
 
 export interface ErrorOverlayBounds {
@@ -133,4 +142,296 @@ export function renderErrorOverlayText(
 		drawEditorText(api, font, lines[i], originX, currentY, undefined, color);
 		currentY += lineHeight;
 	}
+}
+export function computeRuntimeErrorOverlayGeometry(codeRight: number, textLeft: number): { contentRight: number; availableBottom: number; } {
+	const contentRight = Math.max(
+		textLeft,
+		codeRight
+		- (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
+		- constants.CODE_AREA_RIGHT_MARGIN
+	);
+	const codeBottom = ide_state.viewportHeight - bottomMargin();
+	const availableBottom = ide_state.codeHorizontalScrollbarVisible
+		? codeBottom - constants.SCROLLBAR_WIDTH
+		: codeBottom;
+	return { contentRight, availableBottom };
+}
+export function resolveRuntimeErrorOverlayAnchor(
+	overlay: RuntimeErrorOverlay,
+	codeTop: number,
+	textLeft: number,
+	contentRight: number,
+	availableBottom: number): RuntimeErrorOverlayAnchor | null {
+	ensureVisualLines();
+	const visualIndex = positionToVisualIndex(overlay.row, overlay.column);
+	const visibleRows = Math.max(1, Math.floor((availableBottom - codeTop) / ide_state.lineHeight));
+	const relativeRow = visualIndex - ide_state.scrollRow;
+	if (relativeRow < 0 || relativeRow >= visibleRows) {
+		return null;
+	}
+	const segment = visualIndexToSegment(visualIndex);
+	if (!segment) {
+		return null;
+	}
+	const entry = ide_state.layout.getCachedHighlight(ide_state.lines, segment.row);
+	const highlight = entry.hi;
+	let columnStart = ide_state.wordWrapEnabled ? segment.startColumn : ide_state.scrollColumn;
+	if (ide_state.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
+		columnStart = segment.startColumn;
+	}
+	let columnCount: number;
+	if (ide_state.wordWrapEnabled) {
+		columnCount = Math.max(0, segment.endColumn - columnStart);
+	} else {
+		const availableWidth = Math.max(0, contentRight - textLeft);
+		const visibleColumns = Math.max(1, Math.floor(availableWidth / ide_state.charAdvance));
+		columnCount = visibleColumns + 4;
+	}
+	const slice = ide_state.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
+	const sliceStartDisplay = slice.startDisplay;
+	const sliceEndLimit = ide_state.wordWrapEnabled ? ide_state.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
+	const sliceEndDisplay = ide_state.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
+	const anchorDisplay = ide_state.layout.columnToDisplay(highlight, overlay.column);
+	const clampedAnchorDisplay = clamp(anchorDisplay, sliceStartDisplay, sliceEndDisplay);
+	const anchorX = textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, clampedAnchorDisplay);
+	const rowTop = codeTop + relativeRow * ide_state.lineHeight;
+	return {
+		anchorX,
+		rowTop,
+		lineHeight: ide_state.lineHeight,
+		availableBottom,
+	};
+}
+
+export function renderRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
+	const overlay = ide_state.runtimeErrorOverlay;
+	if (!overlay || overlay.hidden) {
+		return;
+	}
+	const geometry = computeRuntimeErrorOverlayGeometry(codeRight, textLeft);
+	const anchor = resolveRuntimeErrorOverlayAnchor(overlay, codeTop, textLeft, geometry.contentRight, geometry.availableBottom);
+	if (!anchor) {
+		overlay.layout = null;
+		return;
+	}
+	const layout = computeRuntimeErrorOverlayLayout(
+		overlay,
+		anchor,
+		codeTop,
+		geometry.contentRight,
+		textLeft,
+		constants.ERROR_OVERLAY_PADDING_X,
+		constants.ERROR_OVERLAY_PADDING_Y,
+		computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth)
+	);
+	if (!layout) {
+		overlay.layout = null;
+		return;
+	}
+	const highlightLines: number[] = [];
+	if (overlay.hovered && overlay.hoverLine >= 0 && overlay.hoverLine < overlay.lineDescriptors.length) {
+		const descriptor = overlay.lineDescriptors[overlay.hoverLine];
+		if (descriptor && descriptor.role === 'frame') {
+			const mapping = layout.displayLineMap as number[] | undefined;
+			if (Array.isArray(mapping) && mapping.length > 0) {
+				for (let i = 0; i < mapping.length; i += 1) {
+					if (mapping[i] === overlay.hoverLine) highlightLines.push(i);
+				}
+			} else {
+				highlightLines.push(overlay.hoverLine);
+			}
+		}
+	}
+	const drawOptions: RuntimeErrorOverlayDrawOptions = {
+		textColor: constants.ERROR_OVERLAY_TEXT_COLOR,
+		paddingX: constants.ERROR_OVERLAY_PADDING_X,
+		paddingY: constants.ERROR_OVERLAY_PADDING_Y,
+		backgroundColor: overlay.hovered ? constants.ERROR_OVERLAY_BACKGROUND_HOVER : constants.ERROR_OVERLAY_BACKGROUND,
+		highlightColor: constants.ERROR_OVERLAY_LINE_HOVER,
+		highlightLines: highlightLines.length > 0 ? highlightLines : null,
+	};
+	renderRuntimeErrorOverlayBubble(api, ide_state.font, overlay, layout, anchor.lineHeight, drawOptions);
+}
+
+const COPY_ICON_ID = 'copy';
+const COPY_ICON_WIDTH = 6;
+const COPY_ICON_HEIGHT = 8;
+const COPY_BUTTON_GAP = 2;
+
+export type RuntimeErrorOverlayAnchor = {
+	anchorX: number;
+	rowTop: number;
+	lineHeight: number;
+	availableBottom: number;
+};
+
+export type RuntimeErrorOverlayLayoutResult = {
+	bounds: ErrorOverlayBounds;
+	connector?: ErrorOverlayRenderConfig['connector'];
+	lineRects: RectBounds[];
+	displayLines: string[];
+	displayLineMap: number[];
+	copyButtonRect: RectBounds;
+	contentRightInset: number;
+};
+
+export type RuntimeErrorOverlayDrawOptions = {
+	textColor: number;
+	paddingX: number;
+	paddingY: number;
+	backgroundColor: number;
+	highlightColor: number;
+	highlightLines: ReadonlyArray<number> | null;
+};
+
+export type RuntimeErrorOverlayClickResult = { kind: 'expand'; } |
+{ kind: 'collapse'; } |
+{ kind: 'navigate'; frame: StackTraceFrame; } |
+{ kind: 'noop'; };
+
+export function computeRuntimeErrorOverlayLayout(
+	overlay: RuntimeErrorOverlay,
+	anchor: RuntimeErrorOverlayAnchor,
+	codeTop: number,
+	codeRight: number,
+	textLeft: number,
+	paddingX: number,
+	paddingY: number,
+	maxTextWidth: number
+): RuntimeErrorOverlayLayoutResult | null {
+	const sourceLines = overlay.lines.length > 0 ? overlay.lines : ['Runtime error'];
+	const buttonSize = Math.max(anchor.lineHeight, COPY_ICON_HEIGHT + 2);
+	const reserveWidth = buttonSize + COPY_BUTTON_GAP;
+	const wrapWidth = Math.max(1, maxTextWidth - reserveWidth);
+	const displayLines: string[] = [];
+	const displayLineMap: number[] = [];
+	for (let d = 0; d < sourceLines.length; d += 1) {
+		const text = sourceLines[d];
+		const wrapped = wrapRuntimeErrorLine(text, wrapWidth);
+		for (let i = 0; i < wrapped.length; i += 1) {
+			displayLines.push(wrapped[i]);
+			displayLineMap.push(d);
+		}
+		if (wrapped.length === 0) {
+			displayLines.push('');
+			displayLineMap.push(d);
+		}
+	}
+	const availableBottom = anchor.availableBottom;
+	const belowTop = anchor.rowTop + anchor.lineHeight + 2;
+	const bubbleBounds = computeErrorOverlayBounds(
+		anchor.anchorX,
+		anchor.rowTop,
+		displayLines,
+		(text) => measureText(text) + reserveWidth,
+		{
+			left: textLeft,
+			top: codeTop,
+			right: codeRight,
+			bottom: availableBottom
+		},
+		anchor.lineHeight
+	);
+
+	const placedBelow = bubbleBounds.top >= belowTop - 1;
+	const connectorLeft = Math.max(textLeft, anchor.anchorX);
+	const connectorRight = Math.min(bubbleBounds.left, connectorLeft + 3);
+
+	let connector: ErrorOverlayRenderConfig['connector'] = undefined;
+	if (connectorRight > connectorLeft) {
+		if (placedBelow) {
+			const connectorStartY = anchor.rowTop + anchor.lineHeight;
+			if (bubbleBounds.top > connectorStartY) {
+				connector = {
+					left: connectorLeft,
+					right: connectorRight,
+					startY: connectorStartY,
+					endY: bubbleBounds.top
+				};
+			}
+		} else if (bubbleBounds.bottom < anchor.rowTop) {
+			connector = {
+				left: connectorLeft,
+				right: connectorRight,
+				startY: bubbleBounds.bottom,
+				endY: anchor.rowTop
+			};
+		}
+	}
+
+	const lineRects: RectBounds[] = [];
+	const lineLeft = bubbleBounds.left + paddingX;
+	const lineRight = Math.max(lineLeft, bubbleBounds.right - paddingX - reserveWidth);
+	let currentY = bubbleBounds.top + paddingY;
+	for (let index = 0; index < displayLines.length; index += 1) {
+		lineRects.push({ left: lineLeft, top: currentY, right: lineRight, bottom: currentY + anchor.lineHeight });
+		currentY += anchor.lineHeight;
+	}
+	const copyButtonRight = bubbleBounds.right - paddingX;
+	const copyButtonLeft = copyButtonRight - buttonSize;
+	const copyButtonTop = bubbleBounds.top + paddingY;
+	const copyButtonRect: RectBounds = {
+		left: copyButtonLeft,
+		top: copyButtonTop,
+		right: copyButtonRight,
+		bottom: copyButtonTop + buttonSize,
+	};
+	overlay.layout = {
+		bounds: { left: bubbleBounds.left, top: bubbleBounds.top, right: bubbleBounds.right, bottom: bubbleBounds.bottom },
+		lineRects,
+		displayLineMap,
+		displayLines,
+		copyButtonRect,
+		contentRightInset: reserveWidth,
+	};
+	return { bounds: bubbleBounds, connector, lineRects, displayLines, displayLineMap, copyButtonRect, contentRightInset: reserveWidth };
+}
+
+export function renderRuntimeErrorOverlayBubble(
+	api: BmsxConsoleApi,
+	font: ConsoleEditorFont,
+	overlay: RuntimeErrorOverlay,
+	layout: RuntimeErrorOverlayLayoutResult,
+	lineHeight: number,
+	options: RuntimeErrorOverlayDrawOptions
+): void {
+	const highlightLines = options.highlightLines && options.highlightLines.length > 0 ? options.highlightLines : undefined;
+	const toDraw = layout.displayLines;
+	const lines = toDraw && toDraw.length > 0 ? toDraw : (overlay.lines.length > 0 ? overlay.lines : ['Runtime error']);
+	renderErrorOverlay(api, lines, font, lineHeight, {
+		bounds: layout.bounds,
+		background: options.backgroundColor,
+		textColor: options.textColor,
+		paddingX: options.paddingX,
+		paddingY: options.paddingY,
+		connector: layout.connector,
+		highlightLines,
+		highlightColor: options.highlightColor,
+		contentRightInset: layout.contentRightInset,
+	});
+
+	// Draw copy button
+	api.rectfill_color(layout.copyButtonRect.left, layout.copyButtonRect.top, layout.copyButtonRect.right, layout.copyButtonRect.bottom, undefined, overlay.copyButtonHovered ? options.highlightColor : options.backgroundColor);
+	api.rect(layout.copyButtonRect.left, layout.copyButtonRect.top, layout.copyButtonRect.right, layout.copyButtonRect.bottom, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
+	const iconX = layout.copyButtonRect.left + (layout.copyButtonRect.right - layout.copyButtonRect.left - COPY_ICON_WIDTH) / 2;
+	const iconY = layout.copyButtonRect.top + (layout.copyButtonRect.bottom - layout.copyButtonRect.top - COPY_ICON_HEIGHT) / 2;
+	api.sprite(COPY_ICON_ID, iconX, iconY, undefined, { colorize: Msx1Colors[constants.ERROR_OVERLAY_TEXT_COLOR] });
+}
+
+export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverlay, x: number, y: number): number {
+	const layout = overlay.layout;
+	if (!layout) {
+		return -1;
+	}
+	for (let index = 0; index < layout.lineRects.length; index += 1) {
+		const rect = layout.lineRects[index];
+		if (pointInRect(x, y, rect)) {
+			const mapping = layout.displayLineMap;
+			if (mapping && index < mapping.length) {
+				return mapping[index];
+			}
+			return index;
+		}
+	}
+	return -1;
 }

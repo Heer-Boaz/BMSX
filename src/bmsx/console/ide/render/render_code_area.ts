@@ -2,7 +2,8 @@ import type { BmsxConsoleApi } from '../../api';
 import type { CachedHighlight, CursorScreenInfo } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { clamp } from '../../../utils/clamp';
-import { columnToDisplay, computeMaximumScrollColumn, drawHoverTooltip, drawRuntimeErrorOverlay, getCodeAreaBounds, getDiagnosticsForRow, maximumLineLength, } from '../console_cart_editor';
+import { columnToDisplay, computeMaximumScrollColumn, drawHoverTooltip, getCodeAreaBounds, getDiagnosticsForRow, maximumLineLength, } from '../console_cart_editor';
+import { renderRuntimeErrorOverlay } from './render_error_overlay';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
 import { drawEditorColoredText } from '../text_renderer';
@@ -239,7 +240,7 @@ export function renderCodeArea(): void {
 		ide_state.codeHorizontalScrollbarVisible = false;
 	}
 
-	drawRuntimeErrorOverlay(api, bounds.codeTop, bounds.codeRight, bounds.textLeft);
+	renderRuntimeErrorOverlay(api, bounds.codeTop, bounds.codeRight, bounds.textLeft);
 	drawHoverTooltip(api, bounds.codeTop, contentBottom, bounds.textLeft);
 
 	if (ide_state.cursorVisible && cursorEntry && cursorInfo) {

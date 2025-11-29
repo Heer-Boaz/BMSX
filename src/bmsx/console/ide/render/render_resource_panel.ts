@@ -11,7 +11,7 @@ import { drawEditorText } from '../text_renderer';
 import { api } from '../../runtime';
 import { measureText } from '../text_utils';
 import * as constants from '../constants';
-import { wrapRuntimeErrorLine } from '../runtime_error_utils';
+import { wrapRuntimeErrorLine } from '../text_utils';
 import { renderErrorOverlayText } from './render_error_overlay';
 
 export interface ResourcePanelHost {
