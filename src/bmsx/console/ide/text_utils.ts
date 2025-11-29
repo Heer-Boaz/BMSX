@@ -332,22 +332,7 @@ export function computeRuntimeErrorOverlayMaxWidth(): number {
 export function buildRuntimeErrorLines(message: string): string[] {
 	const sanitized = message.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 	const rawLines = sanitized.split('\n');
-	const result: string[] = [];
-	const maxWidth = computeRuntimeErrorOverlayMaxWidth(); // Don't recompute for each line
-	for (let i = 0; i < rawLines.length; i += 1) {
-		const segments = wrapRuntimeErrorLine(rawLines[i], maxWidth);
-		if (segments.length === 0) {
-			result.push('');
-			continue;
-		}
-		for (let s = 0; s < segments.length; s += 1) {
-			result.push(segments[s]);
-		}
-	}
-	if (result.length === 0) {
-		result.push('');
-	}
-	return result;
+	return rawLines.length > 0 ? rawLines : [''];
 }
 
 export function wrapRuntimeErrorLine(line: string, maxWidth: number): string[] {
