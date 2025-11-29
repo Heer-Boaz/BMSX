@@ -6,6 +6,7 @@ import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperat
 import type {
 	LuaChunk,
 	LuaCallStatement,
+	LuaCallExpression,
 	LuaFunctionDeclarationStatement,
 	LuaIfStatement,
 	LuaLocalAssignmentStatement,
@@ -18,6 +19,9 @@ import type {
 	LuaLabelStatement,
 	LuaReturnStatement,
 	LuaIdentifierExpression,
+	LuaStringLiteralExpression,
+	LuaTableConstructorExpression,
+	LuaIndexExpression,
 } from '../../src/bmsx/lua/ast';
 
 function parseChunk(source: string): LuaChunk {
@@ -181,4 +185,67 @@ test('parses unary bitwise not', () => {
 	const statement = chunk.body[0] as LuaReturnStatement;
 	const unary = statement.expressions[0] as LuaUnaryExpression;
 	assert.equal(unary.operator, LuaUnaryOperator.BitwiseNot);
+});
+
+test('parses paren-less single string argument calls', () => {
+	const simpleChunk = parseChunk('f "x"');
+	const simpleCall = simpleChunk.body[0] as LuaCallStatement;
+	const simpleExpression = simpleCall.expression as LuaCallExpression;
+	assert.equal(simpleExpression.methodName, null);
+	assert.equal((simpleExpression.arguments[0] as LuaStringLiteralExpression).value, 'x');
+
+	const singleQuoteChunk = parseChunk("f 'x'");
+	const singleQuoteCall = singleQuoteChunk.body[0] as LuaCallStatement;
+	const singleQuoteExpression = singleQuoteCall.expression as LuaCallExpression;
+	assert.equal((singleQuoteExpression.arguments[0] as LuaStringLiteralExpression).value, 'x');
+
+	const longStringChunk = parseChunk('f [[multi line]]');
+	const longStringCall = longStringChunk.body[0] as LuaCallStatement;
+	const longStringExpression = longStringCall.expression as LuaCallExpression;
+	assert.equal((longStringExpression.arguments[0] as LuaStringLiteralExpression).value, 'multi line');
+
+	const methodChunk = parseChunk('obj:method "arg"');
+	const methodCall = methodChunk.body[0] as LuaCallStatement;
+	const methodExpression = methodCall.expression as LuaCallExpression;
+	assert.equal(methodExpression.methodName, 'method');
+	assert.equal((methodExpression.callee as LuaIdentifierExpression).name, 'obj');
+	assert.equal((methodExpression.arguments[0] as LuaStringLiteralExpression).value, 'arg');
+
+	const chainedChunk = parseChunk('(f())[1] "x"');
+	const chainedCall = chainedChunk.body[0] as LuaCallStatement;
+	const chainedExpression = chainedCall.expression as LuaCallExpression;
+	assert.equal((chainedExpression.arguments[0] as LuaStringLiteralExpression).value, 'x');
+	const calleeIndex = chainedExpression.callee as LuaIndexExpression;
+	const indexedBase = calleeIndex.base as LuaCallExpression;
+	assert.equal(indexedBase.arguments.length, 0);
+});
+
+test('parses paren-less table constructor arguments', () => {
+	const chunk = parseChunk(`f { 1, 2, 3 }
+obj:method { key = "value" }`);
+	assert.equal(chunk.body.length, 2);
+
+	const firstCall = chunk.body[0] as LuaCallStatement;
+	const firstExpression = firstCall.expression as LuaCallExpression;
+	const tableArg = firstExpression.arguments[0] as LuaTableConstructorExpression;
+	assert.equal(tableArg.fields.length, 3);
+
+	const methodCall = chunk.body[1] as LuaCallStatement;
+	const methodExpression = methodCall.expression as LuaCallExpression;
+	assert.equal(methodExpression.methodName, 'method');
+	const methodTableArg = methodExpression.arguments[0] as LuaTableConstructorExpression;
+	assert.equal(methodTableArg.fields.length, 1);
+});
+
+test('rejects invalid paren-less call arguments', () => {
+	assert.throws(() => parseChunk('f 1'));
+	assert.throws(() => parseChunk('f x'));
+	const chunk = parseChunk("return f 'a' .. 'b'");
+	const statement = chunk.body[0] as LuaReturnStatement;
+	const binary = statement.expressions[0] as LuaBinaryExpression;
+	assert.equal(binary.operator, LuaBinaryOperator.Concat);
+	const callLeft = binary.left as LuaCallExpression;
+	assert.equal((callLeft.arguments[0] as LuaStringLiteralExpression).value, 'a');
+	const right = binary.right as LuaStringLiteralExpression;
+	assert.equal(right.value, 'b');
 });

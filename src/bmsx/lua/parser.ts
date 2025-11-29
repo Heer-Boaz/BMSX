@@ -764,30 +764,17 @@ export class LuaParser {
 			if (this.match(LuaTokenType.Colon)) {
 				const methodToken = this.consume(LuaTokenType.Identifier, 'Expected method name after ":".');
 				const parsedArguments = this.parseCallArguments();
-				const endToken = parsedArguments.endToken;
-				const range = this.rangeFromNodeAndToken(expression, endToken);
-				const callNode: LuaCallExpression = {
-					kind: LuaSyntaxKind.CallExpression,
-					range,
-					callee: expression,
-					arguments: parsedArguments.arguments,
-					methodName: methodToken.lexeme,
-				};
-				expression = callNode;
+				expression = this.createCallExpression(expression, parsedArguments, methodToken.lexeme);
 				continue;
 			}
-			if (this.isCallArgumentStart(this.current().type)) {
+			const tokenType = this.current().type;
+			if (
+				tokenType === LuaTokenType.LeftParen ||
+				tokenType === LuaTokenType.LeftBrace ||
+				tokenType === LuaTokenType.String
+			) {
 				const parsedArguments = this.parseCallArguments();
-				const endToken = parsedArguments.endToken;
-				const range = this.rangeFromNodeAndToken(expression, endToken);
-				const callNode: LuaCallExpression = {
-					kind: LuaSyntaxKind.CallExpression,
-					range,
-					callee: expression,
-					arguments: parsedArguments.arguments,
-					methodName: null,
-				};
-				expression = callNode;
+				expression = this.createCallExpression(expression, parsedArguments, null);
 				continue;
 			}
 			break;
@@ -828,6 +815,16 @@ export class LuaParser {
 			};
 		}
 		throw this.error(this.current(), 'Invalid function call arguments.');
+	}
+
+	private createCallExpression(callee: LuaExpression, parsedArguments: ParsedArguments, methodName: string | null): LuaCallExpression {
+		return {
+			kind: LuaSyntaxKind.CallExpression,
+			range: this.rangeFromNodeAndToken(callee, parsedArguments.endToken),
+			callee,
+			arguments: parsedArguments.arguments,
+			methodName,
+		};
 	}
 
 	private parsePrimaryExpression(): LuaExpression {
@@ -1372,10 +1369,6 @@ export class LuaParser {
 			return expression as LuaAssignableExpression;
 		}
 		throw this.error(this.current(), 'Expression is not assignable.');
-	}
-
-	private isCallArgumentStart(type: LuaTokenType): boolean {
-		return type === LuaTokenType.LeftParen || type === LuaTokenType.LeftBrace || type === LuaTokenType.String;
 	}
 
 	private isReturnTerminator(type: LuaTokenType): boolean {

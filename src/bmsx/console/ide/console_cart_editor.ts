@@ -39,7 +39,7 @@ import {
 	computeResourceTabTitle,
 } from './editor_tabs';
 
-import { applyCaseOutsideStrings, assertMonospace, buildRuntimeErrorLines, ensureVisualLines, getVisualLineCount, isIdentifierChar, isIdentifierStartChar, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapRuntimeErrorLine } from './text_utils';
+import { applyCaseOutsideStrings, assertMonospace, ensureVisualLines, getVisualLineCount, isIdentifierChar, isIdentifierStartChar, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapRuntimeErrorLine } from './text_utils';
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
@@ -54,9 +54,6 @@ import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar } from './render/render_top_bar';
 import { renderTabBar } from './render/render_tab_bar';
 import { renderStatusBar } from './render/render_status_bar';
-import {
-	cloneRuntimeErrorDetails,
-	rebuildRuntimeErrorOverlayView} from './runtime_error_overlay_model';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
 import { flushWindowFocusState, handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, requestWindowFocusState, resetKeyPressRecords, resourceViewerClampScroll } from './ide_input';
@@ -81,7 +78,6 @@ import type {
 	ResourceSearchResult,
 	ResourceViewerState,
 	RuntimeErrorOverlay,
-	RuntimeErrorDetails,
 	SymbolSearchResult,
 	DebugPanelKind,
 } from './types';
@@ -126,11 +122,13 @@ import { drawActionPromptOverlay } from './render/render_prompt';
 import { drawLineJumpBar, drawRenameBar, drawSearchBar, drawSymbolSearchBar } from './render/render_input_bars';
 import { renderResourceSearchBar } from './render/render_inline_bars';
 import { rewrapRuntimeErrorOverlays } from './text_utils';
+import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRuntimeErrorInChunk } from './render/render_error_overlay';
 
-const editorFacade = {
+export const editorFacade = {
 	activate,
 	deactivate,
-	isActive,
+	get isActive(): boolean { return ide_state.active; },
+	get exists(): boolean { return ide_state.initialized; },
 	update,
 	draw,
 	shutdown,
@@ -143,6 +141,8 @@ const editorFacade = {
 	clearAllRuntimeErrorOverlays,
 	getSourceForChunk,
 	clearWorkspaceDirtyBuffers,
+	renderFaultOverlay,
+	renderRuntimeFaultOverlay,
 };
 
 export type ConsoleCartEditor = typeof editorFacade;
@@ -270,6 +270,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	installPlatformVisibilityListener();
 	installWindowEventListeners();
 	ide_state.navigationHistory.current = createNavigationEntry();
+	ide_state.initialized = true;
 }
 
 export function invalidateLineRange(startRow: number, endRow: number): void {
@@ -633,75 +634,6 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 		drawEditorText(ide_state.font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, undefined, constants.COLOR_STATUS_TEXT);
 	}
 	tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleLeft + bubbleWidth, bottom: bubbleTop + bubbleHeight };
-}
-
-export function showRuntimeErrorInChunk(
-	chunkName: string | null,
-	line: number | null,
-	column: number | null,
-	message: string,
-	hint?: { asset_id: string | null; path?: string | null },
-	details?: RuntimeErrorDetails | null
-): void {
-	focusChunkSource(chunkName, hint);
-	const overlayMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
-	showRuntimeError(line, column, overlayMessage, details ?? null);
-}
-
-export function showRuntimeError(line: number | null, column: number | null, message: string, details?: RuntimeErrorDetails | null): void {
-	if (!ide_state.active) {
-		activate();
-	}
-	const hasLocation = line >= 1 || column >= 0;
-	const processedLine = hasLocation ? line : null
-	const processedColumn = hasLocation ? column - 1 : null;
-	let targetRow = ide_state.cursorRow;
-	if (processedLine !== null) {
-		targetRow = clamp(processedLine - 1, 0, ide_state.lines.length - 1);
-		ide_state.cursorRow = targetRow;
-	}
-	const currentLine = ide_state.lines[targetRow] ?? '';
-	let targetColumn = ide_state.cursorColumn;
-	if (processedColumn !== null) {
-		targetColumn = clamp(processedColumn, 0, currentLine.length);
-		ide_state.cursorColumn = targetColumn;
-	}
-	clampCursorColumn();
-	targetColumn = ide_state.cursorColumn;
-	ide_state.selectionAnchor = null;
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = false;
-	ide_state.scrollbarController.cancel();
-	ide_state.cursorRevealSuspended = false;
-	centerCursorVertically();
-	updateDesiredColumn();
-	revealCursor();
-	resetBlink();
-	const normalizedMessage = message && message.length > 0 ? message.trim() : 'Runtime error';
-	const overlayMessage = processedLine !== null ? `Line ${processedLine}:${normalizedMessage}` : normalizedMessage;
-	const messageLines = buildRuntimeErrorLines(overlayMessage);
-	const overlayDetails = cloneRuntimeErrorDetails(details ?? null);
-	const overlay: RuntimeErrorOverlay = {
-		row: targetRow,
-		column: targetColumn,
-		message: overlayMessage,
-		lines: [],
-		timer: Number.POSITIVE_INFINITY,
-		messageLines,
-		lineDescriptors: [],
-		layout: null,
-		details: overlayDetails,
-		expanded: false,
-		hovered: false,
-		hoverLine: -1,
-		copyButtonHovered: false,
-		hidden: false,
-	};
-	rebuildRuntimeErrorOverlayView(overlay);
-	setActiveRuntimeErrorOverlay(overlay);
-	setExecutionStopHighlight(processedLine !== null ? targetRow : null);
-	const statusLine = overlay.lines.length > 0 ? overlay.lines[0] : 'Runtime error';
-	ide_state.showMessage(statusLine, constants.COLOR_STATUS_ERROR, 2.0);
 }
 
 export function focusChunkSource(chunkName: string | null, hint?: { asset_id: string | null; path?: string | null }): void {
@@ -1683,6 +1615,15 @@ export function activate(): void {
 	ide_state.deferredMessageDuration = null;
 	if (ide_state.dimCrtInEditor) {
 		applyEditorCrtDimming();
+	}
+	if (BmsxConsoleRuntime.instance.hasLuaRuntimeFailed) {
+		const rendered = renderRuntimeFaultOverlay({
+			snapshot: BmsxConsoleRuntime.instance.faultSnapshot,
+			luaRuntimeFailed: BmsxConsoleRuntime.instance.hasLuaRuntimeFailed,
+			needsFlush: BmsxConsoleRuntime.instance.doesFaultOverlayNeedFlush,
+			force: false,
+		});
+		if (rendered) BmsxConsoleRuntime.instance.flushedFaultOverlay();
 	}
 }
 

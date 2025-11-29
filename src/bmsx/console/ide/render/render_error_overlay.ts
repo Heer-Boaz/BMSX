@@ -2,16 +2,19 @@ import type { BmsxConsoleApi } from '../../api';
 import type { ConsoleEditorFont } from '../../editor_font';
 import { drawEditorText } from '../text_renderer';
 import { clamp } from '../../../utils/clamp';
-import { bottomMargin } from '../console_cart_editor';
+import { activate, bottomMargin, editorFacade, focusChunkSource, setActiveRuntimeErrorOverlay, setExecutionStopHighlight, updateDesiredColumn } from '../console_cart_editor';
 import { ide_state } from '../ide_state';
-import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapRuntimeErrorLine } from '../text_utils';
-import type { RuntimeErrorOverlay } from '../types';
+import { buildRuntimeErrorLines, computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapRuntimeErrorLine } from '../text_utils';
+import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../types';
 import type { StackTraceFrame } from '../../../lua/runtime';
 import type { RectBounds } from '../../../rompack/rompack';
 import { Msx1Colors } from '../../../systems/msx';
 import { pointInRect } from '../../../utils/rect_operations';
+import { api, BmsxConsoleRuntime } from '../../runtime';
+import { clampCursorColumn, centerCursorVertically, revealCursor } from '../caret';
 import * as constants from '../constants';
-import { api } from '../../runtime';
+import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../runtime_error_overlay_model';
+import { resetBlink } from './render_caret';
 
 export interface ErrorOverlayBounds {
 	left: number;
@@ -441,3 +444,134 @@ export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverl
 	}
 	return -1;
 }
+
+export type FaultSnapshot = {
+	message: string;
+	chunkName: string | null;
+	line: number | null;
+	column: number | null;
+	details: RuntimeErrorDetails | null;
+	timestampMs: number;
+	fromDebugger: boolean;
+};
+
+export type FaultOverlayTarget = {
+	showRuntimeErrorInChunk: (
+		chunkName: string | null,
+		line: number | null,
+		column: number | null,
+		message: string,
+		hint: { asset_id: string | null; path?: string | null; },
+		details: RuntimeErrorDetails | null
+	) => void;
+	showRuntimeError: (line: number | null, column: number | null, message: string, details: RuntimeErrorDetails | null) => void;
+};
+
+export function renderFaultOverlay() {
+	const snapshot = BmsxConsoleRuntime.instance.faultSnapshot;
+	if (!snapshot) return;
+	showRuntimeErrorInChunk(
+		snapshot.chunkName,
+		snapshot.line,
+		snapshot.column,
+		snapshot.message,
+		{ asset_id: null },
+		snapshot.details
+	);
+}
+
+export function renderRuntimeFaultOverlay(options: {
+	snapshot: FaultSnapshot | null;
+	luaRuntimeFailed: boolean;
+	needsFlush: boolean;
+	force?: boolean;
+}): boolean {
+	const { snapshot } = options;
+	if (!editorFacade.exists) return false;
+	if (!options.force && (!options.luaRuntimeFailed || !options.needsFlush)) return false;
+	if (!snapshot) return false;
+	const hint = BmsxConsoleRuntime.instance.lookupChunkResourceInfoNullable(snapshot.chunkName);
+	if (hint) {
+		showRuntimeErrorInChunk(
+			snapshot.chunkName,
+			snapshot.line,
+			snapshot.column,
+			snapshot.message,
+			hint,
+			snapshot.details
+		);
+		return true;
+	}
+	showRuntimeError(snapshot.line, snapshot.column, snapshot.message, snapshot.details);
+	return true;
+}
+
+export function showRuntimeErrorInChunk(
+	chunkName: string | null,
+	line: number | null,
+	column: number | null,
+	message: string,
+	hint?: { asset_id: string | null; path?: string | null; },
+	details?: RuntimeErrorDetails | null
+): void {
+	focusChunkSource(chunkName, hint);
+	const overlayMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
+	showRuntimeError(line, column, overlayMessage, details ?? null);
+}
+
+export function showRuntimeError(line: number | null, column: number | null, message: string, details?: RuntimeErrorDetails | null): void {
+	if (!ide_state.active) {
+		activate();
+	}
+	const hasLocation = line >= 1 || column >= 0;
+	const processedLine = hasLocation ? line : null;
+	const processedColumn = hasLocation ? column - 1 : null;
+	let targetRow = ide_state.cursorRow;
+	if (processedLine !== null) {
+		targetRow = clamp(processedLine - 1, 0, ide_state.lines.length - 1);
+		ide_state.cursorRow = targetRow;
+	}
+	const currentLine = ide_state.lines[targetRow] ?? '';
+	let targetColumn = ide_state.cursorColumn;
+	if (processedColumn !== null) {
+		targetColumn = clamp(processedColumn, 0, currentLine.length);
+		ide_state.cursorColumn = targetColumn;
+	}
+	clampCursorColumn();
+	targetColumn = ide_state.cursorColumn;
+	ide_state.selectionAnchor = null;
+	ide_state.pointerSelecting = false;
+	ide_state.pointerPrimaryWasPressed = false;
+	ide_state.scrollbarController.cancel();
+	ide_state.cursorRevealSuspended = false;
+	centerCursorVertically();
+	updateDesiredColumn();
+	revealCursor();
+	resetBlink();
+	const normalizedMessage = message && message.length > 0 ? message.trim() : 'Runtime error';
+	const overlayMessage = processedLine !== null ? `Line ${processedLine}:${normalizedMessage}` : normalizedMessage;
+	const messageLines = buildRuntimeErrorLines(overlayMessage);
+	const overlayDetails = cloneRuntimeErrorDetails(details ?? null);
+	const overlay: RuntimeErrorOverlay = {
+		row: targetRow,
+		column: targetColumn,
+		message: overlayMessage,
+		lines: [],
+		timer: Number.POSITIVE_INFINITY,
+		messageLines,
+		lineDescriptors: [],
+		layout: null,
+		details: overlayDetails,
+		expanded: false,
+		hovered: false,
+		hoverLine: -1,
+		copyButtonHovered: false,
+		hidden: false,
+	};
+	rebuildRuntimeErrorOverlayView(overlay);
+	setActiveRuntimeErrorOverlay(overlay);
+	setExecutionStopHighlight(processedLine !== null ? targetRow : null);
+	const statusLine = overlay.lines.length > 0 ? overlay.lines[0] : 'Runtime error';
+	ide_state.showMessage(statusLine, constants.COLOR_STATUS_ERROR, 2.0);
+}
+

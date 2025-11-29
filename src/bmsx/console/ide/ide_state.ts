@@ -114,6 +114,7 @@ export type DebuggerControlsState = {
 };
 
 export interface IdeState {
+	initialized: boolean;
 	playerIndex: number;
 	themeVariant: IdeThemeVariant;
 	lines: string[];
@@ -317,6 +318,7 @@ export interface IdeState {
 }
 
 export const ide_state: IdeState = {
+	initialized: false,
 	playerIndex: 0,
 	themeVariant: getActiveIdeThemeVariant(),
 	lines: [''],

@@ -126,7 +126,7 @@ export function closeSearch(clearQuery: boolean, forceHide = false): void {
 export function focusEditorFromSearch(): void {
 	ide_state.searchActive = false;
 	ide_state.searchHoverIndex = -1;
-	ide_state.searchField.selectionAnchor = null as any;
+	ide_state.searchField.selectionAnchor = null;
 	ide_state.searchField.pointerSelecting = false;
 	if (ide_state.searchQuery.length === 0) {
 		ide_state.searchVisible = false;
@@ -174,7 +174,7 @@ export function focusSearchResult(index: number): void {
 	const match = ide_state.searchMatches[index];
 	ide_state.cursorRow = match.row;
 	ide_state.cursorColumn = match.start;
-	ide_state.selectionAnchor = { row: match.row, column: match.end } as any;
+	ide_state.selectionAnchor = { row: match.row, column: match.end };
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -248,7 +248,7 @@ export function startSearchJob(): void {
 		cursorRow: ide_state.cursorRow,
 		cursorColumn: ide_state.cursorColumn,
 	};
-	ide_state.searchJob = job as any;
+	ide_state.searchJob = job;
 	ide_state.searchMatches = [];
 	ide_state.searchCurrentIndex = -1;
 	ide_state.selectionAnchor = null;
@@ -256,7 +256,7 @@ export function startSearchJob(): void {
 }
 
 export function runSearchJobSlice(job: SearchComputationJob): boolean {
-	if (ide_state.searchJob !== (job as any)) {
+	if (ide_state.searchJob !== job) {
 		return false;
 	}
 	if (job.query.length === 0 || job.version !== ide_state.textVersion || ide_state.searchQuery.length === 0) {
@@ -308,7 +308,7 @@ export function forEachMatchInLine(line: string, needle: string, cb: (start: num
 }
 
 export function completeSearchJob(job: SearchComputationJob): void {
-	if (ide_state.searchJob !== (job as any)) return;
+	if (ide_state.searchJob !== job) return;
 	ide_state.searchJob = null;
 	ide_state.searchMatches = job.matches;
 	if (job.matches.length === 0) {
@@ -319,7 +319,9 @@ export function completeSearchJob(job: SearchComputationJob): void {
 		const index = job.firstMatchAfterCursor >= 0 ? job.firstMatchAfterCursor : 0;
 		ide_state.searchCurrentIndex = clamp(index, 0, job.matches.length - 1);
 		ensureSearchSelectionVisible();
-		focusSearchResult(ide_state.searchCurrentIndex);
+		if (ide_state.searchActive) {
+			focusSearchResult(ide_state.searchCurrentIndex);
+		}
 	}
 }
 
@@ -328,9 +330,9 @@ export function cancelSearchJob(): void {
 }
 
 export function ensureSearchJobCompleted(): void {
-	const job = ide_state.searchJob as any as SearchComputationJob | null;
+	const job = ide_state.searchJob as SearchComputationJob | null;
 	if (!job) return;
-	while (ide_state.searchJob === (job as any) && runSearchJobSlice(job)) {
+	while (ide_state.searchJob === job && runSearchJobSlice(job)) {
 		// process synchronously until complete
 	}
 }
@@ -357,7 +359,7 @@ export function startGlobalSearchJob(): void {
 		matches: [],
 		limitHit: false,
 	};
-	ide_state.globalSearchJob = job as any;
+	ide_state.globalSearchJob = job;
 	ide_state.globalSearchMatches = [];
 	ide_state.searchCurrentIndex = -1;
 	ide_state.searchDisplayOffset = 0;
@@ -366,7 +368,7 @@ export function startGlobalSearchJob(): void {
 }
 
 export function runGlobalSearchJobSlice(job: GlobalSearchJob): boolean {
-	if (ide_state.globalSearchJob !== (job as any)) return false;
+	if (ide_state.globalSearchJob !== job) return false;
 	if (job.query.length === 0) {
 		ide_state.globalSearchJob = null;
 		return false;
@@ -427,7 +429,7 @@ export function runGlobalSearchJobSlice(job: GlobalSearchJob): boolean {
 }
 
 export function completeGlobalSearchJob(job: GlobalSearchJob): void {
-	if (ide_state.globalSearchJob !== (job as any)) return;
+	if (ide_state.globalSearchJob !== job) return;
 	ide_state.globalSearchJob = null;
 	ide_state.globalSearchMatches = job.matches;
 	if (ide_state.globalSearchMatches.length === 0) {
@@ -582,7 +584,7 @@ export function applySearchSelection(index: number, options?: { preview?: boolea
 		return;
 	}
 	ide_state.searchActive = false;
-	ide_state.searchField.selectionAnchor = null as any;
+	ide_state.searchField.selectionAnchor = null;
 	ide_state.searchField.pointerSelecting = false;
 	if (ide_state.searchScope === 'global') {
 		focusGlobalSearchResult(targetIndex, options?.preview === true);
@@ -611,7 +613,7 @@ export function focusGlobalSearchResult(index: number, previewOnly: boolean = fa
 		const endColumn = Math.min(match.end, line.length);
 		ide_state.cursorRow = row;
 		ide_state.cursorColumn = clamp(match.start, 0, line.length);
-		ide_state.selectionAnchor = { row, column: endColumn } as any;
+		ide_state.selectionAnchor = { row, column: endColumn };
 		ensureCursorVisible();
 		resetBlink();
 	});

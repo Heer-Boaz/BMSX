@@ -241,8 +241,9 @@ local function define_blink()
 		id = effect_id,
 		event = 'demo.hero.blink',
 		cooldown_ms = 420,
-		-- handle the blink directly in the effect so a single trigger applies movement/timer/emits without relying on a separate listener.
+		-- handle the blink directly in the effect so a single trigger applies movement/timer/emits without relying on a separate lis
 		handler = function(ctx, payload)
+			print(string.format('[hotreload-test] blink effect handler invoked tick=%d', demo.tick))
 			local owner = ctx.owner
 			local facing = payload and payload.facing or owner.facing or 'right'
 			local offset = facing == 'left' and -24 or 24

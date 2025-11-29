@@ -54,8 +54,8 @@ export function renderCodeArea(): void {
 	const contentRight = Math.max(
 		bounds.textLeft,
 		bounds.codeRight
-			- (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
-			- constants.CODE_AREA_RIGHT_MARGIN
+		- (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
+		- constants.CODE_AREA_RIGHT_MARGIN
 	);
 	const contentBottom = bounds.codeBottom - (ide_state.codeHorizontalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
 	const trackRight = bounds.codeRight - (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
@@ -81,12 +81,12 @@ export function renderCodeArea(): void {
 			break;
 		}
 		if (visualIndex >= visualCount) {
-			drawEditorColoredText(ide_state.font,'~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY, undefined,constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
+			drawEditorColoredText(ide_state.font, '~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
 			continue;
 		}
 		const segment = visualIndexToSegment(visualIndex);
 		if (!segment) {
-			drawEditorColoredText(ide_state.font,'~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY, undefined,constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
+			drawEditorColoredText(ide_state.font, '~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
 			continue;
 		}
 		const lineIndex = segment.row;
@@ -99,14 +99,14 @@ export function renderCodeArea(): void {
 			const markerHeight = Math.max(2, ide_state.lineHeight - 2);
 			const markerTop = rowY + Math.max(1, Math.floor((ide_state.lineHeight - markerHeight) / 2));
 			const markerBottom = Math.min(rowY + ide_state.lineHeight - 1, markerTop + markerHeight);
-			api.rectfill_color(markerLeft, markerTop, markerRight, markerBottom, undefined,constants.COLOR_BREAKPOINT_BORDER);
+			api.rectfill_color(markerLeft, markerTop, markerRight, markerBottom, undefined, constants.COLOR_BREAKPOINT_BORDER);
 		}
 		const isExecutionStopRow = ide_state.executionStopRow !== null && lineIndex === ide_state.executionStopRow;
 		const isCursorLine = lineIndex === ide_state.cursorRow;
 		if (isExecutionStopRow) {
-			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined,constants.EXECUTION_STOP_OVERLAY);
+			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
 		} else if (isCursorLine) {
-			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined,constants.HIGHLIGHT_OVERLAY);
+			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
 		}
 		const highlight = entry.hi;
 		let columnStart = wrapEnabled ? segment.startColumn : ide_state.scrollColumn;
@@ -130,10 +130,10 @@ export function renderCodeArea(): void {
 			const clampedLeft = clamp(selectionStartX, bounds.textLeft, contentRight);
 			const clampedRight = clamp(selectionEndX, clampedLeft, contentRight);
 			if (clampedRight > clampedLeft) {
-				api.rectfill_color(clampedLeft, rowY, clampedRight, rowY + ide_state.lineHeight, undefined,constants.SELECTION_OVERLAY);
+				api.rectfill_color(clampedLeft, rowY, clampedRight, rowY + ide_state.lineHeight, undefined, constants.SELECTION_OVERLAY);
 			}
 		}
-		drawEditorColoredText(ide_state.font, slice.text, slice.colors, bounds.textLeft, rowY, undefined,constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT, { forceUppercase: true });
+		drawEditorColoredText(ide_state.font, slice.text, slice.colors, bounds.textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT, { forceUppercase: true });
 		const rowDiagnostics = getDiagnosticsForRow(lineIndex);
 		for (let i = 0; i < rowDiagnostics.length; i += 1) {
 			const diagnostic = rowDiagnostics[i];
@@ -225,12 +225,12 @@ export function renderCodeArea(): void {
 	ide_state.codeVerticalScrollbarVisible = ide_state.scrollbars.codeVertical.isVisible();
 
 	if (!wrapEnabled) {
-			const horizontalTrack: RectBounds = {
-				left: bounds.codeLeft,
-				top: contentBottom,
-				right: trackRight,
-				bottom: contentBottom + constants.SCROLLBAR_WIDTH,
-			};
+		const horizontalTrack: RectBounds = {
+			left: bounds.codeLeft,
+			top: contentBottom,
+			right: trackRight,
+			bottom: contentBottom + constants.SCROLLBAR_WIDTH,
+		};
 		const maxColumns = columnCapacity + computeMaximumScrollColumn();
 		ide_state.scrollbars.codeHorizontal.layout(horizontalTrack, maxColumns, columnCapacity, ide_state.scrollColumn);
 		ide_state.scrollColumn = clamp(Math.round(ide_state.scrollbars.codeHorizontal.getScroll()), 0, computeMaximumScrollColumn());
