@@ -27,7 +27,7 @@ import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { LuaHandlerCache, isLuaHandlerFn } from '../lua/handler_cache';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast';
 import { createConsoleCartEditor, type ConsoleCartEditor, } from './ide/console_cart_editor';
-import { toggleEditorFromShortcut, isAltDown, isCtrlDown, isMetaDown, isShiftDown } from './ide/ide_input';
+import { isAltDown, isCtrlDown, isMetaDown, isShiftDown } from './ide/ide_input';
 import type { RuntimeErrorDetails } from './ide/types';
 import type { StackTraceFrame } from '../lua/runtime';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
@@ -533,7 +533,7 @@ export class BmsxConsoleRuntime extends Service {
 			: signal.reason === 'breakpoint' || autoActivateOnPause;
 		if (shouldActivateEditor) {
 			try {
-				this.openEditor();
+				this.activateEditor();
 			}
 			catch (activationError) {
 				console.warn('[BmsxConsoleRuntime] Failed to activate console editor during debugger pause.', activationError);
@@ -869,34 +869,42 @@ export class BmsxConsoleRuntime extends Service {
 
 	private toggleConsoleMode(): void {
 		if (this.consoleMode.isActive) {
-			this.closeConsoleMode(true);
+			this.deactivateConsoleMode(true);
 			return;
 		}
-		this.openConsoleMode();
+		this.activateConsoleMode();
 	}
 
-	private handleEditorShortcutToggle(): void {
+	private toggleEditor(): void {
+		if (this.editor.isActive()) {
+			this.editor.deactivate();
+			return;
+		}
+		this.activateEditor();
+	}
+
+	public activateEditor(): void {
 		if (!this.editor) {
 			return;
 		}
 		if (this.consoleMode.isActive) {
-			this.closeConsoleMode(true);
-			this.openEditor();
-			return;
+			this.deactivateConsoleMode(false);
 		}
-		toggleEditorFromShortcut();
-		if (this.editor.isActive()) {
+		if (!this.editor.isActive()) {
+			this.editor.activate();
 			this.flushPendingRuntimeErrorOverlay();
 		}
+
+		this.updateOverlayState(this.consoleMode.isActive, this.editor.isActive(), true);
 	}
 
 	private registerConsoleShortcuts(): void {
 		this.disposeShortcutHandlers();
 		const registry = Input.instance.getGlobalShortcutRegistry();
 		const disposers: Array<() => void> = [];
-		disposers.push(registry.registerKeyboardShortcut(this.playerIndex, EDITOR_TOGGLE_KEY, () => this.handleEditorShortcutToggle()));
+		disposers.push(registry.registerKeyboardShortcut(this.playerIndex, EDITOR_TOGGLE_KEY, () => this.toggleEditor()));
 		disposers.push(registry.registerKeyboardShortcut(this.playerIndex, CONSOLE_TOGGLE_KEY, () => this.toggleConsoleMode()));
-		disposers.push(registry.registerGamepadChord(this.playerIndex, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => this.handleEditorShortcutToggle()));
+		disposers.push(registry.registerGamepadChord(this.playerIndex, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => this.toggleEditor()));
 		disposers.push(registry.registerKeyboardShortcut(this.playerIndex, GAME_PAUSE_KEY, () => $.toggleDebuggerControls()));
 		this.shortcutDisposers = disposers;
 	}
@@ -911,7 +919,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.shortcutDisposers = [];
 	}
 
-	private openConsoleMode(): void {
+	private activateConsoleMode(): void {
 		if (this.consoleMode.isActive) {
 			return;
 		}
@@ -921,7 +929,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.consoleMode.activate();
 	}
 
-	private closeConsoleMode(_resumeGame: boolean): void {
+	private deactivateConsoleMode(_resumeGame: boolean): void {
 		if (!this.consoleMode.isActive) {
 			return;
 		}
@@ -999,7 +1007,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (this.luaDebuggerSuspension) {
 			this.continueLuaDebugger();
 		}
-		this.closeConsoleMode(true);
+		this.deactivateConsoleMode(true);
 	}
 
 	private executeConsoleCommand(command: string): void {
@@ -1466,7 +1474,7 @@ export class BmsxConsoleRuntime extends Service {
 		const haltGame = debugPaused || this.debuggerHaltsGame || consoleActive || editorActive;
 		state.haltGame = haltGame;
 		state.deltaForUpdate = haltGame ? 0 : state.deltaSeconds;
-		this.updateOverlayState(consoleActive, editorActive);
+		this.updateOverlayState(consoleActive, editorActive, false);
 		Input.instance.setDebugHotkeysPaused(consoleActive || editorActive);
 	}
 
@@ -1714,12 +1722,6 @@ export class BmsxConsoleRuntime extends Service {
 		});
 		this.flushLuaWarnings();
 		this.registerConsoleShortcuts();
-	}
-
-	public openEditor(): void {
-		this.editor.activate();
-		this.updateOverlayState(true, true, true);
-		this.flushPendingRuntimeErrorOverlay();
 	}
 
 	public get state(): BmsxConsoleState | undefined {
@@ -3110,7 +3112,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (editorIsActive || editorWasActive) {
 			this.flushPendingRuntimeErrorOverlay();
 		} else {
-			this.openConsoleMode();
+			this.activateConsoleMode();
 			this.presentRuntimeErrorInConsole(chunkName, line, column, message, runtimeDetails);
 			this.updateOverlayState(true, false, true);
 		}
@@ -3478,13 +3480,10 @@ export class BmsxConsoleRuntime extends Service {
 						return this.wrapResultValue(result);
 					} catch (error) {
 						if (this.isLuaError(error)) {
-							this.handleLuaError(error);
-							return [];
+							throw error;
 						}
 						const message = this.extractErrorMessage(error);
-						const runtimeError = this.createApiRuntimeError(`[api.${name}] ${message}`);
-						this.handleLuaError(runtimeError);
-						return [];
+						throw this.createApiRuntimeError(`[api.${name}] ${message}`);
 					}
 				});
 				this.registerLuaGlobal(env, name, native);
@@ -3507,13 +3506,10 @@ export class BmsxConsoleRuntime extends Service {
 						return this.wrapResultValue(value);
 					} catch (error) {
 						if (this.isLuaError(error)) {
-							this.handleLuaError(error);
-							return [];
+							throw error;
 						}
 						const message = this.extractErrorMessage(error);
-						const runtimeError = this.createApiRuntimeError(`[api.${name}] ${message}`);
-						this.handleLuaError(runtimeError);
-						return [];
+						throw this.createApiRuntimeError(`[api.${name}] ${message}`);
 					}
 				});
 				this.registerLuaGlobal(env, name, native);

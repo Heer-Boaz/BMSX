@@ -1705,28 +1705,30 @@ export function activate(): void {
 }
 
 export function applyEditorCrtDimming(): void {
-	const view = $.view;
-	const [bleedR, bleedG, bleedB] = view.colorBleed;
-	const [glowR, glowG, glowB] = view.glowColor;
-	ide_state.crtOptionsSnapshot = {
-		noiseIntensity: view.noiseIntensity,
-		colorBleed: [bleedR, bleedG, bleedB] as [number, number, number],
-		blurIntensity: view.blurIntensity,
-		glowColor: [glowR, glowG, glowB] as [number, number, number],
-	};
-	let snapshot = ide_state.crtOptionsSnapshot;
-	view.noiseIntensity = snapshot.noiseIntensity * 0.5;
-	view.colorBleed = [
-		snapshot.colorBleed[0] * 0.5,
-		snapshot.colorBleed[1] * 0.5,
-		snapshot.colorBleed[2] * 0.5,
-	] as [number, number, number];
-	view.blurIntensity = snapshot.blurIntensity * 0.5;
-	view.glowColor = [
-		snapshot.glowColor[0] * 0.5,
-		snapshot.glowColor[1] * 0.5,
-		snapshot.glowColor[2] * 0.5,
-	] as [number, number, number];
+	// No-op because not used anyway and causing confusion as to whether it's properly restored to original values on close
+
+	// const view = $.view;
+	// const [bleedR, bleedG, bleedB] = view.colorBleed;
+	// const [glowR, glowG, glowB] = view.glowColor;
+	// ide_state.crtOptionsSnapshot = {
+	// 	noiseIntensity: view.noiseIntensity,
+	// 	colorBleed: [bleedR, bleedG, bleedB] as [number, number, number],
+	// 	blurIntensity: view.blurIntensity,
+	// 	glowColor: [glowR, glowG, glowB] as [number, number, number],
+	// };
+	// let snapshot = ide_state.crtOptionsSnapshot;
+	// view.noiseIntensity = snapshot.noiseIntensity * 0.5;
+	// view.colorBleed = [
+	// 	snapshot.colorBleed[0] * 0.5,
+	// 	snapshot.colorBleed[1] * 0.5,
+	// 	snapshot.colorBleed[2] * 0.5,
+	// ] as [number, number, number];
+	// view.blurIntensity = snapshot.blurIntensity * 0.5;
+	// view.glowColor = [
+	// 	snapshot.glowColor[0] * 0.5,
+	// 	snapshot.glowColor[1] * 0.5,
+	// 	snapshot.glowColor[2] * 0.5,
+	// ] as [number, number, number];
 }
 
 export function restoreCrtOptions(): void {

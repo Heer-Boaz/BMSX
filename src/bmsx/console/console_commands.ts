@@ -85,7 +85,7 @@ export class ConsoleCommandDispatcher {
 			return true;
 		}
 		if (upper === 'IDE' || upper === 'WSE') {
-			this.runtime.openEditor();
+			this.runtime.activateEditor();
 			return true;
 		}
 		// Support flexible spacing for WS subcommands, e.g. "WS   RESET", "WS\tEDIT", etc.
@@ -102,7 +102,7 @@ export class ConsoleCommandDispatcher {
 			const sub = tokens[1].toUpperCase();
 			if (sub === 'RESET') { this.runWorkspaceReset(); return true; }
 			if (sub === 'NUKE') { this.runWorkspaceNuke(); return true; }
-			if (sub === 'EDIT') { this.runtime.openEditor(); return true; }
+			if (sub === 'EDIT') { this.runtime.activateEditor(); return true; }
 			this.runtime.consoleMode.appendStderr(ERROR_SYNTAX_ERROR);
 			return true;
 		}
