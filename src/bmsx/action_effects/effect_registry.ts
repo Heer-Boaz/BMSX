@@ -1,3 +1,5 @@
+import { Registry } from '../core/registry';
+import { RegisterablePersistent } from '../rompack/rompack';
 import type { ActionEffectDefinition, ActionEffectId } from './effect_types';
 
 export type Schema<T> = {
@@ -10,7 +12,40 @@ export type RegisterEffectOptions<P> = {
 	validate?: (payload: P) => void;
 };
 
-class ActionEffectRegistry {
+export class ActionEffectRegistry implements RegisterablePersistent {
+	/**
+	 * The singleton instance of the ActionEffectRegistry class.
+	 */
+	public static instance: ActionEffectRegistry = new ActionEffectRegistry();
+
+	// Toggle to enable verbose event logs
+	get registrypersistent(): true {
+		return true;
+	}
+
+	/**
+	 * Gets the identifier of the event emitter.
+	 * Hardcoded to 'event_emitter'.
+	 *
+	 * @returns The identifier of the event emitter.
+	 */
+	public get id(): 'ae_registry' { return 'ae_registry'; }
+
+	/**
+	 * Disposes the object and deregisters it from the registry.
+	 */
+	public dispose(): void {
+		ActionEffectRegistry.instance.clear();
+	}
+
+	public bind(): void {
+		Registry.instance.register(this);
+	}
+
+	public unbind(): void {
+		Registry.instance.deregister(this);
+	}
+
 	private readonly schemas = new Map<ActionEffectId, Schema<unknown>>();
 	private readonly validators = new Map<ActionEffectId, (payload: unknown) => void>();
 	private readonly definitions = new Map<ActionEffectId, ActionEffectDefinition>();
@@ -29,6 +64,12 @@ class ActionEffectRegistry {
 		this.validators.set(id, validator);
 		this.definitions.set(id, definition);
 		return definition;
+	}
+
+	public clear(): void {
+		this.schemas.clear();
+		this.validators.clear();
+		this.definitions.clear();
 	}
 
 	public get<Id extends ActionEffectId>(id: Id): ActionEffectDefinition<Id> | undefined {
@@ -50,11 +91,4 @@ class ActionEffectRegistry {
 			validator(payload);
 		}
 	}
-}
-
-export const actionEffectRegistry = new ActionEffectRegistry();
-
-export function defineActionEffect<Id extends ActionEffectId, P>(definition: ActionEffectDefinition<Id>, opts?: { schema?: Schema<P>; validate?: (payload: P) => void }): Id {
-	actionEffectRegistry.register(definition, opts);
-	return definition.id;
 }

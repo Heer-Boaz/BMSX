@@ -32,8 +32,8 @@ hero.__index = hero
 
 function hero:onspawn(spawn_pos)
 	self.label = 'hero'
-	self.x = spawn_pos.x -- No defensive code allowed
-	self.y = spawn_pos.y -- No defensive code allowed
+	self.x = spawn_pos.x -- no defensive code allowed
+	self.y = spawn_pos.y -- no defensive code allowed
 	self.sx = 10
 	self.sy = 10
 	self.speed = 54
@@ -195,7 +195,7 @@ local function register_hero()
 	define_world_object({
 		def_id = hero_def_id,
 		class = hero,
-		components = { 'ACTIONEFFECTCOMPONENT', },
+		components = { 'ActionEffectComponent', },
 		fsms = { hero_fsm_id, },
 		effects = { effect_id, },
 		defaults = { speed = 54 },
@@ -238,7 +238,7 @@ end
 
 local function define_blink()
 	define_effect({
-		id = effect_id,
+		id = 'bladiebla',
 		event = 'demo.hero.blink',
 		cooldown_ms = 420,
 		-- handle the blink directly in the effect so a single trigger applies movement/timer/emits without relying on a separate listener.

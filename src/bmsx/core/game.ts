@@ -34,6 +34,7 @@ import { collectEcsPipelineExtensions } from "../ecs/extensions";
 import { gameplaySpec } from './pipelines/gameplay';
 import { BmsxConsoleRuntime } from '../console/runtime';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
+import { ActionEffectRegistry } from '../action_effects/effect_registry';
 // No direct space helpers needed here; Spaces are revived as part of the world.
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -196,6 +197,7 @@ export class Game {
 	public get texmanager(): TextureManager { return TextureManager.instance!; }
 	public get registry(): Registry { return Registry.instance!; }
 	public get sndmaster(): SoundMaster { return this.registry.get<SoundMaster>('sm')!; }
+	public get ae_registry(): ActionEffectRegistry { return ActionEffectRegistry.instance; }
 	public get platform(): Platform { return this._platform!; }
 
 	public emit(event: GameEvent): void;
@@ -525,17 +527,16 @@ export class Game {
 			if (!preserveConsole) {
 				BmsxConsoleRuntime.destroy();
 			}
-			const existingWorld = this.registry.get<World>('world');
 			let preservingRuntime = false;
 			if (preserveConsole && BmsxConsoleRuntime.instance !== null) {
 				BmsxConsoleRuntime.beginPreservedWorldReset();
 				preservingRuntime = true;
 			}
 			try {
-				if (existingWorld) {
-					existingWorld.clearAllSpaces();
-					existingWorld.dispose();
-					this.registry.deregister(existingWorld, true);
+				if (this.world) {
+					this.world.clearAllSpaces();
+					this.world.dispose();
+					this.registry.deregister(this.world, true);
 				}
 			}
 			finally {
@@ -544,6 +545,7 @@ export class Game {
 				}
 			}
 
+			this.ae_registry.clear();
 			this.event_emitter.clear();
 			this.registry.clear();
 			this.texmanager.clear();

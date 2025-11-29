@@ -2,7 +2,6 @@ import { Component, type ComponentAttachOptions } from './basecomponent';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import { create_gameevent } from '../core/game_event';
 import type { WorldObject } from '../core/object/worldobject';
-import { actionEffectRegistry } from '../action_effects/effect_registry';
 import {
 	type ActionEffectDefinition,
 	type ActionEffectHandlerResult,
@@ -11,6 +10,7 @@ import {
 	type ActionEffectTriggerOptions,
 	type ActionEffectTriggerResult,
 } from '../action_effects/effect_types';
+import { ActionEffectRegistry } from '../action_effects/effect_registry';
 
 @insavegame
 export class ActionEffectComponent extends Component {
@@ -54,7 +54,7 @@ export class ActionEffectComponent extends Component {
 	}
 
 	public grant_effect_by_id(id: ActionEffectId): void {
-		const definition = actionEffectRegistry.get(id);
+		const definition = ActionEffectRegistry.instance.get(id);
 		if (!definition) {
 			throw new Error(`[ActionEffectComponent] Effect '${id}' is not registered.`);
 		}
@@ -75,7 +75,7 @@ export class ActionEffectComponent extends Component {
 		if (!definition) return 'failed';
 
 		const payload = opts?.payload as ActionEffectPayloadFor<Id> | undefined;
-		actionEffectRegistry.validate(id, payload);
+		ActionEffectRegistry.instance.validate(id, payload);
 
 		const now = this.timeMs;
 		const cdUntil = this.cooldownUntil.get(id);

@@ -302,7 +302,7 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		if (BmsxConsoleRuntime.preservingWorldResetDepth > 0) {
-			instance.prepareForPreservedWorldReset();
+			instance.pendingLuaWarnings = [];
 			return;
 		}
 		instance.dispose();
@@ -1492,7 +1492,7 @@ export class BmsxConsoleRuntime extends Service {
 			});
 		} catch (error) {
 			fault = error;
-			throw error;
+			this.handleLuaError(error);
 		} finally {
 			if (fault !== null || this.currentFrameState !== null) {
 				this.abandonFrameState();
@@ -1513,7 +1513,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (editor && !state.consoleActive) {
 			editor.update(state.deltaSeconds);
 		}
-		const editorActive = editor?.isActive() === true && !state.consoleActive;
+		const editorActive = editor.isActive() === true && !state.consoleActive;
 		state.editorEvaluated = true;
 		state.editorActive = editorActive;
 		this.updateFrameHaltingState(state);
@@ -1677,10 +1677,6 @@ export class BmsxConsoleRuntime extends Service {
 		if (BmsxConsoleRuntime._instance === this) {
 			BmsxConsoleRuntime._instance = null;
 		}
-	}
-
-	private prepareForPreservedWorldReset(): void {
-		this.pendingLuaWarnings = [];
 	}
 
 	private initializeEditor(): void {
@@ -1904,7 +1900,6 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		catch (error) {
 			this.handleLuaError(error);
-			throw error;
 		}
 		this.refreshLuaModulesOnResume(normalizedTarget);
 		this.clearNativeMemberCompletionCache();
@@ -2890,7 +2885,6 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			catch (error) {
 				this.handleLuaError(error);
-				throw error;
 			}
 		} catch (error) {
 			try {
@@ -2957,7 +2951,6 @@ export class BmsxConsoleRuntime extends Service {
 				this.reloadLuaProgramState(source, chunkName, asset.asset_id);
 			} catch (error) {
 				this.handleLuaError(error);
-				throw error;
 			}
 		}
 		finally {
@@ -3117,16 +3110,14 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const logMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
 		console.error('[BmsxConsoleRuntime] Lua runtime error:', logMessage, error);
-		if (chunkName && chunkName.startsWith('console:')) {
-			try {
-				this.consoleMode.appendStderr(logMessage);
-			} catch (appendError) {
-				console.warn('[BmsxConsoleRuntime] Failed to append console runtime error output.', appendError);
-			}
+		try {
+			this.consoleMode.appendStderr(logMessage);
+		} catch (appendError) {
+			console.warn('[BmsxConsoleRuntime] Failed to append console runtime error output.', appendError);
 		}
 		// Remember we've handled this Error-like object so we don't duplicate reporting.
 		if (typeof error === 'object' && error !== null) {
-			this.handledLuaErrors.add(error as object);
+			this.handledLuaErrors.add(error);
 		}
 	}
 

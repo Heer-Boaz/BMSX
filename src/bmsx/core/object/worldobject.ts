@@ -136,6 +136,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	 * @returns {void}
 	 */
 	add_component<T extends Component>(component: T): void {
+		if (!component) throw new Error(`[${this.id}] Cannot add null or undefined component.`);
 		component.parent = this; // Do not use component.attach here, as it would cause infinite recursion
 		this.components.push(component);
 		const key = component.constructor?.name;
@@ -925,21 +926,23 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	protected initializeBehaviorTrees() {
 		// Get the constructor of the current instance
 		const ctor = this.constructor as ConstructorWithBTProperty;
-		const contexts = this._btreecontexts;
 
 		// Iterate over the behavior tree names and ensure the behavior trees exist
-		ctor.linkedBTs?.forEach(btId => {
-			if (contexts[btId]) {
-				return;
-			}
-			const blackboard = new Blackboard({ id: btId });
-			contexts[btId] = {
-				tree_id: btId,
-				running: true,
-				root: instantiateBehaviorTree(btId),
-				blackboard,
-			};
-		});
+		ctor.linkedBTs?.forEach(this.add_btree);
+	}
+
+	public add_btree(bt_id: BehaviorTreeID): void {
+		const contexts = this._btreecontexts;
+		if (contexts[bt_id]) {
+			return;
+		}
+		const blackboard = new Blackboard({ id: bt_id });
+		contexts[bt_id] = {
+			tree_id: bt_id,
+			running: true,
+			root: instantiateBehaviorTree(bt_id),
+			blackboard,
+		};
 	}
 
 	/**

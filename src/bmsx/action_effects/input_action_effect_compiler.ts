@@ -9,9 +9,9 @@ import type {
 } from './input_action_effect_dsl';
 import { create_gameevent, type GameEvent } from '../core/game_event';
 import type { ActionEffectId } from './effect_types';
-import { actionEffectRegistry } from './effect_registry';
 import type { ActionEffectComponent } from '../component/actioneffectcomponent';
 import type { WorldObject } from '../core/object/worldobject';
+import { ActionEffectRegistry } from './effect_registry';
 
 export interface BindingExecutionEnv {
 	owner: WorldObject;
@@ -291,7 +291,7 @@ function validateEffect(effect: Effect, ctx: ValidationContext): void {
 			payload = descriptor.payload;
 		}
 		try {
-			actionEffectRegistry.validate(effectId, payload);
+			ActionEffectRegistry.instance.validate(effectId, payload);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			throw new Error(`[InputActionEffectProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' effect '${effectId}' validation failed: ${message}`);

@@ -26,7 +26,7 @@ import { BmsxConsoleRuntime } from './runtime';
 import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type ConstructorWithBTProperty, BehaviorTreeDefinition } from '../ai/behaviourtree';
 import { deep_clone } from '../utils/deep_clone';
 import { Component, type ComponentAttachOptions } from '../component/basecomponent';
-import { actionEffectRegistry, RegisterEffectOptions } from '../action_effects/effect_registry';
+import { ActionEffectRegistry, RegisterEffectOptions } from '../action_effects/effect_registry';
 import { SpriteObject } from '../core/object/sprite';
 import { LuaTable } from '../lua/value';
 
@@ -436,12 +436,14 @@ export class BmsxConsoleApi {
 	public attach_component(object_id: Identifier, component: string | { id: string; id_local?: string; state?: object }): string {
 		const obj = $.world.getWorldObject(object_id);
 		const componentId = typeof component === 'string' ? component : component.id;
+		if (!obj) throw new Error(`Cannot attach component '${componentId}', ${object_id ? `object '${object_id}' not found` : 'no object_id was provided.'}`);
 		const ctor = this.resolve_component_ctor(componentId);
 		const instanceOpts: ComponentAttachOptions = {
 			parent_or_id: obj,
 			id_local: typeof component === 'object' ? component.id_local : undefined,
 		};
 		const instance = new ctor(instanceOpts);
+		if (!instance) throw new Error(`Failed to instantiate component '${componentId}'.`);
 		if (typeof component === 'object' && component.state) {
 			Object.assign(instance, component.state);
 		}
@@ -451,7 +453,7 @@ export class BmsxConsoleApi {
 
 	public define_effect(descriptor: ActionEffectDefinition, opts?: RegisterEffectOptions<any>): void {
 		if (!descriptor.id) throw new Error('Action effect definition must have a valid id.');
-		actionEffectRegistry.register(descriptor, opts);
+		ActionEffectRegistry.instance.register(descriptor, opts);
 	}
 
 	/**
@@ -483,12 +485,12 @@ export class BmsxConsoleApi {
 
 			if (ext.components) {
 				for (let i = 0; i < ext.components.length; i += 1) {
-					this.attach_component(instance.id, ext.components[i]);
+					instance.add_component(ext.components[i]); // We must pass the instance as the parent, because the object is not yet spawned into the world and cannot be looked up by id.
 				}
 			}
 			if (ext.fsms) {
 				for (let i = 0; i < ext.fsms.length; i += 1) {
-					instance.sc.add_statemachine(ext.fsms[i], instance.id);
+					instance.sc.add_statemachine(ext.fsms[i], instance);
 				}
 			}
 			if (ext.effects && ext.effects.length > 0) {
@@ -503,12 +505,13 @@ export class BmsxConsoleApi {
 			}
 			if (ext.bts) {
 				for (let i = 0; i < ext.bts.length; i += 1) {
-					this.attach_bt(instance.id, ext.bts[i]);
+					instance.add_btree(ext.bts[i]);
 				}
 			}
 		}
 		// Apply overrides (these are applied last to take precedence and are distinct from definition overrides)
 		if (overrides) {
+			// TODO: FILTER!!
 			Object.assign(instance, overrides);
 		}
 	}
@@ -587,7 +590,7 @@ export class BmsxConsoleApi {
 		if (!component) {
 			throw new Error(`World object '${object_id}' does not have an ActionEffectComponent.`);
 		}
-		const effect = actionEffectRegistry.get(effect_id);
+		const effect = ActionEffectRegistry.instance.get(effect_id);
 		if (!effect) {
 			throw new Error(`Action effect '${effect_id}' is not registered.`);
 		}
