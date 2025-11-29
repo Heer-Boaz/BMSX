@@ -1,8 +1,7 @@
 import type { Canvas, CanvasRenderingContext2D } from 'canvas';
 import type { AtlasTexcoords, ImageResource } from './rompacker.rompack';
-import { ENGINE_ATLAS_INDEX } from 'bmsx/render/atlas';
 import { resolve as resolvePath, sep as pathSep } from 'path';
-import { commonResPath } from './rompacker';
+import { commonResPath, ENGINE_ATLAS_INDEX } from './rompacker';
 // @ts-ignore
 const { createCanvas } = require('canvas');
 

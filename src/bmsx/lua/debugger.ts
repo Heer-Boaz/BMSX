@@ -1,5 +1,5 @@
 import type { DebuggerResumeMode } from '../console/debugger_lifecycle';
-import { fallbackclamp } from 'bmsx/utils/clamp';
+import { fallbackclamp } from '../utils/clamp';
 import type { LuaCallFrame, LuaDebuggerPauseSignal, LuaExceptionResumeStrategy } from './runtime';
 
 export function normalizeLuaChunkName(name: string): string {

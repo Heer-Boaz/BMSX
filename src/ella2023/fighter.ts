@@ -1,4 +1,4 @@
-import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction, type EventPayload, Component, type ComponentAttachOptions, type WorldObjectEventPayloads, type TimelineFrameEventPayload, type TimelineEndEventPayload } from 'bmsx';
+import { $, assign_fsm, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction, type EventPayload, Component, type ComponentAttachOptions, type WorldObjectEventPayloads, type TimelineFrameEventPayload, type TimelineEndEventPayload, attach_components } from 'bmsx';
 import { create_gameevent, type GameEvent } from 'bmsx/core/game_event';
 import { FIGHTER_TIMELINES } from './fighter_fsms';
 import { SpriteComponent } from 'bmsx/component/sprite_component';

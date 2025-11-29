@@ -1,6 +1,5 @@
 import { LuaLexer } from '../../lua/lexer';
 import { LuaParser } from '../../lua/parser';
-import { ide_state } from './ide_state';
 import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
@@ -24,6 +23,7 @@ import {
 } from '../../lua/ast';
 import type { LuaToken } from '../../lua/token';
 import { LuaTokenType } from '../../lua/token';
+import { ide_state } from './ide_state';
 
 export type SymbolKind = 'parameter' | 'local' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
 
@@ -1622,4 +1622,48 @@ function findMethodToken(callExpression: LuaCallExpression, tokens: readonly Lua
 		}
 	}
 	return null;
+}
+
+export class LuaSemanticWorkspace {
+	private readonly index: LuaProjectIndex;
+	constructor() {
+		this.index = new LuaProjectIndex();
+	}
+
+	public updateFile(file: string, source: string): LuaSemanticModel {
+		return this.index.updateFile(file, source);
+	}
+
+	public getModel(file: string): LuaSemanticModel | null {
+		return this.index.getFileModel(file);
+	}
+
+	public symbolAt(file: string, row: number, column: number): { id: SymbolID; decl: Decl; } | null {
+		return this.index.symbolAt(file, { line: row, column });
+	}
+
+	public findReferencesByPosition(file: string, row: number, column: number): { id: SymbolID; decl: Decl; references: readonly Ref[]; } | null {
+		const symbol = this.symbolAt(file, row, column);
+		if (!symbol) {
+			return null;
+		}
+		const references = this.index.getReferences(symbol.id);
+		return { id: symbol.id, decl: symbol.decl, references };
+	}
+
+	public getReferences(symbolId: SymbolID): readonly Ref[] {
+		return this.index.getReferences(symbolId);
+	}
+
+	public getDecl(symbolId: SymbolID): Decl | null {
+		return this.index.getDecl(symbolId);
+	}
+
+	public getFileData(file: string): FileSemanticData | null {
+		return this.index.getFileData(file);
+	}
+
+	public listFiles(): string[] {
+		return this.index.listFiles();
+	}
 }

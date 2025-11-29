@@ -22,7 +22,7 @@ import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActio
 import { navigateToRuntimeErrorFrameTarget } from './ide_debugger';
 import { toggleProblemsPanel, hideProblemsPanel } from './problems_panel';
 import { markDiagnosticsDirty } from './diagnostics';
-import { point_in_rect } from 'bmsx/utils/rect_operations';
+import { point_in_rect } from '../../utils/rect_operations';
 import { applyInlineFieldEditing, getFieldText } from './inline_text_field';
 import { api, BmsxConsoleRuntime } from '../runtime';
 import { computeRuntimeErrorOverlayGeometry, resolveRuntimeErrorOverlayAnchor, computeRuntimeErrorOverlayLayout, findRuntimeErrorOverlayLineAtPosition, RuntimeErrorOverlayClickResult } from './render/render_error_overlay';

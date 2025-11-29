@@ -19,7 +19,7 @@ import type { InputController } from './ide_input';
 import type { ProblemsPanelController } from './problems_panel';
 import { ResourcePanelController } from './resource_panel_controller';
 import type { RenameController } from './rename_controller';
-import { LuaSemanticWorkspace } from './semantic_workspace';
+import { type LuaSemanticWorkspace } from './semantic_model';
 import type { CompletionController } from './completion_controller';
 import { createMessageController } from './message_controller';
 import { ReferenceState } from './code_reference';
@@ -521,7 +521,7 @@ export const ide_state: IdeState = {
 	resourcePanelResizing: false,
 	resourcePanel: undefined!,
 	renameController: undefined!,
-	semanticWorkspace: new LuaSemanticWorkspace(),
+	semanticWorkspace: undefined!,
 	layout: undefined!,
 	codeVerticalScrollbarVisible: false,
 	codeHorizontalScrollbarVisible: false,

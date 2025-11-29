@@ -122,6 +122,7 @@ import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRu
 import { point_in_rect } from '../../utils/rect_operations';
 import { lower_bound } from '../../utils/lower_bound';
 import { updateRuntimeErrorOverlay } from './runtime_error_overlay';
+import { LuaSemanticWorkspace } from './semantic_model';
 
 export const editorFacade = {
 	activate,
@@ -234,6 +235,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		shouldAutoTriggerCompletions: () => shouldAutoTriggerCompletions(),
 		shouldShowParameterHints: () => intellisenseUiReady(),
 	});
+	ide_state.semanticWorkspace = new LuaSemanticWorkspace(); // Initialize semantic workspace here to prevent cyclic dependency issues
 	ide_state.completion.enterCommitsCompletion = false;
 	ide_state.input = new InputController();
 	ide_state.problemsPanel = new ProblemsPanelController();

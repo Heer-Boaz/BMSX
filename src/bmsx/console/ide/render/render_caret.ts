@@ -1,7 +1,6 @@
 import type { color } from '../../../render/shared/render_types';
-import { Msx1Colors } from '../../../systems/msx';
+import { Msx1Colors, resolvePaletteIndex, invertColorIndex } from '../../../systems/msx';
 import type { BmsxConsoleApi } from '../../api';
-import { resolvePaletteIndex, invertColorIndex } from 'bmsx/systems/msx';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
 import { drawEditorText } from '../text_renderer';

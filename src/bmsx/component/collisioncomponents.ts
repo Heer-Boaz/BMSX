@@ -8,7 +8,6 @@ import { excludepropfromsavegame, insavegame } from '../serializer/serialization
 import { TileSize } from "../systems/msx";
 import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams, type ComponentAttachOptions } from "./basecomponent";
 
-
 /**
  * ColliderComponent holds collision shapes for a WorldObject.
  * Shapes are stored in local space; world-space accessors apply parent position at read-time.

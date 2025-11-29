@@ -21,7 +21,7 @@ import { AnyBackend, GPUBackend, PassEncoder, RenderContext, RenderPassDef, Rend
 import { checkWebGLError } from './webgl/webgl.helpers';
 import { WebGLBackend } from './webgl/webgl_backend';
 import { registerHeadlessPasses } from '../headless/headless_render_passes';
-import { ENGINE_ATLAS_TEXTURE_KEY } from '../atlas';
+import { ENGINE_ATLAS_TEXTURE_KEY } from '../gameview';
 
 export type FogUniforms = {
 	fogD50: number;

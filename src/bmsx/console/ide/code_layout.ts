@@ -3,7 +3,7 @@ import { clamp } from '../../utils/clamp';
 import type { ConsoleEditorFont } from '../editor_font';
 import { highlightLine as highlightLineExternal } from './syntax_highlight';
 import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from './semantic_model';
-import { LuaSemanticWorkspace } from './semantic_workspace';
+import { LuaSemanticWorkspace } from './semantic_model';
 import type { LuaDefinitionInfo } from '../../lua/ast';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types';
 import { scheduleIdeOnce } from './background_tasks';

@@ -8,7 +8,7 @@ import { consumeIdeKey } from './ide_input';
 import type { LuaSourceRange } from '../../lua/ast';
 import { clamp } from '../../utils/clamp';
 import type { ConsoleResourceDescriptor } from '../types';
-import type { LuaSemanticWorkspace } from './semantic_workspace';
+import type { LuaSemanticWorkspace } from './semantic_model';
 import { ide_state } from './ide_state';
 
 export type RenameCommitPayload = {

@@ -1,7 +1,7 @@
 import { clamp } from '../../utils/clamp';
 import type { ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleResourceDescriptor } from '../types';
 import type { CodeTabContext, SearchMatch, SymbolSearchResult } from './types';
-import { LuaSemanticWorkspace } from './semantic_workspace';
+import { LuaSemanticWorkspace } from './semantic_model';
 import type { Decl } from './semantic_model';
 import type { LuaSourceRange } from '../../lua/ast';
 import type { ConsoleCodeLayout } from './code_layout';

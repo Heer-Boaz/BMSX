@@ -34,7 +34,7 @@ import {
 	ZCOORDS_SIZE
 } from '../backend/webgl/webgl.constants';
 import { color, ImgRenderSubmission, RectRenderSubmission, GameView, type RenderLayer } from '../gameview';
-import { ENGINE_ATLAS_TEXTURE_KEY } from '../atlas';
+import { ENGINE_ATLAS_TEXTURE_KEY } from '../gameview';
 import { $ } from '../../core/game';
 import { bvec } from './vertexutils2d';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';

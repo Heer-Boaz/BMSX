@@ -17,7 +17,6 @@ import { RenderGraphRuntime, buildFrameData } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
 import { GameOptions } from '../core/gameoptions';
 import { calculateCenteredBlockX, renderGlyphs, wrapGlyphs } from './glyphs';
-import { ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from './atlas';
 import type {
 	GameViewHost,
 	GameViewCanvas,
@@ -37,6 +36,21 @@ import type {
 	GlyphRenderSubmission,
 	SkyboxImageIds,
 } from './shared/render_types';
+
+/**
+ * Reserved atlas metadata for engine/runtime resources.
+ *
+ * Atlas indices are stored in packed sprite metadata and must fit in an
+ * unsigned byte. We reserve index 254 for engine assets so carts can safely
+ * use lower indices without risk of collision.
+ */
+export const ENGINE_ATLAS_INDEX = 254;
+/**
+ * Texture dictionary key used by GameView to cache the engine atlas texture.
+ */
+
+export const ENGINE_ATLAS_TEXTURE_KEY = '_atlas_engine';
+
 export type {
 	color,
 	FlipOptions,
@@ -49,6 +63,20 @@ export type {
 	GlyphRenderSubmission,
 	SkyboxImageIds,
 } from './shared/render_types';
+
+
+export interface AtmosphereParams {
+	fogD50: number;
+	fogStart: number;
+	fogColorLow: [number, number, number];
+	fogColorHigh: [number, number, number];
+	fogYMin: number;
+	fogYMax: number;
+	progressFactor: number;
+	enableAutoAnimation: boolean;
+}
+
+export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission) | ({ type: 'glyphs'; } & GlyphRenderSubmission);
 
 // Global gate used to coordinate rendering. When blocked, frames are skipped.
 export const renderGate: GateGroup = taskGate.group('render:main');
@@ -968,16 +996,3 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this._activeCubemap = tex;
 	}
 }
-
-export interface AtmosphereParams {
-	fogD50: number;
-	fogStart: number;
-	fogColorLow: [number, number, number];
-	fogColorHigh: [number, number, number];
-	fogYMin: number;
-	fogYMax: number;
-	progressFactor: number;
-	enableAutoAnimation: boolean;
-}
-
-export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission) | ({ type: 'glyphs'; } & GlyphRenderSubmission);
