@@ -851,7 +851,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private toggleEditor(): void {
-		if (this.editor?.isActive !== true) {
+		if (this.editor?.isActive === true) {
 			this.editor.deactivate();
 			return;
 		}
