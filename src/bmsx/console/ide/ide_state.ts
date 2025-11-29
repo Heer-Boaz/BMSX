@@ -57,7 +57,7 @@ import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
 import type { ReferenceCatalogEntry } from './code_reference';
 import { ConsoleCodeLayout } from './code_layout';
 import type { TimerHandle } from '../../platform';
-import type { DebuggerExecutionState } from '../debugger_lifecycle';
+import type { DebuggerExecutionState } from './ide_debugger';
 import type { LuaDebuggerSessionMetrics } from '../../lua/debugger';
 import { CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_KEY, ESCAPE_KEY, getActiveIdeThemeVariant } from './constants';
 import { CaretNavigationState } from './caret';

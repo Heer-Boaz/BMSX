@@ -45,8 +45,8 @@ import { EDITOR_TOGGLE_KEY, CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, G
 import {
 	emitDebuggerLifecycleEvent,
 	type DebuggerResumeMode,
-	type DebuggerPauseDisplayPayload,
-} from './debugger_lifecycle';
+	type DebuggerPauseDisplayPayload
+} from './ide/ide_debugger';
 import { arrayify } from '../utils/arrayify';
 import { fallbackclamp } from '../utils/clamp';
 import { ConsoleCommandDispatcher } from './console_commands';
@@ -666,7 +666,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private pollConsoleHotkeys(): void {
-		if (this.shouldAcceptConsoleHotkey('console-font-variant', 'KeyT', KeyModifier.ctrl | KeyModifier.alt)) {
+		if (this.shouldAcceptConsoleHotkey('console-font-variant', 'KeyT', KeyModifier.ctrl | KeyModifier.shift)) {
 			$.consume_button(this.playerIndex, 'KeyT', 'keyboard');
 			const next = this._activeIdeFontVariant === 'tiny' ? 'msx' : 'tiny';
 			this.activeIdeFontVariant = next; // Toggle font variant and apply to both console and editor

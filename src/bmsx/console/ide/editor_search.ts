@@ -5,7 +5,7 @@ import { getSelectionRange, getSelectionText } from './text_editing_and_selectio
 
 import type { ConsoleResourceDescriptor } from '../types';
 import { enqueueBackgroundTask } from './background_tasks';
-import { applySearchFieldText, clearReferenceHighlights, closeSymbolSearch, closeResourceSearch, closeLineJump, updateDesiredColumn, listResourcesStrict, openLuaCodeTab } from './console_cart_editor';
+import { applySearchFieldText, beginNavigationCapture, clearReferenceHighlights, closeSymbolSearch, closeResourceSearch, closeLineJump, completeNavigation, updateDesiredColumn, listResourcesStrict, openLuaCodeTab } from './console_cart_editor';
 import { ensureCursorVisible } from './caret';
 import { resetBlink } from './render/render_caret';
 import { revealCursor } from './caret';
@@ -171,6 +171,7 @@ export function focusSearchResult(index: number): void {
 	if (index < 0 || index >= ide_state.searchMatches.length) {
 		return;
 	}
+	const navigationCheckpoint = beginNavigationCapture();
 	const match = ide_state.searchMatches[index];
 	ide_state.cursorRow = match.row;
 	ide_state.cursorColumn = match.start;
@@ -178,6 +179,7 @@ export function focusSearchResult(index: number): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
+	completeNavigation(navigationCheckpoint);
 }
 
 export function jumpToNextMatch(): void {
@@ -602,6 +604,7 @@ export function focusGlobalSearchResult(index: number, previewOnly: boolean = fa
 		return;
 	}
 	if (previewOnly) return;
+	const navigationCheckpoint = beginNavigationCapture();
 	if (match.descriptor) {
 		openLuaCodeTab(match.descriptor);
 	} else {
@@ -616,6 +619,7 @@ export function focusGlobalSearchResult(index: number, previewOnly: boolean = fa
 		ide_state.selectionAnchor = { row, column: endColumn };
 		ensureCursorVisible();
 		resetBlink();
+		completeNavigation(navigationCheckpoint);
 	});
 }
 

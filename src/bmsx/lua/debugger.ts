@@ -1,4 +1,4 @@
-import type { DebuggerResumeMode } from '../console/debugger_lifecycle';
+import type { DebuggerResumeMode } from 'bmsx/console/ide/ide_debugger';
 import { fallbackclamp } from '../utils/clamp';
 import type { LuaCallFrame, LuaDebuggerPauseSignal, LuaExceptionResumeStrategy } from './runtime';
 

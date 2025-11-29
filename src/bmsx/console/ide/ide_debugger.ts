@@ -1,11 +1,3 @@
-import {
-	getDebuggerExecutionState,
-	getLastDebuggerPauseEvent,
-	subscribeDebuggerLifecycleEvents,
-	type DebuggerExecutionState,
-	type DebuggerLifecycleEvent,
-	type DebuggerPauseDisplayPayload,
-} from '../debugger_lifecycle';
 import { RegisterablePersistent } from '../../rompack/rompack';
 import { Registry } from '../../core/registry';
 import { BmsxConsoleRuntime } from '../runtime';
@@ -17,7 +9,7 @@ import { clamp, fallbackclamp } from '../../utils/clamp';
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition } from './caret';
 import { normalizeChunkName, clearExecutionStopHighlights, focusChunkSource, setExecutionStopHighlight, clearRuntimeErrorOverlay, updateDesiredColumn, findFunctionDefinitionRowInActiveFile, findResourceDescriptorForChunk, resetPointerClickTracking } from './console_cart_editor';
 import { resetBlink } from './render/render_caret';
-import type { StackTraceFrame } from '../../lua/runtime';
+import type { LuaCallFrame, LuaDebuggerPauseSignal, StackTraceFrame } from '../../lua/runtime';
 import type { ConsoleResourceDescriptor } from '../types';
 import * as constants from './constants';
 
@@ -384,3 +376,80 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 	ide_state.showMessage('Navigated to call site', constants.COLOR_STATUS_SUCCESS, 1.6);
 }
 
+export type DebuggerPauseFrameHint = { asset_id: string | null; path?: string | null; } | null;
+
+export type DebuggerPauseDisplayPayload = {
+	chunk: string;
+	line: number;
+	column: number;
+	reason: LuaDebuggerPauseSignal['reason'];
+	hint: DebuggerPauseFrameHint;
+};
+
+export type DebuggerResumeMode = 'continue' | 'step_into' | 'step_over' | 'step_out';
+
+export type DebuggerLifecyclePausedEvent = {
+	type: 'paused';
+	suspension: LuaDebuggerPauseSignal;
+	payload: DebuggerPauseDisplayPayload;
+	callStack: ReadonlyArray<LuaCallFrame>;
+	metrics: LuaDebuggerSessionMetrics | null;
+};
+
+export type DebuggerLifecycleContinuedEvent = {
+	type: 'continued';
+	mode: DebuggerResumeMode;
+};
+
+export type DebuggerLifecycleExceptionFrameEvent = {
+	type: 'exception_frame_focus';
+	payload: DebuggerPauseDisplayPayload;
+};
+
+export type DebuggerLifecycleEvent = DebuggerLifecyclePausedEvent |
+	DebuggerLifecycleContinuedEvent |
+	DebuggerLifecycleExceptionFrameEvent;
+
+export type DebuggerExecutionState = 'inactive' | 'running' | 'paused';
+type DebuggerLifecycleListener = (event: DebuggerLifecycleEvent) => void;
+const listeners = new Set<DebuggerLifecycleListener>();
+let lastPausedEvent: DebuggerLifecyclePausedEvent | null = null;
+let debuggerState: DebuggerExecutionState = 'inactive';
+
+export function emitDebuggerLifecycleEvent(event: DebuggerLifecycleEvent): void {
+	if (event.type === 'paused') {
+		debuggerState = 'paused';
+		lastPausedEvent = event;
+	}
+	else if (event.type === 'continued') {
+		debuggerState = 'running';
+		lastPausedEvent = null;
+	}
+	else if (event.type === 'exception_frame_focus') {
+		debuggerState = 'paused';
+	}
+	for (const listener of listeners) {
+		listener(event);
+	}
+}
+
+export function subscribeDebuggerLifecycleEvents(
+	listener: DebuggerLifecycleListener,
+	{ replayCurrentPause }: { replayCurrentPause?: boolean; } = {}
+): () => void {
+	listeners.add(listener);
+	if (replayCurrentPause !== false && lastPausedEvent) {
+		listener(lastPausedEvent);
+	}
+	return () => {
+		listeners.delete(listener);
+	};
+}
+
+export function getDebuggerExecutionState(): DebuggerExecutionState {
+	return debuggerState;
+}
+
+export function getLastDebuggerPauseEvent(): DebuggerLifecyclePausedEvent | null {
+	return lastPausedEvent;
+}

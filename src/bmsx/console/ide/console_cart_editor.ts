@@ -2701,11 +2701,13 @@ export function applyLineJump(): void {
 		ide_state.showMessage(`Line must be between 1 and ${limit}`, constants.COLOR_STATUS_WARNING, 1.8);
 		return;
 	}
+	const navigationCheckpoint = beginNavigationCapture();
 	setCursorPosition(target - 1, 0);
 	TextEditing.clearSelection();
 	breakUndoSequence();
 	closeLineJump(true);
 	ide_state.showMessage(`Jumped to line ${target}`, constants.COLOR_STATUS_SUCCESS, 1.5);
+	completeNavigation(navigationCheckpoint);
 }
 
 export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
@@ -3200,8 +3202,12 @@ export function beginNavigationCapture(): NavigationHistoryEntry | null {
 	if (!ide_state.navigationHistory.current) {
 		ide_state.navigationHistory.current = createNavigationEntry();
 	}
-	const current = ide_state.navigationHistory.current;
-	return current ? { ...current } : null;
+	const current = createNavigationEntry();
+	if (current) {
+		ide_state.navigationHistory.current = current;
+		return { ...current };
+	}
+	return null;
 }
 
 export function completeNavigation(previous: NavigationHistoryEntry | null): void {
@@ -3209,15 +3215,19 @@ export function completeNavigation(previous: NavigationHistoryEntry | null): voi
 		return;
 	}
 	const next = createNavigationEntry();
-	if (previous && (!next || !areNavigationEntriesEqual(previous, next))) {
-		const backStack = ide_state.navigationHistory.back;
+	const backStack = ide_state.navigationHistory.back;
+	if (previous && next && !areNavigationEntriesEqual(previous, next)) {
 		const lastBack = backStack[backStack.length - 1] ?? null;
 		if (!lastBack || !areNavigationEntriesEqual(lastBack, previous)) {
 			pushNavigationEntry(backStack, previous);
 		}
 		ide_state.navigationHistory.forward.length = 0;
-	} else if (previous && next && areNavigationEntriesEqual(previous, next)) {
-		// Same location; do not mutate stacks.
+	} else if (previous && !next) {
+		const lastBack = backStack[backStack.length - 1] ?? null;
+		if (!lastBack || !areNavigationEntriesEqual(lastBack, previous)) {
+			pushNavigationEntry(backStack, previous);
+		}
+		ide_state.navigationHistory.forward.length = 0;
 	} else if (previous === null && next) {
 		ide_state.navigationHistory.forward.length = 0;
 	}
@@ -3309,28 +3319,26 @@ export function goBackwardInNavigationHistory(): void {
 	if (ide_state.navigationHistory.back.length === 0) {
 		return;
 	}
-	const currentEntry = createNavigationEntry();
+	const currentEntry = ide_state.navigationHistory.current ?? createNavigationEntry();
 	if (currentEntry) {
 		const forwardStack = ide_state.navigationHistory.forward;
 		const lastForward = forwardStack[forwardStack.length - 1] ?? null;
 		if (!lastForward || !areNavigationEntriesEqual(lastForward, currentEntry)) {
 			pushNavigationEntry(forwardStack, currentEntry);
 		}
-	} else {
-		ide_state.navigationHistory.forward.length = 0;
 	}
 	const target = ide_state.navigationHistory.back.pop()!;
 	withNavigationCaptureSuspended(() => {
 		applyNavigationEntry(target);
 	});
-	ide_state.navigationHistory.current = createNavigationEntry();
+	ide_state.navigationHistory.current = createNavigationEntry() ?? target;
 }
 
 export function goForwardInNavigationHistory(): void {
 	if (ide_state.navigationHistory.forward.length === 0) {
 		return;
 	}
-	const currentEntry = createNavigationEntry();
+	const currentEntry = ide_state.navigationHistory.current ?? createNavigationEntry();
 	if (currentEntry) {
 		const backStack = ide_state.navigationHistory.back;
 		const lastBack = backStack[backStack.length - 1] ?? null;
@@ -3342,7 +3350,7 @@ export function goForwardInNavigationHistory(): void {
 	withNavigationCaptureSuspended(() => {
 		applyNavigationEntry(target);
 	});
-	ide_state.navigationHistory.current = createNavigationEntry();
+	ide_state.navigationHistory.current = createNavigationEntry() ?? target;
 }
 
 export function openActionPrompt(action: PendingActionPrompt['action']): void {
