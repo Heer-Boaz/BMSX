@@ -48,7 +48,7 @@ import {
 	type DebuggerPauseDisplayPayload,
 } from './debugger_lifecycle';
 import { arrayify } from '../utils/arrayify';
-import { fallbackclamp } from 'bmsx/utils/clamp';
+import { fallbackclamp } from '../utils/clamp';
 import { ConsoleCommandDispatcher } from './console_commands';
 import { CanonicalizationType } from '../rompack/rompack';
 import { ActionEffectRegistry } from '../action_effects/effect_registry';
