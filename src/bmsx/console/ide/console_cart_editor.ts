@@ -72,7 +72,6 @@ import type {
 	EditorTabDescriptor,
 	EditorTabId,
 	EditorDiagnostic,
-	HighlightLine,
 	TextField,
 	MessageState,
 	PendingActionPrompt,
@@ -582,10 +581,10 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 		: visibleColumnCount() + 8;
 	const slice = ide_state.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
 	const sliceStartDisplay = slice.startDisplay;
-	const sliceEndLimit = ide_state.wordWrapEnabled ? columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
+	const sliceEndLimit = ide_state.wordWrapEnabled ? ide_state.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
 	const sliceEndDisplay = ide_state.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
-	const startDisplay = columnToDisplay(highlight, tooltip.startColumn);
-	const endDisplay = columnToDisplay(highlight, tooltip.endColumn);
+	const startDisplay = ide_state.layout.columnToDisplay(highlight, tooltip.startColumn);
+	const endDisplay = ide_state.layout.columnToDisplay(highlight, tooltip.endColumn);
 	const clampedStartDisplay = clamp(startDisplay, sliceStartDisplay, sliceEndDisplay);
 	const clampedEndDisplay = clamp(endDisplay, clampedStartDisplay, sliceEndDisplay);
 	const expressionStartX = textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, clampedStartDisplay);
@@ -3736,7 +3735,7 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 		segmentEndColumn = line.length;
 	}
 	const effectiveStartColumn = clamp(segmentStartColumn, 0, line.length);
-	const startDisplay = columnToDisplay(highlight, effectiveStartColumn);
+	const startDisplay = ide_state.layout.columnToDisplay(highlight, effectiveStartColumn);
 	const offset = viewportX - textLeft;
 	if (offset <= 0) {
 		return effectiveStartColumn;
@@ -3895,7 +3894,7 @@ export function updateDesiredColumn(): void {
 	}
 	const entry = ide_state.layout.getCachedHighlight(ide_state.lines, ide_state.cursorRow);
 	const highlight = entry.hi;
-	const cursorDisplay = columnToDisplay(highlight, ide_state.cursorColumn);
+	const cursorDisplay = ide_state.layout.columnToDisplay(highlight, ide_state.cursorColumn);
 	let segmentStartColumn = 0;
 	if (ide_state.wordWrapEnabled) {
 		ensureVisualLines();
@@ -3910,7 +3909,7 @@ export function updateDesiredColumn(): void {
 			}
 		}
 	}
-	const segmentDisplayStart = columnToDisplay(highlight, segmentStartColumn);
+	const segmentDisplayStart = ide_state.layout.columnToDisplay(highlight, segmentStartColumn);
 	ide_state.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
 	if (ide_state.desiredDisplayOffset < 0) {
 		ide_state.desiredDisplayOffset = 0;
@@ -5213,10 +5212,6 @@ export function applyCaseNormalizationIfNeeded(editContext: EditContext | null):
 	requestSemanticRefresh();
 	const derived = computeEditContextFromSources(previousSource ?? currentSource, normalized);
 	return derived ?? editContext;
-}
-
-export function columnToDisplay(highlight: HighlightLine, column: number): number {
-	return ide_state.layout.columnToDisplay(highlight, column);
 }
 
 export function resolvePaletteIndex(color: { r: number; g: number; b: number; a: number } | number): number | null {

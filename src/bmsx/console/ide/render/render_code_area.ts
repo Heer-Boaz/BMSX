@@ -2,7 +2,7 @@ import type { BmsxConsoleApi } from '../../api';
 import type { CachedHighlight, CursorScreenInfo } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { clamp } from '../../../utils/clamp';
-import { columnToDisplay, computeMaximumScrollColumn, drawHoverTooltip, getCodeAreaBounds, getDiagnosticsForRow, maximumLineLength, } from '../console_cart_editor';
+import { computeMaximumScrollColumn, drawHoverTooltip, getCodeAreaBounds, getDiagnosticsForRow, maximumLineLength, } from '../console_cart_editor';
 import { renderRuntimeErrorOverlay } from './render_error_overlay';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
@@ -119,7 +119,7 @@ export function renderCodeArea(): void {
 		const columnCount = wrapEnabled ? Math.max(0, maxColumn - columnStart) : sliceWidth;
 		const slice = ide_state.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
 		const sliceStartDisplay = slice.startDisplay;
-		const sliceEndLimit = wrapEnabled ? columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
+		const sliceEndLimit = wrapEnabled ? ide_state.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
 		const sliceEndDisplay = wrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
 		drawReferenceHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
 		drawSearchHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
@@ -157,8 +157,8 @@ export function renderCodeArea(): void {
 			if (diagEndColumn <= diagStartColumn) {
 				continue;
 			}
-			const startDisplayFull = columnToDisplay(highlight, diagStartColumn);
-			const endDisplayFull = columnToDisplay(highlight, diagEndColumn);
+			const startDisplayFull = ide_state.layout.columnToDisplay(highlight, diagStartColumn);
+			const endDisplayFull = ide_state.layout.columnToDisplay(highlight, diagEndColumn);
 			const clampedStartDisplay = clamp(startDisplayFull, sliceStartDisplay, sliceEndDisplay);
 			const clampedEndDisplay = clamp(endDisplayFull, clampedStartDisplay, sliceEndDisplay);
 			if (clampedEndDisplay <= clampedStartDisplay) {
@@ -184,8 +184,8 @@ export function renderCodeArea(): void {
 			api.rectfill(drawLeft, underlineY, drawRight, underlineY + 1, undefined, underlineColor);
 		}
 		if (activeGotoHighlight && gotoVisualIndex !== null && visualIndex === gotoVisualIndex && activeGotoHighlight.row === lineIndex) {
-			const startDisplayFull = columnToDisplay(highlight, activeGotoHighlight.startColumn);
-			const endDisplayFull = columnToDisplay(highlight, activeGotoHighlight.endColumn);
+			const startDisplayFull = ide_state.layout.columnToDisplay(highlight, activeGotoHighlight.startColumn);
+			const endDisplayFull = ide_state.layout.columnToDisplay(highlight, activeGotoHighlight.endColumn);
 			const clampedStartDisplay = clamp(startDisplayFull, sliceStartDisplay, sliceEndDisplay);
 			const clampedEndDisplay = clamp(endDisplayFull, clampedStartDisplay, sliceEndDisplay);
 			if (clampedEndDisplay > clampedStartDisplay) {
@@ -309,8 +309,8 @@ export function drawReferenceHighlightsForRow(api: BmsxConsoleApi, rowIndex: num
 		if (match.row !== rowIndex) {
 			continue;
 		}
-		const startDisplay = columnToDisplay(highlight, match.start);
-		const endDisplay = columnToDisplay(highlight, match.end);
+		const startDisplay = ide_state.layout.columnToDisplay(highlight, match.start);
+		const endDisplay = ide_state.layout.columnToDisplay(highlight, match.end);
 		const visibleStart = Math.max(sliceStartDisplay, startDisplay);
 		const visibleEnd = Math.min(sliceEndDisplay, endDisplay);
 		if (visibleEnd <= visibleStart) {
@@ -333,8 +333,8 @@ export function drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number
 		if (match.row !== rowIndex) {
 			continue;
 		}
-		const startDisplay = columnToDisplay(highlight, match.start);
-		const endDisplay = columnToDisplay(highlight, match.end);
+		const startDisplay = ide_state.layout.columnToDisplay(highlight, match.start);
+		const endDisplay = ide_state.layout.columnToDisplay(highlight, match.end);
 		const visibleStart = Math.max(sliceStartDisplay, startDisplay);
 		const visibleEnd = Math.min(sliceEndDisplay, endDisplay);
 		if (visibleEnd <= visibleStart) {

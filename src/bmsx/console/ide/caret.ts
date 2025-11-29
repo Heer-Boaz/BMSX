@@ -1,5 +1,5 @@
 import { clamp } from '../../utils/clamp';
-import { updateDesiredColumn, breakUndoSequence, currentLine, columnToDisplay } from './console_cart_editor';
+import { updateDesiredColumn, breakUndoSequence, currentLine } from './console_cart_editor';
 import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from './text_utils';
 import { visibleRowCount, visibleColumnCount } from './text_utils';
 import { caretNavigation, ide_state } from './ide_state';
@@ -560,8 +560,8 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	let targetColumn = hasDesiredHint ? desiredColumnHint! : ide_state.cursorColumn;
 	if (ide_state.wordWrapEnabled) {
 		const segmentEndColumn = Math.max(segment.endColumn, segment.startColumn);
-		const segmentDisplayStart = columnToDisplay(highlight, segment.startColumn);
-		const segmentDisplayEnd = columnToDisplay(highlight, segmentEndColumn);
+		const segmentDisplayStart = ide_state.layout.columnToDisplay(highlight, segment.startColumn);
+		const segmentDisplayEnd = ide_state.layout.columnToDisplay(highlight, segmentEndColumn);
 		const segmentWidth = Math.max(0, segmentDisplayEnd - segmentDisplayStart);
 		if (hasOffsetHint) {
 			const clampedOffset = clamp(Math.round(desiredOffsetHint!), 0, segmentWidth);
@@ -582,7 +582,7 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	}
 	ide_state.cursorRow = segment.row;
 	ide_state.cursorColumn = clamp(targetColumn, 0, line.length);
-	const cursorDisplay = columnToDisplay(highlight, ide_state.cursorColumn);
+	const cursorDisplay = ide_state.layout.columnToDisplay(highlight, ide_state.cursorColumn);
 	if (ide_state.wordWrapEnabled) {
 		const hasNextSegmentSameRow = (clampedIndex + 1 < visualLines.length)
 			&& visualLines[clampedIndex + 1].row === segment.row;
@@ -596,7 +596,7 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 		if (hasNextSegmentSameRow && ide_state.cursorColumn >= segmentEnd) {
 			ide_state.cursorColumn = Math.max(segment.startColumn, segmentEnd - 1);
 		}
-		const segmentDisplayStart = columnToDisplay(highlight, segment.startColumn);
+		const segmentDisplayStart = ide_state.layout.columnToDisplay(highlight, segment.startColumn);
 		ide_state.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
 	} else {
 		ide_state.desiredDisplayOffset = cursorDisplay;

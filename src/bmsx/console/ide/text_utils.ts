@@ -1,4 +1,4 @@
-import { columnToDisplay, getResourcePanelWidth } from './console_cart_editor';
+import { getResourcePanelWidth } from './console_cart_editor';
 import * as constants from './constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from './constants';
 import { getActiveCodeTabContext } from './editor_tabs';
@@ -266,8 +266,8 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 	if (selectionStartColumn === selectionEndColumn) {
 		return null;
 	}
-	const startDisplay = columnToDisplay(highlight, selectionStartColumn);
-	const endDisplay = columnToDisplay(highlight, selectionEndColumn);
+	const startDisplay = ide_state.layout.columnToDisplay(highlight, selectionStartColumn);
+	const endDisplay = ide_state.layout.columnToDisplay(highlight, selectionEndColumn);
 	const visibleStart = Math.max(sliceStart, startDisplay);
 	const visibleEnd = Math.min(sliceEnd, endDisplay);
 	if (visibleEnd <= visibleStart) {
