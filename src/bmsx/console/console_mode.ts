@@ -38,7 +38,7 @@ import type {
 } from './types';
 import { consumeIdeKey, getIdeKeyState } from './ide/ide_input';
 import type { asset_id, Viewport, CanonicalizationType } from '../rompack/rompack';
-import type { BmsxConsoleApi } from './api';
+import { api } from './runtime';
 
 type ConsoleOutputKind =
 	| 'prompt'
@@ -169,7 +169,7 @@ export class ConsoleMode {
 			resetBlink: () => { this.resetBlink(); },
 			revealCursor: () => { },
 			measureText: (text) => this.measureRawText(text),
-			drawText: (api, text, x, y, color) => { api.write(text, x, y, undefined, color); },
+			drawText: (text, x, y, color) => { api.write(text, x, y, undefined, color); },
 			getCursorScreenInfo: () => this.cursorScreenInfo,
 			getLineHeight: () => this.font.lineHeight(),
 			getSpaceAdvance: () => this.font.advance(' '),
@@ -286,7 +286,7 @@ export class ConsoleMode {
 		return submit;
 	}
 
-	public draw(api: BmsxConsoleApi, renderer: ConsoleRenderFacade, surface: Viewport): void {
+	public draw(renderer: ConsoleRenderFacade, surface: Viewport): void {
 		const lineHeight = this.font.lineHeight();
 		const contentWidth = Math.max(0, surface.width - PADDING_X * 2);
 
@@ -327,7 +327,7 @@ export class ConsoleMode {
 
 		// draw multi-line input (handles selection and caret)
 		this.drawMultilineInput(renderer, PADDING_X, inputStartY, promptWidth, inputWrap);
-		this.drawCompletionOverlays(api, renderer, surface, promptWidth);
+		this.drawCompletionOverlays(surface, promptWidth);
 	}
 
 	public recordHistory(command: string): void {
@@ -656,7 +656,7 @@ export class ConsoleMode {
 		return result;
 	}
 
-	private drawCompletionOverlays(api: BmsxConsoleApi, _renderer: ConsoleRenderFacade, surface: Viewport, promptWidth: number): void {
+	private drawCompletionOverlays(surface: Viewport, promptWidth: number): void {
 		const bounds = {
 			codeTop: PADDING_Y,
 			codeBottom: surface.height - PADDING_Y,
@@ -664,8 +664,8 @@ export class ConsoleMode {
 			codeRight: surface.width - PADDING_X,
 			textLeft: PADDING_X + promptWidth,
 		};
-		this.completion.drawCompletionPopup(api, bounds);
-		this.completion.drawParameterHintOverlay(api, bounds);
+		this.completion.drawCompletionPopup(bounds);
+		this.completion.drawParameterHintOverlay(bounds);
 	}
 
 	private buildConsoleModuleAliases(): Map<string, string> {

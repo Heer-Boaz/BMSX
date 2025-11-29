@@ -2177,7 +2177,7 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 		textLeft,
 		constants.ERROR_OVERLAY_PADDING_X,
 		constants.ERROR_OVERLAY_PADDING_Y,
-		computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth)
+		computeRuntimeErrorOverlayMaxWidth()
 	);
 	if (!layout) {
 		overlay.layout = null;
@@ -2268,4 +2268,3 @@ export function evaluateRuntimeErrorOverlayClick(
 	}
 	return { kind: 'collapse' };
 }
-

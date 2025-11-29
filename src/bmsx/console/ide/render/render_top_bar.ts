@@ -102,7 +102,7 @@ function renderMenuRow(menuEntries: MenuEntry[]): number {
 		const textColor = isOpen ? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_TEXT;
 		api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_BUTTON, fillColor);
 		api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_BUTTON, constants.COLOR_HEADER_BUTTON_BORDER);
-		drawEditorText(api, ide_state.font, entry.label, bounds.left + constants.HEADER_BUTTON_PADDING_X, bounds.top + constants.HEADER_BUTTON_PADDING_Y, Z_MENU_BUTTON_TEXT, textColor);
+		drawEditorText(ide_state.font, entry.label, bounds.left + constants.HEADER_BUTTON_PADDING_X, bounds.top + constants.HEADER_BUTTON_PADDING_Y, Z_MENU_BUTTON_TEXT, textColor);
 		buttonX = right + constants.HEADER_BUTTON_SPACING;
 	}
 	ide_state.menuDropdownBounds = null;
@@ -169,7 +169,7 @@ function renderMenuDropdown(menu: MenuEntry, anchor: RectBounds, itemHeight: num
 		}
 		const textX = bounds.left + paddingX * 2 + markerSize;
 		const textY = bounds.top + constants.HEADER_BUTTON_PADDING_Y;
-		drawEditorText(api, ide_state.font, item.label, textX, textY, Z_MENU_DROPDOWN_TEXT, textColor);
+		drawEditorText(ide_state.font, item.label, textX, textY, Z_MENU_DROPDOWN_TEXT, textColor);
 		currentTop = bounds.bottom;
 	}
 	ide_state.menuDropdownBounds = { left: dropdownLeft, top: dropdownTop, right: dropdownRight, bottom: dropdownTop + totalHeight };

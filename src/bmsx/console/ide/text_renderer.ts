@@ -1,4 +1,3 @@
-import type { BmsxConsoleApi } from '../api';
 import type { ConsoleEditorFont } from '../editor_font';
 import { expandTabs as expandTabsExternal } from './text_utils';
 import * as constants from './constants';
@@ -15,7 +14,7 @@ type DrawEditorTextOptions = {
 	forceUppercase?: boolean;
 };
 
-export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, text: string, originX: number, originY: number, z: number, color: number, options?: DrawEditorTextOptions): void {
+export function drawEditorText(font: ConsoleEditorFont, text: string, originX: number, originY: number, z: number, color: number, options?: DrawEditorTextOptions): void {
 	const baseX = Math.floor(originX);
 	let cursorY = Math.floor(originY);
 	const lines = text.split('\n');

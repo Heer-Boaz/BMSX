@@ -30,7 +30,7 @@ export interface InlineBarsHost {
 	spaceAdvance: number;
 	charAdvance?: number;
 	measureText: (text: string) => number;
-	drawText: (api: BmsxConsoleApi, text: string, x: number, y: number, color: number) => void;
+	drawText: (text: string, x: number, y: number, color: number) => void;
 	inlineFieldMetrics: () => { spaceAdvance: number };
 	createResourceActive: boolean;
 	createResourceVisible: boolean;
@@ -118,7 +118,7 @@ export function renderCreateResourceBar(api: BmsxConsoleApi, host: InlineBarsHos
 	const label = 'NEW FILE:';
 	const labelX = 4;
 	const labelY = barTop + constants.CREATE_RESOURCE_BAR_MARGIN_Y;
-	host.drawText(api, label, labelX, labelY, constants.COLOR_CREATE_RESOURCE_TEXT);
+	host.drawText(label, labelX, labelY, constants.COLOR_CREATE_RESOURCE_TEXT);
 
 	const field = host.createResourceField;
 	const pathX = labelX + host.measureText(label + ' ');
@@ -139,7 +139,7 @@ export function renderCreateResourceBar(api: BmsxConsoleApi, host: InlineBarsHos
 		}
 	}
 
-	host.drawText(api, displayPath, pathX, labelY, pathColor);
+	host.drawText(displayPath, pathX, labelY, pathColor);
 
 	const caretBaseX = host.inlineFieldCaretX(field, pathX, host.measureText);
 	const caretLeft = Math.floor(caretBaseX);
@@ -153,7 +153,7 @@ export function renderCreateResourceBar(api: BmsxConsoleApi, host: InlineBarsHos
 		const status = 'CREATING...';
 		const statusWidth = host.measureText(status);
 		const statusX = Math.max(pathX + host.measureText(displayPath) + host.spaceAdvance, host.viewportWidth - statusWidth - 4);
-		host.drawText(api, status, statusX, labelY, constants.COLOR_CREATE_RESOURCE_TEXT);
+		host.drawText(status, statusX, labelY, constants.COLOR_CREATE_RESOURCE_TEXT);
 	} else if (host.createResourceError && host.createResourceError.length > 0) {
 		host.drawCreateResourceErrorDialog(api, host.createResourceError);
 	}
@@ -172,7 +172,7 @@ export function renderSearchBar(host: InlineBarsHost): void {
 	const label = host.searchScope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
 	const labelX = 4;
 	const labelY = barTop + constants.SEARCH_BAR_MARGIN_Y;
-	host.drawText(api, label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
+	host.drawText(label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
 
 	const active = !!host.searchActive && !host.blockActiveCarets;
 	const fieldText = field ? getFieldText(field) : '';
@@ -193,7 +193,7 @@ export function renderSearchBar(host: InlineBarsHost): void {
 		}
 	}
 
-	host.drawText(api, queryText, queryX, labelY, queryColor);
+	host.drawText(queryText, queryX, labelY, queryColor);
 
 	if (field) {
 		const caretX = host.inlineFieldCaretX(field, queryX, host.measureText);
@@ -210,12 +210,12 @@ export function renderSearchBar(host: InlineBarsHost): void {
 	if (host.searchWorking) {
 		const workingText = 'SEARCHING...';
 		const workingWidth = host.measureText(workingText);
-		host.drawText(api, workingText, infoX - workingWidth, labelY, constants.COLOR_SEARCH_TEXT);
+		host.drawText(workingText, infoX - workingWidth, labelY, constants.COLOR_SEARCH_TEXT);
 	} else if (total > 0 || (host.searchQuery && host.searchQuery.length > 0)) {
 		const infoText = total === 0 ? '0/0' : `${(current >= 0 ? current + 1 : 0)}/${total}`;
 		const infoColor = total === 0 ? constants.COLOR_STATUS_WARNING : constants.COLOR_SEARCH_TEXT;
 		const infoWidth = host.measureText(infoText);
-		host.drawText(api, infoText, infoX - infoWidth, labelY, infoColor);
+		host.drawText(infoText, infoX - infoWidth, labelY, infoColor);
 	}
 
 	const visible = host.searchVisibleResultCount ? host.searchVisibleResultCount() : 0;
@@ -243,15 +243,15 @@ export function renderSearchBar(host: InlineBarsHost): void {
 			const primaryY = rowTop;
 			const secondaryY = rowTop + host.lineHeight;
 			if (entry.primary) {
-				host.drawText(api, entry.primary, paddingX, primaryY, constants.COLOR_SEARCH_TEXT);
+				host.drawText(entry.primary, paddingX, primaryY, constants.COLOR_SEARCH_TEXT);
 			}
 			if (entry.detail) {
 				const detailWidth = host.measureText(entry.detail);
 				const detailX = host.viewportWidth - detailWidth - paddingX;
-				host.drawText(api, entry.detail, detailX, primaryY, constants.COLOR_SEARCH_SECONDARY_TEXT);
+				host.drawText(entry.detail, detailX, primaryY, constants.COLOR_SEARCH_SECONDARY_TEXT);
 			}
 			if (entry.secondary) {
-				host.drawText(api, entry.secondary, paddingX, secondaryY, constants.COLOR_SEARCH_SECONDARY_TEXT);
+				host.drawText(entry.secondary, paddingX, secondaryY, constants.COLOR_SEARCH_SECONDARY_TEXT);
 			}
 		},
 	});
@@ -270,7 +270,7 @@ export function renderResourceSearchBar(): void {
 	const label = 'FILE :';
 	const labelX = 4;
 	const labelY = barTop + constants.QUICK_OPEN_BAR_MARGIN_Y;
-	drawEditorText(api, ide_state.font, label, labelX, labelY, undefined, constants.COLOR_QUICK_OPEN_TEXT);
+	drawEditorText(ide_state.font, label, labelX, labelY, undefined, constants.COLOR_QUICK_OPEN_TEXT);
 
 	const active = !!ide_state.resourceSearchActive && !ide_state.problemsPanel.isVisible && !ide_state.problemsPanel.isFocused;
 	const fieldText = field ? getFieldText(field) : '';
@@ -291,7 +291,7 @@ export function renderResourceSearchBar(): void {
 		}
 	}
 
-	drawEditorText(api, ide_state.font, queryText, queryX, labelY, undefined, queryColor);
+	drawEditorText(ide_state.font, queryText, queryX, labelY, undefined, queryColor);
 
 	if (field) {
 		const caretLeft = caretX(field, queryX, measureText);
@@ -324,19 +324,19 @@ export function renderResourceSearchBar(): void {
 			const kindText = match?.entry.typeLabel ?? '';
 			const detail = match?.entry.assetLabel ?? '';
 			if (kindText.length > 0) {
-				drawEditorText(api, ide_state.font, kindText, textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
+				drawEditorText(ide_state.font, kindText, textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
 				textX += measureText(kindText + ' ');
 			}
-			drawEditorText(api, ide_state.font, match?.entry.displayPath ?? '', textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_TEXT);
+			drawEditorText(ide_state.font, match?.entry.displayPath ?? '', textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_TEXT);
 			if (compactMode) {
 				const secondaryY = rowTop + ide_state.lineHeight;
 				if (detail.length > 0) {
-					drawEditorText(api, ide_state.font, detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, undefined, constants.COLOR_QUICK_OPEN_KIND);
+					drawEditorText(ide_state.font, detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, undefined, constants.COLOR_QUICK_OPEN_KIND);
 				}
 			} else if (detail.length > 0) {
 				const detailWidth = measureText(detail);
 				const detailX = ide_state.viewportWidth - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
-				drawEditorText(api, ide_state.font, detail, detailX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
+				drawEditorText(ide_state.font, detail, detailX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
 			}
 		},
 	});
@@ -356,7 +356,7 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 	const label = mode === 'references' ? 'REFS :' : host.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
 	const labelX = 4;
 	const labelY = barTop + constants.SYMBOL_SEARCH_BAR_MARGIN_Y;
-	host.drawText(api, label, labelX, labelY, constants.COLOR_SYMBOL_SEARCH_TEXT);
+	host.drawText(label, labelX, labelY, constants.COLOR_SYMBOL_SEARCH_TEXT);
 
 	const active = !!host.symbolSearchActive;
 	const fieldText = field ? getFieldText(field) : '';
@@ -378,7 +378,7 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 		}
 	}
 
-	host.drawText(api, queryText, queryX, labelY, queryColor);
+	host.drawText(queryText, queryX, labelY, queryColor);
 
 	if (field) {
 		const caretX = host.inlineFieldCaretX(field, queryX, host.measureText);
@@ -421,26 +421,26 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 				: `:${lineValue}`;
 			const lineWidth = host.measureText(lineText);
 			if (kindText.length > 0) {
-				host.drawText(api, kindText, textX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
+				host.drawText(kindText, textX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
 				textX += host.measureText(kindText + ' ');
 			}
-			host.drawText(api, match?.entry.displayName ?? '', textX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
+			host.drawText(match?.entry.displayName ?? '', textX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
 			if (compactMode) {
 				const secondaryY = rowTop + host.lineHeight;
 				const lineX = host.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-				host.drawText(api, lineText, lineX, secondaryY, constants.COLOR_SYMBOL_SEARCH_TEXT);
+				host.drawText(lineText, lineX, secondaryY, constants.COLOR_SYMBOL_SEARCH_TEXT);
 				const sourceLabel = match?.entry.sourceLabel ?? '';
 				if (sourceLabel) {
-					host.drawText(api, sourceLabel, constants.SYMBOL_SEARCH_RESULT_PADDING_X, secondaryY, constants.COLOR_SYMBOL_SEARCH_KIND);
+					host.drawText(sourceLabel, constants.SYMBOL_SEARCH_RESULT_PADDING_X, secondaryY, constants.COLOR_SYMBOL_SEARCH_KIND);
 				}
 			} else {
 				const lineX = host.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-				host.drawText(api, lineText, lineX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
+				host.drawText(lineText, lineX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
 				const sourceLabel = match?.entry.sourceLabel ?? '';
 				if (sourceLabel) {
 					const sourceWidth = host.measureText(sourceLabel);
 					const sourceX = Math.max(textX, lineX - host.spaceAdvance - sourceWidth);
-					host.drawText(api, sourceLabel, sourceX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
+					host.drawText(sourceLabel, sourceX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
 				}
 			}
 		},
@@ -492,7 +492,7 @@ export function renderRenameBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 	const label = 'RENAME:';
 	const labelX = 4;
 	const labelY = barTop + constants.SEARCH_BAR_MARGIN_Y;
-	host.drawText(api, label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
+	host.drawText(label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
 
 	const active = !!host.renameActive && !host.blockActiveCarets;
 	const fieldText = field ? getFieldText(field) : '';
@@ -513,7 +513,7 @@ export function renderRenameBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 		}
 	}
 
-	host.drawText(api, valueText, valueX, labelY, valueColor);
+	host.drawText(valueText, valueX, labelY, valueColor);
 
 	if (field) {
 		const caretX = host.inlineFieldCaretX(field, valueX, host.measureText);
@@ -537,7 +537,7 @@ export function renderRenameBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 	if (status.length > 0) {
 		const statusWidth = host.measureText(status);
 		const statusX = Math.max(valueX + host.measureText(valueText) + host.spaceAdvance, host.viewportWidth - statusWidth - 4);
-		host.drawText(api, status, statusX, labelY, constants.COLOR_SEARCH_TEXT);
+		host.drawText(status, statusX, labelY, constants.COLOR_SEARCH_TEXT);
 	}
 }
 
@@ -557,7 +557,7 @@ export function renderLineJumpBar(api: BmsxConsoleApi, host: InlineBarsHost): vo
 	const label = 'LINE #:';
 	const labelX = 4;
 	const labelY = barTop + constants.LINE_JUMP_BAR_MARGIN_Y;
-	host.drawText(api, label, labelX, labelY, constants.COLOR_LINE_JUMP_TEXT);
+	host.drawText(label, labelX, labelY, constants.COLOR_LINE_JUMP_TEXT);
 
 	const field = host.lineJumpField as TextField | undefined;
 	const active = !!host.lineJumpActive;
@@ -579,7 +579,7 @@ export function renderLineJumpBar(api: BmsxConsoleApi, host: InlineBarsHost): vo
 		}
 	}
 
-	host.drawText(api, valueText, valueX, labelY, valueColor);
+	host.drawText(valueText, valueX, labelY, valueColor);
 
 	if (field) {
 		const caretX = host.inlineFieldCaretX(field, valueX, host.measureText);

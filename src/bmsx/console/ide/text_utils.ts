@@ -322,24 +322,21 @@ export function positionToVisualIndex(row: number, column: number): number {
 	}
 	return ide_state.layout.positionToVisualIndex(ide_state.lines, row, column);
 }
-export function computeRuntimeErrorOverlayMaxWidth(
-	viewportWidth: number,
-	charAdvance: number,
-	gutterWidth: number
-): number {
-	const horizontalMargin = gutterWidth + ERROR_OVERLAY_CONNECTOR_OFFSET + ERROR_OVERLAY_PADDING_X * 2 + 2;
-	const available = viewportWidth - horizontalMargin;
-	if (available <= charAdvance) {
-		return charAdvance;
-	}
-	return available;
+export function computeRuntimeErrorOverlayMaxWidth(): number {
+	const resourceWidth = ide_state.resourcePanelVisible ? getResourcePanelWidth() : 0;
+	const gutterSpace = ide_state.gutterWidth + 2;
+	const scrollbarSpace = ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
+	const rightMargin = constants.CODE_AREA_RIGHT_MARGIN;
+	const connectorOffset = ERROR_OVERLAY_CONNECTOR_OFFSET + ERROR_OVERLAY_PADDING_X * 2;
+	const available = ide_state.viewportWidth - resourceWidth - gutterSpace - scrollbarSpace - rightMargin - connectorOffset;
+	return Math.max(ide_state.charAdvance, available);
 }
 
 export function buildRuntimeErrorLines(message: string): string[] {
 	const sanitized = message.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 	const rawLines = sanitized.split('\n');
 	const result: string[] = [];
-	const maxWidth = computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth); // Don't recompute for each line
+	const maxWidth = computeRuntimeErrorOverlayMaxWidth(); // Don't recompute for each line
 	for (let i = 0; i < rawLines.length; i += 1) {
 		const segments = wrapRuntimeErrorLine(rawLines[i], maxWidth);
 		if (segments.length === 0) {
@@ -410,4 +407,3 @@ export function rewrapRuntimeErrorOverlays(): void {
 		}
 	}
 }
-

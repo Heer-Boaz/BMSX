@@ -240,19 +240,19 @@ export function renderCodeArea(): void {
 		ide_state.codeHorizontalScrollbarVisible = false;
 	}
 
-	renderRuntimeErrorOverlay(api, bounds.codeTop, bounds.codeRight, bounds.textLeft);
-	drawHoverTooltip(api, bounds.codeTop, contentBottom, bounds.textLeft);
+	renderRuntimeErrorOverlay(bounds.codeTop, bounds.codeRight, bounds.textLeft);
+	drawHoverTooltip(bounds.codeTop, contentBottom, bounds.textLeft);
 
 	if (ide_state.cursorVisible && cursorEntry && cursorInfo) {
-		drawCursor(api, cursorInfo, bounds.textLeft);
+		drawCursor(cursorInfo, bounds.textLeft);
 	}
-	ide_state.completion.drawCompletionPopup(api, bounds);
-	ide_state.completion.drawParameterHintOverlay(api, bounds);
+	ide_state.completion.drawCompletionPopup(bounds);
+	ide_state.completion.drawParameterHintOverlay(bounds);
 	if (ide_state.codeVerticalScrollbarVisible) {
-		ide_state.scrollbars.codeVertical.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+		ide_state.scrollbars.codeVertical.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
 	if (ide_state.codeHorizontalScrollbarVisible) {
-		ide_state.scrollbars.codeHorizontal.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+		ide_state.scrollbars.codeHorizontal.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
 }
 

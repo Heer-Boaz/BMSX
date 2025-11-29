@@ -1,4 +1,3 @@
-import type { BmsxConsoleApi } from '../api';
 import { clamp } from '../../utils/clamp';
 import { SCROLLBAR_MIN_THUMB_HEIGHT } from './constants';
 import type { ScrollbarKind } from './types';
@@ -6,6 +5,7 @@ import type { RectBounds } from '../../rompack/rompack';
 import { computeMaximumScrollColumn, getActiveResourceViewer, resourceViewerTextCapacity } from './console_cart_editor';
 import { ensureVisualLines, getVisualLineCount } from './text_utils';
 import { ide_state } from './ide_state';
+import { api } from '../runtime';
 
 export class ConsoleScrollbar {
 	public readonly orientation: 'vertical' | 'horizontal';
@@ -61,7 +61,7 @@ export class ConsoleScrollbar {
 		}
 	}
 
-	public draw(api: BmsxConsoleApi, trackColor: number, thumbColor: number): void {
+	public draw(trackColor: number, thumbColor: number): void {
 		if (!this.track) {
 			return;
 		}

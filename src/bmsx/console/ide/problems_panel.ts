@@ -104,7 +104,7 @@ export class ProblemsPanelController {
 		const headerLabel = `PROBLEMS (${count})`;
 		const headerX = bounds.left + constants.PROBLEMS_PANEL_HEADER_PADDING_X;
 		const headerY = layout.headerTop + constants.PROBLEMS_PANEL_HEADER_PADDING_Y;
-		drawEditorText(api, ide_state.font, headerLabel, headerX, headerY, undefined, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
+		drawEditorText(ide_state.font, headerLabel, headerX, headerY, undefined, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
 
 		const contentLeft = bounds.left + constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
 		const contentRight = bounds.right - constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
@@ -117,7 +117,7 @@ export class ProblemsPanelController {
 			const message = 'No problems detected.';
 			const truncated = truncateTextToWidth(message, availableWidth);
 			const rowTop = layout.contentTop;
-			drawEditorText(api, ide_state.font, truncated, contentLeft, rowTop, undefined, constants.COLOR_PROBLEMS_PANEL_TEXT);
+			drawEditorText(ide_state.font, truncated, contentLeft, rowTop, undefined, constants.COLOR_PROBLEMS_PANEL_TEXT);
 			return;
 		}
 
@@ -154,7 +154,7 @@ export class ProblemsPanelController {
 			let textCursorX = contentLeft;
 			if (severityLabel) {
 				const sevColor = isHovered && !isSelected ? constants.COLOR_PROBLEMS_PANEL_HOVER_TEXT : this.severityColor(severity);
-				drawEditorText(api, ide_state.font, severityLabel, textCursorX, rowTop, undefined, sevColor);
+				drawEditorText(ide_state.font, severityLabel, textCursorX, rowTop, undefined, sevColor);
 				textCursorX += severityWidth;
 			}
 			// Do not display location/source in the list; leave space for message
@@ -164,7 +164,7 @@ export class ProblemsPanelController {
 			for (let li = 0; li < wrapped.length; li += 1) {
 				const y = rowTop + li * ide_state.lineHeight;
 				const x = li === 0 ? textCursorX : contentLeft;
-				drawEditorText(api, ide_state.font, wrapped[li], x, y, undefined, messageColor);
+				drawEditorText(ide_state.font, wrapped[li], x, y, undefined, messageColor);
 			}
 			cursorY = rowBottom;
 		}

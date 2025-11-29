@@ -1,6 +1,5 @@
-import type { BmsxConsoleApi } from '../../api';
-import type { ResourceBrowserItem } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';
+import type { ResourcePanelController } from '../resource_panel_controller';
 import { Msx1Colors } from '../../../systems/msx';
 import { ConsoleScrollbar } from '../scrollbar';
 import { clamp } from '../../../utils/clamp';
@@ -9,54 +8,27 @@ import { resourceViewerClampScroll } from '../ide_input';
 import { ide_state } from '../ide_state';
 import { drawEditorText } from '../text_renderer';
 import { api } from '../../runtime';
-import { measureText } from '../text_utils';
+import { measureText, wrapRuntimeErrorLine } from '../text_utils';
 import * as constants from '../constants';
-import { wrapRuntimeErrorLine } from '../text_utils';
 import { renderErrorOverlayText } from './render_error_overlay';
+import { drawRectOutlineColor } from './render_caret';
 
-export interface ResourcePanelHost {
-	// Visibility and geometry
-	readonly resourcePanelVisible: boolean;
-	getResourcePanelBounds(): RectBounds | null;
-	readonly lineHeight: number;
-
-	// Text rendering
-	measureText(text: string): number;
-	drawText(api: BmsxConsoleApi, text: string, x: number, y: number, color: number): void;
-	drawColoredText(text: string, colors: number[], x: number, y: number): void;
-	drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void;
-
-	// Data/state
-	resourceBrowserItems: ResourceBrowserItem[];
-	resourceBrowserScroll: number;
-	resourceBrowserHorizontalScroll: number;
-	readonly resourcePanelFocused: boolean;
-	readonly resourceBrowserSelectionIndex: number;
-	readonly resourceBrowserHoverIndex: number;
-	readonly resourceBrowserMaxLineWidth: number;
-	clampResourceBrowserHorizontalScroll(): void;
-
-	// Scrollbars
-	readonly resourceVertical: ConsoleScrollbar;
-	readonly resourceHorizontal: ConsoleScrollbar;
-}
-
-export function renderResourcePanel(host: ResourcePanelHost): void {
-	if (!host.resourcePanelVisible) {
+export function renderResourcePanel(controller: ResourcePanelController): void {
+	if (!controller.visible) {
 		return;
 	}
-	const bounds = host.getResourcePanelBounds();
+	const bounds = controller.getBounds();
 	if (!bounds) {
 		return;
 	}
 	const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
 	const dividerLeft = bounds.right - 1;
-	const capacity = resourcePanelLineCapacity(host, bounds);
-	const itemCount = host.resourceBrowserItems.length;
+	const capacity = resourcePanelLineCapacity(controller, bounds);
+	const itemCount = controller.items.length;
 
 	const maxVerticalScroll = Math.max(0, itemCount - capacity);
-	host.resourceBrowserScroll = clamp(host.resourceBrowserScroll, 0, maxVerticalScroll);
-	host.clampResourceBrowserHorizontalScroll();
+	controller.scroll = clamp(controller.scroll, 0, maxVerticalScroll);
+	controller.clampHScroll();
 
 	const verticalTrack: RectBounds = {
 		left: dividerLeft - constants.SCROLLBAR_WIDTH,
@@ -64,9 +36,9 @@ export function renderResourcePanel(host: ResourcePanelHost): void {
 		right: dividerLeft,
 		bottom: bounds.bottom,
 	};
-	const verticalScrollbar = host.resourceVertical;
-	verticalScrollbar.layout(verticalTrack, itemCount, capacity, host.resourceBrowserScroll);
-	host.resourceBrowserScroll = Math.round(verticalScrollbar.getScroll());
+	const verticalScrollbar = controller.resourceVertical;
+	verticalScrollbar.layout(verticalTrack, itemCount, capacity, controller.scroll);
+	controller.scroll = Math.round(verticalScrollbar.getScroll());
 	const verticalVisible = verticalScrollbar.isVisible();
 	const contentRight = verticalVisible ? verticalTrack.left : bounds.right;
 
@@ -77,31 +49,31 @@ export function renderResourcePanel(host: ResourcePanelHost): void {
 		right: contentRight,
 		bottom: bounds.bottom,
 	};
-	const horizontalScrollbar = host.resourceHorizontal;
+	const horizontalScrollbar = controller.resourceHorizontal;
 	horizontalScrollbar.layout(
 		horizontalTrack,
-		Math.max(host.resourceBrowserMaxLineWidth, availableWidth),
+		Math.max(controller.maxLineWidth, availableWidth),
 		availableWidth,
-		host.resourceBrowserHorizontalScroll,
+		controller.hscroll,
 	);
 	const horizontalVisible = horizontalScrollbar.isVisible();
 	const effectiveBottom = horizontalVisible ? horizontalTrack.top : bounds.bottom;
 
-	host.resourceBrowserHorizontalScroll = horizontalScrollbar.getScroll();
+	controller.hscroll = horizontalScrollbar.getScroll();
 
 	api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_RESOURCE_PANEL_BACKGROUND);
 
 	const contentTop = bounds.top + 2;
-	const scrollStart = Math.floor(host.resourceBrowserScroll);
+	const scrollStart = Math.floor(controller.scroll);
 	const scrollEnd = Math.min(itemCount, scrollStart + capacity);
-	const highlightIndex = host.resourceBrowserHoverIndex >= 0 ? host.resourceBrowserHoverIndex : host.resourceBrowserSelectionIndex;
-	const panelActive = host.resourcePanelFocused;
-	const scrollX = host.resourceBrowserHorizontalScroll;
+	const highlightIndex = controller.hoverIndex >= 0 ? controller.hoverIndex : controller.selectionIndex;
+	const panelActive = controller.focused;
+	const scrollX = controller.hscroll;
 	const highlightColor = Msx1Colors[constants.COLOR_RESOURCE_PANEL_HIGHLIGHT];
 
 	for (let itemIndex = scrollStart, drawIndex = 0; itemIndex < scrollEnd; itemIndex += 1, drawIndex += 1) {
-		const item = host.resourceBrowserItems[itemIndex];
-		const y = contentTop + drawIndex * host.lineHeight;
+		const item = controller.items[itemIndex];
+		const y = contentTop + drawIndex * controller.host.lineHeight;
 		if (y >= effectiveBottom) {
 			break;
 		}
@@ -109,64 +81,66 @@ export function renderResourcePanel(host: ResourcePanelHost): void {
 		const contentText = item.line.slice(item.contentStartColumn);
 		const indentX = contentLeft - scrollX;
 		if (indentText.length > 0) {
-			host.drawText(api, indentText, indentX, y, constants.COLOR_RESOURCE_PANEL_TEXT);
+			controller.host.drawText(indentText, indentX, y, constants.COLOR_RESOURCE_PANEL_TEXT);
 		}
-		const indentWidth = host.measureText(indentText);
+		const indentWidth = controller.host.measureText(indentText);
 		const contentX = indentX + indentWidth;
 		const isHighlighted = itemIndex === highlightIndex;
 		if (isHighlighted) {
-			const highlightWidth = host.measureText(contentText);
+			const highlightWidth = controller.host.measureText(contentText);
 			const caretLeft = Math.floor(contentX);
 			const caretRight = Math.max(caretLeft + 1, Math.floor(contentX + highlightWidth));
 			const visibleLeft = clamp(caretLeft, contentLeft, contentRight);
 			const visibleRight = clamp(caretRight, visibleLeft, contentRight);
 			const caretTop = Math.floor(y);
-			const caretBottom = caretTop + host.lineHeight;
+			const caretBottom = caretTop + controller.host.lineHeight;
 			if (panelActive) {
 				if (visibleRight > visibleLeft) {
 					api.rectfill_color(visibleLeft, caretTop, visibleRight, caretBottom, undefined, highlightColor);
 				}
 				const colors = new Array<number>(contentText.length).fill(constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
 				if (contentText.length > 0) {
-					host.drawColoredText(contentText, colors, contentX, y);
+					controller.host.drawColoredText(contentText, colors, contentX, y);
 				}
 			} else if (visibleRight > visibleLeft) {
-				host.drawRectOutlineColor(api, visibleLeft, caretTop, visibleRight, caretBottom, highlightColor);
+				drawRectOutlineColor(visibleLeft, caretTop, visibleRight, caretBottom, undefined, highlightColor);
 			}
 		}
 		if (!isHighlighted || contentText.length === 0 || !panelActive) {
-			host.drawText(api, contentText, contentX, y, constants.COLOR_RESOURCE_PANEL_TEXT);
+			controller.host.drawText(contentText, contentX, y, constants.COLOR_RESOURCE_PANEL_TEXT);
 		}
 	}
 
 	if (verticalScrollbar.isVisible()) {
-		verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+		verticalScrollbar.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
 	if (horizontalScrollbar.isVisible()) {
-		horizontalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+		horizontalScrollbar.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
 	if (dividerLeft >= bounds.left && dividerLeft < bounds.right) {
 		api.rectfill(dividerLeft, bounds.top, bounds.right, bounds.bottom, undefined, constants.RESOURCE_PANEL_DIVIDER_COLOR);
 	}
 }
 
-function resourcePanelLineCapacity(host: ResourcePanelHost, bounds: RectBounds): number {
+function resourcePanelLineCapacity(controller: ResourcePanelController, bounds: RectBounds): number {
 	const overlayTop = bounds.top;
 	const overlayBottom = bounds.bottom;
 	let contentHeight = Math.max(0, overlayBottom - overlayTop);
-	let initialCapacity = Math.max(1, Math.floor(contentHeight / host.lineHeight));
-	const needsVerticalScrollbar = host.resourceBrowserItems.length > initialCapacity;
+	let initialCapacity = Math.max(1, Math.floor(contentHeight / controller.host.lineHeight));
+	const needsVerticalScrollbar = controller.items.length > initialCapacity;
 	const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
 	const dividerLeft = bounds.right - 1;
 	const availableRight = needsVerticalScrollbar ? dividerLeft - constants.SCROLLBAR_WIDTH : dividerLeft;
 	const availableWidth = Math.max(0, availableRight - contentLeft);
-	const needsHorizontalScrollbar = host.resourceBrowserMaxLineWidth > availableWidth;
+	const needsHorizontalScrollbar = controller.maxLineWidth > availableWidth;
 	if (needsHorizontalScrollbar) {
 		contentHeight = Math.max(0, contentHeight - constants.SCROLLBAR_WIDTH);
-		initialCapacity = Math.max(1, Math.floor(contentHeight / host.lineHeight));
+		initialCapacity = Math.max(1, Math.floor(contentHeight / controller.host.lineHeight));
 	}
 	return initialCapacity;
-}export function drawResourceViewer(): void {
+}
+
+export function drawResourceViewer(): void {
 	const viewer = getActiveResourceViewer();
 	if (!viewer) {
 		return;
@@ -202,12 +176,12 @@ function resourcePanelLineCapacity(host: ResourcePanelHost, bounds: RectBounds):
 		if (viewer.lines.length > 0) {
 			const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.floor(viewer.scroll)))] ?? '';
 			const fallbackY = Math.min(textTop, bounds.codeBottom - ide_state.lineHeight);
-			drawEditorText(api, ide_state.font, line, contentLeft, fallbackY, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			drawEditorText(ide_state.font, line, contentLeft, fallbackY, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		} else {
-			drawEditorText(api, ide_state.font, '<empty>', contentLeft, textTop, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			drawEditorText(ide_state.font, '<empty>', contentLeft, textTop, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		}
 		if (verticalVisible) {
-			verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+			verticalScrollbar.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 		}
 		return;
 	}
@@ -215,7 +189,7 @@ function resourcePanelLineCapacity(host: ResourcePanelHost, bounds: RectBounds):
 	viewer.scroll = clamp(viewer.scroll, 0, maxScroll);
 	const end = Math.min(totalLines, Math.floor(viewer.scroll) + capacity);
 	if (viewer.lines.length === 0) {
-		drawEditorText(api, ide_state.font, '<empty>', contentLeft, textTop, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
+		drawEditorText(ide_state.font, '<empty>', contentLeft, textTop, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 	} else {
 		for (let lineIndex = Math.floor(viewer.scroll), drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
 			const line = viewer.lines[lineIndex] ?? '';
@@ -223,11 +197,11 @@ function resourcePanelLineCapacity(host: ResourcePanelHost, bounds: RectBounds):
 			if (y >= bounds.codeBottom) {
 				break;
 			}
-			drawEditorText(api, ide_state.font, line, contentLeft, y, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			drawEditorText(ide_state.font, line, contentLeft, y, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		}
 	}
 	if (verticalVisible) {
-		verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+		verticalScrollbar.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
 }
 export function drawResourcePanel(): void {
@@ -241,7 +215,7 @@ export function drawResourcePanel(): void {
 	ide_state.resourcePanelResourceCount = s.items.length;
 }
 
-export function drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: string): void {
+export function drawCreateResourceErrorDialog(message: string): void {
 	const maxDialogWidth = Math.min(ide_state.viewportWidth - 16, 360);
 	const wrapWidth = Math.max(ide_state.charAdvance, maxDialogWidth - (constants.ERROR_OVERLAY_PADDING_X * 2 + 12));
 	const segments = message.split(/\r?\n/);
@@ -271,7 +245,6 @@ export function drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: stri
 	const dialogPaddingX = constants.ERROR_OVERLAY_PADDING_X + 6;
 	const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
 	renderErrorOverlayText(
-		api,
 		ide_state.font,
 		ide_state.lines,
 		left + dialogPaddingX,
@@ -280,4 +253,3 @@ export function drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: stri
 		constants.COLOR_STATUS_TEXT
 	);
 }
-

@@ -7,6 +7,7 @@ import { ide_state } from '../ide_state';
 import { drawEditorText } from '../text_renderer';
 import type { CursorScreenInfo, TextField } from '../types';
 import { getCursorOffset, getFieldText } from '../inline_text_field';
+import { api } from '../../runtime';
 
 export interface CaretDrawOps {
 	fillRect(x0: number, y0: number, x1: number, y1: number, color: color): void;
@@ -75,8 +76,8 @@ export function drawInlineCaret(
 	const inverseColor = Msx1Colors[inverseColorIndex];
 	renderInlineCaret({
 		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, undefined, col),
-		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, undefined, col),
-		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, undefined, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
+		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(x0, y0, x1, y1, undefined, col),
+		drawGlyph: (text, x, y, col) => drawEditorText(ide_state.font, text, x, y, undefined, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
 	}, left, top, right, bottom, cursorX, active, caretValue, caretGlyph, inverseColor);
 }
 
@@ -90,7 +91,7 @@ export function getCaretGlyphForDisplay(baseChar: string, baseColor?: number): s
 	return baseChar.toUpperCase();
 }
 
-export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): void {
+export function drawCursor(info: CursorScreenInfo, textX: number): void {
 	const cursorX = info.x;
 	const cursorY = info.y;
 	const caretLeft = Math.floor(Math.max(textX, cursorX - 1));
@@ -103,8 +104,8 @@ export function drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: n
 	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);
 	renderInlineCaret({
 		fillRect: (x0, y0, x1, y1, col) => api.rectfill_color(x0, y0, x1, y1, undefined,col),
-		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(api, x0, y0, x1, y1, undefined, col),
-		drawGlyph: (text, x, y, col) => drawEditorText(api, ide_state.font, text, x, y, undefined, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
+		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(x0, y0, x1, y1, undefined, col),
+		drawGlyph: (text, x, y, col) => drawEditorText(ide_state.font, text, x, y, undefined, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
 	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, Msx1Colors[constants.CARET_COLOR], caretGlyph, glyphColor);
 }
 
@@ -113,7 +114,7 @@ export function resetBlink(): void {
 	ide_state.cursorVisible = true;
 }
 
-export function drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, z: number, color: { r: number; g: number; b: number; a: number; } | number): void {
+export function drawRectOutlineColor(left: number, top: number, right: number, bottom: number, z: number, color: { r: number; g: number; b: number; a: number; } | number): void {
 	if (right <= left || bottom <= top) {
 		return;
 	}

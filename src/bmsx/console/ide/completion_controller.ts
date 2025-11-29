@@ -20,6 +20,7 @@ import { isLuaCommentContext } from './text_utils';
 import { ide_state } from './ide_state';
 import { isReadOnlyCodeTab } from './editor_tabs';
 import { consumeIdeKey } from './ide_input';
+import { api } from '../runtime';
 
 type MemberCompletionHostRequest = {
 	objectName: string;
@@ -47,7 +48,7 @@ export interface CompletionHost {
 	revealCursor(): void;
 	// Geometry/metrics
 	measureText(text: string): number;
-	drawText(api: CompletionRenderApi, text: string, x: number, y: number, color: number): void;
+	drawText(text: string, x: number, y: number, color: number): void;
 	getCursorScreenInfo(): CursorScreenInfo | null;
 	getLineHeight(): number;
 	getSpaceAdvance(): number;
@@ -324,7 +325,7 @@ export class CompletionController {
 		return false;
 	}
 
-	public drawCompletionPopup(api: CompletionRenderApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
+	public drawCompletionPopup(bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
 		const session = this.completionSession;
 		const cursorInfo = this.host.getCursorScreenInfo();
 		this.completionPopupBounds = null;
@@ -374,16 +375,16 @@ export class CompletionController {
 			}
 			let textX = popupLeft + constants.COMPLETION_POPUP_PADDING_X;
 			const labelWidth = this.host.measureText(item.label);
-			this.host.drawText(api, item.label, textX, lineTop, labelColor);
+			this.host.drawText(item.label, textX, lineTop, labelColor);
 			textX += labelWidth + detailSpacing;
 			const detailText = item.detail ?? '';
 			if (detailText.length > 0) {
-				this.host.drawText(api, detailText, textX, lineTop, detailColor);
+				this.host.drawText(detailText, textX, lineTop, detailColor);
 			}
 		}
 	}
 
-	public drawParameterHintOverlay(api: CompletionRenderApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
+	public drawParameterHintOverlay(bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
 		const hint = this.parameterHint;
 		const cursorInfo = this.host.getCursorScreenInfo();
 		if (!hint || !cursorInfo) return;
@@ -443,13 +444,13 @@ export class CompletionController {
 		for (let i = 0; i < segments.length; i += 1) {
 			const part = segments[i];
 			if (part.text.length === 0) continue;
-			this.host.drawText(api, part.text, textX, currentY, part.color);
+			this.host.drawText(part.text, textX, currentY, part.color);
 			textX += this.host.measureText(part.text);
 		}
 		for (let i = 0; i < descriptionLines.length; i += 1) {
 			const line = descriptionLines[i];
 			currentY += lineHeight + lineSpacing;
-			this.host.drawText(api, line.text, popupLeft + constants.PARAMETER_HINT_PADDING_X, currentY, line.color);
+			this.host.drawText(line.text, popupLeft + constants.PARAMETER_HINT_PADDING_X, currentY, line.color);
 		}
 	}
 

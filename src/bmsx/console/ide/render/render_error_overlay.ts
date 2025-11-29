@@ -11,6 +11,7 @@ import type { RectBounds } from '../../../rompack/rompack';
 import { Msx1Colors } from '../../../systems/msx';
 import { pointInRect } from '../../../utils/rect_operations';
 import * as constants from '../constants';
+import { api } from '../../runtime';
 
 export interface ErrorOverlayBounds {
 	left: number;
@@ -110,7 +111,7 @@ export function renderErrorOverlay(
 				api.rectfill_color(lineLeft, currentY, lineRight, currentY + lineHeight, undefined, color);
 			}
 		}
-		drawEditorText(api, font, lines[i], startX, currentY, undefined, textColor);
+		drawEditorText(font, lines[i], startX, currentY, undefined, textColor);
 		currentY += lineHeight;
 	}
 
@@ -129,7 +130,6 @@ export function renderErrorOverlay(
 }
 
 export function renderErrorOverlayText(
-	api: BmsxConsoleApi,
 	font: ConsoleEditorFont,
 	lines: readonly string[],
 	originX: number,
@@ -139,7 +139,7 @@ export function renderErrorOverlayText(
 ): void {
 	let currentY = originY;
 	for (let i = 0; i < lines.length; i += 1) {
-		drawEditorText(api, font, lines[i], originX, currentY, undefined, color);
+		drawEditorText(font, lines[i], originX, currentY, undefined, color);
 		currentY += lineHeight;
 	}
 }
@@ -203,7 +203,7 @@ export function resolveRuntimeErrorOverlayAnchor(
 	};
 }
 
-export function renderRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
+export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, textLeft: number): void {
 	const overlay = ide_state.runtimeErrorOverlay;
 	if (!overlay || overlay.hidden) {
 		return;
@@ -222,7 +222,7 @@ export function renderRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, 
 		textLeft,
 		constants.ERROR_OVERLAY_PADDING_X,
 		constants.ERROR_OVERLAY_PADDING_Y,
-		computeRuntimeErrorOverlayMaxWidth(ide_state.viewportWidth, ide_state.charAdvance, ide_state.gutterWidth)
+		computeRuntimeErrorOverlayMaxWidth()
 	);
 	if (!layout) {
 		overlay.layout = null;
@@ -250,7 +250,7 @@ export function renderRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, 
 		highlightColor: constants.ERROR_OVERLAY_LINE_HOVER,
 		highlightLines: highlightLines.length > 0 ? highlightLines : null,
 	};
-	renderRuntimeErrorOverlayBubble(api, ide_state.font, overlay, layout, anchor.lineHeight, drawOptions);
+	renderRuntimeErrorOverlayBubble(ide_state.font, overlay, layout, anchor.lineHeight, drawOptions);
 }
 
 const COPY_ICON_ID = 'copy';
@@ -388,7 +388,6 @@ export function computeRuntimeErrorOverlayLayout(
 }
 
 export function renderRuntimeErrorOverlayBubble(
-	api: BmsxConsoleApi,
 	font: ConsoleEditorFont,
 	overlay: RuntimeErrorOverlay,
 	layout: RuntimeErrorOverlayLayoutResult,

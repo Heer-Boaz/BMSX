@@ -16,7 +16,7 @@ export function renderStatusBar(): void {
 		let textY = statusTop + 2;
 		const textX = 4;
 		for (let i = 0; i < lines.length; i += 1) {
-			drawEditorText(api, ide_state.font, lines[i], textX, textY, undefined, constants.COLOR_STATUS_ALERT);
+			drawEditorText(ide_state.font, lines[i], textX, textY, undefined, constants.COLOR_STATUS_ALERT);
 			textY += ide_state.lineHeight;
 		}
 		return;
@@ -24,7 +24,7 @@ export function renderStatusBar(): void {
 	const statusLeftInfo = buildStatusLeftInfo();
 	// When Problems panel owns the status (focused), show its info and stop
 	if (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused && statusLeftInfo && statusLeftInfo.length > 0) {
-		drawEditorText(api, ide_state.font, statusLeftInfo, 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
+		drawEditorText(ide_state.font, statusLeftInfo, 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
 		return;
 	}
 
@@ -41,7 +41,7 @@ export function renderStatusBar(): void {
 		const positionSuffix = range ? `:${range.startLine}:${range.startColumn}` : '';
 		const fullText = `${displayPath}${positionSuffix}`;
 		const pathText = truncateTextToWidth(fullText, Math.max(0, ide_state.viewportWidth - 8));
-		drawEditorText(api, ide_state.font, pathText, 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
+		drawEditorText(ide_state.font, pathText, 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
 		return;
 	}
 
@@ -49,8 +49,8 @@ export function renderStatusBar(): void {
 		const filterLabel = ide_state.resourcePanel.getFilterMode() === 'lua_only' ? 'LUA' : 'ALL';
 		const fileInfo = `FILES ${ide_state.resourcePanel.getFilterMode()} (${filterLabel})`;
 		const hint = 'CTRL+SHIFT+L TOGGLE FILTER';
-		drawEditorText(api, ide_state.font, fileInfo, 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
-		drawEditorText(api, ide_state.font, hint, ide_state.viewportWidth - measureText(hint) - 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
+		drawEditorText(ide_state.font, fileInfo, 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
+		drawEditorText(ide_state.font, hint, ide_state.viewportWidth - measureText(hint) - 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
 		return;
 	}
 
@@ -58,9 +58,9 @@ export function renderStatusBar(): void {
 		const viewer = getActiveResourceViewer();
 		const info = viewer ? `${viewer.descriptor.type.toUpperCase()} ${viewer.descriptor.asset_id}` : 'RESOURCE';
 		const detail = viewer ? viewer.descriptor.path : '';
-		drawEditorText(api, ide_state.font, info, 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
+		drawEditorText(ide_state.font, info, 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
 		if (detail.length > 0) {
-			drawEditorText(api, ide_state.font, detail, ide_state.viewportWidth - measureText(detail) - 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
+			drawEditorText(ide_state.font, detail, ide_state.viewportWidth - measureText(detail) - 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
 		}
 		return;
 	}
@@ -70,10 +70,10 @@ export function renderStatusBar(): void {
 	const leftX = 0;
 	const glyphSize = measureText('•');
 	const indicatorColor = ide_state.serverWorkspaceConnected ? constants.COLOR_SERVER_STATUS_CONNECTED : constants.COLOR_SERVER_STATUS_DISCONNECTED;
-	drawEditorText(api, ide_state.font, '•', leftX, statusTop + 2, undefined, indicatorColor);
+	drawEditorText(ide_state.font, '•', leftX, statusTop + 2, undefined, indicatorColor);
 	let textX = leftX + glyphSize;
 	if (statusLeftInfo && statusLeftInfo.length > 0) {
-		drawEditorText(api, ide_state.font, statusLeftInfo, textX, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
+		drawEditorText(ide_state.font, statusLeftInfo, textX, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
 	}
 	// drawEditorText(api, ide_state.font, filenameInfo, ide_state.viewportWidth - measureText(filenameInfo) - 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
 }

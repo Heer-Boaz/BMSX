@@ -1,5 +1,4 @@
 import { $ } from '../../core/game';
-import type { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
 import { clamp } from '../../utils/clamp';
 import { ConsoleScrollbar } from './scrollbar';
@@ -9,56 +8,32 @@ import type { RectBounds } from '../../rompack/rompack';
 import type { ConsoleResourceDescriptor } from '../types';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
 
-export interface ResourcePanelBridge {
-	// Metrics and geometry
-	getViewportWidth(): number;
-	getViewportHeight(): number;
-	getBottomMargin(): number;
-	codeViewportTop(): number;
-	lineHeight: number;
-	charAdvance: number;
-
-	// Text rendering
-	measureText(text: string): number;
-	drawText(api: BmsxConsoleApi, text: string, x: number, y: number, color: number): void;
-	drawColoredText(text: string, colors: number[], x: number, y: number): void;
-	drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void;
-
-	// Editor integration
-	playerIndex: number;
-	listResources(): ConsoleResourceDescriptor[];
-	openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void;
-	openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void;
-	focusEditorFromResourcePanel(): void;
-	showMessage(text: string, color: number, duration: number): void;
-}
-
 export interface ResourcePanelScrollbars {
 	resourceVertical: ConsoleScrollbar;
 	resourceHorizontal: ConsoleScrollbar;
 }
 
 export class ResourcePanelController {
-	private visible = false;
-	private focused = false;
+	public visible = false;
+	public focused = false;
 	private widthRatio: number | null = null;
 	private filterMode: 'lua_only' | 'all' = 'lua_only';
 
 	// Browser state
-	private items: ResourceBrowserItem[] = [];
-	private scroll = 0;
-	private hscroll = 0;
-	private selectionIndex = -1;
-	private hoverIndex = -1;
-	private maxLineWidth = 0;
+	public items: ResourceBrowserItem[] = [];
+	public scroll = 0;
+	public hscroll = 0;
+	public selectionIndex = -1;
+	public hoverIndex = -1;
+	public maxLineWidth = 0;
 	private pendingSelectionasset_id: string | null = null;
 	// totalResourceCount intentionally not tracked here now
 
 	// Scrollbars for the panel
-	private readonly resourceVertical: ConsoleScrollbar;
-	private readonly resourceHorizontal: ConsoleScrollbar;
+	public readonly resourceVertical: ConsoleScrollbar;
+	public readonly resourceHorizontal: ConsoleScrollbar;
 
-	constructor(private readonly host: ResourcePanelBridge, scrollbars?: ResourcePanelScrollbars) {
+	constructor(public readonly host: ResourcePanelBridge, scrollbars?: ResourcePanelScrollbars) {
 		if (scrollbars) {
 			this.resourceVertical = scrollbars.resourceVertical;
 			this.resourceHorizontal = scrollbars.resourceHorizontal;
@@ -112,49 +87,7 @@ export class ResourcePanelController {
 	// === Rendering ===
 	draw(): void {
 		if (!this.visible) return;
-		const proxyHost = {
-			resourcePanelVisible: this.visible,
-			getResourcePanelBounds: () => this.getBounds(),
-			lineHeight: this.host.lineHeight,
-			measureText: (t: string) => this.host.measureText(t),
-			drawText: (a: BmsxConsoleApi, t: string, x: number, y: number, c: number) => this.host.drawText(a, t, x, y, c),
-			drawColoredText: (t: string, colors: number[], x: number, y: number) => this.host.drawColoredText(t, colors, x, y),
-			drawRectOutlineColor: (a: BmsxConsoleApi, l: number, t: number, r: number, b: number, col: { r: number; g: number; b: number; a: number }) => this.host.drawRectOutlineColor(a, l, t, r, b, col),
-			resourceBrowserItems: this.items,
-			resourceBrowserScroll: this.scroll,
-			resourceBrowserHorizontalScroll: this.hscroll,
-			resourcePanelFocused: this.focused,
-			resourceBrowserSelectionIndex: this.selectionIndex,
-			resourceBrowserHoverIndex: this.hoverIndex,
-			resourceBrowserMaxLineWidth: this.maxLineWidth,
-			clampResourceBrowserHorizontalScroll: () => this.clampHScroll(),
-			resourceVertical: this.resourceVertical,
-			resourceHorizontal: this.resourceHorizontal,
-		} as const;
-		// Renderer may update scroll variables; capture via local class implementing same shape
-		class HostProxy {
-			resourcePanelVisible = proxyHost.resourcePanelVisible;
-			getResourcePanelBounds = proxyHost.getResourcePanelBounds;
-			lineHeight = proxyHost.lineHeight;
-			measureText = proxyHost.measureText;
-			drawText = proxyHost.drawText;
-			drawColoredText = proxyHost.drawColoredText;
-			drawRectOutlineColor = proxyHost.drawRectOutlineColor;
-			resourceBrowserItems = proxyHost.resourceBrowserItems;
-			resourceBrowserScroll = proxyHost.resourceBrowserScroll;
-			resourceBrowserHorizontalScroll = proxyHost.resourceBrowserHorizontalScroll;
-			resourcePanelFocused = proxyHost.resourcePanelFocused;
-			resourceBrowserSelectionIndex = proxyHost.resourceBrowserSelectionIndex;
-			resourceBrowserHoverIndex = proxyHost.resourceBrowserHoverIndex;
-			resourceBrowserMaxLineWidth = proxyHost.resourceBrowserMaxLineWidth;
-			clampResourceBrowserHorizontalScroll = proxyHost.clampResourceBrowserHorizontalScroll;
-			resourceVertical = proxyHost.resourceVertical;
-			resourceHorizontal = proxyHost.resourceHorizontal;
-		}
-		const hostImpl = new HostProxy();
-		renderResourcePanel(hostImpl);
-		this.scroll = hostImpl.resourceBrowserScroll;
-		this.hscroll = hostImpl.resourceBrowserHorizontalScroll;
+		renderResourcePanel(this);
 	}
 
 	// === Keyboard ===

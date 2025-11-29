@@ -30,7 +30,7 @@ export interface TabBarHost {
 	activeTabId: string | null;
 	tabHoverId: string | null;
 	measureText: (text: string) => number;
-	drawText: (api: BmsxConsoleApi, text: string, x: number, y: number, color: number) => void;
+	drawText: (text: string, x: number, y: number, color: number) => void;
 	getDirtyMarkerMetrics: () => { width: number; height: number };
 	tabButtonBounds: Map<string, RectBounds>;
 	tabCloseButtonBounds: Map<string, RectBounds>;
@@ -181,7 +181,7 @@ export function renderTabBar(api: BmsxConsoleApi, host: TabBarHost): number {
 
 		const textX = bounds.left + constants.TAB_BUTTON_PADDING_X;
 		const textY = bounds.top + constants.TAB_BUTTON_PADDING_Y;
-		host.drawText(api, tab.title, textX, textY, textColor);
+		host.drawText(tab.title, textX, textY, textColor);
 
 		const indicatorLeft = bounds.right - entry.indicatorWidth;
 		const indicatorWidth = entry.indicatorWidth;
@@ -198,7 +198,7 @@ export function renderTabBar(api: BmsxConsoleApi, host: TabBarHost): number {
 				host.tabCloseButtonBounds.set(tab.id, closeBounds);
 				const closeX = closeBounds.left + constants.TAB_CLOSE_BUTTON_PADDING_X;
 				const closeY = closeBounds.top + constants.TAB_CLOSE_BUTTON_PADDING_Y;
-				host.drawText(api, constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, textColor);
+				host.drawText(constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, textColor);
 			} else {
 				host.tabCloseButtonBounds.delete(tab.id);
 				if (entry.dirty && entry.markerMetrics) {

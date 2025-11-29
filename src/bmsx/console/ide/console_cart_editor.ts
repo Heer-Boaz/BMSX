@@ -1,5 +1,4 @@
 import { $ } from '../../core/game';
-import { BmsxConsoleApi } from '../api';
 import { scheduleMicrotask } from '../../platform/platform';
 import type {
 	ConsoleLuaDefinitionLocation,
@@ -209,9 +208,9 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		lineHeight: ide_state.lineHeight,
 		charAdvance: ide_state.charAdvance,
 		measureText: (t) => measureText(t),
-		drawText: (a, t, x, y, c) => drawEditorText(a, ide_state.font, t, x, y, undefined, c),
+		drawText: (t, x, y, c) => drawEditorText(ide_state.font, t, x, y, undefined, c),
 		drawColoredText: (t, colors, x, y) => drawEditorColoredText(ide_state.font, t, colors, x, y, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT),
-		drawRectOutlineColor: (a, l, t, r, b, col) => drawRectOutlineColor(a, l, t, r, b, undefined, col),
+		drawRectOutlineColor: (l, t, r, b, col) => drawRectOutlineColor(l, t, r, b, undefined, col),
 		playerIndex: ide_state.playerIndex,
 		listResources: () => listResourcesStrict(),
 		openLuaCodeTab: (d) => openLuaCodeTab(d),
@@ -232,7 +231,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		resetBlink: () => resetBlink(),
 		revealCursor: () => revealCursor(),
 		measureText: (text) => measureText(text),
-		drawText: (api, text, x, y, color) => drawEditorText(api as BmsxConsoleApi, ide_state.font, text, x, y, undefined, color),
+		drawText: (text, x, y, color) => drawEditorText(ide_state.font, text, x, y, undefined, color),
 		getCursorScreenInfo: () => ide_state.cursorScreenInfo,
 		getLineHeight: () => ide_state.lineHeight,
 		getSpaceAdvance: () => ide_state.spaceAdvance,
@@ -563,7 +562,7 @@ export function installWindowEventListeners(): void {
 	};
 }
 
-export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void {
+export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: number): void {
 	const tooltip = ide_state.hoverTooltip;
 	if (!tooltip) {
 		return;
@@ -647,7 +646,7 @@ export function drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBotto
 	api.rect(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, undefined, constants.HOVER_TOOLTIP_BORDER);
 	for (let i = 0; i < visibleLines.length; i += 1) {
 		const lineY = bubbleTop + constants.HOVER_TOOLTIP_PADDING_Y + i * ide_state.lineHeight;
-		drawEditorText(api, ide_state.font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, undefined, constants.COLOR_STATUS_TEXT);
+		drawEditorText(ide_state.font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, undefined, constants.COLOR_STATUS_TEXT);
 	}
 	tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleLeft + bubbleWidth, bottom: bubbleTop + bubbleHeight };
 }
@@ -1421,7 +1420,7 @@ export function draw(): void {
 		activeTabId: ide_state.activeTabId,
 		tabHoverId: ide_state.tabHoverId,
 		measureText: (text: string) => measureText(text),
-		drawText: (api2, text, x, y, color) => drawEditorText(api2, ide_state.font, text, x, y, undefined, color),
+		drawText: (text, x, y, color) => drawEditorText(ide_state.font, text, x, y, undefined, color),
 		getDirtyMarkerMetrics: () => constants.TAB_DIRTY_MARKER_METRICS,
 		tabButtonBounds: ide_state.tabButtonBounds,
 		tabCloseButtonBounds: ide_state.tabCloseButtonBounds,

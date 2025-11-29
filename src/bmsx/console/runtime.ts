@@ -947,7 +947,7 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		this.overlayRenderBackend.beginFrame();
-		this.consoleMode.draw(api, this.overlayRenderBackend, this.overlayRenderBackend.viewportSize);
+		this.consoleMode.draw(this.overlayRenderBackend, this.overlayRenderBackend.viewportSize);
 		this.overlayRenderBackend.endFrame();
 		this.overlayRenderedThisFrame = true;
 	}
