@@ -530,28 +530,20 @@ export class Game {
 			throw new Error('[Game] Cannot reset world before initialization.');
 		}
 		const preserveConsole = options?.preserveConsoleRuntime === true;
+		const preservingRuntime = preserveConsole && BmsxConsoleRuntime.instance !== null;
 		const gateToken = renderGate.begin({ blocking: true, tag: preserveConsole ? 'console-reset' : 'world-reset' });
 		const runToken = runGate.begin({ blocking: true, tag: preserveConsole ? 'console-reset' : 'world-reset' });
 		try {
 			if (!preserveConsole) {
 				BmsxConsoleRuntime.destroy();
 			}
-			let preservingRuntime = false;
-			if (preserveConsole && BmsxConsoleRuntime.instance !== null) {
+			if (preservingRuntime) {
 				BmsxConsoleRuntime.beginPreservedWorldReset();
-				preservingRuntime = true;
 			}
-			try {
-				if (this.world) {
-					this.world.clearAllSpaces();
-					this.world.dispose();
-					this.registry.deregister(this.world, true);
-				}
-			}
-			finally {
-				if (preservingRuntime) {
-					BmsxConsoleRuntime.endPreservedWorldReset();
-				}
+			if (this.world) {
+				this.world.clearAllSpaces();
+				this.world.dispose();
+				this.registry.deregister(this.world, true);
 			}
 
 			this.ae_registry.clear();
@@ -582,6 +574,9 @@ export class Game {
 			void this.view.initializeDefaultTextures();
 		}
 		finally {
+			if (preservingRuntime) {
+				BmsxConsoleRuntime.endPreservedWorldReset();
+			}
 			this.wasupdated = true;
 			renderGate.end(gateToken);
 			runGate.end(runToken);

@@ -2,6 +2,7 @@ import * as constants from './constants';
 import { KEYWORDS } from './intellisense';
 import type { SemanticAnnotations, SymbolKind } from './semantic_model';
 import type { HighlightLine } from './types';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../lua_builtins';
 
 // Lightweight Lua syntax highlighter used by the console editor.
 // Pure functions with no runtime/editor state dependencies beyond provided inputs.
@@ -72,6 +73,34 @@ function readIdentifier(line: string, start: number): number {
 	return index;
 }
 
+type IdentifierPath = {
+	segments: Array<{ start: number; end: number }>;
+	delimiters: number[];
+	end: number;
+};
+
+function readIdentifierPath(line: string, start: number): IdentifierPath {
+	const segments: Array<{ start: number; end: number }> = [];
+	const delimiters: number[] = [];
+	let index = start;
+	while (index < line.length && isIdentifierStart(line.charAt(index))) {
+		const segmentStart = index;
+		index = readIdentifier(line, index);
+		segments.push({ start: segmentStart, end: index });
+		if (index >= line.length) {
+			break;
+		}
+		const separator = line.charAt(index);
+		if ((separator === '.' || separator === ':') && index + 1 < line.length && isIdentifierStart(line.charAt(index + 1))) {
+			delimiters.push(index);
+			index += 1;
+			continue;
+		}
+		break;
+	}
+	return { segments, delimiters, end: index };
+}
+
 function skipWhitespace(line: string, start: number): number {
 	let index = start;
 	while (index < line.length) {
@@ -84,51 +113,9 @@ function skipWhitespace(line: string, start: number): number {
 
 const MULTI_CHAR_OPERATORS = new Set(['==', '~=', '<=', '>=', '..', '//', '<<', '>>']);
 
-const DEFAULT_BUILTIN_NAMES: readonly string[] = [
-	'_G',
-	'_ENV',
-	'_VERSION',
-	'assert',
-	'collectgarbage',
-	'coroutine',
-	'debug',
-	'dofile',
-	'error',
-	'getmetatable',
-	'io',
-	'ipairs',
-	'jit',
-	'load',
-	'loadfile',
-	'math',
-	'next',
-	'os',
-	'package',
-	'pairs',
-	'pcall',
-	'print',
-	'rawequal',
-	'rawget',
-	'rawlen',
-	'rawset',
-	'require',
-	'select',
-	'setmetatable',
-	'string',
-	'table',
-	'tonumber',
-	'tostring',
-	'type',
-	'utf8',
-	'xpcall',
-	'bit32',
-];
-
 const COMMENT_ANNOTATIONS = ['TODO', 'FIXME', 'BUG', 'HACK', 'NOTE', 'WARNING'];
 
-type BuiltinLookup = {
-	isBuiltin(word: string): boolean;
-};
+type BuiltinLookup = (word: string) => boolean;
 
 const BUILTIN_LOOKUP_FROM_SET = new WeakMap<ReadonlySet<string>, BuiltinLookup>();
 const BUILTIN_LOOKUP_FROM_KEY = new Map<string, BuiltinLookup>();
@@ -147,23 +134,21 @@ function createLookupFromNames(names: Iterable<string>): BuiltinLookup {
 		exact.add(trimmed);
 		canonical.add(trimmed.toLowerCase());
 	}
-	return {
-		isBuiltin(word: string): boolean {
-			if (!word) {
-				return false;
-			}
-			if (exact.has(word)) {
-				return true;
-			}
-			return canonical.has(word.toLowerCase());
-		},
+	return (word: string) => {
+		if (!word) {
+			return false;
+		}
+		if (exact.has(word)) {
+			return true;
+		}
+		return canonical.has(word.toLowerCase());
 	};
 }
 
 function createLookupWithExtras(extras: Iterable<string>): BuiltinLookup {
 	const names: string[] = [];
-	for (let index = 0; index < DEFAULT_BUILTIN_NAMES.length; index += 1) {
-		names.push(DEFAULT_BUILTIN_NAMES[index]);
+	for (let index = 0; index < DEFAULT_LUA_BUILTIN_NAMES.length; index += 1) {
+		names.push(DEFAULT_LUA_BUILTIN_NAMES[index]);
 	}
 	for (const value of extras) {
 		if (typeof value !== 'string') {
@@ -201,7 +186,7 @@ function buildBuiltinCacheKey(values: readonly string[]): string {
 	return normalized.join('\u0000');
 }
 
-const DEFAULT_BUILTIN_LOOKUP = createLookupFromNames(DEFAULT_BUILTIN_NAMES);
+const DEFAULT_BUILTIN_LOOKUP = createLookupFromNames(DEFAULT_LUA_BUILTIN_NAMES);
 
 function getBuiltinLookup(extra: Iterable<string> | null | undefined): BuiltinLookup {
 	if (!extra) {
@@ -393,6 +378,44 @@ function highlightGotoLabel(line: string, start: number, columnColors: number[])
 	return labelEnd;
 }
 
+function highlightBuiltinIdentifierPath(line: string, path: IdentifierPath, builtinLookup: BuiltinLookup, columnColors: number[]): number | null {
+	const names: string[] = [];
+	for (let index = 0; index < path.segments.length; index += 1) {
+		const segment = path.segments[index];
+		names.push(line.slice(segment.start, segment.end));
+	}
+	for (let length = names.length; length >= 1; length -= 1) {
+		const candidate = names.slice(0, length).join('.');
+		if (!builtinLookup(candidate)) {
+			continue;
+		}
+		for (let segmentIndex = 0; segmentIndex < length; segmentIndex += 1) {
+			const segment = path.segments[segmentIndex];
+			for (let column = segment.start; column < segment.end; column += 1) {
+				columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN;
+			}
+			if (segmentIndex < length - 1) {
+				const delimiterColumn = path.delimiters[segmentIndex];
+				columnColors[delimiterColumn] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
+			}
+		}
+		return path.segments[length - 1].end;
+	}
+	if (names.length > 1 && builtinLookup(names[0])) {
+		for (let segmentIndex = 0; segmentIndex < names.length; segmentIndex += 1) {
+			const segment = path.segments[segmentIndex];
+			for (let column = segment.start; column < segment.end; column += 1) {
+				columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN;
+			}
+			if (segmentIndex < path.delimiters.length) {
+				columnColors[path.delimiters[segmentIndex]] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
+			}
+		}
+		return path.segments[path.segments.length - 1].end;
+	}
+	return null;
+}
+
 function applySemanticAnnotations(
 	line: string,
 	columnColors: number[],
@@ -425,14 +448,14 @@ function applySemanticAnnotations(
 				if (identifier.length === 0) {
 					continue;
 				}
-				if (builtinLookup.isBuiltin(identifier)) {
+				if (builtinLookup(identifier)) {
 					skip = true;
 					break;
 				}
 			}
 			if (!skip) {
 				const trimmed = line.slice(start, Math.min(rawEnd, line.length)).trim();
-				if (trimmed.length > 0 && builtinLookup.isBuiltin(trimmed)) {
+				if (trimmed.length > 0 && builtinLookup(trimmed)) {
 					skip = true;
 				}
 			}
@@ -548,34 +571,33 @@ export function highlightLine(
 			continue;
 		}
 		if (isIdentifierStart(ch)) {
-			const end = readIdentifier(line, i);
-			const word = line.slice(i, end);
+			const path = readIdentifierPath(line, i);
+			const first = path.segments[0];
+			const word = line.slice(first.start, first.end);
 			const lowerWord = word.toLowerCase();
-			let color = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 			if (KEYWORDS.has(lowerWord)) {
-				color = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_KEYWORD;
-			} else if (builtinLookup.isBuiltin(word)) {
-				color = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN;
+				for (let column = first.start; column < first.end; column += 1) {
+					columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_KEYWORD;
+				}
 			}
-			if (color !== constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT) {
-				for (let column = i; column < end; column += 1) columnColors[column] = color;
+			const builtinEnd = highlightBuiltinIdentifierPath(line, path, builtinLookup, columnColors);
+			if (builtinEnd !== null) {
+				i = builtinEnd;
+				continue;
 			}
 			if (lowerWord === 'function') {
-				i = highlightFunctionSignature(line, end, columnColors);
+				i = highlightFunctionSignature(line, first.end, columnColors);
 				continue;
 			}
 			if (lowerWord === 'goto') {
-				i = highlightGotoLabel(line, end, columnColors);
+				i = highlightGotoLabel(line, first.end, columnColors);
 				continue;
 			}
 			if (lowerWord === '::') {
-				i = highlightScopedLabel(line, end, columnColors);
+				i = highlightScopedLabel(line, first.end, columnColors);
 				continue;
 			}
-			if (lowerWord === 'end' || lowerWord === 'until') {
-				for (let column = i; column < end; column += 1) columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_KEYWORD;
-			}
-			i = end;
+			i = first.end;
 			continue;
 		}
 		if (isOperatorChar(ch)) {

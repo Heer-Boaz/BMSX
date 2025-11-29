@@ -31,6 +31,7 @@ import type { RuntimeErrorDetails } from './ide/types';
 import { type FaultSnapshot } from './ide/render/render_error_overlay';
 import type { StackTraceFrame } from '../lua/runtime';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
+import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from './lua_builtins';
 import type { ConsoleFontVariant } from './font';
 import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStateFilePath, buildWorkspaceStorageKey, WORKSPACE_FILE_ENDPOINT } from './workspace';
@@ -221,32 +222,6 @@ export class BmsxConsoleRuntime extends Service {
 	private static readonly MAX_FRAME_DELTA_MS = 250;
 	private static readonly HOVER_VALUE_MAX_LINE_LENGTH = 160;
 	private static readonly HOVER_VALUE_MAX_SERIALIZED_LINES = 200;
-	private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaBuiltinDescriptor> = [
-		{ name: 'assert', params: ['value', 'message?'], signature: 'assert(value [, message])' },
-		{ name: 'error', params: ['message', 'level?'], signature: 'error(message [, level])' },
-		{ name: 'getmetatable', params: ['object'], signature: 'getmetatable(object)' },
-		{ name: 'ipairs', params: ['table'], signature: 'ipairs(t)' },
-		{ name: 'next', params: ['table', 'index?'], signature: 'next(table [, index])' },
-		{ name: 'pairs', params: ['table'], signature: 'pairs(t)' },
-		{ name: 'pcall', params: ['func', 'arg...'], signature: 'pcall(f, ...)' },
-		{ name: 'print', params: ['...'], signature: 'print(...)' },
-		{ name: 'rawequal', params: ['v1', 'v2'], signature: 'rawequal(v1, v2)' },
-		{ name: 'rawget', params: ['table', 'index'], signature: 'rawget(table, index)' },
-		{ name: 'rawset', params: ['table', 'index', 'value'], signature: 'rawset(table, index, value)' },
-		{ name: 'select', params: ['index', '...'], signature: 'select(index, ...)' },
-		{ name: 'setmetatable', params: ['table', 'metatable'], signature: 'setmetatable(table, metatable)' },
-		{ name: 'tonumber', params: ['value', 'base?'], signature: 'tonumber(value [, base])' },
-		{ name: 'tostring', params: ['value'], signature: 'tostring(value)' },
-		{ name: 'type', params: ['value'], signature: 'type(value)' },
-		{ name: 'xpcall', params: ['func', 'msgh', 'arg...'], signature: 'xpcall(f, msgh, ...)' },
-		{ name: 'require', params: ['moduleName'], signature: 'require(moduleName)' },
-		{ name: 'table.concat', params: ['list', 'separator?', 'start?', 'end?'], signature: 'table.concat(list [, sep [, i [, j]]])' },
-		{ name: 'table.insert', params: ['list', 'pos?', 'value'], signature: 'table.insert(list [, pos], value)' },
-		{ name: 'table.pack', params: ['...'], signature: 'table.pack(...)' }, // vararg function
-		{ name: 'table.remove', params: ['list', 'pos?'], signature: 'table.remove(list [, pos])' },
-		{ name: 'table.sort', params: ['list', 'comp?'], signature: 'table.sort(list [, comp])' },
-		{ name: 'table.unpack', params: ['list', 'i?', 'j?'], signature: 'table.unpack(list [, i [, j]])' },
-	];
 	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
 		'print',
 		'type',
@@ -1878,24 +1853,25 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private hotReloadProgramEntry(params: BmsxConsoleLuaPrimaryAssetWithSource): void {
-		const previousChunkState = this.captureChunkState(params.chunkName);
+		const program = this.luaProgram;
+		const canonicalChunk = this.canonicalizeProgramEntryChunkName(program, params.chunkName);
+		const previousChunkState = this.captureChunkState(canonicalChunk);
 		const previousGlobals = this.captureGlobalStateForReload();
 		const interpreter = this.luaInterpreter;
-		const program = this.luaProgram;
-		const entryAsset = this.resolveEntryAsset(program, params.chunkName);
+		const entryAsset = this.resolveEntryAsset(program, canonicalChunk);
 		let entryAssetId: string | null = params.asset_id || entryAsset.asset_id;
-		const normalizedChunk = this.normalizeChunkName(params.chunkName);
-		const hotModuleId = this.moduleIdFor(entryAssetId, params.chunkName);
+		const normalizedChunk = this.normalizeChunkName(canonicalChunk);
+		const hotModuleId = this.moduleIdFor(entryAssetId, canonicalChunk);
 		interpreter.clearLastFaultEnvironment();
-		const results = interpreter.execute(params.source, params.chunkName);
+		const results = interpreter.execute(params.source, canonicalChunk);
 		this.wrapLuaExecutionResults(hotModuleId, results);
-		this.cacheChunkEnvironment(params.chunkName, entryAssetId, hotModuleId);
+		this.cacheChunkEnvironment(canonicalChunk, entryAssetId, hotModuleId);
 		this.restoreChunkState(interpreter.chunkEnvironment, previousChunkState);
 		this.restoreGlobalStateForReload(previousGlobals);
 		this.rebindChunkEnvironmentHandlers(hotModuleId);
 		this.bindLifecycleHandlers();
 		this.luaRuntimeFailed = false;
-		this.luaChunkName = params.chunkName;
+		this.luaChunkName = canonicalChunk;
 		this.luaVmInitialized = true;
 		const hotSource = params.source;
 		this.refreshLuaHandlersForChunk(normalizedChunk, hotSource);
@@ -1913,14 +1889,16 @@ export class BmsxConsoleRuntime extends Service {
 
 
 	private reloadLuaProgramState(source: string, chunkName: string, asset_id?: string): void {
-		const programAssetId = asset_id ?? this.resolveEntryAsset(this.luaProgram!, chunkName).asset_id;
-		this.applyProgramEntrySourceToCartridge(source, chunkName, programAssetId);
-		this.luaChunkName = chunkName;
+		const program = this.luaProgram!;
+		const canonicalChunk = this.canonicalizeProgramEntryChunkName(program, chunkName);
+		const programAssetId = asset_id ?? this.resolveEntryAsset(program, canonicalChunk).asset_id;
+		this.applyProgramEntrySourceToCartridge(source, canonicalChunk, programAssetId);
+		this.luaChunkName = canonicalChunk;
 		if (!this.luaInterpreter) {
 			this.bootLuaProgram(false);
 		}
 		else {
-			this.hotReloadProgramEntry({ asset_id: programAssetId, source, chunkName });
+			this.hotReloadProgramEntry({ asset_id: programAssetId, source, chunkName: canonicalChunk });
 		}
 		this.resetFrameTiming();
 		this.updateOverlayState(this.consoleMode.isActive, this.editor?.isActive === true, true);
@@ -3735,7 +3713,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private seedDefaultLuaBuiltins(): void {
 		this.luaBuiltinMetadata.clear();
-		const defaults = BmsxConsoleRuntime.DEFAULT_LUA_BUILTIN_FUNCTIONS;
+		const defaults = DEFAULT_LUA_BUILTIN_FUNCTIONS;
 		for (let i = 0; i < defaults.length; i += 1) {
 			this.registerLuaBuiltin(defaults[i]);
 		}
