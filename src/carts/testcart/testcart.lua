@@ -12,7 +12,7 @@ local demo = {
 
 local function track_plain_input()
 	local bindings = {
-		{ 'console_left[j]', 'left' },
+		{ 'console_left', 'left' },
 		{ 'console_right', 'right' },
 		{ 'console_up', 'up' },
 		{ 'console_down', 'down' },

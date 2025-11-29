@@ -2435,6 +2435,9 @@ export class BmsxConsoleRuntime extends Service {
 		if (BmsxConsoleRuntime.LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
 			return true;
 		}
+		if (isLuaNativeValue(value)) {
+			return true;
+		}
 		if (this.isLuaFunctionValue(value)) {
 			return true;
 		}

@@ -16,7 +16,7 @@ import { EventTimeline } from '../core/eventtimeline';
 import { WorldObject } from '../core/object/worldobject';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { taskGate, GateGroup } from '../core/taskgate';
-import { buildFSMDefinition, setupFSMlibrary } from '../fsm/fsmlibrary';
+import { buildFSMDefinition } from '../fsm/fsmlibrary';
 import { ConsoleRenderFacade } from './console_render_facade';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
 import type { ActionEffectDefinition } from '../action_effects/effect_types';
