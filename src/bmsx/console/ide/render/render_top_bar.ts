@@ -1,12 +1,12 @@
 import * as constants from '../constants';
 import type { RectBounds } from '../../../rompack/rompack';
-// import type { LuaDebuggerSessionMetrics } from '../../../lua/debugger';
 import { ide_state } from '../ide_state';
 import { isDebugPanelActive } from '../console_cart_editor';
 import { measureText } from '../text_utils';
 import { drawEditorText } from '../text_renderer';
 import { MenuId, TopBarButtonId } from '../types';
 import { api, BmsxConsoleRuntime } from '../../runtime';
+import { MENU_COMMANDS, MENU_IDS } from '../ide_input';
 
 type MenuSeparator = { type: 'separator' };
 type MenuItem = {
@@ -22,27 +22,7 @@ type MenuEntry = {
 	items: Array<MenuItem | MenuSeparator>;
 };
 
-const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
-const TOP_BAR_COMMANDS: TopBarButtonId[] = [
-	'resume',
-	'reboot',
-	'save',
-	'resources',
-	'problems',
-	'filter',
-	'resolution',
-	'wrap',
-	'debugContinue',
-	'debugStepOver',
-	'debugStepInto',
-	'debugStepOut',
-	'debugObjects',
-	'debugEvents',
-	'debugRegistry',
-];
-
 const Z_TOP_BAR_BACKGROUND = 10;
-// const Z_TOP_BAR_TEXT = 12;
 const Z_MENU_BUTTON = 14;
 const Z_MENU_BUTTON_TEXT = 15;
 const Z_MENU_DROPDOWN = 20;
@@ -58,26 +38,6 @@ export function renderTopBar(): void {
 	const menuEntries = buildMenuEntries();
 	const menuButtonHeight = renderMenuRow(menuEntries);
 	renderOpenMenuDropdown(menuEntries, menuButtonHeight);
-
-	// const debuggerPaused = ide_state.debuggerControls.executionState === 'paused';
-	// const debuggerSummary =
-		// debuggerPaused && ide_state.debuggerControls.sessionMetrics
-			// ? formatDebuggerTopBarMetrics(ide_state.debuggerControls.sessionMetrics)
-			// : null;
-
-	// const titleY = primaryBarHeight + 1;
-	// drawEditorText(api, ide_state.font, ide_state.metadata.title.toUpperCase(), 4, titleY, Z_TOP_BAR_TEXT, constants.COLOR_TOP_BAR_TEXT);
-	// const versionSuffix = ide_state.dirty ? '*' : '';
-	// const version = `v${ide_state.metadata.version}${versionSuffix}`;
-	// const versionWidth = measureText(version);
-	// let versionX = ide_state.viewportWidth - versionWidth - 4;
-	// if (debuggerSummary) {
-	// 	const summaryWidth = measureText(debuggerSummary);
-	// 	const summaryX = Math.max(4, versionX - summaryWidth - 8);
-	// 	drawEditorText(api, ide_state.font, debuggerSummary, summaryX, titleY, Z_TOP_BAR_TEXT, constants.COLOR_TOP_BAR_TEXT);
-	// 	versionX = Math.max(summaryX - 4, versionX);
-	// }
-	// drawEditorText(api, ide_state.font, version, versionX, titleY, Z_TOP_BAR_TEXT, constants.COLOR_TOP_BAR_TEXT);
 }
 
 function renderMenuRow(menuEntries: MenuEntry[]): number {
@@ -277,20 +237,9 @@ function clearMenuBounds(): void {
 		const id = MENU_IDS[i];
 		ide_state.menuEntryBounds[id] = { left: 0, top: 0, right: 0, bottom: 0 };
 	}
-	for (let i = 0; i < TOP_BAR_COMMANDS.length; i += 1) {
-		const command = TOP_BAR_COMMANDS[i];
+	for (let i = 0; i < MENU_COMMANDS.length; i += 1) {
+		const command = MENU_COMMANDS[i];
 		ide_state.topBarButtonBounds[command] = { left: 0, top: 0, right: 0, bottom: 0 };
 	}
 	ide_state.menuDropdownBounds = null;
 }
-
-// function formatDebuggerTopBarMetrics(metrics: LuaDebuggerSessionMetrics): string {
-// 	const parts: string[] = [`S${metrics.sessionId}`, `P${metrics.pauseCount}`];
-// 	if (metrics.exceptionCount > 0) {
-// 		parts.push(`E${metrics.exceptionCount}`);
-// 	}
-// 	if (metrics.skippedExceptionCount > 0) {
-// 		parts.push(`Sk${metrics.skippedExceptionCount}`);
-// 	}
-// 	return parts.join(' ');
-// }

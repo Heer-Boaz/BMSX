@@ -31,7 +31,7 @@ import * as constants from './constants';
 import { RuntimeDebuggerCommandExecutor } from './ide_debugger';
 import { toggleBreakpointForEditorRow } from './ide_debugger';
 
-const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
+export const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
 export const MENU_COMMANDS = [
 	'hot-reload-and-resume',
 	'reboot',

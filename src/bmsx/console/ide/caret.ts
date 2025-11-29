@@ -104,7 +104,7 @@ export function setCursorPosition(row: number, column: number): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	onCursorMoved();
+	ide_state.completion.onCursorMoved();
 }
 
 /**
@@ -132,7 +132,7 @@ export function moveCursorVertical(delta: number): void {
 	setCursorFromVisualIndex(targetIndex, desired, desiredDisplay);
 	resetBlink();
 	revealCursor();
-	onCursorMoved();
+	ide_state.completion.onCursorMoved();
 }
 
 /**
@@ -203,7 +203,7 @@ export function moveCursorHorizontal(delta: number): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	onCursorMoved();
+	ide_state.completion.onCursorMoved();
 }
 
 /**
@@ -217,7 +217,7 @@ export function moveWordLeft(): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	onCursorMoved();
+	ide_state.completion.onCursorMoved();
 }
 
 /**
@@ -231,7 +231,7 @@ export function moveWordRight(): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	onCursorMoved();
+	ide_state.completion.onCursorMoved();
 }
 
 /**
@@ -475,7 +475,9 @@ export function clampCursorColumn(): void {
 	if (ide_state.cursorColumn > length) {
 		ide_state.cursorColumn = length;
 	}
-}export function centerCursorVertically(): void {
+}
+
+export function centerCursorVertically(): void {
 	ensureVisualLines();
 	const rows = visibleRowCount();
 	const totalVisual = getVisualLineCount();
@@ -537,6 +539,7 @@ export function ensureCursorVisible(): void {
 		ide_state.scrollColumn = maxColumn;
 	}
 }
+
 export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?: number, desiredOffsetHint?: number): void {
 	ensureVisualLines();
 	caretNavigation.clear();
@@ -609,7 +612,4 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	if (ide_state.desiredDisplayOffset < 0) {
 		ide_state.desiredDisplayOffset = 0;
 	}
-}
-export function onCursorMoved(): void {
-	ide_state.completion.onCursorMoved();
 }
