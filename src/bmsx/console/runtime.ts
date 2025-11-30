@@ -1825,6 +1825,7 @@ export class BmsxConsoleRuntime extends Service {
 		const program = this.luaProgram;
 		const canonicalChunk = this.canonicalizeProgramEntryChunkName(program, params.chunkName);
 		const previousChunkState = this.captureChunkState(canonicalChunk);
+		const previousChunkTables = this.captureChunkTables(canonicalChunk);
 		const previousGlobals = this.captureGlobalStateForReload();
 		const interpreter = this.luaInterpreter;
 		const entryAsset = this.resolveEntryAsset(program, canonicalChunk);
@@ -1836,6 +1837,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.wrapLuaExecutionResults(hotModuleId, results);
 		this.cacheChunkEnvironment(canonicalChunk, entryAssetId, hotModuleId);
 		this.restoreChunkState(interpreter.chunkEnvironment, previousChunkState);
+		this.restoreChunkTables(interpreter.chunkEnvironment, previousChunkTables);
 		this.restoreGlobalStateForReload(previousGlobals);
 		this.rebindChunkEnvironmentHandlers(hotModuleId);
 		this.bindLifecycleHandlers();
@@ -2372,22 +2374,19 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private captureChunkState(chunkName: string): LuaEntrySnapshot | null {
-		const normalized = this.normalizeChunkName(chunkName);
-		let env = this.luaChunkEnvironmentsByChunkName.get(normalized);
-		if (!env) {
-			const info = this.lookupChunkResourceInfo(normalized);
-			if (info?.asset_id) {
-				env = this.luaChunkEnvironmentsByAssetId.get(info.asset_id) ?? null;
-				if (!env && info.path) {
-					const canonicalChunk = this.resolveLuaModuleChunkName(info.asset_id, info.path);
-					env = this.luaChunkEnvironmentsByChunkName.get(this.normalizeChunkName(canonicalChunk)) ?? null;
-				}
+		const env = this.resolveChunkEnvironment(chunkName);
+		return this.captureLuaEntryCollection(env.entries());
+	}
+
+	private captureChunkTables(chunkName: string): Map<string, LuaTable> {
+		const env = this.resolveChunkEnvironment(chunkName);
+		const tables = new Map<string, LuaTable>();
+		for (const [name, value] of env.entries()) {
+			if (typeof name === 'string' && isLuaTable(value)) {
+				tables.set(name, value);
 			}
 		}
-		if (!env) {
-			throw new Error(`[BmsxConsoleRuntime] Missing chunk environment for '${chunkName}'.`);
-		}
-		return this.captureLuaEntryCollection(env.entries());
+		return tables;
 	}
 
 	private restoreChunkState(env: LuaEnvironment | null, snapshot: LuaEntrySnapshot | null): void {
@@ -2403,7 +2402,29 @@ export class BmsxConsoleRuntime extends Service {
 			if (this.isLuaFunctionValue(existing)) {
 				continue;
 			}
+			if (isLuaTable(existing) && isLuaTable(value)) {
+				this.applyLuaTableSnapshot(existing, value);
+				continue;
+			}
 			env.set(name, value);
+		}
+	}
+
+	private restoreChunkTables(env: LuaEnvironment | null, previousTables: Map<string, LuaTable>): void {
+		if (!env || previousTables.size === 0) {
+			return;
+		}
+		const visited = new WeakSet<LuaTable>();
+		for (const [name, freshValue] of env.entries()) {
+			if (typeof name !== 'string' || !isLuaTable(freshValue)) {
+				continue;
+			}
+			const previous = previousTables.get(name);
+			if (!previous) {
+				continue;
+			}
+			this.mergeLuaTablePreservingState(previous, freshValue, visited);
+			env.set(name, previous);
 		}
 	}
 
@@ -2422,6 +2443,10 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			const existing = this.luaInterpreter.getGlobal(name);
 			if (this.isLuaFunctionValue(existing)) {
+				continue;
+			}
+			if (isLuaTable(existing) && isLuaTable(value)) {
+				this.applyLuaTableSnapshot(existing, value);
 				continue;
 			}
 			this.luaInterpreter.setGlobal(name, value);
@@ -2449,6 +2474,107 @@ export class BmsxConsoleRuntime extends Service {
 			return false;
 		}
 		return typeof (value as { call?: unknown }).call === 'function';
+	}
+
+	private resolveChunkEnvironment(chunkName: string): LuaEnvironment {
+		const normalized = this.normalizeChunkName(chunkName);
+		let env = this.luaChunkEnvironmentsByChunkName.get(normalized);
+		if (!env) {
+			const info = this.lookupChunkResourceInfo(normalized);
+			if (info?.asset_id) {
+				env = this.luaChunkEnvironmentsByAssetId.get(info.asset_id) ?? null;
+				if (!env && info.path) {
+					const canonicalChunk = this.resolveLuaModuleChunkName(info.asset_id, info.path);
+					env = this.luaChunkEnvironmentsByChunkName.get(this.normalizeChunkName(canonicalChunk)) ?? null;
+				}
+			}
+		}
+		if (!env) {
+			throw new Error(`[BmsxConsoleRuntime] Missing chunk environment for '${chunkName}'.`);
+		}
+		return env;
+	}
+
+	// private copyLuaTableInPlace(target: LuaTable, source: LuaTable, visited: WeakSet<LuaTable> = new WeakSet()): void {
+	// 	if (visited.has(target)) {
+	// 		return;
+	// 	}
+	// 	visited.add(target);
+	// 	target.setMetatable(source.getMetatable());
+	// 	for (const [key] of target.entriesArray()) {
+	// 		if (!source.has(key)) {
+	// 			target.set(key, null);
+	// 		}
+	// 	}
+	// 	for (const [key, value] of source.entriesArray()) {
+	// 		const current = target.get(key);
+	// 		if (isLuaTable(current) && isLuaTable(value)) {
+	// 			this.copyLuaTableInPlace(current, value, visited);
+	// 			continue;
+	// 		}
+	// 		target.set(key, value);
+	// 	}
+	// }
+
+	private applyLuaTableSnapshot(target: LuaTable, snapshot: LuaTable, visited: WeakSet<LuaTable> = new WeakSet()): void {
+		if (visited.has(target)) {
+			return;
+		}
+		visited.add(target);
+		target.setMetatable(snapshot.getMetatable());
+		const entries = snapshot.entriesArray();
+		for (let index = 0; index < entries.length; index += 1) {
+			const [key, value] = entries[index];
+			if (isLuaTable(value)) {
+				const current = target.get(key);
+				if (isLuaTable(current)) {
+					this.applyLuaTableSnapshot(current, value, visited);
+					continue;
+				}
+			}
+			target.set(key, value);
+		}
+	}
+
+	private mergeLuaTablePreservingState(target: LuaTable, fresh: LuaTable, visited: WeakSet<LuaTable> = new WeakSet()): void {
+		if (visited.has(target)) {
+			return;
+		}
+		visited.add(target);
+		target.setMetatable(fresh.getMetatable());
+		const seenKeys = new Set<LuaValue>();
+		const entries = fresh.entriesArray();
+		for (let index = 0; index < entries.length; index += 1) {
+			const [key, freshValue] = entries[index];
+			seenKeys.add(key);
+			const current = target.get(key);
+			if (this.isLuaFunctionValue(freshValue)) {
+				target.set(key, freshValue);
+				continue;
+			}
+			if (isLuaTable(freshValue)) {
+				if (isLuaTable(current)) {
+					this.mergeLuaTablePreservingState(current, freshValue, visited);
+					continue;
+				}
+				target.set(key, freshValue);
+				continue;
+			}
+			if (current === null || this.isLuaFunctionValue(current)) {
+				target.set(key, freshValue);
+				continue;
+			}
+			if (isLuaTable(current)) {
+				target.set(key, freshValue);
+			}
+		}
+		const existing = target.entriesArray();
+		for (let index = 0; index < existing.length; index += 1) {
+			const [key, value] = existing[index];
+			if (this.isLuaFunctionValue(value) && !seenKeys.has(key)) {
+				target.set(key, null);
+			}
+		}
 	}
 
 	private createLuaSnapshotContext(): LuaSnapshotContext {
@@ -2763,6 +2889,11 @@ export class BmsxConsoleRuntime extends Service {
 			if (!name || this.apiFunctionNames.has(name) || BmsxConsoleRuntime.LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
 				continue;
 			}
+			const existing = interpreter.getGlobal(name);
+			if (isLuaTable(existing) && isLuaTable(value)) {
+				this.applyLuaTableSnapshot(existing, value);
+				continue;
+			}
 			try {
 				interpreter.setGlobal(name, value);
 			}
@@ -2780,6 +2911,14 @@ export class BmsxConsoleRuntime extends Service {
 		for (const [name, value] of entries) {
 			if (!name || !interpreter.hasChunkBinding(name)) {
 				continue;
+			}
+			const env = interpreter.chunkEnvironment;
+			if (env) {
+				const current = env.get(name);
+				if (isLuaTable(current) && isLuaTable(value)) {
+					this.applyLuaTableSnapshot(current, value);
+					continue;
+				}
 			}
 			try {
 				interpreter.assignChunkValue(name, value);
@@ -6541,6 +6680,7 @@ export class BmsxConsoleRuntime extends Service {
 		const interpreter = this.luaInterpreter;
 		const normalizedChunk = this.normalizeChunkName(chunkName);
 		const previousChunkState = this.captureChunkState(normalizedChunk);
+		const previousChunkTables = this.captureChunkTables(normalizedChunk);
 		const previousGlobals = this.captureGlobalStateForReload();
 		const source = sourceOverride ?? this.resolveSourceForChunk(chunkName, info);
 		if (!source) {
@@ -6551,6 +6691,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.wrapLuaExecutionResults(moduleId, results);
 		this.cacheChunkEnvironment(chunkName, info.asset_id, moduleId);
 		this.restoreChunkState(interpreter.chunkEnvironment, previousChunkState);
+		this.restoreChunkTables(interpreter.chunkEnvironment, previousChunkTables);
 		this.restoreGlobalStateForReload(previousGlobals);
 		const packageKey = this.resolveLuaModulePackageKey(info.asset_id ?? normalizedChunk, chunkName);
 		this.refreshPackageLoadedEntry(packageKey, results);
