@@ -188,8 +188,8 @@ local function build_hero_fsm()
 				end,
 			},
 		},
-		})
-	end
+	})
+end
 
 local function register_hero()
 	define_world_object({
@@ -230,10 +230,13 @@ local function register_director_listeners()
 	events:on({
 		event = 'timeline.frame.' .. hero_timeline_id,
 		subscriber = director,
-		handler = function(event)
-			director.stats.pulses = director.stats.pulses + 1
-		end,
+		handler = timelinehandler,
 	})
+end
+
+local function timelinehandler(event)
+	print("director.stats.pulses!  rewsfasfsffs" .. director.stats.pulses)
+	director.stats.pulses = director.stats.pulses + 1
 end
 
 local function define_blink()
@@ -283,6 +286,7 @@ end
 
 local function draw_hud(hero)
 	local stats = director.stats
+	print("UPDATE PULSES: " .. director.stats.pulses .. "/ " .. stats.pulses)
 	write('bmsx lua engine tour', 6, 4, 0, 15)
 	write('worldobject : ' .. hero.id, 6, 14, 0, 11)
 	write('service     : ' .. service_id, 6, 22, 0, 11)
