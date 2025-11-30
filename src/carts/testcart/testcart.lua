@@ -4,6 +4,7 @@ local hero_fsm_id = 'demo.hero.fsm'
 local hero_timeline_id = 'demo.hero.timeline'
 local service_id = 'demo.service.director'
 local effect_id = 'demo.effect.blink'
+local hero_spawn_pos = { x = 48, y = 64, z = 0 }
 
 local demo = {
 	last_plain_input = 'none',
@@ -58,7 +59,7 @@ function hero:onspawn(spawn_pos)
 		event = 'demo.timeline.frame',
 		subscriber = self,
 		handler = function(event)
-			local label = event and event.label
+			local label = event.label
 			if label == 'peak' then
 				self.tempo_ready = false
 			elseif label == 'rise' or label == 'reset' then
@@ -204,8 +205,12 @@ end
 
 local director = { id = service_id, stats = { moves = 0, pulses = 0, effects = 0, charges = 0 } }
 
+local function timelinehandler(event)
+	print("director.stats.pulses!  rewsfasfsffs" .. director.stats.pulses)
+	director.stats.pulses = director.stats.pulses + 1
+end
+
 local function register_director_listeners()
-	director.stats = { moves = 0, pulses = 0, effects = 0, charges = 0 }
 	events:on({
 		event = 'demo.hero.move',
 		subscriber = director,
@@ -234,9 +239,8 @@ local function register_director_listeners()
 	})
 end
 
-local function timelinehandler(event)
-	print("director.stats.pulses!  rewsfasfsffs" .. director.stats.pulses)
-	director.stats.pulses = director.stats.pulses + 1
+local function reset_director_stats()
+	director.stats = { moves = 0, pulses = 0, effects = 0, charges = 0 }
 end
 
 local function define_blink()
@@ -248,7 +252,7 @@ local function define_blink()
 		handler = function(ctx, payload)
 			print(string.format('[hotreload-test] blink effect handler invoked tick=%d', demo.tick))
 			local owner = ctx.owner
-			local facing = payload and payload.facing or owner.facing or 'right'
+			local facing = payload.facing
 			local offset = facing == 'left' and -24 or 24
 			owner.x = owner.x + offset
 			owner.y = owner.y - 2
@@ -262,14 +266,25 @@ local function define_blink()
 	})
 end
 
-function init()
-	cartdata('bmsx_test_cart_demo')
+local function define_blueprints_and_handlers()
 	build_hero_fsm()
 	define_blink()
 	register_hero()
-	spawn_object(hero_def_id, { id = hero_instance_id, pos = { x = 48, y = 64, z = 0 } })
 	register_director_listeners()
+end
+
+function init()
+	cartdata('bmsx_test_cart_demo')
+	define_blueprints_and_handlers()
 	print('[hotreload-test] init completed')
+end
+
+function boot()
+	reset_director_stats()
+	spawn_object(hero_def_id, {
+		id = hero_instance_id,
+		pos = { x = hero_spawn_pos.x, y = hero_spawn_pos.y, z = hero_spawn_pos.z },
+	})
 end
 
 function update(dt)

@@ -25,11 +25,12 @@ export type BmsxConsoleLuaProgram = {
 	readonly entryAssetId?: string;
 };
 
-export type LifeCycleHandlerName = 'init' | 'update' | 'draw';
+export type LifeCycleHandlerName = 'boot' | 'init' | 'update' | 'draw';
 
 export interface BmsxConsoleCartridge {
 	readonly meta: BmsxConsoleMetadata;
 	init(api: BmsxConsoleApi): void;
+	boot(api: BmsxConsoleApi): void;
 	update(api: BmsxConsoleApi, deltaSeconds: number): void;
 	draw(api: BmsxConsoleApi): void;
 	readonly luaProgram: BmsxConsoleLuaProgram;

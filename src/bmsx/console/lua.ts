@@ -9,6 +9,7 @@ export function createLuaConsoleCartridge(options: LuaConsoleCartridgeOptions): 
 	return {
 		meta: options.meta,
 		init(): void {},
+		boot(): void {},
 		update(): void {},
 		draw(): void {},
 		luaProgram: options.program,

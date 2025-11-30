@@ -319,6 +319,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly validationStrategy: BmsxLuaValidationStrategy = BmsxLuaValidationStrategy.TrustRealRun;
 	private luaInterpreter!: LuaInterpreter;
 	private luaInitFunction: LuaFunctionValue | null = null;
+	private luaBootFunction: LuaFunctionValue | null = null;
 	private luaUpdateFunction: LuaFunctionValue | null = null;
 	private luaDrawFunction: LuaFunctionValue | null = null;
 	private luaChunkName: string | null = null;
@@ -1429,10 +1430,11 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			api.cartdata(this.cart.meta.persistentId);
 			if (this.luaProgram) {
-				this.bootLuaProgram(true);
+				this.bootLuaProgram({ runInit: true, runBoot: true });
 			} else {
 				this.resetLuaInteroperabilityState();
 				this.cart.init(api);
+				this.cart.boot(api);
 			}
 			this.resetFrameTiming();
 			this.hasBooted = true;
@@ -1778,6 +1780,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.editor.clearRuntimeErrorOverlay();
 		}
 
+		this.luaRuntimeFailed = false;
 		const shouldRunInit = this.shouldRunInitForSnapshot(snapshot);
 		this.reinitializeLuaProgramFromSnapshot(snapshot, { runInit: shouldRunInit, hotReload: false });
 
@@ -1796,7 +1799,6 @@ export class BmsxConsoleRuntime extends Service {
 			throw new Error('[BmsxConsoleRuntime] Cannot resume from invalid state snapshot.');
 		}
 		const originalSnapshot = state as BmsxConsoleState;
-		// Resume should never re-run init; keep VM state intact.
 		const snapshot: BmsxConsoleState = { ...originalSnapshot, luaRuntimeFailed: false };
 		// Clear any previous error overlays and interpreter fault markers so a fresh
 		// resume starts clean and can report new errors normally.
@@ -1813,7 +1815,7 @@ export class BmsxConsoleRuntime extends Service {
 		publishOverlayFrame(null);
 		void this.refreshWorkspaceSources(false);
 		this.processPendingLuaAssets('resume');
-		this.resumeLuaProgramState(snapshot, { runInit: false });
+		this.resumeLuaProgramState(snapshot, { runInit: true });
 		this.resetFrameTiming();
 		this.updateOverlayState(this.consoleMode.isActive, this.editor?.isActive === true, true);
 		this.redrawAfterStateRestore();
@@ -1853,9 +1855,29 @@ export class BmsxConsoleRuntime extends Service {
 
 	private bindLifecycleHandlers(): void {
 		const env = this.luaInterpreter.globalEnvironment;
+		this.luaBootFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'boot' as LifeCycleHandlerName));
 		this.luaInitFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'init' as LifeCycleHandlerName));
 		this.luaUpdateFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'update' as LifeCycleHandlerName));
 		this.luaDrawFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'draw' as LifeCycleHandlerName));
+	}
+
+	private runLuaLifecycleHandler(kind: 'init' | 'boot'): boolean {
+		const fn = kind === 'init' ? this.luaInitFunction : this.luaBootFunction;
+		if (fn === null) {
+			return true;
+		}
+		try {
+			this.invokeLuaFunction(fn, []);
+			return true;
+		}
+		catch (error) {
+			if (isLuaDebuggerPauseSignal(error)) {
+				this.onLuaDebuggerPause(error);
+			} else {
+				this.handleLuaError(error);
+			}
+			return false;
+		}
 	}
 
 	private reloadLuaProgramState(source: string, chunkName: string, asset_id?: string): void {
@@ -1865,7 +1887,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.applyProgramEntrySourceToCartridge(source, canonicalChunk, programAssetId);
 		this.luaChunkName = canonicalChunk;
 		if (!this.luaInterpreter) {
-			this.bootLuaProgram(false);
+			this.bootLuaProgram({ runInit: false, runBoot: false });
 		}
 		else {
 			this.hotReloadProgramEntry({ asset_id: programAssetId, source, chunkName: canonicalChunk });
@@ -1877,8 +1899,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private shouldRunInitForSnapshot(snapshot: BmsxConsoleState): boolean {
-		const hasVmState = snapshot.luaGlobals !== undefined || snapshot.luaLocals !== undefined || snapshot.luaRandomSeed !== undefined;
-		return snapshot.luaRuntimeFailed !== true && !hasVmState;
+		return snapshot.luaRuntimeFailed !== true;
 	}
 
 	private resumeLuaProgramState(snapshot: BmsxConsoleState, options: { runInit: boolean }): void {
@@ -1895,6 +1916,8 @@ export class BmsxConsoleRuntime extends Service {
 
 		const targetChunkName = this.canonicalizeProgramEntryChunkName(program, snapshot.luaChunkName ?? null);
 		const normalizedTarget = this.normalizeChunkName(targetChunkName);
+		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
+		const shouldRunInit = options.runInit && !savedRuntimeFailed;
 		let source: string;
 		try {
 			source = this.getProgramEntrySource(program);
@@ -1912,7 +1935,13 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.refreshLuaModulesOnResume(normalizedTarget);
 		this.clearNativeMemberCompletionCache();
+		if (shouldRunInit) {
+			this.runLuaLifecycleHandler('init');
+		}
 		this.restoreVmState(snapshot);
+		if (savedRuntimeFailed) {
+			this.luaRuntimeFailed = true;
+		}
 	}
 
 	private reinitializeLuaProgramFromSnapshot(snapshot: BmsxConsoleState, options: { runInit: boolean; hotReload: boolean }): void {
@@ -2017,8 +2046,10 @@ export class BmsxConsoleRuntime extends Service {
 		interpreter.clearLastFaultEnvironment();
 		this.luaInterpreter = interpreter;
 		this.luaInitFunction = null;
+		this.luaBootFunction = null;
 		this.luaUpdateFunction = null;
 		this.luaDrawFunction = null;
+		this.luaRuntimeFailed = false;
 
 		const program = this.luaProgram;
 		let programasset_id: string | null = null;
@@ -2043,22 +2074,13 @@ export class BmsxConsoleRuntime extends Service {
 
 		const snapshot = params.snapshot;
 		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
-		this.restoreVmState(snapshot);
-
-		if (params.runInit && this.luaInitFunction !== null && !savedRuntimeFailed) {
-			try {
-				this.invokeLuaFunction(this.luaInitFunction, []);
-			}
-			catch (error) {
-				if (isLuaDebuggerPauseSignal(error)) {
-					this.onLuaDebuggerPause(error);
-				} else {
-					this.handleLuaError(error);
-				}
-			}
+		if (params.runInit && !savedRuntimeFailed) {
+			this.runLuaLifecycleHandler('init');
 		}
-
-		this.luaRuntimeFailed = savedRuntimeFailed;
+		this.restoreVmState(snapshot);
+		if (savedRuntimeFailed) {
+			this.luaRuntimeFailed = true;
+		}
 	}
 
 	private redrawAfterStateRestore(): void {
@@ -2938,7 +2960,7 @@ export class BmsxConsoleRuntime extends Service {
 		setLuaTableCaseInsensitiveKeys(this.canonicalization !== 'none');
 	}
 
-	private bootLuaProgram(runInit: boolean): void {
+	private bootLuaProgram(options: { runInit: boolean; runBoot: boolean }): void {
 		const program = this.luaProgram;
 		const source = this.getProgramEntrySource(program);
 		const chunkName = this.resolveProgramEntryChunkName(program);
@@ -2949,6 +2971,7 @@ export class BmsxConsoleRuntime extends Service {
 		interpreter.clearLastFaultEnvironment();
 		this.luaInterpreter = interpreter;
 		this.luaInitFunction = null;
+		this.luaBootFunction = null;
 		this.luaUpdateFunction = null;
 		this.luaDrawFunction = null;
 		this.luaChunkName = chunkName;
@@ -2974,15 +2997,14 @@ export class BmsxConsoleRuntime extends Service {
 
 		this.bindLifecycleHandlers();
 
-		if (runInit && this.luaInitFunction !== null) { // NOTE THAT THE INIT-FUNCTION APPARENTLY IS OPTIONAL!
-			try {
-				this.invokeLuaFunction(this.luaInitFunction, []);
-			}
-			catch (error) {
-				console.warn(`[BmsxConsoleRuntime] Lua init for '${chunkName}' failed: ${error}`);
-				this.handleLuaError(error);
+		if (options.runInit) {
+			const ok = this.runLuaLifecycleHandler('init');
+			if (!ok) {
 				return;
 			}
+		}
+		if (options.runBoot) {
+			this.runLuaLifecycleHandler('boot');
 		}
 	}
 

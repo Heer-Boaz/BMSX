@@ -10,6 +10,7 @@ import type { CanonicalizationType, RomPack, Viewport } from '../rompack/rompack
 type ManifestInputMapping = Record<string, string[] | undefined>;
 
 type ManifestLuaEntryPoints = {
+	boot?: string;
 	init?: string;
 	update?: string;
 	draw?: string;
@@ -108,6 +109,9 @@ function buildInputMapping(manifest: CartManifest): {
 function ensureLuaProgram(rompack: RomPack, manifest: CartManifest) {
 	const placeholderId = 'placeholder';
 	const placeholderSource = [
+		'FUNCTION BOOT()',
+		'END',
+		'',
 		'FUNCTION INIT()',
 		'END',
 		'',
@@ -134,6 +138,7 @@ function ensureLuaProgram(rompack: RomPack, manifest: CartManifest) {
 		assets,
 		entryAssetId,
 		entry: {
+			boot: entry.boot ?? 'boot',
 			init: entry.init ?? 'init',
 			update: entry.update ?? 'update',
 			draw: entry.draw ?? 'draw',
