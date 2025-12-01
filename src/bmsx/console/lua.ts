@@ -1,11 +1,11 @@
-import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, BmsxConsoleMetadata } from './types';
+import type { BmsxCartridge, BmsxCartProgram, BmsxCartMetadata } from './types';
 
 export type LuaConsoleCartridgeOptions = {
-	meta: BmsxConsoleMetadata;
-	program: BmsxConsoleLuaProgram;
+	meta: BmsxCartMetadata;
+	program: BmsxCartProgram;
 };
 
-export function createLuaConsoleCartridge(options: LuaConsoleCartridgeOptions): BmsxConsoleCartridge {
+export function createLuaConsoleCartridge(options: LuaConsoleCartridgeOptions): BmsxCartridge {
 	return {
 		meta: options.meta,
 		init(): void {},

@@ -279,7 +279,7 @@ function init()
 	print('[hotreload-test] init completed')
 end
 
-function boot()
+function new_game()
 	reset_director_stats()
 	spawn_object(hero_def_id, {
 		id = hero_instance_id,

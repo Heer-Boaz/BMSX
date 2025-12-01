@@ -2,19 +2,10 @@ import { $, Input, type BootArgs, type WorldConfiguration, type KeyboardButton, 
 import { createBmsxConsoleModule } from './module';
 import { createLuaConsoleCartridge } from './lua';
 import { ConsoleFont } from './font';
-import type { IdeThemeVariant } from './types';
+import type { IdeThemeVariant, LifeCycleHandlerManifest, LifeCycleHandlers, ManifestInputMapping } from './types';
 import { MSX2ScreenHeight } from '../index';
 import { MSX2ScreenWidth } from '../index';
 import type { CanonicalizationType, RomPack, Viewport } from '../rompack/rompack';
-
-type ManifestInputMapping = Record<string, string[] | undefined>;
-
-type ManifestLuaEntryPoints = {
-	boot?: string;
-	init?: string;
-	update?: string;
-	draw?: string;
-};
 
 type CartManifest = {
 	title?: string;
@@ -40,7 +31,7 @@ type CartManifest = {
 	};
 	lua?: {
 		entryAssetId?: string;
-		entry?: ManifestLuaEntryPoints;
+		entry?: LifeCycleHandlers;
 	};
 };
 
@@ -109,18 +100,18 @@ function buildInputMapping(manifest: CartManifest): {
 function ensureLuaProgram(rompack: RomPack, manifest: CartManifest) {
 	const placeholderId = 'placeholder';
 	const placeholderSource = [
-		'FUNCTION BOOT()',
-		'END',
+		'function new_game()',
+		'end',
 		'',
-		'FUNCTION INIT()',
-		'END',
+		'function init()',
+		'end',
 		'',
-		'FUNCTION UPDATE()',
-		'END',
+		'function update()',
+		'end',
 		'',
-		'FUNCTION DRAW()',
-		'\tCLS(4)',
-		'END',
+		'function draw()',
+		'\tcls(4)',
+		'end',
 	].join('\n');
 
 	const luaIds = Object.keys(rompack.lua);
@@ -133,12 +124,12 @@ function ensureLuaProgram(rompack: RomPack, manifest: CartManifest) {
 	const entryAssetId = manifest.lua?.entryAssetId && rompack.lua[manifest.lua.entryAssetId] !== undefined
 		? manifest.lua.entryAssetId
 		: assets[0]?.asset_id;
-	const entry = manifest.lua?.entry ?? {};
+	const entry = manifest.lua?.entry ?? {} as LifeCycleHandlerManifest;
 	return {
 		assets,
 		entryAssetId,
 		entry: {
-			boot: entry.boot ?? 'boot',
+			new_game: entry.new_game ?? 'new_game',
 			init: entry.init ?? 'init',
 			update: entry.update ?? 'update',
 			draw: entry.draw ?? 'draw',

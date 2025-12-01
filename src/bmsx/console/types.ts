@@ -2,13 +2,23 @@ import type { vec2, CanonicalizationType } from '../rompack/rompack';
 
 export type IdeThemeVariant = string;
 
-export interface BmsxConsoleMetadata {
+export interface BmsxCartMetadata {
 	title: string;
 	persistentId: string;
 	ideTheme?: IdeThemeVariant;
 }
 
-export type BmsxConsoleLuaPrimaryAsset = {
+export type ManifestInputMapping = Record<string, string[] | undefined>;
+
+
+export type ManifestLuaEntryPoints = {
+	new_game?: string;
+	init?: string;
+	update?: string;
+	draw?: string;
+};
+
+export type BmsxConsoleLuaEntryAsset = {
 	readonly asset_id: string;
 	readonly chunkName?: string;
 };
@@ -19,20 +29,29 @@ export type BmsxConsoleLuaPrimaryAssetWithSource = {
 	readonly source: string;
 };
 
-export type BmsxConsoleLuaProgram = {
-	readonly assets: ReadonlyArray<BmsxConsoleLuaPrimaryAsset>;
+export type BmsxCartProgram = {
+	readonly assets: ReadonlyArray<BmsxConsoleLuaEntryAsset>;
 	readonly entryAssetId?: string;
 };
 
-export type LifeCycleHandlerName = 'boot' | 'init' | 'update' | 'draw';
+export type LifeCycleHandlers = {
+	new_game: (() => void) | null;
+	init: (() => void) | null;
+	update: ((deltaSeconds: number) => void) | null;
+	draw: (() => void) | null;
+};
 
-export interface BmsxConsoleCartridge {
-	readonly meta: BmsxConsoleMetadata;
+export type LifeCycleHandlerName = keyof LifeCycleHandlers;
+
+export type LifeCycleHandlerManifest = Partial<Record<LifeCycleHandlerName, string>>;
+
+export interface BmsxCartridge {
+	readonly meta: BmsxCartMetadata;
 	init(): void;
 	boot(): void;
 	update(deltaSeconds: number): void;
 	draw(): void;
-	readonly luaProgram: BmsxConsoleLuaProgram;
+	readonly luaProgram: BmsxCartProgram;
 }
 
 export const enum BmsxConsolePointerButton {

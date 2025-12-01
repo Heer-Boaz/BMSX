@@ -1,5 +1,5 @@
 import type {
-	BmsxConsoleMetadata,
+	BmsxCartMetadata,
 	ConsoleLuaBuiltinDescriptor,
 	ConsoleLuaHoverRequest,
 	ConsoleLuaHoverResult,
@@ -23,7 +23,7 @@ export type { IdeThemeVariant } from '../types';
 export type ConsoleEditorOptions = {
 	playerIndex: number;
 	viewport: ConsoleViewport;
-	metadata: BmsxConsoleMetadata;
+	metadata: BmsxCartMetadata;
 	canonicalization?: CanonicalizationType;
 	themeVariant?: IdeThemeVariant;
 	loadSource: () => string;

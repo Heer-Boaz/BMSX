@@ -2,7 +2,7 @@ import type { StorageService, InputEvt } from '../platform/platform';
 import { BmsxConsoleApi } from './api';
 import { CONSOLE_API_METHOD_METADATA } from './api_metadata';
 import { BmsxConsoleStorage } from './storage';
-import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, BmsxConsoleLuaPrimaryAsset, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor, ConsoleLuaMemberCompletionRequest, ConsoleLuaMemberCompletion, BmsxConsoleLuaPrimaryAssetWithSource, LifeCycleHandlerName } from './types';
+import type { BmsxCartridge, BmsxCartProgram, BmsxConsoleLuaEntryAsset, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor, ConsoleLuaMemberCompletionRequest, ConsoleLuaMemberCompletion, BmsxConsoleLuaPrimaryAssetWithSource, LifeCycleHandlerName } from './types';
 import type { RomResourcePath, Viewport } from '../rompack/rompack';
 import {
 	createLuaInterpreter,
@@ -98,7 +98,7 @@ const CONSOLE_PREVIEW_MAX_DEPTH = 2;
 const EDITOR_FONT_VARIANT: ConsoleFontVariant = 'tiny';
 
 export type BmsxConsoleRuntimeOptions = {
-	cart: BmsxConsoleCartridge;
+	cart: BmsxCartridge;
 	playerIndex: number;
 	storage?: StorageService;
 	luaSourceFailurePolicy?: Partial<LuaPersistenceFailurePolicy>;
@@ -264,13 +264,13 @@ export class BmsxConsoleRuntime extends Service {
 		BmsxConsoleRuntime._instance = null;
 	}
 
-	private cart: BmsxConsoleCartridge;
+	private cart: BmsxCartridge;
 	private readonly storage: BmsxConsoleStorage;
 	private readonly storageService: StorageService;
 	private readonly apiFunctionNames = new Set<string>();
 	private readonly luaBuiltinMetadata = new Map<string, ConsoleLuaBuiltinDescriptor>();
 	private _activeIdeFontVariant: ConsoleFontVariant = EDITOR_FONT_VARIANT;
-	private luaProgram!: BmsxConsoleLuaProgram;
+	private luaProgram!: BmsxCartProgram;
 	private playerIndex: number;
 	private editor!: ConsoleCartEditor;
 	private readonly overlayRenderBackend = new ConsoleRenderFacade();
@@ -1362,7 +1362,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private async boot(): Promise<void> {
-		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'boot' });
+		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'new_game' });
 		try {
 			this.luaDebuggerSuspension = null;
 			this.debuggerHaltsGame = false;
@@ -1380,8 +1380,8 @@ export class BmsxConsoleRuntime extends Service {
 			if (this.editor) {
 				this.editor.clearRuntimeErrorOverlay();
 			}
-			if (this.hasCompletedInitialBoot) {
-				await $.reset_to_fresh_world({ preserveConsoleRuntime: true });
+			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset to fresh world
+				await $.reset_to_fresh_world();
 			}
 			api.cartdata(this.cart.meta.persistentId);
 			if (this.luaProgram) {
@@ -1392,7 +1392,7 @@ export class BmsxConsoleRuntime extends Service {
 				this.cart.boot();
 			}
 			this.hasCompletedInitialBoot = true;
-			void this.applyServerWorkspaceDirtyLuaOverrides(true);
+			await this.applyServerWorkspaceDirtyLuaOverrides(true);
 		}
 		catch (error) {
 			throw '[BmsxConsoleRuntime]: Failed to boot runtime: ' + error;
@@ -1740,13 +1740,13 @@ export class BmsxConsoleRuntime extends Service {
 
 	private bindLifecycleHandlers(): void {
 		const env = this.luaInterpreter.globalEnvironment;
-		this.luaBootFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'boot' as LifeCycleHandlerName));
-		this.luaInitFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'init' as LifeCycleHandlerName));
-		this.luaUpdateFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'update' as LifeCycleHandlerName));
-		this.luaDrawFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'draw' as LifeCycleHandlerName));
+		this.luaBootFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'new_game' satisfies LifeCycleHandlerName));
+		this.luaInitFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'init' satisfies LifeCycleHandlerName));
+		this.luaUpdateFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'update' satisfies LifeCycleHandlerName));
+		this.luaDrawFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'draw' satisfies LifeCycleHandlerName));
 	}
 
-	private runLuaLifecycleHandler(kind: 'init' | 'boot'): boolean {
+	private runLuaLifecycleHandler(kind: 'init' | 'new_game'): boolean {
 		const fn = kind === 'init' ? this.luaInitFunction : this.luaBootFunction;
 		if (fn === null) {
 			return true;
@@ -2824,14 +2824,14 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 		if (options.runBoot) {
-			this.runLuaLifecycleHandler('boot');
+			this.runLuaLifecycleHandler('new_game');
 		}
 	}
 
-	private processPendingLuaAssets(context: 'resume' | 'boot'): void {
+	private processPendingLuaAssets(context: 'resume' | 'new_game'): void {
 		switch (context) {
 			case 'resume':
-			case 'boot':
+			case 'new_game':
 				const editorOverrides = this.overlayEditorBuffersToRompack();
 				if (editorOverrides.size > 0) {
 					this.applyWorkspaceLuaOverrides(editorOverrides, false);
@@ -2904,15 +2904,16 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	public async reloadProgramAndResetWorld(): Promise<void> {
+	public async reloadProgramAndResetWorld(options?: { runInit?: boolean }): Promise<void> {
 		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'reload_and_reset' });
 		try {
 			const program = this.luaProgram;
 			const chunkName = this.luaChunkName ?? this.resolveProgramEntryChunkName(program);
-			await $.reset_to_fresh_world({ preserveConsoleRuntime: true });
+			const asset = this.resolveEntryAsset(program, chunkName);
+			const source = this.getProgramEntrySource(program);
+			await $.reset_to_fresh_world();
 			try {
-				const asset = this.resolveEntryAsset(program, chunkName);
-				this.reloadLuaProgramState(source, chunkName, asset.asset_id);
+				this.reloadLuaProgramState(source, chunkName, asset.asset_id, { runInit: options?.runInit !== false });
 			} catch (error) {
 				this.handleLuaError(error);
 			}
@@ -3077,8 +3078,8 @@ export class BmsxConsoleRuntime extends Service {
 			this.consoleMode.appendStderr(logMessage);
 		} catch (appendError) {
 			console.warn('[BmsxConsoleRuntime] Failed to append console runtime error output.', appendError);
-		}
 		// Remember we've handled this Error-like object so we don't duplicate reporting.
+		}
 		if (typeof error === 'object' && error !== null) {
 			this.handledLuaErrors.add(error);
 		}
@@ -4148,7 +4149,7 @@ export class BmsxConsoleRuntime extends Service {
 		return null;
 	}
 
-	private resolveEntryAsset(program: BmsxConsoleLuaProgram, chunkName?: string | null): BmsxConsoleLuaPrimaryAsset {
+	private resolveEntryAsset(program: BmsxCartProgram, chunkName?: string | null): BmsxConsoleLuaEntryAsset {
 		if (program.assets.length === 0) {
 			return { asset_id: '' };
 		}
@@ -4165,12 +4166,12 @@ export class BmsxConsoleRuntime extends Service {
 		return entry;
 	}
 
-	private getProgramEntrySource(program: BmsxConsoleLuaProgram): string {
+	private getProgramEntrySource(program: BmsxCartProgram): string {
 		const asset = this.resolveEntryAsset(program);
 		return $.rompack.lua[asset.asset_id];
 	}
 
-	private resolveLuaEntrySourcePath(program: BmsxConsoleLuaProgram): string | null {
+	private resolveLuaEntrySourcePath(program: BmsxCartProgram): string | null {
 		const asset = this.resolveEntryAsset(program);
 		return $.rompack.luaSourcePaths[asset.asset_id] ?? null;
 	}
@@ -4395,7 +4396,7 @@ export class BmsxConsoleRuntime extends Service {
 		return candidate;
 	}
 
-	private resolveProgramEntryChunkName(program: BmsxConsoleLuaProgram): string {
+	private resolveProgramEntryChunkName(program: BmsxCartProgram): string {
 		const asset = this.resolveEntryAsset(program);
 		return this.canonicalizeProgramEntryChunkName(asset.chunkName);
 	}

@@ -514,20 +514,16 @@ export class Game {
 		}
 	}
 
-	public async reset_to_fresh_world(options?: { preserveConsoleRuntime?: boolean }): Promise<void> {
+	public async reset_to_fresh_world(): Promise<void> {
 		if (!this.initialized) {
 			throw new Error('[Game] Cannot reset world before initialization.');
 		}
 		const gateToken = renderGate.begin({ blocking: true, tag: 'world-reset' });
 		const runToken = runGate.begin({ blocking: true, tag: 'world-reset' });
 		try {
-			if (!options?.preserveConsoleRuntime === true) {
-				BmsxConsoleRuntime.destroy();
-			}
 			if (this.world) {
 				this.world.clearAllSpaces();
 				this.world.dispose();
-				this.registry.deregister(this.world, true);
 			}
 
 			this.ae_registry.clear();

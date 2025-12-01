@@ -1,5 +1,5 @@
 import type {
-	BmsxConsoleMetadata,
+	BmsxCartMetadata,
 	ConsoleLuaBuiltinDescriptor,
 	ConsoleLuaHoverRequest,
 	ConsoleLuaHoverResult,
@@ -133,7 +133,7 @@ export interface IdeState {
 	redoStack: EditorSnapshot[];
 	lastHistoryKey: string | null;
 	lastHistoryTimestamp: number;
-	metadata: BmsxConsoleMetadata;
+	metadata: BmsxCartMetadata;
 	fontVariant: ConsoleFontVariant;
 	loadSourceFn: () => string;
 	saveSourceFn: (source: string) => Promise<void>;

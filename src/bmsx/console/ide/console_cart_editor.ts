@@ -2908,9 +2908,13 @@ export function performReboot(): boolean {
 	deactivate();
 	scheduleRuntimeTask(async () => {
 		if (requiresReload) {
+			console.info('[IDE] Performing full program reload for reboot');
 			await runtime.reloadProgramAndResetWorld({ runInit: false });
 		}
-		await runtime.boot();
+		else {
+			console.info('[IDE] Performing standard reboot');
+			await runtime.reloadProgramAndResetWorld({ runInit: true });
+		}
 		ide_state.appliedGeneration = targetGeneration;
 		$.paused = false;
 	}, (error) => {

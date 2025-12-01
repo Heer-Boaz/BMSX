@@ -1,11 +1,11 @@
 import { $ } from '../core/game';
 import type { World, WorldModule } from '../core/world';
 import { BmsxConsoleRuntime } from './runtime';
-import type { BmsxConsoleCartridge, ConsoleModuleOptions } from './types';
+import type { BmsxCartridge, ConsoleModuleOptions } from './types';
 import { BmsxCartSystem } from './console_systems';
 import { TickGroup } from '../ecs/ecsystem';
 
-export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: ConsoleModuleOptions): WorldModule {
+export function createBmsxConsoleModule(cart: BmsxCartridge, options: ConsoleModuleOptions): WorldModule {
 	const frameSystemId = 'bmsxConsole.frame';
 	return {
 		id: options.moduleId,
@@ -38,7 +38,7 @@ export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: Con
 			// Runtime is independent from world save/load cycles.
 		},
 		dispose() {
-			BmsxConsoleRuntime.destroy();
+			// Don't dispose the runtime here; it is managed by the Game instance and survives world resets.
 		},
 	};
 }
