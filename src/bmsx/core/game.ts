@@ -425,7 +425,7 @@ export class Game {
 		// Init the model to populate states (and do other init stuff) and
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
 		if (!worldConfig) throw new Error('World configuration not passed to game init!');
-		this.initialWorldConfigSnapshot = this.cloneWorldConfig(worldConfig);
+		this.initialWorldConfigSnapshot = worldConfig;
 		new World(worldConfig);
 		Input.instance.bind();
 		// Register built-in ECS systems; allow modules to register extensions on boot
@@ -462,17 +462,6 @@ export class Game {
 		e.preventDefault();
 		e.setReturnMessage('Are you sure you want to exit this awesome game?');
 	};
-
-	private cloneWorldConfig(config: WorldConfiguration): WorldConfiguration {
-		const cloned: WorldConfiguration = { ...config };
-		if (config.viewportSize) {
-			cloned.viewportSize = { ...config.viewportSize };
-		}
-		if (config.modules) {
-			cloned.modules = [...config.modules];
-		}
-		return cloned;
-	}
 
 	private cloneNodeSpec(node: NodeSpec): NodeSpec {
 		return {
@@ -529,16 +518,11 @@ export class Game {
 		if (!this.initialized) {
 			throw new Error('[Game] Cannot reset world before initialization.');
 		}
-		const preserveConsole = options?.preserveConsoleRuntime === true;
-		const preservingRuntime = preserveConsole && BmsxConsoleRuntime.instance !== null;
-		const gateToken = renderGate.begin({ blocking: true, tag: preserveConsole ? 'console-reset' : 'world-reset' });
-		const runToken = runGate.begin({ blocking: true, tag: preserveConsole ? 'console-reset' : 'world-reset' });
+		const gateToken = renderGate.begin({ blocking: true, tag: 'world-reset' });
+		const runToken = runGate.begin({ blocking: true, tag: 'world-reset' });
 		try {
-			if (!preserveConsole) {
+			if (!options?.preserveConsoleRuntime === true) {
 				BmsxConsoleRuntime.destroy();
-			}
-			if (preservingRuntime) {
-				BmsxConsoleRuntime.beginPreservedWorldReset();
 			}
 			if (this.world) {
 				this.world.clearAllSpaces();
@@ -552,12 +536,7 @@ export class Game {
 			this.texmanager.clear();
 			this.view.reset();
 
-			const config = this.initialWorldConfigSnapshot;
-			if (!config) {
-				throw new Error('[Game] Initial world configuration unavailable during reset.');
-			}
-			const freshConfig = this.cloneWorldConfig(config);
-			const world = new World(freshConfig);
+			const world = new World(this.initialWorldConfigSnapshot);
 			await world.init_on_boot();
 
 			this.rebuildPipeline();
@@ -571,12 +550,9 @@ export class Game {
 			}
 
 			PhysicsWorld.rebuild();
-			void this.view.initializeDefaultTextures();
+			await this.view.initializeDefaultTextures();
 		}
 		finally {
-			if (preservingRuntime) {
-				BmsxConsoleRuntime.endPreservedWorldReset();
-			}
 			this.wasupdated = true;
 			renderGate.end(gateToken);
 			runGate.end(runToken);

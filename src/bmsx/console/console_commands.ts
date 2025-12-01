@@ -421,10 +421,8 @@ export class ConsoleCommandDispatcher {
 	}
 
 	private filterListing(listing: Array<{ text: string; kind: PathEntryKind; isDir: boolean }>, filter: string): Array<{ text: string; kind: PathEntryKind; isDir: boolean }> {
-		const normalized = filter.replace(/\/+$/, '');
 		return listing.filter(entry => {
-			const target = entry.text.replace(/\/+$/, '');
-			return target === normalized;
+			return entry.text === filter;
 		});
 	}
 

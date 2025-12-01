@@ -289,8 +289,8 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 	const contexts = Array.from(environment.codeTabContexts);
 	for (let index = 0; index < contexts.length; index += 1) {
 		const context = contexts[index];
-		const descriptor = context.descriptor ?? null;
-		const chunkName = resolveChunkName(descriptor, null);
+		const descriptor = context.descriptor;
+		const chunkName = descriptor.path ?? descriptor.asset_id;
 		if (metadata.has(chunkName)) {
 			continue;
 		}
@@ -302,7 +302,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		} else {
 			try {
 				const source = context.load();
-				lines = normalizeSourceLines(source);
+				lines = normalizeLineEndings(source);
 			} catch {
 				lines = null;
 			}
@@ -320,7 +320,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		if (!isLuaResourceDescriptor(descriptor)) {
 			continue;
 		}
-		const chunkName = resolveChunkName(descriptor, null);
+		const chunkName = descriptor.path ?? descriptor.asset_id;
 		if (metadata.has(chunkName)) {
 			continue;
 		}
@@ -330,7 +330,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		let lines: readonly string[] | null = null;
 		try {
 			const source = environment.loadLuaResource(descriptor.asset_id);
-			lines = normalizeSourceLines(source);
+			lines = normalizeLineEndings(source);
 		} catch {
 			lines = null;
 		}
@@ -342,24 +342,8 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 	return metadata;
 }
 
-function resolveChunkName(descriptor: ConsoleResourceDescriptor | null, fallback: string | null): string {
-	if (descriptor) {
-		if (descriptor.path) {
-			return descriptor.path;
-		}
-		if (descriptor.asset_id) {
-			return descriptor.asset_id;
-		}
-	}
-	if (fallback) {
-		return fallback;
-	}
-	console.warn('Unable to resolve chunk name for Lua resource; using \'<console>\' fallback.');
-	return '<console>';
-}
-
-function normalizeSourceLines(source: string): string[] {
-	return source.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+function normalizeLineEndings(source: string): string[] {
+	return source.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n'); // Normalize line endings
 }
 
 function toRangeLike(range: { start: { line: number; column: number }; end: { line: number; column: number } }): LuaSourceRangeLike {

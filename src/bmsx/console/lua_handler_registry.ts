@@ -94,8 +94,7 @@ export class LuaHandlerRegistry {
 	}
 
 	public listByChunk(chunkName: string): ReadonlyArray<LuaHandlerDescriptor> {
-		const normalized = this.normalizeChunkName(chunkName);
-		const ids = this.handlerIdsByChunk.get(normalized);
+		const ids = this.handlerIdsByChunk.get(chunkName);
 		if (!ids || ids.size === 0) {
 			return [];
 		}
@@ -111,7 +110,7 @@ export class LuaHandlerRegistry {
 
 	private createDescriptor(registration: LuaHandlerRegistration): LuaHandlerDescriptor {
 		const baseChunk = registration.chunkName ?? registration.sourceRange?.chunkName ?? '';
-		const normalizedChunkName = this.normalizeChunkName(baseChunk);
+		const normalizedChunkName = baseChunk;
 		return {
 			id: registration.id,
 			category: registration.category,
@@ -152,9 +151,5 @@ export class LuaHandlerRegistry {
 		}
 		this.unindexDescriptor(previous);
 		this.indexDescriptor(next);
-	}
-
-	private normalizeChunkName(name: string): string {
-		return name;
 	}
 }
