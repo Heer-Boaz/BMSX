@@ -10,6 +10,6 @@
 	  "bmsx/*": ["./*"]
 	}
   },
-  "include": ["**/*.ts", "**/*.d.ts", "../../scripts/rompacker/convex_decomp_2d.ts"],
+  "include": ["**/*.ts", "**/*.d.ts", "../../scripts/rompacker/convex_decomp_2d.ts", "../../scripts/bootrom/cart_normalizer.ts"],
   "exclude": ["node_modules"]
 }

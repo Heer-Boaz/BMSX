@@ -6,7 +6,7 @@ import type { ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHover
 import type { BmsxCartridge, NativeRegisteredObject } from 'bmsx/rompack/rompack';
 import type { LifeCycleHandlerName } from 'bmsx/rompack/rompack';
 import type { RomLuaAsset, Viewport } from '../rompack/rompack';
-import { normalizeNewLuaAsset } from 'bmsx/rompack/cart_normalizer';
+import { normalizeNewLuaAsset } from 'scripts/bootrom/bootresources';
 import {
 	createLuaInterpreter,
 	LuaInterpreter,

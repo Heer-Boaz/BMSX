@@ -6,7 +6,7 @@ import { inflate } from 'pako';
 import { createCanvas, Image, loadImage } from 'canvas';
 
 import type { BootArgs, RomPack, TextureSource } from '../../../src/bmsx/rompack/rompack';
-import { normalizeCartLua } from '../../../src/bmsx/rompack/cart_normalizer';
+import { normalizeCartLua } from '../bootresources';
 import { getZippedRomAndRomLabelFromBlob, loadResources } from '../bootresources';
 import { HeadlessPlatformServices } from '../../../src/bmsx_hostplatform/headless/platform_headless';
 import { CLIPlatformServices } from '../../../src/bmsx_hostplatform/cli/platform_cli';
@@ -576,7 +576,6 @@ function combineRompacks(engineRom: RomPack | null, cartRom: RomPack): RomPack {
 		model: mergeRecords(cartRom.model, engineRom.model),
 		data: mergeRecords(cartRom.data, engineRom.data),
 		audioevents: mergeRecords(cartRom.audioevents, engineRom.audioevents),
-		lua: mergeRecords(cartRom.lua, engineRom.lua),
 		project_root_path: cartRom.project_root_path ?? engineRom.project_root_path ?? null,
 		code: cartRom.code ?? engineRom.code ?? null,
 		canonicalization: cartRom.canonicalization ?? engineRom.canonicalization,
