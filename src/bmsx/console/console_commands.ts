@@ -339,25 +339,25 @@ export class ConsoleCommandDispatcher {
 		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || !mode;
 		const savedAssets = includeSaved ? this.runtime.getWorkspaceSavedAssetIds() : new Set<string>();
 		const scratchPaths = includeDirty ? this.runtime.workspaceScratchPaths : new Set<string>();
+		const luaAssets = Object.values(rompack.lua);
 		if (includeRom) {
-			for (const entry of rompack.resourcePaths) {
-				pushPath(entry.path, 'rom');
-			}
-			for (const [_, path] of Object.entries(rompack.luaSourcePaths)) {
+			for (const asset of luaAssets) {
+				const path = asset.source_path ?? asset.resid;
 				pushPath(path, 'rom');
 			}
 		}
 		if (includeSaved) {
-			for (const [asset_id, path] of Object.entries(rompack.luaSourcePaths)) {
-				if (savedAssets.has(asset_id)) {
-					pushPath(path, 'saved');
-				}
+			for (const asset of luaAssets) {
+				if (!savedAssets.has(asset.resid)) continue;
+				const path = asset.source_path ?? asset.resid;
+				pushPath(path, 'saved');
 			}
 		}
 		if (includeDirty) {
 			const overrides = this.runtime.workspaceLuaOverrides;
 			for (const [asset_id, record] of overrides) {
-				const targetPath = record.cartPath ?? rompack.luaSourcePaths[asset_id];
+				const asset = rompack.lua[asset_id];
+				const targetPath = record.cartPath ?? asset?.source_path ?? asset_id;
 				if (targetPath) {
 					pushPath(targetPath, 'dirty');
 				}

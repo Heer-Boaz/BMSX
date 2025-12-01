@@ -22,7 +22,7 @@ async function main(): Promise<void> {
 	console.log(`projectRootPath: ${projectRootPath ?? '<none>'}`);
 	console.log('Assets (type -> sourcePath):');
 	for (const asset of assets) {
-		const label = asset.sourcePath ?? '<no source path>';
+		const label = asset.source_path ?? '<no source path>';
 		console.log(`  ${asset.type.padEnd(8)} ${asset.resid.padEnd(20)} ${label}`);
 	}
 }

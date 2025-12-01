@@ -62,8 +62,8 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 	}
 	const root = rootRaw;
 	const storage = params.storage;
-	const luaSources = params.rompack.luaSourcePaths;
-	for (const [assetId, cartPath] of Object.entries(luaSources)) {
+	for (const asset of Object.values(params.rompack.lua)) {
+		const cartPath = asset.source_path ?? asset.resid;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
 		const stored = storage.getItem(storageKey);
@@ -83,7 +83,7 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 		} catch {
 			// Fall back to raw string for legacy entries.
 		}
-		overrides.set(assetId, { source, path: dirtyPath, cartPath, updatedAt });
+		overrides.set(asset.resid, { source, path: dirtyPath, cartPath, updatedAt });
 	}
 	return overrides;
 }

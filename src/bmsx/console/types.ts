@@ -1,5 +1,4 @@
 import type { vec2, CanonicalizationType } from '../rompack/rompack';
-export type { IdeThemeVariant } from '../rompack/rompack';
 
 export type ManifestInputMapping = Record<string, string[] | undefined>;
 

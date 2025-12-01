@@ -1,4 +1,4 @@
-import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack, RomResourcePath, TextureSource, color_arr } from '../../src/bmsx/rompack/rompack';
+import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomLuaAsset, RomMeta, RomPack, TextureSource, color_arr } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../../src/bmsx/serializer/binencoder';
 
 export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
@@ -239,14 +239,31 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 		code: null,
 		audioevents: {},
 		lua: {},
-		luaSourcePaths: {},
-		resourcePaths: [],
-		projectRootPath: projectRootPath ?? null,
+		project_root_path: projectRootPath ?? null,
 	};
-	const seenResourcePaths = new Set<string>();
 
-	await Promise.all(assets.map(a => load(rom, a, result, opts, seenResourcePaths)));
+	await Promise.all(assets.map(a => load(rom, a, result, opts)));
+	normalizeLuaAssets(result);
 	return Promise.resolve<RomPack>(result);
+}
+
+function normalizeLuaAssets(rompack: RomPack): void {
+	const luaAssets = Object.values(rompack.lua);
+	if (luaAssets.length === 0) {
+		return;
+	}
+	for (const asset of luaAssets) {
+		if (!asset.source_path || asset.source_path.length === 0) {
+			asset.source_path = asset.resid;
+		}
+		if (!asset.chunk_name || asset.chunk_name.length === 0) {
+			const sourcePath = asset.source_path;
+			asset.chunk_name = sourcePath && sourcePath.length > 0 ? `@${sourcePath}` : `@lua/${asset.resid}`;
+		}
+	}
+	const manifest = (rompack.manifest ?? null) as { lua?: { entryAssetId?: string } } | null;
+	const manifestEntryId = manifest?.lua?.entryAssetId;
+	const entryAssetId = manifestEntryId && rompack.lua[manifestEntryId] ? manifestEntryId : luaAssets[0].resid;
 }
 
 function getImageURL(buffer: ArrayBuffer): string {
@@ -476,7 +493,7 @@ async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: {
 	return source;
 }
 
-async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }, seenPaths?: Set<string>, _loadFSMFromBuffer?: (buffer: ArrayBuffer) => Promise<any>): Promise<void> {
+async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }, _seenPaths?: Set<string>, _loadFSMFromBuffer?: (buffer: ArrayBuffer) => Promise<any>): Promise<void> {
 	switch (res.type) {
 		case 'image':
 		case 'atlas': {
@@ -528,10 +545,16 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 		case 'lua':
 			try {
 				const sliced = new Uint8Array(rom, res.start, res.end - res.start);
-				romResult.lua[res.resid] = decodeuint8arr(sliced);
-				if (res.sourcePath && res.sourcePath.length > 0) {
-					romResult.luaSourcePaths[res.resid] = res.sourcePath;
+				const luaAsset: RomLuaAsset = {
+					...res,
+					src: decodeuint8arr(sliced),
+					chunk_name: res.chunk_name ?? undefined,
+				};
+				if (!luaAsset.chunk_name) {
+					const sourcePath = res.source_path;
+					luaAsset.chunk_name = sourcePath && sourcePath.length > 0 ? `@${sourcePath}` : `@lua/${res.resid}`;
 				}
+				romResult.lua[res.resid] = luaAsset;
 			} catch (err: any) {
 				throw new Error(`Failed to load 'lua' from rom: ${err.message}.`);
 			}
@@ -590,18 +613,6 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 		break;
 		default:
 			throw new Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack!`);
-	}
-	if (res.sourcePath && res.sourcePath.length > 0 && seenPaths) {
-		const key = res.sourcePath;
-		if (!seenPaths.has(key)) {
-			seenPaths.add(key);
-			const entry: RomResourcePath = {
-				path: res.sourcePath,
-				type: res.type,
-				asset_id: res.resid,
-			};
-			romResult.resourcePaths.push(entry);
-		}
 	}
 }
 

@@ -3873,7 +3873,7 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 	const audioevents = rompack.audioevents;
 	switch (descriptor.type) {
 		case 'lua': {
-			const source = lua?.[descriptor.asset_id];
+			const source = lua?.[descriptor.asset_id]?.src;
 			if (typeof source === 'string') {
 				appendResourceViewerLines(lines, ['-- Lua Source --', '']);
 				appendResourceViewerLines(lines, source.split(/\r?\n/));

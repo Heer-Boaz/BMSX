@@ -7,12 +7,11 @@ import type {
 	ConsoleLuaResourceCreationRequest,
 	ConsoleLuaSymbolEntry,
 	ConsoleResourceDescriptor,
-	IdeThemeVariant,
 } from '../types';
 import type { BmsxCartMetadata } from 'bmsx/rompack/rompack';
 import type { ConsoleFontVariant } from '../font';
 import type { ConsoleEditorFont } from '../editor_font';
-import type { TextField, ScrollbarKind, MessageState } from './types';
+import type { TextField, ScrollbarKind, MessageState, IdeThemeVariant } from './types';
 import type { InlineFieldMetrics } from './inline_text_field';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import type { InputController } from './ide_input';

@@ -12,21 +12,13 @@ export interface RomPack {
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	code: string; // The loaded game code in the ROM pack. ALWAYS PRESENT DURING GAME!
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
-	luaSourcePaths: Record<asset_id, string>; // Relative filesystem paths for Lua sources, keyed by Lua asset id.
-	resourcePaths: RomResourcePath[]; // Filesystem metadata for packed resources. ALWAYS PRESENT DURING GAME!
-	projectRootPath?: string | null; // Workspace-relative cart root path for resolving filesystem writes.
+	project_root_path?: string | null; // Workspace-relative cart root path for resolving filesystem writes.
 	canonicalization?: CanonicalizationType; // Canonicalization type for Lua identifiers in this ROM pack.
 	manifest?: unknown;
 }
 
 export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'rommanifest';
 export type asset_id = string;
-
-export interface RomResourcePath {
-	path: string;
-	type: asset_type;
-	asset_id: asset_id;
-}
 
 /**
  * Represents an asset in a ROM pack.
@@ -44,7 +36,7 @@ export interface RomAsset {
 	audiometa?: AudioMeta; // The metadata of the asset, if it is an audio asset.
 	texture_start?: number; // Start offset of the texture buffer within the ROM
 	texture_end?: number;   // End offset of the texture buffer within the ROM
-	sourcePath?: string; // Relative filesystem path for the asset when applicable (e.g., Lua source files).
+	source_path?: string; // Relative filesystem path for the asset when applicable (e.g., Lua source files).
 }
 
 export interface RomImgAsset extends RomAsset {
@@ -54,9 +46,11 @@ export interface RomImgAsset extends RomAsset {
 	get imgbinYFlipped(): Promise<TextureSource>;
 }
 
-export type RomLuaAsset = string;
-	// sourcecode?: string; // The Lua source code of the asset, if it is a Lua script.
-// }
+export type RomLuaAsset = RomAsset & {
+	src: string; // The Lua source code of the Lua script asset. Known at pack time
+	chunk_name?: string; // The chunk name to use when loading this Lua asset into the Lua VM. Always normalized!! Cached at runtime
+	normalized_source_path?: string; // Normalized source path for this Lua asset, used for source mapping and debugging.
+}
 
 export interface RomMeta {
 	start: number; // The start offset of the RomPack metadata in the ROM (file) buffer itself.
@@ -99,13 +93,12 @@ export type Constructor<T> = new (...args: any[]) => T;
  * Used for attaching abstract classes to game objects.
  */
 export type ConcreteOrAbstractConstructor<T> = Function & { prototype: T; };
-// export type AbstractConstructor<T> = (abstract new (...args: any[]) => T);
 
 export interface Native {
-	__NATIVE__: string;
-}
+	__native__: string;
+	}
 
-export type NativeClass<T> = Constructor<T> & Native; // Used to mark native classes in the console API
+export type NativeRegisteredObject = Native & Registerable & { constructor: { name: string }, ctor?: { name: string } }; // Used to mark native objects in the console API, includes JS-engine constructor name
 
 /**
  * Represents the direction values.
@@ -171,7 +164,7 @@ export type vec4arr = [number, number, number, number];
 /**
  * Represents a 2D vector.
  */
-export interface vec2 { x: number; y: number; z?: number;}
+export interface vec2 { x: number; y: number; z?: number; }
 
 /**
  * Represents a 3-dimensional vector.
@@ -334,8 +327,6 @@ export interface GLTFModel {
 	skins?: GLTFSkin[];
 }
 
-export type OBJModel = GLTFModel;
-
 /**
  * Metadata for an image asset.
  */
@@ -357,3 +348,27 @@ export type TextureSource = unknown & { close?(): void; width: number; height: n
 export type Viewport = { width: number; height: number; };
 export type CanonicalizationType = 'none' | 'upper' | 'lower';
 
+export interface BmsxCartMetadata {
+	title: string;
+	persistent_id: string;
+	ide_theme?: string;
+}
+
+export type LifeCycleHandlers = {
+	new_game: (() => void) | null;
+	init: (() => void) | null;
+	update: ((deltaSeconds: number) => void) | null;
+	draw: (() => void) | null;
+};
+
+export type LifeCycleHandlerName = keyof LifeCycleHandlers;
+
+export type LifeCycleHandlerManifest = Partial<Record<LifeCycleHandlerName, string>>;
+
+export type BmsxCartridge = LifeCycleHandlers & {
+	readonly meta: BmsxCartMetadata;
+	lua: id2lua; // Loaded Lua sources bundled with the ROM pack. ALWAYS PRESENT DURING GAME FOR CART-GAMES (not for other game types)!
+	chunk2lua?: Record<string, RomLuaAsset>; // Mapping from normalized chunk names to Lua assets for fast lookup.
+	source2lua?: Record<string, RomLuaAsset>; // Mapping from normalized source paths to Lua assets for fast lookup.
+	entry: asset_id;
+}

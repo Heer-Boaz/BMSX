@@ -1312,7 +1312,7 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 		switch (type) {
 			case 'romlabel':
 				romlabel_buffer = res.buffer;
-				romAssets.push({ resid, type, imgmeta: undefined, buffer: romlabel_buffer, sourcePath });
+				romAssets.push({ resid, type, imgmeta: undefined, buffer: romlabel_buffer, source_path: sourcePath });
 				break;
 			case 'image': {
 				const imgmeta = buildImgMeta(res);
@@ -1320,9 +1320,9 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
 					// Preserve raw image buffer for images explicitly marked to skip atlas (@noatlas)
 					const keepOriginal = !!(res as any).skipAtlas;
-					baseAsset = { resid, type, imgmeta, buffer: keepOriginal ? buffer : undefined, sourcePath };
+					baseAsset = { resid, type, imgmeta, buffer: keepOriginal ? buffer : undefined, source_path: sourcePath };
 				} else {
-					baseAsset = { resid, type, imgmeta, buffer, sourcePath };
+					baseAsset = { resid, type, imgmeta, buffer, source_path: sourcePath };
 				}
 				romAssets.push({ ...baseAsset, });
 			}
@@ -1330,22 +1330,22 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 			case 'audio':
 				// Note that the name has already been sanitized in the `getResMetaList` function
 				const { audiometa } = parseAudioMeta(res.filepath);
-				romAssets.push({ resid, type, audiometa, buffer, sourcePath });
+				romAssets.push({ resid, type, audiometa, buffer, source_path: sourcePath });
 				break;
 			case 'code':
 				resid = resid.replace('.min', '');
-				romAssets.push({ resid, type, buffer, sourcePath });
+				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
 			case 'lua': {
 				if (!res.filepath || res.filepath.length === 0) {
 					throw new Error(`[RomPacker] Lua resource "${resid}" is missing its source file path.`);
 				}
 				const luaSourcePath = sourcePath && sourcePath.length > 0 ? sourcePath : toWorkspaceRelativePath(res.filepath);
-				romAssets.push({ resid, type, buffer, sourcePath: luaSourcePath });
+				romAssets.push({ resid, type, buffer, source_path: luaSourcePath });
 				break;
 			}
 			case 'rommanifest':
-				romAssets.push({ resid, type, buffer, sourcePath });
+				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
 			case 'data':
 			case 'aem':
@@ -1376,7 +1376,7 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 					default:
 						throw new Error(`Unknown data type "${res.datatype}" for resource "${resid}"`);
 				}
-				romAssets.push({ resid, type, buffer, sourcePath });
+				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
 			case 'model': {
 				const pathInfo = parse(res.filepath);
@@ -1436,16 +1436,16 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				buffer = Buffer.from(encodedObj);
 				// @ts-ignore
 				const texture_buffer = Buffer.concat(texBuffers);
-				romAssets.push({ resid, type, buffer, texture_buffer, sourcePath });
+				romAssets.push({ resid, type, buffer, texture_buffer, source_path: sourcePath });
 			}
 				break;
 			case 'atlas': {
 				const imgmeta = buildImgMetaForAtlas(res);
-				romAssets.push({ resid, type, imgmeta, buffer, sourcePath });
+				romAssets.push({ resid, type, imgmeta, buffer, source_path: sourcePath });
 				break;
 			}
 			case 'romlabel':
-				romAssets.push({ resid, type, buffer, sourcePath });
+				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
 			case 'rommanifest':
 				break;

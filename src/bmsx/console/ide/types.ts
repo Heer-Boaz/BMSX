@@ -10,7 +10,6 @@ import type {
 	ConsoleLuaSymbolEntry,
 	ConsoleResourceDescriptor,
 	ConsoleViewport,
-	IdeThemeVariant,
 } from '../types';
 import type { BmsxCartMetadata } from 'bmsx/rompack/rompack';
 import type { ConsoleFontVariant } from '../font';
@@ -18,7 +17,7 @@ import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
 import type { StackTraceFrame } from '../../lua/runtime';
 import { MENU_COMMANDS } from './ide_input';
 
-export type { IdeThemeVariant } from '../types';
+export type IdeThemeVariant = string;
 
 export type ConsoleEditorOptions = {
 	playerIndex: number;

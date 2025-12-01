@@ -2283,7 +2283,7 @@ export function evaluateRuntimeErrorOverlayClick(
 	const nextVariant = currentVariant === 'dark' ? 'light' : 'dark';
 	constants.setIdeThemeVariant(nextVariant);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
-	ide_state.metadata.ideTheme = ide_state.themeVariant;
+	ide_state.metadata.ide_theme = ide_state.themeVariant;
 	ide_state.layout.invalidateAllHighlights();
 }
 

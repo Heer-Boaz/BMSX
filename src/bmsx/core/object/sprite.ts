@@ -15,7 +15,7 @@ const PRIMARY_COLLIDER_ID = 'primary';
  * Extends the WorldObject class.
  */
 export class SpriteObject extends WorldObject {
-	public override get __NATIVE__(): string { return 'sprite_object'; }
+	public override get __native__(): string { return 'sprite_object'; }
 
 	private get sprite_component(): SpriteComponent {
 		const comp = this.get_component_by_local_id(SpriteComponent, BASE_SPRITE_ID);

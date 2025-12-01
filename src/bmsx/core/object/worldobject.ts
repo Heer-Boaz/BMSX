@@ -51,7 +51,7 @@ export const WorldObjectEvents = {
 
 @insavegame
 export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
-	public get __NATIVE__(): string { return 'world_object'; }
+	public get __native__(): string { return 'world_object'; }
 
 	/**
 	 * Represents a map of components associated with their respective keys.
