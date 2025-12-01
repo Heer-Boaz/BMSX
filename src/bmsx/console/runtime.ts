@@ -2113,16 +2113,16 @@ export class BmsxConsoleRuntime extends Service {
 		return lines;
 	}
 
+	private prettyPrintRuntimeError(chunkName: string | null, line: number | null, column: number | null, message: string): string {
+		const location = this.formatRuntimeErrorLocation(chunkName, line, column);
+		return location ? `Runtime error at ${location}: ${message}` : `Runtime error: ${message}`;
+	}
+
 	private presentRuntimeErrorInConsole(
-		chunkName: string | null,
-		line: number | null,
-		column: number | null,
-		message: string,
+		prettyMessage: string,
 		details: RuntimeErrorDetails | null,
 	): void {
-		const location = this.formatRuntimeErrorLocation(chunkName, line, column);
-		const headline = location ? `Runtime error at ${location}: ${message}` : `Runtime error: ${message}`;
-		this.consoleMode.appendStderr(headline);
+		this.consoleMode.appendStderr(prettyMessage);
 		const stackLines = this.buildStackLines(details);
 		for (let index = 0; index < stackLines.length; index += 1) {
 			this.consoleMode.appendStderr(stackLines[index]);
@@ -3065,21 +3065,17 @@ export class BmsxConsoleRuntime extends Service {
 		});
 		this.pauseDebuggerForException({ chunkName: snapshot.chunkName, line: snapshot.line, column: snapshot.column }, callStackSnapshot);
 		const editorIsActive = this.editor?.isActive === true;
+
+		const prettyMessage = this.prettyPrintRuntimeError(chunkName, line, column, message);
+
 		if (editorIsActive || editorWasActive) {
 			this.editor.renderFaultOverlay();
 		} else {
 			this.activateConsoleMode();
-			this.presentRuntimeErrorInConsole(snapshot.chunkName, snapshot.line, snapshot.column, snapshot.message, snapshot.details);
+			this.presentRuntimeErrorInConsole(prettyMessage, snapshot.details);
 			this.updateOverlayState(true, false, true);
 		}
-		const logMessage = snapshot.chunkName && snapshot.chunkName.length > 0 ? `${snapshot.chunkName}: ${snapshot.message}` : snapshot.message;
-		console.error('[BmsxConsoleRuntime] Lua runtime error:', logMessage, error);
-		try {
-			this.consoleMode.appendStderr(logMessage);
-		} catch (appendError) {
-			console.warn('[BmsxConsoleRuntime] Failed to append console runtime error output.', appendError);
-		// Remember we've handled this Error-like object so we don't duplicate reporting.
-		}
+		console.error('[BmsxConsoleRuntime] Lua runtime error:', prettyMessage, error);
 		if (typeof error === 'object' && error !== null) {
 			this.handledLuaErrors.add(error);
 		}

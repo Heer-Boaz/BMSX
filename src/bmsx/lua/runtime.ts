@@ -1805,7 +1805,11 @@ export class LuaInterpreter {
 			const first = result.length > 0 ? result[0] : null;
 			return this.expectBoolean(first, `${metamethodName} metamethod must return a boolean.`, expression.range);
 		}
-		throw this.runtimeErrorAt(expression.range, message);
+		// Fail, so let's see whether we can give a better error message
+		if (left === null || left === undefined) {
+			throw this.runtimeErrorAt(expression.left.range, `Attempt to compare nil value to ${right ?? 'nil'}: ${message}`);
+		}
+		else throw this.runtimeErrorAt(expression.range, message);
 	}
 
 	private invokeUnaryMetamethod(operand: LuaValue, name: string, range: LuaSourceRange): LuaValue | null {
