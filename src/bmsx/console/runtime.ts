@@ -3795,8 +3795,8 @@ export class BmsxConsoleRuntime extends Service {
 			model: this.serializeRomAssetMap(rompack.model),
 			data: this.cloneRompackDataMap(rompack.data),
 			audioevents: rompack.audioevents ? deep_clone(rompack.audioevents) : {},
-			lua: rompack.lua
-				? Object.fromEntries(Object.entries(rompack.lua).map(([id, asset]) => [id, { ...asset }]))
+			lua: rompack.cart?.lua
+				? Object.fromEntries(Object.entries(rompack.cart.lua).map(([id, asset]) => [id, { ...asset }]))
 				: {},
 			code: rompack.code,
 			canonicalization: rompack.canonicalization,
@@ -4396,7 +4396,7 @@ export class BmsxConsoleRuntime extends Service {
 			return `@${this.stripLuaExtension(normalized)}`;
 		}
 		if (asset_id) {
-			const asset = $.rompack.lua[asset_id];
+			const asset = this.cart.lua[asset_id];
 			const resolved = asset?.source_path;
 			return resolved && resolved.length > 0
 				? `@${this.stripLuaExtension(resolved)}`
@@ -4799,7 +4799,7 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			return cached;
 		}
-		const asset = $.rompack.lua[asset_id];
+		const asset = this.cart.lua[asset_id];
 		const path = asset?.source_path ?? null;
 		this.resourcePathCache.set(asset_id, path);
 		return path;

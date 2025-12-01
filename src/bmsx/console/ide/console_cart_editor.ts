@@ -3865,7 +3865,7 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 	let error: string | null = null;
 	const rompack = $.rompack;
 	lines.push('');
-	const lua = rompack.lua;
+	const lua = rompack.cart.lua;
 	const data = rompack.data;
 	const img = rompack.img;
 	const audioTable = rompack.audio;

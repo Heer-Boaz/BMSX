@@ -339,7 +339,7 @@ export class ConsoleCommandDispatcher {
 		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || !mode;
 		const savedAssets = includeSaved ? this.runtime.getWorkspaceSavedAssetIds() : new Set<string>();
 		const scratchPaths = includeDirty ? this.runtime.workspaceScratchPaths : new Set<string>();
-		const luaAssets = Object.values(rompack.lua);
+		const luaAssets = Object.values(rompack.cart.lua);
 		if (includeRom) {
 			for (const asset of luaAssets) {
 				const path = asset.source_path ?? asset.resid;
@@ -356,7 +356,7 @@ export class ConsoleCommandDispatcher {
 		if (includeDirty) {
 			const overrides = this.runtime.workspaceLuaOverrides;
 			for (const [asset_id, record] of overrides) {
-				const asset = rompack.lua[asset_id];
+				const asset = rompack.cart.lua[asset_id];
 				const targetPath = record.cartPath ?? asset?.source_path ?? asset_id;
 				if (targetPath) {
 					pushPath(targetPath, 'dirty');

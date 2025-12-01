@@ -70,27 +70,11 @@ function combineRompacks(engineRom: RomPack | null | undefined, cartRom: RomPack
 		model: mergeRecords(cartRom.model, engineRom.model),
 		data: mergeRecords(cartRom.data, engineRom.data),
 		audioevents: mergeRecords(cartRom.audioevents, engineRom.audioevents),
-		lua: mergeRecords(cartRom.lua, engineRom.lua),
+		cart: cartRom.cart ?? engineRom.cart,
 		project_root_path: cartRom.project_root_path ?? engineRom.project_root_path ?? null,
 		code: cartRom.code ?? engineRom.code ?? null,
 		canonicalization: cartRom.canonicalization ?? engineRom.canonicalization,
 	};
-	const luaAssets = Object.values(combined.lua ?? {});
-	if (luaAssets.length > 0) {
-		for (const asset of luaAssets) {
-			if (!asset.source_path || asset.source_path.length === 0) {
-				asset.source_path = asset.resid;
-			}
-			if (!asset.chunk_name || asset.chunk_name.length === 0) {
-				const path = asset.source_path;
-				asset.chunk_name = path && path.length > 0 ? `@${path}` : `@lua/${asset.resid}`;
-			}
-		}
-		const manifestEntryId = (combined.manifest as { lua?: { entryAssetId?: string } } | null)?.lua?.entryAssetId;
-		const entryAsset = manifestEntryId && combined.lua[manifestEntryId]
-			? combined.lua[manifestEntryId]
-			: luaAssets[0];
-	}
 	return combined;
 }
 

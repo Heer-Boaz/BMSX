@@ -62,7 +62,7 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 	}
 	const root = rootRaw;
 	const storage = params.storage;
-	for (const asset of Object.values(params.rompack.lua)) {
+	for (const asset of Object.values(params.rompack.cart.lua)) {
 		const cartPath = asset.source_path ?? asset.resid;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);

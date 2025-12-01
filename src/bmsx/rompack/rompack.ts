@@ -8,7 +8,7 @@ export interface RomPack {
 	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the cached binary payload. ALWAYS PRESENT DURING GAME!
 	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
-	lua: id2lua; // Loaded Lua sources bundled with the ROM pack. ALWAYS PRESENT DURING GAME!
+	cart: BmsxCartridge; // Cartridge data bundled with the ROM pack, including Lua assets.
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	code: string; // The loaded game code in the ROM pack. ALWAYS PRESENT DURING GAME!
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!

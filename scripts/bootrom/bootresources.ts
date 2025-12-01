@@ -230,6 +230,17 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 
 export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
 	const { assets, projectRootPath } = await loadAssetList(rom);
+	const cart: RomPack['cart'] = {
+		meta: { title: '', persistent_id: '' },
+		lua: {},
+		chunk2lua: {},
+		source2lua: {},
+		entry: '',
+		new_game: null,
+		init: null,
+		update: null,
+		draw: null,
+	};
 	const result: RomPack = {
 		rom: rom,
 		img: {},
@@ -238,7 +249,7 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 		data: {},
 		code: null,
 		audioevents: {},
-		lua: {},
+		cart,
 		project_root_path: projectRootPath ?? null,
 	};
 
@@ -248,7 +259,7 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 }
 
 function normalizeLuaAssets(rompack: RomPack): void {
-	const luaAssets = Object.values(rompack.lua);
+	const luaAssets = Object.values(rompack.cart.lua);
 	if (luaAssets.length === 0) {
 		return;
 	}
@@ -263,7 +274,12 @@ function normalizeLuaAssets(rompack: RomPack): void {
 	}
 	const manifest = (rompack.manifest ?? null) as { lua?: { entryAssetId?: string } } | null;
 	const manifestEntryId = manifest?.lua?.entryAssetId;
-	const entryAssetId = manifestEntryId && rompack.lua[manifestEntryId] ? manifestEntryId : luaAssets[0].resid;
+	const entryAssetId = manifestEntryId && rompack.cart.lua[manifestEntryId] ? manifestEntryId : luaAssets[0].resid;
+	for (const asset of luaAssets) {
+		rompack.cart.chunk2lua[asset.chunk_name!] = asset;
+		rompack.cart.source2lua[asset.source_path!] = asset;
+	}
+	rompack.cart.entry = entryAssetId;
 }
 
 function getImageURL(buffer: ArrayBuffer): string {
@@ -548,13 +564,15 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				const luaAsset: RomLuaAsset = {
 					...res,
 					src: decodeuint8arr(sliced),
-					chunk_name: res.chunk_name ?? undefined,
 				};
 				if (!luaAsset.chunk_name) {
 					const sourcePath = res.source_path;
 					luaAsset.chunk_name = sourcePath && sourcePath.length > 0 ? `@${sourcePath}` : `@lua/${res.resid}`;
 				}
-				romResult.lua[res.resid] = luaAsset;
+				if (!luaAsset.normalized_source_path || luaAsset.normalized_source_path.length === 0) {
+					luaAsset.normalized_source_path = luaAsset.source_path ?? luaAsset.resid;
+				}
+				romResult.cart.lua[res.resid] = luaAsset;
 			} catch (err: any) {
 				throw new Error(`Failed to load 'lua' from rom: ${err.message}.`);
 			}

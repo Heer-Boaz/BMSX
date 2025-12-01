@@ -5,7 +5,7 @@ import type { ManifestInputMapping } from './types';
 import type { BmsxCartridge, LifeCycleHandlers } from 'bmsx/rompack/rompack';
 import { MSX2ScreenHeight } from '../index';
 import { MSX2ScreenWidth } from '../index';
-import type { CanonicalizationType, RomLuaAsset, RomPack, Viewport } from '../rompack/rompack';
+import type { CanonicalizationType, Viewport } from '../rompack/rompack';
 import { IdeThemeVariant } from './ide/types';
 
 type CartManifest = {
@@ -97,51 +97,6 @@ function buildInputMapping(manifest: CartManifest): {
 	return { keyboard, gamepad };
 }
 
-function ensureLuaProgram(rompack: RomPack, manifest: CartManifest): string {
-	const placeholderId = 'placeholder';
-	const placeholderSource = [
-		'function new_game()',
-		'end',
-		'',
-		'function init()',
-		'end',
-		'',
-		'function update()',
-		'end',
-		'',
-		'function draw()',
-		'\tcls(4)',
-		'end',
-	].join('\n');
-
-	let luaAssets: RomLuaAsset[] = Object.values(rompack.lua);
-	if (luaAssets.length === 0) {
-		const placeholder: RomLuaAsset = {
-			resid: placeholderId,
-			type: 'lua',
-			src: placeholderSource,
-			source_path: 'placeholder.lua',
-			chunk_name: '@placeholder.lua',
-		};
-		rompack.lua[placeholderId] = placeholder;
-		luaAssets = [placeholder];
-	}
-	for (const asset of luaAssets) {
-		if (!asset.chunk_name || asset.chunk_name.length === 0) {
-			const path = asset.source_path;
-			asset.chunk_name = path && path.length > 0 ? `@${path}` : `@lua/${asset.resid}`;
-		}
-		if (!asset.normalized_source_path || asset.normalized_source_path.length === 0) {
-			asset.normalized_source_path = asset.source_path && asset.source_path.length > 0 ? asset.source_path : asset.resid;
-		}
-	}
-	const manifestEntryId = manifest.lua?.entryAssetId;
-	const entryAsset = (manifestEntryId && rompack.lua[manifestEntryId])
-		? rompack.lua[manifestEntryId]
-		: luaAssets[0];
-	return entryAsset.resid;
-}
-
 function deriveMetadata(manifest: CartManifest) {
 	const meta = manifest.metadata ?? {};
 	return {
@@ -175,10 +130,10 @@ export async function startCart(args: BootArgs): Promise<void> {
 
 	const { moduleId, playerIndex, viewport, worldViewport, canonicalization } = deriveConsoleOptions(manifest);
 	const meta = deriveMetadata(manifest);
-	const entry = ensureLuaProgram(args.rompack, manifest);
-	const chunk2lua: Record<string, RomLuaAsset> = {};
-	const source2lua: Record<string, RomLuaAsset> = {};
-	for (const asset of Object.values(args.rompack.lua)) {
+	const prebuilt = args.rompack.cart;
+	const chunk2lua = prebuilt.chunk2lua ? { ...prebuilt.chunk2lua } : {};
+	const source2lua = prebuilt.source2lua ? { ...prebuilt.source2lua } : {};
+	for (const asset of Object.values(prebuilt.lua)) {
 		if (asset.chunk_name) {
 			chunk2lua[asset.chunk_name] = asset;
 		}
@@ -186,16 +141,17 @@ export async function startCart(args: BootArgs): Promise<void> {
 			source2lua[asset.normalized_source_path] = asset;
 		}
 	}
+	let entry = prebuilt.entry;
+	const manifestEntryId = manifest.lua?.entryAssetId;
+	if (manifestEntryId && prebuilt.lua[manifestEntryId]) {
+		entry = manifestEntryId;
+	}
 	const cartridge: BmsxCartridge = {
+		...prebuilt,
 		meta,
-		lua: args.rompack.lua,
 		chunk2lua,
 		source2lua,
 		entry,
-		new_game: null,
-		init(): void {},
-		update(): void {},
-		draw(): void {},
 	};
 	const module = createBmsxConsoleModule(cartridge, {
 		moduleId,
