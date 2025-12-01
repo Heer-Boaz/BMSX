@@ -6,6 +6,7 @@ import { inflate } from 'pako';
 import { createCanvas, Image, loadImage } from 'canvas';
 
 import type { BootArgs, RomPack, TextureSource } from '../../../src/bmsx/rompack/rompack';
+import { normalizeCartLua } from '../../../src/bmsx/rompack/cart_normalizer';
 import { getZippedRomAndRomLabelFromBlob, loadResources } from '../bootresources';
 import { HeadlessPlatformServices } from '../../../src/bmsx_hostplatform/headless/platform_headless';
 import { CLIPlatformServices } from '../../../src/bmsx_hostplatform/cli/platform_cli';
@@ -562,6 +563,7 @@ function mergeRecords<T>(primary: Record<string, T> | undefined, fallback?: Reco
 
 function combineRompacks(engineRom: RomPack | null, cartRom: RomPack): RomPack {
 	if (!engineRom) {
+		normalizeCartLua(cartRom.cart);
 		return cartRom;
 	}
 
@@ -580,21 +582,16 @@ function combineRompacks(engineRom: RomPack | null, cartRom: RomPack): RomPack {
 		canonicalization: cartRom.canonicalization ?? engineRom.canonicalization,
 		manifest: cartRom.manifest ?? engineRom.manifest,
 	};
-	const luaAssets = Object.values(combined.lua ?? {});
-	if (luaAssets.length > 0) {
-		for (const asset of luaAssets) {
-			if (!asset.source_path || asset.source_path.length === 0) {
-				asset.source_path = asset.resid;
-			}
-			if (!asset.chunk_name || asset.chunk_name.length === 0) {
-				const path = asset.source_path;
-				asset.chunk_name = path && path.length > 0 ? `@${path}` : `@lua/${asset.resid}`;
-			}
+	normalizeCartLua(combined.cart);
+	if ((!combined.cart.entry || combined.cart.entry.length === 0) && Object.keys(combined.cart.lua).length > 0) {
+		const manifest = combined.manifest as { lua?: { entryAssetId?: string } } | null;
+		const manifestEntryId = manifest && manifest.lua ? manifest.lua.entryAssetId : undefined;
+		if (manifestEntryId && combined.cart.lua[manifestEntryId]) {
+			combined.cart.entry = manifestEntryId;
+		} else {
+			const firstAsset = Object.values(combined.cart.lua)[0];
+			combined.cart.entry = firstAsset.resid;
 		}
-		const manifestEntryId = (combined.manifest as { lua?: { entryAssetId?: string } } | null)?.lua?.entryAssetId;
-		const entryAsset = manifestEntryId && combined.lua[manifestEntryId]
-			? combined.lua[manifestEntryId]
-			: luaAssets[0];
 	}
 	return combined;
 }

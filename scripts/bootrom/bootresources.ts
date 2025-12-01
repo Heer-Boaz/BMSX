@@ -1,4 +1,5 @@
 import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomLuaAsset, RomMeta, RomPack, TextureSource, color_arr } from '../../src/bmsx/rompack/rompack';
+import { normalizeCartLua } from '../../src/bmsx/rompack/cart_normalizer';
 import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../../src/bmsx/serializer/binencoder';
 
 export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
@@ -254,32 +255,12 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 	};
 
 	await Promise.all(assets.map(a => load(rom, a, result, opts)));
-	normalizeLuaAssets(result);
+	normalizeCartLua(result.cart);
+	if ((!result.cart.entry || result.cart.entry.length === 0) && Object.keys(result.cart.lua).length > 0) {
+		const firstAsset = Object.values(result.cart.lua)[0];
+		result.cart.entry = firstAsset.resid;
+	}
 	return Promise.resolve<RomPack>(result);
-}
-
-function normalizeLuaAssets(rompack: RomPack): void {
-	const luaAssets = Object.values(rompack.cart.lua);
-	if (luaAssets.length === 0) {
-		return;
-	}
-	for (const asset of luaAssets) {
-		if (!asset.source_path || asset.source_path.length === 0) {
-			asset.source_path = asset.resid;
-		}
-		if (!asset.chunk_name || asset.chunk_name.length === 0) {
-			const sourcePath = asset.source_path;
-			asset.chunk_name = sourcePath && sourcePath.length > 0 ? `@${sourcePath}` : `@lua/${asset.resid}`;
-		}
-	}
-	const manifest = (rompack.manifest ?? null) as { lua?: { entryAssetId?: string } } | null;
-	const manifestEntryId = manifest?.lua?.entryAssetId;
-	const entryAssetId = manifestEntryId && rompack.cart.lua[manifestEntryId] ? manifestEntryId : luaAssets[0].resid;
-	for (const asset of luaAssets) {
-		rompack.cart.chunk2lua[asset.chunk_name!] = asset;
-		rompack.cart.source2lua[asset.source_path!] = asset;
-	}
-	rompack.cart.entry = entryAssetId;
 }
 
 function getImageURL(buffer: ArrayBuffer): string {
