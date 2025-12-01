@@ -246,13 +246,13 @@ export class ConsoleCommandDispatcher {
 						color = 2;
 						break;
 					case 'saved_dirty':
-						color = 13;
+						color = 16;
 						break;
 					case 'dirty':
-						color = 5;
+						color = 10;
 						break;
 					case 'unsaved':
-						color = 6;
+						color = 8;
 						break;
 				}
 				this.runtime.consoleMode.appendStdout(entry.text.toUpperCase(), color);

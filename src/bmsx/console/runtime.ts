@@ -34,8 +34,14 @@ import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from './lua_builtins';
 import type { ConsoleFontVariant } from './font';
 import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
-import { buildWorkspaceDirtyEntryPath, buildWorkspaceStateFilePath, buildWorkspaceStorageKey, WORKSPACE_FILE_ENDPOINT } from './workspace';
-import { collectWorkspaceOverrides, type WorkspaceOverrideRecord } from './workspace';
+import {
+	buildWorkspaceDirtyEntryPath,
+	buildWorkspaceStateFilePath,
+	buildWorkspaceStorageKey,
+	WORKSPACE_FILE_ENDPOINT,
+	collectWorkspaceOverrides,
+	type WorkspaceOverrideRecord,
+} from './workspace';
 import { deep_clone } from '../utils/deep_clone';
 import { WorldObject } from '../core/object/worldobject';
 import { Input } from '../input/input';
@@ -366,6 +372,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.faultOverlayNeedsFlush = false;
 	}
 	private readonly rompackOriginalLua: Map<string, string> = new Map();
+	private readonly rompackBaseLua: Map<string, string> = new Map();
 	public readonly workspaceLuaOverrides: Map<string, WorkspaceOverrideRecord> = new Map();
 	private hasBooted = false;
 	private workspaceOverrideToken = 0;
@@ -433,6 +440,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaProgram = this.cart.luaProgram;
 		for (const [asset_id, source] of Object.entries(rompack.lua)) {
 			this.rompackOriginalLua.set(asset_id, source);
+			this.rompackBaseLua.set(asset_id, source);
 		}
 		this.seedDefaultLuaBuiltins();
 		this.initializeEditor();
@@ -1421,7 +1429,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.luaChunkEnvironmentsByAssetId.clear();
 			this.luaChunkEnvironmentsByChunkName.clear();
 			this.luaGenericAssetsExecuted.clear();
-			await this.refreshWorkspaceSources(false);
+			await this.refreshWorkspaceSources();
 			if (this.editor) {
 				this.editor.clearRuntimeErrorOverlay();
 			}
@@ -1433,8 +1441,8 @@ export class BmsxConsoleRuntime extends Service {
 				this.bootLuaProgram({ runInit: true, runBoot: true });
 			} else {
 				this.resetLuaInteroperabilityState();
-				this.cart.init(api);
-				this.cart.boot(api);
+				this.cart.init();
+				this.cart.boot();
 			}
 			this.resetFrameTiming();
 			this.hasBooted = true;
@@ -1564,7 +1572,7 @@ export class BmsxConsoleRuntime extends Service {
 					this.invokeLuaFunction(this.luaUpdateFunction, [state.deltaSeconds]);
 				}
 			} else {
-				this.cart.update(api, state.deltaSeconds);
+				this.cart.update(state.deltaSeconds);
 			}
 		} catch (error) {
 			if (isLuaDebuggerPauseSignal(error)) {
@@ -1622,7 +1630,7 @@ export class BmsxConsoleRuntime extends Service {
 					return;
 				}
 			} else {
-				this.cart.draw(api);
+				this.cart.draw();
 			}
 			this.finalizeFrame(editorActive);
 		} finally {
@@ -1813,7 +1821,7 @@ export class BmsxConsoleRuntime extends Service {
 		// Clear flag and any queued overlay frame before we resume swapping handlers.
 		this.luaRuntimeFailed = false;
 		publishOverlayFrame(null);
-		void this.refreshWorkspaceSources(false);
+		void this.refreshWorkspaceSources();
 		this.processPendingLuaAssets('resume');
 		this.resumeLuaProgramState(snapshot, { runInit: true });
 		this.resetFrameTiming();
@@ -2102,7 +2110,7 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			return;
 		}
-		this.cart.draw(api);
+		this.cart.draw();
 	}
 
 	private clearEditorErrorOverlaysIfNoFault(): void {
@@ -2257,6 +2265,7 @@ export class BmsxConsoleRuntime extends Service {
 		await this.persistLuaSourceToFilesystem(filesystemPath, source);
 		const rompack = $.rompack;
 		rompack.lua[asset_id] = source;
+		this.updateSavedBaseline(asset_id, source);
 		const normalizedPath = cartPath.replace(/\\/g, '/');
 		const chunkName = `@${normalizedPath}`;
 		this.registerLuaChunkResource(chunkName, { asset_id, path: normalizedPath });
@@ -2345,6 +2354,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.resourcePathCache.set(asset_id, normalizedPath);
 		this.registerLuaChunkResource(normalizedPath, { asset_id: asset_id, path: normalizedPath });
 		this.luaGenericAssetsExecuted.delete(asset_id);
+		this.updateSavedBaseline(asset_id, contents);
 		this.updateWorkspaceOverrideMap(asset_id, contents, normalizedPath);
 		const descriptor: ConsoleResourceDescriptor = { path: normalizedPath, type: 'lua', asset_id };
 		return descriptor;
@@ -3008,7 +3018,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private processPendingLuaAssets(context: 'resume' | 'boot' | 'workspace:reset'): void {
+	private processPendingLuaAssets(context: 'resume' | 'boot'): void {
 		switch (context) {
 			case 'resume':
 			case 'boot':
@@ -3017,9 +3027,6 @@ export class BmsxConsoleRuntime extends Service {
 					this.applyWorkspaceLuaOverrides(editorOverrides, false);
 					this.reloadChangedLuaAssets(new Set(editorOverrides.keys()));
 				}
-				break;
-			case 'workspace:reset':
-				this.clearWorkspaceLuaOverrides();
 				break;
 		}
 	}
@@ -3063,6 +3070,7 @@ export class BmsxConsoleRuntime extends Service {
 			const rompack = $.rompack;
 			const programasset_id = this.resolveEntryAsset(program, targetChunkName).asset_id;
 			rompack.lua[programasset_id] = source;
+			this.updateSavedBaseline(programasset_id, source);
 			this.updateWorkspaceOverrideMap(programasset_id, source, cartSavePath);
 			try {
 				const asset = this.resolveEntryAsset(program, targetChunkName);
@@ -3853,19 +3861,19 @@ export class BmsxConsoleRuntime extends Service {
 
 	public getWorkspaceSavedAssetIds(): ReadonlySet<string> {
 		const saved = new Set<string>();
-		for (const [asset_id, original] of this.rompackOriginalLua.entries()) {
-			if (this.workspaceLuaOverrides.has(asset_id)) {
-				continue;
-			}
-			const current = $.rompack.lua[asset_id];
-			if (current === undefined) {
-				continue;
-			}
-			const normalizedOriginal = original.replace(/\r\n/g, '\n');
-			const normalizedCurrent = current.replace(/\r\n/g, '\n');
-			if (normalizedCurrent !== normalizedOriginal) {
+		const normalize = (value: string): string => value.replace(/\r\n/g, '\n');
+		for (const [asset_id, baseSource] of this.rompackBaseLua.entries()) {
+			if (this.workspaceLuaOverrides.has(asset_id)) continue;
+			const savedSource = this.rompackOriginalLua.get(asset_id);
+			if (savedSource === undefined) continue;
+			if (normalize(savedSource) !== normalize(baseSource)) {
 				saved.add(asset_id);
 			}
+		}
+		for (const asset_id of this.rompackOriginalLua.keys()) {
+			if (this.rompackBaseLua.has(asset_id)) continue;
+			if (this.workspaceLuaOverrides.has(asset_id)) continue;
+			saved.add(asset_id);
 		}
 		return saved;
 	}
@@ -5143,12 +5151,15 @@ export class BmsxConsoleRuntime extends Service {
 		return normalizedPath;
 	}
 
-	private normalizeWorkspacePath(path: string): string {
-		let normalized = path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\.\//, '');
-		if (normalized.length > 1 && normalized.endsWith('/')) {
-			normalized = normalized.replace(/\/+$/, '');
+	private resetRompackOriginalLua(): void {
+		this.rompackOriginalLua.clear();
+		for (const [asset_id, source] of this.rompackBaseLua) {
+			this.rompackOriginalLua.set(asset_id, source);
 		}
-		return normalized;
+	}
+
+	private updateSavedBaseline(asset_id: string, source: string): void {
+		this.rompackOriginalLua.set(asset_id, source);
 	}
 
 	private isWorkspacePathWithinRoot(path: string, root: string): boolean {
@@ -5160,22 +5171,21 @@ export class BmsxConsoleRuntime extends Service {
 
 	private resolveCartProjectRootPath(): string | null {
 		const root = $.rompack.projectRootPath;
-		return root ? this.normalizeWorkspacePath(root) : null;
+		return root ?? null;
 	}
 
 	private resolveFilesystemPathForCartPath(cartPath: string): string {
-		const normalizedCart = this.normalizeWorkspacePath(cartPath);
 		const root = this.resolveCartProjectRootPath();
 		if (!root || root.length === 0) {
-			return normalizedCart;
+			return cartPath;
 		}
-		if (normalizedCart.length === 0) {
+		if (cartPath.length === 0) {
 			return root;
 		}
-		if (this.isWorkspacePathWithinRoot(normalizedCart, root)) {
-			return normalizedCart;
+		if (this.isWorkspacePathWithinRoot(cartPath, root)) {
+			return cartPath;
 		}
-		return this.normalizeWorkspacePath(`${root}/${normalizedCart}`);
+		return `${root}/${cartPath}`;
 	}
 
 	private applyLocalWorkspaceDirtyLuaOverrides(hotReload: boolean): void {
@@ -5200,7 +5210,7 @@ export class BmsxConsoleRuntime extends Service {
 				rompack.lua[asset_id] = latest;
 				touched = true;
 			}
-			const cartPath = sourcePath ? this.normalizeWorkspacePath(sourcePath) : asset_id;
+			const cartPath = sourcePath ?? asset_id;
 			const original = this.rompackOriginalLua.get(asset_id) ?? '';
 			const normalizedLatest = latest.replace(/\r\n/g, '\n');
 			const normalizedOriginal = original.replace(/\r\n/g, '\n');
@@ -5256,8 +5266,7 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 		const effectiveCartPath = cartPath ?? $.rompack.luaSourcePaths[asset_id] ?? asset_id;
-		const normalizedCartPath = this.normalizeWorkspacePath(effectiveCartPath);
-		this.workspaceLuaOverrides.set(asset_id, { source, path: dirtyPath ?? null, cartPath: normalizedCartPath });
+		this.workspaceLuaOverrides.set(asset_id, { source, path: dirtyPath ?? null, cartPath: effectiveCartPath });
 	}
 
 	private persistWorkspaceOverridesToLocalStorage(root: string, overrides: Map<string, WorkspaceOverrideRecord>): void {
@@ -5319,11 +5328,7 @@ export class BmsxConsoleRuntime extends Service {
 		const rompack = $.rompack;
 		const changed = new Set<string>();
 		for (const [asset_id, cartPath] of Object.entries(rompack.luaSourcePaths)) {
-			if (typeof cartPath !== 'string' || cartPath.length === 0) {
-				continue;
-			}
-			const normalizedPath = this.normalizeWorkspacePath(cartPath);
-			const savedRecord = await this.fetchWorkspaceFile(normalizedPath);
+			const savedRecord = await this.fetchWorkspaceFile(cartPath);
 			if (savedRecord === null) {
 				continue;
 			}
@@ -5338,8 +5343,9 @@ export class BmsxConsoleRuntime extends Service {
 		return changed;
 	}
 
-	public async refreshWorkspaceSources(hotReload: boolean): Promise<void> {
+	public async refreshWorkspaceSources(): Promise<void> {
 		this.workspaceOverrideToken = this.workspaceOverrideToken + 1;
+		this.resetRompackOriginalLua();
 		this.workspaceLuaOverrides.clear();
 		this._workspaceScratchPaths.clear();
 		const changedAssets = new Set<string>();
@@ -5367,9 +5373,6 @@ export class BmsxConsoleRuntime extends Service {
 		const editorChanged = this.applyWorkspaceLuaOverrides(editorOverrides, false);
 		for (const asset_id of editorChanged) {
 			changedAssets.add(asset_id);
-		}
-		if (hotReload && changedAssets.size > 0) {
-			this.reloadChangedLuaAssets(changedAssets);
 		}
 	}
 
@@ -5419,28 +5422,18 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private buildDirtyPathForCartPath(cartPath: string, root: string): string {
-		const normalizedCart = this.normalizeWorkspacePath(cartPath);
-		return buildWorkspaceDirtyEntryPath(root, normalizedCart);
-	}
-
 	private async fetchWorkspaceDirtyLuaOverrides(root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
 		const rompack = $.rompack;
 		const tasks: Array<Promise<{ asset_id: string; contents: string; path: string | null; cartPath: string; updatedAt?: number } | null>> = [];
 		// Fetching dirty files from backend is best-effort. Missing files do NOT mean we should
 		// discard in-memory dirty edits; they simply yield no extra overrides.
 		for (const [asset_id, cartPath] of Object.entries(rompack.luaSourcePaths)) {
-			if (typeof cartPath !== 'string' || cartPath.length === 0) {
-				console.warn('[BmsxConsoleRuntime] Invalid cartPath for asset_id:', asset_id);
-				continue;
-			}
-			const dirtyPath = this.buildDirtyPathForCartPath(cartPath, root);
+			const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 			tasks.push(this.fetchWorkspaceFile(dirtyPath).then((result) => {
 				if (result === null) {
 					return null;
 				}
-				const normalizedCartPath = this.normalizeWorkspacePath(cartPath);
-				return { asset_id, contents: result.contents, path: dirtyPath, cartPath: normalizedCartPath, updatedAt: result.updatedAt };
+				return { asset_id, contents: result.contents, path: dirtyPath, cartPath, updatedAt: result.updatedAt };
 			}));
 		}
 		if (tasks.length === 0) {
@@ -5490,10 +5483,7 @@ export class BmsxConsoleRuntime extends Service {
 				continue;
 			}
 			if (typeof entry.dirtyPath === 'string' && entry.dirtyPath.length > 0) {
-				const normalized = this.normalizeWorkspacePath(entry.dirtyPath);
-				if (normalized.length > 0) {
-					paths.add(normalized);
-				}
+				paths.add(entry.dirtyPath);
 			}
 		}
 		return paths;
@@ -5562,10 +5552,7 @@ export class BmsxConsoleRuntime extends Service {
 		const root = this.resolveCartProjectRootPath();
 		if (root) {
 			for (const cartPath of Object.values(rompack.luaSourcePaths)) {
-				if (typeof cartPath !== 'string' || cartPath.length === 0) {
-					continue;
-				}
-				const dirtyPath = this.buildDirtyPathForCartPath(cartPath, root);
+				const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 				const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
 				this.storageService.removeItem(storageKey);
 				void this.deleteWorkspaceFile(dirtyPath);
@@ -5575,13 +5562,12 @@ export class BmsxConsoleRuntime extends Service {
 			this.storageService.removeItem(stateKey);
 			void this.deleteWorkspaceFile(statePath);
 		}
-		await this.refreshWorkspaceSources(false);
+		await this.refreshWorkspaceSources();
 		if (this.luaInterpreter && this.luaProgram) {
 			const asset = this.resolveEntryAsset(this.luaProgram);
 			const chunkName = this.resolveProgramEntryChunkName(this.luaProgram);
 			const finalSource = rompack.lua[asset.asset_id];
 			this.reloadLuaProgramState(finalSource, chunkName);
-			this.processPendingLuaAssets('workspace:reset');
 		}
 	}
 
