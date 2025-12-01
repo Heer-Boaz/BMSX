@@ -1,5 +1,4 @@
 import type {
-	BmsxCartMetadata,
 	ConsoleLuaBuiltinDescriptor,
 	ConsoleLuaHoverRequest,
 	ConsoleLuaHoverResult,
@@ -13,6 +12,7 @@ import type {
 	ConsoleViewport,
 	IdeThemeVariant,
 } from '../types';
+import type { BmsxCartMetadata } from 'bmsx/rompack/rompack';
 import type { ConsoleFontVariant } from '../font';
 import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
 import type { StackTraceFrame } from '../../lua/runtime';

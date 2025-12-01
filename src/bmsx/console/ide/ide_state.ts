@@ -1,5 +1,4 @@
 import type {
-	BmsxCartMetadata,
 	ConsoleLuaBuiltinDescriptor,
 	ConsoleLuaHoverRequest,
 	ConsoleLuaHoverResult,
@@ -10,6 +9,7 @@ import type {
 	ConsoleResourceDescriptor,
 	IdeThemeVariant,
 } from '../types';
+import type { BmsxCartMetadata } from 'bmsx/rompack/rompack';
 import type { ConsoleFontVariant } from '../font';
 import type { ConsoleEditorFont } from '../editor_font';
 import type { TextField, ScrollbarKind, MessageState } from './types';

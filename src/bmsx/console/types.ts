@@ -1,58 +1,13 @@
 import type { vec2, CanonicalizationType } from '../rompack/rompack';
-
-export type IdeThemeVariant = string;
-
-export interface BmsxCartMetadata {
-	title: string;
-	persistentId: string;
-	ideTheme?: IdeThemeVariant;
-}
+export type { IdeThemeVariant } from '../rompack/rompack';
 
 export type ManifestInputMapping = Record<string, string[] | undefined>;
-
-
-export type ManifestLuaEntryPoints = {
-	new_game?: string;
-	init?: string;
-	update?: string;
-	draw?: string;
-};
-
-export type BmsxConsoleLuaEntryAsset = {
-	readonly asset_id: string;
-	readonly chunkName?: string;
-};
 
 export type BmsxConsoleLuaPrimaryAssetWithSource = {
 	readonly asset_id?: string;
 	readonly chunkName: string;
 	readonly source: string;
 };
-
-export type BmsxCartProgram = {
-	readonly assets: ReadonlyArray<BmsxConsoleLuaEntryAsset>;
-	readonly entryAssetId?: string;
-};
-
-export type LifeCycleHandlers = {
-	new_game: (() => void) | null;
-	init: (() => void) | null;
-	update: ((deltaSeconds: number) => void) | null;
-	draw: (() => void) | null;
-};
-
-export type LifeCycleHandlerName = keyof LifeCycleHandlers;
-
-export type LifeCycleHandlerManifest = Partial<Record<LifeCycleHandlerName, string>>;
-
-export interface BmsxCartridge {
-	readonly meta: BmsxCartMetadata;
-	init(): void;
-	boot(): void;
-	update(deltaSeconds: number): void;
-	draw(): void;
-	readonly luaProgram: BmsxCartProgram;
-}
 
 export const enum BmsxConsolePointerButton {
 	Primary = 0,
