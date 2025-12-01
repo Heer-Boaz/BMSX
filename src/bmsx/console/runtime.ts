@@ -149,7 +149,6 @@ type ConsoleFrameState = {
 	debugPaused: boolean;
 	updateExecuted: boolean;
 	luaFaulted: boolean;
-	frameBegan: boolean;
 	consoleEvaluated: boolean;
 	editorEvaluated: boolean;
 };
@@ -291,7 +290,6 @@ export class BmsxConsoleRuntime extends Service {
 		return this.overlayRenderBackend.viewportSize;
 	}
 
-	private overlayRenderedThisFrame = false;
 	private readonly consoleCommands: ConsoleCommandDispatcher;
 	private readonly consoleHotkeyLatch = new Map<string, number | null>();
 	private shortcutDisposers: Array<() => void> = [];
@@ -347,7 +345,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly rompackOriginalLua: Map<string, string> = new Map();
 	private readonly rompackBaseLua: Map<string, string> = new Map();
 	public readonly workspaceLuaOverrides: Map<string, WorkspaceOverrideRecord> = new Map();
-	private hasBooted = false;
+	private hasCompletedInitialBoot = false;
 	private workspaceOverrideToken = 0;
 	private readonly canonicalization: CanonicalizationType;
 
@@ -590,7 +588,6 @@ export class BmsxConsoleRuntime extends Service {
 			if (this.editor) {
 				this.editor.clearRuntimeErrorOverlay();
 			}
-			publishOverlayFrame(null);
 		}
 		const resumeMode = this.toDebuggerResumeMode(command);
 		emitDebuggerLifecycleEvent({ type: 'continued', mode: resumeMode });
@@ -769,7 +766,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private toggleConsoleMode(): void {
 		if (this.consoleMode.isActive) {
-			this.deactivateConsoleMode(true);
+			this.consoleMode.deactivate();
 			return;
 		}
 		this.activateConsoleMode();
@@ -788,13 +785,13 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		if (this.consoleMode.isActive) {
-			this.deactivateConsoleMode(false);
+			this.consoleMode.deactivate();
 		}
-		if (!this.editor?.isActive === true) {
+		if (!this.editor.isActive === true) {
 			this.editor.activate();
 		}
 
-		this.updateOverlayState(this.consoleMode.isActive, this.editor?.isActive === true, true);
+		this.updateOverlayState(this.consoleMode.isActive, this.editor.isActive === true, true);
 	}
 
 	private registerConsoleShortcuts(): void {
@@ -828,13 +825,6 @@ export class BmsxConsoleRuntime extends Service {
 		this.consoleMode.activate();
 	}
 
-	private deactivateConsoleMode(_resumeGame: boolean): void {
-		if (!this.consoleMode.isActive) {
-			return;
-		}
-		this.consoleMode.deactivate();
-	}
-
 	public toggleOverlayResolutionMode(): 'offscreen' | 'viewport' {
 		const next = this._overlayResolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
 		this.overlayResolutionMode = next;
@@ -848,7 +838,6 @@ export class BmsxConsoleRuntime extends Service {
 		this.overlayRenderBackend.beginFrame();
 		this.consoleMode.draw(this.overlayRenderBackend, this.overlayRenderBackend.viewportSize);
 		this.overlayRenderBackend.endFrame();
-		this.overlayRenderedThisFrame = true;
 	}
 
 	private async advanceConsoleMode(deltaSeconds: number): Promise<void> {
@@ -893,20 +882,11 @@ export class BmsxConsoleRuntime extends Service {
 		return this.includeJsStackTraces;
 	}
 
-	private drawEditorFrame(editor: ConsoleCartEditor): void {
-		this.overlayRenderBackend.beginFrame();
-		try {
-			editor.draw();
-		} finally {
-			this.overlayRenderBackend.endFrame();
-		}
-	}
-
 	public continueFromConsole(): void {
 		if (this.luaDebuggerSuspension) {
 			this.resumeDebugger('continue');
 		}
-		this.deactivateConsoleMode(true);
+		this.consoleMode.deactivate();
 	}
 
 	private executeConsoleCommand(command: string): void {
@@ -1075,7 +1055,6 @@ export class BmsxConsoleRuntime extends Service {
 			if (this.editor) {
 				this.editor.clearRuntimeErrorOverlay();
 			}
-			publishOverlayFrame(null);
 			return { cleared: true, resumedDebugger: false };
 		}
 		return { cleared: false, resumedDebugger: false };
@@ -1371,7 +1350,6 @@ export class BmsxConsoleRuntime extends Service {
 		this.overlayState = { console: includeConsole, editor: includeEditor };
 		const anyOverlay = includeConsole || includeEditor;
 		if (!anyOverlay) {
-			publishOverlayFrame(null);
 			OverlayPipelineController.setRequest('console', null);
 			return;
 		}
@@ -1383,7 +1361,7 @@ export class BmsxConsoleRuntime extends Service {
 		});
 	}
 
-	public async boot(): Promise<void> {
+	private async boot(): Promise<void> {
 		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'boot' });
 		try {
 			this.luaDebuggerSuspension = null;
@@ -1402,8 +1380,8 @@ export class BmsxConsoleRuntime extends Service {
 			if (this.editor) {
 				this.editor.clearRuntimeErrorOverlay();
 			}
-			if (this.hasBooted) {
-				await this.resetWorldState();
+			if (this.hasCompletedInitialBoot) {
+				await $.reset_to_fresh_world({ preserveConsoleRuntime: true });
 			}
 			api.cartdata(this.cart.meta.persistentId);
 			if (this.luaProgram) {
@@ -1413,7 +1391,7 @@ export class BmsxConsoleRuntime extends Service {
 				this.cart.init();
 				this.cart.boot();
 			}
-			this.hasBooted = true;
+			this.hasCompletedInitialBoot = true;
 			void this.applyServerWorkspaceDirtyLuaOverrides(true);
 		}
 		catch (error) {
@@ -1424,11 +1402,6 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private async resetWorldState(): Promise<void> {
-		this.abandonFrameState();
-		await $.reset_to_fresh_world({ preserveConsoleRuntime: true });
-	}
-
 	// Frame state is owned by the runtime: it is created per-frame, kept intact for debugger inspection on faults,
 	// and only cleared via finalize/abandon during explicit reboot/reset flows.
 	// Frame state is owned by the runtime and is always finalized/abandoned by the runtime; faults capture a snapshot for inspection.
@@ -1437,7 +1410,6 @@ export class BmsxConsoleRuntime extends Service {
 			throw new Error('[BmsxConsoleRuntime] Attempted to begin a new frame while another frame is active.');
 		}
 		const deltaSeconds = $.deltatime_seconds;
-		this.overlayRenderedThisFrame = false;
 		const debugPaused = $.paused === true;
 		const haltGame = debugPaused || this.debuggerHaltsGame;
 		const state: ConsoleFrameState = {
@@ -1449,7 +1421,6 @@ export class BmsxConsoleRuntime extends Service {
 			debugPaused,
 			updateExecuted: false,
 			luaFaulted: this.luaRuntimeFailed,
-			frameBegan: false,
 			consoleEvaluated: false,
 			editorEvaluated: false,
 		};
@@ -1479,8 +1450,8 @@ export class BmsxConsoleRuntime extends Service {
 			state = this.beginFrameState();
 			this.runConsolePhase(state).then(() => {
 				this.runEditorPhase(state);
-				this.runUpdatePhaseInternal(state);
-				this.runDrawPhaseInternal(state);
+				this.runUpdatePhase(state);
+				this.runDrawPhase();
 			});
 		} catch (error) {
 			fault = error;
@@ -1511,7 +1482,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.updateFrameHaltingState(state);
 	}
 
-	private runUpdatePhaseInternal(state: ConsoleFrameState): void {
+	private runUpdatePhase(state: ConsoleFrameState): void {
 		this.handleGlobalDebuggerHotkeys();
 		if (state.updateExecuted) {
 			return;
@@ -1553,76 +1524,35 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private runDrawPhaseInternal(state: ConsoleFrameState): void {
+	private runDrawPhase(): void {
 		try {
-			const editor = this.editor;
-			const editorActive = state.editorActive;
-			state.frameBegan = true;
-			if (editorActive && editor) {
-				this.drawEditorFrame(editor);
-				this.finalizeFrame(true);
-				return;
+			this.overlayRenderBackend.beginFrame();
+			if (this.editor?.isActive) {
+				this.editor.draw();
 			}
-			const luaFaulted = state.luaFaulted || this.luaRuntimeFailed;
-			if (luaFaulted) {
-				if (editorActive && editor) {
-					this.drawEditorFrame(editor);
-					this.finalizeFrame(true);
-					return;
+			else {
+				if (this.consoleMode.isActive) {
+					this.renderConsoleOverlay();
 				}
-				this.finalizeFrame(editorActive);
-				return;
-			}
-			if (!this.luaVmGate.ready) {
-				this.finalizeFrame(editorActive);
-				return;
-			}
-			if (this.luaProgram) {
-				try {
+				if (this.luaVmGate.ready) {
 					if (this.luaDrawFunction !== null) {
 						this.invokeLuaFunction(this.luaDrawFunction, []);
 					}
-				} catch (error) {
-					if (isLuaDebuggerPauseSignal(error)) {
-						this.onLuaDebuggerPause(error);
-					} else {
-						this.handleLuaError(error);
-					}
-					if (editorActive && editor) {
-						this.drawEditorFrame(editor);
-						this.finalizeFrame(true);
-						return;
-					}
-					this.finalizeFrame(editorActive);
-					return;
 				}
-			} else {
-				this.cart.draw();
 			}
-			this.finalizeFrame(editorActive);
+		}
+		catch (error) {
+			if (isLuaDebuggerPauseSignal(error)) {
+				this.onLuaDebuggerPause(error);
+			} else {
+				this.handleLuaError(error);
+			}
 		} finally {
-			this.currentFrameState = null;
-		}
-	}
-
-	private finalizeFrame(editorActive: boolean): void {
-		this.overlayRenderedThisFrame = editorActive;
-		if (this.consoleMode.isActive) {
-			this.renderConsoleOverlay();
-		}
-		if (!this.overlayRenderedThisFrame) {
-			publishOverlayFrame(null);
+			this.overlayRenderBackend.endFrame();
 		}
 	}
 
 	public abandonFrameState(): void {
-		const state = this.currentFrameState;
-		if (!state) {
-			return;
-		}
-		if (state.frameBegan) {
-			publishOverlayFrame(null);
-		}
 		this.currentFrameState = null;
 	}
 
@@ -1707,7 +1637,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	public set state(state: BmsxConsoleState) {
 		if (!state) this.resetRuntimeToFreshState();
-		this.restoreFromStateSnapshot(state);
+		else this.restoreFromStateSnapshot(state);
 	}
 
 	private async resetRuntimeToFreshState() {
@@ -1857,11 +1787,6 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private resumeLuaProgramState(snapshot: BmsxConsoleState): void {
-		// if (!this.luaInterpreter) {
-		// 	this.reinitializeLuaProgramFromSnapshot(snapshot, { runInit: options.runInit, hotReload: false });
-		// 	return;
-		// }
-
 		this.processPendingLuaAssets('resume');
 
 		const targetChunkName = this.canonicalizeProgramEntryChunkName(snapshot.luaChunkName ?? null);
@@ -2979,51 +2904,12 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	public async reloadLuaProgram(source: string): Promise<void> {
-		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'reload_program' });
-		if (!this.luaProgram) {
-			throw new Error('[BmsxConsoleRuntime] Cannot reload Lua program when no Lua program is active.');
-		}
-		if (typeof source !== 'string') {
-			throw new Error('[BmsxConsoleRuntime] Lua source must be a string.');
-		}
-		if (source.trim().length === 0) {
-			throw new Error('[BmsxConsoleRuntime] Lua source cannot be empty.');
-		}
-		const program = this.luaProgram;
-		if (!program) {
-			throw new Error('[BmsxConsoleRuntime] Lua program reference unavailable.');
-		}
-		const previousChunkName = this.resolveProgramEntryChunkName(program);
-		const previousSource = this.getProgramEntrySource(program);
-		try {
-			await this.saveLuaProgram(source);
-		}
-		catch (error) {
-			try {
-				const asset = this.resolveEntryAsset(program, previousChunkName);
-				this.reloadLuaProgramState(previousSource, previousChunkName, asset.asset_id);
-			}
-			catch (restoreError) {
-				this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after reload failure', { error: restoreError });
-				return;
-			}
-			this.handleLuaPersistenceFailure('persist', '[BmsxConsoleRuntime] Reload failed', { error });
-			if (this.luaFailurePolicy.persist === 'warning') {
-				return;
-			}
-		}
-		finally {
-			this.luaVmGate.end(vmToken);
-		}
-	}
-
-	public async reloadProgramAndResetWorld(source: string): Promise<void> {
+	public async reloadProgramAndResetWorld(): Promise<void> {
 		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'reload_and_reset' });
 		try {
 			const program = this.luaProgram;
 			const chunkName = this.luaChunkName ?? this.resolveProgramEntryChunkName(program);
-			await this.resetWorldState();
+			await $.reset_to_fresh_world({ preserveConsoleRuntime: true });
 			try {
 				const asset = this.resolveEntryAsset(program, chunkName);
 				this.reloadLuaProgramState(source, chunkName, asset.asset_id);

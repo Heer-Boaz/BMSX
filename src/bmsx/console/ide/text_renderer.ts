@@ -18,9 +18,9 @@ export function drawEditorText(font: ConsoleEditorFont, text: string, originX: n
 	const baseX = Math.floor(originX);
 	let cursorY = Math.floor(originY);
 	const lines = text.split('\n');
-	const renderFont = font.getRenderFont();
+	const renderFont = font.renderFont();
 	const preserveCase = options?.preserveCase ?? false;
-	const forceUppercase = options?.forceUppercase ?? (font.getVariant() === 'tiny');
+	const forceUppercase = options?.forceUppercase ?? (font.variant === 'tiny');
 	const useUppercase = !preserveCase && CASE_INSENSITIVE_EDITOR && forceUppercase;
 	for (let i = 0; i < lines.length; i += 1) {
 		const expanded = expandTabsExternal(lines[i]);
@@ -29,7 +29,7 @@ export function drawEditorText(font: ConsoleEditorFont, text: string, originX: n
 			api.write_with_font(display, baseX, cursorY, z, color, renderFont);
 		}
 		if (i < lines.length - 1) {
-			cursorY += font.lineHeight();
+			cursorY += font.lineHeight;
 		}
 	}
 }
@@ -37,10 +37,10 @@ export function drawEditorText(font: ConsoleEditorFont, text: string, originX: n
 export function drawEditorColoredText(font: ConsoleEditorFont, text: string, colors: readonly number[], originX: number, originY: number, z: number, fallbackColor: number, options?: DrawEditorTextOptions): void {
 	let cursorX = Math.floor(originX);
 	const cursorY = Math.floor(originY);
-	const renderFont = font.getRenderFont();
+	const renderFont = font.renderFont();
 	const apiWithFont = api;
 	const preserveCase = options?.preserveCase ?? false;
-	const forceUppercase = options?.forceUppercase ?? (font.getVariant() === 'tiny');
+	const forceUppercase = options?.forceUppercase ?? (font.variant === 'tiny');
 	const useUppercase = !preserveCase && CASE_INSENSITIVE_EDITOR && forceUppercase;
 	const renderText = useUppercase ? toUpperExceptStrings(text, colors, fallbackColor) : text;
 	let index = 0;

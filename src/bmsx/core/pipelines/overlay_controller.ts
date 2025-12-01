@@ -19,14 +19,6 @@ class OverlayPipelineControllerImpl {
 		} else {
 			this.requests.set(id, { ...request });
 		}
-		// if ($.debug) {
-		// 	console.log('[OverlayPipeline] setRequest', {
-		// 		id,
-		// 		includeConsole: request?.includeConsole ?? false,
-		// 		includeEditor: request?.includeEditor ?? false,
-		// 		includePresentation: request?.includePresentation ?? false,
-		// 	});
-		// }
 		this.rebuild();
 	}
 

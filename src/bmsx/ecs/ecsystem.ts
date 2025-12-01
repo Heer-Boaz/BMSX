@@ -89,10 +89,6 @@ export class ECSystemManager {
 
 	/** Runs systems that belong to the exact TickGroup (single phase). */
 	updatePhase(model: World, group: TickGroup): void {
-		// if ($.debug) {
-		// 	const systems = this._systems.filter(s => s.group === group).map(s => s.__ecsId ?? s.constructor.name);
-		// 	console.log('[ECS][phase:start]', { group, systems });
-		// }
 		for (const s of this._systems) {
 			if (s.group === group) {
 				const t0 = $.platform.clock.now();
@@ -100,14 +96,8 @@ export class ECSystemManager {
 				const t1 = $.platform.clock.now();
 				const id = s.__ecsId ?? s.constructor.name;
 				this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
-				// if ($.debug) {
-				// 	console.log('[ECS][phase:system]', { group, system: id, ms: (t1 - t0) });
-				// }
 			}
 		}
-		// if ($.debug) {
-		// 	console.log('[ECS][phase:end]', { group });
-		// }
 	}
 
 	/** Runs only systems explicitly flagged to run while the game is paused. */
@@ -120,32 +110,6 @@ export class ECSystemManager {
 			const t1 = $.platform.clock.now();
 			const id = s.__ecsId ?? s.constructor.name;
 			this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
-		}
-	}
-}
-
-/** Pre-update: call preprocessingUpdate for components tagged with given tag. */
-export class PreTagSystem extends ECSystem {
-	constructor(private tag: string, priority: number) { super(TickGroup.Input, priority); }
-	update(world: World): void {
-		for (let o of world.objects({ scope: 'active' })) {
-			for (let c of o.iterate_components()) {
-				if (!c.enabled || !c.hasPreprocessingTag(this.tag)) continue;
-				c.preprocessingUpdate();
-			}
-		}
-	}
-}
-
-/** Post-update: call postprocessingUpdate for components tagged with given tag. */
-export class PostTagSystem extends ECSystem {
-	constructor(private tag: string, priority: number) { super(TickGroup.Physics, priority); }
-	update(world: World): void {
-		for (let o of world.objects({ scope: 'active' })) {
-			for (let c of o.iterate_components()) {
-				if (!c.enabled || !c.hasPostprocessingTag(this.tag)) continue;
-				c.postprocessingUpdate({ params: [] });
-			}
 		}
 	}
 }

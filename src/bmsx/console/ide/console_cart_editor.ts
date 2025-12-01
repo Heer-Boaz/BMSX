@@ -214,8 +214,8 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		measureText: (text) => measureText(text),
 		drawText: (text, x, y, color) => drawEditorText(ide_state.font, text, x, y, undefined, color),
 		getCursorScreenInfo: () => ide_state.cursorScreenInfo,
-		getLineHeight: () => ide_state.lineHeight,
-		getSpaceAdvance: () => ide_state.spaceAdvance,
+		characterAdvance: (char) => ide_state.font.advance(char),
+		get lineHeight(): number { return ide_state.font.lineHeight; },
 		getActiveCodeTabContext: () => getActiveCodeTabContext(),
 		resolveHoverasset_id: (ctx) => resolveHoverAssetId(ctx as CodeTabContext),
 		resolveHoverChunkName: (ctx) => resolveHoverChunkName(ctx as CodeTabContext),
@@ -1300,9 +1300,6 @@ export function isActive(): boolean {
 }
 
 export function draw(): void {
-	if (!ide_state.active) {
-		return;
-	}
 	ide_state.codeVerticalScrollbarVisible = false;
 	ide_state.codeHorizontalScrollbarVisible = false;
 	const frameColor = Msx1Colors[constants.COLOR_FRAME];
@@ -2912,7 +2909,7 @@ export function performReboot(): boolean {
 	deactivate();
 	scheduleRuntimeTask(async () => {
 		if (requiresReload && savedSource !== null) {
-			await runtime.reloadLuaProgram(savedSource);
+			await runtime.reloadProgramAndResetWorld(savedSource);
 		}
 		await runtime.boot();
 		ide_state.appliedGeneration = targetGeneration;
@@ -3617,7 +3614,7 @@ export function updateViewport(viewport: { width: number; height: number }): voi
 export function setFontVariant(variant: ConsoleFontVariant): void {
 	ide_state.fontVariant = variant;
 	ide_state.font = new ConsoleEditorFont(variant);
-	ide_state.lineHeight = ide_state.font.lineHeight();
+	ide_state.lineHeight = ide_state.font.lineHeight;
 	ide_state.charAdvance = ide_state.font.advance('M');
 	ide_state.spaceAdvance = ide_state.font.advance(' ');
 	ide_state.inlineFieldMetricsRef = {

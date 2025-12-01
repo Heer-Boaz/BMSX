@@ -5,14 +5,12 @@ export class ConsoleEditorFont {
 	private readonly font: ConsoleFont;
 	private readonly glyphCache: Map<string, ConsoleGlyph> = new Map();
 	private readonly lineHeightValue: number;
-	private readonly spaceAdvanceValue: number;
-	private readonly variant: ConsoleFontVariant;
+	private readonly _variant: ConsoleFontVariant;
 
 	constructor(variant: ConsoleFontVariant = DEFAULT_CONSOLE_FONT_VARIANT) {
-		this.variant = variant;
+		this._variant = variant;
 		this.font = new ConsoleFont({ variant });
-		this.lineHeightValue = this.font.lineHeight();
-		this.spaceAdvanceValue = this.font.advance(' ');
+		this.lineHeightValue = this.font.lineHeight;
 	}
 
 	public getGlyph(char: string): ConsoleGlyph {
@@ -26,13 +24,10 @@ export class ConsoleEditorFont {
 	}
 
 	public advance(char: string): number {
-		if (char === ' ') {
-			return this.spaceAdvanceValue;
-		}
 		return this.getGlyph(char).advance;
 	}
 
-	public lineHeight(): number {
+	public get lineHeight(): number {
 		return this.lineHeightValue;
 	}
 
@@ -40,11 +35,11 @@ export class ConsoleEditorFont {
 		return this.font.measure(text);
 	}
 
-	public getVariant(): ConsoleFontVariant {
-		return this.variant;
+	public get variant(): ConsoleFontVariant {
+		return this._variant;
 	}
 
-	public getRenderFont(): ConsoleFont {
+	public renderFont(): ConsoleFont {
 		return this.font;
 	}
 }

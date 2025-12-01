@@ -2,7 +2,7 @@ import { $ } from '../core/game';
 import type { World, WorldModule } from '../core/world';
 import { BmsxConsoleRuntime } from './runtime';
 import type { BmsxConsoleCartridge, ConsoleModuleOptions } from './types';
-import { BmsxConsoleFrameSystem } from './console_systems';
+import { BmsxCartSystem } from './console_systems';
 import { TickGroup } from '../ecs/ecsystem';
 
 export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: ConsoleModuleOptions): WorldModule {
@@ -15,7 +15,7 @@ export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: Con
 					id: frameSystemId,
 					group: TickGroup.Presentation,
 					defaultPriority: 90,
-					create: (priority: number) => new BmsxConsoleFrameSystem(priority),
+					create: (priority: number) => new BmsxCartSystem(priority),
 				},
 			],
 			nodes: [

@@ -130,7 +130,7 @@ export class ConsoleRenderFacade {
 			const ch = command.text.charAt(i);
 			if (ch === '\n') {
 				cursorX = command.x;
-				cursorY += command.font.lineHeight();
+				cursorY += command.font.lineHeight;
 				continue;
 			}
 			const imgId = command.font.char_to_img(ch);

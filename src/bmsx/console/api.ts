@@ -279,7 +279,7 @@ export class BmsxConsoleApi {
 		const { baseX, baseY, color, font, autoAdvance } = this.resolve_write_context(this.font, x, y, z, colorindex);
 		this.draw_multiline_text(text, baseX, baseY, z, color, font);
 		if (autoAdvance) {
-			this.advance_print_cursor(font.lineHeight());
+			this.advance_print_cursor(font.lineHeight);
 		}
 	}
 
@@ -288,7 +288,7 @@ export class BmsxConsoleApi {
 		const { baseX, baseY, color, autoAdvance } = this.resolve_write_context(renderFont, x, y, z, colorindex);
 		this.draw_multiline_text(text, baseX, baseY, z, color, renderFont);
 		if (autoAdvance) {
-			this.advance_print_cursor(renderFont.lineHeight());
+			this.advance_print_cursor(renderFont.lineHeight);
 		}
 	}
 
@@ -802,7 +802,7 @@ export class BmsxConsoleApi {
 				this.renderBackend.glyphs({ kind: 'print', text: expanded, x, y: cursorY, z, color, font });
 			}
 			if (i < lines.length - 1) {
-				cursorY += font.lineHeight();
+				cursorY += font.lineHeight;
 			}
 		}
 		this.textCursorX = this.textCursorHomeX;

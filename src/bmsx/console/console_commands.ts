@@ -79,7 +79,7 @@ export class ConsoleCommandDispatcher {
 			return true;
 		}
 		if (upper === 'REBOOT') {
-			await this.runtime.boot();
+			await this.runtime.reloadProgramAndResetWorld();
 			return true;
 		}
 		if (upper === 'EXIT' || upper === 'QUIT') {

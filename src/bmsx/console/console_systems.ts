@@ -2,13 +2,7 @@ import type { World } from '../core/world';
 import { ECSystem, TickGroup } from '../ecs/ecsystem';
 import { BmsxConsoleRuntime } from './runtime';
 
-abstract class BaseConsoleSystem extends ECSystem {
-	protected get runtime(): BmsxConsoleRuntime | null {
-		return BmsxConsoleRuntime.instance;
-	}
-}
-
-export class BmsxConsoleFrameSystem extends BaseConsoleSystem {
+export class BmsxCartSystem extends ECSystem {
 	constructor(priority = 90) {
 		super(TickGroup.Presentation, priority);
 		this.__ecsId = 'bmsxConsole.frame';
@@ -16,7 +10,6 @@ export class BmsxConsoleFrameSystem extends BaseConsoleSystem {
 	}
 
 	public update(_world: World): void {
-		if (!this.runtime) return;
-		this.runtime.runFrame();
+		BmsxConsoleRuntime.instance?.runFrame();
 	}
 }

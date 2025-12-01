@@ -228,7 +228,7 @@ export class ConsoleFont extends BFont {
 		return this.getGlyph(char).advance;
 	}
 
-	public lineHeight(): number {
+	public get lineHeight(): number {
 		return this.lineHeightValue;
 	}
 

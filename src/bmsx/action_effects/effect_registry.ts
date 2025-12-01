@@ -44,18 +44,14 @@ export class ActionEffectRegistry implements RegisterablePersistent {
 	private readonly definitions = new Map<ActionEffectId, ActionEffectDefinition>();
 
 	public register<Id extends ActionEffectId, P>(definition: ActionEffectDefinition<Id>, opts?: RegisterEffectOptions<P>): ActionEffectDefinition<Id> {
+		if (!definition) throw new Error('[ActionEffectRegistry] definition is required.');
 		const id = definition.id;
-		if (this.definitions.has(id)) {
-			throw new Error(`[ActionEffectRegistry] '${id}' already registered.`);
+		if (!id) throw new Error('[ActionEffectRegistry] definition.id is required.');
+		if (opts) {
+			if (opts.schema) this.schemas.set(id, opts.schema);
+			if (opts.validate) this.validators.set(id, opts.validate);
 		}
-		if (opts && opts.schema) {
-			this.schemas.set(id, opts.schema as Schema<unknown>);
-		}
-		const validator = opts && opts.validate
-			? (payload: unknown) => { (opts.validate as (payload: P) => void)(payload as P); }
-			: () => {};
-		this.validators.set(id, validator);
-		this.definitions.set(id, definition);
+		this.definitions.set(id, definition); // Note that we allow overwriting definitions here on purpose: we need game initialization to be idemptotent.
 		return definition;
 	}
 

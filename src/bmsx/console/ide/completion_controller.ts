@@ -49,11 +49,11 @@ export interface CompletionHost {
 	resetBlink(): void;
 	revealCursor(): void;
 	// Geometry/metrics
+	characterAdvance: (char: string) => number;
+	get lineHeight(): number;
 	measureText(text: string): number;
 	drawText(text: string, x: number, y: number, color: number): void;
 	getCursorScreenInfo(): CursorScreenInfo | null;
-	getLineHeight(): number;
-	getSpaceAdvance(): number;
 	shouldShowParameterHints(): boolean;
 	// Symbol/source helpers
 	getActiveCodeTabContext(): unknown | null;
@@ -82,7 +82,6 @@ type LocalCompletionCacheEntry = {
 
 export class CompletionController {
 	private readonly host: CompletionHost;
-
 	private completionSession: CompletionSession | null = null;
 	private readonly localCompletionCache: Map<string, LocalCompletionCacheEntry> = new Map();
 	private cachedGlobalCompletionItems: LuaCompletionItem[] | null = null;
@@ -334,7 +333,7 @@ export class CompletionController {
 		const visibleCount = endIndex - startIndex;
 		if (visibleCount <= 0) return;
 		let maxLineWidth = constants.COMPLETION_POPUP_MIN_WIDTH;
-		const detailSpacing = this.host.getSpaceAdvance();
+		const detailSpacing = this.host.characterAdvance(' ');
 		for (let i = 0; i < session.filteredItems.length; i += 1) {
 			const item = session.filteredItems[i];
 			const labelWidth = this.host.measureText(item.label);
@@ -344,7 +343,7 @@ export class CompletionController {
 			if (totalWidth > maxLineWidth) maxLineWidth = totalWidth;
 		}
 		const popupWidth = Math.max(constants.COMPLETION_POPUP_MIN_WIDTH, Math.floor(maxLineWidth + constants.COMPLETION_POPUP_PADDING_X * 2));
-		const popupHeight = Math.floor(constants.COMPLETION_POPUP_PADDING_Y * 2 + visibleCount * this.host.getLineHeight() + Math.max(0, visibleCount - 1) * constants.COMPLETION_POPUP_ITEM_SPACING);
+		const popupHeight = Math.floor(constants.COMPLETION_POPUP_PADDING_Y * 2 + visibleCount * this.host.lineHeight + Math.max(0, visibleCount - 1) * constants.COMPLETION_POPUP_ITEM_SPACING);
 		let popupLeft = Math.floor(cursorInfo.x);
 		if (popupLeft + popupWidth > bounds.codeRight) popupLeft = bounds.codeRight - popupWidth;
 		if (popupLeft < bounds.textLeft) popupLeft = bounds.textLeft;
@@ -362,13 +361,13 @@ export class CompletionController {
 		for (let drawIndex = 0; drawIndex < visibleCount; drawIndex += 1) {
 			const itemIndex = startIndex + drawIndex;
 			const item = session.filteredItems[itemIndex];
-			const lineTop = popupTop + constants.COMPLETION_POPUP_PADDING_Y + drawIndex * (this.host.getLineHeight() + constants.COMPLETION_POPUP_ITEM_SPACING);
+			const lineTop = popupTop + constants.COMPLETION_POPUP_PADDING_Y + drawIndex * (this.host.lineHeight + constants.COMPLETION_POPUP_ITEM_SPACING);
 			const isSelected = itemIndex === session.selectionIndex;
 			const labelColor = isSelected ? constants.COLOR_COMPLETION_HIGHLIGHT_TEXT : constants.COLOR_COMPLETION_TEXT;
 			const detailColor = isSelected ? constants.COLOR_COMPLETION_HIGHLIGHT_TEXT : constants.COLOR_COMPLETION_DETAIL;
 			if (isSelected) {
 				const highlightTop = lineTop - 1;
-				const highlightBottom = highlightTop + this.host.getLineHeight() + 2;
+				const highlightBottom = highlightTop + this.host.lineHeight + 2;
 				api.rectfill(popupLeft + 1, highlightTop, popupRight - 1, highlightBottom, undefined, constants.COLOR_COMPLETION_HIGHLIGHT);
 			}
 			let textX = popupLeft + constants.COMPLETION_POPUP_PADDING_X;
@@ -420,7 +419,7 @@ export class CompletionController {
 				maxLineWidth = width;
 			}
 		}
-		const lineHeight = this.host.getLineHeight();
+		const lineHeight = this.host.lineHeight;
 		const lineSpacing = 2;
 		const totalLines = 1 + descriptionLines.length;
 		const popupWidth = maxLineWidth + constants.PARAMETER_HINT_PADDING_X * 2;

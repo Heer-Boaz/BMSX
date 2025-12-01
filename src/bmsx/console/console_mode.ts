@@ -94,7 +94,7 @@ const OUTPUT_COLORS: Record<ConsoleOutputKind, number> = {
 };
 
 export class ConsoleMode {
-	private font: ConsoleEditorFont;
+	public font: ConsoleEditorFont;
 	private readonly canonicalization: CanonicalizationType;
 	private readonly uppercaseDisplayOverride: boolean;
 	private readonly maxEntries: number;
@@ -168,11 +168,11 @@ export class ConsoleMode {
 			updateDesiredColumn: () => { this.field.desiredColumn = this.field.cursorColumn; },
 			resetBlink: () => { this.resetBlink(); },
 			revealCursor: () => { },
+			characterAdvance: (char) => this.font.advance(char),
+			get lineHeight() { return this.font.lineHeight; },
 			measureText: (text) => this.measureRawText(text),
 			drawText: (text, x, y, color) => { api.write(text, x, y, undefined, color); },
 			getCursorScreenInfo: () => this.cursorScreenInfo,
-			getLineHeight: () => this.font.lineHeight(),
-			getSpaceAdvance: () => this.font.advance(' '),
 			getActiveCodeTabContext: () => (this.active ? this.completionContextToken : null),
 			resolveHoverasset_id: () => null,
 			resolveHoverChunkName: () => this.consoleChunkName,
@@ -205,9 +205,6 @@ export class ConsoleMode {
 
 	public deactivate(): void {
 		this.active = false;
-		this.editingRepeatState.clear();
-		this.historyRepeatState.clear();
-		this.completion.closeSession();
 	}
 
 	public setFontVariant(variant: ConsoleFontVariant): void {
@@ -287,7 +284,7 @@ export class ConsoleMode {
 	}
 
 	public draw(renderer: ConsoleRenderFacade, surface: Viewport): void {
-		const lineHeight = this.font.lineHeight();
+		const lineHeight = this.font.lineHeight;
 		const contentWidth = Math.max(0, surface.width - PADDING_X * 2);
 
 		// compute prompt layout and wrapped input segments
@@ -707,7 +704,7 @@ export class ConsoleMode {
 			const seg = wrap.segments[si];
 			const segStart = wrap.starts[si];
 			const segLen = seg.length;
-			const y = baseY + si * this.font.lineHeight();
+			const y = baseY + si * this.font.lineHeight;
 			let x = baseX;
 			// first segment is placed after the prompt
 			if (si === 0) {
@@ -731,7 +728,7 @@ export class ConsoleMode {
 						x0: x + startWidth,
 						y0: y,
 						x1: x + startWidth + selWidth,
-						y1: y + this.font.lineHeight(),
+						y1: y + this.font.lineHeight,
 						z: undefined,
 						color: this.selectionColor,
 					});
@@ -753,19 +750,19 @@ export class ConsoleMode {
 				const left = Math.floor(x + caretOffset);
 				const topY = y;
 				const right = left + Math.max(1, Math.floor(caretWidth));
-				const bottom = topY + this.font.lineHeight();
+				const bottom = topY + this.font.lineHeight;
 				nextCursorInfo = {
 					row: cursorPosition.row,
 					column: cursorPosition.column,
 					x: left,
 					y: topY,
 					width: Math.max(1, Math.floor(caretWidth)),
-					height: this.font.lineHeight(),
+					height: this.font.lineHeight,
 					baseChar: nextChar,
 					baseColor: OUTPUT_COLORS.stdout,
 				};
 				if (this.caretVisible) {
-					const renderFont = this.font.getRenderFont();
+					const renderFont = this.font.renderFont();
 					const ops: CaretDrawOps = {
 						fillRect: (x0, y0, x1, y1, color) => renderer.rect({ kind: 'fill', x0, y0, x1, y1, z: undefined, color }),
 						strokeRect: (x0, y0, x1, y1, color) => renderer.rect({ kind: 'rect', x0, y0, x1, y1, z: undefined, color }),
@@ -799,7 +796,7 @@ export class ConsoleMode {
 				x0: cursorX,
 				y0: originY,
 				x1: cursorX + advance,
-				y1: originY + this.font.lineHeight(),
+				y1: originY + this.font.lineHeight,
 				z: undefined,
 				color: this.characterBackgroundColor,
 			});
@@ -808,7 +805,7 @@ export class ConsoleMode {
 	}
 
 	private drawGlyphRun(renderer: ConsoleRenderFacade, text: string, originX: number, originY: number, tint: color, uppercase: boolean): void {
-		const renderFont = this.font.getRenderFont();
+		const renderFont = this.font.renderFont();
 		const display = this.toDisplayText(text, uppercase);
 		let cursorX = originX;
 		for (let i = 0; i < display.length; i += 1) {
@@ -845,6 +842,6 @@ export class ConsoleMode {
 	}
 
 	private useUppercaseDisplay(): boolean {
-		return this.font.getVariant() === 'tiny' || this.uppercaseDisplayOverride;
+		return this.font.variant === 'tiny' || this.uppercaseDisplayOverride;
 	}
 }
