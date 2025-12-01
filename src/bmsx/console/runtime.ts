@@ -58,6 +58,7 @@ import { fallbackclamp } from '../utils/clamp';
 import { ConsoleCommandDispatcher } from './console_commands';
 import { CanonicalizationType } from '../rompack/rompack';
 import { KeyModifier } from '../input/playerinput';
+import { LuaLexer } from '../lua/lexer';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -6025,11 +6026,11 @@ export class BmsxConsoleRuntime extends Service {
 			if (part.length === 0) {
 				return null;
 			}
-			if (!this.isLuaIdentifierStartChar(part.charCodeAt(0))) {
+			if (!LuaLexer.isIdentifierStart(part.charAt(0))) {
 				return null;
 			}
 			for (let j = 1; j < part.length; j += 1) {
-				if (!this.isLuaIdentifierChar(part.charCodeAt(j))) {
+				if (!LuaLexer.isIdentifierPart(part.charAt(j))) {
 					return null;
 				}
 			}
@@ -6450,31 +6451,6 @@ export class BmsxConsoleRuntime extends Service {
 			return value;
 		}
 		return value.slice(0, BmsxConsoleRuntime.HOVER_VALUE_MAX_LINE_LENGTH - 3) + '...';
-	}
-
-	private isLuaIdentifierStartChar(code: number): boolean {
-		if (code >= 65 && code <= 90) {
-			return true;
-		}
-		if (code >= 97 && code <= 122) {
-			return true;
-		}
-		// Also support '$' (36) and '_' (95) as valid start characters.
-		if (code === 36) { // Note that '$' is not standard in Lua, but used by my game engine to denote the singleton Game instance
-			return true;
-		}
-		if (code === 95) {
-			return true;
-		}
-
-		return false;
-	}
-
-	private isLuaIdentifierChar(code: number): boolean {
-		if (this.isLuaIdentifierStartChar(code)) {
-			return true;
-		}
-		return code >= 48 && code <= 57;
 	}
 
 	private isLuaBuiltinFunctionName(name: string): boolean {

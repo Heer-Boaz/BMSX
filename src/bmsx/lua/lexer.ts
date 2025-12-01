@@ -84,93 +84,53 @@ export class LuaLexer {
 				this.pushToken(tokens, LuaTokenType.Semicolon, null);
 				return;
 			case '+':
-				if (this.match('=')) {
-					this.pushToken(tokens, LuaTokenType.PlusEqual, null);
-					return;
-				}
-				this.pushToken(tokens, LuaTokenType.Plus, null);
+				this.pushToken(tokens, this.match('=') ? LuaTokenType.PlusEqual : LuaTokenType.Plus, null);
 				return;
 			case '-':
 				if (this.match('-')) {
 					this.skipComment();
 					return;
 				}
-				if (this.match('=')) {
-					this.pushToken(tokens, LuaTokenType.MinusEqual, null);
-					return;
-				}
-				this.pushToken(tokens, LuaTokenType.Minus, null);
+				this.pushToken(tokens, this.match('=') ? LuaTokenType.MinusEqual : LuaTokenType.Minus, null);
 				return;
 			case '*':
-				if (this.match('=')) {
-					this.pushToken(tokens, LuaTokenType.StarEqual, null);
-					return;
-				}
-				this.pushToken(tokens, LuaTokenType.Star, null);
+				this.pushToken(tokens, this.match('=') ? LuaTokenType.StarEqual : LuaTokenType.Star, null);
 				return;
 			case '/':
 				if (this.match('/')) {
 					this.pushToken(tokens, LuaTokenType.FloorDivide, null);
 					return;
 				}
-				if (this.match('=')) {
-					this.pushToken(tokens, LuaTokenType.SlashEqual, null);
-					return;
-				}
-				this.pushToken(tokens, LuaTokenType.Slash, null);
+				this.pushToken(tokens, this.match('=') ? LuaTokenType.SlashEqual : LuaTokenType.Slash, null);
 				return;
 			case '%':
-				if (this.match('=')) {
-					this.pushToken(tokens, LuaTokenType.PercentEqual, null);
-					return;
-				}
-				this.pushToken(tokens, LuaTokenType.Percent, null);
+				this.pushToken(tokens, this.match('=') ? LuaTokenType.PercentEqual : LuaTokenType.Percent, null);
 				return;
 			case '^':
-				if (this.match('=')) {
-					this.pushToken(tokens, LuaTokenType.CaretEqual, null);
-					return;
-				}
-				this.pushToken(tokens, LuaTokenType.Caret, null);
+				this.pushToken(tokens, this.match('=') ? LuaTokenType.CaretEqual : LuaTokenType.Caret, null);
 				return;
 			case '#':
 				this.pushToken(tokens, LuaTokenType.Hash, null);
 				return;
 			case '=':
-				if (this.match('=')) {
-					this.pushToken(tokens, LuaTokenType.EqualEqual, null);
-					return;
-				}
-				this.pushToken(tokens, LuaTokenType.Equal, null);
+				this.pushToken(tokens, this.match('=') ? LuaTokenType.EqualEqual : LuaTokenType.Equal, null);
 				return;
 			case '<':
 				if (this.match('<')) {
 					this.pushToken(tokens, LuaTokenType.ShiftLeft, null);
 					return;
 				}
-				if (this.match('=')) {
-					this.pushToken(tokens, LuaTokenType.LessEqual, null);
-					return;
-				}
-				this.pushToken(tokens, LuaTokenType.Less, null);
+				this.pushToken(tokens, this.match('=') ? LuaTokenType.LessEqual : LuaTokenType.Less, null);
 				return;
 			case '>':
 				if (this.match('>')) {
 					this.pushToken(tokens, LuaTokenType.ShiftRight, null);
 					return;
 				}
-				if (this.match('=')) {
-					this.pushToken(tokens, LuaTokenType.GreaterEqual, null);
-					return;
-				}
-				this.pushToken(tokens, LuaTokenType.Greater, null);
+				this.pushToken(tokens, this.match('=') ? LuaTokenType.GreaterEqual : LuaTokenType.Greater, null);
 				return;
 			case '~':
-				if (this.match('=')) {
-					this.pushToken(tokens, LuaTokenType.TildeEqual, null);
-					return;
-				}
-				this.pushToken(tokens, LuaTokenType.Tilde, null);
+				this.pushToken(tokens, this.match('=') ? LuaTokenType.TildeEqual : LuaTokenType.Tilde, null);
 				return;
 			case '&':
 				this.pushToken(tokens, LuaTokenType.Ampersand, null);
@@ -179,23 +139,15 @@ export class LuaLexer {
 				this.pushToken(tokens, LuaTokenType.Pipe, null);
 				return;
 			case ':':
-				if (this.match(':')) {
-					this.pushToken(tokens, LuaTokenType.DoubleColon, null);
-					return;
-				}
-				this.pushToken(tokens, LuaTokenType.Colon, null);
+				this.pushToken(tokens, this.match(':') ? LuaTokenType.DoubleColon : LuaTokenType.Colon, null);
 				return;
 			case '.':
-				if (this.peekIsDigit()) {
+				if (LuaLexer.isDigit(this.peek())) {
 					this.scanNumber(tokens, true);
 					return;
 				}
 				if (this.match('.')) {
-					if (this.match('.')) {
-						this.pushToken(tokens, LuaTokenType.Vararg, null);
-						return;
-					}
-					this.pushToken(tokens, LuaTokenType.DotDot, null);
+					this.pushToken(tokens, this.match('.') ? LuaTokenType.Vararg : LuaTokenType.DotDot, null);
 					return;
 				}
 				this.pushToken(tokens, LuaTokenType.Dot, null);
@@ -212,11 +164,11 @@ export class LuaLexer {
 			case '\n':
 				return;
 			default:
-				if (this.isDigit(char)) {
+				if (LuaLexer.isDigit(char)) {
 					this.scanNumber(tokens, false);
 					return;
 				}
-				if (this.isIdentifierStart(char)) {
+				if (LuaLexer.isIdentifierStart(char)) {
 					this.scanIdentifier(tokens);
 					return;
 				}
@@ -244,29 +196,25 @@ export class LuaLexer {
 	}
 
 	private scanIdentifier(tokens: LuaToken[]): void {
-		while (this.isIdentifierPart(this.peek())) {
+		while (LuaLexer.isIdentifierPart(this.peek())) {
 			this.advance();
 		}
 		const lexeme = this.currentLexeme();
 		const canonical = this.canonicalizeIdentifier(lexeme);
 		const keywordType = resolveKeyword(canonical);
-		if (keywordType !== null) {
-			if (keywordType === LuaTokenType.True) {
-				this.pushIdentifierToken(tokens, keywordType, true, canonical);
-				return;
-			}
-			if (keywordType === LuaTokenType.False) {
-				this.pushIdentifierToken(tokens, keywordType, false, canonical);
-				return;
-			}
-			if (keywordType === LuaTokenType.Nil) {
-				this.pushIdentifierToken(tokens, keywordType, null, canonical);
-				return;
-			}
+		if (keywordType === LuaTokenType.True) {
+			this.pushIdentifierToken(tokens, keywordType, true, canonical);
+			return;
+		}
+		if (keywordType === LuaTokenType.False) {
+			this.pushIdentifierToken(tokens, keywordType, false, canonical);
+			return;
+		}
+		if (keywordType === LuaTokenType.Nil) {
 			this.pushIdentifierToken(tokens, keywordType, null, canonical);
 			return;
 		}
-		this.pushIdentifierToken(tokens, LuaTokenType.Identifier, null, canonical);
+		this.pushIdentifierToken(tokens, keywordType ?? LuaTokenType.Identifier, null, canonical);
 	}
 
 	private scanNumber(tokens: LuaToken[], startedWithDot: boolean): void {
@@ -280,7 +228,7 @@ export class LuaLexer {
 		}
 		else {
 			this.consumeDigits();
-			if (this.peek() === '.' && this.peekNextIsDigit()) {
+			if (this.peek() === '.' && LuaLexer.isDigit(this.peekNext())) {
 				this.advance();
 				this.consumeDigits();
 			}
@@ -321,9 +269,6 @@ export class LuaLexer {
 	}
 
 	private translateEscape(): string {
-		if (this.isAtEnd()) {
-			throw new LuaSyntaxError('[LuaLexer] Unterminated escape sequence.', this.chunkName, this.tokenStartLine, this.tokenStartColumn);
-		}
 		const code = this.advance();
 		switch (code) {
 			case 'a':
@@ -355,9 +300,9 @@ export class LuaLexer {
 				return String.fromCharCode(value);
 			}
 			default:
-				if (this.isDigit(code)) {
+				if (LuaLexer.isDigit(code)) {
 					let digits = code;
-					for (let index = 0; index < 2 && this.isDigit(this.peek()); index += 1) {
+					for (let index = 0; index < 2 && LuaLexer.isDigit(this.peek()); index += 1) {
 						digits += this.advance();
 					}
 					const value = Number.parseInt(digits, 10);
@@ -371,7 +316,7 @@ export class LuaLexer {
 	}
 
 	private consumeDigits(): void {
-		while (this.isDigit(this.peek())) {
+		while (LuaLexer.isDigit(this.peek())) {
 			this.advance();
 		}
 	}
@@ -382,7 +327,7 @@ export class LuaLexer {
 		if (this.peek() === '+' || this.peek() === '-') {
 			this.advance();
 		}
-		if (!this.isDigit(this.peek())) {
+		if (!LuaLexer.isDigit(this.peek())) {
 			throw new LuaSyntaxError('[LuaLexer] Invalid numeric literal exponent.', this.chunkName, this.tokenStartLine, this.tokenStartColumn);
 		}
 		this.consumeDigits();
@@ -393,13 +338,13 @@ export class LuaLexer {
 
 	private scanHexadecimalLiteral(tokens: LuaToken[]): void {
 		let hasDigits = false;
-		while (this.isHexDigit(this.peek())) {
+		while (LuaLexer.isHexDigit(this.peek())) {
 			this.advance();
 			hasDigits = true;
 		}
 		if (this.peek() === '.') {
 			this.advance();
-			while (this.isHexDigit(this.peek())) {
+			while (LuaLexer.isHexDigit(this.peek())) {
 				this.advance();
 				hasDigits = true;
 			}
@@ -412,7 +357,7 @@ export class LuaLexer {
 			if (this.peek() === '+' || this.peek() === '-') {
 				this.advance();
 			}
-			if (!this.isDigit(this.peek())) {
+			if (!LuaLexer.isDigit(this.peek())) {
 				throw new LuaSyntaxError('[LuaLexer] Hexadecimal literal requires binary exponent.', this.chunkName, this.tokenStartLine, this.tokenStartColumn);
 			}
 			this.consumeDigits();
@@ -426,14 +371,8 @@ export class LuaLexer {
 	}
 
 	private skipWhitespaceSequence(): void {
-		while (!this.isAtEnd()) {
-			const next = this.peek();
-			if (next === ' ' || next === '\t' || next === '\r' || next === '\n' || next === '\v' || next === '\f') {
-				this.advance();
-			}
-			else {
-				break;
-			}
+		while (!this.isAtEnd() && LuaLexer.isWhitespace(this.peek())) {
+			this.advance();
 		}
 	}
 
@@ -441,7 +380,7 @@ export class LuaLexer {
 		let digits = '';
 		for (let index = 0; index < required; index += 1) {
 			const next = this.peek();
-			if (!this.isHexDigit(next)) {
+			if (!LuaLexer.isHexDigit(next)) {
 				throw new LuaSyntaxError('[LuaLexer] Invalid hexadecimal escape sequence.', this.chunkName, this.tokenStartLine, this.tokenStartColumn);
 			}
 			digits += this.advance();
@@ -450,7 +389,7 @@ export class LuaLexer {
 	}
 
 	private determineLongBracketLevelAt(index: number): number {
-		if (index < 0 || index >= this.source.length || this.source.charAt(index) !== '[') {
+		if (this.source.charAt(index) !== '[') {
 			return -1;
 		}
 		let level = 0;
@@ -459,10 +398,7 @@ export class LuaLexer {
 			level += 1;
 			cursor += 1;
 		}
-		if (cursor < this.source.length && this.source.charAt(cursor) === '[') {
-			return level;
-		}
-		return -1;
+		return (cursor < this.source.length && this.source.charAt(cursor) === '[') ? level : -1;
 	}
 
 	private consumeLongBracketOpening(level: number): void {
@@ -483,13 +419,9 @@ export class LuaLexer {
 		let value = '';
 		while (!this.isAtEnd()) {
 			const char = this.advance();
-			if (char === ']') {
-				if (this.checkLongBracketClose(level)) {
-					this.consumeLongBracketClose(level);
-					return value;
-				}
-				value += char;
-				continue;
+			if (char === ']' && this.checkLongBracketClose(level)) {
+				this.consumeLongBracketClose(level);
+				return value;
 			}
 			value += char;
 		}
@@ -500,11 +432,9 @@ export class LuaLexer {
 		this.consumeOptionalLineBreak();
 		while (!this.isAtEnd()) {
 			const char = this.advance();
-			if (char === ']') {
-				if (this.checkLongBracketClose(level)) {
-					this.consumeLongBracketClose(level);
-					return;
-				}
+			if (char === ']' && this.checkLongBracketClose(level)) {
+				this.consumeLongBracketClose(level);
+				return;
 			}
 		}
 		throw new LuaSyntaxError('[LuaLexer] Unterminated block comment.', this.chunkName, this.tokenStartLine, this.tokenStartColumn);
@@ -541,29 +471,17 @@ export class LuaLexer {
 			if (this.peek() === '\n') {
 				this.advance();
 			}
-			return;
-		}
-		if (next === '\n') {
+		} else if (next === '\n') {
 			this.advance();
 		}
 	}
 
-	private isHexDigit(char: string): boolean {
-		return (char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F');
-	}
-
 	private peekAt(index: number): string {
-		if (index < 0 || index >= this.source.length) {
-			return '\0';
-		}
-		return this.source.charAt(index);
+		return this.source.charAt(index) || '\0';
 	}
 
 	private parseHexLiteral(lexeme: string): number {
 		const match = /^0[xX]([0-9A-Fa-f]*)(?:\.([0-9A-Fa-f]*))?(?:[pP]([+-]?[0-9]+))?$/.exec(lexeme);
-		if (match === null) {
-			throw new LuaSyntaxError('[LuaLexer] Invalid hexadecimal literal.', this.chunkName, this.tokenStartLine, this.tokenStartColumn);
-		}
 		const integerPart = match[1] ?? '';
 		const fractionalPart = match[2] ?? '';
 		const exponentPart = match[3] ?? '0';
@@ -584,25 +502,23 @@ export class LuaLexer {
 	}
 
 	private pushToken(tokens: LuaToken[], type: LuaTokenType, literal: LuaTokenLiteral): void {
-		const token: LuaToken = {
+		tokens.push({
 			type,
 			lexeme: this.currentLexeme(),
 			line: this.tokenStartLine,
 			column: this.tokenStartColumn,
 			literal,
-		};
-		tokens.push(token);
+		});
 	}
 
 	private pushIdentifierToken(tokens: LuaToken[], type: LuaTokenType, literal: LuaTokenLiteral, lexeme: string): void {
-		const token: LuaToken = {
+		tokens.push({
 			type,
 			lexeme,
 			line: this.tokenStartLine,
 			column: this.tokenStartColumn,
 			literal,
-		};
-		tokens.push(token);
+		});
 	}
 
 	private canonicalizeIdentifier(value: string): string {
@@ -616,9 +532,6 @@ export class LuaLexer {
 	}
 
 	private advance(): string {
-		if (this.isAtEnd()) {
-			return '\0';
-		}
 		const char = this.source.charAt(this.currentIndex);
 		this.currentIndex += 1;
 		if (char === '\n') {
@@ -632,9 +545,6 @@ export class LuaLexer {
 	}
 
 	private match(expected: string): boolean {
-		if (this.isAtEnd()) {
-			return false;
-		}
 		if (this.source.charAt(this.currentIndex) !== expected) {
 			return false;
 		}
@@ -643,37 +553,36 @@ export class LuaLexer {
 	}
 
 	private peek(): string {
-		if (this.isAtEnd()) {
-			return '\0';
-		}
-		return this.source.charAt(this.currentIndex);
+		return this.source.charAt(this.currentIndex) || '\0';
 	}
 
 	private peekNext(): string {
-		if (this.currentIndex + 1 >= this.source.length) {
-			return '\0';
-		}
-		return this.source.charAt(this.currentIndex + 1);
+		return this.source.charAt(this.currentIndex + 1) || '\0';
 	}
 
-	private peekIsDigit(): boolean {
-		return this.isDigit(this.peek());
+	public static isWhitespace(char: string): boolean {
+		const code = char.charCodeAt(0);
+		return code === 32 || code === 9 || code === 13 || code === 10 || code === 11 || code === 12; // space, tab, \r, \n, \v, \f
 	}
 
-	private peekNextIsDigit(): boolean {
-		return this.isDigit(this.peekNext());
+	public static isDigit(char: string): boolean {
+		const code = char.charCodeAt(0);
+		return code >= 48 && code <= 57; // '0' to '9'
 	}
 
-	private isDigit(char: string): boolean {
-		return char >= '0' && char <= '9';
+	public static isHexDigit(char: string): boolean {
+		const code = char.charCodeAt(0);
+		return (code >= 48 && code <= 57) || (code >= 97 && code <= 102) || (code >= 65 && code <= 70); // 0-9, a-f, A-F
 	}
 
-	private isIdentifierStart(char: string): boolean {
-		return (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char === '_' || char === '$'; // Allow '$' for my own extensions
+	public static isIdentifierStart(char: string): boolean {
+		const code = char.charCodeAt(0);
+		return (code >= 97 && code <= 122) || (code >= 65 && code <= 90) || code === 95 || code === 36; // a-z, A-Z, _, $
 	}
 
-	private isIdentifierPart(char: string): boolean {
-		return this.isIdentifierStart(char) || this.isDigit(char);
+	public static isIdentifierPart(char: string): boolean {
+		const code = char.charCodeAt(0);
+		return (code >= 97 && code <= 122) || (code >= 65 && code <= 90) || code === 95 || code === 36 || (code >= 48 && code <= 57);
 	}
 
 	private isAtEnd(): boolean {
@@ -682,9 +591,5 @@ export class LuaLexer {
 
 	private currentLexeme(): string {
 		return this.source.slice(this.tokenStartIndex, this.currentIndex);
-	}
-
-	public getChunkName(): string {
-		return this.chunkName;
 	}
 }

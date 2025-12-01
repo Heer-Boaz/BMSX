@@ -21,6 +21,8 @@ import { ide_state } from './ide_state';
 import { isReadOnlyCodeTab } from './editor_tabs';
 import { consumeIdeKey } from './ide_input';
 import { api } from '../runtime';
+import { point_in_rect } from '../../utils/rect_operations';
+import { LuaLexer } from '../..';
 
 type MemberCompletionHostRequest = {
 	objectName: string;
@@ -115,7 +117,7 @@ export class CompletionController {
 		if (!session || session.filteredItems.length === 0) {
 			return false;
 		}
-		if (pointer && !this.pointInCompletionPopup(pointer.x, pointer.y)) {
+		if (pointer && !point_in_rect(pointer.x, pointer.y, this.completionPopupBounds)) {
 			return false;
 		}
 		const total = session.filteredItems.length;
@@ -802,20 +804,7 @@ export class CompletionController {
 		if (prefix.length === 0) {
 			return false;
 		}
-		const code = prefix.charCodeAt(0);
-		return this.isIdentifierStartChar(code);
-	}
-
-	private isIdentifierStartChar(code: number): boolean {
-		return (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95;
-	}
-
-	private pointInCompletionPopup(x: number, y: number): boolean {
-		const bounds = this.completionPopupBounds;
-		if (!bounds) {
-			return false;
-		}
-		return x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom;
+		return LuaLexer.isIdentifierStart(prefix.charAt(0));
 	}
 
 	private formatSymbolKind(kind: ConsoleLuaSymbolEntry['kind']): string {

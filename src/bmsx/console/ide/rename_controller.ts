@@ -1,7 +1,6 @@
 import { resolveReferenceLookup, type ReferenceLookupOptions, type ReferenceMatchInfo, ReferenceState } from './code_reference';
 import type { CodeTabContext, InlineInputOptions, TextField, SearchMatch } from './types';
 import { createInlineTextField, getFieldText, setFieldText } from './inline_text_field';
-import { isIdentifierChar, isIdentifierStartChar } from './text_utils';
 import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
 import * as constants from './constants';
 import { consumeIdeKey } from './ide_input';
@@ -10,6 +9,8 @@ import { clamp } from '../../utils/clamp';
 import type { ConsoleResourceDescriptor } from '../types';
 import type { LuaSemanticWorkspace } from './semantic_model';
 import { ide_state } from './ide_state';
+import { LuaLexer } from '../../lua/lexer';
+import { findCodeTabContext } from './editor_tabs';
 
 export type RenameCommitPayload = {
 	matches: readonly SearchMatch[];
@@ -52,7 +53,7 @@ export class RenameController {
 		if (value.length === 0) {
 			return false;
 		}
-		return isIdentifierChar(value.charCodeAt(0));
+		return LuaLexer.isIdentifierPart(value.charAt(0));
 	};
 
 	public constructor(host: RenameControllerHost, referenceState: ReferenceState) {
@@ -189,12 +190,12 @@ export class RenameController {
 			this.host.showMessage('Identifier cannot be empty', constants.COLOR_STATUS_WARNING, 1.6);
 			return;
 		}
-		if (!isIdentifierStartChar(nextName.charCodeAt(0))) {
+		if (!LuaLexer.isIdentifierStart(nextName.charAt(0))) {
 			this.host.showMessage('Identifier must start with a letter or underscore', constants.COLOR_STATUS_WARNING, 1.8);
 			return;
 		}
 		for (let index = 1; index < nextName.length; index += 1) {
-			if (!isIdentifierChar(nextName.charCodeAt(index))) {
+			if (!LuaLexer.isIdentifierPart(nextName.charAt(index))) {
 				this.host.showMessage('Identifier contains invalid characters', constants.COLOR_STATUS_WARNING, 1.8);
 				return;
 			}
@@ -269,7 +270,6 @@ export function planRenameLineEdits(lines: readonly string[], matches: readonly 
 	}
 	return edits;
 }export type CrossFileRenameDependencies = {
-	normalizeChunkReference(reference: string | null): string | null;
 	findResourceDescriptorForChunk(chunkPath: string): ConsoleResourceDescriptor;
 	createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): CodeTabContext;
 	createEntryTabContext(): CodeTabContext | null;
@@ -290,13 +290,11 @@ export class CrossFileRenameManager {
 	) { }
 
 	public applyRenameToChunk(chunkName: string, ranges: readonly LuaSourceRange[], newName: string, activeChunkName: string | null): number {
-		const normalizedActive = activeChunkName ? this.deps.normalizeChunkReference(activeChunkName) ?? activeChunkName : null;
 		const context = this.ensureCodeTabContextForChunk(chunkName);
 		if (!context) {
 			return 0;
 		}
-		const normalizedChunk = this.deps.normalizeChunkReference(chunkName) ?? chunkName;
-		if (normalizedActive && normalizedChunk === normalizedActive) {
+		if (activeChunkName && chunkName === activeChunkName) {
 			return 0;
 		}
 		const lines = this.getContextLinesForRename(context);
@@ -363,13 +361,12 @@ export class CrossFileRenameManager {
 	}
 
 	private ensureCodeTabContextForChunk(chunkName: string): CodeTabContext | null {
-		const existing = this.findCodeTabContextForChunk(chunkName);
+		const existing = findCodeTabContext(undefined, chunkName);
 		if (existing) {
 			return existing;
 		}
-		const normalized = this.deps.normalizeChunkReference(chunkName) ?? chunkName;
 		try {
-			const descriptor = this.deps.findResourceDescriptorForChunk(normalized);
+			const descriptor = this.deps.findResourceDescriptorForChunk(chunkName);
 			const contextId: string = `lua:${descriptor.asset_id}`;
 			let context = this.deps.getCodeTabContext(contextId) ?? null;
 			if (!context) {
@@ -384,8 +381,7 @@ export class CrossFileRenameManager {
 				entryAliases.push(primary);
 			}
 			entryAliases.push('__entry__', '<console>');
-			const normalizedChunk = this.deps.normalizeChunkReference(chunkName) ?? chunkName;
-			const isEntryChunk = entryAliases.some(alias => alias === chunkName || alias === normalizedChunk);
+			const isEntryChunk = entryAliases.some(alias => alias === chunkName || alias === chunkName);
 			if (!isEntryChunk) {
 				return null;
 			}
@@ -406,34 +402,33 @@ export class CrossFileRenameManager {
 		}
 	}
 
-	private findCodeTabContextForChunk(chunkName: string): CodeTabContext | null {
-		const normalized = this.deps.normalizeChunkReference(chunkName) ?? chunkName;
-		for (const context of this.deps.listCodeTabContexts()) {
-			const descriptor = context.descriptor;
-			if (descriptor) {
-				const descriptorPath = this.deps.normalizeChunkReference(descriptor.path);
-				if ((descriptorPath && descriptorPath === normalized)
-					|| descriptor.asset_id === chunkName
-					|| descriptor.asset_id === normalized) {
-					return context;
-				}
-			} else {
-				const entryAliases: string[] = [];
-				const primary = this.deps.getEntryAssetId();
-				if (primary) {
-					entryAliases.push(primary);
-				}
-				entryAliases.push('__entry__', '<console>');
-				for (let index = 0; index < entryAliases.length; index += 1) {
-					const alias = entryAliases[index];
-					if (alias === chunkName || alias === normalized) {
-						return context;
-					}
-				}
-			}
-		}
-		return null;
-	}
+	// private findCodeTabContextForChunk(chunkName: string): CodeTabContext | null {
+	// 	for (const context of this.deps.listCodeTabContexts()) {
+	// 		const descriptor = context.descriptor;
+	// 		if (descriptor) {
+	// 			const descriptorPath = this.deps.normalizeChunkReference(descriptor.path);
+	// 			if ((descriptorPath && descriptorPath === chunkName)
+	// 				|| descriptor.asset_id === chunkName
+	// 				|| descriptor.asset_id === chunkName) {
+	// 				return context;
+	// 			}
+	// 		} else {
+	// 			const entryAliases: string[] = [];
+	// 			const primary = this.deps.getEntryAssetId();
+	// 			if (primary) {
+	// 				entryAliases.push(primary);
+	// 			}
+	// 			entryAliases.push('__entry__', '<console>');
+	// 			for (let index = 0; index < entryAliases.length; index += 1) {
+	// 				const alias = entryAliases[index];
+	// 				if (alias === chunkName || alias === chunkName) {
+	// 					return context;
+	// 				}
+	// 			}
+	// 		}
+	// 	}
+	// 	return null;
+	// }
 }
 
 export function convertRangeToSearchMatch(range: LuaSourceRange | null | undefined, lines: readonly string[]): SearchMatch | null {

@@ -24,6 +24,12 @@ import {
 import type { LuaToken } from '../../lua/token';
 import { LuaTokenType } from '../../lua/token';
 import { ide_state } from './ide_state';
+import type { ConsoleLuaSymbolEntry } from '../types';
+import { computeSourceLabel } from './code_reference';
+import { symbolCatalogDedupKey } from './console_cart_editor';
+import * as constants from './constants';
+import { getActiveCodeTabContext } from './editor_tabs';
+import { resolveHoverAssetId, resolveHoverChunkName } from './intellisense';
 
 export type SymbolKind = 'parameter' | 'local' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
 
@@ -1667,3 +1673,117 @@ export class LuaSemanticWorkspace {
 		return this.index.listFiles();
 	}
 }
+
+export function symbolPriority(kind: ConsoleLuaSymbolEntry['kind']): number {
+	switch (kind) {
+		case 'table_field':
+			return 5;
+		case 'function':
+			return 4;
+		case 'parameter':
+			return 3;
+		case 'variable':
+			return 2;
+		case 'assignment':
+		default:
+			return 1;
+	}
+}
+
+export function symbolKindLabel(kind: ConsoleLuaSymbolEntry['kind']): string {
+	switch (kind) {
+		case 'function':
+			return 'FUNC';
+		case 'table_field':
+			return 'FIELD';
+		case 'parameter':
+			return 'PARAM';
+		case 'variable':
+			return 'VAR';
+		case 'assignment':
+		default:
+			return 'SET';
+	}
+}
+
+export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string | null {
+	const path = entry.location.path ?? entry.location.asset_id ?? null;
+	if (!path) {
+		return null;
+	}
+	return computeSourceLabel(path, entry.location.chunkName ?? '<console>');
+}export function refreshSymbolCatalog(force: boolean): void {
+	const scope: 'local' | 'global' = ide_state.symbolSearchGlobal ? 'global' : 'local';
+	let asset_id: string | null = null;
+	let chunkName: string | null = null;
+	if (scope === 'local') {
+		const context = getActiveCodeTabContext();
+		asset_id = resolveHoverAssetId(context);
+		chunkName = resolveHoverChunkName(context);
+	}
+	const existing = ide_state.symbolCatalogContext;
+	const unchanged = existing !== null
+		&& existing.scope === scope
+		&& (scope === 'global'
+			|| (existing.asset_id === asset_id && existing.chunkName === chunkName));
+	if (!force && unchanged) {
+		return;
+	}
+	let entries: ConsoleLuaSymbolEntry[] = [];
+	try {
+		if (scope === 'global') {
+			entries = ide_state.listGlobalLuaSymbolsFn();
+		} else {
+			entries = ide_state.listLuaSymbolsFn(asset_id, chunkName);
+		}
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		ide_state.symbolCatalog = [];
+		ide_state.symbolSearchMatches = [];
+		ide_state.symbolSearchSelectionIndex = -1;
+		ide_state.symbolSearchDisplayOffset = 0;
+		ide_state.symbolSearchHoverIndex = -1;
+		ide_state.showMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+		return;
+	}
+	ide_state.symbolCatalogContext = { scope, asset_id, chunkName };
+	const deduped: ConsoleLuaSymbolEntry[] = [];
+	const seen = new Set<string>();
+	for (let index = 0; index < entries.length; index += 1) {
+		const entry = entries[index];
+		const key = symbolCatalogDedupKey(entry);
+		if (seen.has(key)) {
+			continue;
+		}
+		seen.add(key);
+		deduped.push(entry);
+	}
+	entries = deduped;
+	const catalogEntries = entries.map((entry) => {
+		const display = entry.path && entry.path.length > 0 ? entry.path : entry.name;
+		const sourceLabel = scope === 'global' ? symbolSourceLabel(entry) : null;
+		const combinedKey = sourceLabel
+			? `${display} ${sourceLabel}`.toLowerCase()
+			: display.toLowerCase();
+		return {
+			symbol: entry,
+			displayName: display,
+			searchKey: combinedKey,
+			line: entry.location.range.startLine,
+			kindLabel: symbolKindLabel(entry.kind),
+			sourceLabel,
+		};
+	}).sort((a, b) => {
+		if (a.line !== b.line) {
+			return a.line - b.line;
+		}
+		if (a.displayName !== b.displayName) {
+			return a.displayName.localeCompare(b.displayName);
+		}
+		const aSource = a.sourceLabel ?? '';
+		const bSource = b.sourceLabel ?? '';
+		return aSource.localeCompare(bSource);
+	});
+	ide_state.symbolCatalog = catalogEntries;
+}
+

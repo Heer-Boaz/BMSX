@@ -39,7 +39,7 @@ import {
 	computeResourceTabTitle,
 } from './editor_tabs';
 
-import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, isIdentifierChar, isIdentifierStartChar, markTextMutated, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapRuntimeErrorLine } from './text_utils';
+import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, markTextMutated, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapRuntimeErrorLine } from './text_utils';
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
@@ -48,8 +48,7 @@ import {
 	setFieldText,
 	updateBlink,
 } from './inline_text_field';
-import { buildMemberCompletionItems, clearHoverTooltip, describeMetadataValue, intellisenseUiReady, requestSemanticRefresh, resolveHoverAssetId, resolveHoverChunkName, safeJsonStringify, shouldAutoTriggerCompletions } from './intellisense';
-import { isLuaCommentContext } from './text_utils';
+import { buildMemberCompletionItems, clearGotoHoverHighlight, clearReferenceHighlights, describeMetadataValue, extractHoverExpression, intellisenseUiReady, navigateToLuaDefinition, requestSemanticRefresh, resolveHoverAssetId, resolveHoverChunkName, safeJsonStringify, shouldAutoTriggerCompletions } from './intellisense';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar } from './render/render_top_bar';
 import { renderTabBar } from './render/render_tab_bar';
@@ -83,8 +82,6 @@ import type {
 import { resolveReferenceLookup, type ReferenceMatchInfo } from './code_reference';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
-	computeSourceLabel,
-	resolveDefinitionLocationForExpression,
 	type ProjectReferenceEnvironment,
 	filterReferenceCatalog,
 	type ReferenceCatalogEntry,
@@ -122,7 +119,7 @@ import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRu
 import { point_in_rect } from '../../utils/rect_operations';
 import { lower_bound } from '../../utils/lower_bound';
 import { updateRuntimeErrorOverlay } from './runtime_error_overlay';
-import { LuaSemanticWorkspace } from './semantic_model';
+import { LuaSemanticWorkspace, refreshSymbolCatalog, symbolPriority } from './semantic_model';
 
 export const editorFacade = {
 	activate,
@@ -690,10 +687,6 @@ export function normalizeResourcePath(path?: string | null): string | undefined 
 	return path === null || path === undefined ? undefined : path;
 }
 
-export function normalizeChunkReference(reference: string | null): string | null {
-	return reference;
-}
-
 export function stripExtension(value: string): string {
 	const lastDot = value.lastIndexOf('.');
 	if (lastDot <= 0) {
@@ -704,14 +697,13 @@ export function stripExtension(value: string): string {
 
 export function resolveResourceDescriptorForSource(asset_id: string | null, chunkName: string | null): ConsoleResourceDescriptor | null {
 	const descriptors = listResourcesStrict();
-	const normalizedChunk = normalizeChunkReference(chunkName);
-	if (normalizedChunk) {
-		const byPath = descriptors.find(entry => entry.path === normalizedChunk);
+	if (chunkName) {
+		const byPath = descriptors.find(entry => entry.path === chunkName);
 		if (byPath && byPath.type === 'lua') {
 			return byPath;
 		}
-		const segments = normalizedChunk.split('/');
-		const basename = segments.length > 0 ? segments[segments.length - 1] : normalizedChunk;
+		const segments = chunkName.split('/');
+		const basename = segments.length > 0 ? segments[segments.length - 1] : chunkName;
 		const withoutExt = stripExtension(basename);
 		const byChunkAsset = descriptors.find(entry =>
 			entry.asset_id === basename
@@ -734,10 +726,10 @@ export function resolveResourceDescriptorForSource(asset_id: string | null, chun
 			return byAsset;
 		}
 	}
-	if (!normalizedChunk) {
+	if (!chunkName) {
 		return null;
 	}
-	return findResourceDescriptorForChunk(normalizedChunk);
+	return findResourceDescriptorForChunk(chunkName);
 }
 
 export function listResourcesStrict(): ConsoleResourceDescriptor[] {
@@ -1279,14 +1271,10 @@ export function getLuaModuleAliases(chunkName: string | null): Map<string, strin
 }
 
 export function findContextByChunk(chunkName: string): CodeTabContext | null {
-	const normalized = normalizeChunkReference(chunkName) ?? chunkName;
 	for (const context of ide_state.codeTabContexts.values()) {
 		const descriptor = context.descriptor;
 		if (descriptor) {
-			const descriptorPath = normalizeChunkReference(descriptor.path);
-			if ((descriptorPath && descriptorPath === normalized)
-				|| descriptor.asset_id === chunkName
-				|| descriptor.asset_id === normalized) {
+			if (descriptor.path === chunkName || descriptor.asset_id === chunkName) { // TODO: ??????????????????
 				return context;
 			}
 			continue;
@@ -1294,7 +1282,7 @@ export function findContextByChunk(chunkName: string): CodeTabContext | null {
 		const aliases: string[] = ['__entry__', '<console>'];
 		for (let index = 0; index < aliases.length; index += 1) {
 			const alias = aliases[index];
-			if (alias === chunkName || alias === normalized) {
+			if (alias === chunkName || alias === chunkName) {
 				return context;
 			}
 		}
@@ -2008,7 +1996,6 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	const activeContext = getActiveCodeTabContext();
 	const referenceContext = buildProjectReferenceContext(activeContext);
 	const activeChunkName = referenceContext.chunkName;
-	const normalizedActiveChunk = normalizeChunkReference(activeChunkName) ?? activeChunkName;
 	const renameManager = new CrossFileRenameManager(getCrossFileRenameDependencies(), ide_state.semanticWorkspace);
 	const sortedMatches = matches.slice();
 	sortedMatches.sort((a, b) => {
@@ -2058,11 +2045,10 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 			return;
 		}
 		const chunk = range.chunkName ?? activeChunkName;
-		const normalized = normalizeChunkReference(chunk) ?? chunk;
-		let bucket = rangeMap.get(normalized);
+		let bucket = rangeMap.get(chunk);
 		if (!bucket) {
 			bucket = { chunkName: chunk, ranges: [], seen: new Set<string>() };
-			rangeMap.set(normalized, bucket);
+			rangeMap.set(chunk, bucket);
 		}
 		const key = `${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
 		if (bucket.seen.has(key)) {
@@ -2077,11 +2063,11 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	for (let index = 0; index < references.length; index += 1) {
 		addRange(references[index].range);
 	}
-	if (normalizedActiveChunk) {
-		rangeMap.delete(normalizedActiveChunk);
+	if (activeChunkName) {
+		rangeMap.delete(activeChunkName);
 	}
 	for (const bucket of rangeMap.values()) {
-		const replacements = renameManager.applyRenameToChunk(bucket.chunkName, bucket.ranges, newName, normalizedActiveChunk);
+		const replacements = renameManager.applyRenameToChunk(bucket.chunkName, bucket.ranges, newName, activeChunkName);
 		updatedTotal += replacements;
 		if (replacements > 0) {
 			markDiagnosticsDirtyForChunk(bucket.chunkName);
@@ -2092,7 +2078,6 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 
 export function getCrossFileRenameDependencies(): CrossFileRenameDependencies {
 	return {
-		normalizeChunkReference: (reference: string | null) => normalizeChunkReference(reference),
 		findResourceDescriptorForChunk: (chunk: string) => findResourceDescriptorForChunk(chunk),
 		createLuaCodeTabContext: (descriptor: ConsoleResourceDescriptor) => createLuaCodeTabContext(descriptor),
 		createEntryTabContext: () => createEntryTabContext(),
@@ -2150,121 +2135,6 @@ export function focusEditorFromRename(): void {
 	resetBlink();
 	revealCursor();
 	ide_state.cursorVisible = true;
-}
-
-export function refreshSymbolCatalog(force: boolean): void {
-	const scope: 'local' | 'global' = ide_state.symbolSearchGlobal ? 'global' : 'local';
-	let asset_id: string | null = null;
-	let chunkName: string | null = null;
-	if (scope === 'local') {
-		const context = getActiveCodeTabContext();
-		asset_id = resolveHoverAssetId(context);
-		chunkName = resolveHoverChunkName(context);
-	}
-	const existing = ide_state.symbolCatalogContext;
-	const unchanged = existing !== null
-		&& existing.scope === scope
-		&& (scope === 'global'
-			|| (existing.asset_id === asset_id && existing.chunkName === chunkName));
-	if (!force && unchanged) {
-		return;
-	}
-	let entries: ConsoleLuaSymbolEntry[] = [];
-	try {
-		if (scope === 'global') {
-			entries = ide_state.listGlobalLuaSymbolsFn();
-		} else {
-			entries = ide_state.listLuaSymbolsFn(asset_id, chunkName);
-		}
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		ide_state.symbolCatalog = [];
-		ide_state.symbolSearchMatches = [];
-		ide_state.symbolSearchSelectionIndex = -1;
-		ide_state.symbolSearchDisplayOffset = 0;
-		ide_state.symbolSearchHoverIndex = -1;
-		ide_state.showMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
-		return;
-	}
-	ide_state.symbolCatalogContext = { scope, asset_id, chunkName };
-	const deduped: ConsoleLuaSymbolEntry[] = [];
-	const seen = new Set<string>();
-	for (let index = 0; index < entries.length; index += 1) {
-		const entry = entries[index];
-		const key = symbolCatalogDedupKey(entry);
-		if (seen.has(key)) {
-			continue;
-		}
-		seen.add(key);
-		deduped.push(entry);
-	}
-	entries = deduped;
-	const catalogEntries = entries.map((entry) => {
-		const display = entry.path && entry.path.length > 0 ? entry.path : entry.name;
-		const sourceLabel = scope === 'global' ? symbolSourceLabel(entry) : null;
-		const combinedKey = sourceLabel
-			? `${display} ${sourceLabel}`.toLowerCase()
-			: display.toLowerCase();
-		return {
-			symbol: entry,
-			displayName: display,
-			searchKey: combinedKey,
-			line: entry.location.range.startLine,
-			kindLabel: symbolKindLabel(entry.kind),
-			sourceLabel,
-		};
-	}).sort((a, b) => {
-		if (a.line !== b.line) {
-			return a.line - b.line;
-		}
-		if (a.displayName !== b.displayName) {
-			return a.displayName.localeCompare(b.displayName);
-		}
-		const aSource = a.sourceLabel ?? '';
-		const bSource = b.sourceLabel ?? '';
-		return aSource.localeCompare(bSource);
-	});
-	ide_state.symbolCatalog = catalogEntries;
-}
-
-export function symbolPriority(kind: ConsoleLuaSymbolEntry['kind']): number {
-	switch (kind) {
-		case 'table_field':
-			return 5;
-		case 'function':
-			return 4;
-		case 'parameter':
-			return 3;
-		case 'variable':
-			return 2;
-		case 'assignment':
-		default:
-			return 1;
-	}
-}
-
-export function symbolKindLabel(kind: ConsoleLuaSymbolEntry['kind']): string {
-	switch (kind) {
-		case 'function':
-			return 'FUNC';
-		case 'table_field':
-			return 'FIELD';
-		case 'parameter':
-			return 'PARAM';
-		case 'variable':
-			return 'VAR';
-		case 'assignment':
-		default:
-			return 'SET';
-	}
-}
-
-export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string | null {
-	const path = entry.location.path ?? entry.location.asset_id ?? null;
-	if (!path) {
-		return null;
-	}
-	return computeSourceLabel(path, entry.location.chunkName ?? '<console>');
 }
 
 export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext | null): ReferenceCatalogEntry[] {
@@ -2467,7 +2337,7 @@ export function refreshResourceCatalog(): void {
 	}
 	descriptors = augmented;
 	const entries: ResourceCatalogEntry[] = descriptors.map((descriptor) => {
-		const normalizedPath = descriptor.path;
+		const normalizedPath = descriptor.path.replace(/\\/g, '/');
 		const displayPathSource = normalizedPath.length > 0 ? normalizedPath : (descriptor.asset_id ?? '');
 		const displayPath = displayPathSource.length > 0 ? displayPathSource : '<unnamed>';
 		const typeLabel = descriptor.type ? descriptor.type.toUpperCase() : '';
@@ -2684,7 +2554,6 @@ export function cancelSearchJob(): void {
 	ide_state.searchJob = null;
 }
 
-
 export function showReferenceStatusMessage(): void {
 	const matches = ide_state.referenceState.getMatches();
 	const activeIndex = ide_state.referenceState.getActiveIndex();
@@ -2694,7 +2563,6 @@ export function showReferenceStatusMessage(): void {
 	const label = ide_state.referenceState.getExpression() ?? '';
 	ide_state.showMessage(`Reference ${activeIndex + 1}/${matches.length} for ${label}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 }
-
 
 export function adjustHoverTooltipScroll(stepCount: number): boolean {
 	if (!ide_state.hoverTooltip) {
@@ -2776,354 +2644,6 @@ export function buildProjectReferenceContext(context: CodeTabContext | null): {
 		normalizedPath,
 		asset_id: resolvedasset_id,
 	};
-}
-
-export function resolveSemanticDefinitionLocation(
-	context: CodeTabContext | null,
-	expression: string,
-	usageRow: number,
-	usageColumn: number,
-	asset_id: string | null,
-	chunkName: string | null,
-): ConsoleLuaDefinitionLocation | null {
-	if (!expression) {
-		return null;
-	}
-	const namePath = expression.split('.');
-	if (namePath.length === 0) {
-		return null;
-	}
-	const activeContext = getActiveCodeTabContext();
-	const hoverChunkName = resolveHoverChunkName(activeContext);
-	const modelChunkName = chunkName ?? hoverChunkName ?? '<console>';
-	const model = ide_state.layout.getSemanticModel(ide_state.lines, ide_state.textVersion, modelChunkName);
-	if (!model) {
-		return null;
-	}
-	let definition = model.lookupIdentifier(usageRow, usageColumn, namePath);
-	if (!definition) {
-		definition = findDefinitionAtPosition(model.definitions, usageRow, usageColumn, namePath);
-	}
-	if (!definition) {
-		return null;
-	}
-	const descriptor = context ? context.descriptor : null;
-	const descriptorPath = descriptor && descriptor.path ? descriptor.path : null;
-	const descriptorAssetId = descriptor ? descriptor.asset_id ?? null : null;
-	const resolvedAssetId = descriptorAssetId ?? asset_id ?? null;
-	const resolvedChunk = chunkName
-		?? descriptorPath
-		?? descriptorAssetId
-		?? asset_id
-		?? ide_state.entryAssetId
-		?? hoverChunkName
-		?? '<console>';
-	const location: ConsoleLuaDefinitionLocation = {
-		chunkName: resolvedChunk,
-		asset_id: resolvedAssetId,
-		range: {
-			startLine: definition.definition.start.line,
-			startColumn: definition.definition.start.column,
-			endLine: definition.definition.end.line,
-			endColumn: definition.definition.end.column,
-		},
-	};
-	if (descriptorPath) {
-		location.path = descriptorPath;
-	} else if (resolvedChunk && resolvedChunk !== '<console>') {
-		location.path = resolvedChunk;
-	}
-	return location;
-}
-
-export function findDefinitionAtPosition(
-	definitions: readonly LuaDefinitionInfo[],
-	row: number,
-	column: number,
-	namePath: readonly string[],
-): LuaDefinitionInfo | null {
-	for (let index = 0; index < definitions.length; index += 1) {
-		const candidate = definitions[index];
-		if (candidate.namePath.length !== namePath.length) {
-			continue;
-		}
-		let matches = true;
-		for (let i = 0; i < namePath.length; i += 1) {
-			if (candidate.namePath[i] !== namePath[i]) {
-				matches = false;
-				break;
-			}
-		}
-		if (!matches) {
-			continue;
-		}
-		const range = candidate.definition;
-		if (row !== range.start.line) {
-			continue;
-		}
-		if (column < range.start.column || column > range.end.column) {
-			continue;
-		}
-		return candidate;
-	}
-	return null;
-}
-
-export function extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number } | null {
-	if (row < 0 || row >= ide_state.lines.length) {
-		return null;
-	}
-	const line = ide_state.lines[row] ?? '';
-	const safeColumn = Math.min(Math.max(column, 0), Math.max(0, line.length));
-	if (isLuaCommentContext(ide_state.lines, row, safeColumn)) {
-		return null;
-	}
-	if (line.length === 0) {
-		return null;
-	}
-	const clampedColumn = Math.min(Math.max(column, 0), Math.max(0, line.length - 1));
-	let probe = clampedColumn;
-	if (!isIdentifierChar(line.charCodeAt(probe))) {
-		if (line.charCodeAt(probe) === 46 && probe > 0) {
-			probe -= 1;
-		}
-		else if (probe > 0 && isIdentifierChar(line.charCodeAt(probe - 1))) {
-			probe -= 1;
-		}
-		else {
-			return null;
-		}
-	}
-	let expressionStart = probe;
-	while (expressionStart > 0 && isIdentifierChar(line.charCodeAt(expressionStart - 1))) {
-		expressionStart -= 1;
-	}
-	if (!isIdentifierStartChar(line.charCodeAt(expressionStart))) {
-		return null;
-	}
-	let expressionEnd = probe + 1;
-	while (expressionEnd < line.length && isIdentifierChar(line.charCodeAt(expressionEnd))) {
-		expressionEnd += 1;
-	}
-	// extend to include preceding segments (left of initial segment)
-	let left = expressionStart;
-	while (left > 0) {
-		const dotIndex = left - 1;
-		if (line.charCodeAt(dotIndex) !== 46) {
-			break;
-		}
-		let segmentStart = dotIndex - 1;
-		while (segmentStart >= 0 && isIdentifierChar(line.charCodeAt(segmentStart))) {
-			segmentStart -= 1;
-		}
-		segmentStart += 1;
-		if (segmentStart >= dotIndex) {
-			break;
-		}
-		if (!isIdentifierStartChar(line.charCodeAt(segmentStart))) {
-			break;
-		}
-		left = segmentStart;
-	}
-	expressionStart = left;
-	let right = expressionEnd;
-	while (right < line.length) {
-		if (line.charCodeAt(right) !== 46) {
-			break;
-		}
-		const identifierStart = right + 1;
-		if (identifierStart >= line.length) {
-			break;
-		}
-		if (!isIdentifierStartChar(line.charCodeAt(identifierStart))) {
-			break;
-		}
-		let identifierEnd = identifierStart + 1;
-		while (identifierEnd < line.length && isIdentifierChar(line.charCodeAt(identifierEnd))) {
-			identifierEnd += 1;
-		}
-		right = identifierEnd;
-	}
-	expressionEnd = right;
-	if (expressionEnd <= expressionStart) {
-		return null;
-	}
-	const segments: Array<{ text: string; start: number; end: number }> = [];
-	let segmentStart = expressionStart;
-	while (segmentStart < expressionEnd) {
-		let segmentEnd = segmentStart;
-		while (segmentEnd < expressionEnd && line.charCodeAt(segmentEnd) !== 46) {
-			segmentEnd += 1;
-		}
-		if (segmentEnd > segmentStart) {
-			segments.push({ text: line.slice(segmentStart, segmentEnd), start: segmentStart, end: segmentEnd });
-		}
-		segmentStart = segmentEnd + 1;
-	}
-	if (segments.length === 0) {
-		return null;
-	}
-	let pointerColumn = Math.min(column, expressionEnd - 1);
-	if (pointerColumn < expressionStart) {
-		pointerColumn = expressionStart;
-	}
-	if (line.charCodeAt(pointerColumn) === 46 && pointerColumn > expressionStart) {
-		pointerColumn -= 1;
-	}
-	let segmentIndex = -1;
-	for (let i = 0; i < segments.length; i += 1) {
-		const seg = segments[i];
-		if (pointerColumn >= seg.start && pointerColumn < seg.end) {
-			segmentIndex = i;
-			break;
-		}
-	}
-	if (segmentIndex === -1) {
-		segmentIndex = segments.length - 1;
-	}
-	const expression = segments.slice(0, segmentIndex + 1).map(segment => segment.text).join('.');
-	if (expression.length === 0) {
-		return null;
-	}
-	const targetSegment = segments[segmentIndex];
-	return { expression, startColumn: targetSegment.start, endColumn: targetSegment.end };
-}
-
-export function refreshGotoHoverHighlight(row: number, column: number, context: CodeTabContext | null): void {
-	const token = extractHoverExpression(row, column);
-	if (!token) {
-		clearGotoHoverHighlight();
-		return;
-	}
-	const existing = ide_state.gotoHoverHighlight;
-	if (existing
-		&& existing.row === row
-		&& column >= existing.startColumn
-		&& column <= existing.endColumn
-		&& existing.expression === token.expression) {
-		return;
-	}
-	const asset_id = resolveHoverAssetId(context);
-	const chunkName = resolveHoverChunkName(context);
-	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, asset_id, chunkName);
-	if (!definition) {
-		const inspection = safeInspectLuaExpression({
-			asset_id,
-			expression: token.expression,
-			chunkName,
-			row: row + 1,
-			column: token.startColumn + 1,
-		});
-		definition = inspection?.definition ?? null;
-	}
-	if (!definition) {
-		clearGotoHoverHighlight();
-		return;
-	}
-	ide_state.gotoHoverHighlight = {
-		row,
-		startColumn: token.startColumn,
-		endColumn: token.endColumn,
-		expression: token.expression,
-	};
-}
-
-export function clearGotoHoverHighlight(): void {
-	ide_state.gotoHoverHighlight = null;
-}
-
-export function clearReferenceHighlights(): void {
-	ide_state.referenceState.clear();
-}
-
-export function tryGotoDefinitionAt(row: number, column: number): boolean {
-	const context = getActiveCodeTabContext();
-	const descriptor = context ? context.descriptor : null;
-	const normalizedPath = descriptor && descriptor.path ? descriptor.path : null;
-	const asset_id = resolveHoverAssetId(context);
-	const token = extractHoverExpression(row, column);
-	if (!token) {
-		ide_state.showMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
-		return false;
-	}
-	const chunkName = resolveHoverChunkName(context);
-	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, asset_id, chunkName);
-	if (!definition) {
-		const inspection = safeInspectLuaExpression({
-			asset_id,
-			expression: token.expression,
-			chunkName,
-			row: row + 1,
-			column: token.startColumn + 1,
-		});
-		definition = inspection?.definition ?? null;
-	}
-	if (!definition) {
-		const resolvedChunkName = chunkName
-			?? normalizedPath
-			?? (descriptor ? descriptor.asset_id : null)
-			?? asset_id
-			?? ide_state.entryAssetId
-			?? '<console>';
-		const environment: ProjectReferenceEnvironment = {
-			activeContext: context,
-			activeLines: ide_state.lines,
-			codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
-			listResources: () => listResourcesStrict(),
-			loadLuaResource: (resourceId: string) => ide_state.loadLuaResourceFn(resourceId),
-		};
-		const projectDefinition = resolveDefinitionLocationForExpression({
-			expression: token.expression,
-			environment,
-			workspace: ide_state.semanticWorkspace,
-			currentChunkName: resolvedChunkName,
-			currentLines: ide_state.lines,
-			currentasset_id: asset_id,
-			sourceLabelPath: normalizedPath ?? (descriptor ? descriptor.asset_id : null),
-		});
-		if (projectDefinition) {
-			navigateToLuaDefinition(projectDefinition);
-			return true;
-		}
-		if (!ide_state.inspectorRequestFailed) {
-			ide_state.showMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
-		}
-		return false;
-	}
-	navigateToLuaDefinition(definition);
-	return true;
-}
-
-export function navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation): void {
-	const navigationCheckpoint = beginNavigationCapture();
-	clearReferenceHighlights();
-	const hint: { asset_id: string | null; path?: string | null } = { asset_id: definition.asset_id };
-	if (definition.path !== undefined) {
-		hint.path = definition.path;
-	}
-	let targetContextId: string | null = null;
-	try {
-		focusChunkSource(definition.chunkName, hint);
-		const context = findCodeTabContext(definition.asset_id ?? null, definition.chunkName ?? null);
-		if (context) {
-			targetContextId = context.id;
-		}
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		ide_state.showMessage(`Failed to open definition: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
-		return;
-	}
-	if (targetContextId) {
-		setActiveTab(targetContextId);
-	} else {
-		activateCodeTab();
-	}
-	applyDefinitionSelection(definition.range);
-	ide_state.cursorRevealSuspended = false;
-	clearHoverTooltip();
-	clearGotoHoverHighlight();
-	completeNavigation(navigationCheckpoint);
-	ide_state.showMessage('Jumped to definition', constants.COLOR_STATUS_SUCCESS, 1.6);
 }
 
 export function applyDefinitionSelection(range: ConsoleLuaDefinitionLocation['range']): void {

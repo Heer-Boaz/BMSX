@@ -1,4 +1,5 @@
-import { applySourceToDocument, clearReferenceHighlights, getResourcePanelWidth } from './console_cart_editor';
+import { applySourceToDocument, getResourcePanelWidth } from './console_cart_editor';
+import { clearReferenceHighlights } from './intellisense';
 import { requestSemanticRefresh } from './intellisense';
 import { markDiagnosticsDirty } from './diagnostics';
 import * as constants from './constants';
@@ -24,22 +25,9 @@ export function isWordChar(ch: string): boolean {
 	return (code >= 48 && code <= 57)
 		|| (code >= 65 && code <= 90)
 		|| (code >= 97 && code <= 122)
-		|| ch === '_';
+		|| ch === '_' || ch === '$';
 }
 
-export function isIdentifierStartChar(code: number): boolean {
-	if (code >= 65 && code <= 90) {
-		return true;
-	}
-	if (code >= 97 && code <= 122) {
-		return true;
-	}
-	return code === 95;
-}
-
-export function isIdentifierChar(code: number): boolean {
-	return isIdentifierStartChar(code) || (code >= 48 && code <= 57);
-}
 export function splitLines(source: string): string[] {
 	return source.split(/\r?\n/);
 }

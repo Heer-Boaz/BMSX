@@ -34,13 +34,15 @@ import {
 	type LuaDefinitionKind,
 } from '../../lua/ast';
 import { LuaTableFieldKind } from '../../lua/ast';
-import type { LuaTableArrayField, LuaTableExpressionField, LuaTableIdentifierField } from '../../lua/ast';
-import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaSymbolEntry } from '../types';
+import type { LuaDefinitionInfo, LuaTableArrayField, LuaTableExpressionField, LuaTableIdentifierField } from '../../lua/ast';
+import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionLocation, ConsoleLuaDefinitionRange, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaSymbolEntry } from '../types';
 import type { ApiCompletionMetadata, CodeTabContext, LuaCompletionItem, PointerSnapshot } from './types';
-import * as constants from './constants';
-import { getActiveCodeTabContext, isCodeTabActive, isReadOnlyCodeTab } from './editor_tabs';
+import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isCodeTabActive, isReadOnlyCodeTab, setActiveTab } from './editor_tabs';
 import { ide_state } from './ide_state';
-import { resolvePointerRow, resolvePointerColumn, extractHoverExpression, safeInspectLuaExpression } from './console_cart_editor';
+import { resolvePointerRow, resolvePointerColumn, safeInspectLuaExpression, applyDefinitionSelection, beginNavigationCapture, completeNavigation, focusChunkSource, listResourcesStrict } from './console_cart_editor';
+import { isLuaCommentContext } from './text_utils';
+import { type ProjectReferenceEnvironment, resolveDefinitionLocationForExpression } from './code_reference';
+import * as constants from './constants';
 
 export const KEYWORDS = new Set([
 	'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
@@ -1498,3 +1500,349 @@ export function requestSemanticRefresh(context?: CodeTabContext | null): void {
 	const chunkName = resolveHoverChunkName(activeContext) ?? '<console>';
 	ide_state.layout.requestSemanticUpdate(ide_state.lines, ide_state.textVersion, chunkName);
 }
+export function resolveSemanticDefinitionLocation(
+	context: CodeTabContext | null,
+	expression: string,
+	usageRow: number,
+	usageColumn: number,
+	asset_id: string | null,
+	chunkName: string | null
+): ConsoleLuaDefinitionLocation | null {
+	if (!expression) {
+		return null;
+	}
+	const namePath = expression.split('.');
+	if (namePath.length === 0) {
+		return null;
+	}
+	const activeContext = getActiveCodeTabContext();
+	const hoverChunkName = resolveHoverChunkName(activeContext);
+	const modelChunkName = chunkName ?? hoverChunkName ?? '<console>';
+	const model = ide_state.layout.getSemanticModel(ide_state.lines, ide_state.textVersion, modelChunkName);
+	if (!model) {
+		return null;
+	}
+	let definition = model.lookupIdentifier(usageRow, usageColumn, namePath);
+	if (!definition) {
+		definition = findDefinitionAtPosition(model.definitions, usageRow, usageColumn, namePath);
+	}
+	if (!definition) {
+		return null;
+	}
+	const descriptor = context ? context.descriptor : null;
+	const descriptorPath = descriptor && descriptor.path ? descriptor.path : null;
+	const descriptorAssetId = descriptor ? descriptor.asset_id ?? null : null;
+	const resolvedAssetId = descriptorAssetId ?? asset_id ?? null;
+	const resolvedChunk = chunkName
+		?? descriptorPath
+		?? descriptorAssetId
+		?? asset_id
+		?? ide_state.entryAssetId
+		?? hoverChunkName
+		?? '<console>';
+	const location: ConsoleLuaDefinitionLocation = {
+		chunkName: resolvedChunk,
+		asset_id: resolvedAssetId,
+		range: {
+			startLine: definition.definition.start.line,
+			startColumn: definition.definition.start.column,
+			endLine: definition.definition.end.line,
+			endColumn: definition.definition.end.column,
+		},
+	};
+	if (descriptorPath) {
+		location.path = descriptorPath;
+	} else if (resolvedChunk && resolvedChunk !== '<console>') {
+		location.path = resolvedChunk;
+	}
+	return location;
+}
+
+export function findDefinitionAtPosition(
+	definitions: readonly LuaDefinitionInfo[],
+	row: number,
+	column: number,
+	namePath: readonly string[]
+): LuaDefinitionInfo | null {
+	for (let index = 0; index < definitions.length; index += 1) {
+		const candidate = definitions[index];
+		if (candidate.namePath.length !== namePath.length) {
+			continue;
+		}
+		let matches = true;
+		for (let i = 0; i < namePath.length; i += 1) {
+			if (candidate.namePath[i] !== namePath[i]) {
+				matches = false;
+				break;
+			}
+		}
+		if (!matches) {
+			continue;
+		}
+		const range = candidate.definition;
+		if (row !== range.start.line) {
+			continue;
+		}
+		if (column < range.start.column || column > range.end.column) {
+			continue;
+		}
+		return candidate;
+	}
+	return null;
+}
+
+export function extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number; } | null {
+	if (row < 0 || row >= ide_state.lines.length) {
+		return null;
+	}
+	const line = ide_state.lines[row] ?? '';
+	const safeColumn = Math.min(Math.max(column, 0), Math.max(0, line.length));
+	if (isLuaCommentContext(ide_state.lines, row, safeColumn)) {
+		return null;
+	}
+	if (line.length === 0) {
+		return null;
+	}
+	const clampedColumn = Math.min(Math.max(column, 0), Math.max(0, line.length - 1));
+	let probe = clampedColumn;
+	if (!LuaLexer.isIdentifierPart(line.charAt(probe))) {
+		if (line.charCodeAt(probe) === 46 && probe > 0) {
+			probe -= 1;
+		}
+		else if (probe > 0 && LuaLexer.isIdentifierPart(line.charAt(probe - 1))) {
+			probe -= 1;
+		}
+		else {
+			return null;
+		}
+	}
+	let expressionStart = probe;
+	while (expressionStart > 0 && LuaLexer.isIdentifierPart(line.charAt(expressionStart - 1))) {
+		expressionStart -= 1;
+	}
+	if (!LuaLexer.isIdentifierStart(line.charAt(expressionStart))) {
+		return null;
+	}
+	let expressionEnd = probe + 1;
+	while (expressionEnd < line.length && LuaLexer.isIdentifierPart(line.charAt(expressionEnd))) {
+		expressionEnd += 1;
+	}
+	// extend to include preceding segments (left of initial segment)
+	let left = expressionStart;
+	while (left > 0) {
+		const dotIndex = left - 1;
+		if (line.charCodeAt(dotIndex) !== 46) {
+			break;
+		}
+		let segmentStart = dotIndex - 1;
+		while (segmentStart >= 0 && LuaLexer.isIdentifierPart(line.charAt(segmentStart))) {
+			segmentStart -= 1;
+		}
+		segmentStart += 1;
+		if (segmentStart >= dotIndex) {
+			break;
+		}
+		if (!LuaLexer.isIdentifierStart(line.charAt(segmentStart))) {
+			break;
+		}
+		left = segmentStart;
+	}
+	expressionStart = left;
+	let right = expressionEnd;
+	while (right < line.length) {
+		if (line.charCodeAt(right) !== 46) {
+			break;
+		}
+		const identifierStart = right + 1;
+		if (identifierStart >= line.length) {
+			break;
+		}
+		if (!LuaLexer.isIdentifierStart(line.charAt(identifierStart))) {
+			break;
+		}
+		let identifierEnd = identifierStart + 1;
+		while (identifierEnd < line.length && LuaLexer.isIdentifierPart(line.charAt(identifierEnd))) {
+			identifierEnd += 1;
+		}
+		right = identifierEnd;
+	}
+	expressionEnd = right;
+	if (expressionEnd <= expressionStart) {
+		return null;
+	}
+	const segments: Array<{ text: string; start: number; end: number; }> = [];
+	let segmentStart = expressionStart;
+	while (segmentStart < expressionEnd) {
+		let segmentEnd = segmentStart;
+		while (segmentEnd < expressionEnd && line.charCodeAt(segmentEnd) !== 46) {
+			segmentEnd += 1;
+		}
+		if (segmentEnd > segmentStart) {
+			segments.push({ text: line.slice(segmentStart, segmentEnd), start: segmentStart, end: segmentEnd });
+		}
+		segmentStart = segmentEnd + 1;
+	}
+	if (segments.length === 0) {
+		return null;
+	}
+	let pointerColumn = Math.min(column, expressionEnd - 1);
+	if (pointerColumn < expressionStart) {
+		pointerColumn = expressionStart;
+	}
+	if (line.charCodeAt(pointerColumn) === 46 && pointerColumn > expressionStart) {
+		pointerColumn -= 1;
+	}
+	let segmentIndex = -1;
+	for (let i = 0; i < segments.length; i += 1) {
+		const seg = segments[i];
+		if (pointerColumn >= seg.start && pointerColumn < seg.end) {
+			segmentIndex = i;
+			break;
+		}
+	}
+	if (segmentIndex === -1) {
+		segmentIndex = segments.length - 1;
+	}
+	const expression = segments.slice(0, segmentIndex + 1).map(segment => segment.text).join('.');
+	if (expression.length === 0) {
+		return null;
+	}
+	const targetSegment = segments[segmentIndex];
+	return { expression, startColumn: targetSegment.start, endColumn: targetSegment.end };
+}export function refreshGotoHoverHighlight(row: number, column: number, context: CodeTabContext | null): void {
+	const token = extractHoverExpression(row, column);
+	if (!token) {
+		clearGotoHoverHighlight();
+		return;
+	}
+	const existing = ide_state.gotoHoverHighlight;
+	if (existing
+		&& existing.row === row
+		&& column >= existing.startColumn
+		&& column <= existing.endColumn
+		&& existing.expression === token.expression) {
+		return;
+	}
+	const asset_id = resolveHoverAssetId(context);
+	const chunkName = resolveHoverChunkName(context);
+	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, asset_id, chunkName);
+	if (!definition) {
+		const inspection = safeInspectLuaExpression({
+			asset_id,
+			expression: token.expression,
+			chunkName,
+			row: row + 1,
+			column: token.startColumn + 1,
+		});
+		definition = inspection?.definition ?? null;
+	}
+	if (!definition) {
+		clearGotoHoverHighlight();
+		return;
+	}
+	ide_state.gotoHoverHighlight = {
+		row,
+		startColumn: token.startColumn,
+		endColumn: token.endColumn,
+		expression: token.expression,
+	};
+}
+
+export function clearGotoHoverHighlight(): void {
+	ide_state.gotoHoverHighlight = null;
+}
+
+export function clearReferenceHighlights(): void {
+	ide_state.referenceState.clear();
+}
+
+export function tryGotoDefinitionAt(row: number, column: number): boolean {
+	const context = getActiveCodeTabContext();
+	const descriptor = context ? context.descriptor : null;
+	const normalizedPath = descriptor && descriptor.path ? descriptor.path : null;
+	const asset_id = resolveHoverAssetId(context);
+	const token = extractHoverExpression(row, column);
+	if (!token) {
+		ide_state.showMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
+		return false;
+	}
+	const chunkName = resolveHoverChunkName(context);
+	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, asset_id, chunkName);
+	if (!definition) {
+		const inspection = safeInspectLuaExpression({
+			asset_id,
+			expression: token.expression,
+			chunkName,
+			row: row + 1,
+			column: token.startColumn + 1,
+		});
+		definition = inspection?.definition ?? null;
+	}
+	if (!definition) {
+		const resolvedChunkName = chunkName
+			?? normalizedPath
+			?? (descriptor ? descriptor.asset_id : null)
+			?? asset_id
+			?? ide_state.entryAssetId
+			?? '<console>';
+		const environment: ProjectReferenceEnvironment = {
+			activeContext: context,
+			activeLines: ide_state.lines,
+			codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
+			listResources: () => listResourcesStrict(),
+			loadLuaResource: (resourceId: string) => ide_state.loadLuaResourceFn(resourceId),
+		};
+		const projectDefinition = resolveDefinitionLocationForExpression({
+			expression: token.expression,
+			environment,
+			workspace: ide_state.semanticWorkspace,
+			currentChunkName: resolvedChunkName,
+			currentLines: ide_state.lines,
+			currentasset_id: asset_id,
+			sourceLabelPath: normalizedPath ?? (descriptor ? descriptor.asset_id : null),
+		});
+		if (projectDefinition) {
+			navigateToLuaDefinition(projectDefinition);
+			return true;
+		}
+		if (!ide_state.inspectorRequestFailed) {
+			ide_state.showMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
+		}
+		return false;
+	}
+	navigateToLuaDefinition(definition);
+	return true;
+}
+
+export function navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation): void {
+	const navigationCheckpoint = beginNavigationCapture();
+	clearReferenceHighlights();
+	const hint: { asset_id: string | null; path?: string | null; } = { asset_id: definition.asset_id };
+	if (definition.path !== undefined) {
+		hint.path = definition.path;
+	}
+	let targetContextId: string | null = null;
+	try {
+		focusChunkSource(definition.chunkName, hint);
+		const context = findCodeTabContext(definition.asset_id ?? null, definition.chunkName ?? null);
+		if (context) {
+			targetContextId = context.id;
+		}
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		ide_state.showMessage(`Failed to open definition: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
+		return;
+	}
+	if (targetContextId) {
+		setActiveTab(targetContextId);
+	} else {
+		activateCodeTab();
+	}
+	applyDefinitionSelection(definition.range);
+	ide_state.cursorRevealSuspended = false;
+	clearHoverTooltip();
+	clearGotoHoverHighlight();
+	completeNavigation(navigationCheckpoint);
+	ide_state.showMessage('Jumped to definition', constants.COLOR_STATUS_SUCCESS, 1.6);
+}
+

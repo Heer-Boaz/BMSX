@@ -18,7 +18,6 @@ import {
 	closeSymbolSearch,
 	hideResourcePanel,
 	enterResourceViewer,
-	normalizeChunkReference,
 	getTabBarTotalHeight,
 	resetPointerClickTracking,
 	resetEditorContent,
@@ -29,7 +28,6 @@ import { measureText } from './text_utils';
 import { ensureCursorVisible } from './caret';
 import { resolveHoverChunkName } from './intellisense';
 import { resetBlink } from './render/render_caret';
-import { splitLines } from './text_utils';
 
 export function createEntryTabContext(): CodeTabContext | null {
 	const luaDescriptors = ide_state.listResourcesFn().filter(r => r.type === 'lua');
@@ -142,7 +140,7 @@ export function activateCodeEditorTab(tabId: string | null): void {
 	}
 	const source = context.load();
 	context.lastSavedSource = source;
-	ide_state.lines = splitLines(source);
+	ide_state.lines = source.split(/\r\n|\n|\r/);
 	ide_state.layout.markVisualLinesDirty();
 	markDiagnosticsDirty();
 	if (ide_state.lines.length === 0) {
@@ -508,33 +506,20 @@ export function endTabDrag(): void {
 }
 
 export function findCodeTabContext(asset_id: string | null, chunkName: string | null): CodeTabContext | null {
-	const normalizedChunk = normalizeChunkReference(chunkName);
 	for (const context of ide_state.codeTabContexts.values()) {
 		const descriptor = context.descriptor;
-		if (asset_id && descriptor && descriptor.asset_id === asset_id) {
+		if (asset_id && descriptor?.asset_id === asset_id) {
 			return context;
 		}
-		if (!asset_id && normalizedChunk && descriptor) {
-			const descriptorPath = normalizeChunkReference(descriptor.path);
-			if (descriptorPath && descriptorPath === normalizedChunk) {
-				return context;
-			}
+		if (!asset_id && chunkName && descriptor?.path === chunkName) {
+			return context;
 		}
-	}
-	if (!ide_state.entryTabId) {
-		return null;
-	}
-	const entry = ide_state.codeTabContexts.get(ide_state.entryTabId);
-	if (entry && !asset_id && normalizedChunk) {
-		// Entry script might match if it's the main file
-		// But usually entry script is anonymous or has special handling
 	}
 	return null;
 }
 
 export function computeResourceTabTitle(descriptor: ConsoleResourceDescriptor): string {
-	const normalized = descriptor.path.replace(/\\/g, '/');
-	const parts = normalized.split('/').filter(part => part.length > 0);
+	const parts = descriptor.path.split('/').filter(part => part.length > 0);
 	if (parts.length > 0) {
 		return parts[parts.length - 1];
 	}
