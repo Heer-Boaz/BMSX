@@ -2903,13 +2903,12 @@ export function performHotReloadAndResume(): boolean {
 export function performReboot(): boolean {
 	const runtime = BmsxConsoleRuntime.instance;
 	const requiresReload = hasPendingRuntimeReload();
-	const savedSource = requiresReload ? getMainProgramSourceForReload() : null;
 	const targetGeneration = ide_state.saveGeneration;
 	clearExecutionStopHighlights();
 	deactivate();
 	scheduleRuntimeTask(async () => {
-		if (requiresReload && savedSource !== null) {
-			await runtime.reloadProgramAndResetWorld(savedSource);
+		if (requiresReload) {
+			await runtime.reloadProgramAndResetWorld({ runInit: false });
 		}
 		await runtime.boot();
 		ide_state.appliedGeneration = targetGeneration;
@@ -3843,27 +3842,6 @@ export function findResourcePanelIndexByasset_id(asset_id: string): number {
 		}
 	}
 	return -1;
-}
-
-export function getMainProgramSourceForReload(): string {
-	const entryId = ide_state.entryTabId;
-	if (!entryId) {
-		return ide_state.loadSourceFn();
-	}
-	const context = ide_state.codeTabContexts.get(entryId);
-	if (!context) {
-		return ide_state.loadSourceFn();
-	}
-	if (context.id === ide_state.activeCodeTabContextId) {
-		return ide_state.lines.join('\n');
-	}
-	if (context.snapshot) {
-		return context.snapshot.lines.join('\n');
-	}
-	if (context.lastSavedSource.length > 0) {
-		return context.lastSavedSource;
-	}
-	return context.load();
 }
 
 export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor): ResourceViewerState {
