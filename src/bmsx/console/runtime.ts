@@ -357,24 +357,6 @@ export class BmsxConsoleRuntime extends Service {
 	public get workspaceScratchPaths(): ReadonlySet<string> {
 		return this._workspaceScratchPaths;
 	}
-
-	private static readonly CONSOLE_SINGLE_ARG_KEYWORDS = new Set([
-		'if',
-		'then',
-		'elseif',
-		'else',
-		'end',
-		'for',
-		'while',
-		'repeat',
-		'until',
-		'function',
-		'local',
-		'return',
-		'break',
-		'do',
-	]);
-
 	private constructor(options: BmsxConsoleRuntimeOptions) {
 		super({ id: 'bmsx_console_runtime' });
 		BmsxConsoleRuntime._instance = this;
@@ -941,30 +923,7 @@ export class BmsxConsoleRuntime extends Service {
 			const expression = trimmed.slice(1).trim();
 			return expression.length === 0 ? '' : `return ${expression}`;
 		}
-		const rewritten = this.rewriteSingleArgumentCall(trimmed);
-		if (rewritten) {
-			return rewritten;
-		}
 		return trimmed;
-	}
-
-	private rewriteSingleArgumentCall(source: string): string | null {
-		const match = source.match(/^([A-Za-z_][A-Za-z0-9_]*(?:[.:][A-Za-z_][A-Za-z0-9_]*)*)\s+(.+)$/);
-		if (!match) {
-			return null;
-		}
-		const callee = match[1];
-		if (BmsxConsoleRuntime.CONSOLE_SINGLE_ARG_KEYWORDS.has(callee)) {
-			return null;
-		}
-		const argument = match[2].trim();
-		if (argument.length === 0 || argument.startsWith('=')) {
-			return null;
-		}
-		if (argument.startsWith('--')) {
-			return null;
-		}
-		return `${callee}(${argument})`;
 	}
 
 	public getSystemStatusLines(): string[] {
