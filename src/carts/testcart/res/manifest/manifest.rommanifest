@@ -36,6 +36,7 @@
 	},
 	"lua": {
 		"entry": {
+			"boot": "boot",
 			"init": "init",
 			"update": "update",
 			"draw": "draw"

@@ -15,7 +15,7 @@ export interface LuaHandlerDescriptor {
 	targetId: string;
 	hook: string;
 	chunkName: string | null;
-	normalizedChunkName: string | null;
+	normalizedChunkName: string;
 	functionName: string | null;
 	sourceRange: LuaSourceRange | null;
 	metadata?: Readonly<Record<string, unknown>>;
@@ -95,9 +95,6 @@ export class LuaHandlerRegistry {
 
 	public listByChunk(chunkName: string): ReadonlyArray<LuaHandlerDescriptor> {
 		const normalized = this.normalizeChunkName(chunkName);
-		if (!normalized) {
-			return [];
-		}
 		const ids = this.handlerIdsByChunk.get(normalized);
 		if (!ids || ids.size === 0) {
 			return [];
@@ -113,8 +110,8 @@ export class LuaHandlerRegistry {
 	}
 
 	private createDescriptor(registration: LuaHandlerRegistration): LuaHandlerDescriptor {
-		const baseChunk = registration.chunkName ?? registration.sourceRange?.chunkName ?? null;
-		const normalizedChunkName = baseChunk ? this.normalizeChunkName(baseChunk) : null;
+		const baseChunk = registration.chunkName ?? registration.sourceRange?.chunkName ?? '';
+		const normalizedChunkName = this.normalizeChunkName(baseChunk);
 		return {
 			id: registration.id,
 			category: registration.category,
@@ -129,9 +126,6 @@ export class LuaHandlerRegistry {
 	}
 
 	private indexDescriptor(descriptor: LuaHandlerDescriptor): void {
-		if (!descriptor.normalizedChunkName) {
-			return;
-		}
 		let bucket = this.handlerIdsByChunk.get(descriptor.normalizedChunkName);
 		if (!bucket) {
 			bucket = new Set<string>();
@@ -142,9 +136,6 @@ export class LuaHandlerRegistry {
 
 	private unindexDescriptor(descriptor: LuaHandlerDescriptor): void {
 		const chunk = descriptor.normalizedChunkName;
-		if (!chunk) {
-			return;
-		}
 		const bucket = this.handlerIdsByChunk.get(chunk);
 		if (!bucket) {
 			return;
@@ -164,14 +155,6 @@ export class LuaHandlerRegistry {
 	}
 
 	private normalizeChunkName(name: string): string {
-		const trimmed = name.trim();
-		if (trimmed.length === 0) {
-			return '';
-		}
-		let normalized = trimmed;
-		if (normalized.startsWith('@')) {
-			normalized = normalized.slice(1);
-		}
-		return normalized.replace(/\\/g, '/');
+		return name;
 	}
 }

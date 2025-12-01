@@ -106,7 +106,7 @@
 				"/home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
 				"*": "${workspaceFolder}/src/*"
 			},
-			"showAsyncStacks": true,
+			"showAsyncStacks": false,
 			"smartStep": true,
 			"disableNetworkCache": true,
 		}

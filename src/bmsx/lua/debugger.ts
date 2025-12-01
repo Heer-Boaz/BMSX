@@ -3,11 +3,7 @@ import { fallbackclamp } from '../utils/clamp';
 import type { LuaCallFrame, LuaDebuggerPauseSignal, LuaExceptionResumeStrategy } from './runtime';
 
 export function normalizeLuaChunkName(name: string): string {
-	let normalized = name.trim();
-	if (normalized.startsWith('@')) {
-		normalized = normalized.slice(1);
-	}
-	return normalized.replace(/\\/g, '/');
+	return name;
 }
 
 export type LuaDebuggerStepMode = 'none' | 'into' | 'over';

@@ -8,29 +8,6 @@ export const WORKSPACE_DIRTY_DIR = 'dirty';
 export const WORKSPACE_STATE_FILE = 'ide-state.json';
 export const WORKSPACE_MARKER_FILE = '~workspace';
 
-export function normalizeWorkspacePath(input: string): string {
-	const replaced = input.replace(/\\/g, '/').trim();
-	if (replaced.length === 0) {
-		return '';
-	}
-	const parts = replaced.split('/');
-	const stack: string[] = [];
-	for (let index = 0; index < parts.length; index += 1) {
-		const part = parts[index];
-		if (!part || part === '.') {
-			continue;
-		}
-		if (part === '..') {
-			if (stack.length > 0) {
-				stack.pop();
-			}
-			continue;
-		}
-		stack.push(part);
-	}
-	return stack.join('/');
-}
-
 export function joinWorkspacePaths(...segments: string[]): string {
 	return segments
 		.filter(segment => segment.length > 0)
@@ -45,7 +22,7 @@ export function sanitizeWorkspaceFilenameSegment(value: string): string {
 }
 
 export function buildWorkspaceMetadataPath(projectRootPath: string): string {
-	return joinWorkspacePaths(normalizeWorkspacePath(projectRootPath), WORKSPACE_METADATA_DIR);
+	return joinWorkspacePaths(projectRootPath, WORKSPACE_METADATA_DIR);
 }
 
 export function buildWorkspaceDirtyDir(projectRootPath: string): string {
@@ -53,12 +30,8 @@ export function buildWorkspaceDirtyDir(projectRootPath: string): string {
 }
 
 export function buildWorkspaceDirtyEntryPath(projectRootPath: string, resourcePath: string): string {
-	const normalizedResource = normalizeWorkspacePath(resourcePath);
-	if (normalizedResource.length === 0) {
-		throw new Error('[workspace_paths] Resource path is required to build dirty file path.');
-	}
-	const segments = normalizedResource.split('/');
-	const baseName = segments.pop() ?? normalizedResource;
+	const segments = resourcePath.split('/');
+	const baseName = segments.pop() ?? resourcePath;
 	const tempName = baseName.startsWith('~') ? baseName : `~${baseName}`;
 	segments.push(tempName);
 	return joinWorkspacePaths(buildWorkspaceDirtyDir(projectRootPath), ...segments);
@@ -75,14 +48,8 @@ export function buildWorkspaceStateFilePath(projectRootPath: string): string {
 	return joinWorkspacePaths(buildWorkspaceMetadataPath(projectRootPath), WORKSPACE_STATE_FILE);
 }
 
-export function buildWorkspaceMarkerPath(projectRootPath: string): string {
-	return joinWorkspacePaths(buildWorkspaceMetadataPath(projectRootPath), WORKSPACE_MARKER_FILE);
-}
-
 export function buildWorkspaceStorageKey(projectRootPath: string, relativePath: string): string {
-	const normalizedRoot = normalizeWorkspacePath(projectRootPath);
-	const normalizedPath = normalizeWorkspacePath(relativePath);
-	return `${WORKSPACE_STORAGE_PREFIX}:${normalizedRoot}:${normalizedPath}`;
+	return `${WORKSPACE_STORAGE_PREFIX}:${projectRootPath}:${relativePath}`;
 }
 
 export type WorkspaceOverrideRecord = { source: string; path: string | null; cartPath: string; updatedAt?: number };
@@ -93,18 +60,11 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 	if (!rootRaw) {
 		return overrides;
 	}
-	const root = normalizeWorkspacePath(rootRaw);
-	if (root.length === 0) {
-		return overrides;
-	}
+	const root = rootRaw;
 	const storage = params.storage;
 	const luaSources = params.rompack.luaSourcePaths;
 	for (const [assetId, cartPath] of Object.entries(luaSources)) {
-		if (typeof cartPath !== 'string' || cartPath.length === 0) {
-			continue;
-		}
-		const normalizedCart = normalizeWorkspacePath(cartPath);
-		const dirtyPath = buildWorkspaceDirtyEntryPath(root, normalizedCart);
+		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
 		const stored = storage.getItem(storageKey);
 		if (stored === null || stored === undefined) {
@@ -123,7 +83,7 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 		} catch {
 			// Fall back to raw string for legacy entries.
 		}
-		overrides.set(assetId, { source, path: dirtyPath, cartPath: normalizedCart, updatedAt });
+		overrides.set(assetId, { source, path: dirtyPath, cartPath, updatedAt });
 	}
 	return overrides;
 }

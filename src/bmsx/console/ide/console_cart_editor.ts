@@ -501,7 +501,7 @@ export function symbolSearchVisibleResultCount(): number {
 export function symbolCatalogDedupKey(entry: ConsoleLuaSymbolEntry): string {
 	const { location, kind, name } = entry;
 	const chunkName = location.chunkName ?? '';
-	const normalizedPath = location.path ? location.path.replace(/\\/g, '/') : '';
+	const normalizedPath = location.path ?? '';
 	const asset_id = location.asset_id ?? '';
 	const locationKey = normalizedPath.length > 0
 		? normalizedPath
@@ -683,34 +683,15 @@ export function focusResourceByAsset(asset_id: string, preferredPath?: string | 
 }
 
 export function normalizeChunkName(name: string | null): string {
-	let normalized = (name ?? '').trim();
-	if (normalized.startsWith('@')) {
-		normalized = normalized.slice(1);
-	}
-	normalized = normalized.replace(/\\/g, '/');
-	if (normalized.length === 0) {
-		throw new Error('[ConsoleCartEditor] Normalized chunk name is empty.');
-	}
-	return normalized;
+	return name ?? '';
 }
 
 export function normalizeResourcePath(path?: string | null): string | undefined {
-	if (path === null || path === undefined) {
-		return undefined;
-	}
-	const normalized = path.replace(/\\/g, '/');
-	return normalized.length > 0 ? normalized : undefined;
+	return path === null || path === undefined ? undefined : path;
 }
 
 export function normalizeChunkReference(reference: string | null): string | null {
-	if (!reference) {
-		return null;
-	}
-	let normalized = reference;
-	if (normalized.startsWith('@')) {
-		normalized = normalized.slice(1);
-	}
-	return normalized.replace(/\\/g, '/');
+	return reference;
 }
 
 export function stripExtension(value: string): string {
@@ -725,7 +706,7 @@ export function resolveResourceDescriptorForSource(asset_id: string | null, chun
 	const descriptors = listResourcesStrict();
 	const normalizedChunk = normalizeChunkReference(chunkName);
 	if (normalizedChunk) {
-		const byPath = descriptors.find(entry => entry.path.replace(/\\/g, '/') === normalizedChunk);
+		const byPath = descriptors.find(entry => entry.path === normalizedChunk);
 		if (byPath && byPath.type === 'lua') {
 			return byPath;
 		}
@@ -735,7 +716,7 @@ export function resolveResourceDescriptorForSource(asset_id: string | null, chun
 		const byChunkAsset = descriptors.find(entry =>
 			entry.asset_id === basename
 			|| entry.asset_id === withoutExt
-			|| stripExtension(entry.path.replace(/\\/g, '/').split('/').pop() ?? '') === basename
+			|| stripExtension(entry.path.split('/').pop() ?? '') === basename
 		);
 		if (byChunkAsset && byChunkAsset.type === 'lua') {
 			return byChunkAsset;
@@ -775,8 +756,8 @@ export function findResourceDescriptorByAssetId(asset_id: string): ConsoleResour
 
 export function findResourceDescriptorForChunk(chunkPath: string): ConsoleResourceDescriptor {
 	const descriptors = listResourcesStrict();
-	const normalizedTarget = chunkPath.replace(/\\/g, '/');
-	const exact = descriptors.find(entry => entry.path.replace(/\\/g, '/') === normalizedTarget);
+	const normalizedTarget = chunkPath;
+	const exact = descriptors.find(entry => entry.path === normalizedTarget);
 	if (exact) {
 		return exact;
 	}
@@ -1831,43 +1812,11 @@ export function isValidCreateResourceCharacter(value: string): boolean {
 }
 
 export function normalizeCreateResourceRequest(rawPath: string): { path: string; asset_id: string; directory: string } {
-	let candidate = rawPath.trim();
-	if (candidate.length === 0) {
-		throw new Error('Path must not be empty.');
-	}
-	if (candidate.indexOf('\n') !== -1 || candidate.indexOf('\r') !== -1) {
-		throw new Error('Path cannot contain newlines.');
-	}
-	candidate = candidate.replace(/\\/g, '/');
-	candidate = candidate.replace(/\/+/g, '/');
-	if (candidate.startsWith('./')) {
-		candidate = candidate.slice(2);
-	}
-	while (candidate.startsWith('/')) {
-		candidate = candidate.slice(1);
-	}
-	const segments = candidate.split('/');
-	for (let i = 0; i < segments.length; i += 1) {
-		if (segments[i] === '..') {
-			throw new Error('Path cannot contain ".." segments.');
-		}
-	}
-	if (candidate.endsWith('/')) {
-		throw new Error('Path must include a file name.');
-	}
-	if (!candidate.endsWith('.lua')) {
-		candidate += '.lua';
-	}
+	const candidate = rawPath;
 	const slashIndex = candidate.lastIndexOf('/');
 	const directory = slashIndex === -1 ? '' : candidate.slice(0, slashIndex + 1);
 	const fileName = slashIndex === -1 ? candidate : candidate.slice(slashIndex + 1);
-	if (fileName.length === 0) {
-		throw new Error('File name cannot be empty.');
-	}
 	const baseName = fileName.endsWith('.lua') ? fileName.slice(0, -4) : fileName;
-	if (baseName.length === 0) {
-		throw new Error('Asset id cannot be empty.');
-	}
 	return { path: candidate, asset_id: baseName, directory: ensureDirectorySuffix(directory) };
 }
 
@@ -1896,12 +1845,11 @@ export function ensureDirectorySuffix(path: string): string {
 	if (!path || path.length === 0) {
 		return '';
 	}
-	const normalized = path.replace(/\\/g, '/');
-	const slashIndex = normalized.lastIndexOf('/');
+	const slashIndex = path.lastIndexOf('/');
 	if (slashIndex === -1) {
 		return '';
 	}
-	return normalized.slice(0, slashIndex + 1);
+	return path.slice(0, slashIndex + 1);
 }
 
 export function openResourceSearch(initialQuery: string = ''): void {
@@ -2321,7 +2269,7 @@ export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string | null {
 
 export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext | null): ReferenceCatalogEntry[] {
 	const descriptor = context ? context.descriptor : null;
-	const normalizedPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
+	const normalizedPath = descriptor && descriptor.path ? descriptor.path : null;
 	const asset_id = descriptor && descriptor.asset_id ? descriptor.asset_id : null;
 	const chunkName = resolveHoverChunkName(context) ?? normalizedPath ?? asset_id ?? '<console>';
 	const environment: ProjectReferenceEnvironment = {
@@ -2519,7 +2467,7 @@ export function refreshResourceCatalog(): void {
 	}
 	descriptors = augmented;
 	const entries: ResourceCatalogEntry[] = descriptors.map((descriptor) => {
-		const normalizedPath = descriptor.path.replace(/\\/g, '/');
+		const normalizedPath = descriptor.path;
 		const displayPathSource = normalizedPath.length > 0 ? normalizedPath : (descriptor.asset_id ?? '');
 		const displayPath = displayPathSource.length > 0 ? displayPathSource : '<unnamed>';
 		const typeLabel = descriptor.type ? descriptor.type.toUpperCase() : '';
@@ -2807,7 +2755,7 @@ export function buildProjectReferenceContext(context: CodeTabContext | null): {
 	asset_id: string | null;
 } {
 	const descriptor = context ? context.descriptor : null;
-	const normalizedPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
+	const normalizedPath = descriptor && descriptor.path ? descriptor.path : null;
 	const descriptorasset_id = descriptor ? descriptor.asset_id ?? null : null;
 	const resolvedasset_id = descriptorasset_id ?? ide_state.entryAssetId ?? null;
 	const resolvedChunk = resolveHoverChunkName(context)
@@ -2860,7 +2808,7 @@ export function resolveSemanticDefinitionLocation(
 		return null;
 	}
 	const descriptor = context ? context.descriptor : null;
-	const descriptorPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
+	const descriptorPath = descriptor && descriptor.path ? descriptor.path : null;
 	const descriptorAssetId = descriptor ? descriptor.asset_id ?? null : null;
 	const resolvedAssetId = descriptorAssetId ?? asset_id ?? null;
 	const resolvedChunk = chunkName
@@ -3091,7 +3039,7 @@ export function clearReferenceHighlights(): void {
 export function tryGotoDefinitionAt(row: number, column: number): boolean {
 	const context = getActiveCodeTabContext();
 	const descriptor = context ? context.descriptor : null;
-	const normalizedPath = descriptor && descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
+	const normalizedPath = descriptor && descriptor.path ? descriptor.path : null;
 	const asset_id = resolveHoverAssetId(context);
 	const token = extractHoverExpression(row, column);
 	if (!token) {

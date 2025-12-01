@@ -17,7 +17,6 @@ import {
 	buildWorkspaceStateFilePath,
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
-	normalizeWorkspacePath,
 } from '../workspace';
 import { openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, findResourceDescriptorByAssetId, restoreSnapshot, setFontVariant } from './console_cart_editor';
 import { createEntryTabContext, initializeTabs, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
@@ -58,18 +57,12 @@ export async function configureWorkspaceStorage(projectRootPath: string | null):
 		resetWorkspaceBackends();
 		return;
 	}
-	const normalizedRoot = normalizeWorkspacePath(projectRootPath);
-	if (normalizedRoot.length === 0) {
-		storagePaths = null;
-		resetWorkspaceBackends();
-		return;
-	}
 	resetWorkspaceBackends();
-	const metadataDir = buildWorkspaceMetadataPath(normalizedRoot);
-	const dirtyDir = buildWorkspaceDirtyDir(normalizedRoot);
-	const stateFile = buildWorkspaceStateFilePath(normalizedRoot);
+	const metadataDir = buildWorkspaceMetadataPath(projectRootPath);
+	const dirtyDir = buildWorkspaceDirtyDir(projectRootPath);
+	const stateFile = buildWorkspaceStateFilePath(projectRootPath);
 	storagePaths = {
-		projectRootPath: normalizedRoot,
+		projectRootPath: projectRootPath,
 		metadataDir,
 		dirtyDir,
 		stateFile,
@@ -78,7 +71,7 @@ export async function configureWorkspaceStorage(projectRootPath: string | null):
 	const storage = $.platform.storage ?? null;
 	if (storage) {
 		try {
-			const backend = new LocalWorkspaceBackend(normalizedRoot, storage);
+			const backend = new LocalWorkspaceBackend(projectRootPath, storage);
 			await backend.ensureReady();
 			localBackend = backend;
 		} catch {
@@ -89,7 +82,7 @@ export async function configureWorkspaceStorage(projectRootPath: string | null):
 	serverBackendFailureNotified = false;
 	serverBackendAvailable = false;
 	try {
-		const backend = new ServerWorkspaceBackend(normalizedRoot);
+		const backend = new ServerWorkspaceBackend(projectRootPath);
 		await backend.ensureReady();
 		serverBackend = backend;
 		serverBackendAvailable = true;
@@ -290,20 +283,11 @@ export function setupWorkspacePersistence(projectRootPath: string | null): void 
 		ide_state.serverWorkspaceConnected = false;
 		return;
 	}
-	const normalizedRoot = normalizeWorkspacePath(projectRootPath);
-	if (normalizedRoot.length === 0) {
-		ide_state.workspaceAutosaveEnabled = false;
-		storagePaths = null;
-		resetWorkspaceBackends();
-		detachWorkspaceExitHandler();
-		ide_state.serverWorkspaceConnected = false;
-		return;
-	}
 	ide_state.workspaceAutosaveEnabled = true;
 	attachWorkspaceExitHandler();
 	ide_state.workspaceRestorePromise = (async () => {
 		try {
-			await configureWorkspaceStorage(normalizedRoot);
+			await configureWorkspaceStorage(projectRootPath);
 			await restoreWorkspaceSessionFromDisk();
 			ide_state.serverWorkspaceConnected = serverBackendAvailable;
 		} catch (error) {

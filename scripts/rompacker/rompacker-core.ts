@@ -92,11 +92,35 @@ export function addFile(dirPath: string, filePath: string, arrayOfFiles: string[
 	arrayOfFiles.push(join(dirPath, "/", filePath));
 }
 
+export function normalizeWorkspacePath(input: string): string {
+	const replaced = input.replace(/\\/g, '/').trim();
+	if (replaced.length === 0) {
+		return '';
+	}
+	const parts = replaced.split('/');
+	const stack: string[] = [];
+	for (let index = 0; index < parts.length; index += 1) {
+		const part = parts[index];
+		if (!part || part === '.') {
+			continue;
+		}
+		if (part === '..') {
+			if (stack.length > 0) {
+				stack.pop();
+			}
+			continue;
+		}
+		stack.push(part);
+	}
+	return stack.join('/');
+}
+
 function toWorkspaceRelativePath(filepath: string): string {
 	const absolutePath = resolve(filepath);
 	const projectRoot = process.cwd();
 	const relativePath = relative(projectRoot, absolutePath);
-	return relativePath.split(sep).join('/');
+	const workspacePath = relativePath.split(sep).join('/');
+	return normalizeWorkspacePath(workspacePath);
 }
 
 function normalizeVirtualRootPath(root?: string): string | null {

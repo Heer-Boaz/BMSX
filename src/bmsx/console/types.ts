@@ -1,5 +1,4 @@
 import type { vec2, CanonicalizationType } from '../rompack/rompack';
-import type { BmsxConsoleApi } from './api';
 
 export type IdeThemeVariant = string;
 
@@ -29,10 +28,10 @@ export type LifeCycleHandlerName = 'boot' | 'init' | 'update' | 'draw';
 
 export interface BmsxConsoleCartridge {
 	readonly meta: BmsxConsoleMetadata;
-	init(api: BmsxConsoleApi): void;
-	boot(api: BmsxConsoleApi): void;
-	update(api: BmsxConsoleApi, deltaSeconds: number): void;
-	draw(api: BmsxConsoleApi): void;
+	init(): void;
+	boot(): void;
+	update(deltaSeconds: number): void;
+	draw(): void;
 	readonly luaProgram: BmsxConsoleLuaProgram;
 }
 

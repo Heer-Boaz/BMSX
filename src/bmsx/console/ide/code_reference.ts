@@ -311,7 +311,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 			continue;
 		}
 		const asset_id = descriptor && descriptor.asset_id ? descriptor.asset_id : null;
-		const path = descriptor && descriptor.path ? normalizePath(descriptor.path) : null;
+		const path = descriptor && descriptor.path ? descriptor.path : null;
 		register(chunkName, lines, asset_id, path, null);
 	}
 	const descriptors = environment.listResources();
@@ -337,7 +337,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		if (!lines) {
 			continue;
 		}
-		register(chunkName, lines, descriptor.asset_id, normalizePath(descriptor.path ?? null), null);
+		register(chunkName, lines, descriptor.asset_id, descriptor.path ?? null, null);
 	}
 	return metadata;
 }
@@ -345,7 +345,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 function resolveChunkName(descriptor: ConsoleResourceDescriptor | null, fallback: string | null): string {
 	if (descriptor) {
 		if (descriptor.path) {
-			return normalizePath(descriptor.path);
+			return descriptor.path;
 		}
 		if (descriptor.asset_id) {
 			return descriptor.asset_id;
@@ -361,11 +361,6 @@ function resolveChunkName(descriptor: ConsoleResourceDescriptor | null, fallback
 function normalizeSourceLines(source: string): string[] {
 	return source.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
 }
-
-function normalizePath(path: string | null): string | null {
-	return path?.replace(/\\/g, '/');
-}
-
 
 function toRangeLike(range: { start: { line: number; column: number }; end: { line: number; column: number } }): LuaSourceRangeLike {
 	return {

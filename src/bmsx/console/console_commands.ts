@@ -1,6 +1,5 @@
 import { $ } from '../core/game';
 import { BmsxConsoleRuntime } from './runtime';
-import { normalizeWorkspacePath } from './workspace';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
 
@@ -114,7 +113,7 @@ export class ConsoleCommandDispatcher {
 			return true;
 		}
 		if (upper === 'LS' || upper.startsWith('LS ')) {
-			this.handleLs(trimmed);
+			void this.handleLs(trimmed);
 			return true;
 		}
 		if (upper === 'CD' || upper.startsWith('CD ')) {
@@ -208,7 +207,8 @@ export class ConsoleCommandDispatcher {
 		this.runtime.consoleMode.appendStdout('Fault state cleared');
 	}
 
-	private handleLs(command: string): void {
+	private async handleLs(command: string): Promise<void> {
+		await this.runtime.refreshWorkspaceSources();
 		const tokens = this.tokenize(command);
 		if (tokens.length > 2) {
 			this.runtime.consoleMode.appendStderr(ERROR_SYNTAX_ERROR);
@@ -303,7 +303,7 @@ export class ConsoleCommandDispatcher {
 			this.runtime.consoleMode.appendStdout(this.cwd);
 			return;
 		}
-		const next = this.normalizePath(targetRaw.startsWith('/') ? targetRaw : `${this.cwd}/${targetRaw}`);
+		const next = targetRaw.startsWith('/') ? targetRaw : `${this.cwd}/${targetRaw}`;
 		const paths = this.collectPaths('-ALL');
 		const hasDir = paths.some(entry => this.isAncestor(next, entry.path) || entry.path === next);
 		if (!hasDir) {
@@ -327,13 +327,12 @@ export class ConsoleCommandDispatcher {
 		const entries: PathEntry[] = [];
 		const seen = new Set<string>();
 		const pushPath = (path: string, kind: PathEntry['kind']): void => {
-			const normalized = this.normalizePath(path);
-			const key = `${normalized}:${kind}`;
+			const key = `${path}:${kind}`;
 			if (seen.has(key)) {
 				return;
 			}
 			seen.add(key);
-			entries.push({ path: normalized, kind });
+			entries.push({ path, kind });
 		};
 		const includeRom = mode === '-ROM' || mode === '-ALL' || !mode;
 		const includeSaved = mode === '-SAVED' || mode === '-ALL' || !mode;
@@ -427,14 +426,6 @@ export class ConsoleCommandDispatcher {
 			const target = entry.text.replace(/\/+$/, '');
 			return target === normalized;
 		});
-	}
-
-	private normalizePath(path: string): string {
-		const normalized = normalizeWorkspacePath(path);
-		if (normalized.length === 0) {
-			return '/';
-		}
-		return normalized.startsWith('/') ? normalized : `/${normalized}`;
 	}
 
 	private parentPath(path: string): string {
