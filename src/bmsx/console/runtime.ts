@@ -16,7 +16,7 @@ import {
 	extractErrorMessage,
 	isLuaDebuggerPauseSignal,
 	isLuaFunctionValue,
-	isLuaNativeValue, isLuaTable, setLuaTableCaseInsensitiveKeys,
+	isLuaTable, setLuaTableCaseInsensitiveKeys,
 	type LuaDebuggerPauseSignal
 } from '../lua/value';
 import type { InputEvt, StorageService } from '../platform/platform';
@@ -266,8 +266,8 @@ export class BmsxConsoleRuntime extends Service {
 				const moduleId = this.cart.chunk2lua[this.luaChunkName]?.resid ?? this.luaChunkName;
 				return this.luaJsBridge.luaValueToJs(luaValue, { moduleId, path: [] });
 			},
-			serializeNative: (native) => this.luaJsBridge.snapshotEncodeNative(native),
-			deserializeNative: (token) => this.luaJsBridge.snapshotDecodeNative(token),
+			serializeNative: (native) => native,
+			deserializeNative: (token) => token as object | Function,
 		});
 		interpreter.setRequireHandler((ctx, module) => this.requireLuaModule(ctx, module));
 		interpreter.attachDebugger(this.luaDebuggerController);
@@ -1652,12 +1652,9 @@ export class BmsxConsoleRuntime extends Service {
 		// The console editor uses this fallback snapshot when a cart does not expose
 		// __bmsx_snapshot_save/__bmsx_snapshot_load. It exists purely to let the editor
 		// "resume" after a runtime failure without rebooting the whole cart. Unlike a
-		// deterministic save-state we only grab plain Lua data that can be faithfully
-		// re-injected; anything that represents a live engine object gets silently skipped.
-		// (That includes tables that still reference __js_handle__ values returned by API
-		// calls or registry lookups.) We deliberately do not warn about those omissions,
-		// because they are expected for this best-effort workflow: the goal of resume is to
-		// recover user script state, not to clone world entities or engine internals.
+		// deterministic save-state we lean on the fact that native JS objects stay alive
+		// across hot reloads: Lua tables are serialized, native references are kept by
+		// identity, and Lua functions get refreshed by the reload pipeline.
 		if (!entries || entries.length === 0) {
 			return null;
 		}
@@ -1765,9 +1762,6 @@ export class BmsxConsoleRuntime extends Service {
 			return true;
 		}
 		if (BmsxConsoleRuntime.LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
-			return true;
-		}
-		if (isLuaNativeValue(value)) {
 			return true;
 		}
 		if (isLuaFunctionValue(value)) {

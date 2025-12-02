@@ -1,9 +1,6 @@
-import { Component } from '../component/basecomponent';
 import { $ } from '../core/game';
-import { WorldObject } from '../core/object/worldobject';
 import { LuaHandlerCache, isLuaHandlerFn } from '../lua/handler_cache';
 import { LuaValue, LuaTable, isLuaNativeValue, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName } from '../lua/value';
-import { NativeRegisteredObject } from '../rompack/rompack';
 import { BmsxConsoleRuntime } from './runtime';
 import { LuaMarshalContext } from './types';
 
@@ -130,13 +127,6 @@ export class LuaJsBridge {
 		if (typeof value === 'object') {
 			if (isPlainObject(value)) {
 				const record = value as Record<string, unknown>;
-				if ('__native__' in record) {
-					const decoded = this.snapshotDecodeNative(record);
-					if (decoded) {
-						return this.wrapNativeValue(decoded);
-					}
-					return null;
-				}
 				if (record.__bmsx_table__ === 'map' && Array.isArray(record.entries)) {
 					const entries = record.entries as Array<{ key: unknown; value: unknown }>;
 					const table = createLuaTable();
@@ -191,55 +181,11 @@ export class LuaJsBridge {
 	}
 
 	public snapshotEncodeNative(native: object | Function): unknown {
-		if (native instanceof WorldObject) {
-			return { __native__: 'world_object', id: native.id };
-		}
-		const owner = (native as { owner: WorldObject }).owner;
-		if (owner instanceof WorldObject) {
-			const componentId = (native as { id?: string }).id;
-			const className = (native as { constructor: { name?: string } }).constructor?.name;
-			return {
-				__native__: 'component',
-				ownerId: owner.id,
-				id: componentId,
-				className,
-			};
-		}
-		if (typeof native === 'function') {
-			return { __native__: 'function' };
-		}
-		return undefined;
+		return native;
 	}
 
 	public snapshotDecodeNative(token: unknown): object | Function {
-		if (!token || typeof token !== 'object') {
-			console.warn('[BmsxConsoleRuntime] Ignoring invalid native snapshot token:', token);
-			return null;
-		}
-		const record = token as NativeRegisteredObject;
-		switch (record.__native__) {
-			case 'world_object': {
-				return $.registry.get<WorldObject>((record as WorldObject).id);
-			}
-			case 'component': {
-				const owner = (record as Component).parent;
-				if (record.id !== undefined && record.id !== null) {
-					const resolved = owner.get_component_by_id(record.id as string);
-					if (resolved) {
-						return resolved as object;
-					}
-				}
-				if (record.ctor?.name) {
-					const resolved = owner.get_component_by_id(record.ctor.name);
-					if (resolved) {
-						return resolved as object;
-					}
-				}
-				return null;
-			}
-			default:
-				return null;
-		}
+		return token as object | Function;
 	}
 
 	private serializeLuaSnapshotKey(key: LuaValue, ctx: LuaSnapshotContext): unknown {
@@ -259,19 +205,59 @@ export class LuaJsBridge {
 	}
 
 	private deserializeLuaSnapshotKey(raw: unknown, resolver?: (value: unknown) => LuaValue): LuaValue {
-		if (raw === null || typeof raw === 'boolean' || typeof raw === 'number' || typeof raw === 'string') {
-			return raw as LuaValue;
-		}
-		if (typeof raw === 'object' && raw !== null) {
-			const decoded = this.snapshotDecodeNative(raw);
-			if (decoded) {
-				return this.wrapNativeValue(decoded);
-			}
-		}
 		if (resolver) {
 			return resolver(raw);
 		}
-		return this.jsToLua(raw);
+		return this.deserializeLuaSnapshotValue(raw);
+	}
+
+	private parseSnapshotObjectId(text: string): number {
+		const id = Number.parseInt(text, 10);
+		if (!Number.isFinite(id)) {
+			throw new Error(`[BmsxConsoleRuntime] Invalid Lua snapshot object id '${text}'.`);
+		}
+		return id;
+	}
+
+	private parseSnapshotReferenceId(raw: unknown): number {
+		const id = Number(raw);
+		if (!Number.isFinite(id)) {
+			throw new Error(`[BmsxConsoleRuntime] Invalid Lua snapshot reference id '${String(raw)}'.`);
+		}
+		return id;
+	}
+
+	private deserializeLuaSnapshotValue(raw: unknown, resolveRef?: (id: number) => LuaTable): LuaValue {
+		if (raw === null || typeof raw === 'boolean' || typeof raw === 'number' || typeof raw === 'string') {
+			return raw as LuaValue;
+		}
+		if (isLuaTable(raw) || isLuaNativeValue(raw)) {
+			return raw as LuaValue;
+		}
+		if (resolveRef && raw && typeof raw === 'object' && 'r' in (raw as Record<string, unknown>)) {
+			const refId = this.parseSnapshotReferenceId((raw as { r: unknown }).r);
+			return resolveRef(refId);
+		}
+		if (Array.isArray(raw)) {
+			const table = createLuaTable();
+			for (let index = 0; index < raw.length; index += 1) {
+				table.set(index + 1, this.deserializeLuaSnapshotValue(raw[index], resolveRef));
+			}
+			return table;
+		}
+		if (raw && typeof raw === 'object') {
+			const record = raw as Record<string, unknown>;
+			if (record.__bmsx_table__ === 'map' && Array.isArray((record as { entries?: unknown }).entries)) {
+				const table = createLuaTable();
+				this.applyLuaSnapshotPayload(table, record, value => this.deserializeLuaSnapshotValue(value, resolveRef));
+				return table;
+			}
+			return this.wrapNativeValue(this.snapshotDecodeNative(raw as object));
+		}
+		if (typeof raw === 'function') {
+			return this.wrapNativeValue(this.snapshotDecodeNative(raw));
+		}
+		return null;
 	}
 
 	private isLuaSnapshotGraph(value: unknown): value is LuaSnapshotGraph {
@@ -288,7 +274,7 @@ export class LuaJsBridge {
 		}
 		const entries: Array<[string, LuaValue]> = [];
 		for (const [name, value] of Object.entries(snapshot)) {
-			entries.push([name, this.jsToLua(value)]);
+			entries.push([name, this.deserializeLuaSnapshotValue(value)]);
 		}
 		return entries;
 	}
@@ -304,63 +290,20 @@ export class LuaJsBridge {
 			tableMap.set(id, created);
 			return created;
 		};
-		const parseRefId = (value: unknown): number => {
-			const id = Number((value as { r: unknown }).r);
-			if (!Number.isFinite(id)) {
-				throw new Error(`[BmsxConsoleRuntime] Invalid Lua snapshot reference id '${String((value as { r: unknown }).r)}'.`);
-			}
-			return id;
-		};
-		const resolveSnapshotValue = (raw: unknown): LuaValue => {
-			if (raw === null || typeof raw === 'boolean' || typeof raw === 'number' || typeof raw === 'string') {
-				return raw as LuaValue;
-			}
-			if (raw && typeof raw === 'object') {
-				if ('r' in (raw as Record<string, unknown>)) {
-					return ensureTable(parseRefId(raw));
-				}
-				const decoded = this.snapshotDecodeNative(raw);
-				if (decoded) {
-					return this.wrapNativeValue(decoded);
-				}
-			}
-			if (Array.isArray(raw)) {
-				const table = createLuaTable();
-				for (let index = 0; index < raw.length; index += 1) {
-					table.set(index + 1, resolveSnapshotValue(raw[index]));
-				}
-				return table;
-			}
-			if (raw && typeof raw === 'object') {
-				const record = raw as Record<string, unknown>;
-				if (record.__bmsx_table__ === 'map' && Array.isArray((record as { entries?: unknown }).entries)) {
-					const table = createLuaTable();
-					this.applyLuaSnapshotPayload(table, record, resolveSnapshotValue);
-					return table;
-				}
-				return this.jsToLua(raw);
-			}
-			return null;
-		};
+		const resolveSnapshotValue = (raw: unknown): LuaValue => this.deserializeLuaSnapshotValue(raw, ensureTable);
 
 		for (const idText of Object.keys(graph.objects)) {
-			const id = Number.parseInt(idText, 10);
-			if (!Number.isFinite(id)) {
-				throw new Error(`[BmsxConsoleRuntime] Invalid Lua snapshot object id '${idText}'.`);
-			}
+			const id = this.parseSnapshotObjectId(idText);
 			ensureTable(id);
 		}
 		for (const [idText, payload] of Object.entries(graph.objects)) {
-			const id = Number.parseInt(idText, 10);
-			if (!Number.isFinite(id)) {
-				throw new Error(`[BmsxConsoleRuntime] Invalid Lua snapshot object id '${idText}'.`);
-			}
+			const id = this.parseSnapshotObjectId(idText);
 			this.applyLuaSnapshotPayload(ensureTable(id), payload, resolveSnapshotValue);
 		}
 
 		const rootRef = graph.root as unknown;
 		const resolvedRoot = rootRef && typeof rootRef === 'object' && 'r' in (rootRef as Record<string, unknown>)
-			? ensureTable(parseRefId(rootRef))
+			? ensureTable(this.parseSnapshotReferenceId((rootRef as { r: unknown }).r))
 			: rootRef;
 
 		if (isLuaTable(resolvedRoot)) {
@@ -484,8 +427,7 @@ export class LuaJsBridge {
 			return value;
 		}
 		if (isLuaNativeValue(value)) {
-			const encoded = this.snapshotEncodeNative(value.native);
-			return encoded !== undefined ? encoded : null;
+			return this.snapshotEncodeNative(value.native);
 		}
 		if (isLuaTable(value)) {
 			return this.serializeLuaTableForSnapshot(value, ctx);
@@ -526,11 +468,7 @@ export class LuaJsBridge {
 			let serializedEntry: unknown;
 			try {
 				if (isLuaNativeValue(entryValue)) {
-					const encoded = this.snapshotEncodeNative(entryValue.native);
-					if (encoded === undefined) {
-						continue;
-					}
-					serializedEntry = encoded;
+					serializedEntry = this.snapshotEncodeNative(entryValue.native);
 				} else {
 					serializedEntry = this.serializeLuaValueForSnapshot(entryValue, ctx);
 				}

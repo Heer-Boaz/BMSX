@@ -702,7 +702,8 @@ export class BmsxConsoleApi {
 	}
 
 	public define_bt(_descriptor: BehaviorTreeDefinition): void {
-		// TODO: Implement
+		// Behavior tree definitions are registered via buildBehaviorTreeDefinition
+		throw new Error('BMSX Console API define_bt is not implemented; use the behavior tree library functions instead.');
 	}
 
 	private pointer_viewport_position_internal(): ConsolePointerViewport {
