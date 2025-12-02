@@ -8,6 +8,7 @@ import type { StorageService, TimerHandle } from '../../platform/platform';
 import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './ide_debugger';
 import { scheduleIdeOnce } from './background_tasks';
 import { taskGate } from '../../core/taskgate';
+import { BmsxConsoleRuntime } from '../runtime';
 import {
 	WORKSPACE_FILE_ENDPOINT,
 	WORKSPACE_MARKER_FILE,
@@ -22,7 +23,6 @@ import {
 import { openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, restoreSnapshot, setFontVariant } from './console_cart_editor';
 import { createEntryTabContext, initializeTabs, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { ConsoleFontVariant } from '../font';
-import { BmsxConsoleRuntime } from '../runtime';
 
 export type WorkspaceStoragePaths = {
 	projectRootPath: string;
@@ -293,10 +293,6 @@ export function initializeWorkspaceStorage(projectRootPath: string): void {
 			await configureWorkspaceStorage(projectRootPath);
 			await restoreWorkspaceSessionFromDisk();
 			ide_state.serverWorkspaceConnected = serverBackendAvailable;
-			const runtime = BmsxConsoleRuntime.instance;
-			if (runtime) {
-				await runtime.refreshWorkspaceOverrides(true, { includeServer: true });
-			}
 		} catch (error) {
 			console.warn('[ConsoleCartEditor] Workspace persistence disabled:', error);
 			ide_state.workspaceAutosaveEnabled = false;
@@ -843,7 +839,7 @@ export async function runWorkspaceAutosaveTick(): Promise<void> {
 		ide_state.workspaceAutosaveRunning = false;
 		if (ide_state.workspaceAutosaveQueued) {
 			ide_state.workspaceAutosaveQueued = false;
-			void runWorkspaceAutosaveTick();
+			await runWorkspaceAutosaveTick();
 		}
 	}
 }
@@ -854,9 +850,9 @@ function scheduleServerBackendRetry(): void {
 	}
 	serverRetryScheduled = true;
 	const delayMs = WORKSPACE_AUTOSAVE_INTERVAL_MS * 4;
-	serverRetryHandle = scheduleIdeOnce(delayMs, () => {
+	serverRetryHandle = scheduleIdeOnce(delayMs, async () => {
 		clearServerRetryHandle();
-		void tryReconnectServerBackend();
+		await tryReconnectServerBackend();
 	});
 }
 

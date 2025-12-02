@@ -48,7 +48,6 @@ const ERROR_SYNTAX_ERROR = 'Syntax error';
 const ERROR_FOLDER_NOT_FOUND = 'Folder not found';
 const ERROR_FILE_NOT_FOUND = 'File not found';
 const ERROR_ILLEGAL_FUNCTION_CALL = 'Illegal function call';
-const ERROR_NOTHING_TO_NUKE = 'Nothing to nuke';
 
 export class ConsoleCommandDispatcher {
 	private cwd = '/';
@@ -137,20 +136,11 @@ export class ConsoleCommandDispatcher {
 	}
 
 	private runWorkspaceNuke(): void {
-		if (!this.hasWorkspaceState()) {
-			this.runtime.consoleMode.appendStderr(ERROR_NOTHING_TO_NUKE);
-			return;
-		}
 		this.runtime.consoleMode.appendStdout('Warning: this will erase workspace!');
-		void this.runtime.nukeWorkspace().then(() => {
+		void this.runtime.clearWorkspaceLuaOverrides().then(() => {
 			this.runtime.consoleMode.appendStdout('Workspace deleted');
 			this.runtime.consoleMode.appendStdout('Reverted to saved workspace sources');
 		});
-	}
-
-	private hasWorkspaceState(): boolean {
-		const overrides = this.runtime.workspaceLuaOverrides;
-		return overrides.size > 0;
 	}
 
 	private handleSys(tokens: string[]): void {
@@ -208,7 +198,6 @@ export class ConsoleCommandDispatcher {
 	}
 
 	private async handleLs(command: string): Promise<void> {
-		await this.runtime.refreshWorkspaceSources();
 		const tokens = this.tokenize(command);
 		if (tokens.length > 2) {
 			this.runtime.consoleMode.appendStderr(ERROR_SYNTAX_ERROR);
@@ -337,8 +326,6 @@ export class ConsoleCommandDispatcher {
 		const includeRom = mode === '-ROM' || mode === '-ALL' || !mode;
 		const includeSaved = mode === '-SAVED' || mode === '-ALL' || !mode;
 		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || !mode;
-		const savedAssets = includeSaved ? this.runtime.getWorkspaceSavedAssetIds() : new Set<string>();
-		const scratchPaths = includeDirty ? this.runtime.workspaceScratchPaths : new Set<string>();
 		const luaAssets = Object.values(rompack.cart.lua);
 		if (includeRom) {
 			for (const asset of luaAssets) {
@@ -347,24 +334,10 @@ export class ConsoleCommandDispatcher {
 			}
 		}
 		if (includeSaved) {
-			for (const asset of luaAssets) {
-				if (!savedAssets.has(asset.resid)) continue;
-				const path = asset.source_path ?? asset.resid;
-				pushPath(path, 'saved');
-			}
+			// Saved workspace data no longer tracked in runtime; list remains empty.
 		}
 		if (includeDirty) {
-			const overrides = this.runtime.workspaceLuaOverrides;
-			for (const [asset_id, record] of overrides) {
-				const asset = rompack.cart.lua[asset_id];
-				const targetPath = record.cartPath ?? asset?.source_path ?? asset_id;
-				if (targetPath) {
-					pushPath(targetPath, 'dirty');
-				}
-			}
-			for (const path of scratchPaths) {
-				pushPath(path, 'unsaved');
-			}
+			// Dirty workspace data no longer tracked in runtime; list remains empty.
 		}
 		return entries;
 	}

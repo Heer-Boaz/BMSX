@@ -1,6 +1,6 @@
 import { convertToError, extractErrorMessage } from 'bmsx/lua/value';
 import type { HttpResponse, StorageService } from '../platform';
-import type { RomPack } from '../rompack/rompack';
+import type { RomPack, BmsxCartridge } from '../rompack/rompack';
 import { BmsxConsoleRuntime } from './runtime';
 import { $ } from '../core/game';
 
@@ -505,4 +505,52 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 			};
 			$.platform.storage.setItem(storageKey, JSON.stringify(payload));
 		}
+	}
+
+	export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; storage: StorageService; includeServer?: boolean }): Promise<Set<string>> {
+		const { rompack, storage } = params;
+		const includeServer = params.includeServer !== false;
+		const cart = rompack.cart;
+		const changed = new Set<string>();
+		for (const asset of Object.values(cart.lua)) {
+			const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+			const savedRecord = await fetchWorkspaceFile(cartPath);
+			if (savedRecord && savedRecord.contents !== asset.src) {
+				asset.src = savedRecord.contents;
+				changed.add(asset.resid);
+			}
+		}
+		const root = rompack.project_root_path;
+		const localOverrides = collectWorkspaceOverrides({ rompack, projectRootPath: root, storage });
+		const serverOverrides = includeServer ? await fetchWorkspaceOverridesPriority() : null;
+		const merged = await mergeWorkspaceOverrides(root, localOverrides, serverOverrides ?? new Map<string, WorkspaceOverrideRecord>());
+		for (const [asset_id, record] of merged) {
+			const asset = cart.lua[asset_id];
+			if (!asset) {
+				continue;
+			}
+			if (asset.src !== record.source) {
+				asset.src = record.source;
+				changed.add(asset_id);
+			}
+		}
+		return changed;
+	}
+
+	export async function clearWorkspaceArtifacts(cart: BmsxCartridge, storage: StorageService): Promise<void> {
+		const root = $.rompack.project_root_path;
+		if (!root) {
+			return;
+		}
+		for (const asset of Object.values(cart.lua)) {
+			const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+			const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
+			const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
+			storage.removeItem(storageKey);
+			await deleteWorkspaceFile(dirtyPath);
+		}
+		const statePath = buildWorkspaceStateFilePath(root);
+		const stateKey = buildWorkspaceStorageKey(root, statePath);
+		storage.removeItem(stateKey);
+		await deleteWorkspaceFile(statePath);
 	}

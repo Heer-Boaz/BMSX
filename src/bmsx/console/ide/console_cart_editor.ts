@@ -102,10 +102,11 @@ import {
 	stopWorkspaceAutosaveLoop,
 	clearWorkspaceDirtyBuffers,
 } from './workspace_storage';
+import { applyWorkspaceOverridesToCart } from '../workspace';
 
 import * as TextEditing from './text_editing_and_selection';
 import { resetBlink } from './render/render_caret';
-import { api, BmsxConsoleRuntime, BmsxConsoleState } from '../runtime';
+import { api, BmsxConsoleRuntime } from '../runtime';
 import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
 import { drawCreateResourceBar } from './render/render_input_bars';
 import { drawActionPromptOverlay } from './render/render_prompt';
@@ -2695,20 +2696,14 @@ export function performAction(action: PendingActionPrompt['action']): boolean {
 
 export function performHotReloadAndResume(): boolean {
 	const runtime = BmsxConsoleRuntime.instance;
-	let snapshot: BmsxConsoleState = null;
-	try {
-		snapshot = runtime.state;
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		ide_state.showMessage(`Failed to capture runtime state: ${message}`, constants.COLOR_STATUS_ERROR, 2.0);
-		return false;
-	}
-	snapshot.luaRuntimeFailed = false;
 	const targetGeneration = ide_state.saveGeneration;
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
 	clearExecutionStopHighlights();
 	deactivate();
 	scheduleRuntimeTask(async () => {
+		await applyWorkspaceOverridesToCart({ rompack: $.rompack, storage: $.platform.storage, includeServer: true });
+		const snapshot = runtime.state;
+		snapshot.luaRuntimeFailed = false;
 		await runtime.resumeFromSnapshot(snapshot);
 		if (shouldUpdateGeneration) {
 			ide_state.appliedGeneration = targetGeneration;
