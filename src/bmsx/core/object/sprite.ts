@@ -5,6 +5,7 @@ import { WorldObject } from "./worldobject";
 import { SpriteComponent } from '../../component/sprite_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
 import { $ } from '../game';
+import { TimelinePlayOptions } from '../..';
 
 const BASE_SPRITE_ID = 'base_sprite';
 const PRIMARY_COLLIDER_ID = 'primary';
@@ -110,6 +111,18 @@ export class SpriteObject extends WorldObject {
 		this.add_component(baseSprite);
 		// Attach Collider by default; sprite-driven sync will populate shapes
 		this.add_component(new Collider2DComponent({ parent_or_id: this, id_local: PRIMARY_COLLIDER_ID }));
+	}
+
+	public play_ani(id: string, opts?: TimelinePlayOptions): void {
+		this.get_component_by_local_id(SpriteComponent, BASE_SPRITE_ID).play_ani(id, opts);
+	}
+
+	public stop_ani(id: string): void {
+		this.get_component_by_local_id(SpriteComponent, BASE_SPRITE_ID).stop_ani(id);
+	}
+
+	public resume_ani(id: string): void {
+		this.get_component_by_local_id(SpriteComponent, BASE_SPRITE_ID).resume_ani(id);
 	}
 
 	// Note: rendering handled by SpriteRenderSystem via SpriteComponent

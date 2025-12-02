@@ -82,16 +82,16 @@ export class SpriteComponent extends Component {
 		super.detach();
 	}
 
-	public play_timeline_animation(id: string, opts?: TimelinePlayOptions): void {
+	public play_ani(id: string, opts?: TimelinePlayOptions): void {
 		this.observe_timeline(id);
 		this.parent.play_timeline(id, opts);
 	}
 
-	public stop_timeline_animation(id: string): void {
+	public stop_ani(id: string): void {
 		this.parent.stop_timeline(id);
 	}
 
-	public resume_timeline_animation(id: string): void {
+	public resume_ani(id: string): void {
 		this.observe_timeline(id);
 		this.parent.play_timeline(id, { rewind: false, snap_to_start: false });
 	}
