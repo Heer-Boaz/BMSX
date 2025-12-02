@@ -2702,27 +2702,63 @@ export class BmsxConsoleRuntime extends Service {
 				const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
 				const col = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
 				// Only inject if not already represented as the innermost frame
-				const innermost = callFrames.length > 0 ? callFrames[callFrames.length - 1] : null;
-				const alreadyCaptured = !!innermost && innermost.source === (src ?? '') && innermost.line === (line ?? 0) && innermost.column === (col ?? 0);
+				const innermostCall = callFrames.length > 0 ? callFrames[callFrames.length - 1] : null;
+				const innermostFrame = luaFrames.length > 0 ? luaFrames[0] : null;
+				const effectiveSource = src !== null ? src : innermostFrame ? innermostFrame.source : null;
+				const resolvedLine = line !== null ? line : (innermostFrame ? innermostFrame.line : null);
+				const resolvedColumn = col !== null ? col : (innermostFrame ? innermostFrame.column : null);
+				const alreadyCaptured =
+					!!innermostFrame &&
+					innermostFrame.source === (effectiveSource ?? '') &&
+					innermostFrame.line === (resolvedLine ?? 0) &&
+					innermostFrame.column === (resolvedColumn ?? 0);
 				if (!alreadyCaptured) {
-					let fnName: string = null;
-					if (innermost) {
-						fnName = innermost.functionName && innermost.functionName.length > 0 ? innermost.functionName : null;
-					}
-					let raw = '';
-					if (fnName && fnName.length > 0) raw = fnName;
-					if (src && src.length > 0) raw = raw.length > 0 ? `${raw} @ ${src}` : src;
-					const top: StackTraceFrame = { origin: 'lua', functionName: fnName, source: src, line, column: col, raw: raw.length > 0 ? raw : '[lua]' };
-					if (src && src.length > 0) {
-						const hint = this.getChunkResourceHint(src);
-						if (hint) {
-							top.chunkasset_id = hint.asset_id;
+					const fnName =
+						innermostCall && innermostCall.functionName && innermostCall.functionName.length > 0
+							? innermostCall.functionName
+							: innermostFrame && innermostFrame.functionName && innermostFrame.functionName.length > 0
+								? innermostFrame.functionName
+								: null;
+					if (innermostFrame && effectiveSource && innermostFrame.source === effectiveSource) {
+						const hint = this.getChunkResourceHint(effectiveSource);
+						const updated: StackTraceFrame = {
+							origin: innermostFrame.origin,
+							functionName: fnName,
+							source: effectiveSource,
+							line: resolvedLine,
+							column: resolvedColumn,
+							raw: this.buildLuaFrameRawLabel(fnName, effectiveSource),
+							chunkasset_id: innermostFrame.chunkasset_id,
+							chunkPath: innermostFrame.chunkPath,
+						};
+						if (!updated.chunkasset_id && hint) {
+							updated.chunkasset_id = hint.asset_id;
 							if (hint.path && hint.path.length > 0) {
-								top.chunkPath = hint.path;
+								updated.chunkPath = hint.path;
 							}
 						}
+						luaFrames[0] = updated;
+					} else {
+						const frameSource = src !== null ? src : effectiveSource;
+						const top: StackTraceFrame = {
+							origin: 'lua',
+							functionName: fnName,
+							source: frameSource,
+							line: resolvedLine,
+							column: resolvedColumn,
+							raw: this.buildLuaFrameRawLabel(fnName, frameSource),
+						};
+						if (frameSource && frameSource.length > 0) {
+							const hint = this.getChunkResourceHint(frameSource);
+							if (hint) {
+								top.chunkasset_id = hint.asset_id;
+								if (hint.path && hint.path.length > 0) {
+									top.chunkPath = hint.path;
+								}
+							}
+						}
+						luaFrames.unshift(top);
 					}
-					luaFrames.unshift(top);
 				}
 			}
 			interpreter.clearLastFaultCallStack();
@@ -2740,6 +2776,19 @@ export class BmsxConsoleRuntime extends Service {
 			luaStack: luaFrames,
 			jsStack: jsFrames,
 		};
+	}
+
+	private buildLuaFrameRawLabel(functionName: string, source: string): string {
+		if (functionName && functionName.length > 0) {
+			if (source && source.length > 0) {
+				return `${functionName} @ ${source}`;
+			}
+			return functionName;
+		}
+		if (source && source.length > 0) {
+			return source;
+		}
+		return '[lua]';
 	}
 
 	private convertLuaCallFrames(callFrames: ReadonlyArray<LuaCallFrame>): StackTraceFrame[] {
