@@ -376,8 +376,11 @@ function handleLuaPersistenceFailure(
 }
 
 
+// StorageService is injected because the workspace merge runs during boot before $.platform is fully wired;
+// reaching back into $.platform.storage here races the runtime initialization.
 export async function mergeWorkspaceOverrides(
 	root: string,
+	storage: StorageService,
 	localOverrides: Map<string, WorkspaceOverrideRecord>,
 	serverOverrides: Map<string, WorkspaceOverrideRecord>,
 ): Promise<Map<string, WorkspaceOverrideRecord>> {
@@ -394,14 +397,14 @@ export async function mergeWorkspaceOverrides(
 		if (local && (!remote || localTime >= remoteTime)) {
 			merged.set(asset_id, local);
 			if (root) {
-				persistWorkspaceOverridesToLocalStorage(root, new Map([[asset_id, local]]));
+				persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[asset_id, local]]));
 			}
 			continue;
 		}
 		if (remote) {
 			merged.set(asset_id, remote);
 			if (root) {
-				persistWorkspaceOverridesToLocalStorage(root, new Map([[asset_id, remote]]));
+				persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[asset_id, remote]]));
 			}
 		}
 	}
@@ -540,7 +543,7 @@ export async function deleteWorkspaceFile(path: string): Promise<void> {
 }
 
 
-export function persistWorkspaceOverridesToLocalStorage(root: string, overrides: Map<string, WorkspaceOverrideRecord>): void {
+export function persistWorkspaceOverridesToLocalStorage(storage: StorageService, root: string, overrides: Map<string, WorkspaceOverrideRecord>): void {
 	for (const record of overrides.values()) {
 		if (!record.path) {
 			continue;
@@ -550,10 +553,21 @@ export function persistWorkspaceOverridesToLocalStorage(root: string, overrides:
 			contents: record.source,
 			updatedAt: record.updatedAt ?? Date.now(),
 		};
-		$.platform.storage.setItem(storageKey, JSON.stringify(payload));
+		storage.setItem(storageKey, JSON.stringify(payload));
 	}
 }
 
+// Workspace sync flow:
+// - The IDE autosaves dirty Lua files. When the HTTP workspace backend is reachable these writes hit the server,
+//   otherwise they are staged in the provided StorageService under the dirty-path key so edits survive reloads.
+//   StorageService comes from the caller because this path can execute before $.platform is ready.
+// - On boot we first check the server for canonical cart paths (in case files were edited outside the IDE), then
+//   gather dirty overrides from local storage and, when available, the workspace backend.
+// - mergeWorkspaceOverrides compares local and remote dirty edits by updatedAt, chooses the freshest version for
+//   each asset, and writes that winner back into StorageService. This means reconnecting after offline work will
+//   either promote local edits (if newer) or replace stale local data with the server copy.
+// - The merged overrides are applied to cart.lua before the Lua VM starts so the running cart always reflects the
+//   most recent edits regardless of where they were saved.
 export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; storage: StorageService; includeServer?: boolean }): Promise<Set<string>> {
 	const { rompack, storage } = params;
 	const includeServer = params.includeServer !== false;
@@ -570,7 +584,7 @@ export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; 
 	const root = rompack.project_root_path;
 	const localOverrides = collectWorkspaceOverrides({ rompack, projectRootPath: root, storage });
 	const serverOverrides = includeServer ? await fetchWorkspaceOverridesPriority(rompack) : null;
-	const merged = await mergeWorkspaceOverrides(root, localOverrides, serverOverrides ?? new Map<string, WorkspaceOverrideRecord>());
+	const merged = await mergeWorkspaceOverrides(root, storage, localOverrides, serverOverrides ?? new Map<string, WorkspaceOverrideRecord>());
 	for (const [asset_id, record] of merged) {
 		const asset = cart.lua[asset_id];
 		if (!asset) {
