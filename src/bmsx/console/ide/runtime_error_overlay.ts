@@ -2,7 +2,7 @@ import type {
 	RuntimeErrorDetails,
 	RuntimeErrorOverlay,
 	RuntimeErrorOverlayLineDescriptor} from './types';
-import type { StackTraceFrame } from '../../lua/runtime';
+import type { StackTraceFrame } from 'bmsx/lua/value';
 import { setActiveRuntimeErrorOverlay } from './console_cart_editor';
 import { ide_state } from './ide_state';
 

@@ -14,7 +14,7 @@ import type {
 import type { BmsxCartMetadata } from 'bmsx/rompack/rompack';
 import type { ConsoleFontVariant } from '../font';
 import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
-import type { StackTraceFrame } from '../../lua/runtime';
+import type { StackTraceFrame } from 'bmsx/lua/value';
 import { MENU_COMMANDS } from './ide_input';
 
 export type IdeThemeVariant = string;

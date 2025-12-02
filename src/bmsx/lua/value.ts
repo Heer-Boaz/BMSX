@@ -1,3 +1,7 @@
+import type { CanonicalizationType } from '../rompack/rompack';
+import { LuaError, LuaRuntimeError, LuaSyntaxError } from './errors';
+import { ExecutionSignal, LuaInterpreter, LuaNativeFunction } from './runtime';
+
 export type LuaValue = LuaNil | boolean | number | string | LuaTable | LuaFunctionValue | LuaNativeValue;
 
 export type LuaNil = null;
@@ -290,4 +294,51 @@ Object.defineProperties(luaTablePrototype, {
 	numericLength: { value: tableNumericLength, enumerable: false, configurable: false },
 	setMetatable: { value: tableSetMetatable, enumerable: false, configurable: false },
 	getMetatable: { value: tableGetMetatable, enumerable: false, configurable: false },
-});
+});export type LuaDebuggerPauseSignal = Extract<ExecutionSignal, { kind: 'pause'; }>;
+
+export function isLuaDebuggerPauseSignal(value: unknown): value is LuaDebuggerPauseSignal {
+	if (typeof value !== 'object' || value === null) {
+		return false;
+	}
+	const candidate = value as Partial<LuaDebuggerPauseSignal>;
+	return candidate.kind === 'pause' && typeof candidate.resume === 'function';
+}
+
+export function createLuaInterpreter(canonicalization: CanonicalizationType = 'none'): LuaInterpreter {
+	return new LuaInterpreter(null, canonicalization);
+}
+
+export function createLuaNativeFunction(name: string, handler: (args: ReadonlyArray<LuaValue>) => ReadonlyArray<LuaValue>): LuaFunctionValue {
+	return new LuaNativeFunction(name, handler);
+}
+
+export function convertToError(error: unknown): Error {
+	return error instanceof Error ? error : new Error(String(error));
+}
+
+export function extractErrorMessage(error: unknown): string {
+	if (typeof error === 'string') {
+		return error;
+	}
+	if (error instanceof LuaError || error instanceof LuaRuntimeError || error instanceof LuaSyntaxError) {
+		return error.message;
+	}
+	if (error instanceof Error) {
+		return error.message;
+	}
+	return String(error);
+}
+
+export type StackFrameLanguage = 'lua' | 'js';
+
+export type StackTraceFrame = {
+	origin: StackFrameLanguage;
+	functionName: string;
+	source: string;
+	line: number;
+	column: number;
+	raw: string;
+	chunkasset_id?: string;
+	chunkPath?: string;
+};
+

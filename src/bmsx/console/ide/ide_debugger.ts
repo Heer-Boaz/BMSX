@@ -9,7 +9,8 @@ import { clamp, fallbackclamp } from '../../utils/clamp';
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition } from './caret';
 import { clearExecutionStopHighlights, focusChunkSource, setExecutionStopHighlight, clearRuntimeErrorOverlay, updateDesiredColumn, findFunctionDefinitionRowInActiveFile, findResourceDescriptorForChunk, resetPointerClickTracking } from './console_cart_editor';
 import { resetBlink } from './render/render_caret';
-import type { LuaCallFrame, LuaDebuggerPauseSignal, StackTraceFrame } from '../../lua/runtime';
+import type { LuaCallFrame } from '../../lua/runtime';
+import type { LuaDebuggerPauseSignal, StackTraceFrame } from 'bmsx/lua/value';
 import type { ConsoleResourceDescriptor } from '../types';
 import * as constants from './constants';
 

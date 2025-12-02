@@ -6,14 +6,15 @@ import type { BmsxCartridge, NativeRegisteredObject } from '../rompack/rompack';
 import type { LifeCycleHandlerName } from '../rompack/rompack';
 import type { RomLuaAsset, Viewport } from '../rompack/rompack';
 import {
-	createLuaInterpreter,
 	LuaInterpreter,
-	createLuaNativeFunction,
 	type LuaCallFrame,
-	type LuaDebuggerPauseSignal,
 	type ExecutionSignal,
-	isLuaDebuggerPauseSignal,
 } from '../lua/runtime';
+import {
+	createLuaInterpreter, createLuaNativeFunction, type LuaDebuggerPauseSignal, isLuaDebuggerPauseSignal,
+	convertToError,
+	extractErrorMessage
+} from 'bmsx/lua/value';
 import { LuaDebuggerController, type LuaDebuggerResumeCommand } from '../lua/debugger';
 import { LuaEnvironment } from '../lua/environment';
 import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from '../lua/value';
@@ -30,7 +31,7 @@ import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lu
 import { createConsoleCartEditor, type ConsoleCartEditor, } from './ide/console_cart_editor';
 import type { RuntimeErrorDetails } from './ide/types';
 import { type FaultSnapshot } from './ide/render/render_error_overlay';
-import type { StackTraceFrame } from '../lua/runtime';
+import type { StackTraceFrame } from 'bmsx/lua/value';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS, isLuaScriptError, registerApiBuiltins, registerLuaBuiltin } from './lua_builtins';
 import type { ConsoleFontVariant } from './font';
@@ -42,6 +43,10 @@ import {
 	WORKSPACE_FILE_ENDPOINT,
 	collectWorkspaceOverrides,
 	type WorkspaceOverrideRecord,
+	LuaPersistenceFailurePolicy,
+	DEFAULT_LUA_FAILURE_POLICY,
+	prefetchLuaSourceFromFilesystem,
+	persistLuaSourceToFilesystem,
 } from './workspace';
 import { normalizeLuaAsset } from 'bmsx/rompack/rompack';
 import { WorldObject } from '../core/object/worldobject';
@@ -60,20 +65,6 @@ import { KeyModifier } from '../input/playerinput';
 import { LuaLexer } from '../lua/lexer';
 import { Component } from '../component/basecomponent';
 import { buildLuaModuleAliases, type LuaRequireModuleRecord } from './lua_module_loader';
-
-type LuaPersistenceFailureMode = 'error' | 'warning';
-type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
-
-type LuaPersistenceFailurePolicy = {
-	[K in LuaPersistenceFailureKind]: LuaPersistenceFailureMode;
-};
-
-const DEFAULT_LUA_FAILURE_POLICY: LuaPersistenceFailurePolicy = {
-	fetch: 'warning',
-	persist: 'error',
-	apply: 'error',
-	restore: 'error',
-};
 
 export const CONSOLE_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'console_left',
@@ -119,11 +110,6 @@ export type BmsxConsoleState = {
 	luaLocals?: LuaEntrySnapshot;
 	luaRandomSeed?: number;
 };
-
-enum BmsxLuaValidationStrategy {
-	TrustRealRun = 'trust_real_run',
-	FullExecution = 'full_execution',
-}
 
 type HttpResponse = {
 	ok: boolean;
@@ -257,7 +243,7 @@ export class BmsxConsoleRuntime extends Service {
 		BmsxConsoleRuntime._instance = null;
 	}
 
-	private cart: BmsxCartridge;
+	public cart: BmsxCartridge;
 	private readonly storage: BmsxConsoleStorage;
 	private readonly storageService: StorageService;
 	public readonly apiFunctionNames = new Set<string>();
@@ -286,7 +272,6 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly consoleHotkeyLatch = new Map<string, number>();
 	private shortcutDisposers: Array<() => void> = [];
 	private globalInputUnsubscribe: (() => void) = null;
-	private readonly validationStrategy: BmsxLuaValidationStrategy = BmsxLuaValidationStrategy.TrustRealRun;
 	private luaInterpreter!: LuaInterpreter;
 	private luaInitFunction: LuaFunctionValue = null;
 	private luaNewGameFunction: LuaFunctionValue = null;
@@ -305,7 +290,7 @@ export class BmsxConsoleRuntime extends Service {
 	private overlayState = { console: false, editor: false };
 	private includeJsStackTraces = false;
 	private currentFrameState: ConsoleFrameState = null;
-	private readonly luaFailurePolicy: LuaPersistenceFailurePolicy;
+	public readonly luaFailurePolicy: LuaPersistenceFailurePolicy;
 	private pendingLuaWarnings: string[] = [];
 	private nativeMemberCompletionCache: WeakMap<object, { dot?: ConsoleLuaMemberCompletion[]; colon?: ConsoleLuaMemberCompletion[] }> = new WeakMap();
 	private readonly luaModuleAliases: Map<string, LuaRequireModuleRecord> = new Map();
@@ -390,21 +375,8 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public async startup(): Promise<void> {
-		await this.prefetchLuaSourceFromFilesystem();
+		await prefetchLuaSourceFromFilesystem();
 		await this.boot();
-	}
-
-	public extractErrorMessage(error: unknown): string {
-		if (typeof error === 'string') {
-			return error;
-		}
-		if (error instanceof LuaError || error instanceof LuaRuntimeError || error instanceof LuaSyntaxError) {
-			return error.message;
-		}
-		if (error instanceof Error) {
-			return error.message;
-		}
-		return String(error);
 	}
 
 	private extractErrorLocation(error: unknown): { line: number; column: number; chunkName: string } {
@@ -418,10 +390,6 @@ export class BmsxConsoleRuntime extends Service {
 			};
 		}
 		return { line: null, column: null, chunkName: null };
-	}
-
-	private convertToError(error: unknown): Error {
-		return error instanceof Error ? error : new Error(String(error));
 	}
 
 	private configureInterpreter(interpreter: LuaInterpreter): void {
@@ -835,7 +803,7 @@ export class BmsxConsoleRuntime extends Service {
 				return;
 			}
 		} catch (error) {
-			this.consoleMode.appendStderr(this.extractErrorMessage(error));
+			this.consoleMode.appendStderr(extractErrorMessage(error));
 			return;
 		}
 		this.executeConsoleCommand(trimmed);
@@ -883,7 +851,7 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 		catch (error) {
-			this.consoleMode.appendStderr(this.extractErrorMessage(error));
+			this.consoleMode.appendStderr(extractErrorMessage(error));
 		}
 		finally {
 			// Restore previous output handler
@@ -1137,7 +1105,7 @@ export class BmsxConsoleRuntime extends Service {
 					const descriptor = (native as Record<string, unknown>)[key];
 					summary = this.formatJsValue(descriptor, depth, visited);
 				} catch (error) {
-					summary = this.extractErrorMessage(error);
+					summary = extractErrorMessage(error);
 				}
 				parts.push(`${key}: ${summary}`);
 			}
@@ -1209,7 +1177,7 @@ export class BmsxConsoleRuntime extends Service {
 				try {
 					summary = this.formatJsValue((value as Record<string, unknown>)[key], depth + 1, visited);
 				} catch (error) {
-					summary = this.extractErrorMessage(error);
+					summary = extractErrorMessage(error);
 				}
 				parts.push(`${key}: ${summary}`);
 			}
@@ -1221,7 +1189,7 @@ export class BmsxConsoleRuntime extends Service {
 		return String(value);
 	}
 
-	private recordLuaWarning(message: string): void {
+	public recordLuaWarning(message: string): void {
 		this.pendingLuaWarnings.push(message);
 		console.warn(message);
 		this.flushLuaWarnings();
@@ -1257,38 +1225,6 @@ export class BmsxConsoleRuntime extends Service {
 
 	private listLuaAssets(): RomLuaAsset[] {
 		return Object.values(this.cart.lua);
-	}
-
-	private handleLuaPersistenceFailure(
-		kind: LuaPersistenceFailureKind,
-		context: string,
-		options: { detail?: string; error?: unknown } = {}
-	): void {
-		const mode = this.luaFailurePolicy[kind];
-		const parts: string[] = [context];
-		if (options.detail && options.detail.length > 0) {
-			parts.push(options.detail);
-		}
-		if (options.error !== undefined) {
-			const reason = this.extractErrorMessage(options.error);
-			if (reason.length > 0) {
-				parts.push(reason);
-			}
-		}
-		const message = parts.join(': ');
-		if (mode === 'warning') {
-			this.recordLuaWarning(message);
-			return;
-		}
-		if (options.error instanceof Error) {
-			const wrapped = new Error(message);
-			// @ts-ignore - preserve original error via non-standard cause where available
-			wrapped.cause = options.error;
-			console.error(message, options.error);
-			throw wrapped;
-		}
-		console.error(message);
-		throw new Error(message);
 	}
 
 	private updateOverlayState(includeConsole: boolean, includeEditor: boolean, force = false): void {
@@ -1329,7 +1265,7 @@ export class BmsxConsoleRuntime extends Service {
 				await $.reset_to_fresh_world();
 			}
 			api.cartdata(this.cart.meta.persistent_id);
-			this.bootLuaProgram({ runInit: true });
+			this.bootLuaProgram();
 			this.hasCompletedInitialBoot = true;
 		}
 		catch (error) {
@@ -1531,7 +1467,7 @@ export class BmsxConsoleRuntime extends Service {
 			viewport,
 			canonicalization: this.canonicalization,
 			loadSource: () => { return this.listLuaAssets().length > 0 ? this.cart.lua[this.cart.entry]?.src : '' },
-			saveSource: (source: string) => this.saveLuaProgram(source),
+			saveSource: (source: string) => saveLuaProgram(source),
 			listResources: () => {
 				const descriptors: ConsoleResourceDescriptor[] = [];
 				for (const asset of Object.values(this.cart.lua)) {
@@ -1710,13 +1646,13 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private reloadLuaProgramState(source: string, options?: { runInit?: boolean; chunkName?: string; assetId?: string }): void {
+	public reloadLuaProgramState(source: string, options?: { runInit?: boolean; chunkName?: string; assetId?: string }): void {
 		const runInit = options?.runInit !== false;
 		const binding = this.resolveChunkBinding(options?.chunkName, options?.assetId);
 		this.applyProgramEntrySourceToCartridge(source, binding.chunkName, binding.assetId);
 		this.luaChunkName = binding.chunkName;
 		if (!this.luaInterpreter) {
-			this.bootLuaProgram({ runInit });
+			this.bootLuaProgram();
 		}
 		else {
 			this.hotReloadProgramEntry({ asset_id: binding.assetId, source, chunkName: binding.chunkName });
@@ -1741,7 +1677,7 @@ export class BmsxConsoleRuntime extends Service {
 			source = this.resolveSourceForChunk(binding.chunkName, binding.assetId);
 		}
 		catch (error) {
-			throw this.convertToError(error);
+			throw convertToError(error);
 		}
 		this.applyProgramEntrySourceToCartridge(source, binding.chunkName, binding.assetId);
 		this.luaChunkName = binding.chunkName;
@@ -1871,8 +1807,6 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaDrawFunction = null;
 		this.luaRuntimeFailed = false;
 
-		this.registerLuaChunkResource(binding.chunkName, { asset_id: binding.assetId, path: binding.asset.normalized_source_path });
-
 		registerApiBuiltins(interpreter);
 		interpreter.setReservedIdentifiers(this.apiFunctionNames);
 
@@ -1969,7 +1903,7 @@ export class BmsxConsoleRuntime extends Service {
 			});
 			return;
 		}
-		const message = this.extractErrorMessage(exception);
+		const message = extractErrorMessage(exception);
 		let chunkName: string = exception.chunkName;
 		if (!chunkName || chunkName.length === 0) {
 			chunkName = signal.location.chunk;
@@ -2064,7 +1998,7 @@ export class BmsxConsoleRuntime extends Service {
 	private async saveLuaResourceSource(asset_id: string, source: string): Promise<void> {
 		const asset = this.getLuaAsset(asset_id);
 		const cartPath = asset.normalized_source_path;
-		await this.persistLuaSourceToFilesystem(cartPath, source);
+		await persistLuaSourceToFilesystem(cartPath, source);
 		asset.src = source;
 		this.rompackOriginalLua.set(asset_id, source);
 		const chunkName = asset.chunk_name ?? `@lua/${asset.resid}`;
@@ -2091,7 +2025,7 @@ export class BmsxConsoleRuntime extends Service {
 		normalizeLuaAsset(this.cart, asset);
 
 		const filesystemPath = asset.normalized_source_path;
-		await this.persistLuaSourceToFilesystem(filesystemPath, contents);
+		await persistLuaSourceToFilesystem(filesystemPath, contents);
 		this.luaGenericAssetsExecuted.delete(asset_id);
 		this.rompackOriginalLua.set(asset_id, contents);
 		this.updateWorkspaceOverrideMap(asset, contents);
@@ -2677,7 +2611,7 @@ export class BmsxConsoleRuntime extends Service {
 		setLuaTableCaseInsensitiveKeys(this.canonicalization !== 'none');
 	}
 
-	private bootLuaProgram(options: { runInit: boolean }): void {
+	private bootLuaProgram(): void {
 		const source = this.cart.lua[this.cart.entry].src;
 		const chunkName = this.cart.lua[this.cart.entry].chunk_name;
 
@@ -2695,7 +2629,6 @@ export class BmsxConsoleRuntime extends Service {
 
 		try {
 			const asset = this.cart.lua[this.cart.entry];
-			this.registerLuaChunkResource(chunkName, { asset_id: asset.resid, path: asset.normalized_source_path });
 			registerApiBuiltins(interpreter);
 			interpreter.setReservedIdentifiers(this.apiFunctionNames);
 			const programasset_id = asset.resid;
@@ -2713,73 +2646,11 @@ export class BmsxConsoleRuntime extends Service {
 
 		this.bindLifecycleHandlers();
 
-		if (options.runInit) {
-			const ok = this.runLuaLifecycleHandler('init');
-			if (!ok) {
-				return;
-			}
-			this.runLuaLifecycleHandler('new_game');
-		}
-	}
-
-	public async saveLuaProgram(source: string): Promise<void> {
-		const cartSavePath = this.cart.lua[this.cart.entry].source_path;
-		if (!cartSavePath) {
-			throw new Error('[BmsxConsoleRuntime] Lua source path unavailable for active Lua asset.');
-		}
-		const previousChunkName = this.cart.lua[this.cart.entry].chunk_name;
-		const previousSource = this.cart.lua[this.cart.entry].src;
-		const targetChunkName = previousChunkName;
-		const shouldValidate = this.validationStrategy === BmsxLuaValidationStrategy.FullExecution;
-		if (!shouldValidate && $.debug === true) {
-			console.info(`[BmsxConsoleRuntime] Skipping pre-boot validation for '${targetChunkName}'. Trusting the real run.`);
-		}
-		if (shouldValidate) {
-			this.validateLuaSource(source, targetChunkName);
-		}
-		try {
-			this.applyProgramEntrySourceToCartridge(source, targetChunkName);
-		}
-		catch (error) {
-			try {
-				this.applyProgramEntrySourceToCartridge(previousSource, previousChunkName);
-			}
-			catch (restoreError) {
-				this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after apply failure', { error: restoreError });
-				return;
-			}
-			this.handleLuaPersistenceFailure('apply', '[BmsxConsoleRuntime] Failed to apply Lua source override', { error });
-			if (this.luaFailurePolicy.apply === 'warning') {
-				return;
-			}
+		const ok = this.runLuaLifecycleHandler('init');
+		if (!ok) {
 			return;
 		}
-		try {
-			await this.persistLuaSourceToFilesystem(cartSavePath, source);
-			const programasset_id = this.cart.lua[this.cart.entry].resid;
-			const programAsset = this.getLuaAsset(programasset_id);
-			programAsset.src = source;
-			this.rompackOriginalLua.set(programasset_id, source);
-			this.updateWorkspaceOverrideMap(programAsset, source, cartSavePath);
-			try {
-				this.reloadLuaProgramState(source, { runInit: true });
-			}
-			catch (error) {
-				this.handleLuaError(error);
-			}
-		} catch (error) {
-			try {
-				this.applyProgramEntrySourceToCartridge(previousSource, previousChunkName);
-			} catch (restoreError) {
-				this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after persistence failure', { error: restoreError });
-				return;
-			}
-			this.handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Failed to persist Lua source to '${cartSavePath}'`, { error });
-			if (this.luaFailurePolicy.persist === 'warning') {
-				return;
-			}
-			return;
-		}
+		this.runLuaLifecycleHandler('new_game');
 	}
 
 	public async reloadProgramAndResetWorld(options?: { runInit?: boolean }): Promise<void> {
@@ -2795,24 +2666,6 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		finally {
 			this.luaVmGate.end(vmToken);
-		}
-	}
-
-	private validateLuaSource(source: string, chunkName: string): void {
-		const previousChunk = this.luaChunkName;
-		const binding = this.resolveChunkBinding(chunkName);
-		this.luaChunkName = binding.chunkName;
-		this.registerLuaChunkResource(binding.chunkName, { asset_id: binding.assetId, path: binding.asset.normalized_source_path });
-		try {
-			const interpreter = createLuaInterpreter(this.canonicalization);
-			this.configureInterpreter(interpreter);
-			registerApiBuiltins(interpreter);
-			interpreter.setReservedIdentifiers(this.apiFunctionNames);
-			const chunk = interpreter.parseChunk(source, binding.chunkName);
-			interpreter.validateChunkIdentifiers(chunk);
-		}
-		finally {
-			this.luaChunkName = previousChunk;
 		}
 	}
 
@@ -2845,7 +2698,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 
 		// Extract message and location info
-		const message = this.extractErrorMessage(error);
+		const message = extractErrorMessage(error);
 		const { line, column, chunkName } = this.extractErrorLocation(error);
 		const editorWasActive = this.editor?.isActive === true;
 
@@ -3203,7 +3056,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private handleLuaHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): void {
-		const normalized = this.convertToError(error);
+		const normalized = convertToError(error);
 		if (meta && meta.hid && !normalized.message.startsWith(`[${meta.hid}]`)) {
 			normalized.message = `[${meta.hid}] ${normalized.message}`;
 		}
@@ -3478,191 +3331,6 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private async persistLuaSourceToFilesystem(path: string, source: string): Promise<void> {
-		if (typeof fetch !== 'function') {
-			throw new Error('[BmsxConsoleRuntime] Fetch API unavailable; cannot persist Lua source.');
-		}
-		let response: HttpResponse;
-		try {
-			response = await fetch(WORKSPACE_FILE_ENDPOINT, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ path, contents: source }),
-			});
-		} catch (error) {
-			this.handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Failed to reach Lua save endpoint for '${path}'`, { error });
-			if (this.luaFailurePolicy.persist === 'warning') {
-				return;
-			}
-			return;
-		}
-		if (!response.ok) {
-			let detail = '';
-			try {
-				detail = await response.text();
-			} catch (textError) {
-				const message = this.extractErrorMessage(textError);
-				this.handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Save rejected for '${path}' (response body read failed)`, { detail: message });
-				if (this.luaFailurePolicy.persist === 'warning') {
-					return;
-				}
-				return;
-			}
-			let finalDetail = response.statusText;
-			if (detail && detail.length > 0) {
-				let parsed: unknown;
-				try {
-					parsed = JSON.parse(detail);
-				} catch (parseError) {
-					const parseMessage = this.extractErrorMessage(parseError);
-					this.handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Save rejected for '${path}' (error payload parse failed)`, { detail: parseMessage });
-					if (this.luaFailurePolicy.persist === 'warning') {
-						return;
-					}
-					return;
-				}
-				if (parsed && typeof parsed === 'object' && 'error' in parsed) {
-					const record = parsed as { error?: unknown };
-					if (typeof record.error === 'string' && record.error.length > 0) {
-						finalDetail = record.error;
-					} else {
-						finalDetail = detail;
-					}
-				} else {
-					finalDetail = detail;
-				}
-			}
-			this.handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Save rejected for '${path}'`, { detail: finalDetail });
-			if (this.luaFailurePolicy.persist === 'warning') {
-				return;
-			}
-			return;
-		}
-	}
-
-	private async fetchLuaSourceFromFilesystem(path: string): Promise<string> {
-		if (typeof fetch !== 'function') {
-			return null;
-		}
-		let response: HttpResponse;
-		const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
-		try {
-			response = await fetch(url, { method: 'GET', cache: 'no-store' });
-		} catch (error) {
-			this.handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from filesystem (${path})`, { error });
-			if (this.luaFailurePolicy.fetch === 'warning') {
-				return null;
-			}
-			return null;
-		}
-		if (response.status === 404) {
-			return null;
-		}
-		if (!response.ok) {
-			let detail = '';
-			try {
-				detail = await response.text();
-			} catch (textError) {
-				const message = this.extractErrorMessage(textError);
-				this.handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from '${path}' (response body read failed)`, { detail: message });
-				if (this.luaFailurePolicy.fetch === 'warning') {
-					return null;
-				}
-				return null;
-			}
-			let finalDetail = response.statusText;
-			if (detail && detail.length > 0) {
-				let parsed: unknown;
-				try {
-					parsed = JSON.parse(detail);
-				} catch (parseError) {
-					const parseMessage = this.extractErrorMessage(parseError);
-					this.handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from '${path}' (error payload parse failed)`, { detail: parseMessage });
-					if (this.luaFailurePolicy.fetch === 'warning') {
-						return null;
-					}
-					return null;
-				}
-				if (parsed && typeof parsed === 'object' && 'error' in parsed) {
-					const record = parsed as { error?: unknown };
-					if (typeof record.error === 'string' && record.error.length > 0) {
-						finalDetail = record.error;
-					} else {
-						finalDetail = detail;
-					}
-				} else {
-					finalDetail = detail;
-				}
-			}
-			this.handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from '${path}'`, { detail: finalDetail });
-			if (this.luaFailurePolicy.fetch === 'warning') {
-				return null;
-			}
-			return null;
-		}
-		let payload: unknown;
-		try {
-			payload = await response.json();
-		} catch (parseError) {
-			const message = this.extractErrorMessage(parseError);
-			this.handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Invalid response while loading Lua source from '${path}'`, { detail: message });
-			if (this.luaFailurePolicy.fetch === 'warning') {
-				return null;
-			}
-			return null;
-		}
-		if (!payload || typeof payload !== 'object') {
-			this.handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Response for '${path}' missing Lua contents`);
-			if (this.luaFailurePolicy.fetch === 'warning') {
-				return null;
-			}
-			return null;
-		}
-		const record = payload as { contents?: unknown };
-		if (typeof record.contents !== 'string') {
-			this.handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Response for '${path}' missing Lua contents`);
-			if (this.luaFailurePolicy.fetch === 'warning') {
-				return null;
-			}
-			return null;
-		}
-		return record.contents;
-	}
-
-	private async prefetchLuaSourceFromFilesystem(): Promise<void> {
-		const entry = this.cart.lua[this.cart.entry];
-		const path = entry?.source_path;
-		if (!path) {
-			return;
-		}
-		const fetched = await this.fetchLuaSourceFromFilesystem(path);
-		if (fetched === null) {
-			return;
-		}
-		const currentSource = entry.src;
-		if (currentSource === fetched) {
-			return;
-		}
-		const chunkName = entry.chunk_name;
-		try {
-			this.reloadLuaProgramState(fetched, { chunkName, assetId: entry.resid, runInit: false });
-		}
-		catch (error) {
-			try {
-				this.reloadLuaProgramState(currentSource, { chunkName, assetId: entry.resid, runInit: false });
-			}
-			catch (restoreError) {
-				this.handleLuaPersistenceFailure('restore', `[BmsxConsoleRuntime] Failed to restore Lua source after prefetched apply error`, { error: restoreError });
-				return;
-			}
-			this.handleLuaPersistenceFailure('apply', `[BmsxConsoleRuntime] Failed to apply prefetched Lua source '${path}'`, { error });
-			if (this.luaFailurePolicy.apply === 'warning') {
-				return;
-			}
-			throw this.convertToError(error);
-		}
-	}
-
 	private applyProgramEntrySourceToCartridge(source: string, chunkName: string, asset_id?: string): void {
 		const binding = this.resolveChunkBinding(chunkName, asset_id);
 		const luaAsset = binding.asset;
@@ -3706,14 +3374,6 @@ export class BmsxConsoleRuntime extends Service {
 			this.reloadGenericLuaChunk(chunkName, info, source);
 		}
 		this.runLuaLifecycleHandler('init');
-	}
-
-	private registerLuaChunkResource(chunkName: string, info: { asset_id: string; path?: string }): void {
-		const asset = this.getLuaAsset(info.asset_id);
-		asset.chunk_name = chunkName;
-		this.cart.chunk2lua![chunkName] = asset;
-		const normalizedPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
-		this.cart.source2lua![normalizedPath] = asset;
 	}
 
 	private invalidateLuaModuleIndex(): void {
@@ -3961,7 +3621,6 @@ export class BmsxConsoleRuntime extends Service {
 		const source = asset.src;
 		const resourceInfo: { asset_id: string; path?: string } = { asset_id: record.asset_id };
 		resourceInfo.path = record.path;
-		this.registerLuaChunkResource(record.chunkName, resourceInfo);
 		this.luaModuleLoadingKeys.add(record.packageKey);
 		packageLoaded.set(record.packageKey, true);
 		const previousChunkName = this.luaChunkName;
@@ -3982,7 +3641,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (isLuaScriptError(error)) {
 				throw error;
 			}
-			const message = this.extractErrorMessage(error);
+			const message = extractErrorMessage(error);
 			throw this.createApiRuntimeError(message);
 		}
 		finally {
@@ -4855,7 +4514,7 @@ export class BmsxConsoleRuntime extends Service {
 				this.chunkSemanticCache.set(chunkName, { source, model: null, definitions: [] });
 				return null;
 			}
-			const message = this.extractErrorMessage(error);
+			const message = extractErrorMessage(error);
 			this.chunkSemanticCache.set(chunkName, { source, model: null, definitions: [] });
 			console.warn(`[BmsxConsoleRuntime] Failed to parse '${chunkName}': ${message}`);
 			return null;
@@ -5337,7 +4996,6 @@ export class BmsxConsoleRuntime extends Service {
 		const asset_id = asset.resid;
 		const resourceInfo: { asset_id: string; path?: string } = { asset_id, path: asset.normalized_source_path };
 		this.luaGenericAssetsExecuted.delete(asset_id);
-		this.registerLuaChunkResource(chunkName, resourceInfo);
 		this.reloadGenericLuaChunk(chunkName, resourceInfo, sourceOverride);
 		this.clearNativeMemberCompletionCache();
 		this.clearEditorErrorOverlaysIfNoFault();

@@ -3,7 +3,8 @@ import { Input } from '../input/input';
 import { GamepadBinding, GamepadInputMapping, InputMap, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping } from '../input/inputtypes';
 import { LuaEnvironment } from '../lua/environment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/errors';
-import { createLuaNativeFunction, LuaInterpreter } from '../lua/runtime';
+import { LuaInterpreter } from '../lua/runtime';
+import { createLuaNativeFunction, extractErrorMessage } from 'bmsx/lua/value';
 import { isLuaNativeValue, isLuaTable, LuaTable, LuaValue } from '../lua/value';
 import { arrayify } from '../utils/arrayify';
 import { deep_clone } from '../utils/deep_clone';
@@ -246,7 +247,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 					if (isLuaScriptError(error)) {
 						throw error;
 					}
-					const message = runtime.extractErrorMessage(error);
+					const message = extractErrorMessage(error);
 					throw runtime.createApiRuntimeError(`[api.${name}] ${message}`);
 				}
 			});
@@ -272,7 +273,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 					if (isLuaScriptError(error)) {
 						throw error;
 					}
-					const message = runtime.extractErrorMessage(error);
+					const message = extractErrorMessage(error);
 					throw runtime.createApiRuntimeError(`[api.${name}] ${message}`);
 				}
 			});

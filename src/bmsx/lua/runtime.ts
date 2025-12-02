@@ -51,7 +51,7 @@ import { LuaLexer } from './lexer';
 import { type CanonicalizationType } from '../rompack/rompack';
 import { LuaParser } from './parser';
 import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from './value';
-import { createLuaNativeValue, createLuaTable, isLuaTable, isLuaNativeValue } from './value';
+import { createLuaNativeValue, createLuaTable, isLuaTable, isLuaNativeValue, isLuaDebuggerPauseSignal } from './value';
 import { LuaDebuggerController, type LuaDebuggerPauseReason } from './debugger';
 import { $ } from '../core/game';
 import { BmsxConsoleRuntime } from '../console/runtime';
@@ -96,7 +96,7 @@ export interface LuaHostAdapter {
 	deserializeNative?(token: unknown): object | Function;
 }
 
-class LuaNativeFunction implements LuaFunctionValue {
+export class LuaNativeFunction implements LuaFunctionValue {
 	public readonly name: string;
 	private readonly handler: (args: ReadonlyArray<LuaValue>) => ReadonlyArray<LuaValue>;
 
@@ -357,7 +357,7 @@ export class LuaInterpreter {
 
 	public getChunkDefinitions(chunkName: string): ReadonlyArray<LuaDefinitionInfo> {
 		const normalized = this.normalizeChunkName(chunkName);
-		return this.chunkDefinitions.get(normalized) ;
+		return this.chunkDefinitions.get(normalized);
 	}
 
 	public hasChunkBinding(name: string): boolean {
@@ -635,7 +635,7 @@ export class LuaInterpreter {
 		const callRange = this.currentCallRange;
 		const currentChunk = this.currentChunk;
 		const chunkEnvironment = this._chunkEnvironment;
-		const statementRange = statements[index]?.range ;
+		const statementRange = statements[index]?.range;
 		const chunkName = error.chunkName ?? statementRange?.chunkName ?? callRange?.chunkName ?? this.currentChunk ?? '<chunk>';
 		const line =
 			Number.isFinite(error.line) && error.line > 0
@@ -2341,7 +2341,7 @@ export class LuaInterpreter {
 			return null;
 		}
 		const entry = cache.get(key);
-		return entry ;
+		return entry;
 	}
 
 	private storeNativeMethod(target: LuaNativeValue, key: string, fn: LuaFunctionValue): void {
@@ -2780,7 +2780,7 @@ export class LuaInterpreter {
 				const formatted = this.formatErrorMessage(error);
 				const handlerResult = messageHandler.call([formatted]);
 				const first = handlerResult.length > 0 ? handlerResult[0] : null;
-				return [false, first ];
+				return [false, first];
 			}
 		}));
 
@@ -3122,7 +3122,7 @@ export class LuaInterpreter {
 				return this.defaultSortCompare(left, right);
 			});
 			for (let index = 1; index <= length; index += 1) {
-				target.set(index, values[index - 1] );
+				target.set(index, values[index - 1]);
 			}
 			return [target];
 		}));
@@ -3332,34 +3332,3 @@ export class LuaInterpreter {
 		return new LuaRuntimeError(message, range.chunkName, range.start.line, range.start.column);
 	}
 }
-
-export type LuaDebuggerPauseSignal = Extract<ExecutionSignal, { kind: 'pause' }>;
-
-export function isLuaDebuggerPauseSignal(value: unknown): value is LuaDebuggerPauseSignal {
-	if (typeof value !== 'object' || value === null) {
-		return false;
-	}
-	const candidate = value as Partial<LuaDebuggerPauseSignal>;
-	return candidate.kind === 'pause' && typeof candidate.resume === 'function';
-}
-
-export function createLuaInterpreter(canonicalization: CanonicalizationType = 'none'): LuaInterpreter {
-	return new LuaInterpreter(null, canonicalization);
-}
-
-export function createLuaNativeFunction(name: string, handler: (args: ReadonlyArray<LuaValue>) => ReadonlyArray<LuaValue>): LuaFunctionValue {
-	return new LuaNativeFunction(name, handler);
-}
-
-export type StackFrameLanguage = 'lua' | 'js';
-
-export type StackTraceFrame = {
-	origin: StackFrameLanguage;
-	functionName: string;
-	source: string;
-	line: number;
-	column: number;
-	raw: string;
-	chunkasset_id?: string;
-	chunkPath?: string;
-};
