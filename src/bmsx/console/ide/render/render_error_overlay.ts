@@ -490,7 +490,7 @@ export function renderRuntimeFaultOverlay(options: {
 	if (!editorFacade.exists) return false;
 	if (!options.force && (!options.luaRuntimeFailed || !options.needsFlush)) return false;
 	if (!snapshot) return false;
-	const hint = BmsxConsoleRuntime.instance.chunkResourceHintFor(snapshot.chunkName);
+	const hint = BmsxConsoleRuntime.instance.getChunkResourceHint(snapshot.chunkName);
 	if (hint) {
 		showRuntimeErrorInChunk(
 			snapshot.chunkName,

@@ -347,10 +347,6 @@ export class BmsxConsoleRuntime extends Service {
 		return this._workspaceScratchPaths;
 	}
 
-	public chunkResourceHintFor(chunkName: string): { asset_id: string; path?: string } | null {
-		return this.getChunkResourceHint(chunkName);
-	}
-
 	private constructor(options: BmsxConsoleRuntimeOptions) {
 		super({ id: 'bmsx_console_runtime' });
 		BmsxConsoleRuntime._instance = this;
@@ -5386,10 +5382,13 @@ export class BmsxConsoleRuntime extends Service {
 		return this.luaBuiltinMetadata.has(name);
 	}
 
-	private getChunkResourceHint(chunkName: string): { asset_id: string; path?: string } {
+	public getChunkResourceHint(chunkName: string): { asset_id: string; path?: string } | null {
 		const asset = this.cart.chunk2lua![chunkName];
+		if (!asset) {
+			return null;
+		}
 		const hint: { asset_id: string; path?: string } = { asset_id: asset.resid };
-		hint.path = asset.normalized_source_path as string;
+		hint.path = asset.normalized_source_path;
 		return hint;
 	}
 
