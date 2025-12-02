@@ -40,13 +40,18 @@ import {
 	buildWorkspaceDirtyEntryPath,
 	buildWorkspaceStateFilePath,
 	buildWorkspaceStorageKey,
-	WORKSPACE_FILE_ENDPOINT,
 	collectWorkspaceOverrides,
 	type WorkspaceOverrideRecord,
 	LuaPersistenceFailurePolicy,
 	DEFAULT_LUA_FAILURE_POLICY,
 	prefetchLuaSourceFromFilesystem,
 	persistLuaSourceToFilesystem,
+	fetchWorkspaceDirtyLuaOverrides,
+	fetchWorkspaceFile,
+	collectScratchWorkspaceDirtyPaths,
+	fetchWorkspaceOverridesPriority,
+	mergeWorkspaceOverrides,
+	deleteWorkspaceFile,
 } from './workspace';
 import { normalizeLuaAsset } from 'bmsx/rompack/rompack';
 import { WorldObject } from '../core/object/worldobject';
@@ -92,7 +97,6 @@ export const EDITOR_FONT_VARIANT: ConsoleFontVariant = 'tiny';
 export type BmsxConsoleRuntimeOptions = {
 	cart: BmsxCartridge;
 	playerIndex: number;
-	storage?: StorageService;
 	luaSourceFailurePolicy?: Partial<LuaPersistenceFailurePolicy>;
 	canonicalization?: CanonicalizationType;
 };
@@ -109,14 +113,6 @@ export type BmsxConsoleState = {
 	luaGlobals?: LuaEntrySnapshot;
 	luaLocals?: LuaEntrySnapshot;
 	luaRandomSeed?: number;
-};
-
-type HttpResponse = {
-	ok: boolean;
-	status: number;
-	statusText: string;
-	text(): Promise<string>;
-	json(): Promise<unknown>;
 };
 
 type ConsoleFrameState = {
@@ -337,7 +333,7 @@ export class BmsxConsoleRuntime extends Service {
 		BmsxConsoleRuntime._instance = this;
 		this.cart = options.cart;
 		this.playerIndex = options.playerIndex;
-		this.storageService = options.storage ?? $.platform.storage;
+		this.storageService = $.platform.storage;
 		this.storage = new BmsxConsoleStorage(this.storageService, options.cart.meta.persistent_id);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
 		this.canonicalization = resolvedCanonicalization;
@@ -1223,10 +1219,6 @@ export class BmsxConsoleRuntime extends Service {
 		return { asset, chunkName: asset.chunk_name, assetId: asset.resid };
 	}
 
-	private listLuaAssets(): RomLuaAsset[] {
-		return Object.values(this.cart.lua);
-	}
-
 	private updateOverlayState(includeConsole: boolean, includeEditor: boolean, force = false): void {
 		if (!force && this.overlayState.console === includeConsole && this.overlayState.editor === includeEditor) {
 			return;
@@ -1379,7 +1371,7 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		try {
-			if (this.listLuaAssets().length > 0) {
+			if (Object.values(this.cart.lua).length > 0) {
 				if (this.luaUpdateFunction !== null) {
 					this.invokeLuaFunction(this.luaUpdateFunction, [state.deltaSeconds]);
 				}
@@ -1448,7 +1440,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private initializeEditor(): void {
-		if (this.listLuaAssets().length === 0) {
+		if (Object.values(this.cart.lua).length === 0) {
 			if (this.editor) {
 				this.editor.shutdown();
 			}
@@ -1466,7 +1458,7 @@ export class BmsxConsoleRuntime extends Service {
 			metadata: this.cart.meta,
 			viewport,
 			canonicalization: this.canonicalization,
-			loadSource: () => { return this.listLuaAssets().length > 0 ? this.cart.lua[this.cart.entry]?.src : '' },
+			loadSource: () => { return Object.values(this.cart.lua).length > 0 ? this.cart.lua[this.cart.entry]?.src : '' },
 			saveSource: (source: string) => saveLuaProgram(source),
 			listResources: () => {
 				const descriptors: ConsoleResourceDescriptor[] = [];
@@ -1727,7 +1719,7 @@ export class BmsxConsoleRuntime extends Service {
 			modules.add(moduleId);
 		};
 
-		for (const asset of this.listLuaAssets()) {
+		for (const asset of Object.values(this.cart.lua)) {
 			const chunkName = asset.chunk_name ?? `@lua/${asset.resid}`;
 			pushModule(chunkName);
 		}
@@ -1828,7 +1820,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private redrawAfterStateRestore(): void {
-		if (this.listLuaAssets().length > 0) {
+		if (Object.values(this.cart.lua).length > 0) {
 			if (this.luaRuntimeFailed) {
 				return;
 			}
@@ -3689,20 +3681,6 @@ export class BmsxConsoleRuntime extends Service {
 		this.workspaceLuaOverrides.set(asset.resid, { source, path: dirtyPath, cartPath: effectiveCartPath });
 	}
 
-	private persistWorkspaceOverridesToLocalStorage(root: string, overrides: Map<string, WorkspaceOverrideRecord>): void {
-		for (const record of overrides.values()) {
-			if (!record.path) {
-				continue;
-			}
-			const storageKey = buildWorkspaceStorageKey(root, record.path);
-			const payload = {
-				contents: record.source,
-				updatedAt: record.updatedAt ?? Date.now(),
-			};
-			this.storageService.setItem(storageKey, JSON.stringify(payload));
-		}
-	}
-
 	private async applyServerWorkspaceDirtyLuaOverrides(hotReload: boolean): Promise<void> {
 		const token = this.workspaceOverrideToken;
 		const root = $.rompack.project_root_path;
@@ -3714,7 +3692,7 @@ export class BmsxConsoleRuntime extends Service {
 			projectRootPath: root,
 			storage: this.storageService,
 		});
-		const serverOverrides = await this.fetchWorkspaceDirtyLuaOverrides(root);
+		const serverOverrides = await fetchWorkspaceDirtyLuaOverrides(root);
 		const overrides = await this.mergeWorkspaceOverrides(root, localOverrides, serverOverrides);
 		if (token !== this.workspaceOverrideToken) {
 			return;
@@ -3740,9 +3718,9 @@ export class BmsxConsoleRuntime extends Service {
 
 	private async applySavedWorkspaceLuaSources(): Promise<Set<string>> {
 		const changed = new Set<string>();
-		for (const asset of this.listLuaAssets()) {
+		for (const asset of Object.values(this.cart.lua)) {
 			const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
-			const savedRecord = await this.fetchWorkspaceFile(cartPath);
+			const savedRecord = await fetchWorkspaceFile(cartPath);
 			if (savedRecord === null) {
 				continue;
 			}
@@ -3771,7 +3749,7 @@ export class BmsxConsoleRuntime extends Service {
 			changedAssets.add(asset_id);
 		}
 		const root = $.rompack.project_root_path;
-		const scratchPaths = await this.collectScratchWorkspaceDirtyPaths(root);
+		const scratchPaths = await collectScratchWorkspaceDirtyPaths(root);
 		for (const path of scratchPaths) {
 			this._workspaceScratchPaths.add(path);
 		}
@@ -3780,174 +3758,11 @@ export class BmsxConsoleRuntime extends Service {
 			projectRootPath: root,
 			storage: this.storageService,
 		});
-		const serverOverrides = await this.fetchWorkspaceOverridesPriority() ?? new Map<string, WorkspaceOverrideRecord>();
-		const merged = await this.mergeWorkspaceOverrides(root, localOverrides, serverOverrides);
+		const serverOverrides = await fetchWorkspaceOverridesPriority() ?? new Map<string, WorkspaceOverrideRecord>();
+		const merged = await mergeWorkspaceOverrides(root, localOverrides, serverOverrides);
 		const dirtyChanged = this.applyWorkspaceLuaOverrides(merged, false);
 		for (const asset_id of dirtyChanged) {
 			changedAssets.add(asset_id);
-		}
-	}
-
-	private async mergeWorkspaceOverrides(
-		root: string,
-		localOverrides: Map<string, WorkspaceOverrideRecord>,
-		serverOverrides: Map<string, WorkspaceOverrideRecord>,
-	): Promise<Map<string, WorkspaceOverrideRecord>> {
-		const merged = new Map<string, WorkspaceOverrideRecord>();
-		const assetIds = new Set<string>([
-			...localOverrides.keys(),
-			...serverOverrides.keys(),
-		]);
-		for (const asset_id of assetIds) {
-			const local = localOverrides.get(asset_id);
-			const remote = serverOverrides.get(asset_id);
-			const localTime = local?.updatedAt ?? 0;
-			const remoteTime = remote?.updatedAt ?? 0;
-			if (local && (!remote || localTime >= remoteTime)) {
-				merged.set(asset_id, local);
-				if (root) {
-					this.persistWorkspaceOverridesToLocalStorage(root, new Map([[asset_id, local]]));
-				}
-				continue;
-			}
-			if (remote) {
-				merged.set(asset_id, remote);
-				if (root) {
-					this.persistWorkspaceOverridesToLocalStorage(root, new Map([[asset_id, remote]]));
-				}
-			}
-		}
-		return merged;
-	}
-
-	private async fetchWorkspaceOverridesPriority(): Promise<Map<string, WorkspaceOverrideRecord>> {
-		const root = $.rompack.project_root_path;
-		if (!root) {
-			return null;
-		}
-		try {
-			const serverOverrides = await this.fetchWorkspaceDirtyLuaOverrides(root);
-			return serverOverrides;
-		} catch (error) {
-			console.warn('[BmsxConsoleRuntime] Failed to load server workspace overrides; falling back to local overrides.', error);
-			return null;
-		}
-	}
-
-	private async fetchWorkspaceDirtyLuaOverrides(root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
-		const tasks: Array<Promise<{ asset_id: string; contents: string; path: string; cartPath: string; updatedAt?: number }>> = [];
-		// Fetching dirty files from backend is best-effort. Missing files do NOT mean we should
-		// discard in-memory dirty edits; they simply yield no extra overrides.
-		for (const asset of this.listLuaAssets()) {
-			const asset_id = asset.resid;
-			const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
-			const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
-			tasks.push(this.fetchWorkspaceFile(dirtyPath).then((result) => {
-				if (result === null) {
-					return null;
-				}
-				return { asset_id, contents: result.contents, path: dirtyPath, cartPath, updatedAt: result.updatedAt };
-			}));
-		}
-		if (tasks.length === 0) {
-			return new Map<string, WorkspaceOverrideRecord>();
-		}
-		const results = await Promise.all(tasks);
-		const overrides = new Map<string, WorkspaceOverrideRecord>();
-		for (let index = 0; index < results.length; index += 1) {
-			const result = results[index];
-			if (!result) {
-				continue;
-			}
-			overrides.set(result.asset_id, { source: result.contents, path: result.path, cartPath: result.cartPath, updatedAt: result.updatedAt });
-		}
-		return overrides;
-	}
-
-	private async collectScratchWorkspaceDirtyPaths(root: string): Promise<Set<string>> {
-		const paths = new Set<string>();
-		if (!root) {
-			return paths;
-		}
-		const statePath = buildWorkspaceStateFilePath(root);
-		const payload = await this.fetchWorkspaceFile(statePath);
-		if (!payload) {
-			return paths;
-		}
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(payload.contents);
-		} catch {
-			return paths;
-		}
-		if (!parsed || typeof parsed !== 'object') {
-			return paths;
-		}
-		const record = parsed as { dirtyFiles?: Array<{ dirtyPath?: string; descriptor?: unknown }> };
-		if (!Array.isArray(record.dirtyFiles)) {
-			return paths;
-		}
-		for (let i = 0; i < record.dirtyFiles.length; i += 1) {
-			const entry = record.dirtyFiles[i];
-			if (!entry || typeof entry !== 'object') {
-				continue;
-			}
-			if (entry.descriptor !== null && entry.descriptor !== undefined) {
-				continue;
-			}
-			if (typeof entry.dirtyPath === 'string' && entry.dirtyPath.length > 0) {
-				paths.add(entry.dirtyPath);
-			}
-		}
-		return paths;
-	}
-
-	private async fetchWorkspaceFile(path: string): Promise<{ contents: string; updatedAt?: number }> {
-		const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
-		let response: HttpResponse;
-		try {
-			response = await fetch(url, { method: 'GET', cache: 'no-store' });
-		} catch {
-			console.info(`[BmsxConsoleRuntime] Failed to fetch workspace file '${path}'. No server response.`);
-			return null;
-		}
-		if (response.status === 404) {
-			return null;
-		}
-		if (!response.ok) {
-			console.info(`[BmsxConsoleRuntime] Workspace file request failed for '${path}' (HTTP ${response.status}).`);
-			return null;
-		}
-		let payload: unknown;
-		try {
-			payload = await response.json();
-		} catch {
-			console.warn(`[BmsxConsoleRuntime] Failed to parse workspace file response JSON for '${path}'.`);
-			return null;
-		}
-		if (!payload || typeof payload !== 'object') {
-			console.warn(`[BmsxConsoleRuntime] Invalid workspace file response payload for '${path}': ${JSON.stringify(payload)}`);
-			return null;
-		}
-		const record = payload as { contents?: string; updatedAt?: number };
-		if (typeof record.contents !== 'string') {
-			console.warn(`[BmsxConsoleRuntime] Invalid workspace file response payload for '${path}': ${JSON.stringify(payload)}`);
-			return null;
-		}
-		return { contents: record.contents, updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : undefined };
-	}
-
-	private async deleteWorkspaceFile(path: string): Promise<void> {
-		if (typeof fetch !== 'function') {
-			console.warn('[BmsxConsoleRuntime] Fetch API is not available.');
-			return;
-		}
-		const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
-		try {
-			await fetch(url, { method: 'DELETE' });
-		} catch {
-			console.info('[BmsxConsoleRuntime] Failed to delete workspace file:', url);
-			return;
 		}
 	}
 
@@ -3963,19 +3778,19 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaGenericAssetsExecuted.clear();
 		const root = $.rompack.project_root_path;
 		if (root) {
-			for (const asset of this.listLuaAssets()) {
+			for (const asset of Object.values(this.cart.lua)) {
 				const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
 				const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 				const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
 				this.storageService.removeItem(storageKey);
-				await this.deleteWorkspaceFile(dirtyPath);
+				await deleteWorkspaceFile(dirtyPath);
 			}
 			const statePath = buildWorkspaceStateFilePath(root);
 			const stateKey = buildWorkspaceStorageKey(root, statePath);
 			this.storageService.removeItem(stateKey);
-			await this.deleteWorkspaceFile(statePath);
+			await deleteWorkspaceFile(statePath);
 		}
-		if (this.luaInterpreter && this.listLuaAssets().length > 0) {
+		if (this.luaInterpreter && Object.values(this.cart.lua).length > 0) {
 			const asset = this.cart.lua[this.cart.entry];
 			const chunkName = asset.chunk_name;
 			const finalSource = asset.src;
@@ -4262,7 +4077,7 @@ export class BmsxConsoleRuntime extends Service {
 			enqueueCandidate(chunkName, { asset_id: asset.resid, path });
 		}
 
-		for (const asset of this.listLuaAssets()) {
+		for (const asset of Object.values(this.cart.lua)) {
 			const chunkName = asset.chunk_name ?? `@lua/${asset.resid}`;
 			const candidateInfo: { asset_id: string; path?: string } = {
 				asset_id: asset.resid,
@@ -4419,7 +4234,7 @@ export class BmsxConsoleRuntime extends Service {
 		const preferredChunkKey = preferredChunk;
 		const preferredPath = preferredChunk;
 		const matchingChunks: Array<{ chunkName: string; info: { asset_id: string; path?: string } }> = [];
-		for (const asset of this.listLuaAssets()) {
+		for (const asset of Object.values(this.cart.lua)) {
 			const chunkName = asset.chunk_name ?? `@lua/${asset.resid}`;
 			const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.normalized_source_path ?? asset.source_path };
 			const matchesAsset = asset_id !== null && info.asset_id === asset_id;

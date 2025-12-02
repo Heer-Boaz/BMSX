@@ -1,7 +1,8 @@
 import { convertToError, extractErrorMessage } from 'bmsx/lua/value';
-import type { StorageService } from '../platform';
+import type { HttpResponse, StorageService } from '../platform';
 import type { RomPack } from '../rompack/rompack';
 import { BmsxConsoleRuntime } from './runtime';
+import { $ } from '../core/game';
 
 export const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 export const WORKSPACE_STORAGE_PREFIX = 'bmsx.workspace';
@@ -109,7 +110,7 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 		if (typeof fetch !== 'function') {
 			throw new Error('[BmsxConsoleRuntime] Fetch API unavailable; cannot persist Lua source.');
 		}
-		let response: Response;
+		let response: HttpResponse;
 		try {
 			response = await fetch(WORKSPACE_FILE_ENDPOINT, {
 				method: 'POST',
@@ -173,7 +174,7 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 		if (typeof fetch !== 'function') {
 			return null;
 		}
-		let response: Response;
+		let response: HttpResponse;
 		const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
 		try {
 			response = await fetch(url, { method: 'GET', cache: 'no-store' });
@@ -325,4 +326,183 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 		}
 		console.error(message);
 		throw new Error(message);
+	}
+
+
+	export async function mergeWorkspaceOverrides(
+		root: string,
+		localOverrides: Map<string, WorkspaceOverrideRecord>,
+		serverOverrides: Map<string, WorkspaceOverrideRecord>,
+	): Promise<Map<string, WorkspaceOverrideRecord>> {
+		const merged = new Map<string, WorkspaceOverrideRecord>();
+		const assetIds = new Set<string>([
+			...localOverrides.keys(),
+			...serverOverrides.keys(),
+		]);
+		for (const asset_id of assetIds) {
+			const local = localOverrides.get(asset_id);
+			const remote = serverOverrides.get(asset_id);
+			const localTime = local?.updatedAt ?? 0;
+			const remoteTime = remote?.updatedAt ?? 0;
+			if (local && (!remote || localTime >= remoteTime)) {
+				merged.set(asset_id, local);
+				if (root) {
+					persistWorkspaceOverridesToLocalStorage(root, new Map([[asset_id, local]]));
+				}
+				continue;
+			}
+			if (remote) {
+				merged.set(asset_id, remote);
+				if (root) {
+					persistWorkspaceOverridesToLocalStorage(root, new Map([[asset_id, remote]]));
+				}
+			}
+		}
+		return merged;
+	}
+
+	export async function fetchWorkspaceOverridesPriority(): Promise<Map<string, WorkspaceOverrideRecord>> {
+		const root = $.rompack.project_root_path;
+		if (!root) {
+			return null;
+		}
+		try {
+			const serverOverrides = await fetchWorkspaceDirtyLuaOverrides(root);
+			return serverOverrides;
+		} catch (error) {
+			console.warn('[BmsxConsoleRuntime] Failed to load server workspace overrides; falling back to local overrides.', error);
+			return null;
+		}
+	}
+
+	export async function fetchWorkspaceDirtyLuaOverrides(root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
+		const tasks: Array<Promise<{ asset_id: string; contents: string; path: string; cartPath: string; updatedAt?: number }>> = [];
+		// Fetching dirty files from backend is best-effort. Missing files do NOT mean we should
+		// discard in-memory dirty edits; they simply yield no extra overrides.
+		for (const asset of Object.values($.rompack.cart.lua)) {
+			const asset_id = asset.resid;
+			const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+			const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
+			tasks.push(fetchWorkspaceFile(dirtyPath).then((result) => {
+				if (result === null) {
+					return null;
+				}
+				return { asset_id, contents: result.contents, path: dirtyPath, cartPath, updatedAt: result.updatedAt };
+			}));
+		}
+		if (tasks.length === 0) {
+			return new Map<string, WorkspaceOverrideRecord>();
+		}
+		const results = await Promise.all(tasks);
+		const overrides = new Map<string, WorkspaceOverrideRecord>();
+		for (let index = 0; index < results.length; index += 1) {
+			const result = results[index];
+			if (!result) {
+				continue;
+			}
+			overrides.set(result.asset_id, { source: result.contents, path: result.path, cartPath: result.cartPath, updatedAt: result.updatedAt });
+		}
+		return overrides;
+	}
+
+	export async function collectScratchWorkspaceDirtyPaths(root: string): Promise<Set<string>> {
+		const paths = new Set<string>();
+		if (!root) {
+			return paths;
+		}
+		const statePath = buildWorkspaceStateFilePath(root);
+		const payload = await fetchWorkspaceFile(statePath);
+		if (!payload) {
+			return paths;
+		}
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(payload.contents);
+		} catch {
+			return paths;
+		}
+		if (!parsed || typeof parsed !== 'object') {
+			return paths;
+		}
+		const record = parsed as { dirtyFiles?: Array<{ dirtyPath?: string; descriptor?: unknown }> };
+		if (!Array.isArray(record.dirtyFiles)) {
+			return paths;
+		}
+		for (let i = 0; i < record.dirtyFiles.length; i += 1) {
+			const entry = record.dirtyFiles[i];
+			if (!entry || typeof entry !== 'object') {
+				continue;
+			}
+			if (entry.descriptor !== null && entry.descriptor !== undefined) {
+				continue;
+			}
+			if (typeof entry.dirtyPath === 'string' && entry.dirtyPath.length > 0) {
+				paths.add(entry.dirtyPath);
+			}
+		}
+		return paths;
+	}
+
+	export async function fetchWorkspaceFile(path: string): Promise<{ contents: string; updatedAt?: number }> {
+		const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
+		let response: HttpResponse;
+		try {
+			response = await fetch(url, { method: 'GET', cache: 'no-store' });
+		} catch {
+			console.info(`[BmsxConsoleRuntime] Failed to fetch workspace file '${path}'. No server response.`);
+			return null;
+		}
+		if (response.status === 404) {
+			return null;
+		}
+		if (!response.ok) {
+			console.info(`[BmsxConsoleRuntime] Workspace file request failed for '${path}' (HTTP ${response.status}).`);
+			return null;
+		}
+		let payload: unknown;
+		try {
+			payload = await response.json();
+		} catch {
+			console.warn(`[BmsxConsoleRuntime] Failed to parse workspace file response JSON for '${path}'.`);
+			return null;
+		}
+		if (!payload || typeof payload !== 'object') {
+			console.warn(`[BmsxConsoleRuntime] Invalid workspace file response payload for '${path}': ${JSON.stringify(payload)}`);
+			return null;
+		}
+		const record = payload as { contents?: string; updatedAt?: number };
+		if (typeof record.contents !== 'string') {
+			console.warn(`[BmsxConsoleRuntime] Invalid workspace file response payload for '${path}': ${JSON.stringify(payload)}`);
+			return null;
+		}
+		return { contents: record.contents, updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : undefined };
+	}
+
+	export async function deleteWorkspaceFile(path: string): Promise<void> {
+		if (typeof fetch !== 'function') {
+			console.warn('[BmsxConsoleRuntime] Fetch API is not available.');
+			return;
+		}
+		const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
+		try {
+			await fetch(url, { method: 'DELETE' });
+		} catch {
+			console.info('[BmsxConsoleRuntime] Failed to delete workspace file:', url);
+			return;
+		}
+	}
+
+
+	export function persistWorkspaceOverridesToLocalStorage(root: string, overrides: Map<string, WorkspaceOverrideRecord>): void {
+		for (const record of overrides.values()) {
+			if (!record.path) {
+				continue;
+			}
+			const storageKey = buildWorkspaceStorageKey(root, record.path);
+			const payload = {
+				contents: record.source,
+				updatedAt: record.updatedAt ?? Date.now(),
+			};
+			$.platform.storage.setItem(storageKey, JSON.stringify(payload));
+		}
 	}

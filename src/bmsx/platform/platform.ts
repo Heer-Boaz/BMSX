@@ -434,3 +434,11 @@ export interface GameViewHost {
 	createBackend(): Promise<unknown>;
 	getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T];
 }
+
+export type HttpResponse = {
+	ok: boolean;
+	status: number;
+	statusText: string;
+	text(): Promise<string>;
+	json(): Promise<unknown>;
+};

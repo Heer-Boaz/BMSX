@@ -29,7 +29,6 @@ export function createBmsxConsoleModule(cart: BmsxCartridge, options: ConsoleMod
 			return BmsxConsoleRuntime.createInstance({
 				cart,
 				playerIndex: options.playerIndex,
-				storage: $.platform.storage,
 				canonicalization,
 			});
 		},
