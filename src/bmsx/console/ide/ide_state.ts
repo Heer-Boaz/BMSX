@@ -311,7 +311,6 @@ export interface IdeState {
 	workspaceAutosaveRunning: boolean;
 	workspaceAutosaveQueued: boolean;
 	disposeWorkspaceExitListener: (() => void);
-	workspaceRestorePromise: Promise<void>;
 	serverWorkspaceConnected: boolean;
 	lastEscapePressId: number;
 }
@@ -543,7 +542,6 @@ export const ide_state: IdeState = {
 	workspaceAutosaveRunning: false,
 	workspaceAutosaveQueued: false,
 	disposeWorkspaceExitListener: null,
-	workspaceRestorePromise: null,
 	serverWorkspaceConnected: false,
 	lastEscapePressId: null,
 };

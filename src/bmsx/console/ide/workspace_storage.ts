@@ -7,6 +7,7 @@ import { safeclamp } from '../../utils/clamp';
 import type { StorageService, TimerHandle } from '../../platform/platform';
 import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './ide_debugger';
 import { scheduleIdeOnce } from './background_tasks';
+import { taskGate } from '../../core/taskgate';
 import {
 	WORKSPACE_FILE_ENDPOINT,
 	WORKSPACE_MARKER_FILE,
@@ -37,6 +38,7 @@ let serverBackendFailureNotified = false;
 let localBackend: LocalWorkspaceBackend = null;
 let serverRetryScheduled = false;
 let serverRetryHandle: TimerHandle | NodeJS.Timeout = null;
+const workspaceRestoreGate = taskGate.group('workspace_restore');
 
 function resetWorkspaceBackends(): void {
 	serverBackend = null;
@@ -271,7 +273,7 @@ export type WorkspaceAutosavePayload = {
 
 export type DirtyContextEntry = PersistedDirtyEntry & { text: string };
 
-export function setupWorkspacePersistence(projectRootPath: string): void {
+export function initializeWorkspaceStorage(projectRootPath: string): void {
 	stopWorkspaceAutosaveLoop();
 	ide_state.workspaceAutosaveSignature = null;
 	workspaceDirtyCache.clear();
@@ -285,11 +287,16 @@ export function setupWorkspacePersistence(projectRootPath: string): void {
 	}
 	ide_state.workspaceAutosaveEnabled = true;
 	attachWorkspaceExitHandler();
-	ide_state.workspaceRestorePromise = (async () => {
+	const token = workspaceRestoreGate.begin({ blocking: true, tag: 'workspace_restore' });
+	(async () => {
 		try {
 			await configureWorkspaceStorage(projectRootPath);
 			await restoreWorkspaceSessionFromDisk();
 			ide_state.serverWorkspaceConnected = serverBackendAvailable;
+			const runtime = BmsxConsoleRuntime.instance;
+			if (runtime) {
+				await runtime.refreshWorkspaceOverrides(true, { includeServer: true });
+			}
 		} catch (error) {
 			console.warn('[ConsoleCartEditor] Workspace persistence disabled:', error);
 			ide_state.workspaceAutosaveEnabled = false;
@@ -298,12 +305,18 @@ export function setupWorkspacePersistence(projectRootPath: string): void {
 			detachWorkspaceExitHandler();
 			return;
 		} finally {
-			ide_state.workspaceRestorePromise = null;
+			workspaceRestoreGate.end(token);
 		}
 		if (ide_state.workspaceAutosaveEnabled) {
 			scheduleWorkspaceAutosaveLoop();
 		}
-	})();
+		if (ide_state.workspaceAutosaveQueued) {
+			ide_state.workspaceAutosaveQueued = false;
+			void runWorkspaceAutosaveTick();
+		}
+	})().catch((error) => {
+		console.warn('[ConsoleCartEditor] Workspace restore failed:', error);
+	});
 }
 
 export function scheduleWorkspaceAutosaveLoop(): void {
@@ -804,12 +817,9 @@ export async function runWorkspaceAutosaveTick(): Promise<void> {
 	if (!serverBackendAvailable && !serverRetryScheduled) {
 		scheduleServerBackendRetry();
 	}
-	if (ide_state.workspaceRestorePromise) {
-		try {
-			await ide_state.workspaceRestorePromise;
-		} catch {
-			// ignore restore failure
-		}
+	if (!workspaceRestoreGate.ready) {
+		ide_state.workspaceAutosaveQueued = true;
+		return;
 	}
 	if (ide_state.workspaceAutosaveRunning) {
 		ide_state.workspaceAutosaveQueued = true;
@@ -827,10 +837,6 @@ export async function runWorkspaceAutosaveTick(): Promise<void> {
 			}
 		}
 		await persistDirtyContextEntries(dirtyEntries);
-		const runtime = BmsxConsoleRuntime.instance;
-		if (runtime) {
-			runtime.refreshWorkspaceOverrides(false, { includeServer: false });
-		}
 	} catch (error) {
 		console.warn('[ConsoleCartEditor] Workspace autosave failed:', error);
 	} finally {

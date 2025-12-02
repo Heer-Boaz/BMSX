@@ -98,7 +98,7 @@ import { initializeDebuggerUiState } from './ide_debugger';
 import { clampCursorColumn, ensureCursorVisible, revealCursor, setCursorPosition } from './caret';
 import {
 	runWorkspaceAutosaveTick,
-	setupWorkspacePersistence,
+	initializeWorkspaceStorage,
 	stopWorkspaceAutosaveLoop,
 	clearWorkspaceDirtyBuffers,
 } from './workspace_storage';
@@ -181,7 +181,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.resourceSearchField = createInlineTextField();
 	ide_state.lineJumpField = createInlineTextField();
 	ide_state.createResourceField = createInlineTextField();
-	setupWorkspacePersistence(options.workspaceRootPath);
+	initializeWorkspaceStorage(options.workspaceRootPath);
 	applySearchFieldText(ide_state.searchQuery, true);
 	applySymbolSearchFieldText(ide_state.symbolSearchQuery, true);
 	applyResourceSearchFieldText(ide_state.resourceSearchQuery, true);
@@ -1305,7 +1305,7 @@ export function shutdown(): void {
 	ide_state.workspaceAutosaveEnabled = false;
 	workspaceDirtyCache.clear();
 	ide_state.workspaceAutosaveSignature = null;
-	setupWorkspacePersistence(null);
+	initializeWorkspaceStorage(null);
 	if (ide_state.disposeVisibilityListener) {
 		ide_state.disposeVisibilityListener();
 		ide_state.disposeVisibilityListener = null;
@@ -2708,8 +2708,8 @@ export function performHotReloadAndResume(): boolean {
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
 	clearExecutionStopHighlights();
 	deactivate();
-	scheduleRuntimeTask(() => {
-		runtime.resumeFromSnapshot(snapshot);
+	scheduleRuntimeTask(async () => {
+		await runtime.resumeFromSnapshot(snapshot);
 		if (shouldUpdateGeneration) {
 			ide_state.appliedGeneration = targetGeneration;
 		}

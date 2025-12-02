@@ -1322,7 +1322,6 @@ export class BmsxConsoleRuntime extends Service {
 			this.luaChunkEnvironmentsByAssetId.clear();
 			this.luaChunkEnvironmentsByChunkName.clear();
 			this.luaGenericAssetsExecuted.clear();
-			await this.refreshWorkspaceSources();
 			if (this.editor) {
 				this.editor.clearRuntimeErrorOverlay();
 			}
@@ -1332,7 +1331,6 @@ export class BmsxConsoleRuntime extends Service {
 			api.cartdata(this.cart.meta.persistent_id);
 			this.bootLuaProgram({ runInit: true });
 			this.hasCompletedInitialBoot = true;
-			await this.applyServerWorkspaceDirtyLuaOverrides(true);
 		}
 		catch (error) {
 			throw new Error('[BmsxConsoleRuntime]: Failed to boot runtime: ' + error);
@@ -1630,7 +1628,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.redrawAfterStateRestore();
 	}
 
-	public resumeFromSnapshot(state: unknown): void {
+	public async resumeFromSnapshot(state: unknown): Promise<void> {
 		this.clearActiveDebuggerPause();
 		if (!state) {
 			this.luaRuntimeFailed = false;
@@ -1651,8 +1649,7 @@ export class BmsxConsoleRuntime extends Service {
 		// Clear flag and any queued overlay frame before we resume swapping handlers.
 		this.luaRuntimeFailed = false;
 		publishOverlayFrame(null);
-		void this.refreshWorkspaceSources();
-		this.processPendingLuaAssets('resume');
+		await this.refreshWorkspaceOverrides(true, { includeServer: true });
 		this.resumeLuaProgramState(snapshot);
 		this.updateOverlayState(this.consoleMode.isActive, this.editor?.isActive === true, true);
 		this.redrawAfterStateRestore();
@@ -1736,8 +1733,6 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private resumeLuaProgramState(snapshot: BmsxConsoleState): void {
-		this.processPendingLuaAssets('resume');
-
 		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
 		const shouldRunInit = !savedRuntimeFailed;
 		const binding = this.resolveChunkBinding(snapshot.luaChunkName);
@@ -2724,19 +2719,6 @@ export class BmsxConsoleRuntime extends Service {
 				return;
 			}
 			this.runLuaLifecycleHandler('new_game');
-		}
-	}
-
-	private processPendingLuaAssets(context: 'resume' | 'new_game'): void {
-		switch (context) {
-			case 'resume':
-			case 'new_game':
-				const editorOverrides = this.overlayEditorBuffersToRompack();
-				if (editorOverrides.size > 0) {
-					this.applyWorkspaceLuaOverrides(editorOverrides, false);
-					this.reloadChangedLuaAssets(new Set(editorOverrides.keys()));
-				}
-				break;
 		}
 	}
 
@@ -4015,36 +3997,6 @@ export class BmsxConsoleRuntime extends Service {
 		this.applyWorkspaceLuaOverrides(overrides, hotReload);
 	}
 
-	private overlayEditorBuffersToRompack(): Map<string, WorkspaceOverrideRecord> {
-		const overrides = new Map<string, WorkspaceOverrideRecord>();
-		if (!this.editor) {
-			return overrides;
-		}
-		let touched = false;
-		for (const asset of this.listLuaAssets()) {
-			const chunkName = asset.chunk_name;
-			const latest = this.editor.getSourceForChunk(asset.resid, chunkName);
-			if (asset.src !== latest) {
-				asset.src = latest;
-				touched = true;
-			}
-			const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
-			const original = this.rompackOriginalLua.get(asset.resid) ?? '';
-			const normalizedLatest = latest.replace(/\r\n/g, '\n');
-			const normalizedOriginal = original.replace(/\r\n/g, '\n');
-			if (normalizedLatest !== normalizedOriginal) {
-				overrides.set(asset.resid, { source: latest, path: null, cartPath });
-				this.workspaceLuaOverrides.set(asset.resid, { source: latest, path: null, cartPath });
-				continue;
-			}
-			this.workspaceLuaOverrides.delete(asset.resid);
-		}
-		if (touched) {
-			this.luaGenericAssetsExecuted.clear();
-		}
-		return overrides;
-	}
-
 	private applyWorkspaceLuaOverrides(overrides: Map<string, WorkspaceOverrideRecord>, hotReload: boolean): Set<string> {
 		// IMPORTANT: Workspace dirty sources (unsaved edits) must always be honored.
 		// The editor can hot-reload or resume using in-memory dirty buffers that were never persisted
@@ -4111,25 +4063,19 @@ export class BmsxConsoleRuntime extends Service {
 		this.applyWorkspaceLuaOverrides(overrides, hotReload);
 	}
 
-	public refreshWorkspaceOverrides(hotReload: boolean, options?: { includeServer?: boolean; includeEditorBuffers?: boolean }): void {
+	public async refreshWorkspaceOverrides(hotReload: boolean, options?: { includeServer?: boolean; includeEditorBuffers?: boolean }): Promise<void> {
 		const includeServer = options ? options.includeServer !== false : true;
-		const includeEditorBuffers = options ? options.includeEditorBuffers !== false : true;
 		if (includeServer) {
 			this.workspaceOverrideToken = this.workspaceOverrideToken + 1;
 		}
 		this.workspaceLuaOverrides.clear();
 		this.applyLocalWorkspaceDirtyLuaOverrides(hotReload);
 		if (includeServer) {
-			void this.applyServerWorkspaceDirtyLuaOverrides(hotReload).catch((error) => {
+			try {
+				await this.applyServerWorkspaceDirtyLuaOverrides(hotReload);
+			} catch (error) {
 				console.warn('[BmsxConsoleRuntime] Failed to refresh server workspace overrides; keeping local overrides active.', error);
-			});
-		}
-		if (!includeEditorBuffers) {
-			return;
-		}
-		const editorOverrides = this.overlayEditorBuffersToRompack();
-		if (editorOverrides.size > 0) {
-			this.applyWorkspaceLuaOverrides(editorOverrides, hotReload);
+			}
 		}
 	}
 
@@ -4179,11 +4125,6 @@ export class BmsxConsoleRuntime extends Service {
 		const merged = await this.mergeWorkspaceOverrides(root, localOverrides, serverOverrides);
 		const dirtyChanged = this.applyWorkspaceLuaOverrides(merged, false);
 		for (const asset_id of dirtyChanged) {
-			changedAssets.add(asset_id);
-		}
-		const editorOverrides = this.overlayEditorBuffersToRompack();
-		const editorChanged = this.applyWorkspaceLuaOverrides(editorOverrides, false);
-		for (const asset_id of editorChanged) {
 			changedAssets.add(asset_id);
 		}
 	}
@@ -4375,7 +4316,6 @@ export class BmsxConsoleRuntime extends Service {
 			this.storageService.removeItem(stateKey);
 			await this.deleteWorkspaceFile(statePath);
 		}
-		await this.refreshWorkspaceSources();
 		if (this.luaInterpreter && this.listLuaAssets().length > 0) {
 			const asset = this.cart.lua[this.cart.entry];
 			const chunkName = asset.chunk_name;
