@@ -1,6 +1,5 @@
 import type { StorageService, InputEvt } from '../platform/platform';
 import { BmsxConsoleApi } from './api';
-import { CONSOLE_API_METHOD_METADATA } from './api_metadata';
 import { BmsxConsoleStorage } from './storage';
 import type { ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor, ConsoleLuaMemberCompletionRequest, ConsoleLuaMemberCompletion, BmsxConsoleLuaPrimaryAssetWithSource } from './types';
 import type { BmsxCartridge, NativeRegisteredObject } from '../rompack/rompack';
@@ -33,7 +32,7 @@ import type { RuntimeErrorDetails } from './ide/types';
 import { type FaultSnapshot } from './ide/render/render_error_overlay';
 import type { StackTraceFrame } from '../lua/runtime';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
-import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from './lua_builtins';
+import { DEFAULT_LUA_BUILTIN_FUNCTIONS, isLuaScriptError, registerApiBuiltins, registerLuaBuiltin } from './lua_builtins';
 import type { ConsoleFontVariant } from './font';
 import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
 import {
@@ -45,10 +44,8 @@ import {
 	type WorkspaceOverrideRecord,
 } from './workspace';
 import { normalizeLuaAsset } from 'bmsx/rompack/rompack';
-import { deep_clone } from '../utils/deep_clone';
 import { WorldObject } from '../core/object/worldobject';
 import { Input } from '../input/input';
-import type { InputMap, KeyboardInputMapping, GamepadInputMapping, PointerInputMapping, KeyboardBinding, GamepadBinding, PointerBinding } from '../input/inputtypes';
 import { ConsoleMode } from './console_mode';
 import { EDITOR_TOGGLE_KEY, CONSOLE_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, GAME_PAUSE_KEY } from './ide/constants';
 import {
@@ -56,14 +53,13 @@ import {
 	type DebuggerResumeMode,
 	type DebuggerPauseDisplayPayload
 } from './ide/ide_debugger';
-import { arrayify } from '../utils/arrayify';
 import { fallbackclamp } from '../utils/clamp';
 import { ConsoleCommandDispatcher } from './console_commands';
 import { CanonicalizationType } from '../rompack/rompack';
 import { KeyModifier } from '../input/playerinput';
 import { LuaLexer } from '../lua/lexer';
 import { Component } from '../component/basecomponent';
-import { buildLuaModuleAliases, resolveLuaModulePackageKey, type LuaRequireModuleRecord } from './lua_module_loader';
+import { buildLuaModuleAliases, type LuaRequireModuleRecord } from './lua_module_loader';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -79,7 +75,7 @@ const DEFAULT_LUA_FAILURE_POLICY: LuaPersistenceFailurePolicy = {
 	restore: 'error',
 };
 
-const CONSOLE_BUTTON_ACTIONS: ReadonlyArray<string> = [
+export const CONSOLE_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'console_left',
 	'console_right',
 	'console_up',
@@ -96,11 +92,11 @@ const CONSOLE_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'console_lb',
 ];
 
-const CONSOLE_PREVIEW_MAX_ENTRIES = 12;
-const CONSOLE_PREVIEW_MAX_DEPTH = 2;
+export const CONSOLE_PREVIEW_MAX_ENTRIES = 12;
+export const CONSOLE_PREVIEW_MAX_DEPTH = 2;
 
-// Flip back to 'msx' to restore the legacy editor font.
-const EDITOR_FONT_VARIANT: ConsoleFontVariant = 'tiny';
+// Flip back to 'msx' to restore default font in console/editor
+export const EDITOR_FONT_VARIANT: ConsoleFontVariant = 'tiny';
 
 export type BmsxConsoleRuntimeOptions = {
 	cart: BmsxCartridge;
@@ -264,10 +260,10 @@ export class BmsxConsoleRuntime extends Service {
 	private cart: BmsxCartridge;
 	private readonly storage: BmsxConsoleStorage;
 	private readonly storageService: StorageService;
-	private readonly apiFunctionNames = new Set<string>();
-	private readonly luaBuiltinMetadata = new Map<string, ConsoleLuaBuiltinDescriptor>();
+	public readonly apiFunctionNames = new Set<string>();
+	public readonly luaBuiltinMetadata = new Map<string, ConsoleLuaBuiltinDescriptor>();
 	private _activeIdeFontVariant: ConsoleFontVariant = EDITOR_FONT_VARIANT;
-	private playerIndex: number;
+	public playerIndex: number;
 	private editor!: ConsoleCartEditor;
 	private readonly overlayRenderBackend = new ConsoleRenderFacade();
 	public readonly consoleMode!: ConsoleMode;
@@ -296,7 +292,7 @@ export class BmsxConsoleRuntime extends Service {
 	private luaNewGameFunction: LuaFunctionValue = null;
 	private luaUpdateFunction: LuaFunctionValue = null;
 	private luaDrawFunction: LuaFunctionValue = null;
-	private luaChunkName: string = null;
+	public luaChunkName: string = null;
 	private luaVmInitialized = false;
 	private luaRuntimeFailed = false;
 	public get hasLuaRuntimeFailed(): boolean {
@@ -402,7 +398,7 @@ export class BmsxConsoleRuntime extends Service {
 		await this.boot();
 	}
 
-	private extractErrorMessage(error: unknown): string {
+	public extractErrorMessage(error: unknown): string {
 		if (typeof error === 'string') {
 			return error;
 		}
@@ -428,10 +424,6 @@ export class BmsxConsoleRuntime extends Service {
 		return { line: null, column: null, chunkName: null };
 	}
 
-	private isLuaScriptError(error: unknown): error is LuaError | LuaRuntimeError | LuaSyntaxError {
-		return error instanceof LuaError || error instanceof LuaRuntimeError || error instanceof LuaSyntaxError;
-	}
-
 	private convertToError(error: unknown): Error {
 		return error instanceof Error ? error : new Error(String(error));
 	}
@@ -440,7 +432,7 @@ export class BmsxConsoleRuntime extends Service {
 		interpreter.setHostAdapter({
 			toLua: (value) => this.jsToLua(value),
 			toJs: (luaValue) => {
-				const moduleId = this.moduleIdFor(null, this.luaChunkName );
+				const moduleId = this.cart.chunk2lua[this.luaChunkName]?.resid ?? this.luaChunkName;
 				return this.luaValueToJs(luaValue, { moduleId, path: [] });
 			},
 			serializeNative: (native) => this.snapshotEncodeNative(native),
@@ -674,7 +666,7 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		const pressId = typeof event.pressId === 'number' ? event.pressId : null;
-		const existing = this.consoleHotkeyLatch.get('debugger-f8-step') ;
+		const existing = this.consoleHotkeyLatch.get('debugger-f8-step');
 		if (pressId !== null) {
 			if (existing === pressId) {
 				return;
@@ -936,7 +928,7 @@ export class BmsxConsoleRuntime extends Service {
 			: null;
 		const debuggerLabel = suspension ? `${suspension.reason} @ ${suspensionLocation ?? suspension.location.chunk}` : 'idle';
 		const faultLabel = this.luaRuntimeFailed ? 'FAULTED' : 'OK';
-		const root = $.rompack.project_root_path ;
+		const root = $.rompack.project_root_path;
 		const lines: string[] = [];
 		lines.push(`Cart: ${this.cart.meta.title} (${this.cart.meta.persistent_id})`);
 		lines.push(`Lua VM: ${vmState} | Entry: ${chunkLabel}`);
@@ -1254,6 +1246,19 @@ export class BmsxConsoleRuntime extends Service {
 		return this.cart.lua[asset_id];
 	}
 
+	private resolveChunkBinding(chunkName?: string, assetId?: string): { asset: RomLuaAsset; chunkName: string; assetId: string } {
+		if (assetId) {
+			const asset = this.getLuaAsset(assetId);
+			return { asset, chunkName: chunkName ?? asset.chunk_name, assetId: asset.resid };
+		}
+		if (chunkName) {
+			const asset = this.cart.chunk2lua![chunkName] ?? this.getLuaAsset(chunkName);
+			return { asset, chunkName, assetId: asset.resid };
+		}
+		const asset = this.getLuaAsset(this.cart.entry);
+		return { asset, chunkName: asset.chunk_name, assetId: asset.resid };
+	}
+
 	private listLuaAssets(): RomLuaAsset[] {
 		return Object.values(this.cart.lua);
 	}
@@ -1329,20 +1334,12 @@ export class BmsxConsoleRuntime extends Service {
 				await $.reset_to_fresh_world();
 			}
 			api.cartdata(this.cart.meta.persistent_id);
-			if (this.listLuaAssets().length > 0) {
-				this.bootLuaProgram({ runInit: true });
-			} else {
-				this.resetLuaInteroperabilityState();
-				this.cart.init();
-				if (this.cart.new_game) {
-					this.cart.new_game();
-				}
-			}
+			this.bootLuaProgram({ runInit: true });
 			this.hasCompletedInitialBoot = true;
 			await this.applyServerWorkspaceDirtyLuaOverrides(true);
 		}
 		catch (error) {
-			throw '[BmsxConsoleRuntime]: Failed to boot runtime: ' + error;
+			throw new Error('[BmsxConsoleRuntime]: Failed to boot runtime: ' + error);
 		}
 		finally {
 			this.luaVmGate.end(vmToken);
@@ -1533,13 +1530,13 @@ export class BmsxConsoleRuntime extends Service {
 		const viewport = { width: viewportSize.width, height: viewportSize.height };
 		// Check the primary asset ID for the currently loaded program
 		// Note that this can be null if the program was not loaded from source or has not been saved yet (then the type is BmsxConsoleLuaInlineProgram)!
-		const entryAssetId = this.resolveEntryAsset().resid;
+		const entryAssetId = this.cart.entry;
 		this.editor = createConsoleCartEditor({
 			playerIndex: this.playerIndex,
 			metadata: this.cart.meta,
 			viewport,
 			canonicalization: this.canonicalization,
-			loadSource: () => this.listLuaAssets().length > 0 ? this.getProgramEntrySource() : '',
+			loadSource: () => { return this.listLuaAssets().length > 0 ? this.cart.lua[this.cart.entry]?.src : '' },
 			saveSource: (source: string) => this.saveLuaProgram(source),
 			listResources: () => {
 				const descriptors: ConsoleResourceDescriptor[] = [];
@@ -1564,7 +1561,7 @@ export class BmsxConsoleRuntime extends Service {
 			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
 			listBuiltinLuaFunctions: () => this.listLuaBuiltinFunctions(),
 			fontVariant: this._activeIdeFontVariant,
-			workspaceRootPath: $.rompack.project_root_path ,
+			workspaceRootPath: $.rompack.project_root_path,
 			themeVariant: this.cart.meta.ide_theme,
 		});
 		this.flushLuaWarnings();
@@ -1599,9 +1596,9 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private async resetRuntimeToFreshState() {
-		const asset = this.resolveEntryAsset();
+		const asset = this.cart.lua[this.cart.entry];
 		this.workspaceLuaOverrides.delete(asset.resid);
-		this.luaChunkName = this.resolveProgramEntryChunkName();
+		this.luaChunkName = asset.chunk_name;
 		this.luaVmInitialized = false;
 		await this.boot();
 	}
@@ -1668,29 +1665,27 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private hotReloadProgramEntry(params: BmsxConsoleLuaPrimaryAssetWithSource): void {
-		const canonicalChunk = this.canonicalizeProgramEntryChunkName(params.chunkName);
-		const previousChunkState = this.captureChunkState(canonicalChunk);
-		const previousChunkTables = this.captureChunkTables(canonicalChunk);
+		const binding = this.resolveChunkBinding(params.chunkName, params.asset_id);
+		const previousChunkState = this.captureChunkState(binding.chunkName);
+		const previousChunkTables = this.captureChunkTables(binding.chunkName);
 		const previousGlobals = this.captureGlobalStateForReload();
 		const interpreter = this.luaInterpreter;
-		const entryAsset = this.resolveEntryAssetForChunk(canonicalChunk);
-		let entryAssetId: string = params.asset_id || entryAsset.resid;
-		const hotModuleId = this.moduleIdFor(entryAssetId, canonicalChunk);
+		const hotModuleId = this.cart.chunk2lua[binding.chunkName]?.resid ?? binding.chunkName;
 		interpreter.clearLastFaultEnvironment();
-		const results = interpreter.execute(params.source, canonicalChunk);
+		const results = interpreter.execute(params.source, binding.chunkName);
 		this.wrapLuaExecutionResults(hotModuleId, results);
-		this.cacheChunkEnvironment(canonicalChunk, entryAssetId, hotModuleId);
+		this.cacheChunkEnvironment(binding.chunkName, binding.assetId, hotModuleId);
 		this.restoreChunkState(interpreter.chunkEnvironment, previousChunkState);
 		this.restoreChunkTables(interpreter.chunkEnvironment, previousChunkTables);
 		this.restoreGlobalStateForReload(previousGlobals);
 		this.rebindChunkEnvironmentHandlers(hotModuleId);
 		this.bindLifecycleHandlers();
 		this.luaRuntimeFailed = false;
-		this.luaChunkName = canonicalChunk;
+		this.luaChunkName = binding.chunkName;
 		this.luaVmInitialized = true;
 		const hotSource = params.source;
-		this.refreshLuaHandlersForChunk(canonicalChunk, hotSource);
-		this.refreshLuaModulesOnResume(canonicalChunk);
+		this.refreshLuaHandlersForChunk(binding.chunkName, hotSource);
+		this.refreshLuaModulesOnResume(binding.chunkName);
 		this.clearNativeMemberCompletionCache();
 		this.clearEditorErrorOverlaysIfNoFault();
 	}
@@ -1722,17 +1717,16 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private reloadLuaProgramState(source: string, chunkName: string, asset_id?: string, options?: { runInit?: boolean }): void {
+	private reloadLuaProgramState(source: string, options?: { runInit?: boolean; chunkName?: string; assetId?: string }): void {
 		const runInit = options?.runInit !== false;
-		const canonicalChunk = this.canonicalizeProgramEntryChunkName(chunkName);
-		const programAssetId = asset_id ?? this.resolveEntryAssetForChunk(canonicalChunk).resid;
-		this.applyProgramEntrySourceToCartridge(source, canonicalChunk, programAssetId);
-		this.luaChunkName = canonicalChunk;
+		const binding = this.resolveChunkBinding(options?.chunkName, options?.assetId);
+		this.applyProgramEntrySourceToCartridge(source, binding.chunkName, binding.assetId);
+		this.luaChunkName = binding.chunkName;
 		if (!this.luaInterpreter) {
 			this.bootLuaProgram({ runInit });
 		}
 		else {
-			this.hotReloadProgramEntry({ asset_id: programAssetId, source, chunkName: canonicalChunk });
+			this.hotReloadProgramEntry({ asset_id: binding.assetId, source, chunkName: binding.chunkName });
 			if (runInit) {
 				if (this.runLuaLifecycleHandler('init')) {
 					// Initialization successful
@@ -1748,25 +1742,25 @@ export class BmsxConsoleRuntime extends Service {
 	private resumeLuaProgramState(snapshot: BmsxConsoleState): void {
 		this.processPendingLuaAssets('resume');
 
-		const targetChunkName = this.canonicalizeProgramEntryChunkName(snapshot.luaChunkName );
 		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
 		const shouldRunInit = !savedRuntimeFailed;
+		const binding = this.resolveChunkBinding(snapshot.luaChunkName);
 		let source: string;
 		try {
-			source = this.getProgramEntrySource();
+			source = this.resolveSourceForChunk(binding.chunkName, binding.assetId);
 		}
 		catch (error) {
 			throw this.convertToError(error);
 		}
-		this.applyProgramEntrySourceToCartridge(source, targetChunkName);
-		this.luaChunkName = targetChunkName;
+		this.applyProgramEntrySourceToCartridge(source, binding.chunkName, binding.assetId);
+		this.luaChunkName = binding.chunkName;
 		try {
-			this.hotReloadProgramEntry({ source, chunkName: targetChunkName });
+			this.hotReloadProgramEntry({ source, chunkName: binding.chunkName, asset_id: binding.assetId });
 		}
 		catch (error) {
 			this.handleLuaError(error);
 		}
-		this.refreshLuaModulesOnResume(targetChunkName);
+		this.refreshLuaModulesOnResume(binding.chunkName);
 		this.clearNativeMemberCompletionCache();
 		if (shouldRunInit) {
 			this.runLuaLifecycleHandler('init');
@@ -1778,21 +1772,15 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private reinitializeLuaProgramFromSnapshot(snapshot: BmsxConsoleState, options: { runInit: boolean; hotReload: boolean }): void {
-		const targetChunkName = this.canonicalizeProgramEntryChunkName(snapshot.luaChunkName);
-		let source: string;
-		try {
-			source = this.getProgramEntrySource();
-		}
-		catch (error) {
-			throw this.convertToError(error);
-		}
+		const binding = this.resolveChunkBinding(this.cart.lua[this.cart.entry].chunk_name, this.cart.entry);
+		const source = binding.asset.src;
 
-		this.applyProgramEntrySourceToCartridge(source, targetChunkName);
-		this.luaChunkName = targetChunkName;
+		this.applyProgramEntrySourceToCartridge(source, binding.chunkName, binding.assetId);
+		this.luaChunkName = binding.chunkName;
 
 		this.initializeLuaInterpreterFromSnapshot({
 			source,
-			chunkName: targetChunkName,
+			chunkName: binding.chunkName,
 			snapshot,
 			runInit: options.runInit,
 			hotReload: options.hotReload,
@@ -1867,8 +1855,9 @@ export class BmsxConsoleRuntime extends Service {
 	private initializeLuaInterpreterFromSnapshot(params: { source: string; chunkName: string; snapshot: BmsxConsoleState; runInit: boolean; hotReload: boolean }): void {
 		const snapshot = params.snapshot;
 		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
+		const binding = this.resolveChunkBinding(params.chunkName);
 		if (params.hotReload) {
-			this.hotReloadProgramEntry({ source: params.source, chunkName: params.chunkName });
+			this.hotReloadProgramEntry({ source: params.source, chunkName: binding.chunkName, asset_id: binding.assetId });
 			if (params.runInit && !savedRuntimeFailed) {
 				this.runLuaLifecycleHandler('init');
 				this.runLuaLifecycleHandler('new_game');
@@ -1891,17 +1880,15 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaDrawFunction = null;
 		this.luaRuntimeFailed = false;
 
-		const entryAsset = this.resolveEntryAssetForChunk(params.chunkName);
-		const programasset_id: string = entryAsset.resid;
-		this.registerProgramChunk(entryAsset, params.chunkName);
+		this.registerLuaChunkResource(binding.chunkName, { asset_id: binding.assetId, path: binding.asset.normalized_source_path });
 
-		this.registerApiBuiltins(interpreter);
+		registerApiBuiltins(interpreter);
 		interpreter.setReservedIdentifiers(this.apiFunctionNames);
 
-		const moduleId = this.moduleIdFor(programasset_id, params.chunkName);
-		const results = interpreter.execute(params.source, params.chunkName);
+		const moduleId = this.cart.chunk2lua[binding.chunkName]?.resid ?? binding.chunkName;
+		const results = interpreter.execute(params.source, binding.chunkName);
 		this.wrapLuaExecutionResults(moduleId, results);
-		this.cacheChunkEnvironment(params.chunkName, programasset_id, moduleId);
+		this.cacheChunkEnvironment(binding.chunkName, binding.assetId, moduleId);
 		this.luaVmInitialized = true;
 
 		this.bindLifecycleHandlers();
@@ -1972,7 +1959,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private recordDebuggerExceptionFault(signal: LuaDebuggerPauseSignal): void {
 		const interpreter = this.luaInterpreter;
-		const exception = interpreter?.consumeLastDebuggerException?.() ;
+		const exception = interpreter?.consumeLastDebuggerException?.();
 		if (this.faultSnapshot && this.luaRuntimeFailed) {
 			this.faultOverlayNeedsFlush = true;
 			return;
@@ -1992,7 +1979,7 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		const message = this.extractErrorMessage(exception);
-		let chunkName: string = exception.chunkName ;
+		let chunkName: string = exception.chunkName;
 		if (!chunkName || chunkName.length === 0) {
 			chunkName = signal.location.chunk;
 		}
@@ -2700,8 +2687,8 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private bootLuaProgram(options: { runInit: boolean }): void {
-		const source = this.getProgramEntrySource();
-		const chunkName = this.resolveProgramEntryChunkName();
+		const source = this.cart.lua[this.cart.entry].src;
+		const chunkName = this.cart.lua[this.cart.entry].chunk_name;
 
 		this.resetLuaInteroperabilityState();
 		const interpreter = createLuaInterpreter(this.canonicalization);
@@ -2716,12 +2703,12 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaRuntimeFailed = false;
 
 		try {
-			const asset = this.resolveEntryAssetForChunk(chunkName);
-			this.registerProgramChunk(asset, chunkName);
-			this.registerApiBuiltins(interpreter);
+			const asset = this.cart.lua[this.cart.entry];
+			this.registerLuaChunkResource(chunkName, { asset_id: asset.resid, path: asset.normalized_source_path });
+			registerApiBuiltins(interpreter);
 			interpreter.setReservedIdentifiers(this.apiFunctionNames);
 			const programasset_id = asset.resid;
-			const moduleId = this.moduleIdFor(programasset_id, chunkName);
+			const moduleId = this.cart.chunk2lua[chunkName]?.resid ?? chunkName;
 			const results = interpreter.execute(source, chunkName);
 			this.wrapLuaExecutionResults(moduleId, results);
 			this.cacheChunkEnvironment(chunkName, programasset_id, moduleId);
@@ -2758,12 +2745,12 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public async saveLuaProgram(source: string): Promise<void> {
-		const cartSavePath = this.resolveLuaEntrySourcePath();
+		const cartSavePath = this.cart.lua[this.cart.entry].source_path;
 		if (!cartSavePath) {
 			throw new Error('[BmsxConsoleRuntime] Lua source path unavailable for active Lua asset.');
 		}
-		const previousChunkName = this.resolveProgramEntryChunkName();
-		const previousSource = this.getProgramEntrySource();
+		const previousChunkName = this.cart.lua[this.cart.entry].chunk_name;
+		const previousSource = this.cart.lua[this.cart.entry].src;
 		const targetChunkName = previousChunkName;
 		const shouldValidate = this.validationStrategy === BmsxLuaValidationStrategy.FullExecution;
 		if (!shouldValidate && $.debug === true) {
@@ -2791,14 +2778,13 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		try {
 			await this.persistLuaSourceToFilesystem(cartSavePath, source);
-			const programasset_id = this.resolveEntryAssetForChunk(targetChunkName).resid;
+			const programasset_id = this.cart.lua[this.cart.entry].resid;
 			const programAsset = this.getLuaAsset(programasset_id);
 			programAsset.src = source;
 			this.rompackOriginalLua.set(programasset_id, source);
 			this.updateWorkspaceOverrideMap(programAsset, source, cartSavePath);
 			try {
-				const asset = this.resolveEntryAssetForChunk(targetChunkName);
-				this.reloadLuaProgramState(source, targetChunkName, asset.resid);
+				this.reloadLuaProgramState(source, { runInit: true });
 			}
 			catch (error) {
 				this.handleLuaError(error);
@@ -2821,12 +2807,10 @@ export class BmsxConsoleRuntime extends Service {
 	public async reloadProgramAndResetWorld(options?: { runInit?: boolean }): Promise<void> {
 		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'reload_and_reset' });
 		try {
-			const chunkName = this.luaChunkName ?? this.resolveProgramEntryChunkName();
-			const asset = this.resolveEntryAssetForChunk(chunkName);
-			const source = this.getProgramEntrySource();
+			const source = this.cart.lua[this.cart.entry].src;
 			await $.reset_to_fresh_world();
 			try {
-				this.reloadLuaProgramState(source, chunkName, asset.resid, { runInit: options?.runInit !== false });
+				this.reloadLuaProgramState(source, { runInit: options?.runInit !== false });
 			} catch (error) {
 				this.handleLuaError(error);
 			}
@@ -2838,15 +2822,15 @@ export class BmsxConsoleRuntime extends Service {
 
 	private validateLuaSource(source: string, chunkName: string): void {
 		const previousChunk = this.luaChunkName;
-		this.luaChunkName = chunkName;
-		const asset = this.resolveEntryAssetForChunk(chunkName);
-		this.registerProgramChunk(asset, chunkName);
+		const binding = this.resolveChunkBinding(chunkName);
+		this.luaChunkName = binding.chunkName;
+		this.registerLuaChunkResource(binding.chunkName, { asset_id: binding.assetId, path: binding.asset.normalized_source_path });
 		try {
 			const interpreter = createLuaInterpreter(this.canonicalization);
 			this.configureInterpreter(interpreter);
-			this.registerApiBuiltins(interpreter);
+			registerApiBuiltins(interpreter);
 			interpreter.setReservedIdentifiers(this.apiFunctionNames);
-			const chunk = interpreter.parseChunk(source, chunkName);
+			const chunk = interpreter.parseChunk(source, binding.chunkName);
 			interpreter.validateChunkIdentifiers(chunk);
 		}
 		finally {
@@ -2867,80 +2851,6 @@ export class BmsxConsoleRuntime extends Service {
 	private invokeLuaFunction(fn: LuaFunctionValue, args: unknown[]): LuaValue[] {
 		const luaArgs = args.map((value) => this.jsToLua(value));
 		return fn.call(luaArgs);
-	}
-
-	private applyInputMappingFromLua(mapping: Record<string, unknown>, playerIndex: number): void {
-		const keyboardLayer = this.convertLuaInputLayer(mapping['keyboard'], 'keyboard') as KeyboardInputMapping;
-		const gamepadLayer = this.convertLuaInputLayer(mapping['gamepad'], 'gamepad') as GamepadInputMapping;
-		const pointerLayer = this.convertLuaInputLayer(mapping['pointer'], 'pointer') as PointerInputMapping;
-
-		const existing = Input.instance.getPlayerInput(playerIndex).inputMap;
-		const next: InputMap = {
-			keyboard: keyboardLayer ?? existing?.keyboard ?? {},
-			gamepad: gamepadLayer ?? existing?.gamepad ?? {},
-			pointer: pointerLayer ?? existing?.pointer ?? Input.clonePointerMapping(),
-		};
-		$.set_inputmap(playerIndex, next);
-	}
-
-	private convertLuaInputLayer(value: unknown, kind: 'keyboard' | 'gamepad' | 'pointer'): KeyboardInputMapping | GamepadInputMapping | PointerInputMapping {
-		if (value === undefined || value === null) {
-			return undefined;
-		}
-		if (typeof value !== 'object') {
-			throw this.createApiRuntimeError(`set_input_map: ${kind} mapping must be a table.`);
-		}
-		const result: Record<string, Array<KeyboardBinding | GamepadBinding | PointerBinding>> = {};
-		for (const [action, rawBindings] of Object.entries(value as Record<string, unknown>)) {
-			if (!action || typeof action !== 'string') {
-				continue;
-			}
-			const entries = this.normalizeBindingList(kind, action, rawBindings);
-			if (entries.length === 0) {
-				continue;
-			}
-			result[action] = entries as Array<KeyboardBinding | GamepadBinding | PointerBinding>;
-		}
-		return result as KeyboardInputMapping | GamepadInputMapping | PointerInputMapping;
-	}
-
-	private normalizeBindingList(kind: 'keyboard' | 'gamepad' | 'pointer', action: string, rawBindings: unknown): Array<KeyboardBinding | GamepadBinding | PointerBinding> {
-		const items = arrayify(rawBindings);
-		const normalized: Array<KeyboardBinding | GamepadBinding | PointerBinding> = [];
-		for (const item of items) {
-			if (item === undefined || item === null) {
-				throw this.createApiRuntimeError(`set_input_map: ${kind} binding for action '${action}' cannot be nil.`);
-			}
-			if (typeof item === 'string') {
-				if (item.length === 0) {
-					throw this.createApiRuntimeError(`set_input_map: ${kind} binding for action '${action}' cannot be an empty string.`);
-				}
-				normalized.push(item);
-				continue;
-			}
-			if (typeof item === 'object') {
-				const record = item as Record<string, unknown>;
-				const idValue = record.id;
-				if (typeof idValue !== 'string' || idValue.length === 0) {
-					throw this.createApiRuntimeError(`set_input_map: ${kind} binding for action '${action}' must provide a non-empty string id.`);
-				}
-				const binding: { id: string; scale?: number; invert?: boolean } = { id: idValue };
-				if ('scale' in record && record.scale !== undefined && record.scale !== null) {
-					const scale = Number(record.scale);
-					if (!Number.isFinite(scale)) {
-						throw this.createApiRuntimeError(`set_input_map: ${kind} binding for action '${action}' has an invalid scale value.`);
-					}
-					binding.scale = scale;
-				}
-				if ('invert' in record && record.invert !== undefined && record.invert !== null) {
-					binding.invert = Boolean(record.invert);
-				}
-				normalized.push(binding as KeyboardBinding | GamepadBinding | PointerBinding);
-				continue;
-			}
-			throw this.createApiRuntimeError(`set_input_map: ${kind} binding for action '${action}' must be a string or a table with an 'id' field.`);
-		}
-		return normalized;
 	}
 
 	public handleLuaError(error: unknown): void {
@@ -3165,285 +3075,13 @@ export class BmsxConsoleRuntime extends Service {
 		};
 	}
 
-	private createApiRuntimeError(message: string): LuaRuntimeError {
+	public createApiRuntimeError(message: string): LuaRuntimeError {
 		this.luaInterpreter.markFaultEnvironment();
 		const range = this.luaInterpreter.getCurrentCallRange();
 		const chunkName = range ? range.chunkName : (this.luaChunkName ?? 'lua');
 		const line = range ? range.start.line : 0;
 		const column = range ? range.start.column : 0;
 		return new LuaRuntimeError(message, chunkName, line, column);
-	}
-
-	private registerApiBuiltins(interpreter: LuaInterpreter): void {
-		this.apiFunctionNames.clear();
-
-		const env = interpreter.globalEnvironment;
-		const resolveButtonAction = (value: LuaValue, fnName: string): string => {
-			if (typeof value !== 'number' || Number.isNaN(value)) {
-				throw this.createApiRuntimeError(`${fnName}(button [, player]) expects a numeric button index.`);
-			}
-			const index = Math.trunc(value);
-			if (index < 0 || index >= CONSOLE_BUTTON_ACTIONS.length) {
-				throw this.createApiRuntimeError(`${fnName}(button [, player]) button index must be between 0 and ${CONSOLE_BUTTON_ACTIONS.length - 1}.`);
-			}
-			return CONSOLE_BUTTON_ACTIONS[index];
-		};
-
-		const resolvePlayerIndex = (value: LuaValue, fnName: string): number => {
-			if (value === undefined || value === null) {
-				throw this.createApiRuntimeError(`${fnName}(button [, player]) expects the optional player index to be numeric.`);
-			}
-			if (typeof value !== 'number' || Number.isNaN(value)) {
-				throw this.createApiRuntimeError(`${fnName}(button [, player]) expects the optional player index to be numeric.`);
-			}
-			const normalized = Math.trunc(value);
-			if (normalized < 0) {
-				throw this.createApiRuntimeError(`${fnName}(button [, player]) player index cannot be negative.`);
-			}
-			return normalized + 1;
-		};
-
-		const registerButtonFunction = (fnName: 'btn' | 'btnp' | 'btnr', modifier: string) => {
-			const native = createLuaNativeFunction(fnName, (args) => {
-				if (args.length === 0) {
-					throw this.createApiRuntimeError(`${fnName}(button [, player]) requires at least one argument.`);
-				}
-				const action = resolveButtonAction(args[0], fnName);
-				const playerIndex = resolvePlayerIndex(args.length >= 2 ? args[1] : undefined, fnName);
-				let hasBinding = false;
-				try {
-					const playerInput = Input.instance.getPlayerInput(playerIndex);
-					const inputMap = playerInput.inputMap;
-					if (inputMap) {
-						const keyboardBindings = inputMap.keyboard?.[action];
-						const gamepadBindings = inputMap.gamepad?.[action];
-						const pointerBindings = inputMap.pointer?.[action];
-						hasBinding = Boolean(
-							(keyboardBindings && keyboardBindings.length > 0) ||
-							(gamepadBindings && gamepadBindings.length > 0) ||
-							(pointerBindings && pointerBindings.length > 0)
-						);
-					}
-				} catch {
-					hasBinding = false;
-					throw this.createApiRuntimeError(`${fnName}(button [, player]) expects a valid input mapping to be defined.`);
-				}
-				if (!hasBinding) {
-					return [false];
-				}
-				const actionDefinition = `${action}${modifier}`;
-				try {
-					const triggered = api.check_action_state(playerIndex, actionDefinition);
-					return [triggered];
-				} catch (error) {
-					if (error instanceof Error && /unknown actions/i.test(error.message)) {
-						throw this.createApiRuntimeError(`${fnName}(button [, player]) unknown action '${actionDefinition}'`);
-					}
-					throw error;
-				}
-			});
-			this.registerLuaGlobal(env, fnName, native);
-			this.registerLuaBuiltin({
-				name: fnName,
-				params: ['button', 'player?'],
-				signature: `${fnName}(button [, player])`,
-				parameterDescriptions: [
-					'Button index (0=left,1=right,2=up,3=down,4=O,5=X).',
-					'Optional player index (0-based).',
-				],
-			});
-		};
-
-		registerButtonFunction('btn', '[p]');
-		registerButtonFunction('btnp', '[gp]');
-		registerButtonFunction('btnr', '[jr]');
-
-		const setInputMapNative = createLuaNativeFunction('set_input_map', (args) => {
-			if (args.length === 0 || !isLuaTable(args[0])) {
-				throw this.createApiRuntimeError('set_input_map(mapping [, player]) requires a table as the first argument.');
-			}
-			const mappingTable = args[0] as LuaTable;
-			const targetPlayer = args.length >= 2
-				? resolvePlayerIndex(args[1], 'set_input_map')
-				: this.playerIndex;
-			const moduleId = this.moduleIdFor(null, this.luaChunkName );
-			const marshalCtx = this.ensureMarshalContext({ moduleId, path: [] });
-			const mappingValue = this.luaValueToJs(mappingTable, marshalCtx);
-			if (!mappingValue || typeof mappingValue !== 'object') {
-				throw this.createApiRuntimeError('set_input_map(mapping [, player]) requires mapping to be a table.');
-			}
-			this.applyInputMappingFromLua(mappingValue as Record<string, unknown>, targetPlayer);
-			return [];
-		});
-		this.registerLuaGlobal(env, 'set_input_map', setInputMapNative);
-		this.registerLuaBuiltin({
-			name: 'set_input_map',
-			params: ['mapping', 'player?'],
-			signature: 'set_input_map(mapping [, player])',
-			description: 'Replaces the input bindings for the console player. The optional player argument is zero-based.',
-		});
-
-		const members = this.collectApiMembers();
-		for (const { name, kind, descriptor } of members) {
-			if (!descriptor) {
-				continue;
-			}
-			if (kind === 'method') {
-				switch (name) {
-					case 'btn':
-					case 'btnp':
-					case 'btnr':
-					case 'set_input_map':
-						// Already registered above
-						continue;
-				}
-				const callable = descriptor.value;
-				if (typeof callable !== 'function') {
-					throw this.createApiRuntimeError(`API method '${name}' is not callable.`);
-				}
-				const params = this.extractFunctionParameters(callable as (...args: unknown[]) => unknown);
-				const apiMetadata = CONSOLE_API_METHOD_METADATA[name];
-				const optionalSet: Set<string> = new Set();
-				if (apiMetadata?.optionalParameters) {
-					for (let index = 0; index < apiMetadata.optionalParameters.length; index += 1) {
-						optionalSet.add(apiMetadata.optionalParameters[index]);
-					}
-				}
-				const parameterDescriptionMap: Map<string, string> = new Map();
-				if (apiMetadata?.parameters) {
-					for (let index = 0; index < apiMetadata.parameters.length; index += 1) {
-						const metadataParam = apiMetadata.parameters[index];
-						if (!metadataParam || typeof metadataParam.name !== 'string') {
-							throw this.createApiRuntimeError(`API method '${name}' has invalid parameter metadata.`);
-						}
-						if (metadataParam.optional) {
-							optionalSet.add(metadataParam.name);
-						}
-						if (metadataParam.description !== undefined) {
-							parameterDescriptionMap.set(metadataParam.name, metadataParam.description );
-						}
-					}
-				}
-				const optionalArray = optionalSet.size > 0 ? Array.from(optionalSet) : undefined;
-				const parameterDescriptions = params.map(param => parameterDescriptionMap.get(param) );
-				const displayParams = params.map(param => (optionalSet.has(param) ? `${param}?` : param));
-				const signature = displayParams.length > 0 ? `${name}(${displayParams.join(', ')})` : `${name}()`;
-				const native = createLuaNativeFunction(`api.${name}`, (args) => {
-					const moduleId = this.moduleIdFor(null, this.luaChunkName );
-					const baseCtx = this.ensureMarshalContext({ moduleId, path: [] });
-					const jsArgs = Array.from(args, (arg, index) => this.luaValueToJs(arg, this.extendMarshalContext(baseCtx, `arg${index}`)));
-					try {
-						const target = api as unknown as Record<string, unknown>;
-						const method = target[name];
-						if (typeof method !== 'function') {
-							throw new Error(`Method '${name}' is not callable.`);
-						}
-						const result = (method as (...inner: unknown[]) => unknown).apply(api, jsArgs);
-						return this.wrapResultValue(result);
-					} catch (error) {
-						if (this.isLuaScriptError(error)) {
-							throw error;
-						}
-						const message = this.extractErrorMessage(error);
-						throw this.createApiRuntimeError(`[api.${name}] ${message}`);
-					}
-				});
-				this.registerLuaGlobal(env, name, native);
-				this.registerLuaBuiltin({
-					name,
-					params,
-					signature,
-					optionalParams: optionalArray,
-					parameterDescriptions,
-					description: apiMetadata?.description ,
-				});
-				continue;
-			}
-
-			if (descriptor.get) {
-				const getter = descriptor.get;
-				const native = createLuaNativeFunction(`api.${name}`, () => {
-					try {
-						const value = getter.call(api);
-						return this.wrapResultValue(value);
-					} catch (error) {
-						if (this.isLuaScriptError(error)) {
-							throw error;
-						}
-						const message = this.extractErrorMessage(error);
-						throw this.createApiRuntimeError(`[api.${name}] ${message}`);
-					}
-				});
-				this.registerLuaGlobal(env, name, native);
-			}
-		}
-
-		this.exposeEngineObjects(env);
-	}
-
-	private registerLuaBuiltin(metadata: ConsoleLuaBuiltinDescriptor): void {
-		const normalizedName = this.canonicalizeIdentifier(metadata.name.trim());
-		if (normalizedName.length === 0) {
-			throw new Error(`Invalid Lua builtin name for '${normalizedName}'.`);
-		}
-		const params: string[] = [];
-		const optionalSet: Set<string> = new Set();
-		const normalizedDescriptions: (string)[] = [];
-		const sourceParams = Array.isArray(metadata.params) ? metadata.params : [];
-		const sourceDescriptions = Array.isArray(metadata.parameterDescriptions) ? metadata.parameterDescriptions : [];
-		for (let index = 0; index < sourceParams.length; index += 1) {
-			const raw = sourceParams[index];
-			const description = index < sourceDescriptions.length ? sourceDescriptions[index]  : null;
-			if (typeof raw !== 'string') {
-				throw new Error(`Invalid Lua builtin parameter at index ${index} for '${normalizedName}'.`);
-			}
-			const trimmed = raw.trim();
-			if (trimmed.length === 0) {
-				throw new Error(`Invalid Lua builtin parameter at index ${index} for '${normalizedName}'.`);
-			}
-			if (trimmed === '...' || trimmed.endsWith('...')) {
-				params.push(trimmed);
-				normalizedDescriptions.push(description);
-				continue;
-			}
-			if (trimmed.endsWith('?')) {
-				const base = trimmed.slice(0, -1);
-				if (base.length > 0) {
-					params.push(base);
-					normalizedDescriptions.push(description);
-					optionalSet.add(base);
-				}
-				continue;
-			}
-			params.push(trimmed);
-			normalizedDescriptions.push(description);
-		}
-		if (Array.isArray(metadata.optionalParams)) {
-			for (let index = 0; index < metadata.optionalParams.length; index += 1) {
-				const name = metadata.optionalParams[index];
-				if (typeof name !== 'string' || name.length === 0) {
-					throw new Error(`Invalid Lua optional parameter at index ${index} for '${normalizedName}'.`);
-				}
-				optionalSet.add(name);
-			}
-		}
-		const signature = typeof metadata.signature === 'string' ? metadata.signature : normalizedName;
-		const optionalParams = optionalSet.size > 0 ? Array.from(optionalSet) : undefined;
-		const descriptor: ConsoleLuaBuiltinDescriptor = {
-			name: normalizedName,
-			params,
-			signature,
-			optionalParams,
-			parameterDescriptions: normalizedDescriptions,
-			description: metadata.description ,
-		};
-		this.luaBuiltinMetadata.set(normalizedName, descriptor);
-	}
-
-	private registerLuaGlobal(env: LuaEnvironment, name: string, value: LuaValue): void {
-		const key = this.canonicalizeIdentifier(name);
-		env.set(key, value);
-		this.apiFunctionNames.add(key);
 	}
 
 	private getLuaGlobalValue(env: LuaEnvironment, name: string): LuaValue {
@@ -3453,7 +3091,7 @@ export class BmsxConsoleRuntime extends Service {
 		return env.get(this.canonicalizeIdentifier(name));
 	}
 
-	private canonicalizeIdentifier(name: string): string {
+	public canonicalizeIdentifier(name: string): string {
 		if (this.canonicalization) {
 			if (this.canonicalization === 'upper') {
 				return name.toUpperCase();
@@ -3464,7 +3102,8 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		return name;
 	}
-	private extractFunctionParameters(fn: (...args: unknown[]) => unknown): string[] {
+
+	public extractFunctionParameters(fn: (...args: unknown[]) => unknown): string[] {
 		const source = Function.prototype.toString.call(fn);
 		const openIndex = source.indexOf('(');
 		if (openIndex === -1) {
@@ -3535,7 +3174,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaBuiltinMetadata.clear();
 		const defaults = DEFAULT_LUA_BUILTIN_FUNCTIONS;
 		for (let i = 0; i < defaults.length; i += 1) {
-			this.registerLuaBuiltin(defaults[i]);
+			registerLuaBuiltin(defaults[i]);
 		}
 	}
 
@@ -3565,7 +3204,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const results = fn.call(luaArgs);
 		const output: unknown[] = [];
-		const moduleId = this.moduleIdFor(null, this.luaChunkName );
+		const moduleId = this.cart.chunk2lua[this.luaChunkName]?.resid ?? this.luaChunkName;
 		const baseCtx = this.ensureMarshalContext({ moduleId, path: [] });
 		for (let i = 0; i < results.length; i += 1) {
 			output.push(this.luaValueToJs(results[i], this.extendMarshalContext(baseCtx, `ret${i}`)));
@@ -3593,7 +3232,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.handleLuaError(normalized);
 	}
 
-	private ensureMarshalContext(context?: LuaMarshalContext): LuaMarshalContext {
+	public ensureMarshalContext(context?: LuaMarshalContext): LuaMarshalContext {
 		if (context) {
 			return context;
 		}
@@ -3604,7 +3243,7 @@ export class BmsxConsoleRuntime extends Service {
 		};
 	}
 
-	private extendMarshalContext(ctx: LuaMarshalContext, segment: string): LuaMarshalContext {
+	public extendMarshalContext(ctx: LuaMarshalContext, segment: string): LuaMarshalContext {
 		if (!segment) {
 			return ctx;
 		}
@@ -3622,123 +3261,6 @@ export class BmsxConsoleRuntime extends Service {
 			return String(key);
 		}
 		return null;
-	}
-
-
-	private moduleIdFor(
-		asset_id?: string,
-		chunkName?: string,
-	): string {
-		return resolveLuaModulePackageKey(this.cart, asset_id, chunkName);
-	}
-
-	private collectApiMembers(): Array<{ name: string; kind: 'method' | 'getter'; descriptor: PropertyDescriptor }> {
-		const map = new Map<string, { kind: 'method' | 'getter'; descriptor: PropertyDescriptor }>();
-		let prototype: object = Object.getPrototypeOf(api);
-		while (prototype && prototype !== Object.prototype) {
-			for (const name of Object.getOwnPropertyNames(prototype)) {
-				if (name === 'constructor') continue;
-				const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
-				if (!descriptor || map.has(name)) continue;
-				if (typeof descriptor.value === 'function') {
-					map.set(name, { kind: 'method', descriptor });
-				}
-				else if (descriptor.get) {
-					map.set(name, { kind: 'getter', descriptor });
-				}
-			}
-			prototype = Object.getPrototypeOf(prototype);
-		}
-		return Array.from(map.entries(), ([name, value]) => ({ name, kind: value.kind, descriptor: value.descriptor }));
-	}
-
-	private exposeEngineObjects(env: LuaEnvironment): void {
-		const rompackView = this.buildLuaRompackView();
-		const entries: Array<[string, unknown]> = [
-			['world', $.world],
-			['game', $],
-			['$', $],
-			['registry', $.registry],
-			['events', $.event_emitter],
-			['rompack', rompackView],
-		];
-		for (const [name, object] of entries) {
-			if (object === undefined || object === null) {
-				continue;
-			}
-			const luaValue = this.jsToLua(object);
-			this.registerLuaGlobal(env, name, luaValue);
-		}
-	}
-
-	private buildLuaRompackView() {
-		const rompack = $.rompack;
-		return {
-			img: this.serializeRomAssetMap(rompack.img),
-			audio: this.serializeRomAssetMap(rompack.audio),
-			model: this.serializeRomAssetMap(rompack.model),
-			data: this.cloneRompackDataMap(rompack.data),
-			audioevents: rompack.audioevents ? deep_clone(rompack.audioevents) : {},
-			lua: rompack.cart?.lua
-				? Object.fromEntries(Object.entries(rompack.cart.lua).map(([id, asset]) => [id, { ...asset }]))
-				: {},
-			code: rompack.code,
-			canonicalization: rompack.canonicalization,
-		};
-	}
-
-	private serializeRomAssetMap(source: Record<string, any>): Record<string, unknown> {
-		const result: Record<string, unknown> = {};
-		if (!source) {
-			return result;
-		}
-		for (const [id, asset] of Object.entries(source)) {
-			if (!asset) {
-				continue;
-			}
-			result[id] = this.extractRomAssetFields(asset);
-		}
-		return result;
-	}
-
-	private cloneRompackDataMap(source: Record<string, unknown>): Record<string, unknown> {
-		if (!source) {
-			return {};
-		}
-		const result: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(source)) {
-			result[key] = deep_clone(value);
-		}
-		return result;
-	}
-
-	private extractRomAssetFields(source: Record<string, any>): Record<string, unknown> {
-		const entry: Record<string, unknown> = {};
-		for (const key of Object.getOwnPropertyNames(source)) {
-			switch (key) { // TODO: Still relevant?
-				case 'buffer':
-				case 'texture_buffer':
-				case '_imgbin':
-				case '_imgbinYFlipped':
-				case 'imgbin':
-				case 'imgbinYFlipped':
-					continue;
-			}
-			const descriptor = Object.getOwnPropertyDescriptor(source, key);
-			if (descriptor && typeof descriptor.get === 'function') {
-				continue;
-			}
-			const value = source[key];
-			if (value === undefined) {
-				continue;
-			}
-			if (value === null || typeof value !== 'object') {
-				entry[key] = value;
-				continue;
-			}
-			entry[key] = deep_clone(value as Record<string, unknown>);
-		}
-		return entry;
 	}
 
 	private isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -3765,40 +3287,6 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 		return 'Object';
-	}
-
-	private wrapResultValue(value: unknown): ReadonlyArray<LuaValue> {
-		if (Array.isArray(value)) {
-			if (value.every((entry) => this.isLuaValue(entry))) {
-				return value as LuaValue[];
-			}
-			return value.map((entry) => this.jsToLua(entry));
-		}
-		if (value === undefined) {
-			return [];
-		}
-		const luaValue = this.jsToLua(value);
-		return [luaValue];
-	}
-
-	private isLuaValue(value: unknown): value is LuaValue {
-		if (value === null) {
-			return true;
-		}
-		if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
-			return true;
-		}
-		if (isLuaTable(value)) {
-			return true;
-		}
-		if (isLuaNativeValue(value)) {
-			return true;
-		}
-		if (value && typeof value === 'object' && 'call' in (value as Record<string, unknown>)) {
-			const candidate = value as { call?: unknown };
-			return typeof candidate.call === 'function';
-		}
-		return false;
 	}
 
 	public luaValueToJs(value: LuaValue, context?: LuaMarshalContext): unknown {
@@ -3962,15 +3450,15 @@ export class BmsxConsoleRuntime extends Service {
 
 	private snapshotEncodeNative(native: object | Function): unknown {
 		if (native instanceof WorldObject) {
-			return { __native__: 'world_object', id: native.id  };
+			return { __native__: 'world_object', id: native.id };
 		}
 		const owner = (native as { owner: WorldObject }).owner;
 		if (owner instanceof WorldObject) {
-			const componentId = (native as { id?: string }).id ;
-			const className = (native as { constructor: { name?: string } }).constructor?.name ;
+			const componentId = (native as { id?: string }).id;
+			const className = (native as { constructor: { name?: string } }).constructor?.name;
 			return {
 				__native__: 'component',
-				ownerId: owner.id ,
+				ownerId: owner.id,
 				id: componentId,
 				className,
 			};
@@ -4010,45 +3498,6 @@ export class BmsxConsoleRuntime extends Service {
 			default:
 				return null;
 		}
-	}
-
-	private resolveEntryAsset(chunkName?: string): RomLuaAsset {
-		const luaAssets = this.listLuaAssets();
-		if (luaAssets.length === 0) {
-			throw new Error('[BmsxConsoleRuntime] No Lua assets available.');
-		}
-		if (chunkName) {
-			const direct = this.cart.chunk2lua![chunkName];
-			if (direct) {
-				return direct;
-			}
-		}
-		const explicit = this.cart.entry;
-		const entryAsset = (explicit && this.cart.lua[explicit]) ? this.cart.lua[explicit] : luaAssets[0];
-		this.cart.entry = entryAsset.resid;
-		return entryAsset;
-	}
-
-	private resolveEntryAssetForChunk(chunkName: string): RomLuaAsset {
-		return this.resolveEntryAsset(chunkName);
-	}
-
-	private getProgramEntrySource(): string {
-		const asset = this.resolveEntryAsset();
-		return asset.src;
-	}
-
-	private resolveLuaEntrySourcePath(): string {
-		const asset = this.resolveEntryAsset();
-		const normalizedPath = asset.normalized_source_path;
-		if (normalizedPath && normalizedPath.length > 0) {
-			return normalizedPath;
-		}
-		const rawPath = asset.source_path;
-		if (rawPath && rawPath.length > 0) {
-			return rawPath;
-		}
-		return null;
 	}
 
 	private async persistLuaSourceToFilesystem(path: string, source: string): Promise<void> {
@@ -4203,7 +3652,8 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private async prefetchLuaSourceFromFilesystem(): Promise<void> {
-		const path = this.resolveLuaEntrySourcePath();
+		const entry = this.cart.lua[this.cart.entry];
+		const path = entry?.source_path;
 		if (!path) {
 			return;
 		}
@@ -4211,19 +3661,17 @@ export class BmsxConsoleRuntime extends Service {
 		if (fetched === null) {
 			return;
 		}
-		const currentSource = this.getProgramEntrySource();
+		const currentSource = entry.src;
 		if (currentSource === fetched) {
 			return;
 		}
-		const chunkName = this.resolveProgramEntryChunkName();
+		const chunkName = entry.chunk_name;
 		try {
-			const asset = this.resolveEntryAssetForChunk(chunkName);
-			this.reloadLuaProgramState(fetched, chunkName, asset.resid, { runInit: false });
+			this.reloadLuaProgramState(fetched, { chunkName, assetId: entry.resid, runInit: false });
 		}
 		catch (error) {
 			try {
-				const asset = this.resolveEntryAssetForChunk(chunkName);
-				this.reloadLuaProgramState(currentSource, chunkName, asset.resid, { runInit: false });
+				this.reloadLuaProgramState(currentSource, { chunkName, assetId: entry.resid, runInit: false });
 			}
 			catch (restoreError) {
 				this.handleLuaPersistenceFailure('restore', `[BmsxConsoleRuntime] Failed to restore Lua source after prefetched apply error`, { error: restoreError });
@@ -4238,33 +3686,14 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private applyProgramEntrySourceToCartridge(source: string, chunkName: string, asset_id?: string): void {
-		const asset = this.resolveEntryAssetForChunk(chunkName);
-		const targetAssetId = asset_id ?? asset.resid;
-		const luaAsset = this.getLuaAsset(targetAssetId);
+		const binding = this.resolveChunkBinding(chunkName, asset_id);
+		const luaAsset = binding.asset;
 		luaAsset.src = source;
-		luaAsset.chunk_name = chunkName;
-		this.cart.chunk2lua![chunkName] = luaAsset;
+		luaAsset.chunk_name = binding.chunkName;
+		this.cart.chunk2lua![binding.chunkName] = luaAsset;
 		const normalizedPath = luaAsset.normalized_source_path ?? luaAsset.source_path ?? luaAsset.resid;
 		this.cart.source2lua![normalizedPath] = luaAsset;
 		this.updateWorkspaceOverrideMap(luaAsset, source);
-	}
-
-	private canonicalizeProgramEntryChunkName(chunkName: string): string {
-		if (chunkName && chunkName.length > 0) {
-			return chunkName;
-		}
-		const asset = this.resolveEntryAsset();
-		return asset.chunk_name ?? `@lua/${asset.resid}`;
-	}
-
-	private resolveProgramEntryChunkName(): string {
-		const asset = this.resolveEntryAsset();
-		return asset.chunk_name ?? `@lua/${asset.resid}`;
-	}
-
-	private registerProgramChunk(asset: RomLuaAsset, chunkName: string): void {
-		asset.chunk_name = chunkName;
-		this.cart.entry = asset.resid;
 	}
 
 	private refreshPackageLoadedEntry(packageKey: string, results: ReadonlyArray<LuaValue>): void {
@@ -4289,10 +3718,10 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		for (const asset_id of changedAssets) {
 			const asset = this.getLuaAsset(asset_id);
-			const chunkName = asset.chunk_name ?? `@lua/${asset.resid}`;
-			const info = { asset_id, path: asset.normalized_source_path  };
-			const source = asset.src;
-			if (asset_id === this.resolveEntryAsset().resid) {
+			const chunkName = asset.chunk_name;
+			const info = { asset_id, path: asset.normalized_source_path };
+			const source = this.resolveSourceForChunk(chunkName, asset_id);
+			if (asset_id === this.cart.entry) {
 				this.hotReloadProgramEntry({ source, chunkName, asset_id });
 				continue;
 			}
@@ -4321,7 +3750,7 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		const definitions = this.luaInterpreter.getChunkDefinitions(chunkName);
-		const effectiveModuleId = moduleId ?? this.moduleIdFor(asset_id, chunkName);
+		const effectiveModuleId = moduleId ?? this.cart.lua[asset_id]?.chunk_name;
 		this.pruneRemovedChunkFunctionExports(chunkName, environment, definitions, this.luaInterpreter.globalEnvironment);
 		this.installFunctionRedirectsForChunk(effectiveModuleId, environment, definitions);
 		this.wrapDynamicChunkFunctions(effectiveModuleId, environment, chunkName);
@@ -4361,7 +3790,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!environment) {
 			return;
 		}
-		const previousKeys = this.chunkFunctionDefinitionKeys.get(normalizedChunk) ;
+		const previousKeys = this.chunkFunctionDefinitionKeys.get(normalizedChunk);
 		const currentKeys = this.collectChunkFunctionDefinitionKeys(definitions);
 		if (previousKeys && previousKeys.size > 0) {
 			for (const key of previousKeys) {
@@ -4553,14 +3982,14 @@ export class BmsxConsoleRuntime extends Service {
 		const asset = this.getLuaAsset(record.asset_id);
 		const source = asset.src;
 		const resourceInfo: { asset_id: string; path?: string } = { asset_id: record.asset_id };
-		resourceInfo.path = record.path ;
+		resourceInfo.path = record.path;
 		this.registerLuaChunkResource(record.chunkName, resourceInfo);
 		this.luaModuleLoadingKeys.add(record.packageKey);
 		packageLoaded.set(record.packageKey, true);
 		const previousChunkName = this.luaChunkName;
 		this.luaChunkName = record.chunkName;
 		try {
-			const moduleId = this.moduleIdFor(record.asset_id, record.chunkName);
+			const moduleId = this.cart.lua[record.asset_id]?.chunk_name;
 			const results = interpreter.execute(source, record.chunkName);
 			this.wrapLuaExecutionResults(moduleId, results);
 			this.cacheChunkEnvironment(record.chunkName, record.asset_id, moduleId);
@@ -4572,7 +4001,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		catch (error) {
 			packageLoaded.delete(record.packageKey);
-			if (this.isLuaScriptError(error)) {
+			if (isLuaScriptError(error)) {
 				throw error;
 			}
 			const message = this.extractErrorMessage(error);
@@ -4585,7 +4014,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private applyLocalWorkspaceDirtyLuaOverrides(hotReload: boolean): void {
-		const root = $.rompack.project_root_path ;
+		const root = $.rompack.project_root_path;
 		const overrides = collectWorkspaceOverrides({ rompack: $.rompack, projectRootPath: root, storage: this.storageService });
 		this.applyWorkspaceLuaOverrides(overrides, hotReload);
 	}
@@ -4650,7 +4079,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private updateWorkspaceOverrideMap(asset: RomLuaAsset, source: string, cartPath?: string, dirtyPath?: string): void {
 		const effectiveCartPath = cartPath ?? asset.normalized_source_path ?? asset.source_path ?? asset.resid;
-		this.workspaceLuaOverrides.set(asset.resid, { source, path: dirtyPath , cartPath: effectiveCartPath });
+		this.workspaceLuaOverrides.set(asset.resid, { source, path: dirtyPath, cartPath: effectiveCartPath });
 	}
 
 	private persistWorkspaceOverridesToLocalStorage(root: string, overrides: Map<string, WorkspaceOverrideRecord>): void {
@@ -4669,7 +4098,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private async applyServerWorkspaceDirtyLuaOverrides(hotReload: boolean): Promise<void> {
 		const token = this.workspaceOverrideToken;
-		const root = $.rompack.project_root_path ;
+		const root = $.rompack.project_root_path;
 		if (!root) {
 			return;
 		}
@@ -4740,7 +4169,7 @@ export class BmsxConsoleRuntime extends Service {
 		for (const asset_id of savedChanged) {
 			changedAssets.add(asset_id);
 		}
-		const root = $.rompack.project_root_path ;
+		const root = $.rompack.project_root_path;
 		const scratchPaths = await this.collectScratchWorkspaceDirtyPaths(root);
 		for (const path of scratchPaths) {
 			this._workspaceScratchPaths.add(path);
@@ -4796,7 +4225,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private async fetchWorkspaceOverridesPriority(): Promise<Map<string, WorkspaceOverrideRecord>> {
-		const root = $.rompack.project_root_path ;
+		const root = $.rompack.project_root_path;
 		if (!root) {
 			return null;
 		}
@@ -4936,7 +4365,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.workspaceLuaOverrides.clear();
 		this.luaGenericAssetsExecuted.clear();
-		const root = $.rompack.project_root_path ;
+		const root = $.rompack.project_root_path;
 		if (root) {
 			for (const asset of this.listLuaAssets()) {
 				const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
@@ -4952,10 +4381,10 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		await this.refreshWorkspaceSources();
 		if (this.luaInterpreter && this.listLuaAssets().length > 0) {
-			const asset = this.resolveEntryAsset();
-			const chunkName = this.resolveProgramEntryChunkName();
+			const asset = this.cart.lua[this.cart.entry];
+			const chunkName = asset.chunk_name;
 			const finalSource = asset.src;
-			this.reloadLuaProgramState(finalSource, chunkName);
+			this.reloadLuaProgramState(finalSource, { chunkName, assetId: asset.resid });
 		}
 	}
 
@@ -5065,11 +4494,11 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private resolveLuaDefinitionMetadata(value: LuaValue, fallbackasset_id: string, definitionRange: LuaSourceRange): ConsoleLuaDefinitionLocation {
-		let range: LuaSourceRange = definitionRange ;
+		let range: LuaSourceRange = definitionRange;
 		if (!range && value && typeof value === 'object') {
 			const candidate = value as { getSourceRange?: () => LuaSourceRange };
 			if (typeof candidate.getSourceRange === 'function') {
-				range = candidate.getSourceRange() ;
+				range = candidate.getSourceRange();
 			}
 		}
 		if (!range) {
@@ -5078,10 +4507,10 @@ export class BmsxConsoleRuntime extends Service {
 		return this.buildDefinitionLocationFromRange(range, fallbackasset_id);
 	}
 
-	private buildDefinitionLocationFromRange(range: LuaSourceRange, fallbackasset_id: string): ConsoleLuaDefinitionLocation {
+	private buildDefinitionLocationFromRange(range: LuaSourceRange, _fallbackasset_id: string): ConsoleLuaDefinitionLocation {
 		const normalizedChunk = range.chunkName;
 		const chunkResource = this.getChunkResourceHint(range.chunkName);
-		const asset_id = chunkResource ? chunkResource.asset_id : fallbackasset_id;
+		const asset_id = chunkResource.asset_id;
 		const location: ConsoleLuaDefinitionLocation = {
 			chunkName: normalizedChunk,
 			asset_id,
@@ -5092,14 +4521,7 @@ export class BmsxConsoleRuntime extends Service {
 				endColumn: range.end.column,
 			},
 		};
-		if (chunkResource && chunkResource.path && chunkResource.path.length > 0) {
-			location.path = chunkResource.path;
-		} else if (asset_id) {
-			const asset = this.cart.lua[asset_id];
-			if (asset && asset.normalized_source_path && asset.normalized_source_path.length > 0) {
-				location.path = asset.normalized_source_path;
-			}
-		}
+		location.path = chunkResource.path!;
 		return location;
 	}
 
@@ -5179,7 +4601,7 @@ export class BmsxConsoleRuntime extends Service {
 				signature: metadata.signature,
 				optionalParams,
 				parameterDescriptions,
-				description: metadata.description ,
+				description: metadata.description,
 			});
 		}
 		result.sort((a, b) => a.name.localeCompare(b.name));
@@ -5241,7 +4663,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (!asset) {
 				continue;
 			}
-			const path = asset.normalized_source_path ?? asset.source_path ;
+			const path = asset.normalized_source_path ?? asset.source_path;
 			enqueueCandidate(chunkName, { asset_id: asset.resid, path });
 		}
 
@@ -5249,7 +4671,7 @@ export class BmsxConsoleRuntime extends Service {
 			const chunkName = asset.chunk_name ?? `@lua/${asset.resid}`;
 			const candidateInfo: { asset_id: string; path?: string } = {
 				asset_id: asset.resid,
-				path: asset.normalized_source_path ?? asset.source_path ,
+				path: asset.normalized_source_path ?? asset.source_path,
 			};
 			enqueueCandidate(chunkName, candidateInfo);
 		}
@@ -5297,7 +4719,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (usageRow !== null && usageColumn !== null) {
 			for (let index = 0; index < chunks.length; index += 1) {
 				const chunk = chunks[index];
-				let model = models.get(chunk.chunkName) ;
+				let model = models.get(chunk.chunkName);
 				if (!model) {
 					const source = this.cart.chunk2lua[chunk.chunkName]?.src;
 					if (!source) {
@@ -5399,12 +4821,12 @@ export class BmsxConsoleRuntime extends Service {
 
 	private getStaticDefinitions(asset_id: string, preferredChunk: string): { definitions: ReadonlyArray<LuaDefinitionInfo>; chunks: Array<{ chunkName: string; info: { asset_id: string; path?: string } }>; models: Map<string, LuaSemanticModel> } {
 		const interpreter = this.luaInterpreter;
-		const preferredChunkKey = preferredChunk ;
-		const preferredPath = preferredChunk ;
+		const preferredChunkKey = preferredChunk;
+		const preferredPath = preferredChunk;
 		const matchingChunks: Array<{ chunkName: string; info: { asset_id: string; path?: string } }> = [];
 		for (const asset of this.listLuaAssets()) {
 			const chunkName = asset.chunk_name ?? `@lua/${asset.resid}`;
-			const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.normalized_source_path ?? asset.source_path  };
+			const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.normalized_source_path ?? asset.source_path };
 			const matchesAsset = asset_id !== null && info.asset_id === asset_id;
 			const matchesPath = preferredPath !== null && info.path === preferredPath;
 			const matchesChunk = preferredChunkKey !== null && chunkName === preferredChunkKey;
@@ -5449,10 +4871,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private buildSemanticModelForChunk(chunkName: string): LuaSemanticModel {
-		const source = this.cart.chunk2lua[chunkName]?.src;
-		if (!source) {
-			return null;
-		}
+		const source = this.cart.chunk2lua![chunkName].src;
 		const cached = this.chunkSemanticCache.get(chunkName);
 		const previousModel = cached ? cached.model : null;
 		const previousDefinitions = cached ? cached.definitions : [];
@@ -5569,7 +4988,7 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 		if (!found && asset_id) {
-			const env = this.luaChunkEnvironmentsByAssetId.get(asset_id) ;
+			const env = this.luaChunkEnvironmentsByAssetId.get(asset_id);
 			if (env && env.hasLocal(root)) {
 				value = env.get(root);
 				scope = env === globalEnv ? 'global' : 'chunk';
@@ -5580,7 +4999,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!found) {
 			const chunkName = this.luaChunkName;
 			if (chunkName) {
-				const envByChunk = this.luaChunkEnvironmentsByChunkName.get(chunkName) ;
+				const envByChunk = this.luaChunkEnvironmentsByChunkName.get(chunkName);
 				if (envByChunk && envByChunk.hasLocal(root)) {
 					value = envByChunk.get(root);
 					scope = envByChunk === globalEnv ? 'global' : 'chunk';
@@ -5967,19 +5386,10 @@ export class BmsxConsoleRuntime extends Service {
 		return this.luaBuiltinMetadata.has(name);
 	}
 
-	private getChunkResourceHint(chunkName: string): { asset_id: string; path?: string } | null {
-		if (!chunkName || chunkName.length === 0) {
-			return null;
-		}
+	private getChunkResourceHint(chunkName: string): { asset_id: string; path?: string } {
 		const asset = this.cart.chunk2lua![chunkName];
-		if (!asset) {
-			return null;
-		}
 		const hint: { asset_id: string; path?: string } = { asset_id: asset.resid };
-		const normalizedPath = asset.normalized_source_path;
-		if (normalizedPath && normalizedPath.length > 0) {
-			hint.path = normalizedPath;
-		}
+		hint.path = asset.normalized_source_path as string;
 		return hint;
 	}
 
@@ -5994,24 +5404,32 @@ export class BmsxConsoleRuntime extends Service {
 		this.clearEditorErrorOverlaysIfNoFault();
 	}
 
-	private reloadGenericLuaChunk(chunkName: string, info: { asset_id: string; path?: string }, sourceOverride: string): void {
+	private reloadGenericLuaChunk(chunkName: string, asset: { asset_id: string; path?: string }, sourceOverride?: string): void {
 		const interpreter = this.luaInterpreter;
 		const previousChunkState = this.captureChunkState(chunkName);
 		const previousChunkTables = this.captureChunkTables(chunkName);
 		const previousGlobals = this.captureGlobalStateForReload();
-		const source = sourceOverride ?? this.cart.chunk2lua![chunkName]?.src;
-		const moduleId = this.moduleIdFor(info.asset_id, chunkName);
+		const source = sourceOverride ? sourceOverride : this.resolveSourceForChunk(chunkName, asset.asset_id);
+		const moduleId = this.cart.lua[asset.asset_id]?.chunk_name ?? chunkName;
 		const results = interpreter.execute(source, chunkName);
 		this.wrapLuaExecutionResults(moduleId, results);
-		this.cacheChunkEnvironment(chunkName, info.asset_id, moduleId);
+		this.cacheChunkEnvironment(chunkName, asset.asset_id, moduleId);
 		this.restoreChunkState(interpreter.chunkEnvironment, previousChunkState);
 		this.restoreChunkTables(interpreter.chunkEnvironment, previousChunkTables);
 		this.restoreGlobalStateForReload(previousGlobals);
-		const packageKey = resolveLuaModulePackageKey(this.cart, info.asset_id, chunkName);
+		const packageKey = this.cart.lua[asset.asset_id]?.chunk_name ?? chunkName;
 		this.refreshPackageLoadedEntry(packageKey, results);
 		const moduleValue = results.length > 0 && results[0] !== null ? results[0] : true;
 		this.rebindChunkEnvironmentHandlers(moduleId);
 		this.rebindModuleExportHandlers(moduleId, moduleValue);
-		this.luaGenericAssetsExecuted.add(info.asset_id);
+		this.luaGenericAssetsExecuted.add(asset.asset_id);
+	}
+
+	private resolveSourceForChunk(chunkName: string, asset_id?: string): string {
+		const binding = this.resolveChunkBinding(chunkName, asset_id);
+		if (this.editor) {
+			return this.editor.getSourceForChunk(binding.assetId, binding.chunkName);
+		}
+		return binding.asset.src;
 	}
 }

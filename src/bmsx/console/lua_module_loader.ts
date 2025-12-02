@@ -22,34 +22,6 @@ function baseModuleName(path: string): string {
 	return stripLuaExtension(name);
 }
 
-export function resolveLuaModulePackageKey(
-	cart: BmsxCartridge,
-	assetId: string | undefined,
-	chunkName: string | undefined,
-): string {
-	if (chunkName && chunkName.length > 0) {
-		const normalized = chunkName.startsWith('@') ? chunkName.slice(1) : chunkName;
-		return `@${stripLuaExtension(normalized)}`;
-	}
-	if (assetId && assetId.length > 0) {
-		const asset = cart.lua[assetId];
-		if (asset) {
-			const normalizedPath = asset.normalized_source_path;
-			let resolvedPath = '';
-			if (normalizedPath && normalizedPath.length > 0) {
-				resolvedPath = normalizedPath;
-			} else if (asset.source_path && asset.source_path.length > 0) {
-				resolvedPath = asset.source_path;
-			}
-			if (resolvedPath.length > 0) {
-				return `@${stripLuaExtension(resolvedPath)}`;
-			}
-		}
-		return `@lua/${stripLuaExtension(assetId)}`;
-	}
-	return '@lua';
-}
-
 function registerLuaModuleAliases(
 	aliases: Map<string, LuaRequireModuleRecord>,
 	record: LuaRequireModuleRecord,
@@ -110,7 +82,7 @@ export function buildLuaModuleAliases(cart: BmsxCartridge): Map<string, LuaRequi
 			? asset.normalized_source_path
 			: asset.resid;
 		const canonicalPath = stripLuaExtension(normalizedPath);
-		const packageKey = resolveLuaModulePackageKey(cart, asset.resid, chunkName);
+		const packageKey = asset.chunk_name;
 		let path: string | undefined;
 		if (asset.normalized_source_path && asset.normalized_source_path.length > 0) {
 			path = asset.normalized_source_path;
@@ -130,4 +102,3 @@ export function buildLuaModuleAliases(cart: BmsxCartridge): Map<string, LuaRequi
 	}
 	return aliases;
 }
-
