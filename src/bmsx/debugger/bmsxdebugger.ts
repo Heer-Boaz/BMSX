@@ -390,7 +390,7 @@ export class FloatingDialog {
 		this.dialogDiv.classList.add('autosize');
 
 		// Force a reflow to ensure the automatic size is applied
-		void this.dialogDiv.offsetHeight;
+		this.dialogDiv.offsetHeight;
 
 		// Remove the autosize class
 		this.dialogDiv.classList.remove('autosize');

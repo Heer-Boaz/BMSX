@@ -105,22 +105,31 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 	return overrides;
 }
 
-	export async function persistLuaSourceToFilesystem(path: string, source: string): Promise<void> {
-		const runtime = BmsxConsoleRuntime.instance;
-		if (typeof fetch !== 'function') {
-			throw new Error('[BmsxConsoleRuntime] Fetch API unavailable; cannot persist Lua source.');
-		}
-		let response: HttpResponse;
-		try {
-			response = await fetch(WORKSPACE_FILE_ENDPOINT, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ path, contents: source }),
-			});
-		} catch (error) {
-			handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Failed to reach Lua save endpoint for '${path}'`, { error });
-			if (runtime.luaFailurePolicy.persist === 'warning') {
-				return;
+function resolveWorkspacePathForIo(path: string): string {
+	const root = $.rompack.project_root_path;
+	// If the path is already absolute or already includes the project root, leave it as-is.
+	if (!root || path.startsWith(root) || path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) {
+		return path;
+	}
+	return joinWorkspacePaths(root, path);
+}
+
+export async function persistLuaSourceToFilesystem(path: string, source: string): Promise<void> {
+	const runtime = BmsxConsoleRuntime.instance;
+	if (typeof fetch !== 'function') {
+		throw new Error('[BmsxConsoleRuntime] Fetch API unavailable; cannot persist Lua source.');
+	}
+	let response: HttpResponse;
+	try {
+		response = await fetch(WORKSPACE_FILE_ENDPOINT, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ path: resolveWorkspacePathForIo(path), contents: source }),
+		});
+	} catch (error) {
+		handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Failed to reach Lua save endpoint for '${path}'`, { error });
+		if (runtime.luaFailurePolicy.persist === 'warning') {
+			return;
 			}
 			return;
 		}
@@ -168,19 +177,20 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 		}
 	}
 
-	export async function fetchLuaSourceFromFilesystem(path: string): Promise<string> {
-		const runtime = BmsxConsoleRuntime.instance;
+export async function fetchLuaSourceFromFilesystem(path: string): Promise<string> {
+	const runtime = BmsxConsoleRuntime.instance;
 
-		if (typeof fetch !== 'function') {
-			return null;
-		}
-		let response: HttpResponse;
-		const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
-		try {
-			response = await fetch(url, { method: 'GET', cache: 'no-store' });
-		} catch (error) {
-			handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from filesystem (${path})`, { error });
-			if (runtime.luaFailurePolicy.fetch === 'warning') {
+	if (typeof fetch !== 'function') {
+		return null;
+	}
+	let response: HttpResponse;
+	const resolvedPath = resolveWorkspacePathForIo(path);
+	const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(resolvedPath)}`;
+	try {
+		response = await fetch(url, { method: 'GET', cache: 'no-store' });
+	} catch (error) {
+		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from filesystem (${path})`, { error });
+		if (runtime.luaFailurePolicy.fetch === 'warning') {
 				return null;
 			}
 			return null;
@@ -259,15 +269,15 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 		return record.contents;
 	}
 
-	export async function prefetchLuaSourceFromFilesystem(): Promise<void> {
-		const runtime = BmsxConsoleRuntime.instance;
+export async function prefetchLuaSourceFromFilesystem(): Promise<void> {
+	const runtime = BmsxConsoleRuntime.instance;
 
-		const entry = runtime.cart.lua[runtime.cart.entry];
-		const path = entry?.source_path;
-		if (!path) {
-			return;
-		}
-		const fetched = await fetchLuaSourceFromFilesystem(path);
+	const entry = runtime.cart.lua[runtime.cart.entry];
+	const path = entry?.source_path;
+	if (!path) {
+		return;
+	}
+	const fetched = await fetchLuaSourceFromFilesystem(path);
 		if (fetched === null) {
 			return;
 		}

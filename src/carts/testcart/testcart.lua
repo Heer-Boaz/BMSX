@@ -54,7 +54,7 @@ function hero:onspawn(spawn_pos)
 			{ frame = 3, event = 'demo.timeline.frame', payload = { label = 'reset' } },
 		},
 	})
-	self:play_timeline(hero_timeline_id)
+	self:play_ani(hero_timeline_id)
 	self.events:on({
 		event = 'demo.timeline.frame',
 		subscriber = self,

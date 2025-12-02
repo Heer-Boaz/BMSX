@@ -105,14 +105,14 @@ export class ConsoleCommandDispatcher {
 				return true;
 			}
 			const sub = tokens[1].toUpperCase();
-			if (sub === 'RESET') { this.runWorkspaceReset(); return true; }
-			if (sub === 'NUKE') { this.runWorkspaceNuke(); return true; }
+			if (sub === 'RESET') { await this.runWorkspaceReset(); return true; }
+			if (sub === 'NUKE') { await this.runWorkspaceNuke(); return true; }
 			if (sub === 'EDIT') { this.runtime.activateEditor(); return true; }
 			this.runtime.consoleMode.appendStderr(ERROR_SYNTAX_ERROR);
 			return true;
 		}
 		if (upper === 'LS' || upper.startsWith('LS ')) {
-			void this.handleLs(trimmed);
+			this.handleLs(trimmed);
 			return true;
 		}
 		if (upper === 'CD' || upper.startsWith('CD ')) {
@@ -128,19 +128,17 @@ export class ConsoleCommandDispatcher {
 		}
 	}
 
-	private runWorkspaceReset(): void {
+	private async runWorkspaceReset() {
 		this.runtime.consoleMode.appendStdout('Discarding dirty files...');
-		void this.runtime.clearWorkspaceLuaOverrides().then(() => {
-			this.runtime.consoleMode.appendStdout('Restored to saved workspace');
-		});
+		await this.runtime.clearWorkspaceLuaOverrides();
+		this.runtime.consoleMode.appendStdout('Restored to saved workspace');
 	}
 
-	private runWorkspaceNuke(): void {
+	private async runWorkspaceNuke() {
 		this.runtime.consoleMode.appendStdout('Warning: this will erase workspace!');
-		void this.runtime.clearWorkspaceLuaOverrides().then(() => {
-			this.runtime.consoleMode.appendStdout('Workspace deleted');
-			this.runtime.consoleMode.appendStdout('Reverted to saved workspace sources');
-		});
+		await this.runtime.clearWorkspaceLuaOverrides();
+		this.runtime.consoleMode.appendStdout('Workspace deleted');
+		this.runtime.consoleMode.appendStdout('Reverted to saved workspace sources');
 	}
 
 	private handleSys(tokens: string[]): void {
@@ -224,29 +222,29 @@ export class ConsoleCommandDispatcher {
 			this.runtime.consoleMode.appendStderr(ERROR_FILE_NOT_FOUND);
 			return;
 		}
-			for (let index = 0; index < filtered.length; index += 1) {
-				const entry = filtered[index];
-				let color;
-				switch (entry.kind) {
-					case 'rom':
-						color = 15;
-						break;
-					case 'saved':
-						color = 2;
-						break;
-					case 'saved_dirty':
-						color = 16;
-						break;
-					case 'dirty':
-						color = 10;
-						break;
-					case 'unsaved':
-						color = 8;
-						break;
-				}
-				this.runtime.consoleMode.appendStdout(entry.text.toUpperCase(), color);
+		for (let index = 0; index < filtered.length; index += 1) {
+			const entry = filtered[index];
+			let color;
+			switch (entry.kind) {
+				case 'rom':
+					color = 15;
+					break;
+				case 'saved':
+					color = 2;
+					break;
+				case 'saved_dirty':
+					color = 16;
+					break;
+				case 'dirty':
+					color = 10;
+					break;
+				case 'unsaved':
+					color = 8;
+					break;
 			}
+			this.runtime.consoleMode.appendStdout(entry.text.toUpperCase(), color);
 		}
+	}
 
 	private handleJsStack(tokens: string[]): void {
 		if (tokens.length === 1) {

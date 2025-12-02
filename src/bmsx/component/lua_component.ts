@@ -81,11 +81,11 @@ export class LuaComponent extends Component {
 	}
 
 	public override preprocessingUpdate(...args: unknown[]): void {
-		void this.invokeHandler('preupdate', ...args);
+		this.invokeHandler('preupdate', ...args);
 	}
 
 	public override postprocessingUpdate(args: { params: any[]; returnvalue?: any }): void {
-		void this.invokeHandler('postupdate', args);
+		this.invokeHandler('postupdate', args);
 	}
 
 	private invokeHandler(key: keyof LuaComponentHandlerMap, ...args: unknown[]): unknown {

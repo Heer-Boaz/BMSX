@@ -79,7 +79,7 @@ export class MeshComponent extends Component {
 	@excludepropfromsavegame private renderMeshes: RenderMesh[] = [];
 	@excludepropfromsavegame private _tmpLocal: Float32Array = new Float32Array(16);
 	@excludepropfromsavegame private _tmpRotation: Float32Array = new Float32Array(16);
-	@excludepropfromsavegame private skinMatrices: (Float32Array[])[] = [];
+	@excludepropfromsavegame private skinMatrices: (Float32Array[] | undefined)[] = [];
 	@excludepropfromsavegame private skinDirty: boolean[] = [];
 	@excludepropfromsavegame private _skinTmpMatrix: Float32Array = new Float32Array(16);
 	@excludepropfromsavegame private _skinMeshInverse: Float32Array = new Float32Array(16);
@@ -89,12 +89,12 @@ export class MeshComponent extends Component {
 	@excludepropfromsavegame private baseTranslation: Float32Array[] = [];
 	@excludepropfromsavegame private baseRotation: Float32Array[] = [];
 	@excludepropfromsavegame private baseScale: Float32Array[] = [];
-	@excludepropfromsavegame private baseWeights: (Float32Array)[] = [];
+	@excludepropfromsavegame private baseWeights: (Float32Array | undefined)[] = [];
 	@excludepropfromsavegame private poseTranslation: Float32Array[] = [];
 	@excludepropfromsavegame private poseRotation: Float32Array[] = [];
 	@excludepropfromsavegame private poseScale: Float32Array[] = [];
-	@excludepropfromsavegame private poseWeights: (Float32Array)[] = [];
-	@excludepropfromsavegame private poseVisibility: (boolean)[] = [];
+	@excludepropfromsavegame private poseWeights: (Float32Array | undefined)[] = [];
+	@excludepropfromsavegame private poseVisibility: (boolean | undefined)[] = [];
 	@excludepropfromsavegame private _sampleVec3: Float32Array = new Float32Array(3);
 	@excludepropfromsavegame private _sampleQuat: Float32Array = new Float32Array(4);
 	@excludepropfromsavegame private _sampleWeights?: Float32Array;
@@ -225,7 +225,7 @@ export class MeshComponent extends Component {
 				meshname: `${mdl.name}_${index}`,
 			});
 			const mat = mdl.materials?.[g.materialIndex ?? 0];
-			const resolveTexture = (idx?: number): number => {
+			const resolveTexture = (idx?: number): number | undefined => {
 				if (idx === undefined) return undefined;
 				return mdl.textures ? mdl.textures[idx] ?? idx : idx;
 			};
@@ -305,7 +305,7 @@ export class MeshComponent extends Component {
 				this.instances.push({ mesh, nodeIndex, meshIndex: node.mesh, skinIndex: node.skin, morphWeights: weights });
 			}
 		}
-		const ch = node.children as number[];
+		const ch = node.children as number[] | undefined;
 		if (ch) for (const c of ch) this.traverse(c, world);
 	}
 
@@ -643,7 +643,7 @@ export class MeshComponent extends Component {
 		this._rootMotionNode = Math.max(0, Math.min(index, nodeCount - 1));
 	}
 
-	private getClipByName(name: string): GLTFAnimation {
+	private getClipByName(name: string): GLTFAnimation | undefined {
 		const anims = this.modelOrThrow().animations;
 		if (!anims || anims.length === 0) return undefined;
 		let clip = anims.find(anim => anim?.name === name);
@@ -665,7 +665,7 @@ export class MeshComponent extends Component {
 		return idx >= 0 ? `clip_${idx}` : 'clip';
 	}
 
-	private cloneNotifies(name: string): MeshAnimationNotify[] {
+	private cloneNotifies(name: string): MeshAnimationNotify[] | undefined {
 		const list = this._clipNotifies.get(name);
 		return list ? list.map(n => ({ ...n })) : undefined;
 	}
@@ -687,7 +687,7 @@ export class MeshComponent extends Component {
 		};
 	}
 
-	private createClipStateFromSnapshot(snapshot: RuntimeClipState): MeshClipState {
+	private createClipStateFromSnapshot(snapshot: RuntimeClipState | undefined): MeshClipState | undefined {
 		if (!snapshot?.clipId) return undefined;
 		const clip = this.getClipByName(snapshot.clipId);
 		if (!clip) return undefined;
@@ -711,7 +711,7 @@ export class MeshComponent extends Component {
 		if (snapshot.notifies) {
 			state.notifies = snapshot.notifies.map(n => ({ ...n }));
 		} else {
-			state.notifies = this.cloneNotifies(name) ;
+			state.notifies = this.cloneNotifies(name) ?? undefined;
 		}
 		if (state.notifies && state.notifies.length) state.notifies.sort((a, b) => a.time - b.time);
 		const storedTranslation = snapshot.lastRootTranslation;
@@ -732,7 +732,7 @@ export class MeshComponent extends Component {
 		return state;
 	}
 
-	private restoreAnimationRuntime(anim: RuntimeAnim | LegacyRuntimeAnim): void {
+	private restoreAnimationRuntime(anim: RuntimeAnim | LegacyRuntimeAnim | undefined): void {
 		if (!anim) return;
 		if ('current' in anim || 'previous' in anim || 'rootMotionNode' in anim || 'autoResetPose' in anim) {
 			const runtime = anim as RuntimeAnim;
@@ -791,7 +791,7 @@ export class MeshComponent extends Component {
 		return new Float32Array(3);
 	}
 
-	private computeSkinMatrices(skinIndex: number, meshNodeIndex: number, meshNodeWorld: Float32Array): Float32Array[] {
+	private computeSkinMatrices(skinIndex: number, meshNodeIndex: number, meshNodeWorld: Float32Array): Float32Array[] | undefined {
 		const model = this.modelOrThrow();
 		const skin = model.skins?.[skinIndex];
 		if (!skin || skin.joints.length === 0) return undefined;
@@ -1099,7 +1099,7 @@ export class MeshComponent extends Component {
 	// --- Runtime save/load -------------------------------------------------
 
 	// Stable node key map for savegames
-	private static buildNodeKeyMap(model: GLTFModel): { toKey: (i: number) => NodeKey; toIndex: (k: NodeKey) => number } {
+	private static buildNodeKeyMap(model: GLTFModel): { toKey: (i: number) => NodeKey; toIndex: (k: NodeKey) => number | undefined } {
 		const nodes = model.nodes ?? [];
 		const sceneIndex = model.scene ?? 0;
 		const scene = model.scenes?.[sceneIndex];
@@ -1113,7 +1113,7 @@ export class MeshComponent extends Component {
 			const ch = nodes[p]?.children ?? [];
 			for (const c of ch) parentOf[c] = p;
 		}
-		const cacheKey: (string)[] = new Array(nodes.length);
+		const cacheKey: (string | undefined)[] = new Array(nodes.length);
 		const keyOf = (i: number): string => {
 			if (cacheKey[i] !== undefined) return cacheKey[i]!;
 			let p = parentOf[i];
