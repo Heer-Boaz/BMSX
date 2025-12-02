@@ -2788,7 +2788,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (source && source.length > 0) {
 			return source;
 		}
-		return '[lua]';
+		return ''; // Was '[lua]', but empty is better here and only mark JS as such
 	}
 
 	private convertLuaCallFrames(callFrames: ReadonlyArray<LuaCallFrame>): StackTraceFrame[] {
@@ -2811,7 +2811,7 @@ export class BmsxConsoleRuntime extends Service {
 				source,
 				line: effectiveLine,
 				column: effectiveColumn,
-				raw: rawLabel.length > 0 ? rawLabel : '[lua]',
+				raw: rawLabel ?? '[unknown]', // We explicitly don't check for rawLabel.length here because we want to support empty labels (e.g. 'lua]' is implicit and thus empty)
 			};
 			if (source && source.length > 0) {
 				const hint = this.getChunkResourceHint(source);

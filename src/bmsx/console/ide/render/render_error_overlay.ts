@@ -206,16 +206,29 @@ export function resolveRuntimeErrorOverlayAnchor(
 	};
 }
 
-export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, textLeft: number): void {
+export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, textLeft: number): RuntimeErrorOverlayRenderResult {
 	const overlay = ide_state.runtimeErrorOverlay;
 	if (!overlay || overlay.hidden) {
-		return;
+		return 'absent';
+	}
+	ensureVisualLines();
+	const visualIndex = positionToVisualIndex(overlay.row, overlay.column);
+	const visibleRows = Math.max(1, ide_state.cachedVisibleRowCount);
+	const visibleStart = ide_state.scrollRow;
+	const visibleEnd = visibleStart + visibleRows - 1;
+	if (visualIndex < visibleStart) {
+		overlay.layout = null;
+		return 'above';
+	}
+	if (visualIndex > visibleEnd) {
+		overlay.layout = null;
+		return 'below';
 	}
 	const geometry = computeRuntimeErrorOverlayGeometry(codeRight, textLeft);
 	const anchor = resolveRuntimeErrorOverlayAnchor(overlay, codeTop, textLeft, geometry.contentRight, geometry.availableBottom);
 	if (!anchor) {
 		overlay.layout = null;
-		return;
+		return 'rendered';
 	}
 	const layout = computeRuntimeErrorOverlayLayout(
 		overlay,
@@ -229,7 +242,7 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 	);
 	if (!layout) {
 		overlay.layout = null;
-		return;
+		return 'rendered';
 	}
 	const highlightLines: number[] = [];
 	if (overlay.hovered && overlay.hoverLine >= 0 && overlay.hoverLine < overlay.lineDescriptors.length) {
@@ -254,12 +267,15 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 		highlightLines: highlightLines.length > 0 ? highlightLines : null,
 	};
 	renderRuntimeErrorOverlayBubble(ide_state.font, overlay, layout, anchor.lineHeight, drawOptions);
+	return 'rendered';
 }
 
 const COPY_ICON_ID = 'copy';
 const COPY_ICON_WIDTH = 6;
 const COPY_ICON_HEIGHT = 8;
 const COPY_BUTTON_GAP = 2;
+
+export type RuntimeErrorOverlayRenderResult = 'absent' | 'rendered' | 'above' | 'below';
 
 export type RuntimeErrorOverlayAnchor = {
 	anchorX: number;

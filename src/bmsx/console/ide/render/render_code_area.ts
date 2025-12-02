@@ -3,7 +3,7 @@ import type { CachedHighlight, CursorScreenInfo } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { clamp } from '../../../utils/clamp';
 import { computeMaximumScrollColumn, drawHoverTooltip, getCodeAreaBounds, getDiagnosticsForRow, maximumLineLength, } from '../console_cart_editor';
-import { renderRuntimeErrorOverlay } from './render_error_overlay';
+import { renderRuntimeErrorOverlay, type RuntimeErrorOverlayRenderResult } from './render_error_overlay';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
 import { drawEditorColoredText } from '../text_renderer';
@@ -240,7 +240,10 @@ export function renderCodeArea(): void {
 		ide_state.codeHorizontalScrollbarVisible = false;
 	}
 
-	renderRuntimeErrorOverlay(bounds.codeTop, bounds.codeRight, bounds.textLeft);
+	const runtimeOverlayState: RuntimeErrorOverlayRenderResult = renderRuntimeErrorOverlay(bounds.codeTop, bounds.codeRight, bounds.textLeft);
+	if (runtimeOverlayState === 'above' || runtimeOverlayState === 'below') {
+		drawRuntimeErrorOverlayIndicator(runtimeOverlayState, bounds, contentBottom);
+	}
 	drawHoverTooltip(bounds.codeTop, contentBottom, bounds.textLeft);
 
 	if (ide_state.cursorVisible && cursorEntry && cursorInfo) {
@@ -254,6 +257,32 @@ export function renderCodeArea(): void {
 	if (ide_state.codeHorizontalScrollbarVisible) {
 		ide_state.scrollbars.codeHorizontal.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
+}
+
+function drawRuntimeErrorOverlayIndicator(
+	direction: 'above' | 'below',
+	bounds: { codeTop: number; codeRight: number; textLeft: number },
+	contentBottom: number
+): void {
+	const indicatorWidth = 16;
+	const indicatorHeight = 5;
+	const margin = 4;
+	const scrollbarOffset = ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
+	const rightEdge = bounds.codeRight - scrollbarOffset - constants.CODE_AREA_RIGHT_MARGIN;
+	const left = Math.max(bounds.textLeft, rightEdge - indicatorWidth);
+	const top = direction === 'above'
+		? bounds.codeTop + margin
+		: contentBottom - indicatorHeight - margin;
+	const bottom = top + indicatorHeight;
+	const accentHeight = 2;
+	const accentTop = direction === 'above' ? top : bottom - accentHeight;
+	api.rectfill_color(left, top, left + indicatorWidth, bottom, undefined, constants.ERROR_OVERLAY_BACKGROUND);
+	api.rectfill_color(left, accentTop, left + indicatorWidth, accentTop + accentHeight, undefined, constants.ERROR_OVERLAY_LINE_HOVER);
+	const notchWidth = 6;
+	const notchLeft = left + Math.max(2, Math.floor((indicatorWidth - notchWidth) / 2));
+	const notchTop = direction === 'above' ? top - 1 : bottom;
+	api.rectfill_color(notchLeft, notchTop, notchLeft + notchWidth, notchTop + 1, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
+	api.rect(left, top, left + indicatorWidth, bottom, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
 }
 
 function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo {

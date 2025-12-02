@@ -21,6 +21,7 @@ import { clamp } from '../../utils/clamp';
 import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, handleActionPromptSelection, openSymbolSearch, openResourceSearch, focusEditorFromProblemsPanel, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openDebugPanelTab, performAction, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, scrollResourceBrowser, getCodeAreaBounds, scrollRows, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, resolvePointerRow, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, handlePointerAutoScroll, getActiveResourceViewer, resourceViewerTextCapacity, moveSymbolSearchSelection, symbolSearchPageSize, updateSymbolSearchMatches, applyLineJumpFieldText, resourceSearchWindowCapacity, updateResourceSearchMatches, applyLineJump, mapScreenPointToViewport } from './console_cart_editor';
 import { clearGotoHoverHighlight, clearReferenceHighlights, tryGotoDefinitionAt, refreshGotoHoverHighlight } from './intellisense';
 import { navigateToRuntimeErrorFrameTarget } from './ide_debugger';
+import { focusRuntimeErrorOverlay } from './runtime_error_navigation';
 import { toggleProblemsPanel, hideProblemsPanel } from './problems_panel';
 import { markDiagnosticsDirty } from './diagnostics';
 import { point_in_rect } from '../../utils/rect_operations';
@@ -453,7 +454,10 @@ export function handleEditorInput(deltaSeconds: number): void {
 	}
 	if ((ctrlDown || metaDown) && !altDown && !shiftDown && isKeyJustPressed('KeyE')) {
 		consumeIdeKey('KeyE');
-		openResourceSearch();
+		const focused = focusRuntimeErrorOverlay();
+		if (!focused) {
+			openResourceSearch();
+		}
 		return;
 	}
 	if ((ctrlDown && altDown) && isKeyJustPressed('Comma')) {
@@ -2286,4 +2290,3 @@ export function evaluateRuntimeErrorOverlayClick(
 	ide_state.metadata.ide_theme = ide_state.themeVariant;
 	ide_state.layout.invalidateAllHighlights();
 }
-

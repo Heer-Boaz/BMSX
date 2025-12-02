@@ -1475,7 +1475,6 @@ export function deactivate(): void {
 	ide_state.searchVisible = false;
 	ide_state.lineJumpActive = false;
 	ide_state.lineJumpVisible = false;
-	ide_state.runtimeErrorOverlay = null;
 	resetActionPromptState();
 	closeCreateResourcePrompt(false);
 	hideResourcePanel();
