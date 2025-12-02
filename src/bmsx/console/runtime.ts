@@ -3693,7 +3693,7 @@ export class BmsxConsoleRuntime extends Service {
 			storage: this.storageService,
 		});
 		const serverOverrides = await fetchWorkspaceDirtyLuaOverrides(root);
-		const overrides = await this.mergeWorkspaceOverrides(root, localOverrides, serverOverrides);
+		const overrides = await mergeWorkspaceOverrides(root, localOverrides, serverOverrides);
 		if (token !== this.workspaceOverrideToken) {
 			return;
 		}
