@@ -1958,6 +1958,18 @@ export class LuaInterpreter {
 		if (isLuaNativeValue(value)) {
 			return this.getOrCreateNativeCallable(value, range);
 		}
+		if (typeof value === 'function') {
+			const wrapped = this.convertFromHost(value);
+			if (isLuaNativeValue(wrapped)) {
+				return this.getOrCreateNativeCallable(wrapped, range);
+			}
+			if (wrapped && typeof wrapped === 'object' && 'call' in (wrapped as Record<string, unknown>)) {
+				const candidate = wrapped as LuaFunctionValue;
+				if (typeof candidate.call === 'function') {
+					return candidate;
+				}
+			}
+		}
 		if (typeof value === 'object' && value !== null) {
 			if ('call' in value) {
 				const candidate = value as LuaFunctionValue;
@@ -1966,10 +1978,12 @@ export class LuaInterpreter {
 				}
 			}
 		}
+		const ctorName = value && typeof value === 'object' ? (value as { constructor?: { name?: string } }).constructor?.name : undefined;
+		const failureMessage = `${message} (value type=${typeof value}${ctorName ? ` ctor=${ctorName}` : ''})`;
 		if (range !== null) {
-			throw this.runtimeErrorAt(range, message);
+			throw this.runtimeErrorAt(range, failureMessage);
 		}
-		throw this.runtimeError(message);
+		throw this.runtimeError(failureMessage);
 	}
 
 	private ensureHostAdapter(range: LuaSourceRange): LuaHostAdapter {
