@@ -168,6 +168,9 @@ function formatRuntimeErrorStackFrame(frame: StackTraceFrame): string {
 		}
 	}
 	const suffix = location.length > 0 ? `(${location})` : '';
+	if (originLabel.length === 0) {
+		return `${name}${suffix}`;
+	}
 	return `[${originLabel}] ${name}${suffix}`;
 }
 

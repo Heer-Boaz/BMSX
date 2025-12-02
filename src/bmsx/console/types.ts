@@ -1,5 +1,5 @@
 import type { LuaFunctionValue } from '../lua/value';
-import type { vec2, CanonicalizationType, BmsxCartridge } from '../rompack/rompack';
+import type { CanonicalizationType, BmsxCartridge } from '../rompack/rompack';
 import { LuaEntrySnapshot } from './lua_js_bridge';
 import { LuaPersistenceFailurePolicy } from './workspace';
 
