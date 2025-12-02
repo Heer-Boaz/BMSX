@@ -169,7 +169,7 @@ export class ConsoleMode {
 			resetBlink: () => { this.resetBlink(); },
 			revealCursor: () => { },
 			characterAdvance: (char) => this.font.advance(char),
-			get lineHeight() { return this.font.lineHeight; },
+			lineHeight: this.font.lineHeight,
 			measureText: (text) => this.measureRawText(text),
 			drawText: (text, x, y, color) => { api.write(text, x, y, undefined, color); },
 			getCursorScreenInfo: () => this.cursorScreenInfo,

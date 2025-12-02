@@ -65,7 +65,6 @@ export class BmsxConsoleApi {
 	private readonly defaultPrintColorIndex = 15;
 	private readonly serviceExts = new Map<string, EntityExtensions>();
 	private readonly worldObjectExts = new Map<string, EntityExtensions>();
-	private readonly spriteObjectExts = new Map<string, EntityExtensions>();
 	private readonly componentExts = new Map<string, EntityExtensions>();
 	private textCursorX = 0;
 	private textCursorY = 0;
@@ -576,7 +575,7 @@ export class BmsxConsoleApi {
 	 * @returns The id of the spawned sprite instance.
 	 */
 	public spawn_sprite(definition_id: Identifier, overrides?: Partial<SpriteObject>): Identifier {
-		const ext = this.spriteObjectExts.get(definition_id);
+		const ext = this.worldObjectExts.get(definition_id);
 		// Default the id of the instance to the Lua-class' definition_id if not overridden
 		const instance = new SpriteObject({ id: overrides?.id ?? ext?.class?.id, constructReason: undefined });
 		// Apply definition
