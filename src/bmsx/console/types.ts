@@ -1,4 +1,7 @@
-import type { vec2, CanonicalizationType } from '../rompack/rompack';
+import type { LuaFunctionValue } from '../lua/value';
+import type { vec2, CanonicalizationType, BmsxCartridge } from '../rompack/rompack';
+import { LuaEntrySnapshot } from './lua_js_bridge';
+import { LuaPersistenceFailurePolicy } from './workspace';
 
 export type ManifestInputMapping = Record<string, string[]>;
 
@@ -45,8 +48,6 @@ export type ConsoleModuleOptions = {
 	moduleId: string;
 	canonicalization?: CanonicalizationType;
 };
-
-export type Vector2 = vec2;
 
 export type ConsoleResourceDescriptor = {
 	path: string;
@@ -133,4 +134,32 @@ export type ConsoleLuaHoverResult = {
 	isLocalFunction: boolean;
 	isBuiltin: boolean;
 	definition?: ConsoleLuaDefinitionLocation;
+};export type BmsxConsoleRuntimeOptions = {
+	cart: BmsxCartridge;
+	playerIndex: number;
+	luaSourceFailurePolicy?: Partial<LuaPersistenceFailurePolicy>;
+	canonicalization?: CanonicalizationType;
 };
+
+export type BmsxConsoleState = {
+	luaRuntimeFailed: boolean;
+	luaChunkName: string;
+	storage?: { namespace: string; entries: Array<{ index: number; value: number; }>; };
+	luaGlobals?: LuaEntrySnapshot;
+	luaLocals?: LuaEntrySnapshot;
+	luaRandomSeed?: number;
+};
+
+export type LuaMarshalContext = {
+	moduleId: string;
+	path: string[];
+};
+
+export type LuaFunctionRedirectRecord = {
+	key: string;
+	moduleId: string;
+	path: ReadonlyArray<string>;
+	current: LuaFunctionValue;
+	redirect: LuaFunctionValue;
+};
+

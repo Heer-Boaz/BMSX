@@ -204,7 +204,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 			if (typeof callable !== 'function') {
 				throw runtime.createApiRuntimeError(`API method '${name}' is not callable.`);
 			}
-			const params = runtime.extractFunctionParameters(callable as (...args: unknown[]) => unknown);
+			const params = extractFunctionParameters(callable as (...args: unknown[]) => unknown);
 			const apiMetadata = CONSOLE_API_METHOD_METADATA[name];
 			const optionalSet: Set<string> = new Set();
 			if (apiMetadata?.optionalParameters) {
@@ -344,13 +344,87 @@ export function registerLuaBuiltin(metadata: ConsoleLuaBuiltinDescriptor): void 
 	runtime.luaBuiltinMetadata.set(normalizedName, descriptor);
 }
 
+function extractFunctionParameters(fn: (...args: unknown[]) => unknown): string[] {
+	const source = Function.prototype.toString.call(fn);
+	const openIndex = source.indexOf('(');
+	if (openIndex === -1) {
+		return [];
+	}
+	let index = openIndex + 1;
+	let depth = 1;
+	let closeIndex = source.length;
+	while (index < source.length) {
+		const ch = source.charAt(index);
+		if (ch === '(') {
+			depth += 1;
+		} else if (ch === ')') {
+			depth -= 1;
+			if (depth === 0) {
+				closeIndex = index;
+				break;
+			}
+		}
+		index += 1;
+	}
+	if (depth !== 0 || closeIndex <= openIndex) {
+		return [];
+	}
+	const slice = source.slice(openIndex + 1, closeIndex);
+	const withoutBlockComments = slice.replace(/\/\*[\s\S]*?\*\//g, '');
+	const withoutLineComments = withoutBlockComments.replace(/\/\/.*$/gm, '');
+	const rawTokens = withoutLineComments.split(',');
+	const names: string[] = [];
+	for (let i = 0; i < rawTokens.length; i += 1) {
+		const token = rawTokens[i].trim();
+		if (token.length === 0) {
+			continue;
+		}
+		names.push(sanitizeParameterName(token, i));
+	}
+	return names;
+}
+
+function sanitizeParameterName(token: string, index: number): string {
+	let candidate = token.trim();
+	if (candidate.length === 0) {
+		return `arg${index + 1}`;
+	}
+	if (candidate.startsWith('...')) {
+		return '...';
+	}
+	const equalsIndex = candidate.indexOf('=');
+	if (equalsIndex >= 0) {
+		candidate = candidate.slice(0, equalsIndex).trim();
+	}
+	const colonIndex = candidate.indexOf(':');
+	if (colonIndex >= 0) {
+		candidate = candidate.slice(0, colonIndex).trim();
+	}
+	const bracketIndex = Math.max(candidate.indexOf('{'), candidate.indexOf('['));
+	if (bracketIndex !== -1) {
+		return `arg${index + 1}`;
+	}
+	const sanitized = candidate.replace(/[^A-Za-z0-9_]/g, '');
+	if (sanitized.length === 0) {
+		return `arg${index + 1}`;
+	}
+	return sanitized;
+}
+
+export function seedDefaultLuaBuiltins(): void {
+	BmsxConsoleRuntime.instance.luaBuiltinMetadata.clear();
+	const defaults = DEFAULT_LUA_BUILTIN_FUNCTIONS;
+	for (let i = 0; i < defaults.length; i += 1) {
+		registerLuaBuiltin(defaults[i]);
+	}
+}
+
 export function registerLuaGlobal(env: LuaEnvironment, name: string, value: LuaValue): void {
 	const runtime = BmsxConsoleRuntime.instance;
 	const key = runtime.canonicalizeIdentifier(name);
 	env.set(key, value);
 	runtime.apiFunctionNames.add(key);
 }
-
 
 function wrapResultValue(value: unknown): ReadonlyArray<LuaValue> {
 	if (Array.isArray(value)) {

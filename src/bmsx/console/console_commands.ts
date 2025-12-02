@@ -248,19 +248,19 @@ export class ConsoleCommandDispatcher {
 
 	private handleJsStack(tokens: string[]): void {
 		if (tokens.length === 1) {
-			const enabled = this.runtime.consoleJsStackEnabled;
+			const enabled = this.runtime.jsStackEnabled;
 			this.runtime.consoleMode.appendStdout(`JS stack traces ${enabled ? 'ON' : 'OFF'}`);
 			return;
 		}
 		if (tokens.length === 2) {
 			const mode = tokens[1].toUpperCase();
 			if (mode === 'ON') {
-				this.runtime.consoleJsStackEnabled = true;
+				this.runtime.jsStackEnabled = true;
 				this.runtime.consoleMode.appendStdout('JS stack traces ON');
 				return;
 			}
 			if (mode === 'OFF') {
-				this.runtime.consoleJsStackEnabled = false;
+				this.runtime.jsStackEnabled = false;
 				this.runtime.consoleMode.appendStdout('JS stack traces OFF');
 				return;
 			}

@@ -1,6 +1,7 @@
 import type { LuaSourceRange } from '../lua/ast';
 import type { LuaInterpreter } from '../lua/runtime';
-import type { LuaFunctionValue } from '../lua/value';
+import { createLuaNativeFunction, type LuaFunctionValue } from '../lua/value';
+import type { LuaFunctionRedirectRecord } from './types';
 
 export type LuaHandlerCategory = string;
 
@@ -35,121 +36,53 @@ export interface LuaHandlerRegistration {
 	onDispose(context: LuaHandlerBindContext): void;
 }
 
-type LuaHandlerRecord = {
-	descriptor: LuaHandlerDescriptor;
-	context: LuaHandlerBindContext;
-	onUpdate: (context: LuaHandlerBindContext) => void;
-	onDispose: (context: LuaHandlerBindContext) => void;
-};
+export class LuaFunctionRedirectCache {
+	private readonly byKey = new Map<string, LuaFunctionRedirectRecord>();
+	private readonly byModule = new Map<string, Set<string>>();
 
-export class LuaHandlerRegistry {
-	public static readonly instance = new LuaHandlerRegistry();
-
-	private readonly records = new Map<string, LuaHandlerRecord>();
-	private readonly handlerIdsByChunk = new Map<string, Set<string>>();
-
-	public register(registration: LuaHandlerRegistration, context: LuaHandlerBindContext): LuaHandlerDescriptor {
-		const descriptor = this.createDescriptor(registration);
-		const existing = this.records.get(registration.id);
-		if (existing) {
-			this.reindexDescriptor(existing.descriptor, descriptor);
-			existing.descriptor = descriptor;
-			existing.onUpdate(context);
-			existing.context = context;
-			return descriptor;
-		}
-
-		registration.onCreate(context);
-		this.records.set(registration.id, {
-			descriptor,
-			context,
-			onUpdate: registration.onUpdate,
-			onDispose: registration.onDispose,
-		});
-		this.indexDescriptor(descriptor);
-		return descriptor;
-	}
-
-	public unregister(handlerId: string): void {
-		const record = this.records.get(handlerId);
+	public getOrCreate(moduleId: string, path: ReadonlyArray<string>, fn: LuaFunctionValue): LuaFunctionValue {
+		const key = this.buildKey(moduleId, path);
+		let record = this.byKey.get(key);
 		if (!record) {
-			return;
+			record = this.createRecord(moduleId, key, path, fn);
+			this.byKey.set(key, record);
+			this.index(moduleId, key);
+			return record.redirect;
 		}
-		this.unindexDescriptor(record.descriptor);
-		try {
-			record.onDispose(record.context);
-		}
-		finally {
-			this.records.delete(handlerId);
-		}
+		record.current = fn;
+		return record.redirect;
 	}
 
-	public get(handlerId: string): LuaHandlerDescriptor {
-		const record = this.records.get(handlerId);
-		return record ? record.descriptor : null;
+	public clear(): void {
+		this.byKey.clear();
+		this.byModule.clear();
 	}
 
-	public list(): ReadonlyArray<LuaHandlerDescriptor> {
-		return Array.from(this.records.values(), (record) => record.descriptor);
-	}
-
-	public listByChunk(chunkName: string): ReadonlyArray<LuaHandlerDescriptor> {
-		const ids = this.handlerIdsByChunk.get(chunkName);
-		if (!ids || ids.size === 0) {
-			return [];
-		}
-		const descriptors: LuaHandlerDescriptor[] = [];
-		for (const handlerId of ids) {
-			const record = this.records.get(handlerId);
-			if (record) {
-				descriptors.push(record.descriptor);
-			}
-		}
-		return descriptors;
-	}
-
-	private createDescriptor(registration: LuaHandlerRegistration): LuaHandlerDescriptor {
-		const baseChunk = registration.chunkName ?? registration.sourceRange?.chunkName ?? '';
-		const normalizedChunkName = baseChunk;
-		return {
-			id: registration.id,
-			category: registration.category,
-			targetId: registration.targetId,
-			hook: registration.hook,
-			chunkName: baseChunk,
-			normalizedChunkName,
-			functionName: registration.functionName,
-			sourceRange: registration.sourceRange,
-			metadata: registration.metadata,
+	private createRecord(moduleId: string, key: string, path: ReadonlyArray<string>, fn: LuaFunctionValue): LuaFunctionRedirectRecord {
+		const record: LuaFunctionRedirectRecord = {
+			key,
+			moduleId,
+			path: path.slice(),
+			current: fn,
+			redirect: null as unknown as LuaFunctionValue,
 		};
+		const redirect = createLuaNativeFunction(`redirect:${path[path.length - 1] ?? 'fn'}`, (args) => {
+			return record.current.call(args);
+		});
+		record.redirect = redirect;
+		return record;
 	}
 
-	private indexDescriptor(descriptor: LuaHandlerDescriptor): void {
-		let bucket = this.handlerIdsByChunk.get(descriptor.normalizedChunkName);
+	private index(moduleId: string, key: string): void {
+		let bucket = this.byModule.get(moduleId);
 		if (!bucket) {
 			bucket = new Set<string>();
-			this.handlerIdsByChunk.set(descriptor.normalizedChunkName, bucket);
+			this.byModule.set(moduleId, bucket);
 		}
-		bucket.add(descriptor.id);
+		bucket.add(key);
 	}
 
-	private unindexDescriptor(descriptor: LuaHandlerDescriptor): void {
-		const chunk = descriptor.normalizedChunkName;
-		const bucket = this.handlerIdsByChunk.get(chunk);
-		if (!bucket) {
-			return;
-		}
-		bucket.delete(descriptor.id);
-		if (bucket.size === 0) {
-			this.handlerIdsByChunk.delete(chunk);
-		}
-	}
-
-	private reindexDescriptor(previous: LuaHandlerDescriptor, next: LuaHandlerDescriptor): void {
-		if (previous.normalizedChunkName === next.normalizedChunkName) {
-			return;
-		}
-		this.unindexDescriptor(previous);
-		this.indexDescriptor(next);
+	private buildKey(moduleId: string, path: ReadonlyArray<string>): string {
+		return `${moduleId}::${path.join('.')}`;
 	}
 }

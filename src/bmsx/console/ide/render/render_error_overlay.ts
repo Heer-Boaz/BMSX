@@ -15,6 +15,7 @@ import { clampCursorColumn, centerCursorVertically, revealCursor } from '../care
 import * as constants from '../constants';
 import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../runtime_error_overlay';
 import { resetBlink } from './render_caret';
+import { getChunkResourceHint } from '../intellisense';
 
 export interface ErrorOverlayBounds {
 	left: number;
@@ -506,7 +507,7 @@ export function renderRuntimeFaultOverlay(options: {
 	if (!editorFacade.exists) return false;
 	if (!options.force && (!options.luaRuntimeFailed || !options.needsFlush)) return false;
 	if (!snapshot) return false;
-	const hint = BmsxConsoleRuntime.instance.getChunkResourceHint(snapshot.chunkName);
+	const hint = getChunkResourceHint(snapshot.chunkName);
 	if (hint) {
 		showRuntimeErrorInChunk(
 			snapshot.chunkName,

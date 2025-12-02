@@ -4,7 +4,8 @@ import { WorldObject } from '../core/object/worldobject';
 import { LuaHandlerCache, isLuaHandlerFn } from '../lua/handler_cache';
 import { LuaValue, LuaTable, isLuaNativeValue, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName } from '../lua/value';
 import { NativeRegisteredObject } from '../rompack/rompack';
-import { BmsxConsoleRuntime, LuaMarshalContext } from './runtime';
+import { BmsxConsoleRuntime } from './runtime';
+import { LuaMarshalContext } from './types';
 
 export type LuaSnapshotObjects = Record<number, unknown>;
 export type LuaSnapshotGraph = { root: unknown; objects: LuaSnapshotObjects };
