@@ -2,7 +2,7 @@ import { $ } from '../core/game';
 import type { World, WorldModule } from '../core/world';
 import { BmsxConsoleRuntime } from './runtime';
 import type { ConsoleModuleOptions } from './types';
-import type { BmsxCartridge } from 'bmsx/rompack/rompack';
+import type { BmsxCartridge } from '../rompack/rompack';
 import { BmsxCartSystem } from './console_systems';
 import { TickGroup } from '../ecs/ecsystem';
 

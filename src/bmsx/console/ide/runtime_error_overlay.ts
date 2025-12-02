@@ -1,8 +1,9 @@
 import type {
 	RuntimeErrorDetails,
 	RuntimeErrorOverlay,
-	RuntimeErrorOverlayLineDescriptor} from './types';
-import type { StackTraceFrame } from 'bmsx/lua/value';
+	RuntimeErrorOverlayLineDescriptor
+} from './types';
+import type { StackTraceFrame } from '../../lua/value';
 import { setActiveRuntimeErrorOverlay } from './console_cart_editor';
 import { ide_state } from './ide_state';
 
@@ -143,19 +144,21 @@ export function buildRuntimeErrorOverlayCopyText(overlay: RuntimeErrorOverlay): 
 }
 
 function formatRuntimeErrorStackFrame(frame: StackTraceFrame): string {
-	const originLabel = frame.origin === 'lua' ? 'Lua' : 'JS';
+	const originLabel = frame.origin === 'lua' ? '' : 'JS'; // Make Lua the default and only label JS frames
 	let name = frame.functionName && frame.functionName.length > 0 ? frame.functionName : '';
-	if (name.length === 0 && frame.source && frame.source.length > 0) {
-		name = frame.source;
-	}
-	if (name.length === 0 && frame.raw.length > 0) {
-		name = frame.raw;
-	}
 	if (name.length === 0) {
-		name = '(anonymous)';
+		if (frame.source?.length > 0) {
+			name = frame.source;
+		}
+		else if (frame.raw?.length > 0) {
+			name = frame.raw;
+		}
+		else {
+			name = '(anonymous)';
+		}
 	}
 	let location = '';
-	if (frame.source && frame.source.length > 0) {
+	if (frame?.source.length > 0) {
 		location = frame.source;
 	}
 	if (frame.line !== null) {
@@ -167,6 +170,7 @@ function formatRuntimeErrorStackFrame(frame: StackTraceFrame): string {
 	const suffix = location.length > 0 ? `(${location})` : '';
 	return `[${originLabel}] ${name}${suffix}`;
 }
+
 export function updateRuntimeErrorOverlay(deltaSeconds: number): void {
 	const overlay = ide_state.runtimeErrorOverlay;
 	if (!overlay) {

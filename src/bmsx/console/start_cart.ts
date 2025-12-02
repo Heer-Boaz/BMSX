@@ -2,7 +2,7 @@ import { $, Input, type BootArgs, type WorldConfiguration, type KeyboardButton, 
 import { createBmsxConsoleModule } from './module';
 import { ConsoleFont } from './font';
 import type { ManifestInputMapping } from './types';
-import type { BmsxCartridge, LifeCycleHandlers } from 'bmsx/rompack/rompack';
+import type { BmsxCartridge, LifeCycleHandlers } from '../rompack/rompack';
 import { MSX2ScreenHeight } from '../index';
 import { MSX2ScreenWidth } from '../index';
 import type { CanonicalizationType, Viewport } from '../rompack/rompack';

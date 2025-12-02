@@ -1,4 +1,4 @@
-import type { BootArgs } from 'bmsx';
+import type { BootArgs } from '../../rompack/rompack';
 import { startCart } from '../start_cart';
 
 declare global {

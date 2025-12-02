@@ -37,6 +37,33 @@ export function isLuaNativeValue(value: unknown): value is LuaNativeValue {
 	return value instanceof LuaNativeValue;
 }
 
+
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+	if (value === null || typeof value !== 'object') {
+		return false;
+	}
+	const proto = Object.getPrototypeOf(value);
+	return proto === Object.prototype || proto === null;
+}
+
+export function resolveNativeTypeName(value: object | Function): string {
+	if (typeof value === 'function') {
+		const name = value.name;
+		if (typeof name === 'string' && name.length > 0) {
+			return name;
+		}
+		return 'Function';
+	}
+	const descriptor = (value as { constructor?: unknown }).constructor;
+	if (typeof descriptor === 'function') {
+		const constructorFunction = descriptor as { name?: unknown };
+		if (constructorFunction && typeof constructorFunction.name === 'string' && constructorFunction.name.length > 0) {
+			return constructorFunction.name;
+		}
+	}
+	return 'Object';
+}
+
 type LuaTableMethods = {
 	get(key: LuaValue): LuaValue;
 	set(key: LuaValue, value: LuaValue): void;
@@ -146,7 +173,7 @@ function tableSet(this: LuaTable, key: LuaValue, value: LuaValue): void {
 	if (value === null) {
 		tableDelete.call(this, key);
 		return;
-}
+	}
 	const state = getState(this);
 	if (typeof key === 'number' && Number.isInteger(key)) {
 		const property = String(key);
@@ -294,7 +321,7 @@ Object.defineProperties(luaTablePrototype, {
 	numericLength: { value: tableNumericLength, enumerable: false, configurable: false },
 	setMetatable: { value: tableSetMetatable, enumerable: false, configurable: false },
 	getMetatable: { value: tableGetMetatable, enumerable: false, configurable: false },
-});export type LuaDebuggerPauseSignal = Extract<ExecutionSignal, { kind: 'pause'; }>;
+}); export type LuaDebuggerPauseSignal = Extract<ExecutionSignal, { kind: 'pause'; }>;
 
 export function isLuaDebuggerPauseSignal(value: unknown): value is LuaDebuggerPauseSignal {
 	if (typeof value !== 'object' || value === null) {
@@ -310,6 +337,13 @@ export function createLuaInterpreter(canonicalization: CanonicalizationType = 'n
 
 export function createLuaNativeFunction(name: string, handler: (args: ReadonlyArray<LuaValue>) => ReadonlyArray<LuaValue>): LuaFunctionValue {
 	return new LuaNativeFunction(name, handler);
+}
+
+export function isLuaFunctionValue(value: unknown): value is LuaFunctionValue {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	return typeof (value as { call?: unknown }).call === 'function';
 }
 
 export function convertToError(error: unknown): Error {

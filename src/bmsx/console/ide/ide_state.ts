@@ -8,7 +8,7 @@ import type {
 	ConsoleLuaSymbolEntry,
 	ConsoleResourceDescriptor,
 } from '../types';
-import type { BmsxCartMetadata } from 'bmsx/rompack/rompack';
+import type { BmsxCartMetadata } from '../../rompack/rompack';
 import type { ConsoleFontVariant } from '../font';
 import type { ConsoleEditorFont } from '../editor_font';
 import type { TextField, ScrollbarKind, MessageState, IdeThemeVariant } from './types';

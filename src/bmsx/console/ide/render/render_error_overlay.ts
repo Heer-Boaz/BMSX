@@ -6,7 +6,7 @@ import { activate, bottomMargin, editorFacade, focusChunkSource, setActiveRuntim
 import { ide_state } from '../ide_state';
 import { buildRuntimeErrorLines, computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapRuntimeErrorLine } from '../text_utils';
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../types';
-import type { StackTraceFrame } from 'bmsx/lua/value';
+import type { StackTraceFrame } from '../../../lua/value';
 import type { RectBounds } from '../../../rompack/rompack';
 import { Msx1Colors } from '../../../systems/msx';
 import { pointInRect } from '../../../utils/rect_operations';

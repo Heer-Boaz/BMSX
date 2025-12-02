@@ -1,4 +1,4 @@
-import { convertToError, extractErrorMessage } from 'bmsx/lua/value';
+import { convertToError, extractErrorMessage } from '../lua/value';
 import type { HttpResponse, StorageService } from '../platform';
 import type { RomPack, BmsxCartridge } from '../rompack/rompack';
 import { BmsxConsoleRuntime } from './runtime';
