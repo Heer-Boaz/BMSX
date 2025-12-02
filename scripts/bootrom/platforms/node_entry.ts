@@ -5,8 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { inflate } from 'pako';
 import { createCanvas, Image, loadImage } from 'canvas';
 
-import type { BootArgs, RomPack, TextureSource } from '../../../src/bmsx/rompack/rompack';
-import { normalizeCartLua } from '../bootresources';
+import { type BootArgs, type RomPack, type TextureSource } from '../../../src/bmsx/rompack/rompack';
 import { getZippedRomAndRomLabelFromBlob, loadResources } from '../bootresources';
 import { HeadlessPlatformServices } from '../../../src/bmsx_hostplatform/headless/platform_headless';
 import { CLIPlatformServices } from '../../../src/bmsx_hostplatform/cli/platform_cli';
@@ -562,11 +561,6 @@ function mergeRecords<T>(primary: Record<string, T>, fallback?: Record<string, T
 }
 
 function combineRompacks(engineRom: RomPack, cartRom: RomPack): RomPack {
-	if (!engineRom) {
-		normalizeCartLua(cartRom.cart);
-		return cartRom;
-	}
-
 	const combined: RomPack = {
 		...engineRom,
 		...cartRom,
@@ -581,7 +575,6 @@ function combineRompacks(engineRom: RomPack, cartRom: RomPack): RomPack {
 		canonicalization: cartRom.canonicalization ?? engineRom.canonicalization,
 		manifest: cartRom.manifest ?? engineRom.manifest,
 	};
-	normalizeCartLua(combined.cart);
 	if ((!combined.cart.entry || combined.cart.entry.length === 0) && Object.keys(combined.cart.lua).length > 0) {
 		const manifest = combined.manifest as { lua?: { entryAssetId?: string } };
 		const manifestEntryId = manifest && manifest.lua ? manifest.lua.entryAssetId : undefined;

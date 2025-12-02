@@ -14,7 +14,7 @@
 import { type ModulationParams } from "../audio/soundmaster";
 import { Space } from '../core/space';
 import { $ } from '../core/game';
-import type { BmsxConsoleState } from 'bmsx/console/types';
+import type { BmsxConsoleState } from '../console/types';
 import { Registry } from "../core/registry";
 import { GameView, SkyboxImageIds } from '../render/gameview';
 import { decodeBinary, encodeBinary } from "./binencoder";
