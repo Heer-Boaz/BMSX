@@ -51,14 +51,14 @@ export class EilaEventService extends Service {
 		}
 	}
 
-	public theOtherFighter(fighter: Fighter): Fighter | null {
+	public theOtherFighter(fighter: Fighter): Fighter {
 		if (fighter.id === 'player') return $.world.getWorldObject<Fighter>('sinterklaas');
 		return $.world.getWorldObject<Fighter>('player');
 	}
 
 	@subscribesToGlobalEvent('hit_animation_end', true)
 	public handleHitAnimationEndEvent(event: GameEvent): void {
-		const emitter = (event.emitter ?? null) as Fighter | null;
+		const emitter = (event.emitter ) as Fighter;
 		if (!emitter) throw new Error('[EilaEventService] hit_animation_end missing fighter emitter.');
 		const otherFighter = this.theOtherFighter(emitter);
 		if (otherFighter) {
@@ -82,7 +82,7 @@ export class EilaEventService extends Service {
 
 	@subscribesToGlobalEvent('humiliated_animation_end', true)
 	public handleHumiliationAnimationEndEvent(event: GameEvent): void {
-		const fighter = (event as { fighter?: Fighter }).fighter ?? (event.emitter as Fighter | undefined);
+		const fighter = (event as { fighter?: Fighter }).fighter ?? (event.emitter as Fighter);
 		if (!fighter) throw new Error('[EilaEventService] humiliated_animation_end missing fighter.');
 		// Track total humiliations for demo state persistence
 		this._humiliationCount++;

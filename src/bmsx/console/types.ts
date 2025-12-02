@@ -1,6 +1,6 @@
 import type { vec2, CanonicalizationType } from '../rompack/rompack';
 
-export type ManifestInputMapping = Record<string, string[] | undefined>;
+export type ManifestInputMapping = Record<string, string[]>;
 
 export type BmsxConsoleLuaPrimaryAssetWithSource = {
 	readonly asset_id?: string;
@@ -56,7 +56,7 @@ export type ConsoleResourceDescriptor = {
 
 export type ConsoleLuaResourceCreationRequest = {
 	path: string;
-	asset_id?: string | null;
+	asset_id?: string;
 	contents: string;
 };
 
@@ -73,8 +73,8 @@ export type ConsoleLuaDefinitionRange = {
 
 export type ConsoleLuaDefinitionLocation = {
 	chunkName: string;
-	asset_id: string | null;
-	path?: string | null;
+	asset_id: string;
+	path?: string;
 	range: ConsoleLuaDefinitionRange;
 };
 
@@ -97,21 +97,21 @@ export type ConsoleLuaBuiltinDescriptor = {
 	params: string[];
 	signature: string;
 	optionalParams?: readonly string[];
-	parameterDescriptions?: readonly (string | null)[];
-	description?: string | null;
+	parameterDescriptions?: readonly (string)[];
+	description?: string;
 };
 
 export type ConsoleLuaHoverRequest = {
-	asset_id: string | null;
+	asset_id: string;
 	expression: string;
-	chunkName: string | null;
+	chunkName: string;
 	row: number;
 	column: number;
 };
 
 export type ConsoleLuaMemberCompletionRequest = {
-	asset_id: string | null;
-	chunkName: string | null;
+	asset_id: string;
+	chunkName: string;
 	expression: string;
 	operator: '.' | ':';
 };
@@ -119,7 +119,7 @@ export type ConsoleLuaMemberCompletionRequest = {
 export type ConsoleLuaMemberCompletion = {
 	name: string;
 	kind: 'method' | 'property';
-	detail: string | null;
+	detail: string;
 	parameters: string[];
 };
 
@@ -132,5 +132,5 @@ export type ConsoleLuaHoverResult = {
 	isFunction: boolean;
 	isLocalFunction: boolean;
 	isBuiltin: boolean;
-	definition?: ConsoleLuaDefinitionLocation | null;
+	definition?: ConsoleLuaDefinitionLocation;
 };

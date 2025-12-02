@@ -19,7 +19,7 @@ function hasFactory(): boolean {
 	return typeof globalScope[FACTORY_KEY] === 'function';
 }
 
-async function createWebGPUBackend(canvas: HTMLCanvasElement): Promise<GPUBackend | null> {
+async function createWebGPUBackend(canvas: HTMLCanvasElement): Promise<GPUBackend> {
 	if (!WEBGPU_RENDERER_SUPPORT) return null;
 	if (!navigator.gpu) return null;
 	const adapter = await navigator.gpu.requestAdapter();

@@ -132,7 +132,7 @@ class HeadlessLifecycle implements Lifecycle {
 
 class MemoryStorage implements StorageService {
 	private readonly store = new Map<string, string>();
-	getItem(k: string): string | null {
+	getItem(k: string): string {
 		return this.store.has(k) ? this.store.get(k)! : null;
 	}
 	setItem(k: string, v: string): void {
@@ -282,7 +282,7 @@ class NoopWindowEventHub implements WindowEventHub {
 class HeadlessGameViewHostWithWindowEvents extends HeadlessGameViewHost {
 	private readonly windowEvents = new NoopWindowEventHub();
 
-	override getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] | null {
+	override getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] {
 		if (capability === 'window-events') {
 			return this.windowEvents as GameViewHostCapabilityMap[T];
 		}

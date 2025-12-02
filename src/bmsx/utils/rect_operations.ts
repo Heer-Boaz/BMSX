@@ -73,7 +73,7 @@ export function get_overlap_area(a: Area, b: Area): Area {
 export function pointInRect(x: number, y: number, rect: RectBounds): boolean {
 	return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
 }
-export function point_in_rect(x: number, y: number, rect: RectBounds | null): boolean {
+export function point_in_rect(x: number, y: number, rect: RectBounds): boolean {
 	if (!rect) {
 		return false;
 	}

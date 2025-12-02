@@ -10,7 +10,7 @@ import { getCreateResourceBarHeight, getResourceSearchBarHeight, getSearchBarHei
 import { measureText } from '../text_utils';
 
 type InlineResultListOptions<T> = {
-	entries: readonly T[] | null | undefined;
+	entries: readonly T[];
 	visibleCount: number;
 	displayOffset: number;
 	entriesBaseOffset?: number;
@@ -36,7 +36,7 @@ export interface InlineBarsHost {
 	createResourceVisible: boolean;
 	createResourceField: TextField;
 	createResourceWorking: boolean;
-	createResourceError: string | null;
+	createResourceError: string;
 	drawCreateResourceErrorDialog: (api: BmsxConsoleApi, errorText: string) => void;
 	getCreateResourceBarHeight: () => number;
 	// Additional height getters for other bars (editor will supply these)
@@ -46,7 +46,7 @@ export interface InlineBarsHost {
 	getRenameBarHeight: () => number;
 	getLineJumpBarHeight: () => number;
 	drawInlineCaret: typeof drawInlineCaret;
-	inlineFieldSelectionRange: (field: unknown) => { start: number; end: number } | null;
+	inlineFieldSelectionRange: (field: unknown) => { start: number; end: number };
 	inlineFieldMeasureRange: (field: unknown, metrics: { spaceAdvance: number }, start: number, end: number) => number;
 	inlineFieldCaretX: (field: unknown, originX: number, measureText: (text: string) => number) => number;
 
@@ -64,7 +64,7 @@ export interface InlineBarsHost {
 	searchWorking?: boolean;
 	searchVisibleResultCount?: () => number;
 	searchResultEntryHeight?: () => number;
-	searchResultEntries?: Array<{ primary: string; secondary?: string | null; detail?: string | null }>;
+	searchResultEntries?: Array<{ primary: string; secondary?: string; detail?: string }>;
 	searchResultEntriesBaseOffset?: number;
 	searchSelectionIndex?: number;
 	searchHoverIndex?: number;
@@ -76,7 +76,7 @@ export interface InlineBarsHost {
 	resourceSearchVisibleResultCount?: () => number;
 	resourceSearchEntryHeight?: () => number;
 	isResourceSearchCompactMode?: () => boolean;
-	resourceSearchMatches?: Array<{ entry: { typeLabel: string; displayPath: string; assetLabel?: string | null } }>;
+	resourceSearchMatches?: Array<{ entry: { typeLabel: string; displayPath: string; assetLabel?: string } }>;
 	resourceSearchSelectionIndex?: number;
 	resourceSearchHoverIndex?: number;
 	resourceSearchDisplayOffset?: number;
@@ -89,7 +89,7 @@ export interface InlineBarsHost {
 	symbolSearchVisibleResultCount?: () => number;
 	symbolSearchEntryHeight?: () => number;
 	isSymbolSearchCompactMode?: () => boolean;
-	symbolSearchMatches?: Array<{ entry: { kindLabel: string; displayName: string; line: number; sourceLabel?: string | null; symbol?: unknown } }>;
+	symbolSearchMatches?: Array<{ entry: { kindLabel: string; displayName: string; line: number; sourceLabel?: string; symbol?: unknown } }>;
 	symbolSearchSelectionIndex?: number;
 	symbolSearchHoverIndex?: number;
 	symbolSearchDisplayOffset?: number;
@@ -102,8 +102,8 @@ export interface InlineBarsHost {
 	renameActive?: boolean;
 	renameField?: unknown;
 	renameMatchCount?: number;
-	renameExpression?: string | null;
-	renameOriginalName?: string | null;
+	renameExpression?: string;
+	renameOriginalName?: string;
 }
 
 export function renderCreateResourceBar(api: BmsxConsoleApi, host: InlineBarsHost): void {
@@ -168,7 +168,7 @@ export function renderSearchBar(host: InlineBarsHost): void {
 	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_SEARCH_OUTLINE);
 	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_SEARCH_OUTLINE);
 
-	const field = host.searchField as TextField | undefined;
+	const field = host.searchField as TextField;
 	const label = host.searchScope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
 	const labelX = 4;
 	const labelY = barTop + constants.SEARCH_BAR_MARGIN_Y;
@@ -266,7 +266,7 @@ export function renderResourceSearchBar(): void {
 	api.rectfill(0, barTop, ide_state.viewportWidth, barTop + 1, undefined, constants.COLOR_QUICK_OPEN_OUTLINE);
 	api.rectfill(0, barBottom - 1, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_QUICK_OPEN_OUTLINE);
 
-	const field = ide_state.resourceSearchField as TextField | undefined;
+	const field = ide_state.resourceSearchField as TextField;
 	const label = 'FILE :';
 	const labelX = 4;
 	const labelY = barTop + constants.QUICK_OPEN_BAR_MARGIN_Y;
@@ -351,7 +351,7 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 
-	const field = host.symbolSearchField as TextField | undefined;
+	const field = host.symbolSearchField as TextField;
 	const mode = host.symbolSearchMode ?? 'symbols';
 	const label = mode === 'references' ? 'REFS :' : host.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
 	const labelX = 4;
@@ -413,7 +413,7 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 		drawRow: (match, rowTop) => {
 			let textX = constants.SYMBOL_SEARCH_RESULT_PADDING_X;
 			const kindText = match?.entry.kindLabel ?? '';
-			const symbol = match?.entry.symbol as { __referenceColumn?: number } | undefined;
+			const symbol = match?.entry.symbol as { __referenceColumn?: number };
 			const referenceColumn = symbol?.__referenceColumn;
 			const lineValue = match?.entry.line ?? 0;
 			const lineText = mode === 'references' && typeof referenceColumn === 'number'
@@ -488,7 +488,7 @@ export function renderRenameBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_SEARCH_OUTLINE);
 	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_SEARCH_OUTLINE);
 
-	const field = host.renameField as TextField | undefined;
+	const field = host.renameField as TextField;
 	const label = 'RENAME:';
 	const labelX = 4;
 	const labelY = barTop + constants.SEARCH_BAR_MARGIN_Y;
@@ -559,7 +559,7 @@ export function renderLineJumpBar(api: BmsxConsoleApi, host: InlineBarsHost): vo
 	const labelY = barTop + constants.LINE_JUMP_BAR_MARGIN_Y;
 	host.drawText(label, labelX, labelY, constants.COLOR_LINE_JUMP_TEXT);
 
-	const field = host.lineJumpField as TextField | undefined;
+	const field = host.lineJumpField as TextField;
 	const active = !!host.lineJumpActive;
 	const fieldText = field ? getFieldText(field) : '';
 	let valueText = fieldText;

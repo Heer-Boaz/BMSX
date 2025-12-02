@@ -28,16 +28,16 @@ export class PendingAssignmentProcessor {
 		return gamepadInput.getButtonState(button).pressed && !gamepadInput.getButtonState(button).consumed;
 	}
 
-	private notifyUIProposed(gamepadIndex: number, proposedPlayerIndex: number | null): void {
+	private notifyUIProposed(gamepadIndex: number, proposedPlayerIndex: number): void {
 		$.emit('controller_assignment_proposed', Input.instance, { gamepadIndex, proposedPlayerIndex });
 	}
 
-	private notifyUIAssignmentStart(gamepadIndex: number, proposedPlayerIndex: number | null): void {
+	private notifyUIAssignmentStart(gamepadIndex: number, proposedPlayerIndex: number): void {
 		$.emit('controller_assignment_start', Input.instance, { gamepadIndex, proposedPlayerIndex });
 	}
 
-	private lastNotified: { proposed: number | null; positionIndex: number } | null = null;
-	private maybeNotify(gamepadIndex: number, proposedPlayerIndex: number | null): void {
+	private lastNotified: { proposed: number; positionIndex: number } = null;
+	private maybeNotify(gamepadIndex: number, proposedPlayerIndex: number): void {
 		const pos = this.pendingIndex;
 		const prev = this.lastNotified;
 		if (!prev || prev.proposed !== proposedPlayerIndex || prev.positionIndex !== pos) {
@@ -89,7 +89,7 @@ export class PendingAssignmentProcessor {
 	 * This constructor sets up an event listener for the "gamepaddisconnected" event,
 	 * which handles the disconnection of gamepads and manages pending assignments.
 	 */
-	constructor(public inputHandler: InputHandler, public proposedPlayerIndex: number | null) {
+	constructor(public inputHandler: InputHandler, public proposedPlayerIndex: number) {
 		// Defer UI creation to ControllerAssignmentUI
 	}
 

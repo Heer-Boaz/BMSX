@@ -189,7 +189,7 @@ export class Serializer {
 		}
 
 		// Iterative stack-based traversal
-		const stack: Array<{ value: any; parent: any; key: string | number | undefined; plain?: any; typename?: string; theConstructor?: any }> = [];
+		const stack: Array<{ value: any; parent: any; key: string | number; plain?: any; typename?: string; theConstructor?: any }> = [];
 		let rootRef: any = undefined;
 		stack.push({ value: obj, parent: null, key: undefined });
 		while (stack.length > 0) {
@@ -514,8 +514,8 @@ type SoundMasterState = {
 
 type ViewState = {
 	dynamicAtlasIndex: number;
-	activeCameraId: string | null;
-	skyboxFaceIds: SkyboxImageIds | undefined;
+	activeCameraId: string;
+	skyboxFaceIds: SkyboxImageIds;
 };
 
 @insavegame
@@ -541,7 +541,7 @@ export class Savegame {
 		const view = $.view as GameView;
 		const viewState: ViewState = {
 			dynamicAtlasIndex: view.dynamicAtlas,
-			activeCameraId: $.world.activeCameraId ?? null,
+			activeCameraId: $.world.activeCameraId ,
 			skyboxFaceIds: view.skyboxFaceIds,
 		};
 		return { viewState };

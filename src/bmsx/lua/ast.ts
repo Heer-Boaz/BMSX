@@ -136,7 +136,7 @@ export type LuaLocalFunctionStatement = LuaNode & {
 
 export type LuaFunctionName = {
 	readonly identifiers: ReadonlyArray<string>;
-	readonly methodName: string | null;
+	readonly methodName: string;
 };
 
 export type LuaFunctionDeclarationStatement = LuaNode & {
@@ -155,7 +155,7 @@ export type LuaBreakStatement = LuaNode & {
 };
 
 export type LuaIfClause = {
-	readonly condition: LuaExpression | null;
+	readonly condition: LuaExpression;
 	readonly block: LuaBlock;
 };
 
@@ -181,7 +181,7 @@ export type LuaForNumericStatement = LuaNode & {
 	readonly variable: LuaIdentifierExpression;
 	readonly start: LuaExpression;
 	readonly limit: LuaExpression;
-	readonly step: LuaExpression | null;
+	readonly step: LuaExpression;
 	readonly block: LuaBlock;
 };
 
@@ -332,7 +332,7 @@ export type LuaCallExpression = LuaNode & {
 	readonly kind: LuaSyntaxKind.CallExpression;
 	readonly callee: LuaExpression;
 	readonly arguments: ReadonlyArray<LuaExpression>;
-	readonly methodName: string | null;
+	readonly methodName: string;
 };
 
 export type LuaMemberExpression = LuaNode & {

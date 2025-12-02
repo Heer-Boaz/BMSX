@@ -16,7 +16,7 @@ import * as constants from './constants';
 const DEBUGGER_LOG_PREFIX = '[Debugger]';
 
 export class RuntimeDebuggerCommandExecutor implements RegisterablePersistent {
-	private static _instance: RuntimeDebuggerCommandExecutor | null = null;
+	private static _instance: RuntimeDebuggerCommandExecutor = null;
 
 	public static get instance(): RuntimeDebuggerCommandExecutor {
 		if (!RuntimeDebuggerCommandExecutor._instance) {
@@ -105,7 +105,7 @@ function handleDebuggerLifecycleEvent(event: DebuggerLifecycleEvent): void {
 		return;
 	}
 	if (event.type === 'paused') {
-		ide_state.debuggerControls.sessionMetrics = event.metrics ?? null;
+		ide_state.debuggerControls.sessionMetrics = event.metrics ;
 		updateExecutionState('paused');
 		return;
 	}
@@ -129,7 +129,7 @@ function ensureBucket(chunkKey: string): Set<number> {
 	return bucket;
 }
 
-export function hasBreakpoint(chunkName: string | null, line: number): boolean {
+export function hasBreakpoint(chunkName: string, line: number): boolean {
 	if (!chunkName) {
 		return false;
 	}
@@ -140,12 +140,12 @@ export function hasBreakpoint(chunkName: string | null, line: number): boolean {
 	return bucket?.has(line) === true;
 }
 
-export function getBreakpointsForChunk(chunkName: string | null): ReadonlySet<number> | null {
+export function getBreakpointsForChunk(chunkName: string): ReadonlySet<number> {
 	if (!chunkName) {
 		return null;
 	}
 	const bucket = ide_state.breakpoints.get(normalizeLuaChunkName(chunkName));
-	return bucket ?? null;
+	return bucket ;
 }
 
 export function toggleBreakpoint(chunkName: string, line: number): BreakpointToggleResult {
@@ -180,7 +180,7 @@ export function serializeBreakpoints(): SerializedBreakpointMap {
 	return payload;
 }
 
-export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap | null | undefined): void {
+export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap): void {
 	ide_state.breakpoints.clear();
 	if (payload) {
 		for (const [chunk, lineEntries] of Object.entries(payload)) {
@@ -213,7 +213,7 @@ export function syncRuntimeBreakpoints(): void {
 	BmsxConsoleRuntime.instance.setLuaBreakpoints(serialized);
 }
 
-export function getActiveBreakpointChunkName(): string | null {
+export function getActiveBreakpointChunkName(): string {
 	const context = getActiveCodeTabContext();
 	return resolveHoverChunkName(context);
 }
@@ -242,7 +242,7 @@ const MESSAGE_BY_REASON: Record<DebuggerPauseDisplayPayload['reason'], string> =
 	exception: 'Paused on exception',
 };
 
-export function showDebuggerPauseOverlay(payload: DebuggerPauseDisplayPayload, metrics: LuaDebuggerSessionMetrics | null): void {
+export function showDebuggerPauseOverlay(payload: DebuggerPauseDisplayPayload, metrics: LuaDebuggerSessionMetrics): void {
 	if (!ide_state.active) {
 		return;
 	}
@@ -251,7 +251,7 @@ export function showDebuggerPauseOverlay(payload: DebuggerPauseDisplayPayload, m
 		clearExecutionStopHighlights();
 		return;
 	}
-	focusChunkSource(normalizedChunk, payload.hint ?? undefined);
+	focusChunkSource(normalizedChunk, payload.hint );
 	const safeLine = fallbackclamp(payload.line, 1, payload.line - 1, 1);
 	const safeColumn = fallbackclamp(payload.column, 1, payload.column - 1, 1);
 	updateDebuggerCaret(safeLine, safeColumn);
@@ -288,7 +288,7 @@ function updateDebuggerCaret(row: number, column: number): void {
 	resetBlink();
 }
 
-function formatDebuggerMetrics(metrics: LuaDebuggerSessionMetrics | null): string | null {
+function formatDebuggerMetrics(metrics: LuaDebuggerSessionMetrics): string {
 	if (!metrics) {
 		return null;
 	}
@@ -321,7 +321,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 	}
 	const frameasset_id = typeof frame.chunkasset_id === 'string' && frame.chunkasset_id.length > 0 ? frame.chunkasset_id : null;
 	const framePath = typeof frame.chunkPath === 'string' && frame.chunkPath.length > 0 ? frame.chunkPath : null;
-	let descriptor: ConsoleResourceDescriptor | null = null;
+	let descriptor: ConsoleResourceDescriptor = null;
 	if (!frameasset_id || !framePath) {
 		try {
 			descriptor = findResourceDescriptorForChunk(normalizedChunk);
@@ -329,8 +329,8 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 			descriptor = null;
 		}
 	}
-	const chunkHintasset_id = frameasset_id ?? descriptor?.asset_id ?? null;
-	const chunkHintPath = framePath ?? descriptor?.path ?? undefined;
+	const chunkHintasset_id = frameasset_id ?? descriptor?.asset_id ;
+	const chunkHintPath = framePath ?? descriptor?.path ;
 	try {
 		const hint = chunkHintasset_id !== null ? { asset_id: chunkHintasset_id, path: chunkHintPath } : (descriptor ? { asset_id: descriptor.asset_id, path: descriptor.path } : undefined);
 		focusChunkSource(normalizedChunk, hint);
@@ -345,7 +345,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 		return;
 	}
 	const lastRowIndex = Math.max(0, ide_state.lines.length - 1);
-	let targetRow: number | null = null;
+	let targetRow: number = null;
 	if (typeof frame.line === 'number' && frame.line > 0) {
 		targetRow = clamp(frame.line - 1, 0, lastRowIndex);
 	}
@@ -376,7 +376,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 	ide_state.showMessage('Navigated to call site', constants.COLOR_STATUS_SUCCESS, 1.6);
 }
 
-export type DebuggerPauseFrameHint = { asset_id: string | null; path?: string | null; } | null;
+export type DebuggerPauseFrameHint = { asset_id: string; path?: string; };
 
 export type DebuggerPauseDisplayPayload = {
 	chunk: string;
@@ -393,7 +393,7 @@ export type DebuggerLifecyclePausedEvent = {
 	suspension: LuaDebuggerPauseSignal;
 	payload: DebuggerPauseDisplayPayload;
 	callStack: ReadonlyArray<LuaCallFrame>;
-	metrics: LuaDebuggerSessionMetrics | null;
+	metrics: LuaDebuggerSessionMetrics;
 };
 
 export type DebuggerLifecycleContinuedEvent = {
@@ -413,7 +413,7 @@ export type DebuggerLifecycleEvent = DebuggerLifecyclePausedEvent |
 export type DebuggerExecutionState = 'inactive' | 'running' | 'paused';
 type DebuggerLifecycleListener = (event: DebuggerLifecycleEvent) => void;
 const listeners = new Set<DebuggerLifecycleListener>();
-let lastPausedEvent: DebuggerLifecyclePausedEvent | null = null;
+let lastPausedEvent: DebuggerLifecyclePausedEvent = null;
 let debuggerState: DebuggerExecutionState = 'inactive';
 
 export function emitDebuggerLifecycleEvent(event: DebuggerLifecycleEvent): void {
@@ -450,13 +450,13 @@ export function getDebuggerExecutionState(): DebuggerExecutionState {
 	return debuggerState;
 }
 
-export function getLastDebuggerPauseEvent(): DebuggerLifecyclePausedEvent | null {
+export function getLastDebuggerPauseEvent(): DebuggerLifecyclePausedEvent {
 	return lastPausedEvent;
 }
 
 subscribeDebuggerLifecycleEvents((event: DebuggerLifecycleEvent) => {
 	if (event.type === 'paused' || event.type === 'exception_frame_focus') {
-		showDebuggerPauseOverlay(event.payload, event.type === 'paused' ? event.metrics ?? null : null);
+		showDebuggerPauseOverlay(event.payload, event.type === 'paused' ? event.metrics  : null);
 		return;
 	}
 	if (event.type === 'continued') {

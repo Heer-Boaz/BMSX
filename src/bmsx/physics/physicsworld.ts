@@ -461,7 +461,7 @@ export class PhysicsWorld implements RegisterablePersistent {
 	getContacts(): Contact[] { return this.contacts; }
 
 	// Generic shape cast (swept test) for sphere or AABB shapes moving from 'from' to 'to'. Returns earliest hit.
-	shapeCast(shape: { kind: 'sphere'; radius: number } | { kind: 'aabb'; halfExtents: vec3 }, from: vec3, to: vec3, opts?: { layerMask?: number; bodyMask?: number; exclude?: PhysicsBody }): ShapeCastHit | null {
+	shapeCast(shape: { kind: 'sphere'; radius: number } | { kind: 'aabb'; halfExtents: vec3 }, from: vec3, to: vec3, opts?: { layerMask?: number; bodyMask?: number; exclude?: PhysicsBody }): ShapeCastHit {
 		const layerMask = opts && opts.layerMask !== undefined ? opts.layerMask : 0xFFFFFFFF;
 		const bodyMask = opts && opts.bodyMask !== undefined ? opts.bodyMask : 0xFFFFFFFF;
 		if (!Number.isInteger(layerMask) || layerMask < 0) {
@@ -477,7 +477,7 @@ export class PhysicsWorld implements RegisterablePersistent {
 		const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
 		const velLenSq = dx * dx + dy * dy + dz * dz;
 		if (velLenSq === 0) return null;
-		let best: ShapeCastHit | null = null;
+		let best: ShapeCastHit = null;
 		const invdx = 1 / (dx || 1e-8);
 		const invdy = 1 / (dy || 1e-8);
 		const invdz = 1 / (dz || 1e-8);
@@ -527,8 +527,8 @@ export class PhysicsWorld implements RegisterablePersistent {
 	}
 
 	// Basic raycast against all AABBs (expanded spheres). Returns closest hit.
-	raycast(origin: vec3, dir: vec3, maxDist: number): RaycastHit | null {
-		let closest: RaycastHit | null = null;
+	raycast(origin: vec3, dir: vec3, maxDist: number): RaycastHit {
+		let closest: RaycastHit = null;
 		const ox = origin.x, oy = origin.y, oz = origin.z;
 		const dx = dir.x, dy = dir.y, dz = dir.z;
 		const dirLen = Math.hypot(dx, dy, dz) || 1;
@@ -578,7 +578,7 @@ export class PhysicsWorld implements RegisterablePersistent {
 		const vx = nx - px, vy = ny - py, vz = nz - pz; // displacement over dt
 		if (vx === 0 && vy === 0 && vz === 0) { body.position.x = nx; body.position.y = ny; body.position.z = nz; return; }
 		let bestT = 1;
-		let hitNormal: vec3 | null = null;
+		let hitNormal: vec3 = null;
 		// Broadphase-assisted: build swept AABB and test against broadphase bodies quickly (reuse broadphase axis list indirectly by brute force for now but with swept AABB early reject)
 		const sweepMinX = Math.min(px - rad, nx - rad);
 		const sweepMaxX = Math.max(px + rad, nx + rad);

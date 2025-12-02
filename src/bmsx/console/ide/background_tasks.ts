@@ -4,7 +4,7 @@ import { scheduleMicrotask, type TimerHandle } from '../../platform/platform';
 export type BackgroundTask = () => boolean;
 
 const backgroundTasks: BackgroundTask[] = [];
-let backgroundTaskHandle: TimerHandle | null = null;
+let backgroundTaskHandle: TimerHandle = null;
 const backgroundTaskBudgetMs = 2.0;
 
 export function enqueueBackgroundTask(task: BackgroundTask): void {

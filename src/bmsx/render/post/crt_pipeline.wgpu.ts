@@ -34,7 +34,7 @@ fn main(@location(0) uv : vec2<f32>) -> @location(0) vec4<f32> {
 }
 `;
 
-interface CRTState { width: number; height: number; baseWidth?: number; baseHeight?: number; colorTex: TextureHandle | null; options?: any }
+interface CRTState { width: number; height: number; baseWidth?: number; baseHeight?: number; colorTex: TextureHandle; options?: any }
 
 export function registerCRT_WebGPU(registry: RenderPassLibrary): void {
 	registry.register({
@@ -51,7 +51,7 @@ export function registerCRT_WebGPU(registry: RenderPassLibrary): void {
 		},
 		// Bind sampled texture to bindings (0,1) for this pass
 		prepare: (backend: GPUBackend, st: unknown) => {
-			const state = st as CRTState | null;
+			const state = st as CRTState;
 			if (!state) {
 				throw new Error('[CRT/WebGPU] Pipeline state missing during prepare.');
 			}

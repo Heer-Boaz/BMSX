@@ -10,7 +10,7 @@ type TabMetrics = {
 	closeWidth: number;
 	indicatorWidth: number;
 	dirty: boolean;
-	markerMetrics: { width: number; height: number } | null;
+	markerMetrics: { width: number; height: number };
 	closable: boolean;
 	tabWidth: number;
 };
@@ -27,8 +27,8 @@ export interface TabBarHost {
 	rowHeight: number;
 	lineHeight: number;
 	tabs: EditorTabDescriptor[];
-	activeTabId: string | null;
-	tabHoverId: string | null;
+	activeTabId: string;
+	tabHoverId: string;
 	measureText: (text: string) => number;
 	drawText: (text: string, x: number, y: number, color: number) => void;
 	getDirtyMarkerMetrics: () => { width: number; height: number };
@@ -41,7 +41,7 @@ export function renderTabBar(api: BmsxConsoleApi, host: TabBarHost): number {
 	host.tabCloseButtonBounds.clear();
 
 	const rowHeight = Math.max(1, host.rowHeight);
-	let markerMetricsCache: { width: number; height: number } | null = null;
+	let markerMetricsCache: { width: number; height: number } = null;
 	const resolveMarkerMetrics = (): { width: number; height: number } => {
 		if (!markerMetricsCache) {
 			markerMetricsCache = host.getDirtyMarkerMetrics();

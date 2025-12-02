@@ -25,7 +25,7 @@ export type LuaDebuggerSessionMetrics = {
 	pauseCount: number;
 	exceptionCount: number;
 	skippedExceptionCount: number;
-	lastExceptionLocation: { chunk: string; line: number } | null;
+	lastExceptionLocation: { chunk: string; line: number };
 };
 
 export class LuaDebuggerController {
@@ -33,8 +33,8 @@ export class LuaDebuggerController {
 	private stepMode: LuaDebuggerStepMode = 'none';
 	private stepDepth = 0;
 	private readonly suppressedBoundaries = new Set<string>();
-	private pendingAsyncStep: AsyncStepAugmentation | null = null;
-	private pendingAsyncAugmentation: ReadonlyArray<LuaCallFrame> | null = null;
+	private pendingAsyncStep: AsyncStepAugmentation = null;
+	private pendingAsyncAugmentation: ReadonlyArray<LuaCallFrame> = null;
 	private sessionMetrics: LuaDebuggerSessionMetrics = this.createSessionMetrics(1);
 
 	public isActive(): boolean {
@@ -248,7 +248,7 @@ export class LuaDebuggerController {
 		return { ...this.sessionMetrics };
 	}
 
-	public shouldPause(chunkName: string, line: number, depth: number): LuaDebuggerPauseReason | null {
+	public shouldPause(chunkName: string, line: number, depth: number): LuaDebuggerPauseReason {
 		const normalizedChunk = this.normalizeChunkName(chunkName);
 		const resolvedLine = this.normalizeLineNumber(line);
 		if (resolvedLine === null) {
@@ -290,7 +290,7 @@ export class LuaDebuggerController {
 		return normalizeLuaChunkName(name);
 	}
 
-	private normalizeLineNumber(value: number): number | null {
+	private normalizeLineNumber(value: number): number {
 		return fallbackclamp(value, 1, Number.MAX_SAFE_INTEGER, null);
 	}
 

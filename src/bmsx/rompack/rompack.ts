@@ -1,6 +1,6 @@
-import { AudioEventMapEntry } from '../audio/audioeventmanager';
-import { quat } from '../render/3d/math3d';
-import { TextureKey } from '../render/texturemanager';
+import type { AudioEventMapEntry } from '../audio/audioeventmanager';
+import type { quat } from '../render/3d/math3d';
+import type { TextureKey } from '../render/texturemanager';
 import type { GameViewHost, Platform } from '../platform';
 
 export interface RomPack {
@@ -12,7 +12,7 @@ export interface RomPack {
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	code: string; // The loaded game code in the ROM pack. ALWAYS PRESENT DURING GAME!
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
-	project_root_path?: string | null; // Workspace-relative cart root path for resolving filesystem writes.
+	project_root_path?: string; // Workspace-relative cart root path for resolving filesystem writes.
 	canonicalization?: CanonicalizationType; // Canonicalization type for Lua identifiers in this ROM pack.
 	manifest?: unknown;
 }
@@ -78,7 +78,7 @@ export interface BootArgs {
 	sndcontext?: AudioContext;
 	gainnode?: GainNode;
 	debug?: boolean;
-	startingGamepadIndex?: number | null;
+	startingGamepadIndex?: number;
 	enableOnscreenGamepad?: boolean;
 	platform: Platform;
 	viewHost?: GameViewHost;
@@ -96,7 +96,7 @@ export type ConcreteOrAbstractConstructor<T> = Function & { prototype: T; };
 
 export interface Native {
 	__native__: string;
-	}
+}
 
 export type NativeRegisteredObject = Native & Registerable & { constructor: { name: string }, ctor?: { name: string } }; // Used to mark native objects in the console API, includes JS-engine constructor name
 
@@ -114,7 +114,7 @@ export interface Identifiable {
 export type MaybeRegisterable = Partial<Registerable>;
 
 export interface Parentable {
-	parent?: Identifiable | null;
+	parent?: Identifiable;
 }
 
 export interface Disposable {
@@ -256,8 +256,8 @@ export interface GLTFMesh {
 	positions: Float32Array;
 	texcoords?: Float32Array;
 	texcoords1?: Float32Array;
-	normals?: Float32Array | null;
-	tangents?: Float32Array | null;
+	normals?: Float32Array;
+	tangents?: Float32Array;
 	indices?: GLTFIndexArray;
 	indexComponentType?: 5121 | 5123 | 5125;
 	materialIndex?: number;
@@ -355,10 +355,10 @@ export interface BmsxCartMetadata {
 }
 
 export type LifeCycleHandlers = {
-	new_game: (() => void) | null;
-	init: (() => void) | null;
-	update: ((deltaSeconds: number) => void) | null;
-	draw: (() => void) | null;
+	new_game: (() => void);
+	init: (() => void);
+	update: ((deltaSeconds: number) => void);
+	draw: (() => void);
 };
 
 export type LifeCycleHandlerName = keyof LifeCycleHandlers;
@@ -371,4 +371,18 @@ export type BmsxCartridge = LifeCycleHandlers & {
 	chunk2lua?: Record<string, RomLuaAsset>; // Mapping from normalized chunk names to Lua assets for fast lookup.
 	source2lua?: Record<string, RomLuaAsset>; // Mapping from normalized source paths to Lua assets for fast lookup.
 	entry: asset_id;
+}
+
+export function normalizeLuaAsset(cart: BmsxCartridge, asset: RomLuaAsset): void {
+	const sourcePath = asset.source_path && asset.source_path.length > 0 ? asset.source_path : asset.resid;
+	const chunkName = asset.chunk_name && asset.chunk_name.length > 0
+		? asset.chunk_name
+		: asset.source_path && asset.source_path.length > 0
+			? `@${asset.source_path}`
+			: `@lua/${asset.resid}`;
+	const normalizedChunkName = chunkName.startsWith('@') ? chunkName : `@${chunkName}`;
+	asset.chunk_name = normalizedChunkName;
+	asset.normalized_source_path = sourcePath;
+	cart.chunk2lua[normalizedChunkName] = asset;
+	cart.source2lua[sourcePath] = asset;
 }

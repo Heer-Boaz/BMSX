@@ -14,7 +14,7 @@ export function clamp01(x: number): number {
 	return x;
 }
 
-export function fallbackclamp(value: number, min: number, max: number, fallback: number | null): number {
+export function fallbackclamp(value: number, min: number, max: number, fallback: number): number {
 	if (!Number.isFinite(value)) return fallback;
 	return clamp(value, min, max);
 }

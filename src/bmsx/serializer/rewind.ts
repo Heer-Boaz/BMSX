@@ -68,7 +68,7 @@ export class RewindBuffer {
 	 * Rewinds to the previous frame in the buffer.
 	 * @returns The `RewindFrame` object of the previous frame, or `null` if rewinding is not possible.
 	 */
-	rewind(): RewindFrame | null {
+	rewind(): RewindFrame {
 		if (!this.canRewind()) return null;
 		if (this.currentIdx === -1) this.currentIdx = this.buffer.length - 1;
 		if (this.currentIdx < this.buffer.length - 1) this.currentIdx++;
@@ -79,7 +79,7 @@ export class RewindBuffer {
 	 * Fast-forwards to the next frame in the buffer.
 	 * @returns The `RewindFrame` object of the next frame, or `null` if fast-forwarding is not possible.
 	 */
-	forward(): RewindFrame | null {
+	forward(): RewindFrame {
 		if (!this.canForward()) return null;
 		this.currentIdx--;
 		return this.buffer[this.buffer.length - 1 - this.currentIdx];
@@ -90,7 +90,7 @@ export class RewindBuffer {
 	 * @param idx - The index of the frame to jump to.
 	 * @returns The `RewindFrame` object of the specified frame, or `null` if the index is invalid.
 	 */
-	jumpTo(idx: number): RewindFrame | null {
+	jumpTo(idx: number): RewindFrame {
 		if (idx < 0 || idx >= this.buffer.length) return null;
 		this.currentIdx = this.buffer.length - 1 - idx;
 		return this.buffer[idx];
@@ -100,7 +100,7 @@ export class RewindBuffer {
 	 * Gets the current frame in the buffer.
 	 * @returns The `RewindFrame` object of the current frame, or `null` if the buffer is empty.
 	 */
-	getCurrent(): RewindFrame | null {
+	getCurrent(): RewindFrame {
 		if (this.currentIdx === -1) return this.buffer[this.buffer.length - 1];
 		return this.buffer[this.buffer.length - 1 - this.currentIdx];
 	}

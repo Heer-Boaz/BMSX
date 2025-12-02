@@ -136,7 +136,7 @@ function recordGlobalRequireAliases(statement: LuaAssignmentStatement, aliases: 
 	}
 }
 
-function tryExtractRequireModuleName(expression: LuaExpression): string | null {
+function tryExtractRequireModuleName(expression: LuaExpression): string {
 	if (expression.kind !== LuaSyntaxKind.CallExpression) {
 		return null;
 	}
@@ -202,7 +202,7 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 	const items: LuaCompletionItem[] = [];
 	const signatures: Map<string, ApiCompletionMetadata> = new Map();
 	const processed = new Set<string>();
-	let prototype: object | null = BmsxConsoleApi.prototype;
+	let prototype: object = BmsxConsoleApi.prototype;
 	while (prototype && prototype !== Object.prototype) {
 		const propertyNames = Object.getOwnPropertyNames(prototype);
 		for (let index = 0; index < propertyNames.length; index += 1) {
@@ -223,7 +223,7 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 						optionalSources.add(metadata.optionalParameters[optIndex]);
 					}
 				}
-				const parameterDescriptionMap: Map<string, string | null> = new Map();
+				const parameterDescriptionMap: Map<string, string> = new Map();
 				if (metadata?.parameters) {
 					for (let paramIndex = 0; paramIndex < metadata.parameters.length; paramIndex += 1) {
 						const paramMeta = metadata.parameters[paramIndex];
@@ -234,17 +234,17 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 							optionalSources.add(paramMeta.name);
 						}
 						if (paramMeta.description !== undefined) {
-							parameterDescriptionMap.set(paramMeta.name, paramMeta.description ?? null);
+							parameterDescriptionMap.set(paramMeta.name, paramMeta.description );
 						}
 					}
 				}
 				const optionalParams = optionalSources.size > 0 ? Array.from(optionalSources) : [];
-				const parameterDescriptions = params.map(param => parameterDescriptionMap.get(param) ?? null);
+				const parameterDescriptions = params.map(param => parameterDescriptionMap.get(param) );
 				const displayParams = params.map(param => (optionalSources.has(param) ? `${param}?` : param));
 				const baseDetail = displayParams.length > 0
 					? `api.${name}(${displayParams.join(', ')})`
 					: `api.${name}()`;
-				const methodDescription = metadata?.description ?? null;
+				const methodDescription = metadata?.description ;
 				const detail = methodDescription && methodDescription.length > 0 ? `${baseDetail} • ${methodDescription}` : baseDetail;
 				const item: LuaCompletionItem = {
 					label: name,
@@ -543,7 +543,7 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 	const visitFunctionExpression = (
 		expression: LuaFunctionExpression,
 		implicitSelf: boolean,
-		binding: { path: string; style: 'function' | 'method' } | null,
+		binding: { path: string; style: 'function' | 'method' },
 	): void => {
 		if (binding) {
 			registerFunctionFromExpression(functionSignatures, binding.path, expression, binding.style);
@@ -776,7 +776,7 @@ function buildGlobalKnownNameSet(
 	apiSignatures: Map<string, ApiCompletionMetadata>,
 ): Set<string> {
 	const names = new Set<string>();
-	const add = (value: string | undefined | null) => {
+	const add = (value: string) => {
 		if (!value) {
 			return;
 		}
@@ -859,15 +859,15 @@ type CallSignatureMetadata = {
 	callStyle?: 'function' | 'method';
 	declarationStyle?: 'function' | 'method';
 	hasVararg?: boolean;
-	description?: string | null;
-	parameterDescriptions?: readonly (string | null)[];
+	description?: string;
+	parameterDescriptions?: readonly (string)[];
 };
 
 function resolveCallSignature(
 	call: LuaCallExpression,
 	builtinLookup: Map<string, ConsoleLuaBuiltinDescriptor>,
 	apiSignatures: Map<string, ApiCompletionMetadata>,
-): CallSignatureMetadata | null {
+): CallSignatureMetadata {
 	if (!call) {
 		return null;
 	}
@@ -876,14 +876,14 @@ function resolveCallSignature(
 		if (qualified && qualified.parts.length > 0 && qualified.parts[0] === 'api') {
 			const apiMeta = apiSignatures.get(call.methodName);
 			if (apiMeta) {
-				const marker = applyOptionalMarkers(apiMeta.params, apiMeta.optionalParams, apiMeta.parameterDescriptions ?? null);
+				const marker = applyOptionalMarkers(apiMeta.params, apiMeta.optionalParams, apiMeta.parameterDescriptions );
 				return {
 					params: marker.params,
 					label: `api.${call.methodName}`,
 					callStyle: 'method',
 					declarationStyle: 'function',
 					hasVararg: apiMeta.params.some(param => param === '...' || param.endsWith('...')),
-					description: apiMeta.description ?? null,
+					description: apiMeta.description ,
 					parameterDescriptions: marker.descriptions,
 				};
 			}
@@ -898,14 +898,14 @@ function resolveCallSignature(
 		const method = qualified.parts[qualified.parts.length - 1];
 		const apiMeta = apiSignatures.get(method);
 		if (apiMeta) {
-			const marker = applyOptionalMarkers(apiMeta.params, apiMeta.optionalParams, apiMeta.parameterDescriptions ?? null);
+			const marker = applyOptionalMarkers(apiMeta.params, apiMeta.optionalParams, apiMeta.parameterDescriptions );
 			return {
 				params: marker.params,
 				label: `api.${method}`,
 				callStyle: 'function',
 				declarationStyle: 'function',
 				hasVararg: apiMeta.params.some(param => param === '...' || param.endsWith('...')),
-				description: apiMeta.description ?? null,
+				description: apiMeta.description ,
 				parameterDescriptions: marker.descriptions,
 			};
 		}
@@ -913,28 +913,28 @@ function resolveCallSignature(
 	const key = qualified.parts.join('.').toLowerCase();
 	const builtin = builtinLookup.get(key);
 	if (builtin) {
-		const marker = applyOptionalMarkers(builtin.params, builtin.optionalParams, builtin.parameterDescriptions ?? null);
+		const marker = applyOptionalMarkers(builtin.params, builtin.optionalParams, builtin.parameterDescriptions );
 		return {
 			params: marker.params,
 			label: builtin.name,
 			callStyle: 'function',
 			declarationStyle: 'function',
 			hasVararg: builtin.params.some(param => param === '...' || param.endsWith('...')),
-			description: builtin.description ?? null,
+			description: builtin.description ,
 			parameterDescriptions: marker.descriptions,
 		};
 	}
 	// Fallback: treat API methods as global functions (runtime registers them globally)
 	const apiMetaAsGlobal = apiSignatures.get(key);
 	if (apiMetaAsGlobal) {
-		const marker = applyOptionalMarkers(apiMetaAsGlobal.params, apiMetaAsGlobal.optionalParams, apiMetaAsGlobal.parameterDescriptions ?? null);
+		const marker = applyOptionalMarkers(apiMetaAsGlobal.params, apiMetaAsGlobal.optionalParams, apiMetaAsGlobal.parameterDescriptions );
 		return {
 			params: marker.params,
 			label: key,
 			callStyle: 'function',
 			declarationStyle: 'function',
 			hasVararg: apiMetaAsGlobal.params.some(param => param === '...' || param.endsWith('...')),
-			description: apiMetaAsGlobal.description ?? null,
+			description: apiMetaAsGlobal.description ,
 			parameterDescriptions: marker.descriptions,
 		};
 	}
@@ -952,21 +952,21 @@ type FunctionCallInfo = {
 
 function applyOptionalMarkers(
 	params: readonly string[],
-	optionalParams?: readonly string[] | null,
-	parameterDescriptions?: readonly (string | null)[] | null,
-): { params: string[]; descriptions: (string | null)[] } {
+	optionalParams?: readonly string[],
+	parameterDescriptions?: readonly (string)[],
+): { params: string[]; descriptions: (string)[] } {
 	if (!params || params.length === 0) {
 		return { params: [], descriptions: [] };
 	}
 	const optionalSet = optionalParams && optionalParams.length > 0 ? new Set(optionalParams) : null;
 	const resultParams: string[] = [];
-	const resultDescriptions: (string | null)[] = [];
+	const resultDescriptions: (string)[] = [];
 	for (let index = 0; index < params.length; index += 1) {
 		const param = params[index];
 		if (!param || param.length === 0) {
 			continue;
 		}
-		const description = parameterDescriptions && index < parameterDescriptions.length ? parameterDescriptions[index] ?? null : null;
+		const description = parameterDescriptions && index < parameterDescriptions.length ? parameterDescriptions[index]  : null;
 		if (optionalSet && optionalSet.has(param)) {
 			resultParams.push(param.endsWith('?') ? param : `${param}?`);
 			resultDescriptions.push(description);
@@ -978,9 +978,9 @@ function applyOptionalMarkers(
 	return { params: resultParams, descriptions: resultDescriptions };
 }
 
-function resolveQualifiedName(expression: LuaExpression): QualifiedName | null {
+function resolveQualifiedName(expression: LuaExpression): QualifiedName {
 	const parts: string[] = [];
-	let current: LuaExpression | null = expression;
+	let current: LuaExpression = expression;
 	while (current) {
 		if (current.kind === LuaSyntaxKind.IdentifierExpression) {
 			const identifier = current as LuaIdentifierExpression;
@@ -1039,8 +1039,8 @@ function determineParameterRequirements(params: readonly string[]): ParameterReq
 	return { required };
 }
 
-function mapAssignmentValues<T>(targetCount: number, values: ReadonlyArray<T>): Array<T | null> {
-	const mapped: Array<T | null> = [];
+function mapAssignmentValues<T>(targetCount: number, values: ReadonlyArray<T>): Array<T> {
+	const mapped: Array<T> = [];
 	if (targetCount <= 0) {
 		return mapped;
 	}
@@ -1052,7 +1052,7 @@ function mapAssignmentValues<T>(targetCount: number, values: ReadonlyArray<T>): 
 
 function registerFunctionSignatureExplicit(
 	signatures: Map<string, FunctionSignatureInfo>,
-	path: string | null,
+	path: string,
 	params: string[],
 	hasVararg: boolean,
 	declarationStyle: 'function' | 'method',
@@ -1065,7 +1065,7 @@ function registerFunctionSignatureExplicit(
 
 function registerFunctionFromExpression(
 	signatures: Map<string, FunctionSignatureInfo>,
-	path: string | null,
+	path: string,
 	expression: LuaFunctionExpression,
 	declarationStyle: 'function' | 'method',
 ): void {
@@ -1089,7 +1089,7 @@ function registerFunctionFromExpression(
 	}
 }
 
-function buildMemberBasePath(expression: LuaExpression): string | null {
+function buildMemberBasePath(expression: LuaExpression): string {
 	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
 		const identifier = expression as LuaIdentifierExpression;
 		return identifier.name;
@@ -1117,7 +1117,7 @@ function buildMemberBasePath(expression: LuaExpression): string | null {
 	return null;
 }
 
-function buildAssignmentPath(target: LuaAssignableExpression): string | null {
+function buildAssignmentPath(target: LuaAssignableExpression): string {
 	if (target.kind === LuaSyntaxKind.IdentifierExpression) {
 		return (target as LuaIdentifierExpression).name;
 	}
@@ -1127,7 +1127,7 @@ function buildAssignmentPath(target: LuaAssignableExpression): string | null {
 	return null;
 }
 
-function convertMethodPathToProperty(path: string): string | null {
+function convertMethodPathToProperty(path: string): string {
 	const index = path.lastIndexOf(':');
 	if (index === -1) {
 		return null;
@@ -1137,7 +1137,7 @@ function convertMethodPathToProperty(path: string): string | null {
 	return prefix.length > 0 ? `${prefix}.${suffix}` : suffix;
 }
 
-function convertPropertyPathToMethod(path: string): string | null {
+function convertPropertyPathToMethod(path: string): string {
 	const index = path.lastIndexOf('.');
 	if (index === -1) {
 		return null;
@@ -1147,7 +1147,7 @@ function convertPropertyPathToMethod(path: string): string | null {
 	return prefix.length > 0 ? `${prefix}:${suffix}` : suffix;
 }
 
-function buildCallInfo(call: LuaCallExpression): FunctionCallInfo | null {
+function buildCallInfo(call: LuaCallExpression): FunctionCallInfo {
 	if (call.methodName !== null) {
 		const basePath = buildMemberBasePath(call.callee);
 		if (!basePath) {
@@ -1167,7 +1167,7 @@ function buildCallInfo(call: LuaCallExpression): FunctionCallInfo | null {
 function resolveUserFunctionSignature(
 	call: LuaCallExpression,
 	signatures: Map<string, FunctionSignatureInfo>,
-): CallSignatureMetadata | null {
+): CallSignatureMetadata {
 	const callInfo = buildCallInfo(call);
 	if (!callInfo) {
 		return null;
@@ -1214,7 +1214,7 @@ function resolveUserFunctionSignature(
 	return null;
 }
 
-function isSelfParameter(name: string | undefined): boolean {
+function isSelfParameter(name: string): boolean {
 	if (!name) {
 		return false;
 	}
@@ -1263,7 +1263,7 @@ function parseLuaChunk(source: string, chunkName: string): LuaChunk {
 	return parser.parseChunk();
 }
 
-function truncateSourceAtSyntaxError(source: string, error: LuaSyntaxError): string | null {
+function truncateSourceAtSyntaxError(source: string, error: LuaSyntaxError): string {
 	if (!Number.isFinite(error.line)) {
 		return null;
 	}
@@ -1407,14 +1407,14 @@ export function clearHoverTooltip(): void {
 	ide_state.hoverTooltip = null;
 	ide_state.lastInspectorResult = null;
 }
-export function resolveHoverAssetId(context: CodeTabContext | null): string | null {
+export function resolveHoverAssetId(context: CodeTabContext): string {
 	if (context && context.descriptor) {
 		return context.descriptor.asset_id;
 	}
 	return null;
 }
 
-export function resolveHoverChunkName(context: CodeTabContext | null): string | null {
+export function resolveHoverChunkName(context: CodeTabContext): string {
 	if (context && context.descriptor) {
 		if (context.descriptor.path && context.descriptor.path.length > 0) {
 			return context.descriptor.path;
@@ -1429,15 +1429,15 @@ export function buildMemberCompletionItems(request: {
 	objectName: string;
 	operator: '.' | ':';
 	prefix: string;
-	asset_id: string | null;
-	chunkName: string | null;
+	asset_id: string;
+	chunkName: string;
 }): LuaCompletionItem[] {
 	if (request.objectName.length === 0) {
 		return [];
 	}
 	const response = ide_state.listLuaObjectMembersFn({
-		asset_id: request.asset_id ?? null,
-		chunkName: request.chunkName ?? null,
+		asset_id: request.asset_id ,
+		chunkName: request.chunkName ,
 		expression: request.objectName,
 		operator: request.operator,
 	});
@@ -1452,7 +1452,7 @@ export function buildMemberCompletionItems(request: {
 		}
 		const kind = entry.kind === 'method' ? 'native_method' : 'native_property';
 		const parameters = entry.parameters && entry.parameters.length > 0 ? entry.parameters.slice() : undefined;
-		const detail = entry.detail ?? null;
+		const detail = entry.detail ;
 		items.push({
 			label: entry.name,
 			insertText: entry.name,
@@ -1495,19 +1495,19 @@ export function describeMetadataValue(value: unknown): string {
 	}
 	return String(value);
 }
-export function requestSemanticRefresh(context?: CodeTabContext | null): void {
+export function requestSemanticRefresh(context?: CodeTabContext): void {
 	const activeContext = context ?? getActiveCodeTabContext();
 	const chunkName = resolveHoverChunkName(activeContext) ?? '<console>';
 	ide_state.layout.requestSemanticUpdate(ide_state.lines, ide_state.textVersion, chunkName);
 }
 export function resolveSemanticDefinitionLocation(
-	context: CodeTabContext | null,
+	context: CodeTabContext,
 	expression: string,
 	usageRow: number,
 	usageColumn: number,
-	asset_id: string | null,
-	chunkName: string | null
-): ConsoleLuaDefinitionLocation | null {
+	asset_id: string,
+	chunkName: string
+): ConsoleLuaDefinitionLocation {
 	if (!expression) {
 		return null;
 	}
@@ -1531,8 +1531,8 @@ export function resolveSemanticDefinitionLocation(
 	}
 	const descriptor = context ? context.descriptor : null;
 	const descriptorPath = descriptor && descriptor.path ? descriptor.path : null;
-	const descriptorAssetId = descriptor ? descriptor.asset_id ?? null : null;
-	const resolvedAssetId = descriptorAssetId ?? asset_id ?? null;
+	const descriptorAssetId = descriptor ? descriptor.asset_id  : null;
+	const resolvedAssetId = descriptorAssetId ?? asset_id ;
 	const resolvedChunk = chunkName
 		?? descriptorPath
 		?? descriptorAssetId
@@ -1563,7 +1563,7 @@ export function findDefinitionAtPosition(
 	row: number,
 	column: number,
 	namePath: readonly string[]
-): LuaDefinitionInfo | null {
+): LuaDefinitionInfo {
 	for (let index = 0; index < definitions.length; index += 1) {
 		const candidate = definitions[index];
 		if (candidate.namePath.length !== namePath.length) {
@@ -1591,7 +1591,7 @@ export function findDefinitionAtPosition(
 	return null;
 }
 
-export function extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number; } | null {
+export function extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number; } {
 	if (row < 0 || row >= ide_state.lines.length) {
 		return null;
 	}
@@ -1709,7 +1709,7 @@ export function extractHoverExpression(row: number, column: number): { expressio
 	}
 	const targetSegment = segments[segmentIndex];
 	return { expression, startColumn: targetSegment.start, endColumn: targetSegment.end };
-}export function refreshGotoHoverHighlight(row: number, column: number, context: CodeTabContext | null): void {
+}export function refreshGotoHoverHighlight(row: number, column: number, context: CodeTabContext): void {
 	const token = extractHoverExpression(row, column);
 	if (!token) {
 		clearGotoHoverHighlight();
@@ -1734,7 +1734,7 @@ export function extractHoverExpression(row: number, column: number): { expressio
 			row: row + 1,
 			column: token.startColumn + 1,
 		});
-		definition = inspection?.definition ?? null;
+		definition = inspection?.definition ;
 	}
 	if (!definition) {
 		clearGotoHoverHighlight();
@@ -1776,7 +1776,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 			row: row + 1,
 			column: token.startColumn + 1,
 		});
-		definition = inspection?.definition ?? null;
+		definition = inspection?.definition ;
 	}
 	if (!definition) {
 		const resolvedChunkName = chunkName
@@ -1817,14 +1817,14 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 export function navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	clearReferenceHighlights();
-	const hint: { asset_id: string | null; path?: string | null; } = { asset_id: definition.asset_id };
+	const hint: { asset_id: string; path?: string; } = { asset_id: definition.asset_id };
 	if (definition.path !== undefined) {
 		hint.path = definition.path;
 	}
-	let targetContextId: string | null = null;
+	let targetContextId: string = null;
 	try {
 		focusChunkSource(definition.chunkName, hint);
-		const context = findCodeTabContext(definition.asset_id ?? null, definition.chunkName ?? null);
+		const context = findCodeTabContext(definition.asset_id , definition.chunkName );
 		if (context) {
 			targetContextId = context.id;
 		}

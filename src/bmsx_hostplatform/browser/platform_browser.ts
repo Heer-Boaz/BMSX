@@ -177,7 +177,7 @@ class BrowserLifecycle implements Lifecycle {
 }
 
 class BrowserStorage implements StorageService {
-	getItem(k: string): string | null {
+	getItem(k: string): string {
 		return window.localStorage.getItem(k);
 	}
 
@@ -235,7 +235,7 @@ class BrowserClipboardService implements ClipboardService {
 		return this.toPermissionState(this.writeStatus);
 	}
 
-	private systemClipboard(): Clipboard | null {
+	private systemClipboard(): Clipboard {
 		if (typeof navigator === 'undefined' || !navigator.clipboard) {
 			return null;
 		}
@@ -289,7 +289,7 @@ class BrowserClipboardService implements ClipboardService {
 		return false;
 	}
 
-	private resolveErrorName(error: unknown): string | null {
+	private resolveErrorName(error: unknown): string {
 		if (!error) {
 			return null;
 		}
@@ -305,7 +305,7 @@ class BrowserClipboardService implements ClipboardService {
 		return null;
 	}
 
-	private resolveErrorMessage(error: unknown): string | null {
+	private resolveErrorMessage(error: unknown): string {
 		if (!error) {
 			return null;
 		}
@@ -448,7 +448,7 @@ class GamepadDevice implements InputDevice {
 	description: string;
 	supportsVibration = true;
 	private index: number;
-	private lastTimestamp: number | null = null;
+	private lastTimestamp: number = null;
 	private buttonPrev: boolean[] = [];
 	private pressIds: number[] = [];
 	private nextPressId = 1;
@@ -542,7 +542,7 @@ class BrowserInputHub implements InputHub {
 	private subs = new Set<(e: InputEvt) => void>();
 	private devicesList: InputDevice[] = [];
 	private clock: Clock;
-	private keyboardCapture: ((code: string) => boolean) | null = null;
+	private keyboardCapture: ((code: string) => boolean) = null;
 
 	constructor(surface: HTMLElement, clock: Clock) {
 		this.clock = clock;
@@ -617,7 +617,7 @@ class BrowserInputHub implements InputHub {
 		event.preventDefault();
 		event.stopPropagation();
 		event.stopImmediatePropagation();
-		const target = event.target as Element | null;
+		const target = event.target as Element;
 		if (target?.setPointerCapture) {
 			try { target.setPointerCapture(event.pointerId); } catch { /* ignore */ }
 		}
@@ -631,7 +631,7 @@ class BrowserInputHub implements InputHub {
 		event.preventDefault();
 		event.stopPropagation();
 		event.stopImmediatePropagation();
-		const target = event.target as Element | null;
+		const target = event.target as Element;
 		if (target && target.hasPointerCapture?.(event.pointerId)) {
 			try { target.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
 		}
@@ -669,7 +669,7 @@ class BrowserInputHub implements InputHub {
 		event.preventDefault();
 		event.stopPropagation();
 		event.stopImmediatePropagation();
-		const target = event.target as Element | null;
+		const target = event.target as Element;
 		if (target && target.hasPointerCapture?.(event.pointerId)) {
 			try { target.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
 		}
@@ -907,7 +907,7 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 		}
 	}
 
-	private findContainerForElement(elementId: string): HTMLElement | null {
+	private findContainerForElement(elementId: string): HTMLElement {
 		if (elementId === 'd-pad-controls' || elementId.indexOf('d-pad-') === 0) {
 			const target = this.document.getElementById('d-pad-controls');
 			return target instanceof HTMLElement ? target : null;
@@ -988,7 +988,7 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 		return element;
 	}
 
-	private optionalElement(id: string): Element | null {
+	private optionalElement(id: string): Element {
 		return this.document.getElementById(id);
 	}
 
@@ -1048,7 +1048,7 @@ class BrowserGameViewCanvas implements GameViewCanvas {
 class BrowserGamepadControlHandle implements GamepadControlHandle {
 	public constructor(public readonly id: string, private readonly element: HTMLElement) { }
 
-	public getNumericAttribute(name: string): number | null {
+	public getNumericAttribute(name: string): number {
 		let value = this.element.getAttribute(name);
 		if (!value) {
 			value = this.element.getAttribute(`data-${name}`);
@@ -1105,7 +1105,7 @@ class BrowserOverlayHandle implements OverlayHandle {
 		return this.element;
 	}
 }
-function toDomOptions(options?: HostEventOptions): boolean | AddEventListenerOptions | undefined {
+function toDomOptions(options?: HostEventOptions): boolean | AddEventListenerOptions {
 	if (options === undefined) return undefined;
 	if (typeof options === 'boolean') return options;
 	return options as AddEventListenerOptions;
@@ -1122,7 +1122,7 @@ function toDomOptions(options?: HostEventOptions): boolean | AddEventListenerOpt
  */
 export class BrowserGameViewHost implements GameViewHost {
 	private static visualViewportForwardingInstalled = false;
-	private static viewportForwardingRafId: number | null = null;
+	private static viewportForwardingRafId: number = null;
 	private static dispatchViewportChange(): void {
 		window.dispatchEvent(new Event('resize'));
 		window.dispatchEvent(new Event('orientationchange'));
@@ -1240,7 +1240,7 @@ export class BrowserGameViewHost implements GameViewHost {
 		};
 	}
 
-	private resolveOnscreenGamepadHandles(): OnscreenGamepadHandles | null {
+	private resolveOnscreenGamepadHandles(): OnscreenGamepadHandles {
 		const dpad = document.querySelector<HTMLElement>('#d-pad-controls');
 		const actionButtons = document.querySelector<HTMLElement>('#button-controls');
 		if (!dpad || !actionButtons) {
@@ -1267,11 +1267,11 @@ export class BrowserGameViewHost implements GameViewHost {
 		return overlay;
 	}
 
-	private getOverlayInternal(id: string): OverlayHandle | null {
-		return this.overlays.get(id) ?? null;
+	private getOverlayInternal(id: string): OverlayHandle {
+		return this.overlays.get(id) ;
 	}
 
-	public getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] | null {
+	public getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] {
 		switch (capability) {
 			case 'viewport-metrics':
 				return this.viewportCapability as GameViewHostCapabilityMap[T];

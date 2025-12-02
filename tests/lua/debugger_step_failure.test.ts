@@ -55,7 +55,7 @@ function prepareBreakpointWorkspaceState(): () => void {
 }
 
 test('debugger step should advance caret after exception pause', async () => {
-	let cleanupWorkspace: (() => void) | null = null;
+	let cleanupWorkspace: (() => void) = null;
 	try {
 		const buildResult = spawnSync('npm', ['run', 'build:game:headless', ROM_NAME], {
 			encoding: 'utf-8',

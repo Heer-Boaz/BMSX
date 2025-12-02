@@ -122,7 +122,7 @@ export const Msx1Colors: color[] = [
 	{ r: 0.1, g: 0.1, b: 0.1, a: 0.9 }, // 57 = Hover tooltip background
 	{ r: 0, g: 0, b: 0, a: 0.65 }, // 58 = Action overlay
 ];
-export function resolvePaletteIndex(color: { r: number; g: number; b: number; a: number; } | number): number | null {
+export function resolvePaletteIndex(color: { r: number; g: number; b: number; a: number; } | number): number {
 	if (typeof color === 'number') {
 		return color;
 	}

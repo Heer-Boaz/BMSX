@@ -6,7 +6,7 @@ import type { StackTraceFrame } from '../../lua/runtime';
 import { setActiveRuntimeErrorOverlay } from './console_cart_editor';
 import { ide_state } from './ide_state';
 
-export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails | null): RuntimeErrorDetails | null {
+export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails): RuntimeErrorDetails {
 	if (!details) {
 		return null;
 	}
@@ -61,7 +61,7 @@ export function rebuildRuntimeErrorOverlayView(overlay: RuntimeErrorOverlay): vo
 
 function buildRuntimeErrorOverlayDescriptors(
 	messageLines: string[],
-	details: RuntimeErrorDetails | null,
+	details: RuntimeErrorDetails,
 	expanded: boolean
 ): RuntimeErrorOverlayLineDescriptor[] {
 	const descriptors: RuntimeErrorOverlayLineDescriptor[] = [];
@@ -97,7 +97,7 @@ function buildRuntimeErrorOverlayDescriptors(
 	return descriptors;
 }
 
-function buildCombinedRuntimeErrorStack(details: RuntimeErrorDetails | null): StackTraceFrame[] {
+function buildCombinedRuntimeErrorStack(details: RuntimeErrorDetails): StackTraceFrame[] {
 	if (!details) {
 		return [];
 	}

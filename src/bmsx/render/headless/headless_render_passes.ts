@@ -29,9 +29,9 @@ function registerFramePasses(registry: RenderPassLibrary): void {
 
 type Snapshot = string[];
 
-let previousSpriteSnapshot: Snapshot | undefined;
-let previousMeshSnapshot: Snapshot | undefined;
-let previousParticleSnapshot: Snapshot | undefined;
+let previousSpriteSnapshot: Snapshot;
+let previousMeshSnapshot: Snapshot;
+let previousParticleSnapshot: Snapshot;
 
 const headlessFallbackParticleState: ParticlePipelineState = {
 	width: FALLBACK_CAMERA.width,
@@ -55,11 +55,11 @@ function formatVec3(input: { x: number; y: number; z: number } | Float32Array | 
 	return `(${formatNumber(input.x)}, ${formatNumber(input.y)}, ${formatNumber(input.z)})`;
 }
 
-function formatScale(scale: { x: number; y: number } | undefined): string {
+function formatScale(scale: { x: number; y: number }): string {
 	return `(${formatNumber(scale?.x ?? 1)}, ${formatNumber(scale?.y ?? 1)})`;
 }
 
-function formatAmbient(enabled: boolean | undefined, factor: number | undefined): string {
+function formatAmbient(enabled: boolean, factor: number): string {
 	if (enabled === undefined && factor === undefined) return 'default';
 	const flag = enabled === undefined ? 'default' : enabled ? 'on' : 'off';
 	const f = factor === undefined ? 'default' : formatNumber(factor);
@@ -70,7 +70,7 @@ function translationFromMatrix(m: Float32Array): string {
 	return `(${formatNumber(m[12])}, ${formatNumber(m[13])}, ${formatNumber(m[14])})`;
 }
 
-function computeDiff(previous: Snapshot | undefined, current: Snapshot): Snapshot {
+function computeDiff(previous: Snapshot, current: Snapshot): Snapshot {
 	if (!previous) return current.map((line) => `+ ${line}`);
 	const max = Math.max(previous.length, current.length);
 	const diff: Snapshot = [];
@@ -89,7 +89,7 @@ function computeDiff(previous: Snapshot | undefined, current: Snapshot): Snapsho
 	return diff;
 }
 
-function emitDiff(label: string, previous: Snapshot | undefined, current: Snapshot): Snapshot {
+function emitDiff(label: string, previous: Snapshot, current: Snapshot): Snapshot {
 	const diff = computeDiff(previous, current);
 	if (diff.length !== 0) {
 		// Headless output is a state diff between frames (first frame is effectively full listing).

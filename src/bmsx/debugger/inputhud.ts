@@ -75,7 +75,7 @@ function flagsToString(state: ActionState | ButtonState): string {
 	return `${flag(state.pressed, 'p')}${justpressedOrHoldFlag}${flag(state.justreleased, 'r')}${flag(state.consumed, 'c')}`;
 }
 
-function formatButtonState(label: string, state: ButtonState | null): string | null {
+function formatButtonState(label: string, state: ButtonState): string {
 	if (!state) return null;
 	const interesting = state.pressed || state.justpressed || state.justreleased || state.consumed;
 	if (!interesting) return null;
@@ -94,7 +94,7 @@ function formatActionState(state: ActionState): string {
 	return `${state.action.padEnd(20)} ${flags}${hold}`;
 }
 
-function extractMappings(map: InputMap | undefined): {
+function extractMappings(map: InputMap): {
 	actions: string[];
 	keyboardKeys: string[];
 	gamepadButtons: string[];
@@ -234,7 +234,7 @@ export class InputHUDOverlay {
 	public unbind(): void { EventEmitter.instance.removeSubscriber(this); }
 }
 
-const overlay: InputHUDOverlay | null = typeof document === 'undefined' ? null : new InputHUDOverlay();
+const overlay: InputHUDOverlay = typeof document === 'undefined' ? null : new InputHUDOverlay();
 if (overlay) { /* overlay auto-binds itself */ }
 
 export function toggleInputHUD(): void {

@@ -12,7 +12,7 @@ import { HagGenerator } from './haggenerator';
 import { Pietula } from './pietula';
 import { Controller } from './gamecontroller';
 
-export type NearingRoomExitResult = { destRoom: number, direction: Direction } | null;
+export type NearingRoomExitResult = { destRoom: number, direction: Direction };
 export type RoomInitDelegate = (room: Room) => void;
 
 export class Room implements WorldObject {

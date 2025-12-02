@@ -108,7 +108,7 @@ function determinePreservedLines(source: string, tokens: readonly LuaToken[], li
 	}
 	const pattern = /--\[(=*)\[(?:[\s\S]*?)\]\1\]/g;
 	const lineStarts = buildLineStartIndices(source);
-	let match: RegExpExecArray | null;
+	let match: RegExpExecArray;
 	while ((match = pattern.exec(source)) !== null) {
 		const startIndex = match.index;
 		const block = match[0];

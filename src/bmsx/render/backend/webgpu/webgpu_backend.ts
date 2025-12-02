@@ -20,10 +20,10 @@ export class WebGPUBackend implements GPUBackend {
 	private textureBindings: Map<number, GPUTextureView> = new Map();
 	private samplerBindings: Map<number, GPUSampler> = new Map();
 	private bindGroupCache: Map<number, GPUBindGroup> = new Map();
-	private _activePassEncoder: GPURenderPassEncoder | null = null;
+	private _activePassEncoder: GPURenderPassEncoder = null;
 
-	private _context: GPUCanvasContext | null = null;
-	public get context(): GPUCanvasContext | null {
+	private _context: GPUCanvasContext = null;
+	public get context(): GPUCanvasContext {
 		return this._context;
 	}
 
@@ -206,7 +206,7 @@ export class WebGPUBackend implements GPUBackend {
 		});
 	}
 
-	createRenderTarget(color?: TextureHandle | null, depth?: TextureHandle | null): unknown {
+	createRenderTarget(color?: TextureHandle, depth?: TextureHandle): unknown {
 		// In WebGPU, no explicit FBO; return a descriptor-like object for compatibility
 		return { color, depth };
 	}
@@ -250,7 +250,7 @@ export class WebGPUBackend implements GPUBackend {
 			});
 		});
 
-		let depthStencilAttachment: GPURenderPassDepthStencilAttachment | undefined;
+		let depthStencilAttachment: GPURenderPassDepthStencilAttachment;
 		if (desc.depth) {
 			depthStencilAttachment = {
 				view: (desc.depth.tex as GPUTexture).createView(),
@@ -283,7 +283,7 @@ export class WebGPUBackend implements GPUBackend {
 		return { maxColorAttachments: this.limits.maxColorAttachments };
 	}
 
-	transitionTexture(_tex: TextureHandle, _fromLayout: string | undefined, _toLayout: string): void {
+	transitionTexture(_tex: TextureHandle, _fromLayout: string, _toLayout: string): void {
 		// WebGPU handles resource states automatically; manual transitions not required.
 	}
 
@@ -413,7 +413,7 @@ export class WebGPUBackend implements GPUBackend {
 		this.stateRegistry.set(label, state);
 	}
 
-	getPassState<S = unknown>(label: RenderPassStateId): S | undefined {
+	getPassState<S = unknown>(label: RenderPassStateId): S {
 		return this.stateRegistry.get(label);
 	}
 
@@ -435,7 +435,7 @@ export class WebGPUBackend implements GPUBackend {
 		const view = texture.createView();
 		const mag = samplerDesc && samplerDesc.mag === 'linear' ? 'linear' : 'nearest';
 		const min = samplerDesc && samplerDesc.min === 'linear' ? 'linear' : 'nearest';
-		const address = (wrap: 'clamp' | 'repeat' | undefined): GPUAddressMode => wrap === 'repeat' ? 'repeat' : 'clamp-to-edge';
+		const address = (wrap: 'clamp' | 'repeat'): GPUAddressMode => wrap === 'repeat' ? 'repeat' : 'clamp-to-edge';
 		const wrapS = samplerDesc ? samplerDesc.wrapS : undefined;
 		const wrapT = samplerDesc ? samplerDesc.wrapT : undefined;
 		const sampler = this.device.createSampler({ magFilter: mag, minFilter: min, addressModeU: address(wrapS), addressModeV: address(wrapT) });
@@ -445,7 +445,7 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	// Optional hook for RenderGraphRuntime to provide the active GPURenderPassEncoder
-	setActivePassEncoder(pass: (WebGPUPassEncoder) | null): void {
+	setActivePassEncoder(pass: (WebGPUPassEncoder)): void {
 		this._activePassEncoder = pass ? pass.encoder : null;
 	}
 }

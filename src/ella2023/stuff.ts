@@ -10,7 +10,7 @@ const SKIP_ACTIONS = ['punch', 'highkick', 'lowkick', 'block'] as const;
 
 export const RETURN_TO_TITLE_EVENT = 'titlescreen.return_requested';
 
-function findTriggeredAction(filter: readonly string[]): string | null {
+function findTriggeredAction(filter: readonly string[]): string {
 	const input = $.input.getPlayerInput(PRIMARY_PLAYER_INDEX);
 	for (const action of filter) {
 		if (input.checkActionTriggered(`${action}[j]`)) return action;

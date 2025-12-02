@@ -103,9 +103,9 @@ export function glLoadShader(
 
 export function glCreateTexture(
 	gl: WebGL2RenderingContext,
-	img?: ImageBitmap | null,
+	img?: ImageBitmap,
 	size?: { x: number; y: number },
-	unit: number | null = null,
+	unit: number = null,
 ): WebGLTexture {
 	const tex = gl.createTexture()!;
 	if (unit != null) gl.activeTexture(gl.TEXTURE0 + unit);
@@ -174,7 +174,7 @@ export function glCreateTextureFromImage(
 	gl: WebGL2RenderingContext,
 	img: ImageBitmap,
 	desc: TextureParams,
-	unit: number | null = null,
+	unit: number = null,
 ): WebGLTexture {
 	const tex = gl.createTexture()!;
 	if (!img) throw new Error('Image is not defined');

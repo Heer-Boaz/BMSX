@@ -97,7 +97,7 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 	private useEMA = false;
 	// EMA smoothing factor (alpha). Will be initialized in constructor.
 	private readonly emaAlpha: number;
-	private emaFrameAvg: number | null = null;
+	private emaFrameAvg: number = null;
 	private emaPerPass: { [key: string]: number } = {};
 	private emaMemPerPass: { [key: string]: number } = {};
 	private peakMemPerPass: { [key: string]: number } = {};
@@ -311,7 +311,7 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 	public unbind(): void { EventEmitter.instance.removeSubscriber(this); }
 }
 
-const overlay: RenderHUDOverlay | null = typeof document === 'undefined' ? null : new RenderHUDOverlay();
+const overlay: RenderHUDOverlay = typeof document === 'undefined' ? null : new RenderHUDOverlay();
 
 export function toggleRenderHUD(): void {
 	if (!overlay) return;

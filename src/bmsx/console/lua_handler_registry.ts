@@ -14,10 +14,10 @@ export interface LuaHandlerDescriptor {
 	category: LuaHandlerCategory;
 	targetId: string;
 	hook: string;
-	chunkName: string | null;
+	chunkName: string;
 	normalizedChunkName: string;
-	functionName: string | null;
-	sourceRange: LuaSourceRange | null;
+	functionName: string;
+	sourceRange: LuaSourceRange;
 	metadata?: Readonly<Record<string, unknown>>;
 }
 
@@ -26,9 +26,9 @@ export interface LuaHandlerRegistration {
 	category: LuaHandlerCategory;
 	targetId: string;
 	hook: string;
-	chunkName?: string | null;
-	functionName: string | null;
-	sourceRange: LuaSourceRange | null;
+	chunkName?: string;
+	functionName: string;
+	sourceRange: LuaSourceRange;
 	metadata?: Readonly<Record<string, unknown>>;
 	onCreate(context: LuaHandlerBindContext): void;
 	onUpdate(context: LuaHandlerBindContext): void;
@@ -84,7 +84,7 @@ export class LuaHandlerRegistry {
 		}
 	}
 
-	public get(handlerId: string): LuaHandlerDescriptor | null {
+	public get(handlerId: string): LuaHandlerDescriptor {
 		const record = this.records.get(handlerId);
 		return record ? record.descriptor : null;
 	}

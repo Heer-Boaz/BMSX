@@ -8,7 +8,7 @@ import { insavegame } from 'bmsx';
 @componenttags_postprocessing('enemy_post')
 export class EnemyHealthComponent extends Component {
 	hp: number; maxHp: number; scoreValue: number;
-	diedAt: number | null = null;
+	diedAt: number = null;
 	despawnDelay = 1.2;
 	flashTimer = 0;
 	private flashDur = 0.15;

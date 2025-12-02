@@ -155,7 +155,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.playerIndex = options.playerIndex;
 	ide_state.metadata = options.metadata;
 	ide_state.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
-	constants.setIdeThemeVariant(options.themeVariant ?? null);
+	constants.setIdeThemeVariant(options.themeVariant );
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
 	const canonicalization = options.canonicalization ?? 'lower';
 	ide_state.canonicalization = canonicalization;
@@ -184,7 +184,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.resourceSearchField = createInlineTextField();
 	ide_state.lineJumpField = createInlineTextField();
 	ide_state.createResourceField = createInlineTextField();
-	setupWorkspacePersistence(options.workspaceRootPath ?? null);
+	setupWorkspacePersistence(options.workspaceRootPath );
 	applySearchFieldText(ide_state.searchQuery, true);
 	applySymbolSearchFieldText(ide_state.symbolSearchQuery, true);
 	applyResourceSearchFieldText(ide_state.resourceSearchQuery, true);
@@ -262,7 +262,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	}
 	ide_state.desiredColumn = ide_state.cursorColumn;
 	assertMonospace();
-	const initialContext = entryContext ? ide_state.codeTabContexts.get(entryContext.id) ?? null : null;
+	const initialContext = entryContext ? ide_state.codeTabContexts.get(entryContext.id)  : null;
 	ide_state.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
 	ide_state.pendingWindowFocused = ide_state.windowFocused;
 	installPlatformVisibilityListener();
@@ -325,7 +325,7 @@ export function currentLine(): string {
 	return ide_state.lines[ide_state.cursorRow];
 }
 
-export function clampSelectionPosition(position: Position | null): Position | null {
+export function clampSelectionPosition(position: Position): Position {
 	if (!position || ide_state.lines.length === 0) {
 		return null;
 	}
@@ -634,13 +634,13 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleLeft + bubbleWidth, bottom: bubbleTop + bubbleHeight };
 }
 
-export function focusChunkSource(chunkName: string | null, hint?: { asset_id: string | null; path?: string | null }): void {
+export function focusChunkSource(chunkName: string, hint?: { asset_id: string; path?: string }): void {
 	if (!ide_state.active) {
 		activate();
 	}
 	closeSymbolSearch(true);
 	if (hint?.asset_id) {
-		focusResourceByAsset(hint.asset_id, hint.path ?? null);
+		focusResourceByAsset(hint.asset_id, hint.path );
 		return;
 	}
 	if (hint?.asset_id === null) {
@@ -652,7 +652,7 @@ export function focusChunkSource(chunkName: string | null, hint?: { asset_id: st
 	openResourceDescriptor(descriptor);
 }
 
-export function focusResourceByAsset(asset_id: string, preferredPath?: string | null): void {
+export function focusResourceByAsset(asset_id: string, preferredPath?: string): void {
 	const descriptors = listResourcesStrict();
 	const normalizedPreferred = normalizeResourcePath(preferredPath);
 	if (normalizedPreferred) {
@@ -679,11 +679,11 @@ export function focusResourceByAsset(asset_id: string, preferredPath?: string | 
 	throw new Error(`[ConsoleCartEditor] No resource found for asset '${asset_id}'.`);
 }
 
-export function normalizeChunkName(name: string | null): string {
+export function normalizeChunkName(name: string): string {
 	return name ?? '';
 }
 
-export function normalizeResourcePath(path?: string | null): string | undefined {
+export function normalizeResourcePath(path?: string): string {
 	return path === null || path === undefined ? undefined : path;
 }
 
@@ -695,7 +695,7 @@ export function stripExtension(value: string): string {
 	return value.slice(0, lastDot);
 }
 
-export function resolveResourceDescriptorForSource(asset_id: string | null, chunkName: string | null): ConsoleResourceDescriptor | null {
+export function resolveResourceDescriptorForSource(asset_id: string, chunkName: string): ConsoleResourceDescriptor {
 	const descriptors = listResourcesStrict();
 	if (chunkName) {
 		const byPath = descriptors.find(entry => entry.path === chunkName);
@@ -721,7 +721,7 @@ export function resolveResourceDescriptorForSource(asset_id: string | null, chun
 		}
 	}
 	if (asset_id) {
-		const byAsset = descriptors.find(entry => entry.asset_id === asset_id) ?? null;
+		const byAsset = descriptors.find(entry => entry.asset_id === asset_id) ;
 		if (byAsset) {
 			return byAsset;
 		}
@@ -740,10 +740,10 @@ export function listResourcesStrict(): ConsoleResourceDescriptor[] {
 	return descriptors;
 }
 
-export function findResourceDescriptorByAssetId(asset_id: string): ConsoleResourceDescriptor | null {
+export function findResourceDescriptorByAssetId(asset_id: string): ConsoleResourceDescriptor {
 	const descriptors = listResourcesStrict();
 	const match = descriptors.find(entry => entry.asset_id === asset_id);
-	return match ?? null;
+	return match ;
 }
 
 export function findResourceDescriptorForChunk(chunkPath: string): ConsoleResourceDescriptor {
@@ -793,7 +793,7 @@ export function clearAllRuntimeErrorOverlays(): void {
 	clearExecutionStopHighlights();
 }
 
-export function setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay | null): void {
+export function setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {
 	if (overlay && overlay.hidden === undefined) {
 		overlay.hidden = false;
 	}
@@ -804,7 +804,7 @@ export function setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay | null
 	}
 }
 
-export function setExecutionStopHighlight(row: number | null): void {
+export function setExecutionStopHighlight(row: number): void {
 	const context = getActiveCodeTabContext();
 	if (!context) {
 		ide_state.executionStopRow = null;
@@ -826,9 +826,9 @@ export function clearExecutionStopHighlights(): void {
 	}
 }
 
-export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext | null): void {
-	ide_state.runtimeErrorOverlay = context ? context.runtimeErrorOverlay ?? null : null;
-	ide_state.executionStopRow = context ? context.executionStopRow ?? null : null;
+export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext): void {
+	ide_state.runtimeErrorOverlay = context ? context.runtimeErrorOverlay  : null;
+	ide_state.executionStopRow = context ? context.executionStopRow  : null;
 }
 
 function canonicalizeEditorIdentifier(name: string): string {
@@ -963,7 +963,7 @@ export function tryShowLuaErrorOverlay(error: unknown): boolean {
 	return true;
 }
 
-export function safeInspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult | null {
+export function safeInspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult {
 	ide_state.inspectorRequestFailed = false;
 	try {
 		return ide_state.inspectLuaExpressionFn(request);
@@ -1117,7 +1117,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 	const providers = createDiagnosticProviders();
 	const activeId = ide_state.activeCodeTabContextId;
 	const inputs: DiagnosticContextInput[] = [];
-	const metadata: Array<{ id: string; chunkName: string | null }> = [];
+	const metadata: Array<{ id: string; chunkName: string }> = [];
 	for (let index = 0; index < contextIds.length; index += 1) {
 		const contextId = contextIds[index];
 		const context = ide_state.codeTabContexts.get(contextId);
@@ -1248,13 +1248,13 @@ export function markDiagnosticsDirtyForChunk(chunkName: string): void {
 	markDiagnosticsDirty(context.id);
 }
 
-export function getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] | null {
+export function getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] {
 	const context = getActiveCodeTabContext();
 	const chunkName = resolveHoverChunkName(context) ?? '<console>';
 	return ide_state.layout.getSemanticDefinitions(ide_state.lines, ide_state.textVersion, chunkName);
 }
 
-export function getLuaModuleAliases(chunkName: string | null): Map<string, string> {
+export function getLuaModuleAliases(chunkName: string): Map<string, string> {
 	const activeContext = getActiveCodeTabContext();
 	const targetChunk = chunkName ?? resolveHoverChunkName(activeContext) ?? '<console>';
 	ide_state.layout.getSemanticDefinitions(ide_state.lines, ide_state.textVersion, targetChunk);
@@ -1270,7 +1270,7 @@ export function getLuaModuleAliases(chunkName: string | null): Map<string, strin
 	return aliases;
 }
 
-export function findContextByChunk(chunkName: string): CodeTabContext | null {
+export function findContextByChunk(chunkName: string): CodeTabContext {
 	for (const context of ide_state.codeTabContexts.values()) {
 		const descriptor = context.descriptor;
 		if (descriptor) {
@@ -1341,7 +1341,7 @@ export function draw(): void {
 	}
 }
 
-export function getSourceForChunk(asset_id: string | null, chunkName: string | null): string {
+export function getSourceForChunk(asset_id: string, chunkName: string): string {
 	const context = findCodeTabContext(asset_id, chunkName);
 	if (context) {
 		if (context.id === ide_state.activeCodeTabContextId) {
@@ -1362,7 +1362,7 @@ export function getSourceForChunk(asset_id: string | null, chunkName: string | n
 	throw new Error(`[ConsoleCartEditor] Unable to locate source for asset '${asset_id ?? '<null>'}' and chunk '${chunkName ?? '<null>'}'.`);
 }
 
-export function getActiveResourceViewer(): ResourceViewerState | null {
+export function getActiveResourceViewer(): ResourceViewerState {
 	const tab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeTabId);
 	if (!tab) {
 		return null;
@@ -1458,7 +1458,7 @@ export function restoreState(state: ConsoleEditorSerializedState): void { // NOT
 	ide_state.appliedGeneration = Number.isFinite(state.appliedGeneration) ? Math.max(0, Math.floor(state.appliedGeneration)) : 0;
 	resetActionPromptState();
 	const activeContext = getActiveCodeTabContext();
-	const entryContextRef = ide_state.entryTabId ? ide_state.codeTabContexts.get(ide_state.entryTabId) ?? null : null;
+	const entryContextRef = ide_state.entryTabId ? ide_state.codeTabContexts.get(ide_state.entryTabId)  : null;
 	if (activeContext) {
 		activeContext.lastSavedSource = ide_state.lines.join('\n');
 		activeContext.dirty = ide_state.dirty;
@@ -2037,7 +2037,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	const references = info.definitionKey ? ide_state.semanticWorkspace.getReferences(info.definitionKey) : [];
 	type RangeBucket = { chunkName: string; ranges: LuaSourceRange[]; seen: Set<string> };
 	const rangeMap = new Map<string, RangeBucket>();
-	const addRange = (range: LuaSourceRange | null | undefined): void => {
+	const addRange = (range: LuaSourceRange): void => {
 		if (!range || !range.start || !range.end) {
 			return;
 		}
@@ -2079,11 +2079,11 @@ export function getCrossFileRenameDependencies(): CrossFileRenameDependencies {
 		createLuaCodeTabContext: (descriptor: ConsoleResourceDescriptor) => createLuaCodeTabContext(descriptor),
 		createEntryTabContext: () => createEntryTabContext(),
 		getEntryTabId: () => ide_state.entryTabId,
-		setEntryTabId: (id: string | null) => {
+		setEntryTabId: (id: string) => {
 			ide_state.entryTabId = id;
 		},
 		getEntryAssetId: () => ide_state.entryAssetId,
-		getCodeTabContext: (id: string) => ide_state.codeTabContexts.get(id) ?? null,
+		getCodeTabContext: (id: string) => ide_state.codeTabContexts.get(id) ,
 		setCodeTabContext: (context: CodeTabContext) => {
 			ide_state.codeTabContexts.set(context.id, context);
 		},
@@ -2134,7 +2134,7 @@ export function focusEditorFromRename(): void {
 	ide_state.cursorVisible = true;
 }
 
-export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext | null): ReferenceCatalogEntry[] {
+export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext): ReferenceCatalogEntry[] {
 	const descriptor = context ? context.descriptor : null;
 	const normalizedPath = descriptor && descriptor.path ? descriptor.path : null;
 	const asset_id = descriptor && descriptor.asset_id ? descriptor.asset_id : null;
@@ -2146,7 +2146,7 @@ export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, con
 		listResources: () => listResourcesStrict(),
 		loadLuaResource: (resourceId: string) => ide_state.loadLuaResourceFn(resourceId),
 	};
-	const sourceLabelPath = descriptor ? (descriptor.path ?? descriptor.asset_id ?? null) : null;
+	const sourceLabelPath = descriptor ? (descriptor.path ?? descriptor.asset_id ) : null;
 	return buildProjectReferenceCatalog({
 		workspace: ide_state.semanticWorkspace,
 		info,
@@ -2226,7 +2226,7 @@ export function updateReferenceSearchMatches(): void {
 	ide_state.symbolSearchHoverIndex = -1;
 }
 
-export function getActiveSymbolSearchMatch(): SymbolSearchResult | null {
+export function getActiveSymbolSearchMatch(): SymbolSearchResult {
 	if (!ide_state.symbolSearchVisible || ide_state.symbolSearchMatches.length === 0) {
 		return null;
 	}
@@ -2613,16 +2613,16 @@ export function pointerHitsHoverTarget(snapshot: PointerSnapshot, tooltip: CodeH
 	return column >= tooltip.startColumn && column <= tooltip.endColumn;
 }
 
-export function buildProjectReferenceContext(context: CodeTabContext | null): {
+export function buildProjectReferenceContext(context: CodeTabContext): {
 	environment: ProjectReferenceEnvironment;
 	chunkName: string;
-	normalizedPath: string | null;
-	asset_id: string | null;
+	normalizedPath: string;
+	asset_id: string;
 } {
 	const descriptor = context ? context.descriptor : null;
 	const normalizedPath = descriptor && descriptor.path ? descriptor.path : null;
-	const descriptorasset_id = descriptor ? descriptor.asset_id ?? null : null;
-	const resolvedasset_id = descriptorasset_id ?? ide_state.entryAssetId ?? null;
+	const descriptorasset_id = descriptor ? descriptor.asset_id  : null;
+	const resolvedasset_id = descriptorasset_id ?? ide_state.entryAssetId ;
 	const resolvedChunk = resolveHoverChunkName(context)
 		?? normalizedPath
 		?? descriptorasset_id
@@ -2660,7 +2660,7 @@ export function applyDefinitionSelection(range: ConsoleLuaDefinitionLocation['ra
 	ensureCursorVisible();
 }
 
-export function beginNavigationCapture(): NavigationHistoryEntry | null {
+export function beginNavigationCapture(): NavigationHistoryEntry {
 	if (ide_state.navigationCaptureSuspended) {
 		return null;
 	}
@@ -2675,20 +2675,20 @@ export function beginNavigationCapture(): NavigationHistoryEntry | null {
 	return null;
 }
 
-export function completeNavigation(previous: NavigationHistoryEntry | null): void {
+export function completeNavigation(previous: NavigationHistoryEntry): void {
 	if (ide_state.navigationCaptureSuspended) {
 		return;
 	}
 	const next = createNavigationEntry();
 	const backStack = ide_state.navigationHistory.back;
 	if (previous && next && !areNavigationEntriesEqual(previous, next)) {
-		const lastBack = backStack[backStack.length - 1] ?? null;
+		const lastBack = backStack[backStack.length - 1] ;
 		if (!lastBack || !areNavigationEntriesEqual(lastBack, previous)) {
 			pushNavigationEntry(backStack, previous);
 		}
 		ide_state.navigationHistory.forward.length = 0;
 	} else if (previous && !next) {
-		const lastBack = backStack[backStack.length - 1] ?? null;
+		const lastBack = backStack[backStack.length - 1] ;
 		if (!lastBack || !areNavigationEntriesEqual(lastBack, previous)) {
 			pushNavigationEntry(backStack, previous);
 		}
@@ -2716,7 +2716,7 @@ export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: Navigati
 		&& a.column === b.column;
 }
 
-export function createNavigationEntry(): NavigationHistoryEntry | null {
+export function createNavigationEntry(): NavigationHistoryEntry {
 	if (!isCodeTabActive()) {
 		return null;
 	}
@@ -2726,7 +2726,7 @@ export function createNavigationEntry(): NavigationHistoryEntry | null {
 	}
 	const asset_id = resolveHoverAssetId(context);
 	const chunkName = resolveHoverChunkName(context);
-	const path = context.descriptor?.path ?? null;
+	const path = context.descriptor?.path ;
 	const maxRowIndex = ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0;
 	const row = clamp(ide_state.cursorRow, 0, maxRowIndex);
 	const column = clamp(ide_state.cursorColumn, 0, ide_state.lines[row]?.length ?? 0);
@@ -2751,11 +2751,11 @@ export function withNavigationCaptureSuspended<T>(operation: () => T): T {
 }
 
 export function applyNavigationEntry(entry: NavigationHistoryEntry): void {
-	const existingContext = ide_state.codeTabContexts.get(entry.contextId) ?? null;
+	const existingContext = ide_state.codeTabContexts.get(entry.contextId) ;
 	if (existingContext) {
 		setActiveTab(entry.contextId);
 	} else {
-		const hint: { asset_id: string | null; path?: string | null } = { asset_id: entry.asset_id };
+		const hint: { asset_id: string; path?: string } = { asset_id: entry.asset_id };
 		if (entry.path) {
 			hint.path = entry.path;
 		}
@@ -2787,7 +2787,7 @@ export function goBackwardInNavigationHistory(): void {
 	const currentEntry = ide_state.navigationHistory.current ?? createNavigationEntry();
 	if (currentEntry) {
 		const forwardStack = ide_state.navigationHistory.forward;
-		const lastForward = forwardStack[forwardStack.length - 1] ?? null;
+		const lastForward = forwardStack[forwardStack.length - 1] ;
 		if (!lastForward || !areNavigationEntriesEqual(lastForward, currentEntry)) {
 			pushNavigationEntry(forwardStack, currentEntry);
 		}
@@ -2806,7 +2806,7 @@ export function goForwardInNavigationHistory(): void {
 	const currentEntry = ide_state.navigationHistory.current ?? createNavigationEntry();
 	if (currentEntry) {
 		const backStack = ide_state.navigationHistory.back;
-		const lastBack = backStack[backStack.length - 1] ?? null;
+		const lastBack = backStack[backStack.length - 1] ;
 		if (!lastBack || !areNavigationEntriesEqual(lastBack, currentEntry)) {
 			pushNavigationEntry(backStack, currentEntry);
 		}
@@ -3375,7 +3375,7 @@ export async function save(): Promise<void> {
 
 export function captureSnapshot(): EditorSnapshot {
 	const linesCopy = ide_state.lines.slice();
-	let selectionCopy: Position | null = null;
+	let selectionCopy: Position = null;
 	if (ide_state.selectionAnchor) {
 		selectionCopy = { row: ide_state.selectionAnchor.row, column: ide_state.selectionAnchor.column };
 	}
@@ -3482,7 +3482,7 @@ export function getLineJumpBarHeight(): number {
 	return ide_state.lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;
 }
 
-export function getCreateResourceBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+export function getCreateResourceBarBounds(): { top: number; bottom: number; left: number; right: number } {
 	const height = getCreateResourceBarHeight();
 	if (height <= 0) {
 		return null;
@@ -3496,7 +3496,7 @@ export function getCreateResourceBarBounds(): { top: number; bottom: number; lef
 	};
 }
 
-export function getSearchBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+export function getSearchBarBounds(): { top: number; bottom: number; left: number; right: number } {
 	const height = getSearchBarHeight();
 	if (height <= 0) {
 		return null;
@@ -3510,7 +3510,7 @@ export function getSearchBarBounds(): { top: number; bottom: number; left: numbe
 	};
 }
 
-export function getResourceSearchBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+export function getResourceSearchBarBounds(): { top: number; bottom: number; left: number; right: number } {
 	const height = getResourceSearchBarHeight();
 	if (height <= 0) {
 		return null;
@@ -3524,7 +3524,7 @@ export function getResourceSearchBarBounds(): { top: number; bottom: number; lef
 	};
 }
 
-export function getLineJumpBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+export function getLineJumpBarBounds(): { top: number; bottom: number; left: number; right: number } {
 	const height = getLineJumpBarHeight();
 	if (height <= 0) {
 		return null;
@@ -3543,7 +3543,7 @@ export function getLineJumpBarBounds(): { top: number; bottom: number; left: num
 	};
 }
 
-export function getSymbolSearchBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+export function getSymbolSearchBarBounds(): { top: number; bottom: number; left: number; right: number } {
 	const height = getSymbolSearchBarHeight();
 	if (height <= 0) {
 		return null;
@@ -3560,7 +3560,7 @@ export function getSymbolSearchBarBounds(): { top: number; bottom: number; left:
 	};
 }
 
-export function getRenameBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+export function getRenameBarBounds(): { top: number; bottom: number; left: number; right: number } {
 	const height = getRenameBarHeight();
 	if (height <= 0) {
 		return null;
@@ -3578,7 +3578,7 @@ export function getRenameBarBounds(): { top: number; bottom: number; left: numbe
 	};
 }
 
-export function findFunctionDefinitionRowInActiveFile(functionName: string): number | null {
+export function findFunctionDefinitionRowInActiveFile(functionName: string): number {
 	if (typeof functionName !== 'string' || functionName.length === 0) {
 		return null;
 	}
@@ -3707,7 +3707,7 @@ export function openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
 		const context = createLuaCodeTabContext(descriptor);
 		ide_state.codeTabContexts.set(tabId, context);
 	}
-	const context = ide_state.codeTabContexts.get(tabId) ?? null;
+	const context = ide_state.codeTabContexts.get(tabId) ;
 	if (!tab) {
 		const dirty = context ? context.dirty : false;
 		tab = {
@@ -3862,7 +3862,7 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 		title,
 		scroll: 0,
 	};
-	let error: string | null = null;
+	let error: string = null;
 	const rompack = $.rompack;
 	lines.push('');
 	const lua = rompack.cart.lua;
@@ -3953,7 +3953,7 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 			}
 			const meta = audio.audiometa ?? {};
 			appendResourceViewerLines(lines, ['-- Audio Metadata --']);
-			const bufferSize = (audio.buffer as { byteLength?: number } | undefined)?.byteLength;
+			const bufferSize = (audio.buffer as { byteLength?: number })?.byteLength;
 			if (typeof bufferSize === 'number') {
 				appendResourceViewerLines(lines, [`Buffer Size: ${bufferSize} bytes`]);
 			}
@@ -4069,7 +4069,7 @@ export function collectWorldObjectLines(): string[] {
 export function describeListenerSet(set: ListenerSet): string {
 	const names: string[] = [];
 	for (const entry of set) {
-		const subscriber = entry.subscriber as { id?: string; constructor?: { name?: string } } | undefined;
+		const subscriber = entry.subscriber as { id?: string; constructor?: { name?: string } };
 		const name = subscriber?.id ?? subscriber?.constructor?.name ?? '<anonymous>';
 		if (!names.includes(name)) names.push(name);
 		if (names.length >= 5) break;
@@ -4220,7 +4220,7 @@ export function scrollResourceBrowser(amount: number): void {
 	// controller owns scroll; no local mirror required
 }
 
-export function resourceViewerImageLayout(viewer: ResourceViewerState): { left: number; top: number; width: number; height: number; bottom: number; scale: number } | null {
+export function resourceViewerImageLayout(viewer: ResourceViewerState): { left: number; top: number; width: number; height: number; bottom: number; scale: number } {
 	const info = viewer.image;
 	if (!info) {
 		return null;

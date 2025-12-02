@@ -63,7 +63,7 @@ const DEFAULT_GAMEPAD_MAPPING: ManifestInputMapping = {
 	console_a: ['a'],
 };
 
-function coerceInputMapping<T extends string>(mapping: ManifestInputMapping | undefined): Record<string, T[]> {
+function coerceInputMapping<T extends string>(mapping: ManifestInputMapping): Record<string, T[]> {
 	const result: Record<string, T[]> = {};
 	if (!mapping) return result;
 	for (const [action, values] of Object.entries(mapping)) {
@@ -123,7 +123,7 @@ function deriveConsoleOptions(manifest: CartManifest) {
 }
 
 export async function startCart(args: BootArgs): Promise<void> {
-	const manifest = (args.rompack.manifest ?? null) as CartManifest | null;
+	const manifest = (args.rompack.manifest ) as CartManifest;
 	if (!manifest) {
 		throw new Error('[start_cart] Cart manifest not found in rompack.');
 	}
@@ -181,7 +181,7 @@ export async function startCart(args: BootArgs): Promise<void> {
 		sndcontext: args.sndcontext,
 		gainnode: args.gainnode,
 		debug: args.debug,
-		startingGamepadIndex: args.startingGamepadIndex ?? null,
+		startingGamepadIndex: args.startingGamepadIndex ,
 		enableOnscreenGamepad: args.enableOnscreenGamepad,
 		platform,
 		viewHost,

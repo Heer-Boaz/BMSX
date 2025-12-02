@@ -16,7 +16,7 @@ export type VisualCursorOverride = {
 };
 
 export class CaretNavigationState {
-	private override: VisualCursorOverride | null = null;
+	private override: VisualCursorOverride = null;
 
 	public clear(): void {
 		this.override = null;
@@ -31,7 +31,7 @@ export class CaretNavigationState {
 		};
 	}
 
-	public peek(row: number, column: number): { visualIndex: number; segmentStartColumn: number } | null {
+	public peek(row: number, column: number): { visualIndex: number; segmentStartColumn: number } {
 		const current = this.override;
 		if (!current) {
 			return null;

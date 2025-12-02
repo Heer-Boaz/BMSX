@@ -13,7 +13,7 @@ type OverlayRequest = ConsoleOverlaySpecOptions;
 class OverlayPipelineControllerImpl {
 	private readonly requests = new Map<string, OverlayRequest>();
 
-	public setRequest(id: string, request: OverlayRequest | null): void {
+	public setRequest(id: string, request: OverlayRequest): void {
 		if (!request) {
 			this.requests.delete(id);
 		} else {

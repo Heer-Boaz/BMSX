@@ -155,8 +155,8 @@ function compilePredicate(binding: Binding): (env: BindingExecutionEnv) => boole
 	};
 }
 
-function compileCustomEffects(binding: Binding, analysis: BindingAnalysis): Map<string, EffectExecutor | undefined> {
-	const map = new Map<string, EffectExecutor | undefined>();
+function compileCustomEffects(binding: Binding, analysis: BindingAnalysis): Map<string, EffectExecutor> {
+	const map = new Map<string, EffectExecutor>();
 	const table = binding.do ?? {};
 	for (const key of Object.keys(table)) {
 		if (key === 'press' || key === 'hold' || key === 'release') continue;
@@ -165,7 +165,7 @@ function compileCustomEffects(binding: Binding, analysis: BindingAnalysis): Map<
 	return map;
 }
 
-function compileEffectList(spec: Effect | Effect[] | undefined, slot?: string, analysis?: BindingAnalysis): EffectExecutor | undefined {
+function compileEffectList(spec: Effect | Effect[], slot?: string, analysis?: BindingAnalysis): EffectExecutor {
 	if (!spec) return undefined;
 	const entries = Array.isArray(spec) ? spec : [spec];
 	const executors: EffectExecutor[] = [];
@@ -259,7 +259,7 @@ export function validateProgramEffects(program: InputActionEffectProgram, progra
 		}
 	}
 }
-function validateEffectSpec(spec: Effect | Effect[] | undefined, ctx: ValidationContext): void {
+function validateEffectSpec(spec: Effect | Effect[], ctx: ValidationContext): void {
 	if (Array.isArray(spec)) {
 		for (let i = 0; i < spec.length; i++) {
 			const entry = spec[i]!;

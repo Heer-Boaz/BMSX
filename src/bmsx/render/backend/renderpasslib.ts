@@ -46,13 +46,13 @@ export interface SpritesPipelineState {
 	height: number;
 	baseWidth: number;
 	baseHeight: number;
-	atlasTex?: TextureHandle | null;
-	atlasDynamicTex?: TextureHandle | null;
-	atlasEngineTex?: TextureHandle | null;
+	atlasTex?: TextureHandle;
+	atlasDynamicTex?: TextureHandle;
+	atlasEngineTex?: TextureHandle;
 	ambientEnabledDefault: boolean;
 	ambientFactorDefault: number;
 }
-export interface CRTPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; colorTex: TextureHandle | null; options?: unknown; }
+export interface CRTPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; colorTex: TextureHandle; options?: unknown; }
 export interface FrameSharedState { view: { camPos: Float32Array | { x: number; y: number; z: number }; viewProj: Float32Array; skyboxView: Float32Array; proj: Float32Array }; lighting: unknown; fog: FogUniforms }
 
 // Type-safe pass state map used by this registry (compile-time only)
@@ -70,7 +70,7 @@ interface RegisteredPassRec {
 	id: string;
 	exec: (backend: AnyBackend, fbo: unknown, state: unknown) => void;
 	prepare?: (backend: AnyBackend, state: unknown) => void;
-	pipelineHandle?: RenderPassInstanceHandle | null;
+	pipelineHandle?: RenderPassInstanceHandle;
 	state?: unknown;
 	bindingLayout?: RenderPassDef['bindingLayout'];
 	present?: boolean;
@@ -180,7 +180,7 @@ export class RenderPassLibrary {
 	}
 
 	public validatePassResources(passId: string, backend: GPUBackend): void {
-		let pass: RenderPassDef | undefined;
+		let pass: RenderPassDef;
 		try {
 			const idx = this.findPipelinePassIndex(passId);
 			if (idx < 0) return;
@@ -211,7 +211,7 @@ export class RenderPassLibrary {
 	register(desc: RenderPassDef): void {
 		const idStr = String(desc.id);
 		if (this.registered.has(idStr)) throw new Error(`Pipeline '${desc.id}' already registered`);
-		let pipelineHandle: RenderPassInstanceHandle | null = null;
+		let pipelineHandle: RenderPassInstanceHandle = null;
 		if (this.backend.createRenderPassInstance && (desc.vsCode || desc.fsCode)) {
 			pipelineHandle = this.backend.createRenderPassInstance({
 				label: desc.label ?? desc.name,
@@ -241,7 +241,7 @@ export class RenderPassLibrary {
 		const p = this.registered.get(String(id)); if (!p) throw new Error(`Pipeline '${String(id)}' not found`);
 		p.state = state;
 	}
-	getState<PState extends keyof PassStateTypes & RenderPassStateId>(id: PState): PassStateTypes[PState] | undefined {
+	getState<PState extends keyof PassStateTypes & RenderPassStateId>(id: PState): PassStateTypes[PState] {
 		const p = this.registered.get(String(id));
 		return p ? (p.state as PassStateTypes[PState]) : undefined;
 	}
@@ -290,8 +290,8 @@ export class RenderPassLibrary {
 	// Build render graph from current pass registry with Clear/Present wiring
 	buildRenderGraph(view: RenderContext, lightingSystem: LightingSystem): RenderGraphRuntime {
 		const rg = new RenderGraphRuntime(view.backend);
-		let frameColorHandle: number | null = null;
-		let frameDepthHandle: number | null = null;
+		let frameColorHandle: number = null;
+		let frameDepthHandle: number = null;
 
 		// Clear pass: create frame color/depth and export to backbuffer
 		const DEBUG_FORCE_VISIBLE_CLEAR = false;

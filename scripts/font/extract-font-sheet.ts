@@ -9,11 +9,11 @@ type GlyphSpec = { suffix: string; tile: number };
 type CliConfig = {
 	sheetPath: string;
 	outputDir: string;
-	mapPath: string | null;
+	mapPath: string;
 	tileWidth: number;
 	tileHeight: number;
-	columns: number | null;
-	rows: number | null;
+	columns: number;
+	rows: number;
 	offsetX: number;
 	offsetY: number;
 	overwrite: boolean;
@@ -122,11 +122,11 @@ function parseCli(argv: string[]): CliConfig {
 	if (raw.tileHeight) {
 		tileHeight = parseNumber(raw.tileHeight, '--tileHeight');
 	}
-	let columns: number | null = null;
+	let columns: number = null;
 	if (raw.columns) {
 		columns = parseNumber(raw.columns, '--columns');
 	}
-	let rows: number | null = null;
+	let rows: number = null;
 	if (raw.rows) {
 		rows = parseNumber(raw.rows, '--rows');
 	}
@@ -163,7 +163,7 @@ function parseNumber(value: string, flagName: string): number {
 	return parsed;
 }
 
-function loadGlyphSpecs(mapPath: string | null, order: GlyphOrder): GlyphSpec[] {
+function loadGlyphSpecs(mapPath: string, order: GlyphOrder): GlyphSpec[] {
 	if (!mapPath) {
 		return buildDefaultGlyphs(order);
 	}

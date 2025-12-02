@@ -113,14 +113,14 @@ export function setCursorFromOffset(field: TextField, offset: number): void {
 	field.desiredColumn = field.cursorColumn;
 }
 
-export function selectionAnchorOffset(field: TextField): number | null {
+export function selectionAnchorOffset(field: TextField): number {
 	if (!field.selectionAnchor) {
 		return null;
 	}
 	return positionToOffset(field.lines, field.selectionAnchor);
 }
 
-export function setSelectionAnchorFromOffset(field: TextField, offset: number | null): void {
+export function setSelectionAnchorFromOffset(field: TextField, offset: number): void {
 	if (offset === null) {
 		field.selectionAnchor = null;
 		return;
@@ -136,7 +136,7 @@ export function clampCursor(field: TextField): void {
 	field.cursorColumn = column;
 }
 
-export function selectionRange(field: TextField): { start: number; end: number } | null {
+export function selectionRange(field: TextField): { start: number; end: number } {
 	const anchor = field.selectionAnchor;
 	if (!anchor) {
 		return null;
@@ -364,7 +364,7 @@ export function selectAll(field: TextField): void {
 	field.desiredColumn = field.cursorColumn;
 }
 
-export function selectedText(field: TextField): string | null {
+export function selectedText(field: TextField): string {
 	const range = selectionRange(field);
 	if (!range) {
 		return null;
@@ -517,7 +517,7 @@ export function applyInlineFieldEditing(
 
 	const shouldRepeat = (code: string): boolean => ide_state.input.shouldRepeat(code, deltaSeconds);
 
-	const readClipboard = (): string | null => ide_state.customClipboard ?? null;
+	const readClipboard = (): string => ide_state.customClipboard ;
 	const writeClipboard = (payload: string): void => {
 		ide_state.customClipboard = payload;
 		try {

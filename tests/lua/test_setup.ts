@@ -22,7 +22,7 @@ const worldStub = {
 	objToSpaceMap: new Map<string, string>(),
 	onObjectSpawned: () => {},
 	dispatchWorldLifecycleSlot: () => {},
-	depthDirtyBatch: null as Set<string> | null,
+	depthDirtyBatch: null as Set<string>,
 	objects: () => [],
 	activeSpaceId: null,
 	activeCameras: [],

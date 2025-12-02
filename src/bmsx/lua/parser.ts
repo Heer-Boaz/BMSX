@@ -230,7 +230,7 @@ export class LuaParser {
 			const identifierToken = this.consume(LuaTokenType.Identifier, 'Expected identifier after "." in function name.');
 			identifiers.push(identifierToken.lexeme);
 		}
-		let methodName: string | null = null;
+		let methodName: string = null;
 		if (this.match(LuaTokenType.Colon)) {
 			const methodToken = this.consume(LuaTokenType.Identifier, 'Expected method name after ":".');
 			methodName = methodToken.lexeme;
@@ -412,7 +412,7 @@ export class LuaParser {
 		const startExpression = this.parseExpression();
 		this.consume(LuaTokenType.Comma, 'Expected "," after start expression in numeric for loop.');
 		const limitExpression = this.parseExpression();
-		let stepExpression: LuaExpression | null = null;
+		let stepExpression: LuaExpression = null;
 		if (this.match(LuaTokenType.Comma)) {
 			stepExpression = this.parseExpression();
 		}
@@ -817,7 +817,7 @@ export class LuaParser {
 		throw this.error(this.current(), 'Invalid function call arguments.');
 	}
 
-	private createCallExpression(callee: LuaExpression, parsedArguments: ParsedArguments, methodName: string | null): LuaCallExpression {
+	private createCallExpression(callee: LuaExpression, parsedArguments: ParsedArguments, methodName: string): LuaCallExpression {
 		return {
 			kind: LuaSyntaxKind.CallExpression,
 			range: this.rangeFromNodeAndToken(callee, parsedArguments.endToken),
@@ -1004,7 +1004,7 @@ export class LuaParser {
 			const name = path[path.length - 1];
 			definitions.push({ name, namePath: Array.from(path), definition: definitionRange, scope: scopeRange, kind });
 		};
-		const extractTableKeyFromExpression = (expression: LuaExpression): string | null => {
+		const extractTableKeyFromExpression = (expression: LuaExpression): string => {
 			switch (expression.kind) {
 				case LuaSyntaxKind.StringLiteralExpression:
 					return (expression as LuaStringLiteralExpression).value;
@@ -1014,7 +1014,7 @@ export class LuaParser {
 					return null;
 			}
 		};
-		const extractPathFromExpression = (expression: LuaExpression): string[] | null => {
+		const extractPathFromExpression = (expression: LuaExpression): string[] => {
 			switch (expression.kind) {
 				case LuaSyntaxKind.IdentifierExpression:
 					return [(expression as LuaIdentifierExpression).name];
@@ -1046,8 +1046,8 @@ export class LuaParser {
 					return null;
 			}
 		};
-		const mapAssignmentValues = (targetCount: number, values: ReadonlyArray<LuaExpression>): Array<LuaExpression | null> => {
-			const mapped: Array<LuaExpression | null> = [];
+		const mapAssignmentValues = (targetCount: number, values: ReadonlyArray<LuaExpression>): Array<LuaExpression> => {
+			const mapped: Array<LuaExpression> = [];
 			if (targetCount <= 0) {
 				return mapped;
 			}
@@ -1137,7 +1137,7 @@ export class LuaParser {
 			}
 			return baseRange;
 		};
-		const recordAssignmentValue = (path: ReadonlyArray<string>, value: LuaExpression | null, scope: LuaSourceRange): void => {
+		const recordAssignmentValue = (path: ReadonlyArray<string>, value: LuaExpression, scope: LuaSourceRange): void => {
 			if (!value) {
 				return;
 			}

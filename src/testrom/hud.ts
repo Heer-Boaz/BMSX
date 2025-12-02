@@ -2,7 +2,7 @@ import { $, WorldObject, Msx1Colors, build_fsm, type StateMachineBlueprint } fro
 import { EnemyHealthComponent } from './enemyhealth';
 
 export class RailShooterHUD extends WorldObject {
-	score = 0; combo = 1; private lastHitTime = 0; comboWindow = 1.5; bossId: string | null = null;
+	score = 0; combo = 1; private lastHitTime = 0; comboWindow = 1.5; bossId: string = null;
 	private comboFade = 0; // alpha fade for combo text when inactive
 	private hitFlash = 0; // brief flash when a hit is registered
 	reticle?: { ox: number; oy: number }; // lightweight reference for aiming offset

@@ -31,15 +31,15 @@ export type ConsoleEditorOptions = {
 	loadLuaResource: (asset_id: string) => string;
 	saveLuaResource: (asset_id: string, source: string) => Promise<void>;
 	createLuaResource: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
-	inspectLuaExpression: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
+	inspectLuaExpression: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult;
 	listLuaObjectMembers: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
 	listLuaModuleSymbols: (moduleName: string) => ConsoleLuaSymbolEntry[];
-	entryAssetId: string | null;
-	listLuaSymbols: (asset_id: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
+	entryAssetId: string;
+	listLuaSymbols: (asset_id: string, chunkName: string) => ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
 	listBuiltinLuaFunctions: () => ConsoleLuaBuiltinDescriptor[];
 	fontVariant?: ConsoleFontVariant;
-	workspaceRootPath?: string | null;
+	workspaceRootPath?: string;
 };
 
 export type Position = { row: number; column: number };
@@ -72,14 +72,14 @@ export type SearchMatch = {
 };
 
 export type GlobalSearchMatch = {
-	descriptor: ConsoleResourceDescriptor | null;
+	descriptor: ConsoleResourceDescriptor;
 	pathLabel: string;
 	row: number;
 	start: number;
 	end: number;
 	snippet: string;
-	asset_id: string | null;
-	chunkName: string | null;
+	asset_id: string;
+	chunkName: string;
 };
 
 export type EditorSnapshot = {
@@ -88,7 +88,7 @@ export type EditorSnapshot = {
 	cursorColumn: number;
 	scrollRow: number;
 	scrollColumn: number;
-	selectionAnchor: Position | null;
+	selectionAnchor: Position;
 	dirty: boolean;
 };
 
@@ -98,7 +98,7 @@ export type SymbolCatalogEntry = {
 	searchKey: string;
 	line: number;
 	kindLabel: string;
-	sourceLabel: string | null;
+	sourceLabel: string;
 };
 
 export type SymbolSearchResult = {
@@ -111,7 +111,7 @@ export type ResourceCatalogEntry = {
 	displayPath: string;
 	searchKey: string;
 	typeLabel: string;
-	assetLabel: string | null;
+	assetLabel: string;
 };
 
 export type ResourceSearchResult = {
@@ -135,7 +135,7 @@ export type LuaCompletionItem = {
 	insertText: string;
 	sortKey: string;
 	kind: LuaCompletionKind;
-	detail: string | null;
+	detail: string;
 	parameters?: readonly string[];
 };
 
@@ -202,8 +202,8 @@ export type ParameterHintState = {
 	anchorRow: number;
 	anchorColumn: number;
 	argumentIndex: number;
-	paramDescriptions?: readonly (string | null)[];
-	methodDescription?: string | null;
+	paramDescriptions?: readonly (string)[];
+	methodDescription?: string;
 };
 
 export type EditorDiagnosticSeverity = 'error' | 'warning';
@@ -216,9 +216,9 @@ export type EditorDiagnostic = {
 	severity: EditorDiagnosticSeverity;
 	// Optional metadata to identify the originating tab/source
 	contextId?: string;
-	sourceLabel?: string | null;
-	asset_id?: string | null;
-	chunkName?: string | null;
+	sourceLabel?: string;
+	asset_id?: string;
+	chunkName?: string;
 };
 
 export type ApiCompletionMetadata = {
@@ -226,8 +226,8 @@ export type ApiCompletionMetadata = {
 	signature: string;
 	kind: 'method' | 'getter';
 	optionalParams?: readonly string[];
-	parameterDescriptions?: readonly (string | null)[];
-	description?: string | null;
+	parameterDescriptions?: readonly (string)[];
+	description?: string;
 };
 
 export type VisualLineSegment = {
@@ -254,19 +254,19 @@ export type CodeHoverTooltip = {
 	valueType: string;
 	scope: ConsoleLuaHoverScope;
 	state: ConsoleLuaHoverValueState;
-	asset_id: string | null;
+	asset_id: string;
 	row: number;
 	startColumn: number;
 	endColumn: number;
 	scrollOffset: number;
 	visibleLineCount: number;
-	bubbleBounds: RectBounds | null;
+	bubbleBounds: RectBounds;
 };
 
 export type ResourceViewerState = {
 	descriptor: ConsoleResourceDescriptor;
 	lines: string[];
-	error: string | null;
+	error: string;
 	title: string;
 	scroll: number;
 	image?: {
@@ -304,22 +304,22 @@ export type CrtOptionsSnapshot = {
 export type ResourceBrowserItem = {
 	line: string;
 	contentStartColumn: number;
-	descriptor: ConsoleResourceDescriptor | null;
+	descriptor: ConsoleResourceDescriptor;
 };
 
 export type CodeTabContext = {
 	id: string;
 	title: string;
-	descriptor: ConsoleResourceDescriptor | null;
+	descriptor: ConsoleResourceDescriptor;
 	load: () => string;
 	save: (source: string) => Promise<void>;
-	snapshot: EditorSnapshot | null;
+	snapshot: EditorSnapshot;
 	lastSavedSource: string;
 	saveGeneration: number;
 	appliedGeneration: number;
 	dirty: boolean;
-	runtimeErrorOverlay: RuntimeErrorOverlay | null;
-	executionStopRow: number | null;
+	runtimeErrorOverlay: RuntimeErrorOverlay;
+	executionStopRow: number;
 	readOnly?: boolean;
 };
 
@@ -340,7 +340,7 @@ export type ConsoleEditorSerializedState = {
 	lineJumpActive: boolean;
 	lineJumpVisible: boolean;
 	message: MessageState;
-	runtimeErrorOverlay: RuntimeErrorOverlay | null;
+	runtimeErrorOverlay: RuntimeErrorOverlay;
 	saveGeneration: number;
 	appliedGeneration: number;
 };
@@ -354,7 +354,7 @@ export type PointerSnapshot = {
 };
 
 export type KeyPressRecord = {
-	lastPressId: number | null;
+	lastPressId: number;
 	downLatched?: boolean;
 };
 
@@ -362,7 +362,7 @@ export type TextField = {
 	lines: string[];
 	cursorRow: number;
 	cursorColumn: number;
-	selectionAnchor?: Position | null;
+	selectionAnchor?: Position;
 	desiredColumn?: number;
 	pointerSelecting?: boolean;
 	lastPointerClickTimeMs?: number;
@@ -373,7 +373,7 @@ export type InlineInputOptions = {
 	deltaSeconds: number;
 	allowSpace: boolean;
 	characterFilter?: (value: string) => boolean;
-	maxLength?: number | null;
+	maxLength?: number;
 };
 
 export type RuntimeErrorOverlayLineRole = 'message' | 'header' | 'divider' | 'frame';
@@ -409,8 +409,8 @@ export type RuntimeErrorOverlay = {
 	timer: number;
 	messageLines: string[];
 	lineDescriptors: RuntimeErrorOverlayLineDescriptor[];
-	layout: RuntimeErrorOverlayLayout | null;
-	details: RuntimeErrorDetails | null;
+	layout: RuntimeErrorOverlayLayout;
+	details: RuntimeErrorDetails;
 	expanded: boolean;
 	hovered: boolean;
 	hoverLine: number;
@@ -424,7 +424,7 @@ export type RepeatEntry = {
 
 export type DiagnosticsCacheEntry = {
 	contextId: string;
-	chunkName: string | null;
+	chunkName: string;
 	diagnostics: EditorDiagnostic[];
 };
 
@@ -442,7 +442,7 @@ export type GlobalSearchJob = {
 	query: string;
 	descriptors: ConsoleResourceDescriptor[];
 	descriptorIndex: number;
-	currentLines: string[] | null;
+	currentLines: string[];
 	nextRow: number;
 	matches: GlobalSearchMatch[];
 	limitHit: boolean;

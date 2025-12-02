@@ -26,7 +26,7 @@ const BASE_EASINGS: Record<string, EasingFn> = {
 
 export const DEFAULT_EASING = 'easeOutQuad' as const;
 
-export function get_easing(name?: string | null): EasingFn {
+export function get_easing(name?: string): EasingFn {
 	if (!name) return BASE_EASINGS[DEFAULT_EASING];
 	return BASE_EASINGS[name] ?? BASE_EASINGS[DEFAULT_EASING];
 }
@@ -44,6 +44,6 @@ export function list_easing_names(): readonly string[] {
 	return Object.keys(BASE_EASINGS);
 }
 
-export function evaluate_easing(name: string | undefined, t: number): number {
+export function evaluate_easing(name: string, t: number): number {
 	return get_easing(name)(t);
 }

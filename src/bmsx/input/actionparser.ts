@@ -50,7 +50,7 @@ function lex(src: string): Token[] {
 	// Regular expression to match various tokens in the input string
 	const R = /\s*(\|\||&&|\||!|\(|\)|\[|]|,|\?jp|&jp|\?gp|&gp|\?rp|&rp|\?wp\{\d+}|&wp\{\d+}|\?jr|&jr|\?wr\{\d+}|&wr\{\d+}|[&?]|(?:t|wp|wr|pr|rc)\{[^}]*}|[a-zA-Z_][a-zA-Z0-9_]*|[<>!=]=?)/gy;
 	const out: Token[] = []; // Array to hold the parsed tokens
-	let m: RegExpExecArray | null; // Regular expression to match tokens in the input string
+	let m: RegExpExecArray; // Regular expression to match tokens in the input string
 	while ((m = R.exec(src)) !== null) {
 		const v = m[1]; // Extract the matched token value
 		// If the token value is undefined, skip to the next iteration
@@ -233,7 +233,7 @@ class InputActionParser {
 		return n; // Return the constructed expression node
 	}
 
-	private isOrOperator(value: string | undefined): boolean {
+	private isOrOperator(value: string): boolean {
 		return value === '||' || value === '|';
 	}
 
@@ -257,7 +257,7 @@ class InputActionParser {
 		return n; // Return the constructed term node
 	}
 
-	private isAndOperator(value: string | undefined): boolean {
+	private isAndOperator(value: string): boolean {
 		return value === '&&';
 	}
 
@@ -314,7 +314,7 @@ class InputActionParser {
 		const tok = this.eat();
 		let base = tok.value;
 		// If the token is a windowed function, extract the base name and window size
-		let win: number | undefined;
+		let win: number;
 
 		// Check if the token is a windowed function
 		if (tok.kind === Tokens.FuncWin) {

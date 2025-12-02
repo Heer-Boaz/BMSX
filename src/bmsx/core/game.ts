@@ -52,7 +52,7 @@ export interface GameInitArgs {
 	sndcontext?: AudioContext;
 	gainnode?: GainNode;
 	debug?: boolean;
-	startingGamepadIndex?: number | null;
+	startingGamepadIndex?: number;
 	enableOnscreenGamepad?: boolean;
 	/**
 	 * ECS pipeline selection. Provide a spec or a pipeline id. Defaults to the platform's default pipeline.
@@ -118,7 +118,7 @@ export class Game {
 	/**
 	 * The ID of the animation frame request.
 	 */
-	private frameLoopHandle: { stop(): void } | null = null;
+	private frameLoopHandle: { stop(): void } = null;
 	private _view!: GameView;
 	private _platform!: Platform;
 	/**
@@ -179,10 +179,10 @@ export class Game {
 	 */
 	public debug_runSingleFrameAndPause!: boolean;
 
-	private removeWillExit: (() => void) | null = null;
+	private removeWillExit: (() => void) = null;
 	private _gameplayPipelineSpec: NodeSpec[] = [];
-	private _pipelineOverride: NodeSpec[] | null = null;
-	private initialWorldConfigSnapshot: WorldConfiguration | null = null;
+	private _pipelineOverride: NodeSpec[] = null;
+	private initialWorldConfigSnapshot: WorldConfiguration = null;
 
 	public get rompack(): RomPack { return $rompack!; }
 
@@ -202,11 +202,11 @@ export class Game {
 	public get platform(): Platform { return this._platform!; }
 
 	public emit(event: GameEvent): void;
-	public emit(event_name: string, emitter: Identifiable | null, payload?: EventPayload): void;
-	public emit(arg0: GameEvent | string, emitter?: Identifiable | null, payload?: EventPayload): void {
+	public emit(event_name: string, emitter: Identifiable, payload?: EventPayload): void;
+	public emit(arg0: GameEvent | string, emitter?: Identifiable, payload?: EventPayload): void {
 		if (typeof arg0 === 'string') {
 			if (payload && typeof payload !== 'object') throw new Error(`[Game.emit] Payload for '${arg0}' must be an object.`);
-			const event = create_gameevent({ type: arg0, emitter: emitter ?? null, ...(payload ?? {}) });
+			const event = create_gameevent({ type: arg0, emitter: emitter , ...(payload ?? {}) });
 			this.emit(event);
 			return;
 		}
@@ -364,7 +364,7 @@ export class Game {
 
 		GameView.imgassets = rompack.img;
 		EventEmitter.instance; // Init event emitter
-		Input.initialize(startingGamepadIndex ?? undefined); // Init input module
+		Input.initialize(startingGamepadIndex ); // Init input module
 		if (enableOnscreenGamepad || this.input.isOnscreenGamepadEnabled) {
 			this.input.enableOnscreenGamepad();
 		}
@@ -503,7 +503,7 @@ export class Game {
 		return baseSpec;
 	}
 
-	public set_pipeline_override(spec: NodeSpec[] | null): void {
+	public set_pipeline_override(spec: NodeSpec[]): void {
 		if (spec) {
 			this._pipelineOverride = spec.map(node => this.cloneNodeSpec(node));
 		} else {

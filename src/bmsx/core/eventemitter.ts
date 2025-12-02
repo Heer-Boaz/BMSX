@@ -261,15 +261,15 @@ export class EventEmitter implements RegisterablePersistent {
 	}
 
 	public emit<E extends GameEvent = GameEvent>(event: E): void;
-	public emit(event_name: string, emitter?: Identifiable | null, payload?: EventPayload): void;
-	public emit<E extends GameEvent = GameEvent>(arg0: E | string, emitterOrSource?: Identifiable | null, payload?: EventPayload): void {
+	public emit(event_name: string, emitter?: Identifiable, payload?: EventPayload): void;
+	public emit<E extends GameEvent = GameEvent>(arg0: E | string, emitterOrSource?: Identifiable, payload?: EventPayload): void {
 		if (typeof arg0 === 'string') {
 			if (payload && typeof payload !== 'object') {
 				throw new Error(`Event '${arg0}' payload must be an object.`);
 			}
 			const event = create_gameevent({
 				type: arg0,
-				emitter: emitterOrSource ?? null,
+				emitter: emitterOrSource ,
 				...(payload ?? {}),
 			});
 			this.emit(event);
@@ -301,7 +301,7 @@ export class EventEmitter implements RegisterablePersistent {
 		const dispatchRegistrySlot = (slotId: string): boolean => {
 			const stub = HandlerRegistry.instance.get(slotId);
 			if (!stub) return false;
-			const outcome = stub.call(emitter ?? null, event);
+			const outcome = stub.call(emitter , event);
 			// anyoneSubscribed = true;
 			return outcome === HandlerRegistry.STOP;
 		};
@@ -333,7 +333,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param emitter - Optional. The emitter id for scoped listeners. If omitted, the listener is removed from global scope.
 	 * @param forcePersistent - If true, also removes persistent listeners.
 	 */
-	off(event_name: string, listener: EventHandler<any>, emitter?: Identifier | null, forcePersistent: boolean = false): void {
+	off(event_name: string, listener: EventHandler<any>, emitter?: Identifier, forcePersistent: boolean = false): void {
 		const self = EventEmitter.instance;
 		if (emitter === undefined) {
 			// Global-scope removal

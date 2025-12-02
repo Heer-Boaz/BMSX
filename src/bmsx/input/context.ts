@@ -17,7 +17,7 @@ export class ContextStack {
 	private contexts: MappingContext[] = [];
 
 	push(ctx: MappingContext): void { this.contexts.push(ctx); }
-	pop(id?: string): MappingContext | undefined {
+	pop(id?: string): MappingContext {
 		if (!id) return this.contexts.pop();
 		const i = this.contexts.findIndex(c => c.id === id);
 		if (i >= 0) return this.contexts.splice(i, 1)[0];

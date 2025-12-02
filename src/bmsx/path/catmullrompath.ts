@@ -12,10 +12,10 @@ export class CatmullRomPath extends EventEmitter implements Path {
 	private _granularity = 200;
 	private _arcLengths: Float32Array = new Float32Array(0);
 	// Expose segment meta query (meta from preceding control point)
-	segmentMetaAt(u: number): PathSegmentMeta | undefined {
+	segmentMetaAt(u: number): PathSegmentMeta {
 		const pts = this.points; if (!pts.length) return undefined; if (u <= 0) return pts[0].meta; if (u >= 1) return pts[pts.length - 1].meta; let prev = pts[0]; for (let i = 1; i < pts.length; i++) { if (pts[i].t! >= u) return prev.meta; prev = pts[i]; } return pts[pts.length - 1].meta;
 	}
-	segmentBoundsAt(u: number): { u0: number; u1: number; meta?: PathSegmentMeta } | undefined {
+	segmentBoundsAt(u: number): { u0: number; u1: number; meta?: PathSegmentMeta } {
 		const pts = this.points; if (pts.length < 2) return undefined; if (u <= 0) return { u0: pts[0].t!, u1: pts[1].t!, meta: pts[0].meta }; if (u >= 1) return { u0: pts[pts.length - 2].t!, u1: pts[pts.length - 1].t!, meta: pts[pts.length - 2].meta }; let prev = pts[0]; for (let i = 1; i < pts.length; i++) { const cur = pts[i]; if (cur.t! >= u) { return { u0: prev.t!, u1: cur.t!, meta: prev.meta }; } prev = cur; } return { u0: pts[pts.length - 2].t!, u1: pts[pts.length - 1].t!, meta: pts[pts.length - 2].meta };
 	}
 	constructor(points?: PathPoint[]) { super(); if (points) this.setPoints(points); }

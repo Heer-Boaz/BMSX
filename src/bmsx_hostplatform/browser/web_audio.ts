@@ -18,7 +18,7 @@ class WebVoice implements VoiceHandle {
 	private readonly ctx: AudioContext;
 	private readonly src: AudioBufferSourceNode;
 	private readonly gain: GainNode;
-	private readonly filter: BiquadFilterNode | null;
+	private readonly filter: BiquadFilterNode;
 	private ended = false;
 	private endedUnsubs: Array<() => void> = [];
 	readonly startedAt: number;
@@ -37,7 +37,7 @@ class WebVoice implements VoiceHandle {
 
 		let nodeDest: AudioNode = gain;
 
-		let filter: BiquadFilterNode | null = null;
+		let filter: BiquadFilterNode = null;
 		if (params.filter !== null) {
 			filter = ctx.createBiquadFilter();
 			filter.type = params.filter.type;
@@ -130,7 +130,7 @@ class WebVoice implements VoiceHandle {
 		p.linearRampToValueAtTime(clamp01(target), now + dur);
 	}
 
-	setFilter(p: AudioFilterParams | null): void {
+	setFilter(p: AudioFilterParams): void {
 		if (p === null) return;
 		if (this.filter === null) return;
 		this.filter.type = p.type;

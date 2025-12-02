@@ -123,14 +123,14 @@ function toWorkspaceRelativePath(filepath: string): string {
 	return normalizeWorkspacePath(workspacePath);
 }
 
-function normalizeVirtualRootPath(root?: string): string | null {
+function normalizeVirtualRootPath(root?: string): string {
 	if (!root || root.length === 0) {
 		return null;
 	}
 	return toWorkspaceRelativePath(root);
 }
 
-export function resolveVirtualSourcePath(filepath: string | undefined, virtualRoot: string | null): string | undefined {
+export function resolveVirtualSourcePath(filepath: string, virtualRoot: string): string {
 	if (!filepath || filepath.length === 0) {
 		return undefined;
 	}
@@ -595,8 +595,8 @@ export function parseAudioMeta(filename: string) {
 
 	const loopregex = /@l=([0-9]+(?:[.,][0-9]+)?)(?:,([0-9]+(?:[.,][0-9]+)?))?/i;
 	const loopresult = loopregex.exec(filename);
-	let loopStart: number | undefined;
-	let loopEnd: number | undefined;
+	let loopStart: number;
+	let loopEnd: number;
 	if (loopresult) {
 		loopStart = parseFloat(loopresult[1].replace(',', '.'));
 		if (loopresult[2]) {
@@ -662,15 +662,15 @@ export function zip(content: Buffer): Uint8Array {
  * @param filepath The path of the resource file.
  * @returns An object containing the name, extension, and type of the resource file.
  */
-export function getResMetaByFilename(filepath: string): { name: string, ext: string, type: resourcetype, collisionType?: 'concave' | 'convex' | 'aabb' | undefined, datatype?: 'json' | 'yaml' | 'bin' | undefined } {
+export function getResMetaByFilename(filepath: string): { name: string, ext: string, type: resourcetype, collisionType?: 'concave' | 'convex' | 'aabb', datatype?: 'json' | 'yaml' | 'bin' } {
 	const parsed = parse(filepath);
 	const rawName = parsed.name;
 	const normalizedName = rawName.replace(/\s+/g, '').toLowerCase();
 	let name = normalizedName;
 	const ext = parsed.ext.toLowerCase();
 	let type: resourcetype;
-	let collisionType: 'concave' | 'convex' | 'aabb' | undefined = undefined;
-	let datatype: 'json' | 'yaml' | 'bin' | undefined = undefined;
+	let collisionType: 'concave' | 'convex' | 'aabb' = undefined;
+	let datatype: 'json' | 'yaml' | 'bin' = undefined;
 
 	const getDataSubtype = (currentName: string): asset_type => {
 		if (currentName.includes('.aem')) return 'aem';
@@ -991,7 +991,7 @@ type LuaCaseState =
 	| { kind: 'longString'; closing: string }
 	| { kind: 'longComment'; closing: string };
 
-type LuaLongBracketMatch = { length: number; closing: string } | null;
+type LuaLongBracketMatch = { length: number; closing: string };
 
 function matchLuaLongBracket(source: string, start: number): LuaLongBracketMatch {
 	if (source.charCodeAt(start) !== 91) {
@@ -1293,11 +1293,11 @@ export async function buildResourceList(respaths: string[], rom_name?: string, o
 export async function generateRomAssets(resources: Resource[], reportProgress?: ProgressNote) {
 	const romAssets: RomAsset[] = [];
 	// @ts-ignore
-	let romlabel_buffer: Buffer | undefined;
+	let romlabel_buffer: Buffer;
 
 	for (const res of resources) {
 		const type = res.type;
-		let sourcePath: string | undefined;
+		let sourcePath: string;
 		if (res.sourcePath && res.sourcePath.length > 0) {
 			sourcePath = res.sourcePath;
 		} else if (res.filepath && res.filepath.length > 0) {
@@ -1584,7 +1584,7 @@ export async function finalizeRompack(
 	assetList: RomAsset[],
 	rom_name: string,
 	debug: boolean,
-	options: { projectRootPath?: string | null, status?: ProgressNote } = {}
+	options: { projectRootPath?: string, status?: ProgressNote } = {}
 ) {
 	const outfileBasename = `${rom_name}${debug ? '.debug' : ''}.rom`;
 	const distPath = `./dist/${outfileBasename}`;
@@ -1594,7 +1594,7 @@ export async function finalizeRompack(
 	await mkdir('./dist', { recursive: true });
 	await mkdir(ignoreDir, { recursive: true });
 
-	let romlabelBuffer: Buffer | undefined;
+	let romlabelBuffer: Buffer;
 	const romlabelIndex = assetList.findIndex(asset => asset.type === 'romlabel');
 	if (romlabelIndex >= 0) {
 		const [romlabel] = assetList.splice(romlabelIndex, 1);
@@ -1648,7 +1648,7 @@ export async function finalizeRompack(
 		status?.('encode manifest');
 		const metadataPayload = {
 			assets: assetList,
-			projectRootPath: options.projectRootPath ?? null,
+			projectRootPath: options.projectRootPath ,
 		};
 		const metadataBuffer = Buffer.from(encodeBinary(metadataPayload));
 		const globalMetadataOffset = offset;
@@ -1707,7 +1707,7 @@ async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolea
 	}
 
 	const romTsStats = await stat(romTsPath);
-	let romJsStats: Stats | undefined;
+	let romJsStats: Stats;
 
 	try {
 		await access(romJsPath);
@@ -1759,8 +1759,8 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 
 	let rebuild = options.forceBuild;
 	if (!rebuild) {
-		let outStats: Stats | undefined;
-		let entryStats: Stats | undefined;
+		let outStats: Stats;
+		let entryStats: Stats;
 		try {
 			outStats = await stat(outPath);
 		} catch {

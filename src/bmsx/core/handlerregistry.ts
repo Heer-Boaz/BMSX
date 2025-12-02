@@ -117,7 +117,7 @@ export class HandlerRegistry {
 		return existing.stub;
 	}
 
-	public get(id: string): GenericHandler | undefined {
+	public get(id: string): GenericHandler {
 		const single = this.singles.get(id);
 		if (single) return single.stub;
 		const slot = this.slots.get(id);
@@ -125,7 +125,7 @@ export class HandlerRegistry {
 		return undefined;
 	}
 
-	public describe(id: string): HandlerDescriptor | undefined {
+	public describe(id: string): HandlerDescriptor {
 		const single = this.singles.get(id);
 		if (single) return single.desc;
 		const listener = this.listeners.get(id);
@@ -197,7 +197,7 @@ export class HandlerRegistry {
 		this.removeListenerById(listenerId);
 	}
 
-	public swapByModule(module: string, resolver: (desc: HandlerDescriptor) => GenericHandler | null): {
+	public swapByModule(module: string, resolver: (desc: HandlerDescriptor) => GenericHandler): {
 		updated: string[];
 		removed: string[];
 		unchanged: string[];
@@ -211,7 +211,7 @@ export class HandlerRegistry {
 		const removed: string[] = [];
 		const unchanged: string[] = [];
 
-		const plan: Array<{ id: string; kind: 'single' | 'listener'; next: GenericHandler | null }> = [];
+		const plan: Array<{ id: string; kind: 'single' | 'listener'; next: GenericHandler }> = [];
 		for (const id of ids) {
 			if (this.singles.has(id)) {
 				const single = this.singles.get(id)!;

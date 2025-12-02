@@ -51,7 +51,7 @@ export function applyCaseOutsideStrings(text: string, transform: (ch: string) =>
 		return text;
 	}
 	let inString = false;
-	let quote: string | null = null;
+	let quote: string = null;
 	let escapeNext = false;
 	let mutated = false;
 	for (let i = 0; i < text.length; i += 1) {
@@ -194,7 +194,7 @@ export function isLuaCommentContext(
 		return false;
 	}
 	let blockComment = false;
-	let stringDelimiter: '\'' | '"' | null = null;
+	let stringDelimiter: '\'' | '"' = null;
 	for (let row = 0; row <= targetRow; row += 1) {
 		const line = lines[row] ?? '';
 		let index = 0;
@@ -312,7 +312,7 @@ export function visibleRowCount(): number {
 export function visibleColumnCount(): number {
 	return ide_state.cachedVisibleColumnCount > 0 ? ide_state.cachedVisibleColumnCount : 1;
 }
-export function computeSelectionSlice(lineIndex: number, highlight: HighlightLine, sliceStart: number, sliceEnd: number): { startDisplay: number; endDisplay: number; } | null {
+export function computeSelectionSlice(lineIndex: number, highlight: HighlightLine, sliceStart: number, sliceEnd: number): { startDisplay: number; endDisplay: number; } {
 	const range = TextEditing.getSelectionRange();
 	if (!range) {
 		return null;
@@ -369,7 +369,7 @@ export function getVisualLineCount(): number {
 	return ide_state.layout.getVisualLineCount();
 }
 
-export function visualIndexToSegment(index: number): VisualLineSegment | null {
+export function visualIndexToSegment(index: number): VisualLineSegment {
 	ensureVisualLines();
 	return ide_state.layout.visualIndexToSegment(index);
 }
@@ -462,7 +462,7 @@ export function normalizeCaseOutsideStrings(text: string): string {
 	return applyCaseOutsideStrings(text, transform);
 }
 
-export function applyCaseNormalizationIfNeeded(editContext: EditContext | null): EditContext | null {
+export function applyCaseNormalizationIfNeeded(editContext: EditContext): EditContext {
 	if (!ide_state.caseInsensitive) {
 		ide_state.preMutationSource = null;
 		return editContext;

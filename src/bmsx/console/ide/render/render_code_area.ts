@@ -70,8 +70,8 @@ export function renderCodeArea(): void {
 		? ide_state.layout.positionToVisualIndex(ide_state.lines, activeGotoHighlight.row, activeGotoHighlight.startColumn)
 		: null;
 	const cursorVisualIndex = ide_state.layout.positionToVisualIndex(ide_state.lines, ide_state.cursorRow, ide_state.cursorColumn);
-	let cursorEntry: CachedHighlight | null = null;
-	let cursorInfo: CursorScreenInfo | null = null;
+	let cursorEntry: CachedHighlight = null;
+	let cursorInfo: CursorScreenInfo = null;
 	const sliceWidth = columnCapacity + 2;
 
 	for (let i = 0; i < rowCapacity; i += 1) {

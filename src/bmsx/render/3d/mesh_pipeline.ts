@@ -36,7 +36,7 @@ const INSTANCE_STRIDE_FLOATS = INSTANCE_STRIDE_BYTES / 4;
 const INSTANCE_STRIDE_NORMAL9 = 9;
 const MAT4_FLOATS = 16;
 
-type TextureContext = RenderContext & { textures: { [k: string]: unknown | null } };
+type TextureContext = RenderContext & { textures: { [k: string]: unknown } };
 
 function assertTextureContext(ctx: RenderContext): asserts ctx is TextureContext {
 	if (typeof (ctx as { textures?: unknown }).textures === 'undefined') throw new Error('Render context does not expose texture bindings');
@@ -59,7 +59,7 @@ interface MeshDrawLists {
 	transparentSingles: MeshRenderSubmission[];
 }
 
-let activeBackend: WebGLBackend | null = null;
+let activeBackend: WebGLBackend = null;
 
 // Legacy direct submission array removed. Use submitMesh() with the shared render queue.
 export function getQueuedMeshCount(): number { return meshQueueBackSize(); }
@@ -107,9 +107,9 @@ const normal9Pool = new Float32ArrayPool(INSTANCE_STRIDE_NORMAL9);
 
 // simpele texture/material state cache
 const stateCache = {
-	albedo: null as WebGLTexture | null,
-	normal: null as WebGLTexture | null,
-	mr: null as WebGLTexture | null,
+	albedo: null as WebGLTexture,
+	normal: null as WebGLTexture,
+	mr: null as WebGLTexture,
 	useAlbedo: -1,
 	useNormal: -1,
 	useMR: -1,
@@ -127,8 +127,8 @@ const pointLights: Map<string, PointLight> = new Map();
 // Accessors for lighting system (decouple from internal maps / buffers)
 export function getDirectionalLightCount(): number { return directionalLights.size; }
 export function getPointLightCount(): number { return pointLights.size; }
-export function getDirectionalLightBuffer(): WebGLBuffer | undefined { return dirLightBuffer; }
-export function getPointLightBuffer(): WebGLBuffer | undefined { return pointLightBuffer; }
+export function getDirectionalLightBuffer(): WebGLBuffer { return dirLightBuffer; }
+export function getPointLightBuffer(): WebGLBuffer { return pointLightBuffer; }
 
 let gameShaderProgram3D: WebGLProgram;
 let vertexPositionLocation3D: number;
@@ -230,7 +230,7 @@ function assignPosition(out: Float32Array, pos: Float32Array | { x: number; y: n
 	return out;
 }
 function setUseInstancing(gl: WebGL2RenderingContext, enabled: boolean): void { const val = enabled ? 1 : 0; if (lastUseInstancing !== val) { gl.uniform1i(useInstancingLocation3D, val); lastUseInstancing = val; } }
-function uploadJointPalette(gl: WebGL2RenderingContext, joints: Float32Array[] | undefined, hasSkinning: boolean): void {
+function uploadJointPalette(gl: WebGL2RenderingContext, joints: Float32Array[], hasSkinning: boolean): void {
 	if (hasSkinning && joints) {
 		jointMatrixArray.fill(0); jointMatrixArray.set(identityMatrix, 0);
 		for (let i = 0; i < joints.length && i < MAX_JOINTS; i++) jointMatrixArray.set(joints[i], i * MAT4_FLOATS);
@@ -239,7 +239,7 @@ function uploadJointPalette(gl: WebGL2RenderingContext, joints: Float32Array[] |
 		jointMatrixArray.fill(0); jointMatrixArray.set(identityMatrix, 0); gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray); lastSkinningEnabled = false; lastJointMatrixArray.set(jointMatrixArray);
 	}
 }
-function uploadMorphWeights(gl: WebGL2RenderingContext, weights: Float32Array | null): void {
+function uploadMorphWeights(gl: WebGL2RenderingContext, weights: Float32Array): void {
 	if (weights) { if (!lastMorphEnabled || !arrays_equal(weights, lastMorphWeightArray)) { gl.uniform1fv(morphWeightLocation3D, weights); lastMorphEnabled = true; lastMorphWeightArray.set(weights); } }
 	else if (lastMorphEnabled) { gl.uniform1fv(morphWeightLocation3D, zeroMorphWeights); lastMorphEnabled = false; lastMorphWeightArray.set(zeroMorphWeights); }
 }
@@ -426,7 +426,7 @@ export function addDirectionalLight(id: Identifier, light: DirectionalLight): vo
 export function removeDirectionalLight(id: string): void { if (directionalLights.delete(id)) uploadDirectionalLights(); }
 export function addPointLight(id: Identifier, light: PointLight): void { if (!light.pos) throw new Error('Point light must have a position'); if (!light.color) throw new Error('Point light must have a color'); if (light.range === undefined) throw new Error('Point light must have a range'); pointLights.set(id, { ...light, type: 'point' }); uploadPointLights(); }
 export function removePointLight(id: string): void { if (pointLights.delete(id)) uploadPointLights(); }
-export function getPointLight(id: string): PointLight | undefined { return pointLights.get(id); }
+export function getPointLight(id: string): PointLight { return pointLights.get(id); }
 export function getDirectionalLights(): ReadonlyArray<DirectionalLight> { return Array.from(directionalLights.values()); }
 export function getPointLightsAll(): ReadonlyArray<PointLight> { return Array.from(pointLights.values()); }
 export function clearLights(): void {
@@ -523,7 +523,7 @@ function ensureLightBuffersInitialized(backend: WebGLBackend): void {
 export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
 	// If program not explicitly created yet, pick up the program bound by the PipelineManager
 	if (!gameShaderProgram3D) {
-		const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+		const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 		if (!current) throw new Error('Mesh shader program not bound during bootstrap');
 		gameShaderProgram3D = current;
 	}
@@ -686,7 +686,7 @@ function setMeshTextures(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers
 	// Albedo: prefer mesh texture; otherwise use 1x1 white (no shared atlas fallback)
 	let tex = m.gpuTextureAlbedo
 		? $.texmanager.getTexture(m.gpuTextureAlbedo)
-		: (context.textures['_default_albedo'] as WebGLTexture | null);
+		: (context.textures['_default_albedo'] as WebGLTexture);
 	if (tex !== stateCache.albedo) {
 		context.activeTexUnit = TEXTURE_UNIT_ALBEDO;
 		context.bind2DTex(tex);
@@ -695,7 +695,7 @@ function setMeshTextures(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers
 	}
 	stateCache.useAlbedo = tex !== null ? 1 : 0;
 
-	tex = m.gpuTextureNormal ? $.texmanager.getTexture(m.gpuTextureNormal) : (context.textures['_default_normal'] as WebGLTexture | null);
+	tex = m.gpuTextureNormal ? $.texmanager.getTexture(m.gpuTextureNormal) : (context.textures['_default_normal'] as WebGLTexture);
 	if (tex !== stateCache.normal) {
 		context.activeTexUnit = TEXTURE_UNIT_NORMAL;
 		context.bind2DTex(tex);
@@ -704,7 +704,7 @@ function setMeshTextures(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers
 	}
 	stateCache.useNormal = tex !== null ? 1 : 0;
 
-	tex = m.gpuTextureMetallicRoughness ? $.texmanager.getTexture(m.gpuTextureMetallicRoughness) : (context.textures['_default_mr'] as WebGLTexture | null);
+	tex = m.gpuTextureMetallicRoughness ? $.texmanager.getTexture(m.gpuTextureMetallicRoughness) : (context.textures['_default_mr'] as WebGLTexture);
 	if (tex !== stateCache.mr) {
 		context.activeTexUnit = TEXTURE_UNIT_METALLIC_ROUGHNESS;
 		context.bind2DTex(tex);
@@ -839,7 +839,7 @@ function renderInstancedMeshes(runtime: MeshPassRuntime, instancedGroups: Map<st
 	checkWebGLError('mesh.instanced: after setUseInstancing');
 }
 // Uniform change caching for materials
-let lastMaterialSig: string | null = null;
+let lastMaterialSig: string = null;
 let lastMaterialColor = new Float32Array([1, 1, 1, 1]);
 let lastMetallic = 1.0;
 let lastRoughness = 1.0;

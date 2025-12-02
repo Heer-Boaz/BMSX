@@ -300,7 +300,7 @@ export function handleEscapeShortcut(): boolean {
 		ide_state.lastEscapePressId = null;
 		return false;
 	}
-	const pressId = state.pressId ?? null;
+	const pressId = state.pressId ;
 	const isNewPress = state.justpressed === true || pressId !== ide_state.lastEscapePressId;
 	if (!isNewPress) {
 		return false;
@@ -323,7 +323,7 @@ export function clearKeyPressRecord(code: string): void {
 	keyPressRecords.delete(code);
 }
 function recordKeyState(code: string, state: ButtonState, latched: boolean): void {
-	const pressId = state.pressId ?? null;
+	const pressId = state.pressId ;
 	keyPressRecords.set(code, { lastPressId: pressId, downLatched: latched });
 }
 
@@ -840,7 +840,7 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 			return;
 	}
 }
-export function getIdeKeyState(code: string): ButtonState | null {
+export function getIdeKeyState(code: string): ButtonState {
 	return $.input.getPlayerInput(ide_state.playerIndex).getButtonState(code, 'keyboard');
 }
 
@@ -906,7 +906,7 @@ export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 	return true;
 }
 
-function findTopMenuAtPoint(x: number, y: number): MenuId | null {
+function findTopMenuAtPoint(x: number, y: number): MenuId {
 	for (let index = 0; index < MENU_IDS.length; index += 1) {
 		const id = MENU_IDS[index];
 		if (point_in_rect(x, y, ide_state.menuEntryBounds[id])) {
@@ -916,7 +916,7 @@ function findTopMenuAtPoint(x: number, y: number): MenuId | null {
 	return null;
 }
 
-function findMenuCommandAtPoint(x: number, y: number): TopBarButtonId | null {
+function findMenuCommandAtPoint(x: number, y: number): TopBarButtonId {
 	for (let index = 0; index < MENU_COMMANDS.length; index += 1) {
 		const command = MENU_COMMANDS[index];
 		if (point_in_rect(x, y, ide_state.topBarButtonBounds[command])) {
@@ -1712,7 +1712,7 @@ export function handleTextEditorPointerInput(): void {
 	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 }
 
-export function updateTabHoverState(snapshot: PointerSnapshot | null): void {
+export function updateTabHoverState(snapshot: PointerSnapshot): void {
 	if (!snapshot || !snapshot.valid || !snapshot.insideViewport) {
 		ide_state.tabHoverId = null;
 		return;
@@ -1725,7 +1725,7 @@ export function updateTabHoverState(snapshot: PointerSnapshot | null): void {
 		return;
 	}
 	const x = snapshot.viewportX;
-	let hovered: string | null = null;
+	let hovered: string = null;
 	for (const [tabId, bounds] of ide_state.tabButtonBounds) {
 		if (point_in_rect(x, y, bounds)) {
 			hovered = tabId;
@@ -2117,7 +2117,7 @@ export function handleLineJumpInput(deltaSeconds: number): void {
 	if (textChanged) {
 		// keep value in sync; no additional processing required
 	}
-}export function readPointerSnapshot(): PointerSnapshot | null {
+}export function readPointerSnapshot(): PointerSnapshot {
 	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
 	if (!playerInput) {
 		return null;

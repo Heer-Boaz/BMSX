@@ -74,7 +74,7 @@ export class ActionEffectComponent extends Component {
 		const definition = this.definitions.get(id);
 		if (!definition) return 'failed';
 
-		const payload = opts?.payload as ActionEffectPayloadFor<Id> | undefined;
+		const payload = opts?.payload as ActionEffectPayloadFor<Id>;
 		ActionEffectRegistry.instance.validate(id, payload);
 
 		const now = this.timeMs;
@@ -98,7 +98,7 @@ export class ActionEffectComponent extends Component {
 		return 'ok';
 	}
 
-	public cooldown_remaining(id: ActionEffectId): number | null {
+	public cooldown_remaining(id: ActionEffectId): number {
 		const until = this.cooldownUntil.get(id);
 		if (until === undefined) return null;
 		const remaining = until - this.timeMs;
@@ -109,7 +109,7 @@ export class ActionEffectComponent extends Component {
 	private invokeHandler<Id extends ActionEffectId>(
 		definition: ActionEffectDefinition<Id>,
 		owner: WorldObject,
-		payload: ActionEffectPayloadFor<Id> | undefined,
+		payload: ActionEffectPayloadFor<Id>,
 	): ActionEffectHandlerResult {
 		const handler = definition.handler;
 		if (!handler) return undefined;

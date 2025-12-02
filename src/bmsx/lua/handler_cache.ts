@@ -71,7 +71,7 @@ export class LuaHandlerCache {
 			handler,
 			moduleId,
 			key,
-			path: pathText ?? undefined,
+			path: pathText ,
 			current: { fn },
 		};
 		this.byLuaFn.set(fn, handler);
@@ -81,7 +81,7 @@ export class LuaHandlerCache {
 		return handler;
 	}
 
-	public rebind(moduleId: string, path: ReadonlyArray<string> | undefined, fn: LuaFunctionValue): void {
+	public rebind(moduleId: string, path: ReadonlyArray<string>, fn: LuaFunctionValue): void {
 		const normalizedModule = this.normalizeModuleId(moduleId);
 		const key = this.resolveKey(normalizedModule, path, { reuseOnly: true });
 		if (!key) {
@@ -97,7 +97,7 @@ export class LuaHandlerCache {
 		this.byLuaFn.set(fn, record.handler);
 	}
 
-	public unwrap(handler: LuaHandlerFn): { fn: LuaFunctionValue } | null {
+	public unwrap(handler: LuaHandlerFn): { fn: LuaFunctionValue } {
 		const record = this.byHandler.get(handler);
 		return record ? record.current : null;
 	}
@@ -133,7 +133,7 @@ export class LuaHandlerCache {
 	private createHandler(
 		hid: string,
 		moduleId: string,
-		path: string | undefined,
+		path: string,
 		fn: LuaFunctionValue,
 	): LuaHandlerFn {
 		let currentFn = fn;
@@ -171,7 +171,7 @@ export class LuaHandlerCache {
 		return handler;
 	}
 
-	private resolveKey(moduleId: string, path: ReadonlyArray<string> | undefined, opts?: { reuseOnly?: boolean }): string | null {
+	private resolveKey(moduleId: string, path: ReadonlyArray<string>, opts?: { reuseOnly?: boolean }): string {
 		const normalizedPath = this.pathToText(path);
 		if (normalizedPath) {
 			return normalizedPath;
@@ -212,7 +212,7 @@ export class LuaHandlerCache {
 		return moduleId.trim();
 	}
 
-	private pathToText(path: ReadonlyArray<string> | undefined): string | null {
+	private pathToText(path: ReadonlyArray<string>): string {
 		if (!path || path.length === 0) {
 			return null;
 		}

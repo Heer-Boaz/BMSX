@@ -26,7 +26,7 @@ export function moduleSignature(m: ShaderModule): string {
 }
 
 // Merge two binding layouts conservatively: concat arrays and keep order.
-function mergeLayouts(a?: GraphicsPipelineBindingLayout, b?: GraphicsPipelineBindingLayout): GraphicsPipelineBindingLayout | undefined {
+function mergeLayouts(a?: GraphicsPipelineBindingLayout, b?: GraphicsPipelineBindingLayout): GraphicsPipelineBindingLayout {
 	if (!a && !b) return undefined;
 	const uniforms = [...(a && Array.isArray(a.uniforms) ? a.uniforms : []), ...(b && Array.isArray(b.uniforms) ? b.uniforms : [])];
 	const textures = [...(a && Array.isArray(a.textures) ? a.textures : []), ...(b && Array.isArray(b.textures) ? b.textures : [])];

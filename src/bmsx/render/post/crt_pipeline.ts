@@ -7,14 +7,14 @@ import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/webgl.cons
 import fragmentShaderCRTCode from './shaders/crt.frag.glsl';
 import vertexShaderCRTCode from './shaders/crt.vert.glsl';
 // Local copy of CRTState to avoid import issues after refactor (remove duplication later)
-interface CRTState { width: number; height: number; baseWidth?: number; baseHeight?: number; fragScale?: number; outWidth?: number; outHeight?: number; colorTex?: TextureHandle | null; options?: any }
+interface CRTState { width: number; height: number; baseWidth?: number; baseHeight?: number; fragScale?: number; outWidth?: number; outHeight?: number; colorTex?: TextureHandle; options?: any }
 
 // Internal cached fullscreen quad (VBO + TBO + attrib locations)
 interface FullscreenQuad { vbo: WebGLBuffer; tbo: WebGLBuffer; attribPos: number; attribTex: number; w: number; h: number }
-let fsq: FullscreenQuad | null = null;
+let fsq: FullscreenQuad = null;
 
 function createFullscreenQuad(gl: WebGL2RenderingContext, srcW: number, srcH: number): FullscreenQuad {
-	const vsProg = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+	const vsProg = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 	const verts = new Float32Array([
 		0.0, 0.0, 0.0, srcH, srcW, 0.0, srcW, 0.0, 0.0, srcH, srcW, srcH,
 	]);
@@ -65,7 +65,7 @@ export function registerCRT_WebGL(registry: RenderPassLibrary): void {
 
 function bindCRTUniforms(gl: WebGL2RenderingContext, st: CRTState): void {
 	const now = $.platform.clock.now() / 1000;
-	const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null; if (!program) return;
+	const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram; if (!program) return;
 	const u = (n: string) => gl.getUniformLocation(program, n);
 	const outW = st.outWidth ?? st.width;
 	const outH = st.outHeight ?? st.height;
@@ -77,7 +77,7 @@ function bindCRTUniforms(gl: WebGL2RenderingContext, st: CRTState): void {
 	set1f('u_scale', 1.0);
 	set1f('u_fragscale', st.fragScale ?? 1.0);
 	const opts = st.options || {};
-	const booleans: Array<[string, boolean | undefined, boolean]> = [
+	const booleans: Array<[string, boolean, boolean]> = [
 		['u_applyNoise', opts.applyNoise, true], ['u_applyColorBleed', opts.applyColorBleed, true], ['u_applyScanlines', opts.applyScanlines, true], ['u_applyBlur', opts.applyBlur, true], ['u_applyGlow', opts.applyGlow, true], ['u_applyFringing', opts.applyFringing, true]
 	];
 	for (const [name, val, def] of booleans) { const loc = u(name); if (loc) gl.uniform1i(loc, (val ?? def) ? 1 : 0); }

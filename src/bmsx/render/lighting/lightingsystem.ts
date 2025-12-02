@@ -8,7 +8,7 @@ const DEFAULT_MAX_DIR_LIGHTS = 4;
 const DEFAULT_MAX_POINT_LIGHTS = 4;
 
 export interface LightingFrameState {
-	ambient: AmbientLight | null;
+	ambient: AmbientLight;
 	dirCount: number;
 	pointCount: number;
 	dirty: boolean; // true if any light data (counts/buffers or ambient) changed this frame
@@ -16,17 +16,17 @@ export interface LightingFrameState {
 
 // Central lighting update system akin to Unreal's FDeferredLightUniformStruct population.
 export class LightingSystem {
-	private _lastAmbient: AmbientLight | null = null;
+	private _lastAmbient: AmbientLight = null;
 	private _frameState: LightingFrameState = { ambient: null, dirCount: 0, pointCount: 0, dirty: true };
 
 	constructor() { }
 
-	update(_ambient: AmbientLight | null): LightingFrameState {
+	update(_ambient: AmbientLight): LightingFrameState {
 		// Renderer-pulled: rebuild light lists from model indexes each frame
 		const active = $.world.activeLights;
 		MeshPipeline.clearLights();
 		const activeAmbient = $.world.activeAmbientLight;
-		let ambient: AmbientLight | null = activeAmbient ? (activeAmbient.light as AmbientLight) : null;
+		let ambient: AmbientLight = activeAmbient ? (activeAmbient.light as AmbientLight) : null;
 		for (const lo of active) {
 			if (lo instanceof DirectionalLightObject) MeshPipeline.addDirectionalLight(lo.id, lo.light as DirectionalLight);
 			else if (lo instanceof PointLightObject) MeshPipeline.addPointLight(lo.id, lo.light as PointLight);

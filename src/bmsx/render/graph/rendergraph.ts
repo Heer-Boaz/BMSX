@@ -80,7 +80,7 @@ interface CRTOptionsCarrier {
 	noiseIntensity: number; colorBleed: [number, number, number]; blurIntensity: number; glowColor: [number, number, number];
 }
 export function buildFrameData(view: { offscreenCanvasSize: { x: number; y: number } } & Partial<CRTOptionsCarrier>): FrameData {
-	const mainCam = $.world.activeCamera3D as Camera | undefined;
+	const mainCam = $.world.activeCamera3D as Camera;
 	const views: View[] = [];
 	if (mainCam) {
 		const invView = mainCam.inverseView;
@@ -135,8 +135,8 @@ export interface IOBuilder {
 }
 
 export interface PassContext {
-	getTex(handle: RGTexHandle): TextureHandle | null;
-	getFBO(color: RGTexHandle, depth?: RGTexHandle): unknown | null;
+	getTex(handle: RGTexHandle): TextureHandle;
+	getFBO(color: RGTexHandle, depth?: RGTexHandle): unknown;
 	getValue<T>(handle: ValueHandle<T>): T;
 	setDebugLabel?(label: string): void;
 	backend: GPUBackend;
@@ -160,8 +160,8 @@ type FramebufferHandle = unknown; // Opaque backend-specific framebuffer handle
 
 interface InternalTexResource {
 	desc: TexDesc;
-	tex: TextureHandle | null;           // physical texture (may be shared via aliasing)
-	fboColorOnly: FramebufferHandle | null; // color-only convenience FBO (or equivalent)
+	tex: TextureHandle;           // physical texture (may be shared via aliasing)
+	fboColorOnly: FramebufferHandle; // color-only convenience FBO (or equivalent)
 	fboWithDepth?: { depth: RGTexHandle; fbo: FramebufferHandle }; // paired depth FBO cache
 	readers: number;
 	writerPasses: number[]; // supports multiple sequential writers (overlays)
@@ -360,7 +360,7 @@ export class RenderGraphRuntime {
 			// Sort freePool largest-first by area to reduce fragmentation
 			freePool.sort((a, b) => (b.desc.width * b.desc.height) - (a.desc.width * a.desc.height));
 			// Pick compatible released physical, prefer matching transient flag
-			let chosen: ActivePhys | undefined;
+			let chosen: ActivePhys;
 			for (let i = 0; i < freePool.length; i++) {
 				const f = freePool[i];
 				if (!formatsCompatible(f.desc, lr.res.desc)) continue;
@@ -398,7 +398,7 @@ export class RenderGraphRuntime {
 		const ctx: PassContext = {
 			getTex: (h) => {
 				const resource = this.texResources[h];
-				return resource ? (resource.tex as TextureHandle | null) : null;
+				return resource ? (resource.tex as TextureHandle) : null;
 			},
 			getFBO: (color, depth) => {
 				const colorRes = this.texResources[color];
@@ -430,7 +430,7 @@ export class RenderGraphRuntime {
 			const pass = this.passes[i];
 			const data = setupData[i];
 			// Begin implicit render pass if this pass writes any textures
-			let rp: { end: () => void } | null = null;
+			let rp: { end: () => void } = null;
 			const writes: RGTexHandle[] = [];
 			if (this._passWrites[i]) {
 				for (const w of this._passWrites[i]) writes.push(w.tex);
@@ -443,7 +443,7 @@ export class RenderGraphRuntime {
 			if (writes.length) {
 				// Multi-attachment discovery (color targets first, single depth optional)
 				const colorTargets: InternalTexResource[] = [];
-				let depthRes: InternalTexResource | undefined;
+				let depthRes: InternalTexResource;
 				for (const w of writes) {
 					const r = this.texResources[w]; if (!r) continue;
 					if (r.desc.depth) depthRes = r; else colorTargets.push(r);
@@ -582,13 +582,13 @@ export class RenderGraphRuntime {
 		}
 	}
 
-	private ensureFBO(color: RGTexHandle, depth: RGTexHandle): FramebufferHandle | null {
+	private ensureFBO(color: RGTexHandle, depth: RGTexHandle): FramebufferHandle {
 		const cRes = this.texResources[color];
 		const dRes = this.texResources[depth];
 		if (!cRes || !dRes) return null;
 		if (cRes.fboWithDepth && cRes.fboWithDepth.depth === depth) return cRes.fboWithDepth.fbo as FramebufferHandle;
 		// Delegate FBO creation to backend abstraction (opaque handle)
-		const fbo = this.backend.createRenderTarget(cRes.tex, dRes.tex) as FramebufferHandle | null;
+		const fbo = this.backend.createRenderTarget(cRes.tex, dRes.tex) as FramebufferHandle;
 		cRes.fboWithDepth = { depth, fbo };
 		return fbo;
 	}

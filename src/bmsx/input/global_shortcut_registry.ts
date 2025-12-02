@@ -7,7 +7,7 @@ export type ShortcutDisposer = () => void;
 export class GlobalShortcutRegistry {
 	private readonly keyboardShortcuts = new Map<number, Map<string, { handler: () => void; latchKey: string }>>();
 	private readonly gamepadChords = new Map<number, Array<{ buttons: string[]; handler: () => void; latchKeys: string[] }>>();
-	private readonly latch = new Map<string, number | null>();
+	private readonly latch = new Map<string, number>();
 
 	public registerKeyboardShortcut(playerIndex: number, key: string, handler: () => void): ShortcutDisposer {
 		Input.instance.setKeyboardCapture(key, true);
@@ -83,7 +83,7 @@ export class GlobalShortcutRegistry {
 
 	private pollGamepadChord(player: PlayerInput, entry: { buttons: string[]; handler: () => void; latchKeys: string[] }): void {
 		let allPressed = true;
-		const states: Array<ButtonState | null> = [];
+		const states: Array<ButtonState> = [];
 		for (let i = 0; i < entry.buttons.length; i++) {
 			const state = player.getButtonState(entry.buttons[i], 'gamepad');
 			states.push(state);
@@ -105,13 +105,13 @@ export class GlobalShortcutRegistry {
 		}
 	}
 
-	private shouldAccept(code: string, state: ButtonState | null | undefined): boolean {
+	private shouldAccept(code: string, state: ButtonState): boolean {
 		if (!state || state.pressed !== true) {
 			this.latch.delete(code);
 			return false;
 		}
 		const pressId = typeof state.pressId === 'number' ? state.pressId : null;
-		const existing = this.latch.get(code) ?? null;
+		const existing = this.latch.get(code) ;
 		if (pressId !== null) {
 			if (existing === pressId) {
 				return false;
@@ -126,7 +126,7 @@ export class GlobalShortcutRegistry {
 		return true;
 	}
 
-	private release(code: string, state: ButtonState | null | undefined): void {
+	private release(code: string, state: ButtonState): void {
 		if (state && state.pressed === true) {
 			return;
 		}

@@ -33,9 +33,9 @@ export class Mesh {
   public texcoords1: Float32Array;
   public colors: Float32Array;
   /** Optional normal vectors per vertex */
-  public normals: Float32Array | null;
+  public normals: Float32Array;
   /** Optional tangent vectors per vertex (xyz + w sign) */
-  public tangents: Float32Array | null;
+  public tangents: Float32Array;
   /** Optional index buffer */
   public indices?: Uint8Array | Uint16Array | Uint32Array;
   public color: color;
@@ -58,8 +58,8 @@ export class Mesh {
 	this.texcoords = opts.texcoords ?? new Float32Array();
 	this.texcoords1 = opts.texcoords1 ?? new Float32Array();
 	this.colors = opts.colors ?? new Float32Array();
-	this.normals = opts.normals ?? null;
-	this.tangents = opts.tangents ?? null;
+	this.normals = opts.normals ;
+	this.tangents = opts.tangents ;
 	this.indices = opts.indices;
 	this.color = opts.color ?? DEFAULT_VERTEX_COLOR;
 	this.atlasId = opts.atlasId ?? 255;
@@ -80,15 +80,15 @@ export class Mesh {
   public get hasSkinning(): boolean { return !!(this.jointIndices && this.jointWeights); }
   public get hasMorphTargets(): boolean { return !!(this.morphPositions && this.morphPositions.length > 0); }
 
-  public get gpuTextureAlbedo(): TextureKey | undefined {
+  public get gpuTextureAlbedo(): TextureKey {
 	const material = this.material;
 	return material ? material.gpuTextures.albedo : undefined;
   }
-  public get gpuTextureNormal(): TextureKey | undefined {
+  public get gpuTextureNormal(): TextureKey {
 	const material = this.material;
 	return material ? material.gpuTextures.normal : undefined;
   }
-  public get gpuTextureMetallicRoughness(): TextureKey | undefined {
+  public get gpuTextureMetallicRoughness(): TextureKey {
 	const material = this.material;
 	return material ? material.gpuTextures.metallicRoughness : undefined;
   }

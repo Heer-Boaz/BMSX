@@ -3,11 +3,11 @@ import type { LuaValue } from './value';
 import type { LuaSourceRange } from './ast';
 
 export class LuaEnvironment {
-	private readonly parent: LuaEnvironment | null;
+	private readonly parent: LuaEnvironment;
 	private readonly values: Map<string, LuaValue>;
 	private readonly definitions: Map<string, LuaSourceRange>;
 
-	private constructor(parent: LuaEnvironment | null) {
+	private constructor(parent: LuaEnvironment) {
 		this.parent = parent;
 		this.values = new Map<string, LuaValue>();
 		this.definitions = new Map<string, LuaSourceRange>();
@@ -21,7 +21,7 @@ export class LuaEnvironment {
 		return new LuaEnvironment(parent);
 	}
 
-	public set(_name: string, value: LuaValue, range?: LuaSourceRange | null): void {
+	public set(_name: string, value: LuaValue, range?: LuaSourceRange): void {
 		const name = _name;
 		this.values.set(name, value);
 		if (range && !this.definitions.has(name)) {
@@ -38,7 +38,7 @@ export class LuaEnvironment {
 		resolved.values.set(name, value);
 	}
 
-	public get(_name: string): LuaValue | null {
+	public get(_name: string): LuaValue {
 		const name = _name;
 		const value = this.values.get(name);
 		if (value !== undefined) {
@@ -50,7 +50,7 @@ export class LuaEnvironment {
 		return null;
 	}
 
-	public getDefinition(_name: string): LuaSourceRange | null {
+	public getDefinition(_name: string): LuaSourceRange {
 		const name = _name;
 		const local = this.definitions.get(name);
 		if (local) {
@@ -67,7 +67,7 @@ export class LuaEnvironment {
 		return this.values.has(name);
 	}
 
-	public resolve(_name: string): LuaEnvironment | null {
+	public resolve(_name: string): LuaEnvironment {
 		const name = _name;
 		if (this.values.has(name)) {
 			return this;
@@ -82,7 +82,7 @@ export class LuaEnvironment {
 		return Array.from(this.values.entries());
 	}
 
-	public getParent(): LuaEnvironment | null {
+	public getParent(): LuaEnvironment {
 		return this.parent;
 	}
 }

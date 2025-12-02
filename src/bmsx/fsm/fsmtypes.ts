@@ -20,7 +20,7 @@ export type id2mstate = Record<Identifier, State>;
 /**
  * Represents a mapping of IDs to sstates.
  */
-export type id2sstate = Record<Identifier, State> | undefined;
+export type id2sstate = Record<Identifier, State>;
 
 /**
  * The states defined for this state machine (key = state id, value = partial state definition), their substate machines and their additional properties are defined in {@link StateDefinition}.

@@ -15,7 +15,7 @@ import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt
 
 const PER_PIXEL_RENDERING_THRESHOLD = 64; // sprites ≤64×64 get per-pixel rendering
 
-let modal: blessed.Widgets.BoxElement | null = null;
+let modal: blessed.Widgets.BoxElement = null;
 let filteredAssetList: RomAsset[] = [];
 let assetList: RomAsset[] = [];
 
@@ -594,7 +594,7 @@ async function main() {
 							);
 							const imgAsset = rom.img[String(selected.resid)];
 							// @ts-ignore
-							const png = imgAsset?._imgbin as { width: number, height: number, data: Buffer } | undefined;
+							const png = imgAsset?._imgbin as { width: number, height: number, data: Buffer };
 							if (png && png.data) {
 								const sizeString = `Size: ${png.width}x${png.height}\n`;
 								if (png.width <= PER_PIXEL_RENDERING_THRESHOLD && png.height <= PER_PIXEL_RENDERING_THRESHOLD) {
@@ -1106,7 +1106,7 @@ async function main() {
 
 main();
 
-function extractSubimageAndSizeFromAtlassedImage(imgToExtract: Buffer, imgmeta: ImgMeta): { subimage: Buffer | null, width: number, height: number } {
+function extractSubimageAndSizeFromAtlassedImage(imgToExtract: Buffer, imgmeta: ImgMeta): { subimage: Buffer, width: number, height: number } {
 	const atlas = PNG.sync.read(imgToExtract);
 	if (!atlas || !atlas.data) throw new Error('Invalid atlas PNG data');
 

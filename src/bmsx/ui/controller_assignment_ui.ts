@@ -125,7 +125,7 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 		const event = create_gameevent({ type: 'animation_end', emitter: this });
 		this.sc.dispatch_event(event);
 	}
-	public set playerIndex(idx: number | null) { this.imgid = idx == null ? 'joystick_none' : PlayerIndexNS.iconAsset(idx); }
+	public set playerIndex(idx: number) { this.imgid = idx == null ? 'joystick_none' : PlayerIndexNS.iconAsset(idx); }
 
 }
 
@@ -169,7 +169,7 @@ export class ControllerAssignmentUI extends WorldObject {
 				throw new Error(`[ControllerAssignmentUI] Pending assignment has invalid gamepad index '${gpIndex}'.`);
 			}
 			const icon = this.ensureIcon(gpIndex);
-			icon.playerIndex = p.proposedPlayerIndex ?? null;
+			icon.playerIndex = p.proposedPlayerIndex ;
 			icon.x = this.calcIconPositionX(gpIndex);
 			icon.y = ControllerAssignmentUI.start.y;
 		}
@@ -191,7 +191,7 @@ export class ControllerAssignmentUI extends WorldObject {
 	}
 
 	public startUIAssignmentProcess(event: GameEvent): void {
-		const detail = event as GameEvent<'controller_assignment_start', { gamepadIndex: number; proposedPlayerIndex: number | null }>;
+		const detail = event as GameEvent<'controller_assignment_start', { gamepadIndex: number; proposedPlayerIndex: number }>;
 		const icon = this.ensureIcon(detail.gamepadIndex);
 		icon.playerIndex = detail.proposedPlayerIndex;
 		icon.x = this.calcIconPositionX(detail.gamepadIndex);
@@ -199,7 +199,7 @@ export class ControllerAssignmentUI extends WorldObject {
 	}
 
 	onProposed(event: GameEvent) {
-		const detail = event as GameEvent<'controller_assignment_proposed', { gamepadIndex: number; proposedPlayerIndex: number | null }>;
+		const detail = event as GameEvent<'controller_assignment_proposed', { gamepadIndex: number; proposedPlayerIndex: number }>;
 		if (!this.icons.has(detail.gamepadIndex)) this.startUIAssignmentProcess(event);
 		// Update sprite immediately for this device
 		const icon = this.icons.get(detail.gamepadIndex);
@@ -216,7 +216,7 @@ export class ControllerAssignmentUI extends WorldObject {
 	}
 
 	onCancelled(event: GameEvent) {
-		const detail = event as GameEvent<'controller_assignment_cancelled', { gamepadIndex: number | undefined }>;
+		const detail = event as GameEvent<'controller_assignment_cancelled', { gamepadIndex: number }>;
 		const { gamepadIndex } = detail;
 		if (gamepadIndex == null) {
 			throw new Error('[ControllerAssignmentUI] controller_assignment_cancelled event missing gamepadIndex.');

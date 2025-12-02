@@ -77,7 +77,7 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 		}
 	}
 
-	function makeRuleKey(file: string, event: string | undefined, ruleIndex: number): string {
+	function makeRuleKey(file: string, event: string, ruleIndex: number): string {
 		return `${file}:${event ?? '<root>'}#rule${ruleIndex}`;
 	}
 

@@ -7,15 +7,15 @@ import { M4 } from './math3d';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { clamp } from '../../utils/clamp';;
 
-let vao: WebGLVertexArrayObject | null = null;
-let program: WebGLProgram | null = null;
+let vao: WebGLVertexArrayObject = null;
+let program: WebGLProgram = null;
 let posLoc = -1;
 let colLoc = -1;
-let uViewLoc: WebGLUniformLocation | null = null;
-let uAspectLoc: WebGLUniformLocation | null = null;
-let uSizeLoc: WebGLUniformLocation | null = null;
-let uOffsetLoc: WebGLUniformLocation | null = null;
-let vbo: WebGLBuffer | null = null;
+let uViewLoc: WebGLUniformLocation = null;
+let uAspectLoc: WebGLUniformLocation = null;
+let uSizeLoc: WebGLUniformLocation = null;
+let uOffsetLoc: WebGLUniformLocation = null;
+let vbo: WebGLBuffer = null;
 
 let enabled = true;
 export function setAxisGizmoEnabled(v: boolean) { enabled = v; }

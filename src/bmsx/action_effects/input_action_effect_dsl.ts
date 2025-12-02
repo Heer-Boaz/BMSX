@@ -50,7 +50,7 @@ export interface EffectTable {
 	press?: Effect | Effect[];
 	hold?: Effect | Effect[];
 	release?: Effect | Effect[];
-	[key: string]: Effect | Effect[] | undefined;
+	[key: string]: Effect | Effect[];
 }
 
 export interface Binding {

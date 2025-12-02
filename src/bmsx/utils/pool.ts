@@ -54,7 +54,7 @@ export class Pool<T> {
 	}
 
 	/** Acquire an item. Returns undefined if pool limits prevent allocation. */
-	acquire(): T | undefined {
+	acquire(): T {
 		// 1. Find inactive slot
 		for (const s of this.slots) {
 			if (!s.active) {
@@ -133,7 +133,7 @@ export class Pool<T> {
 	 * static debugStats() { return this._pool.stats(); }
 	 */
 	static createLazy<T>(opts: PoolOptions<T> & { onCreate: () => T; lazyWarm?: number }): { get: () => Pool<T>; stats: () => { active: number; total: number } } {
-		let singleton: Pool<T> | undefined;
+		let singleton: Pool<T>;
 		return {
 			get: () => {
 				if (!singleton) {

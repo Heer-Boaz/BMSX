@@ -45,10 +45,10 @@ export class RenameController {
 	private active = false;
 	private visible = false;
 	private matches: SearchMatch[] = [];
-	private info: ReferenceMatchInfo | null = null;
+	private info: ReferenceMatchInfo = null;
 	private originalName = '';
 	private activeIndex = -1;
-	private expressionLabel: string | null = null;
+	private expressionLabel: string = null;
 	private readonly identifierFilter = (value: string): boolean => {
 		if (value.length === 0) {
 			return false;
@@ -169,7 +169,7 @@ export class RenameController {
 		return this.matches.length;
 	}
 
-	public getExpressionLabel(): string | null {
+	public getExpressionLabel(): string {
 		return this.expressionLabel;
 	}
 
@@ -272,11 +272,11 @@ export function planRenameLineEdits(lines: readonly string[], matches: readonly 
 }export type CrossFileRenameDependencies = {
 	findResourceDescriptorForChunk(chunkPath: string): ConsoleResourceDescriptor;
 	createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): CodeTabContext;
-	createEntryTabContext(): CodeTabContext | null;
-	getEntryTabId(): string | null;
-	setEntryTabId(id: string | null): void;
-	getEntryAssetId(): string | null;
-	getCodeTabContext(id: string): CodeTabContext | null;
+	createEntryTabContext(): CodeTabContext;
+	getEntryTabId(): string;
+	setEntryTabId(id: string): void;
+	getEntryAssetId(): string;
+	getCodeTabContext(id: string): CodeTabContext;
 	setCodeTabContext(context: CodeTabContext): void;
 	listCodeTabContexts(): Iterable<CodeTabContext>;
 	splitLines(source: string): string[];
@@ -289,7 +289,7 @@ export class CrossFileRenameManager {
 		private readonly workspace: LuaSemanticWorkspace
 	) { }
 
-	public applyRenameToChunk(chunkName: string, ranges: readonly LuaSourceRange[], newName: string, activeChunkName: string | null): number {
+	public applyRenameToChunk(chunkName: string, ranges: readonly LuaSourceRange[], newName: string, activeChunkName: string): number {
 		const context = this.ensureCodeTabContextForChunk(chunkName);
 		if (!context) {
 			return 0;
@@ -360,7 +360,7 @@ export class CrossFileRenameManager {
 		this.deps.setTabDirty(context.id, context.dirty);
 	}
 
-	private ensureCodeTabContextForChunk(chunkName: string): CodeTabContext | null {
+	private ensureCodeTabContextForChunk(chunkName: string): CodeTabContext {
 		const existing = findCodeTabContext(undefined, chunkName);
 		if (existing) {
 			return existing;
@@ -368,7 +368,7 @@ export class CrossFileRenameManager {
 		try {
 			const descriptor = this.deps.findResourceDescriptorForChunk(chunkName);
 			const contextId: string = `lua:${descriptor.asset_id}`;
-			let context = this.deps.getCodeTabContext(contextId) ?? null;
+			let context = this.deps.getCodeTabContext(contextId) ;
 			if (!context) {
 				context = this.deps.createLuaCodeTabContext(descriptor);
 				this.deps.setCodeTabContext(context);
@@ -402,7 +402,7 @@ export class CrossFileRenameManager {
 		}
 	}
 
-	// private findCodeTabContextForChunk(chunkName: string): CodeTabContext | null {
+	// private findCodeTabContextForChunk(chunkName: string): CodeTabContext {
 	// 	for (const context of this.deps.listCodeTabContexts()) {
 	// 		const descriptor = context.descriptor;
 	// 		if (descriptor) {
@@ -431,7 +431,7 @@ export class CrossFileRenameManager {
 	// }
 }
 
-export function convertRangeToSearchMatch(range: LuaSourceRange | null | undefined, lines: readonly string[]): SearchMatch | null {
+export function convertRangeToSearchMatch(range: LuaSourceRange, lines: readonly string[]): SearchMatch {
 	if (!range) {
 		return null;
 	}

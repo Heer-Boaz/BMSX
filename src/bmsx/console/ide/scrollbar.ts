@@ -9,8 +9,8 @@ import { api } from '../runtime';
 
 export class ConsoleScrollbar {
 	public readonly orientation: 'vertical' | 'horizontal';
-	private track: RectBounds | null = null;
-	private thumb: RectBounds | null = null;
+	private track: RectBounds = null;
+	private thumb: RectBounds = null;
 	private scrollValue = 0;
 	private maxScrollValue = 0;
 	private viewportSize = 0;
@@ -77,11 +77,11 @@ export class ConsoleScrollbar {
 		return this.thumb !== null;
 	}
 
-	public getTrack(): RectBounds | null {
+	public getTrack(): RectBounds {
 		return this.track;
 	}
 
-	public getThumb(): RectBounds | null {
+	public getThumb(): RectBounds {
 		return this.thumb;
 	}
 
@@ -89,7 +89,7 @@ export class ConsoleScrollbar {
 		return this.scrollValue;
 	}
 
-	public beginDrag(pointer: number): number | null {
+	public beginDrag(pointer: number): number {
 		if (!this.track || this.maxScrollValue <= 0) {
 			return null;
 		}
@@ -154,7 +154,7 @@ export class ConsoleScrollbar {
 export type ScrollbarMap = Record<ScrollbarKind, ConsoleScrollbar>;
 
 export class ScrollbarController {
-	private active: { kind: ScrollbarKind; pointerOffset: number } | null = null;
+	private active: { kind: ScrollbarKind; pointerOffset: number } = null;
 
 	constructor(private readonly scrollbars: ScrollbarMap) { }
 

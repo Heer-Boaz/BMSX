@@ -11,9 +11,9 @@ export class GamepadInput implements InputHandler {
 	private nextPressId = 1;
 	private lastPollTime = 0;
 
-	private device: InputDevice | null;
+	private device: InputDevice;
 
-	constructor(public readonly deviceId: string, public readonly description: string, device: InputDevice | null) {
+	constructor(public readonly deviceId: string, public readonly description: string, device: InputDevice) {
 		this.device = device;
 		this.reset();
 	}
@@ -28,7 +28,7 @@ export class GamepadInput implements InputHandler {
 		return this.hidPad.isConnected;
 	}
 
-	public setDevice(device: InputDevice | null): void {
+	public setDevice(device: InputDevice): void {
 		this.device = device;
 	}
 
@@ -58,7 +58,7 @@ export class GamepadInput implements InputHandler {
 		return getPressedState(this.buttonStates, btn);
 	}
 
-	public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId: number | null): void {
+	public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId: number): void {
 		const state = this.buttonStates[code] ?? makeButtonState();
 		if (down) {
 			const existingPressId = pressId ?? state.pressId ?? this.nextPressId++;

@@ -42,32 +42,32 @@ export class ConsoleCodeLayout {
 	private visualLines: VisualLineSegment[] = [];
 	private rowToFirstVisualLine: number[] = [];
 	private visualLinesDirty = true;
-	private semanticModel: LuaSemanticModel | null = null;
+	private semanticModel: LuaSemanticModel = null;
 	private semanticVersion = -1;
-	private semanticChunkName: string | null = null;
+	private semanticChunkName: string = null;
 	private readonly semanticDebounceMs: number;
 	private readonly clockNow: () => number;
-	private readonly getBuiltinIdentifiers: (() => Iterable<string> | null) | null;
-	private pendingSemantic: PendingSemanticUpdate | null = null;
-	// private inFlightSemantic: PendingSemanticUpdate | null = null;
-	private semanticDueAtMs: number | null = null;
+	private readonly getBuiltinIdentifiers: (() => Iterable<string>);
+	private pendingSemantic: PendingSemanticUpdate = null;
+	// private inFlightSemantic: PendingSemanticUpdate = null;
+	private semanticDueAtMs: number = null;
 	private semanticUpdateScheduled = false;
-	private annotationRowSig: Uint32Array | null = null;
-	private semanticWorker: Worker | null = null;
+	private annotationRowSig: Uint32Array = null;
+	private semanticWorker: Worker = null;
 	private nextSemanticRequestId = 1;
-	private lastHotRowRange: { start: number; end: number } | null = null;
+	private lastHotRowRange: { start: number; end: number } = null;
 	private lastHotGuardRows = 0;
 	private readonly viewportRowMargin = 64;
 	private readonly averageCharAdvance: number;
 	private rowVisualLineCounts: number[] = [];
 	private lastViewportRowEstimate = 120;
-	private semanticTimer: TimerHandle | null = null;
-	private lastSemanticError: string | null = null;
+	private semanticTimer: TimerHandle = null;
+	private lastSemanticError: string = null;
 
 	constructor(
 		private readonly font: ConsoleEditorFont,
 		private readonly workspace: LuaSemanticWorkspace,
-		options: { maxHighlightCache: number; semanticDebounceMs: number; clockNow: () => number; getBuiltinIdentifiers: () => Iterable<string> | null },
+		options: { maxHighlightCache: number; semanticDebounceMs: number; clockNow: () => number; getBuiltinIdentifiers: () => Iterable<string> },
 	) {
 		this.maxHighlightCache = options.maxHighlightCache;
 		this.semanticDebounceMs = Math.max(0, options.semanticDebounceMs);
@@ -161,7 +161,7 @@ export class ConsoleCodeLayout {
 		if (cached && cached.src === source && cached.rowSignature === rowSignature) {
 			return cached;
 		}
-		let builtinIdentifiers: Iterable<string> | null = null;
+		let builtinIdentifiers: Iterable<string> = null;
 		if (this.getBuiltinIdentifiers) {
 			try {
 				builtinIdentifiers = this.getBuiltinIdentifiers();
@@ -272,7 +272,7 @@ export class ConsoleCodeLayout {
 		return this.visualLines.length;
 	}
 
-	public visualIndexToSegment(index: number): VisualLineSegment | null {
+	public visualIndexToSegment(index: number): VisualLineSegment {
 		if (index < 0 || index >= this.visualLines.length) {
 			return null;
 		}
@@ -306,11 +306,11 @@ export class ConsoleCodeLayout {
 		return this.visualLines;
 	}
 
-	public getLastSemanticError(): string | null {
+	public getLastSemanticError(): string {
 		return this.lastSemanticError;
 	}
 
-	public getSemanticDefinitions(lines: readonly string[], documentVersion: number, chunkName: string): readonly LuaDefinitionInfo[] | null {
+	public getSemanticDefinitions(lines: readonly string[], documentVersion: number, chunkName: string): readonly LuaDefinitionInfo[] {
 		this.ensureSemanticModel(lines, documentVersion, chunkName, 'background');
 		if (!this.semanticModel) {
 			return null;
@@ -471,7 +471,7 @@ export class ConsoleCodeLayout {
 	private buildSegmentsForRow(
 		line: string,
 		row: number,
-		entry: CachedHighlight | null,
+		entry: CachedHighlight,
 		wordWrapEnabled: boolean,
 		effectiveWrapWidth: number,
 		approxWrapColumns: number,
@@ -505,7 +505,7 @@ export class ConsoleCodeLayout {
 		this.dispatchSemanticUpdate(pending, 'force');
 	}
 
-	public getSemanticModel(lines: readonly string[], documentVersion: number, chunkName: string): LuaSemanticModel | null {
+	public getSemanticModel(lines: readonly string[], documentVersion: number, chunkName: string): LuaSemanticModel {
 		this.ensureSemanticModel(lines, documentVersion, chunkName, 'force');
 		return this.semanticModel;
 	}
@@ -606,7 +606,7 @@ export class ConsoleCodeLayout {
 	}
 
 	private applySemanticUpdateSync(pending: PendingSemanticUpdate): void {
-		let model: LuaSemanticModel | null = null;
+		let model: LuaSemanticModel = null;
 		try {
 			model = this.workspace.updateFile(pending.chunkName, pending.source);
 		} catch {
@@ -617,10 +617,10 @@ export class ConsoleCodeLayout {
 	}
 
 	private finalizeSemanticUpdate(
-		model: LuaSemanticModel | null,
+		model: LuaSemanticModel,
 		version: number,
 		chunkName: string,
-		annotations: SemanticAnnotations | null,
+		annotations: SemanticAnnotations,
 	): void {
 		this.semanticModel = model;
 		this.semanticVersion = version;
@@ -633,7 +633,7 @@ export class ConsoleCodeLayout {
 		this.markVisualLinesDirty();
 	}
 
-	private updateAnnotationSignatures(annotations: SemanticAnnotations | null): void {
+	private updateAnnotationSignatures(annotations: SemanticAnnotations): void {
 		if (!annotations) {
 			this.annotationRowSig = null;
 			this.highlightCache.clear();
@@ -664,7 +664,7 @@ export class ConsoleCodeLayout {
 		this.annotationRowSig = next;
 	}
 
-	private hashAnnotationRow(rowAnnotations: TokenAnnotation[] | undefined): number {
+	private hashAnnotationRow(rowAnnotations: TokenAnnotation[]): number {
 		if (!rowAnnotations || rowAnnotations.length === 0) {
 			return 0;
 		}

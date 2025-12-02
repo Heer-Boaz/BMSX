@@ -249,7 +249,7 @@ export function createTestromModule() {
 			$.spawn(bullets);
 			const hud = new RailShooterHUD();
 			$.spawn(hud);
-			let bossObjId: string | null = null; hud.bossId = bossObjId;
+			let bossObjId: string = null; hud.bossId = bossObjId;
 
 			// Wave manager listens to rail spawn events
 			const waves = new WaveManager(eventTimeline);

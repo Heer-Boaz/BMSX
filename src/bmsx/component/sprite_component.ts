@@ -25,7 +25,7 @@ export class SpriteComponent extends Component {
 	public offset: vec3 = { x: 0, y: 0, z: 0 };
 	public autoplay_timeline_id?: string;
 	/** Optional collider binding; when null, sprite will not drive collider sync. */
-	private _colliderLocalId?: Identifier | null;
+	private _colliderLocalId?: Identifier;
 	@excludepropfromsavegame
 	private colliderSyncToken = '';
 	@excludepropfromsavegame
@@ -47,16 +47,16 @@ export class SpriteComponent extends Component {
 		this.syncCollider();
 	}
 
-	public get collider_local_id(): Identifier | null | undefined { return this._colliderLocalId; }
+	public get collider_local_id(): Identifier { return this._colliderLocalId; }
 
-	public set collider_local_id(value: Identifier | null | undefined) {
-		const next = value ?? null;
+	public set collider_local_id(value: Identifier) {
+		const next = value ;
 		if (this._colliderLocalId === next) return;
 		this._colliderLocalId = next;
 		this.syncCollider();
 	}
 
-	constructor(opts: ComponentAttachOptions & { imgid?: asset_id; collider_local_id?: Identifier | null }) {
+	constructor(opts: ComponentAttachOptions & { imgid?: asset_id; collider_local_id?: Identifier }) {
 		super(opts);
 		if (opts.imgid !== undefined) this.imgid = opts.imgid;
 		if (opts.collider_local_id !== undefined) this.collider_local_id = opts.collider_local_id;
@@ -96,7 +96,7 @@ export class SpriteComponent extends Component {
 		this.parent.play_timeline(id, { rewind: false, snap_to_start: false });
 	}
 
-	private resolveCollider(): Collider2DComponent | undefined {
+	private resolveCollider(): Collider2DComponent {
 		const owner = this.parent;
 		const explicitLocalId = this._colliderLocalId;
 		if (explicitLocalId) {
@@ -142,9 +142,9 @@ export class SpriteComponent extends Component {
 			throw new Error(`[SpriteComponent] Sprite asset '${id}' is missing metadata.`);
 		}
 
-		const box = imgmeta['boundingbox'] as BoundingBoxPrecalc | undefined;
+		const box = imgmeta['boundingbox'] as BoundingBoxPrecalc;
 		if (box) collider.setLocalArea(selectBoundingBox(flipH, flipV, box)); else collider.setLocalArea(null);
-		const polys = imgmeta['hitpolygons'] as HitPolygonsPrecalc | undefined;
+		const polys = imgmeta['hitpolygons'] as HitPolygonsPrecalc;
 		if (polys) collider.setLocalPolygons(selectConcavePolygon(flipH, flipV, polys)); else collider.setLocalPolygons(null);
 		collider.syncToken = token;
 		this.colliderSyncToken = token;

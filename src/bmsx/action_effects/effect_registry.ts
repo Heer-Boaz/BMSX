@@ -61,8 +61,8 @@ export class ActionEffectRegistry implements RegisterablePersistent {
 		this.definitions.clear();
 	}
 
-	public get<Id extends ActionEffectId>(id: Id): ActionEffectDefinition<Id> | undefined {
-		return this.definitions.get(id) as ActionEffectDefinition<Id> | undefined;
+	public get<Id extends ActionEffectId>(id: Id): ActionEffectDefinition<Id> {
+		return this.definitions.get(id) as ActionEffectDefinition<Id>;
 	}
 
 	public has(id: ActionEffectId): boolean {

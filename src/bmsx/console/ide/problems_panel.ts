@@ -24,8 +24,8 @@ export class ProblemsPanelController {
 	private selectionIndex = -1;
 	private hoverIndex = -1;
 	private scrollIndex = 0;
-	private cachedLayout: PanelLayout | null = null;
-	private fixedHeightPx: number | null = null;
+	private cachedLayout: PanelLayout = null;
+	private fixedHeightPx: number = null;
 	private lastAvailableWidth = 0;
 
 	public get isVisible(): boolean {
@@ -36,7 +36,7 @@ export class ProblemsPanelController {
 		return this.focused;
 	}
 
-	public get selectedDiagnostic(): EditorDiagnostic | null {
+	public get selectedDiagnostic(): EditorDiagnostic {
 		if (this.selectionIndex < 0 || this.selectionIndex >= this.diagnostics.length) return null;
 		return this.diagnostics[this.selectionIndex];
 	}
@@ -373,7 +373,7 @@ export class ProblemsPanelController {
 		return ide_state.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
 	}
 
-	public setFixedHeightPx(height: number | null): void { this.fixedHeightPx = (height && height > 0) ? Math.floor(height) : null; this.cachedLayout = null; }
+	public setFixedHeightPx(height: number): void { this.fixedHeightPx = (height && height > 0) ? Math.floor(height) : null; this.cachedLayout = null; }
 
 	private estimateVisibleCount(layout: PanelLayout): number {
 		// Estimate how many items fit from current selection based on cached heights

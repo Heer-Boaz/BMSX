@@ -30,13 +30,13 @@ export type WorkspaceStoragePaths = {
 	stateFile: string;
 };
 
-let storagePaths: WorkspaceStoragePaths | null = null;
-let serverBackend: ServerWorkspaceBackend | null = null;
+let storagePaths: WorkspaceStoragePaths = null;
+let serverBackend: ServerWorkspaceBackend = null;
 let serverBackendAvailable = false;
 let serverBackendFailureNotified = false;
-let localBackend: LocalWorkspaceBackend | null = null;
+let localBackend: LocalWorkspaceBackend = null;
 let serverRetryScheduled = false;
-let serverRetryHandle: TimerHandle | NodeJS.Timeout | null = null;
+let serverRetryHandle: TimerHandle | NodeJS.Timeout = null;
 
 function resetWorkspaceBackends(): void {
 	serverBackend = null;
@@ -47,11 +47,11 @@ function resetWorkspaceBackends(): void {
 	ide_state.serverWorkspaceConnected = false;
 }
 
-export function workspaceStoragePaths(): WorkspaceStoragePaths | null {
+export function workspaceStoragePaths(): WorkspaceStoragePaths {
 	return storagePaths;
 }
 
-export async function configureWorkspaceStorage(projectRootPath: string | null): Promise<void> {
+export async function configureWorkspaceStorage(projectRootPath: string): Promise<void> {
 	if (!projectRootPath) {
 		storagePaths = null;
 		resetWorkspaceBackends();
@@ -68,7 +68,7 @@ export async function configureWorkspaceStorage(projectRootPath: string | null):
 		stateFile,
 	};
 	localBackend = null;
-	const storage = $.platform.storage ?? null;
+	const storage = $.platform.storage ;
 	if (storage) {
 		try {
 			const backend = new LocalWorkspaceBackend(projectRootPath, storage);
@@ -109,7 +109,7 @@ export function buildScratchDirtyFilePath(contextId: string): string {
 	return buildWorkspaceScratchDirtyPath(storagePaths.projectRootPath, contextId);
 }
 
-export async function readWorkspaceStateFile(): Promise<string | null> {
+export async function readWorkspaceStateFile(): Promise<string> {
 	if (!storagePaths) {
 		return null;
 	}
@@ -123,7 +123,7 @@ export async function writeWorkspaceStateFile(contents: string): Promise<void> {
 	await writeWorkspaceFile(storagePaths.stateFile, contents);
 }
 
-export async function readDirtyBuffer(relativePath: string): Promise<string | null> {
+export async function readDirtyBuffer(relativePath: string): Promise<string> {
 	return await readWorkspaceFile(relativePath);
 }
 
@@ -135,7 +135,7 @@ export async function deleteDirtyBuffer(relativePath: string): Promise<void> {
 	await deleteWorkspaceFile(relativePath);
 }
 
-async function readWorkspaceFile(relativePath: string): Promise<string | null> {
+async function readWorkspaceFile(relativePath: string): Promise<string> {
 	if (serverBackendAvailable && serverBackend) {
 		try {
 			const result = await serverBackend.readFile(relativePath);
@@ -222,7 +222,7 @@ type SnapshotMetadata = {
 	cursorColumn: number;
 	scrollRow: number;
 	scrollColumn: number;
-	selectionAnchor: Position | null;
+	selectionAnchor: Position;
 };
 
 export type SerializedDescriptor = {
@@ -234,35 +234,35 @@ export type SerializedDescriptor = {
 export type PersistedTabEntry = {
 	id: string;
 	kind: 'lua_editor' | 'resource_view' | 'debug';
-	descriptor: SerializedDescriptor | null;
+	descriptor: SerializedDescriptor;
 };
 
 export type PersistedDirtyEntry = {
 	contextId: string;
-	descriptor: SerializedDescriptor | null;
+	descriptor: SerializedDescriptor;
 	dirtyPath: string;
 	cursorRow: number;
 	cursorColumn: number;
 	scrollRow: number;
 	scrollColumn: number;
-	selectionAnchor: Position | null;
+	selectionAnchor: Position;
 };
 
 export type WorkspaceAutosavePayload = {
 	version: 1 | 2;
 	savedAt: number;
-	entryTabId: string | null;
-	activeTabId: string | null;
+	entryTabId: string;
+	activeTabId: string;
 	tabs: PersistedTabEntry[];
 	dirtyFiles: PersistedDirtyEntry[];
 	undoStack: EditorSnapshot[];
 	redoStack: EditorSnapshot[];
-	lastHistoryKey: string | null;
+	lastHistoryKey: string;
 	lastHistoryTimestamp: number;
 	navigationHistory: {
 		back: NavigationHistoryEntry[];
 		forward: NavigationHistoryEntry[];
-		current: NavigationHistoryEntry | null;
+		current: NavigationHistoryEntry;
 	};
 	breakpoints?: SerializedBreakpointMap;
 	fontVariant?: ConsoleFontVariant;
@@ -271,7 +271,7 @@ export type WorkspaceAutosavePayload = {
 
 export type DirtyContextEntry = PersistedDirtyEntry & { text: string };
 
-export function setupWorkspacePersistence(projectRootPath: string | null): void {
+export function setupWorkspacePersistence(projectRootPath: string): void {
 	stopWorkspaceAutosaveLoop();
 	ide_state.workspaceAutosaveSignature = null;
 	workspaceDirtyCache.clear();
@@ -334,7 +334,7 @@ export async function restoreWorkspaceSessionFromDisk(): Promise<void> {
 	if (!stateText) {
 		return;
 	}
-	let payload: WorkspaceAutosavePayload | null = null;
+	let payload: WorkspaceAutosavePayload = null;
 	try {
 		payload = JSON.parse(stateText) as WorkspaceAutosavePayload;
 	} catch (error) {
@@ -357,7 +357,7 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 	} else {
 		ide_state.entryTabId = null;
 	}
-	initializeTabs(entryContext ?? null);
+	initializeTabs(entryContext );
 	if (entryContext) {
 		ide_state.activeCodeTabContextId = entryContext.id;
 	}
@@ -404,7 +404,7 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 		ide_state.navigationHistory.forward = [];
 		ide_state.navigationHistory.current = null;
 	}
-	restoreBreakpointsFromPayload(payload.breakpoints ?? null);
+	restoreBreakpointsFromPayload(payload.breakpoints );
 }
 
 export function restorePersistedTab(entry: PersistedTabEntry): void {
@@ -426,7 +426,7 @@ export function restorePersistedTab(entry: PersistedTabEntry): void {
 	openLuaCodeTab(descriptor);
 }
 
-export function extractDebugPanelKindFromTabId(tabId: string): DebugPanelKind | null {
+export function extractDebugPanelKindFromTabId(tabId: string): DebugPanelKind {
 	if (!tabId.startsWith('debug:')) {
 		return null;
 	}
@@ -437,7 +437,7 @@ export function extractDebugPanelKindFromTabId(tabId: string): DebugPanelKind | 
 	return null;
 }
 
-export function serializeTabEntry(tab: EditorTabDescriptor): PersistedTabEntry | null {
+export function serializeTabEntry(tab: EditorTabDescriptor): PersistedTabEntry {
 	if (tab.kind === 'resource_view' && tab.resource) {
 		const descriptor = serializeDescriptor(tab.resource.descriptor);
 		if (!descriptor) {
@@ -449,14 +449,14 @@ export function serializeTabEntry(tab: EditorTabDescriptor): PersistedTabEntry |
 		return { id: tab.id, kind: 'debug', descriptor: null };
 	}
 	if (tab.kind === 'lua_editor') {
-		const context = ide_state.codeTabContexts.get(tab.id) ?? null;
+		const context = ide_state.codeTabContexts.get(tab.id) ;
 		const descriptor = context?.descriptor ? serializeDescriptor(context.descriptor) : null;
 		return { id: tab.id, kind: 'lua_editor', descriptor };
 	}
 	return null;
 }
 
-export function serializeDescriptor(descriptor: ConsoleResourceDescriptor | null): SerializedDescriptor | null {
+export function serializeDescriptor(descriptor: ConsoleResourceDescriptor): SerializedDescriptor {
 	if (!descriptor) {
 		return null;
 	}
@@ -467,7 +467,7 @@ export function serializeDescriptor(descriptor: ConsoleResourceDescriptor | null
 	};
 }
 
-export function resolveSerializedDescriptor(serialized: SerializedDescriptor | null): ConsoleResourceDescriptor | null {
+export function resolveSerializedDescriptor(serialized: SerializedDescriptor): ConsoleResourceDescriptor {
 	if (!serialized) {
 		return null;
 	}
@@ -477,10 +477,10 @@ export function resolveSerializedDescriptor(serialized: SerializedDescriptor | n
 export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise<void> {
 	for (const entry of entries) {
 		const descriptor = resolveSerializedDescriptor(entry.descriptor);
-		let context = ide_state.codeTabContexts.get(entry.contextId) ?? null;
+		let context = ide_state.codeTabContexts.get(entry.contextId) ;
 		if (!context && descriptor) {
 			openLuaCodeTab(descriptor);
-			context = ide_state.codeTabContexts.get(entry.contextId) ?? null;
+			context = ide_state.codeTabContexts.get(entry.contextId) ;
 		}
 		if (!context) {
 			continue;
@@ -513,7 +513,7 @@ export function buildSnapshotFromSource(source: string, metadata?: SnapshotMetad
 		cursorColumn,
 		scrollRow: safeclamp(metadata?.scrollRow, 0, lastRow),
 		scrollColumn: Math.max(0, metadata?.scrollColumn ?? 0),
-		selectionAnchor: clampSelection(metadata?.selectionAnchor ?? null, lines),
+		selectionAnchor: clampSelection(metadata?.selectionAnchor , lines),
 		dirty: ide_state.dirty,
 	};
 }
@@ -532,7 +532,7 @@ function cloneEditorSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
 	};
 }
 
-function clampSelection(anchor: Position | null, lines: string[]): Position | null {
+function clampSelection(anchor: Position, lines: string[]): Position {
 	if (!anchor) {
 		return null;
 	}
@@ -567,7 +567,7 @@ class LocalWorkspaceBackend {
 		this.storage.setItem(this.makeKey('__marker__'), 'ready');
 	}
 
-	async readFile(relativePath: string): Promise<string | null> {
+	async readFile(relativePath: string): Promise<string> {
 		return this.storage.getItem(this.makeKey(relativePath));
 	}
 
@@ -589,7 +589,7 @@ class ServerWorkspaceBackend {
 		await this.writeFile(markerPath, '');
 	}
 
-	async readFile(relativePath: string): Promise<string | null> {
+	async readFile(relativePath: string): Promise<string> {
 		const response = await fetchOrThrow(`${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`, {
 			method: 'GET',
 			cache: 'no-store',
@@ -640,7 +640,7 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 		if (!context.dirty) {
 			continue;
 		}
-		const descriptor = serializeDescriptor(context.descriptor ?? null);
+		const descriptor = serializeDescriptor(context.descriptor );
 		const metadata = captureContextSnapshotMetadata(context);
 		let dirtyPath: string;
 		try {
@@ -669,7 +669,7 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 	return entries;
 }
 
-export function captureContextText(context: CodeTabContext): string | null {
+export function captureContextText(context: CodeTabContext): string {
 	if (context.id === ide_state.activeCodeTabContextId) {
 		return ide_state.lines.join('\n');
 	}
@@ -708,7 +708,7 @@ function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetada
 	};
 }
 
-export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextEntry>): WorkspaceAutosavePayload | null {
+export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextEntry>): WorkspaceAutosavePayload {
 	if (!ide_state.workspaceAutosaveEnabled) {
 		return null;
 	}
@@ -743,13 +743,13 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 	return {
 		version: 2,
 		savedAt: $.platform.clock.now(),
-		entryTabId: ide_state.entryTabId ?? null,
-		activeTabId: ide_state.activeTabId ?? null,
+		entryTabId: ide_state.entryTabId ,
+		activeTabId: ide_state.activeTabId ,
 		tabs,
 		dirtyFiles,
 		undoStack,
 		redoStack,
-		lastHistoryKey: ide_state.lastHistoryKey ?? null,
+		lastHistoryKey: ide_state.lastHistoryKey ,
 		lastHistoryTimestamp: ide_state.lastHistoryTimestamp ?? 0,
 		navigationHistory,
 		breakpoints: serializeBreakpoints(),

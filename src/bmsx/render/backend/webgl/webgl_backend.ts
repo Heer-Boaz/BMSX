@@ -15,26 +15,26 @@ export class WebGLBackend implements GPUBackend {
 
 	private texIds = new WeakMap<WebGLTexture, number>();
 	private nextTexId = 1;
-	private fboCache = new Map<string, WebGLFramebuffer | null>();
+	private fboCache = new Map<string, WebGLFramebuffer>();
 	// Legacy / custom pipeline states not managed by PipelineManager (or pre-registered);
 	// typed as Partial<PipelineStates> for compile-time narrowing while still allowing
 	// arbitrary extension via index signature.
 	private extraStates: Partial<RenderPassStateRegistry> & { [k: string]: unknown } = {};
-	private currentProgram: WebGLProgram | null = null;
-	private currentVAO: WebGLVertexArrayObject | null = null;
-	private currentArrayBuffer: WebGLBuffer | null = null;
-	private currentElementArrayBuffer: WebGLBuffer | null = null;
-	private cachedViewport: { x: number; y: number; w: number; h: number } | null = null;
-	private cachedBlendEnabled: boolean | null = null;
-	private cachedCullEnabled: boolean | null = null;
-	private cachedDepthMask: boolean | null = null;
-	private cachedDepthTestEnabled: boolean | null = null;
-	private cachedDepthFunc: number | null = null;
-	private cachedBlendFunc: { src: number; dst: number } | null = null;
-	private currentActiveTexUnit: number | null = null;
-	private boundTex2D: (WebGLTexture | null)[] = [];
-	private boundTexCube: (WebGLTexture | null)[] = [];
-	private uniformCache = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
+	private currentProgram: WebGLProgram = null;
+	private currentVAO: WebGLVertexArrayObject = null;
+	private currentArrayBuffer: WebGLBuffer = null;
+	private currentElementArrayBuffer: WebGLBuffer = null;
+	private cachedViewport: { x: number; y: number; w: number; h: number } = null;
+	private cachedBlendEnabled: boolean = null;
+	private cachedCullEnabled: boolean = null;
+	private cachedDepthMask: boolean = null;
+	private cachedDepthTestEnabled: boolean = null;
+	private cachedDepthFunc: number = null;
+	private cachedBlendFunc: { src: number; dst: number } = null;
+	private currentActiveTexUnit: number = null;
+	private boundTex2D: (WebGLTexture)[] = [];
+	private boundTexCube: (WebGLTexture)[] = [];
+	private uniformCache = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation>>();
 	private attribCache = new WeakMap<WebGLProgram, Map<string, number>>();
 	private bufferSizes = new WeakMap<WebGLBuffer, number>();
 	private frameStats = { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: 0, vertexBytes: 0, indexBytes: 0, uniformBytes: 0, textureBytes: 0 };
@@ -142,7 +142,7 @@ export class WebGLBackend implements GPUBackend {
 		return tex;
 	}
 	createDepthTexture(desc: { width: number; height: number }): WebGLTexture { return GLR.glCreateDepthTexture(this.gl, desc.width, desc.height, TEXTURE_UNIT_UPLOAD); }
-	createRenderTarget(color?: WebGLTexture | null, depth?: WebGLTexture | null): RenderTargetHandle | null {
+	createRenderTarget(color?: WebGLTexture, depth?: WebGLTexture): RenderTargetHandle {
 		const gl = this.gl;
 		const fbo = gl.createFramebuffer();
 		gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
@@ -153,7 +153,7 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 		return fbo;
 	}
-	bindFBO(fbo: WebGLFramebuffer | null): void { this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, fbo); }
+	bindFBO(fbo: WebGLFramebuffer): void { this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, fbo); }
 	clear(opts: { color?: color_arr; depth?: number }): void {
 		const gl = this.gl;
 		let mask = 0;
@@ -162,12 +162,12 @@ export class WebGLBackend implements GPUBackend {
 		if (mask) gl.clear(mask);
 	}
 	beginRenderPass(desc: RenderPassDesc): PassEncoder {
-		let fbo: WebGLFramebuffer | null = null;
+		let fbo: WebGLFramebuffer = null;
 		// Normalize single color into colors[0]
 		const firstColor = desc.colors && desc.colors.length ? desc.colors[0] : desc.color;
 		if (firstColor || desc.depth) {
-			const colorTex = firstColor ? (firstColor.tex as WebGLTexture | null) : null;
-			const depthTex = desc.depth ? (desc.depth.tex as WebGLTexture | null) : null;
+			const colorTex = firstColor ? (firstColor.tex as WebGLTexture) : null;
+			const depthTex = desc.depth ? (desc.depth.tex as WebGLTexture) : null;
 			if (colorTex) {
 				if (!this.texIds.has(colorTex)) this.texIds.set(colorTex, this.nextTexId++);
 				const cid = this.texIds.get(colorTex)!;
@@ -175,10 +175,10 @@ export class WebGLBackend implements GPUBackend {
 				if (depthTex) { if (!this.texIds.has(depthTex)) this.texIds.set(depthTex, this.nextTexId++); did = this.texIds.get(depthTex)!; }
 				const key = cid + ':' + did;
 				let cached = this.fboCache.get(key);
-				if (!cached) { cached = this.createRenderTarget(colorTex, depthTex) as WebGLFramebuffer | null; this.fboCache.set(key, cached); }
+				if (!cached) { cached = this.createRenderTarget(colorTex, depthTex) as WebGLFramebuffer; this.fboCache.set(key, cached); }
 				fbo = cached;
 			} else {
-				fbo = this.createRenderTarget(colorTex, depthTex) as WebGLFramebuffer | null;
+				fbo = this.createRenderTarget(colorTex, depthTex) as WebGLFramebuffer;
 			}
 			this.bindFBO(fbo);
 			const clearColor = firstColor ? firstColor.clear : undefined;
@@ -225,19 +225,19 @@ export class WebGLBackend implements GPUBackend {
 	}
 	// Remove registerCustomPipeline; use PipelineManager.register directly
 	private hashString(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) h = Math.imul(31, h) + s.charCodeAt(i) | 0; return h >>> 0; }
-	getPassState<S = unknown>(label: string): S | undefined {
-		if (this.extraStates[label]) return this.extraStates[label] as S | undefined;
+	getPassState<S = unknown>(label: string): S {
+		if (this.extraStates[label]) return this.extraStates[label] as S;
 		// Assume external PipelineManager; if integrated, call manager.getState
 		// For now, keep extraStates for legacy, but migrate to manager
-		return this.extraStates[label] as S | undefined;
+		return this.extraStates[label] as S;
 	}
 	setPassState<State = unknown>(label: string, state: State): void {
 		// Migrate to external manager.setState; for now keep extraStates
 		this.extraStates[label] = state;
 	}
-	buildProgram(vsSource: string, fsSource: string, label: string): WebGLProgram | null {
+	buildProgram(vsSource: string, fsSource: string, label: string): WebGLProgram {
 		const gl = this.gl;
-		function compile(type: number, source: string, stage: string): WebGLShader | null {
+		function compile(type: number, source: string, stage: string): WebGLShader {
 			const shader = gl.createShader(type);
 			if (!shader) return null;
 			gl.shaderSource(shader, source);
@@ -323,21 +323,21 @@ export class WebGLBackend implements GPUBackend {
 		// Inline detailed diagnostics on error to pinpoint root cause
 		const err = CATCH_WEBGL_ERROR ? gl.getError() : gl.NO_ERROR;
 		if (CATCH_WEBGL_ERROR && err !== gl.NO_ERROR) {
-			const vao = gl.getParameter(gl.VERTEX_ARRAY_BINDING) as WebGLVertexArrayObject | null;
-			const ebo = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING) as WebGLBuffer | null;
+			const vao = gl.getParameter(gl.VERTEX_ARRAY_BINDING) as WebGLVertexArrayObject;
+			const ebo = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING) as WebGLBuffer;
 			// Attempt to inspect a few common attributes
 			const posLoc = this.getAttribLocation('a_position');
 			const instLocs = ['a_i0', 'a_i1', 'a_i2', 'a_i3'].map(n => this.getAttribLocation(n));
 			const attribState = (loc: number) => (loc >= 0 ? {
 				enabled: !!gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_ENABLED),
 				divisor: gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_DIVISOR) as number,
-				buf: gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) as WebGLBuffer | null,
+				buf: gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) as WebGLBuffer,
 			} : null);
 			const pos = attribState(posLoc);
 			const inst = instLocs.map(attribState);
-			let u0: WebGLBuffer | null = null, u1: WebGLBuffer | null = null;
-			u0 = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, 0) as WebGLBuffer | null;
-			u1 = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, 1) as WebGLBuffer | null;
+			let u0: WebGLBuffer = null, u1: WebGLBuffer = null;
+			u0 = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, 0) as WebGLBuffer;
+			u1 = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, 1) as WebGLBuffer;
 			console.error(
 				`WebGL error ${err} after drawElementsInstanced; ` +
 				`firstIndex=${firstIndex} indexCount=${indexCount} instanceCount=${instanceCount} firstInstance=${firstInstance} indexType=${type}; ` +
@@ -370,13 +370,13 @@ export class WebGLBackend implements GPUBackend {
 		this.gl.activeTexture(this.gl.TEXTURE0 + unit);
 		this.currentActiveTexUnit = unit;
 	}
-	bindTexture2D(tex: WebGLTexture | null): void {
+	bindTexture2D(tex: WebGLTexture): void {
 		const unit = this.currentActiveTexUnit ?? 0;
 		if (this.boundTex2D[unit] === tex) return;
 		this.gl.bindTexture(this.gl.TEXTURE_2D, tex);
 		this.boundTex2D[unit] = tex;
 	}
-	bindTextureCube(tex: WebGLTexture | null): void {
+	bindTextureCube(tex: WebGLTexture): void {
 		const unit = this.currentActiveTexUnit ?? 0;
 		if (this.boundTexCube[unit] === tex) return;
 		this.gl.bindTexture(this.gl.TEXTURE_CUBE_MAP, tex);
@@ -401,7 +401,7 @@ export class WebGLBackend implements GPUBackend {
 
 	// --- Uniform helpers ---
 	private getCurrentProgramOrThrow(): WebGLProgram {
-		const p = this.currentProgram ?? (this.gl.getParameter(this.gl.CURRENT_PROGRAM) as WebGLProgram | null);
+		const p = this.currentProgram ?? (this.gl.getParameter(this.gl.CURRENT_PROGRAM) as WebGLProgram);
 		if (!p) throw new Error('No current program bound');
 		this.currentProgram = p;
 		return p;
@@ -415,7 +415,7 @@ export class WebGLBackend implements GPUBackend {
 		map.set(name, loc);
 		return loc;
 	}
-	private getUniformLocationCached(name: string): WebGLUniformLocation | null {
+	private getUniformLocationCached(name: string): WebGLUniformLocation {
 		const prog = this.getCurrentProgramOrThrow();
 		let map = this.uniformCache.get(prog);
 		if (!map) { map = new Map(); this.uniformCache.set(prog, map); }
@@ -450,7 +450,7 @@ export class WebGLBackend implements GPUBackend {
 	}
 	setUniformBlockBinding(blockName: string, bindingIndex: number): void {
 		const gl = this.gl;
-		const prog = this.currentProgram ?? (gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null);
+		const prog = this.currentProgram ?? (gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram);
 		if (!prog) return;
 		const blockIndex = gl.getUniformBlockIndex(prog, blockName);
 		const INVALID_INDEX = (gl.INVALID_INDEX ?? 0xFFFFFFFF);
@@ -470,18 +470,18 @@ export class WebGLBackend implements GPUBackend {
 	}
 
 	// --- Cached buffer/VAO/state binds ---
-	bindArrayBuffer(buf: WebGLBuffer | null): void {
+	bindArrayBuffer(buf: WebGLBuffer): void {
 		if (this.currentArrayBuffer === buf) return;
 		this.gl.bindBuffer(this.gl.ARRAY_BUFFER, buf);
 		this.currentArrayBuffer = buf;
 	}
-	bindElementArrayBuffer(buf: WebGLBuffer | null): void {
+	bindElementArrayBuffer(buf: WebGLBuffer): void {
 		if (this.currentElementArrayBuffer === buf) return;
 		this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, buf);
 		this.currentElementArrayBuffer = buf;
 	}
 	createVertexArray(): WebGLVertexArrayObject { const vao = this.gl.createVertexArray(); if (!vao) throw new Error('Failed to create VAO'); return vao; }
-	bindVertexArray(vao: WebGLVertexArrayObject | null): void {
+	bindVertexArray(vao: WebGLVertexArrayObject): void {
 		// VAO switch changes the element-array binding association.
 		// Invalidate cached ARRAY/ELEMENT_ARRAY buffers so subsequent
 		// bind calls actually rebind for the new VAO.
@@ -496,7 +496,7 @@ export class WebGLBackend implements GPUBackend {
 		// clearing avoids stale cache preventing intended binds during VAO setup.
 		this.currentArrayBuffer = null;
 	}
-	deleteVertexArray(vao: WebGLVertexArrayObject | null): void { if (vao) this.gl.deleteVertexArray(vao); }
+	deleteVertexArray(vao: WebGLVertexArrayObject): void { if (vao) this.gl.deleteVertexArray(vao); }
 
 	setViewport(vp: { x: number; y: number; w: number; h: number }): void {
 		const c = this.cachedViewport;

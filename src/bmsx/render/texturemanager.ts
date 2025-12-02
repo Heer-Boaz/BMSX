@@ -59,7 +59,7 @@ export class TextureManager implements RegisterablePersistent {
 		return `buf:${identifier.modelName}:${identifier.modelImageIndex}`;
 	}
 	// allow nullable face ids and nullable face loaders
-	private makeCubemapKey(name: string, faceIds: readonly (string | null)[], desc: TextureParams): TextureKey {
+	private makeCubemapKey(name: string, faceIds: readonly (string)[], desc: TextureParams): TextureKey {
 		const descKey = JSON.stringify(desc);
 		return `cubemap:${name}|faces:${faceIds.join(',')}|${descKey}`;
 	}
@@ -187,8 +187,8 @@ export class TextureManager implements RegisterablePersistent {
 		delayMs?: number;
 		assetBarrier?: AssetBarrier<TextureHandle>,
 		// loaders and face ids may be null intentionally (some faces left unset)
-		faceLoaders: readonly (Promise<TextureSource> | null)[],
-		faceIdsForKey: readonly (string | null)[],
+		faceLoaders: readonly (Promise<TextureSource>)[],
+		faceIdsForKey: readonly (string)[],
 		desc: TextureParams,
 		fallbackColor: color_arr,
 	}): TextureKey {
@@ -335,7 +335,7 @@ export class TextureManager implements RegisterablePersistent {
 		return this.loadAndCacheTexture(key, () => this.fromBuffer(uri, buffer), desc);
 	}
 
-	public getImage(key: ImageKey): TextureSource | undefined {
+	public getImage(key: ImageKey): TextureSource {
 		const imgEntry = this.imageCache.get(key);
 		return imgEntry ? imgEntry.bitmap : undefined;
 	}
@@ -410,7 +410,7 @@ export class TextureManager implements RegisterablePersistent {
 	// if the asset is atlassed, extracts the region from the atlas image
 	// returns ImageBitmap or equivalent platform-specific typed objects
 	async fromAsset(romImgAsset: RomImgAsset, options?: { flipY?: boolean; }): Promise<TextureSource> {
-		let source: ImageBitmap | Promise<ImageBitmap> | undefined;
+		let source: ImageBitmap | Promise<ImageBitmap>;
 		if (options?.flipY) {
 			source = romImgAsset._imgbinYFlipped as ImageBitmap | Promise<ImageBitmap>; // Use the private _imgbinYFlipped property
 		} else {
@@ -453,12 +453,12 @@ export class TextureManager implements RegisterablePersistent {
 		return source;
 	}
 
-	public getTexture(key: TextureKey): TextureHandle | undefined {
+	public getTexture(key: TextureKey): TextureHandle {
 		const entry = this.gpuCache.get(key);
 		return entry ? entry.handle : undefined;
 	}
 
-	public getTextureByUri(uri: string, desc: TextureParams = {}): TextureHandle | undefined {
+	public getTextureByUri(uri: string, desc: TextureParams = {}): TextureHandle {
 		return this.getTexture(this.makeKey(uri, desc));
 	}
 

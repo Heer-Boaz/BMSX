@@ -164,7 +164,7 @@ export function resolveRuntimeErrorOverlayAnchor(
 	codeTop: number,
 	textLeft: number,
 	contentRight: number,
-	availableBottom: number): RuntimeErrorOverlayAnchor | null {
+	availableBottom: number): RuntimeErrorOverlayAnchor {
 	ensureVisualLines();
 	const visualIndex = positionToVisualIndex(overlay.row, overlay.column);
 	const visibleRows = Math.max(1, Math.floor((availableBottom - codeTop) / ide_state.lineHeight));
@@ -235,7 +235,7 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 	if (overlay.hovered && overlay.hoverLine >= 0 && overlay.hoverLine < overlay.lineDescriptors.length) {
 		const descriptor = overlay.lineDescriptors[overlay.hoverLine];
 		if (descriptor && descriptor.role === 'frame') {
-			const mapping = layout.displayLineMap as number[] | undefined;
+			const mapping = layout.displayLineMap as number[];
 			if (Array.isArray(mapping) && mapping.length > 0) {
 				for (let i = 0; i < mapping.length; i += 1) {
 					if (mapping[i] === overlay.hoverLine) highlightLines.push(i);
@@ -284,7 +284,7 @@ export type RuntimeErrorOverlayDrawOptions = {
 	paddingY: number;
 	backgroundColor: number;
 	highlightColor: number;
-	highlightLines: ReadonlyArray<number> | null;
+	highlightLines: ReadonlyArray<number>;
 };
 
 export type RuntimeErrorOverlayClickResult = { kind: 'expand'; } |
@@ -301,7 +301,7 @@ export function computeRuntimeErrorOverlayLayout(
 	paddingX: number,
 	paddingY: number,
 	maxTextWidth: number
-): RuntimeErrorOverlayLayoutResult | null {
+): RuntimeErrorOverlayLayoutResult {
 	const sourceLines = overlay.lines.length > 0 ? overlay.lines : ['Runtime error'];
 	const buttonSize = Math.max(anchor.lineHeight, COPY_ICON_HEIGHT + 2);
 	const reserveWidth = buttonSize + COPY_BUTTON_GAP;
@@ -447,24 +447,24 @@ export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverl
 
 export type FaultSnapshot = {
 	message: string;
-	chunkName: string | null;
-	line: number | null;
-	column: number | null;
-	details: RuntimeErrorDetails | null;
+	chunkName: string;
+	line: number;
+	column: number;
+	details: RuntimeErrorDetails;
 	timestampMs: number;
 	fromDebugger: boolean;
 };
 
 export type FaultOverlayTarget = {
 	showRuntimeErrorInChunk: (
-		chunkName: string | null,
-		line: number | null,
-		column: number | null,
+		chunkName: string,
+		line: number,
+		column: number,
 		message: string,
-		hint: { asset_id: string | null; path?: string | null; },
-		details: RuntimeErrorDetails | null
+		hint: { asset_id: string; path?: string; },
+		details: RuntimeErrorDetails
 	) => void;
-	showRuntimeError: (line: number | null, column: number | null, message: string, details: RuntimeErrorDetails | null) => void;
+	showRuntimeError: (line: number, column: number, message: string, details: RuntimeErrorDetails) => void;
 };
 
 export function renderFaultOverlay() {
@@ -481,7 +481,7 @@ export function renderFaultOverlay() {
 }
 
 export function renderRuntimeFaultOverlay(options: {
-	snapshot: FaultSnapshot | null;
+	snapshot: FaultSnapshot;
 	luaRuntimeFailed: boolean;
 	needsFlush: boolean;
 	force?: boolean;
@@ -507,19 +507,19 @@ export function renderRuntimeFaultOverlay(options: {
 }
 
 export function showRuntimeErrorInChunk(
-	chunkName: string | null,
-	line: number | null,
-	column: number | null,
+	chunkName: string,
+	line: number,
+	column: number,
 	message: string,
-	hint?: { asset_id: string | null; path?: string | null; },
-	details?: RuntimeErrorDetails | null
+	hint?: { asset_id: string; path?: string; },
+	details?: RuntimeErrorDetails
 ): void {
 	focusChunkSource(chunkName, hint);
 	const overlayMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
-	showRuntimeError(line, column, overlayMessage, details ?? null);
+	showRuntimeError(line, column, overlayMessage, details );
 }
 
-export function showRuntimeError(line: number | null, column: number | null, message: string, details?: RuntimeErrorDetails | null): void {
+export function showRuntimeError(line: number, column: number, message: string, details?: RuntimeErrorDetails): void {
 	if (!ide_state.active) {
 		activate();
 	}
@@ -551,7 +551,7 @@ export function showRuntimeError(line: number | null, column: number | null, mes
 	const normalizedMessage = message && message.length > 0 ? message.trim() : 'Runtime error';
 	const overlayMessage = processedLine !== null ? `Line ${processedLine}:${normalizedMessage}` : normalizedMessage;
 	const messageLines = buildRuntimeErrorLines(overlayMessage);
-	const overlayDetails = cloneRuntimeErrorDetails(details ?? null);
+	const overlayDetails = cloneRuntimeErrorDetails(details );
 	const overlay: RuntimeErrorOverlay = {
 		row: targetRow,
 		column: targetColumn,

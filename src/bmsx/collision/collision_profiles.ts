@@ -8,7 +8,7 @@ export class CollisionProfileRegistry {
 		this._profiles.set(name, profile);
 	}
 
-	static get(name: string): CollisionProfile | undefined {
+	static get(name: string): CollisionProfile {
 		return this._profiles.get(name);
 	}
 

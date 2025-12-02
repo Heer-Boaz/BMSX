@@ -50,7 +50,7 @@ function editorAllowsMutation(): boolean {
  * The anchor is one end of the selection range; the cursor is the other end.
  * @param position The position to set as the anchor, or null to clear
  */
-export function setSelectionAnchorPosition(position: Position | null): void {
+export function setSelectionAnchorPosition(position: Position): void {
 	if (!position) {
 		ide_state.selectionAnchor = null;
 		return;
@@ -90,7 +90,7 @@ export function comparePositions(a: Position, b: Position): number {
  * Gets the current selection range with normalized start/end positions.
  * @returns The selection range with start <= end, or null if no selection
  */
-export function getSelectionRange(): { start: Position; end: Position } | null {
+export function getSelectionRange(): { start: Position; end: Position } {
 	const anchor = ide_state.selectionAnchor;
 	if (!anchor) {
 		return null;
@@ -109,7 +109,7 @@ export function getSelectionRange(): { start: Position; end: Position } | null {
  * Gets the text content of the current selection.
  * @returns The selected text, or null if no selection
  */
-export function getSelectionText(): string | null {
+export function getSelectionText(): string {
 	const range = getSelectionRange();
 	if (!range) {
 		return null;
@@ -232,7 +232,7 @@ export function selectWordAtPosition(row: number, column: number): void {
  * @param position The position to clamp, or null
  * @returns The clamped position, or null if input was null
  */
-export function clampSelectionPosition(position: Position | null): Position | null {
+export function clampSelectionPosition(position: Position): Position {
 	if (!position || ide_state.lines.length === 0) {
 		return null;
 	}
@@ -262,7 +262,7 @@ export function clampSelectionPosition(position: Position | null): Position | nu
  * @param column Current column
  * @returns The new position, or null if at the start of the document
  */
-export function stepLeft(row: number, column: number): { row: number; column: number } | null {
+export function stepLeft(row: number, column: number): { row: number; column: number } {
 	if (column > 0) {
 		return { row, column: column - 1 };
 	}
@@ -278,7 +278,7 @@ export function stepLeft(row: number, column: number): { row: number; column: nu
  * @param column Current column
  * @returns The new position, or null if at the end of the document
  */
-export function stepRight(row: number, column: number): { row: number; column: number } | null {
+export function stepRight(row: number, column: number): { row: number; column: number } {
 	const length = ide_state.lines[row].length;
 	if (column < length) {
 		return { row, column: column + 1 };
@@ -1201,7 +1201,7 @@ export function handlePostEditMutation(): void {
 	const finalContext = applyCaseNormalizationIfNeeded(editContext);
 	ide_state.completion.updateAfterEdit(finalContext);
 }
-export function computeEditContextFromSources(previous: string, next: string): EditContext | null {
+export function computeEditContextFromSources(previous: string, next: string): EditContext {
 	if (previous === next) {
 		return null;
 	}

@@ -63,9 +63,9 @@ import { CaretNavigationState } from './caret';
 
 export type NavigationHistoryEntry = {
 	contextId: string;
-	asset_id: string | null;
-	chunkName: string | null;
-	path: string | null;
+	asset_id: string;
+	chunkName: string;
+	path: string;
 	row: number;
 	column: number;
 };
@@ -109,7 +109,7 @@ export const workspaceDirtyCache = new Map<string, string>();
 
 export type DebuggerControlsState = {
 	executionState: DebuggerExecutionState;
-	sessionMetrics: LuaDebuggerSessionMetrics | null;
+	sessionMetrics: LuaDebuggerSessionMetrics;
 };
 
 export interface IdeState {
@@ -121,16 +121,16 @@ export interface IdeState {
 	cursorColumn: number;
 	caseInsensitive: boolean;
 	canonicalization: CanonicalizationType;
-	preMutationSource: string | null;
+	preMutationSource: string;
 	scrollRow: number;
 	scrollColumn: number;
 	dirty: boolean;
 	desiredColumn: number;
 	desiredDisplayOffset: number;
-	selectionAnchor: Position | null;
+	selectionAnchor: Position;
 	undoStack: EditorSnapshot[];
 	redoStack: EditorSnapshot[];
-	lastHistoryKey: string | null;
+	lastHistoryKey: string;
 	lastHistoryTimestamp: number;
 	metadata: BmsxCartMetadata;
 	fontVariant: ConsoleFontVariant;
@@ -140,18 +140,18 @@ export interface IdeState {
 	saveLuaResourceFn: (asset_id: string, source: string) => Promise<void>;
 	createLuaResourceFn: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
 	listResourcesFn: () => ConsoleResourceDescriptor[];
-	inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
+	inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult;
 	listLuaObjectMembersFn: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
 	listLuaModuleSymbolsFn: (moduleName: string) => ConsoleLuaSymbolEntry[];
-	listLuaSymbolsFn: (asset_id: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
+	listLuaSymbolsFn: (asset_id: string, chunkName: string) => ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
 	listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
-	builtinIdentifierCache: { key: string; set: ReadonlySet<string> } | null;
-	hoverTooltip: CodeHoverTooltip | null;
-	lastPointerSnapshot: PointerSnapshot | null;
-	lastInspectorResult: ConsoleLuaHoverResult | null;
+	builtinIdentifierCache: { key: string; set: ReadonlySet<string> };
+	hoverTooltip: CodeHoverTooltip;
+	lastPointerSnapshot: PointerSnapshot;
+	lastInspectorResult: ConsoleLuaHoverResult;
 	inspectorRequestFailed: boolean;
-	gotoHoverHighlight: { row: number; startColumn: number; endColumn: number; expression: string } | null;
+	gotoHoverHighlight: { row: number; startColumn: number; endColumn: number; expression: string };
 	viewportWidth: number;
 	viewportHeight: number;
 	font: ConsoleEditorFont;
@@ -164,9 +164,9 @@ export interface IdeState {
 	tabBarRowCount: number;
 	baseBottomMargin: number;
 	repeatState: Map<string, RepeatEntry>;
-	deferredMessageDuration: number | null;
-	runtimeErrorOverlay: RuntimeErrorOverlay | null;
-	executionStopRow: number | null;
+	deferredMessageDuration: number;
+	runtimeErrorOverlay: RuntimeErrorOverlay;
+	executionStopRow: number;
 	clockNow: () => number;
 	problemsPanel: ProblemsPanelController;
 	problemsPanelResizing: boolean;
@@ -175,26 +175,26 @@ export interface IdeState {
 	diagnosticsDirty: boolean;
 	diagnosticsCache: Map<string, DiagnosticsCacheEntry>;
 	dirtyDiagnosticContexts: Set<string>;
-	diagnosticsDueAtMs: number | null;
+	diagnosticsDueAtMs: number;
 	diagnosticsComputationScheduled: boolean;
 	codeTabContexts: Map<string, CodeTabContext>;
-	activeCodeTabContextId: string | null;
-	entryAssetId: string | null;
-	entryTabId: string | null;
+	activeCodeTabContextId: string;
+	entryAssetId: string;
+	entryTabId: string;
 	topBarButtonBounds: Record<TopBarButtonId, RectBounds>;
 	menuEntryBounds: Record<MenuId, RectBounds>;
-	menuDropdownBounds: RectBounds | null;
-	openMenuId: MenuId | null;
+	menuDropdownBounds: RectBounds;
+	openMenuId: MenuId;
 	debuggerControls: DebuggerControlsState;
 	breakpoints: Map<string, Set<number>>;
 	tabButtonBounds: Map<string, RectBounds>;
 	tabCloseButtonBounds: Map<string, RectBounds>;
 	activeContextReadOnly: boolean;
-	resourceViewerSpriteId: string | null;
-	resourceViewerSpriteAsset: string | null;
+	resourceViewerSpriteId: string;
+	resourceViewerSpriteAsset: string;
 	resourceViewerSpriteScale: number;
-	actionPromptButtons: { saveAndContinue: RectBounds | null; continue: RectBounds; cancel: RectBounds };
-	pendingActionPrompt: PendingActionPrompt | null;
+	actionPromptButtons: { saveAndContinue: RectBounds; continue: RectBounds; cancel: RectBounds };
+	pendingActionPrompt: PendingActionPrompt;
 	active: boolean;
 	message: MessageState;
 	showMessage: (text: string, color: number, durationSeconds: number) => void;
@@ -217,22 +217,22 @@ export interface IdeState {
 	input: InputController;
 	windowFocused: boolean;
 	pendingWindowFocused: boolean;
-	disposeVisibilityListener: (() => void) | null;
-	disposeWindowEventListeners: (() => void) | null;
+	disposeVisibilityListener: (() => void);
+	disposeWindowEventListeners: (() => void);
 	lastPointerClickTimeMs: number;
 	lastPointerClickRow: number;
 	lastPointerClickColumn: number;
-	tabHoverId: string | null;
-	tabDragState: TabDragState | null;
-	crtOptionsSnapshot: CrtOptionsSnapshot | null;
+	tabHoverId: string;
+	tabDragState: TabDragState;
+	crtOptionsSnapshot: CrtOptionsSnapshot;
 	cursorRevealSuspended: boolean;
 	searchActive: boolean;
 	searchVisible: boolean;
 	searchQuery: string;
 	symbolSearchQuery: string;
 	resourceSearchQuery: string;
-	pendingEditContext: EditContext | null;
-	cursorScreenInfo: CursorScreenInfo | null;
+	pendingEditContext: EditContext;
+	cursorScreenInfo: CursorScreenInfo;
 	lineJumpActive: boolean;
 	symbolSearchActive: boolean;
 	symbolSearchVisible: boolean;
@@ -245,12 +245,12 @@ export interface IdeState {
 	createResourceActive: boolean;
 	createResourceVisible: boolean;
 	createResourcePath: string;
-	createResourceError: string | null;
+	createResourceError: string;
 	createResourceWorking: boolean;
-	lastCreateResourceDirectory: string | null;
+	lastCreateResourceDirectory: string;
 	symbolCatalog: SymbolCatalogEntry[];
 	referenceCatalog: ReferenceCatalogEntry[];
-	symbolCatalogContext: { scope: 'local' | 'global'; asset_id: string | null; chunkName: string | null } | null;
+	symbolCatalogContext: { scope: 'local' | 'global'; asset_id: string; chunkName: string };
 	symbolSearchMatches: SymbolSearchResult[];
 	symbolSearchSelectionIndex: number;
 	symbolSearchDisplayOffset: number;
@@ -262,29 +262,29 @@ export interface IdeState {
 	resourceSearchHoverIndex: number;
 	searchMatches: SearchMatch[];
 	searchCurrentIndex: number;
-	searchJob: SearchComputationJob | null;
+	searchJob: SearchComputationJob;
 	searchDisplayOffset: number;
 	searchHoverIndex: number;
 	searchScope: 'local' | 'global';
 	globalSearchMatches: GlobalSearchMatch[];
-	globalSearchJob: GlobalSearchJob | null;
+	globalSearchJob: GlobalSearchJob;
 	diagnosticsTaskPending: boolean;
-	lastReportedSemanticError: string | null;
+	lastReportedSemanticError: string;
 	referenceState: ReferenceState;
 	textVersion: number;
-	lastContentEditAtMs: number | null;
+	lastContentEditAtMs: number;
 	saveGeneration: number;
 	appliedGeneration: number;
 	lastSavedSource: string;
 	tabs: EditorTabDescriptor[];
-	activeTabId: string | null;
+	activeTabId: string;
 	resourceBrowserItems: ResourceBrowserItem[];
 	resourceBrowserSelectionIndex: number;
 	resourcePanelVisible: boolean;
 	resourcePanelFocused: boolean;
 	resourcePanelResourceCount: number;
-	pendingResourceSelectionAssetId: string | null;
-	resourcePanelWidthRatio: number | null;
+	pendingResourceSelectionAssetId: string;
+	resourcePanelWidthRatio: number;
 	resourcePanelResizing: boolean;
 	resourcePanel: ResourcePanelController;
 	renameController: RenameController;
@@ -296,24 +296,24 @@ export interface IdeState {
 	cachedVisibleColumnCount: number;
 	dimCrtInEditor: boolean;
 	wordWrapEnabled: boolean;
-	lastPointerRowResolution: { visualIndex: number; segment: VisualLineSegment | null } | null;
+	lastPointerRowResolution: { visualIndex: number; segment: VisualLineSegment };
 	completion: CompletionController;
 	navigationHistory: {
 		back: NavigationHistoryEntry[];
 		forward: NavigationHistoryEntry[];
-		current: NavigationHistoryEntry | null;
+		current: NavigationHistoryEntry;
 	};
 	navigationCaptureSuspended: boolean;
-	customClipboard: string | null;
+	customClipboard: string;
 	workspaceAutosaveEnabled: boolean;
 	workspaceAutosaveSignature: string;
-	workspaceAutosaveHandle: TimerHandle | { cancel(): void } | null;
+	workspaceAutosaveHandle: TimerHandle | { cancel(): void };
 	workspaceAutosaveRunning: boolean;
 	workspaceAutosaveQueued: boolean;
-	disposeWorkspaceExitListener: (() => void) | null;
-	workspaceRestorePromise: Promise<void> | null;
+	disposeWorkspaceExitListener: (() => void);
+	workspaceRestorePromise: Promise<void>;
 	serverWorkspaceConnected: boolean;
-	lastEscapePressId: number | null;
+	lastEscapePressId: number;
 }
 
 export const ide_state: IdeState = {
@@ -533,7 +533,7 @@ export const ide_state: IdeState = {
 	navigationHistory: {
 		back: [] as NavigationHistoryEntry[],
 		forward: [] as NavigationHistoryEntry[],
-		current: null as NavigationHistoryEntry | null,
+		current: null as NavigationHistoryEntry,
 	},
 	navigationCaptureSuspended: false,
 	customClipboard: null,

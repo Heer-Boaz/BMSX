@@ -55,7 +55,7 @@ export class BmsxConsoleStorage {
 		return { namespace: this.namespace, entries };
 	}
 
-	public restore(state: { namespace: string; entries: Array<{ index: number; value: number }> } | undefined): void {
+	public restore(state: { namespace: string; entries: Array<{ index: number; value: number }> }): void {
 		const previousIndices = Array.from(this.touchedIndices);
 		for (const index of previousIndices) {
 			this.storage.removeItem(this.keyFor(index));

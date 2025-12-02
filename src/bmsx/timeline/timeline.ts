@@ -61,7 +61,7 @@ export interface TimelineFrameEvent<T = any> {
 	kind: 'frame';
 	previous: number;
 	current: number;
-	value: T | undefined;
+	value: T;
 	rewound: boolean;
 	reason: TimelineFrameChangeReason;
 	direction: 1 | -1;
@@ -169,7 +169,7 @@ export class Timeline<T = any> {
 		return this._direction;
 	}
 
-	get value(): T | undefined {
+	get value(): T {
 		if (this._head < 0 || this._head >= this.frames.length) return undefined;
 		return this.frames[this._head];
 	}

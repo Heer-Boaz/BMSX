@@ -188,7 +188,7 @@ export class InputActionEffectSystem extends ECSystem {
 		target[finalKey] = value as never;
 	}
 
-	private resolveIntentPlayerInput(component: InputIntentComponent, owner: WorldObject): PlayerInput | null {
+	private resolveIntentPlayerInput(component: InputIntentComponent, owner: WorldObject): PlayerInput {
 		const explicitIndex = component.playerIndex ?? 0;
 		const fallback = (owner as { player_index?: number }).player_index ?? 0;
 		const resolved = explicitIndex > 0 ? explicitIndex : fallback;
@@ -256,7 +256,7 @@ export class InputActionEffectSystem extends ECSystem {
 			}
 
 			let matched = false;
-			const runEffect = (effect: EffectExecutor | undefined): boolean => {
+			const runEffect = (effect: EffectExecutor): boolean => {
 				if (!effect) return false;
 				effect(env);
 				return true;
@@ -373,7 +373,7 @@ export class InputActionEffectSystem extends ECSystem {
 		this.patternCache.set(pattern, predicate);
 		if (this.patternCache.size > this.patternCacheMax) {
 			const iterator = this.patternCache.keys();
-			const firstKey = iterator.next().value as string | undefined;
+			const firstKey = iterator.next().value as string;
 			if (firstKey !== undefined && firstKey !== pattern) this.patternCache.delete(firstKey);
 		}
 		return predicate;

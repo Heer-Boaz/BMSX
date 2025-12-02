@@ -19,10 +19,10 @@ export class Space  {
 	 * Returns the WorldObject with the specified ID, or undefined if no such object exists in this space.
 	 * @template T - The type of the WorldObject to return.
 	 * @param {Identifier} id - The ID of the WorldObject to retrieve.
-	 * @returns {T | undefined} The WorldObject with the specified ID, or undefined if no such object exists in this space.
+	 * @returns {T} The WorldObject with the specified ID, or undefined if no such object exists in this space.
 	 */
-	public get<T extends WorldObject>(id: Identifier): T | undefined {
-		return this.objectsById.get(id) as T | undefined;
+	public get<T extends WorldObject>(id: Identifier): T {
+		return this.objectsById.get(id) as T;
 	}
 
 	public id: Identifier;

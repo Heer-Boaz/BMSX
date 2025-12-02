@@ -24,7 +24,7 @@ function resolveSkyboxImage(assetId: string): Promise<TextureSource> {
 	return binPromise;
 }
 
-let vaoSkybox: WebGLVertexArrayObject | null = null;
+let vaoSkybox: WebGLVertexArrayObject = null;
 let skyboxProgram: WebGLProgram;
 let skyboxPositionLocation: number;
 let skyboxViewLocation: WebGLUniformLocation;
@@ -34,9 +34,9 @@ let skyboxDitherIntensityLocation: WebGLUniformLocation;
 let skyboxTintLocation: WebGLUniformLocation;
 let skyboxExposureLocation: WebGLUniformLocation;
 
-export let skyboxKey: TextureKey | undefined; export let skyboxFaceIds: SkyboxImageIds | undefined; const skyboxGroup = taskGate.group('texture:skybox:main');
-let lastBoundSkyboxTexture: TextureHandle | null = null;
-export let skyboxBuffer: WebGLBuffer; export let skyboxTexture: TextureHandle | null = null;
+export let skyboxKey: TextureKey; export let skyboxFaceIds: SkyboxImageIds; const skyboxGroup = taskGate.group('texture:skybox:main');
+let lastBoundSkyboxTexture: TextureHandle = null;
+export let skyboxBuffer: WebGLBuffer; export let skyboxTexture: TextureHandle = null;
 export function init(backend: WebGLBackend): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	vaoSkybox = gl.createVertexArray()!;
@@ -51,7 +51,7 @@ export function init(backend: WebGLBackend): void {
 export function createSkyboxProgram(backend: WebGLBackend): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	// Prefer program that PipelineManager bound before bootstrap
-	const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+	const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 	if (current) { skyboxProgram = current; return; }
 	const program = backend.buildProgram(skyboxVS, skyboxFS, 'skybox');
 	if (!program) throw Error('Failed to build skybox shader program');
@@ -59,7 +59,7 @@ export function createSkyboxProgram(backend: WebGLBackend): void {
 }
 export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
 	if (!skyboxProgram) {
-		const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+		const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 		if (!current) throw new Error('Skybox program not bound during bootstrap');
 		skyboxProgram = current;
 	}
@@ -118,12 +118,12 @@ export function setSkyboxImages(ids: SkyboxImageIds) {
 
 	// Keep face id tuple in parallel; missing ids are represented as null
 	const faceIdsForKey = [
-		posX ?? null,
-		negX ?? null,
-		posY ?? null,
-		negY ?? null,
-		posZ ?? null,
-		negZ ?? null,
+		posX ,
+		negX ,
+		posY ,
+		negY ,
+		posZ ,
+		negZ ,
 	] as const;
 
 	skyboxKey = $.texmanager.acquireCubemap({
@@ -200,7 +200,7 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 			const cam = $.world.activeCamera3D;
 			if (!cam) return;
-			const tex = $.texmanager.getTexture(skyboxKey) as TextureHandle | undefined;
+			const tex = $.texmanager.getTexture(skyboxKey) as TextureHandle;
 			if (!tex) return;
 			// Update state with dynamic data (reuse camera matrices)
 			const mats = cam.getMatrices();

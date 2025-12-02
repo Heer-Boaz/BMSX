@@ -1,4 +1,4 @@
-import type { Area, AudioMeta, BmsxCartridge, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomLuaAsset, RomMeta, RomPack, TextureSource, color_arr } from '../../src/bmsx/rompack/rompack';
+import { normalizeLuaAsset, type Area, type AudioMeta, type BmsxCartridge, type GLTFMaterial, type GLTFModel, type ImgMeta, type Polygon, type RomAsset, type RomImgAsset, type RomLuaAsset, type RomMeta, type RomPack, type TextureSource, type color_arr } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../../src/bmsx/serializer/binencoder';
 
 export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
@@ -70,7 +70,7 @@ export async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer):
 	return { zipped_rom: blob_buffer, romlabel: undefined };
 }
 
-export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsset[]; projectRootPath: string | null }> {
+export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsset[]; projectRootPath: string }> {
 	const sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
 	let decoded: unknown;
 	try {
@@ -79,12 +79,12 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 		console.error('[loadAssetList] decodeBinary error:', e);
 		throw e;
 	}
-	let projectRootPath: string | null = null;
+	let projectRootPath: string = null;
 	let assetList: RomAsset[];
 	if (Array.isArray(decoded)) {
 		assetList = decoded as RomAsset[];
 	} else if (decoded && typeof decoded === 'object' && Array.isArray((decoded as any).assets)) {
-		const payload = decoded as { assets: RomAsset[]; projectRootPath?: string | null };
+		const payload = decoded as { assets: RomAsset[]; projectRootPath?: string };
 		assetList = payload.assets;
 		if (typeof payload.projectRootPath === 'string' && payload.projectRootPath.length > 0) {
 			projectRootPath = payload.projectRootPath;
@@ -250,7 +250,7 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 		code: null,
 		audioevents: {},
 		cart,
-		project_root_path: projectRootPath ?? null,
+		project_root_path: projectRootPath,
 	};
 
 	await Promise.all(assets.map(a => load(rom, a, result, opts)));
@@ -309,7 +309,7 @@ async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
 export async function loadModelFromBuffer(asset_id: string, buffer: ArrayBuffer, textureBuf?: ArrayBuffer): Promise<GLTFModel> {
 	const obj = decodeBinary(new Uint8Array(buffer), { zeroCopyBin: true });
 
-	function toIndices(v: any, componentType?: number): Uint8Array | Uint16Array | Uint32Array | undefined {
+	function toIndices(v: any, componentType?: number): Uint8Array | Uint16Array | Uint32Array {
 		if (v === undefined || v === null) return undefined;
 		if (ArrayBuffer.isView(v)) {
 			const u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
@@ -354,10 +354,10 @@ export async function loadModelFromBuffer(asset_id: string, buffer: ArrayBuffer,
 		colors: toF32(m.colors),
 
 	}));
-	const textures: number[] | undefined = obj.textures;
+	const textures: number[] = obj.textures;
 	const materials = obj.materials as GLTFMaterial[];
 	const texBytes = textureBuf ? new Uint8Array(textureBuf) : undefined;
-	let imageBuffers: ArrayBuffer[] | undefined = undefined;
+	let imageBuffers: ArrayBuffer[] = undefined;
 	if (Array.isArray(obj.imageBuffers) && obj.imageBuffers.length) {
 		imageBuffers = obj.imageBuffers.map((buf: any) => {
 			if (buf instanceof ArrayBuffer) return buf;
@@ -376,7 +376,7 @@ export async function loadModelFromBuffer(asset_id: string, buffer: ArrayBuffer,
 		});
 	}
 
-	function textureIndexToTextureObject(index: number): number | undefined {
+	function textureIndexToTextureObject(index: number): number {
 		if (index === undefined || index === null) return undefined;
 		if (typeof index !== 'number') {
 			console.warn(`Invalid texture index type: ${typeof index}. Expected a number.`);
@@ -444,7 +444,7 @@ export async function loadModelFromBuffer(asset_id: string, buffer: ArrayBuffer,
 }
 
 async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean; }): Promise<ImageBitmap | TextureSource> {
-	let source: TextureSource | ImageBitmap | Promise<ImageBitmap> | undefined;
+	let source: TextureSource | ImageBitmap | Promise<ImageBitmap>;
 	if (options?.flipY) {
 		source = romImgAsset._imgbinYFlipped as TextureSource; // Use the private _imgbinYFlipped property
 	} else {
@@ -493,7 +493,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 	switch (res.type) {
 		case 'image':
 		case 'atlas': {
-			let img: TextureSource | undefined = undefined;
+			let img: TextureSource = undefined;
 			if (!res.imgmeta?.atlassed) {
 				if (opts && opts.loadImageFromBuffer) {
 					img = await opts.loadImageFromBuffer(rom.slice(res.start, res.end));
@@ -584,7 +584,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				throw new Error(`Failed to load 'data' from rom: ${err.message}.`);
 			}
 			break;
-	case 'aem': {
+		case 'aem': {
 			try {
 				const u8 = new Uint8Array(rom.slice(res.start, res.end));
 				const audioevents = decodeBinary(u8);
@@ -595,20 +595,20 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 			}
 			break;
 		}
-	case 'romlabel':
-	case 'rommanifest':
-		if (res.type === 'rommanifest') {
-			try {
-				const slice = rom.slice(res.start, res.end);
-				const text = new TextDecoder('utf-8').decode(slice);
-				const parsed = JSON.parse(text);
-				romResult.manifest = parsed;
-				romResult.data[res.resid] = parsed;
-			} catch (err: any) {
-				throw new Error(`Failed to load 'rommanifest' from rom: ${err.message}.`);
+		case 'romlabel':
+		case 'rommanifest':
+			if (res.type === 'rommanifest') {
+				try {
+					const slice = rom.slice(res.start, res.end);
+					const text = new TextDecoder('utf-8').decode(slice);
+					const parsed = JSON.parse(text);
+					romResult.manifest = parsed;
+					romResult.data[res.resid] = parsed;
+				} catch (err: any) {
+					throw new Error(`Failed to load 'rommanifest' from rom: ${err.message}.`);
+				}
 			}
-		}
-		break;
+			break;
 		default:
 			throw new Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack!`);
 	}
@@ -616,7 +616,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 
 function loadImage(src: string): ImageBitmap | PromiseLike<ImageBitmap> {
 	// Use an async IIFE so we can return a Promise<ImageBitmap>
-	return (async function(): Promise<ImageBitmap> {
+	return (async function (): Promise<ImageBitmap> {
 		// Prefer fetch + createImageBitmap when possible (handles data: and blob: URLs well)
 		if (typeof fetch === 'function' && typeof createImageBitmap === 'function') {
 			try {
@@ -677,18 +677,6 @@ function loadImage(src: string): ImageBitmap | PromiseLike<ImageBitmap> {
 			img.src = src;
 		});
 	})();
-}function normalizeLuaAsset(cart: BmsxCartridge, asset: RomLuaAsset): void {
-	const sourcePath = asset.source_path && asset.source_path.length > 0 ? asset.source_path : asset.resid;
-	const chunkName = asset.chunk_name && asset.chunk_name.length > 0
-		? asset.chunk_name
-		: asset.source_path && asset.source_path.length > 0
-			? `@${asset.source_path}`
-			: `@lua/${asset.resid}`;
-	const normalizedChunkName = chunkName.startsWith('@') ? chunkName : `@${chunkName}`;
-	asset.chunk_name = normalizedChunkName;
-	asset.normalized_source_path = sourcePath;
-	cart.chunk2lua[normalizedChunkName] = asset;
-	cart.source2lua[sourcePath] = asset;
 }
 
 export function normalizeCartLua(cart: BmsxCartridge): void {
@@ -710,14 +698,3 @@ export function normalizeCartLua(cart: BmsxCartridge): void {
 		normalizeLuaAsset(cart, asset);
 	}
 }
-
-export function normalizeNewLuaAsset(cart: BmsxCartridge, asset: RomLuaAsset): void {
-	if (!cart.chunk2lua) {
-		cart.chunk2lua = {};
-	}
-	if (!cart.source2lua) {
-		cart.source2lua = {};
-	}
-	normalizeLuaAsset(cart, asset);
-}
-

@@ -60,7 +60,7 @@ type ConsoleModeOptions = {
 	canonicalization?: CanonicalizationType;
 	caseInsensitiveUppercaseDisplay?: boolean;
 	maxEntries?: number;
-	listLuaSymbols: (asset_id: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
+	listLuaSymbols: (asset_id: string, chunkName: string) => ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
 	listLuaModuleSymbols: (moduleName: string) => ConsoleLuaSymbolEntry[];
 	listBuiltinLuaFunctions: () => ConsoleLuaBuiltinDescriptor[];
@@ -71,8 +71,8 @@ type CompletionMemberRequest = {
 	objectName: string;
 	operator: '.' | ':';
 	prefix: string;
-	asset_id: asset_id | null;
-	chunkName: string | null;
+	asset_id: asset_id;
+	chunkName: string;
 };
 
 const MAX_OUTPUT_ENTRIES = 512;
@@ -99,7 +99,7 @@ export class ConsoleMode {
 	private readonly uppercaseDisplayOverride: boolean;
 	private readonly maxEntries: number;
 	private readonly playerIndex: number;
-	private readonly listLuaSymbolsFn: (asset_id: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
+	private readonly listLuaSymbolsFn: (asset_id: string, chunkName: string) => ConsoleLuaSymbolEntry[];
 	private readonly listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
 	private readonly listLuaModuleSymbolsFn: (moduleName: string) => ConsoleLuaSymbolEntry[];
 	private readonly listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
@@ -110,7 +110,7 @@ export class ConsoleMode {
 	private readonly field: TextField = createInlineTextField();
 	private readonly output: ConsoleOutputEntry[] = [];
 	private readonly history: string[] = [];
-	private historyIndex: number | null = null;
+	private historyIndex: number = null;
 	private readonly editingRepeatState = new Map<string, number>();
 	private readonly historyRepeatState = new Map<string, number>();
 	private readonly completionRepeatState = new Map<string, number>();
@@ -134,17 +134,17 @@ export class ConsoleMode {
 		setCursorFromOffset(this.field, offset);
 	}
 
-	private anchorOffset(): number | null {
+	private anchorOffset(): number {
 		return selectionAnchorOffset(this.field);
 	}
 
-	private setSelectionAnchor(offset: number | null): void {
+	private setSelectionAnchor(offset: number): void {
 		setSelectionAnchorFromOffset(this.field, offset);
 	}
 	private cachedLines: string[] = [''];
 	private cachedLinesVersion = -1;
 	private promptPrefix = '> ';
-	private cursorScreenInfo: CursorScreenInfo | null = null;
+	private cursorScreenInfo: CursorScreenInfo = null;
 	constructor(options: ConsoleModeOptions) {
 		this.font = new ConsoleEditorFont(options.fontVariant);
 		this.canonicalization = options.canonicalization ?? 'none';
@@ -253,7 +253,7 @@ export class ConsoleMode {
 		this.completion.processPending(deltaSeconds);
 	}
 
-	public handleInput(deltaSeconds: number): string | null {
+	public handleInput(deltaSeconds: number): string {
 		if (!this.active) {
 			return null;
 		}
@@ -383,7 +383,7 @@ export class ConsoleMode {
 		this.resetInputField(entry);
 	}
 
-	private trySubmitCommand(): string | null {
+	private trySubmitCommand(): string {
 		const enterPressed = isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter');
 		if (!enterPressed) {
 			return null;
@@ -510,7 +510,7 @@ export class ConsoleMode {
 		this.handleTextMutation(previous, context);
 	}
 
-	private buildEditContext(previous: string, next: string): EditContext | null {
+	private buildEditContext(previous: string, next: string): EditContext {
 		if (previous === next) {
 			return null;
 		}
@@ -532,7 +532,7 @@ export class ConsoleMode {
 		return deleted.length > 0 ? { kind: 'delete', text: deleted } : null;
 	}
 
-	private handleTextMutation(previousText: string | null, editContext: EditContext | null): void {
+	private handleTextMutation(previousText: string, editContext: EditContext): void {
 		if (this.canonicalization !== 'none') {
 			const before = this.fieldText();
 			const normalized = this.normalizeInputCase(before);
@@ -628,7 +628,7 @@ export class ConsoleMode {
 				insertText: entry.name,
 				sortKey: `${kind}:${entry.name.toLowerCase()}`,
 				kind,
-				detail: entry.detail ?? null,
+				detail: entry.detail ,
 				parameters,
 			});
 		}
@@ -697,7 +697,7 @@ export class ConsoleMode {
 		const cursorIndex = this.cursorOffset();
 		const uppercaseDisplay = this.useUppercaseDisplay();
 		const displayText = this.toDisplayText(this.fieldText(), uppercaseDisplay);
-		let nextCursorInfo: CursorScreenInfo | null = null;
+		let nextCursorInfo: CursorScreenInfo = null;
 		const cursorPosition = this.getCursorPosition();
 
 		for (let si = 0; si < wrap.segments.length; si += 1) {

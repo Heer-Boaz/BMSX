@@ -24,7 +24,7 @@ export const StateDefinitions: Record<string, StateDefinition> = {};
 export const ActiveStateMachines: Map<string, State<Stateful>[]> = new Map();
 const stateMachineBlueprintSignatures: Map<Identifier, string> = new Map();
 type GenericHandler = (this: any, ...args: any[]) => any;
-function filterValidStateMachineInstances(machineId: Identifier, instances: ReadonlyArray<State<Stateful>> | undefined): State<Stateful>[] {
+function filterValidStateMachineInstances(machineId: Identifier, instances: ReadonlyArray<State<Stateful>>): State<Stateful>[] {
 	if (!instances || instances.length === 0) {
 		ActiveStateMachines.delete(machineId);
 		return [];
@@ -69,7 +69,7 @@ function unsubscribeStateMachineEvents(instances: readonly State<Stateful>[], de
 	}
 }
 
-function hotReloadStateMachine(machineId: Identifier, previousDefinition: StateDefinition | undefined, newDefinition: StateDefinition): void {
+function hotReloadStateMachine(machineId: Identifier, previousDefinition: StateDefinition, newDefinition: StateDefinition): void {
 	if (!previousDefinition) return;
 	const instances = filterValidStateMachineInstances(machineId, ActiveStateMachines.get(machineId));
 	if (instances.length === 0) return;
@@ -106,7 +106,7 @@ function registerDefinitionTree(def: StateDefinition): void {
 	}
 	if (!def.states) return;
 	for (const stateId of Object.keys(def.states)) {
-		const child = def.states[stateId] as StateDefinition | undefined;
+		const child = def.states[stateId] as StateDefinition;
 		if (child) registerDefinitionTree(child);
 	}
 }
@@ -152,7 +152,7 @@ export function registerHandlersForLinkedMachines(ctor: any, linkedMachines: Set
 }
 
 // ---------- Diff-based, tree-aware migration ----------
-export function migrateMachineDiff(root: State<Stateful>, oldRootDef: StateDefinition | undefined, newRootDef: StateDefinition) {
+export function migrateMachineDiff(root: State<Stateful>, oldRootDef: StateDefinition, newRootDef: StateDefinition) {
 	// Reconcile subtree shape (add/remove child State instances to match new defs)
 	reconcileStateTree(root, oldRootDef, newRootDef);
 
@@ -167,7 +167,7 @@ export function migrateMachineDiff(root: State<Stateful>, oldRootDef: StateDefin
 }
 
 /** Ensure the instance’s children match the new StateDefinition tree. */
-function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | undefined, newDef: StateDefinition) {
+function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition, newDef: StateDefinition) {
 	const newChildren = Object.keys(newDef.states ?? {});
 	const oldChildren = Object.keys(node.states ?? {});
 
@@ -198,7 +198,7 @@ function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | und
 		const childInst = node.states ? node.states[id] : undefined;
 		if (childInst) {
 			const oldChildStates = oldDef ? oldDef.states : undefined;
-			const oldChildDef = oldChildStates ? oldChildStates[id] as StateDefinition | undefined : undefined;
+			const oldChildDef = oldChildStates ? oldChildStates[id] as StateDefinition : undefined;
 			const childStates = newDef.states;
 			const newChildDef = childStates ? childStates[id] as StateDefinition : undefined;
 			if (!newChildDef) {
@@ -219,7 +219,7 @@ function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | und
 }
 
 /** Merge runtime data with new defaults, respecting old defaults to detect user-changed values. */
-function migrateDataTree(node: State<Stateful>, oldDef: StateDefinition | undefined, newDef: StateDefinition) {
+function migrateDataTree(node: State<Stateful>, oldDef: StateDefinition, newDef: StateDefinition) {
 	const oldDefaults = oldDef ? oldDef.data ?? {} : {};
 	const newDefaults = newDef.data ?? {};
 	node.data = mergeDataWithDefaults(node.data, oldDefaults, newDefaults);
@@ -228,9 +228,9 @@ function migrateDataTree(node: State<Stateful>, oldDef: StateDefinition | undefi
 	for (const id in states) {
 		const child = states[id];
 		const oldChildStates = oldDef ? oldDef.states : undefined;
-		const oldChildDef = oldChildStates ? oldChildStates[id] as StateDefinition | undefined : undefined;
+		const oldChildDef = oldChildStates ? oldChildStates[id] as StateDefinition : undefined;
 		const newChildStates = newDef.states;
-		const newChildDef = newChildStates ? newChildStates[id] as StateDefinition | undefined : undefined;
+		const newChildDef = newChildStates ? newChildStates[id] as StateDefinition : undefined;
 		if (child && newChildDef) {
 			migrateDataTree(child, oldChildDef, newChildDef);
 		}
@@ -474,7 +474,7 @@ function looksLikeStatePath(value: string): boolean {
 		value.includes('/');
 }
 
-function createBuiltinHandlerFromString(value: string): GenericHandler | undefined {
+function createBuiltinHandlerFromString(value: string): GenericHandler {
 	if (!value || value.includes('.handlers.')) return undefined;
 	if (!looksLikeStatePath(value)) return undefined;
 	return function () { return value; };
@@ -504,12 +504,12 @@ function hoistSlot(owner: Record<string, any>, slot: string, id: string): void {
 }
 
 // @ts-ignore
-type EventSlots = { [K in keyof StateEventDefinition]-?: StateEventDefinition[K] extends Function | undefined ? K : never }[keyof StateEventDefinition];
+type EventSlots = { [K in keyof StateEventDefinition]-?: StateEventDefinition[K] extends Function ? K : never }[keyof StateEventDefinition];
 // @ts-ignore
-type GuardSlots = { [K in keyof StateGuard]-?: StateGuard[K] extends Function | undefined ? K : never }[keyof StateGuard];
+type GuardSlots = { [K in keyof StateGuard]-?: StateGuard[K] extends Function ? K : never }[keyof StateGuard];
 type StateDefHandlerValue = StateEventHandler | StateExitHandler;
 // @ts-ignore
-type StateSlots = { [K in keyof StateDefinition]-?: StateDefinition[K] extends StateDefHandlerValue | undefined ? K : never }[keyof StateDefinition];
+type StateSlots = { [K in keyof StateDefinition]-?: StateDefinition[K] extends StateDefHandlerValue ? K : never }[keyof StateDefinition];
 
 // Removed unused proxy factory (thunks not used in current code path)
 

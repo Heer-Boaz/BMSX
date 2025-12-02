@@ -13,7 +13,7 @@ export class Registry {
 	 * @param id The identifier of the entity to retrieve.
 	 * @returns The retrieved entity if found, otherwise null.
 	 */
-	public get<T extends Registerable = any>(id: Identifier): T | null {
+	public get<T extends Registerable = any>(id: Identifier): T {
 		return this._registry[id] as T || null;
 	}
 

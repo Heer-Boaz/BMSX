@@ -5,11 +5,11 @@ import { FloatingDialog, removeStateMachineVisualizer } from './bmsxdebugger';
 import { createObjectTableElement } from './objectpropertydialog';
 
 export class StateMachineVisualizer {
-	private dialog: FloatingDialog | null = null;
+	private dialog: FloatingDialog = null;
 	private readonly owner: Stateful;
 	private readonly ownerId: Identifier;
-	private machineElements: Map<string, HTMLElement> | null = null;
-	private stateElements: Map<string, HTMLElement> | null = null;
+	private machineElements: Map<string, HTMLElement> = null;
+	private stateElements: Map<string, HTMLElement> = null;
 
 	constructor(owner: Stateful) {
 		this.owner = owner;

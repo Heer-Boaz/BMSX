@@ -40,11 +40,11 @@ function getObjectEntries(obj: unknown): [string, any][] {
 
 function buildObjectTreePersistent(
 	obj: any,
-	ignoreProps: string[] | undefined,
+	ignoreProps: string[],
 	state: PropertyTreeState,
 	parentPath: string = '',
 	visitedObjs?: WeakSet<object>,
-): HTMLDivElement | undefined {
+): HTMLDivElement {
 	// Use a WeakSet of object references to detect cycles rather than path strings
 	if (!visitedObjs) visitedObjs = new WeakSet<object>();
 
@@ -120,7 +120,7 @@ function updateObjectTreeValues(
 		const path = parentPath ? parentPath + '.' + key : key;
 		if (typeof value === 'object' && value !== null) {
 			// Find <details> for this path
-			let details: HTMLDetailsElement | undefined;
+			let details: HTMLDetailsElement;
 			for (const child of Array.from(container.children) as HTMLElement[]) {
 				if (child.tagName !== 'DETAILS') continue;
 				const summary = child.querySelector('summary');
@@ -132,7 +132,7 @@ function updateObjectTreeValues(
 			}
 			if (details) {
 				// Recurse into child
-				const child = details.lastElementChild as HTMLElement | null;
+				const child = details.lastElementChild as HTMLElement;
 				if (child) updateObjectTreeValues(child, value, path);
 			}
 		} else {

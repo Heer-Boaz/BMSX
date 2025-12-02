@@ -22,7 +22,7 @@ const ACCEPTED_VENDORS_PRODUCTS = [
 	{ vendorId: SONY_VID, productId: DUALSHOCK4_PID_2016 },
 ] as const;
 
-type HidPadKind = 'ds5_usb' | 'ds4_usb' | 'ds5_bt' | 'ds4_bt' | null;
+type HidPadKind = 'ds5_usb' | 'ds4_usb' | 'ds5_bt' | 'ds4_bt';
 
 export interface HidRumbleParams {
 	/** 0 – 255, left (strong) motor */
@@ -35,16 +35,16 @@ export interface HidRumbleParams {
 
 
 export class DualSenseHID {
-	private device: PlatformHIDDevice | null = null;
-	private rumbleTimer: { stop(): void } | null = null;
-	private kind: HidPadKind | null = null;
-	private assignedIndex: number | null = null;
+	private device: PlatformHIDDevice = null;
+	private rumbleTimer: { stop(): void } = null;
+	private kind: HidPadKind = null;
+	private assignedIndex: number = null;
 
 	/** Map of gamepad indices to HID devices that are in use */
 	private static assignedDevices = new Map<number, PlatformHIDDevice>();
 
 	/** Shared lock to avoid overlapping permission prompts */
-	private static pendingRequest: Promise<PlatformHIDDevice[]> | null = null;
+	private static pendingRequest: Promise<PlatformHIDDevice[]> = null;
 
 
 	private static async requestHidPermission(ids?: { vendorId: number; productId: number }): Promise<PlatformHIDDevice[]> {
@@ -77,7 +77,7 @@ export class DualSenseHID {
 		return DualSenseHID.pendingRequest;
 	}
 
-	private matchIds(device: PlatformHIDDevice, ids: { vendorId: number; productId: number } | null): boolean {
+	private matchIds(device: PlatformHIDDevice, ids: { vendorId: number; productId: number }): boolean {
 		return !!ids && device.vendorId === ids.vendorId && device.productId === ids.productId;
 	}
 
@@ -86,7 +86,7 @@ export class DualSenseHID {
 	}
 
 	/** Type of the connected HID pad */
-	public get padKind(): HidPadKind | null {
+	public get padKind(): HidPadKind {
 		return this.kind;
 	}
 
@@ -95,7 +95,7 @@ export class DualSenseHID {
 		return this.kind === 'ds4_usb' || this.kind === 'ds4_bt';
 	}
 
-	private parseGamepadId(id: string): { vendorId: number; productId: number } | null {
+	private parseGamepadId(id: string): { vendorId: number; productId: number } {
 		// Enhanced regex to handle more formats, e.g., "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)"
 		// or "054c-0ce6 (STANDARD GAMEPAD)" or variations with extra text
 		const vendorReg = /(vendor|vid|idvendor|0x?[0-9a-f]{4})[^0-9a-f]*([0-9a-f]{4})/i;
@@ -261,8 +261,8 @@ export class DualSenseHID {
 	 * @param timeoutMs Max time to wait for input (default 5000ms).
 	 * @returns The matching HIDDevice or null if no match.
 	 */
-	public async correlateWithInput(gamepad: Gamepad, candidates: PlatformHIDDevice[], timeoutMs: number = 5000): Promise<PlatformHIDDevice | null> {
-		if (candidates.length <= 1) return candidates[0] ?? null;
+	public async correlateWithInput(gamepad: Gamepad, candidates: PlatformHIDDevice[], timeoutMs: number = 5000): Promise<PlatformHIDDevice> {
+		if (candidates.length <= 1) return candidates[0] ;
 
 		console.info('Multiple candidates; starting input correlation. Press a button on the target controller.');
 

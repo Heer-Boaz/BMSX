@@ -8,7 +8,7 @@ export interface LuaFunctionValue {
 }
 
 export class LuaNativeValue {
-	private metatable: LuaTable | null = null;
+	private metatable: LuaTable = null;
 
 	constructor(public readonly native: object | Function, public readonly typeName?: string) {
 		if (native === null || (typeof native !== 'object' && typeof native !== 'function')) {
@@ -16,11 +16,11 @@ export class LuaNativeValue {
 		}
 	}
 
-	public getMetatable(): LuaTable | null {
+	public getMetatable(): LuaTable {
 		return this.metatable;
 	}
 
-	public setMetatable(value: LuaTable | null): void {
+	public setMetatable(value: LuaTable): void {
 		this.metatable = value;
 	}
 }
@@ -34,14 +34,14 @@ export function isLuaNativeValue(value: unknown): value is LuaNativeValue {
 }
 
 type LuaTableMethods = {
-	get(key: LuaValue): LuaValue | null;
+	get(key: LuaValue): LuaValue;
 	set(key: LuaValue, value: LuaValue): void;
 	delete(key: LuaValue): void;
 	has(key: LuaValue): boolean;
 	entriesArray(): ReadonlyArray<[LuaValue, LuaValue]>;
 	numericLength(): number;
-	setMetatable(table: LuaTable | null): void;
-	getMetatable(): LuaTable | null;
+	setMetatable(table: LuaTable): void;
+	getMetatable(): LuaTable;
 };
 
 const LUA_TABLE_BRAND = Symbol('LuaTableBrand');
@@ -51,7 +51,7 @@ export type LuaTable = {
 } & LuaTableMethods & { [LUA_TABLE_BRAND]?: true };
 
 type TableState = {
-	metatable: LuaTable | null;
+	metatable: LuaTable;
 	stringKeys: Map<string, { key: LuaValue; upper?: string }>;
 	uppercaseIndex?: Map<string, string>;
 	nonPrimitiveKeys?: Map<LuaValue, LuaValue>;
@@ -172,7 +172,7 @@ function tableSet(this: LuaTable, key: LuaValue, value: LuaValue): void {
 	map.set(key, value);
 }
 
-function tableGet(this: LuaTable, key: LuaValue): LuaValue | null {
+function tableGet(this: LuaTable, key: LuaValue): LuaValue {
 	const state = getState(this);
 	if (typeof key === 'number' && Number.isInteger(key)) {
 		const property = String(key);
@@ -272,12 +272,12 @@ function tableNumericLength(this: LuaTable): number {
 	return index - 1;
 }
 
-function tableSetMetatable(this: LuaTable, table: LuaTable | null): void {
+function tableSetMetatable(this: LuaTable, table: LuaTable): void {
 	const state = getState(this);
 	state.metatable = table;
 }
 
-function tableGetMetatable(this: LuaTable): LuaTable | null {
+function tableGetMetatable(this: LuaTable): LuaTable {
 	return getState(this).metatable;
 }
 

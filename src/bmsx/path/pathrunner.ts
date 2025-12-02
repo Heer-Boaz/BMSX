@@ -29,7 +29,7 @@ export class PathRunner {
 	private _lookAt?: () => { x: number; y: number; z: number };
 	private _baseUp = { x: 0, y: 1, z: 0 };
 	private _bankFactor = 0;
-	private _segBankFactor: number | undefined;
+	private _segBankFactor: number;
 	constructor(path: Path, opts: PathRunnerOptions = {}) { this.path = path; if (opts.speed !== undefined) this.speed = opts.speed; if (opts.distanceMode) { this.distanceMode = true; this._distanceCache = path.distanceAtU(this.u); } if (opts.playback) this.playback = opts.playback; if (opts.orientationKeys) this._orientationKeys = opts.orientationKeys.slice().sort((a, b) => a.u - b.u); if (opts.lookAt) this._lookAt = opts.lookAt; if (opts.baseUp) this._baseUp = opts.baseUp; if (opts.bankFactor) this._bankFactor = opts.bankFactor; }
 	setU(u: number): void { this.u = Math.min(1, Math.max(0, u)); this._updateOrientation(); }
 	get distance(): number { return this.distanceMode ? this._distanceCache : this.path.distanceAtU(this.u); }

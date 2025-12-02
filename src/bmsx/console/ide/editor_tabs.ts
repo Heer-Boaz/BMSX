@@ -29,7 +29,7 @@ import { ensureCursorVisible } from './caret';
 import { resolveHoverChunkName } from './intellisense';
 import { resetBlink } from './render/render_caret';
 
-export function createEntryTabContext(): CodeTabContext | null {
+export function createEntryTabContext(): CodeTabContext {
 	const luaDescriptors = ide_state.listResourcesFn().filter(r => r.type === 'lua');
 	const descriptor = luaDescriptors.length > 0 ? luaDescriptors[0] : null;
 	const resolvedasset_id = descriptor ? descriptor.asset_id : '__entry__';
@@ -44,7 +44,7 @@ export function createEntryTabContext(): CodeTabContext | null {
 	return {
 		id: tabId,
 		title,
-		descriptor: descriptor ?? null,
+		descriptor: descriptor ,
 		load,
 		save,
 		snapshot: null,
@@ -75,11 +75,11 @@ export function createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): 
 	};
 }
 
-export function getActiveCodeTabContext(): CodeTabContext | null {
+export function getActiveCodeTabContext(): CodeTabContext {
 	if (!ide_state.activeCodeTabContextId) {
 		return null;
 	}
-	return ide_state.codeTabContexts.get(ide_state.activeCodeTabContextId) ?? null;
+	return ide_state.codeTabContexts.get(ide_state.activeCodeTabContextId) ;
 }
 
 export function storeActiveCodeTabContext(): void {
@@ -99,7 +99,7 @@ export function storeActiveCodeTabContext(): void {
 	setTabDirty(context.id, context.dirty);
 }
 
-export function activateCodeEditorTab(tabId: string | null): void {
+export function activateCodeEditorTab(tabId: string): void {
 	if (!tabId) {
 		return;
 	}
@@ -174,7 +174,7 @@ export function activateCodeEditorTab(tabId: string | null): void {
 	refreshActiveDiagnostics();
 }
 
-export function initializeTabs(entryContext: CodeTabContext | null = null): void {
+export function initializeTabs(entryContext: CodeTabContext = null): void {
 	ide_state.tabs = [];
 	ide_state.tabHoverId = null;
 	ide_state.tabDragState = null;
@@ -218,7 +218,7 @@ export function getActiveTabKind(): EditorTabKind {
 	if (!ide_state.activeTabId) {
 		return 'lua_editor';
 	}
-	const active = ide_state.tabs.find(tab => tab.id === ide_state.activeTabId) ?? null;
+	const active = ide_state.tabs.find(tab => tab.id === ide_state.activeTabId) ;
 	if (active) {
 		return active.kind;
 	}
@@ -395,7 +395,7 @@ export function computeTabLayout(): Array<{ id: string; left: number; right: num
 	const layout: Array<{ id: string; left: number; right: number; width: number; center: number; rowIndex: number }> = [];
 	for (let index = 0; index < ide_state.tabs.length; index += 1) {
 		const tab = ide_state.tabs[index];
-		const bounds = ide_state.tabButtonBounds.get(tab.id) ?? null;
+		const bounds = ide_state.tabButtonBounds.get(tab.id) ;
 		if (bounds) {
 			const left = bounds.left;
 			const right = bounds.right;
@@ -432,7 +432,7 @@ export function beginTabDrag(tabId: string, pointerX: number): void {
 		ide_state.tabDragState = null;
 		return;
 	}
-	const bounds = ide_state.tabButtonBounds.get(tabId) ?? null;
+	const bounds = ide_state.tabButtonBounds.get(tabId) ;
 	const pointerOffset = bounds ? pointerX - bounds.left : 0;
 	ide_state.tabDragState = {
 		tabId,
@@ -505,7 +505,7 @@ export function endTabDrag(): void {
 	ide_state.tabDragState = null;
 }
 
-export function findCodeTabContext(asset_id: string | null, chunkName: string | null): CodeTabContext | null {
+export function findCodeTabContext(asset_id: string, chunkName: string): CodeTabContext {
 	for (const context of ide_state.codeTabContexts.values()) {
 		const descriptor = context.descriptor;
 		if (asset_id && descriptor?.asset_id === asset_id) {

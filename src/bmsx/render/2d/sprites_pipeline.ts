@@ -67,10 +67,10 @@ let texcoordBuffer: WebGLBuffer;
 let zBuffer: WebGLBuffer;
 let color_overrideBuffer: WebGLBuffer;
 let atlas_idBuffer: WebGLBuffer;
-let spriteVAO: WebGLVertexArrayObject | null = null;
+let spriteVAO: WebGLVertexArrayObject = null;
 const spriteShaderData = {
 	resolutionVector: new Float32Array(RESOLUTION_VECTOR_SIZE),
-	vertexcoords: null as Float32Array | null, // Lazy init to avoid circular dependency timing with backend
+	vertexcoords: null as Float32Array, // Lazy init to avoid circular dependency timing with backend
 	texcoords: new Float32Array(TEXTURECOORDS_SIZE * MAX_SPRITES),
 	zcoords: new Float32Array(ZCOORDS_SIZE * MAX_SPRITES),
 	color_override: new Float32Array(COLOR_OVERRIDE_SIZE * MAX_SPRITES),
@@ -102,7 +102,7 @@ export function setupSpriteShaderLocations(backend: GPUBackend): void {
 	const gl = (backend as WebGLBackend).gl;
 	// If program not explicitly created yet, pick up the program bound by the PipelineManager
 	if (!spriteShaderProgram) {
-		const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+		const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 		if (!current) throw new Error('Sprite shader program not bound during bootstrap');
 		spriteShaderProgram = current;
 	}
@@ -228,7 +228,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	if (!vertexcoords) return;
 	const { texcoords, zcoords, color_override, atlas_id } = spriteShaderData;
 	let i = 0;
-	let currentAmbientEnabled: number | null = null;
+	let currentAmbientEnabled: number = null;
 	let currentAmbientFactor = 1.0;
 	const flush = () => {
 		if (i <= 0) return;
@@ -416,8 +416,8 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			if (!atlasTexture) {
 				throw new Error("[SpritesPipeline] Texture '_atlas' missing from view textures.");
 			}
-			const dynamicAtlasTexture = gv.textures['_atlas_dynamic'] as WebGLTexture | null | undefined;
-			const engineAtlasTexture = gv.textures[ENGINE_ATLAS_TEXTURE_KEY] as WebGLTexture | null | undefined;
+			const dynamicAtlasTexture = gv.textures['_atlas_dynamic'] as WebGLTexture;
+			const engineAtlasTexture = gv.textures[ENGINE_ATLAS_TEXTURE_KEY] as WebGLTexture;
 			const spriteState: SpritesPipelineState = {
 				width,
 				height,
@@ -425,8 +425,8 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 				baseHeight,
 				// Provide atlas textures for direct binding in render step when needed
 				atlasTex: atlasTexture as WebGLTexture,
-				atlasDynamicTex: (dynamicAtlasTexture ?? null) as WebGLTexture | null,
-				atlasEngineTex: (engineAtlasTexture ?? null) as WebGLTexture | null,
+				atlasDynamicTex: (dynamicAtlasTexture ) as WebGLTexture,
+				atlasEngineTex: (engineAtlasTexture ) as WebGLTexture,
 				ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
 				ambientFactorDefault: gv.spriteAmbientFactorDefault ?? 1.0,
 			};

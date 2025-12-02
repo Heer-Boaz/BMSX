@@ -114,8 +114,8 @@ export class World implements Stateful, RegisterablePersistent {
 	public sc: StateMachineController;
 
 	@excludepropfromsavegame
-	private _currentPhase: TickGroup | null = null;
-	public get currentPhase(): TickGroup | null { return this._currentPhase; }
+	private _currentPhase: TickGroup = null;
+	public get currentPhase(): TickGroup { return this._currentPhase; }
 
 	/** ECS systems runner */
 	@excludepropfromsavegame
@@ -126,7 +126,7 @@ export class World implements Stateful, RegisterablePersistent {
 	@excludepropfromsavegame
 	public objToSpaceMap: Map<Identifier, Identifier>;
 
-	public getSpace(id: Identifier): Space | undefined {
+	public getSpace(id: Identifier): Space {
 		return this._spaceMap.get(id);
 	}
 
@@ -199,29 +199,29 @@ export class World implements Stateful, RegisterablePersistent {
 
 	public paused: boolean;
 
-	private _activeCameraId: Identifier | null = null;
+	private _activeCameraId: Identifier = null;
 
-	public get activeCameraId(): Identifier | null {
+	public get activeCameraId(): Identifier {
 		return this._activeCameraId;
 	}
 
-	public set activeCameraId(id: Identifier | null) {
+	public set activeCameraId(id: Identifier) {
 		this._activeCameraId = id; // Set the active camera ID, which can be null if no camera is active
 	}
 
-	public get activeCameraObject(): CameraObject | null {
+	public get activeCameraObject(): CameraObject {
 		return this._activeCameraId ? this.getWorldObject<CameraObject>(this.activeCameraId) : null;
 	}
 
-	public get activeCamera3D(): Camera | null {
-		return this.activeCameraObject?.camera ?? null;
+	public get activeCamera3D(): Camera {
+		return this.activeCameraObject?.camera ;
 	}
 
 	// Indexed cameras/lights for fast queries
 	@excludepropfromsavegame private _camerasBySpace: Map<Identifier, Set<CameraObject>> = new Map();
 	@excludepropfromsavegame private _lightsBySpace: Map<Identifier, Set<LightObject>> = new Map();
 	// Batch depth marker: when non-null, collect touched space ids and mark once at end
-	@excludepropfromsavegame public depthDirtyBatch: Set<Identifier> | null = null;
+	@excludepropfromsavegame public depthDirtyBatch: Set<Identifier> = null;
 
 	public get activeCameras(): CameraObject[] {
 		const out: CameraObject[] = [];
@@ -239,8 +239,8 @@ export class World implements Stateful, RegisterablePersistent {
 		return out;
 	}
 
-	public get activeAmbientLight(): AmbientLightObject | null {
-		return this.activeLights.find(light => light.type === 'ambient') as AmbientLightObject | null;
+	public get activeAmbientLight(): AmbientLightObject {
+		return this.activeLights.find(light => light.type === 'ambient') as AmbientLightObject;
 	}
 
 	/**
@@ -248,15 +248,15 @@ export class World implements Stateful, RegisterablePersistent {
 	 * @param {Identifier} id - the id of the {@link WorldObject}.
 	 * @returns {T} The world object with the given id from the current space only.
 	 */
-	public getFromCurrentSpace<T extends WorldObject>(id: Identifier): T | null { return this.activeSpace.get<T>(id) ?? null; }
+	public getFromCurrentSpace<T extends WorldObject>(id: Identifier): T { return this.activeSpace.get<T>(id) ; }
 
 	/**
 	 * Gets the world object with the given id across all spaces.
 	 * If `id === `, returns the game world instead! This is used for {@link State} to make game world as target for callbacks.
 	 * @param {Identifier} id - the id of the {@link WorldObject}.
-	 * @returns {T | null} The object with the given id or the game world itself (when `id === `), or null if the object is not found.
+	 * @returns {T} The object with the given id or the game world itself (when `id === `), or null if the object is not found.
 	 */
-	public getWorldObject<T extends WorldObject = WorldObject>(id: Identifier): T | null {
+	public getWorldObject<T extends WorldObject = WorldObject>(id: Identifier): T {
 		if (!id) return null;
 		const sid = this.objToSpaceMap.get(id);
 		if (!sid) return null;
@@ -264,10 +264,10 @@ export class World implements Stateful, RegisterablePersistent {
 		if (!space) {
 			throw new Error(`[World] Object '${id}' is mapped to missing space '${sid}'.`);
 		}
-		return space.get<T>(id) ?? null;
+		return space.get<T>(id) ;
 	}
 
-	public getSpaceOfObject(obj_id: Identifier): Space | null {
+	public getSpaceOfObject(obj_id: Identifier): Space {
 		const sid = this.objToSpaceMap.get(obj_id);
 		if (!sid) return null;
 		const space = this._spaceMap.get(sid);
@@ -682,7 +682,7 @@ export class World implements Stateful, RegisterablePersistent {
 	 * @throws {Error} Throws an error if the space to remove is not found in the world instance.
 	 */
 	public removeSpace(s: Space | Identifier): void {
-		const space: Space | undefined = (s instanceof Space ? s : this._spaceMap.get(s));
+		const space: Space = (s instanceof Space ? s : this._spaceMap.get(s));
 		if (!space) throw Error(`Space '${s}' to remove from world was not found, while calling [World.removeSpace]!`);
 
 		const index = this.spaces.indexOf(space);
@@ -803,7 +803,7 @@ export class World implements Stateful, RegisterablePersistent {
 	/** Iterate objects that have instances of a given component; passes each component instance. */
 	public forEachWorldObjectWithComponents<T extends Component>(component: ComponentConstructor<T>, fn: (o: WorldObject, c: T) => void, opts: { scope?: WorldScope } = {}): void {
 		this.forEachWorldObject((o) => {
-			const list = (o).get_components?.(component) as T[] | undefined;
+			const list = (o).get_components?.(component) as T[];
 			if (list && list.length) for (const c of list) fn(o, c);
 		}, opts);
 	}

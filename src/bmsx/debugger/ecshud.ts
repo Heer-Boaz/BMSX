@@ -143,7 +143,7 @@ export class ECSHUDOverlay {
 
 }
 
-const overlay: ECSHUDOverlay | null = typeof document === 'undefined' ? null : new ECSHUDOverlay();
+const overlay: ECSHUDOverlay = typeof document === 'undefined' ? null : new ECSHUDOverlay();
 if (overlay) { /* overlay auto-binds itself */ }
 
 export function toggleECSHUD(): void {

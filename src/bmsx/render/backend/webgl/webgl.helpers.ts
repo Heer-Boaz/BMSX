@@ -11,7 +11,7 @@ export function saveTextureToFile(): void {
 	// 1. Bind the framebuffer that has the texture attached
 	// Access legacy framebuffer through the documented getter (GameView exposes _legacyFramebuffer)
 	// TODO: BUG!!!!!!!!! WILL CRASH!!!
-	const fboBuggybug: WebGLFramebuffer | null = null;
+	const fboBuggybug: WebGLFramebuffer = null;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, fboBuggybug);
 
 	// 2. Read the pixels from the framebuffer into an array

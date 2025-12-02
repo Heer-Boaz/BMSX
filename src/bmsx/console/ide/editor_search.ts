@@ -33,15 +33,15 @@ export interface GlobalSearchMatch {
 	start: number;
 	end: number;
 	snippet: string;
-	asset_id: string | null;
-	chunkName: string | null;
+	asset_id: string;
+	chunkName: string;
 }
 
 export interface GlobalSearchJob {
 	query: string;
 	descriptors: ConsoleResourceDescriptor[];
 	descriptorIndex: number;
-	currentLines: string[] | null;
+	currentLines: string[];
 	nextRow: number;
 	matches: GlobalSearchMatch[];
 	limitHit: boolean;
@@ -333,7 +333,7 @@ export function cancelSearchJob(): void {
 }
 
 export function ensureSearchJobCompleted(): void {
-	const job = ide_state.searchJob as SearchComputationJob | null;
+	const job = ide_state.searchJob as SearchComputationJob;
 	if (!job) return;
 	while (ide_state.searchJob === job && runSearchJobSlice(job)) {
 		// process synchronously until complete
@@ -409,8 +409,8 @@ export function runGlobalSearchJobSlice(job: GlobalSearchJob): boolean {
 					start,
 					end,
 					snippet: buildSearchSnippet(line, start, end),
-					asset_id: descriptor.asset_id ?? null,
-					chunkName: descriptor.path ?? null,
+					asset_id: descriptor.asset_id ,
+					chunkName: descriptor.path ,
 				};
 				job.matches.push(match);
 				if (job.matches.length >= constants.GLOBAL_SEARCH_RESULT_LIMIT) {
@@ -450,7 +450,7 @@ export function cancelGlobalSearchJob(): void {
 	ide_state.globalSearchJob = null;
 }
 
-export function loadDescriptorLines(descriptor: ConsoleResourceDescriptor): string[] | null {
+export function loadDescriptorLines(descriptor: ConsoleResourceDescriptor): string[] {
 	try {
 		const asset_id = descriptor.asset_id;
 		if (!asset_id) return null;
@@ -516,10 +516,10 @@ export function computeSearchPageStats(): { total: number; offset: number; visib
 	return { total, offset: ide_state.searchDisplayOffset, visible };
 }
 
-export function getVisibleSearchResultEntries(): Array<{ primary: string; secondary?: string | null; detail?: string | null }> {
+export function getVisibleSearchResultEntries(): Array<{ primary: string; secondary?: string; detail?: string }> {
 	const stats = computeSearchPageStats();
 	if (stats.visible <= 0) return [];
-	const results: Array<{ primary: string; secondary?: string | null; detail?: string | null }> = [];
+	const results: Array<{ primary: string; secondary?: string; detail?: string }> = [];
 	for (let i = 0; i < stats.visible; i += 1) {
 		const entry = buildSearchResultEntry(stats.offset + i);
 		if (entry) results.push(entry);
@@ -527,7 +527,7 @@ export function getVisibleSearchResultEntries(): Array<{ primary: string; second
 	return results;
 }
 
-export function buildSearchResultEntry(index: number): { primary: string; secondary?: string | null; detail?: string | null } | null {
+export function buildSearchResultEntry(index: number): { primary: string; secondary?: string; detail?: string } {
 	if (ide_state.searchScope === 'global') {
 		const match = ide_state.globalSearchMatches[index];
 		if (!match) return null;

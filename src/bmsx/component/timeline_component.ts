@@ -21,7 +21,7 @@ export type TimelinePlayOptions = {
 export type TimelineFrameEventPayload<T = unknown> = {
 	timeline_id: string;
 	frame_index: number;
-	frame_value: T | undefined;
+	frame_value: T;
 	rewound: boolean;
 	reason: TimelineFrameChangeReason;
 	direction: 1 | -1;
@@ -137,8 +137,8 @@ export class TimelineComponent extends Component<WorldObject> {
 		}
 	}
 
-	public get<T = Timeline>(id: string): Timeline<T> | undefined {
-		return this.registry.get(id)?.instance as Timeline<T> | undefined;
+	public get<T = Timeline>(id: string): Timeline<T> {
+		return this.registry.get(id)?.instance as Timeline<T>;
 	}
 
 	public add_listener(id: string, listener: TimelineListener): () => void {

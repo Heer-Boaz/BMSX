@@ -68,13 +68,13 @@ export function getPressedState(
 		waspressed: state.waspressed ?? false,
 		wasreleased: state.wasreleased ?? false,
 		consumed: state.consumed ?? false,
-		presstime: state.presstime ?? null,
-		timestamp: state.timestamp ?? null,
-		pressedAtMs: state.pressedAtMs ?? null,
-		releasedAtMs: state.releasedAtMs ?? null,
-		pressId: state.pressId ?? null,
-		value: state.value ?? null,
-		value2d: state.value2d ?? null,
+		presstime: state.presstime ,
+		timestamp: state.timestamp ,
+		pressedAtMs: state.pressedAtMs ,
+		releasedAtMs: state.releasedAtMs ,
+		pressId: state.pressId ,
+		value: state.value ,
+		value2d: state.value2d ,
 	};
 }
 
@@ -124,8 +124,8 @@ export function makeActionState(actionname: string, partialState?: Partial<Actio
 type DeviceBinding = {
 	handler: InputHandler;
 	source: InputSource;
-	assignedPlayer: number | null;
-	device: InputDevice | null;
+	assignedPlayer: number;
+	device: InputDevice;
 };
 
 /**
@@ -207,8 +207,8 @@ export class InputStateManager {
 			state.pressedAtMs = event.timestamp;
 			state.presstime = 0;
 			state.timestamp = event.timestamp;
-			state.releasedAtMs = state.releasedAtMs ?? null;
-			state.pressId = event.pressId ?? state.pressId ?? null;
+			state.releasedAtMs = state.releasedAtMs ;
+			state.pressId = event.pressId ?? state.pressId ;
 			state.value = state.value ?? 1;
 			state.consumed = event.consumed ?? false;
 		} else {
@@ -219,7 +219,7 @@ export class InputStateManager {
 			state.presstime = null;
 			state.timestamp = event.timestamp;
 			state.releasedAtMs = event.timestamp;
-			state.pressId = event.pressId ?? state.pressId ?? null;
+			state.pressId = event.pressId ?? state.pressId ;
 			state.value = 0;
 			state.consumed = event.consumed ?? false;
 			state.stickyConsumed = false;
@@ -245,12 +245,12 @@ export class InputStateManager {
 		const justreleased = baseState?.justreleased ?? false;
 		let presstime = baseState?.presstime ?? (pressed && baseState?.pressedAtMs != null ? Math.max(0, currentTime - baseState.pressedAtMs) : null);
 		let consumed = baseState?.consumed ?? false;
-		const pressedAtMs = baseState?.pressedAtMs ?? null;
-		const releasedAtMs = baseState?.releasedAtMs ?? null;
-		const timestamp = baseState?.timestamp ?? null;
-		const pressId = baseState?.pressId ?? null;
+		const pressedAtMs = baseState?.pressedAtMs ;
+		const releasedAtMs = baseState?.releasedAtMs ;
+		const timestamp = baseState?.timestamp ;
+		const pressId = baseState?.pressId ;
 		const value = baseState?.value ?? (pressed ? 1 : 0);
-		const value2d = baseState?.value2d ?? null;
+		const value2d = baseState?.value2d ;
 
 		const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier && (currentTime - event.timestamp <= window));
 		let waspressed = pressed;
@@ -289,7 +289,7 @@ export class InputStateManager {
 	 * @param identifier - The unique identifier of the button, which can be a string or a number.
 	 * If the button state exists, it will be marked as consumed.
 	 */
-	consumeBufferedEvent(identifier: ButtonId, pressId?: number | null, opts?: { sticky?: boolean }): void {
+	consumeBufferedEvent(identifier: ButtonId, pressId?: number, opts?: { sticky?: boolean }): void {
 		const sticky = opts?.sticky ?? true;
 		for (const event of this.inputBuffer) {
 			if (event.identifier === identifier && (pressId == null || event.pressId === pressId)) {
@@ -381,8 +381,8 @@ export class Input implements RegisterablePersistent {
 		return Input._instance;
 	}
 
-	public static maybeInstance(): Input | null {
-		return Input._instance ?? null;
+	public static maybeInstance(): Input {
+		return Input._instance ;
 	}
 
 
@@ -394,7 +394,7 @@ export class Input implements RegisterablePersistent {
 	private playerInputs: PlayerInput[] = [];
 
 	private readonly deviceBindings = new Map<string, DeviceBinding>();
-	private startupGamepadIndex: number | null = null;
+	private startupGamepadIndex: number = null;
 
 	/**
 	 * Represents an array of pending gamepad assignments.
@@ -406,11 +406,11 @@ export class Input implements RegisterablePersistent {
 	 * Represents the onscreen gamepad.
 	 * @see OnscreenGamepad
 	 */
-	private onscreenGamepad: OnscreenGamepad | null = null;
+	private onscreenGamepad: OnscreenGamepad = null;
 
 	// Spawn-once guard for UI controller
 	private uiControllerSpawned = false;
-	private platformInputUnsubscribe: (() => void) | null = null;
+	private platformInputUnsubscribe: (() => void) = null;
 	private readonly platformInputListener = (event: InputEvt): void => {
 		this.handleInputEvent(event);
 	};
@@ -603,7 +603,7 @@ export class Input implements RegisterablePersistent {
 	/**
 	 * Enables the onscreen gamepad and assigns it as the gamepad input for player 1.
 	 */
-	public setStartupGamepadIndex(index: number | null): void {
+	public setStartupGamepadIndex(index: number): void {
 		this.startupGamepadIndex = index;
 	}
 
@@ -756,7 +756,7 @@ export class Input implements RegisterablePersistent {
 				justpressed: evt.down,
 				justreleased: !evt.down,
 				timestamp: evt.timestamp,
-				pressId: evt.pressId ?? null,
+				pressId: evt.pressId ,
 				value: evt.value,
 			}));
 		} else if (binding.source === 'gamepad') {
@@ -764,7 +764,7 @@ export class Input implements RegisterablePersistent {
 			handler.ingestButton(evt.code, evt.down, evt.value, evt.timestamp, evt.pressId);
 		}
 		if (binding.assignedPlayer !== null) {
-			this.enqueueButtonEvent(binding.assignedPlayer, evt.code, evt.down ? 'press' : 'release', evt.timestamp, evt.pressId ?? null);
+			this.enqueueButtonEvent(binding.assignedPlayer, evt.code, evt.down ? 'press' : 'release', evt.timestamp, evt.pressId );
 		}
 	}
 
@@ -787,7 +787,7 @@ export class Input implements RegisterablePersistent {
 		}
 	}
 
-	private enqueueButtonEvent(playerIndex: number, code: string, type: 'press' | 'release', timestamp: number, pressId: number | null): void {
+	private enqueueButtonEvent(playerIndex: number, code: string, type: 'press' | 'release', timestamp: number, pressId: number): void {
 		const player = this.getPlayerInput(playerIndex);
 		player.stateManager.addInputEvent({ eventType: type, identifier: code, timestamp, consumed: false, pressId });
 	}
@@ -844,7 +844,7 @@ export class Input implements RegisterablePersistent {
 		this.deviceBindings.delete(deviceId);
 	}
 
-	private getBindingForHandler(handler: InputHandler): DeviceBinding | undefined {
+	private getBindingForHandler(handler: InputHandler): DeviceBinding {
 		for (const value of this.deviceBindings.values()) {
 			if (value.handler === handler) return value;
 		}
@@ -920,7 +920,7 @@ export class Input implements RegisterablePersistent {
 	 * @param from The index to start searching from. Defaults to 1.
 	 * @returns The first available player index for gamepad assignment, or null if none is available.
 	 */
-	public getFirstAvailablePlayerIndexForGamepadAssignment(from: number = 1, reverse: boolean = false): number | null {
+	public getFirstAvailablePlayerIndexForGamepadAssignment(from: number = 1, reverse: boolean = false): number {
 		if (reverse) {
 			for (let i = from; i >= 1; i--) {
 				if (this.isPlayerIndexAvailableForGamepadAssignment(i)) return i;

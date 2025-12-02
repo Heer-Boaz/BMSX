@@ -438,7 +438,7 @@ export class AudioEventManager implements RegisterablePersistent {
 
 	private play(audioId: asset_id, ctx?: Partial<AudioHandleContext>, opts?: { priority?: number }): void {
 		const presetKey = ctx?.payload?.modulationPreset;
-		const params = ctx?.payload?.modulationParams as (RandomModulationParams | ModulationParams | undefined);
+		const params = ctx?.payload?.modulationParams as (RandomModulationParams | ModulationParams);
 		const request: SoundMasterPlayRequest = {};
 		if (opts?.priority !== undefined) {
 			request.priority = opts.priority;
@@ -457,7 +457,7 @@ export class AudioEventManager implements RegisterablePersistent {
 		return $.platform.clock.now();
 	}
 
-	private pickAction(eventName: string, rules: CompiledAudioEventRule[], payload: AudioEventPayload): AudioAction | undefined {
+	private pickAction(eventName: string, rules: CompiledAudioEventRule[], payload: AudioEventPayload): AudioAction {
 		for (let i = 0; i < rules.length; i++) {
 			const r = rules[i];
 			if (!this.ruleMatches(r, payload)) continue;
@@ -479,7 +479,7 @@ export class AudioEventManager implements RegisterablePersistent {
 		return typeof maybe === 'object' && maybe !== null && 'oneOf' in (maybe as Record<string, unknown>) && Array.isArray((maybe as AudioActionOneOfSpec).oneOf);
 	}
 
-	private resolveActionSpec(eventName: string, ruleIndex: number, spec: AudioActionSpec, payload: AudioEventPayload): AudioAction | undefined {
+	private resolveActionSpec(eventName: string, ruleIndex: number, spec: AudioActionSpec, payload: AudioEventPayload): AudioAction {
 		if (!this.isOneOfSpec(spec)) {
 			return spec as AudioAction;
 		}

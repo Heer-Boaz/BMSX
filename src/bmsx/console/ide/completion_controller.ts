@@ -28,8 +28,8 @@ type MemberCompletionHostRequest = {
 	objectName: string;
 	operator: '.' | ':';
 	prefix: string;
-	asset_id: string | null;
-	chunkName: string | null;
+	asset_id: string;
+	chunkName: string;
 };
 
 export type CompletionRenderApi = BmsxConsoleApi;
@@ -53,18 +53,18 @@ export interface CompletionHost {
 	get lineHeight(): number;
 	measureText(text: string): number;
 	drawText(text: string, x: number, y: number, color: number): void;
-	getCursorScreenInfo(): CursorScreenInfo | null;
+	getCursorScreenInfo(): CursorScreenInfo;
 	shouldShowParameterHints(): boolean;
 	// Symbol/source helpers
-	getActiveCodeTabContext(): unknown | null;
-	resolveHoverasset_id(context: unknown | null): string | null;
-	resolveHoverChunkName(context: unknown | null): string | null;
-	listLuaSymbols(asset_id: string | null, chunkName: string | null): ConsoleLuaSymbolEntry[];
+	getActiveCodeTabContext(): unknown;
+	resolveHoverasset_id(context: unknown): string;
+	resolveHoverChunkName(context: unknown): string;
+	listLuaSymbols(asset_id: string, chunkName: string): ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbols(): ConsoleLuaSymbolEntry[];
 	listLuaModuleSymbols(moduleName: string): ConsoleLuaSymbolEntry[];
 	listBuiltinLuaFunctions(): ConsoleLuaBuiltinDescriptor[];
-	getSemanticDefinitions(): readonly LuaDefinitionInfo[] | null;
-	getLuaModuleAliases(chunkName: string | null): Map<string, string>;
+	getSemanticDefinitions(): readonly LuaDefinitionInfo[];
+	getLuaModuleAliases(chunkName: string): Map<string, string>;
 	getMemberCompletionItems(request: MemberCompletionHostRequest): LuaCompletionItem[];
 	// Utilities
 	charAt(row: number, column: number): string;
@@ -75,29 +75,29 @@ export interface CompletionHost {
 
 type LocalCompletionCacheEntry = {
 	parsedVersion: number;
-	chunkName: string | null;
+	chunkName: string;
 	symbols: LuaScopedSymbol[];
 	moduleAliases: Map<string, string>;
 };
 
 export class CompletionController {
 	private readonly host: CompletionHost;
-	private completionSession: CompletionSession | null = null;
+	private completionSession: CompletionSession = null;
 	private readonly localCompletionCache: Map<string, LocalCompletionCacheEntry> = new Map();
-	private cachedGlobalCompletionItems: LuaCompletionItem[] | null = null;
-	private sharedCompletionItems: LuaCompletionItem[] | null = null;
-	private sharedCompletionMap: Map<string, LuaCompletionItem> | null = null;
-	private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } | null = null;
+	private cachedGlobalCompletionItems: LuaCompletionItem[] = null;
+	private sharedCompletionItems: LuaCompletionItem[] = null;
+	private sharedCompletionMap: Map<string, LuaCompletionItem> = null;
+	private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } = null;
 	private suppressNextAutoCompletion = false;
-	private parameterHint: ParameterHintState | null = null;
-	private parameterHintAnchor: { row: number; column: number } | null = null;
+	private parameterHint: ParameterHintState = null;
+	private parameterHintAnchor: { row: number; column: number } = null;
 	private parameterHintTriggerPending = false;
 	private parameterHintIdleElapsed = 0;
-	private lastCursorPosition: { row: number; column: number } | null = null;
+	private lastCursorPosition: { row: number; column: number } = null;
 	private lastTextVersion = -1;
-	private builtinDescriptors: ConsoleLuaBuiltinDescriptor[] | null = null;
+	private builtinDescriptors: ConsoleLuaBuiltinDescriptor[] = null;
 	private readonly builtinDescriptorMap: Map<string, ConsoleLuaBuiltinDescriptor> = new Map();
-	private completionPopupBounds: { left: number; top: number; right: number; bottom: number } | null = null;
+	private completionPopupBounds: { left: number; top: number; right: number; bottom: number } = null;
 	public enterCommitsCompletion = false;
 
 	constructor(host: CompletionHost) {
@@ -111,7 +111,7 @@ export class CompletionController {
 		this.cancelPendingCompletion();
 	}
 
-	public handlePointerWheel(direction: number, steps: number, pointer: { x: number; y: number } | null): boolean {
+	public handlePointerWheel(direction: number, steps: number, pointer: { x: number; y: number }): boolean {
 		const session = this.completionSession;
 		if (!session || session.filteredItems.length === 0) {
 			return false;
@@ -192,7 +192,7 @@ export class CompletionController {
 		this.refreshParameterHint();
 	}
 
-	public updateAfterEdit(edit: EditContext | null): void {
+	public updateAfterEdit(edit: EditContext): void {
 		// Invalidate caches upon edit
 		this.invalidateLocalCompletionCacheForActiveContext();
 		this.cachedGlobalCompletionItems = null;
@@ -403,7 +403,7 @@ export class CompletionController {
 		}
 		const methodDescription = hint.methodDescription && hint.methodDescription.length > 0 ? hint.methodDescription : null;
 		const activeParamDescription = hint.paramDescriptions && hint.argumentIndex < hint.paramDescriptions.length
-			? hint.paramDescriptions[hint.argumentIndex] ?? null
+			? hint.paramDescriptions[hint.argumentIndex]
 			: null;
 		const descriptionLines: Array<{ text: string; color: number }> = [];
 		if (methodDescription) {
@@ -452,7 +452,7 @@ export class CompletionController {
 	}
 
 	// Internal helpers and logic
-	private analyzeCompletionContext(): CompletionContext | null {
+	private analyzeCompletionContext(): CompletionContext {
 		if (!this.host.isCodeTabActive()) return null;
 		const lines = this.host.getLines();
 		if (lines.length === 0) return null;
@@ -520,7 +520,7 @@ export class CompletionController {
 			}
 			const merged: LuaCompletionItem[] = [];
 			const seen = new Map<string, LuaCompletionItem>();
-			const appendItems = (items: LuaCompletionItem[] | undefined | null): void => {
+			const appendItems = (items: LuaCompletionItem[]): void => {
 				if (!items || items.length === 0) {
 					return;
 				}
@@ -574,21 +574,21 @@ export class CompletionController {
 		}
 		const activeCodeContext = this.host.getActiveCodeTabContext();
 		const chunkName = cached.chunkName ?? this.host.resolveHoverChunkName(activeCodeContext);
-		return this.buildLocalCompletionItems(filtered, chunkName ?? null);
+		return this.buildLocalCompletionItems(filtered, chunkName );
 	}
 
-	private ensureLocalCompletionCache(): LocalCompletionCacheEntry | null {
+	private ensureLocalCompletionCache(): LocalCompletionCacheEntry {
 		const key = this.activeCompletionCacheKey();
 		if (!key) return null;
 		const activeCodeContext = this.host.getActiveCodeTabContext();
 		const chunkName = this.host.resolveHoverChunkName(activeCodeContext);
 		const currentVersion = this.host.getTextVersion();
-		let cached = this.localCompletionCache.get(key) ?? null;
+		let cached = this.localCompletionCache.get(key) ;
 		const needsParse = !cached || cached.chunkName !== chunkName || cached.parsedVersion !== currentVersion;
 		if (needsParse) {
 			const definitions = this.host.getSemanticDefinitions();
 			const symbols = definitions && definitions.length > 0 ? this.convertDefinitionsToLocalSymbols(definitions) : [];
-			const moduleAliases = this.host.getLuaModuleAliases(chunkName ?? null);
+			const moduleAliases = this.host.getLuaModuleAliases(chunkName );
 			cached = {
 				parsedVersion: currentVersion,
 				chunkName,
@@ -597,7 +597,7 @@ export class CompletionController {
 			};
 			this.localCompletionCache.set(key, cached);
 		}
-		return cached ?? null;
+		return cached ;
 	}
 
 	private getGlobalCompletionItems(): LuaCompletionItem[] {
@@ -703,7 +703,7 @@ export class CompletionController {
 		return Array.from(selected.values());
 	}
 
-	private buildLocalCompletionItems(symbols: readonly LuaScopedSymbol[], chunkLabel: string | null): LuaCompletionItem[] {
+	private buildLocalCompletionItems(symbols: readonly LuaScopedSymbol[], chunkLabel: string): LuaCompletionItem[] {
 		const items: LuaCompletionItem[] = [];
 		for (let index = 0; index < symbols.length; index += 1) {
 			const symbol = symbols[index];
@@ -839,7 +839,7 @@ export class CompletionController {
 				signature,
 				optionalParams,
 				parameterDescriptions: descriptor.parameterDescriptions ? descriptor.parameterDescriptions.slice() : undefined,
-				description: descriptor.description ?? null,
+				description: descriptor.description ,
 			};
 			this.builtinDescriptorMap.set(normalized.toLowerCase(), entry);
 		};
@@ -862,13 +862,13 @@ export class CompletionController {
 					signature,
 					optionalParams,
 					parameterDescriptions: meta.parameterDescriptions ? meta.parameterDescriptions.slice() : undefined,
-					description: meta.description ?? null,
+					description: meta.description ,
 				});
 			}
 		}
 	}
 
-	private findBuiltinDescriptor(objectName: string | null, methodName: string): ConsoleLuaBuiltinDescriptor | null {
+	private findBuiltinDescriptor(objectName: string, methodName: string): ConsoleLuaBuiltinDescriptor {
 		this.ensureBuiltinDescriptorCache();
 		const methodKey = methodName.toLowerCase();
 		if (objectName) {
@@ -880,7 +880,7 @@ export class CompletionController {
 					params: composite.params.slice(),
 					signature: composite.signature,
 					optionalParams: composite.optionalParams ? composite.optionalParams.slice() : undefined,
-					description: composite.description ?? null,
+					description: composite.description ,
 				};
 			}
 		}
@@ -891,13 +891,13 @@ export class CompletionController {
 				params: direct.params.slice(),
 				signature: direct.signature,
 				optionalParams: direct.optionalParams ? direct.optionalParams.slice() : undefined,
-				description: direct.description ?? null,
+				description: direct.description ,
 			};
 		}
 		return null;
 	}
 
-	private determineAutoCompletionTrigger(context: CompletionContext, edit: EditContext): CompletionTrigger | null {
+	private determineAutoCompletionTrigger(context: CompletionContext, edit: EditContext): CompletionTrigger {
 		if (!this.host.shouldAutoTriggerCompletions()) return null;
 		if (!edit || edit.kind === 'delete') return null;
 		if (edit.text.length === 0) return null;
@@ -912,7 +912,7 @@ export class CompletionController {
 		return 'typing';
 	}
 
-	private updateCompletionSessionAfterMutation(edit: EditContext | null): void {
+	private updateCompletionSessionAfterMutation(edit: EditContext): void {
 		if (!this.host.isCodeTabActive()) { this.closeSession(); return; }
 		const analyzed = this.analyzeCompletionContext();
 		if (this.completionSession) {
@@ -1006,7 +1006,7 @@ export class CompletionController {
 	private applyCompletionFilter(session: CompletionSession): void {
 		const prefix = session.context.prefix;
 		const cacheKey = prefix.toLowerCase();
-		let filtered = session.filterCache.get(cacheKey) ?? null;
+		let filtered = session.filterCache.get(cacheKey) ;
 		if (!filtered) {
 			filtered = this.filterCompletionItems(session.items, prefix);
 			session.filterCache.set(cacheKey, filtered);
@@ -1029,7 +1029,7 @@ export class CompletionController {
 		for (let i = 0; i < items.length; i += 1) {
 			const item = items[i];
 			const labelLower = item.label.toLowerCase();
-			let score: number | null = null;
+			let score: number = null;
 			let exact = false;
 			if (labelLower.startsWith(lower)) { score = 0; exact = labelLower === lower; }
 			else if (lower.length > 0) {
@@ -1180,7 +1180,7 @@ export class CompletionController {
 		}
 	}
 
-	private resolveParameterHintContext(): ParameterHintState | null {
+	private resolveParameterHintContext(): ParameterHintState {
 		if (!this.host.isCodeTabActive()) return null;
 		const lines = this.host.getLines();
 		if (lines.length === 0) return null;
@@ -1216,7 +1216,7 @@ export class CompletionController {
 		}
 		let operatorIndex = scan;
 		while (operatorIndex >= 0 && isWhitespace(prefix.charAt(operatorIndex))) operatorIndex -= 1;
-		let objectName: string | null = null;
+		let objectName: string = null;
 		if (operatorIndex >= 0) {
 			const candidateOperator = prefix.charAt(operatorIndex);
 			if (candidateOperator === '.' || candidateOperator === ':') {
@@ -1247,7 +1247,7 @@ export class CompletionController {
 					anchorColumn: lastOpen,
 					argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
 					paramDescriptions,
-					methodDescription: apiMeta.description ?? null,
+					methodDescription: apiMeta.description ,
 				};
 			}
 		}
@@ -1255,7 +1255,7 @@ export class CompletionController {
 		if (builtin) {
 			const params = Array.isArray(builtin.params) ? builtin.params.slice() : [];
 			let paramDescriptions = Array.isArray(builtin.parameterDescriptions) ? builtin.parameterDescriptions.slice() : undefined;
-			let methodDescription = builtin.description ?? null;
+			let methodDescription = builtin.description ;
 			if ((!paramDescriptions || paramDescriptions.length === 0) || !methodDescription) {
 				const apiMetaFallback = getApiCompletionData().signatures.get(normalizedMethodName);
 				if (apiMetaFallback) {
@@ -1292,14 +1292,14 @@ export class CompletionController {
 					anchorColumn: lastOpen,
 					argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
 					paramDescriptions,
-					methodDescription: apiMetaGlobal.description ?? null,
+					methodDescription: apiMetaGlobal.description ,
 				};
 			}
 		}
 		return null;
 	}
 
-	private activeCompletionCacheKey(): string | null {
+	private activeCompletionCacheKey(): string {
 		const context = this.host.getActiveCodeTabContext();
 		const asset_id = this.host.resolveHoverasset_id(context);
 		const chunkName = this.host.resolveHoverChunkName(context);

@@ -104,7 +104,7 @@ export class KeyboardInput implements InputHandler {
 			const isDown = this.keyStates[buttonId].pressed === true;
 			const wasDown = prev.pressed === true;
 
-			let pressId = prev.pressId ?? null;
+			let pressId = prev.pressId ;
 			if (isDown && !pressId) {
 				pressId = this.nextPressId++;
 			}
@@ -139,7 +139,7 @@ export class KeyboardInput implements InputHandler {
 					wasreleased: prev.wasreleased || wasDown,
 					presstime: null,
 					pressedAtMs: null,
-					releasedAtMs: wasDown ? now : prev.releasedAtMs ?? null,
+					releasedAtMs: wasDown ? now : prev.releasedAtMs ,
 					timestamp: wasDown ? now : prev.timestamp ?? now,
 					pressId: wasDown ? (prev.pressId ?? pressId) : null,
 					value: 0,
@@ -165,7 +165,7 @@ export class KeyboardInput implements InputHandler {
 				dst.releasedAtMs = state.releasedAtMs;
 				dst.pressId = state.pressId;
 				dst.value = state.value;
-				dst.value2d = state.value2d ?? null;
+				dst.value2d = state.value2d ;
 				dst.stickyConsumed = state.stickyConsumed;
 				this.gamepadButtonStates[mapped] = dst;
 			}

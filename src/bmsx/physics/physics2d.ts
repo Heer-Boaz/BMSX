@@ -7,7 +7,7 @@ type PhysicsBodyOptions = {
 	mass?: number;
 	restitution?: number;
 	gravityScale?: number;
-	maxSpeed?: number | null;
+	maxSpeed?: number;
 	isStatic?: boolean;
 };
 
@@ -18,7 +18,7 @@ type PhysicsBodyState = {
 	invMass: number;
 	restitution: number;
 	gravityScale: number;
-	maxSpeed: number | null;
+	maxSpeed: number;
 	isStatic: boolean;
 };
 
@@ -36,7 +36,7 @@ export type Physics2DBodyStateSnapshot = {
 	invMass: number;
 	restitution: number;
 	gravityScale: number;
-	maxSpeed: number | null;
+	maxSpeed: number;
 	isStatic: boolean;
 };
 
@@ -48,17 +48,17 @@ export type Physics2DSerializedState = {
 export type Physics2DColliderContact = {
 	normalX: number;
 	normalY: number;
-	depth: number | null;
+	depth: number;
 };
 
 export type Physics2DColliderAdapter = {
 	setPosition(id: string, centerX: number, centerY: number): void;
-	contact(aId: string, bId: string): Physics2DColliderContact | null;
+	contact(aId: string, bId: string): Physics2DColliderContact;
 	getState(id: string): { centerX: number; centerY: number; width: number; height: number };
 };
 
 export class Physics2DManager {
-	private colliders: Physics2DColliderAdapter | null = null;
+	private colliders: Physics2DColliderAdapter = null;
 	private readonly bodies = new Map<string, PhysicsBodyState>();
 	private readonly staticIds: Set<string> = new Set();
 	private gravity = 0;
@@ -96,7 +96,7 @@ export class Physics2DManager {
 		if (!Number.isFinite(gravityScale)) {
 			throw new Error('[Physics2DManager] Gravity scale must be finite.');
 		}
-		const maxSpeed = options.maxSpeed ?? null;
+		const maxSpeed = options.maxSpeed ;
 		if (maxSpeed !== null && maxSpeed <= 0) {
 			throw new Error('[Physics2DManager] Max speed must be positive when provided.');
 		}
@@ -213,7 +213,7 @@ export class Physics2DManager {
 		}
 	}
 
-	public getCenter(id: string): { x: number; y: number } | null {
+	public getCenter(id: string): { x: number; y: number } {
 		try {
 			const state = this.getColliderState(id);
 			return { x: state.centerX, y: state.centerY };
@@ -286,7 +286,7 @@ export class Physics2DManager {
 		}
 	}
 
-	private computeAabbContact(aId: string, bId: string): Physics2DColliderContact | null {
+	private computeAabbContact(aId: string, bId: string): Physics2DColliderContact {
 		const a = this.getColliderState(aId);
 		const b = this.getColliderState(bId);
 		const ax0 = a.centerX - a.width / 2;
@@ -339,7 +339,7 @@ export class Physics2DManager {
 		this.colliders.setPosition(id, newCenterX, newCenterY);
 	}
 
-	private normalFromCenters(aId: string, bId: string): { x: number; y: number } | null {
+	private normalFromCenters(aId: string, bId: string): { x: number; y: number } {
 		const a = this.getColliderState(aId);
 		const b = this.getColliderState(bId);
 		const dx = b.centerX - a.centerX;
@@ -360,14 +360,14 @@ export class Physics2DManager {
 				invMass: body.invMass,
 				restitution: body.restitution,
 				gravityScale: body.gravityScale,
-				maxSpeed: body.maxSpeed ?? null,
+				maxSpeed: body.maxSpeed ,
 				isStatic: body.isStatic,
 			});
 		}
 		return { gravity: this.gravity, bodies };
 	}
 
-	public restore(state: Physics2DSerializedState | undefined): void {
+	public restore(state: Physics2DSerializedState): void {
 		this.bodies.clear();
 		this.staticIds.clear();
 		if (!state) {
@@ -384,7 +384,7 @@ export class Physics2DManager {
 				invMass: body.invMass,
 				restitution: body.restitution,
 				gravityScale: body.gravityScale,
-				maxSpeed: body.maxSpeed ?? null,
+				maxSpeed: body.maxSpeed ,
 				isStatic: body.isStatic,
 			};
 			this.bodies.set(body.id, entry);

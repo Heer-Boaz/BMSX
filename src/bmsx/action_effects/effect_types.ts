@@ -19,7 +19,7 @@ export type ActionEffectTriggerOptions<Id extends ActionEffectId> = Id extends A
 	: { payload?: EventPayload };
 
 export type ActionEffectTriggerResult = 'ok' | 'on_cooldown' | 'failed';
-export type ActionEffectHandlerResult = { event?: string; payload?: EventPayload } | undefined;
+export type ActionEffectHandlerResult = { event?: string; payload?: EventPayload };
 
 export interface ActionEffectHandlerContext<Id extends ActionEffectId = ActionEffectId> {
 	owner: WorldObject;

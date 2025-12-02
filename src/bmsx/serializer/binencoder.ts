@@ -108,7 +108,7 @@ export function typedArrayFromBytes<T extends ArrayBufferView>(u8: Uint8Array, c
 	return new ctor(aligned.buffer, aligned.byteOffset, aligned.byteLength / alignment);
 }
 
-export function toF32(v: any): Float32Array | undefined {
+export function toF32(v: any): Float32Array {
 	if (v === undefined || v === null) return undefined;
 	if (ArrayBuffer.isView(v)) {
 		const u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
@@ -136,7 +136,7 @@ class BinWriter {
 	static cachePut(key: string, bytes: Uint8Array) {
 		const cache = BinWriter.stringEncodeCache;
 		if (cache.size >= BinWriter.CACHE_MAX) {
-			const first = cache.keys().next().value as string | undefined;
+			const first = cache.keys().next().value as string;
 			if (first !== undefined) cache.delete(first);
 		}
 		cache.set(key, bytes);

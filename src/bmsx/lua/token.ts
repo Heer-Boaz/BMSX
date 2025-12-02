@@ -66,7 +66,7 @@ export const enum LuaTokenType {
 	Eof,
 }
 
-export type LuaTokenLiteral = number | string | boolean | null;
+export type LuaTokenLiteral = number | string | boolean;
 
 export type LuaToken = {
 	readonly type: LuaTokenType;
@@ -76,7 +76,7 @@ export type LuaToken = {
 	readonly literal: LuaTokenLiteral;
 };
 
-export function resolveKeyword(identifier: string): LuaTokenType | null {
+export function resolveKeyword(identifier: string): LuaTokenType {
 	const key = identifier.toLowerCase();
 	switch (key) {
 		case 'and':

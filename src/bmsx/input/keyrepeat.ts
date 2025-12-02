@@ -1,16 +1,16 @@
 import type { ButtonState } from './inputtypes';
 
-export type ButtonStateResolver = (code: string) => ButtonState | null;
+export type ButtonStateResolver = (code: string) => ButtonState;
 
 export class KeyPressLatch {
-	private readonly records = new Map<string, number | null>();
+	private readonly records = new Map<string, number>();
 
-	public accept(code: string, state: ButtonState | undefined | null): boolean {
+	public accept(code: string, state: ButtonState): boolean {
 		if (!state || state.pressed !== true || state.consumed === true) {
 			this.records.delete(code);
 			return false;
 		}
-		const pressId = state.pressId ?? null;
+		const pressId = state.pressId ;
 		if (pressId !== null) {
 			const existing = this.records.get(code);
 			if (existing === pressId) {

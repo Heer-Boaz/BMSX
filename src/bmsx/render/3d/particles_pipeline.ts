@@ -69,7 +69,7 @@ function updateCameraParticleState(width: number, height: number, cam: Camera): 
 	return cameraParticleState;
 }
 
-function resolveParticleState(state: ParticlePipelineState | undefined, context: RenderContext): ParticlePipelineState {
+function resolveParticleState(state: ParticlePipelineState, context: RenderContext): ParticlePipelineState {
 	if (!state) {
 		return updateOrthographicParticleState(context.offscreenCanvasSize.x, context.offscreenCanvasSize.y);
 	}
@@ -101,7 +101,7 @@ export function setupParticleUniforms(backend: WebGLBackend): void {
 	const gl = backend.gl;
 	// Pick up program created/bound by GPUBackend/GraphicsPipelineManager
 	if (!particleProgram) {
-		const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+		const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 		if (!current) throw new Error('Particle shader program not bound during bootstrap');
 		particleProgram = current;
 	}
@@ -130,7 +130,7 @@ interface ParticleRuntime {
 	context: RenderContext;
 }
 
-export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGLFramebuffer, state: ParticlePipelineState | undefined): void {
+export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGLFramebuffer, state: ParticlePipelineState): void {
 	const { backend, gl, context } = runtime;
 	const pending = beginParticleQueue();
 	if (pending === 0) return;
@@ -140,7 +140,7 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 	const batches = new Map<TextureHandle, Map<string, ParticleRenderSubmission[]>>();
 	forEachParticleQueue((p) => {
 		if (!p) return;
-		const tex = (p.texture as TextureHandle | undefined) ?? defaultTexture;
+		const tex = (p.texture as TextureHandle) ?? defaultTexture;
 		let byAmbient = batches.get(tex);
 		if (!byAmbient) { byAmbient = new Map(); batches.set(tex, byAmbient); }
 		const mode = (p.ambient_mode ?? particleAmbientModeDefault) | 0;
@@ -228,7 +228,7 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 		exec: (backend, fbo, s) => {
 			const webglBackend = backend as WebGLBackend;
 			const runtime: ParticleRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: $.view };
-			renderParticleBatch(runtime, fbo as WebGLFramebuffer, s as ParticlePipelineState | undefined);
+			renderParticleBatch(runtime, fbo as WebGLFramebuffer, s as ParticlePipelineState);
 		},
 		prepare: (_backend, _state) => {
 			const gv = $.view;

@@ -11,7 +11,7 @@ export class TransformComponent extends Component<WorldObject> {
 	public orientationQ: quat = { x: 0, y: 0, z: 0, w: 1 }; // authoritative when parent implements Oriented
 	public scale: vec3arr;
 
-	private _parentNode: TransformComponent | null = null;
+	private _parentNode: TransformComponent = null;
 	private children: TransformComponent[] = [];
 
 	private localMatrix: Mat4Float32 = new Float32Array(16);
@@ -27,11 +27,11 @@ export class TransformComponent extends Component<WorldObject> {
 		M4.setIdentity(this.worldMatrix);
 	}
 
-	public get parentNode(): TransformComponent | null {
+	public get parentNode(): TransformComponent {
 		return this._parentNode;
 	}
 
-	public set parentNode(p: TransformComponent | null) {
+	public set parentNode(p: TransformComponent) {
 		if (this._parentNode === p) return;
 		if (this._parentNode) {
 			const idx = this._parentNode.children.indexOf(this);

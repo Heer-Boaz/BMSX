@@ -531,7 +531,7 @@ export const CREATE_RESOURCE_MAX_PATH_LENGTH = 1024;
 
 applyThemeDefinition(THEME_DEFINITIONS[DEFAULT_THEME_VARIANT]);
 
-export function setIdeThemeVariant(variant: IdeThemeVariant | undefined | null): void {
+export function setIdeThemeVariant(variant: IdeThemeVariant): void {
 	const requestedVariant = variant ?? DEFAULT_THEME_VARIANT;
 	if (requestedVariant === activeThemeVariant) {
 		return;

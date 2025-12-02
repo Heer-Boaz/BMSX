@@ -7,7 +7,7 @@ import { WebGLBackend } from './webgl/webgl_backend';
 // DirLightBlock = 0, PointLightBlock = 1 in mesh pipeline. Keep frame at 2.
 export const FRAME_UNIFORM_BINDING = 2;
 
-let ubo: WebGLBuffer | null = null;
+let ubo: WebGLBuffer = null;
 // Layout (std140-friendly):
 // [0..3]   offscreenSize: (offW, offH), logicalSize: (baseW, baseH)
 // [4..7]   timing: (time, delta, 0, 0)

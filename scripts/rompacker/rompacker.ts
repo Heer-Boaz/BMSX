@@ -140,7 +140,7 @@ function removeTaskNamesFromList(target: TaskName[], tasks: TaskName[]): void {
 	}
 }
 
-function collectExistingDirectories(candidates: Array<string | undefined>): string[] {
+function collectExistingDirectories(candidates: Array<string>): string[] {
 	const visited = new Set<string>();
 	const results: string[] = [];
 	for (const candidate of candidates) {
@@ -188,7 +188,7 @@ function parseArgsVector(argv: string[]): Set<string> {
 	return seen;
 }
 
-function getOptionalParam(args: string[], flag: string, envVar: string): string | undefined {
+function getOptionalParam(args: string[], flag: string, envVar: string): string {
 	const value = getParamOrEnv(args, flag, envVar, '');
 	return value.length > 0 ? value : undefined;
 }
@@ -212,7 +212,7 @@ function isDirectoryPath(candidate: string): boolean {
 	}
 }
 
-function findExistingDirectory(candidates: Array<string | undefined>): string | undefined {
+function findExistingDirectory(candidates: Array<string>): string {
 	const visited = new Set<string>();
 	for (const candidate of candidates) {
 		if (!candidate) continue;
@@ -226,7 +226,7 @@ function findExistingDirectory(candidates: Array<string | undefined>): string | 
 	return undefined;
 }
 
-function findBootloaderDirectory(candidates: Array<string | undefined>): string | undefined {
+function findBootloaderDirectory(candidates: Array<string>): string {
 	const visited = new Set<string>();
 	for (const candidate of candidates) {
 		if (!candidate) continue;
@@ -343,7 +343,7 @@ function parseOptions(args: string[]): ParsedOptions {
 	const romSegments = normalizedRomName.split('/').filter(Boolean);
 	const romLeaf = romSegments.length > 0 ? romSegments[romSegments.length - 1] : normalizedRomName;
 
-	const bootloaderCandidates: Array<string | undefined> = [
+	const bootloaderCandidates: Array<string> = [
 		bootloader_path,
 		normalizedRomName ? `./src/${normalizedRomName}` : undefined,
 		normalizedRomName && romLeaf && romLeaf !== normalizedRomName ? `./src/${romLeaf}` : undefined,
@@ -367,7 +367,7 @@ function parseOptions(args: string[]): ParsedOptions {
 	}
 	const bootloaderFallbackPath = bootloaderFallbackApplied ? consoleBootloaderPath : undefined;
 
-	const resCandidates: Array<string | undefined> = [
+	const resCandidates: Array<string> = [
 		respath,
 		normalizedRomName ? `./src/${normalizedRomName}/res` : undefined,
 		normalizedRomName && romLeaf && romLeaf !== normalizedRomName ? `./src/${romLeaf}/res` : undefined,
@@ -388,7 +388,7 @@ function parseOptions(args: string[]): ParsedOptions {
 		shouldBundleCartCode = true;
 	}
 
-	const cartRootCandidates: Array<string | undefined> = [
+	const cartRootCandidates: Array<string> = [
 		bootloader_path,
 		derivedCartRoot,
 		normalizedRomName ? `./src/${normalizedRomName}` : undefined,
@@ -676,7 +676,7 @@ async function main() {
 		const projectRootPath = projectRootFromRes.length > 0
 			? projectRootFromRes
 			: (projectRootFromBoot.length > 0 ? projectRootFromBoot : null);
-		const virtualRoot = projectRootPath ?? undefined;
+		const virtualRoot = projectRootPath ;
 
 		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
 		setAtlasFlag(useTextureAtlas);
@@ -742,7 +742,7 @@ async function main() {
 		if (bootloaderFallbackPath) {
 			logWarn(`Bootloader not found for ROM "${rom_name}". Using default cart bootloader at ${pc.white(bootloaderFallbackPath)}.`);
 		}
-		let pkgTsconfigPath: string | undefined;
+		let pkgTsconfigPath: string;
 		if (usePkgTsconfig) {
 			logBullet('tsconfig', pc.white('tsconfig.pkg.json (per-game)'));
 			const path = require('path');
@@ -795,7 +795,7 @@ async function main() {
 		}
 		// split-engine removed
 		logDivider('Pipeline');
-		let typeCheckError: Error | null = null;
+		let typeCheckError: Error = null;
 		logInfo(`Starting for ${pc.bold(pc.blue(`${rom_name}`))}`);
 		progress.showInitial();
 
@@ -941,7 +941,7 @@ async function main() {
 			prettyErrors.push(...esErrors);
 		} else {
 			// Only add main error message if no esbuild errors were extracted
-			const mainMessage = (e as any)?.message as string | undefined;
+			const mainMessage = (e as any)?.message as string;
 			if (mainMessage && mainMessage.trim().length > 0) {
 				const lines = mainMessage.split('\n').map(l => l.trimEnd()).filter(l => l.length > 0);
 				prettyErrors.push(...lines);

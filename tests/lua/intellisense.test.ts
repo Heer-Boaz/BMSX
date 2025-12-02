@@ -89,7 +89,7 @@ const referenceSourcesModulePromise = import('../../src/bmsx/console/ide/referen
 const workspaceModulePromise = import('../../src/bmsx/console/ide/semantic_workspace');
 const referenceNavigationModulePromise = import('../../src/bmsx/console/ide/reference_navigation');
 
-function luaRangeToSearchMatch(range: { start: { line: number; column: number }; end: { line: number; column: number } }, lines: readonly string[]): { row: number; start: number; end: number } | null {
+function luaRangeToSearchMatch(range: { start: { line: number; column: number }; end: { line: number; column: number } }, lines: readonly string[]): { row: number; start: number; end: number } {
 	const rowIndex = range.start.line - 1;
 	if (rowIndex < 0 || rowIndex >= lines.length) {
 		return null;

@@ -95,24 +95,24 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	 */
 	get_components<T extends Component>(constructor: ComponentConstructor<T>): T[] {
 		const key = constructor.name;
-		const arr = this.componentMap[key] as T[] | undefined;
+		const arr = this.componentMap[key] as T[];
 		return arr ? [...arr] : [];
 	}
 
 	has_component<T extends Component>(constructor: ComponentConstructor<T>): boolean {
 		const key = constructor.name;
-		const arr = this.componentMap[key] as T[] | undefined;
+		const arr = this.componentMap[key] as T[];
 		return !!arr && arr.length > 0;
 	}
 
-	get_first_component<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
+	get_first_component<T extends Component>(constructor: ComponentConstructor<T>): T {
 		const key = constructor.name;
-		const arr = this.componentMap[key] as T[] | undefined;
+		const arr = this.componentMap[key] as T[];
 		return arr && arr.length > 0 ? arr[0] : undefined;
 	}
 
 	/** Returns the component of a given type that matches the supplied local id. */
-	get_component_by_local_id<T extends Component>(constructor: ComponentConstructor<T>, idLocal: Identifier): T | undefined {
+	get_component_by_local_id<T extends Component>(constructor: ComponentConstructor<T>, idLocal: Identifier): T {
 		for (const c of this.components) {
 			if (c instanceof constructor && c.id_local === idLocal) return c as T;
 		}
@@ -120,9 +120,9 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	}
 
 	/** Return the unique instance of a component type; throws if multiple are attached. */
-	get_unique_component<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
+	get_unique_component<T extends Component>(constructor: ComponentConstructor<T>): T {
 		const key = constructor.name;
-		const arr = this.componentMap[key] as T[] | undefined;
+		const arr = this.componentMap[key] as T[];
 		if (!arr || arr.length === 0) return undefined;
 		if (arr.length > 1) throw new Error(`Multiple '${key}' components attached to '${this.id}' but a unique instance was requested.`);
 		return arr[0];
@@ -155,24 +155,24 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	/**
 	 * Retrieves a component instance by its id or local_id.
 	 */
-	public get_component_by_id<T extends Component = Component>(id: string): T | undefined {
+	public get_component_by_id<T extends Component = Component>(id: string): T {
 		const found = this.components.find(c => c.id === id || c.id_local === id);
-		return found as T | undefined;
+		return found as T;
 	}
 
 	/**
 	 * Retrieves the Nth instance of a component type attached to this object.
 	 */
-	public get_component_at<T extends Component>(constructor: ComponentConstructor<T>, index: number): T | undefined {
+	public get_component_at<T extends Component>(constructor: ComponentConstructor<T>, index: number): T {
 		const key = (constructor)?.name;
-		const arr = this.componentMap[key] as T[] | undefined;
+		const arr = this.componentMap[key] as T[];
 		return arr ? arr[index] : undefined;
 	}
 
 	/**
 	 * Finds the first component of an optional type matching a predicate.
 	 */
-	public find_component<T extends Component>(predicate: (c: T, index: number) => boolean, constructor?: ComponentConstructor<T>): T | undefined {
+	public find_component<T extends Component>(predicate: (c: T, index: number) => boolean, constructor?: ComponentConstructor<T>): T {
 		const arr = constructor ? this.get_components(constructor) : this.components as T[];
 		for (let i = 0; i < arr.length; i++) {
 			const c = arr[i];
@@ -235,7 +235,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 			console.log('[Timeline][play]', {
 				parent: this,
 				definition: definition,
-				options: opts ?? null,
+				options: opts ,
 			});
 		}
 		this.timeline_component.play(definition, opts);
@@ -261,7 +261,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 		this.timeline_component.advance(id);
 	}
 
-	public get_timeline<T = unknown>(id: string): Timeline<T> | undefined {
+	public get_timeline<T = unknown>(id: string): Timeline<T> {
 		return this.timeline_component.get<T>(id);
 	}
 
@@ -274,7 +274,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	}
 
 	/** Shorthand getter for retrieving the action-effect component attached to this object. */
-	public get actioneffects(): ActionEffectComponent | undefined {
+	public get actioneffects(): ActionEffectComponent {
 		return this.get_unique_component(ActionEffectComponent);
 	}
 
@@ -459,14 +459,14 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	/**
 	 * Read-only: the identifier of the Space this object currently belongs to, or null if not in a space.
 	 */
-	public get space_id(): Identifier | null {
-		return this.space?.id ?? null;
+	public get space_id(): Identifier {
+		return this.space?.id ;
 	}
 
 	/**
 	 * Read-only: the Space this object currently belongs to, or null if not attached.
 	 */
-	public get space(): Space | null {
+	public get space(): Space {
 		return $.world.getSpaceOfObject(this.id);
 	}
 
@@ -568,7 +568,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	}
 
 	/** Returns the ColliderComponent if attached. */
-	public get collider(): Collider2DComponent | undefined { return this.get_first_component(Collider2DComponent); }
+	public get collider(): Collider2DComponent { return this.get_first_component(Collider2DComponent); }
 
 	/**
 	 * Indicates whether the object is hittable. Delegates to ColliderComponent when present.
@@ -615,7 +615,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	}
 
 	/** World-space polygons if present. */
-	public get hitpolygon(): Polygon[] | undefined { return this.collider?.worldPolygons ?? undefined; }
+	public get hitpolygon(): Polygon[] { return this.collider?.worldPolygons ; }
 	public get has_hitpolygon(): boolean { const p = this.collider?.localPolygons; return !!(p && p.length > 0); }
 
 	public get x_plus_width(): number {
@@ -838,7 +838,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 		// so the first machine is always one the class explicitly requested.
 		const explicitMachineId = opts?.fsm_id;
 		const inferredMachineId = this.constructor.name;
-		let initialMachineId: string | undefined = explicitMachineId;
+		let initialMachineId: string = explicitMachineId;
 		if (!initialMachineId) {
 			const hasDefinitionForDefault = !!StateDefinitions[inferredMachineId];
 			if (hasDefinitionForDefault) {
@@ -950,7 +950,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	 * @param {vec2} p 2D vector; The points for which the overlap is checked.
 	 * @returns {vec2} If there is an overlap, the offset from this object to the point **(used for dragging in debugger)**, or _null_ otherwisse.
 	 */
-	public overlaps_point(p: vec2): vec2 | null {
+	public overlaps_point(p: vec2): vec2 {
 		if (!(this.hitbox_left >= p.x || this.hitbox_right <= p.x || this.hitbox_bottom <= p.y || this.hitbox_top >= p.y))
 			return new_vec2(p.x - this.hitbox_left, p.y - this.hitbox_top);
 		return null;

@@ -36,7 +36,7 @@ export interface BuildDiagnostics {
 
 export class ECSPipelineRegistry {
 	private _descs = new Map<string, SystemDescriptor>();
-	private _lastDiagnostics: BuildDiagnostics | null = null;
+	private _lastDiagnostics: BuildDiagnostics = null;
 
 	register(desc: SystemDescriptor): void {
 		if (this._descs.has(desc.id)) throw new Error(`ECSPipelineRegistry: duplicate id '${desc.id}'`);
@@ -45,7 +45,7 @@ export class ECSPipelineRegistry {
 
 	registerMany(descs: SystemDescriptor[]): void { for (const d of descs) this.register(d); }
 
-	get(id: string): SystemDescriptor | undefined { return this._descs.get(id); }
+	get(id: string): SystemDescriptor { return this._descs.get(id); }
 
 	/** Build and assign systems to the world's ECSystemManager based on nodes. */
 	build(world: World, nodes: NodeSpec[]): BuildDiagnostics {
@@ -103,7 +103,7 @@ export class ECSPipelineRegistry {
 		return diag;
 	}
 
-	getLastDiagnostics(): BuildDiagnostics | null { return this._lastDiagnostics; }
+	getLastDiagnostics(): BuildDiagnostics { return this._lastDiagnostics; }
 }
 
 export const DefaultECSPipelineRegistry = new ECSPipelineRegistry();

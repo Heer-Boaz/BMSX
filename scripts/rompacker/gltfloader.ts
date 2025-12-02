@@ -28,8 +28,8 @@ function parseGLB(data: ArrayBuffer): GLBParseResult {
 	if (version !== 2) throw new Error(`unsupported GLB version ${version}`);
 	const length = dv.getUint32(8, true);
 	let offset = 12;
-	let json: any | undefined;
-	let bin: Uint8Array | undefined;
+	let json: any;
+	let bin: Uint8Array;
 	const decoder = new TextDecoder('utf8');
 	while (offset + 8 <= length) {
 		const chunkLength = dv.getUint32(offset, true); offset += 4;
@@ -50,7 +50,7 @@ function parseGLB(data: ArrayBuffer): GLBParseResult {
 
 export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, resname: string): Promise<GLTFModel> {
 	let json: any;
-	let glbBin: Uint8Array | undefined;
+	let glbBin: Uint8Array;
 
 	if (typeof data === 'string') {
 		json = JSON.parse(data);
@@ -88,8 +88,8 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 
 	const bufferViews = json.bufferViews || [];
 	const accessors = json.accessors || [];
-	const accessorFloatCache: (Float32Array | undefined)[] = [];
-	const accessorRawCache: (AccessorRawArray | undefined)[] = [];
+	const accessorFloatCache: (Float32Array)[] = [];
+	const accessorRawCache: (AccessorRawArray)[] = [];
 
 	function getComponentSize(componentType: number): number {
 		switch (componentType) {
@@ -400,9 +400,9 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 				morphTangents.push(target.TANGENT !== undefined ? getAccessorFloat(target.TANGENT) : new Float32Array());
 			}
 
-		let jointIndices: Uint16Array | undefined;
-		let jointWeights: Float32Array | undefined;
-		const jointAttrPairs: Array<[number | undefined, number | undefined]> = [
+		let jointIndices: Uint16Array;
+		let jointWeights: Float32Array;
+		const jointAttrPairs: Array<[number, number]> = [
 			[attributes.JOINTS_0, attributes.WEIGHTS_0],
 			[attributes.JOINTS_1, attributes.WEIGHTS_1],
 		];
@@ -520,7 +520,7 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 	}));
 
 	const scenes: GLTFScene[] = (json.scenes || []).map((s: any) => ({ nodes: s.nodes || [] }));
-	const scene: number | undefined = json.scene;
+	const scene: number = json.scene;
 
 	const skins: GLTFSkin[] = (json.skins || []).map((s: any) => {
 		if (s.inverseBindMatrices === undefined) {

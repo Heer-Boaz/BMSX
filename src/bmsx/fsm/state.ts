@@ -66,7 +66,7 @@ type TimelineHost = Stateful & {
 	define_timeline(definition: Timeline | TimelineDefinition): void;
 	play_timeline(id: string, opts?: TimelinePlayOptions): void;
 	stop_timeline(id: string): void;
-	get_timeline<T = Timeline>(id: string): Timeline<T> | undefined;
+	get_timeline<T = Timeline>(id: string): Timeline<T>;
 };
 
 type StateTimelineBinding = {
@@ -98,12 +98,12 @@ const EMPTY_GAME_EVENT: GameEvent = Object.freeze({
 	timestamp: 0,
 });
 
-function resolveEmitterId(event: GameEvent | undefined, fallback: Identifier): Identifier {
+function resolveEmitterId(event: GameEvent, fallback: Identifier): Identifier {
 	if (!event || !event.emitter) return fallback;
 	return (event.emitter as Identifiable).id ?? fallback;
 }
 
-function resolveEventPayload(event: GameEvent | undefined): EventPayload | undefined {
+function resolveEventPayload(event: GameEvent): EventPayload {
 	if (!event) return undefined;
 	const { type, timeStamp, emitter, target, ...rest } = event as Record<string, unknown>;
 	if (Object.keys(rest).length === 0) return undefined;
@@ -221,7 +221,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}
 	}
 
-	private static cloneSnapshot(ctx?: TransitionDiagContext): TransitionDiagSnapshot | undefined {
+	private static cloneSnapshot(ctx?: TransitionDiagContext): TransitionDiagSnapshot {
 		if (!ctx) return undefined;
 		return {
 			trigger: ctx.trigger,
@@ -306,7 +306,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}
 
 		if (State._pathCache.size >= State.pathConfig.cacheSize) {
-			const firstKey = State._pathCache.keys().next().value as string | undefined;
+			const firstKey = State._pathCache.keys().next().value as string;
 			if (firstKey) State._pathCache.delete(firstKey);
 		}
 		const rec = { abs, up, segs: segs as readonly string[] };
@@ -330,7 +330,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}
 	}
 
-	private peekTransitionContext(): TransitionDiagContext | undefined {
+	private peekTransitionContext(): TransitionDiagContext {
 		const stack = this.transitionContextStack;
 		if (!stack || stack.length === 0) return undefined;
 		return stack[stack.length - 1];
@@ -361,12 +361,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		ctx.transitions.push(outcome);
 	}
 
-	private resolveContextSnapshot(provided?: TransitionDiagSnapshot): TransitionDiagSnapshot | undefined {
+	private resolveContextSnapshot(provided?: TransitionDiagSnapshot): TransitionDiagSnapshot {
 		if (provided) return provided;
 		return State.cloneSnapshot(this.peekTransitionContext());
 	}
 
-	private formatGuardDiagnostics(guard: TransitionGuardDiagnostics | undefined): string | undefined {
+	private formatGuardDiagnostics(guard: TransitionGuardDiagnostics): string {
 		if (!guard) return undefined;
 		if (!guard.evaluations || guard.evaluations.length === 0) return undefined;
 		return guard.evaluations.map(ev => {
@@ -377,7 +377,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}).join(',');
 	}
 
-	private formatActionEvaluations(context?: TransitionDiagSnapshot): string | undefined {
+	private formatActionEvaluations(context?: TransitionDiagSnapshot): string {
 		if (!context || !context.actionEvaluations || context.actionEvaluations.length === 0) return undefined;
 		return context.actionEvaluations.join(';');
 	}
@@ -423,7 +423,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		};
 	}
 
-	private hydrateContext(snapshot: TransitionDiagSnapshot | undefined, trigger: TransitionTrigger, description: string): TransitionDiagContext {
+	private hydrateContext(snapshot: TransitionDiagSnapshot, trigger: TransitionTrigger, description: string): TransitionDiagContext {
 		if (snapshot) {
 			return {
 				trigger: snapshot.trigger,
@@ -508,7 +508,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		return 'handler';
 	}
 
-	private emitEventDispatchTrace(eventName: string, emitter: Identifier, detail: EventPayload | undefined, handled: boolean, bubbled: boolean, depth: number, context?: TransitionDiagSnapshot): void {
+	private emitEventDispatchTrace(eventName: string, emitter: Identifier, detail: EventPayload, handled: boolean, bubbled: boolean, depth: number, context?: TransitionDiagSnapshot): void {
 		if (!State.shouldTraceDispatch()) return;
 		const ctx = context ?? this.createFallbackSnapshot('event', `event:${eventName}`, detail);
 		const transition = ctx.lastTransition;
@@ -552,7 +552,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	private root_ref?: State;
 
 	/** Parent state of this state (machine). */
-	public get parent(): State | undefined { return this.parent_ref; }
+	public get parent(): State { return this.parent_ref; }
 	/** Root state of this state (machine). */
 	public get root(): State { return this.root_ref ?? this; }
 	public get is_root(): boolean { return this.root === this; }
@@ -621,7 +621,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	/**
 	 * Returns the current state of the FSM
 	 */
-	public get current(): State | undefined {
+	public get current(): State {
 		if (!this.states) return undefined;
 		return this.states[this.currentid];
 	}
@@ -766,7 +766,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		return ctx.states;
 	}
 
-	private resolveDefinitionChild(def: StateDefinition, childId: Identifier): StateDefinition | undefined {
+	private resolveDefinitionChild(def: StateDefinition, childId: Identifier): StateDefinition {
 		const states = def.states;
 		if (!states) return undefined;
 		if (Object.prototype.hasOwnProperty.call(states, childId)) {
@@ -783,7 +783,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		return undefined;
 	}
 
-	private findChild(ctx: State, seg: string): { child: State | undefined, key: string | undefined } {
+	private findChild(ctx: State, seg: string): { child: State, key: string } {
 		const states = ctx.states;
 		if (!states) return { child: undefined, key: undefined };
 		if (Object.prototype.hasOwnProperty.call(states, seg)) {
@@ -1071,7 +1071,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	}
 
 	private resolveInputEvaluationMode(): 'first' | 'all' {
-		let node: State<any> | undefined = this;
+		let node: State<any> = this;
 		while (node) {
 			const mode = node.definition.input_eval;
 			if (mode === 'first' || mode === 'all') return mode;
@@ -1197,7 +1197,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	public get path(): string {
 		if (this.is_root) return '/';
 		const segments: string[] = [];
-		let node: State | undefined = this;
+		let node: State = this;
 		while (node && !node.is_root) {
 			segments.push(node.currentid);
 			node = node.parent;
@@ -1461,7 +1461,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			if (handled) return true;
 		}
 
-		let current: State | undefined = this;
+		let current: State = this;
 		let depth = 0;
 		while (current) {
 			const result = current.handleEvent(eventName, emitterId, detail, event);
@@ -1492,9 +1492,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @param args - Additional arguments for the event.
 	 * @returns A boolean indicating whether the event was handled.
 	 */
-	private handleEvent(eventName: string, emitter_id: Identifier, detail: EventPayload | undefined, event?: GameEvent): EventDispatchResult {
+	private handleEvent(eventName: string, emitter_id: Identifier, detail: EventPayload, event?: GameEvent): EventDispatchResult {
 		if (this.paused) return { handled: false };
-		let capturedContext: TransitionDiagContext | undefined;
+		let capturedContext: TransitionDiagContext;
 		const handled = this.withCriticalSection(() => this.runWithTransitionContext(
 			() => this.createEventContext(eventName, emitter_id, detail),
 			ctx => {
@@ -1514,7 +1514,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		return { handled, context: State.cloneSnapshot(capturedContext) };
 	}
 
-	private handleStateTransition(action: Identifier | StateEventDefinition | TickCheckDefinition | undefined, event?: GameEvent): boolean {
+	private handleStateTransition(action: Identifier | StateEventDefinition | TickCheckDefinition, event?: GameEvent): boolean {
 		if (!action) return false;
 
 		if (typeof action === 'string') {

@@ -6,14 +6,14 @@ export type EventPayload = Record<string, any>;
 type BaseEvent<TType extends string> = {
 	type: TType;
 	timestamp: number;
-	emitter: Identifiable | null;
+	emitter: Identifiable;
 };
 
 export type GameEvent<TType extends string = string, TDetail extends object = {}> = BaseEvent<TType> & TDetail;
 
 type GameEventInit<TType extends string, TDetail extends object> = {
 	type: TType;
-	emitter?: Identifiable | null;
+	emitter?: Identifiable;
 } & TDetail;
 
 export function create_gameevent<TType extends string, TDetail extends object = {}>(init: GameEventInit<TType, TDetail>): GameEvent<TType, TDetail> {

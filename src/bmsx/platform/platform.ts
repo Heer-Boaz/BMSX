@@ -96,8 +96,8 @@ export interface AudioPlaybackParams {
 	offset: number;
 	rate: number;
 	gainLinear: number;
-	loop: AudioLoop | null;
-	filter: AudioFilterParams | null;
+	loop: AudioLoop;
+	filter: AudioFilterParams;
 }
 
 export interface AudioClipHandle {
@@ -115,7 +115,7 @@ export interface VoiceHandle {
 	onEnded(cb: (e: VoiceEndedEvent) => void): () => void;
 	setGainLinear(v: number): void;
 	rampGainLinear(target: number, durationSec: number): void;
-	setFilter(p: AudioFilterParams | null): void;
+	setFilter(p: AudioFilterParams): void;
 	setRate(v: number): void;
 	stop(): void;
 	disconnect(): void;
@@ -152,7 +152,7 @@ export interface InputModifiers {
 }
 
 export type InputEvt =
-	| { type: 'button'; deviceId: string; code: string; down: boolean; value: number; timestamp: MonoTime; pressId: number | null; modifiers?: InputModifiers }
+	| { type: 'button'; deviceId: string; code: string; down: boolean; value: number; timestamp: MonoTime; pressId: number; modifiers?: InputModifiers }
 	| { type: 'axis1'; deviceId: string; code: string; x: number; timestamp: MonoTime; modifiers?: InputModifiers }
 	| { type: 'axis2'; deviceId: string; code: string; x: number; y: number; timestamp: MonoTime; modifiers?: InputModifiers }
 	| { type: 'connect'; device: InputDevice; timestamp: MonoTime }
@@ -229,7 +229,7 @@ export interface Lifecycle {
 }
 
 export interface StorageService {
-	getItem(k: string): string | null;
+	getItem(k: string): string;
 	setItem(k: string, v: string): void;
 	removeItem(k: string): void;
 }
@@ -357,7 +357,7 @@ export interface GameViewCanvas {
  */
 export interface GamepadControlHandle {
 	readonly id: string;
-	getNumericAttribute(name: string): number | null;
+	getNumericAttribute(name: string): number;
 	measure(): { width: number; height: number; };
 	setBottom(px: number): void;
 	setScale(scale: number): void;
@@ -388,7 +388,7 @@ export interface ViewportMetricsProvider {
 
 export interface OverlayManager {
 	ensureOverlay(id: string): OverlayHandle;
-	getOverlay(id: string): OverlayHandle | null;
+	getOverlay(id: string): OverlayHandle;
 }
 
 export interface WindowEventHub {
@@ -403,7 +403,7 @@ export interface DisplayModeController {
 }
 
 export interface OnscreenGamepadHandleProvider {
-	getHandles(): OnscreenGamepadHandles | null;
+	getHandles(): OnscreenGamepadHandles;
 }
 
 export type GameViewHostCapabilityId =
@@ -432,5 +432,5 @@ export interface GameViewHostCapabilityMap {
 export interface GameViewHost {
 	readonly surface: GameViewCanvas;
 	createBackend(): Promise<unknown>;
-	getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] | null;
+	getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T];
 }

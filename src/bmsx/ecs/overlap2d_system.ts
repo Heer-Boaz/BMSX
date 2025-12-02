@@ -83,7 +83,7 @@ class Collision2DService extends Service {
 
 	private isArea(v: unknown): v is Area { return !!v && typeof v === 'object' && 'start' in (v as Record<string, unknown>) && 'end' in (v as Record<string, unknown>); }
 
-	private resolveCollider(target: ColliderTarget): ColliderHandle | null {
+	private resolveCollider(target: ColliderTarget): ColliderHandle {
 		if (target instanceof Collider2DComponent) {
 			const owner = target.parent;
 			if (!owner) return null;
@@ -118,7 +118,7 @@ class Collision2DService extends Service {
 	}
 
 	/** Returns centroid of polygon intersection if any; null otherwise. */
-	getCollisionCentroid(a: ColliderTarget, b: ColliderTarget): vec2arr | null {
+	getCollisionCentroid(a: ColliderTarget, b: ColliderTarget): vec2arr {
 		const ah = this.resolveCollider(a);
 		const bh = this.resolveCollider(b);
 		if (!ah || !bh) return null;
@@ -190,7 +190,7 @@ class Collision2DService extends Service {
 	}
 
 	private contactCirclePoly(c: { x: number; y: number; r: number }, poly: { polys: Polygon[] }) {
-		let bestAxis: { x: number; y: number } | null = null;
+		let bestAxis: { x: number; y: number } = null;
 		let bestOverlap = Infinity;
 		const testAxis = (p: Polygon, ax: number, ay: number) => {
 			let pmin = Infinity, pmax = -Infinity;
@@ -241,7 +241,7 @@ class Collision2DService extends Service {
 	private contactPolyPoly(a: Shape2D, b: Shape2D) {
 		if (a.kind !== 'poly' || b.kind !== 'poly') return undefined;
 		const contactPair = (pa: Polygon, pb: Polygon) => {
-			let bestAxis: { x: number; y: number } | null = null;
+			let bestAxis: { x: number; y: number } = null;
 			let bestOverlap = Infinity;
 			const testAxesFrom = (p: Polygon) => {
 				const n = p.length;
@@ -279,7 +279,7 @@ class Collision2DService extends Service {
 			if (!testAxesFrom(pb)) return undefined;
 			return bestAxis ? { normal: bestAxis, depth: bestOverlap } : undefined;
 		};
-		let best: { normal: { x: number; y: number }; depth: number } | undefined;
+		let best: { normal: { x: number; y: number }; depth: number };
 		for (const pa of a.polys) {
 			for (const pb of b.polys) {
 				const c = contactPair(pa, pb);
@@ -387,7 +387,7 @@ class Collision2DService extends Service {
 		hits.sort((a, b) => a.distance - b.distance); return hits;
 	}
 	/** Compute contact info (normal, depth, point) using SAT/GJK approximations where possible. */
-	getContact2D(a: ColliderTarget, b: ColliderTarget): { normal?: { x: number; y: number }, depth?: number, point?: { x: number; y: number } } | undefined {
+	getContact2D(a: ColliderTarget, b: ColliderTarget): { normal?: { x: number; y: number }, depth?: number, point?: { x: number; y: number } } {
 		const ah = this.resolveCollider(a);
 		const bh = this.resolveCollider(b);
 		if (!ah || !bh) return undefined;
@@ -417,7 +417,7 @@ class Collision2DService extends Service {
 	}
 
 	/** All intersection points between two polygon sets. */
-	polygonsIntersectionPoints(polys1: Polygon[], polys2: Polygon[]): vec2arr[] | null {
+	polygonsIntersectionPoints(polys1: Polygon[], polys2: Polygon[]): vec2arr[] {
 		const out: vec2arr[] = [];
 		for (const p1 of polys1) for (const p2 of polys2) out.push(...this.singlePolygonsIntersectionPoints(p1, p2));
 		return out.length > 0 ? out : null;
@@ -479,7 +479,7 @@ class Collision2DService extends Service {
 	}
 
 	private singlePolygonsIntersectionPoints(poly1: Polygon, poly2: Polygon): vec2arr[] {
-		function edgeIntersection(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number): vec2arr | null {
+		function edgeIntersection(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number): vec2arr {
 			const a1 = by - ay, b1 = ax - bx, c1 = a1 * ax + b1 * ay;
 			const a2 = dy - cy, b2 = cx - dx, c2 = a2 * cx + b2 * cy;
 			const det = a1 * b2 - a2 * b1;
@@ -524,7 +524,7 @@ class Collision2DService extends Service {
 }
 
 // Geometric helpers
-function raySegmentIntersect(px: number, py: number, rx: number, ry: number, ax: number, ay: number, bx: number, by: number): number | null {
+function raySegmentIntersect(px: number, py: number, rx: number, ry: number, ax: number, ay: number, bx: number, by: number): number {
 	// Solve p + t r = a + u (b-a)
 	const sx = bx - ax, sy = by - ay;
 	const det = (-rx * sy + ry * sx);
@@ -537,7 +537,7 @@ function raySegmentIntersect(px: number, py: number, rx: number, ry: number, ax:
 	return t;
 }
 
-function rayCircleIntersect(px: number, py: number, rx: number, ry: number, cx: number, cy: number, r: number): number | null {
+function rayCircleIntersect(px: number, py: number, rx: number, ry: number, cx: number, cy: number, r: number): number {
 	// Ray: P = p + t*r; solve |(p + t r) - c|^2 = r^2
 	const dx = px - cx, dy = py - cy;
 	const a = rx * rx + ry * ry;
@@ -552,7 +552,7 @@ function rayCircleIntersect(px: number, py: number, rx: number, ry: number, cx: 
 	return t >= 0 ? t : (Math.max(t1, t2) >= 0 ? Math.max(t1, t2) : null);
 }
 
-let collision2DInstance: Collision2DService | null = null;
+let collision2DInstance: Collision2DService = null;
 
 function getCollision2DInstance(): Collision2DService {
 	if (!collision2DInstance) {
@@ -674,7 +674,7 @@ class Collision2DBroadphaseIndex {
 	}
 
 	// Slab ray/AABB intersection; returns t or null when no hit.
-	private rayAABB(origin: vec2arr, dir: vec2arr, a: Area): number | null {
+	private rayAABB(origin: vec2arr, dir: vec2arr, a: Area): number {
 		const invx = dir[0] !== 0 ? 1 / dir[0] : Number.POSITIVE_INFINITY;
 		const invy = dir[1] !== 0 ? 1 / dir[1] : Number.POSITIVE_INFINITY;
 		let tmin = (a.start.x - origin[0]) * invx;
@@ -780,14 +780,14 @@ export class Overlap2DSystem extends ECSystem {
 			const emitA = colA.generateOverlapEvents;
 			const emitB = colB.generateOverlapEvents;
 			if (!emitA && !emitB) return;
-			let contact: Contact2D | undefined;
+			let contact: Contact2D;
 			if (eventName !== 'overlap.end') {
-				const c = Collision2DSystem.getContact2D(colA, colB) as Contact2D | undefined;
+				const c = Collision2DSystem.getContact2D(colA, colB) as Contact2D;
 				contact = c;
 			}
 			if (emitA) ownerA.events.emit(eventName, buildOverlapPayload(colA, colB, ownerB, contact));
 			if (emitB) {
-				const flipped: Contact2D | undefined = contact?.normal ? { ...contact, normal: { x: -contact.normal.x, y: -contact.normal.y } } : contact;
+				const flipped: Contact2D = contact?.normal ? { ...contact, normal: { x: -contact.normal.x, y: -contact.normal.y } } : contact;
 				ownerB.events.emit(eventName, buildOverlapPayload(colB, colA, ownerA, flipped));
 			}
 		};
@@ -818,7 +818,7 @@ export class Overlap2DSystem extends ECSystem {
 		this.prevPairs = newPairs;
 	}
 
-	private spaceMatch(scope: 'current' | 'ui' | 'both' | 'all', aSpace: string | null, bSpace: string | null, world: World): boolean {
+	private spaceMatch(scope: 'current' | 'ui' | 'both' | 'all', aSpace: string, bSpace: string, world: World): boolean {
 		if (scope === 'all') return true;
 		const uiId = 'ui';
 		const current = world.activeSpaceId;

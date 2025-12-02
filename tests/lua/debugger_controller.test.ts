@@ -62,7 +62,7 @@ local total = inner()
 total = total + 1
 return total
 `;
-	let firstPause: LuaDebuggerPauseSignal | null = null;
+	let firstPause: LuaDebuggerPauseSignal = null;
 	try {
 		interpreter.execute(source, chunkName);
 		assert.fail('expected pause from step-into');

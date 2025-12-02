@@ -106,15 +106,15 @@ export type ButtonState = {
 	consumed: boolean;
 	stickyConsumed?: boolean;
 	// Timing fields
-	presstime: number | null; // ms since pressed
-	timestamp: number | null; // last transition timestamp (ms)
-	pressedAtMs?: number | null; // absolute press timestamp (ms)
-	releasedAtMs?: number | null; // absolute release timestamp (ms)
+	presstime: number; // ms since pressed
+	timestamp: number; // last transition timestamp (ms)
+	pressedAtMs?: number; // absolute press timestamp (ms)
+	releasedAtMs?: number; // absolute release timestamp (ms)
 	// Identity of this press cycle, increases monotonically per-device
-	pressId?: number | null;
+	pressId?: number;
 	// Analog values
-	value?: number | null; // 1D analog value in [-1,1] or [0,1]
-	value2d?: readonly [number, number] | null; // 2D analog value
+	value?: number; // 1D analog value in [-1,1] or [0,1]
+	value2d?: readonly [number, number]; // 2D analog value
 };
 /**
  * Represents the input event that is stored when a key or button is pressed or released.
@@ -124,7 +124,7 @@ export type InputEvent = {
 	identifier: ButtonId; // Key code or button name
 	timestamp: number;
 	consumed: boolean;
-	pressId?: number | null; // identity of the press this event belongs to
+	pressId?: number; // identity of the press this event belongs to
 };
 /**
  * Represents the state of an action, including the action name and button state.

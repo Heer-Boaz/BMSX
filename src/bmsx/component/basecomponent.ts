@@ -80,19 +80,19 @@ export interface ComponentContainer extends Identifiable, Registerable, Disposab
 	 * Retrieves a specific component instance by its global id.
 	 * @param id - The component id (unique within the registry).
 	 */
-	get_component_by_id<T extends Component = Component>(id: ComponentId): T | undefined;
+	get_component_by_id<T extends Component = Component>(id: ComponentId): T;
 
 	/**
 	 * Retrieves the Nth component instance of a given type attached to this object.
 	 * @param constructor - The component class (abstract allowed).
 	 * @param index - Zero-based index in attachment order.
 	 */
-	get_component_at<T extends Component>(constructor: ComponentConstructor<T>, index: number): T | undefined;
+	get_component_at<T extends Component>(constructor: ComponentConstructor<T>, index: number): T;
 
 	/**
 	 * Finds the first component of a given type matching a predicate.
 	 */
-	find_component<T extends Component>(predicate: (c: T, index: number) => boolean): T | undefined;
+	find_component<T extends Component>(predicate: (c: T, index: number) => boolean): T;
 
 	/**
 	 * Finds all components of a given type matching a predicate.
@@ -100,13 +100,13 @@ export interface ComponentContainer extends Identifiable, Registerable, Disposab
 	find_components<T extends Component>(predicate: (c: T, index: number) => boolean): T[];
 
 	/** Convenience: return the first instance of a component type, if any. */
-	get_unique_component<T extends Component>(constructor: ComponentConstructor<T>): T | undefined;
+	get_unique_component<T extends Component>(constructor: ComponentConstructor<T>): T;
 
 	/**
 	 * Returns the unique instance of a component type if present; throws if multiple instances are attached.
 	 * Useful when the type is expected to be singular (e.g., Transform, Physics, ASC).
 	 */
-	get_unique_component<T extends Component>(constructor: ComponentConstructor<T>): T | undefined;
+	get_unique_component<T extends Component>(constructor: ComponentConstructor<T>): T;
 
 	/** Require a unique instance; throws if missing or if multiples are present. */
 	get_unique_component<T extends Component>(constructor: ComponentConstructor<T>): T;
@@ -177,13 +177,13 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 *
 	 * @returns The parent component.
 	 */
-	protected _parent: T | null = null;
-	public get parent(): T | undefined {
+	protected _parent: T = null;
+	public get parent(): T {
 		if (!this._parent) throw new Error(`[Component:${this.id}] Parent is not attached.`);
 		return this._parent;
 	}
 
-	public set parent(value: T | undefined) {
+	public set parent(value: T) {
 		this._parent = value;
 	}
 

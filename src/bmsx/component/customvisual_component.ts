@@ -58,7 +58,7 @@ export class CustomVisualComponent extends Component<WorldObject> {
 	// public get queuedOpsCount(): number { return this.ops.length; }
 
 	/** Allow setting/replacing the render producer function. If a producer already exists, compose them. */
-	public add_producer(fn: RenderProducer | undefined): void {
+	public add_producer(fn: RenderProducer): void {
 		if (!fn) { this.producer = undefined; return; }
 		const prev = this.producer;
 		this.producer = prev ? ((ctx) => { prev(ctx); fn(ctx); }) : fn;

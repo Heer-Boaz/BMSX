@@ -91,8 +91,8 @@ export interface RenderPassDef<S = unknown> {
 	 * (e.g., buffers, VAOs, default textures). Called once at registration time.
 	 */
 	bootstrap?: (backend: GPUBackend) => void;
-	exec: (backend: AnyBackend, fbo: unknown, state: S | undefined) => void;
-	prepare?: (backend: GPUBackend, state: S | undefined) => void;
+	exec: (backend: AnyBackend, fbo: unknown, state: S) => void;
+	prepare?: (backend: GPUBackend, state: S) => void;
 }
 
 // Minimal shader build description for backend pipeline creation
@@ -122,8 +122,8 @@ export interface GPUBackend {
 	// These allow higher-level code (GameView / render graph) to perform texture
 	// binds without casting to a concrete backend type.
 	setActiveTexture?(unit: number): void;
-	bindTexture2D?(tex: TextureHandle | null): void;
-	bindTextureCube?(tex: TextureHandle | null): void;
+	bindTexture2D?(tex: TextureHandle): void;
+	bindTextureCube?(tex: TextureHandle): void;
 	createImageBitmapFromSource?(src: TextureSource): Promise<ImageBitmap>;
 	createTexture(src: TextureSource | Promise<TextureSource>, desc: TextureParams): TextureHandle;
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, desc?: TextureParams): TextureHandle;
@@ -134,27 +134,27 @@ export interface GPUBackend {
 	destroyTexture(handle: TextureHandle): void;
 	createColorTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createDepthTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
-	createRenderTarget(color?: TextureHandle | null, depth?: TextureHandle | null): RenderTargetHandle;
+	createRenderTarget(color?: TextureHandle, depth?: TextureHandle): RenderTargetHandle;
 	clear(opts: { color?: color_arr; depth?: number }): void;
 	beginRenderPass(desc: RenderPassDesc): PassEncoder;
 	endRenderPass(pass: PassEncoder): void;
 	getCaps(): BackendCaps;
-	transitionTexture?(tex: TextureHandle, fromLayout: string | undefined, toLayout: string): void;
+	transitionTexture?(tex: TextureHandle, fromLayout: string, toLayout: string): void;
 	createRenderPassInstance?(desc: GraphicsPipelineBuildDesc): RenderPassInstanceHandle;
 	destroyRenderPassInstance?(p: RenderPassInstanceHandle): void;
 	setGraphicsPipeline?(pass: PassEncoder, pipeline: RenderPassInstanceHandle): void;
 	draw(pass: PassEncoder, first: number, count: number): void;
 	drawIndexed(pass: PassEncoder, indexCount: number, firstIndex?: number, indexType?: number): void;
 	setPassState<S = unknown>(label: RenderPassId, state: S): void;
-	getPassState<S = unknown>(label: RenderPassId): S | undefined;
+	getPassState<S = unknown>(label: RenderPassId): S;
 
 	// Optional buffer/VAO helpers (WebGL-backed today; WebGPU mapping later)
 	createVertexBuffer?(data: ArrayBufferView, usage: 'static' | 'dynamic'): BufferHandle;
 	updateVertexBuffer?(buf: BufferHandle, data: ArrayBufferView, dstOffset?: number): void;
-	bindArrayBuffer?(buf: BufferHandle | null): void;
+	bindArrayBuffer?(buf: BufferHandle): void;
 	createVertexArray?(): unknown;
-	bindVertexArray?(vao: unknown | null): void;
-	deleteVertexArray?(vao: unknown | null): void;
+	bindVertexArray?(vao: unknown): void;
+	deleteVertexArray?(vao: unknown): void;
 
 	// Backend-agnostic attribute convenience wrappers (avoid GL enums in pipeline code)
 	setAttribPointerFloat?(index: number, size: number, stride: number, offset: number): void;
@@ -173,7 +173,7 @@ export interface GPUBackend {
 	// Optional per-frame hooks + stats
 	beginFrame(): void;
 	endFrame(): void;
-	getFrameStats(): { draws: number; drawIndexed: number; drawsInstanced: number; drawIndexedInstanced: number; bytesUploaded: number } | undefined;
+	getFrameStats(): { draws: number; drawIndexed: number; drawsInstanced: number; drawIndexedInstanced: number; bytesUploaded: number };
 	// Optional: fine-grained upload accounting for HUD
 	accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void;
 }
@@ -196,9 +196,9 @@ export interface RenderContext {
 	backendType: 'webgl2' | 'webgpu' | 'headless';
 	offscreenCanvasSize: { x: number; y: number; };
 	backend: GPUBackend;
-	activeTexUnit: number | null;
-	bind2DTex(tex: TextureHandle | null): void;
-	bindCubemapTex(tex: TextureHandle | null): void;
+	activeTexUnit: number;
+	bind2DTex(tex: TextureHandle): void;
+	bindCubemapTex(tex: TextureHandle): void;
 	// Optional centralized renderer submission + queues (lightweight, backend-agnostic)
 	renderer?: { queues?: { [k: string]: unknown }; submit?: unknown; swap?: () => void };
 }

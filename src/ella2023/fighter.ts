@@ -16,7 +16,7 @@ import {
 export { FIGHTER_ATTACK_ABILITY_IDS, FIGHTER_CORE_ABILITY_IDS } from './ability_catalog';
 export type { FighterCoreAbilityName } from './ability_catalog';
 
-type StoerheidsdansStateData = { expectedAnimation: string | null };
+type StoerheidsdansStateData = { expectedAnimation: string };
 type JumpStateData = { direction: Direction };
 
 export type AttackType = FighterAttackType;
@@ -46,11 +46,11 @@ export abstract class Fighter extends SpriteObject {
 	public static readonly SPEED = 2;
 	public _aied: boolean = false;
 	public get isAIed(): boolean { return this._aied; }
-	public previousAttackType: AttackType | null = null;
-	public currentAttackType: AttackType | null = null;
+	public previousAttackType: AttackType = null;
+	public currentAttackType: AttackType = null;
 	public pendingWalkDirection?: Direction;
 	public pendingAttackPayload?: { attackType?: AttackType };
-	public pendingJumpPayload?: { direction?: Direction | null; directional?: boolean | string };
+	public pendingJumpPayload?: { direction?: Direction; directional?: boolean | string };
 	private _activeAnimationTimeline?: string;
 	private readonly stateTags: Set<string> = new Set();
 	private readonly tagFacade = {
@@ -78,7 +78,7 @@ export abstract class Fighter extends SpriteObject {
 		return this.stateTags.has(tag);
 	}
 
-	public applyWalkFacing(_state: State | undefined, payload: { direction?: Direction } | undefined): void {
+	public applyWalkFacing(_state: State, payload: { direction?: Direction }): void {
 		if (!payload) return;
 		const { direction } = payload;
 		if (direction === 'left' || direction === 'right') this.facing = direction;
@@ -217,7 +217,7 @@ export abstract class Fighter extends SpriteObject {
 	}
 
 	public finishAttack(_state: State, payload?: { attackType?: AttackType }): void {
-		let resolved: AttackType | null = null;
+		let resolved: AttackType = null;
 		if (payload && payload.attackType) {
 			resolved = payload.attackType;
 		} else if (this.currentAttackType) {
@@ -231,7 +231,7 @@ export abstract class Fighter extends SpriteObject {
 		this.hideHitMarker();
 	}
 
-	public doAttackFlow(attackType: AttackType, opponent: Fighter | null): boolean {
+	public doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {
 		if (!opponent) {
 			$.apply_vibration_effect(this.player_index, { effect: 'dual-rumble', duration: 50, intensity: 0.5 });
 			return false;
@@ -255,11 +255,11 @@ export abstract class Fighter extends SpriteObject {
 		this.finishAttack(undefined, { attackType });
 	}
 
-	public getAttackOpponent(): Fighter | null {
+	public getAttackOpponent(): Fighter {
 		return null; // ERROR: to be implemented in subclasses
 	}
 
-	public attackHitsOpponent(attackType: AttackType, opponent: Fighter): vec2 | null {
+	public attackHitsOpponent(attackType: AttackType, opponent: Fighter): vec2 {
 		// Check if the fighter is facing the opponent
 		const middlepoint = this.middlepoint;
 		const opponentMiddlepoint = opponent.middlepoint;
@@ -322,7 +322,7 @@ export abstract class Fighter extends SpriteObject {
 	}
 
 	private _hitSprite?: SpriteComponent;
-	protected applyHitMarker(hitMarker: HitMarkerInfo | null): void {
+	protected applyHitMarker(hitMarker: HitMarkerInfo): void {
 		// Toggle a secondary SpriteComponent for the hit marker
 		if (!hitMarker) {
 			if (this._hitSprite) this._hitSprite.enabled = false;
@@ -360,7 +360,7 @@ export abstract class Fighter extends SpriteObject {
 		this.applyHitMarker(null);
 	}
 
-	public startJump(state?: State, payload?: EventPayload & { direction?: Direction | null; directional?: boolean | string }): void {
+	public startJump(state?: State, payload?: EventPayload & { direction?: Direction; directional?: boolean | string }): void {
 		if (!state) throw new Error('[Eila] startJump invoked without state context.');
 		const data = state.data as JumpStateData;
 		data.direction = payload?.direction;

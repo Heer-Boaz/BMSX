@@ -61,7 +61,7 @@ class CLIDisplayModeController implements DisplayModeController {
 }
 
 class CLIOnscreenGamepadProvider implements OnscreenGamepadHandleProvider {
-	getHandles(): OnscreenGamepadHandles | null { return null; }
+	getHandles(): OnscreenGamepadHandles { return null; }
 }
 
 export class CLIGameViewHost implements GameViewHost {
@@ -70,7 +70,7 @@ export class CLIGameViewHost implements GameViewHost {
 	private readonly terminalDefaults: TerminalDimensions;
 	private readonly terminalOverrides?: Partial<TerminalDimensions>;
 	private readonly viewportCapability: ViewportMetricsProvider;
-	private readonly overlayCapability: OverlayManager | null;
+	private readonly overlayCapability: OverlayManager;
 	private readonly windowEventHub = new CLIWindowEventHub();
 	private readonly displayMode = new CLIDisplayModeController();
 	private readonly gamepadProvider = new CLIOnscreenGamepadProvider();
@@ -88,7 +88,7 @@ export class CLIGameViewHost implements GameViewHost {
 		return this.delegate.createBackend();
 	}
 
-	getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] | null {
+	getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] {
 		switch (capability) {
 			case 'viewport-metrics':
 				return this.viewportCapability as GameViewHostCapabilityMap[T];

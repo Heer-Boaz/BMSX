@@ -1,5 +1,5 @@
 export interface BootAudioState {
-	sndcontext: AudioContext | null;
+	sndcontext: AudioContext;
 	snd_unlocked: boolean;
 }
 

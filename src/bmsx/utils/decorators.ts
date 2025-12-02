@@ -21,7 +21,7 @@ export function defer(fn: () => void): void {
  * (e.g. `_MyClass`) which then leaks into `ctor.name`. For public registries/keys
  * we strip those leading underscores when no explicit id is provided.
  */
-export function normalizeDecoratedClassName(raw: string | undefined | null): string {
+export function normalizeDecoratedClassName(raw: string): string {
 	return raw.startsWith('_') ? raw.replace(/^_+/, '') : raw;
 }
 

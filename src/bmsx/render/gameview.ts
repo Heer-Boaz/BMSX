@@ -144,23 +144,23 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.reactiveDisposables.push(dispose);
 	}
 
-	private getViewportMetricsProvider(): ViewportMetricsProvider | null {
+	private getViewportMetricsProvider(): ViewportMetricsProvider {
 		return this.host.getCapability('viewport-metrics');
 	}
 
-	private getOverlayManager(): OverlayManager | null {
+	private getOverlayManager(): OverlayManager {
 		return this.host.getCapability('overlay');
 	}
 
-	private getWindowEventHub(): WindowEventHub | null {
+	private getWindowEventHub(): WindowEventHub {
 		return this.host.getCapability('window-events');
 	}
 
-	private getDisplayModeController(): DisplayModeController | null {
+	private getDisplayModeController(): DisplayModeController {
 		return this.host.getCapability('display-mode');
 	}
 
-	private getOnscreenGamepadHandleProvider(): OnscreenGamepadHandleProvider | null {
+	private getOnscreenGamepadHandleProvider(): OnscreenGamepadHandleProvider {
 		return this.host.getCapability('onscreen-gamepad');
 	}
 
@@ -179,8 +179,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public readonly host: GameViewHost;
 	public readonly surface: GameViewCanvas;
 	public static imgassets: id2imgres = {};
-	private static fullscreenKeyListenerUnsub: (() => void) | null = null;
-	private static windowedKeyListenerUnsub: (() => void) | null = null;
+	private static fullscreenKeyListenerUnsub: (() => void) = null;
+	private static windowedKeyListenerUnsub: (() => void) = null;
 	public accessor default_font: BFont;
 	private readonly reactiveDisposables: (() => void)[] = [];
 
@@ -196,29 +196,29 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public canvas_dy: number;
 	public canvasScale: number;
 
-	private _nativeCtx: unknown | null = null; // The underlying native rendering context (e.g. WebGL2RenderingContext or GPUDevice)
-	public get nativeCtx(): unknown | null {
+	private _nativeCtx: unknown = null; // The underlying native rendering context (e.g. WebGL2RenderingContext or GPUDevice)
+	public get nativeCtx(): unknown {
 		return this._nativeCtx;
 	}
-	private _backend: GPUBackend | null = null;
+	private _backend: GPUBackend = null;
 	public get backendType(): GPUBackend['type'] {
 		if (!this._backend) {
 			throw new Error('[GameView] Backend type requested before backend was configured.');
 		}
 		return this._backend.type;
 	}
-	public renderGraph: RenderGraphRuntime | null = null;
-	private lightingSystem: LightingSystem | null = null;
+	public renderGraph: RenderGraphRuntime = null;
+	private lightingSystem: LightingSystem = null;
 	public offscreenCanvasSize!: vec2;
-	public textures: { [k: string]: unknown | null } = {};
-	private _dynamicAtlasIndex: number | null = null;
+	public textures: { [k: string]: unknown } = {};
+	private _dynamicAtlasIndex: number = null;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationPassTokens: RenderPassToken[] = [];
 	private presentationEnabled = true;
 	// Texture binding cache
-	private _activeTexUnit: number | null = null;
-	private _activeTexture2D: unknown | null = null;
-	private _activeCubemap: unknown | null = null;
+	private _activeTexUnit: number = null;
+	private _activeTexture2D: unknown = null;
+	private _activeCubemap: unknown = null;
 	// CRT/post flags (used by passes)
 	public applyNoise = true;
 	public applyColorBleed = true;
@@ -904,7 +904,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.textures['_atlas_dynamic_fallback'] = dynamicFallback;
 		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 		const engineAtlas = GameView.imgassets[engineAtlasName];
-		let engineTexture: TextureHandle | null = null;
+		let engineTexture: TextureHandle = null;
 		if (engineAtlas) {
 			const engineAtlasImage = await engineAtlas._imgbin;
 			engineTexture = this.backend.createTexture(engineAtlasImage, {});
@@ -934,14 +934,14 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		renderGate.end(token);
 	}
 	public setSkybox(images: SkyboxImageIds): void { SkyboxPipeline.setSkyboxImages(images); }
-	public get skyboxFaceIds(): SkyboxImageIds | undefined { return SkyboxPipeline.skyboxFaceIds; }
-	public get dynamicAtlas(): number | null { return this._dynamicAtlasIndex; }
-	public set dynamicAtlas(index: number | null) {
+	public get skyboxFaceIds(): SkyboxImageIds { return SkyboxPipeline.skyboxFaceIds; }
+	public get dynamicAtlas(): number { return this._dynamicAtlasIndex; }
+	public set dynamicAtlas(index: number) {
 		if (this._dynamicAtlasIndex === index) return;
 		if (index == null) {
 			this._dynamicAtlasIndex = null;
-			const fallback = this.textures['_atlas_dynamic_fallback'] as TextureHandle | null | undefined;
-			this.textures['_atlas_dynamic'] = fallback ?? null;
+			const fallback = this.textures['_atlas_dynamic_fallback'] as TextureHandle;
+			this.textures['_atlas_dynamic'] = fallback ;
 			return;
 		}
 		const atlasName = generateAtlasName(index);
@@ -955,11 +955,11 @@ export class GameView implements RegisterablePersistent, RenderContext {
 
 
 	// Texture binding helpers
-	get activeTexUnit(): number | null {
+	get activeTexUnit(): number {
 		return this._activeTexUnit;
 	}
 
-	set activeTexUnit(u: number | null) {
+	set activeTexUnit(u: number) {
 		if (this.backendType !== 'webgl2') return; // Texture units are not a thing in WebGPU
 		const backend = this.backend;
 		this._activeTexUnit = u;
@@ -972,7 +972,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		}
 	}
 
-	bind2DTex(tex: TextureHandle | null): void {
+	bind2DTex(tex: TextureHandle): void {
 		if (this.backendType !== 'webgl2') return; // Texture units are not a thing in WebGPU
 		if (this._activeTexture2D === tex) return;
 		const backend = this.backend;
@@ -984,7 +984,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this._activeTexture2D = tex;
 	}
 
-	bindCubemapTex(tex: TextureHandle | null): void {
+	bindCubemapTex(tex: TextureHandle): void {
 		if (this.backendType !== 'webgl2') return; // Texture units are not a thing in WebGPU
 		if (this._activeCubemap === tex) return;
 		const backend = this.backend;

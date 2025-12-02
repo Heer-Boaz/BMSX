@@ -49,7 +49,7 @@ function anchorToStyle(anchor: Anchor, el: HTMLElement): void {
 const docks: Record<string, HTMLElement> = {};
 const flows: Record<string, Flow> = { 'top-left': 'row', 'top-right': 'row', 'bottom-left': 'row', 'bottom-right': 'row' };
 const placeholders: Record<string, HTMLElement> = {};
-const dragState: { panelId: string | null; panelHeight: number; panelWidth: number } = { panelId: null, panelHeight: 48, panelWidth: 160 };
+const dragState: { panelId: string; panelHeight: number; panelWidth: number } = { panelId: null, panelHeight: 48, panelWidth: 160 };
 
 let panelIdCounter = 0;
 
@@ -73,7 +73,7 @@ export function ensureHudDock(anchor: Anchor = 'top-left'): HTMLElement {
 		const flow = flows[key] || 'row';
 		const children = Array.from(dock.children).filter(ch => ch !== ph && (ch as HTMLElement).id !== dragState.panelId) as HTMLElement[];
 		const { clientX: ptX, clientY: ptY } = e as DragEvent;
-		let insertBefore: Element | null = null;
+		let insertBefore: Element = null;
 		for (let i = 0; i < children.length; i++) {
 			const r = children[i].getBoundingClientRect();
 			const cmp = (flow === 'row') ? ptX - (r.left + r.width / 2) : ptY - (r.top + r.height / 2);
@@ -87,7 +87,7 @@ export function ensureHudDock(anchor: Anchor = 'top-left'): HTMLElement {
 	dock.addEventListener('dragenter', () => { dock.style.outline = '2px dashed #88f'; dock.style.outlineOffset = '2px'; });
 	dock.addEventListener('dragleave', (e) => {
 		// Only clear if leaving the dock (not moving between children)
-		const rel = e.relatedTarget as Node | null;
+		const rel = e.relatedTarget as Node;
 		if (rel && dock.contains(rel)) return;
 		dock.style.outline = ''; dock.style.outlineOffset = '';
 		clearPlaceholder(dock);
@@ -174,7 +174,7 @@ export function makeHudPanelDraggable(panel: HTMLElement & { __prevOpacity?: str
 		for (const key of Object.keys(docks)) { docks[key].style.outline = ''; docks[key].style.outlineOffset = ''; clearPlaceholder(docks[key]); }
 		dragState.panelId = null;
 		// Restore panel visibility
-		const prevOp = panel.__prevOpacity as string | undefined;
+		const prevOp = panel.__prevOpacity as string;
 		panel.style.opacity = prevOp ?? '';
 		delete panel.__prevOpacity;
 	});

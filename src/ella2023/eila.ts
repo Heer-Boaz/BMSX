@@ -35,7 +35,7 @@ export class Eila extends Fighter {
 		super.activate();
 	}
 
-	public override getAttackOpponent(): Fighter | null {
-		return $.get<EilaEventService>('eila_events')?.theOtherFighter(this) ?? null;
+	public override getAttackOpponent(): Fighter {
+		return $.get<EilaEventService>('eila_events')?.theOtherFighter(this) ;
 	}
 }

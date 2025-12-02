@@ -60,8 +60,8 @@ if (typeof (globalThis as any).createImageBitmap !== 'function') {
 		const usingCrop = args.length >= 4 && typeof args[0] === 'number';
 		let sx = 0;
 		let sy = 0;
-		let sw: number | undefined;
-		let sh: number | undefined;
+		let sw: number;
+		let sh: number;
 		let options: any;
 		if (usingCrop) {
 			[sx, sy, sw, sh, options] = args as [number, number, number, number, any];
@@ -259,7 +259,7 @@ function parseArgs(argv: string[]): LaunchOptions {
 type WorkspaceFetchDescriptor = {
 	url: URL;
 	method: string;
-	bodyText: string | null;
+	bodyText: string;
 };
 
 function installWorkspaceFetchBridge(): void {
@@ -267,7 +267,7 @@ function installWorkspaceFetchBridge(): void {
 		return;
 	}
 	const workspaceRoot = path.resolve(process.cwd());
-	const existingFetch: ((input: any, init?: any) => Promise<Response>) | null =
+	const existingFetch: ((input: any, init?: any) => Promise<Response>) =
 		typeof (globalThis as any).fetch === 'function'
 			? (globalThis as any).fetch.bind(globalThis)
 			: null;
@@ -286,11 +286,11 @@ function installWorkspaceFetchBridge(): void {
 	workspaceFetchBridgeInstalled = true;
 }
 
-function normalizeWorkspaceFetchRequest(input: any, init?: any): WorkspaceFetchDescriptor | null {
+function normalizeWorkspaceFetchRequest(input: any, init?: any): WorkspaceFetchDescriptor {
 	if (typeof Request !== 'undefined' && input instanceof Request) {
 		return null;
 	}
-	let urlString: string | null = null;
+	let urlString: string = null;
 	if (typeof input === 'string') {
 		urlString = input;
 	} else if (typeof URL !== 'undefined' && input instanceof URL) {
@@ -307,7 +307,7 @@ function normalizeWorkspaceFetchRequest(input: any, init?: any): WorkspaceFetchD
 	const method = typeof init?.method === 'string'
 		? init.method.toUpperCase()
 		: 'GET';
-	let bodyText: string | null = null;
+	let bodyText: string = null;
 	const body = init?.body;
 	if (typeof body === 'string') {
 		bodyText = body;
@@ -376,7 +376,7 @@ async function handleWorkspaceFetch(descriptor: WorkspaceFetchDescriptor, worksp
 		if (!bodyText) {
 			return jsonResponse(400, { error: 'Request body is required.' });
 		}
-		let payload: { path?: string; contents?: string } | null = null;
+		let payload: { path?: string; contents?: string } = null;
 		try {
 			payload = JSON.parse(bodyText) as { path?: string; contents?: string };
 		} catch {
@@ -554,14 +554,14 @@ function executeRomCode(source: string, label: string): void {
 	wrapped(globalThis as Record<string, unknown>);
 }
 
-function mergeRecords<T>(primary: Record<string, T> | undefined, fallback?: Record<string, T>): Record<string, T> {
+function mergeRecords<T>(primary: Record<string, T>, fallback?: Record<string, T>): Record<string, T> {
 	return {
 		...(fallback ?? {}),
 		...(primary ?? {}),
 	};
 }
 
-function combineRompacks(engineRom: RomPack | null, cartRom: RomPack): RomPack {
+function combineRompacks(engineRom: RomPack, cartRom: RomPack): RomPack {
 	if (!engineRom) {
 		normalizeCartLua(cartRom.cart);
 		return cartRom;
@@ -576,14 +576,14 @@ function combineRompacks(engineRom: RomPack | null, cartRom: RomPack): RomPack {
 		model: mergeRecords(cartRom.model, engineRom.model),
 		data: mergeRecords(cartRom.data, engineRom.data),
 		audioevents: mergeRecords(cartRom.audioevents, engineRom.audioevents),
-		project_root_path: cartRom.project_root_path ?? engineRom.project_root_path ?? null,
-		code: cartRom.code ?? engineRom.code ?? null,
+		project_root_path: cartRom.project_root_path ?? engineRom.project_root_path ,
+		code: cartRom.code ?? engineRom.code ,
 		canonicalization: cartRom.canonicalization ?? engineRom.canonicalization,
 		manifest: cartRom.manifest ?? engineRom.manifest,
 	};
 	normalizeCartLua(combined.cart);
 	if ((!combined.cart.entry || combined.cart.entry.length === 0) && Object.keys(combined.cart.lua).length > 0) {
-		const manifest = combined.manifest as { lua?: { entryAssetId?: string } } | null;
+		const manifest = combined.manifest as { lua?: { entryAssetId?: string } };
 		const manifestEntryId = manifest && manifest.lua ? manifest.lua.entryAssetId : undefined;
 		if (manifestEntryId && combined.cart.lua[manifestEntryId]) {
 			combined.cart.entry = manifestEntryId;
@@ -615,7 +615,7 @@ function ensureHostEnvironment(): void {
 	}
 }
 
-function createPlatform(frameIntervalMs: number | undefined): Platform {
+function createPlatform(frameIntervalMs: number): Platform {
 	if (__BOOTROM_TARGET__ === 'headless') {
 		const options = frameIntervalMs ? { frameIntervalMs } : {};
 		return new HeadlessPlatformServices(options);
@@ -647,7 +647,7 @@ async function prepareRuntime(rompack: RomPack, cliOptions: LaunchOptions, romPa
 		? path.resolve(cliOptions.engineRuntimePath)
 		: path.join(romDirectory, 'engine.js');
 
-	let engineRom: RomPack | null = null;
+	let engineRom: RomPack = null;
 	try {
 		const engineBuffer = await readRomFile(engineRomPath);
 		engineRom = await loadRomPack(engineBuffer);

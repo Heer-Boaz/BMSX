@@ -188,7 +188,7 @@ function buildBuiltinCacheKey(values: readonly string[]): string {
 
 const DEFAULT_BUILTIN_LOOKUP = createLookupFromNames(DEFAULT_LUA_BUILTIN_NAMES);
 
-function getBuiltinLookup(extra: Iterable<string> | null | undefined): BuiltinLookup {
+function getBuiltinLookup(extra: Iterable<string>): BuiltinLookup {
 	if (!extra) {
 		return DEFAULT_BUILTIN_LOOKUP;
 	}
@@ -222,7 +222,7 @@ function getBuiltinLookup(extra: Iterable<string> | null | undefined): BuiltinLo
 	return lookup;
 }
 
-function resolveIdentifierPathAt(line: string, column: number): string | null {
+function resolveIdentifierPathAt(line: string, column: number): string {
 	if (column < 0 || column >= line.length) {
 		return null;
 	}
@@ -411,7 +411,7 @@ function highlightGotoLabel(line: string, start: number, columnColors: number[])
 	return labelEnd;
 }
 
-function highlightBuiltinIdentifierPath(line: string, path: IdentifierPath, builtinLookup: BuiltinLookup, columnColors: number[]): number | null {
+function highlightBuiltinIdentifierPath(line: string, path: IdentifierPath, builtinLookup: BuiltinLookup, columnColors: number[]): number {
 	const names: string[] = [];
 	for (let index = 0; index < path.segments.length; index += 1) {
 		const segment = path.segments[index];
@@ -452,7 +452,7 @@ function highlightBuiltinIdentifierPath(line: string, path: IdentifierPath, buil
 function applySemanticAnnotations(
 	line: string,
 	columnColors: number[],
-	annotations: SemanticAnnotations[number] | undefined,
+	annotations: SemanticAnnotations[number],
 	builtinLookup: BuiltinLookup,
 ): void {
 	if (!annotations) {
@@ -481,14 +481,14 @@ function applySemanticAnnotations(
 
 export function highlightLine(
 	source: readonly string[] | string,
-	rowOrSemantics?: number | SemanticAnnotations | null,
-	maybeSemantics?: SemanticAnnotations | null,
-	builtinIdentifiers?: Iterable<string> | null,
+	rowOrSemantics?: number | SemanticAnnotations,
+	maybeSemantics?: SemanticAnnotations,
+	builtinIdentifiers?: Iterable<string>,
 ): HighlightLine {
 	let lines: readonly string[];
 	let row = 0;
-	let annotations: SemanticAnnotations | null = null;
-	let builtinCollection: Iterable<string> | null | undefined = builtinIdentifiers ?? null;
+	let annotations: SemanticAnnotations = null;
+	let builtinCollection: Iterable<string> = builtinIdentifiers ;
 	if (typeof source === 'string') {
 		lines = [source];
 		row = 0;
@@ -496,11 +496,11 @@ export function highlightLine(
 		lines = source;
 		if (typeof rowOrSemantics === 'number') {
 			row = rowOrSemantics;
-			annotations = maybeSemantics ?? null;
+			annotations = maybeSemantics ;
 		} else {
-			annotations = rowOrSemantics ?? null;
+			annotations = rowOrSemantics ;
 			if (builtinIdentifiers === undefined && maybeSemantics !== undefined) {
-				builtinCollection = maybeSemantics as Iterable<string> | null | undefined;
+				builtinCollection = maybeSemantics as Iterable<string>;
 			}
 		}
 	}

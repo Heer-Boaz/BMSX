@@ -6,37 +6,37 @@ import { getSubBufferFromBufferWithMeta, getZippedRomAndRomLabelFromBlob, loadAs
 
 const HAS_DOM_ENVIRONMENT = typeof document !== 'undefined' && document !== null;
 declare const __BOOTROM_CANONICALIZATION__: BootArgs['canonicalization'];
-const initialStartingGamepadIndex: number | null = null;
+const initialStartingGamepadIndex: number = null;
 
 declare global {
 	interface Window {
-		getRomNameFromUrlParameter: () => string | null;
-		getRomFromUrlParameter: () => string | null;
+		getRomNameFromUrlParameter: () => string;
+		getRomFromUrlParameter: () => string;
 		bootrom: {
-			rom: RomPack | null;
-			engineRom: RomPack | null;
-			cartRom: RomPack | null;
+			rom: RomPack;
+			engineRom: RomPack;
+			cartRom: RomPack;
 			debug: boolean;
-			romname: string | undefined;
-			sndcontext: AudioContext | null;
+			romname: string;
+			sndcontext: AudioContext;
 			snd_unlocked: boolean;
-			gainnode: GainNode | null;
+			gainnode: GainNode;
 			theshowsover: boolean;
-			startingGamepadIndex: number | null;
+			startingGamepadIndex: number;
 			enableOnscreenGamepad: boolean;
 			set defusr(rom: RomPack);
 			usr: (x: number) => number;
-			bload: (url: string, mode?: 'auto' | 'engine' | 'cart') => Promise<RomPack | null>;
-			loadEngineRom: (url: string) => Promise<RomPack | null>;
-			loadCartRom: (url: string) => Promise<RomPack | null>;
+			bload: (url: string, mode?: 'auto' | 'engine' | 'cart') => Promise<RomPack>;
+			loadEngineRom: (url: string) => Promise<RomPack>;
+			loadCartRom: (url: string) => Promise<RomPack>;
 			outputError: (errormsg: string) => void;
 			resizeHandler: () => void;
 		};
 	}
 
 	// Add globalThis augmentation so `globalThis.bootrom = ...` type checks
-	var getRomNameFromUrlParameter: () => string | null;
-	var getRomFromUrlParameter: () => string | null;
+	var getRomNameFromUrlParameter: () => string;
+	var getRomFromUrlParameter: () => string;
 	var bootrom: Object;
 }
 
@@ -49,14 +49,14 @@ declare global {
  */
 declare var h406A: (args: BootArgs) => Promise<void>;
 
-function mergeRecords<T>(primary: Record<string, T> | undefined, fallback?: Record<string, T>): Record<string, T> {
+function mergeRecords<T>(primary: Record<string, T>, fallback?: Record<string, T>): Record<string, T> {
 	return {
 		...(fallback ?? {}),
 		...(primary ?? {}),
 	};
 }
 
-function combineRompacks(engineRom: RomPack | null | undefined, cartRom: RomPack): RomPack {
+function combineRompacks(engineRom: RomPack, cartRom: RomPack): RomPack {
 	if (!engineRom) {
 		return cartRom;
 	}
@@ -71,8 +71,8 @@ function combineRompacks(engineRom: RomPack | null | undefined, cartRom: RomPack
 		data: mergeRecords(cartRom.data, engineRom.data),
 		audioevents: mergeRecords(cartRom.audioevents, engineRom.audioevents),
 		cart: cartRom.cart ?? engineRom.cart,
-		project_root_path: cartRom.project_root_path ?? engineRom.project_root_path ?? null,
-		code: cartRom.code ?? engineRom.code ?? null,
+		project_root_path: cartRom.project_root_path ?? engineRom.project_root_path ,
+		code: cartRom.code ?? engineRom.code ,
 		canonicalization: cartRom.canonicalization ?? engineRom.canonicalization,
 	};
 	return combined;
@@ -85,11 +85,11 @@ export const bootrom = {
 	/**
 	 * This section of code defines the boot ROM object and its properties and methods.
 	 *
-	 * @property {RomPack | null} rom - The boot ROM pack.
+	 * @property {RomPack} rom - The boot ROM pack.
 	 * @property {boolean} debug - A flag indicating whether debug mode is enabled.
-	 * @property {string | undefined} romname - The name of the boot ROM pack.
-	 * @property {AudioContext | null} sndcontext - The audio context for the boot ROM.
-	 * @property {GainNode | null} gainnode - The gain node for the boot ROM.
+	 * @property {string} romname - The name of the boot ROM pack.
+	 * @property {AudioContext} sndcontext - The audio context for the boot ROM.
+	 * @property {GainNode} gainnode - The gain node for the boot ROM.
 	 * @property {boolean} theshowsover - A flag indicating whether the boot animation has ended.
 	 * @property {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
 	 *
@@ -102,18 +102,18 @@ export const bootrom = {
 	 *
 	 * @function bload - Asynchronously loads a ROM pack from the specified URL.
 	 * @param {string} url - The URL of the ROM pack to load.
-	 * @returns {Promise<RomPack | null>} A Promise that resolves to the loaded ROM pack, or null if the loading failed.
+	 * @returns {Promise<RomPack>} A Promise that resolves to the loaded ROM pack, or null if the loading failed.
 	 *
 	 * @var {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
 	 */
-	rom: null as RomPack | null,
-	engineRom: null as RomPack | null,
-	cartRom: null as RomPack | null,
+	rom: null as RomPack,
+	engineRom: null as RomPack,
+	cartRom: null as RomPack,
 	debug: false,
-	romname: undefined as string | undefined, // Currently, used for fetching the megarom Javascript for debug mode
-	sndcontext: null as AudioContext | null,
+	romname: undefined as string, // Currently, used for fetching the megarom Javascript for debug mode
+	sndcontext: null as AudioContext,
 	snd_unlocked: false,
-	gainnode: null as GainNode | null,
+	gainnode: null as GainNode,
 	theshowsover: false,
 	startingGamepadIndex: initialStartingGamepadIndex as BootArgs['startingGamepadIndex'],
 	enableOnscreenGamepad: false as BootArgs['enableOnscreenGamepad'],
@@ -149,7 +149,7 @@ export const bootrom = {
 
 			const wrapup = () => {
 				if (!HAS_DOM_ENVIRONMENT) return;
-				const loadingElement = document.querySelector('#loading') as HTMLElement | null;
+				const loadingElement = document.querySelector('#loading') as HTMLElement;
 				if (loadingElement) loadingElement.hidden = true;
 				window.removeEventListener('resize', bootrom.resizeHandler);
 				remove('#msx');
@@ -191,13 +191,13 @@ export const bootrom = {
 			}
 			h406A({
 				rompack: bootrom.rom!,
-				sndcontext: bootrom.sndcontext ?? undefined,
-				gainnode: bootrom.gainnode ?? undefined,
+				sndcontext: bootrom.sndcontext ,
+				gainnode: bootrom.gainnode ,
 				debug: this.debug,
 				startingGamepadIndex: bootrom.startingGamepadIndex,
 				enableOnscreenGamepad: bootrom.enableOnscreenGamepad,
 				platform,
-				viewHost: bootrom.viewHost ?? undefined,
+				viewHost: bootrom.viewHost ,
 				canonicalization: __BOOTROM_CANONICALIZATION__,
 			} as BootArgs).then(() => {
 				wrapup();
@@ -219,7 +219,7 @@ export const bootrom = {
 	 * @param url - The URL of the ROM pack to load.
 	 * @returns A Promise that resolves to the loaded ROM pack, or null if the loading failed.
 	 */
-	async bload(url: string, mode: 'auto' | 'engine' | 'cart' = 'auto'): Promise<RomPack | null> {
+	async bload(url: string, mode: 'auto' | 'engine' | 'cart' = 'auto'): Promise<RomPack> {
 		const loadKind = mode === 'auto' ? 'cart' : mode;
 		if (typeof window !== 'undefined') {
 			window.onunhandledrejection = (event: PromiseRejectionEvent) => {
@@ -274,8 +274,8 @@ export const bootrom = {
 		}
 
 		return new Promise((resolve, reject) => {
-			let loadedRomPack: RomPack | null = null;
-			let romlabel_bloburl: string | null = null;
+			let loadedRomPack: RomPack = null;
+			let romlabel_bloburl: string = null;
 
 			function replaceBMSXImgWithRomLabel() {
 				if (!HAS_DOM_ENVIRONMENT || !romlabel_bloburl) return;
@@ -370,12 +370,12 @@ export const bootrom = {
 
 if (typeof globalThis !== 'undefined') {
 	globalThis.bootrom = bootrom as typeof bootrom;
-	globalThis.getRomFromUrlParameter = (): string | null => {
+	globalThis.getRomFromUrlParameter = (): string => {
 		const rom = getParameterByName('rom');
 		return rom && rom !== '' ? rom : null;
 	}
 
-	globalThis.getRomNameFromUrlParameter = (): string | null => {
+	globalThis.getRomNameFromUrlParameter = (): string => {
 		const rom_name = getParameterByName('romname');
 		return rom_name && rom_name !== '' ? rom_name : null;
 	}

@@ -65,14 +65,14 @@ export class OnscreenGamepad implements InputHandler {
 	public readonly gamepadIndex = OnscreenGamepad.VIRTUAL_PAD_INDEX;
 
 	private readonly platform: OnscreenGamepadPlatform;
-	private session: OnscreenGamepadPlatformSession | null = null;
+	private session: OnscreenGamepadPlatformSession = null;
 	private activeCounts: Record<string, number> = {};
 	private pointer2Buttons = new Map<number, Set<string>>();
 	private pointer2Elements = new Map<number, Set<string>>();
 	private elementActiveCount = new Map<string, number>();
 	private gamepadButtonStates: KeyOrButtonId2ButtonState = {};
 	private nextPressId = 1;
-	private handlesProvider: OnscreenGamepadHandleProvider | null = null;
+	private handlesProvider: OnscreenGamepadHandleProvider = null;
 
 	constructor(platform: OnscreenGamepadPlatform) {
 		this.platform = platform;
@@ -171,7 +171,7 @@ export class OnscreenGamepad implements InputHandler {
 					timestamp: now,
 					pressId: typeof previous.pressId === 'number' ? previous.pressId : null,
 					pressedAtMs: null,
-					releasedAtMs: was ? now : previous.releasedAtMs ?? null,
+					releasedAtMs: was ? now : previous.releasedAtMs ,
 					value: 0,
 				};
 			}
@@ -530,16 +530,16 @@ export class OnscreenGamepad implements InputHandler {
 		};
 	}
 
-	private resolveHandles(): OnscreenGamepadHandles | null {
+	private resolveHandles(): OnscreenGamepadHandles {
 		if (!this.handlesProvider) {
 			const host = $.platform.gameviewHost;
 			if (!host) {
 				return null;
 			}
 			const provider = host.getCapability('onscreen-gamepad');
-			this.handlesProvider = provider ?? null;
+			this.handlesProvider = provider ;
 		}
-		return this.handlesProvider?.getHandles() ?? null;
+		return this.handlesProvider?.getHandles() ;
 	}
 
 	private static readonly EMPTY_LAYOUT: OnscreenGamepadLayout = Object.freeze({

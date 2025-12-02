@@ -38,7 +38,7 @@ export function atlasIndexResolver(filepath: string, current?: number) {
  * @param usedRect The used rectangle to use as a reference for splitting the free rectangle.
  * @returns An array of new free rectangles created by splitting the original free rectangle, or null when the rectangles do not overlap.
  */
-function splitFreeRectangle(freeRect: Bin, usedRect: Bin): Bin[] | null {
+function splitFreeRectangle(freeRect: Bin, usedRect: Bin): Bin[] {
 	const overlapMinX = Math.max(freeRect.x, usedRect.x);
 	const overlapMinY = Math.max(freeRect.y, usedRect.y);
 	const overlapMaxX = Math.min(freeRect.x + freeRect.width, usedRect.x + usedRect.width);
@@ -150,8 +150,8 @@ function maximalRectanglesPacker(rects: Rect[], binWidth: number, binHeight: num
 	const freeRectangles: Bin[] = [{ x: 0, y: 0, width: binWidth, height: binHeight }];
 
 	// Helper function to find the best placement for a rectangle
-	function findBestPlacement(rect: Rect): { bin: Bin, score: number; } | null {
-		let bestBin: Bin | null = null;
+	function findBestPlacement(rect: Rect): { bin: Bin, score: number; } {
+		let bestBin: Bin = null;
 		let bestScore = Number.MAX_VALUE;
 
 		for (const freeRect of freeRectangles) {
@@ -345,7 +345,7 @@ function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items
 
 	// Pack all rectangles
 	for (const rect of sortedRects) {
-		let bestNode: Node | null = null;
+		let bestNode: Node = null;
 		let bestPerimeter = Number.MAX_VALUE;
 
 		// Find the best node to place the rectangle

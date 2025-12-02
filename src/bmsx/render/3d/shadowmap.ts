@@ -2,8 +2,8 @@ import { $ } from '../../core/game';
 import * as GLR from '../backend/webgl/gl_resources';
 
 export class ShadowMap {
-	public texture: WebGLTexture | null = null;
-	public framebuffer: WebGLFramebuffer | null = null;
+	public texture: WebGLTexture = null;
+	public framebuffer: WebGLFramebuffer = null;
 	constructor(size: number = 1024) {
 		const gl = $.view.nativeCtx as WebGL2RenderingContext;
 		const { texture, framebuffer } = GLR.glCreateShadowMapTextureAndFramebuffer(gl, {

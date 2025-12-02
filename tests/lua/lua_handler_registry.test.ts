@@ -22,8 +22,8 @@ test('LuaHandlerRegistry tracks registration and chunk mapping', () => {
 	let createCalls = 0;
 	let updateCalls = 0;
 	let disposeCalls = 0;
-	let lastContext: LuaHandlerBindContext | null = null;
-	let lastDisposedContext: LuaHandlerBindContext | null = null;
+	let lastContext: LuaHandlerBindContext = null;
+	let lastDisposedContext: LuaHandlerBindContext = null;
 
 	const descriptor = registry.register({
 		id: 'lua.handlers.ability:jump.activation',
@@ -113,7 +113,7 @@ test('LuaHandlerRegistry unregister removes chunk association', () => {
 	};
 
 	let disposeCalled = false;
-	let disposedContext: LuaHandlerBindContext | null = null;
+	let disposedContext: LuaHandlerBindContext = null;
 
 	registry.register({
 		id: 'lua.handlers.component:demo.onattach',

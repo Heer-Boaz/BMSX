@@ -27,7 +27,7 @@ import { ActionEffectRegistry, RegisterEffectOptions } from '../action_effects/e
 import { SpriteObject } from '../core/object/sprite';
 import { LuaTable } from '../lua/value';
 
-type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
+type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest;
 
 export type BmsxConsoleApiOptions = {
 	playerindex: number;
@@ -105,7 +105,7 @@ export class BmsxConsoleApi {
 		Object.assign(instance, overrides);
 	}
 
-	public set_render_backend(backend: ConsoleRenderFacade | null): void {
+	public set_render_backend(backend: ConsoleRenderFacade): void {
 		this.renderBackend = backend;
 	}
 
@@ -330,13 +330,13 @@ export class BmsxConsoleApi {
 		$.sndmaster.stopEffect();
 	}
 
-	public music(id: string | null, options?: AudioPlayOptions): void {
+	public music(id: string, options?: AudioPlayOptions): void {
 		if (!id) {
 			$.sndmaster.stopMusic();
 			return;
 		}
 		$.sndmaster.stopMusic();
-		void $.sndmaster.play(id, options as SoundMasterPlayRequest | ModulationParams | RandomModulationParams | undefined);
+		void $.sndmaster.play(id, options as SoundMasterPlayRequest | ModulationParams | RandomModulationParams);
 	}
 
 	public stop_music(): void {
@@ -359,7 +359,7 @@ export class BmsxConsoleApi {
 		return $.world;
 	}
 
-	public world_object(id: Identifier): WorldObject | null {
+	public world_object(id: Identifier): WorldObject {
 		return $.world.getFromCurrentSpace(id);
 	}
 
@@ -522,7 +522,7 @@ export class BmsxConsoleApi {
 	}
 
 	private resolve_component_ctor(id: string): new (opts: ComponentAttachOptions) => Component {
-		const ctor = (globalThis as Record<string, unknown>)[id] as new (opts: ComponentAttachOptions) => Component | undefined;
+		const ctor = (globalThis as Record<string, unknown>)[id] as new (opts: ComponentAttachOptions) => Component;
 		if (ctor) return ctor;
 		const normalized = id.toLowerCase();
 		if (normalized === 'actioneffectcomponent') {
@@ -627,7 +627,7 @@ export class BmsxConsoleApi {
 		return $.registry.getRegisteredEntityIds();
 	}
 
-	public rget(id: Identifier): Registerable | null {
+	public rget(id: Identifier): Registerable {
 		if (typeof id !== 'string' || id.length === 0) {
 			throw new Error('rget id must be a non-empty string.');
 		}
@@ -638,7 +638,7 @@ export class BmsxConsoleApi {
 		return Array.from($.registry.iterate(Service));
 	}
 
-	public service(id: Identifier): Service | null {
+	public service(id: Identifier): Service {
 		if (typeof id !== 'string' || id.length === 0) {
 			throw new Error('service id must be a non-empty string.');
 		}
@@ -646,9 +646,9 @@ export class BmsxConsoleApi {
 	}
 
 	private resolveEmitter(
-		emitter_or_id: Identifier | Registerable | null | undefined,
+		emitter_or_id: Identifier | Registerable,
 		options?: { required?: boolean; context?: string }
-	): Registerable | null {
+	): Registerable {
 		const context = options?.context ?? 'emit';
 		if (emitter_or_id === undefined || emitter_or_id === null) {
 			if (options?.required) {
@@ -666,7 +666,7 @@ export class BmsxConsoleApi {
 		return emitter_or_id;
 	}
 
-	public emit(event_name: string, emitter_or_id?: Identifier | Registerable | null, payload?: EventPayload): void {
+	public emit(event_name: string, emitter_or_id?: Identifier | Registerable, payload?: EventPayload): void {
 		if (typeof event_name !== 'string' || event_name.length === 0) {
 			throw new Error('emit requires a non-empty event name.');
 		}
@@ -674,7 +674,7 @@ export class BmsxConsoleApi {
 		$.emit(event_name, emitter, payload);
 	}
 
-	public emit_gameplay(event_name: string, emitter_or_id: Identifier | Registerable | null, payload?: EventPayload): void {
+	public emit_gameplay(event_name: string, emitter_or_id: Identifier | Registerable, payload?: EventPayload): void {
 		if (typeof event_name !== 'string' || event_name.length === 0) {
 			throw new Error('emit_gameplay requires a non-empty event name.');
 		}
@@ -777,7 +777,7 @@ export class BmsxConsoleApi {
 		return Msx1Colors[index];
 	}
 
-	private resolve_write_context(font: ConsoleFont, x: number, y: number, z: number, colorindex: number | undefined) {
+	private resolve_write_context(font: ConsoleFont, x: number, y: number, z: number, colorindex: number) {
 		const hasExplicitPosition = x !== undefined && y !== undefined;
 		if (hasExplicitPosition) {
 			this.textCursorHomeX = x;

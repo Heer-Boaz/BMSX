@@ -6,14 +6,14 @@ import { ide_state, diagnosticsDebounceMs } from './ide_state';
 export type DiagnosticContextInput = {
 	id: string;
 	title: string;
-	descriptor: ConsoleResourceDescriptor | null;
-	asset_id: string | null;
-	chunkName: string | null;
+	descriptor: ConsoleResourceDescriptor;
+	asset_id: string;
+	chunkName: string;
 	source: string;
 };
 
 export type DiagnosticProviders = {
-	listLocalSymbols(asset_id: string | null, chunkName: string | null): ConsoleLuaSymbolEntry[];
+	listLocalSymbols(asset_id: string, chunkName: string): ConsoleLuaSymbolEntry[];
 	listGlobalSymbols(): ConsoleLuaSymbolEntry[];
 	listBuiltins(): ConsoleLuaBuiltinDescriptor[];
 };
@@ -70,7 +70,7 @@ export function computeAggregatedEditorDiagnostics(
 	return aggregated;
 }
 
-function resolveChunkName(ctx: DiagnosticContextInput): string | null {
+function resolveChunkName(ctx: DiagnosticContextInput): string {
 	const candidate = ctx.chunkName && ctx.chunkName.length > 0 ? ctx.chunkName : null;
 	if (candidate) return candidate;
 	const descriptor = ctx.descriptor;
@@ -78,7 +78,7 @@ function resolveChunkName(ctx: DiagnosticContextInput): string | null {
 		if (descriptor.path && descriptor.path.length > 0) return descriptor.path;
 		if (descriptor.asset_id && descriptor.asset_id.length > 0) return descriptor.asset_id;
 	}
-	return ctx.title ?? null;
+	return ctx.title ;
 }
 export function markDiagnosticsDirty(contextId?: string): void {
 	const targetId = contextId ?? ide_state.activeCodeTabContextId;

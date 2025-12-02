@@ -21,11 +21,11 @@ import { $ } from '../core/game';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 const PHYSICS_OVERLAY_ID = 'physics_overlay_canvas';
 
-let draggedObj: WorldObject | null;
+let draggedObj: WorldObject;
 let draggedObjCursorOffset: vec2;
 let shiftX: number;
 let shiftY: number;
-let currentHighlighterComponent: ObjectHighlighterComponent | null;
+let currentHighlighterComponent: ObjectHighlighterComponent;
 let stateMachineVisualisers: Record<Identifier, StateMachineVisualizer> = {};
 
 export interface DebugPointerEvent {
@@ -57,7 +57,7 @@ export class PhysicsOverlayRenderer extends Component {
 	constructor(opts: ComponentAttachOptions) {
 		super(opts);
 		// Create or reuse overlay canvas
-		let c = document.getElementById(PHYSICS_OVERLAY_ID) as HTMLCanvasElement | null;
+		let c = document.getElementById(PHYSICS_OVERLAY_ID) as HTMLCanvasElement;
 		if (!c) {
 			c = document.createElement('canvas');
 			c.id = PHYSICS_OVERLAY_ID;
@@ -436,7 +436,7 @@ function createDialogDiv(previousDialog?: HTMLElement): HTMLDivElement {
 	return dialogDiv;
 }
 
-function releaseDebuggerOverlay(dialog: HTMLElement | undefined | null): void {
+function releaseDebuggerOverlay(dialog: HTMLElement): void {
 	if (!dialog) return;
 	if ((dialog as HTMLElement).dataset?.debugOverlayRoot === 'true') {
 		debuggerOverlayManager.pop();
@@ -517,7 +517,7 @@ function createContentDiv(dialogDiv: HTMLDivElement, previousDialog?: HTMLElemen
 	return contentDiv;
 }
 
-function createBackSpan(dialogDiv: HTMLDivElement, previousDialog?: HTMLElement): HTMLSpanElement | undefined {
+function createBackSpan(dialogDiv: HTMLDivElement, previousDialog?: HTMLElement): HTMLSpanElement {
 	if (!previousDialog) return undefined;
 
 	const backSpan = document.createElement('span');
@@ -547,9 +547,9 @@ function createCloseSpan(dialogDiv: HTMLDivElement, previousDialog?: HTMLElement
 		document.body.removeChild(dialogDiv);
 		releaseDebuggerOverlay(dialogDiv);
 
-		let previous = previousDialog as (HTMLDivElement & { previous?: HTMLElement }) | undefined;
+		let previous = previousDialog as (HTMLDivElement & { previous?: HTMLElement });
 		while (previous) {
-			const next = previous.previous as (typeof previous) | undefined;
+			const next = previous.previous as (typeof previous);
 			document.body.removeChild(previous);
 			releaseDebuggerOverlay(previous);
 			previous = next;
@@ -600,7 +600,7 @@ function createMinimizeSpan(dialogDiv: HTMLDivElement, titleSpan: HTMLSpanElemen
 	return minimizeSpan;
 }
 
-function addContent(parent: HTMLElement, type: string, content: string | null, depth: number = 0): HTMLElement {
+function addContent(parent: HTMLElement, type: string, content: string, depth: number = 0): HTMLElement {
 	let element = document.createElement(type);
 	if (content !== null) {
 		element.textContent = content;
@@ -613,7 +613,7 @@ function addContent(parent: HTMLElement, type: string, content: string | null, d
 	return element;
 }
 
-export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement): void {
+export function handleOpenObjectMenu(e: UIEvent, previous?: HTMLElement): void {
 	if (e && e.type !== 'keydown') return;
 
 	const [dialogDiv, contentDiv] = createDebugDialog('Objects', previous);
@@ -626,7 +626,7 @@ export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement):
 	for (const o of $.world.objects({ scope: 'all' })) {
 		let row = addContent(table, 'tr', null);
 		row.classList.add('selectableoption');
-		const ctor = o.constructor as { name?: string } | undefined;
+		const ctor = o.constructor as { name?: string };
 		if (!ctor || typeof ctor.name !== 'string') throw new Error(`[DebugMenu] WorldObject '${o.id}' has no constructor name.`);
 		addContent(row, 'td', ctor.name);
 		addContent(row, 'td', `${o.id}`);
@@ -761,7 +761,7 @@ export function handleOpenDebugMenu(e: UIEvent): void {
 	document.body.insertBefore(dialogDiv, null);
 }
 
-export function handleOpenModelMenu(e: UIEvent | null, previous: HTMLElement): void {
+export function handleOpenModelMenu(e: UIEvent, previous: HTMLElement): void {
 	if (e && e.type !== 'keydown') return;
 	if (!previous) {
 		draggedObj = null; // Make sure that we stop dragging any object
@@ -793,7 +793,7 @@ export function handleDebugClick(e: DebugPointerEvent): void {
 	}
 }
 
-function getWorldObjectAtCursor(e: DebugPointerEvent): { objUnderCursor: WorldObject | null; offsetToCursor: vec2 | null; } {
+function getWorldObjectAtCursor(e: DebugPointerEvent): { objUnderCursor: WorldObject; offsetToCursor: vec2; } {
 	const x = e.offsetX;
 	const y = e.offsetY;
 	const p = div_vec2(new_vec2(x, y), $.view.viewportScale);
@@ -878,7 +878,7 @@ export function handleDebugMouseMove(e: DebugPointerEvent): void {
 	}
 }
 
-function highlight_object(o: WorldObject | null) {
+function highlight_object(o: WorldObject) {
 	if (!o) {
 		if (!currentHighlighterComponent) return;
 		if (!currentHighlighterComponent.is_attached) return;

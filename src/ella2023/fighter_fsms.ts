@@ -17,7 +17,7 @@ class FighterFSMs {
 type AttackEventDetail = { attackType?: AttackType };
 type AttackEvent = GameEvent<'mode.action.attack', AttackEventDetail>;
 type AnimationEvent = GameEvent<'animationEnd', { animation_name?: string }>;
-type JumpEventDetail = { direction?: Direction | null; directional?: boolean | string };
+type JumpEventDetail = { direction?: Direction; directional?: boolean | string };
 type JumpEvent = GameEvent<'mode.control.jump', JumpEventDetail>;
 type WalkEvent = GameEvent<'mode.locomotion.walk', { direction?: Direction }>;
 type TimelineFrameEvent = GameEvent<'timeline.frame', TimelineFrameEventPayload>;
@@ -106,7 +106,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 		'mode.control.duck': GROUND_DUCK_STATE_PATH,
 		'mode.control.jump': {
 			do(this: Fighter, _state: State, event: JumpEvent): string {
-				this.pendingJumpPayload = { direction: event.direction ?? null, directional: event.directional };
+				this.pendingJumpPayload = { direction: event.direction , directional: event.directional };
 				return JUMP_STATE_PATH;
 			},
 		},

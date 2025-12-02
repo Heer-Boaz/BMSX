@@ -16,7 +16,7 @@ type ActionGuardRecord = {
 	lastObservedTimestamp: number;
 	lastResultAccepted: boolean;
 	lastWindowMs: number;
-	lastPressId: number | null;
+	lastPressId: number;
 };
 
 type ActionRepeatRecord = {
@@ -49,10 +49,10 @@ export class PlayerInput {
 	/**
 	 * Represents the input handlers for the player.
 	 *
-	 * @property {IInputHandler | null} keyboard - The handler for keyboard input, or null if not set.
-	 * @property {IInputHandler | null} gamepad - The handler for gamepad input, or null if not set.
+	 * @property {IInputHandler} keyboard - The handler for keyboard input, or null if not set.
+	 * @property {IInputHandler} gamepad - The handler for gamepad input, or null if not set.
 	 */
-	public inputHandlers: { [source in InputSource]: InputHandler | null } = {
+	public inputHandlers: { [source in InputSource]: InputHandler } = {
 		keyboard: null,
 		gamepad: null,
 		pointer: null,
@@ -65,11 +65,11 @@ export class PlayerInput {
 	private contexts: ContextStack = new ContextStack();
 
 	/** Pending rebind operation, if any */
-	private pendingRebind: { action: string; source: InputSource; mode: 'append' | 'replace' } | null = null;
+	private pendingRebind: { action: string; source: InputSource; mode: 'append' | 'replace' } = null;
 
 	private readonly actionGuardRecords: Map<string, ActionGuardRecord> = new Map();
 	private readonly actionRepeatRecords: Map<string, ActionRepeatRecord> = new Map();
-	private lastPollTimestampMs: number | null = null;
+	private lastPollTimestampMs: number = null;
 	private guardWindowMs: number = ACTION_GUARD_MIN_MS;
 	private frameCounter = 0;
 
@@ -156,7 +156,7 @@ export class PlayerInput {
 	}
 
 	/** Add a higher-priority mapping context */
-	public pushContext(id: string, keyboard: KeyboardInputMapping | undefined, gamepad: GamepadInputMapping | undefined, pointer: PointerInputMapping | undefined, priority = 100, enabled = true): void {
+	public pushContext(id: string, keyboard: KeyboardInputMapping, gamepad: GamepadInputMapping, pointer: PointerInputMapping, priority = 100, enabled = true): void {
 		this.contexts.push(new MappingContext(id, priority, enabled, keyboard ?? {}, gamepad ?? {}, pointer ?? {}));
 	}
 
@@ -199,14 +199,14 @@ export class PlayerInput {
 
 		const keyboardKeysRaw = this.contexts.getBindings(action, 'keyboard');
 		const gamepadButtonsRaw = this.contexts.getBindings(action, 'gamepad');
-		const keyboardKeys: ButtonId[] | null = (keyboardKeysRaw && keyboardKeysRaw.length > 0)
+		const keyboardKeys: ButtonId[] = (keyboardKeysRaw && keyboardKeysRaw.length > 0)
 			? keyboardKeysRaw.map(k => (typeof k === 'string' ? k : k.id))
 			: null;
-		const gamepadButtons: ButtonId[] | null = (gamepadButtonsRaw && gamepadButtonsRaw.length > 0)
+		const gamepadButtons: ButtonId[] = (gamepadButtonsRaw && gamepadButtonsRaw.length > 0)
 			? gamepadButtonsRaw.map(b => (typeof b === 'string' ? b : b.id))
 			: null;
 		const pointerBindingsRaw = this.contexts.getBindings(action, 'pointer') as PointerBinding[];
-		const pointerButtons: ButtonId[] | null = (pointerBindingsRaw && pointerBindingsRaw.length > 0)
+		const pointerButtons: ButtonId[] = (pointerBindingsRaw && pointerBindingsRaw.length > 0)
 			? pointerBindingsRaw.map(b => (typeof b === 'string' ? b : b.id))
 			: null;
 
@@ -227,8 +227,8 @@ export class PlayerInput {
 			allPressed: boolean; anyPressed: boolean; anyJustPressed: boolean; allJustPressed: boolean;
 			anyWasPressed: boolean; allWasPressed: boolean; anyJustReleased: boolean;
 			allJustReleased: boolean; anyWasReleased: boolean; allWasReleased: boolean;
-			anyConsumed: boolean; leastPressTime: number | null; recentestTimestamp: number | null;
-			lastPressId: number | null; best1DVal: number | null; best1DAbs: number; best2DVal: [number, number] | null; best2DAbs: number;
+			anyConsumed: boolean; leastPressTime: number; recentestTimestamp: number;
+			lastPressId: number; best1DVal: number; best1DAbs: number; best2DVal: [number, number]; best2DAbs: number;
 		};
 		// Aggregate a single action across multiple bindings (keyboard / gamepad / pointer).
 		// Treat bindings as an OR: anyPressed drives `pressed`, while `all*` flags stay true only when every binding matches.
@@ -246,11 +246,11 @@ export class PlayerInput {
 			let allWasReleased = true;
 			let anyConsumed = false;
 			let anyPressed = false;
-			let leastPressTime: number | null = null;
-			let recentestTimestamp: number | null = null;
-			let lastPressId: number | null = null;
-			let best1DVal: number | null = null; let best1DAbs = -Infinity;
-			let best2DVal: [number, number] | null = null; let best2DAbs = -Infinity;
+			let leastPressTime: number = null;
+			let recentestTimestamp: number = null;
+			let lastPressId: number = null;
+			let best1DVal: number = null; let best1DAbs = -Infinity;
+			let best2DVal: [number, number] = null; let best2DAbs = -Infinity;
 
 			if (keys_or_buttons && keys_or_buttons.length > 0) {
 				for (const key of keys_or_buttons) {
@@ -330,26 +330,26 @@ export class PlayerInput {
 			.map(state => state.recentestTimestamp)
 			.filter((value): value is number => value != null)
 			.reduce((max, value) => Math.max(max, value), -Infinity);
-		let merged1D: number | null = null;
+		let merged1D: number = null;
 		let best1DAbs = -Infinity;
 		for (const state of deviceStates) {
 			if (state.best1DAbs > best1DAbs) {
 				best1DAbs = state.best1DAbs;
-				merged1D = state.best1DVal ?? null;
+				merged1D = state.best1DVal ;
 			}
 		}
-		let merged2D: [number, number] | null = null;
+		let merged2D: [number, number] = null;
 		let best2DAbs = -Infinity;
 		for (const state of deviceStates) {
 			if (state.best2DAbs > best2DAbs) {
 				best2DAbs = state.best2DAbs;
-				merged2D = state.best2DVal ?? null;
+				merged2D = state.best2DVal ;
 			}
 		}
 		const minPresstime = minPresstimeRaw === Infinity ? null : minPresstimeRaw;
 
-		let pressId: number | null = null;
-		let pressTimestamp: number | null = null;
+		let pressId: number = null;
+		let pressTimestamp: number = null;
 		for (const state of deviceStates) {
 			if (state.lastPressId == null || state.recentestTimestamp == null) continue;
 			if (pressTimestamp == null || state.recentestTimestamp >= pressTimestamp) {
@@ -497,7 +497,7 @@ export class PlayerInput {
 		const state = handler.getButtonState(button);
 		const sticky = options?.sticky ?? true;
 		handler.consumeButton(button, { sticky });
-		this._stateManager.consumeBufferedEvent(button, state?.pressId ?? undefined, { sticky });
+		this._stateManager.consumeBufferedEvent(button, state?.pressId , { sticky });
 	}
 
 	public consumeButtons(buttons: ButtonId[], source: InputSource): void {
@@ -658,8 +658,8 @@ export class PlayerInput {
 		const { action, source, mode } = this.pendingRebind;
 		const handler = this.inputHandlers[source];
 		if (!handler) return;
-		let capturedKb: string | null = null;
-		let capturedGp: BGamepadButton | null = null;
+		let capturedKb: string = null;
+		let capturedGp: BGamepadButton = null;
 		if (source === 'gamepad') {
 			for (const button of Input.BUTTON_IDS) {
 				const st = handler.getButtonState(button);
@@ -720,7 +720,7 @@ export class PlayerInput {
 		const guardMs = this.normalizeGuardWindow(windowOverride);
 		const existing = this.actionGuardRecords.get(action);
 		// If the same pressId already passed the guard this frame, don't re-block duplicates from multi-binding combos.
-		const pressId = state.pressId ?? null;
+		const pressId = state.pressId ;
 		if (existing) {
 			if (existing.lastPressId !== null && pressId !== null && existing.lastPressId === pressId) {
 				return existing.lastResultAccepted;

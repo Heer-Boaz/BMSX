@@ -55,7 +55,7 @@ export type ParticleRenderSubmission = {
 	position: vec3arr;
 	size: number;
 	color: color;
-	texture?: TextureHandle | WebGLTexture | null;
+	texture?: TextureHandle | WebGLTexture;
 	ambient_mode?: 0 | 1;
 	ambient_factor?: number;
 };

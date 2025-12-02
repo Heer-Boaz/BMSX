@@ -19,7 +19,7 @@ export interface ResourcePanelScrollbars {
 export class ResourcePanelController {
 	public visible = false;
 	public focused = false;
-	private widthRatio: number | null = null;
+	private widthRatio: number = null;
 	private filterMode: 'lua_only' | 'all' = 'lua_only';
 	public lineHeight: number;
 	private charAdvance: number;
@@ -31,7 +31,7 @@ export class ResourcePanelController {
 	public selectionIndex = -1;
 	public hoverIndex = -1;
 	public maxLineWidth = 0;
-	private pendingSelectionasset_id: string | null = null;
+	private pendingSelectionasset_id: string = null;
 
 	// Scrollbars for the panel
 	public readonly resourceVertical: ConsoleScrollbar;
@@ -509,7 +509,7 @@ export class ResourcePanelController {
 		return initialCapacity;
 	}
 
-	public getBounds(): RectBounds | null {
+	public getBounds(): RectBounds {
 		if (!this.visible) return null;
 		const width = this.getWidth();
 		if (width <= 0) return null;
@@ -556,7 +556,7 @@ export class ResourcePanelController {
 		return this.clampRatio(ratio);
 	}
 
-	private clampRatio(ratio: number | null): number {
+	private clampRatio(ratio: number): number {
 		const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
 		const minEditorRatio = constants.RESOURCE_PANEL_MIN_EDITOR_RATIO;
 		const availableForPanel = Math.max(0, 1 - minEditorRatio);
@@ -576,7 +576,7 @@ export class ResourcePanelController {
 	// Expose snapshot for editor sync
 	public getStateForRender(): {
 		visible: boolean;
-		bounds: RectBounds | null;
+		bounds: RectBounds;
 		items: ResourceBrowserItem[];
 		scroll: number;
 		hscroll: number;

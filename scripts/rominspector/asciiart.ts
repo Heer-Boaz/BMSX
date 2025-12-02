@@ -602,7 +602,7 @@ export function parseWav(buf: ArrayBuffer): WavInfo {
 	if (dv.getUint32(0, false) !== 0x52494646) throw new Error('No RIFF');
 	if (dv.getUint32(8, false) !== 0x57415645) throw new Error('No WAVE');
 
-	let ptr = 12, fmt: WavInfo | null = null, dataOff = 0, dataLen = 0;
+	let ptr = 12, fmt: WavInfo = null, dataOff = 0, dataLen = 0;
 
 	while (ptr + 8 <= buf.byteLength) {
 		const id = dv.getUint32(ptr, false);

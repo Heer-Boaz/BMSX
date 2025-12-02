@@ -57,7 +57,7 @@ import { $ } from '../core/game';
 import { BmsxConsoleRuntime } from '../console/runtime';
 
 export type LuaCallFrame = {
-	readonly functionName: string | null;
+	readonly functionName: string;
 	readonly source: string;
 	readonly line: number;
 	readonly column: number;
@@ -125,9 +125,9 @@ class LuaScriptFunction implements LuaFunctionValue {
 	private readonly interpreter: LuaInterpreter;
 	private readonly expression: LuaFunctionExpression;
 	private readonly closure: LuaEnvironment;
-	private readonly implicitSelfName: string | null;
+	private readonly implicitSelfName: string;
 
-	constructor(name: string, interpreter: LuaInterpreter, expression: LuaFunctionExpression, closure: LuaEnvironment, implicitSelfName: string | null) {
+	constructor(name: string, interpreter: LuaInterpreter, expression: LuaFunctionExpression, closure: LuaEnvironment, implicitSelfName: string) {
 		this.name = name;
 		this.interpreter = interpreter;
 		this.expression = expression;
@@ -146,7 +146,7 @@ class LuaScriptFunction implements LuaFunctionValue {
 }
 
 type ResolvedAssignmentTarget =
-	| { readonly kind: 'identifier'; readonly name: string; readonly environment: LuaEnvironment | null }
+	| { readonly kind: 'identifier'; readonly name: string; readonly environment: LuaEnvironment }
 	| { readonly kind: 'member'; readonly table: LuaTable; readonly key: string }
 	| { readonly kind: 'index'; readonly table: LuaTable; readonly index: LuaValue }
 	| { readonly kind: 'native-member'; readonly target: LuaNativeValue; readonly key: string }
@@ -159,7 +159,7 @@ type LabelMetadata = {
 
 type LabelScope = {
 	readonly labels: Map<string, LabelMetadata>;
-	readonly parent: LabelScope | null;
+	readonly parent: LabelScope;
 };
 
 export class LuaInterpreter {
@@ -167,18 +167,18 @@ export class LuaInterpreter {
 	private currentChunk: string;
 	private randomSeedValue: number;
 	private reservedIdentifiers: Set<string> = new Set<string>();
-	private currentCallRange: LuaSourceRange | null = null;
-	private _chunkEnvironment: LuaEnvironment | null = null;
+	private currentCallRange: LuaSourceRange = null;
+	private _chunkEnvironment: LuaEnvironment = null;
 	private readonly chunkDefinitions: Map<string, ReadonlyArray<LuaDefinitionInfo>> = new Map();
 	private readonly envStack: LuaEnvironment[] = [];
-	private _lastFaultEnvironment: LuaEnvironment | null = null;
+	private _lastFaultEnvironment: LuaEnvironment = null;
 	private readonly callStack: LuaCallFrame[] = [];
-	private debuggerController: LuaDebuggerController | null = null;
+	private debuggerController: LuaDebuggerController = null;
 	private _lastFaultCallStack: LuaCallFrame[] = [];
 	private lastFaultDepth: number = 0;
-	private pendingDebuggerException: LuaRuntimeError | null = null;
+	private pendingDebuggerException: LuaRuntimeError = null;
 	private exceptionResumeStrategy: LuaExceptionResumeStrategy = 'propagate';
-	private hostAdapter: LuaHostAdapter | null = null;
+	private hostAdapter: LuaHostAdapter = null;
 	private caseInsensitiveNativeAccess = true;
 	private identifierCanonicalizationMode: CanonicalizationType = 'none';
 	private nativeValueCache: WeakMap<object | Function, LuaNativeValue> = new WeakMap();
@@ -188,10 +188,10 @@ export class LuaInterpreter {
 	>();
 	private readonly packageTable: LuaTable;
 	private readonly packageLoaded: LuaTable;
-	private requireHandler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) | null = null;
+	private requireHandler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) = null;
 	private _outputHandler: ((text: string) => void) = (text: string) => { console.log(text); };
 
-	constructor(globals: LuaEnvironment | null, canonicalization: CanonicalizationType = 'none') {
+	constructor(globals: LuaEnvironment, canonicalization: CanonicalizationType = 'none') {
 		if (globals === null) {
 			this.globals = LuaEnvironment.createRoot();
 		}
@@ -221,15 +221,15 @@ export class LuaInterpreter {
 		this.reservedIdentifiers = new Set(names as Iterable<string>);
 	}
 
-	public setHostAdapter(adapter: LuaHostAdapter | null): void {
+	public setHostAdapter(adapter: LuaHostAdapter): void {
 		this.hostAdapter = adapter;
 	}
 
-	public setRequireHandler(handler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) | null): void {
+	public setRequireHandler(handler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue)): void {
 		this.requireHandler = handler;
 	}
 
-	public attachDebugger(controller: LuaDebuggerController | null): void {
+	public attachDebugger(controller: LuaDebuggerController): void {
 		this.debuggerController = controller;
 	}
 
@@ -274,7 +274,7 @@ export class LuaInterpreter {
 		return nativeValue;
 	}
 
-	public getHostAdapter(): LuaHostAdapter | null {
+	public getHostAdapter(): LuaHostAdapter {
 		return this.hostAdapter;
 	}
 
@@ -297,7 +297,7 @@ export class LuaInterpreter {
 		return this.globals.entries();
 	}
 
-	public setGlobal(name: string, value: LuaValue, range?: LuaSourceRange | null): void {
+	public setGlobal(name: string, value: LuaValue, range?: LuaSourceRange): void {
 		this.globals.set(name, value, range);
 	}
 
@@ -351,13 +351,13 @@ export class LuaInterpreter {
 		return this._chunkEnvironment!.entries();
 	}
 
-	public get chunkEnvironment(): LuaEnvironment | null {
+	public get chunkEnvironment(): LuaEnvironment {
 		return this._chunkEnvironment;
 	}
 
-	public getChunkDefinitions(chunkName: string): ReadonlyArray<LuaDefinitionInfo> | null {
+	public getChunkDefinitions(chunkName: string): ReadonlyArray<LuaDefinitionInfo> {
 		const normalized = this.normalizeChunkName(chunkName);
-		return this.chunkDefinitions.get(normalized) ?? null;
+		return this.chunkDefinitions.get(normalized) ;
 	}
 
 	public hasChunkBinding(name: string): boolean {
@@ -387,7 +387,7 @@ export class LuaInterpreter {
 		}
 	}
 
-	public get lastFaultEnvironment(): LuaEnvironment | null {
+	public get lastFaultEnvironment(): LuaEnvironment {
 		return this._lastFaultEnvironment;
 	}
 
@@ -409,7 +409,7 @@ export class LuaInterpreter {
 		this.lastFaultDepth = 0;
 	}
 
-	public consumeLastDebuggerException(): LuaRuntimeError | null {
+	public consumeLastDebuggerException(): LuaRuntimeError {
 		const exception = this.pendingDebuggerException;
 		this.pendingDebuggerException = null;
 		return exception;
@@ -429,7 +429,7 @@ export class LuaInterpreter {
 		return strategy;
 	}
 
-	private pushCallFrame(functionName: string | null, source: string, line: number, column: number): void {
+	private pushCallFrame(functionName: string, source: string, line: number, column: number): void {
 		const safeLine = Number.isFinite(line) ? Math.max(0, Math.floor(line)) : 0;
 		const safeColumn = Number.isFinite(column) ? Math.max(0, Math.floor(column)) : 0;
 		this.callStack.push({
@@ -480,9 +480,9 @@ export class LuaInterpreter {
 	private withInterpreterSnapshot<T>(
 		envSnapshot: ReadonlyArray<LuaEnvironment>,
 		callStackSnapshot: ReadonlyArray<LuaCallFrame>,
-		callRange: LuaSourceRange | null,
+		callRange: LuaSourceRange,
 		currentChunk: string,
-		chunkEnvironment: LuaEnvironment | null,
+		chunkEnvironment: LuaEnvironment,
 		callback: () => T,
 	): T {
 		const envBackup = this.envStack.slice();
@@ -524,7 +524,7 @@ export class LuaInterpreter {
 		}
 	}
 
-	private executeStatements(statements: ReadonlyArray<LuaStatement>, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, parentScope: LabelScope | null): ExecutionSignal {
+	private executeStatements(statements: ReadonlyArray<LuaStatement>, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, parentScope: LabelScope): ExecutionSignal {
 		const labels = this.buildLabelMap(statements);
 		const scope: LabelScope = { labels, parent: parentScope };
 		return this.runStatements(statements, environment, varargs, scope, 0);
@@ -578,7 +578,7 @@ export class LuaInterpreter {
 		return NORMAL_SIGNAL;
 	}
 
-	private getDebuggerPauseContext(range: LuaSourceRange): DebuggerPauseContext | null {
+	private getDebuggerPauseContext(range: LuaSourceRange): DebuggerPauseContext {
 		const controller = this.debuggerController;
 		if (!controller || !controller.isActive()) {
 			return null;
@@ -635,7 +635,7 @@ export class LuaInterpreter {
 		const callRange = this.currentCallRange;
 		const currentChunk = this.currentChunk;
 		const chunkEnvironment = this._chunkEnvironment;
-		const statementRange = statements[index]?.range ?? null;
+		const statementRange = statements[index]?.range ;
 		const chunkName = error.chunkName ?? statementRange?.chunkName ?? callRange?.chunkName ?? this.currentChunk ?? '<chunk>';
 		const line =
 			Number.isFinite(error.line) && error.line > 0
@@ -777,7 +777,7 @@ export class LuaInterpreter {
 		if (parts.length === 0) {
 			throw this.runtimeErrorAt(range, `Invalid table path for function '${displayName}'.`);
 		}
-		let currentValue: LuaValue | null = this.lookupIdentifier(parts[0], environment);
+		let currentValue: LuaValue = this.lookupIdentifier(parts[0], environment);
 		if (!(isLuaTable(currentValue))) {
 			throw this.runtimeErrorAt(range, `Expected table for '${parts[0]}' when declaring function '${displayName}'.`);
 		}
@@ -1011,7 +1011,7 @@ export class LuaInterpreter {
 		varargs: ReadonlyArray<LuaValue>,
 		scope: LabelScope,
 		results: ReadonlyArray<LuaValue>,
-	): ExecutionSignal | null {
+	): ExecutionSignal {
 		this.assignGenericLoopVariables(statement, loopEnvironment, results);
 		const signal = this.executeBlock(statement.block, loopEnvironment, varargs, scope);
 		if (signal.kind === 'return' || signal.kind === 'goto' || signal.kind === 'pause') {
@@ -1297,7 +1297,7 @@ export class LuaInterpreter {
 		return this.invokeFunction(functionValue, args, expression.range);
 	}
 
-	private buildCallArguments(expression: LuaCallExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, selfValue: LuaValue | null): LuaValue[] {
+	private buildCallArguments(expression: LuaCallExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, selfValue: LuaValue): LuaValue[] {
 		const evaluatedArgs = this.evaluateExpressionList(expression.arguments, environment, varargs);
 		if (selfValue === null) {
 			return evaluatedArgs;
@@ -1566,7 +1566,7 @@ export class LuaInterpreter {
 		return value | 0;
 	}
 
-	private invokeMetamethod(table: LuaTable, name: string, args: ReadonlyArray<LuaValue>): LuaValue[] | null {
+	private invokeMetamethod(table: LuaTable, name: string, args: ReadonlyArray<LuaValue>): LuaValue[] {
 		const metatable = table.getMetatable();
 		if (metatable === null) {
 			return null;
@@ -1659,7 +1659,7 @@ export class LuaInterpreter {
 		if (name.length === 0) {
 			throw this.runtimeError('Cannot deserialize unnamed function.');
 		}
-		let methodName: string | null = null;
+		let methodName: string = null;
 		let path = name;
 		const colonIndex = name.indexOf(':');
 		if (colonIndex >= 0) {
@@ -1670,7 +1670,7 @@ export class LuaInterpreter {
 		if (segments.length === 0) {
 			throw this.runtimeError(`Function '${name}' not found during deserialization.`);
 		}
-		let value: LuaValue | null = this.globals.get(segments[0]);
+		let value: LuaValue = this.globals.get(segments[0]);
 		if (value === null) {
 			throw this.runtimeError(`Function '${name}' not found during deserialization.`);
 		}
@@ -1690,7 +1690,7 @@ export class LuaInterpreter {
 		return functionValue;
 	}
 
-	private lookupIdentifier(name: string, environment: LuaEnvironment): LuaValue | null {
+	private lookupIdentifier(name: string, environment: LuaEnvironment): LuaValue {
 		const value = environment.get(name);
 		if (value !== null) {
 			return value;
@@ -1812,7 +1812,7 @@ export class LuaInterpreter {
 		else throw this.runtimeErrorAt(expression.range, message);
 	}
 
-	private invokeUnaryMetamethod(operand: LuaValue, name: string, range: LuaSourceRange): LuaValue | null {
+	private invokeUnaryMetamethod(operand: LuaValue, name: string, range: LuaSourceRange): LuaValue {
 		const handler = this.extractMetamethodFunction(operand, name, range);
 		if (handler === null) {
 			return null;
@@ -1824,7 +1824,7 @@ export class LuaInterpreter {
 		return result[0];
 	}
 
-	private invokeBinaryMetamethod(left: LuaValue, right: LuaValue, name: string, range: LuaSourceRange): LuaValue | null {
+	private invokeBinaryMetamethod(left: LuaValue, right: LuaValue, name: string, range: LuaSourceRange): LuaValue {
 		const leftHandler = this.extractMetamethodFunction(left, name, range);
 		if (leftHandler !== null) {
 			const result = leftHandler.call([left, right]);
@@ -1844,8 +1844,8 @@ export class LuaInterpreter {
 		return null;
 	}
 
-	private extractMetamethodFunction(value: LuaValue, name: string, range: LuaSourceRange | null): LuaFunctionValue | null {
-		let metatable: LuaTable | null = null;
+	private extractMetamethodFunction(value: LuaValue, name: string, range: LuaSourceRange): LuaFunctionValue {
+		let metatable: LuaTable = null;
 		if (isLuaTable(value)) {
 			metatable = value.getMetatable();
 		} else if (isLuaNativeValue(value)) {
@@ -1863,7 +1863,7 @@ export class LuaInterpreter {
 		return this.expectFunction(handler, `Metamethod ${name} must be a function.`, range);
 	}
 
-	private getMetatableForValue(value: LuaValue): LuaTable | null {
+	private getMetatableForValue(value: LuaValue): LuaTable {
 		if (isLuaTable(value)) {
 			return value.getMetatable();
 		}
@@ -1873,7 +1873,7 @@ export class LuaInterpreter {
 		return null;
 	}
 
-	private extractSharedMetamethodFunction(left: LuaValue, right: LuaValue, name: string, range: LuaSourceRange): LuaFunctionValue | null {
+	private extractSharedMetamethodFunction(left: LuaValue, right: LuaValue, name: string, range: LuaSourceRange): LuaFunctionValue {
 		const leftMetatable = this.getMetatableForValue(left);
 		const rightMetatable = this.getMetatableForValue(right);
 		if (leftMetatable === null || rightMetatable === null || leftMetatable !== rightMetatable) {
@@ -1896,7 +1896,7 @@ export class LuaInterpreter {
 		return true;
 	}
 
-	private expectNumber(value: LuaValue, message: string, range: LuaSourceRange | null): number {
+	private expectNumber(value: LuaValue, message: string, range: LuaSourceRange): number {
 		if (typeof value === 'number') {
 			return value;
 		}
@@ -1944,7 +1944,7 @@ export class LuaInterpreter {
 		return `Attempted to call ${description}.`;
 	}
 
-	private expectBoolean(value: LuaValue, message: string, range: LuaSourceRange | null): boolean {
+	private expectBoolean(value: LuaValue, message: string, range: LuaSourceRange): boolean {
 		if (typeof value === 'boolean') {
 			return value;
 		}
@@ -1954,7 +1954,7 @@ export class LuaInterpreter {
 		throw this.runtimeError(message);
 	}
 
-	public expectFunction(value: LuaValue, message: string, range: LuaSourceRange | null): LuaFunctionValue {
+	public expectFunction(value: LuaValue, message: string, range: LuaSourceRange): LuaFunctionValue {
 		if (isLuaNativeValue(value)) {
 			return this.getOrCreateNativeCallable(value, range);
 		}
@@ -1972,7 +1972,7 @@ export class LuaInterpreter {
 		throw this.runtimeError(message);
 	}
 
-	private ensureHostAdapter(range: LuaSourceRange | null): LuaHostAdapter {
+	private ensureHostAdapter(range: LuaSourceRange): LuaHostAdapter {
 		if (this.hostAdapter) {
 			return this.hostAdapter;
 		}
@@ -1999,7 +1999,7 @@ export class LuaInterpreter {
 		return adapter.toLua(value, this);
 	}
 
-	private convertToHost(value: LuaValue, range: LuaSourceRange | null): unknown {
+	private convertToHost(value: LuaValue, range: LuaSourceRange): unknown {
 		if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
 			return value;
 		}
@@ -2065,7 +2065,7 @@ export class LuaInterpreter {
 		};
 	}
 
-	private bindNativeFunction(target: LuaNativeValue, options: { cacheKey: string; resolvedName: string | null; displayName: string; bindInstance: boolean; range: LuaSourceRange | null }): LuaFunctionValue {
+	private bindNativeFunction(target: LuaNativeValue, options: { cacheKey: string; resolvedName: string; displayName: string; bindInstance: boolean; range: LuaSourceRange }): LuaFunctionValue {
 		const cached = this.getCachedNativeMethod(target, options.cacheKey);
 		if (cached !== null) {
 			return cached;
@@ -2126,16 +2126,16 @@ export class LuaInterpreter {
 		return fn;
 	}
 
-	private getOrCreateNativeMethod(target: LuaNativeValue, resolvedName: string, displayName: string, range: LuaSourceRange | null): LuaFunctionValue {
+	private getOrCreateNativeMethod(target: LuaNativeValue, resolvedName: string, displayName: string, range: LuaSourceRange): LuaFunctionValue {
 		const cacheKey = `method:${displayName}`;
 		return this.bindNativeFunction(target, { cacheKey, resolvedName, displayName, bindInstance: true, range });
 	}
 
-	private getOrCreateNativeCallable(target: LuaNativeValue, range: LuaSourceRange | null): LuaFunctionValue {
+	private getOrCreateNativeCallable(target: LuaNativeValue, range: LuaSourceRange): LuaFunctionValue {
 		return this.bindNativeFunction(target, { cacheKey: 'call', resolvedName: null, displayName: 'call', bindInstance: false, range });
 	}
 
-	private normalizeNativeKey(key: LuaValue): { propertyName: string; displayName: string } | null {
+	private normalizeNativeKey(key: LuaValue): { propertyName: string; displayName: string } {
 		if (typeof key === 'string') {
 			return { propertyName: key, displayName: key };
 		}
@@ -2146,7 +2146,7 @@ export class LuaInterpreter {
 		return null;
 	}
 
-	private resolveNativePropertyName(native: object | Function, propertyName: string): string | null {
+	private resolveNativePropertyName(native: object | Function, propertyName: string): string {
 		if (propertyName in native) {
 			return propertyName;
 		}
@@ -2154,7 +2154,7 @@ export class LuaInterpreter {
 			return null;
 		}
 		const upper = propertyName.toUpperCase();
-		let prototype: object | null = native;
+		let prototype: object = native;
 		while (prototype && prototype !== Object.prototype) {
 			const names = Object.getOwnPropertyNames(prototype);
 			for (let index = 0; index < names.length; index += 1) {
@@ -2171,7 +2171,7 @@ export class LuaInterpreter {
 		return null;
 	}
 
-	private getNativePropertyValue(target: LuaNativeValue, key: LuaValue, range: LuaSourceRange | null): { found: boolean; value: LuaValue; resolvedName: string | null; displayName: string } {
+	private getNativePropertyValue(target: LuaNativeValue, key: LuaValue, range: LuaSourceRange): { found: boolean; value: LuaValue; resolvedName: string; displayName: string } {
 		const normalized = this.normalizeNativeKey(key);
 		if (!normalized) {
 			return { found: false, value: null, resolvedName: null, displayName: '' };
@@ -2207,11 +2207,7 @@ export class LuaInterpreter {
 		return { found: true, value: this.convertFromHost(property), resolvedName, displayName: normalized.displayName };
 	}
 
-	private getNativeValueWithMetamethod(target: LuaNativeValue, key: LuaValue, range: LuaSourceRange | null): LuaValue {
-		return this.getNativeValueWithMetamethodInternal(target, key, range, new Set<LuaNativeValue>());
-	}
-
-	private getNativeValueWithMetamethodInternal(target: LuaNativeValue, key: LuaValue, range: LuaSourceRange | null, visited: Set<LuaNativeValue>): LuaValue {
+	private getNativeValueWithMetamethod(target: LuaNativeValue, key: LuaValue, range: LuaSourceRange, visited: Set<LuaNativeValue> = new Set<LuaNativeValue>()): LuaValue {
 		if (visited.has(target)) {
 			const loopMessage = 'Metatable __index loop detected.';
 			if (range !== null) {
@@ -2247,7 +2243,7 @@ export class LuaInterpreter {
 		return first;
 	}
 
-	public getNativeMemberValue(target: LuaNativeValue, property: string, range: LuaSourceRange | null = null): LuaValue {
+	public getNativeMemberValue(target: LuaNativeValue, property: string, range: LuaSourceRange = null): LuaValue {
 		return this.getNativeValueWithMetamethod(target, property, range);
 	}
 
@@ -2339,13 +2335,13 @@ export class LuaInterpreter {
 		return cache;
 	}
 
-	private getCachedNativeMethod(target: LuaNativeValue, key: string): LuaFunctionValue | null {
+	private getCachedNativeMethod(target: LuaNativeValue, key: string): LuaFunctionValue {
 		const cache = this.nativeMethodCache.get(target);
 		if (!cache) {
 			return null;
 		}
 		const entry = cache.get(key);
-		return entry ?? null;
+		return entry ;
 	}
 
 	private storeNativeMethod(target: LuaNativeValue, key: string, fn: LuaFunctionValue): void {
@@ -2374,7 +2370,7 @@ export class LuaInterpreter {
 		return String(error);
 	}
 
-	private expectString(value: LuaValue, message: string, range: LuaSourceRange | null): string {
+	private expectString(value: LuaValue, message: string, range: LuaSourceRange): string {
 		if (typeof value === 'string') {
 			return value;
 		}
@@ -2403,7 +2399,7 @@ export class LuaInterpreter {
 		return 'function';
 	}
 
-	private createScriptFunction(expression: LuaFunctionExpression, environment: LuaEnvironment, name: string, implicitSelfName: string | null): LuaScriptFunction {
+	private createScriptFunction(expression: LuaFunctionExpression, environment: LuaEnvironment, name: string, implicitSelfName: string): LuaScriptFunction {
 		return new LuaScriptFunction(name, this, expression, environment, implicitSelfName);
 	}
 
@@ -2439,11 +2435,11 @@ export class LuaInterpreter {
 		}
 	}
 
-	public getCurrentCallRange(): LuaSourceRange | null {
+	public getCurrentCallRange(): LuaSourceRange {
 		return this.currentCallRange;
 	}
 
-	public invokeScriptFunction(expression: LuaFunctionExpression, closure: LuaEnvironment, name: string, args: ReadonlyArray<LuaValue>, implicitSelfName: string | null): LuaValue[] {
+	public invokeScriptFunction(expression: LuaFunctionExpression, closure: LuaEnvironment, name: string, args: ReadonlyArray<LuaValue>, implicitSelfName: string): LuaValue[] {
 		const activationEnvironment = LuaEnvironment.createChild(closure);
 		const callRange = this.currentCallRange;
 		const rangeSource = callRange ? callRange.chunkName : expression.range.chunkName;
@@ -2690,7 +2686,7 @@ export class LuaInterpreter {
 				throw this.runtimeError('setmetatable expects a table or native value as the first argument.');
 			}
 			const targetValue = args[0];
-			let metatable: LuaTable | null = null;
+			let metatable: LuaTable = null;
 			if (args.length >= 2) {
 				const metaArg = args[1];
 				if (metaArg !== null && !(isLuaTable(metaArg))) {
@@ -2714,7 +2710,7 @@ export class LuaInterpreter {
 				throw this.runtimeError('getmetatable expects a table or native value as the first argument.');
 			}
 			const targetValue = args[0];
-			let metatable: LuaTable | null = null;
+			let metatable: LuaTable = null;
 			if (isLuaTable(targetValue)) {
 				metatable = targetValue.getMetatable();
 			} else {
@@ -2784,7 +2780,7 @@ export class LuaInterpreter {
 				const formatted = this.formatErrorMessage(error);
 				const handlerResult = messageHandler.call([formatted]);
 				const first = handlerResult.length > 0 ? handlerResult[0] : null;
-				return [false, first ?? null];
+				return [false, first ];
 			}
 		}));
 
@@ -3010,7 +3006,7 @@ export class LuaInterpreter {
 			if (!(isLuaTable(target))) {
 				throw this.runtimeError('table.insert expects a table as the first argument.');
 			}
-			let position: number | null = null;
+			let position: number = null;
 			let value: LuaValue;
 			if (args.length === 2) {
 				value = args[1];
@@ -3126,7 +3122,7 @@ export class LuaInterpreter {
 				return this.defaultSortCompare(left, right);
 			});
 			for (let index = 1; index <= length; index += 1) {
-				target.set(index, values[index - 1] ?? null);
+				target.set(index, values[index - 1] );
 			}
 			return [target];
 		}));
@@ -3279,7 +3275,7 @@ export class LuaInterpreter {
 		}));
 	}
 
-	private tableInsert(table: LuaTable, value: LuaValue, position: number | null): void {
+	private tableInsert(table: LuaTable, value: LuaValue, position: number): void {
 		const length = table.numericLength();
 		let targetIndex = position === null ? length + 1 : Math.max(1, Math.min(length + 1, position));
 		for (let index = length; index >= targetIndex; index -= 1) {
@@ -3289,7 +3285,7 @@ export class LuaInterpreter {
 		table.set(targetIndex, value);
 	}
 
-	private tableRemove(table: LuaTable, position: number | null): LuaValue {
+	private tableRemove(table: LuaTable, position: number): LuaValue {
 		const length = table.numericLength();
 		if (length === 0) {
 			return null;
@@ -3359,11 +3355,11 @@ export type StackFrameLanguage = 'lua' | 'js';
 
 export type StackTraceFrame = {
 	origin: StackFrameLanguage;
-	functionName: string | null;
-	source: string | null;
-	line: number | null;
-	column: number | null;
+	functionName: string;
+	source: string;
+	line: number;
+	column: number;
 	raw: string;
-	chunkasset_id?: string | null;
-	chunkPath?: string | null;
+	chunkasset_id?: string;
+	chunkPath?: string;
 };

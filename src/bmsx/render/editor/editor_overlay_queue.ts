@@ -12,13 +12,13 @@ export type EditorOverlayFrame = {
 	commands: OverlayCommand[];
 };
 
-let pendingFrame: EditorOverlayFrame | null = null;
+let pendingFrame: EditorOverlayFrame = null;
 
-export function publishOverlayFrame(frame: EditorOverlayFrame | null): void {
+export function publishOverlayFrame(frame: EditorOverlayFrame): void {
 	pendingFrame = frame;
 }
 
-export function consumeOverlayFrame(): EditorOverlayFrame | null {
+export function consumeOverlayFrame(): EditorOverlayFrame {
 	const frame = pendingFrame;
 	pendingFrame = null;
 	return frame;

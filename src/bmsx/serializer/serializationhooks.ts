@@ -139,9 +139,9 @@ export function onload(value: (...args: any[]) => any, context: ClassMethodDecor
 // Accept either:
 // - abstract classes without a declared constructor, or
 // - concrete classes whose constructor's first argument is an object type
-//   that at least has `constructReason?: 'revived' | undefined`.
+//   that at least has `constructReason?: 'revived'`.
 
-export type RevivableObjectArgs = { constructReason?: 'revive' | undefined; } & {};
+export type RevivableObjectArgs = { constructReason?: 'revive'; } & {};
 // Utility types to discriminate constructor shapes
 type IsAny<T> = 0 extends (1 & T) ? true : false;
 type ParamsOf<C> = C extends abstract new (...args: infer P) => any ? P : never;

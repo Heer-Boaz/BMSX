@@ -42,8 +42,8 @@ class HeadlessGameViewCanvas implements GameViewCanvas {
 	measureDisplay(): { width: number; height: number; left: number; top: number; } {
 		return { width: this.renderWidth, height: this.renderHeight, left: 0, top: 0 };
 	}
-	requestWebGL2Context(_attributes: WebGLContextAttributes): WebGL2RenderingContext | null { return null; }
-	requestWebGPUContext(): GPUCanvasContext | null { return null; }
+	requestWebGL2Context(_attributes: WebGLContextAttributes): WebGL2RenderingContext { return null; }
+	requestWebGPUContext(): GPUCanvasContext { return null; }
 }
 
 class HeadlessWindowEventHub implements WindowEventHub {
@@ -82,7 +82,7 @@ export class HeadlessGameViewHost implements GameViewHost {
 				}
 				return overlay;
 			},
-			getOverlay: (id: string): OverlayHandle | null => this.overlays.get(id) ?? null,
+			getOverlay: (id: string): OverlayHandle => this.overlays.get(id) ,
 		};
 		this.gamepadCapability = {
 			getHandles: () => null,
@@ -90,7 +90,7 @@ export class HeadlessGameViewHost implements GameViewHost {
 		this.windowEventCapability = new HeadlessWindowEventHub();
 	}
 
-	getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] | null {
+	getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] {
 		switch (capability) {
 			case 'viewport-metrics':
 				return this.viewportCapability as GameViewHostCapabilityMap[T];

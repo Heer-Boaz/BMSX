@@ -8,7 +8,7 @@ export interface Path {
 	uAtDistance(d: number): number;
 	// Optional segment meta accessor (returns meta for segment containing u)
 	// Implementations can return undefined if unsupported.
-	segmentMetaAt?(u: number): PathSegmentMeta | undefined;
+	segmentMetaAt?(u: number): PathSegmentMeta;
 }
 
 export interface PathPoint { p: vec3; t?: number; meta?: PathSegmentMeta; }

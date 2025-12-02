@@ -98,7 +98,7 @@ export class AssetBarrier<T> {
 		return entry.promise;
 	}
 
-	get(key: string): T | undefined { return this.map.get(key)?.value; }
+	get(key: string): T { return this.map.get(key)?.value; }
 
 	addRef(key: string): void {
 		const e = this.map.get(key);

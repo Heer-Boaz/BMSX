@@ -215,7 +215,7 @@ export class ConsoleCommandDispatcher {
 			return;
 		}
 		let mode = '';
-		let filter: string | null = null;
+		let filter: string = null;
 		if (tokens.length >= 2) {
 			const arg = tokens[1];
 			if (arg.startsWith('-')) {

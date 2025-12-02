@@ -25,8 +25,8 @@ export class HeadlessGPUBackend implements GPUBackend {
 	private readonly state = new Map<string, unknown>();
 
 	setActiveTexture(_unit: number): void { }
-	bindTexture2D(_tex: TextureHandle | null): void { }
-	bindTextureCube(_tex: TextureHandle | null): void { }
+	bindTexture2D(_tex: TextureHandle): void { }
+	bindTextureCube(_tex: TextureHandle): void { }
 
 	createTexture(_src: unknown, _desc: TextureParams): TextureHandle {
 		return makeTextureHandle('texture');
@@ -53,7 +53,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	createDepthTexture(desc: { width: number; height: number; format?: unknown }): TextureHandle {
 		return makeTextureHandle('depth', desc as Record<string, unknown>);
 	}
-	createRenderTarget(_color?: TextureHandle | null, _depth?: TextureHandle | null): { size: { x: number; y: number }; colors: TextureHandle[] } {
+	createRenderTarget(_color?: TextureHandle, _depth?: TextureHandle): { size: { x: number; y: number }; colors: TextureHandle[] } {
 		return { size: { x: 0, y: 0 }, colors: [] };
 	}
 
@@ -68,7 +68,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return { maxColorAttachments: 1 };
 	}
 
-	transitionTexture(_tex: TextureHandle, _fromLayout: string | undefined, _toLayout: string): void { }
+	transitionTexture(_tex: TextureHandle, _fromLayout: string, _toLayout: string): void { }
 
 	createRenderPassInstance(_desc: { label?: string }): RenderPassInstanceHandle {
 		return { id: ++passIdSeq, label: _desc.label };
@@ -83,10 +83,10 @@ export class HeadlessGPUBackend implements GPUBackend {
 
 	createVertexBuffer(_data: ArrayBufferView, _usage: 'static' | 'dynamic'): unknown { return null; }
 	updateVertexBuffer(_buf: unknown, _data: ArrayBufferView, _dstOffset?: number): void { }
-	bindArrayBuffer(_buf: unknown | null): void { }
+	bindArrayBuffer(_buf: unknown): void { }
 	createVertexArray(): unknown { return null; }
-	bindVertexArray(_vao: unknown | null): void { }
-	deleteVertexArray(_vao: unknown | null): void { }
+	bindVertexArray(_vao: unknown): void { }
+	deleteVertexArray(_vao: unknown): void { }
 	setAttribPointerFloat(_index: number, _size: number, _stride: number, _offset: number): void { }
 	setAttribIPointerU8(_index: number, _size: number, _stride: number, _offset: number): void { }
 	setAttribIPointerU16(_index: number, _size: number, _stride: number, _offset: number): void { }
@@ -97,7 +97,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 
 	beginFrame(): void { }
 	endFrame(): void { }
-	getFrameStats(): { draws: number; drawIndexed: number; drawsInstanced: number; drawIndexedInstanced: number; bytesUploaded: number } | undefined {
+	getFrameStats(): { draws: number; drawIndexed: number; drawsInstanced: number; drawIndexedInstanced: number; bytesUploaded: number } {
 		return undefined;
 	}
 	accountUpload(_kind: 'vertex' | 'index' | 'uniform' | 'texture', _bytes: number): void { }
@@ -105,7 +105,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	setPassState<S>(id: RenderPassId, state: S): void {
 		this.state.set(String(id), state);
 	}
-	getPassState<S>(id: RenderPassId): S | undefined {
-		return this.state.get(String(id)) as S | undefined;
+	getPassState<S>(id: RenderPassId): S {
+		return this.state.get(String(id)) as S;
 	}
 }

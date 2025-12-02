@@ -37,7 +37,7 @@ value = 1
 error('boom')
 value = value + 5
 `;
-	let suspension: LuaDebuggerPauseSignal | null = null;
+	let suspension: LuaDebuggerPauseSignal = null;
 	try {
 		interpreter.execute(source, 'main.lua');
 		assert.fail('Expected debugger suspension');
@@ -59,7 +59,7 @@ test('lua interpreter propagate strategy rethrows exception when continuing', ()
 	const interpreter = createLuaInterpreter();
 	const controller = new LuaDebuggerController();
 	interpreter.attachDebugger(controller);
-	let suspension: LuaDebuggerPauseSignal | null = null;
+	let suspension: LuaDebuggerPauseSignal = null;
 	try {
 		interpreter.execute('error(\"boom\")', 'main.lua');
 		assert.fail('Expected debugger suspension');

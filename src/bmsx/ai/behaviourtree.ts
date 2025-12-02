@@ -31,7 +31,7 @@ export type BehaviorTreeDefinition = BehaviorTreeNodeSpec | { root: BehaviorTree
  * Represents the definitions of behavior trees that are stored in the library to be constructed later.
  * It allows for the definition of behavior trees in a more declarative way, similar to how state machines
  * are defined in a declarative way.
- * @type { { [key: BehaviorTreeID]: BehaviorTreeDefinition } | null }
+ * @type { { [key: BehaviorTreeID]: BehaviorTreeDefinition } }
  */
 export let BehaviorTreeDefinitions: { [key: BehaviorTreeID]: BehaviorTreeDefinition } = {};
 const behaviorTreeSignatures: Map<BehaviorTreeID, string> = new Map();
@@ -180,7 +180,7 @@ function refreshBehaviorTreeContexts(treeIds?: readonly string[]): void {
  * @returns The root node of the built behavior tree, which can consist of multiple nodes (sub trees).
  */
 function buildBehaviorTreeNode(config: BehaviorTreeNodeSpec, id: BehaviorTreeID): BTNode {
-	const ensureChildren = (children: BehaviorTreeNodeSpec[] | undefined, nodeType: string): BehaviorTreeNodeSpec[] => {
+	const ensureChildren = (children: BehaviorTreeNodeSpec[], nodeType: string): BehaviorTreeNodeSpec[] => {
 		if (!Array.isArray(children) || children.length === 0) {
 			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires at least one child.`);
 		}
@@ -195,19 +195,19 @@ function buildBehaviorTreeNode(config: BehaviorTreeNodeSpec, id: BehaviorTreeID)
 			return node;
 		});
 	};
-	const ensureDecorator = (decorator: NodeDecorator | undefined, nodeType: string): NodeDecorator => {
+	const ensureDecorator = (decorator: NodeDecorator, nodeType: string): NodeDecorator => {
 		if (typeof decorator !== 'function') {
 			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires a decorator function.`);
 		}
 		return decorator;
 	};
-	const ensureCondition = (condition: NodeCondition | undefined, nodeType: string): NodeCondition => {
+	const ensureCondition = (condition: NodeCondition, nodeType: string): NodeCondition => {
 		if (typeof condition !== 'function') {
 			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires a condition function.`);
 		}
 		return condition;
 	};
-	const ensureConditions = (conditions: NodeCondition[] | undefined, nodeType: string): NodeCondition[] => {
+	const ensureConditions = (conditions: NodeCondition[], nodeType: string): NodeCondition[] => {
 		if (!Array.isArray(conditions) || conditions.length === 0) {
 			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires one or more condition functions.`);
 		}
@@ -218,7 +218,7 @@ function buildBehaviorTreeNode(config: BehaviorTreeNodeSpec, id: BehaviorTreeID)
 			return condition;
 		});
 	};
-	const ensureCompositeModifier = (modifier: NodeCompositeConditionModifier | undefined, nodeType: string): NodeCompositeConditionModifier => {
+	const ensureCompositeModifier = (modifier: NodeCompositeConditionModifier, nodeType: string): NodeCompositeConditionModifier => {
 		if (modifier !== 'AND' && modifier !== 'OR') {
 			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires a modifier of 'AND' or 'OR'.`);
 		}
@@ -246,7 +246,7 @@ function buildBehaviorTreeNode(config: BehaviorTreeNodeSpec, id: BehaviorTreeID)
 			return new DecoratorNode(id, buildBehaviorTreeNode(config.child, id), ensureDecorator(config.decorator, 'decorator'), config.priority);
 		case 'condition':
 		case 'Condition':
-			return new ConditionNode(id, ensureCondition(config.condition, 'condition'), config.modifier ?? null, config.priority, config.parameters);
+			return new ConditionNode(id, ensureCondition(config.condition, 'condition'), config.modifier , config.priority, config.parameters);
 		case 'compositecondition':
 		case 'CompositeCondition':
 			return new CompositeConditionNode(id, ensureConditions(config.conditions, 'compositecondition'), ensureCompositeModifier(config.modifier, 'compositecondition'), config.priority, config.parameters);
@@ -427,7 +427,7 @@ export class Blackboard implements Identifiable {
 	}
 
 	// The method for getting a value from the blackboard with the specified key
-	get<T>(key: string): T | undefined {
+	get<T>(key: string): T {
 		return this.data[key] as T;
 	}
 
@@ -529,7 +529,7 @@ export abstract class BTNode implements Identifiable {
 	 * @returns The target object casted to the specified type.
 	 */
 	public getTarget<T extends WorldObject>(targetid: Identifier): T {
-		const target = $.world.getWorldObject(targetid) as WorldObject | null;
+		const target = $.world.getWorldObject(targetid) as WorldObject;
 		if (!target) {
 			throw new Error(`[BehaviorTree:${this.id}] Target '${targetid}' not found in world.`);
 		}
@@ -748,7 +748,7 @@ type NodeCondition = (blackboard: Blackboard, ...parameters: any[]) => boolean;
  * - 'NOT': Negates the condition.
  * - null: No modifier applied.
  */
-type NodeConditionModifier = 'NOT' | null;
+type NodeConditionModifier = 'NOT';
 /**
  * Represents a modifier for composite conditions in a node.
  *

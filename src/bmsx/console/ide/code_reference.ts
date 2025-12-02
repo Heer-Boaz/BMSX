@@ -7,7 +7,7 @@ import type { LuaSourceRange } from '../../lua/ast';
 import type { ConsoleCodeLayout } from './code_layout';
 
 export type ProjectReferenceEnvironment = {
-	activeContext: CodeTabContext | null;
+	activeContext: CodeTabContext;
 	activeLines: readonly string[];
 	codeTabContexts: Iterable<CodeTabContext>;
 	listResources(): readonly ConsoleResourceDescriptor[];
@@ -26,10 +26,10 @@ export type ReferenceCatalogEntry = {
 	searchKey: string;
 	line: number;
 	kindLabel: string;
-	sourceLabel: string | null;
+	sourceLabel: string;
 };
 
-export function computeSourceLabel(path: string | null, fallback: string): string {
+export function computeSourceLabel(path: string, fallback: string): string {
 	if (path && path.length > 0) {
 		const normalized = path.replace(/\\/g, '/');
 		const lastSlash = normalized.lastIndexOf('/');
@@ -53,8 +53,8 @@ export function isLuaResourceDescriptor(descriptor: ConsoleResourceDescriptor): 
 type FileMetadata = {
 	chunkName: string;
 	lines: readonly string[];
-	asset_id: string | null;
-	path: string | null;
+	asset_id: string;
+	path: string;
 	sourceLabel: string;
 };
 
@@ -63,8 +63,8 @@ type CollectMetadataOptions = {
 	environment: ProjectReferenceEnvironment;
 	currentChunkName: string;
 	currentLines: readonly string[];
-	currentasset_id: string | null;
-	sourceLabelPath?: string | null;
+	currentasset_id: string;
+	sourceLabelPath?: string;
 };
 
 type BuildReferenceCatalogOptions = {
@@ -72,9 +72,9 @@ type BuildReferenceCatalogOptions = {
 	info: ReferenceMatchInfo;
 	lines: readonly string[];
 	chunkName: string;
-	asset_id: string | null;
+	asset_id: string;
 	environment: ProjectReferenceEnvironment;
-	sourceLabelPath?: string | null;
+	sourceLabelPath?: string;
 };
 
 type ResolveDefinitionLocationOptions = {
@@ -83,8 +83,8 @@ type ResolveDefinitionLocationOptions = {
 	workspace: LuaSemanticWorkspace;
 	currentChunkName: string;
 	currentLines: readonly string[];
-	currentasset_id: string | null;
-	sourceLabelPath?: string | null;
+	currentasset_id: string;
+	sourceLabelPath?: string;
 };
 
 type LuaSourceRangeLike = {
@@ -155,7 +155,7 @@ export function buildReferenceCatalogForExpression(options: BuildReferenceCatalo
 	return entries;
 }
 
-export function resolveDefinitionLocationForExpression(options: ResolveDefinitionLocationOptions): ConsoleLuaDefinitionLocation | null {
+export function resolveDefinitionLocationForExpression(options: ResolveDefinitionLocationOptions): ConsoleLuaDefinitionLocation {
 	const { expression, environment, workspace, currentChunkName, currentLines, currentasset_id, sourceLabelPath } = options;
 	const namePath = expression.split('.').filter(part => part.length > 0);
 	if (namePath.length === 0) {
@@ -169,8 +169,8 @@ export function resolveDefinitionLocationForExpression(options: ResolveDefinitio
 		currentasset_id,
 		sourceLabelPath,
 	});
-	let bestDecl: Decl | null = null;
-	let bestMeta: FileMetadata | null = null;
+	let bestDecl: Decl = null;
+	let bestMeta: FileMetadata = null;
 	let bestScore = -Infinity;
 	const files = workspace.listFiles();
 	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
@@ -266,7 +266,7 @@ export function filterReferenceCatalog(options: { catalog: readonly ReferenceCat
 function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileMetadata> {
 	const { workspace, environment, currentChunkName, currentLines, currentasset_id, sourceLabelPath } = options;
 	const metadata: Map<string, FileMetadata> = new Map();
-	const register = (chunkName: string, lines: readonly string[], asset_id: string | null, path: string | null, labelHint: string | null): void => {
+	const register = (chunkName: string, lines: readonly string[], asset_id: string, path: string, labelHint: string): void => {
 		if (metadata.has(chunkName)) {
 			return;
 		}
@@ -284,7 +284,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 			sourceLabel,
 		});
 	};
-	register(currentChunkName, currentLines, currentasset_id, null, sourceLabelPath ?? null);
+	register(currentChunkName, currentLines, currentasset_id, null, sourceLabelPath );
 	const activeContext = environment.activeContext;
 	const contexts = Array.from(environment.codeTabContexts);
 	for (let index = 0; index < contexts.length; index += 1) {
@@ -294,7 +294,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		if (metadata.has(chunkName)) {
 			continue;
 		}
-		let lines: readonly string[] | null = null;
+		let lines: readonly string[] = null;
 		if (activeContext && context === activeContext) {
 			lines = environment.activeLines;
 		} else if (context.snapshot) {
@@ -327,7 +327,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		if (!descriptor.asset_id) {
 			continue;
 		}
-		let lines: readonly string[] | null = null;
+		let lines: readonly string[] = null;
 		try {
 			const source = environment.loadLuaResource(descriptor.asset_id);
 			lines = normalizeLineEndings(source);
@@ -337,7 +337,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		if (!lines) {
 			continue;
 		}
-		register(chunkName, lines, descriptor.asset_id, descriptor.path ?? null, null);
+		register(chunkName, lines, descriptor.asset_id, descriptor.path , null);
 	}
 	return metadata;
 }
@@ -482,7 +482,7 @@ function matchToRange(match: SearchMatch): LuaSourceRangeLike {
 		endColumn: match.end,
 	};
 }
-export type ExtractIdentifierExpression = (row: number, column: number) => { expression: string; startColumn: number; endColumn: number; } | null;
+export type ExtractIdentifierExpression = (row: number, column: number) => { expression: string; startColumn: number; endColumn: number; };
 
 export type ReferenceLookupOptions = {
 	layout: ConsoleCodeLayout;
@@ -508,7 +508,7 @@ export type ReferenceLookupResult = { kind: 'success'; info: ReferenceMatchInfo;
 export class ReferenceState {
 	private matches: SearchMatch[] = [];
 	private activeIndex = -1;
-	private expression: string | null = null;
+	private expression: string = null;
 
 	public clear(): void {
 		this.matches = [];
@@ -524,7 +524,7 @@ export class ReferenceState {
 		return this.activeIndex;
 	}
 
-	public getExpression(): string | null {
+	public getExpression(): string {
 		return this.expression;
 	}
 
@@ -629,7 +629,7 @@ export function resolveReferenceLookup(options: ReferenceLookupOptions): Referen
 	};
 	return { kind: 'success', info, initialIndex };
 }
-function rangeToSearchMatch(range: LuaSourceRange, lines: readonly string[]): SearchMatch | null {
+function rangeToSearchMatch(range: LuaSourceRange, lines: readonly string[]): SearchMatch {
 	const rowIndex = range.start.line - 1;
 	if (rowIndex < 0 || rowIndex >= lines.length) {
 		return null;

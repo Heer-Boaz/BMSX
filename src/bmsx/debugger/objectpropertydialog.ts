@@ -66,7 +66,7 @@ function shouldPropertyBeExcluded(propName: string, parentObj: Object): boolean 
 	return exclude ?? false;
 }
 
-function addContent(parent: HTMLElement, type: string, content: string | null, depth: number = 0): HTMLElement {
+function addContent(parent: HTMLElement, type: string, content: string, depth: number = 0): HTMLElement {
 	const element = document.createElement(type);
 	if (content !== null) element.textContent = content;
 	for (let i = 0; i < depth; i++) {
@@ -273,7 +273,7 @@ export class ObjectPropertyDialogOld {
 	private title: string;
 	private ignoreProps?: string[];
 	private contentDiv: HTMLElement;
-	private tableRoot: HTMLTableElement | null = null;
+	private tableRoot: HTMLTableElement = null;
 	private valueCellMap: Map<string, HTMLElement> = new Map(); // path -> cell
 	private lastKeys: string[] = [];
 

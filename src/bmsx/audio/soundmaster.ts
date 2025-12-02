@@ -4,7 +4,7 @@ import { Registry } from '../core/registry';
 import { asset_id, AudioMeta, AudioType, AudioTypes, id2res, RegisterablePersistent } from '../rompack/rompack';
 
 export type VoiceId = number;
-type ModulationInput = RandomModulationParams | ModulationParams | undefined;
+type ModulationInput = RandomModulationParams | ModulationParams;
 
 export interface SoundMasterPlayRequest {
 	params?: RandomModulationParams | ModulationParams;
@@ -53,7 +53,7 @@ export interface ModulationParams {
 }
 
 export interface ModulationPresetResolver {
-	resolve(key: asset_id): RandomModulationParams | ModulationParams | undefined;
+	resolve(key: asset_id): RandomModulationParams | ModulationParams;
 }
 
 interface RomAudioResource {
@@ -72,7 +72,7 @@ interface PausedSnapshot {
 interface ActiveVoiceRecord extends ActiveVoiceInfo {
 	handle: VoiceHandle;
 	clip: AudioClipHandle;
-	endedUnsub: (() => void) | null;
+	endedUnsub: (() => void);
 	finalized: boolean;
 }
 
@@ -88,20 +88,20 @@ export class SoundMaster implements RegisterablePersistent {
 
 	private tracks: Record<asset_id, RomAudioResource>;
 	private clips: Record<string, AudioClipHandle>;
-	private clipPromises: Record<string, Promise<AudioClipHandle> | undefined>;
+	private clipPromises: Record<string, Promise<AudioClipHandle>>;
 	private audio!: AudioService;
 	private rng!: RngService;
-	private modulationResolver: ModulationPresetResolver | null;
-	private modulationPresetCache: Map<asset_id, RandomModulationParams | ModulationParams | undefined>;
+	private modulationResolver: ModulationPresetResolver;
+	private modulationPresetCache: Map<asset_id, RandomModulationParams | ModulationParams>;
 	private voicesByType: Record<AudioType, ActiveVoiceRecord[]>;
-	private currentVoiceByType: Record<AudioType, VoiceHandle | null>;
-	private currentPlayParamsByType: Record<AudioType, ModulationParams | null>;
-	public currentAudioByType: Record<AudioType, AudioMetadataWithID | null>;
+	private currentVoiceByType: Record<AudioType, VoiceHandle>;
+	private currentPlayParamsByType: Record<AudioType, ModulationParams>;
+	public currentAudioByType: Record<AudioType, AudioMetadataWithID>;
 	private pausedByType: Record<AudioType, PausedSnapshot[]>;
 	private endedListenersByType: Record<AudioType, Set<(info: ActiveVoiceInfo) => void>>;
 	private nextVoiceId: VoiceId;
-	private musicTransitionTimer: ReturnType<typeof setTimeout> | null;
-	private pendingStingerReturnTo: asset_id | null;
+	private musicTransitionTimer: ReturnType<typeof setTimeout>;
+	private pendingStingerReturnTo: asset_id;
 	private maxVoicesByType: Record<AudioType, number>;
 	private decodeConcurrency: number;
 	private voiceRecordByHandle: WeakMap<VoiceHandle, ActiveVoiceRecord>;
@@ -140,7 +140,7 @@ export class SoundMaster implements RegisterablePersistent {
 	public async init(audioResources: id2res, startingVolume: number, resolver?: ModulationPresetResolver) {
 		this.audio = $.platform.audio;
 		this.rng = $.platform.rng;
-		this.modulationResolver = resolver ?? null;
+		this.modulationResolver = resolver ;
 		this.modulationPresetCache.clear();
 
 		await this.A.resume();
@@ -303,7 +303,7 @@ export class SoundMaster implements RegisterablePersistent {
 		return params;
 	}
 
-	private resolveModulationPreset(key: asset_id | undefined): RandomModulationParams | ModulationParams | undefined {
+	private resolveModulationPreset(key: asset_id): RandomModulationParams | ModulationParams {
 		if (key === undefined || key === null) return undefined;
 		if (this.modulationPresetCache.has(key)) {
 			return this.modulationPresetCache.get(key);
@@ -368,14 +368,14 @@ export class SoundMaster implements RegisterablePersistent {
 		};
 	}
 
-	private effectivePlaybackRate(params: ModulationParams | null | undefined): number {
+	private effectivePlaybackRate(params: ModulationParams): number {
 		if (!params) return 1;
 		const base = params.playbackRate !== undefined ? params.playbackRate : 1;
 		const pitch = params.pitchDelta !== undefined ? params.pitchDelta : 0;
 		return base * Math.pow(2, pitch / 12);
 	}
 
-	public play(id: asset_id, options?: SoundMasterPlayRequest | ModulationParams | RandomModulationParams): Promise<VoiceId | null> {
+	public play(id: asset_id, options?: SoundMasterPlayRequest | ModulationParams | RandomModulationParams): Promise<VoiceId> {
 		const request = this.normalizePlayRequest(options);
 		let sourceParams = request.params;
 		if (!sourceParams && request.modulationPreset !== undefined) {
@@ -397,7 +397,7 @@ export class SoundMaster implements RegisterablePersistent {
 				const playback = this.createVoiceParams(meta, params, clip);
 				return this.startVoice(typeCandidate, id, meta, clip, params, priority, playback, null);
 			})
-			.catch((e: unknown): VoiceId | null => {
+			.catch((e: unknown): VoiceId => {
 				const message = e instanceof Error ? e.message : String(e);
 				console.error(message);
 				return null;
@@ -412,8 +412,8 @@ export class SoundMaster implements RegisterablePersistent {
 		params: ModulationParams,
 		priority: number,
 		playback: AudioPlaybackParams,
-		onStarted: ((voice: VoiceHandle, record: ActiveVoiceRecord) => void) | null,
-	): VoiceId | null {
+		onStarted: ((voice: VoiceHandle, record: ActiveVoiceRecord) => void),
+	): VoiceId {
 		const pool = this.voicesByType[type];
 		const capacity = this.maxVoicesByType[type];
 		if (capacity > 0 && pool.length >= capacity) {
@@ -509,7 +509,7 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 	}
 
-	private removeRecord(type: AudioType, voiceId: VoiceId): ActiveVoiceRecord | undefined {
+	private removeRecord(type: AudioType, voiceId: VoiceId): ActiveVoiceRecord {
 		const pool = this.voicesByType[type];
 		for (let i = 0; i < pool.length; i++) {
 			if (pool[i].voiceId === voiceId) {
@@ -686,7 +686,7 @@ export class SoundMaster implements RegisterablePersistent {
 		return Number.isFinite(value) ? value : 0;
 	}
 
-	public currentTimeByType(type: AudioType): number | null {
+	public currentTimeByType(type: AudioType): number {
 		const handle = this.currentVoiceByType[type];
 		if (!handle) return null;
 		const record = this.voiceRecordByHandle.get(handle);
@@ -696,17 +696,17 @@ export class SoundMaster implements RegisterablePersistent {
 		return record.startOffset + (now - record.startedAt) * rate;
 	}
 
-	public currentTrackByType(type: AudioType): asset_id | null {
+	public currentTrackByType(type: AudioType): asset_id {
 		const audioMeta = this.currentAudioByType[type];
 		return audioMeta ? audioMeta.id : null;
 	}
 
-	public currentTrackMetaByType(type: AudioType): AudioMeta | null {
+	public currentTrackMetaByType(type: AudioType): AudioMeta {
 		const audioMeta = this.currentAudioByType[type];
 		return audioMeta ? audioMeta : null;
 	}
 
-	public currentModulationParamsByType(type: AudioType): ModulationParams | null {
+	public currentModulationParamsByType(type: AudioType): ModulationParams {
 		return this.currentPlayParamsByType[type] || null;
 	}
 
@@ -866,7 +866,7 @@ export class SoundMaster implements RegisterablePersistent {
 		}, Math.floor(delaySec * 1000));
 	}
 
-	private getCurrentRecord(type: AudioType): ActiveVoiceRecord | null {
+	private getCurrentRecord(type: AudioType): ActiveVoiceRecord {
 		const handle = this.currentVoiceByType[type];
 		if (!handle) return null;
 		const record = this.voiceRecordByHandle.get(handle);

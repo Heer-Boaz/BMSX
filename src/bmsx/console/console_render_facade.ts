@@ -31,7 +31,7 @@ export type PrintCommand = {
 export type SpriteCommand = {
 	kind: 'sprite';
 	imgId: string;
-	spriteIndex: number | null;
+	spriteIndex: number;
 	originX: number;
 	originY: number;
 	baseX: number;
@@ -43,7 +43,7 @@ export type SpriteCommand = {
 	layer?: RenderLayer;
 	flipH: boolean;
 	flipV: boolean;
-	spriteId: string | null;
+	spriteId: string;
 	instanceId: string;
 	width: number;
 	height: number;
@@ -57,7 +57,7 @@ export class ConsoleRenderFacade {
 	private frameLogicalHeight = 0;
 	private frameRenderWidth = 0;
 	private frameRenderHeight = 0;
-	private overrideSize: Viewport | null = null;
+	private overrideSize: Viewport = null;
 	private capturingFrame = false;
 	private static readonly RECT_Z = 0;
 	private static readonly SPRITE_Z = 0;
@@ -241,7 +241,7 @@ function submitSprite(cmd: ImgRenderSubmission, scaleX: number, scaleY: number):
 }
 
 export function drainOverlayFrameIntoSpriteQueue(_renderWidth: number, _renderHeight: number, logicalWidth: number, logicalHeight: number): void {
-	const frame: EditorOverlayFrame | null = consumeOverlayFrame();
+	const frame: EditorOverlayFrame = consumeOverlayFrame();
 	if (!frame) return;
 	const captureWidth = frame.width > 0 ? frame.width : logicalWidth;
 	const captureHeight = frame.height > 0 ? frame.height : logicalHeight;

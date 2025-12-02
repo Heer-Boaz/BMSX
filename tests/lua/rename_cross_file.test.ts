@@ -29,8 +29,8 @@ test('cross file rename updates other chunks and workspace', () => {
 	workspace.updateFile('usage.lua', files.get('usage.lua')!);
 
 	const contexts = new Map<string, CodeTabContext>();
-	let entryTabId: string | null = null;
-	const entryAssetId: string | null = null;
+	let entryTabId: string = null;
+	const entryAssetId: string = null;
 
 	const makeContext = (descriptor: ConsoleResourceDescriptor): CodeTabContext => ({
 		id: `lua:${descriptor.asset_id}`,
@@ -83,7 +83,7 @@ test('cross file rename updates other chunks and workspace', () => {
 			return entryAssetId;
 		},
 		getCodeTabContext(id) {
-			return contexts.get(id) ?? null;
+			return contexts.get(id) ;
 		},
 		setCodeTabContext(context) {
 			contexts.set(context.id, context);
@@ -126,7 +126,7 @@ test('cross file rename updates other chunks and workspace', () => {
 	assert.ok(updatedData);
 	assert.equal(updatedData!.source.trim(), 'print(worldState.value)');
 
-	const match: SearchMatch | null = convertRangeToSearchMatch({
+	const match: SearchMatch = convertRangeToSearchMatch({
 		chunkName: 'usage.lua',
 		start: { line: 1, column: 7 },
 		end: { line: 1, column: 17 },
