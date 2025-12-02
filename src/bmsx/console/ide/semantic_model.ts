@@ -29,7 +29,7 @@ import { computeSourceLabel } from './code_reference';
 import { symbolCatalogDedupKey } from './console_cart_editor';
 import * as constants from './constants';
 import { getActiveCodeTabContext } from './editor_tabs';
-import { resolveHoverAssetId, resolveHoverChunkName } from './intellisense';
+import { listGlobalLuaSymbols, listLuaSymbols, resolveHoverAssetId, resolveHoverChunkName } from './intellisense';
 
 export type SymbolKind = 'parameter' | 'local' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
 
@@ -1732,9 +1732,9 @@ export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string {
 	let entries: ConsoleLuaSymbolEntry[] = [];
 	try {
 		if (scope === 'global') {
-			entries = ide_state.listGlobalLuaSymbolsFn();
+			entries = listGlobalLuaSymbols();
 		} else {
-			entries = ide_state.listLuaSymbolsFn(asset_id, chunkName);
+			entries = listLuaSymbols(asset_id, chunkName);
 		}
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);

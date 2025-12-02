@@ -51,7 +51,17 @@ import { LuaLexer } from './lexer';
 import { type CanonicalizationType } from '../rompack/rompack';
 import { LuaParser } from './parser';
 import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from './value';
-import { createLuaNativeValue, createLuaTable, isLuaTable, isLuaNativeValue, isLuaDebuggerPauseSignal } from './value';
+import {
+	createLuaNativeMemberHandle,
+	createLuaNativeValue,
+	createLuaTable,
+	isLuaDebuggerPauseSignal,
+	isLuaNativeMemberHandle,
+	isLuaNativeValue,
+	isLuaTable,
+	resolveNativeTypeName,
+	type LuaNativeMemberHandle
+} from './value';
 import { LuaDebuggerController, type LuaDebuggerPauseReason } from './debugger';
 import { $ } from '../core/game';
 import { BmsxConsoleRuntime } from '../console/runtime';
@@ -2140,9 +2150,66 @@ export class LuaInterpreter {
 		return fn;
 	}
 
-	private getOrCreateNativeMethod(target: LuaNativeValue, resolvedName: string, displayName: string, range: LuaSourceRange): LuaFunctionValue {
-		const cacheKey = `method:${displayName}`;
-		return this.bindNativeFunction(target, { cacheKey, resolvedName, displayName, bindInstance: true, range });
+	private makeNativeMemberHandle(target: object | Function, path: ReadonlyArray<string>, options: { displayName: string; bindInstance: boolean; range: LuaSourceRange | null }): LuaNativeMemberHandle {
+		const typeName = resolveNativeTypeName(target);
+		const handleName = `${typeName}.${options.displayName}`;
+		const callImpl = (args: ReadonlyArray<LuaValue>): LuaValue[] => {
+			let member: unknown = target;
+			for (let index = 0; index < path.length; index += 1) {
+				member = Reflect.get(member as Record<string, unknown>, path[index]);
+			}
+			if (typeof member !== 'function') {
+				const message = this.formatNativeError(typeName, options.displayName, new Error('Member is not callable.'));
+				if (options.range !== null) {
+					throw this.runtimeErrorAt(options.range, message);
+				}
+				throw this.runtimeError(message);
+			}
+			const jsArgs: unknown[] = [];
+			let startIndex = 0;
+			if (options.bindInstance && args.length > 0) {
+				const maybeSelf = this.convertToHost(args[0], options.range);
+				if (maybeSelf === target) {
+					startIndex = 1;
+				}
+			}
+			for (let index = startIndex; index < args.length; index += 1) {
+				jsArgs.push(this.convertToHost(args[index], options.range));
+			}
+			try {
+				const result = Reflect.apply(member as (...args: unknown[]) => unknown, options.bindInstance ? target : undefined, jsArgs);
+				return this.wrapHostInvocationResult(result);
+			} catch (error) {
+				if (isLuaDebuggerPauseSignal(error)) {
+					throw error;
+				}
+				if (error instanceof LuaRuntimeError) {
+					throw error;
+				}
+				const message = this.formatNativeError(typeName, options.displayName, error);
+				if (options.range !== null) {
+					throw this.runtimeErrorAt(options.range, message);
+				}
+				throw this.runtimeError(message);
+			}
+		};
+		return createLuaNativeMemberHandle({ name: handleName, target, path, callImpl });
+	}
+
+	private getOrCreateNativeMemberHandle(target: LuaNativeValue, path: ReadonlyArray<string>, displayName: string, range: LuaSourceRange, bindInstance: boolean): LuaNativeMemberHandle {
+		const cacheKey = `member:${path.join('.')}`;
+		const cached = this.getCachedNativeMethod(target, cacheKey);
+		if (cached && isLuaNativeMemberHandle(cached)) {
+			return cached;
+		}
+		const handle = this.makeNativeMemberHandle(target.native, path, { displayName, bindInstance, range });
+		this.storeNativeMethod(target, cacheKey, handle);
+		return handle;
+	}
+
+	public createNativeMemberHandle(target: object | Function, path: ReadonlyArray<string>): LuaNativeMemberHandle {
+		const native = this.getOrCreateNativeValue(target, resolveNativeTypeName(target));
+		return this.getOrCreateNativeMemberHandle(native, path, path.join('.'), null, true);
 	}
 
 	private getOrCreateNativeCallable(target: LuaNativeValue, range: LuaSourceRange): LuaFunctionValue {
@@ -2209,8 +2276,8 @@ export class LuaInterpreter {
 		}
 		const exists = resolvedName in (target.native as Record<string, unknown>);
 		if (typeof property === 'function') {
-			const fn = this.getOrCreateNativeMethod(target, resolvedName, normalized.displayName, range);
-			return { found: true, value: fn, resolvedName, displayName: normalized.displayName };
+			const handle = this.getOrCreateNativeMemberHandle(target, [resolvedName], normalized.displayName, range, true);
+			return { found: true, value: handle, resolvedName, displayName: normalized.displayName };
 		}
 		if (!exists && property === undefined) {
 			return { found: false, value: null, resolvedName, displayName: normalized.displayName };

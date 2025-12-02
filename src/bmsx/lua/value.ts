@@ -1,6 +1,7 @@
 import type { CanonicalizationType } from '../rompack/rompack';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from './errors';
 import { ExecutionSignal, LuaInterpreter, LuaNativeFunction } from './runtime';
+import { insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 
 export type LuaValue = LuaNil | boolean | number | string | LuaTable | LuaFunctionValue | LuaNativeValue;
 
@@ -35,6 +36,33 @@ export function createLuaNativeValue(native: object | Function, typeName?: strin
 
 export function isLuaNativeValue(value: unknown): value is LuaNativeValue {
 	return value instanceof LuaNativeValue;
+}
+
+@insavegame
+export class LuaNativeMemberHandle implements LuaFunctionValue {
+	public readonly name: string;
+	public readonly target: object | Function;
+	public readonly path: ReadonlyArray<string>;
+	private readonly callImpl: (args: ReadonlyArray<LuaValue>) => LuaValue[];
+
+	constructor(params: RevivableObjectArgs & { name?: string; target?: object | Function; path?: ReadonlyArray<string>; callImpl?: (args: ReadonlyArray<LuaValue>) => LuaValue[] }) {
+		this.name = (params as { name?: string }).name ?? 'native_member_handle';
+		this.target = (params as { target: object | Function }).target;
+		this.path = Array.from((params as { path?: ReadonlyArray<string> }).path ?? []);
+		this.callImpl = (params as { callImpl?: (args: ReadonlyArray<LuaValue>) => LuaValue[] }).callImpl ?? (() => { throw new Error('Native member handle not bound.'); });
+	}
+
+	public call(args: ReadonlyArray<LuaValue>): LuaValue[] {
+		return this.callImpl(args);
+	}
+}
+
+export function createLuaNativeMemberHandle(params: { name: string; target: object | Function; path: ReadonlyArray<string>; callImpl: (args: ReadonlyArray<LuaValue>) => LuaValue[] }): LuaNativeMemberHandle {
+	return new LuaNativeMemberHandle(params);
+}
+
+export function isLuaNativeMemberHandle(value: unknown): value is LuaNativeMemberHandle {
+	return value instanceof LuaNativeMemberHandle;
 }
 
 
@@ -375,4 +403,3 @@ export type StackTraceFrame = {
 	chunkasset_id?: string;
 	chunkPath?: string;
 };
-

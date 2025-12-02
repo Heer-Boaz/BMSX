@@ -1,6 +1,6 @@
 import { $ } from '../core/game';
 import { LuaHandlerCache, isLuaHandlerFn } from '../lua/handler_cache';
-import { LuaValue, LuaTable, isLuaNativeValue, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName } from '../lua/value';
+import { LuaValue, LuaTable, isLuaNativeValue, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle } from '../lua/value';
 import { BmsxConsoleRuntime } from './runtime';
 import { LuaMarshalContext } from './types';
 
@@ -192,6 +192,13 @@ export class LuaJsBridge {
 		if (key === null || typeof key === 'boolean' || typeof key === 'number' || typeof key === 'string') {
 			return key;
 		}
+		if (isLuaNativeMemberHandle(key)) {
+			return {
+				__native_member_handle__: true,
+				target: (key as { target: object | Function }).target,
+				path: Array.from((key as { path: ReadonlyArray<string> }).path),
+			};
+		}
 		if (isLuaNativeValue(key)) {
 			return this.snapshotEncodeNative(key.native);
 		}
@@ -205,6 +212,14 @@ export class LuaJsBridge {
 	}
 
 	private deserializeLuaSnapshotKey(raw: unknown, resolver?: (value: unknown) => LuaValue): LuaValue {
+		if (raw === null || typeof raw === 'boolean' || typeof raw === 'number' || typeof raw === 'string') {
+			return raw as LuaValue;
+		}
+		if (raw && typeof raw === 'object' && (raw as { __native_member_handle__?: boolean }).__native_member_handle__ === true) {
+			const handleTarget = (raw as { target: object | Function }).target;
+			const path = (raw as { path: ReadonlyArray<string> }).path;
+			return this.consoleRuntime.interpreter.createNativeMemberHandle(handleTarget, path);
+		}
 		if (resolver) {
 			return resolver(raw);
 		}
@@ -251,6 +266,11 @@ export class LuaJsBridge {
 				const table = createLuaTable();
 				this.applyLuaSnapshotPayload(table, record, value => this.deserializeLuaSnapshotValue(value, resolveRef));
 				return table;
+			}
+			if ((record as { __native_member_handle__?: boolean }).__native_member_handle__ === true) {
+				const handleTarget = (record as { target: object | Function }).target;
+				const path = (record as { path: ReadonlyArray<string> }).path;
+				return this.consoleRuntime.interpreter.createNativeMemberHandle(handleTarget, path);
 			}
 			return this.wrapNativeValue(this.snapshotDecodeNative(raw as object));
 		}
@@ -425,6 +445,13 @@ export class LuaJsBridge {
 	public serializeLuaValueForSnapshot(value: LuaValue, ctx: LuaSnapshotContext): unknown {
 		if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
 			return value;
+		}
+		if (isLuaNativeMemberHandle(value)) {
+			return {
+				__native_member_handle__: true,
+				target: (value as { target: object | Function }).target,
+				path: Array.from((value as { path: ReadonlyArray<string> }).path),
+			};
 		}
 		if (isLuaNativeValue(value)) {
 			return this.snapshotEncodeNative(value.native);

@@ -1415,7 +1415,7 @@ export function buildMemberCompletionItems(request: {
 	if (request.objectName.length === 0) {
 		return [];
 	}
-	const response = ide_state.listLuaObjectMembersFn({
+	const response = listLuaObjectMembers({
 		asset_id: request.asset_id,
 		chunkName: request.chunkName,
 		expression: request.objectName,
@@ -2042,7 +2042,7 @@ export function listLuaBuiltinFunctions(): ConsoleLuaBuiltinDescriptor[] {
 	return result;
 }
 
-export function listAllLuaSymbols(): ConsoleLuaSymbolEntry[] {
+export function listGlobalLuaSymbols(): ConsoleLuaSymbolEntry[] {
 	const entries = new Map<string, { info: LuaDefinitionInfo; location: ConsoleLuaDefinitionLocation; priority: number }>();
 
 	const appendDefinitions = (info: { asset_id: string; path?: string }, definitions: ReadonlyArray<LuaDefinitionInfo>) => {

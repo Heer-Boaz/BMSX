@@ -1,44 +1,25 @@
 import type {
-	ConsoleLuaBuiltinDescriptor,
-	ConsoleLuaHoverRequest,
-	ConsoleLuaHoverResult,
-	ConsoleLuaMemberCompletion,
-	ConsoleLuaMemberCompletionRequest,
 	ConsoleLuaHoverScope,
 	ConsoleLuaHoverValueState,
-	ConsoleLuaResourceCreationRequest,
 	ConsoleLuaSymbolEntry,
 	ConsoleResourceDescriptor,
 	ConsoleViewport,
 } from '../types';
 import type { ConsoleFontVariant } from '../font';
-import type { CanonicalizationType, RectBounds, BmsxCartMetadata  } from '../../rompack/rompack';
+import type { CanonicalizationType, RectBounds  } from '../../rompack/rompack';
 import type { StackTraceFrame } from '../../lua/value';
 import { MENU_COMMANDS } from './ide_input';
 
 export type IdeThemeVariant = string;
 
 export type ConsoleEditorOptions = {
-	playerIndex: number;
 	viewport: ConsoleViewport;
-	metadata: BmsxCartMetadata;
 	canonicalization?: CanonicalizationType;
-	themeVariant?: IdeThemeVariant;
 	loadSource: () => string;
 	saveSource: (source: string) => Promise<void>;
 	listResources: () => ConsoleResourceDescriptor[];
 	loadLuaResource: (asset_id: string) => string;
-	saveLuaResource: (asset_id: string, source: string) => Promise<void>;
-	createLuaResource: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
-	inspectLuaExpression: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult;
-	listLuaObjectMembers: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
-	listLuaModuleSymbols: (moduleName: string) => ConsoleLuaSymbolEntry[];
-	entryAssetId: string;
-	listLuaSymbols: (asset_id: string, chunkName: string) => ConsoleLuaSymbolEntry[];
-	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
-	listBuiltinLuaFunctions: () => ConsoleLuaBuiltinDescriptor[];
 	fontVariant?: ConsoleFontVariant;
-	workspaceRootPath?: string;
 };
 
 export type Position = { row: number; column: number };

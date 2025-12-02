@@ -119,31 +119,49 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 	for (const asset of Object.values(params.rompack.cart.lua)) {
 		const cartPath = asset.source_path ?? asset.resid;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
-		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
-		const stored = storage.getItem(storageKey);
-		if (stored === null || stored === undefined) {
-			continue;
-		}
-		let source = stored;
-		let updatedAt: number;
-		try {
-			const parsed = JSON.parse(stored) as { contents?: string; updatedAt?: number };
-			if (typeof parsed.contents === 'string') {
-				source = parsed.contents;
-				if (typeof parsed.updatedAt === 'number') {
-					updatedAt = parsed.updatedAt;
+		let bestSource: string = null;
+		let bestUpdatedAt = -1;
+		let bestPath: string = null;
+		const considerStored = (raw: string, path: string): void => {
+			let source = raw;
+			let updatedAt: number;
+			try {
+				const parsed = JSON.parse(raw) as { contents?: string; updatedAt?: number };
+				if (typeof parsed.contents === 'string') {
+					source = parsed.contents;
+					if (typeof parsed.updatedAt === 'number') {
+						updatedAt = parsed.updatedAt;
+					}
 				}
+			} catch {
+				// Fall back to raw string for legacy entries.
 			}
-		} catch {
-			// Fall back to raw string for legacy entries.
+			const candidateTime = updatedAt ?? 0;
+			if (bestSource === null || candidateTime > bestUpdatedAt || (candidateTime === bestUpdatedAt && path === dirtyPath)) {
+				bestSource = source;
+				bestUpdatedAt = candidateTime;
+				bestPath = path;
+			}
+		};
+		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
+		const storedDirty = storage.getItem(storageKey);
+		if (storedDirty !== null && storedDirty !== undefined) {
+			considerStored(storedDirty, dirtyPath);
 		}
-		overrides.set(asset.resid, { source, path: dirtyPath, cartPath, updatedAt });
+		const canonicalKey = buildWorkspaceStorageKey(root, cartPath);
+		const storedCanonical = storage.getItem(canonicalKey);
+		if (storedCanonical !== null && storedCanonical !== undefined) {
+			considerStored(storedCanonical, cartPath);
+		}
+		if (bestSource !== null) {
+			overrides.set(asset.resid, { source: bestSource, path: bestPath, cartPath, updatedAt: bestUpdatedAt >= 0 ? bestUpdatedAt : undefined });
+		}
 	}
 	return overrides;
 }
 
-function resolveWorkspacePathForIo(path: string): string {
-	const root = $.rompack.project_root_path;
+function resolveWorkspacePathForIo(path: string, projectRootPath?: string): string {
+	const root = projectRootPath ?? $.rompack.project_root_path;
 	// If the path is already absolute or already includes the project root, leave it as-is.
 	if (!root || path.startsWith(root) || path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) {
 		return path;
@@ -542,6 +560,25 @@ export async function deleteWorkspaceFile(path: string): Promise<void> {
 	}
 }
 
+async function persistWorkspaceFileToServer(root: string, path: string, source: string): Promise<void> {
+	if (typeof fetch !== 'function') {
+		return;
+	}
+	const resolvedPath = resolveWorkspacePathForIo(path, root);
+	try {
+		const response = await fetch(WORKSPACE_FILE_ENDPOINT, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ path: resolvedPath, contents: source }),
+		});
+		if (!response.ok) {
+			console.warn(`[BmsxWorkspace] Failed to push workspace file '${resolvedPath}' (HTTP ${response.status}).`);
+		}
+	} catch (error) {
+		console.warn(`[BmsxWorkspace] Failed to push workspace file '${resolvedPath}'.`, error);
+	}
+}
+
 
 export function persistWorkspaceOverridesToLocalStorage(storage: StorageService, root: string, overrides: Map<string, WorkspaceOverrideRecord>): void {
 	for (const record of overrides.values()) {
@@ -566,6 +603,11 @@ export function persistWorkspaceOverridesToLocalStorage(storage: StorageService,
 // - mergeWorkspaceOverrides compares local and remote dirty edits by updatedAt, chooses the freshest version for
 //   each asset, and writes that winner back into StorageService. This means reconnecting after offline work will
 //   either promote local edits (if newer) or replace stale local data with the server copy.
+// - The canonical server file timestamps are compared against the merged overrides; the newest source always wins.
+//   When the server copy is newer it is persisted into StorageService (using the canonical path) so offline boots
+//   use the updated source instead of stale local edits.
+//   When a local or server dirty override is newer than the canonical server file, the canonical file is pushed
+//   to the server so that disk state catches up once connectivity returns.
 // - The merged overrides are applied to cart.lua before the Lua VM starts so the running cart always reflects the
 //   most recent edits regardless of where they were saved.
 export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; storage: StorageService; includeServer?: boolean }): Promise<Set<string>> {
@@ -573,26 +615,53 @@ export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; 
 	const includeServer = params.includeServer !== false;
 	const cart = rompack.cart;
 	const changed = new Set<string>();
-	for (const asset of Object.values(cart.lua)) {
-		const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
-		const savedRecord = await fetchWorkspaceFile(cartPath);
-		if (savedRecord && savedRecord.contents !== asset.src) {
-			asset.src = savedRecord.contents;
-			changed.add(asset.resid);
-		}
-	}
 	const root = rompack.project_root_path;
 	const localOverrides = collectWorkspaceOverrides({ rompack, projectRootPath: root, storage });
 	const serverOverrides = includeServer ? await fetchWorkspaceOverridesPriority(rompack) : null;
 	const merged = await mergeWorkspaceOverrides(root, storage, localOverrides, serverOverrides ?? new Map<string, WorkspaceOverrideRecord>());
-	for (const [asset_id, record] of merged) {
-		const asset = cart.lua[asset_id];
-		if (!asset) {
+	for (const asset of Object.values(cart.lua)) {
+		const asset_id = asset.resid;
+		const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+		const savedRecord = await fetchWorkspaceFile(cartPath);
+		const canonicalRecord = savedRecord ? { source: savedRecord.contents, path: cartPath, cartPath, updatedAt: savedRecord.updatedAt } : null;
+		const overrideRecord = merged.get(asset_id);
+		let winner: WorkspaceOverrideRecord = overrideRecord ?? null;
+		let winnerKind: 'override' | 'canonical' | null = overrideRecord ? 'override' : null;
+		let winnerUpdatedAt = overrideRecord ? (overrideRecord.updatedAt ?? 0) : -1;
+		const canonicalUpdatedAt = canonicalRecord?.updatedAt ?? -1;
+		if (canonicalRecord) {
+			if (winner === null || canonicalUpdatedAt > winnerUpdatedAt) {
+				winner = canonicalRecord;
+				winnerKind = 'canonical';
+				winnerUpdatedAt = canonicalUpdatedAt;
+			}
+		}
+		if (!winner) {
 			continue;
 		}
-		if (asset.src !== record.source) {
-			asset.src = record.source;
+		if (asset.src !== winner.source) {
+			asset.src = winner.source;
 			changed.add(asset_id);
+		}
+		if (root) {
+			if (winnerKind === 'canonical') {
+				const updatedRecord: WorkspaceOverrideRecord = { ...winner, path: cartPath, updatedAt: winnerUpdatedAt >= 0 ? winnerUpdatedAt : undefined };
+				persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[asset_id, updatedRecord]]));
+				const localOverride = localOverrides.get(asset_id);
+				if (localOverride) {
+					const staleKey = buildWorkspaceStorageKey(root, localOverride.path);
+					storage.removeItem(staleKey);
+				}
+			} else {
+				const updatedAt = winnerUpdatedAt >= 0 ? winnerUpdatedAt : Date.now();
+				const updatedRecord: WorkspaceOverrideRecord = { ...winner, updatedAt };
+				persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[asset_id, updatedRecord]]));
+				if (includeServer && canonicalUpdatedAt < updatedAt) {
+					await persistWorkspaceFileToServer(root, cartPath, winner.source);
+					const canonicalUpdatedRecord: WorkspaceOverrideRecord = { ...winner, path: cartPath, updatedAt };
+					persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[asset_id, canonicalUpdatedRecord]]));
+				}
+			}
 		}
 	}
 	return changed;
@@ -614,4 +683,56 @@ export async function clearWorkspaceArtifacts(cart: BmsxCartridge, storage: Stor
 	const stateKey = buildWorkspaceStorageKey(root, statePath);
 	storage.removeItem(stateKey);
 	await deleteWorkspaceFile(statePath);
+}
+
+async function clearWorkspaceDirtyFiles(cart: BmsxCartridge, storage: StorageService): Promise<void> {
+	const root = $.rompack.project_root_path;
+	if (!root) {
+		return;
+	}
+	const scratchPaths = await collectScratchWorkspaceDirtyPaths(root);
+	for (const asset of Object.values(cart.lua)) {
+		const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
+		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
+		storage.removeItem(storageKey);
+		await deleteWorkspaceFile(dirtyPath);
+	}
+	for (const dirtyPath of scratchPaths) {
+		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
+		storage.removeItem(storageKey);
+		await deleteWorkspaceFile(dirtyPath);
+	}
+}
+
+export async function resetWorkspaceDirtyBuffersAndStorage(): Promise<void> {
+	const runtime = BmsxConsoleRuntime.instance;
+	await clearWorkspaceDirtyFiles(runtime.cart, runtime.storageService);
+	const editor = runtime.editor;
+	if (editor) {
+		editor.clearWorkspaceDirtyBuffers();
+	}
+}
+
+export async function nukeWorkspaceState(): Promise<void> {
+	const runtime = BmsxConsoleRuntime.instance;
+	await clearWorkspaceArtifacts(runtime.cart, runtime.storageService);
+	const editor = runtime.editor;
+	if (editor) {
+		editor.clearWorkspaceDirtyBuffers();
+	}
+}
+
+export async function clearWorkspaceLuaOverrides(): Promise<void> {
+	const runtime = BmsxConsoleRuntime.instance;
+	await clearWorkspaceArtifacts(runtime.cart, runtime.storageService);
+	// @ts-ignore - unused variable
+	const changed = await applyWorkspaceOverridesToCart({ rompack: $.rompack, storage: runtime.storageService, includeServer: true });
+	const editor = runtime.editor;
+	if (editor) {
+		runtime.editor.clearWorkspaceDirtyBuffers();
+	}
+	// if (changed.size > 0) {
+	// 	await runtime.reloadProgramAndResetWorld({ runInit: true });
+	// }
 }

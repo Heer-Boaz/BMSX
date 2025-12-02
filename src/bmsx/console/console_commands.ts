@@ -1,5 +1,7 @@
 import { $ } from '../core/game';
 import { BmsxConsoleRuntime } from './runtime';
+import { clearWorkspaceSessionState } from './ide/workspace_storage';
+import { nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from './workspace';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
 
@@ -130,15 +132,15 @@ export class ConsoleCommandDispatcher {
 
 	private async runWorkspaceReset() {
 		this.runtime.consoleMode.appendStdout('Discarding dirty files...');
-		await this.runtime.clearWorkspaceLuaOverrides();
-		this.runtime.consoleMode.appendStdout('Restored to saved workspace');
+		await resetWorkspaceDirtyBuffersAndStorage();
+		this.runtime.consoleMode.appendStdout('Dirty workspace buffers cleared');
 	}
 
 	private async runWorkspaceNuke() {
 		this.runtime.consoleMode.appendStdout('Warning: this will erase workspace!');
-		await this.runtime.clearWorkspaceLuaOverrides();
-		this.runtime.consoleMode.appendStdout('Workspace deleted');
-		this.runtime.consoleMode.appendStdout('Reverted to saved workspace sources');
+		await nukeWorkspaceState();
+		clearWorkspaceSessionState();
+		this.runtime.consoleMode.appendStdout('Workspace data wiped');
 	}
 
 	private handleSys(tokens: string[]): void {

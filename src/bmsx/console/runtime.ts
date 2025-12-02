@@ -16,7 +16,8 @@ import {
 	extractErrorMessage,
 	isLuaDebuggerPauseSignal,
 	isLuaFunctionValue,
-	isLuaTable, setLuaTableCaseInsensitiveKeys,
+	isLuaTable,
+	setLuaTableCaseInsensitiveKeys,
 	type LuaDebuggerPauseSignal
 } from '../lua/value';
 import type { InputEvt, StorageService } from '../platform/platform';
@@ -36,7 +37,7 @@ import {
 	type DebuggerPauseDisplayPayload,
 	type DebuggerResumeMode
 } from './ide/ide_debugger';
-import { clearNativeMemberCompletionCache, consoleValueToString, getChunkResourceHint, inspectLuaExpression, listAllLuaSymbols, listLuaBuiltinFunctions, listLuaModuleSymbols, listLuaObjectMembers, listLuaSymbols } from './ide/intellisense';
+import { clearNativeMemberCompletionCache, consoleValueToString, getChunkResourceHint } from './ide/intellisense';
 import { type FaultSnapshot } from './ide/render/render_error_overlay';
 import { type LuaSemanticModel } from './ide/semantic_model';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
@@ -46,14 +47,11 @@ import { LuaFunctionRedirectCache } from './lua_handler_registry';
 import { LuaEntrySnapshot, LuaJsBridge } from './lua_js_bridge';
 import { buildLuaModuleAliases, type LuaRequireModuleRecord } from './lua_module_loader';
 import { BmsxConsoleStorage } from './storage';
-import type { BmsxConsoleLuaPrimaryAssetWithSource, BmsxConsoleRuntimeOptions, BmsxConsoleState, ConsoleLuaBuiltinDescriptor, ConsoleLuaHoverRequest, ConsoleLuaMemberCompletion, ConsoleResourceDescriptor, LuaMarshalContext } from './types';
+import type { BmsxConsoleLuaPrimaryAssetWithSource, BmsxConsoleRuntimeOptions, BmsxConsoleState, ConsoleLuaBuiltinDescriptor, ConsoleLuaMemberCompletion, ConsoleResourceDescriptor, LuaMarshalContext } from './types';
 import {
-	clearWorkspaceArtifacts,
-	createLuaResource,
 	DEFAULT_LUA_FAILURE_POLICY,
 	LuaPersistenceFailurePolicy,
 	persistLuaSourceToFilesystem,
-	saveLuaResourceSource,
 } from './workspace';
 
 export const CONSOLE_BUTTON_ACTIONS: ReadonlyArray<string> = [
@@ -116,14 +114,14 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public cart: BmsxCartridge;
-	private readonly storage: BmsxConsoleStorage;
-	private readonly storageService: StorageService;
+	public readonly storage: BmsxConsoleStorage;
+	public readonly storageService: StorageService;
 	public readonly luaJsBridge!: LuaJsBridge;
 	public readonly apiFunctionNames = new Set<string>();
 	public readonly luaBuiltinMetadata = new Map<string, ConsoleLuaBuiltinDescriptor>();
 	private _activeIdeFontVariant: ConsoleFontVariant = EDITOR_FONT_VARIANT;
 	public playerIndex: number;
-	private editor!: ConsoleCartEditor;
+	public editor!: ConsoleCartEditor;
 	private readonly overlayRenderBackend = new ConsoleRenderFacade();
 	public readonly consoleMode!: ConsoleMode;
 	private _overlayResolutionMode: 'offscreen' | 'viewport'; // Set in constructor
@@ -197,8 +195,10 @@ export class BmsxConsoleRuntime extends Service {
 		this.faultOverlayNeedsFlush = false;
 	}
 	private hasCompletedInitialBoot = false;
-	private readonly canonicalization: CanonicalizationType;
-
+	private readonly _canonicalization: CanonicalizationType;
+	public get canonicalization(): CanonicalizationType {
+		return this._canonicalization;
+	}
 	public get interpreter(): LuaInterpreter {
 		return this.luaInterpreter;
 	}
@@ -211,20 +211,11 @@ export class BmsxConsoleRuntime extends Service {
 		this.storageService = $.platform.storage;
 		this.storage = new BmsxConsoleStorage(this.storageService, options.cart.meta.persistent_id);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
-		this.canonicalization = resolvedCanonicalization;
-		setLuaTableCaseInsensitiveKeys(this.canonicalization !== 'none');
-		setEditorCaseInsensitivity(this.canonicalization !== 'none');
+		this._canonicalization = resolvedCanonicalization;
+		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
+		setEditorCaseInsensitivity(this._canonicalization !== 'none');
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
-		this.consoleMode = new ConsoleMode({
-			playerIndex: options.playerIndex,
-			fontVariant: this._activeIdeFontVariant,
-			canonicalization: this.canonicalization,
-			listLuaSymbols: (asset_id, chunkName) => listLuaSymbols(asset_id, chunkName),
-			listGlobalLuaSymbols: () => listAllLuaSymbols(),
-			listLuaModuleSymbols: (moduleName) => listLuaModuleSymbols(moduleName),
-			listBuiltinLuaFunctions: () => listLuaBuiltinFunctions(),
-			listLuaObjectMembers: (request) => listLuaObjectMembers(request),
-		});
+		this.consoleMode = new ConsoleMode();
 		this.consoleCommands = new ConsoleCommandDispatcher(this);
 		this.consoleMode.setPromptPrefix(this.consoleCommands.getPrompt());
 		this.enableEvents();
@@ -761,7 +752,7 @@ export class BmsxConsoleRuntime extends Service {
 		lines.push(`Cart: ${this.cart.meta.title} (${this.cart.meta.persistent_id})`);
 		lines.push(`Lua VM: ${vmState} | Entry: ${chunkLabel}`);
 		lines.push(`Status: ${faultLabel} | Debugger: ${debuggerLabel}`);
-		lines.push(`Canonicalization: ${this.canonicalization}`);
+		lines.push(`Canonicalization: ${this._canonicalization}`);
 		lines.push(`Overlay: ${this.overlayResolutionMode} ${Math.round(overlay.width)}x${Math.round(overlay.height)}`);
 		if (root) {
 			lines.push(`Workspace root: ${root}`);
@@ -1098,12 +1089,9 @@ export class BmsxConsoleRuntime extends Service {
 		const viewport = { width: viewportSize.width, height: viewportSize.height };
 		// Check the primary asset ID for the currently loaded program
 		// Note that this can be null if the program was not loaded from source or has not been saved yet (then the type is BmsxConsoleLuaInlineProgram)!
-		const entryAssetId = this.cart.entry;
 		this.editor = createConsoleCartEditor({
-			playerIndex: this.playerIndex,
-			metadata: this.cart.meta,
 			viewport,
-			canonicalization: this.canonicalization,
+			canonicalization: this._canonicalization,
 			loadSource: () => { return Object.values(this.cart.lua).length > 0 ? this.cart.lua[this.cart.entry]?.src : '' },
 			saveSource: (source: string) => persistLuaSourceToFilesystem(this.cart.lua[this.cart.entry].source_path, source),
 			listResources: () => {
@@ -1119,18 +1107,7 @@ export class BmsxConsoleRuntime extends Service {
 				return descriptors;
 			},
 			loadLuaResource: (asset_id: string) => this.cart.lua[asset_id].src,
-			saveLuaResource: async (asset_id: string, source: string) => await saveLuaResourceSource(asset_id, source),
-			createLuaResource: async (request) => await createLuaResource(request),
-			inspectLuaExpression: (request: ConsoleLuaHoverRequest) => inspectLuaExpression(request),
-			listLuaObjectMembers: (request) => listLuaObjectMembers(request),
-			listLuaModuleSymbols: (moduleName) => listLuaModuleSymbols(moduleName),
-			entryAssetId: entryAssetId,
-			listLuaSymbols: (asset_id: string, chunkName: string) => listLuaSymbols(asset_id, chunkName),
-			listGlobalLuaSymbols: () => listAllLuaSymbols(),
-			listBuiltinLuaFunctions: () => listLuaBuiltinFunctions(),
 			fontVariant: this._activeIdeFontVariant,
-			workspaceRootPath: $.rompack.project_root_path,
-			themeVariant: this.cart.meta.ide_theme,
 		});
 		this.flushLuaWarnings();
 		this.registerConsoleShortcuts();
@@ -1433,7 +1410,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 
 		this.resetLuaInteroperabilityState();
-		const interpreter = createLuaInterpreter(this.canonicalization);
+		const interpreter = createLuaInterpreter(this._canonicalization);
 		this.configureInterpreter(interpreter);
 		interpreter.clearLastFaultEnvironment();
 		this.luaInterpreter = interpreter;
@@ -1844,7 +1821,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaGenericAssetsExecuted.clear();
 		this.handledLuaErrors = new WeakSet<object>();
 		this.luaFunctionRedirectCache.clear();
-		setLuaTableCaseInsensitiveKeys(this.canonicalization !== 'none');
+		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
 	}
 
 	private bootLuaProgram(): void {
@@ -1852,7 +1829,7 @@ export class BmsxConsoleRuntime extends Service {
 		const chunkName = this.cart.lua[this.cart.entry].chunk_name;
 
 		this.resetLuaInteroperabilityState();
-		const interpreter = createLuaInterpreter(this.canonicalization);
+		const interpreter = createLuaInterpreter(this._canonicalization);
 		this.configureInterpreter(interpreter);
 		interpreter.clearLastFaultEnvironment();
 		this.luaInterpreter = interpreter;
@@ -2208,11 +2185,11 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public canonicalizeIdentifier(name: string): string {
-		if (this.canonicalization) {
-			if (this.canonicalization === 'upper') {
+		if (this._canonicalization) {
+			if (this._canonicalization === 'upper') {
 				return name.toUpperCase();
 			}
-			if (this.canonicalization === 'lower') {
+			if (this._canonicalization === 'lower') {
 				return name.toLowerCase();
 			}
 		}
@@ -2568,13 +2545,6 @@ export class BmsxConsoleRuntime extends Service {
 			this.luaModuleLoadingKeys.delete(record.packageKey);
 			this.luaChunkName = previousChunkName;
 		}
-	}
-
-	public async clearWorkspaceLuaOverrides(): Promise<void> {
-		if (this.editor) {
-			this.editor.clearWorkspaceDirtyBuffers();
-		}
-		await clearWorkspaceArtifacts(this.cart, this.storageService);
 	}
 
 	private refreshLuaHandlersForChunk(chunkName: string, sourceOverride?: string): void {

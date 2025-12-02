@@ -28,6 +28,7 @@ import { measureText } from './text_utils';
 import { ensureCursorVisible } from './caret';
 import { resolveHoverChunkName } from './intellisense';
 import { resetBlink } from './render/render_caret';
+import { saveLuaResourceSource } from '../workspace';
 
 export function createEntryTabContext(): CodeTabContext {
 	const luaDescriptors = ide_state.listResourcesFn().filter(r => r.type === 'lua');
@@ -39,7 +40,7 @@ export function createEntryTabContext(): CodeTabContext {
 		? () => ide_state.loadLuaResourceFn(descriptor.asset_id)
 		: () => ide_state.loadSourceFn();
 	const save = descriptor
-		? (source: string) => ide_state.saveLuaResourceFn(descriptor.asset_id, source)
+		? (source: string) => saveLuaResourceSource(descriptor.asset_id, source)
 		: (source: string) => ide_state.saveSourceFn(source);
 	return {
 		id: tabId,
@@ -64,7 +65,7 @@ export function createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): 
 		title,
 		descriptor,
 		load: () => ide_state.loadLuaResourceFn(descriptor.asset_id),
-		save: (source: string) => ide_state.saveLuaResourceFn(descriptor.asset_id, source),
+		save: (source: string) => saveLuaResourceSource(descriptor.asset_id, source),
 		snapshot: null,
 		lastSavedSource: '',
 		saveGeneration: 0,

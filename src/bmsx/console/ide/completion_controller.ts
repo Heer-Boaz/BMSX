@@ -1,6 +1,6 @@
 import { BmsxConsoleApi } from '../api';
 import { clamp } from '../../utils/clamp';;
-import { getApiCompletionData, getKeywordCompletions, type LuaScopedSymbol } from './intellisense';
+import { getApiCompletionData, getKeywordCompletions, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaModuleSymbols, type LuaScopedSymbol } from './intellisense';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast';
 import {
 	CompletionContext,
@@ -20,7 +20,7 @@ import { isLuaCommentContext } from './text_utils';
 import { ide_state } from './ide_state';
 import { isReadOnlyCodeTab } from './editor_tabs';
 import { consumeIdeKey } from './ide_input';
-import { api } from '../runtime';
+import { api, BmsxConsoleRuntime } from '../runtime';
 import { point_in_rect } from '../../utils/rect_operations';
 import { LuaLexer } from '../..';
 
@@ -36,7 +36,6 @@ export type CompletionRenderApi = BmsxConsoleApi;
 
 export interface CompletionHost {
 	// Editor state accessors
-	getPlayerIndex(): number;
 	isCodeTabActive(): boolean;
 	getLines(): string[];
 	getCursorRow(): number;
@@ -59,10 +58,6 @@ export interface CompletionHost {
 	getActiveCodeTabContext(): unknown;
 	resolveHoverasset_id(context: unknown): string;
 	resolveHoverChunkName(context: unknown): string;
-	listLuaSymbols(asset_id: string, chunkName: string): ConsoleLuaSymbolEntry[];
-	listGlobalLuaSymbols(): ConsoleLuaSymbolEntry[];
-	listLuaModuleSymbols(moduleName: string): ConsoleLuaSymbolEntry[];
-	listBuiltinLuaFunctions(): ConsoleLuaBuiltinDescriptor[];
 	getSemanticDefinitions(): readonly LuaDefinitionInfo[];
 	getLuaModuleAliases(chunkName: string): Map<string, string>;
 	getMemberCompletionItems(request: MemberCompletionHostRequest): LuaCompletionItem[];
@@ -603,7 +598,7 @@ export class CompletionController {
 	private getGlobalCompletionItems(): LuaCompletionItem[] {
 		if (this.cachedGlobalCompletionItems) return this.cachedGlobalCompletionItems;
 		let entries: ConsoleLuaSymbolEntry[] = [];
-		try { entries = this.host.listGlobalLuaSymbols(); } catch { this.cachedGlobalCompletionItems = []; return this.cachedGlobalCompletionItems; }
+		try { entries = listGlobalLuaSymbols(); } catch { this.cachedGlobalCompletionItems = []; return this.cachedGlobalCompletionItems; }
 		const items = this.buildSymbolCompletionItems(entries, 'global');
 		const apiItem: LuaCompletionItem = { label: 'api', insertText: 'api', sortKey: 'global:api', kind: 'global', detail: 'Console API root' };
 		items.push(apiItem);
@@ -736,7 +731,7 @@ export class CompletionController {
 		}
 		let symbols: ConsoleLuaSymbolEntry[] = [];
 		try {
-			symbols = this.host.listLuaModuleSymbols(moduleName);
+			symbols = listLuaModuleSymbols(moduleName);
 		} catch {
 			symbols = [];
 		}
@@ -820,7 +815,7 @@ export class CompletionController {
 	private ensureBuiltinDescriptorCache(force = false): void {
 		if (!force && this.builtinDescriptors !== null) return;
 		let descriptors: ConsoleLuaBuiltinDescriptor[];
-		try { descriptors = this.host.listBuiltinLuaFunctions(); } catch { descriptors = []; }
+		try { descriptors = listLuaBuiltinFunctions(); } catch { descriptors = []; }
 		if (!Array.isArray(descriptors)) descriptors = [];
 		this.builtinDescriptors = descriptors;
 		this.builtinDescriptorMap.clear();
@@ -1318,7 +1313,7 @@ export class CompletionController {
 		if (contextId.length > 0) {
 			return `ctx:${contextId}`;
 		}
-		return `player:${this.host.getPlayerIndex()}`;
+		return `player:${BmsxConsoleRuntime.instance.playerIndex}`;
 	}
 
 	private invalidateLocalCompletionCacheForActiveContext(): void {

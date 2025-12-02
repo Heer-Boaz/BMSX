@@ -860,6 +860,21 @@ export async function runWorkspaceAutosaveTick(): Promise<void> {
 	}
 }
 
+export function clearWorkspaceSessionState(): void {
+	stopWorkspaceAutosaveLoop();
+	ide_state.undoStack = [];
+	ide_state.redoStack = [];
+	ide_state.lastHistoryKey = null;
+	ide_state.lastHistoryTimestamp = 0;
+	ide_state.navigationHistory.back = [];
+	ide_state.navigationHistory.forward = [];
+	ide_state.navigationHistory.current = null;
+	ide_state.breakpoints.clear();
+	ide_state.workspaceAutosaveSignature = null;
+	ide_state.workspaceAutosaveQueued = false;
+	ide_state.workspaceAutosaveRunning = false;
+}
+
 function scheduleServerBackendRetry(): void {
 	if (serverBackendAvailable || serverRetryScheduled || !storagePaths) {
 		return;

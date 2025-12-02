@@ -47,7 +47,7 @@ import {
 	setFieldText,
 	updateBlink,
 } from './inline_text_field';
-import { buildMemberCompletionItems, clearGotoHoverHighlight, clearReferenceHighlights, describeMetadataValue, extractHoverExpression, intellisenseUiReady, navigateToLuaDefinition, requestSemanticRefresh, resolveHoverAssetId, resolveHoverChunkName, safeJsonStringify, shouldAutoTriggerCompletions } from './intellisense';
+import { buildMemberCompletionItems, clearGotoHoverHighlight, clearReferenceHighlights, describeMetadataValue, extractHoverExpression, inspectLuaExpression, intellisenseUiReady, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaSymbols, navigateToLuaDefinition, requestSemanticRefresh, resolveHoverAssetId, resolveHoverChunkName, safeJsonStringify, shouldAutoTriggerCompletions } from './intellisense';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar } from './render/render_top_bar';
 import { renderTabBar } from './render/render_tab_bar';
@@ -102,7 +102,7 @@ import {
 	stopWorkspaceAutosaveLoop,
 	clearWorkspaceDirtyBuffers,
 } from './workspace_storage';
-import { applyWorkspaceOverridesToCart } from '../workspace';
+import { applyWorkspaceOverridesToCart, createLuaResource } from '../workspace';
 
 import * as TextEditing from './text_editing_and_selection';
 import { resetBlink } from './render/render_caret';
@@ -149,28 +149,20 @@ export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleC
 
 export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	initializeDebuggerUiState();
-
-	ide_state.playerIndex = options.playerIndex;
-	ide_state.metadata = options.metadata;
+	const runtime = BmsxConsoleRuntime.instance;
+	const cart = runtime.cart;
+	ide_state.playerIndex = runtime.playerIndex;
+	ide_state.metadata = cart.meta;
 	ide_state.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
-	constants.setIdeThemeVariant(options.themeVariant);
+	constants.setIdeThemeVariant(cart.meta.ide_theme);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
-	const canonicalization = options.canonicalization ?? 'lower';
-	ide_state.canonicalization = canonicalization;
-	ide_state.caseInsensitive = canonicalization !== 'none';
+	ide_state.canonicalization = options.canonicalization;
+	ide_state.caseInsensitive = ide_state.canonicalization !== 'none';
 	ide_state.preMutationSource = null;
 	ide_state.loadSourceFn = options.loadSource;
 	ide_state.saveSourceFn = options.saveSource;
 	ide_state.listResourcesFn = options.listResources;
 	ide_state.loadLuaResourceFn = options.loadLuaResource;
-	ide_state.saveLuaResourceFn = options.saveLuaResource;
-	ide_state.createLuaResourceFn = options.createLuaResource;
-	ide_state.inspectLuaExpressionFn = options.inspectLuaExpression;
-	ide_state.listLuaObjectMembersFn = options.listLuaObjectMembers;
-	ide_state.listLuaModuleSymbolsFn = options.listLuaModuleSymbols;
-	ide_state.listLuaSymbolsFn = options.listLuaSymbols;
-	ide_state.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
-	ide_state.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
 	if ($.debug) {
 		ide_state.listResourcesFn();
 	}
@@ -182,7 +174,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.resourceSearchField = createInlineTextField();
 	ide_state.lineJumpField = createInlineTextField();
 	ide_state.createResourceField = createInlineTextField();
-	initializeWorkspaceStorage(options.workspaceRootPath);
+	initializeWorkspaceStorage($.rompack.project_root_path);
 	applySearchFieldText(ide_state.searchQuery, true);
 	applySymbolSearchFieldText(ide_state.symbolSearchQuery, true);
 	applyResourceSearchFieldText(ide_state.resourceSearchQuery, true);
@@ -198,7 +190,6 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.scrollbarController = new ScrollbarController(ide_state.scrollbars);
 	ide_state.resourcePanel = new ResourcePanelController({ resourceVertical: ide_state.scrollbars.resourceVertical, resourceHorizontal: ide_state.scrollbars.resourceHorizontal });
 	ide_state.completion = new CompletionController({
-		getPlayerIndex: () => ide_state.playerIndex,
 		isCodeTabActive: () => isCodeTabActive(),
 		getLines: () => ide_state.lines,
 		getCursorRow: () => ide_state.cursorRow,
@@ -217,10 +208,6 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 		getActiveCodeTabContext: () => getActiveCodeTabContext(),
 		resolveHoverasset_id: (ctx) => resolveHoverAssetId(ctx as CodeTabContext),
 		resolveHoverChunkName: (ctx) => resolveHoverChunkName(ctx as CodeTabContext),
-		listLuaSymbols: (asset_id, chunk) => ide_state.listLuaSymbolsFn(asset_id, chunk),
-		listGlobalLuaSymbols: () => ide_state.listGlobalLuaSymbolsFn(),
-		listLuaModuleSymbols: (moduleName) => ide_state.listLuaModuleSymbolsFn(moduleName),
-		listBuiltinLuaFunctions: () => ide_state.listBuiltinLuaFunctionsFn(),
 		getSemanticDefinitions: () => getActiveSemanticDefinitions(),
 		getLuaModuleAliases: (chunkName) => getLuaModuleAliases(chunkName),
 		getMemberCompletionItems: (request) => buildMemberCompletionItems(request),
@@ -788,7 +775,7 @@ function canonicalizeEditorIdentifier(name: string): string {
 
 export function getBuiltinIdentifierSet(): ReadonlySet<string> {
 	try {
-		const descriptors = ide_state.listBuiltinLuaFunctionsFn();
+		const descriptors = listLuaBuiltinFunctions();
 		const names: string[] = [];
 		for (let index = 0; index < descriptors.length; index += 1) {
 			const descriptor = descriptors[index];
@@ -908,7 +895,7 @@ export function tryShowLuaErrorOverlay(error: unknown): boolean {
 export function safeInspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult {
 	ide_state.inspectorRequestFailed = false;
 	try {
-		return ide_state.inspectLuaExpressionFn(request);
+		return inspectLuaExpression(request);
 	} catch (error) {
 		ide_state.inspectorRequestFailed = true;
 		const handled = tryShowLuaErrorOverlay(error);
@@ -1127,13 +1114,13 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 export function createDiagnosticProviders(): DiagnosticProviders {
 	return {
 		listLocalSymbols: (asset_id, chunk) => {
-			return ide_state.listLuaSymbolsFn(asset_id, chunk);
+			return listLuaSymbols(asset_id, chunk);
 		},
 		listGlobalSymbols: () => {
-			return ide_state.listGlobalLuaSymbolsFn();
+			return listGlobalLuaSymbols();
 		},
 		listBuiltins: () => {
-			return ide_state.listBuiltinLuaFunctionsFn();
+			return listLuaBuiltinFunctions();
 		},
 	};
 }
@@ -1575,7 +1562,7 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	resetBlink();
 	const contents = constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 	try {
-		const descriptor = await ide_state.createLuaResourceFn({ path: normalizedPath, asset_id, contents });
+		const descriptor = await createLuaResource({ path: normalizedPath, asset_id, contents });
 		ide_state.lastCreateResourceDirectory = directory;
 		ide_state.pendingResourceSelectionAssetId = descriptor.asset_id;
 		if (ide_state.resourcePanelVisible) {

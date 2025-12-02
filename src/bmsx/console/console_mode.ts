@@ -29,16 +29,10 @@ import {
 	isAltDown
 } from './ide/ide_input';
 import { CompletionController } from './ide/completion_controller';
-import { collectLuaModuleAliases } from './ide/intellisense';
-import type {
-	ConsoleLuaBuiltinDescriptor,
-	ConsoleLuaMemberCompletion,
-	ConsoleLuaMemberCompletionRequest,
-	ConsoleLuaSymbolEntry,
-} from './types';
+import { collectLuaModuleAliases, listLuaObjectMembers } from './ide/intellisense';
 import { consumeIdeKey, getIdeKeyState } from './ide/ide_input';
-import type { asset_id, Viewport, CanonicalizationType } from '../rompack/rompack';
-import { api } from './runtime';
+import type { asset_id, Viewport } from '../rompack/rompack';
+import { api, BmsxConsoleRuntime } from './runtime';
 
 type ConsoleOutputKind =
 	| 'prompt'
@@ -52,19 +46,6 @@ type ConsoleOutputKind =
 type ConsoleOutputEntry = {
 	text: string;
 	color: number;
-};
-
-type ConsoleModeOptions = {
-	playerIndex: number;
-	fontVariant?: ConsoleFontVariant;
-	canonicalization?: CanonicalizationType;
-	caseInsensitiveUppercaseDisplay?: boolean;
-	maxEntries?: number;
-	listLuaSymbols: (asset_id: string, chunkName: string) => ConsoleLuaSymbolEntry[];
-	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
-	listLuaModuleSymbols: (moduleName: string) => ConsoleLuaSymbolEntry[];
-	listBuiltinLuaFunctions: () => ConsoleLuaBuiltinDescriptor[];
-	listLuaObjectMembers: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
 };
 
 type CompletionMemberRequest = {
@@ -95,15 +76,8 @@ const OUTPUT_COLORS: Record<ConsoleOutputKind, number> = {
 
 export class ConsoleMode {
 	public font: ConsoleEditorFont;
-	private readonly canonicalization: CanonicalizationType;
 	private readonly uppercaseDisplayOverride: boolean;
 	private readonly maxEntries: number;
-	private readonly playerIndex: number;
-	private readonly listLuaSymbolsFn: (asset_id: string, chunkName: string) => ConsoleLuaSymbolEntry[];
-	private readonly listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
-	private readonly listLuaModuleSymbolsFn: (moduleName: string) => ConsoleLuaSymbolEntry[];
-	private readonly listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
-	private readonly listLuaObjectMembersFn: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
 	private readonly characterBackgroundColor = { r: 0, g: 0, b: 0, a: CHARACTER_TILE_ALPHA } as color;
 	private readonly caretColor = Msx1Colors[15];
 	private readonly selectionColor = Msx1Colors[11];
@@ -145,19 +119,12 @@ export class ConsoleMode {
 	private cachedLinesVersion = -1;
 	private promptPrefix = '> ';
 	private cursorScreenInfo: CursorScreenInfo = null;
-	constructor(options: ConsoleModeOptions) {
-		this.font = new ConsoleEditorFont(options.fontVariant);
-		this.canonicalization = options.canonicalization ?? 'none';
-		this.uppercaseDisplayOverride = options.caseInsensitiveUppercaseDisplay ?? false;
-		this.maxEntries = options.maxEntries ?? MAX_OUTPUT_ENTRIES;
-		this.playerIndex = options.playerIndex;
-		this.listLuaSymbolsFn = options.listLuaSymbols;
-		this.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
-		this.listLuaModuleSymbolsFn = options.listLuaModuleSymbols;
-		this.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
-		this.listLuaObjectMembersFn = options.listLuaObjectMembers;
+	constructor() {
+		const runtime = BmsxConsoleRuntime.instance;
+		this.font = new ConsoleEditorFont(runtime.activeIdeFontVariant);
+		this.uppercaseDisplayOverride = false;
+		this.maxEntries = MAX_OUTPUT_ENTRIES;
 		this.completion = new CompletionController({
-			getPlayerIndex: () => this.playerIndex,
 			isCodeTabActive: () => this.active,
 			getLines: () => this.getLinesSnapshot(),
 			getCursorRow: () => this.getCursorPosition().row,
@@ -176,10 +143,6 @@ export class ConsoleMode {
 			getActiveCodeTabContext: () => (this.active ? this.completionContextToken : null),
 			resolveHoverasset_id: () => null,
 			resolveHoverChunkName: () => this.consoleChunkName,
-			listLuaSymbols: (asset_id, chunkName) => this.listLuaSymbolsFn(asset_id, chunkName),
-			listGlobalLuaSymbols: () => this.listGlobalLuaSymbolsFn(),
-			listLuaModuleSymbols: (moduleName) => this.listLuaModuleSymbolsFn(moduleName),
-			listBuiltinLuaFunctions: () => this.listBuiltinLuaFunctionsFn(),
 			getSemanticDefinitions: () => null,
 			getLuaModuleAliases: () => this.buildConsoleModuleAliases(),
 			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),
@@ -533,7 +496,7 @@ export class ConsoleMode {
 	}
 
 	private handleTextMutation(previousText: string, editContext: EditContext): void {
-		if (this.canonicalization !== 'none') {
+		if (BmsxConsoleRuntime.instance.canonicalization !== 'none') {
 			const before = this.fieldText();
 			const normalized = this.normalizeInputCase(before);
 			if (normalized !== before) {
@@ -573,11 +536,11 @@ export class ConsoleMode {
 	}
 
 	private normalizeInputCase(text: string): string {
-		if (this.canonicalization === 'none') {
+		if (BmsxConsoleRuntime.instance.canonicalization === 'none') {
 			return text;
 		}
 
-		const transform = this.canonicalization === 'upper'
+		const transform = BmsxConsoleRuntime.instance.canonicalization === 'upper'
 			? (ch: string) => ch.toUpperCase()
 			: (ch: string) => ch.toLowerCase();
 		return applyCaseOutsideStrings(text, transform);
@@ -606,7 +569,7 @@ export class ConsoleMode {
 		if (request.objectName.length === 0) {
 			return [];
 		}
-		const response = this.listLuaObjectMembersFn({
+		const response = listLuaObjectMembers({
 			asset_id: request.asset_id,
 			chunkName: request.chunkName,
 			expression: request.objectName,
@@ -826,7 +789,7 @@ export class ConsoleMode {
 	}
 
 	private toDisplayText(value: string, uppercase: boolean): string {
-		if (uppercase && this.canonicalization !== 'none') {
+		if (uppercase && BmsxConsoleRuntime.instance.canonicalization !== 'none') {
 			return applyCaseOutsideStrings(value, (ch) => ch.toUpperCase());
 		}
 		return value;

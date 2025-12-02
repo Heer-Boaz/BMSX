@@ -1,11 +1,5 @@
 import type {
-	ConsoleLuaBuiltinDescriptor,
-	ConsoleLuaHoverRequest,
 	ConsoleLuaHoverResult,
-	ConsoleLuaMemberCompletion,
-	ConsoleLuaMemberCompletionRequest,
-	ConsoleLuaResourceCreationRequest,
-	ConsoleLuaSymbolEntry,
 	ConsoleResourceDescriptor,
 } from '../types';
 import type { BmsxCartMetadata } from '../../rompack/rompack';
@@ -137,15 +131,7 @@ export interface IdeState {
 	loadSourceFn: () => string;
 	saveSourceFn: (source: string) => Promise<void>;
 	loadLuaResourceFn: (asset_id: string) => string;
-	saveLuaResourceFn: (asset_id: string, source: string) => Promise<void>;
-	createLuaResourceFn: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
 	listResourcesFn: () => ConsoleResourceDescriptor[];
-	inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult;
-	listLuaObjectMembersFn: (request: ConsoleLuaMemberCompletionRequest) => ConsoleLuaMemberCompletion[];
-	listLuaModuleSymbolsFn: (moduleName: string) => ConsoleLuaSymbolEntry[];
-	listLuaSymbolsFn: (asset_id: string, chunkName: string) => ConsoleLuaSymbolEntry[];
-	listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
-	listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
 	builtinIdentifierCache: { key: string; set: ReadonlySet<string> };
 	hoverTooltip: CodeHoverTooltip;
 	lastPointerSnapshot: PointerSnapshot;
@@ -340,15 +326,7 @@ export const ide_state: IdeState = {
 	loadSourceFn: undefined!,
 	saveSourceFn: undefined!,
 	loadLuaResourceFn: undefined!,
-	saveLuaResourceFn: undefined!,
-	createLuaResourceFn: undefined!,
 	listResourcesFn: undefined!,
-	inspectLuaExpressionFn: undefined!,
-	listLuaObjectMembersFn: undefined!,
-	listLuaModuleSymbolsFn: undefined!,
-	listLuaSymbolsFn: undefined!,
-	listGlobalLuaSymbolsFn: undefined!,
-	listBuiltinLuaFunctionsFn: undefined!,
 	builtinIdentifierCache: null,
 	entryAssetId: null,
 	hoverTooltip: null,
