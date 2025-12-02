@@ -18,7 +18,7 @@ import {
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
 } from '../workspace';
-import { openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, findResourceDescriptorByAssetId, restoreSnapshot, setFontVariant } from './console_cart_editor';
+import { openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, restoreSnapshot, setFontVariant } from './console_cart_editor';
 import { createEntryTabContext, initializeTabs, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { ConsoleFontVariant } from '../font';
 import { BmsxConsoleRuntime } from '../runtime';
@@ -471,7 +471,8 @@ export function resolveSerializedDescriptor(serialized: SerializedDescriptor): C
 	if (!serialized) {
 		return null;
 	}
-	return findResourceDescriptorByAssetId(serialized.asset_id);
+	const asset = $.rompack.cart.lua[serialized.asset_id];
+	return asset ? { asset_id: asset.resid, path: serialized.path, type: serialized.type } : null;
 }
 
 export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise<void> {

@@ -490,7 +490,7 @@ export function renderRuntimeFaultOverlay(options: {
 	if (!editorFacade.exists) return false;
 	if (!options.force && (!options.luaRuntimeFailed || !options.needsFlush)) return false;
 	if (!snapshot) return false;
-	const hint = BmsxConsoleRuntime.instance.lookupChunkResourceInfoNullable(snapshot.chunkName);
+	const hint = BmsxConsoleRuntime.instance.chunkResourceHintFor(snapshot.chunkName);
 	if (hint) {
 		showRuntimeErrorInChunk(
 			snapshot.chunkName,
@@ -574,4 +574,3 @@ export function showRuntimeError(line: number, column: number, message: string, 
 	const statusLine = overlay.lines.length > 0 ? overlay.lines[0] : 'Runtime error';
 	ide_state.showMessage(statusLine, constants.COLOR_STATUS_ERROR, 2.0);
 }
-

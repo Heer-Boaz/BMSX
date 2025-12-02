@@ -11,6 +11,7 @@ import type { LuaSemanticWorkspace } from './semantic_model';
 import { ide_state } from './ide_state';
 import { LuaLexer } from '../../lua/lexer';
 import { findCodeTabContext } from './editor_tabs';
+import { findResourceDescriptorForChunk } from './console_cart_editor';
 
 export type RenameCommitPayload = {
 	matches: readonly SearchMatch[];
@@ -270,7 +271,6 @@ export function planRenameLineEdits(lines: readonly string[], matches: readonly 
 	}
 	return edits;
 }export type CrossFileRenameDependencies = {
-	findResourceDescriptorForChunk(chunkPath: string): ConsoleResourceDescriptor;
 	createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): CodeTabContext;
 	createEntryTabContext(): CodeTabContext;
 	getEntryTabId(): string;
@@ -366,7 +366,7 @@ export class CrossFileRenameManager {
 			return existing;
 		}
 		try {
-			const descriptor = this.deps.findResourceDescriptorForChunk(chunkName);
+			const descriptor = findResourceDescriptorForChunk(chunkName);
 			const contextId: string = `lua:${descriptor.asset_id}`;
 			let context = this.deps.getCodeTabContext(contextId) ;
 			if (!context) {
@@ -401,34 +401,6 @@ export class CrossFileRenameManager {
 			return null;
 		}
 	}
-
-	// private findCodeTabContextForChunk(chunkName: string): CodeTabContext {
-	// 	for (const context of this.deps.listCodeTabContexts()) {
-	// 		const descriptor = context.descriptor;
-	// 		if (descriptor) {
-	// 			const descriptorPath = this.deps.normalizeChunkReference(descriptor.path);
-	// 			if ((descriptorPath && descriptorPath === chunkName)
-	// 				|| descriptor.asset_id === chunkName
-	// 				|| descriptor.asset_id === chunkName) {
-	// 				return context;
-	// 			}
-	// 		} else {
-	// 			const entryAliases: string[] = [];
-	// 			const primary = this.deps.getEntryAssetId();
-	// 			if (primary) {
-	// 				entryAliases.push(primary);
-	// 			}
-	// 			entryAliases.push('__entry__', '<console>');
-	// 			for (let index = 0; index < entryAliases.length; index += 1) {
-	// 				const alias = entryAliases[index];
-	// 				if (alias === chunkName || alias === chunkName) {
-	// 					return context;
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-	// 	return null;
-	// }
 }
 
 export function convertRangeToSearchMatch(range: LuaSourceRange, lines: readonly string[]): SearchMatch {

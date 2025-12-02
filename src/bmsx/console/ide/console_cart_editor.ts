@@ -28,15 +28,14 @@ import {
 	initializeTabs,
 	setTabDirty,
 	updateActiveContextDirtyFlag,
-	getActiveTabKind,
 	isCodeTabActive,
 	isEditableCodeTab,
 	isResourceViewActive,
 	setActiveTab,
 	activateCodeTab,
 	closeTab,
-	findCodeTabContext,
 	computeResourceTabTitle,
+	findCodeTabContext,
 } from './editor_tabs';
 
 import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, markTextMutated, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapRuntimeErrorLine } from './text_utils';
@@ -62,13 +61,11 @@ import type {
 	CodeHoverTooltip,
 	CodeTabContext,
 	ConsoleEditorOptions,
-	ConsoleEditorSerializedState,
 	EditorSnapshot,
 	EditorTabDescriptor,
 	EditorTabId,
 	EditorDiagnostic,
 	TextField,
-	MessageState,
 	PendingActionPrompt,
 	PointerSnapshot,
 	Position,
@@ -155,7 +152,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.playerIndex = options.playerIndex;
 	ide_state.metadata = options.metadata;
 	ide_state.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
-	constants.setIdeThemeVariant(options.themeVariant );
+	constants.setIdeThemeVariant(options.themeVariant);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
 	const canonicalization = options.canonicalization ?? 'lower';
 	ide_state.canonicalization = canonicalization;
@@ -184,7 +181,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.resourceSearchField = createInlineTextField();
 	ide_state.lineJumpField = createInlineTextField();
 	ide_state.createResourceField = createInlineTextField();
-	setupWorkspacePersistence(options.workspaceRootPath );
+	setupWorkspacePersistence(options.workspaceRootPath);
 	applySearchFieldText(ide_state.searchQuery, true);
 	applySymbolSearchFieldText(ide_state.symbolSearchQuery, true);
 	applyResourceSearchFieldText(ide_state.resourceSearchQuery, true);
@@ -262,7 +259,7 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	}
 	ide_state.desiredColumn = ide_state.cursorColumn;
 	assertMonospace();
-	const initialContext = entryContext ? ide_state.codeTabContexts.get(entryContext.id)  : null;
+	const initialContext = entryContext ? ide_state.codeTabContexts.get(entryContext.id) : null;
 	ide_state.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
 	ide_state.pendingWindowFocused = ide_state.windowFocused;
 	installPlatformVisibilityListener();
@@ -270,6 +267,28 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.navigationHistory.current = createNavigationEntry();
 	ide_state.initialized = true;
 }
+
+export function getSourceForChunk(asset_id: string | null, chunkName: string | null): string {
+	const context = findCodeTabContext(asset_id, chunkName);
+	if (context) {
+		if (context.id === ide_state.activeCodeTabContextId) {
+			return ide_state.lines.join('\n');
+		}
+		if (context.snapshot) {
+			return context.snapshot.lines.join('\n');
+		}
+		if (context.lastSavedSource.length > 0) {
+			return context.lastSavedSource;
+		}
+		return context.load();
+	}
+	const descriptor = findResourceDescriptorForChunk(chunkName);
+	if (descriptor) {
+		return ide_state.loadLuaResourceFn(descriptor.asset_id);
+	}
+	throw new Error(`[ConsoleCartEditor] Unable to locate source for asset '${asset_id ?? '<null>'}' and chunk '${chunkName ?? '<null>'}'.`);
+}
+
 
 export function invalidateLineRange(startRow: number, endRow: number): void {
 	if (ide_state.lines.length === 0) {
@@ -640,35 +659,33 @@ export function focusChunkSource(chunkName: string, hint?: { asset_id: string; p
 	}
 	closeSymbolSearch(true);
 	if (hint?.asset_id) {
-		focusResourceByAsset(hint.asset_id, hint.path );
+		focusResourceByAsset(hint.asset_id, hint.path);
 		return;
 	}
 	if (hint?.asset_id === null) {
 		activateCodeTab();
 		return;
 	}
-	const normalizedChunk = normalizeChunkName(chunkName);
-	const descriptor = findResourceDescriptorForChunk(normalizedChunk);
+	const descriptor = findResourceDescriptorForChunk(chunkName);
 	openResourceDescriptor(descriptor);
 }
 
 export function focusResourceByAsset(asset_id: string, preferredPath?: string): void {
 	const descriptors = listResourcesStrict();
-	const normalizedPreferred = normalizeResourcePath(preferredPath);
-	if (normalizedPreferred) {
+	if (preferredPath) {
 		const byAssetAndPath = descriptors.find(entry =>
-			entry.asset_id === asset_id && normalizeResourcePath(entry.path) === normalizedPreferred
+			entry.asset_id === asset_id && entry.path === preferredPath
 		);
 		if (byAssetAndPath) {
 			openResourceDescriptor(byAssetAndPath);
 			return;
 		}
-		const byPath = descriptors.find(entry => normalizeResourcePath(entry.path) === normalizedPreferred);
+		const byPath = descriptors.find(entry => entry.path === preferredPath);
 		if (byPath) {
 			openResourceDescriptor(byPath);
 			return;
 		}
-		openResourceDescriptor({ path: normalizedPreferred, type: 'lua', asset_id });
+		openResourceDescriptor({ path: preferredPath, type: 'lua', asset_id });
 		return;
 	}
 	const match = descriptors.find(entry => entry.asset_id === asset_id);
@@ -679,88 +696,12 @@ export function focusResourceByAsset(asset_id: string, preferredPath?: string): 
 	throw new Error(`[ConsoleCartEditor] No resource found for asset '${asset_id}'.`);
 }
 
-export function normalizeChunkName(name: string): string {
-	return name ?? '';
-}
-
-export function normalizeResourcePath(path?: string): string {
-	return path === null || path === undefined ? undefined : path;
-}
-
-export function stripExtension(value: string): string {
-	const lastDot = value.lastIndexOf('.');
-	if (lastDot <= 0) {
-		return value;
-	}
-	return value.slice(0, lastDot);
-}
-
-export function resolveResourceDescriptorForSource(asset_id: string, chunkName: string): ConsoleResourceDescriptor {
-	const descriptors = listResourcesStrict();
-	if (chunkName) {
-		const byPath = descriptors.find(entry => entry.path === chunkName);
-		if (byPath && byPath.type === 'lua') {
-			return byPath;
-		}
-		const segments = chunkName.split('/');
-		const basename = segments.length > 0 ? segments[segments.length - 1] : chunkName;
-		const withoutExt = stripExtension(basename);
-		const byChunkAsset = descriptors.find(entry =>
-			entry.asset_id === basename
-			|| entry.asset_id === withoutExt
-			|| stripExtension(entry.path.split('/').pop() ?? '') === basename
-		);
-		if (byChunkAsset && byChunkAsset.type === 'lua') {
-			return byChunkAsset;
-		}
-		if (byPath) {
-			return byPath;
-		}
-		if (byChunkAsset) {
-			return byChunkAsset;
-		}
-	}
-	if (asset_id) {
-		const byAsset = descriptors.find(entry => entry.asset_id === asset_id) ;
-		if (byAsset) {
-			return byAsset;
-		}
-	}
-	if (!chunkName) {
-		return null;
-	}
-	return findResourceDescriptorForChunk(chunkName);
-}
-
 export function listResourcesStrict(): ConsoleResourceDescriptor[] {
 	const descriptors = ide_state.listResourcesFn();
 	if (!Array.isArray(descriptors)) {
 		throw new Error('[ConsoleCartEditor] Resource enumeration returned an invalid result.');
 	}
 	return descriptors;
-}
-
-export function findResourceDescriptorByAssetId(asset_id: string): ConsoleResourceDescriptor {
-	const descriptors = listResourcesStrict();
-	const match = descriptors.find(entry => entry.asset_id === asset_id);
-	return match ;
-}
-
-export function findResourceDescriptorForChunk(chunkPath: string): ConsoleResourceDescriptor {
-	const descriptors = listResourcesStrict();
-	const normalizedTarget = chunkPath;
-	const exact = descriptors.find(entry => entry.path === normalizedTarget);
-	if (exact) {
-		return exact;
-	}
-	const segments = normalizedTarget.split('/');
-	const basename = segments.length > 0 ? segments[segments.length - 1] : normalizedTarget;
-	const withoutExt = stripExtension(basename);
-	const byasset_id = descriptors.find(entry => entry.asset_id === basename || entry.asset_id === withoutExt);
-	if (byasset_id) {
-		return byasset_id;
-	}
-	throw new Error(`[ConsoleCartEditor] Unable to resolve chunk '${normalizedTarget}' to a resource.`);
 }
 
 export function openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
@@ -827,8 +768,8 @@ export function clearExecutionStopHighlights(): void {
 }
 
 export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext): void {
-	ide_state.runtimeErrorOverlay = context ? context.runtimeErrorOverlay  : null;
-	ide_state.executionStopRow = context ? context.executionStopRow  : null;
+	ide_state.runtimeErrorOverlay = context ? context.runtimeErrorOverlay : null;
+	ide_state.executionStopRow = context ? context.executionStopRow : null;
 }
 
 function canonicalizeEditorIdentifier(name: string): string {
@@ -1133,7 +1074,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			source = ide_state.lines.join('\n');
 		} else {
 			try {
-				source = getSourceForChunk(asset_id, chunkName);
+				source = $.rompack.cart.chunk2lua[chunkName]?.src;
 			} catch {
 				source = '';
 			}
@@ -1341,27 +1282,6 @@ export function draw(): void {
 	}
 }
 
-export function getSourceForChunk(asset_id: string, chunkName: string): string {
-	const context = findCodeTabContext(asset_id, chunkName);
-	if (context) {
-		if (context.id === ide_state.activeCodeTabContextId) {
-			return ide_state.lines.join('\n');
-		}
-		if (context.snapshot) {
-			return context.snapshot.lines.join('\n');
-		}
-		if (context.lastSavedSource.length > 0) {
-			return context.lastSavedSource;
-		}
-		return context.load();
-	}
-	const descriptor = resolveResourceDescriptorForSource(asset_id, chunkName);
-	if (descriptor) {
-		return ide_state.loadLuaResourceFn(descriptor.asset_id);
-	}
-	throw new Error(`[ConsoleCartEditor] Unable to locate source for asset '${asset_id ?? '<null>'}' and chunk '${chunkName ?? '<null>'}'.`);
-}
-
 export function getActiveResourceViewer(): ResourceViewerState {
 	const tab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeTabId);
 	if (!tab) {
@@ -1371,107 +1291,6 @@ export function getActiveResourceViewer(): ResourceViewerState {
 		return null;
 	}
 	return tab.resource;
-}
-
-export function serializeState(): ConsoleEditorSerializedState { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
-	const snapshot = captureSnapshot();
-	const messageSnapshot: MessageState = {
-		text: ide_state.message.text,
-		color: ide_state.message.color,
-		timer: ide_state.message.timer,
-		visible: ide_state.message.visible,
-	};
-	return {
-		active: ide_state.active,
-		activeTab: getActiveTabKind(),
-		snapshot,
-		searchQuery: ide_state.searchQuery,
-		searchMatches: ide_state.searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end })),
-		searchCurrentIndex: ide_state.searchCurrentIndex,
-		searchActive: ide_state.searchActive,
-		searchVisible: ide_state.searchVisible,
-		lineJumpValue: ide_state.lineJumpValue,
-		lineJumpActive: ide_state.lineJumpActive,
-		lineJumpVisible: ide_state.lineJumpVisible,
-		message: messageSnapshot,
-		runtimeErrorOverlay: null,
-		saveGeneration: ide_state.saveGeneration,
-		appliedGeneration: ide_state.appliedGeneration,
-	};
-}
-
-export function restoreState(state: ConsoleEditorSerializedState): void { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
-	if (!state) return;
-	ide_state.input.applyOverrides(false, captureKeys);
-	ide_state.codeTabContexts.clear();
-	const entryContext = createEntryTabContext();
-	if (entryContext) {
-		ide_state.entryTabId = entryContext.id;
-		ide_state.codeTabContexts.set(entryContext.id, entryContext);
-		ide_state.activeCodeTabContextId = entryContext.id;
-	}
-	else {
-		ide_state.activeCodeTabContextId = null;
-	}
-	initializeTabs(entryContext);
-	resetResourcePanelState();
-	hideResourcePanel();
-	ide_state.active = state.active;
-	const restoredKind = state.activeTab ?? 'lua_editor';
-	if (restoredKind === 'resource_view') {
-		const activeResourceTab = ide_state.tabs.find(tab => tab.kind === 'resource_view');
-		if (activeResourceTab) {
-			setActiveTab(activeResourceTab.id);
-		}
-	} else {
-		activateCodeTab();
-	}
-	if (ide_state.active) {
-		ide_state.input.applyOverrides(true, captureKeys);
-	}
-	restoreSnapshot(state.snapshot);
-	applySearchFieldText(state.searchQuery, true);
-	ide_state.searchScope = 'local';
-	ide_state.searchDisplayOffset = 0;
-	ide_state.searchHoverIndex = -1;
-	ide_state.globalSearchMatches = [];
-	ide_state.searchMatches = state.searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end }));
-	ide_state.searchCurrentIndex = state.searchCurrentIndex;
-	ide_state.searchActive = state.searchActive;
-	ide_state.searchVisible = state.searchVisible;
-	applyLineJumpFieldText(state.lineJumpValue, true);
-	ide_state.lineJumpActive = state.lineJumpActive;
-	ide_state.lineJumpVisible = state.lineJumpVisible;
-	ide_state.message.text = state.message.text;
-	ide_state.message.color = state.message.color;
-	ide_state.message.timer = state.message.timer;
-	ide_state.message.visible = state.message.visible;
-	setActiveRuntimeErrorOverlay(null);
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = false;
-	clearGotoHoverHighlight();
-	ide_state.cursorRevealSuspended = false;
-	ide_state.repeatState.clear();
-	resetKeyPressRecords();
-	breakUndoSequence();
-	ide_state.saveGeneration = Number.isFinite(state.saveGeneration) ? Math.max(0, Math.floor(state.saveGeneration)) : 0;
-	ide_state.appliedGeneration = Number.isFinite(state.appliedGeneration) ? Math.max(0, Math.floor(state.appliedGeneration)) : 0;
-	resetActionPromptState();
-	const activeContext = getActiveCodeTabContext();
-	const entryContextRef = ide_state.entryTabId ? ide_state.codeTabContexts.get(ide_state.entryTabId)  : null;
-	if (activeContext) {
-		activeContext.lastSavedSource = ide_state.lines.join('\n');
-		activeContext.dirty = ide_state.dirty;
-		setTabDirty(activeContext.id, activeContext.dirty);
-	}
-	if (entryContextRef) {
-		if (activeContext && activeContext.id === entryContextRef.id) {
-			entryContextRef.lastSavedSource = ide_state.lines.join('\n');
-		}
-		ide_state.lastSavedSource = entryContextRef.lastSavedSource;
-	} else {
-		ide_state.lastSavedSource = '';
-	}
 }
 
 export function shutdown(): void {
@@ -1622,16 +1441,16 @@ export function applyEditorCrtDimming(): void {
 }
 
 export function restoreCrtOptions(): void {
-	const snapshot = ide_state.crtOptionsSnapshot;
-	if (!snapshot) {
-		throw new Error('[ConsoleCartEditor] CRT options snapshot unavailable during restore.');
-	}
-	ide_state.crtOptionsSnapshot = null;
-	const view = $.view;
-	view.noiseIntensity = snapshot.noiseIntensity;
-	view.colorBleed = [snapshot.colorBleed[0], snapshot.colorBleed[1], snapshot.colorBleed[2]] as [number, number, number];
-	view.blurIntensity = snapshot.blurIntensity;
-	view.glowColor = [snapshot.glowColor[0], snapshot.glowColor[1], snapshot.glowColor[2]] as [number, number, number];
+	// const snapshot = ide_state.crtOptionsSnapshot;
+	// if (!snapshot) {
+	// 	throw new Error('[ConsoleCartEditor] CRT options snapshot unavailable during restore.');
+	// }
+	// ide_state.crtOptionsSnapshot = null;
+	// const view = $.view;
+	// view.noiseIntensity = snapshot.noiseIntensity;
+	// view.colorBleed = [snapshot.colorBleed[0], snapshot.colorBleed[1], snapshot.colorBleed[2]] as [number, number, number];
+	// view.blurIntensity = snapshot.blurIntensity;
+	// view.glowColor = [snapshot.glowColor[0], snapshot.glowColor[1], snapshot.glowColor[2]] as [number, number, number];
 }
 
 export function deactivate(): void {
@@ -1673,11 +1492,12 @@ export function deactivate(): void {
 export function handleCreateResourceInput(deltaSeconds: number): void {
 	if (isKeyJustPressed('Escape')) {
 		consumeIdeKey('Escape');
-		cancelCreateResourcePrompt();
+		closeCreateResourcePrompt(true);
 		return;
 	}
-	if (!ide_state.createResourceWorking && isKeyJustPressed('Enter')) {
+	if (!ide_state.createResourceWorking && (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter'))) {
 		consumeIdeKey('Enter');
+		consumeIdeKey('NumpadEnter');
 		void confirmCreateResourcePrompt();
 		return;
 	}
@@ -1728,10 +1548,6 @@ export function closeCreateResourcePrompt(focusEditor: boolean): void {
 	applyCreateResourceFieldText('', true);
 	ide_state.createResourceError = null;
 	resetBlink();
-}
-
-export function cancelCreateResourcePrompt(): void {
-	closeCreateResourcePrompt(true);
 }
 
 export async function confirmCreateResourcePrompt(): Promise<void> {
@@ -2073,9 +1889,13 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	return { updatedMatches: updatedTotal };
 }
 
+export function findResourceDescriptorForChunk(chunk: string): ConsoleResourceDescriptor | null {
+	const asset = $.rompack.cart.chunk2lua[chunk];
+	return asset ? { asset_id: asset.resid, path: asset.source_path, type: asset.type } : null;
+}
+
 export function getCrossFileRenameDependencies(): CrossFileRenameDependencies {
 	return {
-		findResourceDescriptorForChunk: (chunk: string) => findResourceDescriptorForChunk(chunk),
 		createLuaCodeTabContext: (descriptor: ConsoleResourceDescriptor) => createLuaCodeTabContext(descriptor),
 		createEntryTabContext: () => createEntryTabContext(),
 		getEntryTabId: () => ide_state.entryTabId,
@@ -2083,7 +1903,7 @@ export function getCrossFileRenameDependencies(): CrossFileRenameDependencies {
 			ide_state.entryTabId = id;
 		},
 		getEntryAssetId: () => ide_state.entryAssetId,
-		getCodeTabContext: (id: string) => ide_state.codeTabContexts.get(id) ,
+		getCodeTabContext: (id: string) => ide_state.codeTabContexts.get(id),
 		setCodeTabContext: (context: CodeTabContext) => {
 			ide_state.codeTabContexts.set(context.id, context);
 		},
@@ -2146,7 +1966,7 @@ export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, con
 		listResources: () => listResourcesStrict(),
 		loadLuaResource: (resourceId: string) => ide_state.loadLuaResourceFn(resourceId),
 	};
-	const sourceLabelPath = descriptor ? (descriptor.path ?? descriptor.asset_id ) : null;
+	const sourceLabelPath = descriptor ? (descriptor.path ?? descriptor.asset_id) : null;
 	return buildProjectReferenceCatalog({
 		workspace: ide_state.semanticWorkspace,
 		info,
@@ -2621,8 +2441,8 @@ export function buildProjectReferenceContext(context: CodeTabContext): {
 } {
 	const descriptor = context ? context.descriptor : null;
 	const normalizedPath = descriptor && descriptor.path ? descriptor.path : null;
-	const descriptorasset_id = descriptor ? descriptor.asset_id  : null;
-	const resolvedasset_id = descriptorasset_id ?? ide_state.entryAssetId ;
+	const descriptorasset_id = descriptor ? descriptor.asset_id : null;
+	const resolvedasset_id = descriptorasset_id ?? ide_state.entryAssetId;
 	const resolvedChunk = resolveHoverChunkName(context)
 		?? normalizedPath
 		?? descriptorasset_id
@@ -2682,13 +2502,13 @@ export function completeNavigation(previous: NavigationHistoryEntry): void {
 	const next = createNavigationEntry();
 	const backStack = ide_state.navigationHistory.back;
 	if (previous && next && !areNavigationEntriesEqual(previous, next)) {
-		const lastBack = backStack[backStack.length - 1] ;
+		const lastBack = backStack[backStack.length - 1];
 		if (!lastBack || !areNavigationEntriesEqual(lastBack, previous)) {
 			pushNavigationEntry(backStack, previous);
 		}
 		ide_state.navigationHistory.forward.length = 0;
 	} else if (previous && !next) {
-		const lastBack = backStack[backStack.length - 1] ;
+		const lastBack = backStack[backStack.length - 1];
 		if (!lastBack || !areNavigationEntriesEqual(lastBack, previous)) {
 			pushNavigationEntry(backStack, previous);
 		}
@@ -2726,7 +2546,7 @@ export function createNavigationEntry(): NavigationHistoryEntry {
 	}
 	const asset_id = resolveHoverAssetId(context);
 	const chunkName = resolveHoverChunkName(context);
-	const path = context.descriptor?.path ;
+	const path = context.descriptor?.path;
 	const maxRowIndex = ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0;
 	const row = clamp(ide_state.cursorRow, 0, maxRowIndex);
 	const column = clamp(ide_state.cursorColumn, 0, ide_state.lines[row]?.length ?? 0);
@@ -2751,7 +2571,7 @@ export function withNavigationCaptureSuspended<T>(operation: () => T): T {
 }
 
 export function applyNavigationEntry(entry: NavigationHistoryEntry): void {
-	const existingContext = ide_state.codeTabContexts.get(entry.contextId) ;
+	const existingContext = ide_state.codeTabContexts.get(entry.contextId);
 	if (existingContext) {
 		setActiveTab(entry.contextId);
 	} else {
@@ -2787,7 +2607,7 @@ export function goBackwardInNavigationHistory(): void {
 	const currentEntry = ide_state.navigationHistory.current ?? createNavigationEntry();
 	if (currentEntry) {
 		const forwardStack = ide_state.navigationHistory.forward;
-		const lastForward = forwardStack[forwardStack.length - 1] ;
+		const lastForward = forwardStack[forwardStack.length - 1];
 		if (!lastForward || !areNavigationEntriesEqual(lastForward, currentEntry)) {
 			pushNavigationEntry(forwardStack, currentEntry);
 		}
@@ -2806,7 +2626,7 @@ export function goForwardInNavigationHistory(): void {
 	const currentEntry = ide_state.navigationHistory.current ?? createNavigationEntry();
 	if (currentEntry) {
 		const backStack = ide_state.navigationHistory.back;
-		const lastBack = backStack[backStack.length - 1] ;
+		const lastBack = backStack[backStack.length - 1];
 		if (!lastBack || !areNavigationEntriesEqual(lastBack, currentEntry)) {
 			pushNavigationEntry(backStack, currentEntry);
 		}
@@ -3707,7 +3527,7 @@ export function openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
 		const context = createLuaCodeTabContext(descriptor);
 		ide_state.codeTabContexts.set(tabId, context);
 	}
-	const context = ide_state.codeTabContexts.get(tabId) ;
+	const context = ide_state.codeTabContexts.get(tabId);
 	if (!tab) {
 		const dirty = context ? context.dirty : false;
 		tab = {

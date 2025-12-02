@@ -7,7 +7,7 @@ import { getActiveCodeTabContext } from './editor_tabs';
 import { resolveHoverChunkName } from './intellisense';
 import { clamp, fallbackclamp } from '../../utils/clamp';
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition } from './caret';
-import { normalizeChunkName, clearExecutionStopHighlights, focusChunkSource, setExecutionStopHighlight, clearRuntimeErrorOverlay, updateDesiredColumn, findFunctionDefinitionRowInActiveFile, findResourceDescriptorForChunk, resetPointerClickTracking } from './console_cart_editor';
+import { clearExecutionStopHighlights, focusChunkSource, setExecutionStopHighlight, clearRuntimeErrorOverlay, updateDesiredColumn, findFunctionDefinitionRowInActiveFile, findResourceDescriptorForChunk, resetPointerClickTracking } from './console_cart_editor';
 import { resetBlink } from './render/render_caret';
 import type { LuaCallFrame, LuaDebuggerPauseSignal, StackTraceFrame } from '../../lua/runtime';
 import type { ConsoleResourceDescriptor } from '../types';
@@ -246,12 +246,12 @@ export function showDebuggerPauseOverlay(payload: DebuggerPauseDisplayPayload, m
 	if (!ide_state.active) {
 		return;
 	}
-	const normalizedChunk = normalizeChunkName(payload.chunk);
+	const normalizedChunk = payload.chunk;
 	if (!normalizedChunk) {
 		clearExecutionStopHighlights();
 		return;
 	}
-	focusChunkSource(normalizedChunk, payload.hint );
+	focusChunkSource(normalizedChunk, payload.hint);
 	const safeLine = fallbackclamp(payload.line, 1, payload.line - 1, 1);
 	const safeColumn = fallbackclamp(payload.column, 1, payload.column - 1, 1);
 	updateDebuggerCaret(safeLine, safeColumn);
@@ -313,7 +313,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 	}
 	let normalizedChunk: string;
 	try {
-		normalizedChunk = normalizeChunkName(source);
+		normalizedChunk = source;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		ide_state.showMessage(`Unable to resolve runtime chunk name: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
