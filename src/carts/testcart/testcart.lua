@@ -281,7 +281,7 @@ end
 
 function new_game()
 	reset_director_stats()
-	spawn_object(hero_def_id, {
+	spawn_sprite(hero_def_id, {
 		id = hero_instance_id,
 		pos = { x = hero_spawn_pos.x, y = hero_spawn_pos.y, z = hero_spawn_pos.z },
 	})

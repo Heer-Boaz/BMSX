@@ -7,6 +7,7 @@ import { MSX2ScreenHeight } from '../index';
 import { MSX2ScreenWidth } from '../index';
 import type { CanonicalizationType, Viewport } from '../rompack/rompack';
 import { IdeThemeVariant } from './ide/types';
+import { applyWorkspaceOverridesToCart } from './workspace';
 
 type CartManifest = {
 	title?: string;
@@ -123,6 +124,11 @@ function deriveConsoleOptions(manifest: CartManifest) {
 }
 
 export async function startCart(args: BootArgs): Promise<void> {
+	const platform = args.platform;
+	if (!platform) {
+		throw new Error('[start_cart] Platform instance not provided.');
+	}
+
 	const manifest = (args.rompack.manifest ) as CartManifest;
 	if (!manifest) {
 		throw new Error('[start_cart] Cart manifest not found in rompack.');
@@ -146,6 +152,7 @@ export async function startCart(args: BootArgs): Promise<void> {
 	if (manifestEntryId && prebuilt.lua[manifestEntryId]) {
 		entry = manifestEntryId;
 	}
+	await applyWorkspaceOverridesToCart({ rompack: args.rompack, storage: platform.storage, includeServer: true });
 	const cartridge: BmsxCartridge = {
 		...prebuilt,
 		meta,
@@ -164,11 +171,6 @@ export async function startCart(args: BootArgs): Promise<void> {
 		viewportSize: shallowcopy(worldViewport),
 		modules: [module],
 	};
-
-	const platform = args.platform;
-	if (!platform) {
-		throw new Error('[start_cart] Platform instance not provided.');
-	}
 
 	const viewHost = args.viewHost ?? platform.gameviewHost;
 	if (!viewHost) {

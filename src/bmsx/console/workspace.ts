@@ -408,13 +408,13 @@ export async function mergeWorkspaceOverrides(
 	return merged;
 }
 
-export async function fetchWorkspaceOverridesPriority(): Promise<Map<string, WorkspaceOverrideRecord>> {
-	const root = $.rompack.project_root_path;
+export async function fetchWorkspaceOverridesPriority(rompack: RomPack): Promise<Map<string, WorkspaceOverrideRecord>> {
+	const root = rompack.project_root_path;
 	if (!root) {
 		return null;
 	}
 	try {
-		const serverOverrides = await fetchWorkspaceDirtyLuaOverrides(root);
+		const serverOverrides = await fetchWorkspaceDirtyLuaOverrides(rompack, root);
 		return serverOverrides;
 	} catch (error) {
 		console.warn('[BmsxConsoleRuntime] Failed to load server workspace overrides; falling back to local overrides.', error);
@@ -422,11 +422,11 @@ export async function fetchWorkspaceOverridesPriority(): Promise<Map<string, Wor
 	}
 }
 
-export async function fetchWorkspaceDirtyLuaOverrides(root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
+export async function fetchWorkspaceDirtyLuaOverrides(rompack: RomPack, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
 	const tasks: Array<Promise<{ asset_id: string; contents: string; path: string; cartPath: string; updatedAt?: number }>> = [];
 	// Fetching dirty files from backend is best-effort. Missing files do NOT mean we should
 	// discard in-memory dirty edits; they simply yield no extra overrides.
-	for (const asset of Object.values($.rompack.cart.lua)) {
+	for (const asset of Object.values(rompack.cart.lua)) {
 		const asset_id = asset.resid;
 		const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
@@ -569,7 +569,7 @@ export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; 
 	}
 	const root = rompack.project_root_path;
 	const localOverrides = collectWorkspaceOverrides({ rompack, projectRootPath: root, storage });
-	const serverOverrides = includeServer ? await fetchWorkspaceOverridesPriority() : null;
+	const serverOverrides = includeServer ? await fetchWorkspaceOverridesPriority(rompack) : null;
 	const merged = await mergeWorkspaceOverrides(root, localOverrides, serverOverrides ?? new Map<string, WorkspaceOverrideRecord>());
 	for (const [asset_id, record] of merged) {
 		const asset = cart.lua[asset_id];

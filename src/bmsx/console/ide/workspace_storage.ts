@@ -19,6 +19,7 @@ import {
 	buildWorkspaceStateFilePath,
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
+	fetchWorkspaceFile,
 } from '../workspace';
 import { openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, restoreSnapshot, setFontVariant } from './console_cart_editor';
 import { createEntryTabContext, initializeTabs, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
@@ -497,6 +498,21 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 		}
 		const contents = await readDirtyBuffer(entry.dirtyPath);
 		if (contents === null) {
+			continue;
+		}
+		const saved = descriptor ? await fetchWorkspaceFile(descriptor.path) : null;
+		const savedContents = saved?.contents ?? null;
+		if (savedContents !== null && savedContents !== contents) {
+			await deleteDirtyBuffer(entry.dirtyPath);
+			workspaceDirtyCache.delete(entry.dirtyPath);
+			const cleanSnapshot = buildSnapshotFromSource(savedContents, entry);
+			context.snapshot = cleanSnapshot;
+			context.dirty = false;
+			setTabDirty(context.id, false);
+			if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
+				restoreSnapshot(cleanSnapshot, { preserveScroll: true });
+				updateActiveContextDirtyFlag();
+			}
 			continue;
 		}
 		workspaceDirtyCache.set(entry.dirtyPath, contents);
