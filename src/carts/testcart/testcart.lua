@@ -146,8 +146,8 @@ local function build_hero_fsm()
 				},
 			},
 			moving = {
-				entering_state = function(self)
-					self.active_state = 'moving'
+				entering_state = function(self, state)
+					self.active_state = state.id
 				end,
 				tick = function(self)
 					local moved = self:run_motion(game.deltatime_seconds)
@@ -171,8 +171,8 @@ local function build_hero_fsm()
 				},
 			},
 			charging = {
-				entering_state = function(self)
-					self.active_state = 'charging'
+				entering_state = function(self, state)
+					self.active_state = state.id
 					self.charge_time = 0
 				end,
 				tick = function(self)
@@ -188,8 +188,8 @@ local function build_hero_fsm()
 				end,
 			},
 			blinking = {
-				entering_state = function(self)
-					self.active_state = 'blinking'
+				entering_state = function(self, state)
+					self.active_state = state.id
 					self:try_blink()
 				end,
 				tick = function(self)
