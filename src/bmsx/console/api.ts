@@ -87,6 +87,18 @@ export class BmsxConsoleApi {
 		this.reset_print_cursor();
 	}
 
+	// private buildMetatableForNativeClass<TBase extends ConcreteOrAbstractConstructor<any>>(ctor: TBase): LuaTable {
+	// 	const metatable = { } as LuaTable;
+	// 	const proto = ctor.prototype as Record<string, any>;
+	// 	for (const key of Object.getOwnPropertyNames(proto)) {
+	// 		const descriptor = Object.getOwnPropertyDescriptor(proto, key);
+	// 		if (descriptor && descriptor.value !== undefined) {
+	// 			metatable.set(key, descriptor.value);
+	// 		}
+	// 	}
+	// 	return metatable;
+	// }
+
 	/**
 	 * Apply Lua class overrides to a constructed instance.
 	 *
@@ -96,9 +108,20 @@ export class BmsxConsoleApi {
 	private applyClassOverrides<T>(instance: T, classTable: Partial<T> & LuaTable): void {
 		if (!classTable) return; // No overrides to apply
 		// Filter out non-instance override keys, then bulk-assign.
-		const overrides: Record<string, any> = {};
-		for (const [key, value] of Object.entries(classTable)) {
-			if (key === 'def_id' || key === 'class' || key === 'defaults') continue;
+			const overrides: Record<string, any> = {};
+			for (const [key, value] of Object.entries(classTable)) {
+				if (key === 'def_id' || key === 'class' || key === 'defaults') continue;
+				const existing = (instance as any)[key];
+				if (typeof value === 'function' && typeof existing === 'function') {
+					const baseFn: (...args: any[]) => any = existing as (...args: any[]) => any;
+					const overrideFn: (...args: any[]) => any = value as (...args: any[]) => any;
+					overrides[key] = (...args: any[]) => {
+						const baseResult = baseFn.apply(instance as any, args);
+						const overrideResult = overrideFn.apply(instance as any, args);
+						return overrideResult === undefined ? baseResult : overrideResult;
+					};
+				continue;
+			}
 			overrides[key] = value;
 		}
 		Object.assign(instance, overrides);
