@@ -104,16 +104,24 @@ export class BmsxConsoleApi {
 	 *
 	 * Filters out non-instance keys (def_id, class, defaults) and bulk-assigns the
 	 * remaining properties to the instance. This mimics Object.assign(instance, overrides).
+	 *
+	 * Caveat: when Lua overrides lifecycle methods (notably onspawn), a straight overwrite
+	 * would drop the native behavior (activation/registration/FSM start). To keep the
+	 * engine wiring intact, function overrides run the original first and then the Lua
+	 * version. The Lua result wins if it returns something. This mirrors how Lua’s
+	 * `:` syntax would still pass `self` while letting the base work run.
 	 */
 	private applyClassOverrides<T>(instance: T, classTable: Partial<T> & LuaTable): void {
 		if (!classTable) return; // No overrides to apply
 		// Filter out non-instance override keys, then bulk-assign.
-			const overrides: Record<string, any> = {};
-			for (const [key, value] of Object.entries(classTable)) {
-				if (key === 'def_id' || key === 'class' || key === 'defaults') continue;
-				const existing = (instance as any)[key];
-				if (typeof value === 'function' && typeof existing === 'function') {
-					const baseFn: (...args: any[]) => any = existing as (...args: any[]) => any;
+		const overrides: Record<string, any> = {};
+		// For function overrides, run the original first to preserve engine lifecycle (e.g. onspawn),
+		// then run the Lua override and let its return value win when defined.
+		for (const [key, value] of Object.entries(classTable)) {
+			if (key === 'def_id' || key === 'class' || key === 'defaults') continue;
+			const existing = (instance as any)[key];
+			if (typeof value === 'function' && typeof existing === 'function') {
+				const baseFn: (...args: any[]) => any = existing as (...args: any[]) => any;
 					const overrideFn: (...args: any[]) => any = value as (...args: any[]) => any;
 					overrides[key] = (...args: any[]) => {
 						const baseResult = baseFn.apply(instance as any, args);

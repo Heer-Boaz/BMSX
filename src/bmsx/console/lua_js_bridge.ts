@@ -14,6 +14,8 @@ type LuaSnapshotContext = { ids: WeakMap<LuaTable, number>; objects: LuaSnapshot
 export class LuaJsBridge {
 	private readonly luaHandlerCache: LuaHandlerCache;
 	private readonly consoleRuntime: BmsxConsoleRuntime;
+	// Assign stable ids to Lua tables during a marshal pass so handler caches and snapshots don't collide on object identity
+	// across conversions; paths in marshal contexts stay deterministic.
 	private readonly tableIds = new WeakMap<LuaTable, number>();
 	private nextTableId = 1;
 
@@ -65,11 +67,13 @@ export class LuaJsBridge {
 		context: LuaMarshalContext,
 		visited: WeakMap<LuaTable, unknown>,
 	): unknown {
+		// Preserve identity for cycles/repeated references during one marshal pass.
 		const cached = visited.get(table);
 		if (cached !== undefined) {
 			return cached;
 		}
 		const tableId = this.getOrAssignTableId(table);
+		// Carry the marshal path forward so diagnostics point to the logical location inside the Lua object graph.
 		const tableContext = this.consoleRuntime.extendMarshalContext(context, `table${tableId}`);
 		const entries = table.entriesArray();
 		if (entries.length === 0) {

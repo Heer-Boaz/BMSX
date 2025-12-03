@@ -28,7 +28,7 @@ export const KEYWORDS = new Set([
 	'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
 ]);
 
-function canonicalizeIdeIdentifier(name: string): string {
+function canonicalizeIdeIdentifier(name: string): string { // TODO: UGLY: TRIPLE IMPLEMENTATION
 	if (!ide_state.caseInsensitive) {
 		return name;
 	}

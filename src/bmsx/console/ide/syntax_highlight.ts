@@ -3,24 +3,25 @@ import { KEYWORDS } from './intellisense';
 import type { SemanticAnnotations, SymbolKind } from './semantic_model';
 import type { HighlightLine } from './types';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../lua_builtins';
+import { LuaLexer } from '../../lua/lexer';
 
 // Lightweight Lua syntax highlighter used by the console editor.
 // Pure functions with no runtime/editor state dependencies beyond provided inputs.
 
 function isDigit(ch: string): boolean {
-	return ch >= '0' && ch <= '9';
+	return LuaLexer.isDigit(ch);
 }
 
 function isHexDigit(ch: string): boolean {
-	return (ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F') || (ch >= 'a' && ch <= 'f');
+	return LuaLexer.isHexDigit(ch);
 }
 
 function isIdentifierStart(ch: string): boolean {
-	return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch === '_';
+	return LuaLexer.isIdentifierStart(ch);
 }
 
 function isIdentifierPart(ch: string): boolean {
-	return isIdentifierStart(ch) || isDigit(ch);
+	return LuaLexer.isIdentifierPart(ch);
 }
 
 function isOperatorChar(ch: string): boolean {

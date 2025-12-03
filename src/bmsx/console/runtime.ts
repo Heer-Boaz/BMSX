@@ -179,6 +179,7 @@ export class BmsxConsoleRuntime extends Service {
 	public readonly chunkFunctionDefinitionKeys: Map<string, Set<string>> = new Map();
 	private readonly luaGenericAssetsExecuted: Set<string> = new Set();
 	public readonly luaFunctionRedirectCache = new LuaFunctionRedirectCache();
+	// Wrap Lua closures with stable JS stubs so FSM/input/events can hold onto durable references even across hot-reload.
 	private readonly luaHandlerCache = new LuaHandlerCache(
 		(fn, thisArg, args) => this.invokeLuaHandler(fn, thisArg, args),
 		(error, meta) => this.handleLuaHandlerError(error, meta),
@@ -1847,6 +1848,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public callLuaFunction(fn: LuaFunctionValue, args: unknown[]): unknown[] {
+		// Marshal JS→Lua, call, then marshal Lua→JS with path context for error breadcrumbs.
 		const luaArgs: LuaValue[] = [];
 		for (let index = 0; index < args.length; index += 1) {
 			luaArgs.push(this.luaJsBridge.jsToLua(args[index]));
@@ -1862,6 +1864,8 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private invokeLuaHandler(fn: LuaFunctionValue, thisArg: unknown, args: ReadonlyArray<unknown>): unknown {
+		// Lua colon syntax injects the receiver as the first argument; we mirror that here so
+		// Lua-side handlers defined with ':' see the expected self.
 		const callArgs: unknown[] = [];
 		if (thisArg !== undefined) {
 			callArgs.push(thisArg);
@@ -1886,6 +1890,8 @@ export class BmsxConsoleRuntime extends Service {
 			return context;
 		}
 		const moduleId = this._luaChunkName ?? 'lua::runtime';
+		// Marshal contexts annotate where a value came from (module + path) so errors/diagnostics
+		// can report meaningful breadcrumbs for mixed JS/Lua graphs.
 		return {
 			moduleId,
 			path: [],
