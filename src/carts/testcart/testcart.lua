@@ -2,6 +2,7 @@ local hero_def_id = 'demo.hero'
 local hero_instance_id = 'demo.hero.instance'
 local hero_fsm_id = 'demo.hero.fsm'
 local hero_timeline_id = 'demo.hero.timeline'
+local hero_tracker_component_id = 'demo.hero.tracker'
 local service_id = 'demo.service.director'
 local effect_id = 'demo.effect.blink'
 local hero_spawn_pos = { x = 48, y = 64, z = 0 }
@@ -47,6 +48,8 @@ function hero:onspawn(spawn_pos)
 	self.active_state = 'not set'
 	self.tempo_ready = true
 	self.blinking_timer = 0
+	self.move_count = 0
+	self.boundary_pushback = 0
 	define_fn(timeline_component, {
 		id = hero_timeline_id,
 		frames = { 'rise', 'peak', 'cool', 'reset' },
@@ -201,7 +204,7 @@ local function register_hero()
 	define_world_object({
 		def_id = hero_def_id,
 		class = hero,
-		components = { 'actioneffectcomponent', },
+		components = { 'actioneffectcomponent', 'ProhibitLeavingScreenComponent', hero_tracker_component_id },
 		fsms = { hero_fsm_id, },
 		effects = { effect_id, },
 		defaults = { speed = 54 },
@@ -271,7 +274,39 @@ local function define_blink()
 	})
 end
 
+local function define_hero_tracker_component()
+	define_component({
+		def_id = hero_tracker_component_id,
+		class = {
+			onattach = function(self)
+				self.vars.moves = 0
+				self.vars.boundary_bounces = 0
+				local owner = self.parent
+				owner.hero_tracker = self
+				owner.events:on({
+					event = 'demo.hero.move',
+					subscriber = self,
+					handler = function()
+						self.vars.moves = self.vars.moves + 1
+						owner.move_count = self.vars.moves
+					end,
+				})
+				owner.events:on({
+					event = 'screen.leaving',
+					subscriber = self,
+					handler = function()
+						self.vars.boundary_bounces = self.vars.boundary_bounces + 1
+						owner.boundary_pushback = self.vars.boundary_bounces
+					end,
+				})
+			end,
+		},
+		defaults = { moves = 0, boundary_bounces = 0 },
+	})
+end
+
 local function define_blueprints_and_handlers()
+	define_hero_tracker_component()
 	build_hero_fsm()
 	define_blink()
 	register_hero()
@@ -318,6 +353,8 @@ local function draw_hud(hero)
 	write('pulses      : ' .. stats.pulses, 6, 78, 0, 6)
 	write('effects     : ' .. stats.effects, 6, 87, 0, 6)
 	write('charges     : ' .. stats.charges, 6, 96, 0, 6)
+	write('tracker mv  : ' .. hero.move_count, 6, 105, 0, 6)
+	write('screen hits : ' .. hero.boundary_pushback, 6, 114, 0, 6)
 	write('controls:', 6, 118, 0, 13)
 	write('- arrows: move world object', 6, 128, 0, 13)
 	write('- a: blink (inputactiontoeffect + input)', 6, 148, 0, 13)

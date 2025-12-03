@@ -26,6 +26,7 @@ import { Component, type ComponentAttachOptions } from '../component/basecompone
 import { ActionEffectRegistry, RegisterEffectOptions } from '../action_effects/effect_registry';
 import { SpriteObject } from '../core/object/sprite';
 import { LuaTable } from '../lua/value';
+import { LuaComponent, type LuaComponentHandlerMap } from '../component/lua_component';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest;
 
@@ -66,6 +67,7 @@ export class BmsxConsoleApi {
 	private readonly serviceExts = new Map<string, EntityExtensions>();
 	private readonly worldObjectExts = new Map<string, EntityExtensions>();
 	private readonly componentExts = new Map<string, EntityExtensions>();
+	private readonly componentCtors = new Map<string, new (opts: ComponentAttachOptions) => Component>();
 	private textCursorX = 0;
 	private textCursorY = 0;
 	private textCursorHomeX = 0;
@@ -428,6 +430,7 @@ export class BmsxConsoleApi {
 
 	public define_component(descriptor: EntityExtensions): void {
 		this.componentExts.set(descriptor.def_id, descriptor);
+		this.componentExts.set(descriptor.def_id.toLowerCase(), descriptor);
 	}
 
 	public define_world_object(descriptor: EntityExtensions): void {
@@ -543,13 +546,68 @@ export class BmsxConsoleApi {
 	}
 
 	private resolve_component_ctor(id: string): new (opts: ComponentAttachOptions) => Component {
-		const ctor = (globalThis as Record<string, unknown>)[id] as new (opts: ComponentAttachOptions) => Component;
-		if (ctor) return ctor;
 		const normalized = id.toLowerCase();
+		const cached = this.componentCtors.get(id) ?? this.componentCtors.get(normalized);
+		if (cached) return cached;
+
+		const globalTarget = globalThis as typeof globalThis & { bmsx?: Record<string, unknown> };
+		const direct = globalTarget[id] as new (opts: ComponentAttachOptions) => Component;
+		if (direct) return this.cacheComponentCtor(id, normalized, direct);
 		if (normalized === 'actioneffectcomponent') {
-			return ActionEffectComponent as unknown as new (opts: ComponentAttachOptions) => Component;
+			return this.cacheComponentCtor(id, normalized, ActionEffectComponent as unknown as new (opts: ComponentAttachOptions) => Component);
+		}
+
+		const namespace = globalTarget.bmsx;
+		if (namespace) {
+			const exported = namespace[id] as new (opts: ComponentAttachOptions) => Component;
+			if (exported) return this.cacheComponentCtor(id, normalized, exported);
+			for (const [exportName, candidate] of Object.entries(namespace)) {
+				if (exportName.toLowerCase() === normalized) {
+					return this.cacheComponentCtor(id, normalized, candidate as new (opts: ComponentAttachOptions) => Component);
+				}
+			}
+		}
+
+		const ext = this.componentExts.get(id) ?? this.componentExts.get(normalized);
+		if (ext) {
+			const ctor = this.buildLuaComponentCtor(ext);
+			this.cacheComponentCtor(ext.def_id, ext.def_id.toLowerCase(), ctor);
+			return this.cacheComponentCtor(id, normalized, ctor);
 		}
 		throw new Error(`Component constructor '${id}' not found.`);
+	}
+
+	private cacheComponentCtor(id: string, normalized: string, ctor: new (opts: ComponentAttachOptions) => Component): new (opts: ComponentAttachOptions) => Component {
+		this.componentCtors.set(id, ctor);
+		this.componentCtors.set(normalized, ctor);
+		return ctor;
+	}
+
+	private buildLuaComponentCtor(ext: EntityExtensions): new (opts: ComponentAttachOptions) => Component {
+		const handlers = ext.class as unknown as Partial<LuaComponentHandlerMap> | undefined;
+		const initialState = ext.defaults as Record<string, unknown>;
+		const tagsPre = (ext as any).tags_preprocessing ?? (handlers as any)?.tags_preprocessing;
+		const tagsPost = (ext as any).tags_postprocessing ?? (handlers as any)?.tags_postprocessing;
+		const ctor = class extends LuaComponent {
+			constructor(opts: ComponentAttachOptions) {
+				super({
+					...opts,
+					definitionId: ext.def_id,
+					handlers: {
+						onattach: handlers?.onattach,
+						ondetach: handlers?.ondetach,
+						ondispose: handlers?.ondispose,
+						preupdate: handlers?.preupdate,
+						postupdate: handlers?.postupdate,
+					},
+					initialState,
+					tagsPre,
+					tagsPost,
+					unique: (ext as any).unique ?? (handlers as any)?.unique ?? false,
+				});
+			}
+		};
+		return ctor;
 	}
 
 	/**

@@ -143,6 +143,7 @@ export class CompletionController {
 			}
 			if (nextIndex !== session.selectionIndex) {
 				session.selectionIndex = nextIndex;
+				session.navigationCaptured = true;
 				this.ensureCompletionSelectionVisible(session);
 				moved = true;
 			}
@@ -230,74 +231,89 @@ export class CompletionController {
 			this.closeSession();
 			return true;
 		}
+		const navigationCaptured = session.navigationCaptured || session.trigger === 'manual';
+		if (!navigationCaptured && session.filteredItems.length > 0) {
+			if (
+				isKeyPressed('ArrowDown')
+				|| isKeyPressed('ArrowUp')
+				|| isKeyPressed('PageDown')
+				|| isKeyPressed('PageUp')
+				|| isKeyPressed('Home')
+				|| isKeyPressed('End')
+			) {
+				return false;
+			}
+		}
 		let handled = false;
-		if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
-			consumeIdeKey('ArrowDown');
-			this.moveCompletionSelection(1);
-			handled = true;
-		}
-		if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
-			consumeIdeKey('ArrowUp');
-			this.moveCompletionSelection(-1);
-			handled = true;
-		}
-		if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
-			consumeIdeKey('PageDown');
-			this.moveCompletionSelection(session.maxVisibleItems);
-			handled = true;
-		}
-		if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
-			consumeIdeKey('PageUp');
-			this.moveCompletionSelection(-session.maxVisibleItems);
-			handled = true;
-		}
-		if (ctrlDown || metaDown) {
-			if (ide_state.input.shouldRepeat('Home', deltaSeconds)) {
-				consumeIdeKey('Home');
-				if (session.filteredItems.length > 0) {
-					session.selectionIndex = 0;
-					this.ensureCompletionSelectionVisible(session);
-				}
-				handled = true;
-			}
-			if (ide_state.input.shouldRepeat('End', deltaSeconds)) {
-				consumeIdeKey('End');
-				if (session.filteredItems.length > 0) {
-					session.selectionIndex = session.filteredItems.length - 1;
-					this.ensureCompletionSelectionVisible(session);
-				}
-				handled = true;
-			}
-		}
-		if (handled) return true;
-		if (session.filteredItems.length > 0) {
-			let suppressed = false;
-			if (isKeyPressed('ArrowDown')) {
+		if (navigationCaptured) {
+			if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
 				consumeIdeKey('ArrowDown');
-				suppressed = true;
+				this.moveCompletionSelection(1);
+				handled = true;
 			}
-			if (isKeyPressed('ArrowUp')) {
+			if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
 				consumeIdeKey('ArrowUp');
-				suppressed = true;
+				this.moveCompletionSelection(-1);
+				handled = true;
 			}
-			if (isKeyPressed('PageDown')) {
+			if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
 				consumeIdeKey('PageDown');
-				suppressed = true;
+				this.moveCompletionSelection(session.maxVisibleItems);
+				handled = true;
 			}
-			if (isKeyPressed('PageUp')) {
+			if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
 				consumeIdeKey('PageUp');
-				suppressed = true;
+				this.moveCompletionSelection(-session.maxVisibleItems);
+				handled = true;
 			}
-			if (isKeyPressed('Home')) {
-				consumeIdeKey('Home');
-				suppressed = true;
+			if (ctrlDown || metaDown) {
+				if (ide_state.input.shouldRepeat('Home', deltaSeconds)) {
+					consumeIdeKey('Home');
+					if (session.filteredItems.length > 0) {
+						session.selectionIndex = 0;
+						this.ensureCompletionSelectionVisible(session);
+					}
+					handled = true;
+				}
+				if (ide_state.input.shouldRepeat('End', deltaSeconds)) {
+					consumeIdeKey('End');
+					if (session.filteredItems.length > 0) {
+						session.selectionIndex = session.filteredItems.length - 1;
+						this.ensureCompletionSelectionVisible(session);
+					}
+					handled = true;
+				}
 			}
-			if (isKeyPressed('End')) {
-				consumeIdeKey('End');
-				suppressed = true;
-			}
-			if (suppressed) {
-				return true;
+			if (handled) return true;
+			if (session.filteredItems.length > 0) {
+				let suppressed = false;
+				if (isKeyPressed('ArrowDown')) {
+					consumeIdeKey('ArrowDown');
+					suppressed = true;
+				}
+				if (isKeyPressed('ArrowUp')) {
+					consumeIdeKey('ArrowUp');
+					suppressed = true;
+				}
+				if (isKeyPressed('PageDown')) {
+					consumeIdeKey('PageDown');
+					suppressed = true;
+				}
+				if (isKeyPressed('PageUp')) {
+					consumeIdeKey('PageUp');
+					suppressed = true;
+				}
+				if (isKeyPressed('Home')) {
+					consumeIdeKey('Home');
+					suppressed = true;
+				}
+				if (isKeyPressed('End')) {
+					consumeIdeKey('End');
+					suppressed = true;
+				}
+				if (suppressed) {
+					return true;
+				}
 			}
 		}
 		if (this.enterCommitsCompletion) {
@@ -925,7 +941,7 @@ export class CompletionController {
 		this.pendingCompletionRequest = { context: analyzed, trigger, elapsed: 0 };
 	}
 
-	private openCompletionSessionFromContext(context: CompletionContext, _trigger: CompletionTrigger): void {
+	private openCompletionSessionFromContext(context: CompletionContext, trigger: CompletionTrigger): void {
 		this.cancelPendingCompletion();
 		const items = this.collectCompletionItems(context);
 		if (items.length === 0) { this.completionSession = null; return; }
@@ -942,6 +958,8 @@ export class CompletionController {
 					anchorColumn: this.host.getCursorColumn(),
 					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
 					filterCache: new Map(),
+					trigger,
+					navigationCaptured: trigger === 'manual',
 				};
 				break;
 			case 'global':
@@ -955,6 +973,8 @@ export class CompletionController {
 					anchorColumn: this.host.getCursorColumn(),
 					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
 					filterCache: new Map(),
+					trigger,
+					navigationCaptured: trigger === 'manual',
 				};
 				break;
 			case 'local':
@@ -968,6 +988,8 @@ export class CompletionController {
 					anchorColumn: this.host.getCursorColumn(),
 					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
 					filterCache: new Map(),
+					trigger,
+					navigationCaptured: trigger === 'manual',
 				};
 				break;
 		}

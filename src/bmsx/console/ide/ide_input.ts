@@ -103,14 +103,22 @@ export class InputController {
 			const altUpRepeat = !altUpJustPressed && this.shouldRepeat('ArrowUp', deltaSeconds);
 			if (altUpJustPressed || altUpRepeat) {
 				consumeIdeKey('ArrowUp');
-				TextEditing.moveSelectionLines(-1);
+				if (shiftDown) {
+					TextEditing.copySelectionLines(-1);
+				} else {
+					TextEditing.moveSelectionLines(-1);
+				}
 				movedAlt = true;
 			}
 			const altDownJustPressed = isKeyJustPressed('ArrowDown');
 			const altDownRepeat = !altDownJustPressed && this.shouldRepeat('ArrowDown', deltaSeconds);
 			if (altDownJustPressed || altDownRepeat) {
 				consumeIdeKey('ArrowDown');
-				TextEditing.moveSelectionLines(1);
+				if (shiftDown) {
+					TextEditing.copySelectionLines(1);
+				} else {
+					TextEditing.moveSelectionLines(1);
+				}
 				movedAlt = true;
 			}
 			if (movedAlt) {
@@ -1013,15 +1021,15 @@ export function handlePointerWheel(): void {
 	const pointer = ide_state.lastPointerSnapshot;
 	const shiftDown = isShiftDown();
 	if (ide_state.hoverTooltip) {
-		let canScrollTooltip = false;
-		if (!pointer) {
-			canScrollTooltip = true;
-		} else if (pointer.valid && pointer.insideViewport) {
-			if (isPointInHoverTooltip(pointer.viewportX, pointer.viewportY) || pointerHitsHoverTarget(pointer, ide_state.hoverTooltip)) {
-				canScrollTooltip = true;
-			}
+		const tooltip = ide_state.hoverTooltip;
+		const pointerInTooltip = pointer && pointer.valid && pointer.insideViewport && isPointInHoverTooltip(pointer.viewportX, pointer.viewportY);
+		const pointerInTarget = pointer && pointer.valid && pointer.insideViewport && pointerHitsHoverTarget(pointer, tooltip);
+		const allowTooltipScroll = pointerInTooltip || pointerInTarget || !pointer;
+		if (allowTooltipScroll && adjustHoverTooltipScroll(direction * steps)) {
+			playerInput.consumeAction('pointer_wheel');
+			return;
 		}
-		if (canScrollTooltip && adjustHoverTooltipScroll(direction * steps)) {
+		if (pointerInTooltip) {
 			playerInput.consumeAction('pointer_wheel');
 			return;
 		}

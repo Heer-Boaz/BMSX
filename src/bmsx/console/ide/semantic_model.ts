@@ -1,5 +1,3 @@
-import { LuaLexer } from '../../lua/lexer';
-import { LuaParser } from '../../lua/parser';
 import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
@@ -27,6 +25,7 @@ import { ide_state } from './ide_state';
 import type { ConsoleLuaSymbolEntry } from '../types';
 import { computeSourceLabel } from './code_reference';
 import { symbolCatalogDedupKey } from './console_cart_editor';
+import { normalizeLuaSource, parseLuaChunkWithRecovery } from './lua_parse';
 import * as constants from './constants';
 import { getActiveCodeTabContext } from './editor_tabs';
 import { listGlobalLuaSymbols, listLuaSymbols, resolveHoverAssetId, resolveHoverChunkName } from './intellisense';
@@ -177,12 +176,11 @@ type TokenInfo = {
 };
 
 export function buildLuaFileSemanticData(source: string, chunkName: string): FileSemanticData {
-	const normalized = normalizeSource(source);
+	const normalized = normalizeLuaSource(source);
 	const lines = normalized.split('\n');
-	const lexer = new LuaLexer(normalized, chunkName, { canonicalizeIdentifiers: ide_state.caseInsensitive ? ide_state.canonicalization : 'none' });
-	const tokens = lexer.scanTokens();
-	const parser = new LuaParser(tokens, chunkName, normalized);
-	const chunk = parser.parseChunk();
+	const parsed = parseLuaChunkWithRecovery(normalized, chunkName);
+	const chunk = parsed.chunk;
+	const tokens = parsed.tokens;
 	const builder = new SemanticBuilder({
 		chunk,
 		chunkName,
@@ -1494,10 +1492,6 @@ function appendToNamePath(base: readonly string[], segment: string): string[] {
 	return result;
 }
 
-function normalizeSource(source: string): string {
-	return source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-}
-
 function finalizeAnnotations(annotations: SemanticAnnotations): SemanticAnnotations {
 	for (let index = 0; index < annotations.length; index += 1) {
 		const row = annotations[index];
@@ -1786,4 +1780,3 @@ export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string {
 	});
 	ide_state.symbolCatalog = catalogEntries;
 }
-

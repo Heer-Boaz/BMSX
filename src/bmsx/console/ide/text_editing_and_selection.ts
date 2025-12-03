@@ -955,6 +955,54 @@ export function moveSelectionLines(delta: number): void {
 	revealCursor();
 }
 
+/**
+ * Copies the current line or selected lines above/below without moving the originals.
+ * @param delta Negative to copy upward, positive to copy downward.
+ */
+export function copySelectionLines(delta: number): void {
+	if (!editorAllowsMutation()) {
+		return;
+	}
+	if (delta === 0) {
+		return;
+	}
+	const selectionRange = getSelectionRange();
+	const lineRange = getLineRangeForMovement();
+	const insertionStart = delta < 0 ? lineRange.startRow : lineRange.endRow + 1;
+	const block = ide_state.lines.slice(lineRange.startRow, lineRange.endRow + 1);
+	const rowOffset = insertionStart - lineRange.startRow;
+
+	prepareUndo('copy-lines', false);
+	ide_state.lines.splice(insertionStart, 0, ...block);
+	invalidateLineRange(insertionStart, insertionStart + block.length - 1);
+	ide_state.layout.invalidateHighlightsFromRow(insertionStart);
+
+	if (selectionRange) {
+		const anchorIsStart = comparePositions(ide_state.selectionAnchor, selectionRange.start) === 0;
+		const newStart = { row: selectionRange.start.row + rowOffset, column: selectionRange.start.column };
+		const newEnd = { row: selectionRange.end.row + rowOffset, column: selectionRange.end.column };
+		if (anchorIsStart) {
+			ide_state.selectionAnchor = newStart;
+			ide_state.cursorRow = newEnd.row;
+			ide_state.cursorColumn = clamp(newEnd.column, 0, ide_state.lines[newEnd.row].length);
+		} else {
+			ide_state.selectionAnchor = newEnd;
+			ide_state.cursorRow = newStart.row;
+			ide_state.cursorColumn = clamp(newStart.column, 0, ide_state.lines[newStart.row].length);
+		}
+	} else {
+		const targetRow = clamp(ide_state.cursorRow + rowOffset, 0, ide_state.lines.length - 1);
+		ide_state.cursorRow = targetRow;
+		ide_state.cursorColumn = clamp(ide_state.cursorColumn, 0, ide_state.lines[targetRow].length);
+		ide_state.selectionAnchor = null;
+	}
+	recordEditContext('insert', block.join('\n'));
+	markTextMutated();
+	resetBlink();
+	updateDesiredColumn();
+	revealCursor();
+}
+
 // ============================================================================
 // INDENTATION OPERATIONS
 // ============================================================================
@@ -1222,4 +1270,3 @@ export function computeEditContextFromSources(previous: string, next: string): E
 	const deleted = previous.slice(start, endPrev);
 	return deleted.length > 0 ? { kind: 'delete', text: deleted } : null;
 }
-

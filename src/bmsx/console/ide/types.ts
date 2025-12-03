@@ -157,6 +157,8 @@ export type CompletionSession = {
 	anchorColumn: number;
 	maxVisibleItems: number;
 	filterCache: Map<string, LuaCompletionItem[]>;
+	trigger: CompletionTrigger;
+	navigationCaptured: boolean;
 };
 
 export type EditContext = {

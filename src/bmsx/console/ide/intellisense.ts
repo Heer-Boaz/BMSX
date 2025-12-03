@@ -3,7 +3,7 @@ import { LuaSyntaxKind, LuaTableFieldKind, type LuaAssignableExpression, type Lu
 import { LuaEnvironment } from '../../lua/environment';
 import { LuaSyntaxError } from '../../lua/errors';
 import { LuaLexer } from '../../lua/lexer';
-import { LuaParser } from '../../lua/parser';
+import { parseLuaChunk, parseLuaChunkWithRecovery } from './lua_parse';
 import { LuaInterpreter } from '../../lua/runtime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaNativeValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../lua/value';
 import { BmsxConsoleApi } from '../api';
@@ -57,7 +57,7 @@ export type LuaScopedSymbolOptions = {
 export function collectLuaModuleAliases(options: LuaScopedSymbolOptions): Map<string, string> {
 	let chunk: LuaChunk;
 	try {
-		chunk = parseChunkWithRecovery(options.source, options.chunkName);
+		chunk = parseLuaChunkWithRecovery(options.source, options.chunkName).chunk;
 	} catch (error) {
 		if (error instanceof LuaSyntaxError) {
 			return new Map();
@@ -140,25 +140,6 @@ function tryExtractRequireModuleName(expression: LuaExpression): string {
 	}
 	const moduleName = (firstArg as LuaStringLiteralExpression).value.trim();
 	return moduleName.length > 0 ? moduleName : null;
-}
-
-function parseChunkWithRecovery(source: string, chunkName: string): LuaChunk {
-	try {
-		return parseLuaChunk(source, chunkName);
-	} catch (error) {
-		if (!(error instanceof LuaSyntaxError)) {
-			throw error;
-		}
-		const truncated = truncateSourceAtSyntaxError(source, error);
-		if (truncated === null) {
-			throw error;
-		}
-		try {
-			return parseLuaChunk(truncated, chunkName);
-		} catch {
-			throw error;
-		}
-	}
 }
 
 export function getKeywordCompletions(): LuaCompletionItem[] {
@@ -367,7 +348,7 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 	const functionSignatures = new Map<string, FunctionSignatureInfo>();
 	let chunk: LuaChunk;
 	try {
-		chunk = parseLuaChunk(options.source, options.chunkName);
+		chunk = parseLuaChunk(options.source, options.chunkName).chunk;
 	} catch (error) {
 		if (error instanceof LuaSyntaxError) {
 			const row = error.line > 0 ? error.line - 1 : 0;
@@ -1234,36 +1215,6 @@ function validateCallArity(
 		message,
 		severity: 'error',
 	});
-}
-
-function parseLuaChunk(source: string, chunkName: string): LuaChunk {
-	const lexer = new LuaLexer(source, chunkName, { canonicalizeIdentifiers: ide_state.caseInsensitive ? ide_state.canonicalization : 'none' });
-	const tokens = lexer.scanTokens();
-	const parser = new LuaParser(tokens, chunkName, source);
-	return parser.parseChunk();
-}
-
-function truncateSourceAtSyntaxError(source: string, error: LuaSyntaxError): string {
-	if (!Number.isFinite(error.line)) {
-		return null;
-	}
-	const lines = source.split('\n');
-	const lineIndex = error.line - 1;
-	if (lineIndex < 0 || lineIndex >= lines.length) {
-		return null;
-	}
-	const truncated: string[] = [];
-	for (let index = 0; index < lineIndex; index += 1) {
-		truncated.push(lines[index]);
-	}
-	if (lineIndex < lines.length) {
-		const column = Number.isFinite(error.column) ? Math.max(0, error.column - 1) : lines[lineIndex].length;
-		const prefix = lines[lineIndex].slice(0, column);
-		if (prefix.trim().length > 0) {
-			truncated.push(prefix);
-		}
-	}
-	return truncated.join('\n');
 }
 
 function truncateLine(text: string): string {
