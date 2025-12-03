@@ -870,8 +870,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}
 	}
 
-
-
 	/**
 	 * Gets the definition of the current state of the FSM.
 	 * Note that the definition can be empty, as not all objects have a defined machine.

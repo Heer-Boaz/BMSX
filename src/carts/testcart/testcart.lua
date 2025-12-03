@@ -18,7 +18,6 @@ local function track_plain_input()
 		{ 'console_up', 'up' },
 		{ 'console_down', 'down' },
 	}
-	print('asdfsdf')
 	for index = 1, #bindings do
 		local entry = bindings[index]
 		if game:action_triggered(1, entry[1] .. '[j]') then
@@ -74,6 +73,7 @@ function hero:onspawn(spawn_pos)
 			end
 		end,
 	})
+	self:activate()
 end
 
 function hero:emit_move(dx, dy)
@@ -104,7 +104,7 @@ function hero:run_motion(dt)
 end
 
 function hero:try_blink()
-	if not game:action_triggered(1, 'console_a[gp]') then
+	if not game:action_triggered(1, 'console_a[j]') then
 		return
 	end
 	if not self.tempo_ready then
@@ -133,12 +133,12 @@ local function build_hero_fsm()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
-					['console_b[jp]'] = {
+					['console_b[j]'] = {
 						['do'] = function(self)
 							return '/charging'
 						end,
 					},
-					['console_a[jp]'] = {
+					['console_a[j]'] = {
 						['do'] = function(self)
 							return '/blinking'
 						end,
@@ -158,12 +158,12 @@ local function build_hero_fsm()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
-					['console_b[jp]'] = {
+					['console_b[j]'] = {
 						['do'] = function(self)
 							return '/charging'
 						end,
 					},
-					['console_a[jp]'] = {
+					['console_a[j]'] = {
 						['do'] = function(self)
 							return '/blinking'
 						end,
@@ -257,7 +257,7 @@ local function define_blink()
 		cooldown_ms = 420,
 		-- handle the blink directly in the effect so a single trigger applies movement/timer/emits without relying on a separate lis
 		handler = function(ctx, payload)
-			print(string.format('[hotreload-test] blink effect handler invoked tick=%d', demo.tick))
+			print('[hotreload-test] blink effect handler invoked tick=' .. demo.tick)
 			local owner = ctx.owner
 			local facing = payload.facing
 			local offset = facing == 'left' and -24 or 24
@@ -297,8 +297,6 @@ end
 function update(dt)
 	demo.tick = demo.tick + dt
 	track_plain_input()
-	local hero = world_object(hero_instance_id)
-	print(""..hero.blinking_timer)
 end
 
 local function draw_hero(hero)

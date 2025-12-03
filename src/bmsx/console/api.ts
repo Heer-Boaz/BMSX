@@ -367,7 +367,8 @@ export class BmsxConsoleApi {
 	}
 
 	public attach_fsm(id: Identifier, machine_id: Identifier): void {
-		$.world.getWorldObject(id).sc.add_statemachine(id, machine_id);
+		const obj = $.world.getWorldObject(id);
+		obj.sc.add_statemachine(machine_id, obj.id);
 	}
 
 	public attach_bt(object_id: Identifier, tree_id: BehaviorTreeID): void {
@@ -480,21 +481,11 @@ export class BmsxConsoleApi {
 			if (ext.components) {
 				for (let i = 0; i < ext.components.length; i += 1) {
 					this.attach_component(instance, ext.components[i]);
-					// const ctor = this.resolve_component_ctor(componentId);
-					// const componentExt = this.componentExts.get(componentId);
-					// const component = new ctor({ parent_or_id: instance });
-					// if (componentExt && componentExt.defaults) {
-					// 	Object.assign(component, componentExt.defaults);
-					// }
-					// if (componentExt && componentExt.class) {
-					// 	this.applyClassOverrides(component, componentExt.class);
-					// }
-					// instance.add_component(component); // We must pass the instance as the parent, because the object is not yet spawned into the world and cannot be looked up by id.
 				}
 			}
 			if (ext.fsms) {
 				for (let i = 0; i < ext.fsms.length; i += 1) {
-					instance.sc.add_statemachine(ext.fsms[i], instance);
+					instance.sc.add_statemachine(ext.fsms[i], instance.id);
 				}
 			}
 			if (ext.effects && ext.effects.length > 0) {
