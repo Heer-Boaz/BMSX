@@ -17,7 +17,7 @@ const { join, parse, relative, resolve, sep } = require('path');
 // @ts-ignore
 const { access, mkdir, readdir, readFile, stat, writeFile, unlink, copyFile } = require('fs/promises');
 // @ts-ignore
-const { createWriteStream } = require('fs');
+const { createWriteStream, statSync } = require('fs');
 // @ts-ignore
 const { once } = require('events');
 // @ts-ignore
@@ -653,6 +653,7 @@ export function zip(content: Buffer): Uint8Array {
  */
 export function getResMetaByFilename(filepath: string): { name: string, ext: string, type: resourcetype, collisionType?: 'concave' | 'convex' | 'aabb', datatype?: 'json' | 'yaml' | 'bin', update_timestamp?: number } {
 	const parsed = parse(filepath);
+	const stats: Stats = statSync(filepath);
 	const rawName = parsed.name;
 	const normalizedName = rawName.replace(/\s+/g, '').toLowerCase();
 	let name = normalizedName;
@@ -714,7 +715,7 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 			break;
 		case '.lua':
 			type = 'lua';
-			update_timestamp = parsed.mtime.getTime(); // Use file modification time as update timestamp
+			update_timestamp = stats.mtimeMs;
 			break;
 	}
 	return { name, ext, type, collisionType, datatype, update_timestamp };

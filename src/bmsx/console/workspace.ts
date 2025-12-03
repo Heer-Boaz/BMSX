@@ -112,6 +112,7 @@ export function buildWorkspaceStorageKey(projectRootPath: string, relativePath: 
 }
 
 export type WorkspaceOverrideRecord = { source: string; path: string; cartPath: string; updatedAt?: number };
+type WorkspaceStoragePayload = { contents: string; updatedAt: number };
 
 export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRootPath: string; storage: StorageService; }): Map<string, WorkspaceOverrideRecord> {
 	const overrides = new Map<string, WorkspaceOverrideRecord>();
@@ -122,47 +123,36 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 	const root = rootRaw;
 	const storage = params.storage;
 	for (const asset of Object.values(params.rompack.cart.lua)) {
-		const cartPath = asset.source_path ?? asset.resid;
+		const cartPath = asset.normalized_source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		let bestSource: string = null;
-		let bestUpdatedAt = -1;
+		let bestUpdatedAt = asset.update_timestamp ?? 0;
 		let bestPath: string = null;
 		const considerStored = (raw: string, path: string, storageKey: string): void => {
-			let source = raw;
-			let updatedAt: number;
-			try {
-				const parsed = JSON.parse(raw) as { contents: string; updatedAt?: number };
-				source = parsed.contents;
-				updatedAt = parsed.updatedAt;
-			} catch {
-				// Legacy plain-string entry; keep as-is.
-			}
-			if (source === asset.src) {
-				// Stored buffer matches ROM; drop it to avoid stale timestamps overriding packed sources.
-				if (storageKey) {
-					storage.removeItem(storageKey);
-				}
+			const parsed = JSON.parse(raw) as WorkspaceStoragePayload;
+			if (parsed.contents === asset.src) {
+				storage.removeItem(storageKey);
 				return;
 			}
-			const candidateTime = updatedAt ?? 0;
-			if (bestSource === null || candidateTime > bestUpdatedAt || (candidateTime === bestUpdatedAt && path === dirtyPath)) {
-				bestSource = source;
-				bestUpdatedAt = candidateTime;
-				bestPath = path;
+			if (parsed.updatedAt <= bestUpdatedAt) {
+				return;
 			}
+			bestSource = parsed.contents;
+			bestUpdatedAt = parsed.updatedAt;
+			bestPath = path;
 		};
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
 		const storedDirty = storage.getItem(storageKey);
-		if (!storedDirty) {
+		if (storedDirty !== null) {
 			considerStored(storedDirty, dirtyPath, storageKey);
 		}
 		const canonicalKey = buildWorkspaceStorageKey(root, cartPath);
 		const storedCanonical = storage.getItem(canonicalKey);
-		if (!storedCanonical) {
+		if (storedCanonical !== null) {
 			considerStored(storedCanonical, cartPath, canonicalKey);
 		}
 		if (bestSource !== null) {
-			overrides.set(asset.resid, { source: bestSource, path: bestPath, cartPath, updatedAt: bestUpdatedAt >= 0 ? bestUpdatedAt : undefined });
+			overrides.set(asset.resid, { source: bestSource, path: bestPath, cartPath, updatedAt: bestUpdatedAt });
 		}
 	}
 	return overrides;
