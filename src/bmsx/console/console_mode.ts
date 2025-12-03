@@ -29,10 +29,12 @@ import {
 	isAltDown
 } from './ide/ide_input';
 import { CompletionController } from './ide/completion_controller';
-import { collectLuaModuleAliases, listLuaObjectMembers } from './ide/intellisense';
+import { collectLuaModuleAliases, consoleValueToString, listLuaObjectMembers } from './ide/intellisense';
 import { consumeIdeKey, getIdeKeyState } from './ide/ide_input';
 import type { asset_id, Viewport } from '../rompack/rompack';
 import { api, BmsxConsoleRuntime } from './runtime';
+import { ConsoleCommandDispatcher } from './console_commands';
+import { extractErrorMessage, LuaValue } from '../lua/value';
 
 type ConsoleOutputKind =
 	| 'prompt'
@@ -95,6 +97,7 @@ export class ConsoleMode {
 	private caretVisible = true;
 	private active = false;
 	private textVersion = 0;
+	private readonly consoleCommands: ConsoleCommandDispatcher;
 
 	private fieldText(): string {
 		return getFieldText(this.field);
@@ -119,8 +122,10 @@ export class ConsoleMode {
 	private cachedLinesVersion = -1;
 	private promptPrefix = '> ';
 	private cursorScreenInfo: CursorScreenInfo = null;
-	constructor() {
-		const runtime = BmsxConsoleRuntime.instance;
+	constructor(private readonly runtime: BmsxConsoleRuntime) {
+		this.consoleCommands = new ConsoleCommandDispatcher(this.runtime);
+		this.setPromptPrefix(this.consoleCommands.getPrompt());
+
 		this.font = new ConsoleEditorFont(runtime.activeIdeFontVariant);
 		this.uppercaseDisplayOverride = false;
 		this.maxEntries = MAX_OUTPUT_ENTRIES;
@@ -137,7 +142,7 @@ export class ConsoleMode {
 			revealCursor: () => { },
 			characterAdvance: (char) => this.font.advance(char),
 			lineHeight: this.font.lineHeight,
-			measureText: (text) => this.measureRawText(text),
+			measureText: (text) => this.measureDisplayText(text, this.useUppercaseDisplay()),
 			drawText: (text, x, y, color) => { api.write(text, x, y, undefined, color); },
 			getCursorScreenInfo: () => this.cursorScreenInfo,
 			getActiveCodeTabContext: () => (this.active ? this.completionContextToken : null),
@@ -216,7 +221,7 @@ export class ConsoleMode {
 		this.completion.processPending(deltaSeconds);
 	}
 
-	public handleInput(deltaSeconds: number): string {
+	public async handleInput(deltaSeconds: number) {
 		if (!this.active) {
 			return null;
 		}
@@ -242,8 +247,85 @@ export class ConsoleMode {
 		const submit = this.trySubmitCommand();
 		if (submit !== null) {
 			this.completion.closeSession();
+			await this.handleConsoleCommand(submit);
 		}
-		return submit;
+	}
+
+	private async handleConsoleCommand(rawCommand: string): Promise<void> {
+		const input = rawCommand ?? '';
+		this.setPromptPrefix(this.consoleCommands.getPrompt());
+		this.appendPromptEcho(input);
+		const trimmed = input.trim();
+		if (trimmed.length > 0) {
+			this.recordHistory(trimmed);
+		}
+		if (trimmed.length === 0) {
+			return;
+		}
+		try {
+			if (await this.consoleCommands.handle(trimmed)) {
+				return;
+			}
+		} catch (error) {
+			this.appendStderr(extractErrorMessage(error));
+			return;
+		}
+		this.executeConsoleCommand(trimmed);
+	}
+
+	private executeConsoleCommand(command: string): void {
+		const source = this.prepareConsoleChunk(command);
+		if (source.length === 0) {
+			return;
+		}
+		const interpreter = this.runtime.interpreter;
+
+		// Temporarily redirect print output to console mode
+		const previousOutputHandler = interpreter.outputHandler;
+		interpreter.outputHandler = (text: string) => {
+			this.appendStdout(text);
+		};
+
+		try {
+			let results: LuaValue[] = [];
+			try {
+				results = interpreter.execute(source, 'console');
+			}
+			catch (error) {
+				throw error;
+			}
+			if (results.length > 0) {
+				const summary = results.map(value => consoleValueToString(value)).join('\t');
+				this.appendStdout(summary);
+			}
+		}
+		catch (error) {
+			this.appendStderr(extractErrorMessage(error));
+		}
+		finally {
+			// Restore previous output handler
+			if (previousOutputHandler !== undefined) {
+				interpreter.outputHandler = previousOutputHandler;
+			} else {
+				interpreter.outputHandler = null;
+			}
+		}
+	}
+
+	private prepareConsoleChunk(command: string): string {
+		const trimmed = command.trim();
+		if (trimmed.length === 0) {
+			return '';
+		}
+		if (trimmed.startsWith('?')) {
+			const expression = trimmed.slice(1).trim();
+			return expression.length === 0 ? '' : `return ${expression}`;
+		}
+		if (trimmed.startsWith('=')) {
+			const expression = trimmed.slice(1).trim();
+			return expression.length === 0 ? '' : `return ${expression}`;
+		}
+		return trimmed;
 	}
 
 	public draw(renderer: ConsoleRenderFacade, surface: Viewport): void {
@@ -496,7 +578,7 @@ export class ConsoleMode {
 	}
 
 	private handleTextMutation(previousText: string, editContext: EditContext): void {
-		if (BmsxConsoleRuntime.instance.canonicalization !== 'none') {
+		if (this.runtime.canonicalization !== 'none') {
 			const before = this.fieldText();
 			const normalized = this.normalizeInputCase(before);
 			if (normalized !== before) {
@@ -531,16 +613,12 @@ export class ConsoleMode {
 		return line.charAt(column);
 	}
 
-	private measureRawText(text: string): number {
-		return this.measureDisplayText(text, this.useUppercaseDisplay());
-	}
-
 	private normalizeInputCase(text: string): string {
-		if (BmsxConsoleRuntime.instance.canonicalization === 'none') {
+		if (this.runtime.canonicalization === 'none') {
 			return text;
 		}
 
-		const transform = BmsxConsoleRuntime.instance.canonicalization === 'upper'
+		const transform = this.runtime.canonicalization === 'upper'
 			? (ch: string) => ch.toUpperCase()
 			: (ch: string) => ch.toLowerCase();
 		return applyCaseOutsideStrings(text, transform);
@@ -591,7 +669,7 @@ export class ConsoleMode {
 				insertText: entry.name,
 				sortKey: `${kind}:${entry.name.toLowerCase()}`,
 				kind,
-				detail: entry.detail ,
+				detail: entry.detail,
 				parameters,
 			});
 		}
@@ -789,7 +867,7 @@ export class ConsoleMode {
 	}
 
 	private toDisplayText(value: string, uppercase: boolean): string {
-		if (uppercase && BmsxConsoleRuntime.instance.canonicalization !== 'none') {
+		if (uppercase && this.runtime.canonicalization !== 'none') {
 			return applyCaseOutsideStrings(value, (ch) => ch.toUpperCase());
 		}
 		return value;

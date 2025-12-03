@@ -26,7 +26,6 @@ import type { BmsxCartridge, LifeCycleHandlerName, RomLuaAsset, Viewport, } from
 import { CanonicalizationType } from '../rompack/rompack';
 import { fallbackclamp } from '../utils/clamp';
 import { BmsxConsoleApi } from './api';
-import { ConsoleCommandDispatcher } from './console_commands';
 import { ConsoleMode } from './console_mode';
 import { ConsoleRenderFacade } from './console_render_facade';
 import type { ConsoleFontVariant } from './font';
@@ -37,7 +36,7 @@ import {
 	type DebuggerPauseDisplayPayload,
 	type DebuggerResumeMode
 } from './ide/ide_debugger';
-import { clearNativeMemberCompletionCache, consoleValueToString, getChunkResourceHint } from './ide/intellisense';
+import { clearNativeMemberCompletionCache, getChunkResourceHint } from './ide/intellisense';
 import { type FaultSnapshot } from './ide/render/render_error_overlay';
 import { type LuaSemanticModel } from './ide/semantic_model';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
@@ -139,7 +138,6 @@ export class BmsxConsoleRuntime extends Service {
 		return this.overlayRenderBackend.viewportSize;
 	}
 
-	private readonly consoleCommands: ConsoleCommandDispatcher;
 	private readonly consoleHotkeyLatch = new Map<string, number>();
 	private shortcutDisposers: Array<() => void> = [];
 	private globalInputUnsubscribe: (() => void) = null;
@@ -215,9 +213,7 @@ export class BmsxConsoleRuntime extends Service {
 		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
 		setEditorCaseInsensitivity(this._canonicalization !== 'none');
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
-		this.consoleMode = new ConsoleMode();
-		this.consoleCommands = new ConsoleCommandDispatcher(this);
-		this.consoleMode.setPromptPrefix(this.consoleCommands.getPrompt());
+		this.consoleMode = new ConsoleMode(this);
 		this.enableEvents();
 		const policyOverride = options.luaSourceFailurePolicy ?? {};
 		this.luaFailurePolicy = { ...DEFAULT_LUA_FAILURE_POLICY, ...policyOverride };
@@ -638,33 +634,7 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		this.consoleMode.update(deltaSeconds);
-		const command = this.consoleMode.handleInput(deltaSeconds);
-		if (command === null) {
-			return;
-		}
-		await this.handleConsoleCommand(command);
-	}
-
-	private async handleConsoleCommand(rawCommand: string): Promise<void> {
-		const input = rawCommand ?? '';
-		this.consoleMode.setPromptPrefix(this.consoleCommands.getPrompt());
-		this.consoleMode.appendPromptEcho(input);
-		const trimmed = input.trim();
-		if (trimmed.length > 0) {
-			this.consoleMode.recordHistory(trimmed);
-		}
-		if (trimmed.length === 0) {
-			return;
-		}
-		try {
-			if (await this.consoleCommands.handle(trimmed)) {
-				return;
-			}
-		} catch (error) {
-			this.consoleMode.appendStderr(extractErrorMessage(error));
-			return;
-		}
-		this.executeConsoleCommand(trimmed);
+		await this.consoleMode.handleInput(deltaSeconds);
 	}
 
 	public set jsStackEnabled(enabled: boolean) {
@@ -680,61 +650,6 @@ export class BmsxConsoleRuntime extends Service {
 			this.resumeDebugger('continue');
 		}
 		this.consoleMode.deactivate();
-	}
-
-	private executeConsoleCommand(command: string): void {
-		const source = this.prepareConsoleChunk(command);
-		if (source.length === 0) {
-			return;
-		}
-		const interpreter = this.luaInterpreter;
-
-		// Temporarily redirect print output to console mode
-		const previousOutputHandler = interpreter.outputHandler;
-		interpreter.outputHandler = (text: string) => {
-			this.consoleMode.appendStdout(text);
-		};
-
-		try {
-			let results: LuaValue[] = [];
-			try {
-				results = interpreter.execute(source, 'console');
-			}
-			catch (error) {
-				throw error;
-			}
-			if (results.length > 0) {
-				const summary = results.map(value => consoleValueToString(value)).join('\t');
-				this.consoleMode.appendStdout(summary);
-			}
-		}
-		catch (error) {
-			this.consoleMode.appendStderr(extractErrorMessage(error));
-		}
-		finally {
-			// Restore previous output handler
-			if (previousOutputHandler !== undefined) {
-				interpreter.outputHandler = previousOutputHandler;
-			} else {
-				interpreter.outputHandler = null;
-			}
-		}
-	}
-
-	private prepareConsoleChunk(command: string): string {
-		const trimmed = command.trim();
-		if (trimmed.length === 0) {
-			return '';
-		}
-		if (trimmed.startsWith('?')) {
-			const expression = trimmed.slice(1).trim();
-			return expression.length === 0 ? '' : `return ${expression}`;
-		}
-		if (trimmed.startsWith('=')) {
-			const expression = trimmed.slice(1).trim();
-			return expression.length === 0 ? '' : `return ${expression}`;
-		}
-		return trimmed;
 	}
 
 	public getSystemStatusLines(): string[] {
