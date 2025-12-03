@@ -76,8 +76,6 @@ end
 function hero:emit_move(dx, dy)
 	local payload = { x = self.x, y = self.y, dx = dx, dy = dy }
 	self.events:emit('demo.hero.move', payload)
-	emit('demo.hero.move', self, payload)
-	emit('demo.hero.global_move', self, payload)
 end
 
 function hero:run_motion(dt)
@@ -112,7 +110,6 @@ function hero:try_blink()
 	if ok then
 		local payload = { phase = 'request', facing = self.facing }
 		self.events:emit('demo.hero.effect', payload)
-		emit('demo.hero.effect', self, payload)
 	end
 end
 
@@ -182,7 +179,6 @@ local function build_hero_fsm()
 					if not game:action_triggered(1, 'console_b[p]') then
 						local payload = { time = self.charge_time }
 						self.events:emit('demo.hero.charge', payload)
-						emit('demo.hero.charge', self, payload)
 						return '/moving'
 					end
 				end,
@@ -268,8 +264,6 @@ local function define_blink()
 			owner.blinking_timer = 0.2
 			local payload = { phase = 'active', facing = facing, offset = offset }
 			owner.events:emit('demo.hero.effect', payload)
-			emit('demo.hero.effect', owner, payload)
-			emit('demo.hero.effect.global', owner, { phase = 'active', facing = facing, offset = offset })
 			owner.events:emit('demo.hero.effect', { phase = 'done' })
 			print('[hotreload-test] blink facing=' .. facing .. ' offset=' .. offset .. ' tick=' .. demo.tick)
 			return { facing = facing }
