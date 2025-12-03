@@ -3,6 +3,7 @@ import { BmsxConsoleRuntime } from './runtime';
 import { clearWorkspaceSessionState } from './ide/workspace_storage';
 import { ide_state } from './ide/ide_state';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from './workspace';
+import { buildStackLines, formatRuntimeErrorLocation } from './runtime_error_util';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
 
@@ -166,14 +167,14 @@ export class ConsoleCommandDispatcher {
 
 	private printSystemInfo(): void {
 		this.runtime.consoleMode.appendSystem('SYSTEM INFO');
-		const lines = this.runtime.getSystemStatusLines();
+		const lines = this.getSystemStatusLines();
 		for (let index = 0; index < lines.length; index += 1) {
 			this.runtime.consoleMode.appendStdout(lines[index]);
 		}
 	}
 
 	private printFaultState(): void {
-		const { lines, active } = this.runtime.getFaultStatusLines();
+		const { lines, active } = this.getFaultStatusLines();
 		this.runtime.consoleMode.appendSystem('FAULT STATE');
 		for (let index = 0; index < lines.length; index += 1) {
 			const line = lines[index];
@@ -196,6 +197,76 @@ export class ConsoleCommandDispatcher {
 			return;
 		}
 		this.runtime.consoleMode.appendStdout('Fault state cleared');
+	}
+
+	public getSystemStatusLines(): string[] {
+		const overlay = this.runtime.overlayViewportSize;
+		const chunkLabel = this.runtime.currentChunkName ?? '<none>';
+		const vmState = this.runtime.isVmInitialized ? 'initialized' : 'not initialized';
+		const suspension = this.runtime.debuggerSuspendSignal;
+		const suspensionLocation = suspension
+			? formatRuntimeErrorLocation(suspension.location.chunk, suspension.location.line, suspension.location.column)
+			: null;
+		const debuggerLabel = suspension ? `${suspension.reason} @ ${suspensionLocation ?? suspension.location.chunk}` : 'idle';
+		const faultLabel = this.runtime.hasRuntimeFailed ? 'FAULTED' : 'OK';
+		const root = $.rompack.project_root_path;
+		const lines: string[] = [];
+		lines.push(`Cart: ${this.runtime.cart.meta.title} (${this.runtime.cart.meta.persistent_id})`);
+		lines.push(`Lua VM: ${vmState} | Entry: ${chunkLabel}`);
+		lines.push(`Status: ${faultLabel} | Debugger: ${debuggerLabel}`);
+		lines.push(`Canonicalization: ${this.runtime.canonicalization}`);
+		lines.push(`Overlay: ${this.runtime.overlayResolutionMode} ${overlay.width}x${overlay.height}`);
+		if (root) {
+			lines.push(`Workspace root: ${root}`);
+		}
+		const snapshot = this.runtime.faultSnapshot;
+		if (snapshot) {
+			const location = formatRuntimeErrorLocation(snapshot.chunkName, snapshot.line, snapshot.column);
+			const when = new Date(snapshot.timestampMs).toISOString();
+			const label = location ? `${location} - ${snapshot.message}` : snapshot.message;
+			lines.push(`Last fault: ${label} @ ${when}`);
+		} else {
+			lines.push('Last fault: none recorded');
+		}
+		lines.push(`JS stack traces: ${this.runtime.jsStackEnabled ? 'ON' : 'OFF'}`);
+		return lines;
+	}
+
+	public getFaultStatusLines(): { lines: string[]; active: boolean } {
+		const lines: string[] = [];
+		const suspension = this.runtime.debuggerSuspendSignal;
+		const faultInfo = this.runtime.faultSnapshot;
+		const faultFlag = this.runtime.hasRuntimeFailed || (suspension !== null && suspension.reason === 'exception');
+		lines.push(`Faulted: ${faultFlag ? 'YES' : 'NO'}`);
+		if (suspension) {
+			const suspensionLocation = formatRuntimeErrorLocation(
+				suspension.location.chunk,
+				suspension.location.line,
+				suspension.location.column,
+			);
+			lines.push(`Debugger: ${suspension.reason} @ ${suspensionLocation ?? suspension.location.chunk}`);
+		} else {
+			lines.push('Debugger: idle');
+		}
+		if (faultInfo) {
+			const location = formatRuntimeErrorLocation(faultInfo.chunkName, faultInfo.line, faultInfo.column);
+			if (location) {
+				lines.push(`Location: ${location}`);
+			}
+			lines.push(`Message: ${faultInfo.message}`);
+			const stackLines = buildStackLines(faultInfo.details);
+			const maxStackLines = 6;
+			for (let index = 0; index < stackLines.length && index < maxStackLines; index += 1) {
+				lines.push(stackLines[index]);
+			}
+			if (stackLines.length > maxStackLines) {
+				lines.push(`... ${stackLines.length - maxStackLines} more frame(s)`);
+			}
+			lines.push(`Recorded: ${new Date(faultInfo.timestampMs).toISOString()}`);
+			return { lines, active: faultFlag };
+		}
+		lines.push('No fault information recorded.');
+		return { lines, active: faultFlag };
 	}
 
 	private async handleLs(command: string): Promise<void> {

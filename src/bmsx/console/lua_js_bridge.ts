@@ -1,6 +1,8 @@
 import { $ } from '../core/game';
+import { LuaSourceRange } from '../lua/ast';
+import { LuaEnvironment } from '../lua/environment';
 import { LuaHandlerCache, isLuaHandlerFn } from '../lua/handler_cache';
-import { LuaValue, LuaTable, isLuaNativeValue, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle } from '../lua/value';
+import { LuaValue, LuaTable, isLuaNativeValue, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../lua/value';
 import { BmsxConsoleRuntime } from './runtime';
 import { LuaMarshalContext } from './types';
 
@@ -20,7 +22,7 @@ export class LuaJsBridge {
 		this.luaHandlerCache = luaHandlerCache;
 	}
 
-	private describeMarshalSegment(key: LuaValue): string {
+	public describeMarshalSegment(key: LuaValue): string {
 		if (typeof key === 'string') {
 			return key;
 		}
@@ -35,7 +37,7 @@ export class LuaJsBridge {
 		return this.luaValueToJsWithVisited(value, marshalCtx, new WeakMap<LuaTable, unknown>());
 	}
 
-	private luaValueToJsWithVisited(
+	public luaValueToJsWithVisited(
 		value: LuaValue,
 		context: LuaMarshalContext,
 		visited: WeakMap<LuaTable, unknown>,
@@ -58,7 +60,7 @@ export class LuaJsBridge {
 		return null;
 	}
 
-	private convertLuaTableToJs(
+	public convertLuaTableToJs(
 		table: LuaTable,
 		context: LuaMarshalContext,
 		visited: WeakMap<LuaTable, unknown>,
@@ -128,7 +130,7 @@ export class LuaJsBridge {
 		return objectResult;
 	}
 
-	private getOrAssignTableId(table: LuaTable): number {
+	public getOrAssignTableId(table: LuaTable): number {
 		const existing = this.tableIds.get(table);
 		if (existing !== undefined) {
 			return existing;
@@ -211,19 +213,11 @@ export class LuaJsBridge {
 		return null;
 	}
 
-	private wrapNativeValue(value: object | Function): LuaNativeValue {
+	public wrapNativeValue(value: object | Function): LuaNativeValue {
 		return this.consoleRuntime.interpreter.getOrCreateNativeValue(value, resolveNativeTypeName(value));
 	}
 
-	public snapshotEncodeNative(native: object | Function): unknown {
-		return native;
-	}
-
-	public snapshotDecodeNative(token: unknown): object | Function {
-		return token as object | Function;
-	}
-
-	private serializeLuaSnapshotKey(key: LuaValue, ctx: LuaSnapshotContext): unknown {
+	public serializeLuaSnapshotKey(key: LuaValue, ctx: LuaSnapshotContext): unknown {
 		if (key === null || typeof key === 'boolean' || typeof key === 'number' || typeof key === 'string') {
 			return key;
 		}
@@ -235,7 +229,7 @@ export class LuaJsBridge {
 			};
 		}
 		if (isLuaNativeValue(key)) {
-			return this.snapshotEncodeNative(key.native);
+			return key.native;
 		}
 		if (isLuaFunctionValue(key)) {
 			return undefined;
@@ -246,7 +240,7 @@ export class LuaJsBridge {
 		return this.serializeLuaValueForSnapshot(key, ctx);
 	}
 
-	private deserializeLuaSnapshotKey(raw: unknown, resolver?: (value: unknown) => LuaValue): LuaValue {
+	public deserializeLuaSnapshotKey(raw: unknown, resolver?: (value: unknown) => LuaValue): LuaValue {
 		if (raw === null || typeof raw === 'boolean' || typeof raw === 'number' || typeof raw === 'string') {
 			return raw as LuaValue;
 		}
@@ -261,7 +255,7 @@ export class LuaJsBridge {
 		return this.deserializeLuaSnapshotValue(raw);
 	}
 
-	private parseSnapshotObjectId(text: string): number {
+	public parseSnapshotObjectId(text: string): number {
 		const id = Number.parseInt(text, 10);
 		if (!Number.isFinite(id)) {
 			throw new Error(`[BmsxConsoleRuntime] Invalid Lua snapshot object id '${text}'.`);
@@ -269,7 +263,7 @@ export class LuaJsBridge {
 		return id;
 	}
 
-	private parseSnapshotReferenceId(raw: unknown): number {
+	public parseSnapshotReferenceId(raw: unknown): number {
 		const id = Number(raw);
 		if (!Number.isFinite(id)) {
 			throw new Error(`[BmsxConsoleRuntime] Invalid Lua snapshot reference id '${String(raw)}'.`);
@@ -277,7 +271,7 @@ export class LuaJsBridge {
 		return id;
 	}
 
-	private deserializeLuaSnapshotValue(raw: unknown, resolveRef?: (id: number) => LuaTable): LuaValue {
+	public deserializeLuaSnapshotValue(raw: unknown, resolveRef?: (id: number) => LuaTable): LuaValue {
 		if (raw === null || typeof raw === 'boolean' || typeof raw === 'number' || typeof raw === 'string') {
 			return raw as LuaValue;
 		}
@@ -307,15 +301,15 @@ export class LuaJsBridge {
 				const path = (record as { path: ReadonlyArray<string> }).path;
 				return this.consoleRuntime.interpreter.createNativeMemberHandle(handleTarget, path);
 			}
-			return this.wrapNativeValue(this.snapshotDecodeNative(raw as object));
+			return this.wrapNativeValue(raw);
 		}
 		if (typeof raw === 'function') {
-			return this.wrapNativeValue(this.snapshotDecodeNative(raw));
+			return this.wrapNativeValue(raw);
 		}
 		return null;
 	}
 
-	private isLuaSnapshotGraph(value: unknown): value is LuaSnapshotGraph {
+	public isLuaSnapshotGraph(value: unknown): value is LuaSnapshotGraph {
 		if (!value || typeof value !== 'object') {
 			return false;
 		}
@@ -334,7 +328,7 @@ export class LuaJsBridge {
 		return entries;
 	}
 
-	private deserializeLuaSnapshotGraph(graph: LuaSnapshotGraph): Array<[string, LuaValue]> {
+	public deserializeLuaSnapshotGraph(graph: LuaSnapshotGraph): Array<[string, LuaValue]> {
 		const tableMap = new Map<number, LuaTable>();
 		const ensureTable = (id: number): LuaTable => {
 			let table = tableMap.get(id);
@@ -379,7 +373,7 @@ export class LuaJsBridge {
 		return [];
 	}
 
-	private applyLuaSnapshotPayload(target: LuaTable, payload: unknown, resolve: (value: unknown) => LuaValue): void {
+	public applyLuaSnapshotPayload(target: LuaTable, payload: unknown, resolve: (value: unknown) => LuaValue): void {
 		if (Array.isArray(payload)) {
 			for (let index = 0; index < payload.length; index += 1) {
 				target.set(index + 1, resolve(payload[index]));
@@ -489,7 +483,7 @@ export class LuaJsBridge {
 			};
 		}
 		if (isLuaNativeValue(value)) {
-			return this.snapshotEncodeNative(value.native);
+			return value.native;
 		}
 		if (isLuaTable(value)) {
 			return this.serializeLuaTableForSnapshot(value, ctx);
@@ -497,7 +491,7 @@ export class LuaJsBridge {
 		throw new Error('Unsupported Lua value encountered during snapshot serialization.');
 	}
 
-	private serializeLuaTableForSnapshot(table: LuaTable, ctx: LuaSnapshotContext): { r: number } {
+	public serializeLuaTableForSnapshot(table: LuaTable, ctx: LuaSnapshotContext): { r: number } {
 		const existing = ctx.ids.get(table);
 		if (existing !== undefined) {
 			return { r: existing };
@@ -509,7 +503,7 @@ export class LuaJsBridge {
 		return { r: id };
 	}
 
-	private buildLuaTableSnapshotPayload(table: LuaTable, ctx: LuaSnapshotContext): unknown {
+	public buildLuaTableSnapshotPayload(table: LuaTable, ctx: LuaSnapshotContext): unknown {
 		const entries = table.entriesArray();
 		if (entries.length === 0) {
 			return {};
@@ -530,7 +524,7 @@ export class LuaJsBridge {
 			let serializedEntry: unknown;
 			try {
 				if (isLuaNativeValue(entryValue)) {
-					serializedEntry = this.snapshotEncodeNative(entryValue.native);
+					serializedEntry = entryValue.native;
 				} else {
 					serializedEntry = this.serializeLuaValueForSnapshot(entryValue, ctx);
 				}
@@ -589,5 +583,112 @@ export class LuaJsBridge {
 			objectEntries[String(numericKey)] = numericValue;
 		}
 		return objectEntries;
+	}
+
+	public wrapDynamicChunkFunctions(
+		moduleId: string,
+		environment: LuaEnvironment,
+		chunkName: string,
+	): void {
+		const filter = (fn: LuaFunctionValue) => this.isFunctionFromChunk(fn, chunkName);
+		const visited = new WeakSet<LuaTable>();
+		const entries = environment.entries();
+		for (let index = 0; index < entries.length; index += 1) {
+			const [name, value] = entries[index];
+			const wrapped = this.wrapFunctionsInValue(moduleId, value, [name], visited, { filter });
+			if (wrapped !== value) {
+				environment.set(name, wrapped);
+			}
+		}
+	}
+
+	public wrapFunctionByPath(
+		moduleId: string,
+		root: LuaEnvironment,
+		segments: ReadonlyArray<string>,
+	): void {
+		if (segments.length === 0) {
+			return;
+		}
+		let owner: LuaTable | LuaEnvironment = root;
+		for (let index = 0; index < segments.length - 1; index += 1) {
+			const nextValue = owner instanceof LuaEnvironment ? owner.get(segments[index]) : owner.get(segments[index]);
+			if (!isLuaTable(nextValue)) {
+				return;
+			}
+			owner = nextValue;
+		}
+		const leafKey = segments[segments.length - 1];
+		const currentValue = owner instanceof LuaEnvironment ? owner.get(leafKey) : owner.get(leafKey);
+		const visited = new WeakSet<LuaTable>();
+		const wrapped = this.wrapFunctionsInValue(moduleId, currentValue, segments, visited);
+		if (wrapped === currentValue) {
+			return;
+		}
+		if (owner instanceof LuaEnvironment) {
+			owner.set(leafKey, wrapped);
+		} else {
+			owner.set(leafKey, wrapped);
+		}
+	}
+
+	public wrapFunctionsInValue(
+		moduleId: string,
+		value: LuaValue,
+		path: ReadonlyArray<string>,
+		visited: WeakSet<LuaTable>,
+		options?: { filter?: (fn: LuaFunctionValue) => boolean },
+	): LuaValue {
+		if (isLuaFunctionValue(value)) {
+			if (options?.filter && !options.filter(value)) {
+				return value;
+			}
+			return this.consoleRuntime.luaFunctionRedirectCache.getOrCreate(moduleId, path, value);
+		}
+		if (!isLuaTable(value)) {
+			return value;
+		}
+		if (visited.has(value)) {
+			return value;
+		}
+		visited.add(value);
+		const entries = value.entriesArray();
+		for (let index = 0; index < entries.length; index += 1) {
+			const [rawKey, entry] = entries[index];
+			const segment = typeof rawKey === 'string' ? rawKey : String(rawKey);
+			const wrapped = this.wrapFunctionsInValue(moduleId, entry, [...path, segment], visited, options);
+			if (wrapped !== entry) {
+				value.set(rawKey, wrapped);
+			}
+		}
+		return value;
+	}
+
+	public isFunctionFromChunk(fn: LuaFunctionValue, chunkName: string): boolean {
+		const candidate = fn as { getSourceRange?: () => LuaSourceRange };
+		if (typeof candidate.getSourceRange !== 'function') {
+			return false;
+		}
+		try {
+			const range = candidate.getSourceRange();
+			if (!range || typeof range.chunkName !== 'string') {
+				return false;
+			}
+			return range.chunkName === chunkName;
+		}
+		catch {
+			return false;
+		}
+	}
+
+	public wrapLuaExecutionResults(moduleId: string, results: LuaValue[]): void {
+		if (results.length === 0) {
+			return;
+		}
+		const visited = new WeakSet<LuaTable>();
+		for (let index = 0; index < results.length; index += 1) {
+			const wrapped = this.wrapFunctionsInValue(moduleId, results[index], ['return', String(index)], visited);
+			results[index] = wrapped;
+		}
 	}
 }

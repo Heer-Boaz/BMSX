@@ -11,7 +11,7 @@ _global['h406A'] = (args: BootArgs): Promise<void> => {
 	if (!platform) {
 		throw new Error('[Bootloader:sint2024] Platform services not provided. Ensure the host injects a Platform instance before starting the game.');
 	}
-	const worldConfig: WorldConfiguration = { viewportSize: { x: MSX1ScreenWidth, y: MSX1ScreenHeight }, fsmId: 'SintWorldFSM' };
+	const worldConfig: WorldConfiguration = { viewportSize: { width: MSX1ScreenWidth, height: MSX1ScreenHeight }, fsmId: 'SintWorldFSM' };
 	const viewHost = args.viewHost ?? platform.gameviewHost;
 	if (!viewHost) {
 		throw new Error('[Bootloader:sint2024] View host not provided by Platform.');
@@ -28,7 +28,7 @@ _global['h406A'] = (args: BootArgs): Promise<void> => {
 		viewHost,
 	}).then(() => {
 		// set input map previously done in do_one_time_game_init
-		$.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, pointer: Input.clonePointerMapping() });
+		$.set_inputmap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, pointer: Input.clonePointerMapping() });
 		$.view.default_font = new BFont(BitmapId);
 		$.start();
 	});

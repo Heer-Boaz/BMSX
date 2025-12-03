@@ -1,11 +1,11 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset } from '../../src/bmsx/rompack/rompack';
+import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
 import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
-import type { AtlasResource, ImageResource, Resource, resourcetype, RomManifest, RomPackerTarget } from './rompacker.rompack';
+import type { AtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
 import { GENERATE_AND_USE_TEXTURE_ATLAS, LUA_CANONICALIZATION } from './rompacker';
 // @ts-ignore
 const { build } = require('esbuild');
@@ -81,17 +81,6 @@ declare global {
 	var __dirname: string;
 }
 
-/**
-* Adds a file to an array of files.
-* @param {string} dirPath - The path of the directory containing the file.
-* @param {string} filePath - The path of the file to add.
-* @param {string[]} arrayOfFiles - The array of files to append to.
-* @returns {void}
-*/
-export function addFile(dirPath: string, filePath: string, arrayOfFiles: string[]): void {
-	arrayOfFiles.push(join(dirPath, "/", filePath));
-}
-
 export function normalizeWorkspacePath(input: string): string {
 	const replaced = input.replace(/\\/g, '/').trim();
 	if (replaced.length === 0) {
@@ -116,6 +105,9 @@ export function normalizeWorkspacePath(input: string): string {
 }
 
 function toWorkspaceRelativePath(filepath: string): string {
+	if (!filepath || filepath.length === 0) {
+		throw new Error('Cannot convert empty filepath to workspace-relative path.');
+	}
 	const absolutePath = resolve(filepath);
 	const projectRoot = process.cwd();
 	const relativePath = relative(projectRoot, absolutePath);
@@ -332,8 +324,8 @@ export async function buildEngineRuntime(options: { debug: boolean }): Promise<v
  */
 export function typecheckBeforeBuild(
 	bootloader_path: string,
+	emitOutput: (text: string) => void,
 	gameProjectOverride?: string,
-	emitOutput?: (text: string) => void
 ): void {
 	// Resolve local TypeScript CLI entry
 	let tscBin: string;
@@ -347,11 +339,9 @@ export function typecheckBeforeBuild(
 	const run = (projectPath: string, label: string) => {
 		const args = [tscBin, '-p', projectPath, '--noEmit'];
 		const res = spawnSync(process.execPath, args, { stdio: 'pipe', encoding: 'utf8' });
-		if (res.stdout) emitOutput?.(res.stdout);
-		if (res.stderr) emitOutput?.(res.stderr);
+		emitOutput(res.stdout ?? res.stderr); // Emit either stdout or stderr. Also note that `emitOutput` already handles undefined strings
 		if (res.status !== 0) {
-			const reason = res.stderr?.trim() || res.stdout?.trim() || 'Type-check failed';
-			throw new Error(`Type-check failed for ${label} (project: ${projectPath}). ${reason}`);
+			throw new Error(`Type-check failed for ${label} (project: ${projectPath}).`);
 		}
 	};
 
@@ -378,8 +368,8 @@ export function typecheckBeforeBuild(
 export function typecheckGameWithDts(
 	bootloader_path: string,
 	dtsDir: string,
-	baseProjectOverride?: string,
-	emitOutput?: (text: string) => void
+	emitOutput: (text: string) => void,
+	baseProjectOverride?: string
 ): void {
 	let tscBin: string;
 	try { tscBin = require.resolve('typescript/bin/tsc'); }
@@ -421,10 +411,9 @@ export function typecheckGameWithDts(
 	fs.writeFileSync(tmpCfg, JSON.stringify(cfg, null, 2));
 
 	const res = spawnSync(process.execPath, [tscBin, '-p', tmpCfg], { stdio: 'pipe', encoding: 'utf8' });
-	if (res.stdout) emitOutput?.(res.stdout);
-	if (res.stderr) emitOutput?.(res.stderr);
+	emitOutput(res.stdout ?? res.stderr); // Emit either stdout or stderr. Also note that `emitOutput` already handles undefined strings
 	if (res.status !== 0) {
-		const reason = res.stderr?.trim() || res.stdout?.trim() || 'Type-check with engine declarations failed.';
+		const reason = 'Type-check with engine declarations failed.';
 		throw new Error(reason);
 	}
 }
@@ -662,7 +651,7 @@ export function zip(content: Buffer): Uint8Array {
  * @param filepath The path of the resource file.
  * @returns An object containing the name, extension, and type of the resource file.
  */
-export function getResMetaByFilename(filepath: string): { name: string, ext: string, type: resourcetype, collisionType?: 'concave' | 'convex' | 'aabb', datatype?: 'json' | 'yaml' | 'bin' } {
+export function getResMetaByFilename(filepath: string): { name: string, ext: string, type: resourcetype, collisionType?: 'concave' | 'convex' | 'aabb', datatype?: 'json' | 'yaml' | 'bin', update_timestamp?: number } {
 	const parsed = parse(filepath);
 	const rawName = parsed.name;
 	const normalizedName = rawName.replace(/\s+/g, '').toLowerCase();
@@ -671,6 +660,7 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 	let type: resourcetype;
 	let collisionType: 'concave' | 'convex' | 'aabb' = undefined;
 	let datatype: 'json' | 'yaml' | 'bin' = undefined;
+	let update_timestamp: number = undefined;
 
 	const getDataSubtype = (currentName: string): asset_type => {
 		if (currentName.includes('.aem')) return 'aem';
@@ -724,9 +714,10 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 			break;
 		case '.lua':
 			type = 'lua';
+			update_timestamp = parsed.mtime.getTime(); // Use file modification time as update timestamp
 			break;
 	}
-	return { name, ext, type, collisionType, datatype };
+	return { name, ext, type, collisionType, datatype, update_timestamp };
 }
 
 /**
@@ -742,30 +733,26 @@ export type ResourceScanOptions = {
 	resolveAtlasIndex?: boolean;
 };
 
-const EXTRA_LUA_SCAN_SKIP = new Set<string>([
-	'.git',
-	'.svn',
-	'.hg',
-	'.cache',
-	'node_modules',
-	'dist',
-	'build',
-	'out',
-	'rom',
-	'res',
-]);
-
-EXTRA_LUA_SCAN_SKIP.add(WORKSPACE_STATE_DIR_NAME);
-
-function shouldSkipExtraLuaDir(dirname: string): boolean {
-	return EXTRA_LUA_SCAN_SKIP.has(dirname.toLowerCase());
-}
 
 function isWorkspaceStateDirectory(name: string): boolean {
 	return name.toLowerCase() === WORKSPACE_STATE_DIR_NAME;
 }
 
 export async function getResMetaList(respaths: string[], romname?: string, options: ResourceScanOptions = {}): Promise<Resource[]> {
+	const EXTRA_LUA_SCAN_SKIP = new Set<string>([
+		'.git',
+		'.svn',
+		'.hg',
+		'.cache',
+		'node_modules',
+		'dist',
+		'build',
+		'out',
+		'rom',
+		'res',
+	]);
+
+	EXTRA_LUA_SCAN_SKIP.add(WORKSPACE_STATE_DIR_NAME);
 	const arrayOfFiles: string[] = [];
 	const includeCode = options.includeCode !== false;
 	const extraLuaRoots = options.extraLuaPaths ?? [];
@@ -794,7 +781,7 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 			return;
 		}
 		for (const entry of entries) {
-			if (shouldSkipExtraLuaDir(entry.name) || isWorkspaceStateDirectory(entry.name)) continue;
+			if (EXTRA_LUA_SCAN_SKIP.has(entry.name.toLowerCase()) || isWorkspaceStateDirectory(entry.name)) continue;
 			const entryPath = join(root, entry.name);
 			if (entry.isDirectory()) {
 				await appendLuaFilesFromRoot(entryPath);
@@ -837,7 +824,7 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 		let name = meta.name;
 		const ext = meta.ext;
 		const virtualSourcePath = resolveVirtualSourcePath(filepath, virtualRoot);
-		const sourcePath = virtualSourcePath ?? (filepath ? toWorkspaceRelativePath(filepath) : undefined);
+		const sourcePath = virtualSourcePath ?? toWorkspaceRelativePath(filepath);
 		switch (type) {
 			case 'image':
 				const imgMeta = parseImageMeta(name);
@@ -907,7 +894,8 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 				++dataid;
 				break;
 			case 'lua':
-				result.push({ filepath, name, ext, type, id: luaid, sourcePath });
+				// For Lua files, we also determine the current datetime to allow the workspace to detect changes and choosing which source to regard as newer
+				result.push({ filepath, name, ext, type, id: luaid, sourcePath, update_timestamp: meta.update_timestamp });
 				++luaid;
 				break;
 			case 'model':
@@ -1648,7 +1636,7 @@ export async function finalizeRompack(
 		status?.('encode manifest');
 		const metadataPayload = {
 			assets: assetList,
-			projectRootPath: options.projectRootPath ,
+			projectRootPath: options.projectRootPath,
 		};
 		const metadataBuffer = Buffer.from(encodeBinary(metadataPayload));
 		const globalMetadataOffset = offset;

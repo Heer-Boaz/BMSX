@@ -1,4 +1,4 @@
-import { convertToError, extractErrorMessage } from '../lua/value';
+import { extractErrorMessage } from '../lua/value';
 import type { HttpResponse, StorageService } from '../platform';
 import { type RomPack, type BmsxCartridge, type RomLuaAsset, normalizeLuaAsset } from '../rompack/rompack';
 import { BmsxConsoleRuntime } from './runtime';
@@ -19,6 +19,7 @@ export type LuaPersistenceFailurePolicy = {
 	[K in LuaPersistenceFailureKind]: LuaPersistenceFailureMode;
 };
 
+
 export const DEFAULT_LUA_FAILURE_POLICY: LuaPersistenceFailurePolicy = {
 	fetch: 'warning',
 	persist: 'error',
@@ -26,12 +27,15 @@ export const DEFAULT_LUA_FAILURE_POLICY: LuaPersistenceFailurePolicy = {
 	restore: 'error',
 };
 
+const luaFailurePolicy: LuaPersistenceFailurePolicy = { ...DEFAULT_LUA_FAILURE_POLICY };
+
 export async function saveLuaResourceSource(asset_id: string, source: string): Promise<void> {
 	const cart = $.rompack.cart;
 	const asset = cart.lua[asset_id];
 	const cartPath = asset.normalized_source_path;
 	await persistLuaSourceToFilesystem(cartPath, source);
 	asset.src = source;
+	asset.update_timestamp = $.platform.clock.dateNow();
 	const chunkName = asset.chunk_name ?? `@lua/${asset.resid}`;
 	cart.chunk2lua![chunkName] = asset;
 	cart.source2lua![cartPath] = asset;
@@ -50,6 +54,7 @@ export async function createLuaResource(request: ConsoleLuaResourceCreationReque
 		type: 'lua',
 		src: contents,
 		source_path: path,
+		update_timestamp: $.platform.clock.dateNow(),
 	};
 	const cart = $.rompack.cart;
 	cart.lua[asset_id] = asset;
@@ -122,19 +127,22 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 		let bestSource: string = null;
 		let bestUpdatedAt = -1;
 		let bestPath: string = null;
-		const considerStored = (raw: string, path: string): void => {
+		const considerStored = (raw: string, path: string, storageKey: string): void => {
 			let source = raw;
 			let updatedAt: number;
 			try {
-				const parsed = JSON.parse(raw) as { contents?: string; updatedAt?: number };
-				if (typeof parsed.contents === 'string') {
-					source = parsed.contents;
-					if (typeof parsed.updatedAt === 'number') {
-						updatedAt = parsed.updatedAt;
-					}
-				}
+				const parsed = JSON.parse(raw) as { contents: string; updatedAt?: number };
+				source = parsed.contents;
+				updatedAt = parsed.updatedAt;
 			} catch {
-				// Fall back to raw string for legacy entries.
+				// Legacy plain-string entry; keep as-is.
+			}
+			if (source === asset.src) {
+				// Stored buffer matches ROM; drop it to avoid stale timestamps overriding packed sources.
+				if (storageKey) {
+					storage.removeItem(storageKey);
+				}
+				return;
 			}
 			const candidateTime = updatedAt ?? 0;
 			if (bestSource === null || candidateTime > bestUpdatedAt || (candidateTime === bestUpdatedAt && path === dirtyPath)) {
@@ -145,13 +153,13 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 		};
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
 		const storedDirty = storage.getItem(storageKey);
-		if (storedDirty !== null && storedDirty !== undefined) {
-			considerStored(storedDirty, dirtyPath);
+		if (!storedDirty) {
+			considerStored(storedDirty, dirtyPath, storageKey);
 		}
 		const canonicalKey = buildWorkspaceStorageKey(root, cartPath);
 		const storedCanonical = storage.getItem(canonicalKey);
-		if (storedCanonical !== null && storedCanonical !== undefined) {
-			considerStored(storedCanonical, cartPath);
+		if (!storedCanonical) {
+			considerStored(storedCanonical, cartPath, canonicalKey);
 		}
 		if (bestSource !== null) {
 			overrides.set(asset.resid, { source: bestSource, path: bestPath, cartPath, updatedAt: bestUpdatedAt >= 0 ? bestUpdatedAt : undefined });
@@ -170,7 +178,6 @@ function resolveWorkspacePathForIo(path: string, projectRootPath?: string): stri
 }
 
 export async function persistLuaSourceToFilesystem(path: string, source: string): Promise<void> {
-	const runtime = BmsxConsoleRuntime.instance;
 	if (typeof fetch !== 'function') {
 		throw new Error('[BmsxConsoleRuntime] Fetch API unavailable; cannot persist Lua source.');
 	}
@@ -183,7 +190,7 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 		});
 	} catch (error) {
 		handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Failed to reach Lua save endpoint for '${path}'`, { error });
-		if (runtime.luaFailurePolicy.persist === 'warning') {
+		if (luaFailurePolicy.persist === 'warning') {
 			return;
 		}
 		return;
@@ -195,7 +202,7 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 		} catch (textError) {
 			const message = extractErrorMessage(textError);
 			handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Save rejected for '${path}' (response body read failed)`, { detail: message });
-			if (runtime.luaFailurePolicy.persist === 'warning') {
+			if (luaFailurePolicy.persist === 'warning') {
 				return;
 			}
 			return;
@@ -208,7 +215,7 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 			} catch (parseError) {
 				const parseMessage = extractErrorMessage(parseError);
 				handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Save rejected for '${path}' (error payload parse failed)`, { detail: parseMessage });
-				if (runtime.luaFailurePolicy.persist === 'warning') {
+				if (luaFailurePolicy.persist === 'warning') {
 					return;
 				}
 				return;
@@ -225,7 +232,7 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 			}
 		}
 		handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Save rejected for '${path}'`, { detail: finalDetail });
-		if (runtime.luaFailurePolicy.persist === 'warning') {
+		if (luaFailurePolicy.persist === 'warning') {
 			return;
 		}
 		return;
@@ -233,8 +240,6 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 }
 
 export async function fetchLuaSourceFromFilesystem(path: string): Promise<string> {
-	const runtime = BmsxConsoleRuntime.instance;
-
 	if (typeof fetch !== 'function') {
 		return null;
 	}
@@ -245,7 +250,7 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 		response = await fetch(url, { method: 'GET', cache: 'no-store' });
 	} catch (error) {
 		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from filesystem (${path})`, { error });
-		if (runtime.luaFailurePolicy.fetch === 'warning') {
+		if (luaFailurePolicy.fetch === 'warning') {
 			return null;
 		}
 		return null;
@@ -260,7 +265,7 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 		} catch (textError) {
 			const message = extractErrorMessage(textError);
 			handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from '${path}' (response body read failed)`, { detail: message });
-			if (runtime.luaFailurePolicy.fetch === 'warning') {
+			if (luaFailurePolicy.fetch === 'warning') {
 				return null;
 			}
 			return null;
@@ -273,7 +278,7 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 			} catch (parseError) {
 				const parseMessage = extractErrorMessage(parseError);
 				handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from '${path}' (error payload parse failed)`, { detail: parseMessage });
-				if (runtime.luaFailurePolicy.fetch === 'warning') {
+				if (luaFailurePolicy.fetch === 'warning') {
 					return null;
 				}
 				return null;
@@ -290,7 +295,7 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 			}
 		}
 		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from '${path}'`, { detail: finalDetail });
-		if (runtime.luaFailurePolicy.fetch === 'warning') {
+		if (luaFailurePolicy.fetch === 'warning') {
 			return null;
 		}
 		return null;
@@ -301,14 +306,14 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 	} catch (parseError) {
 		const message = extractErrorMessage(parseError);
 		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Invalid response while loading Lua source from '${path}'`, { detail: message });
-		if (runtime.luaFailurePolicy.fetch === 'warning') {
+		if (luaFailurePolicy.fetch === 'warning') {
 			return null;
 		}
 		return null;
 	}
 	if (!payload || typeof payload !== 'object') {
 		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Response for '${path}' missing Lua contents`);
-		if (runtime.luaFailurePolicy.fetch === 'warning') {
+		if (luaFailurePolicy.fetch === 'warning') {
 			return null;
 		}
 		return null;
@@ -316,48 +321,12 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 	const record = payload as { contents?: unknown };
 	if (typeof record.contents !== 'string') {
 		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Response for '${path}' missing Lua contents`);
-		if (runtime.luaFailurePolicy.fetch === 'warning') {
+		if (luaFailurePolicy.fetch === 'warning') {
 			return null;
 		}
 		return null;
 	}
 	return record.contents;
-}
-
-export async function prefetchLuaSourceFromFilesystem(): Promise<void> {
-	const runtime = BmsxConsoleRuntime.instance;
-
-	const entry = runtime.cart.lua[runtime.cart.entry];
-	const path = entry?.source_path;
-	if (!path) {
-		return;
-	}
-	const fetched = await fetchLuaSourceFromFilesystem(path);
-	if (fetched === null) {
-		return;
-	}
-	const currentSource = entry.src;
-	if (currentSource === fetched) {
-		return;
-	}
-	const chunkName = entry.chunk_name;
-	try {
-		runtime.reloadLuaProgramState(fetched, { chunkName, assetId: entry.resid, runInit: false });
-	}
-	catch (error) {
-		try {
-			runtime.reloadLuaProgramState(currentSource, { chunkName, assetId: entry.resid, runInit: false });
-		}
-		catch (restoreError) {
-			handleLuaPersistenceFailure('restore', `[BmsxConsoleRuntime] Failed to restore Lua source after prefetched apply error`, { error: restoreError });
-			return;
-		}
-		handleLuaPersistenceFailure('apply', `[BmsxConsoleRuntime] Failed to apply prefetched Lua source '${path}'`, { error });
-		if (runtime.luaFailurePolicy.apply === 'warning') {
-			return;
-		}
-		throw convertToError(error);
-	}
 }
 
 function handleLuaPersistenceFailure(
@@ -366,7 +335,7 @@ function handleLuaPersistenceFailure(
 	options: { detail?: string; error?: unknown } = {}
 ): void {
 	const runtime = BmsxConsoleRuntime.instance;
-	const mode = runtime.luaFailurePolicy[kind];
+	const mode = luaFailurePolicy[kind];
 	const parts: string[] = [context];
 	if (options.detail && options.detail.length > 0) {
 		parts.push(options.detail);
@@ -407,23 +376,26 @@ export async function mergeWorkspaceOverrides(
 		...localOverrides.keys(),
 		...serverOverrides.keys(),
 	]);
+
+	function ensureLocalStorageHasLatestVersion(asset_id: string, override: WorkspaceOverrideRecord): void {
+		if (root) { // Note that root may be empty string if project root is not set (e.g. in non-debug carts)
+			persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[asset_id, override]]));
+		}
+	}
+
 	for (const asset_id of assetIds) {
-		const local = localOverrides.get(asset_id);
-		const remote = serverOverrides.get(asset_id);
+		const local = localOverrides.get(asset_id); // Get local override
+		const remote = serverOverrides.get(asset_id); // Get server override
 		const localTime = local?.updatedAt ?? 0;
 		const remoteTime = remote?.updatedAt ?? 0;
 		if (local && (!remote || localTime >= remoteTime)) {
 			merged.set(asset_id, local);
-			if (root) {
-				persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[asset_id, local]]));
-			}
+			ensureLocalStorageHasLatestVersion(asset_id, local);
 			continue;
 		}
 		if (remote) {
 			merged.set(asset_id, remote);
-			if (root) {
-				persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[asset_id, remote]]));
-			}
+			ensureLocalStorageHasLatestVersion(asset_id, remote);
 		}
 	}
 	return merged;
@@ -588,7 +560,7 @@ export function persistWorkspaceOverridesToLocalStorage(storage: StorageService,
 		const storageKey = buildWorkspaceStorageKey(root, record.path);
 		const payload = {
 			contents: record.source,
-			updatedAt: record.updatedAt ?? Date.now(),
+			updatedAt: record.updatedAt ?? $.platform.clock.dateNow(),
 		};
 		storage.setItem(storageKey, JSON.stringify(payload));
 	}
@@ -623,8 +595,17 @@ export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; 
 		const asset_id = asset.resid;
 		const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
 		const savedRecord = await fetchWorkspaceFile(cartPath);
-		const canonicalRecord = savedRecord ? { source: savedRecord.contents, path: cartPath, cartPath, updatedAt: savedRecord.updatedAt } : null;
+		const canonicalRecord = savedRecord && savedRecord.contents !== asset.src
+			? { source: savedRecord.contents, path: cartPath, cartPath, updatedAt: savedRecord.updatedAt }
+			: null;
 		const overrideRecord = merged.get(asset_id);
+		if (overrideRecord && overrideRecord.source === asset.src) {
+			const staleKey = root ? buildWorkspaceStorageKey(root, overrideRecord.path) : null;
+			if (staleKey) {
+				storage.removeItem(staleKey);
+			}
+			continue;
+		}
 		let winner: WorkspaceOverrideRecord = overrideRecord ?? null;
 		let winnerKind: 'override' | 'canonical' | null = overrideRecord ? 'override' : null;
 		let winnerUpdatedAt = overrideRecord ? (overrideRecord.updatedAt ?? 0) : -1;
@@ -637,6 +618,14 @@ export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; 
 			}
 		}
 		if (!winner) {
+			continue;
+		}
+		const romTimestamp = asset.update_timestamp ?? 0;
+		if (winnerUpdatedAt >= 0 && winnerUpdatedAt <= romTimestamp && winner.source !== asset.src) {
+			if (root) {
+				const staleKey = buildWorkspaceStorageKey(root, winner.path);
+				storage.removeItem(staleKey);
+			}
 			continue;
 		}
 		if (asset.src !== winner.source) {
@@ -653,7 +642,7 @@ export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; 
 					storage.removeItem(staleKey);
 				}
 			} else {
-				const updatedAt = winnerUpdatedAt >= 0 ? winnerUpdatedAt : Date.now();
+				const updatedAt = winnerUpdatedAt >= 0 ? winnerUpdatedAt : $.platform.clock.dateNow();
 				const updatedRecord: WorkspaceOverrideRecord = { ...winner, updatedAt };
 				persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[asset_id, updatedRecord]]));
 				if (includeServer && canonicalUpdatedAt < updatedAt) {

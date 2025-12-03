@@ -57,6 +57,9 @@ class HeadlessClock implements Clock {
 	now(): MonoTime {
 		return performance.now() - this.origin;
 	}
+	dateNow(): number {
+		return Date.now();
+	}
 }
 
 class HeadlessFrameLoop implements FrameLoop {

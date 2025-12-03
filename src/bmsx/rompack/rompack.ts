@@ -12,9 +12,9 @@ export interface RomPack {
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	code: string; // The loaded game code in the ROM pack. ALWAYS PRESENT DURING GAME!
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
-	project_root_path?: string; // Workspace-relative cart root path for resolving filesystem writes.
+	project_root_path: string; // Workspace-relative cart root path for resolving filesystem writes.
 	canonicalization?: CanonicalizationType; // Canonicalization type for Lua identifiers in this ROM pack.
-	manifest?: unknown;
+	manifest: RomManifest; // The manifest of the ROM pack, if present.
 }
 
 export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'rommanifest';
@@ -49,7 +49,8 @@ export interface RomImgAsset extends RomAsset {
 export type RomLuaAsset = RomAsset & {
 	src: string; // The Lua source code of the Lua script asset. Known at pack time
 	chunk_name?: string; // The chunk name to use when loading this Lua asset into the Lua VM. Always normalized!! Cached at runtime
-	normalized_source_path?: string; // Normalized source path for this Lua asset, used for source mapping and debugging.
+	normalized_source_path?: string; // Normalized absolute source path for this Lua asset, used for source mapping and debugging.
+	update_timestamp: number; // Timestamp of the last update to this Lua asset, used for caching and reloading during development.
 }
 
 export interface RomMeta {
@@ -69,6 +70,22 @@ export type AudioId = asset_id;
 export type ModelId = asset_id;
 export type DataId = asset_id;
 export type LuaId = asset_id;
+
+export interface RomManifest {
+	title?: string;
+	short_name?: string;
+	rom_name?: string;
+	cart?: RomManifestLuaConfig; // cart-related configuration, mainly Lua entry points. Note that this is optional as not all rompacks are Lua-based carts.
+}
+
+export type RomManifestLuaConfig = {
+	entryAssetId: string;
+	entry?: {
+		init?: string;
+		update?: string;
+		draw?: string;
+	};
+};
 
 /**
  * Arguments passed from the bootloader to the game constructor.

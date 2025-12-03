@@ -46,23 +46,14 @@ export type AtlasTexcoords = [
 	number, number
 ];
 
-export type RomManifestLuaConfig = {
-	entryAssetId?: string;
-	entry?: {
-		init?: string;
-		update?: string;
-		draw?: string;
-	};
-};
-
 interface BaseResource<TType extends resourcetype> {
-	type: TType;
-	name: string;
-	filepath?: string;
-	ext?: string;
-	id?: number;
-	buffer?: Buffer;
-	sourcePath?: string;
+	type: TType; // resource type
+	name: string; // logical name within the rompack, but I think unused in the game engine
+	filepath?: string; // Original file path on disk (relative)
+	sourcePath?: string; // Original relative source path before any normalization (e.g. for Lua assets)
+	ext?: string; // file extension
+	id?: number; // assigned resource ID
+	buffer?: Buffer; // raw data buffer
 }
 
 export interface ImageResource extends BaseResource<'image'> {
@@ -106,6 +97,7 @@ export interface ModelResource extends BaseResource<'model'> {
 
 export interface LuaResource extends BaseResource<'lua'> {
 	id: number;
+	update_timestamp: number; // Timestamp of the last update to this Lua asset, used for caching and reloading during development.
 }
 
 export interface RomLabelResource extends BaseResource<'romlabel'> {
@@ -127,10 +119,3 @@ export type Resource =
 	| LuaResource
 	| RomLabelResource
 	| RomManifestResource;
-
-export interface RomManifest {
-	title?: string;
-	short_name?: string;
-	rom_name?: string;
-	lua?: RomManifestLuaConfig;
-}

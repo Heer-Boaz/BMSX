@@ -102,6 +102,10 @@ class BrowserClock implements Clock {
 		return performance.now();
 	}
 
+	dateNow(): number {
+		return Date.now();
+	}
+
 	scheduleOnce(delayMs: number, cb: (t: number) => void) {
 		let active = true;
 		const id = window.setTimeout(() => {

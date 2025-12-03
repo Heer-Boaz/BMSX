@@ -1,4 +1,3 @@
-import type { LuaSourceRange } from '../lua/ast';
 import type { LuaInterpreter } from '../lua/runtime';
 import { createLuaNativeFunction, type LuaFunctionValue } from '../lua/value';
 import type { LuaFunctionRedirectRecord } from './types';
@@ -9,32 +8,6 @@ export type LuaHandlerBindContext = {
 	fn: LuaFunctionValue;
 	interpreter: LuaInterpreter;
 };
-
-export interface LuaHandlerDescriptor {
-	id: string;
-	category: LuaHandlerCategory;
-	targetId: string;
-	hook: string;
-	chunkName: string;
-	normalizedChunkName: string;
-	functionName: string;
-	sourceRange: LuaSourceRange;
-	metadata?: Readonly<Record<string, unknown>>;
-}
-
-export interface LuaHandlerRegistration {
-	id: string;
-	category: LuaHandlerCategory;
-	targetId: string;
-	hook: string;
-	chunkName?: string;
-	functionName: string;
-	sourceRange: LuaSourceRange;
-	metadata?: Readonly<Record<string, unknown>>;
-	onCreate(context: LuaHandlerBindContext): void;
-	onUpdate(context: LuaHandlerBindContext): void;
-	onDispose(context: LuaHandlerBindContext): void;
-}
 
 export class LuaFunctionRedirectCache {
 	private readonly byKey = new Map<string, LuaFunctionRedirectRecord>();
@@ -64,7 +37,7 @@ export class LuaFunctionRedirectCache {
 			moduleId,
 			path: path.slice(),
 			current: fn,
-			redirect: null as unknown as LuaFunctionValue,
+			redirect: null,
 		};
 		const redirect = createLuaNativeFunction(`redirect:${path[path.length - 1] ?? 'fn'}`, (args) => {
 			return record.current.call(args);

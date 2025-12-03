@@ -768,7 +768,7 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 	const runtime = BmsxConsoleRuntime.instance;
 	return {
 		version: 2,
-		savedAt: $.platform.clock.now(),
+		savedAt: $.platform.clock.dateNow(),
 		entryTabId: ide_state.entryTabId ,
 		activeTabId: ide_state.activeTabId ,
 		tabs,
@@ -786,7 +786,8 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 
 export async function persistDirtyContextEntries(entries: Map<string, DirtyContextEntry>): Promise<void> {
 	for (const [dirtyPath, entry] of entries) {
-		if (workspaceDirtyCache.get(dirtyPath) === entry.text) {
+		const cached = workspaceDirtyCache.get(dirtyPath);
+		if (cached === entry.text) {
 			continue;
 		}
 		await writeDirtyBuffer(dirtyPath, entry.text);

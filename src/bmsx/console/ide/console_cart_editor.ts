@@ -1390,10 +1390,10 @@ export function activate(): void {
 	if (ide_state.dimCrtInEditor) {
 		applyEditorCrtDimming();
 	}
-	if (BmsxConsoleRuntime.instance.hasLuaRuntimeFailed) {
+	if (BmsxConsoleRuntime.instance.hasRuntimeFailed) {
 		const rendered = renderRuntimeFaultOverlay({
 			snapshot: BmsxConsoleRuntime.instance.faultSnapshot,
-			luaRuntimeFailed: BmsxConsoleRuntime.instance.hasLuaRuntimeFailed,
+			luaRuntimeFailed: BmsxConsoleRuntime.instance.hasRuntimeFailed,
 			needsFlush: BmsxConsoleRuntime.instance.doesFaultOverlayNeedFlush,
 			force: false,
 		});

@@ -5,8 +5,8 @@ import { Presets, SingleBar } from 'cli-progress';
 
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
-import type { Resource, RomManifest, RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
-import type { CanonicalizationType } from '../../src/bmsx/rompack/rompack';
+import type { RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
+import type { CanonicalizationType, RomManifest } from '../../src/bmsx/rompack/rompack';
 
 import { join, isAbsolute } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
@@ -676,7 +676,7 @@ async function main() {
 		const projectRootPath = projectRootFromRes.length > 0
 			? projectRootFromRes
 			: (projectRootFromBoot.length > 0 ? projectRootFromBoot : null);
-		const virtualRoot = projectRootPath ;
+		const virtualRoot = projectRootPath;
 
 		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
 		setAtlasFlag(useTextureAtlas);
@@ -835,20 +835,17 @@ async function main() {
 			if (!skipTypecheck && (isEngineMode || shouldBundleCartCode)) {
 				const tsProject = pkgTsconfigPath;
 				const stepLogs: string[] = [];
-				const push = (text: string) => { if (text) stepLogs.push(text); };
+				const push = (text: string) => text && stepLogs.push(text);
 				try {
 					await progress.runWithOutput('Type-check', async () => {
-						if (enginedts) typecheckGameWithDts(bootloader_path, enginedts, tsProject, push);
-						else typecheckBeforeBuild(bootloader_path, tsProject, push);
+						if (enginedts) typecheckGameWithDts(bootloader_path, enginedts, push, tsProject);
+						else typecheckBeforeBuild(bootloader_path, push, tsProject);
 					});
 					// Capture type-check output even if it didn't throw
-					if (stepLogs.length > 0) {
-						stepLogs.forEach(captureLog);
-					}
+					stepLogs.forEach(captureLog);
 				} catch (err) {
 					stepLogs.forEach(captureLog);
-					typeCheckError = err as Error;
-					throw typeCheckError;
+					throw err;
 				}
 
 				// Ensure tasks are removed
@@ -863,8 +860,7 @@ async function main() {
 					await progress.runWithOutput('Bundle cart code', () => esbuild(rom_name, bootloader_path, debug, tsProject));
 				} catch (err) {
 					stepLogs.push(...formatEsbuildErrors(err));
-					if (err && (err as any).message) stepLogs.push((err as any).message);
-					for (const line of stepLogs) captureLog(line);
+					stepLogs.forEach(captureLog);
 					throw err;
 				}
 			}

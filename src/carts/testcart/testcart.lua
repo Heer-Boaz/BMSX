@@ -39,14 +39,12 @@ function hero:onspawn(spawn_pos)
 	local define_fn = timeline_component.define
 	local play_fn = timeline_component.play
 	self.label = 'hero'
-	self.x = spawn_pos.x -- no defensive code allowed
-	self.y = spawn_pos.y -- no defensive code allowed
 	self.sx = 10
 	self.sy = 10
 	self.speed = 54
 	self.facing = 'right'
 	self.charge_time = 0
-	self.active_state = 'idle'
+	self.active_state = 'not set'
 	self.tempo_ready = true
 	self.blinking_timer = 0
 	define_fn(timeline_component, {
@@ -73,12 +71,12 @@ function hero:onspawn(spawn_pos)
 			end
 		end,
 	})
-	self:activate()
 end
 
 function hero:emit_move(dx, dy)
 	local payload = { x = self.x, y = self.y, dx = dx, dy = dy }
 	self.events:emit('demo.hero.move', payload)
+	emit('demo.hero.move', self, payload)
 	emit('demo.hero.global_move', self, payload)
 end
 
@@ -112,7 +110,9 @@ function hero:try_blink()
 	end
 	local ok = trigger_effect(self.id, effect_id, { payload = { facing = self.facing, t = demo.tick } })
 	if ok then
-		self.events:emit('demo.hero.effect', { phase = 'request', facing = self.facing })
+		local payload = { phase = 'request', facing = self.facing }
+		self.events:emit('demo.hero.effect', payload)
+		emit('demo.hero.effect', self, payload)
 	end
 end
 
@@ -121,8 +121,8 @@ local function build_hero_fsm()
 		initial = 'idle',
 		states = {
 			idle = {
-				entering_state = function(self)
-					self.active_state = 'idle'
+				entering_state = function(self, state)
+					self.active_state = state.id
 				end,
 				tick = function(self)
 					local moved = self:run_motion(game.deltatime_seconds)
@@ -180,7 +180,9 @@ local function build_hero_fsm()
 					self:run_motion(1)
 					self:try_blink()
 					if not game:action_triggered(1, 'console_b[p]') then
-						self.events:emit('demo.hero.charge', { time = self.charge_time })
+						local payload = { time = self.charge_time }
+						self.events:emit('demo.hero.charge', payload)
+						emit('demo.hero.charge', self, payload)
 						return '/moving'
 					end
 				end,
@@ -256,15 +258,17 @@ local function define_blink()
 		event = 'demo.hero.blink',
 		cooldown_ms = 420,
 		-- handle the blink directly in the effect so a single trigger applies movement/timer/emits without relying on a separate lis
-		handler = function(ctx, payload)
+		handler = function(ctx)
 			print('[hotreload-test] blink effect handler invoked tick=' .. demo.tick)
 			local owner = ctx.owner
-			local facing = payload.facing
+			local facing = owner.facing
 			local offset = facing == 'left' and -24 or 24
 			owner.x = owner.x + offset
 			owner.y = owner.y - 2
 			owner.blinking_timer = 0.2
-			owner.events:emit('demo.hero.effect', { phase = 'active', facing = facing, offset = offset })
+			local payload = { phase = 'active', facing = facing, offset = offset }
+			owner.events:emit('demo.hero.effect', payload)
+			emit('demo.hero.effect', owner, payload)
 			emit('demo.hero.effect.global', owner, { phase = 'active', facing = facing, offset = offset })
 			owner.events:emit('demo.hero.effect', { phase = 'done' })
 			print('[hotreload-test] blink facing=' .. facing .. ' offset=' .. offset .. ' tick=' .. demo.tick)

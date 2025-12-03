@@ -2433,7 +2433,7 @@ export function resolveLuaChainValue(parts: string[], asset_id: string): ({ kind
 		}
 	}
 	if (!found) {
-		const chunkName = runtime.luaChunkName;
+		const chunkName = runtime.currentChunkName;
 		if (chunkName) {
 			const envByChunk = runtime.luaChunkEnvironmentsByChunkName.get(chunkName);
 			if (envByChunk && envByChunk.hasLocal(root)) {

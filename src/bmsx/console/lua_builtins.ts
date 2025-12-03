@@ -169,7 +169,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		const targetPlayer = args.length >= 2
 			? resolvePlayerIndex(args[1], 'set_input_map')
 			: runtime.playerIndex;
-		const moduleId = $.rompack.cart.chunk2lua[runtime.luaChunkName]?.resid ?? runtime.luaChunkName;
+		const moduleId = $.rompack.cart.chunk2lua[runtime.currentChunkName]?.resid ?? runtime.currentChunkName;
 		const marshalCtx = runtime.ensureMarshalContext({ moduleId, path: [] });
 		const mappingValue = runtime.luaJsBridge.luaValueToJs(mappingTable, marshalCtx);
 		if (!mappingValue || typeof mappingValue !== 'object') {
@@ -232,7 +232,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 			const displayParams = params.map(param => (optionalSet.has(param) ? `${param}?` : param));
 			const signature = displayParams.length > 0 ? `${name}(${displayParams.join(', ')})` : `${name}()`;
 			const native = createLuaNativeFunction(`api.${name}`, (args) => {
-				const moduleId = $.rompack.cart.chunk2lua[runtime.luaChunkName]?.resid ?? runtime.luaChunkName;
+				const moduleId = $.rompack.cart.chunk2lua[runtime.currentChunkName]?.resid ?? runtime.currentChunkName;
 				const baseCtx = runtime.ensureMarshalContext({ moduleId, path: [] });
 				const jsArgs = Array.from(args, (arg, index) => runtime.luaJsBridge.luaValueToJs(arg, runtime.extendMarshalContext(baseCtx, `arg${index}`)));
 				try {

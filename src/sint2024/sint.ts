@@ -14,7 +14,7 @@ export class sint extends SpriteObject {
 	public setimg(imgid: string) {
 		this.imgid = imgid; // Set the image to be displayed to 'hmm' so that the size properties are calculated
 		if (this.imgid !== 'none') {
-			const gamescreenSize = $.viewportSize;
+			const gamescreenSize = $.viewportsize;
 			this.x = gamescreenSize.x - this.sx;
 			this.y = gamescreenSize.y - this.sy;
 		}

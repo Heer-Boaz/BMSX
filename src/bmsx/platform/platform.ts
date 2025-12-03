@@ -73,7 +73,9 @@ export interface TimerHandle {
  * (for example, some headless or test harnesses).
  */
 export interface Clock {
-	now(): MonoTime; scheduleOnce: (delayMs: number, cb: (t: MonoTime) => void) => TimerHandle;
+	now(): MonoTime;
+	dateNow(): number;
+	scheduleOnce: (delayMs: number, cb: (t: MonoTime) => void) => TimerHandle;
 }
 
 export interface FrameLoop {

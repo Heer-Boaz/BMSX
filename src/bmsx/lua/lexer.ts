@@ -521,7 +521,7 @@ export class LuaLexer {
 		});
 	}
 
-	private canonicalizeIdentifier(value: string): string {
+	private canonicalizeIdentifier(value: string): string { // UGLY! DUPLICATE IMPLEMENTATION (SEE BmsxConsoleRuntime)!
 		if (this.identifierCanonicalization === 'upper') {
 			return value.toUpperCase();
 		}

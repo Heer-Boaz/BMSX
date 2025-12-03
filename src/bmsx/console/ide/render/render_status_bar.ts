@@ -8,7 +8,7 @@ import { api, BmsxConsoleRuntime } from '../../runtime';
 
 export function renderStatusBar(): void {
 	const runtime = BmsxConsoleRuntime.instance;
-	const runtimeFaulted = runtime ? runtime.hasLuaRuntimeFailed : false;
+	const runtimeFaulted = runtime ? runtime.hasRuntimeFailed : false;
 	const statusTop = ide_state.viewportHeight - statusAreaHeight();
 	const statusBottom = ide_state.viewportHeight;
 	const statusBackground = constants.COLOR_STATUS_BACKGROUND;

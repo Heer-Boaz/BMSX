@@ -30,7 +30,7 @@
 			"console_a": ["a"]
 		}
 	},
-	"lua": {
+	"cart": {
 		"entry": {
 			"new_game": "new_game",
 			"init": "init",

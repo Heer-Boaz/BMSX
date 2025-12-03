@@ -1,5 +1,5 @@
 import { $, WorldObject, StateMachineBlueprint, build_fsm, calculateCenteredBlockX, insavegame, wrapGlyphs, type State, type RevivableObjectArgs, CustomVisualComponent } from 'bmsx';
-import { createGameEvent } from 'bmsx/core/game_event';
+import { create_gameevent } from 'bmsx/core/game_event';
 import { DataId } from './resourceids';
 import type { sint } from './sint';
 // import quizItemsData from './vragen.json';
@@ -190,7 +190,7 @@ export class quiz extends WorldObject {
 	 */
 	switchSintToQuestion(this: quiz) {
 		const sint = $.get_worldobject('sint');
-		const event = createGameEvent({ type: 'vraag', emitter: sint });
+		const event = create_gameevent({ type: 'vraag', emitter: sint });
 		sint.sc.dispatch_event(event);
 	}
 
@@ -201,7 +201,7 @@ export class quiz extends WorldObject {
 	 */
 	switchSintToAnswer(this: quiz) {
 		const sint = $.get_worldobject('sint');
-		const event = createGameEvent({ type: 'antwoord', emitter: sint });
+		const event = create_gameevent({ type: 'antwoord', emitter: sint });
 		sint.sc.dispatch_event(event);
 	}
 
@@ -212,7 +212,7 @@ export class quiz extends WorldObject {
 	 */
 	switchSintToKlaar(this: quiz) {
 		const sint = $.get_worldobject('sint');
-		const event = createGameEvent({ type: 'klaar', emitter: sint });
+		const event = create_gameevent({ type: 'klaar', emitter: sint });
 		sint.sc.dispatch_event(event);
 	}
 
@@ -270,7 +270,7 @@ export class quiz extends WorldObject {
 					input_event_handlers: {
 						'?(a[j!c], b[j!c])': { // Handle both answer options
 							do() {
-								$.consumeActions(1, 'a', 'b');
+								$.consume_actions(1, 'a', 'b');
 								return '/vraag';
 							},
 						},
@@ -289,27 +289,27 @@ export class quiz extends WorldObject {
 					input_event_handlers: {
 						'a[j!c]': { // Handle answer option A
 							do(this: quiz): string {
-								$.consumeAction(1, 'a');
+								$.consume_action(1, 'a');
 								this.currentAnswerOptionChosen = 'a';
 								return '/antwoord';
 							},
 						},
 						'b[j!c]': { // Handle answer option B
 							do(this: quiz): string {
-								$.consumeAction(1, 'b');
+								$.consume_action(1, 'b');
 								this.currentAnswerOptionChosen = 'b';
 								return '/antwoord';
 							},
 						},
 						'left[j!c]': { // Handle previous question on "left"
 							do(this: quiz) {
-								$.consumeAction(1, 'left');
+								$.consume_action(1, 'left');
 								this.presentQuestion('prev');
 							},
 						},
 						'right[j!c]': { // Handle next question on "right"
 							do(this: quiz): string | void {
-								$.consumeAction(1, 'right');
+								$.consume_action(1, 'right');
 								if (this.currentQuestionIndex >= quizItems.length - 1) {
 									return '/end';
 								}
@@ -335,7 +335,7 @@ export class quiz extends WorldObject {
 					input_event_handlers: {
 						'?(a[j!c], b[j!c])': { // Handle both answer options
 							do(this: quiz) {
-								$.consumeActions(1, 'a', 'b');
+								$.consume_actions(1, 'a', 'b');
 								if (this.currentQuestionIndex < quizItems.length - 1) {
 									return '/vraag';
 								} else {
