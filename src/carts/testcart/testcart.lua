@@ -18,9 +18,10 @@ local function track_plain_input()
 		{ 'console_up', 'up' },
 		{ 'console_down', 'down' },
 	}
+	print('asdfsdf')
 	for index = 1, #bindings do
 		local entry = bindings[index]
-		if game:action_triggered(1, entry[1] .. '[gp]') then
+		if game:action_triggered(1, entry[1] .. '[j]') then
 			demo.last_plain_input = entry[2]
 			emit('demo.input', nil, { action = entry[2], t = demo.tick })
 			print('[hotreload-test] input action=' .. entry[2] .. ' tick=' .. demo.tick)
@@ -32,6 +33,12 @@ hero = {}
 hero.__index = hero
 
 function hero:onspawn(spawn_pos)
+	print('[debug] onspawn native=' .. tostring(self.__native__) .. ' play_ani=' .. tostring(self.play_ani))
+	print('[debug] define_timeline value=' .. tostring(self.define_timeline) .. ' type=' .. type(self.define_timeline))
+	local timeline_component = self.timeline_component
+	print('[debug] timeline_component=' .. tostring(timeline_component) .. ' type=' .. type(timeline_component) .. ' has_define=' .. tostring(timeline_component and timeline_component.define) .. ' has_play=' .. tostring(timeline_component and timeline_component.play))
+	local define_fn = timeline_component.define
+	local play_fn = timeline_component.play
 	self.label = 'hero'
 	self.x = spawn_pos.x -- no defensive code allowed
 	self.y = spawn_pos.y -- no defensive code allowed
@@ -43,7 +50,7 @@ function hero:onspawn(spawn_pos)
 	self.active_state = 'idle'
 	self.tempo_ready = true
 	self.blinking_timer = 0
-	self:define_timeline({
+	define_fn(timeline_component, {
 		id = hero_timeline_id,
 		frames = { 'rise', 'peak', 'cool', 'reset' },
 		ticks_per_frame = 0.35,
@@ -54,7 +61,7 @@ function hero:onspawn(spawn_pos)
 			{ frame = 3, event = 'demo.timeline.frame', payload = { label = 'reset' } },
 		},
 	})
-	self:play_ani(hero_timeline_id)
+	play_fn(timeline_component, hero_timeline_id, { rewind = true, snap_to_start = true })
 	self.events:on({
 		event = 'demo.timeline.frame',
 		subscriber = self,
@@ -196,7 +203,7 @@ local function register_hero()
 	define_world_object({
 		def_id = hero_def_id,
 		class = hero,
-		components = { 'ActionEffectComponent', },
+		components = { 'actioneffectcomponent', },
 		fsms = { hero_fsm_id, },
 		effects = { effect_id, },
 		defaults = { speed = 54 },
@@ -290,6 +297,8 @@ end
 function update(dt)
 	demo.tick = demo.tick + dt
 	track_plain_input()
+	local hero = world_object(hero_instance_id)
+	print(""..hero.blinking_timer)
 end
 
 local function draw_hero(hero)
@@ -320,8 +329,8 @@ local function draw_hud(hero)
 end
 
 function draw()
-	cls(1)
-	local hero = world_object(hero_instance_id)
-	draw_hero(hero)
-	draw_hud(hero)
+	cls(4)
+	local hero_instance = world_object(hero_instance_id)
+	draw_hero(hero_instance)
+	draw_hud(hero_instance)
 end

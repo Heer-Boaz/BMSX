@@ -12,6 +12,8 @@ type LuaSnapshotContext = { ids: WeakMap<LuaTable, number>; objects: LuaSnapshot
 export class LuaJsBridge {
 	private readonly luaHandlerCache: LuaHandlerCache;
 	private readonly consoleRuntime: BmsxConsoleRuntime;
+	private readonly tableIds = new WeakMap<LuaTable, number>();
+	private nextTableId = 1;
 
 	constructor(consoleRuntime: BmsxConsoleRuntime, luaHandlerCache: LuaHandlerCache) {
 		this.consoleRuntime = consoleRuntime;
@@ -33,7 +35,11 @@ export class LuaJsBridge {
 		return this.luaValueToJsWithVisited(value, marshalCtx, new WeakMap<LuaTable, unknown>());
 	}
 
-	private luaValueToJsWithVisited(value: LuaValue, context: LuaMarshalContext, visited: WeakMap<LuaTable, unknown>): unknown {
+	private luaValueToJsWithVisited(
+		value: LuaValue,
+		context: LuaMarshalContext,
+		visited: WeakMap<LuaTable, unknown>,
+	): unknown {
 		if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
 			return value;
 		}
@@ -52,11 +58,17 @@ export class LuaJsBridge {
 		return null;
 	}
 
-	private convertLuaTableToJs(table: LuaTable, context: LuaMarshalContext, visited: WeakMap<LuaTable, unknown>): unknown {
+	private convertLuaTableToJs(
+		table: LuaTable,
+		context: LuaMarshalContext,
+		visited: WeakMap<LuaTable, unknown>,
+	): unknown {
 		const cached = visited.get(table);
 		if (cached !== undefined) {
 			return cached;
 		}
+		const tableId = this.getOrAssignTableId(table);
+		const tableContext = this.consoleRuntime.extendMarshalContext(context, `table${tableId}`);
 		const entries = table.entriesArray();
 		if (entries.length === 0) {
 			const empty: Record<string, unknown> = {};
@@ -84,7 +96,11 @@ export class LuaJsBridge {
 			for (let index = 0; index < numericEntries.length; index += 1) {
 				const entry = numericEntries[index];
 				const segment = this.describeMarshalSegment(entry.key);
-				const converted = this.luaValueToJsWithVisited(entry.value, segment ? this.consoleRuntime.extendMarshalContext(context, segment) : context, visited);
+				const converted = this.luaValueToJsWithVisited(
+					entry.value,
+					segment ? this.consoleRuntime.extendMarshalContext(tableContext, segment) : tableContext,
+					visited,
+				);
 				result[entry.key - 1] = converted;
 			}
 			return result;
@@ -94,14 +110,33 @@ export class LuaJsBridge {
 		for (let index = 0; index < numericEntries.length; index += 1) {
 			const entry = numericEntries[index];
 			const segment = this.describeMarshalSegment(entry.key);
-			objectResult[String(entry.key)] = this.luaValueToJsWithVisited(entry.value, segment ? this.consoleRuntime.extendMarshalContext(context, segment) : context, visited);
+			objectResult[String(entry.key)] = this.luaValueToJsWithVisited(
+				entry.value,
+				segment ? this.consoleRuntime.extendMarshalContext(tableContext, segment) : tableContext,
+				visited,
+			);
 		}
 		for (let index = 0; index < otherEntries.length; index += 1) {
 			const entry = otherEntries[index];
 			const segment = this.describeMarshalSegment(entry.key);
-			objectResult[String(entry.key)] = this.luaValueToJsWithVisited(entry.value, segment ? this.consoleRuntime.extendMarshalContext(context, segment) : context, visited);
+			objectResult[String(entry.key)] = this.luaValueToJsWithVisited(
+				entry.value,
+				segment ? this.consoleRuntime.extendMarshalContext(tableContext, segment) : tableContext,
+				visited,
+			);
 		}
 		return objectResult;
+	}
+
+	private getOrAssignTableId(table: LuaTable): number {
+		const existing = this.tableIds.get(table);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const id = this.nextTableId;
+		this.tableIds.set(table, id);
+		this.nextTableId += 1;
+		return id;
 	}
 
 	public jsToLua(value: unknown): LuaValue {

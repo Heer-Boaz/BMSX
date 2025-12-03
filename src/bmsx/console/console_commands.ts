@@ -1,7 +1,8 @@
 import { $ } from '../core/game';
 import { BmsxConsoleRuntime } from './runtime';
 import { clearWorkspaceSessionState } from './ide/workspace_storage';
-import { nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from './workspace';
+import { ide_state } from './ide/ide_state';
+import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from './workspace';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
 
@@ -307,6 +308,49 @@ export class ConsoleCommandDispatcher {
 		return command.trim().split(/\s+/);
 	}
 
+	private collectUnsavedPaths(root: string): Set<string> {
+		const unsaved = new Set<string>();
+		for (const context of ide_state.codeTabContexts.values()) {
+			if (!context.descriptor || !context.dirty) {
+				continue;
+			}
+			const cartPath = context.descriptor.path;
+			const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
+			const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
+			if ($.platform.storage.getItem(storageKey) === null) {
+				const normalizedPath = cartPath.startsWith('/') ? cartPath : `/${cartPath}`;
+				unsaved.add(normalizedPath);
+			}
+		}
+		return unsaved;
+	}
+
+	private collectWorkspaceEntryFlags(luaAssets: Array<{ normalized_source_path?: string; source_path?: string; resid: string; src?: string }>): Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }> {
+		const flags = new Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }>();
+		const root = $.rompack.project_root_path;
+		const storage = $.platform.storage;
+		if (!root || !storage) {
+			return flags;
+		}
+		const unsavedPaths = this.collectUnsavedPaths(root);
+		for (let index = 0; index < luaAssets.length; index += 1) {
+			const asset = luaAssets[index];
+			const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+			const normalizedPath = cartPath.startsWith('/') ? cartPath : `/${cartPath}`;
+			const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
+			const dirtyKey = buildWorkspaceStorageKey(root, dirtyPath);
+			const dirtyRaw = storage.getItem(dirtyKey);
+			const hasDirty = dirtyRaw !== null && dirtyRaw !== undefined;
+
+			const canonicalKey = buildWorkspaceStorageKey(root, cartPath);
+			const savedRaw = storage.getItem(canonicalKey);
+			const hasSaved = savedRaw !== null && savedRaw !== undefined;
+			const hasUnsaved = unsavedPaths.has(normalizedPath);
+			flags.set(normalizedPath, { hasSaved, hasDirty, hasUnsaved });
+		}
+		return flags;
+	}
+
 	private collectPaths(mode: string): PathEntry[] {
 		if (mode && mode !== '-DIRTY' && mode !== '-SAVED' && mode !== '-ALL' && mode !== '-ROM') {
 			this.runtime.consoleMode.appendStderr(ERROR_ILLEGAL_FUNCTION_CALL);
@@ -316,12 +360,13 @@ export class ConsoleCommandDispatcher {
 		const entries: PathEntry[] = [];
 		const seen = new Set<string>();
 		const pushPath = (path: string, kind: PathEntry['kind']): void => {
-			const key = `${path}:${kind}`;
+			const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+			const key = `${normalizedPath}:${kind}`;
 			if (seen.has(key)) {
 				return;
 			}
 			seen.add(key);
-			entries.push({ path, kind });
+			entries.push({ path: normalizedPath, kind });
 		};
 		const includeRom = mode === '-ROM' || mode === '-ALL' || !mode;
 		const includeSaved = mode === '-SAVED' || mode === '-ALL' || !mode;
@@ -333,11 +378,19 @@ export class ConsoleCommandDispatcher {
 				pushPath(path, 'rom');
 			}
 		}
-		if (includeSaved) {
-			// Saved workspace data no longer tracked in runtime; list remains empty.
-		}
-		if (includeDirty) {
-			// Dirty workspace data no longer tracked in runtime; list remains empty.
+		if (includeSaved || includeDirty) {
+			const workspaceFlags = this.collectWorkspaceEntryFlags(luaAssets);
+			for (const [path, flag] of workspaceFlags) {
+				if (includeSaved && flag.hasSaved) {
+					pushPath(path, 'saved');
+				}
+				if (includeDirty && flag.hasDirty) {
+					pushPath(path, 'dirty');
+				}
+				if (flag.hasUnsaved) {
+					pushPath(path, 'unsaved');
+				}
+			}
 		}
 		return entries;
 	}
@@ -387,7 +440,6 @@ export class ConsoleCommandDispatcher {
 			} else if (meta.hasUnsaved) {
 				kind = 'unsaved';
 			}
-			// lines.push({ text: `${name} (${label})`, kind, isDir: false });
 			lines.push({ text: `${name}`, kind, isDir: false });
 		}
 		return lines;
