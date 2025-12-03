@@ -214,6 +214,7 @@ export class BmsxConsoleRuntime extends Service {
 		setEditorCaseInsensitivity(this._canonicalization !== 'none');
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.consoleMode = new ConsoleMode(this);
+		this.normalizeChunkMappings();
 		this.enableEvents();
 		const policyOverride = options.luaSourceFailurePolicy ?? {};
 		this.luaFailurePolicy = { ...DEFAULT_LUA_FAILURE_POLICY, ...policyOverride };
@@ -759,16 +760,17 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private resolveChunkBinding(chunkName?: string, asset_id?: string): { asset: RomLuaAsset; chunkName: string; assetId: string } {
+		let asset: RomLuaAsset = null;
 		if (asset_id) {
-			const asset = this.cart.lua[asset_id];
-			return { asset, chunkName: chunkName ?? asset.chunk_name, assetId: asset.resid };
+			asset = this.cart.lua[asset_id];
+		} else if (chunkName) {
+			asset = this.findAssetByChunkName(chunkName);
 		}
-		if (chunkName) {
-			const asset = this.cart.chunk2lua![chunkName];
-			return { asset, chunkName, assetId: asset.resid };
+		if (!asset) {
+			asset = this.cart.lua[this.cart.entry];
 		}
-		const asset = this.cart.lua[this.cart.entry];
-		return { asset, chunkName: asset.chunk_name, assetId: asset.resid };
+		const canonicalChunkName = this.canonicalChunkName(asset);
+		return { asset, chunkName: canonicalChunkName, assetId: asset.resid };
 	}
 
 	private updateOverlayState(includeConsole: boolean, includeEditor: boolean, force = false): void {
@@ -1663,7 +1665,9 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private resolveChunkEnvironment(chunkName: string): LuaEnvironment {
-		const env = this.luaChunkEnvironmentsByChunkName.get(chunkName);
+		const asset = this.findAssetByChunkName(chunkName) ?? this.cart.lua[this.cart.entry];
+		const canonicalName = asset ? this.canonicalChunkName(asset) : chunkName;
+		const env = this.luaChunkEnvironmentsByChunkName.get(canonicalName);
 		if (!env) {
 			throw new Error(`[BmsxConsoleRuntime] Missing chunk environment for '${chunkName}'.`);
 		}
@@ -2167,6 +2171,34 @@ export class BmsxConsoleRuntime extends Service {
 		};
 	}
 
+	private canonicalChunkName(asset: RomLuaAsset): string {
+		const normalizedPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+		return asset.chunk_name ?? `@${normalizedPath}`;
+	}
+
+	private normalizeChunkMappings(): void {
+		const chunk2lua: Record<string, RomLuaAsset> = {};
+		const source2lua: Record<string, RomLuaAsset> = {};
+		for (const asset of Object.values(this.cart.lua)) {
+			const canonical = this.canonicalChunkName(asset);
+			asset.chunk_name = canonical;
+			chunk2lua[canonical] = asset;
+			const path = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+			if (path) {
+				source2lua[path] = asset;
+			}
+		}
+		this.cart.chunk2lua = chunk2lua;
+		this.cart.source2lua = source2lua;
+	}
+
+	private findAssetByChunkName(chunkName: string): RomLuaAsset {
+		const name = chunkName ?? '';
+		const withAt = name.startsWith('@') ? name : `@${name}`;
+		const withoutAt = withAt.startsWith('@') ? withAt.slice(1) : withAt;
+		return this.cart.chunk2lua?.[withAt] ?? this.cart.source2lua?.[withoutAt] ?? null;
+	}
+
 	private applyProgramEntrySourceToCartridge(source: string, chunkName: string, asset_id?: string): void {
 		const binding = this.resolveChunkBinding(chunkName, asset_id);
 		const luaAsset = binding.asset;
@@ -2204,9 +2236,11 @@ export class BmsxConsoleRuntime extends Service {
 		this.pruneRemovedChunkFunctionExports(chunkName, environment, definitions, this.luaInterpreter.globalEnvironment);
 		this.installFunctionRedirectsForChunk(effectiveModuleId, environment, definitions);
 		this.wrapDynamicChunkFunctions(effectiveModuleId, environment, chunkName);
-		this.luaChunkEnvironmentsByChunkName.set(chunkName, environment);
-		if (asset_id) {
-			this.luaChunkEnvironmentsByAssetId.set(asset_id, environment);
+		const asset = this.cart.lua[asset_id] ?? this.findAssetByChunkName(chunkName);
+		const canonical = asset ? this.canonicalChunkName(asset) : chunkName;
+		this.luaChunkEnvironmentsByChunkName.set(canonical, environment);
+		if (asset && asset.resid) {
+			this.luaChunkEnvironmentsByAssetId.set(asset.resid, environment);
 		}
 	}
 
@@ -2474,18 +2508,19 @@ export class BmsxConsoleRuntime extends Service {
 
 	private reloadGenericLuaChunk(chunkName: string, asset: { asset_id: string; path?: string }, sourceOverride?: string): void {
 		const interpreter = this.luaInterpreter;
-		const previousChunkState = this.captureChunkState(chunkName);
-		const previousChunkTables = this.captureChunkTables(chunkName);
+		const binding = this.resolveChunkBinding(chunkName, asset.asset_id);
+		const previousChunkState = this.captureChunkState(binding.chunkName);
+		const previousChunkTables = this.captureChunkTables(binding.chunkName);
 		const previousGlobals = this.captureGlobalStateForReload();
-		const source = sourceOverride ? sourceOverride : this.resolveSourceForChunk(chunkName, asset.asset_id);
-		const moduleId = this.cart.lua[asset.asset_id]?.chunk_name ?? chunkName;
-		const results = interpreter.execute(source, chunkName);
+		const source = sourceOverride ? sourceOverride : this.resolveSourceForChunk(binding.chunkName, asset.asset_id);
+		const moduleId = this.cart.lua[asset.asset_id]?.chunk_name ?? binding.chunkName;
+		const results = interpreter.execute(source, binding.chunkName);
 		this.wrapLuaExecutionResults(moduleId, results);
-		this.cacheChunkEnvironment(chunkName, asset.asset_id, moduleId);
+		this.cacheChunkEnvironment(binding.chunkName, asset.asset_id, moduleId);
 		this.restoreChunkState(interpreter.chunkEnvironment, previousChunkState);
 		this.restoreChunkTables(interpreter.chunkEnvironment, previousChunkTables);
 		this.restoreGlobalStateForReload(previousGlobals);
-		const packageKey = this.cart.lua[asset.asset_id]?.chunk_name ?? chunkName;
+		const packageKey = this.cart.lua[asset.asset_id]?.chunk_name ?? binding.chunkName;
 		this.refreshPackageLoadedEntry(packageKey, results);
 		const moduleValue = results.length > 0 && results[0] !== null ? results[0] : true;
 		this.rebindChunkEnvironmentHandlers(moduleId);
