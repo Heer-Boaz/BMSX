@@ -1,12 +1,9 @@
-import { $ } from '../core/game';
 import type { World, WorldModule } from '../core/world';
-import { BmsxConsoleRuntime } from './runtime';
 import type { ConsoleModuleOptions } from './types';
-import type { BmsxCartridge } from '../rompack/rompack';
 import { BmsxCartSystem } from './console_systems';
 import { TickGroup } from '../ecs/ecsystem';
 
-export function createBmsxConsoleModule(cart: BmsxCartridge, options: ConsoleModuleOptions): WorldModule {
+export function createBmsxConsoleModule(options: ConsoleModuleOptions): WorldModule {
 	const frameSystemId = 'bmsxConsole.frame';
 	return {
 		id: options.moduleId,
@@ -24,13 +21,6 @@ export function createBmsxConsoleModule(cart: BmsxCartridge, options: ConsoleMod
 			],
 		},
 		onBoot(_world: World) {
-			if (BmsxConsoleRuntime.instance as BmsxConsoleRuntime) return;
-			const canonicalization = options.canonicalization ?? ($.rompack.canonicalization ?? 'none');
-			return BmsxConsoleRuntime.createInstance({
-				cart,
-				playerIndex: options.playerIndex,
-				canonicalization,
-			});
 		},
 		onTick(_world: World, _deltaMilliseconds: number) {
 			// Nothing to do; runtime is ticked by its systems.

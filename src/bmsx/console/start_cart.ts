@@ -8,6 +8,7 @@ import { MSX2ScreenWidth } from '../index';
 import type { CanonicalizationType, Viewport } from '../rompack/rompack';
 import { IdeThemeVariant } from './ide/types';
 import { applyWorkspaceOverridesToCart } from './workspace';
+import { BmsxConsoleRuntime } from './runtime';
 
 type CartManifest = {
 	title?: string;
@@ -129,7 +130,7 @@ export async function startCart(args: BootArgs): Promise<void> {
 		throw new Error('[start_cart] Platform instance not provided.');
 	}
 
-	const manifest = (args.rompack.manifest ) as CartManifest;
+	const manifest = (args.rompack.manifest) as CartManifest;
 	if (!manifest) {
 		throw new Error('[start_cart] Cart manifest not found in rompack.');
 	}
@@ -152,15 +153,7 @@ export async function startCart(args: BootArgs): Promise<void> {
 	if (manifestEntryId && prebuilt.lua[manifestEntryId]) {
 		entry = manifestEntryId;
 	}
-	await applyWorkspaceOverridesToCart({ rompack: args.rompack, storage: platform.storage, includeServer: true });
-	const cartridge: BmsxCartridge = {
-		...prebuilt,
-		meta,
-		chunk2lua,
-		source2lua,
-		entry,
-	};
-	const module = createBmsxConsoleModule(cartridge, {
+	const module = createBmsxConsoleModule({
 		moduleId,
 		playerIndex,
 		viewport,
@@ -183,7 +176,7 @@ export async function startCart(args: BootArgs): Promise<void> {
 		sndcontext: args.sndcontext,
 		gainnode: args.gainnode,
 		debug: args.debug,
-		startingGamepadIndex: args.startingGamepadIndex ,
+		startingGamepadIndex: args.startingGamepadIndex,
 		enableOnscreenGamepad: args.enableOnscreenGamepad,
 		platform,
 		viewHost,
@@ -198,5 +191,20 @@ export async function startCart(args: BootArgs): Promise<void> {
 		pointer: Input.clonePointerMapping(),
 	});
 
+	const cartridge: BmsxCartridge = {
+		...prebuilt,
+		meta,
+		chunk2lua,
+		source2lua,
+		entry,
+	};
+	await applyWorkspaceOverridesToCart({ rompack: args.rompack, storage: platform.storage, includeServer: true });
+	return BmsxConsoleRuntime.createInstance({
+		cart: cartridge,
+		playerIndex: args.startingGamepadIndex,
+		canonicalization: $.rompack.canonicalization ?? 'none',
+	});
+
 	$.start();
+
 }
