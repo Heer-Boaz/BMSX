@@ -8,56 +8,29 @@ import { ide_state } from './ide_state';
 export type ParsedLuaChunk = {
 	chunk: LuaChunk;
 	tokens: LuaToken[];
-	parsedSource: string;
-	normalizedSource: string;
 };
 
-export function normalizeLuaSource(source: string): string {
-	return source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-}
-
 export function parseLuaChunk(source: string, chunkName: string): ParsedLuaChunk {
-	const normalized = normalizeLuaSource(source);
-	const parsed = parseInternal(normalized, chunkName);
-	return {
-		...parsed,
-		parsedSource: normalized,
-		normalizedSource: normalized,
-	};
-}
-
-export function parseLuaChunkWithRecovery(source: string, chunkName: string): ParsedLuaChunk {
-	const normalized = normalizeLuaSource(source);
-	try {
-		const parsed = parseInternal(normalized, chunkName);
-		return {
-			...parsed,
-			parsedSource: normalized,
-			normalizedSource: normalized,
-		};
-	} catch (error) {
-		if (!(error instanceof LuaSyntaxError)) {
-			throw error;
-		}
-		const truncated = truncateSourceAtSyntaxError(normalized, error);
-		if (truncated === null) {
-			throw error;
-		}
-		const parsed = parseInternal(truncated, chunkName);
-		return {
-			...parsed,
-			parsedSource: truncated,
-			normalizedSource: normalized,
-		};
-	}
-}
-
-function parseInternal(source: string, chunkName: string): { chunk: LuaChunk; tokens: LuaToken[] } {
 	const lexer = new LuaLexer(source, chunkName, { canonicalizeIdentifiers: ide_state.caseInsensitive ? ide_state.canonicalization : 'none' });
 	const tokens = lexer.scanTokens();
 	const parser = new LuaParser(tokens, chunkName, source);
 	const chunk = parser.parseChunk();
 	return { chunk, tokens };
+}
+
+export function parseLuaChunkWithRecovery(source: string, chunkName: string): ParsedLuaChunk {
+	try {
+		return parseLuaChunk(source, chunkName);
+	} catch (error) {
+		if (!(error instanceof LuaSyntaxError)) {
+			throw error;
+		}
+		const truncated = truncateSourceAtSyntaxError(source, error);
+		if (truncated === null) {
+			throw error;
+		}
+		return parseLuaChunk(truncated, chunkName);
+	}
 }
 
 function truncateSourceAtSyntaxError(source: string, error: LuaSyntaxError): string {

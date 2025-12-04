@@ -1019,12 +1019,13 @@ export function handlePointerWheel(): void {
 	const steps = Math.max(1, Math.round(magnitude / constants.WHEEL_SCROLL_STEP));
 	const direction = delta > 0 ? 1 : -1;
 	const pointer = ide_state.lastPointerSnapshot;
+	const activePointer = pointer && pointer.valid && pointer.insideViewport ? pointer : null;
 	const shiftDown = isShiftDown();
 	if (ide_state.hoverTooltip) {
 		const tooltip = ide_state.hoverTooltip;
-		const pointerInTooltip = pointer && pointer.valid && pointer.insideViewport && isPointInHoverTooltip(pointer.viewportX, pointer.viewportY);
-		const pointerInTarget = pointer && pointer.valid && pointer.insideViewport && pointerHitsHoverTarget(pointer, tooltip);
-		const allowTooltipScroll = pointerInTooltip || pointerInTarget || !pointer;
+		const pointerInTooltip = activePointer && isPointInHoverTooltip(activePointer.viewportX, activePointer.viewportY);
+		const pointerInTarget = activePointer && pointerHitsHoverTarget(activePointer, tooltip);
+		const allowTooltipScroll = pointerInTooltip || pointerInTarget || !activePointer;
 		if (allowTooltipScroll && adjustHoverTooltipScroll(direction * steps)) {
 			playerInput.consumeAction('pointer_wheel');
 			return;
@@ -1037,10 +1038,8 @@ export function handlePointerWheel(): void {
 	if (ide_state.resourceSearchVisible) {
 		const bounds = getResourceSearchBarBounds();
 		const pointerInQuickOpen = bounds !== null
-			&& pointer
-			&& pointer.valid
-			&& pointer.insideViewport
-			&& point_in_rect(pointer.viewportX, pointer.viewportY, bounds);
+			&& activePointer
+			&& point_in_rect(activePointer.viewportX, activePointer.viewportY, bounds);
 		if (pointerInQuickOpen || ide_state.resourceSearchActive) {
 			moveResourceSearchSelection(direction * steps);
 			playerInput.consumeAction('pointer_wheel');
@@ -1050,10 +1049,8 @@ export function handlePointerWheel(): void {
 	const panelBounds = ide_state.resourcePanel.getBounds();
 	const pointerInPanel = ide_state.resourcePanelVisible
 		&& panelBounds !== null
-		&& pointer
-		&& pointer.valid
-		&& pointer.insideViewport
-		&& point_in_rect(pointer.viewportX, pointer.viewportY, panelBounds);
+		&& activePointer
+		&& point_in_rect(activePointer.viewportX, activePointer.viewportY, panelBounds);
 	if (pointerInPanel) {
 		if (shiftDown) {
 			const horizontalPixels = direction * steps * ide_state.charAdvance * 4;
@@ -1069,9 +1066,9 @@ export function handlePointerWheel(): void {
 		const bounds = drawProblemsPanel();
 		if (bounds) {
 			let allowScroll = false;
-			if (!pointer) {
+			if (!activePointer) {
 				allowScroll = ide_state.problemsPanel.isFocused;
-			} else if (pointer.valid && pointer.insideViewport && point_in_rect(pointer.viewportX, pointer.viewportY, bounds)) {
+			} else if (point_in_rect(activePointer.viewportX, activePointer.viewportY, bounds)) {
 				allowScroll = true;
 			}
 			const stepsAbs = Math.max(1, Math.round(Math.abs(steps)));

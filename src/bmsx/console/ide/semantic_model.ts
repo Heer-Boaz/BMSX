@@ -25,7 +25,7 @@ import { ide_state } from './ide_state';
 import type { ConsoleLuaSymbolEntry } from '../types';
 import { computeSourceLabel } from './code_reference';
 import { symbolCatalogDedupKey } from './console_cart_editor';
-import { normalizeLuaSource, parseLuaChunkWithRecovery } from './lua_parse';
+import { parseLuaChunkWithRecovery } from './lua_parse';
 import * as constants from './constants';
 import { getActiveCodeTabContext } from './editor_tabs';
 import { listGlobalLuaSymbols, listLuaSymbols, resolveHoverAssetId, resolveHoverChunkName } from './intellisense';
@@ -176,9 +176,8 @@ type TokenInfo = {
 };
 
 export function buildLuaFileSemanticData(source: string, chunkName: string): FileSemanticData {
-	const normalized = normalizeLuaSource(source);
-	const lines = normalized.split('\n');
-	const parsed = parseLuaChunkWithRecovery(normalized, chunkName);
+	const lines = source.split('\n');
+	const parsed = parseLuaChunkWithRecovery(source, chunkName);
 	const chunk = parsed.chunk;
 	const tokens = parsed.tokens;
 	const builder = new SemanticBuilder({
@@ -207,7 +206,7 @@ export function buildLuaFileSemanticData(source: string, chunkName: string): Fil
 	});
 	return {
 		model,
-		source: normalized,
+		source,
 		lines,
 		annotations,
 		decls,
