@@ -7,6 +7,7 @@ import { Component, type ComponentAttachOptions } from './basecomponent';
 @insavegame
 export class TransformComponent extends Component<WorldObject> {
 	static override unique = true;
+	static { this.autoRegister(); }
 	public position: vec3arr;
 	public orientationQ: quat = { x: 0, y: 0, z: 0, w: 1 }; // authoritative when parent implements Oriented
 	public scale: vec3arr;

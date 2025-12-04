@@ -17,6 +17,7 @@ export interface PhysicsComponentOptions extends Omit<PhysicsBodyDesc, 'position
 @excludeclassfromsavegame
 export class PhysicsComponent extends Component {
 	static override get unique() { return true; }
+	static { this.autoRegister(); }
 	body: PhysicsBody = null;
 	syncAxis = { x: true, y: true, z: true };
 	writeback = true; // if true: body -> WorldObject each frame (default true)

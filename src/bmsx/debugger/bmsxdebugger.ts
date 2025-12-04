@@ -51,6 +51,7 @@ export interface DebugPointerEvent {
 @componenttags_postprocessing('render')
 export class PhysicsOverlayRenderer extends Component {
 	static override get unique() { return true; }
+	static { this.autoRegister(); }
 	private canvas: HTMLCanvasElement;
 	private ctx: CanvasRenderingContext2D;
 	private lastResizeW = 0; private lastResizeH = 0;
@@ -244,6 +245,7 @@ export class HitBoxVisualizer extends CustomVisualComponent {
 @componenttags_preprocessing('render')
 export class ObjectHighlighterComponent extends Component {
 	static override get unique() { return true; }
+	static { this.autoRegister(); }
 	static toggle(obj: WorldObject) {
 		if (ObjectHighlighterComponent.attachedToObject(obj)) {
 			ObjectHighlighterComponent.detachFromObject(obj);

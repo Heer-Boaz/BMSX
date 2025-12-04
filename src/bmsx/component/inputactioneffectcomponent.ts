@@ -6,6 +6,7 @@ import type { InputActionEffectProgram } from '../action_effects/input_action_ef
 @insavegame
 export class InputActionEffectComponent extends Component {
 	public static override get unique(): boolean { return true; }
+	static { this.autoRegister(); }
 
 	/** Program identifier that resolves to a ROM data asset. */
 	public program_id?: Identifier;

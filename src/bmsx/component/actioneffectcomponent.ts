@@ -15,6 +15,7 @@ import { ActionEffectRegistry } from '../action_effects/effect_registry';
 @insavegame
 export class ActionEffectComponent extends Component {
 	public static override get unique(): boolean { return true; }
+	static { this.autoRegister(); }
 
 	private readonly definitions = new Map<ActionEffectId, ActionEffectDefinition>();
 	@excludepropfromsavegame private readonly cooldownUntil = new Map<ActionEffectId, number>();

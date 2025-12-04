@@ -65,6 +65,7 @@ export type MeshClipPlayOptions = {
 
 @insavegame
 export class MeshComponent extends Component {
+	static { this.autoRegister(); }
 	public modelId!: asset_id;
 
 	@excludepropfromsavegame

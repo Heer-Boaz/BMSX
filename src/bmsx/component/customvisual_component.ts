@@ -16,6 +16,7 @@ export type RenderProducer = (ctx: RenderProducerContext) => void;
  */
 @insavegame
 export class CustomVisualComponent extends Component<WorldObject> {
+	static { this.autoRegister(); }
 	// @excludepropfromsavegame
 	// private ops: RenderSubmission[] = [];
 	@excludepropfromsavegame

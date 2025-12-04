@@ -46,6 +46,7 @@ type RegisteredTimeline = {
 @insavegame
 export class TimelineComponent extends Component<WorldObject> {
 	public static override get unique(): boolean { return true; }
+	static { this.autoRegister(); }
 
 	private readonly registry = new Map<string, RegisteredTimeline>();
 	private readonly active = new Set<string>();

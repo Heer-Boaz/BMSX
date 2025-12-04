@@ -10,6 +10,7 @@ import { FloatingDialog } from './bmsxdebugger';
 @excludeclassfromsavegame
 export class BTVisualizer extends Component {
 	static override get unique() { return true; }
+	static { this.autoRegister(); }
 	private dialog: FloatingDialog;
 	private machineElements: Map<string, HTMLElement>;
 

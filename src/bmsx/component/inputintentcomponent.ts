@@ -29,6 +29,7 @@ export interface InputIntentBinding {
 @insavegame
 export class InputIntentComponent extends Component {
 	public static override get unique(): boolean { return true; }
+	static { this.autoRegister(); }
 
 	/** Player index driving this object. Falls back to the object's player_index. */
 	public playerIndex = 1;

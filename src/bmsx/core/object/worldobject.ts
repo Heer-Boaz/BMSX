@@ -69,6 +69,13 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	 */
 	public objectTracker?: ObjectTracker;
 
+	private createComponentKey<T extends Component>(constructor: ComponentConstructor<T> | Function | string): string {
+		if (typeof constructor === 'string') return constructor.toLowerCase();
+		const maybeCtor = constructor as typeof Component;
+		const name = maybeCtor.typename ?? maybeCtor.name;
+		return name.toLowerCase();
+	}
+
 	/**
 	 * Iterates all components from the object.
 	 *
@@ -93,20 +100,20 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	 * @param constructor - The constructor function of the component.
 	 * @returns The component of the specified type if found, otherwise undefined.
 	 */
-	get_components<T extends Component>(constructor: ComponentConstructor<T>): T[] {
-		const key = constructor.name;
+	get_components<T extends Component>(constructor: ComponentConstructor<T> | string): T[] {
+		const key = this.createComponentKey(constructor);
 		const arr = this.componentMap[key] as T[];
 		return arr ? [...arr] : [];
 	}
 
-	has_component<T extends Component>(constructor: ComponentConstructor<T>): boolean {
-		const key = constructor.name;
+	has_component<T extends Component>(constructor: ComponentConstructor<T> | string): boolean {
+		const key = this.createComponentKey(constructor);
 		const arr = this.componentMap[key] as T[];
 		return !!arr && arr.length > 0;
 	}
 
-	get_first_component<T extends Component>(constructor: ComponentConstructor<T>): T {
-		const key = constructor.name;
+	get_first_component<T extends Component>(constructor: ComponentConstructor<T> | string): T {
+		const key = this.createComponentKey(constructor);
 		const arr = this.componentMap[key] as T[];
 		return arr && arr.length > 0 ? arr[0] : undefined;
 	}
@@ -121,7 +128,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 
 	/** Return the unique instance of a component type; throws if multiple are attached. */
 	get_unique_component<T extends Component>(constructor: ComponentConstructor<T>): T {
-		const key = constructor.name;
+		const key = this.createComponentKey(constructor);
 		const arr = this.componentMap[key] as T[];
 		if (!arr || arr.length === 0) return undefined;
 		if (arr.length > 1) throw new Error(`Multiple '${key}' components attached to '${this.id}' but a unique instance was requested.`);
@@ -139,7 +146,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 		if (!component) throw new Error(`[${this.id}] Cannot add null or undefined component.`);
 		component.parent = this; // Do not use component.attach here, as it would cause infinite recursion
 		this.components.push(component);
-		const key = component.constructor?.name;
+		const key = this.createComponentKey(component.constructor);
 		let arr = this.componentMap[key];
 		if (!arr) {
 			arr = [];
@@ -163,8 +170,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	/**
 	 * Retrieves the Nth instance of a component type attached to this object.
 	 */
-	public get_component_at<T extends Component>(constructor: ComponentConstructor<T>, index: number): T {
-		const key = (constructor)?.name;
+	public get_component_at<T extends Component>(constructor: ComponentConstructor<T> | string, index: number): T {
+		const key = this.createComponentKey(constructor);
 		const arr = this.componentMap[key] as T[];
 		return arr ? arr[index] : undefined;
 	}
@@ -172,7 +179,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	/**
 	 * Finds the first component of an optional type matching a predicate.
 	 */
-	public find_component<T extends Component>(predicate: (c: T, index: number) => boolean, constructor?: ComponentConstructor<T>): T {
+	public find_component<T extends Component>(predicate: (c: T, index: number) => boolean, constructor?: ComponentConstructor<T> | string): T {
 		const arr = constructor ? this.get_components(constructor) : this.components as T[];
 		for (let i = 0; i < arr.length; i++) {
 			const c = arr[i];
@@ -184,7 +191,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	/**
 	 * Finds all components of an optional type matching a predicate.
 	 */
-	public find_components<T extends Component>(predicate: (c: T, index: number) => boolean, constructor?: ComponentConstructor<T>): T[] {
+	public find_components<T extends Component>(predicate: (c: T, index: number) => boolean, constructor?: ComponentConstructor<T> | string): T[] {
 		const arr = constructor ? this.get_components(constructor) : this.components as T[];
 		const out: T[] = [];
 		for (let i = 0; i < arr.length; i++) { if (predicate(arr[i], i)) out.push(arr[i]); }

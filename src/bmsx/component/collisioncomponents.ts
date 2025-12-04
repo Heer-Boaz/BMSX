@@ -17,6 +17,7 @@ import { Component, componenttags_postprocessing, componenttags_preprocessing, C
  */
 @insavegame
 export class Collider2DComponent extends Component<WorldObject> {
+	static { this.autoRegister(); }
 	/** Whether this object should participate in collision tests. */
 	public hittable: boolean = true;
 	/** Collision filtering: object's collision layer (bit). */
@@ -174,6 +175,7 @@ export abstract class PositionUpdateAxisComponent extends Component<WorldObject>
 @insavegame
 export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
 	static override get unique(): boolean { return true; }
+	static { this.autoRegister(); }
 	/**
 	 * Overrides the postprocessingUpdate method to check for boundary collisions on the X and Y axes.
 	 * @override
@@ -258,6 +260,7 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
 @insavegame
 export class TileCollisionComponent extends PositionUpdateAxisComponent {
 	static override get unique() { return true; }
+	static { this.autoRegister(); }
 	/**
 	 * Performs post-processing update for collision components.
 	 * Overrides the base class's update method and checks for tile collisions on the x and y axes.
@@ -325,6 +328,7 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
  */
 @insavegame
 export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
+	static { this.autoRegister(); }
 	public override bind(): void {
 		super.bind();
 		const owner = this.parent;

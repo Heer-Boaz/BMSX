@@ -178,8 +178,8 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			parameter: PALETTE.red,
 			globalVar: PALETTE.lightYellow,
 			label: PALETTE.darkRed,
-			localTop: PALETTE.white,
-			localFunction: PALETTE.white,
+			localTop: PALETTE.cyanBlue,
+			localFunction: PALETTE.functionBlue,
 			functionHandle: PALETTE.lightGreen,
 			selection: PALETTE.darkBlue,
 			selectionBorder: PALETTE.blue,
@@ -242,8 +242,8 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			parameter: PALETTE.deepGrey,
 			globalVar: PALETTE.numberBrown,
 			label: PALETTE.accentRed,
-			localTop: PALETTE.deepGrey,
-			localFunction: PALETTE.deepGrey,
+			localTop: PALETTE.cyanBlue,
+			localFunction: PALETTE.functionBlue,
 			functionHandle: PALETTE.functionBlue,
 			selection: PALETTE.selectionOverlay,
 			selectionBorder: PALETTE.midGrey,
@@ -740,4 +740,3 @@ export const GLOBAL_SEARCH_RESULT_LIMIT = SEARCH_MAX_RESULTS * 4;
 export const TAB_DIRTY_MARKER_METRICS = { width: 4, height: 4 };
 export const TAB_DIRTY_LEFT_MARGIN = 4;
 export const TAB_DIRTY_RIGHT_MARGIN = 4;
-

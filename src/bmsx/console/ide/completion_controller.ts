@@ -14,7 +14,7 @@ import {
 } from './types';
 import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaSymbolEntry } from '../types';
 import * as constants from './constants';
-import { isAltDown, isCtrlDown, isKeyJustPressed, isKeyPressed, isMetaDown, isShiftDown } from './ide_input';
+import { isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
 import { isWhitespace, isWordChar } from './text_utils';
 import { isLuaCommentContext } from './text_utils';
 import { ide_state } from './ide_state';
@@ -75,8 +75,6 @@ type LocalCompletionCacheEntry = {
 	moduleAliases: Map<string, string>;
 };
 
-const NAVIGATION_KEYS: readonly string[] = ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'];
-
 export class CompletionController {
 	private readonly host: CompletionHost;
 	private completionSession: CompletionSession = null;
@@ -118,7 +116,7 @@ export class CompletionController {
 		}
 		const total = session.filteredItems.length;
 		if (total === 0) {
-			return pointer !== null;
+			return pointer !== null || this.completionPopupBounds !== null;
 		}
 		const unit = direction >= 0 ? 1 : -1;
 		const stepCount = Math.max(1, steps);
@@ -228,19 +226,28 @@ export class CompletionController {
 		}
 		const session = this.completionSession;
 		if (!session) return false;
+		const manual = session.trigger === 'manual';
 		if (isKeyJustPressed('Escape')) {
 			consumeIdeKey('Escape');
 			this.closeSession();
 			return true;
 		}
-		const navigationCaptured = this.shouldCaptureNavigation(session);
-		if (!navigationCaptured && this.anyNavigationKeyPressed()) {
+		if (!manual) {
+			if (isKeyJustPressed('Tab')) {
+				consumeIdeKey('Tab');
+				if (shiftDown) {
+					this.moveCompletionSelection(-1);
+				} else {
+					this.acceptSelectedCompletion();
+				}
+				return true;
+			}
 			return false;
 		}
-		if (navigationCaptured && this.handleNavigationKeys(session, deltaSeconds, ctrlDown || metaDown)) {
+		if (this.handleNavigationKeys(session, deltaSeconds, ctrlDown || metaDown)) {
 			return true;
 		}
-		if (this.enterCommitsCompletion) {
+		if (manual && this.enterCommitsCompletion) {
 			const enterPressed = isKeyJustPressed('Enter');
 			const numpadEnterPressed = isKeyJustPressed('NumpadEnter');
 			if (enterPressed || numpadEnterPressed) {
@@ -1008,42 +1015,29 @@ export class CompletionController {
 		this.ensureCompletionSelectionVisible(session);
 	}
 
-	private shouldCaptureNavigation(session: CompletionSession): boolean {
-		return session.navigationCaptured || session.trigger === 'manual';
-	}
-
-	private anyNavigationKeyPressed(): boolean {
-		for (let i = 0; i < NAVIGATION_KEYS.length; i += 1) {
-			if (isKeyPressed(NAVIGATION_KEYS[i])) {
-				return true;
-			}
-		}
-		return false;
-	}
-
 	private handleNavigationKeys(session: CompletionSession, deltaSeconds: number, allowHomeEnd: boolean): boolean {
 		let moved = false;
-		if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
+		if (this.navigationActive('ArrowDown', deltaSeconds)) {
 			consumeIdeKey('ArrowDown');
 			this.moveCompletionSelection(1);
 			moved = true;
 		}
-		if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
+		if (this.navigationActive('ArrowUp', deltaSeconds)) {
 			consumeIdeKey('ArrowUp');
 			this.moveCompletionSelection(-1);
 			moved = true;
 		}
-		if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
+		if (this.navigationActive('PageDown', deltaSeconds)) {
 			consumeIdeKey('PageDown');
 			this.moveCompletionSelection(session.maxVisibleItems);
 			moved = true;
 		}
-		if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
+		if (this.navigationActive('PageUp', deltaSeconds)) {
 			consumeIdeKey('PageUp');
 			this.moveCompletionSelection(-session.maxVisibleItems);
 			moved = true;
 		}
-		if (allowHomeEnd && ide_state.input.shouldRepeat('Home', deltaSeconds)) {
+		if (allowHomeEnd && this.navigationActive('Home', deltaSeconds)) {
 			consumeIdeKey('Home');
 			if (session.filteredItems.length > 0) {
 				session.selectionIndex = 0;
@@ -1052,7 +1046,7 @@ export class CompletionController {
 			}
 			moved = true;
 		}
-		if (allowHomeEnd && ide_state.input.shouldRepeat('End', deltaSeconds)) {
+		if (allowHomeEnd && this.navigationActive('End', deltaSeconds)) {
 			consumeIdeKey('End');
 			if (session.filteredItems.length > 0) {
 				session.selectionIndex = session.filteredItems.length - 1;
@@ -1062,6 +1056,10 @@ export class CompletionController {
 			moved = true;
 		}
 		return moved;
+	}
+
+	private navigationActive(code: string, deltaSeconds: number): boolean {
+		return isKeyJustPressed(code) || ide_state.input.shouldRepeat(code, deltaSeconds);
 	}
 
 	private ensureCompletionSelectionVisible(session: CompletionSession): void {

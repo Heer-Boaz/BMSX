@@ -12,6 +12,7 @@ import { PhysicsComponent, PhysicsComponentOptions } from './physicscomponent';
 @insavegame
 export class PhysicsDescriptorComponent extends Component {
 	static override get unique() { return true; }
+	static { this.autoRegister(); }
 	shape: PhysicsBodyDesc['shape'];
 	mass: number; restitution: number; friction: number; isTrigger: boolean; layer: number; mask: number;
 	syncAxis?: { x?: boolean; y?: boolean; z?: boolean };

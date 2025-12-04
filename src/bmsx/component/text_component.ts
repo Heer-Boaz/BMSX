@@ -6,6 +6,7 @@ import type { BFont } from '../core/font';
 
 @insavegame
 export class TextComponent extends Component {
+	static { this.autoRegister(); }
 	public text: string | string[] = '';
 	public color?: color;
 	public backgroundColor?: color;

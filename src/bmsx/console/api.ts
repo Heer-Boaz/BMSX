@@ -26,7 +26,6 @@ import { Component, type ComponentAttachOptions } from '../component/basecompone
 import { ActionEffectRegistry, RegisterEffectOptions } from '../action_effects/effect_registry';
 import { SpriteObject } from '../core/object/sprite';
 import { LuaTable } from '../lua/value';
-import { LuaComponent, type LuaComponentHandlerMap } from '../component/lua_component';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest;
 
@@ -59,6 +58,8 @@ type EntityExtensions = LuaExtendedClass<typeof WorldObject | typeof SpriteObjec
 	bts?: BehaviorTreeID[];
 };
 
+type AnyFunction = (...args: any[]) => any;
+
 export class BmsxConsoleApi {
 	private readonly playerindex: number;
 	private readonly storage: BmsxConsoleStorage;
@@ -67,7 +68,6 @@ export class BmsxConsoleApi {
 	private readonly serviceExts = new Map<string, EntityExtensions>();
 	private readonly worldObjectExts = new Map<string, EntityExtensions>();
 	private readonly componentExts = new Map<string, EntityExtensions>();
-	private readonly componentCtors = new Map<string, new (opts: ComponentAttachOptions) => Component>();
 	private textCursorX = 0;
 	private textCursorY = 0;
 	private textCursorHomeX = 0;
@@ -89,18 +89,6 @@ export class BmsxConsoleApi {
 		this.reset_print_cursor();
 	}
 
-	// private buildMetatableForNativeClass<TBase extends ConcreteOrAbstractConstructor<any>>(ctor: TBase): LuaTable {
-	// 	const metatable = { } as LuaTable;
-	// 	const proto = ctor.prototype as Record<string, any>;
-	// 	for (const key of Object.getOwnPropertyNames(proto)) {
-	// 		const descriptor = Object.getOwnPropertyDescriptor(proto, key);
-	// 		if (descriptor && descriptor.value !== undefined) {
-	// 			metatable.set(key, descriptor.value);
-	// 		}
-	// 	}
-	// 	return metatable;
-	// }
-
 	/**
 	 * Apply Lua class overrides to a constructed instance.
 	 *
@@ -120,16 +108,16 @@ export class BmsxConsoleApi {
 		// For function overrides, run the original first to preserve engine lifecycle (e.g. onspawn),
 		// then run the Lua override and let its return value win when defined.
 		for (const [key, value] of Object.entries(classTable)) {
-			if (key === 'def_id' || key === 'class' || key === 'defaults') continue;
-			const existing = (instance as any)[key];
+			if (key in ['def_id', 'class', 'defaults', 'metatable', 'constructor', 'prototype', 'super']) continue;
+			const existing = instance[key];
 			if (typeof value === 'function' && typeof existing === 'function') {
-				const baseFn: (...args: any[]) => any = existing as (...args: any[]) => any;
-					const overrideFn: (...args: any[]) => any = value as (...args: any[]) => any;
-					overrides[key] = (...args: any[]) => {
-						const baseResult = baseFn.apply(instance as any, args);
-						const overrideResult = overrideFn.apply(instance as any, args);
-						return overrideResult === undefined ? baseResult : overrideResult;
-					};
+				const baseFn: AnyFunction = existing;
+				const overrideFn: AnyFunction = value;
+				overrides[key] = (...args: any[]) => {
+					const baseResult = baseFn.apply(instance, args);
+					const overrideResult = overrideFn.apply(instance, args);
+					return overrideResult === undefined ? baseResult : overrideResult;
+				};
 				continue;
 			}
 			overrides[key] = value;
@@ -430,7 +418,6 @@ export class BmsxConsoleApi {
 
 	public define_component(descriptor: EntityExtensions): void {
 		this.componentExts.set(descriptor.def_id, descriptor);
-		this.componentExts.set(descriptor.def_id.toLowerCase(), descriptor);
 	}
 
 	public define_world_object(descriptor: EntityExtensions): void {
@@ -464,20 +451,28 @@ export class BmsxConsoleApi {
 	}
 
 	// TODO: Cannot handle Lua class overrides yet and doesn't apply component extensions or definition overrides
-	public attach_component(object_or_id: WorldObject | Identifier, component_name: string): string {
-		const obj = typeof object_or_id === 'string' ? $.world.getWorldObject(object_or_id) : object_or_id;
-		if (!obj) throw new Error(`Cannot attach component '${component_name}', ${object_or_id ? `object '${object_or_id}' not found` : 'no object (or id) was provided.'}`);
-		const ctor = this.resolve_component_ctor(component_name);
-		const instanceOpts: ComponentAttachOptions = {
-			parent_or_id: obj,
-		};
-		const instance = new ctor(instanceOpts);
-		if (!instance) throw new Error(`Failed to instantiate component '${component_name}'.`);
-		// if (typeof component === 'object' && component.state) {
-			// Object.assign(instance, component.state);
-		// }
+	public attach_component(object_or_id: WorldObject | Identifier, component_or_type: Component | Identifier): void {
+		let obj: WorldObject;
+		if (typeof object_or_id === 'string') {
+			obj = $.world.getWorldObject(object_or_id);
+			if (!obj) {
+				throw new Error(`World object '${object_or_id}' not found.`);
+			}
+		} else {
+			obj = object_or_id;
+		}
+
+		// Early out when given an instance
+		if (typeof component_or_type === 'object') {
+			component_or_type.attach(obj.id);
+			return;
+		}
+
+		// Instantiate component from type
+		const instance = Component.newComponent(component_or_type, { parent_or_id: obj.id } as ComponentAttachOptions);
+
+		this.applyObjectExtensionAndOverrides(this.componentExts.get(component_or_type), instance);
 		obj.add_component(instance);
-		return instance.id;
 	}
 
 	public define_effect(descriptor: ActionEffectDefinition, opts?: RegisterEffectOptions<any>): void {
@@ -543,71 +538,6 @@ export class BmsxConsoleApi {
 			// TODO: FILTER!!
 			Object.assign(instance, overrides);
 		}
-	}
-
-	private resolve_component_ctor(id: string): new (opts: ComponentAttachOptions) => Component {
-		const normalized = id.toLowerCase();
-		const cached = this.componentCtors.get(id) ?? this.componentCtors.get(normalized);
-		if (cached) return cached;
-
-		const globalTarget = globalThis as typeof globalThis & { bmsx?: Record<string, unknown> };
-		const direct = globalTarget[id] as new (opts: ComponentAttachOptions) => Component;
-		if (direct) return this.cacheComponentCtor(id, normalized, direct);
-		if (normalized === 'actioneffectcomponent') {
-			return this.cacheComponentCtor(id, normalized, ActionEffectComponent as unknown as new (opts: ComponentAttachOptions) => Component);
-		}
-
-		const namespace = globalTarget.bmsx;
-		if (namespace) {
-			const exported = namespace[id] as new (opts: ComponentAttachOptions) => Component;
-			if (exported) return this.cacheComponentCtor(id, normalized, exported);
-			for (const [exportName, candidate] of Object.entries(namespace)) {
-				if (exportName.toLowerCase() === normalized) {
-					return this.cacheComponentCtor(id, normalized, candidate as new (opts: ComponentAttachOptions) => Component);
-				}
-			}
-		}
-
-		const ext = this.componentExts.get(id) ?? this.componentExts.get(normalized);
-		if (ext) {
-			const ctor = this.buildLuaComponentCtor(ext);
-			this.cacheComponentCtor(ext.def_id, ext.def_id.toLowerCase(), ctor);
-			return this.cacheComponentCtor(id, normalized, ctor);
-		}
-		throw new Error(`Component constructor '${id}' not found.`);
-	}
-
-	private cacheComponentCtor(id: string, normalized: string, ctor: new (opts: ComponentAttachOptions) => Component): new (opts: ComponentAttachOptions) => Component {
-		this.componentCtors.set(id, ctor);
-		this.componentCtors.set(normalized, ctor);
-		return ctor;
-	}
-
-	private buildLuaComponentCtor(ext: EntityExtensions): new (opts: ComponentAttachOptions) => Component {
-		const handlers = ext.class as unknown as Partial<LuaComponentHandlerMap> | undefined;
-		const initialState = ext.defaults as Record<string, unknown>;
-		const tagsPre = (ext as any).tags_preprocessing ?? (handlers as any)?.tags_preprocessing;
-		const tagsPost = (ext as any).tags_postprocessing ?? (handlers as any)?.tags_postprocessing;
-		const ctor = class extends LuaComponent {
-			constructor(opts: ComponentAttachOptions) {
-				super({
-					...opts,
-					definitionId: ext.def_id,
-					handlers: {
-						onattach: handlers?.onattach,
-						ondetach: handlers?.ondetach,
-						ondispose: handlers?.ondispose,
-						preupdate: handlers?.preupdate,
-						postupdate: handlers?.postupdate,
-					},
-					initialState,
-					tagsPre,
-					tagsPost,
-					unique: (ext as any).unique ?? (handlers as any)?.unique ?? false,
-				});
-			}
-		};
-		return ctor;
 	}
 
 	/**

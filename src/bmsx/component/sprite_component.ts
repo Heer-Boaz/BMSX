@@ -12,6 +12,7 @@ import { $ } from '../core/game';
 @insavegame
 @componenttags_postprocessing('render')
 export class SpriteComponent extends Component {
+	static { this.autoRegister(); }
 	private _imgid: asset_id = 'none';
 	public scale: vec2 = new_vec2(1, 1);
 	private readonly flip_state: FlipOptions = { flip_h: false, flip_v: false };

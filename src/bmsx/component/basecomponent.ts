@@ -14,7 +14,9 @@ import { insavegame, onload, type RevivableObjectArgs } from '../serializer/seri
  * The autoAddComponents property is an array of Component constructors that should be
  * automatically added to instances of the class.
  */
-export type ComponentClass<T extends Component = Component> = new (...args: any[]) => T;
+export type ComponentClass<T extends Component = Component> = typeof Component & (new (...args: any[]) => T);
+
+export const ComponentTypenameToCtor = new Map<string, ComponentClass>(); // Used to map component type names to constructors in the registry
 
 export interface ConstructorWithAutoAddComponents {
 	autoAddComponents?: ComponentClass[];
@@ -50,7 +52,7 @@ export type KeyToComponentMap = { [key: string]: Component[] };
  *
  * @notImplementedYet
  */
-export type ComponentConstructor<T extends Component> = new (...args: any[]) => T | ConcreteOrAbstractConstructor<new (...args: any[]) => T>; // Allows abstract Component classes to be used as component constructors. This is necessary to allow abstract Component classes to be used as component types in other components (e.g. to allow a collision component to have a list of collision components as a property)
+export type ComponentConstructor<T extends Component> = ComponentClass<T> | ConcreteOrAbstractConstructor<T>; // Allows abstract Component classes to be used as component constructors. This is necessary to allow abstract Component classes to be used as component types in other components (e.g. to allow a collision component to have a list of collision components as a property)
 export type ComponentId = `${Identifier}_${Identifier}` | `${Identifier}_${Identifier}_${Identifier}`; // `${parentid}_${componentname}` | `${parentid}_${componentname}_${localid}`
 
 /**
@@ -158,10 +160,32 @@ export type ComponentUpdateParams = {
  * @class
  * @implements IIdentifiable
  */
-export abstract class Component<T extends WorldObject = WorldObject> implements Identifiable, Native {
+export class Component<T extends WorldObject = WorldObject> implements Identifiable, Native {
 	public get __native__(): string { return 'component'; }
 
 	static get unique(): boolean { return false; } // If true, only one instance of this component type can be attached to a parent
+	public static get typename(): string { return this.name; }
+
+	public get type(): string { return (this.constructor as typeof Component).typename; } // The component type name which is unique per component class and will never be null or undefined!
+
+	protected static autoRegister(): void {
+		const ctor = this as ComponentClass;
+		ComponentTypenameToCtor.set(ctor.typename, ctor);
+	}
+
+	public static registerComponentType(type: string, ctor?: ComponentClass) {
+		const concrete = ctor ?? this as ComponentClass;
+		ComponentTypenameToCtor.set(type, concrete);
+	}
+
+	public static newComponent(type: string, opts: ComponentAttachOptions): Component {
+		const ctor = ComponentTypenameToCtor.get(type);
+		if (!ctor) {
+			throw new Error(`Component '${type}' is not registered.`);
+		}
+
+		return new ctor(opts);
+	}
 
 	/**
 	 * The component id is the parent id plus the component name.
@@ -230,10 +254,12 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 */
 	constructor(opts: ComponentAttachOptions) {
 		this._parent = $.resolve_ref_or_id(opts.parent_or_id) as T;
+		const ctor = this.constructor as ComponentClass;
+		ComponentTypenameToCtor.set(ctor.typename, ctor);
 
 		// If a local id is supplied, build a compatible id using the parent id and component type name.
 		// Otherwise default to `${parentid}_${Type}`. The container may suffix to ensure uniqueness.
-		const typeName = this.constructor.name;
+		const typeName = this.type;
 		this.id = this.id ?? `${this.parent.id}_${typeName}${opts.id_local ? `_${opts.id_local}` : ''}`;
 		this.id_local = this.id_local ?? opts.id_local;
 		this._enabled = true;
