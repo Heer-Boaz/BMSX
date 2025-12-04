@@ -19,7 +19,6 @@ export type LuaPersistenceFailurePolicy = {
 	[K in LuaPersistenceFailureKind]: LuaPersistenceFailureMode;
 };
 
-
 export const DEFAULT_LUA_FAILURE_POLICY: LuaPersistenceFailurePolicy = {
 	fetch: 'warning',
 	persist: 'error',
@@ -129,7 +128,17 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 		let bestUpdatedAt = asset.update_timestamp ?? 0;
 		let bestPath: string = null;
 		const considerStored = (raw: string, path: string, storageKey: string): void => {
-			const parsed = JSON.parse(raw) as WorkspaceStoragePayload;
+			let parsed: WorkspaceStoragePayload;
+			try {
+				parsed = JSON.parse(raw) as WorkspaceStoragePayload;
+			} catch {
+				storage.removeItem(storageKey);
+				return;
+			}
+			if (!parsed || typeof parsed.contents !== 'string' || typeof parsed.updatedAt !== 'number') {
+				storage.removeItem(storageKey);
+				return;
+			}
 			if (parsed.contents === asset.src) {
 				storage.removeItem(storageKey);
 				return;
