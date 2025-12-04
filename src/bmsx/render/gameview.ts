@@ -941,7 +941,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (index == null) {
 			this._dynamicAtlasIndex = null;
 			const fallback = this.textures['_atlas_dynamic_fallback'] as TextureHandle;
-			this.textures['_atlas_dynamic'] = fallback ;
+			this.textures['_atlas_dynamic'] = fallback;
 			return;
 		}
 		const atlasName = generateAtlasName(index);

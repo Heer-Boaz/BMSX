@@ -2710,7 +2710,7 @@ export function performReboot(): boolean {
 	scheduleRuntimeTask(async () => {
 		if (requiresReload) {
 			console.info('[IDE] Performing full program reload for reboot');
-			await runtime.reloadProgramAndResetWorld({ runInit: false });
+			await runtime.reloadProgramAndResetWorld({ runInit: true }); // Was false, but it makes no sense to skip init on reboot
 		}
 		else {
 			console.info('[IDE] Performing standard reboot');

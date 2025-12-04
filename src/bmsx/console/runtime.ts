@@ -53,6 +53,7 @@ import {
 	LuaPersistenceFailurePolicy,
 	persistLuaSourceToFilesystem,
 } from './workspace';
+import { RenderSubmission } from '../render/gameview';
 
 export const CONSOLE_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'console_left',
@@ -93,6 +94,12 @@ export class BmsxConsoleRuntime extends Service {
 	private static _instance: BmsxConsoleRuntime = null;
 	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api',
 	]);
+	/**
+	 * Preserved render queue when a fault occurs
+	 * This is used to restore the render queue to its previous state
+	 * so that the console mode can be drawn on top of it.
+	 */
+	private preservedRenderQueue: RenderSubmission[] = [];
 
 	public static createInstance(options: BmsxConsoleRuntimeOptions): BmsxConsoleRuntime {
 		const existing = BmsxConsoleRuntime._instance;
@@ -623,9 +630,8 @@ export class BmsxConsoleRuntime extends Service {
 		if (!this.consoleMode.isActive) {
 			return;
 		}
-		this.overlayRenderBackend.beginFrame();
+		this.overlayRenderBackend.setDefaultLayer('editor');
 		this.consoleMode.draw(this.overlayRenderBackend, this.overlayRenderBackend.viewportSize);
-		this.overlayRenderBackend.endFrame();
 	}
 
 	private async advanceConsoleMode(deltaSeconds: number): Promise<void> {
@@ -732,9 +738,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.luaChunkEnvironmentsByAssetId.clear();
 			this.luaChunkEnvironmentsByChunkName.clear();
 			this.luaGenericAssetsExecuted.clear();
-			if (this.editor) {
-				this.editor.clearRuntimeErrorOverlay();
-			}
+			this.editor?.clearRuntimeErrorOverlay();
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset to fresh world
 				await $.reset_to_fresh_world();
 			}
@@ -876,15 +880,38 @@ export class BmsxConsoleRuntime extends Service {
 		try {
 			this.overlayRenderBackend.beginFrame();
 			if (this.editor?.isActive) {
+				this.overlayRenderBackend.setDefaultLayer('editor');
 				this.editor.draw();
 			}
 			else {
 				if (this.consoleMode.isActive) {
 					this.renderConsoleOverlay();
 				}
+				this.overlayRenderBackend.setDefaultLayer('world');
 				if (this.luaVmGate.ready) {
-					if (this.luaDrawFunction !== null) {
-						this.invokeLuaFunction(this.luaDrawFunction, []);
+					// Before drawing, check for active faults and whether we have a preserved render queue from a previous failed draw
+					if (this.luaRuntimeFailed || this.faultSnapshot) {
+						// If so, skip invoking user draw function and instead render the preserved render queue
+						this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
+						// Don't remove the preserved queue ever! We will need it again next frame unless a reboot occurs or the fault is cleared
+						// And even then we don't want to remove it until a fresh frame is drawn successfully
+					}
+					else {
+						try {
+							// Invoke the Lua draw function if it exists
+							this.invokeLuaFunction?.(this.luaDrawFunction, []);
+						} catch (error) {
+							// We want to preserve the currently game render queue as-is,
+							// so that the console mode can be drawn on top of whatever was rendered this frame.
+							// Therefore, we do not call finalizeFrameState here.
+							this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
+
+							if (isLuaDebuggerPauseSignal(error)) {
+								this.onLuaDebuggerPause(error);
+							} else {
+								this.handleLuaError(error);
+							}
+						}
 					}
 				}
 			}
@@ -901,6 +928,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public abandonFrameState(): void {
+		// Clear reference to allow next frame to begin
 		this.currentFrameState = null;
 	}
 
@@ -1020,22 +1048,18 @@ export class BmsxConsoleRuntime extends Service {
 			this.luaRuntimeFailed = true;
 		}
 		this.updateOverlayState(this.consoleMode.isActive, this.editor?.isActive === true, true);
-		this.redrawAfterStateRestore();
 	}
 
-	public async resumeFromSnapshot(state: unknown): Promise<void> {
+	public async resumeFromSnapshot(state: BmsxConsoleState): Promise<void> {
 		this.clearActiveDebuggerPause();
 		if (!state) {
 			this.luaRuntimeFailed = false;
 			throw new Error('[BmsxConsoleRuntime] Cannot resume from invalid state snapshot.');
 		}
-		const originalSnapshot = state as BmsxConsoleState;
-		const snapshot: BmsxConsoleState = { ...originalSnapshot, luaRuntimeFailed: false };
+		const snapshot: BmsxConsoleState = { ...state, luaRuntimeFailed: false };
 		// Clear any previous error overlays and interpreter fault markers so a fresh
 		// resume starts clean and can report new errors normally.
-		if (this.editor) {
-			this.editor.clearRuntimeErrorOverlay();
-		}
+		this.editor?.clearRuntimeErrorOverlay();
 		this.luaInterpreter.clearLastFaultEnvironment();
 		this.luaInterpreter.clearLastFaultCallStack();
 
@@ -1046,7 +1070,6 @@ export class BmsxConsoleRuntime extends Service {
 		publishOverlayFrame(null);
 		this.resumeLuaProgramState(snapshot);
 		this.updateOverlayState(this.consoleMode.isActive, this.editor?.isActive === true, true);
-		this.redrawAfterStateRestore();
 		this.clearFaultSnapshot();
 		this.luaVmInitialized = this.luaInterpreter !== null;
 	}
@@ -1122,7 +1145,6 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 		this.updateOverlayState(this.consoleMode.isActive, this.editor?.isActive === true, true);
-		this.redrawAfterStateRestore();
 		this.luaVmInitialized = this.luaInterpreter !== null;
 	}
 
@@ -1283,28 +1305,6 @@ export class BmsxConsoleRuntime extends Service {
 		if (savedRuntimeFailed) {
 			this.luaRuntimeFailed = true;
 		}
-	}
-
-	private redrawAfterStateRestore(): void {
-		if (Object.values(this.cart.lua).length > 0) {
-			if (this.luaRuntimeFailed) {
-				return;
-			}
-			if (this.luaDrawFunction !== null) {
-				try {
-					this.invokeLuaFunction(this.luaDrawFunction, []);
-				}
-				catch (error) {
-					if (isLuaDebuggerPauseSignal(error)) {
-						this.onLuaDebuggerPause(error);
-					} else {
-						this.handleLuaError(error);
-					}
-				}
-			}
-			return;
-		}
-		this.cart.draw();
 	}
 
 	private clearEditorErrorOverlaysIfNoFault(): void {
@@ -1653,6 +1653,12 @@ export class BmsxConsoleRuntime extends Service {
 	public async reloadProgramAndResetWorld(options?: { runInit?: boolean }): Promise<void> {
 		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'reload_and_reset' });
 		try {
+			// Reset the fault state
+			this.clearActiveDebuggerPause();
+			this.luaRuntimeFailed = false;
+			this.clearFaultSnapshot();
+
+			// Reload the program source from the cartridge and reset the world
 			const source = this.cart.lua[this.cart.entry].src;
 			await $.reset_to_fresh_world();
 			try {

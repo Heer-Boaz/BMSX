@@ -1,6 +1,7 @@
 import { FeatureQueue } from '../../utils/feature_queue';
 import type { ImgMeta } from '../../rompack/rompack';
 import type { ImgRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission } from './render_types';
+import { RenderSubmission } from '../gameview';
 
 export interface SpriteQueueItem {
 	options: ImgRenderSubmission;
@@ -26,7 +27,7 @@ export function sortSpriteQueue(compare: (a: SpriteQueueItem, b: SpriteQueueItem
 	spriteQueue.sortFront(compare);
 }
 
-export function forEachSpriteQueue(fn: (item: SpriteQueueItem, index: number) => void): void {
+export function forEachSprite(fn: (item: SpriteQueueItem, index: number) => void): void {
 	spriteQueue.forEachFront(fn);
 }
 
@@ -36,6 +37,14 @@ export function spriteQueueBackSize(): number {
 
 export function spriteQueueFrontSize(): number {
 	return spriteQueue.sizeFront();
+}
+
+export function copySpriteQueueForPlayback(): RenderSubmission[] {
+	const items: RenderSubmission[] = [];
+	spriteQueue.forEachBack((item) => {
+		items.push( {...item.options, type: 'img'} ); // Add 'kind' property for playback so that we can use `$.view.renderer.submit.typed`
+	});
+	return items;
 }
 
 // --- Mesh queue helpers -----------------------------------------------------

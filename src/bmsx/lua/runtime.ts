@@ -2274,7 +2274,7 @@ export class LuaInterpreter {
 			}
 			throw this.runtimeError(message);
 		}
-		const exists = resolvedName in (target.native as Record<string, unknown>);
+		// const exists = resolvedName in (target.native as Record<string, unknown>);
 		if (typeof property === 'function') {
 			const handle = this.getOrCreateNativeMemberHandle(target, [resolvedName], normalized.displayName, range, true);
 			return { found: true, value: handle, resolvedName, displayName: normalized.displayName };

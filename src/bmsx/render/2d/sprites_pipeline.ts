@@ -42,7 +42,7 @@ import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
 import { drainOverlayFrameIntoSpriteQueue } from '../../console/console_render_facade';
 import {
 	beginSpriteQueue,
-	forEachSpriteQueue,
+	forEachSprite,
 	sortSpriteQueue,
 	spriteQueueBackSize,
 	spriteQueueFrontSize,
@@ -89,7 +89,7 @@ export function sortSpriteBatch(compare: (a: SpriteSubmission, b: SpriteSubmissi
 }
 
 export function forEachSpriteBatch(fn: (submission: SpriteSubmission, index: number) => void): void {
-	forEachSpriteQueue(fn);
+	forEachSprite(fn);
 }
 
 interface SpriteRuntime {

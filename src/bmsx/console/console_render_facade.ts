@@ -2,9 +2,10 @@ import type { color, ImgRenderSubmission, RectRenderSubmission, RenderLayer } fr
 import type { ConsoleFont } from './font';
 import { renderGlyphs } from '../render/glyphs';
 import { $ } from '../core/game';
-import { consumeOverlayFrame, publishOverlayFrame, type EditorOverlayFrame, type OverlayCommand } from '../render/editor/editor_overlay_queue';
+import { consumeOverlayFrame, publishOverlayFrame, type EditorOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { new_vec3, new_vec2 } from '../utils/vector_operations';
 import type { Viewport } from '../rompack/rompack';
+import { RenderSubmission } from '../render/gameview';
 
 export type RectCommand = {
 	kind: 'rect' | 'fill';
@@ -51,8 +52,58 @@ export type SpriteCommand = {
 	colorize?: color;
 };
 
+export type ConsoleRenderCommand = RectRenderSubmission | (ImgRenderSubmission & { kind: 'sprite' });
+
 export class ConsoleRenderFacade {
-	private readonly commands: OverlayCommand[] = [];
+	private defaultLayer: RenderLayer = 'world';
+
+	public playbackRenderQueue(preservedRenderQueue: RenderSubmission[]) {
+		preservedRenderQueue.forEach(s => $.view.renderer.submit.typed(s));
+	}
+
+	public captureCurrentFrameRenderQueue(): RenderSubmission[] {
+		// Preserve the current frame's submissions so they can be replayed under overlays.
+		// We capture world/ui/background layers and ignore editor/overlay layers so that
+		// console/editor UI can continue rendering on top of the frozen game.
+		const preserved: RenderSubmission[] = [];
+		for (const command of this.commands) {
+			const layer = command.layer ?? this.defaultLayer;
+			if (layer === 'editor' || layer === 'overlay') {
+				continue;
+			}
+			switch (command.kind) {
+				case 'fill':
+				case 'rect':
+					preserved.push({
+						type: 'rect',
+						kind: command.kind,
+						area: {
+							start: { ...command.area.start },
+							end: { ...command.area.end },
+						},
+						color: { ...command.color },
+						layer,
+					});
+					break;
+				case 'sprite':
+					preserved.push({
+						type: 'img',
+						imgid: command.imgid,
+						pos: { ...command.pos },
+						scale: command.scale ? { ...command.scale } : undefined,
+						flip: command.flip ? { ...command.flip } : undefined,
+						colorize: command.colorize ? { ...command.colorize } : undefined,
+						layer,
+					});
+					break;
+				default:
+					throw new Error(`ConsoleRenderFacade.captureCurrentFrameRenderQueue: Unsupported command kind '${(command as any).kind}'`);
+			}
+		}
+		return preserved;
+	}
+
+	private readonly commands: ConsoleRenderCommand[] = [];
 	private frameLogicalWidth = 0;
 	private frameLogicalHeight = 0;
 	private frameRenderWidth = 0;
@@ -82,6 +133,7 @@ export class ConsoleRenderFacade {
 
 	public beginFrame(): void {
 		this.capturingFrame = true;
+		this.defaultLayer = 'world';
 		const view = $.view;
 		const offscreen = view.offscreenCanvasSize;
 		const logical = view.viewportSize;
@@ -94,8 +146,12 @@ export class ConsoleRenderFacade {
 		this.commands.length = 0;
 	}
 
+	public setDefaultLayer(layer: RenderLayer): void {
+		this.defaultLayer = layer;
+	}
+
 	public rect(command: RectCommand): void {
-		const layer = command.layer ?? (this.capturingFrame ? 'editor' : 'ui');
+		const layer = command.layer ?? this.defaultLayer;
 		const z = command.z ?? ConsoleRenderFacade.RECT_Z;
 		if (!this.capturingFrame) {
 			$.view.renderer.submit.rect({
@@ -119,7 +175,7 @@ export class ConsoleRenderFacade {
 	}
 
 	public glyphs(command: PrintCommand): void {
-		const layer = command.layer ?? (this.capturingFrame ? 'editor' : 'ui');
+		const layer = command.layer ?? this.defaultLayer;
 		if (!this.capturingFrame) {
 			renderGlyphs(command.x, command.y, command.text, command.z ?? ConsoleRenderFacade.SPRITE_Z, command.font, command.color, undefined, layer);
 			return;
@@ -135,7 +191,8 @@ export class ConsoleRenderFacade {
 			}
 			const imgId = command.font.char_to_img(ch);
 			const advance = command.font.char_width(ch);
-			const sprite: ImgRenderSubmission = {
+			const sprite = {
+				kind: 'sprite' as const,
 				imgid: imgId,
 				pos: { x: cursorX, y: cursorY, z: command.z ?? ConsoleRenderFacade.SPRITE_Z },
 				scale: { x: 1, y: 1 },
@@ -149,7 +206,7 @@ export class ConsoleRenderFacade {
 	}
 
 	public sprite(command: SpriteCommand): void {
-		const layer = command.layer ?? (this.capturingFrame ? 'editor' : 'ui');
+		const layer = command.layer ?? this.defaultLayer;
 		if (!this.capturingFrame) {
 			$.view.renderer.submit.sprite({
 				imgid: command.imgId,
@@ -161,7 +218,8 @@ export class ConsoleRenderFacade {
 			});
 			return;
 		}
-		const sprite: ImgRenderSubmission = {
+		const sprite = {
+			kind: 'sprite' as const,
 			imgid: command.imgId,
 			pos: { x: command.baseX, y: command.baseY, z: command.z ?? ConsoleRenderFacade.SPRITE_Z },
 			scale: { x: command.scale, y: command.scale },
@@ -186,23 +244,29 @@ export class ConsoleRenderFacade {
 			renderWidth: this.frameRenderWidth,
 			renderHeight: this.frameRenderHeight,
 			commands: this.commands.map(cmd => {
-				if ('area' in cmd) {
-					return {
-						...cmd,
-						color: { ...cmd.color },
-						area: {
-							start: { ...cmd.area.start },
-							end: { ...cmd.area.end },
-						},
-					} as RectRenderSubmission;
+				switch (cmd.kind) {
+					case 'fill':
+					case 'rect':
+						return {
+							...cmd,
+							color: { ...cmd.color },
+							area: {
+								start: { ...cmd.area.start },
+								end: { ...cmd.area.end },
+							},
+						};
+					case 'sprite':
+						return {
+							...cmd,
+							kind: 'sprite' as const,
+							pos: { ...cmd.pos },
+							scale: cmd.scale ? { ...cmd.scale } : undefined,
+							flip: cmd.flip ? { ...cmd.flip } : undefined,
+							colorize: cmd.colorize ? { ...cmd.colorize } : undefined,
+						};
+					default:
+						throw new Error(`ConsoleRenderFacade.endFrame: Unsupported command kind '${(cmd as any).kind}'`);
 				}
-				return {
-					...cmd,
-					pos: { ...cmd.pos },
-					scale: cmd.scale ? { ...cmd.scale } : undefined,
-					flip: cmd.flip ? { ...cmd.flip } : undefined,
-					colorize: cmd.colorize ? { ...cmd.colorize } : undefined,
-				} as ImgRenderSubmission;
 			}),
 		};
 		publishOverlayFrame(frame);
@@ -225,7 +289,7 @@ function submitRect(cmd: RectRenderSubmission, scaleX: number, scaleY: number): 
 			},
 		},
 		color: cmd.color,
-		layer: cmd.layer ?? 'editor',
+		layer: cmd.layer ?? 'world',
 	};
 	$.view.renderer.submit.rect(submission);
 }
@@ -236,7 +300,7 @@ function submitSprite(cmd: ImgRenderSubmission, scaleX: number, scaleY: number):
 		...cmd,
 		pos: new_vec3(cmd.pos.x * scaleX, cmd.pos.y * scaleY, cmd.pos.z!),
 		scale: new_vec2(scale.x * scaleX, scale.y * scaleY),
-		layer: cmd.layer ?? 'editor',
+		layer: cmd.layer ?? 'world',
 	});
 }
 
@@ -248,10 +312,14 @@ export function drainOverlayFrameIntoSpriteQueue(_renderWidth: number, _renderHe
 	const scaleX = captureWidth > 0 ? logicalWidth / captureWidth : 1;
 	const scaleY = captureHeight > 0 ? logicalHeight / captureHeight : 1;
 	for (const command of frame.commands) {
-		if ('area' in command) {
-			submitRect(command as RectRenderSubmission, scaleX, scaleY);
-		} else {
-			submitSprite(command as ImgRenderSubmission, scaleX, scaleY);
+		switch (command.kind) {
+			case 'rect':
+			case 'fill':
+				submitRect(command as RectRenderSubmission, scaleX, scaleY);
+				break;
+			case 'sprite':
+				submitSprite(command as ImgRenderSubmission, scaleX, scaleY);
+				break;
 		}
 	}
 }

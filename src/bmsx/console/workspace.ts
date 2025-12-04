@@ -189,9 +189,6 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 		});
 	} catch (error) {
 		handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Failed to reach Lua save endpoint for '${path}'`, { error });
-		if (luaFailurePolicy.persist === 'warning') {
-			return;
-		}
 		return;
 	}
 	if (!response.ok) {
@@ -231,9 +228,6 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 			}
 		}
 		handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Save rejected for '${path}'`, { detail: finalDetail });
-		if (luaFailurePolicy.persist === 'warning') {
-			return;
-		}
 		return;
 	}
 }
@@ -249,9 +243,6 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 		response = await fetch(url, { method: 'GET', cache: 'no-store' });
 	} catch (error) {
 		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from filesystem (${path})`, { error });
-		if (luaFailurePolicy.fetch === 'warning') {
-			return null;
-		}
 		return null;
 	}
 	if (response.status === 404) {
@@ -264,9 +255,6 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 		} catch (textError) {
 			const message = extractErrorMessage(textError);
 			handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from '${path}' (response body read failed)`, { detail: message });
-			if (luaFailurePolicy.fetch === 'warning') {
-				return null;
-			}
 			return null;
 		}
 		let finalDetail = response.statusText;
@@ -277,9 +265,6 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 			} catch (parseError) {
 				const parseMessage = extractErrorMessage(parseError);
 				handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from '${path}' (error payload parse failed)`, { detail: parseMessage });
-				if (luaFailurePolicy.fetch === 'warning') {
-					return null;
-				}
 				return null;
 			}
 			if (parsed && typeof parsed === 'object' && 'error' in parsed) {
@@ -305,24 +290,15 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 	} catch (parseError) {
 		const message = extractErrorMessage(parseError);
 		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Invalid response while loading Lua source from '${path}'`, { detail: message });
-		if (luaFailurePolicy.fetch === 'warning') {
-			return null;
-		}
 		return null;
 	}
 	if (!payload || typeof payload !== 'object') {
 		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Response for '${path}' missing Lua contents`);
-		if (luaFailurePolicy.fetch === 'warning') {
-			return null;
-		}
 		return null;
 	}
 	const record = payload as { contents?: unknown };
 	if (typeof record.contents !== 'string') {
 		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Response for '${path}' missing Lua contents`);
-		if (luaFailurePolicy.fetch === 'warning') {
-			return null;
-		}
 		return null;
 	}
 	return record.contents;
@@ -696,19 +672,13 @@ async function clearWorkspaceDirtyFiles(cart: BmsxCartridge, storage: StorageSer
 export async function resetWorkspaceDirtyBuffersAndStorage(): Promise<void> {
 	const runtime = BmsxConsoleRuntime.instance;
 	await clearWorkspaceDirtyFiles($.rompack.cart, runtime.storageService);
-	const editor = runtime.editor;
-	if (editor) {
-		editor.clearWorkspaceDirtyBuffers();
-	}
+	runtime.editor?.clearWorkspaceDirtyBuffers();
 }
 
 export async function nukeWorkspaceState(): Promise<void> {
 	const runtime = BmsxConsoleRuntime.instance;
 	await clearWorkspaceArtifacts($.rompack.cart, runtime.storageService);
-	const editor = runtime.editor;
-	if (editor) {
-		editor.clearWorkspaceDirtyBuffers();
-	}
+	runtime.editor?.clearWorkspaceDirtyBuffers();
 }
 
 export async function clearWorkspaceLuaOverrides(): Promise<void> {
@@ -716,10 +686,7 @@ export async function clearWorkspaceLuaOverrides(): Promise<void> {
 	await clearWorkspaceArtifacts($.rompack.cart, runtime.storageService);
 	// @ts-ignore - unused variable
 	const changed = await applyWorkspaceOverridesToCart({ rompack: $.rompack, storage: runtime.storageService, includeServer: true });
-	const editor = runtime.editor;
-	if (editor) {
-		runtime.editor.clearWorkspaceDirtyBuffers();
-	}
+	runtime.editor?.clearWorkspaceDirtyBuffers();
 	// if (changed.size > 0) {
 	// 	await runtime.reloadProgramAndResetWorld({ runInit: true });
 	// }

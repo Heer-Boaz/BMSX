@@ -333,6 +333,7 @@ function update(dt)
 end
 
 local function draw_hero(hero)
+	write('TEST!', 0, 0, 0, 15)
 	local ready = hero.tempo_ready
 	local blinking = hero.blinking_timer > 0
 	local basecolor = blinking and 8 or (ready and 10 or 12)

@@ -1,6 +1,4 @@
-import type { ImgRenderSubmission, RectRenderSubmission } from '../shared/render_types';
-
-export type OverlayCommand = RectRenderSubmission | ImgRenderSubmission;
+import { ConsoleRenderCommand } from '../../console/console_render_facade';
 
 export type EditorOverlayFrame = {
 	width: number;
@@ -9,7 +7,7 @@ export type EditorOverlayFrame = {
 	logicalHeight: number;
 	renderWidth: number;
 	renderHeight: number;
-	commands: OverlayCommand[];
+	commands: ConsoleRenderCommand[];
 };
 
 let pendingFrame: EditorOverlayFrame = null;

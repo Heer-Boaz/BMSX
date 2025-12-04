@@ -3,7 +3,7 @@ import { RenderPassLibrary, SpritesPipelineState, MeshBatchPipelineState, Partic
 import { M4 } from '../3d/math3d';
 import {
 	beginSpriteQueue,
-	forEachSpriteQueue,
+	forEachSprite,
 	beginMeshQueue,
 	forEachMeshQueue,
 	beginParticleQueue,
@@ -132,7 +132,7 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 			];
 			if (count > 0) {
 				let index = 0;
-				forEachSpriteQueue((submission: SpriteQueueItem) => {
+				forEachSprite((submission: SpriteQueueItem) => {
 					const { options, imgmeta } = submission;
 					const layer = options.layer ?? 'world';
 					const pos = formatVec3({ x: options.pos.x, y: options.pos.y, z: options.pos.z ?? 0 });
