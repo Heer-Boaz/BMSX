@@ -1,5 +1,5 @@
 /// <reference types="@webgpu/types" />
-import { color_arr, type TextureSource, type vec2 } from '../../rompack/rompack';
+import { type color_arr, type TextureSource, type vec2 } from '../../rompack/rompack';
 import type { WebGLBackend } from './webgl/webgl_backend';
 import type { WebGPUBackend } from './webgpu/webgpu_backend';
 
@@ -202,3 +202,42 @@ export interface RenderContext {
 	// Optional centralized renderer submission + queues (lightweight, backend-agnostic)
 	renderer?: { queues?: { [k: string]: unknown }; submit?: unknown; swap?: () => void };
 }
+
+export interface RenderPassToken {
+	readonly id: string;
+	enable(): void;
+	disable(): void;
+	set(enabled: boolean): void;
+	isEnabled(): boolean;
+}export type FogUniforms = {
+	fogD50: number;
+	fogStart: number;
+	fogColorLow: [number, number, number];
+	fogColorHigh: [number, number, number];
+	fogYMin: number;
+	fogYMax: number;
+};
+export interface SkyboxPipelineState { width: number; height: number; view: Float32Array; proj: Float32Array; tex: TextureHandle; }
+export interface MeshBatchPipelineState {
+	width: number;
+	height: number;
+	camPos: Float32Array | { x: number; y: number; z: number; };
+	viewProj: Float32Array;
+	cameraFrustum: Float32Array;
+	lighting?: unknown;
+}
+export interface ParticlePipelineState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array; }
+export interface SpritesPipelineState {
+	width: number;
+	height: number;
+	baseWidth: number;
+	baseHeight: number;
+	atlasTex?: TextureHandle;
+	atlasDynamicTex?: TextureHandle;
+	atlasEngineTex?: TextureHandle;
+	ambientEnabledDefault: boolean;
+	ambientFactorDefault: number;
+}
+export interface CRTPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; colorTex: TextureHandle; options?: unknown; }
+export interface FrameSharedState { view: { camPos: Float32Array | { x: number; y: number; z: number; }; viewProj: Float32Array; skyboxView: Float32Array; proj: Float32Array; }; lighting: unknown; fog: FogUniforms; }
+

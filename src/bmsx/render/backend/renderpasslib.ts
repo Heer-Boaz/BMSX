@@ -17,43 +17,11 @@ import { LightingSystem } from '../lighting/lightingsystem';
 import { registerCRT_WebGL } from '../post/crt_pipeline';
 import { registerCRT_WebGPU } from '../post/crt_pipeline.wgpu';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_uniforms';
-import { AnyBackend, GPUBackend, PassEncoder, RenderContext, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle } from './pipeline_interfaces';
+import { AnyBackend, CRTPipelineState, FogUniforms, FrameSharedState, GPUBackend, MeshBatchPipelineState, ParticlePipelineState, PassEncoder, RenderContext, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassToken, SkyboxPipelineState, SpritesPipelineState } from './pipeline_interfaces';
 import { checkWebGLError } from './webgl/webgl.helpers';
 import { WebGLBackend } from './webgl/webgl_backend';
 import { registerHeadlessPasses } from '../headless/headless_render_passes';
 import { ENGINE_ATLAS_TEXTURE_KEY } from '../gameview';
-
-export type FogUniforms = {
-	fogD50: number;
-	fogStart: number;
-	fogColorLow: [number, number, number];
-	fogColorHigh: [number, number, number];
-	fogYMin: number;
-	fogYMax: number;
-};
-export interface SkyboxPipelineState { width: number; height: number; view: Float32Array; proj: Float32Array; tex: TextureHandle; }
-export interface MeshBatchPipelineState {
-	width: number;
-	height: number;
-	camPos: Float32Array | { x: number; y: number; z: number };
-	viewProj: Float32Array;
-	cameraFrustum: Float32Array;
-	lighting?: unknown;
-}
-export interface ParticlePipelineState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array; }
-export interface SpritesPipelineState {
-	width: number;
-	height: number;
-	baseWidth: number;
-	baseHeight: number;
-	atlasTex?: TextureHandle;
-	atlasDynamicTex?: TextureHandle;
-	atlasEngineTex?: TextureHandle;
-	ambientEnabledDefault: boolean;
-	ambientFactorDefault: number;
-}
-export interface CRTPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; colorTex: TextureHandle; options?: unknown; }
-export interface FrameSharedState { view: { camPos: Float32Array | { x: number; y: number; z: number }; viewProj: Float32Array; skyboxView: Float32Array; proj: Float32Array }; lighting: unknown; fog: FogUniforms }
 
 // Type-safe pass state map used by this registry (compile-time only)
 type PassStateTypes = {
@@ -461,10 +429,3 @@ export class RenderPassLibrary {
 	}
 }
 
-export interface RenderPassToken {
-	readonly id: string;
-	enable(): void;
-	disable(): void;
-	set(enabled: boolean): void;
-	isEnabled(): boolean;
-}

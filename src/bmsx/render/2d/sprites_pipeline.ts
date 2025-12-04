@@ -6,7 +6,8 @@ import spriteFS from '../2d/shaders/2d.frag.glsl';
 import spriteVS from '../2d/shaders/2d.vert.glsl';
 import * as GLR from '../backend/webgl/gl_resources';
 import type { GPUBackend, RenderContext } from '../backend/pipeline_interfaces';
-import { RenderPassLibrary, SpritesPipelineState } from '../backend/renderpasslib';
+import { RenderPassLibrary } from '../backend/renderpasslib';
+import { SpritesPipelineState } from '../backend/pipeline_interfaces';
 import { updateAndBindFrameUniforms } from '../backend/frame_uniforms';
 import {
 	ATLAS_ID_BUFFER_OFFSET_MULTIPLIER,
@@ -400,7 +401,7 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			const webglBackend = backend as WebGLBackend;
 			const runtime: SpriteRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: $.view };
 			const state = s as SpritesPipelineState;
-			drainOverlayFrameIntoSpriteQueue(state.width, state.height, state.baseWidth, state.baseHeight);
+			drainOverlayFrameIntoSpriteQueue(state.baseWidth, state.baseHeight);
 			updateAndBindFrameUniforms(webglBackend, {
 				offscreen: { x: state.width, y: state.height },
 				logical: { x: $.view.viewportSize.x, y: $.view.viewportSize.y },

@@ -23,23 +23,25 @@ export class ConsoleRenderFacade {
 	private defaultLayer: RenderLayer = 'world';
 
 	public playbackRenderQueue(preservedRenderQueue: RenderSubmission[]) {
-		preservedRenderQueue.forEach(s => $.view.renderer.submit.typed(s));
+		for (let i = 0; i < preservedRenderQueue.length; i++) {
+			const submission = preservedRenderQueue[i];
+			if ('layer' in submission) {
+				const layer = (submission as { layer?: RenderLayer }).layer;
+				if (layer === 'editor' || layer === 'overlay') {
+					continue;
+				}
+			}
+			$.view.renderer.submit.typed(submission);
+		}
 	}
 
 	public captureCurrentFrameRenderQueue(): RenderSubmission[] {
 		// Preserve the current frame's submissions so they can be replayed under overlays.
-		// We capture world/ui layers and ignore editor/overlay layers so that
-		// console/editor UI can continue rendering on top of the frozen game.
-		return this.commands
-			.filter(cmd => {
-				if (!('layer' in cmd)) return true;
-				const layer = this.resolveLayer((cmd as { layer?: RenderLayer }).layer);
-				return layer !== 'editor' && layer !== 'overlay';
-			})
-			.map(cmd => this.cloneSubmission(cmd));
+		// We rely on playback to skip editor/overlay layers so we don't duplicate UI layers.
+		return this.commands;
 	}
 
-	private readonly commands: ConsoleRenderCommand[] = [];
+	private commands: ConsoleRenderCommand[] = [];
 	private frameLogicalWidth = 0;
 	private frameLogicalHeight = 0;
 	private frameRenderWidth = 0;
@@ -70,6 +72,7 @@ export class ConsoleRenderFacade {
 	public beginFrame(): void {
 		this.capturingFrame = true;
 		this.defaultLayer = 'world';
+		this.commands = [];
 		const view = $.view;
 		const offscreen = view.offscreenCanvasSize;
 		const logical = view.viewportSize;
@@ -87,115 +90,73 @@ export class ConsoleRenderFacade {
 	}
 
 	public rect(command: RectRenderSubmission): void {
-		const submission: RectSubmission = {
-			type: 'rect',
-			kind: command.kind,
-			area: {
-				start: { ...command.area.start, z: command.area.start.z ?? ConsoleRenderFacade.RECT_Z },
-				end: { ...command.area.end, z: command.area.end.z ?? ConsoleRenderFacade.RECT_Z },
-			},
-			color: { ...command.color },
-			layer: command.layer,
-		};
+		const area = command.area;
+		if (area.start.z === undefined) area.start.z = ConsoleRenderFacade.RECT_Z;
+		if (area.end.z === undefined) area.end.z = ConsoleRenderFacade.RECT_Z;
+		const submission = command as RectSubmission;
+		(submission as any).type = 'rect';
 		this.submit(submission);
 	}
 
 	public glyphs(command: GlyphRenderSubmission): void {
-		const submission: GlyphSubmission = {
-			type: 'glyphs',
-			glyphs: command.glyphs,
-			x: command.x,
-			y: command.y,
-			z: command.z ?? ConsoleRenderFacade.SPRITE_Z,
-			font: command.font,
-			color: command.color,
-			background_color: command.background_color,
-			wrap_chars: command.wrap_chars,
-			center_block_width: command.center_block_width,
-			align: command.align,
-			baseline: command.baseline,
-			layer: command.layer,
-		};
+		if (command.z === undefined) {
+			command.z = ConsoleRenderFacade.SPRITE_Z;
+		}
+		const submission = command as GlyphSubmission;
+		(submission as any).type = 'glyphs';
 		this.submit(submission);
 	}
 
 	public sprite(command: ImgRenderSubmission): void {
-		const submission: ImgSubmission = {
-			type: 'img',
-			imgid: command.imgid,
-			pos: { ...command.pos, z: command.pos.z ?? ConsoleRenderFacade.SPRITE_Z },
-			scale: command.scale ? { ...command.scale } : undefined,
-			flip: command.flip ? { ...command.flip } : undefined,
-			colorize: command.colorize ? { ...command.colorize } : undefined,
-			ambient_affected: command.ambient_affected,
-			ambient_factor: command.ambient_factor,
-			layer: command.layer,
-		};
+		if (command.pos.z === undefined) {
+			command.pos.z = ConsoleRenderFacade.SPRITE_Z;
+		}
+		const submission = command as ImgSubmission;
+		(submission as any).type = 'img';
 		this.submit(submission);
 	}
 
 	public poly(command: PolyRenderSubmission): void {
-		const submission: PolySubmission = {
-			type: 'poly',
-			points: [...command.points],
-			z: command.z,
-			color: { ...command.color },
-			thickness: command.thickness,
-			layer: command.layer,
-		};
+		const submission = command as PolySubmission;
+		(submission as any).type = 'poly';
 		this.submit(submission);
 	}
 
 	public mesh(command: MeshRenderSubmission): void {
-		const submission: RenderSubmission = {
-			type: 'mesh',
-			mesh: command.mesh,
-			matrix: command.matrix,
-			joint_matrices: command.joint_matrices,
-			morph_weights: command.morph_weights,
-			receive_shadow: command.receive_shadow,
-		};
+		const submission = command as RenderSubmission;
+		(submission as any).type = 'mesh';
 		this.submit(submission);
 	}
 
 	public particle(command: ParticleRenderSubmission): void {
-		const submission: RenderSubmission = {
-			type: 'particle',
-			position: command.position,
-			size: command.size,
-			color: { ...command.color },
-			texture: command.texture,
-			ambient_mode: command.ambient_mode,
-			ambient_factor: command.ambient_factor,
-		};
+		const submission = command as RenderSubmission;
+		(submission as any).type = 'particle';
 		this.submit(submission);
 	}
 
 	private submit(submission: RenderSubmission): void {
-		const resolvedLayer = this.applyDefaultLayer(submission);
+		this.applyDefaultLayer(submission);
 		if (!this.capturingFrame) {
-			$.view.renderer.submit.typed(resolvedLayer);
+			$.view.renderer.submit.typed(submission);
 			return;
 		}
-		this.commands.push(this.cloneSubmission(resolvedLayer));
+		this.commands.push(submission);
 	}
 
-	private applyDefaultLayer(submission: RenderSubmission): RenderSubmission {
+	private applyDefaultLayer(submission: RenderSubmission): void {
 		switch (submission.type) {
 			case 'rect':
 			case 'img':
 			case 'glyphs':
 			case 'poly': {
-				const layer = this.resolveLayer(submission.layer);
-				return { ...submission, layer };
+				if (submission.layer === undefined) {
+					submission.layer = this.defaultLayer;
+				}
+				return;
 			}
 			default:
-				return submission;
+				return;
 		}
-	}
-
-	private resolveLayer(layer?: RenderLayer): RenderLayer {
-		return layer ?? this.defaultLayer;
 	}
 
 	public endFrame(): void {
@@ -211,136 +172,47 @@ export class ConsoleRenderFacade {
 			logicalHeight: this.frameLogicalHeight,
 			renderWidth: this.frameRenderWidth,
 			renderHeight: this.frameRenderHeight,
-			commands: this.commands.map(cmd => this.cloneSubmission(cmd)),
+			commands: [...this.commands],
 		};
 		publishOverlayFrame(frame);
-	}
-
-
-	private cloneSubmission(submission: RenderSubmission): RenderSubmission {
-		switch (submission.type) {
-			case 'rect':
-				return {
-					type: 'rect',
-					kind: submission.kind,
-					area: {
-						start: { ...submission.area.start },
-						end: { ...submission.area.end },
-					},
-					color: { ...submission.color },
-					layer: submission.layer,
-				};
-			case 'img':
-				return {
-					type: 'img',
-					imgid: submission.imgid,
-					pos: { ...submission.pos },
-					scale: submission.scale ? { ...submission.scale } : undefined,
-					flip: submission.flip ? { ...submission.flip } : undefined,
-					colorize: submission.colorize ? { ...submission.colorize } : undefined,
-					ambient_affected: submission.ambient_affected,
-					ambient_factor: submission.ambient_factor,
-					layer: submission.layer,
-				};
-			case 'glyphs':
-				return {
-					type: 'glyphs',
-					glyphs: Array.isArray(submission.glyphs) ? [...submission.glyphs] : submission.glyphs,
-					x: submission.x,
-					y: submission.y,
-					z: submission.z,
-					font: submission.font,
-					color: submission.color ? { ...submission.color } : undefined,
-					background_color: submission.background_color ? { ...submission.background_color } : undefined,
-					wrap_chars: submission.wrap_chars,
-					center_block_width: submission.center_block_width,
-					align: submission.align,
-					baseline: submission.baseline,
-					layer: submission.layer,
-				};
-			case 'poly':
-				return {
-					type: 'poly',
-					points: [...submission.points],
-					z: submission.z,
-					color: { ...submission.color },
-					thickness: submission.thickness,
-					layer: submission.layer,
-				};
-			case 'mesh':
-				return {
-					type: 'mesh',
-					mesh: submission.mesh,
-					matrix: submission.matrix,
-					joint_matrices: submission.joint_matrices,
-					morph_weights: submission.morph_weights,
-					receive_shadow: submission.receive_shadow,
-				};
-			case 'particle':
-				return {
-					type: 'particle',
-					position: submission.position,
-					size: submission.size,
-					color: { ...submission.color },
-					texture: submission.texture,
-					ambient_mode: submission.ambient_mode,
-					ambient_factor: submission.ambient_factor,
-				};
-			default:
-				throw new Error(`ConsoleRenderFacade.cloneSubmission: Unsupported submission type '${(submission as any).type}'`);
-		}
 	}
 }
 
 function scaleRect(cmd: RectSubmission, scaleX: number, scaleY: number): RectSubmission {
-	return {
-		...cmd,
-		area: {
-			start: {
-				x: cmd.area.start.x * scaleX,
-				y: cmd.area.start.y * scaleY,
-				z: cmd.area.start.z!,
-			},
-			end: {
-				x: cmd.area.end.x * scaleX,
-				y: cmd.area.end.y * scaleY,
-				z: cmd.area.end.z!,
-			},
-		},
-		layer: cmd.layer ?? 'world',
-	};
+	cmd.area.start.x *= scaleX;
+	cmd.area.start.y *= scaleY;
+	cmd.area.end.x *= scaleX;
+	cmd.area.end.y *= scaleY;
+	if (cmd.layer === undefined) cmd.layer = 'world';
+	return cmd;
 }
 
 function scaleSprite(cmd: ImgSubmission, scaleX: number, scaleY: number): ImgSubmission {
 	const scale = cmd.scale ?? { x: 1, y: 1 };
-	return {
-		...cmd,
-		pos: new_vec3(cmd.pos.x * scaleX, cmd.pos.y * scaleY, cmd.pos.z!),
-		scale: new_vec2(scale.x * scaleX, scale.y * scaleY),
-		layer: cmd.layer ?? 'world',
-	};
+	cmd.pos = new_vec3(cmd.pos.x * scaleX, cmd.pos.y * scaleY, cmd.pos.z!);
+	cmd.scale = new_vec2(scale.x * scaleX, scale.y * scaleY);
+	if (cmd.layer === undefined) cmd.layer = 'world';
+	return cmd;
 }
 
 function scaleGlyphs(cmd: GlyphSubmission, scaleX: number, scaleY: number): GlyphSubmission {
-	return {
-		...cmd,
-		x: cmd.x * scaleX,
-		y: cmd.y * scaleY,
-		center_block_width: cmd.center_block_width != null ? cmd.center_block_width * scaleX : cmd.center_block_width,
-		layer: cmd.layer ?? 'world',
-	};
+	cmd.x *= scaleX;
+	cmd.y *= scaleY;
+	if (cmd.center_block_width != null) cmd.center_block_width *= scaleX;
+	if (cmd.layer === undefined) cmd.layer = 'world';
+	return cmd;
 }
 
 function scalePoly(cmd: PolySubmission, scaleX: number, scaleY: number): PolySubmission {
-	const points = cmd.points.map((value, index) => (index % 2 === 0 ? value * scaleX : value * scaleY));
-	return {
-		...cmd,
-		points,
-		layer: cmd.layer ?? 'world',
-	};
+	for (let i = 0; i < cmd.points.length; i += 2) {
+		cmd.points[i] *= scaleX;
+		cmd.points[i + 1] *= scaleY;
+	}
+	if (cmd.layer === undefined) cmd.layer = 'world';
+	return cmd;
 }
 
-export function drainOverlayFrameIntoSpriteQueue(_renderWidth: number, _renderHeight: number, logicalWidth: number, logicalHeight: number): void {
+export function drainOverlayFrameIntoSpriteQueue(logicalWidth: number, logicalHeight: number): void {
 	const frame: EditorOverlayFrame = consumeOverlayFrame();
 	if (!frame) return;
 	const captureWidth = frame.width > 0 ? frame.width : logicalWidth;

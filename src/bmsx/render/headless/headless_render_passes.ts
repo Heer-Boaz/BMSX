@@ -1,5 +1,6 @@
 import { $ } from '../../core/game';
-import { RenderPassLibrary, SpritesPipelineState, MeshBatchPipelineState, ParticlePipelineState } from '../backend/renderpasslib';
+import { RenderPassLibrary } from '../backend/renderpasslib';
+import { SpritesPipelineState, MeshBatchPipelineState, ParticlePipelineState } from '../backend/pipeline_interfaces';
 import { M4 } from '../3d/math3d';
 import {
 	beginSpriteQueue,
