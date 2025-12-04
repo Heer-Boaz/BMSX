@@ -94,13 +94,12 @@ export class BmsxConsoleRuntime extends Service {
 	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api',
 	]);
 
-	public static async createInstance(options: BmsxConsoleRuntimeOptions): Promise<void> {
+	public static createInstance(options: BmsxConsoleRuntimeOptions): BmsxConsoleRuntime {
 		const existing = BmsxConsoleRuntime._instance;
 		if (existing) {
 			throw new Error('[BmsxConsoleRuntime] Instance already exists.');
 		}
-		BmsxConsoleRuntime._instance = new BmsxConsoleRuntime(options);
-		await BmsxConsoleRuntime._instance.boot();
+		return new BmsxConsoleRuntime(options);
 	}
 
 	public static get instance(): BmsxConsoleRuntime {
@@ -720,7 +719,7 @@ export class BmsxConsoleRuntime extends Service {
 		});
 	}
 
-	private async boot(): Promise<void> {
+	public async boot(): Promise<void> {
 		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'new_game' });
 		try {
 			this.luaDebuggerSuspension = null;

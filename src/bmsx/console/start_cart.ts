@@ -199,12 +199,12 @@ export async function startCart(args: BootArgs): Promise<void> {
 		entry,
 	};
 	await applyWorkspaceOverridesToCart({ rompack: args.rompack, storage: platform.storage, includeServer: true });
-	return BmsxConsoleRuntime.createInstance({
+	const runtime = BmsxConsoleRuntime.createInstance({
 		cart: cartridge,
-		playerIndex: args.startingGamepadIndex,
+		playerIndex: args.startingGamepadIndex ?? 1,
 		canonicalization: $.rompack.canonicalization ?? 'none',
 	});
 
+	await runtime.boot();
 	$.start();
-
 }

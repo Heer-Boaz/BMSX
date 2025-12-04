@@ -695,7 +695,7 @@ async function clearWorkspaceDirtyFiles(cart: BmsxCartridge, storage: StorageSer
 
 export async function resetWorkspaceDirtyBuffersAndStorage(): Promise<void> {
 	const runtime = BmsxConsoleRuntime.instance;
-	await clearWorkspaceDirtyFiles(runtime.cart, runtime.storageService);
+	await clearWorkspaceDirtyFiles($.rompack.cart, runtime.storageService);
 	const editor = runtime.editor;
 	if (editor) {
 		editor.clearWorkspaceDirtyBuffers();
@@ -704,7 +704,7 @@ export async function resetWorkspaceDirtyBuffersAndStorage(): Promise<void> {
 
 export async function nukeWorkspaceState(): Promise<void> {
 	const runtime = BmsxConsoleRuntime.instance;
-	await clearWorkspaceArtifacts(runtime.cart, runtime.storageService);
+	await clearWorkspaceArtifacts($.rompack.cart, runtime.storageService);
 	const editor = runtime.editor;
 	if (editor) {
 		editor.clearWorkspaceDirtyBuffers();
@@ -713,7 +713,7 @@ export async function nukeWorkspaceState(): Promise<void> {
 
 export async function clearWorkspaceLuaOverrides(): Promise<void> {
 	const runtime = BmsxConsoleRuntime.instance;
-	await clearWorkspaceArtifacts(runtime.cart, runtime.storageService);
+	await clearWorkspaceArtifacts($.rompack.cart, runtime.storageService);
 	// @ts-ignore - unused variable
 	const changed = await applyWorkspaceOverridesToCart({ rompack: $.rompack, storage: runtime.storageService, includeServer: true });
 	const editor = runtime.editor;

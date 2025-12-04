@@ -2279,11 +2279,8 @@ export class LuaInterpreter {
 			const handle = this.getOrCreateNativeMemberHandle(target, [resolvedName], normalized.displayName, range, true);
 			return { found: true, value: handle, resolvedName, displayName: normalized.displayName };
 		}
-		if (!exists && property === undefined) {
-			return { found: false, value: null, resolvedName, displayName: normalized.displayName };
-		}
 		if (property === undefined) {
-			return { found: true, value: null, resolvedName, displayName: normalized.displayName };
+			return { found: false, value: null, resolvedName, displayName: normalized.displayName };
 		}
 		return { found: true, value: this.convertFromHost(property), resolvedName, displayName: normalized.displayName };
 	}
@@ -2302,15 +2299,27 @@ export class LuaInterpreter {
 			visited.delete(target);
 			return property.value;
 		}
+		const keyName = property.displayName && property.displayName.length > 0
+			? property.displayName
+			: typeof key === 'string' || typeof key === 'number'
+				? String(key)
+				: '<unknown>';
+		const missingPropertyMessage = `Attempted to index missing native member '${keyName}' on ${this.nativeTypeName(target)}.`;
 		const metatable = target.getMetatable();
 		if (metatable === null) {
 			visited.delete(target);
-			return null;
+			if (range !== null) {
+				throw this.runtimeErrorAt(range, missingPropertyMessage);
+			}
+			throw this.runtimeError(missingPropertyMessage);
 		}
 		const handler = metatable.get('__index');
 		if (handler === null) {
 			visited.delete(target);
-			return null;
+			if (range !== null) {
+				throw this.runtimeErrorAt(range, missingPropertyMessage);
+			}
+			throw this.runtimeError(missingPropertyMessage);
 		}
 		if (isLuaTable(handler)) {
 			const result = this.getTableValueWithMetamethod(handler, key, range ?? this.fallbackSourceRange());
