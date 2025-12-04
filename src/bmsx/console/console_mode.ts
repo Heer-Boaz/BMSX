@@ -764,17 +764,16 @@ export class ConsoleMode {
 					const selected = displayText.slice(selStart, selEnd);
 					const startWidth = this.measureDisplayText(before, uppercaseDisplay);
 					const selWidth = this.measureDisplayText(selected, uppercaseDisplay);
-					renderer.rect({
-						kind: 'fill',
-						x0: x + startWidth,
-						y0: y,
-						x1: x + startWidth + selWidth,
-						y1: y + this.font.lineHeight,
-						z: undefined,
-						color: this.selectionColor,
-					});
+						renderer.rect({
+							kind: 'fill',
+							area: {
+								start: { x: x + startWidth, y, z: 0 },
+								end: { x: x + startWidth + selWidth, y: y + this.font.lineHeight, z: 0 },
+							},
+							color: this.selectionColor,
+						});
+					}
 				}
-			}
 
 			// draw the glyph run for this segment
 			this.drawGlyphRun(renderer, seg, x, y, inputColor, uppercaseDisplay);
@@ -804,15 +803,23 @@ export class ConsoleMode {
 				};
 				if (this.caretVisible) {
 					const renderFont = this.font.renderFont();
-					const ops: CaretDrawOps = {
-						fillRect: (x0, y0, x1, y1, color) => renderer.rect({ kind: 'fill', x0, y0, x1, y1, z: undefined, color }),
-						strokeRect: (x0, y0, x1, y1, color) => renderer.rect({ kind: 'rect', x0, y0, x1, y1, z: undefined, color }),
-						drawGlyph: (text, gx, gy, color) => renderer.glyphs({ kind: 'print', text, x: gx, y: gy, z: undefined, color, font: renderFont }),
-					};
-					renderInlineCaret(ops, left, topY, right, bottom, left, true, this.caretColor, nextChar, this.characterBackgroundColor);
+						const ops: CaretDrawOps = {
+							fillRect: (x0, y0, x1, y1, color) => renderer.rect({
+								kind: 'fill',
+								area: { start: { x: x0, y: y0, z: 0 }, end: { x: x1, y: y1, z: 0 } },
+								color,
+							}),
+							strokeRect: (x0, y0, x1, y1, color) => renderer.rect({
+								kind: 'rect',
+								area: { start: { x: x0, y: y0, z: 0 }, end: { x: x1, y: y1, z: 0 } },
+								color,
+							}),
+							drawGlyph: (text, gx, gy, color) => renderer.glyphs({ glyphs: text, x: gx, y: gy, z: 0, color, font: renderFont }),
+						};
+						renderInlineCaret(ops, left, topY, right, bottom, left, true, this.caretColor, nextChar, this.characterBackgroundColor);
+					}
 				}
 			}
-		}
 
 		if (nextCursorInfo) {
 			this.cursorScreenInfo = nextCursorInfo;
@@ -832,18 +839,17 @@ export class ConsoleMode {
 				continue;
 			}
 			const advance = this.font.advance(ch);
-			renderer.rect({
-				kind: 'fill',
-				x0: cursorX,
-				y0: originY,
-				x1: cursorX + advance,
-				y1: originY + this.font.lineHeight,
-				z: undefined,
-				color: this.characterBackgroundColor,
-			});
-			cursorX += advance;
+				renderer.rect({
+					kind: 'fill',
+					area: {
+						start: { x: cursorX, y: originY, z: 0 },
+						end: { x: cursorX + advance, y: originY + this.font.lineHeight, z: 0 },
+					},
+					color: this.characterBackgroundColor,
+				});
+				cursorX += advance;
+			}
 		}
-	}
 
 	private drawGlyphRun(renderer: ConsoleRenderFacade, text: string, originX: number, originY: number, tint: color, uppercase: boolean): void {
 		const renderFont = this.font.renderFont();
@@ -860,8 +866,8 @@ export class ConsoleMode {
 			}
 			const advance = this.font.advance(ch);
 			if (ch !== ' ') {
-				renderer.glyphs({ kind: 'print', text: ch, x: cursorX, y: originY, z: undefined, color: tint, font: renderFont });
-			}
+					renderer.glyphs({ glyphs: ch, x: cursorX, y: originY, z: 0, color: tint, font: renderFont });
+				}
 			cursorX += advance;
 		}
 	}

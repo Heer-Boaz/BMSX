@@ -15,7 +15,7 @@ export type FlipOptions = {
 	flip_v: boolean;
 };
 
-export type RenderLayer = 'background' | 'world' | 'ui' | 'overlay' | 'editor';
+export type RenderLayer = 'world' | 'ui' | 'overlay' | 'editor';
 
 export type RectRenderSubmission = {
 	kind: 'rect' | 'fill';

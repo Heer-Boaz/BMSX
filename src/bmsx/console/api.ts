@@ -1,13 +1,22 @@
 import { $, runGate } from '../core/game';
 import { Input } from '../input/input';
 import type { PlayerInput } from '../input/playerinput';
-import type { color } from '../render/shared/render_types';
+import type {
+	color,
+	GlyphRenderSubmission,
+	ImgRenderSubmission,
+	MeshRenderSubmission,
+	ParticleRenderSubmission,
+	PolyRenderSubmission,
+	RectRenderSubmission,
+	RenderLayer
+} from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
 import { ConsoleFont } from './font';
 import { BmsxConsoleStorage } from './storage';
 import { BmsxConsolePointerButton, ConsolePointerVector, ConsolePointerViewport, ConsolePointerWheel } from './types';
 import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest } from '../audio/soundmaster';
-import type { ConcreteOrAbstractConstructor, Identifier, Native, Registerable } from '../rompack/rompack';
+import type { ConcreteOrAbstractConstructor, Identifier, Native, Registerable, Polygon, vec3arr } from '../rompack/rompack';
 import type { World } from '../core/world';
 import type { Registry } from '../core/registry';
 import { Service } from '../core/service';
@@ -242,57 +251,99 @@ export class BmsxConsoleApi {
 
 	public cls(colorindex: number = 0): void {
 		const color = this.palette_color(colorindex);
-		this.renderBackend.rect({
+		const rect: RectRenderSubmission = {
 			kind: 'fill',
-			x0: 0,
-			y0: 0,
-			x1: this.display_width,
-			y1: this.display_height,
-			z: 0,
+			area: {
+				start: { x: 0, y: 0, z: 0 },
+				end: { x: this.display_width, y: this.display_height, z: 0 },
+			},
 			color,
-		});
+		};
+		this.renderBackend.rect(rect);
 		this.reset_print_cursor();
 	}
 
 	public rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
-		this.renderBackend.rect({ kind: 'rect', x0, y0, x1, y1, z, color: this.palette_color(colorindex) });
+		const rect: RectRenderSubmission = {
+			kind: 'rect',
+			area: {
+				start: { x: x0, y: y0, z },
+				end: { x: x1, y: y1, z },
+			},
+			color: this.palette_color(colorindex),
+		};
+		this.renderBackend.rect(rect);
 	}
 
 	public rectfill(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
-		this.renderBackend.rect({ kind: 'fill', x0, y0, x1, y1, z, color: this.palette_color(colorindex) });
+		const rect: RectRenderSubmission = {
+			kind: 'fill',
+			area: {
+				start: { x: x0, y: y0, z },
+				end: { x: x1, y: y1, z },
+			},
+			color: this.palette_color(colorindex),
+		};
+		this.renderBackend.rect(rect);
 	}
 
 	public rectfill_color(x0: number, y0: number, x1: number, y1: number, z: number, colorvalue: number | color): void {
-		const resolved = typeof colorvalue === 'number' ? this.palette_color(colorvalue) : colorvalue;
-		this.renderBackend.rect({ kind: 'fill', x0, y0, x1, y1, z, color: resolved });
+		const resolved = this.resolve_color(colorvalue);
+		const rect: RectRenderSubmission = {
+			kind: 'fill',
+			area: {
+				start: { x: x0, y: y0, z },
+				end: { x: x1, y: y1, z },
+			},
+			color: resolved,
+		};
+		this.renderBackend.rect(rect);
 	}
 
 	public sprite(img_id: string, x: number, y: number, z: number, options?: { scale?: number; flip_h?: boolean; flip_v?: boolean; colorize?: color, }): void {
-		const entry = $.rompack.img[img_id];
-		const width = entry.imgmeta.width;
-		const height = entry.imgmeta.height;
 		const scale = options?.scale ?? 1;
-		this.renderBackend.sprite({
-			kind: 'sprite',
-			imgId: img_id,
-			spriteIndex: null,
-			originX: 0,
-			originY: 0,
-			baseX: x,
-			baseY: y,
-			drawX: x,
-			drawY: y,
-			z,
-			scale,
-			flipH: options?.flip_h === true,
-			flipV: options?.flip_v === true,
-			spriteId: null,
-			instanceId: img_id,
-			width,
-			height,
-			positionDirty: false,
+		const submission: ImgRenderSubmission = {
+			imgid: img_id,
+			pos: { x, y, z },
+			scale: { x: scale, y: scale },
+			flip: options?.flip_h || options?.flip_v ? { flip_h: options?.flip_h === true, flip_v: options?.flip_v === true } : undefined,
 			colorize: options?.colorize,
-		});
+		};
+		this.renderBackend.sprite(submission);
+	}
+
+	public poly(points: Polygon, z: number, colorindex: number, thickness?: number, layer?: RenderLayer): void {
+		const submission: PolyRenderSubmission = {
+			points,
+			z,
+			color: this.palette_color(colorindex),
+			thickness,
+			layer,
+		};
+		this.renderBackend.poly(submission);
+	}
+
+	public mesh(mesh: MeshRenderSubmission['mesh'], matrix: MeshRenderSubmission['matrix'], options?: Omit<MeshRenderSubmission, 'mesh' | 'matrix'>): void {
+		const submission: MeshRenderSubmission = {
+			mesh,
+			matrix,
+			joint_matrices: options?.joint_matrices,
+			morph_weights: options?.morph_weights,
+			receive_shadow: options?.receive_shadow,
+		};
+		this.renderBackend.mesh(submission);
+	}
+
+	public particle(position: vec3arr, size: number, colorvalue: number | color, options?: Omit<ParticleRenderSubmission, 'position' | 'size' | 'color'>): void {
+		const submission: ParticleRenderSubmission = {
+			position,
+			size,
+			color: this.resolve_color(colorvalue),
+			texture: options?.texture,
+			ambient_mode: options?.ambient_mode,
+			ambient_factor: options?.ambient_factor,
+		};
+		this.renderBackend.particle(submission);
 	}
 
 	public write(text: string, x?: number, y?: number, z?: number, colorindex?: number): void {
@@ -787,6 +838,10 @@ export class BmsxConsoleApi {
 		return Msx1Colors[index];
 	}
 
+	private resolve_color(value: number | color): color {
+		return typeof value === 'number' ? this.palette_color(value) : value;
+	}
+
 	private resolve_write_context(font: ConsoleFont, x: number, y: number, z: number, colorindex: number) {
 		const hasExplicitPosition = x !== undefined && y !== undefined;
 		if (hasExplicitPosition) {
@@ -808,9 +863,17 @@ export class BmsxConsoleApi {
 		let cursorY = y;
 		for (let i = 0; i < lines.length; i += 1) {
 			const expanded = this.expand_tabs(lines[i]);
-			if (expanded.length > 0) {
-				this.renderBackend.glyphs({ kind: 'print', text: expanded, x, y: cursorY, z, color, font });
-			}
+				if (expanded.length > 0) {
+					const glyphs: GlyphRenderSubmission = {
+						glyphs: expanded,
+						x,
+						y: cursorY,
+						z,
+						color,
+						font,
+					};
+					this.renderBackend.glyphs(glyphs);
+				}
 			if (i < lines.length - 1) {
 				cursorY += font.lineHeight;
 			}

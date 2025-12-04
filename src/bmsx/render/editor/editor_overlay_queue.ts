@@ -1,4 +1,4 @@
-import { ConsoleRenderCommand } from '../../console/console_render_facade';
+import type { RenderSubmission } from '../gameview';
 
 export type EditorOverlayFrame = {
 	width: number;
@@ -7,7 +7,7 @@ export type EditorOverlayFrame = {
 	logicalHeight: number;
 	renderWidth: number;
 	renderHeight: number;
-	commands: ConsoleRenderCommand[];
+	commands: RenderSubmission[];
 };
 
 let pendingFrame: EditorOverlayFrame = null;
