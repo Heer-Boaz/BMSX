@@ -16,10 +16,8 @@ import * as constants from './constants';
 import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isCodeTabActive, isReadOnlyCodeTab, setActiveTab } from './editor_tabs';
 import { ide_state } from './ide_state';
 import { buildLuaSemanticModel, LuaSemanticModel } from './semantic_model';
-import { isLuaCommentContext } from './text_utils';
+import { isLuaCommentContext, wrapOverlayLine } from './text_utils';
 import type { ApiCompletionMetadata, CodeTabContext, LuaCompletionItem, PointerSnapshot } from './types';
-
-const HOVER_VALUE_MAX_LINE_LENGTH = 160;
 export const CONSOLE_PREVIEW_MAX_ENTRIES = 12;
 export const CONSOLE_PREVIEW_MAX_DEPTH = 2;
 
@@ -1247,28 +1245,38 @@ function validateCallArity(
 	});
 }
 
-function truncateLine(text: string): string {
-	if (text.length <= constants.HOVER_TOOLTIP_MAX_LINE_LENGTH) return text;
-	return text.slice(0, constants.HOVER_TOOLTIP_MAX_LINE_LENGTH - 3) + '...';
+function wrapHoverLines(lines: string[]): string[] {
+	const wrapWidth = Math.max(
+		ide_state.spaceAdvance,
+		ide_state.viewportWidth - constants.HOVER_TOOLTIP_PADDING_X * 2 - ide_state.spaceAdvance * 2
+	);
+	const wrapped: string[] = [];
+	for (let i = 0; i < lines.length; i += 1) {
+		const segments = wrapOverlayLine(lines[i], wrapWidth);
+		for (let j = 0; j < segments.length; j += 1) {
+			wrapped.push(segments[j]);
+		}
+	}
+	return wrapped;
 }
 
 export function buildHoverContentLines(result: ConsoleLuaHoverResult): string[] {
 	const lines: string[] = [];
-	const push = (value: string) => { lines.push(truncateLine(value)); };
+	const push = (value: string) => { lines.push(value); };
 	if (result.state === 'not_defined') {
 		push(`${result.expression} = not defined`);
-		return lines;
+		return wrapHoverLines(lines);
 	}
 	const valueLines = result.lines.length > 0 ? result.lines : [''];
 	if (valueLines.length === 1) {
 		const suffix = result.valueType && result.valueType !== 'unknown' ? ` (${result.valueType})` : '';
 		push(`${result.expression} = ${valueLines[0]}${suffix}`);
-		return lines;
+		return wrapHoverLines(lines);
 	}
 	const suffix = result.valueType && result.valueType !== 'unknown' ? ` (${result.valueType})` : '';
 	push(`${result.expression}${suffix}`);
 	for (const line of valueLines) push(`  ${line}`);
-	return lines;
+	return wrapHoverLines(lines);
 }
 
 export function intellisenseUiReady(): boolean {
@@ -1790,7 +1798,7 @@ export function navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation
 			targetContextId = context.id;
 		}
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
+		const message = extractErrorMessage(error);
 		ide_state.showMessage(`Failed to open definition: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
 		return;
 	}
@@ -2486,7 +2494,7 @@ export function describeLuaValueForInspector(value: LuaValue): { lines: string[]
 		return { lines: [numeric], valueType: 'number', isFunction: false };
 	}
 	if (typeof value === 'string') {
-		return { lines: [truncateInspectorLine(JSON.stringify(value))], valueType: 'string', isFunction: false };
+		return { lines: [JSON.stringify(value)], valueType: 'string', isFunction: false };
 	}
 	if (isLuaFunctionValue(value)) {
 		const fnName = value.name && value.name.length > 0 ? value.name : '<anonymous>';
@@ -2514,7 +2522,7 @@ export function describeLuaValueForInspector(value: LuaValue): { lines: string[]
 		const tableName = resolveTableTypeName(value);
 		const preview = describeLuaTable(value, 0, new Set<unknown>());
 		const lines = tableName ? [`<table ${tableName}>`] : ['<table>'];
-		lines.push(truncateInspectorLine(preview));
+		lines.push(preview);
 		return { lines, valueType: tableName ?? 'table', isFunction: false };
 	}
 	return { lines: ['<unknown>'], valueType: 'unknown', isFunction: false };
@@ -2783,13 +2791,6 @@ export function cloneMemberCompletions(entries: ConsoleLuaMemberCompletion[]): C
 
 export function clearNativeMemberCompletionCache(): void {
 	BmsxConsoleRuntime.instance.nativeMemberCompletionCache = new WeakMap<object, { dot?: ConsoleLuaMemberCompletion[]; colon?: ConsoleLuaMemberCompletion[] }>();
-}
-
-export function truncateInspectorLine(value: string): string {
-	if (value.length <= HOVER_VALUE_MAX_LINE_LENGTH) {
-		return value;
-	}
-	return value.slice(0, HOVER_VALUE_MAX_LINE_LENGTH - 3) + '...';
 }
 
 export function isLuaBuiltinFunctionName(name: string): boolean {
