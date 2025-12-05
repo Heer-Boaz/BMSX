@@ -6,6 +6,7 @@ import type { CodeTabContext } from '../../src/bmsx/console/ide/types';
 import type { ProjectReferenceEnvironment } from '../../src/bmsx/console/ide/reference_sources';
 import type { ConsoleResourceDescriptor } from '../../src/bmsx/console/types';
 import type { ConsoleCodeLayout } from '../../src/bmsx/console/ide/code_layout';
+import { normalizeEndingsAndSplitLines } from 'bmsx/console/ide/text_utils';
 
 register('./glsl-loader.mjs', import.meta.url);
 
@@ -174,7 +175,7 @@ local function create_ball(seed)
 end
 `;
 	const model = buildLuaSemanticModel(source, 'testchunk');
-	const lines = source.replace(/\r\n/g, '\n').split('\n');
+	const lines = normalizeEndingsAndSplitLines(source);
 	const targetLine = lines[3];
 	const leftZeroBased = targetLine.indexOf('seed');
 	const rightZeroBased = targetLine.indexOf('seed', leftZeroBased + 1);

@@ -3,7 +3,7 @@ import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isKeyTyped, isMetaDown, isShiftDown } from './ide_input';
-import { isWhitespace, isWordChar } from './text_utils';
+import { isWhitespace, isWordChar, normalizeLineEndings } from './text_utils';
 import type { InlineInputOptions, Position, TextField } from './types';
 import { clamp } from '../../utils/clamp';
 
@@ -560,7 +560,7 @@ export function applyInlineFieldEditing(
 	if (useCtrl && isKeyJustPressed('KeyV')) {
 		const clipboard = readClipboard();
 		if (clipboard && clipboard.length > 0) {
-			const normalized = clipboard.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+			const normalized = normalizeLineEndings(clipboard);
 			const merged = normalized;
 			if (merged.length > 0) {
 				const filtered = characterFilter ? merged.split('').filter(characterFilter).join('') : merged;

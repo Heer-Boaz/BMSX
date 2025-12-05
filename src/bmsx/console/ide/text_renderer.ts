@@ -15,8 +15,8 @@ type DrawEditorTextOptions = {
 };
 
 export function drawEditorText(font: ConsoleEditorFont, text: string, originX: number, originY: number, z: number, color: number, options?: DrawEditorTextOptions): void {
-	const baseX = Math.floor(originX);
-	let cursorY = Math.floor(originY);
+	const baseX = originX;
+	let cursorY = originY;
 	const lines = text.split('\n');
 	const renderFont = font.renderFont();
 	const preserveCase = options?.preserveCase ?? false;

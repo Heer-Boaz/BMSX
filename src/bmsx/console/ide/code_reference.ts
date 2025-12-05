@@ -5,6 +5,7 @@ import { LuaSemanticWorkspace } from './semantic_model';
 import type { Decl } from './semantic_model';
 import type { LuaSourceRange } from '../../lua/ast';
 import type { ConsoleCodeLayout } from './code_layout';
+import { normalizeEndingsAndSplitLines } from './text_utils';
 
 export type ProjectReferenceEnvironment = {
 	activeContext: CodeTabContext;
@@ -302,7 +303,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		} else {
 			try {
 				const source = context.load();
-				lines = normalizeLineEndings(source);
+				lines = normalizeEndingsAndSplitLines(source);
 			} catch {
 				lines = null;
 			}
@@ -330,7 +331,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		let lines: readonly string[] = null;
 		try {
 			const source = environment.loadLuaResource(descriptor.asset_id);
-			lines = normalizeLineEndings(source);
+			lines = normalizeEndingsAndSplitLines(source);
 		} catch {
 			lines = null;
 		}
@@ -340,10 +341,6 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		register(chunkName, lines, descriptor.asset_id, descriptor.path , null);
 	}
 	return metadata;
-}
-
-function normalizeLineEndings(source: string): string[] {
-	return source.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n'); // Normalize line endings
 }
 
 function toRangeLike(range: { start: { line: number; column: number }; end: { line: number; column: number } }): LuaSourceRangeLike {

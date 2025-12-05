@@ -15,7 +15,7 @@ import { $ } from '../../core/game';
 import { clamp } from '../../utils/clamp';;
 import { ide_state } from './ide_state';
 import type { EditContext, Position } from './types';
-import { isWhitespace, isWordChar } from './text_utils';
+import { isWhitespace, isWordChar, normalizeLineEndings } from './text_utils';
 import {
 	revealCursor,
 	clampCursorColumn,
@@ -591,7 +591,7 @@ export function insertClipboardText(text: string): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
-	const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+	const normalized = normalizeLineEndings(text);
 	const fragments = normalized.split('\n');
 	const currentLineValue = currentLine();
 	const before = currentLineValue.slice(0, ide_state.cursorColumn);

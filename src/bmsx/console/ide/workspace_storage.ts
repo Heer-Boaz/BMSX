@@ -24,6 +24,7 @@ import {
 import { openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, restoreSnapshot, setFontVariant } from './console_cart_editor';
 import { createEntryTabContext, initializeTabs, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { ConsoleFontVariant } from '../font';
+import { normalizeEndingsAndSplitLines } from './text_utils';
 
 export type WorkspaceStoragePaths = {
 	projectRootPath: string;
@@ -528,8 +529,7 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 }
 
 export function buildSnapshotFromSource(source: string, metadata?: SnapshotMetadata): EditorSnapshot {
-	const normalized = source.replace(/\r\n/g, '\n');
-	const lines = normalized.split('\n');
+	const lines = normalizeEndingsAndSplitLines(source);
 	const lastRow = lines.length > 0 ? lines.length - 1 : 0;
 	const cursorRow = safeclamp(metadata?.cursorRow, 0, lastRow);
 	const cursorColumn = safeclamp(metadata?.cursorColumn, 0, lines[cursorRow].length ?? 0);

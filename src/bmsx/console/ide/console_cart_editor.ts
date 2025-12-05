@@ -38,7 +38,7 @@ import {
 	findCodeTabContext,
 } from './editor_tabs';
 
-import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, markTextMutated, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapOverlayLine } from './text_utils';
+import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, markTextMutated, measureText, normalizeEndingsAndSplitLines, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapOverlayLine } from './text_utils';
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
@@ -849,10 +849,7 @@ export function getStatusMessageLines(): string[] {
 	if (!ide_state.message.visible) {
 		return [];
 	}
-	const sanitized = ide_state.message.text.length > 0
-		? ide_state.message.text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-		: '';
-	const rawLines = sanitized.length > 0 ? sanitized.split('\n') : [''];
+	const rawLines = normalizeEndingsAndSplitLines(ide_state.message.text);
 	const maxWidth = Math.max(ide_state.viewportWidth - 8, ide_state.charAdvance);
 	const localLines: string[] = [];
 	for (let i = 0; i < rawLines.length; i += 1) {

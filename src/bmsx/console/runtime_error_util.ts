@@ -1,6 +1,7 @@
 import { LuaCallFrame } from '../lua/runtime';
 import { StackTraceFrame } from '../lua/value';
 import { getChunkResourceHint } from './ide/intellisense';
+import { normalizeEndingsAndSplitLines } from './ide/text_utils';
 import { RuntimeErrorDetails } from './ide/types';
 
 export function buildLuaFrameRawLabel(functionName: string, source: string): string {
@@ -56,8 +57,7 @@ export function parseJsStackFrames(stack: string): StackTraceFrame[] {
 	if (!stack || stack.length === 0) {
 		return [];
 	}
-	const sanitized = stack.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-	const lines = sanitized.split('\n');
+	const lines = normalizeEndingsAndSplitLines(stack);
 	const frames: StackTraceFrame[] = [];
 	for (let index = 1; index < lines.length; index += 1) {
 		const trimmed = lines[index].trim();

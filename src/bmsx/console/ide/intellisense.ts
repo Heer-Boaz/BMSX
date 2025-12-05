@@ -25,19 +25,13 @@ export const KEYWORDS = new Set([
 	'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
 ]);
 
-function resolveRuntimeValueName(value: LuaValue): string {
-	return BmsxConsoleRuntime.instance.interpreter.resolveValueName(value);
-}
-
-function resolveTableTypeName(table: LuaTable): string {
+function resolveTableChain(table: LuaTable): LuaTable[] {
+	const chain: LuaTable[] = [];
 	let current: LuaTable = table;
 	const visited = new Set<LuaTable>();
 	while (current && !visited.has(current)) {
 		visited.add(current);
-		const direct = resolveRuntimeValueName(current);
-		if (direct) {
-			return direct;
-		}
+		chain.push(current);
 		const metatable = current.getMetatable();
 		if (metatable) {
 			const metaIndex = metatable.get('__index');
@@ -52,6 +46,17 @@ function resolveTableTypeName(table: LuaTable): string {
 			continue;
 		}
 		break;
+	}
+	return chain;
+}
+
+function resolveTableTypeName(table: LuaTable): string {
+	const chain = resolveTableChain(table);
+	for (let i = 0; i < chain.length; i += 1) {
+		const direct = BmsxConsoleRuntime.instance.interpreter.resolveValueName(chain[i]);
+		if (direct) {
+			return direct;
+		}
 	}
 	return null;
 }
@@ -2482,7 +2487,7 @@ export function resolveIdentifierThroughChain(environment: LuaEnvironment, name:
 }
 
 export function describeLuaValueForInspector(value: LuaValue): { lines: string[]; valueType: string; isFunction: boolean } {
-	const resolvedName = resolveRuntimeValueName(value);
+	const resolvedName = BmsxConsoleRuntime.instance.interpreter.resolveValueName(value);
 	if (value === null) {
 		return { lines: ['Nil'], valueType: 'nil', isFunction: false };
 	}
@@ -2520,12 +2525,13 @@ export function describeLuaValueForInspector(value: LuaValue): { lines: string[]
 	}
 	if (isLuaTable(value)) {
 		const tableName = resolveTableTypeName(value);
-		const preview = describeLuaTable(value, 0, new Set<unknown>());
+		const preview = consoleValueToString(value);
 		const lines = tableName ? [`<table ${tableName}>`] : ['<table>'];
 		lines.push(preview);
 		return { lines, valueType: tableName ?? 'table', isFunction: false };
 	}
-	return { lines: ['<unknown>'], valueType: 'unknown', isFunction: false };
+	const summary = consoleValueToString(value);
+	return { lines: [summary], valueType: 'unknown', isFunction: false };
 }
 
 export function getNativeMemberCompletionEntries(value: LuaNativeValue, operator: '.' | ':'): ConsoleLuaMemberCompletion[] {
@@ -2649,33 +2655,9 @@ export function buildTableMemberCompletionEntries(table: LuaTable, operator: '.'
 		}
 	};
 
-	const visited = new Set<LuaTable>();
-	let current: LuaTable = table;
-	while (current && !visited.has(current)) {
-		visited.add(current);
-		appendFromTable(current);
-		let nextTable: LuaTable = null;
-
-		const metatable = current.getMetatable();
-		if (metatable) {
-			const metatableIndex = metatable.get('__index');
-			if (isLuaTable(metatableIndex)) {
-				nextTable = metatableIndex;
-			}
-		}
-
-		if (!nextTable) {
-			const ownIndex = current.get('__index');
-			if (isLuaTable(ownIndex)) {
-				nextTable = ownIndex;
-			}
-		}
-
-		if (!nextTable) {
-			break;
-		}
-
-		current = nextTable;
+	const chain = resolveTableChain(table);
+	for (let i = 0; i < chain.length; i += 1) {
+		appendFromTable(chain[i]);
 	}
 
 	const results: ConsoleLuaMemberCompletion[] = [];

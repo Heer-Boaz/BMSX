@@ -392,12 +392,6 @@ export function computeRuntimeErrorOverlayMaxWidth(): number {
 	return Math.max(ide_state.charAdvance, available);
 }
 
-export function buildRuntimeErrorLines(message: string): string[] {
-	const sanitized = message.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-	const rawLines = sanitized.split('\n');
-	return rawLines.length > 0 ? rawLines : [''];
-}
-
 export function wrapOverlayLine(line: string, maxWidth: number): string[] {
 	if (line.length === 0) return [''];
 	const segments: string[] = [];
@@ -435,7 +429,7 @@ export function wrapOverlayLine(line: string, maxWidth: number): string[] {
 }
 
 function rewrapRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {
-	overlay.messageLines = buildRuntimeErrorLines(overlay.message);
+	overlay.messageLines = normalizeEndingsAndSplitLines(overlay.message);
 	rebuildRuntimeErrorOverlayView(overlay);
 }
 
@@ -516,3 +510,11 @@ export function bumpTextVersion(): void {
 	ide_state.textVersion += 1;
 }
 
+export function normalizeLineEndings(source: string): string {
+	return source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+export function normalizeEndingsAndSplitLines(message: string): string[] {
+	const rawLines = normalizeLineEndings(message).split('\n');
+	return rawLines.length > 0 ? rawLines : [''];
+}
