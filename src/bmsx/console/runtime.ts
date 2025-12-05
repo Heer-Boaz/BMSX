@@ -446,8 +446,8 @@ export class BmsxConsoleRuntime extends Service {
 			return;
 		}
 		if (this.consoleMode.isActive) {
-			if (this.shouldAcceptConsoleHotkey('console-resolution', 'KeyV', KeyModifier.ctrl | KeyModifier.alt)) {
-				$.consume_button(this.playerIndex, 'KeyV', 'keyboard');
+			if (this.shouldAcceptConsoleHotkey('console-resolution', 'KeyM', KeyModifier.ctrl | KeyModifier.alt)) {
+				$.consume_button(this.playerIndex, 'KeyModifier', 'keyboard');
 				this.toggleOverlayResolutionMode();
 			}
 		}
@@ -950,14 +950,6 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private initializeEditor(): void {
-		if (Object.values(this.cart.lua).length === 0) {
-			if (this.editor) {
-				this.editor.shutdown();
-			}
-			this.editor = null;
-			this.disposeShortcutHandlers();
-			return;
-		}
 		const viewportSize = this.overlayViewportSize;
 		const viewport = { width: viewportSize.width, height: viewportSize.height };
 		// Check the primary asset ID for the currently loaded program

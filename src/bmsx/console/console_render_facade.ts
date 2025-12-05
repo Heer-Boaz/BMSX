@@ -48,19 +48,20 @@ export class ConsoleRenderFacade {
 	private static readonly SPRITE_Z = 0;
 
 	public setRenderingViewportType(type: 'viewport' | 'offscreen'): void {
-		// let targetSize: Viewport;
+		let targetSize: Viewport;
 		switch (type) {
 			case 'viewport':
 				$.view.viewportTypeIde = 'viewport';
-				// targetSize = { width: $.view.viewportSize.x, height: $.view.viewportSize.y };
+				targetSize = { width: $.view.viewportSize.x, height: $.view.viewportSize.y };
 				break;
 			case 'offscreen':
 				$.view.viewportTypeIde = 'offscreen';
 			default:
-				// targetSize = { width: $.view.offscreenCanvasSize.x, height: $.view.offscreenCanvasSize.y };
+				// targetSize = { width: $.view.viewportSize.x, height: $.view.viewportSize.y };
+				targetSize = { width: $.view.offscreenCanvasSize.x, height: $.view.offscreenCanvasSize.y };
 				break;
 		}
-		// this.overrideSize = targetSize;
+		this.overrideSize = targetSize;
 	}
 
 	public get viewportSize(): Viewport {

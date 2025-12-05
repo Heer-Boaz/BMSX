@@ -177,7 +177,16 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	gl.depthMask(false);
 	backend.bindVertexArray(spriteVAO as WebGLVertexArrayObject);
-	setupDefaultUniformValues(backend, 1.0, [state.baseWidth, state.baseHeight]);
+	const baseScale = state.baseWidth > 0 ? state.width / state.baseWidth : 1;
+	const ideScale = state.viewportTypeIde === 'offscreen' ? 1 : baseScale;
+	setupDefaultUniformValues(backend, baseScale, [state.baseWidth, state.baseHeight]);
+	let currentScale = baseScale;
+	const setScale = (scale: number) => {
+		if (!spriteShaderScaleLocation) return;
+		if (scale === currentScale) return;
+		gl.uniform1f(spriteShaderScaleLocation, scale);
+		currentScale = scale;
+	};
 	if (state.atlasTex) {
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS;
 		context.bind2DTex(state.atlasTex);
@@ -227,6 +236,13 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	};
 	const ambientDefaultEnabled = state.ambientEnabledDefault ? 1 : 0;
 	forEachSprite(({ options, imgmeta }) => {
+		const desiredScale = options.layer === 'ide' ? ideScale : baseScale;
+		if (desiredScale !== currentScale) {
+			flush();
+			setScale(desiredScale);
+			currentAmbientEnabled = null;
+			currentAmbientFactor = 1.0;
+		}
 		const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
 		const layerIsOverlay = options.layer === 'ui' || options.layer === 'ide';
 		const ambE = layerIsOverlay ? 0 : (options.ambient_affected != null ? (options.ambient_affected ? 1 : 0) : ambientDefaultEnabled);
