@@ -31,7 +31,7 @@ import { ActionEffectComponent } from '../component/actioneffectcomponent';
 import type { ActionEffectDefinition } from '../action_effects/effect_types';
 import { BmsxConsoleRuntime } from './runtime';
 import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type ConstructorWithBTProperty, BehaviorTreeDefinition } from '../ai/behaviourtree';
-import { Component, type ComponentAttachOptions } from '../component/basecomponent';
+import { Component, ComponentTypenameToCtor, type ComponentAttachOptions } from '../component/basecomponent';
 import { ActionEffectRegistry, RegisterEffectOptions } from '../action_effects/effect_registry';
 import { SpriteObject } from '../core/object/sprite';
 import { LuaTable } from '../lua/value';
@@ -468,6 +468,16 @@ export class BmsxConsoleApi {
 	}
 
 	public define_component(descriptor: EntityExtensions): void {
+		const defId = descriptor.def_id;
+		if (!ComponentTypenameToCtor.has(defId)) {
+			class LuaComponent extends Component<any> {
+				public static override get typename(): string { return defId; }
+				constructor(opts: ComponentAttachOptions) {
+					super(opts);
+				}
+			}
+			Component.registerComponentType(defId, LuaComponent);
+		}
 		this.componentExts.set(descriptor.def_id, descriptor);
 	}
 
@@ -515,14 +525,23 @@ export class BmsxConsoleApi {
 
 		// Early out when given an instance
 		if (typeof component_or_type === 'object') {
-			component_or_type.attach(obj.id);
+			component_or_type.attach(obj);
 			return;
 		}
 
-		// Instantiate component from type
-		const instance = Component.newComponent(component_or_type, { parent_or_id: obj.id } as ComponentAttachOptions);
-
-		this.applyObjectExtensionAndOverrides(this.componentExts.get(component_or_type), instance);
+		// See whether this is a component type whose extension we have defined
+		const ext = this.componentExts.get(component_or_type);
+		let instance: Component;
+		if (ext?.class) {
+			// If we have an extension and a class-reference, use the base Component to instantiate the component
+			instance = new Component({ parent_or_id: obj } as ComponentAttachOptions);
+			// And apply the extension to it
+			this.applyObjectExtensionAndOverrides(ext, instance);
+			return;
+		}
+		else {
+			instance = Component.newComponent(component_or_type, { parent_or_id: obj } as ComponentAttachOptions);
+		}
 		obj.add_component(instance);
 	}
 
@@ -863,17 +882,17 @@ export class BmsxConsoleApi {
 		let cursorY = y;
 		for (let i = 0; i < lines.length; i += 1) {
 			const expanded = this.expand_tabs(lines[i]);
-				if (expanded.length > 0) {
-					const glyphs: GlyphRenderSubmission = {
-						glyphs: expanded,
-						x,
-						y: cursorY,
-						z,
-						color,
-						font,
-					};
-					this.renderBackend.glyphs(glyphs);
-				}
+			if (expanded.length > 0) {
+				const glyphs: GlyphRenderSubmission = {
+					glyphs: expanded,
+					x,
+					y: cursorY,
+					z,
+					color,
+					font,
+				};
+				this.renderBackend.glyphs(glyphs);
+			}
 			if (i < lines.length - 1) {
 				cursorY += font.lineHeight;
 			}
