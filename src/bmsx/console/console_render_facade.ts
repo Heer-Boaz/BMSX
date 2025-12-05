@@ -57,7 +57,6 @@ export class ConsoleRenderFacade {
 			case 'offscreen':
 				$.view.viewportTypeIde = 'offscreen';
 			default:
-				// targetSize = { width: $.view.viewportSize.x, height: $.view.viewportSize.y };
 				targetSize = { width: $.view.offscreenCanvasSize.x, height: $.view.offscreenCanvasSize.y };
 				break;
 		}

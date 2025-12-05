@@ -157,6 +157,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 		// Late-init: bind component event subscriptions and perform registry registration here,
 		// after the component has been fully constructed and added to the container.
 		component.onloadSetup();
+		component.on_attach(); // Hook for derived classes
 	}
 
 	/**

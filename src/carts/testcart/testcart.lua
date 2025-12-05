@@ -204,7 +204,7 @@ local function register_hero()
 	define_world_object({
 		def_id = hero_def_id,
 		class = hero,
-		components = { 'actioneffectcomponent', 'ProhibitLeavingScreenComponent', hero_tracker_component_id },
+		components = { 'ActionEffectComponent', 'ProhibitLeavingScreenComponent', hero_tracker_component_id },
 		fsms = { hero_fsm_id, },
 		effects = { effect_id, },
 		defaults = { speed = 54 },
@@ -278,7 +278,7 @@ local function define_hero_tracker_component()
 	define_component({
 		def_id = hero_tracker_component_id,
 		class = {
-			onattach = function(self)
+			on_attach = function(self)
 				self.vars.moves = 0
 				self.vars.boundary_bounces = 0
 				local owner = self.parent

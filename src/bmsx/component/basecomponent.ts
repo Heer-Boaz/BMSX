@@ -296,12 +296,17 @@ export class Component<T extends WorldObject = WorldObject> implements Identifia
 		parent.add_component(this);
 		this._parent = parent;
 		this.bind();
+		this.on_attach(); // Hook for derived classes
 	}
 
 	public detach() {
 		// Remove this instance from the parent
 		this.parent.remove_component_instance(this);
 		this._parent = null;
+	}
+
+	public on_attach() {
+		// Can be overridden by derived classes to perform actions when the component is attached
 	}
 
 	/**
