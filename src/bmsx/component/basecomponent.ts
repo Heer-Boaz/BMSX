@@ -166,7 +166,7 @@ export class Component<T extends WorldObject = WorldObject> implements Identifia
 	static get unique(): boolean { return false; } // If true, only one instance of this component type can be attached to a parent
 	public static get typename(): string { return this.name; }
 
-	public get type(): string { return (this.constructor as typeof Component).typename; } // The component type name which is unique per component class and will never be null or undefined!
+	public type: string; // The component type name which is unique per component class and will never be null or undefined!
 
 	protected static autoRegister(): void {
 		const ctor = this as ComponentClass;
@@ -183,7 +183,6 @@ export class Component<T extends WorldObject = WorldObject> implements Identifia
 		if (!ctor) {
 			throw new Error(`Component '${type}' is not registered.`);
 		}
-
 		return new ctor(opts);
 	}
 
@@ -193,9 +192,7 @@ export class Component<T extends WorldObject = WorldObject> implements Identifia
 	public id: ComponentId; // The component id is the parent id + the component name
 	public id_local: Identifier;
 	public get name(): string { return this.constructor.name; }
-	// public static tagsPre: Set<ComponentTag>;
-	// public static tagsPost: Set<ComponentTag>;
-	// public static eventSubscriptions: EventSubscription[]; // Note: This property is only used by the event emitter
+
 	/**
 	 * Gets the parent of the component.
 	 *
@@ -259,8 +256,8 @@ export class Component<T extends WorldObject = WorldObject> implements Identifia
 
 		// If a local id is supplied, build a compatible id using the parent id and component type name.
 		// Otherwise default to `${parentid}_${Type}`. The container may suffix to ensure uniqueness.
-		const typeName = this.type;
-		this.id = this.id ?? `${this.parent.id}_${typeName}${opts.id_local ? `_${opts.id_local}` : ''}`;
+		this.type = ctor.typename;
+		this.id = this.id ?? `${this.parent.id}_${this.type}${opts.id_local ? `_${opts.id_local}` : ''}`;
 		this.id_local = this.id_local ?? opts.id_local;
 		this._enabled = true;
 		// Event binding is performed once from the container at add_component-time or during deserialization (@onload),

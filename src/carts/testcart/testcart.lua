@@ -279,24 +279,24 @@ local function define_hero_tracker_component()
 		def_id = hero_tracker_component_id,
 		class = {
 			on_attach = function(self)
-				self.vars.moves = 0
-				self.vars.boundary_bounces = 0
+				self.moves = 0
+				self.boundary_bounces = 0
 				local owner = self.parent
 				owner.hero_tracker = self
 				owner.events:on({
 					event = 'demo.hero.move',
 					subscriber = self,
 					handler = function()
-						self.vars.moves = self.vars.moves + 1
-						owner.move_count = self.vars.moves
+						self.moves = self.moves + 1
+						owner.move_count = self.moves
 					end,
 				})
 				owner.events:on({
 					event = 'screen.leaving',
 					subscriber = self,
 					handler = function()
-						self.vars.boundary_bounces = self.vars.boundary_bounces + 1
-						owner.boundary_pushback = self.vars.boundary_bounces
+						self.boundary_bounces = self.boundary_bounces + 1
+						owner.boundary_pushback = self.boundary_bounces
 					end,
 				})
 			end,
