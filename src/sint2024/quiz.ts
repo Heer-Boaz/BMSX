@@ -268,13 +268,13 @@ export class quiz extends WorldObject {
 						this.typeNextCharacter();
 					},
 					input_event_handlers: {
-						'?(a[j!c], b[j!c])': { // Handle both answer options
+						'?(a[jp], b[jp])': { // Handle both answer options
 							do() {
 								$.consume_actions(1, 'a', 'b');
 								return '/vraag';
 							},
 						},
-						'down[j]': '/end', // Handle quiz end on "down"
+						'down[jp]': '/end', // Handle quiz end on "down"
 					}
 				},
 
@@ -287,27 +287,27 @@ export class quiz extends WorldObject {
 						this.typeNextCharacter();
 					},
 					input_event_handlers: {
-						'a[j!c]': { // Handle answer option A
+						'a[jp]': { // Handle answer option A
 							do(this: quiz): string {
 								$.consume_action(1, 'a');
 								this.currentAnswerOptionChosen = 'a';
 								return '/antwoord';
 							},
 						},
-						'b[j!c]': { // Handle answer option B
+						'b[jp]': { // Handle answer option B
 							do(this: quiz): string {
 								$.consume_action(1, 'b');
 								this.currentAnswerOptionChosen = 'b';
 								return '/antwoord';
 							},
 						},
-						'left[j!c]': { // Handle previous question on "left"
+						'left[jp]': { // Handle previous question on "left"
 							do(this: quiz) {
 								$.consume_action(1, 'left');
 								this.presentQuestion('prev');
 							},
 						},
-						'right[j!c]': { // Handle next question on "right"
+						'right[jp]': { // Handle next question on "right"
 							do(this: quiz): string | void {
 								$.consume_action(1, 'right');
 								if (this.currentQuestionIndex >= quizItems.length - 1) {
@@ -333,7 +333,7 @@ export class quiz extends WorldObject {
 						this.typeNextCharacter();
 					},
 					input_event_handlers: {
-						'?(a[j!c], b[j!c])': { // Handle both answer options
+						'?(a[jp], b[jp])': { // Handle both answer options
 							do(this: quiz) {
 								$.consume_actions(1, 'a', 'b');
 								if (this.currentQuestionIndex < quizItems.length - 1) {

@@ -21,7 +21,7 @@ local function track_plain_input()
 	}
 	for index = 1, #bindings do
 		local entry = bindings[index]
-		if game:action_triggered(1, entry[1] .. '[j]') then
+		if game:action_triggered(1, entry[1] .. '[jp]') then
 			demo.last_plain_input = entry[2]
 			emit('demo.input', nil, { action = entry[2], t = demo.tick })
 			print('[hotreload-test] input action=' .. entry[2] .. ' tick=' .. demo.tick)
@@ -103,7 +103,7 @@ function hero:run_motion(dt)
 end
 
 function hero:try_blink()
-	if not game:action_triggered(1, 'console_a[j]') then
+	if not game:action_triggered(1, 'console_a[jp]') then
 		return
 	end
 	if not self.tempo_ready then
@@ -133,12 +133,12 @@ local function build_hero_fsm()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
-					['console_b[j]'] = {
+					['console_b[jp]'] = {
 						['do'] = function(self)
 							return '/charging'
 						end,
 					},
-					['console_a[j]'] = {
+					['console_a[jp]'] = {
 						['do'] = function(self)
 							return '/blinking'
 						end,
@@ -158,12 +158,12 @@ local function build_hero_fsm()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
-					['console_b[j]'] = {
+					['console_b[jp]'] = {
 						['do'] = function(self)
 							return '/charging'
 						end,
 					},
-					['console_a[j]'] = {
+					['console_a[jp]'] = {
 						['do'] = function(self)
 							return '/blinking'
 						end,

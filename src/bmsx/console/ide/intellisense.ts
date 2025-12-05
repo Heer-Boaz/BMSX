@@ -25,6 +25,9 @@ export const KEYWORDS = new Set([
 	'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
 ]);
 
+const SYMBOL_PRIORITY_ORDER: LuaDefinitionKind[] = ['table_field', 'function', 'parameter', 'variable', 'assignment'];
+const LOCAL_DEFINITION_PRIORITY_ORDER: LuaDefinitionKind[] = ['parameter', 'table_field', 'function', 'variable', 'assignment'];
+
 function resolveTableChain(table: LuaTable): LuaTable[] {
 	const chain: LuaTable[] = [];
 	let current: LuaTable = table;
@@ -60,6 +63,17 @@ function resolveTableTypeName(table: LuaTable): string {
 	}
 	return null;
 }
+
+function buildDefinitionPriority(order: LuaDefinitionKind[]): (kind: LuaDefinitionKind) => number {
+	const max = order.length;
+	return (kind: LuaDefinitionKind): number => {
+		const index = order.indexOf(kind);
+		return index === -1 ? 0 : max - index;
+	};
+}
+
+const definitionPriorityForSymbols = buildDefinitionPriority(SYMBOL_PRIORITY_ORDER);
+const definitionPriorityForLocals = buildDefinitionPriority(LOCAL_DEFINITION_PRIORITY_ORDER);
 
 function canonicalizeIdeIdentifier(name: string): string { // TODO: UGLY: TRIPLE IMPLEMENTATION
 	if (!ide_state.caseInsensitive) {
@@ -1959,28 +1973,13 @@ export function listLuaSymbols(asset_id: string, chunkName: string): ConsoleLuaS
 		return [];
 	}
 	const { definitions } = bundle;
-	const definitionPriority = (kind: LuaDefinitionKind): number => {
-		switch (kind) {
-			case 'table_field':
-				return 5;
-			case 'function':
-				return 4;
-			case 'parameter':
-				return 3;
-			case 'variable':
-				return 2;
-			case 'assignment':
-			default:
-				return 1;
-		}
-	};
 	const entries = new Map<string, { info: LuaDefinitionInfo; location: ConsoleLuaDefinitionLocation; priority: number }>();
 	for (const info of definitions) {
 		const location = buildDefinitionLocationFromRange(info.definition, asset_id);
 		const path = info.namePath.length > 0 ? info.namePath.join('.') : info.name;
 		const keyPath = path.length > 0 ? path : info.name;
 		const key = `${location.chunkName ?? ''}::${keyPath}@${location.range.startLine}:${location.range.startColumn}`;
-		const priority = definitionPriority(info.kind);
+		const priority = definitionPriorityForSymbols(info.kind);
 		const existing = entries.get(key);
 		if (!existing || priority > existing.priority || (priority === existing.priority && info.definition.start.line < existing.info.definition.start.line)) {
 			entries.set(key, { info, location, priority });
@@ -2174,26 +2173,11 @@ export function findStaticDefinitionLocation(asset_id: string, chain: ReadonlyAr
 				return false;
 			}
 		}
-		return true;
-	};
-	const definitionPriority = (info: LuaDefinitionInfo): number => {
-		switch (info.kind) {
-			case 'parameter':
-				return 5;
-			case 'table_field':
-				return 4;
-			case 'function':
-				return 3;
-			case 'variable':
-				return 2;
-			case 'assignment':
-			default:
-				return 1;
-		}
-	};
+			return true;
+		};
 	const selectPreferred = (candidate: LuaDefinitionInfo, current: LuaDefinitionInfo): LuaDefinitionInfo => {
-		const candidatePriority = definitionPriority(candidate);
-		const currentPriority = current ? definitionPriority(current) : -1;
+		const candidatePriority = definitionPriorityForLocals(candidate.kind);
+		const currentPriority = current ? definitionPriorityForLocals(current.kind) : -1;
 		if (usageRow !== null) {
 			if (!positionWithinRange(usageRow, usageColumn, candidate.scope)) {
 				return current;

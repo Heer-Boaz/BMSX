@@ -401,7 +401,7 @@ class InputActionParser {
 				if (!neg) repeatPos = true;
 				continue;
 			}
-			const pressish = raw === 'p' || raw === 'j' || /^wp\{\d+}/.test(raw);
+			const pressish = raw === 'p' || raw === 'jp' || /^wp\{\d+}/.test(raw);
 			const releaseish = raw === 'jr' || /^wr\{\d+}/.test(raw);
 			if (pressish && !neg) pressPos = true;
 			if (releaseish && !neg) releasePos = true;
@@ -521,16 +521,16 @@ function evalAndCollect(node: Node, gs: GetterFn, win?: number, out?: ActNode[])
  * A mapping of static modifiers to their corresponding evaluation functions.
  *
  * This object defines the behavior of static modifiers used in action definitions,
- * such as `p` (pressed), `j` (just-pressed), `jr` (just-released),
- * `&j` (all-just-pressed), `&jr` (all-just-released), and `c` (consumed).
+ * such as `p` (pressed), `jp` (just-pressed), `jr` (just-released),
+ * `&jp` (all-just-pressed), `&jr` (all-just-released), and `c` (consumed).
  * Added: `h` (hold) which is equivalent to a press time comparator `t{>1}`.
  * Each modifier is associated with a function that evaluates the modifier condition
  * for a given action state.
  *
  * @property p - Evaluates to true if the action is currently pressed.
  * @property r - Evaluates to true if the action is currently not pressed (released).
- * @property j - Evaluates to true if the action was just pressed.
- * @property &j - Evaluates to true if all actions are just pressed.
+ * @property jp - Evaluates to true if the action was just pressed.
+ * @property &jp - Evaluates to true if all actions are just pressed.
  * @property jr - Evaluates to true if the action was just released.
  * @property &jr - Evaluates to true if all actions are just released.
  * @property c - Evaluates to true if the action is consumed.
@@ -539,8 +539,8 @@ function evalAndCollect(node: Node, gs: GetterFn, win?: number, out?: ActNode[])
 const STATIC: Record<string, ModFn> = {
 	'p': (get, n, win) => get(n, win).pressed,
 	'r': (get, n, win) => !get(n, win).pressed,
-	'j': (get, n, win) => get(n, win).justpressed,
-	'&j': (get, n, win) => get(n, win).alljustpressed,
+	'jp': (get, n, win) => get(n, win).justpressed,
+	'&jp': (get, n, win) => get(n, win).alljustpressed,
 	'jr': (get, n, win) => get(n, win).justreleased,
 	'&jr': (get, n, win) => get(n, win).alljustreleased,
 	'gp': (get, n, win) => get(n, win).guardedjustpressed === true,

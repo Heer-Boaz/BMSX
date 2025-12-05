@@ -70,7 +70,7 @@ export class bclass extends SpriteObject {
 			if (input.checkActionTriggered('down[p]')) this.y += speed;
 			if (input.checkActionTriggered('left[p]')) this.x -= speed;
 
-			if (input.checkActionTriggered('bla[j]')) {
+			if (input.checkActionTriggered('bla[jp]')) {
 				input.consumeAction('bla');
 				this.testmeuk();
 				$.emit('testEvent', this);
@@ -78,7 +78,7 @@ export class bclass extends SpriteObject {
 				this.sc.transition_to('bclass:/bla');
 			}
 
-			if (input.checkActionTriggered('blap[j]')) {
+			if (input.checkActionTriggered('blap[jp]')) {
 				input.consumeAction('blap');
 				$.emit('testEventOnce', this);
 				this.sc.machines.bclass_animation.transition_to('ani1');
@@ -95,7 +95,7 @@ export class bclass extends SpriteObject {
 			states: {
 				bla: {
 					input_event_handlers: {
-						'bla[j]': {
+						'bla[jp]': {
 							do(this: bclass) {
 								// PSG.playCustomInstrument(snareInstrument, 10000);
 							}
