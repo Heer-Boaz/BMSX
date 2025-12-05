@@ -9,7 +9,6 @@ import type {
 } from '../render/shared/render_types';
 import { $ } from '../core/game';
 import { consumeOverlayFrame, publishOverlayFrame, type EditorOverlayFrame } from '../render/editor/editor_overlay_queue';
-import { new_vec3, new_vec2 } from '../utils/vector_operations';
 import type { Viewport } from '../rompack/rompack';
 import type { RenderSubmission } from '../render/gameview';
 
@@ -178,64 +177,10 @@ export class ConsoleRenderFacade {
 	}
 }
 
-function scaleRect(cmd: RectSubmission, scaleX: number, scaleY: number): RectSubmission {
-	cmd.area.start.x *= scaleX;
-	cmd.area.start.y *= scaleY;
-	cmd.area.end.x *= scaleX;
-	cmd.area.end.y *= scaleY;
-	if (cmd.layer === undefined) cmd.layer = 'world';
-	return cmd;
-}
-
-function scaleSprite(cmd: ImgSubmission, scaleX: number, scaleY: number): ImgSubmission {
-	const scale = cmd.scale ?? { x: 1, y: 1 };
-	cmd.pos = new_vec3(cmd.pos.x * scaleX, cmd.pos.y * scaleY, cmd.pos.z!);
-	cmd.scale = new_vec2(scale.x * scaleX, scale.y * scaleY);
-	if (cmd.layer === undefined) cmd.layer = 'world';
-	return cmd;
-}
-
-function scaleGlyphs(cmd: GlyphSubmission, scaleX: number, scaleY: number): GlyphSubmission {
-	cmd.x *= scaleX;
-	cmd.y *= scaleY;
-	if (cmd.center_block_width != null) cmd.center_block_width *= scaleX;
-	if (cmd.layer === undefined) cmd.layer = 'world';
-	return cmd;
-}
-
-function scalePoly(cmd: PolySubmission, scaleX: number, scaleY: number): PolySubmission {
-	for (let i = 0; i < cmd.points.length; i += 2) {
-		cmd.points[i] *= scaleX;
-		cmd.points[i + 1] *= scaleY;
-	}
-	if (cmd.layer === undefined) cmd.layer = 'world';
-	return cmd;
-}
-
-export function drainOverlayFrameIntoSpriteQueue(logicalWidth: number, logicalHeight: number): void {
+export function drainOverlayFrameIntoSpriteQueue(_logicalWidth: number, _logicalHeight: number): void {
 	const frame: EditorOverlayFrame = consumeOverlayFrame();
 	if (!frame) return;
-	const captureWidth = frame.width > 0 ? frame.width : logicalWidth;
-	const captureHeight = frame.height > 0 ? frame.height : logicalHeight;
-	const scaleX = captureWidth > 0 ? logicalWidth / captureWidth : 1;
-	const scaleY = captureHeight > 0 ? logicalHeight / captureHeight : 1;
 	for (const command of frame.commands) {
-		switch (command.type) {
-			case 'rect':
-				$.view.renderer.submit.typed(scaleRect(command, scaleX, scaleY));
-				break;
-			case 'img':
-				$.view.renderer.submit.typed(scaleSprite(command, scaleX, scaleY));
-				break;
-			case 'glyphs':
-				$.view.renderer.submit.typed(scaleGlyphs(command, scaleX, scaleY));
-				break;
-			case 'poly':
-				$.view.renderer.submit.typed(scalePoly(command, scaleX, scaleY));
-				break;
-			default:
-				$.view.renderer.submit.typed(command);
-				break;
-		}
+		$.view.renderer.submit.typed(command);
 	}
 }
