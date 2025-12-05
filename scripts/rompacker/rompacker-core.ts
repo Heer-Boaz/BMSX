@@ -1,7 +1,7 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
+import type { asset_type, AudioMeta, BmsxCartridge, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
 import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
@@ -1554,6 +1554,16 @@ export async function createAtlasses(resources: Resource[], reportProgress?: Pro
 	}
 	else {
 		throw new Error('No images found to generate texture atlas from. Please ensure you have images in your resource directory.');
+	}
+}
+
+export async function prepareBmsxCartMetadata(cart: BmsxCartridge): Promise<void> {
+	cart.chunk2lua = {};
+	cart.source2lua = {};
+	for (const codeAsset of Object.values(cart.lua)) {
+		const sourcePath = codeAsset.source_path;
+		cart.chunk2lua[`@${sourcePath}`] = codeAsset;
+		cart.source2lua[sourcePath] = codeAsset;
 	}
 }
 

@@ -678,23 +678,3 @@ function loadImage(src: string): ImageBitmap | PromiseLike<ImageBitmap> {
 		});
 	})();
 }
-
-export function normalizeCartLua(cart: BmsxCartridge): void {
-	if (!cart.chunk2lua) {
-		cart.chunk2lua = {};
-	} else {
-		for (const key of Object.keys(cart.chunk2lua)) {
-			delete cart.chunk2lua[key];
-		}
-	}
-	if (!cart.source2lua) {
-		cart.source2lua = {};
-	} else {
-		for (const key of Object.keys(cart.source2lua)) {
-			delete cart.source2lua[key];
-		}
-	}
-	for (const asset of Object.values(cart.lua)) {
-		normalizeLuaAsset(cart, asset);
-	}
-}

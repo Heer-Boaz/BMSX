@@ -389,17 +389,3 @@ export type BmsxCartridge = LifeCycleHandlers & {
 	source2lua?: Record<string, RomLuaAsset>; // Mapping from normalized source paths to Lua assets for fast lookup.
 	entry: asset_id;
 }
-
-export function normalizeLuaAsset(cart: BmsxCartridge, asset: RomLuaAsset): void {
-	const sourcePath = asset.source_path && asset.source_path.length > 0 ? asset.source_path : asset.resid;
-	const chunkName = asset.chunk_name && asset.chunk_name.length > 0
-		? asset.chunk_name
-		: asset.source_path && asset.source_path.length > 0
-			? `@${asset.source_path}`
-			: `@lua/${asset.resid}`;
-	const normalizedChunkName = chunkName.startsWith('@') ? chunkName : `@${chunkName}`;
-	asset.chunk_name = normalizedChunkName;
-	asset.normalized_source_path = sourcePath;
-	cart.chunk2lua[normalizedChunkName] = asset;
-	cart.source2lua[sourcePath] = asset;
-}
