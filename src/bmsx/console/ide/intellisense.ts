@@ -20,7 +20,6 @@ import { isLuaCommentContext } from './text_utils';
 import type { ApiCompletionMetadata, CodeTabContext, LuaCompletionItem, PointerSnapshot } from './types';
 
 const HOVER_VALUE_MAX_LINE_LENGTH = 160;
-const HOVER_VALUE_MAX_SERIALIZED_LINES = 200;
 export const CONSOLE_PREVIEW_MAX_ENTRIES = 12;
 export const CONSOLE_PREVIEW_MAX_DEPTH = 2;
 
@@ -2475,7 +2474,6 @@ export function resolveIdentifierThroughChain(environment: LuaEnvironment, name:
 }
 
 export function describeLuaValueForInspector(value: LuaValue): { lines: string[]; valueType: string; isFunction: boolean } {
-	const runtime = BmsxConsoleRuntime.instance;
 	const resolvedName = resolveRuntimeValueName(value);
 	if (value === null) {
 		return { lines: ['Nil'], valueType: 'nil', isFunction: false };
@@ -2513,28 +2511,11 @@ export function describeLuaValueForInspector(value: LuaValue): { lines: string[]
 		return { lines: [summary], valueType: labelName ?? 'native', isFunction: false };
 	}
 	if (isLuaTable(value)) {
-		try {
-			const ctx = runtime.luaJsBridge.createLuaSnapshotContext();
-			const serialized = { root: runtime.luaJsBridge.serializeLuaValueForSnapshot(value, ctx), objects: ctx.objects };
-			const json = JSON.stringify(serialized, null, 2) ?? 'null';
-			const rawLines = json.split('\n');
-			const lines: string[] = [];
-			const tableName = resolveTableTypeName(value);
-			if (tableName) {
-				lines.push(`<table ${tableName}>`);
-			}
-			for (let i = 0; i < rawLines.length && i < HOVER_VALUE_MAX_SERIALIZED_LINES; i += 1) {
-				lines.push(truncateInspectorLine(rawLines[i]));
-			}
-			if (rawLines.length > HOVER_VALUE_MAX_SERIALIZED_LINES) {
-				lines.push('...');
-			}
-			return { lines, valueType: tableName ?? 'table', isFunction: false };
-		} catch (_error) {
-			const tableName = resolveTableTypeName(value);
-			const summary = tableName ? [`<table ${tableName}>`] : ['<table>'];
-			return { lines: summary, valueType: tableName ?? 'table', isFunction: false };
-		}
+		const tableName = resolveTableTypeName(value);
+		const preview = describeLuaTable(value, 0, new Set<unknown>());
+		const lines = tableName ? [`<table ${tableName}>`] : ['<table>'];
+		lines.push(truncateInspectorLine(preview));
+		return { lines, valueType: tableName ?? 'table', isFunction: false };
 	}
 	return { lines: ['<unknown>'], valueType: 'unknown', isFunction: false };
 }
