@@ -112,7 +112,8 @@ function makeSpriteState(): SpritesPipelineState {
 		atlasDynamicTex: null,
 		atlasEngineTex: null,
 		ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
-		ambientFactorDefault: gv.spriteAmbientFactorDefault ?? 1.0,
+		ambientFactorDefault: gv.spriteAmbientFactorDefault,
+		viewportTypeIde: gv.viewportTypeIde,
 	};
 }
 

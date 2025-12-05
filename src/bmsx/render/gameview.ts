@@ -235,6 +235,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	// Sprite ambient defaults (used when per-sprite override not provided)
 	public spriteAmbientEnabledDefault = false;
 	public spriteAmbientFactorDefault = 1.0;
+	public viewportTypeIde: 'viewport' | 'offscreen' = 'viewport';
 
 	public atmosphere: AtmosphereParams = {
 		fogD50: 320.0,

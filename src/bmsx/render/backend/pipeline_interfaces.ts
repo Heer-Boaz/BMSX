@@ -209,7 +209,9 @@ export interface RenderPassToken {
 	disable(): void;
 	set(enabled: boolean): void;
 	isEnabled(): boolean;
-}export type FogUniforms = {
+}
+
+export type FogUniforms = {
 	fogD50: number;
 	fogStart: number;
 	fogColorLow: [number, number, number];
@@ -217,7 +219,9 @@ export interface RenderPassToken {
 	fogYMin: number;
 	fogYMax: number;
 };
+
 export interface SkyboxPipelineState { width: number; height: number; view: Float32Array; proj: Float32Array; tex: TextureHandle; }
+
 export interface MeshBatchPipelineState {
 	width: number;
 	height: number;
@@ -226,7 +230,11 @@ export interface MeshBatchPipelineState {
 	cameraFrustum: Float32Array;
 	lighting?: unknown;
 }
+
 export interface ParticlePipelineState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array; }
+
+export type RenderingViewportType = 'viewport' | 'offscreen';
+
 export interface SpritesPipelineState {
 	width: number;
 	height: number;
@@ -237,7 +245,9 @@ export interface SpritesPipelineState {
 	atlasEngineTex?: TextureHandle;
 	ambientEnabledDefault: boolean;
 	ambientFactorDefault: number;
+	viewportTypeIde: RenderingViewportType;
 }
+
 export interface CRTPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; colorTex: TextureHandle; options?: unknown; }
 export interface FrameSharedState { view: { camPos: Float32Array | { x: number; y: number; z: number; }; viewProj: Float32Array; skyboxView: Float32Array; proj: Float32Array; }; lighting: unknown; fog: FogUniforms; }
 

@@ -15,7 +15,7 @@ export type FlipOptions = {
 	flip_v: boolean;
 };
 
-export type RenderLayer = 'world' | 'ui' | 'overlay' | 'editor';
+export type RenderLayer = 'world' | 'ui' | 'ide';
 
 export type RectRenderSubmission = {
 	kind: 'rect' | 'fill';
@@ -49,6 +49,7 @@ export type MeshRenderSubmission = {
 	joint_matrices?: Float32Array[];
 	morph_weights?: number[];
 	receive_shadow?: boolean;
+	layer?: RenderLayer; // Currently unused
 };
 
 export type ParticleRenderSubmission = {
@@ -58,6 +59,7 @@ export type ParticleRenderSubmission = {
 	texture?: TextureHandle | WebGLTexture;
 	ambient_mode?: 0 | 1;
 	ambient_factor?: number;
+	layer?: RenderLayer; // Currently unused
 };
 
 export type GlyphRenderSubmission = {

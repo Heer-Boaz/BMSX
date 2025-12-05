@@ -24,11 +24,8 @@ export class ConsoleRenderFacade {
 	public playbackRenderQueue(preservedRenderQueue: RenderSubmission[]) {
 		for (let i = 0; i < preservedRenderQueue.length; i++) {
 			const submission = preservedRenderQueue[i];
-			if ('layer' in submission) {
-				const layer = (submission as { layer?: RenderLayer }).layer;
-				if (layer === 'editor' || layer === 'overlay') {
-					continue;
-				}
+			if (submission.layer === 'ide') {
+				continue;
 			}
 			$.view.renderer.submit.typed(submission);
 		}
@@ -51,17 +48,19 @@ export class ConsoleRenderFacade {
 	private static readonly SPRITE_Z = 0;
 
 	public setRenderingViewportType(type: 'viewport' | 'offscreen'): void {
-		let targetSize: Viewport;
+		// let targetSize: Viewport;
 		switch (type) {
 			case 'viewport':
-				targetSize = { width: $.view.viewportSize.x, height: $.view.viewportSize.y };
+				$.view.viewportTypeIde = 'viewport';
+				// targetSize = { width: $.view.viewportSize.x, height: $.view.viewportSize.y };
 				break;
 			case 'offscreen':
+				$.view.viewportTypeIde = 'offscreen';
 			default:
-				targetSize = { width: $.view.offscreenCanvasSize.x, height: $.view.offscreenCanvasSize.y };
+				// targetSize = { width: $.view.offscreenCanvasSize.x, height: $.view.offscreenCanvasSize.y };
 				break;
 		}
-		this.overrideSize = targetSize;
+		// this.overrideSize = targetSize;
 	}
 
 	public get viewportSize(): Viewport {
@@ -93,7 +92,7 @@ export class ConsoleRenderFacade {
 		if (area.start.z === undefined) area.start.z = ConsoleRenderFacade.RECT_Z;
 		if (area.end.z === undefined) area.end.z = ConsoleRenderFacade.RECT_Z;
 		const submission = command as RectSubmission;
-		(submission as any).type = 'rect';
+		submission.type = 'rect';
 		this.submit(submission);
 	}
 
@@ -102,7 +101,7 @@ export class ConsoleRenderFacade {
 			command.z = ConsoleRenderFacade.SPRITE_Z;
 		}
 		const submission = command as GlyphSubmission;
-		(submission as any).type = 'glyphs';
+		submission.type = 'glyphs';
 		this.submit(submission);
 	}
 
@@ -111,25 +110,25 @@ export class ConsoleRenderFacade {
 			command.pos.z = ConsoleRenderFacade.SPRITE_Z;
 		}
 		const submission = command as ImgSubmission;
-		(submission as any).type = 'img';
+		submission.type = 'img';
 		this.submit(submission);
 	}
 
 	public poly(command: PolyRenderSubmission): void {
 		const submission = command as PolySubmission;
-		(submission as any).type = 'poly';
+		submission.type = 'poly';
 		this.submit(submission);
 	}
 
 	public mesh(command: MeshRenderSubmission): void {
 		const submission = command as RenderSubmission;
-		(submission as any).type = 'mesh';
+		submission.type = 'mesh';
 		this.submit(submission);
 	}
 
 	public particle(command: ParticleRenderSubmission): void {
 		const submission = command as RenderSubmission;
-		(submission as any).type = 'particle';
+		submission.type = 'particle';
 		this.submit(submission);
 	}
 
@@ -177,7 +176,7 @@ export class ConsoleRenderFacade {
 	}
 }
 
-export function drainOverlayFrameIntoSpriteQueue(_logicalWidth: number, _logicalHeight: number): void {
+export function drainOverlayFrameIntoSpriteQueue(): void {
 	const frame: EditorOverlayFrame = consumeOverlayFrame();
 	if (!frame) return;
 	for (const command of frame.commands) {

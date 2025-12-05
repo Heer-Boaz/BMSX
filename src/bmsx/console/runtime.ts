@@ -630,7 +630,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!this.consoleMode.isActive) {
 			return;
 		}
-		this.overlayRenderBackend.setDefaultLayer('editor');
+		this.overlayRenderBackend.setDefaultLayer('ide');
 		this.consoleMode.draw(this.overlayRenderBackend, this.overlayRenderBackend.viewportSize);
 	}
 
@@ -880,7 +880,7 @@ export class BmsxConsoleRuntime extends Service {
 		try {
 			this.overlayRenderBackend.beginFrame();
 			if (this.editor?.isActive) {
-				this.overlayRenderBackend.setDefaultLayer('editor');
+				this.overlayRenderBackend.setDefaultLayer('ide');
 				this.editor.draw();
 			}
 			else {
