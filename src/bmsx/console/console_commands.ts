@@ -4,6 +4,7 @@ import { clearWorkspaceSessionState } from './ide/workspace_storage';
 import { ide_state } from './ide/ide_state';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from './workspace';
 import { buildStackLines, formatRuntimeErrorLocation } from './runtime_error_util';
+import { RomLuaAsset } from '../rompack/rompack';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
 
@@ -396,7 +397,7 @@ export class ConsoleCommandDispatcher {
 		return unsaved;
 	}
 
-	private collectWorkspaceEntryFlags(luaAssets: Array<{ normalized_source_path?: string; source_path?: string; resid: string; src?: string }>): Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }> {
+	private collectWorkspaceEntryFlags(luaAssets: Array<RomLuaAsset>): Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }> {
 		const flags = new Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }>();
 		const root = $.rompack.project_root_path;
 		const storage = $.platform.storage;
@@ -406,7 +407,7 @@ export class ConsoleCommandDispatcher {
 		const unsavedPaths = this.collectUnsavedPaths(root);
 		for (let index = 0; index < luaAssets.length; index += 1) {
 			const asset = luaAssets[index];
-			const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+			const cartPath = asset.normalized_source_path;
 			const normalizedPath = cartPath.startsWith('/') ? cartPath : `/${cartPath}`;
 			const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 			const dirtyKey = buildWorkspaceStorageKey(root, dirtyPath);

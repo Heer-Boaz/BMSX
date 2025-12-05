@@ -1876,7 +1876,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 
 export function findResourceDescriptorForChunk(chunk: string): ConsoleResourceDescriptor | null {
 	const asset = $.rompack.cart.chunk2lua[chunk];
-	return asset ? { asset_id: asset.resid, path: asset.source_path, type: asset.type } : null;
+	return asset ? { asset_id: asset.resid, path: asset.normalized_source_path, type: asset.type } : null;
 }
 
 export function getCrossFileRenameDependencies(): CrossFileRenameDependencies {

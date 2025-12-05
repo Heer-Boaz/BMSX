@@ -1325,14 +1325,23 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				resid = resid.replace('.min', '');
 				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
-			case 'lua': {
-				if (!res.filepath || res.filepath.length === 0) {
-					throw new Error(`[RomPacker] Lua resource "${resid}" is missing its source file path.`);
-				}
-				const luaSourcePath = sourcePath && sourcePath.length > 0 ? sourcePath : toWorkspaceRelativePath(res.filepath);
-				romAssets.push({ resid, type, buffer, source_path: luaSourcePath });
-				break;
+		case 'lua': {
+			if (!res.filepath || res.filepath.length === 0) {
+				throw new Error(`[RomPacker] Lua resource "${resid}" is missing its source file path.`);
 			}
+			const luaSourcePath = sourcePath && sourcePath.length > 0 ? sourcePath : toWorkspaceRelativePath(res.filepath);
+			const normalizedPath = normalizeWorkspacePath(luaSourcePath);
+			romAssets.push({
+				resid,
+				type,
+				buffer,
+				source_path: normalizedPath,
+				chunk_name: normalizedPath,
+				normalized_source_path: normalizedPath,
+				update_timestamp: res.update_timestamp,
+			});
+			break;
+		}
 			case 'rommanifest':
 				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
@@ -1561,9 +1570,8 @@ export async function prepareBmsxCartMetadata(cart: BmsxCartridge): Promise<void
 	cart.chunk2lua = {};
 	cart.source2lua = {};
 	for (const codeAsset of Object.values(cart.lua)) {
-		const sourcePath = codeAsset.source_path;
-		cart.chunk2lua[`@${sourcePath}`] = codeAsset;
-		cart.source2lua[sourcePath] = codeAsset;
+		cart.chunk2lua[codeAsset.chunk_name] = codeAsset;
+		cart.source2lua[codeAsset.normalized_source_path] = codeAsset;
 	}
 }
 

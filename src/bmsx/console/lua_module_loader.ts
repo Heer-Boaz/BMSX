@@ -77,20 +77,11 @@ export function buildLuaModuleAliases(cart: BmsxCartridge): Map<string, LuaRequi
 		if (!asset || asset.type !== 'lua') {
 			continue;
 		}
-		const chunkName = asset.chunk_name && asset.chunk_name.length > 0 ? asset.chunk_name : `@lua/${asset.resid}`;
-		const normalizedPath = asset.normalized_source_path && asset.normalized_source_path.length > 0
-			? asset.normalized_source_path
-			: asset.resid;
+		const chunkName = asset.chunk_name;
+		const normalizedPath = asset.normalized_source_path;
 		const canonicalPath = stripLuaExtension(normalizedPath);
 		const packageKey = asset.chunk_name;
-		let path: string | undefined;
-		if (asset.normalized_source_path && asset.normalized_source_path.length > 0) {
-			path = asset.normalized_source_path;
-		} else if (asset.source_path && asset.source_path.length > 0) {
-			path = asset.source_path;
-		} else {
-			path = undefined;
-		}
+		const path = asset.normalized_source_path;
 		const record: LuaRequireModuleRecord = {
 			packageKey,
 			canonicalKey: canonicalPath,

@@ -2088,18 +2088,15 @@ export function listGlobalLuaSymbols(): ConsoleLuaSymbolEntry[] {
 	};
 
 	for (const [chunkName, asset] of Object.entries(BmsxConsoleRuntime.instance.cart.chunk2lua)) {
-		if (!asset) {
-			continue;
-		}
-		const path = asset.normalized_source_path ?? asset.source_path;
+		const path = asset.normalized_source_path;
 		enqueueCandidate(chunkName, { asset_id: asset.resid, path });
 	}
 
 	for (const asset of Object.values(BmsxConsoleRuntime.instance.cart.lua)) {
-		const chunkName = asset.chunk_name ?? `@lua/${asset.resid}`; // TODO: REMOVE FALLBACK
+		const chunkName = asset.chunk_name;
 		const candidateInfo: { asset_id: string; path?: string } = {
 			asset_id: asset.resid,
-			path: asset.normalized_source_path ?? asset.source_path,
+			path: asset.normalized_source_path,
 		};
 		enqueueCandidate(chunkName, candidateInfo);
 	}
@@ -2238,8 +2235,8 @@ export function getStaticDefinitions(asset_id: string, preferredChunk: string): 
 	const preferredPath = preferredChunk;
 	const matchingChunks: Array<{ chunkName: string; info: { asset_id: string; path?: string } }> = [];
 	for (const asset of Object.values(BmsxConsoleRuntime.instance.cart.lua)) {
-		const chunkName = asset.chunk_name ?? `@lua/${asset.resid}`;
-		const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.normalized_source_path ?? asset.source_path };
+		const chunkName = asset.chunk_name;
+		const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.normalized_source_path };
 		const matchesAsset = asset_id !== null && info.asset_id === asset_id;
 		const matchesPath = preferredPath !== null && info.path === preferredPath;
 		const matchesChunk = preferredChunkKey !== null && chunkName === preferredChunkKey;

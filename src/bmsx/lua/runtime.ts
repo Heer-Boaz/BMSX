@@ -385,9 +385,6 @@ export class LuaInterpreter {
 
 	private normalizeChunkName(name: string): string {
 		let normalized = name.trim();
-		if (normalized.startsWith('@')) {
-			normalized = normalized.slice(1);
-		}
 		return normalized.replace(/\\/g, '/');
 	}
 

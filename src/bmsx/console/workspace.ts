@@ -1,6 +1,6 @@
 import { extractErrorMessage } from '../lua/value';
 import type { HttpResponse, StorageService } from '../platform';
-import { type RomPack, type BmsxCartridge, type RomLuaAsset, normalizeLuaAsset } from '../rompack/rompack';
+import { type RomPack, type BmsxCartridge, type RomLuaAsset } from '../rompack/rompack';
 import { BmsxConsoleRuntime } from './runtime';
 import { $ } from '../core/game';
 import { ConsoleLuaResourceCreationRequest, ConsoleResourceDescriptor } from './types';
@@ -35,7 +35,7 @@ export async function saveLuaResourceSource(asset_id: string, source: string): P
 	await persistLuaSourceToFilesystem(cartPath, source);
 	asset.src = source;
 	asset.update_timestamp = $.platform.clock.dateNow();
-	const chunkName = asset.chunk_name ?? `@lua/${asset.resid}`;
+	const chunkName = asset.chunk_name;
 	cart.chunk2lua![chunkName] = asset;
 	cart.source2lua![cartPath] = asset;
 	BmsxConsoleRuntime.instance.markSourceAssetAsDirty(asset_id);
@@ -53,12 +53,14 @@ export async function createLuaResource(request: ConsoleLuaResourceCreationReque
 		type: 'lua',
 		src: contents,
 		source_path: path,
+		normalized_source_path: path,
+		chunk_name: path,
 		update_timestamp: $.platform.clock.dateNow(),
 	};
 	const cart = $.rompack.cart;
 	cart.lua[asset_id] = asset;
-	normalizeLuaAsset(cart, asset);
-
+	cart.chunk2lua![asset.chunk_name] = asset;
+	cart.source2lua![asset.normalized_source_path] = asset;
 	const filesystemPath = asset.normalized_source_path;
 	await persistLuaSourceToFilesystem(filesystemPath, contents);
 	BmsxConsoleRuntime.instance.markSourceAssetAsDirty(asset_id);
@@ -396,7 +398,7 @@ export async function fetchWorkspaceDirtyLuaOverrides(rompack: RomPack, root: st
 	// discard in-memory dirty edits; they simply yield no extra overrides.
 	for (const asset of Object.values(rompack.cart.lua)) {
 		const asset_id = asset.resid;
-		const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+		const cartPath = asset.normalized_source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		tasks.push(fetchWorkspaceFile(dirtyPath).then((result) => {
 			if (result === null) {
@@ -568,7 +570,7 @@ export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; 
 	const merged = await mergeWorkspaceOverrides(root, storage, localOverrides, serverOverrides ?? new Map<string, WorkspaceOverrideRecord>());
 	for (const asset of Object.values(cart.lua)) {
 		const asset_id = asset.resid;
-		const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+		const cartPath = asset.normalized_source_path;
 		const savedRecord = await fetchWorkspaceFile(cartPath);
 		const canonicalRecord = savedRecord && savedRecord.contents !== asset.src
 			? { source: savedRecord.contents, path: cartPath, cartPath, updatedAt: savedRecord.updatedAt }
@@ -637,7 +639,7 @@ export async function clearWorkspaceArtifacts(cart: BmsxCartridge, storage: Stor
 		return;
 	}
 	for (const asset of Object.values(cart.lua)) {
-		const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+		const cartPath = asset.normalized_source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
 		storage.removeItem(storageKey);
@@ -656,7 +658,7 @@ async function clearWorkspaceDirtyFiles(cart: BmsxCartridge, storage: StorageSer
 	}
 	const scratchPaths = await collectScratchWorkspaceDirtyPaths(root);
 	for (const asset of Object.values(cart.lua)) {
-		const cartPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+		const cartPath = asset.normalized_source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
 		storage.removeItem(storageKey);

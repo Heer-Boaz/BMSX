@@ -1,4 +1,4 @@
-import { normalizeLuaAsset, type Area, type AudioMeta, type BmsxCartridge, type GLTFMaterial, type GLTFModel, type ImgMeta, type Polygon, type RomAsset, type RomImgAsset, type RomLuaAsset, type RomMeta, type RomPack, type TextureSource, type color_arr } from '../../src/bmsx/rompack/rompack';
+import { type Area, type AudioMeta, type GLTFMaterial, type GLTFModel, type ImgMeta, type Polygon, type RomAsset, type RomImgAsset, type RomLuaAsset, type RomMeta, type RomPack, type TextureSource, type color_arr } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../../src/bmsx/serializer/binencoder';
 
 export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
@@ -248,18 +248,16 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 		model: {},
 		data: {},
 		code: null,
-		audioevents: {},
-		cart,
-		project_root_path: projectRootPath,
-	};
+	audioevents: {},
+	cart,
+	project_root_path: projectRootPath,
+};
 
-	await Promise.all(assets.map(a => load(rom, a, result, opts)));
-	normalizeCartLua(result.cart);
-	if ((!result.cart.entry || result.cart.entry.length === 0) && Object.keys(result.cart.lua).length > 0) {
-		const firstAsset = Object.values(result.cart.lua)[0];
-		result.cart.entry = firstAsset.resid;
-	}
-	return Promise.resolve<RomPack>(result);
+await Promise.all(assets.map(a => load(rom, a, result, opts)));
+	const [entryAsset] = Object.values(result.cart.lua);
+	const manifestEntryId = result.manifest?.lua?.entryAssetId;
+	result.cart.entry = manifestEntryId ?? entryAsset.resid;
+return Promise.resolve<RomPack>(result);
 }
 
 function getImageURL(buffer: ArrayBuffer): string {
@@ -545,13 +543,6 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 					...res,
 					src: decodeuint8arr(sliced),
 				};
-				if (!luaAsset.chunk_name) {
-					const sourcePath = res.source_path;
-					luaAsset.chunk_name = sourcePath && sourcePath.length > 0 ? `@${sourcePath}` : `@lua/${res.resid}`;
-				}
-				if (!luaAsset.normalized_source_path || luaAsset.normalized_source_path.length === 0) {
-					luaAsset.normalized_source_path = luaAsset.source_path ?? luaAsset.resid;
-				}
 				romResult.cart.lua[res.resid] = luaAsset;
 			} catch (err: any) {
 				throw new Error(`Failed to load 'lua' from rom: ${err.message}.`);

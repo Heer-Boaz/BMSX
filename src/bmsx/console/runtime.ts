@@ -258,7 +258,7 @@ export class BmsxConsoleRuntime extends Service {
 		interpreter.setHostAdapter({
 			toLua: (value) => this.luaJsBridge.jsToLua(value),
 			toJs: (luaValue) => {
-				const moduleId = this.cart.chunk2lua[this._luaChunkName]?.resid ?? this._luaChunkName;
+				const moduleId = this.cart.chunk2lua[this._luaChunkName].resid;
 				return this.luaJsBridge.luaValueToJs(luaValue, { moduleId, path: [] });
 			},
 			serializeNative: (native) => native,
@@ -957,15 +957,12 @@ export class BmsxConsoleRuntime extends Service {
 		this.editor = createConsoleCartEditor({
 			viewport,
 			canonicalization: this._canonicalization,
-			loadSource: () => { return Object.values(this.cart.lua).length > 0 ? this.cart.lua[this.cart.entry]?.src : '' },
+			loadSource: () => { return this.cart.lua[this.cart.entry].src; },
 			saveSource: (source: string) => persistLuaSourceToFilesystem(this.cart.lua[this.cart.entry].source_path, source),
 			listResources: () => {
 				const descriptors: ConsoleResourceDescriptor[] = [];
 				for (const asset of Object.values(this.cart.lua)) {
-					const path = asset.normalized_source_path ?? asset.source_path;
-					if (!path || path.length === 0) {
-						continue;
-					}
+					const path = asset.normalized_source_path;
 					descriptors.push({ path, type: asset.type, asset_id: asset.resid });
 				}
 				descriptors.sort((left, right) => left.path.localeCompare(right.path));
@@ -1072,7 +1069,7 @@ export class BmsxConsoleRuntime extends Service {
 		const previousChunkTables = this.captureChunkTables(binding.chunkName);
 		const previousGlobals = this.captureGlobalStateForReload();
 		const interpreter = this.luaInterpreter;
-		const hotModuleId = this.cart.chunk2lua[binding.chunkName]?.resid ?? binding.chunkName;
+		const hotModuleId = this.cart.chunk2lua[binding.chunkName].resid;
 		interpreter.clearLastFaultEnvironment();
 		const results = interpreter.execute(params.source, binding.chunkName);
 		this.luaJsBridge.wrapLuaExecutionResults(hotModuleId, results);
@@ -1190,9 +1187,6 @@ export class BmsxConsoleRuntime extends Service {
 	private refreshLuaModulesOnResume(resumeModuleId: string): void {
 		const modules = new Set<string>();
 		const pushModule = (moduleId: string): void => {
-			if (!moduleId) {
-				return;
-			}
 			if (resumeModuleId && moduleId === resumeModuleId) {
 				return;
 			}
@@ -1200,7 +1194,7 @@ export class BmsxConsoleRuntime extends Service {
 		};
 
 		for (const asset of Object.values(this.cart.lua)) {
-			const chunkName = asset.chunk_name ?? `@lua/${asset.resid}`;
+			const chunkName = asset.chunk_name;
 			pushModule(chunkName);
 		}
 
@@ -1282,7 +1276,7 @@ export class BmsxConsoleRuntime extends Service {
 		registerApiBuiltins(interpreter);
 		interpreter.setReservedIdentifiers(this.apiFunctionNames);
 
-		const moduleId = this.cart.chunk2lua[binding.chunkName]?.resid ?? binding.chunkName;
+		const moduleId = this.cart.chunk2lua[binding.chunkName].resid;
 		const results = interpreter.execute(params.source, binding.chunkName);
 		this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
 		this.cacheChunkEnvironment(binding.chunkName, binding.assetId, moduleId);
@@ -1621,7 +1615,7 @@ export class BmsxConsoleRuntime extends Service {
 			registerApiBuiltins(interpreter);
 			interpreter.setReservedIdentifiers(this.apiFunctionNames);
 			const programasset_id = asset.resid;
-			const moduleId = this.cart.chunk2lua[chunkName]?.resid ?? chunkName;
+			const moduleId = this.cart.chunk2lua[chunkName].resid;
 			const results = interpreter.execute(source, chunkName);
 			this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
 			this.cacheChunkEnvironment(chunkName, programasset_id, moduleId);
@@ -1852,7 +1846,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const results = fn.call(luaArgs);
 		const output: unknown[] = [];
-		const moduleId = this.cart.chunk2lua[this._luaChunkName]?.resid ?? this._luaChunkName;
+		const moduleId = this.cart.chunk2lua[this._luaChunkName].resid;
 		const baseCtx = this.ensureMarshalContext({ moduleId, path: [] });
 		for (let i = 0; i < results.length; i += 1) {
 			output.push(this.luaJsBridge.luaValueToJs(results[i], this.extendMarshalContext(baseCtx, `ret${i}`)));
@@ -1906,8 +1900,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private canonicalChunkName(asset: RomLuaAsset): string {
-		const normalizedPath = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
-		return asset.chunk_name ?? `@${normalizedPath}`;
+		return asset.chunk_name;
 	}
 
 	private normalizeChunkMappings(): void {
@@ -1917,20 +1910,14 @@ export class BmsxConsoleRuntime extends Service {
 			const canonical = this.canonicalChunkName(asset);
 			asset.chunk_name = canonical;
 			chunk2lua[canonical] = asset;
-			const path = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
-			if (path) {
-				source2lua[path] = asset;
-			}
+			source2lua[asset.normalized_source_path] = asset;
 		}
 		this.cart.chunk2lua = chunk2lua;
 		this.cart.source2lua = source2lua;
 	}
 
 	private findAssetByChunkName(chunkName: string): RomLuaAsset {
-		const name = chunkName ?? '';
-		const withAt = name.startsWith('@') ? name : `@${name}`;
-		const withoutAt = withAt.startsWith('@') ? withAt.slice(1) : withAt;
-		return this.cart.chunk2lua?.[withAt] ?? this.cart.source2lua?.[withoutAt] ?? null;
+		return this.cart.chunk2lua[chunkName];
 	}
 
 	private applyProgramEntrySourceToCartridge(source: string, chunkName: string, asset_id?: string): void {
@@ -1939,8 +1926,7 @@ export class BmsxConsoleRuntime extends Service {
 		luaAsset.src = source;
 		luaAsset.chunk_name = binding.chunkName;
 		this.cart.chunk2lua![binding.chunkName] = luaAsset;
-		const normalizedPath = luaAsset.normalized_source_path ?? luaAsset.source_path ?? luaAsset.resid;
-		this.cart.source2lua![normalizedPath] = luaAsset;
+		this.cart.source2lua![luaAsset.normalized_source_path] = luaAsset;
 	}
 
 	private refreshPackageLoadedEntry(packageKey: string, results: ReadonlyArray<LuaValue>): void {
@@ -2140,14 +2126,14 @@ export class BmsxConsoleRuntime extends Service {
 		const previousChunkTables = this.captureChunkTables(binding.chunkName);
 		const previousGlobals = this.captureGlobalStateForReload();
 		const source = sourceOverride ? sourceOverride : this.resolveSourceForChunk(binding.chunkName, asset.asset_id);
-		const moduleId = this.cart.lua[asset.asset_id]?.chunk_name ?? binding.chunkName;
+		const moduleId = this.cart.lua[asset.asset_id].chunk_name;
 		const results = interpreter.execute(source, binding.chunkName);
 		this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
 		this.cacheChunkEnvironment(binding.chunkName, asset.asset_id, moduleId);
 		this.restoreChunkState(interpreter.chunkEnvironment, previousChunkState);
 		this.restoreChunkTables(interpreter.chunkEnvironment, previousChunkTables);
 		this.restoreGlobalStateForReload(previousGlobals);
-		const packageKey = this.cart.lua[asset.asset_id]?.chunk_name ?? binding.chunkName;
+		const packageKey = this.cart.lua[asset.asset_id].chunk_name;
 		this.refreshPackageLoadedEntry(packageKey, results);
 		const moduleValue = results.length > 0 && results[0] !== null ? results[0] : true;
 		this.rebindChunkEnvironmentHandlers(moduleId);

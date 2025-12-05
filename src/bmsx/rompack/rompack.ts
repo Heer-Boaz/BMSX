@@ -37,6 +37,9 @@ export interface RomAsset {
 	texture_start?: number; // Start offset of the texture buffer within the ROM
 	texture_end?: number;   // End offset of the texture buffer within the ROM
 	source_path?: string; // Relative filesystem path for the asset when applicable (e.g., Lua source files).
+	chunk_name?: string; // Normalized chunk identifier used by the Lua VM.
+	normalized_source_path?: string; // Normalized absolute-ish source path for this asset.
+	update_timestamp?: number; // Last update timestamp for the asset, used for dev hot-reload.
 }
 
 export interface RomImgAsset extends RomAsset {
