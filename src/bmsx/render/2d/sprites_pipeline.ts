@@ -177,12 +177,11 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	gl.depthMask(false);
 	backend.bindVertexArray(spriteVAO as WebGLVertexArrayObject);
-	const baseScale = state.baseWidth > 0 ? state.width / state.baseWidth : 1;
-	const ideScale = state.viewportTypeIde === 'offscreen' ? 1 : baseScale;
+	const baseScale = 1;
+	const ideScale = state.viewportTypeIde === 'viewport' ? baseScale : .5;
 	setupDefaultUniformValues(backend, baseScale, [state.baseWidth, state.baseHeight]);
 	let currentScale = baseScale;
 	const setScale = (scale: number) => {
-		if (!spriteShaderScaleLocation) return;
 		if (scale === currentScale) return;
 		gl.uniform1f(spriteShaderScaleLocation, scale);
 		currentScale = scale;
