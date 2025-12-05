@@ -10,7 +10,7 @@ import { centerCursorVertically, ensureCursorVisible, setCursorPosition } from '
 import { clearExecutionStopHighlights, focusChunkSource, setExecutionStopHighlight, clearRuntimeErrorOverlay, updateDesiredColumn, findFunctionDefinitionRowInActiveFile, findResourceDescriptorForChunk, resetPointerClickTracking } from './console_cart_editor';
 import { resetBlink } from './render/render_caret';
 import type { LuaCallFrame } from '../../lua/runtime';
-import type { LuaDebuggerPauseSignal, StackTraceFrame } from '../../lua/value';
+import { extractErrorMessage, type LuaDebuggerPauseSignal, type StackTraceFrame } from '../../lua/value';
 import type { ConsoleResourceDescriptor } from '../types';
 import * as constants from './constants';
 
@@ -316,7 +316,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 	try {
 		normalizedChunk = source;
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
+		const message = extractErrorMessage(error);
 		ide_state.showMessage(`Unable to resolve runtime chunk name: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
@@ -336,7 +336,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 		const hint = chunkHintasset_id !== null ? { asset_id: chunkHintasset_id, path: chunkHintPath } : (descriptor ? { asset_id: descriptor.asset_id, path: descriptor.path } : undefined);
 		focusChunkSource(normalizedChunk, hint);
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
+		const message = extractErrorMessage(error);
 		ide_state.showMessage(`Failed to open runtime chunk: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}

@@ -29,6 +29,7 @@ import { parseLuaChunkWithRecovery } from './lua_parse';
 import * as constants from './constants';
 import { getActiveCodeTabContext } from './editor_tabs';
 import { listGlobalLuaSymbols, listLuaSymbols, resolveHoverAssetId, resolveHoverChunkName } from './intellisense';
+import { extractErrorMessage } from '../../lua/value';
 
 export type SymbolKind = 'parameter' | 'local' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
 
@@ -1730,7 +1731,7 @@ export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string {
 			entries = listLuaSymbols(asset_id, chunkName);
 		}
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
+		const message = extractErrorMessage(error);
 		ide_state.symbolCatalog = [];
 		ide_state.symbolSearchMatches = [];
 		ide_state.symbolSearchSelectionIndex = -1;

@@ -7,7 +7,7 @@ import { resourceViewerClampScroll } from '../ide_input';
 import { ide_state } from '../ide_state';
 import { drawEditorText, drawEditorColoredText } from '../text_renderer';
 import { api } from '../../runtime';
-import { measureText, wrapRuntimeErrorLine } from '../text_utils';
+import { measureText, wrapOverlayLine } from '../text_utils';
 import * as constants from '../constants';
 import { renderErrorOverlayText } from './render_error_overlay';
 import { drawRectOutlineColor } from './render_caret';
@@ -221,7 +221,7 @@ export function drawCreateResourceErrorDialog(message: string): void {
 	const lines: string[] = [];
 	for (let i = 0; i < segments.length; i += 1) {
 		const segment = segments[i].trim();
-		const wrapped = wrapRuntimeErrorLine(segment.length === 0 ? '' : segment, wrapWidth);
+		const wrapped = wrapOverlayLine(segment.length === 0 ? '' : segment, wrapWidth);
 		for (let j = 0; j < wrapped.length; j += 1) {
 			lines.push(wrapped[j]);
 		}

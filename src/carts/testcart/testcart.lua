@@ -214,7 +214,6 @@ end
 local director = { id = service_id, stats = { moves = 0, pulses = 0, effects = 0, charges = 0 } }
 
 local function timelinehandler(event)
-	print("director.stats.pulses!  rewsfasfsffs" .. director.stats.pulses)
 	director.stats.pulses = director.stats.pulses + 1
 end
 
@@ -333,7 +332,6 @@ function update(dt)
 end
 
 local function draw_hero(hero)
-	write('TEST!', 0, 0, 0, 15)
 	local ready = hero.tempo_ready
 	local blinking = hero.blinking_timer > 0
 	local basecolor = blinking and 8 or (ready and 10 or 12)
@@ -342,24 +340,23 @@ end
 
 local function draw_hud(hero)
 	local stats = director.stats
-	print("UPDATE PULSES: " .. director.stats.pulses .. "/ " .. stats.pulses)
-	write('bmsx lua engine tour', 6, 4, 0, 15)
-	write('worldobject : ' .. hero.id, 6, 14, 0, 11)
-	write('service     : ' .. service_id, 6, 22, 0, 11)
-	write('fsm state   : ' .. hero.active_state, 6, 30, 0, 7)
-	write('timeline    : ' .. hero_timeline_id, 6, 38, 0, 7)
-	write('effect      : ' .. effect_id, 6, 46, 0, 7)
-	write('plain input : ' .. demo.last_plain_input, 6, 60, 0, 6)
-	write('moves       : ' .. stats.moves, 6, 69, 0, 6)
-	write('pulses      : ' .. stats.pulses, 6, 78, 0, 6)
-	write('effects     : ' .. stats.effects, 6, 87, 0, 6)
-	write('charges     : ' .. stats.charges, 6, 96, 0, 6)
-	write('tracker mv  : ' .. hero.move_count, 6, 105, 0, 6)
-	write('screen hits : ' .. hero.boundary_pushback, 6, 114, 0, 6)
-	write('controls:', 6, 118, 0, 13)
-	write('- arrows: move world object', 6, 128, 0, 13)
-	write('- a: blink (inputactiontoeffect + input)', 6, 148, 0, 13)
-	write('- b: hold (fsm + input)', 6, 138, 0, 13)
+	write('bmsx lua engine tour', 8, 0, 0, 15)
+	write('worldobject : ' .. hero.id, 8, 8, 0, 11)
+	write('service     : ' .. service_id, 8, 16, 0, 11)
+	write('fsm state   : ' .. hero.active_state, 8, 24, 0, 7)
+	write('timeline    : ' .. hero_timeline_id, 8, 32, 0, 7)
+	write('effect      : ' .. effect_id, 8, 40, 0, 7)
+	write('plain input : ' .. demo.last_plain_input, 6, 48, 0, 6)
+	write('moves       : ' .. stats.moves, 8, 56, 0, 6)
+	write('pulses      : ' .. stats.pulses, 8, 64, 0, 6)
+	write('effects     : ' .. stats.effects, 8, 72, 0, 6)
+	write('charges     : ' .. stats.charges, 8, 80, 0, 6)
+	write('tracker mv  : ' .. hero.move_count, 8, 88, 0, 6)
+	write('screen hits : ' .. hero.boundary_pushback, 8, 96, 0, 6)
+	write('controls:', 8, 112, 0, 13)
+	write('- arrows: move world object', 8, 120, 0, 13)
+	write('  - a: blink (inputactiontoeffect + input)', 8, 128, 0, 13)
+	write('  - b: hold (fsm + input)', 8, 136, 0, 13)
 end
 
 function draw()

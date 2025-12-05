@@ -4,7 +4,7 @@ import { drawEditorText } from '../text_renderer';
 import { clamp } from '../../../utils/clamp';
 import { activate, bottomMargin, editorFacade, focusChunkSource, setActiveRuntimeErrorOverlay, setExecutionStopHighlight, updateDesiredColumn } from '../console_cart_editor';
 import { ide_state } from '../ide_state';
-import { buildRuntimeErrorLines, computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapRuntimeErrorLine } from '../text_utils';
+import { buildRuntimeErrorLines, computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapOverlayLine } from '../text_utils';
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../types';
 import type { StackTraceFrame } from '../../../lua/value';
 import type { RectBounds } from '../../../rompack/rompack';
@@ -334,7 +334,7 @@ export function computeRuntimeErrorOverlayLayout(
 	const displayLineMap: number[] = [];
 	for (let d = 0; d < sourceLines.length; d += 1) {
 		const text = sourceLines[d];
-		const wrapped = wrapRuntimeErrorLine(text, wrapWidth);
+		const wrapped = wrapOverlayLine(text, wrapWidth);
 		for (let i = 0; i < wrapped.length; i += 1) {
 			displayLines.push(wrapped[i]);
 			displayLineMap.push(d);

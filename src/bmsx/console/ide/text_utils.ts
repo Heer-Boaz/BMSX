@@ -398,7 +398,7 @@ export function buildRuntimeErrorLines(message: string): string[] {
 	return rawLines.length > 0 ? rawLines : [''];
 }
 
-export function wrapRuntimeErrorLine(line: string, maxWidth: number): string[] {
+export function wrapOverlayLine(line: string, maxWidth: number): string[] {
 	if (line.length === 0) return [''];
 	const segments: string[] = [];
 	let segmentStart = 0;
@@ -433,6 +433,7 @@ export function wrapRuntimeErrorLine(line: string, maxWidth: number): string[] {
 	}
 	return segments.length > 0 ? segments : [''];
 }
+
 function rewrapRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {
 	overlay.messageLines = buildRuntimeErrorLines(overlay.message);
 	rebuildRuntimeErrorOverlayView(overlay);

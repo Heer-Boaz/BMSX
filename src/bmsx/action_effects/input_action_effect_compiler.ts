@@ -12,6 +12,7 @@ import type { ActionEffectId } from './effect_types';
 import type { ActionEffectComponent } from '../component/actioneffectcomponent';
 import type { WorldObject } from '../core/object/worldobject';
 import { ActionEffectRegistry } from './effect_registry';
+import { extractErrorMessage } from '../lua/value';
 
 export interface BindingExecutionEnv {
 	owner: WorldObject;
@@ -293,7 +294,7 @@ function validateEffect(effect: Effect, ctx: ValidationContext): void {
 		try {
 			ActionEffectRegistry.instance.validate(effectId, payload);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
+			const message = extractErrorMessage(error);
 			throw new Error(`[InputActionEffectProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' effect '${effectId}' validation failed: ${message}`);
 		}
 		return;

@@ -5,6 +5,7 @@ import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';
 import type { Identifiable, Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import type { WorldObject } from '../core/object/worldobject';
+import { extractErrorMessage } from '../lua/value';
 
 /** Node specification used to compose a behaviour tree. */
 export type BehaviorTreeNodeSpec =
@@ -54,7 +55,7 @@ export function setup_bt_library(): void {
 			behaviorTreeDiagnostics.set(bt_id, []);
 		}
 		catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
+			const message = extractErrorMessage(error);
 			behaviorTreeDiagnostics.set(bt_id, [{ severity: 'error', message }]);
 			throw error;
 		}
@@ -146,7 +147,7 @@ export function applyPreparedBehaviorTree(id: BehaviorTreeID, definition: Behavi
 		behaviorTreeDiagnostics.set(trimmed, []);
 	}
 	catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
+		const message = extractErrorMessage(error);
 		behaviorTreeDiagnostics.set(trimmed, [{ severity: 'error', message }]);
 		throw error;
 	}

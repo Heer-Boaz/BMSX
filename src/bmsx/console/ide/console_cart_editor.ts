@@ -38,7 +38,7 @@ import {
 	findCodeTabContext,
 } from './editor_tabs';
 
-import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, markTextMutated, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapRuntimeErrorLine } from './text_utils';
+import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, markTextMutated, measureText, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapOverlayLine } from './text_utils';
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
@@ -118,6 +118,7 @@ import { point_in_rect } from '../../utils/rect_operations';
 import { lower_bound } from '../../utils/lower_bound';
 import { updateRuntimeErrorOverlay } from './runtime_error_overlay';
 import { LuaSemanticWorkspace, refreshSymbolCatalog, symbolPriority } from './semantic_model';
+import { extractErrorMessage } from '../../lua/value';
 
 export const editorFacade = {
 	activate,
@@ -855,7 +856,7 @@ export function getStatusMessageLines(): string[] {
 	const maxWidth = Math.max(ide_state.viewportWidth - 8, ide_state.charAdvance);
 	const localLines: string[] = [];
 	for (let i = 0; i < rawLines.length; i += 1) {
-		const wrapped = wrapRuntimeErrorLine(rawLines[i], maxWidth);
+		const wrapped = wrapOverlayLine(rawLines[i], maxWidth);
 		for (let j = 0; j < wrapped.length; j += 1) {
 			localLines.push(wrapped[j]);
 		}
@@ -900,7 +901,7 @@ export function safeInspectLuaExpression(request: ConsoleLuaHoverRequest): Conso
 		ide_state.inspectorRequestFailed = true;
 		const handled = tryShowLuaErrorOverlay(error);
 		if (!handled) {
-			const message = error instanceof Error ? error.message : String(error);
+			const message = extractErrorMessage(error);
 			ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 3.2);
 		}
 		return null;
@@ -1552,7 +1553,7 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 		applyCreateResourceFieldText(normalizedPath, true);
 		ide_state.createResourceError = null;
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
+		const message = extractErrorMessage(error);
 		ide_state.createResourceError = message;
 		ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 		resetBlink();
@@ -1572,7 +1573,7 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 		ide_state.showMessage(`Created ${descriptor.path} (asset ${descriptor.asset_id})`, constants.COLOR_STATUS_SUCCESS, 2.5);
 		closeCreateResourcePrompt(false);
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
+		const message = extractErrorMessage(error);
 		const simplified = message.replace(/^\[BmsxConsoleRuntime\]\s*/, '');
 		ide_state.createResourceError = simplified;
 		ide_state.showMessage(`Failed to create resource: ${simplified}`, constants.COLOR_STATUS_WARNING, 4.0);
@@ -2120,7 +2121,7 @@ export function refreshResourceCatalog(): void {
 	try {
 		descriptors = listResourcesStrict();
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
+		const message = extractErrorMessage(error);
 		ide_state.resourceCatalog = [];
 		ide_state.resourceSearchMatches = [];
 		ide_state.resourceSearchSelectionIndex = -1;
@@ -3169,7 +3170,7 @@ export async function save(): Promise<void> {
 		if (tryShowLuaErrorOverlay(error)) {
 			return;
 		}
-		const message = error instanceof Error ? error.message : String(error);
+		const message = extractErrorMessage(error);
 		ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 	}
 }

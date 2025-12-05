@@ -36,6 +36,7 @@ import { resolveOffsetPosition } from './lua_formatter';
 import { resetBlink } from './render/render_caret';
 import * as constants from './constants';
 import { formatLuaDocument } from './lua_formatter';
+import { extractErrorMessage } from '../../lua/value';
 
 function editorAllowsMutation(): boolean {
 	return ide_state.activeContextReadOnly !== true;
@@ -1232,7 +1233,7 @@ export function applyDocumentFormatting(): void {
 		markDiagnosticsDirty();
 		ide_state.showMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
+		const message = extractErrorMessage(error);
 		ide_state.showMessage(`Formatting failed: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
 	}
 }

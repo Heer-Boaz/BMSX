@@ -55,6 +55,7 @@ import {
 	createLuaNativeMemberHandle,
 	createLuaNativeValue,
 	createLuaTable,
+	extractErrorMessage,
 	isLuaDebuggerPauseSignal,
 	isLuaNativeMemberHandle,
 	isLuaNativeValue,
@@ -3373,7 +3374,7 @@ export class LuaInterpreter {
 				return [JSON.stringify(serialized)];
 			}
 			catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
+				const message = extractErrorMessage(error);
 				throw this.runtimeError(`serialize failed: ${message}`);
 			}
 		}));
@@ -3392,7 +3393,7 @@ export class LuaInterpreter {
 				return [value];
 			}
 			catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
+				const message = extractErrorMessage(error);
 				throw this.runtimeError(`deserialize failed: ${message}`);
 			}
 		}));

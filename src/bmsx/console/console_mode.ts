@@ -2,7 +2,7 @@ import type { color } from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
 import { ConsoleEditorFont } from './editor_font';
 import type { ConsoleFontVariant } from './font';
-import { wrapRuntimeErrorLine, applyCaseOutsideStrings } from './ide/text_utils';
+import { wrapOverlayLine, applyCaseOutsideStrings } from './ide/text_utils';
 import {
 	createInlineTextField,
 	applyInlineFieldEditing,
@@ -477,7 +477,7 @@ export class ConsoleMode {
 		}
 		const uppercaseDisplay = this.useUppercaseDisplay();
 		const normalized = this.toDisplayText(text, uppercaseDisplay);
-		return wrapRuntimeErrorLine(normalized, Math.max(8, maxWidth));
+		return wrapOverlayLine(normalized, Math.max(8, maxWidth));
 	}
 
 	private shouldRepeatKey(code: string, deltaSeconds: number, state: Map<string, number>): boolean {

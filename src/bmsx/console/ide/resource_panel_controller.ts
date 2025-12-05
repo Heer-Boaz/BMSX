@@ -10,6 +10,7 @@ import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } 
 import { ide_state } from './ide_state';
 import { bottomMargin, codeViewportTop, focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab, openResourceViewerTab } from './console_cart_editor';
 import { measureText } from './text_utils';
+import { extractErrorMessage } from '../../lua/value';
 
 export interface ResourcePanelScrollbars {
 	resourceVertical: ConsoleScrollbar;
@@ -264,7 +265,7 @@ export class ResourcePanelController {
 		try {
 			descriptors = listResourcesStrict();
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
+			const message = extractErrorMessage(error);
 			ide_state.showMessage(`Failed to enumerate resources: ${message}`, constants.COLOR_STATUS_WARNING, 3.0);
 			// count omitted
 			this.items = [{ line: `<failed to load resources: ${message}>`, contentStartColumn: 0, descriptor: null }];
