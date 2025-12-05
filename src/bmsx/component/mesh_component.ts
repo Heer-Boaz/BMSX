@@ -7,6 +7,7 @@ import { Mesh as RenderMesh } from '../render/3d/mesh';
 import { Material } from '../render/3d/material';
 import { insavegame, excludepropfromsavegame, onsave, onload } from '../serializer/serializationhooks';
 import type { MeshRenderSubmission } from '../render/gameview';
+import { clamp } from '../utils/clamp';
 
 type MeshInstance = { mesh: RenderMesh; nodeIndex?: number; meshIndex?: number; skinIndex?: number; morphWeights?: number[]; worldMatrix?: Float32Array };
 
@@ -358,7 +359,7 @@ export class MeshComponent extends Component {
 	}
 
 	private lerpVec3(target: Float32Array, sample: Float32Array, weight: number): void {
-		const w = Math.max(0, Math.min(1, weight));
+		const w = clamp(weight, 0, 1);
 		target[0] += (sample[0] - target[0]) * w;
 		target[1] += (sample[1] - target[1]) * w;
 		target[2] += (sample[2] - target[2]) * w;
@@ -370,7 +371,7 @@ export class MeshComponent extends Component {
 			target = new Float32Array(sample.length);
 			this.poseWeights[nodeIndex] = target;
 		}
-		const w = Math.max(0, Math.min(1, weight));
+		const w = clamp(weight, 0, 1);
 		for (let i = 0; i < sample.length; i++) {
 			target[i] += (sample[i] - target[i]) * w;
 		}
@@ -413,7 +414,7 @@ export class MeshComponent extends Component {
 		} else {
 			state.weight = state.targetWeight;
 		}
-		state.weight = Math.max(0, Math.min(1, state.weight));
+		state.weight = clamp(state.weight, 0, 1);
 		if (!state.loop && !fadingOut && state.time >= duration - 1e-4) {
 			state.targetWeight = 0;
 			state.blendDuration = Math.max(state.blendDuration, 0.1);
@@ -456,7 +457,7 @@ export class MeshComponent extends Component {
 	}
 
 	private applyClipState(state: MeshClipState): void {
-		const weight = Math.max(0, Math.min(1, state.weight));
+		const weight = clamp(state.weight, 0, 1);
 		if (weight <= 0) return;
 		const clip = state.clip;
 		const animations = clip.channels;
@@ -541,13 +542,9 @@ export class MeshComponent extends Component {
 		const parent = this.parent;
 		const busEvent = create_gameevent({ type: event, emitter: parent, ...(payload ?? {}) });
 		$.emit(busEvent);
-		const sc = parent.sc;
-		if (!sc) {
-			throw new Error(`[MeshComponent] Parent '${parent.id}' is missing a state controller.`);
-		}
 		const name = scope === 'self' ? `$${event}` : event;
 		const fsmEvent = create_gameevent({ type: name, emitter: parent, ...(payload ?? {}) });
-		sc.dispatch_event(fsmEvent);
+		parent.sc.dispatch_event(fsmEvent);
 	}
 
 	private applyRootMotionDelta(): void {
@@ -712,7 +709,7 @@ export class MeshComponent extends Component {
 		if (snapshot.notifies) {
 			state.notifies = snapshot.notifies.map(n => ({ ...n }));
 		} else {
-			state.notifies = this.cloneNotifies(name) ?? undefined;
+			state.notifies = this.cloneNotifies(name);
 		}
 		if (state.notifies && state.notifies.length) state.notifies.sort((a, b) => a.time - b.time);
 		const storedTranslation = snapshot.lastRootTranslation;
@@ -728,8 +725,8 @@ export class MeshComponent extends Component {
 		} else {
 			state.notifyCursor = 0;
 		}
-		state.weight = Math.max(0, Math.min(1, state.weight));
-		state.targetWeight = Math.max(0, Math.min(1, state.targetWeight));
+		state.weight = clamp(state.weight, 0, 1);
+		state.targetWeight = clamp(state.targetWeight, 0, 1);
 		return state;
 	}
 
@@ -765,7 +762,7 @@ export class MeshComponent extends Component {
 		this._previousClip = undefined;
 		if (!this._currentClip) return;
 		const duration = this.getClipDuration(this._currentClip);
-		this._currentClip.time = Math.min(Math.max(0, this._currentClip.time), duration);
+		this._currentClip.time = clamp(this._currentClip.time, 0, duration); // clamp time to valid range
 		this._currentClip.weight = 1;
 		this._currentClip.targetWeight = 1;
 		this._currentClip.blendDuration = 0;

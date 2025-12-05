@@ -33,13 +33,67 @@ export type WorkspaceStoragePaths = {
 	stateFile: string;
 };
 
+type SnapshotMetadata = {
+	cursorRow: number;
+	cursorColumn: number;
+	scrollRow: number;
+	scrollColumn: number;
+	selectionAnchor: Position;
+};
+
+export type SerializedDescriptor = {
+	asset_id: string;
+	path: string;
+	type: string;
+};
+
+export type PersistedTabEntry = {
+	id: string;
+	kind: 'lua_editor' | 'resource_view' | 'debug';
+	descriptor: SerializedDescriptor;
+};
+
+export type PersistedDirtyEntry = {
+	contextId: string;
+	descriptor: SerializedDescriptor;
+	dirtyPath: string;
+	cursorRow: number;
+	cursorColumn: number;
+	scrollRow: number;
+	scrollColumn: number;
+	selectionAnchor: Position;
+};
+
+export type WorkspaceAutosavePayload = {
+	version: 1 | 2;
+	savedAt: number;
+	entryTabId: string;
+	activeTabId: string;
+	tabs: PersistedTabEntry[];
+	dirtyFiles: PersistedDirtyEntry[];
+	undoStack: EditorSnapshot[];
+	redoStack: EditorSnapshot[];
+	lastHistoryKey: string;
+	lastHistoryTimestamp: number;
+	navigationHistory: {
+		back: NavigationHistoryEntry[];
+		forward: NavigationHistoryEntry[];
+		current: NavigationHistoryEntry;
+	};
+	breakpoints?: SerializedBreakpointMap;
+	fontVariant?: ConsoleFontVariant;
+	overlayResolutionMode?: 'offscreen' | 'viewport';
+};
+
+export type DirtyContextEntry = PersistedDirtyEntry & { text: string };
+
 let storagePaths: WorkspaceStoragePaths = null;
 let serverBackend: ServerWorkspaceBackend = null;
 let serverBackendAvailable = false;
 let serverBackendFailureNotified = false;
 let localBackend: LocalWorkspaceBackend = null;
 let serverRetryScheduled = false;
-let serverRetryHandle: TimerHandle | NodeJS.Timeout = null;
+let serverRetryHandle: TimerHandle = null;
 const workspaceRestoreGate = taskGate.group('workspace_restore');
 
 function resetWorkspaceBackends(): void {
@@ -47,12 +101,8 @@ function resetWorkspaceBackends(): void {
 	localBackend = null;
 	serverBackendAvailable = false;
 	serverBackendFailureNotified = false;
-	clearServerRetryHandle();
+	serverRetryHandle?.cancel();
 	ide_state.serverWorkspaceConnected = false;
-}
-
-export function workspaceStoragePaths(): WorkspaceStoragePaths {
-	return storagePaths;
 }
 
 export async function configureWorkspaceStorage(projectRootPath: string): Promise<void> {
@@ -220,60 +270,6 @@ function detachWorkspaceExitHandler(): void {
 		ide_state.disposeWorkspaceExitListener = null;
 	}
 }
-
-type SnapshotMetadata = {
-	cursorRow: number;
-	cursorColumn: number;
-	scrollRow: number;
-	scrollColumn: number;
-	selectionAnchor: Position;
-};
-
-export type SerializedDescriptor = {
-	asset_id: string;
-	path: string;
-	type: string;
-};
-
-export type PersistedTabEntry = {
-	id: string;
-	kind: 'lua_editor' | 'resource_view' | 'debug';
-	descriptor: SerializedDescriptor;
-};
-
-export type PersistedDirtyEntry = {
-	contextId: string;
-	descriptor: SerializedDescriptor;
-	dirtyPath: string;
-	cursorRow: number;
-	cursorColumn: number;
-	scrollRow: number;
-	scrollColumn: number;
-	selectionAnchor: Position;
-};
-
-export type WorkspaceAutosavePayload = {
-	version: 1 | 2;
-	savedAt: number;
-	entryTabId: string;
-	activeTabId: string;
-	tabs: PersistedTabEntry[];
-	dirtyFiles: PersistedDirtyEntry[];
-	undoStack: EditorSnapshot[];
-	redoStack: EditorSnapshot[];
-	lastHistoryKey: string;
-	lastHistoryTimestamp: number;
-	navigationHistory: {
-		back: NavigationHistoryEntry[];
-		forward: NavigationHistoryEntry[];
-		current: NavigationHistoryEntry;
-	};
-	breakpoints?: SerializedBreakpointMap;
-	fontVariant?: ConsoleFontVariant;
-	overlayResolutionMode?: 'offscreen' | 'viewport';
-};
-
-export type DirtyContextEntry = PersistedDirtyEntry & { text: string };
 
 export function initializeWorkspaceStorage(projectRootPath: string): void {
 	stopWorkspaceAutosaveLoop();
@@ -502,7 +498,7 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 			continue;
 		}
 		const saved = descriptor ? await fetchWorkspaceFile(descriptor.path) : null;
-		const savedContents = saved?.contents ?? null;
+		const savedContents = saved?.contents;
 		if (savedContents !== null && savedContents !== contents) {
 			await deleteDirtyBuffer(entry.dirtyPath);
 			workspaceDirtyCache.delete(entry.dirtyPath);
@@ -559,9 +555,7 @@ function cloneEditorSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
 }
 
 function clampSelection(anchor: Position, lines: string[]): Position {
-	if (!anchor) {
-		return null;
-	}
+	if (!anchor) return null;
 	const row = safeclamp(anchor.row ?? 0, 0, lines.length - 1);
 	const line = lines[row] ?? '';
 	const column = safeclamp(anchor.column ?? 0, 0, line.length);
@@ -569,12 +563,10 @@ function clampSelection(anchor: Position, lines: string[]): Position {
 }
 
 function handleServerBackendFailure(error: unknown): void {
-	if (!serverBackendAvailable) {
-		return;
-	}
+	if (!serverBackendAvailable) return;
 	serverBackendAvailable = false;
 	serverBackend = null;
-	clearServerRetryHandle();
+	serverRetryHandle?.cancel();
 	ide_state.serverWorkspaceConnected = false;
 	if (!serverBackendFailureNotified) {
 		serverBackendFailureNotified = true;
@@ -658,7 +650,7 @@ class ServerWorkspaceBackend {
 }
 
 export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
-	if (!workspaceStoragePaths()) {
+	if (!storagePaths) {
 		return new Map();
 	}
 	const entries = new Map<string, DirtyContextEntry>();
@@ -673,13 +665,12 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 			dirtyPath = descriptor
 				? buildDirtyFilePath(descriptor.path)
 				: buildScratchDirtyFilePath(context.id);
-		} catch {
+		} catch (error) {
+			console.info(`[WorkspaceStorage] Failed to build dirty file path for context ${context.id}: ${error}`);
 			continue;
 		}
 		const text = captureContextText(context);
-		if (text === null) {
-			continue;
-		}
+		if (!text) continue;
 		entries.set(dirtyPath, {
 			contextId: context.id,
 			descriptor,
@@ -883,7 +874,6 @@ function scheduleServerBackendRetry(): void {
 	serverRetryScheduled = true;
 	const delayMs = WORKSPACE_AUTOSAVE_INTERVAL_MS * 4;
 	serverRetryHandle = scheduleIdeOnce(delayMs, async () => {
-		clearServerRetryHandle();
 		await tryReconnectServerBackend();
 	});
 }
@@ -899,22 +889,8 @@ async function tryReconnectServerBackend(): Promise<void> {
 		serverBackendAvailable = true;
 		serverBackendFailureNotified = false;
 		ide_state.serverWorkspaceConnected = true;
-		clearServerRetryHandle();
+		serverRetryHandle?.cancel();
 	} catch {
 		scheduleServerBackendRetry();
 	}
-}
-
-function clearServerRetryHandle(): void {
-	if (!serverRetryHandle) {
-		serverRetryScheduled = false;
-		return;
-	}
-	if (typeof (serverRetryHandle as TimerHandle).cancel === 'function') {
-		(serverRetryHandle as TimerHandle).cancel();
-	} else {
-		clearTimeout(serverRetryHandle as NodeJS.Timeout);
-	}
-	serverRetryHandle = null;
-	serverRetryScheduled = false;
 }

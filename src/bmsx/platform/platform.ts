@@ -63,7 +63,7 @@ export interface TimerHandle {
 	/**
 	 * Returns true if the timer is still active (not yet fired or cancelled).
 	 */
-	isActive?(): boolean;
+	isActive(): boolean;
 }
 
 /**

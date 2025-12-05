@@ -18,6 +18,11 @@ export interface RomPack {
 	manifest?: CartManifest; // The manifest of the ROM pack, if present.
 }
 
+export type RomAssetListPayload = {
+	assets: RomAsset[];
+	projectRootPath?: string;
+};
+
 export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'rommanifest';
 export type asset_id = string;
 

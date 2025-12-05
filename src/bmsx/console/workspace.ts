@@ -583,8 +583,8 @@ export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; 
 			}
 			continue;
 		}
-		let winner: WorkspaceOverrideRecord = overrideRecord ?? null;
-		let winnerKind: 'override' | 'canonical' | null = overrideRecord ? 'override' : null;
+		let winner: WorkspaceOverrideRecord = overrideRecord;
+		let winnerKind: 'override' | 'canonical' = overrideRecord ? 'override' : null;
 		let winnerUpdatedAt = overrideRecord ? (overrideRecord.updatedAt ?? 0) : -1;
 		const canonicalUpdatedAt = canonicalRecord?.updatedAt ?? -1;
 		if (canonicalRecord) {

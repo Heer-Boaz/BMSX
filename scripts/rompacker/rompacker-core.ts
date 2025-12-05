@@ -1,7 +1,7 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import type { asset_type, AudioMeta, BmsxCartridge, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
+import type { asset_type, AudioMeta, BmsxCartridge, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomAssetListPayload, RomManifest } from '../../src/bmsx/rompack/rompack';
 import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
@@ -1653,7 +1653,7 @@ export async function finalizeRompack(
 		}
 
 		status?.('encode manifest');
-		const metadataPayload = {
+		const metadataPayload: RomAssetListPayload = {
 			assets: assetList,
 			projectRootPath: options.projectRootPath,
 		};

@@ -45,10 +45,13 @@ export function clearBackgroundTasks(): void {
 		backgroundTaskHandle.cancel();
 		backgroundTaskHandle = null;
 	}
-}export function scheduleIdeOnce(delayMs: number, cb: () => void): TimerHandle {
+}
+
+export function scheduleIdeOnce(delayMs: number, cb: () => void): TimerHandle {
 	const clock = $.platform.clock;
 	return clock.scheduleOnce(delayMs, () => cb());
 }
+
 export function scheduleRuntimeTask(task: () => void | Promise<void>, onError: (error: unknown) => void): void {
 	scheduleMicrotask(() => {
 		try {
@@ -58,4 +61,3 @@ export function scheduleRuntimeTask(task: () => void | Promise<void>, onError: (
 		}
 	});
 }
-

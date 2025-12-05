@@ -1,4 +1,4 @@
-import { type Area, type AudioMeta, type GLTFMaterial, type GLTFModel, type ImgMeta, type Polygon, type RomAsset, type RomImgAsset, type RomLuaAsset, type RomMeta, type RomPack, type TextureSource, type color_arr } from '../../src/bmsx/rompack/rompack';
+import { type Area, type AudioMeta, type GLTFMaterial, type GLTFModel, type ImgMeta, type Polygon, type RomAsset, type RomAssetListPayload, type RomImgAsset, type RomLuaAsset, type RomMeta, type RomPack, type TextureSource, type color_arr } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../../src/bmsx/serializer/binencoder';
 
 export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
@@ -72,26 +72,9 @@ export async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer):
 
 export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsset[]; projectRootPath: string }> {
 	const sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
-	let decoded: unknown;
-	try {
-		decoded = decodeBinary(sliced);
-	} catch (e: any) {
-		console.error('[loadAssetList] decodeBinary error:', e);
-		throw e;
-	}
-	let projectRootPath: string = null;
-	let assetList: RomAsset[];
-	if (Array.isArray(decoded)) {
-		assetList = decoded as RomAsset[];
-	} else if (decoded && typeof decoded === 'object' && Array.isArray((decoded as any).assets)) {
-		const payload = decoded as { assets: RomAsset[]; projectRootPath?: string };
-		assetList = payload.assets;
-		if (typeof payload.projectRootPath === 'string' && payload.projectRootPath.length > 0) {
-			projectRootPath = payload.projectRootPath;
-		}
-	} else {
-		throw new Error('[loadAssetList] Invalid rom metadata structure.');
-	}
+	const decoded = decodeBinary(sliced) as RomAssetListPayload;
+	const assetList = decoded.assets;
+	const projectRootPath = decoded.projectRootPath ?? null;
 
 	function flipPolygons(polys: Polygon[], flipH: boolean, flipV: boolean, imgW: number, imgH: number): Polygon[] {
 		return polys.map(poly => {
