@@ -489,6 +489,13 @@ export class BmsxConsoleApi {
 		this.serviceExts.set(descriptor.def_id, descriptor);
 	}
 
+	private resolveLuaClassLocalId(ext: EntityExtensions): string {
+		const classTable = ext.class as LuaTable;
+		if (!classTable) return ext.def_id;
+		const resolved = this.runtime.interpreter.resolveValueName(classTable);
+		return resolved ?? ext.def_id;
+	}
+
 	/**
 	 * Create a Service instance from a previously defined service descriptor.
 	 *
@@ -511,7 +518,6 @@ export class BmsxConsoleApi {
 		return instance.id;
 	}
 
-	// TODO: Cannot handle Lua class overrides yet and doesn't apply component extensions or definition overrides
 	public attach_component(object_or_id: WorldObject | Identifier, component_or_type: Component | Identifier): void {
 		let obj: WorldObject;
 		if (typeof object_or_id === 'string') {
@@ -531,17 +537,9 @@ export class BmsxConsoleApi {
 
 		// See whether this is a component type whose extension we have defined
 		const ext = this.componentExts.get(component_or_type);
-		let instance: Component;
-		if (ext?.class) {
-			// If we have an extension and a class-reference, use the base Component to instantiate the component
-			instance = new Component({ parent_or_id: obj } as ComponentAttachOptions);
-			// And apply the extension to it
-			this.applyObjectExtensionAndOverrides(ext, instance);
-			return;
-		}
-		else {
-			instance = Component.newComponent(component_or_type, { parent_or_id: obj } as ComponentAttachOptions);
-		}
+		const idLocal = ext ? this.resolveLuaClassLocalId(ext) : undefined;
+		const instance = Component.newComponent(component_or_type, { parent_or_id: obj, id_local: idLocal } as ComponentAttachOptions);
+		this.applyObjectExtensionAndOverrides(ext, instance);
 		obj.add_component(instance);
 	}
 

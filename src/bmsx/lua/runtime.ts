@@ -185,6 +185,7 @@ export class LuaInterpreter {
 	private readonly callStack: LuaCallFrame[] = [];
 	private debuggerController: LuaDebuggerController = null;
 	private _lastFaultCallStack: LuaCallFrame[] = [];
+	private valueNameCache = new WeakMap<object | Function, string>();
 	private lastFaultDepth: number = 0;
 	private pendingDebuggerException: LuaRuntimeError = null;
 	private exceptionResumeStrategy: LuaExceptionResumeStrategy = 'propagate';
@@ -309,6 +310,7 @@ export class LuaInterpreter {
 
 	public setGlobal(name: string, value: LuaValue, range?: LuaSourceRange): void {
 		this.globals.set(name, value, range);
+		this.cacheValueName(value, name);
 	}
 
 	public getGlobal(name: string): LuaValue {
@@ -324,6 +326,7 @@ export class LuaInterpreter {
 	}
 
 	protected executeChunk(chunk: LuaChunk): LuaValue[] {
+		this.valueNameCache = new WeakMap<object | Function, string>();
 		this.currentChunk = chunk.range.chunkName;
 		const chunkScope = LuaEnvironment.createChild(this.globals);
 		this._chunkEnvironment = chunkScope;
@@ -417,6 +420,36 @@ export class LuaInterpreter {
 	public clearLastFaultCallStack(): void {
 		this._lastFaultCallStack = [];
 		this.lastFaultDepth = 0;
+	}
+
+	public resolveValueName(value: LuaValue): string | undefined {
+		if (value === null) return undefined;
+		if (typeof value !== 'object' && typeof value !== 'function') return undefined;
+		const cached = this.valueNameCache.get(value);
+		if (cached) return cached;
+		const chunkEntries = this.enumerateChunkEntries();
+		for (let i = 0; i < chunkEntries.length; i++) {
+			const entry = chunkEntries[i]!;
+			const name = entry[0];
+			const entryValue = entry[1];
+			this.cacheValueName(entryValue, name);
+			if (entryValue === value) return name;
+		}
+		const globalEntries = this.enumerateGlobalEntries();
+		for (let i = 0; i < globalEntries.length; i++) {
+			const entry = globalEntries[i]!;
+			const name = entry[0];
+			const entryValue = entry[1];
+			this.cacheValueName(entryValue, name);
+			if (entryValue === value) return name;
+		}
+		return undefined;
+	}
+
+	private cacheValueName(value: LuaValue, name: string): void {
+		if (value !== null && (typeof value === 'object' || typeof value === 'function')) {
+			this.valueNameCache.set(value as object, name);
+		}
 	}
 
 	public consumeLastDebuggerException(): LuaRuntimeError {

@@ -28,6 +28,37 @@ export const KEYWORDS = new Set([
 	'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
 ]);
 
+function resolveRuntimeValueName(value: LuaValue): string {
+	return BmsxConsoleRuntime.instance.interpreter.resolveValueName(value);
+}
+
+function resolveTableTypeName(table: LuaTable): string {
+	let current: LuaTable = table;
+	const visited = new Set<LuaTable>();
+	while (current && !visited.has(current)) {
+		visited.add(current);
+		const direct = resolveRuntimeValueName(current);
+		if (direct) {
+			return direct;
+		}
+		const metatable = current.getMetatable();
+		if (metatable) {
+			const metaIndex = metatable.get('__index');
+			if (isLuaTable(metaIndex)) {
+				current = metaIndex;
+				continue;
+			}
+		}
+		const ownIndex = current.get('__index');
+		if (isLuaTable(ownIndex)) {
+			current = ownIndex;
+			continue;
+		}
+		break;
+	}
+	return null;
+}
+
 function canonicalizeIdeIdentifier(name: string): string { // TODO: UGLY: TRIPLE IMPLEMENTATION
 	if (!ide_state.caseInsensitive) {
 		return name;
@@ -1872,7 +1903,8 @@ export function listLuaObjectMembers(request: ConsoleLuaMemberCompletionRequest)
 		return getNativeMemberCompletionEntries(value, request.operator);
 	}
 	if (isLuaTable(value)) {
-		return buildTableMemberCompletionEntries(value, request.operator);
+		const typeName = resolveTableTypeName(value);
+		return buildTableMemberCompletionEntries(value, request.operator, { typeName });
 	}
 	return [];
 }
@@ -2444,6 +2476,7 @@ export function resolveIdentifierThroughChain(environment: LuaEnvironment, name:
 
 export function describeLuaValueForInspector(value: LuaValue): { lines: string[]; valueType: string; isFunction: boolean } {
 	const runtime = BmsxConsoleRuntime.instance;
+	const resolvedName = resolveRuntimeValueName(value);
 	if (value === null) {
 		return { lines: ['Nil'], valueType: 'nil', isFunction: false };
 	}
@@ -2464,19 +2497,20 @@ export function describeLuaValueForInspector(value: LuaValue): { lines: string[]
 	if (isLuaNativeValue(value)) {
 		const native = value.native;
 		const typeName = value.typeName && value.typeName.length > 0 ? value.typeName : resolveNativeTypeName(native);
+		const labelName = resolvedName ?? typeName;
 		if (typeof native === 'function') {
 			const params = extractFunctionParameters(native as (...args: unknown[]) => unknown);
 			const paramSegment = params.length > 0 ? params.join(', ') : '';
 			const signature = paramSegment.length > 0 ? `(${paramSegment})` : '()';
-			const label = typeName && typeName.length > 0 ? `<native function ${typeName}${signature}>` : `<native function${signature}>`;
-			return { lines: [label], valueType: typeName ?? 'native', isFunction: true };
+			const label = labelName && labelName.length > 0 ? `<native function ${labelName}${signature}>` : `<native function${signature}>`;
+			return { lines: [label], valueType: labelName ?? 'native', isFunction: true };
 		}
-		let summary = `<${typeName ?? 'native'}>`;
+		let summary = `<${labelName ?? 'native'}>`;
 		const identifier = (native as { id?: unknown }).id;
 		if (identifier !== undefined && identifier !== null) {
 			summary = `${summary} id=${String(identifier)}`;
 		}
-		return { lines: [summary], valueType: typeName ?? 'native', isFunction: false };
+		return { lines: [summary], valueType: labelName ?? 'native', isFunction: false };
 	}
 	if (isLuaTable(value)) {
 		try {
@@ -2485,15 +2519,21 @@ export function describeLuaValueForInspector(value: LuaValue): { lines: string[]
 			const json = JSON.stringify(serialized, null, 2) ?? 'null';
 			const rawLines = json.split('\n');
 			const lines: string[] = [];
+			const tableName = resolveTableTypeName(value);
+			if (tableName) {
+				lines.push(`<table ${tableName}>`);
+			}
 			for (let i = 0; i < rawLines.length && i < HOVER_VALUE_MAX_SERIALIZED_LINES; i += 1) {
 				lines.push(truncateInspectorLine(rawLines[i]));
 			}
 			if (rawLines.length > HOVER_VALUE_MAX_SERIALIZED_LINES) {
 				lines.push('...');
 			}
-			return { lines, valueType: 'table', isFunction: false };
+			return { lines, valueType: tableName ?? 'table', isFunction: false };
 		} catch (_error) {
-			return { lines: ['<table>'], valueType: 'table', isFunction: false };
+			const tableName = resolveTableTypeName(value);
+			const summary = tableName ? [`<table ${tableName}>`] : ['<table>'];
+			return { lines: summary, valueType: tableName ?? 'table', isFunction: false };
 		}
 	}
 	return { lines: ['<unknown>'], valueType: 'unknown', isFunction: false };
@@ -2508,7 +2548,7 @@ export function getNativeMemberCompletionEntries(value: LuaNativeValue, operator
 	if (metatable) {
 		const indexValue = metatable.get('__index');
 		if (isLuaTable(indexValue)) {
-			const luaEntries = buildTableMemberCompletionEntries(indexValue, operator);
+			const luaEntries = buildTableMemberCompletionEntries(indexValue, operator, { typeName: resolveTableTypeName(indexValue) });
 			for (let index = 0; index < luaEntries.length; index += 1) {
 				registerNativeCompletion(registry, luaEntries[index]);
 			}
@@ -2587,9 +2627,10 @@ export function buildNativePrototypeMemberEntries(native: object | Function, ope
 	return entries;
 }
 
-export function buildTableMemberCompletionEntries(table: LuaTable, operator: '.' | ':'): ConsoleLuaMemberCompletion[] {
+export function buildTableMemberCompletionEntries(table: LuaTable, operator: '.' | ':', options?: { typeName?: string }): ConsoleLuaMemberCompletion[] {
 	const registry = new Map<string, ConsoleLuaMemberCompletion>();
 	const includeProperties = operator === '.';
+	const typeName = options?.typeName;
 
 	const appendFromTable = (target: LuaTable) => {
 		const entries = target.entriesArray();
@@ -2612,7 +2653,9 @@ export function buildTableMemberCompletionEntries(table: LuaTable, operator: '.'
 			if (registry.has(key)) {
 				continue;
 			}
-			const detail = isFunction ? `function ${key}` : `table field '${key}'`;
+			const detail = isFunction
+				? (typeName ? `function ${typeName}${operator === ':' ? ':' : '.'}${key}` : `function ${key}`)
+				: (typeName ? `${typeName}.${key}` : `table field '${key}'`);
 			registry.set(key, { name: key, kind, detail, parameters: [] });
 		}
 	};
