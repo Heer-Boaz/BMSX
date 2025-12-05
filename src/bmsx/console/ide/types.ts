@@ -3,17 +3,16 @@ import type {
 	ConsoleLuaHoverValueState,
 	ConsoleLuaSymbolEntry,
 	ConsoleResourceDescriptor,
-	ConsoleViewport,
 } from '../types';
 import type { ConsoleFontVariant } from '../font';
-import type { CanonicalizationType, RectBounds  } from '../../rompack/rompack';
+import type { CanonicalizationType, RectBounds, Viewport  } from '../../rompack/rompack';
 import type { StackTraceFrame } from '../../lua/value';
 import { MENU_COMMANDS } from './ide_input';
 
 export type IdeThemeVariant = string;
 
 export type ConsoleEditorOptions = {
-	viewport: ConsoleViewport;
+	viewport: Viewport;
 	canonicalization?: CanonicalizationType;
 	loadSource: () => string;
 	saveSource: (source: string) => Promise<void>;

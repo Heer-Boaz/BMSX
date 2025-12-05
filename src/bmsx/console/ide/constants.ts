@@ -31,6 +31,7 @@ export const UNDO_HISTORY_LIMIT = 512;
 export const UNDO_COALESCE_INTERVAL_MS = 550;
 export const WHEEL_SCROLL_STEP = 40;
 export const DOUBLE_CLICK_MAX_INTERVAL_MS = 320;
+export const DEFAULT_THEME = 'light';
 
 const PALETTE = {
 	transparent: 0,

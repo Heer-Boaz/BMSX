@@ -231,11 +231,11 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
 	const { assets, projectRootPath } = await loadAssetList(rom);
 	const cart: RomPack['cart'] = {
-		meta: { title: '', persistent_id: '' },
 		lua: {},
 		chunk2lua: {},
 		source2lua: {},
-		entry: '',
+		entry: null,
+		namespace: null, // Added missing namespace property
 		new_game: null,
 		init: null,
 		update: null,
@@ -248,15 +248,15 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 		model: {},
 		data: {},
 		code: null,
+
 	audioevents: {},
 	cart,
 	project_root_path: projectRootPath,
 };
 
 await Promise.all(assets.map(a => load(rom, a, result, opts)));
-	const [entryAsset] = Object.values(result.cart.lua);
-	const manifestEntryId = result.manifest?.lua?.entryAssetId;
-	result.cart.entry = manifestEntryId ?? entryAsset.resid;
+	result.cart.entry = result.manifest.lua.entry_asset_id;
+	result.cart.namespace = result.manifest.console.namespace;
 return Promise.resolve<RomPack>(result);
 }
 
@@ -542,7 +542,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				const luaAsset: RomLuaAsset = {
 					...res,
 					src: decodeuint8arr(sliced),
-				};
+				} as RomLuaAsset;
 				romResult.cart.lua[res.resid] = luaAsset;
 			} catch (err: any) {
 				throw new Error(`Failed to load 'lua' from rom: ${err.message}.`);

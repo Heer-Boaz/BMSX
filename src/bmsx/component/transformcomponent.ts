@@ -1,11 +1,10 @@
-import { WorldObject } from '../core/object/worldobject';
 import { M4, Mat4Float32, quat } from '../render/3d/math3d';
 import type { Oriented, Scaled, vec3arr } from '../rompack/rompack';
 import { insavegame } from '../serializer/serializationhooks';
 import { Component, type ComponentAttachOptions } from './basecomponent';
 
 @insavegame
-export class TransformComponent extends Component<WorldObject> {
+export class TransformComponent extends Component<any> {
 	static override unique = true;
 	static { this.autoRegister(); }
 	public position: vec3arr;

@@ -160,7 +160,7 @@ export type ComponentUpdateParams = {
  * @class
  * @implements IIdentifiable
  */
-export class Component<T extends WorldObject = WorldObject> implements Identifiable, Native {
+export class Component<T extends WorldObject = any> implements Identifiable, Native {
 	public get __native__(): string { return 'component'; }
 
 	static get unique(): boolean { return false; } // If true, only one instance of this component type can be attached to a parent

@@ -35,7 +35,7 @@ export function createEntryTabContext(): CodeTabContext {
 	const descriptor = luaDescriptors.length > 0 ? luaDescriptors[0] : null;
 	const resolvedasset_id = descriptor ? descriptor.asset_id : '__entry__';
 	const tabId: string = `lua:${resolvedasset_id}`;
-	const title = descriptor ? computeResourceTabTitle(descriptor) : (ide_state.metadata.title ?? 'ENTRY');
+	const title = computeResourceTabTitle(descriptor);
 	const load = descriptor
 		? () => ide_state.loadLuaResourceFn(descriptor.asset_id)
 		: () => ide_state.loadSourceFn();

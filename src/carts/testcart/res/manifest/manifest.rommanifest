@@ -2,44 +2,35 @@
 	"title": "BMSX Test Cartridge",
 	"short_name": "Test Cart",
 	"rom_name": "testcart",
-	"metadata": {
-		"version": "1.0.0",
-		"persistentId": "bmsx_test_cart"
-	},
 	"console": {
-		"moduleId": "bmsx-console",
-		"playerIndex": 1,
-		"viewport": { "width": 128, "height": 128 },
-		"world": { "viewportSize": { "x": 256, "y": 212 } }
+		"viewport": { "width": 256, "height": 212 },
+		"namespace": "testcart"
 	},
 	"input": {
-		"keyboard": {
-			"console_left": ["ArrowLeft"],
-			"console_right": ["ArrowRight"],
-			"console_up": ["ArrowUp"],
-			"console_down": ["ArrowDown"],
-			"console_b": ["KeyZ", "KeyC"],
-			"console_a": ["KeyX", "KeyV"],
-			"console_x": ["KeyA"],
-			"console_y": ["ShiftLeft"]
-		},
-		"gamepad": {
-			"console_left": ["left"],
-			"console_right": ["right"],
-			"console_up": ["up"],
-			"console_down": ["down"],
-			"console_b": ["b"],
-			"console_a": ["a"],
-			"console_x": ["x"],
-			"console_y": ["y"]
+		"1": {
+			"keyboard": {
+				"console_left": ["ArrowLeft"],
+				"console_right": ["ArrowRight"],
+				"console_up": ["ArrowUp"],
+				"console_down": ["ArrowDown"],
+				"console_b": ["KeyZ", "KeyC"],
+				"console_a": ["KeyX", "KeyV"],
+				"console_x": ["KeyA"],
+				"console_y": ["ShiftLeft"]
+			},
+			"gamepad": {
+				"console_left": ["left"],
+				"console_right": ["right"],
+				"console_up": ["up"],
+				"console_down": ["down"],
+				"console_b": ["b"],
+				"console_a": ["a"],
+				"console_x": ["x"],
+				"console_y": ["y"]
+			}
 		}
 	},
-	"cart": {
-		"entry": {
-			"new_game": "new_game",
-			"init": "init",
-			"update": "update",
-			"draw": "draw"
-		}
+	"lua": {
+		"entry_asset_id": "testcart"
 	}
 }

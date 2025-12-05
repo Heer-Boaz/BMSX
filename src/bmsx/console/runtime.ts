@@ -218,7 +218,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.cart = options.cart;
 		this.playerIndex = options.playerIndex;
 		this.storageService = $.platform.storage;
-		this.storage = new BmsxConsoleStorage(this.storageService, options.cart.meta.persistent_id);
+		this.storage = new BmsxConsoleStorage(this.storageService, options.cart.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
 		this._canonicalization = resolvedCanonicalization;
 		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
@@ -742,7 +742,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset to fresh world
 				await $.reset_to_fresh_world();
 			}
-			api.cartdata(this.cart.meta.persistent_id);
+			api.cartdata(this.cart.namespace);
 			this.bootLuaProgram();
 			this.hasCompletedInitialBoot = true;
 		}
@@ -1021,7 +1021,7 @@ export class BmsxConsoleRuntime extends Service {
 		// cooperation to restore.
 		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
 
-		api.cartdata(this.cart.meta.persistent_id);
+		api.cartdata(this.cart.namespace);
 		if (snapshot.storage !== undefined) {
 			this.storage.restore(snapshot.storage);
 		}

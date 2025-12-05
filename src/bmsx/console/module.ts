@@ -1,12 +1,11 @@
 import type { World, WorldModule } from '../core/world';
-import type { ConsoleModuleOptions } from './types';
 import { BmsxCartSystem } from './console_systems';
 import { TickGroup } from '../ecs/ecsystem';
 
-export function createBmsxConsoleModule(options: ConsoleModuleOptions): WorldModule {
+export function createBmsxConsoleModule(): WorldModule {
 	const frameSystemId = 'bmsxConsole.frame';
 	return {
-		id: options.moduleId,
+		id: 'bmsx',
 		ecs: {
 			systems: [
 				{

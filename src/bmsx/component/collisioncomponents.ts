@@ -150,7 +150,7 @@ export function leavingScreenHandler_prohibit(ik: WorldObject, { d, old_x_or_y }
 @insavegame
 @componenttags_preprocessing('position_update_axis') // Preprocessing update to store the old position so that it can be used in the postprocessing update to place the object back to its old position if it collides with a wall or leaves the screen, etc.
 @componenttags_postprocessing('position_update_axis') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
-export abstract class PositionUpdateAxisComponent extends Component<WorldObject> {
+export abstract class PositionUpdateAxisComponent extends Component<any> {
 	/**
 	 * The previous position of the world object.
 	 */

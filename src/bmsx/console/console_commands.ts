@@ -212,7 +212,7 @@ export class ConsoleCommandDispatcher {
 		const faultLabel = this.runtime.hasRuntimeFailed ? 'FAULTED' : 'OK';
 		const root = $.rompack.project_root_path;
 		const lines: string[] = [];
-		lines.push(`Cart: ${this.runtime.cart.meta.title} (${this.runtime.cart.meta.persistent_id})`);
+		lines.push(`Cart: ${$.rompack.project_root_path} (${this.runtime.cart.namespace})`);
 		lines.push(`Lua VM: ${vmState} | Entry: ${chunkLabel}`);
 		lines.push(`Status: ${faultLabel} | Debugger: ${debuggerLabel}`);
 		lines.push(`Canonicalization: ${this.runtime.canonicalization}`);

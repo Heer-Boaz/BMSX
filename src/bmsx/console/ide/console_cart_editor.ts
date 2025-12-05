@@ -151,11 +151,9 @@ export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleC
 export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
 	initializeDebuggerUiState();
 	const runtime = BmsxConsoleRuntime.instance;
-	const cart = runtime.cart;
 	ide_state.playerIndex = runtime.playerIndex;
-	ide_state.metadata = cart.meta;
 	ide_state.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
-	constants.setIdeThemeVariant(cart.meta.ide_theme);
+	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
 	ide_state.canonicalization = options.canonicalization;
 	ide_state.caseInsensitive = ide_state.canonicalization !== 'none';

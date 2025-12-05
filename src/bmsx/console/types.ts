@@ -3,8 +3,6 @@ import type { CanonicalizationType, BmsxCartridge } from '../rompack/rompack';
 import { LuaEntrySnapshot } from './lua_js_bridge';
 import { LuaPersistenceFailurePolicy } from './workspace';
 
-export type ManifestInputMapping = Record<string, string[]>;
-
 export type BmsxConsoleLuaPrimaryAssetWithSource = {
 	readonly asset_id?: string;
 	readonly chunkName: string;
@@ -35,18 +33,6 @@ export type ConsolePointerViewport = {
 export type ConsolePointerWheel = {
 	value: number;
 	valid: boolean;
-};
-
-export type ConsoleViewport = {
-	width: number;
-	height: number;
-};
-
-export type ConsoleModuleOptions = {
-	playerIndex: number;
-	viewport: ConsoleViewport;
-	moduleId: string;
-	canonicalization?: CanonicalizationType;
 };
 
 export type ConsoleResourceDescriptor = {

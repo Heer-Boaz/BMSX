@@ -2,7 +2,6 @@ import type {
 	ConsoleLuaHoverResult,
 	ConsoleResourceDescriptor,
 } from '../types';
-import type { BmsxCartMetadata } from '../../rompack/rompack';
 import type { ConsoleFontVariant } from '../font';
 import type { ConsoleEditorFont } from '../editor_font';
 import type { TextField, ScrollbarKind, MessageState, IdeThemeVariant } from './types';
@@ -126,7 +125,6 @@ export interface IdeState {
 	redoStack: EditorSnapshot[];
 	lastHistoryKey: string;
 	lastHistoryTimestamp: number;
-	metadata: BmsxCartMetadata;
 	fontVariant: ConsoleFontVariant;
 	loadSourceFn: () => string;
 	saveSourceFn: (source: string) => Promise<void>;
@@ -321,7 +319,6 @@ export const ide_state: IdeState = {
 	redoStack: [],
 	lastHistoryKey: null,
 	lastHistoryTimestamp: 0,
-	metadata: undefined!,
 	fontVariant: undefined!,
 	loadSourceFn: undefined!,
 	saveSourceFn: undefined!,
