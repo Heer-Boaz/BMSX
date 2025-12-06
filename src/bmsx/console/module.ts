@@ -1,22 +1,29 @@
 import type { World, WorldModule } from '../core/world';
-import { BmsxCartSystem } from './console_systems';
+import { BmsxCartDrawSystem, BmsxCartUpdateSystem } from './console_systems';
 import { TickGroup } from '../ecs/ecsystem';
+import { CONSOLE_DRAW_SYSTEM_ID, CONSOLE_UPDATE_SYSTEM_ID } from './system_ids';
 
 export function createBmsxConsoleModule(): WorldModule {
-	const frameSystemId = 'bmsxConsole.frame';
 	return {
 		id: 'bmsx',
 		ecs: {
 			systems: [
 				{
-					id: frameSystemId,
+					id: CONSOLE_UPDATE_SYSTEM_ID,
+					group: TickGroup.ModeResolution,
+					defaultPriority: 90,
+					create: (priority: number) => new BmsxCartUpdateSystem(priority),
+				},
+				{
+					id: CONSOLE_DRAW_SYSTEM_ID,
 					group: TickGroup.Presentation,
 					defaultPriority: 90,
-					create: (priority: number) => new BmsxCartSystem(priority),
+					create: (priority: number) => new BmsxCartDrawSystem(priority),
 				},
 			],
 			nodes: [
-				{ ref: frameSystemId },
+				{ ref: CONSOLE_UPDATE_SYSTEM_ID },
+				{ ref: CONSOLE_DRAW_SYSTEM_ID },
 			],
 		},
 		onBoot(_world: World) {

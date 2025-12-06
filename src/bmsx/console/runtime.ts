@@ -643,12 +643,12 @@ export class BmsxConsoleRuntime extends Service {
 		this.consoleMode.draw(this.overlayRenderBackend, this.overlayRenderBackend.viewportSize);
 	}
 
-	private async advanceConsoleMode(deltaSeconds: number): Promise<void> {
+	private advanceConsoleMode(deltaSeconds: number): void {
 		if (!this.consoleMode.isActive) {
 			return;
 		}
 		this.consoleMode.update(deltaSeconds);
-		await this.consoleMode.handleInput(deltaSeconds);
+		void this.consoleMode.handleInput(deltaSeconds);
 	}
 
 	public set jsStackEnabled(enabled: boolean) {
@@ -787,32 +787,50 @@ export class BmsxConsoleRuntime extends Service {
 		Input.instance.setDebugHotkeysPaused(consoleActive || editorActive);
 	}
 
-	public runFrame(): void {
+	public tickUpdate(): void {
 		if (!this.tickEnabled) {
 			return;
 		}
-		let state: ConsoleFrameState = null;
+		if (this.currentFrameState !== null) {
+			return;
+		}
+		this.runUpdateTick();
+	}
+
+	public tickDraw(): void {
+		if (!this.tickEnabled) {
+			return;
+		}
+		if (!this.currentFrameState) {
+			return;
+		}
+		try {
+			this.runDrawPhase();
+		} finally {
+			this.abandonFrameState();
+		}
+	}
+
+	private runUpdateTick(): void {
 		let fault: unknown = null;
 		try {
-			state = this.beginFrameState();
-			this.runConsolePhase(state).then(() => {
-				this.runEditorPhase(state);
-				this.runUpdatePhase(state);
-				this.runDrawPhase();
-			});
+			const state = this.beginFrameState();
+			this.runConsolePhase(state);
+			this.runEditorPhase(state);
+			this.runUpdatePhase(state);
 		} catch (error) {
 			fault = error;
 			this.handleLuaError(error);
 		} finally {
-			if (fault !== null || this.currentFrameState !== null) {
+			if (fault !== null && this.currentFrameState !== null) {
 				this.abandonFrameState();
 			}
 		}
 	}
 
-	private async runConsolePhase(state: ConsoleFrameState): Promise<void> {
+	private runConsolePhase(state: ConsoleFrameState): void {
 		this.pollConsoleHotkeys();
-		await this.advanceConsoleMode(state.deltaSeconds);
+		this.advanceConsoleMode(state.deltaSeconds);
 		state.consoleEvaluated = true;
 		state.consoleActive = this.consoleMode.isActive;
 		this.updateFrameHaltingState(state);

@@ -1,6 +1,7 @@
 import { $ } from "../game";
 import { TickGroup } from "../../ecs/ecsystem";
 import { DefaultECSPipelineRegistry, type NodeSpec } from "../../ecs/pipeline";
+import { CONSOLE_DRAW_SYSTEM_ID, CONSOLE_UPDATE_SYSTEM_ID } from "../../console/system_ids";
 
 export type ConsoleOverlaySpecOptions = {
 	includeConsole?: boolean;
@@ -11,39 +12,6 @@ export type ConsoleOverlaySpecOptions = {
 
 type ModeSpecOptions = Omit<ConsoleOverlaySpecOptions, 'includeConsole' | 'includeEditor'>;
 
-const CONSOLE_FRAME_REF = 'bmsxConsole.frame';
-const CONSOLE_FRAME_NODE: NodeSpec = { ref: CONSOLE_FRAME_REF };
-
-const cloneNode = (node: NodeSpec): NodeSpec => ({
-	ref: node.ref,
-	group: node.group,
-	priority: node.priority,
-	when: node.when,
-});
-
-const pushNode = (target: NodeSpec[], node: NodeSpec): void => {
-	target.push(cloneNode(node));
-};
-
-const pushNodes = (target: NodeSpec[], nodes: NodeSpec[]): void => {
-	for (const node of nodes) {
-		pushNode(target, node);
-	}
-};
-
-const collectPresentationNodes = (includeConsoleFrame: boolean, includeConsoleDraw?: boolean): NodeSpec[] => {
-	const spec = $.get_gameplay_pipeline_spec();
-	const nodes: NodeSpec[] = [];
-	for (const node of spec) {
-		const desc = DefaultECSPipelineRegistry.get(node.ref)!;
-		const group = node.group ?? desc.group;
-		if (group !== TickGroup.Presentation) continue;
-		if (node.ref === CONSOLE_FRAME_REF && (!includeConsoleFrame || includeConsoleDraw === false)) continue;
-		nodes.push(cloneNode(node));
-	}
-	return nodes;
-};
-
 /**
  * Pipeline variant tailored for console/editor overlays.
  * Keeps rendering systems active while omitting gameplay/physics updates.
@@ -53,16 +21,38 @@ export function buildConsoleOverlaySpec(options: ConsoleOverlaySpecOptions): Nod
 	const includeEditor = options.includeEditor === true;
 	const includeConsoleFrame = includeConsole || includeEditor;
 	const includePresentation = options.includePresentation !== false || includeConsoleFrame;
+	const includeConsoleDraw = options.includeConsoleDraw !== false && includeConsoleFrame;
 	const nodes: NodeSpec[] = [];
-	if (includePresentation) {
-		const presentationNodes = collectPresentationNodes(includeConsoleFrame, options.includeConsoleDraw);
-		const hasConsoleFrame = presentationNodes.some(node => node.ref === CONSOLE_FRAME_REF);
-		if (includeConsoleFrame && options.includeConsoleDraw !== false && !hasConsoleFrame) {
-			pushNode(presentationNodes, CONSOLE_FRAME_NODE);
+	if (includeConsoleFrame) {
+		nodes.push({ ref: CONSOLE_UPDATE_SYSTEM_ID });
+	}
+	if (!includePresentation) {
+		if (includeConsoleDraw) {
+			nodes.push({ ref: CONSOLE_DRAW_SYSTEM_ID });
 		}
-		pushNodes(nodes, presentationNodes);
-	} else if (includeConsoleFrame && options.includeConsoleDraw !== false) {
-		pushNode(nodes, CONSOLE_FRAME_NODE);
+		return nodes;
+	}
+	const spec = $.get_gameplay_pipeline_spec();
+	for (let index = 0; index < spec.length; index += 1) {
+		const node = spec[index];
+		const desc = DefaultECSPipelineRegistry.get(node.ref)!;
+		const group = node.group ?? desc.group;
+		if (group !== TickGroup.Presentation) {
+			continue;
+		}
+		if (!includeConsoleDraw && node.ref === CONSOLE_DRAW_SYSTEM_ID) {
+			continue;
+		}
+		nodes.push({
+			ref: node.ref,
+			group: node.group,
+			priority: node.priority,
+			when: node.when,
+		});
+	}
+	const hasConsoleFrame = nodes.some(node => node.ref === CONSOLE_DRAW_SYSTEM_ID);
+	if (includeConsoleDraw && !hasConsoleFrame) {
+		nodes.push({ ref: CONSOLE_DRAW_SYSTEM_ID });
 	}
 	return nodes;
 }
@@ -80,5 +70,5 @@ export function consoleEditorSpec(options?: ModeSpecOptions): NodeSpec[] {
 }
 
 export function presentationOnlySpec(): NodeSpec[] {
-	return collectPresentationNodes(false);
+	return buildConsoleOverlaySpec({ includePresentation: true, includeConsoleDraw: false });
 }
