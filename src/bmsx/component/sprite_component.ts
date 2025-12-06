@@ -125,8 +125,8 @@ export class SpriteComponent extends Component {
 		const token = `${id}|${flipH ? 1 : 0}|${flipV ? 1 : 0}`;
 		if (this.colliderSyncToken === token) return;
 		if (id === 'none') {
-			collider.setLocalArea(null);
-			collider.setLocalPolygons(null);
+			collider.set_local_area(null);
+			collider.set_local_poly(null);
 			collider.syncToken = token;
 			this.colliderSyncToken = token;
 			return;
@@ -144,9 +144,9 @@ export class SpriteComponent extends Component {
 		}
 
 		const box = imgmeta['boundingbox'] as BoundingBoxPrecalc;
-		if (box) collider.setLocalArea(selectBoundingBox(flipH, flipV, box)); else collider.setLocalArea(null);
+		if (box) collider.set_local_area(selectBoundingBox(flipH, flipV, box)); else collider.set_local_area(null);
 		const polys = imgmeta['hitpolygons'] as HitPolygonsPrecalc;
-		if (polys) collider.setLocalPolygons(selectConcavePolygon(flipH, flipV, polys)); else collider.setLocalPolygons(null);
+		if (polys) collider.set_local_poly(selectConcavePolygon(flipH, flipV, polys)); else collider.set_local_poly(null);
 		collider.syncToken = token;
 		this.colliderSyncToken = token;
 	}

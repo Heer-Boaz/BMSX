@@ -235,7 +235,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 					states: {
 						_ascending: {
 							entering_state(this: Fighter) {
-								this.play_timeline(TIMELINE_IDS.jumpAscending);
+								this.timelines.play(TIMELINE_IDS.jumpAscending);
 							},
 							tick(this: Fighter, state: State) {
 								this.jumpAscendingTick(state);
@@ -250,7 +250,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 						},
 						descending: {
 							entering_state(this: Fighter) {
-								this.play_timeline(TIMELINE_IDS.jumpDescending);
+								this.timelines.play(TIMELINE_IDS.jumpDescending);
 							},
 							tick(this: Fighter, state: State) {
 								this.jumpDescendingTick(state);
@@ -303,7 +303,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 				this.abilitysystem.add_tags('state.combat_disabled');
 				this.abilitysystem.remove_tags('state.attacking');
 				this.enterStoerheidsdans(state);
-				this.play_timeline(TIMELINE_IDS.stoerheidsdans);
+				this.timelines.play(TIMELINE_IDS.stoerheidsdans);
 			},
 			exiting_state(this: Fighter) {
 				this.abilitysystem.remove_tags('state.combat_disabled');

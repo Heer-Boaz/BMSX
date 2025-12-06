@@ -53,9 +53,9 @@ export class SpriteObject extends WorldObject {
 	private updateHitareas() {
 		const id = this.imgid;
 		if (id === 'none') {
-			const collider = this.getOrCreateCollider();
-			collider.setLocalArea(null);
-			collider.setLocalPolygons(null);
+			const collider = this.collider;
+			collider.set_local_area(null);
+			collider.set_local_poly(null);
 			return;
 		}
 		const entry = $.rompack.img[id];
@@ -66,17 +66,17 @@ export class SpriteObject extends WorldObject {
 		if (!imgmeta) {
 			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' is missing metadata.`);
 		}
-		const col = this.getOrCreateCollider();
+		const col = this.collider;
 		const boundingbox = imgmeta['boundingbox'];
 		if (boundingbox) {
-			col.setLocalArea(SpriteObject.selectBoundingBox(this.flip_h, this.flip_v, boundingbox));
+			col.set_local_area(SpriteObject.selectBoundingBox(this.flip_h, this.flip_v, boundingbox));
 		}
 		const polygonsMeta = imgmeta['hitpolygons'];
 		if (polygonsMeta) {
-			col.setLocalPolygons(SpriteObject.selectConcavePolygon(this.flip_h, this.flip_v, polygonsMeta));
+			col.set_local_poly(SpriteObject.selectConcavePolygon(this.flip_h, this.flip_v, polygonsMeta));
 		}
 		else {
-			col.setLocalPolygons(null);
+			col.set_local_poly(null);
 		}
 	}
 

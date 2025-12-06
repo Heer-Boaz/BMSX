@@ -19,7 +19,6 @@ import type { SpawnReason } from '../world';
 import { ActionEffectComponent } from '../../component/actioneffectcomponent';
 import { TimelineComponent, } from '../../component/timeline_component';
 
-const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
 const DEFAULT_POSITION_VALUES: [number, number, number] = [0, 0, 0];
 const DEFAULT_SIZE_VALUES: [number, number, number] = [0, 0, 0];
@@ -533,8 +532,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	/**
 	 * Indicates whether the object is hittable. Delegates to ColliderComponent when present.
 	 */
-	public get hittable(): boolean { return this.collider?.hittable ?? DEFAULT_HITTABLE; }
-	public set hittable(v: boolean) { (this.getOrCreateCollider()).hittable = v; }
+	public get hittable(): boolean { return this.collider?.hittable ?? false; }
+	public set hittable(v: boolean) { this.collider.hittable = v; }
 	/**
 	 * Indicates whether the world object should be rendered or not.
 	 */
@@ -683,15 +682,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 		const rc = new CustomVisualComponent({ parent_or_id: this });
 		this.add_component(rc);
 		return rc;
-	}
-
-	/** Ensure a ColliderComponent exists on this object and return it. */
-	public getOrCreateCollider(): Collider2DComponent {
-		const existing = this.get_first_component(Collider2DComponent);
-		if (existing) return existing;
-		const c = new Collider2DComponent({ parent_or_id: this, id_local: 'primary' });
-		this.add_component(c);
-		return c;
 	}
 
 	/**

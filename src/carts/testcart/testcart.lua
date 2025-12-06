@@ -47,12 +47,14 @@ local function track_plain_input()
 end
 
 local function setup_hero_collision(owner)
-	local collider = owner:getOrCreateCollider()
-	collider:setLocalArea({
-		start = { x = 0, y = 0 },
-		['end'] = { x = owner.sx, y = owner.sy },
+	local collider = owner:collider
+	collider:set_local_area({
+		left = 0,
+		top = 0,
+		right = owner.sx,
+		bottom = owner.sy,
 	})
-	collider.generateOverlapEvents = true
+	collider.generateoverlapevents = true
 	collider.layer = collision_layers.hero
 	collider.mask = collision_layers.target
 	owner.overlapping = false
@@ -283,11 +285,11 @@ function collision_target:onspawn(spawn_pos)
 	self.x = spawn_pos.x
 	self.y = spawn_pos.y
 	self.z = spawn_pos.z
-	local collider = self:getOrCreateCollider()
-	collider:setLocalArea({
+	local collider = self:collider
+	collider:set_local_area({
 		left = 0, top = 0, right = self.sx, bottom = self.sy,
 	})
-	collider.generateOverlapEvents = true
+	collider.generateoverlapevents = true
 	collider.layer = collision_layers.target
 	collider.mask = collision_layers.hero
 	self.events:on({

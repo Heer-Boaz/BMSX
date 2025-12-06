@@ -1,4 +1,4 @@
-import { $, assign_fsm, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction, type EventPayload, Component, type ComponentAttachOptions, type WorldObjectEventPayloads, type TimelineFrameEventPayload, type TimelineEndEventPayload, attach_components } from 'bmsx';
+import { $, assign_fsm, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction, type EventPayload, Component, type ComponentAttachOptions, type WorldObjectEventPayloads, type TimelineFrameEventPayload, type TimelineEndEventPayload, attach_components, Collider2DComponent } from 'bmsx';
 import { create_gameevent, type GameEvent } from 'bmsx/core/game_event';
 import { FIGHTER_TIMELINES } from './fighter_fsms';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
@@ -37,7 +37,7 @@ function getDamage(attackType: AttackType): number {
 }
 
 @insavegame
-@attach_components(ProhibitLeavingScreenComponent)
+@attach_components(ProhibitLeavingScreenComponent, Collider2DComponent)
 @assign_fsm('hitanimation')
 export abstract class Fighter extends SpriteObject {
 	public static readonly ATTACK_DURATION = 15;
@@ -86,7 +86,7 @@ export abstract class Fighter extends SpriteObject {
 
 	protected play_animation_timeline(id: string): void {
 		this._activeAnimationTimeline = id;
-		this.play_timeline(id);
+		this.timelines.play(id);
 	}
 
 	protected handle_animation_timeline_end(id: string): void {
@@ -98,8 +98,8 @@ export abstract class Fighter extends SpriteObject {
 	public skip_animation_to_end(): void {
 		const id = this._activeAnimationTimeline;
 		if (!id) return;
-		const timeline = this.get_timeline(id)!;
-		this.seek_timeline(id, Math.max(0, timeline.length - 1));
+		const timeline = this.timelines.get(id)!;
+		this.timelines.seek(id, Math.max(0, timeline.length - 1));
 	}
 
 	@build_fsm('hitanimation')
@@ -121,7 +121,7 @@ export abstract class Fighter extends SpriteObject {
 				wel_au: {
 					entering_state(this: Fighter) {
 						this.sc.pause_all_except('hitanimation');
-						this.play_timeline('fighter.hitanimation');
+						this.timelines.play('fighter.hitanimation');
 					},
 					on: {
 						['timeline.frame.fighter.hitanimation']: {
@@ -160,9 +160,9 @@ export abstract class Fighter extends SpriteObject {
 	constructor(opts: RevivableObjectArgs & { id: Identifier; fsm_id?: Identifier; facing?: 'left' | 'right'; playerIndex?: number }) {
 		super(opts);
 		for (const definition of FIGHTER_TIMELINES) {
-			this.define_timeline(definition);
+			this.timelines.define(definition);
 		}
-		this.getOrCreateCollider().setLocalArea(new_area(0, 0, 0, 0)); // Default; updated via sprite metadata when set
+		this.collider.set_local_area(new_area(0, 0, 0, 0)); // Default; updated via sprite metadata when set
 		this.facing = opts.facing ?? 'right';
 		this.currentHitMarker = null;
 		this.player_index = opts.playerIndex ?? 1;

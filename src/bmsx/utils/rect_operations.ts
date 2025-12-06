@@ -1,5 +1,13 @@
 import type { RectBounds, vec2, vec3 } from '../rompack/rompack';
 
+export function is_area(v: unknown): v is RectBounds {
+	return !!v && typeof v === 'object'
+		&& 'left' in v
+		&& 'top' in v
+		&& 'right' in v
+		&& 'bottom' in v
+}
+
 /**
  * Moves an area by adding the specified vector to its start and end points.
  * @param a - The area to be moved.

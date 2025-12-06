@@ -5,7 +5,7 @@ import { new_vec2, set_inplace_vec2 } from '../utils/vector_operations';
 import { vec2, type RectBounds, type Polygon } from '../rompack/rompack';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import { Component, componenttags_preprocessing, type ComponentAttachOptions } from "./basecomponent";
-import { new_area } from '../utils/rect_operations';
+import { is_area, new_area } from '../utils/rect_operations';
 
 /**
  * ColliderComponent holds collision shapes for a WorldObject.
@@ -15,7 +15,7 @@ import { new_area } from '../utils/rect_operations';
  * - Custom usage: call setters to provide authored shapes.
  */
 @insavegame
-export class Collider2DComponent extends Component<WorldObject> {
+export class Collider2DComponent extends Component<any> {
 	static { this.autoRegister(); }
 	/** Whether this object should participate in collision tests. */
 	public hittable: boolean = true;
@@ -64,6 +64,7 @@ export class Collider2DComponent extends Component<WorldObject> {
 		generateoverlapevents?: boolean;
 		spaceevents?: 'current' | 'ui' | 'both' | 'all';
 	}) {
+		opts.id_local = opts.id_local ?? 'collider2d';
 		super(opts);
 		this.hittable = opts.hittable;
 		this.layer = opts.layer;
@@ -105,11 +106,17 @@ export class Collider2DComponent extends Component<WorldObject> {
 	public get localCircle(): { x: number; y: number; r: number } { return this._localCircle; }
 
 	/** Set local rectangle bounds (replaces previous). */
-	public setLocalArea(a: RectBounds): void { this._localArea = a; }
+	public set_local_area(a: RectBounds): void {
+		if (!is_area(a)) throw new Error(`Collider2DComponent.set_local_area: invalid area object`);
+		this._localArea = a;
+	}
 	/** Set local polygons (replaces previous). */
-	public setLocalPolygons(polys: Polygon[]): void { this._localPolys = polys; }
+	public set_local_poly(polys: Polygon[]): void {
+		if (!Array.isArray(polys)) throw new Error(`Collider2DComponent.set_local_poly: invalid polygons array`);
+		this._localPolys = polys;
+	}
 	/** Set local circle (replaces previous). */
-	public setLocalCircle(c: { x: number; y: number; r: number }): void { this._localCircle = c; }
+	public set_local_circle(c: { x: number; y: number; r: number }): void { this._localCircle = c; }
 
 	/** Returns world-space circle, if any. */
 	public get worldCircle(): { x: number; y: number; r: number } {

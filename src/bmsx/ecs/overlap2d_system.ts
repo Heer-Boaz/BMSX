@@ -81,8 +81,6 @@ class Collision2DService extends Service {
 		return [area.left, area.top, area.right, area.top, area.right, area.bottom, area.left, area.bottom] as number[];
 	}
 
-	private isArea(v: unknown): v is RectBounds { return !!v && typeof v === 'object' && 'start' in (v as Record<string, unknown>) && 'end' in (v as Record<string, unknown>); }
-
 	private resolveCollider(target: ColliderTarget): ColliderHandle {
 		if (target instanceof Collider2DComponent) {
 			const owner = target.parent;
@@ -90,7 +88,7 @@ class Collision2DService extends Service {
 			return { owner, collider: target };
 		}
 		const col = target.get_first_component(Collider2DComponent);
-		if (!col) return null;
+		// if (!col) return null;
 		return { owner: target, collider: col };
 	}
 
@@ -101,14 +99,14 @@ class Collision2DService extends Service {
 		const { collider: a } = aHandle;
 		if (!a.hittable) return false;
 		if (!a.enabled) return false;
-		if (this.isArea(other)) {
-			if (!this.detectAABBAreas(a.worldArea, other)) return false;
+		if (!(other as ColliderTarget).id) {
+			if (!this.detectAABBAreas(a.worldArea, other as RectBounds)) return false;
 			const aShape = this.getShape(a);
-			const bShape: Shape2D = { kind: 'poly', polys: [this.areaToPoly(other)] };
+			const bShape: Shape2D = { kind: 'poly', polys: [this.areaToPoly(other as RectBounds)] };
 			return this.shapeIntersects(aShape, bShape);
 		}
-		const bHandle = this.resolveCollider(other);
-		if (!bHandle) return false;
+		const bHandle = this.resolveCollider(other as ColliderTarget);
+		// if (!bHandle) return false;
 		const { collider: b } = bHandle;
 		if (!b.hittable || !b.enabled) return false;
 		if (!this.detectAABBAreas(a.worldArea, b.worldArea)) return false;
