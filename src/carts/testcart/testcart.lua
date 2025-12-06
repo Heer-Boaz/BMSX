@@ -364,4 +364,5 @@ function draw()
 	local hero_instance = world_object(hero_instance_id)
 	draw_hero(hero_instance)
 	draw_hud(hero_instance)
+	extra()
 end

@@ -33,7 +33,7 @@ export interface RomPackerOptions {
 	extraLuaRoots: string[];
 }
 
-export type resourcetype = asset_type | 'rommanifest';
+export type resourcetype = asset_type;
 export type collisiontype = 'concave' | 'convex' | 'aabb';
 export type datatype = 'json' | 'yaml' | 'bin';
 
@@ -104,10 +104,6 @@ export interface RomLabelResource extends BaseResource<'romlabel'> {
 	id?: number;
 }
 
-export interface RomManifestResource extends BaseResource<'rommanifest'> {
-	id?: number;
-}
-
 export type Resource =
 	| ImageResource
 	| AtlasResource
@@ -117,5 +113,4 @@ export type Resource =
 	| CodeResource
 	| ModelResource
 	| LuaResource
-	| RomLabelResource
-	| RomManifestResource;
+	| RomLabelResource;

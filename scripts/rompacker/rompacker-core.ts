@@ -195,7 +195,7 @@ export async function getRomManifest(dirPath: string): Promise<RomManifest> {
 		throw new Error(`More than one rommanifest found in ${dirPath}.`);
 	}
 	else if (files.length === 1) {
-		const res = await readFile(files[0]).toString();
+		const res = (await readFile(files[0])).toString();
 		// Read and return the rommanifest file
 		try {
 			return JSON.parse(res) as RomManifest;
@@ -882,9 +882,6 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 			case 'romlabel':
 				result.push({ filepath, name, ext, type, id: undefined, sourcePath });
 				break;
-			case 'rommanifest':
-				result.push({ filepath, name, ext, type, id: undefined, sourcePath });
-				break;
 			case 'code':
 				result.push({ filepath, name, ext, type, id: 1, sourcePath });
 				codeFileCount += 1;
@@ -1150,7 +1147,6 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 			case 'aem':
 			case 'model':
 			case 'romlabel':
-			case 'rommanifest':
 			case 'atlas':
 				return {
 					...meta,
@@ -1343,9 +1339,6 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				});
 				break;
 			}
-			case 'rommanifest':
-				romAssets.push({ resid, type, buffer, source_path: sourcePath });
-				break;
 			case 'data':
 			case 'aem':
 				// Encode the JSON-data via the binencoder
@@ -1445,8 +1438,6 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 			}
 			case 'romlabel':
 				romAssets.push({ resid, type, buffer, source_path: sourcePath });
-				break;
-			case 'rommanifest':
 				break;
 			default:
 				// Skip unknown resource types without failing
@@ -1592,7 +1583,7 @@ export async function finalizeRompack(
 	assetList: RomAsset[],
 	rom_name: string,
 	debug: boolean,
-	options: { projectRootPath?: string, status?: ProgressNote } = {}
+	options: { projectRootPath?: string, status?: ProgressNote, manifest?: RomManifest } = {}
 ) {
 	const outfileBasename = `${rom_name}${debug ? '.debug' : ''}.rom`;
 	const distPath = `./dist/${outfileBasename}`;
@@ -1657,6 +1648,7 @@ export async function finalizeRompack(
 		const metadataPayload: RomAssetListPayload = {
 			assets: assetList,
 			projectRootPath: options.projectRootPath,
+			manifest: options.manifest,
 		};
 		const metadataBuffer = Buffer.from(encodeBinary(metadataPayload));
 		const globalMetadataOffset = offset;

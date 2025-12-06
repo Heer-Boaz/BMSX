@@ -15,15 +15,16 @@ export interface RomPack {
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	project_root_path: string; // Workspace-relative cart root path for resolving filesystem writes.
 	canonicalization?: CanonicalizationType; // Canonicalization type for Lua identifiers in this ROM pack.
-	manifest?: CartManifest; // The manifest of the ROM pack, if present.
+	manifest?: RomManifest; // The manifest of the ROM pack, if present.
 }
 
 export type RomAssetListPayload = {
 	assets: RomAsset[];
 	projectRootPath?: string;
+	manifest?: RomManifest;
 };
 
-export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'rommanifest';
+export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua';
 export type asset_id = string;
 
 /**
@@ -80,12 +81,7 @@ export type ModelId = asset_id;
 export type DataId = asset_id;
 export type LuaId = asset_id;
 
-export interface RomManifest {
-	title?: string;
-	short_name?: string;
-	rom_name?: string;
-	cart?: CartManifest; // cart-related configuration, mainly Lua entry points. Note that this is optional as not all rompacks are Lua-based carts.
-}
+export type RomManifest = CartManifest;
 
 /**
  * Arguments passed from the bootloader to the game constructor.

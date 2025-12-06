@@ -889,7 +889,7 @@ async function main() {
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
 			await progress.taskCompleted();
 
-			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, debug, { projectRootPath, status: message => progress.setDetail(message) }));
+			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, debug, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message) }));
 			await progress.taskCompleted();
 		}
 

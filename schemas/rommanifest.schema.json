@@ -1,0 +1,152 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://bmsx.dev/schemas/cart-manifest.schema.json",
+	"title": "BMSX Cart Manifest",
+	"description": "Schema describing cartridge manifest files (manifest.rommanifest) consumed by the BMSX engine.",
+	"type": "object",
+	"properties": {
+		"title": {
+			"type": "string",
+			"description": "Human-readable title of the cartridge."
+		},
+		"short_name": {
+			"type": "string",
+			"description": "Short display name of the cartridge."
+		},
+		"rom_name": {
+			"type": "string",
+			"description": "ROM filename base (without extension)."
+		},
+		"console": {
+			"$ref": "#/definitions/consoleConfig"
+		},
+		"input": {
+			"$ref": "#/definitions/inputConfig"
+		},
+		"lua": {
+			"$ref": "#/definitions/luaConfig"
+		}
+	},
+	"required": [
+		"lua"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"viewport": {
+			"type": "object",
+			"description": "Logical viewport size for the cartridge.",
+			"properties": {
+				"width": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"height": {
+					"type": "integer",
+					"minimum": 1
+				}
+			},
+			"required": [
+				"width",
+				"height"
+			],
+			"additionalProperties": false
+		},
+		"canonicalization": {
+			"type": "string",
+			"enum": [
+				"none",
+				"upper",
+				"lower"
+			],
+			"description": "Canonicalization mode for Lua identifiers."
+		},
+		"consoleConfig": {
+			"type": "object",
+			"description": "Console configuration for the cartridge.",
+			"properties": {
+				"viewport": {
+					"$ref": "#/definitions/viewport"
+				},
+				"canonicalization": {
+					"$ref": "#/definitions/canonicalization"
+				},
+				"namespace": {
+					"type": "string",
+					"description": "Namespace used for this cart (e.g. for Lua globals)."
+				}
+			},
+			"required": [
+				"namespace"
+			],
+			"additionalProperties": false
+		},
+		"inputMap": {
+			"type": "object",
+			"description": "Input mapping configuration for a single player slot.",
+			"properties": {
+				"keyboard": {
+					"type": "object",
+					"description": "Keyboard mapping for console controls.",
+					"additionalProperties": {
+						"$ref": "#/definitions/stringArray"
+					}
+				},
+				"gamepad": {
+					"type": "object",
+					"description": "Gamepad mapping for console controls.",
+					"additionalProperties": {
+						"$ref": "#/definitions/stringArray"
+					}
+				},
+				"pointer": {
+					"type": "object",
+					"description": "Pointer / mouse / touch mapping for console controls.",
+					"additionalProperties": true
+				}
+			},
+			"additionalProperties": true
+		},
+		"inputConfig": {
+			"type": "object",
+			"description": "Per-player input configuration.",
+			"properties": {
+				"1": {
+					"$ref": "#/definitions/inputMap"
+				},
+				"2": {
+					"$ref": "#/definitions/inputMap"
+				},
+				"3": {
+					"$ref": "#/definitions/inputMap"
+				},
+				"4": {
+					"$ref": "#/definitions/inputMap"
+				}
+			},
+			"required": [
+				"1"
+			],
+			"additionalProperties": false
+		},
+		"luaConfig": {
+			"type": "object",
+			"description": "Lua entrypoint configuration for the cartridge.",
+			"properties": {
+				"entry_asset_id": {
+					"type": "string",
+					"description": "Asset ID of the Lua source that acts as the main entry for the cart."
+				}
+			},
+			"required": [
+				"entry_asset_id"
+			],
+			"additionalProperties": false
+		},
+		"stringArray": {
+			"type": "array",
+			"items": {
+				"type": "string"
+			}
+		}
+	}
+}

@@ -1,36 +1,28 @@
-{
-	"title": "BMSX Test Cartridge",
-	"short_name": "Test Cart",
-	"rom_name": "testcart",
-	"console": {
-		"viewport": { "width": 256, "height": 212 },
-		"namespace": "testcart"
-	},
-	"input": {
-		"1": {
-			"keyboard": {
-				"console_left": ["ArrowLeft"],
-				"console_right": ["ArrowRight"],
-				"console_up": ["ArrowUp"],
-				"console_down": ["ArrowDown"],
-				"console_b": ["KeyZ", "KeyC"],
-				"console_a": ["KeyX", "KeyV"],
-				"console_x": ["KeyA"],
-				"console_y": ["ShiftLeft"]
-			},
-			"gamepad": {
-				"console_left": ["left"],
-				"console_right": ["right"],
-				"console_up": ["up"],
-				"console_down": ["down"],
-				"console_b": ["b"],
-				"console_a": ["a"],
-				"console_x": ["x"],
-				"console_y": ["y"]
-			}
-		}
-	},
-	"lua": {
-		"entry_asset_id": "testcart"
-	}
-}
+title: BMSX Test Cartridge
+short_name: Test Cart
+rom_name: testcart
+console:
+  viewport: {width: 256, height: 212}
+  namespace: testcart
+input:
+  "1":
+    keyboard:
+      console_left: [ArrowLeft]
+      console_right: [ArrowRight]
+      console_up: [ArrowUp]
+      console_down: [ArrowDown]
+      console_b: [KeyZ, KeyC]
+      console_a: [KeyX, KeyV]
+      console_x: [KeyA]
+      console_y: [ShiftLeft]
+    gamepad:
+      console_left: [left]
+      console_right: [right]
+      console_up: [up]
+      console_down: [down]
+      console_b: [b]
+      console_a: [a]
+      console_x: [x]
+      console_y: [y]
+lua:
+  entry_asset_id: testcart

@@ -1,4 +1,4 @@
-import { type Area, type AudioMeta, type GLTFMaterial, type GLTFModel, type ImgMeta, type Polygon, type RomAsset, type RomAssetListPayload, type RomImgAsset, type RomLuaAsset, type RomMeta, type RomPack, type TextureSource, type color_arr } from '../../src/bmsx/rompack/rompack';
+import { type Area, type AudioMeta, type GLTFMaterial, type GLTFModel, type ImgMeta, type Polygon, type RomAsset, type RomAssetListPayload, type RomImgAsset, type RomLuaAsset, type RomManifest, type RomMeta, type RomPack, type TextureSource, type color_arr } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../../src/bmsx/serializer/binencoder';
 
 export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
@@ -70,11 +70,12 @@ export async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer):
 	return { zipped_rom: blob_buffer, romlabel: undefined };
 }
 
-export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsset[]; projectRootPath: string }> {
+export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsset[]; projectRootPath: string; manifest: RomManifest }> {
 	const sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
 	const decoded = decodeBinary(sliced) as RomAssetListPayload;
 	const assetList = decoded.assets;
 	const projectRootPath = decoded.projectRootPath ?? null;
+	const manifest = decoded.manifest as RomManifest;
 
 	function flipPolygons(polys: Polygon[], flipH: boolean, flipV: boolean, imgW: number, imgH: number): Polygon[] {
 		return polys.map(poly => {
@@ -208,17 +209,17 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 			}
 		}
 	}
-	return { assets: assetList, projectRootPath };
+	return { assets: assetList, projectRootPath, manifest };
 }
 
 export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
-	const { assets, projectRootPath } = await loadAssetList(rom);
+	const { assets, projectRootPath, manifest } = await loadAssetList(rom);
 	const cart: RomPack['cart'] = {
 		lua: {},
 		chunk2lua: {},
 		source2lua: {},
-		entry: null,
-		namespace: null, // Added missing namespace property
+		entry: manifest.lua.entry_asset_id,
+		namespace: manifest.console.namespace,
 		new_game: null,
 		init: null,
 		update: null,
@@ -235,11 +236,10 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 	audioevents: {},
 	cart,
 	project_root_path: projectRootPath,
+	manifest,
 };
 
 await Promise.all(assets.map(a => load(rom, a, result, opts)));
-	result.cart.entry = result.manifest.lua.entry_asset_id;
-	result.cart.namespace = result.manifest.console.namespace;
 return Promise.resolve<RomPack>(result);
 }
 
@@ -570,18 +570,6 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 			break;
 		}
 		case 'romlabel':
-		case 'rommanifest':
-			if (res.type === 'rommanifest') {
-				try {
-					const slice = rom.slice(res.start, res.end);
-					const text = new TextDecoder('utf-8').decode(slice);
-					const parsed = JSON.parse(text);
-					romResult.manifest = parsed;
-					romResult.data[res.resid] = parsed;
-				} catch (err: any) {
-					throw new Error(`Failed to load 'rommanifest' from rom: ${err.message}.`);
-				}
-			}
 			break;
 		default:
 			throw new Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack!`);

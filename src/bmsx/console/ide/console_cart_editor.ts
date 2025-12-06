@@ -3696,8 +3696,7 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 			}
 			break;
 		}
-		case 'data':
-		case 'rommanifest': {
+		case 'data': {
 			const dataEntry = data?.[descriptor.asset_id];
 			if (dataEntry !== undefined) {
 				const json = safeJsonStringify(dataEntry);
