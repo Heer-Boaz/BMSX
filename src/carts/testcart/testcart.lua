@@ -47,7 +47,7 @@ local function track_plain_input()
 end
 
 local function setup_hero_collision(owner)
-	local collider = owner:collider
+	local collider = owner.collider
 	collider:set_local_area({
 		left = 0,
 		top = 0,
@@ -285,7 +285,7 @@ function collision_target:onspawn(spawn_pos)
 	self.x = spawn_pos.x
 	self.y = spawn_pos.y
 	self.z = spawn_pos.z
-	local collider = self:collider
+	local collider = self.collider
 	collider:set_local_area({
 		left = 0, top = 0, right = self.sx, bottom = self.sy,
 	})
