@@ -150,7 +150,7 @@ export function collectWorkspaceOverrides(params: { cart: BmsxCartridge; project
 			considerStored(storedCanonical, cartPath, canonicalKey);
 		}
 		if (bestSource !== null) {
-			overrides.set(asset.resid, { source: bestSource, path: bestPath, cartPath, updatedAt: bestUpdatedAt });
+			overrides.set(cartPath, { source: bestSource, path: bestPath, cartPath, updatedAt: bestUpdatedAt });
 		}
 	}
 	return overrides;
@@ -315,30 +315,30 @@ export async function mergeWorkspaceOverrides(
 	serverOverrides: Map<string, WorkspaceOverrideRecord>,
 ): Promise<Map<string, WorkspaceOverrideRecord>> {
 	const merged = new Map<string, WorkspaceOverrideRecord>();
-	const assetIds = new Set<string>([
+	const overridePaths = new Set<string>([
 		...localOverrides.keys(),
 		...serverOverrides.keys(),
 	]);
 
-	function ensureLocalStorageHasLatestVersion(asset_id: string, override: WorkspaceOverrideRecord): void {
+	function ensureLocalStorageHasLatestVersion(path: string, override: WorkspaceOverrideRecord): void {
 		if (root) { // Note that root may be empty string if project root is not set (e.g. in non-debug carts)
-			persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[asset_id, override]]));
+			persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[path, override]]));
 		}
 	}
 
-	for (const asset_id of assetIds) {
-		const local = localOverrides.get(asset_id); // Get local override
-		const remote = serverOverrides.get(asset_id); // Get server override
+	for (const path of overridePaths) {
+		const local = localOverrides.get(path);
+		const remote = serverOverrides.get(path);
 		const localTime = local?.updatedAt ?? 0;
 		const remoteTime = remote?.updatedAt ?? 0;
 		if (local && (!remote || localTime >= remoteTime)) {
-			merged.set(asset_id, local);
-			ensureLocalStorageHasLatestVersion(asset_id, local);
+			merged.set(path, local);
+			ensureLocalStorageHasLatestVersion(path, local);
 			continue;
 		}
 		if (remote) {
-			merged.set(asset_id, remote);
-			ensureLocalStorageHasLatestVersion(asset_id, remote);
+			merged.set(path, remote);
+			ensureLocalStorageHasLatestVersion(path, remote);
 		}
 	}
 	return merged;
@@ -533,7 +533,12 @@ export async function applyWorkspaceOverridesToCart(params: { cart: BmsxCartridg
 		const filePath = asset.normalized_source_path;
 		const savedRecord = await fetchWorkspaceFile(filePath);
 		const canonicalRecord = savedRecord && savedRecord.contents !== asset.src
-			? { source: savedRecord.contents, path: filePath, cartPath: filePath, updatedAt: savedRecord.updatedAt }
+			? {
+				source: savedRecord.contents,
+				path: filePath,
+				cartPath: filePath,
+				updatedAt: typeof savedRecord.updatedAt === 'number' ? savedRecord.updatedAt : asset.update_timestamp ?? 0,
+			}
 			: null;
 		const overrideRecord = merged.get(filePath);
 		if (overrideRecord && overrideRecord.source === asset.src) {
@@ -543,50 +548,63 @@ export async function applyWorkspaceOverridesToCart(params: { cart: BmsxCartridg
 			}
 			continue;
 		}
-		let winner: WorkspaceOverrideRecord = overrideRecord;
-		let winnerKind: 'override' | 'canonical' = overrideRecord ? 'override' : null;
-		let winnerUpdatedAt = overrideRecord ? (overrideRecord.updatedAt ?? 0) : -1;
-		const canonicalUpdatedAt = canonicalRecord?.updatedAt ?? -1;
-		if (canonicalRecord) {
-			if (winner === null || canonicalUpdatedAt > winnerUpdatedAt) {
-				winner = canonicalRecord;
-				winnerKind = 'canonical';
-				winnerUpdatedAt = canonicalUpdatedAt;
-			}
-		}
-		if (!winner) {
-			continue;
-		}
+		const overrideUpdatedAt = overrideRecord ? (overrideRecord.updatedAt ?? -1) : -1;
+		const canonicalUpdatedAt = canonicalRecord ? (canonicalRecord.updatedAt ?? -1) : -1;
 		const romTimestamp = asset.update_timestamp ?? 0;
-		if (winnerUpdatedAt >= 0 && winnerUpdatedAt <= romTimestamp && winner.source !== asset.src) {
+
+		let winnerKind: 'override' | 'canonical' | 'rom' = 'rom';
+		let winner: WorkspaceOverrideRecord = null;
+		let winnerUpdatedAt = romTimestamp;
+
+		if (overrideRecord && overrideUpdatedAt > winnerUpdatedAt) {
+			winnerKind = 'override';
+			winner = overrideRecord;
+			winnerUpdatedAt = overrideUpdatedAt;
+		}
+		if (canonicalRecord && canonicalUpdatedAt > winnerUpdatedAt) {
+			winnerKind = 'canonical';
+			winner = canonicalRecord;
+			winnerUpdatedAt = canonicalUpdatedAt;
+		}
+
+		if (winnerKind === 'rom') {
 			if (root) {
-				const staleKey = buildWorkspaceStorageKey(root, winner.path);
-				storage.removeItem(staleKey);
+				if (overrideRecord) {
+					const dirtyKey = buildWorkspaceStorageKey(root, overrideRecord.path);
+					storage.removeItem(dirtyKey);
+				}
+				if (canonicalRecord) {
+					const canonicalKey = buildWorkspaceStorageKey(root, filePath);
+					storage.removeItem(canonicalKey);
+				}
 			}
 			continue;
 		}
+
 		if (asset.src !== winner.source) {
 			asset.src = winner.source;
 			changed.add(filePath);
 		}
-		if (root) {
-			if (winnerKind === 'canonical') {
-				const updatedRecord: WorkspaceOverrideRecord = { ...winner, path: filePath, updatedAt: winnerUpdatedAt >= 0 ? winnerUpdatedAt : undefined };
-				persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, updatedRecord]]));
-				const localOverride = localOverrides.get(filePath);
-				if (localOverride) {
-					const staleKey = buildWorkspaceStorageKey(root, localOverride.path);
-					storage.removeItem(staleKey);
-				}
-			} else {
-				const updatedAt = winnerUpdatedAt >= 0 ? winnerUpdatedAt : $.platform.clock.dateNow();
-				const updatedRecord: WorkspaceOverrideRecord = { ...winner, updatedAt };
-				persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, updatedRecord]]));
-				if (includeServer && canonicalUpdatedAt < updatedAt) {
-					await persistWorkspaceFileToServer(root, filePath, winner.source);
-					const canonicalUpdatedRecord: WorkspaceOverrideRecord = { ...winner, path: filePath, updatedAt };
-					persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, canonicalUpdatedRecord]]));
-				}
+		if (!root) {
+			continue;
+		}
+
+		if (winnerKind === 'canonical') {
+			const updatedRecord: WorkspaceOverrideRecord = { ...winner, path: filePath, updatedAt: winnerUpdatedAt >= 0 ? winnerUpdatedAt : undefined };
+			persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, updatedRecord]]));
+			const localOverride = localOverrides.get(filePath);
+			if (localOverride) {
+				const staleKey = buildWorkspaceStorageKey(root, localOverride.path);
+				storage.removeItem(staleKey);
+			}
+		} else {
+			const updatedAt = winnerUpdatedAt >= 0 ? winnerUpdatedAt : $.platform.clock.dateNow();
+			const updatedRecord: WorkspaceOverrideRecord = { ...winner, updatedAt };
+			persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, updatedRecord]]));
+			if (includeServer && canonicalUpdatedAt < updatedAt) {
+				await persistWorkspaceFileToServer(root, filePath, winner.source);
+				const canonicalUpdatedRecord: WorkspaceOverrideRecord = { ...winner, path: filePath, updatedAt };
+				persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, canonicalUpdatedRecord]]));
 			}
 		}
 	}

@@ -162,13 +162,19 @@ async function handleLuaApi(req, res, url) {
 			return true;
 		}
 		let contents;
+		let stats;
 		try {
+			stats = await stat(absolutePath);
 			contents = await readFile(absolutePath, 'utf8');
 		} catch {
 			res.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: `File not found: ${targetPath}` }));
 			return true;
 		}
-		res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ path: targetPath, contents }));
+		res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({
+			path: targetPath,
+			contents,
+			updatedAt: stats?.mtimeMs,
+		}));
 		return true;
 	}
 	if (req.method === 'POST') {
