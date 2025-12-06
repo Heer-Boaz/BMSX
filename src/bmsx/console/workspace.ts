@@ -50,6 +50,7 @@ export async function createLuaResource(request: ConsoleLuaResourceCreationReque
 	};
 	registerAsset($.rompack.cart);
 	registerAsset($.cart);
+	BmsxConsoleRuntime.instance.invalidateLuaModuleIndex();
 	const filesystemPath = asset.normalized_source_path;
 	await persistLuaSourceToFilesystem(filesystemPath, contents);
 	BmsxConsoleRuntime.instance.markSourceChunkAsDirty(asset.chunk_name);

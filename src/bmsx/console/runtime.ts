@@ -1872,7 +1872,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.rebindHandlersFromLuaValue(moduleId, moduleValue, [], visited);
 	}
 
-	private invalidateLuaModuleIndex(): void {
+	public invalidateLuaModuleIndex(): void {
 		this.luaModuleIndexBuilt = false;
 		this.luaModuleAliases.clear();
 		this.chunkSemanticCache.clear();

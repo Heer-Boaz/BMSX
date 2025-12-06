@@ -36,8 +36,8 @@ hero.__index = hero
 
 function hero:onspawn(spawn_pos)
 	print('[debug] onspawn native=' .. tostring(self.__native__) .. ' play_ani=' .. tostring(self.play_ani))
-	print('[debug] define_timeline value=' .. tostring(self.define_timeline) .. ' type=' .. type(self.define_timeline))
-	local timeline_component = self.timeline_component
+	print('[debug] define_timeline value=' .. tostring(self.timelines.define) .. ' type=' .. type(self.timelines.define))
+	local timeline_component = self.timelines
 	print('[debug] timeline_component=' .. tostring(timeline_component) .. ' type=' .. type(timeline_component) .. ' has_define=' .. tostring(timeline_component and timeline_component.define) .. ' has_play=' .. tostring(timeline_component and timeline_component.play))
 	local define_fn = timeline_component.define
 	local play_fn = timeline_component.play
