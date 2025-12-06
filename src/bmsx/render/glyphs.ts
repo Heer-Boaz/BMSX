@@ -20,7 +20,7 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 			stepX = font.char_width(letter);
 			stepY = Math.max(stepY, font.char_height(letter));
 			if (backgroundColor) {
-				const rectoptions: RectRenderSubmission = { area: { start: { x: pos.x, y: pos.y }, end: { x: pos.x + stepX, y: pos.y + stepY } }, color: backgroundColor, kind: 'fill', layer };
+				const rectoptions: RectRenderSubmission = { area: { left: pos.x, top: pos.y, right: pos.x + stepX, bottom: pos.y + stepY }, color: backgroundColor, kind: 'fill', layer };
 				$.view.renderer.submit.rect(rectoptions);
 			}
 			$.view.renderer.submit.sprite({ imgid: font.char_to_img(letter), pos, colorize: color, layer });

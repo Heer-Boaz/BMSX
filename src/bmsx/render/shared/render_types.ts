@@ -1,6 +1,6 @@
 import type { BFont } from '../../core/font';
 import type { Mesh } from '../3d/mesh';
-import type { Area, Polygon, vec2, vec3arr } from '../../rompack/rompack';
+import type { RectBounds, Polygon, vec2, vec3arr } from '../../rompack/rompack';
 import type { TextureHandle } from '../backend/pipeline_interfaces';
 
 export type color = {
@@ -19,7 +19,7 @@ export type RenderLayer = 'world' | 'ui' | 'ide';
 
 export type RectRenderSubmission = {
 	kind: 'rect' | 'fill';
-	area: Area;
+	area: RectBounds;
 	color: color;
 	layer?: RenderLayer;
 };

@@ -99,7 +99,7 @@ export type AudioActionSpec = AudioAction | AudioActionOneOfSpec | MusicTransiti
 
 export interface AudioEventRule {
 	when?: AudioCaseMatcher;
-	do: AudioActionSpec;
+	go: AudioActionSpec;
 }
 
 export type AudioPlaybackMode = 'replace' | 'ignore' | 'queue' | 'stop' | 'pause';
@@ -299,7 +299,7 @@ export class AudioEventManager implements RegisterablePersistent {
 		for (let i = 0; i < entry.rules.length; i++) {
 			const r = entry.rules[i];
 			if (!this.ruleMatches(r, payload)) continue;
-			const d = r.do;
+			const d = r.go;
 			if (d && typeof d === 'object' && 'musicTransition' in d && d.musicTransition) {
 				const mt = d.musicTransition;
 				$.sndmaster.requestMusicTransition({
@@ -461,7 +461,7 @@ export class AudioEventManager implements RegisterablePersistent {
 		for (let i = 0; i < rules.length; i++) {
 			const r = rules[i];
 			if (!this.ruleMatches(r, payload)) continue;
-			const resolved = this.resolveActionSpec(eventName, i, r.do, payload);
+			const resolved = this.resolveActionSpec(eventName, i, r.go, payload);
 			if (resolved) return resolved;
 		}
 		return undefined;

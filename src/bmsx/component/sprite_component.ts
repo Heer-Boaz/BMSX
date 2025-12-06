@@ -1,6 +1,6 @@
 import { componenttags_postprocessing, type ComponentAttachOptions } from '../component/basecomponent';
 import { Component } from '../component/basecomponent';
-import type { asset_id, Identifier, vec2, vec3, BoundingBoxPrecalc, HitPolygonsPrecalc, Area } from '../rompack/rompack';
+import type { asset_id, Identifier, vec2, vec3, BoundingBoxPrecalc, HitPolygonsPrecalc, RectBounds } from '../rompack/rompack';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import type { color, FlipOptions, RenderLayer } from '../render/gameview';
 import type { TimelinePlayOptions, TimelineFrameEventPayload } from './timeline_component';
@@ -184,7 +184,7 @@ export class SpriteComponent extends Component {
 	}
 }
 
-function selectBoundingBox(flip_h: boolean, flip_v: boolean, box: BoundingBoxPrecalc): Area {
+function selectBoundingBox(flip_h: boolean, flip_v: boolean, box: BoundingBoxPrecalc): RectBounds {
 	if (flip_h && flip_v) return box.fliphv;
 	if (flip_h) return box.fliph;
 	if (flip_v) return box.flipv;

@@ -1,5 +1,5 @@
 import { color } from "../../render/gameview";
-import { Area, BoundingBoxPrecalc, type HitPolygonsPrecalc, type Polygon } from "../../rompack/rompack";
+import { RectBounds, BoundingBoxPrecalc, type HitPolygonsPrecalc, type Polygon } from "../../rompack/rompack";
 import { insavegame, type RevivableObjectArgs } from '../../serializer/serializationhooks';
 import { WorldObject } from "./worldobject";
 import { SpriteComponent } from '../../component/sprite_component';
@@ -80,7 +80,7 @@ export class SpriteObject extends WorldObject {
 		}
 	}
 
-	private static selectBoundingBox(flip_h: boolean, flip_v: boolean, box: BoundingBoxPrecalc): Area {
+	private static selectBoundingBox(flip_h: boolean, flip_v: boolean, box: BoundingBoxPrecalc): RectBounds {
 		if (flip_h && flip_v) {
 			return box.fliphv;
 		} else if (flip_h) {

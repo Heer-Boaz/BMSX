@@ -26,10 +26,10 @@ export function compute_bar_area(
 
 	if (!reversed) {
 		const endX = bar.startX + filled;
-		return new_area3d(bar.startX, bar.startY, z, endX, bar.endY, z);
+		return new_area3d(bar.startX, bar.startY, z, endX, bar.endY);
 	} else {
 		const startX = bar.endX - filled;
-		return new_area3d(startX, bar.startY, z, bar.endX, bar.endY, z);
+		return new_area3d(startX, bar.startY, z, bar.endX, bar.endY);
 	}
 }
 /**

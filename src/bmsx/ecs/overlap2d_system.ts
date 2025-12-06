@@ -3,7 +3,7 @@ import type { World } from '../core/world';
 import { Collider2DComponent } from '../component/collisioncomponents';
 import { $ } from '../core/game';
 import { Service } from '../core/service';
-import type { Area, Polygon, vec2arr } from '../rompack/rompack';
+import type { RectBounds, Polygon, vec2arr } from '../rompack/rompack';
 import type { WorldObject } from '../core/object/worldobject';
 import { new_area } from '../utils/rect_operations';
 
@@ -46,7 +46,7 @@ class Collision2DService extends Service {
 		}
 	}
 
-	queryAABB(world: World, area: Area): Collider2DComponent[] {
+	queryAABB(world: World, area: RectBounds): Collider2DComponent[] {
 		return this.ensureIndex(world).queryAABB(area);
 	}
 
@@ -67,21 +67,21 @@ class Collision2DService extends Service {
 		});
 	}
 
-	sweepAABB(world: World, area: Area, delta: vec2arr): Collider2DComponent[] {
+	sweepAABB(world: World, area: RectBounds, delta: vec2arr): Collider2DComponent[] {
 		return this.ensureIndex(world).sweepAABB(area, delta);
 	}
 
 	/** Rect-rect (AABB) test. */
-	detectAABBAreas(a1: Area, a2: Area): boolean {
-		return !(a1.start.x > a2.end.x || a1.end.x < a2.start.x || a1.end.y < a2.start.y || a1.start.y > a2.end.y);
+	detectAABBAreas(a1: RectBounds, a2: RectBounds): boolean {
+		return !(a1.left > a2.right || a1.right < a2.left || a1.bottom < a2.top || a1.top > a2.bottom);
 	}
 
 	/** Converts Area to polygon list [x0,y0, x1,y1, x2,y2, x3,y3]. */
-	areaToPoly(area: Area): Polygon {
-		return [area.start.x, area.start.y, area.end.x, area.start.y, area.end.x, area.end.y, area.start.x, area.end.y] as number[];
+	areaToPoly(area: RectBounds): Polygon {
+		return [area.left, area.top, area.right, area.top, area.right, area.bottom, area.left, area.bottom] as number[];
 	}
 
-	private isArea(v: unknown): v is Area { return !!v && typeof v === 'object' && 'start' in (v as Record<string, unknown>) && 'end' in (v as Record<string, unknown>); }
+	private isArea(v: unknown): v is RectBounds { return !!v && typeof v === 'object' && 'start' in (v as Record<string, unknown>) && 'end' in (v as Record<string, unknown>); }
 
 	private resolveCollider(target: ColliderTarget): ColliderHandle {
 		if (target instanceof Collider2DComponent) {
@@ -95,7 +95,7 @@ class Collision2DService extends Service {
 	}
 
 	/** Collider vs Collider/Area collision. Polygons if present; fallback to AABB. */
-	collides(self: ColliderTarget, other: ColliderTarget | Area): boolean {
+	collides(self: ColliderTarget, other: ColliderTarget | RectBounds): boolean {
 		const aHandle = this.resolveCollider(self);
 		if (!aHandle) return false;
 		const { collider: a } = aHandle;
@@ -432,7 +432,7 @@ class Collision2DService extends Service {
 	}
 
 	/** Poly AABB. */
-	polygonAABB(poly: { x: number; y: number }[]): Area {
+	polygonAABB(poly: { x: number; y: number }[]): RectBounds {
 		let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 		for (const p of poly) { if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y; if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y; }
 		return new_area(minX, minY, maxX, maxY);
@@ -585,10 +585,10 @@ class Collision2DBroadphaseIndex {
 	clear(): void { this.cells.clear(); this.colliderKeys = new WeakMap(); }
 
 	private key(cx: number, cy: number): string { return cx + ',' + cy; }
-	private cellCoordsForArea(a: Area): { cx0: number; cy0: number; cx1: number; cy1: number } {
+	private cellCoordsForArea(a: RectBounds): { cx0: number; cy0: number; cx1: number; cy1: number } {
 		const cs = this.cellSize;
-		const cx0 = Math.floor(a.start.x / cs), cy0 = Math.floor(a.start.y / cs);
-		const cx1 = Math.floor(a.end.x / cs), cy1 = Math.floor(a.end.y / cs);
+		const cx0 = Math.floor(a.left / cs), cy0 = Math.floor(a.top / cs);
+		const cx1 = Math.floor(a.right / cs), cy1 = Math.floor(a.bottom / cs);
 		return { cx0, cy0, cx1, cy1 };
 	}
 
@@ -623,7 +623,7 @@ class Collision2DBroadphaseIndex {
 		this.colliderKeys.delete(col);
 	}
 
-	queryAABB(a: Area): Collider2DComponent[] {
+	queryAABB(a: RectBounds): Collider2DComponent[] {
 		const { cx0, cy0, cx1, cy1 } = this.cellCoordsForArea(a);
 		const out: Collider2DComponent[] = [];
 		const seen = new Set<Collider2DComponent>();
@@ -663,25 +663,25 @@ class Collision2DBroadphaseIndex {
 	}
 
 	/** Sweeps a moving AABB by delta and returns possible overlaps based on expanded cover. */
-	sweepAABB(a: Area, delta: vec2arr): Collider2DComponent[] {
+	sweepAABB(a: RectBounds, delta: vec2arr): Collider2DComponent[] {
 		const dx = delta[0], dy = delta[1];
-		const minx = Math.min(a.start.x, a.start.x + dx);
-		const miny = Math.min(a.start.y, a.start.y + dy);
-		const maxx = Math.max(a.end.x, a.end.x + dx);
-		const maxy = Math.max(a.end.y, a.end.y + dy);
+		const minx = Math.min(a.left, a.left + dx);
+		const miny = Math.min(a.top, a.top + dy);
+		const maxx = Math.max(a.right, a.right + dx);
+		const maxy = Math.max(a.bottom, a.bottom + dy);
 		const cover = new_area(minx, miny, maxx, maxy);
 		return this.queryAABB(cover);
 	}
 
 	// Slab ray/AABB intersection; returns t or null when no hit.
-	private rayAABB(origin: vec2arr, dir: vec2arr, a: Area): number {
+	private rayAABB(origin: vec2arr, dir: vec2arr, a: RectBounds): number {
 		const invx = dir[0] !== 0 ? 1 / dir[0] : Number.POSITIVE_INFINITY;
 		const invy = dir[1] !== 0 ? 1 / dir[1] : Number.POSITIVE_INFINITY;
-		let tmin = (a.start.x - origin[0]) * invx;
-		let tmax = (a.end.x - origin[0]) * invx;
+		let tmin = (a.left - origin[0]) * invx;
+		let tmax = (a.right - origin[0]) * invx;
 		if (tmin > tmax) [tmin, tmax] = [tmax, tmin];
-		let tymin = (a.start.y - origin[1]) * invy;
-		let tymax = (a.end.y - origin[1]) * invy;
+		let tymin = (a.top - origin[1]) * invy;
+		let tymax = (a.bottom - origin[1]) * invy;
 		if (tymin > tymax) [tymin, tymax] = [tymax, tymin];
 		if ((tmin > tymax) || (tymin > tmax)) return null;
 		tmin = Math.max(tmin, tymin);

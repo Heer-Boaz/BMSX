@@ -1,5 +1,4 @@
-import type { Area, RectBounds, vec2, vec3 } from '../rompack/rompack';
-import { set_inplace_vec2 } from './vector_operations';
+import type { RectBounds, vec2, vec3 } from '../rompack/rompack';
 
 /**
  * Moves an area by adding the specified vector to its start and end points.
@@ -7,11 +6,12 @@ import { set_inplace_vec2 } from './vector_operations';
  * @param p - The vector representing the amount to move the area by.
  * @returns The moved area.
  */
-export function moveArea(a: Area, p: vec3): Area {
-	return {
-		start: { x: a.start.x + p.x, y: a.start.y + p.y },
-		end: { x: a.end.x + p.x, y: a.end.y + p.y },
-	};
+export function moveArea(a: RectBounds, p: vec3): RectBounds {
+	a.top += p.y;
+	a.bottom += p.y;
+	a.left += p.x;
+	a.right += p.x;
+	return a;
 }
 
 /**
@@ -20,9 +20,11 @@ export function moveArea(a: Area, p: vec3): Area {
  * @param a - The target `Area` object to be modified.
  * @param n - The source `Area` object containing the new values.
  */
-export function set_inplace_area(a: Area, n: Area): void {
-	set_inplace_vec2(a.start, n.start);
-	set_inplace_vec2(a.end, n.end);
+export function set_inplace_area(a: RectBounds, n: RectBounds): void {
+	a.bottom = n.bottom;
+	a.left = n.left;
+	a.right = n.right;
+	a.top = n.top;
 }
 
 /**
@@ -33,13 +35,13 @@ export function set_inplace_area(a: Area, n: Area): void {
  * @param ey The y-coordinate of the end point.
  * @returns The newly created area.
  */
-export function new_area(sx: number, sy: number, ex: number, ey: number): Area {
-	return new_area3d(sx, sy, undefined, ex, ey, undefined);
+export function new_area(sx: number, sy: number, ex: number, ey: number): RectBounds {
+	return new_area3d(sx, sy, undefined, ex, ey);
 }
 
-export function new_area3d(sx: number, sy: number, sz: number, ex: number, ey: number, ez?: number): Area {
+export function new_area3d(sx: number, sy: number, z: number, ex: number, ey: number): RectBounds {
 	[sx, sy, ex, ey] = correctAreaStartEnd(sx, sy, ex, ey);
-	return { start: { x: sx, y: sy, z: sz }, end: { x: ex, y: ey, z: ez } };
+	return { left: sx, top: sy, right: ex, bottom: ey, z: z };
 }
 function correctAreaStartEnd(x: number, y: number, ex: number, ey: number) {
 	if (ex < x) {
@@ -53,8 +55,8 @@ function correctAreaStartEnd(x: number, y: number, ex: number, ey: number) {
 	return [x, y, ex, ey];
 }
 
-export function middlepoint_area(a: Area): vec2 {
-	return { x: ~~((a.start.x + a.end.x) / 2), y: ~~((a.start.y + a.end.y) / 2) };
+export function middlepoint_area(a: RectBounds): vec2 {
+	return { x: ~~((a.left + a.right) / 2), y: ~~((a.top + a.bottom) / 2) };
 }
 
 /**
@@ -63,11 +65,11 @@ export function middlepoint_area(a: Area): vec2 {
  * @param b The second area.
  * @returns The overlap area between the two areas.
  */
-export function get_overlap_area(a: Area, b: Area): Area {
-	const startX = Math.max(a.start.x, b.start.x);
-	const startY = Math.max(a.start.y, b.start.y);
-	const endX = Math.min(a.end.x, b.end.x);
-	const endY = Math.min(a.end.y, b.end.y);
+export function get_overlap_area(a: RectBounds, b: RectBounds): RectBounds {
+	const startX = Math.max(a.left, b.left);
+	const startY = Math.max(a.top, b.top);
+	const endX = Math.min(a.right, b.right);
+	const endY = Math.min(a.bottom, b.bottom);
 	return new_area(startX, startY, endX, endY);
 }
 export function pointInRect(x: number, y: number, rect: RectBounds): boolean {

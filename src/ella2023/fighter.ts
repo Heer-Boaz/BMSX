@@ -125,13 +125,13 @@ export abstract class Fighter extends SpriteObject {
 					},
 					on: {
 						['timeline.frame.fighter.hitanimation']: {
-							do(this: Fighter, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
+							go(this: Fighter, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
 								const delta = typeof event.frame_value === 'number' ? event.frame_value : 0;
 								this.x_nonotify += delta;
 							},
 						},
 						['timeline.end.fighter.hitanimation']: {
-							do(this: Fighter, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+							go(this: Fighter, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 								this.sc.transition_to('hitanimation:/geen_au');
 							},
 						},

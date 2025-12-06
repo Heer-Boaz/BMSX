@@ -341,7 +341,7 @@ export function correctAreaStartEnd(x: number, y: number, ex: number, ey: number
 }
 
 export function drawRectangle(options: RectRenderSubmission): void {
-	let { start: { x, y, z }, end: { x: ex, y: ey } } = options.area; const c = options.color; const imgid = 'whitepixel';[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
+	let { left: x, top: y, z, right: ex, bottom: ey } = options.area; const c = options.color; const imgid = 'whitepixel';[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
 	drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(ex - x, 1), colorize: c, layer: options.layer });
 	drawImg({ pos: new_vec3(x, ey, z), imgid, scale: new_vec2(ex - x, 1), colorize: c, layer: options.layer });
 	drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(1, ey - y), colorize: c, layer: options.layer });
@@ -349,7 +349,7 @@ export function drawRectangle(options: RectRenderSubmission): void {
 }
 
 export function fillRectangle(options: RectRenderSubmission): void {
-	let { start: { x, y, z }, end: { x: ex, y: ey } } = options.area; const c = options.color; const imgid = 'whitepixel';[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
+	let { left: x, top: y, z, right: ex, bottom: ey } = options.area; const c = options.color; const imgid = 'whitepixel';[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
 	drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(ex - x, ey - y), colorize: c, layer: options.layer });
 }
 

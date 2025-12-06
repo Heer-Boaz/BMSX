@@ -1,7 +1,7 @@
 // @ts-ignore
 const { createCanvas } = require('canvas');
 import type { Image } from 'canvas';
-import type { Area, Polygon, vec2arr } from '../../src/bmsx/rompack/rompack';
+import type { RectBounds, Polygon, vec2arr } from '../../src/bmsx/rompack/rompack';
 import type { ImageResource } from './rompacker.rompack';
 import earcut from 'earcut';
 
@@ -14,7 +14,7 @@ export class BoundingBoxExtractor {
 	/**
 	 * Extracts the tightest bounding box around non-transparent pixels in an image.
 	 */
-	static extractBoundingBox(image: Image, opts?: { alphaThreshold?: number }): Area {
+	static extractBoundingBox(image: Image, opts?: { alphaThreshold?: number }): RectBounds {
 		const canvas = createCanvas(image.width, image.height);
 		const context = canvas.getContext('2d');
 		context.drawImage(image, 0, 0, image.width, image.height);
@@ -41,7 +41,7 @@ export class BoundingBoxExtractor {
 				}
 			}
 		}
-		return { start: { x: ~~startx, y: ~~starty }, end: { x: ~~endx, y: ~~endy } };
+		return { left: ~~startx, top: ~~starty, right: ~~endx, bottom: ~~endy };
 	}
 
 	/**
@@ -289,9 +289,9 @@ export class BoundingBoxExtractor {
 		return this.computeConvexPolygon(pts).flat();
 	}
 
-	public static calculateCenterPoint(boundingBox: Area): vec2arr {
-		const middlex = (boundingBox.start.x + boundingBox.end.x) / 2;
-		const middley = (boundingBox.start.y + boundingBox.end.y) / 2;
+	public static calculateCenterPoint(boundingBox: RectBounds): vec2arr {
+		const middlex = (boundingBox.left + boundingBox.right) / 2;
+		const middley = (boundingBox.top + boundingBox.bottom) / 2;
 		return [~~middlex, ~~middley];
 	}
 

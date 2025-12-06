@@ -2,7 +2,7 @@ import { BehaviorTreeContext, BehaviorTreeID, instantiateBehaviorTree, Blackboar
 import { Component, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap, ComponentConstructor } from "../../component/basecomponent";
 import { StateMachineController } from "../../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
-import { ConcreteOrAbstractConstructor, Direction, vec3, type Area, type Identifier, type vec2, type Facing, type Polygon, type Native } from "../../rompack/rompack";
+import { ConcreteOrAbstractConstructor, Direction, vec3, type RectBounds, type Identifier, type vec2, type Facing, type Polygon, type Native } from "../../rompack/rompack";
 import { excludepropfromsavegame, insavegame, type RevivableObjectArgs, onload } from '../../serializer/serializationhooks';
 import { $ } from '../game';
 import type { Space } from '../space';
@@ -546,7 +546,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	 * If there is no hitbox and no bounding boxes, it returns an area based on the position and size of the world object.
 	 * @returns The hitbox area of the world object.
 	 */
-	public get hitbox(): Area { return new_area(this.hitbox_left, this.hitbox_top, this.hitbox_right, this.hitbox_bottom); }
+	public get hitbox(): RectBounds { return new_area(this.hitbox_left, this.hitbox_top, this.hitbox_right, this.hitbox_bottom); }
 
 	/**
 	 * Returns the middle point of the world object's hitbox.
@@ -558,19 +558,19 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	}
 
 	public get hitbox_left(): number {
-		const c = this.collider; if (c?.localArea) return this.pos.x + c.localArea.start.x;
+		const c = this.collider; if (c?.localArea) return this.pos.x + c.localArea.left;
 		return this.x;
 	}
 	public get hitbox_top(): number {
-		const c = this.collider; if (c?.localArea) return this.pos.y + c.localArea.start.y;
+		const c = this.collider; if (c?.localArea) return this.pos.y + c.localArea.top;
 		return this.y;
 	}
 	public get hitbox_right(): number {
-		const c = this.collider; if (c?.localArea) return this.pos.x + c.localArea.end.x;
+		const c = this.collider; if (c?.localArea) return this.pos.x + c.localArea.right;
 		return this.x_plus_width;
 	}
 	public get hitbox_bottom(): number {
-		const c = this.collider; if (c?.localArea) return this.pos.y + c.localArea.end.y;
+		const c = this.collider; if (c?.localArea) return this.pos.y + c.localArea.bottom;
 		return this.y_plus_height;
 	}
 

@@ -89,8 +89,7 @@ export class ConsoleRenderFacade {
 
 	public rect(command: RectRenderSubmission): void {
 		const area = command.area;
-		if (area.start.z === undefined) area.start.z = ConsoleRenderFacade.RECT_Z;
-		if (area.end.z === undefined) area.end.z = ConsoleRenderFacade.RECT_Z;
+		if (area.z === undefined) area.z = ConsoleRenderFacade.RECT_Z;
 		const submission = command as RectSubmission;
 		submission.type = 'rect';
 		this.submit(submission);

@@ -213,7 +213,7 @@ export interface StateEventDefinition<T extends Stateful = any> {
 	/**
 	 * The action that is executed when the event is handled. Returning a transition triggers a state change.
 	 */
-	do?: StateEventHandler<T> | string | StateActionSpec;
+	go?: StateEventHandler<T> | string | StateActionSpec;
 }
 
 /**

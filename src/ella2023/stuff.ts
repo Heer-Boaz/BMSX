@@ -48,7 +48,7 @@ export class GameOver extends SpriteObject {
 					},
 					on: {
 						reset: {
-							do(this: GameOver) {
+							go(this: GameOver) {
 								this.restartTimeout();
 							},
 						},
@@ -105,7 +105,7 @@ export class Hoera extends SpriteObject {
 					},
 					on: {
 						reset: {
-							do(this: Hoera) {
+							go(this: Hoera) {
 								this.restartTimeout();
 							},
 						},
@@ -171,13 +171,13 @@ export class TitleScreen extends SpriteObject {
 					},
 					on: {
 						reset: {
-							do(this: TitleScreen) {
+							go(this: TitleScreen) {
 								this.resetMenu();
 							},
 						},
 						[`timeline.frame.${TitleScreen.BLINK_TIMELINE_ID}`]: {
 							scope: 'self',
-							do(this: TitleScreen, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<boolean>>) {
+							go(this: TitleScreen, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<boolean>>) {
 								this.handleBlinkFrame(event.frame_value === true);
 							},
 						},
@@ -291,7 +291,7 @@ export class Gordijn extends WorldObject {
 							on: {
 								its_curtains: '../closing',
 								reset: {
-									do(this: Gordijn) {
+									go(this: Gordijn) {
 										this.width = 0;
 									},
 								},
@@ -313,13 +313,13 @@ export class Gordijn extends WorldObject {
 							on: {
 								[`timeline.frame.${Gordijn.TIMELINE_ID}`]: {
 									scope: 'self',
-									do(this: Gordijn, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
+									go(this: Gordijn, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
 										this.width += event.frame_value;
 									},
 								},
 					[`timeline.end.${Gordijn.TIMELINE_ID}`]: {
 									scope: 'self',
-									do(this: Gordijn, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+									go(this: Gordijn, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
 										$.emit('curtained', this);
 										return '../idle';
 									},

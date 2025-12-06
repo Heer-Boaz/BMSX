@@ -58,7 +58,7 @@ export interface Binding {
 	priority?: number;
 	when?: WhenClause;
 	on: OnClause;
-	do: EffectTable;
+	go: EffectTable;
 }
 
 export interface InputActionEffectProgram {

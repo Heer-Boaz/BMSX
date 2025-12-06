@@ -77,13 +77,13 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 	// input_eval: 'first',
 	on: {
 		'mode.locomotion.idle': {
-			do(this: Fighter): string | void {
+			go(this: Fighter): string | void {
 				if (isLocomotionLocked(this)) return;
 				return GROUND_IDLE_STATE_PATH;
 			},
 		},
 		'mode.locomotion.walk': {
-			do(this: Fighter, _state: State, event: WalkEvent): string | void {
+			go(this: Fighter, _state: State, event: WalkEvent): string | void {
 				if (isLocomotionLocked(this)) return;
 				const resolved = resolveWalkPayload(this, event);
 				this.pendingWalkDirection = resolved.direction;
@@ -91,7 +91,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 			},
 		},
 		'mode.action.attack': {
-			do(this: Fighter, _state: State, event: AttackEvent): string {
+			go(this: Fighter, _state: State, event: AttackEvent): string {
 				const resolved = resolveAttackPayload(event);
 				this.pendingAttackPayload = resolved;
 				if (resolved.attackType === 'flyingkick') {
@@ -105,7 +105,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 		},
 		'mode.control.duck': GROUND_DUCK_STATE_PATH,
 		'mode.control.jump': {
-			do(this: Fighter, _state: State, event: JumpEvent): string {
+			go(this: Fighter, _state: State, event: JumpEvent): string {
 				this.pendingJumpPayload = { direction: event.direction , directional: event.directional };
 				return JUMP_STATE_PATH;
 			},
@@ -144,7 +144,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 					},
 					on: {
 						'mode.locomotion.walk': {
-							do(this: Fighter, _state: State, event: WalkEvent) {
+							go(this: Fighter, _state: State, event: WalkEvent) {
 								const resolved = resolveWalkPayload(this, event);
 								this.applyWalkFacing(undefined, resolved);
 							},
@@ -174,7 +174,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 					},
 					on: {
 						animationEnd: {
-							do(this: Fighter, _state: State, event: AnimationEvent): string | void {
+							go(this: Fighter, _state: State, event: AnimationEvent): string | void {
 								const animation = event.animation_name;
 								if (!animation) return undefined;
 								if (animation !== this.currentAttackType) return undefined;
@@ -242,7 +242,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 							},
 							on: {
 								[`timeline.end.${TIMELINE_IDS.jumpAscending}`]: {
-									do(this: Fighter) {
+									go(this: Fighter) {
 										return '../descending';
 									},
 								},
@@ -257,7 +257,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 							},
 							on: {
 								[`timeline.end.${TIMELINE_IDS.jumpDescending}`]: {
-									do(this: Fighter) {
+									go(this: Fighter) {
 										return GROUND_IDLE_STATE_PATH;
 									},
 								},
@@ -277,7 +277,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 									},
 									on: {
 										animationEnd: {
-											do(this: Fighter, _state: State, event: AnimationEvent): string | void {
+											go(this: Fighter, _state: State, event: AnimationEvent): string | void {
 												const animation = event.animation_name;
 												if (animation !== 'flyingkick') return;
 												return '../_ready';
@@ -310,17 +310,17 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 			},
 			on: {
 				animationEnd: {
-					do(this: Fighter, state: State, event: AnimationEvent) {
+					go(this: Fighter, state: State, event: AnimationEvent) {
 						this.handleStoerAnimationEnd(state, event);
 					},
 				},
 				[`timeline.frame.${TIMELINE_IDS.stoerheidsdans}`]: {
-					do(this: Fighter, state: State, event: TimelineFrameEvent) {
+					go(this: Fighter, state: State, event: TimelineFrameEvent) {
 						this.handleStoerTimelineFrame(state, event);
 					},
 				},
 				[`timeline.end.${TIMELINE_IDS.stoerheidsdans}`]: {
-					do(this: Fighter, state: State) {
+					go(this: Fighter, state: State) {
 						return this.completeStoerheidsdans(state);
 					},
 				},
@@ -355,19 +355,19 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 	is_concurrent: true,
 	on: {
 		'$i_was_hit': {
-			do(this: Fighter) {
+			go(this: Fighter) {
 				this.skip_animation_to_end();
 			},
 		},
 		'$i_hit_face': {
-			do(this: Fighter) {
+			go(this: Fighter) {
 				this.skip_animation_to_end();
 			},
 		},
 		'$animate_idle': '_idle',
 		'$animate_humiliated': 'humiliated',
 		'$animate_walk': {
-			do(this: Fighter, state: State): string {
+			go(this: Fighter, state: State): string {
 				restartWalkAnimation(state);
 				return 'walk/_walk1';
 			},
@@ -402,7 +402,7 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 					},
 					on: {
 						[`timeline.end.${TIMELINE_IDS.walkStep1}`]: {
-							do(this: Fighter) {
+							go(this: Fighter) {
 								this.handle_animation_timeline_end(TIMELINE_IDS.walkStep1);
 								return '../walk2';
 							},
@@ -416,7 +416,7 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 					},
 					on: {
 						[`timeline.end.${TIMELINE_IDS.walkStep2}`]: {
-							do(this: Fighter) {
+							go(this: Fighter) {
 								this.handle_animation_timeline_end(TIMELINE_IDS.walkStep2);
 								return '../_walk1';
 							},
@@ -448,7 +448,7 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 			},
 			on: {
 				[`timeline.end.${TIMELINE_IDS.humiliated}`]: {
-					do(this: Fighter) {
+					go(this: Fighter) {
 						this.handle_animation_timeline_end(TIMELINE_IDS.humiliated);
 						$.emit('humiliated_animation_end', this, { fighter: this });
 					},
@@ -515,7 +515,7 @@ function createAttackAnimationState(name: AttackType, weaponClass: 'light' | 'he
 		},
 		on: {
 			[`timeline.end.${timelineId}`]: {
-				do(this: Fighter, _state: State) {
+				go(this: Fighter, _state: State) {
 					this.handle_animation_timeline_end(timelineId);
 					$.emit('animationEnd', this, { animation_name: name });
 					$.emit_gameplay(`fighter.attack.animation.${name}.finished`, this, { attackType: name });

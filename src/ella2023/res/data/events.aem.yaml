@@ -7,7 +7,7 @@ events:
             - when:
                   equals:
                       weaponClass: heavy
-              do:
+              go:
                   audioId: kick
                   modulationPreset: modulationparams.attacksfx
                   priority: 1
@@ -15,7 +15,7 @@ events:
             - when:
                   equals:
                       weaponClass: light
-              do:
+              go:
                   audioId: punch
                   modulationPreset: modulationparams.attacksfx
                   priority: 1
@@ -28,7 +28,7 @@ events:
             - when:
                   equals:
                       weaponClass: light
-              do:
+              go:
                   # Randomized pick between two light-hit variants, avoid immediate repeat
                   oneOf:
                       - {
@@ -47,7 +47,7 @@ events:
             - when:
                   equals:
                       weaponClass: heavy
-              do:
+              go:
                   audioId: hit2
                   modulationPreset: modulationparams.hitsfx
                   priority: 2
@@ -55,7 +55,7 @@ events:
         channel: sfx
         maxVoices: 1
         rules:
-            - do:
+            - go:
                   audioId: stuk
                   priority: 10
     # --- Demonstration events showcasing new matcher features ---
@@ -67,7 +67,7 @@ events:
                   # IN-alias: anyOf / in both supported
                   in:
                       material: [wood, stone, metal]
-              do:
+              go:
                   audioId: hit1
                   modulationPreset: modulationparams.hitsfx
 
@@ -81,14 +81,14 @@ events:
                       - equals: { result: crit }
                   not:
                       equals: { material: barrier }
-              do:
+              go:
                   audioId: hit2
                   modulationPreset: modulationparams.hitsfx
 
     demo.random_uniform:
         channel: sfx
         rules:
-            - do:
+            - go:
                   # Uniform random, avoid repeating last choice
                   oneOf:
                       - {
@@ -105,7 +105,7 @@ events:
     demo.random_weighted:
         channel: sfx
         rules:
-            - do:
+            - go:
                   # Weighted random: prefer hit2 (3:1)
                   oneOf:
                       - {
@@ -126,7 +126,7 @@ events:
         channel: music
         maxVoices: 1
         rules:
-            - do:
+            - go:
                   musicTransition:
                       audioId: trainen # explore/ambient theme
                       sync: loop # align to current loop boundary if something is already playing
@@ -136,7 +136,7 @@ events:
         channel: music
         maxVoices: 1
         rules:
-            - do:
+            - go:
                   musicTransition:
                       audioId: knokken # combat theme
                       sync: loop # wait for source loop wrap, then switch
@@ -147,7 +147,7 @@ events:
         channel: music
         maxVoices: 1
         rules:
-            - do:
+            - go:
                   musicTransition:
                       audioId: trainen # back to explore
                       sync: loop
@@ -157,7 +157,7 @@ events:
         channel: music
         maxVoices: 1
         rules:
-            - do:
+            - go:
                   musicTransition:
                       sync:
                           stinger: vernederdans # play stinger immediately
@@ -168,7 +168,7 @@ events:
         channel: music
         maxVoices: 1
         rules:
-            - do:
+            - go:
                   musicTransition:
                       sync:
                           stinger: vernederdans # play stinger immediately
@@ -180,7 +180,7 @@ events:
         channel: music
         maxVoices: 1
         rules:
-            - do:
+            - go:
                   musicTransition:
                       audioId: gameover # game over music
                       sync: immediate # start right away
@@ -190,7 +190,7 @@ events:
         channel: music
         maxVoices: 1
         rules:
-            - do:
+            - go:
                   musicTransition:
                       audioId: start # title/intro theme
                       sync: { delayMs: 500 } # delay start by 0.5s (e.g., after sfx)

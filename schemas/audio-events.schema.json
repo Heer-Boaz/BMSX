@@ -69,10 +69,10 @@
 								"contains": {
 									"type": "object",
 									"required": [
-										"do"
+										"go"
 									],
 									"properties": {
-										"do": {
+										"go": {
 											"type": "object",
 											"required": [
 												"musicTransition"
@@ -107,12 +107,12 @@
 				"when": {
 					"$ref": "#/definitions/audioCaseMatcher"
 				},
-				"do": {
+				"go": {
 					"$ref": "#/definitions/audioActionSpec"
 				}
 			},
 			"required": [
-				"do"
+				"go"
 			],
 			"additionalProperties": false
 		},

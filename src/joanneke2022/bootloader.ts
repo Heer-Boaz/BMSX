@@ -1,5 +1,4 @@
-import { $, base_model_spaces, World, BFont, BGamepadButton, BootArgs, build_fsm, copy_vector, Game, WorldObject, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, GameView, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, CollisionSystem, type Direction } from "bmsx";
-import { subscribesToSelfScopedEvent } from 'bmsx/core/eventemitter';
+import { $, base_model_spaces, World, BFont, BGamepadButton, BootArgs, build_fsm, copy_vector, Game, WorldObject, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, GameView, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, trunc_vec3, vec2, type Direction } from "bmsx";
 import type { GameEvent } from 'bmsx/core/game_event';
 import type { TimelineEndEventPayload, TimelineFrameEventPayload } from 'bmsx/component/timeline_component';
 import { GamepadInputMapping, KeyboardButton, KeyboardInputMapping } from 'bmsx';

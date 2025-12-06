@@ -1,4 +1,4 @@
-import { type Area, type AudioMeta, type GLTFMaterial, type GLTFModel, type ImgMeta, type Polygon, type RomAsset, type RomAssetListPayload, type RomImgAsset, type RomLuaAsset, type RomManifest, type RomMeta, type RomPack, type TextureSource, type color_arr } from '../../src/bmsx/rompack/rompack';
+import { type RectBounds, type AudioMeta, type GLTFMaterial, type GLTFModel, type ImgMeta, type Polygon, type RomAsset, type RomAssetListPayload, type RomImgAsset, type RomLuaAsset, type RomManifest, type RomMeta, type RomPack, type TextureSource, type color_arr } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../../src/bmsx/serializer/binencoder';
 
 export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
@@ -89,21 +89,27 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 		});
 	}
 
-	function flipBoundingBoxHorizontally(box: Area, width: number): Area {
+	function flipBoundingBoxHorizontally(box: RectBounds, width: number): RectBounds {
 		return {
-			start: { x: width - box.end.x, y: box.start.y },
-			end: { x: width - box.start.x, y: box.end.y }
+			left: width - box.right,
+			right: width - box.left,
+			top: box.top,
+			bottom: box.bottom,
+			z: box.z
 		};
 	}
 
-	function flipBoundingBoxVertically(box: Area, height: number): Area {
+	function flipBoundingBoxVertically(box: RectBounds, height: number): RectBounds {
 		return {
-			start: { x: box.start.x, y: height - box.end.y },
-			end: { x: box.end.x, y: height - box.start.y }
+			left: box.left,
+			right: box.right,
+			top: height - box.bottom,
+			bottom: height - box.top,
+			z: box.z
 		};
 	}
 
-	function generateFlippedBoundingBox(extractedBoundingBox: Area, imgW: number, imgH: number) {
+	function generateFlippedBoundingBox(extractedBoundingBox: RectBounds, imgW: number, imgH: number) {
 		const originalBoundingBox = extractedBoundingBox;
 		const horizontalFlipped = flipBoundingBoxHorizontally(originalBoundingBox, imgW);
 		const verticalFlipped = flipBoundingBoxVertically(originalBoundingBox, imgH);

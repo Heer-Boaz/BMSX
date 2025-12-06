@@ -503,8 +503,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	}
 
 	private describeActionHandler(spec: StateEventDefinition | TickCheckDefinition): string {
-		if (typeof spec.do === 'function') return spec.do.name || '<anonymous>';
-		if (typeof spec.do === 'string') return `do:${spec.do}`;
+		if (typeof spec.go === 'function') return spec.go.name || '<anonymous>';
+		if (typeof spec.go === 'string') return `do:${spec.go}`;
 		return 'handler';
 	}
 
@@ -1521,7 +1521,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			return true;
 		}
 
-		const doHandler = action.do;
+		const doHandler = action.go;
 		if (!doHandler) return false;
 
 		switch (typeof doHandler) {

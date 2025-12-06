@@ -37,19 +37,19 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 		const CANCELLED_TIMELINE_ID = SelectedPlayerIndexIcon.TIMELINE_IDS.cancelled;
 		return {
 			on: {
-				animation_end: { do(this: SelectedPlayerIndexIcon) { this.mark_for_disposal(); } },
+				animation_end: { go(this: SelectedPlayerIndexIcon) { this.mark_for_disposal(); } },
 			},
 			states: {
 				_default: {
 					on: {
 						// Guard transitions so only the icon for the matching gamepad reacts.
 						controller_assigned: {
-							do(this: SelectedPlayerIndexIcon, _src: any, payload: EventPayload & { gamepadIndex?: number }) {
+							go(this: SelectedPlayerIndexIcon, _src: any, payload: EventPayload & { gamepadIndex?: number }) {
 								return payload.gamepadIndex === this.gamepadIndex ? '/assigned' : undefined;
 							}
 						},
 						controller_assignment_cancelled: {
-							do(this: SelectedPlayerIndexIcon, _src: any, payload: EventPayload & { gamepadIndex?: number }) {
+							go(this: SelectedPlayerIndexIcon, _src: any, payload: EventPayload & { gamepadIndex?: number }) {
 								return payload.gamepadIndex === this.gamepadIndex ? '/cancelled' : undefined;
 							}
 						},
@@ -61,13 +61,13 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 					},
 				on: {
 					[`timeline.frame.${ASSIGNED_TIMELINE_ID}`]: {
-						do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame.assigned', TimelineFrameEventPayload>) {
+						go(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame.assigned', TimelineFrameEventPayload>) {
 							const visible = event.frame_value === true;
 							this.colorize = visible ? { r: 1, g: 1, b: 1, a: .5 } : { r: 0, g: 1, b: 0, a: .75 };
 						},
 					},
 					[`timeline.end.${ASSIGNED_TIMELINE_ID}`]: {
-						do(this: SelectedPlayerIndexIcon, _state: State, _event: GameEvent<'timeline.end.assigned', TimelineEndEventPayload>) {
+						go(this: SelectedPlayerIndexIcon, _state: State, _event: GameEvent<'timeline.end.assigned', TimelineEndEventPayload>) {
 							this.notifyAnimationEnd();
 						},
 					},
@@ -80,12 +80,12 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 					},
 						on: {
 							[`timeline.frame.${CANCELLED_TIMELINE_ID}`]: {
-								do(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame.cancelled', TimelineFrameEventPayload<number>>) {
+								go(this: SelectedPlayerIndexIcon, _state: State, event: GameEvent<'timeline.frame.cancelled', TimelineFrameEventPayload<number>>) {
 								this.y -= event.frame_value;
 							},
 						},
 						[`timeline.end.${CANCELLED_TIMELINE_ID}`]: {
-							do(this: SelectedPlayerIndexIcon, _state: State, _event: GameEvent<'timeline.end.cancelled', TimelineEndEventPayload>) {
+							go(this: SelectedPlayerIndexIcon, _state: State, _event: GameEvent<'timeline.end.cancelled', TimelineEndEventPayload>) {
 							this.notifyAnimationEnd();
 						},
 					},

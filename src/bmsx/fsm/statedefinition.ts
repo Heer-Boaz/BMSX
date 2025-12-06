@@ -250,11 +250,11 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 					if (typeof t === 'string') {
 						resolveStateDefPath(stateDef, t, statePath, description);
 					} else {
-						if (typeof t.do === 'string') {
-							if (looksLikeStatePath(t.do)) {
-								resolveStateDefPath(stateDef, t.do, statePath, description);
-							} else if (!t.do.includes('.handlers.')) {
-								console.warn(`Handler '${t.do}' referenced in '${statePath}' is missing`);
+						if (typeof t.go === 'string') {
+							if (looksLikeStatePath(t.go)) {
+								resolveStateDefPath(stateDef, t.go, statePath, description);
+							} else if (!t.go.includes('.handlers.')) {
+								console.warn(`Handler '${t.go}' referenced in '${statePath}' is missing`);
 							}
 						}
 					}
@@ -266,11 +266,11 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 			for (const check of stateDef.run_checks ?? []) {
 				if (typeof check === 'string') {
 					resolveStateDefPath(stateDef, check, statePath, 'run check (string)');
-				} else if (typeof check.do === 'string') {
-					if (looksLikeStatePath(check.do)) {
-						resolveStateDefPath(stateDef, check.do, statePath, 'run check (do)');
-					} else if (!check.do.includes('.handlers.')) {
-						console.warn(`Handler '${check.do}' referenced in '${statePath}' is missing`);
+				} else if (typeof check.go === 'string') {
+					if (looksLikeStatePath(check.go)) {
+						resolveStateDefPath(stateDef, check.go, statePath, 'run check (do)');
+					} else if (!check.go.includes('.handlers.')) {
+						console.warn(`Handler '${check.go}' referenced in '${statePath}' is missing`);
 					}
 				}
 			}

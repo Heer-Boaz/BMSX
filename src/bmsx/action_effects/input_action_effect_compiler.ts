@@ -116,9 +116,9 @@ function compileBinding(binding: Binding, parse: PatternParser): CompiledBinding
 		press,
 		hold,
 		release,
-		pressEffect: compileEffectList(binding.do?.press, 'press', analysis),
-		holdEffect: compileEffectList(binding.do?.hold, 'hold', analysis),
-		releaseEffect: compileEffectList(binding.do?.release, 'release', analysis),
+		pressEffect: compileEffectList(binding.go?.press, 'press', analysis),
+		holdEffect: compileEffectList(binding.go?.hold, 'hold', analysis),
+		releaseEffect: compileEffectList(binding.go?.release, 'release', analysis),
 		customEdges,
 		usesEffectTriggers: analysis.usesEffectTriggers,
 	};
@@ -158,7 +158,7 @@ function compilePredicate(binding: Binding): (env: BindingExecutionEnv) => boole
 
 function compileCustomEffects(binding: Binding, analysis: BindingAnalysis): Map<string, EffectExecutor> {
 	const map = new Map<string, EffectExecutor>();
-	const table = binding.do ?? {};
+	const table = binding.go ?? {};
 	for (const key of Object.keys(table)) {
 		if (key === 'press' || key === 'hold' || key === 'release') continue;
 		map.set(key, compileEffectList(table[key], key, analysis));
@@ -242,7 +242,7 @@ export function validateProgramEffects(program: InputActionEffectProgram, progra
 	for (let index = 0; index < bindings.length; index++) {
 		const binding = bindings[index]!;
 		const bindingName = binding.name ? binding.name : `#${index}`;
-		const table = binding.do;
+		const table = binding.go;
 		if (!table) {
 			throw new Error(`[InputActionEffectProgramValidation] Program '${programId}' binding '${bindingName}' missing effect table.`);
 		}

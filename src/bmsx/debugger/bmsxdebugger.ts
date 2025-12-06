@@ -234,7 +234,7 @@ export class HitBoxVisualizer extends CustomVisualComponent {
 					}
 				}
 				if (parent.hitbox) {
-					$.view.renderer.submit.rect({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.5 }, layer: 'ui', kind: 'rect' });
+					$.view.renderer.submit.rect({ area: { ...parent.hitbox, z: parent.z }, color: { ...Msx1Colors[5], a: 0.5 }, layer: 'ui', kind: 'rect' });
 				}
 			}
 		});
@@ -286,7 +286,7 @@ export class ObjectHighlighterComponent extends Component {
 
 		// Draw a transparent filled rectangle around the WorldObject
 		if (parent.hitbox) {
-			$.view.renderer.submit.rect({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.5 }, layer: 'ui', kind: 'fill' });
+			$.view.renderer.submit.rect({ area: { ...parent.hitbox, z: parent.z }, color: { ...Msx1Colors[5], a: 0.5 }, layer: 'ui', kind: 'fill' });
 		}
 	}
 }
@@ -800,7 +800,7 @@ function getWorldObjectAtCursor(e: DebugPointerEvent): { objUnderCursor: WorldOb
 	const y = e.offsetY;
 	const p = div_vec2(new_vec2(x, y), $.view.viewportScale);
 
-	const pointArea = { start: { x: p.x, y: p.y }, end: { x: p.x, y: p.y } };
+	const pointArea = { left: p.x, top: p.y, right: p.x, bottom: p.y };
 
 	// Use a lazy iterable filter helper to filter the world.objects iterable directly
 	const objsUnderCursor: WorldObject[] = Array.from($.world.filterObjects(

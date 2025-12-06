@@ -2,9 +2,10 @@ import { $ } from '../core/game';
 import type { GameEvent } from '../core/game_event';
 import { WorldObject, WorldObjectEventPayloads } from "../core/object/worldobject";
 import { new_vec2, set_inplace_vec2 } from '../utils/vector_operations';
-import { vec2, type Area, type Polygon } from '../rompack/rompack';
+import { vec2, type RectBounds, type Polygon } from '../rompack/rompack';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import { Component, componenttags_preprocessing, type ComponentAttachOptions } from "./basecomponent";
+import { new_area } from '../utils/rect_operations';
 
 /**
  * ColliderComponent holds collision shapes for a WorldObject.
@@ -37,7 +38,7 @@ export class Collider2DComponent extends Component<WorldObject> {
 
 	/** Local-space rectangle bounds (nullable when only polygons are used). */
 	@excludepropfromsavegame
-	private _localArea: Area = null;
+	private _localArea: RectBounds = null;
 
 	/** Local-space polygons; each polygon is a flat [x0,y0,x1,y1,...] list. */
 	@excludepropfromsavegame
@@ -73,19 +74,16 @@ export class Collider2DComponent extends Component<WorldObject> {
 	}
 
 	/** Returns world-space AABB. Falls back to object size if no local area is set. */
-	public get worldArea(): Area {
+	public get worldArea(): RectBounds {
 		const parent = this.parent;
 		const p = parent.pos;
 		if (!this._localArea) {
 			const size = parent.size;
-			return { start: { x: p.x, y: p.y }, end: { x: p.x + size.x, y: p.y + size.y } };
+			return new_area(p.x, p.y, p.x + size.x, p.y + size.y);
 		}
-		return {
-			start: { x: p.x + this._localArea.start.x, y: p.y + this._localArea.start.y },
-			end: { x: p.x + this._localArea.end.x, y: p.y + this._localArea.end.y }
-		};
+		return new_area(p.x + this._localArea.left, p.y + this._localArea.top,
+			p.x + this._localArea.right, p.y + this._localArea.bottom);
 	}
-
 	/** Returns world-space polygons, offset by parent position; null when none. */
 	public get worldPolygons(): Polygon[] {
 		if (!this._localPolys || this._localPolys.length === 0) return null;
@@ -100,14 +98,14 @@ export class Collider2DComponent extends Component<WorldObject> {
 	}
 
 	/** Returns local-space area, if any. */
-	public get localArea(): Area { return this._localArea; }
+	public get localArea(): RectBounds { return this._localArea; }
 	/** Returns local-space polygons, if any. */
 	public get localPolygons(): Polygon[] { return this._localPolys; }
 	/** Returns local-space circle, if any. */
 	public get localCircle(): { x: number; y: number; r: number } { return this._localCircle; }
 
 	/** Set local rectangle bounds (replaces previous). */
-	public setLocalArea(a: Area): void { this._localArea = a; }
+	public setLocalArea(a: RectBounds): void { this._localArea = a; }
 	/** Set local polygons (replaces previous). */
 	public setLocalPolygons(polys: Polygon[]): void { this._localPolys = polys; }
 	/** Set local circle (replaces previous). */

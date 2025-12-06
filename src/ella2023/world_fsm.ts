@@ -35,7 +35,7 @@ export class EilaModelFSM {
 							on: {
 								curtained: {
 									lane: 'presentation',
-									do() {
+									go() {
 										return '../oefenen';
 									},
 								},
@@ -105,7 +105,7 @@ export class EilaModelFSM {
 						[RETURN_TO_TITLE_EVENT]: '/titlescreen',
 						[`timeline.frame.${GameOver.TIMEOUT_TIMELINE_ID}`]: {
 							scope: 'gameover',
-							do() {
+							go() {
 								return '/titlescreen';
 							},
 						},
@@ -126,7 +126,7 @@ export class EilaModelFSM {
 						[RETURN_TO_TITLE_EVENT]: '/titlescreen',
 						[`timeline.frame.${Hoera.TIMEOUT_TIMELINE_ID}`]: {
 							scope: 'hoera',
-							do() {
+							go() {
 								return '/titlescreen';
 							},
 						},

@@ -137,7 +137,7 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 		if (!Array.isArray(rules)) return;
 		rules.forEach((rule, ri) => {
 			if (!rule || typeof rule !== 'object') return;
-			const act = rule.do;
+			const act = rule.go;
 			if (!act) { errors.push(`Missing 'do' action at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}`); return; }
 			if (typeof act === 'object' && 'musicTransition' in act && act.musicTransition) {
 				const mt = act.musicTransition;

@@ -9,7 +9,7 @@ import { Camera } from '../render/3d/camera3d';
 import type { ConcreteOrAbstractConstructor, Identifier, RegisterablePersistent, Viewport } from '../rompack/rompack';
 import type { NodeSpec, SystemDescriptor } from '../ecs/pipeline';
 import type { ECSPipelineExtensionContext } from '../ecs/extensions';
-import { Direction, vec3, type Area, type vec2arr } from "../rompack/rompack";
+import { Direction, vec3, type RectBounds, type vec2arr } from "../rompack/rompack";
 import { excludepropfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { CameraObject } from './object/cameraobject';
 import { WorldObject, WorldObjectEvents, type WorldObjectEventPayloads } from './object/worldobject';
@@ -547,7 +547,7 @@ export class World implements Stateful, RegisterablePersistent {
 	}
 
 	public rebuildCollisionIndex(cellSize = 64): void { Collision2DSystem.rebuildIndex(this, cellSize); }
-	public queryAABB(area: Area): WorldObject[] {
+	public queryAABB(area: RectBounds): WorldObject[] {
 		Collision2DSystem.rebuildIndex(this);
 		const colliders = Collision2DSystem.queryAABB(this, area);
 		const seen = new Set<WorldObject>();
@@ -576,7 +576,7 @@ export class World implements Stateful, RegisterablePersistent {
 		return hits.length > 0 ? hits[0] : null;
 	}
 
-	public sweepAABB(area: Area, delta: vec2arr): WorldObject[] {
+	public sweepAABB(area: RectBounds, delta: vec2arr): WorldObject[] {
 		Collision2DSystem.rebuildIndex(this);
 		const colliders = Collision2DSystem.sweepAABB(this, area, delta);
 		const seen = new Set<WorldObject>();

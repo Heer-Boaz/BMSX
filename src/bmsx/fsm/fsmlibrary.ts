@@ -569,7 +569,7 @@ function rewriteOnBag(bag: StateMachineBlueprint['on']) {
 	const out: NonNullable<StateMachineBlueprint['on']> = {};
 	for (const [raw, def] of Object.entries(bag)) {
 		if (typeof def === 'string') {
-			out[raw] = { do: def };
+			out[raw] = { go: def };
 			continue;
 		}
 		out[raw] = { ...def };
@@ -589,7 +589,7 @@ function hoistEventDef(
 
 	const base = [machineName, ...statePath, bagName, rawEventName];
 
-	if (typeof eventDefinition.do !== 'undefined') {
+	if (typeof eventDefinition.go !== 'undefined') {
 		hoistEventDo(machineName, stateDef, statePath, bagName, rawEventName, eventDefinition, makeId([...base, 'do']));
 	}
 }
@@ -634,7 +634,7 @@ function walkAndHoist(
 		rc.forEach((chk, i) => {
 			if (!chk || typeof chk !== 'object') return;
 			const base = [machineName, ...path, `run_checks[${i}]`];
-			if (typeof chk.do !== 'undefined') {
+			if (typeof chk.go !== 'undefined') {
 				hoistEventDo(machineName, sdef, path, `run_checks`, `${i}`, chk, makeId([...base, 'do']));
 			}
 		});

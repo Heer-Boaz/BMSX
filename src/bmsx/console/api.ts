@@ -254,8 +254,10 @@ export class BmsxConsoleApi {
 		const rect: RectRenderSubmission = {
 			kind: 'fill',
 			area: {
-				start: { x: 0, y: 0, z: 0 },
-				end: { x: this.display_width, y: this.display_height, z: 0 },
+				left: 0,
+				top: 0,
+				right: this.display_width,
+				bottom: this.display_height,
 			},
 			color,
 		};
@@ -267,8 +269,11 @@ export class BmsxConsoleApi {
 		const rect: RectRenderSubmission = {
 			kind: 'rect',
 			area: {
-				start: { x: x0, y: y0, z },
-				end: { x: x1, y: y1, z },
+				left: x0,
+				top: y0,
+				right: x1,
+				bottom: y1,
+				z: z,
 			},
 			color: this.palette_color(colorindex),
 		};
@@ -279,8 +284,11 @@ export class BmsxConsoleApi {
 		const rect: RectRenderSubmission = {
 			kind: 'fill',
 			area: {
-				start: { x: x0, y: y0, z },
-				end: { x: x1, y: y1, z },
+				left: x0,
+				top: y0,
+				right: x1,
+				bottom: y1,
+				z: z,
 			},
 			color: this.palette_color(colorindex),
 		};
@@ -292,8 +300,11 @@ export class BmsxConsoleApi {
 		const rect: RectRenderSubmission = {
 			kind: 'fill',
 			area: {
-				start: { x: x0, y: y0, z },
-				end: { x: x1, y: y1, z },
+				left: x0,
+				top: y0,
+				right: x1,
+				bottom: y1,
+				z: z,
 			},
 			color: resolved,
 		};

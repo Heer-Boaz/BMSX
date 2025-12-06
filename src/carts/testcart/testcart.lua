@@ -5,6 +5,10 @@ local hero_instance_id = 'demo.hero.instance'
 local hero_fsm_id = 'demo.hero.fsm'
 local hero_timeline_id = 'demo.hero.timeline'
 local hero_tracker_component_id = 'demo.hero.tracker'
+local collision_target_def_id = 'demo.collision.target'
+local collision_target_instance_id = 'demo.collision.target.instance'
+local collision_target_spawn_pos = { x = 104, y = 64, z = 0 }
+local collision_layers = { hero = 0x1, target = 0x2 }
 local service_id = 'demo.service.director'
 local effect_id = 'demo.effect.blink'
 local hero_spawn_pos = { x = 48, y = 64, z = 0 }
@@ -12,6 +16,17 @@ local hero_spawn_pos = { x = 48, y = 64, z = 0 }
 local demo = {
 	last_plain_input = 'none',
 	tick = 0,
+	collision = {
+		active = false,
+		last_event = 'none',
+		with = 'none',
+		begin_count = 0,
+		stay_count = 0,
+		end_count = 0,
+		contact_depth = 0,
+		contact_normal_x = 0,
+		contact_normal_y = 0,
+	},
 }
 
 local function track_plain_input()
@@ -29,6 +44,60 @@ local function track_plain_input()
 			print('[hotreload-test] input action=' .. entry[2] .. ' tick=' .. demo.tick)
 		end
 	end
+end
+
+local function setup_hero_collision(owner)
+	local collider = owner:getOrCreateCollider()
+	collider:setLocalArea({
+		start = { x = 0, y = 0 },
+		['end'] = { x = owner.sx, y = owner.sy },
+	})
+	collider.generateOverlapEvents = true
+	collider.layer = collision_layers.hero
+	collider.mask = collision_layers.target
+	owner.overlapping = false
+	local function capture_contact(event, phase)
+		demo.collision.last_event = phase
+		demo.collision.with = event.other_id
+		local contact = event.contact
+		demo.collision.contact_depth = contact.depth
+		demo.collision.contact_normal_x = contact.normal.x
+		demo.collision.contact_normal_y = contact.normal.y
+	end
+	owner.events:on({
+		event = 'overlap.begin',
+		subscriber = owner,
+		handler = function(event)
+			demo.collision.begin_count = demo.collision.begin_count + 1
+			demo.collision.active = true
+			owner.overlapping = true
+			capture_contact(event, 'begin')
+		end,
+	})
+	owner.events:on({
+		event = 'overlap.stay',
+		subscriber = owner,
+		handler = function(event)
+			demo.collision.stay_count = demo.collision.stay_count + 1
+			demo.collision.active = true
+			owner.overlapping = true
+			capture_contact(event, 'stay')
+		end,
+	})
+	owner.events:on({
+		event = 'overlap.end',
+		subscriber = owner,
+		handler = function(event)
+			demo.collision.end_count = demo.collision.end_count + 1
+			demo.collision.active = false
+			owner.overlapping = false
+			demo.collision.last_event = 'end'
+			demo.collision.with = event.other_id
+			demo.collision.contact_depth = 0
+			demo.collision.contact_normal_x = 0
+			demo.collision.contact_normal_y = 0
+		end,
+	})
 end
 
 hero = {}
@@ -52,6 +121,7 @@ function hero:onspawn(spawn_pos)
 	self.blinking_timer = 0
 	self.move_count = 0
 	self.boundary_pushback = 0
+	setup_hero_collision(self)
 	define_fn(timeline_component, {
 		id = hero_timeline_id,
 		frames = { 'rise', 'peak', 'cool', 'reset' },
@@ -136,12 +206,12 @@ local function build_hero_fsm()
 				input_eval = 'first',
 				input_event_handlers = {
 					['console_b[jp]'] = {
-						['do'] = function(self)
+						go = function(self)
 							return '/charging'
 						end,
 					},
 					['console_a[jp]'] = {
-						['do'] = function(self)
+						go = function(self)
 							return '/blinking'
 						end,
 					},
@@ -161,12 +231,12 @@ local function build_hero_fsm()
 				input_eval = 'first',
 				input_event_handlers = {
 					['console_b[jp]'] = {
-						['do'] = function(self)
+						go = function(self)
 							return '/charging'
 						end,
 					},
 					['console_a[jp]'] = {
-						['do'] = function(self)
+						go = function(self)
 							return '/blinking'
 						end,
 					},
@@ -202,14 +272,61 @@ local function build_hero_fsm()
 	})
 end
 
+local collision_target = {}
+collision_target.__index = collision_target
+
+function collision_target:onspawn(spawn_pos)
+	self.label = 'collision target'
+	self.sx = 16
+	self.sy = 16
+	self.hit_flash = 0
+	self.x = spawn_pos.x
+	self.y = spawn_pos.y
+	self.z = spawn_pos.z
+	local collider = self:getOrCreateCollider()
+	collider:setLocalArea({
+		left = 0, top = 0, right = self.sx, bottom = self.sy,
+	})
+	collider.generateOverlapEvents = true
+	collider.layer = collision_layers.target
+	collider.mask = collision_layers.hero
+	self.events:on({
+		event = 'overlap.begin',
+		subscriber = self,
+		handler = function()
+			self.hit_flash = 0.25
+		end,
+	})
+	self.events:on({
+		event = 'overlap.stay',
+		subscriber = self,
+		handler = function()
+			self.hit_flash = 0.15
+		end,
+	})
+end
+
+function collision_target:cooldown_flash(dt)
+	self.hit_flash = math.max(0, self.hit_flash - dt)
+end
+
 local function register_hero()
 	define_world_object({
 		def_id = hero_def_id,
 		class = hero,
-		components = { 'ActionEffectComponent', 'ProhibitLeavingScreenComponent', hero_tracker_component_id },
+		components = { 'ActionEffectComponent', 'Collider2DComponent', 'ProhibitLeavingScreenComponent', hero_tracker_component_id },
 		fsms = { hero_fsm_id, },
 		effects = { effect_id, },
 		defaults = { speed = 54 },
+	})
+end
+
+local function register_collision_target()
+	define_world_object({
+		def_id = collision_target_def_id,
+		class = collision_target,
+		components = { 'Collider2DComponent', 'ProhibitLeavingScreenComponent' },
+		defaults = { sx = 16, sy = 16 },
 	})
 end
 
@@ -250,6 +367,20 @@ end
 
 local function reset_director_stats()
 	director.stats = { moves = 0, pulses = 0, effects = 0, charges = 0 }
+end
+
+local function reset_collision_stats()
+	demo.collision = {
+		active = false,
+		last_event = 'none',
+		with = 'none',
+		begin_count = 0,
+		stay_count = 0,
+		end_count = 0,
+		contact_depth = 0,
+		contact_normal_x = 0,
+		contact_normal_y = 0,
+	}
 end
 
 local function define_blink()
@@ -311,6 +442,7 @@ local function define_blueprints_and_handlers()
 	build_hero_fsm()
 	define_blink()
 	register_hero()
+	register_collision_target()
 	register_director_listeners()
 end
 
@@ -322,26 +454,46 @@ end
 
 function new_game()
 	reset_director_stats()
+	reset_collision_stats()
 	spawn_sprite(hero_def_id, {
 		id = hero_instance_id,
 		pos = { x = hero_spawn_pos.x, y = hero_spawn_pos.y, z = hero_spawn_pos.z },
 	})
+	spawn_sprite(collision_target_def_id, {
+		id = collision_target_instance_id,
+		pos = { x = collision_target_spawn_pos.x, y = collision_target_spawn_pos.y, z = collision_target_spawn_pos.z },
+	})
+end
+
+local function tick_collision_flash(dt)
+	local target = world_object(collision_target_instance_id)
+	target:cooldown_flash(dt)
 end
 
 function update(dt)
 	demo.tick = demo.tick + dt
 	track_plain_input()
+	tick_collision_flash(dt)
 end
 
 local function draw_hero(hero)
 	local ready = hero.tempo_ready
 	local blinking = hero.blinking_timer > 0
+	local touching = hero.overlapping
 	local basecolor = blinking and 8 or (ready and 10 or 12)
-	rectfill(hero.x, hero.y, hero.x + hero.sx, hero.y + hero.sy, 0, basecolor)
+	local color = touching and 2 or basecolor
+	rectfill(hero.x, hero.y, hero.x + hero.sx, hero.y + hero.sy, 0, color)
+end
+
+local function draw_collision_target(target)
+	local flash = target.hit_flash
+	local color = flash > 0 and 9 or 3
+	rectfill(target.x, target.y, target.x + target.sx, target.y + target.sy, 0, color)
 end
 
 local function draw_hud(hero)
 	local stats = director.stats
+	local collision = demo.collision
 	write('bmsx lua engine tour', 8, 0, 0, 15)
 	write('worldobject : ' .. hero.id, 8, 8, 0, 11)
 	write('service     : ' .. service_id, 8, 16, 0, 11)
@@ -355,15 +507,21 @@ local function draw_hud(hero)
 	write('charges     : ' .. stats.charges, 8, 80, 0, 6)
 	write('tracker mv  : ' .. hero.move_count, 8, 88, 0, 6)
 	write('screen hits : ' .. hero.boundary_pushback, 8, 96, 0, 6)
-	write('controls:', 8, 112, 0, 13)
-	write('- arrows: move world object', 8, 120, 0, 13)
-	write('  - a: blink (inputactiontoeffect + input)', 8, 128, 0, 13)
-	write('  - b: hold (fsm + input)', 8, 136, 0, 13)
+	write('collision   : ' .. (collision.active and 'touching' or 'clear'), 8, 104, 0, 9)
+	write('overlap evt : ' .. collision.last_event .. ' vs ' .. collision.with, 8, 112, 0, 9)
+	write('contact d/n : ' .. string.format('%.2f (%.2f, %.2f)', collision.contact_depth, collision.contact_normal_x, collision.contact_normal_y), 8, 120, 0, 9)
+	write('counts b/s/e: ' .. collision.begin_count .. '/' .. collision.stay_count .. '/' .. collision.end_count, 8, 128, 0, 9)
+	write('controls:', 8, 152, 0, 13)
+	write('- arrows: move world object', 8, 160, 0, 13)
+	write('  - a: blink (inputactiontoeffect + input)', 8, 168, 0, 13)
+	write('  - b: hold (fsm + input)', 8, 176, 0, 13)
 end
 
 function draw()
 	cls(4)
 	local hero_instance = world_object(hero_instance_id)
+	local target_instance = world_object(collision_target_instance_id)
+	draw_collision_target(target_instance)
 	draw_hero(hero_instance)
 	draw_hud(hero_instance)
 	extra()

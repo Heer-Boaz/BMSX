@@ -766,8 +766,10 @@ export class ConsoleMode {
 						renderer.rect({
 							kind: 'fill',
 							area: {
-								start: { x: x + startWidth, y, z: 0 },
-								end: { x: x + startWidth + selWidth, y: y + this.font.lineHeight, z: 0 },
+								left: x + startWidth,
+								top: y,
+								right: x + startWidth + selWidth,
+								bottom: y + this.font.lineHeight,
 							},
 							color: this.selectionColor,
 						});
@@ -805,12 +807,12 @@ export class ConsoleMode {
 						const ops: CaretDrawOps = {
 							fillRect: (x0, y0, x1, y1, color) => renderer.rect({
 								kind: 'fill',
-								area: { start: { x: x0, y: y0, z: 0 }, end: { x: x1, y: y1, z: 0 } },
+								area: { left: x0, top: y0, right: x1, bottom: y1 },
 								color,
 							}),
 							strokeRect: (x0, y0, x1, y1, color) => renderer.rect({
 								kind: 'rect',
-								area: { start: { x: x0, y: y0, z: 0 }, end: { x: x1, y: y1, z: 0 } },
+								area: { left: x0, top: y0, right: x1, bottom: y1 },
 								color,
 							}),
 							drawGlyph: (text, gx, gy, color) => renderer.glyphs({ glyphs: text, x: gx, y: gy, z: 0, color, font: renderFont }),
@@ -841,8 +843,10 @@ export class ConsoleMode {
 				renderer.rect({
 					kind: 'fill',
 					area: {
-						start: { x: cursorX, y: originY, z: 0 },
-						end: { x: cursorX + advance, y: originY + this.font.lineHeight, z: 0 },
+						left: cursorX,
+						top: originY,
+						right: cursorX + advance,
+						bottom: originY + this.font.lineHeight,
 					},
 					color: this.characterBackgroundColor,
 				});

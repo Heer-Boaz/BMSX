@@ -189,19 +189,12 @@ export interface vec3 extends vec2 {
 
 export type x_y_w_h_arr = vec4arr;
 
-/**
- * Represents an area defined by a start and end point.
- */
-export interface Area {
-	start: vec2;
-	end: vec2;
-}
-
 export type RectBounds = {
 	left: number;
 	top: number;
 	right: number;
 	bottom: number;
+	z?: number;
 };
 
 export type Polygon = number[];
@@ -225,10 +218,10 @@ export interface AudioMeta {
 }
 
 export interface BoundingBoxPrecalc {
-	original: Area, // The bounding box of the image. Used for collision detection.
-	fliph: Area, // The bounding box of the image, when flipped horizontally. Used for collision detection.
-	flipv: Area, // The bounding box of the image, when flipped vertically. Used for collision detection.
-	fliphv: Area, // The bounding box of the image, when flipped both horizontally and vertically. Used for collision detection.
+	original: RectBounds, // The bounding box of the image. Used for collision detection.
+	fliph: RectBounds, // The bounding box of the image, when flipped horizontally. Used for collision detection.
+	flipv: RectBounds, // The bounding box of the image, when flipped vertically. Used for collision detection.
+	fliphv: RectBounds, // The bounding box of the image, when flipped both horizontally and vertically. Used for collision detection.
 }
 
 export interface HitPolygonsPrecalc {
