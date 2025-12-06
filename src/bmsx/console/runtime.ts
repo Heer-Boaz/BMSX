@@ -2062,6 +2062,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	public resourceSourceForChunk(chunkName: string): string {
 		const binding = $.cart.chunk2lua[chunkName];
+		if (!binding) return null; // This can happen for non-existent chunks, such as debugger tabs that don't refer to real chunks
 		const cached = getWorkspaceCachedSource(binding.normalized_source_path);
 		if (cached !== null) {
 			return cached;
