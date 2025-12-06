@@ -44,9 +44,12 @@ export async function createLuaResource(request: ConsoleLuaResourceCreationReque
 		chunk_name: path,
 		update_timestamp: $.platform.clock.dateNow(),
 	};
-	const cart = $.rompack.cart;
-	cart.chunk2lua![asset.chunk_name] = asset;
-	cart.path2lua![asset.normalized_source_path] = asset;
+	const registerAsset = (cart: BmsxCartridge): void => {
+		cart.chunk2lua![asset.chunk_name] = asset;
+		cart.path2lua![asset.normalized_source_path] = asset;
+	};
+	registerAsset($.rompack.cart);
+	registerAsset($.cart);
 	const filesystemPath = asset.normalized_source_path;
 	await persistLuaSourceToFilesystem(filesystemPath, contents);
 	BmsxConsoleRuntime.instance.markSourceChunkAsDirty(asset.chunk_name);

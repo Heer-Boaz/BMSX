@@ -3,6 +3,7 @@ import { LuaSyntaxError } from '../../lua/errors';
 import { LuaLexer } from '../../lua/lexer';
 import { LuaParser } from '../../lua/parser';
 import type { LuaToken } from '../../lua/token';
+import { clamp } from '../../utils/clamp';
 import { ide_state } from './ide_state';
 
 export type ParsedLuaChunk = {
@@ -19,17 +20,20 @@ export function parseLuaChunk(source: string, chunkName: string): ParsedLuaChunk
 }
 
 export function parseLuaChunkWithRecovery(source: string, chunkName: string): ParsedLuaChunk {
-	try {
-		return parseLuaChunk(source, chunkName);
-	} catch (error) {
-		if (!(error instanceof LuaSyntaxError)) {
-			throw error;
+	let currentSource = source;
+	while (true) {
+		try {
+			return parseLuaChunk(currentSource, chunkName);
+		} catch (error) {
+			if (!(error instanceof LuaSyntaxError)) {
+				throw error;
+			}
+			const truncated = truncateSourceAtSyntaxError(currentSource, error);
+			if (truncated === null) {
+				return null;
+			}
+			currentSource = truncated;
 		}
-		const truncated = truncateSourceAtSyntaxError(source, error);
-		if (truncated === null) {
-			throw error;
-		}
-		return parseLuaChunk(truncated, chunkName);
 	}
 }
 
@@ -46,12 +50,16 @@ function truncateSourceAtSyntaxError(source: string, error: LuaSyntaxError): str
 	for (let index = 0; index < lineIndex; index += 1) {
 		truncated.push(lines[index]);
 	}
-	if (lineIndex < lines.length) {
-		const column = Number.isFinite(error.column) ? Math.max(0, error.column - 1) : lines[lineIndex].length;
-		const prefix = lines[lineIndex].slice(0, column);
-		if (prefix.trim().length > 0) {
-			truncated.push(prefix);
-		}
+	const line = lines[lineIndex];
+	const maxColumn = lineIndex === lines.length - 1 ? Math.max(line.length - 1, 0) : line.length;
+	const column = Number.isFinite(error.column) ? clamp(error.column - 1, 0, maxColumn) : maxColumn;
+	const prefix = line.slice(0, column);
+	if (prefix.trim().length > 0) {
+		truncated.push(prefix);
 	}
-	return truncated.join('\n');
+	const result = truncated.join('\n');
+	if (result.length === source.length) {
+		return null;
+	}
+	return result;
 }

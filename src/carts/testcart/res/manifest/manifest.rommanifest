@@ -25,4 +25,4 @@ input:
       console_x: [x]
       console_y: [y]
 lua:
-  entry_asset_id: testcart
+  entry_path: testcart.lua

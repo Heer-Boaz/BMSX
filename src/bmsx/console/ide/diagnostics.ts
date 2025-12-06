@@ -45,10 +45,10 @@ export function computeAggregatedEditorDiagnostics(
 				source,
 				chunkName: chunkName ?? ctx.title ?? 'lua',
 				localSymbols,
-			globalSymbols,
-			builtinDescriptors,
-			apiSignatures: apiData.signatures,
-		});
+				globalSymbols,
+				builtinDescriptors,
+				apiSignatures: apiData.signatures,
+			});
 		} catch {
 			luaDiagnostics = [];
 		}
@@ -82,7 +82,7 @@ function resolveChunkName(ctx: DiagnosticContextInput): string {
 	if (descriptor) {
 		if (descriptor.path && descriptor.path.length > 0) return descriptor.path;
 	}
-	return ctx.title ;
+	return ctx.title;
 }
 
 function groupGlobalSymbolsByKey(symbols: readonly ConsoleLuaSymbolEntry[]): Map<string, ConsoleLuaSymbolEntry[]> {
@@ -173,6 +173,7 @@ function computeMissingRequireDiagnostics(
 	}
 	return diagnostics;
 }
+
 export function markDiagnosticsDirty(contextId?: string): void {
 	const targetId = contextId ?? ide_state.activeCodeTabContextId;
 	if (!targetId) {
