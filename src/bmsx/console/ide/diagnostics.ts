@@ -1,9 +1,41 @@
 import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaSymbolEntry, ConsoleResourceDescriptor } from '../types';
 import type { EditorDiagnostic } from './types';
 import { BmsxConsoleRuntime } from '../runtime';
-import { computeLuaDiagnostics, getApiCompletionData, collectLuaModuleAliases, type LuaDiagnostic } from './intellisense';
+import { computeLuaDiagnostics, getApiCompletionData, type LuaDiagnostic } from './intellisense';
 import { buildLuaFileSemanticData } from './semantic_model';
 import { ide_state, diagnosticsDebounceMs } from './ide_state';
+import {
+	LuaSyntaxKind,
+	LuaTableFieldKind,
+	type LuaAssignmentStatement,
+	type LuaBlock,
+	type LuaCallExpression,
+	type LuaCallStatement,
+	type LuaDoStatement,
+	type LuaExpression,
+	type LuaForGenericStatement,
+	type LuaForNumericStatement,
+	type LuaFunctionDeclarationStatement,
+	type LuaFunctionExpression,
+	type LuaIfStatement,
+	type LuaIndexExpression,
+	type LuaLocalAssignmentStatement,
+	type LuaLocalFunctionStatement,
+	type LuaMemberExpression,
+	type LuaRepeatStatement,
+	type LuaReturnStatement,
+	type LuaStatement,
+	type LuaTableArrayField,
+	type LuaTableConstructorExpression,
+	type LuaTableExpressionField,
+	type LuaTableIdentifierField,
+	type LuaWhileStatement,
+	type LuaBinaryExpression,
+	type LuaUnaryExpression,
+	type LuaIdentifierExpression,
+	type LuaStringLiteralExpression,
+} from '../../lua/ast';
+import { parseLuaChunkWithRecovery } from './lua_parse';
 
 export type DiagnosticContextInput = {
 	id: string;
@@ -109,15 +141,7 @@ function computeMissingRequireDiagnostics(
 	const runtime = BmsxConsoleRuntime.instance;
 	runtime.ensureLuaModuleIndex();
 	const semantic = buildLuaFileSemanticData(source, chunkName);
-	const requiredChunks = new Set<string>();
-	requiredChunks.add(chunkName);
-	const moduleAliases = collectLuaModuleAliases({ source, chunkName });
-	for (const moduleName of moduleAliases.values()) {
-		const record = runtime.luaModuleAliases.get(moduleName);
-		if (record) {
-			requiredChunks.add(record.chunkName);
-		}
-	}
+	const requiredChunks = collectRequiredChunkNames(runtime, source, chunkName);
 	const localSymbols = new Set<string>();
 	for (let i = 0; i < semantic.decls.length; i += 1) {
 		localSymbols.add(semantic.decls[i].symbolKey);
@@ -172,6 +196,216 @@ function computeMissingRequireDiagnostics(
 		});
 	}
 	return diagnostics;
+}
+
+function collectRequiredChunkNames(runtime: BmsxConsoleRuntime, source: string, chunkName: string): Set<string> {
+	const required = new Set<string>();
+	required.add(chunkName);
+	const modules = collectRequiredModuleNames(source, chunkName);
+	for (const moduleName of modules) {
+		const record = runtime.luaModuleAliases.get(moduleName);
+		if (record) {
+			required.add(record.chunkName);
+		}
+	}
+	return required;
+}
+
+function collectRequiredModuleNames(source: string, chunkName: string): Set<string> {
+	const chunk = parseLuaChunkWithRecovery(source, chunkName).chunk;
+	const required = new Set<string>();
+	for (let index = 0; index < chunk.body.length; index += 1) {
+		collectModulesFromStatement(chunk.body[index], required);
+	}
+	return required;
+}
+
+function collectModulesFromStatement(statement: LuaStatement, required: Set<string>): void {
+	switch (statement.kind) {
+		case LuaSyntaxKind.AssignmentStatement: {
+			const assignment = statement as LuaAssignmentStatement;
+			for (let index = 0; index < assignment.right.length; index += 1) {
+				collectModulesFromExpression(assignment.right[index], required);
+			}
+			break;
+		}
+		case LuaSyntaxKind.LocalAssignmentStatement: {
+			const localAssignment = statement as LuaLocalAssignmentStatement;
+			for (let index = 0; index < localAssignment.values.length; index += 1) {
+				collectModulesFromExpression(localAssignment.values[index], required);
+			}
+			break;
+		}
+		case LuaSyntaxKind.LocalFunctionStatement: {
+			const localFunction = statement as LuaLocalFunctionStatement;
+			collectModulesFromFunction(localFunction.functionExpression, required);
+			break;
+		}
+		case LuaSyntaxKind.FunctionDeclarationStatement: {
+			const declaration = statement as LuaFunctionDeclarationStatement;
+			collectModulesFromFunction(declaration.functionExpression, required);
+			break;
+		}
+		case LuaSyntaxKind.ReturnStatement: {
+			const returnStatement = statement as LuaReturnStatement;
+			for (let index = 0; index < returnStatement.expressions.length; index += 1) {
+				collectModulesFromExpression(returnStatement.expressions[index], required);
+			}
+			break;
+		}
+		case LuaSyntaxKind.IfStatement: {
+			const ifStatement = statement as LuaIfStatement;
+			for (let index = 0; index < ifStatement.clauses.length; index += 1) {
+				const clause = ifStatement.clauses[index];
+				collectModulesFromExpression(clause.condition, required);
+				collectModulesFromBlock(clause.block, required);
+			}
+			break;
+		}
+		case LuaSyntaxKind.WhileStatement: {
+			const whileStatement = statement as LuaWhileStatement;
+			collectModulesFromExpression(whileStatement.condition, required);
+			collectModulesFromBlock(whileStatement.block, required);
+			break;
+		}
+		case LuaSyntaxKind.RepeatStatement: {
+			const repeatStatement = statement as LuaRepeatStatement;
+			collectModulesFromBlock(repeatStatement.block, required);
+			collectModulesFromExpression(repeatStatement.condition, required);
+			break;
+		}
+		case LuaSyntaxKind.ForNumericStatement: {
+			const forNumeric = statement as LuaForNumericStatement;
+			collectModulesFromExpression(forNumeric.start, required);
+			collectModulesFromExpression(forNumeric.limit, required);
+			if (forNumeric.step) {
+				collectModulesFromExpression(forNumeric.step, required);
+			}
+			collectModulesFromBlock(forNumeric.block, required);
+			break;
+		}
+		case LuaSyntaxKind.ForGenericStatement: {
+			const forGeneric = statement as LuaForGenericStatement;
+			for (let index = 0; index < forGeneric.iterators.length; index += 1) {
+				collectModulesFromExpression(forGeneric.iterators[index], required);
+			}
+			collectModulesFromBlock(forGeneric.block, required);
+			break;
+		}
+		case LuaSyntaxKind.DoStatement: {
+			const doStatement = statement as LuaDoStatement;
+			collectModulesFromBlock(doStatement.block, required);
+			break;
+		}
+		case LuaSyntaxKind.CallStatement: {
+			const callStatement = statement as LuaCallStatement;
+			collectModulesFromExpression(callStatement.expression, required);
+			break;
+		}
+		default:
+			break;
+	}
+}
+
+function collectModulesFromBlock(block: LuaBlock, required: Set<string>): void {
+	for (let index = 0; index < block.body.length; index += 1) {
+		collectModulesFromStatement(block.body[index], required);
+	}
+}
+
+function collectModulesFromFunction(fn: LuaFunctionExpression, required: Set<string>): void {
+	collectModulesFromBlock(fn.body, required);
+}
+
+function collectModulesFromExpression(expression: LuaExpression, required: Set<string>): void {
+	switch (expression.kind) {
+		case LuaSyntaxKind.CallExpression: {
+			const callExpression = expression as LuaCallExpression;
+			const moduleName = tryGetRequireModuleName(callExpression);
+			if (moduleName) {
+				required.add(moduleName);
+			}
+			collectModulesFromExpression(callExpression.callee, required);
+			for (let index = 0; index < callExpression.arguments.length; index += 1) {
+				collectModulesFromExpression(callExpression.arguments[index], required);
+			}
+			break;
+		}
+		case LuaSyntaxKind.FunctionExpression: {
+			const functionExpression = expression as LuaFunctionExpression;
+			collectModulesFromBlock(functionExpression.body, required);
+			break;
+		}
+		case LuaSyntaxKind.TableConstructorExpression: {
+			const tableConstructor = expression as LuaTableConstructorExpression;
+			for (let index = 0; index < tableConstructor.fields.length; index += 1) {
+				const field = tableConstructor.fields[index];
+				switch (field.kind) {
+					case LuaTableFieldKind.Array:
+						collectModulesFromExpression((field as LuaTableArrayField).value, required);
+						break;
+					case LuaTableFieldKind.IdentifierKey:
+						collectModulesFromExpression((field as LuaTableIdentifierField).value, required);
+						break;
+					case LuaTableFieldKind.ExpressionKey: {
+						const expressionField = field as LuaTableExpressionField;
+						collectModulesFromExpression(expressionField.key, required);
+						collectModulesFromExpression(expressionField.value, required);
+						break;
+					}
+					default:
+						break;
+				}
+			}
+			break;
+		}
+		case LuaSyntaxKind.BinaryExpression: {
+			const binaryExpression = expression as LuaBinaryExpression;
+			collectModulesFromExpression(binaryExpression.left, required);
+			collectModulesFromExpression(binaryExpression.right, required);
+			break;
+		}
+		case LuaSyntaxKind.UnaryExpression: {
+			const unaryExpression = expression as LuaUnaryExpression;
+			collectModulesFromExpression(unaryExpression.operand, required);
+			break;
+		}
+		case LuaSyntaxKind.MemberExpression: {
+			const memberExpression = expression as LuaMemberExpression;
+			collectModulesFromExpression(memberExpression.base, required);
+			break;
+		}
+		case LuaSyntaxKind.IndexExpression: {
+			const indexExpression = expression as LuaIndexExpression;
+			collectModulesFromExpression(indexExpression.base, required);
+			collectModulesFromExpression(indexExpression.index, required);
+			break;
+		}
+		default:
+			break;
+	}
+}
+
+function tryGetRequireModuleName(callExpression: LuaCallExpression): string {
+	if (callExpression.methodName) {
+		return null;
+	}
+	if (callExpression.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
+		return null;
+	}
+	const callee = callExpression.callee as LuaIdentifierExpression;
+	if (callee.name.toLowerCase() !== 'require') {
+		return null;
+	}
+	if (callExpression.arguments.length === 0) {
+		return null;
+	}
+	const firstArg = callExpression.arguments[0];
+	if (firstArg.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		return null;
+	}
+	const moduleName = (firstArg as LuaStringLiteralExpression).value.trim();
+	return moduleName.length > 0 ? moduleName : null;
 }
 
 export function markDiagnosticsDirty(contextId?: string): void {
