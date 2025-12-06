@@ -1,12 +1,9 @@
 import type { GameEvent } from '../core/game_event';
-import { $ } from '../core/game';
 import { WorldObject, WorldObjectEventPayloads } from "../core/object/worldobject";
 import { new_vec2, set_inplace_vec2 } from '../utils/vector_operations';
-import { mod } from '../utils/mod';
 import { vec2, type Area, type Polygon } from '../rompack/rompack';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
-import { TileSize } from "../systems/msx";
-import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams, type ComponentAttachOptions } from "./basecomponent";
+import { Component, componenttags_preprocessing, type ComponentAttachOptions } from "./basecomponent";
 
 /**
  * ColliderComponent holds collision shapes for a WorldObject.
@@ -145,11 +142,10 @@ export function leavingScreenHandler_prohibit(ik: WorldObject, { d, old_x_or_y }
 
 /**
  * Represents a component responsible for updating the position of a world object along a specific axis.
- * This component handles preprocessing and postprocessing updates to handle collisions, screen boundaries, etc.
+ * Physics systems read the captured old position to resolve collisions and boundaries.
  */
 @insavegame
-@componenttags_preprocessing('position_update_axis') // Preprocessing update to store the old position so that it can be used in the postprocessing update to place the object back to its old position if it collides with a wall or leaves the screen, etc.
-@componenttags_postprocessing('position_update_axis') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
+@componenttags_preprocessing('position_update_axis') // Store old position for physics systems.
 export abstract class PositionUpdateAxisComponent extends Component<any> {
 	/**
 	 * The previous position of the world object.
@@ -162,13 +158,13 @@ export abstract class PositionUpdateAxisComponent extends Component<any> {
 	}
 
 	override preprocessingUpdate(): void {
-		const parent = this.parent;;
+		const parent = this.parent;
 		set_inplace_vec2(this.oldPos, parent.pos);
 	}
 }
 
 /**
- * Represents a screen boundary component that handles collision detection with the screen boundaries.
+ * Marker component for screen boundary handling, used by BoundarySystem.
  * @class
  * @extends PositionUpdateAxisComponent
  */
@@ -176,150 +172,15 @@ export abstract class PositionUpdateAxisComponent extends Component<any> {
 export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
 	static override get unique(): boolean { return true; }
 	static { this.autoRegister(); }
-	/**
-	 * Overrides the postprocessingUpdate method to check for boundary collisions on the X and Y axes.
-	 * @override
-	 */
-	override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
-		super.postprocessingUpdate({ params, returnvalue });
-		const parent = this.parent;
-		const currentPos = parent.pos;
-		if (this.oldPos.x !== currentPos.x) {
-			this.checkBoundaryForXAxis(parent, this.oldPos.x, currentPos.x);
-		}
-		if (this.oldPos.y !== currentPos.y) {
-			this.checkBoundaryForYAxis(parent, this.oldPos.y, currentPos.y);
-		}
-	}
-
-	/**
-	 * Checks for boundary collisions on the X axis.
-	 * @private
-	 * @param {WorldObject} this - The world object.
-	 * @param {number} oldx - The old x position.
-	 * @param {number} newx - The new x position.
-	 */
-	private checkBoundaryForXAxis(parent: WorldObject, oldx: number, newx: number) {
-		if (newx < oldx) {
-			if (newx + parent.size.x < 0) {
-				const payload: WorldObjectEventPayloads['screen.leave'] = { d: 'left', old_x_or_y: oldx };
-				parent.events.emit('screen.leave', payload);
-			}
-			else if (newx < 0) {
-				const payload: WorldObjectEventPayloads['screen.leaving'] = { d: 'left', old_x_or_y: oldx };
-				parent.events.emit('screen.leaving', payload);
-			}
-		}
-		else if (newx > oldx) {
-			if (newx >= $.world.gamewidth) {
-				const payload: WorldObjectEventPayloads['screen.leave'] = { d: 'right', old_x_or_y: oldx };
-				parent.events.emit('screen.leave', payload);
-			}
-			else if (newx + parent.size.x >= $.world.gamewidth) {
-				const payload: WorldObjectEventPayloads['screen.leaving'] = { d: 'right', old_x_or_y: oldx };
-				parent.events.emit('screen.leaving', payload);
-			}
-		}
-	}
-
-	/**
-	 * Checks for boundary collisions on the Y axis.
-	 * @private
-	 * @param {WorldObject} this - The world object.
-	 * @param {number} oldy - The old y position.
-	 * @param {number} newy - The new y position.
-	 */
-	private checkBoundaryForYAxis(parent: WorldObject, oldy: number, newy: number) {
-		if (newy < oldy) {
-			if (newy + parent.size.y < 0) {
-				const payload: WorldObjectEventPayloads['screen.leave'] = { d: 'up', old_x_or_y: oldy };
-				parent.events.emit('screen.leave', payload);
-			}
-			else if (newy < 0) {
-				const payload: WorldObjectEventPayloads['screen.leaving'] = { d: 'up', old_x_or_y: oldy };
-				parent.events.emit('screen.leaving', payload);
-			}
-		}
-		else if (newy > oldy) {
-			if (newy >= $.world.gameheight) {
-				const payload: WorldObjectEventPayloads['screen.leave'] = { d: 'down', old_x_or_y: oldy };
-				parent.events.emit('screen.leave', payload);
-			}
-			else if (newy + parent.size.y >= $.world.gameheight) {
-				const payload: WorldObjectEventPayloads['screen.leaving'] = { d: 'down', old_x_or_y: oldy };
-				parent.events.emit('screen.leaving', payload);
-			}
-		}
-	}
 }
 
 /**
- * Represents a collision component for game objects vs tiles.
- * Extends the PositionUpdateAxisComponent class.
+ * Marker component for tile collisions; TileCollisionSystem performs resolution.
  */
 @insavegame
 export class TileCollisionComponent extends PositionUpdateAxisComponent {
 	static override get unique() { return true; }
 	static { this.autoRegister(); }
-	/**
-	 * Performs post-processing update for collision components.
-	 * Overrides the base class's update method and checks for tile collisions on the x and y axes.
-	 */
-	override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
-		super.postprocessingUpdate({ params, returnvalue });
-		const parent = this.parent;
-		const currentPos = parent.pos;
-		if (this.oldPos.x !== currentPos.x) {
-			this.checkTileCollisionForXAxis(parent, this.oldPos.x, currentPos.x);
-		}
-		if (this.oldPos.y !== currentPos.y) {
-			this.checkTileCollisionForYAxis(parent, this.oldPos.y, currentPos.y);
-		}
-	}
-
-	/**
-	 * Checks for tile collision along the X-axis and updates the object's position accordingly.
-	 * @param oldx The previous X-coordinate of the object.
-	 * @param newx The new X-coordinate of the object.
-	 */
-	protected checkTileCollisionForXAxis(parent: WorldObject, oldx: number, newx: number) {
-		if (newx < oldx) {
-			if ($.world.collidesWithTile(parent, 'left')) {
-				parent.events.emit('wallcollide', { d: 'left' });
-				newx += TileSize - mod(newx, TileSize);
-			}
-			parent.x = ~~newx;
-		}
-		else if (newx > oldx) {
-			if ($.world.collidesWithTile(parent, 'right')) {
-				parent.events.emit('wallcollide', { d: 'right' });
-				newx -= newx % TileSize;
-			}
-			parent.x = ~~newx;
-		}
-	}
-
-	/**
-	 * Checks for tile collision along the Y-axis and updates the object's position accordingly.
-	 * @param oldy The previous Y-coordinate of the object.
-	 * @param newy The new Y-coordinate of the object.
-	 */
-	protected checkTileCollisionForYAxis(parent: WorldObject, oldy: number, newy: number) {
-		if (newy < oldy) {
-			if ($.world.collidesWithTile(parent, 'up')) {
-				parent.events.emit('wallcollide', { d: 'up' });
-				newy += TileSize - mod(newy, TileSize);
-			}
-			parent.y = ~~newy;
-		}
-		else if (newy > oldy) {
-			if ($.world.collidesWithTile(parent, 'down')) {
-				parent.events.emit('wallcollide', { d: 'down' });
-				newy -= newy % TileSize;
-			}
-			parent.y = ~~newy;
-		}
-	}
 }
 
 /**
@@ -329,8 +190,19 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
 @insavegame
 export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
 	static { this.autoRegister(); }
+
 	public override bind(): void {
 		super.bind();
+		this.parent.events.on({
+			event_name: 'screen.leaving',
+			handler: this.onLeavingScreen,
+			subscriber: this,
+		});
+		this.parent.events.on({
+			event_name: 'screen.leave',
+			handler: this.onLeavingScreen,
+			subscriber: this,
+		});
 	}
 
 	/**
@@ -341,7 +213,7 @@ export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
 	 */
 	public onLeavingScreen(event: GameEvent) {
 		const emitter = event.emitter as WorldObject;
-		const detail = event as GameEvent<'screen.leaving', WorldObjectEventPayloads['screen.leaving']>;
+		const detail = event as GameEvent<'screen.leave', WorldObjectEventPayloads['screen.leave']>;
 		leavingScreenHandler_prohibit(emitter, { d: detail.d, old_x_or_y: detail.old_x_or_y });
 	}
 }
