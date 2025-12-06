@@ -57,7 +57,7 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 				},
 				assigned: {
 					entering_state(this: SelectedPlayerIndexIcon) {
-						this.play_timeline(ASSIGNED_TIMELINE_ID, { rewind: true, snap_to_start: true });
+						this.timelines.play(ASSIGNED_TIMELINE_ID, { rewind: true, snap_to_start: true });
 					},
 				on: {
 					[`timeline.frame.${ASSIGNED_TIMELINE_ID}`]: {
@@ -76,7 +76,7 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 				cancelled: {
 					entering_state(this: SelectedPlayerIndexIcon) {
 						this.colorize = { r: 1, g: 0, b: 0, a: .75 };
-						this.play_timeline(CANCELLED_TIMELINE_ID, { rewind: true, snap_to_start: true });
+						this.timelines.play(CANCELLED_TIMELINE_ID, { rewind: true, snap_to_start: true });
 					},
 						on: {
 							[`timeline.frame.${CANCELLED_TIMELINE_ID}`]: {
@@ -102,14 +102,14 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 	}
 	constructor(public gamepadIndex: number) {
 		super({ id: SelectedPlayerIndexIcon.getIconId(gamepadIndex) });
-		this.define_timeline(new Timeline({
+		this.timelines.define(new Timeline({
 			id: SelectedPlayerIndexIcon.TIMELINE_IDS.assigned,
 			frames: [true, false],
 			repetitions: 5,
 			playback_mode: 'once',
 			ticks_per_frame: 4,
 		}));
-		this.define_timeline(new Timeline({
+		this.timelines.define(new Timeline({
 			id: SelectedPlayerIndexIcon.TIMELINE_IDS.cancelled,
 			frames: [2],
 			repetitions: 16,

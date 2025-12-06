@@ -697,7 +697,6 @@ export const TAB_DIRTY_MARKER_SPACING = 2;
 export const TAB_CLOSE_BUTTON_PADDING_X = 3;
 export const TAB_CLOSE_BUTTON_PADDING_Y = 1;
 export const TAB_CLOSE_BUTTON_SYMBOL = 'x';
-export const RESOURCE_VIEWER_MAX_LINES = 512;
 export const RESOURCE_PANEL_MIN_RATIO = 0.18;
 export const RESOURCE_PANEL_MAX_RATIO = 0.6;
 export const RESOURCE_PANEL_DEFAULT_RATIO = 0.3;

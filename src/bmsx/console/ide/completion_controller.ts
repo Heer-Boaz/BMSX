@@ -579,7 +579,6 @@ export class CompletionController {
 			const entry = entries[i];
 			const origin = (() => {
 				if (entry.location.path && entry.location.path.length > 0) return entry.location.path;
-				if (entry.location.asset_id && entry.location.asset_id.length > 0) return entry.location.asset_id;
 				if (entry.location.chunkName && entry.location.chunkName.length > 0) return entry.location.chunkName;
 				return '';
 			})();

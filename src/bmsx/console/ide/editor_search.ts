@@ -2,6 +2,7 @@ import { ide_state } from './ide_state';
 import * as constants from './constants';
 import { clamp } from '../../utils/clamp';;
 import { getSelectionRange, getSelectionText } from './text_editing_and_selection';
+import { BmsxConsoleRuntime } from '../runtime';
 
 import type { ConsoleResourceDescriptor } from '../types';
 import { enqueueBackgroundTask } from './background_tasks';
@@ -452,9 +453,9 @@ export function cancelGlobalSearchJob(): void {
 
 export function loadDescriptorLines(descriptor: ConsoleResourceDescriptor): string[] {
 	try {
-		const asset_id = descriptor.asset_id;
-		if (!asset_id) return null;
-		const source = ide_state.loadLuaResourceFn(asset_id);
+		const chunkName = descriptor.path ?? descriptor.asset_id;
+		if (!chunkName) return null;
+		const source = BmsxConsoleRuntime.instance.resourceSourceForChunk(chunkName);
 		if (typeof source !== 'string') return null;
 		return source.split(/\r?\n/);
 	} catch {

@@ -22,7 +22,7 @@ import {
 } from '../lua/value';
 import type { InputEvt, StorageService } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
-import type { LifeCycleHandlerName, Viewport, } from '../rompack/rompack';
+import type { BmsxCartridge, LifeCycleHandlerName, Viewport, } from '../rompack/rompack';
 import { CanonicalizationType } from '../rompack/rompack';
 import { fallbackclamp } from '../utils/clamp';
 import { BmsxConsoleApi } from './api';
@@ -49,6 +49,7 @@ import { buildLuaFrameRawLabel, buildStackLines, convertLuaCallFrames, parseJsSt
 import { BmsxConsoleStorage } from './storage';
 import type { BmsxConsoleRuntimeOptions, BmsxConsoleState, ConsoleLuaBuiltinDescriptor, ConsoleLuaMemberCompletion, LuaMarshalContext } from './types';
 import { RenderSubmission } from '../render/gameview';
+import { getWorkspaceCachedSource } from './workspace_cache';
 
 export const CONSOLE_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'console_left',
@@ -205,6 +206,10 @@ export class BmsxConsoleRuntime extends Service {
 		return this.luaInterpreter;
 	}
 
+	public get cart(): BmsxCartridge {
+		return $.rompack.cart;
+	}
+
 	private constructor(options: BmsxConsoleRuntimeOptions) {
 		super({ id: 'bmsx_console_runtime' });
 		BmsxConsoleRuntime._instance = this;
@@ -226,7 +231,12 @@ export class BmsxConsoleRuntime extends Service {
 		api.set_render_backend(this.overlayRenderBackend);
 		this.overlayResolutionMode = 'viewport';
 		seedDefaultLuaBuiltins();
-		this.initializeEditor();
+		// Check the primary asset ID for the currently loaded program
+		// Note that this can be null if the program was not loaded from source or has not been saved yet (then the type is BmsxConsoleLuaInlineProgram)!
+		this.editor = createConsoleCartEditor(options.viewport);
+		this.flushLuaWarnings();
+		this.registerConsoleShortcuts();
+
 		this.subscribeGlobalDebuggerHotkeys();
 	}
 
@@ -929,14 +939,6 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private initializeEditor(): void {
-		// Check the primary asset ID for the currently loaded program
-		// Note that this can be null if the program was not loaded from source or has not been saved yet (then the type is BmsxConsoleLuaInlineProgram)!
-		this.editor = createConsoleCartEditor();
-		this.flushLuaWarnings();
-		this.registerConsoleShortcuts();
-	}
-
 	public get state(): BmsxConsoleState {
 		const storage = this.storage.dump();
 		const vmState = this.captureVmState();
@@ -1083,14 +1085,19 @@ export class BmsxConsoleRuntime extends Service {
 		const binding = $.rompack.cart.path2lua[$.rompack.cart.entry_path];
 		this._luaChunkName = binding.chunk_name;
 		if (!this.luaInterpreter) {
-			this.bootLuaProgram();
+			if (!this.bootLuaProgram()) {
+				console.info(`[BmsxConsoleRuntime] Lua boot failed.`);
+				return;
+			}
 		}
 		else {
 			this.hotReloadProgramEntry({ source: getSourceForChunk(binding.chunk_name), chunkName: binding.chunk_name });
 			if (runInit) {
 				if (this.runLuaLifecycleHandler('init')) {
 					// Initialization successful
-					this.runLuaLifecycleHandler('new_game');
+					if (!this.runLuaLifecycleHandler('new_game')) {
+						console.info(`[BmsxConsoleRuntime] Lua 'new_game' lifecycle handler failed during reload.`);
+					}
 				}
 			}
 		}
@@ -1104,7 +1111,7 @@ export class BmsxConsoleRuntime extends Service {
 		const binding = snapshot.luaChunkName;
 		let source: string;
 		try {
-			source = this.resolveSourceForChunk(binding);
+			source = this.resourceSourceForChunk(binding);
 		}
 		catch (error) {
 			throw convertToError(error);
@@ -1129,7 +1136,7 @@ export class BmsxConsoleRuntime extends Service {
 
 	private reinitializeLuaProgramFromSnapshot(snapshot: BmsxConsoleState, options: { runInit: boolean; hotReload: boolean }): void {
 		const binding = $.cart.path2lua[$.cart.entry_path];
-		const source = this.resolveSourceForChunk(binding.chunk_name);
+		const source = this.resourceSourceForChunk(binding.chunk_name);
 
 		this._luaChunkName = binding.chunk_name;
 
@@ -1537,9 +1544,20 @@ export class BmsxConsoleRuntime extends Service {
 		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
 	}
 
-	private bootLuaProgram(): void {
-		const chunkName = $.rompack.cart.path2lua[$.rompack.cart.entry_path].chunk_name;
-		const source = this.resolveSourceForChunk(chunkName);
+	private bootLuaProgram() {
+		const entryAsset = $.rompack.cart.path2lua[$.rompack.cart.entry_path];
+		if (!entryAsset) {
+			throw new Error(`[BmsxConsoleRuntime] Cannot boot Lua program: no entry asset found at path '${$.rompack.cart.entry_path}'.`);
+		}
+		const chunkName = entryAsset.chunk_name;
+		if (!chunkName || chunkName.length === 0) {
+			throw new Error('[BmsxConsoleRuntime] Cannot boot Lua program: entry asset has no chunk name.');
+		}
+
+		const source = this.resourceSourceForChunk(chunkName);
+		if (!source || source.length === 0) {
+			throw new Error(`[BmsxConsoleRuntime] Cannot boot Lua program: entry chunk '${chunkName}' has no source code.`);
+		}
 
 		this.resetLuaInteroperabilityState();
 		const interpreter = createLuaInterpreter(this._canonicalization);
@@ -1574,7 +1592,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!ok) {
 			return;
 		}
-		this.runLuaLifecycleHandler('new_game');
+		return this.runLuaLifecycleHandler('new_game');
 	}
 
 	public async reloadProgramAndResetWorld(options?: { runInit?: boolean }): Promise<void> {
@@ -1989,7 +2007,7 @@ export class BmsxConsoleRuntime extends Service {
 			const pending = packageLoaded.get(record.packageKey);
 			return pending === null ? true : pending;
 		}
-		const source = this.resolveSourceForChunk($.rompack.cart.path2lua[record.path].chunk_name);
+		const source = this.resourceSourceForChunk($.rompack.cart.path2lua[record.path].chunk_name);
 		const resourceInfo: { path?: string } = {};
 		resourceInfo.path = record.path;
 		this.luaModuleLoadingKeys.add(record.packageKey);
@@ -2033,7 +2051,7 @@ export class BmsxConsoleRuntime extends Service {
 		const previousChunkState = this.captureChunkState(chunkName);
 		const previousChunkTables = this.captureChunkTables(chunkName);
 		const previousGlobals = this.captureGlobalStateForReload();
-		const source = sourceOverride ? sourceOverride : this.resolveSourceForChunk(chunkName);
+		const source = sourceOverride ? sourceOverride : this.resourceSourceForChunk(chunkName);
 		const moduleId = chunkName;
 		const results = interpreter.execute(source, chunkName);
 		this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
@@ -2048,10 +2066,11 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaGenericChunksExecuted.add(chunkName);
 	}
 
-	private resolveSourceForChunk(chunkName: string): string {
+	public resourceSourceForChunk(chunkName: string): string {
 		const binding = $.cart.chunk2lua[chunkName];
-		if (this.editor) {
-			return this.editor.getSourceForChunk(chunkName);
+		const cached = getWorkspaceCachedSource(binding.normalized_source_path);
+		if (cached !== null) {
+			return cached;
 		}
 		return binding.src;
 	}

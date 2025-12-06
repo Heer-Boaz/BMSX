@@ -97,7 +97,6 @@ export const NAVIGATION_HISTORY_LIMIT = 64;
 export const diagnosticsDebounceMs = 200;
 
 export const WORKSPACE_AUTOSAVE_INTERVAL_MS = 2500;
-export const workspaceDirtyCache = new Map<string, string>();
 
 export type DebuggerControlsState = {
 	executionState: DebuggerExecutionState;
@@ -158,7 +157,6 @@ export interface IdeState {
 	diagnosticsComputationScheduled: boolean;
 	codeTabContexts: Map<string, CodeTabContext>;
 	activeCodeTabContextId: string;
-	entryAssetId: string;
 	entryTabId: string;
 	topBarButtonBounds: Record<TopBarButtonId, RectBounds>;
 	menuEntryBounds: Record<MenuId, RectBounds>;
@@ -316,7 +314,6 @@ export const ide_state: IdeState = {
 	lastHistoryTimestamp: 0,
 	fontVariant: undefined!,
 	builtinIdentifierCache: null,
-	entryAssetId: null,
 	hoverTooltip: null,
 	lastPointerSnapshot: null,
 	lastInspectorResult: null,

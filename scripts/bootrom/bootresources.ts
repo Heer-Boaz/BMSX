@@ -217,8 +217,8 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 	const cart: RomPack['cart'] = {
 		chunk2lua: {},
 		path2lua: {},
-		entry_path: manifest.lua.entry_path,
-		namespace: manifest.console.namespace,
+		entry_path: manifest?.lua.entry_path,
+		namespace: manifest?.console.namespace,
 		new_game: null,
 		init: null,
 		update: null,
@@ -236,10 +236,17 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 		cart,
 		project_root_path: projectRootPath,
 		manifest,
-		canonicalization: manifest.console.canonicalization ?? 'none',
+		canonicalization: manifest?.console?.canonicalization ?? 'none',
 	};
 
 	await Promise.all(assets.map(a => load(rom, a, result, opts)));
+
+	if (manifest.lua && !manifest.lua.entry_path) {
+		throw new Error('[bootresources] Cart manifest is missing lua.entry_path.');
+	}
+	if (manifest?.lua?.entry_path && !cart.path2lua[manifest.lua.entry_path]) {
+		throw new Error(`[bootresources] Entry Lua asset not found at path '${manifest.lua.entry_path}'.`);
+	}
 	return Promise.resolve<RomPack>(result);
 }
 

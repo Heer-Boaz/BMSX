@@ -1,5 +1,5 @@
 import type { LuaFunctionValue } from '../lua/value';
-import type { CanonicalizationType } from '../rompack/rompack';
+import type { CanonicalizationType, Viewport } from '../rompack/rompack';
 import { LuaEntrySnapshot } from './lua_js_bridge';
 
 export const enum BmsxConsolePointerButton {
@@ -53,6 +53,7 @@ export type ConsoleLuaDefinitionRange = {
 export type ConsoleLuaDefinitionLocation = {
 	path: string;
 	chunkName: string;
+	asset_id?: string;
 	range: ConsoleLuaDefinitionRange;
 };
 
@@ -84,12 +85,14 @@ export type ConsoleLuaHoverRequest = {
 	chunkName: string;
 	row: number;
 	column: number;
+	asset_id?: string;
 };
 
 export type ConsoleLuaMemberCompletionRequest = {
 	chunkName: string;
 	expression: string;
 	operator: '.' | ':';
+	asset_id?: string;
 };
 
 export type ConsoleLuaMemberCompletion = {
@@ -114,6 +117,7 @@ export type ConsoleLuaHoverResult = {
 export type BmsxConsoleRuntimeOptions = {
 	playerIndex: number;
 	canonicalization?: CanonicalizationType;
+	viewport: Viewport;
 };
 
 export type BmsxConsoleState = {
@@ -137,4 +141,3 @@ export type LuaFunctionRedirectRecord = {
 	current: LuaFunctionValue;
 	redirect: LuaFunctionValue;
 };
-

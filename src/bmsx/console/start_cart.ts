@@ -82,6 +82,7 @@ export async function startCart(args: BootArgs): Promise<void> {
 	const runtime = BmsxConsoleRuntime.createInstance({
 		playerIndex: args.startingGamepadIndex ?? 1,
 		canonicalization: $.rompack.canonicalization,
+		viewport,
 	});
 
 	await runtime.boot();

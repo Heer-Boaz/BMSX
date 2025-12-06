@@ -212,7 +212,7 @@ export class ConsoleCommandDispatcher {
 		const faultLabel = this.runtime.hasRuntimeFailed ? 'FAULTED' : 'OK';
 		const root = $.rompack.project_root_path;
 		const lines: string[] = [];
-		lines.push(`Cart: ${$.rompack.project_root_path} (${this.runtime.cart.namespace})`);
+		lines.push(`Cart: ${$.rompack.project_root_path} (${$.cart.namespace})`);
 		lines.push(`Lua VM: ${vmState} | Entry: ${chunkLabel}`);
 		lines.push(`Status: ${faultLabel} | Debugger: ${debuggerLabel}`);
 		lines.push(`Canonicalization: ${this.runtime.canonicalization}`);
@@ -428,7 +428,6 @@ export class ConsoleCommandDispatcher {
 			this.runtime.consoleMode.appendStderr(ERROR_ILLEGAL_FUNCTION_CALL);
 			return [];
 		}
-		const rompack = $.rompack;
 		const entries: PathEntry[] = [];
 		const seen = new Set<string>();
 		const pushPath = (path: string, kind: PathEntry['kind']): void => {
@@ -443,10 +442,10 @@ export class ConsoleCommandDispatcher {
 		const includeRom = mode === '-ROM' || mode === '-ALL' || !mode;
 		const includeSaved = mode === '-SAVED' || mode === '-ALL' || !mode;
 		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || !mode;
-		const luaAssets = Object.values(rompack.cart.lua);
+		const luaAssets = Object.values($.cart.chunk2lua);
 		if (includeRom) {
 			for (const asset of luaAssets) {
-				const path = asset.source_path ?? asset.resid;
+				const path = asset.source_path ?? 'help!!';
 				pushPath(path, 'rom');
 			}
 		}

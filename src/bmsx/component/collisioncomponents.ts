@@ -1,6 +1,6 @@
 import type { GameEvent } from '../core/game_event';
 import { $ } from '../core/game';
-import { WorldObject, WorldObjectEventPayloads, WorldObjectEvents } from "../core/object/worldobject";
+import { WorldObject, WorldObjectEventPayloads } from "../core/object/worldobject";
 import { new_vec2, set_inplace_vec2 } from '../utils/vector_operations';
 import { mod } from '../utils/mod';
 import { vec2, type Area, type Polygon } from '../rompack/rompack';

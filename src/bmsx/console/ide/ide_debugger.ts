@@ -303,6 +303,7 @@ function formatDebuggerMetrics(metrics: LuaDebuggerSessionMetrics): string {
 	return parts.join(' · ');
 }
 
+// TODO: MUST DESTROY ALL REFERENCES TO ASSET_ID!!
 export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void {
 	if (frame.origin !== 'lua') {
 		return;

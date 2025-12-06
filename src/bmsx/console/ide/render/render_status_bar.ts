@@ -42,7 +42,7 @@ export function renderStatusBar(): void {
 		if (!match) return;
 		const symbol = match.entry.symbol;
 		const location = symbol.location;
-		let displayPath = location.path ?? symbol.path ?? location.chunkName ?? location.asset_id ?? '';
+		let displayPath = location.path ?? symbol.path ?? location.chunkName ?? 'NOTHING!';
 		if (!displayPath || displayPath.length === 0) {
 			displayPath = symbol.name;
 		}

@@ -28,28 +28,38 @@ import { measureText } from './text_utils';
 import { ensureCursorVisible } from './caret';
 import { resolveHoverChunkName } from './intellisense';
 import { resetBlink } from './render/render_caret';
-import { listResources, saveLuaResourceSource } from '../workspace';
+import { listResources } from '../workspace';
+import { BmsxConsoleRuntime } from '../runtime';
+
+function resolveChunkName(descriptor: ConsoleResourceDescriptor | null): string {
+	if (!descriptor) {
+		return '<console>';
+	}
+	return descriptor.path ?? descriptor.asset_id ?? '<console>';
+}
+
+function resolveSource(descriptor: ConsoleResourceDescriptor | null): string {
+	const runtime = BmsxConsoleRuntime.instance;
+	const chunkName = resolveChunkName(descriptor);
+	return runtime.resourceSourceForChunk(chunkName);
+}
 
 export function createEntryTabContext(): CodeTabContext {
 	const luaDescriptors = listResources().filter(r => r.type === 'lua');
 	const descriptor = luaDescriptors.length > 0 ? luaDescriptors[0] : null;
+	if (!descriptor) {
+		return null;
+	}
 	const resolvedasset_id = descriptor ? descriptor.asset_id : '__entry__';
 	const tabId: string = `lua:${resolvedasset_id}`;
 	const title = computeResourceTabTitle(descriptor);
-	const load = descriptor
-		? () => ide_stateloadLuaResourceFn(descriptor.asset_id)
-		: () => ide_state.loadSourceFn();
-	const save = descriptor
-		? (source: string) => saveLuaResourceSource(descriptor.asset_id, source)
-		: (source: string) => ide_state.saveSourceFn(source);
+	const initialSource = resolveSource(descriptor);
 	return {
 		id: tabId,
 		title,
 		descriptor: descriptor ,
-		load,
-		save,
 		snapshot: null,
-		lastSavedSource: '',
+		lastSavedSource: initialSource,
 		saveGeneration: 0,
 		appliedGeneration: 0,
 		dirty: false,
@@ -60,14 +70,13 @@ export function createEntryTabContext(): CodeTabContext {
 
 export function createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): CodeTabContext {
 	const title = computeResourceTabTitle(descriptor);
+	const initialSource = resolveSource(descriptor);
 	return {
 		id: `lua:${descriptor.asset_id}`,
 		title,
 		descriptor,
-		load: () => ide_state.loadLuaResourceFn(descriptor.asset_id),
-		save: (source: string) => saveLuaResourceSource(descriptor.asset_id, source),
 		snapshot: null,
-		lastSavedSource: '',
+		lastSavedSource: initialSource,
 		saveGeneration: 0,
 		appliedGeneration: 0,
 		dirty: false,
@@ -139,7 +148,9 @@ export function activateCodeEditorTab(tabId: string): void {
 		ide_state.layout.forceSemanticUpdate(ide_state.lines, ide_state.textVersion, chunkNameSnapshot);
 		return;
 	}
-	const source = context.load();
+	const source = context.lastSavedSource && context.lastSavedSource.length > 0
+		? context.lastSavedSource
+		: resolveSource(context.descriptor);
 	context.lastSavedSource = source;
 	ide_state.lines = source.split(/\r\n|\n|\r/);
 	ide_state.layout.markVisualLinesDirty();

@@ -29,8 +29,6 @@ test('cross file rename updates other chunks and workspace', () => {
 	workspace.updateFile('usage.lua', files.get('usage.lua')!);
 
 	const contexts = new Map<string, CodeTabContext>();
-	let entryTabId: string = null;
-	const entryAssetId: string = null;
 
 	const makeContext = (descriptor: ConsoleResourceDescriptor): CodeTabContext => ({
 		id: `lua:${descriptor.asset_id}`,
@@ -67,24 +65,15 @@ test('cross file rename updates other chunks and workspace', () => {
 			}
 			return { path: normalized, type: 'lua', asset_id: normalized };
 		},
-		createLuaCodeTabContext(descriptor) {
-			return makeContext(descriptor);
-		},
-		createEntryTabContext() {
-			return null;
-		},
-		getEntryTabId() {
-			return entryTabId;
-		},
-		setEntryTabId(id) {
-			entryTabId = id;
-		},
-		getEntryAssetId() {
-			return entryAssetId;
-		},
-		getCodeTabContext(id) {
-			return contexts.get(id) ;
-		},
+	createLuaCodeTabContext(descriptor) {
+		return makeContext(descriptor);
+	},
+	createEntryTabContext() {
+		return null;
+	},
+	getCodeTabContext(id) {
+		return contexts.get(id) ;
+	},
 		setCodeTabContext(context) {
 			contexts.set(context.id, context);
 		},

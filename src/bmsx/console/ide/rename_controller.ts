@@ -12,6 +12,7 @@ import { ide_state } from './ide_state';
 import { LuaLexer } from '../../lua/lexer';
 import { findCodeTabContext } from './editor_tabs';
 import { findResourceDescriptorForChunk } from './console_cart_editor';
+import { BmsxConsoleRuntime } from '../runtime';
 
 export type RenameCommitPayload = {
 	matches: readonly SearchMatch[];
@@ -270,12 +271,11 @@ export function planRenameLineEdits(lines: readonly string[], matches: readonly 
 		edits.push({ row: currentRow, text: builder });
 	}
 	return edits;
-}export type CrossFileRenameDependencies = {
+}
+
+export type CrossFileRenameDependencies = {
 	createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): CodeTabContext;
 	createEntryTabContext(): CodeTabContext;
-	getEntryTabId(): string;
-	setEntryTabId(id: string): void;
-	getEntryAssetId(): string;
 	getCodeTabContext(id: string): CodeTabContext;
 	setCodeTabContext(context: CodeTabContext): void;
 	listCodeTabContexts(): Iterable<CodeTabContext>;
@@ -331,7 +331,9 @@ export class CrossFileRenameManager {
 		if (context.snapshot) {
 			return context.snapshot.lines.slice();
 		}
-		const source = context.load();
+		const descriptor = context.descriptor;
+		const chunkName = descriptor.path ?? descriptor.asset_id;
+		const source = BmsxConsoleRuntime.instance.resourceSourceForChunk(chunkName);
 		context.lastSavedSource = source;
 		return this.deps.splitLines(source);
 	}
@@ -365,41 +367,17 @@ export class CrossFileRenameManager {
 		if (existing) {
 			return existing;
 		}
-		try {
-			const descriptor = findResourceDescriptorForChunk(chunkName);
-			const contextId: string = `lua:${descriptor.asset_id}`;
-			let context = this.deps.getCodeTabContext(contextId) ;
-			if (!context) {
-				context = this.deps.createLuaCodeTabContext(descriptor);
-				this.deps.setCodeTabContext(context);
-			}
-			return context;
-		} catch {
-			const entryAliases: string[] = [];
-			const primary = this.deps.getEntryAssetId();
-			if (primary) {
-				entryAliases.push(primary);
-			}
-			entryAliases.push('__entry__', '<console>');
-			const isEntryChunk = entryAliases.some(alias => alias === chunkName || alias === chunkName);
-			if (!isEntryChunk) {
-				return null;
-			}
-			const entryId = this.deps.getEntryTabId();
-			if (entryId) {
-				const entryContext = this.deps.getCodeTabContext(entryId);
-				if (entryContext) {
-					return entryContext;
-				}
-			}
-			const entryContext = this.deps.createEntryTabContext();
-			if (entryContext) {
-				this.deps.setEntryTabId(entryContext.id);
-				this.deps.setCodeTabContext(entryContext);
-				return entryContext;
-			}
+		const descriptor = findResourceDescriptorForChunk(chunkName);
+		if (!descriptor) {
 			return null;
 		}
+		const contextId: string = `lua:${descriptor.asset_id}`;
+		let context = this.deps.getCodeTabContext(contextId) ;
+		if (!context) {
+			context = this.deps.createLuaCodeTabContext(descriptor);
+			this.deps.setCodeTabContext(context);
+		}
+		return context;
 	}
 }
 

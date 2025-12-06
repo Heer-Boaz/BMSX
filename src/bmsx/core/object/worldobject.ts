@@ -61,7 +61,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	public readonly events: EventPort;
 
 	public components: Component[] = []; // Array of all components in the object for easy iteration
-	private readonly _timelineComponent: TimelineComponent;
 
 	/**
 	 * The object tracker for the world object.
@@ -231,7 +230,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 
 	/** Shorthand getter for retrieving the timeline component attached to this object. */
 	public get timelines(): TimelineComponent {
-		return this._timelineComponent;
+		return this.get_first_component(TimelineComponent);
 	}
 
 	/** Shorthand getter for retrieving the action-effect component attached to this object. */
@@ -807,8 +806,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 			}
 		}
 		this.sc = new StateMachineController({ constructReason: undefined, fsm_id: initialMachineId, id: this.id });
-		this._timelineComponent = new TimelineComponent({ parent_or_id: this });
-		this.add_component(this._timelineComponent);
+		this.add_component(new TimelineComponent({ parent_or_id: this }));
 	}
 
 	removeComponentsWithTag(tag: ComponentTag): void {

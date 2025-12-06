@@ -11,13 +11,14 @@ import { CONSOLE_API_METHOD_METADATA } from '../api_metadata';
 import { BmsxConsoleRuntime } from '../runtime';
 import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionLocation, ConsoleLuaDefinitionRange, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaMemberCompletion, ConsoleLuaMemberCompletionRequest, ConsoleLuaSymbolEntry } from '../types';
 import { resolveDefinitionLocationForExpression, type ProjectReferenceEnvironment } from './code_reference';
-import { applyDefinitionSelection, beginNavigationCapture, completeNavigation, focusChunkSource, listResourcesStrict, resolvePointerColumn, resolvePointerRow, safeInspectLuaExpression } from './console_cart_editor';
+import { applyDefinitionSelection, beginNavigationCapture, completeNavigation, focusChunkSource, resolvePointerColumn, resolvePointerRow, safeInspectLuaExpression } from './console_cart_editor';
 import * as constants from './constants';
 import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isCodeTabActive, isReadOnlyCodeTab, setActiveTab } from './editor_tabs';
 import { ide_state } from './ide_state';
 import { buildLuaSemanticModel, LuaSemanticModel } from './semantic_model';
 import { isLuaCommentContext, wrapOverlayLine } from './text_utils';
 import type { ApiCompletionMetadata, CodeTabContext, LuaCompletionItem, PointerSnapshot } from './types';
+import type { RomLuaAsset } from '../../rompack/rompack';
 export const CONSOLE_PREVIEW_MAX_ENTRIES = 12;
 export const CONSOLE_PREVIEW_MAX_DEPTH = 2;
 
@@ -1513,7 +1514,6 @@ export function resolveSemanticDefinitionLocation(
 	const descriptorPath = descriptor && descriptor.path ? descriptor.path : null;
 	const resolvedChunk = chunkName
 		?? descriptorPath
-		?? ide_state.entryAssetId
 		?? hoverChunkName
 		?? '<console>';
 	const location: ConsoleLuaDefinitionLocation = {
@@ -1756,7 +1756,6 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 			?? normalizedPath
 			?? (descriptor ? descriptor.asset_id : null)
 			?? asset_id
-			?? ide_state.entryAssetId
 			?? '<console>';
 		const environment: ProjectReferenceEnvironment = {
 			activeContext: context,
@@ -1788,10 +1787,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 export function navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	clearReferenceHighlights();
-	const hint: { asset_id: string; path?: string; } = { asset_id: definition.asset_id };
-	if (definition.path !== undefined) {
-		hint.path = definition.path;
-	}
+	const hint = definition.path ? { asset_id: definition.asset_id, path: definition.path } : undefined;
 	let targetContextId: string = null;
 	try {
 		focusChunkSource(definition.chunkName, hint);
@@ -1833,10 +1829,10 @@ export function inspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLu
 	if (!chain) {
 		return null;
 	}
-	const asset_id = request.asset_id && request.asset_id.length > 0 ? request.asset_id : null;
+	const assetIdHint = request.asset_id ?? getChunkResourceHint(request.chunkName)?.asset_id ?? null;
 	const usageRow = Number.isFinite(request.row) ? Math.max(1, Math.floor(request.row)) : null;
 	const usageColumn = Number.isFinite(request.column) ? Math.max(1, Math.floor(request.column)) : null;
-	const resolved = resolveLuaChainValue(chain, asset_id);
+	const resolved = resolveLuaChainValue(chain, request.chunkName);
 	const staticDefinition = findStaticDefinitionLocation(chain, usageRow, usageColumn, request.chunkName);
 	if (!resolved) {
 		if (!staticDefinition) {
@@ -1873,7 +1869,7 @@ export function inspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLu
 	const isBuiltin = isFunction && chain.length === 1 && isLuaBuiltinFunctionName(chain[0]);
 	let definition: ConsoleLuaDefinitionLocation = null;
 	if (!isBuiltin) {
-		definition = resolveLuaDefinitionMetadata(resolved.value, asset_id, resolved.definitionRange);
+		definition = resolveLuaDefinitionMetadata(resolved.value, assetIdHint, resolved.definitionRange);
 		if (!definition) {
 			definition = staticDefinition;
 		}
@@ -1900,7 +1896,7 @@ export function listLuaObjectMembers(request: ConsoleLuaMemberCompletionRequest)
 	if (!chain) {
 		return [];
 	}
-	const resolved = resolveLuaChainValue(chain, request.asset_id);
+	const resolved = resolveLuaChainValue(chain, request.chunkName);
 	if (!resolved || resolved.kind !== 'value') {
 		return [];
 	}
@@ -1935,9 +1931,11 @@ export function resolveLuaDefinitionMetadata(value: LuaValue, _fallbackasset_id:
 export function buildDefinitionLocationFromRange(range: LuaSourceRange): ConsoleLuaDefinitionLocation {
 	const normalizedChunk = range.chunkName;
 	const chunkResource = getChunkResourceHint(range.chunkName);
-	const asset_id = chunkResource.asset_id;
+	const asset_id = chunkResource?.asset_id;
+	const path = chunkResource?.path ?? normalizedChunk;
 	const location: ConsoleLuaDefinitionLocation = {
 		chunkName: normalizedChunk,
+		path,
 		asset_id,
 		range: {
 			startLine: range.start.line,
@@ -1946,7 +1944,6 @@ export function buildDefinitionLocationFromRange(range: LuaSourceRange): Console
 			endColumn: range.end.column,
 		},
 	};
-	location.path = chunkResource.path!;
 	return location;
 }
 
@@ -2070,18 +2067,9 @@ export function listGlobalLuaSymbols(): ConsoleLuaSymbolEntry[] {
 		candidates.push({ chunkName, info: candidateInfo });
 	};
 
-	for (const [chunkName, asset] of Object.entries(BmsxConsoleRuntime.instance.cart.chunk2lua)) {
+	for (const [chunkName, asset] of Object.entries(BmsxConsoleRuntime.instance.cart.chunk2lua) as Array<[string, RomLuaAsset]>) {
 		const path = asset.normalized_source_path;
 		enqueueCandidate(chunkName, { asset_id: asset.resid, path });
-	}
-
-	for (const asset of Object.values(BmsxConsoleRuntime.instance.cart.lua)) {
-		const chunkName = asset.chunk_name;
-		const candidateInfo: { asset_id: string; path?: string } = {
-			asset_id: asset.resid,
-			path: asset.normalized_source_path,
-		};
-		enqueueCandidate(chunkName, candidateInfo);
 	}
 
 	for (const candidate of candidates) {
@@ -2129,7 +2117,7 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 			const chunk = chunks[index];
 			let model = models.get(chunk.chunkName);
 			if (!model) {
-				const source = BmsxConsoleRuntime.instance.cart.chunk2lua[chunk.chunkName]?.src;
+				const source = BmsxConsoleRuntime.instance.resourceSourceForChunk(chunk.chunkName);
 				if (!source) {
 					continue;
 				}
@@ -2214,7 +2202,7 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 export function getStaticDefinitions(preferredChunk: string): { definitions: ReadonlyArray<LuaDefinitionInfo>; chunks: Array<{ chunkName: string; info: { asset_id: string; path?: string } }>; models: Map<string, LuaSemanticModel> } {
 	const interpreter = BmsxConsoleRuntime.instance.interpreter;
 	const matchingChunks: Array<{ chunkName: string; info: { asset_id: string; path?: string } }> = [];
-	for (const asset of Object.values(BmsxConsoleRuntime.instance.cart.lua)) {
+	for (const asset of Object.values(BmsxConsoleRuntime.instance.cart.chunk2lua) as RomLuaAsset[]) {
 		const chunkName = asset.chunk_name;
 		const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.normalized_source_path };
 		const matchesPath = preferredChunk !== null && info.path === preferredChunk;
@@ -2261,7 +2249,7 @@ export function getStaticDefinitions(preferredChunk: string): { definitions: Rea
 
 export function buildSemanticModelForChunk(chunkName: string): LuaSemanticModel {
 	const runtime = BmsxConsoleRuntime.instance;
-	const source = BmsxConsoleRuntime.instance.cart.chunk2lua![chunkName].src;
+	const source = runtime.resourceSourceForChunk(chunkName);
 	const cached = runtime.chunkSemanticCache.get(chunkName);
 	const previousModel = cached ? cached.model : null;
 	const previousDefinitions = cached ? cached.definitions : [];
@@ -2354,7 +2342,7 @@ export function parseLuaIdentifierChain(expression: string): string[] {
 	return parts;
 }
 
-export function resolveLuaChainValue(parts: string[], asset_id: string): ({ kind: 'value'; value: LuaValue; scope: ConsoleLuaHoverScope; definitionRange: LuaSourceRange } | { kind: 'not_defined'; scope: ConsoleLuaHoverScope }) {
+export function resolveLuaChainValue(parts: string[], chunkName: string): ({ kind: 'value'; value: LuaValue; scope: ConsoleLuaHoverScope; definitionRange: LuaSourceRange } | { kind: 'not_defined'; scope: ConsoleLuaHoverScope }) {
 	if (!parts || parts.length === 0) {
 		return null;
 	}
@@ -2378,8 +2366,8 @@ export function resolveLuaChainValue(parts: string[], asset_id: string): ({ kind
 			definitionEnv = resolved.environment;
 		}
 	}
-	if (!found && asset_id) {
-		const env = runtime.luaChunkEnvironmentsByAssetId.get(asset_id);
+	if (!found && chunkName) {
+		const env = runtime.luaChunkEnvironmentsByChunkName.get(chunkName) ?? runtime.luaChunkEnvironmentsByPath.get(chunkName);
 		if (env && env.hasLocal(root)) {
 			value = env.get(root);
 			scope = env === globalEnv ? 'global' : 'chunk';

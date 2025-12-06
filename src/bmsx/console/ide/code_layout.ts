@@ -158,7 +158,7 @@ export class ConsoleCodeLayout {
 		}
 		const source = row >= 0 && row < lines.length ? lines[row] ?? '' : '';
 		const cached = this.highlightCache.get(row);
-		if (cached && cached.src === source && cached.rowSignature === rowSignature) {
+		if (cached && cached.src === source && cached.rowSignature === rowSignature) {// TODO: ARE WE REALLY DOING A STRING COMPARE HERE EACH TIME TO THE WHOLE SOURCE CODE FILE??
 			return cached;
 		}
 		let builtinIdentifiers: Iterable<string> = null;

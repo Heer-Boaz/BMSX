@@ -92,7 +92,7 @@ import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast';
 // Search logic moved to editor_search
 import { closeSearch, focusEditorFromSearch, computeSearchPageStats, startSearchJob, cancelGlobalSearchJob } from './editor_search';
 import * as constants from './constants';
-import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, workspaceDirtyCache, caretNavigation } from './ide_state';
+import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, caretNavigation } from './ide_state';
 import { initializeDebuggerUiState } from './ide_debugger';
 import { clampCursorColumn, ensureCursorVisible, revealCursor, setCursorPosition } from './caret';
 import {
@@ -100,8 +100,10 @@ import {
 	initializeWorkspaceStorage,
 	stopWorkspaceAutosaveLoop,
 	clearWorkspaceDirtyBuffers,
+	buildDirtyFilePath,
 } from './workspace_storage';
-import { applyWorkspaceOverridesToCart, createLuaResource, listResources } from '../workspace';
+import { clearWorkspaceCachedSources, getWorkspaceCachedSource, setWorkspaceCachedSources } from '../workspace_cache';
+import { applyWorkspaceOverridesToCart, createLuaResource, listResources, saveLuaResourceSource } from '../workspace';
 
 import * as TextEditing from './text_editing_and_selection';
 import { resetBlink } from './render/render_caret';
@@ -118,6 +120,7 @@ import { lower_bound } from '../../utils/lower_bound';
 import { updateRuntimeErrorOverlay } from './runtime_error_overlay';
 import { LuaSemanticWorkspace, refreshSymbolCatalog, symbolPriority } from './semantic_model';
 import { extractErrorMessage } from '../../lua/value';
+import { Viewport } from '../../rompack/rompack';
 
 export const editorFacade = {
 	activate,
@@ -142,12 +145,12 @@ export const editorFacade = {
 
 export type ConsoleCartEditor = typeof editorFacade;
 
-export function createConsoleCartEditor(): ConsoleCartEditor {
-	initializeConsoleCartEditor();
+export function createConsoleCartEditor(viewport: Viewport): ConsoleCartEditor {
+	initializeConsoleCartEditor(viewport);
 	return editorFacade;
 }
 
-export function initializeConsoleCartEditor(): void {
+export function initializeConsoleCartEditor(viewport: Viewport): void {
 	initializeDebuggerUiState();
 	const runtime = BmsxConsoleRuntime.instance;
 	ide_state.playerIndex = runtime.playerIndex;
@@ -157,7 +160,7 @@ export function initializeConsoleCartEditor(): void {
 	ide_state.canonicalization = $.rompack.canonicalization;
 	ide_state.caseInsensitive = ide_state.canonicalization !== 'none';
 	ide_state.preMutationSource = null;
-	applyViewportSize(options.viewport);
+	applyViewportSize(viewport);
 	ide_state.clockNow = $.platform.clock.now;
 	setFontVariant(ide_state.fontVariant);
 	ide_state.searchField = createInlineTextField();
@@ -248,6 +251,10 @@ export function initializeConsoleCartEditor(): void {
 }
 
 export function getSourceForChunk(chunkName: string): string {
+	const asset = $.cart.chunk2lua[chunkName];
+	if (!asset) {
+		return '';
+	}
 	const context = findCodeTabContext(chunkName);
 	if (context) {
 		if (context.id === ide_state.activeCodeTabContextId) {
@@ -259,11 +266,20 @@ export function getSourceForChunk(chunkName: string): string {
 		if (context.lastSavedSource.length > 0) {
 			return context.lastSavedSource;
 		}
-		return $.cart.chunk2lua[chunkName].src;
 	}
-	return '';
+	const dirtyPath = (() => {
+		try {
+			return buildDirtyFilePath(asset.normalized_source_path);
+		} catch {
+			return null;
+		}
+	})();
+	const cached = getWorkspaceCachedSource(asset.normalized_source_path) ?? (dirtyPath ? getWorkspaceCachedSource(dirtyPath) : null);
+	if (typeof cached === 'string') {
+		return cached;
+	}
+	return asset.src;
 }
-
 
 export function invalidateLineRange(startRow: number, endRow: number): void {
 	if (ide_state.lines.length === 0) {
@@ -1266,7 +1282,7 @@ export function shutdown(): void {
 		void runWorkspaceAutosaveTick();
 	}
 	ide_state.workspaceAutosaveEnabled = false;
-	workspaceDirtyCache.clear();
+	clearWorkspaceCachedSources();
 	ide_state.workspaceAutosaveSignature = null;
 	initializeWorkspaceStorage(null);
 	if (ide_state.disposeVisibilityListener) {
@@ -1858,11 +1874,6 @@ export function getCrossFileRenameDependencies(): CrossFileRenameDependencies {
 	return {
 		createLuaCodeTabContext: (descriptor: ConsoleResourceDescriptor) => createLuaCodeTabContext(descriptor),
 		createEntryTabContext: () => createEntryTabContext(),
-		getEntryTabId: () => ide_state.entryTabId,
-		setEntryTabId: (id: string) => {
-			ide_state.entryTabId = id;
-		},
-		getEntryAssetId: () => ide_state.entryAssetId,
 		getCodeTabContext: (id: string) => ide_state.codeTabContexts.get(id),
 		setCodeTabContext: (context: CodeTabContext) => {
 			ide_state.codeTabContexts.set(context.id, context);
@@ -2400,11 +2411,9 @@ export function buildProjectReferenceContext(context: CodeTabContext): {
 	const descriptor = context ? context.descriptor : null;
 	const normalizedPath = descriptor && descriptor.path ? descriptor.path : null;
 	const descriptorasset_id = descriptor ? descriptor.asset_id : null;
-	const resolvedasset_id = descriptorasset_id ?? ide_state.entryAssetId;
 	const resolvedChunk = resolveHoverChunkName(context)
 		?? normalizedPath
 		?? descriptorasset_id
-		?? resolvedasset_id
 		?? '<console>';
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: context,
@@ -2415,7 +2424,7 @@ export function buildProjectReferenceContext(context: CodeTabContext): {
 		environment,
 		chunkName: resolvedChunk,
 		normalizedPath,
-		asset_id: resolvedasset_id,
+		asset_id: descriptorasset_id,
 	};
 }
 
@@ -2847,7 +2856,7 @@ export function shiftPositionsForRemoval(row: number, column: number, length: nu
 	}
 }
 
-export function applyViewportSize(viewport: { width: number; height: number }): void {
+export function applyViewportSize(viewport: Viewport): void {
 	ide_state.viewportWidth = viewport.width;
 	ide_state.viewportHeight = viewport.height;
 	ide_state.lastPointerRowResolution = null;
@@ -3120,8 +3129,13 @@ export async function save(): Promise<void> {
 		return;
 	}
 	const source = ide_state.lines.join('\n');
+	const descriptor = context.descriptor;
+	const targetPath = descriptor?.path ?? descriptor?.asset_id;
 	try {
-		await context.save(source);
+		if (targetPath) {
+			await saveLuaResourceSource(targetPath, source);
+			setWorkspaceCachedSources([targetPath, buildDirtyFilePath(targetPath)], source);
+		}
 		ide_state.dirty = false;
 		ide_state.saveGeneration = ide_state.saveGeneration + 1;
 		context.lastSavedSource = source;
@@ -3373,7 +3387,7 @@ export function notifyReadOnlyEdit(): void {
 	ide_state.showMessage('Tab is read-only', constants.COLOR_STATUS_WARNING, 1.5);
 }
 
-export function updateViewport(viewport: { width: number; height: number }): void {
+export function updateViewport(viewport: Viewport): void {
 	applyViewportSize(viewport);
 	ide_state.resourcePanel.clampHScroll();
 	ide_state.resourcePanel.ensureSelectionVisible();
@@ -3635,7 +3649,6 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 	let error: string = null;
 	const rompack = $.rompack;
 	lines.push('');
-	const lua = rompack.cart.path2lua;
 	const data = rompack.data;
 	const img = rompack.img;
 	const audioTable = rompack.audio;
@@ -3643,7 +3656,8 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 	const audioevents = rompack.audioevents;
 	switch (descriptor.type) {
 		case 'lua': {
-			const source = lua?.[descriptor.asset_id]?.src;
+			const chunkName = descriptor.path ?? descriptor.asset_id;
+			const source = BmsxConsoleRuntime.instance.resourceSourceForChunk(chunkName);
 			if (typeof source === 'string') {
 				appendResourceViewerLines(lines, ['-- Lua Source --', '']);
 				appendResourceViewerLines(lines, source.split(/\r?\n/));
@@ -3764,27 +3778,13 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 	if (lines.length === 0) {
 		lines.push('<empty>');
 	}
-	trimResourceViewerLines(lines);
 	state.error = error;
 	return state;
 }
 
 export function appendResourceViewerLines(target: string[], additions: Iterable<string>): void {
 	for (const entry of additions) {
-		if (target.length >= constants.RESOURCE_VIEWER_MAX_LINES - 1) {
-			if (target.length === constants.RESOURCE_VIEWER_MAX_LINES - 1) {
-				target.push('<content truncated>');
-			}
-			return;
-		}
-		target.push(entry);
-	}
-}
-
-export function trimResourceViewerLines(lines: string[]): void {
-	if (lines.length > constants.RESOURCE_VIEWER_MAX_LINES) {
-		lines.length = constants.RESOURCE_VIEWER_MAX_LINES - 1;
-		lines.push('<content truncated>');
+		target.push(...entry.split('\n'));
 	}
 }
 
@@ -3814,7 +3814,6 @@ export function buildDebugPanelLines(kind: DebugPanelKind): string[] {
 	if (lines.length === 0) {
 		lines.push('<empty>');
 	}
-	trimResourceViewerLines(lines);
 	return lines;
 }
 
@@ -3898,7 +3897,6 @@ export function collectRegistryLines(): string[] {
 export function openDebugPanelTab(kind: DebugPanelKind): void {
 	const tabId = debugPanelTabId(kind);
 	const title = DEBUG_PANEL_TITLES[kind];
-	const load = () => buildDebugPanelLines(kind).join('\n');
 	let context = ide_state.codeTabContexts.get(tabId);
 	if (!context) {
 		context = {

@@ -7,7 +7,7 @@ import type { LuaSourceRange } from '../../lua/ast';
 import type { ConsoleCodeLayout } from './code_layout';
 import { normalizeEndingsAndSplitLines } from './text_utils';
 import { listResources } from '../workspace';
-import { $ } from '../../core/game';
+import { BmsxConsoleRuntime } from '../runtime';
 
 export type ProjectReferenceEnvironment = {
 	activeContext: CodeTabContext;
@@ -302,7 +302,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 			lines = context.snapshot.lines;
 		} else {
 			try {
-				const source = $.cart.path2lua[descriptor.path].src;
+				const source = BmsxConsoleRuntime.instance.resourceSourceForChunk(chunkName);
 				lines = normalizeEndingsAndSplitLines(source);
 			} catch {
 				lines = null;
@@ -330,7 +330,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		}
 		let lines: readonly string[] = null;
 		try {
-			const source = $.cart.path2lua[descriptor.path].src;
+			const source = BmsxConsoleRuntime.instance.resourceSourceForChunk(chunkName);
 			lines = normalizeEndingsAndSplitLines(source);
 		} catch {
 			lines = null;

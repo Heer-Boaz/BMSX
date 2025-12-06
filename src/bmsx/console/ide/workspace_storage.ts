@@ -1,6 +1,6 @@
 import { $ } from '../../core/game';
 import type { ConsoleResourceDescriptor } from '../types';
-import { ide_state, WORKSPACE_AUTOSAVE_INTERVAL_MS, workspaceDirtyCache } from './ide_state';
+import { ide_state, WORKSPACE_AUTOSAVE_INTERVAL_MS } from './ide_state';
 import type { NavigationHistoryEntry } from './ide_state';
 import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position, EditorSnapshot } from './types';
 import { safeclamp } from '../../utils/clamp';
@@ -20,11 +20,13 @@ import {
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
 	fetchWorkspaceFile,
+	WORKSPACE_DIRTY_DIR,
 } from '../workspace';
 import { openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, restoreSnapshot, setFontVariant } from './console_cart_editor';
 import { createEntryTabContext, initializeTabs, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { ConsoleFontVariant } from '../font';
 import { normalizeEndingsAndSplitLines } from './text_utils';
+import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../workspace_cache';
 
 export type WorkspaceStoragePaths = {
 	projectRootPath: string;
@@ -274,7 +276,7 @@ function detachWorkspaceExitHandler(): void {
 export function initializeWorkspaceStorage(projectRootPath: string): void {
 	stopWorkspaceAutosaveLoop();
 	ide_state.workspaceAutosaveSignature = null;
-	workspaceDirtyCache.clear();
+	clearWorkspaceCachedSources();
 	if (!projectRootPath || projectRootPath.length === 0) {
 		ide_state.workspaceAutosaveEnabled = false;
 		storagePaths = null;
@@ -498,7 +500,7 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 		const savedContents = saved?.contents;
 		if (savedContents !== null && savedContents !== contents) {
 			await deleteDirtyBuffer(entry.dirtyPath);
-			workspaceDirtyCache.delete(entry.dirtyPath);
+			deleteWorkspaceCachedSources([entry.dirtyPath, descriptor?.path]);
 			const cleanSnapshot = buildSnapshotFromSource(savedContents, entry);
 			context.snapshot = cleanSnapshot;
 			context.dirty = false;
@@ -509,7 +511,7 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 			}
 			continue;
 		}
-		workspaceDirtyCache.set(entry.dirtyPath, contents);
+		setWorkspaceCachedSources([entry.dirtyPath, descriptor?.path], contents);
 		const snapshot = buildSnapshotFromSource(contents, entry);
 		context.snapshot = snapshot;
 		context.dirty = true;
@@ -668,6 +670,7 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 		}
 		const text = captureContextText(context);
 		if (!text) continue;
+		setWorkspaceCachedSources([dirtyPath, descriptor?.path], text);
 		entries.set(dirtyPath, {
 			contextId: context.id,
 			descriptor,
@@ -773,28 +776,39 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 }
 
 export async function persistDirtyContextEntries(entries: Map<string, DirtyContextEntry>): Promise<void> {
+	const activeDirtyPaths = new Set<string>();
 	for (const [dirtyPath, entry] of entries) {
-		const cached = workspaceDirtyCache.get(dirtyPath);
+		activeDirtyPaths.add(dirtyPath);
+		const cached = getWorkspaceCachedSource(dirtyPath);
 		if (cached === entry.text) {
 			continue;
 		}
 		await writeDirtyBuffer(dirtyPath, entry.text);
-		workspaceDirtyCache.set(dirtyPath, entry.text);
+		setWorkspaceCachedSources([dirtyPath, entry.descriptor?.path], entry.text);
 	}
-	for (const cachedPath of Array.from(workspaceDirtyCache.keys())) {
-		if (!entries.has(cachedPath)) {
-			await deleteDirtyBuffer(cachedPath);
-			workspaceDirtyCache.delete(cachedPath);
+	for (const cachedPath of Array.from(listWorkspaceCachedPaths())) {
+		const isDirtyPath = cachedPath.includes(`/${WORKSPACE_DIRTY_DIR}/`);
+		if (!isDirtyPath) {
+			continue;
 		}
+		if (activeDirtyPaths.has(cachedPath)) {
+			continue;
+		}
+		await deleteDirtyBuffer(cachedPath);
+		deleteWorkspaceCachedSources([cachedPath]);
 	}
 }
 
 export function loadSrc(path: string) {
-	return $.rompack.cart.path2lua[path]?.src;
+	const asset = $.rompack.cart.path2lua[path];
+	if (!asset) {
+		return '';
+	}
+	return BmsxConsoleRuntime.instance.resourceSourceForChunk(asset.chunk_name);
 }
 
 export function clearWorkspaceDirtyBuffers(): void {
-	workspaceDirtyCache.clear();
+	clearWorkspaceCachedSources();
 	ide_state.workspaceAutosaveSignature = null;
 	ide_state.saveGeneration = ide_state.appliedGeneration;
 	ide_state.dirty = false;
