@@ -361,7 +361,7 @@ export class CrossFileRenameManager {
 	}
 
 	private ensureCodeTabContextForChunk(chunkName: string): CodeTabContext {
-		const existing = findCodeTabContext(undefined, chunkName);
+		const existing = findCodeTabContext(chunkName);
 		if (existing) {
 			return existing;
 		}

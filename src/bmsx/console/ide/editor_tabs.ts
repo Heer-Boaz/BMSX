@@ -506,13 +506,10 @@ export function endTabDrag(): void {
 	ide_state.tabDragState = null;
 }
 
-export function findCodeTabContext(asset_id: string, chunkName: string): CodeTabContext {
+export function findCodeTabContext(chunkName: string): CodeTabContext {
 	for (const context of ide_state.codeTabContexts.values()) {
 		const descriptor = context.descriptor;
-		if (asset_id && descriptor?.asset_id === asset_id) {
-			return context;
-		}
-		if (!asset_id && chunkName && descriptor?.path === chunkName) {
+		if (descriptor?.path === chunkName) {
 			return context;
 		}
 	}
@@ -523,9 +520,6 @@ export function computeResourceTabTitle(descriptor: ConsoleResourceDescriptor): 
 	const parts = descriptor.path.split('/').filter(part => part.length > 0);
 	if (parts.length > 0) {
 		return parts[parts.length - 1];
-	}
-	if (descriptor.asset_id) {
-		return descriptor.asset_id;
 	}
 	return descriptor.type.toUpperCase();
 }

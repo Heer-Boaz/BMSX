@@ -7,13 +7,12 @@ export type DiagnosticContextInput = {
 	id: string;
 	title: string;
 	descriptor: ConsoleResourceDescriptor;
-	asset_id: string;
 	chunkName: string;
 	source: string;
 };
 
 export type DiagnosticProviders = {
-	listLocalSymbols(asset_id: string, chunkName: string): ConsoleLuaSymbolEntry[];
+	listLocalSymbols(chunkName: string): ConsoleLuaSymbolEntry[];
 	listGlobalSymbols(): ConsoleLuaSymbolEntry[];
 	listBuiltins(): ConsoleLuaBuiltinDescriptor[];
 };
@@ -36,7 +35,7 @@ export function computeAggregatedEditorDiagnostics(
 		const source = ctx.source ?? '';
 		if (source.length === 0) continue;
 		let localSymbols: ConsoleLuaSymbolEntry[] = [];
-		try { localSymbols = providers.listLocalSymbols(ctx.asset_id, chunkName); } catch { localSymbols = []; }
+		try { localSymbols = providers.listLocalSymbols(chunkName); } catch { localSymbols = []; }
 		let luaDiagnostics: LuaDiagnostic[];
 		try {
 			luaDiagnostics = computeLuaDiagnostics({
@@ -62,7 +61,6 @@ export function computeAggregatedEditorDiagnostics(
 				severity: d.severity,
 				contextId: ctx.id,
 				sourceLabel: chunkName,
-				asset_id: ctx.asset_id,
 				chunkName,
 			});
 		}
@@ -76,7 +74,6 @@ function resolveChunkName(ctx: DiagnosticContextInput): string {
 	const descriptor = ctx.descriptor;
 	if (descriptor) {
 		if (descriptor.path && descriptor.path.length > 0) return descriptor.path;
-		if (descriptor.asset_id && descriptor.asset_id.length > 0) return descriptor.asset_id;
 	}
 	return ctx.title ;
 }
@@ -89,4 +86,3 @@ export function markDiagnosticsDirty(contextId?: string): void {
 	ide_state.dirtyDiagnosticContexts.add(targetId);
 	ide_state.diagnosticsDueAtMs = ide_state.clockNow() + diagnosticsDebounceMs;
 }
-

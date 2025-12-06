@@ -234,7 +234,7 @@ export interface IdeState {
 	lastCreateResourceDirectory: string;
 	symbolCatalog: SymbolCatalogEntry[];
 	referenceCatalog: ReferenceCatalogEntry[];
-	symbolCatalogContext: { scope: 'local' | 'global'; asset_id: string; chunkName: string };
+	symbolCatalogContext: { scope: 'local' | 'global'; chunkName: string };
 	symbolSearchMatches: SymbolSearchResult[];
 	symbolSearchSelectionIndex: number;
 	symbolSearchDisplayOffset: number;

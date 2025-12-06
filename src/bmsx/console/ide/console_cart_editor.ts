@@ -255,8 +255,8 @@ export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void
 	ide_state.initialized = true;
 }
 
-export function getSourceForChunk(asset_id: string | null, chunkName: string | null): string {
-	const context = findCodeTabContext(asset_id, chunkName);
+export function getSourceForChunk(chunkName: string): string {
+	const context = findCodeTabContext(chunkName);
 	if (context) {
 		if (context.id === ide_state.activeCodeTabContextId) {
 			return ide_state.lines.join('\n');
@@ -273,7 +273,7 @@ export function getSourceForChunk(asset_id: string | null, chunkName: string | n
 	if (descriptor) {
 		return ide_state.loadLuaResourceFn(descriptor.asset_id);
 	}
-	throw new Error(`[ConsoleCartEditor] Unable to locate source for asset '${asset_id ?? '<null>'}' and chunk '${chunkName ?? '<null>'}'.`);
+	throw new Error(`[ConsoleCartEditor] Unable to locate source for chunk '${chunkName ?? '<null>'}'.`);
 }
 
 
@@ -1051,18 +1051,10 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			ide_state.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
-		const asset_id = resolveHoverAssetId(context);
 		const chunkName = resolveHoverChunkName(context);
-		let source = '';
-		if (activeId && contextId === activeId) {
-			source = ide_state.lines.join('\n');
-		} else {
-			try {
-				source = $.rompack.cart.chunk2lua[chunkName]?.src;
-			} catch {
-				source = '';
-			}
-		}
+		const source = activeId && contextId === activeId
+			? ide_state.lines.join('\n')
+			: getSourceForChunk(chunkName);
 		if (source.length === 0) {
 			ide_state.diagnosticsCache.delete(contextId);
 			ide_state.dirtyDiagnosticContexts.delete(contextId);
@@ -1072,7 +1064,6 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			id: context.id,
 			title: context.title,
 			descriptor: context.descriptor,
-			asset_id,
 			chunkName,
 			source,
 		});
@@ -1109,8 +1100,8 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 
 export function createDiagnosticProviders(): DiagnosticProviders {
 	return {
-		listLocalSymbols: (asset_id, chunk) => {
-			return listLuaSymbols(asset_id, chunk);
+		listLocalSymbols: (chunk) => {
+			return listLuaSymbols(chunk);
 		},
 		listGlobalSymbols: () => {
 			return listGlobalLuaSymbols();
@@ -1196,18 +1187,19 @@ export function getLuaModuleAliases(chunkName: string): Map<string, string> {
 }
 
 export function findContextByChunk(chunkName: string): CodeTabContext {
+	const byChunk = findCodeTabContext(chunkName);
+	if (byChunk) {
+		return byChunk;
+	}
 	for (const context of ide_state.codeTabContexts.values()) {
 		const descriptor = context.descriptor;
 		if (descriptor) {
-			if (descriptor.path === chunkName || descriptor.asset_id === chunkName) { // TODO: ??????????????????
-				return context;
-			}
 			continue;
 		}
 		const aliases: string[] = ['__entry__', '<console>'];
 		for (let index = 0; index < aliases.length; index += 1) {
 			const alias = aliases[index];
-			if (alias === chunkName || alias === chunkName) {
+			if (alias === chunkName) {
 				return context;
 			}
 		}

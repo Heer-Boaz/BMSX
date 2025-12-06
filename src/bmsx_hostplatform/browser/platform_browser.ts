@@ -111,7 +111,9 @@ class BrowserClock implements Clock {
 		const id = window.setTimeout(() => {
 			if (!active) return;
 			active = false;
-			try { cb(this.now()); } catch(e) { /* swallow errors from callbacks */ console.warn(`[BrowserClock] Error in scheduled callback: ${e}`); }
+			try { cb(this.now()); } catch(e) { /* swallow errors from callbacks */
+			throw e;
+			console.warn(`[BrowserClock] Error in scheduled callback: ${e}`); }
 		}, delayMs);
 		return {
 			cancel: () => {

@@ -183,7 +183,7 @@ export class BmsxConsoleRuntime extends Service {
 	public readonly luaChunkEnvironmentsByAssetId: Map<string, LuaEnvironment> = new Map();
 	public readonly luaChunkEnvironmentsByChunkName: Map<string, LuaEnvironment> = new Map();
 	public readonly chunkFunctionDefinitionKeys: Map<string, Set<string>> = new Map();
-	private readonly luaGenericAssetsExecuted: Set<string> = new Set();
+	private readonly luaGenericChunksExecuted: Set<string> = new Set();
 	public readonly luaFunctionRedirectCache = new LuaFunctionRedirectCache();
 	// Wrap Lua closures with stable JS stubs so FSM/input/events can hold onto durable references even across hot-reload.
 	private readonly luaHandlerCache = new LuaHandlerCache(
@@ -194,7 +194,7 @@ export class BmsxConsoleRuntime extends Service {
 	public readonly chunkSemanticCache: Map<string, { source: string; model: LuaSemanticModel; definitions: ReadonlyArray<LuaDefinitionInfo> }> = new Map();
 
 	private readonly luaVmGate = taskGate.group('console:lua_vm');
-	private handledLuaErrors = new WeakSet<object>();
+	private handledLuaErrors = new WeakSet<any>();
 	public faultSnapshot: FaultSnapshot = null;
 	private faultOverlayNeedsFlush = false;
 	public get doesFaultOverlayNeedFlush(): boolean {
@@ -292,9 +292,14 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 		if (signal.reason === 'exception') {
-			this.recordDebuggerExceptionFault(signal);
+			const snapshot = this.recordDebuggerExceptionFault(signal);
 			if (editorActive || shouldActivateEditor) {
 				this.editor.renderFaultOverlay();
+			} else if (snapshot) {
+				const prettyMessage = prettyPrintRuntimeError(snapshot.chunkName, snapshot.line, snapshot.column, snapshot.message);
+				this.activateConsoleMode();
+				this.presentRuntimeErrorInConsole(prettyMessage, snapshot.details);
+				this.updateOverlayState(true, false, true);
 			}
 		} else if (this.luaRuntimeFailed && (editorActive || shouldActivateEditor)) {
 			this.editor.renderFaultOverlay();
@@ -737,7 +742,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.invalidateLuaModuleIndex();
 			this.luaChunkEnvironmentsByAssetId.clear();
 			this.luaChunkEnvironmentsByChunkName.clear();
-			this.luaGenericAssetsExecuted.clear();
+			this.luaGenericChunksExecuted.clear();
 			this.editor?.clearRuntimeErrorOverlay();
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset to fresh world
 				await $.reset_to_fresh_world();
@@ -1143,7 +1148,7 @@ export class BmsxConsoleRuntime extends Service {
 		const binding = this.resolveChunkBinding(snapshot.luaChunkName);
 		let source: string;
 		try {
-			source = this.resolveSourceForChunk(binding.chunkName, binding.assetId);
+			source = this.resolveSourceForChunk(binding.chunkName);
 		}
 		catch (error) {
 			throw convertToError(error);
@@ -1185,23 +1190,12 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private refreshLuaModulesOnResume(resumeModuleId: string): void {
-		const modules = new Set<string>();
-		const pushModule = (moduleId: string): void => {
+		const chunkNames = Object.keys(this.cart.chunk2lua);
+		for (let index = 0; index < chunkNames.length; index += 1) {
+			const moduleId = chunkNames[index];
 			if (resumeModuleId && moduleId === resumeModuleId) {
-				return;
+				continue;
 			}
-			modules.add(moduleId);
-		};
-
-		for (const asset of Object.values(this.cart.lua)) {
-			const chunkName = asset.chunk_name;
-			pushModule(chunkName);
-		}
-
-		if (modules.size === 0) {
-			return;
-		}
-		for (const moduleId of modules) {
 			this.refreshLuaHandlersForChunk(moduleId);
 		}
 	}
@@ -1326,18 +1320,18 @@ export class BmsxConsoleRuntime extends Service {
 		this.faultOverlayNeedsFlush = false;
 	}
 
-	private recordDebuggerExceptionFault(signal: LuaDebuggerPauseSignal): void {
+	private recordDebuggerExceptionFault(signal: LuaDebuggerPauseSignal): FaultSnapshot {
 		const interpreter = this.luaInterpreter;
 		const exception = interpreter?.consumeLastDebuggerException?.();
 		if (this.faultSnapshot && this.luaRuntimeFailed) {
 			this.faultOverlayNeedsFlush = true;
-			return;
+			return this.faultSnapshot;
 		}
 		const signalLine = fallbackclamp(signal.location.line, 1, Number.MAX_SAFE_INTEGER, null);
 		const signalColumn = fallbackclamp(signal.location.column, 1, Number.MAX_SAFE_INTEGER, null);
 		if (!exception) {
 			this.luaRuntimeFailed = true;
-			this.recordFaultSnapshot({
+			return this.recordFaultSnapshot({
 				message: 'Runtime error',
 				chunkName: signal.location.chunk,
 				line: signalLine,
@@ -1345,7 +1339,6 @@ export class BmsxConsoleRuntime extends Service {
 				details: this.buildRuntimeErrorDetailsForEditor(null, 'Runtime error'),
 				fromDebugger: true,
 			});
-			return;
 		}
 		const message = extractErrorMessage(exception);
 		let chunkName: string = exception.chunkName;
@@ -1355,7 +1348,7 @@ export class BmsxConsoleRuntime extends Service {
 		const normalizedLine = fallbackclamp(exception.line, 1, Number.MAX_SAFE_INTEGER, null);
 		const normalizedColumn = fallbackclamp(exception.column, 1, Number.MAX_SAFE_INTEGER, null);
 		this.luaRuntimeFailed = true;
-		this.recordFaultSnapshot({
+		return this.recordFaultSnapshot({
 			message,
 			chunkName,
 			line: normalizedLine ?? signalLine,
@@ -1376,8 +1369,8 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	public markSourceAssetAsDirty(asset_id: string): void {
-		this.luaGenericAssetsExecuted.delete(asset_id);
+	public markSourceChunkAsDirty(chunkName: string): void {
+		this.luaGenericChunksExecuted.delete(chunkName);
 	}
 
 	private captureVmState(): { globals?: LuaEntrySnapshot; locals?: LuaEntrySnapshot; randomSeed?: number } {
@@ -1423,12 +1416,18 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private captureChunkState(chunkName: string): LuaEntrySnapshot {
-		const env = this.resolveChunkEnvironment(chunkName);
+		const env = this.luaChunkEnvironmentsByChunkName.get(chunkName);
+		if (!env) {
+			return null;
+		}
 		return this.captureLuaEntryCollection(env.entries());
 	}
 
 	private captureChunkTables(chunkName: string): Map<string, LuaTable> {
-		const env = this.resolveChunkEnvironment(chunkName);
+		const env = this.luaChunkEnvironmentsByChunkName.get(chunkName);
+		if (!env) {
+			return null;
+		}
 		const tables = new Map<string, LuaTable>();
 		for (const [name, value] of env.entries()) {
 			if (typeof name === 'string' && isLuaTable(value)) {
@@ -1515,16 +1514,6 @@ export class BmsxConsoleRuntime extends Service {
 		return false;
 	}
 
-	private resolveChunkEnvironment(chunkName: string): LuaEnvironment {
-		const asset = this.findAssetByChunkName(chunkName) ?? this.cart.lua[this.cart.entry];
-		const canonicalName = asset ? this.canonicalChunkName(asset) : chunkName;
-		const env = this.luaChunkEnvironmentsByChunkName.get(canonicalName);
-		if (!env) {
-			throw new Error(`[BmsxConsoleRuntime] Missing chunk environment for '${chunkName}'.`);
-		}
-		return env;
-	}
-
 	private restoreVmState(snapshot: BmsxConsoleState): void {
 		const interpreter = this.luaInterpreter;
 		if (snapshot.luaRandomSeed !== undefined) {
@@ -1588,7 +1577,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private resetLuaInteroperabilityState(): void {
-		this.luaGenericAssetsExecuted.clear();
+		this.luaGenericChunksExecuted.clear();
 		this.handledLuaErrors = new WeakSet<object>();
 		this.luaFunctionRedirectCache.clear();
 		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
@@ -1674,6 +1663,9 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public handleLuaError(error: unknown): void {
+		if (!(error instanceof Error)) {
+			error = convertToError(error);
+		}
 		// Pause signal has its own handler
 		if (isLuaDebuggerPauseSignal(error)) {
 			console.info('[BmsxConsoleRuntime] Lua debugger pause signal received: ', error);
@@ -1682,7 +1674,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 
 		// Avoid handling the same Error object repeatedly
-		if (error instanceof Error && this.handledLuaErrors.has(error as object)) {
+		if (this.handledLuaErrors.has(error)) {
 			return;
 		}
 
@@ -1716,9 +1708,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.updateOverlayState(true, false, true);
 		}
 		console.error('[BmsxConsoleRuntime] Lua runtime error:', prettyMessage, error);
-		if (typeof error === 'object' && error !== null) {
-			this.handledLuaErrors.add(error);
-		}
+		this.handledLuaErrors.add(error);
 	}
 
 	private buildRuntimeErrorDetailsForEditor(error: unknown, message: string): RuntimeErrorDetails {
@@ -1869,11 +1859,14 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private handleLuaHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): void {
-		const normalized = convertToError(error);
-		if (meta && meta.hid && !normalized.message.startsWith(`[${meta.hid}]`)) {
-			normalized.message = `[${meta.hid}] ${normalized.message}`;
+		// Annotate the error message with the handler ID if not already present
+		const wrappedError = convertToError(error);
+		if (meta && meta.hid && !wrappedError.message.startsWith(`[${meta.hid}]`)) {
+			wrappedError.message = `[${meta.hid}] ${wrappedError.message}`;
 		}
-		this.handleLuaError(normalized);
+		this.luaInterpreter.recordFaultCallStack();
+		this.handleLuaError(wrappedError);
+		throw wrappedError; // Rethrow for higher-level handling
 	}
 
 	public ensureMarshalContext(context?: LuaMarshalContext): LuaMarshalContext {
@@ -2110,41 +2103,39 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private refreshLuaHandlersForChunk(chunkName: string, sourceOverride?: string): void {
-		const asset = this.cart.chunk2lua![chunkName];
-		const asset_id = asset.resid;
-		const resourceInfo: { asset_id: string; path?: string } = { asset_id, path: asset.normalized_source_path };
-		this.luaGenericAssetsExecuted.delete(asset_id);
-		this.reloadGenericLuaChunk(chunkName, resourceInfo, sourceOverride);
+		const asset = this.findAssetByChunkName(chunkName);
+		const canonicalChunkName = this.canonicalChunkName(asset);
+		this.luaGenericChunksExecuted.delete(canonicalChunkName);
+		this.reloadGenericLuaChunk(canonicalChunkName, sourceOverride);
 		clearNativeMemberCompletionCache();
 		this.clearEditorErrorOverlaysIfNoFault();
 	}
 
-	private reloadGenericLuaChunk(chunkName: string, asset: { asset_id: string; path?: string }, sourceOverride?: string): void {
+	private reloadGenericLuaChunk(chunkName: string, sourceOverride?: string): void {
 		const interpreter = this.luaInterpreter;
-		const binding = this.resolveChunkBinding(chunkName, asset.asset_id);
+		const binding = this.resolveChunkBinding(chunkName);
 		const previousChunkState = this.captureChunkState(binding.chunkName);
 		const previousChunkTables = this.captureChunkTables(binding.chunkName);
 		const previousGlobals = this.captureGlobalStateForReload();
-		const source = sourceOverride ? sourceOverride : this.resolveSourceForChunk(binding.chunkName, asset.asset_id);
-		const moduleId = this.cart.lua[asset.asset_id].chunk_name;
+		const source = sourceOverride ? sourceOverride : this.resolveSourceForChunk(binding.chunkName);
+		const moduleId = binding.chunkName;
 		const results = interpreter.execute(source, binding.chunkName);
 		this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
-		this.cacheChunkEnvironment(binding.chunkName, asset.asset_id, moduleId);
+		this.cacheChunkEnvironment(binding.chunkName, binding.assetId, moduleId);
 		this.restoreChunkState(interpreter.chunkEnvironment, previousChunkState);
 		this.restoreChunkTables(interpreter.chunkEnvironment, previousChunkTables);
 		this.restoreGlobalStateForReload(previousGlobals);
-		const packageKey = this.cart.lua[asset.asset_id].chunk_name;
-		this.refreshPackageLoadedEntry(packageKey, results);
+		this.refreshPackageLoadedEntry(binding.chunkName, results);
 		const moduleValue = results.length > 0 && results[0] !== null ? results[0] : true;
 		this.rebindChunkEnvironmentHandlers(moduleId);
 		this.rebindModuleExportHandlers(moduleId, moduleValue);
-		this.luaGenericAssetsExecuted.add(asset.asset_id);
+		this.luaGenericChunksExecuted.add(binding.chunkName);
 	}
 
-	private resolveSourceForChunk(chunkName: string, asset_id?: string): string {
-		const binding = this.resolveChunkBinding(chunkName, asset_id);
+	private resolveSourceForChunk(chunkName: string): string {
+		const binding = this.resolveChunkBinding(chunkName);
 		if (this.editor) {
-			return this.editor.getSourceForChunk(binding.assetId, binding.chunkName);
+			return this.editor.getSourceForChunk(binding.chunkName);
 		}
 		return binding.asset.src;
 	}

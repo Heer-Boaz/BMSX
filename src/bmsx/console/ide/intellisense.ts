@@ -1404,12 +1404,7 @@ export function resolveHoverAssetId(context: CodeTabContext): string {
 
 export function resolveHoverChunkName(context: CodeTabContext): string {
 	if (context && context.descriptor) {
-		if (context.descriptor.path && context.descriptor.path.length > 0) {
-			return context.descriptor.path;
-		}
-		if (context.descriptor.asset_id) {
-			return context.descriptor.asset_id;
-		}
+		return context.descriptor.path;
 	}
 	return null;
 }
@@ -1812,7 +1807,7 @@ export function navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation
 	let targetContextId: string = null;
 	try {
 		focusChunkSource(definition.chunkName, hint);
-		const context = findCodeTabContext(definition.asset_id, definition.chunkName);
+		const context = findCodeTabContext(definition.chunkName);
 		if (context) {
 			targetContextId = context.id;
 		}
@@ -1854,7 +1849,7 @@ export function inspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLu
 	const usageRow = Number.isFinite(request.row) ? Math.max(1, Math.floor(request.row)) : null;
 	const usageColumn = Number.isFinite(request.column) ? Math.max(1, Math.floor(request.column)) : null;
 	const resolved = resolveLuaChainValue(chain, asset_id);
-	const staticDefinition = findStaticDefinitionLocation(asset_id, chain, usageRow, usageColumn, request.chunkName);
+	const staticDefinition = findStaticDefinitionLocation(chain, usageRow, usageColumn, request.chunkName);
 	if (!resolved) {
 		if (!staticDefinition) {
 			return null;
@@ -1935,7 +1930,7 @@ export function listLuaObjectMembers(request: ConsoleLuaMemberCompletionRequest)
 	return [];
 }
 
-export function resolveLuaDefinitionMetadata(value: LuaValue, fallbackasset_id: string, definitionRange: LuaSourceRange): ConsoleLuaDefinitionLocation {
+export function resolveLuaDefinitionMetadata(value: LuaValue, _fallbackasset_id: string, definitionRange: LuaSourceRange): ConsoleLuaDefinitionLocation {
 	let range: LuaSourceRange = definitionRange;
 	if (!range && value && typeof value === 'object') {
 		const candidate = value as { getSourceRange?: () => LuaSourceRange };
@@ -1946,10 +1941,10 @@ export function resolveLuaDefinitionMetadata(value: LuaValue, fallbackasset_id: 
 	if (!range) {
 		return null;
 	}
-	return buildDefinitionLocationFromRange(range, fallbackasset_id);
+	return buildDefinitionLocationFromRange(range);
 }
 
-export function buildDefinitionLocationFromRange(range: LuaSourceRange, _fallbackasset_id: string): ConsoleLuaDefinitionLocation {
+export function buildDefinitionLocationFromRange(range: LuaSourceRange): ConsoleLuaDefinitionLocation {
 	const normalizedChunk = range.chunkName;
 	const chunkResource = getChunkResourceHint(range.chunkName);
 	const asset_id = chunkResource.asset_id;
@@ -1967,15 +1962,15 @@ export function buildDefinitionLocationFromRange(range: LuaSourceRange, _fallbac
 	return location;
 }
 
-export function listLuaSymbols(asset_id: string, chunkName: string): ConsoleLuaSymbolEntry[] {
-	const bundle = getStaticDefinitions(asset_id, chunkName);
+export function listLuaSymbols(chunkName: string): ConsoleLuaSymbolEntry[] {
+	const bundle = getStaticDefinitions(chunkName);
 	if (!bundle || bundle.definitions.length === 0) {
 		return [];
 	}
 	const { definitions } = bundle;
 	const entries = new Map<string, { info: LuaDefinitionInfo; location: ConsoleLuaDefinitionLocation; priority: number }>();
 	for (const info of definitions) {
-		const location = buildDefinitionLocationFromRange(info.definition, asset_id);
+		const location = buildDefinitionLocationFromRange(info.definition);
 		const path = info.namePath.length > 0 ? info.namePath.join('.') : info.name;
 		const keyPath = path.length > 0 ? path : info.name;
 		const key = `${location.chunkName ?? ''}::${keyPath}@${location.range.startLine}:${location.range.startColumn}`;
@@ -2013,7 +2008,7 @@ export function listLuaModuleSymbols(moduleName: string): ConsoleLuaSymbolEntry[
 	if (!record) {
 		return [];
 	}
-	return listLuaSymbols(record.asset_id, record.chunkName);
+	return listLuaSymbols(record.chunkName);
 }
 
 export function listLuaBuiltinFunctions(): ConsoleLuaBuiltinDescriptor[] {
@@ -2044,7 +2039,7 @@ export function listGlobalLuaSymbols(): ConsoleLuaSymbolEntry[] {
 			return;
 		}
 		for (const definition of definitions) {
-			const location = buildDefinitionLocationFromRange(definition.definition, info.asset_id);
+			const location = buildDefinitionLocationFromRange(definition.definition);
 			if (info.path && !location.path) {
 				location.path = info.path;
 			}
@@ -2132,11 +2127,11 @@ export function listGlobalLuaSymbols(): ConsoleLuaSymbolEntry[] {
 	return symbols;
 }
 
-export function findStaticDefinitionLocation(asset_id: string, chain: ReadonlyArray<string>, usageRow: number, usageColumn: number, preferredChunk: string): ConsoleLuaDefinitionLocation {
+export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usageRow: number, usageColumn: number, preferredChunk: string): ConsoleLuaDefinitionLocation {
 	if (chain.length === 0) {
 		return null;
 	}
-	const bundle = getStaticDefinitions(asset_id, preferredChunk);
+	const bundle = getStaticDefinitions(preferredChunk);
 	if (!bundle || bundle.definitions.length === 0) {
 		return null;
 	}
@@ -2155,8 +2150,7 @@ export function findStaticDefinitionLocation(asset_id: string, chain: ReadonlyAr
 			}
 			const semanticDefinition = model.lookupIdentifier(usageRow, usageColumn, chain);
 			if (semanticDefinition) {
-				const targetAsset = chunk.info.asset_id ?? asset_id;
-				return buildDefinitionLocationFromRange(semanticDefinition.definition, targetAsset);
+				return buildDefinitionLocationFromRange(semanticDefinition.definition);
 			}
 		}
 	}
@@ -2226,21 +2220,18 @@ export function findStaticDefinitionLocation(asset_id: string, chain: ReadonlyAr
 	if (!chosen) {
 		return null;
 	}
-	return buildDefinitionLocationFromRange(chosen.definition, asset_id);
+	return buildDefinitionLocationFromRange(chosen.definition);
 }
 
-export function getStaticDefinitions(asset_id: string, preferredChunk: string): { definitions: ReadonlyArray<LuaDefinitionInfo>; chunks: Array<{ chunkName: string; info: { asset_id: string; path?: string } }>; models: Map<string, LuaSemanticModel> } {
+export function getStaticDefinitions(preferredChunk: string): { definitions: ReadonlyArray<LuaDefinitionInfo>; chunks: Array<{ chunkName: string; info: { asset_id: string; path?: string } }>; models: Map<string, LuaSemanticModel> } {
 	const interpreter = BmsxConsoleRuntime.instance.interpreter;
-	const preferredChunkKey = preferredChunk;
-	const preferredPath = preferredChunk;
 	const matchingChunks: Array<{ chunkName: string; info: { asset_id: string; path?: string } }> = [];
 	for (const asset of Object.values(BmsxConsoleRuntime.instance.cart.lua)) {
 		const chunkName = asset.chunk_name;
 		const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.normalized_source_path };
-		const matchesAsset = asset_id !== null && info.asset_id === asset_id;
-		const matchesPath = preferredPath !== null && info.path === preferredPath;
-		const matchesChunk = preferredChunkKey !== null && chunkName === preferredChunkKey;
-		if (!matchesAsset && !matchesPath && !matchesChunk) {
+		const matchesPath = preferredChunk !== null && info.path === preferredChunk;
+		const matchesChunk = preferredChunk !== null && chunkName === preferredChunk;
+		if (!matchesPath && !matchesChunk) {
 			continue;
 		}
 		matchingChunks.push({ chunkName, info });

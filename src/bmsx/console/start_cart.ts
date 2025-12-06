@@ -1,10 +1,9 @@
-import { $, type BootArgs, type WorldConfiguration, shallowcopy, InputMap, } from '../index';
+import { $, type BootArgs, type WorldConfiguration, shallowcopy, InputMap, Input, } from '../index';
 import { createBmsxConsoleModule } from './module';
 import { ConsoleFont } from './font';
 import type { BmsxCartridge, CartManifest } from '../rompack/rompack';
 import { applyWorkspaceOverridesToCart } from './workspace';
 import { BmsxConsoleRuntime } from './runtime';
-
 
 const DEFAULT_INPUT_MAPPING = {
 	1: {
@@ -23,7 +22,8 @@ const DEFAULT_INPUT_MAPPING = {
 			console_down: ['down'],
 			console_b: ['b'],
 			console_a: ['a'],
-		}
+		},
+		pointer: Input.DEFAULT_POINTER_INPUT_MAPPING,
 	} as InputMap,
 };
 
@@ -95,7 +95,14 @@ export async function startCart(args: BootArgs): Promise<void> {
 	for (const playerIndexStr of Object.keys(inputMappingPerPlayer)) {
 		const playerIndex = parseInt(playerIndexStr, 10);
 		const inputMapping = inputMappingPerPlayer[playerIndex];
-		$.set_inputmap(playerIndex, inputMapping);
+		const pointerMapping = inputMapping.pointer
+			? { ...Input.DEFAULT_POINTER_INPUT_MAPPING, ...inputMapping.pointer }
+			: Input.DEFAULT_POINTER_INPUT_MAPPING;
+		const resolvedMapping: InputMap = {
+			...inputMapping,
+			pointer: pointerMapping,
+		};
+		$.set_inputmap(playerIndex, resolvedMapping);
 	}
 
 	const cartridge: BmsxCartridge = {

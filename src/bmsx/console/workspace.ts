@@ -38,7 +38,7 @@ export async function saveLuaResourceSource(asset_id: string, source: string): P
 	const chunkName = asset.chunk_name;
 	cart.chunk2lua![chunkName] = asset;
 	cart.source2lua![cartPath] = asset;
-	BmsxConsoleRuntime.instance.markSourceAssetAsDirty(asset_id);
+	BmsxConsoleRuntime.instance.markSourceChunkAsDirty(chunkName);
 }
 
 export async function createLuaResource(request: ConsoleLuaResourceCreationRequest): Promise<ConsoleResourceDescriptor> {
@@ -63,7 +63,7 @@ export async function createLuaResource(request: ConsoleLuaResourceCreationReque
 	cart.source2lua![asset.normalized_source_path] = asset;
 	const filesystemPath = asset.normalized_source_path;
 	await persistLuaSourceToFilesystem(filesystemPath, contents);
-	BmsxConsoleRuntime.instance.markSourceAssetAsDirty(asset_id);
+	BmsxConsoleRuntime.instance.markSourceChunkAsDirty(asset.chunk_name);
 	const descriptor: ConsoleResourceDescriptor = { path: asset.normalized_source_path, type: 'lua', asset_id };
 	return descriptor;
 }

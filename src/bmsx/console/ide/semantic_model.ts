@@ -28,7 +28,7 @@ import { symbolCatalogDedupKey } from './console_cart_editor';
 import { parseLuaChunkWithRecovery } from './lua_parse';
 import * as constants from './constants';
 import { getActiveCodeTabContext } from './editor_tabs';
-import { listGlobalLuaSymbols, listLuaSymbols, resolveHoverAssetId, resolveHoverChunkName } from './intellisense';
+import { listGlobalLuaSymbols, listLuaSymbols, resolveHoverChunkName } from './intellisense';
 import { extractErrorMessage } from '../../lua/value';
 
 export type SymbolKind = 'parameter' | 'local' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
@@ -1706,20 +1706,20 @@ export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string {
 		return null;
 	}
 	return computeSourceLabel(path, entry.location.chunkName ?? '<console>');
-}export function refreshSymbolCatalog(force: boolean): void {
+}
+
+export function refreshSymbolCatalog(force: boolean): void {
 	const scope: 'local' | 'global' = ide_state.symbolSearchGlobal ? 'global' : 'local';
-	let asset_id: string = null;
 	let chunkName: string = null;
 	if (scope === 'local') {
 		const context = getActiveCodeTabContext();
-		asset_id = resolveHoverAssetId(context);
 		chunkName = resolveHoverChunkName(context);
 	}
 	const existing = ide_state.symbolCatalogContext;
 	const unchanged = existing !== null
 		&& existing.scope === scope
 		&& (scope === 'global'
-			|| (existing.asset_id === asset_id && existing.chunkName === chunkName));
+			|| existing.chunkName === chunkName);
 	if (!force && unchanged) {
 		return;
 	}
@@ -1728,7 +1728,7 @@ export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string {
 		if (scope === 'global') {
 			entries = listGlobalLuaSymbols();
 		} else {
-			entries = listLuaSymbols(asset_id, chunkName);
+			entries = listLuaSymbols(chunkName);
 		}
 	} catch (error) {
 		const message = extractErrorMessage(error);
@@ -1740,7 +1740,7 @@ export function symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string {
 		ide_state.showMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
-	ide_state.symbolCatalogContext = { scope, asset_id, chunkName };
+	ide_state.symbolCatalogContext = { scope, chunkName };
 	const deduped: ConsoleLuaSymbolEntry[] = [];
 	const seen = new Set<string>();
 	for (let index = 0; index < entries.length; index += 1) {
