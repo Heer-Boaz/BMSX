@@ -1,3 +1,3 @@
 function extra()
-	write('EXTRA!', 0, 200, 0, 1)
+	write('Boaz is stoer!', 0, 200, 0, 1)
 end

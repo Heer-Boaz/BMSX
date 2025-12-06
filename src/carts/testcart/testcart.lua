@@ -206,7 +206,7 @@ local function register_hero()
 	define_world_object({
 		def_id = hero_def_id,
 		class = hero,
-		components = { 'actioneffectcomponent', 'prohibitleavingscreencomponent', hero_tracker_component_id },
+		components = { 'ActionEffectComponent', 'ProhibitLeavingScreenComponent', hero_tracker_component_id },
 		fsms = { hero_fsm_id, },
 		effects = { effect_id, },
 		defaults = { speed = 54 },
