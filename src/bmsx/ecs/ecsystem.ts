@@ -223,7 +223,7 @@ export class BoundarySystem extends ECSystem {
 					o.events.emit('screen.leaving', payload);
 				}
 			}
-			this.prev.set(o, { x: newx, y: newy });
+			this.prev.set(o, { x: o.x, y: o.y });
 		}
 	}
 }
