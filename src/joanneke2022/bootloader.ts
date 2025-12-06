@@ -644,7 +644,7 @@ class draaischijf extends SpriteObject {
 			playbackMode: 'once',
 		});
 		this.imgid = BitmapId.none; // Wordt goed gezet bij ingang start state
-		this.onLeavingScreen = (ik, d, old_x_or_y) => leavingScreenHandler_prohibit(ik, d, old_x_or_y);
+		this.onLeavingScreen = (ik, d, old_x_or_y) => leavingScreenHandler_prohibit(ik, { d, old_x_or_y });
 		this.size = { x: 64, y: 64, z: undefined };
 		this.getOrCreateCollider().setLocalArea(new_area(24, 24, 64 - 24, 64 - 24));
 		this.z = 20;

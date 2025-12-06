@@ -1,3 +1,4 @@
+import { $ } from '../core/game';
 import type { GameEvent } from '../core/game_event';
 import { WorldObject, WorldObjectEventPayloads } from "../core/object/worldobject";
 import { new_vec2, set_inplace_vec2 } from '../utils/vector_operations';
@@ -129,13 +130,22 @@ export class Collider2DComponent extends Component<WorldObject> {
  * @param d The direction in which the `WorldObject` is leaving the screen.
  * @param old_x_or_y The old x or y position of the `WorldObject`.
  */
-export function leavingScreenHandler_prohibit(ik: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['screen.leave']): void {
+export function leavingScreenHandler_prohibit(ik: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['screen.leave'], stickToEdge: boolean = true): void {
+	const world = $.world;
+	const width = world.gamewidth;
+	const height = world.gameheight;
 	switch (d) {
-		case 'left': case 'right':
-			ik.x = old_x_or_y;
+		case 'left':
+			ik.x = stickToEdge ? 0 : old_x_or_y;
 			break;
-		case 'up': case 'down':
-			ik.y = old_x_or_y;
+		case 'right':
+			ik.x = stickToEdge ? width - ik.size.x : old_x_or_y;
+			break;
+		case 'up':
+			ik.y = stickToEdge ? 0 : old_x_or_y;
+			break;
+		case 'down':
+			ik.y = stickToEdge ? height - ik.size.y : old_x_or_y;
 			break;
 	}
 }
@@ -189,6 +199,13 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
  */
 @insavegame
 export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
+	public readonly stickToEdge: boolean;
+
+	public constructor(opts: ComponentAttachOptions & { sticktoedge?: boolean }) {
+		super(opts);
+		this.stickToEdge = opts.sticktoedge !== false;
+	}
+
 	static { this.autoRegister(); }
 
 	public override bind(): void {
@@ -214,6 +231,6 @@ export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
 	public onLeavingScreen(event: GameEvent) {
 		const emitter = event.emitter as WorldObject;
 		const detail = event as GameEvent<'screen.leave', WorldObjectEventPayloads['screen.leave']>;
-		leavingScreenHandler_prohibit(emitter, { d: detail.d, old_x_or_y: detail.old_x_or_y });
+		leavingScreenHandler_prohibit(emitter, { d: detail.d, old_x_or_y: detail.old_x_or_y }, this.stickToEdge);
 	}
 }
