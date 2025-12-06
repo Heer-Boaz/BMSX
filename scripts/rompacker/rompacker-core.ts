@@ -195,9 +195,13 @@ export async function getRomManifest(dirPath: string): Promise<RomManifest> {
 		throw new Error(`More than one rommanifest found in ${dirPath}.`);
 	}
 	else if (files.length === 1) {
-		const res = await readFile(files[0]);
+		const res = await readFile(files[0]).toString();
 		// Read and return the rommanifest file
-		return JSON.parse(res.toString()) as RomManifest;
+		try {
+			return JSON.parse(res) as RomManifest;
+		} catch {
+			return yaml.load(res) as RomManifest;
+		}
 	}
 	else return null;
 }
@@ -679,9 +683,6 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 			break;
 		case '.js':
 			type = 'code';
-			break;
-		case '.rommanifest':
-			type = 'rommanifest';
 			break;
 		case '.atlas': // `.atlas`-files don't exist. We use this to add the atlas to the resource list
 			type = 'atlas';
@@ -1325,23 +1326,23 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				resid = resid.replace('.min', '');
 				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
-		case 'lua': {
-			if (!res.filepath || res.filepath.length === 0) {
-				throw new Error(`[RomPacker] Lua resource "${resid}" is missing its source file path.`);
+			case 'lua': {
+				if (!res.filepath || res.filepath.length === 0) {
+					throw new Error(`[RomPacker] Lua resource "${resid}" is missing its source file path.`);
+				}
+				const luaSourcePath = sourcePath && sourcePath.length > 0 ? sourcePath : toWorkspaceRelativePath(res.filepath);
+				const normalizedPath = normalizeWorkspacePath(luaSourcePath);
+				romAssets.push({
+					resid,
+					type,
+					buffer,
+					source_path: normalizedPath,
+					chunk_name: normalizedPath,
+					normalized_source_path: normalizedPath,
+					update_timestamp: res.update_timestamp,
+				});
+				break;
 			}
-			const luaSourcePath = sourcePath && sourcePath.length > 0 ? sourcePath : toWorkspaceRelativePath(res.filepath);
-			const normalizedPath = normalizeWorkspacePath(luaSourcePath);
-			romAssets.push({
-				resid,
-				type,
-				buffer,
-				source_path: normalizedPath,
-				chunk_name: normalizedPath,
-				normalized_source_path: normalizedPath,
-				update_timestamp: res.update_timestamp,
-			});
-			break;
-		}
 			case 'rommanifest':
 				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
