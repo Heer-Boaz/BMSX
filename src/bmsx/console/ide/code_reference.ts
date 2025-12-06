@@ -6,13 +6,13 @@ import type { Decl } from './semantic_model';
 import type { LuaSourceRange } from '../../lua/ast';
 import type { ConsoleCodeLayout } from './code_layout';
 import { normalizeEndingsAndSplitLines } from './text_utils';
+import { listResources } from '../workspace';
+import { $ } from '../../core/game';
 
 export type ProjectReferenceEnvironment = {
 	activeContext: CodeTabContext;
 	activeLines: readonly string[];
 	codeTabContexts: Iterable<CodeTabContext>;
-	listResources(): readonly ConsoleResourceDescriptor[];
-	loadLuaResource(asset_id: string): string;
 };
 
 export type ReferenceSymbolEntry = ConsoleLuaSymbolEntry & {
@@ -200,8 +200,8 @@ export function resolveDefinitionLocationForExpression(options: ResolveDefinitio
 	}
 	const range = bestDecl.range;
 	const location: ConsoleLuaDefinitionLocation = {
+		path: bestMeta.path,
 		chunkName: bestMeta.chunkName,
-		asset_id: bestMeta.asset_id,
 		range: {
 			startLine: range.start.line,
 			startColumn: range.start.column,
@@ -302,7 +302,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 			lines = context.snapshot.lines;
 		} else {
 			try {
-				const source = context.load();
+				const source = $.cart.path2lua[descriptor.path].src;
 				lines = normalizeEndingsAndSplitLines(source);
 			} catch {
 				lines = null;
@@ -315,7 +315,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		const path = descriptor && descriptor.path ? descriptor.path : null;
 		register(chunkName, lines, asset_id, path, null);
 	}
-	const descriptors = environment.listResources();
+	const descriptors = listResources();
 	for (let index = 0; index < descriptors.length; index += 1) {
 		const descriptor = descriptors[index];
 		if (!isLuaResourceDescriptor(descriptor)) {
@@ -330,7 +330,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		}
 		let lines: readonly string[] = null;
 		try {
-			const source = environment.loadLuaResource(descriptor.asset_id);
+			const source = $.cart.path2lua[descriptor.path].src;
 			lines = normalizeEndingsAndSplitLines(source);
 		} catch {
 			lines = null;
@@ -366,7 +366,7 @@ function createCatalogEntry(args: CatalogEntryArgs): ReferenceCatalogEntry {
 	const symbolName = expression.length > 0 ? expression : snippet;
 	const location: ConsoleLuaDefinitionLocation = {
 		chunkName: meta.chunkName,
-		asset_id: meta.asset_id,
+		path: meta.path,
 		range: {
 			startLine: range.startLine,
 			startColumn: range.startColumn,

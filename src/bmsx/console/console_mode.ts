@@ -648,7 +648,6 @@ export class ConsoleMode {
 			return [];
 		}
 		const response = listLuaObjectMembers({
-			asset_id: request.asset_id,
 			chunkName: request.chunkName,
 			expression: request.objectName,
 			operator: request.operator,

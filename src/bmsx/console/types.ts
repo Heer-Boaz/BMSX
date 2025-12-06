@@ -1,13 +1,6 @@
 import type { LuaFunctionValue } from '../lua/value';
-import type { CanonicalizationType, BmsxCartridge } from '../rompack/rompack';
+import type { CanonicalizationType } from '../rompack/rompack';
 import { LuaEntrySnapshot } from './lua_js_bridge';
-import { LuaPersistenceFailurePolicy } from './workspace';
-
-export type BmsxConsoleLuaPrimaryAssetWithSource = {
-	readonly asset_id?: string;
-	readonly chunkName: string;
-	readonly source: string;
-};
 
 export const enum BmsxConsolePointerButton {
 	Primary = 0,
@@ -38,12 +31,11 @@ export type ConsolePointerWheel = {
 export type ConsoleResourceDescriptor = {
 	path: string;
 	type: string;
-	asset_id: string;
+	asset_id?: string;
 };
 
 export type ConsoleLuaResourceCreationRequest = {
 	path: string;
-	asset_id?: string;
 	contents: string;
 };
 
@@ -59,9 +51,8 @@ export type ConsoleLuaDefinitionRange = {
 };
 
 export type ConsoleLuaDefinitionLocation = {
+	path: string;
 	chunkName: string;
-	asset_id: string;
-	path?: string;
 	range: ConsoleLuaDefinitionRange;
 };
 
@@ -89,7 +80,6 @@ export type ConsoleLuaBuiltinDescriptor = {
 };
 
 export type ConsoleLuaHoverRequest = {
-	asset_id: string;
 	expression: string;
 	chunkName: string;
 	row: number;
@@ -97,7 +87,6 @@ export type ConsoleLuaHoverRequest = {
 };
 
 export type ConsoleLuaMemberCompletionRequest = {
-	asset_id: string;
 	chunkName: string;
 	expression: string;
 	operator: '.' | ':';
@@ -120,10 +109,10 @@ export type ConsoleLuaHoverResult = {
 	isLocalFunction: boolean;
 	isBuiltin: boolean;
 	definition?: ConsoleLuaDefinitionLocation;
-};export type BmsxConsoleRuntimeOptions = {
-	cart: BmsxCartridge;
+};
+
+export type BmsxConsoleRuntimeOptions = {
 	playerIndex: number;
-	luaSourceFailurePolicy?: Partial<LuaPersistenceFailurePolicy>;
 	canonicalization?: CanonicalizationType;
 };
 

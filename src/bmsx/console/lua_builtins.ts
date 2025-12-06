@@ -491,9 +491,7 @@ function buildLuaRompackView() {
 		model: serializeRomAssetMap(rompack.model),
 		data: cloneRompackDataMap(rompack.data),
 		audioevents: rompack.audioevents ? deep_clone(rompack.audioevents) : {},
-		lua: rompack.cart?.lua
-			? Object.fromEntries(Object.entries(rompack.cart.lua).map(([id, asset]) => [id, { ...asset }]))
-			: {},
+		lua: Object.fromEntries(Object.entries(rompack.cart.path2lua).map(([path, asset]) => [path, { ...asset }])),
 		code: rompack.code,
 		canonicalization: rompack.canonicalization,
 	};

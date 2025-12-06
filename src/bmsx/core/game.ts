@@ -36,6 +36,7 @@ import { BmsxConsoleRuntime } from '../console/runtime';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { ActionEffectRegistry } from '../action_effects/effect_registry';
 import { InputSource, KeyModifier } from '../input/playerinput';
+import { deep_clone } from '../utils/deep_clone';
 // No direct space helpers needed here; Spaces are revived as part of the world.
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -101,6 +102,8 @@ export class Game {
 	public get timestep(): number { return 1000 / this.target_fps; }
 
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
+
+	private _cart: RomPack['cart'];
 
 	/**
 	 * The accumulated time in milliseconds.
@@ -200,6 +203,21 @@ export class Game {
 	public get sndmaster(): SoundMaster { return this.registry.get<SoundMaster>('sm')!; }
 	public get ae_registry(): ActionEffectRegistry { return ActionEffectRegistry.instance; }
 	public get platform(): Platform { return this._platform!; }
+
+	/**
+	 * Returns the current cart (Rompack !== cart) associated with the game, including any overrides applied via the workspace.
+	 * This is the effective cart used by the game during runtime.
+	 * The cart may differ from the original ROM pack cart if workspace overrides have been applied.
+	 * The cart only includes the source Lua files of the cart. All other assets are referenced from the original ROM pack (note: pack !== cart).
+	 * Note that `start_cart.ts` applies workspace overrides before initializing the game instance.
+	 */
+	public get cart(): RomPack['cart'] { return this._cart; }
+
+	/**
+	 * Gets the original unpacked cart associated with the ROM. Used to clear (reset) the workspace of any overrides applied via the workspace.
+	 * The cart only includes the source Lua files of the cart. All other assets are referenced from the original ROM pack (note: pack !== cart).
+	 */
+	public get clean_cart(): RomPack['cart'] { return this.rompack.cart; }
 
 	public emit(event: GameEvent): void;
 	public emit(event_name: string, emitter: Identifiable, payload?: EventPayload): void;
@@ -362,6 +380,7 @@ export class Game {
 		this._debug = debug ?? this._debug;
 		$debug = this._debug;
 
+		this._cart = deep_clone(rompack.cart); // Clone the cart to allow workspace overrides without modifying the original rompack
 		GameView.imgassets = rompack.img;
 		EventEmitter.instance; // Init event emitter
 		Input.initialize(startingGamepadIndex ); // Init input module

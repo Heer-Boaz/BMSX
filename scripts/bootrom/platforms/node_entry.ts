@@ -575,16 +575,6 @@ function combineRompacks(engineRom: RomPack, cartRom: RomPack): RomPack {
 		canonicalization: cartRom.canonicalization ?? engineRom.canonicalization,
 		manifest: cartRom.manifest ?? engineRom.manifest,
 	};
-	if ((!combined.cart.entry || combined.cart.entry.length === 0) && Object.keys(combined.cart.lua).length > 0) {
-		const manifest = combined.manifest as { lua?: { entryAssetId?: string } };
-		const manifestEntryId = manifest && manifest.lua ? manifest.lua.entryAssetId : undefined;
-		if (manifestEntryId && combined.cart.lua[manifestEntryId]) {
-			combined.cart.entry = manifestEntryId;
-		} else {
-			const firstAsset = Object.values(combined.cart.lua)[0];
-			combined.cart.entry = firstAsset.resid;
-		}
-	}
 	return combined;
 }
 

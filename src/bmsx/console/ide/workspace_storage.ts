@@ -464,21 +464,18 @@ export function serializeTabEntry(tab: EditorTabDescriptor): PersistedTabEntry {
 }
 
 export function serializeDescriptor(descriptor: ConsoleResourceDescriptor): SerializedDescriptor {
-	if (!descriptor) {
-		return null;
-	}
-	return {
+	return descriptor ? {
 		asset_id: descriptor.asset_id,
 		path: descriptor.path,
 		type: descriptor.type,
-	};
+	} : null;
 }
 
 export function resolveSerializedDescriptor(serialized: SerializedDescriptor): ConsoleResourceDescriptor {
 	if (!serialized) {
 		return null;
 	}
-	const asset = $.rompack.cart.lua[serialized.asset_id];
+	const asset = $.rompack.cart.chunk2lua[serialized.path];
 	return asset ? { asset_id: asset.resid, path: serialized.path, type: serialized.type } : null;
 }
 
@@ -792,13 +789,17 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 	}
 }
 
+export function loadSrc(path: string) {
+	return $.rompack.cart.path2lua[path]?.src;
+}
+
 export function clearWorkspaceDirtyBuffers(): void {
 	workspaceDirtyCache.clear();
 	ide_state.workspaceAutosaveSignature = null;
 	ide_state.saveGeneration = ide_state.appliedGeneration;
 	ide_state.dirty = false;
 	for (const context of ide_state.codeTabContexts.values()) {
-		const source = context.load();
+		const source = loadSrc(context.descriptor.path);
 		const snapshot = buildSnapshotFromSource(source);
 		context.snapshot = snapshot;
 		context.dirty = false;

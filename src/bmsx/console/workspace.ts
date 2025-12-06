@@ -1,6 +1,6 @@
 import { extractErrorMessage } from '../lua/value';
 import type { HttpResponse, StorageService } from '../platform';
-import { type RomPack, type BmsxCartridge, type RomLuaAsset } from '../rompack/rompack';
+import { type BmsxCartridge, type RomLuaAsset } from '../rompack/rompack';
 import { BmsxConsoleRuntime } from './runtime';
 import { $ } from '../core/game';
 import { ConsoleLuaResourceCreationRequest, ConsoleResourceDescriptor } from './types';
@@ -12,32 +12,19 @@ export const WORKSPACE_DIRTY_DIR = 'dirty';
 export const WORKSPACE_STATE_FILE = 'ide-state.json';
 export const WORKSPACE_MARKER_FILE = '~workspace';
 
-type LuaPersistenceFailureMode = 'error' | 'warning';
-type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
+export type WorkspaceOverrideRecord = { source: string; path: string; cartPath: string; updatedAt?: number };
+type WorkspaceStoragePayload = { contents: string; updatedAt: number };
 
-export type LuaPersistenceFailurePolicy = {
-	[K in LuaPersistenceFailureKind]: LuaPersistenceFailureMode;
-};
-
-export const DEFAULT_LUA_FAILURE_POLICY: LuaPersistenceFailurePolicy = {
-	fetch: 'warning',
-	persist: 'error',
-	apply: 'error',
-	restore: 'error',
-};
-
-const luaFailurePolicy: LuaPersistenceFailurePolicy = { ...DEFAULT_LUA_FAILURE_POLICY };
-
-export async function saveLuaResourceSource(asset_id: string, source: string): Promise<void> {
+export async function saveLuaResourceSource(path: string, source: string): Promise<void> {
 	const cart = $.rompack.cart;
-	const asset = cart.lua[asset_id];
-	const cartPath = asset.normalized_source_path;
-	await persistLuaSourceToFilesystem(cartPath, source);
+	const asset = cart.path2lua[path];
+	const absPath = asset.normalized_source_path;
+	await persistLuaSourceToFilesystem(absPath, source);
 	asset.src = source;
 	asset.update_timestamp = $.platform.clock.dateNow();
 	const chunkName = asset.chunk_name;
 	cart.chunk2lua![chunkName] = asset;
-	cart.source2lua![cartPath] = asset;
+	cart.path2lua![absPath] = asset;
 	BmsxConsoleRuntime.instance.markSourceChunkAsDirty(chunkName);
 }
 
@@ -47,7 +34,7 @@ export async function createLuaResource(request: ConsoleLuaResourceCreationReque
 	const slashIndex = path.lastIndexOf('/');
 	const fileName = slashIndex === -1 ? path : path.slice(slashIndex + 1);
 	const baseName = fileName.endsWith('.lua') ? fileName.slice(0, -4) : fileName;
-	const asset_id = typeof request.asset_id === 'string' && request.asset_id.length > 0 ? request.asset_id : baseName;
+	const asset_id = baseName;
 	const asset: RomLuaAsset = {
 		resid: asset_id,
 		type: 'lua',
@@ -58,9 +45,8 @@ export async function createLuaResource(request: ConsoleLuaResourceCreationReque
 		update_timestamp: $.platform.clock.dateNow(),
 	};
 	const cart = $.rompack.cart;
-	cart.lua[asset_id] = asset;
 	cart.chunk2lua![asset.chunk_name] = asset;
-	cart.source2lua![asset.normalized_source_path] = asset;
+	cart.path2lua![asset.normalized_source_path] = asset;
 	const filesystemPath = asset.normalized_source_path;
 	await persistLuaSourceToFilesystem(filesystemPath, contents);
 	BmsxConsoleRuntime.instance.markSourceChunkAsDirty(asset.chunk_name);
@@ -112,10 +98,7 @@ export function buildWorkspaceStorageKey(projectRootPath: string, relativePath: 
 	return `${WORKSPACE_STORAGE_PREFIX}:${projectRootPath}:${relativePath}`;
 }
 
-export type WorkspaceOverrideRecord = { source: string; path: string; cartPath: string; updatedAt?: number };
-type WorkspaceStoragePayload = { contents: string; updatedAt: number };
-
-export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRootPath: string; storage: StorageService; }): Map<string, WorkspaceOverrideRecord> {
+export function collectWorkspaceOverrides(params: { cart: BmsxCartridge; projectRootPath: string; storage: StorageService; }): Map<string, WorkspaceOverrideRecord> {
 	const overrides = new Map<string, WorkspaceOverrideRecord>();
 	const rootRaw = params.projectRootPath;
 	if (!rootRaw) {
@@ -123,7 +106,7 @@ export function collectWorkspaceOverrides(params: { rompack: RomPack; projectRoo
 	}
 	const root = rootRaw;
 	const storage = params.storage;
-	for (const asset of Object.values(params.rompack.cart.lua)) {
+	for (const asset of Object.values(params.cart.chunk2lua)) {
 		const cartPath = asset.normalized_source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		let bestSource: string = null;
@@ -190,7 +173,7 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 			body: JSON.stringify({ path: resolveWorkspacePathForIo(path), contents: source }),
 		});
 	} catch (error) {
-		handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Failed to reach Lua save endpoint for '${path}'`, { error });
+		handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Failed to reach Lua save endpoint for '${path}': ${error}`);
 		return;
 	}
 	if (!response.ok) {
@@ -198,11 +181,7 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 		try {
 			detail = await response.text();
 		} catch (textError) {
-			const message = extractErrorMessage(textError);
-			handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Save rejected for '${path}' (response body read failed)`, { detail: message });
-			if (luaFailurePolicy.persist === 'warning') {
-				return;
-			}
+			handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Save rejected for '${path}' (response body read failed): ${textError}`);
 			return;
 		}
 		let finalDetail = response.statusText;
@@ -212,10 +191,7 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 				parsed = JSON.parse(detail);
 			} catch (parseError) {
 				const parseMessage = extractErrorMessage(parseError);
-				handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Save rejected for '${path}' (error payload parse failed)`, { detail: parseMessage });
-				if (luaFailurePolicy.persist === 'warning') {
-					return;
-				}
+				handleLuaPersistenceFailure('persist', { detail: `[BmsxConsoleRuntime] Save rejected for '${path}' (error payload parse failed): ${parseMessage}`, error: parseError });
 				return;
 			}
 			if (parsed && typeof parsed === 'object' && 'error' in parsed) {
@@ -229,7 +205,7 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 				finalDetail = detail;
 			}
 		}
-		handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Save rejected for '${path}'`, { detail: finalDetail });
+		handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Save rejected for '${path}': ${finalDetail}`);
 		return;
 	}
 }
@@ -244,7 +220,7 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 	try {
 		response = await fetch(url, { method: 'GET', cache: 'no-store' });
 	} catch (error) {
-		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from filesystem (${path})`, { error });
+		handleLuaPersistenceFailure('fetch', { detail: `[BmsxConsoleRuntime] Failed to load Lua source from filesystem (${path})`, error });
 		return null;
 	}
 	if (response.status === 404) {
@@ -256,7 +232,7 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 			detail = await response.text();
 		} catch (textError) {
 			const message = extractErrorMessage(textError);
-			handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from '${path}' (response body read failed)`, { detail: message });
+			handleLuaPersistenceFailure('fetch', { detail: `[BmsxConsoleRuntime] Failed to load Lua source from '${path}' (response body read failed): ${message}`, error: textError });
 			return null;
 		}
 		let finalDetail = response.statusText;
@@ -266,7 +242,7 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 				parsed = JSON.parse(detail);
 			} catch (parseError) {
 				const parseMessage = extractErrorMessage(parseError);
-				handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from '${path}' (error payload parse failed)`, { detail: parseMessage });
+				handleLuaPersistenceFailure('fetch', { detail: `[BmsxConsoleRuntime] Failed to load Lua source from '${path}' (error payload parse failed): ${parseMessage}`, error: parseError });
 				return null;
 			}
 			if (parsed && typeof parsed === 'object' && 'error' in parsed) {
@@ -280,10 +256,7 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 				finalDetail = detail;
 			}
 		}
-		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Failed to load Lua source from '${path}'`, { detail: finalDetail });
-		if (luaFailurePolicy.fetch === 'warning') {
-			return null;
-		}
+		handleLuaPersistenceFailure('fetch', { detail: `[BmsxConsoleRuntime] Failed to load Lua source from '${path}': ${finalDetail}` });
 		return null;
 	}
 	let payload: unknown;
@@ -291,28 +264,30 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 		payload = await response.json();
 	} catch (parseError) {
 		const message = extractErrorMessage(parseError);
-		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Invalid response while loading Lua source from '${path}'`, { detail: message });
+		handleLuaPersistenceFailure('fetch', { detail: `[BmsxConsoleRuntime] Invalid response while loading Lua source from '${path}': ${message}`, error: parseError });
 		return null;
 	}
 	if (!payload || typeof payload !== 'object') {
-		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Response for '${path}' missing Lua contents`);
+		handleLuaPersistenceFailure('fetch', { detail: `[BmsxConsoleRuntime] Response for '${path}' missing Lua contents` });
 		return null;
 	}
 	const record = payload as { contents?: unknown };
 	if (typeof record.contents !== 'string') {
-		handleLuaPersistenceFailure('fetch', `[BmsxConsoleRuntime] Response for '${path}' missing Lua contents`);
+		handleLuaPersistenceFailure('fetch', { detail: `[BmsxConsoleRuntime] Response for '${path}' missing Lua contents` });
 		return null;
 	}
 	return record.contents;
 }
 
 function handleLuaPersistenceFailure(
-	kind: LuaPersistenceFailureKind,
 	context: string,
-	options: { detail?: string; error?: unknown } = {}
+	options: string | { detail?: string; error?: unknown } = {}
 ): void {
 	const runtime = BmsxConsoleRuntime.instance;
-	const mode = luaFailurePolicy[kind];
+	if (typeof options === 'string') {
+		runtime.recordLuaWarning(options);
+		return;
+	}
 	const parts: string[] = [context];
 	if (options.detail && options.detail.length > 0) {
 		parts.push(options.detail);
@@ -324,21 +299,8 @@ function handleLuaPersistenceFailure(
 		}
 	}
 	const message = parts.join(': ');
-	if (mode === 'warning') {
-		runtime.recordLuaWarning(message);
-		return;
-	}
-	if (options.error instanceof Error) {
-		const wrapped = new Error(message);
-		// @ts-ignore - preserve original error via non-standard cause where available
-		wrapped.cause = options.error;
-		console.error(message, options.error);
-		throw wrapped;
-	}
-	console.error(message);
-	throw new Error(message);
+	runtime.recordLuaWarning(message);
 }
-
 
 // StorageService is injected because the workspace merge runs during boot before $.platform is fully wired;
 // reaching back into $.platform.storage here races the runtime initialization.
@@ -378,13 +340,10 @@ export async function mergeWorkspaceOverrides(
 	return merged;
 }
 
-export async function fetchWorkspaceOverridesPriority(rompack: RomPack): Promise<Map<string, WorkspaceOverrideRecord>> {
-	const root = rompack.project_root_path;
-	if (!root) {
-		return null;
-	}
+export async function fetchWorkspaceOverridesPriority(cart: BmsxCartridge): Promise<Map<string, WorkspaceOverrideRecord>> {
+	const root = $.rompack.project_root_path;
 	try {
-		const serverOverrides = await fetchWorkspaceDirtyLuaOverrides(rompack, root);
+		const serverOverrides = await fetchWorkspaceDirtyLuaOverrides(cart, root);
 		return serverOverrides;
 	} catch (error) {
 		console.warn('[BmsxConsoleRuntime] Failed to load server workspace overrides; falling back to local overrides.', error);
@@ -392,19 +351,18 @@ export async function fetchWorkspaceOverridesPriority(rompack: RomPack): Promise
 	}
 }
 
-export async function fetchWorkspaceDirtyLuaOverrides(rompack: RomPack, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
-	const tasks: Array<Promise<{ asset_id: string; contents: string; path: string; cartPath: string; updatedAt?: number }>> = [];
+export async function fetchWorkspaceDirtyLuaOverrides(cart: BmsxCartridge, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
+	const tasks: Array<Promise<{ contents: string; path: string; filePath: string; updatedAt?: number }>> = [];
 	// Fetching dirty files from backend is best-effort. Missing files do NOT mean we should
 	// discard in-memory dirty edits; they simply yield no extra overrides.
-	for (const asset of Object.values(rompack.cart.lua)) {
-		const asset_id = asset.resid;
-		const cartPath = asset.normalized_source_path;
-		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
+	for (const asset of Object.values(cart.chunk2lua)) {
+		const filePath = asset.normalized_source_path;
+		const dirtyPath = buildWorkspaceDirtyEntryPath(root, filePath);
 		tasks.push(fetchWorkspaceFile(dirtyPath).then((result) => {
 			if (result === null) {
 				return null;
 			}
-			return { asset_id, contents: result.contents, path: dirtyPath, cartPath, updatedAt: result.updatedAt };
+			return { contents: result.contents, path: dirtyPath, filePath, updatedAt: result.updatedAt };
 		}));
 	}
 	if (tasks.length === 0) {
@@ -417,7 +375,7 @@ export async function fetchWorkspaceDirtyLuaOverrides(rompack: RomPack, root: st
 		if (!result) {
 			continue;
 		}
-		overrides.set(result.asset_id, { source: result.contents, path: result.path, cartPath: result.cartPath, updatedAt: result.updatedAt });
+		overrides.set(result.filePath, { source: result.contents, path: result.path, cartPath: result.filePath, updatedAt: result.updatedAt });
 	}
 	return overrides;
 }
@@ -559,23 +517,21 @@ export function persistWorkspaceOverridesToLocalStorage(storage: StorageService,
 //   to the server so that disk state catches up once connectivity returns.
 // - The merged overrides are applied to cart.lua before the Lua VM starts so the running cart always reflects the
 //   most recent edits regardless of where they were saved.
-export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; storage: StorageService; includeServer?: boolean }): Promise<Set<string>> {
-	const { rompack, storage } = params;
+export async function applyWorkspaceOverridesToCart(params: { cart: BmsxCartridge; storage: StorageService; includeServer?: boolean }): Promise<Set<string>> {
+	const { cart, storage } = params;
 	const includeServer = params.includeServer !== false;
-	const cart = rompack.cart;
 	const changed = new Set<string>();
-	const root = rompack.project_root_path;
-	const localOverrides = collectWorkspaceOverrides({ rompack, projectRootPath: root, storage });
-	const serverOverrides = includeServer ? await fetchWorkspaceOverridesPriority(rompack) : null;
+	const root = $.rompack.project_root_path;
+	const localOverrides = collectWorkspaceOverrides({ cart, projectRootPath: root, storage });
+	const serverOverrides = includeServer ? await fetchWorkspaceOverridesPriority(cart) : null;
 	const merged = await mergeWorkspaceOverrides(root, storage, localOverrides, serverOverrides ?? new Map<string, WorkspaceOverrideRecord>());
-	for (const asset of Object.values(cart.lua)) {
-		const asset_id = asset.resid;
-		const cartPath = asset.normalized_source_path;
-		const savedRecord = await fetchWorkspaceFile(cartPath);
+	for (const asset of Object.values(cart.path2lua)) {
+		const filePath = asset.normalized_source_path;
+		const savedRecord = await fetchWorkspaceFile(filePath);
 		const canonicalRecord = savedRecord && savedRecord.contents !== asset.src
-			? { source: savedRecord.contents, path: cartPath, cartPath, updatedAt: savedRecord.updatedAt }
+			? { source: savedRecord.contents, path: filePath, cartPath: filePath, updatedAt: savedRecord.updatedAt }
 			: null;
-		const overrideRecord = merged.get(asset_id);
+		const overrideRecord = merged.get(filePath);
 		if (overrideRecord && overrideRecord.source === asset.src) {
 			const staleKey = root ? buildWorkspaceStorageKey(root, overrideRecord.path) : null;
 			if (staleKey) {
@@ -607,13 +563,13 @@ export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; 
 		}
 		if (asset.src !== winner.source) {
 			asset.src = winner.source;
-			changed.add(asset_id);
+			changed.add(filePath);
 		}
 		if (root) {
 			if (winnerKind === 'canonical') {
-				const updatedRecord: WorkspaceOverrideRecord = { ...winner, path: cartPath, updatedAt: winnerUpdatedAt >= 0 ? winnerUpdatedAt : undefined };
-				persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[asset_id, updatedRecord]]));
-				const localOverride = localOverrides.get(asset_id);
+				const updatedRecord: WorkspaceOverrideRecord = { ...winner, path: filePath, updatedAt: winnerUpdatedAt >= 0 ? winnerUpdatedAt : undefined };
+				persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, updatedRecord]]));
+				const localOverride = localOverrides.get(filePath);
 				if (localOverride) {
 					const staleKey = buildWorkspaceStorageKey(root, localOverride.path);
 					storage.removeItem(staleKey);
@@ -621,11 +577,11 @@ export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; 
 			} else {
 				const updatedAt = winnerUpdatedAt >= 0 ? winnerUpdatedAt : $.platform.clock.dateNow();
 				const updatedRecord: WorkspaceOverrideRecord = { ...winner, updatedAt };
-				persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[asset_id, updatedRecord]]));
+				persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, updatedRecord]]));
 				if (includeServer && canonicalUpdatedAt < updatedAt) {
-					await persistWorkspaceFileToServer(root, cartPath, winner.source);
-					const canonicalUpdatedRecord: WorkspaceOverrideRecord = { ...winner, path: cartPath, updatedAt };
-					persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[asset_id, canonicalUpdatedRecord]]));
+					await persistWorkspaceFileToServer(root, filePath, winner.source);
+					const canonicalUpdatedRecord: WorkspaceOverrideRecord = { ...winner, path: filePath, updatedAt };
+					persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, canonicalUpdatedRecord]]));
 				}
 			}
 		}
@@ -635,10 +591,7 @@ export async function applyWorkspaceOverridesToCart(params: { rompack: RomPack; 
 
 export async function clearWorkspaceArtifacts(cart: BmsxCartridge, storage: StorageService): Promise<void> {
 	const root = $.rompack.project_root_path;
-	if (!root) {
-		return;
-	}
-	for (const asset of Object.values(cart.lua)) {
+	for (const asset of Object.values(cart.path2lua)) {
 		const cartPath = asset.normalized_source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
@@ -653,11 +606,8 @@ export async function clearWorkspaceArtifacts(cart: BmsxCartridge, storage: Stor
 
 async function clearWorkspaceDirtyFiles(cart: BmsxCartridge, storage: StorageService): Promise<void> {
 	const root = $.rompack.project_root_path;
-	if (!root) {
-		return;
-	}
 	const scratchPaths = await collectScratchWorkspaceDirtyPaths(root);
-	for (const asset of Object.values(cart.lua)) {
+	for (const asset of Object.values(cart.path2lua)) {
 		const cartPath = asset.normalized_source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
@@ -683,13 +633,12 @@ export async function nukeWorkspaceState(): Promise<void> {
 	runtime.editor?.clearWorkspaceDirtyBuffers();
 }
 
-export async function clearWorkspaceLuaOverrides(): Promise<void> {
-	const runtime = BmsxConsoleRuntime.instance;
-	await clearWorkspaceArtifacts($.rompack.cart, runtime.storageService);
-	// @ts-ignore - unused variable
-	const changed = await applyWorkspaceOverridesToCart({ rompack: $.rompack, storage: runtime.storageService, includeServer: true });
-	runtime.editor?.clearWorkspaceDirtyBuffers();
-	// if (changed.size > 0) {
-	// 	await runtime.reloadProgramAndResetWorld({ runInit: true });
-	// }
+export function listResources(): ConsoleResourceDescriptor[] {
+	const descriptors: ConsoleResourceDescriptor[] = [];
+	for (const asset of Object.values($.rompack.cart.chunk2lua)) {
+		const path = asset.normalized_source_path;
+		descriptors.push({ path, type: asset.type, asset_id: asset.resid });
+	}
+	descriptors.sort((left, right) => left.path.localeCompare(right.path));
+	return descriptors;
 }

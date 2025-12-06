@@ -1,9 +1,8 @@
-import type { BmsxCartridge, RomLuaAsset } from '../rompack/rompack';
+import type { BmsxCartridge } from '../rompack/rompack';
 
 export type LuaRequireModuleRecord = {
 	packageKey: string;
 	canonicalKey: string;
-	asset_id: string;
 	chunkName: string;
 	path?: string;
 };
@@ -25,10 +24,8 @@ function baseModuleName(path: string): string {
 function registerLuaModuleAliases(
 	aliases: Map<string, LuaRequireModuleRecord>,
 	record: LuaRequireModuleRecord,
-	assetId: string,
 	sourcePath: string | undefined,
 	chunkName: string,
-	canonicalPath: string,
 ): void {
 	const register = (candidate: string): void => {
 		if (!candidate || candidate.length === 0) {
@@ -39,9 +36,6 @@ function registerLuaModuleAliases(
 		}
 	};
 
-	register(canonicalPath);
-	register(`${canonicalPath}.lua`);
-
 	if (sourcePath && sourcePath.length > 0) {
 		register(sourcePath);
 		register(`${sourcePath}.lua`);
@@ -50,18 +44,8 @@ function registerLuaModuleAliases(
 		register(`${dottedSource}.lua`);
 	}
 
-	register(assetId);
-	register(`${assetId}.lua`);
-	const assetDots = assetId.replace(/[\\/]/g, '.');
-	register(assetDots);
-	register(`${assetDots}.lua`);
-
 	register(chunkName);
-	const canonicalDots = canonicalPath.replace(/\//g, '.');
-	register(canonicalDots);
-	register(`${canonicalDots}.lua`);
-
-	const baseName = baseModuleName(canonicalPath);
+	const baseName = baseModuleName(sourcePath);
 	register(baseName);
 	register(`${baseName}.lua`);
 	const baseDots = baseName.replace(/\//g, '.');
@@ -71,7 +55,7 @@ function registerLuaModuleAliases(
 
 export function buildLuaModuleAliases(cart: BmsxCartridge): Map<string, LuaRequireModuleRecord> {
 	const aliases = new Map<string, LuaRequireModuleRecord>();
-	const luaAssets = cart.lua as Record<string, RomLuaAsset>;
+	const luaAssets = cart.path2lua;
 	for (const assetId of Object.keys(luaAssets)) {
 		const asset = luaAssets[assetId];
 		if (!asset || asset.type !== 'lua') {
@@ -85,11 +69,10 @@ export function buildLuaModuleAliases(cart: BmsxCartridge): Map<string, LuaRequi
 		const record: LuaRequireModuleRecord = {
 			packageKey,
 			canonicalKey: canonicalPath,
-			asset_id: asset.resid,
 			chunkName,
 			path,
 		};
-		registerLuaModuleAliases(aliases, record, asset.resid, path, chunkName, canonicalPath);
+		registerLuaModuleAliases(aliases, record, path, chunkName);
 	}
 	return aliases;
 }

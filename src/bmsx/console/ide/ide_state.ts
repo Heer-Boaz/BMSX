@@ -1,6 +1,5 @@
 import type {
 	ConsoleLuaHoverResult,
-	ConsoleResourceDescriptor,
 } from '../types';
 import type { ConsoleFontVariant } from '../font';
 import type { ConsoleEditorFont } from '../editor_font';
@@ -126,10 +125,6 @@ export interface IdeState {
 	lastHistoryKey: string;
 	lastHistoryTimestamp: number;
 	fontVariant: ConsoleFontVariant;
-	loadSourceFn: () => string;
-	saveSourceFn: (source: string) => Promise<void>;
-	loadLuaResourceFn: (asset_id: string) => string;
-	listResourcesFn: () => ConsoleResourceDescriptor[];
 	builtinIdentifierCache: { key: string; set: ReadonlySet<string> };
 	hoverTooltip: CodeHoverTooltip;
 	lastPointerSnapshot: PointerSnapshot;
@@ -320,10 +315,6 @@ export const ide_state: IdeState = {
 	lastHistoryKey: null,
 	lastHistoryTimestamp: 0,
 	fontVariant: undefined!,
-	loadSourceFn: undefined!,
-	saveSourceFn: undefined!,
-	loadLuaResourceFn: undefined!,
-	listResourcesFn: undefined!,
 	builtinIdentifierCache: null,
 	entryAssetId: null,
 	hoverTooltip: null,

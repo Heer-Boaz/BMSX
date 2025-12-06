@@ -14,7 +14,7 @@ export interface RomPack {
 	code: string; // The loaded game code in the ROM pack. ALWAYS PRESENT DURING GAME!
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	project_root_path: string; // Workspace-relative cart root path for resolving filesystem writes.
-	canonicalization?: CanonicalizationType; // Canonicalization type for Lua identifiers in this ROM pack.
+	canonicalization: CanonicalizationType; // Canonicalization type for Lua identifiers in this ROM pack.
 	manifest?: RomManifest; // The manifest of the ROM pack, if present.
 }
 
@@ -373,10 +373,9 @@ export type LifeCycleHandlerName = keyof LifeCycleHandlers;
 export type LifeCycleHandlerManifest = Partial<Record<LifeCycleHandlerName, string>>;
 
 export type BmsxCartridge = LifeCycleHandlers & {
-	lua: id2lua; // Loaded Lua sources bundled with the ROM pack. ALWAYS PRESENT DURING GAME FOR CART-GAMES (not for other game types)!
-	chunk2lua?: Record<string, RomLuaAsset>; // Mapping from normalized chunk names to Lua assets for fast lookup.
-	source2lua?: Record<string, RomLuaAsset>; // Mapping from normalized source paths to Lua assets for fast lookup.
-	entry: asset_id;
+	chunk2lua: Record<string, RomLuaAsset>; // Mapping from normalized chunk names to Lua assets for fast lookup.
+	path2lua: Record<string, RomLuaAsset>; // Mapping from normalized source paths to Lua assets for fast lookup.
+	entry_path: string;
 	namespace: string;
 }
 
@@ -396,6 +395,6 @@ export type CartManifest = {
 		4?: InputMap,
 	};
 	lua: {
-		entry_asset_id: string;
+		entry_path: string;
 	};
 };

@@ -4,22 +4,11 @@ import type {
 	ConsoleLuaSymbolEntry,
 	ConsoleResourceDescriptor,
 } from '../types';
-import type { ConsoleFontVariant } from '../font';
-import type { CanonicalizationType, RectBounds, Viewport  } from '../../rompack/rompack';
 import type { StackTraceFrame } from '../../lua/value';
 import { MENU_COMMANDS } from './ide_input';
+import { RectBounds } from '../../rompack/rompack';
 
 export type IdeThemeVariant = string;
-
-export type ConsoleEditorOptions = {
-	viewport: Viewport;
-	canonicalization?: CanonicalizationType;
-	loadSource: () => string;
-	saveSource: (source: string) => Promise<void>;
-	listResources: () => ConsoleResourceDescriptor[];
-	loadLuaResource: (asset_id: string) => string;
-	fontVariant?: ConsoleFontVariant;
-};
 
 export type Position = { row: number; column: number };
 
@@ -57,7 +46,6 @@ export type GlobalSearchMatch = {
 	start: number;
 	end: number;
 	snippet: string;
-	asset_id: string;
 	chunkName: string;
 };
 
@@ -292,8 +280,6 @@ export type CodeTabContext = {
 	id: string;
 	title: string;
 	descriptor: ConsoleResourceDescriptor;
-	load: () => string;
-	save: (source: string) => Promise<void>;
 	snapshot: EditorSnapshot;
 	lastSavedSource: string;
 	saveGeneration: number;

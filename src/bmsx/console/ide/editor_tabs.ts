@@ -28,16 +28,16 @@ import { measureText } from './text_utils';
 import { ensureCursorVisible } from './caret';
 import { resolveHoverChunkName } from './intellisense';
 import { resetBlink } from './render/render_caret';
-import { saveLuaResourceSource } from '../workspace';
+import { listResources, saveLuaResourceSource } from '../workspace';
 
 export function createEntryTabContext(): CodeTabContext {
-	const luaDescriptors = ide_state.listResourcesFn().filter(r => r.type === 'lua');
+	const luaDescriptors = listResources().filter(r => r.type === 'lua');
 	const descriptor = luaDescriptors.length > 0 ? luaDescriptors[0] : null;
 	const resolvedasset_id = descriptor ? descriptor.asset_id : '__entry__';
 	const tabId: string = `lua:${resolvedasset_id}`;
 	const title = computeResourceTabTitle(descriptor);
 	const load = descriptor
-		? () => ide_state.loadLuaResourceFn(descriptor.asset_id)
+		? () => ide_stateloadLuaResourceFn(descriptor.asset_id)
 		: () => ide_state.loadSourceFn();
 	const save = descriptor
 		? (source: string) => saveLuaResourceSource(descriptor.asset_id, source)

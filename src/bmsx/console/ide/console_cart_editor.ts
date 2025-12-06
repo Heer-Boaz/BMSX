@@ -60,7 +60,6 @@ import { ConsoleCodeLayout } from './code_layout';
 import type {
 	CodeHoverTooltip,
 	CodeTabContext,
-	ConsoleEditorOptions,
 	EditorSnapshot,
 	EditorTabDescriptor,
 	EditorTabId,
@@ -102,7 +101,7 @@ import {
 	stopWorkspaceAutosaveLoop,
 	clearWorkspaceDirtyBuffers,
 } from './workspace_storage';
-import { applyWorkspaceOverridesToCart, createLuaResource } from '../workspace';
+import { applyWorkspaceOverridesToCart, createLuaResource, listResources } from '../workspace';
 
 import * as TextEditing from './text_editing_and_selection';
 import { resetBlink } from './render/render_caret';
@@ -143,28 +142,21 @@ export const editorFacade = {
 
 export type ConsoleCartEditor = typeof editorFacade;
 
-export function createConsoleCartEditor(options: ConsoleEditorOptions): ConsoleCartEditor {
-	initializeConsoleCartEditor(options);
+export function createConsoleCartEditor(): ConsoleCartEditor {
+	initializeConsoleCartEditor();
 	return editorFacade;
 }
 
-export function initializeConsoleCartEditor(options: ConsoleEditorOptions): void {
+export function initializeConsoleCartEditor(): void {
 	initializeDebuggerUiState();
 	const runtime = BmsxConsoleRuntime.instance;
 	ide_state.playerIndex = runtime.playerIndex;
-	ide_state.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
+	ide_state.fontVariant = DEFAULT_CONSOLE_FONT_VARIANT;
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
-	ide_state.canonicalization = options.canonicalization;
+	ide_state.canonicalization = $.rompack.canonicalization;
 	ide_state.caseInsensitive = ide_state.canonicalization !== 'none';
 	ide_state.preMutationSource = null;
-	ide_state.loadSourceFn = options.loadSource;
-	ide_state.saveSourceFn = options.saveSource;
-	ide_state.listResourcesFn = options.listResources;
-	ide_state.loadLuaResourceFn = options.loadLuaResource;
-	if ($.debug) {
-		ide_state.listResourcesFn();
-	}
 	applyViewportSize(options.viewport);
 	ide_state.clockNow = $.platform.clock.now;
 	setFontVariant(ide_state.fontVariant);
@@ -267,13 +259,9 @@ export function getSourceForChunk(chunkName: string): string {
 		if (context.lastSavedSource.length > 0) {
 			return context.lastSavedSource;
 		}
-		return context.load();
+		return $.cart.chunk2lua[chunkName].src;
 	}
-	const descriptor = findResourceDescriptorForChunk(chunkName);
-	if (descriptor) {
-		return ide_state.loadLuaResourceFn(descriptor.asset_id);
-	}
-	throw new Error(`[ConsoleCartEditor] Unable to locate source for chunk '${chunkName ?? '<null>'}'.`);
+	return '';
 }
 
 
@@ -505,10 +493,9 @@ export function symbolCatalogDedupKey(entry: ConsoleLuaSymbolEntry): string {
 	const { location, kind, name } = entry;
 	const chunkName = location.chunkName ?? '';
 	const normalizedPath = location.path ?? '';
-	const asset_id = location.asset_id ?? '';
 	const locationKey = normalizedPath.length > 0
 		? normalizedPath
-		: (asset_id.length > 0 ? asset_id : chunkName);
+		: (chunkName.length > 0 ? chunkName : '');
 	const startLine = location.range.startLine;
 	const startColumn = location.range.startColumn;
 	const endLine = location.range.endLine;
@@ -684,7 +671,7 @@ export function focusResourceByAsset(asset_id: string, preferredPath?: string): 
 }
 
 export function listResourcesStrict(): ConsoleResourceDescriptor[] {
-	const descriptors = ide_state.listResourcesFn();
+	const descriptors = listResources();
 	if (!Array.isArray(descriptors)) {
 		throw new Error('[ConsoleCartEditor] Resource enumeration returned an invalid result.');
 	}
@@ -1530,12 +1517,10 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 		return;
 	}
 	let normalizedPath: string;
-	let asset_id: string;
 	let directory: string;
 	try {
 		const result = normalizeCreateResourceRequest(ide_state.createResourcePath);
 		normalizedPath = result.path;
-		asset_id = result.asset_id;
 		directory = result.directory;
 		applyCreateResourceFieldText(normalizedPath, true);
 		ide_state.createResourceError = null;
@@ -1550,7 +1535,7 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	resetBlink();
 	const contents = constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 	try {
-		const descriptor = await createLuaResource({ path: normalizedPath, asset_id, contents });
+		const descriptor = await createLuaResource({ path: normalizedPath, contents });
 		ide_state.lastCreateResourceDirectory = directory;
 		ide_state.pendingResourceSelectionAssetId = descriptor.asset_id;
 		if (ide_state.resourcePanelVisible) {
@@ -1606,7 +1591,7 @@ export function determineCreateResourceDefaultPath(): string {
 	}
 	let descriptors: ConsoleResourceDescriptor[] = [];
 	try {
-		descriptors = ide_state.listResourcesFn();
+		descriptors = listResources();
 	} catch (error) {
 		descriptors = [];
 	}
@@ -1938,8 +1923,6 @@ export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, con
 		activeContext: getActiveCodeTabContext(),
 		activeLines: ide_state.lines,
 		codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
-		listResources: () => listResourcesStrict(),
-		loadLuaResource: (resourceId: string) => ide_state.loadLuaResourceFn(resourceId),
 	};
 	const sourceLabelPath = descriptor ? (descriptor.path ?? descriptor.asset_id) : null;
 	return buildProjectReferenceCatalog({
@@ -2427,8 +2410,6 @@ export function buildProjectReferenceContext(context: CodeTabContext): {
 		activeContext: context,
 		activeLines: ide_state.lines,
 		codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
-		listResources: () => listResourcesStrict(),
-		loadLuaResource: (resourceId: string) => ide_state.loadLuaResourceFn(resourceId),
 	};
 	return {
 		environment,
@@ -2675,7 +2656,7 @@ export function performHotReloadAndResume(): boolean {
 	clearExecutionStopHighlights();
 	deactivate();
 	scheduleRuntimeTask(async () => {
-		await applyWorkspaceOverridesToCart({ rompack: $.rompack, storage: $.platform.storage, includeServer: true });
+		await applyWorkspaceOverridesToCart({ cart: $.cart, storage: $.platform.storage, includeServer: true });
 		const snapshot = runtime.state;
 		snapshot.luaRuntimeFailed = false;
 		await runtime.resumeFromSnapshot(snapshot);
@@ -3640,9 +3621,9 @@ export function findResourcePanelIndexByasset_id(asset_id: string): number {
 export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor): ResourceViewerState {
 	const title = computeResourceTabTitle(descriptor);
 	const lines: string[] = [
-		`Path: ${descriptor.path || '<unknown>'}`,
+		`Path: ${descriptor.path || '<none>'}`,
 		`Type: ${descriptor.type}`,
-		`Asset ID: ${descriptor.asset_id}`,
+		`Asset ID: ${descriptor.asset_id || '<none>'}`,
 	];
 	const state: ResourceViewerState = {
 		descriptor,
@@ -3654,7 +3635,7 @@ export function buildResourceViewerState(descriptor: ConsoleResourceDescriptor):
 	let error: string = null;
 	const rompack = $.rompack;
 	lines.push('');
-	const lua = rompack.cart.lua;
+	const lua = rompack.cart.path2lua;
 	const data = rompack.data;
 	const img = rompack.img;
 	const audioTable = rompack.audio;
@@ -3924,8 +3905,6 @@ export function openDebugPanelTab(kind: DebugPanelKind): void {
 			id: tabId,
 			title,
 			descriptor: null,
-			load,
-			save: async () => { /* read-only */ },
 			snapshot: null,
 			lastSavedSource: '',
 			saveGeneration: 0,
@@ -3937,7 +3916,6 @@ export function openDebugPanelTab(kind: DebugPanelKind): void {
 		};
 		ide_state.codeTabContexts.set(tabId, context);
 	} else {
-		context.load = load;
 		context.title = title;
 		context.readOnly = true;
 		context.snapshot = null;

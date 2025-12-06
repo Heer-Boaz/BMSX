@@ -1336,7 +1336,6 @@ export function shouldAutoTriggerCompletions(): boolean {
 	}
 	const chunkName = resolveHoverChunkName(context);
 	const request: ConsoleLuaHoverRequest = {
-		asset_id,
 		expression: token.expression,
 		chunkName,
 		row: row + 1,
@@ -1419,7 +1418,6 @@ export function buildMemberCompletionItems(request: {
 		return [];
 	}
 	const response = listLuaObjectMembers({
-		asset_id: request.asset_id,
 		chunkName: request.chunkName,
 		expression: request.objectName,
 		operator: request.operator,
@@ -1488,7 +1486,6 @@ export function resolveSemanticDefinitionLocation(
 	expression: string,
 	usageRow: number,
 	usageColumn: number,
-	asset_id: string,
 	chunkName: string
 ): ConsoleLuaDefinitionLocation {
 	if (!expression) {
@@ -1514,18 +1511,14 @@ export function resolveSemanticDefinitionLocation(
 	}
 	const descriptor = context ? context.descriptor : null;
 	const descriptorPath = descriptor && descriptor.path ? descriptor.path : null;
-	const descriptorAssetId = descriptor ? descriptor.asset_id : null;
-	const resolvedAssetId = descriptorAssetId ?? asset_id;
 	const resolvedChunk = chunkName
 		?? descriptorPath
-		?? descriptorAssetId
-		?? asset_id
 		?? ide_state.entryAssetId
 		?? hoverChunkName
 		?? '<console>';
 	const location: ConsoleLuaDefinitionLocation = {
+		path: descriptorPath,
 		chunkName: resolvedChunk,
-		asset_id: resolvedAssetId,
 		range: {
 			startLine: definition.definition.start.line,
 			startColumn: definition.definition.start.column,
@@ -1706,12 +1699,10 @@ export function extractHoverExpression(row: number, column: number): { expressio
 		&& existing.expression === token.expression) {
 		return;
 	}
-	const asset_id = resolveHoverAssetId(context);
 	const chunkName = resolveHoverChunkName(context);
-	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, asset_id, chunkName);
+	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, chunkName);
 	if (!definition) {
 		const inspection = safeInspectLuaExpression({
-			asset_id,
 			expression: token.expression,
 			chunkName,
 			row: row + 1,
@@ -1750,10 +1741,9 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 		return false;
 	}
 	const chunkName = resolveHoverChunkName(context);
-	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, asset_id, chunkName);
+	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, chunkName);
 	if (!definition) {
 		const inspection = safeInspectLuaExpression({
-			asset_id,
 			expression: token.expression,
 			chunkName,
 			row: row + 1,
@@ -1772,8 +1762,6 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 			activeContext: context,
 			activeLines: ide_state.lines,
 			codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
-			listResources: () => listResourcesStrict(),
-			loadLuaResource: (resourceId: string) => ide_state.loadLuaResourceFn(resourceId),
 		};
 		const projectDefinition = resolveDefinitionLocationForExpression({
 			expression: token.expression,

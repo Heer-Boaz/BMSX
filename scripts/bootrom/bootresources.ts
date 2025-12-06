@@ -215,10 +215,9 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
 	const { assets, projectRootPath, manifest } = await loadAssetList(rom);
 	const cart: RomPack['cart'] = {
-		lua: {},
 		chunk2lua: {},
-		source2lua: {},
-		entry: manifest.lua.entry_asset_id,
+		path2lua: {},
+		entry_path: manifest.lua.entry_path,
 		namespace: manifest.console.namespace,
 		new_game: null,
 		init: null,
@@ -233,14 +232,15 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 		data: {},
 		code: null,
 
-	audioevents: {},
-	cart,
-	project_root_path: projectRootPath,
-	manifest,
-};
+		audioevents: {},
+		cart,
+		project_root_path: projectRootPath,
+		manifest,
+		canonicalization: manifest.console.canonicalization ?? 'none',
+	};
 
-await Promise.all(assets.map(a => load(rom, a, result, opts)));
-return Promise.resolve<RomPack>(result);
+	await Promise.all(assets.map(a => load(rom, a, result, opts)));
+	return Promise.resolve<RomPack>(result);
 }
 
 function getImageURL(buffer: ArrayBuffer): string {
@@ -526,7 +526,8 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 					...res,
 					src: decodeuint8arr(sliced),
 				} as RomLuaAsset;
-				romResult.cart.lua[res.resid] = luaAsset;
+				romResult.cart.chunk2lua[res.chunk_name] = luaAsset;
+				romResult.cart.path2lua[res.source_path] = luaAsset;
 			} catch (err: any) {
 				throw new Error(`Failed to load 'lua' from rom: ${err.message}.`);
 			}
