@@ -3116,6 +3116,336 @@ export class LuaInterpreter {
 			}
 			return [result];
 		}));
+		stringTable.set(this.canonicalize('format'), new LuaNativeFunction(this.canonicalize('format'), (args) => {
+			if (args.length === 0) {
+				throw this.runtimeError('string.format expects a format string.');
+			}
+			const template = this.expectString(args[0], 'string.format expects a format string.', null);
+			let argumentIndex = 1;
+			let output = '';
+
+			const takeArgument = (): LuaValue => {
+				const value = argumentIndex < args.length ? args[argumentIndex] : null;
+				argumentIndex += 1;
+				return value;
+			};
+
+			const readInteger = (startIndex: number): { found: boolean; value: number; nextIndex: number } => {
+				let cursor = startIndex;
+				while (cursor < template.length) {
+					const code = template.charCodeAt(cursor);
+					if (code < 48 || code > 57) {
+						break;
+					}
+					cursor += 1;
+				}
+				if (cursor === startIndex) {
+					return { found: false, value: 0, nextIndex: startIndex };
+				}
+				return { found: true, value: parseInt(template.slice(startIndex, cursor), 10), nextIndex: cursor };
+			};
+
+			for (let index = 0; index < template.length; index += 1) {
+				const current = template.charAt(index);
+				if (current !== '%') {
+					output += current;
+					continue;
+				}
+				if (index === template.length - 1) {
+					throw this.runtimeError('string.format incomplete format specifier.');
+				}
+				if (template.charAt(index + 1) === '%') {
+					output += '%';
+					index += 1;
+					continue;
+				}
+
+				let cursor = index + 1;
+				const flags = { leftAlign: false, plus: false, space: false, zeroPad: false, alternate: false };
+				while (true) {
+					const flag = template.charAt(cursor);
+					if (flag === '-') {
+						flags.leftAlign = true;
+						cursor += 1;
+						continue;
+					}
+					if (flag === '+') {
+						flags.plus = true;
+						cursor += 1;
+						continue;
+					}
+					if (flag === ' ') {
+						flags.space = true;
+						cursor += 1;
+						continue;
+					}
+					if (flag === '0') {
+						flags.zeroPad = true;
+						cursor += 1;
+						continue;
+					}
+					if (flag === '#') {
+						flags.alternate = true;
+						cursor += 1;
+						continue;
+					}
+					break;
+				}
+
+				let width: number = null;
+				if (template.charAt(cursor) === '*') {
+					const widthArg = Math.trunc(this.expectNumber(takeArgument(), 'string.format width must be a number.', null));
+					if (widthArg < 0) {
+						flags.leftAlign = true;
+						width = -widthArg;
+					}
+					else {
+						width = widthArg;
+					}
+					cursor += 1;
+				}
+				else {
+					const parsedWidth = readInteger(cursor);
+					if (parsedWidth.found) {
+						width = parsedWidth.value;
+						cursor = parsedWidth.nextIndex;
+					}
+				}
+
+				let precision: number = null;
+				if (template.charAt(cursor) === '.') {
+					cursor += 1;
+					if (template.charAt(cursor) === '*') {
+						const precisionArg = Math.trunc(this.expectNumber(takeArgument(), 'string.format precision must be a number.', null));
+						precision = precisionArg >= 0 ? precisionArg : null;
+						cursor += 1;
+					}
+					else {
+						const parsedPrecision = readInteger(cursor);
+						precision = parsedPrecision.found ? parsedPrecision.value : 0;
+						cursor = parsedPrecision.nextIndex;
+					}
+				}
+
+				while (template.charAt(cursor) === 'l' || template.charAt(cursor) === 'L' || template.charAt(cursor) === 'h') {
+					cursor += 1;
+				}
+
+				const specifier = template.charAt(cursor);
+				if (specifier.length === 0) {
+					throw this.runtimeError('string.format incomplete format specifier.');
+				}
+
+				const signPrefix = (value: number): string => {
+					if (value < 0) {
+						return '-';
+					}
+					if (flags.plus) {
+						return '+';
+					}
+					if (flags.space) {
+						return ' ';
+					}
+					return '';
+				};
+
+				const applyPadding = (content: string, sign: string, prefix: string, allowZeroPadding: boolean): string => {
+					const totalLength = sign.length + prefix.length + content.length;
+					if (width !== null && totalLength < width) {
+						const paddingLength = width - totalLength;
+						if (flags.leftAlign) {
+							return `${sign}${prefix}${content}${' '.repeat(paddingLength)}`;
+						}
+						const padChar = allowZeroPadding ? '0' : ' ';
+						if (padChar === '0') {
+							return `${sign}${prefix}${'0'.repeat(paddingLength)}${content}`;
+						}
+						return `${' '.repeat(paddingLength)}${sign}${prefix}${content}`;
+					}
+					return `${sign}${prefix}${content}`;
+				};
+
+				switch (specifier) {
+					case 's': {
+						const value = takeArgument();
+						let text = value === null ? 'nil' : this.toLuaString(value);
+						if (precision !== null) {
+							text = text.substring(0, precision);
+						}
+						output += applyPadding(text, '', '', false);
+						break;
+					}
+					case 'c': {
+						const value = takeArgument();
+						const code = Math.trunc(this.expectNumber(value, 'string.format %c expects a number.', null));
+						const character = String.fromCharCode(code);
+						output += applyPadding(character, '', '', false);
+						break;
+					}
+					case 'd':
+					case 'i':
+					case 'u':
+					case 'o':
+					case 'x':
+					case 'X': {
+						const value = takeArgument();
+						let number = this.expectNumber(value, `string.format %${specifier} expects a number.`, null);
+						let integerValue = Math.trunc(number);
+						const unsigned = specifier === 'u' || specifier === 'o' || specifier === 'x' || specifier === 'X';
+						if (unsigned) {
+							integerValue = integerValue >>> 0;
+						}
+						const negative = !unsigned && integerValue < 0;
+						const sign = negative ? '-' : (specifier === 'd' || specifier === 'i') ? signPrefix(integerValue) : '';
+						const magnitude = negative ? -integerValue : integerValue;
+						let base = 10;
+						if (specifier === 'o') {
+							base = 8;
+						}
+						if (specifier === 'x' || specifier === 'X') {
+							base = 16;
+						}
+						let digits = Math.trunc(magnitude).toString(base);
+						if (specifier === 'X') {
+							digits = digits.toUpperCase();
+						}
+						if (precision !== null) {
+							const required = Math.max(precision, 0);
+							if (digits.length < required) {
+								digits = '0'.repeat(required - digits.length) + digits;
+							}
+							if (precision === 0 && magnitude === 0) {
+								digits = '';
+							}
+						}
+						let prefix = '';
+						if (flags.alternate) {
+							if ((specifier === 'x' || specifier === 'X') && magnitude !== 0) {
+								prefix = specifier === 'x' ? '0x' : '0X';
+							}
+							if (specifier === 'o') {
+								if (digits.length === 0) {
+									digits = '0';
+								}
+								else if (digits.charAt(0) !== '0') {
+									digits = `0${digits}`;
+								}
+							}
+						}
+						const allowZeroPad = flags.zeroPad && !flags.leftAlign && precision === null;
+						output += applyPadding(digits, sign, prefix, allowZeroPad);
+						break;
+					}
+					case 'f':
+					case 'F': {
+						const value = takeArgument();
+						const number = this.expectNumber(value, 'string.format %f expects a number.', null);
+						const sign = signPrefix(number);
+						const fractionDigits = precision !== null ? Math.max(0, precision) : 6;
+						const text = Math.abs(number).toFixed(fractionDigits);
+						const formatted = flags.alternate && fractionDigits === 0 && text.indexOf('.') === -1 ? `${text}.` : text;
+						const allowZeroPad = flags.zeroPad && !flags.leftAlign;
+						output += applyPadding(formatted, sign, '', allowZeroPad);
+						break;
+					}
+					case 'e':
+					case 'E': {
+						const value = takeArgument();
+						const number = this.expectNumber(value, 'string.format %e expects a number.', null);
+						const sign = signPrefix(number);
+						const fractionDigits = precision !== null ? Math.max(0, precision) : 6;
+						let text = Math.abs(number).toExponential(fractionDigits);
+						if (specifier === 'E') {
+							text = text.toUpperCase();
+						}
+						const allowZeroPad = flags.zeroPad && !flags.leftAlign;
+						output += applyPadding(text, sign, '', allowZeroPad);
+						break;
+					}
+					case 'g':
+					case 'G': {
+						const value = takeArgument();
+						const number = this.expectNumber(value, 'string.format %g expects a number.', null);
+						const sign = signPrefix(number);
+						const significant = precision === null ? 6 : precision === 0 ? 1 : precision;
+						let text = Math.abs(number).toPrecision(significant);
+						if (!flags.alternate) {
+							if (text.indexOf('e') !== -1 || text.indexOf('E') !== -1) {
+								const parts = text.split(/e/i);
+								let mantissa = parts[0];
+								const exponent = parts[1];
+								if (mantissa.indexOf('.') !== -1) {
+									while (mantissa.endsWith('0')) {
+										mantissa = mantissa.slice(0, -1);
+									}
+									if (mantissa.endsWith('.')) {
+										mantissa = mantissa.slice(0, -1);
+									}
+								}
+								text = `${mantissa}e${exponent}`;
+							}
+							else if (text.indexOf('.') !== -1) {
+								while (text.endsWith('0')) {
+									text = text.slice(0, -1);
+								}
+								if (text.endsWith('.')) {
+									text = text.slice(0, -1);
+								}
+							}
+						}
+						if (specifier === 'G') {
+							text = text.toUpperCase();
+						}
+						const allowZeroPad = flags.zeroPad && !flags.leftAlign;
+						output += applyPadding(text, sign, '', allowZeroPad);
+						break;
+					}
+					case 'q': {
+						const value = takeArgument();
+						const raw = value === null ? 'nil' : this.toLuaString(value);
+						let escaped = '"';
+						for (let charIndex = 0; charIndex < raw.length; charIndex += 1) {
+							const code = raw.charCodeAt(charIndex);
+							switch (code) {
+								case 10:
+									escaped += '\\n';
+									break;
+								case 13:
+									escaped += '\\r';
+									break;
+								case 9:
+									escaped += '\\t';
+									break;
+								case 92:
+									escaped += '\\\\';
+									break;
+								case 34:
+									escaped += '\\"';
+									break;
+								default:
+									if (code < 32 || code === 127) {
+										const decimal = code.toString(10);
+										escaped += `\\${decimal.padStart(3, '0')}`;
+									}
+									else {
+										escaped += raw.charAt(charIndex);
+									}
+									break;
+							}
+						}
+						escaped += '"';
+						output += applyPadding(escaped, '', '', false);
+						break;
+					}
+					default:
+						throw this.runtimeError(`string.format unsupported format specifier '%${specifier}'.`);
+				}
+
+				index = cursor;
+			}
+
+			return [output];
+		}));
 		this.globals.set(this.canonicalize('string'), stringTable);
 
 		const tableLibrary = createLuaTable();
