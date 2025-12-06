@@ -1,3 +1,5 @@
+require('extra.lua')
+
 local hero_def_id = 'demo.hero'
 local hero_instance_id = 'demo.hero.instance'
 local hero_fsm_id = 'demo.hero.fsm'
@@ -204,7 +206,7 @@ local function register_hero()
 	define_world_object({
 		def_id = hero_def_id,
 		class = hero,
-		components = { 'ActionEffectComponent', 'ProhibitLeavingScreenComponent', hero_tracker_component_id },
+		components = { 'actioneffectcomponent', 'prohibitleavingscreencomponent', hero_tracker_component_id },
 		fsms = { hero_fsm_id, },
 		effects = { effect_id, },
 		defaults = { speed = 54 },
