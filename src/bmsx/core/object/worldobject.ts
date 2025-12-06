@@ -17,8 +17,7 @@ import { Collider2DComponent } from '../../component/collisioncomponents';
 import { V3 } from '../../render/3d/math3d';
 import type { SpawnReason } from '../world';
 import { ActionEffectComponent } from '../../component/actioneffectcomponent';
-import { TimelineComponent, type TimelinePlayOptions, type TimelineListener } from '../../component/timeline_component';
-import { TimelineEventChannels, type Timeline, type TimelineDefinition } from '../../timeline/timeline';
+import { TimelineComponent, } from '../../component/timeline_component';
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -230,55 +229,9 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 		component.unbind();
 	}
 
-	protected get timeline_component(): TimelineComponent {
+	/** Shorthand getter for retrieving the timeline component attached to this object. */
+	public get timelines(): TimelineComponent {
 		return this._timelineComponent;
-	}
-
-	public define_timeline(definition: TimelineDefinition | Timeline): void {
-		this.timeline_component.define(definition);
-	}
-
-	public play_timeline(definition: string, opts?: TimelinePlayOptions): void {
-		if ($.debug) {
-			console.log('[Timeline][play]', {
-				parent: this,
-				definition: definition,
-				options: opts ,
-			});
-		}
-		this.timeline_component.play(definition, opts);
-	}
-
-	public stop_timeline(id: string): void {
-		this.timeline_component.stop(id);
-	}
-
-	public rewind_timeline(id: string): void {
-		this.timeline_component.rewind(id);
-	}
-
-	public seek_timeline(id: string, frame: number): void {
-		this.timeline_component.seek(id, frame);
-	}
-
-	public force_timeline_head(id: string, frame: number): void {
-		this.timeline_component.force_seek(id, frame);
-	}
-
-	public advance_timeline(id: string): void {
-		this.timeline_component.advance(id);
-	}
-
-	public get_timeline<T = unknown>(id: string): Timeline<T> {
-		return this.timeline_component.get<T>(id);
-	}
-
-	public on_timeline_event(id: string, listener: TimelineListener): () => void {
-		return this.timeline_component.add_listener(id, listener);
-	}
-
-	public timeline_events(id: string): TimelineEventChannels {
-		return new TimelineEventChannels(this, id);
 	}
 
 	/** Shorthand getter for retrieving the action-effect component attached to this object. */
