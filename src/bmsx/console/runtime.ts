@@ -292,12 +292,17 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		if (signal.reason === 'exception') {
 			const snapshot = this.recordDebuggerExceptionFault(signal);
+			const prettyMessage = prettyPrintRuntimeError(
+				snapshot ? snapshot.chunkName : signal.location.chunk,
+				snapshot ? snapshot.line : signal.location.line,
+				snapshot ? snapshot.column : signal.location.column,
+				snapshot ? snapshot.message : 'Runtime error',
+			);
+			this.presentRuntimeErrorInConsole(prettyMessage, snapshot ? snapshot.details : null);
 			if (editorActive || shouldActivateEditor) {
 				this.editor.renderFaultOverlay();
 			} else if (snapshot) {
-				const prettyMessage = prettyPrintRuntimeError(snapshot.chunkName, snapshot.line, snapshot.column, snapshot.message);
 				this.activateConsoleMode();
-				this.presentRuntimeErrorInConsole(prettyMessage, snapshot.details);
 				this.updateOverlayState(true, false, true);
 			}
 		} else if (this.luaRuntimeFailed && (editorActive || shouldActivateEditor)) {
@@ -1650,7 +1655,6 @@ export class BmsxConsoleRuntime extends Service {
 		// Extract message and location info
 		const message = extractErrorMessage(error);
 		const { line, column, chunkName } = this.extractErrorLocation(error);
-		const editorWasActive = this.editor?.isActive === true;
 
 		this.luaRuntimeFailed = true;
 		const interpreter = this.luaInterpreter;
@@ -1665,17 +1669,7 @@ export class BmsxConsoleRuntime extends Service {
 			fromDebugger: false,
 		});
 		this.pauseDebuggerForException({ chunkName: snapshot.chunkName, line: snapshot.line, column: snapshot.column }, callStackSnapshot);
-		const editorIsActive = this.editor?.isActive === true;
-
 		const prettyMessage = prettyPrintRuntimeError(chunkName, line, column, message);
-
-		if (editorIsActive || editorWasActive) {
-			this.editor.renderFaultOverlay();
-		} else {
-			this.activateConsoleMode();
-			this.presentRuntimeErrorInConsole(prettyMessage, snapshot.details);
-			this.updateOverlayState(true, false, true);
-		}
 		console.error('[BmsxConsoleRuntime] Lua runtime error:', prettyMessage, error);
 		this.handledLuaErrors.add(error);
 	}
