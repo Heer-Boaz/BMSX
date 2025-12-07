@@ -4129,6 +4129,6 @@ export function handleRuntimeTaskError(error: unknown, fallbackMessage: string):
 	$.paused = true;
 	activate();
 	const message = `${fallbackMessage}: ${errormsg}`;
-	BmsxVMRuntime.instance.interactiveVM.appendStderr(message);
+	BmsxVMRuntime.instance.terminal.appendStderr(message);
 	ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 2.0);
 }

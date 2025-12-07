@@ -1,12 +1,20 @@
 import { $ } from "../game";
 import { TickGroup } from "../../ecs/ecsystem";
 import { DefaultECSPipelineRegistry, type NodeSpec } from "../../ecs/pipeline";
-import { BMSX_CART_DRAW_SYSTEM_ID, BMSX_CART_UPDATE_SYSTEM_ID } from '../../vm/vm_systems';
+import {
+	BMSX_CART_DRAW_SYSTEM_ID,
+	BMSX_CART_UPDATE_SYSTEM_ID,
+	BMSX_IDE_DRAW_SYSTEM_ID,
+	BMSX_IDE_UPDATE_SYSTEM_ID,
+	BMSX_TERMINAL_DRAW_SYSTEM_ID,
+	BMSX_TERMINAL_UPDATE_SYSTEM_ID,
+} from '../../vm/vm_systems';
 export type VMOverlaySpecOptions = {
 	includeTerminal?: boolean;
 	includeIDE?: boolean;
 	includePresentation?: boolean;
 	includeCartDraw?: boolean;
+	includeCartUpdate?: boolean;
 };
 
 type ModeSpecOptions = Omit<VMOverlaySpecOptions, 'includeTerminal' | 'includeIDE'>;
@@ -19,53 +27,63 @@ export function buildVMOverlaySpec(options: VMOverlaySpecOptions): NodeSpec[] {
 	const includeVM = options.includeTerminal === true;
 	const includeEditor = options.includeIDE === true;
 	const includeVMFrame = includeVM || includeEditor;
-	const includePresentation = options.includePresentation !== false || includeVMFrame;
-	const includeVMDraw = options.includeCartDraw !== false && includeVMFrame;
+	const includeCartUpdate = options.includeCartUpdate === true;
+	const includeCartDraw = options.includeCartDraw !== false;
+	const includePresentation = options.includePresentation !== false || includeVMFrame || includeCartDraw;
 	const nodes: NodeSpec[] = [];
-	if (includeVMFrame) {
-		nodes.push({ ref: BMSX_CART_UPDATE_SYSTEM_ID });
+	const updateRef = includeEditor
+		? BMSX_IDE_UPDATE_SYSTEM_ID
+		: includeVM
+			? BMSX_TERMINAL_UPDATE_SYSTEM_ID
+			: includeCartUpdate
+				? BMSX_CART_UPDATE_SYSTEM_ID
+				: null;
+	if (updateRef) {
+		nodes.push({ ref: updateRef });
 	}
-	if (!includePresentation) {
-		if (includeVMDraw) {
-			nodes.push({ ref: BMSX_CART_DRAW_SYSTEM_ID });
+	if (includePresentation) {
+		const spec = $.get_gameplay_pipeline_spec();
+		for (let index = 0; index < spec.length; index += 1) {
+			const node = spec[index];
+			const desc = DefaultECSPipelineRegistry.get(node.ref)!;
+			const group = node.group ?? desc.group;
+			if (group !== TickGroup.Presentation) {
+				continue;
+			}
+			if (node.ref === BMSX_CART_DRAW_SYSTEM_ID) {
+				continue;
+			}
+			nodes.push({
+				ref: node.ref,
+				group: node.group,
+				priority: node.priority,
+				when: node.when,
+			});
 		}
-		return nodes;
-	}
-	const spec = $.get_gameplay_pipeline_spec();
-	for (let index = 0; index < spec.length; index += 1) {
-		const node = spec[index];
-		const desc = DefaultECSPipelineRegistry.get(node.ref)!;
-		const group = node.group ?? desc.group;
-		if (group !== TickGroup.Presentation) {
-			continue;
+		const drawRef = includeEditor
+			? BMSX_IDE_DRAW_SYSTEM_ID
+			: includeVM
+				? BMSX_TERMINAL_DRAW_SYSTEM_ID
+				: includeCartDraw
+					? BMSX_CART_DRAW_SYSTEM_ID
+					: null;
+		if (drawRef) {
+			nodes.push({ ref: drawRef });
 		}
-		if (!includeVMDraw && node.ref === BMSX_CART_DRAW_SYSTEM_ID) {
-			continue;
-		}
-		nodes.push({
-			ref: node.ref,
-			group: node.group,
-			priority: node.priority,
-			when: node.when,
-		});
-	}
-	const hasVMFrame = nodes.some(node => node.ref === BMSX_CART_DRAW_SYSTEM_ID);
-	if (includeVMDraw && !hasVMFrame) {
-		nodes.push({ ref: BMSX_CART_DRAW_SYSTEM_ID });
 	}
 	return nodes;
 }
 
-export function interactiveVMSpec(options?: ModeSpecOptions): NodeSpec[] {
-	return buildVMOverlaySpec({ ...(options ?? {}), includeTerminal: true, includeIDE: false });
+export function terminalModeSpec(options?: ModeSpecOptions): NodeSpec[] {
+	return buildVMOverlaySpec({ ...(options ?? {}), includeTerminal: true, includeIDE: false, includeCartUpdate: false });
 }
 
 export function editorModeSpec(options?: ModeSpecOptions): NodeSpec[] {
-	return buildVMOverlaySpec({ ...(options ?? {}), includeTerminal: false, includeIDE: true });
+	return buildVMOverlaySpec({ ...(options ?? {}), includeTerminal: false, includeIDE: true, includeCartUpdate: false });
 }
 
 export function consoleEditorSpec(options?: ModeSpecOptions): NodeSpec[] {
-	return buildVMOverlaySpec({ ...(options ?? {}), includeTerminal: true, includeIDE: true });
+	return buildVMOverlaySpec({ ...(options ?? {}), includeTerminal: true, includeIDE: true, includeCartUpdate: false });
 }
 
 export function presentationOnlySpec(): NodeSpec[] {
@@ -94,22 +112,36 @@ class OverlayPipelineControllerImpl {
 			includeTerminal: false,
 			includeIDE: false,
 			includePresentation: false,
+			includeCartUpdate: false,
 		};
 		for (const request of this.requests.values()) {
 			if (request.includeTerminal) merged.includeTerminal = true;
 			if (request.includeIDE) merged.includeIDE = true;
 			if (request.includePresentation) merged.includePresentation = true;
 			if (request.includeCartDraw === false) merged.includeCartDraw = false;
+			if (request.includeCartUpdate) merged.includeCartUpdate = true;
 		}
 		const presentationEnabled = merged.includePresentation !== false;
 		$.view.setPresentationPassesEnabled(presentationEnabled);
 		let spec: NodeSpec[] = [];
 		if (merged.includeTerminal && merged.includeIDE) {
-			spec = consoleEditorSpec({ includePresentation: merged.includePresentation, includeCartDraw: merged.includeCartDraw });
+			spec = consoleEditorSpec({
+				includePresentation: merged.includePresentation,
+				includeCartDraw: merged.includeCartDraw,
+				includeCartUpdate: merged.includeCartUpdate,
+			});
 		} else if (merged.includeTerminal) {
-			spec = interactiveVMSpec({ includePresentation: merged.includePresentation, includeCartDraw: merged.includeCartDraw });
+			spec = terminalModeSpec({
+				includePresentation: merged.includePresentation,
+				includeCartDraw: merged.includeCartDraw,
+				includeCartUpdate: merged.includeCartUpdate,
+			});
 		} else if (merged.includeIDE) {
-			spec = editorModeSpec({ includePresentation: merged.includePresentation, includeCartDraw: merged.includeCartDraw });
+			spec = editorModeSpec({
+				includePresentation: merged.includePresentation,
+				includeCartDraw: merged.includeCartDraw,
+				includeCartUpdate: merged.includeCartUpdate,
+			});
 		} else if (merged.includePresentation) {
 			spec = presentationOnlySpec();
 		} else {

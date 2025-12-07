@@ -41,7 +41,7 @@ export class BmsxIDEUpdateSystem extends ECSystem {
 	}
 
 	public update(_world: World): void {
-		// BmsxVMRuntime.instance.tickIDE();
+		BmsxVMRuntime.instance.tickIDE();
 	}
 }
 
@@ -53,7 +53,7 @@ export class BmsxIDEDrawSystem extends ECSystem {
 	}
 
 	public update(_world: World): void {
-		// BmsxVMRuntime.instance.tickIDEDraw();
+		BmsxVMRuntime.instance.tickIDEDraw();
 	}
 }
 
@@ -65,7 +65,7 @@ export class BmsxTerminalUpdateSystem extends ECSystem {
 	}
 
 	public update(_world: World): void {
-		// BmsxVMRuntime.instance.tickInteractiveVM();
+		BmsxVMRuntime.instance.tickTerminalMode();
 	}
 }
 
@@ -77,6 +77,6 @@ export class BmsxTerminalDrawSystem extends ECSystem {
 	}
 
 	public update(_world: World): void {
-		// BmsxVMRuntime.instance.tickInteractiveVMDraw();
+		BmsxVMRuntime.instance.tickTerminalModeDraw();
 	}
 }
