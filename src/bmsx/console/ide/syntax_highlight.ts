@@ -1,7 +1,7 @@
-import * as constants from './constants';
-import { KEYWORDS } from './intellisense';
 import type { SemanticAnnotations, SymbolKind } from './semantic_model';
 import type { HighlightLine } from './types';
+import * as constants from './constants';
+import { KEYWORDS } from './keywords';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../lua_builtins';
 import { LuaLexer } from '../../lua/lexer';
 

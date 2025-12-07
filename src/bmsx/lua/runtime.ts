@@ -2372,8 +2372,12 @@ export class LuaInterpreter {
 		return this.getNativeValueWithMetamethod(target, key, range);
 	}
 
-	private setNativePropertyInternal(target: LuaNativeValue, key: { propertyName: string; displayName: string }, value: LuaValue, range: LuaSourceRange): void {
+	private setNativeProperty(target: LuaNativeValue, key: { propertyName: string; displayName: string }, value: LuaValue, range: LuaSourceRange): void {
 		const resolvedName = this.resolveNativePropertyName(target.native, key.propertyName) ?? key.propertyName;
+		if (!(resolvedName in (target.native as Record<string, unknown>))) {
+			const message = `Attempted to set missing native member '${key.displayName}' on ${this.nativeTypeName(target)}.`;
+			throw this.runtimeErrorAt(range, message);
+		}
 		const jsValue = this.convertToHost(value, range);
 		try {
 			Reflect.set(target.native as Record<string, unknown>, resolvedName, jsValue);
@@ -2386,7 +2390,7 @@ export class LuaInterpreter {
 
 	private setNativeMember(target: LuaNativeValue, property: string, value: LuaValue, range: LuaSourceRange): void {
 		const normalized = { propertyName: property, displayName: property };
-		this.setNativePropertyInternal(target, normalized, value, range);
+		this.setNativeProperty(target, normalized, value, range);
 	}
 
 	private setNativeIndex(target: LuaNativeValue, key: LuaValue, value: LuaValue, range: LuaSourceRange): void {
@@ -2394,7 +2398,7 @@ export class LuaInterpreter {
 		if (!normalized) {
 			throw this.runtimeErrorAt(range, 'Native value keys must be strings or integers.');
 		}
-		this.setNativePropertyInternal(target, normalized, value, range);
+		this.setNativeProperty(target, normalized, value, range);
 	}
 
 	private enumerateNativeKeys(target: LuaNativeValue): LuaValue[] {

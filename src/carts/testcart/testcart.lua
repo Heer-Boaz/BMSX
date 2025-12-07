@@ -319,7 +319,7 @@ local function register_hero()
 		components = { 'ActionEffectComponent', 'Collider2DComponent', 'ProhibitLeavingScreenComponent', hero_tracker_component_id },
 		fsms = { hero_fsm_id, },
 		effects = { effect_id, },
-		defaults = { speed = 54 },
+		defaults = { speed = 54, hero_tracker = nil },
 	})
 end
 

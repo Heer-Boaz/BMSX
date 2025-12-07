@@ -24,9 +24,9 @@ export class Collider2DComponent extends Component<any> {
 	/** Collision filtering: which layers this collider tests against (bitmask). */
 	public mask: number = 0xFFFFFFFF;
 	/** If true, collider is considered a trigger (no physical response). */
-	public isTrigger: boolean = true;
+	public istrigger: boolean = true;
 	/** If true, the OverlapSystem will emit overlap events for this collider. */
-	public generateOverlapEvents: boolean = false;
+	public generateoverlapevents: boolean = false;
 	/**
 	 * Scope for overlap event pairing by space.
 	 * - 'current': only objects in the same active space
@@ -34,7 +34,7 @@ export class Collider2DComponent extends Component<any> {
 	 * - 'both': objects in current or UI spaces
 	 * - 'all': objects in any space
 	 */
-	public spaceEvents: 'current' | 'ui' | 'both' | 'all' = 'current';
+	public spaceevents: 'current' | 'ui' | 'both' | 'all' = 'current';
 
 	/** Local-space rectangle bounds (nullable when only polygons are used). */
 	@excludepropfromsavegame
@@ -69,9 +69,9 @@ export class Collider2DComponent extends Component<any> {
 		this.hittable = opts.hittable;
 		this.layer = opts.layer;
 		this.mask = opts.mask;
-		this.isTrigger = opts.istrigger;
-		this.generateOverlapEvents = opts.generateoverlapevents;
-		this.spaceEvents = opts.spaceevents;
+		this.istrigger = opts.istrigger;
+		this.generateoverlapevents = opts.generateoverlapevents;
+		this.spaceevents = opts.spaceevents;
 	}
 
 	/** Returns world-space AABB. Falls back to object size if no local area is set. */

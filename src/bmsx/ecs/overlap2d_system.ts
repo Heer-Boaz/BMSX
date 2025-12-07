@@ -718,7 +718,7 @@ export class Overlap2DSystem extends ECSystem {
 			for (const c of o.get_components(Collider2DComponent)) {
 				if (!c.enabled) continue;
 				colliderLookup.set(c.id, c);
-				if (!c.generateOverlapEvents) continue;
+				if (!c.generateoverlapevents) continue;
 				eventColliders.push(c);
 			}
 		}
@@ -730,11 +730,11 @@ export class Overlap2DSystem extends ECSystem {
 				throw new Error(`[Overlap2DSystem] Collider '${col.id}' is not attached to a parent.`);
 			}
 			const ownerSpace = world.getSpaceOfObject(owner.id);
-			if (!ownerSpace) {
-				throw new Error(`[Overlap2DSystem] Collider '${col.id}' with owner '${owner.id}' is not mapped to a space.`);
-			}
-			const oSpace = ownerSpace.id;
-			const candidates = Collision2DSystem.queryAABB(world, col.worldArea);
+				if (!ownerSpace) {
+					throw new Error(`[Overlap2DSystem] Collider '${col.id}' with owner '${owner.id}' is not mapped to a space.`);
+				}
+				const oSpace = ownerSpace.id;
+				const candidates = Collision2DSystem.queryAABB(world, col.worldArea);
 			for (const otherCol of candidates) {
 				if (otherCol === col) continue;
 				const otherOwner = otherCol.parent;
@@ -752,8 +752,8 @@ export class Overlap2DSystem extends ECSystem {
 					throw new Error(`[Overlap2DSystem] Collider '${otherCol.id}' with owner '${otherOwner.id}' is not mapped to a space.`);
 				}
 				const otherSpace = otherSpaceObj.id;
-				if (!this.spaceMatch(col.spaceEvents, oSpace, otherSpace, world)) continue;
-				if (otherCol.generateOverlapEvents && otherCol.id < col.id) continue;
+				if (!this.spaceMatch(col.spaceevents, oSpace, otherSpace, world)) continue;
+				if (otherCol.generateoverlapevents && otherCol.id < col.id) continue;
 				// Final narrow-phase test
 				if (!Collision2DSystem.collides(col, otherCol)) continue;
 				const key = makePairKey(col.id, otherCol.id);
@@ -775,8 +775,8 @@ export class Overlap2DSystem extends ECSystem {
 			if (!ownerA || !ownerB) {
 				throw new Error('[Overlap2DSystem] Attempted to emit overlap event without collider parents.');
 			}
-			const emitA = colA.generateOverlapEvents;
-			const emitB = colB.generateOverlapEvents;
+			const emitA = colA.generateoverlapevents;
+			const emitB = colB.generateoverlapevents;
 			if (!emitA && !emitB) return;
 			let contact: Contact2D;
 			if (eventName !== 'overlap.end') {
@@ -825,7 +825,7 @@ export class Overlap2DSystem extends ECSystem {
 			case 'ui': return (bSpace === uiId);
 			case 'both': return (bSpace === aSpace && (bSpace === current)) || (bSpace === uiId);
 			default:
-				throw new Error(`[Overlap2DSystem] Unknown spaceEvents scope '${scope}'.`);
+				throw new Error(`[Overlap2DSystem] Unknown spaceevents scope '${scope}'.`);
 		}
 	}
 }

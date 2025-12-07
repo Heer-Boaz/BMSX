@@ -540,31 +540,40 @@ export async function applyWorkspaceOverridesToCart(params: { cart: BmsxCartridg
 				updatedAt: typeof savedRecord.updatedAt === 'number' ? savedRecord.updatedAt : asset.update_timestamp ?? 0,
 			}
 			: null;
-		const overrideRecord = merged.get(filePath);
+		let overrideRecord = merged.get(filePath);
 		if (overrideRecord && overrideRecord.source === asset.src) {
 			const staleKey = root ? buildWorkspaceStorageKey(root, overrideRecord.path) : null;
 			if (staleKey) {
 				storage.removeItem(staleKey);
 			}
-			continue;
+			overrideRecord = null;
 		}
-		const overrideUpdatedAt = overrideRecord ? (overrideRecord.updatedAt ?? -1) : -1;
-		const canonicalUpdatedAt = canonicalRecord ? (canonicalRecord.updatedAt ?? -1) : -1;
 		const romTimestamp = asset.update_timestamp ?? 0;
+		const overrideUpdatedAt = overrideRecord ? (typeof overrideRecord.updatedAt === 'number' ? overrideRecord.updatedAt : romTimestamp) : -1;
+		const canonicalUpdatedAt = canonicalRecord ? (typeof canonicalRecord.updatedAt === 'number' ? canonicalRecord.updatedAt : romTimestamp) : -1;
 
 		let winnerKind: 'override' | 'canonical' | 'rom' = 'rom';
 		let winner: WorkspaceOverrideRecord = null;
 		let winnerUpdatedAt = romTimestamp;
+		let winnerPriority = 0;
 
-		if (overrideRecord && overrideUpdatedAt > winnerUpdatedAt) {
-			winnerKind = 'override';
-			winner = overrideRecord;
-			winnerUpdatedAt = overrideUpdatedAt;
+		if (overrideRecord) {
+			const overridePriority = 2;
+			if (overrideUpdatedAt > winnerUpdatedAt || (overrideUpdatedAt === winnerUpdatedAt && overridePriority > winnerPriority)) {
+				winnerKind = 'override';
+				winner = overrideRecord;
+				winnerUpdatedAt = overrideUpdatedAt;
+				winnerPriority = overridePriority;
+			}
 		}
-		if (canonicalRecord && canonicalUpdatedAt > winnerUpdatedAt) {
-			winnerKind = 'canonical';
-			winner = canonicalRecord;
-			winnerUpdatedAt = canonicalUpdatedAt;
+		if (canonicalRecord) {
+			const canonicalPriority = 1;
+			if (canonicalUpdatedAt > winnerUpdatedAt || (canonicalUpdatedAt === winnerUpdatedAt && canonicalPriority > winnerPriority)) {
+				winnerKind = 'canonical';
+				winner = canonicalRecord;
+				winnerUpdatedAt = canonicalUpdatedAt;
+				winnerPriority = canonicalPriority;
+			}
 		}
 
 		if (winnerKind === 'rom') {

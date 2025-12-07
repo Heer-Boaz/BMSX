@@ -3,6 +3,7 @@ import { LuaSyntaxKind, LuaTableFieldKind, type LuaAssignableExpression, type Lu
 import { LuaEnvironment } from '../../lua/environment';
 import { LuaSyntaxError } from '../../lua/errors';
 import { LuaLexer } from '../../lua/lexer';
+import { KEYWORDS } from './keywords';
 import { parseLuaChunk, parseLuaChunkWithRecovery } from './lua_parse';
 import { LuaInterpreter } from '../../lua/runtime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaNativeValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../lua/value';
@@ -21,10 +22,6 @@ import type { ApiCompletionMetadata, CodeTabContext, LuaCompletionItem, PointerS
 import type { RomLuaAsset } from '../../rompack/rompack';
 export const CONSOLE_PREVIEW_MAX_ENTRIES = 12;
 export const CONSOLE_PREVIEW_MAX_DEPTH = 2;
-
-export const KEYWORDS = new Set([
-	'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
-]);
 
 const SYMBOL_PRIORITY_ORDER: LuaDefinitionKind[] = ['table_field', 'function', 'parameter', 'variable', 'assignment'];
 const LOCAL_DEFINITION_PRIORITY_ORDER: LuaDefinitionKind[] = ['parameter', 'table_field', 'function', 'variable', 'assignment'];
