@@ -57,10 +57,10 @@ local function setup_hero_collision(owner)
 	collider.generateoverlapevents = true
 	collider.layer = collision_layers.hero
 	collider.mask = collision_layers.target
-	local function capture_contact(event, phase)
+	local function capture_contact(overlap_event, phase)
 		demo.collision.last_event = phase
-		demo.collision.with = event.other_id
-		local contact = event.contact
+		demo.collision.with = overlap_event.other_id
+		local contact = overlap_event.contact
 		demo.collision.contact_depth = contact.depth
 		demo.collision.contact_normal_x = contact.normal.x
 		demo.collision.contact_normal_y = contact.normal.y
@@ -68,32 +68,32 @@ local function setup_hero_collision(owner)
 	owner.events:on({
 		event = 'overlap.begin',
 		subscriber = owner,
-		handler = function(event)
+		handler = function(_, overlap_event)
 			demo.collision.begin_count = demo.collision.begin_count + 1
 			demo.collision.active = true
 			owner.overlapping = true
-			capture_contact(event, 'begin')
+			capture_contact(overlap_event, 'begin')
 		end,
 	})
 	owner.events:on({
 		event = 'overlap.stay',
 		subscriber = owner,
-		handler = function(event)
+		handler = function(_, overlap_event)
 			demo.collision.stay_count = demo.collision.stay_count + 1
 			demo.collision.active = true
 			owner.overlapping = true
-			capture_contact(event, 'stay')
+			capture_contact(overlap_event, 'stay')
 		end,
 	})
 	owner.events:on({
 		event = 'overlap.end',
 		subscriber = owner,
-		handler = function(event)
+		handler = function(_, overlap_event)
 			demo.collision.end_count = demo.collision.end_count + 1
 			demo.collision.active = false
 			owner.overlapping = false
 			demo.collision.last_event = 'end'
-			demo.collision.with = event.other_id
+			demo.collision.with = overlap_event.other_id
 			demo.collision.contact_depth = 0
 			demo.collision.contact_normal_x = 0
 			demo.collision.contact_normal_y = 0

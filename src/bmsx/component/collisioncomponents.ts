@@ -66,12 +66,12 @@ export class Collider2DComponent extends Component<any> {
 	}) {
 		opts.id_local = opts.id_local ?? 'collider2d';
 		super(opts);
-		this.hittable = opts.hittable;
-		this.layer = opts.layer;
-		this.mask = opts.mask;
-		this.istrigger = opts.istrigger;
-		this.generateoverlapevents = opts.generateoverlapevents;
-		this.spaceevents = opts.spaceevents;
+		this.hittable = opts.hittable ?? this.hittable;
+		this.layer = opts.layer ?? this.layer;
+		this.mask = opts.mask ?? this.mask;
+		this.istrigger = opts.istrigger ?? this.istrigger;
+		this.generateoverlapevents = opts.generateoverlapevents ?? this.generateoverlapevents;
+		this.spaceevents = opts.spaceevents ?? this.spaceevents;
 	}
 
 	/** Returns world-space AABB. Falls back to object size if no local area is set. */
