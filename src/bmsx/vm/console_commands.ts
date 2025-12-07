@@ -75,7 +75,7 @@ export class VMCommandDispatcher {
 			return true;
 		}
 		if (upper === 'CLS') {
-			this.runtime.interactiveVM.clearOutput()
+			this.runtime.terminal.clearOutput()
 			return true;
 		}
 		if (upper === 'CONT') {
@@ -106,14 +106,14 @@ export class VMCommandDispatcher {
 		}
 		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'WS') {
 			if (tokens.length !== 2) {
-				this.runtime.interactiveVM.appendStderr(ERROR_SYNTAX_ERROR);
+				this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 				return true;
 			}
 			const sub = tokens[1].toUpperCase();
 			if (sub === 'RESET') { await this.runWorkspaceReset(); return true; }
 			if (sub === 'NUKE') { await this.runWorkspaceNuke(); return true; }
 			if (sub === 'EDIT') { this.runtime.activateEditor(); return true; }
-			this.runtime.interactiveVM.appendStderr(ERROR_SYNTAX_ERROR);
+			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 			return true;
 		}
 		if (upper === 'LS' || upper.startsWith('LS ')) {
@@ -129,21 +129,21 @@ export class VMCommandDispatcher {
 
 	private printHelp(): void {
 		for (let index = 0; index < HELP_TEXT.length; index += 1) {
-			this.runtime.interactiveVM.appendSystem(HELP_TEXT[index]);
+			this.runtime.terminal.appendSystem(HELP_TEXT[index]);
 		}
 	}
 
 	private async runWorkspaceReset() {
-		this.runtime.interactiveVM.appendStdout('Discarding dirty files...');
+		this.runtime.terminal.appendStdout('Discarding dirty files...');
 		await resetWorkspaceDirtyBuffersAndStorage();
-		this.runtime.interactiveVM.appendStdout('Dirty workspace buffers cleared');
+		this.runtime.terminal.appendStdout('Dirty workspace buffers cleared');
 	}
 
 	private async runWorkspaceNuke() {
-		this.runtime.interactiveVM.appendStdout('Warning: this will erase workspace!');
+		this.runtime.terminal.appendStdout('Warning: this will erase workspace!');
 		await nukeWorkspaceState();
 		clearWorkspaceSessionState();
-		this.runtime.interactiveVM.appendStdout('Workspace data wiped');
+		this.runtime.terminal.appendStdout('Workspace data wiped');
 	}
 
 	private handleSys(tokens: string[]): void {
@@ -163,41 +163,41 @@ export class VMCommandDispatcher {
 				return;
 			}
 		}
-		this.runtime.interactiveVM.appendStderr(ERROR_SYNTAX_ERROR);
+		this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 	}
 
 	private printSystemInfo(): void {
-		this.runtime.interactiveVM.appendSystem('SYSTEM INFO');
+		this.runtime.terminal.appendSystem('SYSTEM INFO');
 		const lines = this.getSystemStatusLines();
 		for (let index = 0; index < lines.length; index += 1) {
-			this.runtime.interactiveVM.appendStdout(lines[index]);
+			this.runtime.terminal.appendStdout(lines[index]);
 		}
 	}
 
 	private printFaultState(): void {
 		const { lines, active } = this.getFaultStatusLines();
-		this.runtime.interactiveVM.appendSystem('FAULT STATE');
+		this.runtime.terminal.appendSystem('FAULT STATE');
 		for (let index = 0; index < lines.length; index += 1) {
 			const line = lines[index];
 			if (index === 0 && active) {
-				this.runtime.interactiveVM.appendStdout(line, 9);
+				this.runtime.terminal.appendStdout(line, 9);
 				continue;
 			}
-			this.runtime.interactiveVM.appendStdout(line);
+			this.runtime.terminal.appendStdout(line);
 		}
 	}
 
 	private clearFaultState(): void {
 		const result = this.runtime.clearFaultState();
 		if (!result.cleared) {
-			this.runtime.interactiveVM.appendStdout('No fault to clear');
+			this.runtime.terminal.appendStdout('No fault to clear');
 			return;
 		}
 		if (result.resumedDebugger) {
-			this.runtime.interactiveVM.appendStdout('Fault cleared; debugger resumed');
+			this.runtime.terminal.appendStdout('Fault cleared; debugger resumed');
 			return;
 		}
-		this.runtime.interactiveVM.appendStdout('Fault state cleared');
+		this.runtime.terminal.appendStdout('Fault state cleared');
 	}
 
 	public getSystemStatusLines(): string[] {
@@ -273,7 +273,7 @@ export class VMCommandDispatcher {
 	private async handleLs(command: string): Promise<void> {
 		const tokens = this.tokenize(command);
 		if (tokens.length > 2) {
-			this.runtime.interactiveVM.appendStderr(ERROR_SYNTAX_ERROR);
+			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 			return;
 		}
 		let mode = '';
@@ -294,7 +294,7 @@ export class VMCommandDispatcher {
 		const listing = this.buildListing(paths, cwd);
 		const filtered = filter ? this.filterListing(listing, filter) : listing;
 		if (filtered.length === 0) {
-			this.runtime.interactiveVM.appendStderr(ERROR_FILE_NOT_FOUND);
+			this.runtime.terminal.appendStderr(ERROR_FILE_NOT_FOUND);
 			return;
 		}
 		for (let index = 0; index < filtered.length; index += 1) {
@@ -317,63 +317,63 @@ export class VMCommandDispatcher {
 					color = 8;
 					break;
 			}
-			this.runtime.interactiveVM.appendStdout(entry.text.toUpperCase(), color);
+			this.runtime.terminal.appendStdout(entry.text.toUpperCase(), color);
 		}
 	}
 
 	private handleJsStack(tokens: string[]): void {
 		if (tokens.length === 1) {
 			const enabled = this.runtime.jsStackEnabled;
-			this.runtime.interactiveVM.appendStdout(`JS stack traces ${enabled ? 'ON' : 'OFF'}`);
+			this.runtime.terminal.appendStdout(`JS stack traces ${enabled ? 'ON' : 'OFF'}`);
 			return;
 		}
 		if (tokens.length === 2) {
 			const mode = tokens[1].toUpperCase();
 			if (mode === 'ON') {
 				this.runtime.jsStackEnabled = true;
-				this.runtime.interactiveVM.appendStdout('JS stack traces ON');
+				this.runtime.terminal.appendStdout('JS stack traces ON');
 				return;
 			}
 			if (mode === 'OFF') {
 				this.runtime.jsStackEnabled = false;
-				this.runtime.interactiveVM.appendStdout('JS stack traces OFF');
+				this.runtime.terminal.appendStdout('JS stack traces OFF');
 				return;
 			}
 		}
-		this.runtime.interactiveVM.appendStderr(ERROR_SYNTAX_ERROR);
+		this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 	}
 
 	private handleCd(command: string): void {
 		const shortcutUp = command.toUpperCase() === 'CD..';
 		const tokens = shortcutUp ? ['CD', '..'] : this.tokenize(command);
 		if (tokens.length > 2) {
-			this.runtime.interactiveVM.appendStderr(ERROR_SYNTAX_ERROR);
+			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 			return;
 		}
 		if (tokens.length === 1) {
-			this.runtime.interactiveVM.appendStdout(this.cwd);
+			this.runtime.terminal.appendStdout(this.cwd);
 			return;
 		}
 		const targetRaw = tokens[1];
 		if (targetRaw === '..') {
 			this.cwd = this.parentPath(this.cwd);
-			this.runtime.interactiveVM.appendStdout(this.cwd);
+			this.runtime.terminal.appendStdout(this.cwd);
 			return;
 		}
 		if (targetRaw === '/') {
 			this.cwd = '/';
-			this.runtime.interactiveVM.appendStdout(this.cwd);
+			this.runtime.terminal.appendStdout(this.cwd);
 			return;
 		}
 		const next = targetRaw.startsWith('/') ? targetRaw : `${this.cwd}/${targetRaw}`;
 		const paths = this.collectPaths('-ALL');
 		const hasDir = paths.some(entry => this.isAncestor(next, entry.path) || entry.path === next);
 		if (!hasDir) {
-			this.runtime.interactiveVM.appendStderr(ERROR_FOLDER_NOT_FOUND);
+			this.runtime.terminal.appendStderr(ERROR_FOLDER_NOT_FOUND);
 			return;
 		}
 		this.cwd = next;
-		this.runtime.interactiveVM.appendStdout(this.cwd);
+		this.runtime.terminal.appendStdout(this.cwd);
 	}
 
 	private tokenize(command: string): string[] {
@@ -425,7 +425,7 @@ export class VMCommandDispatcher {
 
 	private collectPaths(mode: string): PathEntry[] {
 		if (mode && mode !== '-DIRTY' && mode !== '-SAVED' && mode !== '-ALL' && mode !== '-ROM') {
-			this.runtime.interactiveVM.appendStderr(ERROR_ILLEGAL_FUNCTION_CALL);
+			this.runtime.terminal.appendStderr(ERROR_ILLEGAL_FUNCTION_CALL);
 			return [];
 		}
 		const entries: PathEntry[] = [];
