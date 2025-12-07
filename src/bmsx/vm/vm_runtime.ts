@@ -165,7 +165,7 @@ export class BmsxVMRuntime extends Service {
 	public get debuggerSuspendSignal(): LuaDebuggerPauseSignal {
 		return this.luaDebuggerSuspension;
 	}
-	private readonly debuggerEnabled = false;
+	private readonly debuggerEnabled = true;
 	private debuggerHaltsGame = false;
 	private debuggerAutoActivateOnNextPause = false;
 	private overlayState = { console: false, editor: false };
@@ -392,10 +392,10 @@ export class BmsxVMRuntime extends Service {
 		const suspension = this.luaDebuggerSuspension;
 		const controller = this.luaDebuggerController;
 		const interpreter = this.luaInterpreter;
+		controller.suppressNextAtBoundary(suspension.location.chunk, suspension.location.line, suspension.callStack.length);
 		const strategy = controller.prepareResume(command, suspension, options);
-		if (interpreter) {
-			interpreter.setExceptionResumeStrategy(strategy);
-		}
+		interpreter.setExceptionResumeStrategy(strategy);
+
 		const shouldClearRuntimeErrorOverlay =
 			!!suspension &&
 			suspension.reason === 'exception' &&
@@ -1385,8 +1385,7 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private recordDebuggerExceptionFault(signal: LuaDebuggerPauseSignal): FaultSnapshot {
-		const interpreter = this.luaInterpreter;
-		const exception = interpreter?.consumeLastDebuggerException?.();
+		const exception = this.luaInterpreter.pendingDebuggerException;
 		if (this.faultSnapshot && this.luaRuntimeFailed) {
 			this.faultOverlayNeedsFlush = true;
 			return this.faultSnapshot;
