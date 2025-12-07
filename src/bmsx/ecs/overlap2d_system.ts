@@ -711,12 +711,15 @@ export class Overlap2DSystem extends ECSystem {
 	update(world: World): void {
 		const newPairs: Set<PairKey> = new Set();
 		const colliderLookup = new Map<string, Collider2DComponent>();
+		const broadphase = Collision2DSystem.ensureIndex(world);
+		broadphase.clear();
 
 		// Collect colliders that want events across active objects (current + UI overlay)
 		const eventColliders: Collider2DComponent[] = [];
 		for (const o of world.objects({ scope: 'active' })) {
 			for (const c of o.get_components(Collider2DComponent)) {
 				if (!c.enabled) continue;
+				broadphase.addOrUpdate(c);
 				colliderLookup.set(c.id, c);
 				if (!c.generateoverlapevents) continue;
 				eventColliders.push(c);
