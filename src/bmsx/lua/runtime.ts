@@ -2374,10 +2374,6 @@ export class LuaInterpreter {
 
 	private setNativeProperty(target: LuaNativeValue, key: { propertyName: string; displayName: string }, value: LuaValue, range: LuaSourceRange): void {
 		const resolvedName = this.resolveNativePropertyName(target.native, key.propertyName) ?? key.propertyName;
-		if (!(resolvedName in (target.native as Record<string, unknown>))) {
-			const message = `Attempted to set missing native member '${key.displayName}' on ${this.nativeTypeName(target)}.`;
-			throw this.runtimeErrorAt(range, message);
-		}
 		const jsValue = this.convertToHost(value, range);
 		try {
 			Reflect.set(target.native as Record<string, unknown>, resolvedName, jsValue);
