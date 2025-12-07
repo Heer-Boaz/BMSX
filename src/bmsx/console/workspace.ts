@@ -65,6 +65,19 @@ export function joinWorkspacePaths(...segments: string[]): string {
 		.replace(/\/+/g, '/');
 }
 
+function stripProjectRootPrefix(resourcePath: string, projectRootPath: string): string {
+	const normalizedRoot = projectRootPath ? projectRootPath.replace(/^\.?\//, '') : '';
+	const normalizedPath = resourcePath.replace(/^\.?\//, '');
+	if (normalizedRoot.length === 0) {
+		return normalizedPath;
+	}
+	if (normalizedPath.startsWith(normalizedRoot)) {
+		const sliced = normalizedPath.slice(normalizedRoot.length);
+		return sliced.startsWith('/') ? sliced.slice(1) : sliced;
+	}
+	return normalizedPath;
+}
+
 export function sanitizeWorkspaceFilenameSegment(value: string): string {
 	const replaced = value.replace(/[^A-Za-z0-9._-]/g, '_').replace(/_+/g, '_');
 	const trimmed = replaced.replace(/^[_\.]+/, '');
@@ -80,7 +93,8 @@ export function buildWorkspaceDirtyDir(projectRootPath: string): string {
 }
 
 export function buildWorkspaceDirtyEntryPath(projectRootPath: string, resourcePath: string): string {
-	const segments = resourcePath.split('/');
+	const normalizedPath = stripProjectRootPrefix(resourcePath, projectRootPath);
+	const segments = normalizedPath.split('/');
 	const baseName = segments.pop() ?? resourcePath;
 	const tempName = baseName.startsWith('~') ? baseName : `~${baseName}`;
 	segments.push(tempName);
@@ -158,9 +172,16 @@ export function collectWorkspaceOverrides(params: { cart: BmsxCartridge; project
 
 function resolveWorkspacePathForIo(path: string, projectRootPath?: string): string {
 	const root = projectRootPath ?? $.rompack.project_root_path;
-	// If the path is already absolute or already includes the project root, leave it as-is.
-	if (!root || path.startsWith(root) || path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) {
+	if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) {
 		return path;
+	}
+	if (!root) {
+		return path;
+	}
+	const normalizedRoot = root.replace(/^\.?\//, '');
+	const normalizedPath = path.replace(/^\.?\//, '');
+	if (normalizedPath.startsWith(normalizedRoot)) {
+		return normalizedPath;
 	}
 	return joinWorkspacePaths(root, path);
 }

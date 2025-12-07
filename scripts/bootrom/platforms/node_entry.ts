@@ -261,11 +261,10 @@ type WorkspaceFetchDescriptor = {
 	bodyText: string;
 };
 
-function installWorkspaceFetchBridge(): void {
+function installWorkspaceFetchBridge(workspaceRoot: string): void {
 	if (workspaceFetchBridgeInstalled) {
 		return;
 	}
-	const workspaceRoot = path.resolve(process.cwd());
 	const existingFetch: ((input: any, init?: any) => Promise<Response>) =
 		typeof (globalThis as any).fetch === 'function'
 			? (globalThis as any).fetch.bind(globalThis)
@@ -665,7 +664,8 @@ async function main(): Promise<void> {
 	const buffer = await readRomFile(romPath);
 	const rompack = await loadRomPack(buffer);
 	const { rompack: activeRompack, entry } = await prepareRuntime(rompack, cliOptions, romPath);
-	installWorkspaceFetchBridge();
+	const workspaceRoot = path.resolve(path.dirname(romPath), '..');
+	installWorkspaceFetchBridge(workspaceRoot);
 
 	const platform = createPlatform(frameInterval);
 	const postInput = (event: InputEvt) => {

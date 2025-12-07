@@ -57,7 +57,6 @@ local function setup_hero_collision(owner)
 	collider.generateoverlapevents = true
 	collider.layer = collision_layers.hero
 	collider.mask = collision_layers.target
-	owner.overlapping = false
 	local function capture_contact(event, phase)
 		demo.collision.last_event = phase
 		demo.collision.with = event.other_id
@@ -112,17 +111,6 @@ function hero:onspawn(spawn_pos)
 	print('[debug] timeline_component=' .. tostring(timeline_component) .. ' type=' .. type(timeline_component) .. ' has_define=' .. tostring(timeline_component and timeline_component.define) .. ' has_play=' .. tostring(timeline_component and timeline_component.play))
 	local define_fn = timeline_component.define
 	local play_fn = timeline_component.play
-	self.label = 'hero'
-	self.sx = 10
-	self.sy = 10
-	self.speed = 54
-	self.facing = 'right'
-	self.charge_time = 0
-	self.active_state = 'not set'
-	self.tempo_ready = true
-	self.blinking_timer = 0
-	self.move_count = 0
-	self.boundary_pushback = 0
 	setup_hero_collision(self)
 	define_fn(timeline_component, {
 		id = hero_timeline_id,
@@ -319,7 +307,22 @@ local function register_hero()
 		components = { 'ActionEffectComponent', 'Collider2DComponent', 'ProhibitLeavingScreenComponent', hero_tracker_component_id },
 		fsms = { hero_fsm_id, },
 		effects = { effect_id, },
-		defaults = { speed = 54, hero_tracker = nil },
+		defaults = {
+			speed = 54,
+			hero_tracker = 0,
+			label = 'hero',
+			sx = 10,
+			sy = 10,
+			speed = 54,
+			facing = 'right',
+			rge_time = 0,
+			active_state = 'not set',
+			tempo_ready = true,
+			blinking_timer = 0,
+			move_count = 0,
+			boundary_pushback = 0,
+			overlapping = false,
+		},
 	})
 end
 
