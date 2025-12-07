@@ -31,8 +31,8 @@ import { TickGroup } from '../ecs/ecsystem';
 import { registerBuiltinECS } from "../ecs/builtin_pipeline";
 import type { NodeSpec } from "../ecs/pipeline";
 import { collectEcsPipelineExtensions } from "../ecs/extensions";
-import { gameplaySpec } from './pipelines/gameplay';
-import { BmsxConsoleRuntime } from '../console/runtime';
+import { gameplaySpec } from './pipelines/gameplay_pipeline';
+import { BmsxVMRuntime } from '../vm/vm_runtime';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { ActionEffectRegistry } from '../action_effects/effect_registry';
 import { InputSource, KeyModifier } from '../input/playerinput';
@@ -610,11 +610,11 @@ export class Game {
 			$.world.run(deltaTime);
 		} catch (error) {
 			// Surface engine/runtime errors to the in-game terminal when active
-			const consoleRuntime = BmsxConsoleRuntime.instance;
-			if (consoleRuntime) {
+			const vmRuntime = BmsxVMRuntime.instance;
+			if (vmRuntime) {
 				try {
-					consoleRuntime.handleLuaError(error);
-					consoleRuntime.abandonFrameState();
+					vmRuntime.handleLuaError(error);
+					vmRuntime.abandonFrameState();
 				} catch { /* ignore secondary failures, but log them */
 					console.error(`Error while handling surfaced game error in console runtime: ${error}`);
 				}
@@ -723,7 +723,7 @@ export class Game {
 		sg.modelprops = data;
 		sg.spaces = this.world.spaces; // Spaces and their contained objects are serialized directly via references.
 
-		sg.bmsxConsoleState = BmsxConsoleRuntime.instance?.state;
+		sg.bmsxVMState = BmsxVMRuntime.instance?.state;
 		const serialized = Serializer.serialize(sg) as Uint8Array;
 		return compress ? BinaryCompressor.compressBinary(serialized) : serialized;
 	}
@@ -759,8 +759,8 @@ export class Game {
 			// Do not override revived flags or controller state; onspawn('revive') and @onload hooks handled wiring.
 
 			// Restore service state (opt-in)
-			if (sg.bmsxConsoleState) {
-				BmsxConsoleRuntime.instance.state = sg.bmsxConsoleState;
+			if (sg.bmsxVMState) {
+				BmsxVMRuntime.instance.state = sg.bmsxVMState;
 			}
 		} catch (e) {
 			console.error(`Error loading game state: ${e}`);

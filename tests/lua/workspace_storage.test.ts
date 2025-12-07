@@ -10,7 +10,7 @@ import {
 	readWorkspaceStateFile,
 	writeDirtyBuffer,
 	writeWorkspaceStateFile,
-} from '../../src/bmsx/console/ide/workspace_storage';
+} from '../../src/bmsx/vm/ide/workspace_storage';
 
 class MockStorage implements StorageService {
 	private readonly store = new Map<string, string>();

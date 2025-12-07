@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { createRequire, register } from 'node:module';
 import { test } from 'node:test';
 
-import type { CodeTabContext } from '../../src/bmsx/console/ide/types';
-import type { ProjectReferenceEnvironment } from '../../src/bmsx/console/ide/reference_sources';
-import type { ConsoleResourceDescriptor } from '../../src/bmsx/console/types';
-import type { ConsoleCodeLayout } from '../../src/bmsx/console/ide/code_layout';
-import { normalizeEndingsAndSplitLines } from 'bmsx/console/ide/text_utils';
+import type { CodeTabContext } from '../../src/bmsx/vm/ide/types';
+import type { ProjectReferenceEnvironment } from '../../src/bmsx/vm/ide/reference_sources';
+import type { VMResourceDescriptor } from '../../src/bmsx/vm/types';
+import type { VMCodeLayout } from '../../src/bmsx/vm/ide/code_layout';
+import { normalizeEndingsAndSplitLines } from 'bmsx/vm/ide/text_utils';
 
 register('./glsl-loader.mjs', import.meta.url);
 
@@ -54,9 +54,9 @@ registerStubModule(gameserializerPath, (() => {
 	};
 })());
 
-const consoleApiPath = require.resolve('../../src/bmsx/console/api.ts');
+const consoleApiPath = require.resolve('../../src/bmsx/vm/api.ts');
 const consoleApiExports = {
-	BmsxConsoleApi: class {
+	BmsxVMApi: class {
 		public emit(eventName: string, payload?: unknown, emitterId?: unknown): void {
 			void eventName;
 			void payload;
@@ -84,11 +84,11 @@ registerEmptyModule('../../src/bmsx/render/2d/shaders/2d.vert.glsl');
 registerEmptyModule('../../src/bmsx/render/3d/shaders/particle.frag.glsl');
 registerEmptyModule('../../src/bmsx/render/3d/shaders/particle.vert.glsl');
 
-const intellisenseModulePromise = import('../../src/bmsx/console/ide/intellisense');
-const semanticModelModulePromise = import('../../src/bmsx/console/ide/semantic_model');
-const referenceSourcesModulePromise = import('../../src/bmsx/console/ide/reference_sources');
-const workspaceModulePromise = import('../../src/bmsx/console/ide/semantic_workspace');
-const referenceNavigationModulePromise = import('../../src/bmsx/console/ide/reference_navigation');
+const intellisenseModulePromise = import('../../src/bmsx/vm/ide/intellisense');
+const semanticModelModulePromise = import('../../src/bmsx/vm/ide/semantic_model');
+const referenceSourcesModulePromise = import('../../src/bmsx/vm/ide/reference_sources');
+const workspaceModulePromise = import('../../src/bmsx/vm/ide/semantic_workspace');
+const referenceNavigationModulePromise = import('../../src/bmsx/vm/ide/reference_navigation');
 
 function luaRangeToSearchMatch(range: { start: { line: number; column: number }; end: { line: number; column: number } }, lines: readonly string[]): { row: number; start: number; end: number } {
 	const rowIndex = range.start.line - 1;
@@ -294,10 +294,10 @@ test('project reference catalog resolves globals across chunks', async () => {
 	workspace.updateFile('parameter.lua', parameterSource);
 	workspace.updateFile('local.lua', localSource);
 
-	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage' };
-	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', asset_id: 'global' };
-	const parameterDescriptor: ConsoleResourceDescriptor = { path: 'parameter.lua', type: 'lua', asset_id: 'parameter' };
-	const localDescriptor: ConsoleResourceDescriptor = { path: 'local.lua', type: 'lua', asset_id: 'local' };
+	const usageDescriptor: VMResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage' };
+	const globalDescriptor: VMResourceDescriptor = { path: 'global.lua', type: 'lua', asset_id: 'global' };
+	const parameterDescriptor: VMResourceDescriptor = { path: 'parameter.lua', type: 'lua', asset_id: 'parameter' };
+	const localDescriptor: VMResourceDescriptor = { path: 'local.lua', type: 'lua', asset_id: 'local' };
 
 	const usageContext: CodeTabContext = {
 		id: 'usage',
@@ -389,8 +389,8 @@ test('project definition resolver locates global across chunks', async () => {
 	workspace.updateFile('usage.lua', usageSource);
 	workspace.updateFile('global.lua', globalSource);
 
-	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage' };
-	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', asset_id: 'global' };
+	const usageDescriptor: VMResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage' };
+	const globalDescriptor: VMResourceDescriptor = { path: 'global.lua', type: 'lua', asset_id: 'global' };
 
 	const usageContext: CodeTabContext = {
 		id: 'usage',
@@ -467,7 +467,7 @@ test('reference lookup resolves global definition across chunks', async () => {
 	const model = buildLuaSemanticModel(usageSource, 'usage.lua');
 	const layout = {
 		getSemanticModel: () => model,
-	} as unknown as ConsoleCodeLayout;
+	} as unknown as VMCodeLayout;
 
 	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
 	assert.ok(stateRow >= 0);
@@ -526,7 +526,7 @@ test('reference lookup prefers local parameter over global', async () => {
 	const model = buildLuaSemanticModel(usageSource, 'usage.lua');
 	const layout = {
 		getSemanticModel: () => model,
-	} as unknown as ConsoleCodeLayout;
+	} as unknown as VMCodeLayout;
 
 	const helperLineIndex = usageLines.findIndex(line => line.includes('helper'));
 	assert.ok(helperLineIndex >= 0);
@@ -582,8 +582,8 @@ test('intellisense recognizes global variable from another file', async () => {
 	workspace.updateFile('usage.lua', usageSource);
 	workspace.updateFile('global.lua', globalSource);
 
-	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage' };
-	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', asset_id: 'global' };
+	const usageDescriptor: VMResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage' };
+	const globalDescriptor: VMResourceDescriptor = { path: 'global.lua', type: 'lua', asset_id: 'global' };
 
 	const usageContext: CodeTabContext = {
 		id: 'usage',

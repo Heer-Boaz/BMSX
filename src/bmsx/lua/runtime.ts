@@ -65,7 +65,7 @@ import {
 } from './value';
 import { LuaDebuggerController, type LuaDebuggerPauseReason } from './debugger';
 import { $ } from '../core/game';
-import { BmsxConsoleRuntime } from '../console/runtime';
+import { BmsxVMRuntime } from '../vm/vm_runtime';
 
 export type LuaCallFrame = {
 	readonly functionName: string;
@@ -124,7 +124,7 @@ export class LuaNativeFunction implements LuaFunctionValue {
 			if (isLuaDebuggerPauseSignal(error)) {
 				throw error;
 			}
-			BmsxConsoleRuntime.instance.interpreter.recordFaultCallStack();
+			BmsxVMRuntime.instance.interpreter.recordFaultCallStack();
 			throw error;
 		}
 	}

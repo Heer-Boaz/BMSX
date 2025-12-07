@@ -1,4 +1,4 @@
-import * as constants from '../console/ide/constants';
+import * as constants from '../vm/ide/constants';
 import { color } from "../render/gameview";
 import { vec2 } from "../rompack/rompack";
 

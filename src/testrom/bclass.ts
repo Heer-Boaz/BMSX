@@ -40,11 +40,11 @@ export class bclass extends SpriteObject {
 					states: {
 						'#blupperblop1': {
 							tick(this: bclass) { },
-							entering_state(this: bclass) { }, //console.log('enter blupperblop1'); },
+							entering_state(this: bclass) { }, //vm.log('enter blupperblop1'); },
 						},
 						blupperblop2: {
 							tick(this: bclass) { },
-							entering_state(this: bclass) { }, //console.log('enter blupperblop2'); },
+							entering_state(this: bclass) { }, //vm.log('enter blupperblop2'); },
 						},
 					},
 				},

@@ -296,7 +296,7 @@ export async function buildEngineRuntime(options: { debug: boolean }): Promise<v
 	const { debug } = options;
 	await mkdir('./rom', { recursive: true });
 	await build({
-		entryPoints: ['./src/bmsx/console/engine_entry.ts'],
+		entryPoints: ['./src/bmsx/vm/engine_entry.ts'],
 		bundle: true,
 		platform: 'browser',
 		format: 'iife',

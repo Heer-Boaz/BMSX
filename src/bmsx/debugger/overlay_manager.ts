@@ -1,4 +1,4 @@
-import { OverlayPipelineController } from '../core/pipelines/overlay_controller';
+import { OverlayPipelineController } from 'bmsx/core/pipelines/bmsx_vm_pipeline';
 
 class DebuggerOverlayManager {
 	private depth = 0;

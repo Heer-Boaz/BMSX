@@ -152,7 +152,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		 */
 		traceDispatch: true,
 		/** When true, also mirror diagnostics to the console for live debugging. */
-		mirrorToConsole: false,
+		mirrorToVM: false,
 	};
 
 	/** Simple path parse cache. */
@@ -183,7 +183,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		if (limit > 0 && list.length > limit) {
 			list.splice(0, list.length - limit);
 		}
-		if (diag.mirrorToConsole) {
+		if (diag.mirrorToVM) {
 			// eslint-disable-next-line no-console
 			console.debug(`[FSM:${id}] ${message}`);
 		}

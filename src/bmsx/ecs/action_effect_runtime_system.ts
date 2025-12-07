@@ -1,7 +1,7 @@
 import { $ } from '../core/game';
 import { ECSystem, TickGroup } from './ecsystem';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
-import { BmsxConsoleRuntime } from '../console/runtime';
+import { BmsxVMRuntime } from '../vm/vm_runtime';
 import { extractErrorMessage } from '../lua/value';
 
 export class ActionEffectRuntimeSystem extends ECSystem {
@@ -17,7 +17,7 @@ export class ActionEffectRuntimeSystem extends ECSystem {
 			} catch (error) {
 				const message = extractErrorMessage(error);
 				const ownerId = component.parent.id ? component.parent.id : '<unknown>';
-				const runtime = BmsxConsoleRuntime.instance;
+				const runtime = BmsxVMRuntime.instance;
 				if (runtime) {
 					runtime.handleLuaError(error);
 				}

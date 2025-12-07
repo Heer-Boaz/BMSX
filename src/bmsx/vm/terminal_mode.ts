@@ -1,0 +1,897 @@
+import type { color } from '../render/shared/render_types';
+import { Msx1Colors } from '../systems/msx';
+import { VMEditorFont } from './editor_font';
+import type { VMFontVariant } from './font';
+import { wrapOverlayLine, applyCaseOutsideStrings } from './ide/text_utils';
+import {
+	createInlineTextField,
+	applyInlineFieldEditing,
+	setFieldText,
+	selectionRange,
+	deleteSelection,
+	insertValue,
+	getFieldText,
+	getCursorOffset,
+	setCursorFromOffset,
+	selectionAnchorOffset,
+	setSelectionAnchorFromOffset,
+} from './ide/inline_text_field';
+import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext, LuaCompletionItem } from './ide/types';
+import { INITIAL_REPEAT_DELAY, REPEAT_INTERVAL, TAB_SPACES } from './ide/constants';
+import { VMRenderFacade } from './vm_render_facade';
+import { renderInlineCaret, type CaretDrawOps } from './ide/render/render_caret';
+import {
+	isKeyJustPressed as isKeyJustPressed,
+	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
+	clearKeyPressRecord,
+	isCtrlDown,
+	isMetaDown,
+	isAltDown
+} from './ide/ide_input';
+import { CompletionController } from './ide/completion_controller';
+import { collectLuaModuleAliases, consoleValueToString, listLuaObjectMembers } from './ide/intellisense';
+import { consumeIdeKey, getIdeKeyState } from './ide/ide_input';
+import type { asset_id, Viewport } from '../rompack/rompack';
+import { api, BmsxVMRuntime } from './vm_runtime';
+import { VMCommandDispatcher } from './console_commands';
+import { extractErrorMessage, LuaValue } from '../lua/value';
+
+type VMOutputKind =
+	| 'prompt'
+	| 'stdout'
+	| 'stdout_saved'
+	| 'stdout_dirty'
+	| 'stdout_saved_dirty'
+	| 'stderr'
+	| 'system';
+
+type VMOutputEntry = {
+	text: string;
+	color: number;
+};
+
+type CompletionMemberRequest = {
+	objectName: string;
+	operator: '.' | ':';
+	prefix: string;
+	asset_id: asset_id;
+	chunkName: string;
+};
+
+const MAX_OUTPUT_ENTRIES = 512;
+const MAX_HISTORY_ENTRIES = 256;
+// const PROMPT_GAP = 4;
+const PADDING_X = 0;
+const PADDING_Y = 0;
+const CHARACTER_TILE_ALPHA = 1.0;
+const CURSOR_BLINK_PERIOD = 0.5;
+
+const OUTPUT_COLORS: Record<VMOutputKind, number> = {
+	prompt: 15,
+	stdout: 15,
+	stdout_saved: 2,
+	stdout_dirty: 5,
+	stdout_saved_dirty: 13,
+	stderr: 9,
+	system: 11,
+};
+
+export class TerminalMode {
+	public font: VMEditorFont;
+	private readonly uppercaseDisplayOverride: boolean;
+	private readonly maxEntries: number;
+	private readonly characterBackgroundColor = { r: 0, g: 0, b: 0, a: CHARACTER_TILE_ALPHA } as color;
+	private readonly caretColor = Msx1Colors[15];
+	private readonly selectionColor = Msx1Colors[11];
+	private readonly field: TextField = createInlineTextField();
+	private readonly output: VMOutputEntry[] = [];
+	private readonly history: string[] = [];
+	private historyIndex: number = null;
+	private readonly editingRepeatState = new Map<string, number>();
+	private readonly historyRepeatState = new Map<string, number>();
+	private readonly completionRepeatState = new Map<string, number>();
+	private readonly consoleChunkName = '<console>';
+	private readonly completionContextToken = { chunk: this.consoleChunkName };
+	private readonly completion: CompletionController;
+	private blinkTimer = 0;
+	private caretVisible = true;
+	private active = false;
+	private textVersion = 0;
+	private readonly consoleCommands: VMCommandDispatcher;
+
+	private fieldText(): string {
+		return getFieldText(this.field);
+	}
+
+	private cursorOffset(): number {
+		return getCursorOffset(this.field);
+	}
+
+	private setCursorOffset(offset: number): void {
+		setCursorFromOffset(this.field, offset);
+	}
+
+	private anchorOffset(): number {
+		return selectionAnchorOffset(this.field);
+	}
+
+	private setSelectionAnchor(offset: number): void {
+		setSelectionAnchorFromOffset(this.field, offset);
+	}
+	private cachedLines: string[] = [''];
+	private cachedLinesVersion = -1;
+	private promptPrefix = '> ';
+	private cursorScreenInfo: CursorScreenInfo = null;
+	constructor(private readonly runtime: BmsxVMRuntime) {
+		this.consoleCommands = new VMCommandDispatcher(this.runtime);
+		this.setPromptPrefix(this.consoleCommands.getPrompt());
+
+		this.font = new VMEditorFont(runtime.activeIdeFontVariant);
+		this.uppercaseDisplayOverride = false;
+		this.maxEntries = MAX_OUTPUT_ENTRIES;
+		this.completion = new CompletionController({
+			isCodeTabActive: () => this.active,
+			getLines: () => this.getLinesSnapshot(),
+			getCursorRow: () => this.getCursorPosition().row,
+			getCursorColumn: () => this.getCursorPosition().column,
+			setCursorPosition: (row, column) => { this.setCursorFromPosition(row, column); },
+			setSelectionAnchor: (row, column) => { this.setSelectionAnchorFromPosition(row, column); },
+			replaceSelectionWith: (text) => { this.replaceSelectionWithText(text); },
+			updateDesiredColumn: () => { this.field.desiredColumn = this.field.cursorColumn; },
+			resetBlink: () => { this.resetBlink(); },
+			revealCursor: () => { },
+			characterAdvance: (char) => this.font.advance(char),
+			lineHeight: this.font.lineHeight,
+			measureText: (text) => this.measureDisplayText(text, this.useUppercaseDisplay()),
+			drawText: (text, x, y, color) => { api.write(text, x, y, undefined, color); },
+			getCursorScreenInfo: () => this.cursorScreenInfo,
+			getActiveCodeTabContext: () => (this.active ? this.completionContextToken : null),
+			resolveHoverasset_id: () => null,
+			resolveHoverChunkName: () => this.consoleChunkName,
+			getSemanticDefinitions: () => null,
+			getLuaModuleAliases: () => this.buildVMModuleAliases(),
+			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),
+			charAt: (row, column) => this.charAt(row, column),
+			getTextVersion: () => this.textVersion,
+			shouldFireRepeat: (code, deltaSeconds) => this.shouldRepeatKey(code, deltaSeconds, this.completionRepeatState),
+			shouldAutoTriggerCompletions: () => false,
+			shouldShowParameterHints: () => false,
+		});
+		this.completion.enterCommitsCompletion = true;
+	}
+
+	public activate(): void {
+		this.active = true;
+		this.resetInputField('');
+		this.historyIndex = null;
+		this.editingRepeatState.clear();
+		this.historyRepeatState.clear();
+		this.completion.closeSession();
+		this.blinkTimer = 0;
+		this.caretVisible = true;
+	}
+
+	public deactivate(): void {
+		this.active = false;
+	}
+
+	public setFontVariant(variant: VMFontVariant): void {
+		this.font = new VMEditorFont(variant);
+		this.cachedLinesVersion = -1;
+		this.resetBlink();
+	}
+
+	public get isActive(): boolean {
+		return this.active;
+	}
+
+	public clearOutput(): void {
+		this.output.length = 0;
+	}
+
+	public setPromptPrefix(prefix: string): void {
+		this.promptPrefix = prefix;
+	}
+
+	public appendPromptEcho(command: string): void {
+		this.appendEntry({ color: 15, text: `${this.promptPrefix}${command}` });
+	}
+
+	public appendStdout(text: string, color: number = 15): void {
+		this.appendEntry({ color, text });
+	}
+
+	public appendStderr(text: string): void {
+		this.appendEntry({ color: 6, text });
+	}
+
+	public appendSystem(text: string): void {
+		this.appendEntry({ color: 14, text });
+	}
+
+	public update(deltaSeconds: number): void {
+		if (!this.active) {
+			return;
+		}
+		this.blinkTimer += deltaSeconds;
+		if (this.blinkTimer >= CURSOR_BLINK_PERIOD) {
+			this.blinkTimer -= CURSOR_BLINK_PERIOD;
+		}
+		this.caretVisible = this.blinkTimer < CURSOR_BLINK_PERIOD * 0.5;
+		this.completion.processPending(deltaSeconds);
+	}
+
+	public async handleInput(deltaSeconds: number) {
+		if (!this.active) {
+			return null;
+		}
+		if (this.completion.handleKeybindings(deltaSeconds)) {
+			this.resetBlink();
+			return null;
+		}
+		const options: InlineInputOptions = { deltaSeconds, allowSpace: true };
+		const historyHandled = this.handleHistoryNavigation(deltaSeconds);
+		if (historyHandled) {
+			this.resetBlink();
+		}
+		const previousText = this.fieldText();
+		const previousCursor = this.cursorOffset();
+		const previousAnchor = this.anchorOffset();
+		const textChanged = applyInlineFieldEditing(this.field, options);
+		if (textChanged) {
+			const editContext = this.buildEditContext(previousText, this.fieldText());
+			this.handleTextMutation(previousText, editContext);
+		} else if (previousCursor !== this.cursorOffset() || previousAnchor !== this.anchorOffset()) {
+			this.completion.onCursorMoved();
+		}
+		const submit = this.trySubmitCommand();
+		if (submit !== null) {
+			this.completion.closeSession();
+			await this.handleVMCommand(submit);
+		}
+	}
+
+	private async handleVMCommand(rawCommand: string): Promise<void> {
+		const input = rawCommand ?? '';
+		this.setPromptPrefix(this.consoleCommands.getPrompt());
+		this.appendPromptEcho(input);
+		const trimmed = input.trim();
+		if (trimmed.length > 0) {
+			this.recordHistory(trimmed);
+		}
+		if (trimmed.length === 0) {
+			return;
+		}
+		try {
+			if (await this.consoleCommands.handle(trimmed)) {
+				return;
+			}
+		} catch (error) {
+			this.appendStderr(extractErrorMessage(error));
+			return;
+		}
+		this.executeVMCommand(trimmed);
+	}
+
+	private executeVMCommand(command: string): void {
+		const source = this.prepareVMChunk(command);
+		if (source.length === 0) {
+			return;
+		}
+		const interpreter = this.runtime.interpreter;
+
+		// Temporarily redirect print output to console mode
+		const previousOutputHandler = interpreter.outputHandler;
+		interpreter.outputHandler = (text: string) => {
+			this.appendStdout(text);
+		};
+
+		try {
+			let results: LuaValue[] = [];
+			try {
+				results = interpreter.execute(source, 'console');
+			}
+			catch (error) {
+				throw error;
+			}
+			if (results.length > 0) {
+				const summary = results.map(value => consoleValueToString(value)).join('\t');
+				this.appendStdout(summary);
+			}
+		}
+		catch (error) {
+			this.appendStderr(extractErrorMessage(error));
+		}
+		finally {
+			// Restore previous output handler
+			if (previousOutputHandler !== undefined) {
+				interpreter.outputHandler = previousOutputHandler;
+			} else {
+				interpreter.outputHandler = null;
+			}
+		}
+	}
+
+	private prepareVMChunk(command: string): string {
+		const trimmed = command.trim();
+		if (trimmed.length === 0) {
+			return '';
+		}
+		if (trimmed.startsWith('?')) {
+			const expression = trimmed.slice(1).trim();
+			return expression.length === 0 ? '' : `return ${expression}`;
+		}
+		if (trimmed.startsWith('=')) {
+			const expression = trimmed.slice(1).trim();
+			return expression.length === 0 ? '' : `return ${expression}`;
+		}
+		return trimmed;
+	}
+
+	public draw(renderer: VMRenderFacade, surface: Viewport): void {
+		const lineHeight = this.font.lineHeight;
+		const contentWidth = Math.max(0, surface.width - PADDING_X * 2);
+
+		// compute prompt layout and wrapped input segments
+		const uppercaseDisplay = this.useUppercaseDisplay();
+		const promptWidth = this.measureDisplayText(this.promptPrefix, uppercaseDisplay);
+		const firstLineMax = Math.max(8, contentWidth - promptWidth);
+		const otherLineMax = Math.max(8, contentWidth);
+		const displayInput = this.toDisplayText(this.fieldText(), uppercaseDisplay);
+		const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax);
+
+		// space available for output lines above the input area
+		const availableHeight = surface.height - PADDING_Y * 2 - (inputWrap.segments.length * lineHeight);
+		const maxContentLines = Math.max(1, Math.floor(availableHeight / lineHeight));
+
+		// build and clamp output lines
+		const wrappedLines = this.buildWrappedLines(contentWidth, maxContentLines);
+		const visibleStart = Math.max(0, wrappedLines.length - maxContentLines);
+		const visibleLines = wrappedLines.slice(visibleStart);
+
+		// draw visible output lines starting at top padding
+		let y = PADDING_Y;
+		for (const line of visibleLines) {
+			const color = line.color;
+			this.drawGlyphBackgrounds(renderer, line.text, PADDING_X, y, uppercaseDisplay);
+			this.drawGlyphRun(renderer, line.text, PADDING_X, y, Msx1Colors[color], uppercaseDisplay);
+			y += lineHeight;
+		}
+
+		// compute where input block starts (positioned right after visible output lines,
+		// so the input moves upward as output fills the viewport — terminal-like behavior)
+		const inputStartY = PADDING_Y + visibleLines.length * lineHeight;
+
+		// draw prompt at the first input line then draw wrapped input lines (first segment after prompt)
+		const promptColor = Msx1Colors[OUTPUT_COLORS.prompt];
+		this.drawGlyphBackgrounds(renderer, this.promptPrefix, PADDING_X, inputStartY, uppercaseDisplay);
+		this.drawGlyphRun(renderer, this.promptPrefix, PADDING_X, inputStartY, promptColor, uppercaseDisplay);
+
+		// draw multi-line input (handles selection and caret)
+		this.drawMultilineInput(renderer, PADDING_X, inputStartY, promptWidth, inputWrap);
+		this.drawCompletionOverlays(surface, promptWidth);
+	}
+
+	public recordHistory(command: string): void {
+		if (!command || command.trim().length === 0) {
+			this.historyIndex = null;
+			return;
+		}
+		this.history.push(command);
+		if (this.history.length > MAX_HISTORY_ENTRIES) {
+			this.history.shift();
+		}
+		this.historyIndex = null;
+	}
+
+	private appendEntry(entry: VMOutputEntry): void {
+		this.output.push(entry);
+		if (this.output.length > this.maxEntries) {
+			this.output.splice(0, this.output.length - this.maxEntries);
+		}
+	}
+
+	private handleHistoryNavigation(deltaSeconds: number): boolean {
+		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
+		if (ctrlDown || altDown || metaDown) {
+			return false;
+		}
+		if (this.history.length === 0) {
+			return false;
+		}
+		if (this.shouldRepeatKey('ArrowUp', deltaSeconds, this.historyRepeatState)) {
+			this.recallHistory(-1);
+			consumeIdeKey('ArrowUp');
+			return true;
+		}
+		if (this.shouldRepeatKey('ArrowDown', deltaSeconds, this.historyRepeatState)) {
+			this.recallHistory(1);
+			consumeIdeKey('ArrowDown');
+			return true;
+		}
+		return false;
+	}
+
+	private recallHistory(direction: -1 | 1): void {
+		if (this.history.length === 0) {
+			return;
+		}
+		if (this.historyIndex === null) {
+			this.historyIndex = this.history.length;
+		}
+		this.historyIndex = Math.min(this.history.length, Math.max(0, this.historyIndex + direction));
+		if (this.historyIndex === this.history.length) {
+			this.resetInputField('');
+			return;
+		}
+		const entry = this.history[this.historyIndex];
+		this.resetInputField(entry);
+	}
+
+	private trySubmitCommand(): string {
+		const enterPressed = isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter');
+		if (!enterPressed) {
+			return null;
+		}
+		consumeIdeKey('Enter');
+		consumeIdeKey('NumpadEnter');
+		const command = this.fieldText().trimEnd();
+		if (command.length === 0) {
+			this.resetBlink();
+			return null;
+		}
+		this.resetInputField('');
+		this.resetBlink();
+		return command;
+	}
+
+	private resetInputField(value: string): void {
+		const previous = this.fieldText();
+		setFieldText(this.field, value, true);
+		this.onExternalFieldMutation(previous, value);
+	}
+
+	private resetBlink(): void {
+		this.blinkTimer = 0;
+		this.caretVisible = true;
+	}
+
+	private buildWrappedLines(maxWidth: number, maxLines: number): Array<{ text: string; color: number }> {
+		const lines: Array<{ text: string; color: number }> = [];
+		for (let i = 0; i < this.output.length; i += 1) {
+			const entry = this.output[i];
+			const segments = this.wrapText(entry.text, maxWidth);
+			for (let j = 0; j < segments.length; j += 1) {
+				lines.push({ text: segments[j], color: entry.color });
+			}
+		}
+		if (lines.length > maxLines) {
+			return lines.slice(lines.length - maxLines);
+		}
+		return lines;
+	}
+
+	private wrapText(text: string, maxWidth: number): string[] {
+		if (text.length === 0) {
+			return [''];
+		}
+		const uppercaseDisplay = this.useUppercaseDisplay();
+		const normalized = this.toDisplayText(text, uppercaseDisplay);
+		return wrapOverlayLine(normalized, Math.max(8, maxWidth));
+	}
+
+	private shouldRepeatKey(code: string, deltaSeconds: number, state: Map<string, number>): boolean {
+		const buttonState = getIdeKeyState(code);
+		if (!buttonState || buttonState.pressed !== true) {
+			state.delete(code);
+			clearKeyPressRecord(code);
+			return false;
+		}
+		let cooldown = state.get(code);
+		if (cooldown === undefined) {
+			cooldown = INITIAL_REPEAT_DELAY;
+			state.set(code, cooldown);
+		}
+		if (shouldAcceptKeyPressGlobal(code, buttonState)) {
+			state.set(code, INITIAL_REPEAT_DELAY);
+			return true;
+		}
+		const nextCooldown = cooldown - deltaSeconds;
+		if (nextCooldown <= 0) {
+			state.set(code, REPEAT_INTERVAL);
+			return true;
+		}
+		state.set(code, nextCooldown);
+		return false;
+	}
+
+	private getLinesSnapshot(): string[] {
+		if (this.cachedLinesVersion !== this.textVersion) {
+			this.cachedLines = this.field.lines.slice();
+			this.cachedLinesVersion = this.textVersion;
+		}
+		if (this.cachedLines.length === 0) {
+			this.cachedLines = [''];
+		}
+		return this.cachedLines;
+	}
+
+	private getCursorPosition(): { row: number; column: number } {
+		return { row: this.field.cursorRow, column: this.field.cursorColumn };
+	}
+
+	private positionToIndex(row: number, column: number): number {
+		const lines = this.getLinesSnapshot();
+		let index = 0;
+		for (let current = 0; current < row && current < lines.length; current += 1) {
+			index += lines[current].length + 1;
+		}
+		const targetRow = Math.min(row, lines.length - 1);
+		const rowText = lines[targetRow] ?? '';
+		const clampedColumn = Math.max(0, Math.min(column, rowText.length));
+		return index + clampedColumn;
+	}
+
+	private setCursorFromPosition(row: number, column: number): void {
+		const index = this.positionToIndex(row, column);
+		this.setCursorOffset(index);
+		this.field.selectionAnchor = null;
+		this.completion.onCursorMoved();
+	}
+
+	private setSelectionAnchorFromPosition(row: number, column: number): void {
+		const index = this.positionToIndex(row, column);
+		this.setSelectionAnchor(index);
+		this.completion.onCursorMoved();
+	}
+
+	private replaceSelectionWithText(text: string): void {
+		const previous = this.fieldText();
+		deleteSelection(this.field);
+		if (text.length > 0) {
+			insertValue(this.field, text);
+		}
+		const context = text.length > 0 ? { kind: 'insert', text } as EditContext : this.buildEditContext(previous, this.fieldText());
+		this.handleTextMutation(previous, context);
+	}
+
+	private buildEditContext(previous: string, next: string): EditContext {
+		if (previous === next) {
+			return null;
+		}
+		let start = 0;
+		while (start < previous.length && start < next.length && previous.charAt(start) === next.charAt(start)) {
+			start += 1;
+		}
+		let endPrev = previous.length;
+		let endNext = next.length;
+		while (endPrev > start && endNext > start && previous.charAt(endPrev - 1) === next.charAt(endNext - 1)) {
+			endPrev -= 1;
+			endNext -= 1;
+		}
+		if (next.length >= previous.length) {
+			const inserted = next.slice(start, endNext);
+			return inserted.length > 0 ? { kind: 'insert', text: inserted } : null;
+		}
+		const deleted = previous.slice(start, endPrev);
+		return deleted.length > 0 ? { kind: 'delete', text: deleted } : null;
+	}
+
+	private handleTextMutation(previousText: string, editContext: EditContext): void {
+		if (this.runtime.canonicalization !== 'none') {
+			const before = this.fieldText();
+			const normalized = this.normalizeInputCase(before);
+			if (normalized !== before) {
+				const offset = this.cursorOffset();
+				setFieldText(this.field, normalized, false);
+				this.setCursorOffset(Math.min(offset, getFieldText(this.field).length));
+			}
+		}
+		const context = previousText !== null ? this.buildEditContext(previousText, this.fieldText()) : editContext;
+		this.textVersion += 1;
+		this.cachedLinesVersion = -1;
+		this.completion.updateAfterEdit(context);
+		this.completion.onCursorMoved();
+	}
+
+	private onExternalFieldMutation(previous: string, next: string): void {
+		if (previous === next) {
+			return;
+		}
+		this.handleTextMutation(previous, null);
+	}
+
+	private charAt(row: number, column: number): string {
+		const lines = this.getLinesSnapshot();
+		if (row < 0 || row >= lines.length) {
+			return '';
+		}
+		const line = lines[row];
+		if (column < 0 || column >= line.length) {
+			return '';
+		}
+		return line.charAt(column);
+	}
+
+	private normalizeInputCase(text: string): string {
+		if (this.runtime.canonicalization === 'none') {
+			return text;
+		}
+
+		const transform = this.runtime.canonicalization === 'upper'
+			? (ch: string) => ch.toUpperCase()
+			: (ch: string) => ch.toLowerCase();
+		return applyCaseOutsideStrings(text, transform);
+	}
+
+	private drawCompletionOverlays(surface: Viewport, promptWidth: number): void {
+		const bounds = {
+			codeTop: PADDING_Y,
+			codeBottom: surface.height - PADDING_Y,
+			codeLeft: PADDING_X,
+			codeRight: surface.width - PADDING_X,
+			textLeft: PADDING_X + promptWidth,
+		};
+		this.completion.drawCompletionPopup(bounds);
+		this.completion.drawParameterHintOverlay(bounds);
+	}
+
+	private buildVMModuleAliases(): Map<string, string> {
+		if (this.fieldText().trim().length === 0) {
+			return new Map();
+		}
+		return collectLuaModuleAliases({ source: this.fieldText(), chunkName: this.consoleChunkName });
+	}
+
+	private buildMemberCompletionItems(request: CompletionMemberRequest): LuaCompletionItem[] {
+		if (request.objectName.length === 0) {
+			return [];
+		}
+		const response = listLuaObjectMembers({
+			chunkName: request.chunkName,
+			expression: request.objectName,
+			operator: request.operator,
+		});
+		if (response.length === 0) {
+			return [];
+		}
+		const items: LuaCompletionItem[] = [];
+		for (let index = 0; index < response.length; index += 1) {
+			const entry = response[index];
+			if (!entry || entry.name.length === 0) {
+				continue;
+			}
+			const kind = entry.kind === 'method' ? 'native_method' : 'native_property';
+			const parameters = entry.parameters.length > 0 ? entry.parameters.slice() : undefined;
+			items.push({
+				label: entry.name,
+				insertText: entry.name,
+				sortKey: `${kind}:${entry.name.toLowerCase()}`,
+				kind,
+				detail: entry.detail,
+				parameters,
+			});
+		}
+		items.sort((a, b) => a.label.localeCompare(b.label));
+		return items;
+	}
+
+	// New helper: wraps display text with a smaller first-line width (after prompt) and full width for following lines.
+	private wrapDisplayWithFirstWidth(text: string, firstWidth: number, otherWidth: number): { segments: string[]; starts: number[] } {
+		const segments: string[] = [];
+		const starts: number[] = [];
+		let current = '';
+		let currentWidth = 0;
+		let widthLimit = firstWidth;
+		let segStart = 0;
+
+		for (let i = 0; i < text.length; i += 1) {
+			const ch = text.charAt(i);
+			// treat newline as explicit break
+			if (ch === '\n') {
+				segments.push(current);
+				starts.push(segStart);
+				current = '';
+				currentWidth = 0;
+				segStart = i + 1;
+				widthLimit = otherWidth;
+				continue;
+			}
+			const adv = ch === '\t' ? this.font.advance(' ') * TAB_SPACES : this.font.advance(ch);
+			if (currentWidth + adv > widthLimit) {
+				if (current.length > 0) {
+					segments.push(current);
+					starts.push(segStart);
+					current = ch;
+					currentWidth = adv;
+					segStart = i;
+				} else {
+					segments.push(ch);
+					starts.push(i);
+					current = '';
+					currentWidth = 0;
+					segStart = i + 1;
+				}
+				widthLimit = otherWidth;
+				continue;
+			}
+			current += ch;
+			currentWidth += adv;
+		}
+		if (current.length > 0 || text.endsWith('\n')) {
+			segments.push(current);
+			starts.push(segStart);
+		}
+		// ensure at least one segment
+		if (segments.length === 0) {
+			segments.push('');
+			starts.push(0);
+		}
+		return { segments, starts };
+	}
+
+	// Replace single-line drawInputField with multi-line aware renderer
+	private drawMultilineInput(renderer: VMRenderFacade, baseX: number, baseY: number, promptWidth: number, wrap: { segments: string[]; starts: number[] }): void {
+		const inputColor = Msx1Colors[OUTPUT_COLORS.stdout];
+		const sel = selectionRange(this.field);
+		const cursorIndex = this.cursorOffset();
+		const uppercaseDisplay = this.useUppercaseDisplay();
+		const displayText = this.toDisplayText(this.fieldText(), uppercaseDisplay);
+		let nextCursorInfo: CursorScreenInfo = null;
+		const cursorPosition = this.getCursorPosition();
+
+		for (let si = 0; si < wrap.segments.length; si += 1) {
+			const seg = wrap.segments[si];
+			const segStart = wrap.starts[si];
+			const segLen = seg.length;
+			const y = baseY + si * this.font.lineHeight;
+			let x = baseX;
+			// first segment is placed after the prompt
+			if (si === 0) {
+				x += promptWidth;
+			}
+
+			// draw glyph backgrounds before overlays/text so selection remains visible
+			this.drawGlyphBackgrounds(renderer, seg, x, y, uppercaseDisplay);
+
+			// draw selection background for this segment if selection overlaps
+			if (sel) {
+				const selStart = Math.max(sel.start, segStart);
+				const selEnd = Math.min(sel.end, segStart + segLen);
+				if (selStart < selEnd) {
+					const before = displayText.slice(segStart, selStart);
+					const selected = displayText.slice(selStart, selEnd);
+					const startWidth = this.measureDisplayText(before, uppercaseDisplay);
+					const selWidth = this.measureDisplayText(selected, uppercaseDisplay);
+						renderer.rect({
+							kind: 'fill',
+							area: {
+								left: x + startWidth,
+								top: y,
+								right: x + startWidth + selWidth,
+								bottom: y + this.font.lineHeight,
+							},
+							color: this.selectionColor,
+						});
+					}
+				}
+
+			// draw the glyph run for this segment
+			this.drawGlyphRun(renderer, seg, x, y, inputColor, uppercaseDisplay);
+
+			// caret rendering: use shared caret style from console_cart_editor
+			const segEnd = segStart + segLen;
+			const isLastSegment = si === wrap.segments.length - 1;
+			const caretInSeg = cursorIndex >= segStart && (cursorIndex < segEnd || (isLastSegment && cursorIndex === segEnd));
+			if (caretInSeg) {
+				const local = displayText.slice(segStart, cursorIndex);
+				const caretOffset = this.measureDisplayText(local, uppercaseDisplay);
+				const nextChar = cursorIndex < displayText.length ? displayText.charAt(cursorIndex) : ' ';
+				const caretWidth = this.font.advance(nextChar);
+				const left = Math.floor(x + caretOffset);
+				const topY = y;
+				const right = left + Math.max(1, Math.floor(caretWidth));
+				const bottom = topY + this.font.lineHeight;
+				nextCursorInfo = {
+					row: cursorPosition.row,
+					column: cursorPosition.column,
+					x: left,
+					y: topY,
+					width: Math.max(1, Math.floor(caretWidth)),
+					height: this.font.lineHeight,
+					baseChar: nextChar,
+					baseColor: OUTPUT_COLORS.stdout,
+				};
+				if (this.caretVisible) {
+					const renderFont = this.font.renderFont();
+						const ops: CaretDrawOps = {
+							fillRect: (x0, y0, x1, y1, color) => renderer.rect({
+								kind: 'fill',
+								area: { left: x0, top: y0, right: x1, bottom: y1 },
+								color,
+							}),
+							strokeRect: (x0, y0, x1, y1, color) => renderer.rect({
+								kind: 'rect',
+								area: { left: x0, top: y0, right: x1, bottom: y1 },
+								color,
+							}),
+							drawGlyph: (text, gx, gy, color) => renderer.glyphs({ glyphs: text, x: gx, y: gy, z: 0, color, font: renderFont }),
+						};
+						renderInlineCaret(ops, left, topY, right, bottom, left, true, this.caretColor, nextChar, this.characterBackgroundColor);
+					}
+				}
+			}
+
+		if (nextCursorInfo) {
+			this.cursorScreenInfo = nextCursorInfo;
+		}
+	}
+
+	private drawGlyphBackgrounds(renderer: VMRenderFacade, text: string, originX: number, originY: number, uppercase: boolean): void {
+		const display = this.toDisplayText(text, uppercase);
+		let cursorX = originX;
+		for (let i = 0; i < display.length; i += 1) {
+			const ch = display.charAt(i);
+			if (ch === '\t') {
+				cursorX += this.font.advance(' ') * TAB_SPACES;
+				continue;
+			}
+			if (ch === '\n') {
+				continue;
+			}
+			const advance = this.font.advance(ch);
+				renderer.rect({
+					kind: 'fill',
+					area: {
+						left: cursorX,
+						top: originY,
+						right: cursorX + advance,
+						bottom: originY + this.font.lineHeight,
+					},
+					color: this.characterBackgroundColor,
+				});
+				cursorX += advance;
+			}
+		}
+
+	private drawGlyphRun(renderer: VMRenderFacade, text: string, originX: number, originY: number, tint: color, uppercase: boolean): void {
+		const renderFont = this.font.renderFont();
+		const display = this.toDisplayText(text, uppercase);
+		let cursorX = originX;
+		for (let i = 0; i < display.length; i += 1) {
+			const ch = display.charAt(i);
+			if (ch === '\t') {
+				cursorX += this.font.advance(' ') * TAB_SPACES;
+				continue;
+			}
+			if (ch === '\n') {
+				continue;
+			}
+			const advance = this.font.advance(ch);
+			if (ch !== ' ') {
+					renderer.glyphs({ glyphs: ch, x: cursorX, y: originY, z: 0, color: tint, font: renderFont });
+				}
+			cursorX += advance;
+		}
+	}
+
+	private toDisplayText(value: string, uppercase: boolean): string {
+		if (uppercase && this.runtime.canonicalization !== 'none') {
+			return applyCaseOutsideStrings(value, (ch) => ch.toUpperCase());
+		}
+		return value;
+	}
+
+	private measureDisplayText(value: string, uppercase: boolean): number {
+		if (!value) {
+			return 0;
+		}
+		// Match renderer/tab handling: expand tabs to TAB_SPACES spaces before measuring
+		const display = this.toDisplayText(value, uppercase).replace(/\t/g, ' '.repeat(TAB_SPACES));
+		return this.font.measure(display);
+	}
+
+	private useUppercaseDisplay(): boolean {
+		return this.font.variant === 'tiny' || this.uppercaseDisplayOverride;
+	}
+}

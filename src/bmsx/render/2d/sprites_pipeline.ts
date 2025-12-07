@@ -40,7 +40,7 @@ import { $ } from '../../core/game';
 import { bvec } from './vertexutils2d';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
-import { drainOverlayFrameIntoSpriteQueue } from '../../console/console_render_facade';
+import { drainOverlayFrameIntoSpriteQueue } from '../../vm/vm_render_facade';
 import {
 	beginSpriteQueue,
 	forEachSprite,

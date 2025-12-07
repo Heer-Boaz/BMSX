@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeTabContext, SearchMatch } from '../../src/bmsx/console/ide/types';
-import type { ConsoleResourceDescriptor } from '../../src/bmsx/console/types';
-import { LuaSemanticWorkspace } from '../../src/bmsx/console/ide/semantic_workspace';
-import { CrossFileRenameManager, convertRangeToSearchMatch, type CrossFileRenameDependencies } from '../../src/bmsx/console/ide/rename_controller';
+import type { CodeTabContext, SearchMatch } from '../../src/bmsx/vm/ide/types';
+import type { VMResourceDescriptor } from '../../src/bmsx/vm/types';
+import { LuaSemanticWorkspace } from '../../src/bmsx/vm/ide/semantic_workspace';
+import { CrossFileRenameManager, convertRangeToSearchMatch, type CrossFileRenameDependencies } from '../../src/bmsx/vm/ide/rename_controller';
 
 function normalizeSource(source: string): string[] {
 	return source.replace(/\r\n/g, '\n').split('\n');
@@ -30,7 +30,7 @@ test('cross file rename updates other chunks and workspace', () => {
 
 	const contexts = new Map<string, CodeTabContext>();
 
-	const makeContext = (descriptor: ConsoleResourceDescriptor): CodeTabContext => ({
+	const makeContext = (descriptor: VMResourceDescriptor): CodeTabContext => ({
 		id: `lua:${descriptor.asset_id}`,
 		title: descriptor.asset_id,
 		descriptor,

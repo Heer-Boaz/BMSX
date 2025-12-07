@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 test('restoreFromStateSnapshot does not clear colliders or physics', () => {
-  const src = readFileSync('src/bmsx/console/runtime.ts', 'utf8');
+  const src = readFileSync('src/bmsx/vm/runtime.ts', 'utf8');
   const start = src.indexOf('private restoreFromStateSnapshot');
   assert.ok(start > -1, 'restoreFromStateSnapshot not found');
   const end = src.indexOf('private shouldRunInitForSnapshot', start);
@@ -14,7 +14,7 @@ test('restoreFromStateSnapshot does not clear colliders or physics', () => {
 });
 
 test('prefetchLuaSourceFromFilesystem soft-applies without boot()', () => {
-  const src = readFileSync('src/bmsx/console/runtime.ts', 'utf8');
+  const src = readFileSync('src/bmsx/vm/runtime.ts', 'utf8');
   const start = src.indexOf('private async prefetchLuaSourceFromFilesystem');
   assert.ok(start > -1, 'prefetchLuaSourceFromFilesystem not found');
   // Slice until the next private method to approximate the function body
@@ -27,7 +27,7 @@ test('prefetchLuaSourceFromFilesystem soft-applies without boot()', () => {
 });
 
 test('initializeLuaInterpreterFromSnapshot reloads lua integrations', () => {
-  const src = readFileSync('src/bmsx/console/runtime.ts', 'utf8');
+  const src = readFileSync('src/bmsx/vm/runtime.ts', 'utf8');
   const start = src.indexOf('private initializeLuaInterpreterFromSnapshot');
   assert.ok(start > -1, 'initializeLuaInterpreterFromSnapshot not found');
   const nextPrivate = src.indexOf('\n\tprivate ', start + 1);
@@ -38,7 +38,7 @@ test('initializeLuaInterpreterFromSnapshot reloads lua integrations', () => {
 });
 
 test('reloadLuaProgramState applies hot reload without reinitialising interpreter', () => {
-  const src = readFileSync('src/bmsx/console/runtime.ts', 'utf8');
+  const src = readFileSync('src/bmsx/vm/runtime.ts', 'utf8');
   const start = src.indexOf('private reloadLuaProgramState');
   assert.ok(start > -1, 'reloadLuaProgramState not found');
   const nextPrivate = src.indexOf('\n\tprivate ', start + 1);
@@ -48,7 +48,7 @@ test('reloadLuaProgramState applies hot reload without reinitialising interprete
 });
 
 test('applyLuaProgramHotReload keeps interpreter resident', () => {
-  const src = readFileSync('src/bmsx/console/runtime.ts', 'utf8');
+  const src = readFileSync('src/bmsx/vm/runtime.ts', 'utf8');
   const start = src.indexOf('private applyLuaProgramHotReload');
   assert.ok(start > -1, 'applyLuaProgramHotReload not found');
   const nextPrivate = src.indexOf('\n\tprivate ', start + 1);
@@ -59,7 +59,7 @@ test('applyLuaProgramHotReload keeps interpreter resident', () => {
 });
 
 test('registerAbilityDefinition uses Lua handler metadata', () => {
-	const src = readFileSync('src/bmsx/console/runtime.ts', 'utf8');
+	const src = readFileSync('src/bmsx/vm/runtime.ts', 'utf8');
 	const start = src.indexOf('public registerAbilityDefinition');
 	assert.ok(start > -1, 'registerAbilityDefinition not found');
 	const nextPublic = src.indexOf('\n\tpublic ', start + 1);

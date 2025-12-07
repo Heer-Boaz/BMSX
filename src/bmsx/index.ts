@@ -22,7 +22,7 @@ export * from './core/object/pooledworldobject';
 export * from './core/object/sprite';
 export * from './core/object/wavemanager';
 export * from './core/object/worldobject';
-export * from './core/pipelines/gameplay';
+export * from './core/pipelines/gameplay_pipeline';
 export * from './core/registry';
 export * from './core/replay/gameplayeventrecorder';
 export * from './core/service';

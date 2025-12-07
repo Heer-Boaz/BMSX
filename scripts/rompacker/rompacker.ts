@@ -358,7 +358,7 @@ function parseOptions(args: string[]): ParsedOptions {
 		cartBootloaderFound = true;
 	}
 
-	const consoleBootloaderPath = normalizePathKey('./src/bmsx/console/default_cart');
+	const consoleBootloaderPath = normalizePathKey('./src/bmsx/vm/default_cart');
 	const bootloaderFile = join(normalizePathKey(bootloader_path), 'bootloader.ts');
 	let bootloaderFallbackApplied = false;
 	if (!existsSync(bootloaderFile)) {
