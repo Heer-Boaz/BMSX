@@ -224,7 +224,7 @@ export class Game {
 	public emit(arg0: GameEvent | string, emitter?: Identifiable, payload?: EventPayload): void {
 		if (typeof arg0 === 'string') {
 			if (payload && typeof payload !== 'object') throw new Error(`[Game.emit] Payload for '${arg0}' must be an object.`);
-			const event = create_gameevent({ type: arg0, emitter: emitter , ...(payload ?? {}) });
+			const event = create_gameevent({ type: arg0, emitter: emitter, ...(payload ?? {}) });
 			this.emit(event);
 			return;
 		}
@@ -383,7 +383,7 @@ export class Game {
 		this._cart = deep_clone(rompack.cart); // Clone the cart to allow workspace overrides without modifying the original rompack
 		GameView.imgassets = rompack.img;
 		EventEmitter.instance; // Init event emitter
-		Input.initialize(startingGamepadIndex ); // Init input module
+		Input.initialize(startingGamepadIndex); // Init input module
 		if (enableOnscreenGamepad || this.input.isOnscreenGamepadEnabled) {
 			this.input.enableOnscreenGamepad();
 		}
@@ -605,6 +605,7 @@ export class Game {
 	 * @returns void
 	 */
 	public update(deltaTime: number): void {
+		let failed = false;
 		// Step physics first so world object logic can react to post-collision resolved positions.
 		try {
 			$.world.run(deltaTime);
@@ -617,20 +618,23 @@ export class Game {
 					vmRuntime.abandonFrameState();
 				} catch { /* ignore secondary failures, but log them */
 					console.error(`Error while handling surfaced game error in console runtime: ${error}`);
+					// Abort the remainder of this update to keep state coherent this frame.
+					vmRuntime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
+					failed = true;
 				}
 			}
-			// Abort the remainder of this update to keep state coherent this frame.
-			return;
 		}
 
-		if (REWIND_BUFFER_ACTIVATED && ($._turnCounter % REWIND_BUFFER_WRITE_FREQUENCY === 0)) {
-			// --- Rewind snapshot logic ---
-			try {
-				const snapshot = $.save(false);
-				const compressedSnapshot = BinaryCompressor.compressBinary(snapshot, { disableLZ77: false, disableRLE: false });
-				this.rewindBuffer.push(this.turnCounter, compressedSnapshot);
-			} catch (e) {
-				console.warn('Rewind snapshot failed:', e);
+		if (!failed) { // Only store a rewind snapshot if the update succeeded to avoid corrupt states
+			if (REWIND_BUFFER_ACTIVATED && ($._turnCounter % REWIND_BUFFER_WRITE_FREQUENCY === 0)) {
+				// --- Rewind snapshot logic ---
+				try {
+					const snapshot = $.save(false);
+					const compressedSnapshot = BinaryCompressor.compressBinary(snapshot, { disableLZ77: false, disableRLE: false });
+					this.rewindBuffer.push(this.turnCounter, compressedSnapshot);
+				} catch (e) {
+					console.warn('Rewind snapshot failed:', e);
+				}
 			}
 		}
 		if ($.debug_runSingleFrameAndPause) {
@@ -649,33 +653,49 @@ export class Game {
 	private run = (currentTime: number): void => {
 		if (!this.running) return;
 
-		Input.instance.pollInput();
+		try {
+			Input.instance.pollInput();
 
-		this.deltatime = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
-		this.last_update = currentTime;
+			this.deltatime = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
+			this.last_update = currentTime;
 
-		if (this._paused) {
-			this.accumulated_time = 0;
-			this.world.runTickGroups([TickGroup.Presentation, TickGroup.EventFlush]);
-			this.view.drawgame();
-			return;
-		}
+			if (this._paused) {
+				this.accumulated_time = 0;
+				this.world.runTickGroups([TickGroup.Presentation, TickGroup.EventFlush]);
+				this.view.drawgame();
+				return;
+			}
 
-		this.accumulated_time += this.deltatime;
-		this.wasupdated = false;
+			this.accumulated_time += this.deltatime;
+			this.wasupdated = false;
 
-		let steps = 0;
-		while (this.accumulated_time >= this.update_interval && steps < MAX_SUBSTEPS) {
-			if (!this.paused) {
-				if (runGate.ready) {
-					this.update(this.update_interval);
-				} else {
-					this.accumulated_time = 0;
-					break;
+			let steps = 0;
+			while (this.accumulated_time >= this.update_interval && steps < MAX_SUBSTEPS) {
+				if (!this.paused) {
+					if (runGate.ready) {
+						this.update(this.update_interval);
+					} else {
+						this.accumulated_time = 0;
+						break;
+					}
+				}
+				this.accumulated_time -= this.update_interval;
+				++steps;
+			}
+		} catch (error) {
+			// Surface engine/runtime errors to the in-game terminal when active
+			const vmRuntime = BmsxVMRuntime.instance;
+			if (vmRuntime) {
+				try {
+					vmRuntime.handleLuaError(error);
+					vmRuntime.abandonFrameState();
+				} catch { /* ignore secondary failures, but log them */
+					console.error(`Error while handling surfaced game error in console runtime: ${error}`);
+					// Abort the remainder of this update to keep state coherent this frame.
+					vmRuntime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
+					this.wasupdated = true; // Force a redraw to show the error state and prevent freezing the game
 				}
 			}
-			this.accumulated_time -= this.update_interval;
-			++steps;
 		}
 
 		if (this.wasupdated) {
