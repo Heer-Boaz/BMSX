@@ -531,7 +531,6 @@ function draw()
 	local target_instance = world_object(collision_target_instance_id)
 	draw_collision_target(target_instance)
 	draw_hero(hero_instance)
-	assert(false)
 	draw_hud(hero_instance)
 	extra()
 end

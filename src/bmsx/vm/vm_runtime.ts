@@ -165,6 +165,7 @@ export class BmsxVMRuntime extends Service {
 	public get debuggerSuspendSignal(): LuaDebuggerPauseSignal {
 		return this.luaDebuggerSuspension;
 	}
+	private readonly debuggerEnabled = false;
 	private debuggerHaltsGame = false;
 	private debuggerAutoActivateOnNextPause = false;
 	private overlayState = { console: false, editor: false };
@@ -264,10 +265,15 @@ export class BmsxVMRuntime extends Service {
 			deserializeNative: (token) => token as object | Function,
 		});
 		interpreter.setRequireHandler((ctx, module) => this.requireLuaModule(ctx, module));
-		interpreter.attachDebugger(this.luaDebuggerController);
+		if (this.debuggerEnabled) {
+			interpreter.attachDebugger(this.luaDebuggerController);
+		}
 	}
 
 	private onLuaDebuggerPause(signal: LuaDebuggerPauseSignal): void {
+		if (!this.debuggerEnabled) {
+			return;
+		}
 		if (this.luaDebuggerSuspension === signal) {
 			return;
 		}
@@ -333,6 +339,9 @@ export class BmsxVMRuntime extends Service {
 		details: { chunkName: string; line: number; column: number },
 		callStackOverride?: ReadonlyArray<LuaCallFrame>,
 	): void {
+		if (!this.debuggerEnabled) {
+			return;
+		}
 		const controller = this.luaDebuggerController;
 		const interpreter = this.luaInterpreter;
 		const callStack =
@@ -377,6 +386,9 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private resumeLuaDebugger(command: LuaDebuggerResumeCommand, options?: { stepDepthOverride?: number }): void {
+		if (!this.debuggerEnabled) {
+			return;
+		}
 		const suspension = this.luaDebuggerSuspension;
 		const controller = this.luaDebuggerController;
 		const interpreter = this.luaInterpreter;
@@ -433,6 +445,9 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	public resumeDebugger(command: LuaDebuggerResumeCommand): void {
+		if (!this.debuggerEnabled) {
+			return;
+		}
 		const suspension = this.luaDebuggerSuspension;
 		let options: { stepDepthOverride?: number };
 		if (command === 'step_out' || command === 'step_out_exception') {
@@ -443,6 +458,9 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	public setLuaBreakpoints(breakpoints: ReadonlyMap<string, ReadonlySet<number>>): void {
+		if (!this.debuggerEnabled) {
+			return;
+		}
 		const controller = this.luaDebuggerController;
 		controller.setBreakpoints(breakpoints);
 	}
@@ -517,6 +535,9 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private handleGlobalDebuggerHotkeys(): boolean {
+		if (!this.debuggerEnabled) {
+			return false;
+		}
 		if (this.shouldAcceptVMHotkey('debugger-f8-step', 'F8', KeyModifier.ctrl)) {
 			$.consume_button(this.playerIndex, 'F8', 'keyboard');
 			console.log(`[LuaDebugger] Global F8 hotkey detected (suspended=${this.luaDebuggerSuspension ? 'yes' : 'no'}).`);
@@ -527,6 +548,9 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private beginGlobalDebuggerStepping(): void {
+		if (!this.debuggerEnabled) {
+			return;
+		}
 		if (this.luaDebuggerSuspension) {
 			console.log('[LuaDebugger] Global F8 step-over requested while suspended.');
 			if (this.editor?.isActive !== true) {
@@ -962,8 +986,11 @@ export class BmsxVMRuntime extends Service {
 						this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
 					}
 					else {
+						const interpreter = this.luaInterpreter;
 						try {
-							this.invokeLuaFunction?.(this.luaDrawFunction, []);
+							interpreter.pushProgramCounter();
+							this.invokeLuaFunction(this.luaDrawFunction, []);
+							this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
 						} catch (error) {
 							this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
 
@@ -972,6 +999,8 @@ export class BmsxVMRuntime extends Service {
 							} else {
 								this.handleLuaError(error);
 							}
+						} finally {
+							interpreter.popProgramCounter();
 						}
 					}
 				}
@@ -1027,6 +1056,9 @@ export class BmsxVMRuntime extends Service {
 			}
 			if (vmState.randomSeed !== undefined) {
 				state.luaRandomSeed = vmState.randomSeed;
+			}
+			if (vmState.programCounter !== undefined) {
+				state.luaProgramCounter = vmState.programCounter;
 			}
 		}
 		return state;
@@ -1405,16 +1437,18 @@ export class BmsxVMRuntime extends Service {
 		this.luaGenericChunksExecuted.delete(chunkName);
 	}
 
-	private captureVmState(): { globals?: LuaEntrySnapshot; locals?: LuaEntrySnapshot; randomSeed?: number } {
+	private captureVmState(): { globals?: LuaEntrySnapshot; locals?: LuaEntrySnapshot; randomSeed?: number; programCounter?: number } {
 		const interpreter = this.luaInterpreter;
 		if (!this.luaVmInitialized || !interpreter?.chunkEnvironment) return null;
 		const globals = this.captureLuaEntryCollection(interpreter.enumerateGlobalEntries());
 		const locals = this.captureLuaEntryCollection(interpreter.enumerateChunkEntries());
 		const randomSeed = interpreter.getRandomSeed();
+		const programCounter = interpreter.programCounter;
 		return {
 			globals: globals,
 			locals: locals,
 			randomSeed: randomSeed,
+			programCounter: programCounter,
 		};
 	}
 
@@ -1550,6 +1584,9 @@ export class BmsxVMRuntime extends Service {
 		const interpreter = this.luaInterpreter;
 		if (snapshot.luaRandomSeed !== undefined) {
 			interpreter.setRandomSeed(snapshot.luaRandomSeed);
+		}
+		if (snapshot.luaProgramCounter !== undefined) {
+			interpreter.programCounter = snapshot.luaProgramCounter;
 		}
 		if (snapshot.luaGlobals) {
 			this.restoreLuaGlobals(snapshot.luaGlobals);

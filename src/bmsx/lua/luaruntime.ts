@@ -8,7 +8,6 @@ import {
 import type {
 	LuaAssignableExpression,
 	LuaAssignmentStatement,
-	LuaBlock,
 	LuaBooleanLiteralExpression,
 	LuaBinaryExpression,
 	LuaCallExpression,
@@ -89,15 +88,6 @@ export type ExecutionSignal =
 
 const NORMAL_SIGNAL: ExecutionSignal = { kind: 'normal' };
 
-type DebuggerPauseContext = {
-	readonly controller: LuaDebuggerController;
-	readonly chunk: string;
-	readonly line: number;
-	readonly column: number;
-	readonly depth: number;
-	readonly reason: LuaDebuggerPauseReason;
-};
-
 export type LuaExceptionResumeStrategy = 'propagate' | 'skip_statement';
 
 export interface LuaHostAdapter {
@@ -173,6 +163,70 @@ type LabelScope = {
 	readonly parent: LabelScope;
 };
 
+type FrameBoundary = 'chunk' | 'function' | 'block';
+
+type StatementsFrame = {
+	readonly kind: 'statements';
+	statements: ReadonlyArray<LuaStatement>;
+	index: number;
+	environment: LuaEnvironment;
+	varargs: ReadonlyArray<LuaValue>;
+	scope: LabelScope;
+	boundary: FrameBoundary;
+	callFramePushed: boolean;
+	callRange: LuaSourceRange;
+};
+
+type WhileFrame = {
+	readonly kind: 'while';
+	readonly statement: LuaWhileStatement;
+	environment: LuaEnvironment;
+	varargs: ReadonlyArray<LuaValue>;
+	scope: LabelScope;
+	readonly loopEnvironment: LuaEnvironment;
+};
+
+type RepeatFrame = {
+	readonly kind: 'repeat';
+	readonly statement: LuaRepeatStatement;
+	readonly baseEnvironment: LuaEnvironment;
+	environment: LuaEnvironment;
+	varargs: ReadonlyArray<LuaValue>;
+	scope: LabelScope;
+	iterationEnvironment: LuaEnvironment | null;
+	state: 'body' | 'condition';
+};
+
+type NumericForFrame = {
+	readonly kind: 'numeric-for';
+	readonly statement: LuaForNumericStatement;
+	environment: LuaEnvironment;
+	varargs: ReadonlyArray<LuaValue>;
+	scope: LabelScope;
+	readonly loopEnvironment: LuaEnvironment;
+	current: number;
+	readonly limit: number;
+	readonly step: number;
+	readonly ascending: boolean;
+	state: 'check' | 'body';
+};
+
+type GenericForFrame = {
+	readonly kind: 'generic-for';
+	readonly statement: LuaForGenericStatement;
+	environment: LuaEnvironment;
+	varargs: ReadonlyArray<LuaValue>;
+	scope: LabelScope;
+	readonly loopEnvironment: LuaEnvironment;
+	readonly iteratorFunction: LuaFunctionValue;
+	readonly stateValue: LuaValue;
+	control: LuaValue;
+	pendingResults: ReadonlyArray<LuaValue> | null;
+	state: 'call' | 'body';
+};
+
+type ExecutionFrame = StatementsFrame | WhileFrame | RepeatFrame | NumericForFrame | GenericForFrame;
+
 export class LuaInterpreter {
 	private readonly globals: LuaEnvironment;
 	private currentChunk: string;
@@ -189,7 +243,8 @@ export class LuaInterpreter {
 	private valueNameCache = new WeakMap<object | Function, string>();
 	private lastFaultDepth: number = 0;
 	private pendingDebuggerException: LuaRuntimeError = null;
-	private exceptionResumeStrategy: LuaExceptionResumeStrategy = 'propagate';
+	private programCounterValue = 0;
+	private readonly programCounterStack: number[] = [];
 	private hostAdapter: LuaHostAdapter = null;
 	private caseInsensitiveNativeAccess = true;
 	private identifierCanonicalizationMode: CanonicalizationType = 'none';
@@ -202,6 +257,7 @@ export class LuaInterpreter {
 	private readonly packageLoaded: LuaTable;
 	private requireHandler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) = null;
 	private _outputHandler: ((text: string) => void) = (text: string) => { console.log(text); };
+	private readonly frameStack: ExecutionFrame[] = [];
 
 	constructor(globals: LuaEnvironment, canonicalization: CanonicalizationType = 'none') {
 		if (globals === null) {
@@ -255,6 +311,30 @@ export class LuaInterpreter {
 
 	public get outputHandler(): ((text: string) => void) {
 		return this._outputHandler;
+	}
+
+	public get programCounter(): number {
+		return this.programCounterValue;
+	}
+
+	public set programCounter(value: number) {
+		this.programCounterValue = value;
+	}
+
+	public advanceProgramCounter(): number {
+		this.programCounterValue += 1;
+		return this.programCounterValue;
+	}
+
+	public pushProgramCounter(): number {
+		this.programCounterStack.push(this.programCounterValue);
+		return this.programCounterValue;
+	}
+
+	public popProgramCounter(): number {
+		const restored = this.programCounterStack.pop()!;
+		this.programCounterValue = restored;
+		return restored;
 	}
 
 	private invokeRequireBuiltin(args: ReadonlyArray<LuaValue>): LuaValue[] {
@@ -327,38 +407,91 @@ export class LuaInterpreter {
 	}
 
 	protected executeChunk(chunk: LuaChunk): LuaValue[] {
+		const nested = this.frameStack.length > 0;
+		const savedState = nested ? {
+			frameStack: Array.from(this.frameStack),
+			envStack: Array.from(this.envStack),
+			chunkEnvironment: this._chunkEnvironment,
+			currentChunk: this.currentChunk,
+			valueNameCache: this.valueNameCache,
+			lastFaultCallStack: this._lastFaultCallStack,
+			lastFaultDepth: this.lastFaultDepth,
+			lastFaultEnvironment: this._lastFaultEnvironment,
+			callStackLength: this.callStack.length,
+			currentCallRange: this.currentCallRange,
+			programCounter: this.programCounterValue,
+			programCounterStack: Array.from(this.programCounterStack),
+		} : null;
+
 		this.valueNameCache = new WeakMap<object | Function, string>();
 		this.currentChunk = chunk.range.chunkName;
 		const chunkScope = LuaEnvironment.createChild(this.globals);
 		this._chunkEnvironment = chunkScope;
-		return this.withEnv(chunkScope, () => {
-			this._lastFaultCallStack = [];
-			this.pushCallFrame('<chunk>', chunk.range.chunkName, chunk.range.start.line, chunk.range.start.column);
-			try {
-				const signal = this.executeStatements(chunk.body, chunkScope, [], null);
-				if (signal.kind === 'return') {
-					return Array.from(signal.values);
-				}
-				if (signal.kind === 'break') {
-					const breakStatement = signal.origin as LuaBreakStatement;
-					throw this.runtimeErrorAt(breakStatement.range, 'Unexpected break outside of loop.');
-				}
-				if (signal.kind === 'goto') {
-					throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found.`);
-				}
-				if (signal.kind === 'pause') {
-					throw signal;
-				}
-				return [];
-			} catch (error) {
-				if (!isLuaDebuggerPauseSignal(error)) {
-					this.recordFaultCallStack();
-				}
-				throw error;
-			} finally {
-				this.callStack.pop();
-			}
+		this.envStack.length = 0;
+		this.frameStack.length = 0;
+		this._lastFaultCallStack = [];
+		this.lastFaultDepth = 0;
+		this.programCounterStack.length = 0;
+		const rootScope = this.createLabelScope(chunk.body, null);
+		this.pushStatementsFrame({
+			statements: chunk.body,
+			environment: chunkScope,
+			varargs: [],
+			scope: rootScope,
+			boundary: 'chunk',
+			callRange: chunk.range,
+			callName: '<chunk>',
 		});
+		try {
+			const signal = this.runFrameLoop();
+			if (signal.kind === 'return') {
+				return Array.from(signal.values);
+			}
+			if (signal.kind === 'break') {
+				const breakStatement = signal.origin as LuaBreakStatement;
+				throw this.runtimeErrorAt(breakStatement.range, 'Unexpected break outside of loop.');
+			}
+			if (signal.kind === 'goto') {
+				throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found.`);
+			}
+			if (signal.kind === 'pause') {
+				throw signal;
+			}
+			return [];
+		} catch (error) {
+			if (!isLuaDebuggerPauseSignal(error)) {
+				this.recordFaultCallStack();
+			}
+			throw error;
+		} finally {
+			if (nested) {
+				this.frameStack.length = 0;
+				this.envStack.length = 0;
+				for (const frame of savedState.frameStack) {
+					this.frameStack.push(frame);
+				}
+				for (const env of savedState.envStack) {
+					this.envStack.push(env);
+				}
+				this._chunkEnvironment = savedState.chunkEnvironment;
+				this.currentChunk = savedState.currentChunk;
+				this.valueNameCache = savedState.valueNameCache;
+				this._lastFaultCallStack = savedState.lastFaultCallStack;
+				this.lastFaultDepth = savedState.lastFaultDepth;
+				this._lastFaultEnvironment = savedState.lastFaultEnvironment;
+				this.currentCallRange = savedState.currentCallRange;
+				this.programCounterValue = savedState.programCounter;
+				this.programCounterStack.length = 0;
+				for (const pc of savedState.programCounterStack) {
+					this.programCounterStack.push(pc);
+				}
+				this.callStack.length = savedState.callStackLength;
+			} else {
+				this.frameStack.length = 0;
+				this.envStack.length = 0;
+				this._chunkEnvironment = chunkScope;
+			}
+		}
 	}
 
 	public enumerateChunkEntries(): ReadonlyArray<[string, LuaValue]> {
@@ -386,16 +519,6 @@ export class LuaInterpreter {
 	private normalizeChunkName(name: string): string {
 		let normalized = name.trim();
 		return normalized.replace(/\\/g, '/');
-	}
-
-	private withEnv<T>(environment: LuaEnvironment, callback: () => T): T {
-		this.envStack.push(environment);
-		try {
-			return callback();
-		}
-		finally {
-			this.envStack.pop();
-		}
 	}
 
 	public get lastFaultEnvironment(): LuaEnvironment {
@@ -456,18 +579,8 @@ export class LuaInterpreter {
 		return exception;
 	}
 
-	public setExceptionResumeStrategy(strategy: LuaExceptionResumeStrategy): void {
-		if (strategy === 'skip_statement') {
-			this.exceptionResumeStrategy = 'skip_statement'; // TODO: ?????
-			return;
-		}
-		this.exceptionResumeStrategy = 'propagate';
-	}
-
-	private consumeExceptionResumeStrategy(): LuaExceptionResumeStrategy {
-		const strategy = this.exceptionResumeStrategy;
-		this.exceptionResumeStrategy = 'propagate';
-		return strategy;
+	public setExceptionResumeStrategy(_strategy: LuaExceptionResumeStrategy): void {
+		// Debugger disabled: exception resume strategy is ignored.
 	}
 
 	private pushCallFrame(functionName: string, source: string, line: number, column: number): void {
@@ -509,246 +622,456 @@ export class LuaInterpreter {
 		this.lastFaultDepth = depth;
 	}
 
-	private cloneCallStack(): LuaCallFrame[] {
-		return this.callStack.map(frame => ({
-			functionName: frame.functionName,
-			source: frame.source,
-			line: frame.line,
-			column: frame.column,
-		}));
+	private createLabelScope(statements: ReadonlyArray<LuaStatement>, parent: LabelScope): LabelScope {
+		return { labels: this.buildLabelMap(statements), parent };
 	}
 
-	private withInterpreterSnapshot<T>(
-		envSnapshot: ReadonlyArray<LuaEnvironment>,
-		callStackSnapshot: ReadonlyArray<LuaCallFrame>,
-		callRange: LuaSourceRange,
-		currentChunk: string,
-		chunkEnvironment: LuaEnvironment,
-		callback: () => T,
-	): T {
-		const envBackup = this.envStack.slice();
-		const callStackBackup = this.callStack.slice();
-		const previousCallRange = this.currentCallRange;
-		const previousChunk = this.currentChunk;
-		const previousChunkEnvironment = this._chunkEnvironment;
-		this.envStack.length = 0;
-		for (const env of envSnapshot) {
-			this.envStack.push(env);
-		}
-		this.callStack.length = 0;
-		for (const frame of callStackSnapshot) {
-			this.callStack.push({
-				functionName: frame.functionName,
-				source: frame.source,
-				line: frame.line,
-				column: frame.column,
-			});
-		}
-		this.currentCallRange = callRange;
-		this.currentChunk = currentChunk;
-		this._chunkEnvironment = chunkEnvironment;
-		try {
-			return callback();
-		}
-		finally {
-			this.currentCallRange = previousCallRange;
-			this.currentChunk = previousChunk;
-			this._chunkEnvironment = previousChunkEnvironment;
-			this.envStack.length = 0;
-			for (const env of envBackup) {
-				this.envStack.push(env);
-			}
-			this.callStack.length = 0;
-			for (const frame of callStackBackup) {
-				this.callStack.push(frame);
-			}
-		}
+	private pushFrame(frame: ExecutionFrame): void {
+		this.frameStack.push(frame);
+		this.envStack.push(frame.environment);
 	}
 
-	private executeStatements(statements: ReadonlyArray<LuaStatement>, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, parentScope: LabelScope): ExecutionSignal {
-		const labels = this.buildLabelMap(statements);
-		const scope: LabelScope = { labels, parent: parentScope };
-		return this.runStatements(statements, environment, varargs, scope, 0);
+	private popFrame(): ExecutionFrame {
+		const frame = this.frameStack.pop()!;
+		this.envStack.pop();
+		if (frame.kind === 'statements' && frame.callFramePushed) {
+			this.callStack.pop();
+		}
+		return frame;
 	}
 
-	private runStatements(
-		statements: ReadonlyArray<LuaStatement>,
-		environment: LuaEnvironment,
-		varargs: ReadonlyArray<LuaValue>,
-		scope: LabelScope,
-		startIndex: number,
-	): ExecutionSignal {
-		let index = startIndex;
-		while (index < statements.length) {
-			const statement = statements[index];
-			if (statement.kind === LuaSyntaxKind.LabelStatement) {
-				index += 1;
+	private pushStatementsFrame(config: {
+		readonly statements: ReadonlyArray<LuaStatement>;
+		readonly environment: LuaEnvironment;
+		readonly varargs: ReadonlyArray<LuaValue>;
+		readonly scope: LabelScope;
+		readonly boundary: FrameBoundary;
+		readonly callRange: LuaSourceRange;
+		readonly callName?: string;
+	}): void {
+		const callRange = config.callRange ?? this.fallbackSourceRange();
+		let callFramePushed = false;
+		if (config.boundary !== 'block') {
+			this.pushCallFrame(
+				config.callName && config.callName.length > 0 ? config.callName : null,
+				callRange.chunkName,
+				callRange.start.line,
+				callRange.start.column,
+			);
+			callFramePushed = true;
+		}
+		const frame: StatementsFrame = {
+			kind: 'statements',
+			statements: config.statements,
+			index: 0,
+			environment: config.environment,
+			varargs: config.varargs,
+			scope: config.scope,
+			boundary: config.boundary,
+			callFramePushed,
+			callRange,
+		};
+		this.pushFrame(frame);
+	}
+
+	private runFrameLoop(targetDepth: number = 0): ExecutionSignal {
+		while (this.frameStack.length > targetDepth) {
+			const frame = this.frameStack[this.frameStack.length - 1];
+			const signal = this.stepFrame(frame);
+			if (signal.kind === 'normal') {
 				continue;
 			}
-			const pauseContext = this.getDebuggerPauseContext(statement.range);
-			if (pauseContext) {
-				const continuation = () => this.runStatements(statements, environment, varargs, scope, index);
-				return this.createDebuggerPauseSignal(pauseContext, continuation);
+			const processed = this.processSignal(signal);
+			if (processed.kind === 'normal') {
+				continue;
 			}
-			try {
-				const signal = this.executeStatement(statement, environment, varargs, scope);
-				if (signal.kind === 'normal') {
-					index += 1;
-					continue;
-				}
-				if (signal.kind === 'goto') {
-					const metadata = scope.labels.get(signal.label);
-					if (metadata !== undefined) {
-						index = metadata.index;
-						continue;
-					}
-					return signal;
-				}
-				return signal;
-			}
-			catch (error) {
-				if (isLuaDebuggerPauseSignal(error)) {
-					throw error;
-				}
-				if (error instanceof LuaRuntimeError) {
-					return this.createExceptionDebuggerPause(error, statements, environment, varargs, scope, index);
-				}
-				throw error;
-			}
+			return processed;
 		}
 		return NORMAL_SIGNAL;
 	}
 
-	private getDebuggerPauseContext(range: LuaSourceRange): DebuggerPauseContext {
-		const controller = this.debuggerController;
-		if (!controller || !controller.isActive()) {
-			return null;
+	private stepFrame(frame: ExecutionFrame): ExecutionSignal {
+		switch (frame.kind) {
+			case 'statements':
+				return this.stepStatementsFrame(frame as StatementsFrame);
+			case 'while':
+				return this.stepWhileFrame(frame as WhileFrame);
+			case 'repeat':
+				return this.stepRepeatFrame(frame as RepeatFrame);
+			case 'numeric-for':
+				return this.stepNumericForFrame(frame as NumericForFrame);
+			case 'generic-for':
+				return this.stepGenericForFrame(frame as GenericForFrame);
+			default:
+				throw this.runtimeError('Unsupported execution frame.');
 		}
-		const chunk = this.normalizeChunkName(range.chunkName);
-		const line = Number.isFinite(range.start.line) ? range.start.line : 0;
-		const column = Number.isFinite(range.start.column) ? range.start.column : 0;
-		const depth = this.callStack.length;
-		const reason = controller.shouldPause(chunk, line, depth);
-		if (!reason) {
-			return null;
-		}
-		return { controller, chunk, line, column, depth, reason };
 	}
 
-	private createDebuggerPauseSignal(context: DebuggerPauseContext, continuation: () => ExecutionSignal): ExecutionSignal {
-		const envSnapshot = this.envStack.slice();
-		const callStackSnapshot = this.cloneCallStack();
-		const callStackForSignal = context.controller.decorateCallStack(callStackSnapshot);
-		const callRange = this.currentCallRange;
-		const currentChunk = this.currentChunk;
-		const chunkEnvironment = this._chunkEnvironment;
-		return {
-			kind: 'pause',
-			reason: context.reason,
-			location: {
-				chunk: context.chunk,
-				line: context.line,
-				column: context.column,
-			},
-			callStack: callStackForSignal,
-			resume: () => {
-				context.controller.suppressNextAtBoundary(context.chunk, context.line, context.depth);
-				return this.withInterpreterSnapshot(envSnapshot, callStackSnapshot, callRange, currentChunk, chunkEnvironment, continuation);
-			},
-		};
+	private processSignal(signal: ExecutionSignal): ExecutionSignal {
+		let current = signal;
+		while (true) {
+			if (current.kind === 'normal') {
+				return NORMAL_SIGNAL;
+			}
+			if (current.kind === 'pause') {
+				return current;
+			}
+			if (current.kind === 'return') {
+				this.popUntilBoundary();
+				return current;
+			}
+			if (current.kind === 'break') {
+				if (this.tryConsumeBreak()) {
+					current = NORMAL_SIGNAL;
+					continue;
+				}
+				return current;
+			}
+			if (current.kind === 'goto') {
+				if (this.tryConsumeGoto(current)) {
+					current = NORMAL_SIGNAL;
+					continue;
+				}
+				return current;
+			}
+			return current;
+		}
 	}
 
-	private createExceptionDebuggerPause(
-		error: LuaRuntimeError,
-		statements: ReadonlyArray<LuaStatement>,
-		environment: LuaEnvironment,
-		varargs: ReadonlyArray<LuaValue>,
-		scope: LabelScope,
-		index: number,
-	): ExecutionSignal {
-		const controller = this.debuggerController;
-		if (!controller || !controller.isActive()) {
+	private stepStatementsFrame(frame: StatementsFrame): ExecutionSignal {
+		while (frame.index < frame.statements.length && frame.statements[frame.index].kind === LuaSyntaxKind.LabelStatement) {
+			frame.index += 1;
+		}
+		if (frame.index >= frame.statements.length) {
+			this.popFrame();
+			return NORMAL_SIGNAL;
+		}
+		const statement = frame.statements[frame.index];
+		this.advanceProgramCounter();
+		try {
+			switch (statement.kind) {
+				case LuaSyntaxKind.LocalAssignmentStatement:
+					this.executeLocalAssignment(statement as LuaLocalAssignmentStatement, frame.environment, frame.varargs);
+					frame.index += 1;
+					return NORMAL_SIGNAL;
+				case LuaSyntaxKind.LocalFunctionStatement:
+					this.executeLocalFunction(statement as LuaLocalFunctionStatement, frame.environment);
+					frame.index += 1;
+					return NORMAL_SIGNAL;
+				case LuaSyntaxKind.FunctionDeclarationStatement:
+					this.executeFunctionDeclaration(statement as LuaFunctionDeclarationStatement, frame.environment);
+					frame.index += 1;
+					return NORMAL_SIGNAL;
+				case LuaSyntaxKind.AssignmentStatement:
+					this.executeAssignment(statement as LuaAssignmentStatement, frame.environment, frame.varargs);
+					frame.index += 1;
+					return NORMAL_SIGNAL;
+				case LuaSyntaxKind.ReturnStatement:
+					return this.executeReturn(statement as LuaReturnStatement, frame.environment, frame.varargs);
+				case LuaSyntaxKind.BreakStatement:
+					return { kind: 'break', origin: statement };
+				case LuaSyntaxKind.IfStatement: {
+					const ifStatement = statement as LuaIfStatement;
+					for (const clause of ifStatement.clauses) {
+						if (clause.condition === null || this.isTruthy(this.evaluateSingleExpression(clause.condition, frame.environment, frame.varargs))) {
+							const blockEnv = LuaEnvironment.createChild(frame.environment);
+							const blockScope = this.createLabelScope(clause.block.body, frame.scope);
+							frame.index += 1;
+							this.pushStatementsFrame({
+								statements: clause.block.body,
+								environment: blockEnv,
+								varargs: frame.varargs,
+								scope: blockScope,
+								boundary: 'block',
+								callRange: clause.block.range ?? ifStatement.range,
+							});
+							return NORMAL_SIGNAL;
+						}
+					}
+					frame.index += 1;
+					return NORMAL_SIGNAL;
+				}
+				case LuaSyntaxKind.WhileStatement: {
+					const whileStatement = statement as LuaWhileStatement;
+					const loopEnvironment = LuaEnvironment.createChild(frame.environment);
+					const loopFrame: WhileFrame = {
+						kind: 'while',
+						statement: whileStatement,
+						environment: loopEnvironment,
+						varargs: frame.varargs,
+						scope: frame.scope,
+						loopEnvironment,
+					};
+					frame.index += 1;
+					this.pushFrame(loopFrame);
+					return NORMAL_SIGNAL;
+				}
+				case LuaSyntaxKind.RepeatStatement: {
+					const repeatStatement = statement as LuaRepeatStatement;
+					const repeatFrame: RepeatFrame = {
+						kind: 'repeat',
+						statement: repeatStatement,
+						baseEnvironment: frame.environment,
+						environment: frame.environment,
+						varargs: frame.varargs,
+						scope: frame.scope,
+						iterationEnvironment: null,
+						state: 'body',
+					};
+					frame.index += 1;
+					this.pushFrame(repeatFrame);
+					return NORMAL_SIGNAL;
+				}
+				case LuaSyntaxKind.ForNumericStatement: {
+					const numeric = statement as LuaForNumericStatement;
+					const startValue = this.expectNumber(this.evaluateSingleExpression(numeric.start, frame.environment, frame.varargs), 'Numeric for loop start must be a number.', numeric.start.range);
+					const limitValue = this.expectNumber(this.evaluateSingleExpression(numeric.limit, frame.environment, frame.varargs), 'Numeric for loop limit must be a number.', numeric.limit.range);
+					let stepValue = 1;
+					if (numeric.step !== null) {
+						stepValue = this.expectNumber(this.evaluateSingleExpression(numeric.step, frame.environment, frame.varargs), 'Numeric for loop step must be a number.', numeric.step.range);
+					}
+					const loopEnvironment = LuaEnvironment.createChild(frame.environment);
+					loopEnvironment.set(numeric.variable.name, startValue, numeric.variable.range);
+					const loopFrame: NumericForFrame = {
+						kind: 'numeric-for',
+						statement: numeric,
+						environment: loopEnvironment,
+						varargs: frame.varargs,
+						scope: frame.scope,
+						loopEnvironment,
+						current: startValue,
+						limit: limitValue,
+						step: stepValue,
+						ascending: stepValue >= 0,
+						state: 'check',
+					};
+					frame.index += 1;
+					this.pushFrame(loopFrame);
+					return NORMAL_SIGNAL;
+				}
+				case LuaSyntaxKind.ForGenericStatement: {
+					const generic = statement as LuaForGenericStatement;
+					const iteratorValues = this.evaluateExpressionList(generic.iterators, frame.environment, frame.varargs);
+					if (iteratorValues.length === 0) {
+						throw this.runtimeErrorAt(generic.range, 'Generic for loop requires an iterator function.');
+					}
+					const iteratorFunction = this.expectFunction(iteratorValues[0], 'Generic for loop requires an iterator function.', generic.range);
+					const stateValue = iteratorValues.length > 1 ? iteratorValues[1] : null;
+					const initialControl = iteratorValues.length > 2 ? iteratorValues[2] : null;
+					const loopEnvironment = LuaEnvironment.createChild(frame.environment);
+					for (const variable of generic.variables) {
+						loopEnvironment.set(variable.name, null, variable.range);
+					}
+					const loopFrame: GenericForFrame = {
+						kind: 'generic-for',
+						statement: generic,
+						environment: loopEnvironment,
+						varargs: frame.varargs,
+						scope: frame.scope,
+						loopEnvironment,
+						iteratorFunction,
+						stateValue,
+						control: initialControl,
+						pendingResults: null,
+						state: 'call',
+					};
+					frame.index += 1;
+					this.pushFrame(loopFrame);
+					return NORMAL_SIGNAL;
+				}
+				case LuaSyntaxKind.DoStatement: {
+					const doStatement = statement as LuaDoStatement;
+					const blockEnvironment = LuaEnvironment.createChild(frame.environment);
+					const blockScope = this.createLabelScope(doStatement.block.body, frame.scope);
+					frame.index += 1;
+					this.pushStatementsFrame({
+						statements: doStatement.block.body,
+						environment: blockEnvironment,
+						varargs: frame.varargs,
+						scope: blockScope,
+						boundary: 'block',
+						callRange: doStatement.range,
+					});
+					return NORMAL_SIGNAL;
+				}
+				case LuaSyntaxKind.CallStatement:
+					this.evaluateCallExpression((statement as LuaCallStatement).expression, frame.environment, frame.varargs);
+					frame.index += 1;
+					return NORMAL_SIGNAL;
+				case LuaSyntaxKind.GotoStatement:
+					return { kind: 'goto', label: (statement as LuaGotoStatement).label, origin: statement as LuaGotoStatement };
+				default:
+					throw this.runtimeError('Unsupported statement kind.');
+			}
+		}
+		catch (error) {
+			if (isLuaDebuggerPauseSignal(error)) {
+				throw error;
+			}
+			if (error instanceof LuaRuntimeError) {
+				throw error;
+			}
 			throw error;
 		}
-		const envSnapshot = this.envStack.slice();
-		const callStackSnapshot = this.cloneCallStack();
-		const callStackForSignal = controller.decorateCallStack(callStackSnapshot);
-		const callRange = this.currentCallRange;
-		const currentChunk = this.currentChunk;
-		const chunkEnvironment = this._chunkEnvironment;
-		const statementRange = statements[index]?.range;
-		const chunkName = error.chunkName ?? statementRange?.chunkName ?? callRange?.chunkName ?? this.currentChunk ?? '<chunk>';
-		const line =
-			Number.isFinite(error.line) && error.line > 0
-				? Math.floor(error.line)
-				: statementRange?.start.line ?? callRange?.start.line ?? 0;
-		const column =
-			Number.isFinite(error.column) && error.column > 0
-				? Math.floor(error.column)
-				: statementRange?.start.column ?? callRange?.start.column ?? 0;
-		const normalizedChunk = this.normalizeChunkName(chunkName);
-		const resumeIndex = index;
-		const errorRef = error;
-		this.pendingDebuggerException = error;
-		const continuation = () => this.runStatements(statements, environment, varargs, scope, resumeIndex + 1);
-		return {
-			kind: 'pause',
-			reason: 'exception',
-			location: {
-				chunk: normalizedChunk,
-				line,
-				column,
-			},
-			callStack: callStackForSignal,
-			resume: () => {
-				const strategy = this.consumeExceptionResumeStrategy();
-				if (strategy === 'skip_statement') {
-					return this.withInterpreterSnapshot(envSnapshot, callStackSnapshot, callRange, currentChunk, chunkEnvironment, continuation);
-				}
-				throw errorRef;
-			},
-		};
 	}
 
-	private executeStatement(statement: LuaStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, scope: LabelScope): ExecutionSignal {
-		switch (statement.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement:
-				this.executeLocalAssignment(statement as LuaLocalAssignmentStatement, environment, varargs);
+	private stepWhileFrame(frame: WhileFrame): ExecutionSignal {
+		const condition = this.evaluateSingleExpression(frame.statement.condition, frame.loopEnvironment, frame.varargs);
+		if (!this.isTruthy(condition)) {
+			this.popFrame();
+			return NORMAL_SIGNAL;
+		}
+		const blockScope = this.createLabelScope(frame.statement.block.body, frame.scope);
+		this.pushStatementsFrame({
+			statements: frame.statement.block.body,
+			environment: frame.loopEnvironment,
+			varargs: frame.varargs,
+			scope: blockScope,
+			boundary: 'block',
+			callRange: frame.statement.range,
+		});
+		return NORMAL_SIGNAL;
+	}
+
+	private stepRepeatFrame(frame: RepeatFrame): ExecutionSignal {
+		if (frame.state === 'body') {
+			const iterationEnvironment = LuaEnvironment.createChild(frame.baseEnvironment);
+			frame.iterationEnvironment = iterationEnvironment;
+			frame.environment = iterationEnvironment;
+			this.envStack[this.envStack.length - 1] = iterationEnvironment;
+			const blockScope = this.createLabelScope(frame.statement.block.body, frame.scope);
+			this.pushStatementsFrame({
+				statements: frame.statement.block.body,
+				environment: iterationEnvironment,
+				varargs: frame.varargs,
+				scope: blockScope,
+				boundary: 'block',
+				callRange: frame.statement.range,
+			});
+			frame.state = 'condition';
+			return NORMAL_SIGNAL;
+		}
+		const condition = this.evaluateSingleExpression(frame.statement.condition, frame.iterationEnvironment, frame.varargs);
+		if (this.isTruthy(condition)) {
+			this.popFrame();
+			return NORMAL_SIGNAL;
+		}
+		frame.iterationEnvironment = null;
+		frame.environment = frame.baseEnvironment;
+		this.envStack[this.envStack.length - 1] = frame.baseEnvironment;
+		frame.state = 'body';
+		return NORMAL_SIGNAL;
+	}
+
+	private stepNumericForFrame(frame: NumericForFrame): ExecutionSignal {
+		if (frame.state === 'check') {
+			const withinRange = frame.ascending ? frame.current <= frame.limit : frame.current >= frame.limit;
+			if (!withinRange) {
+				this.popFrame();
 				return NORMAL_SIGNAL;
-			case LuaSyntaxKind.LocalFunctionStatement:
-				this.executeLocalFunction(statement as LuaLocalFunctionStatement, environment);
+			}
+			frame.loopEnvironment.assignExisting(frame.statement.variable.name, frame.current);
+			const blockScope = this.createLabelScope(frame.statement.block.body, frame.scope);
+			this.pushStatementsFrame({
+				statements: frame.statement.block.body,
+				environment: frame.loopEnvironment,
+				varargs: frame.varargs,
+				scope: blockScope,
+				boundary: 'block',
+				callRange: frame.statement.range,
+			});
+			frame.state = 'body';
+			return NORMAL_SIGNAL;
+		}
+		frame.current = frame.current + frame.step;
+		frame.state = 'check';
+		return NORMAL_SIGNAL;
+	}
+
+	private stepGenericForFrame(frame: GenericForFrame): ExecutionSignal {
+		if (frame.state === 'call') {
+			const callArgs: LuaValue[] = [frame.stateValue, frame.control];
+			const results = frame.iteratorFunction.call(callArgs);
+			if (results.length === 0 || results[0] === null || results[0] === false) {
+				this.popFrame();
 				return NORMAL_SIGNAL;
-			case LuaSyntaxKind.FunctionDeclarationStatement:
-				this.executeFunctionDeclaration(statement as LuaFunctionDeclarationStatement, environment);
-				return NORMAL_SIGNAL;
-			case LuaSyntaxKind.AssignmentStatement:
-				this.executeAssignment(statement as LuaAssignmentStatement, environment, varargs);
-				return NORMAL_SIGNAL;
-			case LuaSyntaxKind.ReturnStatement:
-				return this.executeReturn(statement as LuaReturnStatement, environment, varargs);
-			case LuaSyntaxKind.BreakStatement:
-				return { kind: 'break', origin: statement };
-			case LuaSyntaxKind.IfStatement:
-				return this.executeIf(statement as LuaIfStatement, environment, varargs, scope);
-			case LuaSyntaxKind.WhileStatement:
-				return this.executeWhile(statement as LuaWhileStatement, environment, varargs, scope);
-			case LuaSyntaxKind.RepeatStatement:
-				return this.executeRepeat(statement as LuaRepeatStatement, environment, varargs, scope);
-			case LuaSyntaxKind.ForNumericStatement:
-				return this.executeForNumeric(statement as LuaForNumericStatement, environment, varargs, scope);
-			case LuaSyntaxKind.ForGenericStatement:
-				return this.executeForGeneric(statement as LuaForGenericStatement, environment, varargs, scope);
-			case LuaSyntaxKind.DoStatement:
-				return this.executeDo(statement as LuaDoStatement, environment, varargs, scope);
-			case LuaSyntaxKind.CallStatement:
-				this.evaluateCallExpression((statement as LuaCallStatement).expression, environment, varargs);
-				return NORMAL_SIGNAL;
-			case LuaSyntaxKind.GotoStatement:
-				return { kind: 'goto', label: (statement as LuaGotoStatement).label, origin: statement as LuaGotoStatement };
-			case LuaSyntaxKind.LabelStatement:
-				return NORMAL_SIGNAL;
-			default:
-				throw this.runtimeError('Unsupported statement kind.');
+			}
+			frame.control = results[0];
+			frame.pendingResults = results;
+			this.assignGenericLoopVariables(frame.statement, frame.loopEnvironment, results);
+			const blockScope = this.createLabelScope(frame.statement.block.body, frame.scope);
+			this.pushStatementsFrame({
+				statements: frame.statement.block.body,
+				environment: frame.loopEnvironment,
+				varargs: frame.varargs,
+				scope: blockScope,
+				boundary: 'block',
+				callRange: frame.statement.range,
+			});
+			frame.state = 'body';
+			return NORMAL_SIGNAL;
+		}
+		frame.pendingResults = null;
+		frame.state = 'call';
+		return NORMAL_SIGNAL;
+	}
+
+	private tryConsumeBreak(): boolean {
+		for (let index = this.frameStack.length - 1; index >= 0; index -= 1) {
+			const frame = this.frameStack[index];
+			if (frame.kind === 'while' || frame.kind === 'repeat' || frame.kind === 'numeric-for' || frame.kind === 'generic-for') {
+				while (this.frameStack.length > index + 1) {
+					this.popFrame();
+				}
+				this.popFrame();
+				return true;
+			}
+			if (frame.kind === 'statements' && (frame as StatementsFrame).boundary !== 'block') {
+				break;
+			}
+		}
+		return false;
+	}
+
+	private tryConsumeGoto(signal: Extract<ExecutionSignal, { kind: 'goto' }>): boolean {
+		for (let index = this.frameStack.length - 1; index >= 0; index -= 1) {
+			const frame = this.frameStack[index];
+			if (frame.kind === 'statements') {
+				const statementsFrame = frame as StatementsFrame;
+				const metadata = this.resolveLabel(statementsFrame.scope, signal.label);
+				if (metadata !== null) {
+					while (this.frameStack.length > index + 1) {
+						this.popFrame();
+					}
+					statementsFrame.index = metadata.index;
+					return true;
+				}
+			}
+			if (frame.kind === 'statements' && (frame as StatementsFrame).boundary !== 'block') {
+				break;
+			}
+		}
+		return false;
+	}
+
+	private resolveLabel(scope: LabelScope, label: string): LabelMetadata {
+		let current: LabelScope = scope;
+		while (current !== null) {
+			const metadata = current.labels.get(label);
+			if (metadata !== undefined) {
+				return metadata;
+			}
+			current = current.parent;
+		}
+		return null;
+	}
+
+	private popUntilBoundary(): void {
+		while (this.frameStack.length > 0) {
+			const frame = this.popFrame();
+			if (frame.kind === 'statements' && frame.boundary !== 'block') {
+				return;
+			}
 		}
 	}
 
@@ -867,210 +1190,12 @@ export class LuaInterpreter {
 		return { kind: 'return', values };
 	}
 
-	private executeIf(statement: LuaIfStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, scope: LabelScope): ExecutionSignal {
-		for (const clause of statement.clauses) {
-			if (clause.condition === null || this.isTruthy(this.evaluateSingleExpression(clause.condition, environment, varargs))) {
-				return this.executeBlock(clause.block, environment, varargs, scope);
-			}
-		}
-		return NORMAL_SIGNAL;
-	}
-
-	private executeWhile(statement: LuaWhileStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, scope: LabelScope): ExecutionSignal {
-		const loopEnvironment = LuaEnvironment.createChild(environment);
-		return this.withEnv(loopEnvironment, () => this.runWhileLoop(statement, loopEnvironment, varargs, scope));
-	}
-
-	private runWhileLoop(statement: LuaWhileStatement, loopEnvironment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, scope: LabelScope): ExecutionSignal {
-		while (true) {
-			if (!this.isTruthy(this.evaluateSingleExpression(statement.condition, loopEnvironment, varargs))) {
-				return NORMAL_SIGNAL;
-			}
-			const pauseContext = this.getDebuggerPauseContext(statement.range);
-			if (pauseContext) {
-				const continuation = () => this.runWhileLoop(statement, loopEnvironment, varargs, scope);
-				return this.createDebuggerPauseSignal(pauseContext, continuation);
-			}
-			const signal = this.executeBlock(statement.block, loopEnvironment, varargs, scope);
-			if (signal.kind === 'return' || signal.kind === 'goto' || signal.kind === 'pause') {
-				return signal;
-			}
-			if (signal.kind === 'break') {
-				return NORMAL_SIGNAL;
-			}
-		}
-	}
-
-	private executeRepeat(statement: LuaRepeatStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, scope: LabelScope): ExecutionSignal {
-		return this.runRepeatLoop(statement, environment, varargs, scope);
-	}
-
-	private runRepeatLoop(statement: LuaRepeatStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, scope: LabelScope): ExecutionSignal {
-		while (true) {
-			const pauseContext = this.getDebuggerPauseContext(statement.range);
-			if (pauseContext) {
-				const continuation = () => this.runRepeatLoop(statement, environment, varargs, scope);
-				return this.createDebuggerPauseSignal(pauseContext, continuation);
-			}
-			const iterationEnvironment = LuaEnvironment.createChild(environment);
-			const signal = this.withEnv(iterationEnvironment, () => this.executeStatements(statement.block.body, iterationEnvironment, varargs, scope));
-			if (signal.kind === 'return' || signal.kind === 'goto' || signal.kind === 'pause') {
-				return signal;
-			}
-			if (signal.kind === 'break') {
-				return NORMAL_SIGNAL;
-			}
-			const condition = this.withEnv(iterationEnvironment, () => this.evaluateSingleExpression(statement.condition, iterationEnvironment, varargs));
-			if (this.isTruthy(condition)) {
-				return NORMAL_SIGNAL;
-			}
-		}
-	}
-
-	private executeForNumeric(statement: LuaForNumericStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, scope: LabelScope): ExecutionSignal {
-		const startValue = this.expectNumber(this.evaluateSingleExpression(statement.start, environment, varargs), 'Numeric for loop start must be a number.', statement.start.range);
-		const limitValue = this.expectNumber(this.evaluateSingleExpression(statement.limit, environment, varargs), 'Numeric for loop limit must be a number.', statement.limit.range);
-		let stepValue = 1;
-		if (statement.step !== null) {
-			stepValue = this.expectNumber(this.evaluateSingleExpression(statement.step, environment, varargs), 'Numeric for loop step must be a number.', statement.step.range);
-		}
-		const loopEnvironment = LuaEnvironment.createChild(environment);
-		loopEnvironment.set(statement.variable.name, startValue, statement.variable.range);
-		return this.withEnv(loopEnvironment, () => this.runNumericForLoop(statement, loopEnvironment, varargs, scope, startValue, limitValue, stepValue));
-	}
-
-	private runNumericForLoop(
-		statement: LuaForNumericStatement,
-		loopEnvironment: LuaEnvironment,
-		varargs: ReadonlyArray<LuaValue>,
-		scope: LabelScope,
-		current: number,
-		limit: number,
-		step: number,
-	): ExecutionSignal {
-		const ascending = step >= 0;
-		let cursor = current;
-		while (true) {
-			const snapshotCursor = cursor;
-			const withinRange = (ascending && snapshotCursor <= limit) || (!ascending && snapshotCursor >= limit);
-			if (!withinRange) {
-				return NORMAL_SIGNAL;
-			}
-			const pauseContext = this.getDebuggerPauseContext(statement.range);
-			if (pauseContext) {
-				const continuation = () => this.runNumericForLoop(statement, loopEnvironment, varargs, scope, snapshotCursor, limit, step);
-				return this.createDebuggerPauseSignal(pauseContext, continuation);
-			}
-			loopEnvironment.assignExisting(statement.variable.name, snapshotCursor);
-			const signal = this.executeBlock(statement.block, loopEnvironment, varargs, scope);
-			if (signal.kind === 'return' || signal.kind === 'goto' || signal.kind === 'pause') {
-				return signal;
-			}
-			if (signal.kind === 'break') {
-				return NORMAL_SIGNAL;
-			}
-			cursor = snapshotCursor + step;
-		}
-	}
-
-	private executeForGeneric(statement: LuaForGenericStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, scope: LabelScope): ExecutionSignal {
-		const iteratorValues = this.evaluateExpressionList(statement.iterators, environment, varargs);
-		if (iteratorValues.length === 0) {
-			throw this.runtimeErrorAt(statement.range, 'Generic for loop requires an iterator function.');
-		}
-		const iteratorFunction = this.expectFunction(iteratorValues[0], 'Generic for loop requires an iterator function.', statement.range);
-		const state = iteratorValues.length > 1 ? iteratorValues[1] : null;
-		const initialControl = iteratorValues.length > 2 ? iteratorValues[2] : null;
-
-		const loopEnvironment = LuaEnvironment.createChild(environment);
-		for (const variable of statement.variables) {
-			loopEnvironment.set(variable.name, null, variable.range);
-		}
-
-		return this.withEnv(loopEnvironment, () => this.runGenericForLoop(statement, loopEnvironment, varargs, scope, iteratorFunction, state, initialControl));
-	}
-
-	private runGenericForLoop(
-		statement: LuaForGenericStatement,
-		loopEnvironment: LuaEnvironment,
-		varargs: ReadonlyArray<LuaValue>,
-		scope: LabelScope,
-		iteratorFunction: LuaFunctionValue,
-		state: LuaValue,
-		control: LuaValue,
-	): ExecutionSignal {
-		let controlValue: LuaValue = control;
-		while (true) {
-			const snapshotControl = controlValue;
-			const callArgs: LuaValue[] = [state, snapshotControl];
-			const results = iteratorFunction.call(callArgs);
-			if (results.length === 0 || results[0] === null || results[0] === false) {
-				return NORMAL_SIGNAL;
-			}
-			controlValue = results[0];
-			const pauseContext = this.getDebuggerPauseContext(statement.range);
-			if (pauseContext) {
-				const resultsSnapshot = Array.from(results);
-				const continuation = () => this.resumeGenericForIteration(statement, loopEnvironment, varargs, scope, iteratorFunction, state, controlValue, resultsSnapshot);
-				return this.createDebuggerPauseSignal(pauseContext, continuation);
-			}
-			const iterationOutcome = this.executeGenericLoopIteration(statement, loopEnvironment, varargs, scope, results);
-			if (iterationOutcome !== null) {
-				return iterationOutcome;
-			}
-		}
-	}
-
 	private assignGenericLoopVariables(statement: LuaForGenericStatement, loopEnvironment: LuaEnvironment, results: ReadonlyArray<LuaValue>): void {
 		for (let index = 0; index < statement.variables.length; index += 1) {
 			const variable = statement.variables[index];
 			const value = index < results.length ? results[index] : null;
 			loopEnvironment.assignExisting(variable.name, value);
 		}
-	}
-
-	private resumeGenericForIteration(
-		statement: LuaForGenericStatement,
-		loopEnvironment: LuaEnvironment,
-		varargs: ReadonlyArray<LuaValue>,
-		scope: LabelScope,
-		iteratorFunction: LuaFunctionValue,
-		state: LuaValue,
-		controlValue: LuaValue,
-		results: ReadonlyArray<LuaValue>,
-	): ExecutionSignal {
-		const iterationOutcome = this.executeGenericLoopIteration(statement, loopEnvironment, varargs, scope, results);
-		if (iterationOutcome !== null) {
-			return iterationOutcome;
-		}
-		return this.runGenericForLoop(statement, loopEnvironment, varargs, scope, iteratorFunction, state, controlValue);
-	}
-
-	private executeGenericLoopIteration(
-		statement: LuaForGenericStatement,
-		loopEnvironment: LuaEnvironment,
-		varargs: ReadonlyArray<LuaValue>,
-		scope: LabelScope,
-		results: ReadonlyArray<LuaValue>,
-	): ExecutionSignal {
-		this.assignGenericLoopVariables(statement, loopEnvironment, results);
-		const signal = this.executeBlock(statement.block, loopEnvironment, varargs, scope);
-		if (signal.kind === 'return' || signal.kind === 'goto' || signal.kind === 'pause') {
-			return signal;
-		}
-		if (signal.kind === 'break') {
-			return NORMAL_SIGNAL;
-		}
-		return null;
-	}
-
-	private executeDo(statement: LuaDoStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, scope: LabelScope): ExecutionSignal {
-		return this.executeBlock(statement.block, environment, varargs, scope);
-	}
-
-	private executeBlock(block: LuaBlock, parentEnvironment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, parentScope: LabelScope): ExecutionSignal {
-		const blockEnvironment = LuaEnvironment.createChild(parentEnvironment);
-		return this.withEnv(blockEnvironment, () => this.executeStatements(block.body, blockEnvironment, varargs, parentScope));
 	}
 
 	private buildLabelMap(statements: ReadonlyArray<LuaStatement>): Map<string, LabelMetadata> {
@@ -2562,11 +2687,7 @@ export class LuaInterpreter {
 
 	public invokeScriptFunction(expression: LuaFunctionExpression, closure: LuaEnvironment, name: string, args: ReadonlyArray<LuaValue>, implicitSelfName: string): LuaValue[] {
 		const activationEnvironment = LuaEnvironment.createChild(closure);
-		const callRange = this.currentCallRange;
-		const rangeSource = callRange ? callRange.chunkName : expression.range.chunkName;
-		const rangeLine = callRange ? callRange.start.line : expression.range.start.line;
-		const rangeColumn = callRange ? callRange.start.column : expression.range.start.column;
-		this.pushCallFrame(name && name.length > 0 ? name : null, rangeSource, rangeLine, rangeColumn);
+		const callRange = this.currentCallRange ?? expression.range;
 		const parameters = expression.parameters;
 		let argumentIndex = 0;
 		if (implicitSelfName !== null) {
@@ -2587,8 +2708,19 @@ export class LuaInterpreter {
 			}
 			varargValues = extras;
 		}
+		const startingDepth = this.frameStack.length;
+		const scope = this.createLabelScope(expression.body.body, null);
+		this.pushStatementsFrame({
+			statements: expression.body.body,
+			environment: activationEnvironment,
+			varargs: varargValues,
+			scope,
+			boundary: 'function',
+			callRange,
+			callName: name,
+		});
 		try {
-			const signal = this.withEnv(activationEnvironment, () => this.executeBlock(expression.body, activationEnvironment, varargValues, null));
+			const signal = this.runFrameLoop(startingDepth);
 			if (signal.kind === 'return') {
 				return Array.from(signal.values);
 			}
@@ -2608,7 +2740,9 @@ export class LuaInterpreter {
 			}
 			throw error;
 		} finally {
-			this.callStack.pop();
+			while (this.frameStack.length > startingDepth) {
+				this.popFrame();
+			}
 		}
 	}
 

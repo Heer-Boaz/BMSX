@@ -127,6 +127,7 @@ export type BmsxVMState = {
 	luaGlobals?: LuaEntrySnapshot;
 	luaLocals?: LuaEntrySnapshot;
 	luaRandomSeed?: number;
+	luaProgramCounter?: number;
 };
 
 export type LuaMarshalContext = {
