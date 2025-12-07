@@ -1,13 +1,13 @@
-import { LuaSyntaxError } from './errors';
-import type { LuaToken } from './token';
-import { LuaTokenType } from './token';
+import { LuaSyntaxError } from './luaerrors';
+import type { LuaToken } from './luatoken';
+import { LuaTokenType } from './luatoken';
 import {
 	LuaSyntaxKind,
 	LuaBinaryOperator,
 	LuaUnaryOperator,
 	LuaTableFieldKind,
 	LuaAssignmentOperator,
-} from './ast';
+} from './lua_ast';
 import type {
 	LuaAssignableExpression,
 	LuaAssignmentStatement,
@@ -53,7 +53,7 @@ import type {
 	LuaWhileStatement,
 LuaDefinitionInfo,
 LuaDefinitionKind,
-} from './ast';
+} from './lua_ast';
 
 type ParsedArguments = {
 	readonly arguments: ReadonlyArray<LuaExpression>;

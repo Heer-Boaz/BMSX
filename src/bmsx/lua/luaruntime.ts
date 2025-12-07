@@ -4,7 +4,7 @@ import {
 	LuaUnaryOperator,
 	LuaTableFieldKind,
 	LuaAssignmentOperator,
-} from './ast';
+} from './lua_ast';
 import type {
 	LuaAssignableExpression,
 	LuaAssignmentStatement,
@@ -44,13 +44,13 @@ import type {
 	LuaWhileStatement,
 	LuaSourceRange,
 	LuaDefinitionInfo,
-} from './ast';
-import { LuaEnvironment } from './environment';
-import { LuaRuntimeError, LuaSyntaxError } from './errors';
-import { LuaLexer } from './lexer';
+} from './lua_ast';
+import { LuaEnvironment } from './luaenvironment';
+import { LuaRuntimeError, LuaSyntaxError } from './luaerrors';
+import { LuaLexer } from './lualexer';
 import { type CanonicalizationType } from '../rompack/rompack';
-import { LuaParser } from './parser';
-import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from './value';
+import { LuaParser } from './luaparser';
+import type { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from './luavalue';
 import {
 	createLuaNativeMemberHandle,
 	createLuaNativeValue,
@@ -62,8 +62,8 @@ import {
 	isLuaTable,
 	resolveNativeTypeName,
 	type LuaNativeMemberHandle
-} from './value';
-import { LuaDebuggerController, type LuaDebuggerPauseReason } from './debugger';
+} from './luavalue';
+import { LuaDebuggerController, type LuaDebuggerPauseReason } from './luadebugger';
 import { $ } from '../core/game';
 import { BmsxVMRuntime } from '../vm/vm_runtime';
 

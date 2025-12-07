@@ -4,13 +4,13 @@ import { Service } from '../core/service';
 import { taskGate } from '../core/taskgate';
 import { Input } from '../input/input';
 import { KeyModifier } from '../input/playerinput';
-import type { LuaDefinitionInfo } from '../lua/ast';
-import { LuaDebuggerController, type LuaDebuggerResumeCommand } from '../lua/debugger';
-import { LuaEnvironment } from '../lua/environment';
-import { LuaError, LuaRuntimeError } from '../lua/errors';
-import { LuaHandlerCache, } from '../lua/handler_cache';
-import { LuaInterpreter, type ExecutionSignal, type LuaCallFrame, } from '../lua/runtime';
-import type { LuaFunctionValue, LuaTable, LuaValue, StackTraceFrame } from '../lua/value';
+import type { LuaDefinitionInfo } from '../lua/lua_ast';
+import { LuaDebuggerController, type LuaDebuggerResumeCommand } from '../lua/luadebugger';
+import { LuaEnvironment } from '../lua/luaenvironment';
+import { LuaError, LuaRuntimeError } from '../lua/luaerrors';
+import { LuaHandlerCache, } from '../lua/luahandler_cache';
+import { LuaInterpreter, type ExecutionSignal, type LuaCallFrame, } from '../lua/luaruntime';
+import type { LuaFunctionValue, LuaTable, LuaValue, StackTraceFrame } from '../lua/luavalue';
 import {
 	convertToError, createLuaInterpreter,
 	extractErrorMessage,
@@ -19,13 +19,13 @@ import {
 	isLuaTable,
 	setLuaTableCaseInsensitiveKeys,
 	type LuaDebuggerPauseSignal
-} from '../lua/value';
+} from '../lua/luavalue';
 import type { InputEvt, StorageService } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { BmsxCartridge, LifeCycleHandlerName, Viewport, } from '../rompack/rompack';
 import { CanonicalizationType } from '../rompack/rompack';
 import { fallbackclamp } from '../utils/clamp';
-import { BmsxVMApi as BmsxVMApi } from './api';
+import { BmsxVMApi as BmsxVMApi } from './vm_api';
 import { TerminalMode as InteractiveVM } from './terminal_mode';
 import { VMRenderFacade } from './vm_render_facade';
 import type { VMFontVariant } from './font';

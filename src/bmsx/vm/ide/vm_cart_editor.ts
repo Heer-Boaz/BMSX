@@ -88,7 +88,7 @@ import { clearBackgroundTasks, enqueueBackgroundTask, scheduleRuntimeTask } from
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
 import { planRenameLineEdits } from './rename_controller';
 import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_controller';
-import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast';
+import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/lua_ast';
 // Search logic moved to editor_search
 import { closeSearch, focusEditorFromSearch, computeSearchPageStats, startSearchJob, cancelGlobalSearchJob } from './editor_search';
 import * as constants from './constants';
@@ -119,7 +119,7 @@ import { point_in_rect } from '../../utils/rect_operations';
 import { lower_bound } from '../../utils/lower_bound';
 import { updateRuntimeErrorOverlay } from './runtime_error_overlay';
 import { LuaSemanticWorkspace, refreshSymbolCatalog, symbolPriority } from './semantic_model';
-import { extractErrorMessage } from '../../lua/value';
+import { extractErrorMessage } from '../../lua/luavalue';
 import { Viewport } from '../../rompack/rompack';
 
 export const editorFacade = {

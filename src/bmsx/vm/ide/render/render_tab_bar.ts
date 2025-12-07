@@ -1,4 +1,4 @@
-import { BmsxVMApi } from '../../api';
+import { BmsxVMApi } from '../../vm_api';
 import * as constants from '../constants';
 import type { EditorTabDescriptor } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';

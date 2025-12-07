@@ -34,7 +34,7 @@ import { consumeIdeKey, getIdeKeyState } from './ide/ide_input';
 import type { asset_id, Viewport } from '../rompack/rompack';
 import { api, BmsxVMRuntime } from './vm_runtime';
 import { VMCommandDispatcher } from './console_commands';
-import { extractErrorMessage, LuaValue } from '../lua/value';
+import { extractErrorMessage, LuaValue } from '../lua/luavalue';
 
 type VMOutputKind =
 	| 'prompt'

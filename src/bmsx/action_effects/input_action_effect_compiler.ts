@@ -12,7 +12,7 @@ import type { ActionEffectId } from './effect_types';
 import type { ActionEffectComponent } from '../component/actioneffectcomponent';
 import type { WorldObject } from '../core/object/worldobject';
 import { ActionEffectRegistry } from './effect_registry';
-import { extractErrorMessage } from '../lua/value';
+import { extractErrorMessage } from '../lua/luavalue';
 
 export interface BindingExecutionEnv {
 	owner: WorldObject;

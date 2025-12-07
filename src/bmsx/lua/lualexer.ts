@@ -1,7 +1,7 @@
 import { CanonicalizationType } from '../rompack/rompack';
-import { LuaSyntaxError } from './errors';
-import type { LuaToken, LuaTokenLiteral } from './token';
-import { LuaTokenType, resolveKeyword } from './token';
+import { LuaSyntaxError } from './luaerrors';
+import type { LuaToken, LuaTokenLiteral } from './luatoken';
+import { LuaTokenType, resolveKeyword } from './luatoken';
 
 export class LuaLexer {
 	private readonly source: string;

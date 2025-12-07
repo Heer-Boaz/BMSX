@@ -1,4 +1,4 @@
-import { BmsxVMApi } from '../../api';
+import { BmsxVMApi } from '../../vm_api';
 import { api } from '../../vm_runtime';
 import { getTabBarTotalHeight, getCreateResourceBarHeight, getSearchBarHeight, getResourceSearchBarHeight, getSymbolSearchBarHeight, getRenameBarHeight, getLineJumpBarHeight, searchVisibleResultCount, searchResultEntryHeight, symbolSearchVisibleResultCount, symbolSearchEntryHeight, isSymbolSearchCompactMode } from '../vm_cart_editor';
 import { drawCreateResourceErrorDialog } from './render_resource_panel';

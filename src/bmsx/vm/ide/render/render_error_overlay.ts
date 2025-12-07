@@ -1,4 +1,4 @@
-import type { BmsxVMApi } from '../../api';
+import type { BmsxVMApi } from '../../vm_api';
 import type { VMEditorFont } from '../../editor_font';
 import { drawEditorText } from '../text_renderer';
 import { clamp } from '../../../utils/clamp';
@@ -6,7 +6,7 @@ import { activate, bottomMargin, editorFacade, focusChunkSource, setActiveRuntim
 import { ide_state } from '../ide_state';
 import { normalizeEndingsAndSplitLines, computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapOverlayLine } from '../text_utils';
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../types';
-import type { StackTraceFrame } from '../../../lua/value';
+import type { StackTraceFrame } from '../../../lua/luavalue';
 import type { RectBounds } from '../../../rompack/rompack';
 import { Msx1Colors } from '../../../systems/msx';
 import { pointInRect } from '../../../utils/rect_operations';

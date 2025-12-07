@@ -1,6 +1,6 @@
 import type { CanonicalizationType } from '../rompack/rompack';
-import { LuaError, LuaRuntimeError, LuaSyntaxError } from './errors';
-import { ExecutionSignal, LuaInterpreter, LuaNativeFunction } from './runtime';
+import { LuaError, LuaRuntimeError, LuaSyntaxError } from './luaerrors';
+import { ExecutionSignal, LuaInterpreter, LuaNativeFunction } from './luaruntime';
 import { insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 
 export type LuaValue = LuaNil | boolean | number | string | LuaTable | LuaFunctionValue | LuaNativeValue;

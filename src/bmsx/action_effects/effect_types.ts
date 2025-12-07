@@ -1,6 +1,6 @@
 import type { EventPayload } from '../core/eventemitter';
 import type { WorldObject } from '../core/object/worldobject';
-import type { ScriptHandler } from '../lua/script_handler';
+import type { LuaScriptHandler } from 'bmsx/vm/lua_handler_registry';
 
 export interface ActionEffectPayloadTable {
 	// Games and engine modules augment this interface with effect ids and their payload contracts.
@@ -27,7 +27,7 @@ export interface ActionEffectHandlerContext<Id extends ActionEffectId = ActionEf
 }
 
 export type ActionEffectHandler<Id extends ActionEffectId = ActionEffectId> =
-	ScriptHandler<[ActionEffectHandlerContext<Id>], ActionEffectHandlerResult>;
+	LuaScriptHandler<[ActionEffectHandlerContext<Id>], ActionEffectHandlerResult>;
 
 export interface ActionEffectDefinition<Id extends ActionEffectId = ActionEffectId> {
 	id: Id;

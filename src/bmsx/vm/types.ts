@@ -1,4 +1,4 @@
-import type { LuaFunctionValue } from '../lua/value';
+import type { LuaFunctionValue } from '../lua/luavalue';
 import type { CanonicalizationType, Viewport } from '../rompack/rompack';
 import { LuaEntrySnapshot } from './lua_js_bridge';
 

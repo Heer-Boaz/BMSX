@@ -2,7 +2,6 @@ import type {
 	VMLuaHoverResult,
 } from '../types';
 import type { VMFontVariant } from '../font';
-import type { VMEditorFont } from '../editor_font';
 import type { TextField, ScrollbarKind, MessageState, IdeThemeVariant } from './types';
 import type { InlineFieldMetrics } from './inline_text_field';
 import { VMScrollbar, ScrollbarController } from './scrollbar';
@@ -49,9 +48,10 @@ import type { ReferenceCatalogEntry } from './code_reference';
 import { VMCodeLayout } from './code_layout';
 import type { TimerHandle } from '../../platform';
 import type { DebuggerExecutionState } from './ide_debugger';
-import type { LuaDebuggerSessionMetrics } from '../../lua/debugger';
+import type { LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import { VM_TOGGLE_KEY, EDITOR_TOGGLE_KEY, ESCAPE_KEY, getActiveIdeThemeVariant } from './constants';
 import { CaretNavigationState } from './caret';
+import { VMEditorFont } from '../editor_font';
 
 export type NavigationHistoryEntry = {
 	contextId: string;

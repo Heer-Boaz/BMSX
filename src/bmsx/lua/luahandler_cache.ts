@@ -1,5 +1,5 @@
-import { isLuaDebuggerPauseSignal } from './value';
-import type { LuaFunctionValue } from '../lua/value';
+import { isLuaDebuggerPauseSignal } from './luavalue';
+import type { LuaFunctionValue } from './luavalue';
 
 export interface LuaHandlerFn extends Function {
 	(...args: unknown[]): unknown;

@@ -1,5 +1,6 @@
-import type { LuaInterpreter } from '../lua/runtime';
-import { createLuaNativeFunction, type LuaFunctionValue } from '../lua/value';
+import type { LuaHandlerFn } from '../lua/luahandler_cache';
+import type { LuaInterpreter } from '../lua/luaruntime';
+import { createLuaNativeFunction, type LuaFunctionValue } from '../lua/luavalue';
 import type { LuaFunctionRedirectRecord } from './types';
 
 export type LuaHandlerCategory = string;
@@ -59,3 +60,6 @@ export class LuaFunctionRedirectCache {
 		return `${moduleId}::${path.join('.')}`;
 	}
 }
+
+export type LuaScriptHandler<TArgs extends unknown[] = unknown[], TResult = unknown> =
+	((...args: TArgs) => TResult) | LuaHandlerFn;

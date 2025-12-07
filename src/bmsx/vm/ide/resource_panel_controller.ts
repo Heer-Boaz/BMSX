@@ -10,7 +10,7 @@ import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } 
 import { ide_state } from './ide_state';
 import { bottomMargin, codeViewportTop, focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab, openResourceViewerTab } from './vm_cart_editor';
 import { measureText } from './text_utils';
-import { extractErrorMessage } from '../../lua/value';
+import { extractErrorMessage } from '../../lua/luavalue';
 
 export interface ResourcePanelScrollbars {
 	resourceVertical: VMScrollbar;

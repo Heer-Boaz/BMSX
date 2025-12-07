@@ -34,7 +34,7 @@ import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorT
 import { Component, ComponentTypenameToCtor, type ComponentAttachOptions } from '../component/basecomponent';
 import { ActionEffectRegistry, RegisterEffectOptions } from '../action_effects/effect_registry';
 import { SpriteObject } from '../core/object/sprite';
-import { LuaTable } from '../lua/value';
+import { LuaTable } from '../lua/luavalue';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest;
 

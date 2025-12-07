@@ -1,4 +1,4 @@
-import type { BmsxVMApi } from '../../api';
+import type { BmsxVMApi } from '../../vm_api';
 import type { CachedHighlight, CursorScreenInfo } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { clamp } from '../../../utils/clamp';

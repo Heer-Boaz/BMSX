@@ -1,7 +1,7 @@
-import { BmsxVMApi } from '../api';
+import { BmsxVMApi } from '../vm_api';
 import { clamp } from '../../utils/clamp';;
 import { getApiCompletionData, getKeywordCompletions, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaModuleSymbols, type LuaScopedSymbol } from './intellisense';
-import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast';
+import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/lua_ast';
 import {
 	CompletionContext,
 	CompletionSession,

@@ -3,7 +3,7 @@ import type {
 	RuntimeErrorOverlay,
 	RuntimeErrorOverlayLineDescriptor
 } from './types';
-import type { StackTraceFrame } from '../../lua/value';
+import type { StackTraceFrame } from '../../lua/luavalue';
 import { setActiveRuntimeErrorOverlay } from './vm_cart_editor';
 import { ide_state } from './ide_state';
 

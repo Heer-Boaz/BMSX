@@ -34,7 +34,7 @@ import {
 	type LuaUnaryExpression,
 	type LuaIdentifierExpression,
 	type LuaStringLiteralExpression,
-} from '../../lua/ast';
+} from '../../lua/lua_ast';
 import { parseLuaChunkWithRecovery } from './lua_parse';
 
 export type DiagnosticContextInput = {

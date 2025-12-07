@@ -18,9 +18,9 @@ import {
 	type LuaFunctionDeclarationStatement,
 	type LuaDefinitionInfo,
 	type LuaSourceRange,
-} from '../../lua/ast';
-import type { LuaToken } from '../../lua/token';
-import { LuaTokenType } from '../../lua/token';
+} from '../../lua/lua_ast';
+import type { LuaToken } from '../../lua/luatoken';
+import { LuaTokenType } from '../../lua/luatoken';
 import { ide_state } from './ide_state';
 import type { VMLuaSymbolEntry } from '../types';
 import { computeSourceLabel } from './code_reference';
@@ -29,7 +29,7 @@ import { parseLuaChunkWithRecovery } from './lua_parse';
 import * as constants from './constants';
 import { getActiveCodeTabContext } from './editor_tabs';
 import { listGlobalLuaSymbols, listLuaSymbols, resolveHoverChunkName } from './intellisense';
-import { extractErrorMessage } from '../../lua/value';
+import { extractErrorMessage } from '../../lua/luavalue';
 
 export type SymbolKind = 'parameter' | 'local' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
 

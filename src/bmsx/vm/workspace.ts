@@ -1,4 +1,4 @@
-import { extractErrorMessage } from '../lua/value';
+import { extractErrorMessage } from '../lua/luavalue';
 import type { HttpResponse, StorageService } from '../platform';
 import { type BmsxCartridge, type RomLuaAsset } from '../rompack/rompack';
 import { BmsxVMRuntime } from './vm_runtime';

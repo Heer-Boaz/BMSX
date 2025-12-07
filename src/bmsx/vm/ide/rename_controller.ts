@@ -4,12 +4,12 @@ import { createInlineTextField, getFieldText, setFieldText } from './inline_text
 import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
 import * as constants from './constants';
 import { consumeIdeKey } from './ide_input';
-import type { LuaSourceRange } from '../../lua/ast';
+import type { LuaSourceRange } from '../../lua/lua_ast';
 import { clamp } from '../../utils/clamp';
 import type { VMResourceDescriptor } from '../types';
 import type { LuaSemanticWorkspace } from './semantic_model';
 import { ide_state } from './ide_state';
-import { LuaLexer } from '../../lua/lexer';
+import { LuaLexer } from '../../lua/lualexer';
 import { findCodeTabContext } from './editor_tabs';
 import { findResourceDescriptorForChunk } from './vm_cart_editor';
 import { BmsxVMRuntime } from '../vm_runtime';

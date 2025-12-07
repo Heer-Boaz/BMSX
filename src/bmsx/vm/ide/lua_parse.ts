@@ -1,8 +1,8 @@
-import type { LuaChunk } from '../../lua/ast';
-import { LuaSyntaxError } from '../../lua/errors';
-import { LuaLexer } from '../../lua/lexer';
-import { LuaParser } from '../../lua/parser';
-import type { LuaToken } from '../../lua/token';
+import type { LuaChunk } from '../../lua/lua_ast';
+import { LuaSyntaxError } from '../../lua/luaerrors';
+import { LuaLexer } from '../../lua/lualexer';
+import { LuaParser } from '../../lua/luaparser';
+import type { LuaToken } from '../../lua/luatoken';
 import { clamp } from '../../utils/clamp';
 import { ide_state } from './ide_state';
 

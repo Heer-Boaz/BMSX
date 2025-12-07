@@ -36,7 +36,7 @@ import { resolveOffsetPosition } from './lua_formatter';
 import { resetBlink } from './render/render_caret';
 import * as constants from './constants';
 import { formatLuaDocument } from './lua_formatter';
-import { extractErrorMessage } from '../../lua/value';
+import { extractErrorMessage } from '../../lua/luavalue';
 
 function editorAllowsMutation(): boolean {
 	return ide_state.activeContextReadOnly !== true;

@@ -1,8 +1,8 @@
 import { $ } from '../core/game';
-import { LuaSourceRange } from '../lua/ast';
-import { LuaEnvironment } from '../lua/environment';
-import { LuaHandlerCache, isLuaHandlerFn } from '../lua/handler_cache';
-import { LuaValue, LuaTable, isLuaNativeValue, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../lua/value';
+import { LuaSourceRange } from '../lua/lua_ast';
+import { LuaEnvironment } from '../lua/luaenvironment';
+import { LuaHandlerCache, isLuaHandlerFn } from '../lua/luahandler_cache';
+import { LuaValue, LuaTable, isLuaNativeValue, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../lua/luavalue';
 import { BmsxVMRuntime } from './vm_runtime';
 import { LuaMarshalContext } from './types';
 

@@ -4,7 +4,7 @@ import type {
 	VMLuaSymbolEntry,
 	VMResourceDescriptor,
 } from '../types';
-import type { StackTraceFrame } from '../../lua/value';
+import type { StackTraceFrame } from '../../lua/luavalue';
 import { MENU_COMMANDS } from './ide_input';
 import { RectBounds } from '../../rompack/rompack';
 

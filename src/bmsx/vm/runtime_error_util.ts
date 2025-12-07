@@ -1,5 +1,5 @@
-import { LuaCallFrame } from '../lua/runtime';
-import { StackTraceFrame } from '../lua/value';
+import { LuaCallFrame } from '../lua/luaruntime';
+import { StackTraceFrame } from '../lua/luavalue';
 import { getChunkResourceHint } from './ide/intellisense';
 import { normalizeEndingsAndSplitLines } from './ide/text_utils';
 import { RuntimeErrorDetails } from './ide/types';

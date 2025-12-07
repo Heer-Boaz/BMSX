@@ -2,7 +2,7 @@ import { $ } from '../core/game';
 import { ECSystem, TickGroup } from './ecsystem';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
 import { BmsxVMRuntime } from '../vm/vm_runtime';
-import { extractErrorMessage } from '../lua/value';
+import { extractErrorMessage } from '../lua/luavalue';
 
 export class ActionEffectRuntimeSystem extends ECSystem {
 	constructor(priority: number = 32) {

@@ -1,14 +1,14 @@
 import { $ } from '../core/game';
 import { Input } from '../input/input';
 import { GamepadBinding, GamepadInputMapping, InputMap, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping } from '../input/inputtypes';
-import { LuaEnvironment } from '../lua/environment';
-import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/errors';
-import { LuaInterpreter } from '../lua/runtime';
-import { createLuaNativeFunction, extractErrorMessage } from '../lua/value';
-import { isLuaNativeValue, isLuaTable, LuaTable, LuaValue } from '../lua/value';
+import { LuaEnvironment } from '../lua/luaenvironment';
+import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
+import { LuaInterpreter } from '../lua/luaruntime';
+import { createLuaNativeFunction, extractErrorMessage } from '../lua/luavalue';
+import { isLuaNativeValue, isLuaTable, LuaTable, LuaValue } from '../lua/luavalue';
 import { arrayify } from '../utils/arrayify';
 import { deep_clone } from '../utils/deep_clone';
-import { VM_API_METHOD_METADATA } from './api_metadata';
+import { VM_API_METHOD_METADATA } from './vm_api_metadata';
 import { api, BmsxVMRuntime, VM_BUTTON_ACTIONS } from './vm_runtime';
 import type { VMLuaBuiltinDescriptor } from './types';
 

@@ -1,6 +1,6 @@
-import { LuaLexer } from '../../lua/lexer';
-import type { LuaToken } from '../../lua/token';
-import { LuaTokenType } from '../../lua/token';
+import { LuaLexer } from '../../lua/lualexer';
+import type { LuaToken } from '../../lua/luatoken';
+import { LuaTokenType } from '../../lua/luatoken';
 import { ide_state } from './ide_state';
 
 type LineMetadata = {

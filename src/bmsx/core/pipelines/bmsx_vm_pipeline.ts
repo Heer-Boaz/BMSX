@@ -1,7 +1,7 @@
 import { $ } from "../game";
 import { TickGroup } from "../../ecs/ecsystem";
 import { DefaultECSPipelineRegistry, type NodeSpec } from "../../ecs/pipeline";
-import { BMSX_TERMINAL_UPDATE_SYSTEM_ID, BMSX_TERMINAL_DRAW_SYSTEM_ID, BMSX_CART_DRAW_SYSTEM_ID } from '../../vm/vm_systems';
+import { BMSX_CART_DRAW_SYSTEM_ID, BMSX_CART_UPDATE_SYSTEM_ID } from '../../vm/vm_systems';
 export type VMOverlaySpecOptions = {
 	includeTerminal?: boolean;
 	includeIDE?: boolean;
@@ -23,11 +23,11 @@ export function buildVMOverlaySpec(options: VMOverlaySpecOptions): NodeSpec[] {
 	const includeVMDraw = options.includeCartDraw !== false && includeVMFrame;
 	const nodes: NodeSpec[] = [];
 	if (includeVMFrame) {
-		nodes.push({ ref: BMSX_TERMINAL_UPDATE_SYSTEM_ID });
+		nodes.push({ ref: BMSX_CART_UPDATE_SYSTEM_ID });
 	}
 	if (!includePresentation) {
 		if (includeVMDraw) {
-			nodes.push({ ref: BMSX_TERMINAL_DRAW_SYSTEM_ID });
+			nodes.push({ ref: BMSX_CART_DRAW_SYSTEM_ID });
 		}
 		return nodes;
 	}
@@ -39,7 +39,7 @@ export function buildVMOverlaySpec(options: VMOverlaySpecOptions): NodeSpec[] {
 		if (group !== TickGroup.Presentation) {
 			continue;
 		}
-		if (!includeVMDraw && node.ref === BMSX_TERMINAL_DRAW_SYSTEM_ID) {
+		if (!includeVMDraw && node.ref === BMSX_CART_DRAW_SYSTEM_ID) {
 			continue;
 		}
 		nodes.push({

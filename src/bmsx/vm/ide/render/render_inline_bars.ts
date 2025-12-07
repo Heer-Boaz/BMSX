@@ -1,4 +1,4 @@
-import { BmsxVMApi } from '../../api';
+import { BmsxVMApi } from '../../vm_api';
 import { drawInlineCaret } from './render_caret';
 import * as constants from '../constants';
 import type { TextField } from '../types';

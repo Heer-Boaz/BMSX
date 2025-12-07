@@ -1,7 +1,7 @@
 import type { DebuggerResumeMode } from '../vm/ide/ide_debugger';
 import { fallbackclamp } from '../utils/clamp';
-import type { LuaCallFrame, LuaExceptionResumeStrategy } from './runtime';
-import type { LuaDebuggerPauseSignal } from './value';
+import type { LuaCallFrame, LuaExceptionResumeStrategy } from './luaruntime';
+import type { LuaDebuggerPauseSignal } from './luavalue';
 
 export function normalizeLuaChunkName(name: string): string {
 	return name;

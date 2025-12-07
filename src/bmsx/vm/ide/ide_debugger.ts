@@ -1,7 +1,7 @@
 import { RegisterablePersistent } from '../../rompack/rompack';
 import { Registry } from '../../core/registry';
 import { BmsxVMRuntime } from '../vm_runtime';
-import { normalizeLuaChunkName, type LuaDebuggerResumeCommand, type LuaDebuggerSessionMetrics } from '../../lua/debugger';
+import { normalizeLuaChunkName, type LuaDebuggerResumeCommand, type LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import { ide_state } from './ide_state';
 import { getActiveCodeTabContext } from './editor_tabs';
 import { resolveHoverChunkName } from './intellisense';
@@ -9,8 +9,8 @@ import { clamp, fallbackclamp } from '../../utils/clamp';
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition } from './caret';
 import { clearExecutionStopHighlights, focusChunkSource, setExecutionStopHighlight, clearRuntimeErrorOverlay, updateDesiredColumn, findFunctionDefinitionRowInActiveFile, findResourceDescriptorForChunk, resetPointerClickTracking } from './vm_cart_editor';
 import { resetBlink } from './render/render_caret';
-import type { LuaCallFrame } from '../../lua/runtime';
-import { extractErrorMessage, type LuaDebuggerPauseSignal, type StackTraceFrame } from '../../lua/value';
+import type { LuaCallFrame } from '../../lua/luaruntime';
+import { extractErrorMessage, type LuaDebuggerPauseSignal, type StackTraceFrame } from '../../lua/luavalue';
 import type { VMResourceDescriptor } from '../types';
 import * as constants from './constants';
 

@@ -3,7 +3,7 @@ import type { VMLuaDefinitionLocation, VMLuaSymbolEntry, VMResourceDescriptor } 
 import type { CodeTabContext, SearchMatch, SymbolSearchResult } from './types';
 import { LuaSemanticWorkspace } from './semantic_model';
 import type { Decl } from './semantic_model';
-import type { LuaSourceRange } from '../../lua/ast';
+import type { LuaSourceRange } from '../../lua/lua_ast';
 import type { VMCodeLayout } from './code_layout';
 import { normalizeEndingsAndSplitLines } from './text_utils';
 import { listResources } from '../workspace';
