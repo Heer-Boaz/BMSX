@@ -48,6 +48,7 @@ end
 
 local function setup_hero_collision(owner)
 	local collider = owner.collider
+	-- Enable overlap events and limit queries to hero→target pairs via layer/mask.
 	collider:set_local_area({
 		left = 0,
 		top = 0,
@@ -57,6 +58,8 @@ local function setup_hero_collision(owner)
 	collider.generateoverlapevents = true
 	collider.layer = collision_layers.hero
 	collider.mask = collision_layers.target
+	-- Event bridge passes subscriber as first arg and the payload as the second;
+	-- use the second slot for overlap data and forward the contact info into HUD stats.
 	local function capture_contact(overlap_event, phase)
 		demo.collision.last_event = phase
 		demo.collision.with = overlap_event.other_id
