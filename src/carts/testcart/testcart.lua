@@ -481,6 +481,7 @@ end
 function update(dt)
 	demo.tick = demo.tick + dt
 	track_plain_input()
+	assert(false)
 	tick_collision_flash(dt)
 end
 
@@ -531,6 +532,7 @@ function draw()
 	local target_instance = world_object(collision_target_instance_id)
 	draw_collision_target(target_instance)
 	draw_hero(hero_instance)
+	-- assert(false)
 	draw_hud(hero_instance)
 	extra()
 end

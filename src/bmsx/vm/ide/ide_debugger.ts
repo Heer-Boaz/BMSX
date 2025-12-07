@@ -106,7 +106,7 @@ function handleDebuggerLifecycleEvent(event: DebuggerLifecycleEvent): void {
 		return;
 	}
 	if (event.type === 'paused') {
-		ide_state.debuggerControls.sessionMetrics = event.metrics ;
+		ide_state.debuggerControls.sessionMetrics = event.metrics;
 		updateExecutionState('paused');
 		return;
 	}
@@ -146,7 +146,7 @@ export function getBreakpointsForChunk(chunkName: string): ReadonlySet<number> {
 		return null;
 	}
 	const bucket = ide_state.breakpoints.get(normalizeLuaChunkName(chunkName));
-	return bucket ;
+	return bucket;
 }
 
 export function toggleBreakpoint(chunkName: string, line: number): BreakpointToggleResult {
@@ -331,8 +331,8 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 			descriptor = null;
 		}
 	}
-	const chunkHintasset_id = frameasset_id ?? descriptor?.asset_id ;
-	const chunkHintPath = framePath ?? descriptor?.path ;
+	const chunkHintasset_id = frameasset_id ?? descriptor?.asset_id;
+	const chunkHintPath = framePath ?? descriptor?.path;
 	try {
 		const hint = chunkHintasset_id !== null ? { asset_id: chunkHintasset_id, path: chunkHintPath } : (descriptor ? { asset_id: descriptor.asset_id, path: descriptor.path } : undefined);
 		focusChunkSource(normalizedChunk, hint);
@@ -458,7 +458,7 @@ export function getLastDebuggerPauseEvent(): DebuggerLifecyclePausedEvent {
 
 subscribeDebuggerLifecycleEvents((event: DebuggerLifecycleEvent) => {
 	if (event.type === 'paused' || event.type === 'exception_frame_focus') {
-		showDebuggerPauseOverlay(event.payload, event.type === 'paused' ? event.metrics  : null);
+		showDebuggerPauseOverlay(event.payload, event.type === 'paused' ? event.metrics : null);
 		return;
 	}
 	if (event.type === 'continued') {
