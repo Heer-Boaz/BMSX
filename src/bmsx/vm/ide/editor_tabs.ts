@@ -25,8 +25,7 @@ import {
 import { markDiagnosticsDirty } from './diagnostics';
 import { bumpTextVersion } from './text_utils';
 import { measureText } from './text_utils';
-import { ensureCursorVisible } from './caret';
-import { resolveHoverChunkName } from './intellisense';
+import { requestSemanticRefresh } from './intellisense';
 import { resetBlink } from './render/render_caret';
 import { listResources } from '../workspace';
 import { BmsxVMRuntime } from '../vm_runtime';
@@ -65,6 +64,7 @@ export function createLuaCodeTabContext(descriptor: VMResourceDescriptor): CodeT
 		dirty: false,
 		runtimeErrorOverlay: null,
 		executionStopRow: null,
+		textVersion: 0,
 	};
 }
 
@@ -78,6 +78,7 @@ export function storeActiveCodeTabContext(): void {
 		return;
 	}
 	context.snapshot = captureSnapshot();
+	context.textVersion = ide_state.textVersion;
 	if (ide_state.entryTabId && context.id === ide_state.entryTabId) {
 		context.lastSavedSource = ide_state.lastSavedSource;
 	}
@@ -111,18 +112,14 @@ export function activateCodeEditorTab(tabId: string): void {
 		restoreSnapshot(context.snapshot);
 		ide_state.saveGeneration = context.saveGeneration;
 		ide_state.appliedGeneration = context.appliedGeneration;
+		ide_state.textVersion = context.textVersion ?? ide_state.textVersion;
 		if (isEntry) {
 			ide_state.lastSavedSource = context.lastSavedSource;
 		}
 		context.dirty = ide_state.dirty;
 		setTabDirty(context.id, context.dirty);
 		syncRuntimeErrorOverlayFromContext(context);
-		ide_state.layout.invalidateAllHighlights();
-		updateDesiredColumn();
-		ensureCursorVisible();
 		refreshActiveDiagnostics();
-		const chunkNameSnapshot = resolveHoverChunkName(context) ?? '<console>';
-		ide_state.layout.forceSemanticUpdate(ide_state.lines, ide_state.textVersion, chunkNameSnapshot);
 		return;
 	}
 	const source = context.lastSavedSource && context.lastSavedSource.length > 0
@@ -130,6 +127,7 @@ export function activateCodeEditorTab(tabId: string): void {
 		: resolveSource(context.descriptor);
 	context.lastSavedSource = source;
 	ide_state.lines = source?.split(/\r\n|\n|\r/) ?? [];
+	ide_state.textVersion = context.textVersion ?? ide_state.textVersion;
 	ide_state.layout.markVisualLinesDirty();
 	markDiagnosticsDirty();
 	if (ide_state.lines.length === 0) {
@@ -148,14 +146,14 @@ export function activateCodeEditorTab(tabId: string): void {
 	ide_state.executionStopRow = null;
 	ide_state.saveGeneration = context.saveGeneration;
 	ide_state.appliedGeneration = context.appliedGeneration;
+	context.textVersion = ide_state.textVersion;
 	if (isEntry) {
 		ide_state.lastSavedSource = context.lastSavedSource;
 	}
 	setTabDirty(context.id, context.dirty);
 	syncRuntimeErrorOverlayFromContext(context);
 	bumpTextVersion();
-	const chunkName = resolveHoverChunkName(context) ?? '<console>';
-	ide_state.layout.forceSemanticUpdate(ide_state.lines, ide_state.textVersion, chunkName);
+	requestSemanticRefresh(context);
 	updateDesiredColumn();
 	resetBlink();
 	ide_state.pointerSelecting = false;
@@ -241,24 +239,19 @@ export function setActiveTab(tabId: string): void {
 	if (!tab) {
 		return;
 	}
-	const navigationCheckpoint = tab.kind === 'lua_editor' && tabId !== ide_state.activeTabId
+	const isSameTab = ide_state.activeTabId === tabId;
+	const navigationCheckpoint = !isSameTab && tab.kind === 'lua_editor'
 		? beginNavigationCapture()
 		: null;
 	closeSymbolSearch(true);
-	const previousKind = getActiveTabKind();
-	if (previousKind === 'lua_editor') {
+	if (!isSameTab && getActiveTabKind() === 'lua_editor') {
 		storeActiveCodeTabContext();
 	}
-	if (ide_state.activeTabId === tabId) {
+	if (isSameTab) {
 		if (tab.kind === 'resource_view') {
 			ide_state.activeContextReadOnly = false;
 			enterResourceViewer(tab);
 			ide_state.runtimeErrorOverlay = null;
-		} else if (tab.kind === 'lua_editor') {
-			activateCodeEditorTab(tab.id);
-			if (navigationCheckpoint) {
-				completeNavigation(navigationCheckpoint);
-			}
 		}
 		return;
 	}

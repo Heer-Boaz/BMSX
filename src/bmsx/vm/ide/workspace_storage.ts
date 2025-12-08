@@ -41,6 +41,7 @@ type SnapshotMetadata = {
 	scrollRow: number;
 	scrollColumn: number;
 	selectionAnchor: Position;
+	textVersion?: number;
 };
 
 export type SerializedDescriptor = {
@@ -536,6 +537,7 @@ export function buildSnapshotFromSource(source: string, metadata?: SnapshotMetad
 		scrollColumn: Math.max(0, metadata?.scrollColumn ?? 0),
 		selectionAnchor: clampSelection(metadata?.selectionAnchor , lines),
 		dirty: ide_state.dirty,
+		textVersion: metadata?.textVersion ?? ide_state.textVersion,
 	};
 }
 
@@ -550,6 +552,7 @@ function cloneEditorSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
 			? { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column }
 			: null,
 		dirty: snapshot.dirty,
+		textVersion: snapshot.textVersion,
 	};
 }
 
@@ -704,6 +707,7 @@ function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetada
 			scrollRow: ide_state.scrollRow,
 			scrollColumn: ide_state.scrollColumn,
 			selectionAnchor: ide_state.selectionAnchor ? { row: ide_state.selectionAnchor.row, column: ide_state.selectionAnchor.column } : null,
+			textVersion: ide_state.textVersion,
 		};
 	}
 	const snapshot = context.snapshot;
@@ -714,6 +718,7 @@ function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetada
 			scrollRow: snapshot.scrollRow,
 			scrollColumn: snapshot.scrollColumn,
 			selectionAnchor: snapshot.selectionAnchor ? { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column } : null,
+			textVersion: snapshot.textVersion,
 		};
 	}
 	return {
@@ -722,6 +727,7 @@ function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetada
 		scrollRow: 0,
 		scrollColumn: 0,
 		selectionAnchor: null,
+		textVersion: context.textVersion,
 	};
 }
 

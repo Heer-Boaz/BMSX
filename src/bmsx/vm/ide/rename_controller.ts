@@ -345,6 +345,7 @@ export class CrossFileRenameManager {
 			scrollColumn: 0,
 			selectionAnchor: null,
 			dirty: true,
+			textVersion: context.textVersion ?? 0,
 		};
 		snapshot.lines = lines.slice();
 		snapshot.dirty = true;

@@ -490,12 +490,12 @@ export class Game {
 			throw new Error('[Game] Gameplay pipeline spec has not been initialized and no override is available.');
 		}
 
-		const newTotalSpecIncludingModuleExtensionsAndAdditionalRuntimeExtensions = this._pipelineSpec;
-		const nonModuleExtensions = this.pipeline_ext ?? [];
+		const combinedSpec = this._pipelineSpec.map(node => shallowcopy(node));
+		const nonModuleExtensions = this._pipelineExt ?? [];
 		for (const node of nonModuleExtensions) {
-			newTotalSpecIncludingModuleExtensionsAndAdditionalRuntimeExtensions.push(shallowcopy(node));
+			combinedSpec.push(shallowcopy(node));
 		}
-		DefaultECSPipelineRegistry.build(this.world, newTotalSpecIncludingModuleExtensionsAndAdditionalRuntimeExtensions);
+		DefaultECSPipelineRegistry.build(this.world, combinedSpec);
 	}
 
 	public get pipeline_spec() {
@@ -590,8 +590,9 @@ export class Game {
 				try {
 					vmRuntime.handleLuaError(error);
 					vmRuntime.abandonFrameState();
-				} catch { /* ignore secondary failures, but log them */
-					console.error(`Error while handling surfaced game error in console runtime: ${error}`);
+				} catch (error) { /* ignore secondary failures, but log them */
+					// console.error(`Error while handling surfaced game error in vm runtime: ${error ?? }`);
+					throw error;
 					// Abort the remainder of this update to keep state coherent this frame.
 					vmRuntime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
 					failed = true;
@@ -664,7 +665,7 @@ export class Game {
 					vmRuntime.handleLuaError(error);
 					vmRuntime.abandonFrameState();
 				} catch { /* ignore secondary failures, but log them */
-					console.error(`Error while handling surfaced game error in console runtime: ${error}`);
+					console.error(`Error while handling surfaced game error in vm runtime: ${error}`);
 					// Abort the remainder of this update to keep state coherent this frame.
 					vmRuntime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
 					this.wasupdated = true; // Force a redraw to show the error state and prevent freezing the game

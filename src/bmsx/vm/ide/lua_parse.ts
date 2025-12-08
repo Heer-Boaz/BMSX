@@ -56,8 +56,13 @@ function truncateSourceAtSyntaxError(
 		truncatedLines.push(lines[index] ?? '');
 	}
 	const line = lines[lineIndex];
-	const maxColumn = lineIndex === lines.length - 1 ? Math.max(line.length - 1, 0) : line.length;
-	const column = Number.isFinite(error.column) ? clamp(error.column - 1, 0, maxColumn) : maxColumn;
+	const isLastLine = lineIndex === lines.length - 1;
+	const maxColumn = line.length;
+	let column = Number.isFinite(error.column) ? clamp(error.column - 1, 0, maxColumn) : maxColumn;
+	if (isLastLine && column >= line.length) {
+		// Avoid shrinking the last line one character at a time when the error is at or beyond EOF.
+		column = 0;
+	}
 	const prefix = line.slice(0, column);
 	if (prefix.trim().length > 0) {
 		truncatedLines.push(prefix);

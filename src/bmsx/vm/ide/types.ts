@@ -57,6 +57,7 @@ export type EditorSnapshot = {
 	scrollColumn: number;
 	selectionAnchor: Position;
 	dirty: boolean;
+	textVersion: number;
 };
 
 export type SymbolCatalogEntry = {
@@ -288,6 +289,7 @@ export type CodeTabContext = {
 	runtimeErrorOverlay: RuntimeErrorOverlay;
 	executionStopRow: number;
 	readOnly?: boolean;
+	textVersion: number;
 };
 
 export type PendingActionPrompt = {
@@ -392,6 +394,8 @@ export type DiagnosticsCacheEntry = {
 	contextId: string;
 	chunkName: string;
 	diagnostics: EditorDiagnostic[];
+	version: number;
+	source: string;
 };
 
 export type SearchComputationJob = {

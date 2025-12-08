@@ -1,7 +1,7 @@
 import type { VMLuaBuiltinDescriptor, VMLuaSymbolEntry, VMResourceDescriptor } from '../types';
 import type { EditorDiagnostic } from './types';
 import { BmsxVMRuntime } from '../vm_runtime';
-import { computeLuaDiagnostics, getApiCompletionData, type LuaDiagnostic } from './intellisense';
+import { computeLuaDiagnostics, getApiCompletionData } from './intellisense';
 import { parseLuaChunkWithRecovery } from './lua_parse';
 import { ide_state, diagnosticsDebounceMs } from './ide_state';
 
@@ -12,6 +12,7 @@ export type DiagnosticContextInput = {
 	chunkName: string;
 	source: string;
 	lines?: readonly string[];
+	version: number;
 };
 
 export type DiagnosticProviders = {
@@ -24,7 +25,7 @@ export function computeAggregatedEditorDiagnostics(
 	contexts: ReadonlyArray<DiagnosticContextInput>,
 	providers: DiagnosticProviders,
 ): EditorDiagnostic[] {
-	if (!Array.isArray(contexts) || contexts.length === 0) return [];
+	if (contexts.length === 0) return [];
 	const globalSymbols = providers.listGlobalSymbols();
 	const builtinDescriptors = providers.listBuiltins();
 	const apiData = getApiCompletionData();
@@ -47,7 +48,7 @@ export function computeAggregatedEditorDiagnostics(
 				source,
 				model,
 				definitions,
-				parsed: parsed ?? undefined,
+				parsed,
 				lines: baseLines,
 			});
 		}

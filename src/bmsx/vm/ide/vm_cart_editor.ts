@@ -162,6 +162,7 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 	ide_state.preMutationSource = null;
 	applyViewportSize(viewport);
 	ide_state.clockNow = $.platform.clock.now;
+	ide_state.semanticWorkspace = new LuaSemanticWorkspace();
 	setFontVariant(ide_state.fontVariant);
 	ide_state.searchField = createInlineTextField();
 	ide_state.symbolSearchField = createInlineTextField();
@@ -211,7 +212,6 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 		shouldAutoTriggerCompletions: () => shouldAutoTriggerCompletions(),
 		shouldShowParameterHints: () => intellisenseUiReady(),
 	});
-	ide_state.semanticWorkspace = new LuaSemanticWorkspace(); // Initialize semantic workspace here to prevent cyclic dependency issues
 	ide_state.completion.enterCommitsCompletion = false;
 	ide_state.input = new InputController();
 	ide_state.problemsPanel = new ProblemsPanelController();
@@ -992,6 +992,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 	const providers = createDiagnosticProviders();
 	const activeId = ide_state.activeCodeTabContextId;
 	const inputs: DiagnosticContextInput[] = [];
+	const inputLookup = new Map<string, DiagnosticContextInput>();
 	const metadata: Array<{ id: string; chunkName: string }> = [];
 	for (let index = 0; index < contextIds.length; index += 1) {
 		const contextId = contextIds[index];
@@ -1012,14 +1013,25 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			continue;
 		}
 		const lines = isActive ? ide_state.lines : (context.snapshot ? context.snapshot.lines : null);
-		inputs.push({
+		const version = isActive
+			? ide_state.textVersion
+			: (context.snapshot ? context.snapshot.textVersion : context.textVersion ?? 0);
+		const cached = ide_state.diagnosticsCache.get(contextId);
+		if (cached && cached.source === source && cached.chunkName === chunkName && cached.version === version) {
+			ide_state.dirtyDiagnosticContexts.delete(contextId);
+			continue;
+		}
+		const input: DiagnosticContextInput = {
 			id: context.id,
 			title: context.title,
 			descriptor: context.descriptor,
 			chunkName,
 			source,
 			lines: lines ?? undefined,
-		});
+			version,
+		};
+		inputs.push(input);
+		inputLookup.set(context.id, input);
 		metadata.push({ id: context.id, chunkName });
 	}
 	if (inputs.length === 0) {
@@ -1041,10 +1053,13 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 	for (let index = 0; index < metadata.length; index += 1) {
 		const meta = metadata[index];
 		const diagList = byContext.get(meta.id) ?? [];
+		const input = inputLookup.get(meta.id)!;
 		ide_state.diagnosticsCache.set(meta.id, {
 			contextId: meta.id,
 			chunkName: meta.chunkName,
 			diagnostics: diagList,
+			version: input.version,
+			source: input.source,
 		});
 		ide_state.dirtyDiagnosticContexts.delete(meta.id);
 	}
@@ -3095,6 +3110,7 @@ export function captureSnapshot(): EditorSnapshot {
 		scrollColumn: ide_state.scrollColumn,
 		selectionAnchor: selectionCopy,
 		dirty: ide_state.dirty,
+		textVersion: ide_state.textVersion,
 	};
 }
 
@@ -3105,15 +3121,14 @@ export type RestoreSnapshotOptions = {
 export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnapshotOptions): void {
 	ide_state.lines = snapshot.lines.slice();
 	ide_state.layout.markVisualLinesDirty();
-	ide_state.layout.invalidateAllHighlights();
-	markDiagnosticsDirty();
+	ide_state.layout.invalidateHighlightsFromRow(0);
 	ide_state.cursorRow = snapshot.cursorRow;
 	ide_state.cursorColumn = snapshot.cursorColumn;
 	ide_state.scrollRow = snapshot.scrollRow;
 	ide_state.scrollColumn = snapshot.scrollColumn;
 	ide_state.selectionAnchor = null;
 	ide_state.dirty = snapshot.dirty;
-	bumpTextVersion();
+	ide_state.textVersion = snapshot.textVersion ?? ide_state.textVersion;
 	updateDesiredColumn();
 	resetBlink();
 	ide_state.cursorRevealSuspended = false;
@@ -3316,7 +3331,6 @@ export function updateViewport(viewport: Viewport): void {
 	ide_state.resourcePanel.clampHScroll();
 	ide_state.resourcePanel.ensureSelectionVisible();
 	ide_state.layout.markVisualLinesDirty();
-	ide_state.layout.invalidateAllHighlights();
 	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();
 	rewrapRuntimeErrorOverlays();
@@ -3404,7 +3418,6 @@ export function hideResourcePanel(): void {
 	ide_state.resourcePanelFocused = false;
 	ide_state.resourcePanelResizing = false;
 	resetResourcePanelState();
-	ide_state.layout.invalidateAllHighlights();
 }
 
 export function openLuaCodeTab(descriptor: VMResourceDescriptor): void {
@@ -3835,6 +3848,7 @@ export function openDebugPanelTab(kind: DebugPanelKind): void {
 			runtimeErrorOverlay: null,
 			executionStopRow: null,
 			readOnly: true,
+			textVersion: 0,
 		};
 		ide_state.codeTabContexts.set(tabId, context);
 	} else {

@@ -411,6 +411,10 @@ export class BmsxVMRuntime extends Service {
 		this.updateGamePipelineExts();
 	}
 
+	private isOverlayActive(): boolean {
+		return this.editor?.isActive === true || this.terminal.isActive;
+	}
+
 	private toggleEditor(): void {
 		if (this.editor?.isActive === true) {
 			this.deactivateEditor();
@@ -684,6 +688,9 @@ export class BmsxVMRuntime extends Service {
 		if (!this.tickEnabled) {
 			return;
 		}
+		if (this.isOverlayActive()) {
+			return;
+		}
 		if (this.currentFrameState !== null) {
 			return;
 		}
@@ -692,6 +699,9 @@ export class BmsxVMRuntime extends Service {
 
 	public tickDraw(): void {
 		if (!this.tickEnabled) {
+			return;
+		}
+		if (this.isOverlayActive()) {
 			return;
 		}
 		if (!this.currentFrameState) {
@@ -1110,10 +1120,7 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private rebindChunkEnvironmentHandlers(moduleId: string): void {
-		const env = this.luaInterpreter?.chunkEnvironment;
-		if (!env) {
-			throw new Error('[BmsxVMRuntime] No Lua environment available for rebind.');
-		}
+		const env = this.luaInterpreter.chunkEnvironment;
 		const visited = new WeakSet<LuaTable>();
 		for (const [key, value] of env.entries()) {
 			const path = [key];
@@ -1790,7 +1797,8 @@ export class BmsxVMRuntime extends Service {
 		if (context) {
 			return context;
 		}
-		const moduleId = this._luaChunkName ?? 'lua::runtime';
+		const binding = this._luaChunkName ? $.rompack.cart.chunk2lua[this._luaChunkName] : null;
+		const moduleId = binding ? binding.source_path : (this._luaChunkName ?? 'lua::runtime');
 		// Marshal contexts annotate where a value came from (module + path) so errors/diagnostics
 		// can report meaningful breadcrumbs for mixed JS/Lua graphs.
 		return {
@@ -1812,12 +1820,13 @@ export class BmsxVMRuntime extends Service {
 	private refreshPackageLoadedEntry(packageKey: string, results: ReadonlyArray<LuaValue>): void {
 		const packageLoaded = this.luaInterpreter.getPackageLoadedTable();
 		const moduleValue = results.length > 0 && results[0] !== null ? results[0] : true;
-		packageLoaded?.set(packageKey, moduleValue);
+		packageLoaded.set(packageKey, moduleValue);
 	}
 
 	private rebindModuleExportHandlers(moduleId: string, moduleValue: LuaValue): void {
 		const visited = new WeakSet<LuaTable>();
-		this.rebindHandlersFromLuaValue(moduleId, moduleValue, [], visited);
+		// Align with wrapLuaExecutionResults() which wraps returned values under ['return', '<index>'].
+		this.rebindHandlersFromLuaValue(moduleId, moduleValue, ['return', '0'], visited);
 	}
 
 	public invalidateLuaModuleIndex(): void {
@@ -1827,20 +1836,15 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private cacheChunkEnvironment(chunkName: string, moduleId?: string): void {
-		const environment = this.luaInterpreter?.chunkEnvironment;
-		if (!environment) {
-			return;
-		}
+		const environment = this.luaInterpreter.chunkEnvironment;
 		const definitions = this.luaInterpreter.getChunkDefinitions(chunkName);
-		const effectiveModuleId = moduleId ?? $.rompack.cart.chunk2lua[chunkName]?.chunk_name;
+		const asset = $.rompack.cart.chunk2lua[chunkName];
+		const effectiveModuleId = moduleId ?? asset.source_path;
 		this.pruneRemovedChunkFunctionExports(chunkName, environment, definitions, this.luaInterpreter.globalEnvironment);
 		this.installFunctionRedirectsForChunk(effectiveModuleId, environment, definitions);
 		this.luaJsBridge.wrapDynamicChunkFunctions(effectiveModuleId, environment, chunkName);
-		const asset = $.rompack.cart.chunk2lua[chunkName];
 		this.luaChunkEnvironmentsByChunkName.set(chunkName, environment);
-		if (asset?.source_path) {
-			this.luaChunkEnvironmentsByPath.set(asset.source_path, environment);
-		}
+		this.luaChunkEnvironmentsByPath.set(asset.source_path, environment);
 	}
 
 	private collectChunkFunctionDefinitionKeys(definitions: ReadonlyArray<LuaDefinitionInfo>): Set<string> {
@@ -1955,15 +1959,14 @@ export class BmsxVMRuntime extends Service {
 			const pending = packageLoaded.get(record.packageKey);
 			return pending === null ? true : pending;
 		}
-		const source = this.resourceSourceForChunk($.rompack.cart.path2lua[record.path].chunk_name);
-		const resourceInfo: { path?: string } = {};
-		resourceInfo.path = record.path;
+		const asset = $.rompack.cart.path2lua[record.path];
+		const source = this.resourceSourceForChunk(asset.chunk_name);
 		this.luaModuleLoadingKeys.add(record.packageKey);
 		packageLoaded.set(record.packageKey, true);
 		const previousChunkName = this._luaChunkName;
 		this._luaChunkName = record.chunkName;
 		try {
-			const moduleId = $.rompack.cart.path2lua[record.path]?.chunk_name;
+			const moduleId = asset.source_path; // Keep redirects aligned with source paths
 			const results = interpreter.execute(source, record.chunkName);
 			this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
 			this.cacheChunkEnvironment(record.chunkName, moduleId);
@@ -2000,7 +2003,8 @@ export class BmsxVMRuntime extends Service {
 		const previousChunkTables = this.captureChunkTables(chunkName);
 		const previousGlobals = this.captureGlobalStateForReload();
 		const source = sourceOverride ? sourceOverride : this.resourceSourceForChunk(chunkName);
-		const moduleId = chunkName;
+		const asset = $.rompack.cart.chunk2lua[chunkName];
+		const moduleId = asset.source_path; // Stable ids for redirect caches
 		const results = interpreter.execute(source, chunkName);
 		this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
 		this.cacheChunkEnvironment(chunkName, moduleId);

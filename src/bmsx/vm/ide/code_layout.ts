@@ -606,8 +606,8 @@ export class VMCodeLayout {
 					source,
 				});
 			}
-		} catch {
-			// this.inFlightSemantic = null;
+		} catch (error) {
+			console.error(error);
 			this.semanticWorker = null;
 			this.applySemanticUpdateSync(pending);
 		}
