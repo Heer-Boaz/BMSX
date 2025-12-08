@@ -50,7 +50,7 @@ export class GamepadInput implements InputHandler {
 				state.presstime = null;
 				state.justreleased = false;
 			}
-			state.consumed = state.stickyConsumed ?? false;
+			state.consumed = state.consumed ?? false;
 		}
 	}
 
@@ -81,7 +81,6 @@ export class GamepadInput implements InputHandler {
 			state.waspressed = state.waspressed || wasPressed;
 			state.wasreleased = state.wasreleased || wasPressed;
 			if (pressId !== null) state.pressId = pressId;
-			state.stickyConsumed = false;
 			state.consumed = false;
 		}
 		this.buttonStates[code] = state;
@@ -95,12 +94,10 @@ export class GamepadInput implements InputHandler {
 		this.buttonStates[code] = state;
 	}
 
-	public consumeButton(button: string, options?: { sticky?: boolean }): void {
-		const sticky = options?.sticky ?? true;
+	public consumeButton(button: string): void {
 		const state = this.buttonStates[button];
 		if (state) {
 			state.consumed = true;
-			state.stickyConsumed = sticky ? true : state.stickyConsumed ?? false;
 		}
 	}
 

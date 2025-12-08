@@ -70,7 +70,6 @@ export function getPressedState(
 		repeatpressed: state.repeatpressed ?? false,
 		repeatcount: state.repeatcount ?? 0,
 		consumed: state.consumed ?? false,
-		stickyConsumed: state.stickyConsumed ?? false,
 		presstime: state.presstime,
 		timestamp: state.timestamp,
 		pressedAtMs: state.pressedAtMs,
@@ -91,7 +90,6 @@ export function makeButtonState(partialState?: Partial<ButtonState>): ButtonStat
 		repeatpressed = false,
 		repeatcount = 0,
 		consumed = false,
-		stickyConsumed = false,
 		presstime = null,
 		timestamp = $.platform.clock.now(),
 		pressedAtMs = null,
@@ -100,7 +98,7 @@ export function makeButtonState(partialState?: Partial<ButtonState>): ButtonStat
 		value = null,
 		value2d = null,
 	} = partialState ?? {};
-	return { pressed, justpressed, justreleased, waspressed, wasreleased, repeatpressed, repeatcount, consumed, stickyConsumed, presstime, timestamp, pressedAtMs, releasedAtMs, pressId, value, value2d };
+	return { pressed, justpressed, justreleased, waspressed, wasreleased, repeatpressed, repeatcount, consumed, presstime, timestamp, pressedAtMs, releasedAtMs, pressId, value, value2d };
 }
 
 export function makeActionState(actionname: string, partialState?: Partial<ActionState>): ActionState {
@@ -170,7 +168,7 @@ export class InputStateManager {
 		for (const state of this.buttonStates.values()) {
 			state.justpressed = false;
 			state.justreleased = false;
-			state.consumed = state.stickyConsumed ?? false;
+			state.consumed = state.consumed ?? false;
 			if (state.pressed) {
 				const pressedAt = state.pressedAtMs ?? state.timestamp ?? currentTime;
 				state.presstime = Math.max(0, currentTime - pressedAt);
@@ -227,7 +225,6 @@ export class InputStateManager {
 			state.pressId = event.pressId ?? state.pressId ;
 			state.value = 0;
 			state.consumed = event.consumed ?? false;
-			state.stickyConsumed = false;
 		}
 	}
 
@@ -294,8 +291,7 @@ export class InputStateManager {
 	 * @param identifier - The unique identifier of the button, which can be a string or a number.
 	 * If the button state exists, it will be marked as consumed.
 	 */
-	consumeBufferedEvent(identifier: ButtonId, pressId?: number, opts?: { sticky?: boolean }): void {
-		const sticky = opts?.sticky ?? true;
+	consumeBufferedEvent(identifier: ButtonId, pressId?: number): void {
 		for (const event of this.inputBuffer) {
 			if (event.identifier === identifier && (pressId == null || event.pressId === pressId)) {
 				event.consumed = true;
@@ -304,7 +300,6 @@ export class InputStateManager {
 		const state = this.buttonStates.get(identifier);
 		if (state) {
 			state.consumed = true;
-			if (sticky) state.stickyConsumed = true;
 		}
 	}
 
@@ -314,7 +309,6 @@ export class InputStateManager {
 			state.justpressed = false;
 			state.justreleased = false;
 			state.consumed = false;
-			state.stickyConsumed = false;
 			if (!state.pressed) {
 				state.presstime = null;
 				state.pressedAtMs = null;

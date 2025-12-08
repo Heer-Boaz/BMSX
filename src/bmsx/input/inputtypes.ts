@@ -107,7 +107,6 @@ export type ButtonState = {
 	repeatcount: number;
 	// Consumption fields
 	consumed: boolean;
-	stickyConsumed?: boolean;
 	// Timing fields
 	presstime: number; // ms since pressed
 	timestamp: number; // last transition timestamp (ms)
@@ -173,7 +172,7 @@ export interface InputHandler {
 	 * Consumes the specified button, marking it as processed.
 	 * @param button - The button name to consume.
 	 */
-	consumeButton(button: ButtonId, options?: { sticky?: boolean }): void;
+	consumeButton(button: ButtonId): void;
 
 	/**
 	 * Resets the input, optionally excluding specified buttons.

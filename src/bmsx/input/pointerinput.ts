@@ -74,7 +74,7 @@ export class PointerInput implements InputHandler {
 			}
 			state.waspressed = state.waspressed || state.pressed;
 			state.wasreleased = state.wasreleased || (!state.pressed);
-			state.consumed = state.stickyConsumed ?? false;
+			state.consumed = state.consumed ?? false;
 		}
 	}
 
@@ -88,7 +88,6 @@ export class PointerInput implements InputHandler {
 			if (!target.pressId) target.pressId = this.nextPressId++;
 			if (!target.pressedAtMs) target.pressedAtMs = target.timestamp ?? $.platform.clock.now();
 		} else {
-			target.stickyConsumed = false;
 			target.consumed = false;
 		}
 		this.buttonStates[code] = target;
@@ -115,7 +114,6 @@ export class PointerInput implements InputHandler {
 		delta.justpressed = moved && !wasPressed;
 		delta.waspressed = moved || wasPressed;
 		delta.consumed = false;
-		delta.stickyConsumed = false;
 		this.buttonStates['pointer_delta'] = delta;
 	}
 
@@ -131,7 +129,6 @@ export class PointerInput implements InputHandler {
 				current.justreleased = false;
 				current.waspressed = true;
 				current.consumed = false;
-				current.stickyConsumed = false;
 				current.pressedAtMs = current.timestamp;
 				current.pressId = this.nextPressId++;
 			}
@@ -139,17 +136,14 @@ export class PointerInput implements InputHandler {
 		this.buttonStates[code] = current;
 	}
 
-	public consumeButton(button: string, options?: { sticky?: boolean }): void {
-		const sticky = options?.sticky ?? true;
+	public consumeButton(button: string): void {
 		const state = this.buttonStates[button];
 		if (state) {
 			state.consumed = true;
-			state.stickyConsumed = sticky ? true : state.stickyConsumed ?? false;
 			if (button === 'pointer_wheel') {
 				state.pressed = false;
 				state.justpressed = false;
 				state.justreleased = false;
-				state.stickyConsumed = false;
 			}
 		}
 	}
