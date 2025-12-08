@@ -14,7 +14,7 @@ import {
 } from './types';
 import type { VMLuaBuiltinDescriptor, VMLuaDefinitionRange, VMLuaSymbolEntry } from '../types';
 import * as constants from './constants';
-import { isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
+import { isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
 import { isWhitespace, isWordChar } from './text_utils';
 import { isLuaCommentContext } from './text_utils';
 import { ide_state } from './ide_state';
@@ -212,7 +212,7 @@ export class CompletionController {
 		this.refreshParameterHint();
 	}
 
-	public handleKeybindings(deltaSeconds: number): boolean {
+	public handleKeybindings(): boolean {
 		const { ctrlDown, altDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
 		if ((ctrlDown || metaDown) && !altDown && this.host.isCodeTabActive() && isKeyJustPressed('Space')) {
 			consumeIdeKey('Space');
@@ -244,7 +244,7 @@ export class CompletionController {
 			}
 			return false;
 		}
-		if (this.handleNavigationKeys(session, deltaSeconds, ctrlDown || metaDown)) {
+		if (this.handleNavigationKeys(session, ctrlDown || metaDown)) {
 			return true;
 		}
 		if (manual && this.enterCommitsCompletion) {
@@ -1014,29 +1014,29 @@ export class CompletionController {
 		this.ensureCompletionSelectionVisible(session);
 	}
 
-	private handleNavigationKeys(session: CompletionSession, deltaSeconds: number, allowHomeEnd: boolean): boolean {
+	private handleNavigationKeys(session: CompletionSession, allowHomeEnd: boolean): boolean {
 		let moved = false;
-		if (this.navigationActive('ArrowDown', deltaSeconds)) {
+		if (this.navigationActive('ArrowDown')) {
 			consumeIdeKey('ArrowDown');
 			this.moveCompletionSelection(1);
 			moved = true;
 		}
-		if (this.navigationActive('ArrowUp', deltaSeconds)) {
+		if (this.navigationActive('ArrowUp')) {
 			consumeIdeKey('ArrowUp');
 			this.moveCompletionSelection(-1);
 			moved = true;
 		}
-		if (this.navigationActive('PageDown', deltaSeconds)) {
+		if (this.navigationActive('PageDown')) {
 			consumeIdeKey('PageDown');
 			this.moveCompletionSelection(session.maxVisibleItems);
 			moved = true;
 		}
-		if (this.navigationActive('PageUp', deltaSeconds)) {
+		if (this.navigationActive('PageUp')) {
 			consumeIdeKey('PageUp');
 			this.moveCompletionSelection(-session.maxVisibleItems);
 			moved = true;
 		}
-		if (allowHomeEnd && this.navigationActive('Home', deltaSeconds)) {
+		if (allowHomeEnd && this.navigationActive('Home')) {
 			consumeIdeKey('Home');
 			if (session.filteredItems.length > 0) {
 				session.selectionIndex = 0;
@@ -1045,7 +1045,7 @@ export class CompletionController {
 			}
 			moved = true;
 		}
-		if (allowHomeEnd && this.navigationActive('End', deltaSeconds)) {
+		if (allowHomeEnd && this.navigationActive('End')) {
 			consumeIdeKey('End');
 			if (session.filteredItems.length > 0) {
 				session.selectionIndex = session.filteredItems.length - 1;
@@ -1057,8 +1057,8 @@ export class CompletionController {
 		return moved;
 	}
 
-	private navigationActive(code: string, deltaSeconds: number): boolean {
-		return isKeyJustPressed(code) || ide_state.input.shouldRepeat(code, deltaSeconds);
+	private navigationActive(code: string): boolean {
+		return isKeyJustPressed(code) || shouldRepeatKeyFromPlayer(code);
 	}
 
 	private ensureCompletionSelectionVisible(session: CompletionSession): void {
@@ -1331,9 +1331,9 @@ export class CompletionController {
 		this.localCompletionCache.delete(key);
 	}
 }
-export function handleCompletionKeybindings(deltaSeconds: number): boolean {
+export function handleCompletionKeybindings(): boolean {
 	if (isReadOnlyCodeTab()) {
 		return false;
 	}
-	return ide_state.completion.handleKeybindings(deltaSeconds);
+	return ide_state.completion.handleKeybindings();
 }

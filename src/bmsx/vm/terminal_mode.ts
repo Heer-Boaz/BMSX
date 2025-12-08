@@ -28,7 +28,7 @@ import {
 } from './ide/ide_input';
 import { CompletionController } from './ide/completion_controller';
 import { collectLuaModuleAliases, consoleValueToString, listLuaObjectMembers } from './ide/intellisense';
-import { consumeIdeKey, getIdeKeyState, shouldRepeatKeyFromPlayer } from './ide/ide_input';
+import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './ide/ide_input';
 import type { asset_id, Viewport } from '../rompack/rompack';
 import { api, BmsxVMRuntime } from './vm_runtime';
 import { VMCommandDispatcher } from './console_commands';
@@ -148,7 +148,7 @@ export class TerminalMode {
 			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),
 			charAt: (row, column) => this.charAt(row, column),
 			getTextVersion: () => this.textVersion,
-			shouldFireRepeat: (code, _deltaSeconds) => this.shouldRepeatKey(code),
+			shouldFireRepeat: (code) => this.shouldRepeatKey(code),
 			shouldAutoTriggerCompletions: () => false,
 			shouldShowParameterHints: () => false,
 		});
@@ -206,7 +206,7 @@ export class TerminalMode {
 		if (!this.active) {
 			return;
 		}
-		this.blinkTimer += deltaSeconds;
+		this.blinkTimer += deltaSeconds; // TODO: REPLACE WITH TIMELINE!!
 		if (this.blinkTimer >= CURSOR_BLINK_PERIOD) {
 			this.blinkTimer -= CURSOR_BLINK_PERIOD;
 		}
@@ -214,16 +214,16 @@ export class TerminalMode {
 		this.completion.processPending(deltaSeconds);
 	}
 
-	public async handleInput(deltaSeconds: number) {
+	public async handleInput() {
 		if (!this.active) {
 			return null;
 		}
-		if (this.completion.handleKeybindings(deltaSeconds)) {
+		if (this.completion.handleKeybindings()) {
 			this.resetBlink();
 			return null;
 		}
-		const options: InlineInputOptions = { deltaSeconds, allowSpace: true };
-		const historyHandled = this.handleHistoryNavigation(deltaSeconds);
+		const options: InlineInputOptions = { allowSpace: true };
+		const historyHandled = this.handleHistoryNavigation();
 		if (historyHandled) {
 			this.resetBlink();
 		}
@@ -384,7 +384,7 @@ export class TerminalMode {
 		}
 	}
 
-	private handleHistoryNavigation(_deltaSeconds: number): boolean {
+	private handleHistoryNavigation(): boolean {
 		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
 		if (ctrlDown || altDown || metaDown) {
 			return false;

@@ -1,14 +1,13 @@
 import { resolveReferenceLookup, type ReferenceLookupOptions, type ReferenceMatchInfo, ReferenceState } from './code_reference';
 import type { CodeTabContext, InlineInputOptions, TextField, SearchMatch } from './types';
 import { createInlineTextField, getFieldText, setFieldText } from './inline_text_field';
-import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
+import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
 import * as constants from './constants';
 import { consumeIdeKey } from './ide_input';
 import type { LuaSourceRange } from '../../lua/lua_ast';
 import { clamp } from '../../utils/clamp';
 import type { VMResourceDescriptor } from '../types';
 import type { LuaSemanticWorkspace } from './semantic_model';
-import { ide_state } from './ide_state';
 import { LuaLexer } from '../../lua/lualexer';
 import { findCodeTabContext } from './editor_tabs';
 import { findResourceDescriptorForChunk } from './vm_cart_editor';
@@ -108,13 +107,13 @@ export class RenameController {
 		this.host.onRenameSessionClosed();
 	}
 
-	public handleInput(deltaSeconds: number): void {
+	public handleInput(): void {
 		if (!this.active) {
 			return;
 		}
 		const { ctrlDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
 
-		if ((ctrlDown || metaDown) && ide_state.input.shouldRepeat('KeyZ', deltaSeconds)) {
+		if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyZ')) {
 			consumeIdeKey('KeyZ');
 			if (shiftDown) {
 				this.host.redo();
@@ -123,7 +122,7 @@ export class RenameController {
 			}
 			return;
 		}
-		if ((ctrlDown || metaDown) && ide_state.input.shouldRepeat('KeyY', deltaSeconds)) {
+		if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyY')) {
 			consumeIdeKey('KeyY');
 			this.host.redo();
 			return;
@@ -144,7 +143,6 @@ export class RenameController {
 			return;
 		}
 		const options: InlineInputOptions = {
-			deltaSeconds,
 			allowSpace: false,
 			characterFilter: this.identifierFilter,
 			maxLength: null,

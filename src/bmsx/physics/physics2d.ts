@@ -174,7 +174,7 @@ export class Physics2DManager {
 		 Collision2DSystem.rebuildIndex($.world);
 		// Temporary debug logging for movement investigation
 		// if (bodies.length && !this.debugPrinted) {
-		// 	console.log('[Physics2D] step', deltaSeconds, bodies[0]);
+		// 	console.log('[Physics2D] step', bodies[0]);
 		// 	this.debugPrinted = true;
 		// }
 

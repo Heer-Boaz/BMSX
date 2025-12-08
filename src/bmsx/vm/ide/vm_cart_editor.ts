@@ -54,7 +54,7 @@ import { renderTabBar } from './render/render_tab_bar';
 import { renderStatusBar } from './render/render_status_bar';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
-import { flushWindowFocusState, handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, requestWindowFocusState, resetKeyPressRecords, resourceViewerClampScroll, toggleThemeMode } from './ide_input';
+import { flushWindowFocusState, handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, requestWindowFocusState, resetKeyPressRecords, resourceViewerClampScroll, shouldRepeatKeyFromPlayer, toggleThemeMode } from './ide_input';
 import { consumeIdeKey } from './ide_input';
 import { VMCodeLayout } from './code_layout';
 import type {
@@ -207,7 +207,7 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 		getMemberCompletionItems: (request) => buildMemberCompletionItems(request),
 		charAt: (r, c) => TextEditing.charAt(r, c),
 		getTextVersion: () => ide_state.textVersion,
-		shouldFireRepeat: (code, dt) => ide_state.input.shouldRepeat(code, dt),
+		shouldFireRepeat: (code) => shouldRepeatKeyFromPlayer(code),
 		shouldAutoTriggerCompletions: () => shouldAutoTriggerCompletions(),
 		shouldShowParameterHints: () => intellisenseUiReady(),
 	});
@@ -218,7 +218,7 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 	ide_state.problemsPanel.setDiagnostics(ide_state.diagnostics);
 	ide_state.renameController = new RenameController({
 		processFieldEdit: (field, options) => applyInlineFieldEditing(field, options),
-		shouldFireRepeat: (code, deltaSeconds) => ide_state.input.shouldRepeat(code, deltaSeconds),
+		shouldFireRepeat: (code) => shouldRepeatKeyFromPlayer(code),
 		undo: () => undo(),
 		redo: () => redo(),
 		showMessage: (text, color, duration) => ide_state.showMessage(text, color, duration),
@@ -915,7 +915,7 @@ export function update(deltaSeconds: number): void {
 		handleActionPromptInput();
 		return;
 	}
-	handleEditorInput(deltaSeconds);
+	handleEditorInput();
 	ide_state.completion.processPending(deltaSeconds);
 	const semanticError = ide_state.layout.getLastSemanticError();
 	if (semanticError && semanticError !== ide_state.lastReportedSemanticError) {
@@ -1459,7 +1459,7 @@ export function deactivate(): void {
 	ide_state.lastReportedSemanticError = null;
 }
 
-export function handleCreateResourceInput(deltaSeconds: number): void {
+export function handleCreateResourceInput(): void {
 	if (isKeyJustPressed('Escape')) {
 		consumeIdeKey('Escape');
 		closeCreateResourcePrompt(true);
@@ -1475,7 +1475,6 @@ export function handleCreateResourceInput(deltaSeconds: number): void {
 		return;
 	}
 	const textChanged = applyInlineFieldEditing(ide_state.createResourceField, {
-		deltaSeconds,
 		allowSpace: true,
 		characterFilter: (value: string): boolean => isValidCreateResourceCharacter(value),
 		maxLength: constants.CREATE_RESOURCE_MAX_PATH_LENGTH,

@@ -902,6 +902,11 @@ export class PlayerInput {
 		this._stateManager.resetEdgeState();
 	}
 
+	/** Clears repeat bookkeeping so downstream callers see a fresh repeat cycle. */
+	public resetRepeatState(): void { // TODO: IS THIS EVEN NEEDED GIVEN THAT WE ALREADY HAVE reset()?
+		this.actionRepeatRecords.clear();
+	}
+
 	/**
 	 * Resets the state of all input keys and gamepad buttons.
 	 * @param except An optional array of keys or buttons to exclude from the reset.

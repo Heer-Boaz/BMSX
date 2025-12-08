@@ -53,9 +53,7 @@ export const MENU_COMMANDS = [
 ] as const;
 
 export class InputController {
-	public handleEditorInput(
-		deltaSeconds: number,
-	): void {
+	public handleEditorInput(): void {
 		if (handleDebuggerShortcuts()) {
 			return;
 		}
@@ -65,9 +63,9 @@ export class InputController {
 			return;
 		}
 		// Navigation
-		this.handleNavigationKeys(deltaSeconds);
+		this.handleNavigationKeys();
 		// Editing
-		this.handleEditingKeys(deltaSeconds);
+		this.handleEditingKeys();
 		const { ctrlDown, metaDown, altDown } = { ctrlDown: isCtrlDown(), metaDown: isMetaDown(), altDown: isAltDown() };
 
 		if (ctrlDown || metaDown || altDown) return;
@@ -79,7 +77,7 @@ export class InputController {
 		}
 	}
 
-	private handleNavigationKeys(deltaSeconds: number): void {
+	private handleNavigationKeys(): void {
 		// Alt+Arrow: move selection lines up/down
 		const { ctrlDown, shiftDown, altDown } = { ctrlDown: isCtrlDown(), shiftDown: isShiftDown(), altDown: isAltDown() };
 
@@ -98,7 +96,7 @@ export class InputController {
 			}
 			let movedAlt = false;
 			const altUpJustPressed = isKeyJustPressed('ArrowUp');
-			const altUpRepeat = !altUpJustPressed && this.shouldRepeat('ArrowUp', deltaSeconds);
+			const altUpRepeat = !altUpJustPressed && shouldRepeatKeyFromPlayer('ArrowUp');
 			if (altUpJustPressed || altUpRepeat) {
 				consumeIdeKey('ArrowUp');
 				if (shiftDown) {
@@ -109,7 +107,7 @@ export class InputController {
 				movedAlt = true;
 			}
 			const altDownJustPressed = isKeyJustPressed('ArrowDown');
-			const altDownRepeat = !altDownJustPressed && this.shouldRepeat('ArrowDown', deltaSeconds);
+			const altDownRepeat = !altDownJustPressed && shouldRepeatKeyFromPlayer('ArrowDown');
 			if (altDownJustPressed || altDownRepeat) {
 				consumeIdeKey('ArrowDown');
 				if (shiftDown) {
@@ -125,51 +123,51 @@ export class InputController {
 			return;
 		}
 		// Arrow keys
-		if (this.shouldRepeat('ArrowLeft', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('ArrowLeft')) {
 			consumeIdeKey('ArrowLeft');
 			moveCursorLeft();
 			return;
 		}
-		if (this.shouldRepeat('ArrowRight', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('ArrowRight')) {
 			consumeIdeKey('ArrowRight');
 			moveCursorRight();
 			return;
 		}
-		if (this.shouldRepeat('ArrowUp', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('ArrowUp')) {
 			consumeIdeKey('ArrowUp');
 			moveCursorUp();
 			return;
 		}
-		if (this.shouldRepeat('ArrowDown', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('ArrowDown')) {
 			consumeIdeKey('ArrowDown');
 			moveCursorDown();
 			return;
 		}
 		// Home/End
-		if (this.shouldRepeat('Home', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('Home')) {
 			consumeIdeKey('Home');
 			moveCursorHome();
 			return;
 		}
-		if (this.shouldRepeat('End', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('End')) {
 			consumeIdeKey('End');
 			moveCursorEnd();
 			return;
 		}
 		// PageUp/PageDown
-		if (this.shouldRepeat('PageDown', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('PageDown')) {
 			consumeIdeKey('PageDown');
 			pageDown();
 			return;
 		}
-		if (this.shouldRepeat('PageUp', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('PageUp')) {
 			consumeIdeKey('PageUp');
 			pageUp();
 			return;
 		}
 	}
 
-	private handleEditingKeys(deltaSeconds: number): void {
+	private handleEditingKeys(): void {
 		// Tab / Shift+Tab
 		const { ctrlDown, shiftDown } = { ctrlDown: isCtrlDown(), shiftDown: isShiftDown() };
 		if (isKeyJustPressed('Tab')) {
@@ -178,7 +176,7 @@ export class InputController {
 			return;
 		}
 		// Backspace/Delete
-		if (this.shouldRepeat('Backspace', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('Backspace')) {
 			consumeIdeKey('Backspace');
 			if (ctrlDown) {
 				TextEditing.deleteWordBackward();
@@ -187,7 +185,7 @@ export class InputController {
 			}
 			return;
 		}
-		if (this.shouldRepeat('Delete', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('Delete')) {
 			consumeIdeKey('Delete');
 			if (shiftDown && !ctrlDown) {
 				TextEditing.deleteActiveLines();
@@ -219,12 +217,9 @@ export class InputController {
 		}
 	}
 
-	// Repeat helper bridged to editor's repeat system via shouldAccept logic
-	public shouldRepeat(code: string, _deltaSeconds: number): boolean {
-		return shouldRepeatKeyFromPlayer(code);
-	}
-
 	public resetRepeats(): void {
+		const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
+		playerInput.resetRepeatState();
 	}
 
 	// Apply input overrides (debug hotkeys + keyboard capture)
@@ -398,7 +393,7 @@ export function handleActionPromptInput(): void {
 	}
 }
 
-export function handleEditorInput(deltaSeconds: number): void {
+export function handleEditorInput(): void {
 	if (ide_state.resourcePanelVisible && ide_state.resourcePanelFocused) {
 		ide_state.resourcePanel.handleKeyboard();
 		const st = ide_state.resourcePanel.getStateForRender();
@@ -406,7 +401,7 @@ export function handleEditorInput(deltaSeconds: number): void {
 		return;
 	}
 	if (isResourceViewActive()) {
-		handleResourceViewerInput(deltaSeconds);
+		handleResourceViewerInput();
 		return;
 	}
 	const { ctrlDown, metaDown, shiftDown, altDown } = { ctrlDown: isCtrlDown(), metaDown: isMetaDown(), shiftDown: isShiftDown(), altDown: isAltDown() };
@@ -483,7 +478,7 @@ export function handleEditorInput(deltaSeconds: number): void {
 	}
 
 	if (ide_state.createResourceActive) {
-		handleCreateResourceInput(deltaSeconds);
+		handleCreateResourceInput();
 		return;
 	}
 
@@ -549,43 +544,43 @@ export function handleEditorInput(deltaSeconds: number): void {
 		return;
 	}
 	if (ide_state.renameController.isActive()) {
-		ide_state.renameController.handleInput(deltaSeconds);
+		ide_state.renameController.handleInput();
 		return;
 	}
 	if (ide_state.resourceSearchActive) {
-		handleResourceSearchInput(deltaSeconds);
+		handleResourceSearchInput();
 		return;
 	}
 	if (ide_state.symbolSearchActive) {
-		handleSymbolSearchInput(deltaSeconds);
+		handleSymbolSearchInput();
 		return;
 	}
 	if (ide_state.lineJumpActive) {
-		handleLineJumpInput(deltaSeconds);
+		handleLineJumpInput();
 		return;
 	}
 	if (ide_state.searchActive) {
-		handleSearchInput(deltaSeconds);
+		handleSearchInput();
 		return;
 	}
 	if (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused) {
 		let handled = false;
-		if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('ArrowUp')) {
 			consumeIdeKey('ArrowUp');
 			handled = ide_state.problemsPanel.handleKeyboardCommand('up');
-		} else if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
+		} else if (shouldRepeatKeyFromPlayer('ArrowDown')) {
 			consumeIdeKey('ArrowDown');
 			handled = ide_state.problemsPanel.handleKeyboardCommand('down');
-		} else if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
+		} else if (shouldRepeatKeyFromPlayer('PageUp')) {
 			consumeIdeKey('PageUp');
 			handled = ide_state.problemsPanel.handleKeyboardCommand('page-up');
-		} else if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
+		} else if (shouldRepeatKeyFromPlayer('PageDown')) {
 			consumeIdeKey('PageDown');
 			handled = ide_state.problemsPanel.handleKeyboardCommand('page-down');
-		} else if (ide_state.input.shouldRepeat('Home', deltaSeconds)) {
+		} else if (shouldRepeatKeyFromPlayer('Home')) {
 			consumeIdeKey('Home');
 			handled = ide_state.problemsPanel.handleKeyboardCommand('home');
-		} else if (ide_state.input.shouldRepeat('End', deltaSeconds)) {
+		} else if (shouldRepeatKeyFromPlayer('End')) {
 			consumeIdeKey('End');
 			handled = ide_state.problemsPanel.handleKeyboardCommand('end');
 		} else if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
@@ -598,8 +593,8 @@ export function handleEditorInput(deltaSeconds: number): void {
 			return;
 		}
 		// Always swallow caret movement while problems panel is focused
-		if (ide_state.input.shouldRepeat('ArrowLeft', deltaSeconds)) consumeIdeKey('ArrowLeft');
-		if (ide_state.input.shouldRepeat('ArrowRight', deltaSeconds)) consumeIdeKey('ArrowRight');
+		if (shouldRepeatKeyFromPlayer('ArrowLeft')) consumeIdeKey('ArrowLeft');
+		if (shouldRepeatKeyFromPlayer('ArrowRight')) consumeIdeKey('ArrowRight');
 		if (handled) return; else return;
 	}
 	if (ide_state.searchQuery.length > 0 && isKeyJustPressed('F3')) {
@@ -611,7 +606,7 @@ export function handleEditorInput(deltaSeconds: number): void {
 		}
 		return;
 	}
-	if ((ctrlDown || metaDown) && ide_state.input.shouldRepeat('KeyZ', deltaSeconds)) {
+	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyZ')) {
 		consumeIdeKey('KeyZ');
 		if (!editableCodeTab) {
 			notifyReadOnlyEdit();
@@ -624,7 +619,7 @@ export function handleEditorInput(deltaSeconds: number): void {
 		}
 		return;
 	}
-	if ((ctrlDown || metaDown) && ide_state.input.shouldRepeat('KeyY', deltaSeconds)) {
+	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyY')) {
 		consumeIdeKey('KeyY');
 		if (!editableCodeTab) {
 			notifyReadOnlyEdit();
@@ -714,13 +709,13 @@ export function handleEditorInput(deltaSeconds: number): void {
 		TextEditing.unindentSelectionOrLine();
 		return;
 	}
-	if (handleCompletionKeybindings(deltaSeconds)) {
+	if (handleCompletionKeybindings()) {
 		return;
 	}
 	if (handleCodeFormattingShortcut()) {
 		return;
 	}
-	ide_state.input.handleEditorInput(deltaSeconds);
+	ide_state.input.handleEditorInput();
 }
 
 export function handleDebuggerShortcuts(): boolean {
@@ -1732,27 +1727,27 @@ export function updateTabHoverState(snapshot: PointerSnapshot): void {
 	ide_state.tabHoverId = hovered;
 }
 
-export function handleResourceViewerInput(deltaSeconds: number): void {
+export function handleResourceViewerInput(): void {
 	// Resource viewer specific keys
 	const viewer = getActiveResourceViewer();
 	if (!viewer) return;
-	if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
+	if (shouldRepeatKeyFromPlayer('ArrowUp')) {
 		consumeIdeKey('ArrowUp');
 		scrollResourceViewer(-1);
 		return;
 	}
-	if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
+	if (shouldRepeatKeyFromPlayer('ArrowDown')) {
 		consumeIdeKey('ArrowDown');
 		scrollResourceViewer(1);
 		return;
 	}
-	if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
+	if (shouldRepeatKeyFromPlayer('PageUp')) {
 		consumeIdeKey('PageUp');
 		const capacity = resourceViewerTextCapacity(viewer);
 		scrollResourceViewer(-Math.max(1, capacity));
 		return;
 	}
-	if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
+	if (shouldRepeatKeyFromPlayer('PageDown')) {
 		consumeIdeKey('PageDown');
 		const capacity = resourceViewerTextCapacity(viewer);
 		scrollResourceViewer(Math.max(1, capacity));
@@ -1807,7 +1802,7 @@ export function isPointerOverResourcePanelDivider(x: number, y: number): boolean
 	const right = bounds.right + margin;
 	return y >= bounds.top && y <= bounds.bottom && x >= left && x <= right;
 }
-export function handleSymbolSearchInput(deltaSeconds: number): void {
+export function handleSymbolSearchInput(): void {
 	const { shiftDown } = { shiftDown: isShiftDown() };
 	if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
@@ -1827,22 +1822,22 @@ export function handleSymbolSearchInput(deltaSeconds: number): void {
 		closeSymbolSearch(true);
 		return;
 	}
-	if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
+	if (shouldRepeatKeyFromPlayer('ArrowUp')) {
 		consumeIdeKey('ArrowUp');
 		moveSymbolSearchSelection(-1);
 		return;
 	}
-	if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
+	if (shouldRepeatKeyFromPlayer('ArrowDown')) {
 		consumeIdeKey('ArrowDown');
 		moveSymbolSearchSelection(1);
 		return;
 	}
-	if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
+	if (shouldRepeatKeyFromPlayer('PageUp')) {
 		consumeIdeKey('PageUp');
 		moveSymbolSearchSelection(-symbolSearchPageSize());
 		return;
 	}
-	if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
+	if (shouldRepeatKeyFromPlayer('PageDown')) {
 		consumeIdeKey('PageDown');
 		moveSymbolSearchSelection(symbolSearchPageSize());
 		return;
@@ -1860,7 +1855,6 @@ export function handleSymbolSearchInput(deltaSeconds: number): void {
 		return;
 	}
 	const textChanged = applyInlineFieldEditing(ide_state.symbolSearchField, {
-		deltaSeconds,
 		allowSpace: true,
 		characterFilter: undefined,
 		maxLength: null,
@@ -1871,7 +1865,7 @@ export function handleSymbolSearchInput(deltaSeconds: number): void {
 	}
 }
 
-export function handleResourceSearchInput(deltaSeconds: number): void {
+export function handleResourceSearchInput(): void {
 	const { shiftDown } = { shiftDown: isShiftDown() };
 	if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
 		consumeIdeKey('Enter');
@@ -1900,22 +1894,22 @@ export function handleResourceSearchInput(deltaSeconds: number): void {
 		focusEditorFromResourceSearch();
 		return;
 	}
-	if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
+	if (shouldRepeatKeyFromPlayer('ArrowUp')) {
 		consumeIdeKey('ArrowUp');
 		moveResourceSearchSelection(-1);
 		return;
 	}
-	if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
+	if (shouldRepeatKeyFromPlayer('ArrowDown')) {
 		consumeIdeKey('ArrowDown');
 		moveResourceSearchSelection(1);
 		return;
 	}
-	if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
+	if (shouldRepeatKeyFromPlayer('PageUp')) {
 		consumeIdeKey('PageUp');
 		moveResourceSearchSelection(-resourceSearchWindowCapacity());
 		return;
 	}
-	if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
+	if (shouldRepeatKeyFromPlayer('PageDown')) {
 		consumeIdeKey('PageDown');
 		moveResourceSearchSelection(resourceSearchWindowCapacity());
 		return;
@@ -1933,7 +1927,6 @@ export function handleResourceSearchInput(deltaSeconds: number): void {
 		return;
 	}
 	const textChanged = applyInlineFieldEditing(ide_state.resourceSearchField, {
-		deltaSeconds,
 		allowSpace: true,
 		characterFilter: undefined,
 		maxLength: null,
@@ -1965,7 +1958,7 @@ export function handleResourceSearchInput(deltaSeconds: number): void {
 		updateResourceSearchMatches();
 	}
 }
-export function handleSearchInput(deltaSeconds: number): void {
+export function handleSearchInput(): void {
 	const { shiftDown, ctrlDown, metaDown, altDown } = { shiftDown: isShiftDown(), ctrlDown: isCtrlDown(), metaDown: isMetaDown(), altDown: isAltDown() };
 	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressed('KeyF')) {
 		consumeIdeKey('KeyF');
@@ -1977,7 +1970,7 @@ export function handleSearchInput(deltaSeconds: number): void {
 		openSearch(false, 'local');
 		return;
 	}
-	if ((ctrlDown || metaDown) && ide_state.input.shouldRepeat('KeyZ', deltaSeconds)) {
+	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyZ')) {
 		consumeIdeKey('KeyZ');
 		if (shiftDown) {
 			redo();
@@ -1986,7 +1979,7 @@ export function handleSearchInput(deltaSeconds: number): void {
 		}
 		return;
 	}
-	if ((ctrlDown || metaDown) && ide_state.input.shouldRepeat('KeyY', deltaSeconds)) {
+	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyY')) {
 		consumeIdeKey('KeyY');
 		redo();
 		return;
@@ -2026,22 +2019,22 @@ export function handleSearchInput(deltaSeconds: number): void {
 		return;
 	}
 	if (hasResults) {
-		if (ide_state.input.shouldRepeat('ArrowUp', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('ArrowUp')) {
 			consumeIdeKey('ArrowUp');
 			moveSearchSelection(-1, { preview: previewLocal });
 			return;
 		}
-		if (ide_state.input.shouldRepeat('ArrowDown', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('ArrowDown')) {
 			consumeIdeKey('ArrowDown');
 			moveSearchSelection(1, { preview: previewLocal });
 			return;
 		}
-		if (ide_state.input.shouldRepeat('PageUp', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('PageUp')) {
 			consumeIdeKey('PageUp');
 			moveSearchSelection(-searchPageSize(), { preview: previewLocal });
 			return;
 		}
-		if (ide_state.input.shouldRepeat('PageDown', deltaSeconds)) {
+		if (shouldRepeatKeyFromPlayer('PageDown')) {
 			consumeIdeKey('PageDown');
 			moveSearchSelection(searchPageSize(), { preview: previewLocal });
 			return;
@@ -2068,7 +2061,6 @@ export function handleSearchInput(deltaSeconds: number): void {
 	}
 
 	const textChanged = applyInlineFieldEditing(ide_state.searchField, {
-		deltaSeconds,
 		allowSpace: true,
 		characterFilter: undefined,
 		maxLength: null,
@@ -2080,7 +2072,7 @@ export function handleSearchInput(deltaSeconds: number): void {
 	}
 }
 
-export function handleLineJumpInput(deltaSeconds: number): void {
+export function handleLineJumpInput(): void {
 	const { shiftDown, ctrlDown, metaDown } = { shiftDown: isShiftDown(), ctrlDown: isCtrlDown(), metaDown: isMetaDown() };
 	if ((ctrlDown || metaDown) && isKeyJustPressed('KeyL')) {
 		consumeIdeKey('KeyL');
@@ -2105,7 +2097,6 @@ export function handleLineJumpInput(deltaSeconds: number): void {
 
 	const digitFilter = (value: string): boolean => value >= '0' && value <= '9';
 	const textChanged = applyInlineFieldEditing(ide_state.lineJumpField, {
-		deltaSeconds,
 		allowSpace: false,
 		characterFilter: digitFilter,
 		maxLength: 6,

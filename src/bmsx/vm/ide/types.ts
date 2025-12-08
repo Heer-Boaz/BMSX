@@ -337,7 +337,6 @@ export type TextField = {
 };
 
 export type InlineInputOptions = {
-	deltaSeconds: number;
 	allowSpace: boolean;
 	characterFilter?: (value: string) => boolean;
 	maxLength?: number;

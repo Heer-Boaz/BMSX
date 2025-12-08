@@ -20,7 +20,7 @@ import {
 } from '../lua/luavalue';
 import type { InputEvt, StorageService } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
-import type {  LifeCycleHandlerName, Viewport, } from '../rompack/rompack';
+import type { LifeCycleHandlerName, Viewport, } from '../rompack/rompack';
 import { CanonicalizationType } from '../rompack/rompack';
 import { fallbackclamp } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
@@ -483,25 +483,8 @@ export class BmsxVMRuntime extends Service {
 			this.editor.update(deltaSeconds);
 		} else if (this.terminal.isActive) {
 			this.terminal.update(deltaSeconds);
-			void this.terminal.handleInput(deltaSeconds);
+			void this.terminal.handleInput();
 		}
-	}
-
-	public tickOverlayFrame(deltaSeconds: number): void {
-		this.advanceOverlayInput(deltaSeconds);
-		if (this.editor?.isActive === true) {
-			this.drawFrame({ drawGame: false, drawTerminal: false, drawEditor: true });
-		} else if (this.terminal.isActive) {
-			this.drawFrame({ drawGame: true, drawTerminal: true, drawEditor: false });
-		}
-	}
-
-	private advanceTerminalMode(deltaSeconds: number): void {
-		if (!this.terminal.isActive) {
-			return;
-		}
-		this.terminal.update(deltaSeconds);
-		void this.terminal.handleInput(deltaSeconds);
 	}
 
 	public set jsStackEnabled(enabled: boolean) {
@@ -724,7 +707,12 @@ export class BmsxVMRuntime extends Service {
 		if (!this.tickEnabled) {
 			return;
 		}
-		this.runTerminalUpdateTick();
+		if (this.currentFrameState !== null) {
+			return;
+		}
+		const state = this.beginFrameState();
+		this.pollVMHotkeys();
+		this.terminal.update(state.deltaSeconds);
 	}
 
 	public tickTerminalModeDraw(): void {
@@ -745,7 +733,12 @@ export class BmsxVMRuntime extends Service {
 		if (!this.tickEnabled) {
 			return;
 		}
-		this.runIdeUpdateTick();
+		if (this.currentFrameState !== null) {
+			return;
+		}
+		const state = this.beginFrameState();
+		this.pollVMHotkeys();
+		this.editor?.update(state.deltaSeconds);
 	}
 
 	public tickIDEDraw(): void {
@@ -775,26 +768,6 @@ export class BmsxVMRuntime extends Service {
 			if (fault !== null && this.currentFrameState !== null) {
 				this.abandonFrameState();
 			}
-		}
-	}
-
-	private runTerminalUpdateTick(): void {
-		if (this.currentFrameState !== null) {
-			return;
-		}
-		const state = this.beginFrameState();
-		this.pollVMHotkeys();
-		this.advanceTerminalMode(state.deltaSeconds);
-	}
-
-	private runIdeUpdateTick(): void {
-		if (this.currentFrameState !== null) {
-			return;
-		}
-		const state = this.beginFrameState();
-		this.pollVMHotkeys();
-		if (this.editor) {
-			this.editor.update(state.deltaSeconds);
 		}
 	}
 

@@ -2,7 +2,7 @@ import { $ } from '../../core/game';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isKeyTyped, isMetaDown, isShiftDown } from './ide_input';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isKeyTyped, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
 import { isWhitespace, isWordChar, normalizeLineEndings } from './text_utils';
 import type { InlineInputOptions, Position, TextField } from './types';
 import { clamp } from '../../utils/clamp';
@@ -506,7 +506,7 @@ export function applyInlineFieldEditing(
 	options: InlineInputOptions,
 ): boolean {
 	const { ctrlDown, metaDown, shiftDown, altDown } = { ctrlDown: isCtrlDown(), metaDown: isMetaDown(), shiftDown: isShiftDown(), altDown: isAltDown() };
-	const { deltaSeconds, allowSpace } = options;
+	const { allowSpace } = options;
 	const characterFilter = options.characterFilter;
 	const maxLength = options.maxLength !== undefined ? options.maxLength : null;
 	const useCtrl = ctrlDown || metaDown;
@@ -515,7 +515,7 @@ export function applyInlineFieldEditing(
 	const initialCursorColumn = field.cursorColumn;
 	const initialAnchor = field.selectionAnchor;
 
-	const shouldRepeat = (code: string): boolean => ide_state.input.shouldRepeat(code, deltaSeconds);
+	const shouldRepeat = (code: string): boolean => shouldRepeatKeyFromPlayer(code);
 
 	const readClipboard = (): string => ide_state.customClipboard ;
 	const writeClipboard = (payload: string): void => {
