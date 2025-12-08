@@ -46,6 +46,7 @@ import { getWorkspaceCachedSource } from './workspace_cache';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/luadebugger';
 import { ide_state } from './ide/ide_state';
 import { ideExtSpec, terminalExtSpec } from '../core/pipelines/bmsxvm_pipeline_exts';
+import type { ParsedLuaChunk } from './ide/lua_parse';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'console_left',
@@ -201,7 +202,7 @@ export class BmsxVMRuntime extends Service {
 		(error, meta) => this.handleLuaHandlerError(error, meta),
 	);
 	public nativeMemberCompletionCache: WeakMap<object, { dot?: VMLuaMemberCompletion[]; colon?: VMLuaMemberCompletion[] }> = new WeakMap();
-	public readonly chunkSemanticCache: Map<string, { source: string; model: LuaSemanticModel; definitions: ReadonlyArray<LuaDefinitionInfo> }> = new Map();
+	public readonly chunkSemanticCache: Map<string, { source: string; model: LuaSemanticModel; definitions: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[] }> = new Map();
 
 	private readonly luaVmGate = taskGate.group('console:lua_vm');
 	private handledLuaErrors = new WeakSet<any>();

@@ -25,7 +25,7 @@ import { ide_state } from './ide_state';
 import type { VMLuaSymbolEntry } from '../types';
 import { computeSourceLabel } from './code_reference';
 import { symbolCatalogDedupKey } from './vm_cart_editor';
-import { parseLuaChunkWithRecovery } from './lua_parse';
+import { parseLuaChunkWithRecovery, type ParsedLuaChunk } from './lua_parse';
 import * as constants from './constants';
 import { getActiveCodeTabContext } from './editor_tabs';
 import { listGlobalLuaSymbols, listLuaSymbols, resolveHoverChunkName } from './intellisense';
@@ -176,11 +176,11 @@ type TokenInfo = {
 	index: number;
 };
 
-export function buildLuaFileSemanticData(source: string, chunkName: string, lines?: readonly string[]): FileSemanticData {
+export function buildLuaFileSemanticData(source: string, chunkName: string, lines?: readonly string[], parsed?: ParsedLuaChunk): FileSemanticData {
 	const fileLines = lines ?? source.split('\n');
-	const parsed = parseLuaChunkWithRecovery(source, chunkName, fileLines);
-	const chunk = parsed.chunk;
-	const tokens = parsed.tokens;
+	const parsedChunk = parsed ?? parseLuaChunkWithRecovery(source, chunkName, fileLines);
+	const chunk = parsedChunk.chunk;
+	const tokens = parsedChunk.tokens;
 	const builder = new SemanticBuilder({
 		chunk,
 		chunkName,
@@ -216,8 +216,8 @@ export function buildLuaFileSemanticData(source: string, chunkName: string, line
 	};
 }
 
-export function buildLuaSemanticModel(source: string, chunkName: string, lines?: readonly string[]): LuaSemanticModel {
-	const data = buildLuaFileSemanticData(source, chunkName, lines);
+export function buildLuaSemanticModel(source: string, chunkName: string, lines?: readonly string[], parsed?: ParsedLuaChunk): LuaSemanticModel {
+	const data = buildLuaFileSemanticData(source, chunkName, lines, parsed);
 	return data.model;
 }
 
@@ -304,8 +304,8 @@ export class LuaProjectIndex {
 	private readonly fileOrder: Map<string, number> = new Map();
 	private nextFileOrder = 1;
 
-	public updateFile(file: string, source: string, lines?: readonly string[]): LuaSemanticModel {
-		const data = buildLuaFileSemanticData(source, file, lines);
+	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk): LuaSemanticModel {
+		const data = buildLuaFileSemanticData(source, file, lines, parsed);
 		return this.storeFileData(file, data);
 	}
 
@@ -1630,8 +1630,8 @@ export class LuaSemanticWorkspace {
 		this.index = new LuaProjectIndex();
 	}
 
-	public updateFile(file: string, source: string, lines?: readonly string[]): LuaSemanticModel {
-		return this.index.updateFile(file, source, lines);
+	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk): LuaSemanticModel {
+		return this.index.updateFile(file, source, lines, parsed);
 	}
 
 	public getModel(file: string): LuaSemanticModel {

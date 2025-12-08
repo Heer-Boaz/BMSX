@@ -4,7 +4,7 @@ import { LuaEnvironment } from '../../lua/luaenvironment';
 import { LuaSyntaxError } from '../../lua/luaerrors';
 import { LuaLexer } from '../../lua/lualexer';
 import { KEYWORDS } from './keywords';
-import { parseLuaChunk, parseLuaChunkWithRecovery } from './lua_parse';
+import { parseLuaChunk, parseLuaChunkWithRecovery, type ParsedLuaChunk } from './lua_parse';
 import { LuaInterpreter } from '../../lua/luaruntime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaNativeValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../lua/luavalue';
 import { BmsxVMApi } from '../vm_api';
@@ -205,7 +205,12 @@ export function getKeywordCompletions(): LuaCompletionItem[] {
 	return items;
 }
 
+let cachedApiCompletionData: { items: LuaCompletionItem[]; signatures: Map<string, ApiCompletionMetadata> } | null = null;
+
 export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures: Map<string, ApiCompletionMetadata> } {
+	if (cachedApiCompletionData) {
+		return cachedApiCompletionData;
+	}
 	const items: LuaCompletionItem[] = [];
 	const signatures: Map<string, ApiCompletionMetadata> = new Map();
 	const processed = new Set<string>();
@@ -300,7 +305,8 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 		prototype = Object.getPrototypeOf(prototype);
 	}
 	items.sort((a, b) => a.label.localeCompare(b.label));
-	return { items, signatures };
+	cachedApiCompletionData = { items, signatures };
+	return cachedApiCompletionData;
 }
 
 function extractFunctionParameters(fn: (...args: unknown[]) => unknown): string[] {
@@ -387,6 +393,8 @@ export type LuaDiagnosticOptions = {
 	globalSymbols: readonly VMLuaSymbolEntry[];
 	builtinDescriptors: readonly VMLuaBuiltinDescriptor[];
 	apiSignatures: Map<string, ApiCompletionMetadata>;
+	lines?: readonly string[];
+	parsed?: ParsedLuaChunk;
 };
 
 export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnostic[] {
@@ -394,7 +402,8 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 	const functionSignatures = new Map<string, FunctionSignatureInfo>();
 	let chunk: LuaChunk;
 	try {
-		chunk = parseLuaChunk(options.source, options.chunkName).chunk;
+		const parsed = options.parsed;
+		chunk = parsed ? parsed.chunk : parseLuaChunk(options.source, options.chunkName, options.lines).chunk;
 	} catch (error) {
 		if (error instanceof LuaSyntaxError) {
 			const row = error.line > 0 ? error.line - 1 : 0;
@@ -2240,14 +2249,19 @@ export function buildSemanticModelForChunk(chunkName: string): LuaSemanticModel 
 	const runtime = BmsxVMRuntime.instance;
 	const source = runtime.resourceSourceForChunk(chunkName);
 	const cached = runtime.chunkSemanticCache.get(chunkName);
-	const previousModel = cached ? cached.model : null;
-	const previousDefinitions = cached ? cached.definitions : [];
-	if (cached && cached.source === source) {
-		return cached.model;
+	const cachedMatch = cached && cached.source === source ? cached : null;
+	if (cachedMatch && cachedMatch.model) {
+		if (!cachedMatch.lines) {
+			cachedMatch.lines = source.split('\n');
+		}
+		return cachedMatch.model;
 	}
+	const baseLines = cachedMatch?.lines ?? source.split('\n');
+	const cachedParsed = cachedMatch?.parsed ?? null;
 	try {
-		const model = buildLuaSemanticModel(source, chunkName);
-		runtime.chunkSemanticCache.set(chunkName, { source, model, definitions: model.definitions });
+		const parsed = cachedParsed ?? parseLuaChunkWithRecovery(source, chunkName, baseLines);
+		const model = buildLuaSemanticModel(source, chunkName, baseLines, parsed);
+		runtime.chunkSemanticCache.set(chunkName, { source, model, definitions: model.definitions, parsed, lines: baseLines });
 		return model;
 	} catch (error) {
 		if (error instanceof LuaSyntaxError) {
@@ -2272,22 +2286,26 @@ export function buildSemanticModelForChunk(chunkName: string): LuaSemanticModel 
 			})();
 			if (sanitizedSource && sanitizedSource !== source) {
 				try {
-					const model = buildLuaSemanticModel(sanitizedSource, chunkName);
-					runtime.chunkSemanticCache.set(chunkName, { source, model, definitions: model.definitions });
+					const sanitizedLines = sanitizedSource.split('\n');
+					const parsed = parseLuaChunkWithRecovery(sanitizedSource, chunkName, sanitizedLines);
+					const model = buildLuaSemanticModel(sanitizedSource, chunkName, sanitizedLines, parsed);
+					runtime.chunkSemanticCache.set(chunkName, { source, model, definitions: model.definitions, parsed, lines: sanitizedLines });
 					return model;
 				} catch {
 					// continue with fallback logic below
 				}
 			}
+			const previousModel = cachedMatch ? cachedMatch.model : null;
+			const previousDefinitions = cachedMatch ? cachedMatch.definitions : [];
 			if (previousModel) {
-				runtime.chunkSemanticCache.set(chunkName, { source, model: previousModel, definitions: previousDefinitions });
+				runtime.chunkSemanticCache.set(chunkName, { source, model: previousModel, definitions: previousDefinitions, parsed: cachedParsed ?? null, lines: baseLines });
 				return previousModel;
 			}
-			runtime.chunkSemanticCache.set(chunkName, { source, model: null, definitions: [] });
+			runtime.chunkSemanticCache.set(chunkName, { source, model: null, definitions: [], parsed: cachedParsed ?? null, lines: baseLines });
 			return null;
 		}
 		const message = extractErrorMessage(error);
-		runtime.chunkSemanticCache.set(chunkName, { source, model: null, definitions: [] });
+		runtime.chunkSemanticCache.set(chunkName, { source, model: null, definitions: [], parsed: cachedParsed ?? null, lines: baseLines });
 		console.warn(`[BmsxVMRuntime] Failed to parse '${chunkName}': ${message}`);
 		return null;
 	}
