@@ -2640,7 +2640,7 @@ export function performAction(action: PendingActionPrompt['action']): boolean {
 		case 'reboot':
 			return performReboot();
 		case 'close':
-			deactivate();
+			BmsxVMRuntime.instance.deactivateEditor();
 			return true;
 		case 'theme-toggle':
 			toggleThemeMode();
@@ -2655,7 +2655,7 @@ export function performHotReloadAndResume(): boolean {
 	const targetGeneration = ide_state.saveGeneration;
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
 	clearExecutionStopHighlights();
-	deactivate();
+	BmsxVMRuntime.instance.deactivateEditor();
 	scheduleRuntimeTask(async () => {
 		await applyWorkspaceOverridesToCart({ cart: $.cart, storage: $.platform.storage, includeServer: true });
 		const snapshot = runtime.state;
@@ -2676,7 +2676,7 @@ export function performReboot(): boolean {
 	const requiresReload = hasPendingRuntimeReload();
 	const targetGeneration = ide_state.saveGeneration;
 	clearExecutionStopHighlights();
-	deactivate();
+	BmsxVMRuntime.instance.deactivateEditor();
 	scheduleRuntimeTask(async () => {
 		if (requiresReload) {
 			console.info('[IDE] Performing full program reload for reboot');

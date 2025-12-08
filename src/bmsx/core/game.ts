@@ -30,13 +30,14 @@ import { DefaultECSPipelineRegistry } from "../ecs/pipeline";
 import { TickGroup } from '../ecs/ecsystem';
 import { registerBuiltinECS } from "../ecs/builtin_pipeline";
 import type { NodeSpec } from "../ecs/pipeline";
-import { collectEcsPipelineExtensions } from "../ecs/extensions";
+import { collectEcsPipelineExtensionsFromWorldModules, } from "../ecs/extensions";
 import { gameplaySpec } from './pipelines/gameplay_pipeline';
 import { BmsxVMRuntime } from '../vm/vm_runtime';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { ActionEffectRegistry } from '../action_effects/effect_registry';
 import { InputSource, KeyModifier } from '../input/playerinput';
 import { deep_clone } from '../utils/deep_clone';
+import { shallowcopy } from '../utils/shallowcopy';
 // No direct space helpers needed here; Spaces are revived as part of the world.
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -86,10 +87,7 @@ export class Game {
 	 * The target frames per second for the game.
 	 */
 	public target_fps: number = GAME_FPS;
-	/**
-	 * The update interval for the bmsx module.
-	 */
-	public update_interval!: number;
+	private update_interval!: number;
 	/**
 	 * The timestamp of the last update.
 	 */
@@ -99,7 +97,7 @@ export class Game {
 	 */
 	public deltatime: number = 0;
 
-	public get timestep(): number { return 1000 / this.target_fps; }
+	public get timestep(): number { return this.update_interval; }
 
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
 
@@ -183,8 +181,8 @@ export class Game {
 	public debug_runSingleFrameAndPause!: boolean;
 
 	private removeWillExit: (() => void) = null;
-	private _gameplayPipelineSpec: NodeSpec[] = [];
-	private _pipelineOverride: NodeSpec[] = null;
+	private _pipelineSpec: NodeSpec[] = []; // Note that the base spec already includes extensions, and is already a clone
+	private _pipelineExt: NodeSpec[] = null; // These nodes override the base spec when set during runtime. Note that these are not extended with module nodes, as the modules are already included in the base spec at init time.
 	private initialWorldConfigSnapshot: WorldConfiguration = null;
 
 	public get rompack(): RomPack { return $rompack!; }
@@ -452,11 +450,13 @@ export class Game {
 		// Initialize world (spaces, FSM/BT libraries, modules onBoot)
 		await this.world.init_on_boot();
 		// Compose pipeline spec from profile/custom and module extensions
-		const baseSpec: NodeSpec[] = Array.isArray(ecsPipeline)
-			? ecsPipeline
-			: gameplaySpec();
-		this._gameplayPipelineSpec = baseSpec.map(node => this.cloneNodeSpec(node));
-		this._pipelineOverride = null;
+		const baseSpec: NodeSpec[] = ecsPipeline ? shallowcopy(ecsPipeline) : gameplaySpec();
+		const extensions = collectEcsPipelineExtensionsFromWorldModules({ world: this.world, registry: DefaultECSPipelineRegistry });
+		for (const node of extensions) {
+			baseSpec.push(shallowcopy(node));
+		}
+		this._pipelineSpec = baseSpec; // Note that the base spec already includes extensions, and is already a clone
+
 		this.rebuildPipeline();
 
 		// Activation: services begin play here (objects already activated in onspawn)
@@ -482,55 +482,29 @@ export class Game {
 		e.setReturnMessage('Are you sure you want to exit this awesome game?');
 	};
 
-	private cloneNodeSpec(node: NodeSpec): NodeSpec {
-		return {
-			ref: node.ref,
-			group: node.group,
-			priority: node.priority,
-			when: node.when,
-		};
-	}
-
 	private rebuildPipeline(): void {
 		if (!this.world) {
 			throw new Error('[Game] Cannot rebuild pipeline before world initialization.');
 		}
-		if (this._gameplayPipelineSpec.length === 0 && !this._pipelineOverride) {
-			throw new Error('[Game] Gameplay pipeline spec has not been initialized.');
+		if (this._pipelineSpec.length === 0 && !this._pipelineExt) {
+			throw new Error('[Game] Gameplay pipeline spec has not been initialized and no override is available.');
 		}
-		const sourceSpec = this._pipelineOverride ?? this._gameplayPipelineSpec;
-		const spec: NodeSpec[] = sourceSpec.map(node => this.cloneNodeSpec(node));
-		if (this._pipelineOverride === null) {
-			const extensions = collectEcsPipelineExtensions({ world: this.world, registry: DefaultECSPipelineRegistry });
-			for (const node of extensions) {
-				spec.push(this.cloneNodeSpec(node));
-			}
+
+		const newTotalSpecIncludingModuleExtensionsAndAdditionalRuntimeExtensions = this._pipelineSpec;
+		const nonModuleExtensions = this.pipeline_ext ?? [];
+		for (const node of nonModuleExtensions) {
+			newTotalSpecIncludingModuleExtensionsAndAdditionalRuntimeExtensions.push(shallowcopy(node));
 		}
-		// const diag = DefaultECSPipelineRegistry.build(this.world, spec);
-		DefaultECSPipelineRegistry.build(this.world, spec);
-		// if (this.debug) {
-		// 	console.log('[Game] ECS Pipeline rebuilt. Diagnostics:', diag);
-		// }
+		DefaultECSPipelineRegistry.build(this.world, newTotalSpecIncludingModuleExtensionsAndAdditionalRuntimeExtensions);
 	}
 
-	public get_gameplay_pipeline_spec(): NodeSpec[] {
-		const baseSpec = this._gameplayPipelineSpec.map(node => this.cloneNodeSpec(node));
-		const extensions = collectEcsPipelineExtensions({ world: this.world, registry: DefaultECSPipelineRegistry });
-		for (const node of extensions) {
-			baseSpec.push(this.cloneNodeSpec(node));
-		}
-		return baseSpec;
+	public get pipeline_spec() {
+		return this._pipelineSpec;
 	}
 
-	public set_pipeline_override(spec: NodeSpec[]): void {
-		if (spec) {
-			this._pipelineOverride = spec.map(node => this.cloneNodeSpec(node));
-		} else {
-			this._pipelineOverride = null;
-		}
-		if (this.initialized) {
-			this.rebuildPipeline();
-		}
+	public set pipeline_ext(spec: NodeSpec[]) {
+		this._pipelineExt = spec;
+		this.rebuildPipeline();
 	}
 
 	public async reset_to_fresh_world(): Promise<void> {
@@ -670,16 +644,16 @@ export class Game {
 			this.wasupdated = false;
 
 			let steps = 0;
-			while (this.accumulated_time >= this.update_interval && steps < MAX_SUBSTEPS) {
+			while (this.accumulated_time >= this.timestep && steps < MAX_SUBSTEPS) {
 				if (!this.paused) {
 					if (runGate.ready) {
-						this.update(this.update_interval);
+						this.update(this.timestep);
 					} else {
 						this.accumulated_time = 0;
 						break;
 					}
 				}
-				this.accumulated_time -= this.update_interval;
+				this.accumulated_time -= this.timestep;
 				++steps;
 			}
 		} catch (error) {

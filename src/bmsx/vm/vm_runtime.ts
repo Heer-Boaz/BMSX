@@ -1,5 +1,4 @@
 import { $ } from '../core/game';
-import { OverlayPipelineController } from 'bmsx/core/pipelines/bmsx_vm_pipeline';
 import { Service } from '../core/service';
 import { taskGate } from '../core/taskgate';
 import { Input } from '../input/input';
@@ -46,6 +45,7 @@ import { RenderSubmission } from '../render/gameview';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/luadebugger';
 import { ide_state } from './ide/ide_state';
+import { ideExtSpec, terminalExtSpec } from '../core/pipelines/bmsxvm_pipeline_exts';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'console_left',
@@ -184,7 +184,6 @@ export class BmsxVMRuntime extends Service {
 	public get hasRuntimeFailed(): boolean {
 		return this.luaRuntimeFailed;
 	}
-	private overlayState = { terminal: false, editor: false };
 	private includeJsStackTraces = false;
 	private currentFrameState: VMFrameState = null;
 	private pendingLuaWarnings: string[] = [];
@@ -241,7 +240,6 @@ export class BmsxVMRuntime extends Service {
 			playerindex: this.playerIndex,
 			storage: this.storage,
 		});
-		api.set_render_backend(this.overlayRenderBackend);
 		this.overlayResolutionMode = 'viewport';
 		seedDefaultLuaBuiltins();
 		// Check the primary asset ID for the currently loaded program
@@ -377,19 +375,44 @@ export class BmsxVMRuntime extends Service {
 		}
 	}
 
+	private updateGamePipelineExts(): void {
+		if (this.terminal.isActive) {
+			$.pipeline_ext = terminalExtSpec; // Activate terminal pipeline extensions
+		} else if (this.editor?.isActive === true) {
+			$.pipeline_ext = ideExtSpec; // Activate IDE pipeline extensions
+		} else {
+			$.pipeline_ext = null; // Remove extensions from pipeline (default game pipeline + world modules already handle VM runtime and are only used for IDE and terminal)
+		}
+	}
+
 	private toggleTerminalMode(): void {
 		if (this.terminal.isActive) {
-			this.terminal.deactivate();
-			this.updateOverlayState(true);
+			this.deactivateTerminalMode();
 			return;
 		}
 		this.activateTerminalMode();
 	}
 
+	private activateTerminalMode(): void {
+		if (this.terminal.isActive) {
+			return;
+		}
+		this.deactivateEditor();
+		this.terminal.activate();
+		this.updateGamePipelineExts();
+	}
+
+	public deactivateTerminalMode(): void {
+		if (!this.terminal.isActive) {
+			return;
+		}
+		this.terminal.deactivate();
+		this.updateGamePipelineExts();
+	}
+
 	private toggleEditor(): void {
 		if (this.editor?.isActive === true) {
-			this.editor.deactivate();
-			this.updateOverlayState(true);
+			this.deactivateEditor();
 			return;
 		}
 		this.activateEditor();
@@ -405,8 +428,18 @@ export class BmsxVMRuntime extends Service {
 		if (!this.editor.isActive === true) {
 			this.editor.activate();
 		}
+		this.updateGamePipelineExts();
+	}
 
-		this.updateOverlayState(true);
+	public deactivateEditor(): void {
+		if (!this.editor) {
+			return;
+		}
+		if (this.editor.isActive === true) {
+			this.editor.deactivate();
+		}
+		this.updateGamePipelineExts();
+
 	}
 
 	private registerVMShortcuts(): void {
@@ -430,29 +463,37 @@ export class BmsxVMRuntime extends Service {
 		this.shortcutDisposers = [];
 	}
 
-	private activateTerminalMode(): void {
-		if (this.terminal.isActive) {
-			return;
-		}
-		if (this.editor?.isActive === true) {
-			this.editor.deactivate();
-		}
-		this.terminal.activate();
-		this.updateOverlayState(true);
-	}
-
 	public toggleOverlayResolutionMode(): 'offscreen' | 'viewport' {
 		const next = this._overlayResolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
 		this.overlayResolutionMode = next;
 		return next;
 	}
 
-	private renderVMOverlay(): void {
+	private renderTerminalOverlay(): void {
 		if (!this.terminal.isActive) {
 			return;
 		}
 		this.overlayRenderBackend.setDefaultLayer('ide');
 		this.terminal.draw(this.overlayRenderBackend, this.overlayRenderBackend.viewportSize);
+	}
+
+	public advanceOverlayInput(deltaSeconds: number): void {
+		this.pollVMHotkeys();
+		if (this.editor?.isActive === true) {
+			this.editor.update(deltaSeconds);
+		} else if (this.terminal.isActive) {
+			this.terminal.update(deltaSeconds);
+			void this.terminal.handleInput(deltaSeconds);
+		}
+	}
+
+	public tickOverlayFrame(deltaSeconds: number): void {
+		this.advanceOverlayInput(deltaSeconds);
+		if (this.editor?.isActive === true) {
+			this.drawFrame({ drawGame: false, drawTerminal: false, drawEditor: true });
+		} else if (this.terminal.isActive) {
+			this.drawFrame({ drawGame: true, drawTerminal: true, drawEditor: false });
+		}
 	}
 
 	private advanceTerminalMode(deltaSeconds: number): void {
@@ -471,11 +512,6 @@ export class BmsxVMRuntime extends Service {
 		return this.includeJsStackTraces;
 	}
 
-	public continueFromVM(): void {
-		this.terminal.deactivate();
-		this.updateOverlayState(true);
-	}
-
 	public recordLuaWarning(message: string): void {
 		this.pendingLuaWarnings.push(message);
 		console.warn(message);
@@ -491,27 +527,6 @@ export class BmsxVMRuntime extends Service {
 		for (const warning of messages) {
 			this.editor!.showWarningBanner(warning, 6.0);
 		}
-	}
-
-	private updateOverlayState(force = false): void {
-		const includeTerminal = this.terminal.isActive;
-		const includeEditor = this.editor?.isActive === true;
-		if (!force && this.overlayState.terminal === includeTerminal && this.overlayState.editor === includeEditor) {
-			return;
-		}
-		this.overlayState = { terminal: includeTerminal, editor: includeEditor };
-		const anyOverlay = includeTerminal || includeEditor;
-		if (!anyOverlay) {
-			OverlayPipelineController.setRequest('vmoverlay', null);
-			return;
-		}
-		api.set_render_backend(this.overlayRenderBackend);
-		OverlayPipelineController.setRequest('vmoverlay', {
-			includeTerminal: includeTerminal,
-			includeIDE: includeEditor,
-			includePresentation: true,
-			includeCartUpdate: false,
-		});
 	}
 
 	public setDebuggerBreakpoints(breakpoints: Map<string, Set<number>>): void {
@@ -670,7 +685,7 @@ export class BmsxVMRuntime extends Service {
 		if (this.currentFrameState) {
 			throw new Error('[BmsxVMRuntime] Attempted to begin a new frame while another frame is active.');
 		}
-		const deltaSeconds = $.update_interval * 0.001; // Align with fixed-step update cadence to avoid over-counting when substepping
+		const deltaSeconds = $.deltatime_seconds; // Align with fixed-step update cadence to avoid over-counting when substepping
 		const state: VMFrameState = {
 			haltGame: this.debuggerPaused,
 			updateExecuted: false,
@@ -679,11 +694,6 @@ export class BmsxVMRuntime extends Service {
 		};
 		this.currentFrameState = state;
 		return state;
-	}
-
-	private updateFrameHaltingState(): void {
-		this.updateOverlayState(false);
-		Input.instance.setDebugHotkeysPaused(false);
 	}
 
 	public tickUpdate(): void {
@@ -752,17 +762,11 @@ export class BmsxVMRuntime extends Service {
 		}
 	}
 
-	private applyOverlayStateToFrame(): void {
-		this.updateOverlayState(false);
-		this.updateFrameHaltingState();
-	}
-
 	private runCartUpdateTick(): void {
 		let fault: unknown = null;
 		try {
 			const state = this.beginFrameState();
 			this.pollVMHotkeys();
-			this.applyOverlayStateToFrame();
 			this.runUpdatePhase(state);
 		} catch (error) {
 			fault = error;
@@ -781,7 +785,6 @@ export class BmsxVMRuntime extends Service {
 		const state = this.beginFrameState();
 		this.pollVMHotkeys();
 		this.advanceTerminalMode(state.deltaSeconds);
-		this.applyOverlayStateToFrame();
 	}
 
 	private runIdeUpdateTick(): void {
@@ -793,7 +796,6 @@ export class BmsxVMRuntime extends Service {
 		if (this.editor) {
 			this.editor.update(state.deltaSeconds);
 		}
-		this.applyOverlayStateToFrame();
 	}
 
 	private runUpdatePhase(state: VMFrameState): void {
@@ -842,7 +844,7 @@ export class BmsxVMRuntime extends Service {
 				this.editor.draw();
 			} else {
 				if (options.drawTerminal && this.terminal.isActive) {
-					this.renderVMOverlay();
+					this.renderTerminalOverlay();
 				}
 				this.overlayRenderBackend.setDefaultLayer('world');
 				if (options.drawGame && this.luaVmGate.ready) {
@@ -893,7 +895,6 @@ export class BmsxVMRuntime extends Service {
 		this.disposeShortcutHandlers();
 		this.terminal.deactivate();
 		this.unsubscribeGlobalDebuggerHotkeys();
-		this.updateOverlayState(true);
 		this.luaVmInitialized = false;
 		if (this.editor) {
 			this.editor.shutdown();
@@ -975,7 +976,6 @@ export class BmsxVMRuntime extends Service {
 		if (savedRuntimeFailed) {
 			this.luaRuntimeFailed = true;
 		}
-		this.updateOverlayState(true);
 	}
 
 	public async resumeFromSnapshot(state: BmsxVMState): Promise<void> {
@@ -997,7 +997,6 @@ export class BmsxVMRuntime extends Service {
 		this.luaRuntimeFailed = false;
 		publishOverlayFrame(null);
 		this.resumeLuaProgramState(snapshot);
-		this.updateOverlayState(true);
 		this.clearFaultSnapshot();
 		this.luaVmInitialized = this.luaInterpreter !== null;
 	}
@@ -1077,7 +1076,6 @@ export class BmsxVMRuntime extends Service {
 				}
 			}
 		}
-		this.updateOverlayState(true);
 		this.luaVmInitialized = this.luaInterpreter !== null;
 	}
 

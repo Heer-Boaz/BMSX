@@ -79,7 +79,7 @@ export class VMCommandDispatcher {
 			return true;
 		}
 		if (upper === 'CONT') {
-			this.runtime.continueFromVM();
+			this.runtime.deactivateTerminalMode();
 			return true;
 		}
 		if (upper === 'REBOOT') {

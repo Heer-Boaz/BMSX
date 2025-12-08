@@ -1,13 +1,27 @@
+import { $ } from '../core/game';
 import type { World } from '../core/world';
 import { ECSystem, TickGroup } from '../ecs/ecsystem';
 import { BmsxVMRuntime } from './vm_runtime';
 
 export const BMSX_CART_UPDATE_SYSTEM_ID = 'bmsx:cart_update_system';
+export const BMSX_CART_INPUT_SYSTEM_ID = 'bmsx:cart_input_system';
 export const BMSX_CART_DRAW_SYSTEM_ID = 'bmsx:cart_draw_system';
 export const BMSX_IDE_UPDATE_SYSTEM_ID = 'bmsx:ide_update_system';
 export const BMSX_IDE_DRAW_SYSTEM_ID = 'bmsx:ide_draw_system';
 export const BMSX_TERMINAL_UPDATE_SYSTEM_ID = 'bmsx:terminal_update_system';
 export const BMSX_TERMINAL_DRAW_SYSTEM_ID = 'bmsx:terminal_draw_system';
+
+export class BmsxCartInputSystem extends ECSystem {
+	constructor(priority = 90) {
+		super(TickGroup.Input, priority);
+		this.__ecsId = BMSX_CART_INPUT_SYSTEM_ID;
+		this.runsWhileGamePaused = true;
+	}
+
+	public update(_world: World): void {
+		BmsxVMRuntime.instance.advanceOverlayInput($.deltatime_seconds);
+	}
+}
 
 export class BmsxCartUpdateSystem extends ECSystem {
 	constructor(priority = 90) {

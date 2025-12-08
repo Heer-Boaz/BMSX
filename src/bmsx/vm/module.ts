@@ -1,5 +1,5 @@
 import type { World, WorldModule } from '../core/world';
-import { BMSX_CART_DRAW_SYSTEM_ID, BMSX_CART_UPDATE_SYSTEM_ID, BMSX_IDE_DRAW_SYSTEM_ID, BMSX_IDE_UPDATE_SYSTEM_ID, BMSX_TERMINAL_DRAW_SYSTEM_ID, BMSX_TERMINAL_UPDATE_SYSTEM_ID, BmsxCartDrawSystem, BmsxCartUpdateSystem, BmsxIDEDrawSystem, BmsxIDEUpdateSystem, BmsxTerminalDrawSystem, BmsxTerminalUpdateSystem } from './vm_systems';
+import { BMSX_CART_DRAW_SYSTEM_ID, BMSX_CART_INPUT_SYSTEM_ID, BMSX_CART_UPDATE_SYSTEM_ID, BMSX_IDE_DRAW_SYSTEM_ID, BMSX_IDE_UPDATE_SYSTEM_ID, BMSX_TERMINAL_DRAW_SYSTEM_ID, BMSX_TERMINAL_UPDATE_SYSTEM_ID, BmsxCartDrawSystem, BmsxCartInputSystem, BmsxCartUpdateSystem, BmsxIDEDrawSystem, BmsxIDEUpdateSystem, BmsxTerminalDrawSystem, BmsxTerminalUpdateSystem } from './vm_systems';
 import { TickGroup } from '../ecs/ecsystem';
 
 export function createBmsxVMModule(): WorldModule {
@@ -7,6 +7,11 @@ export function createBmsxVMModule(): WorldModule {
 		id: 'bmsx',
 		ecs: {
 			systems: [
+				{
+					id: BMSX_CART_INPUT_SYSTEM_ID,
+					group: TickGroup.Input,
+					create: (priority: number) => new BmsxCartInputSystem(priority), // TODO: TO USE CORRECTLY!!
+				},
 				{
 					id: BMSX_CART_UPDATE_SYSTEM_ID,
 					group: TickGroup.ModeResolution,
@@ -39,10 +44,7 @@ export function createBmsxVMModule(): WorldModule {
 				},
 			],
 			nodes: [
-				// { ref: BMSX_TERMINAL_UPDATE_SYSTEM_ID },
-				// { ref: BMSX_TERMINAL_DRAW_SYSTEM_ID },
-				// { ref: BMSX_IDE_UPDATE_SYSTEM_ID },
-				// { ref: BMSX_IDE_DRAW_SYSTEM_ID },
+				{ ref: BMSX_CART_INPUT_SYSTEM_ID }, // TODO: TO USE CORRECTLY!!
 				{ ref: BMSX_CART_UPDATE_SYSTEM_ID },
 				{ ref: BMSX_CART_DRAW_SYSTEM_ID },
 			],

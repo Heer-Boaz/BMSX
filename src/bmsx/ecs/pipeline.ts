@@ -5,9 +5,8 @@ declare const $: any; // avoid circular dependency issues
 
 export interface SystemDescriptor {
 	id: string;
-	group: TickGroup;
+	group: TickGroup; // TODO: BUG!! THIS IS NOT USED BY THE CONSTRUCTOR OF THE SYSTEM!!
 	defaultPriority?: number;
-	tags?: string[];
 	create: (priority: number) => ECSystem;
 }
 

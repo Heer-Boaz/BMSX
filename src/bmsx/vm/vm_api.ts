@@ -134,10 +134,6 @@ export class BmsxVMApi {
 		Object.assign(instance, overrides);
 	}
 
-	public set_render_backend(backend: VMRenderFacade): void {
-		this.renderBackend = backend;
-	}
-
 	public get display_width(): number {
 		return $.view.viewportSize.x;
 	}

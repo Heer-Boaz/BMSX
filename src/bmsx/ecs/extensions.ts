@@ -9,7 +9,7 @@ export interface ECSPipelineExtensionContext {
 
 export type ECSPipelineExtension = (ctx: ECSPipelineExtensionContext) => NodeSpec[] | void;
 
-export function collectEcsPipelineExtensions(ctx: ECSPipelineExtensionContext): NodeSpec[] {
+export function collectEcsPipelineExtensionsFromWorldModules(ctx: ECSPipelineExtensionContext): NodeSpec[] {
 	const out: NodeSpec[] = [];
 	const seenModules = new Set<WorldModule>();
 	for (const mod of ctx.world.modules) {

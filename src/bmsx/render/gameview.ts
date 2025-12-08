@@ -351,11 +351,10 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 
 	public setPresentationPassesEnabled(enabled: boolean): void {
-		const normalized = !!enabled;
-		if (this.presentationEnabled === normalized) {
+		if (this.presentationEnabled === enabled) {
 			return;
 		}
-		this.presentationEnabled = normalized;
+		this.presentationEnabled = enabled;
 		this.applyPresentationPassState();
 	}
 

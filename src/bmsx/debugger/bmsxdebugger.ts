@@ -16,7 +16,6 @@ import { createObjectTableElement } from './objectpropertydialog';
 import { ObjectPropertyDialog, refreshAllObjectPropertyDialogs } from './objectpropertydialogimproved';
 import { StateMachineVisualizer } from './statemachinevisualizer';
 import { CustomVisualComponent } from '../component/customvisual_component';
-import { debuggerOverlayManager } from './overlay_manager';
 import { $ } from '../core/game';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 const PHYSICS_OVERLAY_ID = 'physics_overlay_canvas';
@@ -441,14 +440,13 @@ function createDialogDiv(previousDialog?: HTMLElement): HTMLDivElement {
 function releaseDebuggerOverlay(dialog: HTMLElement): void {
 	if (!dialog) return;
 	if ((dialog as HTMLElement).dataset?.debugOverlayRoot === 'true') {
-		debuggerOverlayManager.pop();
+		// ?????????????????????
 	}
 }
 
 function createDebugDialog(title?: string, previousDialog?: HTMLElement): [HTMLDivElement, HTMLDivElement, HTMLSpanElement, HTMLDivElement, HTMLSpanElement] {
 	const dialogDiv = createDialogDiv(previousDialog);
 	if (!previousDialog) {
-		debuggerOverlayManager.push();
 		dialogDiv.dataset.debugOverlayRoot = 'true';
 	}
 	const wrapperDiv = createWrapperDiv(title, dialogDiv, previousDialog);
