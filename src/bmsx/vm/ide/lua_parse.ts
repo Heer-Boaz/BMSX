@@ -11,55 +11,60 @@ export type ParsedLuaChunk = {
 	tokens: LuaToken[];
 };
 
-export function parseLuaChunk(source: string, chunkName: string): ParsedLuaChunk {
+export function parseLuaChunk(source: string, chunkName: string, lines?: readonly string[]): ParsedLuaChunk {
 	const lexer = new LuaLexer(source, chunkName, { canonicalizeIdentifiers: ide_state.caseInsensitive ? ide_state.canonicalization : 'none' });
 	const tokens = lexer.scanTokens();
-	const parser = new LuaParser(tokens, chunkName, source);
+	const parser = new LuaParser(tokens, chunkName, source, lines);
 	const chunk = parser.parseChunk();
 	return { chunk, tokens };
 }
 
-export function parseLuaChunkWithRecovery(source: string, chunkName: string): ParsedLuaChunk {
+export function parseLuaChunkWithRecovery(source: string, chunkName: string, lines?: readonly string[]): ParsedLuaChunk {
 	let currentSource = source;
+	let currentLines: readonly string[] = lines ?? source.split('\n');
 	while (true) {
 		try {
-			return parseLuaChunk(currentSource, chunkName);
+			return parseLuaChunk(currentSource, chunkName, currentLines);
 		} catch (error) {
 			if (!(error instanceof LuaSyntaxError)) {
 				throw error;
 			}
-			const truncated = truncateSourceAtSyntaxError(currentSource, error);
+			const truncated = truncateSourceAtSyntaxError(currentSource, currentLines, error);
 			if (truncated === null) {
 				return null;
 			}
-			currentSource = truncated;
+			currentSource = truncated.source;
+			currentLines = truncated.lines;
 		}
 	}
 }
 
-function truncateSourceAtSyntaxError(source: string, error: LuaSyntaxError): string {
+function truncateSourceAtSyntaxError(
+	source: string,
+	lines: readonly string[],
+	error: LuaSyntaxError,
+): { source: string; lines: readonly string[] } {
 	if (!Number.isFinite(error.line)) {
 		return null;
 	}
-	const lines = source.split('\n');
 	const lineIndex = error.line - 1;
 	if (lineIndex < 0 || lineIndex >= lines.length) {
 		return null;
 	}
-	const truncated: string[] = [];
+	const truncatedLines: string[] = [];
 	for (let index = 0; index < lineIndex; index += 1) {
-		truncated.push(lines[index]);
+		truncatedLines.push(lines[index] ?? '');
 	}
 	const line = lines[lineIndex];
 	const maxColumn = lineIndex === lines.length - 1 ? Math.max(line.length - 1, 0) : line.length;
 	const column = Number.isFinite(error.column) ? clamp(error.column - 1, 0, maxColumn) : maxColumn;
 	const prefix = line.slice(0, column);
 	if (prefix.trim().length > 0) {
-		truncated.push(prefix);
+		truncatedLines.push(prefix);
 	}
-	const result = truncated.join('\n');
-	if (result.length === source.length) {
+	const truncatedSource = truncatedLines.join('\n');
+	if (truncatedSource.length === source.length) {
 		return null;
 	}
-	return result;
+	return { source: truncatedSource, lines: truncatedLines };
 }

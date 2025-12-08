@@ -271,9 +271,9 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		if (metadata.has(chunkName)) {
 			return;
 		}
-		const sourceLabel = computeSourceLabel(labelHint ?? path ?? asset_id ?? chunkName, chunkName);
+		const sourceLabel = computeSourceLabel(labelHint ?? chunkName ?? path, chunkName);
 		try {
-			workspace.updateFile(chunkName, lines.join('\n'));
+			workspace.updateFile(chunkName, lines.join('\n'), lines);
 		} catch {
 			// Ignore parse errors; we still register metadata so callers can inspect raw lines.
 		}

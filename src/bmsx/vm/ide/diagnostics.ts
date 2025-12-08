@@ -43,6 +43,7 @@ export type DiagnosticContextInput = {
 	descriptor: VMResourceDescriptor;
 	chunkName: string;
 	source: string;
+	lines?: readonly string[];
 };
 
 export type DiagnosticProviders = {
@@ -68,6 +69,7 @@ export function computeAggregatedEditorDiagnostics(
 		const ctx = contexts[i];
 		const chunkName = resolveChunkName(ctx);
 		const source = ctx.source ?? '';
+		const lines = ctx.lines;
 		if (source.length === 0) continue;
 		let localSymbols: VMLuaSymbolEntry[] = [];
 		try { localSymbols = providers.listLocalSymbols(chunkName); } catch { localSymbols = []; }
@@ -99,7 +101,7 @@ export function computeAggregatedEditorDiagnostics(
 				chunkName,
 			});
 		}
-		const requireDiagnostics = computeMissingRequireDiagnostics(ctx, chunkName, source, globalSymbolsByKey);
+		const requireDiagnostics = computeMissingRequireDiagnostics(ctx, chunkName, source, globalSymbolsByKey, lines);
 		for (let index = 0; index < requireDiagnostics.length; index += 1) {
 			aggregated.push(requireDiagnostics[index]);
 		}
@@ -137,11 +139,12 @@ function computeMissingRequireDiagnostics(
 	chunkName: string,
 	source: string,
 	globalSymbolsByKey: Map<string, VMLuaSymbolEntry[]>,
+	lines?: readonly string[],
 ): EditorDiagnostic[] {
 	const runtime = BmsxVMRuntime.instance;
 	runtime.ensureLuaModuleIndex();
-	const semantic = buildLuaFileSemanticData(source, chunkName);
-	const requiredChunks = collectRequiredChunkNames(runtime, source, chunkName);
+	const semantic = buildLuaFileSemanticData(source, chunkName, lines);
+	const requiredChunks = collectRequiredChunkNames(runtime, source, chunkName, lines);
 	const localSymbols = new Set<string>();
 	for (let i = 0; i < semantic.decls.length; i += 1) {
 		localSymbols.add(semantic.decls[i].symbolKey);
@@ -198,10 +201,10 @@ function computeMissingRequireDiagnostics(
 	return diagnostics;
 }
 
-function collectRequiredChunkNames(runtime: BmsxVMRuntime, source: string, chunkName: string): Set<string> {
+function collectRequiredChunkNames(runtime: BmsxVMRuntime, source: string, chunkName: string, lines?: readonly string[]): Set<string> {
 	const required = new Set<string>();
 	required.add(chunkName);
-	const modules = collectRequiredModuleNames(source, chunkName);
+	const modules = collectRequiredModuleNames(source, chunkName, lines);
 	for (const moduleName of modules) {
 		const record = runtime.luaModuleAliases.get(moduleName);
 		if (record) {
@@ -211,8 +214,8 @@ function collectRequiredChunkNames(runtime: BmsxVMRuntime, source: string, chunk
 	return required;
 }
 
-function collectRequiredModuleNames(source: string, chunkName: string): Set<string> {
-	const chunk = parseLuaChunkWithRecovery(source, chunkName).chunk;
+function collectRequiredModuleNames(source: string, chunkName: string, lines?: readonly string[]): Set<string> {
+	const chunk = parseLuaChunkWithRecovery(source, chunkName, lines).chunk;
 	const required = new Set<string>();
 	for (let index = 0; index < chunk.body.length; index += 1) {
 		collectModulesFromStatement(chunk.body[index], required);

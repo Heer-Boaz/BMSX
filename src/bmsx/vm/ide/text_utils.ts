@@ -510,11 +510,7 @@ export function bumpTextVersion(): void {
 	ide_state.textVersion += 1;
 }
 
-export function normalizeLineEndings(source: string): string {
-	return source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-}
-
 export function normalizeEndingsAndSplitLines(message: string): string[] {
-	const rawLines = normalizeLineEndings(message).split('\n');
+	const rawLines = message.split('\n');
 	return rawLines.length > 0 ? rawLines : [''];
 }

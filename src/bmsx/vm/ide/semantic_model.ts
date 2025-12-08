@@ -176,16 +176,16 @@ type TokenInfo = {
 	index: number;
 };
 
-export function buildLuaFileSemanticData(source: string, chunkName: string): FileSemanticData {
-	const lines = source.split('\n');
-	const parsed = parseLuaChunkWithRecovery(source, chunkName);
+export function buildLuaFileSemanticData(source: string, chunkName: string, lines?: readonly string[]): FileSemanticData {
+	const fileLines = lines ?? source.split('\n');
+	const parsed = parseLuaChunkWithRecovery(source, chunkName, fileLines);
 	const chunk = parsed.chunk;
 	const tokens = parsed.tokens;
 	const builder = new SemanticBuilder({
 		chunk,
 		chunkName,
 		tokens,
-		lines,
+		lines: fileLines,
 	});
 	const result = builder.build();
 	const decls = result.decls.map(toDecl);
@@ -208,7 +208,7 @@ export function buildLuaFileSemanticData(source: string, chunkName: string): Fil
 	return {
 		model,
 		source,
-		lines,
+		lines: fileLines,
 		annotations,
 		decls,
 		refs,
@@ -216,8 +216,8 @@ export function buildLuaFileSemanticData(source: string, chunkName: string): Fil
 	};
 }
 
-export function buildLuaSemanticModel(source: string, chunkName: string): LuaSemanticModel {
-	const data = buildLuaFileSemanticData(source, chunkName);
+export function buildLuaSemanticModel(source: string, chunkName: string, lines?: readonly string[]): LuaSemanticModel {
+	const data = buildLuaFileSemanticData(source, chunkName, lines);
 	return data.model;
 }
 
@@ -304,8 +304,8 @@ export class LuaProjectIndex {
 	private readonly fileOrder: Map<string, number> = new Map();
 	private nextFileOrder = 1;
 
-	public updateFile(file: string, source: string): LuaSemanticModel {
-		const data = buildLuaFileSemanticData(source, file);
+	public updateFile(file: string, source: string, lines?: readonly string[]): LuaSemanticModel {
+		const data = buildLuaFileSemanticData(source, file, lines);
 		return this.storeFileData(file, data);
 	}
 
@@ -1630,8 +1630,8 @@ export class LuaSemanticWorkspace {
 		this.index = new LuaProjectIndex();
 	}
 
-	public updateFile(file: string, source: string): LuaSemanticModel {
-		return this.index.updateFile(file, source);
+	public updateFile(file: string, source: string, lines?: readonly string[]): LuaSemanticModel {
+		return this.index.updateFile(file, source, lines);
 	}
 
 	public getModel(file: string): LuaSemanticModel {

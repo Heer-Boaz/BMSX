@@ -20,11 +20,18 @@ export async function saveLuaResourceSource(path: string, source: string): Promi
 	const asset = cart.path2lua[path];
 	const absPath = asset.normalized_source_path;
 	await persistLuaSourceToFilesystem(absPath, source);
+	const updatedAt = $.platform.clock.dateNow();
 	asset.src = source;
-	asset.update_timestamp = $.platform.clock.dateNow();
+	asset.update_timestamp = updatedAt;
 	const chunkName = asset.chunk_name;
 	cart.chunk2lua![chunkName] = asset;
 	cart.path2lua![absPath] = asset;
+	const runtimeCart = $.cart;
+	const runtimeAsset = runtimeCart.path2lua[absPath];
+	runtimeAsset.src = source;
+	runtimeAsset.update_timestamp = updatedAt;
+	runtimeCart.chunk2lua![chunkName] = runtimeAsset;
+	runtimeCart.path2lua![absPath] = runtimeAsset;
 	BmsxVMRuntime.instance.markSourceChunkAsDirty(chunkName);
 }
 

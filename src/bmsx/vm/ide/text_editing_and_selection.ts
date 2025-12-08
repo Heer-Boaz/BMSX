@@ -15,7 +15,7 @@ import { $ } from '../../core/game';
 import { clamp } from '../../utils/clamp';;
 import { ide_state } from './ide_state';
 import type { EditContext, Position } from './types';
-import { isWhitespace, isWordChar, normalizeLineEndings } from './text_utils';
+import { isWhitespace, isWordChar } from './text_utils';
 import {
 	revealCursor,
 	clampCursorColumn,
@@ -591,8 +591,7 @@ export function insertClipboardText(text: string): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
-	const normalized = normalizeLineEndings(text);
-	const fragments = normalized.split('\n');
+	const fragments = text.split('\n');
 	const currentLineValue = currentLine();
 	const before = currentLineValue.slice(0, ide_state.cursorColumn);
 	const after = currentLineValue.slice(ide_state.cursorColumn);
@@ -618,7 +617,7 @@ export function insertClipboardText(text: string): void {
 		ide_state.layout.invalidateHighlightsFromRow(insertionRow);
 		ide_state.cursorRow = insertionRow + lastIndex;
 		ide_state.cursorColumn = lastFragment.length;
-		recordEditContext('insert', normalized);
+		recordEditContext('insert', text);
 	}
 	markTextMutated();
 	resetBlink();

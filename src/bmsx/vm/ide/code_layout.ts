@@ -26,10 +26,11 @@ interface SliceResult {
 }
 
 type PendingSemanticUpdate = {
-	source: string;
 	version: number;
 	chunkName: string;
 	requestId: number;
+	lines: readonly string[];
+	source?: string;
 };
 
 /**
@@ -567,20 +568,27 @@ export class VMCodeLayout {
 		if (current && current.version === version && current.chunkName === chunkName) {
 			return current;
 		}
-		const source = lines.join('\n');
 		const pending: PendingSemanticUpdate = {
-			source,
 			version,
 			chunkName,
 			requestId: this.nextSemanticRequestId,
+			lines,
 		};
 		this.nextSemanticRequestId += 1;
 		this.pendingSemantic = pending;
 		return pending;
 	}
 
+	private materializeSemanticSource(pending: PendingSemanticUpdate): string {
+		if (pending.source === undefined) {
+			pending.source = pending.lines.join('\n');
+		}
+		return pending.source;
+	}
+
 	private dispatchSemanticUpdate(pending: PendingSemanticUpdate, strategy: 'background' | 'force'): void {
 		this.semanticDueAtMs = null;
+		const source = this.materializeSemanticSource(pending);
 		if (strategy === 'force' || this.semanticWorker === null) {
 			this.pendingSemantic = null;
 			this.applySemanticUpdateSync(pending);
@@ -595,7 +603,7 @@ export class VMCodeLayout {
 					requestId: pending.requestId,
 					version: pending.version,
 					chunkName: pending.chunkName,
-					source: pending.source,
+					source,
 				});
 			}
 		} catch {
@@ -608,7 +616,8 @@ export class VMCodeLayout {
 	private applySemanticUpdateSync(pending: PendingSemanticUpdate): void {
 		let model: LuaSemanticModel = null;
 		try {
-			model = this.workspace.updateFile(pending.chunkName, pending.source);
+			const source = this.materializeSemanticSource(pending);
+			model = this.workspace.updateFile(pending.chunkName, source, pending.lines);
 		} catch {
 			model = null;
 		}

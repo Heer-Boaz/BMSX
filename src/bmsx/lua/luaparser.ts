@@ -67,10 +67,10 @@ export class LuaParser {
 	private index: number;
 	private previousToken: LuaToken;
 
-	constructor(tokens: ReadonlyArray<LuaToken>, chunkName: string, source: string) {
+	constructor(tokens: ReadonlyArray<LuaToken>, chunkName: string, source: string, lines?: readonly string[]) {
 		this.tokens = tokens;
 		this.chunkName = chunkName;
-		this.sourceLines = source.split(/\r?\n/);
+		this.sourceLines = lines ? (lines as readonly string[] as string[]) : source.split('\n');
 		this.index = 0;
 		this.previousToken = this.tokens[0];
 	}

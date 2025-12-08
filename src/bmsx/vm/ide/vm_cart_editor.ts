@@ -1002,7 +1002,8 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			continue;
 		}
 		const chunkName = resolveHoverChunkName(context);
-		const source = activeId && contextId === activeId
+		const isActive = activeId && contextId === activeId;
+		const source = isActive
 			? ide_state.lines.join('\n')
 			: getSourceForChunk(chunkName);
 		if (source.length === 0) {
@@ -1010,12 +1011,14 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			ide_state.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
+		const lines = isActive ? ide_state.lines : (context.snapshot ? context.snapshot.lines : null);
 		inputs.push({
 			id: context.id,
 			title: context.title,
 			descriptor: context.descriptor,
 			chunkName,
 			source,
+			lines: lines ?? undefined,
 		});
 		metadata.push({ id: context.id, chunkName });
 	}
@@ -1749,7 +1752,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 		updatedTotal += sortedMatches.length;
 	}
 	if (activeEditsApplied) {
-		ide_state.semanticWorkspace.updateFile(activeChunkName, ide_state.lines.join('\n'));
+		ide_state.semanticWorkspace.updateFile(activeChunkName, ide_state.lines.join('\n'), ide_state.lines);
 	}
 	const decl = info.definitionKey ? ide_state.semanticWorkspace.getDecl(info.definitionKey) : null;
 	const references = info.definitionKey ? ide_state.semanticWorkspace.getReferences(info.definitionKey) : [];
