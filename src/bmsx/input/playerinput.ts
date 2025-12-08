@@ -491,13 +491,12 @@ export class PlayerInput {
 		}
 	}
 
-	public consumeButton(button: ButtonId, source: InputSource, options?: { sticky?: boolean }): void {
+	public consumeButton(button: ButtonId, source: InputSource): void {
 		const handler = this.inputHandlers[source];
 		if (!handler) return;
 		const state = handler.getButtonState(button);
-		const sticky = options?.sticky ?? true;
-		handler.consumeButton(button, { sticky });
-		this._stateManager.consumeBufferedEvent(button, state?.pressId, { sticky });
+		handler.consumeButton(button);
+		this._stateManager.consumeBufferedEvent(button, state?.pressId);
 	}
 
 	public consumeActions(...actions: (ActionState | string)[]): void {
@@ -550,26 +549,12 @@ export class PlayerInput {
 	/** Returns repeat/edge info for a raw button using the built-in repeat cadence. */
 	public getButtonRepeatState(button: ButtonId, source: InputSource): ButtonState {
 		const state = this.getButtonState(button, source);
-		const repeatKey = `__button:${source}:${button}`;
-		const actionState = makeActionState(repeatKey, {
-			pressed: state.pressed === true,
-			justpressed: state.justpressed === true,
-			justreleased: state.justreleased === true,
-			waspressed: state.waspressed === true,
-			wasreleased: state.wasreleased === true,
-			pressId: state.pressId,
-			presstime: state.presstime,
-			timestamp: state.timestamp,
-		});
+		const repeatKey = `${source}:${button}`;
+		const actionState = makeActionState(repeatKey, state);
 		const repeat = this.evaluateActionRepeat(repeatKey, actionState);
-		return {
-			...state,
-			pressed: actionState.pressed,
-			justpressed: actionState.justpressed,
-			justreleased: actionState.justreleased,
-			repeatpressed: repeat.triggered,
-			repeatcount: repeat.count,
-		};
+		actionState.repeatcount = repeat.count;
+		actionState.repeatpressed = repeat.triggered;
+		return actionState;
 	}
 
 	public getKeyState(key: ButtonId, modifiers: KeyModifier): ButtonState {
@@ -654,16 +639,12 @@ export class PlayerInput {
 	 */
 	pollInput(currentTime: number): void {
 		this.frameCounter += 1;
-		if (Number.isFinite(currentTime)) {
-			if (this.lastPollTimestampMs !== null) {
-				const delta = currentTime - this.lastPollTimestampMs;
-				if (Number.isFinite(delta) && delta > 0) {
-					// Guard window follows the observed poll cadence so justpressed remains reliable even if frame timing shifts.
-					this.guardWindowMs = clamp(delta, ACTION_GUARD_MIN_MS, ACTION_GUARD_MAX_MS);
-				}
-			}
-			this.lastPollTimestampMs = currentTime;
+		if (this.lastPollTimestampMs > 0) {
+			const delta = currentTime - this.lastPollTimestampMs;
+			// Guard window follows the observed poll cadence so justpressed remains reliable even if frame timing shifts.
+			this.guardWindowMs = clamp(delta, ACTION_GUARD_MIN_MS, ACTION_GUARD_MAX_MS);
 		}
+		this.lastPollTimestampMs = currentTime;
 
 		this._stateManager.beginFrame(currentTime);
 		for (const source of INPUT_SOURCES) {
@@ -900,11 +881,6 @@ export class PlayerInput {
 	/** Clears cached transition state so edge detectors don't fire spuriously. */
 	public clearEdgeState(): void {
 		this._stateManager.resetEdgeState();
-	}
-
-	/** Clears repeat bookkeeping so downstream callers see a fresh repeat cycle. */
-	public resetRepeatState(): void { // TODO: IS THIS EVEN NEEDED GIVEN THAT WE ALREADY HAVE reset()?
-		this.actionRepeatRecords.clear();
 	}
 
 	/**
