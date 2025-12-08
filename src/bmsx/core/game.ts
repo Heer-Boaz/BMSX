@@ -182,6 +182,7 @@ export class Game {
 
 	private removeWillExit: (() => void) = null;
 	private _pipelineSpec: NodeSpec[] = []; // Note that the base spec already includes extensions, and is already a clone
+	private _pipelineOverride: NodeSpec[] = []; // These nodes override the base spec when set during runtime. So they really replace the base spec until cleared.
 	private _pipelineExt: NodeSpec[] = null; // These nodes override the base spec when set during runtime. Note that these are not extended with module nodes, as the modules are already included in the base spec at init time.
 	private initialWorldConfigSnapshot: WorldConfiguration = null;
 
@@ -456,7 +457,7 @@ export class Game {
 			baseSpec.push(shallowcopy(node));
 		}
 		this._pipelineSpec = baseSpec; // Note that the base spec already includes extensions, and is already a clone
-
+		this._pipelineOverride = null;
 		this.rebuildPipeline();
 
 		// Activation: services begin play here (objects already activated in onspawn)
@@ -486,11 +487,12 @@ export class Game {
 		if (!this.world) {
 			throw new Error('[Game] Cannot rebuild pipeline before world initialization.');
 		}
-		if (this._pipelineSpec.length === 0 && !this._pipelineExt) {
+		if (this._pipelineSpec.length === 0 && !this._pipelineOverride) {
 			throw new Error('[Game] Gameplay pipeline spec has not been initialized and no override is available.');
 		}
 
-		const combinedSpec = this._pipelineSpec.map(node => shallowcopy(node));
+		const base = this._pipelineOverride ?? this._pipelineSpec;
+		const combinedSpec = base.map(node => shallowcopy(node));
 		const nonModuleExtensions = this._pipelineExt ?? [];
 		for (const node of nonModuleExtensions) {
 			combinedSpec.push(shallowcopy(node));
@@ -500,6 +502,11 @@ export class Game {
 
 	public get pipeline_spec() {
 		return this._pipelineSpec;
+	}
+
+	public set pipeline_spec_override(spec: NodeSpec[]) {
+		this._pipelineOverride = spec;
+		this.rebuildPipeline();
 	}
 
 	public set pipeline_ext(spec: NodeSpec[]) {

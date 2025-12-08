@@ -11,6 +11,7 @@ import { $ } from '../core/game';
 import { consumeOverlayFrame, publishOverlayFrame, type EditorOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { Viewport } from '../rompack/rompack';
 import type { RenderSubmission } from '../render/gameview';
+import { copySpriteQueueForPlayback } from '../render/shared/render_queues';
 
 export type VMRenderCommand = RenderSubmission;
 type RectSubmission = Extract<RenderSubmission, { type: 'rect' }>;
@@ -31,10 +32,10 @@ export class VMRenderFacade {
 		}
 	}
 
-	public captureCurrentFrameRenderQueue(): RenderSubmission[] {
+	public captureCurrentFrameRenderQueue() {
 		// Preserve the current frame's submissions so they can be replayed under overlays.
 		// We rely on playback to skip editor/overlay layers so we don't duplicate UI layers.
-		return this.commands;
+		return copySpriteQueueForPlayback();
 	}
 
 	private commands: VMRenderCommand[] = [];
@@ -69,8 +70,6 @@ export class VMRenderFacade {
 
 	public beginFrame(): void {
 		this.capturingFrame = true;
-		this.defaultLayer = 'world';
-		this.commands = [];
 		const view = $.view;
 		const offscreen = view.offscreenCanvasSize;
 		const logical = view.viewportSize;

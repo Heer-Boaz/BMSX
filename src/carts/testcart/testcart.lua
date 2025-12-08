@@ -41,7 +41,6 @@ local function track_plain_input()
 		if game:action_triggered(1, entry[1] .. '[jp]') then
 			demo.last_plain_input = entry[2]
 			emit('demo.input', nil, { action = entry[2], t = demo.tick })
-			print('[hotreload-test] input action=' .. entry[2] .. ' tick=' .. demo.tick)
 		end
 	end
 end
@@ -398,7 +397,6 @@ local function define_blink()
 		cooldown_ms = 420,
 		-- handle the blink directly in the effect so a single trigger applies movement/timer/emits without relying on a separate lis
 		handler = function(ctx)
-			print('[hotreload-test] blink effect handler invoked tick=' .. demo.tick)
 			local owner = ctx.owner
 			local facing = owner.facing
 			local offset = facing == 'left' and -24 or 24
@@ -408,7 +406,6 @@ local function define_blink()
 			local payload = { phase = 'active', facing = facing, offset = offset }
 			owner.events:emit('demo.hero.effect', payload)
 			owner.events:emit('demo.hero.effect', { phase = 'done' })
-			print('[hotreload-test] blink facing=' .. facing .. ' offset=' .. offset .. ' tick=' .. demo.tick)
 			return { facing = facing }
 		end,
 	})
@@ -457,7 +454,6 @@ end
 function init()
 	cartdata('bmsx_test_cart_demo')
 	define_blueprints_and_handlers()
-	print('[hotreload-test] init completed')
 end
 
 function new_game()

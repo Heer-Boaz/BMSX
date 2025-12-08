@@ -14,13 +14,13 @@ import { Service } from '../core/service';
 import { Registry } from '../core/registry';
 
 export enum TickGroup {
-	Input = 10,
-	ActionEffect = 20,
-	ModeResolution = 30,
-	Physics = 40,
-	Animation = 50,
-	Presentation = 60,
-	EventFlush = 70,
+	Input = 10, // Input gathering and preprocessing
+	ActionEffect = 20, // Apply action effects (before physics)
+	ModeResolution = 30, // Resolve game modes and states
+	Physics = 40, // Physics simulation and collision detection
+	Animation = 50, // Animation updates and rendering
+	Presentation = 60, // Final rendering and presentation
+	EventFlush = 70, // Flush events
 }
 
 @excludeclassfromsavegame

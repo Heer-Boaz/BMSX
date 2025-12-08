@@ -1,3 +1,4 @@
+import { $ } from '../core/game';
 import type { World } from '../core/world';
 import { ECSystem, TickGroup } from '../ecs/ecsystem';
 import type { NodeSpec } from '../ecs/pipeline';
@@ -104,6 +105,14 @@ export class BmsxTerminalDrawSystem extends ECSystem {
 	public update(_world: World): void {
 		BmsxVMRuntime.instance.tickTerminalModeDraw();
 	}
+}
+
+export function getBasePipelineSpecOverrideForIdeOrTerminal(): NodeSpec[] {
+	// When paused, we want to override the base pipeline to only include the drawing systems.
+	const base = $.pipeline_spec.filter((node: NodeSpec) =>
+		node.group === TickGroup.Presentation
+	);
+	return base;
 }
 
 export const vmExtSpec: NodeSpec[] = [

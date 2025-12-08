@@ -45,7 +45,7 @@ import { RenderSubmission } from '../render/gameview';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/luadebugger';
 import { ide_state } from './ide/ide_state';
-import { ideExtSpec, terminalExtSpec, vmExtSpec } from './vm_systems';
+import { getBasePipelineSpecOverrideForIdeOrTerminal, ideExtSpec, terminalExtSpec, vmExtSpec } from './vm_systems';
 import type { ParsedLuaChunk } from './ide/lua_parse';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
@@ -377,10 +377,13 @@ export class BmsxVMRuntime extends Service {
 
 	private updateGamePipelineExts(): void {
 		if (this.terminal.isActive) {
+			$.pipeline_spec_override = getBasePipelineSpecOverrideForIdeOrTerminal();
 			$.pipeline_ext = terminalExtSpec; // Activate terminal pipeline extensions
 		} else if (this.editor.isActive) {
+			$.pipeline_spec_override = getBasePipelineSpecOverrideForIdeOrTerminal();
 			$.pipeline_ext = ideExtSpec; // Activate IDE pipeline extensions
 		} else {
+			$.pipeline_spec_override = null; // Clear any pipeline spec override
 			$.pipeline_ext = vmExtSpec; // Activate base VM pipeline extensions
 		}
 	}
@@ -832,7 +835,8 @@ export class BmsxVMRuntime extends Service {
 			this.overlayRenderBackend.beginFrame();
 			this.overlayRenderBackend.setDefaultLayer('ide');
 			this.terminal.draw(this.overlayRenderBackend, this.overlayRenderBackend.viewportSize);
-			this.drawGame();
+			this.overlayRenderBackend.setDefaultLayer('world');
+			this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
 		} catch (error) {
 			if (isLuaDebuggerPauseSignal(error)) {
 				this.onLuaDebuggerPause(error);
@@ -847,7 +851,31 @@ export class BmsxVMRuntime extends Service {
 	private drawGameFrame(): void {
 		try {
 			this.overlayRenderBackend.beginFrame();
-			this.drawGame();
+			// No try catch here; caller handles faults
+			this.overlayRenderBackend.setDefaultLayer('world');
+			if (this.luaVmGate.ready) {
+				if (this.debuggerPaused || this.luaRuntimeFailed || this.faultSnapshot) {
+					this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
+				}
+				else {
+					const interpreter = this.luaInterpreter;
+					try {
+						interpreter.pushProgramCounter();
+						this.invokeLuaFunction(this.luaDrawFunction, []);
+						this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
+					} catch (error) {
+						this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
+
+						if (isLuaDebuggerPauseSignal(error)) {
+							this.onLuaDebuggerPause(error);
+						} else {
+							this.handleLuaError(error);
+						}
+					} finally {
+						interpreter.popProgramCounter();
+					}
+				}
+			}
 		}
 		catch (error) {
 			if (isLuaDebuggerPauseSignal(error)) {
@@ -857,34 +885,6 @@ export class BmsxVMRuntime extends Service {
 			}
 		} finally {
 			this.overlayRenderBackend.endFrame();
-		}
-	}
-
-	private drawGame(): void { // Split so that terminal can also call it without begin/end frame calls
-		// No try catch here; caller handles faults
-		this.overlayRenderBackend.setDefaultLayer('world');
-		if (this.luaVmGate.ready) {
-			if (this.debuggerPaused || this.luaRuntimeFailed || this.faultSnapshot) {
-				this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
-			}
-			else {
-				const interpreter = this.luaInterpreter;
-				try {
-					interpreter.pushProgramCounter();
-					this.invokeLuaFunction(this.luaDrawFunction, []);
-					this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
-				} catch (error) {
-					this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
-
-					if (isLuaDebuggerPauseSignal(error)) {
-						this.onLuaDebuggerPause(error);
-					} else {
-						this.handleLuaError(error);
-					}
-				} finally {
-					interpreter.popProgramCounter();
-				}
-			}
 		}
 	}
 
