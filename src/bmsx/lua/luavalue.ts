@@ -400,6 +400,5 @@ export type StackTraceFrame = {
 	line: number;
 	column: number;
 	raw: string;
-	chunkasset_id?: string;
 	chunkPath?: string;
 };

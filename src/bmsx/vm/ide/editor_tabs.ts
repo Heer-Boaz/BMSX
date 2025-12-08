@@ -35,7 +35,7 @@ function resolveChunkName(descriptor: VMResourceDescriptor | null): string {
 	if (!descriptor) {
 		return '<console>';
 	}
-	return descriptor.path ?? descriptor.asset_id ?? '<console>';
+	return descriptor.path ?? '<console>';
 }
 
 function resolveSource(descriptor: VMResourceDescriptor | null): string {
@@ -50,8 +50,8 @@ export function createEntryTabContext(): CodeTabContext {
 	if (!descriptor) {
 		return null;
 	}
-	const resolvedasset_id = descriptor ? descriptor.asset_id : '__entry__';
-	const tabId: string = `lua:${resolvedasset_id}`;
+	const resolvedId = descriptor ? descriptor.path : '__entry__';
+	const tabId: string = `lua:${resolvedId}`;
 	const title = computeResourceTabTitle(descriptor);
 	const initialSource = resolveSource(descriptor);
 	return {
@@ -72,7 +72,7 @@ export function createLuaCodeTabContext(descriptor: VMResourceDescriptor): CodeT
 	const title = computeResourceTabTitle(descriptor);
 	const initialSource = resolveSource(descriptor);
 	return {
-		id: `lua:${descriptor.asset_id}`,
+		id: `lua:${descriptor.path}`,
 		title,
 		descriptor,
 		snapshot: null,

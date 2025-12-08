@@ -643,19 +643,11 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleLeft + bubbleWidth, bottom: bubbleTop + bubbleHeight };
 }
 
-export function focusChunkSource(chunkName: string, hint?: { asset_id: string; path?: string }): void {
+export function focusChunkSource(chunkName: string): void {
 	if (!ide_state.active) {
 		activate();
 	}
 	closeSymbolSearch(true);
-	if (hint?.asset_id) {
-		focusResourceByAsset(hint.asset_id, hint.path);
-		return;
-	}
-	if (hint?.asset_id === null) {
-		activateCodeTab();
-		return;
-	}
 	const descriptor = findResourceDescriptorForChunk(chunkName);
 	openResourceDescriptor(descriptor);
 }
@@ -2544,7 +2536,7 @@ export function applyNavigationEntry(entry: NavigationHistoryEntry): void {
 		if (entry.path) {
 			hint.path = entry.path;
 		}
-		focusChunkSource(entry.chunkName, hint);
+		focusChunkSource(entry.chunkName);
 		if (entry.contextId) {
 			setActiveTab(entry.contextId);
 		}

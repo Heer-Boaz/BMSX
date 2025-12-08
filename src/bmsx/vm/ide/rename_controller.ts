@@ -332,7 +332,7 @@ export class CrossFileRenameManager {
 			return context.snapshot.lines.slice();
 		}
 		const descriptor = context.descriptor;
-		const chunkName = descriptor.path ?? descriptor.asset_id;
+		const chunkName = descriptor.path;
 		const source = BmsxVMRuntime.instance.resourceSourceForChunk(chunkName);
 		context.lastSavedSource = source;
 		return this.deps.splitLines(source);
@@ -371,7 +371,7 @@ export class CrossFileRenameManager {
 		if (!descriptor) {
 			return null;
 		}
-		const contextId: string = `lua:${descriptor.asset_id}`;
+		const contextId: string = `lua:${descriptor.path}`;
 		let context = this.deps.getCodeTabContext(contextId) ;
 		if (!context) {
 			context = this.deps.createLuaCodeTabContext(descriptor);

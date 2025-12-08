@@ -21,7 +21,6 @@ export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails): RuntimeE
 			line: frame.line,
 			column: frame.column,
 			raw: frame.raw,
-			chunkasset_id: frame.chunkasset_id,
 			chunkPath: frame.chunkPath,
 		});
 	}
@@ -35,7 +34,6 @@ export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails): RuntimeE
 			line: frame.line,
 			column: frame.column,
 			raw: frame.raw,
-			chunkasset_id: frame.chunkasset_id,
 			chunkPath: frame.chunkPath,
 		});
 	}

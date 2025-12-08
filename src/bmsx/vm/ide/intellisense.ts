@@ -20,6 +20,7 @@ import { buildLuaSemanticModel, LuaSemanticModel } from './semantic_model';
 import { isLuaCommentContext, wrapOverlayLine } from './text_utils';
 import type { ApiCompletionMetadata, CodeTabContext, LuaCompletionItem, PointerSnapshot } from './types';
 import type { RomLuaAsset } from '../../rompack/rompack';
+import { $ } from '../../core/game';
 export const VM_PREVIEW_MAX_ENTRIES = 12;
 export const VM_PREVIEW_MAX_DEPTH = 2;
 
@@ -1766,7 +1767,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 			currentChunkName: resolvedChunkName,
 			currentLines: ide_state.lines,
 			currentasset_id: asset_id,
-			sourceLabelPath: normalizedPath ?? (descriptor ? descriptor.asset_id : null),
+			sourceLabelPath: normalizedPath ?? null,
 		});
 		if (projectDefinition) {
 			navigateToLuaDefinition(projectDefinition);
@@ -1784,10 +1785,9 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 export function navigateToLuaDefinition(definition: VMLuaDefinitionLocation): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	clearReferenceHighlights();
-	const hint = definition.path ? { asset_id: definition.asset_id, path: definition.path } : undefined;
 	let targetContextId: string = null;
 	try {
-		focusChunkSource(definition.chunkName, hint);
+		focusChunkSource(definition.chunkName);
 		const context = findCodeTabContext(definition.chunkName);
 		if (context) {
 			targetContextId = context.id;
@@ -1826,7 +1826,6 @@ export function inspectLuaExpression(request: VMLuaHoverRequest): VMLuaHoverResu
 	if (!chain) {
 		return null;
 	}
-	const assetIdHint = request.asset_id ?? getChunkResourceHint(request.chunkName)?.asset_id ?? null;
 	const usageRow = Number.isFinite(request.row) ? Math.max(1, Math.floor(request.row)) : null;
 	const usageColumn = Number.isFinite(request.column) ? Math.max(1, Math.floor(request.column)) : null;
 	const resolved = resolveLuaChainValue(chain, request.chunkName);
@@ -1866,7 +1865,7 @@ export function inspectLuaExpression(request: VMLuaHoverRequest): VMLuaHoverResu
 	const isBuiltin = isFunction && chain.length === 1 && isLuaBuiltinFunctionName(chain[0]);
 	let definition: VMLuaDefinitionLocation = null;
 	if (!isBuiltin) {
-		definition = resolveLuaDefinitionMetadata(resolved.value, assetIdHint, resolved.definitionRange);
+		definition = resolveLuaDefinitionMetadata(resolved.value, resolved.definitionRange);
 		if (!definition) {
 			definition = staticDefinition;
 		}
@@ -1911,7 +1910,7 @@ export function listLuaObjectMembers(request: VMLuaMemberCompletionRequest): VML
 	return [];
 }
 
-export function resolveLuaDefinitionMetadata(value: LuaValue, _fallbackasset_id: string, definitionRange: LuaSourceRange): VMLuaDefinitionLocation {
+export function resolveLuaDefinitionMetadata(value: LuaValue, definitionRange: LuaSourceRange): VMLuaDefinitionLocation {
 	let range: LuaSourceRange = definitionRange;
 	if (!range && value && typeof value === 'object') {
 		const candidate = value as { getSourceRange?: () => LuaSourceRange };
@@ -1927,13 +1926,9 @@ export function resolveLuaDefinitionMetadata(value: LuaValue, _fallbackasset_id:
 
 export function buildDefinitionLocationFromRange(range: LuaSourceRange): VMLuaDefinitionLocation {
 	const normalizedChunk = range.chunkName;
-	const chunkResource = getChunkResourceHint(range.chunkName);
-	const asset_id = chunkResource?.asset_id;
-	const path = chunkResource?.path ?? normalizedChunk;
 	const location: VMLuaDefinitionLocation = {
 		chunkName: normalizedChunk,
-		path,
-		asset_id,
+		path: normalizedChunk,
 		range: {
 			startLine: range.start.line,
 			startColumn: range.start.column,
@@ -2064,7 +2059,7 @@ export function listGlobalLuaSymbols(): VMLuaSymbolEntry[] {
 		candidates.push({ chunkName, info: candidateInfo });
 	};
 
-	for (const [chunkName, asset] of Object.entries(BmsxVMRuntime.instance.cart.chunk2lua) as Array<[string, RomLuaAsset]>) {
+	for (const [chunkName, asset] of Object.entries($.cart.chunk2lua) as Array<[string, RomLuaAsset]>) {
 		const path = asset.normalized_source_path;
 		enqueueCandidate(chunkName, { asset_id: asset.resid, path });
 	}
@@ -2199,7 +2194,7 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 export function getStaticDefinitions(preferredChunk: string): { definitions: ReadonlyArray<LuaDefinitionInfo>; chunks: Array<{ chunkName: string; info: { asset_id: string; path?: string } }>; models: Map<string, LuaSemanticModel> } {
 	const interpreter = BmsxVMRuntime.instance.interpreter;
 	const matchingChunks: Array<{ chunkName: string; info: { asset_id: string; path?: string } }> = [];
-	for (const asset of Object.values(BmsxVMRuntime.instance.cart.chunk2lua) as RomLuaAsset[]) {
+	for (const asset of Object.values($.cart.chunk2lua) as RomLuaAsset[]) {
 		const chunkName = asset.chunk_name;
 		const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.normalized_source_path };
 		const matchesPath = preferredChunk !== null && info.path === preferredChunk;
@@ -2725,16 +2720,6 @@ export function isLuaBuiltinFunctionName(name: string): boolean {
 		return false;
 	}
 	return BmsxVMRuntime.instance.luaBuiltinMetadata.has(name);
-}
-
-export function getChunkResourceHint(chunkName: string): { asset_id: string; path?: string } | null {
-	const asset = BmsxVMRuntime.instance.cart.chunk2lua![chunkName];
-	if (!asset) {
-		return null;
-	}
-	const hint: { asset_id: string; path?: string } = { asset_id: asset.resid };
-	hint.path = asset.normalized_source_path;
-	return hint;
 }
 
 export function describeLuaFunctionValue(value: LuaFunctionValue): string {

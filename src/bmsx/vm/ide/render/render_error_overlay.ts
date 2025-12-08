@@ -15,7 +15,6 @@ import { clampCursorColumn, centerCursorVertically, revealCursor } from '../care
 import * as constants from '../constants';
 import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../runtime_error_overlay';
 import { resetBlink } from './render_caret';
-import { getChunkResourceHint } from '../intellisense';
 
 export interface ErrorOverlayBounds {
 	left: number;
@@ -478,7 +477,6 @@ export type FaultOverlayTarget = {
 		line: number,
 		column: number,
 		message: string,
-		hint: { asset_id: string; path?: string; },
 		details: RuntimeErrorDetails
 	) => void;
 	showRuntimeError: (line: number, column: number, message: string, details: RuntimeErrorDetails) => void;
@@ -492,7 +490,6 @@ export function renderFaultOverlay() {
 		snapshot.line,
 		snapshot.column,
 		snapshot.message,
-		{ asset_id: null },
 		snapshot.details
 	);
 }
@@ -507,19 +504,13 @@ export function renderRuntimeFaultOverlay(options: {
 	if (!editorFacade.exists) return false;
 	if (!options.force && (!options.luaRuntimeFailed || !options.needsFlush)) return false;
 	if (!snapshot) return false;
-	const hint = getChunkResourceHint(snapshot.chunkName);
-	if (hint) {
-		showRuntimeErrorInChunk(
-			snapshot.chunkName,
-			snapshot.line,
-			snapshot.column,
-			snapshot.message,
-			hint,
-			snapshot.details
-		);
-		return true;
-	}
-	showRuntimeError(snapshot.line, snapshot.column, snapshot.message, snapshot.details);
+	showRuntimeErrorInChunk(
+		snapshot.chunkName,
+		snapshot.line,
+		snapshot.column,
+		snapshot.message,
+		snapshot.details
+	);
 	return true;
 }
 
@@ -528,10 +519,9 @@ export function showRuntimeErrorInChunk(
 	line: number,
 	column: number,
 	message: string,
-	hint?: { asset_id: string; path?: string; },
 	details?: RuntimeErrorDetails
 ): void {
-	focusChunkSource(chunkName, hint);
+	focusChunkSource(chunkName);
 	const overlayMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
 	showRuntimeError(line, column, overlayMessage, details );
 }

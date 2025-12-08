@@ -1,6 +1,5 @@
 import { LuaCallFrame } from '../lua/luaruntime';
 import { StackTraceFrame } from '../lua/luavalue';
-import { getChunkResourceHint } from './ide/intellisense';
 import { normalizeEndingsAndSplitLines } from './ide/text_utils';
 import { RuntimeErrorDetails } from './ide/types';
 
@@ -39,15 +38,6 @@ export function convertLuaCallFrames(callFrames: ReadonlyArray<LuaCallFrame>): S
 			column: effectiveColumn,
 			raw: rawLabel ?? '[unknown]', // We explicitly don't check for rawLabel.length here because we want to support empty labels (e.g. 'lua]' is implicit and thus empty)
 		};
-		if (source && source.length > 0) {
-			const hint = getChunkResourceHint(source);
-			if (hint) {
-				runtimeFrame.chunkasset_id = hint.asset_id;
-				if (hint.path && hint.path.length > 0) {
-					runtimeFrame.chunkPath = hint.path;
-				}
-			}
-		}
 		frames.push(runtimeFrame);
 	}
 	return frames;

@@ -1,18 +1,19 @@
 import { RegisterablePersistent } from '../../rompack/rompack';
 import { Registry } from '../../core/registry';
 import { BmsxVMRuntime } from '../vm_runtime';
-import { normalizeLuaChunkName, type LuaDebuggerResumeCommand, type LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
+import { type LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import { ide_state } from './ide_state';
 import { getActiveCodeTabContext } from './editor_tabs';
 import { resolveHoverChunkName } from './intellisense';
 import { clamp, fallbackclamp } from '../../utils/clamp';
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition } from './caret';
-import { clearExecutionStopHighlights, focusChunkSource, setExecutionStopHighlight, clearRuntimeErrorOverlay, updateDesiredColumn, findFunctionDefinitionRowInActiveFile, findResourceDescriptorForChunk, resetPointerClickTracking } from './vm_cart_editor';
+import { clearExecutionStopHighlights, focusChunkSource, setExecutionStopHighlight, clearRuntimeErrorOverlay, updateDesiredColumn, findFunctionDefinitionRowInActiveFile, resetPointerClickTracking } from './vm_cart_editor';
 import { resetBlink } from './render/render_caret';
 import type { LuaCallFrame } from '../../lua/luaruntime';
 import { extractErrorMessage, type LuaDebuggerPauseSignal, type StackTraceFrame } from '../../lua/luavalue';
-import type { VMResourceDescriptor } from '../types';
 import * as constants from './constants';
+
+type DebuggerResumeCommand = 'continue' | 'step_over' | 'step_into' | 'step_out' | 'ignore_exception' | 'step_out_exception';
 
 const DEBUGGER_LOG_PREFIX = '[Debugger]';
 
@@ -65,7 +66,7 @@ export class RuntimeDebuggerCommandExecutor implements RegisterablePersistent {
 		return this.hasActiveSuspension;
 	}
 
-	public issueDebuggerCommand(command: LuaDebuggerResumeCommand): boolean {
+	public issueDebuggerCommand(command: DebuggerResumeCommand): boolean {
 		if (!this.hasActiveSuspension) {
 			this.logCommand(command, false, 'no_suspension');
 			return false;
@@ -75,17 +76,47 @@ export class RuntimeDebuggerCommandExecutor implements RegisterablePersistent {
 			this.logCommand(command, false, 'runtime_unavailable');
 			return false;
 		}
-		try { // Exceptions are already caught and handled by the runtime, but just in case
-			runtime.resumeDebugger(command);
-		} catch (error) {
-			this.logCommand(command, false, `error:${(error as Error).message}`);
+		const handled = this.dispatchCommand(runtime, command);
+		if (!handled) {
+			this.logCommand(command, false, 'unsupported_command');
 			return false;
 		}
 		this.logCommand(command, true, 'ok');
 		return true;
 	}
 
-	private logCommand(command: LuaDebuggerResumeCommand, handled: boolean, reason: string): void {
+	private dispatchCommand(runtime: BmsxVMRuntime, command: DebuggerResumeCommand): boolean {
+		try {
+			switch (command) {
+				case 'continue':
+					runtime.continueLuaDebugger();
+					return true;
+				case 'step_over':
+					runtime.stepOverLuaDebugger();
+					return true;
+				case 'step_into':
+					runtime.stepIntoLuaDebugger();
+					return true;
+				case 'step_out':
+					runtime.stepOutLuaDebugger();
+					return true;
+				case 'ignore_exception':
+					runtime.ignoreLuaException();
+					return true;
+				case 'step_out_exception':
+					runtime.stepOutLuaDebugger();
+					runtime.ignoreLuaException();
+					return true;
+				default:
+					return false;
+			}
+		} catch (error) {
+			this.logCommand(command, false, `error:${(error as Error).message}`);
+			return false;
+		}
+	}
+
+	private logCommand(command: DebuggerResumeCommand, handled: boolean, reason: string): void {
 		console.log(`${DEBUGGER_LOG_PREFIX} command=${command} handled=${handled} reason=${reason}`);
 	}
 }
@@ -137,7 +168,7 @@ export function hasBreakpoint(chunkName: string, line: number): boolean {
 	if (line === null) {
 		return false;
 	}
-	const bucket = ide_state.breakpoints.get(normalizeLuaChunkName(chunkName));
+	const bucket = ide_state.breakpoints.get(chunkName);
 	return bucket?.has(line) === true;
 }
 
@@ -145,7 +176,7 @@ export function getBreakpointsForChunk(chunkName: string): ReadonlySet<number> {
 	if (!chunkName) {
 		return null;
 	}
-	const bucket = ide_state.breakpoints.get(normalizeLuaChunkName(chunkName));
+	const bucket = ide_state.breakpoints.get(chunkName);
 	return bucket;
 }
 
@@ -153,7 +184,7 @@ export function toggleBreakpoint(chunkName: string, line: number): BreakpointTog
 	if (line === null) {
 		return 'unchanged';
 	}
-	const chunkKey = normalizeLuaChunkName(chunkName);
+	const chunkKey = chunkName;
 	const bucket = ensureBucket(chunkKey);
 	if (bucket.has(line)) {
 		bucket.delete(line);
@@ -188,7 +219,7 @@ export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap):
 			if (!Array.isArray(lineEntries) || lineEntries.length === 0) {
 				continue;
 			}
-			const chunkKey = normalizeLuaChunkName(chunk);
+			const chunkKey = chunk;
 			const bucket = new Set<number>();
 			for (const entry of lineEntries) {
 				if (entry !== null) {
@@ -204,14 +235,14 @@ export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap):
 }
 
 export function syncRuntimeBreakpoints(): void {
-	const serialized = new Map<string, ReadonlySet<number>>();
+	const serialized = new Map<string, Set<number>>();
 	for (const [chunk, lines] of ide_state.breakpoints) {
 		if (lines.size === 0) {
 			continue;
 		}
 		serialized.set(chunk, new Set(lines));
 	}
-	BmsxVMRuntime.instance.setLuaBreakpoints(serialized);
+	BmsxVMRuntime.instance.setDebuggerBreakpoints(serialized);
 }
 
 export function getActiveBreakpointChunkName(): string {
@@ -252,7 +283,7 @@ export function showDebuggerPauseOverlay(payload: DebuggerPauseDisplayPayload, m
 		clearExecutionStopHighlights();
 		return;
 	}
-	focusChunkSource(normalizedChunk, payload.hint);
+	focusChunkSource(normalizedChunk);
 	const safeLine = fallbackclamp(payload.line, 1, payload.line - 1, 1);
 	const safeColumn = fallbackclamp(payload.column, 1, payload.column - 1, 1);
 	updateDebuggerCaret(safeLine, safeColumn);
@@ -293,7 +324,7 @@ function formatDebuggerMetrics(metrics: LuaDebuggerSessionMetrics): string {
 	if (!metrics) {
 		return null;
 	}
-	const parts: string[] = [`Session ${metrics.sessionId}`, `${metrics.pauseCount} stop${metrics.pauseCount === 1 ? '' : 's'}`];
+	const parts: string[] = [`${metrics.pauseCount} stop${metrics.pauseCount === 1 ? '' : 's'}`];
 	if (metrics.exceptionCount > 0) {
 		parts.push(`${metrics.exceptionCount} exception${metrics.exceptionCount === 1 ? '' : 's'}`);
 	}
@@ -303,7 +334,6 @@ function formatDebuggerMetrics(metrics: LuaDebuggerSessionMetrics): string {
 	return parts.join(' · ');
 }
 
-// TODO: MUST DESTROY ALL REFERENCES TO ASSET_ID!!
 export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void {
 	if (frame.origin !== 'lua') {
 		return;
@@ -313,29 +343,9 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 		ide_state.showMessage('Runtime frame is missing a chunk reference.', constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
-	let normalizedChunk: string;
+	const normalizedChunk = source;
 	try {
-		normalizedChunk = source;
-	} catch (error) {
-		const message = extractErrorMessage(error);
-		ide_state.showMessage(`Unable to resolve runtime chunk name: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
-		return;
-	}
-	const frameasset_id = typeof frame.chunkasset_id === 'string' && frame.chunkasset_id.length > 0 ? frame.chunkasset_id : null;
-	const framePath = typeof frame.chunkPath === 'string' && frame.chunkPath.length > 0 ? frame.chunkPath : null;
-	let descriptor: VMResourceDescriptor = null;
-	if (!frameasset_id || !framePath) {
-		try {
-			descriptor = findResourceDescriptorForChunk(normalizedChunk);
-		} catch {
-			descriptor = null;
-		}
-	}
-	const chunkHintasset_id = frameasset_id ?? descriptor?.asset_id;
-	const chunkHintPath = framePath ?? descriptor?.path;
-	try {
-		const hint = chunkHintasset_id !== null ? { asset_id: chunkHintasset_id, path: chunkHintPath } : (descriptor ? { asset_id: descriptor.asset_id, path: descriptor.path } : undefined);
-		focusChunkSource(normalizedChunk, hint);
+		focusChunkSource(normalizedChunk);
 	} catch (error) {
 		const message = extractErrorMessage(error);
 		ide_state.showMessage(`Failed to open runtime chunk: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);

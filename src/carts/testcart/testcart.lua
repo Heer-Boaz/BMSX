@@ -481,7 +481,7 @@ end
 function update(dt)
 	demo.tick = demo.tick + dt
 	track_plain_input()
-	assert(false)
+	-- assert(false)
 	tick_collision_flash(dt)
 end
 

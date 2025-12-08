@@ -488,7 +488,7 @@ export class World implements Stateful, RegisterablePersistent {
 	 */
 	public run(deltaTime: number): void {
 		this.systems.beginFrame();
-		GameplayEventRecorder.instance.beginFrame($.turnCounter ?? 0);
+		GameplayEventRecorder.instance.beginFrame($.turnCounter);
 
 		try {
 			// Phase 1: Input → command submission (no gameplay writes)

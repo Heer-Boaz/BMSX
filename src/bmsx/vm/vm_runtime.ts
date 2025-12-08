@@ -5,11 +5,10 @@ import { taskGate } from '../core/taskgate';
 import { Input } from '../input/input';
 import { KeyModifier } from '../input/playerinput';
 import type { LuaDefinitionInfo } from '../lua/lua_ast';
-import { LuaDebuggerController, type LuaDebuggerResumeCommand } from '../lua/luadebugger';
 import { LuaEnvironment } from '../lua/luaenvironment';
-import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
+import { LuaError, LuaRuntimeError } from '../lua/luaerrors';
 import { LuaHandlerCache, } from '../lua/luahandler_cache';
-import { LuaInterpreter, type ExecutionSignal, type LuaCallFrame, type LuaDebuggerState, type LuaExceptionResumeStrategy, } from '../lua/luaruntime';
+import { LuaInterpreter, type ExecutionSignal, type LuaCallFrame, } from '../lua/luaruntime';
 import type { LuaFunctionValue, LuaTable, LuaValue, StackTraceFrame } from '../lua/luavalue';
 import {
 	convertToError, createLuaInterpreter,
@@ -22,21 +21,16 @@ import {
 } from '../lua/luavalue';
 import type { InputEvt, StorageService } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
-import type { BmsxCartridge, LifeCycleHandlerName, Viewport, } from '../rompack/rompack';
+import type {  LifeCycleHandlerName, Viewport, } from '../rompack/rompack';
 import { CanonicalizationType } from '../rompack/rompack';
 import { fallbackclamp } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
 import { TerminalMode } from './terminal_mode';
 import { VMRenderFacade } from './vm_render_facade';
 import type { VMFontVariant } from './font';
-import { createVMCartEditor, getSourceForChunk, type VMCartEditor, } from './ide/vm_cart_editor';
+import { createVMCartEditor, getSourceForChunk, type VMCartEditor, setExecutionStopHighlight, clearExecutionStopHighlights, } from './ide/vm_cart_editor';
 import { VM_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from './ide/constants';
-import {
-	emitDebuggerLifecycleEvent,
-	type DebuggerPauseDisplayPayload,
-	type DebuggerResumeMode
-} from './ide/ide_debugger';
-import { clearNativeMemberCompletionCache, getChunkResourceHint } from './ide/intellisense';
+import { clearNativeMemberCompletionCache } from './ide/intellisense';
 import { type FaultSnapshot } from './ide/render/render_error_overlay';
 import { type LuaSemanticModel } from './ide/semantic_model';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
@@ -45,11 +39,13 @@ import { isLuaScriptError, registerApiBuiltins, seedDefaultLuaBuiltins } from '.
 import { LuaFunctionRedirectCache } from './lua_handler_registry';
 import { LuaEntrySnapshot, LuaJsBridge } from './lua_js_bridge';
 import { buildLuaModuleAliases, type LuaRequireModuleRecord } from './lua_module_loader';
-import { buildLuaFrameRawLabel, buildStackLines, convertLuaCallFrames, parseJsStackFrames, prettyPrintRuntimeError } from './runtime_error_util';
+import { buildLuaFrameRawLabel, convertLuaCallFrames, parseJsStackFrames, prettyPrintRuntimeError } from './runtime_error_util';
 import { BmsxVMStorage } from './storage';
 import type { BmsxVMRuntimeOptions, BmsxVMState, VMLuaBuiltinDescriptor, VMLuaMemberCompletion, LuaMarshalContext } from './types';
 import { RenderSubmission } from '../render/gameview';
 import { getWorkspaceCachedSource } from './workspace_cache';
+import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/luadebugger';
+import { ide_state } from './ide/ide_state';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'console_left',
@@ -72,93 +68,42 @@ export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 export const EDITOR_FONT_VARIANT: VMFontVariant = 'tiny';
 
 type VMFrameState = {
-	deltaSeconds: number;
-	deltaForUpdate: number;
-	editorActive: boolean;
-	consoleActive: boolean;
 	haltGame: boolean;
-	debugPaused: boolean;
 	updateExecuted: boolean;
 	luaFaulted: boolean;
-	consoleEvaluated: boolean;
-	editorEvaluated: boolean;
+	deltaSeconds: number;
 };
 
-export var api: BmsxVMApi; // Initialized in BmsxVMRuntime constructor
-
-type PauseFrameSnapshot = {
-	haltGame: boolean;
-	deltaForUpdate: number;
-	debugPaused: boolean;
-};
-
-class VMPauseCoordinator {
+class DebugPauseCoordinator {
 	private suspension: LuaDebuggerPauseSignal = null;
-	private debuggerHaltsGame = false;
-	private resumeStrategy: LuaExceptionResumeStrategy = 'propagate';
-	private readonly debuggerState: () => LuaDebuggerState;
+	private pendingException: LuaRuntimeError | LuaError = null;
 
-	constructor(stateProvider: () => LuaDebuggerState) {
-		this.debuggerState = stateProvider;
-	}
-
-	public getSuspension(): LuaDebuggerPauseSignal {
-		return this.suspension;
+	public capture(suspension: LuaDebuggerPauseSignal, pendingException: LuaRuntimeError | LuaError): void {
+		this.suspension = suspension;
+		this.pendingException = pendingException;
 	}
 
 	public hasSuspension(): boolean {
 		return this.suspension !== null;
 	}
 
-	public setSuspension(signal: LuaDebuggerPauseSignal): void {
-		this.suspension = signal;
-		this.debuggerHaltsGame = true;
+	public getSuspension(): LuaDebuggerPauseSignal {
+		return this.suspension;
+	}
+
+	public getPendingException(): LuaRuntimeError | LuaError {
+		return this.pendingException;
 	}
 
 	public clearSuspension(): void {
 		this.suspension = null;
-		this.resumeStrategy = 'propagate';
-		this.debuggerHaltsGame = false;
-	}
-
-	public markDebuggerHalt(): void {
-		this.debuggerHaltsGame = true;
-	}
-
-	public isDebuggerHalting(): boolean {
-		return this.debuggerHaltsGame;
-	}
-
-	public snapshotFrame(deltaSeconds: number, debugPaused: boolean): PauseFrameSnapshot {
-		const effectiveDebugPaused = debugPaused || this.debuggerHaltsGame;
-		const haltGame = effectiveDebugPaused;
-		return {
-			haltGame,
-			deltaForUpdate: haltGame ? 0 : deltaSeconds,
-			debugPaused: effectiveDebugPaused,
-		};
-	}
-
-	public applyToFrame(state: VMFrameState, debugPaused: boolean): void {
-		const snapshot = this.snapshotFrame(state.deltaSeconds, debugPaused);
-		state.debugPaused = snapshot.debugPaused;
-		state.haltGame = snapshot.haltGame;
-		state.deltaForUpdate = snapshot.deltaForUpdate;
-	}
-
-	public applyResumeStrategy(strategy: LuaExceptionResumeStrategy): void {
-		this.resumeStrategy = strategy;
-		this.debuggerState().setResumeStrategy(strategy);
-	}
-
-	public currentResumeStrategy(): LuaExceptionResumeStrategy {
-		return this.resumeStrategy;
-	}
-
-	public getPendingException(): LuaRuntimeError | LuaSyntaxError {
-		return this.debuggerState().getPendingException();
+		this.pendingException = null;
 	}
 }
+
+type DebuggerStepOrigin = { chunk: string; line: number; depth: number };
+
+export var api: BmsxVMApi; // Initialized in BmsxVMRuntime constructor
 
 export class BmsxVMRuntime extends Service {
 	private static _instance: BmsxVMRuntime = null;
@@ -200,6 +145,11 @@ export class BmsxVMRuntime extends Service {
 	private readonly overlayRenderBackend = new VMRenderFacade();
 	public readonly terminal!: TerminalMode;
 	private _overlayResolutionMode: 'offscreen' | 'viewport'; // Set in constructor
+	private readonly debuggerController = new LuaDebuggerController();
+	private readonly pauseCoordinator = new DebugPauseCoordinator();
+	public debuggerSuspendSignal: LuaDebuggerPauseSignal = null;
+	private debuggerPaused = false;
+	private debuggerMetrics: LuaDebuggerSessionMetrics = null;
 	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
 		this._overlayResolutionMode = value;
 		this.overlayRenderBackend.setRenderingViewportType(value);
@@ -234,14 +184,7 @@ export class BmsxVMRuntime extends Service {
 	public get hasRuntimeFailed(): boolean {
 		return this.luaRuntimeFailed;
 	}
-	private readonly luaDebuggerController: LuaDebuggerController = new LuaDebuggerController();
-	private readonly pauseCoordinator: VMPauseCoordinator;
-	public get debuggerSuspendSignal(): LuaDebuggerPauseSignal {
-		return this.pauseCoordinator.getSuspension();
-	}
-	private readonly debuggerEnabled = true;
-	private debuggerAutoActivateOnNextPause = false;
-	private overlayState = { console: false, editor: false };
+	private overlayState = { terminal: false, editor: false };
 	private includeJsStackTraces = false;
 	private currentFrameState: VMFrameState = null;
 	private pendingLuaWarnings: string[] = [];
@@ -280,10 +223,6 @@ export class BmsxVMRuntime extends Service {
 		return this.luaInterpreter;
 	}
 
-	public get cart(): BmsxCartridge {
-		return $.rompack.cart;
-	}
-
 	private constructor(options: BmsxVMRuntimeOptions) {
 		super({ id: 'bmsx_console_runtime' });
 		BmsxVMRuntime._instance = this;
@@ -296,7 +235,6 @@ export class BmsxVMRuntime extends Service {
 		setEditorCaseInsensitivity(this._canonicalization !== 'none');
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.terminal = new TerminalMode(this);
-		this.pauseCoordinator = new VMPauseCoordinator(() => this.luaInterpreter.getDebuggerState());
 		this.enableEvents();
 
 		api = new BmsxVMApi({
@@ -313,6 +251,7 @@ export class BmsxVMRuntime extends Service {
 		this.registerVMShortcuts();
 
 		this.subscribeGlobalDebuggerHotkeys();
+		this.setDebuggerBreakpoints(ide_state.breakpoints);
 	}
 
 	private extractErrorLocation(error: unknown): { line: number; column: number; chunkName: string } {
@@ -339,209 +278,6 @@ export class BmsxVMRuntime extends Service {
 			deserializeNative: (token) => token as object | Function,
 		});
 		interpreter.setRequireHandler((ctx, module) => this.requireLuaModule(ctx, module));
-		if (this.debuggerEnabled) {
-			interpreter.attachDebugger(this.luaDebuggerController);
-		}
-	}
-
-	private onLuaDebuggerPause(signal: LuaDebuggerPauseSignal): void {
-		if (!this.debuggerEnabled) {
-			return;
-		}
-		if (this.pauseCoordinator.getSuspension() === signal) {
-			return;
-		}
-		const autoActivateOnPause = this.debuggerAutoActivateOnNextPause;
-		this.debuggerAutoActivateOnNextPause = false;
-		const controller = this.luaDebuggerController;
-		const sessionMetrics = controller.handlePause(signal);
-		this.pauseCoordinator.setSuspension(signal);
-		this.setDebuggerPaused(true);
-		const editorActive = this.editor?.isActive === true;
-		const shouldActivateEditor = signal.reason === 'exception'
-			? editorActive || autoActivateOnPause
-			: signal.reason === 'breakpoint' || autoActivateOnPause;
-		if (shouldActivateEditor) {
-			try {
-				this.activateEditor();
-			}
-			catch (activationError) {
-				console.warn('[BmsxVMRuntime] Failed to activate IDE during debugger pause.', activationError);
-			}
-		}
-		if (signal.reason === 'exception') {
-			const snapshot = this.recordDebuggerExceptionFault(signal);
-			const prettyMessage = prettyPrintRuntimeError(
-				snapshot ? snapshot.chunkName : signal.location.chunk,
-				snapshot ? snapshot.line : signal.location.line,
-				snapshot ? snapshot.column : signal.location.column,
-				snapshot ? snapshot.message : 'Runtime error',
-			);
-			this.presentRuntimeErrorInVM(prettyMessage, snapshot ? snapshot.details : null);
-			if (editorActive || shouldActivateEditor) {
-				this.editor.renderFaultOverlay();
-			} else if (snapshot) {
-				this.activateTerminalMode();
-				this.updateOverlayState(true, false, true);
-			}
-		} else if (this.luaRuntimeFailed && (editorActive || shouldActivateEditor)) {
-			this.editor.renderFaultOverlay();
-		}
-		const state = this.currentFrameState;
-		if (state) {
-			this.pauseCoordinator.applyToFrame(state, true);
-		}
-		const hint = getChunkResourceHint(signal.location.chunk);
-		const payload: DebuggerPauseDisplayPayload = {
-			chunk: signal.location.chunk,
-			line: signal.location.line,
-			column: signal.location.column,
-			reason: signal.reason,
-			hint,
-		};
-		emitDebuggerLifecycleEvent({
-			type: 'paused',
-			suspension: signal,
-			payload,
-			callStack: signal.callStack,
-			metrics: sessionMetrics,
-		});
-	}
-	private pauseDebuggerForException(
-		details: { chunkName: string; line: number; column: number },
-		callStackOverride?: ReadonlyArray<LuaCallFrame>,
-	): void {
-		if (!this.debuggerEnabled) {
-			return;
-		}
-		const controller = this.luaDebuggerController;
-		const interpreter = this.luaInterpreter;
-		const callStack =
-			callStackOverride !== undefined
-				? Array.from(callStackOverride)
-				: interpreter
-					? Array.from(interpreter.lastFaultCallStack)
-					: [];
-		const chunk =
-			(details.chunkName && details.chunkName.length > 0
-				? details.chunkName
-				: this._luaChunkName) ?? '<chunk>';
-		const line = details.line ?? 0;
-		const column = details.column ?? 0;
-		const normalSignal: ExecutionSignal = { kind: 'normal' };
-		const suspension: LuaDebuggerPauseSignal = {
-			kind: 'pause',
-			reason: 'exception',
-			location: { chunk, line, column },
-			callStack,
-			resume: () => normalSignal,
-		};
-		this.onLuaDebuggerPause(suspension as LuaDebuggerPauseSignal);
-		controller.clearStepping();
-	}
-
-	private setDebuggerPaused(paused: boolean) {
-		const state = this.currentFrameState;
-		if (state) {
-			state.debugPaused = paused;
-		}
-	}
-
-	private clearActiveDebuggerPause(): void {
-		const hadSuspension = this.pauseCoordinator.hasSuspension();
-		this.pauseCoordinator.clearSuspension();
-		this.setDebuggerPaused(false);
-		if (hadSuspension) {
-			emitDebuggerLifecycleEvent({ type: 'continued', mode: 'continue' });
-		}
-	}
-
-	private resumeLuaDebugger(command: LuaDebuggerResumeCommand, options?: { stepDepthOverride?: number }): void {
-		if (!this.debuggerEnabled) {
-			return;
-		}
-		const suspension = this.pauseCoordinator.getSuspension();
-		if (!suspension) {
-			return;
-		}
-		const controller = this.luaDebuggerController;
-		controller.suppressNextAtBoundary(suspension.location.chunk, suspension.location.line, suspension.callStack.length);
-		const strategy = controller.prepareResume(command, suspension, options);
-		this.pauseCoordinator.applyResumeStrategy(strategy);
-
-		const resumeMode = this.toDebuggerResumeMode(command);
-		emitDebuggerLifecycleEvent({ type: 'continued', mode: resumeMode });
-		let resumeCompleted = false;
-		try {
-			const result = suspension.resume();
-			if (result.kind === 'pause') {
-				this.onLuaDebuggerPause(result);
-				return;
-			}
-			controller.handleSilentResumeResult(command, suspension);
-			resumeCompleted = true;
-		}
-		catch (error) {
-			if (isLuaDebuggerPauseSignal(error)) {
-				this.onLuaDebuggerPause(error);
-				return;
-			}
-			this.handleLuaError(error);
-			return;
-		}
-		if (resumeCompleted) {
-			this.luaRuntimeFailed = false;
-			const shouldClearRuntimeErrorOverlay =
-				suspension.reason === 'exception' &&
-				(command === 'continue' || command === 'ignore_exception' || command === 'step_out_exception');
-			if (shouldClearRuntimeErrorOverlay) {
-				this.clearFaultSnapshot();
-				this.editor?.clearRuntimeErrorOverlay();
-			}
-			this.pauseCoordinator.clearSuspension();
-			this.setDebuggerPaused(false);
-			const state = this.currentFrameState;
-			if (state) {
-				this.updateFrameHaltingState(state);
-			}
-		}
-	}
-
-	private toDebuggerResumeMode(command: LuaDebuggerResumeCommand): DebuggerResumeMode {
-		if (command === 'step_into') {
-			return 'step_into';
-		}
-		if (command === 'step_over') {
-			return 'step_over';
-		}
-		if (command === 'step_out' || command === 'step_out_exception') {
-			return 'step_out';
-		}
-		return 'continue';
-	}
-
-	public resumeDebugger(command: LuaDebuggerResumeCommand): void {
-		if (!this.debuggerEnabled) {
-			return;
-		}
-		const suspension = this.pauseCoordinator.getSuspension();
-		if (!suspension) {
-			return;
-		}
-		let options: { stepDepthOverride?: number };
-		if (command === 'step_out' || command === 'step_out_exception') {
-			const targetDepth = Math.max(0, suspension.callStack.length - 1);
-			options = { stepDepthOverride: targetDepth };
-		}
-		this.resumeLuaDebugger(command, options);
-	}
-
-	public setLuaBreakpoints(breakpoints: ReadonlyMap<string, ReadonlySet<number>>): void {
-		if (!this.debuggerEnabled) {
-			return;
-		}
-		const controller = this.luaDebuggerController;
-		controller.setBreakpoints(breakpoints);
 	}
 
 	private pollVMHotkeys(): void {
@@ -607,48 +343,6 @@ export class BmsxVMRuntime extends Service {
 		} else {
 			this.consoleHotkeyLatch.set('debugger-f8-step', null);
 		}
-		if (this.editor?.isActive !== true) {
-			this.debuggerAutoActivateOnNextPause = true;
-		}
-		this.beginGlobalDebuggerStepping();
-	}
-
-	private handleGlobalDebuggerHotkeys(): boolean {
-		if (!this.debuggerEnabled) {
-			return false;
-		}
-		if (this.shouldAcceptVMHotkey('debugger-f8-step', 'F8', KeyModifier.ctrl)) {
-			$.consume_button(this.playerIndex, 'F8', 'keyboard');
-			const suspended = this.pauseCoordinator.hasSuspension();
-			console.log(`[LuaDebugger] Global F8 hotkey detected (suspended=${suspended ? 'yes' : 'no'}).`);
-			this.beginGlobalDebuggerStepping();
-			return true;
-		}
-		return false;
-	}
-
-	private beginGlobalDebuggerStepping(): void {
-		if (!this.debuggerEnabled) {
-			return;
-		}
-		if (this.pauseCoordinator.hasSuspension()) {
-			console.log('[LuaDebugger] Global F8 step-over requested while suspended.');
-			if (this.editor?.isActive !== true) {
-				this.debuggerAutoActivateOnNextPause = true;
-			}
-			this.resumeDebugger('step_over');
-			return;
-		}
-		const controller = this.luaDebuggerController;
-		if (this.editor?.isActive !== true) {
-			this.debuggerAutoActivateOnNextPause = true;
-		}
-		if (controller.hasActiveSteppingRequest()) {
-			console.log('[LuaDebugger] Global F8 step already pending; waiting for next pause.');
-			return;
-		}
-		console.log('[LuaDebugger] Global F8 step armed for next statement.');
-		controller.requestStepInto();
 	}
 
 	private shouldAcceptVMHotkey(code: string, key: string, modifiers: KeyModifier): boolean {
@@ -672,10 +366,21 @@ export class BmsxVMRuntime extends Service {
 		return true;
 	}
 
+	private handleGlobalDebuggerHotkeys(): void {
+		if (this.consoleHotkeyLatch.has('debugger-f8-step')) {
+			this.consoleHotkeyLatch.delete('debugger-f8-step');
+			if (this.debuggerSuspendSignal) {
+				this.stepOverLuaDebugger();
+			} else {
+				this.debuggerController.requestStepInto();
+			}
+		}
+	}
+
 	private toggleTerminalMode(): void {
 		if (this.terminal.isActive) {
 			this.terminal.deactivate();
-			this.updateOverlayState(false, this.editor?.isActive === true, true);
+			this.updateOverlayState(true);
 			return;
 		}
 		this.activateTerminalMode();
@@ -684,7 +389,7 @@ export class BmsxVMRuntime extends Service {
 	private toggleEditor(): void {
 		if (this.editor?.isActive === true) {
 			this.editor.deactivate();
-			this.updateOverlayState(this.terminal.isActive, false, true);
+			this.updateOverlayState(true);
 			return;
 		}
 		this.activateEditor();
@@ -701,7 +406,7 @@ export class BmsxVMRuntime extends Service {
 			this.editor.activate();
 		}
 
-		this.updateOverlayState(this.terminal.isActive, this.editor.isActive === true, true);
+		this.updateOverlayState(true);
 	}
 
 	private registerVMShortcuts(): void {
@@ -733,7 +438,7 @@ export class BmsxVMRuntime extends Service {
 			this.editor.deactivate();
 		}
 		this.terminal.activate();
-		this.updateOverlayState(true, false, true);
+		this.updateOverlayState(true);
 	}
 
 	public toggleOverlayResolutionMode(): 'offscreen' | 'viewport' {
@@ -767,30 +472,8 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	public continueFromVM(): void {
-		if (this.pauseCoordinator.hasSuspension()) {
-			this.resumeDebugger('continue');
-		}
 		this.terminal.deactivate();
-		this.updateOverlayState(false, this.editor?.isActive === true, true);
-	}
-
-	public clearFaultState(): { cleared: boolean; resumedDebugger: boolean } {
-		const suspension = this.pauseCoordinator.getSuspension();
-		if (suspension && suspension.reason === 'exception') {
-			this.resumeDebugger('ignore_exception');
-			return { cleared: true, resumedDebugger: true };
-		}
-		if (this.luaRuntimeFailed || this.faultSnapshot) {
-			this.luaRuntimeFailed = false;
-			this.clearFaultSnapshot();
-			this.luaInterpreter.clearLastFaultEnvironment();
-			this.luaInterpreter.clearLastFaultCallStack();
-			if (this.editor) {
-				this.editor.clearRuntimeErrorOverlay();
-			}
-			return { cleared: true, resumedDebugger: false };
-		}
-		return { cleared: false, resumedDebugger: false };
+		this.updateOverlayState(true);
 	}
 
 	public recordLuaWarning(message: string): void {
@@ -810,33 +493,156 @@ export class BmsxVMRuntime extends Service {
 		}
 	}
 
-	private updateOverlayState(includeVM: boolean, includeEditor: boolean, force = false): void {
-		if (!force && this.overlayState.console === includeVM && this.overlayState.editor === includeEditor) {
+	private updateOverlayState(force = false): void {
+		const includeTerminal = this.terminal.isActive;
+		const includeEditor = this.editor?.isActive === true;
+		if (!force && this.overlayState.terminal === includeTerminal && this.overlayState.editor === includeEditor) {
 			return;
 		}
-		this.overlayState = { console: includeVM, editor: includeEditor };
-		const anyOverlay = includeVM || includeEditor;
+		this.overlayState = { terminal: includeTerminal, editor: includeEditor };
+		const anyOverlay = includeTerminal || includeEditor;
 		if (!anyOverlay) {
-			OverlayPipelineController.setRequest('console', null);
+			OverlayPipelineController.setRequest('vmoverlay', null);
 			return;
 		}
 		api.set_render_backend(this.overlayRenderBackend);
-		OverlayPipelineController.setRequest('console', {
-			includeTerminal: includeVM,
+		OverlayPipelineController.setRequest('vmoverlay', {
+			includeTerminal: includeTerminal,
 			includeIDE: includeEditor,
 			includePresentation: true,
 			includeCartUpdate: false,
 		});
 	}
 
+	public setDebuggerBreakpoints(breakpoints: Map<string, Set<number>>): void {
+		this.debuggerController.setBreakpoints(breakpoints);
+	}
+
+	private setDebuggerPaused(paused: boolean): void {
+		this.debuggerPaused = paused;
+		ide_state.debuggerControls.executionState = paused ? 'paused' : 'inactive';
+		ide_state.debuggerControls.sessionMetrics = this.debuggerMetrics;
+		if (!paused) {
+			clearExecutionStopHighlights();
+		}
+	}
+
+	private applyDebuggerStopLocation(signal: LuaDebuggerPauseSignal): void {
+		const normalizedLine = fallbackclamp(signal.location.line, 1, Number.MAX_SAFE_INTEGER, 1);
+		setExecutionStopHighlight(normalizedLine - 1);
+	}
+
+	private onLuaDebuggerPause(signal: LuaDebuggerPauseSignal): void {
+		this.debuggerController.handlePause(signal);
+		const pendingException = this.luaInterpreter.pendingDebuggerException;
+		this.pauseCoordinator.capture(signal, pendingException);
+		this.debuggerSuspendSignal = signal;
+		this.debuggerMetrics = this.debuggerController.getSessionMetrics();
+		this.setDebuggerPaused(true);
+		this.applyDebuggerStopLocation(signal);
+		if (signal.reason === 'exception') {
+			const snapshot = this.recordDebuggerExceptionFault(signal);
+			const message = snapshot.message ?? 'Runtime error';
+			this.editor.showRuntimeErrorInChunk(snapshot.chunkName, snapshot.line, snapshot.column, message);
+		}
+	}
+
+	private clearActiveDebuggerPause(): void {
+		this.pauseCoordinator.clearSuspension();
+		this.debuggerSuspendSignal = null;
+		this.setDebuggerPaused(false);
+		this.clearRuntimeFault();
+		this.debuggerController.clearPauseContext();
+		this.editor.clearRuntimeErrorOverlay();
+	}
+
+	private handleDebuggerResumeResult(result: ExecutionSignal): void {
+		if (result && result.kind === 'pause') {
+			this.onLuaDebuggerPause(result as LuaDebuggerPauseSignal);
+			return;
+		}
+		this.clearActiveDebuggerPause();
+	}
+
+	private buildDebuggerStepOrigin(suspension: LuaDebuggerPauseSignal): DebuggerStepOrigin {
+		return {
+			chunk: suspension.location.chunk,
+			line: suspension.location.line,
+			depth: suspension.callStack.length,
+		};
+	}
+
+	private resolveResumeStrategy(suspension: LuaDebuggerPauseSignal): 'propagate' | 'skip_statement' {
+		return suspension.reason === 'exception' ? 'skip_statement' : 'propagate';
+	}
+
+	private resumeDebugger(options: { mode: 'continue' | 'step_into' | 'step_out'; strategy: 'propagate' | 'skip_statement' }): void {
+		const suspension = this.pauseCoordinator.getSuspension();
+		const stepOrigin = this.buildDebuggerStepOrigin(suspension);
+		if (options.mode === 'step_into') {
+			this.debuggerController.requestStepInto(stepOrigin);
+		}
+		if (options.mode === 'step_out') {
+			this.debuggerController.requestStepOut(suspension.callStack.length, stepOrigin);
+		}
+		if (options.strategy === 'skip_statement' && suspension.reason === 'exception') {
+			this.debuggerController.markSkippedException();
+		}
+		this.luaInterpreter.setDebuggerResumeStrategy(options.strategy);
+		const result = suspension.resume();
+		this.handleDebuggerResumeResult(result);
+	}
+
+	public continueLuaDebugger(): void {
+		this.resumeDebugger({ mode: 'continue', strategy: 'propagate' });
+	}
+
+	public stepOverLuaDebugger(): void {
+		// Step-over is intentionally unavailable: the interpreter runs statements atomically, so there is
+		// no hook to pause after the current statement without re-entering child calls. We fall back to
+		// step-into to keep forward progress predictable.
+		this.stepIntoLuaDebugger();
+	}
+
+	public stepIntoLuaDebugger(): void {
+		const suspension = this.pauseCoordinator.getSuspension();
+		this.resumeDebugger({ mode: 'step_into', strategy: this.resolveResumeStrategy(suspension) });
+	}
+
+	public stepOutLuaDebugger(): void {
+		const suspension = this.pauseCoordinator.getSuspension();
+		this.resumeDebugger({ mode: 'step_out', strategy: this.resolveResumeStrategy(suspension) });
+	}
+
+	public ignoreLuaException(): void {
+		this.resumeDebugger({ mode: 'continue', strategy: 'skip_statement' });
+	}
+
+	public stepOutLuaException(): void {
+		this.resumeDebugger({ mode: 'step_out', strategy: 'skip_statement' });
+	}
+
+	private pauseDebuggerForException(location: { chunkName: string; line: number; column: number }, callStack: ReadonlyArray<LuaCallFrame>): void {
+		const suspension: LuaDebuggerPauseSignal = {
+			kind: 'pause',
+			reason: 'exception',
+			location: {
+				chunk: location.chunkName ?? '',
+				line: location.line ?? 1,
+				column: location.column ?? 1,
+			},
+			callStack: callStack ?? [],
+			resume: () => ({ kind: 'normal' }),
+		};
+		this.onLuaDebuggerPause(suspension);
+	}
+
 	public async boot(): Promise<void> {
 		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'new_game' });
 		try {
-			this.pauseCoordinator.clearSuspension();
-			this.setDebuggerPaused(false);
-			this.luaRuntimeFailed = false;
+			this.clearActiveDebuggerPause();
+			this.clearRuntimeFault();
 			this.luaVmInitialized = false;
-			this.clearFaultSnapshot();
 			this.invalidateLuaModuleIndex();
 			this.luaChunkEnvironmentsByPath.clear();
 			this.luaChunkEnvironmentsByChunkName.clear();
@@ -864,33 +670,20 @@ export class BmsxVMRuntime extends Service {
 		if (this.currentFrameState) {
 			throw new Error('[BmsxVMRuntime] Attempted to begin a new frame while another frame is active.');
 		}
-		const deltaSeconds = $.deltatime_seconds;
-		const snapshot = this.pauseCoordinator.snapshotFrame(deltaSeconds, $.paused === true);
+		const deltaSeconds = $.update_interval * 0.001; // Align with fixed-step update cadence to avoid over-counting when substepping
 		const state: VMFrameState = {
-			deltaSeconds,
-			deltaForUpdate: snapshot.deltaForUpdate,
-			editorActive: false,
-			consoleActive: false,
-			haltGame: snapshot.haltGame,
-			debugPaused: snapshot.debugPaused,
+			haltGame: this.debuggerPaused,
 			updateExecuted: false,
 			luaFaulted: this.luaRuntimeFailed,
-			consoleEvaluated: false,
-			editorEvaluated: false,
+			deltaSeconds,
 		};
 		this.currentFrameState = state;
 		return state;
 	}
 
-	private updateFrameHaltingState(state: VMFrameState): void {
-		const snapshot = this.pauseCoordinator.snapshotFrame(state.deltaSeconds, $.paused === true);
-		state.debugPaused = snapshot.debugPaused;
-		const consoleActive = state.consoleEvaluated ? state.consoleActive : this.overlayState.console;
-		const editorActive = state.editorEvaluated ? state.editorActive : this.overlayState.editor;
-		state.haltGame = snapshot.haltGame;
-		state.deltaForUpdate = snapshot.deltaForUpdate;
-		this.updateOverlayState(consoleActive, editorActive, false);
-		Input.instance.setDebugHotkeysPaused(consoleActive || editorActive);
+	private updateFrameHaltingState(): void {
+		this.updateOverlayState(false);
+		Input.instance.setDebugHotkeysPaused(false);
 	}
 
 	public tickUpdate(): void {
@@ -959,15 +752,9 @@ export class BmsxVMRuntime extends Service {
 		}
 	}
 
-	private applyOverlayStateToFrame(state: VMFrameState): void {
-		const consoleActive = this.terminal.isActive;
-		const editorActive = this.editor?.isActive === true;
-		state.consoleEvaluated = true;
-		state.consoleActive = consoleActive;
-		state.editorEvaluated = true;
-		state.editorActive = editorActive;
-		this.updateOverlayState(consoleActive, editorActive, false);
-		this.updateFrameHaltingState(state);
+	private applyOverlayStateToFrame(): void {
+		this.updateOverlayState(false);
+		this.updateFrameHaltingState();
 	}
 
 	private runCartUpdateTick(): void {
@@ -975,7 +762,7 @@ export class BmsxVMRuntime extends Service {
 		try {
 			const state = this.beginFrameState();
 			this.pollVMHotkeys();
-			this.applyOverlayStateToFrame(state);
+			this.applyOverlayStateToFrame();
 			this.runUpdatePhase(state);
 		} catch (error) {
 			fault = error;
@@ -994,7 +781,7 @@ export class BmsxVMRuntime extends Service {
 		const state = this.beginFrameState();
 		this.pollVMHotkeys();
 		this.advanceTerminalMode(state.deltaSeconds);
-		this.applyOverlayStateToFrame(state);
+		this.applyOverlayStateToFrame();
 	}
 
 	private runIdeUpdateTick(): void {
@@ -1006,7 +793,7 @@ export class BmsxVMRuntime extends Service {
 		if (this.editor) {
 			this.editor.update(state.deltaSeconds);
 		}
-		this.applyOverlayStateToFrame(state);
+		this.applyOverlayStateToFrame();
 	}
 
 	private runUpdatePhase(state: VMFrameState): void {
@@ -1059,7 +846,10 @@ export class BmsxVMRuntime extends Service {
 				}
 				this.overlayRenderBackend.setDefaultLayer('world');
 				if (options.drawGame && this.luaVmGate.ready) {
-					if (this.luaRuntimeFailed || this.faultSnapshot) {
+					if (this.debuggerPaused) {
+						this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
+					}
+					else if (this.luaRuntimeFailed || this.faultSnapshot) {
 						this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
 					}
 					else {
@@ -1103,7 +893,7 @@ export class BmsxVMRuntime extends Service {
 		this.disposeShortcutHandlers();
 		this.terminal.deactivate();
 		this.unsubscribeGlobalDebuggerHotkeys();
-		this.updateOverlayState(false, false, true);
+		this.updateOverlayState(true);
 		this.luaVmInitialized = false;
 		if (this.editor) {
 			this.editor.shutdown();
@@ -1185,7 +975,7 @@ export class BmsxVMRuntime extends Service {
 		if (savedRuntimeFailed) {
 			this.luaRuntimeFailed = true;
 		}
-		this.updateOverlayState(this.terminal.isActive, this.editor?.isActive === true, true);
+		this.updateOverlayState(true);
 	}
 
 	public async resumeFromSnapshot(state: BmsxVMState): Promise<void> {
@@ -1207,7 +997,7 @@ export class BmsxVMRuntime extends Service {
 		this.luaRuntimeFailed = false;
 		publishOverlayFrame(null);
 		this.resumeLuaProgramState(snapshot);
-		this.updateOverlayState(this.terminal.isActive, this.editor?.isActive === true, true);
+		this.updateOverlayState(true);
 		this.clearFaultSnapshot();
 		this.luaVmInitialized = this.luaInterpreter !== null;
 	}
@@ -1287,7 +1077,7 @@ export class BmsxVMRuntime extends Service {
 				}
 			}
 		}
-		this.updateOverlayState(this.terminal.isActive, this.editor?.isActive === true, true);
+		this.updateOverlayState(true);
 		this.luaVmInitialized = this.luaInterpreter !== null;
 	}
 
@@ -1312,7 +1102,7 @@ export class BmsxVMRuntime extends Service {
 		this.refreshLuaModulesOnResume(binding);
 		clearNativeMemberCompletionCache();
 		// if (shouldRunInit) {
-			// this.runLuaLifecycleHandler('init');
+		// this.runLuaLifecycleHandler('init');
 		// }
 		this.restoreVmState(snapshot);
 		if (savedRuntimeFailed) {
@@ -1403,9 +1193,11 @@ export class BmsxVMRuntime extends Service {
 			return;
 		}
 
+		// Path not used right now, but might be useful for loading game state later
 		this.resetLuaInteroperabilityState();
 		const interpreter = createLuaInterpreter(this._canonicalization);
 		this.configureInterpreter(interpreter);
+		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
 		this.luaInterpreter = interpreter;
 		this.luaInitFunction = null;
@@ -1467,6 +1259,33 @@ export class BmsxVMRuntime extends Service {
 		this.faultOverlayNeedsFlush = false;
 	}
 
+	private clearRuntimeFault(): void {
+		this.luaRuntimeFailed = false;
+		this.clearFaultSnapshot();
+	}
+
+	private setRuntimeFault(payload: {
+		message: string;
+		chunkName: string;
+		line: number;
+		column: number;
+		details: RuntimeErrorDetails;
+		fromDebugger: boolean;
+	}): FaultSnapshot {
+		this.luaRuntimeFailed = true;
+		return this.recordFaultSnapshot(payload);
+	}
+
+	public clearFaultState(): { cleared: boolean; resumedDebugger: boolean } {
+		const hadFault = this.luaRuntimeFailed || this.faultSnapshot !== null || this.debuggerSuspendSignal !== null;
+		const wasPaused = this.debuggerSuspendSignal !== null || this.debuggerPaused;
+		this.clearRuntimeFault();
+		if (wasPaused) {
+			this.clearActiveDebuggerPause();
+		}
+		return { cleared: hadFault, resumedDebugger: wasPaused };
+	}
+
 	private recordDebuggerExceptionFault(signal: LuaDebuggerPauseSignal): FaultSnapshot {
 		const exception = this.pauseCoordinator.getPendingException();
 		if (this.faultSnapshot && this.luaRuntimeFailed) {
@@ -1476,8 +1295,7 @@ export class BmsxVMRuntime extends Service {
 		const signalLine = fallbackclamp(signal.location.line, 1, Number.MAX_SAFE_INTEGER, null);
 		const signalColumn = fallbackclamp(signal.location.column, 1, Number.MAX_SAFE_INTEGER, null);
 		if (!exception) {
-			this.luaRuntimeFailed = true;
-			return this.recordFaultSnapshot({
+			return this.setRuntimeFault({
 				message: 'Runtime error',
 				chunkName: signal.location.chunk,
 				line: signalLine,
@@ -1493,8 +1311,7 @@ export class BmsxVMRuntime extends Service {
 		}
 		const normalizedLine = fallbackclamp(exception.line, 1, Number.MAX_SAFE_INTEGER, null);
 		const normalizedColumn = fallbackclamp(exception.column, 1, Number.MAX_SAFE_INTEGER, null);
-		this.luaRuntimeFailed = true;
-		return this.recordFaultSnapshot({
+		return this.setRuntimeFault({
 			message,
 			chunkName,
 			line: normalizedLine ?? signalLine,
@@ -1504,24 +1321,12 @@ export class BmsxVMRuntime extends Service {
 		});
 	}
 
-	public presentRuntimeErrorInVM(
-		prettyMessage: string,
-		details: RuntimeErrorDetails,
-	): void {
-		this.terminal.appendStderr(prettyMessage);
-		const stackLines = buildStackLines(details, this.jsStackEnabled);
-		for (let index = 0; index < stackLines.length; index += 1) {
-			this.terminal.appendStderr(stackLines[index]);
-		}
-	}
-
 	public markSourceChunkAsDirty(chunkName: string): void {
 		this.luaGenericChunksExecuted.delete(chunkName);
 	}
 
 	private captureVmState(): { globals?: LuaEntrySnapshot; locals?: LuaEntrySnapshot; randomSeed?: number; programCounter?: number } {
 		const interpreter = this.luaInterpreter;
-		if (!this.luaVmInitialized || !interpreter?.chunkEnvironment) return null;
 		const globals = this.captureLuaEntryCollection(interpreter.enumerateGlobalEntries());
 		const locals = this.captureLuaEntryCollection(interpreter.enumerateChunkEntries());
 		const randomSeed = interpreter.getRandomSeed();
@@ -1752,6 +1557,7 @@ export class BmsxVMRuntime extends Service {
 		this.resetLuaInteroperabilityState();
 		const interpreter = createLuaInterpreter(this._canonicalization);
 		this.configureInterpreter(interpreter);
+		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
 		this.luaInterpreter = interpreter;
 		this.luaInitFunction = null;
@@ -1792,10 +1598,7 @@ export class BmsxVMRuntime extends Service {
 			if (!preservingSuspension) {
 				this.pauseCoordinator.clearSuspension();
 				this.setDebuggerPaused(false);
-				this.luaRuntimeFailed = false;
-				this.clearFaultSnapshot();
-			} else {
-				this.pauseCoordinator.markDebuggerHalt();
+				this.clearRuntimeFault();
 			}
 
 			// Reload the program source from the cartridge and reset the world
@@ -1846,11 +1649,10 @@ export class BmsxVMRuntime extends Service {
 		const message = extractErrorMessage(error);
 		const { line, column, chunkName } = this.extractErrorLocation(error);
 
-		this.luaRuntimeFailed = true;
 		const interpreter = this.luaInterpreter;
 		const callStackSnapshot = interpreter ? Array.from(interpreter.lastFaultCallStack) : [];
 		const runtimeDetails = this.buildRuntimeErrorDetailsForEditor(error, message);
-		const snapshot = this.recordFaultSnapshot({
+		const snapshot = this.setRuntimeFault({
 			message,
 			chunkName,
 			line,
@@ -1895,7 +1697,7 @@ export class BmsxVMRuntime extends Service {
 								? innermostFrame.functionName
 								: null;
 					if (innermostFrame && effectiveSource && innermostFrame.source === effectiveSource) {
-						const hint = getChunkResourceHint(effectiveSource);
+						const hint = effectiveSource;
 						const updated: StackTraceFrame = {
 							origin: innermostFrame.origin,
 							functionName: fnName,
@@ -1903,15 +1705,9 @@ export class BmsxVMRuntime extends Service {
 							line: resolvedLine,
 							column: resolvedColumn,
 							raw: buildLuaFrameRawLabel(fnName, effectiveSource),
-							chunkasset_id: innermostFrame.chunkasset_id,
 							chunkPath: innermostFrame.chunkPath,
 						};
-						if (!updated.chunkasset_id && hint) {
-							updated.chunkasset_id = hint.asset_id;
-							if (hint.path && hint.path.length > 0) {
-								updated.chunkPath = hint.path;
-							}
-						}
+						updated.chunkPath = hint;
 						luaFrames[0] = updated;
 					} else {
 						const frameSource = src !== null ? src : effectiveSource;
@@ -1924,12 +1720,9 @@ export class BmsxVMRuntime extends Service {
 							raw: buildLuaFrameRawLabel(fnName, frameSource),
 						};
 						if (frameSource && frameSource.length > 0) {
-							const hint = getChunkResourceHint(frameSource);
+							const hint = frameSource;
 							if (hint) {
-								top.chunkasset_id = hint.asset_id;
-								if (hint.path && hint.path.length > 0) {
-									top.chunkPath = hint.path;
-								}
+								top.chunkPath = hint;
 							}
 						}
 						luaFrames.unshift(top);
