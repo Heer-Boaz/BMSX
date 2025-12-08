@@ -127,6 +127,7 @@ export const editorFacade = {
 	deactivate,
 	get isActive(): boolean { return ide_state.active; },
 	get exists(): boolean { return ide_state.initialized; },
+	tickInput,
 	update,
 	draw,
 	shutdown,
@@ -860,10 +861,7 @@ export function safeInspectLuaExpression(request: VMLuaHoverRequest): VMLuaHover
 	}
 }
 
-export function update(deltaSeconds: number): void {
-	ide_state.updateMessage(deltaSeconds);
-	updateRuntimeErrorOverlay(deltaSeconds);
-	updateBlink(deltaSeconds);
+export function tickInput(): void {
 	handlePointerWheel();
 	handleTextEditorPointerInput();
 	if (ide_state.pendingActionPrompt) {
@@ -871,6 +869,12 @@ export function update(deltaSeconds: number): void {
 		return;
 	}
 	handleEditorInput();
+}
+
+export function update(deltaSeconds: number): void {
+	updateBlink(deltaSeconds);
+	ide_state.updateMessage(deltaSeconds);
+	updateRuntimeErrorOverlay(deltaSeconds);
 	ide_state.completion.processPending(deltaSeconds);
 	const semanticError = ide_state.layout.getLastSemanticError();
 	if (semanticError && semanticError !== ide_state.lastReportedSemanticError) {
@@ -882,9 +886,9 @@ export function update(deltaSeconds: number): void {
 	if (ide_state.diagnosticsDirty) {
 		processDiagnosticsQueue(ide_state.clockNow());
 	}
-	if (isCodeTabActive() && !ide_state.cursorRevealSuspended) {
-		ensureCursorVisible();
-	}
+	// if (isCodeTabActive() && !ide_state.cursorRevealSuspended) {
+	// 	ensureCursorVisible();
+	// }
 }
 
 export function processDiagnosticsQueue(now: number): void {

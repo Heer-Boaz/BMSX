@@ -1,5 +1,5 @@
 import type { World, WorldModule } from '../core/world';
-import { BMSX_CART_DRAW_SYSTEM_ID, BMSX_CART_INPUT_SYSTEM_ID, BMSX_CART_UPDATE_SYSTEM_ID, BMSX_IDE_DRAW_SYSTEM_ID, BMSX_IDE_UPDATE_SYSTEM_ID, BMSX_TERMINAL_DRAW_SYSTEM_ID, BMSX_TERMINAL_UPDATE_SYSTEM_ID, BmsxCartDrawSystem, BmsxCartInputSystem, BmsxCartUpdateSystem, BmsxIDEDrawSystem, BmsxIDEUpdateSystem, BmsxTerminalDrawSystem, BmsxTerminalUpdateSystem } from './vm_systems';
+import { BMSX_CART_DRAW_SYSTEM_ID, BMSX_CART_UPDATE_SYSTEM_ID, BMSX_IDE_DRAW_SYSTEM_ID, BMSX_IDE_UPDATE_SYSTEM_ID, BMSX_TERMINAL_DRAW_SYSTEM_ID, BMSX_TERMINAL_UPDATE_SYSTEM_ID, BmsxCartDrawSystem, BmsxIDEInputSystem, BmsxCartUpdateSystem, BmsxIDEDrawSystem, BmsxIDEUpdateSystem, BmsxTerminalDrawSystem, BmsxTerminalUpdateSystem, BMSX_IDE_INPUT_SYSTEM_ID, BMSX_TERMINAL_INPUT_SYSTEM_ID, BmsxTerminalInputSystem } from './vm_systems';
 import { TickGroup } from '../ecs/ecsystem';
 
 export function createBmsxVMModule(): WorldModule {
@@ -7,11 +7,6 @@ export function createBmsxVMModule(): WorldModule {
 		id: 'bmsx',
 		ecs: {
 			systems: [
-				{
-					id: BMSX_CART_INPUT_SYSTEM_ID,
-					group: TickGroup.Input,
-					create: (priority: number) => new BmsxCartInputSystem(priority), // TODO: TO USE CORRECTLY!!
-				},
 				{
 					id: BMSX_CART_UPDATE_SYSTEM_ID,
 					group: TickGroup.ModeResolution,
@@ -23,6 +18,11 @@ export function createBmsxVMModule(): WorldModule {
 					create: (priority: number) => new BmsxCartDrawSystem(priority),
 				},
 				{
+					id: BMSX_IDE_INPUT_SYSTEM_ID,
+					group: TickGroup.Input,
+					create: (priority: number) => new BmsxIDEInputSystem(priority),
+				},
+				{
 					id: BMSX_IDE_UPDATE_SYSTEM_ID,
 					group: TickGroup.ModeResolution,
 					create: (priority: number) => new BmsxIDEUpdateSystem(priority),
@@ -31,6 +31,11 @@ export function createBmsxVMModule(): WorldModule {
 					id: BMSX_IDE_DRAW_SYSTEM_ID,
 					group: TickGroup.Presentation,
 					create: (priority: number) => new BmsxIDEDrawSystem(priority),
+				},
+				{
+					id: BMSX_TERMINAL_INPUT_SYSTEM_ID,
+					group: TickGroup.Input,
+					create: (priority: number) => new BmsxTerminalInputSystem(priority),
 				},
 				{
 					id: BMSX_TERMINAL_UPDATE_SYSTEM_ID,
@@ -44,7 +49,6 @@ export function createBmsxVMModule(): WorldModule {
 				},
 			],
 			nodes: [
-				{ ref: BMSX_CART_INPUT_SYSTEM_ID }, // TODO: TO USE CORRECTLY!!
 			],
 		},
 		onBoot(_world: World) {

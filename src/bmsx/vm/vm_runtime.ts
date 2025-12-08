@@ -154,7 +154,7 @@ export class BmsxVMRuntime extends Service {
 	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
 		this._overlayResolutionMode = value;
 		this.overlayRenderBackend.setRenderingViewportType(value);
-		this.editor?.updateViewport(this.overlayRenderBackend.viewportSize);
+		this.editor.updateViewport(this.overlayRenderBackend.viewportSize);
 	}
 
 	public get overlayResolutionMode() {
@@ -241,16 +241,15 @@ export class BmsxVMRuntime extends Service {
 			playerindex: this.playerIndex,
 			storage: this.storage,
 		});
+		this.editor = createVMCartEditor(options.viewport);
 		this.overlayResolutionMode = 'viewport';
 		seedDefaultLuaBuiltins();
-		// Check the primary asset ID for the currently loaded program
-		// Note that this can be null if the program was not loaded from source or has not been saved yet (then the type is BmsxVMLuaInlineProgram)!
-		this.editor = createVMCartEditor(options.viewport);
 		this.flushLuaWarnings();
 		this.registerVMShortcuts();
 
 		this.subscribeGlobalDebuggerHotkeys();
 		this.setDebuggerBreakpoints(ide_state.breakpoints);
+		$.pipeline_ext = vmExtSpec; // Activate base VM pipeline extensions by default (for ticking the VM and drawing the VM)
 	}
 
 	private extractErrorLocation(error: unknown): { line: number; column: number; chunkName: string } {
@@ -302,7 +301,7 @@ export class BmsxVMRuntime extends Service {
 	public set activeIdeFontVariant(variant: VMFontVariant) {
 		this._activeIdeFontVariant = variant;
 		this.terminal.setFontVariant(variant);
-		this.editor?.setFontVariant(variant);
+		this.editor.setFontVariant(variant);
 	}
 
 	private subscribeGlobalDebuggerHotkeys(): void {
@@ -379,7 +378,7 @@ export class BmsxVMRuntime extends Service {
 	private updateGamePipelineExts(): void {
 		if (this.terminal.isActive) {
 			$.pipeline_ext = terminalExtSpec; // Activate terminal pipeline extensions
-		} else if (this.editor?.isActive === true) {
+		} else if (this.editor.isActive) {
 			$.pipeline_ext = ideExtSpec; // Activate IDE pipeline extensions
 		} else {
 			$.pipeline_ext = vmExtSpec; // Activate base VM pipeline extensions
@@ -412,11 +411,11 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private isOverlayActive(): boolean {
-		return this.editor?.isActive === true || this.terminal.isActive;
+		return this.editor.isActive || this.terminal.isActive;
 	}
 
 	private toggleEditor(): void {
-		if (this.editor?.isActive === true) {
+		if (this.editor.isActive) {
 			this.deactivateEditor();
 			return;
 		}
@@ -430,7 +429,7 @@ export class BmsxVMRuntime extends Service {
 		if (this.terminal.isActive) {
 			this.terminal.deactivate();
 		}
-		if (!this.editor.isActive === true) {
+		if (!this.editor.isActive) {
 			this.editor.activate();
 		}
 		this.updateGamePipelineExts();
@@ -474,22 +473,14 @@ export class BmsxVMRuntime extends Service {
 		return next;
 	}
 
-	private renderTerminalOverlay(): void {
-		if (!this.terminal.isActive) {
-			return;
-		}
-		this.overlayRenderBackend.setDefaultLayer('ide');
-		this.terminal.draw(this.overlayRenderBackend, this.overlayRenderBackend.viewportSize);
+	public tickIdeInput(): void {
+		this.pollVMHotkeys();
+		this.editor.tickInput();
 	}
 
-	public advanceOverlayInput(deltaSeconds: number): void {
+	public tickTerminalInput(): void {
 		this.pollVMHotkeys();
-		if (this.editor?.isActive === true) {
-			this.editor.update(deltaSeconds);
-		} else if (this.terminal.isActive) {
-			this.terminal.update(deltaSeconds);
-			void this.terminal.handleInput();
-		}
+		void this.terminal.handleInput();
 	}
 
 	public set jsStackEnabled(enabled: boolean) {
@@ -650,7 +641,7 @@ export class BmsxVMRuntime extends Service {
 			this.luaChunkEnvironmentsByPath.clear();
 			this.luaChunkEnvironmentsByChunkName.clear();
 			this.luaGenericChunksExecuted.clear();
-			this.editor?.clearRuntimeErrorOverlay();
+			this.editor.clearRuntimeErrorOverlay();
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset to fresh world
 				await $.reset_to_fresh_world();
 			}
@@ -708,7 +699,7 @@ export class BmsxVMRuntime extends Service {
 			return;
 		}
 		try {
-			this.drawFrame({ drawGame: true, drawTerminal: false, drawEditor: false });
+			this.drawGameFrame();
 		} finally {
 			this.abandonFrameState();
 		}
@@ -734,7 +725,7 @@ export class BmsxVMRuntime extends Service {
 			return;
 		}
 		try {
-			this.drawFrame({ drawGame: true, drawTerminal: true, drawEditor: false });
+			this.drawTerminal();
 		} finally {
 			this.abandonFrameState();
 		}
@@ -749,7 +740,7 @@ export class BmsxVMRuntime extends Service {
 		}
 		const state = this.beginFrameState();
 		this.pollVMHotkeys();
-		this.editor?.update(state.deltaSeconds);
+		this.editor.update(state.deltaSeconds);
 	}
 
 	public tickIDEDraw(): void {
@@ -760,7 +751,7 @@ export class BmsxVMRuntime extends Service {
 			return;
 		}
 		try {
-			this.drawFrame({ drawGame: false, drawTerminal: false, drawEditor: true });
+			this.drawIde();
 		} finally {
 			this.abandonFrameState();
 		}
@@ -820,44 +811,43 @@ export class BmsxVMRuntime extends Service {
 		}
 	}
 
-	private drawFrame(options: { drawGame: boolean; drawTerminal: boolean; drawEditor: boolean }): void {
+	public drawIde(): void {
 		try {
 			this.overlayRenderBackend.beginFrame();
-			if (options.drawEditor && this.editor?.isActive) {
-				this.overlayRenderBackend.setDefaultLayer('ide');
-				this.editor.draw();
+			this.overlayRenderBackend.setDefaultLayer('ide');
+			this.editor.draw();
+		} catch (error) {
+			if (isLuaDebuggerPauseSignal(error)) {
+				this.onLuaDebuggerPause(error);
 			} else {
-				if (options.drawTerminal && this.terminal.isActive) {
-					this.renderTerminalOverlay();
-				}
-				this.overlayRenderBackend.setDefaultLayer('world');
-				if (options.drawGame && this.luaVmGate.ready) {
-					if (this.debuggerPaused) {
-						this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
-					}
-					else if (this.luaRuntimeFailed || this.faultSnapshot) {
-						this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
-					}
-					else {
-						const interpreter = this.luaInterpreter;
-						try {
-							interpreter.pushProgramCounter();
-							this.invokeLuaFunction(this.luaDrawFunction, []);
-							this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
-						} catch (error) {
-							this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
-
-							if (isLuaDebuggerPauseSignal(error)) {
-								this.onLuaDebuggerPause(error);
-							} else {
-								this.handleLuaError(error);
-							}
-						} finally {
-							interpreter.popProgramCounter();
-						}
-					}
-				}
+				this.handleLuaError(error);
 			}
+		} finally {
+			this.overlayRenderBackend.endFrame();
+		}
+	}
+
+	public drawTerminal(): void {
+		try {
+			this.overlayRenderBackend.beginFrame();
+			this.overlayRenderBackend.setDefaultLayer('ide');
+			this.terminal.draw(this.overlayRenderBackend, this.overlayRenderBackend.viewportSize);
+			this.drawGame();
+		} catch (error) {
+			if (isLuaDebuggerPauseSignal(error)) {
+				this.onLuaDebuggerPause(error);
+			} else {
+				this.handleLuaError(error);
+			}
+		} finally {
+			this.overlayRenderBackend.endFrame();
+		}
+	}
+
+	private drawGameFrame(): void {
+		try {
+			this.overlayRenderBackend.beginFrame();
+			this.drawGame();
 		}
 		catch (error) {
 			if (isLuaDebuggerPauseSignal(error)) {
@@ -867,6 +857,34 @@ export class BmsxVMRuntime extends Service {
 			}
 		} finally {
 			this.overlayRenderBackend.endFrame();
+		}
+	}
+
+	private drawGame(): void { // Split so that terminal can also call it without begin/end frame calls
+		// No try catch here; caller handles faults
+		this.overlayRenderBackend.setDefaultLayer('world');
+		if (this.luaVmGate.ready) {
+			if (this.debuggerPaused || this.luaRuntimeFailed || this.faultSnapshot) {
+				this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
+			}
+			else {
+				const interpreter = this.luaInterpreter;
+				try {
+					interpreter.pushProgramCounter();
+					this.invokeLuaFunction(this.luaDrawFunction, []);
+					this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
+				} catch (error) {
+					this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
+
+					if (isLuaDebuggerPauseSignal(error)) {
+						this.onLuaDebuggerPause(error);
+					} else {
+						this.handleLuaError(error);
+					}
+				} finally {
+					interpreter.popProgramCounter();
+				}
+			}
 		}
 	}
 
@@ -971,7 +989,7 @@ export class BmsxVMRuntime extends Service {
 		const snapshot: BmsxVMState = { ...state, luaRuntimeFailed: false };
 		// Clear any previous error overlays and interpreter fault markers so a fresh
 		// resume starts clean and can report new errors normally.
-		this.editor?.clearRuntimeErrorOverlay();
+		this.editor.clearRuntimeErrorOverlay();
 		this.luaInterpreter.clearLastFaultEnvironment();
 		this.luaInterpreter.clearLastFaultCallStack();
 
