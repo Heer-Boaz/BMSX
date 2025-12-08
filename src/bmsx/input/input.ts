@@ -67,14 +67,17 @@ export function getPressedState(
 		justreleased: state.justreleased ?? false,
 		waspressed: state.waspressed ?? false,
 		wasreleased: state.wasreleased ?? false,
+		repeatpressed: state.repeatpressed ?? false,
+		repeatcount: state.repeatcount ?? 0,
 		consumed: state.consumed ?? false,
-		presstime: state.presstime ,
-		timestamp: state.timestamp ,
-		pressedAtMs: state.pressedAtMs ,
-		releasedAtMs: state.releasedAtMs ,
-		pressId: state.pressId ,
-		value: state.value ,
-		value2d: state.value2d ,
+		stickyConsumed: state.stickyConsumed ?? false,
+		presstime: state.presstime,
+		timestamp: state.timestamp,
+		pressedAtMs: state.pressedAtMs,
+		releasedAtMs: state.releasedAtMs,
+		pressId: state.pressId,
+		value: state.value,
+		value2d: state.value2d,
 	};
 }
 
@@ -85,6 +88,8 @@ export function makeButtonState(partialState?: Partial<ButtonState>): ButtonStat
 		justreleased = false,
 		waspressed = false,
 		wasreleased = false,
+		repeatpressed = false,
+		repeatcount = 0,
 		consumed = false,
 		stickyConsumed = false,
 		presstime = null,
@@ -95,7 +100,7 @@ export function makeButtonState(partialState?: Partial<ButtonState>): ButtonStat
 		value = null,
 		value2d = null,
 	} = partialState ?? {};
-	return { pressed, justpressed, justreleased, waspressed, wasreleased, consumed, stickyConsumed, presstime, timestamp, pressedAtMs, releasedAtMs, pressId, value, value2d };
+	return { pressed, justpressed, justreleased, waspressed, wasreleased, repeatpressed, repeatcount, consumed, stickyConsumed, presstime, timestamp, pressedAtMs, releasedAtMs, pressId, value, value2d };
 }
 
 export function makeActionState(actionname: string, partialState?: Partial<ActionState>): ActionState {

@@ -17,20 +17,18 @@ import {
 	setSelectionAnchorFromOffset,
 } from './ide/inline_text_field';
 import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext, LuaCompletionItem } from './ide/types';
-import { INITIAL_REPEAT_DELAY, REPEAT_INTERVAL, TAB_SPACES } from './ide/constants';
+import { TAB_SPACES } from './ide/constants';
 import { VMRenderFacade } from './vm_render_facade';
 import { renderInlineCaret, type CaretDrawOps } from './ide/render/render_caret';
 import {
 	isKeyJustPressed as isKeyJustPressed,
-	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
-	clearKeyPressRecord,
 	isCtrlDown,
 	isMetaDown,
 	isAltDown
 } from './ide/ide_input';
 import { CompletionController } from './ide/completion_controller';
 import { collectLuaModuleAliases, consoleValueToString, listLuaObjectMembers } from './ide/intellisense';
-import { consumeIdeKey, getIdeKeyState } from './ide/ide_input';
+import { consumeIdeKey, getIdeKeyState, shouldRepeatKeyFromPlayer } from './ide/ide_input';
 import type { asset_id, Viewport } from '../rompack/rompack';
 import { api, BmsxVMRuntime } from './vm_runtime';
 import { VMCommandDispatcher } from './console_commands';
@@ -87,9 +85,6 @@ export class TerminalMode {
 	private readonly output: VMOutputEntry[] = [];
 	private readonly history: string[] = [];
 	private historyIndex: number = null;
-	private readonly editingRepeatState = new Map<string, number>();
-	private readonly historyRepeatState = new Map<string, number>();
-	private readonly completionRepeatState = new Map<string, number>();
 	private readonly consoleChunkName = '<console>';
 	private readonly completionContextToken = { chunk: this.consoleChunkName };
 	private readonly completion: CompletionController;
@@ -153,7 +148,7 @@ export class TerminalMode {
 			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),
 			charAt: (row, column) => this.charAt(row, column),
 			getTextVersion: () => this.textVersion,
-			shouldFireRepeat: (code, deltaSeconds) => this.shouldRepeatKey(code, deltaSeconds, this.completionRepeatState),
+			shouldFireRepeat: (code, _deltaSeconds) => this.shouldRepeatKey(code),
 			shouldAutoTriggerCompletions: () => false,
 			shouldShowParameterHints: () => false,
 		});
@@ -164,8 +159,6 @@ export class TerminalMode {
 		this.active = true;
 		this.resetInputField('');
 		this.historyIndex = null;
-		this.editingRepeatState.clear();
-		this.historyRepeatState.clear();
 		this.completion.closeSession();
 		this.blinkTimer = 0;
 		this.caretVisible = true;
@@ -391,7 +384,7 @@ export class TerminalMode {
 		}
 	}
 
-	private handleHistoryNavigation(deltaSeconds: number): boolean {
+	private handleHistoryNavigation(_deltaSeconds: number): boolean {
 		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
 		if (ctrlDown || altDown || metaDown) {
 			return false;
@@ -399,12 +392,12 @@ export class TerminalMode {
 		if (this.history.length === 0) {
 			return false;
 		}
-		if (this.shouldRepeatKey('ArrowUp', deltaSeconds, this.historyRepeatState)) {
+		if (this.shouldRepeatKey('ArrowUp')) {
 			this.recallHistory(-1);
 			consumeIdeKey('ArrowUp');
 			return true;
 		}
-		if (this.shouldRepeatKey('ArrowDown', deltaSeconds, this.historyRepeatState)) {
+		if (this.shouldRepeatKey('ArrowDown')) {
 			this.recallHistory(1);
 			consumeIdeKey('ArrowDown');
 			return true;
@@ -480,29 +473,8 @@ export class TerminalMode {
 		return wrapOverlayLine(normalized, Math.max(8, maxWidth));
 	}
 
-	private shouldRepeatKey(code: string, deltaSeconds: number, state: Map<string, number>): boolean {
-		const buttonState = getIdeKeyState(code);
-		if (!buttonState || buttonState.pressed !== true) {
-			state.delete(code);
-			clearKeyPressRecord(code);
-			return false;
-		}
-		let cooldown = state.get(code);
-		if (cooldown === undefined) {
-			cooldown = INITIAL_REPEAT_DELAY;
-			state.set(code, cooldown);
-		}
-		if (shouldAcceptKeyPressGlobal(code, buttonState)) {
-			state.set(code, INITIAL_REPEAT_DELAY);
-			return true;
-		}
-		const nextCooldown = cooldown - deltaSeconds;
-		if (nextCooldown <= 0) {
-			state.set(code, REPEAT_INTERVAL);
-			return true;
-		}
-		state.set(code, nextCooldown);
-		return false;
+	private shouldRepeatKey(code: string): boolean {
+		return shouldRepeatKeyFromPlayer(code);
 	}
 
 	private getLinesSnapshot(): string[] {

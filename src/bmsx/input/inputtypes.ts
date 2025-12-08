@@ -103,6 +103,9 @@ export type ButtonState = {
 	justreleased: boolean;
 	waspressed: boolean;
 	wasreleased: boolean;
+	repeatpressed: boolean;
+	repeatcount: number;
+	// Consumption fields
 	consumed: boolean;
 	stickyConsumed?: boolean;
 	// Timing fields

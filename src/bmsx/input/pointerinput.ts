@@ -14,25 +14,6 @@ const POINTER_DEFAULT_CODES = [
 	'pointer_wheel',
 ] as const;
 
-function cloneState(state: ButtonState): ButtonState {
-	return {
-		pressed: state.pressed,
-		justpressed: state.justpressed,
-		justreleased: state.justreleased,
-		waspressed: state.waspressed,
-		wasreleased: state.wasreleased,
-		consumed: state.consumed,
-		stickyConsumed: state.stickyConsumed,
-		presstime: state.presstime,
-		timestamp: state.timestamp,
-		pressedAtMs: state.pressedAtMs,
-		releasedAtMs: state.releasedAtMs,
-		pressId: state.pressId,
-		value: state.value,
-		value2d: state.value2d ? [state.value2d[0], state.value2d[1]] : null,
-	};
-}
-
 export class PointerInput implements InputHandler {
 	public static readonly VIRTUAL_POINTER_INDEX = 0x7fffffff;
 	public readonly gamepadIndex: number = PointerInput.VIRTUAL_POINTER_INDEX;
@@ -102,7 +83,7 @@ export class PointerInput implements InputHandler {
 	}
 
 	public ingestButton(code: string, state: ButtonState): void {
-		const target = cloneState(state);
+		const target = { ...state, value2d: state.value2d ? ([state.value2d[0], state.value2d[1]] as readonly [number, number]) : null };
 		if (target.pressed) {
 			if (!target.pressId) target.pressId = this.nextPressId++;
 			if (!target.pressedAtMs) target.pressedAtMs = target.timestamp ?? $.platform.clock.now();
@@ -126,7 +107,7 @@ export class PointerInput implements InputHandler {
 		const delta = this.buttonStates['pointer_delta'] ?? makeButtonState();
 		const moved = dx !== 0 || dy !== 0;
 		const wasPressed = delta.pressed === true;
-		delta.value2d = [dx, dy];
+		delta.value2d = [dx, dy] as readonly [number, number];
 		delta.value = Math.hypot(dx, dy);
 		delta.timestamp = timestamp;
 		delta.justreleased = !moved && wasPressed;

@@ -335,7 +335,7 @@ export class PlayerInput {
 		for (const state of deviceStates) {
 			if (state.best1DAbs > best1DAbs) {
 				best1DAbs = state.best1DAbs;
-				merged1D = state.best1DVal ;
+				merged1D = state.best1DVal;
 			}
 		}
 		let merged2D: [number, number] = null;
@@ -343,7 +343,7 @@ export class PlayerInput {
 		for (const state of deviceStates) {
 			if (state.best2DAbs > best2DAbs) {
 				best2DAbs = state.best2DAbs;
-				merged2D = state.best2DVal ;
+				merged2D = state.best2DVal;
 			}
 		}
 		const minPresstime = minPresstimeRaw === Infinity ? null : minPresstimeRaw;
@@ -497,11 +497,7 @@ export class PlayerInput {
 		const state = handler.getButtonState(button);
 		const sticky = options?.sticky ?? true;
 		handler.consumeButton(button, { sticky });
-		this._stateManager.consumeBufferedEvent(button, state?.pressId , { sticky });
-	}
-
-	public consumeButtons(buttons: ButtonId[], source: InputSource): void {
-		buttons.forEach(button => this.consumeButton(button, source));
+		this._stateManager.consumeBufferedEvent(button, state?.pressId, { sticky });
 	}
 
 	public consumeActions(...actions: (ActionState | string)[]): void {
@@ -549,6 +545,31 @@ export class PlayerInput {
 		const handler = this.inputHandlers[source];
 		if (!handler) return makeButtonState();
 		return handler.getButtonState(button);
+	}
+
+	/** Returns repeat/edge info for a raw button using the built-in repeat cadence. */
+	public getButtonRepeatState(button: ButtonId, source: InputSource): ButtonState {
+		const state = this.getButtonState(button, source);
+		const repeatKey = `__button:${source}:${button}`;
+		const actionState = makeActionState(repeatKey, {
+			pressed: state.pressed === true,
+			justpressed: state.justpressed === true,
+			justreleased: state.justreleased === true,
+			waspressed: state.waspressed === true,
+			wasreleased: state.wasreleased === true,
+			pressId: state.pressId,
+			presstime: state.presstime,
+			timestamp: state.timestamp,
+		});
+		const repeat = this.evaluateActionRepeat(repeatKey, actionState);
+		return {
+			...state,
+			pressed: actionState.pressed,
+			justpressed: actionState.justpressed,
+			justreleased: actionState.justreleased,
+			repeatpressed: repeat.triggered,
+			repeatcount: repeat.count,
+		};
 	}
 
 	public getKeyState(key: ButtonId, modifiers: KeyModifier): ButtonState {
@@ -720,7 +741,7 @@ export class PlayerInput {
 		const guardMs = this.normalizeGuardWindow(windowOverride);
 		const existing = this.actionGuardRecords.get(action);
 		// If the same pressId already passed the guard this frame, don't re-block duplicates from multi-binding combos.
-		const pressId = state.pressId ;
+		const pressId = state.pressId;
 		if (existing) {
 			if (existing.lastPressId !== null && pressId !== null && existing.lastPressId === pressId) {
 				return existing.lastResultAccepted;

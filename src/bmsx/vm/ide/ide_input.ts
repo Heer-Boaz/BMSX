@@ -53,8 +53,6 @@ export const MENU_COMMANDS = [
 ] as const;
 
 export class InputController {
-	private readonly repeatState: Map<string, { cooldown: number }> = new Map();
-
 	public handleEditorInput(
 		deltaSeconds: number,
 	): void {
@@ -222,33 +220,11 @@ export class InputController {
 	}
 
 	// Repeat helper bridged to editor's repeat system via shouldAccept logic
-	public shouldRepeat(code: string, deltaSeconds: number): boolean {
-		const state = getIdeKeyState(code);
-		if (!state || state.pressed !== true) {
-			this.repeatState.delete(code);
-			clearKeyPressRecord(code);
-			return false;
-		}
-		let entry = this.repeatState.get(code);
-		if (!entry) {
-			entry = { cooldown: constants.INITIAL_REPEAT_DELAY };
-			this.repeatState.set(code, entry);
-		}
-		if (shouldAcceptKeyPress(code, state)) {
-			entry.cooldown = constants.INITIAL_REPEAT_DELAY;
-			return true;
-		}
-		entry.cooldown -= deltaSeconds;
-		if (entry.cooldown <= 0) {
-			entry.cooldown = constants.REPEAT_INTERVAL;
-			return true;
-		}
-		this.repeatState.set(code, entry);
-		return false;
+	public shouldRepeat(code: string, _deltaSeconds: number): boolean {
+		return shouldRepeatKeyFromPlayer(code);
 	}
 
 	public resetRepeats(): void {
-		this.repeatState.clear();
 	}
 
 	// Apply input overrides (debug hotkeys + keyboard capture)
@@ -394,6 +370,18 @@ export function isKeyPressed(code: string): boolean {
 export function isKeyTyped(code: string): boolean {
 	const state = getIdeKeyState(code);
 	return state ? shouldAcceptKeyPress(code, state) : false;
+}
+
+export function shouldRepeatKeyFromPlayer(code: string): boolean {
+	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
+	const repeat = playerInput.getButtonRepeatState(code, 'keyboard');
+	if (!repeat) {
+		return false;
+	}
+	if (repeat.consumed) {
+		return false;
+	}
+	return repeat.justpressed || repeat.repeatpressed;
 }
 export function handleActionPromptInput(): void {
 	if (!ide_state.pendingActionPrompt) {
