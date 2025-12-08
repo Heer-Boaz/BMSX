@@ -27,7 +27,7 @@ export type RenameCommitResult = {
 
 export type RenameControllerHost = {
 	processFieldEdit(field: TextField, options: InlineInputOptions): boolean;
-	shouldFireRepeat(code: string, deltaSeconds: number): boolean;
+	shouldFireRepeat(code: string): boolean;
 	undo(): void;
 	redo(): void;
 	showMessage(text: string, color: number, duration: number): void;

@@ -19,7 +19,6 @@ import type {
 	EditorSnapshot,
 	CodeHoverTooltip,
 	PointerSnapshot,
-	RepeatEntry,
 	RuntimeErrorOverlay,
 	EditorDiagnostic,
 	DiagnosticsCacheEntry,
@@ -141,7 +140,6 @@ export interface IdeState {
 	tabBarHeight: number;
 	tabBarRowCount: number;
 	baseBottomMargin: number;
-	repeatState: Map<string, RepeatEntry>;
 	deferredMessageDuration: number;
 	runtimeErrorOverlay: RuntimeErrorOverlay;
 	executionStopRow: number;
@@ -192,10 +190,6 @@ export interface IdeState {
 	scrollbars: Record<ScrollbarKind, VMScrollbar>;
 	scrollbarController: ScrollbarController;
 	input: InputController;
-	windowFocused: boolean;
-	pendingWindowFocused: boolean;
-	disposeVisibilityListener: (() => void);
-	disposeWindowEventListeners: (() => void);
 	lastPointerClickTimeMs: number;
 	lastPointerClickRow: number;
 	lastPointerClickColumn: number;
@@ -289,7 +283,6 @@ export interface IdeState {
 	workspaceAutosaveQueued: boolean;
 	disposeWorkspaceExitListener: (() => void);
 	serverWorkspaceConnected: boolean;
-	lastEscapePressId: number;
 }
 
 export const ide_state: IdeState = {
@@ -330,7 +323,6 @@ export const ide_state: IdeState = {
 	tabBarHeight: 0,
 	tabBarRowCount: 1,
 	baseBottomMargin: 0,
-	repeatState: new Map<string, RepeatEntry>(),
 	deferredMessageDuration: null,
 	runtimeErrorOverlay: null,
 	executionStopRow: null,
@@ -409,10 +401,6 @@ export const ide_state: IdeState = {
 	scrollbars: undefined!,
 	scrollbarController: undefined!,
 	input: undefined!,
-	windowFocused: true,
-	pendingWindowFocused: true,
-	disposeVisibilityListener: null,
-	disposeWindowEventListeners: null,
 	lastPointerClickTimeMs: 0,
 	lastPointerClickRow: -1,
 	lastPointerClickColumn: -1,
@@ -506,7 +494,6 @@ export const ide_state: IdeState = {
 	workspaceAutosaveQueued: false,
 	disposeWorkspaceExitListener: null,
 	serverWorkspaceConnected: false,
-	lastEscapePressId: null,
 };
 
 // Initialize message controller

@@ -1304,9 +1304,6 @@ export function intellisenseUiReady(): boolean {
 	if (isReadOnlyCodeTab()) {
 		return false;
 	}
-	if (!ide_state.windowFocused) {
-		return false;
-	}
 	if (ide_state.searchActive || ide_state.symbolSearchActive || ide_state.lineJumpActive || ide_state.resourceSearchActive || ide_state.createResourceActive) {
 		return false;
 	}

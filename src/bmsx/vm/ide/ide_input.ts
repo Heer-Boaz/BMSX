@@ -5,8 +5,7 @@ import { resetBlink } from './render/render_caret';
 import { activeSearchMatchCount, applySearchSelection, closeSearch, ensureSearchSelectionVisible, focusEditorFromSearch, jumpToNextMatch, jumpToPreviousMatch, moveSearchSelection, onSearchQueryChanged, openSearch, searchPageSize } from './editor_search';
 import { ide_state } from './ide_state';
 import { ESCAPE_KEY } from './constants';
-import type { ButtonState } from '../../input/inputtypes';
-import type { KeyPressRecord, MenuId, PointerSnapshot, ResourceViewerState, RuntimeErrorOverlay, TopBarButtonId } from './types';
+import type { MenuId, PointerSnapshot, ResourceViewerState, RuntimeErrorOverlay, TopBarButtonId } from './types';
 import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp, revealCursor, setCursorPosition } from './caret';
 import { isResourceViewActive, isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab, cycleTab, activateCodeTab, beginTabDrag, closeTab, endTabDrag, setActiveTab, getActiveCodeTabContext, updateTabDrag } from './editor_tabs';
 import { prepareDebuggerStepOverlay } from './ide_debugger';
@@ -18,15 +17,14 @@ import { applyScrollbarScroll } from './scrollbar';
 import { clearHoverTooltip, updateHoverTooltip } from './intellisense';
 import * as TextEditing from './text_editing_and_selection';
 import { clamp } from '../../utils/clamp';
-import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, handleActionPromptSelection, openSymbolSearch, openResourceSearch, focusEditorFromProblemsPanel, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openDebugPanelTab, performAction, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, scrollResourceBrowser, getCodeAreaBounds, scrollRows, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, resolvePointerRow, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, handlePointerAutoScroll, getActiveResourceViewer, resourceViewerTextCapacity, moveSymbolSearchSelection, symbolSearchPageSize, updateSymbolSearchMatches, applyLineJumpFieldText, resourceSearchWindowCapacity, updateResourceSearchMatches, applyLineJump, mapScreenPointToViewport } from './vm_cart_editor';
+import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, handleActionPromptSelection, openSymbolSearch, openResourceSearch, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openDebugPanelTab, performAction, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, scrollResourceBrowser, getCodeAreaBounds, scrollRows, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, resolvePointerRow, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, handlePointerAutoScroll, getActiveResourceViewer, resourceViewerTextCapacity, moveSymbolSearchSelection, symbolSearchPageSize, updateSymbolSearchMatches, applyLineJumpFieldText, resourceSearchWindowCapacity, updateResourceSearchMatches, applyLineJump, mapScreenPointToViewport } from './vm_cart_editor';
 import { clearGotoHoverHighlight, clearReferenceHighlights, tryGotoDefinitionAt, refreshGotoHoverHighlight } from './intellisense';
 import { navigateToRuntimeErrorFrameTarget } from './ide_debugger';
 import { focusRuntimeErrorOverlay } from './runtime_error_navigation';
-import { toggleProblemsPanel, hideProblemsPanel } from './problems_panel';
-import { markDiagnosticsDirty } from './diagnostics';
+import { toggleProblemsPanel } from './problems_panel';
 import { point_in_rect } from '../../utils/rect_operations';
 import { applyInlineFieldEditing, getFieldText } from './inline_text_field';
-import { api, BmsxVMRuntime } from '../vm_runtime';
+import { BmsxVMRuntime } from '../vm_runtime';
 import { computeRuntimeErrorOverlayGeometry, resolveRuntimeErrorOverlayAnchor, computeRuntimeErrorOverlayLayout, findRuntimeErrorOverlayLineAtPosition, RuntimeErrorOverlayClickResult } from './render/render_error_overlay';
 import { rebuildRuntimeErrorOverlayView, buildRuntimeErrorOverlayCopyText } from './runtime_error_overlay';
 import * as constants from './constants';
@@ -207,7 +205,7 @@ export class InputController {
 	private handleCharacterInput(): void {
 		for (let i = 0; i < CHARACTER_CODES.length; i++) {
 			const code = CHARACTER_CODES[i];
-			if (!isKeyTyped(code)) continue;
+			if (!isKeyJustPressed(code)) continue;
 			const entry = CHARACTER_MAP[code];
 			const value = isShiftDown() ? entry.shift : entry.normal;
 			if (value && value.length > 0) {
@@ -215,11 +213,6 @@ export class InputController {
 			}
 			consumeIdeKey(code);
 		}
-	}
-
-	public resetRepeats(): void {
-		const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
-		playerInput.resetRepeatState();
 	}
 
 	// Apply input overrides (debug hotkeys + keyboard capture)
@@ -232,10 +225,7 @@ export class InputController {
 	}
 }
 
-type EscapeHandlingOptions = { allowRuntimeErrorToggle?: boolean; };
-
-export function handleEscapeKey(options?: EscapeHandlingOptions): boolean {
-	const allowRuntimeErrorToggle = options?.allowRuntimeErrorToggle !== false;
+export function handleEscapeKey(): boolean {
 	if (ide_state.pendingActionPrompt) {
 		resetActionPromptState();
 		return true;
@@ -261,7 +251,7 @@ export function handleEscapeKey(options?: EscapeHandlingOptions): boolean {
 		closeSearch(false, true);
 		return true;
 	}
-	if (overlay && allowRuntimeErrorToggle) {
+	if (overlay) {
 		overlay.hidden = !overlay.hidden;
 		overlay.hovered = false;
 		overlay.hoverLine = -1;
@@ -273,122 +263,13 @@ export function handleEscapeKey(options?: EscapeHandlingOptions): boolean {
 	return false;
 }
 
-// TODO: Should use existing input handling logic and helpers instead of duplicating here
-export function handleEscapeShortcut(): boolean {
-	const state = getIdeKeyState(ESCAPE_KEY);
-	if (!state || state.pressed !== true) {
-		ide_state.lastEscapePressId = null;
-		return false;
-	}
-	const pressId = state.pressId ;
-	const isNewPress = state.justpressed === true || pressId !== ide_state.lastEscapePressId;
-	if (!isNewPress) {
-		return false;
-	}
-	ide_state.lastEscapePressId = pressId;
-	const handled = handleEscapeKey({ allowRuntimeErrorToggle: true });
-	if (handled) {
-		consumeIdeKey(ESCAPE_KEY);
-	}
-	return handled;
-}
-
-const keyPressRecords = new Map<string, KeyPressRecord>();
-
-export function resetKeyPressRecords(): void {
-	keyPressRecords.clear();
-}
-
-export function clearKeyPressRecord(code: string): void {
-	keyPressRecords.delete(code);
-}
-function recordKeyState(code: string, state: ButtonState, latched: boolean): void {
-	const pressId = state.pressId ;
-	keyPressRecords.set(code, { lastPressId: pressId, downLatched: latched });
-}
-
-export function shouldAcceptKeyPress(code: string, state: ButtonState): boolean {
-	if (state.pressed !== true) {
-		keyPressRecords.delete(code);
-		return false;
-	}
-	if (state.consumed === true) {
-		recordKeyState(code, state, true);
-		return false;
-	}
-	const existing = keyPressRecords.get(code);
-	if (existing?.downLatched) {
-		return false;
-	}
-	if (state.justpressed === true) {
-		recordKeyState(code, state, true);
-		return true;
-	}
-	if (!existing) {
-		recordKeyState(code, state, true);
-		return true;
-	}
-	return false;
-}
-
-export function isKeyJustPressed(code: string): boolean {
-	const state = getIdeKeyState(code);
-	return state ? shouldAcceptKeyPress(code, state) : false;
-}
-
-export function isModifierPressed(code: string): boolean {
-	const state = getIdeKeyState(code);
-	return state ? state.pressed === true : false;
-}
-
-export function isCtrlDown(): boolean {
-	return isModifierPressed('ControlLeft') || isModifierPressed('ControlRight');
-}
-
-export function isAltDown(): boolean {
-	return isModifierPressed('AltLeft') || isModifierPressed('AltRight');
-}
-
-export function isMetaDown(): boolean {
-	return isModifierPressed('MetaLeft') || isModifierPressed('MetaRight');
-}
-
-export function isShiftDown(): boolean {
-	return isModifierPressed('ShiftLeft') || isModifierPressed('ShiftRight');
-}
-
-export function isKeyPressed(code: string): boolean {
-	const state = getIdeKeyState(code);
-	return state ? state.pressed === true : false;
-}
-
-export function isKeyTyped(code: string): boolean {
-	const state = getIdeKeyState(code);
-	return state ? shouldAcceptKeyPress(code, state) : false;
-}
-
-export function shouldRepeatKeyFromPlayer(code: string): boolean {
-	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
-	const repeat = playerInput.getButtonRepeatState(code, 'keyboard');
-	if (!repeat) {
-		return false;
-	}
-	if (repeat.consumed) {
-		return false;
-	}
-	return repeat.justpressed || repeat.repeatpressed;
-}
 export function handleActionPromptInput(): void {
 	if (!ide_state.pendingActionPrompt) {
 		return;
 	}
-	if (isKeyJustPressed('Escape')) {
-		consumeIdeKey('Escape');
-		resetActionPromptState();
-		return;
-	}
-	if (isKeyJustPressed('Enter')) {
+	if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
 		consumeIdeKey('Enter');
+		consumeIdeKey('NumpadEnter');
 		void handleActionPromptSelection('save-continue');
 	}
 }
@@ -408,6 +289,11 @@ export function handleEditorInput(): void {
 
 	const editableCodeTab = isEditableCodeTab();
 	const readOnlyCodeTab = isReadOnlyCodeTab();
+
+	if (handleEscapeKey()) {
+		consumeIdeKey(ESCAPE_KEY);
+		return;
+	}
 
 	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyS')) {
 		consumeIdeKey('KeyS');
@@ -464,11 +350,6 @@ export function handleEditorInput(): void {
 	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyM')) {
 		consumeIdeKey('KeyM');
 		toggleProblemsPanel();
-		if (ide_state.problemsPanel.isVisible) {
-			markDiagnosticsDirty();
-		} else {
-			focusEditorFromProblemsPanel();
-		}
 		return;
 	}
 	if (!ctrlDown && !metaDown && altDown && isKeyJustPressed('Comma')) {
@@ -564,38 +445,31 @@ export function handleEditorInput(): void {
 		return;
 	}
 	if (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused) {
-		let handled = false;
 		if (shouldRepeatKeyFromPlayer('ArrowUp')) {
 			consumeIdeKey('ArrowUp');
-			handled = ide_state.problemsPanel.handleKeyboardCommand('up');
+			ide_state.problemsPanel.handleKeyboardCommand('up');
 		} else if (shouldRepeatKeyFromPlayer('ArrowDown')) {
 			consumeIdeKey('ArrowDown');
-			handled = ide_state.problemsPanel.handleKeyboardCommand('down');
+			ide_state.problemsPanel.handleKeyboardCommand('down');
 		} else if (shouldRepeatKeyFromPlayer('PageUp')) {
 			consumeIdeKey('PageUp');
-			handled = ide_state.problemsPanel.handleKeyboardCommand('page-up');
+			ide_state.problemsPanel.handleKeyboardCommand('page-up');
 		} else if (shouldRepeatKeyFromPlayer('PageDown')) {
 			consumeIdeKey('PageDown');
-			handled = ide_state.problemsPanel.handleKeyboardCommand('page-down');
+			ide_state.problemsPanel.handleKeyboardCommand('page-down');
 		} else if (shouldRepeatKeyFromPlayer('Home')) {
 			consumeIdeKey('Home');
-			handled = ide_state.problemsPanel.handleKeyboardCommand('home');
+			ide_state.problemsPanel.handleKeyboardCommand('home');
 		} else if (shouldRepeatKeyFromPlayer('End')) {
 			consumeIdeKey('End');
-			handled = ide_state.problemsPanel.handleKeyboardCommand('end');
+			ide_state.problemsPanel.handleKeyboardCommand('end');
 		} else if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
 			if (isKeyJustPressed('Enter')) consumeIdeKey('Enter'); else consumeIdeKey('NumpadEnter');
-			handled = ide_state.problemsPanel.handleKeyboardCommand('activate');
-		} else if (isKeyJustPressed('Escape')) {
-			consumeIdeKey('Escape');
-			hideProblemsPanel();
-			focusEditorFromProblemsPanel();
-			return;
+			ide_state.problemsPanel.handleKeyboardCommand('activate');
 		}
 		// Always swallow caret movement while problems panel is focused
 		if (shouldRepeatKeyFromPlayer('ArrowLeft')) consumeIdeKey('ArrowLeft');
 		if (shouldRepeatKeyFromPlayer('ArrowRight')) consumeIdeKey('ArrowRight');
-		if (handled) return; else return;
 	}
 	if (ide_state.searchQuery.length > 0 && isKeyJustPressed('F3')) {
 		consumeIdeKey('F3');
@@ -835,13 +709,7 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 			return;
 	}
 }
-export function getIdeKeyState(code: string): ButtonState {
-	return $.input.getPlayerInput(ide_state.playerIndex).getButtonState(code, 'keyboard');
-}
 
-export function consumeIdeKey(code: string): void {
-	$.input.getPlayerInput(ide_state.playerIndex).consumeButton(code, 'keyboard', { sticky: false });
-}
 export function handleActionPromptPointer(snapshot: PointerSnapshot): void {
 	if (!ide_state.pendingActionPrompt) {
 		return;
@@ -2105,7 +1973,7 @@ export function handleLineJumpInput(): void {
 	if (textChanged) {
 		// keep value in sync; no additional processing required
 	}
-}export function readPointerSnapshot(): PointerSnapshot {
+} export function readPointerSnapshot(): PointerSnapshot {
 	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
 	if (!playerInput) {
 		return null;
@@ -2133,27 +2001,7 @@ export function handleLineJumpInput(): void {
 		primaryPressed,
 	};
 }
-export function resetInputFocusState(): void {
-	if (!api.keyboard) return;
-	api.keyboard.reset();
-	ide_state.input.resetRepeats();
-	resetKeyPressRecords();
-	ide_state.repeatState.clear();
-}
-export function requestWindowFocusState(hasFocus: boolean, immediate: boolean): void {
-	ide_state.pendingWindowFocused = hasFocus;
-	if (immediate) {
-		flushWindowFocusState();
-	}
-}
 
-export function flushWindowFocusState(): void {
-	if (ide_state.pendingWindowFocused === ide_state.windowFocused) {
-		return;
-	}
-	ide_state.windowFocused = ide_state.pendingWindowFocused;
-	resetInputFocusState();
-}
 export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, justPressed: boolean, codeTop: number, codeRight: number, textLeft: number): boolean {
 	const overlay = ide_state.runtimeErrorOverlay;
 	if (!overlay || overlay.hidden) {
@@ -2266,9 +2114,44 @@ export function evaluateRuntimeErrorOverlayClick(
 		return { kind: 'noop' };
 	}
 	return { kind: 'collapse' };
-}export function toggleThemeMode() {
+}
+
+export function toggleThemeMode() {
 	const currentVariant = constants.getActiveIdeThemeVariant();
 	const nextVariant = currentVariant === 'dark' ? 'light' : 'dark';
 	constants.setIdeThemeVariant(nextVariant);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
+}
+
+export function isKeyJustPressed(code: string): boolean {
+	const state = $.input.getPlayerInput(ide_state.playerIndex).getButtonState(code, 'keyboard');
+	return state.consumed !== true && state.justpressed === true;
+}
+
+export function shouldRepeatKeyFromPlayer(code: string): boolean {
+	return $.input.getPlayerInput(ide_state.playerIndex).getButtonRepeatState(code, 'keyboard').repeatpressed;
+}
+
+export function consumeIdeKey(code: string): void {
+	$.consume_button(ide_state.playerIndex, code, 'keyboard');
+}
+
+export function isCtrlDown(): boolean {
+	const mods = $.input.getPlayerInput(ide_state.playerIndex).getModifiersState();
+	return mods.ctrl;
+}
+
+export function isShiftDown(): boolean {
+	const mods = $.input.getPlayerInput(ide_state.playerIndex).getModifiersState();
+	return mods.shift;
+}
+
+export function isAltDown(): boolean {
+	const mods = $.input.getPlayerInput(ide_state.playerIndex).getModifiersState();
+	return mods.alt;
+}
+
+export function isMetaDown(): boolean {
+	const mods = $.input.getPlayerInput(ide_state.playerIndex).getModifiersState();
+	return mods.meta;
 }

@@ -2,7 +2,7 @@ import { $ } from '../../core/game';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isKeyTyped, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
 import { isWhitespace, isWordChar, normalizeLineEndings } from './text_utils';
 import type { InlineInputOptions, Position, TextField } from './types';
 import { clamp } from '../../utils/clamp';
@@ -642,7 +642,7 @@ export function applyInlineFieldEditing(
 	if (!altDown) {
 		for (let i = 0; i < CHARACTER_CODES.length; i += 1) {
 			const code = CHARACTER_CODES[i];
-			if (!isKeyTyped(code)) {
+			if (!isKeyJustPressed(code)) {
 				continue;
 			}
 			const entry = CHARACTER_MAP[code];

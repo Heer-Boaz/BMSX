@@ -30,6 +30,7 @@ import { resolveHoverChunkName } from './intellisense';
 import { resetBlink } from './render/render_caret';
 import { listResources } from '../workspace';
 import { BmsxVMRuntime } from '../vm_runtime';
+import { $ } from '../../core/game';
 
 function resolveChunkName(descriptor: VMResourceDescriptor | null): string {
 	if (!descriptor) {
@@ -46,26 +47,8 @@ function resolveSource(descriptor: VMResourceDescriptor | null): string {
 
 export function createEntryTabContext(): CodeTabContext {
 	const luaDescriptors = listResources().filter(r => r.type === 'lua');
-	const descriptor = luaDescriptors.length > 0 ? luaDescriptors[0] : null;
-	if (!descriptor) {
-		return null;
-	}
-	const resolvedId = descriptor ? descriptor.path : '__entry__';
-	const tabId: string = `lua:${resolvedId}`;
-	const title = computeResourceTabTitle(descriptor);
-	const initialSource = resolveSource(descriptor);
-	return {
-		id: tabId,
-		title,
-		descriptor: descriptor ,
-		snapshot: null,
-		lastSavedSource: initialSource,
-		saveGeneration: 0,
-		appliedGeneration: 0,
-		dirty: false,
-		runtimeErrorOverlay: null,
-		executionStopRow: null,
-	};
+	const descriptor = luaDescriptors.find(r => r.path === $.cart.entry_path);
+	return createLuaCodeTabContext(descriptor);
 }
 
 export function createLuaCodeTabContext(descriptor: VMResourceDescriptor): CodeTabContext {
@@ -86,10 +69,7 @@ export function createLuaCodeTabContext(descriptor: VMResourceDescriptor): CodeT
 }
 
 export function getActiveCodeTabContext(): CodeTabContext {
-	if (!ide_state.activeCodeTabContextId) {
-		return null;
-	}
-	return ide_state.codeTabContexts.get(ide_state.activeCodeTabContextId) ;
+	return ide_state.codeTabContexts?.get(ide_state.activeCodeTabContextId) ;
 }
 
 export function storeActiveCodeTabContext(): void {
@@ -110,9 +90,6 @@ export function storeActiveCodeTabContext(): void {
 }
 
 export function activateCodeEditorTab(tabId: string): void {
-	if (!tabId) {
-		return;
-	}
 	let context = ide_state.codeTabContexts.get(tabId);
 	if (!context) {
 		if (ide_state.entryTabId && tabId === ide_state.entryTabId) {

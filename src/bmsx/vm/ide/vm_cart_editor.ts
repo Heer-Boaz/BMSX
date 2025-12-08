@@ -54,7 +54,7 @@ import { renderTabBar } from './render/render_tab_bar';
 import { renderStatusBar } from './render/render_status_bar';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
-import { flushWindowFocusState, handleActionPromptInput, handleEditorInput, handleEscapeShortcut, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, requestWindowFocusState, resetKeyPressRecords, resourceViewerClampScroll, shouldRepeatKeyFromPlayer, toggleThemeMode } from './ide_input';
+import { handleActionPromptInput, handleEditorInput, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, resourceViewerClampScroll, shouldRepeatKeyFromPlayer, toggleThemeMode } from './ide_input';
 import { consumeIdeKey } from './ide_input';
 import { VMCodeLayout } from './code_layout';
 import type {
@@ -243,9 +243,6 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 	assertMonospace();
 	const initialContext = entryContext ? ide_state.codeTabContexts.get(entryContext.id) : null;
 	ide_state.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
-	ide_state.pendingWindowFocused = ide_state.windowFocused;
-	installPlatformVisibilityListener();
-	installWindowEventListeners();
 	ide_state.navigationHistory.current = createNavigationEntry();
 	ide_state.initialized = true;
 }
@@ -517,41 +514,6 @@ export function symbolCatalogDedupKey(entry: VMLuaSymbolEntry): string {
 	const endLine = location.range.endLine;
 	const endColumn = location.range.endColumn;
 	return `${kind}|${name}|${locationKey}|${startLine}:${startColumn}|${endLine}:${endColumn}`;
-}
-
-export function installPlatformVisibilityListener(): void {
-	ide_state.disposeVisibilityListener?.();
-	ide_state.disposeVisibilityListener = $.platform.lifecycle.onVisibilityChange((visible) => {
-		requestWindowFocusState(!!visible, true);
-	});
-}
-
-export function installWindowEventListeners(): void {
-	ide_state.disposeWindowEventListeners?.();
-	const host = $.platform.gameviewHost;
-	if (!host) {
-		throw new Error('[VMCartEditor] Platform game view host unavailable while installing window listeners.');
-	}
-	const windowEvents = host.getCapability('window-events');
-	if (!windowEvents) {
-		throw new Error('[VMCartEditor] Platform window-events capability not exposed.');
-	}
-	const disposers: (() => void)[] = [];
-	disposers.push(windowEvents.subscribe('blur', () => {
-		requestWindowFocusState(false, true);
-	}));
-	disposers.push(windowEvents.subscribe('focus', () => {
-		requestWindowFocusState(true, true);
-	}));
-	ide_state.disposeWindowEventListeners = () => {
-		for (let i = 0; i < disposers.length; i++) {
-			try {
-				disposers[i]();
-			} catch {
-				// Ignore disposer failures; best-effort cleanup.
-			}
-		}
-	};
 }
 
 export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: number): void {
@@ -899,15 +861,8 @@ export function safeInspectLuaExpression(request: VMLuaHoverRequest): VMLuaHover
 }
 
 export function update(deltaSeconds: number): void {
-	flushWindowFocusState();
 	ide_state.updateMessage(deltaSeconds);
 	updateRuntimeErrorOverlay(deltaSeconds);
-	if (handleEscapeShortcut()) {
-		return;
-	}
-	if (!ide_state.active) {
-		return;
-	}
 	updateBlink(deltaSeconds);
 	handlePointerWheel();
 	handleTextEditorPointerInput();
@@ -919,7 +874,7 @@ export function update(deltaSeconds: number): void {
 	ide_state.completion.processPending(deltaSeconds);
 	const semanticError = ide_state.layout.getLastSemanticError();
 	if (semanticError && semanticError !== ide_state.lastReportedSemanticError) {
-		ide_state.showMessage(semanticError, constants.COLOR_STATUS_ERROR, 4.0);
+		ide_state.showMessage(semanticError, constants.COLOR_STATUS_ERROR, 2.0);
 		ide_state.lastReportedSemanticError = semanticError;
 	} else if (!semanticError && ide_state.lastReportedSemanticError !== null) {
 		ide_state.lastReportedSemanticError = null;
@@ -1277,18 +1232,6 @@ export function shutdown(): void {
 	clearWorkspaceCachedSources();
 	ide_state.workspaceAutosaveSignature = null;
 	initializeWorkspaceStorage(null);
-	if (ide_state.disposeVisibilityListener) {
-		ide_state.disposeVisibilityListener();
-		ide_state.disposeVisibilityListener = null;
-	}
-	if (ide_state.disposeWindowEventListeners) {
-		ide_state.disposeWindowEventListeners();
-		ide_state.disposeWindowEventListeners = null;
-	}
-	ide_state.windowFocused = true;
-	ide_state.pendingWindowFocused = true;
-	ide_state.repeatState.clear();
-	resetKeyPressRecords();
 	ide_state.pointerSelecting = false;
 	ide_state.pointerPrimaryWasPressed = false;
 	ide_state.pointerAuxWasPressed = false;
@@ -1319,12 +1262,6 @@ export function shutdown(): void {
 }
 
 export function activate(): void {
-	if (!ide_state.disposeVisibilityListener) {
-		installPlatformVisibilityListener();
-	}
-	if (!ide_state.disposeWindowEventListeners) {
-		installWindowEventListeners();
-	}
 	ide_state.input.applyOverrides(true, captureKeys);
 	if (ide_state.activeCodeTabContextId) {
 		const existingTab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeCodeTabContextId);
@@ -1343,7 +1280,6 @@ export function activate(): void {
 	ide_state.pointerSelecting = false;
 	ide_state.pointerPrimaryWasPressed = false;
 	ide_state.cursorRevealSuspended = false;
-	ide_state.repeatState.clear();
 	updateDesiredColumn();
 	ide_state.selectionAnchor = null;
 	ide_state.searchActive = false;
@@ -1431,7 +1367,6 @@ export function deactivate(): void {
 		restoreCrtOptions();
 	}
 	ide_state.completion.closeSession();
-	ide_state.repeatState.clear();
 	ide_state.input.applyOverrides(false, captureKeys);
 	ide_state.selectionAnchor = null;
 	ide_state.pointerSelecting = false;
@@ -2269,11 +2204,6 @@ export function focusEditorFromLineJump(): void {
 	ide_state.lineJumpVisible = false;
 	ide_state.lineJumpField.selectionAnchor = null;
 	ide_state.lineJumpField.pointerSelecting = false;
-	resetBlink();
-}
-
-export function focusEditorFromProblemsPanel(): void {
-	ide_state.problemsPanel.setFocused(false);
 	resetBlink();
 }
 

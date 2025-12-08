@@ -2,12 +2,13 @@ import type { EditorDiagnostic, PointerSnapshot } from './types';
 import type { RectBounds } from '../../rompack/rompack';
 import { measureText, truncateTextToWidth, wrapTextDynamic as wrapMessageLinesGeneric } from './text_utils';
 import { clamp } from '../../utils/clamp';
-import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight, gotoDiagnostic, focusEditorFromProblemsPanel } from './vm_cart_editor';
+import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight, gotoDiagnostic } from './vm_cart_editor';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
 import { api } from '../vm_runtime';
 import { drawEditorText } from './text_renderer';
 import { markDiagnosticsDirty } from './diagnostics';
+import { resetBlink } from './render/render_caret';
 
 type PanelLayout = {
 	headerTop: number;
@@ -513,9 +514,11 @@ export function toggleProblemsPanel(): void {
 export function showProblemsPanel(): void {
 	ide_state.problemsPanel.show();
 	markDiagnosticsDirty();
+	// ide_state.problemsPanel.setFocused(true);
 }
 
 export function hideProblemsPanel(): void {
 	ide_state.problemsPanel.hide();
-	focusEditorFromProblemsPanel();
+	ide_state.problemsPanel.setFocused(false);
+	resetBlink();
 }

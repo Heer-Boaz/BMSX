@@ -64,7 +64,7 @@ export interface CompletionHost {
 	// Utilities
 	charAt(row: number, column: number): string;
 	getTextVersion(): number;
-	shouldFireRepeat(code: string, deltaSeconds: number): boolean;
+	shouldFireRepeat(code: string): boolean;
 	shouldAutoTriggerCompletions(): boolean;
 }
 
