@@ -45,7 +45,7 @@ import { RenderSubmission } from '../render/gameview';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/luadebugger';
 import { ide_state } from './ide/ide_state';
-import { ideExtSpec, terminalExtSpec } from '../core/pipelines/bmsxvm_pipeline_exts';
+import { ideExtSpec, terminalExtSpec, vmExtSpec } from './vm_systems';
 import type { ParsedLuaChunk } from './ide/lua_parse';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
@@ -382,7 +382,7 @@ export class BmsxVMRuntime extends Service {
 		} else if (this.editor?.isActive === true) {
 			$.pipeline_ext = ideExtSpec; // Activate IDE pipeline extensions
 		} else {
-			$.pipeline_ext = null; // Remove extensions from pipeline (default game pipeline + world modules already handle VM runtime and are only used for IDE and terminal)
+			$.pipeline_ext = vmExtSpec; // Activate base VM pipeline extensions
 		}
 	}
 

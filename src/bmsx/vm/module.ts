@@ -45,8 +45,6 @@ export function createBmsxVMModule(): WorldModule {
 			],
 			nodes: [
 				{ ref: BMSX_CART_INPUT_SYSTEM_ID }, // TODO: TO USE CORRECTLY!!
-				{ ref: BMSX_CART_UPDATE_SYSTEM_ID },
-				{ ref: BMSX_CART_DRAW_SYSTEM_ID },
 			],
 		},
 		onBoot(_world: World) {

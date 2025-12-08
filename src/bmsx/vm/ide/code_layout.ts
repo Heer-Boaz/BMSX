@@ -64,6 +64,8 @@ export class VMCodeLayout {
 	private lastViewportRowEstimate = 120;
 	private semanticTimer: TimerHandle = null;
 	private lastSemanticError: string = null;
+	private lastSemanticErrorVersion = -1;
+	private lastSemanticErrorChunk: string = null;
 
 	constructor(
 		private readonly font: VMEditorFont,
@@ -132,6 +134,9 @@ export class VMCodeLayout {
 		this.semanticModel = null;
 		this.semanticVersion = -1;
 		this.semanticChunkName = null;
+		this.lastSemanticError = null;
+		this.lastSemanticErrorVersion = -1;
+		this.lastSemanticErrorChunk = null;
 		this.pendingSemantic = null;
 		// this.inFlightSemantic = null;
 		this.semanticDueAtMs = null;
@@ -517,7 +522,15 @@ export class VMCodeLayout {
 		chunkName: string,
 		mode: 'background' | 'force',
 	): void {
-		if (this.semanticModel && this.semanticVersion === version && this.semanticChunkName === chunkName) {
+		if (this.semanticVersion === version && this.semanticChunkName === chunkName) {
+			if (this.semanticModel) {
+				return;
+			}
+			if (this.lastSemanticError && this.lastSemanticErrorVersion === version && this.lastSemanticErrorChunk === chunkName) {
+				return;
+			}
+		}
+		if (this.pendingSemantic && this.pendingSemantic.version === version && this.pendingSemantic.chunkName === chunkName) {
 			return;
 		}
 		const pending = this.updatePendingSemantic(lines, version, chunkName);
@@ -564,6 +577,8 @@ export class VMCodeLayout {
 		chunkName: string,
 	): PendingSemanticUpdate {
 		this.lastSemanticError = null;
+		this.lastSemanticErrorVersion = -1;
+		this.lastSemanticErrorChunk = null;
 		const current = this.pendingSemantic;
 		if (current && current.version === version && current.chunkName === chunkName) {
 			return current;
@@ -615,14 +630,16 @@ export class VMCodeLayout {
 
 	private applySemanticUpdateSync(pending: PendingSemanticUpdate): void {
 		let model: LuaSemanticModel = null;
+		let errorMessage: string = null;
 		try {
 			const source = this.materializeSemanticSource(pending);
 			model = this.workspace.updateFile(pending.chunkName, source, pending.lines);
-		} catch {
+		} catch (error) {
 			model = null;
+			errorMessage = error instanceof Error ? error.message : String(error);
 		}
 		const annotations = model ? model.annotations : null;
-		this.finalizeSemanticUpdate(model, pending.version, pending.chunkName, annotations);
+		this.finalizeSemanticUpdate(model, pending.version, pending.chunkName, annotations, errorMessage);
 	}
 
 	private finalizeSemanticUpdate(
@@ -630,13 +647,22 @@ export class VMCodeLayout {
 		version: number,
 		chunkName: string,
 		annotations: SemanticAnnotations,
+		errorMessage?: string,
 	): void {
 		this.semanticModel = model;
 		this.semanticVersion = version;
 		this.semanticChunkName = chunkName;
 		this.semanticDueAtMs = null;
 		this.pendingSemantic = null;
-		this.lastSemanticError = null;
+		if (errorMessage) {
+			this.lastSemanticError = errorMessage;
+			this.lastSemanticErrorVersion = version;
+			this.lastSemanticErrorChunk = chunkName;
+		} else {
+			this.lastSemanticError = null;
+			this.lastSemanticErrorVersion = -1;
+			this.lastSemanticErrorChunk = null;
+		}
 		this.updateAnnotationSignatures(annotations);
 		this.highlightCache.clear();
 		this.markVisualLinesDirty();

@@ -1,6 +1,7 @@
 import { $ } from '../core/game';
 import type { World } from '../core/world';
 import { ECSystem, TickGroup } from '../ecs/ecsystem';
+import type { NodeSpec } from '../ecs/pipeline';
 import { BmsxVMRuntime } from './vm_runtime';
 
 export const BMSX_CART_UPDATE_SYSTEM_ID = 'bmsx:cart_update_system';
@@ -94,3 +95,19 @@ export class BmsxTerminalDrawSystem extends ECSystem {
 		BmsxVMRuntime.instance.tickTerminalModeDraw();
 	}
 }
+
+export const vmExtSpec: NodeSpec[] = [
+	{ ref: BMSX_CART_UPDATE_SYSTEM_ID },
+	{ ref: BMSX_CART_DRAW_SYSTEM_ID },
+];
+/** BMSX VM overlay pipeline extensions. */
+
+export const ideExtSpec: NodeSpec[] = [
+	{ ref: BMSX_IDE_UPDATE_SYSTEM_ID },
+	{ ref: BMSX_IDE_DRAW_SYSTEM_ID },
+];
+
+export const terminalExtSpec: NodeSpec[] = [
+	{ ref: BMSX_TERMINAL_UPDATE_SYSTEM_ID },
+	{ ref: BMSX_TERMINAL_DRAW_SYSTEM_ID },
+];
