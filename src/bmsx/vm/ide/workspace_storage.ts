@@ -1,8 +1,7 @@
 import { $ } from '../../core/game';
 import type { VMResourceDescriptor } from '../types';
 import { ide_state, WORKSPACE_AUTOSAVE_INTERVAL_MS } from './ide_state';
-import type { NavigationHistoryEntry } from './ide_state';
-import type { DebugPanelKind, EditorTabDescriptor, CodeTabContext, Position, EditorSnapshot } from './types';
+import type { CodeTabContext, Position, EditorSnapshot } from './types';
 import { safeclamp } from '../../utils/clamp';
 import type { StorageService, TimerHandle } from '../../platform/platform';
 import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './ide_debugger';
@@ -22,8 +21,8 @@ import {
 	fetchWorkspaceFile,
 	WORKSPACE_DIRTY_DIR,
 } from '../workspace';
-import { openDebugPanelTab, openLuaCodeTab, openResourceViewerTab, restoreSnapshot, setFontVariant } from './vm_cart_editor';
-import { createEntryTabContext, initializeTabs, setActiveTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
+import { openLuaCodeTab, restoreSnapshot, setFontVariant } from './vm_cart_editor';
+import { createEntryTabContext, initializeTabs, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { VMFontVariant } from '../font';
 import { normalizeEndingsAndSplitLines } from './text_utils';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../workspace_cache';
@@ -45,15 +44,8 @@ type SnapshotMetadata = {
 };
 
 export type SerializedDescriptor = {
-	asset_id: string;
 	path: string;
 	type: string;
-};
-
-export type PersistedTabEntry = {
-	id: string;
-	kind: 'lua_editor' | 'resource_view' | 'debug';
-	descriptor: SerializedDescriptor;
 };
 
 export type PersistedDirtyEntry = {
@@ -68,21 +60,8 @@ export type PersistedDirtyEntry = {
 };
 
 export type WorkspaceAutosavePayload = {
-	version: 1 | 2;
 	savedAt: number;
-	entryTabId: string;
-	activeTabId: string;
-	tabs: PersistedTabEntry[];
 	dirtyFiles: PersistedDirtyEntry[];
-	undoStack: EditorSnapshot[];
-	redoStack: EditorSnapshot[];
-	lastHistoryKey: string;
-	lastHistoryTimestamp: number;
-	navigationHistory: {
-		back: NavigationHistoryEntry[];
-		forward: NavigationHistoryEntry[];
-		current: NavigationHistoryEntry;
-	};
 	breakpoints?: SerializedBreakpointMap;
 	fontVariant?: VMFontVariant;
 	overlayResolutionMode?: 'offscreen' | 'viewport';
@@ -354,11 +333,12 @@ export async function restoreWorkspaceSessionFromDisk(): Promise<void> {
 		console.warn('[VMCartEditor] Failed to parse workspace session state:', error);
 		return;
 	}
-	if (!payload || (payload.version !== 1 && payload.version !== 2)) {
+	if (!payload) {
 		return;
 	}
+	const signature = buildWorkspaceAutosaveSignature(payload);
 	await applyWorkspaceAutosavePayload(payload);
-	ide_state.workspaceAutosaveSignature = stateText;
+	ide_state.workspaceAutosaveSignature = signature;
 }
 
 export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePayload): Promise<void> {
@@ -371,9 +351,6 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 		ide_state.entryTabId = null;
 	}
 	initializeTabs(entryContext );
-	if (entryContext) {
-		ide_state.activeCodeTabContextId = entryContext.id;
-	}
 	const runtime = BmsxVMRuntime.instance;
 	if (payload.fontVariant) {
 		if (runtime) {
@@ -385,93 +362,12 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 	if (payload.overlayResolutionMode && runtime) {
 		runtime.overlayResolutionMode = payload.overlayResolutionMode;
 	}
-	for (const tabEntry of payload.tabs) {
-		restorePersistedTab(tabEntry);
-	}
 	await hydrateDirtyFiles(payload.dirtyFiles);
-	if (payload.activeTabId) {
-		setActiveTab(payload.activeTabId);
-	} else if (ide_state.entryTabId) {
-		setActiveTab(ide_state.entryTabId);
-	} else if (ide_state.tabs.length > 0) {
-		setActiveTab(ide_state.tabs[0].id);
-	}
-	ide_state.undoStack = Array.isArray(payload.undoStack)
-		? payload.undoStack.map(cloneEditorSnapshot)
-		: [];
-	ide_state.redoStack = Array.isArray(payload.redoStack)
-		? payload.redoStack.map(cloneEditorSnapshot)
-		: [];
-	ide_state.lastHistoryKey = typeof payload.lastHistoryKey === 'string' ? payload.lastHistoryKey : null;
-	ide_state.lastHistoryTimestamp = Number.isFinite(payload.lastHistoryTimestamp)
-		? payload.lastHistoryTimestamp
-		: 0;
-	if (payload.navigationHistory) {
-		ide_state.navigationHistory.back = payload.navigationHistory.back.map(entry => ({ ...entry }));
-		ide_state.navigationHistory.forward = payload.navigationHistory.forward.map(entry => ({ ...entry }));
-		ide_state.navigationHistory.current = payload.navigationHistory.current
-			? { ...payload.navigationHistory.current }
-			: null;
-	} else {
-		ide_state.navigationHistory.back = [];
-		ide_state.navigationHistory.forward = [];
-		ide_state.navigationHistory.current = null;
-	}
 	restoreBreakpointsFromPayload(payload.breakpoints );
-}
-
-export function restorePersistedTab(entry: PersistedTabEntry): void {
-	if (entry.kind === 'debug') {
-		const debugKind = extractDebugPanelKindFromTabId(entry.id);
-		if (debugKind) {
-			openDebugPanelTab(debugKind);
-		}
-		return;
-	}
-	const descriptor = resolveSerializedDescriptor(entry.descriptor);
-	if (!descriptor) {
-		return;
-	}
-	if (entry.kind === 'resource_view') {
-		openResourceViewerTab(descriptor);
-		return;
-	}
-	openLuaCodeTab(descriptor);
-}
-
-export function extractDebugPanelKindFromTabId(tabId: string): DebugPanelKind {
-	if (!tabId.startsWith('debug:')) {
-		return null;
-	}
-	const suffix = tabId.slice('debug:'.length);
-	if (suffix === 'objects' || suffix === 'events' || suffix === 'registry') {
-		return suffix as DebugPanelKind;
-	}
-	return null;
-}
-
-export function serializeTabEntry(tab: EditorTabDescriptor): PersistedTabEntry {
-	if (tab.kind === 'resource_view' && tab.resource) {
-		const descriptor = serializeDescriptor(tab.resource.descriptor);
-		if (!descriptor) {
-			return null;
-		}
-		return { id: tab.id, kind: 'resource_view', descriptor };
-	}
-	if (tab.id.startsWith('debug:')) {
-		return { id: tab.id, kind: 'debug', descriptor: null };
-	}
-	if (tab.kind === 'lua_editor') {
-		const context = ide_state.codeTabContexts.get(tab.id) ;
-		const descriptor = context?.descriptor ? serializeDescriptor(context.descriptor) : null;
-		return { id: tab.id, kind: 'lua_editor', descriptor };
-	}
-	return null;
 }
 
 export function serializeDescriptor(descriptor: VMResourceDescriptor): SerializedDescriptor {
 	return descriptor ? {
-		asset_id: descriptor.asset_id,
 		path: descriptor.path,
 		type: descriptor.type,
 	} : null;
@@ -482,7 +378,7 @@ export function resolveSerializedDescriptor(serialized: SerializedDescriptor): V
 		return null;
 	}
 	const asset = $.rompack.cart.chunk2lua[serialized.path];
-	return asset ? { asset_id: asset.resid, path: serialized.path, type: serialized.type } : null;
+	return asset ? { path: serialized.path, type: serialized.type } : null;
 }
 
 export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise<void> {
@@ -544,20 +440,20 @@ export function buildSnapshotFromSource(source: string, metadata?: SnapshotMetad
 	};
 }
 
-function cloneEditorSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
-	return {
-		lines: snapshot.lines.slice(),
-		cursorRow: snapshot.cursorRow,
-		cursorColumn: snapshot.cursorColumn,
-		scrollRow: snapshot.scrollRow,
-		scrollColumn: snapshot.scrollColumn,
-		selectionAnchor: snapshot.selectionAnchor
-			? { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column }
-			: null,
-		dirty: snapshot.dirty,
-		textVersion: snapshot.textVersion,
-	};
-}
+// function cloneEditorSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
+// 	return {
+// 		lines: snapshot.lines.slice(),
+// 		cursorRow: snapshot.cursorRow,
+// 		cursorColumn: snapshot.cursorColumn,
+// 		scrollRow: snapshot.scrollRow,
+// 		scrollColumn: snapshot.scrollColumn,
+// 		selectionAnchor: snapshot.selectionAnchor
+// 			? { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column }
+// 			: null,
+// 		dirty: snapshot.dirty,
+// 		textVersion: snapshot.textVersion,
+// 	};
+// }
 
 function clampSelection(anchor: Position, lines: string[]): Position {
 	if (!anchor) return null;
@@ -738,13 +634,6 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 	if (!ide_state.workspaceAutosaveEnabled) {
 		return null;
 	}
-	const tabs: PersistedTabEntry[] = [];
-	for (const tab of ide_state.tabs) {
-		const serialized = serializeTabEntry(tab);
-		if (serialized) {
-			tabs.push(serialized);
-		}
-	}
 	const dirtyFiles: PersistedDirtyEntry[] = [];
 	for (const entry of entries.values()) {
 		dirtyFiles.push({
@@ -758,30 +647,43 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 			selectionAnchor: entry.selectionAnchor ? { row: entry.selectionAnchor.row, column: entry.selectionAnchor.column } : null,
 		});
 	}
-	const undoStack = ide_state.undoStack.map(cloneEditorSnapshot);
-	const redoStack = ide_state.redoStack.map(cloneEditorSnapshot);
-	const navigationHistory = {
-		back: ide_state.navigationHistory.back.map(entry => ({ ...entry })),
-		forward: ide_state.navigationHistory.forward.map(entry => ({ ...entry })),
-		current: ide_state.navigationHistory.current ? { ...ide_state.navigationHistory.current } : null,
-	};
 	const runtime = BmsxVMRuntime.instance;
 	return {
-		version: 2,
 		savedAt: $.platform.clock.dateNow(),
-		entryTabId: ide_state.entryTabId ,
-		activeTabId: ide_state.activeTabId ,
-		tabs,
 		dirtyFiles,
-		undoStack,
-		redoStack,
-		lastHistoryKey: ide_state.lastHistoryKey ,
-		lastHistoryTimestamp: ide_state.lastHistoryTimestamp ?? 0,
-		navigationHistory,
 		breakpoints: serializeBreakpoints(),
 		fontVariant: ide_state.fontVariant,
 		overlayResolutionMode: runtime ? runtime.overlayResolutionMode : undefined,
 	};
+}
+
+function buildWorkspaceAutosaveSignature(payload: WorkspaceAutosavePayload): string {
+	const dirtyParts = payload.dirtyFiles
+		.map((dirty) => {
+			const selection = dirty.selectionAnchor ? `${dirty.selectionAnchor.row}:${dirty.selectionAnchor.column}` : '';
+			const descriptorKey = dirty.descriptor ? `${dirty.descriptor.path}:${dirty.descriptor.type}` : '';
+			return [
+				dirty.dirtyPath,
+				descriptorKey,
+				dirty.cursorRow,
+				dirty.cursorColumn,
+				dirty.scrollRow,
+				dirty.scrollColumn,
+				selection,
+			].join(':');
+		})
+		.sort();
+	const breakpointEntries = payload.breakpoints
+		? Object.keys(payload.breakpoints)
+			.sort()
+			.map(chunk => `${chunk}:${payload.breakpoints[chunk].join(',')}`)
+		: [];
+	return [
+		payload.fontVariant ?? '',
+		payload.overlayResolutionMode ?? '',
+		dirtyParts.join('|'),
+		breakpointEntries.join('|'),
+	].join('#');
 }
 
 export async function persistDirtyContextEntries(entries: Map<string, DirtyContextEntry>): Promise<void> {
@@ -858,10 +760,10 @@ export async function runWorkspaceAutosaveTick(): Promise<void> {
 		const dirtyEntries = collectDirtyContextEntries();
 		const payload = buildWorkspaceAutosavePayload(dirtyEntries);
 		if (payload) {
-			const serialized = JSON.stringify(payload);
-			if (serialized !== ide_state.workspaceAutosaveSignature) {
-				await writeWorkspaceStateFile(serialized);
-				ide_state.workspaceAutosaveSignature = serialized;
+			const signature = buildWorkspaceAutosaveSignature(payload);
+			if (signature !== ide_state.workspaceAutosaveSignature) {
+				await writeWorkspaceStateFile(JSON.stringify(payload));
+				ide_state.workspaceAutosaveSignature = signature;
 			}
 		}
 		await persistDirtyContextEntries(dirtyEntries);

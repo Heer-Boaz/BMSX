@@ -4,6 +4,8 @@ import type { TextureKey } from '../render/texturemanager';
 import type { GameViewHost, Platform } from '../platform';
 import { InputMap } from '../input/inputtypes';
 
+export const GAME_FPS = 50;
+
 export interface RomPack {
 	rom: ArrayBuffer; // The binary buffer of the ROM pack, containing all assets, including images, audio and code. ALWAYS PRESENT DURING GAME!
 	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the cached binary payload. ALWAYS PRESENT DURING GAME!

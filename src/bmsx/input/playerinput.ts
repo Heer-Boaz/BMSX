@@ -5,11 +5,15 @@ import { KeyboardInput } from './keyboardinput';
 import { ContextStack, MappingContext } from './context';
 import { $ } from '../core/game';
 import { clamp } from '../utils/clamp';
+import { GAME_FPS } from '../rompack/rompack';
 
 const ACTION_GUARD_MIN_MS = 24;
 const ACTION_GUARD_MAX_MS = 120;
 const INITIAL_REPEAT_DELAY_FRAMES = 15;
 const REPEAT_INTERVAL_FRAMES = 4;
+const REPEAT_FRAME_MS = 1000 / GAME_FPS;
+const INITIAL_REPEAT_DELAY_MS = INITIAL_REPEAT_DELAY_FRAMES * REPEAT_FRAME_MS;
+const REPEAT_INTERVAL_MS = REPEAT_INTERVAL_FRAMES * REPEAT_FRAME_MS;
 
 type ActionGuardRecord = {
 	lastAcceptedAtMs: number;
@@ -22,10 +26,10 @@ type ActionGuardRecord = {
 type ActionRepeatRecord = {
 	active: boolean;
 	repeatCount: number;
-	pressStartFrame: number;
+	pressStartMs: number;
 	lastFrameEvaluated: number;
 	lastResult: boolean;
-	hasDispatchedThisCycle: boolean;
+	lastRepeatAtMs: number;
 };
 
 export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
@@ -781,41 +785,36 @@ export class PlayerInput {
 		}
 
 		let result = false;
+		const pressed = state.pressed === true;
+		const justpressed = state.justpressed === true;
+		const now = this.lastPollTimestampMs ?? $.platform.clock.now();
+		const startMs = state.pressedAtMs ?? state.timestamp ?? now;
 
-		if (state.justpressed === true) {
+		if (justpressed) {
 			repeat.active = true;
 			repeat.repeatCount = 0;
-			repeat.hasDispatchedThisCycle = true;
-			repeat.pressStartFrame = this.frameCounter;
+			repeat.pressStartMs = startMs;
+			repeat.lastRepeatAtMs = startMs;
 			result = true;
-		} else if (state.pressed !== true && state.justreleased === true && !repeat.hasDispatchedThisCycle) {
+		} else if (!pressed) {
 			repeat.active = false;
 			repeat.repeatCount = 0;
-			repeat.hasDispatchedThisCycle = true;
-			repeat.pressStartFrame = -1;
-			result = true;
-		} else if (state.pressed !== true) {
-			repeat.active = false;
-			repeat.repeatCount = 0;
-			repeat.hasDispatchedThisCycle = false;
-			repeat.pressStartFrame = -1;
+			repeat.pressStartMs = -1;
+			repeat.lastRepeatAtMs = -1;
 		} else {
 			if (!repeat.active) {
 				repeat.active = true;
 				repeat.repeatCount = 0;
-				repeat.pressStartFrame = this.frameCounter;
+				repeat.pressStartMs = startMs;
+				repeat.lastRepeatAtMs = startMs;
 			}
-			if (repeat.pressStartFrame < 0) {
-				repeat.pressStartFrame = this.frameCounter;
+			if (repeat.pressStartMs < 0) {
+				repeat.pressStartMs = startMs;
 			}
-			const heldFrames = this.frameCounter - repeat.pressStartFrame;
-			if (heldFrames < 0) {
-				throw new Error(`[PlayerInput] Negative held frame count detected for action ${action}.`);
-			}
-			const repeatsElapsed = this.computeRepeatCount(heldFrames);
+			const heldMs = now - repeat.pressStartMs;
+			const repeatsElapsed = this.computeRepeatCount(heldMs);
 			if (repeatsElapsed > repeat.repeatCount) {
 				repeat.repeatCount = repeatsElapsed;
-				repeat.hasDispatchedThisCycle = true;
 				result = true;
 			}
 		}
@@ -831,25 +830,22 @@ export class PlayerInput {
 			entry = {
 				active: false,
 				repeatCount: 0,
-				pressStartFrame: -1,
+				pressStartMs: -1,
 				lastFrameEvaluated: -1,
 				lastResult: false,
-				hasDispatchedThisCycle: false,
+				lastRepeatAtMs: -1,
 			};
 			this.actionRepeatRecords.set(action, entry);
 		}
 		return entry;
 	}
 
-	private computeRepeatCount(heldFrames: number): number {
-		if (heldFrames < 0) {
-			throw new Error('[PlayerInput] Held frame count cannot be negative.');
-		}
-		if (heldFrames < INITIAL_REPEAT_DELAY_FRAMES) {
+	private computeRepeatCount(heldMs: number): number {
+		if (heldMs < INITIAL_REPEAT_DELAY_MS) {
 			return 0;
 		}
-		const elapsedSinceDelay = heldFrames - INITIAL_REPEAT_DELAY_FRAMES;
-		return Math.floor(elapsedSinceDelay / REPEAT_INTERVAL_FRAMES) + 1;
+		const elapsedSinceDelay = heldMs - INITIAL_REPEAT_DELAY_MS;
+		return Math.floor(elapsedSinceDelay / REPEAT_INTERVAL_MS) + 1;
 	}
 
 	/** Updates aggregated button states and cleans up stale events. */

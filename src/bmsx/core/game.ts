@@ -12,7 +12,7 @@ import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_factory";
 import type { GameViewHost, Platform, PlatformExitEvent } from '../platform';
 import { setMicrotaskQueue } from '../platform';
-import { asset_id, Identifiable, Identifier, Registerable, RomPack, type vec3, type vec2 } from "../rompack/rompack";
+import { asset_id, Identifiable, Identifier, Registerable, RomPack, type vec3, type vec2, GAME_FPS } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
 import { Service } from "./service";
@@ -64,7 +64,6 @@ export interface GameInitArgs {
 	viewHost?: GameViewHost;
 }
 
-const GAME_FPS = 50;
 const MAX_FRAME_DELTA = 250;  // ms
 const MAX_SUBSTEPS = 5;
 const REWIND_BUFFER_ACTIVATED = true;
