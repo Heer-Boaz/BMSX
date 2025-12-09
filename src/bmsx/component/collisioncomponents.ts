@@ -112,7 +112,6 @@ export class Collider2DComponent extends Component<any> {
 	}
 	/** Set local polygons (replaces previous). */
 	public set_local_poly(polys: Polygon[]): void {
-		if (!Array.isArray(polys)) throw new Error(`Collider2DComponent.set_local_poly: invalid polygons array`);
 		this._localPolys = polys;
 	}
 	/** Set local circle (replaces previous). */

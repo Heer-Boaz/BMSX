@@ -1,4 +1,4 @@
-import { $, WorldObject, StateMachineBlueprint, build_fsm, calculateCenteredBlockX, insavegame, wrapGlyphs, type State, type RevivableObjectArgs, CustomVisualComponent } from 'bmsx';
+import { $, TextObject, StateMachineBlueprint, build_fsm, insavegame, type State, type RevivableObjectArgs, CustomVisualComponent } from 'bmsx';
 import { create_gameevent } from 'bmsx/core/game_event';
 import { DataId } from './resourceids';
 import type { sint } from './sint';
@@ -48,50 +48,10 @@ let quizItems: QuizItem[] = null;
 const maximum_characters_per_line_question = 28;
 
 @insavegame
-export class quiz extends WorldObject {
-	/**
-	 * An array of strings used to store text data.
-	 */
-	text: string[] = [];
-	/**
-	 * The index of the current question being displayed.
-	 * Initialized to 0, indicating the first question.
-	 */
+export class quiz extends TextObject {
 	currentQuestionIndex = 0;
-	/**
-	 * Represents the currently chosen answer option.
-	 */
 	currentAnswerOptionChosen: 'a' | 'b' = 'a';
-
-	/**
-	 * An array of strings representing the full text lines.
-	 */
-	fullTextLines: string[] = [];
-	/**
-	 * An array of strings representing the lines that are currently displayed.
-	 */
-	displayedLines: string[] = [];
-	/**
-	 * The index of the current line being shown as the text is being printed on screen character by character.
-	 */
-	currentLineIndex = 0;
-	/**
-	 * Index of the current character being shown as the text is being printed on screen character by character.
-	 */
-	currentCharIndex = 0;
-
-	/**
-	 * A boolean flag indicating that the text is being printed on screen character by character.
-	 */
-	isTyping = false;
-	/**
-	 * Sets the maximum number of characters allowed per line for text being printed to screen.
-	 *
-	 * @param maximum_characters_per_line - The maximum number of characters allowed per line.
-	 */
-	maximum_characters_per_line = maximum_characters_per_line_question;
-
-	private centeredBlockX = 0;
+	override maximum_characters_per_line = maximum_characters_per_line_question;
 
 	/**
 	 * Creates an instance of the quiz class.
@@ -100,87 +60,16 @@ export class quiz extends WorldObject {
 		super({ id: 'quiz', ...opts });
 		this.add_component(new CustomVisualComponent({
 			parent_or_id: this, producer: ({ rc }) => {
-				const charWidth = 8;
+				const charWidth = this.characterWidth;
 				const startY = 2 * charWidth;
 
-				const xOffset = this.centeredBlockX;
+				const xOffset = this.textOffsetX;
 
 				this.text.forEach((line, index) => {
 					rc.submit_glyphs({ x: xOffset, y: index * charWidth + startY, glyphs: line, background_color: { r: 0, g: 0, b: 0, a: 1 } });
 				});
 			}
 		}));
-	}
-
-	/**
-	 * Sets the text from an array of lines, wraps the text, and initializes the display properties.
-	 *
-	 * @param lines - An array of strings where each string represents a line of text.
-	 *
-	 * This method performs the following steps:
-	 * 1. Combines the lines into a single string with newline characters.
-	 * 2. Wraps the combined text.
-	 * 3. Initializes the `fullTextLines` with the wrapped lines.
-	 * 4. Initializes the `displayedLines` as an array of empty strings with the same length as `fullTextLines`.
-	 * 5. Resets the `currentLineIndex` and `currentCharIndex` to 0.
-	 * 6. Sets the `isTyping` flag to true.
-	 * 7. Calculates the centered block X position.
-	 * 8. Updates the displayed text.
-	 */
-	private setTextFromLines(lines: string[]) {
-		const combined = lines.join('\n');
-		const wrappedLines = wrapGlyphs(combined, this.maximum_characters_per_line);
-
-		this.fullTextLines = wrappedLines;
-		this.displayedLines = this.fullTextLines.map(() => '');
-		this.currentLineIndex = 0;
-		this.currentCharIndex = 0;
-		this.isTyping = true;
-
-		this.centeredBlockX = calculateCenteredBlockX(this.fullTextLines, 8, 256);
-
-		this.updateDisplayedText();
-	}
-
-	/**
-	 * Handles the typing effect by adding the next character from the current line
-	 * to the displayed text. If the end of the current line is reached, it moves
-	 * to the next line. If all lines have been processed, it stops the typing effect.
-	 *
-	 * @private
-	 * @method
-	 * @returns {void}
-	 */
-	private typeNextCharacter(): void {
-		if (!this.isTyping) return;
-
-		if (this.currentLineIndex >= this.fullTextLines.length) {
-			this.isTyping = false;
-			return;
-		}
-
-		const line = this.fullTextLines[this.currentLineIndex];
-		if (this.currentCharIndex < line.length) {
-			const charToAdd = line[this.currentCharIndex];
-			this.displayedLines[this.currentLineIndex] += charToAdd;
-			this.currentCharIndex++;
-		} else {
-			this.currentLineIndex++;
-			this.currentCharIndex = 0;
-			if (this.currentLineIndex >= this.fullTextLines.length) {
-				this.isTyping = false;
-			}
-		}
-
-		this.updateDisplayedText();
-	}
-
-	/**
-	 * Updates the displayed text by copying the contents of `displayedLines` to `text`.
-	 * This method ensures that the `text` property reflects the current state of `displayedLines`.
-	 */
-	private updateDisplayedText(): void {
-		this.text = [...this.displayedLines];
 	}
 
 	/**
@@ -280,7 +169,6 @@ export class quiz extends WorldObject {
 
 				vraag: {
 					entering_state(this: quiz) {
-						this.currentQuestionIndex = 0;
 						this.presentQuestion();
 					},
 					tick(this: quiz, _state: State) {
@@ -337,6 +225,7 @@ export class quiz extends WorldObject {
 							go(this: quiz) {
 								$.consume_actions(1, 'a', 'b');
 								if (this.currentQuestionIndex < quizItems.length - 1) {
+									this.currentQuestionIndex++;
 									return '/vraag';
 								} else {
 									return '/end';

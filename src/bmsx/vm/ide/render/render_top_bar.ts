@@ -25,10 +25,11 @@ type MenuEntry = {
 const Z_TOP_BAR_BACKGROUND = 10;
 const Z_MENU_BUTTON = 14;
 const Z_MENU_BUTTON_TEXT = 15;
-const Z_MENU_DROPDOWN = 20;
-const Z_MENU_DROPDOWN_TEXT = 21;
-const Z_MENU_MARKER = 22;
-const Z_MENU_SHADOW = 19;
+const Z_MENU_DROPDOWN_BASE = 1000;
+const Z_MENU_SHADOW = Z_MENU_DROPDOWN_BASE - 1;
+const Z_MENU_DROPDOWN = Z_MENU_DROPDOWN_BASE;
+const Z_MENU_DROPDOWN_TEXT = Z_MENU_DROPDOWN_BASE + 1;
+const Z_MENU_MARKER = Z_MENU_DROPDOWN_BASE + 2;
 
 export function renderTopBar(): void {
 	clearMenuBounds();

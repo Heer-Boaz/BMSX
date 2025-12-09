@@ -220,7 +220,7 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 
 export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
 	const { assets, projectRootPath, manifest } = await loadAssetList(rom);
-	const cart: RomPack['cart'] = {
+	const cart: RomPack['cart'] | null = manifest?.lua ? {
 		chunk2lua: {},
 		path2lua: {},
 		entry_path: manifest?.lua.entry_path,
@@ -229,7 +229,7 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 		init: null,
 		update: null,
 		draw: null,
-	};
+	} : null;
 	const result: RomPack = {
 		rom: rom,
 		img: {},
@@ -247,11 +247,13 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 
 	await Promise.all(assets.map(a => load(rom, a, result, opts)));
 
-	if (manifest.lua && !manifest.lua.entry_path) {
-		throw new Error('[bootresources] Cart manifest is missing lua.entry_path.');
-	}
-	if (manifest?.lua?.entry_path && !cart.path2lua[manifest.lua.entry_path]) {
-		throw new Error(`[bootresources] Entry Lua asset not found at path '${manifest.lua.entry_path}'.`);
+	if (cart) {
+		if (!manifest.lua.entry_path) {
+			throw new Error('[bootresources] Cart manifest is missing lua.entry_path.');
+		}
+		if (!cart.path2lua[manifest.lua.entry_path]) {
+			throw new Error(`[bootresources] Entry Lua asset not found at path '${manifest.lua.entry_path}'.`);
+		}
 	}
 	return Promise.resolve<RomPack>(result);
 }

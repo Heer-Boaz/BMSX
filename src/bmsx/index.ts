@@ -20,6 +20,7 @@ export * from './core/object/cameraobject';
 export * from './core/object/lightobject';
 export * from './core/object/pooledworldobject';
 export * from './core/object/sprite';
+export * from './core/object/textobject';
 export * from './core/object/wavemanager';
 export * from './core/object/worldobject';
 export * from './core/pipelines/gameplay_pipeline';
