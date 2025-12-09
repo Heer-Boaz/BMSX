@@ -127,3 +127,27 @@ export function resolveKeyword(identifier: string): LuaTokenType {
 			return null;
 	}
 }
+export const KEYWORDS = new Set([
+	'and',
+	'break',
+	'do',
+	'else',
+	'elseif',
+	'end',
+	'false',
+	'for',
+	'function',
+	'goto',
+	'if',
+	'in',
+	'local',
+	'nil',
+	'not',
+	'or',
+	'repeat',
+	'return',
+	'then',
+	'true',
+	'until',
+	'while',
+]);

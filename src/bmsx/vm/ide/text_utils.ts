@@ -1,36 +1,13 @@
 import { applySourceToDocument, getResourcePanelWidth } from './vm_cart_editor';
-import { clearReferenceHighlights } from './intellisense';
-import { requestSemanticRefresh } from './intellisense';
-import { markDiagnosticsDirty } from './diagnostics';
 import * as constants from './constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from './constants';
 import { startSearchJob } from './editor_search';
 import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from './editor_tabs';
 import { caretNavigation, ide_state } from './ide_state';
-import { resolveHoverChunkName } from './intellisense';
 import { rebuildRuntimeErrorOverlayView } from './runtime_error_overlay';
 import * as TextEditing from './text_editing_and_selection';
 import { computeEditContextFromSources, handlePostEditMutation } from './text_editing_and_selection';
 import type { EditContext, HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from './types';
-
-export function isWhitespace(ch: string): boolean {
-	return ch === '' || ch === ' ' || ch === '\t';
-}
-
-export function isWordChar(ch: string): boolean {
-	if (!ch) {
-		return false;
-	}
-	const code = ch.charCodeAt(0);
-	return (code >= 48 && code <= 57)
-		|| (code >= 65 && code <= 90)
-		|| (code >= 97 && code <= 122)
-		|| ch === '_' || ch === '$';
-}
-
-export function splitLines(source: string): string[] {
-	return source.split(/\r?\n/);
-}
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;
