@@ -1,32 +1,30 @@
-import { calculateCenteredBlockX, wrapGlyphs } from '../../render/glyphs';
+import { wrapGlyphs } from '../../render/glyphs';
+import { BFont } from '../font';
+import { $ } from '../game';
 import { insavegame, type RevivableObjectArgs } from '../../serializer/serializationhooks';
 import { WorldObject } from './worldobject';
-
-const DEFAULT_MAX_CHARACTERS_PER_LINE = 32;
-const DEFAULT_CHARACTER_WIDTH = 8;
-const DEFAULT_TEXT_BLOCK_WIDTH = 256;
+import { RectBounds } from '../../rompack/rompack';
 
 @insavegame
 /**
  * World object that manages wrapped, typewriter-style text lines.
  */
 export class TextObject extends WorldObject {
-	public text: string[] = [];
-	public fullTextLines: string[] = [];
-	public displayedLines: string[] = [];
-	public currentLineIndex = 0;
-	public currentCharIndex = 0;
-	public maximum_characters_per_line = DEFAULT_MAX_CHARACTERS_PER_LINE;
-	public isTyping = false;
-	protected centeredBlockX = 0;
-	protected characterWidth: number;
-	protected textBlockWidth: number;
+	public text: string[] = [''];
+	public full_text_lines: string[] = [''];
+	public displayed_lines: string[] = [''];
+	public current_line_index = 0;
+	public current_char_index = 0;
+	public maximum_characters_per_line: number;
+	public is_typing = false;
+	public font: BFont;
+	protected _dimensions: RectBounds = null;
+	protected centered_block_x = 0;
 
-	constructor(opts?: RevivableObjectArgs & { id?: string, fsm_id?: string, characterWidth?: number, textBlockWidth?: number, maximum_characters_per_line?: number }) {
+	constructor(opts?: RevivableObjectArgs & { id?: string, fsm_id?: string, font?: BFont, dims?: RectBounds }) {
 		super(opts);
-		this.characterWidth = opts?.characterWidth ?? DEFAULT_CHARACTER_WIDTH;
-		this.textBlockWidth = opts?.textBlockWidth ?? DEFAULT_TEXT_BLOCK_WIDTH;
-		this.maximum_characters_per_line = opts?.maximum_characters_per_line ?? this.maximum_characters_per_line;
+		this.font = opts?.font || $.view.default_font;
+		this.dimensions = opts?.dims ?? { top: 0, left: 0, right: $.viewportsize.x, bottom: $.viewportsize.y };
 	}
 
 	/**
@@ -48,15 +46,14 @@ export class TextObject extends WorldObject {
 		const combined = lines.join('\n');
 		const wrappedLines = wrapGlyphs(combined, this.maximum_characters_per_line);
 
-		this.fullTextLines = wrappedLines;
-		this.displayedLines = this.fullTextLines.map(() => '');
-		this.currentLineIndex = 0;
-		this.currentCharIndex = 0;
-		this.isTyping = true;
+		this.full_text_lines = wrappedLines;
+		this.displayed_lines = this.full_text_lines.map(() => '');
+		this.current_line_index = 0;
+		this.current_char_index = 0;
+		this.is_typing = true;
 
-		this.centeredBlockX = calculateCenteredBlockX(this.fullTextLines, this.characterWidth, this.textBlockWidth);
-
-		this.updateDisplayedText();
+		this.recenter_text_block();
+		this.update_displayed_text();
 	}
 
 	/**
@@ -68,38 +65,62 @@ export class TextObject extends WorldObject {
 	 * @method
 	 * @returns {void}
 	 */
-	 protected typeNextCharacter(): void {
-		if (!this.isTyping) return;
+	protected typeNextCharacter(): void {
+		if (!this.is_typing) return;
 
-		if (this.currentLineIndex >= this.fullTextLines.length) {
-			this.isTyping = false;
+		if (this.current_line_index >= this.full_text_lines.length) {
+			this.is_typing = false;
+			this.events.emit('text.typing.done', { totalLines: this.full_text_lines.length });
 			return;
 		}
 
-		const line = this.fullTextLines[this.currentLineIndex];
-		if (this.currentCharIndex < line.length) {
-			this.displayedLines[this.currentLineIndex] += line[this.currentCharIndex];
-			this.currentCharIndex++;
+		const line = this.full_text_lines[this.current_line_index];
+		if (this.current_char_index < line.length) {
+			const charIndex = this.current_char_index;
+			const char = line[charIndex];
+			this.displayed_lines[this.current_line_index] += char;
+			this.current_char_index++;
+			this.update_displayed_text();
+			this.events.emit('text.typing.char', { char, lineIndex: this.current_line_index, charIndex });
+			return;
 		} else {
-			this.currentLineIndex++;
-			this.currentCharIndex = 0;
-			if (this.currentLineIndex >= this.fullTextLines.length) {
-				this.isTyping = false;
+			this.current_line_index++;
+			this.current_char_index = 0;
+			if (this.current_line_index >= this.full_text_lines.length) {
+				this.is_typing = false;
+				this.events.emit('text.typing.done', { totalLines: this.full_text_lines.length });
 			}
 		}
 
-		this.updateDisplayedText();
+		this.update_displayed_text();
 	}
 
 	/**
 	 * Updates the displayed text by copying the contents of `displayedLines` to `text`.
 	 * This method ensures that the `text` property reflects the current state of `displayedLines`.
 	 */
-	protected updateDisplayedText(): void {
-		this.text = [...this.displayedLines];
+	protected update_displayed_text(): void {
+		this.text = [...this.displayed_lines];
 	}
 
-	public get textOffsetX(): number {
-		return this.centeredBlockX;
+	public get text_offset_x(): number {
+		return this.centered_block_x;
+	}
+
+	public set dimensions(rect: RectBounds) {
+		this._dimensions = rect;
+		this.maximum_characters_per_line = Math.floor((rect.right - rect.left) / this.font.char_width(' '));
+		this.recenter_text_block();
+	}
+
+	protected recenter_text_block(): void {
+		let longestWidth = 0;
+		for (const line of this.full_text_lines) {
+			const width = this.font.textWidth(line);
+			if (width > longestWidth) {
+				longestWidth = width;
+			}
+		}
+		this.centered_block_x = ((this._dimensions.right - this._dimensions.left) - longestWidth) / 2 + this._dimensions.left;
 	}
 }

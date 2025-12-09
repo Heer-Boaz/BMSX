@@ -60,13 +60,13 @@ export class quiz extends TextObject {
 		super({ id: 'quiz', ...opts });
 		this.add_component(new CustomVisualComponent({
 			parent_or_id: this, producer: ({ rc }) => {
-				const charWidth = this.characterWidth;
-				const startY = 2 * charWidth;
+				const lineHeight = this.font.char_height(' ');
+				const startY = 2 * lineHeight;
 
-				const xOffset = this.textOffsetX;
+				const xOffset = this.text_offset_x;
 
 				this.text.forEach((line, index) => {
-					rc.submit_glyphs({ x: xOffset, y: index * charWidth + startY, glyphs: line, background_color: { r: 0, g: 0, b: 0, a: 1 } });
+					rc.submit_glyphs({ x: xOffset, y: index * lineHeight + startY, glyphs: line, background_color: { r: 0, g: 0, b: 0, a: 1 } });
 				});
 			}
 		}));

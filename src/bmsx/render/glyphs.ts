@@ -46,12 +46,12 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
  * @param blockWidth - The total width of the block to center the text within.
  * @returns The X coordinate for centering the text block.
  */
-
 export function calculateCenteredBlockX(fullTextLines: string[], charWidth: number, blockWidth: number): number {
 	const longestLine = fullTextLines.reduce((a, b) => a.length > b.length ? a : b, '');
 	const longestLineWidth = longestLine.length * charWidth;
 	return (blockWidth - longestLineWidth) / 2;
 }
+
 /**
  * Splits a given text into an array of strings, where each string represents a line of text
  * that does not exceed the maximum number of characters per line. The method also respects
@@ -61,7 +61,6 @@ export function calculateCenteredBlockX(fullTextLines: string[], charWidth: numb
  * @param maxLineLength - The maximum number of characters allowed per line.
  * @returns An array of strings, where each string is a line of text.
  */
-
 export function wrapGlyphs(text: string, maxLineLength: number): string[] {
 	const words = text.match(/(\S+|\n)/g) || [];
 	const lines: string[] = [];
