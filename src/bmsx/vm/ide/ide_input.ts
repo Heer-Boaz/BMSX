@@ -867,7 +867,7 @@ export function handlePointerWheel(): void {
 	if (!delta) return;
 
 	const magnitude = Math.abs(delta);
-	const steps = Math.max(1, Math.round(magnitude / constants.WHEEL_SCROLL_STEP));
+	const steps = ~~(magnitude / constants.WHEEL_SCROLL_STEP);
 	const direction = delta > 0 ? 1 : -1;
 	const pointer = ide_state.lastPointerSnapshot;
 	const activePointer = pointer && pointer.valid && pointer.insideViewport ? pointer : null;
@@ -922,7 +922,7 @@ export function handlePointerWheel(): void {
 			} else if (point_in_rect(activePointer.viewportX, activePointer.viewportY, bounds)) {
 				allowScroll = true;
 			}
-			const stepsAbs = Math.max(1, Math.round(Math.abs(steps)));
+			const stepsAbs = steps;
 			if (ide_state.problemsPanel.isFocused) {
 				// Match quick-open/symbol behavior: focused wheel moves selection
 				for (let i = 0; i < stepsAbs; i += 1) {

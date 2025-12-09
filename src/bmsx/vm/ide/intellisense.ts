@@ -1,8 +1,9 @@
-import type { LuaDefinitionInfo, LuaDefinitionKind, LuaForGenericStatement, LuaForNumericStatement, LuaFunctionExpression, LuaMemberExpression, LuaReturnStatement, LuaSourceRange, LuaStringLiteralExpression, LuaTableArrayField, LuaTableExpressionField, LuaTableIdentifierField } from '../../lua/lua_ast';
-import { LuaSyntaxKind, LuaTableFieldKind, type LuaAssignableExpression, type LuaAssignmentStatement, type LuaBinaryExpression, type LuaBlock, type LuaCallExpression, type LuaChunk, type LuaDoStatement, type LuaExpression, type LuaIdentifierExpression, type LuaIndexExpression, type LuaLocalAssignmentStatement, type LuaLocalFunctionStatement, type LuaTableConstructorExpression, type LuaCallStatement, type LuaFunctionDeclarationStatement, type LuaIfStatement, type LuaRepeatStatement, type LuaStatement, type LuaUnaryExpression, type LuaWhileStatement } from '../../lua/lua_ast';
+import type { LuaDefinitionInfo, LuaDefinitionKind, LuaMemberExpression, LuaSourceRange, LuaStringLiteralExpression } from '../../lua/lua_ast';
+import { LuaSyntaxKind, type LuaAssignmentStatement, type LuaCallExpression, type LuaExpression, type LuaIdentifierExpression, type LuaIndexExpression, type LuaLocalAssignmentStatement, type LuaStatement } from '../../lua/lua_ast';
 import { LuaEnvironment } from '../../lua/luaenvironment';
 import { LuaLexer } from '../../lua/lualexer';
 import type { ParsedLuaChunk } from './lua_parse';
+import type { LuaSyntaxError } from '../../lua/luaerrors';
 import { getCachedLuaParse } from './lua_analysis_cache';
 import { LuaInterpreter } from '../../lua/luaruntime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaNativeValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../lua/luavalue';
@@ -10,15 +11,17 @@ import { BmsxVMApi } from '../vm_api';
 import { VM_API_METHOD_METADATA } from '../vm_api_metadata';
 import { BmsxVMRuntime } from '../vm_runtime';
 import type { VMLuaBuiltinDescriptor, VMLuaDefinitionLocation, VMLuaDefinitionRange, VMLuaHoverRequest, VMLuaHoverResult, VMLuaHoverScope, VMLuaMemberCompletion, VMLuaMemberCompletionRequest, VMLuaSymbolEntry } from '../types';
+import { ScratchBatchPooled } from '../../utils/scratchbatch';
 import { resolveDefinitionLocationForExpression, type ProjectReferenceEnvironment } from './code_reference';
 import { applyDefinitionSelection, beginNavigationCapture, completeNavigation, focusChunkSource, resolvePointerColumn, resolvePointerRow, safeInspectLuaExpression } from './vm_cart_editor';
 import * as constants from './constants';
 import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isCodeTabActive, isReadOnlyCodeTab, setActiveTab } from './editor_tabs';
 import { ide_state } from './ide_state';
-import { buildLuaSemanticModel, LuaSemanticModel } from './semantic_model';
+import { buildLuaSemanticModel, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type FunctionSignatureInfo } from './semantic_model';
 import { isLuaCommentContext, wrapOverlayLine } from './text_utils';
 import type { ApiCompletionMetadata, CodeTabContext, LuaCompletionItem, PointerSnapshot } from './types';
 import type { RomLuaAsset } from '../../rompack/rompack';
+import { Pool } from '../../utils/pool';
 import { $ } from '../../core/game';
 import { KEYWORDS } from '../../lua/luatoken';
 export const VM_PREVIEW_MAX_ENTRIES = 12;
@@ -392,11 +395,176 @@ export type LuaDiagnosticOptions = {
 	lines?: readonly string[];
 	parsed?: ParsedLuaChunk;
 	version?: number;
+	analysis?: FileSemanticData;
 };
 
+type MutableLuaDiagnostic = {
+	row: number;
+	startColumn: number;
+	endColumn: number;
+	message: string;
+	severity: LuaDiagnosticSeverity;
+};
+
+const luaDiagnosticPoolAccessor = Pool.createLazy<MutableLuaDiagnostic>({
+	onCreate: () => ({
+		row: 0,
+		startColumn: 0,
+		endColumn: 0,
+		message: '',
+		severity: 'error',
+	}),
+	onReset: (diag) => {
+		diag.row = 0;
+		diag.startColumn = 0;
+		diag.endColumn = 0;
+		diag.message = '';
+		diag.severity = 'error';
+	},
+});
+
+const luaDiagnosticBatch = new ScratchBatchPooled<MutableLuaDiagnostic>(luaDiagnosticPoolAccessor.get());
+
+function getSemanticWorkspace(): LuaSemanticWorkspace {
+	const existing = ide_state.semanticWorkspace;
+	if (existing) {
+		return existing;
+	}
+	const workspace = new LuaSemanticWorkspace();
+	ide_state.semanticWorkspace = workspace;
+	return workspace;
+}
+
+type SemanticResolutionInput = {
+	chunkName: string;
+	source: string;
+	lines: readonly string[];
+	parsed: ParsedLuaChunk;
+	version?: number;
+};
+
+function finalizeLuaDiagnostics(): LuaDiagnostic[] {
+	const result: LuaDiagnostic[] = [];
+	for (const diag of luaDiagnosticBatch) {
+		result.push({
+			row: diag.row,
+			startColumn: diag.startColumn,
+			endColumn: diag.endColumn,
+			message: diag.message,
+			severity: diag.severity,
+		});
+	}
+	luaDiagnosticBatch.clear();
+	return result;
+}
+
+function pushDiagnostic(row: number, startColumn: number, endColumn: number, message: string, severity: LuaDiagnosticSeverity): void {
+	const slot = luaDiagnosticBatch.next();
+	slot.row = row;
+	slot.startColumn = startColumn;
+	slot.endColumn = endColumn > startColumn ? endColumn : startColumn + 1;
+	slot.message = message;
+	slot.severity = severity;
+}
+
+function pushSyntaxErrorDiagnostic(error: LuaSyntaxError): void {
+	const row = error.line > 0 ? error.line - 1 : 0;
+	const startColumn = error.column > 0 ? error.column - 1 : 0;
+	const endColumn = startColumn + 1;
+	pushDiagnostic(row, startColumn, endColumn, error.message, 'error');
+}
+
+function resolveSemanticDataForDiagnostics(input: SemanticResolutionInput): FileSemanticData {
+	const chunkKey = input.chunkName ?? '';
+	const runtime = BmsxVMRuntime.instance;
+	const cached = runtime.chunkSemanticCache.get(chunkKey);
+	if (cached && cached.source === input.source) {
+		const cachedAnalysis = (cached as { analysis?: FileSemanticData }).analysis;
+		if (cachedAnalysis) {
+			return cachedAnalysis;
+		}
+		const workspace = getSemanticWorkspace();
+		const workspaceData = workspace.getFileData(chunkKey);
+		if (workspaceData && workspaceData.source === input.source) {
+			(cached as { analysis?: FileSemanticData }).analysis = workspaceData;
+			return workspaceData;
+		}
+	}
+	const workspace = getSemanticWorkspace();
+	workspace.updateFile(chunkKey, input.source, input.lines, input.parsed, input.version);
+	const data = workspace.getFileData(chunkKey);
+	if (data) {
+		runtime.chunkSemanticCache.set(chunkKey, {
+			source: input.source,
+			model: data.model,
+			definitions: data.model.definitions,
+			parsed: input.parsed,
+			lines: input.lines,
+			analysis: data,
+		});
+		return data;
+	}
+	return null;
+}
+
+function addIdentifierDiagnosticsFromSemantic(analysis: FileSemanticData, globalKnownNames: Set<string>): void {
+	const refs = analysis.refs;
+	for (let index = 0; index < refs.length; index += 1) {
+		const ref = refs[index];
+		if (ref.isWrite) {
+			continue;
+		}
+		if (ref.target) {
+			continue;
+		}
+		if (!ref.namePath || ref.namePath.length !== 1) {
+			continue;
+		}
+		const name = ref.name;
+		if (!name || name.length === 0) {
+			continue;
+		}
+		const normalized = canonicalizeIdeIdentifier(name);
+		if (globalKnownNames.has(normalized)) {
+			continue;
+		}
+		const row = ref.range.start.line > 0 ? ref.range.start.line - 1 : 0;
+		const startColumn = ref.range.start.column > 0 ? ref.range.start.column - 1 : 0;
+		const length = name.length > 0 ? name.length : 1;
+		const endColumn = startColumn + length;
+		pushDiagnostic(row, startColumn, endColumn, `'${name}' is not defined.`, 'error');
+	}
+}
+
+function addCallDiagnosticsFromSemantic(
+	analysis: FileSemanticData,
+	builtinLookup: Map<string, VMLuaBuiltinDescriptor>,
+	apiSignatures: Map<string, ApiCompletionMetadata>,
+): void {
+	const calls = analysis.callExpressions;
+	if (!calls || calls.length === 0) {
+		return;
+	}
+	const signatures = analysis.functionSignatures ?? new Map<string, FunctionSignatureInfo>();
+	const emit = (diag: LuaDiagnostic): void => {
+		pushDiagnostic(diag.row, diag.startColumn, diag.endColumn, diag.message, diag.severity);
+	};
+	for (let index = 0; index < calls.length; index += 1) {
+		const call = calls[index];
+		const metadata = resolveCallSignature(call, builtinLookup, apiSignatures);
+		if (metadata) {
+			validateCallArity(call, metadata, emit);
+			continue;
+		}
+		const userMetadata = resolveUserFunctionSignature(call, signatures);
+		if (userMetadata) {
+			validateCallArity(call, userMetadata, emit);
+		}
+	}
+}
+
 export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnostic[] {
-	const diagnostics: LuaDiagnostic[] = [];
-	const functionSignatures = new Map<string, FunctionSignatureInfo>();
+	luaDiagnosticBatch.clear();
 	const parseEntry = getCachedLuaParse({
 		chunkName: options.chunkName,
 		source: options.source,
@@ -407,382 +575,27 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 	});
 	const syntaxError = parseEntry.syntaxError;
 	if (syntaxError) {
-		const row = syntaxError.line > 0 ? syntaxError.line - 1 : 0;
-		const startColumn = syntaxError.column > 0 ? syntaxError.column - 1 : 0;
-		const endColumn = startColumn + 1;
-		diagnostics.push({
-			row,
-			startColumn,
-			endColumn: endColumn > startColumn ? endColumn : startColumn + 1,
-			message: syntaxError.message,
-			severity: 'error',
-		});
-		return diagnostics;
+		pushSyntaxErrorDiagnostic(syntaxError);
+		return finalizeLuaDiagnostics();
 	}
-	const chunk = parseEntry.parsed.chunk;
+
+	const semanticData = options.analysis ?? resolveSemanticDataForDiagnostics({
+		chunkName: options.chunkName,
+		source: options.source,
+		lines: parseEntry.lines,
+		parsed: parseEntry.parsed,
+		version: options.version,
+	});
+	if (!semanticData) {
+		return [];
+	}
 
 	const globalKnownNames = buildGlobalKnownNameSet(options.localSymbols, options.globalSymbols, options.builtinDescriptors, options.apiSignatures);
 	const builtinLookup = buildBuiltinLookup(options.builtinDescriptors);
-	const scopeStack: Array<Set<string>> = [new Set<string>()];
+	addIdentifierDiagnosticsFromSemantic(semanticData, globalKnownNames);
+	addCallDiagnosticsFromSemantic(semanticData, builtinLookup, options.apiSignatures);
 
-	const declareInCurrentScope = (name: string): void => {
-		if (name.length === 0) {
-			return;
-		}
-		scopeStack[scopeStack.length - 1].add(name);
-	};
-
-	const pushScope = (): void => {
-		scopeStack.push(new Set<string>());
-	};
-
-	const popScope = (): void => {
-		if (scopeStack.length > 1) {
-			scopeStack.pop();
-		}
-	};
-
-	const isNameDefined = (name: string): boolean => {
-		if (name.length === 0) {
-			return true;
-		}
-		for (let index = scopeStack.length - 1; index >= 0; index -= 1) {
-			if (scopeStack[index].has(name)) {
-				return true;
-			}
-		}
-		return globalKnownNames.has(name);
-	};
-
-	const addIdentifierDiagnostic = (identifier: LuaIdentifierExpression): void => {
-		const name = identifier.name;
-		if (name.length === 0) {
-			return;
-		}
-		if (isNameDefined(name)) {
-			return;
-		}
-		const row = identifier.range.start.line > 0 ? identifier.range.start.line - 1 : 0;
-		const startColumn = identifier.range.start.column > 0 ? identifier.range.start.column - 1 : 0;
-		const rawLength = name.length;
-		const adjustedLength = rawLength > 0 ? rawLength : 1;
-		const endColumn = startColumn + adjustedLength;
-		diagnostics.push({
-			row,
-			startColumn,
-			endColumn,
-			message: `'${name}' is not defined.`,
-			severity: 'error',
-		});
-	};
-
-	const analyzeCallExpression = (call: LuaCallExpression): void => {
-		const metadata = resolveCallSignature(call, builtinLookup, options.apiSignatures);
-		if (metadata) {
-			validateCallArity(call, metadata, diagnostics);
-			return;
-		}
-		const userMetadata = resolveUserFunctionSignature(call, functionSignatures);
-		if (userMetadata) {
-			validateCallArity(call, userMetadata, diagnostics);
-		}
-	};
-
-	const visitExpression = (expression: LuaExpression, allowIdentifierCheck: boolean): void => {
-		switch (expression.kind) {
-			case LuaSyntaxKind.IdentifierExpression: {
-				if (allowIdentifierCheck) {
-					addIdentifierDiagnostic(expression as LuaIdentifierExpression);
-				}
-				break;
-			}
-			case LuaSyntaxKind.CallExpression: {
-				const call = expression as LuaCallExpression;
-				visitExpression(call.callee, true);
-				for (let index = 0; index < call.arguments.length; index += 1) {
-					visitExpression(call.arguments[index], true);
-				}
-				analyzeCallExpression(call);
-				break;
-			}
-			case LuaSyntaxKind.MemberExpression: {
-				const member = expression as LuaMemberExpression;
-				visitExpression(member.base, true);
-				break;
-			}
-			case LuaSyntaxKind.IndexExpression: {
-				const indexExpression = expression as LuaIndexExpression;
-				visitExpression(indexExpression.base, true);
-				visitExpression(indexExpression.index, true);
-				break;
-			}
-			case LuaSyntaxKind.BinaryExpression: {
-				const binary = expression as LuaBinaryExpression;
-				visitExpression(binary.left, true);
-				visitExpression(binary.right, true);
-				break;
-			}
-			case LuaSyntaxKind.UnaryExpression: {
-				const unary = expression as LuaUnaryExpression;
-				visitExpression(unary.operand, true);
-				break;
-			}
-			case LuaSyntaxKind.FunctionExpression: {
-				visitFunctionExpression(expression as LuaFunctionExpression, false, null);
-				break;
-			}
-			case LuaSyntaxKind.TableConstructorExpression: {
-				const tableExpression = expression as LuaTableConstructorExpression;
-				for (let i = 0; i < tableExpression.fields.length; i += 1) {
-					const field = tableExpression.fields[i];
-					if (field.kind === LuaTableFieldKind.Array) {
-						const arrayField = field as LuaTableArrayField;
-						visitExpression(arrayField.value, true);
-						continue;
-					}
-					if (field.kind === LuaTableFieldKind.IdentifierKey) {
-						const identifierField = field as LuaTableIdentifierField;
-						visitExpression(identifierField.value, true);
-						continue;
-					}
-					const expressionField = field as LuaTableExpressionField;
-					visitExpression(expressionField.key, true);
-					visitExpression(expressionField.value, true);
-				}
-				break;
-			}
-			default:
-				break;
-		}
-	};
-
-	const visitFunctionExpression = (
-		expression: LuaFunctionExpression,
-		implicitSelf: boolean,
-		binding: { path: string; style: 'function' | 'method' },
-	): void => {
-		if (binding) {
-			registerFunctionFromExpression(functionSignatures, binding.path, expression, binding.style);
-		}
-		pushScope();
-		if (implicitSelf) {
-			declareInCurrentScope('self');
-		}
-		for (let index = 0; index < expression.parameters.length; index += 1) {
-			const parameter = expression.parameters[index];
-			declareInCurrentScope(parameter.name);
-		}
-		if (expression.hasVararg) {
-			declareInCurrentScope('...');
-		}
-		visitBlockBody(expression.body);
-		popScope();
-	};
-
-	const visitAssignmentTarget = (target: LuaAssignableExpression): void => {
-		if (target.kind === LuaSyntaxKind.IdentifierExpression) {
-			return;
-		}
-		if (target.kind === LuaSyntaxKind.MemberExpression) {
-			const member = target as LuaMemberExpression;
-			visitExpression(member.base, true);
-			return;
-		}
-		if (target.kind === LuaSyntaxKind.IndexExpression) {
-			const indexExpression = target as LuaIndexExpression;
-			visitExpression(indexExpression.base, true);
-			visitExpression(indexExpression.index, true);
-		}
-	};
-
-	const visitStatement = (statement: LuaStatement): void => {
-		switch (statement.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement: {
-				const localAssignment = statement as LuaLocalAssignmentStatement;
-				const mappedValues = mapAssignmentValues(localAssignment.names.length, localAssignment.values);
-				const processed = new Set<LuaExpression>();
-				for (let index = 0; index < localAssignment.names.length; index += 1) {
-					const identifier = localAssignment.names[index];
-					declareInCurrentScope(identifier.name);
-					const value = mappedValues[index];
-					if (!value) {
-						continue;
-					}
-					if (value.kind === LuaSyntaxKind.FunctionExpression) {
-						visitFunctionExpression(value as LuaFunctionExpression, false, { path: identifier.name, style: 'function' });
-						processed.add(value);
-						continue;
-					}
-					visitExpression(value, true);
-					processed.add(value);
-				}
-				for (let index = 0; index < localAssignment.values.length; index += 1) {
-					const value = localAssignment.values[index];
-					if (!value || processed.has(value)) {
-						continue;
-					}
-					visitExpression(value, true);
-				}
-				break;
-			}
-			case LuaSyntaxKind.LocalFunctionStatement: {
-				const localFunction = statement as LuaLocalFunctionStatement;
-				declareInCurrentScope(localFunction.name.name);
-				visitFunctionExpression(localFunction.functionExpression, false, { path: localFunction.name.name, style: 'function' });
-				break;
-			}
-			case LuaSyntaxKind.FunctionDeclarationStatement: {
-				const functionDeclaration = statement as LuaFunctionDeclarationStatement;
-				const identifiers = functionDeclaration.name.identifiers;
-				if (identifiers.length > 0) {
-					const declaredName = identifiers[identifiers.length - 1];
-					if (declaredName.length > 0) {
-						globalKnownNames.add(declaredName);
-					}
-				}
-				const methodName = functionDeclaration.name.methodName;
-				const basePath = identifiers.join('.');
-				if (methodName) {
-					const colonPath = basePath.length > 0 ? `${basePath}:${methodName}` : methodName;
-					visitFunctionExpression(functionDeclaration.functionExpression, true, { path: colonPath, style: 'method' });
-				} else {
-					const path = basePath;
-					visitFunctionExpression(functionDeclaration.functionExpression, false, { path, style: 'function' });
-				}
-				break;
-			}
-			case LuaSyntaxKind.AssignmentStatement: {
-				const assignment = statement as LuaAssignmentStatement;
-				const mappedValues = mapAssignmentValues(assignment.left.length, assignment.right);
-				const processed = new Set<LuaExpression>();
-				for (let index = 0; index < assignment.left.length; index += 1) {
-					const target = assignment.left[index];
-					visitAssignmentTarget(target);
-					if (target.kind === LuaSyntaxKind.IdentifierExpression) {
-						const identifier = target as LuaIdentifierExpression;
-						globalKnownNames.add(identifier.name);
-						declareInCurrentScope(identifier.name);
-					}
-					const value = mappedValues[index];
-					if (!value) {
-						continue;
-					}
-					if (value.kind === LuaSyntaxKind.FunctionExpression) {
-						const path = buildAssignmentPath(target);
-						if (path) {
-							visitFunctionExpression(value as LuaFunctionExpression, false, { path, style: 'function' });
-						} else {
-							visitFunctionExpression(value as LuaFunctionExpression, false, null);
-						}
-						processed.add(value);
-						continue;
-					}
-					visitExpression(value, true);
-					processed.add(value);
-				}
-				for (let index = 0; index < assignment.right.length; index += 1) {
-					const value = assignment.right[index];
-					if (!value || processed.has(value)) {
-						continue;
-					}
-					visitExpression(value, true);
-				}
-				break;
-			}
-			case LuaSyntaxKind.CallStatement: {
-				const callStatement = statement as LuaCallStatement;
-				visitExpression(callStatement.expression, true);
-				break;
-			}
-			case LuaSyntaxKind.ReturnStatement: {
-				const returnStatement = statement as LuaReturnStatement;
-				for (let index = 0; index < returnStatement.expressions.length; index += 1) {
-					visitExpression(returnStatement.expressions[index], true);
-				}
-				break;
-			}
-			case LuaSyntaxKind.IfStatement: {
-				const ifStatement = statement as LuaIfStatement;
-				for (let index = 0; index < ifStatement.clauses.length; index += 1) {
-					const clause = ifStatement.clauses[index];
-					if (clause.condition) {
-						visitExpression(clause.condition, true);
-					}
-					visitBlock(clause.block);
-				}
-				break;
-			}
-			case LuaSyntaxKind.WhileStatement: {
-				const whileStatement = statement as LuaWhileStatement;
-				visitExpression(whileStatement.condition, true);
-				visitBlock(whileStatement.block);
-				break;
-			}
-			case LuaSyntaxKind.RepeatStatement: {
-				const repeatStatement = statement as LuaRepeatStatement;
-				visitBlock(repeatStatement.block);
-				visitExpression(repeatStatement.condition, true);
-				break;
-			}
-			case LuaSyntaxKind.DoStatement: {
-				const doStatement = statement as LuaDoStatement;
-				visitBlock(doStatement.block);
-				break;
-			}
-			case LuaSyntaxKind.ForNumericStatement: {
-				const forNumeric = statement as LuaForNumericStatement;
-				visitExpression(forNumeric.start, true);
-				visitExpression(forNumeric.limit, true);
-				if (forNumeric.step) {
-					visitExpression(forNumeric.step, true);
-				}
-				pushScope();
-				declareInCurrentScope(forNumeric.variable.name);
-				visitBlockBody(forNumeric.block);
-				popScope();
-				break;
-			}
-			case LuaSyntaxKind.ForGenericStatement: {
-				const forGeneric = statement as LuaForGenericStatement;
-				for (let index = 0; index < forGeneric.iterators.length; index += 1) {
-					visitExpression(forGeneric.iterators[index], true);
-				}
-				pushScope();
-				for (let index = 0; index < forGeneric.variables.length; index += 1) {
-					declareInCurrentScope(forGeneric.variables[index].name);
-				}
-				visitBlockBody(forGeneric.block);
-				popScope();
-				break;
-			}
-			default:
-				break;
-		}
-	};
-
-	const visitBlockBody = (block: LuaBlock): void => {
-		for (let index = 0; index < block.body.length; index += 1) {
-			visitStatement(block.body[index]);
-		}
-	};
-
-	const visitBlock = (block: LuaBlock): void => {
-		pushScope();
-		visitBlockBody(block);
-		popScope();
-	};
-
-	const visitChunk = (root: LuaChunk): void => {
-		for (let index = 0; index < root.body.length; index += 1) {
-			visitStatement(root.body[index]);
-		}
-	};
-
-	pushScope();
-	visitChunk(chunk);
-	popScope();
-
-	return diagnostics;
+	return finalizeLuaDiagnostics();
 }
 
 function buildGlobalKnownNameSet(
@@ -792,11 +605,21 @@ function buildGlobalKnownNameSet(
 	apiSignatures: Map<string, ApiCompletionMetadata>,
 ): Set<string> {
 	const names = new Set<string>();
+	const canonicalCache = new Map<string, string>();
+	const normalize = (value: string): string => {
+		const cached = canonicalCache.get(value);
+		if (cached !== undefined) {
+			return cached;
+		}
+		const normalized = canonicalizeIdeIdentifier(value);
+		canonicalCache.set(value, normalized);
+		return normalized;
+	};
 	const add = (value: string) => {
 		if (!value) {
 			return;
 		}
-		const normalized = canonicalizeIdeIdentifier(value);
+		const normalized = normalize(value);
 		names.add(normalized);
 	};
 	add('api');
@@ -878,6 +701,8 @@ type CallSignatureMetadata = {
 	description?: string;
 	parameterDescriptions?: readonly (string)[];
 };
+
+type DiagnosticEmitter = (diag: LuaDiagnostic) => void;
 
 function resolveCallSignature(
 	call: LuaCallExpression,
@@ -1027,12 +852,6 @@ type ParameterRequirement = {
 	required: number;
 };
 
-type FunctionSignatureInfo = {
-	params: string[];
-	hasVararg: boolean;
-	declarationStyle: 'function' | 'method';
-};
-
 function determineParameterRequirements(params: readonly string[]): ParameterRequirement {
 	let required = 0;
 	for (let index = 0; index < params.length; index += 1) {
@@ -1053,56 +872,6 @@ function determineParameterRequirements(params: readonly string[]): ParameterReq
 		}
 	}
 	return { required };
-}
-
-function mapAssignmentValues<T>(targetCount: number, values: ReadonlyArray<T>): Array<T> {
-	const mapped: Array<T> = [];
-	if (targetCount <= 0) {
-		return mapped;
-	}
-	for (let index = 0; index < targetCount; index += 1) {
-		mapped.push(index < values.length ? values[index] : null);
-	}
-	return mapped;
-}
-
-function registerFunctionSignatureExplicit(
-	signatures: Map<string, FunctionSignatureInfo>,
-	path: string,
-	params: string[],
-	hasVararg: boolean,
-	declarationStyle: 'function' | 'method',
-): void {
-	if (!path || path.length === 0) {
-		return;
-	}
-	signatures.set(path, { params, hasVararg, declarationStyle });
-}
-
-function registerFunctionFromExpression(
-	signatures: Map<string, FunctionSignatureInfo>,
-	path: string,
-	expression: LuaFunctionExpression,
-	declarationStyle: 'function' | 'method',
-): void {
-	if (!path || path.length === 0) {
-		return;
-	}
-	const params: string[] = [];
-	for (let index = 0; index < expression.parameters.length; index += 1) {
-		const parameter = expression.parameters[index];
-		if (parameter.name.length > 0) {
-			params.push(parameter.name);
-		}
-	}
-	registerFunctionSignatureExplicit(signatures, path, params, expression.hasVararg, declarationStyle);
-	if (declarationStyle === 'method') {
-		const dotPath = convertMethodPathToProperty(path);
-		if (dotPath) {
-			const extended = ['self', ...params];
-			registerFunctionSignatureExplicit(signatures, dotPath, extended, expression.hasVararg, 'function');
-		}
-	}
 }
 
 function buildMemberBasePath(expression: LuaExpression): string {
@@ -1129,16 +898,6 @@ function buildMemberBasePath(expression: LuaExpression): string {
 			return `${base}.${literal.value}`;
 		}
 		return null;
-	}
-	return null;
-}
-
-function buildAssignmentPath(target: LuaAssignableExpression): string {
-	if (target.kind === LuaSyntaxKind.IdentifierExpression) {
-		return (target as LuaIdentifierExpression).name;
-	}
-	if (target.kind === LuaSyntaxKind.MemberExpression || target.kind === LuaSyntaxKind.IndexExpression) {
-		return buildMemberBasePath(target as unknown as LuaExpression);
 	}
 	return null;
 }
@@ -1182,7 +941,7 @@ function buildCallInfo(call: LuaCallExpression): FunctionCallInfo {
 
 function resolveUserFunctionSignature(
 	call: LuaCallExpression,
-	signatures: Map<string, FunctionSignatureInfo>,
+	signatures: ReadonlyMap<string, FunctionSignatureInfo>,
 ): CallSignatureMetadata {
 	const callInfo = buildCallInfo(call);
 	if (!callInfo) {
@@ -1241,7 +1000,7 @@ function isSelfParameter(name: string): boolean {
 function validateCallArity(
 	call: LuaCallExpression,
 	metadata: CallSignatureMetadata,
-	diagnostics: LuaDiagnostic[],
+	emit: DiagnosticEmitter,
 ): void {
 	const requirement = determineParameterRequirements(metadata.params);
 	let required = requirement.required;
@@ -1263,7 +1022,7 @@ function validateCallArity(
 	const expectedLabel = required === 1 ? 'argument' : 'arguments';
 	const providedLabel = actualCount === 1 ? 'was' : 'were';
 	const message = `${metadata.label} expects ${required} ${expectedLabel}, but ${actualCount} ${providedLabel} provided.`;
-	diagnostics.push({
+	emit({
 		row,
 		startColumn,
 		endColumn,
@@ -2250,11 +2009,30 @@ export function buildSemanticModelForChunk(chunkName: string): LuaSemanticModel 
 	const source = runtime.resourceSourceForChunk(chunkName);
 	const cached = runtime.chunkSemanticCache.get(chunkName);
 	const cachedMatch = cached && cached.source === source ? cached : null;
-	if (cachedMatch && cachedMatch.model) {
-		if (!cachedMatch.lines) {
-			cachedMatch.lines = cachedMatch.source.split('\n');
+	if (cachedMatch) {
+		const cachedAnalysis = (cachedMatch as { analysis?: FileSemanticData }).analysis;
+		if (cachedAnalysis) {
+			return cachedAnalysis.model;
 		}
-		return cachedMatch.model;
+		if (cachedMatch.model) {
+			if (!cachedMatch.lines) {
+				cachedMatch.lines = cachedMatch.source.split('\n');
+			}
+			return cachedMatch.model;
+		}
+	}
+	const workspace = getSemanticWorkspace();
+	const workspaceData = workspace.getFileData(chunkName);
+	if (workspaceData && workspaceData.source === source) {
+		runtime.chunkSemanticCache.set(chunkName, {
+			source,
+			model: workspaceData.model,
+			definitions: workspaceData.model.definitions,
+			parsed: cachedMatch?.parsed,
+			lines: workspaceData.lines,
+			analysis: workspaceData,
+		});
+		return workspaceData.model;
 	}
 	const parseEntry = getCachedLuaParse({
 		chunkName,
@@ -2266,9 +2044,13 @@ export function buildSemanticModelForChunk(chunkName: string): LuaSemanticModel 
 	});
 	const baseLines = parseEntry.lines;
 	const parsed = parseEntry.parsed;
-	const model = buildLuaSemanticModel(parseEntry.source, chunkName, baseLines, parsed);
-	runtime.chunkSemanticCache.set(chunkName, { source, model, definitions: model.definitions, parsed, lines: baseLines });
-	return model;
+	workspace.updateFile(chunkName, parseEntry.source, baseLines, parsed, null);
+	const data = workspace.getFileData(chunkName);
+	if (data) {
+		runtime.chunkSemanticCache.set(chunkName, { source, model: data.model, definitions: data.model.definitions, parsed, lines: baseLines, analysis: data });
+		return data.model;
+	}
+	return null;
 }
 
 export function positionWithinRange(row: number, column: number, range: LuaSourceRange): boolean {

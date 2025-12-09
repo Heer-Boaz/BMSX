@@ -1,6 +1,6 @@
-import { LuaSyntaxError } from '../../lua/luaerrors';
+import type { LuaSyntaxError } from '../../lua/luaerrors';
 import type { ParsedLuaChunk } from './lua_parse';
-import { parseLuaChunk, parseLuaChunkWithRecovery } from './lua_parse';
+import { parseLuaChunkWithRecovery } from './lua_parse';
 
 export type LuaAnalysisEntry = {
 	chunkName: string;
@@ -31,17 +31,15 @@ export function getCachedLuaParse(options: {
 		const versionMatches = version !== null && cached.version === version;
 		if (versionMatches || cached.source === options.source) {
 			cached.lastAccessMs = Date.now();
-			if (!cached.lines) {
-				cached.lines = resolvedLines;
-			}
-			if (options.withSyntaxError && cached.syntaxError === undefined) {
-				cached.syntaxError = tryParseStrict(options.source, options.chunkName, resolvedLines);
+			if (!cached.lines) cached.lines = resolvedLines;
+			if (cached.syntaxError === undefined && cached.parsed) {
+				cached.syntaxError = cached.parsed.syntaxError ?? null;
 			}
 			return cached;
 		}
 	}
 	const parsed = options.parsed ?? parseLuaChunkWithRecovery(options.source, options.chunkName, resolvedLines);
-	const syntaxError = options.withSyntaxError ? tryParseStrict(options.source, options.chunkName, resolvedLines) : undefined;
+	const syntaxError = parsed ? parsed.syntaxError ?? null : null;
 	const entry: LuaAnalysisEntry = {
 		chunkName: options.chunkName,
 		source: options.source,
@@ -75,17 +73,5 @@ function evictIfNeeded(): void {
 	}
 	if (oldestKey !== null) {
 		analysisCache.delete(oldestKey);
-	}
-}
-
-function tryParseStrict(source: string, chunkName: string, lines: readonly string[]): LuaSyntaxError | null {
-	try {
-		parseLuaChunk(source, chunkName, lines);
-		return null;
-	} catch (error) {
-		if (error instanceof LuaSyntaxError) {
-			return error;
-		}
-		throw error;
 	}
 }

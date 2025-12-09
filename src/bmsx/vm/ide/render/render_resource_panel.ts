@@ -37,7 +37,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 	};
 	const verticalScrollbar = controller.resourceVertical;
 	verticalScrollbar.layout(verticalTrack, itemCount, capacity, controller.scroll);
-	controller.scroll = Math.round(verticalScrollbar.getScroll());
+	controller.scroll = verticalScrollbar.getScroll();
 	const verticalVisible = verticalScrollbar.isVisible();
 	const contentRight = verticalVisible ? verticalTrack.left : bounds.right;
 

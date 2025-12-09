@@ -86,28 +86,7 @@ export class OnscreenGamepad implements InputHandler {
 		if (!this.platform.supportsVibration()) {
 			return;
 		}
-		let intensity = 1;
-		if (typeof params.intensity === 'number') {
-			intensity = params.intensity;
-		}
-		if (intensity < 0) {
-			intensity = 0;
-		}
-		if (intensity > 1) {
-			intensity = 1;
-		}
-		let duration = 0;
-		if (typeof params.duration === 'number') {
-			duration = params.duration;
-		}
-		if (duration < 0) {
-			duration = 0;
-		}
-		const scaled = Math.round(duration * intensity);
-		if (scaled <= 0) {
-			return;
-		}
-		this.platform.vibrate(scaled);
+		this.platform.vibrate(params.duration * params.intensity);
 	}
 
 	public static hideButtons(gamepad_button_ids: string[]): void {

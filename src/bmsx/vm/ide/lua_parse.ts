@@ -7,8 +7,9 @@ import { clamp } from '../../utils/clamp';
 import { ide_state } from './ide_state';
 
 export type ParsedLuaChunk = {
-	chunk: LuaChunk;
+	chunk: LuaChunk | null;
 	tokens: LuaToken[];
+	syntaxError?: LuaSyntaxError | null;
 };
 
 export function parseLuaChunk(source: string, chunkName: string, lines?: readonly string[]): ParsedLuaChunk {
@@ -16,22 +17,32 @@ export function parseLuaChunk(source: string, chunkName: string, lines?: readonl
 	const tokens = lexer.scanTokens();
 	const parser = new LuaParser(tokens, chunkName, source, lines);
 	const chunk = parser.parseChunk();
-	return { chunk, tokens };
+	return { chunk, tokens, syntaxError: null };
 }
 
 export function parseLuaChunkWithRecovery(source: string, chunkName: string, lines?: readonly string[]): ParsedLuaChunk {
 	let currentSource = source;
 	let currentLines: readonly string[] = lines ?? source.split('\n');
+	let firstSyntaxError: LuaSyntaxError = null;
 	while (true) {
 		try {
-			return parseLuaChunk(currentSource, chunkName, currentLines);
+			const parsed = parseLuaChunk(currentSource, chunkName, currentLines);
+			if (firstSyntaxError && !parsed.syntaxError) {
+				parsed.syntaxError = firstSyntaxError;
+			}
+			return parsed;
 		} catch (error) {
 			if (!(error instanceof LuaSyntaxError)) {
 				throw error;
 			}
+			if (!firstSyntaxError) {
+				firstSyntaxError = error;
+			}
 			const truncated = truncateSourceAtSyntaxError(currentSource, currentLines, error);
 			if (truncated === null) {
-				return null;
+				return firstSyntaxError
+					? { chunk: null, tokens: [], syntaxError: firstSyntaxError }
+					: null;
 			}
 			currentSource = truncated.source;
 			currentLines = truncated.lines;

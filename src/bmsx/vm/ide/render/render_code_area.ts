@@ -220,8 +220,8 @@ export function renderCodeArea(): void {
 		bottom: contentBottom,
 	};
 
-	ide_state.scrollbars.codeVertical.layout(verticalTrack, Math.max(visualCount, 1), rowCapacity, ide_state.scrollRow);
-	ide_state.scrollRow = clamp(Math.round(ide_state.scrollbars.codeVertical.getScroll()), 0, Math.max(0, visualCount - rowCapacity));
+	ide_state.scrollbars.codeVertical.layout(verticalTrack, visualCount, rowCapacity, ide_state.scrollRow);
+	ide_state.scrollRow = clamp(ide_state.scrollbars.codeVertical.getScroll(), 0, visualCount - rowCapacity);
 	ide_state.codeVerticalScrollbarVisible = ide_state.scrollbars.codeVertical.isVisible();
 
 	if (!wrapEnabled) {
@@ -233,7 +233,7 @@ export function renderCodeArea(): void {
 		};
 		const maxColumns = columnCapacity + computeMaximumScrollColumn();
 		ide_state.scrollbars.codeHorizontal.layout(horizontalTrack, maxColumns, columnCapacity, ide_state.scrollColumn);
-		ide_state.scrollColumn = clamp(Math.round(ide_state.scrollbars.codeHorizontal.getScroll()), 0, computeMaximumScrollColumn());
+		ide_state.scrollColumn = clamp(~~(ide_state.scrollbars.codeHorizontal.getScroll(), 0, computeMaximumScrollColumn());
 		ide_state.codeHorizontalScrollbarVisible = ide_state.scrollbars.codeHorizontal.isVisible();
 	} else {
 		ide_state.scrollColumn = 0;

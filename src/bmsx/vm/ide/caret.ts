@@ -609,7 +609,7 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 		const segmentDisplayEnd = ide_state.layout.columnToDisplay(highlight, segmentEndColumn);
 		const segmentWidth = Math.max(0, segmentDisplayEnd - segmentDisplayStart);
 		if (hasOffsetHint) {
-			const clampedOffset = clamp(Math.round(desiredOffsetHint!), 0, segmentWidth);
+			const clampedOffset = clamp(desiredOffsetHint, 0, segmentWidth);
 			const targetDisplay = clamp(segmentDisplayStart + clampedOffset, segmentDisplayStart, segmentDisplayEnd);
 			let columnFromOffset = entry.displayToColumn[targetDisplay];
 			if (columnFromOffset === undefined) {
@@ -617,13 +617,13 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 			}
 			targetColumn = clamp(columnFromOffset, segment.startColumn, segmentEndColumn);
 		} else {
-			targetColumn = clamp(Math.round(targetColumn), segment.startColumn, segmentEndColumn);
+			targetColumn = clamp(targetColumn, segment.startColumn, segmentEndColumn);
 			if (targetColumn > line.length) {
 				targetColumn = line.length;
 			}
 		}
 	} else {
-		targetColumn = clamp(Math.round(targetColumn), 0, line.length);
+		targetColumn = clamp(targetColumn, 0, line.length);
 	}
 	ide_state.cursorRow = segment.row;
 	ide_state.cursorColumn = clamp(targetColumn, 0, line.length);

@@ -120,15 +120,15 @@ export class GamepadInput implements InputHandler {
 			try {
 				const nav = navigator as Navigator & { vibrate?: (pattern: number | number[]) => boolean };
 				if (typeof nav.vibrate === 'function') {
-					nav.vibrate(Math.max(0, Math.round(params.duration * params.intensity)));
+					nav.vibrate(Math.max(0, params.duration * params.intensity));
 				}
 			} catch {
 				// Ignore fallback errors
 			}
 			return;
 		}
-		const strongMagnitude = params.intensity > 0.5 ? Math.round(params.intensity * 255) : 0;
-		const weakMagnitude = params.intensity <= 0.5 ? Math.round(params.intensity * 255) : 0;
+		const strongMagnitude = ~~(params.intensity > 0.5 ? params.intensity * 255 : 0);
+		const weakMagnitude = ~~(params.intensity <= 0.5 ? params.intensity * 255 : 0);
 		try {
 			this.hidPad.sendRumble({ strong: strongMagnitude, weak: weakMagnitude, duration: params.duration });
 		} catch (err) {

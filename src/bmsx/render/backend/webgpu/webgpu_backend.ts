@@ -70,10 +70,10 @@ export class WebGPUBackend implements GPUBackend {
 		const pixelCount = width * height;
 		const data = new Uint8Array(pixelCount * 4);
 		for (let i = 0; i < pixelCount; i++) {
-			data[i * 4 + 0] = Math.round(rgba[0] * 255);
-			data[i * 4 + 1] = Math.round(rgba[1] * 255);
-			data[i * 4 + 2] = Math.round(rgba[2] * 255);
-			data[i * 4 + 3] = Math.round(rgba[3] * 255);
+			data[i * 4 + 0] = ~~(rgba[0] * 255);
+			data[i * 4 + 1] = ~~(rgba[1] * 255);
+			data[i * 4 + 2] = ~~(rgba[2] * 255);
+			data[i * 4 + 3] = ~~(rgba[3] * 255);
 		}
 		this.device.queue.writeTexture(
 			{ texture },
@@ -124,10 +124,10 @@ export class WebGPUBackend implements GPUBackend {
 		for (let face = 0; face < 6; face++) {
 			for (let i = 0; i < pixelCountPerFace; i++) {
 				const offset = (face * pixelCountPerFace + i) * 4;
-				data[offset] = Math.round(rgba[0] * 255);
-				data[offset + 1] = Math.round(rgba[1] * 255);
-				data[offset + 2] = Math.round(rgba[2] * 255);
-				data[offset + 3] = Math.round(rgba[3] * 255);
+				data[offset + 0] = ~~(rgba[0] * 255);
+				data[offset + 1] = ~~(rgba[1] * 255);
+				data[offset + 2] = ~~(rgba[2] * 255);
+				data[offset + 3] = ~~(rgba[3] * 255);
 			}
 		}
 

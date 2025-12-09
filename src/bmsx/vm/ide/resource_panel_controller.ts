@@ -202,7 +202,7 @@ export class ResourcePanelController {
 		if (!this.visible) return;
 		const capacity = this.lineCapacity();
 		const maxScroll = Math.max(0, this.items.length - capacity);
-		this.scroll = clamp(Math.round(scroll), 0, maxScroll);
+		this.scroll = clamp(scroll, 0, maxScroll);
 	}
 
 	setHScroll(scroll: number): void {

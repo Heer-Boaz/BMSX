@@ -198,7 +198,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
 		context.bind2DTex(state.atlasEngineTex);
 	}
-	const q = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 100) / 100;
+	// const q = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 100) / 100; // Quantize float to 2 decimal places
 	const layerWeight = (layer?: RenderLayer) => {
 		if (layer === 'ide') return 2;
 		if (layer === 'ui') return 1;
@@ -213,8 +213,8 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		const ae = (a.options.ambient_affected ? 1 : 0);
 		const be = (b.options.ambient_affected ? 1 : 0);
 		if (ae !== be) return ae - be;
-		const af = q(a.options.ambient_factor ?? state.ambientFactorDefault);
-		const bf = q(b.options.ambient_factor ?? state.ambientFactorDefault);
+		const af = (a.options.ambient_factor ?? state.ambientFactorDefault);
+		const bf = (b.options.ambient_factor ?? state.ambientFactorDefault);
 		if (af !== bf) return af - bf;
 		return 0;
 	});
@@ -245,7 +245,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
 		const layerIsOverlay = options.layer === 'ui' || options.layer === 'ide';
 		const ambE = layerIsOverlay ? 0 : (options.ambient_affected != null ? (options.ambient_affected ? 1 : 0) : ambientDefaultEnabled);
-		const ambF = q(options.ambient_factor != null ? options.ambient_factor : state.ambientFactorDefault);
+		const ambF = options.ambient_factor != null ? options.ambient_factor : state.ambientFactorDefault;
 		if (currentAmbientEnabled === null) { currentAmbientEnabled = ambE; currentAmbientFactor = ambF; }
 		else if (ambE !== currentAmbientEnabled || Math.abs(ambF - currentAmbientFactor) > 1e-3) { flush(); currentAmbientEnabled = ambE; currentAmbientFactor = ambF; }
 		const { width, height } = imgmeta;
@@ -356,7 +356,7 @@ export function fillRectangle(options: RectRenderSubmission): void {
 export function drawPolygon(coords: Polygon, z: number, color: color, thickness: number = 1, layer?: RenderLayer): void {
 	if (!coords || coords.length < 4) return; const imgid = 'whitepixel';
 	for (let i = 0; i < coords.length; i += 2) {
-		let x0 = Math.round(coords[i]), y0 = Math.round(coords[i + 1]); const next = (i + 2) % coords.length; let x1 = Math.round(coords[next]), y1 = Math.round(coords[next + 1]);
+		let x0 = coords[i], y0 = coords[i + 1]; const next = (i + 2) % coords.length; let x1 = coords[next], y1 = coords[next + 1];
 		const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0); const sx = x0 < x1 ? 1 : -1; const sy = y0 < y1 ? 1 : -1; let err = dx - dy;
 		if (dx > dy) {
 			while (true) {

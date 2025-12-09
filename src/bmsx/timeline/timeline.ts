@@ -119,10 +119,10 @@ export function compile_timeline_markers<T>(def: TimelineDefinition<T>): Compile
 
 function clamp_marker_frame(at: TimelineMarkerAt, length: number): number {
 	if ((at as TimelineFrameMarkerAt).frame !== undefined) {
-		return clamp((at as TimelineFrameMarkerAt).frame, 0, Math.max(0, length - 1));
+		return clamp((at as TimelineFrameMarkerAt).frame, 0, length - 1);
 	}
 	const normalized = clamp((at as TimelineUTMarkerAt).u, 0, 1);
-	return clamp(Math.round(normalized * (length - 1)), 0, Math.max(0, length - 1));
+	return clamp(~~(normalized * (length - 1)), 0, length - 1);
 }
 
 export class Timeline<T = any> {

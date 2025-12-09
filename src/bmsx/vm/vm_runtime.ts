@@ -31,7 +31,7 @@ import { createVMCartEditor, getSourceForChunk, type VMCartEditor, setExecutionS
 import { VM_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from './ide/constants';
 import { clearNativeMemberCompletionCache } from './ide/intellisense';
 import { type FaultSnapshot } from './ide/render/render_error_overlay';
-import { type LuaSemanticModel } from './ide/semantic_model';
+import { type LuaSemanticModel, type FileSemanticData } from './ide/semantic_model';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { RuntimeErrorDetails } from './ide/types';
 import { isLuaScriptError, registerApiBuiltins, seedDefaultLuaBuiltins } from './lua_builtins';
@@ -202,7 +202,7 @@ export class BmsxVMRuntime extends Service {
 		(error, meta) => this.handleLuaHandlerError(error, meta),
 	);
 	public nativeMemberCompletionCache: WeakMap<object, { dot?: VMLuaMemberCompletion[]; colon?: VMLuaMemberCompletion[] }> = new WeakMap();
-	public readonly chunkSemanticCache: Map<string, { source: string; model: LuaSemanticModel; definitions: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[] }> = new Map();
+	public readonly chunkSemanticCache: Map<string, { source: string; model: LuaSemanticModel; definitions: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
 
 	private readonly luaVmGate = taskGate.group('console:lua_vm');
 	private handledLuaErrors = new WeakSet<any>();

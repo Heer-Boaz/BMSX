@@ -810,10 +810,10 @@ function renderInstancedMeshes(runtime: MeshPassRuntime, instancedGroups: Map<st
 					instanceScratchF32.set(inst.matrix, i * INSTANCE_STRIDE_FLOATS);
 					// colors (pack UNORM8)
 					const base = i * INSTANCE_STRIDE_BYTES + INSTANCE_COLOR_OFFSET_BYTES;
-					instanceScratchU8[base + 0] = Math.min(255, Math.max(0, Math.round(inst.color[0] * 255)));
-					instanceScratchU8[base + 1] = Math.min(255, Math.max(0, Math.round(inst.color[1] * 255)));
-					instanceScratchU8[base + 2] = Math.min(255, Math.max(0, Math.round(inst.color[2] * 255)));
-					instanceScratchU8[base + 3] = Math.min(255, Math.max(0, Math.round(inst.color[3] * 255)));
+					instanceScratchU8[base + 0] = clamp(inst.color[0] * 255, 0, 255);
+					instanceScratchU8[base + 1] = clamp(inst.color[1] * 255, 0, 255);
+					instanceScratchU8[base + 2] = clamp(inst.color[2] * 255, 0, 255);
+					instanceScratchU8[base + 3] = clamp(inst.color[3] * 255, 0, 255);
 				}
 				// Orphan then upload
 				gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);

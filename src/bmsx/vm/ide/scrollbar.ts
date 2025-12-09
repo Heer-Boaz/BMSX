@@ -266,7 +266,7 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 			}
 			const capacity = resourceViewerTextCapacity(viewer);
 			const maxScroll = Math.max(0, viewer.lines.length - capacity);
-			viewer.scroll = clamp(Math.round(scroll), 0, maxScroll);
+			viewer.scroll = clamp(scroll, 0, maxScroll);
 			break;
 		}
 	}

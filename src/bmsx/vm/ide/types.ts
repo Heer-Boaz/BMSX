@@ -31,6 +31,7 @@ export type CachedHighlight = {
 	displayToColumn: number[];
 	advancePrefix: number[];
 	rowSignature: number;
+	srcHash: number;
 };
 
 export type SearchMatch = {

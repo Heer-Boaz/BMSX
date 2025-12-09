@@ -54,8 +54,8 @@ export class VMCodeLayout {
 	private semanticDueAtMs: number = null;
 	private semanticUpdateScheduled = false;
 	private annotationRowSig: Uint32Array = null;
-	private semanticWorker: Worker = null;
 	private nextSemanticRequestId = 1;
+	private semanticDispatchHandle: TimerHandle = null;
 	private lastHotRowRange: { start: number; end: number } = null;
 	private lastHotGuardRows = 0;
 	private readonly viewportRowMargin = 64;
@@ -161,8 +161,9 @@ export class VMCodeLayout {
 			rowSignature = signatures[row];
 		}
 		const source = row >= 0 && row < lines.length ? lines[row] ?? '' : '';
+		const sourceHash = hashLineContent(source);
 		const cached = this.highlightCache.get(row);
-		if (cached && cached.src === source && cached.rowSignature === rowSignature) {// TODO: ARE WE REALLY DOING A STRING COMPARE HERE EACH TIME TO THE WHOLE SOURCE CODE FILE??
+		if (cached && cached.rowSignature === rowSignature && cached.srcHash === sourceHash) {
 			return cached;
 		}
 		let builtinIdentifiers: Iterable<string> = null;
@@ -197,6 +198,7 @@ export class VMCodeLayout {
 			displayToColumn,
 			advancePrefix,
 			rowSignature,
+			srcHash: sourceHash,
 		};
 		this.highlightCache.set(row, entry);
 		while (this.highlightCache.size > this.maxHighlightCache) {
@@ -590,33 +592,27 @@ export class VMCodeLayout {
 
 	private dispatchSemanticUpdate(pending: PendingSemanticUpdate, strategy: 'background' | 'force'): void {
 		this.semanticDueAtMs = null;
-		const source = this.materializeSemanticSource(pending);
-		if (strategy === 'force' || this.semanticWorker === null) {
+		this.materializeSemanticSource(pending);
+		if (strategy === 'force') {
 			this.pendingSemantic = null;
 			this.applySemanticUpdateSync(pending);
 			return;
 		}
-		this.pendingSemantic = null;
-		const worker = this.semanticWorker;
-		try {
-			if (worker) {
-				worker.postMessage({
-					type: 'update',
-					requestId: pending.requestId,
-					version: pending.version,
-					chunkName: pending.chunkName,
-					source,
-				});
-			}
-		} catch (error) {
-			console.error(error);
-			this.semanticWorker = null;
-			this.applySemanticUpdateSync(pending);
+		this.pendingSemantic = pending;
+		if (this.semanticDispatchHandle) {
+			this.semanticDispatchHandle.cancel();
 		}
+		this.semanticDispatchHandle = scheduleIdeOnce(0, () => {
+			this.semanticDispatchHandle = null;
+			if (!this.pendingSemantic || this.pendingSemantic.requestId !== pending.requestId) {
+				return;
+			}
+			this.pendingSemantic = null;
+			this.applySemanticUpdateSync(pending);
+		});
 	}
 
 	private applySemanticUpdateSync(pending: PendingSemanticUpdate): void {
-		return;
 		let model: LuaSemanticModel = null;
 		let errorMessage: string = null;
 		try {
@@ -776,4 +772,13 @@ export class VMCodeLayout {
 		}
 		return true;
 	}
+}
+
+function hashLineContent(line: string): number {
+	let hash = 2166136261 >>> 0;
+	for (let index = 0; index < line.length; index += 1) {
+		hash ^= line.charCodeAt(index);
+		hash = (hash * 16777619) >>> 0;
+	}
+	return hash;
 }

@@ -58,10 +58,10 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindTexture(gl.TEXTURE_2D, tex);
 		const data = new Uint8Array(width * height * 4);
 		for (let i = 0; i < width * height; i++) {
-			data[i * 4 + 0] = Math.round(rgba[0] * 255);
-			data[i * 4 + 1] = Math.round(rgba[1] * 255);
-			data[i * 4 + 2] = Math.round(rgba[2] * 255);
-			data[i * 4 + 3] = Math.round(rgba[3] * 255);
+			data[i * 4 + 0] = ~~(rgba[0] * 255);
+			data[i * 4 + 1] = ~~(rgba[1] * 255);
+			data[i * 4 + 2] = ~~(rgba[2] * 255);
+			data[i * 4 + 3] = ~~(rgba[3] * 255);
 		}
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
 		const bytes = width * height * 4;
