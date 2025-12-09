@@ -1,12 +1,12 @@
 local controller_def_id = 'intro2025.controller'
 local controller_instance_id = 'intro2025.controller.instance'
 local controller_fsm_id = 'intro2025.controller.fsm'
-local glitch_timeline_id = 'intro2025.glitch.timeline'
-local glitch_timeline_event = 'intro2025.timeline.frame'
+local glitch_timeline_id = 'intro2025.glitch'
+local glitch_timeline_event = 'timeline.frame.' .. glitch_timeline_id
+local glitch_listener = { id = 'intro2025.glitch.listener' }
 
-local viewport_width = 256
 local char_width = 8
-local line_height = 10
+local line_height = 8
 
 local narrative = {
 	start = {
@@ -52,8 +52,8 @@ function intro_controller:onspawn()
 	self.current_line = 1
 	self.current_char = 1
 	self.typing = false
-	self.typing_timer = 0
-	self.typing_delay = 0.03
+	self.typing_frame_acc = 0
+	self.typing_delay_frames = 2
 	self.pages = narrative.start
 	self.page_index = 1
 	self.choice_index = 1
@@ -62,32 +62,19 @@ function intro_controller:onspawn()
 	self.glitch_active = false
 	self.glitch_phase = 0
 	self.glitch_tone = 'low'
-	self.portal_timer = 0
 	self.scene_label = 'start'
 
 	local timeline_component = self.timelines
 	timeline_component.define(timeline_component, {
 		id = glitch_timeline_id,
 		frames = { 'buzz', 'flash', 'static' },
-		ticks_per_frame = 0.18,
+		ticks_per_frame = 1,
 		playback_mode = 'loop',
 		markers = {
 			{ frame = 0, event = glitch_timeline_event, payload = { tone = 'low' } },
 			{ frame = 1, event = glitch_timeline_event, payload = { tone = 'mid' } },
 			{ frame = 2, event = glitch_timeline_event, payload = { tone = 'high' } },
 		},
-	})
-	timeline_component.play(timeline_component, glitch_timeline_id, { rewind = true, snap_to_start = true })
-
-	self.events:on({
-		event = glitch_timeline_event,
-		subscriber = self,
-		handler = function(event)
-			if self.glitch_active then
-				self.glitch_phase = self.glitch_phase + 1
-				self.glitch_tone = event.tone
-			end
-		end,
 	})
 
 	self:set_pages(self.pages)
@@ -108,14 +95,13 @@ function intro_controller:set_lines(lines)
 	self.current_line = 1
 	self.current_char = 1
 	self.typing = true
-	self.typing_timer = 0
+	self.typing_frame_acc = 0
 end
 
 function intro_controller:type_next_character()
 	local line = self.text_full[self.current_line]
-	local char_to_add = string.sub(line, self.current_char, self.current_char)
-	self.text_display[self.current_line] = self.text_display[self.current_line] .. char_to_add
 	self.current_char = self.current_char + 1
+	self.text_display[self.current_line] = string.sub(line, 1, self.current_char - 1)
 	if self.current_char > #line then
 		self.current_line = self.current_line + 1
 		self.current_char = 1
@@ -125,13 +111,13 @@ function intro_controller:type_next_character()
 	end
 end
 
-function intro_controller:tick_text(dt)
+function intro_controller:tick_text()
 	if not self.typing then
 		return
 	end
-	self.typing_timer = self.typing_timer + dt
-	while self.typing_timer >= self.typing_delay do
-		self.typing_timer = self.typing_timer - self.typing_delay
+	self.typing_frame_acc = self.typing_frame_acc + 1
+	while self.typing_frame_acc >= self.typing_delay_frames do
+		self.typing_frame_acc = self.typing_frame_acc - self.typing_delay_frames
 		self:type_next_character()
 		if not self.typing then
 			break
@@ -164,6 +150,7 @@ function intro_controller:start_glitch()
 	self.glitch_active = true
 	self.glitch_phase = 0
 	self.glitch_tone = 'low'
+	self.timelines.play(self.timelines, glitch_timeline_id, { rewind = true, snap_to_start = true })
 end
 
 function intro_controller:stop_glitch()
@@ -211,7 +198,7 @@ local function build_intro_fsm()
 					self:set_pages(narrative.start)
 				end,
 				tick = function(self)
-					self:tick_text(game.deltatime_seconds)
+					self:tick_text()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
@@ -231,7 +218,7 @@ local function build_intro_fsm()
 					self:set_pages(narrative.niece)
 				end,
 				tick = function(self)
-					self:tick_text(game.deltatime_seconds)
+					self:tick_text()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
@@ -252,7 +239,7 @@ local function build_intro_fsm()
 					self:set_pages(narrative.transmission)
 				end,
 				tick = function(self)
-					self:tick_text(game.deltatime_seconds)
+					self:tick_text()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
@@ -273,7 +260,7 @@ local function build_intro_fsm()
 					self:set_pages(narrative.sinter)
 				end,
 				tick = function(self)
-					self:tick_text(game.deltatime_seconds)
+					self:tick_text()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
@@ -295,7 +282,7 @@ local function build_intro_fsm()
 					self:set_choice_index(1)
 				end,
 				tick = function(self)
-					self:tick_text(game.deltatime_seconds)
+					self:tick_text()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
@@ -327,11 +314,9 @@ local function build_intro_fsm()
 					self.pages = self:portal_pages()
 					self.page_index = 1
 					self:set_lines(self.pages[self.page_index])
-					self.portal_timer = 0
 				end,
 				tick = function(self)
-					self:tick_text(game.deltatime_seconds)
-					self.portal_timer = self.portal_timer + game.deltatime_seconds
+					self:tick_text()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
@@ -360,11 +345,13 @@ local function register_controller()
 			current_line = 1,
 			current_char = 1,
 			typing = false,
-			typing_timer = 0,
+			typing_frame_acc = 0,
+			typing_delay_frames = 2,
 			pages = {},
 			page_index = 1,
 			glitch_active = false,
 			glitch_phase = 0,
+			glitch_tone = 'low',
 			scene_label = 'start',
 		},
 	})
@@ -373,6 +360,17 @@ end
 local function define_blueprints_and_handlers()
 	build_intro_fsm()
 	register_controller()
+	events:on({
+		event = glitch_timeline_event,
+		subscriber = glitch_listener,
+		handler = function(_, event)
+			local controller = world_object(controller_instance_id)
+			if controller.glitch_active then
+				controller.glitch_phase = controller.glitch_phase + 1
+				controller.glitch_tone = event.tone
+			end
+		end,
+	})
 end
 
 function init()
@@ -390,15 +388,15 @@ local function draw_background(controller)
 	if controller.glitch_active then
 		local flash_color = (controller.glitch_phase % 2 == 0) and 6 or 2
 		cls(flash_color)
-	else
-		cls(1)
+		return
 	end
+	cls(1)
 end
 
 local function draw_text_block(lines, anchor_y)
 	for index = 1, #lines do
 		local line = lines[index]
-		local x = math.floor((viewport_width - (#line * char_width)) * 0.5)
+		local x = (display_width() - (#line * char_width)) * 0.5
 		local y = anchor_y + (index - 1) * line_height
 		write(line, x, y, 0, 15)
 	end
@@ -409,7 +407,7 @@ local function draw_choice_ui(controller, anchor_y)
 		local option = narrative.choice.options[index]
 		local prefix = controller.choice_index == index and '> ' or '  '
 		local line = prefix .. option.label
-		local x = math.floor((viewport_width - (#line * char_width)) * 0.5)
+		local x = (display_width() - (#line * char_width)) * 0.5
 		local y = anchor_y + (index - 1) * line_height
 		local color = controller.choice_index == index and 10 or 7
 		write(line, x, y, 0, color)
@@ -418,7 +416,7 @@ end
 
 local function draw_prompt(controller)
 	local prompt = controller.typing and '[A] skip' or '[A] verder'
-	local x = math.floor((viewport_width - (#prompt * char_width)) * 0.5)
+	local x = (display_width() - (#prompt * char_width)) * 0.5
 	local y = 180
 	write(prompt, x, y, 0, 11)
 end
@@ -434,6 +432,5 @@ function draw()
 	draw_prompt(controller)
 end
 
-function update(dt)
-	-- no-op; FSM ticks handle logic via states
+function update()
 end

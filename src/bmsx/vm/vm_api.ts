@@ -134,11 +134,11 @@ export class BmsxVMApi {
 		Object.assign(instance, overrides);
 	}
 
-	public get display_width(): number {
+	public display_width(): number {
 		return $.view.viewportSize.x;
 	}
 
-	public get display_height(): number {
+	public display_height(): number {
 		return $.view.viewportSize.y;
 	}
 
@@ -252,8 +252,8 @@ export class BmsxVMApi {
 			area: {
 				left: 0,
 				top: 0,
-				right: this.display_width,
-				bottom: this.display_height,
+				right: this.display_width(),
+				bottom: this.display_height(),
 			},
 			color,
 		};
@@ -809,8 +809,8 @@ export class BmsxVMApi {
 		const relativeX = screen.x - rect.left;
 		const relativeY = screen.y - rect.top;
 		const inside = relativeX >= 0 && relativeX < width && relativeY >= 0 && relativeY < height;
-		const viewportX = (relativeX / width) * this.display_width;
-		const viewportY = (relativeY / height) * this.display_height;
+		const viewportX = (relativeX / width) * this.display_width();
+		const viewportY = (relativeY / height) * this.display_height();
 		return { x: viewportX, y: viewportY, valid: true, inside };
 	}
 
@@ -909,7 +909,7 @@ export class BmsxVMApi {
 
 	private advance_print_cursor(lineHeight: number): void {
 		this.textCursorY += lineHeight;
-		const limit = this.display_height - lineHeight;
+		const limit = this.display_height() - lineHeight;
 		if (this.textCursorY >= limit) {
 			this.textCursorY = 0;
 		}

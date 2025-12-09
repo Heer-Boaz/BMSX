@@ -1665,7 +1665,7 @@ export class BmsxVMRuntime extends Service {
 		});
 		const prettyMessage = prettyPrintRuntimeError(snapshot.chunkName, snapshot.line, snapshot.column, message);
 		if (error instanceof Error) {
-			error.stack = buildErrorStackString(error.name ?? 'Error', message, runtimeDetails, this.includeJsStackTraces);
+			error.stack = buildErrorStackString(error.name, message, runtimeDetails, this.includeJsStackTraces);
 		}
 		console.error('[BmsxVMRuntime] Lua runtime error:', prettyMessage, error);
 		// try {

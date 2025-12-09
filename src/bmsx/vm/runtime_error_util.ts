@@ -129,10 +129,10 @@ export function parseJsStackLine(line: string): StackTraceFrame {
 
 
 export function formatRuntimeErrorLocation(chunkName: string, line: number, column: number): string {
-	let label = chunkName && chunkName.length > 0 ? chunkName : null;
+	let label = chunkName;
 	if (line !== null) {
 		const suffix = column !== null ? `${line}:${column}` : `${line}`;
-		label = label ? `${label}:${suffix}` : suffix;
+		label = `${label}:${suffix}`;
 	}
 	return label;
 }
@@ -192,7 +192,7 @@ export function prettyPrintRuntimeError(chunkName: string, line: number, column:
 }
 
 export function buildErrorStackString(name: string, message: string, details: RuntimeErrorDetails, includeJsStackTraces: boolean): string {
-	const header = name && name.length > 0 ? `${name}: ${message}` : message;
+	const header = `${name}: ${message}`;
 	if (!details) {
 		return header;
 	}
