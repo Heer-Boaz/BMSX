@@ -4,6 +4,7 @@ import { $ } from '../game';
 import { insavegame, type RevivableObjectArgs } from '../../serializer/serializationhooks';
 import { WorldObject } from './worldobject';
 import { RectBounds } from '../../rompack/rompack';
+import { CustomVisualComponent } from '../..';
 
 @insavegame
 /**
@@ -25,6 +26,19 @@ export class TextObject extends WorldObject {
 		super(opts);
 		this.font = opts?.font || $.view.default_font;
 		this.dimensions = opts?.dims ?? { top: 0, left: 0, right: $.viewportsize.x, bottom: $.viewportsize.y };
+
+		this.add_component(new CustomVisualComponent({
+			parent_or_id: this, producer: ({ rc }) => {
+				const lineHeight = this.font.char_height(' ');
+				const startY = 2 * lineHeight;
+
+				const xOffset = this.text_offset_x;
+
+				this.text.forEach((line, index) => {
+					rc.submit_glyphs({ x: xOffset, y: index * lineHeight + startY, glyphs: line, background_color: { r: 0, g: 0, b: 0, a: 1 } });
+				});
+			}
+		}));
 	}
 
 	/**
