@@ -1,5 +1,5 @@
 import { $ } from '../../core/game';
-import { scheduleMicrotask } from '../../platform/platform';
+import { scheduleMicrotask, type TimerHandle } from '../../platform/platform';
 import type {
 	VMLuaDefinitionLocation,
 	VMLuaHoverRequest,
@@ -83,7 +83,7 @@ import {
 	type ReferenceCatalogEntry,
 	type ReferenceSymbolEntry,
 } from './code_reference';
-import { clearBackgroundTasks, enqueueBackgroundTask, scheduleRuntimeTask } from './background_tasks';
+import { clearBackgroundTasks, enqueueBackgroundTask, scheduleIdeOnce, scheduleRuntimeTask } from './background_tasks';
 
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
 import { planRenameLineEdits } from './rename_controller';
@@ -877,6 +877,20 @@ export function update(deltaSeconds: number): void {
 	// }
 }
 
+const diagnosticsMinIntervalMs = 600;
+let diagnosticsTimer: TimerHandle | null = null;
+let diagnosticsScheduledForMs = 0;
+let lastDiagnosticsRunMs = 0;
+
+function cancelDiagnosticsTimer(): void {
+	if (diagnosticsTimer) {
+		diagnosticsTimer.cancel();
+		diagnosticsTimer = null;
+	}
+	diagnosticsScheduledForMs = 0;
+	ide_state.diagnosticsComputationScheduled = false;
+}
+
 export function processDiagnosticsQueue(now: number): void {
 	if (!ide_state.diagnosticsDirty) {
 		return;
@@ -888,24 +902,33 @@ export function processDiagnosticsQueue(now: number): void {
 	if (ide_state.dirtyDiagnosticContexts.size === 0) {
 		ide_state.diagnosticsDirty = false;
 		ide_state.diagnosticsDueAtMs = null;
+		cancelDiagnosticsTimer();
+		return;
+	}
+	if (ide_state.diagnosticsTaskPending) {
 		return;
 	}
 	if (ide_state.diagnosticsDueAtMs === null) {
 		ide_state.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
-		return;
-	}
-	if (now < ide_state.diagnosticsDueAtMs) {
-		return;
 	}
 	scheduleDiagnosticsComputation();
 }
 
 export function scheduleDiagnosticsComputation(): void {
-	if (ide_state.diagnosticsComputationScheduled) {
+	const now = ide_state.clockNow();
+	const dueAt = ide_state.diagnosticsDueAtMs ?? now + diagnosticsDebounceMs;
+	const spacedDueAt = Math.max(dueAt, lastDiagnosticsRunMs + diagnosticsMinIntervalMs);
+	ide_state.diagnosticsDueAtMs = spacedDueAt;
+	if (diagnosticsTimer && diagnosticsTimer.isActive() && diagnosticsScheduledForMs >= spacedDueAt) {
 		return;
 	}
+	cancelDiagnosticsTimer();
+	const delay = clamp(spacedDueAt - now, 0, diagnosticsMinIntervalMs + diagnosticsDebounceMs);
+	diagnosticsScheduledForMs = spacedDueAt;
 	ide_state.diagnosticsComputationScheduled = true;
-	scheduleMicrotask(() => {
+	diagnosticsTimer = scheduleIdeOnce(delay, () => {
+		diagnosticsTimer = null;
+		diagnosticsScheduledForMs = 0;
 		ide_state.diagnosticsComputationScheduled = false;
 		executeDiagnosticsComputation();
 	});
@@ -914,19 +937,23 @@ export function scheduleDiagnosticsComputation(): void {
 export function executeDiagnosticsComputation(): void {
 	if (!ide_state.diagnosticsDirty) {
 		ide_state.diagnosticsDueAtMs = null;
+		cancelDiagnosticsTimer();
 		return;
 	}
 	const activeId = ide_state.activeCodeTabContextId;
 	if (activeId && !ide_state.dirtyDiagnosticContexts.has(activeId)) {
 		ide_state.diagnosticsDueAtMs = null;
+		cancelDiagnosticsTimer();
 		return;
 	}
 	if (ide_state.dirtyDiagnosticContexts.size === 0) {
 		ide_state.diagnosticsDirty = false;
 		ide_state.diagnosticsDueAtMs = null;
+		cancelDiagnosticsTimer();
 		return;
 	}
 	if (ide_state.diagnosticsTaskPending) {
+		scheduleDiagnosticsComputation();
 		return;
 	}
 	const now = ide_state.clockNow();
@@ -943,6 +970,7 @@ export function executeDiagnosticsComputation(): void {
 	if (batch.length === 0) {
 		ide_state.diagnosticsDirty = false;
 		ide_state.diagnosticsDueAtMs = null;
+		cancelDiagnosticsTimer();
 		return;
 	}
 	enqueueDiagnosticsJob(batch);
@@ -957,13 +985,15 @@ export function enqueueDiagnosticsJob(contextIds: readonly string[]): void {
 	enqueueBackgroundTask(() => {
 		runDiagnosticsForContexts(batch);
 		ide_state.diagnosticsTaskPending = false;
+		lastDiagnosticsRunMs = ide_state.clockNow();
 		if (ide_state.dirtyDiagnosticContexts.size === 0) {
 			ide_state.diagnosticsDirty = false;
 			ide_state.diagnosticsDueAtMs = null;
+			cancelDiagnosticsTimer();
 		} else {
 			const now = ide_state.clockNow();
 			ide_state.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
-			scheduleDiagnosticsComputation();
+			processDiagnosticsQueue(now);
 		}
 		return false;
 	});
@@ -978,7 +1008,6 @@ export function collectDiagnosticsBatch(): string[] {
 }
 
 export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
-	return;
 	if (contextIds.length === 0) {
 		return;
 	}

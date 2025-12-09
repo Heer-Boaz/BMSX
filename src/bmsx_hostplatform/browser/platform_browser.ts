@@ -202,6 +202,9 @@ type ClipboardAvailability = 'unknown' | 'allowed' | 'blocked';
 
 class BrowserClipboardService implements ClipboardService {
 	private writeStatus: ClipboardAvailability = 'unknown';
+	private clipboardBlocked = false;
+	private lastClipboardBlockCheckMs = 0;
+	private readonly clipboardDetectionIntervalMs = 1000;
 
 	constructor(_focusTarget?: HTMLElement) { }
 
@@ -210,6 +213,10 @@ class BrowserClipboardService implements ClipboardService {
 	}
 
 	async writeText(text: string): Promise<void> {
+		const now = performance.now();
+		if (this.clipboardBlocked && (now - this.lastClipboardBlockCheckMs) < this.clipboardDetectionIntervalMs) {
+			throw new Error('[BrowserClipboardService] Clipboard write was blocked by the browser.');
+		}
 		const clipboard = this.systemClipboard();
 		if (!clipboard || typeof clipboard.writeText !== 'function') {
 			this.writeStatus = 'blocked';
@@ -218,6 +225,8 @@ class BrowserClipboardService implements ClipboardService {
 		try {
 			await clipboard.writeText(text);
 			this.writeStatus = 'allowed';
+			this.clipboardBlocked = false;
+			this.lastClipboardBlockCheckMs = now;
 		}
 		catch (error) {
 			this.writeStatus = 'blocked';
@@ -238,6 +247,9 @@ class BrowserClipboardService implements ClipboardService {
 	async requestWritePermission(): Promise<ClipboardPermissionState> {
 		const permission = await this.queryPermission('clipboard-write');
 		this.writeStatus = this.fromPermissionState(permission, this.writeStatus);
+		if (this.writeStatus !== 'blocked') {
+			this.clipboardBlocked = false;
+		}
 		return this.toPermissionState(this.writeStatus);
 	}
 
@@ -278,10 +290,16 @@ class BrowserClipboardService implements ClipboardService {
 	}
 
 	private detectClipboardBlock(error: unknown): boolean {
+		const now = performance.now();
+		if ((now - this.lastClipboardBlockCheckMs) < this.clipboardDetectionIntervalMs) {
+			return this.clipboardBlocked;
+		}
+		this.lastClipboardBlockCheckMs = now;
 		const name = this.resolveErrorName(error);
 		if (name) {
 			const loweredName = name.toLowerCase();
 			if (this.isClipboardBlockedIndicator(loweredName)) {
+				this.clipboardBlocked = true;
 				return true;
 			}
 		}
@@ -289,9 +307,11 @@ class BrowserClipboardService implements ClipboardService {
 		if (message) {
 			const loweredMessage = message.toLowerCase();
 			if (this.isClipboardBlockedIndicator(loweredMessage)) {
+				this.clipboardBlocked = true;
 				return true;
 			}
 		}
+		this.clipboardBlocked = false;
 		return false;
 	}
 
