@@ -198,6 +198,13 @@ export class TerminalMode {
 		this.appendEntry({ color: 6, text });
 	}
 
+	public appendError(error: Error): void {
+		this.appendEntry({ color: 6, text: error.message });
+		error.stack?.split('\n').forEach(line => {
+			this.appendStdout(line);
+		});
+	}
+
 	public appendSystem(text: string): void {
 		this.appendEntry({ color: 14, text });
 	}
@@ -735,18 +742,18 @@ export class TerminalMode {
 					const selected = displayText.slice(selStart, selEnd);
 					const startWidth = this.measureDisplayText(before, uppercaseDisplay);
 					const selWidth = this.measureDisplayText(selected, uppercaseDisplay);
-						renderer.rect({
-							kind: 'fill',
-							area: {
-								left: x + startWidth,
-								top: y,
-								right: x + startWidth + selWidth,
-								bottom: y + this.font.lineHeight,
-							},
-							color: this.selectionColor,
-						});
-					}
+					renderer.rect({
+						kind: 'fill',
+						area: {
+							left: x + startWidth,
+							top: y,
+							right: x + startWidth + selWidth,
+							bottom: y + this.font.lineHeight,
+						},
+						color: this.selectionColor,
+					});
 				}
+			}
 
 			// draw the glyph run for this segment
 			this.drawGlyphRun(renderer, seg, x, y, inputColor, uppercaseDisplay);
@@ -776,23 +783,23 @@ export class TerminalMode {
 				};
 				if (this.caretVisible) {
 					const renderFont = this.font.renderFont();
-						const ops: CaretDrawOps = {
-							fillRect: (x0, y0, x1, y1, color) => renderer.rect({
-								kind: 'fill',
-								area: { left: x0, top: y0, right: x1, bottom: y1 },
-								color,
-							}),
-							strokeRect: (x0, y0, x1, y1, color) => renderer.rect({
-								kind: 'rect',
-								area: { left: x0, top: y0, right: x1, bottom: y1 },
-								color,
-							}),
-							drawGlyph: (text, gx, gy, color) => renderer.glyphs({ glyphs: text, x: gx, y: gy, z: 0, color, font: renderFont }),
-						};
-						renderInlineCaret(ops, left, topY, right, bottom, left, true, this.caretColor, nextChar, this.characterBackgroundColor);
-					}
+					const ops: CaretDrawOps = {
+						fillRect: (x0, y0, x1, y1, color) => renderer.rect({
+							kind: 'fill',
+							area: { left: x0, top: y0, right: x1, bottom: y1 },
+							color,
+						}),
+						strokeRect: (x0, y0, x1, y1, color) => renderer.rect({
+							kind: 'rect',
+							area: { left: x0, top: y0, right: x1, bottom: y1 },
+							color,
+						}),
+						drawGlyph: (text, gx, gy, color) => renderer.glyphs({ glyphs: text, x: gx, y: gy, z: 0, color, font: renderFont }),
+					};
+					renderInlineCaret(ops, left, topY, right, bottom, left, true, this.caretColor, nextChar, this.characterBackgroundColor);
 				}
 			}
+		}
 
 		if (nextCursorInfo) {
 			this.cursorScreenInfo = nextCursorInfo;
@@ -812,19 +819,19 @@ export class TerminalMode {
 				continue;
 			}
 			const advance = this.font.advance(ch);
-				renderer.rect({
-					kind: 'fill',
-					area: {
-						left: cursorX,
-						top: originY,
-						right: cursorX + advance,
-						bottom: originY + this.font.lineHeight,
-					},
-					color: this.characterBackgroundColor,
-				});
-				cursorX += advance;
-			}
+			renderer.rect({
+				kind: 'fill',
+				area: {
+					left: cursorX,
+					top: originY,
+					right: cursorX + advance,
+					bottom: originY + this.font.lineHeight,
+				},
+				color: this.characterBackgroundColor,
+			});
+			cursorX += advance;
 		}
+	}
 
 	private drawGlyphRun(renderer: VMRenderFacade, text: string, originX: number, originY: number, tint: color, uppercase: boolean): void {
 		const renderFont = this.font.renderFont();
@@ -841,8 +848,8 @@ export class TerminalMode {
 			}
 			const advance = this.font.advance(ch);
 			if (ch !== ' ') {
-					renderer.glyphs({ glyphs: ch, x: cursorX, y: originY, z: 0, color: tint, font: renderFont });
-				}
+				renderer.glyphs({ glyphs: ch, x: cursorX, y: originY, z: 0, color: tint, font: renderFont });
+			}
 			cursorX += advance;
 		}
 	}

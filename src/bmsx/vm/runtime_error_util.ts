@@ -4,35 +4,35 @@ import { normalizeEndingsAndSplitLines } from './ide/text_utils';
 import { RuntimeErrorDetails } from './ide/types';
 
 export function buildLuaFrameRawLabel(functionName: string, source: string): string {
-	if (functionName && functionName.length > 0) {
-		if (source && source.length > 0) {
+	if (functionName) {
+		if (source) {
 			return `${functionName} @ ${source}`;
 		}
 		return functionName;
 	}
-	if (source && source.length > 0) {
+	if (source) {
 		return source;
 	}
-	return '[lua]';
+	return '';
 }
 
 export function convertLuaCallFrames(callFrames: ReadonlyArray<LuaCallFrame>): StackTraceFrame[] {
 	const frames: StackTraceFrame[] = [];
 	for (let index = callFrames.length - 1; index >= 0; index -= 1) {
 		const frame = callFrames[index];
-		const source = frame.source && frame.source.length > 0 ? frame.source : null;
+		const source = frame.source ? frame.source : null;
 		const effectiveLine = frame.line > 0 ? frame.line : null;
 		const effectiveColumn = frame.column > 0 ? frame.column : null;
 		let rawLabel = '';
-		if (frame.functionName && frame.functionName.length > 0) {
+		if (frame.functionName) {
 			rawLabel = frame.functionName;
 		}
-		if (source && source.length > 0) {
+		if (source) {
 			rawLabel = rawLabel.length > 0 ? `${rawLabel} @ ${source}` : source;
 		}
 		const runtimeFrame: StackTraceFrame = {
 			origin: 'lua',
-			functionName: frame.functionName && frame.functionName.length > 0 ? frame.functionName : null,
+			functionName: frame.functionName ? frame.functionName : null,
 			source,
 			line: effectiveLine,
 			column: effectiveColumn,
@@ -189,4 +189,40 @@ export function buildStackLines(details: RuntimeErrorDetails, includeJsStackTrac
 export function prettyPrintRuntimeError(chunkName: string, line: number, column: number, message: string): string {
 	const location = formatRuntimeErrorLocation(chunkName, line, column);
 	return location ? `Runtime error at ${location}: ${message}` : `Runtime error: ${message}`;
+}
+
+export function buildErrorStackString(name: string, message: string, details: RuntimeErrorDetails, includeJsStackTraces: boolean): string {
+	const header = name && name.length > 0 ? `${name}: ${message}` : message;
+	if (!details) {
+		return header;
+	}
+	const frames: StackTraceFrame[] = [];
+	for (let index = 0; index < details.luaStack.length; index += 1) {
+		frames.push(details.luaStack[index]);
+	}
+	if (includeJsStackTraces) {
+		for (let index = 0; index < details.jsStack.length; index += 1) {
+			frames.push(details.jsStack[index]);
+		}
+	}
+	if (frames.length === 0) {
+		return header;
+	}
+	const lines: string[] = [header];
+	for (let index = 0; index < frames.length; index += 1) {
+		const frame = frames[index];
+		const fn = frame.functionName && frame.functionName.length > 0 ? frame.functionName : '<anonymous>';
+		let location = '';
+		if (frame.source && frame.source.length > 0) {
+			location = frame.source;
+			if (frame.line !== null && frame.line !== undefined) {
+				location += `:${frame.line}`;
+				if (frame.column !== null && frame.column !== undefined) {
+					location += `:${frame.column}`;
+				}
+			}
+		}
+		lines.push(location.length > 0 ? `  at ${fn} (${location})` : `  at ${fn}`);
+	}
+	return lines.join('\n');
 }

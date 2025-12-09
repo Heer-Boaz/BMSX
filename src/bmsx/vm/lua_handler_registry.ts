@@ -1,14 +1,7 @@
 import type { LuaHandlerFn } from '../lua/luahandler_cache';
-import type { LuaInterpreter } from '../lua/luaruntime';
-import { createLuaNativeFunction, type LuaFunctionValue } from '../lua/luavalue';
+import { LuaNativeFunction } from '../lua/luaruntime';
+import { type LuaFunctionValue } from '../lua/luavalue';
 import type { LuaFunctionRedirectRecord } from './types';
-
-export type LuaHandlerCategory = string;
-
-export type LuaHandlerBindContext = {
-	fn: LuaFunctionValue;
-	interpreter: LuaInterpreter;
-};
 
 export class LuaFunctionRedirectCache {
 	private readonly byKey = new Map<string, LuaFunctionRedirectRecord>();
@@ -40,7 +33,7 @@ export class LuaFunctionRedirectCache {
 			current: fn,
 			redirect: null,
 		};
-		const redirect = createLuaNativeFunction(`redirect:${path[path.length - 1] ?? 'fn'}`, (args) => {
+		const redirect = new LuaNativeFunction(`redirect:${path[path.length - 1] ?? 'fn'}`, (args) => {
 			return record.current.call(args);
 		});
 		record.redirect = redirect;

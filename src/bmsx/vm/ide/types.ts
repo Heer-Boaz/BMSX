@@ -387,10 +387,6 @@ export type RuntimeErrorOverlay = {
 	hidden: boolean;
 };
 
-export type RepeatEntry = {
-	cooldown: number;
-};
-
 export type DiagnosticsCacheEntry = {
 	contextId: string;
 	chunkName: string;

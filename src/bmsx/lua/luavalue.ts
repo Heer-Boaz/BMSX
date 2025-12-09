@@ -1,5 +1,5 @@
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from './luaerrors';
-import { ExecutionSignal, LuaNativeFunction } from './luaruntime';
+import { ExecutionSignal } from './luaruntime';
 import { insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 
 export type LuaValue = null | boolean | number | string | LuaTable | LuaFunctionValue | LuaNativeValue;
@@ -10,20 +10,12 @@ export interface LuaFunctionValue {
 }
 
 export class LuaNativeValue {
-	private metatable: LuaTable = null;
+	public metatable: LuaTable = null;
 
 	constructor(public readonly native: object | Function, public readonly typeName?: string) {
-		if (native === null || (typeof native !== 'object' && typeof native !== 'function')) {
-			throw new Error('LuaNativeValue requires an object or function.');
-		}
-	}
-
-	public getMetatable(): LuaTable {
-		return this.metatable;
-	}
-
-	public setMetatable(value: LuaTable): void {
-		this.metatable = value;
+		// if (native === null || (typeof native !== 'object' && typeof native !== 'function')) { // Useless defensive coding
+		// 	throw new Error('LuaNativeValue requires an object or function.');
+		// }
 	}
 }
 
@@ -346,10 +338,6 @@ export function isLuaDebuggerPauseSignal(value: unknown): value is LuaDebuggerPa
 	}
 	const candidate = value as Partial<LuaDebuggerPauseSignal>;
 	return candidate.kind === 'pause' && typeof candidate.resume === 'function';
-}
-
-export function createLuaNativeFunction(name: string, handler: (args: ReadonlyArray<LuaValue>) => ReadonlyArray<LuaValue>): LuaFunctionValue {
-	return new LuaNativeFunction(name, handler);
 }
 
 export function isLuaFunctionValue(value: unknown): value is LuaFunctionValue {

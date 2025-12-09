@@ -2194,7 +2194,7 @@ export function getNativeMemberCompletionEntries(value: LuaNativeValue, operator
 	const typeName = value.typeName && value.typeName.length > 0 ? value.typeName : resolveNativeTypeName(native);
 	const registry = new Map<string, VMLuaMemberCompletion>();
 	const includeProperties = operator === '.';
-	const metatable = value.getMetatable();
+	const metatable = value.metatable;
 	if (metatable) {
 		const indexValue = metatable.get('__index');
 		if (isLuaTable(indexValue)) {

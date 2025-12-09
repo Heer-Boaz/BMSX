@@ -2318,7 +2318,7 @@ export class LuaInterpreter {
 		if (isLuaTable(value)) {
 			metatable = value.getMetatable();
 		} else if (value instanceof LuaNativeValue) {
-			metatable = value.getMetatable();
+			metatable = value.metatable;
 		} else {
 			return null;
 		}
@@ -2337,7 +2337,7 @@ export class LuaInterpreter {
 			return value.getMetatable();
 		}
 		if (value instanceof LuaNativeValue) {
-			return value.getMetatable();
+			return value.metatable;
 		}
 		return null;
 	}
@@ -2764,7 +2764,7 @@ export class LuaInterpreter {
 				? String(key)
 				: '<unknown>';
 		const missingPropertyMessage = `Attempted to index missing native member '${keyName}' on ${this.nativeTypeName(target)}.`;
-		const metatable = target.getMetatable();
+		const metatable = target.metatable;
 		if (metatable === null) {
 			visited.delete(target);
 			if (range !== null) {
@@ -3279,7 +3279,7 @@ export class LuaInterpreter {
 				return [targetValue];
 			}
 			const nativeTarget = targetValue as LuaNativeValue;
-			nativeTarget.setMetatable(metatable);
+			nativeTarget.metatable = metatable;
 			return [nativeTarget];
 		}));
 
@@ -3290,9 +3290,9 @@ export class LuaInterpreter {
 			const targetValue = args[0];
 			let metatable: LuaTable = null;
 			if (isLuaTable(targetValue)) {
-				metatable = targetValue.getMetatable();
+				metatable = targetValue.metatable as LuaTable;
 			} else {
-				metatable = (targetValue as LuaNativeValue).getMetatable();
+				metatable = (targetValue as LuaNativeValue).metatable as LuaTable;
 			}
 			if (metatable === null) {
 				return [null];

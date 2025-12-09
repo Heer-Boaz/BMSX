@@ -39,7 +39,13 @@ import { isLuaScriptError, registerApiBuiltins, seedDefaultLuaBuiltins } from '.
 import { LuaFunctionRedirectCache } from './lua_handler_registry';
 import { LuaEntrySnapshot, LuaJsBridge } from './lua_js_bridge';
 import { buildLuaModuleAliases, type LuaRequireModuleRecord } from './lua_module_loader';
-import { buildLuaFrameRawLabel, buildStackLines, convertLuaCallFrames, parseJsStackFrames, prettyPrintRuntimeError } from './runtime_error_util';
+import {
+	buildErrorStackString,
+	buildLuaFrameRawLabel,
+	convertLuaCallFrames,
+	parseJsStackFrames,
+	prettyPrintRuntimeError
+} from './runtime_error_util';
 import { BmsxVMStorage } from './storage';
 import type { BmsxVMRuntimeOptions, BmsxVMState, VMLuaBuiltinDescriptor, VMLuaMemberCompletion, LuaMarshalContext } from './types';
 import { RenderSubmission } from '../render/gameview';
@@ -1043,17 +1049,14 @@ export class BmsxVMRuntime extends Service {
 
 	private bindLifecycleHandlers(): void {
 		const env = this.luaInterpreter.globalEnvironment;
-		this.luaNewGameFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'new_game' satisfies LifeCycleHandlerName));
-		this.luaInitFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'init' satisfies LifeCycleHandlerName));
-		this.luaUpdateFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'update' satisfies LifeCycleHandlerName));
-		this.luaDrawFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, 'draw' satisfies LifeCycleHandlerName));
+		this.luaNewGameFunction = this.getLuaGlobalValue(env, 'new_game' satisfies LifeCycleHandlerName) as LuaFunctionValue;
+		this.luaInitFunction = this.getLuaGlobalValue(env, 'init' satisfies LifeCycleHandlerName) as LuaFunctionValue;
+		this.luaUpdateFunction = this.getLuaGlobalValue(env, 'update' satisfies LifeCycleHandlerName) as LuaFunctionValue;
+		this.luaDrawFunction = this.getLuaGlobalValue(env, 'draw' satisfies LifeCycleHandlerName) as LuaFunctionValue;
 	}
 
 	private runLuaLifecycleHandler(kind: 'init' | 'new_game'): boolean {
 		const fn = kind === 'init' ? this.luaInitFunction : this.luaNewGameFunction;
-		if (fn === null) {
-			return true;
-		}
 		try {
 			this.invokeLuaFunction(fn, []);
 			return true;
@@ -1622,32 +1625,13 @@ export class BmsxVMRuntime extends Service {
 		}
 	}
 
-	private resolveLuaFunction(value: LuaValue): LuaFunctionValue {
-		if (value === null) {
-			return null;
-		}
-		if (typeof value === 'object' && value !== null && 'call' in value) {
-			return value as LuaFunctionValue;
-		}
-		return null;
-	}
-
 	private invokeLuaFunction(fn: LuaFunctionValue, args: unknown[]): LuaValue[] {
 		const luaArgs = args.map((value) => this.luaJsBridge.jsToLua(value));
 		return fn.call(luaArgs);
 	}
 
-	private surfaceRuntimeErrorToTerminal(message: string, details: RuntimeErrorDetails): void {
-		this.terminal.appendStderr(message);
-		const stackLines = buildStackLines(details, this.includeJsStackTraces);
-		for (let index = 0; index < stackLines.length; index += 1) {
-			this.terminal.appendStdout(stackLines[index]);
-		}
-		this.activateTerminalMode();
-	}
-
-	public handleLuaError(error: unknown): void {
-		error = convertToError(error);
+	public handleLuaError(whatever: unknown): void {
+		const error = convertToError(whatever);
 		// Pause signal has its own handler
 		if (isLuaDebuggerPauseSignal(error)) {
 			console.info('[BmsxVMRuntime] Lua debugger pause signal received: ', error);
@@ -1680,13 +1664,17 @@ export class BmsxVMRuntime extends Service {
 			fromDebugger: false,
 		});
 		const prettyMessage = prettyPrintRuntimeError(snapshot.chunkName, snapshot.line, snapshot.column, message);
+		if (error instanceof Error) {
+			error.stack = buildErrorStackString(error.name ?? 'Error', message, runtimeDetails, this.includeJsStackTraces);
+		}
 		console.error('[BmsxVMRuntime] Lua runtime error:', prettyMessage, error);
 		// try {
 			// this.pauseDebuggerForException({ chunkName: snapshot.chunkName, line: snapshot.line, column: snapshot.column }, callStackSnapshot);
 		// } catch (pauseError) {
 		// 	console.error('[BmsxVMRuntime] Failed to pause debugger for runtime exception:', pauseError);
 		// }
-		this.surfaceRuntimeErrorToTerminal(prettyMessage, runtimeDetails);
+		this.terminal.appendError(error)
+		this.activateTerminalMode();
 		this.handledLuaErrors.add(error);
 	}
 

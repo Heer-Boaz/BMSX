@@ -3,8 +3,8 @@ import { Input } from '../input/input';
 import { GamepadBinding, GamepadInputMapping, InputMap, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping } from '../input/inputtypes';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
-import { LuaInterpreter } from '../lua/luaruntime';
-import { createLuaNativeFunction, extractErrorMessage, LuaNativeValue } from '../lua/luavalue';
+import { LuaInterpreter, LuaNativeFunction } from '../lua/luaruntime';
+import { extractErrorMessage, LuaNativeValue } from '../lua/luavalue';
 import { isLuaTable, LuaTable, LuaValue } from '../lua/luavalue';
 import { arrayify } from '../utils/arrayify';
 import { deep_clone } from '../utils/deep_clone';
@@ -107,7 +107,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 	};
 
 	const registerButtonFunction = (fnName: 'btn' | 'btnp' | 'btnr', modifier: string) => {
-		const native = createLuaNativeFunction(fnName, (args) => {
+		const native = new LuaNativeFunction(fnName, (args) => {
 			if (args.length === 0) {
 				throw runtime.createApiRuntimeError(`${fnName}(button [, player]) requires at least one argument.`);
 			}
@@ -161,7 +161,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 	registerButtonFunction('btnp', '[gp]');
 	registerButtonFunction('btnr', '[jr]');
 
-	const setInputMapNative = createLuaNativeFunction('set_input_map', (args) => {
+	const setInputMapNative = new LuaNativeFunction('set_input_map', (args) => {
 		if (args.length === 0 || !isLuaTable(args[0])) {
 			throw runtime.createApiRuntimeError('set_input_map(mapping [, player]) requires a table as the first argument.');
 		}
@@ -231,7 +231,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 			const parameterDescriptions = params.map(param => parameterDescriptionMap.get(param));
 			const displayParams = params.map(param => (optionalSet.has(param) ? `${param}?` : param));
 			const signature = displayParams.length > 0 ? `${name}(${displayParams.join(', ')})` : `${name}()`;
-			const native = createLuaNativeFunction(`api.${name}`, (args) => {
+			const native = new LuaNativeFunction(`api.${name}`, (args) => {
 				const moduleId = $.rompack.cart.chunk2lua[runtime.currentChunkName].source_path;
 				const baseCtx = runtime.ensureMarshalContext({ moduleId, path: [] });
 				const jsArgs = Array.from(args, (arg, index) => runtime.luaJsBridge.luaValueToJs(arg, runtime.extendMarshalContext(baseCtx, `arg${index}`)));
@@ -265,7 +265,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 
 		if (descriptor.get) {
 			const getter = descriptor.get;
-			const native = createLuaNativeFunction(`api.${name}`, () => {
+			const native = new LuaNativeFunction(`api.${name}`, () => {
 				try {
 					const value = getter.call(api);
 					return wrapResultValue(value);
