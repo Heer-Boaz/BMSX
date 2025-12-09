@@ -43,6 +43,10 @@ export function convertLuaCallFrames(callFrames: ReadonlyArray<LuaCallFrame>): S
 	return frames;
 }
 
+export function sanitizeLuaErrorMessage(message: string): string {
+	return message.replace(/^\[mod:[^\]]+]\s*/, '');
+}
+
 export function parseJsStackFrames(stack: string): StackTraceFrame[] {
 	if (!stack || stack.length === 0) {
 		return [];
@@ -129,12 +133,12 @@ export function parseJsStackLine(line: string): StackTraceFrame {
 
 
 export function formatRuntimeErrorLocation(chunkName: string, line: number, column: number): string {
-	let label = chunkName;
-	if (line !== null) {
-		const suffix = column !== null ? `${line}:${column}` : `${line}`;
-		label = `${label}:${suffix}`;
+	let label = chunkName && chunkName.length > 0 ? chunkName : '';
+	if (line !== null && line !== undefined) {
+		const suffix = column !== null && column !== undefined ? `${line}:${column}` : `${line}`;
+		label = label.length > 0 ? `${label}:${suffix}` : `${suffix}`;
 	}
-	return label;
+	return label.length > 0 ? label : null;
 }
 
 export function formatRuntimeStackFrameForVM(frame: StackTraceFrame): string {
@@ -188,11 +192,13 @@ export function buildStackLines(details: RuntimeErrorDetails, includeJsStackTrac
 
 export function prettyPrintRuntimeError(chunkName: string, line: number, column: number, message: string): string {
 	const location = formatRuntimeErrorLocation(chunkName, line, column);
-	return location ? `Runtime error at ${location}: ${message}` : `Runtime error: ${message}`;
+	const sanitized = sanitizeLuaErrorMessage(message);
+	return location ? `Runtime error at ${location}: ${sanitized}` : `Runtime error: ${sanitized}`;
 }
 
 export function buildErrorStackString(name: string, message: string, details: RuntimeErrorDetails, includeJsStackTraces: boolean): string {
-	const header = `${name}: ${message}`;
+	const sanitizedMessage = sanitizeLuaErrorMessage(message);
+	const header = `${name}: ${sanitizedMessage}`;
 	if (!details) {
 		return header;
 	}

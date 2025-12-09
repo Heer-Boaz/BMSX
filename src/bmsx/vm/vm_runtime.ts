@@ -44,7 +44,8 @@ import {
 	buildLuaFrameRawLabel,
 	convertLuaCallFrames,
 	parseJsStackFrames,
-	prettyPrintRuntimeError
+	prettyPrintRuntimeError,
+	sanitizeLuaErrorMessage
 } from './runtime_error_util';
 import { BmsxVMStorage } from './storage';
 import type { BmsxVMRuntimeOptions, BmsxVMState, VMLuaBuiltinDescriptor, VMLuaMemberCompletion, LuaMarshalContext } from './types';
@@ -1315,7 +1316,7 @@ export class BmsxVMRuntime extends Service {
 				fromDebugger: true,
 			});
 		}
-		const message = extractErrorMessage(exception);
+		const message = sanitizeLuaErrorMessage(extractErrorMessage(exception));
 		let chunkName: string = exception.chunkName;
 		if (!chunkName || chunkName.length === 0) {
 			chunkName = signal.location.chunk;
@@ -1645,7 +1646,7 @@ export class BmsxVMRuntime extends Service {
 		}
 
 		// Extract message and location info
-		const message = extractErrorMessage(error);
+		const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
 		const { line, column, chunkName } = this.extractErrorLocation(error);
 
 		const interpreter = this.luaInterpreter;
@@ -1655,6 +1656,12 @@ export class BmsxVMRuntime extends Service {
 		const resolvedLine = line ?? (innermostFrame ? innermostFrame.line : null);
 		const resolvedColumn = column ?? (innermostFrame ? innermostFrame.column : null);
 		const runtimeDetails = this.buildRuntimeErrorDetailsForEditor(error, message);
+		const stackText = buildErrorStackString(
+			error instanceof Error && error.name ? error.name : 'Error',
+			message,
+			runtimeDetails,
+			this.includeJsStackTraces,
+		);
 		const snapshot = this.setRuntimeFault({
 			message,
 			chunkName: resolvedChunkName,
@@ -1665,9 +1672,11 @@ export class BmsxVMRuntime extends Service {
 		});
 		const prettyMessage = prettyPrintRuntimeError(snapshot.chunkName, snapshot.line, snapshot.column, message);
 		if (error instanceof Error) {
-			error.stack = buildErrorStackString(error.name, message, runtimeDetails, this.includeJsStackTraces);
+			error.message = message;
+			error.stack = stackText;
 		}
-		console.error('[BmsxVMRuntime] Lua runtime error:', prettyMessage, error);
+		console.error('[BmsxVMRuntime] Lua runtime error:', prettyMessage);
+		console.error(stackText);
 		// try {
 			// this.pauseDebuggerForException({ chunkName: snapshot.chunkName, line: snapshot.line, column: snapshot.column }, callStackSnapshot);
 		// } catch (pauseError) {

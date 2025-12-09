@@ -31,10 +31,10 @@ import { collectLuaModuleAliases, consoleValueToString, listLuaObjectMembers } f
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './ide/ide_input';
 import type { asset_id, Viewport } from '../rompack/rompack';
 import { api, BmsxVMRuntime } from './vm_runtime';
-import { VMCommandDispatcher } from './console_commands';
+import { VMCommandDispatcher as TerminalCommandDispatcher } from './console_commands';
 import { extractErrorMessage, LuaValue } from '../lua/luavalue';
 
-type VMOutputKind =
+type TerminalOutputKind =
 	| 'prompt'
 	| 'stdout'
 	| 'stdout_saved'
@@ -43,7 +43,7 @@ type VMOutputKind =
 	| 'stderr'
 	| 'system';
 
-type VMOutputEntry = {
+type TerminalOutputEntry = {
 	text: string;
 	color: number;
 };
@@ -64,7 +64,7 @@ const PADDING_Y = 0;
 const CHARACTER_TILE_ALPHA = 1.0;
 const CURSOR_BLINK_PERIOD = 0.5;
 
-const OUTPUT_COLORS: Record<VMOutputKind, number> = {
+const OUTPUT_COLORS: Record<TerminalOutputKind, number> = {
 	prompt: 15,
 	stdout: 15,
 	stdout_saved: 2,
@@ -82,7 +82,7 @@ export class TerminalMode {
 	private readonly caretColor = Msx1Colors[15];
 	private readonly selectionColor = Msx1Colors[11];
 	private readonly field: TextField = createInlineTextField();
-	private readonly output: VMOutputEntry[] = [];
+	private readonly output: TerminalOutputEntry[] = [];
 	private readonly history: string[] = [];
 	private historyIndex: number = null;
 	private readonly consoleChunkName = '<console>';
@@ -92,7 +92,7 @@ export class TerminalMode {
 	private caretVisible = true;
 	private active = false;
 	private textVersion = 0;
-	private readonly consoleCommands: VMCommandDispatcher;
+	private readonly consoleCommands: TerminalCommandDispatcher;
 
 	private fieldText(): string {
 		return getFieldText(this.field);
@@ -118,7 +118,7 @@ export class TerminalMode {
 	private promptPrefix = '> ';
 	private cursorScreenInfo: CursorScreenInfo = null;
 	constructor(private readonly runtime: BmsxVMRuntime) {
-		this.consoleCommands = new VMCommandDispatcher(this.runtime);
+		this.consoleCommands = new TerminalCommandDispatcher(this.runtime);
 		this.setPromptPrefix(this.consoleCommands.getPrompt());
 
 		this.font = new VMEditorFont(runtime.activeIdeFontVariant);
@@ -144,7 +144,7 @@ export class TerminalMode {
 			resolveHoverasset_id: () => null,
 			resolveHoverChunkName: () => this.consoleChunkName,
 			getSemanticDefinitions: () => null,
-			getLuaModuleAliases: () => this.buildVMModuleAliases(),
+			getLuaModuleAliases: () => this.buildTerminalModuleAliases(),
 			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),
 			charAt: (row, column) => this.charAt(row, column),
 			getTextVersion: () => this.textVersion,
@@ -247,11 +247,11 @@ export class TerminalMode {
 		const submit = this.trySubmitCommand();
 		if (submit !== null) {
 			this.completion.closeSession();
-			await this.handleVMCommand(submit);
+			await this.handleTerminalCommand(submit);
 		}
 	}
 
-	private async handleVMCommand(rawCommand: string): Promise<void> {
+	private async handleTerminalCommand(rawCommand: string): Promise<void> {
 		const input = rawCommand ?? '';
 		this.setPromptPrefix(this.consoleCommands.getPrompt());
 		this.appendPromptEcho(input);
@@ -270,11 +270,11 @@ export class TerminalMode {
 			this.appendStderr(extractErrorMessage(error));
 			return;
 		}
-		this.executeVMCommand(trimmed);
+		this.executeTerminalCommand(trimmed);
 	}
 
-	private executeVMCommand(command: string): void {
-		const source = this.prepareVMChunk(command);
+	private executeTerminalCommand(command: string): void {
+		const source = this.prepareTerminalChunk(command);
 		if (source.length === 0) {
 			return;
 		}
@@ -312,7 +312,7 @@ export class TerminalMode {
 		}
 	}
 
-	private prepareVMChunk(command: string): string {
+	private prepareTerminalChunk(command: string): string {
 		const trimmed = command.trim();
 		if (trimmed.length === 0) {
 			return '';
@@ -384,7 +384,7 @@ export class TerminalMode {
 		this.historyIndex = null;
 	}
 
-	private appendEntry(entry: VMOutputEntry): void {
+	private appendEntry(entry: TerminalOutputEntry): void {
 		this.output.push(entry);
 		if (this.output.length > this.maxEntries) {
 			this.output.splice(0, this.output.length - this.maxEntries);
@@ -615,7 +615,7 @@ export class TerminalMode {
 		this.completion.drawParameterHintOverlay(bounds);
 	}
 
-	private buildVMModuleAliases(): Map<string, string> {
+	private buildTerminalModuleAliases(): Map<string, string> {
 		if (this.fieldText().trim().length === 0) {
 			return new Map();
 		}
