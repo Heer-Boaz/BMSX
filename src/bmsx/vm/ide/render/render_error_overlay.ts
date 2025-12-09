@@ -15,6 +15,7 @@ import { clampCursorColumn, centerCursorVertically, revealCursor } from '../care
 import * as constants from '../constants';
 import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../runtime_error_overlay';
 import { resetBlink } from './render_caret';
+import { formatRuntimeErrorLocation } from '../../runtime_error_util';
 
 export interface ErrorOverlayBounds {
 	left: number;
@@ -479,7 +480,7 @@ export type FaultOverlayTarget = {
 		message: string,
 		details: RuntimeErrorDetails
 	) => void;
-	showRuntimeError: (line: number, column: number, message: string, details: RuntimeErrorDetails) => void;
+	showRuntimeError: (line: number, column: number, message: string, details: RuntimeErrorDetails, chunkName?: string) => void;
 };
 
 export function renderFaultOverlay() {
@@ -522,17 +523,23 @@ export function showRuntimeErrorInChunk(
 	details?: RuntimeErrorDetails
 ): void {
 	focusChunkSource(chunkName);
-	const overlayMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
-	showRuntimeError(line, column, overlayMessage, details );
+	showRuntimeError(line, column, message, details, chunkName);
 }
 
-export function showRuntimeError(line: number, column: number, message: string, details?: RuntimeErrorDetails): void {
+export function showRuntimeError(
+	line: number,
+	column: number,
+	message: string,
+	details?: RuntimeErrorDetails,
+	chunkName?: string
+): void {
 	if (!ide_state.active) {
 		activate();
 	}
-	const hasLocation = line >= 1 || column >= 0;
-	const processedLine = hasLocation ? line : null;
-	const processedColumn = hasLocation ? column - 1 : null;
+	const normalizedLine = Number.isFinite(line) ? line : null;
+	const normalizedColumn = Number.isFinite(column) ? column : null;
+	const processedLine = normalizedLine;
+	const processedColumn = normalizedColumn !== null ? normalizedColumn - 1 : null;
 	let targetRow = ide_state.cursorRow;
 	if (processedLine !== null) {
 		targetRow = clamp(processedLine - 1, 0, ide_state.lines.length - 1);
@@ -556,7 +563,10 @@ export function showRuntimeError(line: number, column: number, message: string, 
 	revealCursor();
 	resetBlink();
 	const normalizedMessage = message && message.length > 0 ? message.trim() : 'Runtime error';
-	const overlayMessage = processedLine !== null ? `Line ${processedLine}:${normalizedMessage}` : normalizedMessage;
+	const locationLabel = formatRuntimeErrorLocation(chunkName ?? null, processedLine, normalizedColumn);
+	const overlayMessage = locationLabel
+		? `${locationLabel}: ${normalizedMessage}`
+		: (processedLine !== null ? `Line ${processedLine}:${normalizedMessage}` : normalizedMessage);
 	const messageLines = normalizeEndingsAndSplitLines(overlayMessage);
 	const overlayDetails = cloneRuntimeErrorDetails(details );
 	const overlay: RuntimeErrorOverlay = {

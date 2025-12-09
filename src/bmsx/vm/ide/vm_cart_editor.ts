@@ -49,7 +49,7 @@ import {
 } from './inline_text_field';
 import { buildMemberCompletionItems, clearGotoHoverHighlight, clearReferenceHighlights, describeMetadataValue, extractHoverExpression, inspectLuaExpression, intellisenseUiReady, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaSymbols, navigateToLuaDefinition, requestSemanticRefresh, resolveHoverAssetId, resolveHoverChunkName, safeJsonStringify, shouldAutoTriggerCompletions } from './intellisense';
 import { VMScrollbar, ScrollbarController } from './scrollbar';
-import { renderTopBar } from './render/render_top_bar';
+import { renderTopBar, renderTopBarDropdown } from './render/render_top_bar';
 import { renderTabBar } from './render/render_tab_bar';
 import { renderStatusBar } from './render/render_status_bar';
 // Resource panel rendering is handled via ResourcePanelController
@@ -1251,6 +1251,7 @@ export function draw(): void {
 	}
 	drawProblemsPanel();
 	renderStatusBar();
+	renderTopBarDropdown();
 	if (ide_state.pendingActionPrompt) {
 		drawActionPromptOverlay();
 	}

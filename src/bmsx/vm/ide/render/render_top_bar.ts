@@ -37,7 +37,12 @@ export function renderTopBar(): void {
 	api.rectfill(0, 0, ide_state.viewportWidth, primaryBarHeight, Z_TOP_BAR_BACKGROUND, constants.COLOR_TOP_BAR);
 
 	const menuEntries = buildMenuEntries();
-	const menuButtonHeight = renderMenuRow(menuEntries);
+	renderMenuRow(menuEntries);
+}
+
+export function renderTopBarDropdown(): void {
+	const menuEntries = buildMenuEntries();
+	const menuButtonHeight = ide_state.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
 	renderOpenMenuDropdown(menuEntries, menuButtonHeight);
 }
 

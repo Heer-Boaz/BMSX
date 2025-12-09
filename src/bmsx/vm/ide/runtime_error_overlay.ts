@@ -4,8 +4,8 @@ import type {
 	RuntimeErrorOverlayLineDescriptor
 } from './types';
 import type { StackTraceFrame } from '../../lua/luavalue';
-import { setActiveRuntimeErrorOverlay } from './vm_cart_editor';
 import { ide_state } from './ide_state';
+import { setActiveRuntimeErrorOverlay } from './vm_cart_editor';
 
 export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails): RuntimeErrorDetails {
 	if (!details) {
