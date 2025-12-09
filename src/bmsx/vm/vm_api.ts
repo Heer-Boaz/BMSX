@@ -18,7 +18,6 @@ import { BmsxVMPointerButton, VMPointerVector, VMPointerViewport, VMPointerWheel
 import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest } from '../audio/soundmaster';
 import type { ConcreteOrAbstractConstructor, Identifier, Native, Registerable, Polygon, vec3arr } from '../rompack/rompack';
 import type { World } from '../core/world';
-import type { Registry } from '../core/registry';
 import { Service } from '../core/service';
 import type { EventPayload } from '../core/eventemitter';
 import { EventTimeline } from '../core/eventtimeline';
@@ -34,7 +33,9 @@ import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorT
 import { Component, ComponentTypenameToCtor, type ComponentAttachOptions } from '../component/basecomponent';
 import { ActionEffectRegistry, RegisterEffectOptions } from '../action_effects/effect_registry';
 import { SpriteObject } from '../core/object/sprite';
+import { TextObject } from '../core/object/textobject';
 import { LuaTable } from '../lua/luavalue';
+import { Timeline, TimelineDefinition } from '../timeline/timeline';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest;
 
@@ -670,6 +671,32 @@ export class BmsxVMApi {
 		return instance.id;
 	}
 
+	/**
+	 * Spawn a TextObject instance from a previously defined textobject descriptor.
+	 *
+	 * Behavior:
+	 * - Looks up the textobject extensions registered via define_world_object(definition).
+	 * - Creates a new TextObject. Instance id defaults to the Lua class override id (if present)
+	 *   and can be overridden via overrides.id.
+	 * - Applies descriptor defaults, then Lua class overrides to the instance.
+	 * - Attaches declared components, FSMs, effects, and behavior trees from the descriptor.
+	 * - Finally applies user-supplied overrides so they take precedence, then spawns the textobject
+	 *   into the world, honoring overrides.pos if provided.
+	 *
+	 * @param definition_id The id used when registering the textobject definition.
+	 * @param overrides Optional partial properties to apply last; may include id and pos.
+	 * @returns The id of the spawned textobject instance.
+	 */
+	public spawn_textobject(definition_id: Identifier, overrides?: Partial<TextObject>): Identifier {
+		const ext = this.worldObjectExts.get(definition_id);
+		const instance = new TextObject({ id: overrides?.id ?? ext?.class?.id ?? definition_id, constructReason: undefined });
+		// Apply definition
+		this.applyObjectExtensionAndOverrides(ext, instance, overrides);
+
+		$.world.spawn(instance, overrides?.pos, { reason: 'fresh' });
+		return instance.id;
+	}
+
 	public grant_effect(object_id: Identifier, effect_id: string): void {
 		if (typeof effect_id !== 'string' || effect_id.trim().length === 0) {
 			throw new Error('grant_effect requires a non-empty effect id.');
@@ -703,12 +730,11 @@ export class BmsxVMApi {
 		return result;
 	}
 
-	public get registry(): Registry {
-		return $.registry;
-	}
-
-	public get registry_ids(): Identifier[] {
-		return $.registry.getRegisteredEntityIds();
+	public new_timeline(def: TimelineDefinition<any>): Timeline {
+		if (!def) {
+			throw new Error('new_timeline requires a valid timeline definition object.');
+		}
+		return new Timeline(def);
 	}
 
 	public rget(id: Identifier): Registerable {
@@ -716,10 +742,6 @@ export class BmsxVMApi {
 			throw new Error('rget id must be a non-empty string.');
 		}
 		return $.registry.get(id);
-	}
-
-	public get services(): Service[] {
-		return Array.from($.registry.iterate(Service));
 	}
 
 	public service(id: Identifier): Service {

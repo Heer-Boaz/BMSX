@@ -1,4 +1,4 @@
-import { $, TextObject, StateMachineBlueprint, build_fsm, insavegame, type State, type RevivableObjectArgs, CustomVisualComponent } from 'bmsx';
+import { $, TextObject, StateMachineBlueprint, build_fsm, insavegame, type State, type RevivableObjectArgs } from 'bmsx';
 import { create_gameevent } from 'bmsx/core/game_event';
 import { DataId } from './resourceids';
 import type { sint } from './sint';

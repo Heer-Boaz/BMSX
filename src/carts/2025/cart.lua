@@ -3,10 +3,13 @@ local controller_instance_id = 'intro2025.controller.instance'
 local controller_fsm_id = 'intro2025.controller.fsm'
 local glitch_timeline_id = 'intro2025.glitch'
 local glitch_timeline_event = 'timeline.frame.' .. glitch_timeline_id
-local glitch_listener = { id = 'intro2025.glitch.listener' }
 
-local char_width = 8
-local line_height = 8
+local text_main_def_id = 'intro2025.text.main'
+local text_main_id = 'intro2025.text.main.instance'
+local text_choice_def_id = 'intro2025.text.choice'
+local text_choice_id = 'intro2025.text.choice.instance'
+local text_prompt_def_id = 'intro2025.text.prompt'
+local text_prompt_id = 'intro2025.text.prompt.instance'
 
 local narrative = {
 	start = {
@@ -43,130 +46,135 @@ local narrative = {
 	},
 }
 
-local intro_controller = {}
-intro_controller.__index = intro_controller
-
-function intro_controller:onspawn()
-	self.text_full = {}
-	self.text_display = {}
-	self.current_line = 1
-	self.current_char = 1
-	self.typing = false
-	self.typing_frame_acc = 0
-	self.typing_delay_frames = 2
-	self.pages = narrative.start
-	self.page_index = 1
-	self.choice_index = 1
-	self.choice_response = narrative.choice.options[1].response
-	self.choice_label = narrative.choice.options[1].label
-	self.glitch_active = false
-	self.glitch_phase = 0
-	self.glitch_tone = 'low'
-	self.scene_label = 'start'
-
-	local timeline_component = self.timelines
-	timeline_component.define(timeline_component, {
-		id = glitch_timeline_id,
-		frames = { 'buzz', 'flash', 'static' },
-		ticks_per_frame = 1,
-		playback_mode = 'loop',
-		markers = {
-			{ frame = 0, event = glitch_timeline_event, payload = { tone = 'low' } },
-			{ frame = 1, event = glitch_timeline_event, payload = { tone = 'mid' } },
-			{ frame = 2, event = glitch_timeline_event, payload = { tone = 'high' } },
-		},
-	})
-
-	self:set_pages(self.pages)
-end
-
-function intro_controller:set_pages(pages)
-	self.pages = pages
-	self.page_index = 1
-	self:set_lines(self.pages[self.page_index])
-end
-
-function intro_controller:set_lines(lines)
-	self.text_full = lines
-	self.text_display = {}
-	for index = 1, #lines do
-		self.text_display[index] = ''
-	end
-	self.current_line = 1
-	self.current_char = 1
-	self.typing = true
-	self.typing_frame_acc = 0
-end
-
-function intro_controller:type_next_character()
-	local line = self.text_full[self.current_line]
-	self.current_char = self.current_char + 1
-	self.text_display[self.current_line] = string.sub(line, 1, self.current_char - 1)
-	if self.current_char > #line then
-		self.current_line = self.current_line + 1
-		self.current_char = 1
-		if self.current_line > #self.text_full then
-			self.typing = false
-		end
-	end
-end
-
-function intro_controller:tick_text()
-	if not self.typing then
+local function set_text_lines(text_object_id, lines, typed)
+	local text_obj = world_object(text_object_id)
+	text_obj:setTextFromLines(lines)
+	if typed then
 		return
 	end
-	self.typing_frame_acc = self.typing_frame_acc + 1
-	while self.typing_frame_acc >= self.typing_delay_frames do
-		self.typing_frame_acc = self.typing_frame_acc - self.typing_delay_frames
-		self:type_next_character()
-		if not self.typing then
-			break
-		end
+	text_obj.displayed_lines = text_obj.full_text_lines
+	text_obj.text = text_obj.full_text_lines
+	text_obj.is_typing = false
+end
+
+local function finish_text(text_object_id)
+	local text_obj = world_object(text_object_id)
+	text_obj.displayed_lines = text_obj.full_text_lines
+	text_obj.text = text_obj.full_text_lines
+	text_obj.is_typing = false
+end
+
+local function tick_text(text_object_id)
+	local text_obj = world_object(text_object_id)
+	if text_obj.is_typing then
+		text_obj:typeNextCharacter()
 	end
 end
 
-function intro_controller:finish_block()
-	self.text_display = {}
-	for index = 1, #self.text_full do
-		self.text_display[index] = self.text_full[index]
-	end
-	self.typing = false
+local function set_prompt_lines()
+	local prompt_obj = world_object(text_prompt_id)
+	local main_text = world_object(text_main_id)
+	local prompt = main_text.is_typing and '[A] skip' or '[A] verder'
+	set_text_lines(text_prompt_id, { prompt }, false)
 end
 
-function intro_controller:advance_page()
-	if self.typing then
+local function choice_lines(choice_index)
+	local lines = {}
+	for index = 1, #narrative.choice.options do
+		local option = narrative.choice.options[index]
+		local prefix = choice_index == index and '> ' or '  '
+		lines[#lines + 1] = prefix .. option.label
+	end
+	return lines
+end
+
+local intro_service = {}
+intro_service.__index = intro_service
+intro_service.id = controller_instance_id
+
+function intro_service:ensure_glitch_timeline()
+	if self.glitch_timeline then
+		return
+	end
+	self.glitch_timeline = new_timeline({
+		id = glitch_timeline_id,
+		frames = { 'low', 'mid', 'high' },
+		ticks_per_frame = 1,
+		playback_mode = 'loop',
+	})
+end
+
+function intro_service:set_pages(pages)
+	self.pages = pages
+	self.page_index = 1
+	self:set_lines(self.pages[self.page_index], true)
+end
+
+function intro_service:set_lines(lines, typed)
+	set_text_lines(text_main_id, lines, typed)
+	set_prompt_lines()
+end
+
+function intro_service:tick_texts()
+	tick_text(text_main_id)
+	set_prompt_lines()
+end
+
+function intro_service:finish_block()
+	finish_text(text_main_id)
+	set_prompt_lines()
+end
+
+function intro_service:advance_page()
+	local main_text = world_object(text_main_id)
+	if main_text.is_typing then
 		self:finish_block()
 		return true
 	end
 	if self.page_index < #self.pages then
 		self.page_index = self.page_index + 1
-		self:set_lines(self.pages[self.page_index])
+		self:set_lines(self.pages[self.page_index], true)
 		return true
 	end
 	return false
 end
 
-function intro_controller:start_glitch()
+function intro_service:start_glitch()
 	self.glitch_active = true
 	self.glitch_phase = 0
 	self.glitch_tone = 'low'
-	self.timelines.play(self.timelines, glitch_timeline_id, { rewind = true, snap_to_start = true })
+	self:ensure_glitch_timeline()
+	self.glitch_timeline:rewind()
 end
 
-function intro_controller:stop_glitch()
+function intro_service:stop_glitch()
 	self.glitch_active = false
 end
 
-function intro_controller:set_choice_index(next_index)
-	self.choice_index = next_index
-	local option = narrative.choice.options[self.choice_index]
-	self.choice_label = option.label
-	self.choice_response = option.response
+function intro_service:tick_glitch()
+	if not self.glitch_active then
+		return
+	end
+	local tl = self.glitch_timeline
+	local events = tl:advance()
+	for index = 1, #events do
+		local ev = events[index]
+		if ev.kind == 'frame' then
+			self.glitch_phase = self.glitch_phase + 1
+			self.glitch_tone = ev.value
+			emit(glitch_timeline_event, self, { tone = ev.value })
+		end
+	end
 end
 
-function intro_controller:confirm_choice()
+function intro_service:set_choice_index(next_index)
+	self.choice_index = next_index
 	local option = narrative.choice.options[self.choice_index]
 	self.choice_response = option.response
+	set_text_lines(text_choice_id, choice_lines(self.choice_index), false)
+end
+
+function intro_service:confirm_choice()
 	if self.choice_index == 1 then
 		self.scene_label = 'accept'
 	else
@@ -175,7 +183,7 @@ function intro_controller:confirm_choice()
 	return '/open_portal'
 end
 
-function intro_controller:portal_pages()
+function intro_service:portal_pages()
 	local decision_line = self.choice_response
 	local accept_lines = self.scene_label == 'accept' and narrative.portal.accept or narrative.portal.doubt
 	local blocks = {
@@ -198,7 +206,8 @@ local function build_intro_fsm()
 					self:set_pages(narrative.start)
 				end,
 				tick = function(self)
-					self:tick_text()
+					self:tick_texts()
+					self:tick_glitch()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
@@ -218,7 +227,8 @@ local function build_intro_fsm()
 					self:set_pages(narrative.niece)
 				end,
 				tick = function(self)
-					self:tick_text()
+					self:tick_texts()
+					self:tick_glitch()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
@@ -239,7 +249,8 @@ local function build_intro_fsm()
 					self:set_pages(narrative.transmission)
 				end,
 				tick = function(self)
-					self:tick_text()
+					self:tick_texts()
+					self:tick_glitch()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
@@ -260,7 +271,8 @@ local function build_intro_fsm()
 					self:set_pages(narrative.sinter)
 				end,
 				tick = function(self)
-					self:tick_text()
+					self:tick_texts()
+					self:tick_glitch()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
@@ -282,7 +294,7 @@ local function build_intro_fsm()
 					self:set_choice_index(1)
 				end,
 				tick = function(self)
-					self:tick_text()
+					self:tick_texts()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
@@ -313,10 +325,11 @@ local function build_intro_fsm()
 					self:stop_glitch()
 					self.pages = self:portal_pages()
 					self.page_index = 1
-					self:set_lines(self.pages[self.page_index])
+					self:set_lines(self.pages[self.page_index], true)
 				end,
 				tick = function(self)
-					self:tick_text()
+					self:tick_texts()
+					self:tick_glitch()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
@@ -334,25 +347,20 @@ local function build_intro_fsm()
 end
 
 local function register_controller()
-	define_world_object({
+	define_service({
 		def_id = controller_def_id,
-		class = intro_controller,
+		class = intro_service,
 		fsms = { controller_fsm_id },
 		defaults = {
 			label = 'IntroController',
-			text_full = {},
-			text_display = {},
-			current_line = 1,
-			current_char = 1,
-			typing = false,
-			typing_frame_acc = 0,
-			typing_delay_frames = 2,
-			pages = {},
+			pages = narrative.start,
 			page_index = 1,
 			glitch_active = false,
 			glitch_phase = 0,
 			glitch_tone = 'low',
 			scene_label = 'start',
+			choice_index = 1,
+			choice_response = narrative.choice.options[1].response,
 		},
 	})
 end
@@ -360,17 +368,6 @@ end
 local function define_blueprints_and_handlers()
 	build_intro_fsm()
 	register_controller()
-	events:on({
-		event = glitch_timeline_event,
-		subscriber = glitch_listener,
-		handler = function(_, event)
-			local controller = world_object(controller_instance_id)
-			if controller.glitch_active then
-				controller.glitch_phase = controller.glitch_phase + 1
-				controller.glitch_tone = event.tone
-			end
-		end,
-	})
 end
 
 function init()
@@ -378,10 +375,30 @@ function init()
 end
 
 function new_game()
-	spawn_sprite(controller_def_id, {
-		id = controller_instance_id,
-		pos = { x = 0, y = 0, z = 0 },
+	local w = display_width()
+	local h = display_height()
+	local line_height = 8
+
+	spawn_textobject(text_main_def_id, {
+		id = text_main_id,
+		dimensions = { left = 0, right = w, top = line_height * 2, bottom = h - line_height * 6 },
 	})
+	spawn_textobject(text_choice_def_id, {
+		id = text_choice_id,
+		dimensions = { left = 0, right = w, top = h - line_height * 7, bottom = h - line_height * 3 },
+	})
+	spawn_textobject(text_prompt_def_id, {
+		id = text_prompt_id,
+		dimensions = { left = 0, right = w, top = h - line_height * 2, bottom = h },
+	})
+
+	create_service(controller_def_id)
+	local ctrl = service(controller_instance_id)
+	ctrl:ensure_glitch_timeline()
+	ctrl:set_pages(narrative.start)
+	set_text_lines(text_choice_id, {}, false)
+	set_prompt_lines()
+	ctrl:activate()
 end
 
 local function draw_background(controller)
@@ -393,44 +410,12 @@ local function draw_background(controller)
 	cls(1)
 end
 
-local function draw_text_block(lines, anchor_y)
-	for index = 1, #lines do
-		local line = lines[index]
-		local x = (display_width() - (#line * char_width)) * 0.5
-		local y = anchor_y + (index - 1) * line_height
-		write(line, x, y, 0, 15)
-	end
-end
-
-local function draw_choice_ui(controller, anchor_y)
-	for index = 1, #narrative.choice.options do
-		local option = narrative.choice.options[index]
-		local prefix = controller.choice_index == index and '> ' or '  '
-		local line = prefix .. option.label
-		local x = (display_width() - (#line * char_width)) * 0.5
-		local y = anchor_y + (index - 1) * line_height
-		local color = controller.choice_index == index and 10 or 7
-		write(line, x, y, 0, color)
-	end
-end
-
-local function draw_prompt(controller)
-	local prompt = controller.typing and '[A] skip' or '[A] verder'
-	local x = (display_width() - (#prompt * char_width)) * 0.5
-	local y = 180
-	write(prompt, x, y, 0, 11)
-end
-
 function draw()
-	local controller = world_object(controller_instance_id)
+	local controller = service(controller_instance_id)
 	draw_background(controller)
-	local anchor_y = 40
-	draw_text_block(controller.text_display, anchor_y)
-	if controller.scene_label == 'choice' then
-		draw_choice_ui(controller, anchor_y + (#controller.text_display + 1) * line_height)
-	end
-	draw_prompt(controller)
 end
 
 function update()
+	local controller = service(controller_instance_id)
+	controller.sc:tick()
 end

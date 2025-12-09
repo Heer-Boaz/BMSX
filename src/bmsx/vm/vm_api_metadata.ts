@@ -243,6 +243,14 @@ export const VM_API_METHOD_METADATA: Record<string, VMApiMethodMetadata> = {
 			{ name: 'options', optional: true, description: 'Optional spawn options such as position, orientation, or components.' },
 		],
 	},
+	spawn_textobject: {
+		optionalParameters: ['overrides'],
+		description: 'Instantiates and spawns a TextObject from a registered descriptor.',
+		parameters: [
+			{ name: 'definition_id', description: 'Identifier of the registered text object definition.' },
+			{ name: 'overrides', optional: true, description: 'Optional overrides applied to the spawned text object (e.g. id, dims, pos).' },
+		],
+	},
 	stat: {
 		description: 'Returns numeric stat values; indices 32-36 cover pointer position/buttons/wheel.',
 		parameters: [
@@ -256,6 +264,12 @@ export const VM_API_METHOD_METADATA: Record<string, VMApiMethodMetadata> = {
 	stop_sfx: {
 		description: 'Stops all sound effects.',
 		parameters: [],
+	},
+	new_timeline: {
+		description: 'Creates a standalone Timeline instance from a definition.',
+		parameters: [
+			{ name: 'definition', description: 'Timeline definition with id, frames, and optional ticks_per_frame/playback_mode/markers.' },
+		],
 	},
 	taskgate: {
 		description: 'Fetches or creates a named gate group for task coordination.',

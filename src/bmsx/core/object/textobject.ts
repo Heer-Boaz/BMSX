@@ -32,7 +32,7 @@ export class TextObject extends WorldObject {
 				const lineHeight = this.font.char_height(' ');
 				const startY = 2 * lineHeight;
 
-				const xOffset = this.text_offset_x;
+				const xOffset = this.centered_block_x;
 
 				this.text.forEach((line, index) => {
 					rc.submit_glyphs({ x: xOffset, y: index * lineHeight + startY, glyphs: line, background_color: { r: 0, g: 0, b: 0, a: 1 } });
@@ -115,10 +115,6 @@ export class TextObject extends WorldObject {
 	 */
 	protected update_displayed_text(): void {
 		this.text = [...this.displayed_lines];
-	}
-
-	public get text_offset_x(): number {
-		return this.centered_block_x;
 	}
 
 	public set dimensions(rect: RectBounds) {

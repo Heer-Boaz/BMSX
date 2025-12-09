@@ -1,5 +1,3 @@
-import { EventChannel, type EventHandler, type LocalSubscriptionOptions, type EventListenerDisposer } from '../core/eventemitter';
-import { WorldObject } from '../core/object/worldobject';
 import { clamp } from '../utils/clamp';
 import { get_easing } from '../utils/easing';
 
@@ -339,26 +337,4 @@ function computeProgress(index: number, length: number): number {
 	if (clamped <= TIMELINE_START_INDEX) return 0;
 	if (clamped >= length) return 1;
 	return (clamped + 1) / length;
-}
-export class TimelineEventChannels {
-	constructor(
-		private readonly owner: WorldObject,
-		private readonly timelineId: string
-	) { }
-
-	public get frame(): EventChannel {
-		return this.owner.events.channel('timeline.frame', this.timelineId);
-	}
-
-	public get end(): EventChannel {
-		return this.owner.events.channel('timeline.end', this.timelineId);
-	}
-
-	public on_frame(subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer {
-		return this.frame.on({ handler, subscriber, persistent: options?.persistent });
-	}
-
-	public on_end(subscriber: any, handler: EventHandler, options?: LocalSubscriptionOptions): EventListenerDisposer {
-		return this.end.on({ handler, subscriber, persistent: options?.persistent });
-	}
 }
