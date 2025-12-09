@@ -5,6 +5,8 @@ import type { LuaSourceRange } from '../../lua/lua_ast';
 import { normalizeEndingsAndSplitLines } from './text_utils';
 import { listResources } from '../workspace';
 import { BmsxVMRuntime } from '../vm_runtime';
+import { VMCodeLayout } from './code_layout';
+import { LuaSemanticWorkspace, Decl } from './semantic_model';
 
 export type ProjectReferenceEnvironment = {
 	activeContext: CodeTabContext;

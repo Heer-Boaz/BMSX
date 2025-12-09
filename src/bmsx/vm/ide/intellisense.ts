@@ -3,7 +3,6 @@ import { LuaSyntaxKind, LuaTableFieldKind, type LuaAssignableExpression, type Lu
 import { LuaEnvironment } from '../../lua/luaenvironment';
 import { LuaSyntaxError } from '../../lua/luaerrors';
 import { LuaLexer } from '../../lua/lualexer';
-import { KEYWORDS } from './keywords';
 import { parseLuaChunk, parseLuaChunkWithRecovery, type ParsedLuaChunk } from './lua_parse';
 import { getCachedLuaParse } from './lua_analysis_cache';
 import { LuaInterpreter } from '../../lua/luaruntime';
@@ -22,6 +21,7 @@ import { isLuaCommentContext, wrapOverlayLine } from './text_utils';
 import type { ApiCompletionMetadata, CodeTabContext, LuaCompletionItem, PointerSnapshot } from './types';
 import type { RomLuaAsset } from '../../rompack/rompack';
 import { $ } from '../../core/game';
+import { KEYWORDS } from '../../lua/luatoken';
 export const VM_PREVIEW_MAX_ENTRIES = 12;
 export const VM_PREVIEW_MAX_DEPTH = 2;
 

@@ -15,7 +15,6 @@ import {
 import type { VMLuaBuiltinDescriptor, VMLuaDefinitionRange, VMLuaSymbolEntry } from '../types';
 import * as constants from './constants';
 import { isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
-import { isWhitespace, isWordChar } from './text_utils';
 import { isLuaCommentContext } from './text_utils';
 import { ide_state } from './ide_state';
 import { isReadOnlyCodeTab } from './editor_tabs';
@@ -406,7 +405,7 @@ export class CompletionController {
 		const line = lines[row];
 		const column = clamp(this.host.getCursorColumn(), 0, line.length);
 		let start = column;
-		while (start > 0 && isWordChar(line.charAt(start - 1))) start -= 1;
+		while (start > 0 && LuaLexer.isIdentifierPart(line.charAt(start - 1))) start -= 1;
 		const prefix = line.slice(start, column);
 		const replaceFromColumn = start;
 		const replaceToColumn = column;
@@ -414,16 +413,16 @@ export class CompletionController {
 			return null;
 		}
 		let probe = start - 1;
-		while (probe >= 0 && isWhitespace(line.charAt(probe))) probe -= 1;
+		while (probe >= 0 && LuaLexer.isWhitespace(line.charAt(probe))) probe -= 1;
 		if (probe >= 0) {
 			const operator = line.charAt(probe);
 			if (operator === '.' || operator === ':') {
 				let objectEnd = probe;
 				let objectProbe = objectEnd - 1;
-				while (objectProbe >= 0 && isWhitespace(line.charAt(objectProbe))) objectProbe -= 1;
+				while (objectProbe >= 0 && LuaLexer.isWhitespace(line.charAt(objectProbe))) objectProbe -= 1;
 				if (objectProbe < 0) return null;
 				let objectStart = objectProbe;
-				while (objectStart >= 0 && isWordChar(line.charAt(objectStart))) objectStart -= 1;
+				while (objectStart >= 0 && LuaLexer.isIdentifierPart(line.charAt(objectStart))) objectStart -= 1;
 				const objectName = line.slice(objectStart + 1, objectProbe + 1);
 				if (objectName.length === 0) return null;
 				return { kind: 'member', objectName, operator: operator as '.' | ':', prefix, row, replaceFromColumn, replaceToColumn };
@@ -849,10 +848,10 @@ export class CompletionController {
 		const lastChar = edit.text.charAt(edit.text.length - 1);
 		if (context.kind === 'member') {
 			if (lastChar === '.' || lastChar === ':') return 'punctuation';
-			if (!isWordChar(lastChar)) return null;
+			if (!LuaLexer.isIdentifierPart(lastChar)) return null;
 			return context.prefix.length === 0 ? null : 'typing';
 		}
-		if (!isWordChar(lastChar)) return null;
+		if (!LuaLexer.isIdentifierPart(lastChar)) return null;
 		if (!this.isIdentifierTriggerPrefix(context.prefix)) return null;
 		return 'typing';
 	}
@@ -864,7 +863,7 @@ export class CompletionController {
 			this.cancelPendingCompletion();
 			if (!analyzed) { this.closeSession(); return; }
 			const previousChar = this.host.charAt(this.host.getCursorRow(), this.host.getCursorColumn() - 1);
-			if (analyzed.prefix.length === 0 && previousChar !== '.' && previousChar !== ':' && !isWordChar(previousChar)) { this.closeSession(); return; }
+			if (analyzed.prefix.length === 0 && previousChar !== '.' && previousChar !== ':' && !LuaLexer.isIdentifierPart(previousChar)) { this.closeSession(); return; }
 			this.refreshCompletionSessionFromContext(analyzed);
 			return;
 		}
@@ -1198,10 +1197,10 @@ export class CompletionController {
 		if (isLuaCommentContext(lines, safeRow, lastOpen)) return null;
 		const prefix = line.slice(0, lastOpen);
 		let scan = prefix.length - 1;
-		while (scan >= 0 && isWhitespace(prefix.charAt(scan))) scan -= 1;
+		while (scan >= 0 && LuaLexer.isWhitespace(prefix.charAt(scan))) scan -= 1;
 		if (scan < 0) return null;
 		let nameEnd = scan + 1;
-		while (scan >= 0 && isWordChar(prefix.charAt(scan))) scan -= 1;
+		while (scan >= 0 && LuaLexer.isIdentifierPart(prefix.charAt(scan))) scan -= 1;
 		const methodName = prefix.slice(scan + 1, nameEnd);
 		if (methodName.length === 0) return null;
 		const inner = line.slice(lastOpen + 1, safeColumn);
@@ -1214,17 +1213,17 @@ export class CompletionController {
 			else if (ch === ',' && nested === 0) argumentIndex += 1;
 		}
 		let operatorIndex = scan;
-		while (operatorIndex >= 0 && isWhitespace(prefix.charAt(operatorIndex))) operatorIndex -= 1;
+		while (operatorIndex >= 0 && LuaLexer.isWhitespace(prefix.charAt(operatorIndex))) operatorIndex -= 1;
 		let objectName: string = null;
 		if (operatorIndex >= 0) {
 			const candidateOperator = prefix.charAt(operatorIndex);
 			if (candidateOperator === '.' || candidateOperator === ':') {
 				let objectEnd = operatorIndex;
 				let objectIndex = objectEnd - 1;
-				while (objectIndex >= 0 && isWhitespace(prefix.charAt(objectIndex))) objectIndex -= 1;
+				while (objectIndex >= 0 && LuaLexer.isWhitespace(prefix.charAt(objectIndex))) objectIndex -= 1;
 				if (objectIndex >= 0) {
 					let objectStart = objectIndex;
-					while (objectStart >= 0 && isWordChar(prefix.charAt(objectStart))) objectStart -= 1;
+					while (objectStart >= 0 && LuaLexer.isIdentifierPart(prefix.charAt(objectStart))) objectStart -= 1;
 					objectName = prefix.slice(objectStart + 1, objectIndex + 1);
 				}
 			}

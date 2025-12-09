@@ -8,6 +8,8 @@ import { rebuildRuntimeErrorOverlayView } from './runtime_error_overlay';
 import * as TextEditing from './text_editing_and_selection';
 import { computeEditContextFromSources, handlePostEditMutation } from './text_editing_and_selection';
 import type { EditContext, HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from './types';
+import { markDiagnosticsDirty } from './diagnostics';
+import { resolveHoverChunkName, requestSemanticRefresh, clearReferenceHighlights } from './intellisense';
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;
@@ -490,4 +492,9 @@ export function bumpTextVersion(): void {
 export function normalizeEndingsAndSplitLines(message: string): string[] {
 	const rawLines = message.split('\n');
 	return rawLines.length > 0 ? rawLines : [''];
-}
+}const NEWLINE = '\n';
+
+export const textFromLines = (lines: string[]): string => lines.join(NEWLINE);
+
+export const splitText = (text: string): string[] => text.split(NEWLINE);
+

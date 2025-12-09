@@ -15,7 +15,6 @@ import { $ } from '../../core/game';
 import { clamp } from '../../utils/clamp';;
 import { ide_state } from './ide_state';
 import type { EditContext, Position } from './types';
-import { isWhitespace, isWordChar } from './text_utils';
 import {
 	revealCursor,
 	clampCursorColumn,
@@ -37,6 +36,7 @@ import { resetBlink } from './render/render_caret';
 import * as constants from './constants';
 import { formatLuaDocument } from './lua_formatter';
 import { extractErrorMessage } from '../../lua/luavalue';
+import { LuaLexer } from '../../lua/lualexer';
 
 function editorAllowsMutation(): boolean {
 	return ide_state.activeContextReadOnly !== true;
@@ -187,31 +187,31 @@ export function selectWordAtPosition(row: number, column: number): void {
 	let start = index;
 	let end = index + 1;
 	const current = line.charAt(index);
-	if (isWordChar(current)) {
-		while (start > 0 && isWordChar(line.charAt(start - 1))) {
+	if (LuaLexer.isIdentifierPart(current)) {
+		while (start > 0 && LuaLexer.isIdentifierPart(line.charAt(start - 1))) {
 			start -= 1;
 		}
-		while (end < line.length && isWordChar(line.charAt(end))) {
+		while (end < line.length && LuaLexer.isIdentifierPart(line.charAt(end))) {
 			end += 1;
 		}
-	} else if (isWhitespace(current)) {
-		while (start > 0 && isWhitespace(line.charAt(start - 1))) {
+	} else if (LuaLexer.isWhitespace(current)) {
+		while (start > 0 && LuaLexer.isWhitespace(line.charAt(start - 1))) {
 			start -= 1;
 		}
-		while (end < line.length && isWhitespace(line.charAt(end))) {
+		while (end < line.length && LuaLexer.isWhitespace(line.charAt(end))) {
 			end += 1;
 		}
 	} else {
 		while (start > 0) {
 			const previous = line.charAt(start - 1);
-			if (isWordChar(previous) || isWhitespace(previous)) {
+			if (LuaLexer.isIdentifierPart(previous) || LuaLexer.isWhitespace(previous)) {
 				break;
 			}
 			start -= 1;
 		}
 		while (end < line.length) {
 			const next = line.charAt(end);
-			if (isWordChar(next) || isWhitespace(next)) {
+			if (LuaLexer.isIdentifierPart(next) || LuaLexer.isWhitespace(next)) {
 				break;
 			}
 			end += 1;
@@ -323,7 +323,7 @@ export function findWordLeft(row: number, column: number): { row: number; column
 	currentRow = step.row;
 	currentColumn = step.column;
 	let currentChar = charAt(currentRow, currentColumn);
-	while (isWhitespace(currentChar)) {
+	while (LuaLexer.isWhitespace(currentChar)) {
 		const previous = stepLeft(currentRow, currentColumn);
 		if (!previous) {
 			return { row: 0, column: 0 };
@@ -332,7 +332,7 @@ export function findWordLeft(row: number, column: number): { row: number; column
 		currentColumn = previous.column;
 		currentChar = charAt(currentRow, currentColumn);
 	}
-	const word = isWordChar(currentChar);
+	const word = LuaLexer.isIdentifierPart(currentChar);
 	while (true) {
 		const previous = stepLeft(currentRow, currentColumn);
 		if (!previous) {
@@ -341,7 +341,7 @@ export function findWordLeft(row: number, column: number): { row: number; column
 			break;
 		}
 		const previousChar = charAt(previous.row, previous.column);
-		if (isWhitespace(previousChar) || isWordChar(previousChar) !== word) {
+		if (LuaLexer.isWhitespace(previousChar) || LuaLexer.isIdentifierPart(previousChar) !== word) {
 			break;
 		}
 		currentRow = previous.row;
@@ -367,7 +367,7 @@ export function findWordRight(row: number, column: number): { row: number; colum
 	currentRow = step.row;
 	currentColumn = step.column;
 	let currentChar = charAt(currentRow, currentColumn);
-	while (isWhitespace(currentChar)) {
+	while (LuaLexer.isWhitespace(currentChar)) {
 		const next = stepRight(currentRow, currentColumn);
 		if (!next) {
 			const lastRow = ide_state.lines.length - 1;
@@ -377,7 +377,7 @@ export function findWordRight(row: number, column: number): { row: number; colum
 		currentColumn = next.column;
 		currentChar = charAt(currentRow, currentColumn);
 	}
-	const word = isWordChar(currentChar);
+	const word = LuaLexer.isIdentifierPart(currentChar);
 	while (true) {
 		const next = stepRight(currentRow, currentColumn);
 		if (!next) {
@@ -387,7 +387,7 @@ export function findWordRight(row: number, column: number): { row: number; colum
 			break;
 		}
 		const nextChar = charAt(next.row, next.column);
-		if (isWhitespace(nextChar) || isWordChar(nextChar) !== word) {
+		if (LuaLexer.isWhitespace(nextChar) || LuaLexer.isIdentifierPart(nextChar) !== word) {
 			currentRow = next.row;
 			currentColumn = next.column;
 			break;
@@ -395,7 +395,7 @@ export function findWordRight(row: number, column: number): { row: number; colum
 		currentRow = next.row;
 		currentColumn = next.column;
 	}
-	while (isWhitespace(charAt(currentRow, currentColumn))) {
+	while (LuaLexer.isWhitespace(charAt(currentRow, currentColumn))) {
 		const next = stepRight(currentRow, currentColumn);
 		if (!next) {
 			const lastRow = ide_state.lines.length - 1;

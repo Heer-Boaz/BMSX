@@ -1,9 +1,9 @@
 import type { SemanticAnnotations, SymbolKind } from './semantic_model';
 import type { HighlightLine } from './types';
 import * as constants from './constants';
-import { KEYWORDS } from './keywords';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../lua_builtins';
 import { LuaLexer } from '../../lua/lualexer';
+import { KEYWORDS } from '../../lua/luatoken';
 
 // Lightweight Lua syntax highlighter used by the IDE.
 // Pure functions with no runtime/editor state dependencies beyond provided inputs.

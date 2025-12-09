@@ -38,7 +38,7 @@ import {
 	findCodeTabContext,
 } from './editor_tabs';
 
-import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, markTextMutated, measureText, normalizeEndingsAndSplitLines, positionToVisualIndex, splitLines, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapOverlayLine } from './text_utils';
+import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, markTextMutated, measureText, normalizeEndingsAndSplitLines, positionToVisualIndex, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapOverlayLine } from './text_utils';
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
@@ -1830,7 +1830,6 @@ export function getCrossFileRenameDependencies(): CrossFileRenameDependencies {
 			ide_state.codeTabContexts.set(context.id, context);
 		},
 		listCodeTabContexts: () => ide_state.codeTabContexts.values(),
-		splitLines: (source: string) => splitLines(source),
 		setTabDirty: (tabId: string, dirty: boolean) => setTabDirty(tabId, dirty),
 	};
 }

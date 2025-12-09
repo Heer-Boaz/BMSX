@@ -12,6 +12,7 @@ import { LuaLexer } from '../../lua/lualexer';
 import { findCodeTabContext } from './editor_tabs';
 import { findResourceDescriptorForChunk } from './vm_cart_editor';
 import { BmsxVMRuntime } from '../vm_runtime';
+import { splitText } from './text_utils';
 
 export type RenameCommitPayload = {
 	matches: readonly SearchMatch[];
@@ -277,7 +278,6 @@ export type CrossFileRenameDependencies = {
 	getCodeTabContext(id: string): CodeTabContext;
 	setCodeTabContext(context: CodeTabContext): void;
 	listCodeTabContexts(): Iterable<CodeTabContext>;
-	splitLines(source: string): string[];
 	setTabDirty(tabId: string, dirty: boolean): void;
 };
 
@@ -333,7 +333,7 @@ export class CrossFileRenameManager {
 		const chunkName = descriptor.path;
 		const source = BmsxVMRuntime.instance.resourceSourceForChunk(chunkName);
 		context.lastSavedSource = source;
-		return this.deps.splitLines(source);
+		return splitText(source);
 	}
 
 	private applyLinesToContextSnapshot(context: CodeTabContext, lines: readonly string[]): void {

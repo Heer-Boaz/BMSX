@@ -3,26 +3,16 @@ import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
-import { isWhitespace, isWordChar } from './text_utils';
 import type { InlineInputOptions, Position, TextField } from './types';
 import { clamp } from '../../utils/clamp';
+import { LuaLexer } from '../../lua/lualexer';
+import { splitText, textFromLines } from './text_utils';
 
 export type InlineFieldMetrics = {
 	measureText: (text: string) => number;
 	advanceChar: (ch: string) => number;
 	spaceAdvance: number;
 	tabSpaces: number;
-};
-
-const NEWLINE = '\n';
-
-const normalizeLines = (lines: string[]): string[] => (lines.length === 0 ? [''] : lines);
-
-const textFromLines = (lines: string[]): string => normalizeLines(lines).join(NEWLINE);
-
-const splitText = (text: string): string[] => {
-	const parts = text.split(NEWLINE);
-	return normalizeLines(parts);
 };
 
 const positionToOffset = (lines: string[], position: Position): number => {
@@ -233,13 +223,13 @@ export function deleteWordBackward(field: TextField): boolean {
 		return false;
 	}
 	let index = offset;
-	while (index > 0 && isWhitespace(text.charAt(index - 1))) {
+	while (index > 0 && LuaLexer.isWhitespace(text.charAt(index - 1))) {
 		index -= 1;
 	}
-	while (index > 0 && !isWhitespace(text.charAt(index - 1)) && !isWordChar(text.charAt(index - 1))) {
+	while (index > 0 && !LuaLexer.isWhitespace(text.charAt(index - 1)) && !LuaLexer.isIdentifierPart(text.charAt(index - 1))) {
 		index -= 1;
 	}
-	while (index > 0 && isWordChar(text.charAt(index - 1))) {
+	while (index > 0 && LuaLexer.isIdentifierPart(text.charAt(index - 1))) {
 		index -= 1;
 	}
 	if (index === offset) {
@@ -260,13 +250,13 @@ export function deleteWordForward(field: TextField): boolean {
 		return false;
 	}
 	let index = offset;
-	while (index < text.length && isWhitespace(text.charAt(index))) {
+	while (index < text.length && LuaLexer.isWhitespace(text.charAt(index))) {
 		index += 1;
 	}
-	while (index < text.length && !isWhitespace(text.charAt(index)) && !isWordChar(text.charAt(index))) {
+	while (index < text.length && !LuaLexer.isWhitespace(text.charAt(index)) && !LuaLexer.isIdentifierPart(text.charAt(index))) {
 		index += 1;
 	}
-	while (index < text.length && isWordChar(text.charAt(index))) {
+	while (index < text.length && LuaLexer.isIdentifierPart(text.charAt(index))) {
 		index += 1;
 	}
 	if (index === offset) {
@@ -309,13 +299,13 @@ export function moveWordLeft(field: TextField, extendSelection: boolean): void {
 		return;
 	}
 	let index = offset;
-	while (index > 0 && isWhitespace(text.charAt(index - 1))) {
+	while (index > 0 && LuaLexer.isWhitespace(text.charAt(index - 1))) {
 		index -= 1;
 	}
-	while (index > 0 && !isWhitespace(text.charAt(index - 1)) && !isWordChar(text.charAt(index - 1))) {
+	while (index > 0 && !LuaLexer.isWhitespace(text.charAt(index - 1)) && !LuaLexer.isIdentifierPart(text.charAt(index - 1))) {
 		index -= 1;
 	}
-	while (index > 0 && isWordChar(text.charAt(index - 1))) {
+	while (index > 0 && LuaLexer.isIdentifierPart(text.charAt(index - 1))) {
 		index -= 1;
 	}
 	const next = offsetToPosition(field.lines, index);
@@ -332,13 +322,13 @@ export function moveWordRight(field: TextField, extendSelection: boolean): void 
 		return;
 	}
 	let index = offset;
-	while (index < text.length && isWhitespace(text.charAt(index))) {
+	while (index < text.length && LuaLexer.isWhitespace(text.charAt(index))) {
 		index += 1;
 	}
-	while (index < text.length && !isWhitespace(text.charAt(index)) && !isWordChar(text.charAt(index))) {
+	while (index < text.length && !LuaLexer.isWhitespace(text.charAt(index)) && !LuaLexer.isIdentifierPart(text.charAt(index))) {
 		index += 1;
 	}
-	while (index < text.length && isWordChar(text.charAt(index))) {
+	while (index < text.length && LuaLexer.isIdentifierPart(text.charAt(index))) {
 		index += 1;
 	}
 	const next = offsetToPosition(field.lines, index);
@@ -390,31 +380,31 @@ export function selectWordAt(field: TextField, row: number, column: number): voi
 	const ch = text.charAt(index);
 	let start = index;
 	let end = index + 1;
-	if (isWordChar(ch)) {
-		while (start > 0 && isWordChar(text.charAt(start - 1))) {
+	if (LuaLexer.isIdentifierPart(ch)) {
+		while (start > 0 && LuaLexer.isIdentifierPart(text.charAt(start - 1))) {
 			start -= 1;
 		}
-		while (end < text.length && isWordChar(text.charAt(end))) {
+		while (end < text.length && LuaLexer.isIdentifierPart(text.charAt(end))) {
 			end += 1;
 		}
-	} else if (isWhitespace(ch)) {
-		while (start > 0 && isWhitespace(text.charAt(start - 1))) {
+	} else if (LuaLexer.isWhitespace(ch)) {
+		while (start > 0 && LuaLexer.isWhitespace(text.charAt(start - 1))) {
 			start -= 1;
 		}
-		while (end < text.length && isWhitespace(text.charAt(end))) {
+		while (end < text.length && LuaLexer.isWhitespace(text.charAt(end))) {
 			end += 1;
 		}
 	} else {
 		while (start > 0) {
 			const previous = text.charAt(start - 1);
-			if (isWordChar(previous) || isWhitespace(previous)) {
+			if (LuaLexer.isIdentifierPart(previous) || LuaLexer.isWhitespace(previous)) {
 				break;
 			}
 			start -= 1;
 		}
 		while (end < text.length) {
 			const next = text.charAt(end);
-			if (isWordChar(next) || isWhitespace(next)) {
+			if (LuaLexer.isIdentifierPart(next) || LuaLexer.isWhitespace(next)) {
 				break;
 			}
 			end += 1;
