@@ -789,6 +789,8 @@ export class PlayerInput {
 		const justpressed = state.justpressed === true;
 		const now = this.lastPollTimestampMs ?? $.platform.clock.now();
 		const startMs = state.pressedAtMs ?? state.timestamp ?? now;
+		const initialDelayMs = INITIAL_REPEAT_DELAY_MS;
+		const repeatIntervalMs = REPEAT_INTERVAL_MS;
 
 		if (justpressed) {
 			repeat.active = true;
@@ -811,10 +813,12 @@ export class PlayerInput {
 			if (repeat.pressStartMs < 0) {
 				repeat.pressStartMs = startMs;
 			}
-			const heldMs = now - repeat.pressStartMs;
-			const repeatsElapsed = this.computeRepeatCount(heldMs);
-			if (repeatsElapsed > repeat.repeatCount) {
-				repeat.repeatCount = repeatsElapsed;
+			const nextAt = repeat.repeatCount === 0
+				? repeat.pressStartMs + initialDelayMs
+				: repeat.lastRepeatAtMs + repeatIntervalMs;
+			if (now >= nextAt) {
+				repeat.repeatCount += 1;
+				repeat.lastRepeatAtMs = nextAt;
 				result = true;
 			}
 		}
@@ -838,14 +842,6 @@ export class PlayerInput {
 			this.actionRepeatRecords.set(action, entry);
 		}
 		return entry;
-	}
-
-	private computeRepeatCount(heldMs: number): number {
-		if (heldMs < INITIAL_REPEAT_DELAY_MS) {
-			return 0;
-		}
-		const elapsedSinceDelay = heldMs - INITIAL_REPEAT_DELAY_MS;
-		return Math.floor(elapsedSinceDelay / REPEAT_INTERVAL_MS) + 1;
 	}
 
 	/** Updates aggregated button states and cleans up stale events. */
