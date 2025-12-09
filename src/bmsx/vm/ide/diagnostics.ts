@@ -64,6 +64,7 @@ export function computeAggregatedEditorDiagnostics(
 			globalSymbols,
 			builtinDescriptors,
 			apiSignatures: apiData.signatures,
+			version: ctx.version,
 			lines: baseLines,
 			parsed: parsed ?? undefined,
 		});

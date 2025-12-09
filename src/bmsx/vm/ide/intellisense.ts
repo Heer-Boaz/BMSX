@@ -1,9 +1,8 @@
 import type { LuaDefinitionInfo, LuaDefinitionKind, LuaForGenericStatement, LuaForNumericStatement, LuaFunctionExpression, LuaMemberExpression, LuaReturnStatement, LuaSourceRange, LuaStringLiteralExpression, LuaTableArrayField, LuaTableExpressionField, LuaTableIdentifierField } from '../../lua/lua_ast';
 import { LuaSyntaxKind, LuaTableFieldKind, type LuaAssignableExpression, type LuaAssignmentStatement, type LuaBinaryExpression, type LuaBlock, type LuaCallExpression, type LuaChunk, type LuaDoStatement, type LuaExpression, type LuaIdentifierExpression, type LuaIndexExpression, type LuaLocalAssignmentStatement, type LuaLocalFunctionStatement, type LuaTableConstructorExpression, type LuaCallStatement, type LuaFunctionDeclarationStatement, type LuaIfStatement, type LuaRepeatStatement, type LuaStatement, type LuaUnaryExpression, type LuaWhileStatement } from '../../lua/lua_ast';
 import { LuaEnvironment } from '../../lua/luaenvironment';
-import { LuaSyntaxError } from '../../lua/luaerrors';
 import { LuaLexer } from '../../lua/lualexer';
-import { parseLuaChunk, parseLuaChunkWithRecovery, type ParsedLuaChunk } from './lua_parse';
+import type { ParsedLuaChunk } from './lua_parse';
 import { getCachedLuaParse } from './lua_analysis_cache';
 import { LuaInterpreter } from '../../lua/luaruntime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaNativeValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../lua/luavalue';
@@ -392,31 +391,35 @@ export type LuaDiagnosticOptions = {
 	apiSignatures: Map<string, ApiCompletionMetadata>;
 	lines?: readonly string[];
 	parsed?: ParsedLuaChunk;
+	version?: number;
 };
 
 export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnostic[] {
 	const diagnostics: LuaDiagnostic[] = [];
 	const functionSignatures = new Map<string, FunctionSignatureInfo>();
-	let chunk: LuaChunk;
-	try {
-		const parsed = options.parsed;
-		chunk = parsed ? parsed.chunk : parseLuaChunk(options.source, options.chunkName, options.lines).chunk;
-	} catch (error) {
-		if (error instanceof LuaSyntaxError) {
-			const row = error.line > 0 ? error.line - 1 : 0;
-			const startColumn = error.column > 0 ? error.column - 1 : 0;
-			const endColumn = startColumn + 1;
-			diagnostics.push({
-				row,
-				startColumn,
-				endColumn,
-				message: error.message,
-				severity: 'error',
-			});
-			return diagnostics;
-		}
-		throw error;
+	const parseEntry = getCachedLuaParse({
+		chunkName: options.chunkName,
+		source: options.source,
+		lines: options.lines,
+		version: options.version,
+		parsed: options.parsed,
+		withSyntaxError: true,
+	});
+	const syntaxError = parseEntry.syntaxError;
+	if (syntaxError) {
+		const row = syntaxError.line > 0 ? syntaxError.line - 1 : 0;
+		const startColumn = syntaxError.column > 0 ? syntaxError.column - 1 : 0;
+		const endColumn = startColumn + 1;
+		diagnostics.push({
+			row,
+			startColumn,
+			endColumn: endColumn > startColumn ? endColumn : startColumn + 1,
+			message: syntaxError.message,
+			severity: 'error',
+		});
+		return diagnostics;
 	}
+	const chunk = parseEntry.parsed.chunk;
 
 	const globalKnownNames = buildGlobalKnownNameSet(options.localSymbols, options.globalSymbols, options.builtinDescriptors, options.apiSignatures);
 	const builtinLookup = buildBuiltinLookup(options.builtinDescriptors);
@@ -2249,63 +2252,23 @@ export function buildSemanticModelForChunk(chunkName: string): LuaSemanticModel 
 	const cachedMatch = cached && cached.source === source ? cached : null;
 	if (cachedMatch && cachedMatch.model) {
 		if (!cachedMatch.lines) {
-			cachedMatch.lines = source.split('\n');
+			cachedMatch.lines = cachedMatch.source.split('\n');
 		}
 		return cachedMatch.model;
 	}
-	const baseLines = cachedMatch?.lines ?? source.split('\n');
-	const cachedParsed = cachedMatch?.parsed ?? null;
-	try {
-		const parsed = cachedParsed ?? parseLuaChunkWithRecovery(source, chunkName, baseLines);
-		const model = buildLuaSemanticModel(source, chunkName, baseLines, parsed);
-		runtime.chunkSemanticCache.set(chunkName, { source, model, definitions: model.definitions, parsed, lines: baseLines });
-		return model;
-	} catch (error) {
-		if (error instanceof LuaSyntaxError) {
-			const sanitizedSource = (() => {
-				if (!Number.isFinite(error.line)) {
-					return null;
-				}
-				const lines = source.split('\n');
-				const lineIndex = error.line - 1;
-				if (lineIndex < 0 || lineIndex >= lines.length) {
-					return null;
-				}
-				const originalLine = lines[lineIndex];
-				const trimmed = originalLine.trimStart();
-				if (trimmed.startsWith('--__BMSX_SYNTAX_ERROR__')) {
-					return null;
-				}
-				const prefixLength = originalLine.length - trimmed.length;
-				const prefix = originalLine.slice(0, prefixLength);
-				lines[lineIndex] = `${prefix}--__BMSX_SYNTAX_ERROR__ ${trimmed}`;
-				return lines.join('\n');
-			})();
-			if (sanitizedSource && sanitizedSource !== source) {
-				try {
-					const sanitizedLines = sanitizedSource.split('\n');
-					const parsed = parseLuaChunkWithRecovery(sanitizedSource, chunkName, sanitizedLines);
-					const model = buildLuaSemanticModel(sanitizedSource, chunkName, sanitizedLines, parsed);
-					runtime.chunkSemanticCache.set(chunkName, { source, model, definitions: model.definitions, parsed, lines: sanitizedLines });
-					return model;
-				} catch {
-					// continue with fallback logic below
-				}
-			}
-			const previousModel = cachedMatch ? cachedMatch.model : null;
-			const previousDefinitions = cachedMatch ? cachedMatch.definitions : [];
-			if (previousModel) {
-				runtime.chunkSemanticCache.set(chunkName, { source, model: previousModel, definitions: previousDefinitions, parsed: cachedParsed ?? null, lines: baseLines });
-				return previousModel;
-			}
-			runtime.chunkSemanticCache.set(chunkName, { source, model: null, definitions: [], parsed: cachedParsed ?? null, lines: baseLines });
-			return null;
-		}
-		const message = extractErrorMessage(error);
-		runtime.chunkSemanticCache.set(chunkName, { source, model: null, definitions: [], parsed: cachedParsed ?? null, lines: baseLines });
-		console.warn(`[BmsxVMRuntime] Failed to parse '${chunkName}': ${message}`);
-		return null;
-	}
+	const parseEntry = getCachedLuaParse({
+		chunkName,
+		source,
+		lines: cachedMatch?.lines,
+		version: null,
+		withSyntaxError: false,
+		parsed: cachedMatch?.parsed,
+	});
+	const baseLines = parseEntry.lines;
+	const parsed = parseEntry.parsed;
+	const model = buildLuaSemanticModel(parseEntry.source, chunkName, baseLines, parsed);
+	runtime.chunkSemanticCache.set(chunkName, { source, model, definitions: model.definitions, parsed, lines: baseLines });
+	return model;
 }
 
 export function positionWithinRange(row: number, column: number, range: LuaSourceRange): boolean {

@@ -1,5 +1,5 @@
 import { BmsxVMApi } from '../vm_api';
-import { clamp } from '../../utils/clamp';;
+import { clamp } from '../../utils/clamp';
 import { getApiCompletionData, getKeywordCompletions, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaModuleSymbols, type LuaScopedSymbol } from './intellisense';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/lua_ast';
 import {
@@ -21,7 +21,7 @@ import { isReadOnlyCodeTab } from './editor_tabs';
 import { consumeIdeKey } from './ide_input';
 import { api, BmsxVMRuntime } from '../vm_runtime';
 import { point_in_rect } from '../../utils/rect_operations';
-import { LuaLexer } from '../..';
+import { LuaLexer } from '../../lua/lualexer';
 
 type MemberCompletionHostRequest = {
 	objectName: string;
@@ -74,13 +74,17 @@ type LocalCompletionCacheEntry = {
 	moduleAliases: Map<string, string>;
 };
 
+const KEYWORD_COMPLETION_ITEMS: LuaCompletionItem[] = getKeywordCompletions();
+
 export class CompletionController {
 	private readonly host: CompletionHost;
 	private completionSession: CompletionSession = null;
 	private readonly localCompletionCache: Map<string, LocalCompletionCacheEntry> = new Map();
 	private cachedGlobalCompletionItems: LuaCompletionItem[] = null;
+	private cachedGlobalCompletionVersion = -1;
 	private sharedCompletionItems: LuaCompletionItem[] = null;
 	private sharedCompletionMap: Map<string, LuaCompletionItem> = null;
+	private sharedCompletionVersion = -1;
 	private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } = null;
 	private suppressNextAutoCompletion = false;
 	private parameterHint: ParameterHintState = null;
@@ -190,9 +194,6 @@ export class CompletionController {
 	public updateAfterEdit(edit: EditContext): void {
 		// Invalidate caches upon edit
 		this.invalidateLocalCompletionCacheForActiveContext();
-		this.cachedGlobalCompletionItems = null;
-		this.sharedCompletionItems = null;
-		this.sharedCompletionMap = null;
 		this.parameterHintIdleElapsed = 0;
 		this.lastCursorPosition = { row: this.host.getCursorRow(), column: this.host.getCursorColumn() };
 		this.lastTextVersion = this.host.getTextVersion();
@@ -432,17 +433,18 @@ export class CompletionController {
 	}
 
 	private getSharedCompletionEntries(): { list: LuaCompletionItem[]; map: Map<string, LuaCompletionItem> } {
-		if (!this.sharedCompletionItems || !this.sharedCompletionMap) {
+		const globalItems = this.getGlobalCompletionItems();
+		const version = this.cachedGlobalCompletionVersion;
+		if (!this.sharedCompletionItems || !this.sharedCompletionMap || this.sharedCompletionVersion !== version) {
 			const map = new Map<string, LuaCompletionItem>();
 			const register = (item: LuaCompletionItem): void => {
 				if (!map.has(item.sortKey)) {
 					map.set(item.sortKey, item);
 				}
 			};
-			for (let i = 0; i < getKeywordCompletions().length; i += 1) {
-				register(getKeywordCompletions()[i]);
+			for (let i = 0; i < KEYWORD_COMPLETION_ITEMS.length; i += 1) {
+				register(KEYWORD_COMPLETION_ITEMS[i]);
 			}
-			const globalItems = this.getGlobalCompletionItems();
 			for (let i = 0; i < globalItems.length; i += 1) {
 				register(globalItems[i]);
 			}
@@ -454,6 +456,7 @@ export class CompletionController {
 			sharedList.sort((a, b) => a.label.localeCompare(b.label));
 			this.sharedCompletionItems = sharedList;
 			this.sharedCompletionMap = map;
+			this.sharedCompletionVersion = version;
 		}
 		return { list: this.sharedCompletionItems!, map: this.sharedCompletionMap! };
 	}
@@ -546,14 +549,20 @@ export class CompletionController {
 	}
 
 	private getGlobalCompletionItems(): LuaCompletionItem[] {
-		if (this.cachedGlobalCompletionItems) return this.cachedGlobalCompletionItems;
-		let entries: VMLuaSymbolEntry[] = [];
-		try { entries = listGlobalLuaSymbols(); } catch { this.cachedGlobalCompletionItems = []; return this.cachedGlobalCompletionItems; }
+		const version = this.host.getTextVersion();
+		if (this.cachedGlobalCompletionItems && this.cachedGlobalCompletionVersion === version) {
+			return this.cachedGlobalCompletionItems;
+		}
+		const entries = listGlobalLuaSymbols();
 		const items = this.buildSymbolCompletionItems(entries, 'global');
 		const apiItem: LuaCompletionItem = { label: 'api', insertText: 'api', sortKey: 'global:api', kind: 'global', detail: 'VM API root' };
 		items.push(apiItem);
 		items.sort((a, b) => a.label.localeCompare(b.label));
 		this.cachedGlobalCompletionItems = items;
+		this.cachedGlobalCompletionVersion = version;
+		this.sharedCompletionItems = null;
+		this.sharedCompletionMap = null;
+		this.sharedCompletionVersion = -1;
 		return items;
 	}
 
@@ -1322,11 +1331,6 @@ export class CompletionController {
 	private invalidateLocalCompletionCacheForActiveContext(): void {
 		const key = this.activeCompletionCacheKey();
 		if (!key) return;
-		const cached = this.localCompletionCache.get(key);
-		if (cached) {
-			cached.parsedVersion = -1;
-			return;
-		}
 		this.localCompletionCache.delete(key);
 	}
 }

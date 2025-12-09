@@ -271,11 +271,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 			return;
 		}
 		const sourceLabel = computeSourceLabel(labelHint ?? chunkName ?? path, chunkName);
-		try {
-			workspace.updateFile(chunkName, lines.join('\n'), lines, null, version);
-		} catch {
-			// Ignore parse errors; we still register metadata so callers can inspect raw lines.
-		}
+		workspace.updateFile(chunkName, lines.join('\n'), lines, null, version);
 		metadata.set(chunkName, {
 			chunkName,
 			lines,
