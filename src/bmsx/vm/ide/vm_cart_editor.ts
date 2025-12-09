@@ -731,37 +731,36 @@ function canonicalizeEditorIdentifier(name: string): string {
 }
 
 export function getBuiltinIdentifierSet(): ReadonlySet<string> {
-	try {
-		const descriptors = listLuaBuiltinFunctions();
-		const names: string[] = [];
-		for (let index = 0; index < descriptors.length; index += 1) {
-			const descriptor = descriptors[index];
-			names.push(descriptor.name);
-		}
-		names.sort((a, b) => a.localeCompare(b));
-		const key = names.join('\u0000');
-		const cached = ide_state.builtinIdentifierCache;
-		if (cached && cached.key === key) {
-			return cached.set;
-		}
-		const set = new Set<string>();
-		for (let i = 0; i < names.length; i += 1) {
-			const name = names[i];
-			const canonical = canonicalizeEditorIdentifier(name);
-			set.add(canonical);
-			set.add(name);
-		}
-		const entry = { key, set };
-		ide_state.builtinIdentifierCache = entry;
-		return entry.set;
-	} catch (error) {
-		if (ide_state.builtinIdentifierCache) {
-			return ide_state.builtinIdentifierCache.set;
-		}
-		const fallback = new Set<string>();
-		ide_state.builtinIdentifierCache = { key: '', set: fallback };
-		return fallback;
+	const cached = ide_state.builtinIdentifierCache;
+	if (cached && cached.caseInsensitive === ide_state.caseInsensitive && cached.canonicalization === ide_state.canonicalization) {
+		return cached.set;
 	}
+	const descriptors = listLuaBuiltinFunctions();
+	const names: string[] = [];
+	for (let index = 0; index < descriptors.length; index += 1) {
+		names.push(descriptors[index].name);
+	}
+	names.sort((a, b) => a.localeCompare(b));
+	const canonicalize = ide_state.caseInsensitive
+		? (ide_state.canonicalization === 'upper'
+			? (value: string) => value.toUpperCase()
+			: (value: string) => value.toLowerCase())
+		: (value: string) => value;
+	const set = new Set<string>();
+	for (let i = 0; i < names.length; i += 1) {
+		const name = names[i];
+		const canonical = canonicalize(name);
+		set.add(canonical);
+		set.add(name);
+	}
+	const entry = {
+		key: names.join('\u0000'),
+		set,
+		canonicalization: ide_state.canonicalization,
+		caseInsensitive: ide_state.caseInsensitive,
+	};
+	ide_state.builtinIdentifierCache = entry;
+	return entry.set;
 }
 
 export function getTabBarTotalHeight(): number {

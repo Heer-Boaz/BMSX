@@ -161,8 +161,11 @@ export class VMCodeLayout {
 			rowSignature = signatures[row];
 		}
 		const source = row >= 0 && row < lines.length ? lines[row] ?? '' : '';
-		const sourceHash = hashLineContent(source);
 		const cached = this.highlightCache.get(row);
+		if (cached && cached.rowSignature === rowSignature && cached.src === source) {
+			return cached;
+		}
+		const sourceHash = hashLineContent(source);
 		if (cached && cached.rowSignature === rowSignature && cached.srcHash === sourceHash) {
 			return cached;
 		}
@@ -774,11 +777,18 @@ export class VMCodeLayout {
 	}
 }
 
+const lineHashCache = new Map<string, number>();
+
 function hashLineContent(line: string): number {
+	const cached = lineHashCache.get(line);
+	if (cached !== undefined) {
+		return cached;
+	}
 	let hash = 2166136261 >>> 0;
 	for (let index = 0; index < line.length; index += 1) {
 		hash ^= line.charCodeAt(index);
 		hash = (hash * 16777619) >>> 0;
 	}
+	lineHashCache.set(line, hash);
 	return hash;
 }

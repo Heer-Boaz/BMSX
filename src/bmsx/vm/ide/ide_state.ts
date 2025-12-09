@@ -52,6 +52,13 @@ import { VM_TOGGLE_KEY, EDITOR_TOGGLE_KEY, ESCAPE_KEY, getActiveIdeThemeVariant 
 import { CaretNavigationState } from './caret';
 import { VMEditorFont } from '../editor_font';
 
+type BuiltinIdentifierCache = {
+	key: string;
+	set: ReadonlySet<string>;
+	canonicalization: CanonicalizationType;
+	caseInsensitive: boolean;
+};
+
 export type NavigationHistoryEntry = {
 	contextId: string;
 	asset_id: string;
@@ -123,7 +130,7 @@ export interface IdeState {
 	lastHistoryKey: string;
 	lastHistoryTimestamp: number;
 	fontVariant: VMFontVariant;
-	builtinIdentifierCache: { key: string; set: ReadonlySet<string> };
+	builtinIdentifierCache: BuiltinIdentifierCache | null;
 	hoverTooltip: CodeHoverTooltip;
 	lastPointerSnapshot: PointerSnapshot;
 	lastInspectorResult: VMLuaHoverResult;
