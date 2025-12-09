@@ -23,7 +23,6 @@ function prepareBreakpointWorkspaceState(): () => void {
 	const payload = {
 		version: 1,
 		savedAt: performance.now(),
-		entryTabId: null,
 		activeTabId: null,
 		tabs: [],
 		dirtyFiles: [],

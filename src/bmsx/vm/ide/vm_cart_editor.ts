@@ -232,7 +232,6 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 	ide_state.cachedVisibleColumnCount = 1;
 	const entryContext = createEntryTabContext();
 	if (entryContext) {
-		ide_state.entryTabId = entryContext.id;
 		ide_state.codeTabContexts.set(entryContext.id, entryContext);
 	}
 	initializeTabs(entryContext);
@@ -3110,13 +3109,10 @@ export async function save(): Promise<void> {
 		ide_state.saveGeneration = ide_state.saveGeneration + 1;
 		context.lastSavedSource = source;
 		context.saveGeneration = ide_state.saveGeneration;
-		const isEntryContext = ide_state.entryTabId !== null && context.id === ide_state.entryTabId;
-		if (isEntryContext) {
-			ide_state.lastSavedSource = source;
-		}
+		ide_state.lastSavedSource = source;
 		context.snapshot = captureSnapshot();
 		updateActiveContextDirtyFlag();
-		const message = isEntryContext ? 'Lua cart saved (restart pending)' : `${context.title} saved (restart pending)`;
+		const message = `${context.title} saved (restart pending)`;
 		ide_state.showMessage(message, constants.COLOR_STATUS_SUCCESS, 2.5);
 	} catch (error) {
 		if (tryShowLuaErrorOverlay(error)) {
@@ -3453,7 +3449,7 @@ export function hideResourcePanel(): void {
 
 export function openLuaCodeTab(descriptor: VMResourceDescriptor): void {
 	const navigationCheckpoint = beginNavigationCapture();
-	const tabId: EditorTabId = `lua:${descriptor.asset_id}`;
+	const tabId: EditorTabId = `lua:${descriptor.path}`;
 	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
 	if (!ide_state.codeTabContexts.has(tabId)) {
 		const context = createLuaCodeTabContext(descriptor);
@@ -3482,7 +3478,7 @@ export function openLuaCodeTab(descriptor: VMResourceDescriptor): void {
 }
 
 export function openResourceViewerTab(descriptor: VMResourceDescriptor): void {
-	const tabId: EditorTabId = `resource:${descriptor.asset_id}`;
+	const tabId: EditorTabId = `resource:${descriptor.path}`;
 	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
 	const state = buildResourceViewerState(descriptor);
 	resourceViewerClampScroll(state);

@@ -345,12 +345,9 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 	const entryContext = createEntryTabContext();
 	ide_state.codeTabContexts.clear();
 	if (entryContext) {
-		ide_state.entryTabId = entryContext.id;
 		ide_state.codeTabContexts.set(entryContext.id, entryContext);
-	} else {
-		ide_state.entryTabId = null;
 	}
-	initializeTabs(entryContext );
+	initializeTabs(entryContext);
 	const runtime = BmsxVMRuntime.instance;
 	if (payload.fontVariant) {
 		if (runtime) {

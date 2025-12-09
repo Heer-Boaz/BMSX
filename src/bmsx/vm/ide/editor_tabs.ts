@@ -79,9 +79,6 @@ export function storeActiveCodeTabContext(): void {
 	}
 	context.snapshot = captureSnapshot();
 	context.textVersion = ide_state.textVersion;
-	if (ide_state.entryTabId && context.id === ide_state.entryTabId) {
-		context.lastSavedSource = ide_state.lastSavedSource;
-	}
 	context.saveGeneration = ide_state.saveGeneration;
 	context.appliedGeneration = ide_state.appliedGeneration;
 	context.dirty = ide_state.dirty;
@@ -91,23 +88,12 @@ export function storeActiveCodeTabContext(): void {
 }
 
 export function activateCodeEditorTab(tabId: string): void {
-	let context = ide_state.codeTabContexts.get(tabId);
+	const context = ide_state.codeTabContexts.get(tabId);
 	if (!context) {
-		if (ide_state.entryTabId && tabId === ide_state.entryTabId) {
-			const recreated = createEntryTabContext();
-			if (!recreated || recreated.id !== tabId) {
-				return;
-			}
-			context = recreated;
-			ide_state.entryTabId = context.id;
-			ide_state.codeTabContexts.set(tabId, context);
-		} else {
-			return;
-		}
+		return;
 	}
 	ide_state.activeCodeTabContextId = tabId;
 	ide_state.activeContextReadOnly = context.readOnly === true;
-	const isEntry = ide_state.entryTabId !== null && context.id === ide_state.entryTabId;
 	if (context.snapshot) {
 		restoreSnapshot(context.snapshot);
 		ide_state.saveGeneration = context.saveGeneration;
@@ -120,9 +106,7 @@ export function activateCodeEditorTab(tabId: string): void {
 		if (!cached || cachedVersion !== ide_state.textVersion || cachedChunk !== chunkName) {
 			markDiagnosticsDirty(context.id);
 		}
-		if (isEntry) {
-			ide_state.lastSavedSource = context.lastSavedSource;
-		}
+		ide_state.lastSavedSource = context.lastSavedSource;
 		context.dirty = ide_state.dirty;
 		setTabDirty(context.id, context.dirty);
 		syncRuntimeErrorOverlayFromContext(context);
@@ -154,9 +138,7 @@ export function activateCodeEditorTab(tabId: string): void {
 	ide_state.saveGeneration = context.saveGeneration;
 	ide_state.appliedGeneration = context.appliedGeneration;
 	context.textVersion = ide_state.textVersion;
-	if (isEntry) {
-		ide_state.lastSavedSource = context.lastSavedSource;
-	}
+	ide_state.lastSavedSource = context.lastSavedSource;
 	setTabDirty(context.id, context.dirty);
 	syncRuntimeErrorOverlayFromContext(context);
 	bumpTextVersion();
@@ -168,22 +150,22 @@ export function activateCodeEditorTab(tabId: string): void {
 	refreshActiveDiagnostics();
 }
 
-export function initializeTabs(entryContext: CodeTabContext = null): void {
+export function initializeTabs(initialContext: CodeTabContext = null): void {
 	ide_state.tabs = [];
 	ide_state.tabHoverId = null;
 	ide_state.tabDragState = null;
 	ide_state.tabButtonBounds.clear();
 	ide_state.tabCloseButtonBounds.clear();
-	if (entryContext) {
+	if (initialContext) {
 		ide_state.tabs.push({
-			id: entryContext.id,
+			id: initialContext.id,
 			kind: 'lua_editor',
-			title: entryContext.title,
+			title: initialContext.title,
 			closable: true,
-			dirty: entryContext.dirty,
+			dirty: initialContext.dirty,
 		});
-		ide_state.activeTabId = entryContext.id;
-		ide_state.activeCodeTabContextId = entryContext.id;
+		ide_state.activeTabId = initialContext.id;
+		ide_state.activeCodeTabContextId = initialContext.id;
 		return;
 	}
 	ide_state.activeTabId = null;
@@ -282,31 +264,6 @@ export function activateCodeTab(): void {
 	const codeTab = ide_state.tabs.find(candidate => candidate.kind === 'lua_editor');
 	if (codeTab) {
 		setActiveTab(codeTab.id);
-		return;
-	}
-	if (ide_state.entryTabId) {
-		let context = ide_state.codeTabContexts.get(ide_state.entryTabId);
-		if (!context) {
-			context = createEntryTabContext();
-			if (!context) {
-				return;
-			}
-			ide_state.entryTabId = context.id;
-			ide_state.codeTabContexts.set(context.id, context);
-		}
-		let entryTab = ide_state.tabs.find(candidate => candidate.id === context.id);
-		if (!entryTab) {
-			entryTab = {
-				id: context.id,
-				kind: 'lua_editor',
-				title: context.title,
-				closable: true,
-				dirty: context.dirty,
-				resource: undefined,
-			};
-			ide_state.tabs.unshift(entryTab);
-		}
-		setActiveTab(context.id);
 	}
 }
 

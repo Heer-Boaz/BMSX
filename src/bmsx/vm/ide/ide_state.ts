@@ -162,7 +162,6 @@ export interface IdeState {
 	diagnosticsComputationScheduled: boolean;
 	codeTabContexts: Map<string, CodeTabContext>;
 	activeCodeTabContextId: string;
-	entryTabId: string;
 	topBarButtonBounds: Record<TopBarButtonId, RectBounds>;
 	menuEntryBounds: Record<MenuId, RectBounds>;
 	menuDropdownBounds: RectBounds;
@@ -345,7 +344,6 @@ export const ide_state: IdeState = {
 	diagnosticsComputationScheduled: false,
 	codeTabContexts: new Map<string, CodeTabContext>(),
 	activeCodeTabContextId: null,
-	entryTabId: null,
 	topBarButtonBounds: {
 		"hot-reload-and-resume": { left: 0, top: 0, right: 0, bottom: 0 },
 		reboot: { left: 0, top: 0, right: 0, bottom: 0 },
