@@ -362,7 +362,7 @@ export class LuaInterpreter {
 	private _hostAdapter: LuaHostAdapter = null;
 	private caseInsensitiveNativeAccess = true;
 	private identifierCanonicalizationMode: CanonicalizationType = 'none';
-	private readonly canonicalizeIdentifier: (value: string) => string;
+	private readonly canonicalize: (value: string) => string;
 	private nativeValueCache: WeakMap<object | Function, LuaNativeValue> = new WeakMap();
 	private readonly nativeMethodCache: WeakMap<LuaNativeValue, Map<string, LuaFunctionValue>> = new WeakMap<
 		LuaNativeValue,
@@ -380,13 +380,14 @@ export class LuaInterpreter {
 	public constructor(canonicalization: CanonicalizationType = 'none') {
 		this.globals = LuaEnvironment.createRoot();
 		this.identifierCanonicalizationMode = canonicalization;
-		this.canonicalizeIdentifier = createIdentifierCanonicalizer(canonicalization);
+		this.canonicalize = createIdentifierCanonicalizer(canonicalization);
 		this.caseInsensitiveNativeAccess = canonicalization !== 'none';
 		this.currentChunk = '<chunk>';
 		this.randomSeedValue = $.platform.clock.now();
 		this.packageTable = createLuaTable();
 		this.packageLoaded = createLuaTable();
 		this.initializeBuiltins();
+		this._chunkEnvironment = LuaEnvironment.createChild(this.globals);
 	}
 
 	public execute(source: string, chunkName: string): LuaValue[] {
@@ -3175,10 +3176,6 @@ export class LuaInterpreter {
 			this.ensureIdentifierNotReserved(parameter.name, parameter.range);
 		}
 		this.validateReservedIdentifiers(expression.body.body);
-	}
-
-	private canonicalize(name: string): string {
-		return this.canonicalizeIdentifier(name);
 	}
 
 	private initializeBuiltins(): void {
