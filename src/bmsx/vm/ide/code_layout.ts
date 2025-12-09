@@ -76,8 +76,6 @@ export class VMCodeLayout {
 		this.semanticDebounceMs = Math.max(0, options.semanticDebounceMs);
 		this.clockNow = options.clockNow;
 		this.getBuiltinIdentifiers = options.getBuiltinIdentifiers;
-		// this.semanticWorker = this.tryCreateSemanticWorker();
-		this.semanticWorker = null;
 		const probeAdvance = this.font.advance('M');
 		const fallbackAdvance = this.font.advance(' ');
 		this.averageCharAdvance = Math.max(1, Number.isFinite(probeAdvance) && probeAdvance > 0 ? probeAdvance : (Number.isFinite(fallbackAdvance) && fallbackAdvance > 0 ? fallbackAdvance : 1));
@@ -500,19 +498,8 @@ export class VMCodeLayout {
 		return segments;
 	}
 
-	public forceSemanticUpdate(lines: readonly string[], documentVersion: number, chunkName: string): void {
-		const pending = this.updatePendingSemantic(lines, documentVersion, chunkName);
-		this.semanticDueAtMs = null;
-		if (this.semanticTimer) {
-			this.semanticTimer.cancel();
-			this.semanticTimer = null;
-		}
-		this.semanticUpdateScheduled = false;
-		this.dispatchSemanticUpdate(pending, 'force');
-	}
-
 	public getSemanticModel(lines: readonly string[], documentVersion: number, chunkName: string): LuaSemanticModel {
-		this.ensureSemanticModel(lines, documentVersion, chunkName, 'force');
+		this.ensureSemanticModel(lines, documentVersion, chunkName, 'background');
 		return this.semanticModel;
 	}
 
@@ -520,7 +507,7 @@ export class VMCodeLayout {
 		lines: readonly string[],
 		version: number,
 		chunkName: string,
-		mode: 'background' | 'force',
+		_mode: 'background',
 	): void {
 		if (this.semanticVersion === version && this.semanticChunkName === chunkName) {
 			if (this.semanticModel) {
@@ -534,16 +521,16 @@ export class VMCodeLayout {
 			return;
 		}
 		const pending = this.updatePendingSemantic(lines, version, chunkName);
-		if (mode === 'force') {
-			this.semanticDueAtMs = null;
-			if (this.semanticTimer) {
-				this.semanticTimer.cancel();
-				this.semanticTimer = null;
-			}
-			this.semanticUpdateScheduled = false;
-			this.dispatchSemanticUpdate(pending, 'force');
-			return;
-		}
+		// if (mode === 'force') {
+		// 	this.semanticDueAtMs = null;
+		// 	if (this.semanticTimer) {
+		// 		this.semanticTimer.cancel();
+		// 		this.semanticTimer = null;
+		// 	}
+		// 	this.semanticUpdateScheduled = false;
+		// 	this.dispatchSemanticUpdate(pending, 'force');
+		// 	return;
+		// }
 		if (this.semanticDebounceMs === 0) {
 			this.semanticDueAtMs = null;
 			if (this.semanticTimer) {
@@ -629,11 +616,12 @@ export class VMCodeLayout {
 	}
 
 	private applySemanticUpdateSync(pending: PendingSemanticUpdate): void {
+		return;
 		let model: LuaSemanticModel = null;
 		let errorMessage: string = null;
 		try {
 			const source = this.materializeSemanticSource(pending);
-			model = this.workspace.updateFile(pending.chunkName, source, pending.lines);
+			model = this.workspace.updateFile(pending.chunkName, source, pending.lines, null, pending.version);
 		} catch (error) {
 			model = null;
 			errorMessage = error instanceof Error ? error.message : String(error);

@@ -2,7 +2,7 @@ import type { VMLuaBuiltinDescriptor, VMLuaSymbolEntry, VMResourceDescriptor } f
 import type { EditorDiagnostic } from './types';
 import { BmsxVMRuntime } from '../vm_runtime';
 import { computeLuaDiagnostics, getApiCompletionData } from './intellisense';
-import { parseLuaChunkWithRecovery } from './lua_parse';
+import { getCachedLuaParse } from './lua_analysis_cache';
 import { ide_state, diagnosticsDebounceMs } from './ide_state';
 
 export type DiagnosticContextInput = {
@@ -35,15 +35,19 @@ export function computeAggregatedEditorDiagnostics(
 		const ctx = contexts[i];
 		const chunkName = resolveChunkName(ctx);
 		const source = ctx.source ?? '';
-		const lines = ctx.lines;
-		const cacheEntry = chunkName ? BmsxVMRuntime.instance.chunkSemanticCache.get(chunkName) : null;
-		const cachedMatch = cacheEntry && cacheEntry.source === source ? cacheEntry : null;
 		if (source.length === 0) continue;
-		const baseLines = lines ?? cachedMatch?.lines ?? source.split('\n');
-		const parsed = cachedMatch?.parsed ?? (chunkName ? parseLuaChunkWithRecovery(source, chunkName, baseLines) : null);
+		const parseEntry = getCachedLuaParse({
+			chunkName,
+			source,
+			lines: ctx.lines,
+			version: ctx.version,
+		});
+		const baseLines = parseEntry.lines;
+		const parsed = parseEntry.parsed;
 		if (chunkName) {
-			const model = cachedMatch ? cachedMatch.model : null;
-			const definitions = cachedMatch ? cachedMatch.definitions : [];
+			const cacheEntry = BmsxVMRuntime.instance.chunkSemanticCache.get(chunkName);
+			const model = cacheEntry ? cacheEntry.model : null;
+			const definitions = cacheEntry ? cacheEntry.definitions : [];
 			BmsxVMRuntime.instance.chunkSemanticCache.set(chunkName, {
 				source,
 				model,

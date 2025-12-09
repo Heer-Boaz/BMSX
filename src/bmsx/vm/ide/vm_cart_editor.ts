@@ -992,6 +992,7 @@ export function collectDiagnosticsBatch(): string[] {
 }
 
 export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
+	return;
 	if (contextIds.length === 0) {
 		return;
 	}
@@ -1773,7 +1774,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 		updatedTotal += sortedMatches.length;
 	}
 	if (activeEditsApplied) {
-		ide_state.semanticWorkspace.updateFile(activeChunkName, ide_state.lines.join('\n'), ide_state.lines);
+		ide_state.semanticWorkspace.updateFile(activeChunkName, ide_state.lines.join('\n'), ide_state.lines, null, ide_state.textVersion);
 	}
 	const decl = info.definitionKey ? ide_state.semanticWorkspace.getDecl(info.definitionKey) : null;
 	const references = info.definitionKey ? ide_state.semanticWorkspace.getReferences(info.definitionKey) : [];

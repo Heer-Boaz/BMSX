@@ -321,7 +321,7 @@ export class CrossFileRenameManager {
 			lines[edit.row] = edit.text;
 		}
 		this.applyLinesToContextSnapshot(context, lines);
-		this.workspace.updateFile(chunkName, lines.join('\n'), lines);
+		this.workspace.updateFile(chunkName, lines.join('\n'), lines, null, context.textVersion);
 		return matches.length;
 	}
 

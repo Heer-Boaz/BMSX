@@ -5,6 +5,7 @@ import { LuaSyntaxError } from '../../lua/luaerrors';
 import { LuaLexer } from '../../lua/lualexer';
 import { KEYWORDS } from './keywords';
 import { parseLuaChunk, parseLuaChunkWithRecovery, type ParsedLuaChunk } from './lua_parse';
+import { getCachedLuaParse } from './lua_analysis_cache';
 import { LuaInterpreter } from '../../lua/luaruntime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaNativeValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../lua/luavalue';
 import { BmsxVMApi } from '../vm_api';
@@ -101,15 +102,11 @@ export type LuaScopedSymbolOptions = {
 };
 
 export function collectLuaModuleAliases(options: LuaScopedSymbolOptions): Map<string, string> {
-	let chunk: LuaChunk;
-	try {
-		chunk = parseLuaChunkWithRecovery(options.source, options.chunkName).chunk;
-	} catch (error) {
-		if (error instanceof LuaSyntaxError) {
-			return new Map();
-		}
-		throw error;
-	}
+	const parsed = getCachedLuaParse({
+		chunkName: options.chunkName,
+		source: options.source,
+	}).parsed;
+	const chunk = parsed.chunk;
 	const aliases = new Map<string, string>();
 	collectRequireAliasesFromStatements(chunk.body, aliases);
 	return aliases;

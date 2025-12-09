@@ -267,13 +267,13 @@ export function filterReferenceCatalog(options: { catalog: readonly ReferenceCat
 function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileMetadata> {
 	const { workspace, environment, currentChunkName, currentLines, currentasset_id, sourceLabelPath } = options;
 	const metadata: Map<string, FileMetadata> = new Map();
-	const register = (chunkName: string, lines: readonly string[], asset_id: string, path: string, labelHint: string): void => {
+	const register = (chunkName: string, lines: readonly string[], asset_id: string, path: string, labelHint: string, version?: number): void => {
 		if (metadata.has(chunkName)) {
 			return;
 		}
 		const sourceLabel = computeSourceLabel(labelHint ?? chunkName ?? path, chunkName);
 		try {
-			workspace.updateFile(chunkName, lines.join('\n'), lines);
+			workspace.updateFile(chunkName, lines.join('\n'), lines, null, version);
 		} catch {
 			// Ignore parse errors; we still register metadata so callers can inspect raw lines.
 		}
@@ -285,7 +285,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 			sourceLabel,
 		});
 	};
-	register(currentChunkName, currentLines, currentasset_id, null, sourceLabelPath );
+	register(currentChunkName, currentLines, currentasset_id, null, sourceLabelPath, environment.activeContext.textVersion);
 	const activeContext = environment.activeContext;
 	const contexts = Array.from(environment.codeTabContexts);
 	for (let index = 0; index < contexts.length; index += 1) {
@@ -301,19 +301,15 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		} else if (context.snapshot) {
 			lines = context.snapshot.lines;
 		} else {
-			try {
-				const source = BmsxVMRuntime.instance.resourceSourceForChunk(chunkName);
-				lines = normalizeEndingsAndSplitLines(source);
-			} catch {
-				lines = null;
-			}
+			const source = BmsxVMRuntime.instance.resourceSourceForChunk(chunkName);
+			lines = normalizeEndingsAndSplitLines(source);
 		}
-		if (!lines) {
+		if (!lines || lines.length === 0) {
 			continue;
 		}
-		const asset_id = descriptor && descriptor.asset_id ? descriptor.asset_id : null;
-		const path = descriptor && descriptor.path ? descriptor.path : null;
-		register(chunkName, lines, asset_id, path, null);
+		const asset_id = descriptor.asset_id;
+		const path = descriptor.path;
+		register(chunkName, lines, asset_id, path, null, context.textVersion);
 	}
 	const descriptors = listResources();
 	for (let index = 0; index < descriptors.length; index += 1) {
@@ -328,17 +324,12 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		if (!descriptor.asset_id) {
 			continue;
 		}
-		let lines: readonly string[] = null;
-		try {
-			const source = BmsxVMRuntime.instance.resourceSourceForChunk(chunkName);
-			lines = normalizeEndingsAndSplitLines(source);
-		} catch {
-			lines = null;
-		}
-		if (!lines) {
+		const source = BmsxVMRuntime.instance.resourceSourceForChunk(chunkName);
+		const lines = normalizeEndingsAndSplitLines(source);
+		if (!lines || lines.length === 0) {
 			continue;
 		}
-		register(chunkName, lines, descriptor.asset_id, descriptor.path , null);
+		register(chunkName, lines, descriptor.asset_id, descriptor.path , null, null);
 	}
 	return metadata;
 }
