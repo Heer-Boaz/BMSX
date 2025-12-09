@@ -939,36 +939,36 @@ export class Input implements RegisterablePersistent {
 		const keyboardHandler = player.inputHandlers['keyboard'];
 		if (!keyboardHandler) return;
 
-		const fogToggle = player.getButtonState('KeyF', 'keyboard');
-		if (fogToggle?.justpressed) {
-			const atmosphere = $.view?.atmosphere;
-			if (!atmosphere) {
-				throw new Error('[Input] GameView atmosphere settings unavailable while toggling fog.');
-			}
-			atmosphere.fogD50 = (atmosphere.fogD50 > 1e6) ? 320.0 : 1e9;
-			console.info(`Fog ${atmosphere.fogD50 > 1e6 ? 'disabled' : 'enabled'} (d50=${atmosphere.fogD50})`);
-			keyboardHandler.consumeButton('KeyF');
-		}
+		// const fogToggle = player.getButtonState('KeyF', 'keyboard');
+		// if (fogToggle?.justpressed) {
+		// 	const atmosphere = $.view?.atmosphere;
+		// 	if (!atmosphere) {
+		// 		throw new Error('[Input] GameView atmosphere settings unavailable while toggling fog.');
+		// 	}
+		// 	atmosphere.fogD50 = (atmosphere.fogD50 > 1e6) ? 320.0 : 1e9;
+		// 	console.info(`Fog ${atmosphere.fogD50 > 1e6 ? 'disabled' : 'enabled'} (d50=${atmosphere.fogD50})`);
+		// 	keyboardHandler.consumeButton('KeyF');
+		// }
 
-		const fogColorToggle = player.getButtonState('KeyG', 'keyboard');
-		if (fogColorToggle?.justpressed) {
-			const atmosphere = $.view?.atmosphere;
-			if (!atmosphere) {
-				throw new Error('[Input] GameView atmosphere settings unavailable while toggling fog color.');
-			}
-			const isNeutral = atmosphere.fogColorLow[0] === 1.0 && atmosphere.fogColorHigh[0] === 1.0
-				&& atmosphere.fogColorLow[1] === 1.0 && atmosphere.fogColorHigh[1] === 1.0
-				&& atmosphere.fogColorLow[2] === 1.0 && atmosphere.fogColorHigh[2] === 1.0;
-			if (isNeutral) {
-				atmosphere.fogColorLow = [0.90, 0.95, 1.00];
-				atmosphere.fogColorHigh = [1.05, 1.02, 0.95];
-			} else {
-				atmosphere.fogColorLow = [1.0, 1.0, 1.0];
-				atmosphere.fogColorHigh = [1.0, 1.0, 1.0];
-			}
-			console.info('Fog color gradient toggled');
-			keyboardHandler.consumeButton('KeyG');
-		}
+		// const fogColorToggle = player.getButtonState('KeyG', 'keyboard');
+		// if (fogColorToggle?.justpressed) {
+		// 	const atmosphere = $.view?.atmosphere;
+		// 	if (!atmosphere) {
+		// 		throw new Error('[Input] GameView atmosphere settings unavailable while toggling fog color.');
+		// 	}
+		// 	const isNeutral = atmosphere.fogColorLow[0] === 1.0 && atmosphere.fogColorHigh[0] === 1.0
+		// 		&& atmosphere.fogColorLow[1] === 1.0 && atmosphere.fogColorHigh[1] === 1.0
+		// 		&& atmosphere.fogColorLow[2] === 1.0 && atmosphere.fogColorHigh[2] === 1.0;
+		// 	if (isNeutral) {
+		// 		atmosphere.fogColorLow = [0.90, 0.95, 1.00];
+		// 		atmosphere.fogColorHigh = [1.05, 1.02, 0.95];
+		// 	} else {
+		// 		atmosphere.fogColorLow = [1.0, 1.0, 1.0];
+		// 		atmosphere.fogColorHigh = [1.0, 1.0, 1.0];
+		// 	}
+		// 	console.info('Fog color gradient toggled');
+		// 	keyboardHandler.consumeButton('KeyG');
+		// }
 
 		const allowGlobalHotkeys = $.running || !$.paused;
 		if (allowGlobalHotkeys) {
