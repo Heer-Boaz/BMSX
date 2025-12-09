@@ -550,6 +550,10 @@ export class PlayerInput {
 		return handler.getButtonState(button);
 	}
 
+	public get pollFrame(): number {
+		return this.frameCounter;
+	}
+
 	/** Returns repeat/edge info for a raw button using the built-in repeat cadence. */
 	public getButtonRepeatState(button: ButtonId, source: InputSource): ButtonState {
 		const state = this.getButtonState(button, source);

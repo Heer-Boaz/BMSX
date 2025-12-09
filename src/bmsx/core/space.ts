@@ -9,7 +9,7 @@ export type initial_world_spaces = 'game_start' | 'default' | 'ui';
 /**
  * Represents a space in the game world, which contains a collection of game objects.
  */
-export class Space  {
+export class Space {
 	@excludepropfromsavegame
 	private readonly objectsById: Map<Identifier, WorldObject>;
 
@@ -120,10 +120,10 @@ export class Space  {
 			spaceId: this.id,
 			reason: skip_ondespawn_event ? 'transfer' : 'despawn',
 		});
-	if (index > -1) this.objects.splice(index, 1);
-	this.objectsById.delete(o.id);
-	world.objToSpaceMap.delete(o.id);
-	world.onObjectExiled(this, o);
+		if (index > -1) this.objects.splice(index, 1);
+		this.objectsById.delete(o.id);
+		world.objToSpaceMap.delete(o.id);
+		world.onObjectExiled(this, o);
 		if (world.depthDirtyBatch) world.depthDirtyBatch.add(this.id); else this.depthSortDirty = true;
 	}
 

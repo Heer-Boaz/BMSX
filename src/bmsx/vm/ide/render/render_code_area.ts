@@ -233,7 +233,7 @@ export function renderCodeArea(): void {
 		};
 		const maxColumns = columnCapacity + computeMaximumScrollColumn();
 		ide_state.scrollbars.codeHorizontal.layout(horizontalTrack, maxColumns, columnCapacity, ide_state.scrollColumn);
-		ide_state.scrollColumn = clamp(~~(ide_state.scrollbars.codeHorizontal.getScroll(), 0, computeMaximumScrollColumn());
+		ide_state.scrollColumn = clamp(~~(ide_state.scrollbars.codeHorizontal.getScroll()), 0, computeMaximumScrollColumn());
 		ide_state.codeHorizontalScrollbarVisible = ide_state.scrollbars.codeHorizontal.isVisible();
 	} else {
 		ide_state.scrollColumn = 0;

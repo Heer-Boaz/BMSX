@@ -290,7 +290,7 @@ export function handleEditorInput(): void {
 	const editableCodeTab = isEditableCodeTab();
 	const readOnlyCodeTab = isReadOnlyCodeTab();
 
-	if (handleEscapeKey()) {
+	if (isKeyJustPressed(ESCAPE_KEY) && handleEscapeKey()) {
 		consumeIdeKey(ESCAPE_KEY);
 		return;
 	}
@@ -470,6 +470,7 @@ export function handleEditorInput(): void {
 		// Always swallow caret movement while problems panel is focused
 		if (shouldRepeatKeyFromPlayer('ArrowLeft')) consumeIdeKey('ArrowLeft');
 		if (shouldRepeatKeyFromPlayer('ArrowRight')) consumeIdeKey('ArrowRight');
+		return;
 	}
 	if (ide_state.searchQuery.length > 0 && isKeyJustPressed('F3')) {
 		consumeIdeKey('F3');

@@ -26,6 +26,7 @@ import {
 	meshQueueFrontSize,
 	submitMesh as enqueueMesh,
 } from '../shared/render_queues';
+import { clamp } from '../../utils/clamp';
 
 const BYTES_PER_FLOAT = 4;
 const COLUMN_BYTES = 4 * BYTES_PER_FLOAT; // 4 floats per kolom = 16 bytes

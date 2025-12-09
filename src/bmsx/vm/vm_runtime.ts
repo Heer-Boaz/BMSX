@@ -151,6 +151,8 @@ export class BmsxVMRuntime extends Service {
 	public debuggerSuspendSignal: LuaDebuggerPauseSignal = null;
 	private debuggerPaused = false;
 	private debuggerMetrics: LuaDebuggerSessionMetrics = null;
+	private lastIdeInputFrame = -1;
+	private lastTerminalInputFrame = -1;
 	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
 		this._overlayResolutionMode = value;
 		this.overlayRenderBackend.setRenderingViewportType(value);
@@ -477,11 +479,21 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	public tickIdeInput(): void {
+		const pollFrame = $.input.getPlayerInput(this.playerIndex).pollFrame;
+		if (pollFrame === this.lastIdeInputFrame) {
+			return;
+		}
+		this.lastIdeInputFrame = pollFrame;
 		this.pollVMHotkeys();
 		this.editor.tickInput();
 	}
 
 	public tickTerminalInput(): void {
+		const pollFrame = $.input.getPlayerInput(this.playerIndex).pollFrame;
+		if (pollFrame === this.lastTerminalInputFrame) {
+			return;
+		}
+		this.lastTerminalInputFrame = pollFrame;
 		this.pollVMHotkeys();
 		void this.terminal.handleInput();
 	}
