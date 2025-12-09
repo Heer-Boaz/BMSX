@@ -113,6 +113,13 @@ export function activateCodeEditorTab(tabId: string): void {
 		ide_state.saveGeneration = context.saveGeneration;
 		ide_state.appliedGeneration = context.appliedGeneration;
 		ide_state.textVersion = context.textVersion ?? ide_state.textVersion;
+		const cached = ide_state.diagnosticsCache.get(context.id);
+		const cachedVersion = cached?.version ?? -1;
+		const cachedChunk = cached?.chunkName ?? null;
+		const chunkName = resolveChunkName(context.descriptor);
+		if (!cached || cachedVersion !== ide_state.textVersion || cachedChunk !== chunkName) {
+			markDiagnosticsDirty(context.id);
+		}
 		if (isEntry) {
 			ide_state.lastSavedSource = context.lastSavedSource;
 		}

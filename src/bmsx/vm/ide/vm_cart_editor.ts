@@ -895,6 +895,10 @@ export function processDiagnosticsQueue(now: number): void {
 	if (!ide_state.diagnosticsDirty) {
 		return;
 	}
+	const activeId = ide_state.activeCodeTabContextId;
+	if (activeId && !ide_state.dirtyDiagnosticContexts.has(activeId)) {
+		return;
+	}
 	if (ide_state.dirtyDiagnosticContexts.size === 0) {
 		ide_state.diagnosticsDirty = false;
 		ide_state.diagnosticsDueAtMs = null;
@@ -923,6 +927,11 @@ export function scheduleDiagnosticsComputation(): void {
 
 export function executeDiagnosticsComputation(): void {
 	if (!ide_state.diagnosticsDirty) {
+		ide_state.diagnosticsDueAtMs = null;
+		return;
+	}
+	const activeId = ide_state.activeCodeTabContextId;
+	if (activeId && !ide_state.dirtyDiagnosticContexts.has(activeId)) {
 		ide_state.diagnosticsDueAtMs = null;
 		return;
 	}
@@ -975,18 +984,11 @@ export function enqueueDiagnosticsJob(contextIds: readonly string[]): void {
 }
 
 export function collectDiagnosticsBatch(): string[] {
-	const batch: string[] = [];
 	const activeId = ide_state.activeCodeTabContextId;
 	if (activeId && ide_state.dirtyDiagnosticContexts.has(activeId)) {
-		batch.push(activeId);
+		return [activeId];
 	}
-	if (batch.length === 0) {
-		const iterator = ide_state.dirtyDiagnosticContexts.values().next();
-		if (!iterator.done) {
-			batch.push(iterator.value);
-		}
-	}
-	return batch;
+	return [];
 }
 
 export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
@@ -2617,6 +2619,7 @@ export function performHotReloadAndResume(): boolean {
 		}
 		$.paused = false;
 	}, (error) => {
+		console.error(error);
 		handleRuntimeTaskError(error, 'Failed to resume game');
 	});
 	return true;
