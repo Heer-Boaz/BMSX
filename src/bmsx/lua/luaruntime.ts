@@ -710,15 +710,35 @@ export class LuaInterpreter {
 			return;
 		}
 		// Preserve the most-detailed stack captured in this fault path
-		if (this._lastFaultCallStack.length > 0 && depth < this.lastFaultDepth) {
-			return;
-		}
 		const snapshot = this.callStack.map(frame => ({
 			functionName: frame.functionName,
 			source: frame.source,
 			line: frame.line,
 			column: frame.column,
 		}));
+		let snapshotDepth = snapshot.length;
+		const innermostRange = this.activeStatementRange ?? this.lastStatementRange;
+		if (innermostRange) {
+			const innermost = snapshot.length > 0 ? snapshot[snapshot.length - 1] : null;
+			const alreadyCaptured =
+				innermost &&
+				innermost.source === innermostRange.chunkName &&
+				innermost.line === innermostRange.start.line &&
+				innermost.column === innermostRange.start.column;
+			if (!alreadyCaptured) {
+				const hintedFunctionName = innermost ? innermost.functionName : null;
+				snapshot.push({
+					functionName: hintedFunctionName,
+					source: innermostRange.chunkName,
+					line: innermostRange.start.line,
+					column: innermostRange.start.column,
+				});
+				snapshotDepth = snapshot.length;
+			}
+		}
+		if (this._lastFaultCallStack.length > 0 && snapshotDepth < this.lastFaultDepth) {
+			return;
+		}
 		const controller = this.debuggerController;
 		const decorated = controller ? controller.decorateCallStack(snapshot, { consume: false }) : snapshot;
 		this._lastFaultCallStack = decorated.map(frame => ({
@@ -727,7 +747,7 @@ export class LuaInterpreter {
 			line: frame.line,
 			column: frame.column,
 		}));
-		this.lastFaultDepth = depth;
+		this.lastFaultDepth = snapshotDepth;
 	}
 
 	private createLabelScope(statements: ReadonlyArray<LuaStatement>, parent: LabelScope): LabelScope {
