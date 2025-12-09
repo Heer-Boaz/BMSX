@@ -597,9 +597,15 @@ export class Game {
 					vmRuntime.handleLuaError(error);
 					vmRuntime.abandonFrameState();
 				} catch (error) { /* ignore secondary failures, but log them */
-					console.error(`Error while handling surfaced game error in vm runtime: ${error ?? '<unknown error>'}`);
+					// console.error(`Error while handling surfaced game error in vm runtime: ${error ?? '<unknown error>'}`);
 					// Abort the remainder of this update to keep state coherent this frame.
-					vmRuntime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
+					try {
+						vmRuntime.handleLuaError(error);
+						vmRuntime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
+					} catch (error) {
+						console.error(`Error while handling surfaced game error in vm runtime: ${error ?? '<unknown error>'}`);
+						// ignore secondary failures, but log them
+					}
 					failed = true;
 				}
 			}

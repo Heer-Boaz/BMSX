@@ -1,0 +1,28 @@
+title: Sinter Glitch 2025
+short_name: Intro2025
+rom_name: sinter2025
+console:
+  viewport: {width: 256, height: 212}
+  namespace: intro2025
+input:
+  "1":
+    keyboard:
+      console_left: [ArrowLeft]
+      console_right: [ArrowRight]
+      console_up: [ArrowUp]
+      console_down: [ArrowDown]
+      console_b: [KeyZ, KeyC]
+      console_a: [KeyX, KeyV]
+      console_x: [KeyA]
+      console_y: [ShiftLeft]
+    gamepad:
+      console_left: [left]
+      console_right: [right]
+      console_up: [up]
+      console_down: [down]
+      console_b: [b]
+      console_a: [a]
+      console_x: [x]
+      console_y: [y]
+lua:
+  entry_path: cart.lua

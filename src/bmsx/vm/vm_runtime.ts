@@ -38,7 +38,7 @@ import { isLuaScriptError, registerApiBuiltins, seedDefaultLuaBuiltins } from '.
 import { LuaFunctionRedirectCache } from './lua_handler_registry';
 import { LuaEntrySnapshot, LuaJsBridge } from './lua_js_bridge';
 import { buildLuaModuleAliases, type LuaRequireModuleRecord } from './lua_module_loader';
-import { buildLuaFrameRawLabel, convertLuaCallFrames, parseJsStackFrames, prettyPrintRuntimeError } from './runtime_error_util';
+import { buildLuaFrameRawLabel, buildStackLines, convertLuaCallFrames, parseJsStackFrames, prettyPrintRuntimeError } from './runtime_error_util';
 import { BmsxVMStorage } from './storage';
 import type { BmsxVMRuntimeOptions, BmsxVMState, VMLuaBuiltinDescriptor, VMLuaMemberCompletion, LuaMarshalContext } from './types';
 import { RenderSubmission } from '../render/gameview';
@@ -900,8 +900,8 @@ export class BmsxVMRuntime extends Service {
 		}
 	}
 
+	// Clear reference to allow next frame to begin
 	public abandonFrameState(): void {
-		// Clear reference to allow next frame to begin
 		this.currentFrameState = null;
 	}
 
@@ -1638,10 +1638,17 @@ export class BmsxVMRuntime extends Service {
 		return fn.call(luaArgs);
 	}
 
-	public handleLuaError(error: unknown): void {
-		if (!(error instanceof Error)) {
-			error = convertToError(error);
+	private surfaceRuntimeErrorToTerminal(message: string, details: RuntimeErrorDetails): void {
+		this.terminal.appendStderr(message);
+		const stackLines = buildStackLines(details, this.includeJsStackTraces);
+		for (let index = 0; index < stackLines.length; index += 1) {
+			this.terminal.appendStdout(stackLines[index]);
 		}
+		this.activateTerminalMode();
+	}
+
+	public handleLuaError(error: unknown): void {
+		error = convertToError(error);
 		// Pause signal has its own handler
 		if (isLuaDebuggerPauseSignal(error)) {
 			console.info('[BmsxVMRuntime] Lua debugger pause signal received: ', error);
