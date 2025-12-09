@@ -132,13 +132,13 @@
 			"type": "object",
 			"description": "Lua entrypoint configuration for the cartridge.",
 			"properties": {
-				"entry_asset_id": {
+				"entry_path": {
 					"type": "string",
-					"description": "Asset ID of the Lua source that acts as the main entry for the cart."
+					"description": "Path to the Lua source that acts as the main entry for the cart."
 				}
 			},
 			"required": [
-				"entry_asset_id"
+				"entry_path"
 			],
 			"additionalProperties": false
 		},

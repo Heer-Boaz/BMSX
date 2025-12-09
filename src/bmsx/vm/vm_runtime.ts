@@ -10,7 +10,7 @@ import { LuaHandlerCache, } from '../lua/luahandler_cache';
 import { LuaInterpreter, type ExecutionSignal, } from '../lua/luaruntime';
 import type { LuaFunctionValue, LuaTable, LuaValue, StackTraceFrame } from '../lua/luavalue';
 import {
-	convertToError, createLuaInterpreter,
+	convertToError,
 	extractErrorMessage,
 	isLuaDebuggerPauseSignal,
 	isLuaFunctionValue,
@@ -271,7 +271,7 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private configureInterpreter(interpreter: LuaInterpreter): void {
-		interpreter.setHostAdapter({
+		interpreter.hostAdapter = {
 			toLua: (value) => this.luaJsBridge.jsToLua(value),
 			toJs: (luaValue) => {
 				const moduleId = $.rompack.cart.chunk2lua[this._luaChunkName].source_path;
@@ -279,8 +279,8 @@ export class BmsxVMRuntime extends Service {
 			},
 			serializeNative: (native) => native,
 			deserializeNative: (token) => token as object | Function,
-		});
-		interpreter.setRequireHandler((ctx, module) => this.requireLuaModule(ctx, module));
+		};
+		interpreter.requireHandler = (ctx, module) => this.requireLuaModule(ctx, module);
 	}
 
 	private pollVMHotkeys(): void {
@@ -1203,7 +1203,7 @@ export class BmsxVMRuntime extends Service {
 
 		// Path not used right now, but might be useful for loading game state later
 		this.resetLuaInteroperabilityState();
-		const interpreter = createLuaInterpreter(this._canonicalization);
+		const interpreter = new LuaInterpreter(this._canonicalization);
 		this.configureInterpreter(interpreter);
 		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
@@ -1215,7 +1215,7 @@ export class BmsxVMRuntime extends Service {
 		this.luaRuntimeFailed = false;
 
 		registerApiBuiltins(interpreter);
-		interpreter.setReservedIdentifiers(this.apiFunctionNames);
+		interpreter.reservedIdentifiers(this.apiFunctionNames);
 
 		const moduleId = $.rompack.cart.chunk2lua[binding.chunk_name].source_path;
 		const results = interpreter.execute(params.source, binding.chunk_name);
@@ -1563,7 +1563,7 @@ export class BmsxVMRuntime extends Service {
 		}
 
 		this.resetLuaInteroperabilityState();
-		const interpreter = createLuaInterpreter(this._canonicalization);
+		const interpreter = new LuaInterpreter(this._canonicalization);
 		this.configureInterpreter(interpreter);
 		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
@@ -1577,7 +1577,7 @@ export class BmsxVMRuntime extends Service {
 
 		try {
 			registerApiBuiltins(interpreter);
-			interpreter.setReservedIdentifiers(this.apiFunctionNames);
+			interpreter.reservedIdentifiers(this.apiFunctionNames);
 			const moduleId = $.rompack.cart.chunk2lua[chunkName].source_path;
 			const results = interpreter.execute(source, chunkName);
 			this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);

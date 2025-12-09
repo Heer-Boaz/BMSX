@@ -1,11 +1,8 @@
-import type { CanonicalizationType } from '../rompack/rompack';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from './luaerrors';
-import { ExecutionSignal, LuaInterpreter, LuaNativeFunction } from './luaruntime';
+import { ExecutionSignal, LuaNativeFunction } from './luaruntime';
 import { insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 
-export type LuaValue = LuaNil | boolean | number | string | LuaTable | LuaFunctionValue | LuaNativeValue;
-
-export type LuaNil = null;
+export type LuaValue = null | boolean | number | string | LuaTable | LuaFunctionValue | LuaNativeValue;
 
 export interface LuaFunctionValue {
 	readonly name: string;
@@ -28,14 +25,6 @@ export class LuaNativeValue {
 	public setMetatable(value: LuaTable): void {
 		this.metatable = value;
 	}
-}
-
-export function createLuaNativeValue(native: object | Function, typeName?: string): LuaNativeValue {
-	return new LuaNativeValue(native, typeName);
-}
-
-export function isLuaNativeValue(value: unknown): value is LuaNativeValue {
-	return value instanceof LuaNativeValue;
 }
 
 @insavegame
@@ -145,7 +134,7 @@ export function createLuaTable(): LuaTable {
 }
 
 export function isLuaTable(value: unknown): value is LuaTable {
-	return !!value && typeof value === 'object' && (value as LuaTable)[LUA_TABLE_BRAND] === true;
+	return (value as LuaTable)?.[LUA_TABLE_BRAND] === true;
 }
 
 function getState(table: LuaTable): TableState {
@@ -357,10 +346,6 @@ export function isLuaDebuggerPauseSignal(value: unknown): value is LuaDebuggerPa
 	}
 	const candidate = value as Partial<LuaDebuggerPauseSignal>;
 	return candidate.kind === 'pause' && typeof candidate.resume === 'function';
-}
-
-export function createLuaInterpreter(canonicalization: CanonicalizationType = 'none'): LuaInterpreter {
-	return new LuaInterpreter(null, canonicalization);
 }
 
 export function createLuaNativeFunction(name: string, handler: (args: ReadonlyArray<LuaValue>) => ReadonlyArray<LuaValue>): LuaFunctionValue {

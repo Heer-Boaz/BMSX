@@ -1,9 +1,9 @@
 title: Sinter Glitch 2025
-short_name: Intro2025
-rom_name: sinter2025
+short_name: '2025'
+rom_name: '2025'
 console:
   viewport: {width: 256, height: 212}
-  namespace: intro2025
+  namespace: 'sinterglith2025'
 input:
   "1":
     keyboard:

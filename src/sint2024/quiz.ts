@@ -269,7 +269,7 @@ export class quiz extends WorldObject {
 					},
 					input_event_handlers: {
 						'?(a[jp], b[jp])': { // Handle both answer options
-							do() {
+							go() {
 								$.consume_actions(1, 'a', 'b');
 								return '/vraag';
 							},
@@ -288,27 +288,27 @@ export class quiz extends WorldObject {
 					},
 					input_event_handlers: {
 						'a[jp]': { // Handle answer option A
-							do(this: quiz): string {
+							go(this: quiz): string {
 								$.consume_action(1, 'a');
 								this.currentAnswerOptionChosen = 'a';
 								return '/antwoord';
 							},
 						},
 						'b[jp]': { // Handle answer option B
-							do(this: quiz): string {
+							go(this: quiz): string {
 								$.consume_action(1, 'b');
 								this.currentAnswerOptionChosen = 'b';
 								return '/antwoord';
 							},
 						},
 						'left[jp]': { // Handle previous question on "left"
-							do(this: quiz) {
+							go(this: quiz) {
 								$.consume_action(1, 'left');
 								this.presentQuestion('prev');
 							},
 						},
 						'right[jp]': { // Handle next question on "right"
-							do(this: quiz): string | void {
+							go(this: quiz): string | void {
 								$.consume_action(1, 'right');
 								if (this.currentQuestionIndex >= quizItems.length - 1) {
 									return '/end';
@@ -334,7 +334,7 @@ export class quiz extends WorldObject {
 					},
 					input_event_handlers: {
 						'?(a[jp], b[jp])': { // Handle both answer options
-							do(this: quiz) {
+							go(this: quiz) {
 								$.consume_actions(1, 'a', 'b');
 								if (this.currentQuestionIndex < quizItems.length - 1) {
 									return '/vraag';

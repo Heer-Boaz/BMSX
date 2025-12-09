@@ -4,8 +4,8 @@ import { GamepadBinding, GamepadInputMapping, InputMap, KeyboardBinding, Keyboar
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
 import { LuaInterpreter } from '../lua/luaruntime';
-import { createLuaNativeFunction, extractErrorMessage } from '../lua/luavalue';
-import { isLuaNativeValue, isLuaTable, LuaTable, LuaValue } from '../lua/luavalue';
+import { createLuaNativeFunction, extractErrorMessage, LuaNativeValue } from '../lua/luavalue';
+import { isLuaTable, LuaTable, LuaValue } from '../lua/luavalue';
 import { arrayify } from '../utils/arrayify';
 import { deep_clone } from '../utils/deep_clone';
 import { VM_API_METHOD_METADATA } from './vm_api_metadata';
@@ -450,7 +450,7 @@ function isLuaValue(value: unknown): value is LuaValue {
 	if (isLuaTable(value)) {
 		return true;
 	}
-	if (isLuaNativeValue(value)) {
+	if (value instanceof LuaNativeValue) {
 		return true;
 	}
 	if (value && typeof value === 'object' && 'call' in (value as Record<string, unknown>)) {

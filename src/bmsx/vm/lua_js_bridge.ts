@@ -2,7 +2,7 @@ import { $ } from '../core/game';
 import { LuaSourceRange } from '../lua/lua_ast';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaHandlerCache, isLuaHandlerFn } from '../lua/luahandler_cache';
-import { LuaValue, LuaTable, isLuaNativeValue, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../lua/luavalue';
+import { LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../lua/luavalue';
 import { BmsxVMRuntime } from './vm_runtime';
 import { LuaMarshalContext } from './types';
 
@@ -53,7 +53,7 @@ export class LuaJsBridge {
 				path: context.path.slice(),
 			});
 		}
-		if (isLuaNativeValue(value)) {
+		if (value instanceof LuaNativeValue) {
 			return value.native;
 		}
 		if (isLuaTable(value)) {
@@ -155,7 +155,7 @@ export class LuaJsBridge {
 		if (isLuaTable(value)) {
 			return value;
 		}
-		if (isLuaNativeValue(value)) {
+		if (value instanceof LuaNativeValue) {
 			return value;
 		}
 		if (Array.isArray(value)) {
@@ -232,7 +232,7 @@ export class LuaJsBridge {
 				path: Array.from((key as { path: ReadonlyArray<string> }).path),
 			};
 		}
-		if (isLuaNativeValue(key)) {
+		if (key instanceof LuaNativeValue) {
 			return key.native;
 		}
 		if (isLuaFunctionValue(key)) {
@@ -279,7 +279,7 @@ export class LuaJsBridge {
 		if (raw === null || typeof raw === 'boolean' || typeof raw === 'number' || typeof raw === 'string') {
 			return raw as LuaValue;
 		}
-		if (isLuaTable(raw) || isLuaNativeValue(raw)) {
+		if (isLuaTable(raw) || raw instanceof LuaNativeValue) {
 			return raw as LuaValue;
 		}
 		if (resolveRef && raw && typeof raw === 'object' && 'r' in (raw as Record<string, unknown>)) {
@@ -486,7 +486,7 @@ export class LuaJsBridge {
 				path: Array.from((value as { path: ReadonlyArray<string> }).path),
 			};
 		}
-		if (isLuaNativeValue(value)) {
+		if (value instanceof LuaNativeValue) {
 			return value.native;
 		}
 		if (isLuaTable(value)) {
@@ -527,7 +527,7 @@ export class LuaJsBridge {
 			}
 			let serializedEntry: unknown;
 			try {
-				if (isLuaNativeValue(entryValue)) {
+				if (entryValue instanceof LuaNativeValue) {
 					serializedEntry = entryValue.native;
 				} else {
 					serializedEntry = this.serializeLuaValueForSnapshot(entryValue, ctx);

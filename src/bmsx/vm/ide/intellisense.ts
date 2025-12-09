@@ -7,7 +7,7 @@ import type { ParsedLuaChunk } from './lua_parse';
 import type { LuaSyntaxError } from '../../lua/luaerrors';
 import { getCachedLuaParse } from './lua_analysis_cache';
 import { LuaInterpreter } from '../../lua/luaruntime';
-import { extractErrorMessage, isLuaFunctionValue, isLuaNativeValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../lua/luavalue';
+import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../lua/luavalue';
 import { BmsxVMApi } from '../vm_api';
 import { VM_API_METHOD_METADATA } from '../vm_api_metadata';
 import { BmsxVMRuntime } from '../vm_runtime';
@@ -1635,7 +1635,7 @@ export function listLuaObjectMembers(request: VMLuaMemberCompletionRequest): VML
 	if (value === null) {
 		return [];
 	}
-	if (isLuaNativeValue(value)) {
+	if (value instanceof LuaNativeValue) {
 		return getNativeMemberCompletionEntries(value, request.operator);
 	}
 	if (isLuaTable(value)) {
@@ -2160,7 +2160,7 @@ export function describeLuaValueForInspector(value: LuaValue): { lines: string[]
 		const fnName = value.name && value.name.length > 0 ? value.name : '<anonymous>';
 		return { lines: [`<function ${fnName}>`], valueType: 'function', isFunction: true };
 	}
-	if (isLuaNativeValue(value)) {
+	if (value instanceof LuaNativeValue) {
 		const native = value.native;
 		const typeName = value.typeName && value.typeName.length > 0 ? value.typeName : resolveNativeTypeName(native);
 		const labelName = resolvedName ?? typeName;
@@ -2600,7 +2600,7 @@ export function formatJsValue(value: unknown, depth: number, visited: Set<unknow
 	if (isLuaTable(value)) {
 		return describeLuaTable(value, depth + 1, visited);
 	}
-	if (isLuaNativeValue(value)) {
+	if (value instanceof LuaNativeValue) {
 		return describeLuaNativeValue(value, depth + 1, visited);
 	}
 	if (value && typeof value === 'object') {
@@ -2645,7 +2645,7 @@ export function consoleValueToString(value: LuaValue, depth = 0, visited: Set<un
 	if (isLuaTable(value)) {
 		return describeLuaTable(value, depth, visited);
 	}
-	if (isLuaNativeValue(value)) {
+	if (value instanceof LuaNativeValue) {
 		return describeLuaNativeValue(value, depth, visited);
 	}
 	if (isLuaFunctionValue(value)) {
