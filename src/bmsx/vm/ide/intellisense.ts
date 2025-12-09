@@ -2,6 +2,7 @@ import type { LuaDefinitionInfo, LuaDefinitionKind, LuaMemberExpression, LuaSour
 import { LuaSyntaxKind, type LuaAssignmentStatement, type LuaCallExpression, type LuaExpression, type LuaIdentifierExpression, type LuaIndexExpression, type LuaLocalAssignmentStatement, type LuaStatement } from '../../lua/lua_ast';
 import { LuaEnvironment } from '../../lua/luaenvironment';
 import { LuaLexer } from '../../lua/lualexer';
+import { createIdentifierCanonicalizer } from '../../lua/identifier_canonicalizer';
 import type { ParsedLuaChunk } from './lua_parse';
 import type { LuaSyntaxError } from '../../lua/luaerrors';
 import { getCachedLuaParse } from './lua_analysis_cache';
@@ -10,14 +11,14 @@ import { extractErrorMessage, isLuaFunctionValue, isLuaNativeValue, isLuaTable, 
 import { BmsxVMApi } from '../vm_api';
 import { VM_API_METHOD_METADATA } from '../vm_api_metadata';
 import { BmsxVMRuntime } from '../vm_runtime';
-import type { VMLuaBuiltinDescriptor, VMLuaDefinitionLocation, VMLuaDefinitionRange, VMLuaHoverRequest, VMLuaHoverResult, VMLuaHoverScope, VMLuaMemberCompletion, VMLuaMemberCompletionRequest, VMLuaSymbolEntry } from '../types';
+import type { VMLuaBuiltinDescriptor, VMLuaDefinitionLocation, VMLuaDefinitionRange, VMLuaHoverRequest, VMLuaHoverResult, VMLuaHoverScope, VMLuaMemberCompletion, VMLuaMemberCompletionRequest, VMLuaSymbolEntry, VMLuaSymbolKind } from '../types';
 import { ScratchBatchPooled } from '../../utils/scratchbatch';
 import { resolveDefinitionLocationForExpression, type ProjectReferenceEnvironment } from './code_reference';
 import { applyDefinitionSelection, beginNavigationCapture, completeNavigation, focusChunkSource, resolvePointerColumn, resolvePointerRow, safeInspectLuaExpression } from './vm_cart_editor';
 import * as constants from './constants';
 import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isCodeTabActive, isReadOnlyCodeTab, setActiveTab } from './editor_tabs';
 import { ide_state } from './ide_state';
-import { buildLuaSemanticModel, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type FunctionSignatureInfo } from './semantic_model';
+import { buildLuaSemanticModel, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type FunctionSignatureInfo } from './semantic_model';
 import { isLuaCommentContext, wrapOverlayLine } from './text_utils';
 import type { ApiCompletionMetadata, CodeTabContext, LuaCompletionItem, PointerSnapshot } from './types';
 import type { RomLuaAsset } from '../../rompack/rompack';
@@ -77,17 +78,16 @@ function buildDefinitionPriority(order: LuaDefinitionKind[]): (kind: LuaDefiniti
 const definitionPriorityForSymbols = buildDefinitionPriority(SYMBOL_PRIORITY_ORDER);
 const definitionPriorityForLocals = buildDefinitionPriority(LOCAL_DEFINITION_PRIORITY_ORDER);
 
-function canonicalizeIdeIdentifier(name: string): string { // TODO: UGLY: TRIPLE IMPLEMENTATION
-	if (!ide_state.caseInsensitive) {
-		return name;
-	}
-	if (ide_state.canonicalization === 'upper') {
-		return name.toUpperCase();
-	}
-	if (ide_state.canonicalization === 'lower') {
-		return name.toLowerCase();
-	}
-	return name;
+const identityCanonicalizer = (value: string): string => value;
+const DEFAULT_GLOBAL_IDENTIFIERS = ['math', 'string', 'table', 'os', 'coroutine', 'debug', 'io', 'utf8', 'bit32'];
+const ENGINE_GLOBAL_IDENTIFIERS = ['world', 'game', 'registry', 'events', 'rompack'];
+const JS_GLOBAL_IDENTIFIERS = ['Game', 'World', 'Registry', 'Events', 'Rompack', 'Math'];
+const builtinLookupScratch = new Map<string, VMLuaBuiltinDescriptor>();
+const globalKnownNamesScratch = new Set<string>();
+const globalSymbolsCache: { version: number; entries: VMLuaSymbolEntry[] } = { version: -1, entries: [] };
+
+function getActiveCanonicalizer(): (value: string) => string {
+	return ide_state.caseInsensitive ? createIdentifierCanonicalizer(ide_state.canonicalization) : identityCanonicalizer;
 }
 
 export type LuaScopedSymbol = {
@@ -276,8 +276,12 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 				};
 				signatures.set(name, metadataEntry);
 				const lower = name.toLowerCase();
+				const upper = name.toUpperCase();
 				if (lower !== name && !signatures.has(lower)) {
 					signatures.set(lower, metadataEntry);
+				}
+				if (upper !== name && !signatures.has(upper)) {
+					signatures.set(upper, metadataEntry);
 				}
 				processed.add(name);
 				continue;
@@ -295,8 +299,12 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 				const metadataEntry: ApiCompletionMetadata = { params: [], signature: detail, kind: 'getter', description: null };
 				signatures.set(name, metadataEntry);
 				const lower = name.toLowerCase();
+				const upper = name.toUpperCase();
 				if (lower !== name && !signatures.has(lower)) {
 					signatures.set(lower, metadataEntry);
+				}
+				if (upper !== name && !signatures.has(upper)) {
+					signatures.set(upper, metadataEntry);
 				}
 				processed.add(name);
 			}
@@ -511,27 +519,16 @@ function addIdentifierDiagnosticsFromSemantic(analysis: FileSemanticData, global
 	const refs = analysis.refs;
 	for (let index = 0; index < refs.length; index += 1) {
 		const ref = refs[index];
-		if (ref.isWrite) {
-			continue;
-		}
-		if (ref.target) {
-			continue;
-		}
-		if (!ref.namePath || ref.namePath.length !== 1) {
+		if (ref.isWrite || ref.target || ref.namePath.length !== 1) {
 			continue;
 		}
 		const name = ref.name;
-		if (!name || name.length === 0) {
+		if (globalKnownNames.has(name)) {
 			continue;
 		}
-		const normalized = canonicalizeIdeIdentifier(name);
-		if (globalKnownNames.has(normalized)) {
-			continue;
-		}
-		const row = ref.range.start.line > 0 ? ref.range.start.line - 1 : 0;
-		const startColumn = ref.range.start.column > 0 ? ref.range.start.column - 1 : 0;
-		const length = name.length > 0 ? name.length : 1;
-		const endColumn = startColumn + length;
+		const row = ref.range.start.line - 1;
+		const startColumn = ref.range.start.column - 1;
+		const endColumn = startColumn + name.length;
 		pushDiagnostic(row, startColumn, endColumn, `'${name}' is not defined.`, 'error');
 	}
 }
@@ -540,6 +537,7 @@ function addCallDiagnosticsFromSemantic(
 	analysis: FileSemanticData,
 	builtinLookup: Map<string, VMLuaBuiltinDescriptor>,
 	apiSignatures: Map<string, ApiCompletionMetadata>,
+	canonicalApiRoot: string,
 ): void {
 	const calls = analysis.callExpressions;
 	if (!calls || calls.length === 0) {
@@ -551,7 +549,7 @@ function addCallDiagnosticsFromSemantic(
 	};
 	for (let index = 0; index < calls.length; index += 1) {
 		const call = calls[index];
-		const metadata = resolveCallSignature(call, builtinLookup, apiSignatures);
+		const metadata = resolveCallSignature(call, builtinLookup, apiSignatures, canonicalApiRoot);
 		if (metadata) {
 			validateCallArity(call, metadata, emit);
 			continue;
@@ -590,10 +588,12 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 		return [];
 	}
 
-	const globalKnownNames = buildGlobalKnownNameSet(options.localSymbols, options.globalSymbols, options.builtinDescriptors, options.apiSignatures);
-	const builtinLookup = buildBuiltinLookup(options.builtinDescriptors);
+	const canonicalize = getActiveCanonicalizer();
+	const canonicalApiRoot = canonicalize('api');
+	const globalKnownNames = buildGlobalKnownNameSet(options.localSymbols, options.globalSymbols, options.builtinDescriptors, options.apiSignatures, canonicalize);
+	const builtinLookup = buildBuiltinLookup(options.builtinDescriptors, canonicalize);
 	addIdentifierDiagnosticsFromSemantic(semanticData, globalKnownNames);
-	addCallDiagnosticsFromSemantic(semanticData, builtinLookup, options.apiSignatures);
+	addCallDiagnosticsFromSemantic(semanticData, builtinLookup, options.apiSignatures, canonicalApiRoot);
 
 	return finalizeLuaDiagnostics();
 }
@@ -603,93 +603,65 @@ function buildGlobalKnownNameSet(
 	globalSymbols: readonly VMLuaSymbolEntry[],
 	builtinDescriptors: readonly VMLuaBuiltinDescriptor[],
 	apiSignatures: Map<string, ApiCompletionMetadata>,
+	canonicalize: (value: string) => string,
 ): Set<string> {
-	const names = new Set<string>();
-	const canonicalCache = new Map<string, string>();
-	const normalize = (value: string): string => {
-		const cached = canonicalCache.get(value);
-		if (cached !== undefined) {
-			return cached;
-		}
-		const normalized = canonicalizeIdeIdentifier(value);
-		canonicalCache.set(value, normalized);
-		return normalized;
+	globalKnownNamesScratch.clear();
+	const addCanonical = (value: string): void => {
+		globalKnownNamesScratch.add(canonicalize(value));
 	};
-	const add = (value: string) => {
-		if (!value) {
-			return;
-		}
-		const normalized = normalize(value);
-		names.add(normalized);
+	const addDirect = (value: string): void => {
+		globalKnownNamesScratch.add(value);
 	};
-	add('api');
-	const defaultGlobals = ['math', 'string', 'table', 'os', 'coroutine', 'debug', 'io', 'utf8', 'bit32'];
-	const engineGlobals = ['world', 'game', 'registry', 'events', 'rompack'];
-	const jsGlobals = ['Game', 'World', 'Registry', 'Events', 'Rompack', 'Math'];
-	for (let i = 0; i < defaultGlobals.length; i += 1) {
-		add(defaultGlobals[i]);
+	addCanonical('api');
+	for (let i = 0; i < DEFAULT_GLOBAL_IDENTIFIERS.length; i += 1) {
+		addCanonical(DEFAULT_GLOBAL_IDENTIFIERS[i]);
 	}
-	for (let i = 0; i < engineGlobals.length; i += 1) add(engineGlobals[i]);
-	for (let i = 0; i < jsGlobals.length; i += 1) add(jsGlobals[i]);
+	for (let i = 0; i < ENGINE_GLOBAL_IDENTIFIERS.length; i += 1) {
+		addCanonical(ENGINE_GLOBAL_IDENTIFIERS[i]);
+	}
+	for (let i = 0; i < JS_GLOBAL_IDENTIFIERS.length; i += 1) {
+		addCanonical(JS_GLOBAL_IDENTIFIERS[i]);
+	}
 	for (let index = 0; index < localSymbols.length; index += 1) {
 		const entry = localSymbols[index];
-		if (entry && entry.name.length > 0) {
-			add(entry.name);
-		}
+		addDirect(entry.name);
 	}
 	for (let index = 0; index < globalSymbols.length; index += 1) {
 		const entry = globalSymbols[index];
-		if (!entry || entry.name.length === 0) {
-			continue;
-		}
-		const symbolName = entry.name.trim();
-		if (symbolName.length === 0) {
-			continue;
-		}
-		add(symbolName);
+		const symbolName = entry.name;
+		addDirect(symbolName);
 		const dotIndex = symbolName.indexOf('.');
 		if (dotIndex !== -1) {
-			const root = symbolName.slice(0, dotIndex);
-			if (root.length > 0) {
-				add(root);
-			}
+			addDirect(symbolName.slice(0, dotIndex));
 		}
 	}
 	for (let index = 0; index < builtinDescriptors.length; index += 1) {
 		const descriptor = builtinDescriptors[index];
-		if (!descriptor || descriptor.name.length === 0) {
-			continue;
-		}
-		const dotIndex = descriptor.name.indexOf('.');
+		const canonical = canonicalize(descriptor.name);
+		addDirect(canonical);
+		const dotIndex = canonical.indexOf('.');
 		if (dotIndex !== -1) {
-			const root = descriptor.name.slice(0, dotIndex);
-			if (root.length > 0) {
-				add(root);
-			}
-		} else {
-			add(descriptor.name);
+			addDirect(canonical.slice(0, dotIndex));
 		}
 	}
-	// Also expose API method names as globals, since the runtime registers them globally
 	for (const [name] of apiSignatures) {
-		if (name && name.length > 0) {
-			add(name);
-		}
+		addCanonical(name);
 	}
-	add('self');
-	return names;
+	addCanonical('self');
+	return globalKnownNamesScratch;
 }
 
-function buildBuiltinLookup(builtinDescriptors: readonly VMLuaBuiltinDescriptor[]): Map<string, VMLuaBuiltinDescriptor> {
-	const map = new Map<string, VMLuaBuiltinDescriptor>();
+function buildBuiltinLookup(
+	builtinDescriptors: readonly VMLuaBuiltinDescriptor[],
+	canonicalize: (value: string) => string,
+): Map<string, VMLuaBuiltinDescriptor> {
+	builtinLookupScratch.clear();
 	for (let index = 0; index < builtinDescriptors.length; index += 1) {
 		const descriptor = builtinDescriptors[index];
-		if (!descriptor || descriptor.name.length === 0) {
-			continue;
-		}
-		map.set(descriptor.name.toLowerCase(), descriptor);
+		const key = canonicalize(descriptor.name);
+		builtinLookupScratch.set(key, descriptor);
 	}
-	return map;
+	return builtinLookupScratch;
 }
 
 type CallSignatureMetadata = {
@@ -708,13 +680,11 @@ function resolveCallSignature(
 	call: LuaCallExpression,
 	builtinLookup: Map<string, VMLuaBuiltinDescriptor>,
 	apiSignatures: Map<string, ApiCompletionMetadata>,
+	canonicalApiRoot: string,
 ): CallSignatureMetadata {
-	if (!call) {
-		return null;
-	}
 	if (call.methodName !== null) {
 		const qualified = resolveQualifiedName(call.callee);
-		if (qualified && qualified.parts.length > 0 && qualified.parts[0] === 'api') {
+		if (qualified && qualified.parts.length > 0 && qualified.parts[0] === canonicalApiRoot) {
 			const apiMeta = apiSignatures.get(call.methodName);
 			if (apiMeta) {
 				const marker = applyOptionalMarkers(apiMeta.params, apiMeta.optionalParams, apiMeta.parameterDescriptions);
@@ -735,7 +705,7 @@ function resolveCallSignature(
 	if (!qualified) {
 		return null;
 	}
-	if (qualified.parts.length >= 2 && qualified.parts[0] === 'api') {
+	if (qualified.parts.length >= 2 && qualified.parts[0] === canonicalApiRoot) {
 		const method = qualified.parts[qualified.parts.length - 1];
 		const apiMeta = apiSignatures.get(method);
 		if (apiMeta) {
@@ -751,7 +721,7 @@ function resolveCallSignature(
 			};
 		}
 	}
-	const key = qualified.parts.join('.').toLowerCase();
+	const key = qualified.parts.join('.');
 	const builtin = builtinLookup.get(key);
 	if (builtin) {
 		const marker = applyOptionalMarkers(builtin.params, builtin.optionalParams, builtin.parameterDescriptions);
@@ -1773,78 +1743,64 @@ export function listLuaBuiltinFunctions(): VMLuaBuiltinDescriptor[] {
 	return result;
 }
 
+function primeWorkspaceGlobalIndex(workspace: LuaSemanticWorkspace): void {
+	const runtime = BmsxVMRuntime.instance;
+	for (const [chunkName] of Object.entries($.cart.chunk2lua) as Array<[string, RomLuaAsset]>) {
+		if (workspace.getFileData(chunkName)) {
+			continue;
+		}
+		const cacheEntry = runtime.chunkSemanticCache.get(chunkName);
+		const source = cacheEntry ? cacheEntry.source : runtime.resourceSourceForChunk(chunkName);
+		const lines = cacheEntry?.lines ?? source.split('\n');
+		const parsed = cacheEntry ? cacheEntry.parsed : undefined;
+		workspace.updateFile(chunkName, source, lines, parsed, null);
+		const data = workspace.getFileData(chunkName);
+		if (data) {
+			runtime.chunkSemanticCache.set(chunkName, {
+				source,
+				model: data.model,
+				definitions: data.model.definitions,
+				parsed: parsed ?? cacheEntry?.parsed,
+				lines: data.lines,
+				analysis: data,
+			});
+		}
+	}
+}
+
+function symbolKindToVmKind(kind: Decl['kind']): VMLuaSymbolKind {
+	switch (kind) {
+		case 'tableField':
+			return 'table_field';
+		case 'function':
+			return 'function';
+		case 'parameter':
+			return 'parameter';
+		default:
+			return 'variable';
+	}
+}
+
 export function listGlobalLuaSymbols(): VMLuaSymbolEntry[] {
-	const entries = new Map<string, { info: LuaDefinitionInfo; location: VMLuaDefinitionLocation; priority: number }>();
-
-	const appendDefinitions = (info: { asset_id: string; path?: string }, definitions: ReadonlyArray<LuaDefinitionInfo>) => {
-		if (!definitions) {
-			return;
-		}
-		for (const definition of definitions) {
-			const location = buildDefinitionLocationFromRange(definition.definition);
-			if (info.path && !location.path) {
-				location.path = info.path;
-			}
-			const symbolPath = definition.namePath.length > 0 ? definition.namePath.join('.') : definition.name;
-			const key = `${location.chunkName}::${symbolPath}@${definition.definition.start.line}:${definition.definition.start.column}`;
-			const priority = (() => {
-				switch (definition.kind) {
-					case 'table_field':
-						return 5;
-					case 'function':
-						return 4;
-					case 'variable':
-						return 3;
-					case 'parameter':
-						return 2;
-					case 'assignment':
-					default:
-						return 1;
-				}
-			})();
-			const existing = entries.get(key);
-			if (!existing || priority > existing.priority) {
-				entries.set(key, { info: definition, location, priority });
-			}
-		}
-	};
-
-	const enqueuedChunks = new Set<string>();
-	const candidates: Array<{ chunkName: string; info: { asset_id: string; path?: string } }> = [];
-	const enqueueCandidate = (chunkName: string, info: { asset_id: string; path?: string }): void => {
-		const key = `${info.asset_id}|${chunkName}`;
-		if (enqueuedChunks.has(key)) {
-			return;
-		}
-		enqueuedChunks.add(key);
-		const candidateInfo: { asset_id: string; path?: string } = { asset_id: info.asset_id };
-		if (info.path !== undefined) {
-			candidateInfo.path = info.path;
-		}
-		candidates.push({ chunkName, info: candidateInfo });
-	};
-
-	for (const [chunkName, asset] of Object.entries($.cart.chunk2lua) as Array<[string, RomLuaAsset]>) {
-		const path = asset.normalized_source_path;
-		enqueueCandidate(chunkName, { asset_id: asset.resid, path });
+	const workspace = getSemanticWorkspace();
+	primeWorkspaceGlobalIndex(workspace);
+	const version = workspace.version;
+	if (globalSymbolsCache.version === version) {
+		return globalSymbolsCache.entries;
 	}
-
-	for (const candidate of candidates) {
-		const model = buildSemanticModelForChunk(candidate.chunkName);
-		appendDefinitions(candidate.info, model ? model.definitions : null);
-	}
-
-	const symbols: VMLuaSymbolEntry[] = [];
-	for (const { info, location } of entries.values()) {
-		const path = info.namePath.length > 0 ? info.namePath.join('.') : info.name;
-		symbols.push({
-			name: info.name,
+	const decls = workspace.listGlobalDecls();
+	const entries: VMLuaSymbolEntry[] = [];
+	for (let index = 0; index < decls.length; index += 1) {
+		const decl = decls[index];
+		const path = decl.namePath.length > 0 ? decl.namePath.join('.') : decl.name;
+		entries.push({
+			name: decl.name,
 			path,
-			kind: info.kind,
-			location,
+			kind: symbolKindToVmKind(decl.kind),
+			location: buildDefinitionLocationFromRange(decl.range),
 		});
 	}
-	symbols.sort((a, b) => {
+	entries.sort((a, b) => {
 		const pathA = a.location.path ?? a.location.chunkName ?? '';
 		const pathB = b.location.path ?? b.location.chunkName ?? '';
 		if (pathA !== pathB) {
@@ -1857,7 +1813,9 @@ export function listGlobalLuaSymbols(): VMLuaSymbolEntry[] {
 		}
 		return a.path.localeCompare(b.path);
 	});
-	return symbols;
+	globalSymbolsCache.version = version;
+	globalSymbolsCache.entries = entries;
+	return entries;
 }
 
 export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usageRow: number, usageColumn: number, preferredChunk: string): VMLuaDefinitionLocation {

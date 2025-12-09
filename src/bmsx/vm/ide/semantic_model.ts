@@ -341,6 +341,7 @@ export class LuaProjectIndex {
 	private readonly globalsSources: Map<string, Map<SymbolID, number>> = new Map();
 	private readonly refsByGlobalKey: Map<string, Set<Ref>> = new Map();
 	private readonly fileOrder: Map<string, number> = new Map();
+	private version = 0;
 	private nextFileOrder = 1;
 
 	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk, version?: number): LuaSemanticModel {
@@ -356,6 +357,10 @@ export class LuaProjectIndex {
 	public getFileModel(file: string): LuaSemanticModel {
 		const record = this.files.get(file);
 		return record ? record.data.model : null;
+	}
+
+	public getVersion(): number {
+		return this.version;
 	}
 
 	public symbolAt(file: string, position: Position): { id: SymbolID; decl: Decl } {
@@ -379,6 +384,36 @@ export class LuaProjectIndex {
 	public getFileData(file: string): FileSemanticData {
 		const record = this.files.get(file);
 		return record ? record.data : null;
+	}
+
+	public listGlobalDecls(): Decl[] {
+		const decls: Decl[] = [];
+		for (const record of this.files.values()) {
+			const fileDecls = record.data.decls;
+			for (let index = 0; index < fileDecls.length; index += 1) {
+				const decl = fileDecls[index];
+				if (decl.isGlobal) {
+					decls.push(decl);
+				}
+			}
+		}
+		decls.sort((a, b) => {
+			const orderA = this.fileOrder.get(a.file)!;
+			const orderB = this.fileOrder.get(b.file)!;
+			if (orderA !== orderB) {
+				return orderA - orderB;
+			}
+			const startA = a.range.start;
+			const startB = b.range.start;
+			if (startA.line !== startB.line) {
+				return startA.line - startB.line;
+			}
+			if (startA.column !== startB.column) {
+				return startA.column - startB.column;
+			}
+			return a.symbolKey.localeCompare(b.symbolKey);
+		});
+		return decls;
 	}
 
 	public listFiles(): string[] {
@@ -580,6 +615,9 @@ export class LuaProjectIndex {
 
 	private storeFileData(file: string, data: FileSemanticData): LuaSemanticModel {
 		const current = this.files.get(file);
+		if (current && current.source === data.source) {
+			return current.data.model;
+		}
 		if (current) {
 			this.removeFileData(current.data);
 		}
@@ -589,6 +627,7 @@ export class LuaProjectIndex {
 		});
 		this.ensureFileOrder(file);
 		this.applyFileData(data);
+		this.version += 1;
 		return data.model;
 	}
 
@@ -1762,6 +1801,10 @@ export class LuaSemanticWorkspace {
 		this.index = new LuaProjectIndex();
 	}
 
+	public get version(): number {
+		return this.index.getVersion();
+	}
+
 	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk, version?: number): LuaSemanticModel {
 		return this.index.updateFile(file, source, lines, parsed, version);
 	}
@@ -1793,6 +1836,10 @@ export class LuaSemanticWorkspace {
 
 	public getFileData(file: string): FileSemanticData {
 		return this.index.getFileData(file);
+	}
+
+	public listGlobalDecls(): readonly Decl[] {
+		return this.index.listGlobalDecls();
 	}
 
 	public listFiles(): string[] {

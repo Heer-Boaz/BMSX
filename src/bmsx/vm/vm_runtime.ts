@@ -7,7 +7,7 @@ import type { LuaDefinitionInfo } from '../lua/lua_ast';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaError, LuaRuntimeError } from '../lua/luaerrors';
 import { LuaHandlerCache, } from '../lua/luahandler_cache';
-import { LuaInterpreter, type ExecutionSignal, type LuaCallFrame, } from '../lua/luaruntime';
+import { LuaInterpreter, type ExecutionSignal, } from '../lua/luaruntime';
 import type { LuaFunctionValue, LuaTable, LuaValue, StackTraceFrame } from '../lua/luavalue';
 import {
 	convertToError, createLuaInterpreter,
@@ -22,6 +22,7 @@ import type { InputEvt, StorageService } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { LifeCycleHandlerName, Viewport, } from '../rompack/rompack';
 import { CanonicalizationType } from '../rompack/rompack';
+import { createIdentifierCanonicalizer } from '../lua/identifier_canonicalizer';
 import { fallbackclamp } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
 import { TerminalMode } from './terminal_mode';
@@ -218,6 +219,7 @@ export class BmsxVMRuntime extends Service {
 	}
 	private hasCompletedInitialBoot = false;
 	private readonly _canonicalization: CanonicalizationType;
+	private readonly canonicalizeIdentifierFn: (value: string) => string;
 	public get canonicalization(): CanonicalizationType {
 		return this._canonicalization;
 	}
@@ -233,6 +235,7 @@ export class BmsxVMRuntime extends Service {
 		this.storage = new BmsxVMStorage(this.storageService, $.cart.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
 		this._canonicalization = resolvedCanonicalization;
+		this.canonicalizeIdentifierFn = createIdentifierCanonicalizer(this._canonicalization);
 		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
 		setEditorCaseInsensitivity(this._canonicalization !== 'none');
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
@@ -627,24 +630,20 @@ export class BmsxVMRuntime extends Service {
 		this.resumeDebugger({ mode: 'continue', strategy: 'skip_statement' });
 	}
 
-	public stepOutLuaException(): void {
-		this.resumeDebugger({ mode: 'step_out', strategy: 'skip_statement' });
-	}
-
-	private pauseDebuggerForException(location: { chunkName: string; line: number; column: number }, callStack: ReadonlyArray<LuaCallFrame>): void {
-		const suspension: LuaDebuggerPauseSignal = {
-			kind: 'pause',
-			reason: 'exception',
-			location: {
-				chunk: location.chunkName ?? '',
-				line: location.line ?? 1,
-				column: location.column ?? 1,
-			},
-			callStack: callStack ?? [],
-			resume: () => ({ kind: 'normal' }),
-		};
-		this.onLuaDebuggerPause(suspension);
-	}
+	// private pauseDebuggerForException(location: { chunkName: string; line: number; column: number }, callStack: ReadonlyArray<LuaCallFrame>): void {
+	// 	const suspension: LuaDebuggerPauseSignal = {
+	// 		kind: 'pause',
+	// 		reason: 'exception',
+	// 		location: {
+	// 			chunk: location.chunkName,
+	// 			line: location.line,
+	// 			column: location.column,
+	// 		},
+	// 		callStack: callStack ?? [],
+	// 		resume: () => ({ kind: 'normal' }),
+	// 	};
+	// 	this.onLuaDebuggerPause(suspension);
+	// }
 
 	public async boot(): Promise<void> {
 		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'new_game' });
@@ -1667,18 +1666,27 @@ export class BmsxVMRuntime extends Service {
 
 		const interpreter = this.luaInterpreter;
 		const callStackSnapshot = interpreter ? Array.from(interpreter.lastFaultCallStack) : [];
+		const innermostFrame = callStackSnapshot.length > 0 ? callStackSnapshot[callStackSnapshot.length - 1] : null;
+		const resolvedChunkName = chunkName ?? (innermostFrame ? innermostFrame.source : this._luaChunkName);
+		const resolvedLine = line ?? (innermostFrame ? innermostFrame.line : null);
+		const resolvedColumn = column ?? (innermostFrame ? innermostFrame.column : null);
 		const runtimeDetails = this.buildRuntimeErrorDetailsForEditor(error, message);
 		const snapshot = this.setRuntimeFault({
 			message,
-			chunkName,
-			line,
-			column,
+			chunkName: resolvedChunkName,
+			line: resolvedLine,
+			column: resolvedColumn,
 			details: runtimeDetails,
 			fromDebugger: false,
 		});
-		this.pauseDebuggerForException({ chunkName: snapshot.chunkName, line: snapshot.line, column: snapshot.column }, callStackSnapshot);
-		const prettyMessage = prettyPrintRuntimeError(chunkName, line, column, message);
+		const prettyMessage = prettyPrintRuntimeError(snapshot.chunkName, snapshot.line, snapshot.column, message);
 		console.error('[BmsxVMRuntime] Lua runtime error:', prettyMessage, error);
+		// try {
+			// this.pauseDebuggerForException({ chunkName: snapshot.chunkName, line: snapshot.line, column: snapshot.column }, callStackSnapshot);
+		// } catch (pauseError) {
+		// 	console.error('[BmsxVMRuntime] Failed to pause debugger for runtime exception:', pauseError);
+		// }
+		this.surfaceRuntimeErrorToTerminal(prettyMessage, runtimeDetails);
 		this.handledLuaErrors.add(error);
 	}
 
@@ -1778,15 +1786,7 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	public canonicalizeIdentifier(name: string): string {
-		if (this._canonicalization) {
-			if (this._canonicalization === 'upper') {
-				return name.toUpperCase();
-			}
-			if (this._canonicalization === 'lower') {
-				return name.toLowerCase();
-			}
-		}
-		return name;
+		return this.canonicalizeIdentifierFn(name);
 	}
 
 	public callLuaFunction(fn: LuaFunctionValue, args: unknown[]): unknown[] {

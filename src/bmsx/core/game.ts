@@ -590,24 +590,18 @@ export class Game {
 		try {
 			$.world.run(deltaTime);
 		} catch (error) {
+			failed = true;
 			// Surface engine/runtime errors to the in-game terminal when active
 			const vmRuntime = BmsxVMRuntime.instance;
 			if (vmRuntime) {
 				try {
 					vmRuntime.handleLuaError(error);
-					vmRuntime.abandonFrameState();
+					vmRuntime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
 				} catch (error) { /* ignore secondary failures, but log them */
-					// console.error(`Error while handling surfaced game error in vm runtime: ${error ?? '<unknown error>'}`);
-					// Abort the remainder of this update to keep state coherent this frame.
-					try {
-						vmRuntime.handleLuaError(error);
-						vmRuntime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
-					} catch (error) {
-						console.error(`Error while handling surfaced game error in vm runtime: ${error ?? '<unknown error>'}`);
-						// ignore secondary failures, but log them
-					}
-					failed = true;
+					console.error(`Error while handling surfaced game error in vm runtime: ${error?.message ?? '<unknown error>'}`);
+					// ignore secondary failures, but log them
 				}
+				failed = true;
 			}
 		}
 

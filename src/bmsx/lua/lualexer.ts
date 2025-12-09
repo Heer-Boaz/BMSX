@@ -1,5 +1,6 @@
 import { CanonicalizationType } from '../rompack/rompack';
 import { LuaSyntaxError } from './luaerrors';
+import { createIdentifierCanonicalizer } from './identifier_canonicalizer';
 import type { LuaToken, LuaTokenLiteral } from './luatoken';
 import { LuaTokenType, resolveKeyword } from './luatoken';
 
@@ -13,6 +14,7 @@ export class LuaLexer {
 	private tokenStartLine: number;
 	private tokenStartColumn: number;
 	private readonly identifierCanonicalization: CanonicalizationType;
+	private readonly canonicalizeIdentifier: (value: string) => string;
 
 	constructor(source: string, chunkName: string, options?: { canonicalizeIdentifiers?: CanonicalizationType }) {
 		this.source = source;
@@ -24,6 +26,7 @@ export class LuaLexer {
 		this.tokenStartLine = 1;
 		this.tokenStartColumn = 1;
 		this.identifierCanonicalization = options?.canonicalizeIdentifiers ?? 'none';
+		this.canonicalizeIdentifier = createIdentifierCanonicalizer(this.identifierCanonicalization);
 	}
 
 	public scanTokens(): LuaToken[] {
@@ -519,16 +522,6 @@ export class LuaLexer {
 			column: this.tokenStartColumn,
 			literal,
 		});
-	}
-
-	private canonicalizeIdentifier(value: string): string { // UGLY! DUPLICATE IMPLEMENTATION (SEE BmsxVMRuntime)!
-		if (this.identifierCanonicalization === 'upper') {
-			return value.toUpperCase();
-		}
-		if (this.identifierCanonicalization === 'lower') {
-			return value.toLowerCase();
-		}
-		return value;
 	}
 
 	private advance(): string {

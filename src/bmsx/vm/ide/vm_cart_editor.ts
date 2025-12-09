@@ -611,7 +611,16 @@ export function focusChunkSource(chunkName: string): void {
 		activate();
 	}
 	closeSymbolSearch(true);
+	closeResourceSearch(true);
+	closeLineJump(true);
+	closeSearch(true);
+	if (!chunkName) {
+		return;
+	}
 	const descriptor = findResourceDescriptorForChunk(chunkName);
+	if (!descriptor) {
+		return;
+	}
 	openResourceDescriptor(descriptor);
 }
 
