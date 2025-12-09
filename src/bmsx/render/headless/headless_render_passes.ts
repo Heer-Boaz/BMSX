@@ -60,13 +60,6 @@ function formatScale(scale: { x: number; y: number }): string {
 	return `(${formatNumber(scale?.x ?? 1)}, ${formatNumber(scale?.y ?? 1)})`;
 }
 
-function formatAmbient(enabled: boolean, factor: number): string {
-	if (enabled === undefined && factor === undefined) return 'default';
-	const flag = enabled === undefined ? 'default' : enabled ? 'on' : 'off';
-	const f = factor === undefined ? 'default' : formatNumber(factor);
-	return `${flag}@${f}`;
-}
-
 function translationFromMatrix(m: Float32Array): string {
 	return `(${formatNumber(m[12])}, ${formatNumber(m[13])}, ${formatNumber(m[14])})`;
 }
@@ -113,6 +106,8 @@ function makeSpriteState(): SpritesPipelineState {
 		atlasEngineTex: null,
 		ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
 		ambientFactorDefault: gv.spriteAmbientFactorDefault,
+		ambientColor: [0, 0, 0], // Ambient sprites disabled; update when a new path is implemented.
+		ambientIntensity: 0,
 		viewportTypeIde: gv.viewportTypeIde,
 	};
 }
@@ -130,7 +125,7 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 			const spriteState = state as SpritesPipelineState;
 			const count = beginSpriteQueue();
 			const snapshot: Snapshot = [
-				`draws=${count} viewport=${spriteState.width}x${spriteState.height} base=${spriteState.baseWidth}x${spriteState.baseHeight} ambient_default=${formatAmbient(spriteState.ambientEnabledDefault, spriteState.ambientFactorDefault)}`,
+				`draws=${count} viewport=${spriteState.width}x${spriteState.height} base=${spriteState.baseWidth}x${spriteState.baseHeight} ambient_default=disabled`,
 			];
 			if (count > 0) {
 				let index = 0;
@@ -141,9 +136,9 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 					const scale = formatScale(options.scale);
 					const flipH = options.flip?.flip_h ? 'H' : '-';
 					const flipV = options.flip?.flip_v ? 'V' : '-';
-					const ambient = formatAmbient(options.ambient_affected ?? spriteState.ambientEnabledDefault, options.ambient_factor ?? spriteState.ambientFactorDefault);
 					const atlas = imgmeta.atlasid ?? 'na';
-					snapshot.push(`[sprite#${index}] id=${options.imgid} layer=${layer} pos=${pos} scale=${scale} flip=${flipH}${flipV} ambient=${ambient} atlas=${atlas}`);
+					// Ambient sprites are disabled in the runtime; logging follows suit until a new approach is added.
+					snapshot.push(`[sprite#${index}] id=${options.imgid} layer=${layer} pos=${pos} scale=${scale} flip=${flipH}${flipV} ambient=disabled atlas=${atlas}`);
 					index += 1;
 				});
 			}
@@ -237,9 +232,8 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 			if (count > 0) {
 				let index = 0;
 				forEachParticleQueue((submission: ParticleRenderSubmission) => {
-					const ambient = formatAmbient(submission.ambient_mode === undefined ? undefined : submission.ambient_mode === 1, submission.ambient_factor);
 					const textureTag = submission.texture ? 'custom' : 'default';
-					snapshot.push(`[particle#${index}] pos=${formatVec3(submission.position)} size=${formatNumber(submission.size)} texture=${textureTag} ambient=${ambient}`);
+					snapshot.push(`[particle#${index}] pos=${formatVec3(submission.position)} size=${formatNumber(submission.size)} texture=${textureTag}`);
 					index += 1;
 				});
 			}

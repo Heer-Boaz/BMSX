@@ -20,8 +20,9 @@ layout(std140) uniform FrameUniforms {
 	vec4 u_cameraPos; // xyz, pad
 	vec4 u_ambient_frame; // rgb,intensity
 };
-uniform int u_spriteAmbientEnabled;  // 0/1
-uniform float u_spriteAmbientFactor; // 0..1
+// Ambient uniforms kept for future re-enable; disabled for now.
+// uniform int u_spriteAmbientEnabled;  // 0/1
+// uniform float u_spriteAmbientFactor; // 0..1
 
 const uint ENGINE_ATLAS_ID = 254u;
 
@@ -42,9 +43,10 @@ void main() {
 			break;
 		}
 	texColor *= v_color_override;
-	if (u_spriteAmbientEnabled == 1) {
-		float f = clamp(u_spriteAmbientFactor, 0.0, 1.0);
-		texColor.rgb *= mix(vec3(1.0), u_ambient_frame.rgb * u_ambient_frame.a, f);
-	}
+	// Ambient sprites disabled; re-enable by restoring the mix below.
+	// if (u_spriteAmbientEnabled == 1) {
+	// 	float f = clamp(u_spriteAmbientFactor, 0.0, 1.0);
+	// 	texColor.rgb *= mix(vec3(1.0), u_ambient_frame.rgb * u_ambient_frame.a, f);
+	// }
 	outputColor = texColor;
 }

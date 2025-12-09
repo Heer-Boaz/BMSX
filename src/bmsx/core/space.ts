@@ -3,6 +3,7 @@ import { insavegame, excludepropfromsavegame, onload, type RevivableObjectArgs }
 import { $ } from './game';
 import { WorldObject } from './object/worldobject';
 import type { SpawnReason } from './world';
+import { DEFAULT_ZCOORD } from '../render/backend/webgl/webgl.constants';
 export type initial_world_spaces = 'game_start' | 'default' | 'ui';
 
 @insavegame
@@ -65,7 +66,7 @@ export class Space {
 	 */
 	public sort_by_depth(): void {
 		this.depthSortDirty = false;
-		this.objects.sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
+		this.objects.sort((a, b) => (a.z ?? DEFAULT_ZCOORD) - (b.z ?? DEFAULT_ZCOORD));
 	}
 
 	/**

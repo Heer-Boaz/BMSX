@@ -764,20 +764,19 @@ export class VMCodeLayout {
 		const endSegment = this.visualLines[endVisual] ?? startSegment;
 		const viewportStartRow = Math.min(startSegment.row, endSegment.row);
 		const viewportEndRow = Math.max(startSegment.row, endSegment.row);
-		const guard = this.lastHotGuardRows;
-		const guardedStart = Math.max(0, hot.start + guard);
-		if (viewportStartRow < guardedStart) {
-			return false;
-		}
-		const guardedEnd = Math.max(guardedStart, hot.end - guard);
-		if (viewportEndRow > guardedEnd) {
-			return false;
-		}
+		const maxRow = this.rowToFirstVisualLine.length > 0 ? this.rowToFirstVisualLine.length - 1 : 0;
+		const guardStart = hot.start === 0 ? 0 : this.lastHotGuardRows;
+		const guardEnd = hot.end >= maxRow ? 0 : this.lastHotGuardRows;
+		const guardedStart = Math.max(0, hot.start + guardStart);
+		const guardedEnd = Math.max(guardedStart, hot.end - guardEnd);
+		if (viewportStartRow < guardedStart) return false;
+		if (viewportEndRow > guardedEnd) return false;
 		return true;
 	}
 }
 
 const lineHashCache = new Map<string, number>();
+const LINE_HASH_CACHE_LIMIT = 2048;
 
 function hashLineContent(line: string): number {
 	const cached = lineHashCache.get(line);
@@ -790,5 +789,11 @@ function hashLineContent(line: string): number {
 		hash = (hash * 16777619) >>> 0;
 	}
 	lineHashCache.set(line, hash);
+	if (lineHashCache.size > LINE_HASH_CACHE_LIMIT) {
+		const first = lineHashCache.keys().next();
+		if (!first.done) {
+			lineHashCache.delete(first.value);
+		}
+	}
 	return hash;
 }

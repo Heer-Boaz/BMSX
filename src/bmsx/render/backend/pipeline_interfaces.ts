@@ -245,9 +245,10 @@ export interface SpritesPipelineState {
 	atlasEngineTex?: TextureHandle;
 	ambientEnabledDefault: boolean;
 	ambientFactorDefault: number;
+	ambientColor: [number, number, number];
+	ambientIntensity: number;
 	viewportTypeIde: RenderingViewportType;
 }
 
 export interface CRTPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; colorTex: TextureHandle; options?: unknown; }
 export interface FrameSharedState { view: { camPos: Float32Array | { x: number; y: number; z: number; }; viewProj: Float32Array; skyboxView: Float32Array; proj: Float32Array; }; lighting: unknown; fog: FogUniforms; }
-

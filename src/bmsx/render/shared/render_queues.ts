@@ -6,20 +6,24 @@ import { RenderSubmission } from '../gameview';
 export interface SpriteQueueItem {
 	options: ImgRenderSubmission;
 	imgmeta: ImgMeta;
+	submissionIndex: number;
 }
 
 const spriteQueue = new FeatureQueue<SpriteQueueItem>(256);
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
 const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
+let spriteSubmissionCounter = 0;
 
 // --- Sprite queue helpers ---------------------------------------------------
 
-export function submitSprite(item: SpriteQueueItem): void {
-	spriteQueue.submit(item);
+export function submitSprite(item: Omit<SpriteQueueItem, 'submissionIndex'>): void {
+	const submissionIndex = spriteSubmissionCounter++;
+	spriteQueue.submit({ ...item, submissionIndex });
 }
 
 export function beginSpriteQueue(): number {
 	spriteQueue.swap();
+	spriteSubmissionCounter = 0;
 	return spriteQueue.sizeFront();
 }
 
@@ -92,4 +96,3 @@ export function particleQueueBackSize(): number {
 export function particleQueueFrontSize(): number {
 	return particleQueue.sizeFront();
 }
-

@@ -717,19 +717,6 @@ export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext): voi
 	ide_state.executionStopRow = context ? context.executionStopRow : null;
 }
 
-function canonicalizeEditorIdentifier(name: string): string {
-	if (!ide_state.caseInsensitive) {
-		return name;
-	}
-	if (ide_state.canonicalization === 'upper') {
-		return name.toUpperCase();
-	}
-	if (ide_state.canonicalization === 'lower') {
-		return name.toLowerCase();
-	}
-	return name;
-}
-
 export function getBuiltinIdentifierSet(): ReadonlySet<string> {
 	const cached = ide_state.builtinIdentifierCache;
 	if (cached && cached.caseInsensitive === ide_state.caseInsensitive && cached.canonicalization === ide_state.canonicalization) {
