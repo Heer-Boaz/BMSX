@@ -141,14 +141,31 @@ export function formatRuntimeErrorLocation(chunkName: string, line: number, colu
 	return label.length > 0 ? label : null;
 }
 
-export function formatRuntimeStackFrameForTerminal(frame: StackTraceFrame): string {
-	const origin = frame.origin === 'lua' ? 'Lua' : 'JS';
-	let name = frame.functionName && frame.functionName.length > 0 ? frame.functionName : '';
-	if (name.length === 0 && frame.raw && frame.raw.length > 0) {
-		name = frame.raw;
+export function collectRuntimeStackFrames(details: RuntimeErrorDetails, includeJsStackTraces: boolean = true): StackTraceFrame[] {
+	if (!details) {
+		return [];
 	}
-	if (name.length === 0 && frame.source && frame.source.length > 0) {
-		name = frame.source;
+	const frames: StackTraceFrame[] = [];
+	for (let index = 0; index < details.luaStack.length; index += 1) {
+		frames.push(details.luaStack[index]);
+	}
+	if (includeJsStackTraces) {
+		for (let index = 0; index < details.jsStack.length; index += 1) {
+			frames.push(details.jsStack[index]);
+		}
+	}
+	return frames;
+}
+
+export function formatRuntimeStackFrame(frame: StackTraceFrame): string {
+	const originLabel = frame.origin === 'lua' ? '' : 'JS';
+	let name = frame.functionName && frame.functionName.length > 0 ? frame.functionName : '';
+	if (name.length === 0) {
+		if (frame.raw && frame.raw.length > 0) {
+			name = frame.raw;
+		} else if (frame.source && frame.source.length > 0) {
+			name = frame.source;
+		}
 	}
 	if (name.length === 0) {
 		name = '(anonymous)';
@@ -163,29 +180,18 @@ export function formatRuntimeStackFrameForTerminal(frame: StackTraceFrame): stri
 			location += `:${frame.column}`;
 		}
 	}
-	return location.length > 0 ? `[${origin}] ${name} (${location})` : `[${origin}] ${name}`;
+	const suffix = location.length > 0 ? `(${location})` : '';
+	return originLabel.length > 0 ? `[${originLabel}] ${name}${suffix}` : `${name}${suffix}`;
 }
 
 export function buildStackLines(details: RuntimeErrorDetails, includeJsStackTraces: boolean = false): string[] {
-	if (!details) {
-		return [];
-	}
-	const frames: StackTraceFrame[] = [];
-	for (let index = 0; index < details.luaStack.length; index += 1) {
-		frames.push(details.luaStack[index]);
-	}
-	if (includeJsStackTraces) {
-		for (let index = 0; index < details.jsStack.length; index += 1) {
-			frames.push(details.jsStack[index]);
-		}
-	}
+	const frames = collectRuntimeStackFrames(details, includeJsStackTraces);
 	if (frames.length === 0) {
 		return [];
 	}
 	const lines: string[] = ['Stack trace:'];
 	for (let index = 0; index < frames.length; index += 1) {
-		const frame = frames[index];
-		lines.push(`  ${formatRuntimeStackFrameForTerminal(frame)}`);
+		lines.push(`  ${formatRuntimeStackFrame(frames[index])}`);
 	}
 	return lines;
 }
@@ -196,33 +202,13 @@ export function buildErrorStackString(name: string, message: string, details: Ru
 	if (!details) {
 		return header;
 	}
-	const frames: StackTraceFrame[] = [];
-	for (let index = 0; index < details.luaStack.length; index += 1) {
-		frames.push(details.luaStack[index]);
-	}
-	if (includeJsStackTraces) {
-		for (let index = 0; index < details.jsStack.length; index += 1) {
-			frames.push(details.jsStack[index]);
-		}
-	}
+	const frames = collectRuntimeStackFrames(details, includeJsStackTraces);
 	if (frames.length === 0) {
 		return header;
 	}
 	const lines: string[] = [header];
 	for (let index = 0; index < frames.length; index += 1) {
-		const frame = frames[index];
-		const fn = frame.functionName && frame.functionName.length > 0 ? frame.functionName : '<anonymous>';
-		let location = '';
-		if (frame.source && frame.source.length > 0) {
-			location = frame.source;
-			if (frame.line !== null && frame.line !== undefined) {
-				location += `:${frame.line}`;
-				if (frame.column !== null && frame.column !== undefined) {
-					location += `:${frame.column}`;
-				}
-			}
-		}
-		lines.push(location.length > 0 ? `  at ${fn} (${location})` : `  at ${fn}`);
+		lines.push(`  at ${formatRuntimeStackFrame(frames[index])}`);
 	}
 	return lines.join('\n');
 }
