@@ -199,9 +199,13 @@ export class TerminalMode {
 	}
 
 	public appendError(error: Error): void {
-		error.stack?.split('\n').forEach(line => {
-			this.appendStderr(line);
-		});
+		const stackText = typeof error.stack === 'string' && error.stack.length > 0
+			? error.stack
+			: (error.message ?? String(error));
+		const lines = stackText.split('\n');
+		for (let index = 0; index < lines.length; index += 1) {
+			this.appendStderr(lines[index]);
+		}
 	}
 
 	public appendSystem(text: string): void {

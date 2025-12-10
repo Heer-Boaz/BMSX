@@ -3,7 +3,7 @@ import { BmsxVMRuntime } from './vm_runtime';
 import { clearWorkspaceSessionState } from './ide/workspace_storage';
 import { ide_state } from './ide/ide_state';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from './workspace';
-import { buildStackLines, formatRuntimeErrorLocation } from './runtime_error_util';
+import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from './runtime_error_util';
 import { RomLuaAsset } from '../rompack/rompack';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
@@ -255,13 +255,16 @@ export class TerminalCommandDispatcher {
 				lines.push(`Location: ${location}`);
 			}
 			lines.push(`Message: ${faultInfo.message}`);
-			const stackLines = buildStackLines(faultInfo.details);
-			const maxStackLines = 6;
-			for (let index = 0; index < stackLines.length && index < maxStackLines; index += 1) {
-				lines.push(stackLines[index]);
-			}
-			if (stackLines.length > maxStackLines) {
-				lines.push(`... ${stackLines.length - maxStackLines} more frame(s)`);
+			const frames = collectRuntimeStackFrames(faultInfo.details, this.runtime.jsStackEnabled);
+			if (frames.length > 0) {
+				const maxStackLines = 6;
+				lines.push('Stack trace:');
+				for (let index = 0; index < frames.length && index < maxStackLines; index += 1) {
+					lines.push(`  ${formatRuntimeStackFrame(frames[index])}`);
+				}
+				if (frames.length > maxStackLines) {
+					lines.push(`... ${frames.length - maxStackLines} more frame(s)`);
+				}
 			}
 			lines.push(`Recorded: ${new Date(faultInfo.timestampMs).toISOString()}`);
 			return { lines, active: faultFlag };

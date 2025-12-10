@@ -6,6 +6,7 @@ import type {
 import type { StackTraceFrame } from '../../lua/luavalue';
 import { ide_state } from './ide_state';
 import { setActiveRuntimeErrorOverlay } from './vm_cart_editor';
+import { collectRuntimeStackFrames, formatRuntimeStackFrame } from '../runtime_error_util';
 
 export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails): RuntimeErrorDetails {
 	if (!details) {
@@ -70,7 +71,10 @@ function buildRuntimeErrorOverlayDescriptors(
 	if (!expanded) {
 		return descriptors;
 	}
-	const combinedStack = buildCombinedRuntimeErrorStack(details);
+	if (!details) {
+		return descriptors;
+	}
+	const combinedStack = collectRuntimeStackFrames(details, true);
 	if (combinedStack.length === 0) {
 		return descriptors;
 	}
@@ -78,8 +82,8 @@ function buildRuntimeErrorOverlayDescriptors(
 		descriptors.push({ text: '', role: 'divider' });
 	}
 	let headerText = 'Call Stack:';
-	const hasLuaFrames = details !== null && details.luaStack.length > 0;
-	const hasJsFrames = details !== null && details.jsStack.length > 0;
+	const hasLuaFrames = details.luaStack.length > 0;
+	const hasJsFrames = details.jsStack.length > 0;
 	if (hasLuaFrames && hasJsFrames) {
 		headerText = 'Call Stack (Lua + JS):';
 	} else if (hasLuaFrames) {
@@ -90,41 +94,10 @@ function buildRuntimeErrorOverlayDescriptors(
 	descriptors.push({ text: headerText, role: 'header' });
 	for (let frameIndex = 0; frameIndex < combinedStack.length; frameIndex += 1) {
 		const frame = combinedStack[frameIndex];
-		const text = formatErrorStackFrame(frame);
+		const text = formatRuntimeStackFrame(frame);
 		descriptors.push({ text, role: 'frame', frame });
 	}
 	return descriptors;
-}
-
-function buildCombinedRuntimeErrorStack(details: RuntimeErrorDetails): StackTraceFrame[] {
-	if (!details) {
-		return [];
-	}
-	const luaFrames: StackTraceFrame[] = [];
-	for (let index = 0; index < details.luaStack.length; index += 1) {
-		luaFrames.push(details.luaStack[index]);
-	}
-	const jsFrames: StackTraceFrame[] = [];
-	for (let index = 0; index < details.jsStack.length; index += 1) {
-		jsFrames.push(details.jsStack[index]);
-	}
-	if (luaFrames.length === 0 && jsFrames.length === 0) {
-		return [];
-	}
-	if (luaFrames.length === 0) {
-		return jsFrames.slice();
-	}
-	if (jsFrames.length === 0) {
-		return luaFrames.slice();
-	}
-	const combined: StackTraceFrame[] = [];
-	for (let index = 0; index < luaFrames.length; index += 1) {
-		combined.push(luaFrames[index]);
-	}
-	for (let index = 0; index < jsFrames.length; index += 1) {
-		combined.push(jsFrames[index]);
-	}
-	return combined;
 }
 
 export function buildRuntimeErrorOverlayCopyText(overlay: RuntimeErrorOverlay): string {
@@ -139,37 +112,6 @@ export function buildRuntimeErrorOverlayCopyText(overlay: RuntimeErrorOverlay): 
 		return overlay.lines.join('\n');
 	}
 	return 'Runtime error';
-}
-
-function formatErrorStackFrame(frame: StackTraceFrame): string {
-	const originLabel = frame.origin === 'lua' ? '' : 'JS'; // Make Lua the default and only label JS frames
-	let name = frame.functionName && frame.functionName.length > 0 ? frame.functionName : '';
-	if (name.length === 0) {
-		if (frame.source?.length > 0) {
-			name = frame.source;
-		}
-		else if (frame.raw?.length > 0) {
-			name = frame.raw;
-		}
-		else {
-			name = '(anonymous)';
-		}
-	}
-	let location = '';
-	if (frame?.source.length > 0) {
-		location = frame.source;
-	}
-	if (frame.line !== null) {
-		location = location.length > 0 ? `${location}:${frame.line}` : `${frame.line}`;
-		if (frame.column !== null) {
-			location += `:${frame.column}`;
-		}
-	}
-	const suffix = location.length > 0 ? `(${location})` : '';
-	if (originLabel.length === 0) {
-		return `${name}${suffix}`;
-	}
-	return `[${originLabel}] ${name}${suffix}`;
 }
 
 export function updateRuntimeErrorOverlay(deltaSeconds: number): void {

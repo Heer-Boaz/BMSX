@@ -44,7 +44,7 @@ export function convertLuaCallFrames(callFrames: ReadonlyArray<LuaCallFrame>): S
 }
 
 export function sanitizeLuaErrorMessage(message: string): string {
-	return message.replace(/^\[mod:[^\]]+]\s*/, '');
+	return message.replace(/^\[mod:[^\]]+]\s*/, ''); // Remove mod prefix if present
 }
 
 export function parseJsStackFrames(stack: string): StackTraceFrame[] {
@@ -182,18 +182,6 @@ export function formatRuntimeStackFrame(frame: StackTraceFrame): string {
 	}
 	const suffix = location.length > 0 ? `(${location})` : '';
 	return originLabel.length > 0 ? `[${originLabel}] ${name}${suffix}` : `${name}${suffix}`;
-}
-
-export function buildStackLines(details: RuntimeErrorDetails, includeJsStackTraces: boolean = false): string[] {
-	const frames = collectRuntimeStackFrames(details, includeJsStackTraces);
-	if (frames.length === 0) {
-		return [];
-	}
-	const lines: string[] = ['Stack trace:'];
-	for (let index = 0; index < frames.length; index += 1) {
-		lines.push(`  ${formatRuntimeStackFrame(frames[index])}`);
-	}
-	return lines;
 }
 
 export function buildErrorStackString(name: string, message: string, details: RuntimeErrorDetails, includeJsStackTraces: boolean): string {

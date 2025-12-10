@@ -48,7 +48,7 @@ local narrative = {
 
 local function set_text_lines(text_object_id, lines, typed)
 	local text_obj = world_object(text_object_id)
-	text_obj:setTextFromLines(lines)
+	text_obj:settextfromlines(lines)
 	if typed then
 		return
 	end
@@ -67,7 +67,7 @@ end
 local function tick_text(text_object_id)
 	local text_obj = world_object(text_object_id)
 	if text_obj.is_typing then
-		text_obj:typeNextCharacter()
+		text_obj:typenextcharacter()
 	end
 end
 
@@ -156,6 +156,7 @@ function intro_service:tick_glitch()
 		return
 	end
 	local tl = self.glitch_timeline
+	return
 	local events = tl:advance()
 	for index = 1, #events do
 		local ev = events[index]
