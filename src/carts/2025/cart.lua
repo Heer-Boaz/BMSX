@@ -11,6 +11,13 @@ local text_choice_id = 'intro2025.text.choice.instance'
 local text_prompt_def_id = 'intro2025.text.prompt'
 local text_prompt_id = 'intro2025.text.prompt.instance'
 
+local glitch_timeline_def = {
+	id = glitch_timeline_id,
+	frames = { 'low', 'mid', 'high' },
+	ticks_per_frame = 1,
+	playback_mode = 'loop',
+}
+
 local narrative = {
 	start = {
 		{ 'Pakjesavond 5 december...', 'Een moderne slaapkamer.', 'Druk [A] om te beginnen.' },
@@ -92,18 +99,6 @@ local intro_service = {}
 intro_service.__index = intro_service
 intro_service.id = controller_instance_id
 
-function intro_service:ensure_glitch_timeline()
-	if self.glitch_timeline then
-		return
-	end
-	self.glitch_timeline = new_timeline({
-		id = glitch_timeline_id,
-		frames = { 'low', 'mid', 'high' },
-		ticks_per_frame = 1,
-		playback_mode = 'loop',
-	})
-end
-
 function intro_service:set_pages(pages)
 	self.pages = pages
 	self.page_index = 1
@@ -143,7 +138,6 @@ function intro_service:start_glitch()
 	self.glitch_active = true
 	self.glitch_phase = 0
 	self.glitch_tone = 'low'
-	self:ensure_glitch_timeline()
 	self.glitch_timeline:rewind()
 end
 
@@ -156,10 +150,9 @@ function intro_service:tick_glitch()
 		return
 	end
 	local tl = self.glitch_timeline
-	return
-	local events = tl:advance()
-	for index = 1, #events do
-		local ev = events[index]
+	local ev = tl:advance()
+	for index = 1, #ev do
+		local ev = ev[index]
 		if ev.kind == 'frame' then
 			self.glitch_phase = self.glitch_phase + 1
 			self.glitch_tone = ev.value
@@ -356,6 +349,7 @@ local function register_controller()
 			label = 'IntroController',
 			pages = narrative.start,
 			page_index = 1,
+			glitch_timeline = nil,
 			glitch_active = false,
 			glitch_phase = 0,
 			glitch_tone = 'low',
@@ -395,9 +389,9 @@ function new_game()
 
 	create_service(controller_def_id)
 	local ctrl = service(controller_instance_id)
-	ctrl:ensure_glitch_timeline()
+	ctrl.glitch_timeline = new_timeline(glitch_timeline_def)
 	ctrl:set_pages(narrative.start)
-	set_text_lines(text_choice_id, {}, false)
+	set_text_lines(text_choice_id, array({}), false)
 	set_prompt_lines()
 	ctrl:activate()
 end

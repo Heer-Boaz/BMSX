@@ -552,7 +552,8 @@ export async function applyWorkspaceOverridesToCart(params: { cart: BmsxCartridg
 	const merged = await mergeWorkspaceOverrides(root, storage, localOverrides, serverOverrides ?? new Map<string, WorkspaceOverrideRecord>());
 	for (const asset of Object.values(cart.path2lua)) {
 		const filePath = asset.normalized_source_path;
-		const savedRecord = await fetchWorkspaceFile(filePath);
+		const canonicalPath = resolveWorkspacePathForIo(filePath, root);
+		const savedRecord = await fetchWorkspaceFile(canonicalPath);
 		const canonicalRecord = savedRecord && savedRecord.contents !== asset.src
 			? {
 				source: savedRecord.contents,

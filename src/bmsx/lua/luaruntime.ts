@@ -370,6 +370,7 @@ export class LuaInterpreter {
 	>();
 	private readonly packageTable: LuaTable;
 	private readonly packageLoaded: LuaTable;
+	private readonly arrayMetatable: LuaTable;
 	private _requireHandler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) = null;
 	private _outputHandler: ((text: string) => void) = (text: string) => { console.log(text); };
 	private readonly frameStack: ExecutionFrame[] = [];
@@ -386,6 +387,8 @@ export class LuaInterpreter {
 		this.randomSeedValue = $.platform.clock.now();
 		this.packageTable = createLuaTable();
 		this.packageLoaded = createLuaTable();
+		this.arrayMetatable = createLuaTable();
+		this.arrayMetatable.set('__bmsx_array', true);
 		this.initializeBuiltins();
 		this._chunkEnvironment = LuaEnvironment.createChild(this.globals);
 	}
@@ -3195,6 +3198,33 @@ export class LuaInterpreter {
 				this.outputHandler(parts.join('\t'));
 			}
 			return [];
+		}));
+
+		this.globals.set(this.canonicalize('array'), new LuaNativeFunction(this.canonicalize('array'), (args) => {
+			const arrayTable = createLuaTable();
+			arrayTable.setMetatable(this.arrayMetatable);
+			if (args.length === 1 && isLuaTable(args[0])) {
+				const source = args[0] as LuaTable;
+				const entries = source.entriesArray();
+				let nextIndex = source.numericLength() + 1;
+				for (let index = 0; index < entries.length; index += 1) {
+					const [key, value] = entries[index];
+					if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+						arrayTable.set(key, value);
+						if (key >= nextIndex) {
+							nextIndex = key + 1;
+						}
+						continue;
+					}
+					arrayTable.set(nextIndex, value);
+					nextIndex += 1;
+				}
+				return [arrayTable];
+			}
+			for (let index = 0; index < args.length; index += 1) {
+				arrayTable.set(index + 1, args[index]);
+			}
+			return [arrayTable];
 		}));
 
 		this.globals.set(this.canonicalize('assert'), new LuaNativeFunction(this.canonicalize('assert'), (args) => {

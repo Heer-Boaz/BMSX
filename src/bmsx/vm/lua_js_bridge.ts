@@ -75,6 +75,22 @@ export class LuaJsBridge {
 		const tableId = this.getOrAssignTableId(table);
 		// Carry the marshal path forward so diagnostics point to the logical location inside the Lua object graph.
 		const tableContext = this.vmRuntime.extendMarshalContext(context, `table${tableId}`);
+		const metatable = table.getMetatable();
+		if (metatable !== null && metatable.get('__bmsx_array') === true) {
+			const length = table.numericLength();
+			const result: unknown[] = new Array(length);
+			visited.set(table, result);
+			for (let index = 1; index <= length; index += 1) {
+				const segment = this.describeMarshalSegment(index);
+				const converted = this.luaValueToJsWithVisited(
+					table.get(index),
+					segment ? this.vmRuntime.extendMarshalContext(tableContext, segment) : tableContext,
+					visited,
+				);
+				result[index - 1] = converted;
+			}
+			return result;
+		}
 		const entries = table.entriesArray();
 		if (entries.length === 0) {
 			const empty: Record<string, unknown> = {};
