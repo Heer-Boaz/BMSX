@@ -15,13 +15,13 @@ export class LuaError extends Error {
 export class LuaSyntaxError extends LuaError {
 	constructor(message: string, chunkName: string, line: number, column: number) {
 		super(message, chunkName, line, column);
-		this.name = 'LuaSyntaxError';
+		this.name = 'Syntax Error';
 	}
 }
 
 export class LuaRuntimeError extends LuaError {
 	constructor(message: string, chunkName: string, line: number, column: number) {
 		super(message, chunkName, line, column);
-		this.name = 'LuaRuntimeError';
+		this.name = 'Run Error';
 	}
 }

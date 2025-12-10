@@ -54,7 +54,7 @@ const ERROR_FOLDER_NOT_FOUND = 'Folder not found';
 const ERROR_FILE_NOT_FOUND = 'File not found';
 const ERROR_ILLEGAL_FUNCTION_CALL = 'Illegal function call';
 
-export class VMCommandDispatcher {
+export class TerminalCommandDispatcher {
 	private cwd = '/';
 	private readonly drive = 'ROM';
 	constructor(private readonly runtime: BmsxVMRuntime) {
@@ -190,7 +190,7 @@ export class VMCommandDispatcher {
 	private clearFaultState(): void {
 		const result = this.runtime.clearFaultState();
 		if (!result.cleared) {
-			this.runtime.terminal.appendStdout('No fault to clear');
+			this.runtime.terminal.appendStderr('No fault to clear');
 			return;
 		}
 		if (result.resumedDebugger) {

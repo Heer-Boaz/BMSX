@@ -31,7 +31,7 @@ import { collectLuaModuleAliases, consoleValueToString, listLuaObjectMembers } f
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './ide/ide_input';
 import type { asset_id, Viewport } from '../rompack/rompack';
 import { api, BmsxVMRuntime } from './vm_runtime';
-import { VMCommandDispatcher as TerminalCommandDispatcher } from './console_commands';
+import { TerminalCommandDispatcher as TerminalCommandDispatcher } from './terminal_commands';
 import { extractErrorMessage, LuaValue } from '../lua/luavalue';
 
 type TerminalOutputKind =
@@ -199,9 +199,8 @@ export class TerminalMode {
 	}
 
 	public appendError(error: Error): void {
-		this.appendEntry({ color: 6, text: error.message });
 		error.stack?.split('\n').forEach(line => {
-			this.appendStdout(line);
+			this.appendStderr(line);
 		});
 	}
 
