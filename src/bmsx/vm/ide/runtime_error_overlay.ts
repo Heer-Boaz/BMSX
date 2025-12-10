@@ -90,7 +90,7 @@ function buildRuntimeErrorOverlayDescriptors(
 	descriptors.push({ text: headerText, role: 'header' });
 	for (let frameIndex = 0; frameIndex < combinedStack.length; frameIndex += 1) {
 		const frame = combinedStack[frameIndex];
-		const text = formatRuntimeErrorStackFrame(frame);
+		const text = formatErrorStackFrame(frame);
 		descriptors.push({ text, role: 'frame', frame });
 	}
 	return descriptors;
@@ -141,7 +141,7 @@ export function buildRuntimeErrorOverlayCopyText(overlay: RuntimeErrorOverlay): 
 	return 'Runtime error';
 }
 
-function formatRuntimeErrorStackFrame(frame: StackTraceFrame): string {
+function formatErrorStackFrame(frame: StackTraceFrame): string {
 	const originLabel = frame.origin === 'lua' ? '' : 'JS'; // Make Lua the default and only label JS frames
 	let name = frame.functionName && frame.functionName.length > 0 ? frame.functionName : '';
 	if (name.length === 0) {

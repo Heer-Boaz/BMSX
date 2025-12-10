@@ -141,7 +141,7 @@ export function formatRuntimeErrorLocation(chunkName: string, line: number, colu
 	return label.length > 0 ? label : null;
 }
 
-export function formatRuntimeStackFrameForVM(frame: StackTraceFrame): string {
+export function formatRuntimeStackFrameForTerminal(frame: StackTraceFrame): string {
 	const origin = frame.origin === 'lua' ? 'Lua' : 'JS';
 	let name = frame.functionName && frame.functionName.length > 0 ? frame.functionName : '';
 	if (name.length === 0 && frame.raw && frame.raw.length > 0) {
@@ -185,15 +185,9 @@ export function buildStackLines(details: RuntimeErrorDetails, includeJsStackTrac
 	const lines: string[] = ['Stack trace:'];
 	for (let index = 0; index < frames.length; index += 1) {
 		const frame = frames[index];
-		lines.push(`  ${formatRuntimeStackFrameForVM(frame)}`);
+		lines.push(`  ${formatRuntimeStackFrameForTerminal(frame)}`);
 	}
 	return lines;
-}
-
-export function prettyPrintRuntimeError(chunkName: string, line: number, column: number, message: string): string {
-	const location = formatRuntimeErrorLocation(chunkName, line, column);
-	const sanitized = sanitizeLuaErrorMessage(message);
-	return location ? `Runtime error at ${location}: ${sanitized}` : `Runtime error: ${sanitized}`;
 }
 
 export function buildErrorStackString(name: string, message: string, details: RuntimeErrorDetails, includeJsStackTraces: boolean): string {

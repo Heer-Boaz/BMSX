@@ -5,7 +5,7 @@ import { Input } from '../input/input';
 import { KeyModifier } from '../input/playerinput';
 import type { LuaDefinitionInfo } from '../lua/lua_ast';
 import { LuaEnvironment } from '../lua/luaenvironment';
-import { LuaError, LuaRuntimeError } from '../lua/luaerrors';
+import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
 import { LuaHandlerCache, } from '../lua/luahandler_cache';
 import { LuaInterpreter, type ExecutionSignal, } from '../lua/luaruntime';
 import type { LuaFunctionValue, LuaTable, LuaValue, StackTraceFrame } from '../lua/luavalue';
@@ -44,7 +44,6 @@ import {
 	buildLuaFrameRawLabel,
 	convertLuaCallFrames,
 	parseJsStackFrames,
-	prettyPrintRuntimeError,
 	sanitizeLuaErrorMessage
 } from './runtime_error_util';
 import { BmsxVMStorage } from './storage';
@@ -560,9 +559,9 @@ export class BmsxVMRuntime extends Service {
 		this.setDebuggerPaused(true);
 		this.applyDebuggerStopLocation(signal);
 		if (signal.reason === 'exception') {
-			const snapshot = this.recordDebuggerExceptionFault(signal);
-			const message = snapshot.message ?? 'Runtime error';
-			this.editor.showRuntimeErrorInChunk(snapshot.chunkName, snapshot.line, snapshot.column, message);
+			this.recordDebuggerExceptionFault(signal);
+			const message = this.faultSnapshot.message;
+			this.editor.showRuntimeErrorInChunk(this.faultSnapshot.chunkName, this.faultSnapshot.line, this.faultSnapshot.column, message);
 		}
 	}
 
@@ -1244,28 +1243,6 @@ export class BmsxVMRuntime extends Service {
 		publishOverlayFrame(null);
 	}
 
-	private recordFaultSnapshot(payload: {
-		message: string;
-		chunkName: string;
-		line: number;
-		column: number;
-		details: RuntimeErrorDetails;
-		fromDebugger: boolean;
-	}): FaultSnapshot {
-		const snapshot: FaultSnapshot = {
-			message: payload.message,
-			chunkName: payload.chunkName,
-			line: payload.line,
-			column: payload.column,
-			details: payload.details,
-			timestampMs: $.platform.clock.dateNow(),
-			fromDebugger: payload.fromDebugger,
-		};
-		this.faultSnapshot = snapshot;
-		this.faultOverlayNeedsFlush = true;
-		return snapshot;
-	}
-
 	private clearFaultSnapshot(): void {
 		this.faultSnapshot = null;
 		this.faultOverlayNeedsFlush = false;
@@ -1283,9 +1260,11 @@ export class BmsxVMRuntime extends Service {
 		column: number;
 		details: RuntimeErrorDetails;
 		fromDebugger: boolean;
-	}): FaultSnapshot {
+	}): void {
 		this.luaRuntimeFailed = true;
-		return this.recordFaultSnapshot(payload);
+		this.faultSnapshot = payload;
+		this.faultSnapshot.timestampMs = $.platform.clock.dateNow();
+		this.faultOverlayNeedsFlush = true;
 	}
 
 	public clearFaultState(): { cleared: boolean; resumedDebugger: boolean } {
@@ -1298,16 +1277,16 @@ export class BmsxVMRuntime extends Service {
 		return { cleared: hadFault, resumedDebugger: wasPaused };
 	}
 
-	private recordDebuggerExceptionFault(signal: LuaDebuggerPauseSignal): FaultSnapshot {
+	private recordDebuggerExceptionFault(signal: LuaDebuggerPauseSignal) {
 		const exception = this.pauseCoordinator.getPendingException();
 		if (this.faultSnapshot && this.luaRuntimeFailed) {
 			this.faultOverlayNeedsFlush = true;
-			return this.faultSnapshot;
+			return;
 		}
 		const signalLine = fallbackclamp(signal.location.line, 1, Number.MAX_SAFE_INTEGER, null);
 		const signalColumn = fallbackclamp(signal.location.column, 1, Number.MAX_SAFE_INTEGER, null);
 		if (!exception) {
-			return this.setRuntimeFault({
+			this.setRuntimeFault({
 				message: 'Runtime error',
 				chunkName: signal.location.chunk,
 				line: signalLine,
@@ -1315,6 +1294,7 @@ export class BmsxVMRuntime extends Service {
 				details: this.buildRuntimeErrorDetailsForEditor(null, 'Runtime error'),
 				fromDebugger: true,
 			});
+			return;
 		}
 		const message = sanitizeLuaErrorMessage(extractErrorMessage(exception));
 		let chunkName: string = exception.chunkName;
@@ -1323,7 +1303,7 @@ export class BmsxVMRuntime extends Service {
 		}
 		const normalizedLine = fallbackclamp(exception.line, 1, Number.MAX_SAFE_INTEGER, null);
 		const normalizedColumn = fallbackclamp(exception.column, 1, Number.MAX_SAFE_INTEGER, null);
-		return this.setRuntimeFault({
+		this.setRuntimeFault({
 			message,
 			chunkName,
 			line: normalizedLine ?? signalLine,
@@ -1662,7 +1642,7 @@ export class BmsxVMRuntime extends Service {
 			runtimeDetails,
 			this.includeJsStackTraces,
 		);
-		const snapshot = this.setRuntimeFault({
+		this.setRuntimeFault({
 			message,
 			chunkName: resolvedChunkName,
 			line: resolvedLine,
@@ -1670,24 +1650,20 @@ export class BmsxVMRuntime extends Service {
 			details: runtimeDetails,
 			fromDebugger: false,
 		});
-		const prettyMessage = prettyPrintRuntimeError(snapshot.chunkName, snapshot.line, snapshot.column, message);
 		if (error instanceof Error) {
 			error.message = message;
 			error.stack = stackText;
 		}
-		console.error('[BmsxVMRuntime] Lua runtime error:', prettyMessage);
 		console.error(stackText);
-		// try {
-			// this.pauseDebuggerForException({ chunkName: snapshot.chunkName, line: snapshot.line, column: snapshot.column }, callStackSnapshot);
-		// } catch (pauseError) {
-		// 	console.error('[BmsxVMRuntime] Failed to pause debugger for runtime exception:', pauseError);
-		// }
-		this.terminal.appendError(error)
+		this.terminal.appendError(error);
 		this.activateTerminalMode();
 		this.handledLuaErrors.add(error);
 	}
 
 	private buildRuntimeErrorDetailsForEditor(error: unknown, message: string): RuntimeErrorDetails {
+		if (error instanceof LuaSyntaxError) {
+			return null;
+		}
 		const interpreter = this.luaInterpreter;
 		let luaFrames: StackTraceFrame[] = [];
 		if (interpreter) {

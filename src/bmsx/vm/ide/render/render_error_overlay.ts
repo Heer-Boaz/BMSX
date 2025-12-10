@@ -468,7 +468,7 @@ export type FaultSnapshot = {
 	line: number;
 	column: number;
 	details: RuntimeErrorDetails;
-	timestampMs: number;
+	timestampMs?: number;
 	fromDebugger: boolean;
 };
 
