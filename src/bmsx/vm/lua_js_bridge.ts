@@ -75,21 +75,12 @@ export class LuaJsBridge {
 		const tableId = this.getOrAssignTableId(table);
 		// Carry the marshal path forward so diagnostics point to the logical location inside the Lua object graph.
 		const tableContext = this.vmRuntime.extendMarshalContext(context, `table${tableId}`);
-		const metatable = table.getMetatable();
-		if (metatable !== null && metatable.get('__bmsx_array') === true) {
-			const length = table.numericLength();
-			const result: unknown[] = new Array(length);
-			visited.set(table, result);
-			for (let index = 1; index <= length; index += 1) {
-				const segment = this.describeMarshalSegment(index);
-				const converted = this.luaValueToJsWithVisited(
-					table.get(index),
-					segment ? this.vmRuntime.extendMarshalContext(tableContext, segment) : tableContext,
-					visited,
-				);
-				result[index - 1] = converted;
+		const nativeRef = table.get('__native') ?? table.get('__native__');
+		if (nativeRef !== null) {
+			if (nativeRef instanceof LuaNativeValue) {
+				return nativeRef.native;
 			}
-			return result;
+			return nativeRef;
 		}
 		const entries = table.entriesArray();
 		if (entries.length === 0) {
@@ -175,11 +166,7 @@ export class LuaJsBridge {
 			return value;
 		}
 		if (Array.isArray(value)) {
-			const table = createLuaTable();
-			for (let index = 0; index < value.length; index += 1) {
-				table.set(index + 1, this.jsToLua(value[index]));
-			}
-			return table;
+			return this.wrapNativeValue(value);
 		}
 		if (typeof value === 'object') {
 			if (isPlainObject(value)) {

@@ -11,7 +11,7 @@ import { CustomVisualComponent } from '../..';
  * World object that manages wrapped, typewriter-style text lines.
  */
 export class TextObject extends WorldObject {
-	public text: string[] = [''];
+	protected text: string[] = [''];
 	public full_text_lines: string[] = [''];
 	public displayed_lines: string[] = [''];
 	public current_line_index = 0;
@@ -56,7 +56,10 @@ export class TextObject extends WorldObject {
 	 * 7. Calculates the centered block X position.
 	 * 8. Updates the displayed text.
 	 */
-	protected setTextFromLines(lines: string[]): void {
+	public setTextFromLines(lines: string | string[]): void {
+		if (typeof lines === 'string') {
+			lines = [lines];
+		}
 		const combined = lines.join('\n');
 		const wrappedLines = wrapGlyphs(combined, this.maximum_characters_per_line);
 

@@ -370,7 +370,6 @@ export class LuaInterpreter {
 	>();
 	private readonly packageTable: LuaTable;
 	private readonly packageLoaded: LuaTable;
-	private readonly arrayMetatable: LuaTable;
 	private _requireHandler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) = null;
 	private _outputHandler: ((text: string) => void) = (text: string) => { console.log(text); };
 	private readonly frameStack: ExecutionFrame[] = [];
@@ -387,8 +386,6 @@ export class LuaInterpreter {
 		this.randomSeedValue = $.platform.clock.now();
 		this.packageTable = createLuaTable();
 		this.packageLoaded = createLuaTable();
-		this.arrayMetatable = createLuaTable();
-		this.arrayMetatable.set('__bmsx_array', true);
 		this.initializeBuiltins();
 		this._chunkEnvironment = LuaEnvironment.createChild(this.globals);
 	}
@@ -1633,7 +1630,7 @@ export class LuaInterpreter {
 			return this.getTableValueWithMetamethod(baseValue, expression.identifier, expression.range);
 		}
 		if (baseValue instanceof LuaNativeValue) {
-			return this.getNativeMemberValue(baseValue, expression.identifier, expression.range);
+			return this.getNativeValueWithMetamethod(baseValue, expression.identifier, expression.range);
 		}
 		throw this.runtimeErrorAt(expression.range, 'Attempted to index field on a non-table value.');
 	}
@@ -1648,7 +1645,7 @@ export class LuaInterpreter {
 		if (baseValue instanceof LuaNativeValue) {
 			const indexValues = this.evaluateExpression(expression.index, environment, varargs);
 			const indexValue = indexValues.length > 0 ? indexValues[0] : null;
-			return this.getNativeIndexValue(baseValue, indexValue, expression.range);
+			return this.getNativeValueWithMetamethod(baseValue, indexValue, expression.range);
 		}
 		throw this.runtimeErrorAt(expression.range, 'Attempted to index on a non-table value.');
 	}
@@ -1740,6 +1737,23 @@ export class LuaInterpreter {
 					}
 					return operand.numericLength();
 				}
+				if (operand instanceof LuaNativeValue) {
+					// Allow # to work on native JS arrays to keep Lua length checks consistent with 0-based native arrays.
+					const native = operand.native;
+					if (Array.isArray(native)) {
+						return native.length;
+					}
+					const metatable = this.getMetatableForValue(operand);
+					if (metatable !== null) {
+						const handler = metatable.get('__len');
+						if (handler !== null) {
+							const fn = this.expectFunction(handler, '__len metamethod must be a function.', expression.range);
+							const values = fn.call([operand]);
+							const first = values.length > 0 ? values[0] : null;
+							return this.expectNumber(first, '__len metamethod must return a number.', expression.range);
+						}
+					}
+				}
 				throw this.runtimeErrorAt(expression.range, 'Length operator expects a string or table.');
 			case LuaUnaryOperator.BitwiseNot:
 				if (typeof operand === 'number') {
@@ -1767,7 +1781,7 @@ export class LuaInterpreter {
 				return this.invokeFunction(functionValue, args, expression.range);
 			}
 			if (calleeValue instanceof LuaNativeValue) {
-				const methodValue = this.getNativeMemberValue(calleeValue, expression.methodName, expression.range);
+				const methodValue = this.getNativeValueWithMetamethod(calleeValue, expression.methodName, expression.range);
 				const functionValue = this.expectFunction(methodValue, `Method '${expression.methodName}' not found on native value.`, expression.range);
 				const args = this.buildCallArguments(expression, environment, varargs, calleeValue);
 				return this.invokeFunction(functionValue, args, expression.range);
@@ -1930,10 +1944,10 @@ export class LuaInterpreter {
 			return this.getTableValueWithMetamethod(target.table, target.index, range);
 		}
 		if (target.kind === 'native-member') {
-			return this.getNativeMemberValue(target.target, target.key, range);
+			return this.getNativeValueWithMetamethod(target.target, target.key, range);
 		}
 		if (target.kind === 'native-index') {
-			return this.getNativeIndexValue(target.target, target.key, range);
+			return this.getNativeValueWithMetamethod(target.target, target.key, range);
 		}
 		throw this.runtimeError('Unsupported assignment target kind.');
 	}
@@ -2729,6 +2743,14 @@ export class LuaInterpreter {
 	}
 
 	private getNativePropertyValue(target: LuaNativeValue, key: LuaValue, range: LuaSourceRange): { found: boolean; value: LuaValue; resolvedName: string; displayName: string } {
+		if (Array.isArray(target.native) && typeof key === 'number' && Number.isInteger(key)) {
+			const zeroIndex = key - 1;
+			if (zeroIndex < 0 || zeroIndex >= target.native.length) {
+				return { found: true, value: null, resolvedName: String(zeroIndex), displayName: String(key) };
+			}
+			const property = (target.native as unknown[])[zeroIndex];
+			return { found: true, value: this.convertFromHost(property), resolvedName: String(zeroIndex), displayName: String(key) };
+		}
 		const normalized = this.normalizeNativeKey(key);
 		if (!normalized) {
 			return { found: false, value: null, resolvedName: null, displayName: '' };
@@ -2749,6 +2771,9 @@ export class LuaInterpreter {
 				throw this.runtimeErrorAt(range, message);
 			}
 			throw this.runtimeError(message);
+		}
+		if (property === undefined && Array.isArray(target.native) && typeof key === 'number' && Number.isInteger(key)) {
+			return { found: true, value: null, resolvedName, displayName: normalized.displayName };
 		}
 		// const exists = resolvedName in (target.native as Record<string, unknown>);
 		if (typeof property === 'function') {
@@ -2809,15 +2834,23 @@ export class LuaInterpreter {
 		return first;
 	}
 
-	public getNativeMemberValue(target: LuaNativeValue, property: string, range: LuaSourceRange = null): LuaValue {
-		return this.getNativeValueWithMetamethod(target, property, range);
-	}
-
-	private getNativeIndexValue(target: LuaNativeValue, key: LuaValue, range: LuaSourceRange): LuaValue {
-		return this.getNativeValueWithMetamethod(target, key, range);
-	}
-
 	private setNativeProperty(target: LuaNativeValue, key: { propertyName: string; displayName: string }, value: LuaValue, range: LuaSourceRange): void {
+		if (Array.isArray(target.native)) {
+			if (key.propertyName === 'length') {
+				throw this.runtimeErrorAt(range, 'Cannot assign length on native Array from Lua.');
+			}
+			const numeric = Number(key.propertyName);
+			if (Number.isInteger(numeric)) {
+				const zeroIndex = numeric >= 1 ? numeric - 1 : numeric;
+				if (zeroIndex < 0) {
+					throw this.runtimeErrorAt(range, 'Array index must be positive.');
+				}
+				const jsValue = this.convertToHost(value, range);
+				(target.native as unknown[])[zeroIndex] = jsValue;
+				this.evictNativeMethod(target, key.displayName);
+				return;
+			}
+		}
 		const resolvedName = this.resolveNativePropertyName(target.native, key.propertyName) ?? key.propertyName;
 		const jsValue = this.convertToHost(value, range);
 		try {
@@ -3200,31 +3233,29 @@ export class LuaInterpreter {
 			return [];
 		}));
 
+		// array(...): create a native JS array (0-based) and expose it to Lua as a native value.
+		// - array(a, b, c) -> native Array [a, b, c]
+		// - array(table) copies 1-based numeric entries into a native Array, appending any non-numeric keys.
+		// The array stays native so that JS receives real arrays via the bridge.
 		this.globals.set(this.canonicalize('array'), new LuaNativeFunction(this.canonicalize('array'), (args) => {
-			const arrayTable = createLuaTable();
-			arrayTable.setMetatable(this.arrayMetatable);
+			const nativeArray: unknown[] = [];
 			if (args.length === 1 && isLuaTable(args[0])) {
 				const source = args[0] as LuaTable;
 				const entries = source.entriesArray();
-				let nextIndex = source.numericLength() + 1;
 				for (let index = 0; index < entries.length; index += 1) {
 					const [key, value] = entries[index];
 					if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
-						arrayTable.set(key, value);
-						if (key >= nextIndex) {
-							nextIndex = key + 1;
-						}
+						nativeArray[key - 1] = value;
 						continue;
 					}
-					arrayTable.set(nextIndex, value);
-					nextIndex += 1;
+					nativeArray.push(value);
 				}
-				return [arrayTable];
+				return [this.getOrCreateNativeValue(nativeArray, 'Array')];
 			}
 			for (let index = 0; index < args.length; index += 1) {
-				arrayTable.set(index + 1, args[index]);
+				nativeArray[index] = args[index];
 			}
-			return [arrayTable];
+			return [this.getOrCreateNativeValue(nativeArray, 'Array')];
 		}));
 
 		this.globals.set(this.canonicalize('assert'), new LuaNativeFunction(this.canonicalize('assert'), (args) => {
@@ -4046,6 +4077,32 @@ export class LuaInterpreter {
 				result.push(target.get(index));
 			}
 			return result;
+		}));
+
+		// table.fromnative(value): convert a native Array (or LuaNativeValue wrapping one) into a Lua table.
+		// Numeric slots become 1-based Lua indices; the original native Array is kept on __native for pass-through.
+		tableLibrary.set(this.canonicalize('fromnative'), new LuaNativeFunction(this.canonicalize('table.fromnative'), (args) => {
+			if (args.length === 0) {
+				return [createLuaTable()];
+			}
+			const source = args[0];
+			if (isLuaTable(source)) {
+				return [source];
+			}
+			let nativeValue: unknown = source;
+			if (source instanceof LuaNativeValue) {
+				nativeValue = source.native;
+			}
+			if (!Array.isArray(nativeValue)) {
+				return [createLuaTable()];
+			}
+			const table = createLuaTable();
+			const array = nativeValue as unknown[];
+			for (let index = 0; index < array.length; index += 1) {
+				table.set(index + 1, this.convertFromHost(array[index]));
+			}
+			table.set('__native', this.getOrCreateNativeValue(array, 'Array'));
+			return [table];
 		}));
 
 		tableLibrary.set(this.canonicalize('sort'), new LuaNativeFunction(this.canonicalize('sort'), (args) => {
