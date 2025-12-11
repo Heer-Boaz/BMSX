@@ -71,8 +71,8 @@ function combineRompacks(engineRom: RomPack, cartRom: RomPack): RomPack {
 		data: mergeRecords(cartRom.data, engineRom.data),
 		audioevents: mergeRecords(cartRom.audioevents, engineRom.audioevents),
 		cart: cartRom.cart ?? engineRom.cart,
-		project_root_path: cartRom.project_root_path ?? engineRom.project_root_path ,
-		code: cartRom.code ?? engineRom.code ,
+		project_root_path: cartRom.project_root_path ?? engineRom.project_root_path,
+		code: cartRom.code ?? engineRom.code,
 		canonicalization: cartRom.canonicalization ?? engineRom.canonicalization,
 	};
 	return combined;
@@ -162,16 +162,16 @@ export const bootrom = {
 				document.body.classList.add('game-started'); // Change background color of body
 			};
 
-			if (!h406A) throw new Error(`h406A(${x}) is not defined!`);
+			if (!h406A) throw new Error(`h406A(${x}) is not defined!`); // h406A is the main function that starts the game engine
 			if (HAS_DOM_ENVIRONMENT) {
 				const gamescreen = document.getElementById('gamescreen');
 				if (!(gamescreen instanceof HTMLElement)) {
-					throw new Error('[bootrom] #gamescreen element not found; cannot bootstrap platform.');
+					throw new Error('#gamescreen element not found; cannot bootstrap platform.');
 				}
 				gamescreen.hidden = false;
 				gamescreen.style.display = 'block';
 				if (!(gamescreen instanceof HTMLCanvasElement)) {
-					throw new Error('[bootrom] #gamescreen must be a <canvas> to construct a Platform.');
+					throw new Error('#gamescreen must be a <canvas> to construct a Platform.');
 				}
 				const platform = constructPlatformFromViewHostHandle(gamescreen);
 				bootrom.platform = platform;
@@ -189,28 +189,24 @@ export const bootrom = {
 			if (!platform) {
 				throw new Error('[bootrom] Platform not initialized before starting the game.');
 			}
-			h406A({
+			Promise.resolve(h406A({
 				rompack: bootrom.rom!,
-				sndcontext: bootrom.sndcontext ,
-				gainnode: bootrom.gainnode ,
+				sndcontext: bootrom.sndcontext,
+				gainnode: bootrom.gainnode,
 				debug: this.debug,
 				startingGamepadIndex: bootrom.startingGamepadIndex,
 				enableOnscreenGamepad: bootrom.enableOnscreenGamepad,
 				platform,
-				viewHost: bootrom.viewHost ,
+				viewHost: bootrom.viewHost,
 				canonicalization: __BOOTROM_CANONICALIZATION__,
-			} as BootArgs).then(() => {
+			} as BootArgs)).then(() => {
 				wrapup();
 				bootrom.rom = undefined;
 				delete bootrom.rom;
-			}).catch(err => {
-				bootrom.outputError(err);
-				return -1;
 			});
 			return 255;
 		} catch (err) {
-			bootrom.outputError(err);
-			return -1;
+			throw err;
 		}
 	},
 
@@ -227,7 +223,7 @@ export const bootrom = {
 				event.stopPropagation();
 				event.stopImmediatePropagation();
 				const reason = event.reason?.message ?? event.reason ?? 'unkown error';
-				const errormsg = `Unhandled rejection during "bload"-command: "${reason}".`;
+				const errormsg = `Unhandled rejection: ${reason}".`;
 				throw new Error(errormsg);
 			};
 		}
@@ -269,7 +265,7 @@ export const bootrom = {
 				bootrom.engineRom = enginePack;
 				return enginePack;
 			} catch (err) {
-				throw '[bootrom] Failed to load engine ROM:\n' + err;
+				throw 'Failed to load engine ROM:\n' + err;
 			}
 		}
 
@@ -330,7 +326,15 @@ export const bootrom = {
 				})
 				.then(() => resolve(loadedRomPack))
 				.catch(err => {
-					reject('[bload] Top-level error:\n' + err);
+					reject(err);
+					// if (typeof err === 'string') {
+					// 	reject(err);
+					// } else if (err instanceof Error) {
+					// 	reject(err);
+					// } else {
+					// 	reject('Unknown error during bload.');
+					// }
+					// reject('[bload] Top-level error:\n' + err);
 				});
 		});
 	},
@@ -430,7 +434,7 @@ async function loadScript(rom: RomPack): Promise<void> {
 		romcode.textContent = rom.code;
 		document.head.appendChild(romcode);
 	} catch (err) {
-		throw new Error(`Error in loadScript: ${err.message}`);
+		throw new Error(`ROM source loading failed: ${err.message}`);
 	}
 }
 
@@ -551,7 +555,7 @@ export async function fetchText(url: string): Promise<string> {
 		const data = await response.arrayBuffer();
 		return decoder.decode(data);
 	} catch (err) {
-		throw new Error(`Error @fetchText for URL "${url}": ${err.message}`);
+		throw new Error(`Failed @fetchText for URL "${url}": ${err.message}`);
 	}
 }
 
@@ -573,7 +577,7 @@ async function fetchBuffer(url: string): Promise<ArrayBuffer> {
 		}
 		return await response.arrayBuffer();
 	} catch (err) {
-		throw new Error(`Error @fetchBuffer for URL "${url}": ${err.message}`);
+		throw new Error(`Failed @fetchBuffer for URL "${url}": ${err.message}`);
 	}
 }
 

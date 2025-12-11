@@ -65,7 +65,7 @@ export async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer):
 			return { zipped_rom: rest, romlabel: label };
 		}
 	} catch (e) {
-		console.warn('[bootresources] PNG split failed:', e);
+		console.warn('PNG split from ROM\n', e);
 	}
 	return { zipped_rom: blob_buffer, romlabel: undefined };
 }
@@ -249,10 +249,10 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 
 	if (cart) {
 		if (!manifest.lua.entry_path) {
-			throw new Error('[bootresources] Cart manifest is missing lua.entry_path.');
+			throw new Error('Cart manifest is missing lua.entry_path.');
 		}
 		if (!cart.path2lua[manifest.lua.entry_path]) {
-			throw new Error(`[bootresources] Entry Lua asset not found at path '${manifest.lua.entry_path}'.`);
+			throw new Error(`Entry Lua asset not found at path '${manifest.lua.entry_path}'.`);
 		}
 	}
 	return Promise.resolve<RomPack>(result);
