@@ -927,7 +927,7 @@ export class BmsxVMRuntime extends Service {
 		}
 	}
 
-	public get state(): BmsxVMState {
+	public captureCurrentState(): BmsxVMState {
 		const storage = this.storage.dump();
 		const vmState = this.captureVmState();
 		const state: BmsxVMState = {
@@ -952,8 +952,8 @@ export class BmsxVMRuntime extends Service {
 		return state;
 	}
 
-	public set state(state: BmsxVMState) {
-		if (!state) this.resetRuntimeToFreshState();
+	public async applyState(state: BmsxVMState) {
+		if (!state) await this.resetRuntimeToFreshState();
 		else this.restoreFromStateSnapshot(state);
 	}
 

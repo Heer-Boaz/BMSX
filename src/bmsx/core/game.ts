@@ -724,7 +724,7 @@ export class Game {
 		sg.modelprops = data;
 		sg.spaces = this.world.spaces; // Spaces and their contained objects are serialized directly via references.
 
-		sg.bmsxVMState = BmsxVMRuntime.instance?.state;
+		sg.bmsxVMState = BmsxVMRuntime.instance?.captureCurrentState();
 		const serialized = Serializer.serialize(sg) as Uint8Array;
 		return compress ? BinaryCompressor.compressBinary(serialized) : serialized;
 	}
@@ -761,7 +761,16 @@ export class Game {
 
 			// Restore service state (opt-in)
 			if (sg.bmsxVMState) {
-				BmsxVMRuntime.instance.state = sg.bmsxVMState;
+				BmsxVMRuntime.instance.applyState(sg.bmsxVMState).then(() => {
+					this.wasupdated = true;
+					renderGate.end(gateToken);
+					runGate.end(runToken);
+				}).catch((e) => {
+					console.error(`Error loading game state: ${e}`);
+					this.wasupdated = true;
+					renderGate.end(gateToken);
+					runGate.end(runToken);
+				});
 			}
 		} catch (e) {
 			console.error(`Error loading game state: ${e}`);

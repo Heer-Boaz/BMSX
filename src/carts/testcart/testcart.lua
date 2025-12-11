@@ -479,6 +479,7 @@ function update(dt)
 	track_plain_input()
 	-- assert(false)
 	tick_collision_flash(dt)
+	reboot()
 end
 
 local function draw_hero(hero)

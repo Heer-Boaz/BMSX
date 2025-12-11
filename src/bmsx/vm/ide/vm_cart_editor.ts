@@ -2635,7 +2635,7 @@ export function performHotReloadAndResume(): boolean {
 	BmsxVMRuntime.instance.deactivateEditor();
 	scheduleRuntimeTask(async () => {
 		await applyWorkspaceOverridesToCart({ cart: $.cart, storage: $.platform.storage, includeServer: true });
-		const snapshot = runtime.state;
+		const snapshot = runtime.captureCurrentState();
 		snapshot.luaRuntimeFailed = false;
 		await runtime.resumeFromSnapshot(snapshot);
 		if (shouldUpdateGeneration) {

@@ -662,6 +662,9 @@ export class BmsxVMApi {
 	 */
 	public spawn_sprite(definition_id: Identifier, overrides?: Partial<SpriteObject>): SpriteObject {
 		const ext = this.worldObjectExts.get(definition_id);
+		if (!ext || !ext.class) {
+			console.warn(`[VM API] Missing extension for sprite '${definition_id}'${ext ? ' (no class)' : ''}`);
+		}
 		// Default the id of the instance to the Lua-class' definition_id if not overridden
 		const instance = new SpriteObject({ id: overrides?.id ?? ext?.class?.id, constructReason: undefined });
 		// Apply definition
@@ -802,6 +805,12 @@ export class BmsxVMApi {
 
 	public get runtime(): BmsxVMRuntime {
 		return BmsxVMRuntime.instance!;
+	}
+
+	public reboot(): void {
+		console.log('[BMSX VM API] Reboot requested.');
+		BmsxVMRuntime.instance.reloadProgramAndResetWorld(); // Reboot to initial state
+		console.log('[BMSX VM API] Reboot completed.');
 	}
 
 	public define_fsm(id: string, blueprint: StateMachineBlueprint): void {
