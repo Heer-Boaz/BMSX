@@ -1405,7 +1405,7 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private restoreChunkTables(env: LuaEnvironment, previousTables: Map<string, LuaTable>): void {
-		if (!env || previousTables.size === 0) {
+		if (!env || !previousTables || previousTables.size === 0) {
 			return;
 		}
 		const visited = new WeakSet<LuaTable>();
@@ -1593,6 +1593,12 @@ export class BmsxVMRuntime extends Service {
 				this.setDebuggerPaused(false);
 				this.clearRuntimeFault();
 			}
+
+			// Full reboot starts from a clean Lua chunk environment cache to avoid merging
+			// stale per-chunk tables (from previously loaded modules) into the fresh program.
+			this.luaChunkEnvironmentsByChunkName.clear();
+			this.luaChunkEnvironmentsByPath.clear();
+			this.luaGenericChunksExecuted.clear();
 
 			// Reload the program source from the cartridge and reset the world
 			await $.reset_to_fresh_world();
@@ -2010,6 +2016,9 @@ export class BmsxVMRuntime extends Service {
 
 	private reloadGenericLuaChunk(chunkName: string, sourceOverride?: string): void {
 		const interpreter = this.luaInterpreter;
+		const previousEnv = this.luaChunkEnvironmentsByChunkName.get(chunkName);
+		const entryEnv = this._luaChunkName ? this.luaChunkEnvironmentsByChunkName.get(this._luaChunkName) : null;
+		const sharedWithEntry = chunkName !== this._luaChunkName && !!previousEnv && previousEnv === entryEnv;
 		const previousChunkState = this.captureChunkState(chunkName);
 		const previousChunkTables = this.captureChunkTables(chunkName);
 		const previousGlobals = this.captureGlobalStateForReload();
@@ -2019,9 +2028,11 @@ export class BmsxVMRuntime extends Service {
 		const results = interpreter.execute(source, chunkName);
 		this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
 		this.cacheChunkEnvironment(chunkName, moduleId);
-		this.restoreChunkState(interpreter.chunkEnvironment, previousChunkState);
-		this.restoreChunkTables(interpreter.chunkEnvironment, previousChunkTables);
-		this.restoreGlobalStateForReload(previousGlobals);
+		if (!sharedWithEntry) {
+			this.restoreChunkState(interpreter.chunkEnvironment, previousChunkState);
+			this.restoreChunkTables(interpreter.chunkEnvironment, previousChunkTables);
+			this.restoreGlobalStateForReload(previousGlobals);
+		}
 		this.refreshPackageLoadedEntry(chunkName, results);
 		const moduleValue = results.length > 0 && results[0] !== null ? results[0] : true;
 		this.rebindChunkEnvironmentHandlers(moduleId);
