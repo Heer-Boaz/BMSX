@@ -1,4 +1,3 @@
-
 export function arrayify(value: unknown): unknown[] {
 	if (Array.isArray(value)) {
 		return value;

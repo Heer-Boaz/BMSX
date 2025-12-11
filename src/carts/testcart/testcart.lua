@@ -344,28 +344,28 @@ local function timelinehandler(event)
 end
 
 local function register_director_listeners()
-	events:on({
+	$.events:on({
 		event = 'demo.hero.move',
 		subscriber = director,
 		handler = function(event)
 			director.stats.moves = director.stats.moves + 1
 		end,
 	})
-	events:on({
+	$.events:on({
 		event = 'demo.hero.effect',
 		subscriber = director,
 		handler = function(event)
 			director.stats.effects = director.stats.effects + 1
 		end,
 	})
-	events:on({
+	$.events:on({
 		event = 'demo.hero.charge',
 		subscriber = director,
 		handler = function(event)
 			director.stats.charges = director.stats.charges + 1
 		end,
 	})
-	events:on({
+	$.events:on({
 		event = 'timeline.frame.' .. hero_timeline_id,
 		subscriber = director,
 		handler = timelinehandler,

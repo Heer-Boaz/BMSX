@@ -6,6 +6,7 @@ import { ContextStack, MappingContext } from './context';
 import { $ } from '../core/game';
 import { clamp } from '../utils/clamp';
 import { GAME_FPS } from '../rompack/rompack';
+import { deep_clone } from '../utils/deep_clone';
 
 const ACTION_GUARD_MIN_MS = 24;
 const ACTION_GUARD_MAX_MS = 120;
@@ -149,11 +150,19 @@ export class PlayerInput {
 	/**
 	 * Sets the input map for a specific player.
 	 * @param inputMap - The input map to set.
+	 * TODO: id unused (always defaults to 'base')
+	 * TODO: priority unused (always defaults to 0)
 	 */
 	public setInputMap(inputMap: InputMap): void {
+		if (!inputMap) throw new Error('[PlayerInput] Null or undefined input map provided.');
+		inputMap.keyboard = inputMap.keyboard ?? this.inputMap?.keyboard ?? {};
+		inputMap.gamepad = inputMap.gamepad ?? this.inputMap?.gamepad ?? {};
+		inputMap.pointer = inputMap.pointer ?? this.inputMap?.pointer ?? deep_clone(Input.DEFAULT_POINTER_INPUT_MAPPING);
 		this.inputMap = inputMap;
+
 		// Mirror into a base context for layered merging semantics
-		const base = new MappingContext('base', 0, true, inputMap.keyboard ?? {}, inputMap.gamepad ?? {}, inputMap.pointer ?? {});
+		const base = new MappingContext('base', 0, true, inputMap.keyboard, inputMap.gamepad, inputMap.pointer);
+
 		// Reset stack to base
 		this.contexts = new ContextStack();
 		this.contexts.push(base);

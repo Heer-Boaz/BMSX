@@ -61,10 +61,10 @@ export type KeyboardBinding = string | { id: string; scale?: number; invert?: bo
 export type KeyboardInputMapping = {
 	[action: string]: KeyboardBinding[];
 };
+
 /**
  * Represents a mapping of gamepad inputs to gamepad buttons.
  */
-
 export type GamepadBinding = BGamepadButton | { id: BGamepadButton; scale?: number; invert?: boolean };
 export type GamepadInputMapping = {
 	[action: string]: GamepadBinding[];
@@ -73,29 +73,30 @@ export type PointerBinding = string | { id: string; scale?: number; invert?: boo
 export type PointerInputMapping = {
 	[action: string]: PointerBinding[];
 };
+
 /**
  * Represents the input mapping for a game.
  */
-
 export interface InputMap {
 	keyboard: KeyboardInputMapping;
 	gamepad: GamepadInputMapping;
 	pointer?: PointerInputMapping;
 }
+
 /**
  * Represents an entry in a keyboard mapping. Accepts DOM key codes or named button ids.
  */
 export type KeyboardButton = string | BGamepadButton;
+
 /**
  * Represents a gamepad button.
  * @typedef {keyof typeof Input.BUTTON2INDEX } BGamepadButton
  */
-
 export type BGamepadButton = (typeof Input.BUTTON_IDS)[number];
+
 /**
  * Represents the state of a button.
  */
-
 export type ButtonState = {
 	// Binary/edge fields
 	pressed: boolean;
@@ -118,6 +119,7 @@ export type ButtonState = {
 	value?: number; // 1D analog value in [-1,1] or [0,1]
 	value2d?: readonly [number, number]; // 2D analog value
 };
+
 /**
  * Represents the input event that is stored when a key or button is pressed or released.
  */
@@ -128,10 +130,10 @@ export type InputEvent = {
 	consumed: boolean;
 	pressId?: number; // identity of the press this event belongs to
 };
+
 /**
  * Represents the state of an action, including the action name and button state.
  */
-
 export type ActionState = {
 	action: string;
 	alljustpressed: boolean;

@@ -517,13 +517,13 @@ export class BmsxVMApi {
 	 * @param defer_bind Optional flag forwarded to Service constructor to defer binding.
 	 * @returns The id of the created service instance.
 	 */
-	public create_service(definition_id: Identifier, defer_bind?: boolean): Identifier {
+	public create_service(definition_id: Identifier, defer_bind?: boolean): Service {
 		const ext = this.serviceExts.get(definition_id);
 		// Default the id of the instance to the Lua-class' definition id and otherwise defaults to the definition id
 		const instance = new Service({ id: ext?.class?.id ?? definition_id, deferBind: defer_bind ?? false });
 		// Apply definition
 		this.applyObjectExtensionAndOverrides(ext, instance, undefined);
-		return instance.id;
+		return instance;
 	}
 
 	public attach_component(object_or_id: WorldObject | Identifier, component_or_type: Component | Identifier): void {
@@ -632,7 +632,7 @@ export class BmsxVMApi {
 	 * @param overrides Optional partial properties to apply last; may include id and pos.
 	 * @returns The id of the spawned object.
 	 */
-	public spawn_object(definition_id: Identifier, overrides?: Partial<WorldObject>): Identifier {
+	public spawn_object(definition_id: Identifier, overrides?: Partial<WorldObject>): WorldObject {
 		const ext = this.worldObjectExts.get(definition_id);
 		// Default the id of the instance to the Lua-class' definition id if not overridden
 		const instance = new WorldObject({ id: overrides?.id ?? ext?.class?.id, constructReason: undefined });
@@ -641,7 +641,7 @@ export class BmsxVMApi {
 		this.applyObjectExtensionAndOverrides(ext, instance, overrides);
 
 		$.world.spawn(instance, overrides?.pos, { reason: 'fresh' });
-		return instance.id;
+		return instance;
 	}
 
 	/**
@@ -660,7 +660,7 @@ export class BmsxVMApi {
 	 * @param overrides Optional partial properties to apply last; may include id and pos.
 	 * @returns The id of the spawned sprite instance.
 	 */
-	public spawn_sprite(definition_id: Identifier, overrides?: Partial<SpriteObject>): Identifier {
+	public spawn_sprite(definition_id: Identifier, overrides?: Partial<SpriteObject>): SpriteObject {
 		const ext = this.worldObjectExts.get(definition_id);
 		// Default the id of the instance to the Lua-class' definition_id if not overridden
 		const instance = new SpriteObject({ id: overrides?.id ?? ext?.class?.id, constructReason: undefined });
@@ -668,7 +668,7 @@ export class BmsxVMApi {
 		this.applyObjectExtensionAndOverrides(ext, instance, overrides);
 
 		$.world.spawn(instance, overrides?.pos, { reason: 'fresh' });
-		return instance.id;
+		return instance;
 	}
 
 	/**
@@ -687,14 +687,14 @@ export class BmsxVMApi {
 	 * @param overrides Optional partial properties to apply last; may include id and pos.
 	 * @returns The id of the spawned textobject instance.
 	 */
-	public spawn_textobject(definition_id: Identifier, overrides?: Partial<TextObject>): Identifier {
+	public spawn_textobject(definition_id: Identifier, overrides?: Partial<TextObject>): TextObject {
 		const ext = this.worldObjectExts.get(definition_id);
 		const instance = new TextObject({ id: overrides?.id ?? ext?.class?.id ?? definition_id, constructReason: undefined });
 		// Apply definition
 		this.applyObjectExtensionAndOverrides(ext, instance, overrides);
 
 		$.world.spawn(instance, overrides?.pos, { reason: 'fresh' });
-		return instance.id;
+		return instance;
 	}
 
 	public grant_effect(object_id: Identifier, effect_id: string): void {

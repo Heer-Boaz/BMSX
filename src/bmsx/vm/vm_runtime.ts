@@ -254,6 +254,7 @@ export class BmsxVMRuntime extends Service {
 		});
 		this.editor = createVMCartEditor(options.viewport);
 		this.overlayResolutionMode = 'viewport';
+
 		seedDefaultLuaBuiltins();
 		this.flushLuaWarnings();
 		this.registerVMShortcuts();

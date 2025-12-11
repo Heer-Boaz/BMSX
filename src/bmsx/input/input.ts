@@ -9,7 +9,7 @@ import { openDebugOverviewTab, openEventInspectorTab, openObjectInspectorTab } f
 import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
 import { GamepadInput } from './gamepad';
 import { controllerUnassignedToast } from '../ui/ui_toast';
-import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState, PointerBinding, PointerInputMapping } from './inputtypes';
+import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState, PointerInputMapping } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
 import type { OnscreenGamepadLayout } from './onscreengamepad';
@@ -530,18 +530,6 @@ export class Input implements RegisterablePersistent {
 		pointer_position: ['pointer_position'],
 		pointer_wheel: ['pointer_wheel'],
 	};
-
-	public static clonePointerMapping(source: PointerInputMapping = Input.DEFAULT_POINTER_INPUT_MAPPING): PointerInputMapping {
-		const clone: PointerInputMapping = {};
-		for (const [action, bindings] of Object.entries(source) as [string, PointerBinding[]][]) {
-			clone[action] = bindings.map(binding =>
-				typeof binding === 'string'
-					? binding
-					: { ...binding }
-			);
-		}
-		return clone;
-	}
 
 	private static readonly DEBUG_CAPTURE_KEYS = new Set([DEBUG_HUD_TOGGLE_KEY, 'F6', 'F7', 'F11']);
 

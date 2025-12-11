@@ -303,7 +303,7 @@ export class LuaJsBridge {
 				this.applyLuaSnapshotPayload(table, record, value => this.deserializeLuaSnapshotValue(value, resolveRef));
 				return table;
 			}
-			if ((record as { __native_member_handle__?: boolean }).__native_member_handle__ === true) {
+			if (record.__native_member_handle__ === true) {
 				const handleTarget = (record as { target: object | Function }).target;
 				const path = (record as { path: ReadonlyArray<string> }).path;
 				return this.vmRuntime.interpreter.createNativeMemberHandle(handleTarget, path);
@@ -372,7 +372,7 @@ export class LuaJsBridge {
 		}
 		if (resolvedRoot && typeof resolvedRoot === 'object') {
 			const entries: Array<[string, LuaValue]> = [];
-			for (const [name, value] of Object.entries(resolvedRoot as Record<string, unknown>)) {
+			for (const [name, value] of Object.entries(resolvedRoot)) {
 				entries.push([name, resolveSnapshotValue(value)]);
 			}
 			return entries;

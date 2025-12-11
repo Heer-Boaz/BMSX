@@ -1,13 +1,12 @@
 import { $ } from '../core/game';
 import { Input } from '../input/input';
-import { GamepadBinding, GamepadInputMapping, InputMap, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping } from '../input/inputtypes';
+import { InputMap } from '../input/inputtypes';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
 import { LuaInterpreter, LuaNativeFunction } from '../lua/luaruntime';
 import { extractErrorMessage, LuaNativeValue } from '../lua/luavalue';
 import { isLuaTable, LuaTable, LuaValue } from '../lua/luavalue';
 import { arrayify } from '../utils/arrayify';
-import { deep_clone } from '../utils/deep_clone';
 import { VM_API_METHOD_METADATA } from './vm_api_metadata';
 import { api, BmsxVMRuntime, VM_BUTTON_ACTIONS } from './vm_runtime';
 import type { VMLuaBuiltinDescriptor } from './types';
@@ -171,13 +170,27 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 			: runtime.playerIndex;
 		const moduleId = $.rompack.cart.chunk2lua[runtime.currentChunkName].source_path;
 		const marshalCtx = runtime.ensureMarshalContext({ moduleId, path: [] });
-		const mappingValue = runtime.luaJsBridge.luaValueToJs(mappingTable, marshalCtx);
+		const mappingValue = runtime.luaJsBridge.luaValueToJs(mappingTable, marshalCtx) as InputMap;
 		if (!mappingValue || typeof mappingValue !== 'object') {
 			throw runtime.createApiRuntimeError('set_input_map(mapping [, player]) requires mapping to be a table.');
 		}
-		applyInputMappingFromLua(mappingValue as Record<string, unknown>, targetPlayer);
+		for (const key of ['keyboard', 'gamepad', 'pointer']) {
+			if (key in mappingValue) {
+				const layer = mappingValue[key];
+				if (layer !== undefined && layer !== null && typeof layer !== 'object') {
+					throw runtime.createApiRuntimeError(`set_input_map(mapping [, player]) requires ${key} to be a table.`);
+				}
+				// Apply the layer mapping to the player input
+				for (const [_action, bindings] of Object.entries(layer)) {
+					layer.bindings = arrayify(bindings);
+				}
+			}
+		}
+
+		$.set_inputmap(targetPlayer, mappingValue as InputMap);
 		return [];
 	});
+
 	registerLuaGlobal(env, 'set_input_map', setInputMapNative);
 	registerLuaBuiltin({
 		name: 'set_input_map',
@@ -412,11 +425,7 @@ function sanitizeParameterName(token: string, index: number): string {
 }
 
 export function seedDefaultLuaBuiltins(): void {
-	BmsxVMRuntime.instance.luaBuiltinMetadata.clear();
-	const defaults = DEFAULT_LUA_BUILTIN_FUNCTIONS;
-	for (let i = 0; i < defaults.length; i += 1) {
-		registerLuaBuiltin(defaults[i]);
-	}
+	DEFAULT_LUA_BUILTIN_FUNCTIONS.forEach(registerLuaBuiltin);
 }
 
 export function registerLuaGlobal(env: LuaEnvironment, name: string, value: LuaValue): void {
@@ -465,164 +474,17 @@ export function isLuaScriptError(error: unknown): error is LuaError | LuaRuntime
 }
 
 function exposeEngineObjects(env: LuaEnvironment): void {
-	const rompackView = buildLuaRompackView();
-	const entries: Array<[string, unknown]> = [
+	const entries: Array<[string, any]> = [
 		['world', $.world],
 		['game', $],
 		['$', $],
 		['registry', $.registry],
-		['events', $.event_emitter],
-		['rompack', rompackView],
+		['rompack', $.rompack],
 	];
 	for (const [name, object] of entries) {
-		if (object === undefined || object === null) {
-			continue;
-		}
-		const luaValue = BmsxVMRuntime.instance.luaJsBridge.jsToLua(object);
-		registerLuaGlobal(env, name, luaValue);
+		// const luaValue = BmsxVMRuntime.instance.luaJsBridge.jsToLua(object);
+		registerLuaGlobal(env, name, new LuaNativeValue(object));
 	}
-}
-
-function buildLuaRompackView() {
-	const rompack = $.rompack;
-	return {
-		img: serializeRomAssetMap(rompack.img),
-		audio: serializeRomAssetMap(rompack.audio),
-		model: serializeRomAssetMap(rompack.model),
-		data: cloneRompackDataMap(rompack.data),
-		audioevents: rompack.audioevents ? deep_clone(rompack.audioevents) : {},
-		lua: Object.fromEntries(Object.entries(rompack.cart.path2lua).map(([path, asset]) => [path, { ...asset }])),
-		code: rompack.code,
-		canonicalization: rompack.canonicalization,
-	};
-}
-
-function serializeRomAssetMap(source: Record<string, any>): Record<string, unknown> {
-	const result: Record<string, unknown> = {};
-	if (!source) {
-		return result;
-	}
-	for (const [id, asset] of Object.entries(source)) {
-		if (!asset) {
-			continue;
-		}
-		result[id] = extractRomAssetFields(asset);
-	}
-	return result;
-}
-
-function cloneRompackDataMap(source: Record<string, unknown>): Record<string, unknown> {
-	if (!source) {
-		return {};
-	}
-	const result: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(source)) {
-		result[key] = deep_clone(value);
-	}
-	return result;
-}
-
-function extractRomAssetFields(source: Record<string, any>): Record<string, unknown> {
-	const entry: Record<string, unknown> = {};
-	for (const key of Object.getOwnPropertyNames(source)) {
-		switch (key) { // TODO: Still relevant?
-			case 'buffer':
-			case 'texture_buffer':
-			case '_imgbin':
-			case '_imgbinYFlipped':
-			case 'imgbin':
-			case 'imgbinYFlipped':
-				continue;
-		}
-		const descriptor = Object.getOwnPropertyDescriptor(source, key);
-		if (descriptor && typeof descriptor.get === 'function') {
-			continue;
-		}
-		const value = source[key];
-		if (value === undefined) {
-			continue;
-		}
-		if (value === null || typeof value !== 'object') {
-			entry[key] = value;
-			continue;
-		}
-		entry[key] = deep_clone(value as Record<string, unknown>);
-	}
-	return entry;
-}
-
-function applyInputMappingFromLua(mapping: Record<string, unknown>, playerIndex: number): void {
-	const keyboardLayer = convertLuaInputLayer(mapping['keyboard'], 'keyboard') as KeyboardInputMapping;
-	const gamepadLayer = convertLuaInputLayer(mapping['gamepad'], 'gamepad') as GamepadInputMapping;
-	const pointerLayer = convertLuaInputLayer(mapping['pointer'], 'pointer') as PointerInputMapping;
-
-	const existing = Input.instance.getPlayerInput(playerIndex).inputMap;
-	const next: InputMap = {
-		keyboard: keyboardLayer ?? existing?.keyboard ?? {},
-		gamepad: gamepadLayer ?? existing?.gamepad ?? {},
-		pointer: pointerLayer ?? existing?.pointer ?? Input.clonePointerMapping(),
-	};
-	$.set_inputmap(playerIndex, next);
-}
-
-function convertLuaInputLayer(value: unknown, kind: 'keyboard' | 'gamepad' | 'pointer'): KeyboardInputMapping | GamepadInputMapping | PointerInputMapping {
-	if (value === undefined || value === null) {
-		return undefined;
-	}
-	if (typeof value !== 'object') {
-		throw BmsxVMRuntime.instance.createApiRuntimeError(`set_input_map: ${kind} mapping must be a table.`);
-	}
-	const result: Record<string, Array<KeyboardBinding | GamepadBinding | PointerBinding>> = {};
-	for (const [action, rawBindings] of Object.entries(value as Record<string, unknown>)) {
-		if (!action || typeof action !== 'string') {
-			continue;
-		}
-		const entries = normalizeBindingList(kind, action, rawBindings);
-		if (entries.length === 0) {
-			continue;
-		}
-		result[action] = entries as Array<KeyboardBinding | GamepadBinding | PointerBinding>;
-	}
-	return result as KeyboardInputMapping | GamepadInputMapping | PointerInputMapping;
-}
-
-function normalizeBindingList(kind: 'keyboard' | 'gamepad' | 'pointer', action: string, rawBindings: unknown): Array<KeyboardBinding | GamepadBinding | PointerBinding> {
-	const items = arrayify(rawBindings);
-	const normalized: Array<KeyboardBinding | GamepadBinding | PointerBinding> = [];
-	for (const item of items) {
-		if (item === undefined || item === null) {
-			throw BmsxVMRuntime.instance.createApiRuntimeError(`set_input_map: ${kind} binding for action '${action}' cannot be nil.`);
-		}
-		if (typeof item === 'string') {
-			if (item.length === 0) {
-				throw BmsxVMRuntime.instance.createApiRuntimeError(`set_input_map: ${kind} binding for action '${action}' cannot be an empty string.`);
-			}
-			normalized.push(item);
-			continue;
-		}
-		if (typeof item === 'object') {
-			const record = item as Record<string, unknown>;
-			const idValue = record.id;
-			if (typeof idValue !== 'string' || idValue.length === 0) {
-				throw BmsxVMRuntime.instance.createApiRuntimeError(`set_input_map: ${kind} binding for action '${action}' must provide a non-empty string id.`);
-			}
-			const binding: { id: string; scale?: number; invert?: boolean } = { id: idValue };
-			if ('scale' in record && record.scale !== undefined && record.scale !== null) {
-				const scale = Number(record.scale);
-				if (!Number.isFinite(scale)) {
-					throw BmsxVMRuntime.instance.createApiRuntimeError(`set_input_map: ${kind} binding for action '${action}' has an invalid scale value.`);
-				}
-				binding.scale = scale;
-			}
-			if ('invert' in record && record.invert !== undefined && record.invert !== null) {
-				binding.invert = Boolean(record.invert);
-			}
-			normalized.push(binding as KeyboardBinding | GamepadBinding | PointerBinding);
-			continue;
-		}
-		throw BmsxVMRuntime.instance.createApiRuntimeError(`set_input_map: ${kind} binding for action '${action}' must be a string or a table with an 'id' field.`);
-	}
-	return normalized;
 }
 
 function collectApiMembers(): Array<{ name: string; kind: 'method' | 'getter'; descriptor: PropertyDescriptor }> {

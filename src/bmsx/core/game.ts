@@ -194,6 +194,7 @@ export class Game {
 	public get aem(): AudioEventManager { return AudioEventManager.instance!; }
 
 	public get event_emitter(): EventEmitter { return EventEmitter.instance!; }
+	public get events(): EventEmitter { return EventEmitter.instance!; }
 
 	public get input(): Input { return Input.instance!; }
 	public get texmanager(): TextureManager { return TextureManager.instance!; }
