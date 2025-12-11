@@ -1,41 +1,28 @@
-{
-	"title": "BMSX Empty Cartridge",
-	"short_name": "Empty Cart",
-	"rom_name": "emptycart",
-	"metadata": {
-		"version": "1.0.0",
-		"persistentId": "bmsx_empty_cart"
-	},
-	"console": {
-		"moduleId": "bmsx-console",
-		"playerIndex": 1,
-		"viewport": { "width": 128, "height": 128 },
-		"world": { "viewportSize": { "x": 256, "y": 212 } }
-	},
-	"input": {
-		"keyboard": {
-			"console_left": ["ArrowLeft"],
-			"console_right": ["ArrowRight"],
-			"console_up": ["ArrowUp"],
-			"console_down": ["ArrowDown"],
-			"console_b": ["KeyZ"],
-			"console_a": ["KeyX"]
-		},
-		"gamepad": {
-			"console_left": ["left"],
-			"console_right": ["right"],
-			"console_up": ["up"],
-			"console_down": ["down"],
-			"console_b": ["b"],
-			"console_a": ["a"]
-		}
-	},
-	"cart": {
-		"entry": {
-			"new_game": "new_game",
-			"init": "init",
-			"update": "update",
-			"draw": "draw"
-		}
-	}
-}
+title: Empty Cart
+short_name: 'emptycart'
+rom_name: 'emptycart'
+console:
+  viewport: {width: 256, height: 212}
+  namespace: 'emptycart'
+input:
+  "1":
+    keyboard:
+      console_left: [ArrowLeft]
+      console_right: [ArrowRight]
+      console_up: [ArrowUp]
+      console_down: [ArrowDown]
+      console_b: [KeyZ, KeyC]
+      console_a: [KeyX, KeyV]
+      console_x: [KeyA]
+      console_y: [ShiftLeft]
+    gamepad:
+      console_left: [left]
+      console_right: [right]
+      console_up: [up]
+      console_down: [down]
+      console_b: [b]
+      console_a: [a]
+      console_x: [x]
+      console_y: [y]
+lua:
+  entry_path: entry.lua

@@ -2,6 +2,55 @@ import { LuaCallFrame } from '../lua/luaruntime';
 import { StackTraceFrame } from '../lua/luavalue';
 import { normalizeEndingsAndSplitLines } from './ide/text_utils';
 import { RuntimeErrorDetails } from './ide/types';
+import { createMinimalSourceMapConsumer, InlineSourceMap, MinimalSourceMapConsumer, originalPositionFor } from './sourcemap_minimal';
+
+type InlineSourceMapRegistry = Map<string, InlineSourceMap>;
+
+function getInlineSourceMapRegistry(): InlineSourceMapRegistry {
+	return (globalThis as unknown as { __bmsx_sourceMaps?: InlineSourceMapRegistry }).__bmsx_sourceMaps;
+}
+
+function getInlineSourceMapConsumerCache(): Map<string, MinimalSourceMapConsumer> {
+	const g = globalThis as unknown as { __bmsx_sourceMapConsumers?: Map<string, MinimalSourceMapConsumer> };
+	if (!g.__bmsx_sourceMapConsumers) {
+		g.__bmsx_sourceMapConsumers = new Map<string, MinimalSourceMapConsumer>();
+	}
+	return g.__bmsx_sourceMapConsumers;
+}
+
+function mapJsFrameToOriginalSource(frame: StackTraceFrame): StackTraceFrame {
+	if (frame.origin !== 'js') {
+		return frame;
+	}
+	if (!frame.source || frame.line === null || frame.column === null) {
+		return frame;
+	}
+	const registry = getInlineSourceMapRegistry();
+	if (!registry) {
+		return frame;
+	}
+	const rawMap = registry.get(frame.source);
+	if (!rawMap) {
+		return frame;
+	}
+	const cache = getInlineSourceMapConsumerCache();
+	let consumer = cache.get(frame.source);
+	if (!consumer) {
+		consumer = createMinimalSourceMapConsumer(rawMap);
+		cache.set(frame.source, consumer);
+	}
+	// Stack traces use 1-based columns; source maps expect 0-based columns.
+	const mapped = originalPositionFor(consumer, { line: frame.line, column: frame.column - 1 });
+	if (!mapped.source || mapped.line === null) {
+		return frame;
+	}
+	return {
+		...frame,
+		source: mapped.source,
+		line: mapped.line,
+		column: mapped.column === null ? null : mapped.column,
+	};
+}
 
 export function buildLuaFrameRawLabel(functionName: string, source: string): string {
 	if (functionName) {
@@ -151,7 +200,7 @@ export function collectRuntimeStackFrames(details: RuntimeErrorDetails, includeJ
 	}
 	if (includeJsStackTraces) {
 		for (let index = 0; index < details.jsStack.length; index += 1) {
-			frames.push(details.jsStack[index]);
+			frames.push(mapJsFrameToOriginalSource(details.jsStack[index]));
 		}
 	}
 	return frames;

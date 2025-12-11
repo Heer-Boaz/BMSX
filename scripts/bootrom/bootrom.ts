@@ -32,12 +32,33 @@ declare global {
 			outputError: (errormsg: string) => void;
 			resizeHandler: () => void;
 		};
+		__bmsx_sourceMaps?: Map<string, unknown>;
 	}
 
 	// Add globalThis augmentation so `globalThis.bootrom = ...` type checks
 	var getRomNameFromUrlParameter: () => string;
 	var getRomFromUrlParameter: () => string;
 	var bootrom: Object;
+	var __bmsx_sourceMaps: Map<string, unknown> | undefined;
+}
+
+function registerInlineSourceMapFromInjectedScript(scriptText: string): void {
+	// The cart bundle is injected via <script>.textContent, so the browser debugger
+	// can't fetch original TS sources from disk. We store the inline sourcemap here
+	// so runtime error formatting can map stack frames back to TS.
+	const sourceUrlMatch = scriptText.match(/^[ \t]*\/\/# sourceURL=(.+)$/m);
+	const mapMatch = scriptText.match(/\/\/# sourceMappingURL=data:application\/json;base64,([A-Za-z0-9+/=]+)/);
+	if (!sourceUrlMatch || !mapMatch) {
+		return;
+	}
+	const sourceUrl = sourceUrlMatch[1].trim();
+	// atob is available in the browser; this function is only used when we have a DOM.
+	const mapJson = JSON.parse(atob(mapMatch[1])) as unknown;
+	const g = globalThis as unknown as { __bmsx_sourceMaps?: Map<string, unknown> };
+	if (!g.__bmsx_sourceMaps) {
+		g.__bmsx_sourceMaps = new Map<string, unknown>();
+	}
+	g.__bmsx_sourceMaps.set(sourceUrl, mapJson);
 }
 
 /**
@@ -429,6 +450,7 @@ async function loadScript(rom: RomPack): Promise<void> {
 		return;
 	}
 	try {
+		registerInlineSourceMapFromInjectedScript(rom.code);
 		const romcode = document.createElement('script');
 		romcode.async = false;
 		romcode.textContent = rom.code;

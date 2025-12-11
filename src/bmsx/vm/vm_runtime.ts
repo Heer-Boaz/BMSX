@@ -194,7 +194,7 @@ export class BmsxVMRuntime extends Service {
 	public get hasRuntimeFailed(): boolean {
 		return this.luaRuntimeFailed;
 	}
-	private includeJsStackTraces = false;
+	private includeJsStackTraces = true;
 	private currentFrameState: VMFrameState = null;
 	private pendingLuaWarnings: string[] = [];
 	public readonly luaModuleAliases: Map<string, LuaRequireModuleRecord> = new Map();
@@ -1643,6 +1643,7 @@ export class BmsxVMRuntime extends Service {
 		const resolvedLine = line ?? (innermostFrame ? innermostFrame.line : null);
 		const resolvedColumn = column ?? (innermostFrame ? innermostFrame.column : null);
 		const runtimeDetails = this.buildRuntimeErrorDetailsForEditor(error, message);
+
 		const stackText = buildErrorStackString(
 			error instanceof Error && error.name ? error.name : 'Error',
 			message,

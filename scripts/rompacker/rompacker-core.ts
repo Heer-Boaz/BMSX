@@ -242,14 +242,14 @@ export async function esbuild(romname: string, bootloader_path: string, debug: b
 		} catch { return undefined; }
 	})();
 	const define = {
-		'process.env.NODE_ENV': '"production"',
+		'process.env.NODE_ENV': debug ? '"development"' : '"production"',
 	};
 	if (debug) {
 		await build({
 			entryPoints: [bootloader_ts_path], // Entry point for the rompack
 			bundle: true, // Bundle all dependencies into a single file
 			sourcemap: 'inline', // Include inline source maps for debugging
-			sourcesContent: false,
+			sourcesContent: true,
 			footer: {
 				js: `\n//# sourceURL=${romname}.debug.rom`,
 			},
@@ -305,6 +305,7 @@ export async function buildEngineRuntime(options: { debug: boolean }): Promise<v
 		keepNames: true,
 		minify: !debug,
 		sourcemap: debug ? 'inline' : false,
+		sourcesContent: debug,
 		define: {
 			'process.env.NODE_ENV': debug ? '"development"' : '"production"',
 		},
@@ -1718,6 +1719,7 @@ async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolea
 	const esbuildOptions: any = {
 		entryPoints: [romTsPath],
 		bundle: true,
+		sourcemap: options.debug ? 'inline' : false,
 		sourcesContent: options.debug,
 		platform: 'browser',
 		target: 'es2024',
@@ -1790,6 +1792,7 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 		keepNames: true,
 		define,
 		external: ['canvas'],
+		sourcemap: options.debug ? 'inline' : false,
 		sourcesContent: options.debug,
 		outfile: outPath,
 	};
