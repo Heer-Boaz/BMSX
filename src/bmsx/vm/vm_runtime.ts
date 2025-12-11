@@ -1059,6 +1059,7 @@ export class BmsxVMRuntime extends Service {
 	private runLuaLifecycleHandler(kind: 'init' | 'new_game'): boolean {
 		const fn = kind === 'init' ? this.luaInitFunction : this.luaNewGameFunction;
 		try {
+			if (!fn) throw new Error(`Lua lifecycle handler '${kind}' is not defined.`);
 			this.invokeLuaFunction(fn, []);
 			return true;
 		}

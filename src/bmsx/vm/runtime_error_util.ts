@@ -18,6 +18,27 @@ function getInlineSourceMapConsumerCache(): Map<string, MinimalSourceMapConsumer
 	return g.__bmsx_sourceMapConsumers;
 }
 
+function normalizeMappedSourcePathForEditor(source: string): string {
+	if (!source || source.length === 0) {
+		return source;
+	}
+	// Keep original case as provided by the sourcemap. VS Code's file opening in a
+	// remote/WSL setup is case-sensitive and absolute paths are not linkable here.
+	// We normalize only the *shape* of the path so it becomes workspace-relative.
+	const normalized = source.replace(/\\/g, '/');
+	const srcIndex = normalized.indexOf('/src/');
+	if (srcIndex >= 0) {
+		return `./${normalized.slice(srcIndex + 1)}`;
+	}
+	if (normalized.startsWith('./')) {
+		return normalized.slice(2);
+	}
+	if (normalized.startsWith('../')) {
+		return `./${normalized.replace(/^(\.\.\/)+/, '')}`;
+	}
+	return `./${normalized}`;
+}
+
 function mapJsFrameToOriginalSource(frame: StackTraceFrame): StackTraceFrame {
 	if (frame.origin !== 'js') {
 		return frame;
@@ -46,7 +67,7 @@ function mapJsFrameToOriginalSource(frame: StackTraceFrame): StackTraceFrame {
 	}
 	return {
 		...frame,
-		source: mapped.source,
+		source: normalizeMappedSourcePathForEditor(mapped.source),
 		line: mapped.line,
 		column: mapped.column === null ? null : mapped.column,
 	};
