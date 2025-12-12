@@ -285,6 +285,25 @@ export class InputStateManager {
 		});
 	}
 
+	/** Returns true if an unconsumed press edge happened recently. */
+	hasUnconsumedPress(identifier: ButtonId, windowFrames: number = 2): boolean {
+		const windowMs = this.toMs(windowFrames);
+		const currentTime = $.platform.clock.now();
+		for (let i = this.inputBuffer.length - 1; i >= 0; i -= 1) {
+			const event = this.inputBuffer[i];
+			if (currentTime - event.timestamp > windowMs) {
+				break;
+			}
+			if (event.identifier !== identifier) {
+				continue;
+			}
+			if (event.eventType === 'press' && event.consumed !== true) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/**
 	 * Marks the specified button as consumed, preventing further interactions.
 	 *

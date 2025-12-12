@@ -2125,16 +2125,21 @@ export function toggleThemeMode() {
 }
 
 export function isKeyJustPressed(code: string): boolean {
-	const state = $.input.getPlayerInput(ide_state.playerIndex).getButtonState(code, 'keyboard');
-	return state.consumed !== true && state.justpressed === true;
+	const player = $.input.getPlayerInput(ide_state.playerIndex);
+	return player.stateManager.hasUnconsumedPress(code);
 }
 
 export function shouldRepeatKeyFromPlayer(code: string): boolean {
-	return $.input.getPlayerInput(ide_state.playerIndex).getButtonRepeatState(code, 'keyboard').repeatpressed;
+	const player = $.input.getPlayerInput(ide_state.playerIndex);
+	if (player.stateManager.hasUnconsumedPress(code)) {
+		return true;
+	}
+	return player.getButtonRepeatState(code, 'keyboard').repeatpressed;
 }
 
 export function consumeIdeKey(code: string): void {
 	$.consume_button(ide_state.playerIndex, code, 'keyboard');
+	$.input.getPlayerInput(ide_state.playerIndex).stateManager.consumeBufferedEvent(code);
 }
 
 export function isCtrlDown(): boolean {
