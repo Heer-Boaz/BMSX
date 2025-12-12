@@ -1,4 +1,4 @@
-import { applySourceToDocument, getResourcePanelWidth } from './vm_cart_editor';
+import { getResourcePanelWidth } from './vm_cart_editor';
 import * as constants from './constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from './constants';
 import { startSearchJob } from './editor_search';
@@ -6,8 +6,8 @@ import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from './editor_
 import { caretNavigation, ide_state } from './ide_state';
 import { rebuildRuntimeErrorOverlayView } from './runtime_error_overlay';
 import * as TextEditing from './text_editing_and_selection';
-import { computeEditContextFromSources, handlePostEditMutation } from './text_editing_and_selection';
-import type { EditContext, HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from './types';
+import { handlePostEditMutation } from './text_editing_and_selection';
+import type { HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from './types';
 import { markDiagnosticsDirty } from './diagnostics';
 import { resolveHoverChunkName, requestSemanticRefresh, clearReferenceHighlights } from './intellisense';
 
@@ -436,41 +436,18 @@ export function normalizeCaseOutsideStrings(text: string): string {
 	return applyCaseOutsideStrings(text, transform);
 }
 
-export function applyCaseNormalizationIfNeeded(editContext: EditContext): EditContext {
-	if (!ide_state.caseInsensitive) {
-		ide_state.preMutationSource = null;
-		return editContext;
-	}
-	const currentSource = serializeCurrentSource();
-	const normalized = normalizeCaseOutsideStrings(currentSource);
-	const previousSource = ide_state.preMutationSource;
-	ide_state.preMutationSource = null;
-	if (normalized === currentSource) {
-		if (!previousSource) {
-			return editContext;
-		}
-		return computeEditContextFromSources(previousSource, currentSource) ?? editContext;
-	}
-	applySourceToDocument(normalized);
-	bumpTextVersion();
-	requestSemanticRefresh();
-	const derived = computeEditContextFromSources(previousSource ?? currentSource, normalized);
-	return derived ?? editContext;
-}export function serializeCurrentSource(): string {
-	return ide_state.lines.join('\n');
-}
-
 export function capturePreMutationSource(): void {
 	if (!ide_state.caseInsensitive) {
 		return;
 	}
 	if (ide_state.preMutationSource === null) {
-		ide_state.preMutationSource = serializeCurrentSource();
+		ide_state.preMutationSource = ide_state.lines.slice();
 	}
 }
+
 export function markTextMutated(): void {
 	ide_state.saveGeneration = ide_state.saveGeneration + 1;
-	ide_state.dirty = true;
+	ide_state.dirty = ide_state.undoStack.length !== ide_state.savePointDepth;
 	const context = getActiveCodeTabContext();
 	if (context) {
 		context.saveGeneration = ide_state.saveGeneration;
@@ -492,9 +469,10 @@ export function bumpTextVersion(): void {
 export function normalizeEndingsAndSplitLines(message: string): string[] {
 	const rawLines = message.split('\n');
 	return rawLines.length > 0 ? rawLines : [''];
-}const NEWLINE = '\n';
+}
+
+const NEWLINE = '\n';
 
 export const textFromLines = (lines: string[]): string => lines.join(NEWLINE);
 
 export const splitText = (text: string): string[] => text.split(NEWLINE);
-

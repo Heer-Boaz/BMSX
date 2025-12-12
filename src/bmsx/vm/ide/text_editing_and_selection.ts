@@ -30,7 +30,6 @@ import {
 import { markDiagnosticsDirty } from './diagnostics';
 import { markTextMutated } from './text_utils';
 import { capturePreMutationSource } from './text_utils';
-import { applyCaseNormalizationIfNeeded } from './text_utils';
 import { resolveOffsetPosition } from './lua_formatter';
 import { resetBlink } from './render/render_caret';
 import * as constants from './constants';
@@ -1246,8 +1245,7 @@ export function computeDocumentOffset(lines: readonly string[], row: number, col
 export function handlePostEditMutation(): void {
 	const editContext = ide_state.pendingEditContext;
 	ide_state.pendingEditContext = null;
-	const finalContext = applyCaseNormalizationIfNeeded(editContext);
-	ide_state.completion.updateAfterEdit(finalContext);
+	ide_state.completion.updateAfterEdit(editContext);
 }
 export function computeEditContextFromSources(previous: string, next: string): EditContext {
 	if (previous === next) {

@@ -397,6 +397,8 @@ export function undo(): void {
 	}
 	ide_state.redoStack.push(current);
 	restoreSnapshot(snapshot);
+	ide_state.dirty = ide_state.undoStack.length !== ide_state.savePointDepth;
+	updateActiveContextDirtyFlag();
 	ide_state.saveGeneration = ide_state.saveGeneration + 1;
 	const context = getActiveCodeTabContext();
 	if (context) {
@@ -423,6 +425,8 @@ export function redo(): void {
 	}
 	ide_state.undoStack.push(current);
 	restoreSnapshot(snapshot);
+	ide_state.dirty = ide_state.undoStack.length !== ide_state.savePointDepth;
+	updateActiveContextDirtyFlag();
 	ide_state.saveGeneration = ide_state.saveGeneration + 1;
 	const context = getActiveCodeTabContext();
 	if (context) {
@@ -3107,6 +3111,9 @@ export async function save(): Promise<void> {
 			setWorkspaceCachedSources([targetPath, buildDirtyFilePath(targetPath)], source);
 		}
 		ide_state.dirty = false;
+		ide_state.savePointDepth = ide_state.undoStack.length;
+		context.savePointDepth = ide_state.savePointDepth;
+		breakUndoSequence();
 		ide_state.saveGeneration = ide_state.saveGeneration + 1;
 		context.lastSavedSource = source;
 		context.saveGeneration = ide_state.saveGeneration;
@@ -3519,6 +3526,11 @@ export function resetEditorContent(): void {
 	ide_state.scrollColumn = 0;
 	ide_state.selectionAnchor = null;
 	ide_state.lastSavedSource = '';
+	ide_state.undoStack = [];
+	ide_state.redoStack = [];
+	ide_state.lastHistoryKey = null;
+	ide_state.lastHistoryTimestamp = 0;
+	ide_state.savePointDepth = 0;
 	ide_state.layout.invalidateAllHighlights();
 	bumpTextVersion();
 	ide_state.dirty = false;
@@ -3864,27 +3876,37 @@ export function openDebugPanelTab(kind: DebugPanelKind): void {
 	const title = DEBUG_PANEL_TITLES[kind];
 	let context = ide_state.codeTabContexts.get(tabId);
 	if (!context) {
-		context = {
-			id: tabId,
-			title,
-			descriptor: null,
-			snapshot: null,
-			lastSavedSource: '',
-			saveGeneration: 0,
-			appliedGeneration: 0,
-			dirty: false,
-			runtimeErrorOverlay: null,
-			executionStopRow: null,
-			readOnly: true,
-			textVersion: 0,
-		};
+			context = {
+				id: tabId,
+				title,
+				descriptor: null,
+				snapshot: null,
+				lastSavedSource: '',
+				saveGeneration: 0,
+				appliedGeneration: 0,
+				undoStack: [],
+				redoStack: [],
+				lastHistoryKey: null,
+				lastHistoryTimestamp: 0,
+				savePointDepth: 0,
+				dirty: false,
+				runtimeErrorOverlay: null,
+				executionStopRow: null,
+				readOnly: true,
+				textVersion: 0,
+			};
 		ide_state.codeTabContexts.set(tabId, context);
 	} else {
-		context.title = title;
-		context.readOnly = true;
-		context.snapshot = null;
-		context.dirty = false;
-	}
+			context.title = title;
+			context.readOnly = true;
+			context.snapshot = null;
+			context.undoStack.length = 0;
+			context.redoStack.length = 0;
+			context.lastHistoryKey = null;
+			context.lastHistoryTimestamp = 0;
+			context.savePointDepth = 0;
+			context.dirty = false;
+		}
 	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
 	if (!tab) {
 		tab = {

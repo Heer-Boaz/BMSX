@@ -398,27 +398,33 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 		if (savedContents !== null && savedContents !== contents) {
 			await deleteDirtyBuffer(entry.dirtyPath);
 			deleteWorkspaceCachedSources([entry.dirtyPath, descriptor?.path]);
-			const cleanSnapshot = buildSnapshotFromSource(savedContents, entry);
-			context.snapshot = cleanSnapshot;
-			context.dirty = false;
-			setTabDirty(context.id, false);
+				const cleanSnapshot = buildSnapshotFromSource(savedContents, entry);
+				context.snapshot = cleanSnapshot;
+				context.dirty = false;
+				context.savePointDepth = context.undoStack.length;
+				setTabDirty(context.id, false);
+				if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
+					restoreSnapshot(cleanSnapshot, { preserveScroll: true });
+					ide_state.savePointDepth = context.savePointDepth;
+					ide_state.dirty = false;
+					updateActiveContextDirtyFlag();
+				}
+				continue;
+			}
+		setWorkspaceCachedSources([entry.dirtyPath, descriptor?.path], contents);
+			const snapshot = buildSnapshotFromSource(contents, entry);
+			context.snapshot = snapshot;
+			context.dirty = true;
+			context.savePointDepth = -1;
+			setTabDirty(context.id, true);
 			if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
-				restoreSnapshot(cleanSnapshot, { preserveScroll: true });
+				restoreSnapshot(snapshot, { preserveScroll: true });
+				ide_state.savePointDepth = context.savePointDepth;
+				ide_state.dirty = true;
 				updateActiveContextDirtyFlag();
 			}
-			continue;
-		}
-		setWorkspaceCachedSources([entry.dirtyPath, descriptor?.path], contents);
-		const snapshot = buildSnapshotFromSource(contents, entry);
-		context.snapshot = snapshot;
-		context.dirty = true;
-		setTabDirty(context.id, true);
-		if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
-			restoreSnapshot(snapshot, { preserveScroll: true });
-			updateActiveContextDirtyFlag();
 		}
 	}
-}
 
 export function buildSnapshotFromSource(source: string, metadata?: SnapshotMetadata): EditorSnapshot {
 	const lines = normalizeEndingsAndSplitLines(source);
@@ -720,6 +726,11 @@ export function clearWorkspaceDirtyBuffers(): void {
 	ide_state.workspaceAutosaveSignature = null;
 	ide_state.saveGeneration = ide_state.appliedGeneration;
 	ide_state.dirty = false;
+	ide_state.undoStack.length = 0;
+	ide_state.redoStack.length = 0;
+	ide_state.lastHistoryKey = null;
+	ide_state.lastHistoryTimestamp = 0;
+	ide_state.savePointDepth = 0;
 	for (const context of ide_state.codeTabContexts.values()) {
 		const source = loadSrc(context.descriptor.path);
 		const snapshot = buildSnapshotFromSource(source);
@@ -728,6 +739,11 @@ export function clearWorkspaceDirtyBuffers(): void {
 		context.saveGeneration = ide_state.saveGeneration;
 		context.appliedGeneration = ide_state.appliedGeneration;
 		context.lastSavedSource = source;
+		context.undoStack.length = 0;
+		context.redoStack.length = 0;
+		context.lastHistoryKey = null;
+		context.lastHistoryTimestamp = 0;
+		context.savePointDepth = 0;
 		setTabDirty(context.id, false);
 		if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
 			restoreSnapshot(snapshot, { preserveScroll: false });
@@ -777,10 +793,21 @@ export async function runWorkspaceAutosaveTick(): Promise<void> {
 
 export function clearWorkspaceSessionState(): void {
 	stopWorkspaceAutosaveLoop();
-	ide_state.undoStack = [];
-	ide_state.redoStack = [];
+	ide_state.undoStack.length = 0;
+	ide_state.redoStack.length = 0;
 	ide_state.lastHistoryKey = null;
 	ide_state.lastHistoryTimestamp = 0;
+	ide_state.savePointDepth = 0;
+	ide_state.dirty = false;
+	for (const context of ide_state.codeTabContexts.values()) {
+		context.undoStack.length = 0;
+		context.redoStack.length = 0;
+		context.lastHistoryKey = null;
+		context.lastHistoryTimestamp = 0;
+		context.savePointDepth = 0;
+		context.dirty = false;
+		setTabDirty(context.id, false);
+	}
 	ide_state.navigationHistory.back = [];
 	ide_state.navigationHistory.forward = [];
 	ide_state.navigationHistory.current = null;

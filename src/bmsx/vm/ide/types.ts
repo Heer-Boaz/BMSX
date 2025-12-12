@@ -286,6 +286,11 @@ export type CodeTabContext = {
 	lastSavedSource: string;
 	saveGeneration: number;
 	appliedGeneration: number;
+	undoStack: EditorSnapshot[];
+	redoStack: EditorSnapshot[];
+	lastHistoryKey: string;
+	lastHistoryTimestamp: number;
+	savePointDepth: number;
 	dirty: boolean;
 	runtimeErrorOverlay: RuntimeErrorOverlay;
 	executionStopRow: number;

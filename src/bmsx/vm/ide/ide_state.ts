@@ -118,7 +118,7 @@ export interface IdeState {
 	cursorColumn: number;
 	caseInsensitive: boolean;
 	canonicalization: CanonicalizationType;
-	preMutationSource: string;
+	preMutationSource: string[];
 	scrollRow: number;
 	scrollColumn: number;
 	dirty: boolean;
@@ -129,6 +129,7 @@ export interface IdeState {
 	redoStack: EditorSnapshot[];
 	lastHistoryKey: string;
 	lastHistoryTimestamp: number;
+	savePointDepth: number;
 	fontVariant: VMFontVariant;
 	builtinIdentifierCache: BuiltinIdentifierCache | null;
 	hoverTooltip: CodeHoverTooltip;
@@ -311,6 +312,7 @@ export const ide_state: IdeState = {
 	redoStack: [],
 	lastHistoryKey: null,
 	lastHistoryTimestamp: 0,
+	savePointDepth: 0,
 	fontVariant: undefined!,
 	builtinIdentifierCache: null,
 	hoverTooltip: null,

@@ -61,6 +61,11 @@ export function createLuaCodeTabContext(descriptor: VMResourceDescriptor): CodeT
 		lastSavedSource: initialSource,
 		saveGeneration: 0,
 		appliedGeneration: 0,
+		undoStack: [],
+		redoStack: [],
+		lastHistoryKey: null,
+		lastHistoryTimestamp: 0,
+		savePointDepth: 0,
 		dirty: false,
 		runtimeErrorOverlay: null,
 		executionStopRow: null,
@@ -81,6 +86,11 @@ export function storeActiveCodeTabContext(): void {
 	context.textVersion = ide_state.textVersion;
 	context.saveGeneration = ide_state.saveGeneration;
 	context.appliedGeneration = ide_state.appliedGeneration;
+	context.undoStack = ide_state.undoStack;
+	context.redoStack = ide_state.redoStack;
+	context.lastHistoryKey = ide_state.lastHistoryKey;
+	context.lastHistoryTimestamp = ide_state.lastHistoryTimestamp;
+	context.savePointDepth = ide_state.savePointDepth;
 	context.dirty = ide_state.dirty;
 	context.runtimeErrorOverlay = ide_state.runtimeErrorOverlay;
 	context.executionStopRow = ide_state.executionStopRow;
@@ -94,8 +104,14 @@ export function activateCodeEditorTab(tabId: string): void {
 	}
 	ide_state.activeCodeTabContextId = tabId;
 	ide_state.activeContextReadOnly = context.readOnly === true;
+	ide_state.undoStack = context.undoStack;
+	ide_state.redoStack = context.redoStack;
+	ide_state.lastHistoryKey = context.lastHistoryKey;
+	ide_state.lastHistoryTimestamp = context.lastHistoryTimestamp;
+	ide_state.savePointDepth = context.savePointDepth;
 	if (context.snapshot) {
 		restoreSnapshot(context.snapshot);
+		ide_state.dirty = ide_state.undoStack.length !== ide_state.savePointDepth;
 		ide_state.saveGeneration = context.saveGeneration;
 		ide_state.appliedGeneration = context.appliedGeneration;
 		ide_state.textVersion = context.textVersion ?? ide_state.textVersion;
@@ -131,6 +147,8 @@ export function activateCodeEditorTab(tabId: string): void {
 	ide_state.scrollColumn = 0;
 	ide_state.selectionAnchor = null;
 	ide_state.dirty = false;
+	ide_state.savePointDepth = ide_state.undoStack.length;
+	context.savePointDepth = ide_state.savePointDepth;
 	context.dirty = false;
 	context.runtimeErrorOverlay = null;
 	context.executionStopRow = null;

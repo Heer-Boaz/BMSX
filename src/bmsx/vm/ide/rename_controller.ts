@@ -356,10 +356,11 @@ export class CrossFileRenameManager {
 		const cursorLine = snapshot.lines[snapshot.cursorRow] ?? '';
 		snapshot.cursorColumn = clamp(snapshot.cursorColumn, 0, cursorLine.length);
 		snapshot.scrollRow = clamp(snapshot.scrollRow, 0, Math.max(0, snapshot.lines.length - 1));
-		context.snapshot = snapshot;
-		context.dirty = true;
-		this.deps.setTabDirty(context.id, context.dirty);
-	}
+			context.snapshot = snapshot;
+			context.dirty = true;
+			context.savePointDepth = -1;
+			this.deps.setTabDirty(context.id, context.dirty);
+		}
 
 	private ensureCodeTabContextForChunk(chunkName: string): CodeTabContext {
 		const existing = findCodeTabContext(chunkName);
