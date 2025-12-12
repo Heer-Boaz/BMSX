@@ -124,6 +124,7 @@ export class TerminalMode {
 		this.font = new VMEditorFont(runtime.activeIdeFontVariant);
 		this.uppercaseDisplayOverride = false;
 		this.maxEntries = MAX_OUTPUT_ENTRIES;
+		const terminal = this;
 		this.completion = new CompletionController({
 			isCodeTabActive: () => this.active,
 			getLines: () => this.getLinesSnapshot(),
@@ -136,9 +137,13 @@ export class TerminalMode {
 			resetBlink: () => { this.resetBlink(); },
 			revealCursor: () => { },
 			characterAdvance: (char) => this.font.advance(char),
-			lineHeight: this.font.lineHeight,
+			get lineHeight(): number { return terminal.font.lineHeight; },
 			measureText: (text) => this.measureDisplayText(text, this.useUppercaseDisplay()),
-			drawText: (text, x, y, color) => { api.write(text, x, y, undefined, color); },
+			drawText: (text, x, y, color) => {
+				const uppercaseDisplay = terminal.useUppercaseDisplay();
+				const display = terminal.toDisplayText(text, uppercaseDisplay);
+				api.write_with_font(display, x, y, undefined, color, terminal.font.renderFont());
+			},
 			getCursorScreenInfo: () => this.cursorScreenInfo,
 			getActiveCodeTabContext: () => (this.active ? this.completionContextToken : null),
 			resolveHoverasset_id: () => null,

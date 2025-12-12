@@ -149,6 +149,52 @@ type ThemeDefinition = {
 		editor: number;
 		inline: number;
 	};
+	overlays: ThemeOverlays;
+};
+
+type ThemeOverlays = {
+	search: {
+		background: number;
+		text: number;
+		secondaryText: number;
+		placeholder: number;
+		outline: number;
+	};
+	completion: {
+		background: number;
+		border: number;
+		text: number;
+		detail: number;
+		highlight: number;
+		highlightText: number;
+	};
+	parameterHint: {
+		background: number;
+		border: number;
+		text: number;
+		active: number;
+	};
+	action: {
+		dialogBackground: number;
+		dialogBorder: number;
+		dialogText: number;
+		buttonBackground: number;
+		buttonText: number;
+	};
+	symbolSearch: {
+		background: number;
+		text: number;
+		placeholder: number;
+		outline: number;
+		kind: number;
+	};
+	quickOpen: {
+		background: number;
+		text: number;
+		placeholder: number;
+		outline: number;
+		kind: number;
+	};
 };
 
 const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
@@ -215,6 +261,50 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			editor: PALETTE.white,
 			inline: PALETTE.black,
 		},
+		overlays: {
+			search: {
+				background: PALETTE.lightBlue,
+				text: PALETTE.black,
+				secondaryText: PALETTE.magenta,
+				placeholder: PALETTE.lightRed,
+				outline: PALETTE.black,
+			},
+			completion: {
+				background: PALETTE.lightBlue,
+				border: PALETTE.black,
+				text: PALETTE.black,
+				detail: PALETTE.magenta,
+				highlight: PALETTE.black,
+				highlightText: PALETTE.grey,
+			},
+			parameterHint: {
+				background: PALETTE.lightBlue,
+				border: PALETTE.black,
+				text: PALETTE.black,
+				active: PALETTE.lightRed,
+			},
+			action: {
+				dialogBackground: PALETTE.lightBlue,
+				dialogBorder: PALETTE.black,
+				dialogText: PALETTE.black,
+				buttonBackground: PALETTE.grey,
+				buttonText: PALETTE.black,
+			},
+			symbolSearch: {
+				background: PALETTE.lightBlue,
+				text: PALETTE.black,
+				placeholder: PALETTE.lightRed,
+				outline: PALETTE.black,
+				kind: PALETTE.magenta,
+			},
+			quickOpen: {
+				background: PALETTE.lightBlue,
+				text: PALETTE.black,
+				placeholder: PALETTE.lightRed,
+				outline: PALETTE.black,
+				kind: PALETTE.magenta,
+			},
+		},
 	},
 	light: {
 		surfaces: {
@@ -280,6 +370,50 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			editor: PALETTE.accentBlue,
 			inline: PALETTE.deepGrey,
 		},
+		overlays: {
+			search: {
+				background: PALETTE.lightBlue,
+				text: PALETTE.black,
+				secondaryText: PALETTE.magenta,
+				placeholder: PALETTE.lightRed,
+				outline: PALETTE.black,
+			},
+			completion: {
+				background: PALETTE.lightBlue,
+				border: PALETTE.black,
+				text: PALETTE.black,
+				detail: PALETTE.magenta,
+				highlight: PALETTE.black,
+				highlightText: PALETTE.grey,
+			},
+			parameterHint: {
+				background: PALETTE.lightBlue,
+				border: PALETTE.black,
+				text: PALETTE.black,
+				active: PALETTE.lightRed,
+			},
+			action: {
+				dialogBackground: PALETTE.lightBlue,
+				dialogBorder: PALETTE.black,
+				dialogText: PALETTE.black,
+				buttonBackground: PALETTE.grey,
+				buttonText: PALETTE.black,
+			},
+			symbolSearch: {
+				background: PALETTE.lightBlue,
+				text: PALETTE.black,
+				placeholder: PALETTE.lightRed,
+				outline: PALETTE.black,
+				kind: PALETTE.magenta,
+			},
+			quickOpen: {
+				background: PALETTE.lightBlue,
+				text: PALETTE.black,
+				placeholder: PALETTE.lightRed,
+				outline: PALETTE.black,
+				kind: PALETTE.magenta,
+			},
+		},
 	},
 };
 
@@ -318,37 +452,6 @@ function buildTabBase(theme: ThemeDefinition) {
 	};
 }
 
-function buildSearchBase(theme: ThemeDefinition) {
-	return {
-		background: theme.searchBackground,
-		text: theme.input.text,
-		secondaryText: theme.input.secondaryText,
-		placeholder: theme.input.placeholder,
-		outline: theme.input.outline,
-	};
-}
-
-function buildCompletionBase(searchBase: ReturnType<typeof buildSearchBase>, tabBase: ReturnType<typeof buildTabBase>) {
-	return {
-		background: searchBase.background,
-		border: searchBase.outline,
-		text: searchBase.text,
-		detail: searchBase.secondaryText,
-		highlight: tabBase.activeBackground,
-		highlightText: tabBase.activeText,
-	};
-}
-
-function buildActionBase(theme: ThemeDefinition, searchBase: ReturnType<typeof buildSearchBase>) {
-	return {
-		dialogBackground: searchBase.background,
-		dialogBorder: searchBase.outline,
-		dialogText: searchBase.text,
-		buttonBackground: theme.status.background,
-		buttonText: theme.status.text,
-	};
-}
-
 function buildHeaderButtonBase(theme: ThemeDefinition) {
 	return {
 		background: theme.status.background,
@@ -358,35 +461,6 @@ function buildHeaderButtonBase(theme: ThemeDefinition) {
 		disabledText: theme.text.dim,
 		activeBackground: theme.status.warning,
 		activeText: theme.text.topBar,
-	};
-}
-
-function buildSymbolSearchBase(searchBase: ReturnType<typeof buildSearchBase>) {
-	return {
-		background: searchBase.background,
-		text: searchBase.text,
-		placeholder: searchBase.placeholder,
-		outline: searchBase.outline,
-		kind: searchBase.secondaryText,
-	};
-}
-
-function buildQuickOpenBase(symbolSearchBase: ReturnType<typeof buildSymbolSearchBase>, searchBase: ReturnType<typeof buildSearchBase>) {
-	return {
-		background: symbolSearchBase.background,
-		text: searchBase.text,
-		placeholder: searchBase.placeholder,
-		outline: searchBase.outline,
-		kind: searchBase.secondaryText,
-	};
-}
-
-function buildParameterHintBase(theme: ThemeDefinition, searchBase: ReturnType<typeof buildSearchBase>) {
-	return {
-		background: searchBase.background,
-		border: searchBase.outline,
-		text: searchBase.text,
-		active: theme.status.warning,
 	};
 }
 
@@ -554,13 +628,13 @@ export function getActiveIdeThemeVariant(): IdeThemeVariant {
 function applyThemeDefinition(theme: ThemeDefinition): void {
 	const panel = buildPanelBase(theme);
 	const tab = buildTabBase(theme);
-	const search = buildSearchBase(theme);
-	const completion = buildCompletionBase(search, tab);
-	const action = buildActionBase(theme, search);
 	const headerButtons = buildHeaderButtonBase(theme);
-	const symbolSearch = buildSymbolSearchBase(search);
-	const quickOpen = buildQuickOpenBase(symbolSearch, search);
-	const parameterHint = buildParameterHintBase(theme, search);
+	const search = theme.overlays.search;
+	const completion = theme.overlays.completion;
+	const action = theme.overlays.action;
+	const symbolSearch = theme.overlays.symbolSearch;
+	const quickOpen = theme.overlays.quickOpen;
+	const parameterHint = theme.overlays.parameterHint;
 
 	COLOR_FRAME = theme.surfaces.frame;
 	COLOR_TOP_BAR = theme.surfaces.topBar;

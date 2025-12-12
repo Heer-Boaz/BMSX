@@ -8,7 +8,7 @@ import type {
 	VMResourceDescriptor,
 } from '../types';
 import { VMEditorFont } from '../editor_font';
-import { VMFontVariant, DEFAULT_VM_FONT_VARIANT } from '../font';
+import { VMFontVariant } from '../font';
 import { drawEditorText } from './text_renderer';
 import { Msx1Colors } from '../../systems/msx';
 import { EventEmitter, type ListenerSet } from '../../core/eventemitter';
@@ -155,7 +155,7 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 	initializeDebuggerUiState();
 	const runtime = BmsxVMRuntime.instance;
 	ide_state.playerIndex = runtime.playerIndex;
-	ide_state.fontVariant = DEFAULT_VM_FONT_VARIANT;
+	ide_state.fontVariant = runtime.activeIdeFontVariant;
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
 	ide_state.canonicalization = $.rompack.canonicalization;

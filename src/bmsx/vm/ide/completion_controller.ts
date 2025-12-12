@@ -15,7 +15,7 @@ import {
 import type { VMLuaBuiltinDescriptor, VMLuaDefinitionRange, VMLuaSymbolEntry } from '../types';
 import * as constants from './constants';
 import { isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
-import { isLuaCommentContext } from './text_utils';
+import { isLuaCommentContext, wrapTextDynamic } from './text_utils';
 import { ide_state } from './ide_state';
 import { isReadOnlyCodeTab } from './editor_tabs';
 import { consumeIdeKey } from './ide_input';
@@ -274,21 +274,53 @@ export class CompletionController {
 		this.completionPopupBounds = null;
 		if (!session || !cursorInfo) return;
 		if (session.filteredItems.length === 0) return;
-		const startIndex = session.displayOffset;
+		const maxAllowedWidth = Math.floor(bounds.codeRight - bounds.textLeft);
+		if (maxAllowedWidth <= 0) {
+			return;
+		}
+		const maxAllowedHeight = Math.floor(bounds.codeBottom - bounds.codeTop);
+		if (maxAllowedHeight <= 0) {
+			return;
+		}
+		const maxVisibleByHeight = (() => {
+			const available = maxAllowedHeight - constants.COMPLETION_POPUP_PADDING_Y * 2 + constants.COMPLETION_POPUP_ITEM_SPACING;
+			const stride = this.host.lineHeight + constants.COMPLETION_POPUP_ITEM_SPACING;
+			return Math.max(1, Math.floor(available / stride));
+		})();
+		session.maxVisibleItems = Math.min(constants.COMPLETION_POPUP_MAX_VISIBLE, maxVisibleByHeight);
+		const maxStartIndex = Math.max(0, session.filteredItems.length - session.maxVisibleItems);
+		let startIndex = clamp(session.displayOffset, 0, maxStartIndex);
+		const selectionIndex = session.selectionIndex;
+		if (selectionIndex >= 0) {
+			if (selectionIndex < startIndex) {
+				startIndex = selectionIndex;
+			} else if (selectionIndex >= startIndex + session.maxVisibleItems) {
+				startIndex = selectionIndex - session.maxVisibleItems + 1;
+			}
+			startIndex = clamp(startIndex, 0, maxStartIndex);
+		}
+		session.displayOffset = startIndex;
 		const endIndex = Math.min(session.filteredItems.length, startIndex + session.maxVisibleItems);
 		const visibleCount = endIndex - startIndex;
 		if (visibleCount <= 0) return;
-		let maxLineWidth = constants.COMPLETION_POPUP_MIN_WIDTH;
-		const detailSpacing = this.host.characterAdvance(' ');
+		const maxTextWidth = Math.max(0, maxAllowedWidth - constants.COMPLETION_POPUP_PADDING_X * 2);
+		let maxLineWidth = 0;
 		for (let i = 0; i < session.filteredItems.length; i += 1) {
 			const item = session.filteredItems[i];
 			const labelWidth = this.host.measureText(item.label);
-			const detailText = item.detail ?? '';
-			const detailWidth = detailText.length > 0 ? this.host.measureText(detailText) : 0;
-			const totalWidth = detailWidth > 0 ? labelWidth + detailSpacing + detailWidth : labelWidth;
-			if (totalWidth > maxLineWidth) maxLineWidth = totalWidth;
+			const clamped = Math.min(labelWidth, maxTextWidth);
+			if (clamped > maxLineWidth) {
+				maxLineWidth = clamped;
+			}
 		}
-		const popupWidth = Math.max(constants.COMPLETION_POPUP_MIN_WIDTH, Math.floor(maxLineWidth + constants.COMPLETION_POPUP_PADDING_X * 2));
+		const minWidth = Math.min(constants.COMPLETION_POPUP_MIN_WIDTH, maxAllowedWidth);
+		let popupWidth = Math.floor(maxLineWidth + constants.COMPLETION_POPUP_PADDING_X * 2);
+		if (popupWidth < minWidth) {
+			popupWidth = minWidth;
+		}
+		if (popupWidth > maxAllowedWidth) {
+			popupWidth = maxAllowedWidth;
+		}
 		const popupHeight = Math.floor(constants.COMPLETION_POPUP_PADDING_Y * 2 + visibleCount * this.host.lineHeight + Math.max(0, visibleCount - 1) * constants.COMPLETION_POPUP_ITEM_SPACING);
 		let popupLeft = Math.floor(cursorInfo.x);
 		if (popupLeft + popupWidth > bounds.codeRight) popupLeft = bounds.codeRight - popupWidth;
@@ -304,26 +336,21 @@ export class CompletionController {
 		api.rectfill(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_COMPLETION_BACKGROUND);
 		api.rect(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_COMPLETION_BORDER);
 		this.completionPopupBounds = { left: popupLeft, top: popupTop, right: popupRight, bottom: popupBottom };
+		const maxLabelWidth = Math.max(0, popupWidth - constants.COMPLETION_POPUP_PADDING_X * 2);
 		for (let drawIndex = 0; drawIndex < visibleCount; drawIndex += 1) {
 			const itemIndex = startIndex + drawIndex;
 			const item = session.filteredItems[itemIndex];
 			const lineTop = popupTop + constants.COMPLETION_POPUP_PADDING_Y + drawIndex * (this.host.lineHeight + constants.COMPLETION_POPUP_ITEM_SPACING);
 			const isSelected = itemIndex === session.selectionIndex;
 			const labelColor = isSelected ? constants.COLOR_COMPLETION_HIGHLIGHT_TEXT : constants.COLOR_COMPLETION_TEXT;
-			const detailColor = isSelected ? constants.COLOR_COMPLETION_HIGHLIGHT_TEXT : constants.COLOR_COMPLETION_DETAIL;
 			if (isSelected) {
 				const highlightTop = lineTop - 1;
 				const highlightBottom = highlightTop + this.host.lineHeight + 2;
 				api.rectfill(popupLeft + 1, highlightTop, popupRight - 1, highlightBottom, undefined, constants.COLOR_COMPLETION_HIGHLIGHT);
 			}
-			let textX = popupLeft + constants.COMPLETION_POPUP_PADDING_X;
-			const labelWidth = this.host.measureText(item.label);
-			this.host.drawText(item.label, textX, lineTop, labelColor);
-			textX += labelWidth + detailSpacing;
-			const detailText = item.detail ?? '';
-			if (detailText.length > 0) {
-				this.host.drawText(detailText, textX, lineTop, detailColor);
-			}
+			const textX = popupLeft + constants.COMPLETION_POPUP_PADDING_X;
+			const label = wrapTextDynamic(item.label, maxLabelWidth, maxLabelWidth, (value) => this.host.measureText(value), 1)[0];
+			this.host.drawText(label, textX, lineTop, labelColor);
 		}
 	}
 
@@ -341,12 +368,6 @@ export class CompletionController {
 			segments.push({ text: params[i], color });
 		}
 		segments.push({ text: ')', color: baseColor });
-		let firstLineWidth = 0;
-		for (let i = 0; i < segments.length; i += 1) {
-			const part = segments[i];
-			if (part.text.length === 0) continue;
-			firstLineWidth += this.host.measureText(part.text);
-		}
 		const methodDescription = hint.methodDescription && hint.methodDescription.length > 0 ? hint.methodDescription : null;
 		const returnType = hint.returnType && hint.returnType.length > 0 ? hint.returnType : null;
 		const returnDescription = hint.returnDescription && hint.returnDescription.length > 0 ? hint.returnDescription : null;
@@ -364,17 +385,60 @@ export class CompletionController {
 		if (activeParamDescription && activeParamDescription.length > 0) {
 			descriptionLines.push({ text: activeParamDescription, color: constants.COLOR_PARAMETER_HINT_ACTIVE });
 		}
-		let maxLineWidth = firstLineWidth;
+		const maxAllowedWidth = Math.floor(bounds.codeRight - bounds.textLeft);
+		if (maxAllowedWidth <= 0) {
+			return;
+		}
+		const maxTextWidth = Math.max(0, maxAllowedWidth - constants.PARAMETER_HINT_PADDING_X * 2);
+		if (maxTextWidth <= 0) {
+			return;
+		}
+		const clippedSegments: Array<{ text: string; color: number }> = [];
+		let signatureWidth = 0;
+		for (let i = 0; i < segments.length; i += 1) {
+			const part = segments[i];
+			if (part.text.length === 0) continue;
+			const width = this.host.measureText(part.text);
+			if (signatureWidth + width <= maxTextWidth) {
+				clippedSegments.push(part);
+				signatureWidth += width;
+				continue;
+			}
+			const remainingWidth = maxTextWidth - signatureWidth;
+			if (remainingWidth <= 0) {
+				break;
+			}
+			const clipped = wrapTextDynamic(part.text, remainingWidth, remainingWidth, (value) => this.host.measureText(value), 1)[0];
+			if (clipped.length > 0) {
+				clippedSegments.push({ text: clipped, color: part.color });
+				signatureWidth += this.host.measureText(clipped);
+			}
+			break;
+		}
+		const wrappedDescriptionLines: Array<{ text: string; color: number }> = [];
+		const maxDescriptionLines = 4;
 		for (let i = 0; i < descriptionLines.length; i += 1) {
-			const width = this.host.measureText(descriptionLines[i].text);
+			if (wrappedDescriptionLines.length >= maxDescriptionLines) {
+				break;
+			}
+			const line = descriptionLines[i];
+			const remaining = maxDescriptionLines - wrappedDescriptionLines.length;
+			const wrapped = wrapTextDynamic(line.text, maxTextWidth, maxTextWidth, (value) => this.host.measureText(value), remaining);
+			for (let segIndex = 0; segIndex < wrapped.length; segIndex += 1) {
+				wrappedDescriptionLines.push({ text: wrapped[segIndex], color: line.color });
+			}
+		}
+		let maxLineWidth = signatureWidth;
+		for (let i = 0; i < wrappedDescriptionLines.length; i += 1) {
+			const width = this.host.measureText(wrappedDescriptionLines[i].text);
 			if (width > maxLineWidth) {
 				maxLineWidth = width;
 			}
 		}
 		const lineHeight = this.host.lineHeight;
 		const lineSpacing = 2;
-		const totalLines = 1 + descriptionLines.length;
-		const popupWidth = maxLineWidth + constants.PARAMETER_HINT_PADDING_X * 2;
+		const totalLines = 1 + wrappedDescriptionLines.length;
+		const popupWidth = Math.min(maxAllowedWidth, maxLineWidth + constants.PARAMETER_HINT_PADDING_X * 2);
 		const popupHeight = Math.floor(totalLines * lineHeight + constants.PARAMETER_HINT_PADDING_Y * 2 + Math.max(0, totalLines - 1) * lineSpacing);
 		let popupLeft = cursorInfo.x;
 		if (popupLeft + popupWidth > bounds.codeRight) popupLeft = bounds.codeRight - popupWidth;
@@ -390,14 +454,14 @@ export class CompletionController {
 		api.rectfill(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_PARAMETER_HINT_BACKGROUND);
 		let textX = popupLeft + constants.PARAMETER_HINT_PADDING_X;
 		let currentY = popupTop + constants.PARAMETER_HINT_PADDING_Y;
-		for (let i = 0; i < segments.length; i += 1) {
-			const part = segments[i];
+		for (let i = 0; i < clippedSegments.length; i += 1) {
+			const part = clippedSegments[i];
 			if (part.text.length === 0) continue;
 			this.host.drawText(part.text, textX, currentY, part.color);
 			textX += this.host.measureText(part.text);
 		}
-		for (let i = 0; i < descriptionLines.length; i += 1) {
-			const line = descriptionLines[i];
+		for (let i = 0; i < wrappedDescriptionLines.length; i += 1) {
+			const line = wrappedDescriptionLines[i];
 			currentY += lineHeight + lineSpacing;
 			this.host.drawText(line.text, popupLeft + constants.PARAMETER_HINT_PADDING_X, currentY, line.color);
 		}
