@@ -23,7 +23,7 @@ import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { LifeCycleHandlerName, Viewport, } from '../rompack/rompack';
 import { CanonicalizationType } from '../rompack/rompack';
 import { createIdentifierCanonicalizer } from '../lua/identifier_canonicalizer';
-import { fallbackclamp } from '../utils/clamp';
+import { clamp_fallback } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
 import { TerminalMode } from './terminal_mode';
 import { VMRenderFacade } from './vm_render_facade';
@@ -547,7 +547,7 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private applyDebuggerStopLocation(signal: LuaDebuggerPauseSignal): void {
-		const normalizedLine = fallbackclamp(signal.location.line, 1, Number.MAX_SAFE_INTEGER, 1);
+		const normalizedLine = clamp_fallback(signal.location.line, 1, Number.MAX_SAFE_INTEGER, 1);
 		setExecutionStopHighlight(normalizedLine - 1);
 	}
 
@@ -1281,8 +1281,8 @@ export class BmsxVMRuntime extends Service {
 			this.faultOverlayNeedsFlush = true;
 			return;
 		}
-		const signalLine = fallbackclamp(signal.location.line, 1, Number.MAX_SAFE_INTEGER, null);
-		const signalColumn = fallbackclamp(signal.location.column, 1, Number.MAX_SAFE_INTEGER, null);
+		const signalLine = clamp_fallback(signal.location.line, 1, Number.MAX_SAFE_INTEGER, null);
+		const signalColumn = clamp_fallback(signal.location.column, 1, Number.MAX_SAFE_INTEGER, null);
 		if (!exception) {
 			this.setRuntimeFault({
 				message: 'Runtime error',
@@ -1299,8 +1299,8 @@ export class BmsxVMRuntime extends Service {
 		if (!chunkName || chunkName.length === 0) {
 			chunkName = signal.location.chunk;
 		}
-		const normalizedLine = fallbackclamp(exception.line, 1, Number.MAX_SAFE_INTEGER, null);
-		const normalizedColumn = fallbackclamp(exception.column, 1, Number.MAX_SAFE_INTEGER, null);
+		const normalizedLine = clamp_fallback(exception.line, 1, Number.MAX_SAFE_INTEGER, null);
+		const normalizedColumn = clamp_fallback(exception.column, 1, Number.MAX_SAFE_INTEGER, null);
 		this.setRuntimeFault({
 			message,
 			chunkName,

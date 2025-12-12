@@ -348,12 +348,18 @@ export class CompletionController {
 			firstLineWidth += this.host.measureText(part.text);
 		}
 		const methodDescription = hint.methodDescription && hint.methodDescription.length > 0 ? hint.methodDescription : null;
+		const returnType = hint.returnType && hint.returnType.length > 0 ? hint.returnType : null;
+		const returnDescription = hint.returnDescription && hint.returnDescription.length > 0 ? hint.returnDescription : null;
 		const activeParamDescription = hint.paramDescriptions && hint.argumentIndex < hint.paramDescriptions.length
 			? hint.paramDescriptions[hint.argumentIndex]
 			: null;
 		const descriptionLines: Array<{ text: string; color: number }> = [];
 		if (methodDescription) {
 			descriptionLines.push({ text: methodDescription, color: baseColor });
+		}
+		if (returnType) {
+			const returnLine = returnDescription ? `Returns ${returnType}: ${returnDescription}` : `Returns ${returnType}`;
+			descriptionLines.push({ text: returnLine, color: baseColor });
 		}
 		if (activeParamDescription && activeParamDescription.length > 0) {
 			descriptionLines.push({ text: activeParamDescription, color: constants.COLOR_PARAMETER_HINT_ACTIVE });
@@ -1255,6 +1261,8 @@ export class CompletionController {
 					argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
 					paramDescriptions,
 					methodDescription: apiMeta.description ,
+					returnType: apiMeta.returnType,
+					returnDescription: apiMeta.returnDescription,
 				};
 			}
 		}
@@ -1263,8 +1271,8 @@ export class CompletionController {
 			const params = Array.isArray(builtin.params) ? builtin.params.slice() : [];
 			let paramDescriptions = Array.isArray(builtin.parameterDescriptions) ? builtin.parameterDescriptions.slice() : undefined;
 			let methodDescription = builtin.description ;
+			const apiMetaFallback = getApiCompletionData().signatures.get(normalizedMethodName);
 			if ((!paramDescriptions || paramDescriptions.length === 0) || !methodDescription) {
-				const apiMetaFallback = getApiCompletionData().signatures.get(normalizedMethodName);
 				if (apiMetaFallback) {
 					if (!paramDescriptions || paramDescriptions.length === 0) {
 						paramDescriptions = apiMetaFallback.parameterDescriptions ? apiMetaFallback.parameterDescriptions.slice() : undefined;
@@ -1283,6 +1291,8 @@ export class CompletionController {
 				argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
 				paramDescriptions,
 				methodDescription,
+				returnType: apiMetaFallback?.returnType,
+				returnDescription: apiMetaFallback?.returnDescription,
 			};
 		}
 		if (!objectName || isApiObject) {
@@ -1300,6 +1310,8 @@ export class CompletionController {
 					argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
 					paramDescriptions,
 					methodDescription: apiMetaGlobal.description ,
+					returnType: apiMetaGlobal.returnType,
+					returnDescription: apiMetaGlobal.returnDescription,
 				};
 			}
 		}

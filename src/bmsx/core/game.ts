@@ -86,7 +86,7 @@ export class Game {
 	 * The target frames per second for the game.
 	 */
 	public target_fps: number = GAME_FPS;
-	private update_interval!: number;
+	private update_interval_ms!: number; // ms per update = 1000 / fps
 	/**
 	 * The timestamp of the last update.
 	 */
@@ -96,7 +96,7 @@ export class Game {
 	 */
 	public deltatime: number = 0;
 
-	public get timestep(): number { return this.update_interval; }
+	public get timestep_ms(): number { return this.update_interval_ms; } // ms per update = 1000 / fps
 
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
 
@@ -373,7 +373,7 @@ export class Game {
 		this.running = false;
 		this._paused = false;
 		this.wasupdated = true;
-		this.update_interval = 1000 / this.target_fps;
+		this.update_interval_ms = 1000 / this.target_fps;
 		this.rewindBuffer = new RewindBuffer(this.target_fps, this.REWINDBUFFER_LENGTH_SECONDS);
 
 		this._debug = debug ?? this._debug;
@@ -651,16 +651,16 @@ export class Game {
 			this.wasupdated = false;
 
 			let steps = 0;
-			while (this.accumulated_time >= this.timestep && steps < MAX_SUBSTEPS) {
+			while (this.accumulated_time >= this.timestep_ms && steps < MAX_SUBSTEPS) {
 				if (!this.paused) {
 					if (runGate.ready) {
-						this.update(this.timestep);
+						this.update(this.timestep_ms);
 					} else {
 						this.accumulated_time = 0;
 						break;
 					}
 				}
-				this.accumulated_time -= this.timestep;
+				this.accumulated_time -= this.timestep_ms;
 				++steps;
 			}
 		} catch (error) {

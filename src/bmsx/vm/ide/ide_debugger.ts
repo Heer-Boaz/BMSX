@@ -5,7 +5,7 @@ import { type LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import { ide_state } from './ide_state';
 import { getActiveCodeTabContext } from './editor_tabs';
 import { resolveHoverChunkName } from './intellisense';
-import { clamp, fallbackclamp } from '../../utils/clamp';
+import { clamp, clamp_fallback } from '../../utils/clamp';
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition } from './caret';
 import { clearExecutionStopHighlights, focusChunkSource, setExecutionStopHighlight, clearRuntimeErrorOverlay, updateDesiredColumn, findFunctionDefinitionRowInActiveFile, resetPointerClickTracking } from './vm_cart_editor';
 import { resetBlink } from './render/render_caret';
@@ -284,8 +284,8 @@ export function showDebuggerPauseOverlay(payload: DebuggerPauseDisplayPayload, m
 		return;
 	}
 	focusChunkSource(normalizedChunk);
-	const safeLine = fallbackclamp(payload.line, 1, payload.line - 1, 1);
-	const safeColumn = fallbackclamp(payload.column, 1, payload.column - 1, 1);
+	const safeLine = clamp_fallback(payload.line, 1, payload.line - 1, 1);
+	const safeColumn = clamp_fallback(payload.column, 1, payload.column - 1, 1);
 	updateDebuggerCaret(safeLine, safeColumn);
 	setExecutionStopHighlight(safeLine);
 	const baseMessage = MESSAGE_BY_REASON[payload.reason] ?? 'Debugger paused';

@@ -1,4 +1,4 @@
-import { $, World, InputActionEffectSystem, Input, insavegame, Service, subscribesToGlobalEvent, TickGroup, type InputMap, type PointerInputMapping, type RevivableObjectArgs, type WorldModule } from 'bmsx';
+import { $, World, InputActionEffectSystem, Input, insavegame, Service, TickGroup, type InputMap, type PointerInputMapping, type RevivableObjectArgs, type WorldModule } from 'bmsx';
 import { create_gameevent, type GameEvent } from 'bmsx/core/game_event';
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
@@ -25,9 +25,8 @@ export const EILA_MODULE: WorldModule = {
 		world.addSpace('titlescreen');
 		world.addSpace('niets');
 		// Input maps
-		const pointerInputMapping: PointerInputMapping = Input.clonePointerMapping();
-		$.input.getPlayerInput(1).setInputMap({ keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, pointer: pointerInputMapping } as InputMap);
-		$.input.getPlayerInput(2).setInputMap({ keyboard: null, gamepad: gamepadInputMapping } as InputMap);
+		$.input.getPlayerInput(1).setInputMap({ keyboard: keyboardInputMapping, gamepad: gamepadInputMapping });
+		$.input.getPlayerInput(2).setInputMap({ keyboard: null, gamepad: gamepadInputMapping });
 		// Register persistent Eila game state service
 		new YieArGameState();
 		// Register event service for handlers
@@ -40,15 +39,6 @@ export class EilaEventService extends Service {
 	private _humiliationCount = 0;
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'eila_events', ...opts });
-	}
-
-	// Example service state (DTO) participation: opt-in via getState/setState.
-	public override getState() { return { humiliationCount: this._humiliationCount }; }
-	public override setState(dto: unknown): void {
-		if (dto && typeof dto === 'object' && 'humiliationCount' in dto) {
-			const n = dto.humiliationCount;
-			if (typeof n === 'number' && isFinite(n)) this._humiliationCount = n;
-		}
 	}
 
 	public theOtherFighter(fighter: Fighter): Fighter {

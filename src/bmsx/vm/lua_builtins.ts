@@ -220,11 +220,6 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 			const params = extractFunctionParameters(callable as (...args: unknown[]) => unknown);
 			const apiMetadata = VM_API_METHOD_METADATA[name];
 			const optionalSet: Set<string> = new Set();
-			if (apiMetadata?.optionalParameters) {
-				for (let index = 0; index < apiMetadata.optionalParameters.length; index += 1) {
-					optionalSet.add(apiMetadata.optionalParameters[index]);
-				}
-			}
 			const parameterDescriptionMap: Map<string, string> = new Map();
 			if (apiMetadata?.parameters) {
 				for (let index = 0; index < apiMetadata.parameters.length; index += 1) {
@@ -243,7 +238,12 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 			const optionalArray = optionalSet.size > 0 ? Array.from(optionalSet) : undefined;
 			const parameterDescriptions = params.map(param => parameterDescriptionMap.get(param));
 			const displayParams = params.map(param => (optionalSet.has(param) ? `${param}?` : param));
-			const signature = displayParams.length > 0 ? `${name}(${displayParams.join(', ')})` : `${name}()`;
+			const returnTypeSuffix = apiMetadata?.returnType && apiMetadata.returnType !== 'void'
+				? ` -> ${apiMetadata.returnType}`
+				: '';
+			const signature = displayParams.length > 0
+				? `${name}(${displayParams.join(', ')})${returnTypeSuffix}`
+				: `${name}()${returnTypeSuffix}`;
 			const native = new LuaNativeFunction(`api.${name}`, (args) => {
 				const moduleId = $.rompack.cart.chunk2lua[runtime.currentChunkName].source_path;
 				const baseCtx = runtime.ensureMarshalContext({ moduleId, path: [] });

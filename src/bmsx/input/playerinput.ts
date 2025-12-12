@@ -596,41 +596,6 @@ export class PlayerInput {
 	}
 
 	/**
-	 * Checks if a specific button on a gamepad is currently being pressed down.
-	 * @param button - The gamepad button to check.
-	 * @returns A boolean indicating whether the button is currently pressed down.
-	 */
-	public isButtonDown(button: ButtonId, source: InputSource): boolean {
-		const buttonState = this.getButtonState(button, source);
-		return buttonState.pressed;
-	}
-
-	/**
-	 * Checks if a key or gamepad button is pressed and consumes the input if it is.
-	 * @param key - The key to check.
-	 * @param button - The gamepad button to check (optional).
-	 * @returns `true` if the input was consumed, `false` otherwise.
-	 */
-	public checkAndConsume(key: ButtonId, button?: ButtonId): boolean {
-		const keyState = this.inputHandlers['keyboard']?.getButtonState(key) ?? makeButtonState();
-
-		if (keyState.pressed && !keyState.consumed) {
-			this.inputHandlers['keyboard'].consumeButton(key);
-			return true;
-		}
-
-		if (button !== undefined && this.isGamepadConnected()) {
-			const buttonState = this.getButtonState(button, 'gamepad');
-			if (buttonState.pressed && !buttonState.consumed) {
-				this.inputHandlers['gamepad'].consumeButton(button);
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
 	* Assigns a gamepad to a player and returns the player index.
 	* If no player index is available, returns null.
 	* @param gamepad The gamepad to assign to a player.
@@ -869,18 +834,6 @@ export class PlayerInput {
 		this._stateManager = new InputStateManager();
 		this.inputHandlers['gamepad'] = null;
 		this.reset();
-	}
-
-	/**
-	 * Checks if a keyboard is connected for the specified player index.
-	 * @returns True if a keyboard is connected for the specified player index, false otherwise.
-	 */
-	/**
-	 * Checks if a gamepad is connected for the specified player index.
-	 * @returns True if a gamepad is connected for the specified player index, false otherwise.
-	 */
-	private isGamepadConnected(): boolean {
-		return this.inputHandlers['gamepad'] !== null;
 	}
 
 	/** Clears cached transition state so edge detectors don't fire spuriously. */

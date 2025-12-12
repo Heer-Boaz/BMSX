@@ -229,11 +229,6 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 				const params = extractFunctionParameters(descriptor.value as (...args: unknown[]) => unknown);
 				const metadata = VM_API_METHOD_METADATA[name];
 				const optionalSources = new Set<string>();
-				if (metadata?.optionalParameters) {
-					for (let optIndex = 0; optIndex < metadata.optionalParameters.length; optIndex += 1) {
-						optionalSources.add(metadata.optionalParameters[optIndex]);
-					}
-				}
 				const parameterDescriptionMap: Map<string, string> = new Map();
 				if (metadata?.parameters) {
 					for (let paramIndex = 0; paramIndex < metadata.parameters.length; paramIndex += 1) {
@@ -252,9 +247,12 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 				const optionalParams = optionalSources.size > 0 ? Array.from(optionalSources) : [];
 				const parameterDescriptions = params.map(param => parameterDescriptionMap.get(param));
 				const displayParams = params.map(param => (optionalSources.has(param) ? `${param}?` : param));
+				const returnTypeSuffix = metadata?.returnType && metadata.returnType !== 'void'
+					? ` -> ${metadata.returnType}`
+					: '';
 				const baseDetail = displayParams.length > 0
-					? `api.${name}(${displayParams.join(', ')})`
-					: `api.${name}()`;
+					? `api.${name}(${displayParams.join(', ')})${returnTypeSuffix}`
+					: `api.${name}()${returnTypeSuffix}`;
 				const methodDescription = metadata?.description;
 				const detail = methodDescription && methodDescription.length > 0 ? `${baseDetail} • ${methodDescription}` : baseDetail;
 				const item: LuaCompletionItem = {
@@ -273,6 +271,8 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 					optionalParams,
 					parameterDescriptions,
 					description: methodDescription,
+					returnType: metadata?.returnType,
+					returnDescription: metadata?.returnDescription,
 				};
 				signatures.set(name, metadataEntry);
 				const lower = name.toLowerCase();
@@ -287,7 +287,13 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 				continue;
 			}
 			if (descriptor.get) {
-				const detail = `api.${name}`;
+				const metadata = VM_API_METHOD_METADATA[name];
+				const returnTypeSuffix = metadata?.returnType && metadata.returnType !== 'void'
+					? ` -> ${metadata.returnType}`
+					: '';
+				const baseDetail = `api.${name}${returnTypeSuffix}`;
+				const description = metadata?.description;
+				const detail = description && description.length > 0 ? `${baseDetail} • ${description}` : baseDetail;
 				const item: LuaCompletionItem = {
 					label: name,
 					insertText: name,
@@ -296,7 +302,14 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 					detail,
 				};
 				items.push(item);
-				const metadataEntry: ApiCompletionMetadata = { params: [], signature: detail, kind: 'getter', description: null };
+				const metadataEntry: ApiCompletionMetadata = {
+					params: [],
+					signature: baseDetail,
+					kind: 'getter',
+					description,
+					returnType: metadata?.returnType,
+					returnDescription: metadata?.returnDescription,
+				};
 				signatures.set(name, metadataEntry);
 				const lower = name.toLowerCase();
 				const upper = name.toUpperCase();

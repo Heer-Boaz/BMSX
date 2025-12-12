@@ -12,11 +12,9 @@ import { controllerUnassignedToast } from '../ui/ui_toast';
 import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState, PointerInputMapping } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
-import type { OnscreenGamepadLayout } from './onscreengamepad';
 import { GlobalShortcutRegistry } from './global_shortcut_registry';
 import { excludepropfromsavegame } from '../serializer/serializationhooks';
 
-const NO_GAMEPAD_LAYOUT: OnscreenGamepadLayout = Object.freeze({ left: 0, right: 0, bottom: 0, visible: false }) as OnscreenGamepadLayout;
 const DEBUG_HUD_TOGGLE_KEY = 'F10';
 import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
 import { ControllerAssignmentUI } from '../ui/controller_assignment_ui';
@@ -147,12 +145,6 @@ export class InputStateManager {
 	private inputBuffer: InputEvent[];
 	private readonly buttonStates = new Map<ButtonId, ButtonState>();
 
-	public get bufferWindowDuration(): number {
-		return this.toMs(this.bufferframeDuration);
-	}
-
-	private toMs(frames: number) { return frames * 1000 / $.target_fps; }
-
 	/**
 	 * Constructs an instance of the InputStateManager.
 	 *
@@ -183,7 +175,7 @@ export class InputStateManager {
 	 * Cleans up old events from the input buffer used for windowed queries.
 	 */
 	update(currentTime: number): void {
-		this.inputBuffer = this.inputBuffer.filter(event => currentTime - event.timestamp <= this.bufferWindowDuration);
+		this.inputBuffer = this.inputBuffer.filter(event => currentTime - event.timestamp <= this.bufferframeDuration * $.timestep_ms);
 	}
 
 	/**
@@ -237,8 +229,8 @@ export class InputStateManager {
 	 */
 	getButtonState(identifier: ButtonId, framewindow?: number): ButtonState {
 		const window = framewindow != null
-			? this.toMs(framewindow)
-			: this.bufferWindowDuration;
+			? framewindow * $.timestep_ms
+			: this.bufferframeDuration * $.timestep_ms;
 		const currentTime = $.platform.clock.now();
 		const baseState = this.buttonStates.get(identifier);
 
@@ -287,7 +279,7 @@ export class InputStateManager {
 
 	/** Returns true if an unconsumed press edge happened recently. */
 	hasUnconsumedPress(identifier: ButtonId, windowFrames: number = 2): boolean {
-		const windowMs = this.toMs(windowFrames);
+		const windowMs = windowFrames * $.timestep_ms;
 		const currentTime = $.platform.clock.now();
 		for (let i = this.inputBuffer.length - 1; i >= 0; i -= 1) {
 			const event = this.inputBuffer[i];
@@ -384,7 +376,7 @@ export class Input implements RegisterablePersistent {
 	public static initialize(startingGamepadIndex?: number): Input {
 		if (Input._instance) {
 			if (typeof startingGamepadIndex === 'number') {
-				Input._instance.setStartupGamepadIndex(startingGamepadIndex);
+				Input._instance.startupGamepadIndex = startingGamepadIndex;
 			}
 			return Input._instance;
 		}
@@ -399,11 +391,6 @@ export class Input implements RegisterablePersistent {
 		return Input._instance;
 	}
 
-	public static maybeInstance(): Input {
-		return Input._instance ;
-	}
-
-
 	/**
 	 * An array of player inputs for each player.
 	 * The Player 1 input is at index 0, Player 2 input is at index 1, and so on.
@@ -412,7 +399,7 @@ export class Input implements RegisterablePersistent {
 	private playerInputs: PlayerInput[] = [];
 
 	private readonly deviceBindings = new Map<string, DeviceBinding>();
-	private startupGamepadIndex: number = null;
+	public startupGamepadIndex: number = null;
 
 	/**
 	 * Represents an array of pending gamepad assignments.
@@ -434,7 +421,7 @@ export class Input implements RegisterablePersistent {
 	};
 
 	private debugHotkeysEnabled = false;
-	private debugHotkeysPaused = false;
+	public debugHotkeysPaused = false;
 	private readonly additionalCaptureKeys: Set<string> = new Set();
 	private readonly globalShortcuts = new GlobalShortcutRegistry();
 
@@ -444,15 +431,6 @@ export class Input implements RegisterablePersistent {
 			player.clearEdgeState();
 		}
 	};
-
-	/**
-	 * Gets the onscreen gamepad.
-	 * @returns The onscreen gamepad.
-	 */
-	public getOnscreenGamepad(): OnscreenGamepad {
-		if (!this.onscreenGamepad) throw new Error('[Input] Onscreen gamepad has not been initialised.');
-		return this.onscreenGamepad;
-	}
 
 	/**
 	 * Retrieves the player input for the specified player index.
@@ -476,13 +454,6 @@ export class Input implements RegisterablePersistent {
 	 */
 	public hideOnscreenGamepadButtons(gamepad_button_ids: string[]): void {
 		OnscreenGamepad.hideButtons(gamepad_button_ids);
-	}
-
-	public getOnscreenGamepadLayout(viewportWidth: number, viewportHeight: number): OnscreenGamepadLayout {
-		if (!this.onscreenGamepad) {
-			return NO_GAMEPAD_LAYOUT;
-		}
-		return this.onscreenGamepad.getLayoutMargins(viewportWidth, viewportHeight);
 	}
 
 	/**
@@ -537,8 +508,6 @@ export class Input implements RegisterablePersistent {
 		'KeyT': 'touch'
 	} as const;
 
-	public static readonly POINTER_BUTTONS = ['pointer_primary', 'pointer_secondary', 'pointer_aux', 'pointer_back', 'pointer_forward'] as const;
-
 	public static readonly DEFAULT_POINTER_INPUT_MAPPING: PointerInputMapping = {
 		pointer_primary: ['pointer_primary'],
 		pointer_secondary: ['pointer_secondary'],
@@ -551,30 +520,6 @@ export class Input implements RegisterablePersistent {
 	};
 
 	private static readonly DEBUG_CAPTURE_KEYS = new Set([DEBUG_HUD_TOGGLE_KEY, 'F6', 'F7', 'F11']);
-
-	/**
-	* The mapping of indices to their corresponding gamepad button names.
-	*/
-	public static readonly INDEX2BUTTON = {
-		0: 'a', // Bottom face button
-		1: 'b', // Right face button
-		2: 'x', // Left face button
-		3: 'y', // Top face button
-		4: 'lb', // Left shoulder button
-		5: 'rb', // Right shoulder button
-		6: 'lt', // Left trigger button
-		7: 'rt', // Right trigger button
-		8: 'select', // Select button
-		9: 'start', // Start button
-		10: 'ls', // Left stick button
-		11: 'rs', // Right stick button
-		12: 'up', // D-pad up
-		13: 'down', // D-pad down
-		14: 'left', // D-pad left
-		15: 'right', // D-pad right
-		16: 'home', // Xbox button,
-		17: 'touch', // Touchpad button
-	} as const;
 
 	/**
 	 * Prevents the default action of a UI event based on the key pressed, except for certain keys when the game is running or not paused.
@@ -606,13 +551,6 @@ export class Input implements RegisterablePersistent {
 		return this.onscreenGamepad !== null;
 	}
 
-	/**
-	 * Enables the onscreen gamepad and assigns it as the gamepad input for player 1.
-	 */
-	public setStartupGamepadIndex(index: number): void {
-		this.startupGamepadIndex = index;
-	}
-
 	public enableOnscreenGamepad(): void {
 		if (!this.onscreenGamepad) {
 			this.onscreenGamepad = new OnscreenGamepad($.platform.onscreenGamepad);
@@ -626,10 +564,6 @@ export class Input implements RegisterablePersistent {
 			return true;
 		}
 		return this.debugHotkeysEnabled && !this.debugHotkeysPaused && Input.DEBUG_CAPTURE_KEYS.has(code);
-	}
-
-	public setDebugHotkeysPaused(paused: boolean): void {
-		this.debugHotkeysPaused = paused;
 	}
 
 	public setKeyboardCapture(code: string, enabled: boolean): void {
@@ -1060,130 +994,4 @@ export class Input implements RegisterablePersistent {
 		}
 		this.events.emit('playerjoin', { playerIndex });
 	}
-
-	public static get KC_F10(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume(DEBUG_HUD_TOGGLE_KEY);
-	}
-
-	public static get KC_F1(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('F1');
-	}
-
-	public static get KC_F12(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('F12');
-	}
-
-	public static get KC_F2(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('F2');
-	}
-
-	public static get KC_F3(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('F3');
-	}
-
-	public static get KC_F4(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('F4');
-	}
-
-	public static get KC_F5(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('F5');
-	}
-
-	public static get KC_M(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('KeyM');
-	}
-
-	public static get KC_SPACE(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('Space');
-	}
-
-	public static get KC_UP(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('ArrowUp', 'up');
-	}
-
-	public static get KC_RIGHT(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('ArrowRight', 'right');
-	}
-
-	public static get KC_DOWN(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('ArrowDown', 'down');
-	}
-
-	public static get KC_LEFT(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('ArrowLeft', 'left');
-	}
-
-	public static get KC_BTN1(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('ShiftLeft', 'a');
-	}
-
-	public static get KC_BTN2(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('KeyZ', 'b');
-	}
-
-	public static get KC_BTN3(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume(DEBUG_HUD_TOGGLE_KEY, 'x');
-	}
-
-	public static get KC_BTN4(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('F5', 'y');
-	}
-
-	public static get KD_F10(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState(DEBUG_HUD_TOGGLE_KEY, 'keyboard').pressed;
-	}
-	public static get KD_F1(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('F1', 'keyboard').pressed;
-	}
-	public static get KD_F12(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('F12', 'keyboard').pressed;
-	}
-	public static get KD_F2(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('F2', 'keyboard').pressed;
-	}
-	public static get KD_F3(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('F3', 'keyboard').pressed;
-	}
-	public static get KD_F4(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('F4', 'keyboard').pressed;
-	}
-	public static get KD_F5(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('F5', 'keyboard').pressed;
-	}
-	public static get KD_M(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('KeyM', 'keyboard').pressed;
-	}
-	public static get KD_SPACE(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('Space', 'keyboard').pressed;
-	}
-	public static get KD_UP(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('ArrowUp', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('up', 'gamepad').pressed;
-	}
-	public static get KD_RIGHT(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('ArrowRight', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('right', 'gamepad').pressed;
-	}
-	public static get KD_DOWN(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('ArrowDown', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('down', 'gamepad').pressed;
-	}
-	public static get KD_LEFT(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('ArrowLeft', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('left', 'gamepad').pressed;
-	}
-	public static get KD_BTN1(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('a', 'gamepad').pressed;
-	}
-	public static get KD_BTN2(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('KeyZ', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('b', 'gamepad').pressed;
-	}
-	public static get KD_BTN3(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState(DEBUG_HUD_TOGGLE_KEY, 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('x', 'gamepad').pressed;
-	}
-	public static get KD_BTN4(): boolean {
-		return Input.instance.getPlayerInput(1).getButtonState('F5', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('y', 'gamepad').pressed;
-	}
-
-	/**
-	* Handles debug events such as mouse/pointer events and keyboard events.
-	*
-	* @param e The event object representing the debug event.
-	*/
 }

@@ -2,7 +2,7 @@ import { $ } from '../../core/game';
 import type { VMResourceDescriptor } from '../types';
 import { ide_state, WORKSPACE_AUTOSAVE_INTERVAL_MS } from './ide_state';
 import type { CodeTabContext, Position, EditorSnapshot } from './types';
-import { safeclamp } from '../../utils/clamp';
+import { clamp_safe } from '../../utils/clamp';
 import type { StorageService, TimerHandle } from '../../platform/platform';
 import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './ide_debugger';
 import { scheduleIdeOnce } from './background_tasks';
@@ -429,13 +429,13 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 export function buildSnapshotFromSource(source: string, metadata?: SnapshotMetadata): EditorSnapshot {
 	const lines = normalizeEndingsAndSplitLines(source);
 	const lastRow = lines.length > 0 ? lines.length - 1 : 0;
-	const cursorRow = safeclamp(metadata?.cursorRow, 0, lastRow);
-	const cursorColumn = safeclamp(metadata?.cursorColumn, 0, lines[cursorRow].length ?? 0);
+	const cursorRow = clamp_safe(metadata?.cursorRow, 0, lastRow);
+	const cursorColumn = clamp_safe(metadata?.cursorColumn, 0, lines[cursorRow].length ?? 0);
 	return {
 		lines,
 		cursorRow,
 		cursorColumn,
-		scrollRow: safeclamp(metadata?.scrollRow, 0, lastRow),
+		scrollRow: clamp_safe(metadata?.scrollRow, 0, lastRow),
 		scrollColumn: Math.max(0, metadata?.scrollColumn ?? 0),
 		selectionAnchor: clampSelection(metadata?.selectionAnchor , lines),
 		dirty: ide_state.dirty,
@@ -460,9 +460,9 @@ export function buildSnapshotFromSource(source: string, metadata?: SnapshotMetad
 
 function clampSelection(anchor: Position, lines: string[]): Position {
 	if (!anchor) return null;
-	const row = safeclamp(anchor.row ?? 0, 0, lines.length - 1);
+	const row = clamp_safe(anchor.row ?? 0, 0, lines.length - 1);
 	const line = lines[row] ?? '';
-	const column = safeclamp(anchor.column ?? 0, 0, line.length);
+	const column = clamp_safe(anchor.column ?? 0, 0, line.length);
 	return { row, column };
 }
 

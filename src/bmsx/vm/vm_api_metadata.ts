@@ -1,3 +1,5 @@
+import type { BmsxVMApi } from './vm_api';
+
 export type VMApiParameterMetadata = {
 	readonly name: string;
 	readonly optional?: boolean;
@@ -5,93 +7,217 @@ export type VMApiParameterMetadata = {
 };
 
 export type VMApiMethodMetadata = {
-	readonly optionalParameters?: readonly string[];
 	readonly description?: string;
 	readonly parameters?: readonly VMApiParameterMetadata[];
+	readonly returnType?: string;
+	readonly returnDescription?: string;
 };
 
-export const VM_API_METHOD_METADATA: Record<string, VMApiMethodMetadata> = {
-	add_component: {
-		optionalParameters: ['options'],
-		description: 'Adds an engine component instance to an existing world object.',
-		parameters: [
-			{ name: 'object_id', description: 'Identifier of the world object that receives the component.' },
-			{ name: 'component_ref', description: 'Component class name to attach.' },
-			{ name: 'options', optional: true, description: 'Optional component configuration such as state overrides.' },
-		],
+type VMApiMemberName = keyof BmsxVMApi;
+
+export const VM_API_METHOD_METADATA = {
+	display_width: {
+		description: 'Returns the current display width in pixels.',
+		parameters: [],
+		returnType: 'number',
+		returnDescription: 'Viewport width in pixels.',
 	},
-	attach_bt: {
-		description: 'Attaches a registered behaviour tree to a world object.',
-		parameters: [
-			{ name: 'object_id', description: 'World object identifier.' },
-			{ name: 'tree_id', description: 'Behaviour tree id registered via define_bt.' },
-		],
+	display_height: {
+		description: 'Returns the current display height in pixels.',
+		parameters: [],
+		returnType: 'number',
+		returnDescription: 'Viewport height in pixels.',
 	},
-	attach_component: {
-		description: 'Attaches a Lua component definition (by id) to a world object.',
+	mousebtn: {
+		description: 'Checks whether a pointer button is currently pressed.',
 		parameters: [
-			{ name: 'object_id', description: 'World object identifier.' },
-			{ name: 'component', description: 'Component id string or descriptor with id/id_local/state.' },
+			{ name: 'button', description: 'Pointer button index (0=Primary, 1=Secondary, 2=Auxiliary, 3=Back, 4=Forward).' },
 		],
+		returnType: 'boolean',
+		returnDescription: 'True while the button is held down.',
 	},
-	attach_fsm: {
-		description: 'Attaches a registered finite-state machine to a world object.',
+	mousebtnp: {
+		description: 'Checks whether a pointer button was pressed this frame.',
 		parameters: [
-			{ name: 'object_id', description: 'World object identifier.' },
-			{ name: 'machine_id', description: 'FSM id registered via register_prepared_fsm.' },
+			{ name: 'button', description: 'Pointer button index (0=Primary, 1=Secondary, 2=Auxiliary, 3=Back, 4=Forward).' },
 		],
+		returnType: 'boolean',
+		returnDescription: 'True only on the frame the button is pressed.',
+	},
+	mousebtnr: {
+		description: 'Checks whether a pointer button was released this frame.',
+		parameters: [
+			{ name: 'button', description: 'Pointer button index (0=Primary, 1=Secondary, 2=Auxiliary, 3=Back, 4=Forward).' },
+		],
+		returnType: 'boolean',
+		returnDescription: 'True only on the frame the button is released.',
+	},
+	keyboard: {
+		description: 'Returns the keyboard input handler for the console player.',
+		parameters: [],
+		returnType: 'InputHandler',
+		returnDescription: 'Native input handler instance.',
+	},
+	mousepos: {
+		description: 'Returns the pointer position mapped into the game viewport.',
+		parameters: [],
+		returnType: 'VMPointerViewport',
+		returnDescription: '{ x, y, valid, inside } in viewport coordinates.',
+	},
+	pointer_screen_position: {
+		description: 'Returns the raw pointer screen position.',
+		parameters: [],
+		returnType: 'VMPointerVector',
+		returnDescription: '{ x, y, valid } in screen coordinates.',
+	},
+	pointer_delta: {
+		description: 'Returns the pointer movement delta since last frame.',
+		parameters: [],
+		returnType: 'VMPointerVector',
+		returnDescription: '{ x, y, valid } delta values.',
+	},
+	pointer_viewport_position: {
+		description: 'Returns the pointer position mapped into the game viewport.',
+		parameters: [],
+		returnType: 'VMPointerViewport',
+		returnDescription: '{ x, y, valid, inside } in viewport coordinates.',
+	},
+	mousewheel: {
+		description: 'Returns the pointer wheel delta.',
+		parameters: [],
+		returnType: 'VMPointerWheel',
+		returnDescription: '{ value, valid } wheel delta.',
+	},
+	stat: {
+		description: 'Returns numeric stat values; indices 32-36 cover pointer position/buttons/wheel.',
+		parameters: [
+			{ name: 'index', description: 'Stat index to query (integer).' },
+		],
+		returnType: 'number',
+		returnDescription: 'Stat value (0 when unavailable/unsupported).',
+	},
+	cls: {
+		description: 'Clears the screen and resets the text cursor.',
+		parameters: [
+			{ name: 'colorindex', optional: true, description: 'Palette index to fill the screen with (defaults to 0).' },
+		],
+		returnType: 'void',
+	},
+	rect: {
+		description: 'Draws a rectangle outline.',
+		parameters: [
+			{ name: 'x0', description: 'Left coordinate in pixels.' },
+			{ name: 'y0', description: 'Top coordinate in pixels.' },
+			{ name: 'x1', description: 'Right coordinate in pixels.' },
+			{ name: 'y1', description: 'Bottom coordinate in pixels.' },
+			{ name: 'z', description: 'Z coordinate for ordering.' },
+			{ name: 'colorindex', description: 'Palette index for the outline color.' },
+		],
+		returnType: 'void',
+	},
+	rectfill: {
+		description: 'Draws a filled rectangle.',
+		parameters: [
+			{ name: 'x0', description: 'Left coordinate in pixels.' },
+			{ name: 'y0', description: 'Top coordinate in pixels.' },
+			{ name: 'x1', description: 'Right coordinate in pixels.' },
+			{ name: 'y1', description: 'Bottom coordinate in pixels.' },
+			{ name: 'z', description: 'Z coordinate for ordering.' },
+			{ name: 'colorindex', description: 'Palette index for the fill color.' },
+		],
+		returnType: 'void',
+	},
+	rectfill_color: {
+		description: 'Draws a filled rectangle using a raw color value.',
+		parameters: [
+			{ name: 'x0', description: 'Left coordinate in pixels.' },
+			{ name: 'y0', description: 'Top coordinate in pixels.' },
+			{ name: 'x1', description: 'Right coordinate in pixels.' },
+			{ name: 'y1', description: 'Bottom coordinate in pixels.' },
+			{ name: 'z', description: 'Z coordinate for ordering.' },
+			{ name: 'colorvalue', description: 'Palette index (number) or a color object.' },
+		],
+		returnType: 'void',
+	},
+	sprite: {
+		description: 'Draws an image resource at the given position.',
+		parameters: [
+			{ name: 'img_id', description: 'Image asset id (imgid).' },
+			{ name: 'x', description: 'X coordinate in pixels.' },
+			{ name: 'y', description: 'Y coordinate in pixels.' },
+			{ name: 'z', description: 'Z coordinate for ordering.' },
+			{ name: 'options', optional: true, description: 'Optional sprite options (scale, flip_h, flip_v, colorize).' },
+		],
+		returnType: 'void',
+	},
+	poly: {
+		description: 'Draws a polygon/line strip.',
+		parameters: [
+			{ name: 'points', description: 'Polygon points array.' },
+			{ name: 'z', description: 'Z coordinate for ordering.' },
+			{ name: 'colorindex', description: 'Palette index for the line color.' },
+			{ name: 'thickness', optional: true, description: 'Optional line thickness.' },
+			{ name: 'layer', optional: true, description: 'Optional render layer.' },
+		],
+		returnType: 'void',
+	},
+	mesh: {
+		description: 'Submits a 3D mesh render request.',
+		parameters: [
+			{ name: 'mesh', description: 'Mesh resource/handle.' },
+			{ name: 'matrix', description: 'Transform matrix.' },
+			{ name: 'options', optional: true, description: 'Optional mesh render options (joint_matrices, morph_weights, receive_shadow).' },
+		],
+		returnType: 'void',
+	},
+	particle: {
+		description: 'Submits a particle render request.',
+		parameters: [
+			{ name: 'position', description: 'Particle position as a vec3 array.' },
+			{ name: 'size', description: 'Particle size in pixels.' },
+			{ name: 'colorvalue', description: 'Palette index (number) or a color object.' },
+			{ name: 'options', optional: true, description: 'Optional particle options (texture, ambient_mode, ambient_factor).' },
+		],
+		returnType: 'void',
+	},
+	write: {
+		description: 'Writes text to the screen. If x/y are omitted, uses the current text cursor and auto-advances.',
+		parameters: [
+			{ name: 'text', description: 'Text to write.' },
+			{ name: 'x', optional: true, description: 'Optional X coordinate in pixels.' },
+			{ name: 'y', optional: true, description: 'Optional Y coordinate in pixels.' },
+			{ name: 'z', optional: true, description: 'Optional Z coordinate for ordering.' },
+			{ name: 'colorindex', optional: true, description: 'Optional palette index for the text color.' },
+		],
+		returnType: 'void',
+	},
+	write_with_font: {
+		description: 'Writes text to the screen using a specific VMFont instance.',
+		parameters: [
+			{ name: 'text', description: 'Text to write.' },
+			{ name: 'x', optional: true, description: 'Optional X coordinate in pixels.' },
+			{ name: 'y', optional: true, description: 'Optional Y coordinate in pixels.' },
+			{ name: 'z', optional: true, description: 'Optional Z coordinate for ordering.' },
+			{ name: 'colorindex', optional: true, description: 'Optional palette index for the text color.' },
+			{ name: 'font', optional: true, description: 'Optional VMFont to use (defaults to the VM font).' },
+		],
+		returnType: 'void',
+	},
+	check_action_state: {
+		description: 'Checks whether an input action definition is triggered for a given player.',
+		parameters: [
+			{ name: 'playerindex', description: 'Player index (1-based).' },
+			{ name: 'actiondefinition', description: 'Action definition string (e.g. "jump[p]" or "pointer_primary[jr]").' },
+		],
+		returnType: 'boolean',
+		returnDescription: 'True when the action definition evaluates to triggered.',
 	},
 	cartdata: {
 		description: 'Sets the persistent storage namespace for this cart (used by dget/dset).',
 		parameters: [
-			{ name: 'namespace', description: 'Unique storage namespace key.' },
+			{ name: 'namespace', description: 'Storage namespace key.' },
 		],
-	},
-	cls: {
-		optionalParameters: ['colorindex'],
-		description: 'Clears the console render surface.',
-		parameters: [
-			{ name: 'colorindex', optional: true, description: 'Palette index to fill the screen with (defaults to 0).' },
-		],
-	},
-	define_effect: {
-		description: 'Registers a Lua input-action effect with a handler and optional event/cooldown metadata.',
-		parameters: [
-			{ name: 'descriptor', description: 'Effect descriptor with id (or def_id), handler(ctx,payload), optional event override, and optional cooldown_ms.' },
-			{ name: 'opts', optional: true, description: 'Optional effect configuration such as "schema" and "validate".' },
-		],
-	},
-	define_component: {
-		description: 'Registers a Lua component definition.',
-		parameters: [
-			{ name: 'descriptor', description: 'Component descriptor table defining handlers and defaults.' },
-		],
-	},
-	define_component_preset: {
-		description: 'Registers a reusable component preset.',
-		parameters: [
-			{ name: 'descriptor', description: 'Preset descriptor table with id and build function/options.' },
-		],
-	},
-	define_service: {
-		description: 'Registers a Lua service descriptor.',
-		parameters: [
-			{ name: 'descriptor', description: 'Service descriptor with id, lifecycle hooks, optional systems/effects/tags, and auto_activate flag.' },
-		],
-	},
-	despawn: {
-		optionalParameters: ['options'],
-		description: 'Removes a world object from the world.',
-		parameters: [
-			{ name: 'id', description: 'Identifier of the world object to despawn.' },
-			{ name: 'options', optional: true, description: 'Optional flags such as disposing the object immediately.' },
-		],
-	},
-	dget: {
-		description: 'Reads a number from persistent cart storage.',
-		parameters: [
-			{ name: 'index', description: 'Storage slot index (integer).' },
-		],
+		returnType: 'void',
 	},
 	dset: {
 		description: 'Writes a number to persistent cart storage.',
@@ -99,221 +225,272 @@ export const VM_API_METHOD_METADATA: Record<string, VMApiMethodMetadata> = {
 			{ name: 'index', description: 'Storage slot index (integer).' },
 			{ name: 'value', description: 'Numeric value to persist.' },
 		],
+		returnType: 'void',
 	},
-	emit: {
-		optionalParameters: ['emitter_or_id', 'payload'],
-		description: 'Broadcasts an engine event via the global event bus.',
+	dget: {
+		description: 'Reads a number from persistent cart storage.',
 		parameters: [
-			{ name: 'event_name', description: 'Name of the event to emit.' },
-			{ name: 'emitter_or_id', optional: true, description: 'Emitter instance or identifier that produced the event.' },
-			{ name: 'payload', optional: true, description: 'Optional payload delivered to event listeners.' },
+			{ name: 'index', description: 'Storage slot index (integer).' },
 		],
+		returnType: 'number',
+		returnDescription: 'Stored numeric value.',
 	},
-	emit_gameplay: {
-		optionalParameters: ['payload'],
-		description: 'Dispatches a gameplay-scoped event to listeners.',
+	sfx: {
+		description: 'Plays a sound effect by identifier.',
 		parameters: [
-			{ name: 'event_name', description: 'Name of the gameplay event to emit.' },
-			{ name: 'emitter_or_id', description: 'Emitter identifier associated with the event.' },
-			{ name: 'payload', optional: true, description: 'Optional gameplay event payload.' },
+			{ name: 'id', description: 'Sound effect id.' },
+			{ name: 'options', optional: true, description: 'Optional playback options.' },
 		],
+		returnType: 'void',
+	},
+	stop_sfx: {
+		description: 'Stops the currently playing sound effect.',
+		parameters: [],
+		returnType: 'void',
+	},
+	music: {
+		description: 'Starts or stops background music playback.',
+		parameters: [
+			{ name: 'id', optional: true, description: 'Music track id (omit/nil to stop playback).' },
+			{ name: 'options', optional: true, description: 'Optional playback options.' },
+		],
+		returnType: 'void',
+	},
+	stop_music: {
+		description: 'Stops background music playback.',
+		parameters: [],
+		returnType: 'void',
+	},
+	set_master_volume: {
+		description: 'Sets master audio volume.',
+		parameters: [
+			{ name: 'volume', description: 'Volume scalar between 0 and 1.' },
+		],
+		returnType: 'void',
+	},
+	pause_audio: {
+		description: 'Pauses console audio playback.',
+		parameters: [],
+		returnType: 'void',
+	},
+	resume_audio: {
+		description: 'Resumes audio after a pause_audio call.',
+		parameters: [],
+		returnType: 'void',
+	},
+	world: {
+		description: 'Returns the active World instance.',
+		parameters: [],
+		returnType: 'World',
+		returnDescription: 'Native World instance.',
+	},
+	world_object: {
+		description: 'Fetches a world object by id from the current space.',
+		parameters: [
+			{ name: 'id', description: 'World object id.' },
+		],
+		returnType: 'WorldObject | nil',
+		returnDescription: 'The object instance, or nil when not found.',
+	},
+	world_objects: {
+		description: 'Returns all world objects currently registered in the world.',
+		parameters: [],
+		returnType: 'WorldObject[]',
+		returnDescription: 'Array of world objects across spaces.',
+	},
+	attach_fsm: {
+		description: 'Attaches a registered finite-state machine to a world object.',
+		parameters: [
+			{ name: 'id', description: 'World object identifier.' },
+			{ name: 'machine_id', description: 'FSM id registered via define_fsm/buildFSMDefinition.' },
+		],
+		returnType: 'void',
+	},
+	attach_bt: {
+		description: 'Attaches a registered behaviour tree to a world object.',
+		parameters: [
+			{ name: 'object_id', description: 'World object identifier.' },
+			{ name: 'tree_id', description: 'Behaviour tree id.' },
+		],
+		returnType: 'void',
+	},
+	define_component: {
+		description: 'Registers a Lua component definition.',
+		parameters: [
+			{ name: 'descriptor', description: 'Component descriptor (def_id, class/defaults, optional fsms/components/effects/bts).' },
+		],
+		returnType: 'void',
+	},
+	define_world_object: {
+		description: 'Registers a world object descriptor that can be spawned later.',
+		parameters: [
+			{ name: 'descriptor', description: 'World object descriptor (def_id, class/defaults, optional fsms/components/effects/bts).' },
+		],
+		returnType: 'void',
+	},
+	define_service: {
+		description: 'Registers a service descriptor that can be instantiated later.',
+		parameters: [
+			{ name: 'descriptor', description: 'Service descriptor (def_id, class/defaults, optional fsms/components/effects/bts).' },
+		],
+		returnType: 'void',
+	},
+	create_service: {
+		description: 'Creates a Service instance from a previously registered service descriptor.',
+		parameters: [
+			{ name: 'definition_id', description: 'Id of the service definition registered via define_service.' },
+			{ name: 'defer_bind', optional: true, description: 'Optional flag to defer service binding.' },
+		],
+		returnType: 'Service',
+		returnDescription: 'The created Service instance.',
+	},
+	attach_component: {
+		description: 'Attaches a component instance or component type (by id) to a world object.',
+		parameters: [
+			{ name: 'object_or_id', description: 'WorldObject instance or world object id.' },
+			{ name: 'component_or_type', description: 'Component instance or component typename/id.' },
+		],
+		returnType: 'void',
+	},
+	define_effect: {
+		description: 'Registers an action-effect definition with the ActionEffectRegistry.',
+		parameters: [
+			{ name: 'descriptor', description: 'Action effect definition (id, handler, optional event/cooldown_ms).' },
+			{ name: 'opts', optional: true, description: 'Optional registry options such as schema/validation.' },
+		],
+		returnType: 'void',
+	},
+	spawn_object: {
+		description: 'Spawns a WorldObject instance from a previously defined descriptor.',
+		parameters: [
+			{ name: 'definition_id', description: 'Id of the world object definition registered via define_world_object.' },
+			{ name: 'overrides', optional: true, description: 'Optional overrides applied after the descriptor defaults/overrides.' },
+		],
+		returnType: 'WorldObject',
+		returnDescription: 'The spawned WorldObject instance.',
+	},
+	spawn_sprite: {
+		description: 'Spawns a SpriteObject instance from a previously defined descriptor.',
+		parameters: [
+			{ name: 'definition_id', description: 'Id of the sprite definition registered via define_world_object.' },
+			{ name: 'overrides', optional: true, description: 'Optional overrides applied after the descriptor defaults/overrides.' },
+		],
+		returnType: 'SpriteObject',
+		returnDescription: 'The spawned SpriteObject instance.',
+	},
+	spawn_textobject: {
+		description: 'Spawns a TextObject instance from a previously defined descriptor.',
+		parameters: [
+			{ name: 'definition_id', description: 'Id of the text object definition registered via define_world_object.' },
+			{ name: 'overrides', optional: true, description: 'Optional overrides applied after the descriptor defaults/overrides.' },
+		],
+		returnType: 'TextObject',
+		returnDescription: 'The spawned TextObject instance.',
 	},
 	grant_effect: {
 		description: 'Grants a registered effect definition to a world object with an ActionEffectComponent.',
 		parameters: [
 			{ name: 'object_id', description: 'World object receiving the effect.' },
-			{ name: 'effect_id', description: 'Identifier of the effect to grant.' },
+			{ name: 'effect_id', description: 'Effect id to grant.' },
 		],
-	},
-	music: {
-		optionalParameters: ['options'],
-		description: 'Starts or stops background music playback.',
-		parameters: [
-			{ name: 'id', description: 'Identifier of the music track to play, or null to stop playback.' },
-			{ name: 'options', optional: true, description: 'Optional playback options such as modulation settings.' },
-		],
-	},
-	pause_audio: {
-		description: 'Pauses all console audio playback.',
-		parameters: [],
-	},
-	print: {
-		optionalParameters: ['text'],
-		description: 'Prints text to the console output log. If no text is provided, a blank line is printed.',
-		parameters: [
-			{ name: 'text', optional: true, description: 'Text string to print to the console log.' },
-		],
-	},
-	define_bt: {
-		description: 'Registers a behaviour tree definition provided as a descriptor table.',
-		parameters: [
-			{ name: 'descriptor', description: 'Behaviour tree descriptor containing the root node definition.' },
-		],
-	},
-	register_prepared_fsm: {
-		optionalParameters: ['options'],
-		description: 'Registers a prepared finite-state machine blueprint with the runtime.',
-		parameters: [
-			{ name: 'id', description: 'Identifier for the FSM to register.' },
-			{ name: 'blueprint', description: 'FSM blueprint object produced by the builder.' },
-			{ name: 'options', optional: true, description: 'Optional registration settings, e.g. immediate setup.' },
-		],
-	},
-	define_world_object: {
-		description: 'Registers a world object descriptor that can be spawned later.',
-		parameters: [
-			{ name: 'descriptor', description: 'Descriptor with id, class/class_ref, components, fsms, behavior_trees, effects, tags, and defaults.' },
-		],
-	},
-	remove_component: {
-		description: 'Removes and disposes a component by id from a world object.',
-		parameters: [
-			{ name: 'object_id', description: 'World object identifier.' },
-			{ name: 'component_id', description: 'Component id or local id to remove.' },
-		],
+		returnType: 'void',
 	},
 	trigger_effect: {
-		optionalParameters: ['options'],
 		description: 'Triggers an effect for a world object. Payload is forwarded to the effect handler as intent.',
 		parameters: [
 			{ name: 'object_id', description: 'Identifier of the world object triggering the effect.' },
-			{ name: 'effect_id', description: 'Effect identifier to trigger.' },
-			{ name: 'options', optional: true, description: 'Optional request options such as payload data.' },
+			{ name: 'effect_id', description: 'Effect id to trigger.' },
+			{ name: 'options', optional: true, description: 'Optional trigger options, e.g. { payload = ... }.' },
 		],
+		returnType: 'ActionEffectTriggerResult',
+		returnDescription: 'One of "ok", "on_cooldown", or "failed".',
 	},
-	resume_audio: {
-		description: 'Resumes audio after a pause_audio call.',
-		parameters: [],
+	new_timeline: {
+		description: 'Creates a standalone Timeline instance from a definition.',
+		parameters: [
+			{ name: 'def', description: 'Timeline definition.' },
+		],
+		returnType: 'Timeline',
+		returnDescription: 'New Timeline instance.',
 	},
 	rget: {
 		description: 'Looks up a registered object by id in the global registry.',
 		parameters: [
 			{ name: 'id', description: 'Registry id to fetch.' },
 		],
-	},
-	registry: {
-		description: 'Returns the global registry instance.',
-		parameters: [],
-	},
-	registry_ids: {
-		description: 'Lists all registry ids currently registered.',
-		parameters: [],
-	},
-	rungate: {
-		description: 'Returns the global run gate group for coarse execution control.',
-		parameters: [],
+		returnType: 'Registerable | nil',
+		returnDescription: 'Registered object, or nil when not found.',
 	},
 	service: {
 		description: 'Fetches a registered service by id.',
 		parameters: [
 			{ name: 'id', description: 'Service identifier.' },
 		],
+		returnType: 'Service | nil',
+		returnDescription: 'Service instance, or nil when not found.',
 	},
-	services: {
-		description: 'Returns all registered services.',
+	emit: {
+		description: 'Broadcasts an engine event via the global event bus.',
+		parameters: [
+			{ name: 'event_name', description: 'Name of the event to emit.' },
+			{ name: 'emitter_or_id', optional: true, description: 'Optional emitter instance or id.' },
+			{ name: 'payload', optional: true, description: 'Optional event payload.' },
+		],
+		returnType: 'void',
+	},
+	emit_gameplay: {
+		description: 'Dispatches a gameplay-scoped event to listeners.',
+		parameters: [
+			{ name: 'event_name', description: 'Name of the gameplay event to emit.' },
+			{ name: 'emitter_or_id', description: 'Emitter instance or id.' },
+			{ name: 'payload', optional: true, description: 'Optional gameplay event payload.' },
+		],
+		returnType: 'void',
+	},
+	timelines: {
+		description: 'Lists all registered EventTimeline instances.',
 		parameters: [],
-	},
-	set_master_volume: {
-		description: 'Sets master audio volume (0-1).',
-		parameters: [
-			{ name: 'volume', description: 'Volume scalar between 0 and 1.' },
-		],
-	},
-	sfx: {
-		optionalParameters: ['options'],
-		description: 'Plays a sound effect by identifier.',
-		parameters: [
-			{ name: 'id', description: 'Identifier of the sound effect to play.' },
-			{ name: 'options', optional: true, description: 'Optional playback options such as pitch or volume modulation.' },
-		],
-	},
-	spawn_object: {
-		optionalParameters: ['overrides'],
-		description: 'Instantiates a world object from a registered descriptor.',
-		parameters: [
-			{ name: 'definition_id', description: 'Identifier of the registered world object definition.' },
-			{ name: 'overrides', optional: true, description: 'Optional overrides applied to the spawned instance.' },
-		],
-	},
-	spawn_world_object: {
-		optionalParameters: ['options'],
-		description: 'Creates a world object from the given class reference.',
-		parameters: [
-			{ name: 'class_ref', description: 'World object class reference or identifier.' },
-			{ name: 'options', optional: true, description: 'Optional spawn options such as position, orientation, or components.' },
-		],
-	},
-	spawn_textobject: {
-		optionalParameters: ['overrides'],
-		description: 'Instantiates and spawns a TextObject from a registered descriptor.',
-		parameters: [
-			{ name: 'definition_id', description: 'Identifier of the registered text object definition.' },
-			{ name: 'overrides', optional: true, description: 'Optional overrides applied to the spawned text object (e.g. id, dims, pos).' },
-		],
-	},
-	stat: {
-		description: 'Returns numeric stat values; indices 32-36 cover pointer position/buttons/wheel.',
-		parameters: [
-			{ name: 'index', description: 'Stat index to query.' },
-		],
-	},
-	stop_music: {
-		description: 'Stops music playback.',
-		parameters: [],
-	},
-	stop_sfx: {
-		description: 'Stops all sound effects.',
-		parameters: [],
-	},
-	new_timeline: {
-		description: 'Creates a standalone Timeline instance from a definition.',
-		parameters: [
-			{ name: 'definition', description: 'Timeline definition with id, frames, and optional ticks_per_frame/playback_mode/markers.' },
-		],
+		returnType: 'EventTimeline[]',
+		returnDescription: 'Array of EventTimeline instances.',
 	},
 	taskgate: {
 		description: 'Fetches or creates a named gate group for task coordination.',
 		parameters: [
 			{ name: 'name', description: 'Gate group identifier.' },
 		],
+		returnType: 'GateGroup',
+		returnDescription: 'Gate group instance.',
 	},
-	timelines: {
-		description: 'Lists all registered EventTimeline instances.',
+	rungate: {
+		description: 'Returns the global run gate group for coarse execution control.',
 		parameters: [],
+		returnType: 'GateGroup',
+		returnDescription: 'Global run gate group.',
 	},
-	world: {
-		description: 'Returns the active World instance.',
+	runtime: {
+		description: 'Returns the active VM runtime instance.',
 		parameters: [],
+		returnType: 'BmsxVMRuntime',
+		returnDescription: 'VM runtime singleton.',
 	},
-	world_object: {
-		description: 'Fetches a world object by id or null if not found.',
-		parameters: [
-			{ name: 'id', description: 'World object identifier.' },
-		],
-	},
-	world_objects: {
-		description: 'Returns all world objects currently registered in the World.',
+	reboot: {
+		description: 'Reboots the VM: reloads the program and resets the world.',
 		parameters: [],
+		returnType: 'void',
 	},
-	write: {
-		optionalParameters: ['x', 'y', 'colorindex'],
-		description: 'Writes text to screen. Coordinates are in pixels. If x and y are not provided, text will be written at the current cursor position.',
+	define_fsm: {
+		description: 'Registers a finite-state machine blueprint.',
 		parameters: [
-			{ name: 'text', optional: false, description: 'Text string to write to the screen.' },
-			{ name: 'x', optional: true, description: 'X coordinate to start writing the text at.' },
-			{ name: 'y', optional: true, description: 'Y coordinate to start writing the text at.' },
-			{ name: 'colorindex', optional: true, description: 'Palette index to use for the text color.' },
+			{ name: 'id', description: 'FSM id.' },
+			{ name: 'blueprint', description: 'FSM blueprint object.' },
 		],
+		returnType: 'void',
 	},
-	write_with_font: {
-		optionalParameters: ['x', 'y', 'colorindex', 'font'],
-		description: 'Writes text to screen using a specific font. Coordinates are in pixels. If x and y are not provided, text will be written at the current cursor position. If font is not provided, the default font will be used.',
+	define_bt: {
+		description: 'Defines a behaviour tree (currently not implemented in the VM API).',
 		parameters: [
-			{ name: 'text', optional: false, description: 'Text string to write to the screen.' },
-			{ name: 'x', optional: true, description: 'X coordinate to start writing the text at.' },
-			{ name: 'y', optional: true, description: 'Y coordinate to start writing the text at.' },
-			{ name: 'colorindex', optional: true, description: 'Palette index to use for the text color.' },
-			{ name: 'fontid', optional: true, description: 'Identifier of the font to use for rendering the text.' },
+			{ name: '_descriptor', description: 'Behaviour tree descriptor.' },
 		],
+		returnType: 'void',
 	},
-} as const;
+} as const satisfies Record<VMApiMemberName, VMApiMethodMetadata>;

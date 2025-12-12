@@ -2,7 +2,7 @@ import { $ } from '../../core/game';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, cutSelectionToClipboard, insertText, pasteFromClipboard, writeClipboard } from './text_editing_and_selection';
 import { resetBlink } from './render/render_caret';
-import { activeSearchMatchCount, applySearchSelection, closeSearch, ensureSearchSelectionVisible, focusEditorFromSearch, jumpToNextMatch, jumpToPreviousMatch, moveSearchSelection, onSearchQueryChanged, openSearch, searchPageSize } from './editor_search';
+import { activeSearchMatchCount, applySearchSelection, closeSearch, ensureSearchSelectionVisible, focusEditorFromSearch, jumpToNextMatch, jumpToPreviousMatch, onSearchQueryChanged, openSearch, searchPageSize, stepSearchSelection } from './editor_search';
 import { ide_state } from './ide_state';
 import { ESCAPE_KEY } from './constants';
 import type { MenuId, PointerSnapshot, ResourceViewerState, RuntimeErrorOverlay, TopBarButtonId } from './types';
@@ -218,7 +218,7 @@ export class InputController {
 	// Apply input overrides (debug hotkeys + keyboard capture)
 	public applyOverrides(active: boolean, captureKeys: readonly string[]): void {
 		const input = $.input;
-		input.setDebugHotkeysPaused(active);
+		input.debugHotkeysPaused = active;
 		for (let i = 0; i < captureKeys.length; i++) {
 			input.setKeyboardCapture(captureKeys[i], active);
 		}
@@ -1863,14 +1863,7 @@ export function handleSearchInput(): void {
 	if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
 		if (hasResults) {
-			if (shiftDown) {
-				moveSearchSelection(-1, { wrap: true, preview: previewLocal });
-			} else if (ide_state.searchCurrentIndex === -1) {
-				ide_state.searchCurrentIndex = 0;
-			} else {
-				moveSearchSelection(1, { wrap: true, preview: previewLocal });
-			}
-			applySearchSelection(ide_state.searchCurrentIndex);
+			stepSearchSelection(shiftDown ? -1 : 1, { wrap: true, keepSearchActive: true });
 		} else if (shiftDown) {
 			jumpToPreviousMatch();
 		} else {
@@ -1890,40 +1883,35 @@ export function handleSearchInput(): void {
 	if (hasResults) {
 		if (shouldRepeatKeyFromPlayer('ArrowUp')) {
 			consumeIdeKey('ArrowUp');
-			moveSearchSelection(-1, { preview: previewLocal });
+			stepSearchSelection(-1, { preview: previewLocal });
 			return;
 		}
 		if (shouldRepeatKeyFromPlayer('ArrowDown')) {
 			consumeIdeKey('ArrowDown');
-			moveSearchSelection(1, { preview: previewLocal });
+			stepSearchSelection(1, { preview: previewLocal });
 			return;
 		}
 		if (shouldRepeatKeyFromPlayer('PageUp')) {
 			consumeIdeKey('PageUp');
-			moveSearchSelection(-searchPageSize(), { preview: previewLocal });
+			stepSearchSelection(-searchPageSize(), { preview: previewLocal });
 			return;
 		}
 		if (shouldRepeatKeyFromPlayer('PageDown')) {
 			consumeIdeKey('PageDown');
-			moveSearchSelection(searchPageSize(), { preview: previewLocal });
+			stepSearchSelection(searchPageSize(), { preview: previewLocal });
 			return;
 		}
 		if (isKeyJustPressed('Home')) {
 			consumeIdeKey('Home');
-			ide_state.searchCurrentIndex = hasResults ? 0 : -1;
-			ensureSearchSelectionVisible();
-			if (previewLocal) {
-				applySearchSelection(ide_state.searchCurrentIndex, { preview: true });
+			if (hasResults) {
+				applySearchSelection(0, { preview: true, keepSearchActive: true });
 			}
 			return;
 		}
 		if (isKeyJustPressed('End')) {
 			consumeIdeKey('End');
-			const lastIndex = hasResults ? activeSearchMatchCount() - 1 : -1;
-			ide_state.searchCurrentIndex = lastIndex;
-			ensureSearchSelectionVisible();
-			if (previewLocal) {
-				applySearchSelection(ide_state.searchCurrentIndex, { preview: true });
+			if (hasResults) {
+				applySearchSelection(activeSearchMatchCount() - 1, { preview: true, keepSearchActive: true });
 			}
 			return;
 		}
@@ -1948,13 +1936,9 @@ export function handleLineJumpInput(): void {
 		openLineJump();
 		return;
 	}
-	if (isKeyJustPressed('Enter')) {
-		consumeIdeKey('Enter');
-		applyLineJump();
-		return;
-	}
-	if (!shiftDown && isKeyJustPressed('NumpadEnter')) {
+	if (!shiftDown && (isKeyJustPressed('NumpadEnter') || isKeyJustPressed('Enter'))) {
 		consumeIdeKey('NumpadEnter');
+		consumeIdeKey('Enter');
 		applyLineJump();
 		return;
 	}

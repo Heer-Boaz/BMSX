@@ -175,6 +175,8 @@ export type ParameterHintState = {
 	argumentIndex: number;
 	paramDescriptions?: readonly (string)[];
 	methodDescription?: string;
+	returnType?: string;
+	returnDescription?: string;
 };
 
 export type EditorDiagnosticSeverity = 'error' | 'warning';
@@ -199,6 +201,8 @@ export type ApiCompletionMetadata = {
 	optionalParams?: readonly string[];
 	parameterDescriptions?: readonly (string)[];
 	description?: string;
+	returnType?: string;
+	returnDescription?: string;
 };
 
 export type VisualLineSegment = {
@@ -402,7 +406,6 @@ export type DiagnosticsCacheEntry = {
 
 export type SearchComputationJob = {
 	query: string;
-	version: number;
 	nextRow: number;
 	matches: SearchMatch[];
 	firstMatchAfterCursor: number;

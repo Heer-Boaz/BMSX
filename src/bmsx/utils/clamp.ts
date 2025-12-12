@@ -14,26 +14,22 @@ export function clamp01(x: number): number {
 	return x;
 }
 
-export function fallbackclamp(value: number, min: number, max: number, fallback: number): number {
+export function clamp_fallback(value: number, min: number, max: number, fallback: number): number {
 	if (!Number.isFinite(value)) return fallback;
 	return clamp(value, min, max);
 }
 
-export function safeclamp(value: number, min: number, max: number): number {
+export function clamp_safe(value: number, min: number, max: number): number {
 	if (!Number.isFinite(value)) return min;
 	return clamp(value, min, max);
 }
 
-export function wrapClamp(value: number, min: number, max: number): number {
+export function clamp_wrap(value: number, min: number, max: number): number {
 	const range = max - min + 1;
-	if (range <= 0) return min; // degenerate case
-	let v = value;
-	while (v < min) v += range;
-	while (v > max) v -= range;
-	return v;
+	return ((value % range) + range) % range + min;
 }
 
-export function wrapClamp01(x: number): number {
+export function clamp_wrap01(x: number): number {
 	let v = x;
 	while (v < 0) v += 1;
 	while (v > 1) v -= 1;
