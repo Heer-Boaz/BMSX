@@ -671,10 +671,17 @@ export async function applyWorkspaceOverridesToCart(params: { cart: BmsxCartridg
 			continue;
 		}
 
-		if (asset.src !== winner.record.source) {
-			asset.src = winner.record.source;
+		// Keep `path2lua` and `chunk2lua` in sync.
+		// The VM executes sources via `$.cart.chunk2lua[...]` (see `BmsxVMRuntime.resourceSourceForChunk()`), while
+		// workspace merges/overrides are keyed by path via `path2lua[...]`. These two maps are expected to point at
+		// the same `RomLuaAsset` objects, but a naive cart clone can break that identity, so we always set both here.
+		const nextSource = winner.record.source;
+		const chunkBinding = cart.chunk2lua[asset.chunk_name];
+		if (asset.src !== nextSource || chunkBinding.src !== nextSource) {
 			changed.add(filePath);
 		}
+		asset.src = nextSource;
+		chunkBinding.src = nextSource;
 
 		if (!root) {
 			continue;

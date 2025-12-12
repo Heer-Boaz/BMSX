@@ -1112,9 +1112,8 @@ function changeCasingLuaSourceExceptStrings(source: string): string {
  * @param rom_name The name of the ROM pack to build the list for.
  * @returns An array of resources.
  */
-export async function getResourcesList(resMetaList: Resource[], rom_name: string, options: { includeCode?: boolean } = {}): Promise<Resource[]> {
+export async function getResourcesList(resMetaList: Resource[]): Promise<Resource[]> {
 	let resources: Array<Resource> = [];
-	const includeCode = options.includeCode !== false;
 
 	/**
 	 * Loads an image from the specified resource object.
@@ -1178,21 +1177,6 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 				};
 		}
 	});
-	if (includeCode) {
-		resourcePromises.push((async () => {
-			const megarom_filename = `${rom_name}.js`;
-			const filepath = `./rom/${megarom_filename}`;
-			// Manually add the ROM source code to the list
-			return {
-				buffer: await readFile(filepath),
-				filepath: filepath,
-				name: megarom_filename,
-				ext: '.js',
-				type: 'code',
-				id: 1,
-			};
-		})());
-	}
 
 	resources = await Promise.all(resourcePromises);
 

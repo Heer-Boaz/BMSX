@@ -1859,7 +1859,7 @@ export class BmsxVMRuntime extends Service {
 		this.installFunctionRedirectsForChunk(effectiveModuleId, environment, definitions);
 		this.luaJsBridge.wrapDynamicChunkFunctions(effectiveModuleId, environment, chunkName);
 		this.luaChunkEnvironmentsByChunkName.set(chunkName, environment);
-		this.luaChunkEnvironmentsByPath.set(asset.source_path, environment);
+		this.luaChunkEnvironmentsByPath.set(asset.normalized_source_path, environment);
 	}
 
 	private collectChunkFunctionDefinitionKeys(definitions: ReadonlyArray<LuaDefinitionInfo>): Set<string> {
@@ -2039,6 +2039,9 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	public resourceSourceForChunk(chunkName: string): string {
+		// The runtime reads sources from `$.cart.chunk2lua`. Keep the cart's `chunk2lua` and `path2lua` indices
+		// pointing at the same `RomLuaAsset` objects (see `cloneCartForRuntime()` in `core/game.ts`), or ensure that
+		// any code mutating sources updates both indices; otherwise the VM can execute stale code after an override.
 		const binding = $.cart.chunk2lua[chunkName];
 		if (!binding) return null; // This can happen for non-existent chunks, such as debugger tabs that don't refer to real chunks
 		const cached = getWorkspaceCachedSource(binding.normalized_source_path);

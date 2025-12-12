@@ -1205,6 +1205,7 @@ class SemanticBuilder {
 
 	private assignIndex(indexExpression: LuaIndexExpression): AssignmentTargetInfo {
 		const baseInfo = this.visitExpression(indexExpression.base, { tableBaseDecl: null, tableBasePath: null });
+		this.visitExpression(indexExpression.index, { tableBaseDecl: null, tableBasePath: null });
 		const namePath = baseInfo ? baseInfo.namePath : extractNamePath(indexExpression.base);
 		return {
 			decl: baseInfo ? baseInfo.decl : null,
@@ -1297,6 +1298,7 @@ class SemanticBuilder {
 
 	private handleIndexExpression(indexExpression: LuaIndexExpression, context: ExpressionContext): ResolvedNamePath {
 		this.visitExpression(indexExpression.base, context);
+		this.visitExpression(indexExpression.index, { tableBaseDecl: null, tableBasePath: null });
 		return null;
 	}
 

@@ -12,7 +12,7 @@ import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_factory";
 import type { GameViewHost, Platform, PlatformExitEvent } from '../platform';
 import { setMicrotaskQueue } from '../platform';
-import { asset_id, Identifiable, Identifier, Registerable, RomPack, type vec3, type vec2, GAME_FPS } from "../rompack/rompack";
+import { asset_id, Identifiable, Identifier, Registerable, RomPack, type RomLuaAsset, type vec3, type vec2, GAME_FPS } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
 import { Service } from "./service";
@@ -71,6 +71,47 @@ const REWIND_BUFFER_WRITE_FREQUENCY = 1; // Frames
 
 // Gate to block the game update/run loop (used when loading/hydrating game state)
 export const runGate: GateGroup = taskGate.group('run:main');
+
+/**
+ * Creates the mutable runtime cart (`$.cart`) from the packed baseline (`$.rompack.cart`).
+ *
+ * We need this separation because the IDE/workspace can apply overrides, hot-reload sources, and otherwise mutate
+ * the active cart while the ROM pack should remain pristine (e.g. for "reset workspace" or comparing against ROM).
+ *
+ * Important: The cart stores the same `RomLuaAsset` objects in both `chunk2lua` and `path2lua` for fast lookup.
+ * A generic deep clone duplicates those objects independently per map, breaking identity between the indices.
+ * That identity is relied on across the VM + workspace pipeline (edits/overrides can originate from either map).
+ */
+function cloneCartForRuntime(cart: RomPack['cart']): RomPack['cart'] {
+	const clones = new Map<RomLuaAsset, RomLuaAsset>();
+	const cloneAsset = (asset: RomLuaAsset): RomLuaAsset => {
+		const existing = clones.get(asset);
+		if (existing) {
+			return existing;
+		}
+		const cloned = deep_clone(asset);
+		clones.set(asset, cloned);
+		return cloned;
+	};
+
+	const clonedCart: RomPack['cart'] = {
+		...cart,
+		chunk2lua: {},
+		path2lua: {},
+	};
+
+	for (const chunkName of Object.keys(cart.chunk2lua)) {
+		const asset = cart.chunk2lua[chunkName];
+		clonedCart.chunk2lua[chunkName] = cloneAsset(asset);
+	}
+
+	for (const path of Object.keys(cart.path2lua)) {
+		const asset = cart.path2lua[path];
+		clonedCart.path2lua[path] = cloneAsset(asset);
+	}
+
+	return clonedCart;
+}
 
 /**
  * Represents the main game loop and manages the game state.
@@ -379,7 +420,7 @@ export class Game {
 		this._debug = debug ?? this._debug;
 		$debug = this._debug;
 
-		this._cart = deep_clone(rompack.cart); // Clone the cart to allow workspace overrides without modifying the original rompack
+		this._cart = cloneCartForRuntime(rompack.cart); // Mutable runtime cart: keep ROM-pack cart pristine.
 		GameView.imgassets = rompack.img;
 		EventEmitter.instance; // Init event emitter
 		Input.initialize(startingGamepadIndex); // Init input module

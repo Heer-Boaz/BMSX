@@ -873,9 +873,7 @@ async function main() {
 			}));
 			await progress.taskCompleted();
 			// Build resources
-			let resources = await progress.runWithDetail('Load resources', () => getResourcesList(romResMetaList, rom_name, {
-				includeCode: isEngineMode || shouldBundleCartCode,
-			}));
+			let resources = await progress.runWithDetail('Load resources', () => getResourcesList(romResMetaList));
 			await progress.taskCompleted();
 
 			if (GENERATE_AND_USE_TEXTURE_ATLAS) {
