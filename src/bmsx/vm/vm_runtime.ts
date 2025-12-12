@@ -1009,7 +1009,7 @@ export class BmsxVMRuntime extends Service {
 		// resume starts clean and can report new errors normally.
 		this.editor.clearRuntimeErrorOverlay();
 		this.luaInterpreter.clearLastFaultEnvironment();
-		this.luaInterpreter.clearLastFaultCallStack();
+		this.clearFaultSnapshot();
 
 		// Also clear dedupe set so subsequent errors surface again after resume.
 		this.handledLuaErrors = new WeakSet<object>();
@@ -1017,7 +1017,6 @@ export class BmsxVMRuntime extends Service {
 		this.luaRuntimeFailed = false;
 		publishOverlayFrame(null);
 		this.resumeLuaProgramState(snapshot);
-		this.clearFaultSnapshot();
 		this.luaVmInitialized = this.luaInterpreter !== null;
 	}
 
@@ -1099,7 +1098,6 @@ export class BmsxVMRuntime extends Service {
 
 	private resumeLuaProgramState(snapshot: BmsxVMState): void {
 		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
-		// const shouldRunInit = !savedRuntimeFailed;
 		const binding = snapshot.luaChunkName;
 		let source: string;
 		try {
@@ -1117,9 +1115,7 @@ export class BmsxVMRuntime extends Service {
 		}
 		this.refreshLuaModulesOnResume(binding);
 		clearNativeMemberCompletionCache();
-		// if (shouldRunInit) {
-		// this.runLuaLifecycleHandler('init');
-		// }
+		this.runLuaLifecycleHandler('init');
 		this.restoreVmState(snapshot);
 		if (savedRuntimeFailed) {
 			this.luaRuntimeFailed = true;

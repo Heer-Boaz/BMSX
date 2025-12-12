@@ -371,7 +371,7 @@ export class LuaInterpreter {
 	private readonly packageTable: LuaTable;
 	private readonly packageLoaded: LuaTable;
 	private _requireHandler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) = null;
-	private _outputHandler: ((text: string) => void) = (text: string) => { console.log(text); };
+	private _outputHandler: ((text: string) => void) = (text: string) => { console.log(text); BmsxVMRuntime.instance.terminal.appendStdout(text); };
 	private readonly frameStack: ExecutionFrame[] = [];
 	private activeStatementRange: LuaSourceRange = null;
 	private activeStatementFrame: StatementsFrame = null;
@@ -638,6 +638,8 @@ export class LuaInterpreter {
 
 	public clearLastFaultEnvironment(): void {
 		this._lastFaultEnvironment = null;
+		this._lastFaultCallStack = [];
+		this.lastFaultDepth = 0;
 	}
 
 	public markFaultEnvironment(): void {
@@ -647,11 +649,6 @@ export class LuaInterpreter {
 
 	public get lastFaultCallStack(): ReadonlyArray<LuaCallFrame> {
 		return this._lastFaultCallStack;
-	}
-
-	public clearLastFaultCallStack(): void {
-		this._lastFaultCallStack = [];
-		this.lastFaultDepth = 0;
 	}
 
 	public resolveValueName(value: LuaValue): string | undefined {

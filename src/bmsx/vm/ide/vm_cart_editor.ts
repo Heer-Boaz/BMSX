@@ -2637,12 +2637,18 @@ export function performHotReloadAndResume(): boolean {
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
 	clearExecutionStopHighlights();
 	BmsxVMRuntime.instance.deactivateEditor();
+	console.log('[IDE] Performing hot-reload and resume');
 	scheduleRuntimeTask(async () => {
+		console.log('[IDE] Applying workspace overrides to cart before resume');
 		await applyWorkspaceOverridesToCart({ cart: $.cart, storage: $.platform.storage, includeServer: true });
+		console.log('[IDE] Capturing runtime snapshot for resume');
 		const snapshot = runtime.captureCurrentState();
+		console.log('[IDE] Clear execution stop highlights before resume');
 		snapshot.luaRuntimeFailed = false;
+		console.log('[IDE] Resuming from captured snapshot');
 		await runtime.resumeFromSnapshot(snapshot);
 		if (shouldUpdateGeneration) {
+			console.log('[IDE] Updating applied generation after resume');
 			ide_state.appliedGeneration = targetGeneration;
 		}
 		$.paused = false;

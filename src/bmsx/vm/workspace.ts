@@ -737,13 +737,13 @@ async function clearWorkspaceDirtyFiles(cart: BmsxCartridge, storage: StorageSer
 export async function resetWorkspaceDirtyBuffersAndStorage(): Promise<void> {
 	const runtime = BmsxVMRuntime.instance;
 	await clearWorkspaceDirtyFiles($.rompack.cart, runtime.storageService);
-	runtime.editor?.clearWorkspaceDirtyBuffers();
+	runtime.editor.clearWorkspaceDirtyBuffers();
 }
 
 export async function nukeWorkspaceState(): Promise<void> {
 	const runtime = BmsxVMRuntime.instance;
 	await clearWorkspaceArtifacts($.rompack.cart, runtime.storageService);
-	runtime.editor?.clearWorkspaceDirtyBuffers();
+	runtime.editor.clearWorkspaceDirtyBuffers();
 }
 
 export function listResources(): VMResourceDescriptor[] {
