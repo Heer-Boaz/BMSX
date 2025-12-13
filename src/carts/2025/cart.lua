@@ -20,16 +20,15 @@ local states = {
 }
 
 local gamestate = nil
-local keuzestate = 'A'
 
 local function draw_title()
-	sprite('titel', 0, 0, 0)
+	sprite('titel', 0, 0, -1)
 end
 
 Bg = nil
 local function draw_game()
 	if bg == nil then return end
-	sprite(bg, 0, 0, 0)
+	sprite(bg, 0, 0, 100)
 end
 
 local next_state = nil
@@ -58,7 +57,7 @@ function init()
 		states = {
 			boot = {
 				tick = function(self)
-					return '/title'
+					return '/player_choice'
 				end,
 			},
 			title = {
@@ -112,29 +111,38 @@ function init()
 					gamestate = 'game'
 					choice_index = 1
 					local tekstding = rget('textbox')
-					tekstding.set_text(array({'asfasassdasdasadsads', 'sdfsdfdsf', 'sfdsfdsf'}))
+					local choices = blaat[self.story_state].keuzes
+					local choice_lines = {}
+					for i = 1, #choices do
+						choice_lines[i] = choices[i].tekst
+					end
+					tekstding.set_text(array(choice_lines))
 				end,
 				tick = function(self)
 					local tekstding = rget('textbox')
 					tekstding.type_next()
+					if not tekstding.is_typing then
+						tekstding.highlighted_line_index = choice_index - 1
+					else
+						tekstding.highlighted_line_index = nil
+					end
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
 					['up[jp]'] = {
 						go = function(self)
-							local next_index = math.max(1, choice_index - 1)
-							choice_index = next_index
+							choice_index = math.max(1, choice_index - 1)
 						end,
 					},
 					['down[jp]'] = {
 						go = function(self)
-							local next_index = math.min(#blaat[keuzestate].keuzes, choice_index + 1)
-							choice_index = next_index
+							local st = self.story_state
+							choice_index = math.min(#blaat[st].keuzes, choice_index + 1)
 						end,
 					},
 					['a[jp]'] = {
 						go = function(self)
-							local selected_option = blaat[keuzestate].keuzes[choice_index].handle
+							local selected_option = blaat[self.story_state].keuzes[choice_index].handle
 							local result = selected_option()
 							if result then return result end
 						end,
@@ -149,6 +157,7 @@ function init()
 		class = state_svc,
 		fsms = { 'state_fsm' },
 		defaults = {
+			story_state = 'a',
 		},
 	})
 end
@@ -156,9 +165,10 @@ end
 function new_game()
 	local svc = create_service('state_def')
 	svc.activate()
+	local horizontal_margin = display_width() / 10
 	spawn_textobject('textbox', {
-		dimensions = { left = 0, right = display_width(), top = display_height() - (display_height() / 4), bottom = display_height() },
-		pos = { z = 10000 },
+		dimensions = { left = horizontal_margin, right = display_width() - horizontal_margin, top = display_height() - (display_height() / 4), bottom = display_height() },
+		pos = { z = 1000 },
 	})
 end
 
