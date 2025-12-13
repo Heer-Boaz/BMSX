@@ -9,7 +9,13 @@ local text_prompt_id = 'p3.text.prompt'
 local text_transition_id = 'p3.text.transition'
 
 local overgang_timeline_id = 'overgang'
-local overgang_frame_count = 60
+local overgang_in_frames = 24
+local overgang_hold_frames = 48
+local overgang_out_frames = 24
+local overgang_frame_count = overgang_in_frames + overgang_hold_frames + overgang_out_frames
+local overgang_ticks_per_frame = 32
+local overgang_fade_out_frames = 18
+local overgang_fade_in_frames = 18
 
 local story = {
 	title = {
@@ -129,17 +135,25 @@ local story = {
 	},
 }
 
+
+current_music = nil
 local function playmusic(musicid)
-	if musicid ~= nil then
+	if musicid ~= nil and musicid ~= current_music then
 		$.playaudio(musicid)
+		return
 	else
 		$.stopmusic()
 	end
+	current_music = musicid
 end
 
 local function set_text_lines(text_object_id, lines, typed)
 	local text_obj = world_object(text_object_id)
-	text_obj.set_text(array(lines))
+	if type(lines) == 'table' then
+		text_obj.set_text(array(lines))
+	else
+		text_obj.set_text(lines)
+	end
 	if typed then
 		return
 	end
@@ -219,7 +233,6 @@ local function build_director_fsm()
 			boot = {
 				entering_state = function(self)
 					self.node_id = 'title'
-					self.current_music = nil
 					self.stats = { courage = 0, charm = 0, academics = 0 }
 					self.inline_pages = nil
 					self.inline_next = nil
@@ -258,7 +271,7 @@ local function build_director_fsm()
 							return new_timeline({
 								id = overgang_timeline_id,
 								frames = frames,
-								ticks_per_frame = 16,
+								ticks_per_frame = overgang_ticks_per_frame,
 								playback_mode = 'once',
 							})
 						end,
@@ -275,16 +288,46 @@ local function build_director_fsm()
 					clear_text(text_prompt_id)
 					set_text_lines(text_transition_id, { node.label }, false)
 					local transition_text = world_object(text_transition_id)
+					self.transition_center_x = transition_text.centered_block_x
+					self.transition_target_bg = story[node.next].bg
 					transition_text.centered_block_x = display_width()
+					local bg = world_object(bg_id)
+					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				end,
 				on = {
 					['timeline.frame.' .. overgang_timeline_id] = {
 						go = function(self, _state, event)
 							local frame_index = event.frame_index
-							local u = frame_index / (overgang_frame_count - 1)
+							if frame_index == (overgang_fade_out_frames - 1) then
+								self:apply_background(self.transition_target_bg)
+							end
+							local fade_in_start = overgang_frame_count - overgang_fade_in_frames
+							local c = 1
+							if frame_index < overgang_fade_out_frames then
+								local u = frame_index / (overgang_fade_out_frames - 1)
+								c = 1 - u
+							elseif frame_index < fade_in_start then
+								c = 0
+							else
+								local u = (frame_index - fade_in_start) / (overgang_fade_in_frames - 1)
+								c = u
+							end
+							local bg = world_object(bg_id)
+							bg.colorize = { r = c, g = c, b = c, a = 1 }
+							local center_x = self.transition_center_x
 							local start_x = display_width()
 							local end_x = -display_width()
-							local x = start_x + (end_x - start_x) * u
+							local x = start_x
+							if frame_index < overgang_in_frames then
+								local u = frame_index / (overgang_in_frames - 1)
+								x = start_x + (center_x - start_x) * u
+							elseif frame_index < (overgang_in_frames + overgang_hold_frames) then
+								x = center_x
+							else
+								local out_index = frame_index - (overgang_in_frames + overgang_hold_frames)
+								local u = out_index / (overgang_out_frames - 1)
+								x = center_x + (end_x - center_x) * u
+							end
 							local transition_text = world_object(text_transition_id)
 							transition_text.centered_block_x = x
 						end,
@@ -299,6 +342,8 @@ local function build_director_fsm()
 					},
 				},
 				leaving_state = function(self)
+					local bg = world_object(bg_id)
+					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
 					clear_text(text_transition_id)
 				end,
 			},
@@ -442,11 +487,11 @@ local function register_director()
 			node_id = 'title',
 			page_index = 1,
 			choice_index = 1,
-			current_music = nil,
 			stats = { courage = 0, charm = 0, academics = 0 },
 			inline_pages = nil,
 			inline_next = nil,
 			pages = nil,
+			transition_center_x = 0,
 		},
 	})
 end
