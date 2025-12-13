@@ -1,37 +1,39 @@
-local blaat = {
-	a = {
+Bg = nil
+
+blaat = {
+	[1] = {
 		tekst = array({ 'Pakjesavond 5 december...', 'Een moderne slaapkamer.', 'Druk [A] om te beginnen.' }),
 		keuzes = { -- Choices here => show choice menu instead of going immediately to next state
 			{ tekst = 'Ga naar beneden.', handle = function() return '/game' end },
 			{ tekst = 'Blijf liggen.', handle = function() return '/staybed' end },
 		},
 	},
-	b = {
+	[2] = {
 		tekst = array({ 'Je ligt in bed en probeert te slapen.', 'Maar je hoort iets vreemds beneden...', 'Druk [A] om te gaan kijken.' }),
 		keuzes = nil, -- No choices here => continue story
 		next_state = '/downstairs', -- Next state to go to after text is done and [A] is pressed
 	},
 }
 
-local states = {
+states = {
 	title = 'title',
 	game = 'game',
 	overgang = 'overgang',
 }
 
-local gamestate = nil
+gamestate = nil
 
 local function draw_title()
-	sprite('titel', 0, 0, -1)
+	bg = 'titel'
+	draw_game()
 end
 
-Bg = nil
 local function draw_game()
 	if bg == nil then return end
-	sprite(bg, 0, 0, 100)
+	sprite(bg, 0, 0, 0)
 end
 
-local next_state = nil
+next_state = nil
 local overgang_x = 0
 local overgang_y = 64
 
@@ -157,7 +159,7 @@ function init()
 		class = state_svc,
 		fsms = { 'state_fsm' },
 		defaults = {
-			story_state = 'a',
+			story_state = 1,
 		},
 	})
 end
