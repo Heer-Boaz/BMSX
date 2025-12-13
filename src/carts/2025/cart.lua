@@ -234,8 +234,9 @@ local function build_director_fsm()
 				entering_state = function(self)
 					self.node_id = 'title'
 					self.stats = { courage = 0, charm = 0, academics = 0 }
-					self.inline_pages = nil
-					self.inline_next = nil
+					self.inline_pages = {}
+					self.inline_next = ''
+					self.skip_combat_fade_in = false
 					clear_text(text_main_id)
 					clear_text(text_choice_id)
 					clear_text(text_prompt_id)
@@ -243,24 +244,24 @@ local function build_director_fsm()
 					return '/run_node'
 				end,
 			},
-				run_node = {
-					entering_state = function(self)
-						local node = story[self.node_id]
-						if node.kind == 'transition' then
-							return '/transition'
-						end
-						if node.kind == 'dialogue' or node.kind == 'dialogue_inline' then
-							return '/dialogue'
-						end
-						if node.kind == 'bg_only' then
-							return '/bg_only'
-						end
-						if node.kind == 'choice' then
-							return '/choice'
-						end
-						if node.kind == 'combat' then
-							if self.skip_combat_fade_in then
-							self.skip_combat_fade_in = nil
+			run_node = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					if node.kind == 'transition' then
+						return '/transition'
+					end
+					if node.kind == 'dialogue' or node.kind == 'dialogue_inline' then
+						return '/dialogue'
+					end
+					if node.kind == 'bg_only' then
+						return '/bg_only'
+					end
+					if node.kind == 'choice' then
+						return '/choice'
+					end
+					if node.kind == 'combat' then
+						if self.skip_combat_fade_in then
+							self.skip_combat_fade_in = false
 							return '/combat'
 						end
 						return '/combat_fade_in'
@@ -548,8 +549,8 @@ local function build_director_fsm()
 							local node = story[self.node_id]
 							if node.kind == 'dialogue_inline' then
 								self.node_id = self.inline_next
-								self.inline_pages = nil
-								self.inline_next = nil
+								self.inline_pages = {}
+								self.inline_next = ''
 							else
 								self.node_id = node.next
 							end
@@ -648,12 +649,13 @@ local function register_director()
 			page_index = 1,
 			choice_index = 1,
 			stats = { courage = 0, charm = 0, academics = 0 },
-			inline_pages = nil,
-			inline_next = nil,
-			pages = nil,
+			inline_pages = {},
+			inline_next = '',
+			pages = {},
 			transition_center_x = 0,
-			combat_fade_target_bg = nil,
-			skip_combat_fade_in = nil,
+			transition_target_bg = story.title.bg,
+			combat_fade_target_bg = story.title.bg,
+			skip_combat_fade_in = false,
 		},
 	})
 end
