@@ -59,7 +59,7 @@ function init()
 		states = {
 			boot = {
 				tick = function(self)
-					return '/player_choice'
+					return '/title'
 				end,
 			},
 			title = {
