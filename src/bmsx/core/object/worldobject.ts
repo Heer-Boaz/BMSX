@@ -17,7 +17,8 @@ import { Collider2DComponent } from '../../component/collisioncomponents';
 import { V3 } from '../../render/3d/math3d';
 import type { SpawnReason } from '../world';
 import { ActionEffectComponent } from '../../component/actioneffectcomponent';
-import { TimelineComponent, } from '../../component/timeline_component';
+import { TimelineComponent, type TimelinePlayOptions } from '../../component/timeline_component';
+import type { Timeline, TimelineDefinition } from '../../timeline/timeline';
 
 const DEFAULT_VISIBLE = true;
 const DEFAULT_POSITION_VALUES: [number, number, number] = [0, 0, 0];
@@ -230,6 +231,22 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	/** Shorthand getter for retrieving the timeline component attached to this object. */
 	public get timelines(): TimelineComponent {
 		return this.get_first_component(TimelineComponent);
+	}
+
+	public define_timeline(definition: Timeline | TimelineDefinition): void {
+		this.timelines.define(definition as Timeline | TimelineDefinition);
+	}
+
+	public play_timeline(id: string, opts?: TimelinePlayOptions): void {
+		this.timelines.play(id, opts);
+	}
+
+	public stop_timeline(id: string): void {
+		this.timelines.stop(id);
+	}
+
+	public get_timeline<T = Timeline>(id: string): Timeline<T> {
+		return this.timelines.get<T>(id);
 	}
 
 	/** Shorthand getter for retrieving the action-effect component attached to this object. */
