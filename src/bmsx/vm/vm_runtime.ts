@@ -56,20 +56,20 @@ import { getBasePipelineSpecOverrideForIdeOrTerminal, ideExtSpec, terminalExtSpe
 import type { ParsedLuaChunk } from './ide/lua_parse';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
-	'console_left',
-	'console_right',
-	'console_up',
-	'console_down',
-	'console_b',
-	'console_a',
-	'console_x',
-	'console_y',
-	'console_start',
-	'console_select',
-	'console_rt',
-	'console_lt',
-	'console_rb',
-	'console_lb',
+	'left',
+	'right',
+	'up',
+	'down',
+	'b',
+	'a',
+	'x',
+	'y',
+	'start',
+	'select',
+	'rt',
+	'lt',
+	'rb',
+	'lb',
 ];
 
 // Flip back to 'msx' to restore default font in vm/editor

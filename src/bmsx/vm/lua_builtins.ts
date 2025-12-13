@@ -135,7 +135,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 			}
 			const actionDefinition = `${action}${modifier}`;
 			try {
-				const triggered = api.check_action_state(playerIndex, actionDefinition);
+				const triggered = api.action_triggered(actionDefinition, playerIndex);
 				return [triggered];
 			} catch (error) {
 				if (error instanceof Error && /unknown actions/i.test(error.message)) {

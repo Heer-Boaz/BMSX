@@ -88,11 +88,12 @@ export type VMLuaHoverRequest = {
 	asset_id?: string;
 };
 
-export type VMLuaMemberCompletionRequest = {
+export type LuaMemberCompletionRequest = {
+	objectName?: string;
+	prefix?: string;
 	chunkName: string;
-	expression: string;
+	expression?: string;
 	operator: '.' | ':';
-	asset_id?: string;
 };
 
 export type VMLuaMemberCompletion = {

@@ -162,10 +162,10 @@ export class BmsxVMApi {
 		return $.input.getPlayerInput(1).inputHandlers.keyboard;
 	}
 
-	private get_player_input(): PlayerInput {
-		const playerInput = Input.instance.getPlayerInput(this.playerindex);
+	public get_player_input(playerindex?: number): PlayerInput {
+		const playerInput = Input.instance.getPlayerInput(playerindex ?? this.playerindex);
 		if (!playerInput) {
-			throw new Error(`Player input handler for index ${this.playerindex} is not initialised.`);
+			throw new Error(`Player input handler for index ${playerindex ?? this.playerindex} is not initialised.`);
 		}
 		return playerInput;
 	}
@@ -371,22 +371,8 @@ export class BmsxVMApi {
 		}
 	}
 
-	public check_action_state(playerindex: number, actiondefinition: string): boolean {
-		if (!Number.isInteger(playerindex) || playerindex <= 0) {
-			throw new Error('check_action_state requires a positive integer player index.');
-		}
-		if (typeof actiondefinition !== 'string') {
-			throw new Error('check_action_state requires an action definition string.');
-		}
-		const trimmed = actiondefinition.trim();
-		if (trimmed.length === 0) {
-			throw new Error('check_action_state requires a non-empty action definition.');
-		}
-		const playerInput = Input.instance.getPlayerInput(playerindex);
-		if (!playerInput) {
-			throw new Error(`Player input handler for index ${playerindex} is not initialised.`);
-		}
-		return playerInput.checkActionTriggered(trimmed);
+	public action_triggered(actiondefinition: string, playerindex?: number): boolean {
+		return $.action_triggered(playerindex ?? this.playerindex, actiondefinition)
 	}
 
 	public cartdata(namespace: string): void {

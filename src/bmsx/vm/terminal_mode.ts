@@ -27,12 +27,13 @@ import {
 	isAltDown
 } from './ide/ide_input';
 import { CompletionController } from './ide/completion_controller';
-import { collectLuaModuleAliases, consoleValueToString, listLuaObjectMembers } from './ide/intellisense';
+import { collectLuaModuleAliases, valueToString, listLuaObjectMembers } from './ide/intellisense';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './ide/ide_input';
-import type { asset_id, Viewport } from '../rompack/rompack';
-import { api, BmsxVMRuntime } from './vm_runtime';
+import type { Viewport } from '../rompack/rompack';
+import { BmsxVMRuntime } from './vm_runtime';
 import { TerminalCommandDispatcher as TerminalCommandDispatcher } from './terminal_commands';
 import { extractErrorMessage, LuaValue } from '../lua/luavalue';
+import { LuaMemberCompletionRequest } from './types';
 
 type TerminalOutputKind =
 	| 'prompt'
@@ -46,14 +47,6 @@ type TerminalOutputKind =
 type TerminalOutputEntry = {
 	text: string;
 	color: number;
-};
-
-type CompletionMemberRequest = {
-	objectName: string;
-	operator: '.' | ':';
-	prefix: string;
-	asset_id: asset_id;
-	chunkName: string;
 };
 
 const MAX_OUTPUT_ENTRIES = 512;
@@ -85,14 +78,14 @@ export class TerminalMode {
 	private readonly output: TerminalOutputEntry[] = [];
 	private readonly history: string[] = [];
 	private historyIndex: number = null;
-	private readonly consoleChunkName = '<console>';
-	private readonly completionContextToken = { chunk: this.consoleChunkName };
+	private readonly terminalChunkName = '<terminal>';
+	private readonly completionContextToken = { chunk: this.terminalChunkName };
 	private readonly completion: CompletionController;
 	private blinkTimer = 0;
 	private caretVisible = true;
 	private active = false;
 	private textVersion = 0;
-	private readonly consoleCommands: TerminalCommandDispatcher;
+	private readonly terminalCommands: TerminalCommandDispatcher;
 
 	private fieldText(): string {
 		return getFieldText(this.field);
@@ -117,9 +110,10 @@ export class TerminalMode {
 	private cachedLinesVersion = -1;
 	private promptPrefix = '> ';
 	private cursorScreenInfo: CursorScreenInfo = null;
+	private currentRenderer: VMRenderFacade = null;
 	constructor(private readonly runtime: BmsxVMRuntime) {
-		this.consoleCommands = new TerminalCommandDispatcher(this.runtime);
-		this.setPromptPrefix(this.consoleCommands.getPrompt());
+		this.terminalCommands = new TerminalCommandDispatcher(this.runtime);
+		this.setPromptPrefix(this.terminalCommands.getPrompt());
 
 		this.font = new VMEditorFont(runtime.activeIdeFontVariant);
 		this.uppercaseDisplayOverride = false;
@@ -141,20 +135,33 @@ export class TerminalMode {
 			measureText: (text) => this.measureDisplayText(text, this.useUppercaseDisplay()),
 			drawText: (text, x, y, color) => {
 				const uppercaseDisplay = terminal.useUppercaseDisplay();
-				const display = terminal.toDisplayText(text, uppercaseDisplay);
-				api.write_with_font(display, x, y, undefined, color, terminal.font.renderFont());
+				const display = terminal.toDisplayText(text, uppercaseDisplay).replace(/\t/g, ' '.repeat(TAB_SPACES));
+				terminal.currentRenderer.glyphs({ glyphs: display, x, y, z: 0, color: Msx1Colors[color], font: terminal.font.renderFont() });
+			},
+			fillRect: (left, top, right, bottom, color) => {
+				terminal.currentRenderer.rect({
+					kind: 'fill',
+					area: { left, top, right, bottom },
+					color: Msx1Colors[color],
+				});
+			},
+			strokeRect: (left, top, right, bottom, color) => {
+				terminal.currentRenderer.rect({
+					kind: 'rect',
+					area: { left, top, right, bottom },
+					color: Msx1Colors[color],
+				});
 			},
 			getCursorScreenInfo: () => this.cursorScreenInfo,
 			getActiveCodeTabContext: () => (this.active ? this.completionContextToken : null),
-			resolveHoverasset_id: () => null,
-			resolveHoverChunkName: () => this.consoleChunkName,
+			resolveHoverChunkName: () => this.terminalChunkName,
 			getSemanticDefinitions: () => null,
 			getLuaModuleAliases: () => this.buildTerminalModuleAliases(),
 			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),
 			charAt: (row, column) => this.charAt(row, column),
 			getTextVersion: () => this.textVersion,
 			shouldFireRepeat: (code) => this.shouldRepeatKey(code),
-			shouldAutoTriggerCompletions: () => false,
+			shouldAutoTriggerCompletions: () => true,
 			shouldShowParameterHints: () => false,
 		});
 		this.completion.enterCommitsCompletion = true;
@@ -261,7 +268,7 @@ export class TerminalMode {
 
 	private async handleTerminalCommand(rawCommand: string): Promise<void> {
 		const input = rawCommand ?? '';
-		this.setPromptPrefix(this.consoleCommands.getPrompt());
+		this.setPromptPrefix(this.terminalCommands.getPrompt());
 		this.appendPromptEcho(input);
 		const trimmed = input.trim();
 		if (trimmed.length > 0) {
@@ -271,7 +278,7 @@ export class TerminalMode {
 			return;
 		}
 		try {
-			if (await this.consoleCommands.handle(trimmed)) {
+			if (await this.terminalCommands.handle(trimmed)) {
 				return;
 			}
 		} catch (error) {
@@ -303,7 +310,7 @@ export class TerminalMode {
 				throw error;
 			}
 			if (results.length > 0) {
-				const summary = results.map(value => consoleValueToString(value)).join('\t');
+				const summary = results.map(value => valueToString(value)).join('\t');
 				this.appendStdout(summary);
 			}
 		}
@@ -337,47 +344,52 @@ export class TerminalMode {
 	}
 
 	public draw(renderer: VMRenderFacade, surface: Viewport): void {
-		const lineHeight = this.font.lineHeight;
-		const contentWidth = Math.max(0, surface.width - PADDING_X * 2);
+		this.currentRenderer = renderer;
+		try {
+			const lineHeight = this.font.lineHeight;
+			const contentWidth = Math.max(0, surface.width - PADDING_X * 2);
 
-		// compute prompt layout and wrapped input segments
-		const uppercaseDisplay = this.useUppercaseDisplay();
-		const promptWidth = this.measureDisplayText(this.promptPrefix, uppercaseDisplay);
-		const firstLineMax = Math.max(8, contentWidth - promptWidth);
-		const otherLineMax = Math.max(8, contentWidth);
-		const displayInput = this.toDisplayText(this.fieldText(), uppercaseDisplay);
-		const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax);
+			// compute prompt layout and wrapped input segments
+			const uppercaseDisplay = this.useUppercaseDisplay();
+			const promptWidth = this.measureDisplayText(this.promptPrefix, uppercaseDisplay);
+			const firstLineMax = Math.max(8, contentWidth - promptWidth);
+			const otherLineMax = Math.max(8, contentWidth);
+			const displayInput = this.toDisplayText(this.fieldText(), uppercaseDisplay);
+			const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax);
 
-		// space available for output lines above the input area
-		const availableHeight = surface.height - PADDING_Y * 2 - (inputWrap.segments.length * lineHeight);
-		const maxContentLines = Math.max(1, Math.floor(availableHeight / lineHeight));
+			// space available for output lines above the input area
+			const availableHeight = surface.height - PADDING_Y * 2 - (inputWrap.segments.length * lineHeight);
+			const maxContentLines = Math.max(1, Math.floor(availableHeight / lineHeight));
 
-		// build and clamp output lines
-		const wrappedLines = this.buildWrappedLines(contentWidth, maxContentLines);
-		const visibleStart = Math.max(0, wrappedLines.length - maxContentLines);
-		const visibleLines = wrappedLines.slice(visibleStart);
+			// build and clamp output lines
+			const wrappedLines = this.buildWrappedLines(contentWidth, maxContentLines);
+			const visibleStart = Math.max(0, wrappedLines.length - maxContentLines);
+			const visibleLines = wrappedLines.slice(visibleStart);
 
-		// draw visible output lines starting at top padding
-		let y = PADDING_Y;
-		for (const line of visibleLines) {
-			const color = line.color;
-			this.drawGlyphBackgrounds(renderer, line.text, PADDING_X, y, uppercaseDisplay);
-			this.drawGlyphRun(renderer, line.text, PADDING_X, y, Msx1Colors[color], uppercaseDisplay);
-			y += lineHeight;
+			// draw visible output lines starting at top padding
+			let y = PADDING_Y;
+			for (const line of visibleLines) {
+				const color = line.color;
+				this.drawGlyphBackgrounds(renderer, line.text, PADDING_X, y, uppercaseDisplay);
+				this.drawGlyphRun(renderer, line.text, PADDING_X, y, Msx1Colors[color], uppercaseDisplay);
+				y += lineHeight;
+			}
+
+			// compute where input block starts (positioned right after visible output lines,
+			// so the input moves upward as output fills the viewport — terminal-like behavior)
+			const inputStartY = PADDING_Y + visibleLines.length * lineHeight;
+
+			// draw prompt at the first input line then draw wrapped input lines (first segment after prompt)
+			const promptColor = Msx1Colors[OUTPUT_COLORS.prompt];
+			this.drawGlyphBackgrounds(renderer, this.promptPrefix, PADDING_X, inputStartY, uppercaseDisplay);
+			this.drawGlyphRun(renderer, this.promptPrefix, PADDING_X, inputStartY, promptColor, uppercaseDisplay);
+
+			// draw multi-line input (handles selection and caret)
+			this.drawMultilineInput(renderer, PADDING_X, inputStartY, promptWidth, inputWrap);
+			this.drawCompletionOverlays(surface, promptWidth);
+		} finally {
+			this.currentRenderer = null;
 		}
-
-		// compute where input block starts (positioned right after visible output lines,
-		// so the input moves upward as output fills the viewport — terminal-like behavior)
-		const inputStartY = PADDING_Y + visibleLines.length * lineHeight;
-
-		// draw prompt at the first input line then draw wrapped input lines (first segment after prompt)
-		const promptColor = Msx1Colors[OUTPUT_COLORS.prompt];
-		this.drawGlyphBackgrounds(renderer, this.promptPrefix, PADDING_X, inputStartY, uppercaseDisplay);
-		this.drawGlyphRun(renderer, this.promptPrefix, PADDING_X, inputStartY, promptColor, uppercaseDisplay);
-
-		// draw multi-line input (handles selection and caret)
-		this.drawMultilineInput(renderer, PADDING_X, inputStartY, promptWidth, inputWrap);
-		this.drawCompletionOverlays(surface, promptWidth);
 	}
 
 	public recordHistory(command: string): void {
@@ -578,7 +590,6 @@ export class TerminalMode {
 		this.textVersion += 1;
 		this.cachedLinesVersion = -1;
 		this.completion.updateAfterEdit(context);
-		this.completion.onCursorMoved();
 	}
 
 	private onExternalFieldMutation(previous: string, next: string): void {
@@ -627,10 +638,10 @@ export class TerminalMode {
 		if (this.fieldText().trim().length === 0) {
 			return new Map();
 		}
-		return collectLuaModuleAliases({ source: this.fieldText(), chunkName: this.consoleChunkName });
+		return collectLuaModuleAliases({ source: this.fieldText(), chunkName: this.terminalChunkName });
 	}
 
-	private buildMemberCompletionItems(request: CompletionMemberRequest): LuaCompletionItem[] {
+	private buildMemberCompletionItems(request: LuaMemberCompletionRequest): LuaCompletionItem[] {
 		if (request.objectName.length === 0) {
 			return [];
 		}
