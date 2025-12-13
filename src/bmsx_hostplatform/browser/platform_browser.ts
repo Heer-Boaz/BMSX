@@ -591,6 +591,7 @@ class BrowserInputHub implements InputHub {
 
 		window.addEventListener('gamepadconnected', this.onGamepadConnected);
 		window.addEventListener('gamepaddisconnected', this.onGamepadDisconnected);
+		this.scanInitialGamepads();
 	}
 
 	subscribe(fn: (e: InputEvt) => void): () => void {
@@ -711,8 +712,24 @@ class BrowserInputHub implements InputHub {
 		this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
 	};
 
+	private scanInitialGamepads(): void {
+		const pads = navigator.getGamepads();
+		const now = this.clock.now();
+		for (let i = 0; i < pads.length; i++) {
+			const gp = pads[i];
+			if (!gp) continue;
+			const id = 'gamepad:' + gp.index;
+			if (this.devicesList.some(device => device.id === id)) continue;
+			const device = new GamepadDevice(gp, this.post.bind(this));
+			this.devicesList.push(device);
+			this.post({ type: 'connect', device, timestamp: now });
+		}
+	}
+
 	private onGamepadConnected = (event: GamepadEvent) => {
 		const source = event.gamepad;
+		const id = 'gamepad:' + source.index;
+		if (this.devicesList.some(device => device.id === id)) return;
 		const device = new GamepadDevice(source, this.post.bind(this));
 		this.devicesList.push(device);
 		const now = this.clock.now();

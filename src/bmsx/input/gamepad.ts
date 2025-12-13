@@ -34,7 +34,7 @@ export class GamepadInput implements InputHandler {
 
 	public pollInput(): void {
 		const now = $.platform.clock.now();
-		if (this.lastPollTime === 0) this.lastPollTime = now;
+		const prevPollTime = this.lastPollTime;
 		this.lastPollTime = now;
 
 		const keys = Object.keys(this.buttonStates);
@@ -45,10 +45,16 @@ export class GamepadInput implements InputHandler {
 			if (state.pressed) {
 				const pressedAt = state.pressedAtMs ?? state.timestamp ?? now;
 				state.presstime = Math.max(0, now - pressedAt);
-				state.justpressed = false;
+				if (prevPollTime > 0 && state.justpressed && state.timestamp <= prevPollTime) {
+					state.justpressed = false;
+				}
+				state.justreleased = false;
 			} else {
 				state.presstime = null;
-				state.justreleased = false;
+				if (prevPollTime > 0 && state.justreleased && state.timestamp <= prevPollTime) {
+					state.justreleased = false;
+				}
+				state.justpressed = false;
 			}
 			state.consumed = state.consumed ?? false;
 		}
