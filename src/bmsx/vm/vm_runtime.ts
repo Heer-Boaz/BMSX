@@ -1035,13 +1035,14 @@ export class BmsxVMRuntime extends Service {
 		this.restoreChunkState(interpreter.chunkEnvironment, previousChunkState);
 		this.restoreChunkTables(interpreter.chunkEnvironment, previousChunkTables);
 		this.restoreGlobalStateForReload(previousGlobals);
+		this.refreshPackageLoadedEntry(binding, results);
+		const moduleValue = results.length > 0 && results[0] !== null ? results[0] : true;
 		this.rebindChunkEnvironmentHandlers(hotModuleId);
+		this.rebindModuleExportHandlers(hotModuleId, moduleValue);
 		this.bindLifecycleHandlers();
 		this.luaRuntimeFailed = preserveRuntimeFailure;
 		this._luaChunkName = binding;
 		this.luaVmInitialized = true;
-		const hotSource = params.source;
-		this.refreshLuaHandlersForChunk(binding, hotSource);
 		this.refreshLuaModulesOnResume(binding);
 		clearNativeMemberCompletionCache();
 		this.clearEditorErrorOverlaysIfNoFault();
