@@ -77,17 +77,18 @@ local story = {
 	},
 	intro = {
 		kind = 'fade',
-		music = 'm03',
+		music = 'm05',
 		next = 'overgang_monday',
 	},
 	overgang_monday = {
 		kind = 'transition',
-		label = 'MONDAY',
 		music = 'm05',
+		label = 'MONDAY',
 		next = 'klas',
 	},
 	klas = {
 		kind = 'dialogue',
+		music = 'm05',
 		bg = 'klas1',
 		typed = true,
 		pages = {
@@ -95,7 +96,7 @@ local story = {
 			{ 'En na verveelt te zijn op school,', 'Ook nog een bak huiswerk mee naar huis.' },
 		},
 		next = 'overgang_monday_middag',
-	}
+	},
 	overgang_monday_middag = {
 		kind = 'transition',
 		label = 'MONDAY AFTERNOON',
@@ -105,6 +106,7 @@ local story = {
 	schoolplein = {
 		kind = 'dialogue',
 		bg = 'vriendin',
+		music = 'm05',
 		typed = true,
 		pages = {
 			{ 'Op het schoolplein spreek je met je vriendin.', 'Ze lijkt bezorgd.' },
@@ -115,6 +117,7 @@ local story = {
 	vriendin_choice = {
 		kind = 'choice',
 		bg = 'vriendin',
+		music = 'm05',
 		prompt = { 'Wat zeg je?' },
 		options = {
 			{
@@ -143,6 +146,7 @@ local story = {
 	},
 	monday_evening = {
 		kind = 'dialogue',
+		music = 'm04',
 		bg = 'slaap_n',
 		typed = true,
 		pages = {
@@ -157,10 +161,12 @@ local story = {
 		kind = 'transition',
 		label = 'MONDAY NIGHT',
 		next = 'monday_night',
+		music = 'm04',
 	},
 	monday_night = {
 		kind = 'dialogue',
 		bg = 'slaap_n',
+		music = 'm04',
 		typed = true,
 		pages = {
 			{ 'Maya ligt s\'avonds lekker te ronken.', },
@@ -174,7 +180,7 @@ local story = {
 		kind = 'dialogue',
 		bg = 'igor',
 		typed = true,
-		music = 'm00',
+		music = 'm02',
 		pages = {
 			{ 'Een mysterieuze figuur verschijnt.', 'Hij noemt zichzelf Sintigor.' },
 			{ 'Sintigor: "Welkom Maya.', 'Ik zie dat je houdt van goede spellen."' },
@@ -186,6 +192,7 @@ local story = {
 	igor_choice = {
 		kind = 'choice',
 		bg = 'igor',
+		music = 'm02',
 			
 		prompt = { 'Sintigor: "Je zult het snel genoeg ontdekken."',},
 		options = {
@@ -217,6 +224,7 @@ local story = {
 		kind = 'dialogue',
 		bg = 'ochtendpijn',
 		typed = true,
+		music = 'm06',
 		pages = {
 			{ 'De wekker gaat af.', 'Maya wordt semi-wakker.' },
 			{ '"Die rotwekker ook!" denkt ze bij zichzelf.' },
@@ -225,8 +233,6 @@ local story = {
 		},
 		next = 'combat_wekker',
 	},
-
-
 	combat_wekker = {
 		kind = 'combat',
 		music = 'm16',
@@ -286,14 +292,14 @@ local story = {
 		pages = {
 			{ 'De wekker is verslagen... Tijd voor de volgende uitdaging.', },
 		},
-		next = 'ending',
+		next = 'spiegel',
 	},
 	spiegel = {
 		kind = 'dialogue',
 		bg = 'spiegel',
 		typed = true,
 		pages = {
-			{ 'In de spiegel ziet Maya er stralend uit.', 'Ze voelt zich klaar voor de dag.' },
+			{ '' },
 		},
 		next = 'ochtendpijn',
 	},
