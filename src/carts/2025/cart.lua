@@ -126,7 +126,7 @@ local story = {
 				result_pages = {
 					{ 'Je "vriendin" zucht.', 'Gelukkig bestaat ze niet echt.', 'Planning -1', 'Rust +1' },
 				},
-				next = 'bed_intro',
+				next = 'overgang_monday_evening',
 			},
 			{
 				label = '\"Ik ben echt gestrest.\"',
@@ -134,7 +134,7 @@ local story = {
 				result_pages = {
 					{ 'Je vriendin stelt je gerust.', 'Rust +1' },
 				},
-				next = 'bed_intro',
+				next = 'overgang_monday_evening',
 			},
 		},
 	},
@@ -155,9 +155,9 @@ local story = {
 			{ 'En huiswerk is toch stom.' },
 			{ 'Awel, het wordt toch tijd om te gaan slapen.' },
 		},
-		next = 'bed_intro',
+		next = 'overgang_monday_night',
 	},
-	overgang_monday_evening = {
+	overgang_monday_night = {
 		kind = 'transition',
 		label = 'MONDAY NIGHT',
 		next = 'monday_night',
@@ -193,7 +193,6 @@ local story = {
 		kind = 'choice',
 		bg = 'igor',
 		music = 'm02',
-			
 		prompt = { 'Sintigor: "Je zult het snel genoeg ontdekken."',},
 		options = {
 			{
@@ -202,7 +201,7 @@ local story = {
 				result_pages = {
 					{ 'Sintigor lacht. Hij wat jou te wachten staat.', 'Opdekin +1' },
 				},
-				next = 'ochtendpijn',
+				next = 'overgang_tuesday_morning',
 			},
 			{
 				label = 'Nogal verontrustend dat Sinterklaas in de dromen van kinderen verschijnt.',
@@ -210,7 +209,7 @@ local story = {
 				result_pages = {
 					{ 'Sintigor: "Ik ben Sintigor, niet Sinterklaas. Jouw opmerking is wel scherp en laat je er beter uit zien."', 'Make-up +1' },
 				},
-				next = 'ochtendpijn',
+				next = 'overgang_tuesday_morning',
 			},
 		},
 	},
@@ -296,20 +295,131 @@ local story = {
 	},
 	spiegel = {
 		kind = 'dialogue',
-		bg = 'spiegel',
+		bg = 'ochtendpijn',
 		typed = true,
 		pages = {
-			{ '' },
+			{ 'De dodelijkste strijd gaat beginnen!' },
+			{ 'Het allerbelangrijkste wat er moet gebeuren...' },
+			{ 'Het opmaken voor de toets!' },
 		},
-		next = 'ochtendpijn',
+		next = 'combat_spiegel',
 	},
-
-
-	ending = {
-		kind = 'ending',
-		bg = 'sint_blij',
-		music = 'm17',
+	combat_spiegel = {
+		kind = 'combat',
+		music = 'm35',
+		monster_imgid = 'monster_spiegel',
+		rounds = {
+			{
+				prompt = { 'Wat wordt het vandaag?', 'Extra eyeliner of lipstick?' },
+				options = {
+					{ label = '\"Extra eyeliner.\"', outcome = 'dodge', points = 0 },
+					{ label = '\"Extra lipstick.\"', outcome = 'dodge', points = 0 },
+				},
+			},
+			{
+				prompt = { 'Oei, een puistje!', 'Meer make-up?' },
+				options = {
+					{ label = '\"Boeuh!\"', outcome = 'hit', points = 1 },
+					{ label = '\"Upermakeup!\"', outcome = 'dodge', points = 0 },
+				},
+			},
+			{
+				prompt = { 'Je mag jezelf nu wel vertonen op school.', 'Maar het is nog niet genoeg!' },
+				options = {
+					{ label = '\"MEER MAKEUP!\"', outcome = 'dodge', points = 0 },
+					{ label = '\"Ik luister naar mijn moeder.\"', outcome = 'hit', points = 1 },
+				},
+			},
+		},
+		rewards = {
+			{
+				min = 0,
+				max = 10,
+				effects = { { stat = 'makeup', add = 3 } },
+			},
+			{
+				min = 2,
+				max = 20,
+				effects = { { stat = 'planning', add = 1 }, { stat = 'rust', add = 1 } },
+			},
+			{
+				min = 3,
+				max = 99,
+				effects = {
+					{ stat = 'planning', add = 1 },
+					{ stat = 'opdekin', add = 1 },
+					{ stat = 'rust', add = 1 },
+					{ stat = 'makeup', add = 1 },
+				},
+			},
+		},
+		next = 'after_combat_spiegel',
+	},
+	after_combat_spiegel = {
+		kind = 'dialogue',
+		bg = 'klas1',
+		music = 'm05',
 		typed = true,
+		pages = {
+			{ 'YES, JE ZIET ER WEER GOED UIT!', },
+			{ 'Nu voorbereiden op de toets!', },
+		},
+		next = 'overgang_huiswerk',
+	},
+	overgang_huiswerk = {
+		kind = 'fade',
+		music = 'm05',
+		next = 'huiswerk',
+	},
+	huiswerk = {
+		kind = 'dialogue',
+		music = 'm05',
+		bg = 'huiswerk',
+		typed = true,
+		pages = {
+			{ 'Nadat Maya dapper heeft gestreden tegen haar wekker en spiegel...' },
+			{ 'Besluit Maya verstandig haar voorbereiding te doen voor de toets!' },
+			{ 'Nu tijd voor school.' },
+		},
+		next = 'overgang_tuesday_afternoon',
+	},
+	overgang_tuesday_afternoon = {
+		kind = 'transition',
+		label = 'TUESDAY AFTERNOON',
+		music = 'm05',
+		next = 'toets',
+	},
+	toets = {
+		kind = 'dialogue',
+		bg = 'klas1',
+		music = 'm05',
+		typed = true,
+		pages = {
+			{ 'Maya zit in de klas, klaar voor de toets.', },
+			{ 'Ze voelt zich goed voorbereid.', },
+			{ 'De toets begint...' },
+			{ 'Nu tijd voor combat...' },
+			{ 'Maar de Sint faalt met goede voorbereiding en skipt dit gedeelte van het spel...' },
+		},
+		next = 'combat_toets',
+	},
+	overgang_tuesday_afternoon = {
+		kind = 'transition',
+		label = 'ORDEEL DES SINTS',
+		music = 'm02',
+		next = 'ending',
+	},
+	ending = {
+		kind = 'dialogue',
+		bg = 'sint_blij',
+		music = 'm02',
+		typed = true,
+		pages = {
+			{ 'Maya, dat heb je toch weer redelijk gedaan!' },
+			{ 'Je hebt dapper gestreden tegen twee verschrikkelijke verleidingen:' },
+			{ 'De gruwelijke snooze', 'En de afgrijselijke make-up spiegel!' },
+			{ 'Ik ben trots op je!', 'Dit zal jouw toekomst zeker ten goede komen.' },
+		},
 	},
 	__inline_dialogue = {
 		kind = 'dialogue_inline',
@@ -513,6 +623,9 @@ local function build_director_fsm()
 				run_node = {
 					entering_state = function(self)
 						local node = story[self.node_id]
+						if node == nil then
+							return
+						end
 						if node.kind == 'transition' then
 							return '/transition'
 						end
