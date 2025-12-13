@@ -31,10 +31,10 @@ local demo = {
 
 local function track_plain_input()
 	local bindings = {
-		{ 'console_left', 'left' },
-		{ 'console_right', 'right' },
-		{ 'console_up', 'up' },
-		{ 'console_down', 'down' },
+		{ 'left', 'left' },
+		{ 'right', 'right' },
+		{ 'up', 'up' },
+		{ 'down', 'down' },
 	}
 	for index = 1, #bindings do
 		local entry = bindings[index]
@@ -146,10 +146,10 @@ function hero:emit_move(dx, dy)
 end
 
 function hero:run_motion(dt)
-	local left = game:action_triggered(1, 'console_left[p]')
-	local right = game:action_triggered(1, 'console_right[p]')
-	local up = game:action_triggered(1, 'console_up[p]')
-	local down = game:action_triggered(1, 'console_down[p]')
+	local left = game:action_triggered(1, 'left[p]')
+	local right = game:action_triggered(1, 'right[p]')
+	local up = game:action_triggered(1, 'up[p]')
+	local down = game:action_triggered(1, 'down[p]')
 	local dx = (right and 1 or 0) - (left and 1 or 0)
 	local dy = (down and 1 or 0) - (up and 1 or 0)
 	local moved = dx ~= 0 or dy ~= 0
@@ -167,7 +167,7 @@ function hero:run_motion(dt)
 end
 
 function hero:try_blink()
-	if not game:action_triggered(1, 'console_a[jp]') then
+	if not game:action_triggered(1, 'a[jp]') then
 		return
 	end
 	if not self.tempo_ready then
@@ -197,12 +197,12 @@ local function build_hero_fsm()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
-					['console_b[jp]'] = {
+					['b[jp]'] = {
 						go = function(self)
 							return '/charging'
 						end,
 					},
-					['console_a[jp]'] = {
+					['a[jp]'] = {
 						go = function(self)
 							return '/blinking'
 						end,
@@ -222,12 +222,12 @@ local function build_hero_fsm()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
-					['console_b[jp]'] = {
+					['b[jp]'] = {
 						go = function(self)
 							return '/charging'
 						end,
 					},
-					['console_a[jp]'] = {
+					['a[jp]'] = {
 						go = function(self)
 							return '/blinking'
 						end,
@@ -243,7 +243,7 @@ local function build_hero_fsm()
 					self.charge_time = self.charge_time + game.deltatime_seconds
 					self:run_motion(1)
 					self:try_blink()
-					if not game:action_triggered(1, 'console_b[p]') then
+					if not game:action_triggered(1, 'b[p]') then
 						local payload = { time = self.charge_time }
 						self.events:emit('demo.hero.charge', payload)
 						return '/moving'

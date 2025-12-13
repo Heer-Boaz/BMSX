@@ -224,7 +224,7 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 		chunk2lua: {},
 		path2lua: {},
 		entry_path: manifest?.lua.entry_path,
-		namespace: manifest?.console.namespace,
+		namespace: manifest?.vm.namespace,
 		new_game: null,
 		init: null,
 		update: null,
@@ -242,7 +242,7 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 		cart,
 		project_root_path: projectRootPath,
 		manifest,
-		canonicalization: manifest?.console?.canonicalization ?? 'none',
+		canonicalization: manifest?.vm?.canonicalization ?? 'none',
 	};
 
 	await Promise.all(assets.map(a => load(rom, a, result, opts)));

@@ -358,14 +358,14 @@ function parseOptions(args: string[]): ParsedOptions {
 		cartBootloaderFound = true;
 	}
 
-	const consoleBootloaderPath = normalizePathKey('./src/bmsx/vm/default_cart');
+	const vmBootloaderPath = normalizePathKey('./src/bmsx/vm/default_cart');
 	const bootloaderFile = join(normalizePathKey(bootloader_path), 'bootloader.ts');
 	let bootloaderFallbackApplied = false;
 	if (!existsSync(bootloaderFile)) {
-		bootloader_path = consoleBootloaderPath;
+		bootloader_path = vmBootloaderPath;
 		bootloaderFallbackApplied = true;
 	}
-	const bootloaderFallbackPath = bootloaderFallbackApplied ? consoleBootloaderPath : undefined;
+	const bootloaderFallbackPath = bootloaderFallbackApplied ? vmBootloaderPath : undefined;
 
 	const resCandidates: Array<string> = [
 		respath,
