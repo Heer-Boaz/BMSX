@@ -420,7 +420,9 @@ export class Game {
 		this._debug = debug ?? this._debug;
 		$debug = this._debug;
 
-		this._cart = cloneCartForRuntime(rompack.cart); // Mutable runtime cart: keep ROM-pack cart pristine.
+		if (rompack.cart?.entry_path) {
+			this._cart = cloneCartForRuntime(rompack.cart); // Mutable runtime cart: keep ROM-pack cart pristine.
+		}
 		GameView.imgassets = rompack.img;
 		EventEmitter.instance; // Init event emitter
 		Input.initialize(startingGamepadIndex); // Init input module
