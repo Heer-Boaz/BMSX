@@ -163,6 +163,11 @@ export class SoundMaster implements RegisterablePersistent {
 	}
 
 	private resetVoiceState(): void {
+		if (this.musicTransitionTimer !== null) {
+			clearTimeout(this.musicTransitionTimer);
+		}
+		this.musicTransitionTimer = null;
+		this.pendingStingerReturnTo = null;
 		this.stopAllVoices();
 		this.voicesByType = { sfx: [], music: [], ui: [] };
 		this.currentVoiceByType = { sfx: null, music: null, ui: null };
@@ -170,9 +175,11 @@ export class SoundMaster implements RegisterablePersistent {
 		this.currentAudioByType = { sfx: null, music: null, ui: null };
 		this.pausedByType = { sfx: [], music: [], ui: [] };
 		this.nextVoiceId = 1;
-		this.musicTransitionTimer = null;
-		this.pendingStingerReturnTo = null;
 		this.voiceRecordByHandle = new WeakMap();
+	}
+
+	public resetPlaybackState(): void {
+		this.resetVoiceState();
 	}
 
 	private stopAllVoices(): void {

@@ -292,6 +292,18 @@ export class PSG {
 	//======================================================================
 	// Utility: Pause/Resume & Volume
 	//======================================================================
+	public static stopAll(): void {
+		const t0 = PSG.sndContext.currentTime;
+		for (let i = 0; i < PSG.psgChannels.length; i++) {
+			const ch = PSG.psgChannels[i];
+			ch.toneGain.gain.cancelScheduledValues(t0);
+			ch.toneGain.gain.setValueAtTime(0, t0);
+			ch.noiseGain.gain.cancelScheduledValues(t0);
+			ch.noiseGain.gain.setValueAtTime(0, t0);
+			ch.oscillator.frequency.cancelScheduledValues(t0);
+		}
+	}
+
 	public static pause(): void {
 		if (PSG.sndContext.state === "running") PSG.sndContext.suspend();
 	}

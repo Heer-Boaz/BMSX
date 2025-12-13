@@ -254,6 +254,11 @@ export class AudioEventManager implements RegisterablePersistent {
 		};
 	}
 
+	public resetPlaybackState(): void {
+		this.queuesByType = { sfx: [], music: [], ui: [] };
+		this.resumeOnNextEndByType = { sfx: false, music: false, ui: false };
+	}
+
 	public restoreQueues(qs: { sfx: AudioEventQueuePartialForDeserialization; ui: AudioEventQueuePartialForDeserialization }): void {
 		const now = this.nowMs();
 		this.queuesByType.sfx = (qs.sfx || []).map(it => ({ name: it.name ?? 'restored.sfx', audioId: it.audioId, modulationPreset: it.modulationPreset, modulationParams: it.modulationParams, priority: it.priority, cooldownMs: it.cooldownMs, payloadActorId: it.payloadActorId, enqueuedAt: now }));

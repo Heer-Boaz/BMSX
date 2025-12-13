@@ -562,6 +562,12 @@ export class Game {
 		const gateToken = renderGate.begin({ blocking: true, tag: 'world-reset' });
 		const runToken = runGate.begin({ blocking: true, tag: 'world-reset' });
 		try {
+			this.aem.resetPlaybackState();
+			this.sndmaster.resetPlaybackState();
+			// if (this.psgEnabled) {
+			// 	PSG.stopAll();
+			// }
+
 			if (this.world) {
 				this.world.clearAllSpaces();
 				this.world.dispose();
