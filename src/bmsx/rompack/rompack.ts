@@ -378,7 +378,7 @@ export type CartManifest = {
 	title?: string;
 	short_name?: string;
 	rom_name?: string;
-	console?: {
+	vm?: {
 		viewport?: Viewport;
 		canonicalization?: CanonicalizationType;
 		namespace: string;

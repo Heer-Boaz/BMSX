@@ -8,29 +8,53 @@ import { BmsxVMRuntime } from './vm_runtime';
 const DEFAULT_INPUT_MAPPING = {
 	1: {
 		keyboard: {
-			console_left: ['ArrowLeft'],
-			console_right: ['ArrowRight'],
-			console_up: ['ArrowUp'],
-			console_down: ['ArrowDown'],
-			console_b: ['KeyZ'],
-			console_a: ['KeyX'],
+			a: ['KeyX', 'KeyV'],
+			b: ['KeyZ', 'KeyC'],
+			x: ['KeyA'],
+			y: ['ShiftLeft'],
+			lb: ['KeyS'],
+			rb: ['KeyD'],
+			lt: ['KeyQ'],
+			rt: ['KeyE'],
+			select: ['Enter'],
+			start: ['Space'],
+			ls: ['KeyW'],
+			rs: ['KeyF'],
+			up: ['ArrowUp'],
+			down: ['ArrowDown'],
+			left: ['ArrowLeft'],
+			right: ['ArrowRight'],
+			home: ['Escape'],
+			touch: ['Mouse0'],
 		},
 		gamepad: {
-			console_left: ['left'],
-			console_right: ['right'],
-			console_up: ['up'],
-			console_down: ['down'],
-			console_b: ['b'],
-			console_a: ['a'],
+			a: ['a'],
+			b: ['b'],
+			x: ['x'],
+			y: ['y'],
+			lb: ['lb'],
+			rb: ['rb'],
+			lt: ['lt'],
+			rt: ['rt'],
+			select: ['select'],
+			start: ['start'],
+			ls: ['ls'],
+			rs: ['rs'],
+			up: ['up'],
+			down: ['down'],
+			left: ['left'],
+			right: ['right'],
+			home: ['home'],
+			touch: ['touch'],
 		},
 		pointer: Input.DEFAULT_POINTER_INPUT_MAPPING,
 	} as InputMap,
 };
 
 function deriveVMOptions(manifest: CartManifest) {
-	const consoleConfig = manifest.console;
-	const viewport = consoleConfig.viewport;
-	const canonicalization = consoleConfig.canonicalization;
+	const vmConfig = manifest.vm;
+	const viewport = vmConfig.viewport;
+	const canonicalization = vmConfig.canonicalization;
 	return {
 		viewport,
 		canonicalization,

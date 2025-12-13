@@ -17,8 +17,8 @@
 			"type": "string",
 			"description": "ROM filename base (without extension)."
 		},
-		"console": {
-			"$ref": "#/definitions/consoleConfig"
+		"vm": {
+			"$ref": "#/definitions/vmConfig"
 		},
 		"input": {
 			"$ref": "#/definitions/inputConfig"
@@ -60,9 +60,9 @@
 			],
 			"description": "Canonicalization mode for Lua identifiers."
 		},
-		"consoleConfig": {
+		"vmConfig": {
 			"type": "object",
-			"description": "Console configuration for the cartridge.",
+			"description": "VM configuration for the cartridge.",
 			"properties": {
 				"viewport": {
 					"$ref": "#/definitions/viewport"
@@ -86,21 +86,21 @@
 			"properties": {
 				"keyboard": {
 					"type": "object",
-					"description": "Keyboard mapping for console controls.",
+					"description": "Keyboard mapping for vm controls.",
 					"additionalProperties": {
 						"$ref": "#/definitions/stringArray"
 					}
 				},
 				"gamepad": {
 					"type": "object",
-					"description": "Gamepad mapping for console controls.",
+					"description": "Gamepad mapping for vm controls.",
 					"additionalProperties": {
 						"$ref": "#/definitions/stringArray"
 					}
 				},
 				"pointer": {
 					"type": "object",
-					"description": "Pointer / mouse / touch mapping for console controls.",
+					"description": "Pointer / mouse / touch mapping for vm controls.",
 					"additionalProperties": true
 				}
 			},
