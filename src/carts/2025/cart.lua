@@ -21,6 +21,7 @@ local overgang_frame_count = overgang_in_frames + overgang_hold_frames + overgan
 local overgang_ticks_per_frame = 32
 local overgang_fade_out_frames = 18
 local overgang_fade_in_frames = 18
+local overgang_post_fade_in_timeline_id = 'overgang_post_fade_in'
 
 local combat_fade_timeline_id = 'combat_fade'
 local combat_fade_out_frames = 10
@@ -29,12 +30,19 @@ local combat_fade_in_frames = 10
 local combat_fade_frame_count = combat_fade_out_frames + combat_fade_hold_frames + combat_fade_in_frames
 local combat_fade_ticks_per_frame = 32
 
+local fade_timeline_id = 'fade'
+local fade_out_frames = 18
+local fade_hold_frames = 12
+local fade_in_frames = 18
+local fade_frame_count = fade_out_frames + fade_hold_frames + fade_in_frames
+local fade_ticks_per_frame = 32
+
 local combat_hit_timeline_id = 'combat_hit'
-local combat_hit_frame_count = 10
+local combat_hit_frame_count = 16
 local combat_hit_ticks_per_frame = 24
 
 local combat_dodge_timeline_id = 'combat_dodge'
-local combat_dodge_frame_count = 12
+local combat_dodge_frame_count = 20
 local combat_dodge_ticks_per_frame = 24
 
 local combat_all_out_timeline_id = 'combat_all_out'
@@ -52,6 +60,10 @@ local story = {
 		music = 'm02',
 		typed = false,
 		pages = nil,
+		next = 'bla',
+	},
+	bla = {
+		kind = 'fade',
 		next = 'overgang_monday',
 	},
 	overgang_monday = {
@@ -384,6 +396,8 @@ local function build_director_fsm()
 						self.inline_pages = {}
 						self.inline_next = ''
 						self.skip_combat_fade_in = false
+						self.skip_transition_fade = false
+						self.fade_hold_black = false
 						clear_text(text_main_id)
 						clear_text(text_choice_id)
 						clear_text(text_prompt_id)
@@ -410,6 +424,9 @@ local function build_director_fsm()
 						end
 						if node.kind == 'choice' then
 							return '/choice'
+						end
+						if node.kind == 'fade' then
+							return '/fade'
 						end
 						if node.kind == 'combat' then
 							if self.skip_combat_fade_in then
@@ -449,31 +466,43 @@ local function build_director_fsm()
 					set_text_lines(text_transition_id, { node.label }, false)
 					local transition_text = world_object(text_transition_id)
 					self.transition_center_x = transition_text.centered_block_x
-					self.transition_target_bg = story[node.next].bg
-					transition_text.centered_block_x = display_width()
-					local bg = world_object(bg_id)
-					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
-				end,
+						self.transition_target_bg = story[node.next].bg
+						transition_text.centered_block_x = display_width()
+						local bg = world_object(bg_id)
+						bg.visible = true
+						local c = 1
+						if self.skip_transition_fade then
+							c = 0
+						end
+						bg.colorize = { r = c, g = c, b = c, a = 1 }
+						if self.skip_transition_fade then
+							self:apply_background(self.transition_target_bg)
+						end
+					end,
 				on = {
 					['timeline.frame.' .. overgang_timeline_id] = {
 						go = function(self, _state, event)
-							local frame_index = event.frame_index
-							if frame_index == (overgang_fade_out_frames - 1) then
-								self:apply_background(self.transition_target_bg)
+								local frame_index = event.frame_index
+								local bg = world_object(bg_id)
+								if self.skip_transition_fade then
+									bg.colorize = { r = 0, g = 0, b = 0, a = 1 }
+								else
+									if frame_index == (overgang_fade_out_frames - 1) then
+										self:apply_background(self.transition_target_bg)
+									end
+								local fade_in_start = overgang_frame_count - overgang_fade_in_frames
+								local c = 1
+								if frame_index < overgang_fade_out_frames then
+									local u = frame_index / (overgang_fade_out_frames - 1)
+									c = 1 - u
+								elseif frame_index < fade_in_start then
+									c = 0
+								else
+									local u = (frame_index - fade_in_start) / (overgang_fade_in_frames - 1)
+									c = u
+								end
+								bg.colorize = { r = c, g = c, b = c, a = 1 }
 							end
-							local fade_in_start = overgang_frame_count - overgang_fade_in_frames
-							local c = 1
-							if frame_index < overgang_fade_out_frames then
-								local u = frame_index / (overgang_fade_out_frames - 1)
-								c = 1 - u
-							elseif frame_index < fade_in_start then
-								c = 0
-							else
-								local u = (frame_index - fade_in_start) / (overgang_fade_in_frames - 1)
-								c = u
-							end
-							local bg = world_object(bg_id)
-							bg.colorize = { r = c, g = c, b = c, a = 1 }
 							local center_x = self.transition_center_x
 							local start_x = display_width()
 							local end_x = -display_width()
@@ -492,29 +521,82 @@ local function build_director_fsm()
 							transition_text.centered_block_x = x
 						end,
 					},
-					['timeline.end.' .. overgang_timeline_id] = {
-						go = function(self)
-							local node = story[self.node_id]
-							self.node_id = node.next
-							if story[self.node_id].kind == 'combat' then
-								self.skip_combat_fade_in = true
-							end
-							clear_text(text_transition_id)
-							return '/run_node'
-						end,
+						['timeline.end.' .. overgang_timeline_id] = {
+							go = function(self)
+								local node = story[self.node_id]
+								local came_from_fade = self.skip_transition_fade
+								self.node_id = node.next
+								self.skip_transition_fade = false
+								if story[self.node_id].kind == 'combat' then
+									self.skip_combat_fade_in = true
+								end
+								clear_text(text_transition_id)
+								if came_from_fade then
+									return '/transition_fade_in'
+								end
+								return '/run_node'
+							end,
+						},
 					},
-				},
 				leaving_state = function(self)
 					local bg = world_object(bg_id)
 					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
 					clear_text(text_transition_id)
 				end,
 			},
-			bg_only = {
-				entering_state = function(self)
-					local node = story[self.node_id]
-					playmusic(node.music)
-					self:apply_background(node.bg)
+				transition_fade_in = {
+					timelines = {
+						[overgang_post_fade_in_timeline_id] = {
+							create = function()
+								local frames = {}
+								for i = 0, overgang_fade_in_frames - 1 do
+									frames[#frames + 1] = i
+								end
+								return new_timeline({
+									id = overgang_post_fade_in_timeline_id,
+									frames = frames,
+									ticks_per_frame = overgang_ticks_per_frame,
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = { rewind = true, snap_to_start = true },
+						},
+					},
+					entering_state = function(self)
+						clear_text(text_transition_id)
+						local bg = world_object(bg_id)
+						bg.visible = true
+						bg.colorize = { r = 0, g = 0, b = 0, a = 1 }
+					end,
+					on = {
+						['timeline.frame.' .. overgang_post_fade_in_timeline_id] = {
+							go = function(self, _state, event)
+								local u = event.frame_index / (overgang_fade_in_frames - 1)
+								local c = smoothstep(u)
+								local bg = world_object(bg_id)
+								bg.colorize = { r = c, g = c, b = c, a = 1 }
+							end,
+						},
+						['timeline.end.' .. overgang_post_fade_in_timeline_id] = {
+							go = function(self)
+								local bg = world_object(bg_id)
+								bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+								return '/run_node'
+							end,
+						},
+					},
+					leaving_state = function(self)
+						local bg = world_object(bg_id)
+						bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+					end,
+				},
+				bg_only = {
+					entering_state = function(self)
+						local node = story[self.node_id]
+						playmusic(node.music)
+						self:apply_background(node.bg)
 					clear_text(text_main_id)
 					clear_text(text_choice_id)
 					clear_text(text_prompt_id)
@@ -528,13 +610,106 @@ local function build_director_fsm()
 							self.node_id = node.next
 							return '/run_node'
 						end,
+						},
 					},
 				},
-			},
-			combat_fade_in = {
-				timelines = {
-					[combat_fade_timeline_id] = {
-						create = function()
+				fade = {
+					timelines = {
+						[fade_timeline_id] = {
+							create = function()
+								local frames = {}
+								for i = 0, fade_frame_count - 1 do
+									frames[#frames + 1] = i
+								end
+								return new_timeline({
+									id = fade_timeline_id,
+									frames = frames,
+									ticks_per_frame = fade_ticks_per_frame,
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = { rewind = true, snap_to_start = true },
+						},
+					},
+					entering_state = function(self)
+						local node = story[self.node_id]
+						playmusic(node.music)
+						clear_text(text_main_id)
+						clear_text(text_choice_id)
+						clear_text(text_prompt_id)
+						clear_text(text_transition_id)
+						clear_text(text_results_id)
+						local next_node = story[node.next]
+						self.fade_hold_black = false
+						if next_node.kind == 'transition' then
+							self.fade_hold_black = true
+							self.fade_target_bg = story[next_node.next].bg
+						else
+							self.fade_target_bg = next_node.bg
+						end
+						local bg = world_object(bg_id)
+						bg.visible = true
+						bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+					end,
+					on = {
+						['timeline.frame.' .. fade_timeline_id] = {
+							go = function(self, _state, event)
+								local frame_index = event.frame_index
+								if frame_index == (fade_out_frames - 1) then
+									self:apply_background(self.fade_target_bg)
+								end
+								local c = 1
+								if frame_index < fade_out_frames then
+									local u = frame_index / (fade_out_frames - 1)
+									c = 1 - smoothstep(u)
+								else
+									if self.fade_hold_black then
+										c = 0
+									else
+										local fade_in_start = fade_out_frames + fade_hold_frames
+										if frame_index < fade_in_start then
+											c = 0
+										else
+											local u = (frame_index - fade_in_start) / (fade_in_frames - 1)
+											c = smoothstep(u)
+										end
+									end
+								end
+								local bg = world_object(bg_id)
+								bg.colorize = { r = c, g = c, b = c, a = 1 }
+							end,
+						},
+						['timeline.end.' .. fade_timeline_id] = {
+							go = function(self)
+								local node = story[self.node_id]
+								self.node_id = node.next
+								local next_kind = story[self.node_id].kind
+								if next_kind == 'combat' then
+									self.skip_combat_fade_in = true
+								end
+								if next_kind == 'transition' then
+									self.skip_transition_fade = true
+								end
+								return '/run_node'
+							end,
+						},
+					},
+					leaving_state = function(self)
+						local bg = world_object(bg_id)
+						local c = 1
+						if self.fade_hold_black then
+							c = 0
+						end
+						bg.colorize = { r = c, g = c, b = c, a = 1 }
+						self.fade_hold_black = false
+					end,
+				},
+				combat_fade_in = {
+					timelines = {
+						[combat_fade_timeline_id] = {
+							create = function()
 							local frames = {}
 							for i = 0, combat_fade_frame_count - 1 do
 								frames[#frames + 1] = i
@@ -560,6 +735,7 @@ local function build_director_fsm()
 					clear_text(text_transition_id)
 					self.combat_fade_target_bg = node.bg
 					local bg = world_object(bg_id)
+					bg.visible = true
 					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				end,
 				on = {
@@ -624,6 +800,7 @@ local function build_director_fsm()
 					clear_text(text_transition_id)
 					self.combat_fade_target_bg = node.bg
 					local bg = world_object(bg_id)
+					bg.visible = true
 					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				end,
 				on = {
@@ -664,6 +841,7 @@ local function build_director_fsm()
 					local node = story[self.node_id]
 					playmusic(node.music)
 					self:apply_background(node.bg)
+					world_object(bg_id).visible = false
 					clear_text(text_transition_id)
 					clear_text(text_results_id)
 
@@ -800,8 +978,17 @@ local function build_director_fsm()
 				on = {
 					['timeline.frame.' .. combat_hit_timeline_id] = {
 						go = function(self, _state, event)
+							local frame_index = event.frame_index
 							local monster = world_object(combat_monster_id)
-							if (event.frame_index % 2) == 0 then
+							local hold_in = 3
+							local hold_out = 3
+							local flash_end = combat_hit_frame_count - hold_out
+							if frame_index < hold_in or frame_index >= flash_end then
+								monster.colorize = { r = 1, g = 1, b = 1, a = 1 }
+								return
+							end
+							local flash_index = frame_index - hold_in
+							if (flash_index % 2) == 0 then
 								monster.colorize = { r = 1, g = 1, b = 1, a = 1 }
 							else
 								monster.colorize = { r = 1, g = 0.2, b = 0.2, a = 1 }
@@ -854,8 +1041,15 @@ local function build_director_fsm()
 					['timeline.frame.' .. combat_dodge_timeline_id] = {
 						go = function(self, _state, event)
 							local monster = world_object(combat_monster_id)
-							local u = event.frame_index / (combat_dodge_frame_count - 1)
-							local offset = arc01(u) * combat_monster_dodge_distance * self.combat_dodge_dir
+							local frame_index = event.frame_index
+							local hold_in = 4
+							local hold_out = 4
+							local move_frames = combat_dodge_frame_count - hold_in - hold_out
+							local offset = 0
+							if frame_index >= hold_in and frame_index < (hold_in + move_frames) then
+								local u = (frame_index - hold_in) / (move_frames - 1)
+								offset = arc01(u) * combat_monster_dodge_distance * self.combat_dodge_dir
+							end
 							monster.x = self.combat_monster_base_x + offset
 						end,
 					},
@@ -1195,8 +1389,11 @@ local function register_director()
 			pages = {},
 			transition_center_x = 0,
 			transition_target_bg = story.title.bg,
+			fade_target_bg = story.title.bg,
 			combat_fade_target_bg = story.title.bg,
 			skip_combat_fade_in = false,
+			skip_transition_fade = false,
+			fade_hold_black = false,
 			combat_round_index = 1,
 			combat_points = 0,
 			combat_max_points = 0,
