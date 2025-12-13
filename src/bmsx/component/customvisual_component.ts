@@ -21,8 +21,6 @@ export class CustomVisualComponent extends Component<WorldObject> {
 	// private ops: RenderSubmission[] = [];
 	@excludepropfromsavegame
 	private producer?: RenderProducer;
-	private static flushLogCount = 0;
-	private static readonly FLUSH_DEBUG_LIMIT = 20;
 
 	constructor(opts: ComponentAttachOptions & { producer?: RenderProducer }) {
 		super(opts);
