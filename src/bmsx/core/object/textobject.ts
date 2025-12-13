@@ -30,11 +30,9 @@ export class TextObject extends WorldObject {
 		this.add_component(new CustomVisualComponent({
 			parent_or_id: this, producer: ({ rc }) => {
 				const lineHeight = this.font.char_height(' ');
-				let y = this._dimensions.top;
 
 				this.text.forEach((line, index) => {
-					rc.submit_glyphs({ x: this.centered_block_x, y: y, z: this.z, glyphs: line, font: this.font, background_color: { r: 0, g: 0, b: 0, a: 1 } });
-					y += lineHeight;
+					rc.submit_glyphs({ x: this.centered_block_x, y: this._dimensions.top + lineHeight * index, z: this.z, glyphs: line, font: this.font, background_color: { r: 0, g: 0, b: 0, a: 1 } });
 				});
 			}
 		}));
