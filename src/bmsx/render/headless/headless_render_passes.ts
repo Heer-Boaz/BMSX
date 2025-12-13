@@ -109,6 +109,7 @@ function makeSpriteState(): SpritesPipelineState {
 		ambientColor: [0, 0, 0], // Ambient sprites disabled; update when a new path is implemented.
 		ambientIntensity: 0,
 		viewportTypeIde: gv.viewportTypeIde,
+		psxDither2dEnabled: gv.psx_dither_2d_enabled,
 	};
 }
 

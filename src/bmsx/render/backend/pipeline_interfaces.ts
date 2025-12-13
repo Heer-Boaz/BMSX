@@ -248,6 +248,7 @@ export interface SpritesPipelineState {
 	ambientColor: [number, number, number];
 	ambientIntensity: number;
 	viewportTypeIde: RenderingViewportType;
+	psxDither2dEnabled: boolean;
 }
 
 export interface CRTPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; colorTex: TextureHandle; options?: unknown; }

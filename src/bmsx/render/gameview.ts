@@ -14,7 +14,7 @@ import * as SkyboxPipeline from './3d/skybox_pipeline';
 import type { GPUBackend, RenderContext, TextureHandle } from './backend/pipeline_interfaces';
 import { RenderPassLibrary } from './backend/renderpasslib';
 import { type RenderPassToken } from './backend/pipeline_interfaces';
-import { RenderGraphRuntime, buildFrameData } from './graph/rendergraph';
+import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
 import { GameOptions } from '../core/gameoptions';
 import { calculateCenteredBlockX, renderGlyphs, wrapGlyphs } from './glyphs';
@@ -231,11 +231,15 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public colorBleed: [number, number, number] = [0.02, 0.0, 0.0];
 	public blurIntensity = 0.6;
 	public glowColor: [number, number, number] = [0.12, 0.10, 0.09];
+	public psx_dither_2d_enabled = true; // TODO: JUST ADDED AND NOW MUST BE USED!
+	// public psx_dither_3d_enabled = false; TODO: JUST ADDED AND WE'LL USE IT LATER!
 
 	// Sprite ambient defaults (used when per-sprite override not provided)
 	public spriteAmbientEnabledDefault = false;
 	public spriteAmbientFactorDefault = 1.0;
 	public viewportTypeIde: 'viewport' | 'offscreen' = 'viewport';
+	private renderFrameIndex = 0;
+	private lastRenderTimeSeconds = 0;
 
 	public atmosphere: AtmosphereParams = {
 		fogD50: 320.0,
@@ -372,6 +376,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.canvasSize = (shallowcopy(opts.canvasSize) ?? multiply_vec2(this.viewportSize, 2)) as vec2; // By default, the canvas is twice the size of the viewport!!
 		// Offscreen resolution for internal render graph targets (view-agnostic, but usually twice the viewport size to allow for effects like CRT post processing)
 		this.offscreenCanvasSize = shallowcopy(opts.offscreenSize ?? multiply_vec(this.viewportSize, 2)) as vec2;
+		this.lastRenderTimeSeconds = $.platform.clock.now() / 1000;
 		renderGate.begin({ blocking: true, category: 'init', tag: 'init' }); // Note that we don't store the token; We can end the scope by calling renderGate.end() without a token, assuming that the category is unique fot init. It means that we can safely end the scope later without worrying about late resolves or lifecycle issues.
 	}
 
@@ -472,6 +477,10 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		}
 		try {
 			backend.beginFrame();
+			const nowSeconds = $.platform.clock.now() / 1000;
+			updateExternalFrameTiming(this.renderFrameIndex, nowSeconds, nowSeconds - this.lastRenderTimeSeconds);
+			this.renderFrameIndex += 1;
+			this.lastRenderTimeSeconds = nowSeconds;
 			const frame = buildFrameData(this);
 			renderGraph.execute(frame);
 		} finally {

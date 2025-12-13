@@ -14,6 +14,7 @@ import { GPUBackend, TextureHandle } from '../backend/pipeline_interfaces';
 import { RenderPassBuilder } from '../backend/renderpass_builder';
 import { checkWebGLError } from '../backend/webgl/webgl.helpers';
 import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu/webgpu_backend';
+import { GameView } from '../gameview';
 
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
 export type RGTexHandle = number;
@@ -74,12 +75,8 @@ export function updateExternalFrameTiming(frameIndex: number, timeSeconds: numbe
 	extTimeSeconds = timeSeconds;
 	extDeltaSeconds = deltaSeconds;
 }
-interface CRTOptionsCarrier {
-	// CRT/post-processing options exposed by the view
-	applyNoise: boolean; applyColorBleed: boolean; applyScanlines: boolean; applyBlur: boolean; applyGlow: boolean; applyFringing: boolean;
-	noiseIntensity: number; colorBleed: [number, number, number]; blurIntensity: number; glowColor: [number, number, number];
-}
-export function buildFrameData(view: { offscreenCanvasSize: { x: number; y: number } } & Partial<CRTOptionsCarrier>): FrameData {
+
+export function buildFrameData(view: GameView): FrameData {
 	const mainCam = $.world.activeCamera3D as Camera;
 	const views: View[] = [];
 	if (mainCam) {
@@ -103,7 +100,7 @@ export function buildFrameData(view: { offscreenCanvasSize: { x: number; y: numb
 		time: extTimeSeconds,
 		delta: extDeltaSeconds,
 		views,
-		postFx: view && typeof view.noiseIntensity === 'number' ? {
+		postFx: {
 			crt: {
 				noise: view.noiseIntensity,
 				colorBleed: view.colorBleed as [number, number, number],
@@ -118,7 +115,7 @@ export function buildFrameData(view: { offscreenCanvasSize: { x: number; y: numb
 					fringe: !!view.applyFringing,
 				},
 			},
-		} : undefined,
+		},
 	} as FrameData;
 	return frame;
 }

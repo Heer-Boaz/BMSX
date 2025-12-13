@@ -1,4 +1,3 @@
-// Sprites pipeline (formerly glview.2d) inlined from legacy module.
 // Provides batched 2D sprite + primitive rendering using shared buffers.
 import { new_vec2, new_vec3 } from '../../utils/vector_operations';
 import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
@@ -9,7 +8,6 @@ import type { GPUBackend, RenderContext } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary } from '../backend/renderpasslib';
 import { SpritesPipelineState } from '../backend/pipeline_interfaces';
 import type { FrameSharedState } from '../backend/pipeline_interfaces';
-import { updateAndBindFrameUniforms } from '../backend/frame_uniforms';
 import {
 	ATLAS_ID_COMPONENTS,
 	ATLAS_ID_SIZE,
@@ -72,6 +70,7 @@ const spriteShaderData = {
 	atlas_id: new Uint8Array(ATLAS_ID_SIZE * MAX_SPRITES),
 };
 let spriteShaderScaleLocation: WebGLUniformLocation;
+let spriteShaderDitherIntensityLocation: WebGLUniformLocation;
 
 interface SpriteRuntime {
 	backend: WebGLBackend;
@@ -104,12 +103,14 @@ export function setupSpriteShaderLocations(backend: GPUBackend): void {
 	texture1Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture1')!;
 	texture2Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture2')!;
 	spriteShaderScaleLocation = gl.getUniformLocation(spriteShaderProgram, 'u_scale');
+	spriteShaderDitherIntensityLocation = gl.getUniformLocation(spriteShaderProgram, 'u_ditherIntensity')!;
 }
 
-export function setupDefaultUniformValues(backend: WebGLBackend, defaultScale: number, canvasSize: vec2arr): void {
+export function setupDefaultUniformValues(backend: WebGLBackend, defaultScale: number, canvasSize: vec2arr, ditherIntensity: number): void {
 	const gl = backend.gl;
 	gl.useProgram(spriteShaderProgram);
 	gl.uniform1f(spriteShaderScaleLocation, defaultScale);
+	gl.uniform1f(spriteShaderDitherIntensityLocation, ditherIntensity);
 	spriteShaderData.resolutionVector.set([canvasSize[0], canvasSize[1]]);
 	gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
 	gl.uniform1i(texture0Location, TEXTURE_UNIT_ATLAS);
@@ -169,7 +170,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	backend.bindVertexArray(spriteVAO as WebGLVertexArrayObject);
 	const baseScale = 1;
 	const ideScale = state.viewportTypeIde === 'viewport' ? baseScale : .5;
-	setupDefaultUniformValues(backend, baseScale, [state.baseWidth, state.baseHeight]);
+	setupDefaultUniformValues(backend, baseScale, [state.baseWidth, state.baseHeight], state.psxDither2dEnabled ? 1 : 0);
 	let currentScale = baseScale;
 	const setScale = (scale: number) => {
 		if (scale === currentScale) return;
@@ -372,12 +373,6 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 		exec: (backend: WebGLBackend, fbo, state: SpritesPipelineState) => {
 			const runtime: SpriteRuntime = { backend, gl: backend.gl, context: $.view };
 			drainOverlayFrameIntoSpriteQueue();
-			updateAndBindFrameUniforms(backend, {
-				offscreen: { x: state.width, y: state.height },
-				logical: { x: $.view.viewportSize.x, y: $.view.viewportSize.y },
-				// Ambient sprites disabled; re-enable by passing ambient here:
-				// ambient: { color: state.ambientColor, intensity: state.ambientIntensity },
-			});
 			renderSpriteBatch(runtime, fbo, state);
 		},
 		prepare: (backend, _state) => {
@@ -411,6 +406,7 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 				ambientColor,
 				ambientIntensity,
 				viewportTypeIde: gv.viewportTypeIde,
+				psxDither2dEnabled: gv.psx_dither_2d_enabled,
 			};
 			registry.setState('sprites', spriteState);
 			// Validate binding layout vs resources
