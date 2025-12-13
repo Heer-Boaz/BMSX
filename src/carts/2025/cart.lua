@@ -38,7 +38,7 @@ local combat_dodge_frame_count = 12
 local combat_dodge_ticks_per_frame = 24
 
 local combat_all_out_timeline_id = 'combat_all_out'
-local combat_all_out_frame_count = 48
+local combat_all_out_frame_count = 64
 local combat_all_out_ticks_per_frame = 32
 
 local combat_monster_hover_period_seconds = 1.8
@@ -951,12 +951,13 @@ local function build_director_fsm()
 				entering_state = function(self)
 					local node = story[self.node_id]
 					local rewards = self:resolve_combat_rewards(node)
+					playmusic('m17')
 					self:apply_effects(rewards)
 
 					clear_text(text_main_id)
 					clear_text(text_choice_id)
+					clear_text(text_prompt_id)
 					clear_text(text_transition_id)
-					self:set_prompt_line('[A] continue')
 
 					local monster = world_object(combat_monster_id)
 					monster.visible = false
@@ -973,8 +974,6 @@ local function build_director_fsm()
 					maya_b.z = 300
 
 					local lines = {}
-					lines[#lines + 1] = 'RESULTS'
-					lines[#lines + 1] = 'Score: ' .. self.combat_points .. '/' .. self.combat_max_points
 					for i = 1, #rewards do
 						local effect = rewards[i]
 						lines[#lines + 1] = stat_label(effect.stat) .. ' +' .. effect.add
@@ -997,6 +996,7 @@ local function build_director_fsm()
 				leaving_state = function(self)
 					world_object(combat_maya_b_id).visible = false
 					clear_text(text_results_id)
+					self:hide_combat_sprites()
 				end,
 			},
 			dialogue = {
@@ -1233,7 +1233,7 @@ function new_game()
 	})
 	spawn_textobject('p3.text.choice.def', {
 		id = text_choice_id,
-		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = h - (line_height * 7), bottom = h - (line_height * 3) },
+		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = h - (h / 2), bottom = h - (h / 3) },
 		pos = { z = 1001 },
 	})
 	spawn_textobject('p3.text.prompt.def', {
