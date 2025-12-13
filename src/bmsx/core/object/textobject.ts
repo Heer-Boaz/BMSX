@@ -41,13 +41,16 @@ export class TextObject extends WorldObject {
 				const lineHeight = this.font.char_height(' ') * 2;
 				const margin = this.font.char_width(' ') / 2;
 				const highlightColor = this.highlight_color;
-				const normalColor = { r: 0, g: 0, b: 0, a: 1 };
+				const textColor = this.text_color;
+				const bgAlpha = textColor.a;
+				const normalBgColor = { r: 0, g: 0, b: 0, a: bgAlpha };
+				const highlightBgColor = { r: highlightColor.r, g: highlightColor.g, b: highlightColor.b, a: highlightColor.a * bgAlpha };
 
 				this.text.forEach((line, index) => {
 					if (index === this._highlighted_line_index) {
-						rc.submit_rect({ area: { left: this._dimensions.left - margin, top: this._dimensions.top + lineHeight * index - margin, right: this._dimensions.right + margin, bottom: this._dimensions.top + lineHeight * (index + .5) + margin, z: this.z }, color: highlightColor, kind: 'fill' });
+						rc.submit_rect({ area: { left: this._dimensions.left - margin, top: this._dimensions.top + lineHeight * index - margin, right: this._dimensions.right + margin, bottom: this._dimensions.top + lineHeight * (index + .5) + margin, z: this.z }, color: highlightBgColor, kind: 'fill' });
 					}
-					rc.submit_glyphs({ x: this.centered_block_x, y: this._dimensions.top + lineHeight * index, z: this.z, glyphs: line, font: this.font, color: this.text_color, background_color: (index === this._highlighted_line_index) ? highlightColor : normalColor });
+					rc.submit_glyphs({ x: this.centered_block_x, y: this._dimensions.top + lineHeight * index, z: this.z, glyphs: line, font: this.font, color: textColor, background_color: (index === this._highlighted_line_index) ? highlightBgColor : normalBgColor });
 				});
 			}
 		}));
