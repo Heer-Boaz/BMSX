@@ -57,17 +57,17 @@ local story = {
 		options = {
 			{
 				label = 'Ga naar beneden.',
-				effects = { { stat = 'courage', add = 1 } },
+				effects = { { stat = 'opdekin', add = 1 } },
 				result_pages = {
-					{ 'Je staat op. Geen weg terug.', 'Moed +1' },
+					{ 'Je staat op. Geen weg terug.', 'Opdekin +1' },
 				},
 				next = 'overgang_downstairs',
 			},
 			{
 				label = 'Blijf liggen.',
-				effects = { { stat = 'academics', add = 1 } },
+				effects = { { stat = 'planning', add = 1 } },
 				result_pages = {
-					{ 'Je trekt de deken over je hoofd.', 'Maar de geluiden stoppen niet.', 'Studie +1' },
+					{ 'Je trekt de deken over je hoofd.', 'Maar de geluiden stoppen niet.', 'Planning +1' },
 				},
 				next = 'overgang_downstairs',
 			},
@@ -95,17 +95,17 @@ local story = {
 		options = {
 			{
 				label = 'Neem op.',
-				effects = { { stat = 'charm', add = 1 } },
+				effects = { { stat = 'makeup', add = 1 } },
 				result_pages = {
-					{ 'Een stem fluistert: "Pas op voor de schaduw."', 'Charme +1' },
+					{ 'Een stem fluistert: "Pas op voor de schaduw."', 'Make-up +1' },
 				},
 				next = 'combat_intro',
 			},
 			{
 				label = 'Negeer het.',
-				effects = { { stat = 'courage', add = 1 } },
+				effects = { { stat = 'rust', add = 1 } },
 				result_pages = {
-					{ 'Je drukt weg. Je moet focussen.', 'Moed +1' },
+					{ 'Je drukt weg. Je moet focussen.', 'Rust +1' },
 				},
 				next = 'combat_intro',
 			},
@@ -126,7 +126,13 @@ local story = {
 			{ 'De schaduw verdwijnt alsof hij nooit bestond.', 'Je knippert. Het is weer ochtend.' },
 			{ 'Je voelt je veranderd.', 'Dit was nog maar het begin.' },
 		},
-		next = 'title',
+		next = 'ending',
+	},
+	ending = {
+		kind = 'ending',
+		bg = 'ochtendpijn',
+		music = 'm17',
+		typed = true,
 	},
 	__inline_dialogue = {
 		kind = 'dialogue_inline',
@@ -230,44 +236,47 @@ local function build_director_fsm()
 	define_fsm(director_fsm_id, {
 		initial = 'boot',
 		states = {
-			boot = {
-				entering_state = function(self)
-					self.node_id = 'title'
-					self.stats = { courage = 0, charm = 0, academics = 0 }
-					self.inline_pages = {}
-					self.inline_next = ''
-					self.skip_combat_fade_in = false
-					clear_text(text_main_id)
-					clear_text(text_choice_id)
-					clear_text(text_prompt_id)
-					clear_text(text_transition_id)
-					return '/run_node'
-				end,
-			},
-			run_node = {
-				entering_state = function(self)
-					local node = story[self.node_id]
-					if node.kind == 'transition' then
-						return '/transition'
-					end
-					if node.kind == 'dialogue' or node.kind == 'dialogue_inline' then
-						return '/dialogue'
-					end
-					if node.kind == 'bg_only' then
-						return '/bg_only'
-					end
-					if node.kind == 'choice' then
-						return '/choice'
-					end
-					if node.kind == 'combat' then
-						if self.skip_combat_fade_in then
-							self.skip_combat_fade_in = false
-							return '/combat'
+				boot = {
+					entering_state = function(self)
+						self.node_id = 'title'
+						self.stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
+						self.inline_pages = {}
+						self.inline_next = ''
+						self.skip_combat_fade_in = false
+						clear_text(text_main_id)
+						clear_text(text_choice_id)
+						clear_text(text_prompt_id)
+						clear_text(text_transition_id)
+						return '/run_node'
+					end,
+				},
+				run_node = {
+					entering_state = function(self)
+						local node = story[self.node_id]
+						if node.kind == 'transition' then
+							return '/transition'
 						end
-						return '/combat_fade_in'
-					end
-				end,
-			},
+						if node.kind == 'dialogue' or node.kind == 'dialogue_inline' then
+							return '/dialogue'
+						end
+						if node.kind == 'ending' then
+							return '/ending'
+						end
+						if node.kind == 'bg_only' then
+							return '/bg_only'
+						end
+						if node.kind == 'choice' then
+							return '/choice'
+						end
+						if node.kind == 'combat' then
+							if self.skip_combat_fade_in then
+								self.skip_combat_fade_in = false
+								return '/combat'
+							end
+							return '/combat_fade_in'
+						end
+					end,
+				},
 			transition = {
 				timelines = {
 					[overgang_timeline_id] = {
@@ -559,6 +568,79 @@ local function build_director_fsm()
 					},
 				},
 			},
+			ending = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					playmusic(node.music)
+					self:apply_background(node.bg)
+					clear_text(text_transition_id)
+					clear_text(text_choice_id)
+					clear_text(text_prompt_id)
+					local total = self.stats.planning + self.stats.opdekin + self.stats.rust + self.stats.makeup
+					local title = ''
+					local total_line = ''
+					local line1 = ''
+					local line2 = ''
+					if total <= 1 then
+						title = 'Ending C - Bijna, maar net niet'
+						total_line = 'Totaal <= 1 (' .. total .. ')'
+						line1 = 'Verslag wordt op het nippertje (of net te laat) ingeleverd.'
+						line2 = 'Maya leert: zonder voorbereiding wint de mist.'
+					elseif total <= 5 then
+						title = 'Ending B - School op de rails'
+						total_line = 'Totaal 2-5 (' .. total .. ')'
+						line1 = 'Maya levert op tijd in en is redelijk rustig.'
+						line2 = 'Make-up is \"goed genoeg\" en geen tijddief meer.'
+					else
+						title = 'Ending A - Klokmeester: Stijlvol en Stabiel'
+						total_line = 'Totaal >= 6 (' .. total .. ')'
+						line1 = 'Maya is op tijd, voorbereid, en straalt zonder stress.'
+						line2 = 'School is leidend, en extras passen er naast.'
+					end
+					self.pages = {
+						{ title, total_line },
+						{ line1, line2 },
+						{
+							'Planning: ' .. self.stats.planning,
+							'Opdekin: ' .. self.stats.opdekin,
+							'Rust: ' .. self.stats.rust,
+							'Make-up: ' .. self.stats.makeup,
+						},
+					}
+					self.page_index = 1
+					self:show_dialogue_page(node.typed)
+				end,
+				tick = function(self)
+					local main = world_object(text_main_id)
+					if main.is_typing then
+						main.type_next()
+						return
+					end
+					if self.page_index < #self.pages then
+						self:set_prompt_line('(A) next')
+						return
+					end
+					self:set_prompt_line('EINDE')
+				end,
+				input_eval = 'first',
+				input_event_handlers = {
+					['a[jp]'] = {
+						go = function(self)
+							local main = world_object(text_main_id)
+							if main.is_typing then
+								finish_text(text_main_id)
+								return
+							end
+							if self.page_index < #self.pages then
+								self.page_index = self.page_index + 1
+								local node = story[self.node_id]
+								self:show_dialogue_page(node.typed)
+								return
+							end
+						end,
+					},
+				},
+			},
 			choice = {
 				entering_state = function(self)
 					local node = story[self.node_id]
@@ -648,7 +730,7 @@ local function register_director()
 			node_id = 'title',
 			page_index = 1,
 			choice_index = 1,
-			stats = { courage = 0, charm = 0, academics = 0 },
+			stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 },
 			inline_pages = {},
 			inline_next = '',
 			pages = {},
