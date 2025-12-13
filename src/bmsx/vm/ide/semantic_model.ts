@@ -1886,7 +1886,7 @@ export function symbolSourceLabel(entry: VMLuaSymbolEntry): string {
 	if (!path) {
 		return null;
 	}
-	return computeSourceLabel(path, entry.location.chunkName ?? '<console>');
+	return computeSourceLabel(path, entry.location.chunkName ?? '<anynomous>');
 }
 
 export function refreshSymbolCatalog(force: boolean): void {

@@ -320,7 +320,7 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 
 export function ensureVisualLines(): void {
 	const activeContext = getActiveCodeTabContext();
-	const chunkName = resolveHoverChunkName(activeContext) ?? '<console>';
+	const chunkName = resolveHoverChunkName(activeContext) ?? '<anynomous>';
 	ide_state.scrollRow = ide_state.layout.ensureVisualLines({
 		lines: ide_state.lines,
 		wordWrapEnabled: ide_state.wordWrapEnabled,

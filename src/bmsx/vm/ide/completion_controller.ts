@@ -1,4 +1,3 @@
-import { BmsxVMApi } from '../vm_api';
 import { clamp } from '../../utils/clamp';
 import { getApiCompletionData, getKeywordCompletions, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaModuleSymbols, type LuaScopedSymbol } from './intellisense';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/lua_ast';
@@ -12,26 +11,13 @@ import {
 	LuaCompletionKind,
 	ParameterHintState,
 } from './types';
-import type { VMLuaBuiltinDescriptor, VMLuaDefinitionRange, VMLuaSymbolEntry } from '../types';
+import type { LuaMemberCompletionRequest, VMLuaBuiltinDescriptor, VMLuaDefinitionRange, VMLuaSymbolEntry } from '../types';
 import * as constants from './constants';
 import { isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
 import { isLuaCommentContext, wrapTextDynamic } from './text_utils';
-import { ide_state } from './ide_state';
-import { isReadOnlyCodeTab } from './editor_tabs';
 import { consumeIdeKey } from './ide_input';
-import { api, BmsxVMRuntime } from '../vm_runtime';
 import { point_in_rect } from '../../utils/rect_operations';
 import { LuaLexer } from '../../lua/lualexer';
-
-type MemberCompletionHostRequest = {
-	objectName: string;
-	operator: '.' | ':';
-	prefix: string;
-	asset_id: string;
-	chunkName: string;
-};
-
-export type CompletionRenderApi = BmsxVMApi;
 
 export interface CompletionHost {
 	// Editor state accessors
@@ -53,13 +39,15 @@ export interface CompletionHost {
 	drawText(text: string, x: number, y: number, color: number): void;
 	getCursorScreenInfo(): CursorScreenInfo;
 	shouldShowParameterHints(): boolean;
+	// Rendering primitives
+	fillRect(left: number, top: number, right: number, bottom: number, color: number): void;
+	strokeRect(left: number, top: number, right: number, bottom: number, color: number): void;
 	// Symbol/source helpers
 	getActiveCodeTabContext(): unknown;
-	resolveHoverasset_id(context: unknown): string;
 	resolveHoverChunkName(context: unknown): string;
 	getSemanticDefinitions(): readonly LuaDefinitionInfo[];
 	getLuaModuleAliases(chunkName: string): Map<string, string>;
-	getMemberCompletionItems(request: MemberCompletionHostRequest): LuaCompletionItem[];
+	getMemberCompletionItems(request: LuaMemberCompletionRequest): LuaCompletionItem[];
 	// Utilities
 	charAt(row: number, column: number): string;
 	getTextVersion(): number;
@@ -192,8 +180,6 @@ export class CompletionController {
 	}
 
 	public updateAfterEdit(edit: EditContext): void {
-		// Invalidate caches upon edit
-		this.invalidateLocalCompletionCacheForActiveContext();
 		this.parameterHintIdleElapsed = 0;
 		this.lastCursorPosition = { row: this.host.getCursorRow(), column: this.host.getCursorColumn() };
 		this.lastTextVersion = this.host.getTextVersion();
@@ -333,8 +319,8 @@ export class CompletionController {
 		}
 		const popupRight = popupLeft + popupWidth;
 		const popupBottom = popupTop + popupHeight;
-		api.rectfill(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_COMPLETION_BACKGROUND);
-		api.rect(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_COMPLETION_BORDER);
+		this.host.fillRect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_COMPLETION_BACKGROUND);
+		this.host.strokeRect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_COMPLETION_BORDER);
 		this.completionPopupBounds = { left: popupLeft, top: popupTop, right: popupRight, bottom: popupBottom };
 		const maxLabelWidth = Math.max(0, popupWidth - constants.COMPLETION_POPUP_PADDING_X * 2);
 		for (let drawIndex = 0; drawIndex < visibleCount; drawIndex += 1) {
@@ -346,7 +332,7 @@ export class CompletionController {
 			if (isSelected) {
 				const highlightTop = lineTop - 1;
 				const highlightBottom = highlightTop + this.host.lineHeight + 2;
-				api.rectfill(popupLeft + 1, highlightTop, popupRight - 1, highlightBottom, undefined, constants.COLOR_COMPLETION_HIGHLIGHT);
+				this.host.fillRect(popupLeft + 1, highlightTop, popupRight - 1, highlightBottom, constants.COLOR_COMPLETION_HIGHLIGHT);
 			}
 			const textX = popupLeft + constants.COMPLETION_POPUP_PADDING_X;
 			const label = wrapTextDynamic(item.label, maxLabelWidth, maxLabelWidth, (value) => this.host.measureText(value), 1)[0];
@@ -450,8 +436,8 @@ export class CompletionController {
 		}
 		const popupRight = popupLeft + popupWidth;
 		const popupBottom = popupTop + popupHeight;
-		api.rect(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_PARAMETER_HINT_BORDER);
-		api.rectfill(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_PARAMETER_HINT_BACKGROUND);
+		this.host.strokeRect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BORDER);
+		this.host.fillRect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BACKGROUND);
 		let textX = popupLeft + constants.PARAMETER_HINT_PADDING_X;
 		let currentY = popupTop + constants.PARAMETER_HINT_PADDING_Y;
 		for (let i = 0; i < clippedSegments.length; i += 1) {
@@ -552,13 +538,11 @@ export class CompletionController {
 			};
 			appendItems(this.getModuleMemberCompletionItems(context));
 			const activeContext = this.host.getActiveCodeTabContext();
-			const asset_id = this.host.resolveHoverasset_id(activeContext);
 			const chunkName = this.host.resolveHoverChunkName(activeContext);
 			const runtimeItems = this.host.getMemberCompletionItems({
 				objectName: context.objectName,
 				operator: context.operator,
 				prefix: context.prefix,
-				asset_id,
 				chunkName,
 			});
 			appendItems(runtimeItems);
@@ -586,12 +570,13 @@ export class CompletionController {
 		const cached = this.ensureLocalCompletionCache();
 		if (!cached) return [];
 		const column = context.replaceToColumn;
-		const filtered = this.filterLocalSymbolsAtPosition(cached.symbols, context.row, column);
+		const lines = this.host.getLines();
+		const filtered = this.filterLocalSymbolsAtPosition(cached.symbols, lines, context.row, column);
 		if (filtered.length === 0) {
 			return [];
 		}
 		const activeCodeContext = this.host.getActiveCodeTabContext();
-		const chunkName = cached.chunkName ?? this.host.resolveHoverChunkName(activeCodeContext);
+		const chunkName = cached.chunkName ?? this.host.resolveHoverChunkName(activeCodeContext) ?? '<anynomous>';
 		return this.buildLocalCompletionItems(filtered, chunkName );
 	}
 
@@ -599,23 +584,26 @@ export class CompletionController {
 		const key = this.activeCompletionCacheKey();
 		if (!key) return null;
 		const activeCodeContext = this.host.getActiveCodeTabContext();
-		const chunkName = this.host.resolveHoverChunkName(activeCodeContext);
+		const chunkName = this.host.resolveHoverChunkName(activeCodeContext) ?? '<anynomous>';
 		const currentVersion = this.host.getTextVersion();
-		let cached = this.localCompletionCache.get(key) ;
-		const needsParse = !cached || cached.chunkName !== chunkName || cached.parsedVersion !== currentVersion;
-		if (needsParse) {
-			const definitions = this.host.getSemanticDefinitions();
-			const symbols = definitions && definitions.length > 0 ? this.convertDefinitionsToLocalSymbols(definitions) : [];
-			const moduleAliases = this.host.getLuaModuleAliases(chunkName );
-			cached = {
-				parsedVersion: currentVersion,
-				chunkName,
-				symbols,
-				moduleAliases: new Map(moduleAliases),
-			};
-			this.localCompletionCache.set(key, cached);
+		const cached = this.localCompletionCache.get(key);
+		if (cached && cached.chunkName === chunkName && cached.parsedVersion === currentVersion) {
+			return cached;
 		}
-		return cached ;
+		const definitions = this.host.getSemanticDefinitions();
+		if (!definitions) {
+			return cached;
+		}
+		const symbols = definitions.length > 0 ? this.convertDefinitionsToLocalSymbols(definitions) : [];
+		const moduleAliases = this.host.getLuaModuleAliases(chunkName);
+		const updated: LocalCompletionCacheEntry = {
+			parsedVersion: currentVersion,
+			chunkName,
+			symbols,
+			moduleAliases: new Map(moduleAliases),
+		};
+		this.localCompletionCache.set(key, updated);
+		return updated;
 	}
 
 	private getGlobalCompletionItems(): LuaCompletionItem[] {
@@ -702,18 +690,41 @@ export class CompletionController {
 		};
 	}
 
-	private filterLocalSymbolsAtPosition(symbols: readonly LuaScopedSymbol[], row: number, column: number): LuaScopedSymbol[] {
+	private filterLocalSymbolsAtPosition(symbols: readonly LuaScopedSymbol[], lines: readonly string[], row: number, column: number): LuaScopedSymbol[] {
 		if (symbols.length === 0) return [];
 		const row1Based = row + 1;
 		const column1Based = column + 1;
+		let semanticEndLine = 0;
+		for (let index = 0; index < symbols.length; index += 1) {
+			const scopeEndLine = symbols[index].scopeRange.endLine;
+			if (scopeEndLine > semanticEndLine) {
+				semanticEndLine = scopeEndLine;
+			}
+		}
+		const documentEndLine = lines.length;
+		const scopeEndExtendsToDocument = semanticEndLine < documentEndLine;
+		const documentEndColumn = lines[documentEndLine - 1].length + 1;
 		const selected = new Map<string, LuaScopedSymbol>();
 		for (let index = 0; index < symbols.length; index += 1) {
 			const symbol = symbols[index];
 			if (!this.isLocalDefinitionKind(symbol.kind)) {
 				continue;
 			}
-			if (!this.isPositionWithinRange(row1Based, column1Based, symbol.scopeRange)) {
-				continue;
+			const scopeRange = symbol.scopeRange;
+			if (!scopeEndExtendsToDocument || scopeRange.endLine !== semanticEndLine) {
+				if (!this.isPositionWithinRange(row1Based, column1Based, scopeRange)) {
+					continue;
+				}
+			} else {
+				if (row1Based < scopeRange.startLine || row1Based > documentEndLine) {
+					continue;
+				}
+				if (row1Based === scopeRange.startLine && column1Based < scopeRange.startColumn) {
+					continue;
+				}
+				if (row1Based === documentEndLine && column1Based > documentEndColumn) {
+					continue;
+				}
 			}
 			if (!this.isDefinitionBeforePosition(symbol.definitionRange, row1Based, column1Based)) {
 				continue;
@@ -1384,35 +1395,6 @@ export class CompletionController {
 
 	private activeCompletionCacheKey(): string {
 		const context = this.host.getActiveCodeTabContext();
-		const asset_id = this.host.resolveHoverasset_id(context);
-		const chunkName = this.host.resolveHoverChunkName(context);
-		if (asset_id || chunkName) {
-			const safeasset_id = asset_id ?? '';
-			const safeChunk = chunkName ?? '';
-			return `${safeasset_id}|${safeChunk}`;
-		}
-		let contextId = '';
-		if (context && typeof context === 'object') {
-			const candidate = (context as { id?: unknown }).id;
-			if (candidate !== undefined && candidate !== null) {
-				contextId = String(candidate);
-			}
-		}
-		if (contextId.length > 0) {
-			return `ctx:${contextId}`;
-		}
-		return `player:${BmsxVMRuntime.instance.playerIndex}`;
+		return this.host.resolveHoverChunkName(context) ?? '<anynomous>';
 	}
-
-	private invalidateLocalCompletionCacheForActiveContext(): void {
-		const key = this.activeCompletionCacheKey();
-		if (!key) return;
-		this.localCompletionCache.delete(key);
-	}
-}
-export function handleCompletionKeybindings(): boolean {
-	if (isReadOnlyCodeTab()) {
-		return false;
-	}
-	return ide_state.completion.handleKeybindings();
 }

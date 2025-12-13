@@ -210,7 +210,7 @@ export function resolveDefinitionLocationForExpression(options: ResolveDefinitio
 	};
 	if (bestMeta.path) {
 		location.path = bestMeta.path;
-	} else if (bestMeta.chunkName && bestMeta.chunkName !== '<console>') {
+	} else if (bestMeta.chunkName && bestMeta.chunkName !== '<anynomous>') {
 		location.path = bestMeta.chunkName;
 	}
 	return location;
@@ -219,7 +219,7 @@ export function resolveDefinitionLocationForExpression(options: ResolveDefinitio
 export function referenceEntryKey(entry: ReferenceCatalogEntry): string {
 	const location = entry.symbol.location;
 	const range = location.range;
-	const chunk = location.chunkName ?? '<console>';
+	const chunk = location.chunkName ?? '<anynomous>';
 	return `${chunk}:${range.startLine}:${range.startColumn}`;
 }
 

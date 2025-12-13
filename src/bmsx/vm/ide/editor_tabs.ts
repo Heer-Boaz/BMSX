@@ -33,9 +33,9 @@ import { $ } from '../../core/game';
 
 function resolveChunkName(descriptor: VMResourceDescriptor | null): string {
 	if (!descriptor) {
-		return '<console>';
+		return '<anynomous>';
 	}
-	return descriptor.path ?? '<console>';
+	return descriptor.path ?? '<anynomous>';
 }
 
 function resolveSource(descriptor: VMResourceDescriptor | null): string {

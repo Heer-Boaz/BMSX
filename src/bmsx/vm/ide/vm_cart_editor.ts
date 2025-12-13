@@ -198,11 +198,12 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 		revealCursor: () => revealCursor(),
 		measureText: (text) => measureText(text),
 		drawText: (text, x, y, color) => drawEditorText(ide_state.font, text, x, y, undefined, color),
+		fillRect: (left, top, right, bottom, color) => api.rectfill(left, top, right, bottom, undefined, color),
+		strokeRect: (left, top, right, bottom, color) => api.rect(left, top, right, bottom, undefined, color),
 		getCursorScreenInfo: () => ide_state.cursorScreenInfo,
 		characterAdvance: (char) => ide_state.font.advance(char),
 		get lineHeight(): number { return ide_state.font.lineHeight; },
 		getActiveCodeTabContext: () => getActiveCodeTabContext(),
-		resolveHoverasset_id: (ctx) => resolveHoverAssetId(ctx as CodeTabContext),
 		resolveHoverChunkName: (ctx) => resolveHoverChunkName(ctx as CodeTabContext),
 		getSemanticDefinitions: () => getActiveSemanticDefinitions(),
 		getLuaModuleAliases: (chunkName) => getLuaModuleAliases(chunkName),
@@ -625,32 +626,6 @@ export function focusChunkSource(chunkName: string): void {
 		return;
 	}
 	openResourceDescriptor(descriptor);
-}
-
-export function focusResourceByAsset(asset_id: string, preferredPath?: string): void {
-	const descriptors = listResourcesStrict();
-	if (preferredPath) {
-		const byAssetAndPath = descriptors.find(entry =>
-			entry.asset_id === asset_id && entry.path === preferredPath
-		);
-		if (byAssetAndPath) {
-			openResourceDescriptor(byAssetAndPath);
-			return;
-		}
-		const byPath = descriptors.find(entry => entry.path === preferredPath);
-		if (byPath) {
-			openResourceDescriptor(byPath);
-			return;
-		}
-		openResourceDescriptor({ path: preferredPath, type: 'lua', asset_id });
-		return;
-	}
-	const match = descriptors.find(entry => entry.asset_id === asset_id);
-	if (match) {
-		openResourceDescriptor(match);
-		return;
-	}
-	throw new Error(`[VMCartEditor] No resource found for asset '${asset_id}'.`);
 }
 
 export function listResourcesStrict(): VMResourceDescriptor[] {
@@ -1168,13 +1143,13 @@ export function markDiagnosticsDirtyForChunk(chunkName: string): void {
 
 export function getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] {
 	const context = getActiveCodeTabContext();
-	const chunkName = resolveHoverChunkName(context) ?? '<console>';
+	const chunkName = resolveHoverChunkName(context) ?? '<anynomous>';
 	return ide_state.layout.getSemanticDefinitions(ide_state.lines, ide_state.textVersion, chunkName);
 }
 
 export function getLuaModuleAliases(chunkName: string): Map<string, string> {
 	const activeContext = getActiveCodeTabContext();
-	const targetChunk = chunkName ?? resolveHoverChunkName(activeContext) ?? '<console>';
+	const targetChunk = chunkName ?? resolveHoverChunkName(activeContext) ?? '<anynomous>';
 	ide_state.layout.getSemanticDefinitions(ide_state.lines, ide_state.textVersion, targetChunk);
 	const data = ide_state.semanticWorkspace.getFileData(targetChunk);
 	if (!data || data.moduleAliases.length === 0) {
@@ -1198,7 +1173,7 @@ export function findContextByChunk(chunkName: string): CodeTabContext {
 		if (descriptor) {
 			continue;
 		}
-		const aliases: string[] = ['__entry__', '<console>'];
+		const aliases: string[] = ['__entry__', '<anynomous>'];
 		for (let index = 0; index < aliases.length; index += 1) {
 			const alias = aliases[index];
 			if (alias === chunkName) {
@@ -1907,7 +1882,7 @@ export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, con
 	const descriptor = context ? context.descriptor : null;
 	const normalizedPath = descriptor && descriptor.path ? descriptor.path : null;
 	const asset_id = descriptor && descriptor.asset_id ? descriptor.asset_id : null;
-	const chunkName = resolveHoverChunkName(context) ?? normalizedPath ?? asset_id ?? '<console>';
+	const chunkName = resolveHoverChunkName(context) ?? normalizedPath ?? asset_id ?? '<anynomous>';
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: getActiveCodeTabContext(),
 		activeLines: ide_state.lines,
@@ -2387,7 +2362,7 @@ export function buildProjectReferenceContext(context: CodeTabContext): {
 	const resolvedChunk = resolveHoverChunkName(context)
 		?? normalizedPath
 		?? descriptorasset_id
-		?? '<console>';
+		?? '<anynomous>';
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: context,
 		activeLines: ide_state.lines,
@@ -4030,7 +4005,7 @@ export function resourceViewerTextCapacity(viewer: ResourceViewerState): number 
 
 export function ensureResourceViewerSprite(asset_id: string, layout: { left: number; top: number; scale: number }): void {
 	if (!ide_state.resourceViewerSpriteId) {
-		ide_state.resourceViewerSpriteId = 'console_resource_viewer_sprite';
+		ide_state.resourceViewerSpriteId = 'resource_viewer_sprite';
 	}
 	const spriteId = ide_state.resourceViewerSpriteId;
 	let object = api.world_object(spriteId);

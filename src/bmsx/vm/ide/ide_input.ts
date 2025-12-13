@@ -9,7 +9,6 @@ import type { MenuId, PointerSnapshot, ResourceViewerState, RuntimeErrorOverlay,
 import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp, revealCursor, setCursorPosition } from './caret';
 import { isResourceViewActive, isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab, cycleTab, activateCodeTab, beginTabDrag, closeTab, endTabDrag, setActiveTab, getActiveCodeTabContext, updateTabDrag } from './editor_tabs';
 import { prepareDebuggerStepOverlay } from './ide_debugger';
-import { handleCompletionKeybindings } from './completion_controller';
 import { computeRuntimeErrorOverlayMaxWidth } from './text_utils';
 import { drawProblemsPanel, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from './problems_panel';
 import { measureText } from './text_utils';
@@ -584,7 +583,7 @@ export function handleEditorInput(): void {
 		TextEditing.unindentSelectionOrLine();
 		return;
 	}
-	if (handleCompletionKeybindings()) {
+	if (ide_state.completion.handleKeybindings()) {
 		return;
 	}
 	if (handleCodeFormattingShortcut()) {

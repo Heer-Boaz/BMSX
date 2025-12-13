@@ -11,7 +11,7 @@ import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, 
 import { BmsxVMApi } from '../vm_api';
 import { VM_API_METHOD_METADATA } from '../vm_api_metadata';
 import { BmsxVMRuntime } from '../vm_runtime';
-import type { VMLuaBuiltinDescriptor, VMLuaDefinitionLocation, VMLuaDefinitionRange, VMLuaHoverRequest, VMLuaHoverResult, VMLuaHoverScope, VMLuaMemberCompletion, VMLuaMemberCompletionRequest, VMLuaSymbolEntry, VMLuaSymbolKind } from '../types';
+import type { VMLuaBuiltinDescriptor, VMLuaDefinitionLocation, VMLuaDefinitionRange, VMLuaHoverRequest, VMLuaHoverResult, VMLuaHoverScope, VMLuaMemberCompletion, LuaMemberCompletionRequest, VMLuaSymbolEntry, VMLuaSymbolKind } from '../types';
 import { ScratchBatchPooled } from '../../utils/scratchbatch';
 import { resolveDefinitionLocationForExpression, type ProjectReferenceEnvironment } from './code_reference';
 import { applyDefinitionSelection, beginNavigationCapture, completeNavigation, focusChunkSource, resolvePointerColumn, resolvePointerRow, safeInspectLuaExpression } from './vm_cart_editor';
@@ -1154,13 +1154,7 @@ export function resolveHoverChunkName(context: CodeTabContext): string {
 	}
 	return null;
 }
-export function buildMemberCompletionItems(request: {
-	objectName: string;
-	operator: '.' | ':';
-	prefix: string;
-	asset_id: string;
-	chunkName: string;
-}): LuaCompletionItem[] {
+export function buildMemberCompletionItems(request: LuaMemberCompletionRequest): LuaCompletionItem[] {
 	if (request.objectName.length === 0) {
 		return [];
 	}
@@ -1225,7 +1219,7 @@ export function describeMetadataValue(value: unknown): string {
 }
 export function requestSemanticRefresh(context?: CodeTabContext): void {
 	const activeContext = context ?? getActiveCodeTabContext();
-	const chunkName = resolveHoverChunkName(activeContext) ?? '<console>';
+	const chunkName = resolveHoverChunkName(activeContext) ?? '<anynomous>';
 	ide_state.layout.requestSemanticUpdate(ide_state.lines, ide_state.textVersion, chunkName);
 }
 export function resolveSemanticDefinitionLocation(
@@ -1244,7 +1238,7 @@ export function resolveSemanticDefinitionLocation(
 	}
 	const activeContext = getActiveCodeTabContext();
 	const hoverChunkName = resolveHoverChunkName(activeContext);
-	const modelChunkName = chunkName ?? hoverChunkName ?? '<console>';
+	const modelChunkName = chunkName ?? hoverChunkName ?? '<anynomous>';
 	const model = ide_state.layout.getSemanticModel(ide_state.lines, ide_state.textVersion, modelChunkName);
 	if (!model) {
 		return null;
@@ -1261,7 +1255,7 @@ export function resolveSemanticDefinitionLocation(
 	const resolvedChunk = chunkName
 		?? descriptorPath
 		?? hoverChunkName
-		?? '<console>';
+		?? '<anynomous>';
 	const location: VMLuaDefinitionLocation = {
 		path: descriptorPath,
 		chunkName: resolvedChunk,
@@ -1274,7 +1268,7 @@ export function resolveSemanticDefinitionLocation(
 	};
 	if (descriptorPath) {
 		location.path = descriptorPath;
-	} else if (resolvedChunk && resolvedChunk !== '<console>') {
+	} else if (resolvedChunk && resolvedChunk !== '<anynomous>') {
 		location.path = resolvedChunk;
 	}
 	return location;
@@ -1502,7 +1496,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 			?? normalizedPath
 			?? (descriptor ? descriptor.asset_id : null)
 			?? asset_id
-			?? '<console>';
+			?? '<anynomous>';
 		const environment: ProjectReferenceEnvironment = {
 			activeContext: context,
 			activeLines: ide_state.lines,
@@ -1631,7 +1625,7 @@ export function inspectLuaExpression(request: VMLuaHoverRequest): VMLuaHoverResu
 	};
 }
 
-export function listLuaObjectMembers(request: VMLuaMemberCompletionRequest): VMLuaMemberCompletion[] {
+export function listLuaObjectMembers(request: LuaMemberCompletionRequest): VMLuaMemberCompletion[] {
 	const trimmed = request.expression.trim();
 	if (trimmed.length === 0) {
 		return [];
@@ -2193,12 +2187,12 @@ export function describeLuaValueForInspector(value: LuaValue): { lines: string[]
 	}
 	if (isLuaTable(value)) {
 		const tableName = resolveTableTypeName(value);
-		const preview = consoleValueToString(value);
+		const preview = valueToString(value);
 		const lines = tableName ? [`<table ${tableName}>`] : ['<table>'];
 		lines.push(preview);
 		return { lines, valueType: tableName ?? 'table', isFunction: false };
 	}
-	const summary = consoleValueToString(value);
+	const summary = valueToString(value);
 	return { lines: [summary], valueType: 'unknown', isFunction: false };
 }
 
@@ -2480,7 +2474,7 @@ export function describeLuaTable(table: LuaTable, depth: number, visited: Set<un
 			stringEntries.push({ key, value: entryValue });
 			continue;
 		}
-		otherEntries.push({ key: consoleValueToString(key as LuaValue, depth + 1, visited), value: entryValue });
+		otherEntries.push({ key: valueToString(key as LuaValue, depth + 1, visited), value: entryValue });
 	}
 	const sequentialValues: LuaValue[] = [];
 	let seqIndex = 1;
@@ -2499,7 +2493,7 @@ export function describeLuaTable(table: LuaTable, depth: number, visited: Set<un
 		if (consumed >= limit) {
 			return;
 		}
-		parts.push(`${label} = ${consoleValueToString(entryValue, depth + 1, visited)}`);
+		parts.push(`${label} = ${valueToString(entryValue, depth + 1, visited)}`);
 		consumed += 1;
 	};
 	stringEntries.sort((a, b) => a.key.localeCompare(b.key));
@@ -2586,7 +2580,7 @@ export function formatValueList(values: LuaValue[], depth: number, visited: Set<
 	const parts: string[] = [];
 	const limit = Math.min(values.length, VM_PREVIEW_MAX_ENTRIES);
 	for (let i = 0; i < limit; i += 1) {
-		parts.push(consoleValueToString(values[i], depth + 1, visited));
+		parts.push(valueToString(values[i], depth + 1, visited));
 	}
 	return parts.join(', ');
 }
@@ -2642,7 +2636,7 @@ export function formatJsValue(value: unknown, depth: number, visited: Set<unknow
 	return String(value);
 }
 
-export function consoleValueToString(value: LuaValue, depth = 0, visited: Set<unknown> = new Set()): string {
+export function valueToString(value: LuaValue, depth = 0, visited: Set<unknown> = new Set()): string {
 	if (value === null) {
 		return 'nil';
 	}
