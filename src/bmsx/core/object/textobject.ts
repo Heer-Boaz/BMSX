@@ -17,8 +17,16 @@ export class TextObject extends WorldObject {
 	public current_line_index = 0;
 	public current_char_index = 0;
 	public maximum_characters_per_line: number;
+	private _highlighted_line_index: number = null;
+	public get highlighted_line_index(): number | null {
+		return this._highlighted_line_index;
+	}
+	public set highlighted_line_index(value: number | null) {
+		this._highlighted_line_index = value;
+	}
 	public is_typing = false;
 	public font: BFont;
+	public highlight_color = { r: 0, g: 0, b: .5, a: 1 };
 	protected _dimensions: RectBounds = null;
 	protected centered_block_x = 0;
 
@@ -29,10 +37,16 @@ export class TextObject extends WorldObject {
 
 		this.add_component(new CustomVisualComponent({
 			parent_or_id: this, producer: ({ rc }) => {
-				const lineHeight = this.font.char_height(' ');
+				const lineHeight = this.font.char_height(' ') * 2;
+				const margin = this.font.char_width(' ') / 2;
+				const highlightColor = this.highlight_color;
+				const normalColor = { r: 0, g: 0, b: 0, a: 1 };
 
 				this.text.forEach((line, index) => {
-					rc.submit_glyphs({ x: this.centered_block_x, y: this._dimensions.top + lineHeight * index, z: this.z, glyphs: line, font: this.font, background_color: { r: 0, g: 0, b: 0, a: 1 } });
+					if (index === this._highlighted_line_index) {
+						rc.submit_rect({ area: { left: this._dimensions.left - margin, top: this._dimensions.top + lineHeight * index - margin, right: this._dimensions.right + margin, bottom: this._dimensions.top + lineHeight * (index + .5) + margin, z: this.z }, color: highlightColor, kind: 'fill' });
+					}
+					rc.submit_glyphs({ x: this.centered_block_x, y: this._dimensions.top + lineHeight * index, z: this.z, glyphs: line, font: this.font, background_color: (index === this._highlighted_line_index) ? highlightColor : normalColor });
 				});
 			}
 		}));
