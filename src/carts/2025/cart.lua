@@ -57,6 +57,10 @@ local combat_exit_fade_in_timeline_id = 'combat_exit_fade_in'
 local combat_exit_fade_in_frames = 18
 local combat_exit_fade_in_ticks_per_frame = 32
 
+local combat_results_fade_in_timeline_id = 'combat_results_fade_in'
+local combat_results_fade_in_frames = 18
+local combat_results_fade_in_ticks_per_frame = 32
+
 local combat_monster_hover_period_seconds = 1.8
 local combat_monster_hover_amp = 6
 local combat_monster_dodge_distance = 24
@@ -321,6 +325,14 @@ function director:set_prompt_line(text)
 	set_text_lines(text_prompt_id, { text }, false)
 end
 
+function director:reset_text_colors()
+	world_object(text_main_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
+	world_object(text_choice_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
+	world_object(text_prompt_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
+	world_object(text_transition_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
+	world_object(text_results_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
+end
+
 function director:apply_effects(effects)
 	for i = 1, #effects do
 		local effect = effects[i]
@@ -472,6 +484,7 @@ local function build_director_fsm()
 					clear_text(text_choice_id)
 					clear_text(text_prompt_id)
 					set_text_lines(text_transition_id, { node.label }, false)
+					self:reset_text_colors()
 					local transition_text = world_object(text_transition_id)
 					self.transition_center_x = transition_text.centered_block_x
 						self.transition_target_bg = story[node.next].bg
@@ -609,6 +622,7 @@ local function build_director_fsm()
 					clear_text(text_choice_id)
 					clear_text(text_prompt_id)
 					clear_text(text_transition_id)
+					self:reset_text_colors()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
@@ -649,6 +663,7 @@ local function build_director_fsm()
 						clear_text(text_prompt_id)
 						clear_text(text_transition_id)
 						clear_text(text_results_id)
+						self:reset_text_colors()
 						local next_node = story[node.next]
 						self.fade_hold_black = false
 						if next_node.kind == 'transition' then
@@ -850,10 +865,7 @@ local function build_director_fsm()
 						bg.colorize = { r = 0, g = 0, b = 0, a = 1 }
 						clear_text(text_transition_id)
 						clear_text(text_results_id)
-						world_object(text_main_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
-						world_object(text_choice_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
-						world_object(text_prompt_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
-						world_object(text_results_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
+						self:reset_text_colors()
 
 						self.combat_round_index = 1
 						self.combat_points = 0
@@ -1146,7 +1158,7 @@ local function build_director_fsm()
 				on = {
 					['timeline.end.' .. combat_all_out_timeline_id] = {
 						go = function(self)
-							return '/combat_results'
+							return '/combat_results_setup'
 						end,
 					},
 				},
@@ -1154,7 +1166,7 @@ local function build_director_fsm()
 					world_object(combat_all_out_id).visible = false
 				end,
 			},
-			combat_results = {
+			combat_results_setup = {
 				entering_state = function(self)
 					local node = story[self.node_id]
 					local rewards = self:resolve_combat_rewards(node)
@@ -1182,7 +1194,7 @@ local function build_director_fsm()
 					maya_b.x = display_width() - maya_b.sx
 					maya_b.y = display_height() - maya_b.sy
 					maya_b.z = 300
-					maya_b.colorize = { r = 1, g = 1, b = 1, a = 1 }
+					maya_b.colorize = { r = 1, g = 1, b = 1, a = 0 }
 
 					local lines = {}
 					for i = 1, #rewards do
@@ -1190,8 +1202,49 @@ local function build_director_fsm()
 						lines[#lines + 1] = stat_label(effect.stat) .. ' +' .. effect.add
 					end
 					set_text_lines(text_results_id, lines, false)
-					world_object(text_results_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
+					world_object(text_results_id).text_color = { r = 1, g = 1, b = 1, a = 0 }
+					return '/combat_results_fade_in'
 				end,
+			},
+			combat_results_fade_in = {
+				timelines = {
+					[combat_results_fade_in_timeline_id] = {
+						create = function()
+							local frames = {}
+							for i = 0, combat_results_fade_in_frames - 1 do
+								frames[#frames + 1] = i
+							end
+							return new_timeline({
+								id = combat_results_fade_in_timeline_id,
+								frames = frames,
+								ticks_per_frame = combat_results_fade_in_ticks_per_frame,
+								playback_mode = 'once',
+							})
+						end,
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = { rewind = true, snap_to_start = true },
+					},
+				},
+				on = {
+					['timeline.frame.' .. combat_results_fade_in_timeline_id] = {
+						go = function(self, _state, event)
+							local u = event.frame_index / (combat_results_fade_in_frames - 1)
+							local a = smoothstep(u)
+							local maya_b = world_object(combat_maya_b_id)
+							maya_b.colorize = { r = 1, g = 1, b = 1, a = a }
+							local results = world_object(text_results_id)
+							results.text_color = { r = 1, g = 1, b = 1, a = a }
+						end,
+					},
+					['timeline.end.' .. combat_results_fade_in_timeline_id] = {
+						go = function(self)
+							return '/combat_results'
+						end,
+					},
+				},
+			},
+			combat_results = {
 				input_eval = 'first',
 				input_event_handlers = {
 					['a[jp]'] = {
@@ -1313,6 +1366,8 @@ local function build_director_fsm()
 					local node = story[self.node_id]
 					playmusic(node.music)
 					self:apply_background(node.bg)
+					world_object(bg_id).visible = true
+					self:reset_text_colors()
 					if node.kind == 'dialogue_inline' then
 						self.pages = self.inline_pages
 					else
@@ -1365,6 +1420,8 @@ local function build_director_fsm()
 					local node = story[self.node_id]
 					playmusic(node.music)
 					self:apply_background(node.bg)
+					world_object(bg_id).visible = true
+					self:reset_text_colors()
 					clear_text(text_transition_id)
 					clear_text(text_choice_id)
 					clear_text(text_prompt_id)
@@ -1438,6 +1495,8 @@ local function build_director_fsm()
 					local node = story[self.node_id]
 					playmusic(node.music)
 					self:apply_background(node.bg)
+					world_object(bg_id).visible = true
+					self:reset_text_colors()
 					self:setup_choice_menu(node)
 				end,
 				tick = function(self)
