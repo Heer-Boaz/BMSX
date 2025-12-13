@@ -398,6 +398,15 @@ export class BmsxVMRuntime extends Service {
 			$.pipeline_spec_override = null; // Clear any pipeline spec override
 			$.pipeline_ext = vmExtSpec; // Activate base VM pipeline extensions
 		}
+		this.updateOverlayAudioSuspension();
+	}
+
+	private updateOverlayAudioSuspension(): void {
+		if (this.isOverlayActive()) {
+			$.sndmaster.suspendAll('overlay');
+		} else {
+			$.sndmaster.resumeAll('overlay');
+		}
 	}
 
 	private toggleTerminalMode(): void {

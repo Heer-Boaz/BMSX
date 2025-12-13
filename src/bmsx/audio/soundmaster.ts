@@ -86,6 +86,7 @@ export class SoundMaster implements RegisterablePersistent {
 
 	public static readonly instance: SoundMaster = new SoundMaster();
 
+	private globalSuspensions: Set<string>;
 	private tracks: Record<asset_id, RomAudioResource>;
 	private clips: Record<string, AudioClipHandle>;
 	private clipPromises: Record<string, Promise<AudioClipHandle>>;
@@ -107,6 +108,7 @@ export class SoundMaster implements RegisterablePersistent {
 	private voiceRecordByHandle: WeakMap<VoiceHandle, ActiveVoiceRecord>;
 
 	private constructor() {
+		this.globalSuspensions = new Set();
 		this.tracks = {};
 		this.clips = {};
 		this.clipPromises = {};
@@ -647,7 +649,7 @@ export class SoundMaster implements RegisterablePersistent {
 
 	public pause(type?: AudioType): void {
 		if (!type) {
-			void this.A.suspend();
+			this.suspendAll('pause');
 			return;
 		}
 		const pool = this.voicesByType[type];
@@ -666,7 +668,7 @@ export class SoundMaster implements RegisterablePersistent {
 	}
 
 	public resume(): void {
-		void this.A.resume();
+		this.resumeAll('pause');
 	}
 
 	public resumeType(type: AudioType): void {
@@ -675,6 +677,25 @@ export class SoundMaster implements RegisterablePersistent {
 			const snapshot = paused[i];
 			const params: ModulationParams = { ...snapshot.params, offset: snapshot.offset };
 			void this.play(snapshot.id, { params, priority: snapshot.priority });
+		}
+	}
+
+	public suspendAll(tag: string): void {
+		if (this.globalSuspensions.has(tag)) {
+			return;
+		}
+		this.globalSuspensions.add(tag);
+		if (this.globalSuspensions.size === 1) {
+			void this.A.suspend();
+		}
+	}
+
+	public resumeAll(tag: string): void {
+		if (!this.globalSuspensions.delete(tag)) {
+			return;
+		}
+		if (this.globalSuspensions.size === 0) {
+			void this.A.resume();
 		}
 	}
 

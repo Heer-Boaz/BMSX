@@ -4,12 +4,16 @@ import { $ } from '../core/game';
 export function showRewindDialog() {
 	// Remove any existing rewind overlay
 	let rewindOverlay = document.getElementById('rewind-overlay');
-	if (rewindOverlay) rewindOverlay.remove();
+	if (rewindOverlay) {
+		$.sndmaster.resumeAll('rewindui');
+		rewindOverlay.remove();
+	}
 
 	// Create overlay
 	rewindOverlay = document.createElement('div');
 	rewindOverlay.id = 'rewind-overlay';
 	// All overlay styling is now in CSS
+	$.sndmaster.suspendAll('rewindui');
 
 	// Title
 	const title = document.createElement('div');
@@ -43,10 +47,9 @@ export function showRewindDialog() {
 		const now = $.platform.clock.now();
 		if (now - lastJumpTime < JUMP_INTERVAL) return;
 		lastJumpTime = now;
-		if (!$) return;
 		const rect = barContainer.getBoundingClientRect();
 		const percent = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
-		const frames = $.getRewindFrames() || [];
+		const frames = $.getRewindFrames();
 		const idx = Math.round(percent * (frames.length - 1));
 		if ($.jumpToFrame(idx)) {
 			updateInfo();
@@ -72,12 +75,14 @@ export function showRewindDialog() {
 	closeBtn.textContent = '✖';
 	closeBtn.title = 'Close';
 	closeBtn.className = 'rewind-close-btn';
-	closeBtn.onclick = () => rewindOverlay.remove();
+	closeBtn.onclick = () => {
+		$.sndmaster.resumeAll('rewindui');
+		rewindOverlay.remove();
+	};
 	rewindOverlay.appendChild(closeBtn);
 
 	// --- Update bar fill/handle on frame change ---
 	function updateInfo() {
-		if (!$) return;
 		const frames = $.getRewindFrames();
 		let idx = $.getCurrentRewindFrameIndex();
 		const totalFrames = frames.length - 1; // Exclude the current frame
