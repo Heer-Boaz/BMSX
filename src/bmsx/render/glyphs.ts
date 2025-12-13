@@ -70,7 +70,6 @@ export function wrapGlyphs(text: string, maxLineLength: number): string[] {
 		if (word === '\n') {
 			lines.push(currentLine.trim());
 			currentLine = '';
-			lines.push('');
 		} else {
 			const tentativeLine = currentLine ? currentLine + ' ' + word : word;
 			if (tentativeLine.length <= maxLineLength) {
@@ -93,4 +92,3 @@ export function wrapGlyphs(text: string, maxLineLength: number): string[] {
 
 	return lines;
 }
-
