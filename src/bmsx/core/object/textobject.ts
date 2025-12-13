@@ -30,15 +30,15 @@ export class TextObject extends WorldObject {
 		this.add_component(new CustomVisualComponent({
 			parent_or_id: this, producer: ({ rc }) => {
 				const lineHeight = this.font.char_height(' ');
-				const startY = 2 * lineHeight;
-
-				const xOffset = this.centered_block_x;
+				let y = this._dimensions.top;
 
 				this.text.forEach((line, index) => {
-					rc.submit_glyphs({ x: xOffset, y: index * lineHeight + startY, glyphs: line, background_color: { r: 0, g: 0, b: 0, a: 1 } });
+					rc.submit_glyphs({ x: this.centered_block_x, y: y, z: this.z, glyphs: line, font: this.font, background_color: { r: 0, g: 0, b: 0, a: 1 } });
+					y += lineHeight;
 				});
 			}
 		}));
+		this.recenter_text_block();
 	}
 
 	/**
@@ -56,7 +56,7 @@ export class TextObject extends WorldObject {
 	 * 7. Calculates the centered block X position.
 	 * 8. Updates the displayed text.
 	 */
-	public setTextFromLines(lines: string | string[]): void {
+	public set_text(lines: string | string[]): void {
 		if (typeof lines === 'string') {
 			lines = [lines];
 		}
@@ -82,7 +82,7 @@ export class TextObject extends WorldObject {
 	 * @method
 	 * @returns {void}
 	 */
-	protected typeNextCharacter(): void {
+	public type_next(): void {
 		if (!this.is_typing) return;
 
 		if (this.current_line_index >= this.full_text_lines.length) {
