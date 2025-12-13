@@ -25,12 +25,6 @@ import type { DeviceKind, InputDevice, InputEvt } from '../platform';
 import type { GameViewCanvas } from '../platform';
 
 /**
- * Prevents the default action, propagation, and immediate propagation of an event.
- *
- * @param e The event object.
- * @returns Returns false.
- */
-/**
  * Resets the properties of an object by deleting all keys except for the ones specified in the `except` array.
  * If no `except` array is provided, all keys will be deleted.
  * Used for resetting the UI of the onscreen gamepad for events such as button releases.
