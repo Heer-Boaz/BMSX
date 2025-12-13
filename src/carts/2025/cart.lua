@@ -17,15 +17,20 @@ local overgang_ticks_per_frame = 32
 local overgang_fade_out_frames = 18
 local overgang_fade_in_frames = 18
 
+local combat_fade_timeline_id = 'combat_fade'
+local combat_fade_out_frames = 10
+local combat_fade_hold_frames = 4
+local combat_fade_in_frames = 10
+local combat_fade_frame_count = combat_fade_out_frames + combat_fade_hold_frames + combat_fade_in_frames
+local combat_fade_ticks_per_frame = 32
+
 local story = {
 	title = {
-		kind = 'dialogue',
+		kind = 'bg_only',
 		bg = 'titel',
 		music = 'm02',
 		typed = false,
-		pages = {
-			{ 'Pakjesavond 5 december...', 'Een moderne slaapkamer.', 'Druk [A] om te beginnen.' },
-		},
+		pages = nil,
 		next = 'overgang_monday',
 	},
 	overgang_monday = {
@@ -94,7 +99,7 @@ local story = {
 				result_pages = {
 					{ 'Een stem fluistert: "Pas op voor de schaduw."', 'Charme +1' },
 				},
-				next = 'overgang_darkhour',
+				next = 'combat_intro',
 			},
 			{
 				label = 'Negeer het.',
@@ -102,15 +107,9 @@ local story = {
 				result_pages = {
 					{ 'Je drukt weg. Je moet focussen.', 'Moed +1' },
 				},
-				next = 'overgang_darkhour',
+				next = 'combat_intro',
 			},
 		},
-	},
-	overgang_darkhour = {
-		kind = 'transition',
-		label = 'DARK HOUR',
-		music = 'm16',
-		next = 'combat_intro',
 	},
 	combat_intro = {
 		kind = 'combat',
@@ -135,12 +134,13 @@ local story = {
 	},
 }
 
-
-current_music = nil
+local current_music = nil
 local function playmusic(musicid)
-	if musicid ~= nil and musicid ~= current_music then
-		$.playaudio(musicid)
+	if musicid == current_music then
 		return
+	end
+	if musicid ~= nil then
+		$.playaudio(musicid)
 	else
 		$.stopmusic()
 	end
@@ -206,14 +206,14 @@ end
 function director:update_dialogue_prompt()
 	local main = world_object(text_main_id)
 	if main.is_typing then
-		self:set_prompt_line('[A] skip')
+		-- self:set_prompt_line('[A] skip')
 		return
 	end
 	if self.page_index < #self.pages then
-		self:set_prompt_line('[A] next')
+		self:set_prompt_line('(A) Next')
 		return
 	end
-	self:set_prompt_line('[A] continue')
+	self:set_prompt_line('(A) Continue')
 end
 
 function director:setup_choice_menu(node)
@@ -243,20 +243,27 @@ local function build_director_fsm()
 					return '/run_node'
 				end,
 			},
-			run_node = {
-				entering_state = function(self)
-					local node = story[self.node_id]
-					if node.kind == 'transition' then
-						return '/transition'
-					end
-					if node.kind == 'dialogue' or node.kind == 'dialogue_inline' then
-						return '/dialogue'
-					end
-					if node.kind == 'choice' then
-						return '/choice'
-					end
-					if node.kind == 'combat' then
-						return '/combat'
+				run_node = {
+					entering_state = function(self)
+						local node = story[self.node_id]
+						if node.kind == 'transition' then
+							return '/transition'
+						end
+						if node.kind == 'dialogue' or node.kind == 'dialogue_inline' then
+							return '/dialogue'
+						end
+						if node.kind == 'bg_only' then
+							return '/bg_only'
+						end
+						if node.kind == 'choice' then
+							return '/choice'
+						end
+						if node.kind == 'combat' then
+							if self.skip_combat_fade_in then
+							self.skip_combat_fade_in = nil
+							return '/combat'
+						end
+						return '/combat_fade_in'
 					end
 				end,
 			},
@@ -336,6 +343,9 @@ local function build_director_fsm()
 						go = function(self)
 							local node = story[self.node_id]
 							self.node_id = node.next
+							if story[self.node_id].kind == 'combat' then
+								self.skip_combat_fade_in = true
+							end
 							clear_text(text_transition_id)
 							return '/run_node'
 						end,
@@ -345,6 +355,155 @@ local function build_director_fsm()
 					local bg = world_object(bg_id)
 					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
 					clear_text(text_transition_id)
+				end,
+			},
+			bg_only = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					playmusic(node.music)
+					self:apply_background(node.bg)
+					clear_text(text_main_id)
+					clear_text(text_choice_id)
+					clear_text(text_prompt_id)
+					clear_text(text_transition_id)
+				end,
+				input_eval = 'first',
+				input_event_handlers = {
+					['a[jp]'] = {
+						go = function(self)
+							local node = story[self.node_id]
+							self.node_id = node.next
+							return '/run_node'
+						end,
+					},
+				},
+			},
+			combat_fade_in = {
+				timelines = {
+					[combat_fade_timeline_id] = {
+						create = function()
+							local frames = {}
+							for i = 0, combat_fade_frame_count - 1 do
+								frames[#frames + 1] = i
+							end
+							return new_timeline({
+								id = combat_fade_timeline_id,
+								frames = frames,
+								ticks_per_frame = combat_fade_ticks_per_frame,
+								playback_mode = 'once',
+							})
+						end,
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = { rewind = true, snap_to_start = true },
+					},
+				},
+				entering_state = function(self)
+					local node = story[self.node_id]
+					playmusic(node.music)
+					clear_text(text_main_id)
+					clear_text(text_choice_id)
+					clear_text(text_prompt_id)
+					clear_text(text_transition_id)
+					self.combat_fade_target_bg = node.bg
+					local bg = world_object(bg_id)
+					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+				end,
+				on = {
+					['timeline.frame.' .. combat_fade_timeline_id] = {
+						go = function(self, _state, event)
+							local frame_index = event.frame_index
+							if frame_index == (combat_fade_out_frames - 1) then
+								self:apply_background(self.combat_fade_target_bg)
+							end
+							local fade_in_start = combat_fade_out_frames + combat_fade_hold_frames
+							local c = 1
+							if frame_index < combat_fade_out_frames then
+								local u = frame_index / (combat_fade_out_frames - 1)
+								c = 1 - u
+							elseif frame_index < fade_in_start then
+								c = 0
+							else
+								local u = (frame_index - fade_in_start) / (combat_fade_in_frames - 1)
+								c = u
+							end
+							local bg = world_object(bg_id)
+							bg.colorize = { r = c, g = c, b = c, a = 1 }
+						end,
+					},
+					['timeline.end.' .. combat_fade_timeline_id] = {
+						go = function(self)
+							return '/combat'
+						end,
+					},
+				},
+				leaving_state = function(self)
+					local bg = world_object(bg_id)
+					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+				end,
+			},
+			combat_fade_out = {
+				timelines = {
+					[combat_fade_timeline_id] = {
+						create = function()
+							local frames = {}
+							for i = 0, combat_fade_frame_count - 1 do
+								frames[#frames + 1] = i
+							end
+							return new_timeline({
+								id = combat_fade_timeline_id,
+								frames = frames,
+								ticks_per_frame = combat_fade_ticks_per_frame,
+								playback_mode = 'once',
+							})
+						end,
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = { rewind = true, snap_to_start = true },
+					},
+				},
+				entering_state = function(self)
+					local node = story[self.node_id]
+					playmusic(node.music)
+					clear_text(text_main_id)
+					clear_text(text_choice_id)
+					clear_text(text_prompt_id)
+					clear_text(text_transition_id)
+					self.combat_fade_target_bg = node.bg
+					local bg = world_object(bg_id)
+					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+				end,
+				on = {
+					['timeline.frame.' .. combat_fade_timeline_id] = {
+						go = function(self, _state, event)
+							local frame_index = event.frame_index
+							if frame_index == (combat_fade_out_frames - 1) then
+								self:apply_background(self.combat_fade_target_bg)
+							end
+							local fade_in_start = combat_fade_out_frames + combat_fade_hold_frames
+							local c = 1
+							if frame_index < combat_fade_out_frames then
+								local u = frame_index / (combat_fade_out_frames - 1)
+								c = 1 - u
+							elseif frame_index < fade_in_start then
+								c = 0
+							else
+								local u = (frame_index - fade_in_start) / (combat_fade_in_frames - 1)
+								c = u
+							end
+							local bg = world_object(bg_id)
+							bg.colorize = { r = c, g = c, b = c, a = 1 }
+						end,
+					},
+					['timeline.end.' .. combat_fade_timeline_id] = {
+						go = function(self)
+							return '/run_node'
+						end,
+					},
+				},
+				leaving_state = function(self)
+					local bg = world_object(bg_id)
+					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				end,
 			},
 			dialogue = {
@@ -405,13 +564,11 @@ local function build_director_fsm()
 					playmusic(node.music)
 					self:apply_background(node.bg)
 					self:setup_choice_menu(node)
-					self:set_prompt_line('[A] skip')
 				end,
 				tick = function(self)
 					local main = world_object(text_main_id)
 					if main.is_typing then
 						main.type_next()
-						self:set_prompt_line('[A] skip')
 					else
 						self:set_prompt_line('[A] select')
 					end
@@ -469,7 +626,10 @@ local function build_director_fsm()
 						go = function(self)
 							local node = story[self.node_id]
 							self.node_id = node.next
-							return '/run_node'
+							if story[self.node_id].kind == 'transition' then
+								return '/run_node'
+							end
+							return '/combat_fade_out'
 						end,
 					},
 				},
@@ -492,6 +652,8 @@ local function register_director()
 			inline_next = nil,
 			pages = nil,
 			transition_center_x = 0,
+			combat_fade_target_bg = nil,
+			skip_combat_fade_in = nil,
 		},
 	})
 end
@@ -502,6 +664,7 @@ function init()
 end
 
 function new_game()
+	current_music = nil
 	local w = display_width()
 	local h = display_height()
 	local line_height = 8
