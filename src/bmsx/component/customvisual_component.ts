@@ -68,11 +68,6 @@ export class CustomVisualComponent extends Component<WorldObject> {
 	/** Submit accumulated ops into the current frame's renderer and clear the buffer. */
 	public flush(_queue: RenderSubmitQueue): void {
 		const producer = this.producer;
-		if ($.debug && CustomVisualComponent.flushLogCount < CustomVisualComponent.FLUSH_DEBUG_LIMIT) {
-			CustomVisualComponent.flushLogCount++;
-			const label = producer ? (producer.name && producer.name.length > 0 ? producer.name : 'anonymous') : 'missing';
-			console.debug(`[CustomVisualComponent][flush] parent=${this.parent.id} producer=${label}`);
-		}
 		if (!producer) throw new Error(`[CustomVisualComponent] No producer defined for '${this.parent.id}' while flushing render ops.`);
 		producer({ parent: this.parent, rc: this });
 
