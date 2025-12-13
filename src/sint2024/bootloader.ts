@@ -1,4 +1,4 @@
-import { $, BFont, BGamepadButton, World, BootArgs, GamepadInputMapping, Input, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, type State, WorldConfiguration } from 'bmsx';
+import { $, BFont, BGamepadButton, World, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, type State, WorldConfiguration } from 'bmsx';
 import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';
@@ -28,7 +28,7 @@ _global['h406A'] = (args: BootArgs): Promise<void> => {
 		viewHost,
 	}).then(() => {
 		// set input map previously done in do_one_time_game_init
-		$.set_inputmap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, pointer: Input.clonePointerMapping() });
+		$.set_inputmap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, });
 		$.view.default_font = new BFont(BitmapId);
 		$.start();
 	});

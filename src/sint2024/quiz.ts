@@ -108,7 +108,7 @@ export class quiz extends TextObject {
 		if (currentQ.imgid) {
 			$.get_worldobject<sint>('sint').setimg(currentQ.imgid);
 		}
-		this.setTextFromLines([
+		this.set_text([
 			`Vraag ${idx + 1}/${quizItems.length}: ${currentQ.question}`,
 			...currentQ.options
 		]);
@@ -139,10 +139,10 @@ export class quiz extends TextObject {
 				_start: {
 					entering_state(this: quiz) {
 						this.maximum_characters_per_line = maximum_characters_per_line_question;
-						this.setTextFromLines(['Beste Eli,', 'Welkom bij deze quiz,', 'Een speelse uitdaging,dat is wat dit is.', 'Met vragen over films,sport en spel,', 'Ben je klaar?', 'Dan beginnen we snel!']);
+						this.set_text(['Beste Eli,', 'Welkom bij deze quiz,', 'Een speelse uitdaging,dat is wat dit is.', 'Met vragen over films,sport en spel,', 'Ben je klaar?', 'Dan beginnen we snel!']);
 					},
 					tick(this: quiz, _state: State) {
-						this.typeNextCharacter();
+						this.type_next();
 					},
 					input_event_handlers: {
 						'?(a[jp], b[jp])': { // Handle both answer options
@@ -160,7 +160,7 @@ export class quiz extends TextObject {
 						this.presentQuestion();
 					},
 					tick(this: quiz, _state: State) {
-						this.typeNextCharacter();
+						this.type_next();
 					},
 					input_event_handlers: {
 						'a[jp]': { // Handle answer option A
@@ -200,13 +200,13 @@ export class quiz extends TextObject {
 						this.switchSintToAnswer();
 						const currentQ = quizItems[this.currentQuestionIndex];
 						if (this.currentAnswerOptionChosen === 'a') {
-							this.setTextFromLines([currentQ.reactionA]);
+							this.set_text([currentQ.reactionA]);
 						} else {
-							this.setTextFromLines([currentQ.reactionB]);
+							this.set_text([currentQ.reactionB]);
 						}
 					},
 					tick(this: quiz, _state: State) {
-						this.typeNextCharacter();
+						this.type_next();
 					},
 					input_event_handlers: {
 						'?(a[jp], b[jp])': { // Handle both answer options
@@ -230,7 +230,7 @@ export class quiz extends TextObject {
 					entering_state(this: quiz) {
 						// this.maximum_characters_per_line = maximum_characters_per_line_end;
 						this.switchSintToKlaar();
-						this.setTextFromLines([
+						this.set_text([
 							'Gefeliciteerd!Je bent geniaal!Jouw diepgaande kennis is fenomenaal!',
 							'Dat je zou winnen,daarover twijfelde ik niet,Ondanks de moeilijke vragen van mijn quizmasterpiet!',
 							'',
@@ -241,7 +241,7 @@ export class quiz extends TextObject {
 						]);
 					},
 					tick(this: quiz, _state: State) {
-						this.typeNextCharacter();
+						this.type_next();
 					}
 				}
 			}
