@@ -357,7 +357,7 @@ local story = {
 	},
 	after_combat_spiegel = {
 		kind = 'dialogue',
-		bg = 'klas1',
+		bg = 'maya_b',
 		music = 'm05',
 		typed = true,
 		pages = {
