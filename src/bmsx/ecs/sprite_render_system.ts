@@ -11,6 +11,7 @@ export class SpriteRenderSystem extends ECSystem {
 	constructor(priority = 8) { super(TickGroup.Presentation, priority); }
 	update(world: World): void {
 		for (const [o, sc] of world.objects_with_components(SpriteComponent, { scope: 'active' })) {
+			if (o.dispose_flag || !o.visible) continue;
 			if (!sc.enabled) continue;
 			const parent = o as WorldObject;
 			const tc = parent.get_unique_component(TransformComponent);

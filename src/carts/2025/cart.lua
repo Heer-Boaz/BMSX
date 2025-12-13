@@ -3,10 +3,15 @@ local director_instance_id = 'p3.director.instance'
 local director_fsm_id = 'p3.director.fsm'
 
 local bg_id = 'p3.bg'
+local combat_monster_id = 'p3.combat.monster'
+local combat_maya_a_id = 'p3.combat.maya_a'
+local combat_maya_b_id = 'p3.combat.maya_b'
+local combat_all_out_id = 'p3.combat.all_out'
 local text_main_id = 'p3.text.main'
 local text_choice_id = 'p3.text.choice'
 local text_prompt_id = 'p3.text.prompt'
 local text_transition_id = 'p3.text.transition'
+local text_results_id = 'p3.text.results'
 
 local overgang_timeline_id = 'overgang'
 local overgang_in_frames = 24
@@ -23,6 +28,22 @@ local combat_fade_hold_frames = 4
 local combat_fade_in_frames = 10
 local combat_fade_frame_count = combat_fade_out_frames + combat_fade_hold_frames + combat_fade_in_frames
 local combat_fade_ticks_per_frame = 32
+
+local combat_hit_timeline_id = 'combat_hit'
+local combat_hit_frame_count = 10
+local combat_hit_ticks_per_frame = 24
+
+local combat_dodge_timeline_id = 'combat_dodge'
+local combat_dodge_frame_count = 12
+local combat_dodge_ticks_per_frame = 24
+
+local combat_all_out_timeline_id = 'combat_all_out'
+local combat_all_out_frame_count = 48
+local combat_all_out_ticks_per_frame = 32
+
+local combat_monster_hover_period_seconds = 1.8
+local combat_monster_hover_amp = 6
+local combat_monster_dodge_distance = 24
 
 local story = {
 	title = {
@@ -115,6 +136,55 @@ local story = {
 		kind = 'combat',
 		bg = 'klas1',
 		music = 'm16',
+		monster_imgid = 'monster_snoozer',
+		rounds = {
+			{
+				prompt = { 'Een schaduw blokkeert de weg.', 'Wat zeg je?' },
+				options = {
+					{ label = '\"Ik ben niet bang.\"', outcome = 'hit', points = 1 },
+					{ label = '\"Ehm... sorry?\"', outcome = 'dodge', points = 0 },
+					{ label = '\"Rustig blijven.\"', outcome = 'hit', points = 1 },
+				},
+			},
+			{
+				prompt = { 'Het monster sist.', 'Hoe reageer je?' },
+				options = {
+					{ label = '\"Ik laat me niet afleiden.\"', outcome = 'hit', points = 1 },
+					{ label = '\"Misschien gaat het weg...\"', outcome = 'dodge', points = 0 },
+					{ label = '\"Ik zet door.\"', outcome = 'hit', points = 1 },
+				},
+			},
+			{
+				prompt = { 'Het wankelt.', 'Wat is je laatste zet?' },
+				options = {
+					{ label = '\"Dit is mijn keuze.\"', outcome = 'hit', points = 1 },
+					{ label = '\"Ik kijk weg.\"', outcome = 'dodge', points = 0 },
+					{ label = '\"Niet vandaag.\"', outcome = 'hit', points = 1 },
+				},
+			},
+		},
+		rewards = {
+			{
+				min = 0,
+				max = 1,
+				effects = { { stat = 'rust', add = 1 } },
+			},
+			{
+				min = 2,
+				max = 2,
+				effects = { { stat = 'planning', add = 1 }, { stat = 'rust', add = 1 } },
+			},
+			{
+				min = 3,
+				max = 99,
+				effects = {
+					{ stat = 'planning', add = 1 },
+					{ stat = 'opdekin', add = 1 },
+					{ stat = 'rust', add = 1 },
+					{ stat = 'makeup', add = 1 },
+				},
+			},
+		},
 		next = 'after_combat',
 	},
 	after_combat = {
@@ -151,6 +221,41 @@ local function playmusic(musicid)
 		$.stopmusic()
 	end
 	current_music = musicid
+end
+
+local function stat_label(stat_id)
+	if stat_id == 'planning' then
+		return 'Planning'
+	end
+	if stat_id == 'opdekin' then
+		return 'Opdekin'
+	end
+	if stat_id == 'rust' then
+		return 'Rust'
+	end
+	if stat_id == 'makeup' then
+		return 'Make-up'
+	end
+end
+
+local function smoothstep(u)
+	return u * u * (3 - 2 * u)
+end
+
+local function pingpong01(u)
+	local f = u - math.floor(u)
+	local p = f * 2
+	if p <= 1 then
+		return p
+	end
+	return 2 - p
+end
+
+local function arc01(u)
+	if u <= 0.5 then
+		return smoothstep(u * 2)
+	end
+	return smoothstep((1 - u) * 2)
 end
 
 local function set_text_lines(text_object_id, lines, typed)
@@ -203,6 +308,42 @@ function director:apply_effects(effects)
 	end
 end
 
+function director:hide_combat_sprites()
+	world_object(combat_monster_id).visible = false
+	world_object(combat_maya_a_id).visible = false
+	world_object(combat_maya_b_id).visible = false
+	world_object(combat_all_out_id).visible = false
+end
+
+function director:apply_combat_round(node)
+	local round = node.rounds[self.combat_round_index]
+	set_text_lines(text_main_id, round.prompt, true)
+	local choice_lines = {}
+	for i = 1, #round.options do
+		choice_lines[i] = round.options[i].label
+	end
+	set_text_lines(text_choice_id, choice_lines, false)
+	self.choice_index = 1
+end
+
+function director:update_combat_hover()
+	self.combat_hover_time = self.combat_hover_time + game.deltatime_seconds
+	local monster = world_object(combat_monster_id)
+	local u = (self.combat_hover_time / combat_monster_hover_period_seconds) + 0.25
+	local wave = smoothstep(pingpong01(u))
+	local offset = (wave - 0.5) * 2 * combat_monster_hover_amp
+	monster.y = self.combat_monster_base_y + offset
+end
+
+function director:resolve_combat_rewards(node)
+	for i = 1, #node.rewards do
+		local reward = node.rewards[i]
+		if self.combat_points >= reward.min and self.combat_points <= reward.max then
+			return reward.effects
+		end
+	end
+end
+
 function director:show_dialogue_page(typed)
 	local page = self.pages[self.page_index]
 	set_text_lines(text_main_id, page, typed)
@@ -247,6 +388,8 @@ local function build_director_fsm()
 						clear_text(text_choice_id)
 						clear_text(text_prompt_id)
 						clear_text(text_transition_id)
+						clear_text(text_results_id)
+						self:hide_combat_sprites()
 						return '/run_node'
 					end,
 				},
@@ -271,7 +414,7 @@ local function build_director_fsm()
 						if node.kind == 'combat' then
 							if self.skip_combat_fade_in then
 								self.skip_combat_fade_in = false
-								return '/combat'
+								return '/combat_init'
 							end
 							return '/combat_fade_in'
 						end
@@ -443,7 +586,7 @@ local function build_director_fsm()
 					},
 					['timeline.end.' .. combat_fade_timeline_id] = {
 						go = function(self)
-							return '/combat'
+							return '/combat_init'
 						end,
 					},
 				},
@@ -514,6 +657,346 @@ local function build_director_fsm()
 				leaving_state = function(self)
 					local bg = world_object(bg_id)
 					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+				end,
+			},
+			combat_init = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					playmusic(node.music)
+					self:apply_background(node.bg)
+					clear_text(text_transition_id)
+					clear_text(text_results_id)
+
+					self.combat_round_index = 1
+					self.combat_points = 0
+					self.combat_max_points = #node.rounds
+					self.combat_hover_time = 0
+
+					local monster = world_object(combat_monster_id)
+					monster.imgid = node.monster_imgid
+					monster.visible = true
+					monster.colorize = { r = 1, g = 1, b = 1, a = 1 }
+					monster.x = (display_width() * 0.65) - (monster.sx / 2)
+					monster.y = (display_height() * 0.25) - (monster.sy / 2)
+					monster.z = 200
+
+					self.combat_monster_base_x = monster.x
+					self.combat_monster_base_y = monster.y
+
+					local maya_a = world_object(combat_maya_a_id)
+					maya_a.imgid = 'maya_a'
+					maya_a.visible = true
+					maya_a.x = 0
+					maya_a.y = display_height() - maya_a.sy
+					maya_a.z = 300
+
+					local all_out = world_object(combat_all_out_id)
+					all_out.imgid = 'all_out'
+					all_out.visible = false
+					all_out.x = 0
+					all_out.y = 0
+					all_out.z = 800
+
+					local maya_b = world_object(combat_maya_b_id)
+					maya_b.imgid = 'maya_b'
+					maya_b.visible = false
+					maya_b.x = display_width() - maya_b.sx
+					maya_b.y = display_height() - maya_b.sy
+					maya_b.z = 300
+
+					return '/combat_round'
+				end,
+			},
+			combat_round = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					playmusic(node.music)
+					self:apply_background(node.bg)
+					clear_text(text_transition_id)
+					clear_text(text_results_id)
+					local monster = world_object(combat_monster_id)
+					monster.imgid = node.monster_imgid
+					monster.visible = true
+					local maya_a = world_object(combat_maya_a_id)
+					maya_a.imgid = 'maya_a'
+					maya_a.visible = true
+					world_object(combat_all_out_id).visible = false
+					world_object(combat_maya_b_id).visible = false
+					self:apply_combat_round(node)
+				end,
+				tick = function(self)
+					self:update_combat_hover()
+					local main = world_object(text_main_id)
+					if main.is_typing then
+						main.type_next()
+						return
+					end
+					self:set_prompt_line('[A] select')
+					local choice_text = world_object(text_choice_id)
+					choice_text.highlighted_line_index = self.choice_index - 1
+				end,
+				input_eval = 'first',
+				input_event_handlers = {
+					['up[jp]'] = {
+						go = function(self)
+							self.choice_index = math.max(1, self.choice_index - 1)
+						end,
+					},
+					['down[jp]'] = {
+						go = function(self)
+							local node = story[self.node_id]
+							local round = node.rounds[self.combat_round_index]
+							self.choice_index = math.min(#round.options, self.choice_index + 1)
+						end,
+					},
+					['a[jp]'] = {
+						go = function(self)
+							local main = world_object(text_main_id)
+							if main.is_typing then
+								finish_text(text_main_id)
+								return
+							end
+							local node = story[self.node_id]
+							local round = node.rounds[self.combat_round_index]
+							local option = round.options[self.choice_index]
+							self.combat_points = self.combat_points + option.points
+							self.combat_round_index = self.combat_round_index + 1
+							if option.outcome == 'hit' then
+								return '/combat_hit'
+							end
+							return '/combat_dodge'
+						end,
+					},
+				},
+			},
+			combat_hit = {
+				timelines = {
+					[combat_hit_timeline_id] = {
+						create = function()
+							local frames = {}
+							for i = 0, combat_hit_frame_count - 1 do
+								frames[#frames + 1] = i
+							end
+							return new_timeline({
+								id = combat_hit_timeline_id,
+								frames = frames,
+								ticks_per_frame = combat_hit_ticks_per_frame,
+								playback_mode = 'once',
+							})
+						end,
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = { rewind = true, snap_to_start = true },
+					},
+				},
+				entering_state = function(self)
+					clear_text(text_choice_id)
+					clear_text(text_prompt_id)
+					set_text_lines(text_main_id, { 'RAAK!' }, false)
+				end,
+				tick = function(self)
+					self:update_combat_hover()
+				end,
+				on = {
+					['timeline.frame.' .. combat_hit_timeline_id] = {
+						go = function(self, _state, event)
+							local monster = world_object(combat_monster_id)
+							if (event.frame_index % 2) == 0 then
+								monster.colorize = { r = 1, g = 1, b = 1, a = 1 }
+							else
+								monster.colorize = { r = 1, g = 0.2, b = 0.2, a = 1 }
+							end
+						end,
+					},
+					['timeline.end.' .. combat_hit_timeline_id] = {
+						go = function(self)
+							local monster = world_object(combat_monster_id)
+							monster.colorize = { r = 1, g = 1, b = 1, a = 1 }
+							local node = story[self.node_id]
+							if self.combat_round_index > #node.rounds then
+								return '/combat_all_out_prompt'
+							end
+							return '/combat_round'
+						end,
+					},
+				},
+			},
+			combat_dodge = {
+				timelines = {
+					[combat_dodge_timeline_id] = {
+						create = function()
+							local frames = {}
+							for i = 0, combat_dodge_frame_count - 1 do
+								frames[#frames + 1] = i
+							end
+							return new_timeline({
+								id = combat_dodge_timeline_id,
+								frames = frames,
+								ticks_per_frame = combat_dodge_ticks_per_frame,
+								playback_mode = 'once',
+							})
+						end,
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = { rewind = true, snap_to_start = true },
+					},
+				},
+				entering_state = function(self)
+					clear_text(text_choice_id)
+					clear_text(text_prompt_id)
+					set_text_lines(text_main_id, { 'ONTWIJKT!' }, false)
+					self.combat_dodge_dir = -self.combat_dodge_dir
+				end,
+				tick = function(self)
+					self:update_combat_hover()
+				end,
+				on = {
+					['timeline.frame.' .. combat_dodge_timeline_id] = {
+						go = function(self, _state, event)
+							local monster = world_object(combat_monster_id)
+							local u = event.frame_index / (combat_dodge_frame_count - 1)
+							local offset = arc01(u) * combat_monster_dodge_distance * self.combat_dodge_dir
+							monster.x = self.combat_monster_base_x + offset
+						end,
+					},
+					['timeline.end.' .. combat_dodge_timeline_id] = {
+						go = function(self)
+							local monster = world_object(combat_monster_id)
+							monster.x = self.combat_monster_base_x
+							local node = story[self.node_id]
+							if self.combat_round_index > #node.rounds then
+								return '/combat_all_out_prompt'
+							end
+							return '/combat_round'
+						end,
+					},
+				},
+			},
+			combat_all_out_prompt = {
+				entering_state = function(self)
+					clear_text(text_choice_id)
+					clear_text(text_prompt_id)
+					set_text_lines(text_main_id, { 'Het monster lijkt rijp voor de sloop!' }, true)
+					set_text_lines(text_choice_id, { 'ALL-OUT-ATTACK!!' }, false)
+					self.choice_index = 1
+				end,
+				tick = function(self)
+					self:update_combat_hover()
+					local main = world_object(text_main_id)
+					if main.is_typing then
+						main.type_next()
+						return
+					end
+					self:set_prompt_line('[A] ATTACK')
+					world_object(text_choice_id).highlighted_line_index = 0
+				end,
+				input_eval = 'first',
+				input_event_handlers = {
+					['a[jp]'] = {
+						go = function(self)
+							local main = world_object(text_main_id)
+							if main.is_typing then
+								finish_text(text_main_id)
+								return
+							end
+							return '/combat_all_out'
+						end,
+					},
+				},
+			},
+			combat_all_out = {
+				timelines = {
+					[combat_all_out_timeline_id] = {
+						create = function()
+							local frames = {}
+							for i = 0, combat_all_out_frame_count - 1 do
+								frames[#frames + 1] = i
+							end
+							return new_timeline({
+								id = combat_all_out_timeline_id,
+								frames = frames,
+								ticks_per_frame = combat_all_out_ticks_per_frame,
+								playback_mode = 'once',
+							})
+						end,
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = { rewind = true, snap_to_start = true },
+					},
+				},
+				entering_state = function(self)
+					self:hide_combat_sprites()
+					clear_text(text_main_id)
+					clear_text(text_choice_id)
+					clear_text(text_prompt_id)
+					clear_text(text_transition_id)
+					clear_text(text_results_id)
+					local all_out = world_object(combat_all_out_id)
+					all_out.visible = true
+					all_out.x = 0
+					all_out.y = 0
+				end,
+				on = {
+					['timeline.end.' .. combat_all_out_timeline_id] = {
+						go = function(self)
+							return '/combat_results'
+						end,
+					},
+				},
+				leaving_state = function(self)
+					world_object(combat_all_out_id).visible = false
+				end,
+			},
+			combat_results = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					local rewards = self:resolve_combat_rewards(node)
+					self:apply_effects(rewards)
+
+					clear_text(text_main_id)
+					clear_text(text_choice_id)
+					clear_text(text_transition_id)
+					self:set_prompt_line('[A] continue')
+
+					local monster = world_object(combat_monster_id)
+					monster.visible = false
+					local maya_a = world_object(combat_maya_a_id)
+					maya_a.visible = false
+					local all_out = world_object(combat_all_out_id)
+					all_out.visible = false
+
+					local maya_b = world_object(combat_maya_b_id)
+					maya_b.imgid = 'maya_b'
+					maya_b.visible = true
+					maya_b.x = display_width() - maya_b.sx
+					maya_b.y = display_height() - maya_b.sy
+					maya_b.z = 300
+
+					local lines = {}
+					lines[#lines + 1] = 'RESULTS'
+					lines[#lines + 1] = 'Score: ' .. self.combat_points .. '/' .. self.combat_max_points
+					for i = 1, #rewards do
+						local effect = rewards[i]
+						lines[#lines + 1] = stat_label(effect.stat) .. ' +' .. effect.add
+					end
+					set_text_lines(text_results_id, lines, false)
+				end,
+				input_eval = 'first',
+				input_event_handlers = {
+					['a[jp]'] = {
+						go = function(self)
+							local node = story[self.node_id]
+							self.node_id = node.next
+							if story[self.node_id].kind == 'transition' then
+								return '/run_node'
+							end
+							return '/combat_fade_out'
+						end,
+					},
+				},
+				leaving_state = function(self)
+					world_object(combat_maya_b_id).visible = false
+					clear_text(text_results_id)
 				end,
 			},
 			dialogue = {
@@ -693,30 +1176,6 @@ local function build_director_fsm()
 					},
 				},
 			},
-			combat = {
-				entering_state = function(self)
-					local node = story[self.node_id]
-					playmusic(node.music)
-					self:apply_background(node.bg)
-					clear_text(text_transition_id)
-					clear_text(text_choice_id)
-					set_text_lines(text_main_id, { 'COMBAT!!', '(placeholder)', 'Druk [A] om te winnen.' }, false)
-					self:set_prompt_line('[A] win')
-				end,
-				input_eval = 'first',
-				input_event_handlers = {
-					['a[jp]'] = {
-						go = function(self)
-							local node = story[self.node_id]
-							self.node_id = node.next
-							if story[self.node_id].kind == 'transition' then
-								return '/run_node'
-							end
-							return '/combat_fade_out'
-						end,
-					},
-				},
-			},
 		},
 	})
 end
@@ -738,6 +1197,13 @@ local function register_director()
 			transition_target_bg = story.title.bg,
 			combat_fade_target_bg = story.title.bg,
 			skip_combat_fade_in = false,
+			combat_round_index = 1,
+			combat_points = 0,
+			combat_max_points = 0,
+			combat_hover_time = 0,
+			combat_monster_base_x = 0,
+			combat_monster_base_y = 0,
+			combat_dodge_dir = 1,
 		},
 	})
 end
@@ -780,11 +1246,42 @@ function new_game()
 		dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
 		pos = { z = 900 },
 	})
+	spawn_textobject('p3.text.results.def', {
+		id = text_results_id,
+		dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
+		pos = { z = 1003 },
+	})
 
 	clear_text(text_main_id)
 	clear_text(text_choice_id)
 	clear_text(text_prompt_id)
 	clear_text(text_transition_id)
+	clear_text(text_results_id)
+
+	spawn_sprite('p3.combat.monster.def', {
+		id = combat_monster_id,
+		pos = { x = 0, y = 0, z = 200 },
+		imgid = 'monster_snoozer',
+		visible = false,
+	})
+	spawn_sprite('p3.combat.maya_a.def', {
+		id = combat_maya_a_id,
+		pos = { x = 0, y = 0, z = 300 },
+		imgid = 'maya_a',
+		visible = false,
+	})
+	spawn_sprite('p3.combat.maya_b.def', {
+		id = combat_maya_b_id,
+		pos = { x = 0, y = 0, z = 300 },
+		imgid = 'maya_b',
+		visible = false,
+	})
+	spawn_sprite('p3.combat.all_out.def', {
+		id = combat_all_out_id,
+		pos = { x = 0, y = 0, z = 800 },
+		imgid = 'all_out',
+		visible = false,
+	})
 
 	spawn_object(director_def_id, { id = director_instance_id })
 end
