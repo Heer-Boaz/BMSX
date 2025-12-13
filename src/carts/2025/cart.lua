@@ -147,7 +147,7 @@ local story = {
 	monday_evening = {
 		kind = 'dialogue',
 		music = 'm04',
-		bg = 'slaap_n',
+		bg = 'gamen',
 		typed = true,
 		pages = {
 			{ 'Maya besluit thuis lekker Persona 4 te spelen.' },
