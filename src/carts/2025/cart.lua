@@ -401,7 +401,7 @@ local story = {
 			{ 'Nu tijd voor combat...' },
 			{ 'Maar de Sint faalt met goede voorbereiding en skipt dit gedeelte van het spel...' },
 		},
-		next = 'combat_toets',
+		next = 'overgang_tuesday_afternoon',
 	},
 	overgang_tuesday_afternoon = {
 		kind = 'transition',

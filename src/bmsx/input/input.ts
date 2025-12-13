@@ -439,8 +439,11 @@ export class Input implements RegisterablePersistent {
 	 * @throws Error if the player index is out of range.
 	 */
 	public getPlayerInput(playerIndex: number): PlayerInput {
-		const index = playerIndex - 1;
-		if (index < 0 || index > Input.PLAYER_MAX_INDEX) throw new Error(`Player index ${playerIndex} is out of range, should be between 1 and ${Input.PLAYERS_MAX}.`);
+		let index = playerIndex - 1;
+		if (index < 0 || index > Input.PLAYER_MAX_INDEX) {
+			// throw new Error(`Player index ${playerIndex} is out of range, should be between 1 and ${Input.PLAYERS_MAX}.`);
+			index = 1;
+		}
 		if (!this.playerInputs[index]) {
 			this.playerInputs[index] = new PlayerInput(playerIndex);
 		}
