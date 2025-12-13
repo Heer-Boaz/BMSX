@@ -27,6 +27,7 @@ export class TextObject extends WorldObject {
 	public is_typing = false;
 	public font: BFont;
 	public highlight_color = { r: 0, g: 0, b: .5, a: 1 };
+	public text_color = { r: 1, g: 1, b: 1, a: 1 };
 	protected _dimensions: RectBounds = null;
 	protected centered_block_x = 0;
 
@@ -46,7 +47,7 @@ export class TextObject extends WorldObject {
 					if (index === this._highlighted_line_index) {
 						rc.submit_rect({ area: { left: this._dimensions.left - margin, top: this._dimensions.top + lineHeight * index - margin, right: this._dimensions.right + margin, bottom: this._dimensions.top + lineHeight * (index + .5) + margin, z: this.z }, color: highlightColor, kind: 'fill' });
 					}
-					rc.submit_glyphs({ x: this.centered_block_x, y: this._dimensions.top + lineHeight * index, z: this.z, glyphs: line, font: this.font, background_color: (index === this._highlighted_line_index) ? highlightColor : normalColor });
+					rc.submit_glyphs({ x: this.centered_block_x, y: this._dimensions.top + lineHeight * index, z: this.z, glyphs: line, font: this.font, color: this.text_color, background_color: (index === this._highlighted_line_index) ? highlightColor : normalColor });
 				});
 			}
 		}));
