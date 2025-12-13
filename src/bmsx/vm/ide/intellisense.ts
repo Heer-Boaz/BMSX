@@ -79,9 +79,6 @@ const definitionPriorityForSymbols = buildDefinitionPriority(SYMBOL_PRIORITY_ORD
 const definitionPriorityForLocals = buildDefinitionPriority(LOCAL_DEFINITION_PRIORITY_ORDER);
 
 const identityCanonicalizer = (value: string): string => value;
-const DEFAULT_GLOBAL_IDENTIFIERS = ['math', 'string', 'table', 'os', 'coroutine', 'debug', 'io', 'utf8', 'bit32'];
-const ENGINE_GLOBAL_IDENTIFIERS = ['world', 'game', 'registry', 'events', 'rompack'];
-const JS_GLOBAL_IDENTIFIERS = ['Game', 'World', 'Registry', 'Events', 'Rompack', 'Math'];
 const builtinLookupScratch = new Map<string, VMLuaBuiltinDescriptor>();
 const globalKnownNamesScratch = new Set<string>();
 const globalSymbolsCache: { version: number; entries: VMLuaSymbolEntry[] } = { version: -1, entries: [] };
@@ -626,14 +623,8 @@ function buildGlobalKnownNameSet(
 		globalKnownNamesScratch.add(value);
 	};
 	addCanonical('api');
-	for (let i = 0; i < DEFAULT_GLOBAL_IDENTIFIERS.length; i += 1) {
-		addCanonical(DEFAULT_GLOBAL_IDENTIFIERS[i]);
-	}
-	for (let i = 0; i < ENGINE_GLOBAL_IDENTIFIERS.length; i += 1) {
-		addCanonical(ENGINE_GLOBAL_IDENTIFIERS[i]);
-	}
-	for (let i = 0; i < JS_GLOBAL_IDENTIFIERS.length; i += 1) {
-		addCanonical(JS_GLOBAL_IDENTIFIERS[i]);
+	for (const name of BmsxVMRuntime.instance.interpreter.globalEnvironment.keys()) {
+		addDirect(name);
 	}
 	for (let index = 0; index < localSymbols.length; index += 1) {
 		const entry = localSymbols[index];

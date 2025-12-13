@@ -82,6 +82,10 @@ export class LuaEnvironment {
 		return Array.from(this.values.entries());
 	}
 
+	public keys(): IterableIterator<string> {
+		return this.values.keys();
+	}
+
 	public getParent(): LuaEnvironment {
 		return this.parent;
 	}
