@@ -340,7 +340,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 	}
 	const source = frame.source ?? '';
 	if (source.length === 0) {
-		ide_state.showMessage('Runtime frame is missing a chunk reference.', constants.COLOR_STATUS_ERROR, 3.0);
+		ide_state.showMessage('Runtime frame is missing a chunk reference.', constants.COLOR_STATUS_ERROR, 1.6);
 		return;
 	}
 	const normalizedChunk = source;
@@ -348,12 +348,12 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 		focusChunkSource(normalizedChunk);
 	} catch (error) {
 		const message = extractErrorMessage(error);
-		ide_state.showMessage(`Failed to open runtime chunk: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+		ide_state.showMessage(`Failed to open runtime chunk: ${message}`, constants.COLOR_STATUS_ERROR, 1.6);
 		return;
 	}
 	const activeContext = getActiveCodeTabContext();
 	if (!activeContext) {
-		ide_state.showMessage('Unable to activate editor context for runtime frame.', constants.COLOR_STATUS_ERROR, 3.0);
+		ide_state.showMessage('Unable to activate editor context for runtime frame.', constants.COLOR_STATUS_ERROR, 1.6);
 		return;
 	}
 	const lastRowIndex = Math.max(0, ide_state.lines.length - 1);
@@ -385,7 +385,6 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 	ide_state.cursorRevealSuspended = false;
 	centerCursorVertically();
 	ensureCursorVisible();
-	ide_state.showMessage('Navigated to call site', constants.COLOR_STATUS_SUCCESS, 1.6);
 }
 
 export type DebuggerPauseFrameHint = { asset_id: string; path?: string; };
