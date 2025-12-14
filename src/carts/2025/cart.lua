@@ -46,8 +46,8 @@ local combat_dodge_frame_count = 20
 local combat_dodge_ticks_per_frame = 24
 
 local combat_all_out_timeline_id = 'combat_all_out'
-local combat_all_out_frame_count = 64
-local combat_all_out_ticks_per_frame = 32
+local combat_all_out_frame_count = 150
+local combat_all_out_ticks_per_frame = 20
 
 local combat_results_fade_out_timeline_id = 'combat_results_fade_out'
 local combat_results_fade_out_frames = 18
@@ -65,8 +65,73 @@ local combat_monster_hover_period_seconds = 1.8
 local combat_monster_hover_amp = 6
 local combat_monster_dodge_distance = 24
 
+local function round(x)
+	if x >= 0 then
+		return math.floor(x + 0.5)
+	end
+	return -math.floor((-x) + 0.5)
+end
+
+local function shake_hash(seed)
+	seed = seed ~ (seed << 13)
+	seed = seed ~ (seed >> 17)
+	seed = seed ~ (seed << 5)
+	return seed
+end
+
+local function shake_signed(seed)
+	local h = shake_hash(seed)
+	local u = (h & 0xffff) / 0xffff
+	return (u * 2) - 1
+end
+
+local function all_out_shake(frame_index)
+	local total_frames = combat_all_out_frame_count
+	local impact_frames = 8
+	local finisher_frames = 10
+	local finisher_start = total_frames - finisher_frames
+
+	if frame_index < impact_frames then
+		local amp_x = 12 - (frame_index * 2)
+		local amp_y = 5 - frame_index
+		return round(shake_signed(frame_index * 31 + 7) * amp_x), round(shake_signed(frame_index * 47 + 13) * amp_y)
+	end
+
+	if frame_index < finisher_start then
+		local step = math.floor(frame_index / 2)
+		local loop = step % 16
+		local base_x = 3
+		local base_y = 1
+		local dx = round(shake_signed(loop * 29 + 3) * base_x)
+		local dy = round(shake_signed(loop * 31 + 9) * base_y)
+
+		local segment_len = 20
+		local segment_index = math.floor((frame_index - impact_frames) / segment_len)
+		local segment_start = impact_frames + (segment_index * segment_len)
+		local accent_at = segment_start + 5 + (shake_hash(segment_index * 73 + 11) & 7)
+		local accent_len = 3
+		if frame_index >= accent_at and frame_index < (accent_at + accent_len) then
+			local k = frame_index - accent_at
+			local intensity = (accent_len - k) / accent_len
+			dx = dx + round(shake_signed(segment_index * 199 + k * 17 + 5) * 8 * intensity)
+			dy = dy + round(shake_signed(segment_index * 211 + k * 19 + 9) * 3 * intensity)
+		end
+
+		return dx, dy
+	end
+
+	if frame_index >= (total_frames - 1) then
+		return 0, 0
+	end
+
+	local k = frame_index - finisher_start
+	local fin_len = total_frames - finisher_start
+	local intensity = (fin_len - k) / fin_len
+	return round(shake_signed(5000 + k * 37 + 1) * 14 * intensity), round(shake_signed(6000 + k * 41 + 3) * 5 * intensity)
+end
+
 -- { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
-local story = {
+story = {
 	title = {
 		kind = 'bg_only',
 		bg = 'titel',
@@ -568,7 +633,6 @@ local function build_director_fsm()
 		states = {
 			boot = {
 				entering_state = function(self)
-					self.node_id = 'title'
 					self.stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
 					self.inline_pages = {}
 					self.inline_next = ''
@@ -1282,8 +1346,18 @@ local function build_director_fsm()
 					all_out.visible = true
 					all_out.x = 0
 					all_out.y = 0
+					self.all_out_origin_x = all_out.x
+					self.all_out_origin_y = all_out.y
 				end,
 				on = {
+					['timeline.frame.' .. combat_all_out_timeline_id] = {
+						go = function(self, _state, event)
+							local dx, dy = all_out_shake(event.frame_index)
+							local all_out = world_object(combat_all_out_id)
+							all_out.x = self.all_out_origin_x + dx
+							all_out.y = self.all_out_origin_y + dy
+						end,
+					},
 					['timeline.end.' .. combat_all_out_timeline_id] = {
 						go = function(self)
 							return '/combat_results_setup'
@@ -1291,7 +1365,10 @@ local function build_director_fsm()
 					},
 				},
 				leaving_state = function(self)
-					world_object(combat_all_out_id).visible = false
+					local all_out = world_object(combat_all_out_id)
+					all_out.visible = false
+					all_out.x = self.all_out_origin_x
+					all_out.y = self.all_out_origin_y
 				end,
 			},
 				combat_results_setup = {
@@ -1680,13 +1757,13 @@ local function register_director()
 		class = director,
 		fsms = { director_fsm_id },
 		defaults = {
-			node_id = 'title',
-			page_index = 1,
+			node_id = 'combat_wekker',
+			page_index = nil,
 			choice_index = 1,
 			stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 },
 			inline_pages = {},
 			inline_next = '',
-			pages = {},
+			pages = nil,
 			transition_center_x = 0,
 			transition_target_bg = story.title.bg,
 			fade_target_bg = story.title.bg,

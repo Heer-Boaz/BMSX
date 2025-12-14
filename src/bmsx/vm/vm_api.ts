@@ -566,6 +566,8 @@ export class BmsxVMApi {
 		if (ext) {
 			if (ext.defaults) {
 				Object.assign(instance, ext.defaults);
+				// Ensure that any `nil` defaults in Lua get applied as `null` in JS
+				Object.entries(ext.defaults).filter(([, v]) => v === null).forEach(([k, v]: [string, any]) => { instance[k] = v; }); // v === null
 			}
 			this.applyClassOverrides(instance, ext.class); // Apply Lua class overrides
 

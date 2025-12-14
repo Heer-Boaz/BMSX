@@ -102,6 +102,9 @@ export class CompletionController {
 		if (!session || session.filteredItems.length === 0) {
 			return false;
 		}
+		if (session.trigger !== 'manual') {
+			return false;
+		}
 		if (pointer && !point_in_rect(pointer.x, pointer.y, this.completionPopupBounds)) {
 			return false;
 		}
@@ -202,8 +205,14 @@ export class CompletionController {
 		const { ctrlDown, altDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
 		if ((ctrlDown || metaDown) && !altDown && this.host.isCodeTabActive() && isKeyJustPressed('Space')) {
 			consumeIdeKey('Space');
-			if (this.completionSession) {
-				this.closeSession();
+			const session = this.completionSession;
+			if (session) {
+				if (session.trigger === 'manual') {
+					this.closeSession();
+				} else {
+					const context = this.analyzeCompletionContext();
+					if (context) this.openCompletionSessionFromContext(context, 'manual'); else this.closeSession();
+				}
 			} else {
 				const context = this.analyzeCompletionContext();
 				if (context) this.openCompletionSessionFromContext(context, 'manual'); else this.closeSession();
@@ -260,6 +269,10 @@ export class CompletionController {
 		this.completionPopupBounds = null;
 		if (!session || !cursorInfo) return;
 		if (session.filteredItems.length === 0) return;
+		if (session.trigger !== 'manual') {
+			this.drawInlineCompletionPreview(session, cursorInfo, bounds);
+			return;
+		}
 		const maxAllowedWidth = Math.floor(bounds.codeRight - bounds.textLeft);
 		if (maxAllowedWidth <= 0) {
 			return;
@@ -338,6 +351,43 @@ export class CompletionController {
 			const label = wrapTextDynamic(item.label, maxLabelWidth, maxLabelWidth, (value) => this.host.measureText(value), 1)[0];
 			this.host.drawText(label, textX, lineTop, labelColor);
 		}
+	}
+
+	private drawInlineCompletionPreview(
+		session: CompletionSession,
+		cursorInfo: CursorScreenInfo,
+		bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number },
+	): void {
+		const maxAllowedWidth = Math.floor(bounds.codeRight - cursorInfo.x);
+		if (maxAllowedWidth <= 0) {
+			return;
+		}
+		let index = session.selectionIndex;
+		if (index < 0 || index >= session.filteredItems.length) index = 0;
+		const item = session.filteredItems[index];
+		const addParentheses = item.kind === 'api_method' || item.kind === 'native_method';
+		const insertion = addParentheses ? `${item.insertText}()` : item.insertText;
+		const prefix = session.context.prefix;
+		if (!insertion.toLowerCase().startsWith(prefix.toLowerCase())) {
+			return;
+		}
+		if (prefix.length >= insertion.length) {
+			return;
+		}
+		const suffix = insertion.slice(prefix.length);
+		if (this.host.measureText(suffix) > maxAllowedWidth) {
+			let clip = suffix.length;
+			while (clip > 0) {
+				const candidate = suffix.slice(0, clip);
+				if (this.host.measureText(candidate) <= maxAllowedWidth) {
+					this.host.drawText(candidate, cursorInfo.x, cursorInfo.y, constants.COLOR_COMPLETION_PREVIEW_TEXT);
+					return;
+				}
+				clip -= 1;
+			}
+			return;
+		}
+		this.host.drawText(suffix, cursorInfo.x, cursorInfo.y, constants.COLOR_COMPLETION_PREVIEW_TEXT);
 	}
 
 	public drawParameterHintOverlay(bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
