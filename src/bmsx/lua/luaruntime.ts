@@ -59,6 +59,7 @@ import {
 import { LuaDebuggerController, type LuaDebuggerPauseReason } from './luadebugger';
 import { $ } from '../core/game';
 import { BmsxVMRuntime } from '../vm/vm_runtime';
+import { isLuaHandlerFunction } from './luahandler_cache';
 
 export type LuaCallFrame = {
 	readonly functionName: string;
@@ -376,12 +377,6 @@ export class LuaInterpreter {
 	private activeStatementRange: LuaSourceRange = null;
 	private activeStatementFrame: StatementsFrame = null;
 	private lastStatementRange: LuaSourceRange = null;
-
-	private isLuaHandlerFunction(value: unknown): value is Function {
-		return typeof value === 'function'
-			&& Object.prototype.hasOwnProperty.call(value, '__hid')
-			&& Object.prototype.hasOwnProperty.call(value, '__hmod');
-	}
 
 	public constructor(canonicalization: CanonicalizationType = 'none') {
 		this.globals = LuaEnvironment.createRoot();
@@ -2570,7 +2565,7 @@ export class LuaInterpreter {
 	}
 
 	private formatNativeError(typeName: string, memberName: string, error: unknown): string {
-		const detail = this.formatErrorMessage(error);
+		const detail = extractErrorMessage(error);
 		return `[${typeName}.${memberName}] ${detail}`;
 	}
 
@@ -2778,9 +2773,8 @@ export class LuaInterpreter {
 		if (property === undefined && Array.isArray(target.native) && typeof key === 'number' && Number.isInteger(key)) {
 			return { found: true, value: null, resolvedName, displayName: normalized.displayName };
 		}
-		// const exists = resolvedName in (target.native as Record<string, unknown>);
-		if (typeof property === 'function') {
-			if (this.isLuaHandlerFunction(property)) {
+		if (typeof property === 'function') { // Bind functions as native callables or member handles
+			if (isLuaHandlerFunction(property)) {
 				return { found: true, value: this.convertFromHost(property), resolvedName, displayName: normalized.displayName };
 			}
 			const handle = this.getOrCreateNativeMemberHandle(target, [resolvedName], normalized.displayName, range, true);
@@ -2963,16 +2957,6 @@ export class LuaInterpreter {
 		if (cache.size === 0) {
 			this.nativeMethodCache.delete(target);
 		}
-	}
-
-	private formatErrorMessage(error: unknown): string {
-		if (error instanceof LuaRuntimeError || error instanceof LuaSyntaxError) {
-			return error.message;
-		}
-		if (error instanceof Error) {
-			return error.message;
-		}
-		return String(error);
 	}
 
 	private expectString(value: LuaValue, message: string, range: LuaSourceRange): string {
@@ -3415,7 +3399,7 @@ export class LuaInterpreter {
 				if (isLuaDebuggerPauseSignal(error)) {
 					throw error;
 				}
-				const message = this.formatErrorMessage(error);
+				const message = extractErrorMessage(error);
 				return [false, message];
 			}
 		}));
@@ -3432,7 +3416,7 @@ export class LuaInterpreter {
 				if (isLuaDebuggerPauseSignal(error)) {
 					throw error;
 				}
-				const formatted = this.formatErrorMessage(error);
+				const formatted = extractErrorMessage(error);
 				const handlerResult = messageHandler.call([formatted]);
 				const first = handlerResult.length > 0 ? handlerResult[0] : null;
 				return [false, first];

@@ -1,7 +1,7 @@
 import { $ } from '../core/game';
 import { LuaSourceRange } from '../lua/lua_ast';
 import { LuaEnvironment } from '../lua/luaenvironment';
-import { LuaHandlerCache, isLuaHandlerFn } from '../lua/luahandler_cache';
+import { LuaHandlerCache, isLuaHandlerFunction } from '../lua/luahandler_cache';
 import { LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../lua/luavalue';
 import { BmsxVMRuntime } from './vm_runtime';
 import { LuaMarshalContext } from './types';
@@ -209,7 +209,7 @@ export class LuaJsBridge {
 			return this.wrapNativeValue(value);
 		}
 		if (typeof value === 'function') {
-			if (isLuaHandlerFn(value)) {
+			if (isLuaHandlerFunction(value)) {
 				const binding = this.luaHandlerCache.unwrap(value);
 				if (binding) {
 					return binding.fn;

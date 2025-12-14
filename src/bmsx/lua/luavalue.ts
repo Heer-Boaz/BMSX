@@ -1,5 +1,5 @@
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from './luaerrors';
-import { ExecutionSignal } from './luaruntime';
+import type { ExecutionSignal } from './luaruntime';
 import { insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 
 export type LuaValue = null | boolean | number | string | LuaTable | LuaFunctionValue | LuaNativeValue;
@@ -45,7 +45,6 @@ export function createLuaNativeMemberHandle(params: { name: string; target: obje
 export function isLuaNativeMemberHandle(value: unknown): value is LuaNativeMemberHandle {
 	return value instanceof LuaNativeMemberHandle;
 }
-
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
 	if (value === null || typeof value !== 'object') {
@@ -330,7 +329,9 @@ Object.defineProperties(luaTablePrototype, {
 	numericLength: { value: tableNumericLength, enumerable: false, configurable: false },
 	setMetatable: { value: tableSetMetatable, enumerable: false, configurable: false },
 	getMetatable: { value: tableGetMetatable, enumerable: false, configurable: false },
-}); export type LuaDebuggerPauseSignal = Extract<ExecutionSignal, { kind: 'pause'; }>;
+});
+
+export type LuaDebuggerPauseSignal = Extract<ExecutionSignal, { kind: 'pause'; }>;
 
 export function isLuaDebuggerPauseSignal(value: unknown): value is LuaDebuggerPauseSignal {
 	if (typeof value !== 'object' || value === null) {

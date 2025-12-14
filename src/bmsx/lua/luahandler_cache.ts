@@ -224,7 +224,7 @@ export class LuaHandlerCache {
 	}
 }
 
-export function isLuaHandlerFn(candidate: unknown): candidate is LuaHandlerFn {
+export function isLuaHandlerFunction(candidate: unknown): candidate is LuaHandlerFn {
 	return typeof candidate === 'function'
 		&& Object.prototype.hasOwnProperty.call(candidate, '__hid')
 		&& Object.prototype.hasOwnProperty.call(candidate, '__hmod');
