@@ -377,6 +377,12 @@ export class LuaInterpreter {
 	private activeStatementFrame: StatementsFrame = null;
 	private lastStatementRange: LuaSourceRange = null;
 
+	private isLuaHandlerFunction(value: unknown): value is Function {
+		return typeof value === 'function'
+			&& Object.prototype.hasOwnProperty.call(value, '__hid')
+			&& Object.prototype.hasOwnProperty.call(value, '__hmod');
+	}
+
 	public constructor(canonicalization: CanonicalizationType = 'none') {
 		this.globals = LuaEnvironment.createRoot();
 		this.identifierCanonicalizationMode = canonicalization;
@@ -2774,6 +2780,9 @@ export class LuaInterpreter {
 		}
 		// const exists = resolvedName in (target.native as Record<string, unknown>);
 		if (typeof property === 'function') {
+			if (this.isLuaHandlerFunction(property)) {
+				return { found: true, value: this.convertFromHost(property), resolvedName, displayName: normalized.displayName };
+			}
 			const handle = this.getOrCreateNativeMemberHandle(target, [resolvedName], normalized.displayName, range, true);
 			return { found: true, value: handle, resolvedName, displayName: normalized.displayName };
 		}
