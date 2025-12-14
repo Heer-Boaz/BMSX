@@ -169,8 +169,8 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 			? resolvePlayerIndex(args[1], 'set_input_map')
 			: runtime.playerIndex;
 		const moduleId = $.rompack.cart.chunk2lua[runtime.currentChunkName].source_path;
-		const marshalCtx = runtime.ensureMarshalContext({ moduleId, path: [] });
-		const mappingValue = runtime.luaJsBridge.luaValueToJs(mappingTable, marshalCtx) as InputMap;
+		const marshalCtx = { moduleId, path: [] };
+		const mappingValue = runtime.luaJsBridge.convertFromLua(mappingTable, marshalCtx) as InputMap;
 		if (!mappingValue || typeof mappingValue !== 'object') {
 			throw runtime.createApiRuntimeError('set_input_map(mapping [, player]) requires mapping to be a table.');
 		}
@@ -246,10 +246,10 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 				: `${name}()${returnTypeSuffix}`;
 			const native = new LuaNativeFunction(`api.${name}`, (args) => {
 				const moduleId = $.rompack.cart.chunk2lua[runtime.currentChunkName].source_path;
-				const baseCtx = runtime.ensureMarshalContext({ moduleId, path: [] });
-				const jsArgs = Array.from(args, (arg, index) => runtime.luaJsBridge.luaValueToJs(arg, runtime.extendMarshalContext(baseCtx, `arg${index}`)));
+				const baseCtx = { moduleId, path: [] };
+				const jsArgs = Array.from(args, (arg, index) => runtime.luaJsBridge.convertFromLua(arg, runtime.extendMarshalContext(baseCtx, `arg${index}`)));
 				try {
-					const target = api as unknown as Record<string, unknown>;
+					const target = api;
 					const method = target[name];
 					if (typeof method !== 'function') {
 						throw new Error(`Method '${name}' is not callable.`);
@@ -440,12 +440,12 @@ function wrapResultValue(value: unknown): ReadonlyArray<LuaValue> {
 		if (value.every((entry) => isLuaValue(entry))) {
 			return value as LuaValue[];
 		}
-		return value.map((entry) => BmsxVMRuntime.instance.luaJsBridge.jsToLua(entry));
+		return value.map((entry) => BmsxVMRuntime.instance.luaJsBridge.toLua(entry));
 	}
 	if (value === undefined) {
 		return [];
 	}
-	const luaValue = BmsxVMRuntime.instance.luaJsBridge.jsToLua(value);
+	const luaValue = BmsxVMRuntime.instance.luaJsBridge.toLua(value);
 	return [luaValue];
 }
 

@@ -9,9 +9,14 @@ import { LuaMarshalContext } from './types';
 export type LuaSnapshotObjects = Record<number, unknown>;
 export type LuaSnapshotGraph = { root: unknown; objects: LuaSnapshotObjects };
 export type LuaEntrySnapshot = Record<string, unknown> | LuaSnapshotGraph;
+
+export interface LuaInteropAdapter {
+	convertFromLua(value: LuaValue, context?: LuaMarshalContext): unknown;
+	toLua(value: unknown): LuaValue;
+}
 type LuaSnapshotContext = { ids: WeakMap<LuaTable, number>; objects: LuaSnapshotObjects; nextId: number };
 
-export class LuaJsBridge {
+export class LuaJsBridge implements LuaInteropAdapter {
 	private readonly luaHandlerCache: LuaHandlerCache;
 	private readonly vmRuntime: BmsxVMRuntime;
 	// Assign stable ids to Lua tables during a marshal pass so handler caches and snapshots don't collide on object identity
@@ -34,9 +39,11 @@ export class LuaJsBridge {
 		return null;
 	}
 
-	public luaValueToJs(value: LuaValue, context?: LuaMarshalContext): unknown {
-		const marshalCtx = this.vmRuntime.ensureMarshalContext(context);
-		return this.luaValueToJsWithVisited(value, marshalCtx, new WeakMap<LuaTable, unknown>());
+	public convertFromLua(value: LuaValue, context?: LuaMarshalContext): unknown {
+		if (!context) {
+			context = { moduleId: $.cart.chunk2lua[BmsxVMRuntime.instance.currentChunkName].source_path, path: [] };
+		}
+		return this.luaValueToJsWithVisited(value, context, new WeakMap<LuaTable, unknown>());
 	}
 
 	public luaValueToJsWithVisited(
@@ -152,7 +159,7 @@ export class LuaJsBridge {
 		return id;
 	}
 
-	public jsToLua(value: unknown): LuaValue {
+	public toLua(value: unknown): LuaValue {
 		if (value === undefined || value === null) {
 			return null;
 		}
@@ -179,21 +186,21 @@ export class LuaJsBridge {
 						if (keyValue === undefined || keyValue === null) {
 							continue;
 						}
-						const valueValue = this.jsToLua(entry.value);
+						const valueValue = this.toLua(entry.value);
 						table.set(keyValue, valueValue);
 					}
 					return table;
 				}
 				const table = createLuaTable();
 				for (const [prop, entry] of Object.entries(record)) {
-					table.set(prop, this.jsToLua(entry));
+					table.set(prop, this.toLua(entry));
 				}
 				return table;
 			}
 			if (value instanceof Map) {
 				const table = createLuaTable();
 				for (const [key, entry] of value.entries()) {
-					table.set(this.jsToLua(key), this.jsToLua(entry));
+					table.set(this.toLua(key), this.toLua(entry));
 				}
 				return table;
 			}
@@ -201,7 +208,7 @@ export class LuaJsBridge {
 				const table = createLuaTable();
 				let index = 1;
 				for (const entry of value.values()) {
-					table.set(index, this.jsToLua(entry));
+					table.set(index, this.toLua(entry));
 					index += 1;
 				}
 				return table;

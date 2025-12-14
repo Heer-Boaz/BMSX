@@ -278,15 +278,6 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private configureInterpreter(interpreter: LuaInterpreter): void {
-		interpreter.hostAdapter = {
-			toLua: (value) => this.luaJsBridge.jsToLua(value),
-			toJs: (luaValue) => {
-				const moduleId = $.rompack.cart.chunk2lua[this._luaChunkName].source_path;
-				return this.luaJsBridge.luaValueToJs(luaValue, { moduleId, path: [] });
-			},
-			serializeNative: (native) => native,
-			deserializeNative: (token) => token as object | Function,
-		};
 		interpreter.requireHandler = (ctx, module) => this.requireLuaModule(ctx, module);
 	}
 
@@ -616,7 +607,7 @@ export class BmsxVMRuntime extends Service {
 		if (options.strategy === 'skip_statement' && suspension.reason === 'exception') {
 			this.debuggerController.markSkippedException();
 		}
-		this.luaInterpreter.setDebuggerResumeStrategy(options.strategy);
+		this.luaInterpreter.debuggerResumeStrategy = options.strategy;
 		const result = suspension.resume();
 		this.handleDebuggerResumeResult(result);
 	}
@@ -1214,7 +1205,7 @@ export class BmsxVMRuntime extends Service {
 
 		// Path not used right now, but might be useful for loading game state later
 		this.resetLuaInteroperabilityState();
-		const interpreter = new LuaInterpreter(this._canonicalization);
+		const interpreter = new LuaInterpreter(this.luaJsBridge, this._canonicalization);
 		this.configureInterpreter(interpreter);
 		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
@@ -1226,7 +1217,7 @@ export class BmsxVMRuntime extends Service {
 		this.luaRuntimeFailed = false;
 
 		registerApiBuiltins(interpreter);
-		interpreter.reservedIdentifiers(this.apiFunctionNames);
+		interpreter.setReservedIdentifiers(this.apiFunctionNames);
 
 		const moduleId = $.rompack.cart.chunk2lua[binding.chunk_name].source_path;
 		const results = interpreter.execute(params.source, binding.chunk_name);
@@ -1329,7 +1320,7 @@ export class BmsxVMRuntime extends Service {
 		const interpreter = this.luaInterpreter;
 		const globals = this.captureLuaEntryCollection(interpreter.enumerateGlobalEntries());
 		const locals = this.captureLuaEntryCollection(interpreter.enumerateChunkEntries());
-		const randomSeed = interpreter.getRandomSeed();
+		const randomSeed = interpreter.randomSeed;
 		const programCounter = interpreter.programCounter;
 		return {
 			globals: globals,
@@ -1470,7 +1461,7 @@ export class BmsxVMRuntime extends Service {
 	private restoreVmState(snapshot: BmsxVMState): void {
 		const interpreter = this.luaInterpreter;
 		if (snapshot.luaRandomSeed !== undefined) {
-			interpreter.setRandomSeed(snapshot.luaRandomSeed);
+			interpreter.randomSeed = snapshot.luaRandomSeed;
 		}
 		if (snapshot.luaProgramCounter !== undefined) {
 			interpreter.programCounter = snapshot.luaProgramCounter;
@@ -1555,7 +1546,7 @@ export class BmsxVMRuntime extends Service {
 		}
 
 		this.resetLuaInteroperabilityState();
-		const interpreter = new LuaInterpreter(this._canonicalization);
+		const interpreter = new LuaInterpreter(this.luaJsBridge, this._canonicalization);
 		this.configureInterpreter(interpreter);
 		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
@@ -1569,7 +1560,7 @@ export class BmsxVMRuntime extends Service {
 
 		try {
 			registerApiBuiltins(interpreter);
-			interpreter.reservedIdentifiers(this.apiFunctionNames);
+			interpreter.setReservedIdentifiers(this.apiFunctionNames);
 			const moduleId = $.rompack.cart.chunk2lua[chunkName].source_path;
 			const results = interpreter.execute(source, chunkName);
 			this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
@@ -1621,7 +1612,7 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private invokeLuaFunction(fn: LuaFunctionValue, args: unknown[]): LuaValue[] {
-		const luaArgs = args.map((value) => this.luaJsBridge.jsToLua(value));
+		const luaArgs = args.map((value) => this.luaJsBridge.toLua(value));
 		return fn.call(luaArgs);
 	}
 
@@ -1759,7 +1750,7 @@ export class BmsxVMRuntime extends Service {
 
 	public createApiRuntimeError(message: string): LuaRuntimeError {
 		this.luaInterpreter.markFaultEnvironment();
-		const range = this.luaInterpreter.getCurrentCallRange();
+		const range = this.luaInterpreter.currentCallRange;
 		const chunkName = range ? range.chunkName : (this._luaChunkName ?? 'lua');
 		const line = range ? range.start.line : 0;
 		const column = range ? range.start.column : 0;
@@ -1781,14 +1772,14 @@ export class BmsxVMRuntime extends Service {
 		// Marshal JS→Lua, call, then marshal Lua→JS with path context for error breadcrumbs.
 		const luaArgs: LuaValue[] = [];
 		for (let index = 0; index < args.length; index += 1) {
-			luaArgs.push(this.luaJsBridge.jsToLua(args[index]));
+			luaArgs.push(this.luaJsBridge.toLua(args[index]));
 		}
 		const results = fn.call(luaArgs);
 		const output: unknown[] = [];
-		const moduleId = $.rompack.cart.chunk2lua[this._luaChunkName].source_path;
-		const baseCtx = this.ensureMarshalContext({ moduleId, path: [] });
+		const moduleId = $.cart.chunk2lua[this._luaChunkName].source_path;
+		const baseCtx = { moduleId, path: [] };
 		for (let i = 0; i < results.length; i += 1) {
-			output.push(this.luaJsBridge.luaValueToJs(results[i], this.extendMarshalContext(baseCtx, `ret${i}`)));
+			output.push(this.luaJsBridge.convertFromLua(results[i], this.extendMarshalContext(baseCtx, `ret${i}`)));
 		}
 		return output;
 	}
@@ -1818,20 +1809,6 @@ export class BmsxVMRuntime extends Service {
 		throw wrappedError; // Rethrow for higher-level handling
 	}
 
-	public ensureMarshalContext(context?: LuaMarshalContext): LuaMarshalContext {
-		if (context) {
-			return context;
-		}
-		const binding = this._luaChunkName ? $.rompack.cart.chunk2lua[this._luaChunkName] : null;
-		const moduleId = binding ? binding.source_path : (this._luaChunkName ?? 'lua::runtime');
-		// Marshal contexts annotate where a value came from (module + path) so errors/diagnostics
-		// can report meaningful breadcrumbs for mixed JS/Lua graphs.
-		return {
-			moduleId,
-			path: [],
-		};
-	}
-
 	public extendMarshalContext(ctx: LuaMarshalContext, segment: string): LuaMarshalContext {
 		if (!segment) {
 			return ctx;
@@ -1843,7 +1820,7 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private refreshPackageLoadedEntry(packageKey: string, results: ReadonlyArray<LuaValue>): void {
-		const packageLoaded = this.luaInterpreter.getPackageLoadedTable();
+		const packageLoaded = this.luaInterpreter.packageLoadedTable;
 		const moduleValue = results.length > 0 && results[0] !== null ? results[0] : true;
 		packageLoaded.set(packageKey, moduleValue);
 	}
@@ -1975,7 +1952,7 @@ export class BmsxVMRuntime extends Service {
 		if (!record) {
 			throw this.createApiRuntimeError(`Module '${moduleName}' not found.`);
 		}
-		const packageLoaded = interpreter.getPackageLoadedTable();
+		const packageLoaded = interpreter.packageLoadedTable;
 		const cached = packageLoaded.get(record.packageKey);
 		if (cached !== null) {
 			return cached;

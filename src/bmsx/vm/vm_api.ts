@@ -54,6 +54,8 @@ const POINTER_ACTIONS: readonly string[] = [
 	'pointer_forward',
 ] as const;
 
+const excludedClassOverrideKeys = new Set(['def_id', 'class', 'defaults', 'metatable', 'constructor', 'prototype', 'super']);
+
 type LuaExtendedClass<TBase extends ConcreteOrAbstractConstructor<any>> =
 	TBase & Native & {
 		def_id: Identifier; // Id of the definition this class was registered with
@@ -118,7 +120,7 @@ export class BmsxVMApi {
 		// For function overrides, run the original first to preserve engine lifecycle (e.g. onspawn),
 		// then run the Lua override and let its return value win when defined.
 		for (const [key, value] of Object.entries(classTable)) {
-			if (key in ['def_id', 'class', 'defaults', 'metatable', 'constructor', 'prototype', 'super']) continue;
+			if (excludedClassOverrideKeys.has(key)) continue;
 			const existing = instance[key];
 			if (typeof value === 'function' && typeof existing === 'function') {
 				const baseFn: AnyFunction = existing;
@@ -564,22 +566,14 @@ export class BmsxVMApi {
 	 */
 	private applyObjectExtensionAndOverrides(ext: EntityExtensions, instance: any, overrides?: Partial<any>): void {
 		if (ext) {
-			if (ext.defaults) {
-				Object.assign(instance, ext.defaults);
-				// Ensure that any `nil` defaults in Lua get applied as `null` in JS
-				Object.entries(ext.defaults).filter(([, v]) => v === null).forEach(([k, v]: [string, any]) => { instance[k] = v; }); // v === null
-			}
+			if (ext.defaults) { Object.assign(instance, ext.defaults); }
 			this.applyClassOverrides(instance, ext.class); // Apply Lua class overrides
 
 			if (ext.components) {
-				for (let i = 0; i < ext.components.length; i += 1) {
-					this.attach_component(instance, ext.components[i]);
-				}
+				for (let i = 0; i < ext.components.length; i += 1) { this.attach_component(instance, ext.components[i]); }
 			}
 			if (ext.fsms) {
-				for (let i = 0; i < ext.fsms.length; i += 1) {
-					instance.sc.add_statemachine(ext.fsms[i], instance.id);
-				}
+				for (let i = 0; i < ext.fsms.length; i += 1) { instance.sc.add_statemachine(ext.fsms[i], instance.id); }
 			}
 			if (ext.effects && ext.effects.length > 0) {
 				let effectComponent = instance.get_unique_component(ActionEffectComponent);
@@ -587,14 +581,10 @@ export class BmsxVMApi {
 					effectComponent = new ActionEffectComponent({ parent_or_id: instance });
 					instance.add_component(effectComponent);
 				}
-				for (let i = 0; i < ext.effects.length; i += 1) {
-					effectComponent.grant_effect_by_id(ext.effects[i]);
-				}
+				for (let i = 0; i < ext.effects.length; i += 1) { effectComponent.grant_effect_by_id(ext.effects[i]); }
 			}
 			if (ext.bts) {
-				for (let i = 0; i < ext.bts.length; i += 1) {
-					instance.add_btree(ext.bts[i]);
-				}
+				for (let i = 0; i < ext.bts.length; i += 1) { instance.add_btree(ext.bts[i]); }
 			}
 		}
 		// Apply overrides (these are applied last to take precedence and are distinct from definition overrides)
