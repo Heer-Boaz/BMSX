@@ -542,7 +542,7 @@ end
 function director:update_dialogue_prompt()
 	local main = world_object(text_main_id)
 	if main.is_typing then
-		-- self:set_prompt_line('[A] skip')
+		self:set_prompt_line('(B) skip')
 		return
 	end
 	if self.page_index < #self.pages then
