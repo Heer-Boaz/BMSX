@@ -568,7 +568,7 @@ local function build_director_fsm()
 		states = {
 			boot = {
 				entering_state = function(self)
-					self.node_id = 'combat_wekker'
+					self.node_id = 'title'
 					self.stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
 					self.inline_pages = {}
 					self.inline_next = ''
