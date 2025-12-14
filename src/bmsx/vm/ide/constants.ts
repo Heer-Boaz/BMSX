@@ -165,6 +165,7 @@ type ThemeOverlays = {
 		border: number;
 		text: number;
 		detail: number;
+		previewText: number;
 		highlight: number;
 		highlightText: number;
 	};
@@ -274,6 +275,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 				border: PALETTE.black,
 				text: PALETTE.black,
 				detail: PALETTE.magenta,
+				previewText: PALETTE.commentGrey,
 				highlight: PALETTE.black,
 				highlightText: PALETTE.grey,
 			},
@@ -383,6 +385,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 				border: PALETTE.black,
 				text: PALETTE.black,
 				detail: PALETTE.magenta,
+				previewText: PALETTE.commentGrey,
 				highlight: PALETTE.black,
 				highlightText: PALETTE.grey,
 			},
@@ -595,6 +598,7 @@ export let COLOR_COMPLETION_BACKGROUND: number;
 export let COLOR_COMPLETION_BORDER: number;
 export let COLOR_COMPLETION_TEXT: number;
 export let COLOR_COMPLETION_DETAIL: number;
+export let COLOR_COMPLETION_PREVIEW_TEXT: number;
 export let COLOR_COMPLETION_HIGHLIGHT: number;
 export let COLOR_COMPLETION_HIGHLIGHT_TEXT: number;
 export let COLOR_PARAMETER_HINT_BACKGROUND: number;
@@ -740,6 +744,7 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_COMPLETION_BORDER = completion.border;
 	COLOR_COMPLETION_TEXT = completion.text;
 	COLOR_COMPLETION_DETAIL = completion.detail;
+	COLOR_COMPLETION_PREVIEW_TEXT = completion.previewText;
 	COLOR_COMPLETION_HIGHLIGHT = completion.highlight;
 	COLOR_COMPLETION_HIGHLIGHT_TEXT = completion.highlightText;
 	COLOR_PARAMETER_HINT_BACKGROUND = parameterHint.background;
