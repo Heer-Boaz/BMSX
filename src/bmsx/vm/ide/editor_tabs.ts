@@ -8,8 +8,6 @@ import type { VMResourceDescriptor } from '../types';
 import * as constants from './constants';
 import { clamp } from '../../utils/clamp';
 import {
-	captureSnapshot,
-	restoreSnapshot,
 	syncRuntimeErrorOverlayFromContext,
 	updateDesiredColumn,
 	refreshActiveDiagnostics,
@@ -23,13 +21,13 @@ import {
 	resetEditorContent,
 } from './vm_cart_editor';
 import { markDiagnosticsDirty } from './diagnostics';
-import { bumpTextVersion } from './text_utils';
 import { measureText } from './text_utils';
 import { requestSemanticRefresh } from './intellisense';
 import { resetBlink } from './render/render_caret';
 import { listResources } from '../workspace';
 import { BmsxVMRuntime } from '../vm_runtime';
 import { $ } from '../../core/game';
+import { PieceTreeBuffer } from './piece_tree_buffer';
 
 function resolveChunkName(descriptor: VMResourceDescriptor | null): string {
 	if (!descriptor) {
@@ -53,11 +51,17 @@ export function createEntryTabContext(): CodeTabContext {
 export function createLuaCodeTabContext(descriptor: VMResourceDescriptor): CodeTabContext {
 	const title = computeResourceTabTitle(descriptor);
 	const initialSource = resolveSource(descriptor);
+	const buffer = new PieceTreeBuffer(initialSource ?? '');
 	return {
 		id: `lua:${descriptor.path}`,
 		title,
 		descriptor,
-		snapshot: null,
+		buffer,
+		cursorRow: 0,
+		cursorColumn: 0,
+		scrollRow: 0,
+		scrollColumn: 0,
+		selectionAnchor: null,
 		lastSavedSource: initialSource,
 		saveGeneration: 0,
 		appliedGeneration: 0,
@@ -69,7 +73,7 @@ export function createLuaCodeTabContext(descriptor: VMResourceDescriptor): CodeT
 		dirty: false,
 		runtimeErrorOverlay: null,
 		executionStopRow: null,
-		textVersion: 0,
+		textVersion: buffer.version,
 	};
 }
 
@@ -82,7 +86,12 @@ export function storeActiveCodeTabContext(): void {
 	if (!context) {
 		return;
 	}
-	context.snapshot = captureSnapshot();
+	context.buffer = ide_state.buffer;
+	context.cursorRow = ide_state.cursorRow;
+	context.cursorColumn = ide_state.cursorColumn;
+	context.scrollRow = ide_state.scrollRow;
+	context.scrollColumn = ide_state.scrollColumn;
+	context.selectionAnchor = ide_state.selectionAnchor;
 	context.textVersion = ide_state.textVersion;
 	context.saveGeneration = ide_state.saveGeneration;
 	context.appliedGeneration = ide_state.appliedGeneration;
@@ -109,58 +118,34 @@ export function activateCodeEditorTab(tabId: string): void {
 	ide_state.lastHistoryKey = context.lastHistoryKey;
 	ide_state.lastHistoryTimestamp = context.lastHistoryTimestamp;
 	ide_state.savePointDepth = context.savePointDepth;
-	if (context.snapshot) {
-		restoreSnapshot(context.snapshot);
-		ide_state.dirty = ide_state.undoStack.length !== ide_state.savePointDepth;
-		ide_state.saveGeneration = context.saveGeneration;
-		ide_state.appliedGeneration = context.appliedGeneration;
-		ide_state.textVersion = context.textVersion ?? ide_state.textVersion;
-		const cached = ide_state.diagnosticsCache.get(context.id);
-		const cachedVersion = cached?.version ?? -1;
-		const cachedChunk = cached?.chunkName ?? null;
-		const chunkName = resolveChunkName(context.descriptor);
-		if (!cached || cachedVersion !== ide_state.textVersion || cachedChunk !== chunkName) {
-			markDiagnosticsDirty(context.id);
-		}
-		ide_state.lastSavedSource = context.lastSavedSource;
-		context.dirty = ide_state.dirty;
-		setTabDirty(context.id, context.dirty);
-		syncRuntimeErrorOverlayFromContext(context);
-		refreshActiveDiagnostics();
-		return;
-	}
-	const source = context.lastSavedSource && context.lastSavedSource.length > 0
-		? context.lastSavedSource
-		: resolveSource(context.descriptor);
-	context.lastSavedSource = source;
-	ide_state.lines = source?.split(/\r\n|\n|\r/) ?? [];
+	ide_state.buffer = context.buffer;
+	ide_state.cursorRow = context.cursorRow;
+	ide_state.cursorColumn = context.cursorColumn;
+	ide_state.scrollRow = context.scrollRow;
+	ide_state.scrollColumn = context.scrollColumn;
+	ide_state.selectionAnchor = context.selectionAnchor;
+	ide_state.textVersion = ide_state.buffer.version;
+	context.textVersion = ide_state.textVersion;
+
 	ide_state.maxLineLengthDirty = true;
-	ide_state.textVersion = context.textVersion ?? ide_state.textVersion;
 	ide_state.layout.markVisualLinesDirty();
-	markDiagnosticsDirty();
-	if (ide_state.lines.length === 0) {
-		ide_state.lines.push('');
-	}
 	ide_state.layout.invalidateAllHighlights();
-	ide_state.cursorRow = 0;
-	ide_state.cursorColumn = 0;
-	ide_state.scrollRow = 0;
-	ide_state.scrollColumn = 0;
-	ide_state.selectionAnchor = null;
-	ide_state.dirty = false;
-	ide_state.savePointDepth = ide_state.undoStack.length;
-	context.savePointDepth = ide_state.savePointDepth;
-	context.dirty = false;
-	context.runtimeErrorOverlay = null;
-	context.executionStopRow = null;
-	ide_state.executionStopRow = null;
+
+	const cached = ide_state.diagnosticsCache.get(context.id);
+	const cachedVersion = cached?.version ?? -1;
+	const cachedChunk = cached?.chunkName ?? null;
+	const chunkName = resolveChunkName(context.descriptor);
+	if (!cached || cachedVersion !== ide_state.textVersion || cachedChunk !== chunkName) {
+		markDiagnosticsDirty(context.id);
+	}
+
+	ide_state.dirty = ide_state.undoStack.length !== ide_state.savePointDepth;
 	ide_state.saveGeneration = context.saveGeneration;
 	ide_state.appliedGeneration = context.appliedGeneration;
-	context.textVersion = ide_state.textVersion;
 	ide_state.lastSavedSource = context.lastSavedSource;
+	context.dirty = ide_state.dirty;
 	setTabDirty(context.id, context.dirty);
 	syncRuntimeErrorOverlayFromContext(context);
-	bumpTextVersion();
 	requestSemanticRefresh(context);
 	updateDesiredColumn();
 	resetBlink();

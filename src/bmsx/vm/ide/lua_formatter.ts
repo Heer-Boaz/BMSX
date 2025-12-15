@@ -213,9 +213,9 @@ export function resolveOffsetPosition(lines: readonly string[], offset: number):
 		}
 		remaining -= lineLength + 1;
 	}
-	if (ide_state.lines.length === 0) {
+	if (lines.length === 0) {
 		return { row: 0, column: 0 };
 	}
-	const lastRow = ide_state.lines.length - 1;
-	return { row: lastRow, column: ide_state.lines[lastRow].length };
+	const lastRow = lines.length - 1;
+	return { row: lastRow, column: lines[lastRow].length };
 }

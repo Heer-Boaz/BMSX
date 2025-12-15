@@ -251,7 +251,7 @@ export function getActiveBreakpointChunkName(): string {
 }
 
 export function toggleBreakpointForEditorRow(row: number = ide_state.cursorRow): boolean {
-	if (row < 0 || row >= ide_state.lines.length) {
+	if (row < 0 || row >= ide_state.buffer.getLineCount()) {
 		return false;
 	}
 	const chunkName = getActiveBreakpointChunkName();
@@ -308,9 +308,9 @@ export function prepareDebuggerStepOverlay(): void {
 }
 
 function updateDebuggerCaret(row: number, column: number): void {
-	const maxRow = Math.max(0, ide_state.lines.length - 1);
+	const maxRow = Math.max(0, ide_state.buffer.getLineCount() - 1);
 	const clampedRow = clamp(row, 0, maxRow);
-	const lineText = ide_state.lines[clampedRow] ?? '';
+	const lineText = ide_state.buffer.getLineContent(clampedRow);
 	const clampedColumn = clamp(column, 0, lineText.length);
 	ide_state.cursorRow = clampedRow;
 	ide_state.cursorColumn = clampedColumn;
@@ -356,7 +356,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 		ide_state.showMessage('Unable to activate editor context for runtime frame.', constants.COLOR_STATUS_ERROR, 1.6);
 		return;
 	}
-	const lastRowIndex = Math.max(0, ide_state.lines.length - 1);
+	const lastRowIndex = Math.max(0, ide_state.buffer.getLineCount() - 1);
 	let targetRow: number = null;
 	if (typeof frame.line === 'number' && frame.line > 0) {
 		targetRow = clamp(frame.line - 1, 0, lastRowIndex);
@@ -367,7 +367,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 	if (targetRow === null) {
 		targetRow = 0;
 	}
-	const targetLine = ide_state.lines[targetRow] ?? '';
+	const targetLine = ide_state.buffer.getLineContent(targetRow);
 	let targetColumn = 0;
 	if (typeof frame.column === 'number' && frame.column > 0) {
 		targetColumn = clamp(frame.column - 1, 0, targetLine.length);

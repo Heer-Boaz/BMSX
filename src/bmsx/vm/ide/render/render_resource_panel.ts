@@ -245,7 +245,7 @@ export function drawCreateResourceErrorDialog(message: string): void {
 	const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
 	renderErrorOverlayText(
 		ide_state.font,
-		ide_state.lines,
+		lines,
 		left + dialogPaddingX,
 		top + dialogPaddingY,
 		ide_state.lineHeight,

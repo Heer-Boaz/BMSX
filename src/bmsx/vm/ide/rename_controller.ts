@@ -11,8 +11,7 @@ import type { LuaSemanticWorkspace } from './semantic_model';
 import { LuaLexer } from '../../lua/lualexer';
 import { findCodeTabContext } from './editor_tabs';
 import { findResourceDescriptorForChunk } from './vm_cart_editor';
-import { BmsxVMRuntime } from '../vm_runtime';
-import { splitText } from './source_text';
+import { getTextSnapshot, splitText } from './source_text';
 
 export type RenameCommitPayload = {
 	matches: readonly SearchMatch[];
@@ -37,7 +36,6 @@ export type RenameControllerHost = {
 };
 
 export type RenameStartOptions = ReferenceLookupOptions & {
-	lines: readonly string[];
 };
 
 export class RenameController {
@@ -75,7 +73,7 @@ export class RenameController {
 			return false;
 		}
 		const firstMatch = info.matches[Math.max(0, Math.min(initialIndex, info.matches.length - 1))];
-		const activeLine = options.lines[firstMatch.row] ?? '';
+		const activeLine = options.buffer.getLineContent(firstMatch.row);
 		const currentName = activeLine.slice(firstMatch.start, firstMatch.end);
 		if (currentName.length === 0) {
 			this.host.showMessage('Unable to determine identifier name', constants.COLOR_STATUS_WARNING, 1.6);
@@ -326,41 +324,25 @@ export class CrossFileRenameManager {
 	}
 
 	private getContextLinesForRename(context: CodeTabContext): string[] {
-		if (context.snapshot) {
-			return context.snapshot.lines.slice();
-		}
-		const descriptor = context.descriptor;
-		const chunkName = descriptor.path;
-		const source = BmsxVMRuntime.instance.resourceSourceForChunk(chunkName);
-		context.lastSavedSource = source;
-		return splitText(source);
+		return splitText(getTextSnapshot(context.buffer));
 	}
 
 	private applyLinesToContextSnapshot(context: CodeTabContext, lines: readonly string[]): void {
-		const snapshot = context.snapshot ?? {
-			lines: [],
-			cursorRow: 0,
-			cursorColumn: 0,
-			scrollRow: 0,
-			scrollColumn: 0,
-			selectionAnchor: null,
-			dirty: true,
-			textVersion: context.textVersion ?? 0,
-		};
-		snapshot.lines = lines.slice();
-		snapshot.dirty = true;
-		if (snapshot.cursorRow >= snapshot.lines.length) {
-			snapshot.cursorRow = Math.max(0, snapshot.lines.length - 1);
-			snapshot.cursorColumn = 0;
+		const source = lines.join('\n');
+		context.buffer.replace(0, context.buffer.length, source);
+		context.textVersion = context.buffer.version;
+		context.dirty = true;
+		context.savePointDepth = -1;
+		const lineCount = context.buffer.getLineCount();
+		if (context.cursorRow >= lineCount) {
+			context.cursorRow = lineCount - 1;
+			context.cursorColumn = 0;
 		}
-		const cursorLine = snapshot.lines[snapshot.cursorRow] ?? '';
-		snapshot.cursorColumn = clamp(snapshot.cursorColumn, 0, cursorLine.length);
-		snapshot.scrollRow = clamp(snapshot.scrollRow, 0, Math.max(0, snapshot.lines.length - 1));
-			context.snapshot = snapshot;
-			context.dirty = true;
-			context.savePointDepth = -1;
-			this.deps.setTabDirty(context.id, context.dirty);
-		}
+		const cursorLength = context.buffer.getLineEndOffset(context.cursorRow) - context.buffer.getLineStartOffset(context.cursorRow);
+		context.cursorColumn = clamp(context.cursorColumn, 0, cursorLength);
+		context.scrollRow = clamp(context.scrollRow, 0, lineCount - 1);
+		this.deps.setTabDirty(context.id, context.dirty);
+	}
 
 	private ensureCodeTabContextForChunk(chunkName: string): CodeTabContext {
 		const existing = findCodeTabContext(chunkName);

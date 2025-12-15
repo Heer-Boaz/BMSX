@@ -218,13 +218,14 @@ function runLocalSearchSlice(job: LocalSearchJob): boolean {
 		return false;
 	}
 	let processed = 0;
-	while (job.nextRow < ide_state.lines.length && processed < LOCAL_ROWS_PER_SLICE) {
+	const lineCount = ide_state.buffer.getLineCount();
+	while (job.nextRow < lineCount && processed < LOCAL_ROWS_PER_SLICE) {
 		const row = job.nextRow;
 		job.nextRow += 1;
 		processed += 1;
 		collectLocalMatches(job, row);
 	}
-	if (job.nextRow >= ide_state.lines.length) {
+	if (job.nextRow >= lineCount) {
 		completeLocalSearchJob(job);
 		return false;
 	}
@@ -232,7 +233,7 @@ function runLocalSearchSlice(job: LocalSearchJob): boolean {
 }
 
 function collectLocalMatches(job: LocalSearchJob, row: number): void {
-	const line = ide_state.lines[row];
+	const line = ide_state.buffer.getLineContent(row);
 	if (line.length === 0) return;
 	forEachMatchInLine(line, job.query, (start, end) => {
 		const match: SearchMatch = { row, start, end };
@@ -393,8 +394,8 @@ function focusGlobalMatch(index: number): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	openLuaCodeTab(match.descriptor);
 	scheduleMicrotask(() => {
-		const row = clamp(match.row, 0, ide_state.lines.length - 1);
-		const line = ide_state.lines[row];
+		const row = clamp(match.row, 0, ide_state.buffer.getLineCount() - 1);
+		const line = ide_state.buffer.getLineContent(row);
 		const startColumn = clamp(match.start, 0, line.length);
 		const endColumn = clamp(match.end, 0, line.length);
 		ide_state.cursorRow = row;
@@ -536,7 +537,7 @@ function buildSearchResultEntry(index: number): { primary: string; secondary?: s
 	}
 
 	const match = ide_state.searchMatches[index];
-	const lineText = ide_state.lines[match.row];
+	const lineText = ide_state.buffer.getLineContent(match.row);
 	return {
 		primary: `Line ${match.row + 1}`,
 		secondary: buildSnippet(lineText, match.start, match.end),

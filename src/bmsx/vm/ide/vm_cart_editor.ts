@@ -57,7 +57,9 @@ import { ResourcePanelController } from './resource_panel_controller';
 import { handleActionPromptInput, handleEditorInput, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, resourceViewerClampScroll, shouldRepeatKeyFromPlayer, toggleThemeMode } from './ide_input';
 import { consumeIdeKey } from './ide_input';
 import { VMCodeLayout } from './code_layout';
-import { joinLinesCached, splitText } from './source_text';
+import { getTextSnapshot, splitText } from './source_text';
+import { EditorUndoRecord, TextUndoOp } from './editor_undo';
+import { PieceTreeBuffer } from './piece_tree_buffer';
 import type {
 	CodeHoverTooltip,
 	CodeTabContext,
@@ -87,7 +89,6 @@ import {
 import { clearBackgroundTasks, enqueueBackgroundTask, scheduleIdeOnce, scheduleRuntimeTask } from './background_tasks';
 
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
-import { planRenameLineEdits } from './rename_controller';
 import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_controller';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/lua_ast';
 // Search logic moved to editor_search
@@ -188,7 +189,7 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 	ide_state.resourcePanel = new ResourcePanelController({ resourceVertical: ide_state.scrollbars.resourceVertical, resourceHorizontal: ide_state.scrollbars.resourceHorizontal });
 	ide_state.completion = new CompletionController({
 		isCodeTabActive: () => isCodeTabActive(),
-		getLines: () => ide_state.lines,
+		getBuffer: () => ide_state.buffer,
 		getCursorRow: () => ide_state.cursorRow,
 		getCursorColumn: () => ide_state.cursorColumn,
 		setCursorPosition: (row, column) => { ide_state.cursorRow = row; ide_state.cursorColumn = column; },
@@ -257,10 +258,10 @@ export function getSourceForChunk(chunkName: string): string {
 	const context = findCodeTabContext(chunkName);
 	if (context) {
 		if (context.id === ide_state.activeCodeTabContextId) {
-			return joinLinesCached(ide_state.lines, ide_state.textVersion);
+			return getTextSnapshot(ide_state.buffer);
 		}
-		if (context.snapshot) {
-			return joinLinesCached(context.snapshot.lines, context.snapshot.textVersion);
+		if (context.buffer) {
+			return getTextSnapshot(context.buffer);
 		}
 		if (context.lastSavedSource.length > 0) {
 			return context.lastSavedSource;
@@ -281,12 +282,9 @@ export function getSourceForChunk(chunkName: string): string {
 }
 
 export function invalidateLineRange(startRow: number, endRow: number): void {
-	if (ide_state.lines.length === 0) {
-		return;
-	}
 	let from = Math.min(startRow, endRow);
 	let to = Math.max(startRow, endRow);
-	const lastRow = ide_state.lines.length - 1;
+	const lastRow = ide_state.buffer.getLineCount() - 1;
 	from = clamp(from, 0, lastRow);
 	to = clamp(to, 0, lastRow);
 	for (let row = from; row <= to; row += 1) {
@@ -300,8 +298,9 @@ export function maximumLineLength(): number {
 	}
 	let maxLength = 0;
 	let maxRow = 0;
-	for (let i = 0; i < ide_state.lines.length; i += 1) {
-		const length = ide_state.lines[i].length;
+	const lineCount = ide_state.buffer.getLineCount();
+	for (let i = 0; i < lineCount; i += 1) {
+		const length = ide_state.buffer.getLineEndOffset(i) - ide_state.buffer.getLineStartOffset(i);
 		if (length > maxLength) {
 			maxLength = length;
 			maxRow = i;
@@ -336,28 +335,28 @@ export function getLineRangeForMovement(): { startRow: number; endRow: number } 
 }
 
 export function currentLine(): string {
-	if (ide_state.cursorRow < 0 || ide_state.cursorRow >= ide_state.lines.length) {
+	if (ide_state.cursorRow < 0 || ide_state.cursorRow >= ide_state.buffer.getLineCount()) {
 		return '';
 	}
-	return ide_state.lines[ide_state.cursorRow];
+	return ide_state.buffer.getLineContent(ide_state.cursorRow);
 }
 
 export function clampSelectionPosition(position: Position): Position {
-	if (!position || ide_state.lines.length === 0) {
+	if (!position) {
 		return null;
 	}
 	let row = position.row;
 	if (row < 0) {
 		row = 0;
-	} else if (row >= ide_state.lines.length) {
-		row = ide_state.lines.length - 1;
+	} else if (row >= ide_state.buffer.getLineCount()) {
+		row = ide_state.buffer.getLineCount() - 1;
 	}
-	const line = ide_state.lines[row] ?? '';
+	const lineLength = ide_state.buffer.getLineEndOffset(row) - ide_state.buffer.getLineStartOffset(row);
 	let column = position.column;
 	if (column < 0) {
 		column = 0;
-	} else if (column > line.length) {
-		column = line.length;
+	} else if (column > lineLength) {
+		column = lineLength;
 	}
 	return { row, column };
 }
@@ -375,18 +374,90 @@ export function prepareUndo(key: string, allowMerge: boolean): void {
 		ide_state.lastHistoryTimestamp = now;
 		return;
 	}
-	const snapshot = captureSnapshot();
+
+	const record = new EditorUndoRecord();
+	const anchor = ide_state.selectionAnchor;
+	record.setBeforeState(
+		ide_state.cursorRow,
+		ide_state.cursorColumn,
+		ide_state.scrollRow,
+		ide_state.scrollColumn,
+		anchor ? anchor.row : 0,
+		anchor ? anchor.column : 0,
+		anchor !== null,
+	);
+	record.setAfterState(
+		ide_state.cursorRow,
+		ide_state.cursorColumn,
+		ide_state.scrollRow,
+		ide_state.scrollColumn,
+		anchor ? anchor.row : 0,
+		anchor ? anchor.column : 0,
+		anchor !== null,
+	);
+
+	const buffer = activePieceBuffer();
 	if (ide_state.undoStack.length >= constants.UNDO_HISTORY_LIMIT) {
-		ide_state.undoStack.shift();
+		const dropped = ide_state.undoStack.shift();
+		if (dropped) {
+			releaseUndoRecord(buffer, dropped);
+		}
 	}
-	ide_state.undoStack.push(snapshot);
-	ide_state.redoStack.length = 0;
+	ide_state.undoStack.push(record);
+
+	clearRedoStack(buffer);
 	ide_state.lastHistoryTimestamp = now;
 	if (allowMerge) {
 		ide_state.lastHistoryKey = key;
 	} else {
 		ide_state.lastHistoryKey = null;
 	}
+}
+
+function activePieceBuffer(): PieceTreeBuffer {
+	return ide_state.buffer as PieceTreeBuffer;
+}
+
+function releaseUndoRecord(buffer: PieceTreeBuffer, record: EditorUndoRecord): void {
+	const ops = record.ops;
+	for (let index = 0; index < ops.length; index += 1) {
+		const op = ops[index];
+		if (op.deletedRoot) {
+			buffer.releaseDetachedSubtree(op.deletedRoot);
+			op.deletedRoot = null;
+		}
+		if (op.insertedRoot) {
+			buffer.releaseDetachedSubtree(op.insertedRoot);
+			op.insertedRoot = null;
+		}
+	}
+}
+
+function clearRedoStack(buffer: PieceTreeBuffer): void {
+	const redoStack = ide_state.redoStack;
+	for (let index = 0; index < redoStack.length; index += 1) {
+		releaseUndoRecord(buffer, redoStack[index]);
+	}
+	redoStack.length = 0;
+}
+
+export function applyUndoableReplace(offset: number, deleteLength: number, insertText: string): void {
+	const record = ide_state.undoStack[ide_state.undoStack.length - 1];
+	const buffer = activePieceBuffer();
+	const op = new TextUndoOp();
+
+	if (deleteLength === 0 && insertText.length > 0) {
+		buffer.insert(offset, insertText);
+		op.setInsert(offset, insertText.length);
+	} else if (deleteLength > 0 && insertText.length === 0) {
+		const deletedRoot = buffer.deleteToSubtree(offset, deleteLength);
+		op.setDelete(offset, deleteLength, deletedRoot);
+	} else {
+		const deletedRoot = buffer.replaceToSubtree(offset, deleteLength, insertText);
+		op.setReplace(offset, deleteLength, deletedRoot, insertText.length);
+	}
+
+	record.ops.push(op);
 }
 
 export function undo(): void {
@@ -397,22 +468,62 @@ export function undo(): void {
 	if (ide_state.undoStack.length === 0) {
 		return;
 	}
-	const snapshot = ide_state.undoStack.pop();
-	if (!snapshot) {
-		return;
+	const record = ide_state.undoStack.pop();
+	const buffer = activePieceBuffer();
+	const ops = record.ops;
+	for (let index = ops.length - 1; index >= 0; index -= 1) {
+		const op = ops[index];
+		switch (op.kind) {
+			case 'insert': {
+				op.insertedRoot = buffer.deleteToSubtree(op.offset, op.insertedLen);
+				break;
+			}
+			case 'delete': {
+				buffer.insertSubtree(op.offset, op.deletedRoot);
+				op.deletedRoot = null;
+				break;
+			}
+			case 'replace': {
+				op.insertedRoot = buffer.deleteToSubtree(op.offset, op.insertedLen);
+				buffer.insertSubtree(op.offset, op.deletedRoot);
+				op.deletedRoot = null;
+				break;
+			}
+		}
 	}
-	const current = captureSnapshot();
+
 	if (ide_state.redoStack.length >= constants.UNDO_HISTORY_LIMIT) {
-		ide_state.redoStack.shift();
+		const dropped = ide_state.redoStack.shift();
+		if (dropped) {
+			releaseUndoRecord(buffer, dropped);
+		}
 	}
-	ide_state.redoStack.push(current);
-	restoreSnapshot(snapshot);
+	ide_state.redoStack.push(record);
+
+	ide_state.cursorRow = record.beforeCursorRow;
+	ide_state.cursorColumn = record.beforeCursorColumn;
+	ide_state.scrollRow = record.beforeScrollRow;
+	ide_state.scrollColumn = record.beforeScrollColumn;
+	ide_state.selectionAnchor = record.beforeHasSelectionAnchor
+		? { row: record.beforeSelectionAnchorRow, column: record.beforeSelectionAnchorColumn }
+		: null;
+	ide_state.textVersion = ide_state.buffer.version;
+	ide_state.maxLineLengthDirty = true;
+	ide_state.layout.markVisualLinesDirty();
+	ide_state.layout.invalidateHighlightsFromRow(0);
+	ide_state.cursorRevealSuspended = false;
+	updateDesiredColumn();
+	resetBlink();
+	ensureCursorVisible();
+	requestSemanticRefresh();
+
 	ide_state.dirty = ide_state.undoStack.length !== ide_state.savePointDepth;
 	updateActiveContextDirtyFlag();
 	ide_state.saveGeneration = ide_state.saveGeneration + 1;
 	const context = getActiveCodeTabContext();
 	if (context) {
 		context.saveGeneration = ide_state.saveGeneration;
+		context.textVersion = ide_state.textVersion;
 	}
 	breakUndoSequence();
 }
@@ -425,22 +536,62 @@ export function redo(): void {
 	if (ide_state.redoStack.length === 0) {
 		return;
 	}
-	const snapshot = ide_state.redoStack.pop();
-	if (!snapshot) {
-		return;
+	const record = ide_state.redoStack.pop();
+	const buffer = activePieceBuffer();
+	const ops = record.ops;
+	for (let index = 0; index < ops.length; index += 1) {
+		const op = ops[index];
+		switch (op.kind) {
+			case 'insert': {
+				buffer.insertSubtree(op.offset, op.insertedRoot);
+				op.insertedRoot = null;
+				break;
+			}
+			case 'delete': {
+				op.deletedRoot = buffer.deleteToSubtree(op.offset, op.deletedLen);
+				break;
+			}
+			case 'replace': {
+				op.deletedRoot = buffer.deleteToSubtree(op.offset, op.deletedLen);
+				buffer.insertSubtree(op.offset, op.insertedRoot);
+				op.insertedRoot = null;
+				break;
+			}
+		}
 	}
-	const current = captureSnapshot();
+
 	if (ide_state.undoStack.length >= constants.UNDO_HISTORY_LIMIT) {
-		ide_state.undoStack.shift();
+		const dropped = ide_state.undoStack.shift();
+		if (dropped) {
+			releaseUndoRecord(buffer, dropped);
+		}
 	}
-	ide_state.undoStack.push(current);
-	restoreSnapshot(snapshot);
+	ide_state.undoStack.push(record);
+
+	ide_state.cursorRow = record.afterCursorRow;
+	ide_state.cursorColumn = record.afterCursorColumn;
+	ide_state.scrollRow = record.afterScrollRow;
+	ide_state.scrollColumn = record.afterScrollColumn;
+	ide_state.selectionAnchor = record.afterHasSelectionAnchor
+		? { row: record.afterSelectionAnchorRow, column: record.afterSelectionAnchorColumn }
+		: null;
+	ide_state.textVersion = ide_state.buffer.version;
+	ide_state.maxLineLengthDirty = true;
+	ide_state.layout.markVisualLinesDirty();
+	ide_state.layout.invalidateHighlightsFromRow(0);
+	ide_state.cursorRevealSuspended = false;
+	updateDesiredColumn();
+	resetBlink();
+	ensureCursorVisible();
+	requestSemanticRefresh();
+
 	ide_state.dirty = ide_state.undoStack.length !== ide_state.savePointDepth;
 	updateActiveContextDirtyFlag();
 	ide_state.saveGeneration = ide_state.saveGeneration + 1;
 	const context = getActiveCodeTabContext();
 	if (context) {
 		context.saveGeneration = ide_state.saveGeneration;
+		context.textVersion = ide_state.textVersion;
 	}
 	breakUndoSequence();
 }
@@ -554,7 +705,7 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 		tooltip.bubbleBounds = null;
 		return;
 	}
-	const entry = ide_state.layout.getCachedHighlight(ide_state.lines, segment.row);
+	const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, segment.row);
 	const highlight = entry.hi;
 	let columnStart = ide_state.wordWrapEnabled ? segment.startColumn : ide_state.scrollColumn;
 	if (ide_state.wordWrapEnabled) {
@@ -694,7 +845,7 @@ export function setExecutionStopHighlight(row: number): void {
 	}
 	let nextRow = row;
 	if (nextRow !== null) {
-		const maxRow = Math.max(0, ide_state.lines.length - 1);
+		const maxRow = Math.max(0, ide_state.buffer.getLineCount() - 1);
 		nextRow = clamp(nextRow, 0, maxRow);
 	}
 	context.executionStopRow = nextRow;
@@ -1022,20 +1173,16 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 		}
 		const chunkName = resolveHoverChunkName(context);
 		const isActive = activeId && contextId === activeId;
-		const source = isActive
-			? joinLinesCached(ide_state.lines, ide_state.textVersion)
-			: getSourceForChunk(chunkName);
-		if (source.length === 0) {
-			ide_state.diagnosticsCache.delete(contextId);
+		const cached = ide_state.diagnosticsCache.get(contextId);
+		const buffer = isActive ? ide_state.buffer : context.buffer;
+		const version = buffer.version;
+		if (cached && cached.chunkName === chunkName && cached.version === version) {
 			ide_state.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
-		const lines = isActive ? ide_state.lines : (context.snapshot ? context.snapshot.lines : null);
-		const version = isActive
-			? ide_state.textVersion
-			: (context.snapshot ? context.snapshot.textVersion : context.textVersion ?? 0);
-		const cached = ide_state.diagnosticsCache.get(contextId);
-		if (cached && cached.source === source && cached.chunkName === chunkName && cached.version === version) {
+		const source = getTextSnapshot(buffer);
+		if (source.length === 0) {
+			ide_state.diagnosticsCache.delete(contextId);
 			ide_state.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
@@ -1045,7 +1192,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			descriptor: context.descriptor,
 			chunkName,
 			source,
-			lines: lines ?? undefined,
+			lines: splitText(source),
 			version,
 		};
 		inputs.push(input);
@@ -1153,13 +1300,13 @@ export function markDiagnosticsDirtyForChunk(chunkName: string): void {
 export function getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] {
 	const context = getActiveCodeTabContext();
 	const chunkName = resolveHoverChunkName(context) ?? '<anynomous>';
-	return ide_state.layout.getSemanticDefinitions(ide_state.lines, ide_state.textVersion, chunkName);
+	return ide_state.layout.getSemanticDefinitions(ide_state.buffer, ide_state.textVersion, chunkName);
 }
 
 export function getLuaModuleAliases(chunkName: string): Map<string, string> {
 	const activeContext = getActiveCodeTabContext();
 	const targetChunk = chunkName ?? resolveHoverChunkName(activeContext) ?? '<anynomous>';
-	ide_state.layout.getSemanticDefinitions(ide_state.lines, ide_state.textVersion, targetChunk);
+	ide_state.layout.getSemanticDefinitions(ide_state.buffer, ide_state.textVersion, targetChunk);
 	const data = ide_state.semanticWorkspace.getFileData(targetChunk);
 	if (!data || data.moduleAliases.length === 0) {
 		return new Map();
@@ -1684,7 +1831,7 @@ export function openReferenceSearchPopup(): void {
 	const result = resolveReferenceLookup({
 		layout: ide_state.layout,
 		workspace: ide_state.semanticWorkspace,
-		lines: ide_state.lines,
+		buffer: ide_state.buffer,
 		textVersion: ide_state.textVersion,
 		cursorRow: ide_state.cursorRow,
 		cursorColumn: ide_state.cursorColumn,
@@ -1730,7 +1877,7 @@ export function openRenamePrompt(): void {
 	const started = ide_state.renameController.begin({
 		layout: ide_state.layout,
 		workspace: ide_state.semanticWorkspace,
-		lines: ide_state.lines,
+		buffer: ide_state.buffer,
 		textVersion: ide_state.textVersion,
 		cursorRow: ide_state.cursorRow,
 		cursorColumn: ide_state.cursorColumn,
@@ -1757,37 +1904,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 		return a.start - b.start;
 	});
 	let updatedTotal = 0;
-	let activeEditsApplied = false;
-	if (sortedMatches.length > 0) {
-		const edits = planRenameLineEdits(ide_state.lines, sortedMatches, newName);
-		if (edits.length > 0) {
-			prepareUndo('rename', false);
-			recordEditContext('replace', newName);
-			for (let index = 0; index < edits.length; index += 1) {
-				const edit = edits[index];
-				ide_state.lines[edit.row] = edit.text;
-				ide_state.layout.invalidateLine(edit.row);
-			}
-			markTextMutated();
-			activeEditsApplied = true;
-		}
-		const clampedIndex = clamp(activeIndex, 0, sortedMatches.length - 1);
-		const match = sortedMatches[clampedIndex];
-		const line = ide_state.lines[match.row] ?? '';
-		const startColumn = clamp(match.start, 0, line.length);
-		const endColumn = clamp(startColumn + newName.length, startColumn, line.length);
-		ide_state.cursorRow = match.row;
-		ide_state.cursorColumn = startColumn;
-		ide_state.selectionAnchor = { row: match.row, column: endColumn };
-		updateDesiredColumn();
-		resetBlink();
-		ide_state.cursorRevealSuspended = false;
-		ensureCursorVisible();
-		updatedTotal += sortedMatches.length;
-	}
-	if (activeEditsApplied) {
-		ide_state.semanticWorkspace.updateFile(activeChunkName, joinLinesCached(ide_state.lines, ide_state.textVersion), ide_state.lines, null, ide_state.textVersion);
-	}
+
 	const decl = info.definitionKey ? ide_state.semanticWorkspace.getDecl(info.definitionKey) : null;
 	const references = info.definitionKey ? ide_state.semanticWorkspace.getReferences(info.definitionKey) : [];
 	type RangeBucket = { chunkName: string; ranges: LuaSourceRange[]; seen: Set<string> };
@@ -1818,6 +1935,31 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	if (activeChunkName) {
 		rangeMap.delete(activeChunkName);
 	}
+
+	if (sortedMatches.length > 0) {
+		prepareUndo('rename', false);
+		recordEditContext('replace', newName);
+		for (let index = sortedMatches.length - 1; index >= 0; index -= 1) {
+			const match = sortedMatches[index];
+			const startOffset = ide_state.buffer.offsetAt(match.row, match.start);
+			const endOffset = ide_state.buffer.offsetAt(match.row, match.end);
+			applyUndoableReplace(startOffset, endOffset - startOffset, newName);
+			ide_state.layout.invalidateLine(match.row);
+		}
+		markTextMutated();
+
+		const clampedIndex = clamp(activeIndex, 0, sortedMatches.length - 1);
+		const focused = sortedMatches[clampedIndex];
+		ide_state.cursorRow = focused.row;
+		ide_state.cursorColumn = focused.start;
+		ide_state.selectionAnchor = { row: focused.row, column: focused.start + newName.length };
+		updateDesiredColumn();
+		resetBlink();
+		ide_state.cursorRevealSuspended = false;
+		ensureCursorVisible();
+		updatedTotal += sortedMatches.length;
+	}
+
 	for (const bucket of rangeMap.values()) {
 		const replacements = renameManager.applyRenameToChunk(bucket.chunkName, bucket.ranges, newName, activeChunkName);
 		updatedTotal += replacements;
@@ -1892,16 +2034,17 @@ export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, con
 	const normalizedPath = descriptor && descriptor.path ? descriptor.path : null;
 	const asset_id = descriptor && descriptor.asset_id ? descriptor.asset_id : null;
 	const chunkName = resolveHoverChunkName(context) ?? normalizedPath ?? asset_id ?? '<anynomous>';
+	const activeLines = splitText(getTextSnapshot(ide_state.buffer));
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: getActiveCodeTabContext(),
-		activeLines: ide_state.lines,
+		activeLines,
 		codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
 	};
 	const sourceLabelPath = descriptor ? (descriptor.path ?? descriptor.asset_id) : null;
 	return buildProjectReferenceCatalog({
 		workspace: ide_state.semanticWorkspace,
 		info,
-		lines: ide_state.lines,
+		lines: activeLines,
 		chunkName,
 		asset_id,
 		environment,
@@ -2257,9 +2400,9 @@ export function applyLineJump(): void {
 		return;
 	}
 	const target = Number.parseInt(ide_state.lineJumpValue, 10);
-	if (!Number.isFinite(target) || target < 1 || target > ide_state.lines.length) {
-		const limit = ide_state.lines.length <= 0 ? 1 : ide_state.lines.length;
-		ide_state.showMessage(`Line must be between 1 and ${limit}`, constants.COLOR_STATUS_WARNING, 1.8);
+	const lineCount = ide_state.buffer.getLineCount();
+	if (!Number.isFinite(target) || target < 1 || target > lineCount) {
+		ide_state.showMessage(`Line must be between 1 and ${lineCount}`, constants.COLOR_STATUS_WARNING, 1.8);
 		return;
 	}
 	const navigationCheckpoint = beginNavigationCapture();
@@ -2283,8 +2426,8 @@ export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
 	if (!isCodeTabActive()) {
 		return;
 	}
-	const targetRow = clamp(diagnostic.row, 0, Math.max(0, ide_state.lines.length - 1));
-	const line = ide_state.lines[targetRow] ?? '';
+	const targetRow = clamp(diagnostic.row, 0, Math.max(0, ide_state.buffer.getLineCount() - 1));
+	const line = ide_state.buffer.getLineContent(targetRow);
 	const targetColumn = clamp(diagnostic.startColumn, 0, line.length);
 	setCursorPosition(targetRow, targetColumn);
 	TextEditing.clearSelection();
@@ -2374,7 +2517,7 @@ export function buildProjectReferenceContext(context: CodeTabContext): {
 		?? '<anynomous>';
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: context,
-		activeLines: ide_state.lines,
+		activeLines: splitText(getTextSnapshot(ide_state.buffer)),
 		codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
 	};
 	return {
@@ -2386,9 +2529,9 @@ export function buildProjectReferenceContext(context: CodeTabContext): {
 }
 
 export function applyDefinitionSelection(range: VMLuaDefinitionLocation['range']): void {
-	const lastRowIndex = Math.max(0, ide_state.lines.length - 1);
+	const lastRowIndex = Math.max(0, ide_state.buffer.getLineCount() - 1);
 	const startRow = clamp(range.startLine - 1, 0, lastRowIndex);
-	const startLine = ide_state.lines[startRow] ?? '';
+	const startLine = ide_state.buffer.getLineContent(startRow);
 	const startColumn = clamp(range.startColumn - 1, 0, startLine.length);
 	ide_state.cursorRow = startRow;
 	ide_state.cursorColumn = startColumn;
@@ -2469,9 +2612,10 @@ export function createNavigationEntry(): NavigationHistoryEntry {
 	const asset_id = resolveHoverAssetId(context);
 	const chunkName = resolveHoverChunkName(context);
 	const path = context.descriptor?.path;
-	const maxRowIndex = ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0;
+	const maxRowIndex = Math.max(0, ide_state.buffer.getLineCount() - 1);
 	const row = clamp(ide_state.cursorRow, 0, maxRowIndex);
-	const column = clamp(ide_state.cursorColumn, 0, ide_state.lines[row]?.length ?? 0);
+	const lineLen = ide_state.buffer.getLineEndOffset(row) - ide_state.buffer.getLineStartOffset(row);
+	const column = clamp(ide_state.cursorColumn, 0, lineLen);
 	return {
 		contextId: context.id,
 		asset_id,
@@ -2512,9 +2656,9 @@ export function applyNavigationEntry(entry: NavigationHistoryEntry): void {
 	if (!isCodeTabActive()) {
 		return;
 	}
-	const maxRowIndex = ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0;
+	const maxRowIndex = Math.max(0, ide_state.buffer.getLineCount() - 1);
 	const targetRow = clamp(entry.row, 0, maxRowIndex);
-	const line = ide_state.lines[targetRow] ?? '';
+	const line = ide_state.buffer.getLineContent(targetRow);
 	const targetColumn = clamp(entry.column, 0, line.length);
 	setCursorPosition(targetRow, targetColumn);
 	TextEditing.clearSelection();
@@ -2677,7 +2821,7 @@ export function toggleLineComments(): void {
 	}
 	let allCommented = true;
 	for (let row = range.startRow; row <= range.endRow; row++) {
-		const line = ide_state.lines[row];
+		const line = ide_state.buffer.getLineContent(row);
 		const commentIndex = firstNonWhitespaceIndex(line);
 		if (commentIndex >= line.length) {
 			allCommented = false;
@@ -2704,10 +2848,10 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 	if (target.startRow < 0 || target.endRow < target.startRow) {
 		return;
 	}
-	prepareUndo('comment-ide_state.lines', false);
+	prepareUndo('comment-lines', false);
 	let changed = false;
 	for (let row = target.startRow; row <= target.endRow; row++) {
-		const originalLine = ide_state.lines[row];
+		const originalLine = ide_state.buffer.getLineContent(row);
 		const insertIndex = firstNonWhitespaceIndex(originalLine);
 		const hasContent = insertIndex < originalLine.length;
 		let insertion = '--';
@@ -2717,8 +2861,7 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 				insertion = '-- ';
 			}
 		}
-		const updatedLine = originalLine.slice(0, insertIndex) + insertion + originalLine.slice(insertIndex);
-		ide_state.lines[row] = updatedLine;
+		applyUndoableReplace(ide_state.buffer.offsetAt(row, insertIndex), 0, insertion);
 		ide_state.layout.invalidateLine(row);
 		shiftPositionsForInsertion(row, insertIndex, insertion.length);
 		changed = true;
@@ -2743,10 +2886,10 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 	if (target.startRow < 0 || target.endRow < target.startRow) {
 		return;
 	}
-	prepareUndo('uncomment-ide_state.lines', false);
+	prepareUndo('uncomment-lines', false);
 	let changed = false;
 	for (let row = target.startRow; row <= target.endRow; row++) {
-		const originalLine = ide_state.lines[row];
+		const originalLine = ide_state.buffer.getLineContent(row);
 		const commentIndex = firstNonWhitespaceIndex(originalLine);
 		if (commentIndex >= originalLine.length) {
 			continue;
@@ -2761,8 +2904,7 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 				removal = 3;
 			}
 		}
-		const updatedLine = originalLine.slice(0, commentIndex) + originalLine.slice(commentIndex + removal);
-		ide_state.lines[row] = updatedLine;
+		applyUndoableReplace(ide_state.buffer.offsetAt(row, commentIndex), removal, '');
 		ide_state.layout.invalidateLine(row);
 		shiftPositionsForRemoval(row, commentIndex, removal);
 		changed = true;
@@ -2872,7 +3014,7 @@ export function resolvePointerRow(viewportY: number): number {
 	const segment = visualIndexToSegment(visualIndex);
 	if (!segment) {
 		ide_state.lastPointerRowResolution = null;
-		return clamp(visualIndex, 0, Math.max(0, ide_state.lines.length - 1));
+		return clamp(visualIndex, 0, Math.max(0, ide_state.buffer.getLineCount() - 1));
 	}
 	ide_state.lastPointerRowResolution = { visualIndex, segment };
 	return segment.row;
@@ -2881,11 +3023,11 @@ export function resolvePointerRow(viewportY: number): number {
 export function resolvePointerColumn(row: number, viewportX: number): number {
 	const bounds = getCodeAreaBounds();
 	const textLeft = bounds.textLeft;
-	const line = ide_state.lines[row] ?? '';
+	const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, row);
+	const line = entry.src;
 	if (line.length === 0) {
 		return 0;
 	}
-	const entry = ide_state.layout.getCachedHighlight(ide_state.lines, row);
 	const highlight = entry.hi;
 	let segmentStartColumn = ide_state.scrollColumn;
 	let segmentEndColumn = line.length;
@@ -3060,10 +3202,10 @@ export function processInlineFieldPointer(field: TextField, textLeft: number, po
 export function updateDesiredColumn(): void {
 	ide_state.desiredColumn = ide_state.cursorColumn;
 	ide_state.desiredDisplayOffset = 0;
-	if (ide_state.cursorRow < 0 || ide_state.cursorRow >= ide_state.lines.length) {
+	if (ide_state.cursorRow < 0 || ide_state.cursorRow >= ide_state.buffer.getLineCount()) {
 		return;
 	}
-	const entry = ide_state.layout.getCachedHighlight(ide_state.lines, ide_state.cursorRow);
+	const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, ide_state.cursorRow);
 	const highlight = entry.hi;
 	const cursorDisplay = ide_state.layout.columnToDisplay(highlight, ide_state.cursorColumn);
 	let segmentStartColumn = 0;
@@ -3092,7 +3234,7 @@ export async function save(): Promise<void> {
 	if (!context) {
 		return;
 	}
-	const source = joinLinesCached(ide_state.lines, ide_state.textVersion);
+	const source = getTextSnapshot(ide_state.buffer);
 	const descriptor = context.descriptor;
 	const targetPath = descriptor?.path ?? descriptor?.asset_id;
 	try {
@@ -3108,7 +3250,6 @@ export async function save(): Promise<void> {
 		context.lastSavedSource = source;
 		context.saveGeneration = ide_state.saveGeneration;
 		ide_state.lastSavedSource = source;
-		context.snapshot = captureSnapshot();
 		updateActiveContextDirtyFlag();
 		const message = `${context.title} saved (restart pending)`;
 		ide_state.showMessage(message, constants.COLOR_STATUS_SUCCESS, 2.5);
@@ -3122,19 +3263,17 @@ export async function save(): Promise<void> {
 }
 
 export function captureSnapshot(): EditorSnapshot {
-	const linesCopy = ide_state.lines.slice();
 	let selectionCopy: Position = null;
-	if (ide_state.selectionAnchor) {
-		selectionCopy = { row: ide_state.selectionAnchor.row, column: ide_state.selectionAnchor.column };
+	const anchor = ide_state.selectionAnchor;
+	if (anchor) {
+		selectionCopy = { row: anchor.row, column: anchor.column };
 	}
 	return {
-		lines: linesCopy,
 		cursorRow: ide_state.cursorRow,
 		cursorColumn: ide_state.cursorColumn,
 		scrollRow: ide_state.scrollRow,
 		scrollColumn: ide_state.scrollColumn,
 		selectionAnchor: selectionCopy,
-		dirty: ide_state.dirty,
 		textVersion: ide_state.textVersion,
 	};
 }
@@ -3144,7 +3283,6 @@ export type RestoreSnapshotOptions = {
 };
 
 export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnapshotOptions): void {
-	ide_state.lines = snapshot.lines.slice();
 	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.markVisualLinesDirty();
 	ide_state.layout.invalidateHighlightsFromRow(0);
@@ -3152,9 +3290,8 @@ export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnaps
 	ide_state.cursorColumn = snapshot.cursorColumn;
 	ide_state.scrollRow = snapshot.scrollRow;
 	ide_state.scrollColumn = snapshot.scrollColumn;
-	ide_state.selectionAnchor = null;
-	ide_state.dirty = snapshot.dirty;
-	ide_state.textVersion = snapshot.textVersion ?? ide_state.textVersion;
+	ide_state.selectionAnchor = snapshot.selectionAnchor;
+	ide_state.textVersion = ide_state.buffer.version;
 	updateDesiredColumn();
 	resetBlink();
 	ide_state.cursorRevealSuspended = false;
@@ -3337,8 +3474,9 @@ export function findFunctionDefinitionRowInActiveFile(functionName: string): num
 		new RegExp(`^\\s*local\\s+function\\s+${escaped}\\b`),
 		new RegExp(`\\b${escaped}\\s*=\\s*function\\b`),
 	];
-	for (let row = 0; row < ide_state.lines.length; row += 1) {
-		const line = ide_state.lines[row];
+	const lineCount = ide_state.buffer.getLineCount();
+	for (let row = 0; row < lineCount; row += 1) {
+		const line = ide_state.buffer.getLineContent(row);
 		for (let index = 0; index < patterns.length; index += 1) {
 			if (patterns[index].test(line)) {
 				return row;
@@ -3417,8 +3555,8 @@ export function toggleWordWrap(): void {
 	ide_state.layout.markVisualLinesDirty();
 	ensureVisualLines();
 
-	ide_state.cursorRow = clamp(previousCursorRow, 0, ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0);
-	const currentLine = ide_state.lines[ide_state.cursorRow] ?? '';
+	ide_state.cursorRow = clamp(previousCursorRow, 0, Math.max(0, ide_state.buffer.getLineCount() - 1));
+	const currentLine = ide_state.buffer.getLineContent(ide_state.cursorRow);
 	ide_state.cursorColumn = clamp(previousCursorColumn, 0, currentLine.length);
 	ide_state.desiredColumn = previousDesiredColumn;
 
@@ -3508,7 +3646,7 @@ export function closeActiveTab(): void {
 }
 
 export function resetEditorContent(): void {
-	ide_state.lines = [''];
+	ide_state.buffer = new PieceTreeBuffer('');
 	ide_state.layout.markVisualLinesDirty();
 	markDiagnosticsDirty();
 	ide_state.cursorRow = 0;
@@ -3865,39 +4003,53 @@ export function collectRegistryLines(): string[] {
 export function openDebugPanelTab(kind: DebugPanelKind): void {
 	const tabId = debugPanelTabId(kind);
 	const title = DEBUG_PANEL_TITLES[kind];
+	const source = buildDebugPanelLines(kind).join('\n');
+	const wasActive = ide_state.activeTabId === tabId;
 	let context = ide_state.codeTabContexts.get(tabId);
 	if (!context) {
-			context = {
-				id: tabId,
-				title,
-				descriptor: null,
-				snapshot: null,
-				lastSavedSource: '',
-				saveGeneration: 0,
-				appliedGeneration: 0,
-				undoStack: [],
-				redoStack: [],
-				lastHistoryKey: null,
-				lastHistoryTimestamp: 0,
-				savePointDepth: 0,
-				dirty: false,
-				runtimeErrorOverlay: null,
-				executionStopRow: null,
-				readOnly: true,
-				textVersion: 0,
-			};
+		const buffer = new PieceTreeBuffer(source);
+		context = {
+			id: tabId,
+			title,
+			descriptor: null,
+			buffer,
+			cursorRow: 0,
+			cursorColumn: 0,
+			scrollRow: 0,
+			scrollColumn: 0,
+			selectionAnchor: null,
+			lastSavedSource: '',
+			saveGeneration: 0,
+			appliedGeneration: 0,
+			undoStack: [],
+			redoStack: [],
+			lastHistoryKey: null,
+			lastHistoryTimestamp: 0,
+			savePointDepth: 0,
+			dirty: false,
+			runtimeErrorOverlay: null,
+			executionStopRow: null,
+			readOnly: true,
+			textVersion: buffer.version,
+		};
 		ide_state.codeTabContexts.set(tabId, context);
 	} else {
-			context.title = title;
-			context.readOnly = true;
-			context.snapshot = null;
-			context.undoStack.length = 0;
-			context.redoStack.length = 0;
-			context.lastHistoryKey = null;
-			context.lastHistoryTimestamp = 0;
-			context.savePointDepth = 0;
-			context.dirty = false;
-		}
+		context.title = title;
+		context.readOnly = true;
+		context.buffer.replace(0, context.buffer.length, source);
+		context.textVersion = context.buffer.version;
+		context.cursorRow = 0;
+		context.cursorColumn = 0;
+		context.scrollRow = 0;
+		context.scrollColumn = 0;
+		context.selectionAnchor = null;
+		context.undoStack.length = 0;
+		context.redoStack.length = 0;
+		context.lastHistoryKey = null;
+		context.lastHistoryTimestamp = 0;
+		context.savePointDepth = 0;
+		context.dirty = false;
+	}
 	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
 	if (!tab) {
 		tab = {
@@ -3914,6 +4066,12 @@ export function openDebugPanelTab(kind: DebugPanelKind): void {
 	}
 	setTabDirty(tabId, false);
 	setActiveTab(tabId);
+	if (wasActive) {
+		ide_state.textVersion = ide_state.buffer.version;
+		ide_state.maxLineLengthDirty = true;
+		ide_state.layout.invalidateHighlightsFromRow(0);
+		ide_state.layout.markVisualLinesDirty();
+	}
 }
 
 export function isDebugPanelActive(kind: DebugPanelKind): boolean {
@@ -4073,21 +4231,8 @@ export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: s
 }
 
 export function applySourceToDocument(source: string): void {
-	const nextLines = splitText(source);
-	const previousLength = ide_state.lines.length;
-	const limit = Math.min(previousLength, nextLines.length);
-	for (let index = 0; index < limit; index += 1) {
-		if (ide_state.lines[index] !== nextLines[index]) {
-			ide_state.lines[index] = nextLines[index];
-		}
-	}
-	if (nextLines.length > previousLength) {
-		for (let index = previousLength; index < nextLines.length; index += 1) {
-			ide_state.lines.push(nextLines[index]);
-		}
-	} else if (nextLines.length < previousLength) {
-		ide_state.lines.length = nextLines.length;
-	}
+	ide_state.buffer.replace(0, ide_state.buffer.length, source);
+	ide_state.textVersion = ide_state.buffer.version;
 	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.invalidateHighlightsFromRow(0);
 	ide_state.layout.markVisualLinesDirty();

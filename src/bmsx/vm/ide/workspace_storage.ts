@@ -24,8 +24,7 @@ import {
 import { openLuaCodeTab, restoreSnapshot, setFontVariant } from './vm_cart_editor';
 import { createEntryTabContext, initializeTabs, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { VMFontVariant } from '../font';
-import { normalizeEndingsAndSplitLines } from './text_utils';
-import { joinLinesCached } from './source_text';
+import { getTextSnapshot } from './source_text';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../workspace_cache';
 
 export type WorkspaceStoragePaths = {
@@ -382,10 +381,10 @@ export function resolveSerializedDescriptor(serialized: SerializedDescriptor): V
 export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise<void> {
 	for (const entry of entries) {
 		const descriptor = resolveSerializedDescriptor(entry.descriptor);
-		let context = ide_state.codeTabContexts.get(entry.contextId) ;
+		let context = ide_state.codeTabContexts.get(entry.contextId);
 		if (!context && descriptor) {
 			openLuaCodeTab(descriptor);
-			context = ide_state.codeTabContexts.get(entry.contextId) ;
+			context = ide_state.codeTabContexts.get(entry.contextId);
 		}
 		if (!context) {
 			continue;
@@ -399,72 +398,78 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 		if (savedContents !== null && savedContents !== contents) {
 			await deleteDirtyBuffer(entry.dirtyPath);
 			deleteWorkspaceCachedSources([entry.dirtyPath, descriptor?.path]);
-				const cleanSnapshot = buildSnapshotFromSource(savedContents, entry);
-				context.snapshot = cleanSnapshot;
-				context.dirty = false;
-				context.savePointDepth = context.undoStack.length;
-				setTabDirty(context.id, false);
-				if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
-					restoreSnapshot(cleanSnapshot, { preserveScroll: true });
-					ide_state.savePointDepth = context.savePointDepth;
-					ide_state.dirty = false;
-					updateActiveContextDirtyFlag();
-				}
-				continue;
-			}
-		setWorkspaceCachedSources([entry.dirtyPath, descriptor?.path], contents);
-			const snapshot = buildSnapshotFromSource(contents, entry);
-			context.snapshot = snapshot;
-			context.dirty = true;
-			context.savePointDepth = -1;
-			setTabDirty(context.id, true);
+			applySourceToContext(context, savedContents, entry);
+			context.lastSavedSource = savedContents;
+			context.dirty = false;
+			context.savePointDepth = context.undoStack.length;
+			setTabDirty(context.id, false);
 			if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
-				restoreSnapshot(snapshot, { preserveScroll: true });
+				restoreSnapshot(buildSnapshotFromBuffer(context, entry), { preserveScroll: true });
 				ide_state.savePointDepth = context.savePointDepth;
-				ide_state.dirty = true;
+				ide_state.dirty = false;
 				updateActiveContextDirtyFlag();
 			}
+			continue;
+		}
+		setWorkspaceCachedSources([entry.dirtyPath, descriptor?.path], contents);
+		applySourceToContext(context, contents, entry);
+		context.dirty = true;
+		context.savePointDepth = -1;
+		setTabDirty(context.id, true);
+		if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
+			restoreSnapshot(buildSnapshotFromBuffer(context, entry), { preserveScroll: true });
+			ide_state.savePointDepth = context.savePointDepth;
+			ide_state.dirty = true;
+			updateActiveContextDirtyFlag();
 		}
 	}
+}
 
-export function buildSnapshotFromSource(source: string, metadata?: SnapshotMetadata): EditorSnapshot {
-	const lines = normalizeEndingsAndSplitLines(source);
-	const lastRow = lines.length > 0 ? lines.length - 1 : 0;
+function applySourceToContext(context: CodeTabContext, source: string, metadata?: SnapshotMetadata): void {
+	context.buffer.replace(0, context.buffer.length, source);
+	context.textVersion = context.buffer.version;
+	context.undoStack.length = 0;
+	context.redoStack.length = 0;
+	context.lastHistoryKey = null;
+	context.lastHistoryTimestamp = 0;
+	context.savePointDepth = 0;
+	if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
+		ide_state.undoStack.length = 0;
+		ide_state.redoStack.length = 0;
+		ide_state.lastHistoryKey = null;
+		ide_state.lastHistoryTimestamp = 0;
+		ide_state.savePointDepth = 0;
+	}
+	const snapshot = buildSnapshotFromBuffer(context, metadata);
+	context.cursorRow = snapshot.cursorRow;
+	context.cursorColumn = snapshot.cursorColumn;
+	context.scrollRow = snapshot.scrollRow;
+	context.scrollColumn = snapshot.scrollColumn;
+	context.selectionAnchor = snapshot.selectionAnchor;
+}
+
+function buildSnapshotFromBuffer(context: CodeTabContext, metadata?: SnapshotMetadata): EditorSnapshot {
+	const buffer = context.buffer;
+	const lastRow = Math.max(0, buffer.getLineCount() - 1);
 	const cursorRow = clamp_safe(metadata?.cursorRow, 0, lastRow);
-	const cursorColumn = clamp_safe(metadata?.cursorColumn, 0, lines[cursorRow].length ?? 0);
+	const cursorLen = buffer.getLineEndOffset(cursorRow) - buffer.getLineStartOffset(cursorRow);
+	const cursorColumn = clamp_safe(metadata?.cursorColumn, 0, cursorLen);
+	const anchor = metadata?.selectionAnchor;
+	let selectionAnchor: Position = null;
+	if (anchor) {
+		const anchorRow = clamp_safe(anchor.row ?? 0, 0, lastRow);
+		const anchorLen = buffer.getLineEndOffset(anchorRow) - buffer.getLineStartOffset(anchorRow);
+		const anchorColumn = clamp_safe(anchor.column ?? 0, 0, anchorLen);
+		selectionAnchor = { row: anchorRow, column: anchorColumn };
+	}
 	return {
-		lines,
 		cursorRow,
 		cursorColumn,
 		scrollRow: clamp_safe(metadata?.scrollRow, 0, lastRow),
 		scrollColumn: Math.max(0, metadata?.scrollColumn ?? 0),
-		selectionAnchor: clampSelection(metadata?.selectionAnchor , lines),
-		dirty: ide_state.dirty,
-		textVersion: metadata?.textVersion ?? ide_state.textVersion,
+		selectionAnchor,
+		textVersion: metadata?.textVersion ?? buffer.version,
 	};
-}
-
-// function cloneEditorSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
-// 	return {
-// 		lines: snapshot.lines.slice(),
-// 		cursorRow: snapshot.cursorRow,
-// 		cursorColumn: snapshot.cursorColumn,
-// 		scrollRow: snapshot.scrollRow,
-// 		scrollColumn: snapshot.scrollColumn,
-// 		selectionAnchor: snapshot.selectionAnchor
-// 			? { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column }
-// 			: null,
-// 		dirty: snapshot.dirty,
-// 		textVersion: snapshot.textVersion,
-// 	};
-// }
-
-function clampSelection(anchor: Position, lines: string[]): Position {
-	if (!anchor) return null;
-	const row = clamp_safe(anchor.row ?? 0, 0, lines.length - 1);
-	const line = lines[row] ?? '';
-	const column = clamp_safe(anchor.column ?? 0, 0, line.length);
-	return { row, column };
 }
 
 function handleServerBackendFailure(error: unknown): void {
@@ -575,7 +580,6 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 			continue;
 		}
 		const text = captureContextText(context);
-		if (!text) continue;
 		setWorkspaceCachedSources([dirtyPath, descriptor?.path], text);
 		entries.set(dirtyPath, {
 			contextId: context.id,
@@ -594,12 +598,9 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 
 export function captureContextText(context: CodeTabContext): string {
 	if (context.id === ide_state.activeCodeTabContextId) {
-		return joinLinesCached(ide_state.lines, ide_state.textVersion);
+		return getTextSnapshot(ide_state.buffer);
 	}
-	if (context.snapshot) {
-		return joinLinesCached(context.snapshot.lines, context.snapshot.textVersion);
-	}
-	return null;
+	return getTextSnapshot(context.buffer);
 }
 
 function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetadata {
@@ -613,23 +614,12 @@ function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetada
 			textVersion: ide_state.textVersion,
 		};
 	}
-	const snapshot = context.snapshot;
-	if (snapshot) {
-		return {
-			cursorRow: snapshot.cursorRow,
-			cursorColumn: snapshot.cursorColumn,
-			scrollRow: snapshot.scrollRow,
-			scrollColumn: snapshot.scrollColumn,
-			selectionAnchor: snapshot.selectionAnchor ? { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column } : null,
-			textVersion: snapshot.textVersion,
-		};
-	}
 	return {
-		cursorRow: 0,
-		cursorColumn: 0,
-		scrollRow: 0,
-		scrollColumn: 0,
-		selectionAnchor: null,
+		cursorRow: context.cursorRow,
+		cursorColumn: context.cursorColumn,
+		scrollRow: context.scrollRow,
+		scrollColumn: context.scrollColumn,
+		selectionAnchor: context.selectionAnchor ? { row: context.selectionAnchor.row, column: context.selectionAnchor.column } : null,
 		textVersion: context.textVersion,
 	};
 }
@@ -734,8 +724,7 @@ export function clearWorkspaceDirtyBuffers(): void {
 	ide_state.savePointDepth = 0;
 	for (const context of ide_state.codeTabContexts.values()) {
 		const source = loadSrc(context.descriptor.path);
-		const snapshot = buildSnapshotFromSource(source);
-		context.snapshot = snapshot;
+		applySourceToContext(context, source);
 		context.dirty = false;
 		context.saveGeneration = ide_state.saveGeneration;
 		context.appliedGeneration = ide_state.appliedGeneration;
@@ -747,7 +736,7 @@ export function clearWorkspaceDirtyBuffers(): void {
 		context.savePointDepth = 0;
 		setTabDirty(context.id, false);
 		if (ide_state.activeCodeTabContextId === context.id && ide_state.activeTabId === context.id) {
-			restoreSnapshot(snapshot, { preserveScroll: false });
+			restoreSnapshot(buildSnapshotFromBuffer(context), { preserveScroll: false });
 			updateActiveContextDirtyFlag();
 		}
 	}

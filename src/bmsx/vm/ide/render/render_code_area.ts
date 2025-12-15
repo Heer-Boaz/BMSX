@@ -97,11 +97,11 @@ export function renderCodeArea(): void {
 
 	const activeGotoHighlight = ide_state.gotoHoverHighlight;
 	const gotoVisualIndex = activeGotoHighlight
-		? ide_state.layout.positionToVisualIndex(ide_state.lines, activeGotoHighlight.row, activeGotoHighlight.startColumn)
+		? ide_state.layout.positionToVisualIndex(ide_state.buffer, activeGotoHighlight.row, activeGotoHighlight.startColumn)
 		: null;
 	const activeChunkName = resolveHoverChunkName(getActiveCodeTabContext());
 	const breakpointsForChunk = getBreakpointsForChunk(activeChunkName);
-	const cursorVisualIndex = ide_state.layout.positionToVisualIndex(ide_state.lines, ide_state.cursorRow, ide_state.cursorColumn);
+	const cursorVisualIndex = ide_state.layout.positionToVisualIndex(ide_state.buffer, ide_state.cursorRow, ide_state.cursorColumn);
 	const inlineCompletionPreview = ide_state.completion.getInlineCompletionPreview();
 	const shouldRenderInlinePreview = inlineCompletionPreview !== null
 		&& inlineCompletionPreview.row === ide_state.cursorRow
@@ -129,7 +129,7 @@ export function renderCodeArea(): void {
 			continue;
 		}
 		const lineIndex = segment.row;
-		const entry = ide_state.layout.getCachedHighlight(ide_state.lines, lineIndex);
+		const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, lineIndex);
 		const hasBreakpointForRow = breakpointsForChunk?.has(lineIndex + 1) ?? false;
 		if (hasBreakpointForRow && bounds.gutterRight > bounds.gutterLeft) {
 			const markerLeft = bounds.gutterLeft;
@@ -156,7 +156,7 @@ export function renderCodeArea(): void {
 			}
 		}
 		const columnToDisplay = highlight.columnToDisplay;
-		const maxColumn = wrapEnabled ? segment.endColumn : ide_state.lines[lineIndex].length;
+		const maxColumn = wrapEnabled ? segment.endColumn : (ide_state.buffer.getLineEndOffset(lineIndex) - ide_state.buffer.getLineStartOffset(lineIndex));
 		const columnCount = wrapEnabled ? Math.max(0, maxColumn - columnStart) : sliceWidth;
 		const clampedStartColumn = Math.min(columnStart, columnToDisplay.length - 1);
 		const clampedEndColumn = Math.min(columnStart + columnCount, columnToDisplay.length - 1);
@@ -378,7 +378,7 @@ function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTo
 			}
 		}
 	}
-	const currentChar = ide_state.lines[ide_state.cursorRow]?.charAt(ide_state.cursorColumn) ?? '';
+	const currentChar = ide_state.buffer.getLineContent(ide_state.cursorRow).charAt(ide_state.cursorColumn);
 	if (currentChar === '\t') {
 		cursorWidth = ide_state.spaceAdvance * constants.TAB_SPACES;
 	}

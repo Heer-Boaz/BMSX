@@ -10,7 +10,8 @@ import { handlePostEditMutation } from './text_editing_and_selection';
 import type { HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from './types';
 import { markDiagnosticsDirty } from './diagnostics';
 import { resolveHoverChunkName, requestSemanticRefresh, clearReferenceHighlights } from './intellisense';
-import { splitText } from './source_text';
+import { getTextSnapshot, splitText } from './source_text';
+import type { TextBuffer } from './text_buffer';
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;
@@ -166,17 +167,18 @@ export function wrapTextDynamic(
 }
 
 export function isLuaCommentContext(
-	lines: readonly string[],
+	buffer: TextBuffer,
 	targetRow: number,
 	targetColumn: number
 ): boolean {
-	if (targetRow < 0 || targetRow >= lines.length) {
+	const lineCount = buffer.getLineCount();
+	if (targetRow < 0 || targetRow >= lineCount) {
 		return false;
 	}
 	let blockComment = false;
 	let stringDelimiter: '\'' | '"' = null;
 	for (let row = 0; row <= targetRow; row += 1) {
-		const line = lines[row] ?? '';
+		const line = buffer.getLineContent(row);
 		let index = 0;
 		let lineComment = false;
 		const limitColumn = row === targetRow ? targetColumn : line.length;
@@ -302,7 +304,8 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 		return null;
 	}
 	let selectionStartColumn = lineIndex === start.row ? start.column : 0;
-	let selectionEndColumn = lineIndex === end.row ? end.column : ide_state.lines[lineIndex].length;
+	const lineLength = ide_state.buffer.getLineEndOffset(lineIndex) - ide_state.buffer.getLineStartOffset(lineIndex);
+	let selectionEndColumn = lineIndex === end.row ? end.column : lineLength;
 	if (lineIndex === end.row && end.column === 0 && end.row > start.row) {
 		selectionEndColumn = 0;
 	}
@@ -323,7 +326,7 @@ export function ensureVisualLines(): void {
 	const activeContext = getActiveCodeTabContext();
 	const chunkName = resolveHoverChunkName(activeContext) ?? '<anynomous>';
 	ide_state.scrollRow = ide_state.layout.ensureVisualLines({
-		lines: ide_state.lines,
+		buffer: ide_state.buffer,
 		wordWrapEnabled: ide_state.wordWrapEnabled,
 		scrollRow: ide_state.scrollRow,
 		documentVersion: ide_state.textVersion,
@@ -360,7 +363,7 @@ export function positionToVisualIndex(row: number, column: number): number {
 	if (override) {
 		return override.visualIndex;
 	}
-	return ide_state.layout.positionToVisualIndex(ide_state.lines, row, column);
+	return ide_state.layout.positionToVisualIndex(ide_state.buffer, row, column);
 }
 export function computeRuntimeErrorOverlayMaxWidth(): number {
 	const resourceWidth = ide_state.resourcePanelVisible ? getResourcePanelWidth() : 0;
@@ -442,11 +445,22 @@ export function capturePreMutationSource(): void {
 		return;
 	}
 	if (ide_state.preMutationSource === null) {
-		ide_state.preMutationSource = ide_state.lines.slice();
+		ide_state.preMutationSource = getTextSnapshot(ide_state.buffer);
 	}
 }
 
 export function markTextMutated(): void {
+	const record = ide_state.undoStack[ide_state.undoStack.length - 1];
+	const anchor = ide_state.selectionAnchor;
+	record.setAfterState(
+		ide_state.cursorRow,
+		ide_state.cursorColumn,
+		ide_state.scrollRow,
+		ide_state.scrollColumn,
+		anchor ? anchor.row : 0,
+		anchor ? anchor.column : 0,
+		anchor !== null,
+	);
 	ide_state.saveGeneration = ide_state.saveGeneration + 1;
 	ide_state.dirty = ide_state.undoStack.length !== ide_state.savePointDepth;
 	const context = getActiveCodeTabContext();
@@ -465,7 +479,7 @@ export function markTextMutated(): void {
 	if (ide_state.searchQuery.length > 0) startSearchJob();
 }
 export function bumpTextVersion(): void {
-	ide_state.textVersion += 1;
+	ide_state.textVersion = ide_state.buffer.version;
 }
 
 export function normalizeEndingsAndSplitLines(message: string): string[] {

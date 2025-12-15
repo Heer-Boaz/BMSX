@@ -409,8 +409,8 @@ export function handleEditorInput(): void {
 		&& isKeyJustPressed('KeyA')) {
 		consumeIdeKey('KeyA');
 		ide_state.selectionAnchor = { row: 0, column: 0 };
-		const lastRowIndex = ide_state.lines.length > 0 ? ide_state.lines.length - 1 : 0;
-		const lastColumn = ide_state.lines.length > 0 ? ide_state.lines[lastRowIndex].length : 0;
+		const lastRowIndex = Math.max(0, ide_state.buffer.getLineCount() - 1);
+		const lastColumn = ide_state.buffer.getLineEndOffset(lastRowIndex) - ide_state.buffer.getLineStartOffset(lastRowIndex);
 		ide_state.cursorRow = lastRowIndex;
 		ide_state.cursorColumn = lastColumn;
 		updateDesiredColumn();

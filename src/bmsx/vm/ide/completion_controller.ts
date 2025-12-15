@@ -18,11 +18,12 @@ import { isLuaCommentContext, wrapTextDynamic } from './text_utils';
 import { consumeIdeKey } from './ide_input';
 import { point_in_rect } from '../../utils/rect_operations';
 import { LuaLexer } from '../../lua/lualexer';
+import type { TextBuffer } from './text_buffer';
 
 export interface CompletionHost {
 	// Editor state accessors
 	isCodeTabActive(): boolean;
-	getLines(): string[];
+	getBuffer(): TextBuffer;
 	getCursorRow(): number;
 	getCursorColumn(): number;
 	setCursorPosition(row: number, column: number): void;
@@ -498,17 +499,17 @@ export class CompletionController {
 	// Internal helpers and logic
 	private analyzeCompletionContext(): CompletionContext {
 		if (!this.host.isCodeTabActive()) return null;
-		const lines = this.host.getLines();
-		if (lines.length === 0) return null;
-		const row = clamp(this.host.getCursorRow(), 0, lines.length - 1);
-		const line = lines[row];
+		const buffer = this.host.getBuffer();
+		const lineCount = buffer.getLineCount();
+		const row = clamp(this.host.getCursorRow(), 0, Math.max(0, lineCount - 1));
+		const line = buffer.getLineContent(row);
 		const column = clamp(this.host.getCursorColumn(), 0, line.length);
 		let start = column;
 		while (start > 0 && LuaLexer.isIdentifierPart(line.charAt(start - 1))) start -= 1;
 		const prefix = line.slice(start, column);
 		const replaceFromColumn = start;
 		const replaceToColumn = column;
-		if (isLuaCommentContext(lines, row, replaceFromColumn)) {
+		if (isLuaCommentContext(buffer, row, replaceFromColumn)) {
 			return null;
 		}
 		let probe = start - 1;
@@ -612,8 +613,10 @@ export class CompletionController {
 		const cached = this.ensureLocalCompletionCache();
 		if (!cached) return [];
 		const column = context.replaceToColumn;
-		const lines = this.host.getLines();
-		const filtered = this.filterLocalSymbolsAtPosition(cached.symbols, lines, context.row, column);
+		const buffer = this.host.getBuffer();
+		const lineCount = buffer.getLineCount();
+		const lastLine = buffer.getLineContent(Math.max(0, lineCount - 1));
+		const filtered = this.filterLocalSymbolsAtPosition(cached.symbols, lineCount, lastLine.length, context.row, column);
 		if (filtered.length === 0) {
 			return [];
 		}
@@ -732,7 +735,7 @@ export class CompletionController {
 		};
 	}
 
-	private filterLocalSymbolsAtPosition(symbols: readonly LuaScopedSymbol[], lines: readonly string[], row: number, column: number): LuaScopedSymbol[] {
+	private filterLocalSymbolsAtPosition(symbols: readonly LuaScopedSymbol[], lineCount: number, lastLineLength: number, row: number, column: number): LuaScopedSymbol[] {
 		if (symbols.length === 0) return [];
 		const row1Based = row + 1;
 		const column1Based = column + 1;
@@ -743,9 +746,9 @@ export class CompletionController {
 				semanticEndLine = scopeEndLine;
 			}
 		}
-		const documentEndLine = lines.length;
+		const documentEndLine = lineCount;
 		const scopeEndExtendsToDocument = semanticEndLine < documentEndLine;
-		const documentEndColumn = lines[documentEndLine - 1].length + 1;
+		const documentEndColumn = lastLineLength + 1;
 		const selected = new Map<string, LuaScopedSymbol>();
 		for (let index = 0; index < symbols.length; index += 1) {
 			const symbol = symbols[index];
@@ -1229,9 +1232,10 @@ export class CompletionController {
 	}
 
 	private applyCompletionItemForContext(context: CompletionContext, item: LuaCompletionItem, addParentheses: boolean): void {
-		const lines = this.host.getLines();
-		const row = clamp(context.row, 0, Math.max(0, lines.length - 1));
-		const line = lines[row] ?? '';
+		const buffer = this.host.getBuffer();
+		const lineCount = buffer.getLineCount();
+		const row = clamp(context.row, 0, Math.max(0, lineCount - 1));
+		const line = buffer.getLineContent(row);
 		const replaceStart = clamp(context.replaceFromColumn, 0, line.length);
 		const replaceEnd = clamp(context.replaceToColumn, replaceStart, line.length);
 		this.host.setCursorPosition(row, replaceEnd);
@@ -1312,10 +1316,10 @@ export class CompletionController {
 
 	private resolveParameterHintContext(): ParameterHintState {
 		if (!this.host.isCodeTabActive()) return null;
-		const lines = this.host.getLines();
-		if (lines.length === 0) return null;
-		const safeRow = clamp(this.host.getCursorRow(), 0, lines.length - 1);
-		const line = lines[safeRow];
+		const buffer = this.host.getBuffer();
+		const lineCount = buffer.getLineCount();
+		const safeRow = clamp(this.host.getCursorRow(), 0, Math.max(0, lineCount - 1));
+		const line = buffer.getLineContent(safeRow);
 		if (line.length === 0) return null;
 		const safeColumn = clamp(this.host.getCursorColumn(), 0, line.length);
 		let depth = 0;
@@ -1326,7 +1330,7 @@ export class CompletionController {
 			else if (ch === ')') { if (depth > 0) { depth -= 1; if (depth === 0) lastOpen = -1; } }
 		}
 		if (depth <= 0 || lastOpen < 0) return null;
-		if (isLuaCommentContext(lines, safeRow, lastOpen)) return null;
+		if (isLuaCommentContext(buffer, safeRow, lastOpen)) return null;
 		const prefix = line.slice(0, lastOpen);
 		let scan = prefix.length - 1;
 		while (scan >= 0 && LuaLexer.isWhitespace(prefix.charAt(scan))) scan -= 1;

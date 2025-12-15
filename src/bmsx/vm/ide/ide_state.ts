@@ -16,7 +16,6 @@ import { ReferenceState } from './code_reference';
 import { CHARACTER_CODES } from './character_map';
 import type {
 	Position,
-	EditorSnapshot,
 	CodeHoverTooltip,
 	PointerSnapshot,
 	RuntimeErrorOverlay,
@@ -42,6 +41,9 @@ import type {
 	ResourceBrowserItem,
 	VisualLineSegment,
 } from './types';
+import type { TextBuffer } from './text_buffer';
+import { PieceTreeBuffer } from './piece_tree_buffer';
+import type { EditorUndoRecord } from './editor_undo';
 import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
 import type { ReferenceCatalogEntry } from './code_reference';
 import { VMCodeLayout } from './code_layout';
@@ -113,20 +115,20 @@ export interface IdeState {
 	initialized: boolean;
 	playerIndex: number;
 	themeVariant: IdeThemeVariant;
-	lines: string[];
+	buffer: TextBuffer;
 	cursorRow: number;
 	cursorColumn: number;
 	caseInsensitive: boolean;
 	canonicalization: CanonicalizationType;
-	preMutationSource: string[];
+	preMutationSource: string;
 	scrollRow: number;
 	scrollColumn: number;
 	dirty: boolean;
 	desiredColumn: number;
 	desiredDisplayOffset: number;
 	selectionAnchor: Position;
-	undoStack: EditorSnapshot[];
-	redoStack: EditorSnapshot[];
+	undoStack: EditorUndoRecord[];
+	redoStack: EditorUndoRecord[];
 	lastHistoryKey: string;
 	lastHistoryTimestamp: number;
 	savePointDepth: number;
@@ -299,7 +301,7 @@ export const ide_state: IdeState = {
 	initialized: false,
 	playerIndex: 0,
 	themeVariant: getActiveIdeThemeVariant(),
-	lines: [''],
+	buffer: new PieceTreeBuffer(''),
 	cursorRow: 0,
 	cursorColumn: 0,
 	caseInsensitive: true,

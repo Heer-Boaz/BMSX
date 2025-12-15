@@ -34,6 +34,7 @@ import { BmsxVMRuntime } from './vm_runtime';
 import { TerminalCommandDispatcher as TerminalCommandDispatcher } from './terminal_commands';
 import { extractErrorMessage, LuaValue } from '../lua/luavalue';
 import { LuaMemberCompletionRequest } from './types';
+import type { MutableTextPosition, TextBuffer } from './ide/text_buffer';
 
 type TerminalOutputKind =
 	| 'prompt'
@@ -48,6 +49,90 @@ type TerminalOutputEntry = {
 	text: string;
 	color: number;
 };
+
+class InlineFieldTextBuffer implements TextBuffer {
+	public constructor(
+		private readonly getLines: () => readonly string[],
+		private readonly getVersion: () => number,
+	) { }
+
+	public get version(): number {
+		return this.getVersion();
+	}
+
+	public get length(): number {
+		const lines = this.getLines();
+		if (lines.length === 0) {
+			return 0;
+		}
+		let total = 0;
+		for (let row = 0; row < lines.length; row += 1) {
+			total += lines[row].length;
+		}
+		return total + (lines.length - 1);
+	}
+
+	public insert(): void {
+		throw new Error('[InlineFieldTextBuffer] insert not supported');
+	}
+
+	public delete(): void {
+		throw new Error('[InlineFieldTextBuffer] delete not supported');
+	}
+
+	public replace(): void {
+		throw new Error('[InlineFieldTextBuffer] replace not supported');
+	}
+
+	public getLineCount(): number {
+		return this.getLines().length;
+	}
+
+	public getLineStartOffset(row: number): number {
+		const lines = this.getLines();
+		let offset = 0;
+		for (let index = 0; index < row; index += 1) {
+			offset += lines[index].length + 1;
+		}
+		return offset;
+	}
+
+	public getLineEndOffset(row: number): number {
+		return this.getLineStartOffset(row) + this.getLineContent(row).length;
+	}
+
+	public getLineContent(row: number): string {
+		return this.getLines()[row] ?? '';
+	}
+
+	public offsetAt(row: number, column: number): number {
+		return this.getLineStartOffset(row) + column;
+	}
+
+	public positionAt(offset: number, out: MutableTextPosition): void {
+		let remaining = offset;
+		const lines = this.getLines();
+		for (let row = 0; row < lines.length; row += 1) {
+			const lineLength = lines[row].length;
+			if (remaining <= lineLength) {
+				out.row = row;
+				out.column = remaining;
+				return;
+			}
+			remaining -= lineLength + 1;
+		}
+		out.row = lines.length - 1;
+		out.column = lines[lines.length - 1].length;
+	}
+
+	public getTextRange(start: number, end: number): string {
+		return this.getText().slice(start, end);
+	}
+
+	public getText(): string {
+		return this.getLines().join('\n');
+	}
+}
 
 const MAX_OUTPUT_ENTRIES = 512;
 const MAX_HISTORY_ENTRIES = 256;
@@ -81,6 +166,7 @@ export class TerminalMode {
 	private readonly terminalChunkName = '<terminal>';
 	private readonly completionContextToken = { chunk: this.terminalChunkName };
 	private readonly completion: CompletionController;
+	private readonly buffer: TextBuffer;
 	private blinkTimer = 0;
 	private caretVisible = true;
 	private active = false;
@@ -119,9 +205,10 @@ export class TerminalMode {
 		this.uppercaseDisplayOverride = false;
 		this.maxEntries = MAX_OUTPUT_ENTRIES;
 		const terminal = this;
+		this.buffer = new InlineFieldTextBuffer(() => this.getLinesSnapshot(), () => this.textVersion);
 		this.completion = new CompletionController({
 			isCodeTabActive: () => this.active,
-			getLines: () => this.getLinesSnapshot(),
+			getBuffer: () => this.buffer,
 			getCursorRow: () => this.getCursorPosition().row,
 			getCursorColumn: () => this.getCursorPosition().column,
 			setCursorPosition: (row, column) => { this.setCursorFromPosition(row, column); },

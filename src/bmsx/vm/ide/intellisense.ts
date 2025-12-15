@@ -25,7 +25,7 @@ import type { RomLuaAsset } from '../../rompack/rompack';
 import { Pool } from '../../utils/pool';
 import { $ } from '../../core/game';
 import { KEYWORDS } from '../../lua/luatoken';
-import { splitText } from './source_text';
+import { getTextSnapshot, splitText } from './source_text';
 export const VM_PREVIEW_MAX_ENTRIES = 12;
 export const VM_PREVIEW_MAX_DEPTH = 2;
 
@@ -1212,7 +1212,7 @@ export function describeMetadataValue(value: unknown): string {
 export function requestSemanticRefresh(context?: CodeTabContext): void {
 	const activeContext = context ?? getActiveCodeTabContext();
 	const chunkName = resolveHoverChunkName(activeContext) ?? '<anynomous>';
-	ide_state.layout.requestSemanticUpdate(ide_state.lines, ide_state.textVersion, chunkName);
+	ide_state.layout.requestSemanticUpdate(ide_state.buffer, ide_state.textVersion, chunkName);
 }
 export function resolveSemanticDefinitionLocation(
 	context: CodeTabContext,
@@ -1231,7 +1231,7 @@ export function resolveSemanticDefinitionLocation(
 	const activeContext = getActiveCodeTabContext();
 	const hoverChunkName = resolveHoverChunkName(activeContext);
 	const modelChunkName = chunkName ?? hoverChunkName ?? '<anynomous>';
-	const model = ide_state.layout.getSemanticModel(ide_state.lines, ide_state.textVersion, modelChunkName);
+	const model = ide_state.layout.getSemanticModel(ide_state.buffer, ide_state.textVersion, modelChunkName);
 	if (!model) {
 		return null;
 	}
@@ -1300,12 +1300,12 @@ export function findDefinitionAtPosition(
 }
 
 export function extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number; } {
-	if (row < 0 || row >= ide_state.lines.length) {
+	if (row < 0 || row >= ide_state.buffer.getLineCount()) {
 		return null;
 	}
-	const line = ide_state.lines[row] ?? '';
+	const line = ide_state.buffer.getLineContent(row);
 	const safeColumn = Math.min(Math.max(column, 0), Math.max(0, line.length));
-	if (isLuaCommentContext(ide_state.lines, row, safeColumn)) {
+	if (isLuaCommentContext(ide_state.buffer, row, safeColumn)) {
 		return null;
 	}
 	if (line.length === 0) {
@@ -1484,25 +1484,26 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 		definition = inspection?.definition;
 	}
 	if (!definition) {
-		const resolvedChunkName = chunkName
-			?? normalizedPath
-			?? (descriptor ? descriptor.asset_id : null)
-			?? asset_id
-			?? '<anynomous>';
-		const environment: ProjectReferenceEnvironment = {
-			activeContext: context,
-			activeLines: ide_state.lines,
-			codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
-		};
-		const projectDefinition = resolveDefinitionLocationForExpression({
-			expression: token.expression,
-			environment,
-			workspace: ide_state.semanticWorkspace,
-			currentChunkName: resolvedChunkName,
-			currentLines: ide_state.lines,
-			currentasset_id: asset_id,
-			sourceLabelPath: normalizedPath ?? null,
-		});
+			const resolvedChunkName = chunkName
+				?? normalizedPath
+				?? (descriptor ? descriptor.asset_id : null)
+				?? asset_id
+				?? '<anynomous>';
+			const activeLines = splitText(getTextSnapshot(ide_state.buffer));
+			const environment: ProjectReferenceEnvironment = {
+				activeContext: context,
+				activeLines,
+				codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
+			};
+			const projectDefinition = resolveDefinitionLocationForExpression({
+				expression: token.expression,
+				environment,
+				workspace: ide_state.semanticWorkspace,
+				currentChunkName: resolvedChunkName,
+				currentLines: activeLines,
+				currentasset_id: asset_id,
+				sourceLabelPath: normalizedPath ?? null,
+			});
 		if (projectDefinition) {
 			navigateToLuaDefinition(projectDefinition);
 			return true;

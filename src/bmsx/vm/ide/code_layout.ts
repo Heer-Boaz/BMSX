@@ -1,16 +1,17 @@
 import type { TimerHandle } from '../../platform/platform';
 import { clamp } from '../../utils/clamp';
-import { highlightLine as highlightLineExternal } from './syntax_highlight';
+import { highlightTextLine as highlightTextLineExternal } from './syntax_highlight';
 import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from './semantic_model';
 import { LuaSemanticWorkspace } from './semantic_model';
 import type { LuaDefinitionInfo } from '../../lua/lua_ast';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types';
 import { scheduleIdeOnce } from './background_tasks';
 import { VMEditorFont } from '../editor_font';
-import { joinLinesCached } from './source_text';
+import { getTextSnapshot, splitText } from './source_text';
+import type { TextBuffer } from './text_buffer';
 
 interface VisualLinesContext {
-	lines: readonly string[];
+	buffer: TextBuffer;
 	wordWrapEnabled: boolean;
 	scrollRow: number;
 	documentVersion: number;
@@ -30,8 +31,9 @@ type PendingSemanticUpdate = {
 	version: number;
 	chunkName: string;
 	requestId: number;
-	lines: readonly string[];
+	buffer: TextBuffer;
 	source?: string;
+	lines?: readonly string[];
 };
 
 /**
@@ -47,6 +49,7 @@ export class VMCodeLayout {
 	private semanticModel: LuaSemanticModel = null;
 	private semanticVersion = -1;
 	private semanticChunkName: string = null;
+	private semanticBuffer: TextBuffer = null;
 	private readonly semanticDebounceMs: number;
 	private readonly clockNow: () => number;
 	private readonly getBuiltinIdentifiers: (() => Iterable<string>);
@@ -130,6 +133,7 @@ export class VMCodeLayout {
 
 	public invalidateAllHighlights(): void {
 		this.highlightCache.clear();
+		this.semanticBuffer = null;
 		this.semanticModel = null;
 		this.semanticVersion = -1;
 		this.semanticChunkName = null;
@@ -150,18 +154,18 @@ export class VMCodeLayout {
 		this.rowVisualLineCounts = [];
 	}
 
-	public requestSemanticUpdate(lines: readonly string[], documentVersion: number, chunkName: string): void {
-		this.ensureSemanticModel(lines, documentVersion, chunkName, 'background');
+	public requestSemanticUpdate(buffer: TextBuffer, documentVersion: number, chunkName: string): void {
+		this.ensureSemanticModel(buffer, documentVersion, chunkName, 'background');
 	}
 
-	public getCachedHighlight(lines: readonly string[], row: number): CachedHighlight {
+	public getCachedHighlight(buffer: TextBuffer, row: number): CachedHighlight {
 		const annotations = this.semanticModel ? this.semanticModel.annotations : null;
 		let rowSignature = 0;
 		const signatures = this.annotationRowSig;
 		if (signatures && row >= 0 && row < signatures.length) {
 			rowSignature = signatures[row];
 		}
-		const source = row >= 0 && row < lines.length ? lines[row] ?? '' : '';
+		const source = buffer.getLineContent(row);
 		const cached = this.highlightCache.get(row);
 		if (cached && cached.rowSignature === rowSignature && cached.src === source) {
 			return cached;
@@ -178,7 +182,8 @@ export class VMCodeLayout {
 				builtinIdentifiers = null;
 			}
 		}
-		const highlight = highlightLineExternal(lines, row, annotations, builtinIdentifiers);
+		const lineAnnotations = annotations ? annotations[row] : undefined;
+		const highlight = highlightTextLineExternal(source, lineAnnotations, builtinIdentifiers);
 		const displayToColumn: number[] = new Array(highlight.text.length + 1);
 		for (let index = 0; index < displayToColumn.length; index += 1) {
 			displayToColumn[index] = 0;
@@ -266,7 +271,7 @@ export class VMCodeLayout {
 		}
 		if (this.visualLinesDirty) {
 			this.rebuildVisualLines(
-				context.lines,
+				context.buffer,
 				context.wordWrapEnabled,
 				context.computeWrapWidth(),
 				context.scrollRow,
@@ -288,11 +293,11 @@ export class VMCodeLayout {
 		return this.visualLines[index];
 	}
 
-	public positionToVisualIndex(lines: readonly string[], row: number, column: number): number {
+	public positionToVisualIndex(buffer: TextBuffer, row: number, column: number): number {
 		if (this.visualLines.length === 0) {
 			return 0;
 		}
-		const safeRow = clamp(row, 0, lines.length - 1);
+		const safeRow = clamp(row, 0, buffer.getLineCount() - 1);
 		const baseIndex = this.rowToFirstVisualLine[safeRow];
 		if (!Number.isFinite(baseIndex) || baseIndex === undefined || baseIndex === -1) {
 			return 0;
@@ -319,8 +324,8 @@ export class VMCodeLayout {
 		return this.lastSemanticError;
 	}
 
-	public getSemanticDefinitions(lines: readonly string[], documentVersion: number, chunkName: string): readonly LuaDefinitionInfo[] {
-		this.ensureSemanticModel(lines, documentVersion, chunkName, 'background');
+	public getSemanticDefinitions(buffer: TextBuffer, documentVersion: number, chunkName: string): readonly LuaDefinitionInfo[] {
+		this.ensureSemanticModel(buffer, documentVersion, chunkName, 'background');
 		if (!this.semanticModel) {
 			return null;
 		}
@@ -336,13 +341,13 @@ export class VMCodeLayout {
 	}
 
 	private rebuildVisualLines(
-		lines: readonly string[],
+		buffer: TextBuffer,
 		wordWrapEnabled: boolean,
 		wrapWidth: number,
 		scrollRow: number,
 		visibleRowEstimate: number,
 	): void {
-		const lineCount = lines.length;
+		const lineCount = buffer.getLineCount();
 		if (lineCount === 0) {
 			this.visualLines = [{
 				row: 0,
@@ -359,23 +364,23 @@ export class VMCodeLayout {
 			|| this.rowToFirstVisualLine.length !== lineCount
 			|| this.rowVisualLineCounts.length !== lineCount;
 		if (needsFullRebuild) {
-			this.rebuildAllVisualLines(lines, wordWrapEnabled, wrapWidth);
+			this.rebuildAllVisualLines(buffer, wordWrapEnabled, wrapWidth);
 			this.lastHotRowRange = { start: 0, end: lineCount - 1 };
 			this.lastHotGuardRows = Math.max(8, Math.floor(visibleRowEstimate / 2));
 			return;
 		}
 		const hotRows = this.computeHotRowWindow(lineCount, scrollRow, visibleRowEstimate);
-		this.rebuildRowRange(lines, wordWrapEnabled, wrapWidth, hotRows.start, hotRows.end);
+		this.rebuildRowRange(buffer, wordWrapEnabled, wrapWidth, hotRows.start, hotRows.end);
 		this.lastHotRowRange = hotRows;
 		this.lastHotGuardRows = Math.max(8, Math.floor(visibleRowEstimate / 2));
 	}
 
 	private rebuildAllVisualLines(
-		lines: readonly string[],
+		buffer: TextBuffer,
 		wordWrapEnabled: boolean,
 		wrapWidth: number,
 	): void {
-		const lineCount = lines.length;
+		const lineCount = buffer.getLineCount();
 		const segments: VisualLineSegment[] = [];
 		const rowIndexLookup: number[] = new Array(lineCount).fill(-1);
 		const counts: number[] = new Array(lineCount).fill(0);
@@ -385,8 +390,8 @@ export class VMCodeLayout {
 			: Math.max(1, Math.floor(wrapWidth / Math.max(1, this.averageCharAdvance)));
 		for (let row = 0; row < lineCount; row += 1) {
 			rowIndexLookup[row] = segments.length;
-			const line = lines[row];
-			const entry = this.getCachedHighlight(lines, row);
+			const line = buffer.getLineContent(row);
+			const entry = this.getCachedHighlight(buffer, row);
 			const rowSegments = this.buildSegmentsForRow(line, row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
 			segments.push(...rowSegments);
 			counts[row] = rowSegments.length;
@@ -400,7 +405,7 @@ export class VMCodeLayout {
 	}
 
 	private rebuildRowRange(
-		lines: readonly string[],
+		buffer: TextBuffer,
 		wordWrapEnabled: boolean,
 		wrapWidth: number,
 		startRow: number,
@@ -409,7 +414,7 @@ export class VMCodeLayout {
 		if (startRow > endRow) {
 			return;
 		}
-		const lineCount = lines.length;
+		const lineCount = buffer.getLineCount();
 		const effectiveWrapWidth = wordWrapEnabled ? wrapWidth : Number.POSITIVE_INFINITY;
 		const approxWrapColumns = !wordWrapEnabled || wrapWidth === Number.POSITIVE_INFINITY
 			? Number.POSITIVE_INFINITY
@@ -417,8 +422,8 @@ export class VMCodeLayout {
 		for (let row = startRow; row <= endRow; row += 1) {
 			const startIndex = this.rowToFirstVisualLine[row];
 			const oldCount = this.rowVisualLineCounts[row] ?? 0;
-			const entry = this.getCachedHighlight(lines, row);
-			const rowSegments = this.buildSegmentsForRow(lines[row], row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
+			const entry = this.getCachedHighlight(buffer, row);
+			const rowSegments = this.buildSegmentsForRow(buffer.getLineContent(row), row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
 			this.visualLines.splice(startIndex, oldCount, ...rowSegments);
 			const newCount = rowSegments.length;
 			this.rowVisualLineCounts[row] = newCount;
@@ -503,18 +508,18 @@ export class VMCodeLayout {
 		return segments;
 	}
 
-	public getSemanticModel(lines: readonly string[], documentVersion: number, chunkName: string): LuaSemanticModel {
-		this.ensureSemanticModel(lines, documentVersion, chunkName, 'background');
+	public getSemanticModel(buffer: TextBuffer, documentVersion: number, chunkName: string): LuaSemanticModel {
+		this.ensureSemanticModel(buffer, documentVersion, chunkName, 'background');
 		return this.semanticModel;
 	}
 
 	private ensureSemanticModel(
-		lines: readonly string[],
+		buffer: TextBuffer,
 		version: number,
 		chunkName: string,
 		_mode: 'background',
 	): void {
-		if (this.semanticVersion === version && this.semanticChunkName === chunkName) {
+		if (this.semanticBuffer === buffer && this.semanticVersion === version && this.semanticChunkName === chunkName) {
 			if (this.semanticModel) {
 				return;
 			}
@@ -522,10 +527,10 @@ export class VMCodeLayout {
 				return;
 			}
 		}
-		if (this.pendingSemantic && this.pendingSemantic.version === version && this.pendingSemantic.chunkName === chunkName) {
+		if (this.pendingSemantic && this.pendingSemantic.buffer === buffer && this.pendingSemantic.version === version && this.pendingSemantic.chunkName === chunkName) {
 			return;
 		}
-		const pending = this.updatePendingSemantic(lines, version, chunkName);
+		const pending = this.updatePendingSemantic(buffer, version, chunkName);
 		// if (mode === 'force') {
 		// 	this.semanticDueAtMs = null;
 		// 	if (this.semanticTimer) {
@@ -564,7 +569,7 @@ export class VMCodeLayout {
 	}
 
 	private updatePendingSemantic(
-		lines: readonly string[],
+		buffer: TextBuffer,
 		version: number,
 		chunkName: string,
 	): PendingSemanticUpdate {
@@ -572,14 +577,14 @@ export class VMCodeLayout {
 		this.lastSemanticErrorVersion = -1;
 		this.lastSemanticErrorChunk = null;
 		const current = this.pendingSemantic;
-		if (current && current.version === version && current.chunkName === chunkName) {
+		if (current && current.buffer === buffer && current.version === version && current.chunkName === chunkName) {
 			return current;
 		}
 		const pending: PendingSemanticUpdate = {
 			version,
 			chunkName,
 			requestId: this.nextSemanticRequestId,
-			lines,
+			buffer,
 		};
 		this.nextSemanticRequestId += 1;
 		this.pendingSemantic = pending;
@@ -588,7 +593,8 @@ export class VMCodeLayout {
 
 	private materializeSemanticSource(pending: PendingSemanticUpdate): string {
 		if (pending.source === undefined) {
-			pending.source = joinLinesCached(pending.lines, pending.version);
+			pending.source = getTextSnapshot(pending.buffer);
+			pending.lines = splitText(pending.source);
 		}
 		return pending.source;
 	}
@@ -626,16 +632,18 @@ export class VMCodeLayout {
 			errorMessage = error instanceof Error ? error.message : String(error);
 		}
 		const annotations = model ? model.annotations : null;
-		this.finalizeSemanticUpdate(model, pending.version, pending.chunkName, annotations, errorMessage);
+		this.finalizeSemanticUpdate(pending.buffer, model, pending.version, pending.chunkName, annotations, errorMessage);
 	}
 
 	private finalizeSemanticUpdate(
+		buffer: TextBuffer,
 		model: LuaSemanticModel,
 		version: number,
 		chunkName: string,
 		annotations: SemanticAnnotations,
 		errorMessage?: string,
 	): void {
+		this.semanticBuffer = buffer;
 		this.semanticModel = model;
 		this.semanticVersion = version;
 		this.semanticChunkName = chunkName;

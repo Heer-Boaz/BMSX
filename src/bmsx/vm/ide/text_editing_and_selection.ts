@@ -12,15 +12,15 @@
  */
 
 import { $ } from '../../core/game';
-import { clamp } from '../../utils/clamp';;
+import { clamp } from '../../utils/clamp';
 import { ide_state } from './ide_state';
 import type { EditContext, Position } from './types';
 import {
 	revealCursor,
 	clampCursorColumn,
-	setCursorPosition
 } from './caret';
 import {
+	applyUndoableReplace,
 	updateDesiredColumn,
 	invalidateLineRange,
 	recordEditContext,
@@ -30,13 +30,15 @@ import {
 import { markDiagnosticsDirty } from './diagnostics';
 import { markTextMutated } from './text_utils';
 import { capturePreMutationSource } from './text_utils';
-import { resolveOffsetPosition } from './lua_formatter';
 import { resetBlink } from './render/render_caret';
 import * as constants from './constants';
 import { formatLuaDocument } from './lua_formatter';
 import { extractErrorMessage } from '../../lua/luavalue';
 import { LuaLexer } from '../../lua/lualexer';
-import { splitText } from './source_text';
+import { getTextSnapshot } from './source_text';
+import type { MutableTextPosition } from './text_buffer';
+
+const tmpPosition: MutableTextPosition = { row: 0, column: 0 };
 
 function editorAllowsMutation(): boolean {
 	return ide_state.activeContextReadOnly !== true;
@@ -110,23 +112,18 @@ export function getSelectionRange(): { start: Position; end: Position } {
  * Gets the text content of the current selection.
  * @returns The selected text, or null if no selection
  */
-export function getSelectionText(): string {
-	const range = getSelectionRange();
-	if (!range) {
-		return null;
+	export function getSelectionText(): string {
+		const range = getSelectionRange();
+		if (!range) {
+			return null;
+		}
+		const buffer = ide_state.buffer;
+		const start = range.start;
+		const end = range.end;
+		const startOffset = buffer.offsetAt(start.row, start.column);
+		const endOffset = buffer.offsetAt(end.row, end.column);
+		return buffer.getTextRange(startOffset, endOffset);
 	}
-	const { start, end } = range;
-	if (start.row === end.row) {
-		return ide_state.lines[start.row].slice(start.column, end.column);
-	}
-	const parts: string[] = [];
-	parts.push(ide_state.lines[start.row].slice(start.column));
-	for (let row = start.row + 1; row < end.row; row += 1) {
-		parts.push(ide_state.lines[row]);
-	}
-	parts.push(ide_state.lines[end.row].slice(0, end.column));
-	return parts.join('\n');
-}
 
 /**
  * Ensures that a selection anchor exists at the specified position.
@@ -163,19 +160,24 @@ export function collapseSelectionTo(target: 'start' | 'end'): void {
  * @param row The row containing the word
  * @param column The column within the word
  */
-export function selectWordAtPosition(row: number, column: number): void {
-	if (row < 0 || row >= ide_state.lines.length) {
-		return;
-	}
-	const line = ide_state.lines[row];
-	if (line.length === 0) {
-		ide_state.selectionAnchor = null;
-		ide_state.cursorRow = row;
-		ide_state.cursorColumn = 0;
-		updateDesiredColumn();
-		resetBlink();
-		revealCursor();
-		return;
+	export function selectWordAtPosition(row: number, column: number): void {
+		const buffer = ide_state.buffer;
+		const lineCount = buffer.getLineCount();
+		let targetRow = row;
+		if (targetRow < 0) {
+			targetRow = 0;
+		} else if (targetRow >= lineCount) {
+			targetRow = lineCount - 1;
+		}
+		const line = buffer.getLineContent(targetRow);
+		if (line.length === 0) {
+			ide_state.selectionAnchor = null;
+			ide_state.cursorRow = targetRow;
+			ide_state.cursorColumn = 0;
+			updateDesiredColumn();
+			resetBlink();
+			revealCursor();
+			return;
 	}
 	let index = column;
 	if (index >= line.length) {
@@ -217,41 +219,43 @@ export function selectWordAtPosition(row: number, column: number): void {
 			end += 1;
 		}
 	}
-	if (end < start) {
-		end = start;
+		if (end < start) {
+			end = start;
+		}
+		ide_state.selectionAnchor = { row: targetRow, column: start };
+		ide_state.cursorRow = targetRow;
+		ide_state.cursorColumn = end;
+		updateDesiredColumn();
+		resetBlink();
+		revealCursor();
 	}
-	ide_state.selectionAnchor = { row, column: start };
-	ide_state.cursorRow = row;
-	ide_state.cursorColumn = end;
-	updateDesiredColumn();
-	resetBlink();
-	revealCursor();
-}
 
 /**
  * Clamps a position to valid document bounds.
  * @param position The position to clamp, or null
  * @returns The clamped position, or null if input was null
  */
-export function clampSelectionPosition(position: Position): Position {
-	if (!position || ide_state.lines.length === 0) {
-		return null;
+	export function clampSelectionPosition(position: Position): Position {
+		if (!position) {
+			return null;
+		}
+		const buffer = ide_state.buffer;
+		const lineCount = buffer.getLineCount();
+		let row = position.row;
+		if (row < 0) {
+			row = 0;
+		} else if (row >= lineCount) {
+			row = lineCount - 1;
+		}
+		const lineLength = buffer.getLineEndOffset(row) - buffer.getLineStartOffset(row);
+		let column = position.column;
+		if (column < 0) {
+			column = 0;
+		} else if (column > lineLength) {
+			column = lineLength;
+		}
+		return { row, column };
 	}
-	let row = position.row;
-	if (row < 0) {
-		row = 0;
-	} else if (row >= ide_state.lines.length) {
-		row = ide_state.lines.length - 1;
-	}
-	const line = ide_state.lines[row] ?? '';
-	let column = position.column;
-	if (column < 0) {
-		column = 0;
-	} else if (column > line.length) {
-		column = line.length;
-	}
-	return { row, column };
-}
 
 // ============================================================================
 // POSITION NAVIGATION HELPERS
@@ -263,15 +267,18 @@ export function clampSelectionPosition(position: Position): Position {
  * @param column Current column
  * @returns The new position, or null if at the start of the document
  */
-export function stepLeft(row: number, column: number): { row: number; column: number } {
-	if (column > 0) {
-		return { row, column: column - 1 };
+	export function stepLeft(row: number, column: number): { row: number; column: number } {
+		if (column > 0) {
+			return { row, column: column - 1 };
+		}
+		if (row > 0) {
+			const previousRow = row - 1;
+			const buffer = ide_state.buffer;
+			const length = buffer.getLineEndOffset(previousRow) - buffer.getLineStartOffset(previousRow);
+			return { row: previousRow, column: length };
+		}
+		return null;
 	}
-	if (row > 0) {
-		return { row: row - 1, column: ide_state.lines[row - 1].length };
-	}
-	return null;
-}
 
 /**
  * Moves one position to the right in the document.
@@ -279,16 +286,17 @@ export function stepLeft(row: number, column: number): { row: number; column: nu
  * @param column Current column
  * @returns The new position, or null if at the end of the document
  */
-export function stepRight(row: number, column: number): { row: number; column: number } {
-	const length = ide_state.lines[row].length;
-	if (column < length) {
-		return { row, column: column + 1 };
+	export function stepRight(row: number, column: number): { row: number; column: number } {
+		const buffer = ide_state.buffer;
+		const length = buffer.getLineEndOffset(row) - buffer.getLineStartOffset(row);
+		if (column < length) {
+			return { row, column: column + 1 };
+		}
+		if (row < buffer.getLineCount() - 1) {
+			return { row: row + 1, column: 0 };
+		}
+		return null;
 	}
-	if (row < ide_state.lines.length - 1) {
-		return { row: row + 1, column: 0 };
-	}
-	return null;
-}
 
 /**
  * Gets the character at the specified position.
@@ -296,16 +304,21 @@ export function stepRight(row: number, column: number): { row: number; column: n
  * @param column Column index
  * @returns The character, or empty string if position is out of bounds
  */
-export function charAt(row: number, column: number): string {
-	if (row < 0 || row >= ide_state.lines.length) {
-		return '';
+	export function charAt(row: number, column: number): string {
+		const buffer = ide_state.buffer;
+		const lineCount = buffer.getLineCount();
+		if (row < 0 || row >= lineCount) {
+			return '';
+		}
+		const lineStart = buffer.getLineStartOffset(row);
+		const lineEnd = buffer.getLineEndOffset(row);
+		const length = lineEnd - lineStart;
+		if (column < 0 || column >= length) {
+			return '';
+		}
+		const offset = lineStart + column;
+		return getTextSnapshot(buffer).charAt(offset);
 	}
-	const line = ide_state.lines[row];
-	if (column < 0 || column >= line.length) {
-		return '';
-	}
-	return line.charAt(column);
-}
 
 /**
  * Finds the start of the word to the left of the cursor.
@@ -361,8 +374,10 @@ export function findWordRight(row: number, column: number): { row: number; colum
 	let currentColumn = column;
 	let step = stepRight(currentRow, currentColumn);
 	if (!step) {
-		const lastRow = ide_state.lines.length - 1;
-		return { row: lastRow, column: ide_state.lines[lastRow].length };
+		const buffer = ide_state.buffer;
+		const lastRow = buffer.getLineCount() - 1;
+		const length = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
+		return { row: lastRow, column: length };
 	}
 	currentRow = step.row;
 	currentColumn = step.column;
@@ -370,8 +385,10 @@ export function findWordRight(row: number, column: number): { row: number; colum
 	while (LuaLexer.isWhitespace(currentChar)) {
 		const next = stepRight(currentRow, currentColumn);
 		if (!next) {
-			const lastRow = ide_state.lines.length - 1;
-			return { row: lastRow, column: ide_state.lines[lastRow].length };
+			const buffer = ide_state.buffer;
+			const lastRow = buffer.getLineCount() - 1;
+			const length = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
+			return { row: lastRow, column: length };
 		}
 		currentRow = next.row;
 		currentColumn = next.column;
@@ -381,9 +398,10 @@ export function findWordRight(row: number, column: number): { row: number; colum
 	while (true) {
 		const next = stepRight(currentRow, currentColumn);
 		if (!next) {
-			const lastRow = ide_state.lines.length - 1;
+			const buffer = ide_state.buffer;
+			const lastRow = buffer.getLineCount() - 1;
 			currentRow = lastRow;
-			currentColumn = ide_state.lines[lastRow].length;
+			currentColumn = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
 			break;
 		}
 		const nextChar = charAt(next.row, next.column);
@@ -398,9 +416,10 @@ export function findWordRight(row: number, column: number): { row: number; colum
 	while (LuaLexer.isWhitespace(charAt(currentRow, currentColumn))) {
 		const next = stepRight(currentRow, currentColumn);
 		if (!next) {
-			const lastRow = ide_state.lines.length - 1;
+			const buffer = ide_state.buffer;
+			const lastRow = buffer.getLineCount() - 1;
 			currentRow = lastRow;
-			currentColumn = ide_state.lines[lastRow].length;
+			currentColumn = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
 			break;
 		}
 		currentRow = next.row;
@@ -451,28 +470,21 @@ export function replaceSelectionWith(text: string): void {
 	if (!range) {
 		return;
 	}
+
+	const buffer = ide_state.buffer;
+	const start = range.start;
+	const end = range.end;
+	const startOffset = buffer.offsetAt(start.row, start.column);
+	const endOffset = buffer.offsetAt(end.row, end.column);
+	applyUndoableReplace(startOffset, endOffset - startOffset, text);
+
+	const newOffset = startOffset + text.length;
+	buffer.positionAt(newOffset, tmpPosition);
+	ide_state.cursorRow = tmpPosition.row;
+	ide_state.cursorColumn = tmpPosition.column;
+
 	recordEditContext(text.length === 0 ? 'delete' : 'replace', text);
-	const { start, end } = range;
-	const startLine = ide_state.lines[start.row];
-	const endLine = ide_state.lines[end.row];
-	const leading = startLine.slice(0, start.column);
-	const trailing = endLine.slice(end.column);
-	const fragments = splitText(text);
-	if (fragments.length === 1) {
-		const combined = leading + fragments[0] + trailing;
-		ide_state.lines.splice(start.row, end.row - start.row + 1, combined);
-		ide_state.cursorRow = start.row;
-		ide_state.cursorColumn = leading.length + fragments[0].length;
-	} else {
-		const firstLine = leading + fragments[0];
-		const lastFragment = fragments[fragments.length - 1];
-		const lastLine = lastFragment + trailing;
-		const middle = fragments.slice(1, -1);
-		ide_state.lines.splice(start.row, end.row - start.row + 1, firstLine, ...middle, lastLine);
-		ide_state.cursorRow = start.row + fragments.length - 1;
-		ide_state.cursorColumn = lastFragment.length;
-	}
-	invalidateLineRange(start.row, start.row + fragments.length - 1);
+	invalidateLineRange(start.row, tmpPosition.row);
 	ide_state.layout.invalidateHighlightsFromRow(start.row);
 	ide_state.selectionAnchor = null;
 	markTextMutated();
@@ -494,21 +506,19 @@ export function insertText(text: string): void {
 	if (!editorAllowsMutation() || text.length === 0) {
 		return;
 	}
-	if (text.length === 0) {
-		return;
-	}
 	const coalesce = text.length === 1;
 	prepareUndo('insert-text', coalesce);
-	if (deleteSelectionIfPresent()) {
-		// Selection replaced.
-	}
-	const line = currentLine();
-	const before = line.slice(0, ide_state.cursorColumn);
-	const after = line.slice(ide_state.cursorColumn);
-	ide_state.lines[ide_state.cursorRow] = before + text + after;
-	ide_state.layout.invalidateLine(ide_state.cursorRow);
+	deleteSelectionIfPresent();
+	const buffer = ide_state.buffer;
+	const startRow = ide_state.cursorRow;
+	const offset = buffer.offsetAt(startRow, ide_state.cursorColumn);
+	applyUndoableReplace(offset, 0, text);
+	const newOffset = offset + text.length;
+	buffer.positionAt(newOffset, tmpPosition);
+	ide_state.cursorRow = tmpPosition.row;
+	ide_state.cursorColumn = tmpPosition.column;
+	invalidateLineRange(startRow, tmpPosition.row);
 	recordEditContext('insert', text);
-	ide_state.cursorColumn += text.length;
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -524,20 +534,24 @@ export function insertLineBreak(): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
-	const sourceRow = ide_state.cursorRow;
 	prepareUndo('insert-line-break', false);
 	deleteSelectionIfPresent();
+	const buffer = ide_state.buffer;
+	const sourceRow = ide_state.cursorRow;
+	const sourceColumn = ide_state.cursorColumn;
 	const line = currentLine();
-	const before = line.slice(0, ide_state.cursorColumn);
-	const after = line.slice(ide_state.cursorColumn);
-	ide_state.lines[sourceRow] = before;
+	const before = line.slice(0, sourceColumn);
 	const indentation = extractIndentation(before);
-	const newLine = indentation + after;
-	ide_state.lines.splice(sourceRow + 1, 0, newLine);
-	invalidateLineRange(sourceRow, sourceRow + 1);
+	const insertion = `\n${indentation}`;
+	const offset = buffer.offsetAt(sourceRow, sourceColumn);
+	applyUndoableReplace(offset, 0, insertion);
+	const newOffset = offset + insertion.length;
+	buffer.positionAt(newOffset, tmpPosition);
+	ide_state.cursorRow = tmpPosition.row;
+	ide_state.cursorColumn = tmpPosition.column;
+
+	invalidateLineRange(sourceRow, tmpPosition.row);
 	ide_state.layout.invalidateHighlightsFromRow(sourceRow);
-	ide_state.cursorRow = sourceRow + 1;
-	ide_state.cursorColumn = indentation.length;
 	recordEditContext('insert', '\n');
 	markTextMutated();
 	resetBlink();
@@ -591,34 +605,18 @@ export function insertClipboardText(text: string): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
-	const fragments = splitText(text);
-	const currentLineValue = currentLine();
-	const before = currentLineValue.slice(0, ide_state.cursorColumn);
-	const after = currentLineValue.slice(ide_state.cursorColumn);
-	if (fragments.length === 1) {
-		const fragment = fragments[0];
-		ide_state.lines[ide_state.cursorRow] = before + fragment + after;
-		ide_state.layout.invalidateLine(ide_state.cursorRow);
-		ide_state.cursorColumn = before.length + fragment.length;
-		recordEditContext('insert', fragment);
-	} else {
-		const firstLine = before + fragments[0];
-		const lastIndex = fragments.length - 1;
-		const lastFragment = fragments[lastIndex];
-		const newLines: string[] = [];
-		newLines.push(firstLine);
-		for (let i = 1; i < lastIndex; i += 1) {
-			newLines.push(fragments[i]);
-		}
-		newLines.push(lastFragment + after);
-		const insertionRow = ide_state.cursorRow;
-		ide_state.lines.splice(insertionRow, 1, ...newLines);
-		invalidateLineRange(insertionRow, insertionRow + newLines.length - 1);
-		ide_state.layout.invalidateHighlightsFromRow(insertionRow);
-		ide_state.cursorRow = insertionRow + lastIndex;
-		ide_state.cursorColumn = lastFragment.length;
-		recordEditContext('insert', text);
-	}
+	const buffer = ide_state.buffer;
+	const startRow = ide_state.cursorRow;
+	const offset = buffer.offsetAt(startRow, ide_state.cursorColumn);
+	applyUndoableReplace(offset, 0, text);
+	const newOffset = offset + text.length;
+	buffer.positionAt(newOffset, tmpPosition);
+	ide_state.cursorRow = tmpPosition.row;
+	ide_state.cursorColumn = tmpPosition.column;
+
+	invalidateLineRange(startRow, tmpPosition.row);
+	ide_state.layout.invalidateHighlightsFromRow(startRow);
+	recordEditContext('insert', text);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -637,41 +635,25 @@ export function backspace(): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
-	if (!hasSelection() && ide_state.cursorColumn === 0 && ide_state.cursorRow === 0) {
+	const buffer = ide_state.buffer;
+	const cursorOffset = buffer.offsetAt(ide_state.cursorRow, ide_state.cursorColumn);
+	if (!hasSelection() && cursorOffset === 0) {
 		return;
 	}
 	prepareUndo('backspace', true);
 	if (deleteSelectionIfPresent()) {
 		return;
 	}
-	if (ide_state.cursorColumn > 0) {
-		const line = currentLine();
-		const removedChar = line.charAt(ide_state.cursorColumn - 1);
-		const before = line.slice(0, ide_state.cursorColumn - 1);
-		const after = line.slice(ide_state.cursorColumn);
-		ide_state.lines[ide_state.cursorRow] = before + after;
-		ide_state.layout.invalidateLine(ide_state.cursorRow);
-		ide_state.cursorColumn -= 1;
-		recordEditContext('delete', removedChar);
-		markTextMutated();
-		resetBlink();
-		updateDesiredColumn();
-		revealCursor();
-		return;
-	}
-	if (ide_state.cursorRow === 0) {
-		return;
-	}
-	const mergedRow = ide_state.cursorRow - 1;
-	const previousLine = ide_state.lines[mergedRow];
-	const currentLineValue = currentLine();
-	recordEditContext('delete', '\n');
-	ide_state.lines[mergedRow] = previousLine + currentLineValue;
-	ide_state.lines.splice(ide_state.cursorRow, 1);
-	ide_state.layout.invalidateLine(mergedRow);
-	ide_state.layout.invalidateHighlightsFromRow(mergedRow);
-	ide_state.cursorRow = mergedRow;
-	ide_state.cursorColumn = previousLine.length;
+
+	const deleteOffset = cursorOffset - 1;
+	const removed = buffer.getTextRange(deleteOffset, cursorOffset);
+	applyUndoableReplace(deleteOffset, 1, '');
+	buffer.positionAt(deleteOffset, tmpPosition);
+	ide_state.cursorRow = tmpPosition.row;
+	ide_state.cursorColumn = tmpPosition.column;
+	invalidateLineRange(tmpPosition.row, tmpPosition.row + 1);
+	ide_state.layout.invalidateHighlightsFromRow(tmpPosition.row);
+	recordEditContext('delete', removed);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -686,37 +668,24 @@ export function deleteForward(): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
-	if (!hasSelection() && ide_state.cursorColumn >= currentLine().length && ide_state.cursorRow >= ide_state.lines.length - 1) {
+	const buffer = ide_state.buffer;
+	const cursorOffset = buffer.offsetAt(ide_state.cursorRow, ide_state.cursorColumn);
+	if (!hasSelection() && cursorOffset >= buffer.length) {
 		return;
 	}
 	prepareUndo('delete-forward', true);
 	if (deleteSelectionIfPresent()) {
 		return;
 	}
-	const line = currentLine();
-	if (ide_state.cursorColumn < line.length) {
-		const removedChar = line.charAt(ide_state.cursorColumn);
-		const before = line.slice(0, ide_state.cursorColumn);
-		const after = line.slice(ide_state.cursorColumn + 1);
-		ide_state.lines[ide_state.cursorRow] = before + after;
-		ide_state.layout.invalidateLine(ide_state.cursorRow);
-		recordEditContext('delete', removedChar);
-		markTextMutated();
-		resetBlink();
-		updateDesiredColumn();
-		revealCursor();
-		return;
-	}
-	if (ide_state.cursorRow >= ide_state.lines.length - 1) {
-		return;
-	}
-	const nextLine = ide_state.lines[ide_state.cursorRow + 1];
-	const updatedLine = line + nextLine;
-	ide_state.lines[ide_state.cursorRow] = updatedLine;
-	ide_state.lines.splice(ide_state.cursorRow + 1, 1);
-	ide_state.layout.invalidateLine(ide_state.cursorRow);
-	ide_state.layout.invalidateHighlightsFromRow(ide_state.cursorRow);
-	recordEditContext('delete', '\n');
+
+	const removed = buffer.getTextRange(cursorOffset, cursorOffset + 1);
+	applyUndoableReplace(cursorOffset, 1, '');
+	buffer.positionAt(cursorOffset, tmpPosition);
+	ide_state.cursorRow = tmpPosition.row;
+	ide_state.cursorColumn = tmpPosition.column;
+	invalidateLineRange(tmpPosition.row, tmpPosition.row + 1);
+	ide_state.layout.invalidateHighlightsFromRow(tmpPosition.row);
+	recordEditContext('delete', removed);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -730,7 +699,9 @@ export function deleteWordBackward(): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
-	if (!hasSelection() && ide_state.cursorColumn === 0 && ide_state.cursorRow === 0) {
+	const buffer = ide_state.buffer;
+	const cursorOffset = buffer.offsetAt(ide_state.cursorRow, ide_state.cursorColumn);
+	if (!hasSelection() && cursorOffset === 0) {
 		return;
 	}
 	prepareUndo('delete-word-backward', false);
@@ -738,42 +709,20 @@ export function deleteWordBackward(): void {
 		return;
 	}
 	const target = findWordLeft(ide_state.cursorRow, ide_state.cursorColumn);
-	if (target.row === ide_state.cursorRow && target.column === ide_state.cursorColumn) {
+	const targetOffset = buffer.offsetAt(target.row, target.column);
+	if (targetOffset === cursorOffset) {
 		backspace();
 		return;
 	}
-	const startRow = target.row;
-	const startColumn = target.column;
-	const endRow = ide_state.cursorRow;
-	const endColumn = ide_state.cursorColumn;
-	if (startRow === endRow) {
-		const line = ide_state.lines[startRow];
-		const removed = line.slice(startColumn, endColumn);
-		ide_state.lines[startRow] = line.slice(0, startColumn) + line.slice(endColumn);
-		ide_state.cursorColumn = startColumn;
-		ide_state.layout.invalidateLine(startRow);
-		recordEditContext('delete', removed);
-		markTextMutated();
-		resetBlink();
-		updateDesiredColumn();
-		revealCursor();
-		return;
-	}
-	const firstLine = ide_state.lines[startRow];
-	const lastLine = ide_state.lines[endRow];
-	const removedParts: string[] = [];
-	removedParts.push(firstLine.slice(startColumn));
-	for (let row = startRow + 1; row < endRow; row += 1) {
-		removedParts.push(ide_state.lines[row]);
-	}
-	removedParts.push(lastLine.slice(0, endColumn));
-	ide_state.lines[startRow] = firstLine.slice(0, startColumn) + lastLine.slice(endColumn);
-	ide_state.lines.splice(startRow + 1, endRow - startRow);
-	ide_state.cursorRow = startRow;
-	ide_state.cursorColumn = startColumn;
-	ide_state.layout.invalidateLine(startRow);
-	ide_state.layout.invalidateHighlightsFromRow(startRow);
-	recordEditContext('delete', removedParts.join('\n'));
+
+	const removed = buffer.getTextRange(targetOffset, cursorOffset);
+	applyUndoableReplace(targetOffset, cursorOffset - targetOffset, '');
+	buffer.positionAt(targetOffset, tmpPosition);
+	ide_state.cursorRow = tmpPosition.row;
+	ide_state.cursorColumn = tmpPosition.column;
+	invalidateLineRange(tmpPosition.row, tmpPosition.row + 1);
+	ide_state.layout.invalidateHighlightsFromRow(tmpPosition.row);
+	recordEditContext('delete', removed);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -787,7 +736,9 @@ export function deleteWordForward(): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
-	if (!hasSelection() && ide_state.cursorRow >= ide_state.lines.length - 1 && ide_state.cursorColumn >= currentLine().length) {
+	const buffer = ide_state.buffer;
+	const cursorOffset = buffer.offsetAt(ide_state.cursorRow, ide_state.cursorColumn);
+	if (!hasSelection() && cursorOffset >= buffer.length) {
 		return;
 	}
 	prepareUndo('delete-word-forward', false);
@@ -795,37 +746,20 @@ export function deleteWordForward(): void {
 		return;
 	}
 	const destination = findWordRight(ide_state.cursorRow, ide_state.cursorColumn);
-	if (destination.row === ide_state.cursorRow && destination.column === ide_state.cursorColumn) {
+	const destinationOffset = buffer.offsetAt(destination.row, destination.column);
+	if (destinationOffset === cursorOffset) {
 		deleteForward();
 		return;
 	}
-	const startRow = ide_state.cursorRow;
-	const startColumn = ide_state.cursorColumn;
-	const endRow = destination.row;
-	const endColumn = destination.column;
-	if (startRow === endRow) {
-		const line = ide_state.lines[startRow];
-		const removed = line.slice(startColumn, endColumn);
-		ide_state.lines[startRow] = line.slice(0, startColumn) + line.slice(endColumn);
-		ide_state.layout.invalidateLine(startRow);
-		recordEditContext('delete', removed);
-	} else {
-		const firstLine = ide_state.lines[startRow];
-		const lastLine = ide_state.lines[endRow];
-		const removedParts: string[] = [];
-		removedParts.push(firstLine.slice(startColumn));
-		for (let row = startRow + 1; row < endRow; row += 1) {
-			removedParts.push(ide_state.lines[row]);
-		}
-		removedParts.push(lastLine.slice(0, endColumn));
-		ide_state.lines[startRow] = firstLine.slice(0, startColumn) + lastLine.slice(endColumn);
-		ide_state.lines.splice(startRow + 1, endRow - startRow);
-		ide_state.layout.invalidateLine(startRow);
-		ide_state.layout.invalidateHighlightsFromRow(startRow);
-		recordEditContext('delete', removedParts.join('\n'));
-	}
-	ide_state.cursorRow = startRow;
-	ide_state.cursorColumn = startColumn;
+
+	const removed = buffer.getTextRange(cursorOffset, destinationOffset);
+	applyUndoableReplace(cursorOffset, destinationOffset - cursorOffset, '');
+	buffer.positionAt(cursorOffset, tmpPosition);
+	ide_state.cursorRow = tmpPosition.row;
+	ide_state.cursorColumn = tmpPosition.column;
+	invalidateLineRange(tmpPosition.row, tmpPosition.row + 1);
+	ide_state.layout.invalidateHighlightsFromRow(tmpPosition.row);
+	recordEditContext('delete', removed);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -844,52 +778,58 @@ export function deleteActiveLines(): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
-	if (ide_state.lines.length === 0) {
-		return;
-	}
-	prepareUndo('delete-active-lines', false);
+
+	const buffer = ide_state.buffer;
+	const lineCount = buffer.getLineCount();
 	const range = getSelectionRange();
-	if (!range) {
-		const removedRow = ide_state.cursorRow;
-		ide_state.lines.splice(removedRow, 1);
-		if (ide_state.lines.length === 0) {
-			ide_state.lines = [''];
-			ide_state.cursorRow = 0;
-			ide_state.cursorColumn = 0;
-		} else if (ide_state.cursorRow >= ide_state.lines.length) {
-			ide_state.cursorRow = ide_state.lines.length - 1;
-			ide_state.cursorColumn = ide_state.lines[ide_state.cursorRow].length;
-		} else {
-			const line = ide_state.lines[ide_state.cursorRow];
-			ide_state.cursorColumn = Math.min(ide_state.cursorColumn, line.length);
+
+	let deletionStartRow = ide_state.cursorRow;
+	let deletionEndRow = ide_state.cursorRow;
+	let recordText = '\n';
+	if (range) {
+		deletionStartRow = range.start.row;
+		deletionEndRow = range.end.row;
+		if (range.end.column === 0 && range.end.row > range.start.row) {
+			deletionEndRow -= 1;
 		}
-		ide_state.layout.invalidateLine(ide_state.cursorRow);
-		ide_state.layout.invalidateHighlightsFromRow(Math.min(removedRow, ide_state.lines.length - 1));
-		recordEditContext('delete', '\n');
-		markTextMutated();
-		resetBlink();
-		updateDesiredColumn();
-		revealCursor();
+		const deletedLines: string[] = [];
+		for (let row = deletionStartRow; row <= deletionEndRow; row += 1) {
+			deletedLines.push(buffer.getLineContent(row));
+		}
+		recordText = deletedLines.join('\n');
+	}
+
+	let startOffset = 0;
+	let endOffset = 0;
+	if (deletionStartRow === 0) {
+		startOffset = 0;
+		if (deletionEndRow + 1 < lineCount) {
+			endOffset = buffer.getLineStartOffset(deletionEndRow + 1);
+		} else {
+			endOffset = buffer.length;
+		}
+	} else if (deletionEndRow + 1 < lineCount) {
+		startOffset = buffer.getLineStartOffset(deletionStartRow);
+		endOffset = buffer.getLineStartOffset(deletionEndRow + 1);
+	} else {
+		startOffset = buffer.getLineEndOffset(deletionStartRow - 1);
+		endOffset = buffer.length;
+	}
+
+	const deleteLength = endOffset - startOffset;
+	if (deleteLength === 0) {
 		return;
 	}
-	const { start, end } = range;
-	const deletionStart = start.row;
-	let deletionEnd = end.row;
-	if (end.column === 0 && end.row > start.row) {
-		deletionEnd -= 1;
-	}
-	const count = deletionEnd - deletionStart + 1;
-	const deletedLines = ide_state.lines.slice(deletionStart, deletionStart + count);
-	ide_state.lines.splice(deletionStart, count);
-	if (ide_state.lines.length === 0) {
-		ide_state.lines = [''];
-	}
-	ide_state.cursorRow = clamp(deletionStart, 0, ide_state.lines.length - 1);
+
+	prepareUndo('delete-active-lines', false);
+	applyUndoableReplace(startOffset, deleteLength, '');
+	const nextLineCount = buffer.getLineCount();
+	ide_state.cursorRow = clamp(deletionStartRow, 0, nextLineCount - 1);
 	ide_state.cursorColumn = 0;
 	ide_state.selectionAnchor = null;
 	ide_state.layout.invalidateLine(ide_state.cursorRow);
-	ide_state.layout.invalidateHighlightsFromRow(deletionStart);
-	recordEditContext('delete', deletedLines.join('\n'));
+	ide_state.layout.invalidateHighlightsFromRow(deletionStartRow);
+	recordEditContext('delete', recordText);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -924,26 +864,48 @@ export function moveSelectionLines(delta: number): void {
 	if (delta === 0) {
 		return;
 	}
+	const buffer = ide_state.buffer;
+	const lineCount = buffer.getLineCount();
 	const range = getLineRangeForMovement();
 	if (delta < 0 && range.startRow === 0) {
 		return;
 	}
-	if (delta > 0 && range.endRow >= ide_state.lines.length - 1) {
+	if (delta > 0 && range.endRow >= lineCount - 1) {
 		return;
 	}
-	prepareUndo('move-lines', false);
-	const count = range.endRow - range.startRow + 1;
-	const block = ide_state.lines.splice(range.startRow, count);
-	const targetIndex = range.startRow + delta;
-	ide_state.lines.splice(targetIndex, 0, ...block);
-	const affectedStart = Math.max(0, Math.min(range.startRow, targetIndex));
-	const affectedEnd = Math.min(ide_state.lines.length - 1, Math.max(range.endRow, targetIndex + count - 1));
-	if (affectedStart <= affectedEnd) {
-		for (let row = affectedStart; row <= affectedEnd; row += 1) {
-			ide_state.layout.invalidateLine(row);
+
+	const regionStartRow = delta < 0 ? range.startRow - 1 : range.startRow;
+	const regionEndRow = delta < 0 ? range.endRow : range.endRow + 1;
+	const regionStartOffset = buffer.getLineStartOffset(regionStartRow);
+	const regionEndOffset = regionEndRow < lineCount - 1
+		? buffer.getLineStartOffset(regionEndRow + 1)
+		: buffer.length;
+	const endsWithNewline = regionEndRow < lineCount - 1;
+	const regionLines: string[] = [];
+	for (let row = regionStartRow; row <= regionEndRow; row += 1) {
+		regionLines.push(buffer.getLineContent(row));
+	}
+	const replacementLines: string[] = [];
+	if (delta < 0) {
+		for (let index = 1; index < regionLines.length; index += 1) {
+			replacementLines.push(regionLines[index]);
+		}
+		replacementLines.push(regionLines[0]);
+	} else {
+		replacementLines.push(regionLines[regionLines.length - 1]);
+		for (let index = 0; index < regionLines.length - 1; index += 1) {
+			replacementLines.push(regionLines[index]);
 		}
 	}
-	ide_state.layout.invalidateHighlightsFromRow(affectedStart);
+	let replacementText = replacementLines.join('\n');
+	if (endsWithNewline) {
+		replacementText += '\n';
+	}
+
+	prepareUndo('move-lines', false);
+	applyUndoableReplace(regionStartOffset, regionEndOffset - regionStartOffset, replacementText);
+	invalidateLineRange(regionStartRow, regionEndRow);
+	ide_state.layout.invalidateHighlightsFromRow(regionStartRow);
 	ide_state.cursorRow += delta;
 	if (ide_state.selectionAnchor) {
 		ide_state.selectionAnchor = { row: ide_state.selectionAnchor.row + delta, column: ide_state.selectionAnchor.column };
@@ -966,15 +928,28 @@ export function copySelectionLines(delta: number): void {
 	if (delta === 0) {
 		return;
 	}
+	const buffer = ide_state.buffer;
+	const lineCount = buffer.getLineCount();
 	const selectionRange = getSelectionRange();
 	const lineRange = getLineRangeForMovement();
 	const insertionStart = delta < 0 ? lineRange.startRow : lineRange.endRow + 1;
-	const block = ide_state.lines.slice(lineRange.startRow, lineRange.endRow + 1);
 	const rowOffset = insertionStart - lineRange.startRow;
+	const blockLines: string[] = [];
+	for (let row = lineRange.startRow; row <= lineRange.endRow; row += 1) {
+		blockLines.push(buffer.getLineContent(row));
+	}
+	let insertionText = blockLines.join('\n');
+	if (insertionStart === lineCount && buffer.length > 0) {
+		insertionText = `\n${insertionText}`;
+	}
+	if (insertionStart < lineCount) {
+		insertionText += '\n';
+	}
+	const insertionOffset = insertionStart < lineCount ? buffer.getLineStartOffset(insertionStart) : buffer.length;
 
 	prepareUndo('copy-lines', false);
-	ide_state.lines.splice(insertionStart, 0, ...block);
-	invalidateLineRange(insertionStart, insertionStart + block.length - 1);
+	applyUndoableReplace(insertionOffset, 0, insertionText);
+	invalidateLineRange(insertionStart, insertionStart + blockLines.length - 1);
 	ide_state.layout.invalidateHighlightsFromRow(insertionStart);
 
 	if (selectionRange) {
@@ -984,19 +959,19 @@ export function copySelectionLines(delta: number): void {
 		if (anchorIsStart) {
 			ide_state.selectionAnchor = newStart;
 			ide_state.cursorRow = newEnd.row;
-			ide_state.cursorColumn = clamp(newEnd.column, 0, ide_state.lines[newEnd.row].length);
+			ide_state.cursorColumn = clamp(newEnd.column, 0, buffer.getLineEndOffset(newEnd.row) - buffer.getLineStartOffset(newEnd.row));
 		} else {
 			ide_state.selectionAnchor = newEnd;
 			ide_state.cursorRow = newStart.row;
-			ide_state.cursorColumn = clamp(newStart.column, 0, ide_state.lines[newStart.row].length);
+			ide_state.cursorColumn = clamp(newStart.column, 0, buffer.getLineEndOffset(newStart.row) - buffer.getLineStartOffset(newStart.row));
 		}
 	} else {
-		const targetRow = clamp(ide_state.cursorRow + rowOffset, 0, ide_state.lines.length - 1);
+		const targetRow = clamp(ide_state.cursorRow + rowOffset, 0, buffer.getLineCount() - 1);
 		ide_state.cursorRow = targetRow;
-		ide_state.cursorColumn = clamp(ide_state.cursorColumn, 0, ide_state.lines[targetRow].length);
+		ide_state.cursorColumn = clamp(ide_state.cursorColumn, 0, buffer.getLineEndOffset(targetRow) - buffer.getLineStartOffset(targetRow));
 		ide_state.selectionAnchor = null;
 	}
-	recordEditContext('insert', block.join('\n'));
+	recordEditContext('insert', blockLines.join('\n'));
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -1014,11 +989,13 @@ export function indentSelectionOrLine(): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
+	const buffer = ide_state.buffer;
 	prepareUndo('indent', false);
 	const range = getSelectionRange();
 	if (!range) {
-		const line = currentLine();
-		ide_state.lines[ide_state.cursorRow] = '\t' + line;
+		const row = ide_state.cursorRow;
+		const offset = buffer.getLineStartOffset(row);
+		applyUndoableReplace(offset, 0, '\t');
 		ide_state.cursorColumn += 1;
 		ide_state.layout.invalidateLine(ide_state.cursorRow);
 		recordEditContext('insert', '\t');
@@ -1028,8 +1005,9 @@ export function indentSelectionOrLine(): void {
 		revealCursor();
 		return;
 	}
-	for (let row = range.start.row; row <= range.end.row; row += 1) {
-		ide_state.lines[row] = '\t' + ide_state.lines[row];
+	for (let row = range.end.row; row >= range.start.row; row -= 1) {
+		const offset = buffer.getLineStartOffset(row);
+		applyUndoableReplace(offset, 0, '\t');
 		ide_state.layout.invalidateLine(row);
 	}
 	if (ide_state.selectionAnchor) {
@@ -1050,32 +1028,42 @@ export function unindentSelectionOrLine(): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
+	const buffer = ide_state.buffer;
 	prepareUndo('unindent', false);
 	const range = getSelectionRange();
 	if (!range) {
+		const row = ide_state.cursorRow;
 		const line = currentLine();
-		const indentation = countLeadingIndent(line);
-		if (indentation === 0) {
+		if (line.length === 0) {
 			return;
 		}
-		const remove = Math.min(indentation, 1);
-		ide_state.lines[ide_state.cursorRow] = line.slice(remove);
-		ide_state.cursorColumn = Math.max(0, ide_state.cursorColumn - remove);
+		const first = line.charAt(0);
+		if (first !== '\t' && first !== ' ') {
+			return;
+		}
+		const offset = buffer.getLineStartOffset(row);
+		applyUndoableReplace(offset, 1, '');
+		ide_state.cursorColumn = Math.max(0, ide_state.cursorColumn - 1);
 		ide_state.layout.invalidateLine(ide_state.cursorRow);
-		recordEditContext('delete', line.slice(0, remove));
+		recordEditContext('delete', first);
 		markTextMutated();
 		resetBlink();
 		updateDesiredColumn();
 		revealCursor();
 		return;
 	}
-	for (let row = range.start.row; row <= range.end.row; row += 1) {
-		const line = ide_state.lines[row];
-		const indentation = countLeadingIndent(line);
-		if (indentation > 0) {
-			ide_state.lines[row] = line.slice(1);
-			ide_state.layout.invalidateLine(row);
+	for (let row = range.end.row; row >= range.start.row; row -= 1) {
+		const line = buffer.getLineContent(row);
+		if (line.length === 0) {
+			continue;
 		}
+		const first = line.charAt(0);
+		if (first !== '\t' && first !== ' ') {
+			continue;
+		}
+		const offset = buffer.getLineStartOffset(row);
+		applyUndoableReplace(offset, 1, '');
+		ide_state.layout.invalidateLine(row);
 	}
 	if (ide_state.selectionAnchor) {
 		ide_state.selectionAnchor = { row: ide_state.selectionAnchor.row, column: Math.max(0, ide_state.selectionAnchor.column - 1) };
@@ -1129,33 +1117,47 @@ export async function cutSelectionToClipboard(): Promise<void> {
  * Used when no selection is active.
  */
 export async function cutLineToClipboard(): Promise<void> {
-	if (ide_state.lines.length === 0) {
-		ide_state.showMessage('Nothing to cut', constants.COLOR_STATUS_WARNING, 1.5);
-		return;
-	}
+	const buffer = ide_state.buffer;
+	const lineCount = buffer.getLineCount();
+	const row = ide_state.cursorRow;
 	const currentLineValue = currentLine();
-	const isLastLine = ide_state.cursorRow >= ide_state.lines.length - 1;
-	const text = isLastLine ? currentLineValue : currentLineValue + '\n';
+	const isLastLine = row >= lineCount - 1;
+	const text = isLastLine ? currentLineValue : `${currentLineValue}\n`;
 	prepareUndo('cut-line', false);
 	await writeClipboard(text, 'Cut line to clipboard');
 	if (!editorAllowsMutation()) {
 		return;
 	}
-	if (ide_state.lines.length === 1) {
-		ide_state.lines[0] = '';
-		ide_state.cursorColumn = 0;
-	} else {
-		const removedRow = ide_state.cursorRow;
-		ide_state.lines.splice(ide_state.cursorRow, 1);
-		if (ide_state.cursorRow >= ide_state.lines.length) {
-			ide_state.cursorRow = ide_state.lines.length - 1;
+
+	const lineStart = buffer.getLineStartOffset(row);
+	const lineEnd = buffer.getLineEndOffset(row);
+	let deleteStart = lineStart;
+	let deleteEnd = lineEnd;
+	if (lineCount > 1) {
+		if (!isLastLine) {
+			deleteStart = lineStart;
+			deleteEnd = buffer.getLineStartOffset(row + 1);
+		} else {
+			deleteStart = buffer.getLineEndOffset(row - 1);
+			deleteEnd = buffer.length;
 		}
-		const newLength = ide_state.lines[ide_state.cursorRow].length;
-		if (ide_state.cursorColumn > newLength) {
-			ide_state.cursorColumn = newLength;
-		}
-		ide_state.layout.invalidateHighlightsFromRow(Math.min(removedRow, ide_state.lines.length - 1));
 	}
+	const deleteLength = deleteEnd - deleteStart;
+	if (deleteLength > 0) {
+		applyUndoableReplace(deleteStart, deleteLength, '');
+	}
+
+	const nextLineCount = buffer.getLineCount();
+	if (ide_state.cursorRow >= nextLineCount) {
+		ide_state.cursorRow = nextLineCount - 1;
+	}
+	const currentLength = buffer.getLineEndOffset(ide_state.cursorRow) - buffer.getLineStartOffset(ide_state.cursorRow);
+	if (ide_state.cursorColumn > currentLength) {
+		ide_state.cursorColumn = currentLength;
+	}
+
+	const removedRow = row;
+	ide_state.layout.invalidateHighlightsFromRow(Math.min(removedRow, buffer.getLineCount() - 1));
 	ide_state.layout.invalidateLine(ide_state.cursorRow);
 	ide_state.selectionAnchor = null;
 	markTextMutated();
@@ -1206,42 +1208,33 @@ export async function writeClipboard(text: string, successMessage: string): Prom
 }
 
 export function applyDocumentFormatting(): void {
-	const originalLines = [...ide_state.lines];
-	const originalSource = originalLines.join('\n');
+	const buffer = ide_state.buffer;
+	const originalSource = getTextSnapshot(buffer);
 	try {
 		const formatted = formatLuaDocument(originalSource);
 		if (formatted === originalSource) {
 			ide_state.showMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
 			return;
 		}
-		const cursorOffset = computeDocumentOffset(originalLines, ide_state.cursorRow, ide_state.cursorColumn);
+		const cursorOffset = buffer.offsetAt(ide_state.cursorRow, ide_state.cursorColumn);
 		prepareUndo('format-document', false);
-		if (ide_state.lines.length === 0) {
-			setSelectionAnchorPosition({ row: 0, column: 0 });
-			setCursorPosition(0, 0);
-		} else {
-			const lastRow = ide_state.lines.length - 1;
-			setSelectionAnchorPosition({ row: 0, column: 0 });
-			setCursorPosition(lastRow, ide_state.lines[lastRow].length);
-		}
-		replaceSelectionWith(formatted);
-		const updatedLines = [...ide_state.lines];
-		const target = resolveOffsetPosition(updatedLines, cursorOffset);
-		setCursorPosition(target.row, target.column);
-		clearSelection();
+		recordEditContext('replace', formatted);
+		applyUndoableReplace(0, buffer.length, formatted);
+		const restoredOffset = clamp(cursorOffset, 0, buffer.length);
+		buffer.positionAt(restoredOffset, tmpPosition);
+		ide_state.cursorRow = tmpPosition.row;
+		ide_state.cursorColumn = tmpPosition.column;
+		ide_state.selectionAnchor = null;
+		updateDesiredColumn();
+		resetBlink();
+		revealCursor();
 		markDiagnosticsDirty();
+		markTextMutated();
 		ide_state.showMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
 	} catch (error) {
 		const message = extractErrorMessage(error);
 		ide_state.showMessage(`Formatting failed: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
 	}
-}
-export function computeDocumentOffset(lines: readonly string[], row: number, column: number): number {
-	let offset = 0;
-	for (let index = 0; index < row; index += 1) {
-		offset += lines[index].length + 1;
-	}
-	return offset + column;
 }
 export function handlePostEditMutation(): void {
 	const editContext = ide_state.pendingEditContext;

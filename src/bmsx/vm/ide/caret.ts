@@ -83,19 +83,20 @@ export function findFirstNonWhitespace(line: string, startColumn: number, endCol
  */
 export function setCursorPosition(row: number, column: number): void {
 	caretNavigation.clear();
+	const buffer = ide_state.buffer;
 	let targetRow = row;
 	if (targetRow < 0) {
 		targetRow = 0;
 	}
-	const lastRow = ide_state.lines.length - 1;
+	const lastRow = buffer.getLineCount() - 1;
 	if (targetRow > lastRow) {
-		targetRow = lastRow >= 0 ? lastRow : 0;
+		targetRow = lastRow;
 	}
 	let targetColumn = column;
 	if (targetColumn < 0) {
 		targetColumn = 0;
 	}
-	const lineLength = ide_state.lines[targetRow]?.length ?? 0;
+	const lineLength = buffer.getLineEndOffset(targetRow) - buffer.getLineStartOffset(targetRow);
 	if (targetColumn > lineLength) {
 		targetColumn = lineLength;
 	}
@@ -153,7 +154,8 @@ export function moveCursorHorizontal(delta: number): void {
 	if (!segment) {
 		return;
 	}
-	const line = ide_state.lines[segment.row] ?? '';
+	const buffer = ide_state.buffer;
+	const line = buffer.getLineContent(segment.row);
 	if (delta < 0) {
 		// Move left
 		if (ide_state.cursorColumn > segment.startColumn) {
@@ -164,7 +166,7 @@ export function moveCursorHorizontal(delta: number): void {
 				const prevSegment = visualIndexToSegment(visualIndex - 1);
 				if (prevSegment && prevSegment.row === segment.row) {
 					ide_state.cursorRow = prevSegment.row;
-					const prevLine = ide_state.lines[prevSegment.row] ?? '';
+					const prevLine = buffer.getLineContent(prevSegment.row);
 					const prevEnd = Math.max(prevSegment.endColumn, prevSegment.startColumn);
 					const hasMoreBefore = prevEnd > prevSegment.startColumn;
 					const targetColumn = hasMoreBefore && prevEnd < prevLine.length
@@ -176,7 +178,7 @@ export function moveCursorHorizontal(delta: number): void {
 			}
 			if (!moved && segment.row > 0) {
 				ide_state.cursorRow = segment.row - 1;
-				ide_state.cursorColumn = ide_state.lines[ide_state.cursorRow].length;
+				ide_state.cursorColumn = buffer.getLineEndOffset(ide_state.cursorRow) - buffer.getLineStartOffset(ide_state.cursorRow);
 			}
 		}
 	} else {
@@ -193,13 +195,14 @@ export function moveCursorHorizontal(delta: number): void {
 					moved = true;
 				}
 			}
-			if (!moved && segment.row < ide_state.lines.length - 1) {
+			if (!moved && segment.row < buffer.getLineCount() - 1) {
 				ide_state.cursorRow = segment.row + 1;
 				ide_state.cursorColumn = 0;
 			}
 		}
 	}
-	ide_state.cursorColumn = clamp(ide_state.cursorColumn, 0, ide_state.lines[ide_state.cursorRow]?.length ?? 0);
+	const cursorLength = buffer.getLineEndOffset(ide_state.cursorRow) - buffer.getLineStartOffset(ide_state.cursorRow);
+	ide_state.cursorColumn = clamp(ide_state.cursorColumn, 0, cursorLength);
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -335,6 +338,7 @@ export function moveCursorDown(): void {
 export function moveCursorHome(): void {
 	const previousOverride = caretNavigation.peek(ide_state.cursorRow, ide_state.cursorColumn);
 	caretNavigation.clear();
+	const buffer = ide_state.buffer;
 	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	const select = isShiftDown();
 	if (select) {
@@ -352,7 +356,7 @@ export function moveCursorHome(): void {
 		const segment = visualIndexToSegment(visualIndex);
 		if (segment) {
 			ide_state.cursorRow = segment.row;
-			const line = ide_state.lines[segment.row] ?? '';
+			const line = buffer.getLineContent(segment.row);
 			ide_state.cursorColumn = resolveIndentAwareHome(line, segment, ide_state.cursorColumn);
 			caretNavigation.capture(segment.row, ide_state.cursorColumn, visualIndex, segment.startColumn);
 		} else {
@@ -371,6 +375,7 @@ export function moveCursorHome(): void {
 export function moveCursorEnd(): void {
 	const previousOverride = caretNavigation.peek(ide_state.cursorRow, ide_state.cursorColumn);
 	caretNavigation.clear();
+	const buffer = ide_state.buffer;
 	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	const select = isShiftDown();
 	if (select) {
@@ -380,21 +385,16 @@ export function moveCursorEnd(): void {
 	}
 	const ctrlDown = isCtrlDown();
 	if (ctrlDown) {
-		const lastRow = ide_state.lines.length - 1;
-		if (lastRow < 0) {
-			ide_state.cursorRow = 0;
-			ide_state.cursorColumn = 0;
-		} else {
-			ide_state.cursorRow = lastRow;
-			ide_state.cursorColumn = ide_state.lines[lastRow].length;
-		}
+		const lastRow = buffer.getLineCount() - 1;
+		ide_state.cursorRow = lastRow;
+		ide_state.cursorColumn = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
 	} else {
 		ensureVisualLines();
 		const visualIndex = previousOverride?.visualIndex ?? positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
 		const segment = visualIndexToSegment(visualIndex);
 		if (segment) {
 			ide_state.cursorRow = segment.row;
-			const line = ide_state.lines[segment.row] ?? '';
+			const line = buffer.getLineContent(segment.row);
 			ide_state.cursorColumn = resolveSegmentEnd(line, segment);
 			caretNavigation.capture(segment.row, ide_state.cursorColumn, visualIndex, segment.startColumn);
 		} else {
@@ -453,10 +453,11 @@ export function pageDown(): void {
  * Clamp cursor row to valid range
  */
 export function clampCursorRow(): void {
+	const lineCount = ide_state.buffer.getLineCount();
 	if (ide_state.cursorRow < 0) {
 		ide_state.cursorRow = 0;
-	} else if (ide_state.cursorRow >= ide_state.lines.length) {
-		ide_state.cursorRow = Math.max(0, ide_state.lines.length - 1);
+	} else if (ide_state.cursorRow >= lineCount) {
+		ide_state.cursorRow = lineCount - 1;
 	}
 }
 
@@ -597,9 +598,9 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	if (!segment) {
 		return;
 	}
-	const entry = ide_state.layout.getCachedHighlight(ide_state.lines, segment.row);
+	const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, segment.row);
 	const highlight = entry.hi;
-	const line = ide_state.lines[segment.row] ?? '';
+	const line = ide_state.buffer.getLineContent(segment.row);
 	const hasDesiredHint = desiredColumnHint !== undefined;
 	const hasOffsetHint = desiredOffsetHint !== undefined;
 	let targetColumn = hasDesiredHint ? desiredColumnHint! : ide_state.cursorColumn;
@@ -613,7 +614,7 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 			const targetDisplay = clamp(segmentDisplayStart + clampedOffset, segmentDisplayStart, segmentDisplayEnd);
 			let columnFromOffset = entry.displayToColumn[targetDisplay];
 			if (columnFromOffset === undefined) {
-				columnFromOffset = ide_state.lines[segment.row].length;
+				columnFromOffset = line.length;
 			}
 			targetColumn = clamp(columnFromOffset, segment.startColumn, segmentEndColumn);
 		} else {

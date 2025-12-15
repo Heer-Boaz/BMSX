@@ -177,7 +177,7 @@ export function resolveRuntimeErrorOverlayAnchor(
 	if (!segment) {
 		return null;
 	}
-	const entry = ide_state.layout.getCachedHighlight(ide_state.lines, segment.row);
+	const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, segment.row);
 	const highlight = entry.hi;
 	let columnStart = ide_state.wordWrapEnabled ? segment.startColumn : ide_state.scrollColumn;
 	if (ide_state.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
@@ -542,10 +542,10 @@ export function showRuntimeError(
 	const processedColumn = normalizedColumn !== null ? normalizedColumn - 1 : null;
 	let targetRow = ide_state.cursorRow;
 	if (processedLine !== null) {
-		targetRow = clamp(processedLine - 1, 0, ide_state.lines.length - 1);
+		targetRow = clamp(processedLine - 1, 0, ide_state.buffer.getLineCount() - 1);
 		ide_state.cursorRow = targetRow;
 	}
-	const currentLine = ide_state.lines[targetRow] ?? '';
+	const currentLine = ide_state.buffer.getLineContent(targetRow);
 	let targetColumn = ide_state.cursorColumn;
 	if (processedColumn !== null) {
 		targetColumn = clamp(processedColumn, 0, currentLine.length);

@@ -7,6 +7,8 @@ import type {
 import type { StackTraceFrame } from '../../lua/luavalue';
 import { MENU_COMMANDS } from './ide_input';
 import { RectBounds } from '../../rompack/rompack';
+import type { TextBuffer } from './text_buffer';
+import type { EditorUndoRecord } from './editor_undo';
 
 export type IdeThemeVariant = string;
 
@@ -52,13 +54,11 @@ export type GlobalSearchMatch = {
 };
 
 export type EditorSnapshot = {
-	lines: string[];
 	cursorRow: number;
 	cursorColumn: number;
 	scrollRow: number;
 	scrollColumn: number;
 	selectionAnchor: Position;
-	dirty: boolean;
 	textVersion: number;
 };
 
@@ -287,12 +287,17 @@ export type CodeTabContext = {
 	id: string;
 	title: string;
 	descriptor: VMResourceDescriptor;
-	snapshot: EditorSnapshot;
+	buffer: TextBuffer;
+	cursorRow: number;
+	cursorColumn: number;
+	scrollRow: number;
+	scrollColumn: number;
+	selectionAnchor: Position;
 	lastSavedSource: string;
 	saveGeneration: number;
 	appliedGeneration: number;
-	undoStack: EditorSnapshot[];
-	redoStack: EditorSnapshot[];
+	undoStack: EditorUndoRecord[];
+	redoStack: EditorUndoRecord[];
 	lastHistoryKey: string;
 	lastHistoryTimestamp: number;
 	savePointDepth: number;

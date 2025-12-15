@@ -7,6 +7,8 @@ import { listResources } from '../workspace';
 import { BmsxVMRuntime } from '../vm_runtime';
 import { VMCodeLayout } from './code_layout';
 import { LuaSemanticWorkspace, Decl } from './semantic_model';
+import type { TextBuffer } from './text_buffer';
+import { getTextSnapshot } from './source_text';
 
 export type ProjectReferenceEnvironment = {
 	activeContext: CodeTabContext;
@@ -283,25 +285,23 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 	register(currentChunkName, currentLines, currentasset_id, null, sourceLabelPath, environment.activeContext.textVersion);
 	const activeContext = environment.activeContext;
 	const contexts = Array.from(environment.codeTabContexts);
-	for (let index = 0; index < contexts.length; index += 1) {
-		const context = contexts[index];
-		const descriptor = context.descriptor;
-		const chunkName = descriptor.path ?? descriptor.asset_id;
-		if (metadata.has(chunkName)) {
-			continue;
-		}
-		let lines: readonly string[] = null;
-		if (activeContext && context === activeContext) {
-			lines = environment.activeLines;
-		} else if (context.snapshot) {
-			lines = context.snapshot.lines;
-		} else {
-			const source = BmsxVMRuntime.instance.resourceSourceForChunk(chunkName);
-			lines = normalizeEndingsAndSplitLines(source);
-		}
-		if (!lines || lines.length === 0) {
-			continue;
-		}
+		for (let index = 0; index < contexts.length; index += 1) {
+			const context = contexts[index];
+			const descriptor = context.descriptor;
+			const chunkName = descriptor.path ?? descriptor.asset_id;
+			if (metadata.has(chunkName)) {
+				continue;
+			}
+			let lines: readonly string[] = null;
+			if (activeContext && context === activeContext) {
+				lines = environment.activeLines;
+			} else {
+				const source = getTextSnapshot(context.buffer);
+				lines = normalizeEndingsAndSplitLines(source);
+			}
+			if (!lines || lines.length === 0) {
+				continue;
+			}
 		const asset_id = descriptor.asset_id;
 		const path = descriptor.path;
 		register(chunkName, lines, asset_id, path, null, context.textVersion);
@@ -470,7 +470,7 @@ export type ExtractIdentifierExpression = (row: number, column: number) => { exp
 export type ReferenceLookupOptions = {
 	layout: VMCodeLayout;
 	workspace: LuaSemanticWorkspace;
-	lines: readonly string[];
+	buffer: TextBuffer;
 	textVersion: number;
 	cursorRow: number;
 	cursorColumn: number;
@@ -541,9 +541,9 @@ export class ReferenceState {
 
 export function resolveReferenceLookup(options: ReferenceLookupOptions): ReferenceLookupResult {
 	const {
-		layout, workspace, lines, textVersion, cursorRow, cursorColumn, extractExpression, chunkName,
+		layout, workspace, buffer, textVersion, cursorRow, cursorColumn, extractExpression, chunkName,
 	} = options;
-	const model = layout.getSemanticModel(lines, textVersion, chunkName);
+	const model = layout.getSemanticModel(buffer, textVersion, chunkName);
 	if (!model) {
 		return { kind: 'error', message: 'References unavailable', duration: 1.6 };
 	}
@@ -563,7 +563,7 @@ export function resolveReferenceLookup(options: ReferenceLookupOptions): Referen
 	const seen = new Set<string>();
 	const definitionRange = resolution.decl.range;
 	if (definitionRange.chunkName === chunkName) {
-		const definitionMatch = rangeToSearchMatch(definitionRange, lines);
+		const definitionMatch = rangeToSearchMatchInBuffer(definitionRange, buffer);
 		if (definitionMatch) {
 			const key = `${definitionMatch.row}:${definitionMatch.start}`;
 			seen.add(key);
@@ -576,7 +576,7 @@ export function resolveReferenceLookup(options: ReferenceLookupOptions): Referen
 		if (reference.file !== chunkName) {
 			continue;
 		}
-		const match = rangeToSearchMatch(reference.range, lines);
+		const match = rangeToSearchMatchInBuffer(reference.range, buffer);
 		if (!match) {
 			continue;
 		}
@@ -611,6 +611,24 @@ export function resolveReferenceLookup(options: ReferenceLookupOptions): Referen
 		documentVersion: textVersion,
 	};
 	return { kind: 'success', info, initialIndex };
+}
+
+function rangeToSearchMatchInBuffer(range: LuaSourceRange, buffer: TextBuffer): SearchMatch {
+	const rowIndex = range.start.line - 1;
+	const lineCount = buffer.getLineCount();
+	if (rowIndex < 0 || rowIndex >= lineCount) {
+		return null;
+	}
+	const line = buffer.getLineContent(rowIndex);
+	const startColumn = Math.max(0, range.start.column - 1);
+	const endInclusive = Math.max(startColumn, range.end.column - 1);
+	const endExclusive = Math.min(line.length, endInclusive + 1);
+	const clampedStart = Math.min(startColumn, line.length);
+	const clampedEnd = Math.max(clampedStart, endExclusive);
+	if (clampedEnd <= clampedStart) {
+		return null;
+	}
+	return { row: rowIndex, start: clampedStart, end: clampedEnd };
 }
 function rangeToSearchMatch(range: LuaSourceRange, lines: readonly string[]): SearchMatch {
 	const rowIndex = range.start.line - 1;

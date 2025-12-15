@@ -102,5 +102,5 @@ export function buildStatusLeftInfo(): string {
 		// When Problems panel is visible but not focused or no selection, don't render default editor position
 		return '';
 	}
-	return `LINE ${ide_state.cursorRow + 1}/${ide_state.lines.length} COL ${ide_state.cursorColumn + 1}`;
+	return `LINE ${ide_state.cursorRow + 1}/${ide_state.buffer.getLineCount()} COL ${ide_state.cursorColumn + 1}`;
 }

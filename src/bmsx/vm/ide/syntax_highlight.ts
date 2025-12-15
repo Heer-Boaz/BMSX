@@ -511,9 +511,18 @@ export function highlightLine(
 		builtinCollection = builtinIdentifiers;
 	}
 	const line = row >= 0 && row < lines.length ? lines[row] ?? '' : '';
+	const lineAnnotations = annotations ? (row >= 0 && row < annotations.length ? annotations[row] : undefined) : undefined;
+	return highlightTextLine(line, lineAnnotations, builtinCollection);
+}
+
+export function highlightTextLine(
+	line: string,
+	lineAnnotations?: SemanticAnnotations[number],
+	builtinIdentifiers?: Iterable<string>,
+): HighlightLine {
 	const length = line.length;
 	const columnColors: number[] = new Array(length).fill(constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
-	const builtinLookup = getBuiltinLookup(builtinCollection);
+	const builtinLookup = getBuiltinLookup(builtinIdentifiers);
 	let i = 0;
 	while (i < length) {
 		if (i === 0 && line.startsWith('#!')) {
@@ -618,8 +627,7 @@ export function highlightLine(
 		i += 1;
 	}
 
-	if (annotations) {
-		const lineAnnotations = row >= 0 && row < annotations.length ? annotations[row] : undefined;
+	if (lineAnnotations) {
 		applySemanticAnnotations(line, columnColors, lineAnnotations, builtinLookup);
 	}
 
