@@ -7,16 +7,16 @@ import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/webgl.cons
 import fragmentShaderCRTCode from './shaders/crt.frag.glsl';
 import vertexShaderCRTCode from './shaders/crt.vert.glsl';
 // Local copy of CRTState to avoid import issues after refactor (remove duplication later)
-interface CRTState { width: number; height: number; baseWidth?: number; baseHeight?: number; fragScale?: number; outWidth?: number; outHeight?: number; colorTex?: TextureHandle; options?: any }
+interface CRTState { width: number; height: number; baseWidth: number; baseHeight: number; outWidth?: number; outHeight?: number; colorTex?: TextureHandle; options?: any }
 
 // Internal cached fullscreen quad (VBO + TBO + attrib locations)
 interface FullscreenQuad { vbo: WebGLBuffer; tbo: WebGLBuffer; attribPos: number; attribTex: number; w: number; h: number }
 let fsq: FullscreenQuad = null;
 
-function createFullscreenQuad(gl: WebGL2RenderingContext, srcW: number, srcH: number): FullscreenQuad {
+function createFullscreenQuad(gl: WebGL2RenderingContext, outW: number, outH: number): FullscreenQuad {
 	const vsProg = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 	const verts = new Float32Array([
-		0.0, 0.0, 0.0, srcH, srcW, 0.0, srcW, 0.0, 0.0, srcH, srcW, srcH,
+		0.0, 0.0, 0.0, outH, outW, 0.0, outW, 0.0, 0.0, outH, outW, outH,
 	]);
 	const texcoords = new Float32Array([
 		0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0
@@ -27,7 +27,7 @@ function createFullscreenQuad(gl: WebGL2RenderingContext, srcW: number, srcH: nu
 	gl.bindBuffer(gl.ARRAY_BUFFER, tbo); gl.bufferData(gl.ARRAY_BUFFER, texcoords, gl.STATIC_DRAW);
 	const attribPos = vsProg ? gl.getAttribLocation(vsProg, 'a_position') : -1;
 	const attribTex = vsProg ? gl.getAttribLocation(vsProg, 'a_texcoord') : -1;
-	return { vbo, tbo, attribPos, attribTex, w: srcW, h: srcH };
+	return { vbo, tbo, attribPos, attribTex, w: outW, h: outH };
 }
 
 interface CRTRuntime {
@@ -73,9 +73,9 @@ function bindCRTUniforms(gl: WebGL2RenderingContext, st: CRTState): void {
 	const set2f = (n: string, x: number, y: number) => { const loc = u(n); if (loc) gl.uniform2f(loc, x, y); };
 	set1f('u_time', now); set1f('u_random', Math.random());
 	set2f('u_resolution', outW, outH);
-	set2f('u_srcResolution', st.baseWidth ?? st.width, st.baseHeight ?? st.height);
+	set2f('u_srcResolution', st.baseWidth, st.baseHeight);
 	set1f('u_scale', 1.0);
-	set1f('u_fragscale', st.fragScale ?? 1.0);
+	set1f('u_fragscale', st.width / st.baseWidth);
 	const opts = st.options || {};
 	const booleans: Array<[string, boolean, boolean]> = [
 		['u_applyNoise', opts.applyNoise, true], ['u_applyColorBleed', opts.applyColorBleed, true], ['u_applyScanlines', opts.applyScanlines, true], ['u_applyBlur', opts.applyBlur, true], ['u_applyGlow', opts.applyGlow, true], ['u_applyFringing', opts.applyFringing, true]
@@ -95,7 +95,8 @@ function renderCRT(runtime: CRTRuntime, st: CRTState): void {
 	const outH = st.outHeight ?? st.height;
 	gl.viewport(0, 0, outW, outH);
 	if (!fsq || fsq.w !== outW || fsq.h !== outH) {
-		fsq = createFullscreenQuad(gl, st.width, st.height);
+		if (fsq) { gl.deleteBuffer(fsq.vbo); gl.deleteBuffer(fsq.tbo); }
+		fsq = createFullscreenQuad(gl, outW, outH);
 	}
 	const { vbo, tbo, attribPos, attribTex } = fsq;
 	gl.bindBuffer(gl.ARRAY_BUFFER, vbo);

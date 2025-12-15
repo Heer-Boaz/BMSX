@@ -168,7 +168,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	gl.depthMask(false);
 	backend.bindVertexArray(spriteVAO as WebGLVertexArrayObject);
 	const baseScale = 1;
-	const ideScale = state.viewportTypeIde === 'viewport' ? baseScale : .5;
+	const ideScale = state.viewportTypeIde === 'viewport' ? baseScale : baseScale * (state.baseWidth / state.width);
 	setupDefaultUniformValues(backend, baseScale, [state.baseWidth, state.baseHeight], state.psxDither2dEnabled ? 1 : 0);
 	let currentScale = baseScale;
 	const setScale = (scale: number) => {
