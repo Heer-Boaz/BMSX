@@ -452,6 +452,7 @@ export function markTextMutated(): void {
 	if (context) {
 		context.saveGeneration = ide_state.saveGeneration;
 	}
+	ide_state.maxLineLengthDirty = true;
 	markDiagnosticsDirty();
 	bumpTextVersion();
 	clearReferenceHighlights();

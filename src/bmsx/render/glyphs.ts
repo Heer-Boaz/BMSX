@@ -2,6 +2,15 @@ import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import type { vec2 } from "../rompack/rompack";
 import type { color, RectRenderSubmission, RenderLayer } from './gameview';
+import type { ImgRenderSubmission } from './shared/render_types';
+
+const CHAR_CACHE: string[] = (() => {
+	const cache: string[] = new Array(256);
+	for (let i = 0; i < cache.length; i += 1) {
+		cache[i] = String.fromCharCode(i);
+	}
+	return cache;
+})();
 
 /**
  * Text rendering utility (engine-level). Preferred UE-style usage is via TextComponent + TextRenderSystem.
@@ -10,28 +19,149 @@ import type { color, RectRenderSubmission, RenderLayer } from './gameview';
 export function renderGlyphs(x: number, y: number, textToWrite: string | string[], z: number = 950, _font?: BFont, color?: color, backgroundColor?: color, layer?: RenderLayer): void {
 	const font = _font ?? $.view.default_font;
 	if (!font) { console.error('No default font available for drawText'); return; }
-	const startPos: vec2 = { x, y };
-	let stepX = 0; let stepY = 0;
-	const pos: vec2 = { x: startPos.x, y: startPos.y, z };
+	const startX = x;
+	let stepY = 0;
+	const pos: vec2 = { x, y, z };
+	const spriteOptions: ImgRenderSubmission = { imgid: 'none', pos, colorize: color, layer };
+	const rectoptions: RectRenderSubmission = backgroundColor
+		? { area: { left: 0, top: 0, right: 0, bottom: 0 }, color: backgroundColor, kind: 'fill', layer }
+		: null;
 
-	const drawLine = (text: string): boolean => {
-		for (let i = 0; i < text.length; i++) {
-			const letter = text[i];
-			stepX = font.char_width(letter);
-			stepY = Math.max(stepY, font.char_height(letter));
-			if (backgroundColor) {
-				const rectoptions: RectRenderSubmission = { area: { left: pos.x, top: pos.y, right: pos.x + stepX, bottom: pos.y + stepY }, color: backgroundColor, kind: 'fill', layer };
+	const glyphGetter = (font as unknown as { getGlyph?: (char: string) => { imgId: string; width: number; height: number } }).getGlyph;
+	const getGlyph = glyphGetter ? ((char: string) => glyphGetter.call(font, char)) : null;
+	const drawLine = getGlyph
+		? (text: string): boolean => {
+			for (let i = 0; i < text.length; i += 1) {
+				const code = text.charCodeAt(i);
+				const letter = code < CHAR_CACHE.length ? CHAR_CACHE[code] : text.charAt(i);
+				const glyph = getGlyph(letter);
+				const stepX = glyph.width;
+				const height = glyph.height;
+				if (height > stepY) {
+					stepY = height;
+				}
+				if (rectoptions) {
+					const area = rectoptions.area;
+					area.left = pos.x;
+					area.top = pos.y;
+					area.right = pos.x + stepX;
+					area.bottom = pos.y + stepY;
+					$.view.renderer.submit.rect(rectoptions);
+				}
+				spriteOptions.imgid = glyph.imgId;
+				$.view.renderer.submit.sprite(spriteOptions);
+				pos.x += stepX;
+			}
+			pos.x = startX;
+			pos.y += stepY;
+			stepY = 0;
+			return pos.y >= $.view.canvasSize.y;
+		}
+		: (text: string): boolean => {
+		for (let i = 0; i < text.length; i += 1) {
+			const code = text.charCodeAt(i);
+			const letter = code < CHAR_CACHE.length ? CHAR_CACHE[code] : text.charAt(i);
+			const stepX = font.char_width(letter);
+			const height = font.char_height(letter);
+			if (height > stepY) {
+				stepY = height;
+			}
+			if (rectoptions) {
+				const area = rectoptions.area;
+				area.left = pos.x;
+				area.top = pos.y;
+				area.right = pos.x + stepX;
+				area.bottom = pos.y + stepY;
 				$.view.renderer.submit.rect(rectoptions);
 			}
-			$.view.renderer.submit.sprite({ imgid: font.char_to_img(letter), pos, colorize: color, layer });
+			spriteOptions.imgid = font.char_to_img(letter);
+			$.view.renderer.submit.sprite(spriteOptions);
 			pos.x += stepX;
 		}
-		pos.x = startPos.x; pos.y += stepY; stepY = 0;
+		pos.x = startX;
+		pos.y += stepY;
+		stepY = 0;
 		return pos.y >= $.view.canvasSize.y;
 	};
 
-	if (Array.isArray(textToWrite)) { for (const t of textToWrite) if (drawLine(t)) return; }
-	else drawLine(textToWrite);
+	if (Array.isArray(textToWrite)) {
+		for (let i = 0; i < textToWrite.length; i += 1) {
+			if (drawLine(textToWrite[i])) {
+				return;
+			}
+		}
+		return;
+	}
+	drawLine(textToWrite);
+}
+
+export function renderGlyphsSpan(
+	x: number,
+	y: number,
+	text: string,
+	start: number,
+	end: number,
+	z: number = 950,
+	_font?: BFont,
+	color?: color,
+	backgroundColor?: color,
+	layer?: RenderLayer,
+): void {
+	const font = _font ?? $.view.default_font;
+	if (!font) { console.error('No default font available for drawText'); return; }
+	let stepY = 0;
+	const pos: vec2 = { x, y, z };
+	const spriteOptions: ImgRenderSubmission = { imgid: 'none', pos, colorize: color, layer };
+	const rectoptions: RectRenderSubmission = backgroundColor
+		? { area: { left: 0, top: 0, right: 0, bottom: 0 }, color: backgroundColor, kind: 'fill', layer }
+		: null;
+
+	const glyphGetter = (font as unknown as { getGlyph?: (char: string) => { imgId: string; width: number; height: number } }).getGlyph;
+	if (glyphGetter) {
+		for (let i = start; i < end; i += 1) {
+			const code = text.charCodeAt(i);
+			const letter = code < CHAR_CACHE.length ? CHAR_CACHE[code] : text.charAt(i);
+			const glyph = glyphGetter.call(font, letter);
+			const stepX = glyph.width;
+			const height = glyph.height;
+			if (height > stepY) {
+				stepY = height;
+			}
+			if (rectoptions) {
+				const area = rectoptions.area;
+				area.left = pos.x;
+				area.top = pos.y;
+				area.right = pos.x + stepX;
+				area.bottom = pos.y + stepY;
+				$.view.renderer.submit.rect(rectoptions);
+			}
+			spriteOptions.imgid = glyph.imgId;
+			$.view.renderer.submit.sprite(spriteOptions);
+			pos.x += stepX;
+		}
+		return;
+	}
+
+	for (let i = start; i < end; i += 1) {
+		const code = text.charCodeAt(i);
+		const letter = code < CHAR_CACHE.length ? CHAR_CACHE[code] : text.charAt(i);
+		const stepX = font.char_width(letter);
+		const height = font.char_height(letter);
+		if (height > stepY) {
+			stepY = height;
+		}
+		if (rectoptions) {
+			const area = rectoptions.area;
+			area.left = pos.x;
+			area.top = pos.y;
+			area.right = pos.x + stepX;
+			area.bottom = pos.y + stepY;
+			$.view.renderer.submit.rect(rectoptions);
+		}
+		spriteOptions.imgid = font.char_to_img(letter);
+		$.view.renderer.submit.sprite(spriteOptions);
+		pos.x += stepX;
+	}
 }
 
 /**

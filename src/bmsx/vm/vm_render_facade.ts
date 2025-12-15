@@ -39,6 +39,7 @@ export class VMRenderFacade {
 	}
 
 	private commands: VMRenderCommand[] = [];
+	private commandBuffer: VMRenderCommand[] = [];
 	private frameLogicalWidth = 0;
 	private frameLogicalHeight = 0;
 	private frameRenderWidth = 0;
@@ -161,6 +162,9 @@ export class VMRenderFacade {
 			publishOverlayFrame(null);
 			return;
 		}
+		const frameCommands = this.commands;
+		this.commands = this.commandBuffer;
+		this.commandBuffer = frameCommands;
 		const frame: EditorOverlayFrame = {
 			width: this.frameRenderWidth,
 			height: this.frameRenderHeight,
@@ -168,7 +172,7 @@ export class VMRenderFacade {
 			logicalHeight: this.frameLogicalHeight,
 			renderWidth: this.frameRenderWidth,
 			renderHeight: this.frameRenderHeight,
-			commands: [...this.commands],
+			commands: frameCommands,
 		};
 		publishOverlayFrame(frame);
 	}
@@ -177,7 +181,8 @@ export class VMRenderFacade {
 export function drainOverlayFrameIntoSpriteQueue(): void {
 	const frame: EditorOverlayFrame = consumeOverlayFrame();
 	if (!frame) return;
-	for (const command of frame.commands) {
-		$.view.renderer.submit.typed(command);
+	const commands = frame.commands;
+	for (let i = 0; i < commands.length; i += 1) {
+		$.view.renderer.submit.typed(commands[i]);
 	}
 }

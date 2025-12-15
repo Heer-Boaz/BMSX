@@ -67,6 +67,8 @@ export type GlyphRenderSubmission = {
 	y: number;
 	z?: number;
 	glyphs: string | string[];
+	glyph_start?: number;
+	glyph_end?: number;
 	font?: BFont;
 	color?: color;
 	background_color?: color;

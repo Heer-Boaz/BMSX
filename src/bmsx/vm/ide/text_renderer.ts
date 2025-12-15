@@ -26,7 +26,7 @@ export function drawEditorText(font: VMEditorFont, text: string, originX: number
 		const expanded = expandTabsExternal(lines[i]);
 		if (expanded.length > 0) {
 			const display = useUppercase ? applyCaseOutsideStrings(expanded, (ch) => ch.toUpperCase()) : expanded;
-			api.write_with_font(display, baseX, cursorY, z, color, renderFont);
+			api.write_inline_with_font(display, baseX, cursorY, z, color, renderFont);
 		}
 		if (i < lines.length - 1) {
 			cursorY += font.lineHeight;
@@ -56,7 +56,7 @@ export function drawEditorColoredText(font: VMEditorFont, text: string, colors: 
 		}
 		const segment = renderText.slice(index, end);
 		if (segment.length > 0) {
-			apiWithFont.write_with_font(segment, cursorX, cursorY, z, colorIndex, renderFont);
+			apiWithFont.write_inline_with_font(segment, cursorX, cursorY, z, colorIndex, renderFont);
 			cursorX += font.measure(segment);
 		}
 		index = end;

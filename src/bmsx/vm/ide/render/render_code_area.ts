@@ -38,7 +38,7 @@ function drawHighlightSlice(
 		while (end < endDisplay && colors[end] === color) {
 			end += 1;
 		}
-		api.write_with_font(renderText.slice(index, end), cursorX, cursorY, z, color, renderFont);
+		api.write_inline_span_with_font(renderText, index, end, cursorX, cursorY, z, color, renderFont);
 		cursorX += advancePrefix[end] - advancePrefix[index];
 		index = end;
 	}
@@ -182,7 +182,7 @@ export function renderCodeArea(): void {
 				const prefixWidth = entry.advancePrefix[insertDisplay] - entry.advancePrefix[sliceStartDisplay];
 				const ghostText = useUppercase ? ghost.toUpperCase() : ghost;
 				if (ghostText.length > 0) {
-					api.write_with_font(ghostText, textLeftFloor + prefixWidth, rowY, undefined, constants.COLOR_COMPLETION_PREVIEW_TEXT, renderFont);
+					api.write_inline_with_font(ghostText, textLeftFloor + prefixWidth, rowY, undefined, constants.COLOR_COMPLETION_PREVIEW_TEXT, renderFont);
 				}
 				const ghostWidth = ghostText.length > 0 ? ide_state.font.measure(ghostText) : 0;
 				drawHighlightSlice(

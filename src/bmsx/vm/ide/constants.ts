@@ -658,6 +658,9 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_NAME = theme.text.functionName;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_PARAMETER = theme.text.parameter;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_GLOBAL_VARIABLE = theme.text.globalVar;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_TABLE_FIELD = theme.text.primary;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_MODULE = theme.text.primary;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_TYPE = theme.text.primary;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LABEL = theme.text.label;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_TOP = theme.text.localTop;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_FUNCTION = theme.text.localFunction;

@@ -13,7 +13,6 @@ import {
 	ATLAS_ID_SIZE,
 	COLOR_OVERRIDE_COMPONENTS,
 	COLOR_OVERRIDE_SIZE,
-	DEFAULT_VERTEX_COLOR,
 	DEFAULT_ZCOORD,
 	MAX_SPRITES,
 	POSITION_COMPONENTS,
@@ -212,7 +211,10 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 			flush();
 			setScale(desiredScale);
 		}
-		const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
+		const pos = options.pos;
+		const flip = options.flip!;
+		const scale = options.scale!;
+		const colorize = options.colorize!;
 		// Ambient sprites disabled for now; re-enable by using the mixing block below.
 		// const layerIsOverlay = options.layer === 'ui' || options.layer === 'ide';
 		// const ambientEnabled = !layerIsOverlay && (options.ambient_affected != null ? options.ambient_affected : state.ambientEnabledDefault);
@@ -247,17 +249,7 @@ export function drawImg(options: ImgRenderSubmission): void {
 	if (!imgmeta) {
 		throw new Error(`[Sprite Pipeline] Image metadata missing for imgid '${imgid}'.`);
 	}
-	// Deep-copy nested objects to freeze values at submission time
-	enqueueSprite({
-		options: {
-			...options,
-			pos: options.pos ? { ...options.pos } : undefined,
-			scale: options.scale ? { ...options.scale } : undefined,
-			colorize: options.colorize ? { ...options.colorize } : undefined,
-			flip: options.flip ? { ...options.flip } : undefined,
-		},
-		imgmeta,
-	});
+	enqueueSprite(options, imgmeta);
 }
 
 export function getQueuedSpriteCount(): number { return spriteQueueBackSize(); }

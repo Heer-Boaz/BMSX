@@ -294,13 +294,21 @@ export function invalidateLineRange(startRow: number, endRow: number): void {
 }
 
 export function maximumLineLength(): number {
+	if (!ide_state.maxLineLengthDirty) {
+		return ide_state.maxLineLength;
+	}
 	let maxLength = 0;
+	let maxRow = 0;
 	for (let i = 0; i < ide_state.lines.length; i += 1) {
 		const length = ide_state.lines[i].length;
 		if (length > maxLength) {
 			maxLength = length;
+			maxRow = i;
 		}
 	}
+	ide_state.maxLineLength = maxLength;
+	ide_state.maxLineLengthRow = maxRow;
+	ide_state.maxLineLengthDirty = false;
 	return maxLength;
 }
 
@@ -3136,6 +3144,7 @@ export type RestoreSnapshotOptions = {
 
 export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnapshotOptions): void {
 	ide_state.lines = snapshot.lines.slice();
+	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.markVisualLinesDirty();
 	ide_state.layout.invalidateHighlightsFromRow(0);
 	ide_state.cursorRow = snapshot.cursorRow;
@@ -4078,6 +4087,7 @@ export function applySourceToDocument(source: string): void {
 	} else if (nextLines.length < previousLength) {
 		ide_state.lines.length = nextLines.length;
 	}
+	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.invalidateHighlightsFromRow(0);
 	ide_state.layout.markVisualLinesDirty();
 }

@@ -373,6 +373,34 @@ export class BmsxVMApi {
 		}
 	}
 
+	public write_inline_with_font(text: string, x: number, y: number, z: number, colorindex: number, font?: VMFont): void {
+		const renderFont = font ?? this.font;
+		const glyphs: GlyphRenderSubmission = {
+			glyphs: text,
+			x,
+			y,
+			z,
+			color: Msx1Colors[colorindex],
+			font: renderFont,
+		};
+		this.renderBackend.glyphs(glyphs);
+	}
+
+	public write_inline_span_with_font(text: string, start: number, end: number, x: number, y: number, z: number, colorindex: number, font?: VMFont): void {
+		const renderFont = font ?? this.font;
+		const glyphs: GlyphRenderSubmission = {
+			glyphs: text,
+			glyph_start: start,
+			glyph_end: end,
+			x,
+			y,
+			z,
+			color: Msx1Colors[colorindex],
+			font: renderFont,
+		};
+		this.renderBackend.glyphs(glyphs);
+	}
+
 	public action_triggered(actiondefinition: string, playerindex?: number): boolean {
 		return $.action_triggered(playerindex ?? this.playerindex, actiondefinition)
 	}

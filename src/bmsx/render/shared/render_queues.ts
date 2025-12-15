@@ -16,16 +16,118 @@ const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
 const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
 let spriteSubmissionCounter = 0;
 
+type PlaybackImgSubmission = Extract<RenderSubmission, { type: 'img' }>;
+
+const DEFAULT_IMG_META: ImgMeta = {
+	atlassed: false,
+	width: 0,
+	height: 0,
+};
+
+const spriteQueuePlaybackBuffer: PlaybackImgSubmission[] = [];
+
+function createPlaybackImgSubmission(): PlaybackImgSubmission {
+	return {
+		type: 'img',
+		imgid: 'none',
+		pos: { x: 0, y: 0, z: DEFAULT_ZCOORD },
+		scale: { x: 1, y: 1 },
+		flip: { flip_h: false, flip_v: false },
+		colorize: { r: 1, g: 1, b: 1, a: 1 },
+		layer: undefined,
+		ambient_affected: undefined,
+		ambient_factor: undefined,
+	};
+}
+
+const spriteItemPoolA: SpriteQueueItem[] = [];
+const spriteItemPoolB: SpriteQueueItem[] = [];
+let spriteItemPool = spriteItemPoolA;
+let spriteItemPoolAlt = spriteItemPoolB;
+let spriteItemPoolIndex = 0;
+
+function createSpriteQueueItem(): SpriteQueueItem {
+	return {
+		options: {
+			imgid: 'none',
+			pos: { x: 0, y: 0, z: DEFAULT_ZCOORD },
+			scale: { x: 1, y: 1 },
+			flip: { flip_h: false, flip_v: false },
+			colorize: { r: 1, g: 1, b: 1, a: 1 },
+			layer: undefined,
+			ambient_affected: undefined,
+			ambient_factor: undefined,
+		},
+		imgmeta: DEFAULT_IMG_META,
+		submissionIndex: 0,
+	};
+}
+
+function acquireSpriteQueueItem(): SpriteQueueItem {
+	const index = spriteItemPoolIndex;
+	spriteItemPoolIndex = index + 1;
+	if (index >= spriteItemPool.length) {
+		const created = createSpriteQueueItem();
+		spriteItemPool.push(created);
+		return created;
+	}
+	return spriteItemPool[index];
+}
+
 // --- Sprite queue helpers ---------------------------------------------------
 
-export function submitSprite(item: Omit<SpriteQueueItem, 'submissionIndex'>): void {
+export function submitSprite(options: ImgRenderSubmission, imgmeta: ImgMeta): void {
 	const submissionIndex = spriteSubmissionCounter++;
-	spriteQueue.submit({ ...item, submissionIndex });
+	const pooled = acquireSpriteQueueItem();
+	pooled.submissionIndex = submissionIndex;
+	pooled.imgmeta = imgmeta;
+	const src = options;
+	const dst = pooled.options;
+	dst.imgid = src.imgid;
+	dst.layer = src.layer;
+	dst.ambient_affected = src.ambient_affected;
+	dst.ambient_factor = src.ambient_factor;
+	dst.pos.x = src.pos.x;
+	dst.pos.y = src.pos.y;
+	dst.pos.z = src.pos.z;
+	const scale = src.scale;
+	if (scale) {
+		dst.scale.x = scale.x;
+		dst.scale.y = scale.y;
+	} else {
+		dst.scale.x = 1;
+		dst.scale.y = 1;
+	}
+	const flip = src.flip;
+	if (flip) {
+		dst.flip.flip_h = flip.flip_h;
+		dst.flip.flip_v = flip.flip_v;
+	} else {
+		dst.flip.flip_h = false;
+		dst.flip.flip_v = false;
+	}
+	const colorize = src.colorize;
+	if (colorize) {
+		dst.colorize.r = colorize.r;
+		dst.colorize.g = colorize.g;
+		dst.colorize.b = colorize.b;
+		dst.colorize.a = colorize.a;
+	} else {
+		dst.colorize.r = 1;
+		dst.colorize.g = 1;
+		dst.colorize.b = 1;
+		dst.colorize.a = 1;
+	}
+	spriteQueue.submit(pooled);
 }
 
 export function beginSpriteQueue(): number {
 	spriteQueue.swap();
 	spriteSubmissionCounter = 0;
+	const tmpPool = spriteItemPool;
+	spriteItemPool = spriteItemPoolAlt;
+	spriteItemPoolAlt = tmpPool;
+	spriteItemPoolIndex = 0;
 	sortSpriteQueueForRendering();
 	return spriteQueue.sizeFront();
 }
@@ -65,10 +167,34 @@ export function spriteQueueFrontSize(): number {
 }
 
 export function copySpriteQueueForPlayback(): RenderSubmission[] {
-	const items: RenderSubmission[] = [];
+	const items = spriteQueuePlaybackBuffer;
+	let count = 0;
 	spriteQueue.forEachBack((item) => {
-		items.push( {...item.options, type: 'img'} ); // Add 'kind' property for playback so that we can use `$.view.renderer.submit.typed`
+		let op = items[count];
+		if (!op) {
+			op = createPlaybackImgSubmission();
+			items[count] = op;
+		}
+		const src = item.options;
+		const dst = op;
+		dst.imgid = src.imgid;
+		dst.layer = src.layer;
+		dst.ambient_affected = src.ambient_affected;
+		dst.ambient_factor = src.ambient_factor;
+		dst.pos.x = src.pos.x;
+		dst.pos.y = src.pos.y;
+		dst.pos.z = src.pos.z;
+		dst.scale.x = src.scale.x;
+		dst.scale.y = src.scale.y;
+		dst.flip.flip_h = src.flip.flip_h;
+		dst.flip.flip_v = src.flip.flip_v;
+		dst.colorize.r = src.colorize.r;
+		dst.colorize.g = src.colorize.g;
+		dst.colorize.b = src.colorize.b;
+		dst.colorize.a = src.colorize.a;
+		count += 1;
 	});
+	items.length = count;
 	return items;
 }
 

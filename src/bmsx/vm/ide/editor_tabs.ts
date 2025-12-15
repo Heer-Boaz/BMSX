@@ -134,6 +134,7 @@ export function activateCodeEditorTab(tabId: string): void {
 		: resolveSource(context.descriptor);
 	context.lastSavedSource = source;
 	ide_state.lines = source?.split(/\r\n|\n|\r/) ?? [];
+	ide_state.maxLineLengthDirty = true;
 	ide_state.textVersion = context.textVersion ?? ide_state.textVersion;
 	ide_state.layout.markVisualLinesDirty();
 	markDiagnosticsDirty();

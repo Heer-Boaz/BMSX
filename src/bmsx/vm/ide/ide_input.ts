@@ -2105,6 +2105,7 @@ export function toggleThemeMode() {
 	const nextVariant = currentVariant === 'dark' ? 'light' : 'dark';
 	constants.setIdeThemeVariant(nextVariant);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
+	ide_state.layout.invalidateAllHighlights();
 }
 
 export function isKeyJustPressed(code: string): boolean {

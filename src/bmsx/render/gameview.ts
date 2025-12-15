@@ -17,7 +17,7 @@ import { type RenderPassToken } from './backend/pipeline_interfaces';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
 import { GameOptions } from '../core/gameoptions';
-import { calculateCenteredBlockX, renderGlyphs, wrapGlyphs } from './glyphs';
+import { calculateCenteredBlockX, renderGlyphs, renderGlyphsSpan, wrapGlyphs } from './glyphs';
 import type {
 	GameViewHost,
 	GameViewCanvas,
@@ -309,6 +309,11 @@ export class GameView implements RegisterablePersistent, RenderContext {
 						throw new Error('[GameView] No font available for glyph rendering.');
 					}
 					o.font = resolvedFont;
+
+					if (typeof lines === 'string' && o.glyph_start !== undefined && o.glyph_end !== undefined) {
+						renderGlyphsSpan(o.x, o.y, lines, o.glyph_start, o.glyph_end, o.z ?? 950, o.font, o.color, o.background_color, o.layer);
+						return;
+					}
 
 					// Optional char-based wrapping
 					if (typeof lines === 'string' && o.wrap_chars !== undefined && o.wrap_chars > 0) {

@@ -270,6 +270,9 @@ export interface IdeState {
 	layout: VMCodeLayout;
 	codeVerticalScrollbarVisible: boolean;
 	codeHorizontalScrollbarVisible: boolean;
+	maxLineLength: number;
+	maxLineLengthRow: number;
+	maxLineLengthDirty: boolean;
 	cachedVisibleRowCount: number;
 	cachedVisibleColumnCount: number;
 	dimCrtInEditor: boolean;
@@ -481,6 +484,9 @@ export const ide_state: IdeState = {
 	layout: undefined!,
 	codeVerticalScrollbarVisible: false,
 	codeHorizontalScrollbarVisible: false,
+	maxLineLength: 0,
+	maxLineLengthRow: 0,
+	maxLineLengthDirty: true,
 	cachedVisibleRowCount: 1,
 	cachedVisibleColumnCount: 1,
 	dimCrtInEditor: false,
