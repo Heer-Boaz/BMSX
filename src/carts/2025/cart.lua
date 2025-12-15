@@ -48,6 +48,8 @@ local combat_dodge_ticks_per_frame = 24
 local combat_all_out_timeline_id = 'combat_all_out'
 local combat_all_out_frame_count = 150
 local combat_all_out_ticks_per_frame = 1
+local combat_all_out_pulse_period_frames = 32
+local combat_all_out_pulse_amp = 0.05
 
 local combat_results_fade_out_timeline_id = 'combat_results_fade_out'
 local combat_results_fade_out_frames = 18
@@ -1348,6 +1350,7 @@ local function build_director_fsm()
 					clear_text(text_transition_id)
 					clear_text(text_results_id)
 					local all_out = world_object(combat_all_out_id)
+					all_out.get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 					all_out.visible = true
 					all_out.x = 0
 					all_out.y = 0
@@ -1357,10 +1360,17 @@ local function build_director_fsm()
 				on = {
 					['timeline.frame.' .. combat_all_out_timeline_id] = {
 						go = function(self, _state, event)
-							local dx, dy = all_out_shake(event.frame_index)
+							local frame_index = event.frame_index
+							local dx, dy = all_out_shake(frame_index)
 							local all_out = world_object(combat_all_out_id)
-							all_out.x = self.all_out_origin_x + dx
-							all_out.y = self.all_out_origin_y + dy
+							local u = (frame_index / combat_all_out_pulse_period_frames) + 0.25
+							local pulse = smoothstep(pingpong01(u))
+							local s = 1 + (((pulse * 2) - 1) * combat_all_out_pulse_amp)
+							all_out.get_component_by_id('base_sprite').scale = { x = s, y = s }
+							local ox = (all_out.sx * (s - 1)) / 2
+							local oy = (all_out.sy * (s - 1)) / 2
+							all_out.x = self.all_out_origin_x + dx - ox
+							all_out.y = self.all_out_origin_y + dy - oy
 						end,
 					},
 					['timeline.end.' .. combat_all_out_timeline_id] = {
@@ -1371,6 +1381,7 @@ local function build_director_fsm()
 				},
 				leaving_state = function(self)
 					local all_out = world_object(combat_all_out_id)
+					all_out.get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 					all_out.visible = false
 					all_out.x = self.all_out_origin_x
 					all_out.y = self.all_out_origin_y
