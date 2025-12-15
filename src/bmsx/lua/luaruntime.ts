@@ -801,6 +801,12 @@ export class LuaInterpreter {
 					if (isLuaDebuggerPauseSignal(error)) {
 						return this.bindPauseResume(error as PauseSignal, targetDepth);
 					}
+					if (error instanceof LuaRuntimeError || error instanceof LuaSyntaxError) {
+						this.markPendingException(error);
+						const range = this.activeStatementRange ?? this.lastStatementRange ?? this.fallbackSourceRange();
+						const pause = this.createPauseSignal('exception', range, error);
+						return this.bindPauseResume(pause, targetDepth);
+					}
 					throw error;
 				}
 				if (signal.kind === 'pause') {

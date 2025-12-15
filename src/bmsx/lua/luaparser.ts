@@ -87,6 +87,25 @@ export class LuaParser {
 		};
 	}
 
+	public parseChunkWithRecovery(): { chunk: LuaChunk; syntaxError: LuaSyntaxError | null } {
+		const { block, syntaxError } = this.parseBlockWithRecovery(new Set<LuaTokenType>([LuaTokenType.Eof]));
+		let end: LuaSourcePosition;
+		if (syntaxError) {
+			end = { line: syntaxError.line, column: syntaxError.column };
+		} else {
+			const eofToken = this.consume(LuaTokenType.Eof, 'Expected end of input.');
+			end = this.positionFromToken(eofToken);
+		}
+		const range: LuaSourceRange = { chunkName: this.chunkName, start: block.range.start, end };
+		const chunk: LuaChunk = {
+			kind: LuaSyntaxKind.Chunk,
+			range,
+			body: block.body,
+			definitions: this.buildDefinitionIndex(block),
+		};
+		return { chunk, syntaxError };
+	}
+
 	private parseBlock(terminators: ReadonlySet<LuaTokenType>): LuaBlock {
 		const startToken = this.current();
 		const statements: LuaStatement[] = [];
@@ -107,6 +126,40 @@ export class LuaParser {
 				end: endPosition,
 			},
 			body: statements,
+		};
+	}
+
+	private parseBlockWithRecovery(terminators: ReadonlySet<LuaTokenType>): { block: LuaBlock; syntaxError: LuaSyntaxError | null } {
+		const startToken = this.current();
+		const statements: LuaStatement[] = [];
+		let syntaxError: LuaSyntaxError | null = null;
+		try {
+			while (!this.isAtEnd() && !terminators.has(this.current().type)) {
+				if (this.current().type === LuaTokenType.Semicolon) {
+					this.advance();
+					continue;
+				}
+				statements.push(this.parseStatement());
+			}
+		} catch (error) {
+			if (!(error instanceof LuaSyntaxError)) {
+				throw error;
+			}
+			syntaxError = error;
+		}
+		const startPosition = statements.length > 0 ? statements[0].range.start : this.positionFromToken(startToken);
+		const endPosition = statements.length > 0 ? statements[statements.length - 1].range.end : startPosition;
+		return {
+			block: {
+				kind: LuaSyntaxKind.Block,
+				range: {
+					chunkName: this.chunkName,
+					start: startPosition,
+					end: endPosition,
+				},
+				body: statements,
+			},
+			syntaxError,
 		};
 	}
 

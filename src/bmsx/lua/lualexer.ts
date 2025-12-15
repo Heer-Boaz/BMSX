@@ -45,6 +45,32 @@ export class LuaLexer {
 		return tokens;
 	}
 
+	public scanTokensWithRecovery(): { tokens: LuaToken[]; syntaxError: LuaSyntaxError | null } {
+		const tokens: LuaToken[] = [];
+		let syntaxError: LuaSyntaxError | null = null;
+		try {
+			while (!this.isAtEnd()) {
+				this.beginToken();
+				this.scanToken(tokens);
+			}
+		} catch (error) {
+			if (!(error instanceof LuaSyntaxError)) {
+				throw error;
+			}
+			syntaxError = error;
+		}
+		const eofLine = syntaxError ? syntaxError.line : this.line;
+		const eofColumn = syntaxError ? syntaxError.column : this.column;
+		tokens.push({
+			type: LuaTokenType.Eof,
+			lexeme: '',
+			line: eofLine,
+			column: eofColumn,
+			literal: null,
+		});
+		return { tokens, syntaxError };
+	}
+
 	private beginToken(): void {
 		this.tokenStartIndex = this.currentIndex;
 		this.tokenStartLine = this.line;
