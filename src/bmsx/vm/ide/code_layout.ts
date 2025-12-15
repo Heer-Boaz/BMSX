@@ -7,6 +7,7 @@ import type { LuaDefinitionInfo } from '../../lua/lua_ast';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types';
 import { scheduleIdeOnce } from './background_tasks';
 import { VMEditorFont } from '../editor_font';
+import { joinLinesCached } from './source_text';
 
 interface VisualLinesContext {
 	lines: readonly string[];
@@ -587,7 +588,7 @@ export class VMCodeLayout {
 
 	private materializeSemanticSource(pending: PendingSemanticUpdate): string {
 		if (pending.source === undefined) {
-			pending.source = pending.lines.join('\n');
+			pending.source = joinLinesCached(pending.lines, pending.version);
 		}
 		return pending.source;
 	}

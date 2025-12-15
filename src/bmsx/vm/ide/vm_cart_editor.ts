@@ -57,6 +57,7 @@ import { ResourcePanelController } from './resource_panel_controller';
 import { handleActionPromptInput, handleEditorInput, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, resourceViewerClampScroll, shouldRepeatKeyFromPlayer, toggleThemeMode } from './ide_input';
 import { consumeIdeKey } from './ide_input';
 import { VMCodeLayout } from './code_layout';
+import { joinLinesCached, splitText } from './source_text';
 import type {
 	CodeHoverTooltip,
 	CodeTabContext,
@@ -256,10 +257,10 @@ export function getSourceForChunk(chunkName: string): string {
 	const context = findCodeTabContext(chunkName);
 	if (context) {
 		if (context.id === ide_state.activeCodeTabContextId) {
-			return ide_state.lines.join('\n');
+			return joinLinesCached(ide_state.lines, ide_state.textVersion);
 		}
 		if (context.snapshot) {
-			return context.snapshot.lines.join('\n');
+			return joinLinesCached(context.snapshot.lines, context.snapshot.textVersion);
 		}
 		if (context.lastSavedSource.length > 0) {
 			return context.lastSavedSource;
@@ -1022,7 +1023,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 		const chunkName = resolveHoverChunkName(context);
 		const isActive = activeId && contextId === activeId;
 		const source = isActive
-			? ide_state.lines.join('\n')
+			? joinLinesCached(ide_state.lines, ide_state.textVersion)
 			: getSourceForChunk(chunkName);
 		if (source.length === 0) {
 			ide_state.diagnosticsCache.delete(contextId);
@@ -1785,7 +1786,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 		updatedTotal += sortedMatches.length;
 	}
 	if (activeEditsApplied) {
-		ide_state.semanticWorkspace.updateFile(activeChunkName, ide_state.lines.join('\n'), ide_state.lines, null, ide_state.textVersion);
+		ide_state.semanticWorkspace.updateFile(activeChunkName, joinLinesCached(ide_state.lines, ide_state.textVersion), ide_state.lines, null, ide_state.textVersion);
 	}
 	const decl = info.definitionKey ? ide_state.semanticWorkspace.getDecl(info.definitionKey) : null;
 	const references = info.definitionKey ? ide_state.semanticWorkspace.getReferences(info.definitionKey) : [];
@@ -3091,7 +3092,7 @@ export async function save(): Promise<void> {
 	if (!context) {
 		return;
 	}
-	const source = ide_state.lines.join('\n');
+	const source = joinLinesCached(ide_state.lines, ide_state.textVersion);
 	const descriptor = context.descriptor;
 	const targetPath = descriptor?.path ?? descriptor?.asset_id;
 	try {
@@ -3751,7 +3752,7 @@ export function buildResourceViewerState(descriptor: VMResourceDescriptor): Reso
 
 export function appendResourceViewerLines(target: string[], additions: Iterable<string>): void {
 	for (const entry of additions) {
-		target.push(...entry.split('\n'));
+		target.push(...splitText(entry));
 	}
 }
 
@@ -4072,7 +4073,7 @@ export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: s
 }
 
 export function applySourceToDocument(source: string): void {
-	const nextLines = source.split('\n');
+	const nextLines = splitText(source);
 	const previousLength = ide_state.lines.length;
 	const limit = Math.min(previousLength, nextLines.length);
 	for (let index = 0; index < limit; index += 1) {

@@ -10,6 +10,7 @@ import { handlePostEditMutation } from './text_editing_and_selection';
 import type { HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from './types';
 import { markDiagnosticsDirty } from './diagnostics';
 import { resolveHoverChunkName, requestSemanticRefresh, clearReferenceHighlights } from './intellisense';
+import { splitText } from './source_text';
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;
@@ -468,12 +469,5 @@ export function bumpTextVersion(): void {
 }
 
 export function normalizeEndingsAndSplitLines(message: string): string[] {
-	const rawLines = message.split('\n');
-	return rawLines.length > 0 ? rawLines : [''];
+	return splitText(message);
 }
-
-const NEWLINE = '\n';
-
-export const textFromLines = (lines: string[]): string => lines.join(NEWLINE);
-
-export const splitText = (text: string): string[] => text.split(NEWLINE);

@@ -25,6 +25,7 @@ import { openLuaCodeTab, restoreSnapshot, setFontVariant } from './vm_cart_edito
 import { createEntryTabContext, initializeTabs, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { VMFontVariant } from '../font';
 import { normalizeEndingsAndSplitLines } from './text_utils';
+import { joinLinesCached } from './source_text';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../workspace_cache';
 
 export type WorkspaceStoragePaths = {
@@ -593,10 +594,10 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 
 export function captureContextText(context: CodeTabContext): string {
 	if (context.id === ide_state.activeCodeTabContextId) {
-		return ide_state.lines.join('\n');
+		return joinLinesCached(ide_state.lines, ide_state.textVersion);
 	}
 	if (context.snapshot) {
-		return context.snapshot.lines.join('\n');
+		return joinLinesCached(context.snapshot.lines, context.snapshot.textVersion);
 	}
 	return null;
 }

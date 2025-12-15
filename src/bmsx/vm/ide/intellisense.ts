@@ -25,6 +25,7 @@ import type { RomLuaAsset } from '../../rompack/rompack';
 import { Pool } from '../../utils/pool';
 import { $ } from '../../core/game';
 import { KEYWORDS } from '../../lua/luatoken';
+import { splitText } from './source_text';
 export const VM_PREVIEW_MAX_ENTRIES = 12;
 export const VM_PREVIEW_MAX_DEPTH = 2;
 
@@ -1749,7 +1750,7 @@ function primeWorkspaceGlobalIndex(workspace: LuaSemanticWorkspace): void {
 		}
 		const cacheEntry = runtime.chunkSemanticCache.get(chunkName);
 		const source = cacheEntry ? cacheEntry.source : runtime.resourceSourceForChunk(chunkName);
-		const lines = cacheEntry?.lines ?? source.split('\n');
+		const lines = cacheEntry?.lines ?? splitText(source);
 		const parsed = cacheEntry ? cacheEntry.parsed : undefined;
 		workspace.updateFile(chunkName, source, lines, parsed, null);
 		const data = workspace.getFileData(chunkName);
@@ -1972,7 +1973,7 @@ export function buildSemanticModelForChunk(chunkName: string): LuaSemanticModel 
 		}
 		if (cachedMatch.model) {
 			if (!cachedMatch.lines) {
-				cachedMatch.lines = cachedMatch.source.split('\n');
+				cachedMatch.lines = splitText(cachedMatch.source);
 			}
 			return cachedMatch.model;
 		}

@@ -2,6 +2,7 @@ import type { VMEditorFont } from '../editor_font';
 import { applyCaseOutsideStrings, expandTabs as expandTabsExternal } from './text_utils';
 import * as constants from './constants';
 import { api } from '../vm_runtime';
+import { splitText } from './source_text';
 
 let CASE_INSENSITIVE_EDITOR = true;
 
@@ -17,7 +18,7 @@ type DrawEditorTextOptions = {
 export function drawEditorText(font: VMEditorFont, text: string, originX: number, originY: number, z: number, color: number, options?: DrawEditorTextOptions): void {
 	const baseX = originX;
 	let cursorY = originY;
-	const lines = text.split('\n');
+	const lines = splitText(text);
 	const renderFont = font.renderFont();
 	const preserveCase = options?.preserveCase ?? false;
 	const forceUppercase = options?.forceUppercase ?? (font.variant === 'tiny');

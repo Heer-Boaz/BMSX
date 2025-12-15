@@ -12,7 +12,7 @@ import { LuaLexer } from '../../lua/lualexer';
 import { findCodeTabContext } from './editor_tabs';
 import { findResourceDescriptorForChunk } from './vm_cart_editor';
 import { BmsxVMRuntime } from '../vm_runtime';
-import { splitText } from './text_utils';
+import { splitText } from './source_text';
 
 export type RenameCommitPayload = {
 	matches: readonly SearchMatch[];

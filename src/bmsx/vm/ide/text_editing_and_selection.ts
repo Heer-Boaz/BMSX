@@ -36,6 +36,7 @@ import * as constants from './constants';
 import { formatLuaDocument } from './lua_formatter';
 import { extractErrorMessage } from '../../lua/luavalue';
 import { LuaLexer } from '../../lua/lualexer';
+import { splitText } from './source_text';
 
 function editorAllowsMutation(): boolean {
 	return ide_state.activeContextReadOnly !== true;
@@ -456,7 +457,7 @@ export function replaceSelectionWith(text: string): void {
 	const endLine = ide_state.lines[end.row];
 	const leading = startLine.slice(0, start.column);
 	const trailing = endLine.slice(end.column);
-	const fragments = text.split('\n');
+	const fragments = splitText(text);
 	if (fragments.length === 1) {
 		const combined = leading + fragments[0] + trailing;
 		ide_state.lines.splice(start.row, end.row - start.row + 1, combined);
@@ -590,7 +591,7 @@ export function insertClipboardText(text: string): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
-	const fragments = text.split('\n');
+	const fragments = splitText(text);
 	const currentLineValue = currentLine();
 	const before = currentLineValue.slice(0, ide_state.cursorColumn);
 	const after = currentLineValue.slice(ide_state.cursorColumn);
