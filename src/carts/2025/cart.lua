@@ -136,7 +136,7 @@ local function all_out_shake(frame_index)
 end
 
 -- { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
-story = {
+local story = {
 	title = {
 		kind = 'bg_only',
 		bg = 'titel',
@@ -293,8 +293,8 @@ story = {
 		kind = 'dialogue',
 		bg = 'ochtendpijn',
 		typed = true,
-		music = 'm06',
 		pages = {
+			music = 'm06',
 			{ 'De wekker gaat af.', 'Maya wordt semi-wakker.' },
 			{ '"Die rotwekker ook!" denkt ze bij zichzelf.' },
 			{ '"Gelukkig hebben ze daarom snooze uitgevonden."', 'Maar is dat wel verstandig met een toets vandaag?' },
@@ -302,10 +302,10 @@ story = {
 		},
 		next = 'combat_wekker',
 	},
-		combat_wekker = {
-			kind = 'combat',
-			music = 'm16',
-			monster_imgid = 'monster_snoozer',
+	combat_wekker = {
+		kind = 'combat',
+		music = 'm16',
+		monster_imgid = 'monster_snoozer',
 		rounds = {
 			{
 				prompt = { 'De wekker gaat af.', 'Tijd voor een snooze?' },
@@ -328,19 +328,19 @@ story = {
 					{ label = '\"School is stom.\"', outcome = 'dodge', points = 0 },
 				},
 			},
-			},
-				rewards = {
-					{ { stat = 'makeup', add = 2 } },
-					{ { stat = 'rust', add = 1 }, { stat = 'planning', add = 1 }, { stat = 'makeup', add = 1 } },
-					{ { stat = 'planning', add = 1 }, { stat = 'rust', add = 1 }, { stat = 'opdekin', add = 1 } },
-					{ { stat = 'planning', add = 2 }, { stat = 'rust', add = 2 }, { stat = 'opdekin', add = 2 } },
-				},
-			next = 'after_combat_wekker',
 		},
+		rewards = {
+			{ { stat = 'makeup', add = 2 } },
+			{ { stat = 'rust', add = 1 }, { stat = 'planning', add = 1 }, { stat = 'makeup', add = 1 } },
+			{ { stat = 'planning', add = 1 }, { stat = 'rust', add = 1 }, { stat = 'opdekin', add = 1 } },
+			{ { stat = 'planning', add = 2 }, { stat = 'rust', add = 2 }, { stat = 'opdekin', add = 2 } },
+		},
+		next = 'after_combat_wekker',
+	},
 	after_combat_wekker = {
 		kind = 'dialogue',
 		bg = 'ochtendpijn',
-		music = 'm17',
+		music = 'm07',
 		typed = true,
 		pages = {
 			{ 'De wekker is verslagen... Tijd voor de volgende uitdaging.', },
@@ -358,10 +358,10 @@ story = {
 		},
 		next = 'combat_spiegel',
 	},
-		combat_spiegel = {
-			kind = 'combat',
-			music = 'm35',
-			monster_imgid = 'monster_spiegel',
+	combat_spiegel = {
+		kind = 'combat',
+		music = 'm35',
+		monster_imgid = 'monster_spiegel',
 		rounds = {
 			{
 				prompt = { 'Wat wordt het vandaag?', 'Extra eyeliner of lipstick?' },
@@ -384,14 +384,14 @@ story = {
 					{ label = '\"Ik luister naar mijn moeder.\"', outcome = 'hit', points = 1 },
 				},
 			},S
-			},
-				rewards = {
-					{ { stat = 'makeup', add = 3 } },
-					{ { stat = 'makeup', add = 3 } },
-					{ { stat = 'makeup', add = 3 }, { stat = 'planning', add = 1 }, { stat = 'rust', add = 1 } },
-				},
-			next = 'after_combat_spiegel',
 		},
+		rewards = {
+			{ { stat = 'makeup', add = 3 } },
+			{ { stat = 'makeup', add = 3 } },
+			{ { stat = 'makeup', add = 3 }, { stat = 'planning', add = 1 }, { stat = 'rust', add = 1 } },
+		},
+		next = 'after_combat_spiegel',
+	},
 	after_combat_spiegel = {
 		kind = 'dialogue',
 		bg = 'maya_b',
@@ -653,12 +653,12 @@ local function build_director_fsm()
 					return '/run_node'
 				end,
 			},
-				run_node = {
-					entering_state = function(self)
-						local node = story[self.node_id]
-						if node.kind == 'transition' then
-							return '/transition'
-						end
+			run_node = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					if node.kind == 'transition' then
+						return '/transition'
+					end
 					if node.kind == 'dialogue' or node.kind == 'dialogue_inline' then
 						return '/dialogue'
 					end
@@ -1376,12 +1376,12 @@ local function build_director_fsm()
 					all_out.y = self.all_out_origin_y
 				end,
 			},
-				combat_results_setup = {
-					entering_state = function(self)
-						local node = story[self.node_id]
-						local rewards = self:resolve_combat_rewards(node)
-						playmusic('m17')
-						self:apply_effects(rewards)
+			combat_results_setup = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					local rewards = self:resolve_combat_rewards(node)
+					playmusic('m17')
+					self:apply_effects(rewards)
 
 					clear_text(text_main_id)
 					clear_text(text_choice_id)
@@ -1415,22 +1415,22 @@ local function build_director_fsm()
 					maya_b.x = self.combat_results_maya_start_x
 					maya_b.y = display_height() - maya_b.sy
 					maya_b.colorize = { r = 1, g = 1, b = 1, a = 0 }
-						maya_b.z = 300
+					maya_b.z = 300
 
-						local lines = { 'Combat Results:' }
-						for i = 1, #rewards do
-							local effect = rewards[i]
-							lines[#lines + 1] = stat_label(effect.stat) .. ' +' .. effect.add
-						end
-						set_text_lines(text_results_id, lines, false)
-						local results = world_object(text_results_id)
-						results.text_color = { r = 1, g = 1, b = 1, a = 0 }
-						self.combat_results_text_target_x = results.centered_block_x / 2
-						self.combat_results_text_start_x = -display_width()
-						results.centered_block_x = self.combat_results_text_start_x
-						return '/combat_results_fade_in'
-					end,
-				},
+					local lines = { 'Combat Results:' }
+					for i = 1, #rewards do
+						local effect = rewards[i]
+						lines[#lines + 1] = stat_label(effect.stat) .. ' +' .. effect.add
+					end
+					set_text_lines(text_results_id, lines, false)
+					local results = world_object(text_results_id)
+					results.text_color = { r = 1, g = 1, b = 1, a = 0 }
+					self.combat_results_text_target_x = results.centered_block_x / 2
+					self.combat_results_text_start_x = -display_width()
+					results.centered_block_x = self.combat_results_text_start_x
+					return '/combat_results_fade_in'
+				end,
+			},
 			combat_results_fade_in = {
 				timelines = {
 					[combat_results_fade_in_timeline_id] = {
@@ -1513,32 +1513,32 @@ local function build_director_fsm()
 				end,
 				on = {
 					['timeline.frame.' .. combat_results_fade_out_timeline_id] = {
-							go = function(self, _state, event)
-								local u = event.frame_index / (combat_results_fade_out_frames - 1)
-								local a = 1 - smoothstep(u)
-								local bg = world_object(bg_id)
-								bg.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a * a }
-								local maya_b = world_object(combat_maya_b_id)
-								maya_b.colorize = { r = 1, g = 1, b = 1, a = a }
-								local results = world_object(text_results_id)
-								results.text_color = { r = 1, g = 1, b = 1, a = a }
+						go = function(self, _state, event)
+							local u = event.frame_index / (combat_results_fade_out_frames - 1)
+							local a = 1 - smoothstep(u)
+							local bg = world_object(bg_id)
+							bg.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a * a }
+							local maya_b = world_object(combat_maya_b_id)
+							maya_b.colorize = { r = 1, g = 1, b = 1, a = a }
+							local results = world_object(text_results_id)
+							results.text_color = { r = 1, g = 1, b = 1, a = a }
 						end,
 					},
-						['timeline.end.' .. combat_results_fade_out_timeline_id] = {
-							go = function(self)
-								world_object(combat_maya_b_id).visible = false
-								clear_text(text_results_id)
-								local bg = world_object(bg_id)
-								local bg_sprite = bg.get_component_by_id('base_sprite')
-								bg.visible = false
-								bg.imgid = self.combat_results_prev_bg_imgid
-								bg_sprite.scale = { x = self.combat_results_prev_bg_scale_x, y = self.combat_results_prev_bg_scale_y }
-								bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
-								self:hide_combat_sprites()
-								local next_kind = story[self.node_id].kind
-								if next_kind == 'transition' then
-									self.skip_transition_fade = true
-									return '/run_node'
+					['timeline.end.' .. combat_results_fade_out_timeline_id] = {
+						go = function(self)
+							world_object(combat_maya_b_id).visible = false
+							clear_text(text_results_id)
+							local bg = world_object(bg_id)
+							local bg_sprite = bg.get_component_by_id('base_sprite')
+							bg.visible = false
+							bg.imgid = self.combat_results_prev_bg_imgid
+							bg_sprite.scale = { x = self.combat_results_prev_bg_scale_x, y = self.combat_results_prev_bg_scale_y }
+							bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+							self:hide_combat_sprites()
+							local next_kind = story[self.node_id].kind
+							if next_kind == 'transition' then
+								self.skip_transition_fade = true
+								return '/run_node'
 							end
 							if next_kind == 'fade' then
 								self.combat_exit_target_bg = story[story[self.node_id].next].bg
