@@ -295,8 +295,8 @@ local story = {
 		kind = 'dialogue',
 		bg = 'ochtendpijn',
 		typed = true,
+		music = 'm06',
 		pages = {
-			music = 'm06',
 			{ 'De wekker gaat af.', 'Maya wordt semi-wakker.' },
 			{ '"Die rotwekker ook!" denkt ze bij zichzelf.' },
 			{ '"Gelukkig hebben ze daarom snooze uitgevonden."', 'Maar is dat wel verstandig met een toets vandaag?' },
@@ -609,6 +609,20 @@ function director:show_dialogue_page(typed)
 	local page = self.pages[self.page_index]
 	set_text_lines(text_main_id, page, typed)
 	clear_text(text_choice_id)
+end
+
+function director:is_typing()
+	return world_object(text_main_id).is_typing
+end
+
+function director:skip_typing()
+	if self:is_typing() then
+		finish_text(text_main_id)
+		self:update_dialogue_prompt()
+		$.consume_action('b')
+		return true -- Indicate that input was consumed
+	end
+	return false -- Indicate that input was not consumed yet
 end
 
 function director:update_dialogue_prompt()
@@ -1151,13 +1165,12 @@ local function build_director_fsm()
 							self.choice_index = math.min(#round.options, self.choice_index + 1)
 						end,
 					},
+					['b[jp]'] = {
+						go = function(self) seLf:skip_typing() end
+					},
 					['a[jp]'] = {
 						go = function(self)
-							local main = world_object(text_main_id)
-							if main.is_typing then
-								finish_text(text_main_id)
-								return
-							end
+							if self:is_typing() then return end
 							local node = story[self.node_id]
 							local round = node.rounds[self.combat_round_index]
 							local option = round.options[self.choice_index]
@@ -1310,13 +1323,12 @@ local function build_director_fsm()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
+					['b[jp]'] = {
+						go = function(self) seLf:skip_typing() end
+					},
 					['a[jp]'] = {
 						go = function(self)
-							local main = world_object(text_main_id)
-							if main.is_typing then
-								finish_text(text_main_id)
-								return
-							end
+							if self:is_typing() then return end
 							return '/combat_all_out'
 						end,
 					},
@@ -1635,14 +1647,13 @@ local function build_director_fsm()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
+					['b[jp]'] = {
+						go = function(self) seLf:skip_typing() end
+					},
 					['a[jp]'] = {
 						go = function(self)
-							local main = world_object(text_main_id)
-							if main.is_typing then
-								finish_text(text_main_id)
-								self:update_dialogue_prompt()
-								return
-							end
+							if self:is_typing() then return end
+
 							if self.page_index < #self.pages then
 								self.page_index = self.page_index + 1
 								local node = story[self.node_id]
@@ -1721,13 +1732,12 @@ local function build_director_fsm()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
+					['b[jp]'] = {
+						go = function(self) seLf:skip_typing() end
+					},
 					['a[jp]'] = {
 						go = function(self)
-							local main = world_object(text_main_id)
-							if main.is_typing then
-								finish_text(text_main_id)
-								return
-							end
+							if self:is_typing() then return end
 							if self.page_index < #self.pages then
 								self.page_index = self.page_index + 1
 								local node = story[self.node_id]
@@ -1736,7 +1746,7 @@ local function build_director_fsm()
 							end
 						end,
 					},
-				},
+				}
 			},
 			choice = {
 				entering_state = function(self)
@@ -1774,13 +1784,12 @@ local function build_director_fsm()
 							self.choice_index = math.min(#node.options, self.choice_index + 1)
 						end,
 					},
+					['b[jp]'] = {
+						go = function(self) seLf:skip_typing() end
+					},
 					['a[jp]'] = {
 						go = function(self)
-							local main = world_object(text_main_id)
-							if main.is_typing then
-								finish_text(text_main_id)
-								return
-							end
+							if self:is_typing() then return end
 							local node = story[self.node_id]
 							local option = node.options[self.choice_index]
 							self:apply_effects(option.effects)
@@ -1792,7 +1801,7 @@ local function build_director_fsm()
 					},
 				},
 			},
-		},
+		}
 	})
 end
 
@@ -1802,8 +1811,8 @@ local function register_director()
 		class = director,
 		fsms = { director_fsm_id },
 		defaults = {
-			node_id = 'title',
-			page_index = 0,
+			node_id = 'ochtendpijn',
+			page_index = 1,
 			choice_index = 1,
 			stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 },
 			inline_pages = {},
