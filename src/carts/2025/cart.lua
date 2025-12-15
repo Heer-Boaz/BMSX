@@ -47,7 +47,7 @@ local combat_dodge_ticks_per_frame = 24
 
 local combat_all_out_timeline_id = 'combat_all_out'
 local combat_all_out_frame_count = 150
-local combat_all_out_ticks_per_frame = 20
+local combat_all_out_ticks_per_frame = 1
 
 local combat_results_fade_out_timeline_id = 'combat_results_fade_out'
 local combat_results_fade_out_frames = 18
@@ -64,6 +64,11 @@ local combat_results_fade_in_ticks_per_frame = 32
 local combat_monster_hover_period_seconds = 1.8
 local combat_monster_hover_amp = 6
 local combat_monster_dodge_distance = 24
+
+local combat_results_bg_r = 0.07
+local combat_results_bg_g = 0.28
+local combat_results_bg_b = 0.8
+local combat_results_bg_a = 0.85
 
 local function round(x)
 	if x >= 0 then
@@ -1390,10 +1395,24 @@ local function build_director_fsm()
 					local all_out = world_object(combat_all_out_id)
 					all_out.visible = false
 
+					local bg = world_object(bg_id)
+					local bg_sprite = bg.get_component_by_id('base_sprite')
+					self.combat_results_prev_bg_imgid = bg.imgid
+					self.combat_results_prev_bg_scale_x = bg_sprite.scale.x
+					self.combat_results_prev_bg_scale_y = bg_sprite.scale.y
+					bg.visible = true
+					bg.imgid = 'whitepixel'
+					bg.x = 0
+					bg.y = 0
+					bg_sprite.scale = { x = display_width(), y = display_height() }
+					bg.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = 0 }
+
 					local maya_b = world_object(combat_maya_b_id)
 					maya_b.imgid = 'maya_b'
 					maya_b.visible = true
-					maya_b.x = display_width() - maya_b.sx
+					self.combat_results_maya_target_x = display_width() - maya_b.sx
+					self.combat_results_maya_start_x = display_width()
+					maya_b.x = self.combat_results_maya_start_x
 					maya_b.y = display_height() - maya_b.sy
 					maya_b.colorize = { r = 1, g = 1, b = 1, a = 0 }
 						maya_b.z = 300
@@ -1403,9 +1422,12 @@ local function build_director_fsm()
 							local effect = rewards[i]
 							lines[#lines + 1] = stat_label(effect.stat) .. ' +' .. effect.add
 						end
-						-- set_text_lines(text_results_id, lines, false)
 						set_text_lines(text_results_id, lines, false)
-						world_object(text_results_id).text_color = { r = 1, g = 1, b = 1, a = 0 }
+						local results = world_object(text_results_id)
+						results.text_color = { r = 1, g = 1, b = 1, a = 0 }
+						self.combat_results_text_target_x = results.centered_block_x / 2
+						self.combat_results_text_start_x = -display_width()
+						results.centered_block_x = self.combat_results_text_start_x
 						return '/combat_results_fade_in'
 					end,
 				},
@@ -1434,10 +1456,14 @@ local function build_director_fsm()
 						go = function(self, _state, event)
 							local u = event.frame_index / (combat_results_fade_in_frames - 1)
 							local a = smoothstep(u)
+							local bg = world_object(bg_id)
+							bg.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a * a }
 							local maya_b = world_object(combat_maya_b_id)
 							maya_b.colorize = { r = 1, g = 1, b = 1, a = a }
+							maya_b.x = self.combat_results_maya_start_x + (self.combat_results_maya_target_x - self.combat_results_maya_start_x) * a
 							local results = world_object(text_results_id)
 							results.text_color = { r = 1, g = 1, b = 1, a = a }
+							results.centered_block_x = self.combat_results_text_start_x + (self.combat_results_text_target_x - self.combat_results_text_start_x) * a
 						end,
 					},
 					['timeline.end.' .. combat_results_fade_in_timeline_id] = {
@@ -1487,24 +1513,32 @@ local function build_director_fsm()
 				end,
 				on = {
 					['timeline.frame.' .. combat_results_fade_out_timeline_id] = {
-						go = function(self, _state, event)
-							local u = event.frame_index / (combat_results_fade_out_frames - 1)
-							local a = 1 - smoothstep(u)
-							local maya_b = world_object(combat_maya_b_id)
-							maya_b.colorize = { r = 1, g = 1, b = 1, a = a }
-							local results = world_object(text_results_id)
-							results.text_color = { r = 1, g = 1, b = 1, a = a }
+							go = function(self, _state, event)
+								local u = event.frame_index / (combat_results_fade_out_frames - 1)
+								local a = 1 - smoothstep(u)
+								local bg = world_object(bg_id)
+								bg.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a * a }
+								local maya_b = world_object(combat_maya_b_id)
+								maya_b.colorize = { r = 1, g = 1, b = 1, a = a }
+								local results = world_object(text_results_id)
+								results.text_color = { r = 1, g = 1, b = 1, a = a }
 						end,
 					},
-					['timeline.end.' .. combat_results_fade_out_timeline_id] = {
-						go = function(self)
-							world_object(combat_maya_b_id).visible = false
-							clear_text(text_results_id)
-							self:hide_combat_sprites()
-							local next_kind = story[self.node_id].kind
-							if next_kind == 'transition' then
-								self.skip_transition_fade = true
-								return '/run_node'
+						['timeline.end.' .. combat_results_fade_out_timeline_id] = {
+							go = function(self)
+								world_object(combat_maya_b_id).visible = false
+								clear_text(text_results_id)
+								local bg = world_object(bg_id)
+								local bg_sprite = bg.get_component_by_id('base_sprite')
+								bg.visible = false
+								bg.imgid = self.combat_results_prev_bg_imgid
+								bg_sprite.scale = { x = self.combat_results_prev_bg_scale_x, y = self.combat_results_prev_bg_scale_y }
+								bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+								self:hide_combat_sprites()
+								local next_kind = story[self.node_id].kind
+								if next_kind == 'transition' then
+									self.skip_transition_fade = true
+									return '/run_node'
 							end
 							if next_kind == 'fade' then
 								self.combat_exit_target_bg = story[story[self.node_id].next].bg
@@ -1758,12 +1792,12 @@ local function register_director()
 		fsms = { director_fsm_id },
 		defaults = {
 			node_id = 'combat_wekker',
-			page_index = nil,
+			page_index = null,
 			choice_index = 1,
 			stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 },
 			inline_pages = {},
 			inline_next = '',
-			pages = nil,
+			pages = null,
 			transition_center_x = 0,
 			transition_target_bg = story.title.bg,
 			fade_target_bg = story.title.bg,
@@ -1778,6 +1812,8 @@ local function register_director()
 			combat_monster_base_x = 0,
 			combat_monster_base_y = 0,
 			combat_dodge_dir = 1,
+			all_out_origin_x = 0,
+			all_out_origin_y = 0,
 		},
 	})
 end
@@ -1802,7 +1838,8 @@ function new_game()
 	spawn_sprite('p3.bg.def', {
 		id = bg_id,
 		pos = { x = 0, y = 0, z = 0 },
-		imgid = 'titel',
+		imgid = 'none',
+		visible = false,
 	})
 
 	local horizontal_margin = w / 10
