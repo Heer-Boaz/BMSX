@@ -5,7 +5,6 @@ import { RenderPassLibrary } from '../backend/renderpasslib';
 export function registerMeshBatchPass_WebGPU(library: RenderPassLibrary): void {
 	library.register({
 		id: 'meshbatch',
-		label: 'meshbatch',
 		name: 'Meshes (WebGPU)',
 		writesDepth: true,
 		stateOnly: true,

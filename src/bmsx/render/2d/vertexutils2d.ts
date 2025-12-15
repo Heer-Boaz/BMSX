@@ -1,6 +1,5 @@
 import { ATLAS_ID_ATTRIBUTE_SIZE, ATLAS_ID_SIZE, COLOR_OVERRIDE_ATTRIBUTE_SIZE, COLOR_OVERRIDE_SIZE, TEXTURECOORDS_SIZE, VERTEXCOORDS_SIZE, ZCOORDS_SIZE, ZCOORD_ATTRIBUTE_SIZE } from '../backend/webgl/webgl.constants';
-import type { color } from '../gameview';
-
+import type { color } from '../shared/render_types';
 
 export const bvec = {
 	set(v: Float32Array, i: number, x: number, y: number, w: number, h: number, sx: number, sy: number): void {

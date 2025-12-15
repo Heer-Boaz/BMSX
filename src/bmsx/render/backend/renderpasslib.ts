@@ -68,7 +68,7 @@ export class RenderPassLibrary {
 	private registerBuiltinPassesWebGPU() {
 		// Common state-only passes (backend-agnostic)
 		this.register({
-			id: 'frame_resolve', label: 'frame_resolve', name: 'FrameResolve', stateOnly: true,
+			id: 'frame_resolve', name: 'FrameResolve', stateOnly: true,
 			exec: () => { /* state only */ },
 			prepare: (backend, _state) => {
 				const gv = $.view;
@@ -83,7 +83,7 @@ export class RenderPassLibrary {
 			},
 		});
 		// Removed: standalone fog pass. Fog state is produced in FrameSharedState.
-		this.register({ id: 'frame_shared', label: 'frame_shared', name: 'FrameShared', stateOnly: true, exec: () => { } });
+		this.register({ id: 'frame_shared', name: 'FrameShared', stateOnly: true, exec: () => { } });
 		// Backend-specific pass registrations (stubs for now)
 		registerSkyboxPass_WebGPU(this);
 		registerMeshBatchPass_WebGPU(this);
@@ -97,7 +97,6 @@ export class RenderPassLibrary {
 		// FrameResolve: set per-frame default uniforms shared across passes (sprite + mesh)
 		this.register({
 			id: 'frame_resolve',
-			label: 'frame_resolve',
 			name: 'FrameResolve',
 			stateOnly: true,
 			exec: () => { /* state only */ },
@@ -136,7 +135,6 @@ export class RenderPassLibrary {
 		// FrameShared
 		this.register({
 			id: 'frame_shared',
-			label: 'frame_shared',
 			name: 'FrameShared',
 			stateOnly: true,
 			exec: () => { /* populated per frame by graph */ }
@@ -182,7 +180,7 @@ export class RenderPassLibrary {
 		let pipelineHandle: RenderPassInstanceHandle = null;
 		if (this.backend.createRenderPassInstance && (desc.vsCode || desc.fsCode)) {
 			pipelineHandle = this.backend.createRenderPassInstance({
-				label: desc.label ?? desc.name,
+				label: desc.name,
 				vsCode: desc.vsCode,
 				fsCode: desc.fsCode,
 				bindingLayout: desc.bindingLayout,
@@ -338,27 +336,34 @@ export class RenderPassLibrary {
 					}
 					return { width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, present: isPresent };
 				},
-				execute: (ctx, frame, data: { width: number; height: number; present: boolean }) => {
-					const enabled = this.isPassEnabled(desc.id as string);
+				execute: (ctx, _frame, data: { width: number; height: number; present: boolean }) => {
+					const enabled = this.isPassEnabled(desc.id);
 					const willRun = enabled && (!desc.shouldExecute || desc.shouldExecute());
 					if (!willRun) return;
 					if (data.present) {
 						const colorTex = frameColorHandle != null ? ctx.getTex(frameColorHandle) : null;
-						const postFxSource = frame && typeof frame === 'object' ? (frame as Record<string, unknown>)['postFx'] : undefined;
-						const crtOptions = postFxSource && typeof postFxSource === 'object' ? (postFxSource as Record<string, unknown>)['crt'] : undefined;
-						try {
-							this.setState('crt', {
-								width: view.offscreenCanvasSize.x,
-								height: view.offscreenCanvasSize.y,
-								baseWidth: view.viewportSize.x,
-								baseHeight: view.viewportSize.y,
-								// fragScale,
-								colorTex,
-								options: crtOptions,
-							});
-						} catch {
-							console.error(`Failed to set CRT state: ${String(crtOptions)}`);
-						}
+						const gv = $.view;
+
+						this.setState('crt', {
+							width: gv.offscreenCanvasSize.x,
+							height: gv.offscreenCanvasSize.y,
+							baseWidth: gv.viewportSize.x,
+							baseHeight: gv.viewportSize.y,
+							colorTex,
+							options: {
+								applyNoise: gv.applyNoise,
+								applyColorBleed: gv.applyColorBleed,
+								applyScanlines: gv.applyScanlines,
+								applyBlur: gv.applyBlur,
+								applyGlow: gv.applyGlow,
+								applyFringing: gv.applyFringing,
+								noiseIntensity: gv.noiseIntensity,
+								colorBleed: gv.colorBleed,
+								blurIntensity: gv.blurIntensity,
+								glowColor: gv.glowColor,
+
+							} as CRTPipelineState['options'],
+						});
 						// Execute the pass; PipelineRegistry ensures the program/pipeline is bound.
 						this.execute(desc.id as string, null);
 					} else if (isStateOnly) {

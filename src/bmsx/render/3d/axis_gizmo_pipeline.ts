@@ -2,7 +2,7 @@ import { $ } from '../../core/game';
 import axisFS from './shaders/axis_gizmo.frag.glsl';
 import axisVS from './shaders/axis_gizmo.vert.glsl';
 import { RenderPassLibrary } from '../backend/renderpasslib';
-import type { color } from '../gameview';
+import type { color } from '../shared/render_types';
 import { M4 } from './math3d';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { clamp } from '../../utils/clamp';;
@@ -64,7 +64,6 @@ function init(gl: WebGL2RenderingContext): void {
 export function registerAxisGizmoPass_WebGL(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'axis_gizmo',
-		label: 'axis_gizmo',
 		name: 'AxisGizmo',
 		vsCode: axisVS,
 		fsCode: axisFS,

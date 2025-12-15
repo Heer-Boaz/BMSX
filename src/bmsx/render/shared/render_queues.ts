@@ -1,9 +1,9 @@
 import { FeatureQueue } from '../../utils/feature_queue';
 import type { ImgMeta } from '../../rompack/rompack';
 import type { ImgRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission } from './render_types';
-import { RenderSubmission } from '../gameview';
 import type { RenderLayer } from './render_types';
 import { DEFAULT_ZCOORD } from '../backend/webgl/webgl.constants';
+import { RenderSubmission } from '../backend/pipeline_interfaces';
 
 export interface SpriteQueueItem {
 	options: ImgRenderSubmission;

@@ -2,12 +2,12 @@ import { componenttags_postprocessing, type ComponentAttachOptions } from '../co
 import { Component } from '../component/basecomponent';
 import type { asset_id, Identifier, vec2, vec3, BoundingBoxPrecalc, HitPolygonsPrecalc, RectBounds } from '../rompack/rompack';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
-import type { color, FlipOptions, RenderLayer } from '../render/gameview';
 import type { TimelinePlayOptions } from './timeline_component';
 import { new_vec2 } from '../utils/vector_operations';
 import { Collider2DComponent } from './collisioncomponents';
 import { $ } from '../core/game';
 import { WorldObject } from '../core/object/worldobject';
+import { color, FlipOptions, RenderLayer } from '../render/shared/render_types';
 
 @insavegame
 @componenttags_postprocessing('render')

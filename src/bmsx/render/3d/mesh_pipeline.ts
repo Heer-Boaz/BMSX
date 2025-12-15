@@ -14,7 +14,7 @@ import type { PassEncoder, RenderContext } from '../backend/pipeline_interfaces'
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_MORPH_NORM, TEXTURE_UNIT_MORPH_POS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl/webgl.constants';
 import { checkWebGLError } from '../backend/webgl/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
-import { MeshRenderSubmission } from '../gameview';
+import { MeshRenderSubmission } from '../shared/render_types';
 import type { DirectionalLight, PointLight } from './light';
 import { M4, V3, float32ToFloat16, isMatrixMirrored, sphereInFrustumPacked, transformBoundingSphereCenter, transformedBoundingSphereRadius, translationDistanceSquared } from './math3d';
 import { arrays_equal } from '../../utils/arrays_equal';
@@ -948,7 +948,6 @@ export function getMeshQueueDebug(): { front: number; back: number } { return { 
 export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 	registry.register({
 		id: 'meshbatch',
-		label: 'meshbatch',
 		name: 'Meshes',
 		...(() => {
 			const vs = shaderModule(meshVS, { uniforms: ['FrameUniforms', 'DirLightBlock', 'PointLightBlock'] }, 'mesh-vs');

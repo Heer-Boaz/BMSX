@@ -1,4 +1,3 @@
-import { color } from "../../render/gameview";
 import { RectBounds, BoundingBoxPrecalc, type HitPolygonsPrecalc, type Polygon } from "../../rompack/rompack";
 import { insavegame, type RevivableObjectArgs } from '../../serializer/serializationhooks';
 import { WorldObject } from "./worldobject";
@@ -6,6 +5,7 @@ import { SpriteComponent } from '../../component/sprite_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
 import { $ } from '../game';
 import { TimelinePlayOptions } from '../..';
+import { color } from '../../render/shared/render_types';
 
 const BASE_SPRITE_ID = 'base_sprite';
 const PRIMARY_COLLIDER_ID = 'primary';

@@ -10,8 +10,8 @@ import type {
 import { $ } from '../core/game';
 import { consumeOverlayFrame, publishOverlayFrame, type EditorOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { Viewport } from '../rompack/rompack';
-import type { RenderSubmission } from '../render/gameview';
 import { copySpriteQueueForPlayback } from '../render/shared/render_queues';
+import { RenderSubmission } from '../render/backend/pipeline_interfaces';
 
 export type VMRenderCommand = RenderSubmission;
 type RectSubmission = Extract<RenderSubmission, { type: 'rect' }>;

@@ -24,8 +24,8 @@ export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 }
 
 function registerFramePasses(registry: RenderPassLibrary): void {
-	registry.register({ id: 'frame_resolve', label: 'frame_resolve', name: 'HeadlessFrameResolve', stateOnly: true, exec: () => { /* noop */ } });
-	registry.register({ id: 'frame_shared', label: 'frame_shared', name: 'HeadlessFrameShared', stateOnly: true, exec: () => { /* noop */ } });
+	registry.register({ id: 'frame_resolve', name: 'HeadlessFrameResolve', stateOnly: true, exec: () => { /* noop */ } });
+	registry.register({ id: 'frame_shared', name: 'HeadlessFrameShared', stateOnly: true, exec: () => { /* noop */ } });
 }
 
 type Snapshot = string[];
@@ -116,7 +116,6 @@ function makeSpriteState(): SpritesPipelineState {
 function registerSpritePass(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'sprites',
-		label: 'sprites_headless',
 		name: 'HeadlessSprites',
 		stateOnly: true,
 		prepare: () => {
@@ -167,7 +166,6 @@ function makeMeshState(registry: RenderPassLibrary): MeshBatchPipelineState {
 function registerMeshPass(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'meshbatch',
-		label: 'mesh_headless',
 		name: 'HeadlessMeshes',
 		stateOnly: true,
 		shouldExecute: () => meshQueueBackSize() > 0,
@@ -219,7 +217,6 @@ function makeParticleState(): ParticlePipelineState {
 function registerParticlePass(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'particles',
-		label: 'particles_headless',
 		name: 'HeadlessParticles',
 		stateOnly: true,
 		shouldExecute: () => particleQueueBackSize() > 0,

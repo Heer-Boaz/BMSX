@@ -46,12 +46,7 @@ export interface FrameData {
 	time: number;
 	delta: number;
 	views: View[];
-	// Lights, postFx, etc. are attached here later.
-	// Using index signature to stay flexible during migration.
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	[k: string]: any;
 }
-
 
 // Public debug info interface (exported separately)
 export interface RGTexDebugInfo {

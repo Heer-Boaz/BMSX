@@ -1,6 +1,6 @@
 import * as constants from '../vm/ide/constants';
-import { color } from "../render/gameview";
 import { vec2 } from "../rompack/rompack";
+import { color } from '../render/shared/render_types';
 
 export const TileSize: number = 16;
 export class Tile {

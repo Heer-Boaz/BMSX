@@ -4,7 +4,7 @@ import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
 import spriteFS from '../2d/shaders/2d.frag.glsl';
 import spriteVS from '../2d/shaders/2d.vert.glsl';
 import * as GLR from '../backend/webgl/gl_resources';
-import type { GPUBackend, RenderContext } from '../backend/pipeline_interfaces';
+import type { GPUBackend, RenderContext, RenderPassStateRegistry } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary } from '../backend/renderpasslib';
 import { SpritesPipelineState } from '../backend/pipeline_interfaces';
 import type { FrameSharedState } from '../backend/pipeline_interfaces';
@@ -28,8 +28,7 @@ import {
 	ZCOORD_MAX,
 	ZCOORDS_SIZE
 } from '../backend/webgl/webgl.constants';
-import { color, ImgRenderSubmission, RectRenderSubmission, GameView, type RenderLayer } from '../gameview';
-import { ENGINE_ATLAS_TEXTURE_KEY } from '../gameview';
+import { ENGINE_ATLAS_TEXTURE_KEY, GameView } from '../gameview';
 import { $ } from '../../core/game';
 import { bvec } from './vertexutils2d';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
@@ -43,6 +42,8 @@ import {
 	spriteQueueFrontSize,
 	submitSprite as enqueueSprite,
 } from '../shared/render_queues';
+import { ImgRenderSubmission, RectRenderSubmission, RenderLayer } from '../shared/render_types';
+import { color } from '../shared/render_types';
 
 export let spriteShaderProgram: WebGLProgram;
 let vertexLocation: number;
@@ -338,7 +339,6 @@ export function drawPolygon(coords: Polygon, z: number, color: color, thickness:
 export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'sprites',
-		label: 'sprites',
 		name: 'Sprites2D',
 		...(() => {
 			const vs = shaderModule(spriteVS, { uniforms: ['FrameUniforms'] }, 'sprites-vs');
@@ -367,7 +367,7 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			drainOverlayFrameIntoSpriteQueue();
 			renderSpriteBatch(runtime, fbo, state);
 		},
-		prepare: (backend, _state) => {
+		prepare: (backend: GPUBackend, _state: RenderPassStateRegistry['sprites']) => {
 			const gv = $.view;
 			const width = gv.offscreenCanvasSize.x;
 			const height = gv.offscreenCanvasSize.y;
@@ -384,7 +384,7 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			}
 			const dynamicAtlasTexture = gv.textures['_atlas_dynamic'];
 			const engineAtlasTexture = gv.textures[ENGINE_ATLAS_TEXTURE_KEY];
-			const spriteState: SpritesPipelineState = {
+			const spriteState: RenderPassStateRegistry['sprites'] = {
 				width,
 				height,
 				baseWidth,

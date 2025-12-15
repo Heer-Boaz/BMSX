@@ -1,5 +1,7 @@
 /// <reference types="@webgpu/types" />
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/rompack';
+import { GlyphRenderSubmission, ImgRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission, PolyRenderSubmission, RectRenderSubmission } from '../shared/render_types';
+import { LightingFrameState } from '../lighting/lightingsystem';
 import type { WebGLBackend } from './webgl/webgl_backend';
 import type { WebGPUBackend } from './webgpu/webgpu_backend';
 
@@ -75,7 +77,6 @@ export interface RenderPassDesc {
 // Definition of a logical pass (registration-time)
 export interface RenderPassDef<S = unknown> {
 	id: RenderPassStateId;
-	label?: string;
 	vsCode?: string;
 	fsCode?: string;
 	bindingLayout?: GraphicsPipelineBindingLayout;
@@ -179,17 +180,20 @@ export interface GPUBackend {
 }
 
 export interface RenderPassStateRegistry {
-	['skybox']: unknown;
-	['meshbatch']: unknown;
-	['particles']: unknown;
-	['sprites']: unknown;
-	['crt']: unknown;
-	['frame_shared']: unknown;
-	['frame_resolve']: unknown;
-	['axis_gizmo']: unknown;
-	['debug_solid']: unknown;
+	['skybox']: SkyboxPipelineState;
+	['meshbatch']: MeshBatchPipelineState;
+	['particles']: ParticlePipelineState;
+	['sprites']: SpritesPipelineState;
+	['crt']: CRTPipelineState;
+	['frame_shared']: FrameSharedState;
+	['frame_resolve']: never;
+	['axis_gizmo']: never;
+	['debug_solid']: never;
 }
 export type RenderPassStateId = keyof RenderPassStateRegistry;
+
+export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission) | ({ type: 'glyphs'; } & GlyphRenderSubmission);
+export type RenderSubmitQueue = Pick<Pick<RenderContext, 'renderer'>['renderer'], 'submit'>;
 
 export interface RenderContext {
 	viewportSize: { x: number; y: number };
@@ -199,8 +203,20 @@ export interface RenderContext {
 	activeTexUnit: number;
 	bind2DTex(tex: TextureHandle): void;
 	bindCubemapTex(tex: TextureHandle): void;
+
+
 	// Optional centralized renderer submission + queues (lightweight, backend-agnostic)
-	renderer?: { queues?: { [k: string]: unknown }; submit?: unknown; swap?: () => void };
+	renderer: {
+		submit: {
+			typed: (o: RenderSubmission) => void;
+			particle: (o: ParticleRenderSubmission) => void;
+			sprite: (o: ImgRenderSubmission) => void;
+			mesh: (o: MeshRenderSubmission) => void;
+			rect: (o: RectRenderSubmission) => void;
+			poly: (o: PolyRenderSubmission) => void;
+			glyphs: (o: GlyphRenderSubmission) => void;
+		};
+	};
 }
 
 export interface RenderPassToken {
@@ -228,7 +244,7 @@ export interface MeshBatchPipelineState {
 	camPos: Float32Array | { x: number; y: number; z: number; };
 	viewProj: Float32Array;
 	cameraFrustum: Float32Array;
-	lighting?: unknown;
+	lighting?: LightingFrameState;
 }
 
 export interface ParticlePipelineState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array; }
@@ -251,5 +267,42 @@ export interface SpritesPipelineState {
 	psxDither2dEnabled: boolean;
 }
 
-export interface CRTPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; colorTex: TextureHandle; options?: unknown; }
-export interface FrameSharedState { view: { camPos: Float32Array | { x: number; y: number; z: number; }; viewProj: Float32Array; skyboxView: Float32Array; proj: Float32Array; }; lighting: unknown; fog: FogUniforms; }
+export interface CRTPipelineState {
+	width: number;
+	height: number;
+	baseWidth: number;
+	baseHeight: number;
+	colorTex: TextureHandle;
+	options: {
+		applyNoise: boolean;
+		noiseIntensity: number;
+		applyColorBleed: boolean;
+		colorBleed: [number, number, number];
+		applyScanlines: boolean;
+		applyBlur: boolean;
+		applyGlow: boolean;
+		applyFringing: boolean;
+		blurIntensity: number;
+		glowColor: [number, number, number];
+	};
+}
+export interface FrameSharedState {
+	view: {
+		camPos: Float32Array | { x: number; y: number; z: number; };
+		viewProj: Float32Array;
+		skyboxView: Float32Array;
+		proj: Float32Array;
+	};
+	lighting: LightingFrameState;
+	fog: FogUniforms;
+}export interface AtmosphereParams {
+	fogD50: number;
+	fogStart: number;
+	fogColorLow: [number, number, number];
+	fogColorHigh: [number, number, number];
+	fogYMin: number;
+	fogYMax: number;
+	progressFactor: number;
+	enableAutoAnimation: boolean;
+}
+

@@ -1,4 +1,4 @@
-import type { RenderSubmission } from '../gameview';
+import { RenderSubmission } from '../backend/pipeline_interfaces';
 
 export type EditorOverlayFrame = {
 	width: number;

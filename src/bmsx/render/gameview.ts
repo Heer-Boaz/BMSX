@@ -11,7 +11,7 @@ import * as SpritesPipeline from './2d/sprites_pipeline';
 import * as MeshPipeline from './3d/mesh_pipeline';
 import * as ParticlesPipeline from './3d/particles_pipeline';
 import * as SkyboxPipeline from './3d/skybox_pipeline';
-import type { GPUBackend, RenderContext, TextureHandle } from './backend/pipeline_interfaces';
+import type { AtmosphereParams, GPUBackend, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/pipeline_interfaces';
 import { RenderPassLibrary } from './backend/renderpasslib';
 import { type RenderPassToken } from './backend/pipeline_interfaces';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/rendergraph';
@@ -52,36 +52,8 @@ export const ENGINE_ATLAS_INDEX = 254;
 
 export const ENGINE_ATLAS_TEXTURE_KEY = '_atlas_engine';
 
-export type {
-	color,
-	FlipOptions,
-	RenderLayer,
-	RectRenderSubmission,
-	ImgRenderSubmission,
-	PolyRenderSubmission,
-	MeshRenderSubmission,
-	ParticleRenderSubmission,
-	GlyphRenderSubmission,
-	SkyboxImageIds,
-} from './shared/render_types';
-
-
-export interface AtmosphereParams {
-	fogD50: number;
-	fogStart: number;
-	fogColorLow: [number, number, number];
-	fogColorHigh: [number, number, number];
-	fogYMin: number;
-	fogYMax: number;
-	progressFactor: number;
-	enableAutoAnimation: boolean;
-}
-
-export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission) | ({ type: 'glyphs'; } & GlyphRenderSubmission);
-
 // Global gate used to coordinate rendering. When blocked, frames are skipped.
 export const renderGate: GateGroup = taskGate.group('render:main');
-export type RenderSubmitQueue = Pick<Pick<GameView, 'renderer'>['renderer'], 'submit'>;
 
 const atlasNameCache = new Map<number, string>(); // Cache for atlas names to avoid regenerating them for each request
 export function generateAtlasName(atlasIndex: number): string {
@@ -98,7 +70,7 @@ export function generateAtlasName(atlasIndex: number): string {
 
 const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'sprites', 'crt'];
 
-export interface GameViewOpts {
+interface GameViewOpts {
 	host: GameViewHost;
 	viewportSize: vec2; // If not provided, defaults to 256x212 (MSX2) TODO: CHECK WHETHER THIS IS TRUE!
 	canvasSize?: vec2; // If not provided, defaults to 2x viewport size
@@ -231,7 +203,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public colorBleed: [number, number, number] = [0.02, 0.0, 0.0];
 	public blurIntensity = 0.6;
 	public glowColor: [number, number, number] = [0.12, 0.10, 0.09];
-	public psx_dither_2d_enabled = true; // TODO: JUST ADDED AND NOW MUST BE USED!
+	public crt_postprocessing_intensity = true; // Whether to apply postprocessing in the CRT-shader, such as scanlines, noise, glow, etc.
+	public psx_dither_2d_enabled = true;
 	// public psx_dither_3d_enabled = false; TODO: JUST ADDED AND WE'LL USE IT LATER!
 
 	// Sprite ambient defaults (used when per-sprite override not provided)
@@ -252,7 +225,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		enableAutoAnimation: false,
 	};
 
-	// Renderer submission facade (no legacy queues)
+	// Renderer submission facade
 	public renderer: {
 		submit: {
 			typed: (o: RenderSubmission) => void;
@@ -328,7 +301,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 					renderGlyphs(xx, o.y, lines, o.z ?? 950, o.font, o.color, o.background_color, o.layer);
 				},
 			},
-		};
+		} as RenderSubmitQueue;
 
 	// --- Ambient controls API (best-practice toggles) -------------------------
 	public setSkyboxTintExposure(tint: [number, number, number], exposure = 1.0): void {

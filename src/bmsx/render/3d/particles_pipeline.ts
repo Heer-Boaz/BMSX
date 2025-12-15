@@ -213,7 +213,6 @@ export function getParticleQueueDebug(): { front: number; back: number } { retur
 export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'particles',
-		label: 'particles',
 		name: 'Particles',
 		vsCode: particleVS,
 		fsCode: particleFS,

@@ -1,8 +1,7 @@
 import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import type { vec2 } from "../rompack/rompack";
-import type { color, RectRenderSubmission, RenderLayer } from './gameview';
-import type { ImgRenderSubmission } from './shared/render_types';
+import type { ImgRenderSubmission, RectRenderSubmission, RenderLayer, color } from './shared/render_types';
 
 const CHAR_CACHE: string[] = (() => {
 	const cache: string[] = new Array(256);

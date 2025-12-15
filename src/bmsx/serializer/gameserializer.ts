@@ -16,11 +16,12 @@ import { Space } from '../core/space';
 import { $ } from '../core/game';
 import type { BmsxVMState } from '../vm/types';
 import { Registry } from "../core/registry";
-import { GameView, SkyboxImageIds } from '../render/gameview';
+import { GameView } from '../render/gameview';
 import { decodeBinary, encodeBinary } from "./binencoder";
 import { Bindable, Identifier } from "../rompack/rompack";
 import { insavegame, type RevivableObjectArgs, onsave, onload } from './serializationhooks';
 import { typedarray_to_numberarray } from '../utils/typedarray_to_numberarray';
+import { SkyboxImageIds } from '../render/shared/render_types';
 
 // Decorators onload/onsave are defined locally in this file
 export type ConstructorWithSaveGame<T = Bindable> = (new (...args: any[]) => T) & { __exclude_savegame__?: boolean };

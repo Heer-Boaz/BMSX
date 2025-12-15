@@ -39,7 +39,6 @@ interface CRTState { width: number; height: number; baseWidth?: number; baseHeig
 export function registerCRT_WebGPU(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'crt',
-		label: 'crt',
 		name: 'Present/CRT (WebGPU)',
 		present: true,
 		// Provide WGSL + binding layout (texture + sampler)

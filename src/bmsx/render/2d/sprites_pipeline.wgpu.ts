@@ -5,7 +5,6 @@ import { RenderPassLibrary } from '../backend/renderpasslib';
 export function registerSpritesPass_WebGPU(library: RenderPassLibrary): void {
 	library.register({
 		id: 'sprites',
-		label: 'sprites',
 		name: 'Sprites2D (WebGPU)',
 		stateOnly: true,
 		shouldExecute: () => false, // Skip until implemented

@@ -4,7 +4,6 @@ import { RenderPassLibrary } from '../backend/renderpasslib';
 export function registerParticlesPass_WebGPU(library: RenderPassLibrary): void {
 	library.register({
 		id: 'particles',
-		label: 'particles',
 		name: 'Particles (WebGPU)',
 		writesDepth: true,
 		stateOnly: true,

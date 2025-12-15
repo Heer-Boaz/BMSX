@@ -1,8 +1,8 @@
 import { Component, type ComponentAttachOptions } from '../component/basecomponent';
 import type { vec3 } from '../rompack/rompack';
 import { insavegame } from '../serializer/serializationhooks';
-import type { color, RenderLayer } from '../render/gameview';
 import type { BFont } from '../core/font';
+import { color, RenderLayer } from '../render/shared/render_types';
 
 @insavegame
 export class TextComponent extends Component {

@@ -6,8 +6,8 @@ import type { asset_id, GLTFModel, GLTFMesh, GLTFAnimation, GLTFAnimationSampler
 import { Mesh as RenderMesh } from '../render/3d/mesh';
 import { Material } from '../render/3d/material';
 import { insavegame, excludepropfromsavegame, onsave, onload } from '../serializer/serializationhooks';
-import type { MeshRenderSubmission } from '../render/gameview';
 import { clamp } from '../utils/clamp';
+import { MeshRenderSubmission } from '../render/shared/render_types';
 
 type MeshInstance = { mesh: RenderMesh; nodeIndex?: number; meshIndex?: number; skinIndex?: number; morphWeights?: number[]; worldMatrix?: Float32Array };
 

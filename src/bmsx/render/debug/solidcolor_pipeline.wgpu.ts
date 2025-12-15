@@ -33,7 +33,6 @@ fn main() -> @location(0) vec4<f32> {
 export function registerSolidColorPass_WebGPU(library: RenderPassLibrary): void {
 	library.register({
 		id: 'debug_solid',
-		label: 'debug_solid',
 		name: 'Debug Solid (WebGPU)',
 		vsCode: VS_SOLID,
 		fsCode: FS_SOLID,

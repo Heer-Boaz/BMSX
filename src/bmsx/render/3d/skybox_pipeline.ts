@@ -10,8 +10,9 @@ import { SkyboxPipelineState } from '../backend/pipeline_interfaces';
 import { TEXTURE_UNIT_SKYBOX } from '../backend/webgl/webgl.constants';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { TextureKey } from '../texturemanager';
-import { GameView, SkyboxImageIds } from '../gameview';
+import { GameView } from '../gameview';
 import type { TextureSource } from '../../rompack/rompack';
+import { SkyboxImageIds } from '../shared/render_types';
 
 function resolveSkyboxImage(assetId: string): Promise<TextureSource> {
 	const asset = GameView.imgassets[assetId];
@@ -177,7 +178,6 @@ export function setSkyboxTintExposure(tint: [number, number, number], exposure =
 export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 	registry.register({
 		id: 'skybox',
-		label: 'skybox',
 		name: 'Skybox',
 		vsCode: skyboxVS,
 		fsCode: skyboxFS,

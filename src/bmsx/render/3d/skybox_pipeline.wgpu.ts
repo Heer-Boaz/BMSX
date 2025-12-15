@@ -4,7 +4,6 @@ import { RenderPassLibrary } from '../backend/renderpasslib';
 export function registerSkyboxPass_WebGPU(library: RenderPassLibrary): void {
 	library.register({
 		id: 'skybox',
-		label: 'skybox',
 		name: 'Skybox (WebGPU)',
 		writesDepth: true,
 		stateOnly: true,

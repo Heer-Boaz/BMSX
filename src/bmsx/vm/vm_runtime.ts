@@ -48,12 +48,12 @@ import {
 } from './runtime_error_util';
 import { BmsxVMStorage } from './storage';
 import type { BmsxVMRuntimeOptions, BmsxVMState, VMLuaBuiltinDescriptor, VMLuaMemberCompletion, LuaMarshalContext } from './types';
-import { RenderSubmission } from '../render/gameview';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/luadebugger';
 import { ide_state } from './ide/ide_state';
 import { getBasePipelineSpecOverrideForIdeOrTerminal, ideExtSpec, terminalExtSpec, vmExtSpec } from './vm_systems';
 import type { ParsedLuaChunk } from './ide/lua_parse';
+import { RenderSubmission } from '../render/backend/pipeline_interfaces';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'left',
