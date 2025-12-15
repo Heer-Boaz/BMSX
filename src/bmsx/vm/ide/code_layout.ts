@@ -178,7 +178,7 @@ export class VMCodeLayout {
 			}
 		}
 		const highlight = highlightLineExternal(lines, row, annotations, builtinIdentifiers);
-		const displayToColumn: number[] = new Array(highlight.chars.length + 1);
+		const displayToColumn: number[] = new Array(highlight.text.length + 1);
 		for (let index = 0; index < displayToColumn.length; index += 1) {
 			displayToColumn[index] = 0;
 		}
@@ -189,11 +189,11 @@ export class VMCodeLayout {
 				displayToColumn[display] = column;
 			}
 		}
-		displayToColumn[highlight.chars.length] = source.length;
-		const advancePrefix: number[] = new Array(highlight.chars.length + 1);
+		displayToColumn[highlight.text.length] = source.length;
+		const advancePrefix: number[] = new Array(highlight.text.length + 1);
 		advancePrefix[0] = 0;
-		for (let i = 0; i < highlight.chars.length; i += 1) {
-			advancePrefix[i + 1] = advancePrefix[i] + this.font.advance(highlight.chars[i]);
+		for (let i = 0; i < highlight.text.length; i += 1) {
+			advancePrefix[i + 1] = advancePrefix[i] + this.font.advance(highlight.text.charAt(i));
 		}
 		const entry: CachedHighlight = {
 			src: source,
@@ -216,7 +216,7 @@ export class VMCodeLayout {
 	}
 
 	public measureRangeFast(entry: CachedHighlight, startDisplay: number, endDisplay: number): number {
-		const length = entry.hi.chars.length;
+		const length = entry.hi.text.length;
 		if (length === 0) {
 			return 0;
 		}
@@ -230,13 +230,13 @@ export class VMCodeLayout {
 			return 0;
 		}
 		if (column >= highlight.columnToDisplay.length) {
-			return highlight.chars.length;
+			return highlight.text.length;
 		}
 		return highlight.columnToDisplay[column];
 	}
 
 	public sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): SliceResult {
-		if (highlight.chars.length === 0) {
+		if (highlight.text.length === 0) {
 			return { text: '', colors: [], startDisplay: 0, endDisplay: 0 };
 		}
 		const columnToDisplay = highlight.columnToDisplay;
@@ -244,10 +244,9 @@ export class VMCodeLayout {
 		const clampedEndColumn = Math.min(columnStart + columnCount, columnToDisplay.length - 1);
 		const startDisplay = columnToDisplay[clampedStart];
 		const endDisplay = columnToDisplay[clampedEndColumn];
-		const sliceChars = highlight.chars.slice(startDisplay, endDisplay);
 		const sliceColors = highlight.colors.slice(startDisplay, endDisplay);
 		return {
-			text: sliceChars.join(''),
+			text: highlight.text.slice(startDisplay, endDisplay),
 			colors: sliceColors,
 			startDisplay,
 			endDisplay,

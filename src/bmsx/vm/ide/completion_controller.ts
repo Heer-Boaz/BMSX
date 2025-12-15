@@ -97,6 +97,30 @@ export class CompletionController {
 		this.cancelPendingCompletion();
 	}
 
+	public getInlineCompletionPreview(): { row: number; column: number; suffix: string } {
+		const session = this.completionSession;
+		if (!session || session.trigger === 'manual') {
+			return null;
+		}
+		if (session.filteredItems.length === 0) {
+			return null;
+		}
+		let index = session.selectionIndex;
+		if (index < 0 || index >= session.filteredItems.length) index = 0;
+		const item = session.filteredItems[index];
+		const addParentheses = item.kind === 'api_method' || item.kind === 'native_method';
+		const insertion = addParentheses ? `${item.insertText}()` : item.insertText;
+		const prefix = session.context.prefix;
+		if (!insertion.toLowerCase().startsWith(prefix.toLowerCase())) {
+			return null;
+		}
+		if (prefix.length >= insertion.length) {
+			return null;
+		}
+		const suffix = insertion.slice(prefix.length);
+		return { row: session.context.row, column: session.context.replaceToColumn, suffix };
+	}
+
 	public handlePointerWheel(direction: number, steps: number, pointer: { x: number; y: number }): boolean {
 		const session = this.completionSession;
 		if (!session || session.filteredItems.length === 0) {
@@ -172,9 +196,15 @@ export class CompletionController {
 		this.parameterHintAnchor = null;
 		this.parameterHintTriggerPending = false;
 		this.parameterHintIdleElapsed = 0;
+		const session = this.completionSession;
+		if (session && session.trigger !== 'manual') {
+			this.closeSession();
+			this.refreshParameterHint();
+			return;
+		}
 		this.lastCursorPosition = { row: this.host.getCursorRow(), column: this.host.getCursorColumn() };
 		this.lastTextVersion = this.host.getTextVersion();
-		if (this.completionSession) {
+		if (session) {
 			const context = this.analyzeCompletionContext();
 			if (!context) this.closeSession();
 			else this.refreshCompletionSessionFromContext(context);
@@ -270,7 +300,6 @@ export class CompletionController {
 		if (!session || !cursorInfo) return;
 		if (session.filteredItems.length === 0) return;
 		if (session.trigger !== 'manual') {
-			this.drawInlineCompletionPreview(session, cursorInfo, bounds);
 			return;
 		}
 		const maxAllowedWidth = Math.floor(bounds.codeRight - bounds.textLeft);
@@ -351,43 +380,6 @@ export class CompletionController {
 			const label = wrapTextDynamic(item.label, maxLabelWidth, maxLabelWidth, (value) => this.host.measureText(value), 1)[0];
 			this.host.drawText(label, textX, lineTop, labelColor);
 		}
-	}
-
-	private drawInlineCompletionPreview(
-		session: CompletionSession,
-		cursorInfo: CursorScreenInfo,
-		bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number },
-	): void {
-		const maxAllowedWidth = Math.floor(bounds.codeRight - cursorInfo.x);
-		if (maxAllowedWidth <= 0) {
-			return;
-		}
-		let index = session.selectionIndex;
-		if (index < 0 || index >= session.filteredItems.length) index = 0;
-		const item = session.filteredItems[index];
-		const addParentheses = item.kind === 'api_method' || item.kind === 'native_method';
-		const insertion = addParentheses ? `${item.insertText}()` : item.insertText;
-		const prefix = session.context.prefix;
-		if (!insertion.toLowerCase().startsWith(prefix.toLowerCase())) {
-			return;
-		}
-		if (prefix.length >= insertion.length) {
-			return;
-		}
-		const suffix = insertion.slice(prefix.length);
-		if (this.host.measureText(suffix) > maxAllowedWidth) {
-			let clip = suffix.length;
-			while (clip > 0) {
-				const candidate = suffix.slice(0, clip);
-				if (this.host.measureText(candidate) <= maxAllowedWidth) {
-					this.host.drawText(candidate, cursorInfo.x, cursorInfo.y, constants.COLOR_COMPLETION_PREVIEW_TEXT);
-					return;
-				}
-				clip -= 1;
-			}
-			return;
-		}
-		this.host.drawText(suffix, cursorInfo.x, cursorInfo.y, constants.COLOR_COMPLETION_PREVIEW_TEXT);
 	}
 
 	public drawParameterHintOverlay(bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {

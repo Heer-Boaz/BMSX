@@ -17,7 +17,7 @@ import {
 	setSelectionAnchorFromOffset,
 } from './ide/inline_text_field';
 import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext, LuaCompletionItem } from './ide/types';
-import { TAB_SPACES } from './ide/constants';
+import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from './ide/constants';
 import { VMRenderFacade } from './vm_render_facade';
 import { renderInlineCaret, type CaretDrawOps } from './ide/render/render_caret';
 import {
@@ -735,6 +735,7 @@ export class TerminalMode {
 		const cursorIndex = this.cursorOffset();
 		const uppercaseDisplay = this.useUppercaseDisplay();
 		const displayText = this.toDisplayText(this.fieldText(), uppercaseDisplay);
+		const inlinePreview = sel ? null : this.completion.getInlineCompletionPreview();
 		let nextCursorInfo: CursorScreenInfo = null;
 		const cursorPosition = this.getCursorPosition();
 
@@ -749,38 +750,59 @@ export class TerminalMode {
 				x += promptWidth;
 			}
 
-			// draw glyph backgrounds before overlays/text so selection remains visible
-			this.drawGlyphBackgrounds(renderer, seg, x, y, uppercaseDisplay);
-
-			// draw selection background for this segment if selection overlaps
-			if (sel) {
-				const selStart = Math.max(sel.start, segStart);
-				const selEnd = Math.min(sel.end, segStart + segLen);
-				if (selStart < selEnd) {
-					const before = displayText.slice(segStart, selStart);
-					const selected = displayText.slice(selStart, selEnd);
-					const startWidth = this.measureDisplayText(before, uppercaseDisplay);
-					const selWidth = this.measureDisplayText(selected, uppercaseDisplay);
-					renderer.rect({
-						kind: 'fill',
-						area: {
-							left: x + startWidth,
-							top: y,
-							right: x + startWidth + selWidth,
-							bottom: y + this.font.lineHeight,
-						},
-						color: this.selectionColor,
-					});
-				}
-			}
-
-			// draw the glyph run for this segment
-			this.drawGlyphRun(renderer, seg, x, y, inputColor, uppercaseDisplay);
-
 			// caret rendering: use shared caret style from console_cart_editor
 			const segEnd = segStart + segLen;
 			const isLastSegment = si === wrap.segments.length - 1;
 			const caretInSeg = cursorIndex >= segStart && (cursorIndex < segEnd || (isLastSegment && cursorIndex === segEnd));
+			const shouldRenderInlineGhost = caretInSeg
+				&& inlinePreview !== null
+				&& inlinePreview.row === cursorPosition.row
+				&& inlinePreview.column === cursorPosition.column;
+			if (shouldRenderInlineGhost) {
+				const localIndex = cursorIndex - segStart;
+				const prefixText = seg.slice(0, localIndex);
+				const suffixText = seg.slice(localIndex);
+				const ghostWidth = this.measureDisplayText(inlinePreview.suffix, uppercaseDisplay);
+				const prefixWidth = this.measureDisplayText(prefixText, uppercaseDisplay);
+
+				// draw glyph backgrounds before overlays/text so selection remains visible
+				this.drawGlyphBackgrounds(renderer, prefixText, x, y, uppercaseDisplay);
+				this.drawGlyphBackgrounds(renderer, inlinePreview.suffix, x + prefixWidth, y, uppercaseDisplay);
+				this.drawGlyphBackgrounds(renderer, suffixText, x + prefixWidth + ghostWidth, y, uppercaseDisplay);
+
+				// draw glyph runs (ghost inserted at caret)
+				this.drawGlyphRun(renderer, prefixText, x, y, inputColor, uppercaseDisplay);
+				this.drawGlyphRun(renderer, inlinePreview.suffix, x + prefixWidth, y, Msx1Colors[COLOR_COMPLETION_PREVIEW_TEXT], uppercaseDisplay);
+				this.drawGlyphRun(renderer, suffixText, x + prefixWidth + ghostWidth, y, inputColor, uppercaseDisplay);
+			} else {
+				// draw glyph backgrounds before overlays/text so selection remains visible
+				this.drawGlyphBackgrounds(renderer, seg, x, y, uppercaseDisplay);
+
+				// draw selection background for this segment if selection overlaps
+				if (sel) {
+					const selStart = Math.max(sel.start, segStart);
+					const selEnd = Math.min(sel.end, segStart + segLen);
+					if (selStart < selEnd) {
+						const before = displayText.slice(segStart, selStart);
+						const selected = displayText.slice(selStart, selEnd);
+						const startWidth = this.measureDisplayText(before, uppercaseDisplay);
+						const selWidth = this.measureDisplayText(selected, uppercaseDisplay);
+						renderer.rect({
+							kind: 'fill',
+							area: {
+								left: x + startWidth,
+								top: y,
+								right: x + startWidth + selWidth,
+								bottom: y + this.font.lineHeight,
+							},
+							color: this.selectionColor,
+						});
+					}
+				}
+
+				// draw the glyph run for this segment
+				this.drawGlyphRun(renderer, seg, x, y, inputColor, uppercaseDisplay);
+			}
 			if (caretInSeg) {
 				const local = displayText.slice(segStart, cursorIndex);
 				const caretOffset = this.measureDisplayText(local, uppercaseDisplay);

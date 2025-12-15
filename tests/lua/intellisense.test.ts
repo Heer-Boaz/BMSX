@@ -62,11 +62,6 @@ const consoleApiExports = {
 			void payload;
 			void emitterId;
 		}
-		public emit_gameplay(eventName: string, emitterId: string, payload?: unknown): void {
-			void eventName;
-			void emitterId;
-			void payload;
-		}
 	},
 };
 registerStubModule(consoleApiPath, consoleApiExports);

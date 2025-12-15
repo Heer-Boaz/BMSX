@@ -2909,7 +2909,7 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 	if (displayIndex < startDisplay) {
 		displayIndex = startDisplay;
 	}
-	if (displayIndex >= highlight.chars.length) {
+	if (displayIndex >= highlight.text.length) {
 		return ide_state.wordWrapEnabled ? Math.min(segmentEndColumn, line.length) : line.length;
 	}
 	const left = entry.advancePrefix[displayIndex];

@@ -8,6 +8,8 @@ import { KEYWORDS } from '../../lua/luatoken';
 // Lightweight Lua syntax highlighter used by the IDE.
 // Pure functions with no runtime/editor state dependencies beyond provided inputs.
 
+const TAB_EXPANSION = ' '.repeat(constants.TAB_SPACES);
+
 function isDigit(ch: string): boolean {
 	return LuaLexer.isDigit(ch);
 }
@@ -621,23 +623,48 @@ export function highlightLine(
 		applySemanticAnnotations(line, columnColors, lineAnnotations, builtinLookup);
 	}
 
-	const chars: string[] = [];
 	const colors: number[] = [];
 	const columnToDisplay: number[] = [];
+	const textParts: string[] = [];
+	let displayIndex = 0;
 	for (let column = 0; column < length; column += 1) {
-		columnToDisplay.push(chars.length);
+		columnToDisplay.push(displayIndex);
 		const ch = line.charAt(column);
 		const color = columnColors[column];
 		if (ch === '\t') {
-			for (let tab = 0; tab < constants.TAB_SPACES; tab += 1) {
-				chars.push(' ');
-				colors.push(color);
-			}
+			textParts.push(TAB_EXPANSION);
+			for (let tab = 0; tab < constants.TAB_SPACES; tab += 1) colors.push(color);
+			displayIndex += constants.TAB_SPACES;
 		} else {
-			chars.push(ch);
+			textParts.push(ch);
 			colors.push(color);
+			displayIndex += 1;
 		}
 	}
-	columnToDisplay.push(chars.length);
-	return { chars, colors, columnToDisplay };
+	columnToDisplay.push(displayIndex);
+	const text = textParts.join('');
+	let mutated = false;
+	for (let index = 0; index < text.length; index += 1) {
+		const color = colors[index];
+		if (color === constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING) {
+			continue;
+		}
+		const ch = text.charAt(index);
+		const upper = ch.toUpperCase();
+		if (upper !== ch) {
+			mutated = true;
+			break;
+		}
+	}
+	const upperText = mutated
+		? (() => {
+			const buffer: string[] = new Array(text.length);
+			for (let index = 0; index < text.length; index += 1) {
+				const ch = text.charAt(index);
+				buffer[index] = colors[index] === constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING ? ch : ch.toUpperCase();
+			}
+			return buffer.join('');
+		})()
+		: text;
+	return { text, upperText, colors, columnToDisplay };
 }

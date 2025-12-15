@@ -13,6 +13,36 @@ import { getActiveCodeTabContext } from '../editor_tabs';
 import { api } from '../../vm_runtime';
 import { computeSelectionSlice, ensureVisualLines, getVisualLineCount, visualIndexToSegment } from '../text_utils';
 import { drawCursor } from './render_caret';
+import type { VMFont } from '../../font';
+
+function drawHighlightSlice(
+	renderFont: VMFont,
+	renderText: string,
+	colors: readonly number[],
+	advancePrefix: readonly number[],
+	startDisplay: number,
+	endDisplay: number,
+	originX: number,
+	originY: number,
+	z: number
+): void {
+	if (endDisplay <= startDisplay) {
+		return;
+	}
+	let cursorX = originX;
+	const cursorY = originY;
+	let index = startDisplay;
+	while (index < endDisplay) {
+		const color = colors[index];
+		let end = index + 1;
+		while (end < endDisplay && colors[end] === color) {
+			end += 1;
+		}
+		api.write_with_font(renderText.slice(index, end), cursorX, cursorY, z, color, renderFont);
+		cursorX += advancePrefix[end] - advancePrefix[index];
+		index = end;
+	}
+}
 
 export function renderCodeArea(): void {
 	ensureVisualLines();
@@ -69,7 +99,16 @@ export function renderCodeArea(): void {
 	const gotoVisualIndex = activeGotoHighlight
 		? ide_state.layout.positionToVisualIndex(ide_state.lines, activeGotoHighlight.row, activeGotoHighlight.startColumn)
 		: null;
+	const activeChunkName = resolveHoverChunkName(getActiveCodeTabContext());
+	const breakpointsForChunk = getBreakpointsForChunk(activeChunkName);
 	const cursorVisualIndex = ide_state.layout.positionToVisualIndex(ide_state.lines, ide_state.cursorRow, ide_state.cursorColumn);
+	const inlineCompletionPreview = ide_state.completion.getInlineCompletionPreview();
+	const shouldRenderInlinePreview = inlineCompletionPreview !== null
+		&& inlineCompletionPreview.row === ide_state.cursorRow
+		&& inlineCompletionPreview.column === ide_state.cursorColumn;
+	const useUppercase = ide_state.caseInsensitive;
+	const renderFont = ide_state.font.renderFont();
+	const textLeftFloor = Math.floor(bounds.textLeft);
 	let cursorEntry: CachedHighlight = null;
 	let cursorInfo: CursorScreenInfo = null;
 	const sliceWidth = columnCapacity + 2;
@@ -91,7 +130,7 @@ export function renderCodeArea(): void {
 		}
 		const lineIndex = segment.row;
 		const entry = ide_state.layout.getCachedHighlight(ide_state.lines, lineIndex);
-		const hasBreakpointForRow = getBreakpointsForChunk(resolveHoverChunkName(getActiveCodeTabContext()))?.has(lineIndex + 1) ?? false;
+		const hasBreakpointForRow = breakpointsForChunk?.has(lineIndex + 1) ?? false;
 		if (hasBreakpointForRow && bounds.gutterRight > bounds.gutterLeft) {
 			const markerLeft = bounds.gutterLeft;
 			const gutterWidth = Math.max(1, bounds.gutterRight - bounds.gutterLeft);
@@ -109,18 +148,20 @@ export function renderCodeArea(): void {
 			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
 		}
 		const highlight = entry.hi;
+		const renderText = useUppercase ? highlight.upperText : highlight.text;
 		let columnStart = wrapEnabled ? segment.startColumn : ide_state.scrollColumn;
 		if (wrapEnabled) {
 			if (columnStart < segment.startColumn || columnStart > segment.endColumn) {
 				columnStart = segment.startColumn;
 			}
 		}
+		const columnToDisplay = highlight.columnToDisplay;
 		const maxColumn = wrapEnabled ? segment.endColumn : ide_state.lines[lineIndex].length;
 		const columnCount = wrapEnabled ? Math.max(0, maxColumn - columnStart) : sliceWidth;
-		const slice = ide_state.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
-		const sliceStartDisplay = slice.startDisplay;
-		const sliceEndLimit = wrapEnabled ? ide_state.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
-		const sliceEndDisplay = wrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
+		const clampedStartColumn = Math.min(columnStart, columnToDisplay.length - 1);
+		const clampedEndColumn = Math.min(columnStart + columnCount, columnToDisplay.length - 1);
+		const sliceStartDisplay = columnToDisplay[clampedStartColumn];
+		const sliceEndDisplay = columnToDisplay[clampedEndColumn];
 		drawReferenceHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
 		drawSearchHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
 		const selectionSlice = computeSelectionSlice(lineIndex, highlight, sliceStartDisplay, sliceEndDisplay);
@@ -133,7 +174,34 @@ export function renderCodeArea(): void {
 				api.rectfill_color(clampedLeft, rowY, clampedRight, rowY + ide_state.lineHeight, undefined, constants.SELECTION_OVERLAY);
 			}
 		}
-		drawEditorColoredText(ide_state.font, slice.text, slice.colors, bounds.textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT, { forceUppercase: true });
+		if (shouldRenderInlinePreview && visualIndex === cursorVisualIndex && lineIndex === inlineCompletionPreview.row) {
+			const insertDisplay = ide_state.layout.columnToDisplay(highlight, inlineCompletionPreview.column);
+			if (insertDisplay >= sliceStartDisplay && insertDisplay <= sliceEndDisplay) {
+				const ghost = inlineCompletionPreview.suffix;
+				drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, insertDisplay, textLeftFloor, rowY, undefined);
+				const prefixWidth = entry.advancePrefix[insertDisplay] - entry.advancePrefix[sliceStartDisplay];
+				const ghostText = useUppercase ? ghost.toUpperCase() : ghost;
+				if (ghostText.length > 0) {
+					api.write_with_font(ghostText, textLeftFloor + prefixWidth, rowY, undefined, constants.COLOR_COMPLETION_PREVIEW_TEXT, renderFont);
+				}
+				const ghostWidth = ghostText.length > 0 ? ide_state.font.measure(ghostText) : 0;
+				drawHighlightSlice(
+					renderFont,
+					renderText,
+					highlight.colors,
+					entry.advancePrefix,
+					insertDisplay,
+					sliceEndDisplay,
+					textLeftFloor + prefixWidth + ghostWidth,
+					rowY,
+					undefined
+				);
+			} else {
+				drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, sliceEndDisplay, textLeftFloor, rowY, undefined);
+			}
+		} else {
+			drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, sliceEndDisplay, textLeftFloor, rowY, undefined);
+		}
 		const rowDiagnostics = getDiagnosticsForRow(lineIndex);
 		for (let i = 0; i < rowDiagnostics.length; i += 1) {
 			const diagnostic = rowDiagnostics[i];
@@ -297,8 +365,8 @@ function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTo
 	let cursorWidth = ide_state.charAdvance;
 	let baseChar = ' ';
 	let baseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
-	if (cursorDisplayIndex < highlight.chars.length) {
-		baseChar = highlight.chars[cursorDisplayIndex];
+	if (cursorDisplayIndex < highlight.text.length) {
+		baseChar = highlight.text.charAt(cursorDisplayIndex);
 		baseColor = highlight.colors[cursorDisplayIndex];
 		const widthIndex = cursorDisplayIndex + 1;
 		if (widthIndex < entry.advancePrefix.length) {

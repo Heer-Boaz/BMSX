@@ -20,7 +20,8 @@ export type MessageState = {
 };
 
 export type HighlightLine = {
-	chars: string[];
+	text: string;
+	upperText: string;
 	colors: number[];
 	columnToDisplay: number[];
 };

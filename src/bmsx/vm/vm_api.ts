@@ -729,41 +729,15 @@ export class BmsxVMApi {
 		return $.registry.get<Service>(id);
 	}
 
-	private resolveEmitter(
-		emitter_or_id: Identifier | Registerable,
-		options?: { required?: boolean; context?: string }
-	): Registerable {
-		const context = options?.context ?? 'emit';
-		if (emitter_or_id === undefined || emitter_or_id === null) {
-			if (options?.required) {
-				throw new Error(`${context} requires a non-empty emitter or emitter id.`);
-			}
-			return null;
-		}
-		if (typeof emitter_or_id === 'string') {
-			const emitter = $.registry.get(emitter_or_id);
-			if (!emitter) {
-				throw new Error(`Emitter '${emitter_or_id}' not found.`);
-			}
-			return emitter;
-		}
-		return emitter_or_id;
-	}
-
 	public emit(event_name: string, emitter_or_id?: Identifier | Registerable, payload?: EventPayload): void {
 		if (typeof event_name !== 'string' || event_name.length === 0) {
 			throw new Error('emit requires a non-empty event name.');
 		}
-		const emitter = this.resolveEmitter(emitter_or_id);
+		const emitter = typeof emitter_or_id === 'string' ? $.get(emitter_or_id) : emitter_or_id;
+		// if (!emitter) {
+		// 	throw new Error(`emit requires a non-empty emitter and '${emitter_or_id}' not found.`);
+		// }
 		$.emit(event_name, emitter, payload);
-	}
-
-	public emit_gameplay(event_name: string, emitter_or_id: Identifier | Registerable, payload?: EventPayload): void {
-		if (typeof event_name !== 'string' || event_name.length === 0) {
-			throw new Error('emit_gameplay requires a non-empty event name.');
-		}
-		const emitter = this.resolveEmitter(emitter_or_id, { required: true, context: 'emit_gameplay' });
-		$.emit_gameplay(event_name, emitter as any, payload);
 	}
 
 	public get timelines(): EventTimeline[] {
