@@ -3,15 +3,15 @@ import { Component } from '../component/basecomponent';
 import type { asset_id, Identifier, vec2, vec3, BoundingBoxPrecalc, HitPolygonsPrecalc, RectBounds } from '../rompack/rompack';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import type { color, FlipOptions, RenderLayer } from '../render/gameview';
-import type { TimelinePlayOptions, TimelineFrameEventPayload } from './timeline_component';
+import type { TimelinePlayOptions } from './timeline_component';
 import { new_vec2 } from '../utils/vector_operations';
 import { Collider2DComponent } from './collisioncomponents';
-import type { GameEvent } from '../core/game_event';
 import { $ } from '../core/game';
+import { WorldObject } from '../core/object/worldobject';
 
 @insavegame
 @componenttags_postprocessing('render')
-export class SpriteComponent extends Component {
+export class SpriteComponent extends Component<WorldObject> {
 	static { this.autoRegister(); }
 	private _imgid: asset_id = 'none';
 	public scale: vec2 = new_vec2(1, 1);
@@ -107,7 +107,7 @@ export class SpriteComponent extends Component {
 		}
 		const primarySprite = owner.get_first_component(SpriteComponent);
 		if (this === primarySprite) {
-			return owner.getOrCreateCollider();
+			return owner.collider;
 		}
 		return undefined;
 	}
@@ -134,8 +134,8 @@ export class SpriteComponent extends Component {
 
 		const entry = $.rompack.img[id];
 		if (!entry) {
-			const ownerId = this.parent.id ?? '<unknown>';
-			const componentId = this.id ?? this.constructor.name;
+			const ownerId = this.parent.id;
+			const componentId = this.id;
 			throw new Error(`[SpriteComponent] Sprite asset '${id}' not found in rompack (object='${ownerId}', component='${componentId}').`);
 		}
 		const imgmeta = entry['imgmeta'];
@@ -151,13 +151,14 @@ export class SpriteComponent extends Component {
 		this.colliderSyncToken = token;
 	}
 
-	private observe_timeline(id: string): void {
-		if (this.timeline_followers.has(id)) return;
-		const channel = this.parent.timeline_events(id);
-		const remove = channel.on_frame(this, (event: GameEvent<'timeline.frame', TimelineFrameEventPayload<asset_id>>) => {
-			this.imgid = event.frame_value as asset_id;
-		});
-		this.timeline_followers.set(id, remove);
+	private observe_timeline(_id: string): void {
+		throw new Error('Not implemented yet.');
+		// if (this.timeline_followers.has(id)) return;
+		// const channel = this.parent.get_timeline(id);
+		// const remove = channel.on_frame(this, (event: GameEvent<'timeline.frame', TimelineFrameEventPayload<asset_id>>) => {
+		// 	this.imgid = event.frame_value;
+		// });
+		// this.timeline_followers.set(id, remove);
 	}
 
 	private release_timeline_followers(): void {

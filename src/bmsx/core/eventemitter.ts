@@ -12,25 +12,12 @@ export type ListenerSet = Set<Listener>;
 type EventListenerMap = Record<string, ListenerSet>;
 type EmitterScopeListenerMap = Record<string, EventListenerMap>;
 
-export interface EventSubscriptionOptions {
-	emitter?: Identifier;
-	persistent?: boolean;
-}
-
-export interface LocalSubscriptionOptions {
-	persistent?: boolean;
-}
-
 export type EventListenerDisposer = () => void;
 
 const portCache = new WeakMap<Identifiable, EventPort>();
 
 export class EventPort {
 	constructor(private readonly emitter: Identifiable) { }
-
-	public channel(path: string, key?: string): EventChannel {
-		return new EventChannel(this, path, key);
-	}
 
 	public on(spec: { event_name?: string; event?: string; handler: EventHandler; subscriber?: any; emitter?: Identifier; persistent?: boolean }): EventListenerDisposer {
 		if (!spec || typeof spec !== 'object') {
@@ -55,49 +42,12 @@ export class EventPort {
 		return event;
 	}
 
-	emitEvent<T extends GameEvent>(event: T): T {
+	emit_event<T extends GameEvent>(event: T): T {
 		if (!event.emitter) {
 			event.emitter = this.emitter;
 		}
 		EventEmitter.instance.emit(event);
 		return event;
-	}
-}
-
-export class EventChannel {
-	private readonly baseSegments: string[];
-
-	constructor(
-		private readonly port: EventPort,
-		path: string,
-		private readonly key?: string,
-	) {
-		this.baseSegments = path.split('.').filter(segment => segment.length > 0);
-	}
-
-	private resolve(segment?: string): string {
-		const parts = [...this.baseSegments];
-		if (segment && segment.length > 0) parts.push(segment);
-		if (this.key && this.key.length > 0) parts.push(this.key);
-		return parts.join('.');
-	}
-
-	type(segment?: string): string {
-		return this.resolve(segment);
-	}
-
-	public emit(payload?: EventPayload): GameEvent;
-	public emit(segment: string, payload?: EventPayload): GameEvent;
-	public emit(arg?: string | EventPayload, payload?: EventPayload): GameEvent {
-		if (typeof arg === 'string') {
-			return this.port.emit(this.resolve(arg), payload);
-		}
-		return this.port.emit(this.resolve(), arg);
-	}
-
-	public on(spec: { handler: EventHandler; subscriber?: any; persistent?: boolean; event_name?: string; event?: string; segment?: string; emitter?: Identifier }): EventListenerDisposer {
-		const eventName = spec.event_name ?? spec.event ?? this.resolve(spec.segment);
-		return this.port.on({ event_name: eventName, handler: spec.handler, subscriber: spec.subscriber, persistent: spec.persistent, emitter: spec.emitter });
 	}
 }
 
@@ -187,7 +137,6 @@ export class EventEmitter implements RegisterablePersistent {
 		EventEmitter.instance.anyListeners = EventEmitter.instance.anyListeners.filter(x => (x.handler !== handler || (forcePersistentRemoval && x.persistent)));
 	}
 
-
 	private checkIfListenerExists(event_name: string, listener: EventHandler<any>, subscriber: any, filtered_on_emitter_id?: Identifier): boolean {
 		const self = EventEmitter.instance;
 		if (filtered_on_emitter_id) {
@@ -267,11 +216,7 @@ export class EventEmitter implements RegisterablePersistent {
 			if (payload && typeof payload !== 'object') {
 				throw new Error(`Event '${arg0}' payload must be an object.`);
 			}
-			const event = create_gameevent({
-				type: arg0,
-				emitter: emitterOrSource ,
-				...(payload ?? {}),
-			});
+			const event = create_gameevent({type: arg0, emitter: emitterOrSource, payload});
 			this.emit(event);
 			return;
 		}

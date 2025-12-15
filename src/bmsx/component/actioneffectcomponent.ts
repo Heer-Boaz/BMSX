@@ -90,7 +90,7 @@ export class ActionEffectComponent extends Component {
 		const eventType = outcome?.event ?? definition.event ?? (definition.id as string);
 		const eventPayload = outcome && outcome.payload !== undefined ? outcome.payload : payload;
 		const event = this.createOwnerEvent(owner, eventType, eventPayload);
-		owner.events.emitEvent(event);
+		owner.events.emit_event(event);
 		owner.sc.dispatch_event(event);
 
 		if (definition.cooldown_ms !== undefined && definition.cooldown_ms > 0) {

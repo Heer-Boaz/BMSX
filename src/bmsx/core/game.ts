@@ -262,29 +262,9 @@ export class Game {
 	public emit(event: GameEvent): void;
 	public emit(event_name: string, emitter: Identifiable, payload?: EventPayload): void;
 	public emit(arg0: GameEvent | string, emitter?: Identifiable, payload?: EventPayload): void {
-		if (typeof arg0 === 'string') {
-			if (payload && typeof payload !== 'object') throw new Error(`[Game.emit] Payload for '${arg0}' must be an object.`);
-			const event = create_gameevent({ type: arg0, emitter: emitter, ...(payload ?? {}) });
-			this.emit(event);
-			return;
-		}
-		this.event_emitter.emit(arg0);
-	}
-
-	public emit_gameplay(event: GameEvent): void;
-	public emit_gameplay(event_name: string, emitter: Identifiable, payload?: EventPayload): void;
-	public emit_gameplay(arg0: GameEvent | string, emitter?: Identifiable, payload?: EventPayload): void {
-		let event: GameEvent;
-		if (typeof arg0 === 'string') {
-			if (!emitter) throw new Error(`[Game.emitGameplay] Emitter required for '${arg0}'.`);
-			if (payload && typeof payload !== 'object') throw new Error(`[Game.emitGameplay] Payload for '${arg0}' must be an object.`);
-			event = create_gameevent({ type: arg0, emitter, ...(payload ?? {}) });
-		} else {
-			event = arg0;
-		}
-		if (!event.emitter) throw new Error(`[Game.emitGameplay] Gameplay events require an emitter ('${event.type}').`);
-		GameplayEventRecorder.instance.record(event);
-		this.emit(event);
+		const e = typeof arg0 === 'string' ? create_gameevent({ type: arg0, emitter: emitter, payload }) : arg0;
+		GameplayEventRecorder.instance.record(e);
+		this.event_emitter.emit(e);
 	}
 
 	public get<T extends Registerable>(id: Identifier): T {

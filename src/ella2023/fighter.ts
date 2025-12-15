@@ -138,8 +138,8 @@ export abstract class Fighter extends SpriteObject {
 					},
 					exiting_state(this: Fighter) {
 						this.sc.resume_all_statemachines();
-						$.emit_gameplay('i_was_hit', this, { fighter: this }); // Allow the player to recuperate from the hit quickly.
-						$.emit_gameplay('hit_animation_end', this, { fighter: this }); // The Game Model will handle the hit animation end event, which will hide the hit marker and determine if the fighter is down.
+						$.emit('i_was_hit', this, { fighter: this }); // Allow the player to recuperate from the hit quickly.
+						$.emit('hit_animation_end', this, { fighter: this }); // The Game Model will handle the hit animation end event, which will hide the hit marker and determine if the fighter is down.
 					},
 				},
 			}
@@ -291,7 +291,7 @@ export abstract class Fighter extends SpriteObject {
 		opponent.sc.transition_to('hitanimation:/doet_au');
 		this.hp -= getDamage(attackType);
 		const weaponClass = (attackType === 'punch') ? 'light' : 'heavy';
-		$.emit_gameplay('combat.hit', this, { result: 'hit', weaponClass, actorId: opponent.id, targetId: this.id });
+		$.emit('combat.hit', this, { result: 'hit', weaponClass, actorId: opponent.id, targetId: this.id });
 	}
 
 	// queueRenderSubmissions removed; rendering handled by GenericRendererComponent producer

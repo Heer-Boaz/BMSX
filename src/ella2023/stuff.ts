@@ -71,7 +71,7 @@ export class GameOver extends SpriteObject {
 		this.getOrCreateCustomRenderer().add_producer(({ rc }) => {
 			rc.submit_rect({
 				kind: 'fill',
-				area: new_area3d(0, 136, this.z + 1, 256, 184, this.z + 1),
+				area: new_area3d(0, 136, this.z + 1, 256, 184),
 				color: Msx1Colors[0],
 			});
 			rc.submit_glyphs({

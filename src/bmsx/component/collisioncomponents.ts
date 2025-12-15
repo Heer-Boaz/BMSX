@@ -5,7 +5,7 @@ import { new_vec2, set_inplace_vec2 } from '../utils/vector_operations';
 import { vec2, type RectBounds, type Polygon } from '../rompack/rompack';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import { Component, componenttags_preprocessing, type ComponentAttachOptions } from "./basecomponent";
-import { is_area, new_area } from '../utils/rect_operations';
+import { new_area } from '../utils/rect_operations';
 
 /**
  * ColliderComponent holds collision shapes for a WorldObject.
@@ -107,7 +107,6 @@ export class Collider2DComponent extends Component<any> {
 
 	/** Set local rectangle bounds (replaces previous). */
 	public set_local_area(a: RectBounds): void {
-		if (!is_area(a)) throw new Error(`Collider2DComponent.set_local_area: invalid area object`);
 		this._localArea = a;
 	}
 	/** Set local polygons (replaces previous). */

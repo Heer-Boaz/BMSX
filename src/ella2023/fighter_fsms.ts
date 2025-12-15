@@ -511,14 +511,14 @@ function createAttackAnimationState(name: AttackType, weaponClass: 'light' | 'he
 		entering_state(this: Fighter) {
 			setSpriteFrame(this, name);
 			this.play_animation_timeline(timelineId);
-			$.emit_gameplay('combat.attack', this, { animation_name: name, weaponClass });
+			$.emit('combat.attack', this, { animation_name: name, weaponClass });
 		},
 		on: {
 			[`timeline.end.${timelineId}`]: {
 				go(this: Fighter, _state: State) {
 					this.handle_animation_timeline_end(timelineId);
 					$.emit('animationEnd', this, { animation_name: name });
-					$.emit_gameplay(`fighter.attack.animation.${name}.finished`, this, { attackType: name });
+					$.emit(`fighter.attack.animation.${name}.finished`, this, { attackType: name });
 				},
 			},
 		},

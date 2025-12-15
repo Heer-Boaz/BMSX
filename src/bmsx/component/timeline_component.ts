@@ -226,11 +226,11 @@ export class TimelineComponent extends Component<WorldObject> {
 		payload: TimelineFrameEventPayload | TimelineEndEventPayload,
 	): void {
 		const baseEvent = create_gameevent({ type: baseType, emitter: owner, ...payload });
-		owner.events.emitEvent(baseEvent);
+		owner.events.emit_event(baseEvent);
 		owner.sc.dispatch_event(baseEvent);
 		const scopedType = `${baseType}.${payload.timeline_id}`;
 		const scopedEvent = create_gameevent({ type: scopedType, emitter: owner, ...payload });
-		owner.events.emitEvent(scopedEvent);
+		owner.events.emit_event(scopedEvent);
 		owner.sc.dispatch_event(scopedEvent);
 	}
 
