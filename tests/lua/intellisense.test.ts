@@ -147,17 +147,6 @@ tracker:add()
 	assert.match(diagnostics[0].message, /tracker:add/);
 });
 
-test('detects missing emitter id for gameplay emit', async () => {
-	const diagnostics = await runDiagnostics(`
-local function send()
-	emit_gameplay('start')
-end
-send()
-`);
-	assert.equal(diagnostics.length, 1);
-	assert.match(diagnostics[0].message, /emit_gameplay expects 3 arguments/i);
-});
-
 // Semantic model behavior tests
 
 test('semantic model distinguishes table field and parameter', async () => {

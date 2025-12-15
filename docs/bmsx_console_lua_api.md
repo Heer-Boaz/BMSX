@@ -19,7 +19,7 @@ Use `guardedjustpressed` for single-fire input (as in `console_a` and `console_b
 
 ## Events and Timelines
 
-- Global emitters: `emit(name, emitter?, payload?)` for general events and `emit_gameplay` for gameplay-scoped events (records to the gameplay log).
+- Global emitters: `emit(name, emitter?, payload?)` for general events.
 - `events:on(name, handler, ctx?)` subscribes; `events:off(name, handler?)` removes.
 - World object timelines emit both `timeline.frame` and `timeline.frame.<timelineId>` events. Payload:
 

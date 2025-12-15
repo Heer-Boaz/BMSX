@@ -443,15 +443,6 @@ export const VM_API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	emit_gameplay: {
-		description: 'Dispatches a gameplay-scoped event to listeners.',
-		parameters: [
-			{ name: 'event_name', description: 'Name of the gameplay event to emit.' },
-			{ name: 'emitter_or_id', description: 'Emitter instance or id.' },
-			{ name: 'payload', optional: true, description: 'Optional gameplay event payload.' },
-		],
-		returnType: 'void',
-	},
 	timelines: {
 		description: 'Lists all registered EventTimeline instances.',
 		parameters: [],
