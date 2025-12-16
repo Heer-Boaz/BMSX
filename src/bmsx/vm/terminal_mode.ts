@@ -2,7 +2,7 @@ import type { color } from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
 import { VMEditorFont } from './editor_font';
 import type { VMFontVariant } from './font';
-import { wrapOverlayLine, applyCaseOutsideStrings } from './ide/text_utils';
+import { invalidateLuaCommentContextFromRow, wrapOverlayLine, applyCaseOutsideStrings } from './ide/text_utils';
 import {
 	createInlineTextField,
 	applyInlineFieldEditing,
@@ -72,6 +72,25 @@ class InlineFieldTextBuffer implements TextBuffer {
 		return total + (lines.length - 1);
 	}
 
+	public charCodeAt(offset: number): number {
+		let remaining = offset;
+		const lines = this.getLines();
+		for (let row = 0; row < lines.length; row += 1) {
+			const line = lines[row];
+			if (remaining < line.length) {
+				return line.charCodeAt(remaining);
+			}
+			if (remaining === line.length) {
+				if (row < lines.length - 1) {
+					return 10;
+				}
+				return NaN;
+			}
+			remaining -= line.length + 1;
+		}
+		return NaN;
+	}
+
 	public insert(): void {
 		throw new Error('[InlineFieldTextBuffer] insert not supported');
 	}
@@ -101,13 +120,22 @@ class InlineFieldTextBuffer implements TextBuffer {
 		return this.getLineStartOffset(row) + this.getLineContent(row).length;
 	}
 
-	public getLineContent(row: number): string {
-		return this.getLines()[row] ?? '';
-	}
+		public getLineContent(row: number): string {
+			return this.getLines()[row] ?? '';
+		}
 
-	public offsetAt(row: number, column: number): number {
-		return this.getLineStartOffset(row) + column;
-	}
+		public getLineSignature(row: number): number {
+			const line = this.getLineContent(row);
+			let hash = 2166136261;
+			for (let i = 0; i < line.length; i += 1) {
+				hash = Math.imul(hash ^ line.charCodeAt(i), 16777619) >>> 0;
+			}
+			return hash;
+		}
+
+		public offsetAt(row: number, column: number): number {
+			return this.getLineStartOffset(row) + column;
+		}
 
 	public positionAt(offset: number, out: MutableTextPosition): void {
 		let remaining = offset;
@@ -676,6 +704,7 @@ export class TerminalMode {
 		const context = previousText !== null ? this.buildEditContext(previousText, this.fieldText()) : editContext;
 		this.textVersion += 1;
 		this.cachedLinesVersion = -1;
+		invalidateLuaCommentContextFromRow(this.buffer, 0);
 		this.completion.updateAfterEdit(context);
 	}
 

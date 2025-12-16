@@ -208,9 +208,9 @@ export class RenderPassLibrary {
 		p.state = state;
 	}
 	getState<PState extends keyof PassStateTypes & RenderPassStateId>(id: PState): PassStateTypes[PState] {
-		const p = this.registered.get(String(id));
-		return p ? (p.state as PassStateTypes[PState]) : undefined;
+		return this.registered.get(String(id))?.state as PassStateTypes[PState];
 	}
+
 	execute(id: string, fbo: unknown): void {
 		const p = this.registered.get(String(id)); if (!p) throw new Error(`Pipeline '${id}' not found`);
 		const backend = this.backend;
@@ -229,7 +229,7 @@ export class RenderPassLibrary {
 				}
 			}
 		}
-		if (p.prepare) p.prepare(backend, p.state);
+		p.prepare?.(backend, p.state);
 
 		// Special-case: present passes on WebGPU manage their own pass/encoder.
 		// Provide pipeline handle via fbo parameter for convenience.
@@ -341,38 +341,48 @@ export class RenderPassLibrary {
 					const willRun = enabled && (!desc.shouldExecute || desc.shouldExecute());
 					if (!willRun) return;
 					if (data.present) {
+						// Execute the pass; PipelineRegistry ensures the program/pipeline is bound.
 						const colorTex = frameColorHandle != null ? ctx.getTex(frameColorHandle) : null;
 						const gv = $.view;
-
+						// TODO: Move CRT state setup to prepare()?
 						this.setState('crt', {
 							width: gv.offscreenCanvasSize.x,
 							height: gv.offscreenCanvasSize.y,
 							baseWidth: gv.viewportSize.x,
 							baseHeight: gv.viewportSize.y,
 							colorTex,
-							options: {
-								applyNoise: gv.applyNoise,
-								applyColorBleed: gv.applyColorBleed,
-								applyScanlines: gv.applyScanlines,
-								applyBlur: gv.applyBlur,
-								applyGlow: gv.applyGlow,
-								applyFringing: gv.applyFringing,
+							options: !!gv.crt_postprocessing_enabled ? {
+								applyNoise: !!gv.applyNoise,
+								applyColorBleed: !!gv.applyColorBleed,
+								applyScanlines: !!gv.applyScanlines,
+								applyBlur: !!gv.applyBlur,
+								applyGlow: !!gv.applyGlow,
+								applyFringing: !!gv.applyFringing,
 								noiseIntensity: gv.noiseIntensity,
 								colorBleed: gv.colorBleed,
 								blurIntensity: gv.blurIntensity,
 								glowColor: gv.glowColor,
-
-							} as CRTPipelineState['options'],
+							} as CRTPipelineState['options'] : {
+								applyNoise: false,
+								applyColorBleed: false,
+								applyScanlines: false,
+								applyBlur: false,
+								applyGlow: false,
+								applyFringing: false,
+								noiseIntensity: gv.noiseIntensity, // Will be unused
+								colorBleed: gv.colorBleed, // Will be unused
+								blurIntensity: gv.blurIntensity, // Will be unused
+								glowColor: gv.glowColor, // Will be unused
+							},
 						});
-						// Execute the pass; PipelineRegistry ensures the program/pipeline is bound.
-						this.execute(desc.id as string, null);
+						this.execute(desc.id, null);
 					} else if (isStateOnly) {
 						// Even for state-only passes, route through execute() to keep behavior uniform.
-						this.execute(desc.id as string, null);
+						this.execute(desc.id, null);
 					} else {
 						if (frameColorHandle == null || frameDepthHandle == null) return;
 						// Execute with the current frame FBO; registry binds pipeline then calls prepare().
-						this.execute(desc.id as string, ctx.getFBO(frameColorHandle, frameDepthHandle) as WebGLFramebuffer);
+						this.execute(desc.id, ctx.getFBO(frameColorHandle, frameDepthHandle) as WebGLFramebuffer);
 					}
 				}
 			});

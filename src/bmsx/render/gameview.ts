@@ -203,7 +203,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public colorBleed: [number, number, number] = [0.02, 0.0, 0.0];
 	public blurIntensity = 0.6;
 	public glowColor: [number, number, number] = [0.12, 0.10, 0.09];
-	public crt_postprocessing_intensity = true; // Whether to apply postprocessing in the CRT-shader, such as scanlines, noise, glow, etc.
+	public crt_postprocessing_enabled = true; // Whether to apply postprocessing in the CRT-shader, such as scanlines, noise, glow, etc.
 	public psx_dither_2d_enabled = true;
 	// public psx_dither_3d_enabled = false; TODO: JUST ADDED AND WE'LL USE IT LATER!
 

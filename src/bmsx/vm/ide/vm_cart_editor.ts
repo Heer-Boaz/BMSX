@@ -38,7 +38,7 @@ import {
 	findCodeTabContext,
 } from './editor_tabs';
 
-import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, markTextMutated, measureText, normalizeEndingsAndSplitLines, positionToVisualIndex, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapOverlayLine } from './text_utils';
+import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, invalidateLuaCommentContextFromRow, markTextMutated, measureText, normalizeEndingsAndSplitLines, positionToVisualIndex, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapOverlayLine } from './text_utils';
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
@@ -441,10 +441,17 @@ function clearRedoStack(buffer: PieceTreeBuffer): void {
 	redoStack.length = 0;
 }
 
+const tmpEditStartPosition = { row: 0, column: 0 };
+
 export function applyUndoableReplace(offset: number, deleteLength: number, insertText: string): void {
+	if (deleteLength === 0 && insertText.length === 0) {
+		return;
+	}
 	const record = ide_state.undoStack[ide_state.undoStack.length - 1];
 	const buffer = activePieceBuffer();
 	const op = new TextUndoOp();
+	buffer.positionAt(offset, tmpEditStartPosition);
+	const startRow = tmpEditStartPosition.row;
 
 	if (deleteLength === 0 && insertText.length > 0) {
 		buffer.insert(offset, insertText);
@@ -456,6 +463,7 @@ export function applyUndoableReplace(offset: number, deleteLength: number, inser
 		const deletedRoot = buffer.replaceToSubtree(offset, deleteLength, insertText);
 		op.setReplace(offset, deleteLength, deletedRoot, insertText.length);
 	}
+	invalidateLuaCommentContextFromRow(buffer, startRow);
 
 	record.ops.push(op);
 }
@@ -491,6 +499,7 @@ export function undo(): void {
 			}
 		}
 	}
+	invalidateLuaCommentContextFromRow(buffer, 0);
 
 	if (ide_state.redoStack.length >= constants.UNDO_HISTORY_LIMIT) {
 		const dropped = ide_state.redoStack.shift();
@@ -559,6 +568,7 @@ export function redo(): void {
 			}
 		}
 	}
+	invalidateLuaCommentContextFromRow(buffer, 0);
 
 	if (ide_state.undoStack.length >= constants.UNDO_HISTORY_LIMIT) {
 		const dropped = ide_state.undoStack.shift();
@@ -1505,6 +1515,9 @@ export function activate(): void {
 }
 
 export function applyEditorCrtDimming(): void {
+	$.view.crt_postprocessing_enabled = false;
+	$.view.psx_dither_2d_enabled = false;
+
 	// No-op because not used anyway and causing confusion as to whether it's properly restored to original values on close
 
 	// const view = $.view;
@@ -1532,6 +1545,8 @@ export function applyEditorCrtDimming(): void {
 }
 
 export function restoreCrtOptions(): void {
+	$.view.crt_postprocessing_enabled = true;
+	$.view.psx_dither_2d_enabled = true;
 	// const snapshot = ide_state.crtOptionsSnapshot;
 	// if (!snapshot) {
 	// 	throw new Error('[VMCartEditor] CRT options snapshot unavailable during restore.');
@@ -4232,6 +4247,7 @@ export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: s
 
 export function applySourceToDocument(source: string): void {
 	ide_state.buffer.replace(0, ide_state.buffer.length, source);
+	invalidateLuaCommentContextFromRow(ide_state.buffer, 0);
 	ide_state.textVersion = ide_state.buffer.version;
 	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.invalidateHighlightsFromRow(0);
