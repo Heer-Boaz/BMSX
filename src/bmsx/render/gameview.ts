@@ -476,6 +476,9 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	 *    an onscreen keyboard is sliding in (observed on several mobile web views).
 	 *  - `viewportScale` and `canvasScale`: the ratio between that real estate and the
 	 *    logical render sizes (`viewportSize` for gameplay, `canvasSize` for the backing buffer).
+	 *    Ensure scale is a half-integer multiple of the logical viewport
+	 *    (`viewportSize * viewportScale`) to reduce subpixel jitter when scaling non-integer factors.
+	 *    We centre the resulting surface within the **largest** container reported by either
 	 *
 	 * Historical context / pitfalls:
 	 *  - When the onscreen gamepad is enabled it becomes a first-class surface sharing the same
