@@ -8,6 +8,12 @@ const { createCanvas } = require('canvas');
 const ATLAS_MAX_SIZE_IN_PIXELS = 2048;
 const CROP_ATLAS = true;
 
+// Reserve and extrude a border around each image in the atlas.
+// This prevents gaps/bleeding when sampling the atlas (especially with subpixel
+// screen placement / scaling) while keeping the UVs mapped to the full image
+// area (no shrink/stretch of small sprites like glyphs).
+const ATLAS_IMAGE_PADDING = 1;
+
 export type Rect = { width: number; height: number; id: number; };
 export type Bin = { x: number; y: number; width: number; height: number; };
 
@@ -405,7 +411,13 @@ export function createOptimizedAtlas(imageResources: ImageResource[]): Canvas {
 	if (imageResources.length === 0) {
 		return createCanvas(1, 1);
 	}
-	const rects = imageResources.map(img_resource => ({ x: undefined as number, y: undefined as number, width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
+	const rects = imageResources.map(img_resource => ({
+		x: undefined as number,
+		y: undefined as number,
+		width: (img_resource.img?.width ?? 0) + ATLAS_IMAGE_PADDING * 2,
+		height: (img_resource.img?.height ?? 0) + ATLAS_IMAGE_PADDING * 2,
+		id: img_resource.id
+	}));
 
 	const results: Array<{ items: { item: Rect, x: number, y: number; }[], width: number, height: number; }> = [];
 	const packers: Array<{ name: string; fn: (rectangles: Rect[], width: number, height: number) => { items: { item: Rect, x: number, y: number; }[], width: number, height: number; }; }> = [
@@ -452,21 +464,38 @@ export function createOptimizedAtlas(imageResources: ImageResource[]): Canvas {
 			throw new Error(`Image resource "${img_asset.name}" is missing its image payload.`);
 		}
 		const img = img_asset.img;
-		ctx.drawImage(img, packedRect.x, packedRect.y);
-		img_asset.atlasTexcoords = uvcoords(
-			packedRect.x,
-			packedRect.y,
-			atlas_width,
-			atlas_height,
-			img.width,
-			img.height
-		);
+		const pad = ATLAS_IMAGE_PADDING;
+		const dx = packedRect.x + pad;
+		const dy = packedRect.y + pad;
+
+		// Draw the main image
+		ctx.drawImage(img, dx, dy);
+
+		// Extrude edge pixels into the padding area to prevent sampling gaps.
+		if (pad > 0) {
+			// Left / right borders
+			ctx.drawImage(img, 0, 0, 1, img.height, packedRect.x, dy, pad, img.height);
+			ctx.drawImage(img, img.width - 1, 0, 1, img.height, dx + img.width, dy, pad, img.height);
+			// Top / bottom borders
+			ctx.drawImage(img, 0, 0, img.width, 1, dx, packedRect.y, img.width, pad);
+			ctx.drawImage(img, 0, img.height - 1, img.width, 1, dx, dy + img.height, img.width, pad);
+			// Corners
+			ctx.drawImage(img, 0, 0, 1, 1, packedRect.x, packedRect.y, pad, pad);
+			ctx.drawImage(img, img.width - 1, 0, 1, 1, dx + img.width, packedRect.y, pad, pad);
+			ctx.drawImage(img, 0, img.height - 1, 1, 1, packedRect.x, dy + img.height, pad, pad);
+			ctx.drawImage(img, img.width - 1, img.height - 1, 1, 1, dx + img.width, dy + img.height, pad, pad);
+		}
+
+		// UVs cover ONLY the actual image pixels (exclude the padding).
+		img_asset.atlasTexcoords = uvcoords(dx, dy, atlas_width, atlas_height, img.width, img.height);
 	}
 	return atlasCanvas;
 }
 
 /**
- * Calculates the UV coordinates of an image that has been packed into a texture atlas.
+ * Calculates the UV coordinates of the inner image region that has been packed into a texture atlas.
+ * Note: the atlas builder reserves a padded border around each image and extrudes edge pixels into it.
+ * UVs must therefore address the *inner* (non-padded) rectangle using texel edges.
  * @param x The x-coordinate of the image in the texture atlas.
  * @param y The y-coordinate of the image in the texture atlas.
  * @param width The width of the texture atlas.
