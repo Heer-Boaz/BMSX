@@ -17,7 +17,7 @@ import { type RenderPassToken } from './backend/pipeline_interfaces';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
 import { GameOptions } from '../core/gameoptions';
-import { calculateCenteredBlockX, renderGlyphs, renderGlyphsSpan, wrapGlyphs } from './glyphs';
+import { calculateCenteredBlockX, renderGlyphs, wrapGlyphs } from './glyphs';
 import type {
 	GameViewHost,
 	GameViewCanvas,
@@ -239,71 +239,66 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			glyphs: (o: GlyphRenderSubmission) => void;
 		};
 	} = {
-			submit: {
-				typed: (o: RenderSubmission) => {
-					switch (o.type) {
-						case 'img':
-							this.renderer.submit.sprite(o);
-							return;
-						case 'mesh':
-							this.renderer.submit.mesh(o);
-							return;
-						case 'particle':
-							this.renderer.submit.particle(o);
-							return;
-						case 'rect':
-							this.renderer.submit.rect(o);
-							return;
-						case 'poly':
-							this.renderer.submit.poly(o);
-							return;
-						case 'glyphs':
-							this.renderer.submit.glyphs(o);
-							return;
-					}
-				},
-				particle: (o: ParticleRenderSubmission) => {
-					ParticlesPipeline.submit_particle({ ...o });
-				},
-				sprite: (o: ImgRenderSubmission) => {
-					SpritesPipeline.drawImg(o);
-				},
-				mesh: (o: MeshRenderSubmission) => {
-					MeshPipeline.submitMesh({ ...o });
-				},
-				rect: (o: RectRenderSubmission) => {
-					o.kind === 'fill' ? SpritesPipeline.fillRectangle(o) : SpritesPipeline.drawRectangle(o);
-				},
-				poly: (o: PolyRenderSubmission) => {
-					SpritesPipeline.drawPolygon(o.points, o.z, o.color, o.thickness ?? 1, o.layer);
-				},
-				glyphs: (o: GlyphRenderSubmission) => {
-					let lines: string | string[] = o.glyphs;
-					const resolvedFont = o.font ?? this.default_font;
-					if (!resolvedFont) {
-						throw new Error('[GameView] No font available for glyph rendering.');
-					}
-					o.font = resolvedFont;
-
-					if (typeof lines === 'string' && o.glyph_start !== undefined && o.glyph_end !== undefined) {
-						renderGlyphsSpan(o.x, o.y, lines, o.glyph_start, o.glyph_end, o.z ?? 950, o.font, o.color, o.background_color, o.layer);
+		submit: {
+			typed: (o: RenderSubmission) => {
+				switch (o.type) {
+					case 'img':
+						this.renderer.submit.sprite(o);
 						return;
-					}
-
-					// Optional char-based wrapping
-					if (typeof lines === 'string' && o.wrap_chars !== undefined && o.wrap_chars > 0) {
-						lines = wrapGlyphs(lines, o.wrap_chars);
-					}
-					let xx = o.x;
-					// Optional simple centering within a block of width (pixels)
-					if (o.center_block_width && o.center_block_width > 0) {
-						const arr = Array.isArray(lines) ? lines : [lines];
-						xx += calculateCenteredBlockX(arr, o.font.char_width('a'), o.center_block_width);
-					}
-					renderGlyphs(xx, o.y, lines, o.z ?? 950, o.font, o.color, o.background_color, o.layer);
-				},
+					case 'mesh':
+						this.renderer.submit.mesh(o);
+						return;
+					case 'particle':
+						this.renderer.submit.particle(o);
+						return;
+					case 'rect':
+						this.renderer.submit.rect(o);
+						return;
+					case 'poly':
+						this.renderer.submit.poly(o);
+						return;
+					case 'glyphs':
+						this.renderer.submit.glyphs(o);
+						return;
+				}
 			},
-		} as RenderSubmitQueue;
+			particle: (o: ParticleRenderSubmission) => {
+				ParticlesPipeline.submit_particle({ ...o });
+			},
+			sprite: (o: ImgRenderSubmission) => {
+				SpritesPipeline.drawImg(o);
+			},
+			mesh: (o: MeshRenderSubmission) => {
+				MeshPipeline.submitMesh({ ...o });
+			},
+			rect: (o: RectRenderSubmission) => {
+				o.kind === 'fill' ? SpritesPipeline.fillRectangle(o) : SpritesPipeline.drawRectangle(o);
+			},
+			poly: (o: PolyRenderSubmission) => {
+				SpritesPipeline.drawPolygon(o.points, o.z, o.color, o.thickness ?? 1, o.layer);
+			},
+			glyphs: (o: GlyphRenderSubmission) => {
+				let lines: string | string[] = o.glyphs;
+				const resolvedFont = o.font ?? this.default_font;
+				if (!resolvedFont) {
+					throw new Error('[GameView] No font available for glyph rendering.');
+				}
+				o.font = resolvedFont;
+
+				// Optional char-based wrapping
+				if (typeof lines === 'string' && o.wrap_chars !== undefined && o.wrap_chars > 0) {
+					lines = wrapGlyphs(lines, o.wrap_chars);
+				}
+				let xx = o.x;
+				// Optional simple centering within a block of width (pixels)
+				if (o.center_block_width && o.center_block_width > 0) {
+					const arr = Array.isArray(lines) ? lines : [lines];
+					xx += calculateCenteredBlockX(arr, o.font.char_width('a'), o.center_block_width);
+				}
+				renderGlyphs(xx, o.y, lines, o.glyph_start, o.glyph_end, o.z ?? 950, o.font, o.color, o.background_color, o.layer);
+			},
+		},
+	} as RenderSubmitQueue;
 
 	// --- Ambient controls API (best-practice toggles) -------------------------
 	public setSkyboxTintExposure(tint: [number, number, number], exposure = 1.0): void {
@@ -554,10 +549,11 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		}
 
 		self.windowSize = { x: adjustedWidth, y: effectiveHeight };
-		self.availableWindowSize = { x: ~~adjustedWidth, y: ~~effectiveHeight };
+		self.availableWindowSize = { x: Math.round(adjustedWidth), y: Math.round(effectiveHeight) };
 		self.dx = self.availableWindowSize.x / self.viewportSize.x;
 		self.dy = self.availableWindowSize.y / self.viewportSize.y;
-		self.viewportScale = Math.min(self.dx, self.dy);
+		// self.viewportScale = Math.min(self.dx, self.dy);
+		self.viewportScale = Math.floor(Math.min(self.dx, self.dy) * 2) / 2;
 
 		self.canvas_dx = self.availableWindowSize.x / self.canvasSize.x;
 		self.canvas_dy = self.availableWindowSize.y / self.canvasSize.y;
@@ -619,8 +615,24 @@ export class GameView implements RegisterablePersistent, RenderContext {
 
 		const self = $.view || this;
 		self.calculateSize();
-		const displayWidth = ~~(self.canvasSize.x * self.canvasScale);
-		const displayHeight = ~~(self.canvasSize.y * self.canvasScale);
+		// const displayWidth = ~~(self.canvasSize.x * self.canvasScale);
+		// const displayHeight = ~~(self.canvasSize.y * self.canvasScale);
+
+		// const targetWidth = ~~(self.viewportSize.x * self.viewportScale);
+		// const targetHeight = ~~(self.viewportSize.y * self.viewportScale);
+		const targetWidth = Math.round(self.viewportSize.x * self.viewportScale);
+		const targetHeight = Math.round(self.viewportSize.y * self.viewportScale);
+		if (self.canvasSize.x !== targetWidth
+			|| self.canvasSize.y !== targetHeight
+			|| self.offscreenCanvasSize.x !== targetWidth
+			|| self.offscreenCanvasSize.y !== targetHeight) {
+			self.configureRenderTargets({ canvasSize: { x: targetWidth, y: targetHeight }, offscreenSize: { x: targetWidth, y: targetHeight } });
+			return;
+		}
+
+		const displayWidth = self.canvasSize.x;
+		const displayHeight = self.canvasSize.y;
+
 		const horizontalContainer = Math.max(viewportWidth, self.windowSize.x, displayWidth);
 		const verticalContainer = Math.max(viewportHeight, self.windowSize.y, displayHeight);
 		let displayLeft = ~~((horizontalContainer - displayWidth) / 2);

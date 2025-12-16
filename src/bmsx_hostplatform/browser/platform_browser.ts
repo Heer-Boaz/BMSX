@@ -1091,7 +1091,7 @@ class BrowserGameViewCanvas implements GameViewCanvas {
 class BrowserGamepadControlHandle implements GamepadControlHandle {
 	public constructor(public readonly id: string, private readonly element: HTMLElement) { }
 
-	public getNumericAttribute(name: string): number {
+	public getNumericAttribute(name: string): number | null {
 		let value = this.element.getAttribute(name);
 		if (!value) {
 			value = this.element.getAttribute(`data-${name}`);

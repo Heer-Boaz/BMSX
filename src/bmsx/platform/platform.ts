@@ -359,7 +359,7 @@ export interface GameViewCanvas {
  */
 export interface GamepadControlHandle {
 	readonly id: string;
-	getNumericAttribute(name: string): number;
+	getNumericAttribute(name: string): number | null;
 	measure(): { width: number; height: number; };
 	setBottom(px: number): void;
 	setScale(scale: number): void;

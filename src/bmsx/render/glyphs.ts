@@ -1,6 +1,5 @@
 import { BFont } from '../core/font';
 import { $ } from '../core/game';
-import type { vec2 } from "../rompack/rompack";
 import type { ImgRenderSubmission, RectRenderSubmission, RenderLayer, color } from './shared/render_types';
 
 const CHAR_CACHE: string[] = (() => {
@@ -12,154 +11,59 @@ const CHAR_CACHE: string[] = (() => {
 })();
 
 /**
- * Text rendering utility (engine-level). Preferred UE-style usage is via TextComponent + TextRenderSystem.
- * This function exists as an immediate-mode bridge for custom producers and legacy code.
+ * Text rendering utility (engine-level). Preferred UE-style usage is via TextComponent + TextRenderSystem, which uses this internally.
  */
-export function renderGlyphs(x: number, y: number, textToWrite: string | string[], z: number = 950, font?: BFont, color?: color, backgroundColor?: color, layer?: RenderLayer): void {
+export function renderGlyphs(x: number, y: number, textToWrite: string | string[], start?: number, end?: number, z: number = 950, font?: BFont, color?: color, backgroundColor?: color, layer?: RenderLayer): void {
 	font ??= $.view.default_font;
 	if (!font) { console.error('No default font available for drawText'); return; }
 	const startX = x;
 	let stepY = 0;
-	const pos: vec2 = { x: ~~x, y: ~~y, z: ~~z };
-	const spriteOptions: ImgRenderSubmission = { imgid: 'none', pos, colorize: color, layer };
+	const spriteOptions: ImgRenderSubmission = { imgid: 'none', pos: { x, y, z }, colorize: color, layer };
+	const spritePos = spriteOptions.pos;
 	const rectoptions: RectRenderSubmission = backgroundColor
 		? { area: { left: 0, top: 0, right: 0, bottom: 0 }, color: backgroundColor, kind: 'fill', layer }
 		: null;
 
-	const glyphGetter = (font as unknown as { getGlyph?: (char: string) => { imgId: string; width: number; height: number } }).getGlyph;
-	const getGlyph = glyphGetter ? ((char: string) => glyphGetter.call(font, char)) : null;
-	const drawLine = getGlyph
-		? (text: string): boolean => {
-			for (let i = 0; i < text.length; i += 1) {
-				const code = text.charCodeAt(i);
-				const letter = code < CHAR_CACHE.length ? CHAR_CACHE[code] : text.charAt(i);
-				const glyph = getGlyph(letter);
-				const stepX = glyph.width;
-				const height = glyph.height;
-				if (height > stepY) {
-					stepY = height;
-				}
-				if (rectoptions) {
-					const area = rectoptions.area;
-					area.left = pos.x;
-					area.top = pos.y;
-					area.right = pos.x + stepX;
-					area.bottom = pos.y + stepY;
-					$.view.renderer.submit.rect(rectoptions);
-				}
-				spriteOptions.imgid = glyph.imgId;
-				$.view.renderer.submit.sprite(spriteOptions);
-				pos.x += stepX;
-			}
-			pos.x = startX;
-			pos.y += stepY;
-			stepY = 0;
-			return pos.y >= $.view.canvasSize.y;
-		}
-		: (text: string): boolean => {
-		for (let i = 0; i < text.length; i += 1) {
+	start = start ?? 0;
+
+	const renderSpan = (text: string) => {
+		const endIndex = end ?? text.length;
+		for (let i = start; i < endIndex; i += 1) {
 			const code = text.charCodeAt(i);
 			const letter = code < CHAR_CACHE.length ? CHAR_CACHE[code] : text.charAt(i);
-			const stepX = font.char_width(letter);
-			const height = font.char_height(letter);
-			if (height > stepY) {
-				stepY = height;
-			}
-			if (rectoptions) {
-				const area = rectoptions.area;
-				area.left = pos.x;
-				area.top = pos.y;
-				area.right = pos.x + stepX;
-				area.bottom = pos.y + stepY;
-				$.view.renderer.submit.rect(rectoptions);
-			}
-			spriteOptions.imgid = font.char_to_img(letter);
-			$.view.renderer.submit.sprite(spriteOptions);
-			pos.x += stepX;
-		}
-		pos.x = startX;
-		pos.y += stepY;
-		stepY = 0;
-		return pos.y >= $.view.canvasSize.y;
-	};
-
-	if (Array.isArray(textToWrite)) {
-		for (let i = 0; i < textToWrite.length; i += 1) {
-			if (drawLine(textToWrite[i])) {
-				return;
-			}
-		}
-		return;
-	}
-	drawLine(textToWrite);
-}
-
-export function renderGlyphsSpan(
-	x: number,
-	y: number,
-	text: string,
-	start: number,
-	end: number,
-	z: number = 950,
-	_font?: BFont,
-	color?: color,
-	backgroundColor?: color,
-	layer?: RenderLayer,
-): void {
-	const font = _font ?? $.view.default_font;
-	if (!font) { console.error('No default font available for drawText'); return; }
-	let stepY = 0;
-	const pos: vec2 = { x, y, z };
-	const spriteOptions: ImgRenderSubmission = { imgid: 'none', pos, colorize: color, layer };
-	const rectoptions: RectRenderSubmission = backgroundColor
-		? { area: { left: 0, top: 0, right: 0, bottom: 0 }, color: backgroundColor, kind: 'fill', layer }
-		: null;
-
-	const glyphGetter = (font as unknown as { getGlyph?: (char: string) => { imgId: string; width: number; height: number } }).getGlyph;
-	if (glyphGetter) {
-		for (let i = start; i < end; i += 1) {
-			const code = text.charCodeAt(i);
-			const letter = code < CHAR_CACHE.length ? CHAR_CACHE[code] : text.charAt(i);
-			const glyph = glyphGetter.call(font, letter);
-			const stepX = glyph.width;
+			const glyph = font.getGlyph(letter);
+			const stepX = glyph.advance;
 			const height = glyph.height;
 			if (height > stepY) {
 				stepY = height;
 			}
 			if (rectoptions) {
 				const area = rectoptions.area;
-				area.left = pos.x;
-				area.top = pos.y;
-				area.right = pos.x + stepX;
-				area.bottom = pos.y + stepY;
+				area.left = x;
+				area.top = y;
+				area.right = x + stepX;
+				area.bottom = y + stepY;
 				$.view.renderer.submit.rect(rectoptions);
 			}
-			spriteOptions.imgid = glyph.imgId;
+			spritePos.x = x;
+			spritePos.y = y;
+			spriteOptions.imgid = glyph.imgid;
 			$.view.renderer.submit.sprite(spriteOptions);
-			pos.x += stepX;
+			x += stepX;
 		}
-		return;
-	}
+		x = startX;
+		y += stepY;
+		stepY = 0;
+	};
 
-	for (let i = start; i < end; i += 1) {
-		const code = text.charCodeAt(i);
-		const letter = code < CHAR_CACHE.length ? CHAR_CACHE[code] : text.charAt(i);
-		const stepX = font.char_width(letter);
-		const height = font.char_height(letter);
-		if (height > stepY) {
-			stepY = height;
+	if (Array.isArray(textToWrite)) {
+		for (let a = 0; a < textToWrite.length; a += 1) {
+			renderSpan(textToWrite[a]);
+			if (y >= $.view.canvasSize.y) return;
 		}
-		if (rectoptions) {
-			const area = rectoptions.area;
-			area.left = pos.x;
-			area.top = pos.y;
-			area.right = pos.x + stepX;
-			area.bottom = pos.y + stepY;
-			$.view.renderer.submit.rect(rectoptions);
-		}
-		spriteOptions.imgid = font.char_to_img(letter);
-		$.view.renderer.submit.sprite(spriteOptions);
-		pos.x += stepX;
+	}
+	else {
+		renderSpan(textToWrite);
 	}
 }
 

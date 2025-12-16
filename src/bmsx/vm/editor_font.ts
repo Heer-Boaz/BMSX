@@ -1,9 +1,10 @@
-import type { VMGlyph, VMFontVariant } from './font';
+import type { VMFontVariant } from './font';
+import type { FontGlyph } from 'bmsx/core/font';
 import { VMFont, DEFAULT_VM_FONT_VARIANT } from './font';
 
 export class VMEditorFont {
 	private readonly font: VMFont;
-	private readonly glyphCache: Map<string, VMGlyph> = new Map();
+	private readonly glyphCache: Map<string, FontGlyph> = new Map();
 	private readonly lineHeightValue: number;
 	private readonly _variant: VMFontVariant;
 
@@ -13,7 +14,7 @@ export class VMEditorFont {
 		this.lineHeightValue = this.font.lineHeight;
 	}
 
-	public getGlyph(char: string): VMGlyph {
+	public getGlyph(char: string): FontGlyph {
 		let glyph = this.glyphCache.get(char);
 		if (glyph) {
 			return glyph;

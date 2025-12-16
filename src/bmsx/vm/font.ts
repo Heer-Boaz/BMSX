@@ -1,43 +1,27 @@
-import { BFont } from '../core/font';
-import { $ } from '../core/game';
-
-export type VMGlyph = {
-	imgId: string;
-	width: number;
-	height: number;
-	advance: number;
-};
+import { BFont, GlyphMap } from '../core/font';
 
 export type VMFontVariant = 'msx' | 'tiny';
 
 type VMFontPreset = {
 	prefix: string;
-	fallbackSprite: string;
 	tabDirtyMarkerAssetId: string;
-	buildCharMap(): CharMap;
+	buildCharMap(): GlyphMap;
 };
 
-type CharMap = Record<string, string>;
-
-const ADVANCE_PADDING: number = 0;
-const LINE_SPACING: number = 0;
-const TAB_SPACES: number = 2;
 export const DEFAULT_VM_FONT_VARIANT: VMFontVariant = 'msx';
 
 const FONT_PRESETS: Record<VMFontVariant, VMFontPreset> = {
 	msx: {
 		prefix: 'msx_6b_font',
-		fallbackSprite: 'msx_6b_font_question',
 		tabDirtyMarkerAssetId: 'msx_6b_font_ctrl_bel',
-		buildCharMap(): CharMap {
+		buildCharMap(): GlyphMap {
 			return buildMsxCharMap('msx_6b_font');
 		},
 	},
 	tiny: {
 		prefix: 'tiny_3b_font',
-		fallbackSprite: 'tiny_3b_font_question',
 		tabDirtyMarkerAssetId: 'tiny_3b_font_ctrl_bel',
-		buildCharMap(): CharMap {
+		buildCharMap(): GlyphMap {
 			return buildTinyCharMap('tiny_3b_font');
 		},
 	},
@@ -47,9 +31,9 @@ export function getVMFontPreset(variant: VMFontVariant): VMFontPreset {
 	return FONT_PRESETS[variant];
 }
 
-function buildMsxCharMap(prefix: string): CharMap {
+function buildMsxCharMap(prefix: string): GlyphMap {
 	const withPrefix = (suffix: string): string => `${prefix}_${suffix}`;
-	const map: CharMap = {
+	const map: GlyphMap = {
 		' ': withPrefix('space'),
 		'!': withPrefix('exclamation'),
 		'"': withPrefix('code_0x22'),
@@ -84,6 +68,7 @@ function buildMsxCharMap(prefix: string): CharMap {
 		'}': withPrefix('code_0x7d'),
 		'~': withPrefix('code_0x7e'),
 		'•': withPrefix('ctrl_bel'),
+		'¡': withPrefix('code_0x80'),
 	};
 	for (let i = 0; i < 10; i += 1) {
 		const digit = String.fromCharCode(48 + i);
@@ -103,9 +88,9 @@ function buildMsxCharMap(prefix: string): CharMap {
 	return map;
 }
 
-function buildTinyCharMap(prefix: string): CharMap {
+function buildTinyCharMap(prefix: string): GlyphMap {
 	const withPrefix = (suffix: string): string => `${prefix}_${suffix}`;
-	const map: CharMap = {
+	const map: GlyphMap = {
 		' ': withPrefix('space'),
 		'!': withPrefix('exclamation'),
 		'@': withPrefix('at_sign'),
@@ -140,6 +125,16 @@ function buildTinyCharMap(prefix: string): CharMap {
 		'|': withPrefix('pipe'),
 		'}': withPrefix('braceclose'),
 		'•': withPrefix('bullet'),
+		'¡': withPrefix('inverted_exclamation'),
+		'¤': withPrefix('flower'),
+		'¦': withPrefix('brokenbar'),
+		'§': withPrefix('section'),
+		'£': withPrefix('pound'),
+		'¥': withPrefix('yen'),
+		'€': withPrefix('euro'),
+		'µ': withPrefix('euler'),
+		'ĳ': withPrefix('low_ij'),
+		'Ĳ': withPrefix('ij'),
 	};
 	for (let i = 0; i < 10; i += 1) {
 		const digit = String.fromCharCode(48 + i);
@@ -156,105 +151,24 @@ function buildTinyCharMap(prefix: string): CharMap {
 		const lower = upper.toLowerCase();
 		map[upper] = withPrefix(lower);
 	}
-	map['¡'] = withPrefix('inverted_exclamation');
-	map['¤'] = withPrefix('flower');
-	map['¦'] = withPrefix('brokenbar');
-	map['§'] = withPrefix('section');
-	map['£'] = withPrefix('pound');
-	map['¥'] = withPrefix('yen');
-	map['€'] = withPrefix('euro');
-	map['µ'] = withPrefix('euler');
-	map['ĳ'] = withPrefix('low_ij');
-	map['Ĳ'] = withPrefix('ij');
 	return map;
 }
 
 export class VMFont extends BFont {
-	private readonly glyphs: Map<string, VMGlyph> = new Map();
-	private readonly advancePadding: number;
-	private readonly lineHeightValue: number;
-	private readonly spaceAdvanceValue: number;
-	private readonly preset: VMFontPreset;
-	private readonly variant: VMFontVariant;
+	protected readonly preset: VMFontPreset;
+	protected readonly variant: VMFontVariant;
 
 	constructor(config?: { variant?: VMFontVariant }) {
-		super({});
-		this.variant = config?.variant ?? DEFAULT_VM_FONT_VARIANT;
-		this.preset = getVMFontPreset(this.variant);
-		this.advancePadding = ADVANCE_PADDING;
-		this.resetLetterMap();
-		this.spaceAdvanceValue = this.advance(' ');
-		this.lineHeightValue = this.computeLineHeight();
+		const variant = config?.variant ?? DEFAULT_VM_FONT_VARIANT;
+		const preset = getVMFontPreset(variant);
+		super(preset.buildCharMap());
+		this.variant = variant;
+		this.preset = preset;
+		// this.resetLetterMap();
 	}
 
-	public override char_width(letter: string): number {
-		return this.getGlyph(letter).width;
-	}
-
-	public override char_height(letter: string): number {
-		return this.getGlyph(letter).height;
-	}
-
-	public override char_to_img(c: string): string {
-		if (c in this.letter_to_img) {
-			return this.letter_to_img[c];
-		}
-		return this.preset.fallbackSprite;
-	}
-
-	public getGlyph(char: string): VMGlyph {
-		let glyph = this.glyphs.get(char);
-		if (glyph) {
-			return glyph;
-		}
-		const imgId = this.char_to_img(char);
-		const entry = $.rompack.img[imgId];
-		if (!entry || !entry.imgmeta) {
-			throw new Error(`[VMFont] Glyph asset "${imgId}" for character "${char}" not found in rompack.`);
-		}
-		const width = entry.imgmeta.width;
-		const height = entry.imgmeta.height;
-		const computed: VMGlyph = {
-			imgId,
-			width,
-			height,
-			advance: width + this.advancePadding,
-		};
-		this.glyphs.set(char, computed);
-		return computed;
-	}
-
-	public advance(char: string): number {
-		return this.getGlyph(char).advance;
-	}
-
-	public get lineHeight(): number {
-		return this.lineHeightValue;
-	}
-
-	public measure(text: string): number {
-		let width = 0;
-		for (let i = 0; i < text.length; i++) {
-			const ch = text.charAt(i);
-			if (ch === '\t') {
-				width += this.spaceAdvanceValue * TAB_SPACES;
-				continue;
-			}
-			if (ch === '\n') {
-				continue;
-			}
-			width += this.advance(ch);
-		}
-		return width;
-	}
-
-	private computeLineHeight(): number {
-		const reference = this.getGlyph('A');
-		return reference.height + this.advancePadding + LINE_SPACING;
-	}
-
-	private resetLetterMap(): void {
-		const target = this.letter_to_img as Record<string, string>;
+	protected resetLetterMap(): void {
+		const target = this.letter_to_img;
 		const keys = Object.keys(target);
 		for (let i = 0; i < keys.length; i++) {
 			delete target[keys[i]];
@@ -265,7 +179,6 @@ export class VMFont extends BFont {
 			const ch = entries[i];
 			target[ch] = map[ch];
 		}
-		target['?'] = this.preset.fallbackSprite;
-		target['¡'] = `${this.preset.prefix}_code_0x80`;
 	}
+
 }
