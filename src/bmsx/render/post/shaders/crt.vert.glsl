@@ -7,7 +7,7 @@ in vec2 a_texcoord;         // Texture coordinates
 in float a_pos_z;           // Z position for depth sorting
 
 // Uniforms for resolution and scaling factor
-uniform vec2 u_resolution;  // Resolution of the screen
+uniform highp vec2 u_resolution;  // Resolution of the screen
 uniform float u_scale;      // Scaling factor for the position
 
 // Output variables to pass to the fragment shader

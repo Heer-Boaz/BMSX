@@ -198,7 +198,7 @@ export class WebGLBackend implements GPUBackend {
 	transitionTexture(): void { } // No-op in WebGL
 	// --- Pipeline API ---
 	createRenderPassInstance(desc: GraphicsPipelineBuildDesc): RenderPassInstanceHandle {
-		const program = this.buildProgram(desc.vsCode ?? '', desc.fsCode ?? '', desc.label ?? 'unnamed');
+		const program = this.buildProgram(desc.vsCode, desc.fsCode, desc.label);
 		if (!program) throw new Error(`Failed to create pipeline for ${desc.label}`);
 		const id = this.hashString(desc.label ?? Math.random().toString(36).slice(2));
 		return { id, label: desc.label, backendData: program };
