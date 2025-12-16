@@ -5,6 +5,7 @@ uniform sampler2D u_texture0;
 uniform sampler2D u_texture1;
 uniform sampler2D u_texture2;
 uniform float u_ditherIntensity;
+uniform bool u_ditherEnabled;
 
 in vec2 v_texcoord;
 in vec4 v_color_override;
@@ -74,12 +75,12 @@ void main() {
 	// 	float f = clamp(u_spriteAmbientFactor, 0.0, 1.0);
 	// 	texColor.rgb *= mix(vec3(1.0), u_ambient_frame.rgb * u_ambient_frame.a, f);
 	// }
-	float intensity = clamp(u_ditherIntensity, 0.0, 1.0);
-	if (intensity > 0.0) {
+
+	if (u_ditherEnabled) {
 		vec3 colS = linear_to_srgb(texColor.rgb);
 		float stepSz = 1.0 / 31.0;
 		float lumS = dot(colS, vec3(0.299, 0.587, 0.114));
-		float guard = smoothstep(stepSz, 3.0 * stepSz, lumS) * intensity;
+		float guard = smoothstep(stepSz, 3.0 * stepSz, lumS) * u_ditherIntensity;
 		int jitter = int(fract(u_timeDelta.x * 60.0) * 4.0);
 		ivec2 pix = ivec2(gl_FragCoord.xy) + ivec2(jitter);
 		vec3 qS = quantize_psx_ordered(colS, pix, guard);

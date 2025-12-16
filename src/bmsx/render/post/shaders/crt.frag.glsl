@@ -17,6 +17,7 @@ uniform bool u_applyScanlines;
 uniform bool u_applyBlur;
 uniform bool u_applyGlow;
 uniform bool u_applyFringing;
+uniform bool u_applyAperture;
 
 // --- Parameters ---
 uniform float u_noiseIntensity;       // 0..~0.5
@@ -178,33 +179,26 @@ void main(){
 	} else {
 		bc.blurred = color; bc.contrast = 0.0;
 	}
-	if (u_applyBlur) {
-		color = mix(color, bc.blurred, clamp(u_blurIntensity, 0.0, 1.0));
-	}
+	if (u_applyBlur) color = mix(color, bc.blurred, clamp(u_blurIntensity, 0.0, 1.0));
 
 	// 3) fringing
-	if (u_applyFringing){
-		color = applyFringing(color, v_texcoord, texel, bc.contrast, FRINGING_MIX);
-	}
+	if (u_applyFringing) color = applyFringing(color, v_texcoord, texel, bc.contrast, FRINGING_MIX);
 
 	// 4) scanlines
 	if (u_applyScanlines) color = applyScanlines(color, v_texcoord, srcPxRes);
 
 	// 5) aperture mask
-	// TODO: Add flag for aperture mask as u_applyApertureMask
-	color = applyApertureMask(color, v_texcoord, srcPxRes);
+	if (u_applyAperture) color = applyApertureMask(color, v_texcoord, srcPxRes);
 
 	// 6) glow (gate by near-black)
-	if (u_applyGlow){
+	if (u_applyGlow) {
 		float b = dot(color, LUMA);
 		float k = smoothstep(BLACK_CUTOFF, BLACK_SOFT, b);
 		color += u_glowColor * clamp(b, 0.0, GLOW_BRIGHTNESS_CLAMP) * k;
 	}
 
 	// 7) noise (gate by near-black)
-	if (u_applyNoise){
-		color += applyNoise(color, v_texcoord, srcPxRes);
-	}
+	if (u_applyNoise) color += applyNoise(color, v_texcoord, srcPxRes);
 
 	// --- Final black clamp (safety net) ---
 	float lumFinal = dot(color, LUMA);

@@ -71,6 +71,7 @@ const spriteShaderData = {
 };
 let spriteShaderScaleLocation: WebGLUniformLocation;
 let spriteShaderDitherIntensityLocation: WebGLUniformLocation;
+let spriteShaderDitherEnabledLocation: WebGLUniformLocation;
 
 interface SpriteRuntime {
 	backend: WebGLBackend;
@@ -104,14 +105,17 @@ export function setupSpriteShaderLocations(backend: GPUBackend): void {
 	texture2Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture2')!;
 	spriteShaderScaleLocation = gl.getUniformLocation(spriteShaderProgram, 'u_scale');
 	spriteShaderDitherIntensityLocation = gl.getUniformLocation(spriteShaderProgram, 'u_ditherIntensity')!;
+	spriteShaderDitherEnabledLocation = gl.getUniformLocation(spriteShaderProgram, 'u_ditherEnabled')!;
 }
 
-export function setupDefaultUniformValues(backend: WebGLBackend, defaultScale: number, canvasSize: vec2arr, ditherIntensity: number): void {
+export function setupDefaultUniformValues(backend: WebGLBackend, canvasSize: vec2arr): void {
 	const gl = backend.gl;
 	gl.useProgram(spriteShaderProgram);
-	gl.uniform1f(spriteShaderScaleLocation, defaultScale);
-	gl.uniform1f(spriteShaderDitherIntensityLocation, ditherIntensity);
-	spriteShaderData.resolutionVector.set([canvasSize[0], canvasSize[1]]);
+	gl.uniform1f(spriteShaderScaleLocation, 1);
+	gl.uniform1f(spriteShaderDitherIntensityLocation, 1);
+	gl.uniform1f(spriteShaderDitherEnabledLocation, 1);
+	spriteShaderData.resolutionVector[0] = canvasSize[0];
+	spriteShaderData.resolutionVector[1] = canvasSize[1];
 	gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
 	gl.uniform1i(texture0Location, TEXTURE_UNIT_ATLAS);
 	gl.uniform1i(texture1Location, TEXTURE_UNIT_ATLAS_DYNAMIC);
@@ -168,15 +172,36 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	gl.depthMask(false);
 	backend.bindVertexArray(spriteVAO as WebGLVertexArrayObject);
-	const baseScale = 1;
-	const ideScale = state.viewportTypeIde === 'viewport' ? baseScale : baseScale * (state.baseWidth / state.width);
-	setupDefaultUniformValues(backend, baseScale, [state.baseWidth, state.baseHeight], state.psxDither2dEnabled ? 1 : 0);
-	let currentScale = baseScale;
+
+	const program = gl.getParameter(gl.CURRENT_PROGRAM);
+
+	const u = (n: string) => gl.getUniformLocation(program, n);
+	const set1i = (n: string, v: number) => { const loc = u(n); gl.uniform1i(loc, v); };
+	const set1f = (n: string, v: number) => { const loc = u(n); gl.uniform1f(loc, v); };
+	// const set2f = (n: string, x: number, y: number) => { const loc = u(n); gl.uniform2f(loc, x, y); };
+
+	// Legacy fallback uniform for shader paths where FrameUniforms.u_logicalSize is not available.
+	spriteShaderData.resolutionVector[0] = state.baseWidth;
+	spriteShaderData.resolutionVector[1] = state.baseHeight;
+	gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
+
+	const ideScale = state.viewportTypeIde === 'viewport' ? 1 : (state.baseWidth / state.width);
+	let currentScale = 1;
 	const setScale = (scale: number) => {
 		if (scale === currentScale) return;
-		gl.uniform1f(spriteShaderScaleLocation, scale);
+		set1f('u_scale', scale);
 		currentScale = scale;
 	};
+
+	// const opts = state.options;
+	// const booleans: Array<[string, boolean]> = [
+	// ];
+	// for (const [name, val] of booleans) gl.uniform1i(u(name), val ? 1 : 0);
+
+	set1i('u_ditherEnabled', state.psxDither2dEnabled ? 1 : 0);
+	set1f('u_ditherIntensity', state.psxDither2dIntensity);
+
+
 	if (state.atlasTex) {
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS;
 		context.bind2DTex(state.atlasTex);
@@ -207,7 +232,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		i = 0;
 	};
 	forEachSprite(({ options, imgmeta }) => {
-		const desiredScale = options.layer === 'ide' ? ideScale : baseScale;
+		const desiredScale = options.layer === 'ide' ? ideScale : 1;
 		if (desiredScale !== currentScale) {
 			flush();
 			setScale(desiredScale);
@@ -253,7 +278,6 @@ export function drawImg(options: ImgRenderSubmission): void {
 	enqueueSprite(options, imgmeta);
 }
 
-export function getQueuedSpriteCount(): number { return spriteQueueBackSize(); }
 export function getSpriteQueueDebug(): { front: number; back: number } { return { front: spriteQueueFrontSize(), back: spriteQueueBackSize() }; }
 
 export function getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta): number[] {
@@ -354,12 +378,13 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			const build = makePipelineBuildDesc('Sprites2D', vs, fs);
 			return { vsCode: build.vsCode, fsCode: build.fsCode, bindingLayout: build.bindingLayout };
 		})(),
-		bootstrap: (backend: WebGLBackend) => {
-			const webglBackend = backend;
-			setupSpriteShaderLocations(webglBackend);
-			setupBuffers(webglBackend);
-			setupSpriteLocations(webglBackend);
-		},
+			bootstrap: (backend: WebGLBackend) => {
+				const webglBackend = backend;
+				setupSpriteShaderLocations(webglBackend);
+				setupBuffers(webglBackend);
+				setupSpriteLocations(webglBackend);
+				setupDefaultUniformValues(backend, [$.view.viewportSize.x, $.view.viewportSize.y]);
+			},
 		writesDepth: true,
 		shouldExecute: () => true,
 		exec: (backend: WebGLBackend, fbo, state: SpritesPipelineState) => {
@@ -399,6 +424,7 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 				ambientIntensity,
 				viewportTypeIde: gv.viewportTypeIde,
 				psxDither2dEnabled: gv.psx_dither_2d_enabled,
+				psxDither2dIntensity: gv.psx_dither2d_intensity,
 			};
 			registry.setState('sprites', spriteState);
 			// Validate binding layout vs resources

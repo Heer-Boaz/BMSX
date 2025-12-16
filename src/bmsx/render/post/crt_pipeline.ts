@@ -81,7 +81,8 @@ function bindCRTUniforms(gl: WebGL2RenderingContext, state: RenderPassStateRegis
 		['u_applyScanlines', opts.applyScanlines],
 		['u_applyBlur', opts.applyBlur],
 		['u_applyGlow', opts.applyGlow],
-		['u_applyFringing', opts.applyFringing]
+		['u_applyFringing', opts.applyFringing],
+		['u_applyAperture', opts.applyAperture]
 	];
 	for (const [name, val] of booleans) gl.uniform1i(u(name), val ? 1 : 0);
 	set1f('u_noiseIntensity', opts.noiseIntensity);

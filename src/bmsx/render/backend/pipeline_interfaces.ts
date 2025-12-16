@@ -265,6 +265,7 @@ export interface SpritesPipelineState {
 	ambientIntensity: number;
 	viewportTypeIde: RenderingViewportType;
 	psxDither2dEnabled: boolean;
+	psxDither2dIntensity: number;
 }
 
 export interface CRTPipelineState {
@@ -282,6 +283,7 @@ export interface CRTPipelineState {
 		applyBlur: boolean;
 		applyGlow: boolean;
 		applyFringing: boolean;
+		applyAperture: boolean;
 		blurIntensity: number;
 		glowColor: [number, number, number];
 	};

@@ -358,6 +358,7 @@ export class RenderPassLibrary {
 								applyBlur: !!gv.applyBlur,
 								applyGlow: !!gv.applyGlow,
 								applyFringing: !!gv.applyFringing,
+								applyAperture: !!gv.applyAperture,
 								noiseIntensity: gv.noiseIntensity,
 								colorBleed: gv.colorBleed,
 								blurIntensity: gv.blurIntensity,
@@ -369,6 +370,7 @@ export class RenderPassLibrary {
 								applyBlur: false,
 								applyGlow: false,
 								applyFringing: false,
+								applyAperture: false,
 								noiseIntensity: gv.noiseIntensity, // Will be unused
 								colorBleed: gv.colorBleed, // Will be unused
 								blurIntensity: gv.blurIntensity, // Will be unused
