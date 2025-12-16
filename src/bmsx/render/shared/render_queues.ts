@@ -87,9 +87,9 @@ export function submitSprite(options: ImgRenderSubmission, imgmeta: ImgMeta): vo
 	dst.layer = src.layer;
 	dst.ambient_affected = src.ambient_affected;
 	dst.ambient_factor = src.ambient_factor;
-	dst.pos.x = src.pos.x;
-	dst.pos.y = src.pos.y;
-	dst.pos.z = src.pos.z;
+	dst.pos.x = ~~src.pos.x;
+	dst.pos.y = ~~src.pos.y;
+	dst.pos.z = ~~src.pos.z;
 	const scale = src.scale;
 	if (scale) {
 		dst.scale.x = scale.x;

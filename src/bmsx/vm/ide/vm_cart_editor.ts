@@ -1524,46 +1524,11 @@ export function activate(): void {
 export function applyEditorCrtDimming(): void {
 	$.view.crt_postprocessing_enabled = false;
 	$.view.psx_dither_2d_enabled = false;
-
-	// No-op because not used anyway and causing confusion as to whether it's properly restored to original values on close
-
-	// const view = $.view;
-	// const [bleedR, bleedG, bleedB] = view.colorBleed;
-	// const [glowR, glowG, glowB] = view.glowColor;
-	// ide_state.crtOptionsSnapshot = {
-	// 	noiseIntensity: view.noiseIntensity,
-	// 	colorBleed: [bleedR, bleedG, bleedB] as [number, number, number],
-	// 	blurIntensity: view.blurIntensity,
-	// 	glowColor: [glowR, glowG, glowB] as [number, number, number],
-	// };
-	// let snapshot = ide_state.crtOptionsSnapshot;
-	// view.noiseIntensity = snapshot.noiseIntensity * 0.5;
-	// view.colorBleed = [
-	// 	snapshot.colorBleed[0] * 0.5,
-	// 	snapshot.colorBleed[1] * 0.5,
-	// 	snapshot.colorBleed[2] * 0.5,
-	// ] as [number, number, number];
-	// view.blurIntensity = snapshot.blurIntensity * 0.5;
-	// view.glowColor = [
-	// 	snapshot.glowColor[0] * 0.5,
-	// 	snapshot.glowColor[1] * 0.5,
-	// 	snapshot.glowColor[2] * 0.5,
-	// ] as [number, number, number];
 }
 
 export function restoreCrtOptions(): void {
 	$.view.crt_postprocessing_enabled = true;
 	$.view.psx_dither_2d_enabled = true;
-	// const snapshot = ide_state.crtOptionsSnapshot;
-	// if (!snapshot) {
-	// 	throw new Error('[VMCartEditor] CRT options snapshot unavailable during restore.');
-	// }
-	// ide_state.crtOptionsSnapshot = null;
-	// const view = $.view;
-	// view.noiseIntensity = snapshot.noiseIntensity;
-	// view.colorBleed = [snapshot.colorBleed[0], snapshot.colorBleed[1], snapshot.colorBleed[2]] as [number, number, number];
-	// view.blurIntensity = snapshot.blurIntensity;
-	// view.glowColor = [snapshot.glowColor[0], snapshot.glowColor[1], snapshot.glowColor[2]] as [number, number, number];
 }
 
 export function deactivate(): void {

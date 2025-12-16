@@ -491,7 +491,7 @@ export const ide_state: IdeState = {
 	maxLineLengthDirty: true,
 	cachedVisibleRowCount: 1,
 	cachedVisibleColumnCount: 1,
-	dimCrtInEditor: false,
+	dimCrtInEditor: true,
 	wordWrapEnabled: true,
 	lastPointerRowResolution: null,
 	completion: undefined!,

@@ -15,12 +15,12 @@ const CHAR_CACHE: string[] = (() => {
  * Text rendering utility (engine-level). Preferred UE-style usage is via TextComponent + TextRenderSystem.
  * This function exists as an immediate-mode bridge for custom producers and legacy code.
  */
-export function renderGlyphs(x: number, y: number, textToWrite: string | string[], z: number = 950, _font?: BFont, color?: color, backgroundColor?: color, layer?: RenderLayer): void {
-	const font = _font ?? $.view.default_font;
+export function renderGlyphs(x: number, y: number, textToWrite: string | string[], z: number = 950, font?: BFont, color?: color, backgroundColor?: color, layer?: RenderLayer): void {
+	font ??= $.view.default_font;
 	if (!font) { console.error('No default font available for drawText'); return; }
 	const startX = x;
 	let stepY = 0;
-	const pos: vec2 = { x, y, z };
+	const pos: vec2 = { x: ~~x, y: ~~y, z: ~~z };
 	const spriteOptions: ImgRenderSubmission = { imgid: 'none', pos, colorize: color, layer };
 	const rectoptions: RectRenderSubmission = backgroundColor
 		? { area: { left: 0, top: 0, right: 0, bottom: 0 }, color: backgroundColor, kind: 'fill', layer }
