@@ -1147,7 +1147,7 @@ local function build_director_fsm()
 						main.type_next()
 						return
 					end
-					self:set_prompt_line('[A] select')
+					self:set_prompt_line('(A) select')
 					local choice_text = world_object(text_choice_id)
 					choice_text.highlighted_line_index = self.choice_index - 1
 				end,
@@ -1318,7 +1318,7 @@ local function build_director_fsm()
 						main.type_next()
 						return
 					end
-					self:set_prompt_line('[A] ATTACK')
+					self:set_prompt_line('(A) ATTACK')
 					world_object(text_choice_id).highlighted_line_index = 0
 				end,
 				input_eval = 'first',
@@ -1759,15 +1759,12 @@ local function build_director_fsm()
 				end,
 				tick = function(self)
 					local main = world_object(text_main_id)
-					if main.is_typing then
-						main.type_next()
-					else
-						self:set_prompt_line('[A] select')
-					end
 					local choice_text = world_object(text_choice_id)
 					if main.is_typing then
+						main.type_next()
 						choice_text.highlighted_line_index = nil
 					else
+						self:set_prompt_line('(A) select')
 						choice_text.highlighted_line_index = self.choice_index - 1
 					end
 				end,
