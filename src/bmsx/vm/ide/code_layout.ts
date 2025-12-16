@@ -92,8 +92,17 @@ export class VMCodeLayout {
 
 	private refreshBuiltinIdentifiers(): void {
 		const snapshot = this.getBuiltinIdentifiers();
-		this.builtinEpoch = snapshot.epoch;
-		this.builtinIdentifiers = snapshot.ids;
+		if (snapshot.epoch !== this.builtinEpoch) {
+			this.builtinEpoch = snapshot.epoch;
+			this.builtinIdentifiers = snapshot.ids;
+
+			// Force rebuikd: builtins influence highlight → thus segments too
+			this.highlightCache.clear(); // Optional optimization (we could keep rows without builtin highlights)
+			this.markVisualLinesDirty();
+		} else {
+			// ids can be the same; yet assigning is ok
+			this.builtinIdentifiers = snapshot.ids;
+		}
 	}
 
 	private scheduleSemanticUpdate(): void {
