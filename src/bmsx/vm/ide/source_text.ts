@@ -10,16 +10,21 @@ export function splitText(text: string): string[] {
 	return text.split(NEWLINE);
 }
 
-let cachedBuffer: TextBuffer | null = null;
-let cachedVersion = -1;
-let cachedSource = '';
+type TextSnapshotCacheEntry = { v: number; s: string };
+const textSnapshotCache = new WeakMap<TextBuffer, TextSnapshotCacheEntry>();
 
 export function getTextSnapshot(buffer: TextBuffer): string {
-	if (cachedBuffer === buffer && cachedVersion === buffer.version) {
-		return cachedSource;
+	const v = buffer.version;
+	const cached = textSnapshotCache.get(buffer);
+	if (cached && cached.v === v) {
+		return cached.s;
 	}
-	cachedBuffer = buffer;
-	cachedVersion = buffer.version;
-	cachedSource = buffer.getText();
-	return cachedSource;
+	const s = buffer.getText();
+	if (cached) {
+		cached.v = v;
+		cached.s = s;
+	} else {
+		textSnapshotCache.set(buffer, { v, s });
+	}
+	return s;
 }

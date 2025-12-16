@@ -33,8 +33,10 @@ export type CachedHighlight = {
 	hi: HighlightLine;
 	displayToColumn: number[];
 	advancePrefix: number[];
+	textVersion: number;
+	lineSignature: number;
+	builtinEpoch: number;
 	rowSignature: number;
-	srcHash: number;
 };
 
 export type SearchMatch = {

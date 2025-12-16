@@ -12,6 +12,7 @@ import { markDiagnosticsDirty } from './diagnostics';
 import { resolveHoverChunkName, requestSemanticRefresh, clearReferenceHighlights } from './intellisense';
 import { getTextSnapshot, splitText } from './source_text';
 import type { TextBuffer } from './text_buffer';
+import { clamp } from '../../utils/clamp';
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;
@@ -175,67 +176,293 @@ export function isLuaCommentContext(
 	if (targetRow < 0 || targetRow >= lineCount) {
 		return false;
 	}
-	let blockComment = false;
-	let stringDelimiter: '\'' | '"' = null;
-	for (let row = 0; row <= targetRow; row += 1) {
-		const line = buffer.getLineContent(row);
-		let index = 0;
-		let lineComment = false;
-		const limitColumn = row === targetRow ? targetColumn : line.length;
-		while (index <= line.length) {
-			if (row === targetRow && index >= limitColumn) {
-				return blockComment || lineComment;
+	const cache = getLuaCommentContextCache(buffer);
+	ensureLuaCommentStateUpTo(buffer, cache, targetRow);
+	const line = buffer.getLineContent(targetRow);
+	let mode = cache.modeState[targetRow];
+	let level = cache.levelState[targetRow];
+	let index = 0;
+	while (index < line.length && index < targetColumn) {
+		if (mode === MODE_LONG_COMMENT) {
+			const ch = line.charCodeAt(index);
+			if (ch === 93) {
+				const closeLen = longBracketCloseLengthAt(line, index, level);
+				if (closeLen > 0) {
+					mode = MODE_NORMAL;
+					level = 0;
+					index += closeLen;
+					continue;
+				}
 			}
-			if (index === line.length) {
-				break;
+			index += 1;
+			continue;
+		}
+		if (mode === MODE_LONG_STRING) {
+			const ch = line.charCodeAt(index);
+			if (ch === 93) {
+				const closeLen = longBracketCloseLengthAt(line, index, level);
+				if (closeLen > 0) {
+					mode = MODE_NORMAL;
+					level = 0;
+					index += closeLen;
+					continue;
+				}
 			}
-			const ch = line.charAt(index);
-			const next = index + 1 < line.length ? line.charAt(index + 1) : '';
-			if (lineComment) {
+			index += 1;
+			continue;
+		}
+		if (mode === MODE_STRING_SINGLE || mode === MODE_STRING_DOUBLE) {
+			const ch = line.charCodeAt(index);
+			if (ch === 92) {
+				const escape = index + 1 < line.length ? line.charCodeAt(index + 1) : 0;
+				index += escape === 122 ? 2 + skipLuaStringWhitespace(line, index + 2) : 2;
+				continue;
+			}
+			if ((mode === MODE_STRING_SINGLE && ch === 39) || (mode === MODE_STRING_DOUBLE && ch === 34)) {
+				mode = MODE_NORMAL;
 				index += 1;
 				continue;
 			}
-			if (stringDelimiter !== null) {
-				if (ch === '\\') {
-					index += 2;
-				} else if (ch === stringDelimiter) {
-					stringDelimiter = null;
-					index += 1;
-				} else {
-					index += 1;
-				}
+			index += 1;
+			continue;
+		}
+
+		const ch = line.charCodeAt(index);
+		const next = index + 1 < line.length ? line.charCodeAt(index + 1) : 0;
+		if (ch === 45 && next === 45) {
+			const openIndex = index + 2;
+			const openLevel = openIndex < line.length ? longBracketLevelAt(line, openIndex) : -1;
+			if (openLevel >= 0) {
+				mode = MODE_LONG_COMMENT;
+				level = openLevel;
+				index = openIndex + openLevel + 2;
 				continue;
 			}
-			if (blockComment) {
-				if (ch === ']' && next === ']') {
-					blockComment = false;
-					index += 2;
-				} else {
-					index += 1;
-				}
+			return true;
+		}
+		if (ch === 91) {
+			const openLevel = longBracketLevelAt(line, index);
+			if (openLevel >= 0) {
+				mode = MODE_LONG_STRING;
+				level = openLevel;
+				index += openLevel + 2;
 				continue;
 			}
-			if (ch === '-' && next === '-') {
-				const next2 = index + 2 < line.length ? line.charAt(index + 2) : '';
-				const next3 = index + 3 < line.length ? line.charAt(index + 3) : '';
-				if (next2 === '[' && next3 === '[') {
-					blockComment = true;
-					index += 4;
+		}
+		if (ch === 39) {
+			mode = MODE_STRING_SINGLE;
+			index += 1;
+			continue;
+		}
+		if (ch === 34) {
+			mode = MODE_STRING_DOUBLE;
+			index += 1;
+			continue;
+		}
+		index += 1;
+	}
+	return mode === MODE_LONG_COMMENT;
+}
+
+class LuaCommentContextCache {
+	public version = -1;
+	public lineCount = 0;
+	public validThroughRow = 0;
+	public modeState = new Uint8Array(1);
+	public levelState = new Uint32Array(1);
+
+	public reset(lineCount: number, version: number): void {
+		this.version = version;
+		this.lineCount = lineCount;
+		this.validThroughRow = 0;
+		this.modeState = new Uint8Array(lineCount + 1);
+		this.levelState = new Uint32Array(lineCount + 1);
+	}
+}
+
+const luaCommentContextCache = new WeakMap<TextBuffer, LuaCommentContextCache>();
+
+export function invalidateLuaCommentContextFromRow(buffer: TextBuffer, row: number): void {
+	let cache = luaCommentContextCache.get(buffer);
+	if (!cache) {
+		cache = new LuaCommentContextCache();
+		cache.reset(buffer.getLineCount(), buffer.version);
+		luaCommentContextCache.set(buffer, cache);
+	}
+	const lineCount = buffer.getLineCount();
+	const clampedRow = clamp(row, 0, lineCount);
+	if (cache.lineCount !== lineCount) {
+		const validThroughRow = Math.min(cache.validThroughRow, clampedRow);
+		const nextModeState = new Uint8Array(lineCount + 1);
+		const nextLevelState = new Uint32Array(lineCount + 1);
+		nextModeState.set(cache.modeState.subarray(0, validThroughRow + 1));
+		nextLevelState.set(cache.levelState.subarray(0, validThroughRow + 1));
+		cache.version = buffer.version;
+		cache.lineCount = lineCount;
+		cache.validThroughRow = validThroughRow;
+		cache.modeState = nextModeState;
+		cache.levelState = nextLevelState;
+		return;
+	}
+	cache.version = buffer.version;
+	cache.validThroughRow = Math.min(cache.validThroughRow, clampedRow);
+}
+
+function getLuaCommentContextCache(buffer: TextBuffer): LuaCommentContextCache {
+	let cache = luaCommentContextCache.get(buffer);
+	if (!cache) {
+		cache = new LuaCommentContextCache();
+		cache.reset(buffer.getLineCount(), buffer.version);
+		luaCommentContextCache.set(buffer, cache);
+	}
+	return cache;
+}
+
+function ensureLuaCommentStateUpTo(buffer: TextBuffer, cache: LuaCommentContextCache, targetRow: number): void {
+	const lineCount = buffer.getLineCount();
+	if (cache.lineCount !== lineCount) {
+		cache.reset(lineCount, buffer.version);
+	}
+	if (cache.version !== buffer.version) {
+		cache.version = buffer.version;
+		cache.validThroughRow = 0;
+	}
+	while (cache.validThroughRow < targetRow) {
+		const row = cache.validThroughRow;
+		let mode = cache.modeState[row];
+		let level = cache.levelState[row];
+		const line = buffer.getLineContent(row);
+		let index = 0;
+		while (index < line.length) {
+			if (mode === MODE_LONG_COMMENT) {
+				const ch = line.charCodeAt(index);
+				if (ch === 93) {
+					const closeLen = longBracketCloseLengthAt(line, index, level);
+					if (closeLen > 0) {
+						mode = MODE_NORMAL;
+						level = 0;
+						index += closeLen;
+						continue;
+					}
+				}
+				index += 1;
+				continue;
+			}
+			if (mode === MODE_LONG_STRING) {
+				const ch = line.charCodeAt(index);
+				if (ch === 93) {
+					const closeLen = longBracketCloseLengthAt(line, index, level);
+					if (closeLen > 0) {
+						mode = MODE_NORMAL;
+						level = 0;
+						index += closeLen;
+						continue;
+					}
+				}
+				index += 1;
+				continue;
+			}
+			if (mode === MODE_STRING_SINGLE || mode === MODE_STRING_DOUBLE) {
+				const ch = line.charCodeAt(index);
+				if (ch === 92) {
+					const escape = index + 1 < line.length ? line.charCodeAt(index + 1) : 0;
+					index += escape === 122 ? 2 + skipLuaStringWhitespace(line, index + 2) : 2;
 					continue;
 				}
-				lineComment = true;
-				index += 2;
+				if ((mode === MODE_STRING_SINGLE && ch === 39) || (mode === MODE_STRING_DOUBLE && ch === 34)) {
+					mode = MODE_NORMAL;
+					index += 1;
+					continue;
+				}
+				index += 1;
 				continue;
 			}
-			if (ch === '\'' || ch === '"') {
-				stringDelimiter = ch as '\'' | '"';
+
+			const ch = line.charCodeAt(index);
+			const next = index + 1 < line.length ? line.charCodeAt(index + 1) : 0;
+			if (ch === 45 && next === 45) {
+				const openIndex = index + 2;
+				const openLevel = openIndex < line.length ? longBracketLevelAt(line, openIndex) : -1;
+				if (openLevel >= 0) {
+					mode = MODE_LONG_COMMENT;
+					level = openLevel;
+					index = openIndex + openLevel + 2;
+					continue;
+				}
+				break;
+			}
+			if (ch === 91) {
+				const openLevel = longBracketLevelAt(line, index);
+				if (openLevel >= 0) {
+					mode = MODE_LONG_STRING;
+					level = openLevel;
+					index += openLevel + 2;
+					continue;
+				}
+			}
+			if (ch === 39) {
+				mode = MODE_STRING_SINGLE;
+				index += 1;
+				continue;
+			}
+			if (ch === 34) {
+				mode = MODE_STRING_DOUBLE;
 				index += 1;
 				continue;
 			}
 			index += 1;
 		}
+		cache.modeState[row + 1] = mode;
+		cache.levelState[row + 1] = level;
+		cache.validThroughRow = row + 1;
 	}
-	return blockComment;
+}
+
+const MODE_NORMAL = 0;
+const MODE_STRING_SINGLE = 1;
+const MODE_STRING_DOUBLE = 2;
+const MODE_LONG_STRING = 3;
+const MODE_LONG_COMMENT = 4;
+
+function longBracketLevelAt(line: string, index: number): number {
+	if (line.charCodeAt(index) !== 91) {
+		return -1;
+	}
+	let level = 0;
+	let cursor = index + 1;
+	while (cursor < line.length && line.charCodeAt(cursor) === 61) {
+		level += 1;
+		cursor += 1;
+	}
+	return cursor < line.length && line.charCodeAt(cursor) === 91 ? level : -1;
+}
+
+function longBracketCloseLengthAt(line: string, index: number, level: number): number {
+	if (line.charCodeAt(index) !== 93) {
+		return 0;
+	}
+	let cursor = index + 1;
+	for (let i = 0; i < level; i += 1) {
+		if (cursor >= line.length || line.charCodeAt(cursor) !== 61) {
+			return 0;
+		}
+		cursor += 1;
+	}
+	return cursor < line.length && line.charCodeAt(cursor) === 93 ? level + 2 : 0;
+}
+
+function skipLuaStringWhitespace(line: string, index: number): number {
+	let skipped = 0;
+	let cursor = index;
+	while (cursor < line.length) {
+		const code = line.charCodeAt(cursor);
+		if (code !== 32 && code !== 9 && code !== 13 && code !== 10 && code !== 11 && code !== 12) {
+			break;
+		}
+		cursor += 1;
+		skipped += 1;
+	}
+	return skipped;
 }
 function findMaxFittingIndexMeasure(text: string, maxWidth: number, measure: (t: string) => number): number {
 	if (text.length === 0) return 0;

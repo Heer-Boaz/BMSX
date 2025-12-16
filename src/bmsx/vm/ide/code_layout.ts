@@ -27,6 +27,8 @@ interface SliceResult {
 	endDisplay: number;
 }
 
+type BuiltinIdentifierSnapshot = { epoch: number; ids: Iterable<string> };
+
 type PendingSemanticUpdate = {
 	version: number;
 	chunkName: string;
@@ -52,7 +54,7 @@ export class VMCodeLayout {
 	private semanticBuffer: TextBuffer = null;
 	private readonly semanticDebounceMs: number;
 	private readonly clockNow: () => number;
-	private readonly getBuiltinIdentifiers: (() => Iterable<string>);
+	private readonly getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot;
 	private pendingSemantic: PendingSemanticUpdate = null;
 	// private inFlightSemantic: PendingSemanticUpdate = null;
 	private semanticDueAtMs: number = null;
@@ -70,19 +72,28 @@ export class VMCodeLayout {
 	private lastSemanticError: string = null;
 	private lastSemanticErrorVersion = -1;
 	private lastSemanticErrorChunk: string = null;
+	private builtinEpoch = 0;
+	private builtinIdentifiers: Iterable<string> = null;
 
 	constructor(
 		private readonly font: VMEditorFont,
 		private readonly workspace: LuaSemanticWorkspace,
-		options: { maxHighlightCache: number; semanticDebounceMs: number; clockNow: () => number; getBuiltinIdentifiers: () => Iterable<string> },
+		options: { maxHighlightCache: number; semanticDebounceMs: number; clockNow: () => number; getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot },
 	) {
 		this.maxHighlightCache = options.maxHighlightCache;
 		this.semanticDebounceMs = Math.max(0, options.semanticDebounceMs);
 		this.clockNow = options.clockNow;
 		this.getBuiltinIdentifiers = options.getBuiltinIdentifiers;
+		this.refreshBuiltinIdentifiers();
 		const probeAdvance = this.font.advance('M');
 		const fallbackAdvance = this.font.advance(' ');
 		this.averageCharAdvance = Math.max(1, Number.isFinite(probeAdvance) && probeAdvance > 0 ? probeAdvance : (Number.isFinite(fallbackAdvance) && fallbackAdvance > 0 ? fallbackAdvance : 1));
+	}
+
+	private refreshBuiltinIdentifiers(): void {
+		const snapshot = this.getBuiltinIdentifiers();
+		this.builtinEpoch = snapshot.epoch;
+		this.builtinIdentifiers = snapshot.ids;
 	}
 
 	private scheduleSemanticUpdate(): void {
@@ -160,27 +171,29 @@ export class VMCodeLayout {
 
 	public getCachedHighlight(buffer: TextBuffer, row: number): CachedHighlight {
 		const annotations = this.semanticModel ? this.semanticModel.annotations : null;
+		const builtinEpoch = this.builtinEpoch;
+		const builtinIdentifiers = this.builtinIdentifiers;
+		const textVersion = buffer.version;
 		let rowSignature = 0;
 		const signatures = this.annotationRowSig;
 		if (signatures && row >= 0 && row < signatures.length) {
 			rowSignature = signatures[row];
 		}
-		const source = buffer.getLineContent(row);
 		const cached = this.highlightCache.get(row);
-		if (cached && cached.rowSignature === rowSignature && cached.src === source) {
-			return cached;
-		}
-		const sourceHash = hashLineContent(source);
-		if (cached && cached.rowSignature === rowSignature && cached.srcHash === sourceHash) {
-			return cached;
-		}
-		let builtinIdentifiers: Iterable<string> = null;
-		if (this.getBuiltinIdentifiers) {
-			try {
-				builtinIdentifiers = this.getBuiltinIdentifiers();
-			} catch {
-				builtinIdentifiers = null;
+		let lineSignature = -1;
+		if (cached && cached.rowSignature === rowSignature && cached.builtinEpoch === builtinEpoch) {
+			if (cached.textVersion === textVersion) {
+				return cached;
 			}
+			lineSignature = buffer.getLineSignature(row);
+			if (cached.lineSignature === lineSignature) {
+				cached.textVersion = textVersion;
+				return cached;
+			}
+		}
+		const source = buffer.getLineContent(row);
+		if (lineSignature === -1) {
+			lineSignature = buffer.getLineSignature(row);
 		}
 		const lineAnnotations = annotations ? annotations[row] : undefined;
 		const highlight = highlightTextLineExternal(source, lineAnnotations, builtinIdentifiers);
@@ -206,8 +219,10 @@ export class VMCodeLayout {
 			hi: highlight,
 			displayToColumn,
 			advancePrefix,
+			textVersion,
+			lineSignature,
+			builtinEpoch,
 			rowSignature,
-			srcHash: sourceHash,
 		};
 		this.highlightCache.set(row, entry);
 		while (this.highlightCache.size > this.maxHighlightCache) {
@@ -264,6 +279,7 @@ export class VMCodeLayout {
 	}
 
 	public ensureVisualLines(context: VisualLinesContext): number {
+		this.refreshBuiltinIdentifiers();
 		const visibleRows = Math.max(1, context.estimatedVisibleRowCount ?? this.lastViewportRowEstimate);
 		this.lastViewportRowEstimate = visibleRows;
 		if (!this.visualLinesDirty && !this.viewportWithinHotWindow(context, visibleRows)) {
@@ -390,9 +406,8 @@ export class VMCodeLayout {
 			: Math.max(1, Math.floor(wrapWidth / Math.max(1, this.averageCharAdvance)));
 		for (let row = 0; row < lineCount; row += 1) {
 			rowIndexLookup[row] = segments.length;
-			const line = buffer.getLineContent(row);
 			const entry = this.getCachedHighlight(buffer, row);
-			const rowSegments = this.buildSegmentsForRow(line, row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
+			const rowSegments = this.buildSegmentsForRow(entry.src, row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
 			segments.push(...rowSegments);
 			counts[row] = rowSegments.length;
 		}
@@ -423,7 +438,7 @@ export class VMCodeLayout {
 			const startIndex = this.rowToFirstVisualLine[row];
 			const oldCount = this.rowVisualLineCounts[row] ?? 0;
 			const entry = this.getCachedHighlight(buffer, row);
-			const rowSegments = this.buildSegmentsForRow(buffer.getLineContent(row), row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
+			const rowSegments = this.buildSegmentsForRow(entry.src, row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
 			this.visualLines.splice(startIndex, oldCount, ...rowSegments);
 			const newCount = rowSegments.length;
 			this.rowVisualLineCounts[row] = newCount;
@@ -658,21 +673,17 @@ export class VMCodeLayout {
 			this.lastSemanticErrorVersion = -1;
 			this.lastSemanticErrorChunk = null;
 		}
-		this.updateAnnotationSignatures(annotations);
-		this.highlightCache.clear();
+		this.updateAnnotationSignatures(buffer, annotations);
 		this.markVisualLinesDirty();
 	}
 
-	private updateAnnotationSignatures(annotations: SemanticAnnotations): void {
-		if (!annotations) {
-			this.annotationRowSig = null;
-			this.highlightCache.clear();
-			return;
-		}
+	private updateAnnotationSignatures(buffer: TextBuffer, annotations: SemanticAnnotations): void {
+		const lineCount = buffer.getLineCount();
 		const previous = this.annotationRowSig;
-		const next = new Uint32Array(annotations.length);
-		for (let row = 0; row < annotations.length; row += 1) {
-			const hash = this.hashAnnotationRow(annotations[row]);
+		const next = new Uint32Array(lineCount);
+		const annotationCount = annotations ? annotations.length : 0;
+		for (let row = 0; row < lineCount; row += 1) {
+			const hash = row < annotationCount ? this.hashAnnotationRow(annotations[row]) : 0;
 			next[row] = hash;
 			const cached = this.highlightCache.get(row);
 			if (!cached) {
@@ -684,9 +695,9 @@ export class VMCodeLayout {
 			}
 			this.highlightCache.delete(row);
 		}
-		if (previous && previous.length > annotations.length) {
+		if (previous && previous.length > lineCount) {
 			for (const [row] of this.highlightCache) {
-				if (row >= annotations.length) {
+				if (row >= lineCount) {
 					this.highlightCache.delete(row);
 				}
 			}
@@ -781,27 +792,4 @@ export class VMCodeLayout {
 		if (viewportEndRow > guardedEnd) return false;
 		return true;
 	}
-}
-
-const lineHashCache = new Map<string, number>();
-const LINE_HASH_CACHE_LIMIT = 2048;
-
-function hashLineContent(line: string): number {
-	const cached = lineHashCache.get(line);
-	if (cached !== undefined) {
-		return cached;
-	}
-	let hash = 2166136261 >>> 0;
-	for (let index = 0; index < line.length; index += 1) {
-		hash ^= line.charCodeAt(index);
-		hash = (hash * 16777619) >>> 0;
-	}
-	lineHashCache.set(line, hash);
-	if (lineHashCache.size > LINE_HASH_CACHE_LIMIT) {
-		const first = lineHashCache.keys().next();
-		if (!first.done) {
-			lineHashCache.delete(first.value);
-		}
-	}
-	return hash;
 }

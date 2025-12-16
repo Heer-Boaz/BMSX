@@ -6,12 +6,23 @@ function assert(condition: unknown, message: string): asserts condition {
 	}
 }
 
-class BufferBlock {
+type PieceBufferBlock = {
+	value: string;
+	lineStarts: ArrayLike<number>;
+};
+
+class BufferBlock implements PieceBufferBlock {
 	public readonly value: string;
 	public readonly lineStarts: Int32Array;
 
-	constructor(value: string) {
+	constructor(value: string, precomputedLineStarts?: Int32Array) {
 		this.value = value;
+		if (precomputedLineStarts) {
+			assert(precomputedLineStarts.length > 0 && precomputedLineStarts[0] === 0, '[BufferBlock] lineStarts must start at 0');
+			assert(precomputedLineStarts[precomputedLineStarts.length - 1] <= value.length, '[BufferBlock] lineStarts out of range');
+			this.lineStarts = precomputedLineStarts;
+			return;
+		}
 		let lineCount = 1;
 		for (let index = 0; index < value.length; index += 1) {
 			if (value.charCodeAt(index) === 10) {
@@ -30,6 +41,33 @@ class BufferBlock {
 	}
 }
 
+class AddedBufferBlock implements PieceBufferBlock {
+	public value = '';
+	public lineStarts: number[] = [0];
+
+	public appendStart = 0;
+	public appendStartLine = 0;
+	public appendLF = 0;
+
+	public append(text: string): void {
+		const start = this.value.length;
+		const startLine = this.lineStarts.length - 1;
+		let lf = 0;
+		for (let index = 0; index < text.length; index += 1) {
+			if (text.charCodeAt(index) === 10) {
+				this.lineStarts.push(start + index + 1);
+				lf += 1;
+			}
+		}
+		this.value += text;
+		this.appendStart = start;
+		this.appendStartLine = startLine;
+		this.appendLF = lf;
+	}
+}
+
+const ADDED_BUFFER_FLUSH_THRESHOLD = 1 << 20;
+
 function upperBound(values: ArrayLike<number>, x: number): number {
 	let low = 0;
 	let high = values.length;
@@ -44,7 +82,7 @@ function upperBound(values: ArrayLike<number>, x: number): number {
 	return low;
 }
 
-function lineIndexAt(block: BufferBlock, offset: number): number {
+function lineIndexAt(block: PieceBufferBlock, offset: number): number {
 	return upperBound(block.lineStarts, offset) - 1;
 }
 
@@ -87,7 +125,10 @@ export class PieceTreeBuffer implements TextBuffer {
 	public version = 0;
 
 	private root: PieceTreeNode | null = null;
-	private buffers: BufferBlock[] = [];
+	private buffers: PieceBufferBlock[] = [];
+	private original: BufferBlock = null;
+	private added: AddedBufferBlock = null;
+	private addedIndex = 1;
 
 	private readonly free: PieceTreeNode[] = [];
 
@@ -95,6 +136,8 @@ export class PieceTreeBuffer implements TextBuffer {
 
 	private readonly split1 = new SplitResult();
 	private readonly split2 = new SplitResult();
+	private readonly mergeSplit1 = new SplitResult();
+	private readonly mergeSplit2 = new SplitResult();
 
 	private readonly parts: string[] = [];
 	private readonly stackN: PieceTreeNode[] = [];
@@ -102,11 +145,14 @@ export class PieceTreeBuffer implements TextBuffer {
 	private readonly stackS: number[] = [];
 
 	public constructor(text = '') {
+		this.original = new BufferBlock(text);
+		this.added = new AddedBufferBlock();
+		this.buffers.push(this.original);
+		this.buffers.push(this.added);
+		this.addedIndex = 1;
 		if (text.length > 0) {
-			const block = new BufferBlock(text);
-			this.buffers.push(block);
 			const node = this.allocNode();
-			const lf = block.lineStarts.length - 1;
+			const lf = this.original.lineStarts.length - 1;
 			node.setPiece(0, 0, text.length, 0, lf, this.nextPrio());
 			this.recalc(node);
 			this.root = node;
@@ -116,6 +162,29 @@ export class PieceTreeBuffer implements TextBuffer {
 	public get length(): number {
 		const root = this.root;
 		return root ? root.sumLen : 0;
+	}
+
+	public charCodeAt(offset: number): number {
+		if (offset < 0 || offset >= this.length) {
+			return NaN;
+		}
+		let node = this.root;
+		let pos = offset;
+		while (node) {
+			const left = node.left;
+			const leftLen = left ? left.sumLen : 0;
+			if (pos < leftLen) {
+				node = left;
+				continue;
+			}
+			pos -= leftLen;
+			if (pos < node.len) {
+				return this.buffers[node.buf].value.charCodeAt(node.start + pos);
+			}
+			pos -= node.len;
+			node = node.right;
+		}
+		throw new Error('[PieceTreeBuffer] charCodeAt offset traversal failed');
 	}
 
 	public getNodeCount(): number {
@@ -131,14 +200,17 @@ export class PieceTreeBuffer implements TextBuffer {
 		const oldRoot = this.root;
 		const text = this.getText();
 		this.root = null;
-		this.buffers = [];
+		this.buffers.length = 0;
 		this.releaseSubtree(oldRoot);
 
+		this.original = new BufferBlock(text);
+		this.added = new AddedBufferBlock();
+		this.buffers.push(this.original);
+		this.buffers.push(this.added);
+		this.addedIndex = 1;
 		if (text.length > 0) {
-			const block = new BufferBlock(text);
-			this.buffers.push(block);
 			const node = this.allocNode();
-			const lf = block.lineStarts.length - 1;
+			const lf = this.original.lineStarts.length - 1;
 			node.setPiece(0, 0, text.length, 0, lf, this.nextPrio());
 			this.recalc(node);
 			this.root = node;
@@ -151,18 +223,24 @@ export class PieceTreeBuffer implements TextBuffer {
 			return;
 		}
 		assert(offset >= 0 && offset <= this.length, `[PieceTreeBuffer] insert offset out of range: ${offset}`);
-		const bufIndex = this.buffers.length;
-		const block = new BufferBlock(text);
-		this.buffers.push(block);
 
 		const node = this.allocNode();
-		const lf = block.lineStarts.length - 1;
-		node.setPiece(bufIndex, 0, text.length, 0, lf, this.nextPrio());
+		if (text.length > ADDED_BUFFER_FLUSH_THRESHOLD) {
+			const bufIndex = this.buffers.length;
+			const block = new BufferBlock(text);
+			this.buffers.push(block);
+			const lf = block.lineStarts.length - 1;
+			node.setPiece(bufIndex, 0, text.length, 0, lf, this.nextPrio());
+		} else {
+			this.flushAddedBufferIfNeeded(text.length);
+			this.added.append(text);
+			node.setPiece(this.addedIndex, this.added.appendStart, text.length, this.added.appendStartLine, this.added.appendLF, this.nextPrio());
+		}
 		this.recalc(node);
 
 		this.split(this.root, offset, this.split1);
-		const mergedLeft = this.merge(this.split1.left, node);
-		this.root = this.merge(mergedLeft, this.split1.right);
+		const mergedLeft = this.mergeAdjacent(this.split1.left, node);
+		this.root = this.mergeAdjacent(mergedLeft, this.split1.right);
 		this.version += 1;
 	}
 
@@ -188,7 +266,7 @@ export class PieceTreeBuffer implements TextBuffer {
 		this.split(this.root, offset, this.split1);
 		this.split(this.split1.right, length, this.split2);
 		const deleted = this.split2.left;
-		this.root = this.merge(this.split1.left, this.split2.right);
+		this.root = this.mergeAdjacent(this.split1.left, this.split2.right);
 		this.version += 1;
 		return deleted;
 	}
@@ -199,8 +277,8 @@ export class PieceTreeBuffer implements TextBuffer {
 		this.split(this.split1.right, length, this.split2);
 		const deleted = this.split2.left;
 		const inserted = this.buildInsertedTree(text);
-		const mergedLeft = this.merge(this.split1.left, inserted);
-		this.root = this.merge(mergedLeft, this.split2.right);
+		const mergedLeft = this.mergeAdjacent(this.split1.left, inserted);
+		this.root = this.mergeAdjacent(mergedLeft, this.split2.right);
 		this.version += 1;
 		return deleted;
 	}
@@ -211,8 +289,8 @@ export class PieceTreeBuffer implements TextBuffer {
 		}
 		assert(offset >= 0 && offset <= this.length, `[PieceTreeBuffer] insertSubtree offset out of range: ${offset}`);
 		this.split(this.root, offset, this.split1);
-		const mergedLeft = this.merge(this.split1.left, subtree);
-		this.root = this.merge(mergedLeft, this.split1.right);
+		const mergedLeft = this.mergeAdjacent(this.split1.left, subtree);
+		this.root = this.mergeAdjacent(mergedLeft, this.split1.right);
 		this.version += 1;
 	}
 
@@ -240,6 +318,12 @@ export class PieceTreeBuffer implements TextBuffer {
 		const start = this.getLineStartOffset(row);
 		const end = this.getLineEndOffset(row);
 		return this.getTextRange(start, end);
+	}
+
+	public getLineSignature(row: number): number {
+		const start = this.getLineStartOffset(row);
+		const end = this.getLineEndOffset(row);
+		return this.computeRangeSignature(start, end);
 	}
 
 	public offsetAt(row: number, column: number): number {
@@ -276,18 +360,109 @@ export class PieceTreeBuffer implements TextBuffer {
 		return this.getTextRange(0, this.length);
 	}
 
+	private computeRangeSignature(start: number, end: number): number {
+		const root = this.root;
+		if (!root || start === end) {
+			return 0;
+		}
+		const stackN = this.stackN;
+		const stackB = this.stackB;
+		const stackS = this.stackS;
+		stackN.length = 0;
+		stackB.length = 0;
+		stackS.length = 0;
+
+		stackN.push(root);
+		stackB.push(0);
+		stackS.push(0);
+
+		let hash = 2166136261;
+		while (stackN.length > 0) {
+			const state = stackS.pop()!;
+			const base = stackB.pop()!;
+			const node = stackN.pop()!;
+			if (state === 0) {
+				const subtreeEnd = base + node.sumLen;
+				if (subtreeEnd <= start) {
+					continue;
+				}
+				if (base >= end) {
+					continue;
+				}
+
+				const left = node.left;
+				const leftLen = left ? left.sumLen : 0;
+				const nodeStart = base + leftLen;
+				const rightBase = nodeStart + node.len;
+
+				const right = node.right;
+				if (right) {
+					stackN.push(right);
+					stackB.push(rightBase);
+					stackS.push(0);
+				}
+				stackN.push(node);
+				stackB.push(base);
+				stackS.push(1);
+				if (left) {
+					stackN.push(left);
+					stackB.push(base);
+					stackS.push(0);
+				}
+				continue;
+			}
+
+			const left = node.left;
+			const leftLen = left ? left.sumLen : 0;
+			const nodeStart = base + leftLen;
+			const nodeEnd = nodeStart + node.len;
+			if (nodeEnd <= start) {
+				continue;
+			}
+			if (nodeStart >= end) {
+				continue;
+			}
+			const segStart = start > nodeStart ? start - nodeStart : 0;
+			const segEnd = end < nodeEnd ? end - nodeStart : node.len;
+			const bufStart = node.start + segStart;
+			const segLen = segEnd - segStart;
+			hash = Math.imul(hash ^ node.buf, 16777619) >>> 0;
+			hash = Math.imul(hash ^ bufStart, 16777619) >>> 0;
+			hash = Math.imul(hash ^ segLen, 16777619) >>> 0;
+		}
+		return hash;
+	}
+
 	private buildInsertedTree(text: string): PieceTreeNode | null {
 		if (text.length === 0) {
 			return null;
 		}
-		const bufIndex = this.buffers.length;
-		const block = new BufferBlock(text);
-		this.buffers.push(block);
 		const node = this.allocNode();
-		const lf = block.lineStarts.length - 1;
-		node.setPiece(bufIndex, 0, text.length, 0, lf, this.nextPrio());
+		if (text.length > ADDED_BUFFER_FLUSH_THRESHOLD) {
+			const bufIndex = this.buffers.length;
+			const block = new BufferBlock(text);
+			this.buffers.push(block);
+			const lf = block.lineStarts.length - 1;
+			node.setPiece(bufIndex, 0, text.length, 0, lf, this.nextPrio());
+		} else {
+			this.flushAddedBufferIfNeeded(text.length);
+			this.added.append(text);
+			node.setPiece(this.addedIndex, this.added.appendStart, text.length, this.added.appendStartLine, this.added.appendLF, this.nextPrio());
+		}
 		this.recalc(node);
 		return node;
+	}
+
+	private flushAddedBufferIfNeeded(appendLength: number): void {
+		if (this.added.value.length + appendLength <= ADDED_BUFFER_FLUSH_THRESHOLD) {
+			return;
+		}
+		if (this.added.value.length > 0) {
+			this.buffers[this.addedIndex] = new BufferBlock(this.added.value, new Int32Array(this.added.lineStarts));
+		}
+		this.added = new AddedBufferBlock();
+		this.addedIndex = this.buffers.length;
+		this.buffers.push(this.added);
 	}
 
 	private nextPrio(): number {
@@ -409,6 +584,67 @@ export class PieceTreeBuffer implements TextBuffer {
 		b.left = this.merge(a, b.left);
 		this.recalc(b);
 		return b;
+	}
+
+	private leftmostNode(root: PieceTreeNode): PieceTreeNode {
+		let node = root;
+		while (node.left) {
+			node = node.left;
+		}
+		return node;
+	}
+
+	private rightmostNode(root: PieceTreeNode): PieceTreeNode {
+		let node = root;
+		while (node.right) {
+			node = node.right;
+		}
+		return node;
+	}
+
+	private mergeAdjacent(a: PieceTreeNode | null, b: PieceTreeNode | null): PieceTreeNode | null {
+		if (!a) {
+			return b;
+		}
+		if (!b) {
+			return a;
+		}
+
+		let left = a;
+		let right = b;
+		while (left && right) {
+			const last = this.rightmostNode(left);
+			const first = this.leftmostNode(right);
+			if (last.buf !== first.buf || last.start + last.len !== first.start) {
+				break;
+			}
+
+			const leftCut = left.sumLen - last.len;
+			this.split(left, leftCut, this.mergeSplit1);
+			this.split(right, first.len, this.mergeSplit2);
+			const leftRest = this.mergeSplit1.left;
+			const lastNode = this.mergeSplit1.right!;
+			const firstNode = this.mergeSplit2.left!;
+			const rightRest = this.mergeSplit2.right;
+
+			assert(!lastNode.left && !lastNode.right, '[PieceTreeBuffer] mergeAdjacent expected isolated lastNode');
+			assert(!firstNode.left && !firstNode.right, '[PieceTreeBuffer] mergeAdjacent expected isolated firstNode');
+			assert(lastNode.startLine + lastNode.lf === firstNode.startLine, '[PieceTreeBuffer] mergeAdjacent startLine mismatch');
+
+			lastNode.len += firstNode.len;
+			lastNode.lf += firstNode.lf;
+			this.recalc(lastNode);
+			firstNode.left = null;
+			firstNode.right = null;
+			this.free.push(firstNode);
+
+			left = this.merge(leftRest, lastNode);
+			right = rightRest;
+			if (!right) {
+				return left;
+			}
+		}
+		return this.merge(left, right);
 	}
 
 	private findOffsetOfNthLF(nth: number): number {

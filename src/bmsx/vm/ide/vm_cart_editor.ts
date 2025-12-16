@@ -874,10 +874,12 @@ export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext): voi
 	ide_state.executionStopRow = context ? context.executionStopRow : null;
 }
 
-export function getBuiltinIdentifierSet(): ReadonlySet<string> {
+let builtinIdentifierEpoch = 0;
+
+export function getBuiltinIdentifiersSnapshot(): { epoch: number; ids: ReadonlySet<string> } {
 	const cached = ide_state.builtinIdentifierCache;
 	if (cached && cached.caseInsensitive === ide_state.caseInsensitive && cached.canonicalization === ide_state.canonicalization) {
-		return cached.set;
+		return cached;
 	}
 	const descriptors = listLuaBuiltinFunctions();
 	const names: string[] = [];
@@ -890,21 +892,26 @@ export function getBuiltinIdentifierSet(): ReadonlySet<string> {
 			? (value: string) => value.toUpperCase()
 			: (value: string) => value.toLowerCase())
 		: (value: string) => value;
-	const set = new Set<string>();
+	const ids = new Set<string>();
 	for (let i = 0; i < names.length; i += 1) {
 		const name = names[i];
 		const canonical = canonicalize(name);
-		set.add(canonical);
-		set.add(name);
+		ids.add(canonical);
+		ids.add(name);
 	}
+	builtinIdentifierEpoch += 1;
 	const entry = {
-		key: names.join('\u0000'),
-		set,
+		epoch: builtinIdentifierEpoch,
+		ids,
 		canonicalization: ide_state.canonicalization,
 		caseInsensitive: ide_state.caseInsensitive,
 	};
 	ide_state.builtinIdentifierCache = entry;
-	return entry.set;
+	return entry;
+}
+
+export function getBuiltinIdentifierSet(): ReadonlySet<string> {
+	return getBuiltinIdentifiersSnapshot().ids;
 }
 
 export function getTabBarTotalHeight(): number {
@@ -3535,7 +3542,7 @@ export function setFontVariant(variant: VMFontVariant): void {
 		maxHighlightCache: 512,
 		semanticDebounceMs: 200,
 		clockNow: ide_state.clockNow,
-		getBuiltinIdentifiers: () => getBuiltinIdentifierSet(),
+		getBuiltinIdentifiers: () => getBuiltinIdentifiersSnapshot(),
 	});
 	if (ide_state.resourcePanel) {
 		ide_state.resourcePanel.setFontMetrics(ide_state.lineHeight, ide_state.charAdvance);

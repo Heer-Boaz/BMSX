@@ -55,8 +55,8 @@ import { CaretNavigationState } from './caret';
 import { VMEditorFont } from '../editor_font';
 
 type BuiltinIdentifierCache = {
-	key: string;
-	set: ReadonlySet<string>;
+	epoch: number;
+	ids: ReadonlySet<string>;
 	canonicalization: CanonicalizationType;
 	caseInsensitive: boolean;
 };

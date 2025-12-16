@@ -36,9 +36,14 @@ import { formatLuaDocument } from './lua_formatter';
 import { extractErrorMessage } from '../../lua/luavalue';
 import { LuaLexer } from '../../lua/lualexer';
 import { getTextSnapshot } from './source_text';
-import type { MutableTextPosition } from './text_buffer';
+import type { MutableTextPosition, TextBuffer } from './text_buffer';
 
 const tmpPosition: MutableTextPosition = { row: 0, column: 0 };
+
+function bufferCharAtOffset(buffer: TextBuffer, offset: number): string {
+	const code = buffer.charCodeAt(offset);
+	return Number.isNaN(code) ? '' : String.fromCharCode(code);
+}
 
 function editorAllowsMutation(): boolean {
 	return ide_state.activeContextReadOnly !== true;
@@ -317,7 +322,7 @@ export function collapseSelectionTo(target: 'start' | 'end'): void {
 			return '';
 		}
 		const offset = lineStart + column;
-		return getTextSnapshot(buffer).charAt(offset);
+		return bufferCharAtOffset(buffer, offset);
 	}
 
 /**
