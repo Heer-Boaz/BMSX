@@ -178,7 +178,6 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	const u = (n: string) => gl.getUniformLocation(program, n);
 	const set1i = (n: string, v: number) => { const loc = u(n); gl.uniform1i(loc, v); };
 	const set1f = (n: string, v: number) => { const loc = u(n); gl.uniform1f(loc, v); };
-	// const set2f = (n: string, x: number, y: number) => { const loc = u(n); gl.uniform2f(loc, x, y); };
 
 	// Legacy fallback uniform for shader paths where FrameUniforms.u_logicalSize is not available.
 	spriteShaderData.resolutionVector[0] = state.baseWidth;
@@ -331,16 +330,22 @@ export function correctAreaStartEnd(x: number, y: number, ex: number, ey: number
 }
 
 export function drawRectangle(options: RectRenderSubmission): void {
-	let { left: x, top: y, z, right: ex, bottom: ey } = options.area; const c = options.color; const imgid = 'whitepixel';[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
-	drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(ex - x, 1), colorize: c, layer: options.layer });
-	drawImg({ pos: new_vec3(x, ey, z), imgid, scale: new_vec2(ex - x, 1), colorize: c, layer: options.layer });
-	drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(1, ey - y), colorize: c, layer: options.layer });
-	drawImg({ pos: new_vec3(ex, y, z), imgid, scale: new_vec2(1, ey - y), colorize: c, layer: options.layer });
+	let { left: x, top: y, z, right: ex, bottom: ey } = options.area;
+	const c = options.color;
+	const imgid = 'whitepixel';
+	[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
+	drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(~~(ex - x), 1), colorize: c, layer: options.layer });
+	drawImg({ pos: new_vec3(x, ey, z), imgid, scale: new_vec2(~~(ex - x), 1), colorize: c, layer: options.layer });
+	drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(1, ~~(ey - y)), colorize: c, layer: options.layer });
+	drawImg({ pos: new_vec3(ex, y, z), imgid, scale: new_vec2(1, ~~(ey - y)), colorize: c, layer: options.layer });
 }
 
 export function fillRectangle(options: RectRenderSubmission): void {
-	let { left: x, top: y, z, right: ex, bottom: ey } = options.area; const c = options.color; const imgid = 'whitepixel';[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
-	drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(ex - x, ey - y), colorize: c, layer: options.layer });
+	let { left: x, top: y, z, right: ex, bottom: ey } = options.area;
+	const c = options.color;
+	const imgid = 'whitepixel';
+	[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
+	drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(~~(ex - x), ~~(ey - y)), colorize: c, layer: options.layer });
 }
 
 export function drawPolygon(coords: Polygon, z: number, color: color, thickness: number = 1, layer?: RenderLayer): void {

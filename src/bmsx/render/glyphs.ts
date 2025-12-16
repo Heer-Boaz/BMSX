@@ -15,7 +15,7 @@ const CHAR_CACHE: string[] = (() => {
  */
 export function renderGlyphs(x: number, y: number, textToWrite: string | string[], start?: number, end?: number, z: number = 950, font?: BFont, color?: color, backgroundColor?: color, layer?: RenderLayer): void {
 	font ??= $.view.default_font;
-	if (!font) { console.error('No default font available for drawText'); return; }
+	if (!font) { throw new Error('No font or default font available for renderGlyphs'); }
 	const startX = x;
 	let stepY = 0;
 	const spriteOptions: ImgRenderSubmission = { imgid: 'none', pos: { x, y, z }, colorize: color, layer };

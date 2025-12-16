@@ -1,37 +1,15 @@
 import { BFont, GlyphMap } from '../core/font';
+import { DEFAULT_VM_FONT_VARIANT } from './start_cart';
 
 export type VMFontVariant = 'msx' | 'tiny';
 
-type VMFontPreset = {
-	prefix: string;
-	tabDirtyMarkerAssetId: string;
-	buildCharMap(): GlyphMap;
-};
-
-export const DEFAULT_VM_FONT_VARIANT: VMFontVariant = 'msx';
-
-const FONT_PRESETS: Record<VMFontVariant, VMFontPreset> = {
-	msx: {
-		prefix: 'msx_6b_font',
-		tabDirtyMarkerAssetId: 'msx_6b_font_ctrl_bel',
-		buildCharMap(): GlyphMap {
-			return buildMsxCharMap('msx_6b_font');
-		},
-	},
-	tiny: {
-		prefix: 'tiny_3b_font',
-		tabDirtyMarkerAssetId: 'tiny_3b_font_ctrl_bel',
-		buildCharMap(): GlyphMap {
-			return buildTinyCharMap('tiny_3b_font');
-		},
-	},
+const FONT_PRESETS: Record<VMFontVariant, GlyphMap> = {
+	msx: buildMsxCharMap(),
+	tiny: buildTinyCharMap(),
 } as const;
 
-export function getVMFontPreset(variant: VMFontVariant): VMFontPreset {
-	return FONT_PRESETS[variant];
-}
-
-function buildMsxCharMap(prefix: string): GlyphMap {
+function buildMsxCharMap(): GlyphMap {
+	const prefix = 'msx_6b_font';
 	const withPrefix = (suffix: string): string => `${prefix}_${suffix}`;
 	const map: GlyphMap = {
 		' ': withPrefix('space'),
@@ -88,7 +66,8 @@ function buildMsxCharMap(prefix: string): GlyphMap {
 	return map;
 }
 
-function buildTinyCharMap(prefix: string): GlyphMap {
+function buildTinyCharMap(): GlyphMap {
+	const prefix = 'tiny_3b_font';
 	const withPrefix = (suffix: string): string => `${prefix}_${suffix}`;
 	const map: GlyphMap = {
 		' ': withPrefix('space'),
@@ -155,30 +134,9 @@ function buildTinyCharMap(prefix: string): GlyphMap {
 }
 
 export class VMFont extends BFont {
-	protected readonly preset: VMFontPreset;
-	protected readonly variant: VMFontVariant;
-
 	constructor(config?: { variant?: VMFontVariant }) {
 		const variant = config?.variant ?? DEFAULT_VM_FONT_VARIANT;
-		const preset = getVMFontPreset(variant);
-		super(preset.buildCharMap());
-		this.variant = variant;
-		this.preset = preset;
-		// this.resetLetterMap();
+		const preset = FONT_PRESETS[variant];
+		super(preset);
 	}
-
-	protected resetLetterMap(): void {
-		const target = this.letter_to_img;
-		const keys = Object.keys(target);
-		for (let i = 0; i < keys.length; i++) {
-			delete target[keys[i]];
-		}
-		const map = this.preset.buildCharMap();
-		const entries = Object.keys(map);
-		for (let i = 0; i < entries.length; i++) {
-			const ch = entries[i];
-			target[ch] = map[ch];
-		}
-	}
-
 }

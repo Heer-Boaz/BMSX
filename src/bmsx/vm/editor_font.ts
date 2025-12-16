@@ -1,6 +1,7 @@
 import type { VMFontVariant } from './font';
 import type { FontGlyph } from 'bmsx/core/font';
-import { VMFont, DEFAULT_VM_FONT_VARIANT } from './font';
+import { VMFont } from './font';
+import { DEFAULT_VM_FONT_VARIANT } from './start_cart';
 
 export class VMEditorFont {
 	private readonly font: VMFont;

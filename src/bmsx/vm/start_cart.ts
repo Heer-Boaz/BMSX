@@ -1,9 +1,10 @@
 import { $, type BootArgs, type WorldConfiguration, shallowcopy, InputMap, Input, } from '../index';
 import { createBmsxVMModule } from './module';
-import { VMFont } from './font';
+import { VMFont, VMFontVariant } from './font';
 import type { CartManifest } from '../rompack/rompack';
 import { applyWorkspaceOverridesToCart } from './workspace';
 import { BmsxVMRuntime } from './vm_runtime';
+export const DEFAULT_VM_FONT_VARIANT: VMFontVariant = 'msx';
 
 const DEFAULT_INPUT_MAPPING = {
 	1: {

@@ -553,7 +553,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		self.dx = self.availableWindowSize.x / self.viewportSize.x;
 		self.dy = self.availableWindowSize.y / self.viewportSize.y;
 		// self.viewportScale = Math.min(self.dx, self.dy);
-		self.viewportScale = Math.floor(Math.min(self.dx, self.dy) * 2) / 2;
+		self.viewportScale = Math.floor(Math.min(self.dx, self.dy) * 2) / 2; // Snap to half-pixels to stabilise scaling steps
 
 		self.canvas_dx = self.availableWindowSize.x / self.canvasSize.x;
 		self.canvas_dy = self.availableWindowSize.y / self.canvasSize.y;
