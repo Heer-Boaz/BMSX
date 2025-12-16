@@ -1808,7 +1808,7 @@ local function register_director()
 		class = director,
 		fsms = { director_fsm_id },
 		defaults = {
-			node_id = 'ochtendpijn',
+			node_id = 'title',
 			page_index = 1,
 			choice_index = 1,
 			stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 },
