@@ -134,7 +134,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param forcePersistentRemoval - If true, also removes persistent listeners.
 	 */
 	public offAny(handler: EventHandler<any>, forcePersistentRemoval: boolean = false): void {
-		EventEmitter.instance.anyListeners = EventEmitter.instance.anyListeners.filter(x => (x.handler !== handler || (forcePersistentRemoval && x.persistent)));
+		EventEmitter.instance.anyListeners = EventEmitter.instance.anyListeners.filter(x => (x.handler !== handler || (!forcePersistentRemoval && x.persistent)));
 	}
 
 	private checkIfListenerExists(event_name: string, listener: EventHandler<any>, subscriber: any, filtered_on_emitter_id?: Identifier): boolean {

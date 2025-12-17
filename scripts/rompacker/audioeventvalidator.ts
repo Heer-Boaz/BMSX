@@ -1,4 +1,4 @@
-import { AudioAction, AudioActionOneOfSpec, AudioEventRule } from '../../src/bmsx';
+import type { AudioAction, AudioActionOneOfSpec, AudioDelaySpec, AudioEventRule, AudioStingerSpec } from '../../src/bmsx';
 import type { Resource } from './rompacker.rompack';
 // @ts-ignore
 const yaml = require('js-yaml');
@@ -64,6 +64,18 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 	const errors: string[] = [];
 	const warnings: string[] = [];
 	const musicTransitionsWithFallback = new Set<string>();
+
+	function asStingerSync(sync: unknown): AudioStingerSpec | null {
+		if (!sync || typeof sync !== 'object') return null;
+		const stingerSync = sync as AudioStingerSpec;
+		return stingerSync.stinger !== undefined ? stingerSync : null;
+	}
+
+	function asDelaySync(sync: unknown): AudioDelaySpec | null {
+		if (!sync || typeof sync !== 'object') return null;
+		const delaySync = sync as AudioDelaySpec;
+		return delaySync.delayMs !== undefined ? delaySync : null;
+	}
 
 	function collectKeys(obj: Record<string, unknown>, prefix: string, depth: number): void {
 		if (depth < 0) return;
@@ -139,43 +151,44 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 			if (!rule || typeof rule !== 'object') return;
 			const act = rule.go;
 			if (!act) { errors.push(`Missing 'do' action at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}`); return; }
-			if (typeof act === 'object' && 'musicTransition' in act && act.musicTransition) {
-				const mt = act.musicTransition;
-				const sync = mt.sync;
-				const ruleKey = makeRuleKey(file, eventName, ri);
-				if (sync && typeof sync === 'object' && 'stinger' in sync && (sync.returnTo !== undefined || sync.returnToPrevious)) {
-					musicTransitionsWithFallback.add(ruleKey);
-				}
-				checkAction({ audioId: mt.audioId }, { file, event: eventName, ruleIndex: ri });
-				// Basic value checks
+				if (typeof act === 'object' && 'musicTransition' in act && act.musicTransition) {
+					const mt = act.musicTransition;
+					const sync = mt.sync;
+					const ruleKey = makeRuleKey(file, eventName, ri);
+					const stingerSync = asStingerSync(sync);
+					if (stingerSync && (stingerSync.returnTo !== undefined || stingerSync.returnToPrevious)) {
+						musicTransitionsWithFallback.add(ruleKey);
+					}
+					checkAction({ audioId: mt.audioId }, { file, event: eventName, ruleIndex: ri });
+					// Basic value checks
 				if (mt.fadeMs !== undefined && (!(typeof mt.fadeMs === 'number') || mt.fadeMs < 0)) {
 					errors.push(`Invalid fadeMs at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: must be >= 0`);
 				}
 				if (mt.startAtLoopStart && mt.startFresh) {
 					errors.push(`Ambiguous musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: startAtLoopStart and startFresh cannot both be true`);
 				}
-				if (sync && typeof sync === 'object') {
-					const hasStinger = 'stinger' in sync;
-					const hasDelay = 'delayMs' in sync;
-					if (hasStinger && hasDelay) {
-						errors.push(`Ambiguous musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: sync cannot specify both stinger and delayMs`);
-					}
-					if (hasStinger) {
-						checkAction({ audioId: sync.stinger }, { file, event: eventName, ruleIndex: ri });
-						if (sync.returnTo !== undefined) checkAction({ audioId: sync.returnTo }, { file, event: eventName, ruleIndex: ri });
-						if (sync.returnTo !== undefined && sync.returnToPrevious) {
-							errors.push(`Ambiguous musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: provide either returnTo or returnToPrevious, not both`);
+					if (sync && typeof sync === 'object') {
+						const stingerSync = asStingerSync(sync);
+						const delaySync = asDelaySync(sync);
+						if (stingerSync && delaySync) {
+							errors.push(`Ambiguous musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: sync cannot specify both stinger and delayMs`);
 						}
-						if (mt.audioId !== undefined && sync.returnTo !== undefined && sync.returnTo !== mt.audioId) {
-							errors.push(`Ambiguous musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: 'audioId' (post-stinger target) conflicts with 'returnTo' (two targets specified)`);
-						} else if (mt.audioId !== undefined && sync.returnTo !== undefined) {
-							warnings.push(`Redundant musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: 'audioId' and 'returnTo' both target '${mt.audioId}'. Consider removing one.`);
+						if (stingerSync) {
+							checkAction({ audioId: stingerSync.stinger }, { file, event: eventName, ruleIndex: ri });
+							if (stingerSync.returnTo !== undefined) checkAction({ audioId: stingerSync.returnTo }, { file, event: eventName, ruleIndex: ri });
+							if (stingerSync.returnTo !== undefined && stingerSync.returnToPrevious) {
+								errors.push(`Ambiguous musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: provide either returnTo or returnToPrevious, not both`);
+							}
+							if (mt.audioId !== undefined && stingerSync.returnTo !== undefined && stingerSync.returnTo !== mt.audioId) {
+								errors.push(`Ambiguous musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: 'audioId' (post-stinger target) conflicts with 'returnTo' (two targets specified)`);
+							} else if (mt.audioId !== undefined && stingerSync.returnTo !== undefined) {
+								warnings.push(`Redundant musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: 'audioId' and 'returnTo' both target '${mt.audioId}'. Consider removing one.`);
+							}
+						} else if (!delaySync) {
+							// Unknown object props in sync → error
+							errors.push(`Invalid musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: unknown sync object shape`);
 						}
-					} else if (!hasDelay) {
-						// Unknown object props in sync → error
-						errors.push(`Invalid musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: unknown sync object shape`);
 					}
-				}
 				return;
 			}
 			if (typeof act === 'object' && (act as AudioActionOneOfSpec).oneOf && Array.isArray((act as AudioActionOneOfSpec).oneOf)) {

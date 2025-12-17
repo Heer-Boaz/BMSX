@@ -80,16 +80,16 @@ export interface MusicTransitionSpec {
 	musicTransition: {
 		audioId: AudioId;
 		/**
-		 * How to schedule the transition:
-		 * - 'immediate': switch now
-		 * - 'loop': switch at next loop boundary of current track (uses audiometa.loop)
-		 * - { delayMs }: switch after delay
-	 * - { stinger, returnTo?: AudioId, returnToPrevious?: boolean }: play stinger immediately, then switch to either a specific id (returnTo) or the previously playing music (returnToPrevious). Specify at most one of these follow-up targets.
-		 */
-		sync?: AudioSyncMode;
-		fadeMs?: number;
-		/** If true and target has a loop point, start at its loopStart (skip intro) */
-		startAtLoopStart?: boolean;
+			 * How to schedule the transition:
+			 * - 'immediate': switch now
+			 * - 'loop': switch at next loop boundary of current track (uses audiometa.loop)
+			 * - { delayMs }: switch after delay
+		 * - { stinger, returnTo?: AudioId, returnToPrevious?: boolean }: play stinger immediately, then switch to either a specific id (returnTo) or the previously playing music (returnToPrevious). Specify at most one of these follow-up targets.
+			 */
+			sync?: AudioSyncMode;
+			fadeMs?: number;
+			/** If true and target has a loop point, start at its loopStart (skip intro) */
+			startAtLoopStart?: boolean;
 		/** If true, start target at t=0 (fresh) instead of resuming an offset */
 		startFresh?: boolean;
 	};
@@ -189,6 +189,7 @@ export class AudioEventManager implements RegisterablePersistent {
 	private weightedScratch: number[] = [];
 
 	init(map: id2audioevent, handlers?: AudioHandler[]): void {
+		this.dispose();
 		this.handlers = handlers ?? [];
 		this.merged = this.mergeEvents(map);
 		this.anyListener = (event: GameEvent) => {
@@ -207,6 +208,8 @@ export class AudioEventManager implements RegisterablePersistent {
 		// subscribe to voice end events for sfx and ui to manage queue/pause
 		this.endUnsubByType['sfx'] = $.sndmaster.addEndedListener('sfx', _info => this.onChannelEnded('sfx'));
 		this.endUnsubByType['ui'] = $.sndmaster.addEndedListener('ui', _info => this.onChannelEnded('ui'));
+
+		this.bind();
 
 		// Debug: list registered audio events and handlers
 		// try {

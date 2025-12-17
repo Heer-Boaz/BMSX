@@ -80,6 +80,18 @@ const MIN_GAIN = 0.0001;
 const DEFAULT_DECODE_CONCURRENCY = 4;
 const DEFAULT_MAX_VOICES: Record<AudioType, number> = { sfx: 16, music: 1, ui: 8 };
 
+type MusicTransitionStingerSync = { stinger: asset_id; returnTo?: asset_id; returnToPrevious?: boolean };
+type MusicTransitionDelaySync = { delayMs: number };
+type MusicTransitionSync = 'immediate' | 'loop' | MusicTransitionDelaySync | MusicTransitionStingerSync;
+
+function isMusicTransitionStingerSync(sync: MusicTransitionSync): sync is MusicTransitionStingerSync {
+	return typeof sync === 'object' && (sync as MusicTransitionStingerSync).stinger !== undefined;
+}
+
+function isMusicTransitionDelaySync(sync: MusicTransitionSync): sync is MusicTransitionDelaySync {
+	return typeof sync === 'object' && (sync as MusicTransitionDelaySync).delayMs !== undefined;
+}
+
 export class SoundMaster implements RegisterablePersistent {
 	public get id(): 'sm' { return 'sm'; }
 	public get registrypersistent(): true { return true; }
@@ -792,7 +804,7 @@ export class SoundMaster implements RegisterablePersistent {
 
 	public requestMusicTransition(opts: {
 		to: asset_id;
-		sync?: 'immediate' | 'loop' | { delayMs: number } | { stinger: asset_id; returnTo?: asset_id; returnToPrevious?: boolean };
+		sync?: MusicTransitionSync;
 		fadeMs?: number;
 		startAtLoopStart?: boolean;
 		startFresh?: boolean;
@@ -807,7 +819,11 @@ export class SoundMaster implements RegisterablePersistent {
 			this.musicTransitionTimer = null;
 		}
 
-		if (typeof sync === 'object' && 'stinger' in sync) {
+		if (!isMusicTransitionStingerSync(sync) && !startFresh && this.currentTrackByType('music') === opts.to) {
+			return;
+		}
+
+		if (isMusicTransitionStingerSync(sync)) {
 			const stingerType = this.getAudioMetaOrThrow(sync.stinger).audiotype;
 			if (!this.isAudioType(stingerType)) {
 				throw new Error(`[SoundMaster] Audio asset '${String(sync.stinger)}' has unknown audio type.`);
@@ -854,7 +870,7 @@ export class SoundMaster implements RegisterablePersistent {
 			return;
 		}
 
-		if (typeof sync === 'object' && 'delayMs' in sync) {
+		if (isMusicTransitionDelaySync(sync)) {
 			const delayMs = sync.delayMs >= 0 ? sync.delayMs : 0;
 			this.musicTransitionTimer = setTimeout(() => {
 				this.musicTransitionTimer = null;

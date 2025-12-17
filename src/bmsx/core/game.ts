@@ -261,8 +261,8 @@ export class Game {
 
 	public emit(event: GameEvent): void;
 	public emit(event_name: string, emitter: Identifiable, payload?: EventPayload): void;
-	public emit(arg0: GameEvent | string, emitter?: Identifiable, payload?: EventPayload): void {
-		const e = typeof arg0 === 'string' ? create_gameevent({ type: arg0, emitter: emitter, payload }) : arg0;
+	public emit(arg0: GameEvent | string, emitter?: Identifiable, payload: EventPayload = {}): void {
+		const e = typeof arg0 === 'string' ? create_gameevent({ type: arg0, emitter: emitter, ...payload }) : arg0;
 		GameplayEventRecorder.instance.record(e);
 		this.event_emitter.emit(e);
 	}
