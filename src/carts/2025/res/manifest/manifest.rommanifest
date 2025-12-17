@@ -1,9 +1,8 @@
-title: Sinter Glitch 2025
+title: Pietsona 2025
 short_name: '2025'
 rom_name: '2025'
 vm:
-  # viewport: {width: 256, height: 212}
   viewport: {width: 320, height: 240}
-  namespace: 'sinterglith2025'
+  namespace: 'pietsona2025'
 lua:
   entry_path: cart.lua
