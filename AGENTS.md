@@ -103,6 +103,75 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 	```typescript
 	this.onSomething();
 	```
+
+	Also avoid code like this:
+	```typescript
+	function dumbDefensiveFunction(value: string[]): string[] | null {
+		// (...)
+		return (value && value.length > 0) ? value : null; // Prevents allowing checks for undefined or empty arrays. Also, why even check for an empty array? Just return the empty array or never call this function with an empty array!
+	}
+	```
+	Instead, do this:
+	```typescript
+	function smartFunction(value: string[]): string[] {
+		// (...)
+		return value; // Assume value is always a valid, non-empty array, or handle empty arrays as needed without returning null
+	}
+	```
+
+	Also avoid code like this:
+	```typescript
+	function anotherDumbDefensiveFunction(num: number): number {
+		// (...)
+		const defensiveBla = bla ?? null; // What is the point of this? Just use bla directly! If bla is undefined, let it be undefined! Don't be afraid of using truthy checks!
+		return defensiveBla;
+	}
+	```
+
+	Of course, there are valid cases for defensive coding:
+	```typescript
+	function parseJson(jsonString: string): any | null {
+		try {
+			return JSON.parse(jsonString);
+		} catch (e) {
+			console.warn('Failed to parse JSON:', e); // Log the error for debugging purposes
+			return null; // Valid defensive coding: handle potential JSON parsing errors
+		}
+	}
+	```
+	or this:
+	```typescript
+	function getConfigValue(key: string): string {
+		const value = this.config[key];
+		if (value === undefined) {
+			throw new Error(`Configuration key "${key}" is missing.`); // Valid defensive coding: throw an error if a required configuration key is missing
+		}
+		return value;
+	}
+	```
+	or this:
+	```typescript
+	function fetchData(url: string): Promise<any> {
+		return fetch(url)
+			.then(response => {
+				if (!response.ok) {
+					throw new Error(`Network response was not ok: ${response.statusText}`); // Valid defensive coding: handle network errors
+				}
+				return response.json();
+			});
+	}
+	```
+	or this:
+	```typescript
+	function doSomethingComplexWithOptionalParam(param?: SomeType): void {
+		if (param) {
+			// Handle the case where param is provided
+		} else {
+			// Handle the case where param is not provided
+		}
+	}
+	```
+* Don't worry about indentation styles. I will take care of formatting the code using Prettier before committing.
 * `clamp` is a utility function available that you can find in the folder `/src/bmsx/util/`; use it instead of writing your own!
 * Scratch buffers are available in `/src/bmsx/util/scratchbuffer.ts`; use them for temporary data storage instead of allocating new arrays or buffers.
 * Look at other utility functions available in `/src/bmsx/util/` before writing your own utility functions!
