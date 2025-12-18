@@ -116,6 +116,7 @@ export * from './render/backend/shader_module';
 export * from './render/backend/webgl/webgl_backend';
 export * from './render/glyphs';
 export * from './rompack/rompack';
+export * from './rompack/cart_index';
 export * from './serializer/bincompressor';
 export * from './serializer/binencoder';
 export * from './serializer/gameserializer';

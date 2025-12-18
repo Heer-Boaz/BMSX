@@ -16,6 +16,7 @@ import { Registry } from '../../core/registry';
 import { SpriteComponent } from '../../component/sprite_component';
 import { renderCodeArea } from './render/render_code_area';
 import { clamp } from '../../utils/clamp';
+import { materializeLuaAssetSource } from '../lua_source';
 import { CompletionController } from './completion_controller';
 import { drawProblemsPanel, ProblemsPanelController } from './problems_panel';
 import { computeAggregatedEditorDiagnostics, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
@@ -278,7 +279,7 @@ export function getSourceForChunk(chunkName: string): string {
 	if (typeof cached === 'string') {
 		return cached;
 	}
-	return asset.src;
+	return materializeLuaAssetSource(asset, $.rompack.rom);
 }
 
 export function invalidateLineRange(startRow: number, endRow: number): void {

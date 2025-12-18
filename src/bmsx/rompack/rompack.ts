@@ -59,7 +59,7 @@ export interface RomImgAsset extends RomAsset {
 }
 
 export type RomLuaAsset = RomAsset & {
-	src: string; // The Lua source code of the Lua script asset. Known at pack time
+	src?: string; // The Lua source code of the Lua script asset. May be materialized lazily from the ROM buffer.
 	chunk_name?: string; // The chunk name to use when loading this Lua asset into the Lua VM. Always normalized!! Cached at runtime
 	normalized_source_path?: string; // Normalized absolute source path for this Lua asset, used for source mapping and debugging.
 	update_timestamp: number; // Timestamp of the last update to this Lua asset, used for caching and reloading during development.
