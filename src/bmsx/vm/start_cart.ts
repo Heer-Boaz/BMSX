@@ -1,56 +1,10 @@
-import { $, type BootArgs, type WorldConfiguration, shallowcopy, InputMap, Input, } from '../index';
+import { $, type BootArgs, type InputMap, type WorldConfiguration, shallowcopy, } from '../index';
 import { createBmsxVMModule } from './module';
 import { VMFont, VMFontVariant } from './font';
 import type { CartManifest } from '../rompack/rompack';
 import { applyWorkspaceOverridesToCart } from './workspace';
 import { BmsxVMRuntime } from './vm_runtime';
 export const DEFAULT_VM_FONT_VARIANT: VMFontVariant = 'msx';
-
-const DEFAULT_INPUT_MAPPING = {
-	1: {
-		keyboard: {
-			a: ['KeyZ'],
-			b: ['KeyX'],
-			x: ['KeyA'],
-			y: ['KeyS'],
-			lb: ['ShiftLeft'],
-			rb: ['Capslock'],
-			lt: ['KeyC'],
-			rt: ['KeyD'],
-			select: ['Enter'],
-			start: ['Space'],
-			ls: ['KeyQ'],
-			rs: ['KeyW'],
-			up: ['ArrowUp'],
-			down: ['ArrowDown'],
-			left: ['ArrowLeft'],
-			right: ['ArrowRight'],
-			home: ['Escape'],
-			touch: ['Backspace'],
-		},
-		gamepad: {
-			a: ['a'],
-			b: ['b'],
-			x: ['x'],
-			y: ['y'],
-			lb: ['lb'],
-			rb: ['rb'],
-			lt: ['lt'],
-			rt: ['rt'],
-			select: ['select'],
-			start: ['start'],
-			ls: ['ls'],
-			rs: ['rs'],
-			up: ['up'],
-			down: ['down'],
-			left: ['left'],
-			right: ['right'],
-			home: ['home'],
-			touch: ['touch'],
-		},
-		pointer: Input.DEFAULT_POINTER_INPUT_MAPPING,
-	} as InputMap,
-};
 
 function deriveVMOptions(manifest: CartManifest) {
 	const vmConfig = manifest.vm;
@@ -89,18 +43,11 @@ export async function startCart(args: BootArgs): Promise<void> {
 
 	$.view.default_font = new VMFont();
 
-	const inputMappingPerPlayer = manifest.input ?? DEFAULT_INPUT_MAPPING;
+	const inputMappingPerPlayer = manifest.input ?? { 1: { keyboard: null, gamepad: null, pointer: null } as InputMap }; // Default to player 1 with no custom mapping if none specified. The PlayerInput will fill in defaults. It will also fill in defaults for other players if needed (and distinguish between player 1 and others for keyboard so that player 1 gets the default keyboard mapping).
 	for (const playerIndexStr of Object.keys(inputMappingPerPlayer)) {
 		const playerIndex = parseInt(playerIndexStr, 10);
 		const inputMapping = inputMappingPerPlayer[playerIndex];
-		const pointerMapping = inputMapping.pointer
-			? { ...Input.DEFAULT_POINTER_INPUT_MAPPING, ...inputMapping.pointer }
-			: Input.DEFAULT_POINTER_INPUT_MAPPING;
-		const resolvedMapping: InputMap = {
-			...inputMapping,
-			pointer: pointerMapping,
-		};
-		$.set_inputmap(playerIndex, resolvedMapping);
+		$.set_inputmap(playerIndex, inputMapping);
 	}
 
 	await applyWorkspaceOverridesToCart({ cart: $.cart, storage: $.platform.storage, includeServer: true });

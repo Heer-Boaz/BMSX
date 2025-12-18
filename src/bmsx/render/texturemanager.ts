@@ -6,9 +6,6 @@ import { GPUBackend, TextureHandle, TextureParams } from './backend/pipeline_int
 import { $ } from '../core/game';
 import { generateAtlasName } from './gameview';
 
-export const TEXTMANAGER_ID = 'texmgr';
-export type TextureIdentifier = string;
-
 export interface ModelTextureIdentifier {
 	modelName: string;
 	modelImageIndex: number;
@@ -40,7 +37,7 @@ export class TextureManager implements RegisterablePersistent {
 	private gpuCache = new Map<TextureKey, GPUCacheEntry>();
 	private textureBarrier: AssetBarrier<TextureHandle>;
 
-	constructor(private backend?: GPUBackend, private defaultGroup: GateGroup = taskGate.group('texture:default')) {
+	constructor(private backend: GPUBackend, private defaultGroup: GateGroup = taskGate.group('texture:default')) {
 		this.textureBarrier = new AssetBarrier<TextureHandle>(this.defaultGroup);
 		TextureManager._instance = this;
 		this.bind();
@@ -58,6 +55,7 @@ export class TextureManager implements RegisterablePersistent {
 	private makeModelBufferKey(identifier: ModelTextureIdentifier): TextureKey {
 		return `buf:${identifier.modelName}:${identifier.modelImageIndex}`;
 	}
+
 	// allow nullable face ids and nullable face loaders
 	private makeCubemapKey(name: string, faceIds: readonly (string)[], desc: TextureParams): TextureKey {
 		const descKey = JSON.stringify(desc);
@@ -81,7 +79,7 @@ export class TextureManager implements RegisterablePersistent {
 			key,
 			async () => {
 				const bmp = await loadBitmapFn() as TextureSource;
-				const h = this.backend!.createTexture(bmp, desc);
+				const h = this.backend.createTexture(bmp, desc);
 				if ('close' in bmp) (bmp as { close: () => void }).close();
 				return h;
 			},
@@ -89,14 +87,14 @@ export class TextureManager implements RegisterablePersistent {
 				category: 'texture',
 				block_render: false,
 				tag: `tex:${key}`,
-				disposer: (h) => this.backend!.destroyTexture(h),
+				disposer: (h) => this.backend.destroyTexture(h),
 				warnIfLongerMs: 1000,
 			}
 		);
 
 		// Entry may have been released while loading
 		const entry = this.gpuCache.get(key);
-		if (!entry) { if (this.backend) this.backend.destroyTexture(handle); return key; }
+		if (!entry) { this.backend.destroyTexture(handle); return key; }
 		entry.handle = handle;
 		return key;
 	}
@@ -133,12 +131,12 @@ export class TextureManager implements RegisterablePersistent {
 			}
 		).then((realHandle) => {
 			const entry = this.gpuCache.get(key);
-			if (!entry) { if (this.backend) this.backend.destroyTexture(realHandle); return; }
+			if (!entry) { this.backend.destroyTexture(realHandle); return; }
 			if (entry.handle !== realHandle) {
 				const old = entry.handle;
 				entry.handle = realHandle;
 				// Destroy only manager-owned fallbacks
-				if (old && entry.ownedFallback && this.backend) this.backend.destroyTexture(old);
+				if (old && entry.ownedFallback) this.backend.destroyTexture(old);
 				entry.ownedFallback = false;
 			}
 		}).catch(err => {
@@ -150,7 +148,7 @@ export class TextureManager implements RegisterablePersistent {
 
 	// helper: reserve a fallback cubemap entry that we own
 	private reserveFallbackCubemap(key: string, desc: TextureParams, fallbackColor: color_arr): void {
-		const fallback = this.backend!.createSolidCubemap(1, fallbackColor, desc);
+		const fallback = this.backend.createSolidCubemap(1, fallbackColor, desc);
 		this.gpuCache.set(key, { handle: fallback, refCount: 1, ownedFallback: true });
 	}
 
@@ -173,10 +171,10 @@ export class TextureManager implements RegisterablePersistent {
 			}
 		).then((real) => {
 			const entry = this.gpuCache.get(key);
-			if (!entry) { if (this.backend) this.backend.destroyTexture(real); return; }
+			if (!entry) { this.backend!.destroyTexture(real); return; }
 			const old = entry.handle;
 			entry.handle = real;
-			if (old && entry.ownedFallback && this.backend) this.backend.destroyTexture(old);
+			if (old && entry.ownedFallback) this.backend!.destroyTexture(old);
 			entry.ownedFallback = false;
 		}).catch(err => console.error(`Cubemap acquire failed for key=${key}`, err));
 	}
@@ -337,7 +335,7 @@ export class TextureManager implements RegisterablePersistent {
 
 	public getImage(key: ImageKey): TextureSource {
 		const imgEntry = this.imageCache.get(key);
-		return imgEntry ? imgEntry.bitmap : undefined;
+		return imgEntry?.bitmap;
 	}
 
 	async fromBuffer(uri: string, buffer?: ArrayBuffer, options?: { flipY?: boolean; }): Promise<TextureSource> {
@@ -455,7 +453,7 @@ export class TextureManager implements RegisterablePersistent {
 
 	public getTexture(key: TextureKey): TextureHandle {
 		const entry = this.gpuCache.get(key);
-		return entry ? entry.handle : undefined;
+		return entry?.handle;
 	}
 
 	public getTextureByUri(uri: string, desc: TextureParams = {}): TextureHandle {
@@ -472,9 +470,9 @@ export class TextureManager implements RegisterablePersistent {
 		e.refCount--;
 		if (e.refCount <= 0) {
 			// Let the barrier dispose the real handle
-			this.textureBarrier.release(key, (h) => { if (this.backend) this.backend.destroyTexture(h); });
+			this.textureBarrier.release(key, (h) => { this.backend.destroyTexture(h); });
 			// Dispose manager-owned fallback if still present (barrier never saw it)
-			if (e.ownedFallback && e.handle && this.backend) this.backend.destroyTexture(e.handle);
+			if (e.ownedFallback && e.handle) this.backend.destroyTexture(e.handle);
 			this.gpuCache.delete(key);
 		}
 	}
@@ -482,11 +480,11 @@ export class TextureManager implements RegisterablePersistent {
 	public clear(): void {
 		// Dispose any manager-owned fallbacks that never entered the barrier
 		for (const [_, entry] of this.gpuCache) {
-			if (entry.ownedFallback && entry.handle && this.backend) this.backend.destroyTexture(entry.handle);
+			if (entry.ownedFallback && entry.handle) this.backend.destroyTexture(entry.handle);
 		}
 		this.gpuCache.clear();
 		// Dispose everything the barrier owns
-		this.textureBarrier.clear((h) => { if (this.backend) this.backend.destroyTexture(h); });
+		this.textureBarrier.clear((h) => { this.backend.destroyTexture(h); });
 		this.imageCache.clear();
 	}
 

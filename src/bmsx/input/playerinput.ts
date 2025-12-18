@@ -155,9 +155,9 @@ export class PlayerInput {
 	 */
 	public setInputMap(inputMap: InputMap): void {
 		if (!inputMap) throw new Error('[PlayerInput] Null or undefined input map provided.');
-		inputMap.keyboard = inputMap.keyboard ?? this.inputMap?.keyboard ?? {};
-		inputMap.gamepad = inputMap.gamepad ?? this.inputMap?.gamepad ?? {};
-		inputMap.pointer = inputMap.pointer ?? this.inputMap?.pointer ?? deep_clone(Input.DEFAULT_POINTER_INPUT_MAPPING);
+		inputMap.keyboard = inputMap.keyboard ?? this.inputMap?.keyboard ?? (this.playerIndex === 1 ? deep_clone(Input.DEFAULT_INPUT_MAPPING.keyboard) : {});
+		inputMap.gamepad = inputMap.gamepad ?? this.inputMap?.gamepad ?? deep_clone(Input.DEFAULT_INPUT_MAPPING.gamepad);
+		inputMap.pointer = inputMap.pointer ?? this.inputMap?.pointer ?? deep_clone(Input.DEFAULT_INPUT_MAPPING.pointer);
 		this.inputMap = inputMap;
 
 		// Mirror into a base context for layered merging semantics

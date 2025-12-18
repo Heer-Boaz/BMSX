@@ -9,7 +9,7 @@ import { openDebugOverviewTab, openEventInspectorTab, openObjectInspectorTab } f
 import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
 import { GamepadInput } from './gamepad';
 import { controllerUnassignedToast } from '../ui/ui_toast';
-import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState, PointerInputMapping } from './inputtypes';
+import type { ActionState, ButtonId, ButtonState, GamepadInputMapping, InputEvent, InputHandler, InputMap, KeyboardInputMapping, KeyOrButtonId2ButtonState, PointerInputMapping } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
 import { GlobalShortcutRegistry } from './global_shortcut_registry';
@@ -196,8 +196,8 @@ export class InputStateManager {
 			state.pressedAtMs = event.timestamp;
 			state.presstime = 0;
 			state.timestamp = event.timestamp;
-			state.releasedAtMs = state.releasedAtMs ;
-			state.pressId = event.pressId ?? state.pressId ;
+			state.releasedAtMs = state.releasedAtMs;
+			state.pressId = event.pressId ?? state.pressId;
 			state.value = state.value ?? 1;
 			state.consumed = event.consumed ?? false;
 		} else {
@@ -208,7 +208,7 @@ export class InputStateManager {
 			state.presstime = null;
 			state.timestamp = event.timestamp;
 			state.releasedAtMs = event.timestamp;
-			state.pressId = event.pressId ?? state.pressId ;
+			state.pressId = event.pressId ?? state.pressId;
 			state.value = 0;
 			state.consumed = event.consumed ?? false;
 		}
@@ -233,12 +233,12 @@ export class InputStateManager {
 		const justreleased = baseState?.justreleased ?? false;
 		let presstime = baseState?.presstime ?? (pressed && baseState?.pressedAtMs != null ? Math.max(0, currentTime - baseState.pressedAtMs) : null);
 		let consumed = baseState?.consumed ?? false;
-		const pressedAtMs = baseState?.pressedAtMs ;
-		const releasedAtMs = baseState?.releasedAtMs ;
-		const timestamp = baseState?.timestamp ;
-		const pressId = baseState?.pressId ;
+		const pressedAtMs = baseState?.pressedAtMs;
+		const releasedAtMs = baseState?.releasedAtMs;
+		const timestamp = baseState?.timestamp;
+		const pressId = baseState?.pressId;
 		const value = baseState?.value ?? (pressed ? 1 : 0);
-		const value2d = baseState?.value2d ;
+		const value2d = baseState?.value2d;
 
 		const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier && (currentTime - event.timestamp <= window));
 		let waspressed = pressed;
@@ -505,7 +505,7 @@ export class Input implements RegisterablePersistent {
 		'KeyT': 'touch'
 	} as const;
 
-	public static readonly DEFAULT_POINTER_INPUT_MAPPING: PointerInputMapping = {
+	private static readonly DEFAULT_POINTER_INPUT_MAPPING: PointerInputMapping = Object.freeze({
 		pointer_primary: ['pointer_primary'],
 		pointer_secondary: ['pointer_secondary'],
 		pointer_aux: ['pointer_aux'],
@@ -514,7 +514,55 @@ export class Input implements RegisterablePersistent {
 		pointer_delta: ['pointer_delta'],
 		pointer_position: ['pointer_position'],
 		pointer_wheel: ['pointer_wheel'],
-	};
+	});
+
+	private static readonly DEFAULT_KEYBOARD_INPUT_MAPPING: KeyboardInputMapping = Object.freeze({
+		a: ['KeyZ'],
+		b: ['KeyX'],
+		x: ['KeyA'],
+		y: ['KeyS'],
+		lb: ['ShiftLeft'],
+		rb: ['Capslock'],
+		lt: ['KeyC'],
+		rt: ['KeyD'],
+		select: ['Enter'],
+		start: ['Space'],
+		ls: ['KeyQ'],
+		rs: ['KeyW'],
+		up: ['ArrowUp'],
+		down: ['ArrowDown'],
+		left: ['ArrowLeft'],
+		right: ['ArrowRight'],
+		home: ['Escape'],
+		touch: ['Backspace'],
+	});
+
+	private static readonly DEFAULT_GAMEPAD_INPUT_MAPPING: GamepadInputMapping = Object.freeze({
+		a: ['a'],
+		b: ['b'],
+		x: ['x'],
+		y: ['y'],
+		lb: ['lb'],
+		rb: ['rb'],
+		lt: ['lt'],
+		rt: ['rt'],
+		select: ['select'],
+		start: ['start'],
+		ls: ['ls'],
+		rs: ['rs'],
+		up: ['up'],
+		down: ['down'],
+		left: ['left'],
+		right: ['right'],
+		home: ['home'],
+		touch: ['touch'],
+	});
+
+	public static readonly DEFAULT_INPUT_MAPPING: InputMap = Object.freeze({
+		keyboard: Input.DEFAULT_KEYBOARD_INPUT_MAPPING,
+		gamepad: Input.DEFAULT_GAMEPAD_INPUT_MAPPING,
+		pointer: Input.DEFAULT_POINTER_INPUT_MAPPING,
+	});
 
 	private static readonly DEBUG_CAPTURE_KEYS = new Set([DEBUG_HUD_TOGGLE_KEY, 'F6', 'F7', 'F11']);
 
@@ -693,7 +741,7 @@ export class Input implements RegisterablePersistent {
 				justpressed: evt.down,
 				justreleased: !evt.down,
 				timestamp: evt.timestamp,
-				pressId: evt.pressId ,
+				pressId: evt.pressId,
 				value: evt.value,
 			}));
 		} else if (binding.source === 'gamepad') {
@@ -701,7 +749,7 @@ export class Input implements RegisterablePersistent {
 			handler.ingestButton(evt.code, evt.down, evt.value, evt.timestamp, evt.pressId);
 		}
 		if (binding.assignedPlayer !== null) {
-			this.enqueueButtonEvent(binding.assignedPlayer, evt.code, evt.down ? 'press' : 'release', evt.timestamp, evt.pressId );
+			this.enqueueButtonEvent(binding.assignedPlayer, evt.code, evt.down ? 'press' : 'release', evt.timestamp, evt.pressId);
 		}
 	}
 
