@@ -53,40 +53,32 @@ export function isLuaResourceDescriptor(descriptor: VMResourceDescriptor): boole
 }
 
 type FileMetadata = {
-	chunkName: string;
-	lines: readonly string[];
-	asset_id: string;
 	path: string;
+	lines: readonly string[];
 	sourceLabel: string;
 };
 
 type CollectMetadataOptions = {
 	workspace: LuaSemanticWorkspace;
 	environment: ProjectReferenceEnvironment;
-	currentChunkName: string;
+	currentPath: string;
 	currentLines: readonly string[];
-	currentasset_id: string;
-	sourceLabelPath?: string;
 };
 
 type BuildReferenceCatalogOptions = {
 	workspace: LuaSemanticWorkspace;
 	info: ReferenceMatchInfo;
 	lines: readonly string[];
-	chunkName: string;
-	asset_id: string;
+	path: string;
 	environment: ProjectReferenceEnvironment;
-	sourceLabelPath?: string;
 };
 
 type ResolveDefinitionLocationOptions = {
 	expression: string;
 	environment: ProjectReferenceEnvironment;
 	workspace: LuaSemanticWorkspace;
-	currentChunkName: string;
+	currentPath: string;
 	currentLines: readonly string[];
-	currentasset_id: string;
-	sourceLabelPath?: string;
 };
 
 type LuaSourceRangeLike = {
@@ -105,19 +97,17 @@ type CatalogEntryArgs = {
 };
 
 export function buildReferenceCatalogForExpression(options: BuildReferenceCatalogOptions): ReferenceCatalogEntry[] {
-	const { workspace, info, lines, chunkName, asset_id, environment, sourceLabelPath } = options;
+	const { workspace, info, lines, path, environment } = options;
 	const metadata = collectFileMetadata({
 		workspace,
 		environment,
-		currentChunkName: chunkName,
+		currentPath: path,
 		currentLines: lines,
-		currentasset_id: asset_id,
-		sourceLabelPath,
 	});
 	const entries: ReferenceCatalogEntry[] = [];
 	const existingKeys: Set<string> = new Set();
 	let nextIndex = 0;
-	const baseMeta = metadata.get(chunkName);
+	const baseMeta = metadata.get(path);
 	if (baseMeta) {
 		for (let index = 0; index < info.matches.length; index += 1) {
 			const match = info.matches[index];
@@ -158,7 +148,7 @@ export function buildReferenceCatalogForExpression(options: BuildReferenceCatalo
 }
 
 export function resolveDefinitionLocationForExpression(options: ResolveDefinitionLocationOptions): VMLuaDefinitionLocation {
-	const { expression, environment, workspace, currentChunkName, currentLines, currentasset_id, sourceLabelPath } = options;
+	const { expression, environment, workspace, currentPath, currentLines } = options;
 	const namePath = expression.split('.').filter(part => part.length > 0);
 	if (namePath.length === 0) {
 		return null;
@@ -166,10 +156,8 @@ export function resolveDefinitionLocationForExpression(options: ResolveDefinitio
 	const metadata = collectFileMetadata({
 		workspace,
 		environment,
-		currentChunkName,
+		currentPath,
 		currentLines,
-		currentasset_id,
-		sourceLabelPath,
 	});
 	let bestDecl: Decl = null;
 	let bestMeta: FileMetadata = null;
@@ -202,7 +190,6 @@ export function resolveDefinitionLocationForExpression(options: ResolveDefinitio
 	const range = bestDecl.range;
 	const location: VMLuaDefinitionLocation = {
 		path: bestMeta.path,
-		chunkName: bestMeta.chunkName,
 		range: {
 			startLine: range.start.line,
 			startColumn: range.start.column,
@@ -212,8 +199,8 @@ export function resolveDefinitionLocationForExpression(options: ResolveDefinitio
 	};
 	if (bestMeta.path) {
 		location.path = bestMeta.path;
-	} else if (bestMeta.chunkName && bestMeta.chunkName !== '<anynomous>') {
-		location.path = bestMeta.chunkName;
+	} else if (bestMeta.path && bestMeta.path !== '<anynomous>') {
+		location.path = bestMeta.path;
 	}
 	return location;
 }
@@ -221,8 +208,8 @@ export function resolveDefinitionLocationForExpression(options: ResolveDefinitio
 export function referenceEntryKey(entry: ReferenceCatalogEntry): string {
 	const location = entry.symbol.location;
 	const range = location.range;
-	const chunk = location.chunkName ?? '<anynomous>';
-	return `${chunk}:${range.startLine}:${range.startColumn}`;
+	const path = location.path ?? '<anynomous>';
+	return `${path}:${range.startLine}:${range.startColumn}`;
 }
 
 export function filterReferenceCatalog(options: { catalog: readonly ReferenceCatalogEntry[]; query: string; state: ReferenceState; pageSize: number }): {
@@ -266,45 +253,41 @@ export function filterReferenceCatalog(options: { catalog: readonly ReferenceCat
 }
 
 function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileMetadata> {
-	const { workspace, environment, currentChunkName, currentLines, currentasset_id, sourceLabelPath } = options;
+	const { workspace, environment, currentPath, currentLines } = options;
 	const metadata: Map<string, FileMetadata> = new Map();
-	const register = (chunkName: string, lines: readonly string[], asset_id: string, path: string, labelHint: string, version?: number): void => {
-		if (metadata.has(chunkName)) {
+	const register = (path: string, lines: readonly string[], labelHint: string, version?: number): void => {
+		if (metadata.has(path)) {
 			return;
 		}
-		const sourceLabel = computeSourceLabel(labelHint ?? chunkName ?? path, chunkName);
-		workspace.updateFile(chunkName, lines.join('\n'), lines, null, version);
-		metadata.set(chunkName, {
-			chunkName,
-			lines,
-			asset_id,
+		const sourceLabel = computeSourceLabel(labelHint ?? path ?? path, path);
+		workspace.updateFile(path, lines.join('\n'), lines, null, version);
+		metadata.set(path, {
 			path,
+			lines,
 			sourceLabel,
 		});
 	};
-	register(currentChunkName, currentLines, currentasset_id, null, sourceLabelPath, environment.activeContext.textVersion);
+	register(currentPath, currentLines, null, environment.activeContext.textVersion);
 	const activeContext = environment.activeContext;
 	const contexts = Array.from(environment.codeTabContexts);
-		for (let index = 0; index < contexts.length; index += 1) {
-			const context = contexts[index];
-			const descriptor = context.descriptor;
-			const chunkName = descriptor.path ?? descriptor.asset_id;
-			if (metadata.has(chunkName)) {
-				continue;
-			}
-			let lines: readonly string[] = null;
-			if (activeContext && context === activeContext) {
-				lines = environment.activeLines;
-			} else {
-				const source = getTextSnapshot(context.buffer);
-				lines = normalizeEndingsAndSplitLines(source);
-			}
-			if (!lines || lines.length === 0) {
-				continue;
-			}
-		const asset_id = descriptor.asset_id;
+	for (let index = 0; index < contexts.length; index += 1) {
+		const context = contexts[index];
+		const descriptor = context.descriptor;
 		const path = descriptor.path;
-		register(chunkName, lines, asset_id, path, null, context.textVersion);
+		if (metadata.has(path)) {
+			continue;
+		}
+		let lines: readonly string[] = null;
+		if (activeContext && context === activeContext) {
+			lines = environment.activeLines;
+		} else {
+			const source = getTextSnapshot(context.buffer);
+			lines = normalizeEndingsAndSplitLines(source);
+		}
+		if (!lines || lines.length === 0) {
+			continue;
+		}
+		register(path, lines, null, context.textVersion);
 	}
 	const descriptors = listResources();
 	for (let index = 0; index < descriptors.length; index += 1) {
@@ -312,19 +295,16 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		if (!isLuaResourceDescriptor(descriptor)) {
 			continue;
 		}
-		const chunkName = descriptor.path ?? descriptor.asset_id;
-		if (metadata.has(chunkName)) {
+		const path = descriptor.path;
+		if (metadata.has(path)) {
 			continue;
 		}
-		if (!descriptor.asset_id) {
-			continue;
-		}
-		const source = BmsxVMRuntime.instance.resourceSourceForChunk(chunkName);
+		const source = BmsxVMRuntime.instance.resourceSourceForChunk(path);
 		const lines = normalizeEndingsAndSplitLines(source);
 		if (!lines || lines.length === 0) {
 			continue;
 		}
-		register(chunkName, lines, descriptor.asset_id, descriptor.path , null, null);
+		register(path, lines, null, null);
 	}
 	return metadata;
 }
@@ -351,7 +331,6 @@ function createCatalogEntry(args: CatalogEntryArgs): ReferenceCatalogEntry {
 	const snippet = buildReferenceSnippet(meta.lines, match);
 	const symbolName = expression.length > 0 ? expression : snippet;
 	const location: VMLuaDefinitionLocation = {
-		chunkName: meta.chunkName,
 		path: meta.path,
 		range: {
 			startLine: range.startLine,
@@ -475,7 +454,7 @@ export type ReferenceLookupOptions = {
 	cursorRow: number;
 	cursorColumn: number;
 	extractExpression: ExtractIdentifierExpression;
-	chunkName: string;
+	path: string;
 };
 
 export type ReferenceMatchInfo = {
@@ -541,9 +520,9 @@ export class ReferenceState {
 
 export function resolveReferenceLookup(options: ReferenceLookupOptions): ReferenceLookupResult {
 	const {
-		layout, workspace, buffer, textVersion, cursorRow, cursorColumn, extractExpression, chunkName,
+		layout, workspace, buffer, textVersion, cursorRow, cursorColumn, extractExpression, path,
 	} = options;
-	const model = layout.getSemanticModel(buffer, textVersion, chunkName);
+	const model = layout.getSemanticModel(buffer, textVersion, path);
 	if (!model) {
 		return { kind: 'error', message: 'References unavailable', duration: 1.6 };
 	}
@@ -551,7 +530,7 @@ export function resolveReferenceLookup(options: ReferenceLookupOptions): Referen
 	if (!identifier) {
 		return { kind: 'error', message: 'No identifier at cursor', duration: 1.6 };
 	}
-	const resolution = workspace.findReferencesByPosition(chunkName, cursorRow + 1, cursorColumn + 1);
+	const resolution = workspace.findReferencesByPosition(path, cursorRow + 1, cursorColumn + 1);
 	if (!resolution) {
 		return {
 			kind: 'error',
@@ -562,7 +541,7 @@ export function resolveReferenceLookup(options: ReferenceLookupOptions): Referen
 	const matches: SearchMatch[] = [];
 	const seen = new Set<string>();
 	const definitionRange = resolution.decl.range;
-	if (definitionRange.chunkName === chunkName) {
+	if (definitionRange.path === path) {
 		const definitionMatch = rangeToSearchMatchInBuffer(definitionRange, buffer);
 		if (definitionMatch) {
 			const key = `${definitionMatch.row}:${definitionMatch.start}`;
@@ -573,7 +552,7 @@ export function resolveReferenceLookup(options: ReferenceLookupOptions): Referen
 	const references = resolution.references;
 	for (let index = 0; index < references.length; index += 1) {
 		const reference = references[index];
-		if (reference.file !== chunkName) {
+		if (reference.file !== path) {
 			continue;
 		}
 		const match = rangeToSearchMatchInBuffer(reference.range, buffer);

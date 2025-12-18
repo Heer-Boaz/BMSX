@@ -25,16 +25,16 @@ import type {
 } from '../../src/bmsx/lua/ast';
 
 function parseChunk(source: string): LuaChunk {
-	const lexer = new LuaLexer(source, 'chunk');
+	const lexer = new LuaLexer(source, 'path');
 	const tokens = lexer.scanTokens();
-	const parser = new LuaParser(tokens, 'chunk', source);
+	const parser = new LuaParser(tokens, 'path', source);
 	return parser.parseChunk();
 }
 
 test('parses local assignment with multiple values', () => {
-	const chunk = parseChunk('local a, b = 1, 2');
-	assert.equal(chunk.body.length, 1);
-	const statement = chunk.body[0];
+	const path = parseChunk('local a, b = 1, 2');
+	assert.equal(path.body.length, 1);
+	const statement = path.body[0];
 	assert.equal(statement.kind, LuaSyntaxKind.LocalAssignmentStatement);
 	const localStatement = statement as LuaLocalAssignmentStatement;
 	assert.equal(localStatement.names.length, 2);
@@ -48,9 +48,9 @@ test('parses local assignment with multiple values', () => {
 });
 
 test('parses function declaration with method name and parameters', () => {
-	const chunk = parseChunk('function module.object:method(x, y, ...)\nreturn x + y\nend');
-	assert.equal(chunk.body.length, 1);
-	const statement = chunk.body[0];
+	const path = parseChunk('function module.object:method(x, y, ...)\nreturn x + y\nend');
+	assert.equal(path.body.length, 1);
+	const statement = path.body[0];
 	assert.equal(statement.kind, LuaSyntaxKind.FunctionDeclarationStatement);
 	const functionStatement = statement as LuaFunctionDeclarationStatement;
 	assert.deepEqual(functionStatement.name.identifiers, ['module', 'object']);
@@ -72,9 +72,9 @@ elseif b then
 else
 	call_c()
 end`;
-	const chunk = parseChunk(source);
-	assert.equal(chunk.body.length, 1);
-	const statement = chunk.body[0];
+	const path = parseChunk(source);
+	assert.equal(path.body.length, 1);
+	const statement = path.body[0];
 	assert.equal(statement.kind, LuaSyntaxKind.IfStatement);
 	const ifStatement = statement as LuaIfStatement;
 	assert.equal(ifStatement.clauses.length, 3);
@@ -84,9 +84,9 @@ end`;
 });
 
 test('parses numeric for loop', () => {
-	const chunk = parseChunk('for i = 1, 10, 2 do sum = sum + i end');
-	assert.equal(chunk.body.length, 1);
-	const statement = chunk.body[0];
+	const path = parseChunk('for i = 1, 10, 2 do sum = sum + i end');
+	assert.equal(path.body.length, 1);
+	const statement = path.body[0];
 	assert.equal(statement.kind, LuaSyntaxKind.ForNumericStatement);
 	const forStatement = statement as LuaForNumericStatement;
 	assert.equal(forStatement.variable.name, 'i');
@@ -99,24 +99,24 @@ test('parses numeric for loop', () => {
 });
 
 test('parses table assignment and preserves call statement', () => {
-	const chunk = parseChunk('t[i] = t[i] + 1\nprint("updated")');
-	assert.equal(chunk.body.length, 2);
-	const assignment = chunk.body[0];
+	const path = parseChunk('t[i] = t[i] + 1\nprint("updated")');
+	assert.equal(path.body.length, 2);
+	const assignment = path.body[0];
 	assert.equal(assignment.kind, LuaSyntaxKind.AssignmentStatement);
 	const assignmentStatement = assignment as LuaAssignmentStatement;
 	assert.equal(assignmentStatement.left.length, 1);
 	assert.equal(assignmentStatement.right.length, 1);
 	assert.equal(assignmentStatement.operator, LuaAssignmentOperator.Assign);
-	const callStatement = chunk.body[1];
+	const callStatement = path.body[1];
 	assert.equal(callStatement.kind, LuaSyntaxKind.CallStatement);
 	const call = callStatement as LuaCallStatement;
 	assert.equal(call.expression.kind, LuaSyntaxKind.CallExpression);
 });
 
 test('parses augmented assignment statement', () => {
-	const chunk = parseChunk('value += 1');
-	assert.equal(chunk.body.length, 1);
-	const statement = chunk.body[0] as LuaAssignmentStatement;
+	const path = parseChunk('value += 1');
+	assert.equal(path.body.length, 1);
+	const statement = path.body[0] as LuaAssignmentStatement;
 	assert.equal(statement.kind, LuaSyntaxKind.AssignmentStatement);
 	assert.equal(statement.left.length, 1);
 	assert.equal(statement.right.length, 1);
@@ -124,8 +124,8 @@ test('parses augmented assignment statement', () => {
 });
 
 test('parses unary minus with exponent precedence', () => {
-	const chunk = parseChunk('local value = -2 ^ 2');
-	const statement = chunk.body[0] as LuaLocalAssignmentStatement;
+	const path = parseChunk('local value = -2 ^ 2');
+	const statement = path.body[0] as LuaLocalAssignmentStatement;
 	assert.equal(statement.values.length, 1);
 	const unary = statement.values[0] as LuaUnaryExpression;
 	assert.equal(unary.kind, LuaSyntaxKind.UnaryExpression);
@@ -138,20 +138,20 @@ test('parses unary minus with exponent precedence', () => {
 });
 
 test('parses goto and label statements', () => {
-	const chunk = parseChunk('::loop::\ngoto loop');
-	assert.equal(chunk.body.length, 2);
-	const label = chunk.body[0] as LuaLabelStatement;
+	const path = parseChunk('::loop::\ngoto loop');
+	assert.equal(path.body.length, 2);
+	const label = path.body[0] as LuaLabelStatement;
 	assert.equal(label.kind, LuaSyntaxKind.LabelStatement);
 	assert.equal(label.label, 'loop');
-	const gotoStatement = chunk.body[1] as LuaGotoStatement;
+	const gotoStatement = path.body[1] as LuaGotoStatement;
 	assert.equal(gotoStatement.kind, LuaSyntaxKind.GotoStatement);
 	assert.equal(gotoStatement.label, 'loop');
 });
 
 test('parses floor division operator', () => {
-	const chunk = parseChunk('return a // b');
-	assert.equal(chunk.body.length, 1);
-	const statement = chunk.body[0] as LuaReturnStatement;
+	const path = parseChunk('return a // b');
+	assert.equal(path.body.length, 1);
+	const statement = path.body[0] as LuaReturnStatement;
 	assert.equal(statement.kind, LuaSyntaxKind.ReturnStatement);
 	assert.equal(statement.expressions.length, 1);
 	const binary = statement.expressions[0] as LuaBinaryExpression;
@@ -159,8 +159,8 @@ test('parses floor division operator', () => {
 });
 
 test('parses bitwise operator precedence', () => {
-	const chunk = parseChunk('return a | b ~ c & d');
-	const statement = chunk.body[0] as LuaReturnStatement;
+	const path = parseChunk('return a | b ~ c & d');
+	const statement = path.body[0] as LuaReturnStatement;
 	const root = statement.expressions[0] as LuaBinaryExpression;
 	assert.equal(root.operator, LuaBinaryOperator.BitwiseOr);
 	const left = root.left as LuaIdentifierExpression;
@@ -172,8 +172,8 @@ test('parses bitwise operator precedence', () => {
 });
 
 test('parses shift operators as left associative', () => {
-	const chunk = parseChunk('return a << b >> c');
-	const statement = chunk.body[0] as LuaReturnStatement;
+	const path = parseChunk('return a << b >> c');
+	const statement = path.body[0] as LuaReturnStatement;
 	const root = statement.expressions[0] as LuaBinaryExpression;
 	assert.equal(root.operator, LuaBinaryOperator.ShiftRight);
 	const left = root.left as LuaBinaryExpression;
@@ -181,8 +181,8 @@ test('parses shift operators as left associative', () => {
 });
 
 test('parses unary bitwise not', () => {
-	const chunk = parseChunk('return ~value');
-	const statement = chunk.body[0] as LuaReturnStatement;
+	const path = parseChunk('return ~value');
+	const statement = path.body[0] as LuaReturnStatement;
 	const unary = statement.expressions[0] as LuaUnaryExpression;
 	assert.equal(unary.operator, LuaUnaryOperator.BitwiseNot);
 });
@@ -221,16 +221,16 @@ test('parses paren-less single string argument calls', () => {
 });
 
 test('parses paren-less table constructor arguments', () => {
-	const chunk = parseChunk(`f { 1, 2, 3 }
+	const path = parseChunk(`f { 1, 2, 3 }
 obj:method { key = "value" }`);
-	assert.equal(chunk.body.length, 2);
+	assert.equal(path.body.length, 2);
 
-	const firstCall = chunk.body[0] as LuaCallStatement;
+	const firstCall = path.body[0] as LuaCallStatement;
 	const firstExpression = firstCall.expression as LuaCallExpression;
 	const tableArg = firstExpression.arguments[0] as LuaTableConstructorExpression;
 	assert.equal(tableArg.fields.length, 3);
 
-	const methodCall = chunk.body[1] as LuaCallStatement;
+	const methodCall = path.body[1] as LuaCallStatement;
 	const methodExpression = methodCall.expression as LuaCallExpression;
 	assert.equal(methodExpression.methodName, 'method');
 	const methodTableArg = methodExpression.arguments[0] as LuaTableConstructorExpression;
@@ -240,8 +240,8 @@ obj:method { key = "value" }`);
 test('rejects invalid paren-less call arguments', () => {
 	assert.throws(() => parseChunk('f 1'));
 	assert.throws(() => parseChunk('f x'));
-	const chunk = parseChunk("return f 'a' .. 'b'");
-	const statement = chunk.body[0] as LuaReturnStatement;
+	const path = parseChunk("return f 'a' .. 'b'");
+	const statement = path.body[0] as LuaReturnStatement;
 	const binary = statement.expressions[0] as LuaBinaryExpression;
 	assert.equal(binary.operator, LuaBinaryOperator.Concat);
 	const callLeft = binary.left as LuaCallExpression;

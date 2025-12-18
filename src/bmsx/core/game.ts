@@ -78,7 +78,7 @@ export const runGate: GateGroup = taskGate.group('run:main');
  * We need this separation because the IDE/workspace can apply overrides, hot-reload sources, and otherwise mutate
  * the active cart while the ROM pack should remain pristine (e.g. for "reset workspace" or comparing against ROM).
  *
- * Important: The cart stores the same `RomLuaAsset` objects in both `chunk2lua` and `path2lua` for fast lookup.
+ * Important: The cart stores the same `RomLuaAsset` objects in both `path2lua` and `path2lua` for fast lookup.
  * A generic deep clone duplicates those objects independently per map, breaking identity between the indices.
  * That identity is relied on across the VM + workspace pipeline (edits/overrides can originate from either map).
  */
@@ -96,14 +96,8 @@ function cloneCartForRuntime(cart: RomPack['cart']): RomPack['cart'] {
 
 	const clonedCart: RomPack['cart'] = {
 		...cart,
-		chunk2lua: {},
 		path2lua: {},
 	};
-
-	for (const chunkName of Object.keys(cart.chunk2lua)) {
-		const asset = cart.chunk2lua[chunkName];
-		clonedCart.chunk2lua[chunkName] = cloneAsset(asset);
-	}
 
 	for (const path of Object.keys(cart.path2lua)) {
 		const asset = cart.path2lua[path];

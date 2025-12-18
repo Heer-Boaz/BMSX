@@ -107,7 +107,7 @@ async function runDiagnostics(source: string) {
 	const apiData = getApiCompletionData();
 	return computeLuaDiagnostics({
 		source,
-		chunkName: 'testchunk',
+		path: 'testpath',
 		localSymbols: [],
 		globalSymbols: [],
 		builtinDescriptors: [],
@@ -158,7 +158,7 @@ local function create_ball(seed)
 	}
 end
 `;
-	const model = buildLuaSemanticModel(source, 'testchunk');
+	const model = buildLuaSemanticModel(source, 'testpath');
 	const lines = normalizeEndingsAndSplitLines(source);
 	const targetLine = lines[3];
 	const leftZeroBased = targetLine.indexOf('seed');
@@ -180,7 +180,7 @@ local state = {
 }
 state.count = state.count + 1
 `;
-	const model = buildLuaSemanticModel(source, 'testchunk');
+	const model = buildLuaSemanticModel(source, 'testpath');
 	const lines = source.replace(/\r\n/g, '\n').split('\n');
 	const assignmentLine = lines[4];
 	const firstZeroBased = assignmentLine.indexOf('count');
@@ -201,7 +201,7 @@ test('semantic model reports references for locals', async () => {
 		'counter = counter + 1',
 		'return counter',
 	].join('\n');
-	const model = buildLuaSemanticModel(source, 'testchunk');
+	const model = buildLuaSemanticModel(source, 'testpath');
 	const lines = source.split('\n');
 	const definitionColumn = lines[0].indexOf('counter') + 1;
 	const lookup = model.lookupReferences(1, definitionColumn, ['counter']);
@@ -226,7 +226,7 @@ test('semantic model reports references for table fields', async () => {
 		'state.value = state.value + 1',
 		'return state.value',
 	].join('\n');
-	const model = buildLuaSemanticModel(source, 'testchunk');
+	const model = buildLuaSemanticModel(source, 'testpath');
 	const lines = source.split('\n');
 	const definitionColumn = lines[0].indexOf('value') + 1;
 	const lookup = model.lookupReferences(1, definitionColumn, ['state', 'value']);
@@ -246,7 +246,7 @@ test('semantic model reports references for table fields', async () => {
 
 // Workspace-driven reference catalog test
 
-test('project reference catalog resolves globals across chunks', async () => {
+test('project reference catalog resolves globals across paths', async () => {
 	const { buildReferenceCatalogForExpression } = await referenceSourcesModulePromise;
 	const { LuaSemanticWorkspace } = await workspaceModulePromise;
 	const usageSource = [
@@ -340,20 +340,20 @@ test('project reference catalog resolves globals across chunks', async () => {
 		workspace,
 		info,
 		lines: usageLines,
-		chunkName: 'usage.lua',
+		path: 'usage.lua',
 		asset_id: 'usage',
 		environment,
 		sourceLabelPath: 'usage.lua',
 	});
 
-	assert.ok(catalog.some(entry => entry.symbol.location.chunkName === 'global.lua'), 'global chunk included in reference catalog');
-	const usageEntries = catalog.filter(entry => entry.symbol.location.chunkName === 'usage.lua');
+	assert.ok(catalog.some(entry => entry.symbol.location.path === 'global.lua'), 'global path included in reference catalog');
+	const usageEntries = catalog.filter(entry => entry.symbol.location.path === 'usage.lua');
 	assert.equal(usageEntries.length, matches.length, 'usage matches retained');
-	assert.ok(!catalog.some(entry => entry.symbol.location.chunkName === 'parameter.lua'), 'parameter file excluded from references');
-	assert.ok(!catalog.some(entry => entry.symbol.location.chunkName === 'local.lua'), 'local-scoped variable file excluded from references');
+	assert.ok(!catalog.some(entry => entry.symbol.location.path === 'parameter.lua'), 'parameter file excluded from references');
+	assert.ok(!catalog.some(entry => entry.symbol.location.path === 'local.lua'), 'local-scoped variable file excluded from references');
 });
 
-test('project definition resolver locates global across chunks', async () => {
+test('project definition resolver locates global across paths', async () => {
 	const { resolveDefinitionLocationForExpression } = await referenceSourcesModulePromise;
 	const { LuaSemanticWorkspace } = await workspaceModulePromise;
 
@@ -409,20 +409,20 @@ test('project definition resolver locates global across chunks', async () => {
 		expression: 'state',
 		environment,
 		workspace,
-		currentChunkName: 'usage.lua',
+		currentPath: 'usage.lua',
 		currentLines: usageLines,
 		currentasset_id: 'usage',
 		sourceLabelPath: 'usage.lua',
 	});
 
 	assert.ok(location, 'global definition location resolved');
-	assert.equal(location!.chunkName, 'global.lua');
+	assert.equal(location!.path, 'global.lua');
 	assert.equal(location!.asset_id, 'global');
 	assert.equal(location!.range.startLine, 1);
 	assert.equal(location!.range.startColumn, 1);
 });
 
-test('reference lookup resolves global definition across chunks', async () => {
+test('reference lookup resolves global definition across paths', async () => {
 	const { resolveReferenceLookup } = await referenceNavigationModulePromise;
 	const { LuaSemanticWorkspace } = await workspaceModulePromise;
 
@@ -474,7 +474,7 @@ test('reference lookup resolves global definition across chunks', async () => {
 			}
 			return { expression: 'state', startColumn: index, endColumn: index + name.length };
 		},
-		chunkName: 'usage.lua',
+		path: 'usage.lua',
 	});
 
 	assert.equal(result.kind, 'success', 'reference lookup succeeded');
@@ -532,7 +532,7 @@ test('reference lookup prefers local parameter over global', async () => {
 			}
 			return { expression: 'state', startColumn: index, endColumn: index + name.length };
 		},
-		chunkName: 'usage.lua',
+		path: 'usage.lua',
 	});
 
 	assert.equal(parameterResult.kind, 'success', 'parameter lookup succeeds');
@@ -622,7 +622,7 @@ test('intellisense recognizes global variable from another file', async () => {
 		workspace,
 		info,
 		lines: usageLines,
-		chunkName: 'usage.lua',
+		path: 'usage.lua',
 		asset_id: 'usage',
 		environment,
 		sourceLabelPath: 'usage.lua',
@@ -631,7 +631,7 @@ test('intellisense recognizes global variable from another file', async () => {
 	const apiData = getApiCompletionData();
 	const diagnostics = computeLuaDiagnostics({
 		source: usageSource,
-		chunkName: 'usage.lua',
+		path: 'usage.lua',
 		localSymbols: [],
 		globalSymbols: catalog.map(entry => entry.symbol),
 		builtinDescriptors: [],

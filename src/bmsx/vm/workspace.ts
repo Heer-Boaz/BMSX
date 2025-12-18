@@ -19,14 +19,13 @@ type WorkspaceWinnerKind = 'override' | 'canonical' | 'rom';
 export async function saveLuaResourceSource(path: string, source: string): Promise<void> {
 	const cart = $.rompack.cart;
 	const asset = cart.path2lua[path];
-	const absPath = asset.normalized_source_path;
+	const absPath = asset.source_path;
 	await persistLuaSourceToFilesystem(absPath, source);
 	asset.src = source;
 	asset.update_timestamp = $.platform.clock.dateNow();
-	const chunkName = asset.chunk_name;
-	cart.chunk2lua![chunkName] = asset;
+	cart.path2lua![path] = asset;
 	cart.path2lua![absPath] = asset;
-	BmsxVMRuntime.instance.markSourceChunkAsDirty(chunkName);
+	BmsxVMRuntime.instance.markSourceChunkAsDirty(path);
 }
 
 export async function createLuaResource(request: VMLuaResourceCreationRequest): Promise<VMResourceDescriptor> {
@@ -42,20 +41,19 @@ export async function createLuaResource(request: VMLuaResourceCreationRequest): 
 		src: contents,
 		source_path: path,
 		normalized_source_path: path,
-		chunk_name: path,
 		update_timestamp: $.platform.clock.dateNow(),
 	};
 	const registerAsset = (cart: BmsxCartridge): void => {
-		cart.chunk2lua![asset.chunk_name] = asset;
+		cart.path2lua![asset.source_path] = asset;
 		cart.path2lua![asset.normalized_source_path] = asset;
 	};
 	registerAsset($.rompack.cart);
 	registerAsset($.cart);
 	BmsxVMRuntime.instance.invalidateLuaModuleIndex();
-	const filesystemPath = asset.normalized_source_path;
+	const filesystemPath = asset.source_path;
 	await persistLuaSourceToFilesystem(filesystemPath, contents);
-	BmsxVMRuntime.instance.markSourceChunkAsDirty(asset.chunk_name);
-	const descriptor: VMResourceDescriptor = { path: asset.normalized_source_path, type: 'lua', asset_id };
+	BmsxVMRuntime.instance.markSourceChunkAsDirty(asset.source_path);
+	const descriptor: VMResourceDescriptor = { path: asset.source_path, type: 'lua' };
 	return descriptor;
 }
 
@@ -125,7 +123,7 @@ export function collectWorkspaceOverrides(params: { cart: BmsxCartridge; project
 	}
 	const root = rootRaw;
 	const storage = params.storage;
-	for (const asset of Object.values(params.cart.chunk2lua)) {
+	for (const asset of Object.values(params.cart.path2lua)) {
 		const cartPath = asset.normalized_source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		let bestSource: string = null;
@@ -385,7 +383,7 @@ export async function fetchWorkspaceDirtyLuaOverrides(cart: BmsxCartridge, root:
 	const tasks: Array<Promise<{ contents: string; path: string; filePath: string; updatedAt?: number }>> = [];
 	// Fetching dirty files from backend is best-effort. Missing files do NOT mean we should
 	// discard in-memory dirty edits; they simply yield no extra overrides.
-	for (const asset of Object.values(cart.chunk2lua)) {
+	for (const asset of Object.values(cart.path2lua)) {
 		const filePath = asset.normalized_source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, filePath);
 		tasks.push(fetchWorkspaceFile(dirtyPath).then((result) => {
@@ -671,17 +669,17 @@ export async function applyWorkspaceOverridesToCart(params: { cart: BmsxCartridg
 			continue;
 		}
 
-		// Keep `path2lua` and `chunk2lua` in sync.
-		// The VM executes sources via `$.cart.chunk2lua[...]` (see `BmsxVMRuntime.resourceSourceForChunk()`), while
+		// Keep `path2lua` and `path2lua` in sync.
+		// The VM executes sources via `$.cart.path2lua[...]` (see `BmsxVMRuntime.resourceSourceForChunk()`), while
 		// workspace merges/overrides are keyed by path via `path2lua[...]`. These two maps are expected to point at
 		// the same `RomLuaAsset` objects, but a naive cart clone can break that identity, so we always set both here.
 		const nextSource = winner.record.source;
-		const chunkBinding = cart.chunk2lua[asset.chunk_name];
-		if (asset.src !== nextSource || chunkBinding.src !== nextSource) {
+		const pathBinding = cart.path2lua[asset.source_path];
+		if (asset.src !== nextSource || pathBinding.src !== nextSource) {
 			changed.add(filePath);
 		}
 		asset.src = nextSource;
-		chunkBinding.src = nextSource;
+		pathBinding.src = nextSource;
 
 		if (!root) {
 			continue;
@@ -755,7 +753,7 @@ export async function nukeWorkspaceState(): Promise<void> {
 
 export function listResources(): VMResourceDescriptor[] {
 	const descriptors: VMResourceDescriptor[] = [];
-	for (const asset of Object.values($.rompack.cart.chunk2lua)) {
+	for (const asset of Object.values($.rompack.cart.path2lua)) {
 		const path = asset.normalized_source_path;
 		descriptors.push({ path, type: asset.type, asset_id: asset.resid });
 	}

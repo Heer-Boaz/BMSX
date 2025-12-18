@@ -464,7 +464,7 @@ export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverl
 
 export type FaultSnapshot = {
 	message: string;
-	chunkName: string;
+	path: string;
 	line: number;
 	column: number;
 	details: RuntimeErrorDetails;
@@ -474,20 +474,20 @@ export type FaultSnapshot = {
 
 export type FaultOverlayTarget = {
 	showRuntimeErrorInChunk: (
-		chunkName: string,
+		path: string,
 		line: number,
 		column: number,
 		message: string,
 		details: RuntimeErrorDetails
 	) => void;
-	showRuntimeError: (line: number, column: number, message: string, details: RuntimeErrorDetails, chunkName?: string) => void;
+	showRuntimeError: (line: number, column: number, message: string, details: RuntimeErrorDetails, path?: string) => void;
 };
 
 export function renderFaultOverlay() {
 	const snapshot = BmsxVMRuntime.instance.faultSnapshot;
 	if (!snapshot) return;
 	showRuntimeErrorInChunk(
-		snapshot.chunkName,
+		snapshot.path,
 		snapshot.line,
 		snapshot.column,
 		snapshot.message,
@@ -506,7 +506,7 @@ export function renderRuntimeFaultOverlay(options: {
 	if (!options.force && (!options.luaRuntimeFailed || !options.needsFlush)) return false;
 	if (!snapshot) return false;
 	showRuntimeErrorInChunk(
-		snapshot.chunkName,
+		snapshot.path,
 		snapshot.line,
 		snapshot.column,
 		snapshot.message,
@@ -516,14 +516,14 @@ export function renderRuntimeFaultOverlay(options: {
 }
 
 export function showRuntimeErrorInChunk(
-	chunkName: string,
+	path: string,
 	line: number,
 	column: number,
 	message: string,
 	details?: RuntimeErrorDetails
 ): void {
-	focusChunkSource(chunkName);
-	showRuntimeError(line, column, message, details, chunkName);
+	focusChunkSource(path);
+	showRuntimeError(line, column, message, details, path);
 }
 
 export function showRuntimeError(
@@ -531,7 +531,7 @@ export function showRuntimeError(
 	column: number,
 	message: string,
 	details?: RuntimeErrorDetails,
-	chunkName?: string
+	path?: string
 ): void {
 	if (!ide_state.active) {
 		activate();
@@ -563,7 +563,7 @@ export function showRuntimeError(
 	revealCursor();
 	resetBlink();
 	const normalizedMessage = message && message.length > 0 ? message.trim() : 'Runtime error';
-	const locationLabel = formatRuntimeErrorLocation(chunkName ?? null, processedLine, normalizedColumn);
+	const locationLabel = formatRuntimeErrorLocation(path ?? null, processedLine, normalizedColumn);
 	const overlayMessage = locationLabel
 		? `${locationLabel}: ${normalizedMessage}`
 		: (processedLine !== null ? `Line ${processedLine}:${normalizedMessage}` : normalizedMessage);

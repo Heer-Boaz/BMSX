@@ -1318,7 +1318,6 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 					type,
 					buffer,
 					source_path: normalizedPath,
-					chunk_name: normalizedPath,
 					normalized_source_path: normalizedPath,
 					update_timestamp: res.update_timestamp,
 				});

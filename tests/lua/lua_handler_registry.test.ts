@@ -6,11 +6,11 @@ import type { LuaFunctionValue } from '../../src/bmsx/lua/value';
 import { LuaHandlerRegistry, type LuaHandlerBindContext } from '../../src/bmsx/vm/lua_handler_registry';
 import type { LuaValue } from '../../src/bmsx/lua/value';
 
-test('LuaHandlerRegistry tracks registration and chunk mapping', () => {
+test('LuaHandlerRegistry tracks registration and path mapping', () => {
 	const registry = new LuaHandlerRegistry();
 	const interpreter = createLuaInterpreter();
 	const range: LuaSourceRange = {
-		chunkName: '@test/chunk.lua',
+		path: '@test/path.lua',
 		start: { line: 1, column: 0 },
 		end: { line: 1, column: 10 },
 	};
@@ -32,7 +32,7 @@ test('LuaHandlerRegistry tracks registration and chunk mapping', () => {
 		hook: 'activation',
 		functionName: fn.name,
 		sourceRange: range,
-		chunkName: range.chunkName,
+		path: range.path,
 		onCreate(context) {
 		createCalls += 1;
 		lastContext = context;
@@ -47,8 +47,8 @@ test('LuaHandlerRegistry tracks registration and chunk mapping', () => {
 	},
 }, { fn, interpreter });
 
-	assert.equal(descriptor.normalizedChunkName, 'test/chunk.lua');
-	assert.equal(registry.listByChunk('@test/chunk.lua').length, 1);
+	assert.equal(descriptor.normalizedPath, 'test/path.lua');
+	assert.equal(registry.listByChunk('@test/path.lua').length, 1);
 	assert.equal(createCalls, 1);
 	assert.equal(updateCalls, 0);
 	assert.ok(lastContext);
@@ -57,7 +57,7 @@ assert.equal(disposeCalls, 0);
 
 
 	const nextRange: LuaSourceRange = {
-		chunkName: '@test/chunk.lua',
+		path: '@test/path.lua',
 		start: { line: 5, column: 0 },
 		end: { line: 5, column: 16 },
 	};
@@ -73,7 +73,7 @@ assert.equal(disposeCalls, 0);
 		hook: 'activation',
 		functionName: updatedFn.name,
 		sourceRange: nextRange,
-		chunkName: nextRange.chunkName,
+		path: nextRange.path,
 	onCreate(context) {
 		createCalls += 1;
 		lastContext = context;
@@ -99,11 +99,11 @@ assert.equal(disposeCalls, 0, 'Handler should still be registered');
 assert.strictEqual(lastDisposedContext, null);
 });
 
-test('LuaHandlerRegistry unregister removes chunk association', () => {
+test('LuaHandlerRegistry unregister removes path association', () => {
 	const registry = new LuaHandlerRegistry();
 	const interpreter = createLuaInterpreter();
 	const range: LuaSourceRange = {
-		chunkName: '@demo/main.lua',
+		path: '@demo/main.lua',
 		start: { line: 1, column: 0 },
 		end: { line: 1, column: 12 },
 	};
@@ -122,7 +122,7 @@ test('LuaHandlerRegistry unregister removes chunk association', () => {
 		hook: 'onattach',
 		functionName: fn.name,
 		sourceRange: range,
-		chunkName: range.chunkName,
+		path: range.path,
 	onCreate() {},
 	onUpdate() {},
 	onDispose: (context) => { disposeCalled = true; disposedContext = context; },

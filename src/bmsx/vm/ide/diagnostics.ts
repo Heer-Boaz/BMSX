@@ -9,14 +9,14 @@ export type DiagnosticContextInput = {
 	id: string;
 	title: string;
 	descriptor: VMResourceDescriptor;
-	chunkName: string;
+	path: string;
 	source: string;
 	lines?: readonly string[];
 	version: number;
 };
 
 export type DiagnosticProviders = {
-	listLocalSymbols(chunkName: string): VMLuaSymbolEntry[];
+	listLocalSymbols(path: string): VMLuaSymbolEntry[];
 	listGlobalSymbols(): VMLuaSymbolEntry[];
 	listBuiltins(): VMLuaBuiltinDescriptor[];
 };
@@ -33,22 +33,22 @@ export function computeAggregatedEditorDiagnostics(
 	const aggregated: EditorDiagnostic[] = [];
 	for (let i = 0; i < contexts.length; i += 1) {
 		const ctx = contexts[i];
-		const chunkName = resolveChunkName(ctx);
+		const path = resolvePath(ctx);
 		const source = ctx.source ?? '';
 		if (source.length === 0) continue;
 		const parseEntry = getCachedLuaParse({
-			chunkName,
+			path,
 			source,
 			lines: ctx.lines,
 			version: ctx.version,
 		});
 		const baseLines = parseEntry.lines;
 		const parsed = parseEntry.parsed;
-		if (chunkName) {
-			const cacheEntry = BmsxVMRuntime.instance.chunkSemanticCache.get(chunkName);
+		if (path) {
+			const cacheEntry = BmsxVMRuntime.instance.pathSemanticCache.get(path);
 			const model = cacheEntry ? cacheEntry.model : null;
 			const definitions = cacheEntry ? cacheEntry.definitions : [];
-			BmsxVMRuntime.instance.chunkSemanticCache.set(chunkName, {
+			BmsxVMRuntime.instance.pathSemanticCache.set(path, {
 				source,
 				model,
 				definitions,
@@ -56,10 +56,10 @@ export function computeAggregatedEditorDiagnostics(
 				lines: baseLines,
 			});
 		}
-		const localSymbols = providers.listLocalSymbols(chunkName);
+		const localSymbols = providers.listLocalSymbols(path);
 		const luaDiagnostics = computeLuaDiagnostics({
 			source,
-			chunkName,
+			path,
 			localSymbols,
 			globalSymbols,
 			builtinDescriptors,
@@ -79,16 +79,16 @@ export function computeAggregatedEditorDiagnostics(
 				message: d.message,
 				severity: d.severity,
 				contextId: ctx.id,
-				sourceLabel: chunkName,
-				chunkName,
+				sourceLabel: path,
+				path,
 			});
 		}
 	}
 	return aggregated;
 }
 
-function resolveChunkName(ctx: DiagnosticContextInput): string {
-	const candidate = ctx.chunkName && ctx.chunkName.length > 0 ? ctx.chunkName : null;
+function resolvePath(ctx: DiagnosticContextInput): string {
+	const candidate = ctx.path && ctx.path.length > 0 ? ctx.path : null;
 	if (candidate) return candidate;
 	const descriptor = ctx.descriptor;
 	if (descriptor) {

@@ -32,7 +32,7 @@ export class ResourcePanelController {
 	public selectionIndex = -1;
 	public hoverIndex = -1;
 	public maxLineWidth = 0;
-	private pendingSelectionasset_id: string = null;
+	private pendingSelectionAssetId: string = null;
 
 	// Scrollbars for the panel
 	public readonly resourceVertical: VMScrollbar;
@@ -175,13 +175,6 @@ export class ResourcePanelController {
 		return index;
 	}
 
-	selectResource(descriptor: VMResourceDescriptor): void {
-		if (!descriptor.asset_id || descriptor.asset_id.length === 0) return;
-		this.pendingSelectionasset_id = descriptor.asset_id;
-		if (!this.visible) return;
-		this.applyPendingSelection();
-	}
-
 	setSelectionIndex(index: number): void {
 		if (!this.visible) return;
 		if (!Number.isFinite(index)) return;
@@ -251,7 +244,7 @@ export class ResourcePanelController {
 		this.hoverIndex = -1;
 		this.hscroll = 0;
 		this.maxLineWidth = 0;
-		this.pendingSelectionasset_id = null;
+		this.pendingSelectionAssetId = null;
 	}
 
 	private refreshContents(): void {
@@ -271,7 +264,7 @@ export class ResourcePanelController {
 			this.items = [{ line: `<failed to load resources: ${message}>`, contentStartColumn: 0, descriptor: null }];
 			this.scroll = 0;
 			this.selectionIndex = 0;
-			this.pendingSelectionasset_id = null;
+			this.pendingSelectionAssetId = null;
 			return;
 		}
 		// Augment with atlas entries (moved from editor)
@@ -291,13 +284,13 @@ export class ResourcePanelController {
 		// count omitted
 		this.items = this.buildItems(filtered);
 		this.updateMetrics();
-		const targetasset_id = this.pendingSelectionasset_id ?? (previous.descriptor ? previous.descriptor.asset_id : null);
+		const targetAssetId = this.pendingSelectionAssetId ?? (previous.descriptor ? previous.descriptor.asset_id : null);
 		let selectionIndex = -1;
-		if (targetasset_id) {
-			const resolved = this.findIndexByAssetId(targetasset_id);
+		if (targetAssetId) {
+			const resolved = this.findIndexByAssetId(targetAssetId);
 			if (resolved !== -1) {
 				selectionIndex = resolved;
-				if (this.pendingSelectionasset_id === targetasset_id) this.pendingSelectionasset_id = null;
+				if (this.pendingSelectionAssetId === targetAssetId) this.pendingSelectionAssetId = null;
 			}
 		}
 		if (selectionIndex === -1 && previous.index >= 0 && previous.index < this.items.length) selectionIndex = previous.index;
@@ -319,10 +312,6 @@ export class ResourcePanelController {
 		if (this.filterMode !== 'lua_only') return true;
 		if (!descriptor) return false;
 		if (descriptor.type === 'lua') return true;
-		const path = descriptor.path;
-		if (typeof path === 'string' && path.length > 0 && path.toLowerCase().endsWith('.lua')) return true;
-		const asset_id = descriptor.asset_id;
-		if (typeof asset_id === 'string' && asset_id.toLowerCase().endsWith('.lua')) return true;
 		return false;
 	}
 
@@ -416,13 +405,13 @@ export class ResourcePanelController {
 
 	private applyPendingSelection(): void {
 		if (!this.visible) return;
-		const asset_id = this.pendingSelectionasset_id;
+		const asset_id = this.pendingSelectionAssetId;
 		if (!asset_id) return;
 		const index = this.findIndexByAssetId(asset_id);
 		if (index === -1) return;
 		this.selectionIndex = index;
 		this.ensureSelectionVisible();
-		this.pendingSelectionasset_id = null;
+		this.pendingSelectionAssetId = null;
 	}
 
 	private openSelectedInternal(): void {
@@ -435,17 +424,8 @@ export class ResourcePanelController {
 			focusEditorFromResourcePanel();
 			return;
 		}
-		if (d.type === 'lua' || this.isLuaLike(d)) openLuaCodeTab(d); else openResourceViewerTab(d);
+		if (d.type === 'lua') openLuaCodeTab(d); else openResourceViewerTab(d);
 		focusEditorFromResourcePanel();
-	}
-
-	private isLuaLike(descriptor: VMResourceDescriptor): boolean {
-		if (descriptor.type === 'lua') return true;
-		const path = descriptor.path;
-		if (typeof path === 'string' && path.length > 0 && path.toLowerCase().endsWith('.lua')) return true;
-		const asset_id = descriptor.asset_id;
-		if (typeof asset_id === 'string' && asset_id.toLowerCase().endsWith('.lua')) return true;
-		return false;
 	}
 
 	private moveSelection(delta: number): void {

@@ -9,7 +9,7 @@ import * as TextEditing from './text_editing_and_selection';
 import { handlePostEditMutation } from './text_editing_and_selection';
 import type { HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from './types';
 import { markDiagnosticsDirty } from './diagnostics';
-import { resolveHoverChunkName, requestSemanticRefresh, clearReferenceHighlights } from './intellisense';
+import { requestSemanticRefresh, clearReferenceHighlights } from './intellisense';
 import { getTextSnapshot, splitText } from './source_text';
 import type { TextBuffer } from './text_buffer';
 import { clamp } from '../../utils/clamp';
@@ -551,13 +551,13 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 
 export function ensureVisualLines(): void {
 	const activeContext = getActiveCodeTabContext();
-	const chunkName = resolveHoverChunkName(activeContext) ?? '<anynomous>';
+	const path = activeContext?.descriptor?.path ?? '<anynomous>';
 	ide_state.scrollRow = ide_state.layout.ensureVisualLines({
 		buffer: ide_state.buffer,
 		wordWrapEnabled: ide_state.wordWrapEnabled,
 		scrollRow: ide_state.scrollRow,
 		documentVersion: ide_state.textVersion,
-		chunkName,
+		path,
 		computeWrapWidth: () => computeWrapWidth(),
 		estimatedVisibleRowCount: Math.max(1, ide_state.cachedVisibleRowCount),
 	});

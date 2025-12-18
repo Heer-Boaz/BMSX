@@ -47,7 +47,7 @@ import {
 	setFieldText,
 	updateBlink,
 } from './inline_text_field';
-import { buildMemberCompletionItems, clearGotoHoverHighlight, clearReferenceHighlights, describeMetadataValue, extractHoverExpression, inspectLuaExpression, intellisenseUiReady, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaSymbols, navigateToLuaDefinition, requestSemanticRefresh, resolveHoverAssetId, resolveHoverChunkName, safeJsonStringify, shouldAutoTriggerCompletions } from './intellisense';
+import { buildMemberCompletionItems, clearGotoHoverHighlight, clearReferenceHighlights, describeMetadataValue, extractHoverExpression, inspectLuaExpression, intellisenseUiReady, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaSymbols, navigateToLuaDefinition, requestSemanticRefresh, safeJsonStringify, shouldAutoTriggerCompletions } from './intellisense';
 import { VMScrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar, renderTopBarDropdown } from './render/render_top_bar';
 import { renderTabBar } from './render/render_tab_bar';
@@ -206,9 +206,9 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 		characterAdvance: (char) => ide_state.font.advance(char),
 		get lineHeight(): number { return ide_state.font.lineHeight; },
 		getActiveCodeTabContext: () => getActiveCodeTabContext(),
-		resolveHoverChunkName: (ctx) => resolveHoverChunkName(ctx as CodeTabContext),
+		resolveHoverPath: (ctx: CodeTabContext) => ctx.descriptor?.path,
 		getSemanticDefinitions: () => getActiveSemanticDefinitions(),
-		getLuaModuleAliases: (chunkName) => getLuaModuleAliases(chunkName),
+		getLuaModuleAliases: (path) => getLuaModuleAliases(path),
 		getMemberCompletionItems: (request) => buildMemberCompletionItems(request),
 		charAt: (r, c) => TextEditing.charAt(r, c),
 		getTextVersion: () => ide_state.textVersion,
@@ -250,12 +250,12 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 	ide_state.initialized = true;
 }
 
-export function getSourceForChunk(chunkName: string): string {
-	const asset = $.cart.chunk2lua[chunkName];
+export function getSourceForChunk(path: string): string {
+	const asset = $.cart.path2lua[path];
 	if (!asset) {
 		return '';
 	}
-	const context = findCodeTabContext(chunkName);
+	const context = findCodeTabContext(path);
 	if (context) {
 		if (context.id === ide_state.activeCodeTabContextId) {
 			return getTextSnapshot(ide_state.buffer);
@@ -679,11 +679,11 @@ export function symbolSearchVisibleResultCount(): number {
 
 export function symbolCatalogDedupKey(entry: VMLuaSymbolEntry): string {
 	const { location, kind, name } = entry;
-	const chunkName = location.chunkName ?? '';
+	const path = location.path ?? '';
 	const normalizedPath = location.path ?? '';
 	const locationKey = normalizedPath.length > 0
 		? normalizedPath
-		: (chunkName.length > 0 ? chunkName : '');
+		: (path.length > 0 ? path : '');
 	const startLine = location.range.startLine;
 	const startColumn = location.range.startColumn;
 	const endLine = location.range.endLine;
@@ -780,7 +780,7 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleLeft + bubbleWidth, bottom: bubbleTop + bubbleHeight };
 }
 
-export function focusChunkSource(chunkName: string): void {
+export function focusChunkSource(path: string): void {
 	if (!ide_state.active) {
 		activate();
 	}
@@ -788,10 +788,10 @@ export function focusChunkSource(chunkName: string): void {
 	closeResourceSearch(true);
 	closeLineJump(true);
 	closeSearch(true);
-	if (!chunkName) {
+	if (!path) {
 		return;
 	}
-	const descriptor = findResourceDescriptorForChunk(chunkName);
+	const descriptor = findResourceDescriptorForChunk(path);
 	if (!descriptor) {
 		return;
 	}
@@ -827,7 +827,7 @@ export function clearRuntimeErrorOverlay(): void {
 
 // Clear overlays and stop highlights across all open code ide_state.tabs, not just the
 // currently ide_state.active one. Useful when resuming after a runtime error where the
-// editor may have switched ide_state.tabs to the faulting chunk.
+// editor may have switched ide_state.tabs to the faulting path.
 export function clearAllRuntimeErrorOverlays(): void {
 	ide_state.runtimeErrorOverlay = null;
 	for (const context of ide_state.codeTabContexts.values()) {
@@ -968,17 +968,17 @@ export function getStatusMessageLines(): string[] {
 }
 
 export function tryShowLuaErrorOverlay(error: unknown): boolean {
-	let candidate: { line?: unknown; column?: unknown; chunkName?: unknown; message?: unknown };
+	let candidate: { line?: unknown; column?: unknown; path?: unknown; message?: unknown };
 	if (typeof error === 'string') {
 		candidate = { message: error };
 	} else if (error && typeof error === 'object') {
-		candidate = error as { line?: unknown; column?: unknown; chunkName?: unknown; message?: unknown };
+		candidate = error as { line?: unknown; column?: unknown; path?: unknown; message?: unknown };
 	} else {
 		throw new Error('[VMCartEditor] Lua error payload is neither an object nor a string.');
 	}
 	const rawLine = candidate.line as number;
 	const rawColumn = candidate.column as number;
-	const chunkName = candidate.chunkName as string;
+	const path = candidate.path as string;
 	const messageText = candidate.message as string;
 	const hasLine = rawLine !== null && rawLine > 0;
 	const hasColumn = rawColumn !== null && rawColumn > 0;
@@ -992,7 +992,7 @@ export function tryShowLuaErrorOverlay(error: unknown): boolean {
 	const safeLine = hasLine ? rawLine : 0;
 	const safeColumn = hasColumn ? rawColumn : 0;
 	const baseMessage = messageText ?? 'Unprintable error';
-	showRuntimeErrorInChunk(chunkName, safeLine, safeColumn, baseMessage);
+	showRuntimeErrorInChunk(path, safeLine, safeColumn, baseMessage);
 	return true;
 }
 
@@ -1179,7 +1179,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 	const activeId = ide_state.activeCodeTabContextId;
 	const inputs: DiagnosticContextInput[] = [];
 	const inputLookup = new Map<string, DiagnosticContextInput>();
-	const metadata: Array<{ id: string; chunkName: string }> = [];
+	const metadata: Array<{ id: string; path: string }> = [];
 	for (let index = 0; index < contextIds.length; index += 1) {
 		const contextId = contextIds[index];
 		const context = ide_state.codeTabContexts.get(contextId);
@@ -1188,12 +1188,12 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			ide_state.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
-		const chunkName = resolveHoverChunkName(context);
+		const path = context.descriptor?.path;
 		const isActive = activeId && contextId === activeId;
 		const cached = ide_state.diagnosticsCache.get(contextId);
 		const buffer = isActive ? ide_state.buffer : context.buffer;
 		const version = buffer.version;
-		if (cached && cached.chunkName === chunkName && cached.version === version) {
+		if (cached && cached.path === path && cached.version === version) {
 			ide_state.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
@@ -1207,14 +1207,14 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			id: context.id,
 			title: context.title,
 			descriptor: context.descriptor,
-			chunkName,
+			path,
 			source,
 			lines: splitText(source),
 			version,
 		};
 		inputs.push(input);
 		inputLookup.set(context.id, input);
-		metadata.push({ id: context.id, chunkName });
+		metadata.push({ id: context.id, path });
 	}
 	if (inputs.length === 0) {
 		updateDiagnosticsAggregates();
@@ -1238,7 +1238,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 		const input = inputLookup.get(meta.id)!;
 		ide_state.diagnosticsCache.set(meta.id, {
 			contextId: meta.id,
-			chunkName: meta.chunkName,
+			path: meta.path,
 			diagnostics: diagList,
 			version: input.version,
 			source: input.source,
@@ -1250,8 +1250,8 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 
 export function createDiagnosticProviders(): DiagnosticProviders {
 	return {
-		listLocalSymbols: (chunk) => {
-			return listLuaSymbols(chunk);
+		listLocalSymbols: (path) => {
+			return listLuaSymbols(path);
 		},
 		listGlobalSymbols: () => {
 			return listGlobalLuaSymbols();
@@ -1306,8 +1306,8 @@ export function refreshActiveDiagnostics(): void {
 	}
 }
 
-export function markDiagnosticsDirtyForChunk(chunkName: string): void {
-	const context = findContextByChunk(chunkName);
+export function markDiagnosticsDirtyForChunk(path: string): void {
+	const context = findContextByChunk(path);
 	if (!context) {
 		return;
 	}
@@ -1316,13 +1316,13 @@ export function markDiagnosticsDirtyForChunk(chunkName: string): void {
 
 export function getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] {
 	const context = getActiveCodeTabContext();
-	const chunkName = resolveHoverChunkName(context) ?? '<anynomous>';
-	return ide_state.layout.getSemanticDefinitions(ide_state.buffer, ide_state.textVersion, chunkName);
+	const path = context.descriptor?.path ?? '<anynomous>';
+	return ide_state.layout.getSemanticDefinitions(ide_state.buffer, ide_state.textVersion, path);
 }
 
-export function getLuaModuleAliases(chunkName: string): Map<string, string> {
+export function getLuaModuleAliases(path: string): Map<string, string> {
 	const activeContext = getActiveCodeTabContext();
-	const targetChunk = chunkName ?? resolveHoverChunkName(activeContext) ?? '<anynomous>';
+	const targetChunk = path ?? activeContext.descriptor?.path ?? '<anynomous>';
 	ide_state.layout.getSemanticDefinitions(ide_state.buffer, ide_state.textVersion, targetChunk);
 	const data = ide_state.semanticWorkspace.getFileData(targetChunk);
 	if (!data || data.moduleAliases.length === 0) {
@@ -1336,8 +1336,8 @@ export function getLuaModuleAliases(chunkName: string): Map<string, string> {
 	return aliases;
 }
 
-export function findContextByChunk(chunkName: string): CodeTabContext {
-	const byChunk = findCodeTabContext(chunkName);
+export function findContextByChunk(path: string): CodeTabContext {
+	const byChunk = findCodeTabContext(path);
 	if (byChunk) {
 		return byChunk;
 	}
@@ -1349,7 +1349,7 @@ export function findContextByChunk(chunkName: string): CodeTabContext {
 		const aliases: string[] = ['__entry__', '<anynomous>'];
 		for (let index = 0; index < aliases.length; index += 1) {
 			const alias = aliases[index];
-			if (alias === chunkName) {
+			if (alias === path) {
 				return context;
 			}
 		}
@@ -1823,7 +1823,7 @@ export function openReferenceSearchPopup(): void {
 		cursorRow: ide_state.cursorRow,
 		cursorColumn: ide_state.cursorColumn,
 		extractExpression: (row, column) => extractHoverExpression(row, column),
-		chunkName: referenceContext.chunkName,
+		path: referenceContext.path,
 	});
 	if (result.kind === 'error') {
 		ide_state.showMessage(result.message, constants.COLOR_STATUS_WARNING, result.duration);
@@ -1869,7 +1869,7 @@ export function openRenamePrompt(): void {
 		cursorRow: ide_state.cursorRow,
 		cursorColumn: ide_state.cursorColumn,
 		extractExpression: (row, column) => extractHoverExpression(row, column),
-		chunkName: referenceContext.chunkName,
+		path: referenceContext.path,
 	});
 	if (started) {
 		ide_state.cursorVisible = true;
@@ -1881,7 +1881,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	const { matches, newName, activeIndex, info } = payload;
 	const activeContext = getActiveCodeTabContext();
 	const referenceContext = buildProjectReferenceContext(activeContext);
-	const activeChunkName = referenceContext.chunkName;
+	const activePath = referenceContext.path;
 	const renameManager = new CrossFileRenameManager(getCrossFileRenameDependencies(), ide_state.semanticWorkspace);
 	const sortedMatches = matches.slice();
 	sortedMatches.sort((a, b) => {
@@ -1894,17 +1894,17 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 
 	const decl = info.definitionKey ? ide_state.semanticWorkspace.getDecl(info.definitionKey) : null;
 	const references = info.definitionKey ? ide_state.semanticWorkspace.getReferences(info.definitionKey) : [];
-	type RangeBucket = { chunkName: string; ranges: LuaSourceRange[]; seen: Set<string> };
+	type RangeBucket = { path: string; ranges: LuaSourceRange[]; seen: Set<string> };
 	const rangeMap = new Map<string, RangeBucket>();
 	const addRange = (range: LuaSourceRange): void => {
 		if (!range || !range.start || !range.end) {
 			return;
 		}
-		const chunk = range.chunkName ?? activeChunkName;
-		let bucket = rangeMap.get(chunk);
+		const path = range.path ?? activePath;
+		let bucket = rangeMap.get(path);
 		if (!bucket) {
-			bucket = { chunkName: chunk, ranges: [], seen: new Set<string>() };
-			rangeMap.set(chunk, bucket);
+			bucket = { path: path, ranges: [], seen: new Set<string>() };
+			rangeMap.set(path, bucket);
 		}
 		const key = `${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
 		if (bucket.seen.has(key)) {
@@ -1919,8 +1919,8 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	for (let index = 0; index < references.length; index += 1) {
 		addRange(references[index].range);
 	}
-	if (activeChunkName) {
-		rangeMap.delete(activeChunkName);
+	if (activePath) {
+		rangeMap.delete(activePath);
 	}
 
 	if (sortedMatches.length > 0) {
@@ -1948,17 +1948,17 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	}
 
 	for (const bucket of rangeMap.values()) {
-		const replacements = renameManager.applyRenameToChunk(bucket.chunkName, bucket.ranges, newName, activeChunkName);
+		const replacements = renameManager.applyRenameToChunk(bucket.path, bucket.ranges, newName, activePath);
 		updatedTotal += replacements;
 		if (replacements > 0) {
-			markDiagnosticsDirtyForChunk(bucket.chunkName);
+			markDiagnosticsDirtyForChunk(bucket.path);
 		}
 	}
 	return { updatedMatches: updatedTotal };
 }
 
-export function findResourceDescriptorForChunk(chunk: string): VMResourceDescriptor | null {
-	const asset = $.rompack.cart.chunk2lua[chunk];
+export function findResourceDescriptorForChunk(path: string): VMResourceDescriptor | null {
+	const asset = $.rompack.cart.path2lua[path];
 	return asset ? { asset_id: asset.resid, path: asset.normalized_source_path, type: asset.type } : null;
 }
 
@@ -2019,23 +2019,19 @@ export function focusEditorFromRename(): void {
 export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext): ReferenceCatalogEntry[] {
 	const descriptor = context ? context.descriptor : null;
 	const normalizedPath = descriptor && descriptor.path ? descriptor.path : null;
-	const asset_id = descriptor && descriptor.asset_id ? descriptor.asset_id : null;
-	const chunkName = resolveHoverChunkName(context) ?? normalizedPath ?? asset_id ?? '<anynomous>';
+	const path = descriptor?.path ?? normalizedPath ?? '<anynomous>';
 	const activeLines = splitText(getTextSnapshot(ide_state.buffer));
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: getActiveCodeTabContext(),
 		activeLines,
 		codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
 	};
-	const sourceLabelPath = descriptor ? (descriptor.path ?? descriptor.asset_id) : null;
 	return buildProjectReferenceCatalog({
 		workspace: ide_state.semanticWorkspace,
 		info,
 		lines: activeLines,
-		chunkName,
-		asset_id,
+		path,
 		environment,
-		sourceLabelPath,
 	});
 }
 
@@ -2489,30 +2485,14 @@ export function pointerHitsHoverTarget(snapshot: PointerSnapshot, tooltip: CodeH
 	return column >= tooltip.startColumn && column <= tooltip.endColumn;
 }
 
-export function buildProjectReferenceContext(context: CodeTabContext): {
-	environment: ProjectReferenceEnvironment;
-	chunkName: string;
-	normalizedPath: string;
-	asset_id: string;
-} {
-	const descriptor = context ? context.descriptor : null;
-	const normalizedPath = descriptor && descriptor.path ? descriptor.path : null;
-	const descriptorasset_id = descriptor ? descriptor.asset_id : null;
-	const resolvedChunk = resolveHoverChunkName(context)
-		?? normalizedPath
-		?? descriptorasset_id
-		?? '<anynomous>';
+export function buildProjectReferenceContext(context: CodeTabContext): { environment: ProjectReferenceEnvironment; path: string; } {
+	const path = context?.descriptor?.path ?? '<anynomous>';
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: context,
 		activeLines: splitText(getTextSnapshot(ide_state.buffer)),
 		codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
 	};
-	return {
-		environment,
-		chunkName: resolvedChunk,
-		normalizedPath,
-		asset_id: descriptorasset_id,
-	};
+	return { environment, path, };
 }
 
 export function applyDefinitionSelection(range: VMLuaDefinitionLocation['range']): void {
@@ -2581,8 +2561,6 @@ export function pushNavigationEntry(stack: NavigationHistoryEntry[], entry: Navi
 
 export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: NavigationHistoryEntry): boolean {
 	return a.contextId === b.contextId
-		&& a.asset_id === b.asset_id
-		&& a.chunkName === b.chunkName
 		&& a.path === b.path
 		&& a.row === b.row
 		&& a.column === b.column;
@@ -2596,8 +2574,6 @@ export function createNavigationEntry(): NavigationHistoryEntry {
 	if (!context) {
 		return null;
 	}
-	const asset_id = resolveHoverAssetId(context);
-	const chunkName = resolveHoverChunkName(context);
 	const path = context.descriptor?.path;
 	const maxRowIndex = Math.max(0, ide_state.buffer.getLineCount() - 1);
 	const row = clamp(ide_state.cursorRow, 0, maxRowIndex);
@@ -2605,8 +2581,6 @@ export function createNavigationEntry(): NavigationHistoryEntry {
 	const column = clamp(ide_state.cursorColumn, 0, lineLen);
 	return {
 		contextId: context.id,
-		asset_id,
-		chunkName,
 		path,
 		row,
 		column,
@@ -2628,11 +2602,7 @@ export function applyNavigationEntry(entry: NavigationHistoryEntry): void {
 	if (existingContext) {
 		setActiveTab(entry.contextId);
 	} else {
-		const hint: { asset_id: string; path?: string } = { asset_id: entry.asset_id };
-		if (entry.path) {
-			hint.path = entry.path;
-		}
-		focusChunkSource(entry.chunkName);
+		focusChunkSource(entry.path);
 		if (entry.contextId) {
 			setActiveTab(entry.contextId);
 		}
@@ -3223,7 +3193,7 @@ export async function save(): Promise<void> {
 	}
 	const source = getTextSnapshot(ide_state.buffer);
 	const descriptor = context.descriptor;
-	const targetPath = descriptor?.path ?? descriptor?.asset_id;
+	const targetPath = descriptor?.path;
 	try {
 		if (targetPath) {
 			await saveLuaResourceSource(targetPath, source);
@@ -3749,8 +3719,8 @@ export function buildResourceViewerState(descriptor: VMResourceDescriptor): Reso
 	const audioevents = rompack.audioevents;
 	switch (descriptor.type) {
 		case 'lua': {
-			const chunkName = descriptor.path ?? descriptor.asset_id;
-			const source = BmsxVMRuntime.instance.resourceSourceForChunk(chunkName);
+			const path = descriptor.path ?? descriptor.asset_id;
+			const source = BmsxVMRuntime.instance.resourceSourceForChunk(path);
 			if (typeof source === 'string') {
 				appendResourceViewerLines(lines, ['-- Lua Source --', '']);
 				appendResourceViewerLines(lines, source.split(/\r?\n/));

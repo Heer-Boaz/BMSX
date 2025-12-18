@@ -45,9 +45,9 @@ export interface CompletionHost {
 	strokeRect(left: number, top: number, right: number, bottom: number, color: number): void;
 	// Symbol/source helpers
 	getActiveCodeTabContext(): unknown;
-	resolveHoverChunkName(context: unknown): string;
+	resolveHoverPath(context: unknown): string;
 	getSemanticDefinitions(): readonly LuaDefinitionInfo[];
-	getLuaModuleAliases(chunkName: string): Map<string, string>;
+	getLuaModuleAliases(path: string): Map<string, string>;
 	getMemberCompletionItems(request: LuaMemberCompletionRequest): LuaCompletionItem[];
 	// Utilities
 	charAt(row: number, column: number): string;
@@ -58,7 +58,7 @@ export interface CompletionHost {
 
 type LocalCompletionCacheEntry = {
 	parsedVersion: number;
-	chunkName: string;
+	path: string;
 	symbols: LuaScopedSymbol[];
 	moduleAliases: Map<string, string>;
 };
@@ -581,12 +581,12 @@ export class CompletionController {
 			};
 			appendItems(this.getModuleMemberCompletionItems(context));
 			const activeContext = this.host.getActiveCodeTabContext();
-			const chunkName = this.host.resolveHoverChunkName(activeContext);
+			const path = this.host.resolveHoverPath(activeContext);
 			const runtimeItems = this.host.getMemberCompletionItems({
 				objectName: context.objectName,
 				operator: context.operator,
 				prefix: context.prefix,
-				chunkName,
+				path,
 			});
 			appendItems(runtimeItems);
 			if (merged.length > 0) {
@@ -621,18 +621,18 @@ export class CompletionController {
 			return [];
 		}
 		const activeCodeContext = this.host.getActiveCodeTabContext();
-		const chunkName = cached.chunkName ?? this.host.resolveHoverChunkName(activeCodeContext) ?? '<anynomous>';
-		return this.buildLocalCompletionItems(filtered, chunkName );
+		const path = cached.path ?? this.host.resolveHoverPath(activeCodeContext) ?? '<anynomous>';
+		return this.buildLocalCompletionItems(filtered, path );
 	}
 
 	private ensureLocalCompletionCache(): LocalCompletionCacheEntry {
 		const key = this.activeCompletionCacheKey();
 		if (!key) return null;
 		const activeCodeContext = this.host.getActiveCodeTabContext();
-		const chunkName = this.host.resolveHoverChunkName(activeCodeContext) ?? '<anynomous>';
+		const path = this.host.resolveHoverPath(activeCodeContext) ?? '<anynomous>';
 		const currentVersion = this.host.getTextVersion();
 		const cached = this.localCompletionCache.get(key);
-		if (cached && cached.chunkName === chunkName && cached.parsedVersion === currentVersion) {
+		if (cached && cached.path === path && cached.parsedVersion === currentVersion) {
 			return cached;
 		}
 		const definitions = this.host.getSemanticDefinitions();
@@ -640,10 +640,10 @@ export class CompletionController {
 			return cached;
 		}
 		const symbols = definitions.length > 0 ? this.convertDefinitionsToLocalSymbols(definitions) : [];
-		const moduleAliases = this.host.getLuaModuleAliases(chunkName);
+		const moduleAliases = this.host.getLuaModuleAliases(path);
 		const updated: LocalCompletionCacheEntry = {
 			parsedVersion: currentVersion,
-			chunkName,
+			path,
 			symbols,
 			moduleAliases: new Map(moduleAliases),
 		};
@@ -689,8 +689,7 @@ export class CompletionController {
 		for (let i = 0; i < entries.length; i += 1) {
 			const entry = entries[i];
 			const origin = (() => {
-				if (entry.location.path && entry.location.path.length > 0) return entry.location.path;
-				if (entry.location.chunkName && entry.location.chunkName.length > 0) return entry.location.chunkName;
+				if (entry.location.path) return entry.location.path;
 				return '';
 			})();
 			const kindLabel = this.formatSymbolKind(entry.kind);
@@ -782,15 +781,15 @@ export class CompletionController {
 		return Array.from(selected.values());
 	}
 
-	private buildLocalCompletionItems(symbols: readonly LuaScopedSymbol[], chunkLabel: string): LuaCompletionItem[] {
+	private buildLocalCompletionItems(symbols: readonly LuaScopedSymbol[], pathLabel: string): LuaCompletionItem[] {
 		const items: LuaCompletionItem[] = [];
 		for (let index = 0; index < symbols.length; index += 1) {
 			const symbol = symbols[index];
 			const label = symbol.name;
 			const kindLabel = this.formatSymbolKind(symbol.kind as VMLuaSymbolEntry['kind']);
 			const detailParts: string[] = [kindLabel];
-			if (chunkLabel && chunkLabel.length > 0) {
-				detailParts.push(chunkLabel);
+			if (pathLabel && pathLabel.length > 0) {
+				detailParts.push(pathLabel);
 			}
 			detailParts.push(`line ${symbol.definitionRange.startLine}`);
 			const detail = detailParts.join(' • ');
@@ -1441,6 +1440,6 @@ export class CompletionController {
 
 	private activeCompletionCacheKey(): string {
 		const context = this.host.getActiveCodeTabContext();
-		return this.host.resolveHoverChunkName(context) ?? '<anynomous>';
+		return this.host.resolveHoverPath(context) ?? '<anynomous>';
 	}
 }

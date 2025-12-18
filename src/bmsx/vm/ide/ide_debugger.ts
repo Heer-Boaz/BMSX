@@ -4,7 +4,6 @@ import { BmsxVMRuntime } from '../vm_runtime';
 import { type LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import { ide_state } from './ide_state';
 import { getActiveCodeTabContext } from './editor_tabs';
-import { resolveHoverChunkName } from './intellisense';
 import { clamp, clamp_fallback } from '../../utils/clamp';
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition } from './caret';
 import { clearExecutionStopHighlights, focusChunkSource, setExecutionStopHighlight, clearRuntimeErrorOverlay, updateDesiredColumn, findFunctionDefinitionRowInActiveFile, resetPointerClickTracking } from './vm_cart_editor';
@@ -152,44 +151,44 @@ function updateExecutionState(state: DebuggerExecutionState): void {
 export type SerializedBreakpointMap = Record<string, number[]>;
 
 export type BreakpointToggleResult = 'added' | 'removed' | 'unchanged';
-function ensureBucket(chunkKey: string): Set<number> {
-	let bucket = ide_state.breakpoints.get(chunkKey);
+function ensureBucket(pathKey: string): Set<number> {
+	let bucket = ide_state.breakpoints.get(pathKey);
 	if (!bucket) {
 		bucket = new Set<number>();
-		ide_state.breakpoints.set(chunkKey, bucket);
+		ide_state.breakpoints.set(pathKey, bucket);
 	}
 	return bucket;
 }
 
-export function hasBreakpoint(chunkName: string, line: number): boolean {
-	if (!chunkName) {
+export function hasBreakpoint(path: string, line: number): boolean {
+	if (!path) {
 		return false;
 	}
 	if (line === null) {
 		return false;
 	}
-	const bucket = ide_state.breakpoints.get(chunkName);
+	const bucket = ide_state.breakpoints.get(path);
 	return bucket?.has(line) === true;
 }
 
-export function getBreakpointsForChunk(chunkName: string): ReadonlySet<number> {
-	if (!chunkName) {
+export function getBreakpointsForChunk(path: string): ReadonlySet<number> {
+	if (!path) {
 		return null;
 	}
-	const bucket = ide_state.breakpoints.get(chunkName);
+	const bucket = ide_state.breakpoints.get(path);
 	return bucket;
 }
 
-export function toggleBreakpoint(chunkName: string, line: number): BreakpointToggleResult {
+export function toggleBreakpoint(path: string, line: number): BreakpointToggleResult {
 	if (line === null) {
 		return 'unchanged';
 	}
-	const chunkKey = chunkName;
-	const bucket = ensureBucket(chunkKey);
+	const pathKey = path;
+	const bucket = ensureBucket(pathKey);
 	if (bucket.has(line)) {
 		bucket.delete(line);
 		if (bucket.size === 0) {
-			ide_state.breakpoints.delete(chunkKey); // Clean up empty bucket
+			ide_state.breakpoints.delete(pathKey); // Clean up empty bucket
 		}
 
 		syncRuntimeBreakpoints();
@@ -202,12 +201,12 @@ export function toggleBreakpoint(chunkName: string, line: number): BreakpointTog
 
 export function serializeBreakpoints(): SerializedBreakpointMap {
 	const payload: SerializedBreakpointMap = {};
-	for (const [chunk, lines] of ide_state.breakpoints) {
+	for (const [path, lines] of ide_state.breakpoints) {
 		if (lines.size === 0) {
 			continue;
 		}
 		const sorted = Array.from(lines).sort((a, b) => a - b);
-		payload[chunk] = sorted;
+		payload[path] = sorted;
 	}
 	return payload;
 }
@@ -215,11 +214,11 @@ export function serializeBreakpoints(): SerializedBreakpointMap {
 export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap): void {
 	ide_state.breakpoints.clear();
 	if (payload) {
-		for (const [chunk, lineEntries] of Object.entries(payload)) {
+		for (const [path, lineEntries] of Object.entries(payload)) {
 			if (!Array.isArray(lineEntries) || lineEntries.length === 0) {
 				continue;
 			}
-			const chunkKey = chunk;
+			const pathKey = path;
 			const bucket = new Set<number>();
 			for (const entry of lineEntries) {
 				if (entry !== null) {
@@ -227,7 +226,7 @@ export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap):
 				}
 			}
 			if (bucket.size > 0) {
-				ide_state.breakpoints.set(chunkKey, bucket);
+				ide_state.breakpoints.set(pathKey, bucket);
 			}
 		}
 	}
@@ -236,36 +235,36 @@ export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap):
 
 export function syncRuntimeBreakpoints(): void {
 	const serialized = new Map<string, Set<number>>();
-	for (const [chunk, lines] of ide_state.breakpoints) {
+	for (const [path, lines] of ide_state.breakpoints) {
 		if (lines.size === 0) {
 			continue;
 		}
-		serialized.set(chunk, new Set(lines));
+		serialized.set(path, new Set(lines));
 	}
 	BmsxVMRuntime.instance.setDebuggerBreakpoints(serialized);
 }
 
-export function getActiveBreakpointChunkName(): string {
+export function getActiveBreakpointPath(): string {
 	const context = getActiveCodeTabContext();
-	return resolveHoverChunkName(context);
+	return context.descriptor?.path;
 }
 
 export function toggleBreakpointForEditorRow(row: number = ide_state.cursorRow): boolean {
 	if (row < 0 || row >= ide_state.buffer.getLineCount()) {
 		return false;
 	}
-	const chunkName = getActiveBreakpointChunkName();
-	if (!chunkName) {
-		ide_state.showMessage('No active chunk available for breakpoints.', constants.COLOR_STATUS_WARNING, 1.6);
+	const path = getActiveBreakpointPath();
+	if (!path) {
+		ide_state.showMessage('No active path available for breakpoints.', constants.COLOR_STATUS_WARNING, 1.6);
 		return false;
 	}
 	const lineNumber = row + 1;
-	const result = toggleBreakpoint(chunkName, lineNumber);
+	const result = toggleBreakpoint(path, lineNumber);
 	if (result === 'unchanged') {
 		return false;
 	}
 	const verb = result === 'added' ? 'set' : 'cleared';
-	ide_state.showMessage(`Breakpoint ${verb} at ${chunkName}:${lineNumber}`, constants.COLOR_STATUS_TEXT, 1.4);
+	ide_state.showMessage(`Breakpoint ${verb} at ${path}:${lineNumber}`, constants.COLOR_STATUS_TEXT, 1.4);
 	return true;
 }
 const MESSAGE_BY_REASON: Record<DebuggerPauseDisplayPayload['reason'], string> = {
@@ -278,7 +277,7 @@ export function showDebuggerPauseOverlay(payload: DebuggerPauseDisplayPayload, m
 	if (!ide_state.active) {
 		return;
 	}
-	const normalizedChunk = payload.chunk;
+	const normalizedChunk = payload.path;
 	if (!normalizedChunk) {
 		clearExecutionStopHighlights();
 		return;
@@ -340,7 +339,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 	}
 	const source = frame.source ?? '';
 	if (source.length === 0) {
-		ide_state.showMessage('Runtime frame is missing a chunk reference.', constants.COLOR_STATUS_ERROR, 1.6);
+		ide_state.showMessage('Runtime frame is missing a path reference.', constants.COLOR_STATUS_ERROR, 1.6);
 		return;
 	}
 	const normalizedChunk = source;
@@ -348,7 +347,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 		focusChunkSource(normalizedChunk);
 	} catch (error) {
 		const message = extractErrorMessage(error);
-		ide_state.showMessage(`Failed to open runtime chunk: ${message}`, constants.COLOR_STATUS_ERROR, 1.6);
+		ide_state.showMessage(`Failed to open runtime path: ${message}`, constants.COLOR_STATUS_ERROR, 1.6);
 		return;
 	}
 	const activeContext = getActiveCodeTabContext();
@@ -387,14 +386,11 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 	ensureCursorVisible();
 }
 
-export type DebuggerPauseFrameHint = { asset_id: string; path?: string; };
-
 export type DebuggerPauseDisplayPayload = {
-	chunk: string;
+	path: string;
 	line: number;
 	column: number;
 	reason: LuaDebuggerPauseSignal['reason'];
-	hint: DebuggerPauseFrameHint;
 };
 
 export type DebuggerResumeMode = 'continue' | 'step_into' | 'step_over' | 'step_out';

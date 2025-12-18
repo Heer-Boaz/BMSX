@@ -12,20 +12,20 @@ export type ParsedLuaChunk = {
 	syntaxError?: LuaSyntaxError | null;
 };
 
-export function parseLuaChunk(source: string, chunkName: string, lines?: readonly string[]): ParsedLuaChunk {
-	const lexer = new LuaLexer(source, chunkName, { canonicalizeIdentifiers: ide_state.caseInsensitive ? ide_state.canonicalization : 'none' });
+export function parseLuaChunk(source: string, path: string, lines?: readonly string[]): ParsedLuaChunk {
+	const lexer = new LuaLexer(source, path, { canonicalizeIdentifiers: ide_state.caseInsensitive ? ide_state.canonicalization : 'none' });
 	const tokens = lexer.scanTokens();
-	const parser = new LuaParser(tokens, chunkName, source, lines);
+	const parser = new LuaParser(tokens, path, source, lines);
 	const chunk = parser.parseChunk();
 	return { chunk, tokens, syntaxError: null };
 }
 
-export function parseLuaChunkWithRecovery(source: string, chunkName: string, lines?: readonly string[]): ParsedLuaChunk {
+export function parseLuaChunkWithRecovery(source: string, path: string, lines?: readonly string[]): ParsedLuaChunk {
 	const resolvedLines: readonly string[] = lines ?? splitText(source);
-	const lexer = new LuaLexer(source, chunkName, { canonicalizeIdentifiers: ide_state.caseInsensitive ? ide_state.canonicalization : 'none' });
+	const lexer = new LuaLexer(source, path, { canonicalizeIdentifiers: ide_state.caseInsensitive ? ide_state.canonicalization : 'none' });
 	const lexed = lexer.scanTokensWithRecovery();
 	const tokens = lexed.tokens;
-	const parser = new LuaParser(tokens, chunkName, source, resolvedLines);
+	const parser = new LuaParser(tokens, path, source, resolvedLines);
 	const parsed = parser.parseChunkWithRecovery();
 	let syntaxError = parsed.syntaxError;
 	if (lexed.syntaxError) {
@@ -36,7 +36,7 @@ export function parseLuaChunkWithRecovery(source: string, chunkName: string, lin
 		}
 	}
 	return {
-		chunk: parsed.chunk,
+		chunk: parsed.path,
 		tokens,
 		syntaxError,
 	};

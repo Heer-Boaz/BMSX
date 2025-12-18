@@ -22,7 +22,7 @@ export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails): RuntimeE
 			line: frame.line,
 			column: frame.column,
 			raw: frame.raw,
-			chunkPath: frame.chunkPath,
+			pathPath: frame.pathPath,
 		});
 	}
 	const jsFrames: StackTraceFrame[] = [];
@@ -35,7 +35,7 @@ export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails): RuntimeE
 			line: frame.line,
 			column: frame.column,
 			raw: frame.raw,
-			chunkPath: frame.chunkPath,
+			pathPath: frame.pathPath,
 		});
 	}
 	return {

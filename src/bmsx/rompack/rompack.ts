@@ -46,7 +46,6 @@ export interface RomAsset {
 	texture_start?: number; // Start offset of the texture buffer within the ROM
 	texture_end?: number;   // End offset of the texture buffer within the ROM
 	source_path?: string; // Relative filesystem path for the asset when applicable (e.g., Lua source files).
-	chunk_name?: string; // Normalized chunk identifier used by the Lua VM.
 	normalized_source_path?: string; // Normalized absolute-ish source path for this asset.
 	update_timestamp?: number; // Last update timestamp for the asset, used for dev hot-reload.
 }
@@ -60,7 +59,6 @@ export interface RomImgAsset extends RomAsset {
 
 export type RomLuaAsset = RomAsset & {
 	src: string; // The Lua source code of the Lua script asset. Known at pack time
-	chunk_name?: string; // The chunk name to use when loading this Lua asset into the Lua VM. Always normalized!! Cached at runtime
 	normalized_source_path?: string; // Normalized absolute source path for this Lua asset, used for source mapping and debugging.
 	update_timestamp: number; // Timestamp of the last update to this Lua asset, used for caching and reloading during development.
 }
@@ -368,7 +366,6 @@ export type LifeCycleHandlerName = keyof LifeCycleHandlers;
 export type LifeCycleHandlerManifest = Partial<Record<LifeCycleHandlerName, string>>;
 
 export type BmsxCartridge = LifeCycleHandlers & {
-	chunk2lua: Record<string, RomLuaAsset>; // Mapping from normalized chunk names to Lua assets for fast lookup.
 	path2lua: Record<string, RomLuaAsset>; // Mapping from normalized source paths to Lua assets for fast lookup.
 	entry_path: string;
 	namespace: string;

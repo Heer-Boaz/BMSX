@@ -42,7 +42,7 @@ export function renderStatusBar(): void {
 		if (!match) return;
 		const symbol = match.entry.symbol;
 		const location = symbol.location;
-		let displayPath = location.path ?? symbol.path ?? location.chunkName ?? 'NOTHING!';
+		let displayPath = location.path ?? symbol.path ?? 'NOTHING!';
 		if (!displayPath || displayPath.length === 0) {
 			displayPath = symbol.name;
 		}
@@ -92,7 +92,7 @@ export function buildStatusLeftInfo(): string {
 		if (ide_state.problemsPanel.isFocused) {
 			const sel = ide_state.problemsPanel.selectedDiagnostic;
 			if (sel) {
-				const file = sel.sourceLabel ?? (sel.chunkName ?? '');
+				const file = sel.sourceLabel ?? (sel.path ?? '');
 				const parts: string[] = [];
 				parts.push(`Ln ${sel.row + 1}, Col ${sel.startColumn + 1}`);
 				if (file.length > 0) parts.push(file);

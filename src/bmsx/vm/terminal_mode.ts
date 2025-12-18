@@ -191,8 +191,8 @@ export class TerminalMode {
 	private readonly output: TerminalOutputEntry[] = [];
 	private readonly history: string[] = [];
 	private historyIndex: number = null;
-	private readonly terminalChunkName = '<terminal>';
-	private readonly completionContextToken = { chunk: this.terminalChunkName };
+	private readonly terminalPath = '<terminal>';
+	private readonly completionContextToken = { path: this.terminalPath };
 	private readonly completion: CompletionController;
 	private readonly buffer: TextBuffer;
 	private blinkTimer = 0;
@@ -269,7 +269,7 @@ export class TerminalMode {
 			},
 			getCursorScreenInfo: () => this.cursorScreenInfo,
 			getActiveCodeTabContext: () => (this.active ? this.completionContextToken : null),
-			resolveHoverChunkName: () => this.terminalChunkName,
+			resolveHoverPath: () => this.terminalPath,
 			getSemanticDefinitions: () => null,
 			getLuaModuleAliases: () => this.buildTerminalModuleAliases(),
 			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),
@@ -754,7 +754,7 @@ export class TerminalMode {
 		if (this.fieldText().trim().length === 0) {
 			return new Map();
 		}
-		return collectLuaModuleAliases({ source: this.fieldText(), chunkName: this.terminalChunkName });
+		return collectLuaModuleAliases({ source: this.fieldText(), path: this.terminalPath });
 	}
 
 	private buildMemberCompletionItems(request: LuaMemberCompletionRequest): LuaCompletionItem[] {
@@ -762,7 +762,7 @@ export class TerminalMode {
 			return [];
 		}
 		const response = listLuaObjectMembers({
-			chunkName: request.chunkName,
+			path: request.path,
 			expression: request.objectName,
 			operator: request.operator,
 		});

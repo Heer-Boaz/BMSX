@@ -10,7 +10,7 @@ function normalizeSource(source: string): string[] {
 	return source.replace(/\r\n/g, '\n').split('\n');
 }
 
-test('cross file rename updates other chunks and workspace', () => {
+test('cross file rename updates other paths and workspace', () => {
 	const workspace = new LuaSemanticWorkspace();
 	const files = new Map<string, string>([
 		['main.lua', [
@@ -58,10 +58,10 @@ test('cross file rename updates other chunks and workspace', () => {
 			}
 			return normalized.replace(/\\/g, '/');
 		},
-		findResourceDescriptorForChunk(chunkPath) {
-			const normalized = chunkPath.replace(/\\/g, '/');
+		findResourceDescriptorForChunk(pathPath) {
+			const normalized = pathPath.replace(/\\/g, '/');
 			if (!files.has(normalized)) {
-				throw new Error(`Missing chunk ${normalized}`);
+				throw new Error(`Missing path ${normalized}`);
 			}
 			return { path: normalized, type: 'lua', asset_id: normalized };
 		},
@@ -116,7 +116,7 @@ test('cross file rename updates other chunks and workspace', () => {
 	assert.equal(updatedData!.source.trim(), 'print(worldState.value)');
 
 	const match: SearchMatch = convertRangeToSearchMatch({
-		chunkName: 'usage.lua',
+		path: 'usage.lua',
 		start: { line: 1, column: 7 },
 		end: { line: 1, column: 17 },
 	}, ['print(worldState.value)']);

@@ -1,3 +1,4 @@
+import { LuaSourceLocation } from './lua_ast';
 import type { LuaCallFrame } from './luaruntime';
 import type { LuaDebuggerPauseSignal } from './luavalue';
 
@@ -9,11 +10,11 @@ export type LuaDebuggerSessionMetrics = {
 	stepCount: number;
 	exceptionCount: number;
 	skippedExceptionCount: number;
-	lastExceptionLocation?: { chunk: string; line: number; column: number };
+	lastExceptionLocation?: LuaSourceLocation;
 };
 
 type StepMode = 'none' | 'into' | 'out';
-type PauseLocation = { chunk: string; line: number; depth: number };
+type PauseLocation = { path: string; line: number; depth: number };
 type StepRequest = {
 	mode: StepMode;
 	targetDepth: number;
@@ -36,8 +37,8 @@ export class LuaDebuggerController {
 
 	public setBreakpoints(breakpoints: Map<string, Set<number>>): void {
 		this.breakpoints = new Map();
-		for (const [chunk, lines] of breakpoints.entries()) {
-			this.breakpoints.set(chunk, new Set(lines));
+		for (const [path, lines] of breakpoints.entries()) {
+			this.breakpoints.set(path, new Set(lines));
 		}
 	}
 
@@ -76,25 +77,25 @@ export class LuaDebuggerController {
 		};
 	}
 
-	public shouldPause(chunk: string, line: number, callDepth: number): LuaDebuggerPauseReason {
-		const stepReason = this.shouldPauseForStep(chunk, line, callDepth);
+	public shouldPause(path: string, line: number, callDepth: number): LuaDebuggerPauseReason {
+		const stepReason = this.shouldPauseForStep(path, line, callDepth);
 		if (stepReason !== null) {
 			return stepReason;
 		}
-		const lines = this.breakpoints.get(chunk);
+		const lines = this.breakpoints.get(path);
 		if (lines && lines.has(line)) {
 			return 'breakpoint';
 		}
 		return null;
 	}
 
-	private shouldPauseForStep(chunk: string, line: number, callDepth: number): LuaDebuggerPauseReason {
+	private shouldPauseForStep(path: string, line: number, callDepth: number): LuaDebuggerPauseReason {
 		const step = this.stepRequest;
 		if (!step || step.mode === 'none') {
 			return null;
 		}
 		if (!step.originConsumed) {
-			if (step.origin && step.origin.chunk === chunk && step.origin.line === line && step.origin.depth === callDepth) {
+			if (step.origin && step.origin.path === path && step.origin.line === line && step.origin.depth === callDepth) {
 				step.originConsumed = true;
 				return null;
 			}
@@ -129,12 +130,12 @@ export class LuaDebuggerController {
 		if (signal.reason === 'exception') {
 			this.metrics.exceptionCount += 1;
 			this.metrics.lastExceptionLocation = {
-				chunk: signal.location.chunk,
+				path: signal.location.path,
 				line: signal.location.line,
 				column: signal.location.column,
 			};
 		}
-		this.lastPauseLocation = { chunk: signal.location.chunk, line: signal.location.line, depth: signal.callStack.length };
+		this.lastPauseLocation = { path: signal.location.path, line: signal.location.line, depth: signal.callStack.length };
 		this.clearStepRequest();
 	}
 

@@ -29,7 +29,7 @@ import { BmsxVMRuntime } from '../vm_runtime';
 import { $ } from '../../core/game';
 import { PieceTreeBuffer } from './piece_tree_buffer';
 
-function resolveChunkName(descriptor: VMResourceDescriptor | null): string {
+function resolvePath(descriptor: VMResourceDescriptor | null): string {
 	if (!descriptor) {
 		return '<anynomous>';
 	}
@@ -38,8 +38,8 @@ function resolveChunkName(descriptor: VMResourceDescriptor | null): string {
 
 function resolveSource(descriptor: VMResourceDescriptor | null): string {
 	const runtime = BmsxVMRuntime.instance;
-	const chunkName = resolveChunkName(descriptor);
-	return runtime.resourceSourceForChunk(chunkName);
+	const path = resolvePath(descriptor);
+	return runtime.resourceSourceForChunk(path);
 }
 
 export function createEntryTabContext(): CodeTabContext {
@@ -133,9 +133,9 @@ export function activateCodeEditorTab(tabId: string): void {
 
 	const cached = ide_state.diagnosticsCache.get(context.id);
 	const cachedVersion = cached?.version ?? -1;
-	const cachedChunk = cached?.chunkName ?? null;
-	const chunkName = resolveChunkName(context.descriptor);
-	if (!cached || cachedVersion !== ide_state.textVersion || cachedChunk !== chunkName) {
+	const cachedChunk = cached?.path ?? null;
+	const path = resolvePath(context.descriptor);
+	if (!cached || cachedVersion !== ide_state.textVersion || cachedChunk !== path) {
 		markDiagnosticsDirty(context.id);
 	}
 
@@ -455,10 +455,10 @@ export function endTabDrag(): void {
 	ide_state.tabDragState = null;
 }
 
-export function findCodeTabContext(chunkName: string): CodeTabContext {
+export function findCodeTabContext(path: string): CodeTabContext {
 	for (const context of ide_state.codeTabContexts.values()) {
 		const descriptor = context.descriptor;
-		if (descriptor?.path === chunkName) {
+		if (descriptor?.path === path) {
 			return context;
 		}
 	}

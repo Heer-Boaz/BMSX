@@ -4,7 +4,7 @@ import { createLuaInterpreter, LuaInterpreter } from '../../src/bmsx/lua/runtime
 
 function run(source: string): ReturnType<LuaInterpreter['execute']> {
 	const interpreter = createLuaInterpreter();
-	return interpreter.execute(source, 'chunk');
+	return interpreter.execute(source, 'path');
 }
 
 test('computes arithmetic and numeric for loop', () => {
@@ -46,7 +46,7 @@ function tracker:add(value)
 end
 local current = tracker:add(5)
 return tracker.total, current
-`, 'chunk');
+`, 'path');
 	assert.equal(result.length, 2);
 	assert.equal(result[0], 15);
 	assert.equal(result[1], 15);

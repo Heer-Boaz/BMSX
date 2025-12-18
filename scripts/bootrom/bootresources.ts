@@ -221,7 +221,6 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
 	const { assets, projectRootPath, manifest } = await loadAssetList(rom);
 	const cart: RomPack['cart'] | null = manifest?.lua ? {
-		chunk2lua: {},
 		path2lua: {},
 		entry_path: manifest?.lua.entry_path,
 		namespace: manifest?.vm.namespace,
@@ -541,7 +540,6 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 					...res,
 					src: decodeuint8arr(sliced),
 				} as RomLuaAsset;
-				romResult.cart.chunk2lua[res.chunk_name] = luaAsset;
 				romResult.cart.path2lua[res.source_path] = luaAsset;
 			} catch (err: any) {
 				throw new Error(`Failed to load 'lua' from rom: ${err.message}.`);

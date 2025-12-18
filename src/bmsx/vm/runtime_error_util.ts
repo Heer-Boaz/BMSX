@@ -202,8 +202,8 @@ export function parseJsStackLine(line: string): StackTraceFrame {
 }
 
 
-export function formatRuntimeErrorLocation(chunkName: string, line: number, column: number): string {
-	let label = chunkName && chunkName.length > 0 ? chunkName : '';
+export function formatRuntimeErrorLocation(path: string, line: number, column: number): string {
+	let label = path && path.length > 0 ? path : '';
 	if (line !== null && line !== undefined) {
 		const suffix = column !== null && column !== undefined ? `${line}:${column}` : `${line}`;
 		label = label.length > 0 ? `${label}:${suffix}` : `${suffix}`;

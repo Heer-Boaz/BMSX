@@ -52,7 +52,7 @@ export type GlobalSearchMatch = {
 	start: number;
 	end: number;
 	snippet: string;
-	chunkName: string;
+	path: string;
 };
 
 export type EditorSnapshot = {
@@ -193,8 +193,7 @@ export type EditorDiagnostic = {
 	// Optional metadata to identify the originating tab/source
 	contextId?: string;
 	sourceLabel?: string;
-	asset_id?: string;
-	chunkName?: string;
+	path?: string;
 };
 
 export type ApiCompletionMetadata = {
@@ -232,7 +231,7 @@ export type CodeHoverTooltip = {
 	valueType: string;
 	scope: VMLuaHoverScope;
 	state: VMLuaHoverValueState;
-	asset_id: string;
+	path: string;
 	row: number;
 	startColumn: number;
 	endColumn: number;
@@ -406,7 +405,7 @@ export type RuntimeErrorOverlay = {
 
 export type DiagnosticsCacheEntry = {
 	contextId: string;
-	chunkName: string;
+	path: string;
 	diagnostics: EditorDiagnostic[];
 	version: number;
 	source: string;

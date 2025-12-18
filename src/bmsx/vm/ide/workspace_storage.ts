@@ -374,7 +374,7 @@ export function resolveSerializedDescriptor(serialized: SerializedDescriptor): V
 	if (!serialized) {
 		return null;
 	}
-	const asset = $.rompack.cart.chunk2lua[serialized.path];
+	const asset = $.rompack.cart.path2lua[serialized.path];
 	return asset ? { path: serialized.path, type: serialized.type } : null;
 }
 
@@ -670,7 +670,7 @@ function buildWorkspaceAutosaveSignature(payload: WorkspaceAutosavePayload): str
 	const breakpointEntries = payload.breakpoints
 		? Object.keys(payload.breakpoints)
 			.sort()
-			.map(chunk => `${chunk}:${payload.breakpoints[chunk].join(',')}`)
+			.map(path => `${path}:${payload.breakpoints[path].join(',')}`)
 		: [];
 	return [
 		payload.fontVariant ?? '',
@@ -704,12 +704,12 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 	}
 }
 
-export function loadSrc(path: string) {
+export function loadCleanSrc(path: string) {
 	const asset = $.rompack.cart.path2lua[path];
 	if (!asset) {
 		return '';
 	}
-	return BmsxVMRuntime.instance.resourceSourceForChunk(asset.chunk_name);
+	return BmsxVMRuntime.instance.resourceSourceForChunk(asset.source_path);
 }
 
 export function clearWorkspaceDirtyBuffers(): void {
@@ -723,7 +723,7 @@ export function clearWorkspaceDirtyBuffers(): void {
 	ide_state.lastHistoryTimestamp = 0;
 	ide_state.savePointDepth = 0;
 	for (const context of ide_state.codeTabContexts.values()) {
-		const source = loadSrc(context.descriptor.path);
+		const source = loadCleanSrc(context.descriptor.path);
 		applySourceToContext(context, source);
 		context.dirty = false;
 		context.saveGeneration = ide_state.saveGeneration;

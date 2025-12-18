@@ -3,8 +3,12 @@ export type LuaSourcePosition = {
 	readonly column: number;
 };
 
+export type LuaSourceLocation = {
+	readonly path: string;
+} & LuaSourcePosition;
+
 export type LuaSourceRange = {
-	readonly chunkName: string;
+	readonly path: string;
 	readonly start: LuaSourcePosition;
 	readonly end: LuaSourcePosition;
 };

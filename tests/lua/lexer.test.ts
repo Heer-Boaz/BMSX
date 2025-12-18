@@ -5,7 +5,7 @@ import { LuaSyntaxError } from '../../src/bmsx/lua/errors';
 import { LuaTokenType, type LuaToken } from '../../src/bmsx/lua/token';
 
 function lex(source: string): LuaToken[] {
-	const lexer = new LuaLexer(source, 'chunk');
+	const lexer = new LuaLexer(source, 'path');
 	return lexer.scanTokens();
 }
 

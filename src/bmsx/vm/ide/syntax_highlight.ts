@@ -472,9 +472,9 @@ function applySemanticAnnotations(
 			continue;
 		}
 		const end = Math.min(rawEnd, columnColors.length);
-		const pathName = resolveIdentifierPathAt(line, start);
+		const path = resolveIdentifierPathAt(line, start);
 		const tokenText = line.slice(start, Math.min(rawEnd, line.length)).trim();
-		const isBuiltin = (pathName && builtinLookup(pathName)) || (tokenText.length > 0 && builtinLookup(tokenText));
+		const isBuiltin = (path && builtinLookup(path)) || (tokenText.length > 0 && builtinLookup(tokenText));
 		const color = isBuiltin ? constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN : resolveColorForSymbolKind(annotation.kind);
 		for (let column = start; column < end && column < columnColors.length; column += 1) {
 			columnColors[column] = color;

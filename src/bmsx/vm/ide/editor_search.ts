@@ -333,7 +333,7 @@ function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
 					start,
 					end,
 					snippet: buildSnippet(line, start, end),
-					chunkName: descriptor.path,
+					path: descriptor.path,
 				};
 				job.matches.push(match);
 				if (job.matches.length >= constants.GLOBAL_SEARCH_RESULT_LIMIT) {

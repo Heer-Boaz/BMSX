@@ -41,7 +41,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 
 	public convertFromLua(value: LuaValue, context?: LuaMarshalContext): unknown {
 		if (!context) {
-			context = { moduleId: $.cart.chunk2lua[BmsxVMRuntime.instance.currentChunkName].source_path, path: [] };
+			context = { moduleId: $.cart.path2lua[BmsxVMRuntime.instance.currentPath].source_path, path: [] };
 		}
 		return this.luaValueToJsWithVisited(value, context, new WeakMap<LuaTable, unknown>());
 	}
@@ -602,9 +602,9 @@ export class LuaJsBridge implements LuaInteropAdapter {
 	public wrapDynamicChunkFunctions(
 		moduleId: string,
 		environment: LuaEnvironment,
-		chunkName: string,
+		path: string,
 	): void {
-		const filter = (fn: LuaFunctionValue) => this.isFunctionFromChunk(fn, chunkName);
+		const filter = (fn: LuaFunctionValue) => this.isFunctionFromChunk(fn, path);
 		const visited = new WeakSet<LuaTable>();
 		const entries = environment.entries();
 		for (let index = 0; index < entries.length; index += 1) {
@@ -678,17 +678,17 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		return value;
 	}
 
-	public isFunctionFromChunk(fn: LuaFunctionValue, chunkName: string): boolean {
+	public isFunctionFromChunk(fn: LuaFunctionValue, path: string): boolean {
 		const candidate = fn as { getSourceRange?: () => LuaSourceRange };
 		if (typeof candidate.getSourceRange !== 'function') {
 			return false;
 		}
 		try {
 			const range = candidate.getSourceRange();
-			if (!range || typeof range.chunkName !== 'string') {
+			if (!range || typeof range.path !== 'string') {
 				return false;
 			}
-			return range.chunkName === chunkName;
+			return range.path === path;
 		}
 		catch {
 			return false;

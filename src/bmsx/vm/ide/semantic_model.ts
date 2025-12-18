@@ -29,7 +29,7 @@ import type { ParsedLuaChunk } from './lua_parse';
 import { getCachedLuaParse } from './lua_analysis_cache';
 import * as constants from './constants';
 import { getActiveCodeTabContext } from './editor_tabs';
-import { listGlobalLuaSymbols, listLuaSymbols, resolveHoverChunkName } from './intellisense';
+import { listGlobalLuaSymbols, listLuaSymbols } from './intellisense';
 import { extractErrorMessage } from '../../lua/luavalue';
 
 export type SymbolKind = 'parameter' | 'local' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
@@ -150,7 +150,7 @@ export function hydrateFileSemanticData(data: SerializedFileSemanticData): FileS
 	};
 }
 
-type ScopeKind = 'chunk' | 'function' | 'block' | 'loop';
+type ScopeKind = 'path' | 'function' | 'block' | 'loop';
 
 type Scope = {
 	id: number;
@@ -201,13 +201,13 @@ type TokenInfo = {
 
 export function buildLuaFileSemanticData(
 	source: string,
-	chunkName: string,
+	path: string,
 	lines?: readonly string[],
 	parsed?: ParsedLuaChunk,
 	version?: number,
 ): FileSemanticData {
 	const parseEntry = getCachedLuaParse({
-		chunkName,
+		path,
 		source,
 		lines,
 		version,
@@ -217,8 +217,8 @@ export function buildLuaFileSemanticData(
 	const chunk = parseEntry.parsed.chunk;
 	const tokens = parseEntry.parsed.tokens;
 	const builder = new SemanticBuilder({
+		path,
 		chunk,
-		chunkName,
 		tokens,
 		lines: fileLines,
 	});
@@ -234,7 +234,7 @@ export function buildLuaFileSemanticData(
 		moduleAliases.push({ alias, module: moduleName });
 	}
 	const model: LuaSemanticModel = createSemanticModel({
-		file: chunkName,
+		file: path,
 		decls,
 		definitions,
 		refs,
@@ -255,14 +255,14 @@ export function buildLuaFileSemanticData(
 	};
 }
 
-export function buildLuaSemanticModel(source: string, chunkName: string, lines?: readonly string[], parsed?: ParsedLuaChunk): LuaSemanticModel {
-	const data = buildLuaFileSemanticData(source, chunkName, lines, parsed);
+export function buildLuaSemanticModel(source: string, path: string, lines?: readonly string[], parsed?: ParsedLuaChunk): LuaSemanticModel {
+	const data = buildLuaFileSemanticData(source, path, lines, parsed);
 	return data.model;
 }
 
-function collectModuleAliasesFromChunk(chunk: LuaChunk): Map<string, string> {
+function collectModuleAliasesFromChunk(path: LuaChunk): Map<string, string> {
 	const aliases = new Map<string, string>();
-	const statements = chunk.body;
+	const statements = path.body;
 	for (let index = 0; index < statements.length; index += 1) {
 		const statement = statements[index];
 		if (statement.kind === LuaSyntaxKind.LocalAssignmentStatement) {
@@ -817,7 +817,7 @@ function namePathMatches(candidate: readonly string[], desired: readonly string[
 
 class SemanticBuilder {
 	private readonly chunk: LuaChunk;
-	private readonly chunkName: string;
+	private readonly path: string;
 	private readonly tokens: readonly LuaToken[];
 	private readonly annotations: SemanticAnnotations;
 	private readonly tokenMap: Map<string, TokenInfo>;
@@ -833,19 +833,19 @@ class SemanticBuilder {
 
 	constructor(options: {
 		chunk: LuaChunk;
-		chunkName: string;
+		path: string;
 		tokens: readonly LuaToken[];
 		lines: readonly string[];
 	}) {
 		this.chunk = options.chunk;
-		this.chunkName = options.chunkName;
+		this.path = options.path;
 		this.tokens = options.tokens;
 		this.annotations = new Array(options.lines.length);
 		this.tokenMap = buildTokenMap(options.tokens);
 	}
 
 	public build(): SemanticBuildResult {
-		this.enterScope(this.chunk.range, 'chunk');
+		this.enterScope(this.chunk.range, 'path');
 		for (let index = 0; index < this.chunk.body.length; index += 1) {
 			this.visitStatement(this.chunk.body[index]);
 		}
@@ -907,11 +907,11 @@ class SemanticBuilder {
 				let decl = this.tableFields.get(symbolKey);
 				if (!decl) {
 					const scopeRange = scope.range;
-					const isGlobal = scope.kind === 'chunk';
+					const isGlobal = scope.kind === 'path';
 					const tokenInfo = findFunctionNameToken(functionDeclaration, this.tokens, this.tokenMap);
 					const range = tokenInfo
-						? buildRangeFromToken(tokenInfo, this.chunkName)
-						: buildRangeFromPosition(functionDeclaration.range.start, namePath[namePath.length - 1].length, this.chunkName);
+						? buildRangeFromToken(tokenInfo, this.path)
+						: buildRangeFromPosition(functionDeclaration.range.start, namePath[namePath.length - 1].length, this.path);
 					decl = this.createDecl({
 						namePath,
 						name: namePath[namePath.length - 1],
@@ -1160,7 +1160,7 @@ class SemanticBuilder {
 
 	private assignIdentifier(identifier: LuaIdentifierExpression): AssignmentTargetInfo {
 		const existing = this.resolveName(identifier.name);
-		const range = buildIdentifierRange(identifier, this.tokenMap, this.chunkName);
+		const range = buildIdentifierRange(identifier, this.tokenMap, this.path);
 		if (existing) {
 			this.recordReference({
 				namePath: existing.namePath,
@@ -1172,7 +1172,7 @@ class SemanticBuilder {
 			return { decl: existing, namePath: existing.namePath, path: identifier.name };
 		}
 		const scope = this.currentScope();
-		if (scope.kind === 'chunk') {
+		if (scope.kind === 'path') {
 			const decl = this.declareGlobal(identifier, range);
 			return { decl, namePath: decl.namePath, path: identifier.name };
 		}
@@ -1191,7 +1191,7 @@ class SemanticBuilder {
 		const basePath = baseInfo ? baseInfo.namePath : extractNamePath(member.base);
 		const baseDecl = baseInfo ? baseInfo.decl : null;
 		const namePath = basePath ? appendToNamePath(basePath, member.identifier) : [member.identifier];
-		const range = buildPropertyRange(member, this.tokenMap, this.chunkName);
+		const range = buildPropertyRange(member, this.tokenMap, this.path);
 		const decl = this.ensureTableField(namePath, range.start, member.identifier.length, baseDecl);
 		this.recordReference({
 			namePath,
@@ -1221,7 +1221,7 @@ class SemanticBuilder {
 		}
 		const namePath = appendToNamePath(basePath, callExpression.methodName!);
 		const tokenInfo = findMethodToken(callExpression, this.tokens, this.tokenMap);
-		const range = tokenInfo ? buildRangeFromToken(tokenInfo, this.chunkName) : callExpression.range;
+		const range = tokenInfo ? buildRangeFromToken(tokenInfo, this.path) : callExpression.range;
 		const key = joinNamePath(namePath);
 		const decl = this.tableFields.get(key);
 		const targetId = decl ? decl.id : null;
@@ -1242,7 +1242,7 @@ class SemanticBuilder {
 	}
 
 	private handleIdentifierExpression(identifier: LuaIdentifierExpression, isWrite: boolean): ResolvedNamePath {
-		const range = buildIdentifierRange(identifier, this.tokenMap, this.chunkName);
+		const range = buildIdentifierRange(identifier, this.tokenMap, this.path);
 		const resolved = this.resolveName(identifier.name);
 		const namePath = [identifier.name];
 		const targetId = resolved ? resolved.id : null;
@@ -1282,7 +1282,7 @@ class SemanticBuilder {
 		const baseInfo = this.visitExpression(member.base, context);
 		const basePath = baseInfo ? baseInfo.namePath : extractNamePath(member.base);
 		const namePath = basePath ? appendToNamePath(basePath, member.identifier) : [member.identifier];
-		const range = buildPropertyRange(member, this.tokenMap, this.chunkName);
+		const range = buildPropertyRange(member, this.tokenMap, this.path);
 		const key = joinNamePath(namePath);
 		const decl = this.tableFields.get(key) ;
 		const targetId = decl ? decl.id : null;
@@ -1304,7 +1304,7 @@ class SemanticBuilder {
 
 	private declareLocal(name: LuaIdentifierExpression, kind: SymbolKind, activate: boolean): InternalDecl {
 		const scope = this.currentScope();
-		const range = buildIdentifierRange(name, this.tokenMap, this.chunkName);
+		const range = buildIdentifierRange(name, this.tokenMap, this.path);
 		const decl = this.createDecl({
 			namePath: [name.name],
 			name: name.name,
@@ -1324,7 +1324,7 @@ class SemanticBuilder {
 
 	private declareParameter(name: LuaIdentifierExpression): InternalDecl {
 		const scope = this.currentScope();
-		const range = buildIdentifierRange(name, this.tokenMap, this.chunkName);
+		const range = buildIdentifierRange(name, this.tokenMap, this.path);
 		const decl = this.createDecl({
 			namePath: [name.name],
 			name: name.name,
@@ -1366,7 +1366,7 @@ class SemanticBuilder {
 		}
 		const scope = baseDecl ? baseDecl.scopeRef : this.currentScope();
 		const scopeRange = baseDecl ? baseDecl.scope : scope.range;
-		const range = buildRangeFromPosition(start, length, this.chunkName);
+		const range = buildRangeFromPosition(start, length, this.path);
 		const decl = this.createDecl({
 			namePath: namePath,
 			name: namePath[namePath.length - 1],
@@ -1374,7 +1374,7 @@ class SemanticBuilder {
 			range,
 			scopeRange,
 			scopeRef: scope,
-			isGlobal: baseDecl ? baseDecl.isGlobal : scope.kind === 'chunk',
+			isGlobal: baseDecl ? baseDecl.isGlobal : scope.kind === 'path',
 			active: true,
 		});
 		this.tableFields.set(key, decl);
@@ -1396,10 +1396,10 @@ class SemanticBuilder {
 		active: boolean;
 	}): InternalDecl {
 		const { namePath, name, kind, range, scopeRange, scopeRef, isGlobal, active } = options;
-		const id = createSymbolId(this.chunkName, range, kind, namePath);
+		const id = createSymbolId(this.path, range, kind, namePath);
 		const decl: InternalDecl = {
 			id,
-			file: this.chunkName,
+			file: this.path,
 			name,
 			namePath: namePath.slice(),
 			symbolKey: joinNamePath(namePath),
@@ -1427,7 +1427,7 @@ class SemanticBuilder {
 		isWrite: boolean;
 	}): void {
 		const ref: Ref = {
-			file: this.chunkName,
+			file: this.path,
 			name: options.name,
 			namePath: options.namePath.slice(),
 			symbolKey: joinNamePath(options.namePath),
@@ -1534,28 +1534,28 @@ function inferReferenceKind(ref: Ref): SymbolKind {
 	return 'global';
 }
 
-function buildIdentifierRange(identifier: LuaIdentifierExpression, tokenMap: Map<string, TokenInfo>, chunkName: string): LuaSourceRange {
+function buildIdentifierRange(identifier: LuaIdentifierExpression, tokenMap: Map<string, TokenInfo>, path: string): LuaSourceRange {
 	const info = tokenMap.get(tokenKey(identifier.range.start.line, identifier.range.start.column));
 	const length = info ? info.token.lexeme.length : identifier.name.length;
-	return buildRangeFromPosition(identifier.range.start, length, chunkName);
+	return buildRangeFromPosition(identifier.range.start, length, path);
 }
 
-function buildPropertyRange(member: LuaMemberExpression, tokenMap: Map<string, TokenInfo>, chunkName: string): LuaSourceRange {
+function buildPropertyRange(member: LuaMemberExpression, tokenMap: Map<string, TokenInfo>, path: string): LuaSourceRange {
 	const start = member.range.end;
 	const info = tokenMap.get(tokenKey(start.line, start.column));
 	const length = info ? info.token.lexeme.length : member.identifier.length;
-	return buildRangeFromPosition(start, length, chunkName);
+	return buildRangeFromPosition(start, length, path);
 }
 
-function buildRangeFromToken(tokenInfo: TokenInfo, chunkName: string): LuaSourceRange {
+function buildRangeFromToken(tokenInfo: TokenInfo, path: string): LuaSourceRange {
 	const token = tokenInfo.token;
-	return buildRangeFromPosition({ line: token.line, column: token.column }, token.lexeme.length, chunkName);
+	return buildRangeFromPosition({ line: token.line, column: token.column }, token.lexeme.length, path);
 }
 
-function buildRangeFromPosition(position: Position, length: number, chunkName: string): LuaSourceRange {
+function buildRangeFromPosition(position: Position, length: number, path: string): LuaSourceRange {
 	const endColumn = position.column + Math.max(length, 1) - 1;
 	return {
-		chunkName,
+		path,
 		start: { line: position.line, column: position.column },
 		end: { line: position.line, column: endColumn },
 	};
@@ -1573,7 +1573,7 @@ function declToDefinitionInfo(decl: Decl): LuaDefinitionInfo {
 
 function cloneRange(range: LuaSourceRange): LuaSourceRange {
 	return {
-		chunkName: range.chunkName,
+		path: range.path,
 		start: { line: range.start.line, column: range.start.column },
 		end: { line: range.end.line, column: range.end.column },
 	};
@@ -1607,7 +1607,7 @@ function joinNamePath(namePath: readonly string[]): string {
 }
 
 function definitionLookupKey(range: LuaSourceRange, namePath: readonly string[]): string {
-	return `${range.chunkName}|${range.start.line}|${range.start.column}|${joinNamePath(namePath)}`;
+	return `${range.path}|${range.start.line}|${range.start.column}|${joinNamePath(namePath)}`;
 }
 
 function appendToNamePath(base: readonly string[], segment: string): string[] {
@@ -1882,25 +1882,25 @@ export function symbolKindLabel(kind: VMLuaSymbolEntry['kind']): string {
 }
 
 export function symbolSourceLabel(entry: VMLuaSymbolEntry): string {
-	const path = entry.location.path ?? entry.location.asset_id ;
+	const path = entry.location.path;
 	if (!path) {
 		return null;
 	}
-	return computeSourceLabel(path, entry.location.chunkName ?? '<anynomous>');
+	return computeSourceLabel(path, entry.location.path ?? '<anynomous>');
 }
 
 export function refreshSymbolCatalog(force: boolean): void {
 	const scope: 'local' | 'global' = ide_state.symbolSearchGlobal ? 'global' : 'local';
-	let chunkName: string = null;
+	let path: string = null;
 	if (scope === 'local') {
 		const context = getActiveCodeTabContext();
-		chunkName = resolveHoverChunkName(context);
+		path = context.descriptor?.path;
 	}
 	const existing = ide_state.symbolCatalogContext;
 	const unchanged = existing !== null
 		&& existing.scope === scope
 		&& (scope === 'global'
-			|| existing.chunkName === chunkName);
+			|| existing.path === path);
 	if (!force && unchanged) {
 		return;
 	}
@@ -1909,7 +1909,7 @@ export function refreshSymbolCatalog(force: boolean): void {
 		if (scope === 'global') {
 			entries = listGlobalLuaSymbols();
 		} else {
-			entries = listLuaSymbols(chunkName);
+			entries = listLuaSymbols(path);
 		}
 	} catch (error) {
 		const message = extractErrorMessage(error);
@@ -1921,7 +1921,7 @@ export function refreshSymbolCatalog(force: boolean): void {
 		ide_state.showMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
-	ide_state.symbolCatalogContext = { scope, chunkName };
+	ide_state.symbolCatalogContext = { scope, path };
 	const deduped: VMLuaSymbolEntry[] = [];
 	const seen = new Set<string>();
 	for (let index = 0; index < entries.length; index += 1) {

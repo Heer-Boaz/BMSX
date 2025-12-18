@@ -4,7 +4,7 @@ import { parseLuaChunkWithRecovery } from './lua_parse';
 import { splitText } from './source_text';
 
 export type LuaAnalysisEntry = {
-	chunkName: string;
+	path: string;
 	source: string;
 	version: number | null;
 	lines: readonly string[];
@@ -17,14 +17,14 @@ const MAX_ANALYSIS_CACHE_ENTRIES = 24;
 const analysisCache: Map<string, LuaAnalysisEntry> = new Map();
 
 export function getCachedLuaParse(options: {
-	chunkName: string;
+	path: string;
 	source: string;
 	lines?: readonly string[];
 	version?: number;
 	parsed?: ParsedLuaChunk;
 	withSyntaxError?: boolean;
 }): LuaAnalysisEntry {
-	const cacheKey = options.chunkName;
+	const cacheKey = options.path;
 	const version = options.version ?? null;
 	const cached = analysisCache.get(cacheKey);
 	if (cached) {
@@ -35,10 +35,10 @@ export function getCachedLuaParse(options: {
 		}
 	}
 	const resolvedLines = options.lines ?? splitText(options.source);
-	const parsed = options.parsed ?? parseLuaChunkWithRecovery(options.source, options.chunkName, resolvedLines);
+	const parsed = options.parsed ?? parseLuaChunkWithRecovery(options.source, options.path, resolvedLines);
 	const syntaxError = parsed.syntaxError;
 	const entry: LuaAnalysisEntry = {
-		chunkName: options.chunkName,
+		path: options.path,
 		source: options.source,
 		version,
 		lines: resolvedLines,
@@ -51,8 +51,8 @@ export function getCachedLuaParse(options: {
 	return entry;
 }
 
-export function invalidateLuaAnalysis(chunkName: string): void {
-	analysisCache.delete(chunkName);
+export function invalidateLuaAnalysis(path: string): void {
+	analysisCache.delete(path);
 }
 
 function evictIfNeeded(): void {

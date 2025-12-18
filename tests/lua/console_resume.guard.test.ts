@@ -54,7 +54,7 @@ test('applyLuaProgramHotReload keeps interpreter resident', () => {
   const nextPrivate = src.indexOf('\n\tprivate ', start + 1);
   const snippet = src.slice(start, nextPrivate === -1 ? undefined : nextPrivate);
   assert.equal(snippet.includes('resetLuaInterpreterForHotReload'), false, 'applyLuaProgramHotReload should not reset interpreter');
-  assert.equal(snippet.includes('execute('), true, 'applyLuaProgramHotReload must execute the updated chunk');
+  assert.equal(snippet.includes('execute('), true, 'applyLuaProgramHotReload must execute the updated path');
   assert.equal(snippet.includes('mergeLuaChunkEnvironmentState'), true, 'applyLuaProgramHotReload should merge previous state');
 });
 

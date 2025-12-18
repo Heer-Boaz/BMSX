@@ -374,5 +374,5 @@ export type StackTraceFrame = {
 	line: number;
 	column: number;
 	raw: string;
-	chunkPath?: string;
+	pathPath?: string;
 };

@@ -63,8 +63,6 @@ type BuiltinIdentifierCache = {
 
 export type NavigationHistoryEntry = {
 	contextId: string;
-	asset_id: string;
-	chunkName: string;
 	path: string;
 	row: number;
 	column: number;
@@ -230,7 +228,7 @@ export interface IdeState {
 	lastCreateResourceDirectory: string;
 	symbolCatalog: SymbolCatalogEntry[];
 	referenceCatalog: ReferenceCatalogEntry[];
-	symbolCatalogContext: { scope: 'local' | 'global'; chunkName: string };
+	symbolCatalogContext: { scope: 'local' | 'global'; path: string };
 	symbolSearchMatches: SymbolSearchResult[];
 	symbolSearchSelectionIndex: number;
 	symbolSearchDisplayOffset: number;

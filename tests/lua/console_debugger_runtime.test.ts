@@ -54,12 +54,12 @@ test('breakpoints still suspend execution', () => {
 	const interpreter = createLuaInterpreter();
 	const controller = new LuaDebuggerController();
 	interpreter.attachDebugger(controller);
-	const chunkName = 'main.lua';
-	controller.setBreakpoints(new Map([[chunkName, new Set([2])]]));
+	const path = 'main.lua';
+	controller.setBreakpoints(new Map([[path, new Set([2])]]));
 	const source = "local value = 1\nvalue = value + 1\nreturn value\n";
 	let suspension: LuaDebuggerPauseSignal = null;
 	try {
-		interpreter.execute(source, chunkName);
+		interpreter.execute(source, path);
 		assert.fail('expected debugger suspension');
 	} catch (signal) {
 		assert.ok(isLuaDebuggerPauseSignal(signal), 'expected pause signal');
@@ -96,7 +96,7 @@ test('debugger commands dispatch only when a suspension is active', () => {
 		const suspension: LuaDebuggerPauseSignal = {
 			kind: 'pause',
 			reason: 'breakpoint',
-			location: { chunk: 'main.lua', line: 1, column: 1 },
+			location: { path: 'main.lua', line: 1, column: 1 },
 			callStack: [],
 			resume: () => ({ kind: 'normal' }),
 		};
@@ -104,7 +104,7 @@ test('debugger commands dispatch only when a suspension is active', () => {
 			type: 'paused',
 			suspension,
 			payload: {
-				chunk: suspension.location.chunk,
+				path: suspension.location.path,
 				line: suspension.location.line,
 				column: suspension.location.column,
 				reason: suspension.reason,

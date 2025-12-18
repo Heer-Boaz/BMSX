@@ -17,7 +17,7 @@ function createPauseSignal(reason: LuaDebuggerPauseSignal['reason']): LuaDebugge
 	return {
 		kind: 'pause',
 		reason,
-		location: { chunk: 'main.lua', line: 1, column: 1 },
+		location: { path: 'main.lua', line: 1, column: 1 },
 		callStack: [{ functionName: 'entry', source: 'main.lua', line: 1, column: 1 }],
 		resume: () => ({ kind: 'normal' }),
 	};
@@ -27,15 +27,15 @@ test('breakpoint pause resumes execution to completion', () => {
 	const interpreter = createLuaInterpreter();
 	const controller = new LuaDebuggerController();
 	interpreter.attachDebugger(controller);
-	const chunkName = 'break_test.lua';
-	controller.setBreakpoints(new Map([[chunkName, new Set([2])]]));
+	const path = 'break_test.lua';
+	controller.setBreakpoints(new Map([[path, new Set([2])]]));
 	const source = `
 local value = 1
 value = value + 5
 return value
 `;
 	try {
-		interpreter.execute(source, chunkName);
+		interpreter.execute(source, path);
 		assert.fail('expected breakpoint pause');
 	}
 	catch (signal) {
@@ -52,7 +52,7 @@ test('step over pauses only after returning to the same depth', () => {
 	const controller = new LuaDebuggerController();
 	interpreter.attachDebugger(controller);
 	controller.requestStepInto();
-	const chunkName = 'step_over.lua';
+	const path = 'step_over.lua';
 	const source = `
 local function inner()
   local v = 10
@@ -64,7 +64,7 @@ return total
 `;
 	let firstPause: LuaDebuggerPauseSignal = null;
 	try {
-		interpreter.execute(source, chunkName);
+		interpreter.execute(source, path);
 		assert.fail('expected pause from step-into');
 	} catch (signal) {
 		firstPause = expectPause(signal as ExecutionSignal);

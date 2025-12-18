@@ -3,8 +3,7 @@ import type { BmsxCartridge } from '../rompack/rompack';
 export type LuaRequireModuleRecord = {
 	packageKey: string;
 	canonicalKey: string;
-	chunkName: string;
-	path?: string;
+	path: string;
 };
 
 function stripLuaExtension(candidate: string): string {
@@ -25,7 +24,7 @@ function registerLuaModuleAliases(
 	aliases: Map<string, LuaRequireModuleRecord>,
 	record: LuaRequireModuleRecord,
 	sourcePath: string | undefined,
-	chunkName: string,
+	path: string,
 ): void {
 	const register = (candidate: string): void => {
 		if (!candidate || candidate.length === 0) {
@@ -44,7 +43,7 @@ function registerLuaModuleAliases(
 		register(`${dottedSource}.lua`);
 	}
 
-	register(chunkName);
+	register(path);
 	const baseName = baseModuleName(sourcePath);
 	register(baseName);
 	register(`${baseName}.lua`);
@@ -61,18 +60,16 @@ export function buildLuaModuleAliases(cart: BmsxCartridge): Map<string, LuaRequi
 		if (!asset || asset.type !== 'lua') {
 			continue;
 		}
-		const chunkName = asset.chunk_name;
 		const normalizedPath = asset.normalized_source_path;
 		const canonicalPath = stripLuaExtension(normalizedPath);
-		const packageKey = asset.chunk_name;
+		const packageKey = asset.source_path;
 		const path = asset.normalized_source_path;
 		const record: LuaRequireModuleRecord = {
 			packageKey,
 			canonicalKey: canonicalPath,
-			chunkName,
 			path,
 		};
-		registerLuaModuleAliases(aliases, record, path, chunkName);
+		registerLuaModuleAliases(aliases, record, path, path);
 	}
 	return aliases;
 }

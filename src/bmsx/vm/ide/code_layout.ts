@@ -15,7 +15,7 @@ interface VisualLinesContext {
 	wordWrapEnabled: boolean;
 	scrollRow: number;
 	documentVersion: number;
-	chunkName: string;
+	path: string;
 	computeWrapWidth(): number;
 	estimatedVisibleRowCount?: number;
 }
@@ -31,7 +31,7 @@ type BuiltinIdentifierSnapshot = { epoch: number; ids: Iterable<string> };
 
 type PendingSemanticUpdate = {
 	version: number;
-	chunkName: string;
+	path: string;
 	requestId: number;
 	buffer: TextBuffer;
 	source?: string;
@@ -50,7 +50,7 @@ export class VMCodeLayout {
 	private visualLinesDirty = true;
 	private semanticModel: LuaSemanticModel = null;
 	private semanticVersion = -1;
-	private semanticChunkName: string = null;
+	private semanticPath: string = null;
 	private semanticBuffer: TextBuffer = null;
 	private readonly semanticDebounceMs: number;
 	private readonly clockNow: () => number;
@@ -156,7 +156,7 @@ export class VMCodeLayout {
 		this.semanticBuffer = null;
 		this.semanticModel = null;
 		this.semanticVersion = -1;
-		this.semanticChunkName = null;
+		this.semanticPath = null;
 		this.lastSemanticError = null;
 		this.lastSemanticErrorVersion = -1;
 		this.lastSemanticErrorChunk = null;
@@ -174,8 +174,8 @@ export class VMCodeLayout {
 		this.rowVisualLineCounts = [];
 	}
 
-	public requestSemanticUpdate(buffer: TextBuffer, documentVersion: number, chunkName: string): void {
-		this.ensureSemanticModel(buffer, documentVersion, chunkName, 'background');
+	public requestSemanticUpdate(buffer: TextBuffer, documentVersion: number, path: string): void {
+		this.ensureSemanticModel(buffer, documentVersion, path, 'background');
 	}
 
 	public getCachedHighlight(buffer: TextBuffer, row: number): CachedHighlight {
@@ -349,12 +349,12 @@ export class VMCodeLayout {
 		return this.lastSemanticError;
 	}
 
-	public getSemanticDefinitions(buffer: TextBuffer, documentVersion: number, chunkName: string): readonly LuaDefinitionInfo[] {
-		this.ensureSemanticModel(buffer, documentVersion, chunkName, 'background');
+	public getSemanticDefinitions(buffer: TextBuffer, documentVersion: number, path: string): readonly LuaDefinitionInfo[] {
+		this.ensureSemanticModel(buffer, documentVersion, path, 'background');
 		if (!this.semanticModel) {
 			return null;
 		}
-		if (this.semanticVersion !== documentVersion || this.semanticChunkName !== chunkName) {
+		if (this.semanticVersion !== documentVersion || this.semanticPath !== path) {
 			return null;
 		}
 		return this.semanticModel.definitions;
@@ -532,29 +532,29 @@ export class VMCodeLayout {
 		return segments;
 	}
 
-	public getSemanticModel(buffer: TextBuffer, documentVersion: number, chunkName: string): LuaSemanticModel {
-		this.ensureSemanticModel(buffer, documentVersion, chunkName, 'background');
+	public getSemanticModel(buffer: TextBuffer, documentVersion: number, path: string): LuaSemanticModel {
+		this.ensureSemanticModel(buffer, documentVersion, path, 'background');
 		return this.semanticModel;
 	}
 
 	private ensureSemanticModel(
 		buffer: TextBuffer,
 		version: number,
-		chunkName: string,
+		path: string,
 		_mode: 'background',
 	): void {
-		if (this.semanticBuffer === buffer && this.semanticVersion === version && this.semanticChunkName === chunkName) {
+		if (this.semanticBuffer === buffer && this.semanticVersion === version && this.semanticPath === path) {
 			if (this.semanticModel) {
 				return;
 			}
-			if (this.lastSemanticError && this.lastSemanticErrorVersion === version && this.lastSemanticErrorChunk === chunkName) {
+			if (this.lastSemanticError && this.lastSemanticErrorVersion === version && this.lastSemanticErrorChunk === path) {
 				return;
 			}
 		}
-		if (this.pendingSemantic && this.pendingSemantic.buffer === buffer && this.pendingSemantic.version === version && this.pendingSemantic.chunkName === chunkName) {
+		if (this.pendingSemantic && this.pendingSemantic.buffer === buffer && this.pendingSemantic.version === version && this.pendingSemantic.path === path) {
 			return;
 		}
-		const pending = this.updatePendingSemantic(buffer, version, chunkName);
+		const pending = this.updatePendingSemantic(buffer, version, path);
 		// if (mode === 'force') {
 		// 	this.semanticDueAtMs = null;
 		// 	if (this.semanticTimer) {
@@ -595,18 +595,18 @@ export class VMCodeLayout {
 	private updatePendingSemantic(
 		buffer: TextBuffer,
 		version: number,
-		chunkName: string,
+		path: string,
 	): PendingSemanticUpdate {
 		this.lastSemanticError = null;
 		this.lastSemanticErrorVersion = -1;
 		this.lastSemanticErrorChunk = null;
 		const current = this.pendingSemantic;
-		if (current && current.buffer === buffer && current.version === version && current.chunkName === chunkName) {
+		if (current && current.buffer === buffer && current.version === version && current.path === path) {
 			return current;
 		}
 		const pending: PendingSemanticUpdate = {
 			version,
-			chunkName,
+			path,
 			requestId: this.nextSemanticRequestId,
 			buffer,
 		};
@@ -650,33 +650,33 @@ export class VMCodeLayout {
 		let errorMessage: string = null;
 		try {
 			const source = this.materializeSemanticSource(pending);
-			model = this.workspace.updateFile(pending.chunkName, source, pending.lines, null, pending.version);
+			model = this.workspace.updateFile(pending.path, source, pending.lines, null, pending.version);
 		} catch (error) {
 			model = null;
 			errorMessage = error instanceof Error ? error.message : String(error);
 		}
 		const annotations = model ? model.annotations : null;
-		this.finalizeSemanticUpdate(pending.buffer, model, pending.version, pending.chunkName, annotations, errorMessage);
+		this.finalizeSemanticUpdate(pending.buffer, model, pending.version, pending.path, annotations, errorMessage);
 	}
 
 	private finalizeSemanticUpdate(
 		buffer: TextBuffer,
 		model: LuaSemanticModel,
 		version: number,
-		chunkName: string,
+		path: string,
 		annotations: SemanticAnnotations,
 		errorMessage?: string,
 	): void {
 		this.semanticBuffer = buffer;
 		this.semanticModel = model;
 		this.semanticVersion = version;
-		this.semanticChunkName = chunkName;
+		this.semanticPath = path;
 		this.semanticDueAtMs = null;
 		this.pendingSemantic = null;
 		if (errorMessage) {
 			this.lastSemanticError = errorMessage;
 			this.lastSemanticErrorVersion = version;
-			this.lastSemanticErrorChunk = chunkName;
+			this.lastSemanticErrorChunk = path;
 		} else {
 			this.lastSemanticError = null;
 			this.lastSemanticErrorVersion = -1;

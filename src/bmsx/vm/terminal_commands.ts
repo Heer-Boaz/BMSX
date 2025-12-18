@@ -202,18 +202,18 @@ export class TerminalCommandDispatcher {
 
 	public getSystemStatusLines(): string[] {
 		const overlay = this.runtime.overlayViewportSize;
-		const chunkLabel = this.runtime.currentChunkName ?? '<none>';
+		const pathLabel = this.runtime.currentPath ?? '<none>';
 		const vmState = this.runtime.isVmInitialized ? 'initialized' : 'not initialized';
 		const suspension = this.runtime.debuggerSuspendSignal;
 		const suspensionLocation = suspension
-			? formatRuntimeErrorLocation(suspension.location.chunk, suspension.location.line, suspension.location.column)
+			? formatRuntimeErrorLocation(suspension.location.path, suspension.location.line, suspension.location.column)
 			: null;
-		const debuggerLabel = suspension ? `${suspension.reason} @ ${suspensionLocation ?? suspension.location.chunk}` : 'idle';
+		const debuggerLabel = suspension ? `${suspension.reason} @ ${suspensionLocation ?? suspension.location.path}` : 'idle';
 		const faultLabel = this.runtime.hasRuntimeFailed ? 'FAULTED' : 'OK';
 		const root = $.rompack.project_root_path;
 		const lines: string[] = [];
 		lines.push(`Cart: ${$.rompack.project_root_path} (${$.cart.namespace})`);
-		lines.push(`Lua VM: ${vmState} | Entry: ${chunkLabel}`);
+		lines.push(`Lua VM: ${vmState} | Entry: ${pathLabel}`);
 		lines.push(`Status: ${faultLabel} | Debugger: ${debuggerLabel}`);
 		lines.push(`Canonicalization: ${this.runtime.canonicalization}`);
 		lines.push(`Overlay: ${this.runtime.overlayResolutionMode} ${overlay.width}x${overlay.height}`);
@@ -222,7 +222,7 @@ export class TerminalCommandDispatcher {
 		}
 		const snapshot = this.runtime.faultSnapshot;
 		if (snapshot) {
-			const location = formatRuntimeErrorLocation(snapshot.chunkName, snapshot.line, snapshot.column);
+			const location = formatRuntimeErrorLocation(snapshot.path, snapshot.line, snapshot.column);
 			const when = new Date(snapshot.timestampMs).toISOString();
 			const label = location ? `${location} - ${snapshot.message}` : snapshot.message;
 			lines.push(`Last fault: ${label} @ ${when}`);
@@ -241,16 +241,16 @@ export class TerminalCommandDispatcher {
 		lines.push(`Faulted: ${faultFlag ? 'YES' : 'NO'}`);
 		if (suspension) {
 			const suspensionLocation = formatRuntimeErrorLocation(
-				suspension.location.chunk,
+				suspension.location.path,
 				suspension.location.line,
 				suspension.location.column,
 			);
-			lines.push(`Debugger: ${suspension.reason} @ ${suspensionLocation ?? suspension.location.chunk}`);
+			lines.push(`Debugger: ${suspension.reason} @ ${suspensionLocation ?? suspension.location.path}`);
 		} else {
 			lines.push('Debugger: idle');
 		}
 		if (faultInfo) {
-			const location = formatRuntimeErrorLocation(faultInfo.chunkName, faultInfo.line, faultInfo.column);
+			const location = formatRuntimeErrorLocation(faultInfo.path, faultInfo.line, faultInfo.column);
 			if (location) {
 				lines.push(`Location: ${location}`);
 			}
@@ -445,7 +445,7 @@ export class TerminalCommandDispatcher {
 		const includeRom = mode === '-ROM' || mode === '-ALL' || !mode;
 		const includeSaved = mode === '-SAVED' || mode === '-ALL' || !mode;
 		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || !mode;
-		const luaAssets = Object.values($.cart.chunk2lua);
+		const luaAssets = Object.values($.cart.path2lua);
 		if (includeRom) {
 			for (const asset of luaAssets) {
 				const path = asset.source_path ?? 'help!!';

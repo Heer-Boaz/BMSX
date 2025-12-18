@@ -1,5 +1,5 @@
 import type { LuaFunctionValue } from '../lua/luavalue';
-import type { CanonicalizationType, Viewport } from '../rompack/rompack';
+import type { asset_id, CanonicalizationType, Viewport } from '../rompack/rompack';
 import { LuaEntrySnapshot } from './lua_js_bridge';
 
 export const enum BmsxVMPointerButton {
@@ -31,7 +31,7 @@ export type VMPointerWheel = {
 export type VMResourceDescriptor = {
 	path: string;
 	type: string;
-	asset_id?: string;
+	asset_id?: asset_id;
 };
 
 export type VMLuaResourceCreationRequest = {
@@ -39,7 +39,7 @@ export type VMLuaResourceCreationRequest = {
 	contents: string;
 };
 
-export type VMLuaHoverScope = 'global' | 'chunk';
+export type VMLuaHoverScope = 'global' | 'path';
 
 export type VMLuaHoverValueState = 'value' | 'not_defined';
 
@@ -52,8 +52,6 @@ export type VMLuaDefinitionRange = {
 
 export type VMLuaDefinitionLocation = {
 	path: string;
-	chunkName: string;
-	asset_id?: string;
 	range: VMLuaDefinitionRange;
 };
 
@@ -82,16 +80,15 @@ export type VMLuaBuiltinDescriptor = {
 
 export type VMLuaHoverRequest = {
 	expression: string;
-	chunkName: string;
+	path: string;
 	row: number;
 	column: number;
-	asset_id?: string;
 };
 
 export type LuaMemberCompletionRequest = {
 	objectName?: string;
 	prefix?: string;
-	chunkName: string;
+	path: string;
 	expression?: string;
 	operator: '.' | ':';
 };
@@ -123,7 +120,7 @@ export type BmsxVMRuntimeOptions = {
 
 export type BmsxVMState = {
 	luaRuntimeFailed: boolean;
-	luaChunkName: string;
+	luaPath: string;
 	storage?: { namespace: string; entries: Array<{ index: number; value: number; }>; };
 	luaGlobals?: LuaEntrySnapshot;
 	luaLocals?: LuaEntrySnapshot;

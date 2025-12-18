@@ -86,14 +86,14 @@ export type ExecutionSignal =
 	| { readonly kind: 'goto'; readonly label: string; readonly origin: LuaGotoStatement }
 	| {
 		readonly kind: 'yield';
-		readonly location: { chunk: string; line: number; column: number };
+		readonly location: { path: string; line: number; column: number };
 		readonly callStack: ReadonlyArray<LuaCallFrame>;
 		readonly resume: (instructionBudget: number) => ExecutionSignal;
 	}
 	| {
 		readonly kind: 'pause';
 		readonly reason: LuaDebuggerPauseReason;
-		readonly location: { chunk: string; line: number; column: number };
+		readonly location: { path: string; line: number; column: number };
 		readonly callStack: ReadonlyArray<LuaCallFrame>;
 		readonly exception?: LuaRuntimeError | LuaSyntaxError;
 		readonly message?: string;
@@ -105,14 +105,14 @@ type PauseSignal = Extract<ExecutionSignal, { kind: 'pause' }>;
 type YieldSignal = Extract<ExecutionSignal, { kind: 'yield' }>;
 type MutableYieldSignal = {
 	kind: 'yield';
-	location: { chunk: string; line: number; column: number };
+	location: { path: string; line: number; column: number };
 	callStack: ReadonlyArray<LuaCallFrame>;
 	resume: (instructionBudget: number) => ExecutionSignal;
 };
 type NestedInterpreterState = {
 	frameStack: ExecutionFrame[];
 	envStack: LuaEnvironment[];
-	chunkEnvironment: LuaEnvironment;
+	pathEnvironment: LuaEnvironment;
 	currentChunk: string;
 	valueNameCache: WeakMap<object | Function, string>;
 	lastFaultCallStack: LuaCallFrame[];
@@ -126,8 +126,8 @@ type NestedInterpreterState = {
 };
 
 type ChunkExecutionContext = {
-	readonly chunk: LuaChunk;
-	readonly chunkScope: LuaEnvironment;
+	readonly path: LuaChunk;
+	readonly pathScope: LuaEnvironment;
 	readonly nested: boolean;
 	readonly savedState: NestedInterpreterState | null;
 };
@@ -280,7 +280,7 @@ type LabelScope = {
 	readonly parent: LabelScope;
 };
 
-type FrameBoundary = 'chunk' | 'function' | 'block';
+type FrameBoundary = 'path' | 'function' | 'block';
 
 type StatementsFrame = {
 	readonly kind: 'statements';
@@ -350,8 +350,8 @@ export class LuaInterpreter {
 	private randomSeedValue: number;
 	private _reservedIdentifiers: Set<string> = new Set<string>();
 	private _currentCallRange: LuaSourceRange = null;
-	private _chunkEnvironment: LuaEnvironment = null;
-	private readonly chunkDefinitions: Map<string, ReadonlyArray<LuaDefinitionInfo>> = new Map();
+	private _pathEnvironment: LuaEnvironment = null;
+	private readonly pathDefinitions: Map<string, ReadonlyArray<LuaDefinitionInfo>> = new Map();
 	private readonly envStack: LuaEnvironment[] = [];
 	private _lastFaultEnvironment: LuaEnvironment = null;
 	private readonly callStack: LuaCallFrame[] = [];
@@ -366,7 +366,7 @@ export class LuaInterpreter {
 	private readonly programCounterStack: number[] = [];
 	private instructionBudgetRemaining: number | null = null;
 	private yieldTargetDepth = 0;
-	private readonly yieldLocation = { chunk: '<chunk>', line: 0, column: 0 };
+	private readonly yieldLocation = { path: '<path>', line: 0, column: 0 };
 	private readonly yieldSignal: MutableYieldSignal;
 	private readonly luaValueListScratch: LuaValue[][] = [];
 	private luaValueListScratchIndex = 0;
@@ -395,12 +395,12 @@ export class LuaInterpreter {
 		this.identifierCanonicalizationMode = canonicalization;
 		this.canonicalize = createIdentifierCanonicalizer(canonicalization);
 		this.caseInsensitiveNativeAccess = canonicalization !== 'none';
-		this.currentChunk = '<chunk>';
+		this.currentChunk = '<path>';
 		this.randomSeedValue = $.platform.clock.now();
 		this.packageTable = createLuaTable();
 		this.packageLoaded = createLuaTable();
 		this.initializeBuiltins();
-		this._chunkEnvironment = LuaEnvironment.createChild(this.globals);
+		this._pathEnvironment = LuaEnvironment.createChild(this.globals);
 		this.yieldSignal = {
 			kind: 'yield',
 			location: this.yieldLocation,
@@ -409,18 +409,18 @@ export class LuaInterpreter {
 		};
 	}
 
-	public execute(source: string, chunkName: string): LuaValue[] {
-		const chunk = this.prepareChunk(source, chunkName);
+	public execute(source: string, path: string): LuaValue[] {
+		const chunk = this.prepareChunk(source, path);
 		return this.executeChunk(chunk);
 	}
 
-	private prepareChunk(source: string, chunkName: string): LuaChunk {
-		const lexer = new LuaLexer(source, chunkName, { canonicalizeIdentifiers: this.identifierCanonicalizationMode });
+	private prepareChunk(source: string, path: string): LuaChunk {
+		const lexer = new LuaLexer(source, path, { canonicalizeIdentifiers: this.identifierCanonicalizationMode });
 		const tokens = lexer.scanTokens();
-		const parser = new LuaParser(tokens, chunkName, source);
+		const parser = new LuaParser(tokens, path, source);
 		const chunk = parser.parseChunk();
 		this.validateReservedIdentifiers(chunk.body);
-		this.chunkDefinitions.set(chunk.range.chunkName, chunk.definitions);
+		this.pathDefinitions.set(chunk.range.path, chunk.definitions);
 		return chunk;
 	}
 
@@ -550,12 +550,12 @@ export class LuaInterpreter {
 		this.randomSeedValue = seed;
 	}
 
-	private beginChunkExecution(chunk: LuaChunk): ChunkExecutionContext {
+	private beginChunkExecution(path: LuaChunk): ChunkExecutionContext {
 		const nested = this.frameStack.length > 0;
 		const savedState: NestedInterpreterState | null = nested ? {
 			frameStack: Array.from(this.frameStack),
 			envStack: Array.from(this.envStack),
-			chunkEnvironment: this._chunkEnvironment,
+			pathEnvironment: this._pathEnvironment,
 			currentChunk: this.currentChunk,
 			valueNameCache: this.valueNameCache,
 			lastFaultCallStack: this._lastFaultCallStack,
@@ -569,26 +569,26 @@ export class LuaInterpreter {
 		} : null;
 
 		this.valueNameCache = new WeakMap<object | Function, string>();
-		this.currentChunk = chunk.range.chunkName;
-		const chunkScope = LuaEnvironment.createChild(this.globals);
-		this._chunkEnvironment = chunkScope;
+		this.currentChunk = path.range.path;
+		const pathScope = LuaEnvironment.createChild(this.globals);
+		this._pathEnvironment = pathScope;
 		this.envStack.length = 0;
 		this.frameStack.length = 0;
 		this._lastFaultCallStack = [];
 		this.lastFaultDepth = 0;
 		this.programCounterStack.length = 0;
 		this.lastStatementRange = null;
-		const rootScope = this.createLabelScope(chunk.body, null);
+		const rootScope = this.createLabelScope(path.body, null);
 		this.pushStatementsFrame({
-			statements: chunk.body,
-			environment: chunkScope,
+			statements: path.body,
+			environment: pathScope,
 			varargs: [],
 			scope: rootScope,
-			boundary: 'chunk',
-			callRange: chunk.range,
-			callName: '<chunk>',
+			boundary: 'path',
+			callRange: path.range,
+			callName: '<path>',
 		});
-		return { chunk, chunkScope, nested, savedState };
+		return { path, pathScope, nested, savedState };
 	}
 
 	private runChunkExecution(context: ChunkExecutionContext, instructionBudget: number | null): ExecutionSignal {
@@ -633,13 +633,13 @@ export class LuaInterpreter {
 			throw error;
 		} finally {
 			if (!suspended) {
-				this.finalizeChunkExecution(context.chunkScope, context.savedState, context.nested);
+				this.finalizeChunkExecution(context.pathScope, context.savedState, context.nested);
 			}
 		}
 	}
 
-	protected executeChunk(chunk: LuaChunk): LuaValue[] {
-		const context = this.beginChunkExecution(chunk);
+	protected executeChunk(path: LuaChunk): LuaValue[] {
+		const context = this.beginChunkExecution(path);
 		const signal = this.runChunkExecution(context, null);
 		if (signal !== null && signal.kind === 'return') {
 			return this.consumeReturnValues();
@@ -648,23 +648,23 @@ export class LuaInterpreter {
 	}
 
 	public enumerateChunkEntries(): ReadonlyArray<[string, LuaValue]> {
-		return this._chunkEnvironment!.entries();
+		return this._pathEnvironment!.entries();
 	}
 
-	public get chunkEnvironment(): LuaEnvironment {
-		return this._chunkEnvironment;
+	public get pathEnvironment(): LuaEnvironment {
+		return this._pathEnvironment;
 	}
 
-	public getChunkDefinitions(chunkName: string): ReadonlyArray<LuaDefinitionInfo> {
-		return this.chunkDefinitions.get(chunkName);
+	public getChunkDefinitions(path: string): ReadonlyArray<LuaDefinitionInfo> {
+		return this.pathDefinitions.get(path);
 	}
 
 	public hasChunkBinding(name: string): boolean {
-		return this._chunkEnvironment!.resolve(name) !== null;
+		return this._pathEnvironment!.resolve(name) !== null;
 	}
 
 	public assignChunkValue(name: string, value: LuaValue): void {
-		const target = this._chunkEnvironment!.resolve(name);
+		const target = this._pathEnvironment!.resolve(name);
 		target.assignExisting(name, value);
 	}
 
@@ -692,9 +692,9 @@ export class LuaInterpreter {
 		if (typeof value !== 'object' && typeof value !== 'function') return undefined;
 		const cached = this.valueNameCache.get(value);
 		if (cached) return cached;
-		const chunkEntries = this.enumerateChunkEntries();
-		for (let i = 0; i < chunkEntries.length; i++) {
-			const entry = chunkEntries[i]!;
+		const pathEntries = this.enumerateChunkEntries();
+		for (let i = 0; i < pathEntries.length; i++) {
+			const entry = pathEntries[i]!;
 			const name = entry[0];
 			const entryValue = entry[1];
 			this.cacheValueName(entryValue, name);
@@ -743,11 +743,11 @@ export class LuaInterpreter {
 		if (innermostRange) {
 			const innermost = snapshot[snapshot.length - 1];
 			const alreadyCaptured =
-				innermost.source === innermostRange.chunkName &&
+				innermost.source === innermostRange.path &&
 				innermost.line === innermostRange.start.line &&
 				innermost.column === innermostRange.start.column;
 			if (!alreadyCaptured) {
-				innermost.source = innermostRange.chunkName;
+				innermost.source = innermostRange.path;
 				innermost.line = innermostRange.start.line;
 				innermost.column = innermostRange.start.column;
 			}
@@ -798,7 +798,7 @@ export class LuaInterpreter {
 		if (config.boundary !== 'block') {
 			this.callStack.push({
 				functionName: config.callName && config.callName.length > 0 ? config.callName : null,
-				source: callRange.chunkName,
+				source: callRange.path,
 				line: callRange.start.line,
 				column: callRange.start.column,
 			});
@@ -944,8 +944,8 @@ export class LuaInterpreter {
 	}
 
 	private createPauseSignal(reason: LuaDebuggerPauseReason, range: LuaSourceRange, exception: LuaRuntimeError | LuaSyntaxError = null): PauseSignal {
-		const location = { chunk: range.chunkName, line: range.start.line, column: range.start.column };
-		const message = exception ? exception.message : `${reason} at ${location.chunk}:${location.line}:${location.column}`;
+		const location = { path: range.path, line: range.start.line, column: range.start.column };
+		const message = exception ? exception.message : `${reason} at ${location.path}:${location.line}:${location.column}`;
 		return {
 			kind: 'pause',
 			reason,
@@ -961,7 +961,7 @@ export class LuaInterpreter {
 	private createYieldSignal(targetDepth: number): YieldSignal {
 		const range = this.activeStatementRange ?? this.lastStatementRange ?? this.fallbackSourceRange();
 		this.yieldTargetDepth = targetDepth;
-		this.yieldLocation.chunk = range.chunkName;
+		this.yieldLocation.path = range.path;
 		this.yieldLocation.line = range.start.line;
 		this.yieldLocation.column = range.start.column;
 		this.yieldSignal.callStack = this.snapshotCallStack();
@@ -1054,7 +1054,7 @@ export class LuaInterpreter {
 		}
 	}
 
-	private finalizeChunkExecution(chunkScope: LuaEnvironment, savedState: NestedInterpreterState | null, nested: boolean): void {
+	private finalizeChunkExecution(pathScope: LuaEnvironment, savedState: NestedInterpreterState | null, nested: boolean): void {
 		if (nested) {
 			this.frameStack.length = 0;
 			this.envStack.length = 0;
@@ -1064,7 +1064,7 @@ export class LuaInterpreter {
 			for (const env of savedState.envStack) {
 				this.envStack.push(env);
 			}
-			this._chunkEnvironment = savedState.chunkEnvironment;
+			this._pathEnvironment = savedState.pathEnvironment;
 			this.currentChunk = savedState.currentChunk;
 			this.valueNameCache = savedState.valueNameCache;
 			this._lastFaultCallStack = savedState.lastFaultCallStack;
@@ -1082,24 +1082,24 @@ export class LuaInterpreter {
 		}
 		this.frameStack.length = 0;
 		this.envStack.length = 0;
-		this._chunkEnvironment = chunkScope;
+		this._pathEnvironment = pathScope;
 	}
 
 	private handleChunkContinuation(signal: ExecutionSignal, context: ChunkExecutionContext): ExecutionSignal {
 		if (signal !== null && signal.kind === 'return') {
-			this.finalizeChunkExecution(context.chunkScope, context.savedState, context.nested);
+			this.finalizeChunkExecution(context.pathScope, context.savedState, context.nested);
 			return RETURN_SIGNAL;
 		}
 		if (signal !== null && signal.kind === 'break') {
-			this.finalizeChunkExecution(context.chunkScope, context.savedState, context.nested);
+			this.finalizeChunkExecution(context.pathScope, context.savedState, context.nested);
 			const breakStatement = signal.origin as LuaBreakStatement;
 			throw this.runtimeErrorAt(breakStatement.range, 'Unexpected break outside of loop.');
 		}
 		if (signal !== null && signal.kind === 'goto') {
-			this.finalizeChunkExecution(context.chunkScope, context.savedState, context.nested);
+			this.finalizeChunkExecution(context.pathScope, context.savedState, context.nested);
 			throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found.`);
 		}
-		this.finalizeChunkExecution(context.chunkScope, context.savedState, context.nested);
+		this.finalizeChunkExecution(context.pathScope, context.savedState, context.nested);
 		return NORMAL_SIGNAL;
 	}
 
@@ -1115,7 +1115,7 @@ export class LuaInterpreter {
 		this.activeStatementRange = statement.range ?? this.fallbackSourceRange();
 		this.activeStatementFrame = frame;
 		if (this.debuggerController) {
-			const reason = this.debuggerController.shouldPause(this.activeStatementRange.chunkName, this.activeStatementRange.start.line, this.callStack.length);
+			const reason = this.debuggerController.shouldPause(this.activeStatementRange.path, this.activeStatementRange.start.line, this.callStack.length);
 			if (reason !== null) {
 				const pause = this.createPauseSignal(reason, this.activeStatementRange);
 				this.activeStatementRange = null;
@@ -2691,7 +2691,7 @@ export class LuaInterpreter {
 
 	private fallbackSourceRange(): LuaSourceRange {
 		return {
-			chunkName: this.currentChunk,
+			path: this.currentChunk,
 			start: { line: 0, column: 0 },
 			end: { line: 0, column: 0 },
 		};
@@ -3104,7 +3104,7 @@ export class LuaInterpreter {
 			if (functionValue instanceof LuaNativeFunction) {
 				this.callStack.push({
 					functionName: functionValue.name && functionValue.name.length > 0 ? functionValue.name : null,
-					source: range.chunkName,
+					source: range.path,
 					line: range.start.line,
 					column: range.start.column,
 				});
@@ -3392,7 +3392,7 @@ export class LuaInterpreter {
 
 	private ensureIdentifierNotReserved(name: string, range: LuaSourceRange): void {
 		if (this._reservedIdentifiers.has(this.canonicalize(name))) {
-			throw new LuaSyntaxError(`'${name}' is reserved and cannot be redefined.`, range.chunkName, range.start.line, range.start.column);
+			throw new LuaSyntaxError(`'${name}' is reserved and cannot be redefined.`, range.path, range.start.line, range.start.column);
 		}
 	}
 
@@ -4549,13 +4549,13 @@ export class LuaInterpreter {
 	private runtimeError(message: string): LuaRuntimeError {
 		this.markFaultEnvironment();
 		const range = this._currentCallRange;
-		if (range !== null) return new LuaRuntimeError(message, range.chunkName, range.start.line, range.start.column);
+		if (range !== null) return new LuaRuntimeError(message, range.path, range.start.line, range.start.column);
 		return new LuaRuntimeError(message, this.currentChunk, 0, 0);
 	}
 
 	private runtimeErrorAt(range: LuaSourceRange, message: string): LuaRuntimeError {
 		this.markFaultEnvironment();
-		return new LuaRuntimeError(message, range.chunkName, range.start.line, range.start.column);
+		return new LuaRuntimeError(message, range.path, range.start.line, range.start.column);
 	}
 
 	private throwErrorWithRangeOrCurrentRange(range: LuaSourceRange | null, message: string): never {

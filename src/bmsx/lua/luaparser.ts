@@ -62,14 +62,14 @@ type ParsedArguments = {
 
 export class LuaParser {
 	private readonly tokens: ReadonlyArray<LuaToken>;
-	private readonly chunkName: string;
+	private readonly path: string;
 	private readonly sourceLines: string[];
 	private index: number;
 	private previousToken: LuaToken;
 
-	constructor(tokens: ReadonlyArray<LuaToken>, chunkName: string, source: string, lines?: readonly string[]) {
+	constructor(tokens: ReadonlyArray<LuaToken>, path: string, source: string, lines?: readonly string[]) {
 		this.tokens = tokens;
-		this.chunkName = chunkName;
+		this.path = path;
 		this.sourceLines = lines ? (lines as readonly string[] as string[]) : source.split('\n');
 		this.index = 0;
 		this.previousToken = this.tokens[0];
@@ -87,7 +87,7 @@ export class LuaParser {
 		};
 	}
 
-	public parseChunkWithRecovery(): { chunk: LuaChunk; syntaxError: LuaSyntaxError | null } {
+	public parseChunkWithRecovery(): { path: LuaChunk; syntaxError: LuaSyntaxError | null } {
 		const { block, syntaxError } = this.parseBlockWithRecovery(new Set<LuaTokenType>([LuaTokenType.Eof]));
 		let end: LuaSourcePosition;
 		if (syntaxError) {
@@ -96,14 +96,14 @@ export class LuaParser {
 			const eofToken = this.consume(LuaTokenType.Eof, 'Expected end of input.');
 			end = this.positionFromToken(eofToken);
 		}
-		const range: LuaSourceRange = { chunkName: this.chunkName, start: block.range.start, end };
-		const chunk: LuaChunk = {
+		const range: LuaSourceRange = { path: this.path, start: block.range.start, end };
+		const path: LuaChunk = {
 			kind: LuaSyntaxKind.Chunk,
 			range,
 			body: block.body,
 			definitions: this.buildDefinitionIndex(block),
 		};
-		return { chunk, syntaxError };
+		return { path, syntaxError };
 	}
 
 	private parseBlock(terminators: ReadonlySet<LuaTokenType>): LuaBlock {
@@ -121,7 +121,7 @@ export class LuaParser {
 		return {
 			kind: LuaSyntaxKind.Block,
 			range: {
-				chunkName: this.chunkName,
+				path: this.path,
 				start: startPosition,
 				end: endPosition,
 			},
@@ -153,7 +153,7 @@ export class LuaParser {
 			block: {
 				kind: LuaSyntaxKind.Block,
 				range: {
-					chunkName: this.chunkName,
+					path: this.path,
 					start: startPosition,
 					end: endPosition,
 				},
@@ -253,7 +253,7 @@ export class LuaParser {
 		return {
 			kind: LuaSyntaxKind.LocalAssignmentStatement,
 			range: {
-				chunkName: this.chunkName,
+				path: this.path,
 				start: this.positionFromToken(localToken),
 				end: endPosition,
 			},
@@ -346,7 +346,7 @@ export class LuaParser {
 		return {
 			kind: LuaSyntaxKind.ReturnStatement,
 			range: {
-				chunkName: this.chunkName,
+				path: this.path,
 				start: this.positionFromToken(returnToken),
 				end: endPosition,
 			},
@@ -362,7 +362,7 @@ export class LuaParser {
 		return {
 			kind: LuaSyntaxKind.BreakStatement,
 			range: {
-				chunkName: this.chunkName,
+				path: this.path,
 				start: this.positionFromToken(breakToken),
 				end: this.positionFromToken(this.previous()),
 			},
@@ -539,7 +539,7 @@ export class LuaParser {
 		return {
 			kind: LuaSyntaxKind.AssignmentStatement,
 			range: {
-				chunkName: this.chunkName,
+				path: this.path,
 				start: startPosition,
 				end: endPosition,
 			},
@@ -969,7 +969,7 @@ export class LuaParser {
 					this.consume(LuaTokenType.Equal, 'Expected "=" after table key.');
 					const valueExpression = this.parseExpression();
 					const range: LuaSourceRange = {
-						chunkName: this.chunkName,
+						path: this.path,
 						start: keyExpression.range.start,
 						end: valueExpression.range.end,
 					};
@@ -986,7 +986,7 @@ export class LuaParser {
 					this.consume(LuaTokenType.Equal, 'Expected "=" after table identifier key.');
 					const valueExpression = this.parseExpression();
 					const range: LuaSourceRange = {
-						chunkName: this.chunkName,
+						path: this.path,
 						start: this.positionFromToken(nameToken),
 						end: valueExpression.range.end,
 					};
@@ -1038,7 +1038,7 @@ export class LuaParser {
 		return {
 			kind: LuaSyntaxKind.BinaryExpression,
 			range: {
-				chunkName: this.chunkName,
+				path: this.path,
 				start: left.range.start,
 				end: right.range.end,
 			},
@@ -1129,7 +1129,7 @@ export class LuaParser {
 						? identifierStart.column + Math.max(0, identifierLength - 1)
 						: identifierStart.column;
 					const identifierRange: LuaSourceRange = {
-						chunkName: this.chunkName,
+						path: this.path,
 						start: identifierStart,
 						end: {
 							line: identifierStart.line,
@@ -1170,7 +1170,7 @@ export class LuaParser {
 				const start = member.range.end;
 				const adjustedEndColumn = identifierLength > 0 ? start.column + Math.max(0, identifierLength - 1) : start.column;
 				return {
-					chunkName: baseRange.chunkName,
+					path: baseRange.path,
 					start,
 					end: {
 						line: start.line,
@@ -1183,7 +1183,7 @@ export class LuaParser {
 				const start = indexExpression.index.range.start;
 				const end = indexExpression.index.range.end;
 				return {
-					chunkName: baseRange.chunkName,
+					path: baseRange.path,
 					start,
 					end,
 				};
@@ -1385,7 +1385,7 @@ export class LuaParser {
 		return {
 			kind: LuaSyntaxKind.UnaryExpression,
 			range: {
-				chunkName: this.chunkName,
+				path: this.path,
 				start: this.positionFromToken(operatorToken),
 				end: operand.range.end,
 			},
@@ -1489,7 +1489,7 @@ export class LuaParser {
 
 	private rangeFromTokenAndToken(startToken: LuaToken, endToken: LuaToken): LuaSourceRange {
 		return {
-			chunkName: this.chunkName,
+			path: this.path,
 			start: this.positionFromToken(startToken),
 			end: this.positionFromToken(endToken),
 		};
@@ -1497,7 +1497,7 @@ export class LuaParser {
 
 	private rangeFromTokenAndNode(startToken: LuaToken, node: LuaNode): LuaSourceRange {
 		return {
-			chunkName: this.chunkName,
+			path: this.path,
 			start: this.positionFromToken(startToken),
 			end: node.range.end,
 		};
@@ -1505,7 +1505,7 @@ export class LuaParser {
 
 	private rangeFromNodeAndToken(node: LuaNode, endToken: LuaToken): LuaSourceRange {
 		return {
-			chunkName: this.chunkName,
+			path: this.path,
 			start: node.range.start,
 			end: this.positionFromToken(endToken),
 		};
@@ -1513,7 +1513,7 @@ export class LuaParser {
 
 	private rangeFromBlockAndToken(block: LuaBlock, endToken: LuaToken): LuaSourceRange {
 		return {
-			chunkName: this.chunkName,
+			path: this.path,
 			start: block.range.start,
 			end: this.positionFromToken(endToken),
 		};
@@ -1525,13 +1525,13 @@ export class LuaParser {
 
 	private error(token: LuaToken, message: string): LuaSyntaxError {
 		const payload = this.formatError(token.line, token.column, message, token.lexeme ?? '');
-		return new LuaSyntaxError(payload, this.chunkName, token.line, token.column);
+		return new LuaSyntaxError(payload, this.path, token.line, token.column);
 	}
 
 	private errorAtRange(range: LuaSourceRange, message: string): LuaSyntaxError {
 		const lexeme = this.extractLexeme(range);
 		const payload = this.formatError(range.start.line, range.start.column, message, lexeme);
-		return new LuaSyntaxError(payload, this.chunkName, range.start.line, range.start.column);
+		return new LuaSyntaxError(payload, this.path, range.start.line, range.start.column);
 	}
 
 	private formatError(line: number, column: number, message: string, lexeme: string): string {
