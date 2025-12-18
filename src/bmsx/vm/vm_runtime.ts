@@ -554,6 +554,11 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private onLuaDebuggerPause(signal: LuaDebuggerPauseSignal): void {
+		if (signal.reason === 'exception' && !this.editor.isActive) {
+			this.luaInterpreter.markFaultEnvironment();
+			this.handleLuaError(signal.exception);
+			return;
+		}
 		this.debuggerController.handlePause(signal);
 		const pendingException = this.luaInterpreter.pendingDebuggerException;
 		this.pauseCoordinator.capture(signal, pendingException);

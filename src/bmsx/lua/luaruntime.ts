@@ -150,6 +150,10 @@ export class LuaExecutionThread {
 			const signal = this.runImpl(instructionBudget);
 			return this.consumeSignal(signal);
 		} catch (error) {
+			if (isLuaDebuggerPauseSignal(error)) {
+				this.paused = error as PauseSignal;
+				return VmSliceResult.Pause;
+			}
 			this.fault = error as Error;
 			return VmSliceResult.Fault;
 		}
@@ -162,6 +166,10 @@ export class LuaExecutionThread {
 			const signal = yielded.resume(instructionBudget);
 			return this.consumeSignal(signal);
 		} catch (error) {
+			if (isLuaDebuggerPauseSignal(error)) {
+				this.paused = error as PauseSignal;
+				return VmSliceResult.Pause;
+			}
 			this.fault = error as Error;
 			return VmSliceResult.Fault;
 		}
@@ -824,19 +832,20 @@ export class LuaInterpreter {
 				const frame = this.frameStack[this.frameStack.length - 1];
 				const scratchIndex = this.luaValueListScratchIndex;
 				let signal: ExecutionSignal;
-				try {
-					signal = this.stepFrame(frame);
-				} catch (error) {
-					if (isLuaDebuggerPauseSignal(error)) {
-						return this.bindPauseResume(error as PauseSignal, targetDepth);
-					}
-					if (error instanceof LuaRuntimeError || error instanceof LuaSyntaxError) {
-						this.markPendingException(error);
-						const range = this.activeStatementRange ?? this.lastStatementRange ?? this.fallbackSourceRange();
-						const pause = this.createPauseSignal('exception', range, error);
-						return this.bindPauseResume(pause, targetDepth);
-					}
-					throw error;
+					try {
+						signal = this.stepFrame(frame);
+					} catch (error) {
+						if (isLuaDebuggerPauseSignal(error)) {
+							return this.bindPauseResume(error as PauseSignal, targetDepth);
+						}
+						if (error instanceof LuaRuntimeError || error instanceof LuaSyntaxError) {
+							this.markFaultEnvironment();
+							this.markPendingException(error);
+							const range = this.activeStatementRange ?? this.lastStatementRange ?? this.fallbackSourceRange();
+							const pause = this.createPauseSignal('exception', range, error);
+							return this.bindPauseResume(pause, targetDepth);
+						}
+						throw error;
 				} finally {
 					this.luaValueListScratchIndex = scratchIndex;
 				}
@@ -3137,75 +3146,83 @@ export class LuaInterpreter {
 				return NORMAL_SIGNAL;
 			});
 		}
-		if (functionValue instanceof LuaScriptFunction) {
-			let started = false;
-			let startingDepth = 0;
-			let expression: LuaFunctionExpression = null;
-			let closure: LuaEnvironment = null;
+			if (functionValue instanceof LuaScriptFunction) {
+				let started = false;
+				let startingDepth = 0;
+				let expression: LuaFunctionExpression = null;
+				let closure: LuaEnvironment = null;
 			let name = '';
 			let implicitSelfName: string = null;
 			let callRange: LuaSourceRange = null;
 			let activationEnvironment: LuaEnvironment = null;
 			let varargValues: LuaValue[] = [];
 
-			return new LuaExecutionThread((instructionBudget) => {
-				if (!started) {
-					started = true;
-					startingDepth = this.frameStack.length;
-					expression = functionValue.expression;
-					closure = functionValue.closure;
-					name = functionValue.name;
-					implicitSelfName = functionValue.implicitSelfName;
-					callRange = this._currentCallRange ?? expression.range;
+				return new LuaExecutionThread((instructionBudget) => {
+					try {
+						if (!started) {
+							started = true;
+							startingDepth = this.frameStack.length;
+							expression = functionValue.expression;
+							closure = functionValue.closure;
+							name = functionValue.name;
+							implicitSelfName = functionValue.implicitSelfName;
+							callRange = this._currentCallRange ?? expression.range;
 
-					activationEnvironment = LuaEnvironment.createChild(closure);
-					const parameters = expression.parameters;
-					let argumentIndex = 0;
-					if (implicitSelfName !== null) {
-						const selfValue = argumentIndex < args.length ? args[argumentIndex] : null;
-						activationEnvironment.set(implicitSelfName, selfValue);
-						argumentIndex += 1;
-					}
-					for (const parameter of parameters) {
-						const value = argumentIndex < args.length ? args[argumentIndex] : null;
-						activationEnvironment.set(parameter.name, value, parameter.range);
-						argumentIndex += 1;
-					}
-					varargValues.length = 0;
-					if (expression.hasVararg) {
-						const extras: LuaValue[] = [];
-						for (let index = argumentIndex; index < args.length; index += 1) {
-							extras.push(args[index]);
+							activationEnvironment = LuaEnvironment.createChild(closure);
+							const parameters = expression.parameters;
+							let argumentIndex = 0;
+							if (implicitSelfName !== null) {
+								const selfValue = argumentIndex < args.length ? args[argumentIndex] : null;
+								activationEnvironment.set(implicitSelfName, selfValue);
+								argumentIndex += 1;
+							}
+							for (const parameter of parameters) {
+								const value = argumentIndex < args.length ? args[argumentIndex] : null;
+								activationEnvironment.set(parameter.name, value, parameter.range);
+								argumentIndex += 1;
+							}
+							varargValues.length = 0;
+							if (expression.hasVararg) {
+								const extras: LuaValue[] = [];
+								for (let index = argumentIndex; index < args.length; index += 1) {
+									extras.push(args[index]);
+								}
+								varargValues = extras;
+							}
+							const scope = this.createLabelScope(expression.body.body, null);
+							this.pushStatementsFrame({
+								statements: expression.body.body,
+								environment: activationEnvironment,
+								varargs: varargValues,
+								scope,
+								boundary: 'function',
+								callRange,
+								callName: name,
+							});
 						}
-						varargValues = extras;
+
+						const signal = this.runFrameLoop(startingDepth, instructionBudget);
+						if (!signal) return NORMAL_SIGNAL;
+
+						switch (signal.kind) {
+							case 'return':
+								this.consumeReturnValues();
+								return NORMAL_SIGNAL;
+							case 'break':
+								throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
+							case 'goto':
+								throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found in function '${name}'.`);
+							default:
+								return signal;
+						}
+					} catch (error) {
+						if (!isLuaDebuggerPauseSignal(error)) {
+							this.recordFaultCallStack();
+						}
+						throw error;
 					}
-					const scope = this.createLabelScope(expression.body.body, null);
-					this.pushStatementsFrame({
-						statements: expression.body.body,
-						environment: activationEnvironment,
-						varargs: varargValues,
-						scope,
-						boundary: 'function',
-						callRange,
-						callName: name,
-					});
-				}
-
-				const signal = this.runFrameLoop(startingDepth, instructionBudget);
-				if (!signal) return NORMAL_SIGNAL;
-
-				switch (signal.kind) {
-					case 'return':
-						this.consumeReturnValues();
-						return NORMAL_SIGNAL;
-					case 'break':
-						throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
-					case 'goto':
-						throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found in function '${name}'.`);
-					default: return signal;
-				}
-			});
-		}
+				});
+			}
 
 		return new LuaExecutionThread(() => {
 			functionValue.call(args);
