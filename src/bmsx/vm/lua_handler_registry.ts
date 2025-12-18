@@ -16,6 +16,9 @@ export class LuaFunctionRedirectCache {
 			this.index(moduleId, key);
 			return record.redirect;
 		}
+		if (fn === record.redirect) {
+			return record.redirect;
+		}
 		record.current = fn;
 		return record.redirect;
 	}
